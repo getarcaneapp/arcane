@@ -1,5 +1,5 @@
-import type { Action } from '$lib/components/arcane-button/index.js';
-import type { IconType } from '$lib/icons';
+import type { Action } from '#lib/components/arcane-button/index.js';
+import type { IconType } from '#lib/icons';
 
 export interface ActionButtonMenuItem {
 	id: string;

@@ -1,18 +1,19 @@
 <script lang="ts">
-	import * as ResponsiveDialog from '$lib/components/ui/responsive-dialog/index.js';
-	import SheetFooterActions from '$lib/components/sheets/sheet-footer-actions.svelte';
-	import FormInput from '$lib/components/form/form-input.svelte';
-	import SwitchWithLabel from '$lib/components/form/labeled-switch.svelte';
-	import SelectWithLabel from '$lib/components/form/select-with-label.svelte';
+	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
+	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
+	import FormInput from '#lib/components/form/form-input.svelte';
+	import SwitchWithLabel from '#lib/components/form/labeled-switch.svelte';
+	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
 	import type {
 		ContainerRegistry,
 		ContainerRegistryCreateDto,
 		ContainerRegistryUpdateDto,
 		RegistryType
-	} from '$lib/types/docker';
+	} from '#lib/types/docker';
 	import { z } from 'zod/v4';
-	import { createForm, preventDefault } from '$lib/utils/settings';
-	import { m } from '$lib/paraglide/messages';
+	import { createForm, preventDefault } from '#lib/utils/settings';
+	import { parseLines } from '#lib/utils/form-parsers';
+	import { m } from '#lib/paraglide/messages';
 
 	type ContainerRegistryFormProps = {
 		open: boolean;
@@ -37,6 +38,7 @@
 			username: z.string().optional(),
 			token: z.string().optional(),
 			description: z.string().optional(),
+			repositoryNames: z.string().optional(),
 			insecure: z.boolean().default(false),
 			enabled: z.boolean().default(true),
 			awsAccessKeyId: z.string().optional(),
@@ -90,6 +92,7 @@
 		username: open && registryToEdit ? registryToEdit.username : '',
 		token: '',
 		description: open && registryToEdit ? registryToEdit.description || '' : '',
+		repositoryNames: open && registryToEdit ? (registryToEdit.repositoryNames?.join('\n') ?? '') : '',
 		insecure: open && registryToEdit ? (registryToEdit.insecure ?? false) : false,
 		enabled: open && registryToEdit ? (registryToEdit.enabled ?? true) : true,
 		awsAccessKeyId: open && registryToEdit ? (registryToEdit.awsAccessKeyId ?? '') : '',
@@ -104,7 +107,7 @@
 	function handleSubmit() {
 		const data = form.validate();
 		if (!data) return;
-		onSubmit({ registry: data, isEditMode });
+		onSubmit({ registry: { ...data, repositoryNames: parseLines(data.repositoryNames ?? '') }, isEditMode });
 	}
 
 	function handleOpenChange(newOpenState: boolean) {
@@ -176,6 +179,14 @@
 				type="text"
 				placeholder={m.registries_description_placeholder()}
 				bind:input={$inputs.description}
+			/>
+			<FormInput
+				label={m.registries_repository_names()}
+				type="textarea"
+				rows={3}
+				placeholder={m.registries_repository_names_placeholder()}
+				description={m.registries_repository_names_description()}
+				bind:input={$inputs.repositoryNames}
 			/>
 			<SwitchWithLabel
 				id="isEnabledSwitch"

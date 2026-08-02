@@ -2,18 +2,20 @@ package bootstrap
 
 import (
 	"context"
-	json "encoding/json/v2"
-	"errors"
+	"encoding/json/v2"
 	"fmt"
 	"log/slog"
 
+	"emperror.dev/errors"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/di"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
+	"go.uber.org/fx"
 )
 
 // registerEdgeTunnelRoutes configures the manager-side edge tunnel server.
@@ -21,34 +23,43 @@ import (
 // Returns the TunnelServer for graceful shutdown.
 func registerEdgeTunnelRoutes(
 	ctx context.Context,
+	lifecycle fx.Lifecycle,
+	actorRuntime *actors.Runtime,
 	cfg *config.Config,
 	apiGroup *echo.Group,
-	appServices *di.Services,
+	environmentService *services.EnvironmentService,
+	eventService *services.EventService,
+	registry *edge.TunnelRegistry,
 ) *edge.TunnelServer {
 	// Resolver that validates API key and returns the environment ID
 	resolver := func(ctx context.Context, token string) (string, error) {
-		return appServices.Environment.ResolveEdgeEnvironmentByToken(ctx, token)
+		return environmentService.ResolveEdgeEnvironmentByToken(ctx, token)
 	}
 
 	// Status callback to update environment status when agent connects/disconnects
 	statusCallback := func(ctx context.Context, envID string, connected bool) {
 		envName := envID
-		env, getErr := appServices.Environment.GetEnvironmentByID(ctx, envID)
+		env, getErr := environmentService.GetEnvironmentByID(ctx, envID)
 		if getErr != nil {
 			slog.WarnContext(ctx, "Failed to load environment before edge status update", "environment_id", envID, "error", getErr)
 		} else if env != nil && env.Name != "" {
 			envName = env.Name
 		}
 
-		if err := appServices.Environment.UpdateEnvironmentConnectionState(ctx, envID, connected); err != nil {
+		if err := environmentService.UpdateEnvironmentConnectionState(ctx, envID, connected); err != nil {
 			slog.WarnContext(ctx, "Failed to update environment status on edge connect/disconnect", "environment_id", envID, "connected", connected, "error", err)
 		} else {
 			slog.InfoContext(ctx, "Updated edge environment connection state", "environment_id", envID, "connected", connected)
 		}
 
-		if err := createEdgeConnectionEvent(ctx, appServices.Event, envID, envName, connected); err != nil {
+		if err := createEdgeConnectionEvent(ctx, eventService, envID, envName, connected); err != nil {
 			slog.WarnContext(ctx, "Failed to create edge connection event", "environment_id", envID, "connected", connected, "error", err)
 		}
+
+		// This is the only funnel for "an edge tunnel came up or went down"
+		// (register, unregister and stale reaping all route through it), so it
+		// is where open status streams learn about it without polling.
+		environmentService.NotifyRuntimeStateChanged()
 	}
 
 	eventCallback := func(ctx context.Context, envID string, evt *edge.TunnelEvent) error {
@@ -60,7 +71,7 @@ func registerEdgeTunnelRoutes(
 		if len(evt.MetadataJSON) > 0 {
 			metadata = models.JSON{}
 			if err := json.Unmarshal(evt.MetadataJSON, &metadata); err != nil {
-				return fmt.Errorf("failed to decode event metadata: %w", err)
+				return errors.WrapIf(err, "failed to decode event metadata")
 			}
 		}
 
@@ -77,14 +88,14 @@ func registerEdgeTunnelRoutes(
 			EnvironmentID: &envID,
 			Metadata:      metadata,
 		}
-		_, err := appServices.Event.CreateEvent(ctx, req)
+		_, err := eventService.CreateEvent(ctx, req)
 		if err != nil {
-			return fmt.Errorf("failed to persist synced event: %w", err)
+			return errors.WrapIf(err, "failed to persist synced event")
 		}
 		return nil
 	}
 
-	server := edge.NewTunnelServer(resolver, statusCallback)
+	server := edge.NewTunnelServerWithRegistry(registry, resolver, statusCallback)
 	server.SetConfig(&edge.Config{
 		EdgeMTLSMode:       cfg.EdgeMTLSMode,
 		EdgeMTLSCAFile:     cfg.EdgeMTLSCAFile,
@@ -96,7 +107,7 @@ func registerEdgeTunnelRoutes(
 		ManagerApiUrl:      cfg.ManagerApiUrl,
 	})
 	server.SetEnvironmentNameResolver(func(ctx context.Context, envID string) (string, error) {
-		env, err := appServices.Environment.GetEnvironmentByID(ctx, envID)
+		env, err := environmentService.GetEnvironmentByID(ctx, envID)
 		if err != nil {
 			return "", err
 		}
@@ -107,16 +118,16 @@ func registerEdgeTunnelRoutes(
 	})
 	server.SetEventCallback(eventCallback)
 	server.SetEnrollmentCallback(func(ctx context.Context, envID, remoteAddr string, certIssued bool, caGenerated bool, reenrolled bool) {
-		if appServices.Event == nil {
+		if eventService == nil {
 			return
 		}
 		envName := ""
-		if env, err := appServices.Environment.GetEnvironmentByID(ctx, envID); err == nil && env != nil {
+		if env, err := environmentService.GetEnvironmentByID(ctx, envID); err == nil && env != nil {
 			envName = env.Name
 		}
 		envIDCopy := envID
 		envNameCopy := envName
-		_, _ = appServices.Event.CreateEvent(ctx, services.CreateEventRequest{
+		_, _ = eventService.CreateEvent(ctx, services.CreateEventRequest{
 			Type:          models.EventTypeEnvironmentMTLSEnroll,
 			Severity:      edgeMTLSEnrollmentSeverityInternal(reenrolled),
 			Title:         "Edge mTLS enrollment",
@@ -127,9 +138,22 @@ func registerEdgeTunnelRoutes(
 			EnvironmentID: &envIDCopy,
 			Metadata:      models.JSON{"remoteAddr": remoteAddr, "reenrollment": reenrolled},
 		})
-		createEdgeMTLSIssueEventsInternal(ctx, appServices.Event, envIDCopy, envNameCopy, remoteAddr, certIssued, caGenerated, reenrolled)
+		createEdgeMTLSIssueEventsInternal(ctx, eventService, envIDCopy, envNameCopy, remoteAddr, certIssued, caGenerated, reenrolled)
 	})
-	go server.StartCleanupLoop(ctx)
+	var cleanupRunner *actors.Runner
+	lifecycle.Append(fx.Hook{
+		OnStart: func(context.Context) error {
+			var err error
+			cleanupRunner, err = actors.NewRunner(ctx, actorRuntime, "edge-tunnel", "cleanup", "edge tunnel cleanup", 3, func(runCtx context.Context) error {
+				server.StartCleanupLoop(runCtx)
+				return nil
+			})
+			return err
+		},
+		OnStop: func(stopCtx context.Context) error {
+			return cleanupRunner.Stop(stopCtx)
+		},
+	})
 	apiGroup.POST("/tunnel/poll", server.HandlePoll)
 	// Rate-limit agent mTLS enrollment per-IP. Enrollment is authenticated
 	// only by the agent token, so we cap bursts to mitigate brute-force or
@@ -221,7 +245,7 @@ func createEdgeConnectionEvent(ctx context.Context, eventService *services.Event
 		EnvironmentID: &envID,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to create edge lifecycle event: %w", err)
+		return errors.WrapIf(err, "failed to create edge lifecycle event")
 	}
 
 	return nil

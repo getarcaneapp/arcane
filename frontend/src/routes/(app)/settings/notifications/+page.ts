@@ -1,5 +1,5 @@
-import { notificationService } from '$lib/services/notification-service';
-import { queryKeys } from '$lib/query/query-keys';
+import { notificationService } from '#lib/services/notification-service';
+import { queryKeys } from '#lib/query/query-keys';
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({ parent }) => {

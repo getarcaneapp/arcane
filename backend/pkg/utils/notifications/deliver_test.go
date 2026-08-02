@@ -10,7 +10,7 @@ import (
 )
 
 func TestDeliver_UnknownProviderIsNotHandled(t *testing.T) {
-	handled, err := Deliver(context.Background(), models.NotificationProvider("bogus"), models.JSON{}, Content{})
+	handled, err := Deliver(context.Background(), "bogus", models.JSON{}, Content{})
 	require.False(t, handled)
 	require.NoError(t, err)
 }

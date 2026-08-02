@@ -1,12 +1,13 @@
 package projects
 
 import (
-	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+
+	"emperror.dev/errors"
 
 	"github.com/compose-spec/compose-go/v2/cli"
 )

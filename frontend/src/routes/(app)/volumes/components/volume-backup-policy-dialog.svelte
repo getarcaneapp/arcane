@@ -1,15 +1,15 @@
 <script lang="ts">
-	import { ResponsiveDialog } from '$lib/components/ui/responsive-dialog';
-	import { ArcaneButton } from '$lib/components/arcane-button';
-	import LabeledSwitch from '$lib/components/form/labeled-switch.svelte';
-	import SelectWithLabel from '$lib/components/form/select-with-label.svelte';
-	import TextInputWithLabel from '$lib/components/form/text-input-with-label.svelte';
-	import type { UpdateVolumeBackupPolicy, VolumeBackupPolicy } from '$lib/types/shared';
-	import type { S3Destination } from '$lib/types/s3-destination';
-	import { s3DestinationService } from '$lib/services/s3-destination-service';
-	import { volumeBackupService } from '$lib/services/volume-backup-service';
+	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog';
+	import { ArcaneButton } from '#lib/components/arcane-button';
+	import LabeledSwitch from '#lib/components/form/labeled-switch.svelte';
+	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
+	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
+	import type { UpdateVolumeBackupPolicy, VolumeBackupPolicy } from '#lib/types/shared';
+	import type { S3Destination } from '#lib/types/s3-destination';
+	import { s3DestinationService } from '#lib/services/s3-destination-service';
+	import { volumeBackupService } from '#lib/services/volume-backup-service';
 	import { toast } from 'svelte-sonner';
-	import * as m from '$lib/paraglide/messages.js';
+	import * as m from '#lib/paraglide/messages.js';
 
 	type PolicyForm = UpdateVolumeBackupPolicy & { destination: 'local' | 's3' | 'local_s3'; serverError?: string };
 

@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import * as Card from '$lib/components/ui/card/index.js';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import * as Card from '#lib/components/ui/card/index.js';
 	import type { Component } from 'svelte';
-	import { m } from '$lib/paraglide/messages';
-	import { ArrowRightIcon } from '$lib/icons';
+	import { m } from '#lib/paraglide/messages';
+	import { ArrowRightIcon } from '#lib/icons';
 
 	interface Props {
 		icon: Component<any>;

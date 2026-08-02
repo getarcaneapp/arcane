@@ -1,14 +1,14 @@
 <script lang="ts">
-	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
-	import { UniversalMobileCard, type ColumnSpec, type MobileFieldVisibility } from '$lib/components/arcane-table';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
-	import { Badge } from '$lib/components/ui/badge';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
-	import type { SystemBackupRun } from '$lib/types/system-backup';
-	import { BackupIcon, RestartIcon, TrashIcon, UploadIcon, ClockIcon } from '$lib/icons';
-	import { bytes, formatDateTimeShort } from '$lib/utils/formatting';
-	import * as m from '$lib/paraglide/messages.js';
+	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
+	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
+	import { UniversalMobileCard, type ColumnSpec, type MobileFieldVisibility } from '#lib/components/arcane-table';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu';
+	import { Badge } from '#lib/components/ui/badge';
+	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
+	import type { SystemBackupRun } from '#lib/types/system-backup';
+	import { BackupIcon, RestartIcon, TrashIcon, UploadIcon, ClockIcon } from '#lib/icons';
+	import { bytes, formatDateTimeShort } from '#lib/utils/formatting';
+	import * as m from '#lib/paraglide/messages.js';
 
 	let {
 		backups = $bindable(),

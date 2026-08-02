@@ -1,16 +1,16 @@
 <script lang="ts">
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { refreshAll } from '$app/navigation';
-	import ActionButtons from '$lib/components/action-buttons.svelte';
-	import { Badge } from '$lib/components/ui/badge';
-	import { bytes } from '$lib/utils/formatting';
+	import ActionButtons from '#lib/components/action-buttons.svelte';
+	import { Badge } from '#lib/components/ui/badge';
+	import { bytes } from '#lib/utils/formatting';
 	import { tick } from 'svelte';
 	import { page } from '$app/state';
-	import type { ContainerDetailsDto, ContainerNetworkSettings, ContainerStats as ContainerStatsType } from '$lib/types/docker';
-	import { m } from '$lib/paraglide/messages';
-	import TabbedPageLayout from '$lib/layouts/tabbed-page-layout.svelte';
-	import { type TabItem } from '$lib/components/tab-bar/index.js';
-	import * as Tabs from '$lib/components/ui/tabs/index.js';
+	import type { ContainerDetailsDto, ContainerNetworkSettings, ContainerStats as ContainerStatsType } from '#lib/types/docker';
+	import { m } from '#lib/paraglide/messages';
+	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
+	import { type TabItem } from '#lib/components/tab-bar/index.js';
+	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import ContainerOverview from '../components/ContainerOverview.svelte';
 	import ContainerStats from '../components/ContainerStats.svelte';
 	import ContainerConfiguration from '../components/ContainerConfiguration.svelte';
@@ -24,9 +24,9 @@
 	import ContainerDetailStatsSync from '../components/container-detail-stats-sync.svelte';
 	import ContainerHealthcheck from '../components/ContainerHealthcheck.svelte';
 	import ContainerCommitDialog from '../components/container-commit-dialog.svelte';
-	import IconImage from '$lib/components/icon-image.svelte';
-	import ResourceNotFound from '$lib/components/resource-not-found.svelte';
-	import { calculateMemoryUsage, getThemedIconUrl } from '$lib/utils/docker';
+	import IconImage from '#lib/components/icon-image.svelte';
+	import ResourceNotFound from '#lib/components/resource-not-found.svelte';
+	import { calculateMemoryUsage, getThemedIconUrl } from '#lib/utils/docker';
 	import { mode } from 'mode-watcher';
 	import {
 		VolumesIcon,
@@ -39,17 +39,18 @@
 		CodeIcon,
 		InspectIcon,
 		HealthIcon
-	} from '$lib/icons';
+	} from '#lib/icons';
 	import { parse as parseYaml } from 'yaml';
-	import type { IncludeFile } from '$lib/types/swarm';
-	import { projectService } from '$lib/services/project-service';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { hasPermission } from '$lib/utils/auth';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import { ImagesIcon, PauseIcon, PlayIcon, ZapIcon } from '$lib/icons';
-	import { runContainerLifecycleAction } from '$lib/utils/container-actions';
+	import type { IncludeFile } from '#lib/types/swarm';
+	import { projectService } from '#lib/services/project-service';
+	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import { hasPermission } from '#lib/utils/auth';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import { ImagesIcon, PauseIcon, PlayIcon, ZapIcon } from '#lib/icons';
+	import { runContainerLifecycleAction } from '#lib/utils/container-actions';
+	import { isAutoUpdateIgnored, isAutoUpdateLabelDisabled } from '#lib/utils/container-auto-update';
 	import KillContainerDialog from '../components/kill-container-dialog.svelte';
-	import { useUrlTab } from '$lib/hooks/use-url-tab.svelte';
+	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte';
 	let { data } = $props();
 	let container = $derived(data?.container as ContainerDetailsDto);
 	let stats = $state(null as ContainerStatsType | null);
@@ -57,27 +58,13 @@
 	let autoScrollLogs = $state(true);
 	let hasInitialStatsLoaded = $state(false);
 
-	// Auto-update: detect whether the Docker label controls the state (not toggleable via UI)
-	function isAutoUpdateLabelControlled(c: ContainerDetailsDto): boolean {
-		if (!c?.labels) return false;
-		const labelValue = Object.entries(c.labels).find(([k]) => k.toLowerCase() === 'com.getarcaneapp.arcane.updater')?.[1];
-		return !!labelValue && ['false', '0', 'no', 'off'].includes(labelValue.trim().toLowerCase());
-	}
-
-	function isAutoUpdateEnabled(c: ContainerDetailsDto, settings: any): boolean {
-		if (isAutoUpdateLabelControlled(c)) return false;
-		const excluded = settings?.autoUpdateExcludedContainers ?? '';
-		const containerName = c?.name?.replace(/^\/+/, '') ?? '';
-		if (containerName && excluded) {
-			const excludedList = excluded.split(',').map((s: string) => s.trim());
-			if (excludedList.includes(containerName)) return false;
-		}
-		return true;
-	}
-
-	const autoUpdateLabelControlled = $derived(isAutoUpdateLabelControlled(container));
+	// Auto-update: the Docker label controls the state when set (not toggleable via UI)
+	const autoUpdateLabelControlled = $derived(isAutoUpdateLabelDisabled(container?.labels));
 	let autoUpdateOverride = $state<boolean | null>(null);
-	const autoUpdateEnabled = $derived(autoUpdateOverride ?? isAutoUpdateEnabled(container, data?.settings));
+	const autoUpdateEnabled = $derived(
+		autoUpdateOverride ??
+			!isAutoUpdateIgnored(container?.name ?? '', container?.labels, data?.settings?.autoUpdateExcludedContainers)
+	);
 
 	const cleanContainerName = (name: string | undefined): string => {
 		if (!name) return m.common_not_found_title({ resource: m.containers() });

@@ -27,7 +27,7 @@ import (
 )
 
 const (
-	smtpTestHost        = "localhost."
+	smtpTestHost        = "localhost"
 	smtpTestConnTimeout = 2 * time.Second
 )
 

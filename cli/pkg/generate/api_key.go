@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 
+	"emperror.dev/errors"
 	"github.com/spf13/cobra"
 )
 
@@ -29,7 +30,7 @@ func init() {
 func GenerateAPIKey() (string, error) {
 	keyBytes := make([]byte, apiKeyLength)
 	if _, err := crand.Read(keyBytes); err != nil {
-		return "", fmt.Errorf("failed to generate API key: %w", err)
+		return "", errors.WrapIf(err, "failed to generate API key")
 	}
 
 	return apiKeyPrefix + hex.EncodeToString(keyBytes), nil

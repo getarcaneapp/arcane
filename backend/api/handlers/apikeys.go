@@ -2,12 +2,12 @@ package handlers
 
 import (
 	"context"
-	"errors"
 	"net/http"
+
+	"emperror.dev/errors"
 
 	"github.com/danielgtaylor/huma/v2"
 	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/types/v2/apikey"
@@ -21,13 +21,6 @@ type ApiKeyHandler struct {
 
 // --- Huma Input/Output Wrappers ---
 
-// ApiKeyPaginatedResponse is the paginated response for API keys.
-type ApiKeyPaginatedResponse struct {
-	Success    bool                    `json:"success"`
-	Data       []apikey.ApiKey         `json:"data"`
-	Pagination base.PaginationResponse `json:"pagination"`
-}
-
 type ListApiKeysInput struct {
 	Search string `query:"search" doc:"Search query for filtering by name or description"`
 	Sort   string `query:"sort" doc:"Column to sort by"`
@@ -37,7 +30,7 @@ type ListApiKeysInput struct {
 }
 
 type ListApiKeysOutput struct {
-	Body ApiKeyPaginatedResponse
+	Body base.Paginated[apikey.ApiKey]
 }
 
 type CreateApiKeyInput struct {
@@ -94,10 +87,7 @@ func RegisterApiKeys(api huma.API, apiKeyService *services.ApiKeyService) {
 		Summary:     "List API keys",
 		Description: "Get a paginated list of API keys",
 		Tags:        []string{"API Keys"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 		Middlewares: humamw.RequirePermission(api, authz.PermApiKeysList),
 	}, h.ListApiKeys)
 
@@ -108,10 +98,7 @@ func RegisterApiKeys(api huma.API, apiKeyService *services.ApiKeyService) {
 		Summary:     "Create an API key",
 		Description: "Create a new API key for programmatic access",
 		Tags:        []string{"API Keys"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 		Middlewares: humamw.RequirePermission(api, authz.PermApiKeysCreate),
 	}, h.CreateApiKey)
 
@@ -122,10 +109,7 @@ func RegisterApiKeys(api huma.API, apiKeyService *services.ApiKeyService) {
 		Summary:     "Get an API key",
 		Description: "Get details of a specific API key by ID",
 		Tags:        []string{"API Keys"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 		Middlewares: humamw.RequirePermission(api, authz.PermApiKeysRead),
 	}, h.GetApiKey)
 
@@ -136,10 +120,7 @@ func RegisterApiKeys(api huma.API, apiKeyService *services.ApiKeyService) {
 		Summary:     "Update an API key",
 		Description: "Update an existing API key's details",
 		Tags:        []string{"API Keys"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 		Middlewares: humamw.RequirePermission(api, authz.PermApiKeysUpdate),
 	}, h.UpdateApiKey)
 
@@ -150,10 +131,7 @@ func RegisterApiKeys(api huma.API, apiKeyService *services.ApiKeyService) {
 		Summary:     "Delete an API key",
 		Description: "Delete an API key by ID",
 		Tags:        []string{"API Keys"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 		Middlewares: humamw.RequirePermission(api, authz.PermApiKeysDelete),
 	}, h.DeleteApiKey)
 
@@ -166,10 +144,7 @@ func RegisterApiKeys(api huma.API, apiKeyService *services.ApiKeyService) {
 		Summary:     "List my API keys",
 		Description: "List API keys owned by the current user",
 		Tags:        []string{"API Keys"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, h.ListMyApiKeys)
 
 	// Personal keys inherit the owner's permissions, so creating or deleting
@@ -202,19 +177,15 @@ func RegisterApiKeys(api huma.API, apiKeyService *services.ApiKeyService) {
 
 // ListApiKeys returns a paginated list of API keys.
 func (h *ApiKeyHandler) ListApiKeys(ctx context.Context, input *ListApiKeysInput) (*ListApiKeysOutput, error) {
-	if h.apiKeyService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 
 	apiKeys, paginationResp, err := h.apiKeyService.ListApiKeys(ctx, params)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.ApiKeyListError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to list API keys").Error())
 	}
 
 	return &ListApiKeysOutput{
-		Body: ApiKeyPaginatedResponse{
+		Body: base.Paginated[apikey.ApiKey]{
 			Success:    true,
 			Data:       apiKeys,
 			Pagination: toPaginationResponseInternal(paginationResp),
@@ -225,10 +196,6 @@ func (h *ApiKeyHandler) ListApiKeys(ctx context.Context, input *ListApiKeysInput
 // CreateApiKey creates a new scoped API key. Requested grants are capped by
 // the calling credential's effective permissions.
 func (h *ApiKeyHandler) CreateApiKey(ctx context.Context, input *CreateApiKeyInput) (*CreateApiKeyOutput, error) {
-	if h.apiKeyService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	user, err := requireUserInternal(ctx)
 	if err != nil {
 		return nil, err
@@ -240,7 +207,7 @@ func (h *ApiKeyHandler) CreateApiKey(ctx context.Context, input *CreateApiKeyInp
 		if errors.Is(err, services.ErrApiKeyPermissionEscalation) {
 			return nil, huma.Error403Forbidden(err.Error())
 		}
-		return nil, huma.Error500InternalServerError((&common.ApiKeyCreationError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Failed to create API key")
 	}
 
 	return &CreateApiKeyOutput{
@@ -253,13 +220,9 @@ func (h *ApiKeyHandler) CreateApiKey(ctx context.Context, input *CreateApiKeyInp
 
 // GetApiKey returns details of a specific API key.
 func (h *ApiKeyHandler) GetApiKey(ctx context.Context, input *GetApiKeyInput) (*GetApiKeyOutput, error) {
-	if h.apiKeyService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	apiKey, err := h.apiKeyService.GetApiKey(ctx, input.ID)
 	if err != nil {
-		return nil, huma.Error404NotFound((&common.ApiKeyNotFoundError{}).Error())
+		return nil, huma.Error404NotFound("API key not found")
 	}
 
 	return &GetApiKeyOutput{
@@ -272,10 +235,6 @@ func (h *ApiKeyHandler) GetApiKey(ctx context.Context, input *GetApiKeyInput) (*
 
 // UpdateApiKey updates an existing API key.
 func (h *ApiKeyHandler) UpdateApiKey(ctx context.Context, input *UpdateApiKeyInput) (*UpdateApiKeyOutput, error) {
-	if h.apiKeyService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	if _, err := requireUserInternal(ctx); err != nil {
 		return nil, err
 	}
@@ -284,7 +243,7 @@ func (h *ApiKeyHandler) UpdateApiKey(ctx context.Context, input *UpdateApiKeyInp
 	apiKey, err := h.apiKeyService.UpdateApiKey(ctx, callerPerms, input.ID, input.Body)
 	if err != nil {
 		if errors.Is(err, services.ErrApiKeyNotFound) {
-			return nil, huma.Error404NotFound((&common.ApiKeyNotFoundError{}).Error())
+			return nil, huma.Error404NotFound("API key not found")
 		}
 		if errors.Is(err, services.ErrApiKeyProtected) {
 			return nil, huma.Error403Forbidden("static API keys cannot be updated")
@@ -295,7 +254,7 @@ func (h *ApiKeyHandler) UpdateApiKey(ctx context.Context, input *UpdateApiKeyInp
 		if errors.Is(err, services.ErrApiKeyPersonalNoGrants) {
 			return nil, huma.Error400BadRequest(err.Error())
 		}
-		return nil, huma.Error500InternalServerError((&common.ApiKeyUpdateError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Failed to update API key")
 	}
 
 	return &UpdateApiKeyOutput{
@@ -308,18 +267,14 @@ func (h *ApiKeyHandler) UpdateApiKey(ctx context.Context, input *UpdateApiKeyInp
 
 // DeleteApiKey deletes an API key.
 func (h *ApiKeyHandler) DeleteApiKey(ctx context.Context, input *DeleteApiKeyInput) (*DeleteApiKeyOutput, error) {
-	if h.apiKeyService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	if err := h.apiKeyService.DeleteApiKey(ctx, input.ID); err != nil {
 		if errors.Is(err, services.ErrApiKeyNotFound) {
-			return nil, huma.Error404NotFound((&common.ApiKeyNotFoundError{}).Error())
+			return nil, huma.Error404NotFound("API key not found")
 		}
 		if errors.Is(err, services.ErrApiKeyProtected) {
 			return nil, huma.Error403Forbidden("static API keys cannot be deleted")
 		}
-		return nil, huma.Error500InternalServerError((&common.ApiKeyDeletionError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Failed to delete API key")
 	}
 
 	return &DeleteApiKeyOutput{
@@ -334,10 +289,6 @@ func (h *ApiKeyHandler) DeleteApiKey(ctx context.Context, input *DeleteApiKeyInp
 
 // ListMyApiKeys lists API keys owned by the current user (self-service).
 func (h *ApiKeyHandler) ListMyApiKeys(ctx context.Context, input *struct{}) (*ListMyApiKeysOutput, error) {
-	if h.apiKeyService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	user, err := requireUserInternal(ctx)
 	if err != nil {
 		return nil, err
@@ -345,7 +296,7 @@ func (h *ApiKeyHandler) ListMyApiKeys(ctx context.Context, input *struct{}) (*Li
 
 	keys, err := h.apiKeyService.ListApiKeysByUser(ctx, user.ID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.ApiKeyListError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to list API keys").Error())
 	}
 
 	return &ListMyApiKeysOutput{
@@ -360,10 +311,6 @@ func (h *ApiKeyHandler) ListMyApiKeys(ctx context.Context, input *struct{}) (*Li
 // (self-service). Personal keys inherit the owner's role permissions, and may
 // only be minted from an interactive session — never by another API key.
 func (h *ApiKeyHandler) CreateMyApiKey(ctx context.Context, input *CreateMyApiKeyInput) (*CreateApiKeyOutput, error) {
-	if h.apiKeyService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	// Defense in depth alongside the BearerAuth-only Security requirement:
 	// only session auth sets a session ID, so API-key and sudo callers stop here.
 	if _, ok := humamw.GetCurrentSessionIDFromContext(ctx); !ok {
@@ -377,7 +324,7 @@ func (h *ApiKeyHandler) CreateMyApiKey(ctx context.Context, input *CreateMyApiKe
 
 	apiKey, err := h.apiKeyService.CreatePersonalApiKey(ctx, user.ID, input.Body)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.ApiKeyCreationError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Failed to create API key")
 	}
 
 	return &CreateApiKeyOutput{
@@ -392,10 +339,6 @@ func (h *ApiKeyHandler) CreateMyApiKey(ctx context.Context, input *CreateMyApiKe
 // ownership before removal so the endpoint can't be used to delete other
 // users' keys.
 func (h *ApiKeyHandler) DeleteMyApiKey(ctx context.Context, input *DeleteApiKeyInput) (*DeleteApiKeyOutput, error) {
-	if h.apiKeyService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	// Defense in depth alongside the BearerAuth-only Security requirement:
 	// only session auth sets a session ID, so API-key and sudo callers stop here.
 	if _, ok := humamw.GetCurrentSessionIDFromContext(ctx); !ok {
@@ -409,20 +352,20 @@ func (h *ApiKeyHandler) DeleteMyApiKey(ctx context.Context, input *DeleteApiKeyI
 
 	existing, err := h.apiKeyService.GetApiKey(ctx, input.ID)
 	if err != nil {
-		return nil, huma.Error404NotFound((&common.ApiKeyNotFoundError{}).Error())
+		return nil, huma.Error404NotFound("API key not found")
 	}
 	if existing.UserID == nil || *existing.UserID != user.ID {
-		return nil, huma.Error404NotFound((&common.ApiKeyNotFoundError{}).Error())
+		return nil, huma.Error404NotFound("API key not found")
 	}
 
 	if err := h.apiKeyService.DeleteApiKey(ctx, input.ID); err != nil {
 		if errors.Is(err, services.ErrApiKeyNotFound) {
-			return nil, huma.Error404NotFound((&common.ApiKeyNotFoundError{}).Error())
+			return nil, huma.Error404NotFound("API key not found")
 		}
 		if errors.Is(err, services.ErrApiKeyProtected) {
 			return nil, huma.Error403Forbidden("this API key cannot be deleted")
 		}
-		return nil, huma.Error500InternalServerError((&common.ApiKeyDeletionError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Failed to delete API key")
 	}
 
 	return &DeleteApiKeyOutput{

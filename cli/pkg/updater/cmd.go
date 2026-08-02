@@ -3,10 +3,13 @@ package updater
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strconv"
 	"time"
 
+	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
 	"github.com/getarcaneapp/arcane/types/v2/base"
@@ -14,7 +17,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var jsonOutput bool
+var (
+	jsonOutput   bool
+	historyLimit int
+)
 
 // UpdaterCmd is the parent command for updater operations
 var UpdaterCmd = &cobra.Command{
@@ -35,19 +41,19 @@ var statusCmd = &cobra.Command{
 
 		resp, err := c.Get(cmd.Context(), types.Endpoints.UpdaterStatus(c.EnvID()))
 		if err != nil {
-			return fmt.Errorf("failed to get updater status: %w", err)
+			return errors.WrapIf(err, "failed to get updater status")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[updater.Status]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -75,19 +81,19 @@ var runCmd = &cobra.Command{
 
 		resp, err := c.Post(cmd.Context(), types.Endpoints.UpdaterRun(c.EnvID()), nil)
 		if err != nil {
-			return fmt.Errorf("failed to run updater: %w", err)
+			return errors.WrapIf(err, "failed to run updater")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[updater.Result]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -103,6 +109,23 @@ var runCmd = &cobra.Command{
 	},
 }
 
+// autoUpdateRecord mirrors the backend's models.AutoUpdateRecord, which is not
+// exported through the shared types module.
+type autoUpdateRecord struct {
+	ID              string            `json:"id"`
+	ResourceID      string            `json:"resourceId"`
+	ResourceType    string            `json:"resourceType"`
+	ResourceName    string            `json:"resourceName"`
+	Status          string            `json:"status"`
+	StartTime       time.Time         `json:"startTime"`
+	EndTime         *time.Time        `json:"endTime,omitempty"`
+	UpdateAvailable bool              `json:"updateAvailable"`
+	UpdateApplied   bool              `json:"updateApplied"`
+	Error           *string           `json:"error,omitempty"`
+	OldImages       map[string]string `json:"oldImageVersions,omitempty"`
+	NewImages       map[string]string `json:"newImageVersions,omitempty"`
+}
+
 var historyCmd = &cobra.Command{
 	Use:          "history",
 	Short:        "Get updater history",
@@ -113,34 +136,39 @@ var historyCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.Endpoints.UpdaterHistory(c.EnvID()))
+		path := types.Endpoints.UpdaterHistory(c.EnvID())
+		if cmd.Flags().Changed("limit") {
+			path = cmdutil.AppendQuery(path, url.Values{"limit": []string{strconv.Itoa(historyLimit)}})
+		}
+
+		resp, err := c.Get(cmd.Context(), path)
 		if err != nil {
-			return fmt.Errorf("failed to get updater history: %w", err)
+			return errors.WrapIf(err, "failed to get updater history")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
-		var result base.ApiResponse[[]updater.Result]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+		var result base.ApiResponse[[]autoUpdateRecord]
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return errors.WrapIf(err, "failed to get updater history")
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
-		headers := []string{"CHECKED", "UPDATED", "FAILED", "DURATION"}
+		headers := []string{"RESOURCE", "TYPE", "STATUS", "APPLIED", "STARTED"}
 		rows := make([][]string, len(result.Data))
 		for i, h := range result.Data {
+			name := h.ResourceName
+			if name == "" {
+				name = h.ResourceID
+			}
 			rows[i] = []string{
-				strconv.Itoa(h.Checked),
-				strconv.Itoa(h.Updated),
-				strconv.Itoa(h.Failed),
-				h.Duration,
+				name,
+				h.ResourceType,
+				h.Status,
+				strconv.FormatBool(h.UpdateApplied),
+				h.StartTime.Format("2006-01-02 15:04"),
 			}
 		}
 
@@ -158,4 +186,5 @@ func init() {
 	statusCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	runCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	historyCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
+	historyCmd.Flags().IntVarP(&historyLimit, "limit", "n", 50, "Number of history entries to show")
 }

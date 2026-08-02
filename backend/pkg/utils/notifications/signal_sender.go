@@ -2,12 +2,13 @@ package notifications
 
 import (
 	"context"
-	"errors"
-	"fmt"
+
+	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/nicholas-fedor/shoutrrr"
 	"github.com/nicholas-fedor/shoutrrr/pkg/services/chat/signal"
+	shoutrrrTypes "github.com/nicholas-fedor/shoutrrr/pkg/types"
 )
 
 // BuildSignalURL converts SignalConfig to Shoutrrr URL format using shoutrrr's Config
@@ -54,18 +55,18 @@ func SendSignal(ctx context.Context, config models.SignalConfig, message string)
 
 	shoutrrrURL, err := BuildSignalURL(config)
 	if err != nil {
-		return fmt.Errorf("failed to build shoutrrr Signal URL: %w", err)
+		return errors.WrapIf(err, "failed to build shoutrrr Signal URL")
 	}
 
-	sender, err := shoutrrr.CreateSender(shoutrrrURL)
+	sender, err := shoutrrr.CreateSenderWithOptions(shoutrrrTypes.SenderOptions{}, shoutrrrURL)
 	if err != nil {
-		return fmt.Errorf("failed to create shoutrrr Signal sender: %w", err)
+		return errors.WrapIf(err, "failed to create shoutrrr Signal sender")
 	}
 
 	errs := sender.Send(message, nil)
 	for _, err := range errs {
 		if err != nil {
-			return fmt.Errorf("failed to send Signal message via shoutrrr: %w", err)
+			return errors.WrapIf(err, "failed to send Signal message via shoutrrr")
 		}
 	}
 	return nil

@@ -2,13 +2,15 @@ package handlers
 
 import (
 	"context"
-	json "encoding/json/v2"
-	"errors"
+	"encoding/json/v2"
+	stderrors "errors"
+	"mime/multipart"
 	"strings"
+
+	"emperror.dev/errors"
 
 	"github.com/danielgtaylor/huma/v2"
 	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
@@ -73,11 +75,26 @@ func toPaginationResponseInternal(p pagination.Response) base.PaginationResponse
 
 // requireUserInternal returns the authenticated user from the request context or a 401 error.
 func requireUserInternal(ctx context.Context) (*models.User, error) {
-	user, exists := humamw.GetCurrentUserFromContext(ctx)
+	user, exists := models.CurrentUserFromContext(ctx)
 	if !exists || user == nil {
-		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+		return nil, huma.Error401Unauthorized("Not authenticated")
 	}
 	return user, nil
+}
+
+func openUploadedFileInternal(form multipart.Form) (multipart.File, *multipart.FileHeader, error) {
+	files := form.File["file"]
+	if len(files) == 0 {
+		return nil, nil, huma.Error400BadRequest("No file uploaded")
+	}
+
+	fileHeader := files[0]
+	file, err := fileHeader.Open()
+	if err != nil {
+		return nil, nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to read upload").Error())
+	}
+
+	return file, fileHeader, nil
 }
 
 func registerSecuredInternal[I, O any](
@@ -88,46 +105,6 @@ func registerSecuredInternal[I, O any](
 ) {
 	op.Security = defaultOperationSecurityInternal()
 	humamw.RegisterWithPermission(api, op, permission, handler)
-}
-
-func registerCustomizeSecuredInternal[I, O any](
-	api huma.API,
-	operationID string,
-	method string,
-	path string,
-	summary string,
-	description string,
-	permission string,
-	handler func(context.Context, *I) (*O, error),
-) {
-	registerTaggedSecuredInternal(api, operationID, method, path, summary, description, "Customize", permission, handler)
-}
-
-func registerGitOpsSecuredInternal[I, O any](
-	api huma.API,
-	operationID string,
-	method string,
-	path string,
-	summary string,
-	description string,
-	permission string,
-	handler func(context.Context, *I) (*O, error),
-) {
-	registerTaggedSecuredInternal(api, operationID, method, path, summary, description, "GitOps Syncs", permission, handler)
-}
-
-func registerTaggedSecuredInternal[I, O any](
-	api huma.API,
-	operationID string,
-	method string,
-	path string,
-	summary string,
-	description string,
-	tag string,
-	permission string,
-	handler func(context.Context, *I) (*O, error),
-) {
-	registerSecuredInternal(api, operationInternal(operationID, method, path, summary, description, tag), permission, handler)
 }
 
 func operationInternal(operationID, method, path, summary, description string, tags ...string) huma.Operation {
@@ -143,7 +120,7 @@ func operationInternal(operationID, method, path, summary, description string, t
 
 func currentActorInternal(ctx context.Context) models.User {
 	actor := models.User{}
-	if currentUser, exists := humamw.GetCurrentUserFromContext(ctx); exists && currentUser != nil {
+	if currentUser, exists := models.CurrentUserFromContext(ctx); exists && currentUser != nil {
 		actor = *currentUser
 	}
 	return actor
@@ -201,15 +178,15 @@ func marshalRemoteRequestBodyInternal(requestBody any) ([]byte, error) {
 }
 
 func translateRemoteProxyErrorInternal(err error) error {
-	if transportErr, ok := errors.AsType[*remenv.TransportError](err); ok {
+	if transportErr, ok := stderrors.AsType[*remenv.TransportError](err); ok {
 		return huma.Error502BadGateway("failed to proxy request to environment: " + transportErr.Error())
 	}
 
-	if statusErr, ok := errors.AsType[*remenv.StatusError](err); ok {
+	if statusErr, ok := stderrors.AsType[*remenv.StatusError](err); ok {
 		return huma.NewError(statusErr.StatusCode, "environment returned error: "+string(statusErr.Body), nil)
 	}
 
-	if decodeErr, ok := errors.AsType[*remenv.DecodeError](err); ok {
+	if decodeErr, ok := stderrors.AsType[*remenv.DecodeError](err); ok {
 		return huma.Error500InternalServerError("failed to decode environment response: " + decodeErr.Error())
 	}
 

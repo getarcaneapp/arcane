@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { ArrowUpIcon } from '$lib/icons';
+	import { ArrowUpIcon } from '#lib/icons';
 	import { Select as SelectPrimitive } from 'bits-ui';
-	import { cn, type WithoutChildrenOrChild } from '$lib/utils.js';
+	import { cn, type WithoutChildrenOrChild } from '#lib/utils.js';
 
 	let {
 		ref = $bindable(null),

@@ -1,22 +1,22 @@
 <script lang="ts">
-	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import * as Card from '$lib/components/ui/card/index.js';
-	import { Badge } from '$lib/components/ui/badge';
-	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
+	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import { Badge } from '#lib/components/ui/badge';
+	import { UniversalMobileCard } from '#lib/components/arcane-table/index.js';
 	import DashTableCardHeader from './dash-table-card-header.svelte';
-	import { getStatusVariant } from '$lib/utils/docker';
-	import { capitalizeFirstLetter } from '$lib/utils/formatting';
-	import type { SearchPaginationSortRequest, Paginated } from '$lib/types/shared';
-	import type { ContainerSummaryDto } from '$lib/types/docker';
-	import type { ColumnSpec } from '$lib/components/arcane-table';
-	import { m } from '$lib/paraglide/messages';
-	import { containerService } from '$lib/services/container-service';
+	import { getStatusVariant } from '#lib/utils/docker';
+	import { capitalizeFirstLetter } from '#lib/utils/formatting';
+	import type { SearchPaginationSortRequest, Paginated } from '#lib/types/shared';
+	import type { ContainerSummaryDto } from '#lib/types/docker';
+	import type { ColumnSpec } from '#lib/components/arcane-table';
+	import { m } from '#lib/paraglide/messages';
+	import { containerService } from '#lib/services/container-service';
 	import { goto } from '$app/navigation';
 	import { mode } from 'mode-watcher';
-	import { useResponsiveTableLimit } from '$lib/hooks/use-responsive-table-limit.svelte';
-	import { ContainersIcon } from '$lib/icons';
-	import IconImage from '$lib/components/icon-image.svelte';
-	import { getThemedIconUrl } from '$lib/utils/docker';
+	import { useResponsiveTableLimit } from '#lib/hooks/use-responsive-table-limit.svelte';
+	import { ContainersIcon } from '#lib/icons';
+	import IconImage from '#lib/components/icon-image.svelte';
+	import { getThemedIconUrl } from '#lib/utils/docker';
 
 	let {
 		containers = $bindable(),

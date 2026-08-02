@@ -7,7 +7,7 @@
 // # Example Usage
 //
 //	output.Success("Operation completed")
-//	output.Error("Something went wrong: %v", err)
+//	output.Warning("Something looks off: %v", err)
 //	output.KeyValue("Status", "Running")
 //	output.Table([]string{"ID", "Name"}, rows)
 package output
@@ -54,7 +54,6 @@ var (
 
 var (
 	successStyle = lipgloss.NewStyle().Foreground(statusOnline)
-	errorStyle   = lipgloss.NewStyle().Foreground(statusOffline)
 	warnStyle    = lipgloss.NewStyle().Foreground(statusWarn)
 	infoStyle    = lipgloss.NewStyle().Foreground(arcanePurple)
 	headerStyle  = lipgloss.NewStyle().Bold(true).Foreground(arcanePurple)
@@ -78,6 +77,9 @@ var (
 )
 
 var ansiRegexp = regexp.MustCompile("\x1b\\[[0-9;]*[a-zA-Z]")
+
+// ansiReset closes a styled run re-applied after truncation.
+const ansiReset = "\x1b[0m"
 
 var tableWhitespaceReplacer = strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ", "\t", " ")
 
@@ -109,16 +111,6 @@ func Success(format string, a ...any) {
 	fmt.Printf("\n%s\n", render(successStyle, msg))
 }
 
-// Error prints an error message in red.
-// The message is prefixed with a newline for visual separation.
-// Format specifiers and arguments work like fmt.Printf.
-//
-//nolint:goprintffuncname // printf-style output helper; *f rename across call sites tracked separately
-func Error(format string, a ...any) {
-	msg := fmt.Sprintf(format, a...)
-	fmt.Printf("\n%s\n", render(errorStyle, msg))
-}
-
 // Warning prints a warning message in yellow.
 // The message is prefixed with a newline for visual separation.
 // Format specifiers and arguments work like fmt.Printf.
@@ -147,14 +139,6 @@ func Info(format string, a ...any) {
 func Header(format string, a ...any) {
 	msg := fmt.Sprintf(format, a...)
 	fmt.Printf("\n%s\n", render(headerStyle, msg))
-}
-
-// Print prints a standard message without color formatting.
-// Use this for regular output that doesn't need status indication.
-//
-//nolint:goprintffuncname // printf-style output helper; *f rename across call sites tracked separately
-func Print(format string, a ...any) {
-	fmt.Printf(format+"\n", a...)
 }
 
 // KeyValue prints a key-value pair with the key in bold and value in blue.
@@ -372,11 +356,20 @@ func truncateVisible(value string, maxWidth int) string {
 	}
 
 	plain := ansiRegexp.ReplaceAllString(value, "")
-	if maxWidth == 1 {
-		return "…"
+	truncated := "…"
+	if maxWidth > 1 {
+		truncated = runewidth.Truncate(plain, maxWidth, "…")
 	}
 
-	return runewidth.Truncate(plain, maxWidth, "…")
+	// Re-apply the cell's styling. Colour is written as a single leading escape
+	// sequence plus a trailing reset, so measuring against the stripped text and
+	// then returning it bare would leave truncated cells uncoloured while their
+	// untruncated neighbours in the same column stay tinted.
+	codes := ansiRegexp.FindAllString(value, -1)
+	if len(codes) == 0 || !strings.HasPrefix(value, codes[0]) {
+		return truncated
+	}
+	return codes[0] + truncated + ansiReset
 }
 
 func tableNonContentWidth(columnCount int) int {

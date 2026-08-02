@@ -1,7 +1,6 @@
 package config
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/config"
 	clitypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
@@ -39,7 +40,7 @@ var configShowCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := config.Load()
 		if err != nil {
-			return fmt.Errorf("failed to load config: %w", err)
+			return errors.WrapIf(err, "failed to load config")
 		}
 
 		path, _ := config.ConfigPath()
@@ -118,7 +119,7 @@ Legacy flag syntax (flags shown below) is still supported:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := config.Load()
 		if err != nil {
-			return fmt.Errorf("failed to load config: %w", err)
+			return errors.WrapIf(err, "failed to load config")
 		}
 
 		updated := false
@@ -139,7 +140,7 @@ Legacy flag syntax (flags shown below) is still supported:
 		}
 
 		if err := config.Save(cfg); err != nil {
-			return fmt.Errorf("failed to save config: %w", err)
+			return errors.WrapIf(err, "failed to save config")
 		}
 
 		path, _ := config.ConfigPath()
@@ -168,7 +169,7 @@ var configTestCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := config.Load()
 		if err != nil {
-			return fmt.Errorf("failed to load config: %w", err)
+			return errors.WrapIf(err, "failed to load config")
 		}
 
 		if err := cfg.Validate(); err != nil {
@@ -181,7 +182,7 @@ var configTestCmd = &cobra.Command{
 		httpClient := &http.Client{Timeout: 10 * time.Second}
 		req, err := http.NewRequestWithContext(cmd.Context(), http.MethodGet, cfg.ServerURL+"/api/version", nil)
 		if err != nil {
-			return fmt.Errorf("failed to create request: %w", err)
+			return errors.WrapIf(err, "failed to create request")
 		}
 		// Prefer JWT bearer if present, else API key.
 		if cfg.JWTToken != "" {
@@ -192,13 +193,13 @@ var configTestCmd = &cobra.Command{
 
 		resp, err := httpClient.Do(req)
 		if err != nil {
-			return fmt.Errorf("connection test failed: %w", err)
+			return errors.WrapIf(err, "connection test failed")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(resp.Body)
-			return fmt.Errorf("connection test failed with status %d: %s", resp.StatusCode, string(body))
+			return errors.Errorf("connection test failed with status %d: %s", resp.StatusCode, string(body))
 		}
 
 		fmt.Println("✓ Connection successful!")
@@ -222,7 +223,7 @@ If the config file already exists, this command is a no-op and does not overwrit
 
 		created, err := config.InitDefaultFile()
 		if err != nil {
-			return fmt.Errorf("failed to initialize config: %w", err)
+			return errors.WrapIf(err, "failed to initialize config")
 		}
 		if !created {
 			fmt.Printf("Config file already exists at %s (no changes made)\n", path)
@@ -251,7 +252,7 @@ This removes the original config file from its previous path.`,
 
 		backupPath, moved, err := config.BackupFile()
 		if err != nil {
-			return fmt.Errorf("failed to backup config: %w", err)
+			return errors.WrapIf(err, "failed to backup config")
 		}
 		if !moved {
 			fmt.Printf("No config file found at %s (no changes made)\n", path)
@@ -380,10 +381,10 @@ func applyConfigSetFlags(cmd *cobra.Command, cfg *clitypes.Config) (bool, error)
 	for _, pair := range setResourceLimit {
 		resource, limit, ok := parseResourceLimitPair(pair)
 		if !ok {
-			return false, fmt.Errorf("invalid --resource-limit %q (expected resource=number, resources: %s)", pair, strings.Join(clitypes.KnownPaginatedResources, ", "))
+			return false, errors.Errorf("invalid --resource-limit %q (expected resource=number, resources: %s)", pair, strings.Join(clitypes.KnownPaginatedResources, ", "))
 		}
 		if limit < 0 {
-			return false, fmt.Errorf("invalid --resource-limit %q (limit must be >= 0)", pair)
+			return false, errors.Errorf("invalid --resource-limit %q (limit must be >= 0)", pair)
 		}
 		cfg.SetResourceLimit(resource, limit)
 		if limit == 0 {
@@ -402,7 +403,7 @@ func applyConfigSetArgs(cfg *clitypes.Config, args []string) (bool, error) {
 		return false, nil
 	}
 	if len(args)%2 != 0 {
-		return false, fmt.Errorf("expected key/value pairs, got odd number of arguments (%d). Example: `arcane config set server-url http://localhost:3552`", len(args))
+		return false, errors.Errorf("expected key/value pairs, got odd number of arguments (%d). Example: `arcane config set server-url http://localhost:3552`", len(args))
 	}
 
 	updated := false
@@ -452,7 +453,7 @@ func applyConfigSetArg(cfg *clitypes.Config, key, value string) (bool, error) {
 	case "cli-update-channel", "cli_update_channel", "cli-channel", "channel":
 		channel := strings.ToLower(strings.TrimSpace(value))
 		if channel != "stable" && channel != "next" {
-			return false, fmt.Errorf("invalid cli update channel %q (expected stable or next)", value)
+			return false, errors.Errorf("invalid cli update channel %q (expected stable or next)", value)
 		}
 		cfg.CLIUpdateChannel = channel
 		fmt.Printf("Set cli_update_channel = %s\n", channel)
@@ -472,10 +473,10 @@ func applyConfigSetArg(cfg *clitypes.Config, key, value string) (bool, error) {
 	case "resource-limit", "resource_limit":
 		resource, limit, ok := parseResourceLimitPair(value)
 		if !ok {
-			return false, fmt.Errorf("invalid value %q for key %q (expected resource=number, resources: %s)", value, key, strings.Join(clitypes.KnownPaginatedResources, ", "))
+			return false, errors.Errorf("invalid value %q for key %q (expected resource=number, resources: %s)", value, key, strings.Join(clitypes.KnownPaginatedResources, ", "))
 		}
 		if limit < 0 {
-			return false, fmt.Errorf("invalid value %q for key %q (limit must be >= 0)", value, key)
+			return false, errors.Errorf("invalid value %q for key %q (limit must be >= 0)", value, key)
 		}
 		cfg.SetResourceLimit(resource, limit)
 		if limit == 0 {
@@ -495,13 +496,13 @@ func applyConfigSetArg(cfg *clitypes.Config, key, value string) (bool, error) {
 		return applyResourceLimitByKey(cfg, key, resource, value)
 	}
 
-	return false, fmt.Errorf("unknown config key %q. Supported keys include server-url, api-key, jwt-token, environment, federated-audience, log-level, default-limit, resource-limit, and pagination.resources.<resource>.limit", key)
+	return false, errors.Errorf("unknown config key %q. Supported keys include server-url, api-key, jwt-token, environment, federated-audience, log-level, default-limit, resource-limit, and pagination.resources.<resource>.limit", key)
 }
 
 func applyResourceLimitByKey(cfg *clitypes.Config, key, resourceValue, limitValue string) (bool, error) {
 	resource := clitypes.NormalizePaginatedResource(resourceValue)
 	if resource == "" || !isKnownPaginatedResource(resource) {
-		return false, fmt.Errorf("invalid resource %q for key %q (supported resources: %s)", resourceValue, key, strings.Join(clitypes.KnownPaginatedResources, ", "))
+		return false, errors.Errorf("invalid resource %q for key %q (supported resources: %s)", resourceValue, key, strings.Join(clitypes.KnownPaginatedResources, ", "))
 	}
 	limit, err := parseLimitValue(key, limitValue)
 	if err != nil {
@@ -523,10 +524,10 @@ func isKnownPaginatedResource(resource string) bool {
 func parseLimitValue(key, value string) (int, error) {
 	parsed, err := strconv.Atoi(strings.TrimSpace(value))
 	if err != nil {
-		return 0, fmt.Errorf("invalid value %q for key %q (expected a non-negative integer)", value, key)
+		return 0, errors.Errorf("invalid value %q for key %q (expected a non-negative integer)", value, key)
 	}
 	if parsed < 0 {
-		return 0, fmt.Errorf("invalid value %q for key %q (must be >= 0)", value, key)
+		return 0, errors.Errorf("invalid value %q for key %q (must be >= 0)", value, key)
 	}
 	return parsed, nil
 }

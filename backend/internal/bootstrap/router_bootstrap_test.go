@@ -6,15 +6,17 @@ import (
 	"testing"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cookie"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSecureCookieContextMiddleware_TrustGating(t *testing.T) {
 	_, loopback, err := net.ParseCIDR("127.0.0.0/8")
-	if err != nil {
-		t.Fatalf("parse cidr: %v", err)
-	}
+
+	require.NoError(t, err,
+		"parse cidr: %v", err)
+
 	trusted := []*net.IPNet{loopback}
 
 	runRequest := func(t *testing.T, nets []*net.IPNet, remoteAddr, forwardedProto string) bool {
@@ -29,13 +31,16 @@ func TestSecureCookieContextMiddleware_TrustGating(t *testing.T) {
 		c := e.NewContext(req, rec)
 
 		var observed bool
-		handler := secureCookieContextMiddlewareInternal(nets)(func(c echo.Context) error {
+		handler := secureCookieContextMiddlewareInternal(nets)(func(c *echo.Context) error {
 			observed = cookie.SecureCookieFromContext(c.Request().Context())
 			return nil
 		})
-		if err := handler(c); err != nil {
-			t.Fatalf("handler: %v", err)
+		{
+			err := handler(c)
+			require.NoError(t, err,
+				"handler: %v", err)
 		}
+
 		return observed
 	}
 

@@ -11,8 +11,8 @@
 	differ per page and cannot be unified without changing behavior.
 -->
 <script lang="ts">
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { ArrowsUpDownIcon, FileTextIcon, SearchIcon } from '$lib/icons';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import { ArrowsUpDownIcon, FileTextIcon, SearchIcon } from '#lib/icons';
 
 	interface Props {
 		outlineOpen: boolean;

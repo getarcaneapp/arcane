@@ -1,75 +1,28 @@
 package ws
 
-import (
-	"runtime"
-	"strings"
-	"sync"
-	"time"
-)
+import "sync/atomic"
 
-const wsPkgPath = "internal/utils/ws"
+// workerGoroutines tracks how many websocket worker goroutines this package is
+// currently running (hub loops, read/write pumps and log forwarders).
+//
+// This used to be derived by scanning a full runtime.Stack(buf, true) dump on a
+// 5s timer whenever a diagnostics client was connected — a stop-the-world pause
+// of up to 8MB plus a string split, just to produce one integer. It also matched
+// frames against a package path that no longer exists, so the reported number
+// had been zero regardless. Workers now account for themselves.
+var workerGoroutines atomic.Int64
 
-const workerGoroutineCountTTL = 5 * time.Second
-
-var workerGoroutineCountCache struct {
-	sync.Mutex
-
-	value int
-	at    time.Time
+// trackWorkerGoroutine marks the calling goroutine as an active worker and
+// returns the function that releases it. Intended to be deferred immediately:
+//
+//	defer trackWorkerGoroutine()()
+func trackWorkerGoroutine() func() {
+	workerGoroutines.Add(1)
+	return func() { workerGoroutines.Add(-1) }
 }
 
-// CountWorkerGoroutines returns a best-effort count of websocket worker goroutines
+// CountWorkerGoroutines returns the number of websocket worker goroutines
 // belonging to this package. Intended for diagnostics endpoints only.
 func CountWorkerGoroutines() int {
-	workerGoroutineCountCache.Lock()
-	if !workerGoroutineCountCache.at.IsZero() && time.Since(workerGoroutineCountCache.at) < workerGoroutineCountTTL {
-		value := workerGoroutineCountCache.value
-		workerGoroutineCountCache.Unlock()
-		return value
-	}
-	workerGoroutineCountCache.Unlock()
-
-	count := countWorkerGoroutinesInternal()
-
-	workerGoroutineCountCache.Lock()
-	workerGoroutineCountCache.value = count
-	workerGoroutineCountCache.at = time.Now()
-	workerGoroutineCountCache.Unlock()
-
-	return count
-}
-
-func countWorkerGoroutinesInternal() int {
-	buf := make([]byte, 1<<20)
-	for {
-		n := runtime.Stack(buf, true)
-		if n < len(buf) {
-			buf = buf[:n]
-			break
-		}
-		if len(buf) >= 8<<20 {
-			buf = buf[:n]
-			break
-		}
-		buf = make([]byte, len(buf)*2)
-	}
-
-	s := string(buf)
-	blocks := strings.Split(s, "\n\n")
-	count := 0
-	for _, block := range blocks {
-		if block == "" || !strings.Contains(block, wsPkgPath) {
-			continue
-		}
-		if strings.Contains(block, ".Run(") ||
-			strings.Contains(block, "readPump") ||
-			strings.Contains(block, "writePump") ||
-			strings.Contains(block, "ForwardLines") ||
-			strings.Contains(block, "ForwardLogJSON") ||
-			strings.Contains(block, "ForwardLogJSONBatched") {
-			count++
-		}
-	}
-
-	return count
+	return int(workerGoroutines.Load())
 }

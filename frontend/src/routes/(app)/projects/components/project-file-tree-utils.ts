@@ -1,7 +1,7 @@
 import { toast } from 'svelte-sonner';
-import { m } from '$lib/paraglide/messages';
-import type { ProjectFile, ProjectFileChange } from '$lib/types/project-files';
-import type { CodeLanguage } from '$lib/components/code-editor/analysis/types';
+import { m } from '#lib/paraglide/messages';
+import type { ProjectFile, ProjectFileChange } from '#lib/types/project-files';
+import type { CodeLanguage } from '#lib/components/code-editor/analysis/types';
 
 export type ManagedProjectFileEntry = ProjectFile & {
 	pending?: boolean;

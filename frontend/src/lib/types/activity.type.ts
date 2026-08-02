@@ -23,11 +23,10 @@ export type ActivityType =
 
 export type ActivityMessageLevel = 'info' | 'warning' | 'error' | 'success';
 
-export type ActivityFilter = 'running' | 'failed' | 'completed';
-
 export interface Activity {
 	id: string;
 	environmentId: string;
+	batchId?: string;
 	sourceEnvironmentId?: string;
 	sourceEnvironmentName?: string;
 	type: ActivityType;
@@ -35,8 +34,6 @@ export interface Activity {
 	resourceType?: string;
 	resourceId?: string;
 	resourceName?: string;
-	progress?: number | null;
-	step?: string;
 	latestMessage?: string;
 	startedBy?: ActivityStartedBy;
 	startedAt: string;
@@ -67,6 +64,18 @@ export interface ActivityDetail {
 	activity: Activity;
 	messages: ActivityMessage[];
 }
+
+export interface ActivityBatchGroup {
+	kind: 'batch';
+	batchId: string;
+	items: Activity[];
+	total: number;
+	done: number;
+	failed: number;
+	status: ActivityStatus;
+}
+
+export type ActivityGroup = { kind: 'single'; activity: Activity } | ActivityBatchGroup;
 
 export interface ActivityClearHistoryResult {
 	deleted: number;

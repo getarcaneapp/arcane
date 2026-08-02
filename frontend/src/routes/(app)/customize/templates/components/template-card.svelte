@@ -1,15 +1,15 @@
 <script lang="ts">
-	import { Badge } from '$lib/components/ui/badge';
-	import { Spinner } from '$lib/components/ui/spinner/index.js';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
-	import IconImage from '$lib/components/icon-image.svelte';
-	import IfPermitted from '$lib/components/if-permitted.svelte';
+	import { Badge } from '#lib/components/ui/badge';
+	import { Spinner } from '#lib/components/ui/spinner/index.js';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
+	import IconImage from '#lib/components/icon-image.svelte';
+	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import { goto } from '$app/navigation';
-	import { m } from '$lib/paraglide/messages';
-	import { hasPermission } from '$lib/utils/auth';
-	import type { Template } from '$lib/types/swarm';
-	import { InspectIcon, FolderOpenIcon, GlobeIcon, TrashIcon, DownloadIcon, MoveToFolderIcon } from '$lib/icons';
+	import { m } from '#lib/paraglide/messages';
+	import { hasPermission } from '#lib/utils/auth';
+	import type { Template } from '#lib/types/swarm';
+	import { InspectIcon, FolderOpenIcon, GlobeIcon, TrashIcon, DownloadIcon, MoveToFolderIcon } from '#lib/icons';
 
 	let {
 		template,

@@ -1,10 +1,10 @@
 package httpx
 
 import (
-	"errors"
-	"fmt"
 	"net/url"
 	"strings"
+
+	"emperror.dev/errors"
 )
 
 // ValidateOutboundHTTPURL parses and validates an outbound HTTP(S) target URL.
@@ -19,12 +19,12 @@ func ValidateOutboundHTTPURL(rawURL string) (*url.URL, error) {
 
 	parsed, err := url.Parse(trimmed)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse URL: %w", err)
+		return nil, errors.WrapIf(err, "failed to parse URL")
 	}
 
 	scheme := strings.ToLower(parsed.Scheme)
 	if scheme != "http" && scheme != "https" {
-		return nil, fmt.Errorf("unsupported scheme %q", parsed.Scheme)
+		return nil, errors.Errorf("unsupported scheme %q", parsed.Scheme)
 	}
 
 	if parsed.User != nil {

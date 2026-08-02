@@ -1,10 +1,10 @@
 <script lang="ts" generics="TData extends Record<string, any> & { id: string }">
 	import type { ArcaneRow, ArcaneSvelteTable } from './table-features';
-	import Skeleton from '$lib/components/ui/skeleton/skeleton.svelte';
-	import DropdownCard from '$lib/components/dropdown-card.svelte';
+	import Skeleton from '#lib/components/ui/skeleton/skeleton.svelte';
+	import DropdownCard from '#lib/components/dropdown-card.svelte';
 	import TableEmpty from './table-empty.svelte';
-	import { m } from '$lib/paraglide/messages';
-	import { cn } from '$lib/utils';
+	import { m } from '#lib/paraglide/messages';
+	import { cn } from '#lib/utils';
 	import type { Snippet, Component } from 'svelte';
 	import { getTableRowsForItems, shouldIgnoreTableRowClick, type GroupedData } from './arcane-table.types.svelte';
 	import { slide } from 'svelte/transition';

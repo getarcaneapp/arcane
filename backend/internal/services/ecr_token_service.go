@@ -3,15 +3,14 @@ package services
 import (
 	"context"
 	"encoding/base64"
-	"fmt"
 	"log/slog"
 	"strings"
 	"time"
 
+	"emperror.dev/errors"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/ecr"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"go.getarcane.app/sys/crypto"
 )
@@ -51,7 +50,7 @@ func (s *ContainerRegistryService) GetOrRefreshECRToken(ctx context.Context, reg
 	}
 	r, ok := result.(*ecrTokenResult)
 	if !ok {
-		return "", "", &common.ECRTokenResultTypeError{}
+		return "", "", errors.New("unexpected ECR token result type")
 	}
 	return r.username, r.password, nil
 }
@@ -60,11 +59,11 @@ func (s *ContainerRegistryService) refreshECRTokenInternal(ctx context.Context, 
 	// Decrypt the stored AWS secret access key.
 	secretKey, decErr := crypto.Decrypt(reg.AWSSecretAccessKey)
 	if decErr != nil {
-		return nil, fmt.Errorf("failed to decrypt AWS secret key for registry %s: %w", reg.URL, decErr)
+		return nil, errors.WrapIff(decErr, "failed to decrypt AWS secret key for registry %s", reg.URL)
 	}
 	secretKey = strings.TrimSpace(secretKey)
 	if secretKey == "" {
-		return nil, fmt.Errorf("AWS secret access key is empty for registry %s", reg.URL)
+		return nil, errors.Errorf("AWS secret access key is empty for registry %s", reg.URL)
 	}
 
 	// Call AWS ECR GetAuthorizationToken.
@@ -77,33 +76,33 @@ func (s *ContainerRegistryService) refreshECRTokenInternal(ctx context.Context, 
 		)),
 	)
 	if cfgErr != nil {
-		return nil, fmt.Errorf("failed to load AWS config for registry %s: %w", reg.URL, cfgErr)
+		return nil, errors.WrapIff(cfgErr, "failed to load AWS config for registry %s", reg.URL)
 	}
 
 	ecrClient := ecr.NewFromConfig(cfg)
 	result, ecrErr := ecrClient.GetAuthorizationToken(ctx, &ecr.GetAuthorizationTokenInput{})
 	if ecrErr != nil {
-		return nil, fmt.Errorf("failed to get ECR authorization token for registry %s: %w", reg.URL, ecrErr)
+		return nil, errors.WrapIff(ecrErr, "failed to get ECR authorization token for registry %s", reg.URL)
 	}
 	if len(result.AuthorizationData) == 0 || result.AuthorizationData[0].AuthorizationToken == nil {
-		return nil, fmt.Errorf("ECR returned empty authorization data for registry %s", reg.URL)
+		return nil, errors.Errorf("ECR returned empty authorization data for registry %s", reg.URL)
 	}
 
 	// Decode base64 token → "AWS:<password>".
 	decoded, decodeErr := base64.StdEncoding.DecodeString(*result.AuthorizationData[0].AuthorizationToken)
 	if decodeErr != nil {
-		return nil, fmt.Errorf("failed to decode ECR token for registry %s: %w", reg.URL, decodeErr)
+		return nil, errors.WrapIff(decodeErr, "failed to decode ECR token for registry %s", reg.URL)
 	}
 	parts := strings.SplitN(string(decoded), ":", 2)
 	if len(parts) != 2 || parts[1] == "" {
-		return nil, fmt.Errorf("unexpected ECR token format for registry %s", reg.URL)
+		return nil, errors.Errorf("unexpected ECR token format for registry %s", reg.URL)
 	}
 	ecrPassword := parts[1]
 
 	// Persist the new token (encrypted) and generation timestamp.
 	encryptedToken, encErr := crypto.Encrypt(ecrPassword)
 	if encErr != nil {
-		return nil, fmt.Errorf("failed to encrypt ECR token for registry %s: %w", reg.URL, encErr)
+		return nil, errors.WrapIff(encErr, "failed to encrypt ECR token for registry %s", reg.URL)
 	}
 	now := time.Now().UTC()
 	reg.ECRToken = encryptedToken

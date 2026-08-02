@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { formatImageUpdateCheckedAt } from '$lib/utils/image-updates';
+	import { formatImageUpdateCheckedAt } from '#lib/utils/image-updates';
 
 	let { value }: { value: unknown } = $props();
 </script>

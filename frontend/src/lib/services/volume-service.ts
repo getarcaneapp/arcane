@@ -1,5 +1,5 @@
 import BaseAPIService from './api-service';
-import { environmentStore } from '$lib/stores/environment.store.svelte';
+import { environmentStore } from '#lib/stores/environment.store.svelte';
 import type {
 	VolumeSummaryDto,
 	VolumeDetailDto,
@@ -7,9 +7,9 @@ import type {
 	VolumeUsageCounts,
 	VolumeCreateRequest,
 	VolumeSizeInfo
-} from '$lib/types/docker';
-import type { SearchPaginationSortRequest, Paginated } from '$lib/types/shared';
-import { transformPaginationParams } from '$lib/utils/tables';
+} from '#lib/types/docker';
+import type { SearchPaginationSortRequest, Paginated } from '#lib/types/shared';
+import { transformPaginationParams } from '#lib/utils/tables';
 
 export type VolumesPaginatedResponse = Paginated<VolumeSummaryDto, VolumeUsageCounts>;
 
@@ -52,9 +52,8 @@ class VolumeService extends BaseAPIService {
 		return res.data.data;
 	}
 
-	async getVolumeSizes(): Promise<VolumeSizeInfo[]> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		const res = await this.api.get(`/environments/${envId}/volumes/sizes`);
+	async getVolumeSizes(environmentId: string): Promise<VolumeSizeInfo[]> {
+		const res = await this.api.get(`/environments/${environmentId}/volumes/sizes`);
 		return res.data.data;
 	}
 

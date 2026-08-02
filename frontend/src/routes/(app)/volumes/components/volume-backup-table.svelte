@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { m } from '$lib/paraglide/messages';
-	import { volumeBackupService, type VolumeBackupListResponse } from '$lib/services/volume-backup-service';
-	import { s3DestinationService } from '$lib/services/s3-destination-service';
-	import { volumeService } from '$lib/services/volume-service';
-	import type { BackupEntry, CreateVolumeBackupRequest, VolumeBackupPolicy } from '$lib/types/shared';
-	import type { S3Destination } from '$lib/types/s3-destination';
+	import { m } from '#lib/paraglide/messages';
+	import { volumeBackupService, type VolumeBackupListResponse } from '#lib/services/volume-backup-service';
+	import { s3DestinationService } from '#lib/services/s3-destination-service';
+	import { volumeService } from '#lib/services/volume-service';
+	import type { BackupEntry, CreateVolumeBackupRequest, VolumeBackupPolicy } from '#lib/types/shared';
+	import type { S3Destination } from '#lib/types/s3-destination';
 	import { onMount } from 'svelte';
 	import {
 		LoadingSpinnerIcon,
@@ -20,37 +20,37 @@
 		UploadIcon,
 		ArrowDownIcon,
 		EditIcon
-	} from '$lib/icons';
-	import { ArcaneButton, arcaneButtonVariants } from '$lib/components/arcane-button';
-	import * as ButtonGroup from '$lib/components/ui/button-group';
+	} from '#lib/icons';
+	import { ArcaneButton, arcaneButtonVariants } from '#lib/components/arcane-button';
+	import * as ButtonGroup from '#lib/components/ui/button-group';
 	import { toast } from 'svelte-sonner';
-	import { bytes, formatDateTimeShort } from '$lib/utils/formatting';
-	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import type { SearchPaginationSortRequest } from '$lib/types/shared';
+	import { bytes, formatDateTimeShort } from '#lib/utils/formatting';
+	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
+	import type { SearchPaginationSortRequest } from '#lib/types/shared';
 	import {
 		UniversalMobileCard,
 		type BulkAction,
 		type ColumnSpec,
 		type MobileFieldVisibility
-	} from '$lib/components/arcane-table';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
-	import RowActionsMenu from '$lib/components/file-browser/row-actions-menu.svelte';
-	import { openConfirmDialog } from '$lib/components/confirm-dialog';
-	import { ResponsiveDialog } from '$lib/components/ui/responsive-dialog';
-	import { Input } from '$lib/components/ui/input';
-	import { ScrollArea } from '$lib/components/ui/scroll-area';
-	import * as Checkbox from '$lib/components/ui/checkbox';
-	import * as Alert from '$lib/components/ui/alert';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { hasPermission } from '$lib/utils/auth';
-	import IfPermitted from '$lib/components/if-permitted.svelte';
-	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
+	} from '#lib/components/arcane-table';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu';
+	import RowActionsMenu from '#lib/components/file-browser/row-actions-menu.svelte';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog';
+	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog';
+	import { Input } from '#lib/components/ui/input';
+	import { ScrollArea } from '#lib/components/ui/scroll-area';
+	import * as Checkbox from '#lib/components/ui/checkbox';
+	import * as Alert from '#lib/components/ui/alert';
+	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import { hasPermission } from '#lib/utils/auth';
+	import IfPermitted from '#lib/components/if-permitted.svelte';
+	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
 	import VolumeBackupPolicyDialog from './volume-backup-policy-dialog.svelte';
-	import { Badge } from '$lib/components/ui/badge';
-	import { cn } from '$lib/utils';
-	import { bulkConfirmAndRun } from '$lib/utils/bulk-actions';
-	import { extractApiErrorMessage } from '$lib/utils/api';
-	import SelectWithLabel from '$lib/components/form/select-with-label.svelte';
+	import { Badge } from '#lib/components/ui/badge';
+	import { cn } from '#lib/utils';
+	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions';
+	import { extractApiErrorMessage } from '#lib/utils/api';
+	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
 
 	let { volumeName }: { volumeName: string } = $props();
 

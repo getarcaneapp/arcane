@@ -1,13 +1,13 @@
 <script lang="ts">
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { Calendar } from '$lib/components/ui/calendar';
-	import * as Popover from '$lib/components/ui/popover';
-	import { m } from '$lib/paraglide/messages';
-	import { getLocale } from '$lib/paraglide/runtime';
-	import { cn } from '$lib/utils';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import { Calendar } from '#lib/components/ui/calendar';
+	import * as Popover from '#lib/components/ui/popover';
+	import { m } from '#lib/paraglide/messages';
+	import { getLocale } from '#lib/paraglide/runtime';
+	import { cn } from '#lib/utils';
 	import { CalendarDate, DateFormatter, getLocalTimeZone, type DateValue } from '@internationalized/date';
 	import type { HTMLAttributes } from 'svelte/elements';
-	import { CalendarIcon } from '$lib/icons';
+	import { CalendarIcon } from '#lib/icons';
 
 	type Props = {
 		value?: Date;

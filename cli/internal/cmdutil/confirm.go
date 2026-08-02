@@ -1,10 +1,11 @@
 package cmdutil
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"strings"
+
+	"emperror.dev/errors"
 
 	"github.com/spf13/cobra"
 )
@@ -19,7 +20,7 @@ func Confirm(cmd *cobra.Command, prompt string) (bool, error) {
 	var response string
 	if _, err := fmt.Scanln(&response); err != nil && !errors.Is(err, io.EOF) {
 		// Keep EOF as a default "no" response, but surface other input failures.
-		return false, fmt.Errorf("failed to read confirmation input: %w", err)
+		return false, errors.WrapIf(err, "failed to read confirmation input")
 	}
 
 	switch strings.ToLower(strings.TrimSpace(response)) {

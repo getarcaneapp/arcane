@@ -1,9 +1,9 @@
 package completion
 
 import (
-	"fmt"
 	"os"
 
+	"emperror.dev/errors"
 	"github.com/spf13/cobra"
 )
 
@@ -28,7 +28,7 @@ func NewCommand(root *cobra.Command) *cobra.Command {
 			case "powershell", "pwsh":
 				return root.GenPowerShellCompletionWithDesc(os.Stdout)
 			default:
-				return fmt.Errorf("unsupported shell %q", args[0])
+				return errors.Errorf("unsupported shell %q", args[0])
 			}
 		},
 	}

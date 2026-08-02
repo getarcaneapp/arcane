@@ -3,8 +3,8 @@ package version
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 
+	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/logger"
@@ -27,18 +27,21 @@ var VersionCmd = &cobra.Command{
 			return err
 		}
 
-		logger.GetLogger().Debug("Sending request", "endpoint", clitypes.Endpoints.VersionEndpoint)
-		resp, err := c.Get(cmd.Context(), clitypes.Endpoints.VersionEndpoint)
+		// /api/version returns the trimmed version.Check payload, which carries
+		// neither displayVersion nor revision. /api/app-version returns the full
+		// version.Info, including the update-check fields printed below.
+		logger.GetLogger().Debug("Sending request", "endpoint", clitypes.Endpoints.AppVersionEndpoint)
+		resp, err := c.Get(cmd.Context(), clitypes.Endpoints.AppVersionEndpoint)
 		if err != nil {
-			return fmt.Errorf("failed to get version: %w", err)
+			return errors.WrapIf(err, "failed to get version")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		logger.GetLogger().Debug("Response received", "status", resp.Status)
 
-		body, err := io.ReadAll(resp.Body)
+		body, err := cmdutil.ReadJSONBody(resp)
 		if err != nil {
-			return fmt.Errorf("failed to read response: %w", err)
+			return errors.WrapIf(err, "failed to get version")
 		}
 
 		logger.GetLogger().Debug("Raw response", "body", string(body))
@@ -46,7 +49,7 @@ var VersionCmd = &cobra.Command{
 		var result version.Info
 
 		if err := json.Unmarshal(body, &result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+			return errors.WrapIf(err, "failed to parse response")
 		}
 
 		logger.GetLogger().Debug("Parsed version data", "result", result)
@@ -54,7 +57,7 @@ var VersionCmd = &cobra.Command{
 		if cmdutil.JSONOutputEnabled(cmd) {
 			resultBytes, err := json.MarshalIndent(result, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil

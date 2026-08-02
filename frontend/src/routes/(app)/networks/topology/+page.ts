@@ -1,8 +1,8 @@
-import { networkService } from '$lib/services/network-service';
-import { queryKeys } from '$lib/query/query-keys';
-import { throwPageLoadError } from '$lib/utils/api';
+import { networkService } from '#lib/services/network-service';
+import { queryKeys } from '#lib/query/query-keys';
+import { throwPageLoadError } from '#lib/utils/api';
 import type { PageLoad } from './$types';
-import { environmentStore } from '$lib/stores/environment.store.svelte';
+import { environmentStore } from '#lib/stores/environment.store.svelte';
 
 export const load: PageLoad = async ({ parent }) => {
 	const { queryClient } = await parent();

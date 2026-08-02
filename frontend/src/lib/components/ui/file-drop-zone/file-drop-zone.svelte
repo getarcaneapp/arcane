@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { cn } from '$lib/utils';
-	import { UpdateIcon } from '$lib/icons';
+	import { cn } from '#lib/utils';
+	import { UpdateIcon } from '#lib/icons';
 	import { displaySize } from './display-size';
 	import { useId } from 'bits-ui';
 	import type { FileDropZoneProps, FileRejectedReason } from './types';
-	import { m } from '$lib/paraglide/messages';
+	import { m } from '#lib/paraglide/messages';
 
 	let {
 		id = useId(),

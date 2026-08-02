@@ -6,7 +6,7 @@ set working-directory := './'
 
 export GOEXPERIMENT := "jsonv2"
 
-edge_proto_dir := 'backend/pkg/libarcane/edge/proto'
+edge_proto_dir := 'backend/proto'
 
 _default:
     @just --list
@@ -316,20 +316,30 @@ _lint-js:
     @just _lint-tests
     @just _lint-email-templates
 
+# Build golangci-lint with the custom linters enabled by the shared config
+[group('quality')]
+_build-golangci-lint:
+    golangci-lint custom
+
 # Lint Go backend
 [group('quality')]
-_lint-backend:
-    cd backend && golangci-lint run -c ../.github/.golangci.yml ./...
+_lint-backend: _build-golangci-lint
+    cd backend && ../.bin/golangci-lint-custom run -c ../.github/.golangci.yml ./...
 
 # Lint Go CLI
 [group('quality')]
-_lint-cli:
-    cd cli && golangci-lint run -c ../.github/.golangci.yml ./...
+_lint-cli: _build-golangci-lint
+    cd cli && ../.bin/golangci-lint-custom run -c ../.github/.golangci.yml ./...
 
 # Lint Types
 [group('quality')]
-_lint-types:
-    cd types && golangci-lint run -c ../.github/.golangci.yml ./...
+_lint-types: _build-golangci-lint
+    cd types && ../.bin/golangci-lint-custom run -c ../.github/.golangci.yml ./...
+
+# Lint edge tunnel protobuf definitions.
+[group('quality')]
+_lint-proto:
+    cd {{ edge_proto_dir }} && go run github.com/bufbuild/buf/cmd/buf@latest lint
 
 # Lint all Go code
 [group('quality')]
@@ -339,8 +349,9 @@ _lint-go: _lint-backend _lint-cli _lint-types
 _lint-all:
     @just _lint-js
     @just _lint-go
+    @just _lint-proto
 
-# Lint targets. Valid: "backend", "frontend", "tests", "email-templates", "js", "cli", "types", "go", "all".
+# Lint targets. Valid: "backend", "frontend", "tests", "email-templates", "js", "cli", "types", "go", "proto", "all".
 [group('quality')]
 lint target="all":
     @just "_lint-{{ target }}"
@@ -507,14 +518,10 @@ gomod action="tidy" target="all":
 # Generate edge tunnel protobuf/gRPC code.
 [group('codegen')]
 _generate-proto:
+    cd {{ edge_proto_dir }} && go run github.com/bufbuild/buf/cmd/buf@latest lint
     cd {{ edge_proto_dir }} && go run github.com/bufbuild/buf/cmd/buf@latest generate
 
-# Generate Wire dependency injection code.
-[group('codegen')]
-_generate-wire:
-    cd backend && go tool wire ./...
-
-# Generate targets. Valid: "proto", "wire".
+# Generate targets. Valid: "proto".
 [group('codegen')]
 generate target:
     @just "_generate-{{ target }}"

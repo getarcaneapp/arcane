@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -11,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	sqlite "github.com/libtnb/sqlite"
+	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
@@ -20,6 +21,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/types/v2/activity"
+	streamtypes "github.com/getarcaneapp/arcane/types/v2/stream"
+	"github.com/stretchr/testify/assert"
 )
 
 func setupActivityHandlerTestDBInternal(t *testing.T) *database.DB {
@@ -36,10 +39,24 @@ func setupActivityHandlerTestDBInternal(t *testing.T) *database.DB {
 	return &database.DB{DB: db}
 }
 
+func TestActivitySnapshotFingerprintDetectsChangesInternal(t *testing.T) {
+	progress := 10
+	items := []activity.Activity{
+		{ID: "a-1", Status: activity.StatusRunning, Progress: &progress, Step: "pull"},
+		{ID: "a-2", Status: activity.StatusSuccess},
+	}
+	base := activitySnapshotFingerprintInternal(items)
+	require.Equal(t, base, activitySnapshotFingerprintInternal(items))
+
+	bumped := 20
+	items[0].Progress = &bumped
+	require.NotEqual(t, base, activitySnapshotFingerprintInternal(items))
+}
+
 func TestActivityHandlerClearHistoryDeletesSelectedEnvironmentOnlyInternal(t *testing.T) {
 	ctx := context.Background()
 	db := setupActivityHandlerTestDBInternal(t)
-	activityService := services.NewActivityService(db)
+	activityService := services.NewActivityService(db, nil)
 	handler := &ActivityHandler{activityService: activityService}
 
 	completed, err := activityService.StartActivity(ctx, services.StartActivityRequest{EnvironmentID: "0", Type: models.ActivityTypeResourceAction})
@@ -67,15 +84,23 @@ func TestActivityHandlerClearHistoryDeletesSelectedEnvironmentOnlyInternal(t *te
 func TestActivityHandlerClearHistoryProxiesRemoteEnvironmentInternal(t *testing.T) {
 	ctx := context.Background()
 	db := setupActivityHandlerTestDBInternal(t)
-	settingsService, err := services.NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	token := "remote-token"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, http.MethodDelete, r.Method)
-		require.Equal(t, "/api/environments/0/activities/history", r.URL.Path)
-		require.Equal(t, token, r.Header.Get("X-API-Key"))
-		require.Equal(t, token, r.Header.Get("X-Arcane-Agent-Token"))
+		if !assert.Equal(t, http.MethodDelete, r.Method) {
+			return
+		}
+		if !assert.Equal(t, "/api/environments/0/activities/history", r.URL.Path) {
+			return
+		}
+		if !assert.Equal(t, token, r.Header.Get("X-API-Key")) {
+			return
+		}
+		if !assert.Equal(t, token, r.Header.Get("X-Arcane-Agent-Token")) {
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"success":true,"data":{"deleted":7}}`))
 	}))
@@ -131,10 +156,9 @@ func createStreamTestRemoteEnvironmentInternal(t *testing.T, db *database.DB, en
 	}).Error)
 }
 
-// runStreamAllInternal drives streamAllActivitiesInternal through a pipe and
-// returns each decoded event to onEvent until it reports done or the stream
-// ends; remaining output is drained so a blocked writer can always finish.
-func runStreamAllInternal(t *testing.T, ctx context.Context, cancel context.CancelFunc, handler *ActivityHandler, ps *authz.PermissionSet, onEvent func(activity.StreamEvent) bool) {
+// runActivityClientStreamInternal drives the activities channel through a pipe
+// and returns each decoded activity event to onEvent until it reports done.
+func runActivityClientStreamInternal(t *testing.T, ctx context.Context, cancel context.CancelFunc, handler *ActivityHandler, ps *authz.PermissionSet, onEvent func(activity.StreamEvent) bool) {
 	t.Helper()
 
 	pr, pw := io.Pipe()
@@ -142,14 +166,18 @@ func runStreamAllInternal(t *testing.T, ctx context.Context, cancel context.Canc
 	go func() {
 		defer close(done)
 		defer func() { _ = pw.Close() }()
-		handler.streamAllActivitiesInternal(ctx, ps, 50, pw, func() {})
+		streamHandler := &StreamHandler{activity: handler}
+		streamHandler.streamClientInternal(ctx, ps, &StreamClientInput{
+			Channels: streamtypes.ChannelActivities,
+			Limit:    50,
+		}, pw, func() {})
 	}()
 
 	scanner := bufio.NewScanner(pr)
 	for scanner.Scan() {
-		var event activity.StreamEvent
+		var event streamtypes.Event
 		require.NoError(t, json.Unmarshal(scanner.Bytes(), &event))
-		if onEvent(event) {
+		if event.Activity != nil && onEvent(*event.Activity) {
 			cancel()
 			break
 		}
@@ -161,7 +189,7 @@ func runStreamAllInternal(t *testing.T, ctx context.Context, cancel context.Canc
 	select {
 	case <-done:
 	case <-time.After(5 * time.Second):
-		t.Fatal("stream did not terminate after cancel")
+		require.FailNow(t, "stream did not terminate after cancel")
 	}
 }
 
@@ -171,9 +199,9 @@ func TestActivityHandlerStreamAllEmitsEnvironmentScopedEventsInternal(t *testing
 
 	db := setupActivityHandlerTestDBInternal(t)
 	limitStreamTestDBToSingleConnInternal(t, db)
-	settingsService, err := services.NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
-	activityService := services.NewActivityService(db)
+	activityService := services.NewActivityService(db, settingsService)
 
 	local, err := activityService.StartActivity(ctx, services.StartActivityRequest{EnvironmentID: "0", Type: models.ActivityTypeResourceAction})
 	require.NoError(t, err)
@@ -192,7 +220,7 @@ func TestActivityHandlerStreamAllEmitsEnvironmentScopedEventsInternal(t *testing
 	}
 
 	var localSnapshot, remoteSnapshot bool
-	runStreamAllInternal(t, ctx, cancel, handler, authz.SudoPermissionSet(), func(event activity.StreamEvent) bool {
+	runActivityClientStreamInternal(t, ctx, cancel, handler, authz.SudoPermissionSet(), func(event activity.StreamEvent) bool {
 		if event.Type == "snapshot" && event.EnvironmentID == "0" && len(event.Activities) == 1 {
 			require.Equal(t, local.ID, event.Activities[0].ID)
 			require.Equal(t, "0", event.Activities[0].SourceEnvironmentID)
@@ -217,9 +245,9 @@ func TestActivityHandlerStreamAllReusesRemoteEnvironmentAfterInitialPollInternal
 
 	db := setupActivityHandlerTestDBInternal(t)
 	limitStreamTestDBToSingleConnInternal(t, db)
-	settingsService, err := services.NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
-	activityService := services.NewActivityService(db)
+	activityService := services.NewActivityService(db, settingsService)
 
 	var countEnvironmentQueries atomic.Bool
 	var environmentQueryCount atomic.Int64
@@ -230,9 +258,13 @@ func TestActivityHandlerStreamAllReusesRemoteEnvironmentAfterInitialPollInternal
 	}))
 
 	token := "remote-token"
+	// Vary the payload per poll so snapshot fingerprint suppression does not
+	// swallow the follow-up snapshots this test waits for.
+	var pollCount atomic.Int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"success":true,"data":[{"id":"remote-activity-1"}],"pagination":{"totalPages":1,"totalItems":1,"currentPage":1,"itemsPerPage":50}}`))
+		payload := fmt.Sprintf(`{"success":true,"data":[{"id":"remote-activity-1","latestMessage":"poll-%d"}],"pagination":{"totalPages":1,"totalItems":1,"currentPage":1,"itemsPerPage":50}}`, pollCount.Add(1))
+		_, _ = w.Write([]byte(payload))
 	}))
 	defer server.Close()
 	createStreamTestRemoteEnvironmentInternal(t, db, "remote-1", "Remote", server.URL, token)
@@ -243,7 +275,7 @@ func TestActivityHandlerStreamAllReusesRemoteEnvironmentAfterInitialPollInternal
 	}
 
 	remoteSnapshotCount := 0
-	runStreamAllInternal(t, ctx, cancel, handler, authz.SudoPermissionSet(), func(event activity.StreamEvent) bool {
+	runActivityClientStreamInternal(t, ctx, cancel, handler, authz.SudoPermissionSet(), func(event activity.StreamEvent) bool {
 		if event.Type != "snapshot" || event.EnvironmentID != "remote-1" {
 			return false
 		}
@@ -279,9 +311,9 @@ func TestActivityHandlerStreamAllRemoteFailureEmitsErrorAndKeepsStreamingInterna
 
 	db := setupActivityHandlerTestDBInternal(t)
 	limitStreamTestDBToSingleConnInternal(t, db)
-	settingsService, err := services.NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
-	activityService := services.NewActivityService(db)
+	activityService := services.NewActivityService(db, settingsService)
 
 	token := "remote-token"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -296,7 +328,7 @@ func TestActivityHandlerStreamAllRemoteFailureEmitsErrorAndKeepsStreamingInterna
 	}
 
 	var localSnapshot, remoteError bool
-	runStreamAllInternal(t, ctx, cancel, handler, authz.SudoPermissionSet(), func(event activity.StreamEvent) bool {
+	runActivityClientStreamInternal(t, ctx, cancel, handler, authz.SudoPermissionSet(), func(event activity.StreamEvent) bool {
 		if event.Type == "snapshot" && event.EnvironmentID == "0" {
 			localSnapshot = true
 		}
@@ -316,9 +348,9 @@ func TestActivityHandlerStreamAllFiltersUnauthorizedEnvironmentsInternal(t *test
 
 	db := setupActivityHandlerTestDBInternal(t)
 	limitStreamTestDBToSingleConnInternal(t, db)
-	settingsService, err := services.NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
-	activityService := services.NewActivityService(db)
+	activityService := services.NewActivityService(db, settingsService)
 	_, err = activityService.StartActivity(ctx, services.StartActivityRequest{EnvironmentID: "0", Type: models.ActivityTypeResourceAction})
 	require.NoError(t, err)
 
@@ -347,7 +379,7 @@ func TestActivityHandlerStreamAllFiltersUnauthorizedEnvironmentsInternal(t *test
 	ps.AddEnv("remote-allowed", authz.PermActivitiesRead)
 
 	seenEnvironments := make(map[string]struct{})
-	runStreamAllInternal(t, ctx, cancel, handler, ps, func(event activity.StreamEvent) bool {
+	runActivityClientStreamInternal(t, ctx, cancel, handler, ps, func(event activity.StreamEvent) bool {
 		if event.EnvironmentID != "" {
 			seenEnvironments[event.EnvironmentID] = struct{}{}
 		}

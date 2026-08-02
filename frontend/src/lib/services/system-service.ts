@@ -1,7 +1,7 @@
 import BaseAPIService from './api-service';
-import { environmentStore } from '$lib/stores/environment.store.svelte';
-import type { DockerInfo } from '$lib/types/docker';
-import type { SystemPruneRequest } from '$lib/types/automation';
+import { environmentStore } from '#lib/stores/environment.store.svelte';
+import type { DockerInfo } from '#lib/types/docker';
+import type { SystemPruneRequest } from '#lib/types/automation';
 
 type ConvertedDockerRun = {
 	dockerCompose: string;

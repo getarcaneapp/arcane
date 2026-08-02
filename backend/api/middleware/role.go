@@ -10,11 +10,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 )
 
-// MetaRequiredPermission is re-exported from the authz package for callers that
-// reference it via this middleware package. The authoritative definition (and
-// the matcher that consumes it) lives in authz.
-const MetaRequiredPermission = authz.MetaRequiredPermission
-
 // RegisterWithPermission registers a Huma operation that requires perm. It
 // attaches the RequirePermission middleware AND records perm in the operation
 // metadata (authz.MetaRequiredPermission) so the remote environment proxy can
@@ -60,23 +55,6 @@ func RequirePermission(api huma.API, perm string) huma.Middlewares {
 	}}
 }
 
-// RequireAnyEnvironmentPermission protects aggregate operations that span
-// environments but do not carry an environment ID in their path. The caller
-// must hold perm globally or for at least one environment; handlers remain
-// responsible for filtering aggregate output to the exact allowed scopes.
-func RequireAnyEnvironmentPermission(api huma.API, perm string) huma.Middlewares {
-	return huma.Middlewares{func(ctx huma.Context, next func(huma.Context)) {
-		ps, _ := PermissionsFromContext(ctx.Context())
-		if !ps.AllowsAny(perm) {
-			if err := huma.WriteErr(api, ctx, http.StatusForbidden, "permission denied: "+perm); err != nil {
-				slog.WarnContext(ctx.Context(), "failed to write 403 response", "error", err)
-			}
-			return
-		}
-		next(ctx)
-	}}
-}
-
 // RequireGlobalAdmin returns a per-operation Huma middleware that rejects any
 // caller who is not a global admin (or sudo). Used for operations that are
 // intentionally not exposed as delegated permissions — role creation/edits,
@@ -88,6 +66,22 @@ func RequireGlobalAdmin(api huma.API) huma.Middlewares {
 		ps, _ := PermissionsFromContext(ctx.Context())
 		if !ps.IsGlobalAdmin() {
 			if err := huma.WriteErr(api, ctx, http.StatusForbidden, "permission denied: global admin required"); err != nil {
+				slog.WarnContext(ctx.Context(), "failed to write 403 response", "error", err)
+			}
+			return
+		}
+		next(ctx)
+	}}
+}
+
+// RequireSudo restricts infrastructure-only operations to callers authenticated
+// through the agent-token path. Holding every user-facing permission is not
+// sufficient because these operations may expose materialized secret values.
+func RequireSudo(api huma.API) huma.Middlewares {
+	return huma.Middlewares{func(ctx huma.Context, next func(huma.Context)) {
+		ps, _ := PermissionsFromContext(ctx.Context())
+		if ps == nil || !ps.Sudo {
+			if err := huma.WriteErr(api, ctx, http.StatusForbidden, "permission denied: agent authentication required"); err != nil {
 				slog.WarnContext(ctx.Context(), "failed to write 403 response", "error", err)
 			}
 			return

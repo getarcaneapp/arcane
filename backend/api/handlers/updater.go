@@ -4,9 +4,9 @@ import (
 	"context"
 	"net/http"
 
+	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
@@ -72,10 +72,7 @@ func RegisterUpdater(api huma.API, updaterService *services.UpdaterService, appC
 		Summary:     "Run updater",
 		Description: "Apply pending container updates",
 		Tags:        []string{"Updater"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermImageUpdatesCheck, h.RunUpdater)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -85,10 +82,7 @@ func RegisterUpdater(api huma.API, updaterService *services.UpdaterService, appC
 		Summary:     "Get updater status",
 		Description: "Get the current status of the updater",
 		Tags:        []string{"Updater"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermImageUpdatesRead, h.GetUpdaterStatus)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -98,10 +92,7 @@ func RegisterUpdater(api huma.API, updaterService *services.UpdaterService, appC
 		Summary:     "Get updater history",
 		Description: "Get the history of update operations",
 		Tags:        []string{"Updater"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermImageUpdatesRead, h.GetUpdaterHistory)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -111,19 +102,12 @@ func RegisterUpdater(api huma.API, updaterService *services.UpdaterService, appC
 		Summary:     "Update a single container",
 		Description: "Pull the latest image and apply the appropriate update strategy for a specific container",
 		Tags:        []string{"Updater", "Containers"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermImageUpdatesCheck, h.UpdateContainer)
 }
 
 // RunUpdater applies pending container updates.
 func (h *UpdaterHandler) RunUpdater(ctx context.Context, input *RunUpdaterInput) (*RunUpdaterOutput, error) {
-	if h.updaterService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	options := updater.Options{}
 	if input.Body != nil {
 		options = *input.Body
@@ -132,7 +116,7 @@ func (h *UpdaterHandler) RunUpdater(ctx context.Context, input *RunUpdaterInput)
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	out, err := h.updaterService.ApplyPending(runtimeCtx, options)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.UpdaterRunError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to run updater").Error())
 	}
 
 	return &RunUpdaterOutput{
@@ -145,10 +129,6 @@ func (h *UpdaterHandler) RunUpdater(ctx context.Context, input *RunUpdaterInput)
 
 // GetUpdaterStatus returns the current status of the updater.
 func (h *UpdaterHandler) GetUpdaterStatus(ctx context.Context, input *GetUpdaterStatusInput) (*GetUpdaterStatusOutput, error) {
-	if h.updaterService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	status := h.updaterService.GetStatus()
 
 	return &GetUpdaterStatusOutput{
@@ -161,10 +141,6 @@ func (h *UpdaterHandler) GetUpdaterStatus(ctx context.Context, input *GetUpdater
 
 // GetUpdaterHistory returns the history of update operations.
 func (h *UpdaterHandler) GetUpdaterHistory(ctx context.Context, input *GetUpdaterHistoryInput) (*GetUpdaterHistoryOutput, error) {
-	if h.updaterService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	limit := input.Limit
 	if limit <= 0 {
 		limit = 50
@@ -172,7 +148,7 @@ func (h *UpdaterHandler) GetUpdaterHistory(ctx context.Context, input *GetUpdate
 
 	history, err := h.updaterService.GetHistory(ctx, limit)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.UpdaterHistoryError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to get updater history").Error())
 	}
 
 	return &GetUpdaterHistoryOutput{
@@ -185,14 +161,10 @@ func (h *UpdaterHandler) GetUpdaterHistory(ctx context.Context, input *GetUpdate
 
 // UpdateContainer updates a single container by pulling the latest image and applying the appropriate update flow.
 func (h *UpdaterHandler) UpdateContainer(ctx context.Context, input *UpdateContainerInput) (*UpdateContainerOutput, error) {
-	if h.updaterService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	out, err := h.updaterService.UpdateSingleContainer(runtimeCtx, input.ContainerID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.UpdaterRunError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to run updater").Error())
 	}
 
 	return &UpdateContainerOutput{

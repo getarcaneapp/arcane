@@ -1,5 +1,5 @@
 import BaseAPIService from './api-service';
-import type { Diagnostics, LogEntry, PprofProfile } from '$lib/types/diagnostics';
+import type { Diagnostics, LogEntry, PprofProfile } from '#lib/types/diagnostics';
 
 class DiagnosticsAPIService extends BaseAPIService {
 	/** One-shot runtime/memory/GC + WebSocket snapshot (used for initial paint). */

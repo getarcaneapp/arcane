@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/csv"
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -14,37 +13,50 @@ import (
 	"sync"
 	"time"
 
+	"emperror.dev/errors"
+
 	systemtypes "github.com/getarcaneapp/arcane/types/v2/system"
+	"github.com/samber/hot"
 )
 
 // AMDGPUSysfsPath is the sysfs base used to discover AMD GPUs.
-const AMDGPUSysfsPath = "/sys/class/drm"
+const (
+	AMDGPUSysfsPath = "/sys/class/drm"
 
-// gpuDetectionTTL bounds how long a successful detection result is reused before re-detecting.
-const gpuDetectionTTL = 30 * time.Second
+	// gpuDetectionTTL bounds how long a successful detection result is reused before re-detecting.
+	gpuDetectionTTL = 30 * time.Second
+)
 
 // GPUMonitor probes for an attached GPU (NVIDIA / AMD / Intel) and reports VRAM usage.
 // Detection is cached for gpuDetectionTTL; once a vendor is detected, subsequent Stats
 // calls invoke the vendor-specific tool directly.
 type GPUMonitor struct {
-	enabled        bool
 	configuredType string
 
-	detectionMu   sync.Mutex
-	detectionDone bool
+	detectionMu    sync.Mutex
+	detectionCache *hot.HotCache[struct{}, gpuDetection]
+	detectionDone  bool
 
-	cacheMu   sync.RWMutex
-	detected  bool
-	timestamp time.Time
-	gpuType   string
-	toolPath  string
+	enabled bool
+}
+
+type gpuDetection struct {
+	detected bool
+	gpuType  string
+	toolPath string
 }
 
 // NewGPUMonitor creates a monitor. enabled gates Stats; when false, Stats returns
 // (nil, nil). configuredType is the user-pinned vendor ("nvidia"|"amd"|"intel"|"auto"|"")
 // — anything else falls back to auto-detection.
 func NewGPUMonitor(enabled bool, configuredType string) *GPUMonitor {
-	return &GPUMonitor{enabled: enabled, configuredType: configuredType}
+	return &GPUMonitor{
+		enabled:        enabled,
+		configuredType: configuredType,
+		detectionCache: hot.NewHotCache[struct{}, gpuDetection](hot.LRU, 1).
+			WithTTL(gpuDetectionTTL).
+			Build(),
+	}
 }
 
 // Enabled reports whether GPU monitoring is on.
@@ -66,25 +78,19 @@ func (m *GPUMonitor) Stats(ctx context.Context) ([]systemtypes.GPUStats, error) 
 		}
 	}
 
-	m.cacheMu.RLock()
-	if m.detected && time.Since(m.timestamp) < gpuDetectionTTL {
-		t := m.gpuType
-		m.cacheMu.RUnlock()
-		return m.statsForTypeInternal(ctx, t)
+	if detection, found, _ := m.detectionCache.Get(struct{}{}); found && detection.detected {
+		return m.statsForTypeInternal(ctx, detection.gpuType)
 	}
-	m.cacheMu.RUnlock()
 
 	if err := m.detectInternal(ctx); err != nil {
 		return nil, err
 	}
 
-	m.cacheMu.RLock()
-	t := m.gpuType
-	m.cacheMu.RUnlock()
-	if t == "" {
+	detection, found, _ := m.detectionCache.Get(struct{}{})
+	if !found || detection.gpuType == "" {
 		return nil, errors.New("no supported GPU found")
 	}
-	return m.statsForTypeInternal(ctx, t)
+	return m.statsForTypeInternal(ctx, detection.gpuType)
 }
 
 func (m *GPUMonitor) statsForTypeInternal(ctx context.Context, gpuType string) ([]systemtypes.GPUStats, error) {
@@ -100,14 +106,9 @@ func (m *GPUMonitor) statsForTypeInternal(ctx context.Context, gpuType string) (
 	}
 }
 
-// markDetected records a successful detection. Caller must NOT hold cacheMu.
+// markDetected records a successful detection.
 func (m *GPUMonitor) markDetectedInternal(gpuType, toolPath string) {
-	m.cacheMu.Lock()
-	m.detected = true
-	m.gpuType = gpuType
-	m.toolPath = toolPath
-	m.timestamp = time.Now()
-	m.cacheMu.Unlock()
+	m.detectionCache.Set(struct{}{}, gpuDetection{detected: true, gpuType: gpuType, toolPath: toolPath})
 	m.detectionDone = true
 }
 
@@ -203,7 +204,7 @@ func getNvidiaStatsInternal(ctx context.Context) ([]systemtypes.GPUStats, error)
 	output, err := cmd.Output()
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to execute nvidia-smi", "error", err)
-		return nil, fmt.Errorf("nvidia-smi execution failed: %w", err)
+		return nil, errors.WrapIf(err, "nvidia-smi execution failed")
 	}
 
 	reader := csv.NewReader(bytes.NewReader(output))
@@ -211,7 +212,7 @@ func getNvidiaStatsInternal(ctx context.Context) ([]systemtypes.GPUStats, error)
 	records, err := reader.ReadAll()
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to parse nvidia-smi CSV output", "error", err)
-		return nil, fmt.Errorf("failed to parse nvidia-smi output: %w", err)
+		return nil, errors.WrapIf(err, "failed to parse nvidia-smi output")
 	}
 
 	var stats []systemtypes.GPUStats
@@ -254,7 +255,7 @@ func getAMDStatsInternal(ctx context.Context) ([]systemtypes.GPUStats, error) {
 	entries, err := os.ReadDir(AMDGPUSysfsPath)
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to read DRM sysfs directory", "error", err)
-		return nil, fmt.Errorf("failed to read sysfs: %w", err)
+		return nil, errors.WrapIf(err, "failed to read sysfs")
 	}
 
 	var stats []systemtypes.GPUStats

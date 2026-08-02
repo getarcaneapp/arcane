@@ -1,6 +1,6 @@
 import type { PageLoad } from './$types';
 import { error } from '@sveltejs/kit';
-import { swarmService } from '$lib/services/swarm-service';
+import { swarmService } from '#lib/services/swarm-service';
 
 export const load: PageLoad = async ({ params }) => {
 	const serviceId = params.serviceId;

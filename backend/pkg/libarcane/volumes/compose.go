@@ -1,10 +1,10 @@
 package volumes
 
 import (
-	"errors"
-	"fmt"
 	"os"
 	"strings"
+
+	"emperror.dev/errors"
 
 	composetemplate "github.com/compose-spec/compose-go/v2/template"
 	"go.yaml.in/yaml/v4"
@@ -31,12 +31,12 @@ func composeVolumeKeysWithExplicitNameInternal(composeFiles []string) (map[strin
 func composeVolumeKeysWithExplicitNameInFileInternal(path string) (map[string]struct{}, error) {
 	content, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("read compose file: %w", err)
+		return nil, errors.WrapIf(err, "read compose file")
 	}
 
 	composeData := map[string]any{}
 	if err := yaml.Unmarshal(content, &composeData); err != nil {
-		return nil, fmt.Errorf("parse compose file: %w", err)
+		return nil, errors.WrapIf(err, "parse compose file")
 	}
 
 	rawVolumes, ok := composeData["volumes"]

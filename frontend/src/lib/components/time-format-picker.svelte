@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
-	import * as Select from '$lib/components/ui/select/index.js';
-	import { m } from '$lib/paraglide/messages';
-	import { queryKeys } from '$lib/query/query-keys';
-	import { userService } from '$lib/services/user-service';
-	import { timeFormatStore } from '$lib/stores/time-format.store.svelte';
-	import userStore from '$lib/stores/user-store';
-	import type { TimeFormat } from '$lib/types/auth';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import { m } from '#lib/paraglide/messages';
+	import { queryKeys } from '#lib/query/query-keys';
+	import { userService } from '#lib/services/user-service';
+	import { timeFormatStore } from '#lib/stores/time-format.store.svelte';
+	import userStore from '#lib/stores/user-store';
+	import type { TimeFormat } from '#lib/types/auth';
 
 	let {
 		id = 'timeFormatPicker',

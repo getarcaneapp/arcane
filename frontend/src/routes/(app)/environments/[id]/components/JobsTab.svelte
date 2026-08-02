@@ -1,21 +1,23 @@
 <script lang="ts">
 	import { SvelteSet } from 'svelte/reactivity';
-	import { jobScheduleService } from '$lib/services/job-schedule-service';
-	import { containerService } from '$lib/services/container-service';
-	import { tryCatch } from '$lib/utils/api';
-	import JobCard from '$lib/components/job-card/job-card.svelte';
-	import { Spinner } from '$lib/components/ui/spinner';
-	import { m } from '$lib/paraglide/messages';
-	import * as Card from '$lib/components/ui/card';
-	import { Label } from '$lib/components/ui/label';
-	import { Switch } from '$lib/components/ui/switch';
-	import { Input } from '$lib/components/ui/input';
-	import { Checkbox } from '$lib/components/ui/checkbox';
-	import * as ScrollArea from '$lib/components/ui/scroll-area';
-	import { JobsIcon } from '$lib/icons';
-	import type { JobStatus, JobPrerequisite } from '$lib/types/settings';
-	import type { ContainerSummaryDto } from '$lib/types/docker';
+	import { jobScheduleService } from '#lib/services/job-schedule-service';
+	import { containerService } from '#lib/services/container-service';
+	import { tryCatch } from '#lib/utils/api';
+	import JobCard from '#lib/components/job-card/job-card.svelte';
+	import { Spinner } from '#lib/components/ui/spinner';
+	import { m } from '#lib/paraglide/messages';
+	import * as Alert from '#lib/components/ui/alert';
+	import * as Card from '#lib/components/ui/card';
+	import { Label } from '#lib/components/ui/label';
+	import { Switch } from '#lib/components/ui/switch';
+	import { Input } from '#lib/components/ui/input';
+	import { Checkbox } from '#lib/components/ui/checkbox';
+	import * as ScrollArea from '#lib/components/ui/scroll-area';
+	import { AlertTriangleIcon, JobsIcon } from '#lib/icons';
+	import type { JobStatus, JobPrerequisite } from '#lib/types/settings';
+	import type { ContainerSummaryDto } from '#lib/types/docker';
 	import type { JobsTabProps } from './tab-props';
+	import { isAutoUpdateLabelDisabled, normalizeContainerName, parseExcludedContainerSet } from '#lib/utils/container-auto-update';
 
 	let { formInputs, environmentId }: JobsTabProps = $props();
 
@@ -56,16 +58,7 @@
 	let searchTerm = $state('');
 	let autoHealSearchTerm = $state('');
 
-	function parseExcludedContainerSet(value: string | undefined) {
-		return new SvelteSet(
-			(value || '')
-				.split(',')
-				.map((s: string) => normalizeContainerName(s.trim()))
-				.filter(Boolean)
-		);
-	}
-
-	function toggleExcludedContainerValue(current: SvelteSet<string>, containerName: string): string {
+	function toggleExcludedContainerValue(current: ReadonlySet<string>, containerName: string): string {
 		const normalizedName = normalizeContainerName(containerName);
 		const newSet = new SvelteSet(current);
 		if (newSet.has(normalizedName)) {
@@ -89,7 +82,7 @@
 		switch (prereq.settingKey) {
 			case 'pollingEnabled':
 			case 'autoUpdate':
-				return `${envBase}?tab=docker`;
+				return `${envBase}?tab=jobs`;
 			case 'scheduledPruneEnabled':
 				return `${envBase}?tab=jobs`;
 			case 'vulnerabilityScanEnabled':
@@ -131,10 +124,10 @@
 	}
 
 	const categories = [
+		{ id: 'updates', label: m.updates() },
 		{ id: 'monitoring', label: m.jobs_monitoring_heading() },
 		{ id: 'maintenance', label: m.maintenance() },
 		{ id: 'security', label: m.security() },
-		{ id: 'updates', label: m.updates() },
 		{ id: 'sync', label: m.resource_sync_cap() },
 		{ id: 'telemetry', label: m.jobs_telemetry_heading() }
 	];
@@ -173,23 +166,9 @@
 		return normalizeContainerName(rawName);
 	}
 
-	function normalizeContainerName(name: string): string {
-		return name.replace(/^\/+/, '');
-	}
-
-	function isContainerLabelExcluded(container: ContainerSummaryDto): boolean {
-		const labels = container.labels || {};
-		for (const [k, v] of Object.entries(labels)) {
-			if (k.toLowerCase() === 'com.getarcaneapp.arcane.updater') {
-				return ['false', '0', 'no', 'off'].includes(v.trim().toLowerCase());
-			}
-		}
-		return false;
-	}
-
 	function mapContainerToItem(container: ContainerSummaryDto) {
 		const name = getContainerName(container);
-		const labelExcluded = isContainerLabelExcluded(container);
+		const labelExcluded = isAutoUpdateLabelDisabled(container.labels);
 		return {
 			value: name,
 			label: name,
@@ -263,7 +242,7 @@
 		<Card.Header icon={JobsIcon}>
 			<div class="flex flex-col space-y-1.5">
 				<Card.Title>
-					<h2>{m.jobs_title()}</h2>
+					<h2>{m.automations()}</h2>
 				</Card.Title>
 				<Card.Description>{m.jobs_environment_scope_description()}</Card.Description>
 			</div>
@@ -329,6 +308,25 @@
 																onToggle: toggleContainerExclusion
 															})}
 														</div>
+													</div>
+												{/if}
+
+												{#if job.id === 'image-polling'}
+													<div class="space-y-3 border-t border-border/20 pt-3">
+														<div class="flex items-center justify-between gap-3">
+															<div class="space-y-1">
+																<Label class="text-sm font-medium">{m.jobs_image_event_watcher_label()}</Label>
+																<p class="text-xs text-muted-foreground">{m.jobs_image_event_watcher_description()}</p>
+															</div>
+															<Switch
+																id="image-event-watcher-enabled"
+																bind:checked={$formInputs.imageEventWatcherEnabled.value}
+															/>
+														</div>
+														<Alert.Root variant="warning" class="py-2 [&>svg]:top-2">
+															<AlertTriangleIcon class="size-4" />
+															<Alert.Description class="text-xs">{m.jobs_image_event_watcher_warning()}</Alert.Description>
+														</Alert.Root>
 													</div>
 												{/if}
 

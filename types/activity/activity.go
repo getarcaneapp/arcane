@@ -48,6 +48,7 @@ const (
 type Activity struct {
 	ID                    string         `json:"id"`
 	EnvironmentID         string         `json:"environmentId"`
+	BatchID               *string        `json:"batchId,omitempty"`
 	SourceEnvironmentID   string         `json:"sourceEnvironmentId,omitempty"`
 	SourceEnvironmentName string         `json:"sourceEnvironmentName,omitempty"`
 	Type                  Type           `json:"type"`

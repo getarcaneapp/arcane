@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge/proto/tunnel/v1"
-	"github.com/gorilla/websocket"
-	"github.com/labstack/echo/v4"
+	"github.com/coder/websocket"
+	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
+	"github.com/labstack/echo/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -25,15 +25,14 @@ import (
 // It receives requests and sends back responses
 func setupMockAgentServer(t *testing.T, handler func(*TunnelMessage) *TunnelMessage) (*httptest.Server, *AgentTunnel) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		upgrader := websocket.Upgrader{}
-		conn, err := upgrader.Upgrade(w, r, nil)
+		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {
 			return
 		}
-		defer func() { _ = conn.Close() }()
+		defer func() { _ = conn.CloseNow() }()
 
 		for {
-			_, data, err := conn.ReadMessage()
+			_, data, err := conn.Read(r.Context())
 			if err != nil {
 				return
 			}
@@ -44,17 +43,14 @@ func setupMockAgentServer(t *testing.T, handler func(*TunnelMessage) *TunnelMess
 			if msg.Type == MessageTypeRequest || msg.Type == MessageTypeCommandRequest {
 				resp := handler(&msg)
 				respData, _ := json.Marshal(resp)
-				_ = conn.WriteMessage(websocket.TextMessage, respData)
+				_ = conn.Write(r.Context(), websocket.MessageText, respData)
 			}
 		}
 	}))
 
 	url := "ws" + strings.TrimPrefix(server.URL, "http")
-	conn, resp, err := websocket.DefaultDialer.Dial(url, nil)
+	conn, _, err := websocket.Dial(t.Context(), url, nil)
 	require.NoError(t, err)
-	if resp != nil {
-		defer func() { _ = resp.Body.Close() }()
-	}
 
 	tunnel := newWebSocketAgentTunnel("env-1", conn)
 
@@ -86,7 +82,7 @@ func TestProxyRequest(t *testing.T) {
 		}
 	})
 	defer server.Close()
-	defer func() { _ = tunnel.Close() }()
+	defer func() { _ = tunnel.CloseWithReason("") }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
@@ -110,7 +106,7 @@ func TestProxyHTTPRequest(t *testing.T) {
 		}
 	})
 	defer server.Close()
-	defer func() { _ = tunnel.Close() }()
+	defer func() { _ = tunnel.CloseWithReason("") }()
 
 	e := echo.New()
 	w := httptest.NewRecorder()
@@ -153,7 +149,7 @@ func TestProxyHTTPRequest_GRPCTunnel(t *testing.T) {
 	defer func() { _ = conn.Close() }()
 
 	client := tunnelpb.NewTunnelServiceClient(conn)
-	stream, err := client.Connect(ctx)
+	stream, err := client.Connect(testGRPCOutgoingContextInternal(ctx, "valid-token"))
 	require.NoError(t, err)
 
 	err = stream.Send(&tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_Register{Register: &tunnelpb.RegisterRequest{AgentToken: "valid-token"}}})
@@ -221,7 +217,7 @@ func TestProxyHTTPRequest_GRPCTunnel(t *testing.T) {
 	var tunnel *AgentTunnel
 	require.Eventually(t, func() bool {
 		var ok bool
-		tunnel, ok = GetRegistry().Get(envID)
+		tunnel, ok = GetRegistry().Get(envID).Get()
 		return ok && tunnel != nil && !tunnel.Conn.IsClosed()
 	}, time.Second, 10*time.Millisecond)
 
@@ -251,7 +247,7 @@ func TestDoRequest(t *testing.T) {
 		}
 	})
 	defer server.Close()
-	defer func() { _ = tunnel.Close() }()
+	defer func() { _ = tunnel.CloseWithReason("") }()
 
 	// Register tunnel globally
 	registry := GetRegistry()
@@ -272,9 +268,39 @@ func TestDoRequest_NoTunnel(t *testing.T) {
 	assert.Contains(t, err.Error(), "no active tunnel")
 }
 
+func TestCommandRequestFailsWhenTunnelCloses(t *testing.T) {
+	tunnel := NewAgentTunnelWithConn("env-closing", &fakeTunnelConn{})
+	errCh := make(chan error, 1)
+
+	go func() {
+		_, err := DefaultCommandClient.Execute(context.Background(), tunnel, &CommandRequest{
+			Method: http.MethodGet,
+			Path:   "/api/health",
+		})
+		errCh <- err
+	}()
+
+	require.Eventually(t, func() bool {
+		found := false
+		tunnel.Pending.Range(func(_, _ any) bool {
+			found = true
+			return false
+		})
+		return found
+	}, time.Second, 10*time.Millisecond)
+
+	require.NoError(t, tunnel.CloseWithReason("test disconnect"))
+	select {
+	case err := <-errCh:
+		require.ErrorContains(t, err, "edge tunnel closed while waiting for response")
+	case <-time.After(time.Second):
+		require.FailNow(t, "pending command did not fail after tunnel close")
+	}
+}
+
 func TestHasActiveTunnel(t *testing.T) {
 	conn := createTestConn(t)
-	defer func() { _ = conn.Close() }()
+	defer func() { _ = conn.CloseNow() }()
 	tunnel := newWebSocketAgentTunnel("env-active", conn)
 
 	registry := GetRegistry()
@@ -284,7 +310,7 @@ func TestHasActiveTunnel(t *testing.T) {
 	assert.True(t, HasActiveTunnel("env-active"))
 	assert.False(t, HasActiveTunnel("non-existent"))
 
-	_ = tunnel.Close()
+	_ = tunnel.CloseWithReason("")
 	assert.False(t, HasActiveTunnel("env-active"))
 }
 
@@ -341,7 +367,7 @@ func TestProxyHTTPRequest_StripsBrowserHeaders(t *testing.T) {
 		}
 	})
 	defer server.Close()
-	defer func() { _ = tunnel.Close() }()
+	defer func() { _ = tunnel.CloseWithReason("") }()
 
 	e := echo.New()
 	w := httptest.NewRecorder()
@@ -399,7 +425,7 @@ func TestProxyHTTPRequest_ForwardsBodyCorrectly(t *testing.T) {
 		}
 	})
 	defer server.Close()
-	defer func() { _ = tunnel.Close() }()
+	defer func() { _ = tunnel.CloseWithReason("") }()
 
 	requestBody := `{"name":"My Project"}`
 
@@ -427,7 +453,7 @@ func TestHandleRequest_SetsHostField(t *testing.T) {
 
 	client := NewTunnelClient(&Config{}, localHandler)
 	conn := &capturingTunnelConnForHandleRequest{}
-	client.setConn(conn)
+	client.conn.Store(&connBox{conn: conn})
 
 	client.handleRequest(context.Background(), conn, &TunnelMessage{
 		ID:     "req-host-1",
@@ -459,7 +485,7 @@ func TestHandleRequest_ForwardsBody(t *testing.T) {
 
 	client := NewTunnelClient(&Config{}, localHandler)
 	conn := &capturingTunnelConnForHandleRequest{}
-	client.setConn(conn)
+	client.conn.Store(&connBox{conn: conn})
 
 	client.handleRequest(context.Background(), conn, &TunnelMessage{
 		ID:     "req-body-1",
@@ -491,7 +517,7 @@ func TestHandleRequest_NoBrowserHeadersInTunnelMessage(t *testing.T) {
 
 	client := NewTunnelClient(&Config{}, localHandler)
 	conn := &capturingTunnelConnForHandleRequest{}
-	client.setConn(conn)
+	client.conn.Store(&connBox{conn: conn})
 
 	// Simulate an old manager that doesn't strip Origin
 	client.handleRequest(context.Background(), conn, &TunnelMessage{
@@ -539,7 +565,7 @@ func TestProxyHTTPRequest_EndToEnd_BrowserOriginStripped(t *testing.T) {
 
 	server, tunnel := setupMockAgentServer(t, agentHandler)
 	defer server.Close()
-	defer func() { _ = tunnel.Close() }()
+	defer func() { _ = tunnel.CloseWithReason("") }()
 
 	e := echo.New()
 	w := httptest.NewRecorder()
@@ -563,15 +589,14 @@ func TestProxyHTTPRequest_BodyPreservation_WebSocket(t *testing.T) {
 	var receivedBody string
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		upgrader := websocket.Upgrader{}
-		conn, err := upgrader.Upgrade(w, r, nil)
+		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {
 			return
 		}
-		defer func() { _ = conn.Close() }()
+		defer func() { _ = conn.CloseNow() }()
 
 		for {
-			_, data, err := conn.ReadMessage()
+			_, data, err := conn.Read(r.Context())
 			if err != nil {
 				return
 			}
@@ -589,21 +614,18 @@ func TestProxyHTTPRequest_BodyPreservation_WebSocket(t *testing.T) {
 					Body:    []byte(`{"ok":true}`),
 				}
 				respData, _ := json.Marshal(resp)
-				_ = conn.WriteMessage(websocket.TextMessage, respData)
+				_ = conn.Write(r.Context(), websocket.MessageText, respData)
 			}
 		}
 	}))
 	defer server.Close()
 
 	url := "ws" + server.URL[4:]
-	wsConn, resp, err := websocket.DefaultDialer.Dial(url, nil)
+	wsConn, _, err := websocket.Dial(t.Context(), url, nil)
 	require.NoError(t, err)
-	if resp != nil {
-		defer func() { _ = resp.Body.Close() }()
-	}
 
 	tunnel := newWebSocketAgentTunnel("env-body-test", wsConn)
-	defer func() { _ = tunnel.Close() }()
+	defer func() { _ = tunnel.CloseWithReason("") }()
 
 	go func() {
 		for {

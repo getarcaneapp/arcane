@@ -6,6 +6,8 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+
+	"emperror.dev/errors"
 )
 
 type HeaderSetter interface {
@@ -60,6 +62,23 @@ func ValidateWebSocketOrigin(appURL string) func(r *http.Request) bool {
 	}
 }
 
+// IsWebSocketUpgradeRequest reports whether r is a WebSocket handshake: the
+// Connection header contains "upgrade" (it can be a list, e.g. Firefox sends
+// "keep-alive, Upgrade") and Upgrade is "websocket".
+func IsWebSocketUpgradeRequest(r *http.Request) bool {
+	connection := strings.ToLower(r.Header.Get("Connection"))
+	upgrade := strings.ToLower(r.Header.Get("Upgrade"))
+
+	switch {
+	case !strings.Contains(connection, "upgrade"):
+		return false
+	case upgrade != "websocket":
+		return false
+	default:
+		return true
+	}
+}
+
 func isLocalhost(host string) bool {
 	hostOnly := host
 	if idx := strings.LastIndex(host, ":"); idx != -1 {
@@ -79,7 +98,7 @@ func GetQueryParam(r *http.Request, name string, required bool) (string, error) 
 	q := r.URL.Query()
 	if !q.Has(name) || q.Get(name) == "" {
 		if required {
-			return "", fmt.Errorf("missing query parameter %s", name)
+			return "", errors.Errorf("missing query parameter %s", name)
 		}
 		return "", nil
 	}
@@ -92,13 +111,13 @@ func GetIntQueryParam(r *http.Request, name string, required bool) (int, error) 
 	q := r.URL.Query()
 	if !q.Has(name) || q.Get(name) == "" {
 		if required {
-			return 0, fmt.Errorf("missing numeric query parameter %s", name)
+			return 0, errors.Errorf("missing numeric query parameter %s", name)
 		}
 		return 0, nil
 	}
 	n, err := strconv.Atoi(q.Get(name))
 	if err != nil {
-		return 0, fmt.Errorf("invalid numeric query parameter %s: %w", name, err)
+		return 0, errors.WrapIff(err, "invalid numeric query parameter %s", name)
 	}
 	return n, nil
 }

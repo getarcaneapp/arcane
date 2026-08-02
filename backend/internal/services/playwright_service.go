@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
@@ -36,7 +37,7 @@ func (ps *PlaywrightService) CreateTestApiKeys(ctx context.Context, count int) (
 	// Get the arcane user to associate the API keys with
 	user, err := ps.userService.GetUserByUsername(ctx, "arcane")
 	if err != nil {
-		return nil, fmt.Errorf("failed to get arcane user: %w", err)
+		return nil, errors.WrapIf(err, "failed to get arcane user")
 	}
 
 	// Grant every recognized permission globally so the test key behaves like
@@ -59,7 +60,7 @@ func (ps *PlaywrightService) CreateTestApiKeys(ctx context.Context, count int) (
 
 		apiKey, err := ps.apiKeyService.CreateApiKey(ctx, user.ID, authz.SudoPermissionSet(), req)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create test API key %d: %w", i+1, err)
+			return nil, errors.WrapIff(err, "failed to create test API key %d", i+1)
 		}
 
 		createdKeys = append(createdKeys, apiKey)
@@ -85,7 +86,7 @@ func (ps *PlaywrightService) DeleteAllTestApiKeys(ctx context.Context) error {
 
 	apiKeys, _, err := ps.apiKeyService.ListApiKeys(ctx, params)
 	if err != nil {
-		return fmt.Errorf("failed to list API keys: %w", err)
+		return errors.WrapIf(err, "failed to list API keys")
 	}
 
 	for _, apiKey := range apiKeys {
@@ -100,10 +101,10 @@ func (ps *PlaywrightService) DeleteAllTestApiKeys(ctx context.Context) error {
 
 func (ps *PlaywrightService) CreateTestFederatedCredential(ctx context.Context, issuerURL string, audiences []string, subject string, roleID string, tokenTTLSeconds int) (string, error) {
 	if ps.federatedCredentialService == nil || ps.federatedCredentialService.db == nil {
-		return "", fmt.Errorf("federated credential service is not available")
+		return "", errors.Errorf("federated credential service is not available")
 	}
 	if strings.TrimSpace(issuerURL) == "" || strings.TrimSpace(subject) == "" || strings.TrimSpace(roleID) == "" || len(audiences) == 0 {
-		return "", fmt.Errorf("issuerUrl, subject, roleId, and audiences are required")
+		return "", errors.Errorf("issuerUrl, subject, roleId, and audiences are required")
 	}
 	if tokenTTLSeconds <= 0 {
 		tokenTTLSeconds = 600
@@ -116,7 +117,7 @@ func (ps *PlaywrightService) CreateTestFederatedCredential(ctx context.Context, 
 			IsServiceAccount: true,
 		}
 		if err := tx.Create(&serviceUser).Error; err != nil {
-			return fmt.Errorf("failed to create federated e2e user: %w", err)
+			return errors.WrapIf(err, "failed to create federated e2e user")
 		}
 
 		credential := models.FederatedCredential{
@@ -132,7 +133,7 @@ func (ps *PlaywrightService) CreateTestFederatedCredential(ctx context.Context, 
 			TokenTTLSeconds: tokenTTLSeconds,
 		}
 		if err := tx.Create(&credential).Error; err != nil {
-			return fmt.Errorf("failed to create federated e2e credential: %w", err)
+			return errors.WrapIf(err, "failed to create federated e2e credential")
 		}
 
 		assignment := models.UserRoleAssignment{
@@ -141,7 +142,7 @@ func (ps *PlaywrightService) CreateTestFederatedCredential(ctx context.Context, 
 			Source: models.RoleAssignmentSourceManual,
 		}
 		if err := tx.Create(&assignment).Error; err != nil {
-			return fmt.Errorf("failed to create federated e2e role assignment: %w", err)
+			return errors.WrapIf(err, "failed to create federated e2e role assignment")
 		}
 
 		credentialID = credential.ID

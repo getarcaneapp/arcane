@@ -2,10 +2,11 @@ package handlers
 
 import (
 	"context"
-	"errors"
-	"io"
+	stderrors "errors"
 	"net/http"
 	"time"
+
+	"emperror.dev/errors"
 
 	"github.com/danielgtaylor/huma/v2"
 	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
@@ -14,12 +15,12 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
 	dashboardtypes "github.com/getarcaneapp/arcane/types/v2/dashboard"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 	versiontypes "github.com/getarcaneapp/arcane/types/v2/version"
+	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"go.getarcane.app/streams/agg"
 )
 
@@ -35,10 +36,6 @@ type GetDashboardInput struct {
 
 type GetDashboardOutput struct {
 	Body base.ApiResponse[dashboardtypes.Snapshot]
-}
-
-type StreamAllDashboardsInput struct {
-	DebugAllGood bool `query:"debugAllGood" default:"false" doc:"Debug mode: force an empty action item list"`
 }
 
 const (
@@ -63,32 +60,11 @@ func RegisterDashboard(api huma.API, dashboardService *services.DashboardService
 		Summary:     "Get dashboard snapshot",
 		Description: "Returns the dashboard first-paint snapshot in a single response",
 		Tags:        []string{"Dashboard"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermDashboardRead, h.GetDashboard)
-
-	huma.Register(api, huma.Operation{
-		OperationID: "stream-all-dashboards",
-		Method:      http.MethodGet,
-		Path:        "/dashboard/stream",
-		Summary:     "Stream dashboard snapshots across all environments",
-		Description: "Stream dashboard snapshot updates for the local environment and all enabled remote environments as JSON lines",
-		Tags:        []string{"Dashboard"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
-		Middlewares: humamw.RequireAnyEnvironmentPermission(api, authz.PermDashboardRead),
-	}, h.StreamAllDashboards)
 }
 
 func (h *DashboardHandler) GetDashboard(ctx context.Context, input *GetDashboardInput) (*GetDashboardOutput, error) {
-	if h.dashboardService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	// EnvironmentID is consumed by env proxy/auth middleware for routing/validation.
 	_ = input.EnvironmentID
 
@@ -109,49 +85,6 @@ func (h *DashboardHandler) GetDashboard(ctx context.Context, input *GetDashboard
 			Data:    *snapshot,
 		},
 	}, nil
-}
-
-func (h *DashboardHandler) StreamAllDashboards(ctx context.Context, input *StreamAllDashboardsInput) (*huma.StreamResponse, error) {
-	if h.dashboardService == nil || h.environmentService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
-	return &huma.StreamResponse{
-		Body: func(humaCtx huma.Context) { //nolint:contextcheck // streaming work must use humaCtx.Context()
-			httpx.SetJSONStreamHeaders(humaCtx)
-
-			writer := humaCtx.BodyWriter()
-			flush := func() {
-				if f, ok := writer.(http.Flusher); ok {
-					f.Flush()
-				}
-			}
-
-			ps, _ := humamw.PermissionsFromContext(humaCtx.Context())
-			h.streamAllDashboardsInternal(humaCtx.Context(), ps, input.DebugAllGood, writer, flush)
-		},
-	}, nil
-}
-
-// streamAllDashboardsInternal multiplexes dashboard snapshots for the local
-// environment and every enabled remote environment over a single response so
-// the browser needs one connection regardless of environment count.
-func (h *DashboardHandler) streamAllDashboardsInternal(ctx context.Context, ps *authz.PermissionSet, debugAllGood bool, writer io.Writer, flush func()) {
-	_ = httpx.RunAuthorizedAggregateStream(ctx, ps, authz.PermDashboardRead, agg.Config[dashboardtypes.StreamEvent]{
-		Writer:            writer,
-		Flush:             flush,
-		Buffer:            dashboardStreamEventBuffer,
-		HeartbeatInterval: dashboardStreamHeartbeatInterval,
-		MakeHeartbeat: func() dashboardtypes.StreamEvent {
-			return dashboardtypes.StreamEvent{Type: "heartbeat", Timestamp: time.Now()}
-		},
-	},
-		func(ctx context.Context, events chan<- dashboardtypes.StreamEvent) {
-			h.runLocalDashboardStreamProducerInternal(ctx, debugAllGood, events)
-		},
-		func(ctx context.Context, events chan<- dashboardtypes.StreamEvent) {
-			h.runRemoteDashboardStreamPollersInternal(ctx, ps, debugAllGood, events)
-		})
 }
 
 // trimDashboardStreamSnapshotInternal drops the first-page container/image
@@ -175,7 +108,7 @@ func (h *DashboardHandler) runLocalDashboardStreamProducerInternal(ctx context.C
 			DebugAllGood: debugAllGood,
 		})
 		if err == nil && snapshot == nil {
-			err = &common.DashboardSnapshotUnavailableError{}
+			err = common.Classify(common.ErrUnavailable, errors.New("dashboard snapshot not available"))
 		}
 		if err != nil {
 			if ctx.Err() != nil {
@@ -275,7 +208,7 @@ func (h *DashboardHandler) runRemoteDashboardStreamPollerInternal(ctx context.Co
 		currentEnvironment := environment
 		if h.environmentService != nil {
 			var ok bool
-			currentEnvironment, ok = h.environmentService.GetActiveRemoteEnvironmentSnapshot(environmentID)
+			currentEnvironment, ok = h.environmentService.GetActiveRemoteEnvironmentSnapshot(environmentID).Get()
 			if !ok {
 				return
 			}
@@ -346,7 +279,7 @@ func (h *DashboardHandler) fetchRemoteDashboardSnapshotInternal(ctx context.Cont
 		return nil, err
 	}
 	if !out.Success {
-		return nil, &common.DashboardSnapshotUnavailableError{}
+		return nil, common.Classify(common.ErrUnavailable, errors.New("dashboard snapshot not available"))
 	}
 	return &out.Data, nil
 }
@@ -387,6 +320,14 @@ func (h *DashboardHandler) fetchLegacyDashboardSnapshotInternal(ctx context.Cont
 	}
 
 	attempted++
+	var volumeCounts base.ApiResponse[volumetypes.UsageCounts]
+	if err := h.environmentService.ProxyJSONRequestForEnvironment(ctx, environment, http.MethodGet, "/api/environments/0/volumes/counts", nil, &volumeCounts); err != nil {
+		errs = append(errs, err)
+	} else {
+		snapshot.VolumeUsageCounts = &volumeCounts.Data
+	}
+
+	attempted++
 	var versionInfo versiontypes.Info
 	if err := h.environmentService.ProxyJSONRequestForEnvironment(ctx, environment, http.MethodGet, "/api/app-version", nil, &versionInfo); err != nil {
 		errs = append(errs, err)
@@ -395,7 +336,7 @@ func (h *DashboardHandler) fetchLegacyDashboardSnapshotInternal(ctx context.Cont
 	}
 
 	if len(errs) == attempted {
-		return nil, errors.Join(errs...)
+		return nil, stderrors.Join(errs...)
 	}
 	return snapshot, nil
 }
@@ -404,10 +345,10 @@ func (h *DashboardHandler) fetchLegacyDashboardSnapshotInternal(ctx context.Cont
 // endpoint is absent (404 on older agents) or speaks an incompatible payload
 // shape (decode failure) — the cases the legacy composition can recover from.
 func isDashboardEndpointMissingInternal(err error) bool {
-	if statusErr, ok := errors.AsType[*remenv.StatusError](err); ok && statusErr.StatusCode == http.StatusNotFound {
+	if statusErr, ok := stderrors.AsType[*remenv.StatusError](err); ok && statusErr.StatusCode == http.StatusNotFound {
 		return true
 	}
-	_, ok := errors.AsType[*remenv.DecodeError](err)
+	_, ok := stderrors.AsType[*remenv.DecodeError](err)
 	return ok
 }
 
@@ -417,9 +358,9 @@ func isDashboardEndpointMissingInternal(err error) bool {
 // both indicate a version mismatch between manager and agent.
 func classifyDashboardStreamErrorInternal(err error) (string, string) {
 	if isDashboardEndpointMissingInternal(err) {
-		return (&common.AgentDashboardUnsupportedError{}).Error(), dashboardtypes.StreamErrorCodeAgentIncompatible
+		return "Agent does not provide the dashboard endpoint — the agent is likely running an older Arcane version and should be upgraded", dashboardtypes.StreamErrorCodeAgentIncompatible
 	}
-	if transportErr, ok := errors.AsType[*remenv.TransportError](err); ok {
+	if transportErr, ok := stderrors.AsType[*remenv.TransportError](err); ok {
 		return transportErr.Error(), dashboardtypes.StreamErrorCodeUnreachable
 	}
 	return err.Error(), ""

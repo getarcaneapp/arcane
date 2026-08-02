@@ -7,7 +7,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,6 +17,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/config"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
@@ -120,9 +121,9 @@ func newSelfUpdateChannelValueCmdInternal(channel string) *cobra.Command {
 }
 
 func setCLIUpdateChannelAndRunInternal(cmd *cobra.Command, channel string) error {
-	channel = normalizeCLIUpdateChannelInternal(channel)
+	channel = strings.ToLower(strings.TrimSpace(channel))
 	if channel != cliUpdateChannelNext && channel != cliUpdateChannelStable {
-		return fmt.Errorf("invalid update channel %q (expected stable or next)", channel)
+		return errors.Errorf("invalid update channel %q (expected stable or next)", channel)
 	}
 	if err := saveCLIUpdateChannelInternal(channel); err != nil {
 		return err
@@ -144,7 +145,7 @@ func runCLIUpdateInternal(ctx context.Context, overrideChannel string) error {
 	if jsonOutput {
 		resultBytes, err := json.MarshalIndent(plan, "", "  ")
 		if err != nil {
-			return fmt.Errorf("failed to marshal JSON: %w", err)
+			return errors.WrapIf(err, "failed to marshal JSON")
 		}
 		fmt.Println(string(resultBytes))
 		return nil
@@ -182,7 +183,7 @@ func buildCLIUpdatePlanInternal(ctx context.Context, overrideChannel string) (*c
 		return nil, err
 	}
 
-	channel := normalizeCLIUpdateChannelInternal(overrideChannel)
+	channel := strings.ToLower(strings.TrimSpace(overrideChannel))
 	if channel == "" {
 		channel, err = configuredCLIUpdateChannelInternal()
 		if err != nil {
@@ -193,7 +194,7 @@ func buildCLIUpdatePlanInternal(ctx context.Context, overrideChannel string) (*c
 		channel = inferCLIUpdateChannelInternal(config.Version)
 	}
 	if channel != cliUpdateChannelNext && channel != cliUpdateChannelStable {
-		return nil, fmt.Errorf("invalid update channel %q (expected next or stable)", channel)
+		return nil, errors.Errorf("invalid update channel %q (expected next or stable)", channel)
 	}
 	verboseCLIUpdateInternal("channel=%s target=%s platform=%s/%s", channel, targetPath, runtime.GOOS, runtime.GOARCH)
 
@@ -216,14 +217,14 @@ func buildCLIUpdatePlanInternal(ctx context.Context, overrideChannel string) (*c
 func configuredCLIUpdateChannelInternal() (string, error) {
 	cfg, err := config.Load()
 	if err != nil {
-		return "", fmt.Errorf("failed to load config: %w", err)
+		return "", errors.WrapIf(err, "failed to load config")
 	}
-	channel := normalizeCLIUpdateChannelInternal(cfg.CLIUpdateChannel)
+	channel := strings.ToLower(strings.TrimSpace(cfg.CLIUpdateChannel))
 	if channel == "" {
 		return "", nil
 	}
 	if channel != cliUpdateChannelNext && channel != cliUpdateChannelStable {
-		return "", fmt.Errorf("invalid configured CLI update channel %q (expected stable or next)", cfg.CLIUpdateChannel)
+		return "", errors.Errorf("invalid configured CLI update channel %q (expected stable or next)", cfg.CLIUpdateChannel)
 	}
 	return channel, nil
 }
@@ -231,11 +232,11 @@ func configuredCLIUpdateChannelInternal() (string, error) {
 func saveCLIUpdateChannelInternal(channel string) error {
 	cfg, err := config.Load()
 	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
+		return errors.WrapIf(err, "failed to load config")
 	}
 	cfg.CLIUpdateChannel = channel
 	if err := config.Save(cfg); err != nil {
-		return fmt.Errorf("failed to save config: %w", err)
+		return errors.WrapIf(err, "failed to save config")
 	}
 	return nil
 }
@@ -247,19 +248,15 @@ func resolveCLIUpdateTargetInternal() (string, error) {
 	if pathTarget, err := exec.LookPath("arcane-cli"); err == nil {
 		absTarget, err := filepath.Abs(pathTarget)
 		if err != nil {
-			return "", fmt.Errorf("failed to resolve arcane-cli from PATH: %w", err)
+			return "", errors.WrapIf(err, "failed to resolve arcane-cli from PATH")
 		}
 		return filepath.EvalSymlinks(absTarget)
 	}
 	exe, err := os.Executable()
 	if err != nil {
-		return "", fmt.Errorf("failed to resolve current executable: %w", err)
+		return "", errors.WrapIf(err, "failed to resolve current executable")
 	}
 	return filepath.EvalSymlinks(exe)
-}
-
-func normalizeCLIUpdateChannelInternal(channel string) string {
-	return strings.ToLower(strings.TrimSpace(channel))
 }
 
 func inferCLIUpdateChannelInternal(version string) string {
@@ -370,16 +367,14 @@ func resolveStableCLIUpdateInternal(ctx context.Context) (*cliUpdatePlan, error)
 
 func cliUpdateNeededInternal(channel, currentSHA, expectedSHA, remoteVersion string) bool {
 	if channel == cliUpdateChannelStable {
-		return normalizeVersionInternal(config.Version) != normalizeVersionInternal(remoteVersion)
+		current := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(config.Version)), "v")
+		remote := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(remoteVersion)), "v")
+		return current != remote
 	}
 	if strings.TrimSpace(expectedSHA) == "" {
 		return true
 	}
 	return !strings.EqualFold(currentSHA, expectedSHA)
-}
-
-func normalizeVersionInternal(version string) string {
-	return strings.TrimPrefix(strings.ToLower(strings.TrimSpace(version)), "v")
 }
 
 func fetchLatestGitHubReleaseInternal(ctx context.Context) (string, error) {
@@ -392,16 +387,16 @@ func fetchLatestGitHubReleaseInternal(ctx context.Context) (string, error) {
 	client := &http.Client{Timeout: cliUpdateHTTPTimeout}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("failed to fetch latest GitHub release: %w", err)
+		return "", errors.WrapIf(err, "failed to fetch latest GitHub release")
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("failed to fetch latest GitHub release: HTTP %s", resp.Status)
+		return "", errors.Errorf("failed to fetch latest GitHub release: HTTP %s", resp.Status)
 	}
 
 	var latest githubLatestRelease
 	if err := json.NewDecoder(resp.Body).Decode(&latest); err != nil {
-		return "", fmt.Errorf("failed to fetch latest GitHub release: %w", err)
+		return "", errors.WrapIf(err, "failed to fetch latest GitHub release")
 	}
 	return strings.TrimSpace(latest.TagName), nil
 }
@@ -437,14 +432,14 @@ func cliArtifactArchInternal() (string, error) {
 	case "arm":
 		return "armv7", nil
 	default:
-		return "", fmt.Errorf("unsupported CLI update architecture %s/%s", runtime.GOOS, runtime.GOARCH)
+		return "", errors.Errorf("unsupported CLI update architecture %s/%s", runtime.GOOS, runtime.GOARCH)
 	}
 }
 
 func installCLIUpdateInternal(ctx context.Context, plan *cliUpdatePlan) error {
 	tmpDir, err := os.MkdirTemp("", "arcane-cli-update-*")
 	if err != nil {
-		return fmt.Errorf("failed to create update temp dir: %w", err)
+		return errors.WrapIf(err, "failed to create update temp dir")
 	}
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
@@ -455,7 +450,7 @@ func installCLIUpdateInternal(ctx context.Context, plan *cliUpdatePlan) error {
 	if gotSHA, err := sha256FileInternal(downloadPath); err != nil {
 		return err
 	} else if !strings.EqualFold(gotSHA, plan.ArtifactSHA) {
-		return fmt.Errorf("downloaded artifact SHA mismatch: got %s, expected %s", gotSHA, plan.ArtifactSHA)
+		return errors.Errorf("downloaded artifact SHA mismatch: got %s, expected %s", gotSHA, plan.ArtifactSHA)
 	}
 
 	binaryPath := downloadPath
@@ -468,7 +463,7 @@ func installCLIUpdateInternal(ctx context.Context, plan *cliUpdatePlan) error {
 	}
 
 	if err := os.Chmod(binaryPath, 0o755); err != nil {
-		return fmt.Errorf("failed to make downloaded binary executable: %w", err)
+		return errors.WrapIf(err, "failed to make downloaded binary executable")
 	}
 	return replaceExecutableInternal(binaryPath, plan.TargetPath)
 }
@@ -477,7 +472,7 @@ func replaceExecutableInternal(sourcePath, targetPath string) error {
 	targetDir := filepath.Dir(targetPath)
 	tmpTarget, err := os.CreateTemp(targetDir, filepath.Base(targetPath)+".update-*")
 	if err != nil {
-		return fmt.Errorf("failed to create replacement file in %s: %w", targetDir, err)
+		return errors.WrapIff(err, "failed to create replacement file in %s", targetDir)
 	}
 	tmpTargetPath := tmpTarget.Name()
 	cleanup := func() { _ = os.Remove(tmpTargetPath) }
@@ -486,41 +481,41 @@ func replaceExecutableInternal(sourcePath, targetPath string) error {
 	if err != nil {
 		_ = tmpTarget.Close()
 		cleanup()
-		return fmt.Errorf("failed to open downloaded binary: %w", err)
+		return errors.WrapIf(err, "failed to open downloaded binary")
 	}
 	defer func() { _ = source.Close() }()
 
 	if _, err := io.Copy(tmpTarget, source); err != nil {
 		_ = tmpTarget.Close()
 		cleanup()
-		return fmt.Errorf("failed to write replacement binary: %w", err)
+		return errors.WrapIf(err, "failed to write replacement binary")
 	}
 	if err := tmpTarget.Chmod(0o755); err != nil {
 		_ = tmpTarget.Close()
 		cleanup()
-		return fmt.Errorf("failed to chmod replacement binary: %w", err)
+		return errors.WrapIf(err, "failed to chmod replacement binary")
 	}
 	if err := tmpTarget.Sync(); err != nil {
 		_ = tmpTarget.Close()
 		cleanup()
-		return fmt.Errorf("failed to sync replacement binary: %w", err)
+		return errors.WrapIf(err, "failed to sync replacement binary")
 	}
 	if err := tmpTarget.Close(); err != nil {
 		cleanup()
-		return fmt.Errorf("failed to close replacement binary: %w", err)
+		return errors.WrapIf(err, "failed to close replacement binary")
 	}
 	if err := os.Rename(tmpTargetPath, targetPath); err != nil {
 		cleanup()
-		return fmt.Errorf("failed to replace %s: %w", targetPath, err)
+		return errors.WrapIff(err, "failed to replace %s", targetPath)
 	}
 
 	dirFile, err := os.Open(targetDir)
 	if err != nil {
-		return fmt.Errorf("failed to open target directory for sync: %w", err)
+		return errors.WrapIf(err, "failed to open target directory for sync")
 	}
 	defer func() { _ = dirFile.Close() }()
 	if err := dirFile.Sync(); err != nil {
-		return fmt.Errorf("failed to sync target directory: %w", err)
+		return errors.WrapIf(err, "failed to sync target directory")
 	}
 	return nil
 }
@@ -528,13 +523,13 @@ func replaceExecutableInternal(sourcePath, targetPath string) error {
 func extractCLIFromTarGzInternal(archivePath, outputPath string) error {
 	file, err := os.Open(archivePath)
 	if err != nil {
-		return fmt.Errorf("failed to open archive: %w", err)
+		return errors.WrapIf(err, "failed to open archive")
 	}
 	defer func() { _ = file.Close() }()
 
 	gzipReader, err := gzip.NewReader(file)
 	if err != nil {
-		return fmt.Errorf("failed to read gzip archive: %w", err)
+		return errors.WrapIf(err, "failed to read gzip archive")
 	}
 	defer func() { _ = gzipReader.Close() }()
 
@@ -545,7 +540,7 @@ func extractCLIFromTarGzInternal(archivePath, outputPath string) error {
 			break
 		}
 		if err != nil {
-			return fmt.Errorf("failed to read tar archive: %w", err)
+			return errors.WrapIf(err, "failed to read tar archive")
 		}
 		if header.Typeflag != tar.TypeReg {
 			continue
@@ -554,19 +549,19 @@ func extractCLIFromTarGzInternal(archivePath, outputPath string) error {
 			continue
 		}
 		if header.Size < 0 || header.Size > maxCLIExtractSize {
-			return fmt.Errorf("arcane-cli archive entry has invalid size %d", header.Size)
+			return errors.Errorf("arcane-cli archive entry has invalid size %d", header.Size)
 		}
 
 		out, err := os.OpenFile(outputPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o755)
 		if err != nil {
-			return fmt.Errorf("failed to create extracted binary: %w", err)
+			return errors.WrapIf(err, "failed to create extracted binary")
 		}
 		if _, err := io.CopyN(out, tarReader, header.Size); err != nil {
 			_ = out.Close()
-			return fmt.Errorf("failed to extract CLI binary: %w", err)
+			return errors.WrapIf(err, "failed to extract CLI binary")
 		}
 		if err := out.Close(); err != nil {
-			return fmt.Errorf("failed to close extracted binary: %w", err)
+			return errors.WrapIf(err, "failed to close extracted binary")
 		}
 		return nil
 	}
@@ -583,19 +578,19 @@ func fetchTextInternal(ctx context.Context, url string) (string, error) {
 	client := &http.Client{Timeout: cliUpdateHTTPTimeout}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("failed to fetch %s: %w", url, err)
+		return "", errors.WrapIff(err, "failed to fetch %s", url)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("failed to fetch %s: HTTP %s", url, resp.Status)
+		return "", errors.Errorf("failed to fetch %s: HTTP %s", url, resp.Status)
 	}
 	limitedBody := &io.LimitedReader{R: resp.Body, N: maxCLIChecksumSize + 1}
 	body, err := io.ReadAll(limitedBody)
 	if err != nil {
-		return "", fmt.Errorf("failed to read %s: %w", url, err)
+		return "", errors.WrapIff(err, "failed to read %s", url)
 	}
 	if len(body) > maxCLIChecksumSize {
-		return "", fmt.Errorf("failed to read %s: checksum response exceeds maximum size of %d bytes", url, maxCLIChecksumSize)
+		return "", errors.Errorf("failed to read %s: checksum response exceeds maximum size of %d bytes", url, maxCLIChecksumSize)
 	}
 	return string(body), nil
 }
@@ -609,29 +604,29 @@ func downloadFileInternal(ctx context.Context, url, outputPath string) error {
 	client := &http.Client{Timeout: cliUpdateHTTPTimeout}
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to download %s: %w", url, err)
+		return errors.WrapIff(err, "failed to download %s", url)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("failed to download %s: HTTP %s", url, resp.Status)
+		return errors.Errorf("failed to download %s: HTTP %s", url, resp.Status)
 	}
 
 	out, err := os.OpenFile(outputPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 	if err != nil {
-		return fmt.Errorf("failed to create download file: %w", err)
+		return errors.WrapIf(err, "failed to create download file")
 	}
 	limitedBody := &io.LimitedReader{R: resp.Body, N: maxCLIDownloadSize + 1}
 	written, err := io.Copy(out, limitedBody)
 	if err != nil {
 		_ = out.Close()
-		return fmt.Errorf("failed to write download file: %w", err)
+		return errors.WrapIf(err, "failed to write download file")
 	}
 	if written > maxCLIDownloadSize {
 		_ = out.Close()
-		return fmt.Errorf("downloaded artifact exceeds maximum size of %d bytes", maxCLIDownloadSize)
+		return errors.Errorf("downloaded artifact exceeds maximum size of %d bytes", maxCLIDownloadSize)
 	}
 	if err := out.Close(); err != nil {
-		return fmt.Errorf("failed to close download file: %w", err)
+		return errors.WrapIf(err, "failed to close download file")
 	}
 	return nil
 }
@@ -647,13 +642,13 @@ func verboseCLIUpdateInternal(format string, args ...any) {
 func sha256FileInternal(path string) (string, error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return "", fmt.Errorf("failed to open %s for SHA-256: %w", path, err)
+		return "", errors.WrapIff(err, "failed to open %s for SHA-256", path)
 	}
 	defer func() { _ = file.Close() }()
 
 	hash := sha256.New()
 	if _, err := io.Copy(hash, file); err != nil {
-		return "", fmt.Errorf("failed to hash %s: %w", path, err)
+		return "", errors.WrapIff(err, "failed to hash %s", path)
 	}
 	return hex.EncodeToString(hash.Sum(nil)), nil
 }
@@ -661,7 +656,7 @@ func sha256FileInternal(path string) (string, error) {
 func findChecksumInternal(checksums string, artifactNames ...string) (string, error) {
 	wanted := make(map[string]struct{}, len(artifactNames))
 	for _, artifactName := range artifactNames {
-		artifactName = normalizeChecksumPathInternal(artifactName)
+		artifactName = strings.TrimPrefix(path.Clean(strings.TrimSpace(artifactName)), "./")
 		if artifactName != "" {
 			wanted[artifactName] = struct{}{}
 		}
@@ -672,12 +667,12 @@ func findChecksumInternal(checksums string, artifactNames ...string) (string, er
 		if len(fields) < 2 {
 			continue
 		}
-		checksumPath := normalizeChecksumPathInternal(fields[len(fields)-1])
+		checksumPath := strings.TrimPrefix(path.Clean(strings.TrimSpace(fields[len(fields)-1])), "./")
 		if checksumPathMatchesInternal(checksumPath, wanted) {
 			return strings.ToLower(fields[0]), nil
 		}
 	}
-	return "", fmt.Errorf("checksum for %s not found", strings.Join(artifactNames, " or "))
+	return "", errors.Errorf("checksum for %s not found", strings.Join(artifactNames, " or "))
 }
 
 func checksumEntryNamesInternal(checksums string) []string {
@@ -687,13 +682,9 @@ func checksumEntryNamesInternal(checksums string) []string {
 		if len(fields) < 2 {
 			continue
 		}
-		names = append(names, normalizeChecksumPathInternal(fields[len(fields)-1]))
+		names = append(names, strings.TrimPrefix(path.Clean(strings.TrimSpace(fields[len(fields)-1])), "./"))
 	}
 	return names
-}
-
-func normalizeChecksumPathInternal(value string) string {
-	return strings.TrimPrefix(path.Clean(strings.TrimSpace(value)), "./")
 }
 
 func checksumPathMatchesInternal(checksumPath string, wanted map[string]struct{}) bool {

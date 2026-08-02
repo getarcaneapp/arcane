@@ -3,8 +3,8 @@ package handlers
 import (
 	"context"
 
+	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
@@ -21,13 +21,6 @@ type GitRepositoryHandler struct {
 // Input/Output Types
 // ============================================================================
 
-// GitRepositoryPaginatedResponse is the paginated response for git repositories.
-type GitRepositoryPaginatedResponse struct {
-	Success    bool                    `json:"success"`
-	Data       []gitops.GitRepository  `json:"data"`
-	Pagination base.PaginationResponse `json:"pagination"`
-}
-
 type ListGitRepositoriesInput struct {
 	Search string `query:"search" doc:"Search query"`
 	Sort   string `query:"sort" doc:"Column to sort by"`
@@ -37,7 +30,7 @@ type ListGitRepositoriesInput struct {
 }
 
 type ListGitRepositoriesOutput struct {
-	Body GitRepositoryPaginatedResponse
+	Body base.Paginated[gitops.GitRepository]
 }
 
 type CreateGitRepositoryInput struct {
@@ -116,15 +109,15 @@ type SyncGitRepositoriesOutput struct {
 func RegisterGitRepositories(api huma.API, repoService *services.GitRepositoryService) {
 	h := &GitRepositoryHandler{repoService: repoService}
 
-	registerCustomizeSecuredInternal(api, "listGitRepositories", "GET", "/customize/git-repositories", "List git repositories", "Get a paginated list of git repositories", authz.PermGitReposList, h.ListRepositories)
-	registerCustomizeSecuredInternal(api, "createGitRepository", "POST", "/customize/git-repositories", "Create a git repository", "Create a new git repository configuration", authz.PermGitReposCreate, h.CreateRepository)
-	registerCustomizeSecuredInternal(api, "getGitRepository", "GET", "/customize/git-repositories/{id}", "Get a git repository", "Get a git repository by ID", authz.PermGitReposRead, h.GetRepository)
-	registerCustomizeSecuredInternal(api, "updateGitRepository", "PUT", "/customize/git-repositories/{id}", "Update a git repository", "Update an existing git repository configuration", authz.PermGitReposUpdate, h.UpdateRepository)
-	registerCustomizeSecuredInternal(api, "deleteGitRepository", "DELETE", "/customize/git-repositories/{id}", "Delete a git repository", "Delete a git repository configuration by ID", authz.PermGitReposDelete, h.DeleteRepository)
-	registerCustomizeSecuredInternal(api, "testGitRepository", "POST", "/customize/git-repositories/{id}/test", "Test a git repository", "Test connectivity and authentication to a git repository", authz.PermGitReposTest, h.TestRepository)
-	registerCustomizeSecuredInternal(api, "listGitRepositoryBranches", "GET", "/customize/git-repositories/{id}/branches", "List repository branches", "Get all branches from a git repository with default branch detection", authz.PermGitReposRead, h.ListBranches)
-	registerCustomizeSecuredInternal(api, "browseGitRepositoryFiles", "GET", "/customize/git-repositories/{id}/files", "Browse repository files", "Browse files and directories in a git repository", authz.PermGitReposRead, h.BrowseFiles)
-	registerTaggedSecuredInternal(api, "syncGitRepositories", "POST", "/git-repositories/sync", "Sync git repositories", "Sync git repositories from a manager to this agent instance", "Git Repositories", authz.PermGitReposSync, h.SyncRepositories)
+	registerSecuredInternal(api, operationInternal("listGitRepositories", "GET", "/customize/git-repositories", "List git repositories", "Get a paginated list of git repositories", "Customize"), authz.PermGitReposList, h.ListRepositories)
+	registerSecuredInternal(api, operationInternal("createGitRepository", "POST", "/customize/git-repositories", "Create a git repository", "Create a new git repository configuration", "Customize"), authz.PermGitReposCreate, h.CreateRepository)
+	registerSecuredInternal(api, operationInternal("getGitRepository", "GET", "/customize/git-repositories/{id}", "Get a git repository", "Get a git repository by ID", "Customize"), authz.PermGitReposRead, h.GetRepository)
+	registerSecuredInternal(api, operationInternal("updateGitRepository", "PUT", "/customize/git-repositories/{id}", "Update a git repository", "Update an existing git repository configuration", "Customize"), authz.PermGitReposUpdate, h.UpdateRepository)
+	registerSecuredInternal(api, operationInternal("deleteGitRepository", "DELETE", "/customize/git-repositories/{id}", "Delete a git repository", "Delete a git repository configuration by ID", "Customize"), authz.PermGitReposDelete, h.DeleteRepository)
+	registerSecuredInternal(api, operationInternal("testGitRepository", "POST", "/customize/git-repositories/{id}/test", "Test a git repository", "Test connectivity and authentication to a git repository", "Customize"), authz.PermGitReposTest, h.TestRepository)
+	registerSecuredInternal(api, operationInternal("listGitRepositoryBranches", "GET", "/customize/git-repositories/{id}/branches", "List repository branches", "Get all branches from a git repository with default branch detection", "Customize"), authz.PermGitReposRead, h.ListBranches)
+	registerSecuredInternal(api, operationInternal("browseGitRepositoryFiles", "GET", "/customize/git-repositories/{id}/files", "Browse repository files", "Browse files and directories in a git repository", "Customize"), authz.PermGitReposRead, h.BrowseFiles)
+	registerSecuredInternal(api, operationInternal("syncGitRepositories", "POST", "/git-repositories/sync", "Sync git repositories", "Sync git repositories from a manager to this agent instance", "Git Repositories"), authz.PermGitReposSync, h.SyncRepositories)
 }
 
 // ============================================================================
@@ -133,19 +126,15 @@ func RegisterGitRepositories(api huma.API, repoService *services.GitRepositorySe
 
 // ListRepositories returns a paginated list of git repositories.
 func (h *GitRepositoryHandler) ListRepositories(ctx context.Context, input *ListGitRepositoriesInput) (*ListGitRepositoriesOutput, error) {
-	if h.repoService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 
 	repositories, paginationResp, err := h.repoService.GetRepositoriesPaginated(ctx, params)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.GitRepositoryListError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to list git repositories").Error())
 	}
 
 	return &ListGitRepositoriesOutput{
-		Body: GitRepositoryPaginatedResponse{
+		Body: base.Paginated[gitops.GitRepository]{
 			Success:    true,
 			Data:       repositories,
 			Pagination: toPaginationResponseInternal(paginationResp),
@@ -155,20 +144,16 @@ func (h *GitRepositoryHandler) ListRepositories(ctx context.Context, input *List
 
 // CreateRepository creates a new git repository.
 func (h *GitRepositoryHandler) CreateRepository(ctx context.Context, input *CreateGitRepositoryInput) (*CreateGitRepositoryOutput, error) {
-	if h.repoService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	actor := currentActorInternal(ctx)
 
 	repo, err := h.repoService.CreateRepository(ctx, input.Body, actor)
 	if err != nil {
 		apiErr := models.ToAPIError(err)
-		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.GitRepositoryCreationError{Err: err}).Error())
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to create git repository")
 	}
 
 	body, mapErr := mapOneAPIResponseInternal[*models.GitRepository, gitops.GitRepository](repo, func(err error) string {
-		return (&common.GitRepositoryMappingError{Err: err}).Error()
+		return "Failed to map git repository"
 	})
 	if mapErr != nil {
 		return nil, mapErr
@@ -181,18 +166,14 @@ func (h *GitRepositoryHandler) CreateRepository(ctx context.Context, input *Crea
 
 // GetRepository returns a git repository by ID.
 func (h *GitRepositoryHandler) GetRepository(ctx context.Context, input *GetGitRepositoryInput) (*GetGitRepositoryOutput, error) {
-	if h.repoService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	repo, err := h.repoService.GetRepositoryByID(ctx, input.ID)
 	if err != nil {
 		apiErr := models.ToAPIError(err)
-		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.GitRepositoryRetrievalError{Err: err}).Error())
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to retrieve git repository")
 	}
 
 	body, mapErr := mapOneAPIResponseInternal[*models.GitRepository, gitops.GitRepository](repo, func(err error) string {
-		return (&common.GitRepositoryMappingError{Err: err}).Error()
+		return "Failed to map git repository"
 	})
 	if mapErr != nil {
 		return nil, mapErr
@@ -205,20 +186,16 @@ func (h *GitRepositoryHandler) GetRepository(ctx context.Context, input *GetGitR
 
 // UpdateRepository updates an existing git repository.
 func (h *GitRepositoryHandler) UpdateRepository(ctx context.Context, input *UpdateGitRepositoryInput) (*UpdateGitRepositoryOutput, error) {
-	if h.repoService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	actor := currentActorInternal(ctx)
 
 	repo, err := h.repoService.UpdateRepository(ctx, input.ID, input.Body, actor)
 	if err != nil {
 		apiErr := models.ToAPIError(err)
-		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.GitRepositoryUpdateError{Err: err}).Error())
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to update git repository")
 	}
 
 	body, mapErr := mapOneAPIResponseInternal[*models.GitRepository, gitops.GitRepository](repo, func(err error) string {
-		return (&common.GitRepositoryMappingError{Err: err}).Error()
+		return "Failed to map git repository"
 	})
 	if mapErr != nil {
 		return nil, mapErr
@@ -231,15 +208,11 @@ func (h *GitRepositoryHandler) UpdateRepository(ctx context.Context, input *Upda
 
 // DeleteRepository deletes a git repository by ID.
 func (h *GitRepositoryHandler) DeleteRepository(ctx context.Context, input *DeleteGitRepositoryInput) (*DeleteGitRepositoryOutput, error) {
-	if h.repoService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	actor := currentActorInternal(ctx)
 
 	if err := h.repoService.DeleteRepository(ctx, input.ID, actor); err != nil {
 		apiErr := models.ToAPIError(err)
-		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.GitRepositoryDeletionError{Err: err}).Error())
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to delete git repository")
 	}
 
 	return &DeleteGitRepositoryOutput{
@@ -254,14 +227,10 @@ func (h *GitRepositoryHandler) DeleteRepository(ctx context.Context, input *Dele
 
 // TestRepository tests connectivity and authentication to a git repository.
 func (h *GitRepositoryHandler) TestRepository(ctx context.Context, input *TestGitRepositoryInput) (*TestGitRepositoryOutput, error) {
-	if h.repoService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	actor := currentActorInternal(ctx)
 
 	if err := h.repoService.TestConnection(ctx, input.ID, input.Branch, actor); err != nil {
-		return nil, huma.Error400BadRequest((&common.GitRepositoryTestError{Err: err}).Error())
+		return nil, huma.Error400BadRequest(errors.WithMessage(err, "Failed to test git repository connection").Error())
 	}
 
 	return &TestGitRepositoryOutput{
@@ -276,13 +245,9 @@ func (h *GitRepositoryHandler) TestRepository(ctx context.Context, input *TestGi
 
 // ListBranches returns all branches from a git repository.
 func (h *GitRepositoryHandler) ListBranches(ctx context.Context, input *ListBranchesInput) (*ListBranchesOutput, error) {
-	if h.repoService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	branches, err := h.repoService.ListBranches(ctx, input.ID)
 	if err != nil {
-		return nil, huma.Error400BadRequest((&common.GitRepositoryTestError{Err: err}).Error())
+		return nil, huma.Error400BadRequest(errors.WithMessage(err, "Failed to test git repository connection").Error())
 	}
 
 	return &ListBranchesOutput{
@@ -297,17 +262,13 @@ func (h *GitRepositoryHandler) ListBranches(ctx context.Context, input *ListBran
 
 // BrowseFiles returns files and directories from a git repository.
 func (h *GitRepositoryHandler) BrowseFiles(ctx context.Context, input *BrowseFilesInput) (*BrowseFilesOutput, error) {
-	if h.repoService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	if input.Branch == "" {
 		return nil, huma.Error400BadRequest("branch parameter is required")
 	}
 
 	result, err := h.repoService.BrowseFiles(ctx, input.ID, input.Branch, input.Path)
 	if err != nil {
-		return nil, huma.Error400BadRequest((&common.GitRepositoryTestError{Err: err}).Error())
+		return nil, huma.Error400BadRequest(errors.WithMessage(err, "Failed to test git repository connection").Error())
 	}
 
 	return &BrowseFilesOutput{
@@ -320,13 +281,9 @@ func (h *GitRepositoryHandler) BrowseFiles(ctx context.Context, input *BrowseFil
 
 // SyncRepositories syncs git repositories from a manager to this agent instance.
 func (h *GitRepositoryHandler) SyncRepositories(ctx context.Context, input *SyncGitRepositoriesInput) (*SyncGitRepositoriesOutput, error) {
-	if h.repoService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	if err := h.repoService.SyncRepositories(ctx, input.Body.Repositories); err != nil {
 		apiErr := models.ToAPIError(err)
-		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.GitRepositorySyncError{Err: err}).Error())
+		return nil, huma.NewError(apiErr.HTTPStatus(), errors.WithMessage(err, "Failed to sync git repositories").Error())
 	}
 
 	return &SyncGitRepositoriesOutput{

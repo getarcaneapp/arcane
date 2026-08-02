@@ -45,8 +45,39 @@ func TestBuildPermissionsManifestIncludesEventsDelete(t *testing.T) {
 				return
 			}
 		}
-		t.Fatalf("events resource did not include %s", authz.PermEventsDelete)
+		require.FailNowf(t, "unexpected failure", "events resource did not include %s", authz.PermEventsDelete)
+	}
+	require.FailNow(t, "events resource not found")
+}
+
+func TestBuildPermissionsManifestKeepsVariablesSeparateFromTemplates(t *testing.T) {
+	manifest := buildPermissionsManifestInternal()
+
+	var variablePermissions []string
+	for _, resource := range manifest.Resources {
+		if resource.Key != "variables" {
+			continue
+		}
+		for _, action := range resource.Actions {
+			variablePermissions = append(variablePermissions, action.Permission)
+		}
+	}
+	require.ElementsMatch(t, []string{
+		authz.PermVariablesRead,
+		authz.PermVariablesCreate,
+		authz.PermVariablesUpdate,
+		authz.PermVariablesDelete,
+		authz.PermVariablesSync,
+	}, variablePermissions)
+	for _, permission := range variablePermissions {
+		require.NotEqual(t, authz.PermTemplatesRead, permission)
 	}
 
-	t.Fatal("events resource not found")
+	surfaces := make(map[string][]string, len(manifest.AccessSurfaces))
+	for _, surface := range manifest.AccessSurfaces {
+		surfaces[surface.ID] = surface.Permissions
+	}
+	require.Equal(t, []string{authz.PermVariablesRead}, surfaces["customize.category.variables"])
+	require.Equal(t, []string{authz.PermActivitiesRead}, surfaces["route.activities"])
+	require.ElementsMatch(t, authz.AllPermissions(), surfaces["route.oidc-role-mappings"])
 }

@@ -1,22 +1,22 @@
 <script lang="ts">
-	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import { UniversalMobileCard } from '$lib/components/arcane-table';
-	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
-	import { Badge } from '$lib/components/ui/badge';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
-	import { CopyButton } from '$lib/components/ui/copy-button';
+	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
+	import { UniversalMobileCard } from '#lib/components/arcane-table';
+	import type { ColumnSpec, MobileFieldVisibility } from '#lib/components/arcane-table';
+	import { Badge } from '#lib/components/ui/badge';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
+	import { CopyButton } from '#lib/components/ui/copy-button';
 	import { toast } from 'svelte-sonner';
-	import { openConfirmDialog } from '$lib/components/confirm-dialog';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api';
-	import { tryCatch } from '$lib/utils/api';
-	import type { Webhook } from '$lib/types/environment';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
-	import { webhookService } from '$lib/services/webhook-service';
-	import { TrashIcon, GlobeIcon } from '$lib/icons';
-	import * as m from '$lib/paraglide/messages.js';
-	import IfPermitted from '$lib/components/if-permitted.svelte';
-	import { formatDateTime } from '$lib/utils/formatting';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api';
+	import { tryCatch } from '#lib/utils/api';
+	import type { Webhook } from '#lib/types/environment';
+	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
+	import { webhookService } from '#lib/services/webhook-service';
+	import { TrashIcon, GlobeIcon } from '#lib/icons';
+	import * as m from '#lib/paraglide/messages.js';
+	import IfPermitted from '#lib/components/if-permitted.svelte';
+	import { formatDateTime } from '#lib/utils/formatting';
 
 	let {
 		webhooks = $bindable(),

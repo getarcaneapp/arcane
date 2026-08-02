@@ -1,6 +1,6 @@
 <script lang="ts">
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import { Spinner } from '$lib/components/ui/spinner/index.js';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import type { Component } from 'svelte';
 
 	interface Props {

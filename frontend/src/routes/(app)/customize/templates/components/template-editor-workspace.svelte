@@ -1,13 +1,13 @@
 <script lang="ts">
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import FormInput from '$lib/components/form/form-input.svelte';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import FormInput from '#lib/components/form/form-input.svelte';
 	import CodePanel from '../../../projects/components/CodePanel.svelte';
 	import EditableName from '../../../projects/components/EditableName.svelte';
-	import { ComposeEditorSplit } from '$lib/components/compose';
+	import { ComposeEditorSplit } from '#lib/components/compose';
 	import { goto } from '$app/navigation';
-	import { m } from '$lib/paraglide/messages';
-	import { preventDefault, type FormInputs } from '$lib/utils/settings';
-	import { ArrowLeftIcon } from '$lib/icons';
+	import { m } from '#lib/paraglide/messages';
+	import { preventDefault, type FormInputs } from '#lib/utils/settings';
+	import { ArrowLeftIcon } from '#lib/icons';
 	import type { Writable } from 'svelte/store';
 	import type { Snippet } from 'svelte';
 

@@ -136,6 +136,8 @@ export interface GotifyFormValues extends BaseProviderFormValues {
 	priority: number;
 	title: string;
 	disableTls: boolean;
+	insecureSkipVerify: boolean;
+	useHeader: boolean;
 }
 
 export interface MatrixFormValues extends BaseProviderFormValues {
@@ -473,6 +475,8 @@ export function gotifySettingsToFormValues(settings?: NotificationSettings): Got
 		priority: Number(cfg['priority'] ?? 0),
 		title: getString(cfg, 'title'),
 		disableTls: getBoolean(cfg, 'disableTls', false),
+		insecureSkipVerify: getBoolean(cfg, 'insecureSkipVerify', false),
+		useHeader: getBoolean(cfg, 'useHeader', false),
 		...eventFlagsToFormValues(events)
 	};
 }
@@ -581,6 +585,8 @@ export function gotifyFormValuesToSettings(values: GotifyFormValues): Notificati
 			priority: values.priority,
 			title: values.title,
 			disableTls: values.disableTls,
+			insecureSkipVerify: values.insecureSkipVerify,
+			useHeader: values.useHeader,
 			events: {
 				image_update: values.eventImageUpdate,
 				container_update: values.eventContainerUpdate,

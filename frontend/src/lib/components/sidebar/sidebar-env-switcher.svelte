@@ -1,9 +1,9 @@
 <script lang="ts">
-	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { m } from '$lib/paraglide/messages';
-	import settingsStore from '$lib/stores/config-store';
-	import { EnvironmentsIcon, RemoteEnvironmentIcon, EdgeConnectionIcon, ArrowsUpDownIcon } from '$lib/icons';
+	import * as Sidebar from '#lib/components/ui/sidebar/index.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import { m } from '#lib/paraglide/messages';
+	import settingsStore from '#lib/stores/config-store';
+	import { EnvironmentsIcon, RemoteEnvironmentIcon, EdgeConnectionIcon, ArrowsUpDownIcon } from '#lib/icons';
 
 	type Props = {
 		onOpenDialog?: () => void;

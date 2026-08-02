@@ -1,20 +1,20 @@
 import { browser } from '$app/env';
-import { environmentManagementService } from '$lib/services/env-mgmt-service';
-import { settingsService } from '$lib/services/settings-service';
-import { roleService } from '$lib/services/role-service';
-import { swarmService } from '$lib/services/swarm-service';
-import { userService } from '$lib/services/user-service';
-import versionService from '$lib/services/version-service';
-import settingsStore from '$lib/stores/config-store';
-import { environmentStore } from '$lib/stores/environment.store.svelte';
-import userStore from '$lib/stores/user-store';
-import { type AppVersionInformation } from '$lib/types/settings';
-import type { SearchPaginationSortRequest } from '$lib/types/shared';
-import type { PermissionsManifest } from '$lib/types/auth';
-import { authService } from '$lib/services/auth-service';
-import { tryCatch } from '$lib/utils/api';
+import { environmentManagementService } from '#lib/services/env-mgmt-service';
+import { settingsService } from '#lib/services/settings-service';
+import { roleService } from '#lib/services/role-service';
+import { swarmService } from '#lib/services/swarm-service';
+import { userService } from '#lib/services/user-service';
+import versionService from '#lib/services/version-service';
+import settingsStore from '#lib/stores/config-store';
+import { environmentStore } from '#lib/stores/environment.store.svelte';
+import userStore from '#lib/stores/user-store';
+import { type AppVersionInformation } from '#lib/types/settings';
+import type { SearchPaginationSortRequest } from '#lib/types/shared';
+import type { PermissionsManifest } from '#lib/types/auth';
+import { authService } from '#lib/services/auth-service';
+import { tryCatch } from '#lib/utils/api';
 import { QueryClient } from '@tanstack/svelte-query';
-import { queryKeys } from '$lib/query/query-keys';
+import { queryKeys } from '#lib/query/query-keys';
 
 export const ssr = false;
 

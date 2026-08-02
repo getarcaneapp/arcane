@@ -8,7 +8,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humaecho"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"github.com/stretchr/testify/require"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
@@ -34,7 +34,7 @@ func TestRequirePermission_RejectsCallerMissingPermission(t *testing.T) {
 		ID  string `path:"id"`
 		CID string `path:"cid"`
 	}) (*struct{}, error) {
-		t.Fatal("handler must not run when permission is missing")
+		require.FailNow(t, "handler must not run when permission is missing")
 		return nil, nil
 	})
 
@@ -105,11 +105,40 @@ func TestRequirePermission_EnvScopedDoesNotLeakAcrossEnvs(t *testing.T) {
 		ID  string `path:"id"`
 		CID string `path:"cid"`
 	}) (*struct{}, error) {
-		t.Fatal("handler must not run when permission is scoped to a different env")
+		require.FailNow(t, "handler must not run when permission is scoped to a different env")
 		return nil, nil
 	})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/environments/env-2/containers/c/start", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+func TestRequirePermissionEnvironmentGrantCannotManageGlobalNotificationsInternal(t *testing.T) {
+	router := echo.New()
+	api := humaecho.NewWithGroup(router, router.Group("/api"), huma.DefaultConfig("test", "1.0.0"))
+
+	api.UseMiddleware(func(ctx huma.Context, next func(huma.Context)) {
+		ps := authz.NewPermissionSet()
+		ps.AddEnv("env-1", authz.PermNotificationsManage)
+		next(huma.WithContext(ctx, context.WithValue(ctx.Context(), ContextKeyUserPermissions, ps)))
+	})
+
+	huma.Register(api, huma.Operation{
+		OperationID: "guarded-global-notifications",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/notifications/settings",
+		Middlewares: RequirePermission(api, authz.PermNotificationsManage),
+	}, func(_ context.Context, _ *struct {
+		ID string `path:"id"`
+	}) (*struct{}, error) {
+		require.FailNow(t, "handler must not run for an environment-scoped grant on global notification settings")
+		return nil, nil
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/environments/env-1/notifications/settings", nil)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
@@ -145,30 +174,19 @@ func TestRequirePermission_SudoCallerAllowed(t *testing.T) {
 	require.True(t, handlerRan)
 }
 
-func TestRequireAnyEnvironmentPermission(t *testing.T) {
+func TestRequireSudoRejectsHumanAdminAndAllowsAgent(t *testing.T) {
 	tests := []struct {
 		name       string
 		permission *authz.PermissionSet
 		wantStatus int
 		wantRan    bool
 	}{
-		{name: "missing", permission: authz.NewPermissionSet(), wantStatus: http.StatusForbidden},
-		{name: "other permission", permission: func() *authz.PermissionSet {
+		{name: "human admin", permission: func() *authz.PermissionSet {
 			ps := authz.NewPermissionSet()
-			ps.AddEnv("env-1", authz.PermContainersList)
+			ps.AddGlobal(authz.AllPermissions()...)
 			return ps
 		}(), wantStatus: http.StatusForbidden},
-		{name: "environment permission", permission: func() *authz.PermissionSet {
-			ps := authz.NewPermissionSet()
-			ps.AddEnv("env-1", authz.PermActivitiesRead)
-			return ps
-		}(), wantStatus: http.StatusNoContent, wantRan: true},
-		{name: "global permission", permission: func() *authz.PermissionSet {
-			ps := authz.NewPermissionSet()
-			ps.AddGlobal(authz.PermActivitiesRead)
-			return ps
-		}(), wantStatus: http.StatusNoContent, wantRan: true},
-		{name: "sudo", permission: authz.SudoPermissionSet(), wantStatus: http.StatusNoContent, wantRan: true},
+		{name: "agent sudo", permission: authz.SudoPermissionSet(), wantStatus: http.StatusNoContent, wantRan: true},
 	}
 
 	for _, tt := range tests {
@@ -181,16 +199,18 @@ func TestRequireAnyEnvironmentPermission(t *testing.T) {
 
 			handlerRan := false
 			huma.Register(api, huma.Operation{
-				OperationID: "aggregate-permission-" + tt.name,
+				OperationID: "materialized-variables-" + tt.name,
 				Method:      http.MethodGet,
-				Path:        "/activities/stream",
-				Middlewares: RequireAnyEnvironmentPermission(api, authz.PermActivitiesRead),
-			}, func(_ context.Context, _ *struct{}) (*struct{}, error) {
+				Path:        "/environments/{id}/templates/variables",
+				Middlewares: RequireSudo(api),
+			}, func(_ context.Context, _ *struct {
+				ID string `path:"id"`
+			}) (*struct{}, error) {
 				handlerRan = true
 				return &struct{}{}, nil
 			})
 
-			req := httptest.NewRequest(http.MethodGet, "/api/activities/stream", nil)
+			req := httptest.NewRequest(http.MethodGet, "/api/environments/0/templates/variables", nil)
 			rec := httptest.NewRecorder()
 			router.ServeHTTP(rec, req)
 

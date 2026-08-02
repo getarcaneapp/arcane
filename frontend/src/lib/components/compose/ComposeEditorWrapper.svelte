@@ -1,8 +1,8 @@
 <script lang="ts">
-	import * as Alert from '$lib/components/ui/alert/index.js';
-	import { ArcaneButton } from '$lib/components/arcane-button';
-	import { AlertIcon, ExternalLinkIcon } from '$lib/icons';
-	import * as m from '$lib/paraglide/messages';
+	import * as Alert from '#lib/components/ui/alert/index.js';
+	import { ArcaneButton } from '#lib/components/arcane-button';
+	import { AlertIcon, ExternalLinkIcon } from '#lib/icons';
+	import * as m from '#lib/paraglide/messages';
 	import { toast } from 'svelte-sonner';
 	import { refreshAll } from '$app/navigation';
 	import type { Snippet } from 'svelte';

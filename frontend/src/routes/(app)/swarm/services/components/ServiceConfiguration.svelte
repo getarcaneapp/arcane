@@ -1,9 +1,9 @@
 <script lang="ts">
-	import * as Card from '$lib/components/ui/card';
-	import { m } from '$lib/paraglide/messages';
-	import { SettingsIcon, TagIcon } from '$lib/icons';
-	import { KeyValueCard, KeyValueGrid } from '$lib/components/resource-detail';
-	import EnvVarsList from '$lib/components/env-vars-list.svelte';
+	import * as Card from '#lib/components/ui/card';
+	import { m } from '#lib/paraglide/messages';
+	import { SettingsIcon, TagIcon } from '#lib/icons';
+	import { KeyValueCard, KeyValueGrid } from '#lib/components/resource-detail';
+	import EnvVarsList from '#lib/components/env-vars-list.svelte';
 
 	interface Props {
 		envVars: string[];

@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { cn } from '$lib/utils.js';
-	import { useSidebar } from '$lib/components/ui/sidebar/context.svelte.js';
-	import { PinOnIcon, PinOffIcon } from '$lib/icons';
-	import { m } from '$lib/paraglide/messages';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import { cn } from '#lib/utils.js';
+	import { useSidebar } from '#lib/components/ui/sidebar/context.svelte.js';
+	import { PinOnIcon, PinOffIcon } from '#lib/icons';
+	import { m } from '#lib/paraglide/messages';
 
 	let {
 		ref = $bindable(null),

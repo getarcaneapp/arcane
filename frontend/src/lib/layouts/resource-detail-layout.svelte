@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import { cn } from '$lib/utils';
-	import { ArrowLeftIcon, EllipsisIcon } from '$lib/icons';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import { cn } from '#lib/utils';
+	import { ArrowLeftIcon, EllipsisIcon } from '#lib/icons';
 	import type { Snippet } from 'svelte';
 	import type { DetailAction } from './types.js';
 

@@ -3,7 +3,6 @@ package repos
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,6 +10,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
@@ -25,6 +26,7 @@ import (
 var (
 	limitFlag  int
 	startFlag  int
+	allFlag    bool
 	forceFlag  bool
 	jsonOutput bool
 )
@@ -82,26 +84,26 @@ var listCmd = &cobra.Command{
 		}
 
 		path := types.Endpoints.GitRepositories()
-		path, err = cmdutil.ApplyPaginationParams(cmd, path, "repos", "limit", limitFlag, 20, "start", startFlag)
+		path, err = cmdutil.ApplyPaginationParams(cmd, path, cmdutil.ListParams{Resource: "repos", Limit: limitFlag, FallbackDefault: 20, Start: startFlag, All: allFlag})
 		if err != nil {
-			return fmt.Errorf("failed to build pagination query: %w", err)
+			return errors.WrapIf(err, "failed to build pagination query")
 		}
 
 		resp, err := c.Get(cmd.Context(), path)
 		if err != nil {
-			return fmt.Errorf("failed to list repositories: %w", err)
+			return errors.WrapIf(err, "failed to list repositories")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.Paginated[gitops.GitRepository]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(result, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -155,7 +157,7 @@ var createCmd = &cobra.Command{
 		if cmd.Flags().Changed("ssh-key") {
 			sshKeyData, err := os.ReadFile(repoCreateSSHKey)
 			if err != nil {
-				return fmt.Errorf("failed to read SSH key file: %w", err)
+				return errors.WrapIf(err, "failed to read SSH key file")
 			}
 			req.SSHKey = string(sshKeyData)
 		}
@@ -171,22 +173,22 @@ var createCmd = &cobra.Command{
 
 		resp, err := c.Post(cmd.Context(), types.Endpoints.GitRepositories(), req)
 		if err != nil {
-			return fmt.Errorf("failed to create repository: %w", err)
+			return errors.WrapIf(err, "failed to create repository")
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to create repository: %w", err)
+			return errors.WrapIf(err, "failed to create repository")
 		}
 
 		var result base.ApiResponse[gitops.GitRepository]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -221,7 +223,7 @@ var getCmd = &cobra.Command{
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(resolved, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -284,7 +286,7 @@ var updateCmd = &cobra.Command{
 		if cmd.Flags().Changed("ssh-key") {
 			sshKeyData, err := os.ReadFile(repoUpdateSSHKey)
 			if err != nil {
-				return fmt.Errorf("failed to read SSH key file: %w", err)
+				return errors.WrapIf(err, "failed to read SSH key file")
 			}
 			req.SSHKey = new(string(sshKeyData))
 		}
@@ -300,17 +302,17 @@ var updateCmd = &cobra.Command{
 
 		resp, err := c.Put(cmd.Context(), types.Endpoints.GitRepository(resolved.ID), req)
 		if err != nil {
-			return fmt.Errorf("failed to update repository: %w", err)
+			return errors.WrapIf(err, "failed to update repository")
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to update repository: %w", err)
+			return errors.WrapIf(err, "failed to update repository")
 		}
 
 		var result base.ApiResponse[gitops.GitRepository]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 			if jsonOutput {
-				return fmt.Errorf("failed to parse response: %w", err)
+				return errors.WrapIf(err, "failed to parse response")
 			}
 			output.Success("Repository updated successfully")
 			return nil
@@ -319,7 +321,7 @@ var updateCmd = &cobra.Command{
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -365,11 +367,11 @@ var deleteCmd = &cobra.Command{
 
 		resp, err := c.Delete(cmd.Context(), types.Endpoints.GitRepository(resolved.ID))
 		if err != nil {
-			return fmt.Errorf("failed to delete repository: %w", err)
+			return errors.WrapIf(err, "failed to delete repository")
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to delete repository: %w", err)
+			return errors.WrapIf(err, "failed to delete repository")
 		}
 
 		output.Success("Repository deleted successfully")
@@ -395,11 +397,11 @@ var testCmd = &cobra.Command{
 
 		resp, err := c.Post(cmd.Context(), types.Endpoints.GitRepositoryTest(resolved.ID), nil)
 		if err != nil {
-			return fmt.Errorf("failed to test repository: %w", err)
+			return errors.WrapIf(err, "failed to test repository")
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("repository connection test failed: %w", err)
+			return errors.WrapIf(err, "repository connection test failed")
 		}
 
 		if jsonOutput {
@@ -435,19 +437,19 @@ var branchesCmd = &cobra.Command{
 
 		resp, err := c.Get(cmd.Context(), types.Endpoints.GitRepositoryBranches(resolved.ID))
 		if err != nil {
-			return fmt.Errorf("failed to list branches: %w", err)
+			return errors.WrapIf(err, "failed to list branches")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[gitops.BranchesResponse]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -502,20 +504,20 @@ var filesCmd = &cobra.Command{
 
 		resp, err := c.Get(cmd.Context(), path)
 		if err != nil {
-			return fmt.Errorf("failed to list files: %w", err)
+			return errors.WrapIf(err, "failed to list files")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[gitops.BrowseResponse]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		files := result.Data.Files
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(files, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -538,40 +540,6 @@ var filesCmd = &cobra.Command{
 
 		output.Table(headers, rows)
 		fmt.Printf("\nTotal: %d entries\n", len(files))
-		return nil
-	},
-}
-
-var syncCmd = &cobra.Command{
-	Use:          "sync",
-	Short:        "Sync all git repositories",
-	SilenceUsage: true,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := client.NewFromConfig()
-		if err != nil {
-			return err
-		}
-
-		resp, err := c.Post(cmd.Context(), types.Endpoints.GitRepositoriesSync(), nil)
-		if err != nil {
-			return fmt.Errorf("failed to sync repositories: %w", err)
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to sync repositories: %w", err)
-		}
-
-		if jsonOutput {
-			var result base.ApiResponse[any]
-			if err := json.NewDecoder(resp.Body).Decode(&result); err == nil {
-				if resultBytes, err := json.MarshalIndent(result.Data, "", "  "); err == nil {
-					fmt.Println(string(resultBytes))
-				}
-			}
-			return nil
-		}
-
-		output.Success("Repositories synced successfully")
 		return nil
 	},
 }
@@ -600,16 +568,16 @@ func resolveGitRepository(ctx context.Context, c *client.Client, identifier stri
 	}
 
 	// Fallback: search via list endpoint.
-	listPath := types.Endpoints.GitRepositories() + "?limit=200"
+	listPath := cmdutil.AppendQuery(types.Endpoints.GitRepositories(), url.Values{"limit": []string{strconv.Itoa(cmdutil.ShowAllLimit)}})
 	listResp, err := c.Get(ctx, listPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to search repositories: %w", err)
+		return nil, errors.WrapIf(err, "failed to search repositories")
 	}
 	defer func() { _ = listResp.Body.Close() }()
 
 	var listResult base.Paginated[gitops.GitRepository]
-	if err := json.NewDecoder(listResp.Body).Decode(&listResult); err != nil {
-		return nil, fmt.Errorf("failed to parse repository list: %w", err)
+	if err := cmdutil.DecodeJSON(listResp, &listResult); err != nil {
+		return nil, errors.WrapIf(err, "failed to search repositories")
 	}
 
 	lowerIdentifier := strings.ToLower(trimmed)
@@ -626,12 +594,12 @@ func resolveGitRepository(ctx context.Context, c *client.Client, identifier stri
 
 	switch len(matches) {
 	case 0:
-		return nil, fmt.Errorf("repository %q not found", trimmed)
+		return nil, errors.Errorf("repository %q not found", trimmed)
 	case 1:
 		return &matches[0], nil
 	default:
 		if !prompt.IsInteractive() || len(matches) > maxPromptOptions {
-			return nil, fmt.Errorf("ambiguous repository %q: %d matches found, please be more specific", trimmed, len(matches))
+			return nil, errors.Errorf("ambiguous repository %q: %d matches found, please be more specific", trimmed, len(matches))
 		}
 		options := make([]string, len(matches))
 		for i, m := range matches {
@@ -654,11 +622,11 @@ func init() {
 	ReposCmd.AddCommand(testCmd)
 	ReposCmd.AddCommand(branchesCmd)
 	ReposCmd.AddCommand(filesCmd)
-	ReposCmd.AddCommand(syncCmd)
 
 	// List command flags
 	listCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of repositories to show")
-	listCmd.Flags().IntVar(&startFlag, "start", 0, "Offset for pagination")
+	listCmd.Flags().IntVar(&startFlag, "start", 0, cmdutil.StartFlagUsage)
+	listCmd.Flags().BoolVarP(&allFlag, "all", "a", false, cmdutil.AllFlagUsage)
 	listCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 
 	// Create command flags
@@ -702,10 +670,10 @@ func init() {
 	branchesCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 
 	// Files command flags
-	filesCmd.Flags().StringVar(&filesBranch, "branch", "", "Branch to browse")
+	filesCmd.Flags().StringVar(&filesBranch, "branch", "", "Branch to browse (required)")
+	_ = filesCmd.MarkFlagRequired("branch")
 	filesCmd.Flags().StringVar(&filesPath, "path", "", "Path within repository")
 	filesCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 
 	// Sync command flags
-	syncCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 }

@@ -1,9 +1,10 @@
 package types
 
 import (
-	"errors"
 	"maps"
 	"strings"
+
+	"emperror.dev/errors"
 )
 
 // PaginationResourceConfig defines pagination options for a specific resource.
@@ -33,6 +34,7 @@ var KnownPaginatedResources = []string{
 	"repos",
 	"gitops-syncs",
 	"users",
+	"roles",
 	"events",
 	"apikeys",
 }
@@ -68,6 +70,8 @@ func NormalizePaginatedResource(resource string) string {
 		return "gitops-syncs"
 	case "user":
 		return "users"
+	case "role":
+		return "roles"
 	case "event":
 		return "events"
 	default:

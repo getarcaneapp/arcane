@@ -21,12 +21,12 @@
 </script>
 
 <script lang="ts">
-	import { m } from '$lib/paraglide/messages';
+	import { m } from '#lib/paraglide/messages';
 	import { Dialog as SheetPrimitive } from 'bits-ui';
-	import { CloseIcon } from '$lib/icons';
+	import { CloseIcon } from '#lib/icons';
 	import type { Snippet } from 'svelte';
 	import SheetOverlay from './sheet-overlay.svelte';
-	import { cn, type WithoutChildrenOrChild } from '$lib/utils.js';
+	import { cn, type WithoutChildrenOrChild } from '#lib/utils.js';
 
 	let {
 		ref = $bindable(null),

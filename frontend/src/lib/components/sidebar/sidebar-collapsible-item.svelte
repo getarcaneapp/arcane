@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { m } from '$lib/paraglide/messages';
+	import { m } from '#lib/paraglide/messages';
 	import type { Snippet } from 'svelte';
-	import * as Collapsible from '$lib/components/ui/collapsible/index.js';
-	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
-	import { ArrowRightIcon } from '$lib/icons';
+	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
+	import * as Sidebar from '#lib/components/ui/sidebar/index.js';
+	import { ArrowRightIcon } from '#lib/icons';
 	import SidebarItemTooltipContent from './sidebar-item-tooltip-content.svelte';
-	import type { ShortcutKey } from '$lib/utils/navigation';
+	import type { ShortcutKey } from '#lib/utils/navigation';
 
 	let {
 		item,

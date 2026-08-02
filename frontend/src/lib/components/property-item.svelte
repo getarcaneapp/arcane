@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import { m } from '$lib/paraglide/messages';
+	import { m } from '#lib/paraglide/messages';
 
 	const colorClasses = {
 		gray: { bg: 'bg-gray-500/10', text: 'text-gray-500' },

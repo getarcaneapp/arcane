@@ -3,9 +3,9 @@ package handlers
 import (
 	"context"
 
+	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
@@ -22,14 +22,6 @@ type GitOpsSyncHandler struct {
 // Input/Output Types
 // ============================================================================
 
-// GitOpsSyncPaginatedResponse is the paginated response for GitOps syncs.
-type GitOpsSyncPaginatedResponse struct {
-	Success    bool                    `json:"success"`
-	Data       []gitops.GitOpsSync     `json:"data"`
-	Counts     gitops.SyncCounts       `json:"counts"`
-	Pagination base.PaginationResponse `json:"pagination"`
-}
-
 type ListGitOpsSyncsInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Search        string `query:"search" doc:"Search query"`
@@ -40,7 +32,7 @@ type ListGitOpsSyncsInput struct {
 }
 
 type ListGitOpsSyncsOutput struct {
-	Body GitOpsSyncPaginatedResponse
+	Body base.PaginatedWithCounts[gitops.GitOpsSync, gitops.SyncCounts]
 }
 
 type CreateGitOpsSyncInput struct {
@@ -125,15 +117,18 @@ type ImportGitOpsSyncsOutput struct {
 func RegisterGitOpsSyncs(api huma.API, syncService *services.GitOpsSyncService) {
 	h := &GitOpsSyncHandler{syncService: syncService}
 
-	registerGitOpsSecuredInternal(api, "listGitOpsSyncs", "GET", "/environments/{id}/gitops-syncs", "List GitOps syncs", "Get a paginated list of GitOps syncs for an environment", authz.PermGitOpsList, h.ListSyncs)
-	registerGitOpsSecuredInternal(api, "createGitOpsSync", "POST", "/environments/{id}/gitops-syncs", "Create a GitOps sync", "Create a new GitOps sync configuration for an environment", authz.PermGitOpsCreate, h.CreateSync)
-	registerGitOpsSecuredInternal(api, "importGitOpsSyncs", "POST", "/environments/{id}/gitops-syncs/import", "Import GitOps syncs", "Import multiple GitOps sync configurations from JSON", authz.PermGitOpsCreate, h.ImportSyncs)
-	registerGitOpsSecuredInternal(api, "getGitOpsSync", "GET", "/environments/{id}/gitops-syncs/{syncId}", "Get a GitOps sync", "Get a GitOps sync by ID", authz.PermGitOpsRead, h.GetSync)
-	registerGitOpsSecuredInternal(api, "updateGitOpsSync", "PUT", "/environments/{id}/gitops-syncs/{syncId}", "Update a GitOps sync", "Update an existing GitOps sync configuration", authz.PermGitOpsUpdate, h.UpdateSync)
-	registerGitOpsSecuredInternal(api, "deleteGitOpsSync", "DELETE", "/environments/{id}/gitops-syncs/{syncId}", "Delete a GitOps sync", "Delete a GitOps sync configuration by ID", authz.PermGitOpsDelete, h.DeleteSync)
-	registerGitOpsSecuredInternal(api, "performGitOpsSync", "POST", "/environments/{id}/gitops-syncs/{syncId}/sync", "Perform a GitOps sync", "Manually trigger a sync operation", authz.PermGitOpsSync, h.PerformSync)
-	registerGitOpsSecuredInternal(api, "getGitOpsSyncStatus", "GET", "/environments/{id}/gitops-syncs/{syncId}/status", "Get GitOps sync status", "Get the current status of a GitOps sync", authz.PermGitOpsRead, h.GetStatus)
-	registerGitOpsSecuredInternal(api, "browseGitOpsSyncFiles", "GET", "/environments/{id}/gitops-syncs/{syncId}/files", "Browse GitOps sync files", "Browse files in the synced repository", authz.PermGitOpsRead, h.BrowseFiles)
+	const basePath = "/environments/{id}/gitops-syncs"
+	const syncPath = basePath + "/{syncId}"
+
+	registerSecuredInternal(api, operationInternal("listGitOpsSyncs", "GET", basePath, "List GitOps syncs", "Get a paginated list of GitOps syncs for an environment", "GitOps Syncs"), authz.PermGitOpsList, h.ListSyncs)
+	registerSecuredInternal(api, operationInternal("createGitOpsSync", "POST", basePath, "Create a GitOps sync", "Create a new GitOps sync configuration for an environment", "GitOps Syncs"), authz.PermGitOpsCreate, h.CreateSync)
+	registerSecuredInternal(api, operationInternal("importGitOpsSyncs", "POST", basePath+"/import", "Import GitOps syncs", "Import multiple GitOps sync configurations from JSON", "GitOps Syncs"), authz.PermGitOpsCreate, h.ImportSyncs)
+	registerSecuredInternal(api, operationInternal("getGitOpsSync", "GET", syncPath, "Get a GitOps sync", "Get a GitOps sync by ID", "GitOps Syncs"), authz.PermGitOpsRead, h.GetSync)
+	registerSecuredInternal(api, operationInternal("updateGitOpsSync", "PUT", syncPath, "Update a GitOps sync", "Update an existing GitOps sync configuration", "GitOps Syncs"), authz.PermGitOpsUpdate, h.UpdateSync)
+	registerSecuredInternal(api, operationInternal("deleteGitOpsSync", "DELETE", syncPath, "Delete a GitOps sync", "Delete a GitOps sync configuration by ID", "GitOps Syncs"), authz.PermGitOpsDelete, h.DeleteSync)
+	registerSecuredInternal(api, operationInternal("performGitOpsSync", "POST", syncPath+"/sync", "Perform a GitOps sync", "Manually trigger a sync operation", "GitOps Syncs"), authz.PermGitOpsSync, h.PerformSync)
+	registerSecuredInternal(api, operationInternal("getGitOpsSyncStatus", "GET", syncPath+"/status", "Get GitOps sync status", "Get the current status of a GitOps sync", "GitOps Syncs"), authz.PermGitOpsRead, h.GetStatus)
+	registerSecuredInternal(api, operationInternal("browseGitOpsSyncFiles", "GET", syncPath+"/files", "Browse GitOps sync files", "Browse files in the synced repository", "GitOps Syncs"), authz.PermGitOpsRead, h.BrowseFiles)
 }
 
 // requireLifecyclePermissionInternal rejects callers lacking gitops:lifecycle
@@ -161,19 +156,15 @@ func requireLifecyclePermissionInternal(ctx context.Context, environmentID strin
 
 // ListSyncs returns a paginated list of GitOps syncs.
 func (h *GitOpsSyncHandler) ListSyncs(ctx context.Context, input *ListGitOpsSyncsInput) (*ListGitOpsSyncsOutput, error) {
-	if h.syncService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 
 	syncs, paginationResp, counts, err := h.syncService.GetSyncsPaginated(ctx, input.EnvironmentID, params)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.GitOpsSyncListError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to list GitOps syncs").Error())
 	}
 
 	return &ListGitOpsSyncsOutput{
-		Body: GitOpsSyncPaginatedResponse{
+		Body: base.PaginatedWithCounts[gitops.GitOpsSync, gitops.SyncCounts]{
 			Success:    true,
 			Data:       syncs,
 			Counts:     counts,
@@ -184,10 +175,6 @@ func (h *GitOpsSyncHandler) ListSyncs(ctx context.Context, input *ListGitOpsSync
 
 // CreateSync creates a new GitOps sync.
 func (h *GitOpsSyncHandler) CreateSync(ctx context.Context, input *CreateGitOpsSyncInput) (*CreateGitOpsSyncOutput, error) {
-	if h.syncService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	if err := requireLifecyclePermissionInternal(ctx, input.EnvironmentID, input.Body.HasPreDeployConfig()); err != nil {
 		return nil, err
 	}
@@ -197,11 +184,11 @@ func (h *GitOpsSyncHandler) CreateSync(ctx context.Context, input *CreateGitOpsS
 	sync, err := h.syncService.CreateSync(ctx, input.EnvironmentID, input.Body, actor)
 	if err != nil {
 		apiErr := models.ToAPIError(err)
-		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.GitOpsSyncCreationError{Err: err}).Error())
+		return nil, huma.NewError(apiErr.HTTPStatus(), errors.WithMessage(err, "Failed to create GitOps sync").Error())
 	}
 
 	body, mapErr := mapOneAPIResponseInternal[*models.GitOpsSync, gitops.GitOpsSync](sync, func(err error) string {
-		return (&common.GitOpsSyncMappingError{Err: err}).Error()
+		return "Failed to map GitOps sync"
 	})
 	if mapErr != nil {
 		return nil, mapErr
@@ -214,10 +201,6 @@ func (h *GitOpsSyncHandler) CreateSync(ctx context.Context, input *CreateGitOpsS
 
 // ImportSyncs imports multiple GitOps syncs.
 func (h *GitOpsSyncHandler) ImportSyncs(ctx context.Context, input *ImportGitOpsSyncsInput) (*ImportGitOpsSyncsOutput, error) {
-	if h.syncService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	actor := currentActorInternal(ctx)
 
 	response, err := h.syncService.ImportSyncs(ctx, input.EnvironmentID, input.Body, actor)
@@ -235,18 +218,14 @@ func (h *GitOpsSyncHandler) ImportSyncs(ctx context.Context, input *ImportGitOps
 
 // GetSync returns a GitOps sync by ID.
 func (h *GitOpsSyncHandler) GetSync(ctx context.Context, input *GetGitOpsSyncInput) (*GetGitOpsSyncOutput, error) {
-	if h.syncService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	sync, err := h.syncService.GetSyncByID(ctx, input.EnvironmentID, input.SyncID)
 	if err != nil {
 		apiErr := models.ToAPIError(err)
-		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.GitOpsSyncRetrievalError{Err: err}).Error())
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to retrieve GitOps sync")
 	}
 
 	body, mapErr := mapOneAPIResponseInternal[*models.GitOpsSync, gitops.GitOpsSync](sync, func(err error) string {
-		return (&common.GitOpsSyncMappingError{Err: err}).Error()
+		return "Failed to map GitOps sync"
 	})
 	if mapErr != nil {
 		return nil, mapErr
@@ -259,10 +238,6 @@ func (h *GitOpsSyncHandler) GetSync(ctx context.Context, input *GetGitOpsSyncInp
 
 // UpdateSync updates an existing GitOps sync.
 func (h *GitOpsSyncHandler) UpdateSync(ctx context.Context, input *UpdateGitOpsSyncInput) (*UpdateGitOpsSyncOutput, error) {
-	if h.syncService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	if err := requireLifecyclePermissionInternal(ctx, input.EnvironmentID, input.Body.HasPreDeployConfig()); err != nil {
 		return nil, err
 	}
@@ -272,11 +247,11 @@ func (h *GitOpsSyncHandler) UpdateSync(ctx context.Context, input *UpdateGitOpsS
 	sync, err := h.syncService.UpdateSync(ctx, input.EnvironmentID, input.SyncID, input.Body, actor)
 	if err != nil {
 		apiErr := models.ToAPIError(err)
-		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.GitOpsSyncUpdateError{Err: err}).Error())
+		return nil, huma.NewError(apiErr.HTTPStatus(), errors.WithMessage(err, "Failed to update GitOps sync").Error())
 	}
 
 	body, mapErr := mapOneAPIResponseInternal[*models.GitOpsSync, gitops.GitOpsSync](sync, func(err error) string {
-		return (&common.GitOpsSyncMappingError{Err: err}).Error()
+		return "Failed to map GitOps sync"
 	})
 	if mapErr != nil {
 		return nil, mapErr
@@ -289,15 +264,11 @@ func (h *GitOpsSyncHandler) UpdateSync(ctx context.Context, input *UpdateGitOpsS
 
 // DeleteSync deletes a GitOps sync by ID.
 func (h *GitOpsSyncHandler) DeleteSync(ctx context.Context, input *DeleteGitOpsSyncInput) (*DeleteGitOpsSyncOutput, error) {
-	if h.syncService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	actor := currentActorInternal(ctx)
 
 	if err := h.syncService.DeleteSync(ctx, input.EnvironmentID, input.SyncID, actor); err != nil {
 		apiErr := models.ToAPIError(err)
-		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.GitOpsSyncDeletionError{Err: err}).Error())
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to delete GitOps sync")
 	}
 
 	return &DeleteGitOpsSyncOutput{
@@ -312,16 +283,12 @@ func (h *GitOpsSyncHandler) DeleteSync(ctx context.Context, input *DeleteGitOpsS
 
 // PerformSync manually triggers a sync operation.
 func (h *GitOpsSyncHandler) PerformSync(ctx context.Context, input *PerformSyncInput) (*PerformSyncOutput, error) {
-	if h.syncService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	actor := currentActorInternal(ctx)
 
 	result, err := h.syncService.PerformSync(ctx, input.EnvironmentID, input.SyncID, actor)
 	if err != nil {
 		apiErr := models.ToAPIError(err)
-		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.GitOpsSyncPerformError{Err: err}).Error())
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to perform GitOps sync")
 	}
 
 	return &PerformSyncOutput{
@@ -334,14 +301,10 @@ func (h *GitOpsSyncHandler) PerformSync(ctx context.Context, input *PerformSyncI
 
 // GetStatus returns the current status of a GitOps sync.
 func (h *GitOpsSyncHandler) GetStatus(ctx context.Context, input *GetSyncStatusInput) (*GetSyncStatusOutput, error) {
-	if h.syncService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	status, err := h.syncService.GetSyncStatus(ctx, input.EnvironmentID, input.SyncID)
 	if err != nil {
 		apiErr := models.ToAPIError(err)
-		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.GitOpsSyncStatusError{Err: err}).Error())
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to get GitOps sync status")
 	}
 
 	return &GetSyncStatusOutput{
@@ -354,14 +317,10 @@ func (h *GitOpsSyncHandler) GetStatus(ctx context.Context, input *GetSyncStatusI
 
 // BrowseFiles returns the file tree at the specified path in the repository.
 func (h *GitOpsSyncHandler) BrowseFiles(ctx context.Context, input *BrowseSyncFilesInput) (*BrowseSyncFilesOutput, error) {
-	if h.syncService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	response, err := h.syncService.BrowseFiles(ctx, input.EnvironmentID, input.SyncID, input.Path)
 	if err != nil {
 		apiErr := models.ToAPIError(err)
-		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.GitOpsSyncBrowseError{Err: err}).Error())
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to browse GitOps sync files")
 	}
 
 	return &BrowseSyncFilesOutput{

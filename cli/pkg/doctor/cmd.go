@@ -2,9 +2,10 @@ package doctor
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
+
+	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/config"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
@@ -106,7 +107,7 @@ var DoctorCmd = &cobra.Command{
 		if jsonOutput || app.IsJSON() {
 			b, err := json.MarshalIndent(rep, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal doctor output: %w", err)
+				return errors.WrapIf(err, "failed to marshal doctor output")
 			}
 			fmt.Println(string(b))
 		} else {

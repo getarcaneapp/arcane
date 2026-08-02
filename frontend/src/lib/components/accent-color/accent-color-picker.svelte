@@ -1,15 +1,22 @@
 <script lang="ts">
-	import { Label } from '$lib/components/ui/label/index.js';
-	import * as RadioGroup from '$lib/components/ui/radio-group/index.js';
-	import { applyAccentColor } from '$lib/utils/theme';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as RadioGroup from '#lib/components/ui/radio-group/index.js';
+	import { applyAccentColor } from '#lib/utils/theme';
 	import CustomColorDialog from './custom-color.svelte';
-	import { CheckIcon, AddIcon } from '$lib/icons';
+	import { CheckIcon, AddIcon } from '#lib/icons';
 
 	let {
 		selectedColor = $bindable(),
 		previousColor,
-		disabled = false
-	}: { selectedColor: string; previousColor: string; disabled?: boolean } = $props();
+		disabled = false,
+		onSelect
+	}: {
+		selectedColor: string;
+		previousColor: string;
+		disabled?: boolean;
+		/** Called whenever the user picks a different accent color. */
+		onSelect?: (color: string) => void;
+	} = $props();
 	let showCustomColorDialog = $state(false);
 
 	const accentColors = [
@@ -29,6 +36,7 @@
 	function handleAccentColorChange(accentValue: string) {
 		selectedColor = accentValue;
 		applyAccentColor(accentValue);
+		onSelect?.(accentValue);
 	}
 </script>
 

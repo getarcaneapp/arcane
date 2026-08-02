@@ -1,8 +1,8 @@
 import { PersistedState } from 'runed';
 import { goto, refreshAll } from '$app/navigation';
 import { page } from '$app/state';
-import type { Environment } from '$lib/types/environment';
-import { isEnvironmentOnline } from '$lib/utils/docker';
+import type { Environment } from '#lib/types/environment';
+import { isEnvironmentOnline } from '#lib/utils/docker';
 
 export const LOCAL_DOCKER_ENVIRONMENT_ID = '0';
 
@@ -146,6 +146,25 @@ function createEnvironmentManagementStore() {
 				} else if (available.length > 0) {
 					_selectInitialEnvironment(available);
 				}
+			}
+		},
+		// Applies a live environment list pushed by the backend stream.
+		//
+		// Edge liveness is process-local state on the manager, so a list fetched
+		// once goes stale the moment an agent reconnects — after a fleet update
+		// that leaves every agent stuck rendering as offline. This replaces the
+		// records wholesale rather than merging runtime fields, which keeps
+		// renames and enable toggles live too. Unlike initialize() it never
+		// re-runs initial selection: switching the user's environment out from
+		// under them because of a transient blip would be worse than the blip.
+		applyLiveEnvironments: (environments: Environment[]) => {
+			const available = _updateAvailable(environments);
+			if (!_selectedEnvironment) {
+				return;
+			}
+			const updated = available.find((env) => env.id === _selectedEnvironment!.id);
+			if (updated) {
+				_assignSelectedEnvironment(updated);
 			}
 		},
 		setEnvironment: async (environment: Environment) => {

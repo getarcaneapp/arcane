@@ -1,4 +1,4 @@
-import { environmentStore } from '$lib/stores/environment.store.svelte';
+import { environmentStore } from '#lib/stores/environment.store.svelte';
 
 export class ResourceListPageState<TItems, TReq> {
 	items = $state() as TItems;

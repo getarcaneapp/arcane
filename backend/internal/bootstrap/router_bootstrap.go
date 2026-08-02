@@ -2,34 +2,37 @@ package bootstrap
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"net"
 	"net/http"
 	"path"
 	"strings"
 
-	"github.com/labstack/echo/v4"
-	echomiddleware "github.com/labstack/echo/v4/middleware"
-	slogecho "github.com/samber/slog-echo"
+	"emperror.dev/errors"
+
+	"github.com/labstack/echo/v5"
+	echomiddleware "github.com/labstack/echo/v5/middleware"
+	slogecho "github.com/samber/slog-echo/v2"
 
 	"github.com/getarcaneapp/arcane/backend/v2/api"
 	"github.com/getarcaneapp/arcane/backend/v2/api/handlers"
 	"github.com/getarcaneapp/arcane/backend/v2/api/ws"
 	"github.com/getarcaneapp/arcane/backend/v2/frontend"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/di"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cookie"
+	httputil "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/types/v2"
+	"go.uber.org/fx"
 )
 
 var (
-	registerPlaywrightRoutes []func(apiGroup *echo.Group, services *di.Services)
-	registerBuildableRoutes  []func(apiGroup *echo.Group, services *di.Services)
+	registerPlaywrightRoutes []func(apiGroup *echo.Group, deps api.HandlerDeps)
+	registerBuildableRoutes  []func(apiGroup *echo.Group, deps api.HandlerDeps)
 )
 
 var loggerSkipPatterns = []string{
@@ -39,6 +42,11 @@ var loggerSkipPatterns = []string{
 	"GET /api/environments/*/ws/containers/*/terminal",
 	"GET /api/environments/*/ws/projects/*/logs",
 	"GET /api/environments/*/ws/system/stats",
+	// Long-lived aggregate streams. The access log only fires when the stream
+	// ends, so it reports the full connection lifetime as request latency —
+	// which reads as a multi-minute hung request. The handlers log their own
+	// termination instead.
+	"GET /api/stream",
 	"GET /_app/*",
 	"GET /img",
 	"GET /api/health",
@@ -48,7 +56,7 @@ var loggerSkipPatterns = []string{
 	"GET /api/app-images/*",
 }
 
-func shouldLogRequestInternal(c echo.Context) bool {
+func shouldLogRequestInternal(c *echo.Context, _ error) bool {
 	mp := c.Request().Method + " " + c.Request().URL.Path
 	for _, pat := range loggerSkipPatterns {
 		if pat == mp {
@@ -73,11 +81,14 @@ func shouldLogRequestInternal(c echo.Context) bool {
 // edge tunnel requests plus high-volume endpoints (health, WS, static).
 func requestLoggerMiddlewareInternal() echo.MiddlewareFunc {
 	loggerMiddleware := slogecho.NewWithConfig(slog.Default(), slogecho.Config{
-		Filters: []slogecho.Filter{shouldLogRequestInternal},
+		DefaultLevel:     slog.LevelInfo,
+		ClientErrorLevel: slog.LevelWarn,
+		ServerErrorLevel: slog.LevelError,
+		Filters:          []slogecho.Filter{shouldLogRequestInternal},
 	})
 
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
+		return func(c *echo.Context) error {
 			if edge.IsInternalTunnelRequest(c.Request().Context()) {
 				return next(c)
 			}
@@ -89,9 +100,9 @@ func requestLoggerMiddlewareInternal() echo.MiddlewareFunc {
 	}
 }
 
-func createAuthValidatorInternal(appServices *di.Services) middleware.AuthValidator {
+func createAuthValidatorInternal(deps api.HandlerDeps) middleware.AuthValidator {
 	resolveUser := func(ctx context.Context, user *models.User) *authz.PermissionSet {
-		ps, err := appServices.Role.ResolvePermissions(ctx, user)
+		ps, err := deps.Role.ResolvePermissions(ctx, user)
 		if err != nil || ps == nil {
 			slog.WarnContext(ctx, "failed to resolve user permissions for env proxy", "error", err)
 			return authz.NewPermissionSet()
@@ -99,20 +110,20 @@ func createAuthValidatorInternal(appServices *di.Services) middleware.AuthValida
 		return ps
 	}
 	resolveKey := func(ctx context.Context, keyID string) *authz.PermissionSet {
-		ps, err := appServices.Role.ResolveApiKeyPermissions(ctx, keyID)
+		ps, err := deps.Role.ResolveApiKeyPermissions(ctx, keyID)
 		if err != nil || ps == nil {
 			slog.WarnContext(ctx, "failed to resolve api key permissions for env proxy", "error", err)
 			return authz.NewPermissionSet()
 		}
 		return ps
 	}
-	return func(ctx context.Context, c echo.Context) (*authz.PermissionSet, bool) {
+	return func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, bool) {
 		req := c.Request()
 		// Check for API key authentication
 		if apiKey := req.Header.Get("X-Api-Key"); apiKey != "" {
 			// User-owned API key: personal keys inherit the owner's role
 			// permissions; scoped keys are limited to their own grants.
-			if user, key, err := appServices.ApiKey.ValidateApiKeyWithID(ctx, apiKey); err == nil && user != nil {
+			if user, key, err := deps.ApiKey.ValidateApiKeyWithID(ctx, apiKey); err == nil && user != nil {
 				if key != nil && key.Kind != models.ApiKeyKindPersonal {
 					return resolveKey(ctx, key.ID), true
 				}
@@ -120,7 +131,7 @@ func createAuthValidatorInternal(appServices *di.Services) middleware.AuthValida
 			}
 			// Environment bootstrap key (user_id = NULL): used by the proxy when forwarding
 			// requests to a remote env whose apiUrl resolves back to this manager.
-			if envID, err := appServices.ApiKey.GetEnvironmentByApiKey(ctx, apiKey); err == nil && envID != nil {
+			if envID, err := deps.ApiKey.GetEnvironmentByApiKey(ctx, apiKey); err == nil && envID != nil {
 				return authz.EnvironmentPermissionSet(*envID), true
 			}
 			return nil, false
@@ -138,7 +149,7 @@ func createAuthValidatorInternal(appServices *di.Services) middleware.AuthValida
 			return nil, false
 		}
 
-		user, _, err := appServices.Auth.VerifyToken(ctx, token)
+		user, _, err := deps.Auth.VerifyToken(ctx, token)
 		if err != nil || user == nil {
 			return nil, false
 		}
@@ -146,10 +157,24 @@ func createAuthValidatorInternal(appServices *di.Services) middleware.AuthValida
 	}
 }
 
-func setupRouter(ctx context.Context, cfg *config.Config, appServices *di.Services) (*echo.Echo, *edge.TunnelServer) {
+type RouterParams struct {
+	fx.In
+
+	Context        context.Context
+	Lifecycle      fx.Lifecycle
+	ActorRuntime   *actors.Runtime
+	Config         *config.Config
+	HandlerDeps    api.HandlerDeps
+	AuthMiddleware *middleware.AuthMiddleware
+	TunnelRegistry *edge.TunnelRegistry
+}
+
+func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
+	ctx := p.Context
+	cfg := p.Config
+	deps := p.HandlerDeps
+
 	e := echo.New()
-	e.HideBanner = true
-	e.HidePort = true
 
 	trustedProxyNets := parseTrustedProxyCIDRsInternal(cfg.TrustedProxies)
 	if cfg.TrustedProxies != "" && len(trustedProxyNets) == 0 {
@@ -166,12 +191,12 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *di.Servic
 	}
 
 	e.Use(echomiddleware.Recover())
-	e.Use(requestLoggerMiddlewareInternal())                       //nolint:contextcheck
-	e.Use(secureCookieContextMiddlewareInternal(trustedProxyNets)) //nolint:contextcheck
+	e.Use(requestLoggerMiddlewareInternal())
+	e.Use(secureCookieContextMiddlewareInternal(trustedProxyNets))
 
-	authMiddleware := appServices.AuthMiddleware
+	authMiddleware := p.AuthMiddleware
 	e.Use(middleware.NewCORSMiddleware(cfg).Add())
-	e.Use(middleware.NewCSRFMiddleware(cfg).Add()) //nolint:contextcheck // Echo middleware uses request context from echo.Context, not the app lifecycle context.
+	e.Use(middleware.NewCSRFMiddleware(cfg).Add())
 
 	apiGroup := e.Group("/api")
 
@@ -188,12 +213,16 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *di.Servic
 	apiGroup.Use(middleware.PerIPRateLimitForPaths(
 		[]string{"/api/webhooks/trigger/:token"}, 60, 10,
 	))
+	// Agent event ingestion authenticates on the agent token alone and sits
+	// outside the auth middleware, so it needs its own brute-force ceiling.
+	// The allowance is generous because busy agents legitimately batch events.
+	apiGroup.Use(middleware.PerIPRateLimitForPaths(
+		[]string{"/api/events"}, 60, 30,
+	))
 	handlerAppCtx := handlers.NewActivityAppContext(ctx)
 
-	tunnelRegistry := edge.NewTunnelRegistry()
-	edge.SetDefaultRegistry(tunnelRegistry)
 	envResolver := func(ctx context.Context, id string) (string, *string, bool, error) {
-		env, err := appServices.Environment.GetEnvironmentByID(ctx, id)
+		env, err := deps.Environment.GetEnvironmentByID(ctx, id)
 		if err != nil || env == nil {
 			return "", nil, false, err
 		}
@@ -201,23 +230,27 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *di.Servic
 	}
 
 	// Register public webhook trigger endpoint before auth middleware (token in URL is the sole auth)
-	api.RegisterWebhookTrigger(apiGroup, appServices.Webhook, handlerAppCtx) //nolint:contextcheck // app lifecycle context is intentionally wrapped for detached activity work.
-	handlers.RegisterFederatedTokenExchange(apiGroup, appServices.Federated) //nolint:contextcheck // public RFC 8693 form endpoint uses request context.
-	handlers.RegisterAgentEventIngestion(apiGroup, appServices.Event, cfg)   //nolint:contextcheck // internal agent-token route; intentionally outside user/RBAC auth.
+	api.RegisterWebhookTrigger(apiGroup, deps.Webhook, handlerAppCtx)
+	handlers.RegisterFederatedTokenExchange(apiGroup, deps.Federated)
+	handlers.RegisterAgentEventIngestion(apiGroup, deps.Event, cfg)
 
 	permissionMatcher := authz.NewPermissionMatcher()
 
-	//nolint:contextcheck // Echo middleware reads context from echo.Context.Request().Context(), not a parameter.
-	envProxyMiddleware := middleware.NewEnvProxyMiddlewareWithParam(
-		types.LOCAL_DOCKER_ENVIRONMENT_ID,
+	envProxyMiddleware := middleware.NewEnvProxyMiddlewareWithParamAndRegistry(
+		types.LocalDockerEnvironmentID,
 		"id",
 		envResolver,
-		createAuthValidatorInternal(appServices),
+		createAuthValidatorInternal(deps),
 		permissionMatcher,
+		p.TunnelRegistry,
+		// Proxied WebSocket upgrades enforce the same Origin policy as the local
+		// endpoints, so a cross-origin page cannot ride a session cookie into a
+		// remote environment.
+		httputil.ValidateWebSocketOrigin(cfg.GetAppURL()),
 	)
 	apiGroup.Use(envProxyMiddleware)
 
-	humaAPI := api.SetupAPI(e, apiGroup, handlerAppCtx, cfg, appServices) //nolint:contextcheck // app lifecycle context is intentionally wrapped for detached activity work.
+	humaAPI := api.SetupAPI(e, apiGroup, handlerAppCtx, cfg, deps)
 
 	// Populate the proxy permission matcher from the registered API surface so
 	// remote-environment requests are authorized with the same permissions
@@ -227,24 +260,38 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *di.Servic
 	ws.AddProxiedPermissions(permissionMatcher)
 
 	for _, register := range registerBuildableRoutes {
-		register(apiGroup, appServices)
+		register(apiGroup, deps)
 	}
 
 	// Remaining echo handlers (WebSocket/streaming)
-	ws.NewWebSocketHandler(apiGroup, appServices.Project, appServices.Container, appServices.Swarm, appServices.System, appServices.Diagnostics, authMiddleware, cfg) //nolint:contextcheck
+	ws.NewWebSocketHandler(apiGroup, deps.Project, deps.Container, deps.Swarm, deps.System, deps.Diagnostics, authMiddleware, cfg)
 
 	// Register edge tunnel endpoint for manager to accept agent connections
 	// This is only registered when NOT in agent mode (i.e., running as manager)
 	var tunnelServer *edge.TunnelServer
 	if !cfg.AgentMode {
-		tunnelServer = registerEdgeTunnelRoutes(ctx, cfg, apiGroup, appServices)
+		tunnelServer = registerEdgeTunnelRoutes(ctx, p.Lifecycle, p.ActorRuntime, cfg, apiGroup, deps.Environment, deps.Event, p.TunnelRegistry)
 	}
 
 	if cfg.Environment != "production" {
 		for _, registerFunc := range registerPlaywrightRoutes {
-			registerFunc(apiGroup, appServices)
+			registerFunc(apiGroup, deps)
 		}
 	}
+
+	// Unknown API endpoints respond with JSON 404. This must be registered
+	// after every apiGroup.Use call: each Use re-registers the group's
+	// auto-404 routes, which would overwrite these. Without an explicit
+	// handler those auto-404 routes return echo v5's unexported sentinel
+	// error, which slog-echo rewrites into a 500.
+	apiNotFound := func(c *echo.Context) error {
+		return c.JSON(http.StatusNotFound, map[string]any{
+			"success": false,
+			"error":   "API endpoint not found: " + c.Request().URL.Path,
+		})
+	}
+	apiGroup.RouteNotFound("", apiNotFound)
+	apiGroup.RouteNotFound("/*", apiNotFound)
 
 	if err := frontend.RegisterFrontend(e); err != nil {
 		if errors.Is(err, frontend.ErrFrontendNotIncluded) {
@@ -286,7 +333,7 @@ func parseTrustedProxyCIDRsInternal(raw string) []*net.IPNet {
 // __Host- cookies over plain HTTP.
 func secureCookieContextMiddlewareInternal(trustedProxyNets []*net.IPNet) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
+		return func(c *echo.Context) error {
 			req := c.Request()
 			secure := req.TLS != nil
 			if !secure && len(trustedProxyNets) > 0 &&
@@ -295,7 +342,7 @@ func secureCookieContextMiddlewareInternal(trustedProxyNets []*net.IPNet) echo.M
 				secure = true
 			}
 			if secure {
-				c.SetRequest(req.WithContext(cookie.WithSecureCookieContext(req.Context(), true)))
+				c.SetRequest(req.WithContext(context.WithValue(req.Context(), cookie.SecureCookieContextKey{}, true)))
 			}
 			return next(c)
 		}

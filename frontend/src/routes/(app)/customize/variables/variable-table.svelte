@@ -1,19 +1,19 @@
 <script lang="ts">
-	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import { UniversalMobileCard } from '$lib/components/arcane-table';
-	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
-	import CreatedAtCell from '$lib/components/arcane-table/cells/created-at-cell.svelte';
-	import { Badge } from '$lib/components/ui/badge';
-	import { CopyButton } from '$lib/components/ui/copy-button';
-	import IfPermitted from '$lib/components/if-permitted.svelte';
-	import type { GlobalVariable } from '$lib/types/variable';
-	import type { Environment } from '$lib/types/environment';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
-	import { VariableIcon, LockIcon, EditIcon, TrashIcon, ClockIcon, GlobeIcon } from '$lib/icons';
-	import { m } from '$lib/paraglide/messages';
-	import { formatDateTime } from '$lib/utils/formatting';
+	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
+	import { UniversalMobileCard } from '#lib/components/arcane-table';
+	import type { ColumnSpec, MobileFieldVisibility } from '#lib/components/arcane-table';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
+	import CreatedAtCell from '#lib/components/arcane-table/cells/created-at-cell.svelte';
+	import { Badge } from '#lib/components/ui/badge';
+	import { CopyButton } from '#lib/components/ui/copy-button';
+	import IfPermitted from '#lib/components/if-permitted.svelte';
+	import type { GlobalVariable } from '#lib/types/variable';
+	import type { Environment } from '#lib/types/environment';
+	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
+	import { VariableIcon, LockIcon, EditIcon, TrashIcon, ClockIcon, GlobeIcon } from '#lib/icons';
+	import { m } from '#lib/paraglide/messages';
+	import { formatDateTime } from '#lib/utils/formatting';
 
 	let {
 		variables = $bindable(),

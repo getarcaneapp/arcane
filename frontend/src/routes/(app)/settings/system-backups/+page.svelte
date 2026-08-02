@@ -1,19 +1,19 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import settingsStore from '$lib/stores/config-store';
-	import { SettingsPageLayout, type SettingsActionButton } from '$lib/layouts';
-	import { BackupIcon, EditIcon, LockIcon } from '$lib/icons';
-	import { Badge } from '$lib/components/ui/badge';
-	import { ResponsiveDialog } from '$lib/components/ui/responsive-dialog';
-	import { ArcaneButton } from '$lib/components/arcane-button';
-	import SelectWithLabel from '$lib/components/form/select-with-label.svelte';
-	import TextInputWithLabel from '$lib/components/form/text-input-with-label.svelte';
-	import { systemBackupService } from '$lib/services/system-backup-service';
-	import { formatDateTimeShort } from '$lib/utils/formatting';
-	import type { SearchPaginationSortRequest } from '$lib/types/shared';
-	import type { SystemBackupDestination, SystemBackupRun } from '$lib/types/system-backup';
-	import * as m from '$lib/paraglide/messages.js';
+	import settingsStore from '#lib/stores/config-store';
+	import { SettingsPageLayout, type SettingsActionButton } from '#lib/layouts';
+	import { BackupIcon, EditIcon, LockIcon } from '#lib/icons';
+	import { Badge } from '#lib/components/ui/badge';
+	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog';
+	import { ArcaneButton } from '#lib/components/arcane-button';
+	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
+	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
+	import { systemBackupService } from '#lib/services/system-backup-service';
+	import { formatDateTimeShort } from '#lib/utils/formatting';
+	import type { SearchPaginationSortRequest } from '#lib/types/shared';
+	import type { SystemBackupDestination, SystemBackupRun } from '#lib/types/system-backup';
+	import * as m from '#lib/paraglide/messages.js';
 	import SystemBackupTable from './system-backup-table.svelte';
 	import SystemBackupPolicyDialog from './system-backup-policy-dialog.svelte';
 

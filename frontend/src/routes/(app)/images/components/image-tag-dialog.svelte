@@ -1,10 +1,10 @@
 <script lang="ts">
-	import SheetFooterActions from '$lib/components/sheets/sheet-footer-actions.svelte';
-	import * as ResponsiveDialog from '$lib/components/ui/responsive-dialog/index.js';
-	import RepoTagFields from '$lib/components/form/repo-tag-fields.svelte';
-	import { createForm, preventDefault } from '$lib/utils/settings';
-	import { imageService } from '$lib/services/image-service';
-	import { m } from '$lib/paraglide/messages';
+	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
+	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
+	import RepoTagFields from '#lib/components/form/repo-tag-fields.svelte';
+	import { createForm, preventDefault } from '#lib/utils/settings';
+	import { imageService } from '#lib/services/image-service';
+	import { m } from '#lib/paraglide/messages';
 	import { toast } from 'svelte-sonner';
 	import { z } from 'zod/v4';
 

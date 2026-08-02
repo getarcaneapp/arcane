@@ -3,7 +3,6 @@ package handlers
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	stdimage "image"
 	"image/jpeg"
@@ -12,15 +11,21 @@ import (
 	"log/slog"
 	"mime/multipart"
 	"net/http"
+	"reflect"
+	"strings"
 	"time"
+
+	"emperror.dev/errors"
 
 	"github.com/danielgtaylor/huma/v2"
 	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cookie"
 	"github.com/getarcaneapp/arcane/types/v2/auth"
 	"github.com/getarcaneapp/arcane/types/v2/base"
+	"github.com/getarcaneapp/arcane/types/v2/settings"
 	"github.com/getarcaneapp/arcane/types/v2/user"
 )
 
@@ -71,14 +76,17 @@ type LogoutAllOtherSessionsOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
 }
 
+type UpdateMyProfileBody struct {
+	DisplayName *string           `json:"displayName,omitempty"`
+	Email       *string           `json:"email,omitempty"`
+	Locale      *string           `json:"locale,omitempty"`
+	TimeFormat  *user.TimeFormat  `json:"timeFormat,omitempty" enum:"auto,12h,24h"`
+	FontSize    *int              `json:"fontSize,omitempty" minimum:"12" maximum:"20"`
+	Preferences *user.Preferences `json:"preferences,omitempty"`
+}
+
 type UpdateMyProfileInput struct {
-	Body struct {
-		DisplayName *string          `json:"displayName,omitempty"`
-		Email       *string          `json:"email,omitempty"`
-		Locale      *string          `json:"locale,omitempty"`
-		TimeFormat  *user.TimeFormat `json:"timeFormat,omitempty" enum:"auto,12h,24h"`
-		FontSize    *int             `json:"fontSize,omitempty" minimum:"12" maximum:"20"`
-	}
+	Body UpdateMyProfileBody
 }
 
 type UpdateMyProfileOutput struct {
@@ -137,10 +145,7 @@ func RegisterAuth(api huma.API, userService *services.UserService, authService *
 		Summary:     "Get current user",
 		Description: "Get the currently authenticated user's information",
 		Tags:        []string{"Auth"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, h.GetCurrentUser)
 
 	huma.Register(api, huma.Operation{
@@ -160,10 +165,7 @@ func RegisterAuth(api huma.API, userService *services.UserService, authService *
 		Summary:     "Change password",
 		Description: "Change the current user's password",
 		Tags:        []string{"Auth"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, h.ChangePassword)
 
 	huma.Register(api, huma.Operation{
@@ -173,10 +175,7 @@ func RegisterAuth(api huma.API, userService *services.UserService, authService *
 		Summary:     "Logout all other sessions",
 		Description: "Revoke every session for the current user except the one making this request",
 		Tags:        []string{"Auth"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, h.LogoutAllOtherSessions)
 
 	huma.Register(api, huma.Operation{
@@ -186,10 +185,7 @@ func RegisterAuth(api huma.API, userService *services.UserService, authService *
 		Summary:     "Update own profile",
 		Description: "Update the current user's display name and email. Forbidden for OIDC-managed accounts.",
 		Tags:        []string{"Auth"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, h.UpdateMyProfile)
 
 	huma.Register(api, huma.Operation{
@@ -199,10 +195,7 @@ func RegisterAuth(api huma.API, userService *services.UserService, authService *
 		Summary:     "Upload own avatar",
 		Description: "Upload a custom profile picture (PNG, JPEG or WebP). Replaces any existing avatar.",
 		Tags:        []string{"Auth"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 		RequestBody: &huma.RequestBody{
 			Required: true,
 			Content: map[string]*huma.MediaType{
@@ -225,42 +218,35 @@ func RegisterAuth(api huma.API, userService *services.UserService, authService *
 		Summary:     "Delete own avatar",
 		Description: "Remove the current user's custom profile picture, reverting to the default avatar.",
 		Tags:        []string{"Auth"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, h.DeleteMyAvatar)
 }
 
 // Login authenticates a user and returns tokens.
 func (h *AuthHandler) Login(ctx context.Context, input *LoginInput) (*LoginOutput, error) {
-	if h.authService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	localAuthEnabled, err := h.authService.IsLocalAuthEnabled(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.AuthSettingsCheckError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Failed to check authentication settings")
 	}
 	if !localAuthEnabled {
-		return nil, huma.Error400BadRequest((&common.LocalAuthDisabledError{}).Error())
+		return nil, huma.Error400BadRequest("Local authentication is disabled")
 	}
 
 	userModel, tokenPair, err := h.authService.Login(ctx, input.Body.Username, input.Body.Password, sessionMetaFromContextInternal(ctx, input.UserAgent))
 	if err != nil {
 		switch {
 		case errors.Is(err, services.ErrInvalidCredentials):
-			return nil, huma.Error401Unauthorized((&common.InvalidCredentialsError{}).Error())
+			return nil, huma.Error401Unauthorized("Invalid username or password")
 		case errors.Is(err, services.ErrLocalAuthDisabled):
-			return nil, huma.Error400BadRequest((&common.LocalAuthDisabledError{}).Error())
+			return nil, huma.Error400BadRequest("Local authentication is disabled")
 		default:
-			return nil, huma.Error500InternalServerError((&common.AuthFailedError{Err: err}).Error())
+			return nil, huma.Error500InternalServerError("Authentication failed")
 		}
 	}
 
 	userResp, err := h.userService.ToUserResponseDto(ctx, *userModel)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.UserMappingError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Failed to map user")
 	}
 
 	maxAge := max(int(time.Until(tokenPair.ExpiresAt).Seconds()), 0)
@@ -288,7 +274,7 @@ func (h *AuthHandler) Logout(ctx context.Context, input *struct{}) (*LogoutOutpu
 				slog.ErrorContext(ctx, "Failed to revoke session on logout; clearing cookie anyway", "sessionID", sessionID, "error", err)
 			}
 		}
-		if userModel, exists := humamw.GetCurrentUserFromContext(ctx); exists {
+		if userModel, exists := models.CurrentUserFromContext(ctx); exists {
 			h.authService.LogLogout(ctx, userModel)
 		}
 	}
@@ -308,23 +294,19 @@ func (h *AuthHandler) Logout(ctx context.Context, input *struct{}) (*LogoutOutpu
 // Uses ToUserResponseDto (not the generic struct mapper) so the RBAC fields
 // (RoleAssignments, PermissionsByEnv) are resolved via RoleService.
 func (h *AuthHandler) GetCurrentUser(ctx context.Context, input *struct{}) (*GetCurrentUserOutput, error) {
-	if h.userService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	userID, exists := humamw.GetUserIDFromContext(ctx)
 	if !exists {
-		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+		return nil, huma.Error401Unauthorized("Not authenticated")
 	}
 
 	userModel, err := h.userService.GetUser(ctx, userID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.UserRetrievalError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Failed to get user information")
 	}
 
 	out, err := h.userService.ToUserResponseDto(ctx, *userModel)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.UserMappingError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Failed to map user")
 	}
 
 	return &GetCurrentUserOutput{
@@ -337,17 +319,13 @@ func (h *AuthHandler) GetCurrentUser(ctx context.Context, input *struct{}) (*Get
 
 // RefreshToken obtains a new access token using a refresh token.
 func (h *AuthHandler) RefreshToken(ctx context.Context, input *RefreshTokenInput) (*RefreshTokenOutput, error) {
-	if h.authService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	tokenPair, err := h.authService.RefreshToken(ctx, input.Body.RefreshToken, sessionMetaFromContextInternal(ctx, input.UserAgent))
 	if err != nil {
 		switch {
-		case errors.Is(err, services.ErrInvalidToken), errors.Is(err, services.ErrExpiredToken), common.IsTokenValidationError(err), common.IsSessionRevokedError(err), errors.Is(err, services.ErrTokenVersionMismatch):
-			return nil, huma.Error401Unauthorized((&common.InvalidTokenError{}).Error())
+		case errors.Is(err, services.ErrInvalidToken), errors.Is(err, services.ErrExpiredToken), errors.Is(err, common.ErrTokenValidation), errors.Is(err, common.ErrSessionRevoked), errors.Is(err, services.ErrTokenVersionMismatch):
+			return nil, huma.Error401Unauthorized("Invalid or expired refresh token")
 		default:
-			return nil, huma.Error500InternalServerError((&common.TokenRefreshError{Err: err}).Error())
+			return nil, huma.Error500InternalServerError("Failed to refresh token")
 		}
 	}
 
@@ -376,17 +354,13 @@ func sessionMetaFromContextInternal(ctx context.Context, userAgent string) auth.
 
 // ChangePassword changes the current user's password.
 func (h *AuthHandler) ChangePassword(ctx context.Context, input *ChangePasswordInput) (*ChangePasswordOutput, error) {
-	if h.authService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	userModel, err := requireUserInternal(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	if input.Body.CurrentPassword == "" {
-		return nil, huma.Error400BadRequest((&common.PasswordRequiredError{}).Error())
+		return nil, huma.Error400BadRequest("Current password is required")
 	}
 
 	currentSessionID, _ := humamw.GetCurrentSessionIDFromContext(ctx)
@@ -394,9 +368,9 @@ func (h *AuthHandler) ChangePassword(ctx context.Context, input *ChangePasswordI
 	if err != nil {
 		switch {
 		case errors.Is(err, services.ErrInvalidCredentials):
-			return nil, huma.Error401Unauthorized((&common.IncorrectPasswordError{}).Error())
+			return nil, huma.Error401Unauthorized("Current password is incorrect")
 		default:
-			return nil, huma.Error500InternalServerError((&common.PasswordChangeError{Err: err}).Error())
+			return nil, huma.Error500InternalServerError("Failed to change password")
 		}
 	}
 
@@ -413,10 +387,6 @@ func (h *AuthHandler) ChangePassword(ctx context.Context, input *ChangePasswordI
 // LogoutAllOtherSessions revokes every active session for the current user
 // except the session making this request.
 func (h *AuthHandler) LogoutAllOtherSessions(ctx context.Context, input *struct{}) (*LogoutAllOtherSessionsOutput, error) {
-	if h.authService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	userModel, err := requireUserInternal(ctx)
 	if err != nil {
 		return nil, err
@@ -437,13 +407,42 @@ func (h *AuthHandler) LogoutAllOtherSessions(ctx context.Context, input *struct{
 	}, nil
 }
 
+// validatePreferencesInternal checks the preference values Huma's enum tags
+// cannot express. Everything else is constrained by the schema.
+func validatePreferencesInternal(p *user.Preferences) error {
+	// The "default" sentinel means "no override"; anything else must be a color
+	// literal safe to inject into CSS.
+	if v := p.AccentColor; v != nil && *v != "" && *v != "default" && !settings.SafeAccentColor.MatchString(*v) {
+		return huma.Error400BadRequest("invalid accentColor value")
+	}
+	// Keep the landing page a same-origin relative path. The frontend
+	// additionally validates it against the known nav pages, falling back to
+	// /dashboard.
+	if v := p.DefaultLandingPage; v != nil && (!strings.HasPrefix(*v, "/") || strings.HasPrefix(*v, "//")) {
+		return huma.Error400BadRequest("invalid defaultLandingPage value")
+	}
+	return nil
+}
+
+// mergePreferencesInternal copies every set (non-nil) field of src onto dst.
+// Reflection keeps this merge-only update free of per-field branches, the same
+// way the settings update path walks its DTO, so a new preference needs no
+// handler change.
+func mergePreferencesInternal(dst, src *user.Preferences) {
+	dstValue := reflect.ValueOf(dst).Elem()
+	srcValue := reflect.ValueOf(src).Elem()
+
+	for i := range srcValue.NumField() {
+		field := srcValue.Field(i)
+		if field.Kind() == reflect.Pointer && !field.IsNil() {
+			dstValue.Field(i).Set(field)
+		}
+	}
+}
+
 // UpdateMyProfile lets the current user update their own displayName and email.
 // OIDC-managed accounts are read-only here.
 func (h *AuthHandler) UpdateMyProfile(ctx context.Context, input *UpdateMyProfileInput) (*UpdateMyProfileOutput, error) {
-	if h.userService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	currentUser, err := requireUserInternal(ctx)
 	if err != nil {
 		return nil, err
@@ -457,7 +456,7 @@ func (h *AuthHandler) UpdateMyProfile(ctx context.Context, input *UpdateMyProfil
 
 	userModel, err := h.userService.GetUser(ctx, currentUser.ID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.UserRetrievalError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Failed to get user information")
 	}
 
 	if input.Body.DisplayName != nil {
@@ -479,15 +478,21 @@ func (h *AuthHandler) UpdateMyProfile(ctx context.Context, input *UpdateMyProfil
 	if input.Body.FontSize != nil {
 		userModel.FontSize = input.Body.FontSize
 	}
+	if p := input.Body.Preferences; p != nil {
+		if err := validatePreferencesInternal(p); err != nil {
+			return nil, err
+		}
+		mergePreferencesInternal(&userModel.Preferences, p)
+	}
 
-	updated, err := h.userService.UpdateUser(ctx, userModel)
+	updated, err := h.userService.UpdateUser(ctx, userModel, nil)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.UserUpdateError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Failed to update user")
 	}
 
 	out, err := h.userService.ToUserResponseDto(ctx, *updated)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.UserMappingError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Failed to map user")
 	}
 
 	return &UpdateMyProfileOutput{
@@ -501,10 +506,6 @@ func (h *AuthHandler) UpdateMyProfile(ctx context.Context, input *UpdateMyProfil
 // UploadMyAvatar lets the current user upload a custom profile picture.
 // Accepts PNG, JPEG, or WebP images up to the configured avatar upload limit.
 func (h *AuthHandler) UploadMyAvatar(ctx context.Context, input *UploadMyAvatarInput) (*UploadMyAvatarOutput, error) {
-	if h.userService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	currentUser, err := requireUserInternal(ctx)
 	if err != nil {
 		return nil, err
@@ -554,12 +555,12 @@ func (h *AuthHandler) UploadMyAvatar(ctx context.Context, input *UploadMyAvatarI
 	// Reload user so the response reflects the new AvatarURL
 	updatedUser, err := h.userService.GetUser(ctx, currentUser.ID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.UserRetrievalError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Failed to get user information")
 	}
 
 	out, err := h.userService.ToUserResponseDto(ctx, *updatedUser)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.UserMappingError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Failed to map user")
 	}
 
 	return &UploadMyAvatarOutput{
@@ -584,10 +585,6 @@ func (h *AuthHandler) avatarMaxUploadSizeMbInternal(ctx context.Context) int {
 
 // DeleteMyAvatar removes the current user's custom profile picture.
 func (h *AuthHandler) DeleteMyAvatar(ctx context.Context, input *struct{}) (*DeleteMyAvatarOutput, error) {
-	if h.userService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	currentUser, err := requireUserInternal(ctx)
 	if err != nil {
 		return nil, err
@@ -600,12 +597,12 @@ func (h *AuthHandler) DeleteMyAvatar(ctx context.Context, input *struct{}) (*Del
 
 	updatedUser, err := h.userService.GetUser(ctx, currentUser.ID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.UserRetrievalError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Failed to get user information")
 	}
 
 	out, err := h.userService.ToUserResponseDto(ctx, *updatedUser)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.UserMappingError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Failed to map user")
 	}
 
 	return &DeleteMyAvatarOutput{

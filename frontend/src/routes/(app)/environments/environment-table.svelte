@@ -1,29 +1,30 @@
 <script lang="ts">
-	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
-	import { Badge } from '$lib/components/ui/badge';
+	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
+	import { Badge } from '#lib/components/ui/badge';
 	import { goto } from '$app/navigation';
-	import { openConfirmDialog } from '$lib/components/confirm-dialog';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api';
-	import { tryCatch } from '$lib/utils/api';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api';
+	import { tryCatch } from '#lib/utils/api';
 	import { toast } from 'svelte-sonner';
-	import { toastUpgradeError } from '$lib/utils/api';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
-	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '$lib/components/arcane-table';
-	import type { FilterOption } from '$lib/components/arcane-table/arcane-table.types.svelte';
-	import { UniversalMobileCard } from '$lib/components/arcane-table';
-	import type { Environment } from '$lib/types/environment';
-	import { m } from '$lib/paraglide/messages';
-	import { environmentManagementService } from '$lib/services/env-mgmt-service';
-	import systemUpgradeService from '$lib/services/api/system-upgrade-service';
-	import UpdateCenterDialog from '$lib/components/dialogs/update-center-dialog.svelte';
+	import { toastUpgradeError } from '#lib/utils/api';
+	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
+	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '#lib/components/arcane-table';
+	import type { FilterOption } from '#lib/components/arcane-table/arcane-table.types.svelte';
+	import { UniversalMobileCard } from '#lib/components/arcane-table';
+	import type { Environment } from '#lib/types/environment';
+	import { m } from '#lib/paraglide/messages';
+	import { environmentManagementService } from '#lib/services/env-mgmt-service';
+	import systemUpgradeService from '#lib/services/api/system-upgrade-service';
+	import UpdateCenterDialog from '#lib/components/dialogs/update-center-dialog.svelte';
 	import EnvironmentUpgradeMenuItem from './environment-upgrade-menu-item.svelte';
-	import type { AppVersionInformation } from '$lib/types/settings';
-	import { hasPermission } from '$lib/utils/auth';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { capitalizeFirstLetter } from '$lib/utils/formatting';
-	import { getEnvironmentStatusVariant, isEnvironmentOnline, resolveEnvironmentStatus } from '$lib/utils/docker';
+	import EnvironmentVersionCell from './environment-version-cell.svelte';
+	import type { AppVersionInformation } from '#lib/types/settings';
+	import { hasPermission } from '#lib/utils/auth';
+	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import { capitalizeFirstLetter } from '#lib/utils/formatting';
+	import { getEnvironmentStatusVariant, isEnvironmentOnline, resolveEnvironmentStatus } from '#lib/utils/docker';
 	import {
 		EyeOnIcon,
 		TrashIcon,
@@ -33,8 +34,8 @@
 		EyeOffIcon,
 		TestIcon,
 		ConnectionIcon
-	} from '$lib/icons';
-	import { useEasyJoinCandidates } from '$lib/hooks/use-easy-join-candidates.svelte';
+	} from '#lib/icons';
+	import { useEasyJoinCandidates } from '#lib/hooks/use-easy-join-candidates.svelte';
 	import EasyJoinDialog from '../swarm/cluster/easy-join-dialog.svelte';
 
 	let {
@@ -197,6 +198,7 @@
 				throw new Error(result.error || m.upgrade_failed({ error: 'Unknown error' }));
 			}
 			toast.success(m.upgrade_success());
+			return { upToDate: result.upToDate };
 		} catch (error) {
 			toastUpgradeError(error, m.upgrade_failed);
 			throw error;
@@ -264,9 +266,10 @@
 			cell: EnabledCell
 		},
 		{
-			accessorKey: 'apiUrl',
-			title: m.environments_api_url(),
-			cell: ApiCell
+			id: 'version',
+			title: m.common_version(),
+			accessorFn: (row) => row,
+			cell: VersionCell
 		}
 	] satisfies ColumnSpec<Environment>[];
 
@@ -341,8 +344,8 @@
 	<Badge variant={typeVariant} minWidth="20">{typeLabel}</Badge>
 {/snippet}
 
-{#snippet ApiCell({ value }: { value: unknown })}
-	<span class="font-mono text-sm text-muted-foreground">{String(value)}</span>
+{#snippet VersionCell({ item }: { item: Environment })}
+	<EnvironmentVersionCell environment={item} isOnline={isEnvironmentOnline(item)} />
 {/snippet}
 
 {#snippet EnabledCell({ value }: { value: unknown })}

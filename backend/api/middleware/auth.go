@@ -2,10 +2,11 @@ package middleware
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
+
+	"emperror.dev/errors"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -23,8 +24,6 @@ type ContextKey string
 const (
 	// ContextKeyUserID is the context key for the authenticated user's ID.
 	ContextKeyUserID ContextKey = "userID"
-	// ContextKeyCurrentUser is the context key for the authenticated user model.
-	ContextKeyCurrentUser ContextKey = "currentUser"
 	// ContextKeyCurrentSessionID is the context key for the authenticated session ID.
 	ContextKeyCurrentSessionID ContextKey = "currentSessionID"
 	// ContextKeyUserPermissions is the context key for the caller's resolved
@@ -38,12 +37,6 @@ const (
 func GetUserIDFromContext(ctx context.Context) (string, bool) {
 	userID, ok := ctx.Value(ContextKeyUserID).(string)
 	return userID, ok
-}
-
-// GetCurrentUserFromContext retrieves the current user from the context.
-func GetCurrentUserFromContext(ctx context.Context) (*models.User, bool) {
-	u, ok := ctx.Value(ContextKeyCurrentUser).(*models.User)
-	return u, ok
 }
 
 // GetCurrentSessionIDFromContext retrieves the current session ID from the context.
@@ -197,7 +190,7 @@ func tryAgentAuthInternal(ctx huma.Context, cfg *config.Config) (*models.User, b
 }
 
 // createAgentSudoUserInternal creates a sudo user for agent authentication.
-// The PermissionSet attached to the context (via setUserInContextWithSudoInternal)
+// The sudo PermissionSet attached to the context by the agent token path
 // bypasses every check; the user's Roles field is intentionally empty.
 func createAgentSudoUserInternal() *models.User {
 	return &models.User{
@@ -270,7 +263,9 @@ func tryAgentAuthCtxInternal(ctx huma.Context, cfg *config.Config) (huma.Context
 	if !ok {
 		return ctx, false
 	}
-	return huma.WithContext(ctx, setUserInContextWithSudoInternal(ctx.Context(), user)), true
+	// The agent token path is infrastructure-level and not per-user, so it
+	// gets a sudo PermissionSet that bypasses every check.
+	return huma.WithContext(ctx, setUserInContextInternal(ctx.Context(), user, authz.SudoPermissionSet())), true
 }
 
 // opportunisticBearerAuthInternal populates the user/session context if a valid
@@ -338,7 +333,7 @@ func handleBearerAuthInternal(api huma.API, ctx huma.Context, authService *servi
 		_ = huma.WriteErr(api, ctx, http.StatusUnauthorized, "Application has been updated. Refreshing session.")
 		return nil, true
 	}
-	if common.IsSessionRevokedError(err) || common.IsTokenValidationError(err) {
+	if errors.Is(err, common.ErrSessionRevoked) || errors.Is(err, common.ErrTokenValidation) {
 		for _, cookieHeader := range cookie.BuildClearTokenCookieStringsFor(cookie.SecureCookieFromContext(ctx.Context())) {
 			ctx.AppendHeader("Set-Cookie", cookieHeader)
 		}
@@ -416,14 +411,7 @@ func setUserInContextInternal(ctx context.Context, user *models.User, ps *authz.
 		ps = authz.NewPermissionSet()
 	}
 	ctx = context.WithValue(ctx, ContextKeyUserID, user.ID)
-	ctx = context.WithValue(ctx, ContextKeyCurrentUser, user)
+	ctx = context.WithValue(ctx, models.CurrentUserContextKey{}, user)
 	ctx = context.WithValue(ctx, ContextKeyUserPermissions, ps)
 	return ctx
-}
-
-// setUserInContextWithSudoInternal attaches a sudo PermissionSet (bypasses
-// every check) plus the user. Used by the agent token path, which is
-// infrastructure-level and not per-user.
-func setUserInContextWithSudoInternal(ctx context.Context, user *models.User) context.Context {
-	return setUserInContextInternal(ctx, user, authz.SudoPermissionSet())
 }

@@ -1,27 +1,27 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { TabBar, type TabItem } from '$lib/components/tab-bar';
-	import CodeEditor from '$lib/components/code-editor/editor.svelte';
-	import * as Card from '$lib/components/ui/card';
-	import * as Tabs from '$lib/components/ui/tabs';
-	import { useEnvironmentRefresh } from '$lib/hooks/use-environment-refresh.svelte';
-	import { LayersIcon, DockIcon, JobsIcon, TrashIcon, EditIcon, FileTextIcon } from '$lib/icons';
+	import { TabBar, type TabItem } from '#lib/components/tab-bar';
+	import CodeEditor from '#lib/components/code-editor/editor.svelte';
+	import * as Card from '#lib/components/ui/card';
+	import * as Tabs from '#lib/components/ui/tabs';
+	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte';
+	import { LayersIcon, DockIcon, JobsIcon, TrashIcon, EditIcon, FileTextIcon } from '#lib/icons';
 	import EditorTabStrip from '../../../projects/components/EditorTabStrip.svelte';
 	import ProjectFileTreePanel from '../../../projects/components/ProjectFileTreePanel.svelte';
-	import ResizableSplit from '$lib/components/resizable-split.svelte';
-	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
-	import { m } from '$lib/paraglide/messages';
-	import { swarmService } from '$lib/services/swarm-service';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api';
-	import { tryCatch } from '$lib/utils/api';
+	import ResizableSplit from '#lib/components/resizable-split.svelte';
+	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
+	import { m } from '#lib/paraglide/messages';
+	import { swarmService } from '#lib/services/swarm-service';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api';
+	import { tryCatch } from '#lib/utils/api';
 	import { onMount } from 'svelte';
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import { openConfirmDialog } from '$lib/components/confirm-dialog';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog';
 	import SwarmServicesTable from '../../services/services-table.svelte';
 	import SwarmTasksTable from '../../tasks/tasks-table.svelte';
-	import type { SwarmStackSource } from '$lib/types/swarm';
-	import { useUrlTab } from '$lib/hooks/use-url-tab.svelte';
+	import type { SwarmStackSource } from '#lib/types/swarm';
+	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte';
 
 	let { data } = $props();
 

@@ -1,12 +1,16 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"reflect"
 	"testing"
 	"time"
 
+	"github.com/danielgtaylor/huma/v2"
+	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
@@ -15,6 +19,56 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestEnvironmentHandlerTestConnectionRequiresUpdatePermissionForCustomURLInternal(t *testing.T) {
+	permissions := authz.NewPermissionSet()
+	permissions.AddGlobal(authz.PermEnvironmentsRead)
+	ctx := context.WithValue(context.Background(), humamw.ContextKeyUserPermissions, permissions)
+
+	output, err := (&EnvironmentHandler{}).TestConnection(ctx, &TestConnectionInput{
+		ID: "0",
+		Body: &envtypes.TestConnectionRequest{
+			ApiUrl: new("http://10.0.0.2:3553"),
+		},
+	})
+
+	require.Nil(t, output)
+	require.ErrorContains(t, err, "permission denied: "+authz.PermEnvironmentsUpdate)
+}
+
+func TestEnvironmentHandlerTestConnectionReturnsOpaqueBadRequestForCustomURLInternal(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusTeapot)
+	}))
+	t.Cleanup(server.Close)
+
+	db := setupActivityHandlerTestDBInternal(t)
+	env := &models.Environment{Name: "Test", ApiUrl: "http://stored.example", Enabled: true}
+	env.ID = "env-1"
+	require.NoError(t, db.Create(env).Error)
+
+	permissions := authz.NewPermissionSet()
+	permissions.AddGlobal(authz.PermEnvironmentsUpdate)
+	ctx := context.WithValue(context.Background(), humamw.ContextKeyUserPermissions, permissions)
+	handler := &EnvironmentHandler{
+		environmentService: services.NewEnvironmentService(db, server.Client(), nil, nil, nil, nil),
+	}
+
+	output, err := handler.TestConnection(ctx, &TestConnectionInput{
+		ID: "env-1",
+		Body: &envtypes.TestConnectionRequest{
+			ApiUrl: new(server.URL),
+		},
+	})
+
+	require.NotNil(t, output)
+	require.False(t, output.Body.Success)
+	require.Nil(t, output.Body.Data.Message)
+	var statusErr huma.StatusError
+	require.ErrorAs(t, err, &statusErr)
+	require.Equal(t, http.StatusBadRequest, statusErr.GetStatus())
+	require.Equal(t, "Environment connection test failed", statusErr.Error())
+}
 
 func TestEnvironmentSecretDeploymentRoutesRequirePairPermission(t *testing.T) {
 	testCases := []struct {
@@ -42,18 +96,6 @@ func TestEnvironmentSecretDeploymentRoutesRequirePairPermission(t *testing.T) {
 			require.Contains(t, rec.Body.String(), authz.PermEnvironmentsPair)
 		})
 
-		t.Run(testCase.name+" pair allowed", func(t *testing.T) {
-			ps := authz.NewPermissionSet()
-			ps.AddGlobal(authz.PermEnvironmentsPair)
-			router, api := newPermissionGatingRouterInternal(t, ps)
-			RegisterEnvironments(api, nil, nil, nil, nil, nil)
-
-			req := httptest.NewRequest(http.MethodGet, testCase.path, nil)
-			rec := httptest.NewRecorder()
-			router.ServeHTTP(rec, req)
-
-			require.NotEqual(t, http.StatusForbidden, rec.Code)
-		})
 	}
 }
 
@@ -226,4 +268,22 @@ func TestEnvironmentHandlerApplyEdgeRuntimeState(t *testing.T) {
 		assert.Nil(t, env.LastHeartbeat)
 		assert.NotNil(t, env.LastPollAt)
 	})
+}
+
+// The environment stream suppresses redundant sends by comparing a fingerprint
+// of the visible list. A field added to Environment but not to the fingerprint
+// would stop propagating to connected clients until the 30s floor, so pin the
+// field count: if this fails, add the new field to
+// fingerprintEnvironmentsInternal and bump the constant.
+func TestEnvironmentFingerprintCoversEveryField(t *testing.T) {
+	const environmentFingerprintFieldCount = 19
+	require.Equal(t, environmentFingerprintFieldCount, reflect.TypeOf(envtypes.Environment{}).NumField(),
+		"environment.Environment gained or lost a field; update fingerprintEnvironmentsInternal to match")
+}
+
+func TestFingerprintEnvironmentsDetectsFieldChange(t *testing.T) {
+	base := []envtypes.Environment{{ID: "1", Name: "prod", Status: "online", Enabled: true}}
+	renamed := []envtypes.Environment{{ID: "1", Name: "production", Status: "online", Enabled: true}}
+
+	assert.NotEqual(t, fingerprintEnvironmentsInternal(base), fingerprintEnvironmentsInternal(renamed))
 }

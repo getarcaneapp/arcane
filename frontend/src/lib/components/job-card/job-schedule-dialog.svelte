@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
-	import { m } from '$lib/paraglide/messages';
-	import { Button } from '$lib/components/ui/button';
-	import { ResponsiveDialog } from '$lib/components/ui/responsive-dialog';
-	import { Label } from '$lib/components/ui/label';
-	import { Input } from '$lib/components/ui/input';
-	import { jobScheduleService } from '$lib/services/job-schedule-service';
-	import type { JobStatus } from '$lib/types/settings';
+	import { m } from '#lib/paraglide/messages';
+	import { Button } from '#lib/components/ui/button';
+	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog';
+	import { Label } from '#lib/components/ui/label';
+	import { Input } from '#lib/components/ui/input';
+	import { jobScheduleService } from '#lib/services/job-schedule-service';
+	import type { JobStatus } from '#lib/types/settings';
 	import { createMutation } from '@tanstack/svelte-query';
 
 	let {

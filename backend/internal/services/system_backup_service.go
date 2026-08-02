@@ -23,6 +23,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
+	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/google/uuid"
 	containertypes "github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
@@ -47,7 +48,7 @@ type SystemBackupService struct {
 	s3Destinations  *S3DestinationService
 	activityService *ActivityService
 	config          *config.Config
-	scheduler       DynamicScheduler
+	scheduler       schedulertypes.DynamicScheduler
 	lifecycleCtx    context.Context
 	running         sync.Mutex
 	inProgress      bool
@@ -91,7 +92,7 @@ func validateRecoveryKeyInternal(key string) error {
 func recoveryHelperExecutableInternal(mounts []containertypes.MountPoint, executablePath string) (string, *mount.Mount, error) {
 	executablePath = strings.TrimSpace(executablePath)
 	if executablePath == "" {
-		return "", nil, errors.New("Arcane executable path is empty")
+		return "", nil, errors.New("arcane executable path is empty")
 	}
 	executableMount := dockerutil.MountForSubpath(mounts, executablePath, systemRecoveryHelperPath)
 	if executableMount == nil {
@@ -130,7 +131,10 @@ func (s *SystemBackupService) recoveryEnvironmentInternal() map[string]string {
 				continue
 			}
 			if field.Type() == reflect.TypeFor[os.FileMode]() {
-				result[name] = fmt.Sprintf("%#o", uint32(field.Interface().(os.FileMode)))
+				mode, ok := field.Interface().(os.FileMode)
+				if ok {
+					result[name] = fmt.Sprintf("%#o", uint32(mode))
+				}
 			} else {
 				result[name] = fmt.Sprint(field.Interface())
 			}
@@ -158,7 +162,7 @@ func (s *SystemBackupService) appDataMountInternal(ctx context.Context, dockerCl
 		return mount.Mount{}, fmt.Errorf("failed to inspect Arcane data mount: %w", err)
 	}
 	if dataMount == nil {
-		return mount.Mount{}, errors.New("Arcane system backups require /app/data to be mounted into the Arcane container")
+		return mount.Mount{}, errors.New("arcane system backups require /app/data to be mounted into the Arcane container")
 	}
 	dataMount.ReadOnly = readOnly
 	return *dataMount, nil
@@ -219,7 +223,7 @@ func (s *SystemBackupService) createSnapshotInternal(ctx context.Context, docker
 		return rusticSnapshotInternal{}, fmt.Errorf("failed to decode Rustic snapshot: %w", err)
 	}
 	if snapshot.ID == "" {
-		return rusticSnapshotInternal{}, errors.New("Rustic did not return a snapshot ID")
+		return rusticSnapshotInternal{}, errors.New("rustic did not return a snapshot ID")
 	}
 	return snapshot, nil
 }
@@ -273,6 +277,7 @@ func (s *SystemBackupService) recoveryKeyInternal(ctx context.Context, supplied 
 	return key, validateRecoveryKeyInternal(key)
 }
 
+//nolint:gocognit,gocyclo // backup orchestration keeps cleanup and persistence transitions in one transaction-like flow
 func (s *SystemBackupService) CreateBackup(ctx context.Context, user models.User, trigger models.VolumeBackupTrigger, request backuptypes.CreateSystemBackupRequest) (_ *models.SystemBackupRun, err error) {
 	if !s.acquireInternal() {
 		return nil, ErrSystemBackupAlreadyRunning
@@ -282,7 +287,8 @@ func (s *SystemBackupService) CreateBackup(ctx context.Context, user models.User
 	if err != nil {
 		return nil, err
 	}
-	localEnabled, s3Enabled, destinationID := true, false, strings.TrimSpace(request.S3DestinationID)
+	var localEnabled, s3Enabled bool
+	destinationID := strings.TrimSpace(request.S3DestinationID)
 	if request.PolicyID != "" {
 		policy, policyErr := s.loadPolicyInternal(ctx, request.PolicyID)
 		if policyErr != nil || policy == nil {
@@ -324,7 +330,7 @@ func (s *SystemBackupService) CreateBackup(ctx context.Context, user models.User
 		}
 	}()
 	if !strings.HasPrefix(s.config.DatabaseURL, "file:") {
-		return run, errors.New("Arcane system recovery currently requires the SQLite database provider")
+		return run, errors.New("arcane system recovery currently requires the SQLite database provider")
 	}
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
@@ -622,7 +628,7 @@ func (s *SystemBackupService) RestoreBackup(ctx context.Context, id, recoveryKey
 	}
 	containerID, err := cgroup.CurrentContainerID()
 	if err != nil {
-		return errors.New("Arcane system restore requires Arcane to run in Docker")
+		return errors.New("arcane system restore requires Arcane to run in Docker")
 	}
 	inspectResult, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
 	if err != nil {
@@ -631,17 +637,18 @@ func (s *SystemBackupService) RestoreBackup(ctx context.Context, id, recoveryKey
 	current := inspectResult.Container
 	appDataMount := dockerutil.MountForDestination(current.Mounts, "/app/data", "/app/data")
 	if appDataMount == nil {
-		return errors.New("Arcane system restore requires /app/data to be mounted")
+		return errors.New("arcane system restore requires /app/data to be mounted")
 	}
 	var repository rusticRepositoryInternal
 	var snapshotID string
-	if run.LocalSnapshotID != "" {
+	switch {
+	case run.LocalSnapshotID != "":
 		repository, err = s.localRepositoryInternal(ctx, dockerClient, true)
 		snapshotID = run.LocalSnapshotID
-	} else if run.RemoteSnapshotID != "" {
+	case run.RemoteSnapshotID != "":
 		repository, err = s.remoteRepositoryInternal(ctx, run.S3DestinationID)
 		snapshotID = run.RemoteSnapshotID
-	} else {
+	default:
 		return errors.New("system backup has no Rustic snapshot")
 	}
 	if err != nil {

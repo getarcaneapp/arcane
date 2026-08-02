@@ -25,11 +25,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
+	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
 	"github.com/go-viper/mapstructure/v2"
+	"github.com/samber/hot"
 	"github.com/spf13/viper"
 )
 
@@ -48,12 +49,10 @@ const (
 
 var customConfigPath string
 
-var (
-	cacheMu     sync.RWMutex
-	cachedPath  string
-	cachedCfg   *types.Config
-	cacheLoaded bool
-)
+var configCache = hot.NewHotCache[string, *types.Config](hot.LRU, 4).
+	WithCopyOnRead(cloneConfig).
+	WithCopyOnWrite(cloneConfig).
+	Build()
 
 func cloneConfig(cfg *types.Config) *types.Config {
 	return cfg.Clone()
@@ -76,11 +75,7 @@ func normalizeConfig(cfg *types.Config) *types.Config {
 }
 
 func invalidateCache() {
-	cacheMu.Lock()
-	defer cacheMu.Unlock()
-	cacheLoaded = false
-	cachedPath = ""
-	cachedCfg = nil
+	configCache.Purge()
 }
 
 // DefaultConfig returns a Config with sensible default values.
@@ -106,7 +101,7 @@ func ConfigPath() (string, error) {
 
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", fmt.Errorf("failed to get home directory: %w", err)
+		return "", errors.WrapIf(err, "failed to get home directory")
 	}
 
 	return filepath.Join(home, ".config", configFileName), nil
@@ -125,7 +120,7 @@ func SetConfigPath(path string) error {
 	if path == "~" || strings.HasPrefix(path, "~/") {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			return fmt.Errorf("failed to expand config path: %w", err)
+			return errors.WrapIf(err, "failed to expand config path")
 		}
 		rel := strings.TrimPrefix(path, "~")
 		path = filepath.Join(home, strings.TrimPrefix(rel, string(os.PathSeparator)))
@@ -133,7 +128,7 @@ func SetConfigPath(path string) error {
 
 	absPath, err := filepath.Abs(path)
 	if err != nil {
-		return fmt.Errorf("failed to resolve config path: %w", err)
+		return errors.WrapIf(err, "failed to resolve config path")
 	}
 
 	customConfigPath = absPath
@@ -150,26 +145,18 @@ func Load() (*types.Config, error) {
 		return nil, err
 	}
 
-	cacheMu.RLock()
-	if cacheLoaded && cachedCfg != nil && cachedPath == path {
-		cfg := cloneConfig(cachedCfg)
-		cacheMu.RUnlock()
+	if cfg, ok, _ := configCache.Get(path); ok {
 		return cfg, nil
 	}
-	cacheMu.RUnlock()
 
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			def := DefaultConfig()
-			cacheMu.Lock()
-			cacheLoaded = true
-			cachedPath = path
-			cachedCfg = cloneConfig(def)
-			cacheMu.Unlock()
+			configCache.Set(path, def)
 			return def, nil
 		}
-		return nil, fmt.Errorf("failed to read config file: %w", err)
+		return nil, errors.WrapIf(err, "failed to read config file")
 	}
 	_ = data
 
@@ -181,7 +168,7 @@ func Load() (*types.Config, error) {
 	v.SetDefault("federated_audience", "")
 	v.SetDefault("log_level", "info")
 	if err := v.ReadInConfig(); err != nil {
-		return nil, fmt.Errorf("failed to parse config file: %w", err)
+		return nil, errors.WrapIf(err, "failed to parse config file")
 	}
 
 	var cfg types.Config
@@ -189,15 +176,11 @@ func Load() (*types.Config, error) {
 		dc.TagName = "mapstructure"
 		dc.WeaklyTypedInput = true
 	}); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
+		return nil, errors.WrapIf(err, "failed to unmarshal config")
 	}
 	normalized := normalizeConfig(&cfg)
 
-	cacheMu.Lock()
-	cacheLoaded = true
-	cachedPath = path
-	cachedCfg = cloneConfig(normalized)
-	cacheMu.Unlock()
+	configCache.Set(path, normalized)
 
 	return normalized, nil
 }
@@ -214,7 +197,7 @@ func Save(c *types.Config) error {
 	// Ensure the config directory exists
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("failed to create config directory: %w", err)
+		return errors.WrapIf(err, "failed to create config directory")
 	}
 
 	cfg := normalizeConfig(c)
@@ -256,17 +239,13 @@ func Save(c *types.Config) error {
 	}
 
 	if err := v.WriteConfigAs(path); err != nil {
-		return fmt.Errorf("failed to write config file: %w", err)
+		return errors.WrapIf(err, "failed to write config file")
 	}
 	if err := os.Chmod(path, 0o600); err != nil {
-		return fmt.Errorf("failed to set config permissions: %w", err)
+		return errors.WrapIf(err, "failed to set config permissions")
 	}
 
-	cacheMu.Lock()
-	cacheLoaded = true
-	cachedPath = path
-	cachedCfg = cloneConfig(cfg)
-	cacheMu.Unlock()
+	configCache.Set(path, cfg)
 
 	return nil
 }
@@ -284,18 +263,18 @@ func InitDefaultFile() (bool, error) {
 	switch {
 	case err == nil:
 		if info.IsDir() {
-			return false, fmt.Errorf("config path is a directory: %s", path)
+			return false, errors.Errorf("config path is a directory: %s", path)
 		}
 		return false, nil
 	case os.IsNotExist(err):
 		// Continue and create the file below.
 	default:
-		return false, fmt.Errorf("failed to stat config path: %w", err)
+		return false, errors.WrapIf(err, "failed to stat config path")
 	}
 
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return false, fmt.Errorf("failed to create config directory: %w", err)
+		return false, errors.WrapIf(err, "failed to create config directory")
 	}
 
 	v := viper.New()
@@ -314,10 +293,10 @@ func InitDefaultFile() (bool, error) {
 	}
 
 	if err := v.WriteConfigAs(path); err != nil {
-		return false, fmt.Errorf("failed to write config file: %w", err)
+		return false, errors.WrapIf(err, "failed to write config file")
 	}
 	if err := os.Chmod(path, 0o600); err != nil {
-		return false, fmt.Errorf("failed to set config permissions: %w", err)
+		return false, errors.WrapIf(err, "failed to set config permissions")
 	}
 
 	invalidateCache()
@@ -338,28 +317,28 @@ func BackupFile() (backupPath string, moved bool, err error) {
 	switch {
 	case err == nil:
 		if info.IsDir() {
-			return "", false, fmt.Errorf("config path is a directory: %s", path)
+			return "", false, errors.Errorf("config path is a directory: %s", path)
 		}
 	case os.IsNotExist(err):
 		return backupPath, false, nil
 	default:
-		return "", false, fmt.Errorf("failed to stat config path: %w", err)
+		return "", false, errors.WrapIf(err, "failed to stat config path")
 	}
 
 	if existingBackup, backupErr := os.Stat(backupPath); backupErr == nil {
 		if existingBackup.IsDir() {
-			return "", false, fmt.Errorf("backup path is a directory: %s", backupPath)
+			return "", false, errors.Errorf("backup path is a directory: %s", backupPath)
 		}
 		rotatedPath := fmt.Sprintf("%s.%s", backupPath, time.Now().UTC().Format("20060102150405"))
 		if err := os.Rename(backupPath, rotatedPath); err != nil {
-			return "", false, fmt.Errorf("failed to rotate existing backup %s: %w", backupPath, err)
+			return "", false, errors.WrapIff(err, "failed to rotate existing backup %s", backupPath)
 		}
 	} else if !os.IsNotExist(backupErr) {
-		return "", false, fmt.Errorf("failed to stat backup path: %w", backupErr)
+		return "", false, errors.WrapIf(backupErr, "failed to stat backup path")
 	}
 
 	if err := os.Rename(path, backupPath); err != nil {
-		return "", false, fmt.Errorf("failed to move config to backup: %w", err)
+		return "", false, errors.WrapIf(err, "failed to move config to backup")
 	}
 
 	invalidateCache()

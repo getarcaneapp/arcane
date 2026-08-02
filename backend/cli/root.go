@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/getarcaneapp/arcane/backend/v2/cli/admin"
 	"github.com/getarcaneapp/arcane/backend/v2/cli/generate"
 	"github.com/getarcaneapp/arcane/backend/v2/cli/recovery"
 	"github.com/getarcaneapp/arcane/backend/v2/cli/upgrade"
@@ -39,6 +40,7 @@ func Execute() {
 }
 
 func init() {
+	rootCmd.AddCommand(admin.AdminCmd)
 	rootCmd.AddCommand(upgrade.UpgradeCmd)
 	rootCmd.AddCommand(recovery.RestoreCmd)
 	rootCmd.AddCommand(generate.GenerateCmd)

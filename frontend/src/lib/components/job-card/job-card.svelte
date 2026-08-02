@@ -1,15 +1,15 @@
 <script lang="ts">
-	import { StartIcon, EditIcon, ClockIcon } from '$lib/icons';
-	import { m } from '$lib/paraglide/messages';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import * as Card from '$lib/components/ui/card';
-	import { Spinner } from '$lib/components/ui/spinner';
-	import { jobScheduleService } from '$lib/services/job-schedule-service';
+	import { StartIcon, EditIcon, ClockIcon } from '#lib/icons';
+	import { m } from '#lib/paraglide/messages';
+	import { Badge } from '#lib/components/ui/badge';
+	import { Button } from '#lib/components/ui/button';
+	import * as Card from '#lib/components/ui/card';
+	import { Spinner } from '#lib/components/ui/spinner';
+	import { jobScheduleService } from '#lib/services/job-schedule-service';
 	import { formatDistanceToNow } from 'date-fns';
-	import { formatDateTimeShort } from '$lib/utils/formatting';
+	import { formatDateTimeShort } from '#lib/utils/formatting';
 	import type { Snippet } from 'svelte';
-	import type { JobStatus } from '$lib/types/settings';
+	import type { JobStatus } from '#lib/types/settings';
 	import JobScheduleDialog from './job-schedule-dialog.svelte';
 	import { createMutation } from '@tanstack/svelte-query';
 

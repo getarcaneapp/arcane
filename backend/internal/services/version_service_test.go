@@ -17,7 +17,7 @@ import (
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	libupdater "go.getarcane.app/updater/pkg/labels"
+	"go.getarcane.app/updater/labels"
 )
 
 func TestVersionService_GetAppVersionInfoDoesNotUseStoredDigestUpdateForSemverBuildInternal(t *testing.T) {
@@ -36,38 +36,46 @@ func TestVersionService_GetAppVersionInfoDoesNotUseStoredDigestUpdateForSemverBu
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/containers/json"):
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode([]container.Summary{
+			if !assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{
 				{
 					ID:    containerID,
 					State: container.StateRunning,
 					Labels: map[string]string{
-						libupdater.LabelArcane: "true",
+						labels.LabelArcane: "true",
 					},
 				},
-			}))
+			})) {
+				return
+			}
 		case strings.Contains(r.URL.Path, "/containers/") && strings.HasSuffix(r.URL.Path, "/json"):
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(container.InspectResponse{
+			if !assert.NoError(t, json.NewEncoder(w).Encode(container.InspectResponse{
 				ID:    containerID,
 				Image: imageID,
 				Config: &container.Config{
 					Image: imageRef,
 					Labels: map[string]string{
-						libupdater.LabelArcane: "true",
+						labels.LabelArcane: "true",
 					},
 				},
-			}))
+			})) {
+				return
+			}
 		case strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json"):
 			encodedRef := strings.TrimSuffix(r.URL.Path[strings.LastIndex(r.URL.Path, "/images/")+len("/images/"):], "/json")
 			_, err := url.PathUnescape(encodedRef)
-			require.NoError(t, err)
+			if !assert.NoError(t, err) {
+				return
+			}
 
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(dockertypesimage.InspectResponse{
+			if !assert.NoError(t, json.NewEncoder(w).Encode(dockertypesimage.InspectResponse{
 				ID:          imageID,
 				RepoTags:    []string{imageRef},
 				RepoDigests: []string{"ghcr.io/getarcaneapp/arcane@" + currentDigest},
-			}))
+			})) {
+				return
+			}
 		default:
 			http.NotFound(w, r)
 		}

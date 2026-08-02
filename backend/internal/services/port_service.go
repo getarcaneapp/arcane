@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
 	porttypes "github.com/getarcaneapp/arcane/types/v2/port"
@@ -23,12 +24,12 @@ func NewPortService(dockerService *DockerClientService) *PortService {
 func (s *PortService) ListPortsPaginated(ctx context.Context, params pagination.QueryParams) ([]porttypes.PortMapping, pagination.Response, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, pagination.Response{}, fmt.Errorf("failed to connect to Docker: %w", err)
+		return nil, pagination.Response{}, errors.WrapIf(err, "failed to connect to Docker")
 	}
 
 	containerList, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
 	if err != nil {
-		return nil, pagination.Response{}, fmt.Errorf("failed to list containers: %w", err)
+		return nil, pagination.Response{}, errors.WrapIf(err, "failed to list containers")
 	}
 
 	items := make([]porttypes.PortMapping, 0)

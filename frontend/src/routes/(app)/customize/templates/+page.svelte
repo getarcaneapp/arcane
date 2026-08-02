@@ -1,20 +1,20 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
-	import AddTemplateRegistrySheet from '$lib/components/sheets/add-template-registry-sheet.svelte';
-	import { m } from '$lib/paraglide/messages';
-	import { templateService } from '$lib/services/template-service.js';
-	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts';
-	import { TabBar, type TabItem } from '$lib/components/tab-bar';
-	import * as Tabs from '$lib/components/ui/tabs';
+	import AddTemplateRegistrySheet from '#lib/components/sheets/add-template-registry-sheet.svelte';
+	import { m } from '#lib/paraglide/messages';
+	import { templateService } from '#lib/services/template-service.js';
+	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts';
+	import { TabBar, type TabItem } from '#lib/components/tab-bar';
+	import * as Tabs from '#lib/components/ui/tabs';
 	import TemplateGallery from './components/template-gallery.svelte';
 	import RegistryManager from './components/RegistryManager.svelte';
-	import type { TemplateRegistry } from '$lib/types/swarm';
+	import type { TemplateRegistry } from '#lib/types/swarm';
 	import { untrack } from 'svelte';
-	import type { SearchPaginationSortRequest } from '$lib/types/shared';
-	import { RegistryIcon, TemplateIcon, FolderOpenIcon } from '$lib/icons';
-	import { hasPermission } from '$lib/utils/auth';
-	import { useUrlTab } from '$lib/hooks/use-url-tab.svelte';
+	import type { SearchPaginationSortRequest } from '#lib/types/shared';
+	import { RegistryIcon, TemplateIcon, FolderOpenIcon } from '#lib/icons';
+	import { hasPermission } from '#lib/utils/auth';
+	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte';
 
 	let { data } = $props();
 

@@ -1,6 +1,6 @@
 <script lang="ts">
-	import SettingsRow from '$lib/components/settings/settings-row.svelte';
-	import { Switch } from '$lib/components/ui/switch/index.js';
+	import SettingsRow from '#lib/components/settings/settings-row.svelte';
+	import { Switch } from '#lib/components/ui/switch/index.js';
 
 	interface Props {
 		id: string;
@@ -15,7 +15,6 @@
 </script>
 
 <div class="space-y-4">
-	<h3 class="text-base font-semibold">{title}</h3>
 	<SettingsRow label={title} {description} layout="inline">
 		<Switch id="{id}-enabled" bind:checked={enabled} {disabled} />
 	</SettingsRow>

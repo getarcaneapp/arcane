@@ -21,8 +21,8 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/imageupdate"
 	notificationdto "github.com/getarcaneapp/arcane/types/v2/notification"
-	"github.com/labstack/echo/v4"
-	sqlite "github.com/libtnb/sqlite"
+	"github.com/labstack/echo/v5"
+	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.getarcane.app/sys/crypto"
@@ -133,7 +133,7 @@ func TestDispatchNotification_ReturnsBadRequestForUnsupportedDispatchKind(t *tes
 	resp, err := h.DispatchNotification(ctx, &DispatchNotificationInput{
 		APIKey: token,
 		Body: notificationdto.DispatchRequest{
-			Kind: notificationdto.DispatchKind("bogus_kind"),
+			Kind: "bogus_kind",
 		},
 	})
 	require.Nil(t, resp)

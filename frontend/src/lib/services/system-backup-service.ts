@@ -1,12 +1,12 @@
 import BaseAPIService from './api-service';
-import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
+import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
 import type {
 	CreateSystemBackup,
 	SystemBackupPolicyCollection,
 	SystemBackupRun,
 	UpdateSystemBackupPolicy
-} from '$lib/types/system-backup';
-import { transformPaginationParams } from '$lib/utils/tables';
+} from '#lib/types/system-backup';
+import { transformPaginationParams } from '#lib/utils/tables';
 
 class SystemBackupService extends BaseAPIService {
 	async list(options?: SearchPaginationSortRequest): Promise<Paginated<SystemBackupRun>> {

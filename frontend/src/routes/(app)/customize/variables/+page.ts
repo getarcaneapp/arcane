@@ -1,7 +1,7 @@
-import { variableService } from '$lib/services/variable-service';
-import { environmentManagementService } from '$lib/services/env-mgmt-service';
-import { queryKeys } from '$lib/query/query-keys';
-import type { SearchPaginationSortRequest } from '$lib/types/shared';
+import { variableService } from '#lib/services/variable-service';
+import { environmentManagementService } from '#lib/services/env-mgmt-service';
+import { queryKeys } from '#lib/query/query-keys';
+import type { SearchPaginationSortRequest } from '#lib/types/shared';
 import type { PageLoad } from './$types';
 
 const environmentListOptions: SearchPaginationSortRequest = {

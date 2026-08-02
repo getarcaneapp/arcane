@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { AlertIcon, ArrowLeftIcon } from '$lib/icons';
-	import { m } from '$lib/paraglide/messages';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import { AlertIcon, ArrowLeftIcon } from '#lib/icons';
+	import { m } from '#lib/paraglide/messages';
 
 	let {
 		resource,

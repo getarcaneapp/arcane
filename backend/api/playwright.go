@@ -6,7 +6,7 @@ import (
 	"net/http"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 type PlaywrightHandler struct {
@@ -39,7 +39,7 @@ type CreateTestFederatedCredentialRequest struct {
 	TokenTTLSeconds int      `json:"tokenTtlSeconds"`
 }
 
-func (ph *PlaywrightHandler) CreateTestApiKeysHandler(c echo.Context) error {
+func (ph *PlaywrightHandler) CreateTestApiKeysHandler(c *echo.Context) error {
 	var req CreateTestApiKeysRequest
 	if err := c.Bind(&req); err != nil {
 		req.Count = 2
@@ -57,7 +57,7 @@ func (ph *PlaywrightHandler) CreateTestApiKeysHandler(c echo.Context) error {
 	return c.JSON(http.StatusCreated, map[string]any{"apiKeys": apiKeys})
 }
 
-func (ph *PlaywrightHandler) DeleteTestApiKeysHandler(c echo.Context) error {
+func (ph *PlaywrightHandler) DeleteTestApiKeysHandler(c *echo.Context) error {
 	if err := ph.PlaywrightService.DeleteAllTestApiKeys(c.Request().Context()); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]any{"error": err.Error()})
 	}
@@ -65,7 +65,7 @@ func (ph *PlaywrightHandler) DeleteTestApiKeysHandler(c echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
-func (ph *PlaywrightHandler) CreateTestFederatedCredentialHandler(c echo.Context) error {
+func (ph *PlaywrightHandler) CreateTestFederatedCredentialHandler(c *echo.Context) error {
 	var req CreateTestFederatedCredentialRequest
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]any{"error": "invalid request body"})

@@ -1,7 +1,7 @@
-import { createContainerStatsWebSocket } from '$lib/utils/ws';
-import type { ContainerStats } from '$lib/types/docker';
-import { calculateCPUPercent, calculateMemoryPercent, calculateMemoryUsage } from '$lib/utils/docker';
-import type { ReconnectingWebSocket } from '$lib/utils/ws';
+import { createContainerStatsWebSocket } from '#lib/utils/ws';
+import type { ContainerStats } from '#lib/types/docker';
+import { calculateCPUPercent, calculateMemoryPercent, calculateMemoryUsage } from '#lib/utils/docker';
+import type { ReconnectingWebSocket } from '#lib/utils/ws';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 
 export class ContainerStatsManager {

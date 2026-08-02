@@ -1,11 +1,11 @@
 <script lang="ts">
-	import * as Dialog from '$lib/components/ui/dialog';
-	import { AlertIcon } from '$lib/icons';
+	import * as Dialog from '#lib/components/ui/dialog';
+	import { AlertIcon } from '#lib/icons';
 	import { confirmDialogStore } from './store';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { Label } from '$lib/components/ui/label';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import { Label } from '#lib/components/ui/label';
 	import Checkbox from '../ui/checkbox/checkbox.svelte';
-	import { m } from '$lib/paraglide/messages';
+	import { m } from '#lib/paraglide/messages';
 
 	let checkboxStates = $state<Record<string, boolean>>({});
 
@@ -91,7 +91,7 @@
 				<ArcaneButton class="min-w-[80px]" action="cancel" onclick={() => ($confirmDialogStore.open = false)} />
 				<ArcaneButton
 					class="min-w-[80px]"
-					action={$confirmDialogStore.confirm.destructive ? 'remove' : 'confirm'}
+					action={$confirmDialogStore.confirm.button ?? ($confirmDialogStore.confirm.destructive ? 'remove' : 'confirm')}
 					customLabel={$confirmDialogStore.confirm.label}
 					onclick={handleConfirm}
 				/>

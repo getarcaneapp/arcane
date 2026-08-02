@@ -4,17 +4,18 @@
 	import { arcaneTableFeatures, type ArcaneColumnDef, type ArcaneRow, type ArcaneTable } from './table-features';
 	import DataTableToolbar from './arcane-table-toolbar.svelte';
 	import { onMount, untrack } from 'svelte';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
+	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
 	import type { Snippet } from 'svelte';
 	import type { ColumnSpec } from './arcane-table.types.svelte';
 	import TableCheckbox from './arcane-table-checkbox.svelte';
-	import { m } from '$lib/paraglide/messages';
+	import { m } from '#lib/paraglide/messages';
 	import { PersistedState } from 'runed';
 	import {
 		type CompactTablePrefs,
 		type FieldSpec,
 		type GroupedData,
 		type GroupSelectionState,
+		type SortState,
 		encodeHidden,
 		applyHiddenPatch,
 		encodeFilters,
@@ -54,6 +55,8 @@
 		customTableView,
 		customSettings = $bindable<Record<string, unknown>>({}),
 		columnVisibility = $bindable<ColumnVisibilityState>({}),
+		preferencesReady = $bindable(false),
+		hiddenSortFallback,
 		groupedRows = null,
 		// Grouping props
 		groupBy,
@@ -96,6 +99,8 @@
 		>;
 		customSettings?: Record<string, unknown>;
 		columnVisibility?: ColumnVisibilityState;
+		preferencesReady?: boolean;
+		hiddenSortFallback?: SortState;
 		groupedRows?: GroupedData<TData>[] | null;
 		// Grouping props
 		groupBy?: (item: TData) => string;
@@ -156,7 +161,10 @@
 		}
 
 		// Then restore preferences
-		if (!enablePersist) return;
+		if (!enablePersist) {
+			preferencesReady = true;
+			return;
+		}
 		const snapshot = extractPersistedPreferences(prefs?.current, getEffectiveLimit());
 
 		const patchedVisibility = { ...columnVisibility };
@@ -212,10 +220,15 @@
 		const persistedSort = snapshot.sort;
 		const currentSort = requestOptions?.sort;
 		if (persistedSort) {
-			if (currentSort?.column !== persistedSort.column || currentSort?.direction !== persistedSort.direction) {
+			const restoredSort =
+				patchedVisibility[persistedSort.column] === false && hiddenSortFallback ? hiddenSortFallback : persistedSort;
+			if (restoredSort !== persistedSort && prefs) {
+				prefs.current = { ...prefs.current, s: encodeSort(restoredSort) };
+			}
+			if (currentSort?.column !== restoredSort.column || currentSort?.direction !== restoredSort.direction) {
 				requestOptions = {
 					...requestOptions,
-					sort: persistedSort,
+					sort: restoredSort,
 					pagination: { page: 1, limit: requestOptions?.pagination?.limit ?? getEffectiveLimit() }
 				};
 				shouldRefresh = true;
@@ -230,6 +243,8 @@
 		if (snapshot.customSettings && Object.keys(snapshot.customSettings).length > 0) {
 			customSettings = { ...snapshot.customSettings };
 		}
+
+		preferencesReady = true;
 	});
 
 	function updatePagination(patch: Partial<{ page: number; limit: number }>) {
@@ -345,7 +360,11 @@
 		if (rowActions) {
 			cols.push({
 				id: 'actions',
-				cell: ({ row }) => renderSnippet(rowActions, { row, item: row.original as TData })
+				// The closure reads the live rowActions prop. When the caller flips it
+				// to undefined (e.g. a project stops and its per-row actions go away),
+				// the old column can still render once before the column set rebuilds —
+				// rendering an undefined snippet would crash the page (invalid_snippet).
+				cell: ({ row }) => (rowActions ? renderSnippet(rowActions, { row, item: row.original as TData }) : undefined)
 			});
 		}
 
@@ -489,10 +508,28 @@
 			onRefresh(requestOptions);
 		},
 		onColumnVisibilityChange: (updater) => {
-			columnVisibility = typeof updater === 'function' ? updater(columnVisibility) : updater;
+			const nextVisibility = typeof updater === 'function' ? updater(columnVisibility) : updater;
+			columnVisibility = nextVisibility;
 			// Persist visibility
 			if (enablePersist && prefs) {
 				prefs.current = { ...prefs.current, v: encodeHidden(columnVisibility) };
+			}
+
+			const activeSort = requestOptions?.sort;
+			if (activeSort && nextVisibility[activeSort.column] === false && hiddenSortFallback) {
+				sorting = [{ id: hiddenSortFallback.column, desc: hiddenSortFallback.direction === 'desc' }];
+				requestOptions = {
+					...requestOptions,
+					sort: hiddenSortFallback,
+					pagination: {
+						page: 1,
+						limit: requestOptions?.pagination?.limit ?? items?.pagination?.itemsPerPage ?? 10
+					}
+				};
+				if (enablePersist && prefs) {
+					prefs.current = { ...prefs.current, s: encodeSort(hiddenSortFallback) };
+				}
+				onRefresh(requestOptions);
 			}
 		},
 		onGlobalFilterChange: (value) => {

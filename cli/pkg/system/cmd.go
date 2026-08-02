@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
@@ -42,30 +43,30 @@ var pruneCmd = &cobra.Command{
 
 		resp, err := c.Post(cmd.Context(), types.Endpoints.SystemPrune(c.EnvID()), req)
 		if err != nil {
-			return fmt.Errorf("failed to prune: %w", err)
+			return errors.WrapIf(err, "failed to prune")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to prune: %w", err)
+			return errors.WrapIf(err, "failed to prune")
 		}
 
 		var result base.ApiResponse[system.PruneAllResult]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
 		}
 
 		output.Header("System Prune Results")
-		output.KeyValue("Space Reclaimed", result.Data.SpaceReclaimed)
+		output.KeyValue("Space Reclaimed", output.UnsignedBytes(result.Data.SpaceReclaimed))
 		return nil
 	},
 }
@@ -82,29 +83,26 @@ var dockerInfoCmd = &cobra.Command{
 
 		resp, err := c.Get(cmd.Context(), types.Endpoints.SystemDockerInfo(c.EnvID()))
 		if err != nil {
-			return fmt.Errorf("failed to get docker info: %w", err)
+			return errors.WrapIf(err, "failed to get docker info")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
-		var result base.ApiResponse[dockerinfo.Info]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+		// This endpoint returns dockerinfo.Info directly, not wrapped in an
+		// ApiResponse envelope.
+		var result dockerinfo.Info
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return errors.WrapIf(err, "failed to get docker info")
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result)
 		}
 
 		output.Header("Docker Info")
-		output.KeyValue("API Version", result.Data.APIVersion)
-		output.KeyValue("OS", result.Data.Os)
-		output.KeyValue("Architecture", result.Data.Arch)
-		output.KeyValue("Go Version", result.Data.GoVersion)
+		output.KeyValue("API Version", result.APIVersion)
+		output.KeyValue("OS", result.Os)
+		output.KeyValue("Architecture", result.Arch)
+		output.KeyValue("Go Version", result.GoVersion)
 		return nil
 	},
 }
@@ -121,12 +119,12 @@ var containersStartAllCmd = &cobra.Command{
 
 		resp, err := c.Post(cmd.Context(), types.Endpoints.SystemContainersStartAll(c.EnvID()), nil)
 		if err != nil {
-			return fmt.Errorf("failed to start all containers: %w", err)
+			return errors.WrapIf(err, "failed to start all containers")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to start all containers: %w", err)
+			return errors.WrapIf(err, "failed to start all containers")
 		}
 
 		output.Success("Started all containers")
@@ -146,12 +144,12 @@ var containersStopAllCmd = &cobra.Command{
 
 		resp, err := c.Post(cmd.Context(), types.Endpoints.SystemContainersStopAll(c.EnvID()), nil)
 		if err != nil {
-			return fmt.Errorf("failed to stop all containers: %w", err)
+			return errors.WrapIf(err, "failed to stop all containers")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to stop all containers: %w", err)
+			return errors.WrapIf(err, "failed to stop all containers")
 		}
 
 		output.Success("Stopped all containers")
@@ -171,11 +169,11 @@ var startStoppedCmd = &cobra.Command{
 
 		resp, err := c.Post(cmd.Context(), types.Endpoints.SystemStartStopped(c.EnvID()), nil)
 		if err != nil {
-			return fmt.Errorf("failed to start stopped containers: %w", err)
+			return errors.WrapIf(err, "failed to start stopped containers")
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to start stopped containers: %w", err)
+			return errors.WrapIf(err, "failed to start stopped containers")
 		}
 
 		if jsonOutput {
@@ -207,11 +205,11 @@ var convertCmd = &cobra.Command{
 		req := map[string]string{"dockerRunCommand": args[0]}
 		resp, err := c.Post(cmd.Context(), types.Endpoints.SystemConvert(c.EnvID()), req)
 		if err != nil {
-			return fmt.Errorf("failed to convert command: %w", err)
+			return errors.WrapIf(err, "failed to convert command")
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to convert command: %w", err)
+			return errors.WrapIf(err, "failed to convert command")
 		}
 
 		var result struct {
@@ -220,8 +218,8 @@ var convertCmd = &cobra.Command{
 			EnvVars       string `json:"envVars"`
 			ServiceName   string `json:"serviceName"`
 		}
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if jsonOutput {
@@ -232,7 +230,7 @@ var convertCmd = &cobra.Command{
 			}
 			resultBytes, err := json.MarshalIndent(out, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -279,11 +277,11 @@ var upgradeCmd = &cobra.Command{
 
 		resp, err := c.Post(cmd.Context(), types.Endpoints.SystemUpgrade(c.EnvID()), nil)
 		if err != nil {
-			return fmt.Errorf("failed to upgrade system: %w", err)
+			return errors.WrapIf(err, "failed to upgrade system")
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to upgrade system: %w", err)
+			return errors.WrapIf(err, "failed to upgrade system")
 		}
 
 		if jsonOutput {
@@ -313,12 +311,12 @@ var upgradeCheckCmd = &cobra.Command{
 
 		resp, err := c.Get(cmd.Context(), types.Endpoints.SystemUpgradeCheck(c.EnvID()))
 		if err != nil {
-			return fmt.Errorf("failed to check for upgrades: %w", err)
+			return errors.WrapIf(err, "failed to check for upgrades")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to check for upgrades: %w", err)
+			return errors.WrapIf(err, "failed to check for upgrades")
 		}
 
 		var result struct {
@@ -326,14 +324,14 @@ var upgradeCheckCmd = &cobra.Command{
 			Error      bool   `json:"error"`
 			Message    string `json:"message"`
 		}
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(result, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil

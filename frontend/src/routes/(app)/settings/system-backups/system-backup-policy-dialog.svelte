@@ -1,14 +1,14 @@
 <script lang="ts">
-	import { ResponsiveDialog } from '$lib/components/ui/responsive-dialog';
-	import { ArcaneButton } from '$lib/components/arcane-button';
-	import LabeledSwitch from '$lib/components/form/labeled-switch.svelte';
-	import SelectWithLabel from '$lib/components/form/select-with-label.svelte';
-	import TextInputWithLabel from '$lib/components/form/text-input-with-label.svelte';
-	import type { S3Destination } from '$lib/types/s3-destination';
-	import type { SystemBackupPolicy, SystemBackupDestination, UpdateSystemBackupPolicy } from '$lib/types/system-backup';
-	import { systemBackupService } from '$lib/services/system-backup-service';
+	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog';
+	import { ArcaneButton } from '#lib/components/arcane-button';
+	import LabeledSwitch from '#lib/components/form/labeled-switch.svelte';
+	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
+	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
+	import type { S3Destination } from '#lib/types/s3-destination';
+	import type { SystemBackupPolicy, SystemBackupDestination, UpdateSystemBackupPolicy } from '#lib/types/system-backup';
+	import { systemBackupService } from '#lib/services/system-backup-service';
 	import { toast } from 'svelte-sonner';
-	import * as m from '$lib/paraglide/messages.js';
+	import * as m from '#lib/paraglide/messages.js';
 
 	type PolicyForm = UpdateSystemBackupPolicy & { destination: SystemBackupDestination; serverError?: string };
 

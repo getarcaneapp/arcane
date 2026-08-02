@@ -1,12 +1,12 @@
 <script lang="ts">
 	import type { Component, ComponentProps, Snippet } from 'svelte';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { Card } from '$lib/components/ui/card';
-	import { UiConfigDisabledTag } from '$lib/components/badges/index.js';
-	import * as InputGroup from '$lib/components/ui/input-group/index.js';
-	import { Spinner } from '$lib/components/ui/spinner/index.js';
-	import HeaderCard from '$lib/components/header-card.svelte';
-	import { SearchIcon, ArrowRightIcon, CloseIcon } from '$lib/icons';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import { Card } from '#lib/components/ui/card';
+	import { UiConfigDisabledTag } from '#lib/components/badges/index.js';
+	import * as InputGroup from '#lib/components/ui/input-group/index.js';
+	import { Spinner } from '#lib/components/ui/spinner/index.js';
+	import HeaderCard from '#lib/components/header-card.svelte';
+	import { SearchIcon, ArrowRightIcon, CloseIcon } from '#lib/icons';
 	import type { NormalizedCategory } from './category-index-page.types';
 
 	interface CategorySearch {

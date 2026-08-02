@@ -1,14 +1,13 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { m } from '$lib/paraglide/messages';
-	import { createBackendLogsWebSocket, ReconnectingWebSocket } from '$lib/utils/ws';
-	import { diagnosticsService } from '$lib/services/diagnostics-service';
-	import type { LogEntry } from '$lib/types/diagnostics';
-	import { cn } from '$lib/utils';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { TrashIcon } from '$lib/icons';
+	import { m } from '#lib/paraglide/messages';
+	import { createBackendLogsWebSocket, ReconnectingWebSocket } from '#lib/utils/ws';
+	import type { LogEntry } from '#lib/types/diagnostics';
+	import { cn } from '#lib/utils';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import { TrashIcon } from '#lib/icons';
 	import { attrsText } from './diagnostic-log-formatting';
-	import { formatTime } from '$lib/utils/formatting';
+	import { formatTime } from '#lib/utils/formatting';
 
 	interface Props {
 		height?: string;
@@ -17,7 +16,13 @@
 
 	let { height = '360px', maxLines = 1000 }: Props = $props();
 
-	let logs = $state<LogEntry[]>([]);
+	interface DisplayLogEntry {
+		id: number;
+		entry: LogEntry;
+	}
+
+	let nextLogId = 0;
+	let logs = $state<DisplayLogEntry[]>([]);
 	let connected = $state(false);
 	let autoScroll = $state(true);
 	let filterText = $state('');
@@ -26,10 +31,10 @@
 	let ws: ReconnectingWebSocket<LogEntry> | null = null;
 
 	const filtered = $derived(
-		logs.filter((l) => {
-			const lvl = l.level.toLowerCase();
+		logs.filter(({ entry }) => {
+			const lvl = entry.level.toLowerCase();
 			if (levelFilter !== 'all' && !lvl.startsWith(levelFilter)) return false;
-			if (filterText && !l.message.toLowerCase().includes(filterText.toLowerCase())) return false;
+			if (filterText && !entry.message.toLowerCase().includes(filterText.toLowerCase())) return false;
 			return true;
 		})
 	);
@@ -43,7 +48,7 @@
 	}
 
 	function push(entry: LogEntry) {
-		logs.push(entry);
+		logs.push({ id: nextLogId++, entry });
 		if (logs.length > maxLines) logs = logs.slice(logs.length - maxLines);
 		scrollToBottom();
 	}
@@ -60,20 +65,13 @@
 		return formatTime(t) || t;
 	}
 
-	function logKey(entry: LogEntry): string {
-		return `${entry.time}-${entry.level}-${entry.message}-${attrsText(entry.attrs)}`;
-	}
-
 	onMount(async () => {
-		try {
-			const recent = await diagnosticsService.getRecentLogs();
-			logs = recent.slice(-maxLines);
-		} catch {
-			// initial backlog is best-effort; the live stream fills in
-		}
 		ws = createBackendLogsWebSocket({
 			onMessage: (e) => push(e),
-			onOpen: () => (connected = true),
+			onOpen: () => {
+				logs = [];
+				connected = true;
+			},
 			onClose: () => (connected = false)
 		});
 		await ws.connect();
@@ -135,7 +133,8 @@
 		{#if filtered.length === 0}
 			<div class="py-6 text-center text-muted-foreground">{m.diagnostics_logs_empty()}</div>
 		{:else}
-			{#each filtered as entry (logKey(entry))}
+			{#each filtered as item (item.id)}
+				{@const entry = item.entry}
 				<div class="flex gap-2 rounded px-1 py-0.5 hover:bg-foreground/5">
 					<span class="shrink-0 text-muted-foreground tabular-nums">{fmtTime(entry.time)}</span>
 					<span class={cn('w-12 shrink-0 font-semibold uppercase', levelClass(entry.level))}>{entry.level}</span>

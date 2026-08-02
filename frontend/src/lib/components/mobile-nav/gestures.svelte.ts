@@ -1,4 +1,4 @@
-import { SwipeGestureDetector, type SwipeDirection } from '$lib/hooks/use-swipe-gesture.svelte';
+import { SwipeGestureDetector, type SwipeDirection } from '#lib/hooks/use-swipe-gesture.svelte';
 
 export interface GestureHandlers {
 	onMenuOpen: () => void;

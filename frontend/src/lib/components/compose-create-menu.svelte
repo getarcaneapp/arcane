@@ -8,14 +8,14 @@
 	no business logic — it purely renders the shared chrome.
 -->
 <script lang="ts">
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { Spinner } from '$lib/components/ui/spinner/index.js';
-	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
-	import * as ButtonGroup from '$lib/components/ui/button-group/index.js';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import IfPermitted from '$lib/components/if-permitted.svelte';
-	import { TerminalIcon, TemplateIcon, AddIcon, ArrowDownIcon as ChevronDown, GitBranchIcon } from '$lib/icons';
-	import { dropdownContentClass, dropdownItemClass, templateBtnClass } from '$lib/utils/compose-flow';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import { Spinner } from '#lib/components/ui/spinner/index.js';
+	import * as ArcaneTooltip from '#lib/components/arcane-tooltip';
+	import * as ButtonGroup from '#lib/components/ui/button-group/index.js';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import IfPermitted from '#lib/components/if-permitted.svelte';
+	import { TerminalIcon, TemplateIcon, AddIcon, ArrowDownIcon as ChevronDown, GitBranchIcon } from '#lib/icons';
+	import { dropdownContentClass, dropdownItemClass, templateBtnClass } from '#lib/utils/compose-flow';
 	import { mergeProps } from 'bits-ui';
 
 	interface Props {

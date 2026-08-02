@@ -2,11 +2,11 @@ package runtime
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"sync"
 	"time"
 
+	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/config"
 	clitypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
@@ -14,7 +14,9 @@ import (
 
 type contextKey string
 
-const appContextKey contextKey = "arcane_app_context"
+// AppContextKey is the context key under which the CLI's AppContext is stored;
+// set it with context.WithValue and read it back with From.
+const AppContextKey contextKey = "arcane_app_context"
 
 type OutputMode string
 
@@ -51,7 +53,7 @@ type AppContext struct {
 func New(opts Options) (*AppContext, error) {
 	cfg, err := config.Load()
 	if err != nil {
-		return nil, fmt.Errorf("failed to load config: %w", err)
+		return nil, errors.WrapIf(err, "failed to load config")
 	}
 
 	mode := opts.OutputMode
@@ -61,7 +63,7 @@ func New(opts Options) (*AppContext, error) {
 	switch mode {
 	case OutputModeText, OutputModeJSON:
 	default:
-		return nil, fmt.Errorf("invalid output mode %q (expected text or json)", mode)
+		return nil, errors.Errorf("invalid output mode %q (expected text or json)", mode)
 	}
 
 	return &AppContext{
@@ -74,15 +76,11 @@ func New(opts Options) (*AppContext, error) {
 	}, nil
 }
 
-func WithAppContext(ctx context.Context, app *AppContext) context.Context {
-	return context.WithValue(ctx, appContextKey, app)
-}
-
 func From(ctx context.Context) (*AppContext, bool) {
 	if ctx == nil {
 		return nil, false
 	}
-	app, ok := ctx.Value(appContextKey).(*AppContext)
+	app, ok := ctx.Value(AppContextKey).(*AppContext)
 	return app, ok && app != nil
 }
 

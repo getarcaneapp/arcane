@@ -65,6 +65,22 @@ func TestResolveConfiguredContainerDirectory(t *testing.T) {
 	})
 }
 
+func TestResolvePathWithinDir(t *testing.T) {
+	workingDir := filepath.Join(string(filepath.Separator), "tmp", "stack")
+
+	t.Run("allows paths within the directory", func(t *testing.T) {
+		resolved, err := ResolvePathWithinDir(workingDir, filepath.Join("configs", "app.env"))
+		require.NoError(t, err)
+		require.Equal(t, filepath.Join(workingDir, "configs", "app.env"), resolved)
+	})
+
+	t.Run("rejects escaping paths", func(t *testing.T) {
+		_, err := ResolvePathWithinDir(workingDir, filepath.Join("..", "..", "etc", "shadow"))
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "escapes directory")
+	})
+}
+
 func TestReadProjectFiles(t *testing.T) {
 	t.Run("detects compose path when not provided", func(t *testing.T) {
 		projectPath := t.TempDir()

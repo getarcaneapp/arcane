@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { Badge } from '$lib/components/ui/badge';
-	import { m } from '$lib/paraglide/messages';
+	import { Badge } from '#lib/components/ui/badge';
+	import { m } from '#lib/paraglide/messages';
 
 	let { value }: { value: unknown } = $props();
 	const enabled = $derived(Boolean(value));

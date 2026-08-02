@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { DropdownMenu as DropdownMenuPrimitive } from 'bits-ui';
-	import { ArrowRightIcon } from '$lib/icons';
-	import { cn } from '$lib/utils.js';
+	import { ArrowRightIcon } from '#lib/icons';
+	import { cn } from '#lib/utils.js';
 
 	let {
 		ref = $bindable(null),

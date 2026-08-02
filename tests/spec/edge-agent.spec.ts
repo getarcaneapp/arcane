@@ -135,7 +135,7 @@ test.describe('Edge Agent Environment', () => {
 				await expect(page).toHaveURL(new RegExp(`/environments/${createdEnvironmentId}`));
 			}
 
-			await expect(page.locator('#api-url')).toHaveValue(/edge:\/\/edge-agent-/);
+			await expect(page.getByTitle('API URL', { exact: true })).toHaveText(/edge:\/\/edge-agent-/);
 			await expect(page.getByText('Edge', { exact: true }).first()).toBeVisible();
 			await expect(page.getByText('Live Tunnel', { exact: true })).toBeVisible();
 		} finally {

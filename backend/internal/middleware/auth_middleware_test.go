@@ -9,7 +9,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"github.com/stretchr/testify/require"
 )
 
@@ -80,7 +80,7 @@ func TestAuthMiddleware_ManagerAuthResolvesPermissionsByKeyKind(t *testing.T) {
 					WithPermissionResolver(testPermissionResolver{}).
 					Add(),
 			)
-			router.GET("/secure", func(c echo.Context) error {
+			router.GET("/secure", func(c *echo.Context) error {
 				ps, ok := c.Get("userPermissions").(*authz.PermissionSet)
 				require.True(t, ok)
 				require.True(t, ps.Allows(tc.wantAllowed, ""))
@@ -112,7 +112,7 @@ func TestAuthMiddleware_ManagerAuthAcceptsEnvironmentAccessTokenViaAPIKey(t *tes
 			}).
 			Add(),
 	)
-	router.GET("/secure", func(c echo.Context) error {
+	router.GET("/secure", func(c *echo.Context) error {
 		currentUser := c.Get("currentUser")
 		require.NotNil(t, currentUser)
 

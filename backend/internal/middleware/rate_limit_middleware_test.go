@@ -6,14 +6,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/time/rate"
 )
 
 func TestPerIPRateLimit_AllowsUnderBurstAndBlocksOver(t *testing.T) {
 	router := echo.New()
-	router.POST("/t", func(c echo.Context) error {
+	router.POST("/t", func(c *echo.Context) error {
 		return c.NoContent(http.StatusOK)
 	}, PerIPRateLimit(60, 2))
 
@@ -32,7 +32,7 @@ func TestPerIPRateLimit_AllowsUnderBurstAndBlocksOver(t *testing.T) {
 
 func TestPerIPRateLimit_TracksDistinctClients(t *testing.T) {
 	router := echo.New()
-	router.POST("/t", func(c echo.Context) error {
+	router.POST("/t", func(c *echo.Context) error {
 		return c.NoContent(http.StatusOK)
 	}, PerIPRateLimit(60, 1))
 
@@ -51,7 +51,7 @@ func TestPerIPRateLimit_TracksDistinctClients(t *testing.T) {
 
 func TestStackedAgentEnrollmentRateLimits_KeepIPBackPressure(t *testing.T) {
 	router := echo.New()
-	router.POST("/t", func(c echo.Context) error {
+	router.POST("/t", func(c *echo.Context) error {
 		return c.NoContent(http.StatusOK)
 	}, PerIPRateLimit(60, 1), PerAgentTokenRateLimit(60, 10))
 
@@ -73,10 +73,10 @@ func TestPerIPRateLimitForPaths_AppliesOnlyToConfiguredPaths(t *testing.T) {
 	router.IPExtractor = echo.ExtractIPDirect()
 
 	router.Use(PerIPRateLimitForPaths([]string{"/limited"}, 60, 1))
-	router.POST("/limited", func(c echo.Context) error {
+	router.POST("/limited", func(c *echo.Context) error {
 		return c.NoContent(http.StatusOK)
 	})
-	router.POST("/unlimited", func(c echo.Context) error {
+	router.POST("/unlimited", func(c *echo.Context) error {
 		return c.NoContent(http.StatusOK)
 	})
 
@@ -101,7 +101,7 @@ func TestPerIPRateLimitForPaths_TracksDistinctIPs(t *testing.T) {
 	router.IPExtractor = echo.ExtractIPDirect()
 
 	router.Use(PerIPRateLimitForPaths([]string{"/limited"}, 60, 1))
-	router.POST("/limited", func(c echo.Context) error {
+	router.POST("/limited", func(c *echo.Context) error {
 		return c.NoContent(http.StatusOK)
 	})
 
@@ -123,8 +123,8 @@ func TestPerIPRateLimitForPaths_IndependentBucketPerPath(t *testing.T) {
 	router.IPExtractor = echo.ExtractIPDirect()
 
 	router.Use(PerIPRateLimitForPaths([]string{"/a", "/b"}, 60, 1))
-	router.POST("/a", func(c echo.Context) error { return c.NoContent(http.StatusOK) })
-	router.POST("/b", func(c echo.Context) error { return c.NoContent(http.StatusOK) })
+	router.POST("/a", func(c *echo.Context) error { return c.NoContent(http.StatusOK) })
+	router.POST("/b", func(c *echo.Context) error { return c.NoContent(http.StatusOK) })
 
 	doReq := func(path string) int {
 		req := httptest.NewRequest(http.MethodPost, path, nil)
@@ -146,7 +146,7 @@ func TestPerIPRateLimitForPaths_RouteParamsDoNotEscapeFilter(t *testing.T) {
 	router.IPExtractor = echo.ExtractIPDirect()
 
 	router.Use(PerIPRateLimitForPaths([]string{"/webhooks/trigger/:token"}, 60, 1))
-	router.POST("/webhooks/trigger/:token", func(c echo.Context) error {
+	router.POST("/webhooks/trigger/:token", func(c *echo.Context) error {
 		return c.NoContent(http.StatusOK)
 	})
 

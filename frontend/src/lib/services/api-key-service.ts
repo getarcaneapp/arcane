@@ -1,7 +1,7 @@
 import BaseAPIService from './api-service';
-import type { ApiKey, ApiKeyCreated, CreateApiKey, CreateUserApiKey, UpdateApiKey } from '$lib/types/auth';
-import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
-import { transformPaginationParams } from '$lib/utils/tables';
+import type { ApiKey, ApiKeyCreated, CreateApiKey, CreateUserApiKey, UpdateApiKey } from '#lib/types/auth';
+import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
+import { transformPaginationParams } from '#lib/utils/tables';
 
 class ApiKeyAPIService extends BaseAPIService {
 	async getApiKeys(options?: SearchPaginationSortRequest): Promise<Paginated<ApiKey>> {

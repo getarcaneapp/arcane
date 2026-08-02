@@ -3,25 +3,23 @@ package services
 import (
 	"context"
 	"encoding/json/jsontext"
-	json "encoding/json/v2"
-	"errors"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"log/slog"
 	"maps"
-	"slices"
 	"strings"
 	"sync"
 	"time"
+
+	"emperror.dev/errors"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/events"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
-	"golang.org/x/sync/singleflight"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
@@ -29,15 +27,15 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cache"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/iconcatalog"
 	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
+	"github.com/samber/hot"
 	"go.getarcane.app/streams/bus"
 	containerstats "go.getarcane.app/streams/stats"
 	"go.getarcane.app/sys/cgroup"
-	libupdater "go.getarcane.app/updater/pkg/labels"
+	"go.getarcane.app/updater/labels"
 )
 
 type ContainerService struct {
@@ -48,9 +46,8 @@ type ContainerService struct {
 	settingsService *SettingsService
 	projectService  *ProjectService
 	statsHistory    containerstats.Store
-	updateInfoCache *cache.KeyedCache[string, *imagetypes.UpdateInfo]
-	updateInfoSF    singleflight.Group
-	iconMetaCache   *cache.TTL[projects.ArcaneComposeMetadata]
+	updateInfoCache *hot.HotCache[string, *imagetypes.UpdateInfo]
+	iconMetaCache   *hot.HotCache[string, projects.ArcaneComposeMetadata]
 }
 
 const (
@@ -74,8 +71,11 @@ func NewContainerService(ctx context.Context, db *database.DB, eventService *Eve
 		imageService:    imageService,
 		settingsService: settingsService,
 		projectService:  projectService,
-		updateInfoCache: cache.NewKeyed[string, *imagetypes.UpdateInfo](),
-		iconMetaCache:   cache.NewTTL[projects.ArcaneComposeMetadata](containerIconMetadataTTL),
+		updateInfoCache: hot.NewHotCache[string, *imagetypes.UpdateInfo](hot.LRU, 4096).Build(),
+		iconMetaCache: hot.NewHotCache[string, projects.ArcaneComposeMetadata](hot.LRU, 1024).
+			WithTTL(containerIconMetadataTTL).
+			WithJanitor().
+			Build(),
 	}
 	svc.subscribeUpdateInfoCacheInvalidationInternal(ctx)
 	return svc
@@ -96,7 +96,7 @@ func (s *ContainerService) subscribeUpdateInfoCacheInvalidationInternal(ctx cont
 				if !ok {
 					return
 				}
-				s.updateInfoCache.InvalidateAll()
+				s.updateInfoCache.Purge()
 			}
 		}
 	}()
@@ -155,20 +155,9 @@ func shouldStartRedeployedContainerInternal(containerInfo container.InspectRespo
 	return shouldStart
 }
 
-func writeContainerProgressInternal(ctx context.Context, message string, progress int, phase string) {
-	progressWriter, _ := ctx.Value(projects.ProgressWriterKey{}).(io.Writer)
-	if progressWriter == nil {
-		return
-	}
-	payload := fmt.Sprintf(`{"type":"container","phase":%q,"status":%q,"progressDetail":{"current":%d,"total":100}}`+"\n", phase, message, progress)
-	if _, err := progressWriter.Write([]byte(payload)); err != nil {
-		slog.DebugContext(ctx, "failed to write container progress", "phase", phase, "error", err)
-	}
-}
-
 func (s *ContainerService) pullRedeployImageInternal(ctx context.Context, dockerClient *client.Client, imageName, containerID, containerName string, user models.User) error {
 	settings := s.settingsService.GetSettingsConfig()
-	pullCtx, pullCancel := timeouts.WithTimeout(ctx, settings.DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull)
+	pullCtx, pullCancel := context.WithTimeout(ctx, timeouts.GetDuration(settings.DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull))
 	defer pullCancel()
 
 	pullOptions, authErr := s.imageService.getPullOptionsWithAuth(ctx, imageName, nil)
@@ -196,7 +185,7 @@ func (s *ContainerService) pullRedeployImageInternal(ctx context.Context, docker
 				"step":   "pull_image_timeout",
 				"image":  imageName,
 			})
-			return fmt.Errorf("image pull timed out for %s (increase DOCKER_IMAGE_PULL_TIMEOUT or setting)", imageName)
+			return errors.Errorf("image pull timed out for %s (increase DOCKER_IMAGE_PULL_TIMEOUT or setting)", imageName)
 		}
 
 		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", pullErr, models.JSON{
@@ -204,18 +193,22 @@ func (s *ContainerService) pullRedeployImageInternal(ctx context.Context, docker
 			"step":   "pull_image",
 			"image":  imageName,
 		})
-		return fmt.Errorf("failed to pull image %s: %w", imageName, pullErr)
+		return errors.WrapIff(pullErr, "failed to pull image %s", imageName)
 	}
 	defer func() { _ = reader.Close() }()
 
-	streamErr := dockerutils.ConsumeJSONMessageStream(reader, nil)
+	progressWriter, _ := ctx.Value(dockerutils.ProgressWriterKey{}).(io.Writer)
+	logWriter := dockerutils.NewLogLineWriter(progressWriter)
+	defer func() { _ = logWriter.Close() }()
+
+	streamErr := dockerutils.RenderJSONMessageStream(reader, logWriter)
 	if streamErr != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", streamErr, models.JSON{
 			"action": "redeploy",
 			"step":   "complete_pull",
 			"image":  imageName,
 		})
-		return fmt.Errorf("failed to complete image pull: %w", streamErr)
+		return errors.WrapIf(streamErr, "failed to complete image pull")
 	}
 
 	return nil
@@ -229,7 +222,7 @@ func (s *ContainerService) prepareContainerForRedeployInternal(ctx context.Conte
 				"step":       "rename_old",
 				"backupName": backupName,
 			})
-			return fmt.Errorf("failed to rename existing container: %w", err)
+			return errors.WrapIf(err, "failed to rename existing container")
 		}
 	}
 
@@ -255,7 +248,7 @@ func (s *ContainerService) prepareContainerForRedeployInternal(ctx context.Conte
 		"action": "redeploy",
 		"step":   "stop",
 	})
-	return fmt.Errorf("failed to stop container: %w", err)
+	return errors.WrapIf(err, "failed to stop container")
 }
 
 func (s *ContainerService) restoreContainerAfterRedeployFailureInternal(ctx context.Context, dockerClient *client.Client, containerID, containerName, backupName, failedStep string, wasRunning bool, user models.User) {
@@ -294,7 +287,7 @@ func (s *ContainerService) runContainerLifecycleActionInternal(ctx context.Conte
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, models.JSON{"action": cfg.action})
-		return fmt.Errorf("failed to connect to Docker: %w", err)
+		return errors.WrapIf(err, "failed to connect to Docker")
 	}
 
 	metadata := models.JSON{
@@ -306,7 +299,7 @@ func (s *ContainerService) runContainerLifecycleActionInternal(ctx context.Conte
 	err = s.eventService.LogContainerEvent(ctx, cfg.eventType, containerID, "name", user.ID, user.Username, "0", metadata)
 	if err != nil {
 		if !cfg.warnOnLogError {
-			return fmt.Errorf("failed to log action: %w", err)
+			return errors.WrapIf(err, "failed to log action")
 		}
 		slog.WarnContext(ctx, "could not log container action", "action", cfg.action, "error", err)
 	}
@@ -403,7 +396,7 @@ func (s *ContainerService) CommitContainer(ctx context.Context, containerID stri
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "container", containerID, "", user.ID, user.Username, "0", err, models.JSON{"action": "commit"})
-		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
+		return nil, errors.WrapIf(err, "failed to connect to Docker")
 	}
 
 	repository := strings.TrimSpace(req.Repository)
@@ -422,7 +415,7 @@ func (s *ContainerService) CommitContainer(ctx context.Context, containerID stri
 	})
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "container", containerID, reference, user.ID, user.Username, "0", err, models.JSON{"action": "commit", "reference": reference})
-		return nil, fmt.Errorf("failed to commit container: %w", err)
+		return nil, errors.WrapIf(err, "failed to commit container")
 	}
 
 	metadata := models.JSON{
@@ -460,9 +453,9 @@ func (s *ContainerService) tryRedeployViaComposeProjectInternal(ctx context.Cont
 	if s.projectService == nil || containerInfo.Config == nil {
 		return "", false, nil
 	}
-	labels := containerInfo.Config.Labels
-	projectName := dockerutils.ComposeProjectLabel(labels)
-	serviceName := dockerutils.ComposeServiceLabel(labels)
+	containerLabels := containerInfo.Config.Labels
+	projectName := dockerutils.ComposeProjectLabel(containerLabels)
+	serviceName := dockerutils.ComposeServiceLabel(containerLabels)
 	if projectName == "" || serviceName == "" {
 		return "", false, nil
 	}
@@ -480,7 +473,7 @@ func (s *ContainerService) tryRedeployViaComposeProjectInternal(ctx context.Cont
 			)
 			return "", false, nil
 		}
-		return "", true, fmt.Errorf("failed to look up compose project %s: %w", projectName, err)
+		return "", true, errors.WrapIff(err, "failed to look up compose project %s", projectName)
 	}
 	if proj == nil {
 		slog.WarnContext(ctx, "RedeployContainer: compose project not registered, falling back to standalone redeploy",
@@ -506,7 +499,7 @@ func (s *ContainerService) tryRedeployViaComposeProjectInternal(ctx context.Cont
 			"projectId":   proj.ID,
 			"projectName": proj.Name,
 		})
-		return "", true, fmt.Errorf("compose redeploy failed for %s/%s: %w", projectName, serviceName, err)
+		return "", true, errors.WrapIff(err, "compose redeploy failed for %s/%s", projectName, serviceName)
 	}
 
 	newID := s.findComposeServiceContainerIDInternal(ctx, projectName, serviceName)
@@ -569,7 +562,7 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 			"action": "redeploy",
 			"step":   "get_client",
 		})
-		return "", fmt.Errorf("failed to connect to Docker: %w", err)
+		return "", errors.WrapIf(err, "failed to connect to Docker")
 	}
 
 	containerJSON, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
@@ -578,7 +571,7 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 			"action": "redeploy",
 			"step":   "inspect",
 		})
-		return "", fmt.Errorf("failed to inspect container: %w", err)
+		return "", errors.WrapIf(err, "failed to inspect container")
 	}
 
 	containerInfo := containerJSON.Container
@@ -588,7 +581,7 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 			"action": "redeploy",
 			"step":   "validate_config",
 		})
-		return "", fmt.Errorf("failed to redeploy container: %w", err)
+		return "", errors.WrapIf(err, "failed to redeploy container")
 	}
 
 	containerName := strings.TrimPrefix(containerInfo.Name, "/")
@@ -597,8 +590,8 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 	apiVersion := libarcane.DetectDockerAPIVersion(ctx, dockerClient)
 
 	currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
-	if libupdater.ShouldDisableArcaneServerRedeploy(containerInfo.Config.Labels, containerInfo.ID, currentContainerID, currentContainerErr) {
-		err = &common.ArcaneSelfRedeployError{}
+	if labels.ShouldDisableArcaneServerRedeploy(containerInfo.Config.Labels, containerInfo.ID, currentContainerID, currentContainerErr) {
+		err = errors.New("arcane cannot redeploy itself; use the system upgrade flow (Settings -> Updates) instead")
 		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", err, models.JSON{
 			"action": "redeploy",
 			"step":   "self_redeploy_blocked",
@@ -626,14 +619,12 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 	}
 
 	if imageName != "" {
-		writeContainerProgressInternal(ctx, "Pulling latest container image", 20, "pull")
 		if err := s.pullRedeployImageInternal(ctx, dockerClient, imageName, containerID, containerName, user); err != nil {
 			return "", err
 		}
 	}
 
 	backupName := buildRedeployBackupNameInternal(containerName, containerID)
-	writeContainerProgressInternal(ctx, "Preparing existing container", 45, "prepare")
 	if err := s.prepareContainerForRedeployInternal(ctx, dockerClient, containerID, containerName, backupName, wasRunning, user); err != nil {
 		return "", err
 	}
@@ -645,7 +636,6 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 		newConfig.Hostname = ""
 	}
 
-	writeContainerProgressInternal(ctx, "Creating replacement container", 65, "create")
 	createResp, err := libarcane.ContainerCreateWithCompatibilityForAPIVersion(ctx, dockerClient, client.ContainerCreateOptions{
 		Config:           &newConfig,
 		HostConfig:       containerInfo.HostConfig,
@@ -659,11 +649,10 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 			"step":   "create",
 			"image":  imageName,
 		})
-		return "", fmt.Errorf("failed to recreate container: %w", err)
+		return "", errors.WrapIf(err, "failed to recreate container")
 	}
 
 	if shouldStartRedeployedContainerInternal(containerInfo, wasRunning) {
-		writeContainerProgressInternal(ctx, "Starting replacement container", 80, "start")
 		_, err = dockerClient.ContainerStart(ctx, createResp.ID, client.ContainerStartOptions{})
 		if err != nil {
 			if _, removeErr := dockerClient.ContainerRemove(ctx, createResp.ID, client.ContainerRemoveOptions{Force: true}); removeErr != nil {
@@ -678,7 +667,7 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 				"step":   "start",
 				"image":  imageName,
 			})
-			return "", fmt.Errorf("failed to start new container: %w", err)
+			return "", errors.WrapIf(err, "failed to start new container")
 		}
 	}
 
@@ -705,19 +694,18 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 		slog.WarnContext(ctx, "failed to log deploy event", "err", logErr)
 	}
 
-	writeContainerProgressInternal(ctx, "Container redeployed", 100, "complete")
 	return createResp.ID, nil
 }
 
 func (s *ContainerService) GetContainerByReference(ctx context.Context, ref string) (*container.InspectResponse, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
+		return nil, errors.WrapIf(err, "failed to connect to Docker")
 	}
 
 	containerInspect, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, ref, client.ContainerInspectOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("container not found: %w", err)
+		return nil, errors.WrapIf(err, "container not found")
 	}
 
 	return new(containerInspect.Container), nil
@@ -735,7 +723,7 @@ func (s *ContainerService) GetContainerDetails(ctx context.Context, id string) (
 
 	details := containertypes.NewDetails(containerInspect)
 	currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
-	details.RedeployDisabled = libupdater.ShouldDisableArcaneServerRedeploy(details.Labels, details.ID, currentContainerID, currentContainerErr)
+	details.RedeployDisabled = labels.ShouldDisableArcaneServerRedeploy(details.Labels, details.ID, currentContainerID, currentContainerErr)
 	s.applyContainerDetailsIconInternal(ctx, &details)
 
 	return details, nil
@@ -759,7 +747,7 @@ func (s *ContainerService) DeleteContainer(ctx context.Context, containerID stri
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, models.JSON{"action": "delete", "force": force, "removeVolumes": removeVolumes})
-		return fmt.Errorf("failed to connect to Docker: %w", err)
+		return errors.WrapIf(err, "failed to connect to Docker")
 	}
 
 	// Get container mounts before deletion if we need to remove volumes
@@ -783,7 +771,7 @@ func (s *ContainerService) DeleteContainer(ctx context.Context, containerID stri
 	})
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, models.JSON{"action": "delete", "force": force, "removeVolumes": removeVolumes})
-		return fmt.Errorf("failed to delete container: %w", err)
+		return errors.WrapIf(err, "failed to delete container")
 	}
 
 	// Remove named volumes if requested
@@ -803,7 +791,7 @@ func (s *ContainerService) DeleteContainer(ctx context.Context, containerID stri
 
 	err = s.eventService.LogContainerEvent(ctx, models.EventTypeContainerDelete, containerID, "name", user.ID, user.Username, "0", metadata)
 	if err != nil {
-		return fmt.Errorf("failed to log action: %w", err)
+		return errors.WrapIf(err, "failed to log action")
 	}
 
 	return nil
@@ -813,7 +801,7 @@ func (s *ContainerService) CreateContainer(ctx context.Context, config *containe
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", "", containerName, user.ID, user.Username, "0", err, models.JSON{"action": "create", "image": config.Image})
-		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
+		return nil, errors.WrapIf(err, "failed to connect to Docker")
 	}
 
 	_, err = dockerClient.ImageInspect(ctx, config.Image)
@@ -828,24 +816,27 @@ func (s *ContainerService) CreateContainer(ctx context.Context, config *containe
 		}
 
 		settings := s.settingsService.GetSettingsConfig()
-		pullCtx, pullCancel := timeouts.WithTimeout(ctx, settings.DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull)
+		pullCtx, pullCancel := context.WithTimeout(ctx, timeouts.GetDuration(settings.DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull))
 		defer pullCancel()
 
 		reader, pullErr := dockerClient.ImagePull(pullCtx, config.Image, pullOptions)
 		if pullErr != nil {
 			if errors.Is(pullCtx.Err(), context.DeadlineExceeded) {
 				s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", "", containerName, user.ID, user.Username, "0", pullErr, models.JSON{"action": "create", "image": config.Image, "step": "pull_image_timeout"})
-				return nil, fmt.Errorf("image pull timed out for %s (increase DOCKER_IMAGE_PULL_TIMEOUT or setting)", config.Image)
+				return nil, errors.Errorf("image pull timed out for %s (increase DOCKER_IMAGE_PULL_TIMEOUT or setting)", config.Image)
 			}
 			s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", "", containerName, user.ID, user.Username, "0", pullErr, models.JSON{"action": "create", "image": config.Image, "step": "pull_image"})
-			return nil, fmt.Errorf("failed to pull image %s: %w", config.Image, pullErr)
+			return nil, errors.WrapIff(pullErr, "failed to pull image %s", config.Image)
 		}
 		defer func() { _ = reader.Close() }()
 
-		streamErr := dockerutils.ConsumeJSONMessageStream(reader, nil)
+		progressWriter, _ := ctx.Value(dockerutils.ProgressWriterKey{}).(io.Writer)
+		logWriter := dockerutils.NewLogLineWriter(progressWriter)
+		streamErr := dockerutils.RenderJSONMessageStream(reader, logWriter)
+		_ = logWriter.Close()
 		if streamErr != nil {
 			s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", "", containerName, user.ID, user.Username, "0", streamErr, models.JSON{"action": "create", "image": config.Image, "step": "complete_pull"})
-			return nil, fmt.Errorf("failed to complete image pull: %w", streamErr)
+			return nil, errors.WrapIf(streamErr, "failed to complete image pull")
 		}
 	}
 
@@ -857,7 +848,7 @@ func (s *ContainerService) CreateContainer(ctx context.Context, config *containe
 	})
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", "", containerName, user.ID, user.Username, "0", err, models.JSON{"action": "create", "image": config.Image, "step": "create"})
-		return nil, fmt.Errorf("failed to create container: %w", err)
+		return nil, errors.WrapIf(err, "failed to create container")
 	}
 
 	metadata := models.JSON{
@@ -872,13 +863,13 @@ func (s *ContainerService) CreateContainer(ctx context.Context, config *containe
 	if _, err := dockerClient.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{}); err != nil {
 		_, _ = dockerClient.ContainerRemove(ctx, resp.ID, client.ContainerRemoveOptions{Force: true})
 		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", resp.ID, containerName, user.ID, user.Username, "0", err, models.JSON{"action": "create", "image": config.Image, "step": "start"})
-		return nil, fmt.Errorf("failed to start container: %w", err)
+		return nil, errors.WrapIf(err, "failed to start container")
 	}
 
 	containerJSON, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, resp.ID, client.ContainerInspectOptions{})
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", resp.ID, containerName, user.ID, user.Username, "0", err, models.JSON{"action": "create", "image": config.Image, "step": "inspect"})
-		return nil, fmt.Errorf("failed to inspect created container: %w", err)
+		return nil, errors.WrapIf(err, "failed to inspect created container")
 	}
 
 	return new(containerJSON.Container), nil
@@ -887,12 +878,12 @@ func (s *ContainerService) CreateContainer(ctx context.Context, config *containe
 func (s *ContainerService) StreamStats(ctx context.Context, containerID string, statsChan chan<- any) error {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to connect to Docker: %w", err)
+		return errors.WrapIf(err, "failed to connect to Docker")
 	}
 
 	stats, err := dockerClient.ContainerStats(ctx, containerID, client.ContainerStatsOptions{Stream: true})
 	if err != nil {
-		return fmt.Errorf("failed to start stats stream: %w", err)
+		return errors.WrapIf(err, "failed to start stats stream")
 	}
 	defer func() { _ = stats.Body.Close() }()
 
@@ -912,7 +903,7 @@ func (s *ContainerService) StreamStats(ctx context.Context, containerID string, 
 			if errors.Is(err, io.EOF) {
 				return nil
 			}
-			return fmt.Errorf("failed to decode stats: %w", err)
+			return errors.WrapIf(err, "failed to decode stats")
 		}
 
 		recordedAt := statsData.Read
@@ -943,12 +934,12 @@ func (s *ContainerService) StreamStats(ctx context.Context, containerID string, 
 func (s *ContainerService) StreamLogs(ctx context.Context, containerID string, logsChan chan<- string, follow bool, tail, since string, timestamps bool) error {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to connect to Docker: %w", err)
+		return errors.WrapIf(err, "failed to connect to Docker")
 	}
 
 	containerInspect, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
 	if err != nil {
-		return fmt.Errorf("failed to inspect container for logs: %w", err)
+		return errors.WrapIf(err, "failed to inspect container for logs")
 	}
 
 	options := client.ContainerLogsOptions{
@@ -962,7 +953,7 @@ func (s *ContainerService) StreamLogs(ctx context.Context, containerID string, l
 
 	logs, err := dockerClient.ContainerLogs(ctx, containerID, options)
 	if err != nil {
-		return fmt.Errorf("failed to get container logs: %w", err)
+		return errors.WrapIf(err, "failed to get container logs")
 	}
 	defer func() { _ = logs.Close() }()
 
@@ -987,12 +978,12 @@ func (s *ContainerService) ListContainersPaginated(
 	} else {
 		dockerClient, err := s.dockerService.GetClient(ctx)
 		if err != nil {
-			return ContainerListResult{}, fmt.Errorf("failed to connect to Docker: %w", err)
+			return ContainerListResult{}, errors.WrapIf(err, "failed to connect to Docker")
 		}
 
 		containerList, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: false})
 		if err != nil {
-			return ContainerListResult{}, fmt.Errorf("failed to list Docker containers: %w", err)
+			return ContainerListResult{}, errors.WrapIf(err, "failed to list Docker containers")
 		}
 		dockerContainers = containerList.Items
 	}
@@ -1185,43 +1176,27 @@ func (s *ContainerService) getUpdateInfoMap(ctx context.Context, imageIDs []stri
 		return updateInfoMap
 	}
 
-	updateInfoMap := make(map[string]*imagetypes.UpdateInfo, len(imageIDs))
-	var uncachedIDs []string
-	for _, imageID := range imageIDs {
-		info, ok := s.updateInfoCache.Get(imageID)
-		if !ok {
-			uncachedIDs = append(uncachedIDs, imageID)
-			continue
+	infos, _, err := s.updateInfoCache.GetManyWithLoaders(imageIDs, func(missingIDs []string) (map[string]*imagetypes.UpdateInfo, error) {
+		loaded, loadErr := s.imageService.GetUpdateInfoByImageIDs(ctx, missingIDs)
+		if loadErr != nil {
+			return nil, loadErr
 		}
-		if info != nil {
-			updateInfoMap[imageID] = info
+		for _, imageID := range missingIDs {
+			if _, ok := loaded[imageID]; !ok {
+				loaded[imageID] = nil
+			}
 		}
+		return loaded, nil
+	})
+	if err != nil {
+		slog.WarnContext(ctx, "Failed to fetch image update info for container images", "imageIDs", len(imageIDs), "error", err)
+		infos, _ = s.updateInfoCache.PeekMany(imageIDs)
 	}
 
-	if len(uncachedIDs) > 0 {
-		// Singleflight keyed by the uncached set so concurrent list requests
-		// that miss on the same images share one batch query.
-		slices.Sort(uncachedIDs)
-		res, err, _ := s.updateInfoSF.Do(strings.Join(uncachedIDs, ","), func() (any, error) {
-			infos, fetchErr := s.imageService.GetUpdateInfoByImageIDs(ctx, uncachedIDs)
-			if fetchErr != nil {
-				return nil, fetchErr
-			}
-			for _, imageID := range uncachedIDs {
-				// Cache nil results too so absent rows don't refetch until invalidation.
-				s.updateInfoCache.Set(imageID, infos[imageID])
-			}
-			return infos, nil
-		})
-		if err != nil {
-			slog.WarnContext(ctx, "Failed to fetch image update info for container images", "imageIDs", len(uncachedIDs), "error", err)
-			return updateInfoMap
-		}
-		infos, _ := res.(map[string]*imagetypes.UpdateInfo)
-		for _, imageID := range uncachedIDs {
-			if info := infos[imageID]; info != nil {
-				updateInfoMap[imageID] = info
-			}
+	updateInfoMap := make(map[string]*imagetypes.UpdateInfo, len(infos))
+	for imageID, info := range infos {
+		if info != nil {
+			updateInfoMap[imageID] = info
 		}
 	}
 	return updateInfoMap
@@ -1234,7 +1209,7 @@ func (s *ContainerService) buildContainerSummaries(containers []container.Summar
 		if info, exists := updateInfoMap[dc.ImageID]; exists {
 			summary.UpdateInfo = info
 		}
-		summary.RedeployDisabled = libupdater.ShouldDisableArcaneServerRedeploy(summary.Labels, summary.ID, currentContainerID, currentContainerErr)
+		summary.RedeployDisabled = labels.ShouldDisableArcaneServerRedeploy(summary.Labels, summary.ID, currentContainerID, currentContainerErr)
 		items = append(items, summary)
 	}
 	return items
@@ -1299,7 +1274,7 @@ func (s *ContainerService) getCachedProjectIconMetadataInternal(ctx context.Cont
 	}
 
 	if s.iconMetaCache != nil {
-		if meta, ok := s.iconMetaCache.Get(projectName); ok {
+		if meta, ok, _ := s.iconMetaCache.Get(projectName); ok {
 			if metadataByProject != nil {
 				metadataByProject[projectName] = meta
 			}
@@ -1310,10 +1285,10 @@ func (s *ContainerService) getCachedProjectIconMetadataInternal(ctx context.Cont
 	meta := projects.ArcaneComposeMetadata{ServiceIconSets: map[string]projects.IconSet{}}
 	proj, err := s.projectService.GetProjectByComposeName(ctx, projectName)
 	if err == nil && proj != nil {
-		meta = s.projectService.getProjectMetadataForProject(ctx, *proj)
+		meta = s.projectService.getProjectMetadataForProject(ctx, *proj, nil)
 	}
 	if s.iconMetaCache != nil {
-		s.iconMetaCache.Put(projectName, meta)
+		s.iconMetaCache.Set(projectName, meta)
 	}
 	if metadataByProject != nil {
 		metadataByProject[projectName] = meta
@@ -1322,11 +1297,7 @@ func (s *ContainerService) getCachedProjectIconMetadataInternal(ctx context.Cont
 }
 
 func (s *ContainerService) resolveIconSetInternal(ctx context.Context, iconSet iconcatalog.IconSet) iconcatalog.ResolvedIconSet {
-	catalog := iconcatalog.DefaultCatalog
-	if s != nil && s.settingsService != nil {
-		catalog = s.settingsService.GetStringSetting(ctx, "iconCatalog", iconcatalog.DefaultCatalog)
-	}
-	return iconcatalog.Resolve(catalog, iconSet)
+	return iconcatalog.Resolve(iconCatalogForContextInternal(ctx), iconSet)
 }
 
 func (s *ContainerService) buildContainerPaginationConfig() pagination.Config[containertypes.Summary] {
@@ -1531,7 +1502,7 @@ func (s *ContainerService) calculateContainerStatusCounts(items []containertypes
 func (s *ContainerService) CreateExec(ctx context.Context, containerID string, cmd []string) (string, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return "", fmt.Errorf("failed to connect to Docker: %w", err)
+		return "", errors.WrapIf(err, "failed to connect to Docker")
 	}
 
 	execConfig := client.ExecCreateOptions{
@@ -1544,7 +1515,7 @@ func (s *ContainerService) CreateExec(ctx context.Context, containerID string, c
 
 	execResp, err := dockerClient.ExecCreate(ctx, containerID, execConfig)
 	if err != nil {
-		return "", fmt.Errorf("failed to create exec: %w", err)
+		return "", errors.WrapIf(err, "failed to create exec")
 	}
 
 	return execResp.ID, nil
@@ -1584,14 +1555,14 @@ func (e *ExecSession) Close(ctx context.Context) error {
 func (s *ContainerService) AttachExec(ctx context.Context, containerID, execID string) (*ExecSession, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
+		return nil, errors.WrapIf(err, "failed to connect to Docker")
 	}
 
 	execAttach, err := dockerClient.ExecAttach(ctx, execID, client.ExecAttachOptions{
 		TTY: true,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to attach to exec: %w", err)
+		return nil, errors.WrapIf(err, "failed to attach to exec")
 	}
 
 	return &ExecSession{

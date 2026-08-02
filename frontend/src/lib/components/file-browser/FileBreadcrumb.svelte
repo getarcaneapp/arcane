@@ -1,6 +1,6 @@
 <script lang="ts">
-	import * as Breadcrumb from '$lib/components/ui/breadcrumb';
-	import { ArrowRightIcon, DashboardIcon } from '$lib/icons';
+	import * as Breadcrumb from '#lib/components/ui/breadcrumb';
+	import { ArrowRightIcon, DashboardIcon } from '#lib/icons';
 
 	let {
 		path,

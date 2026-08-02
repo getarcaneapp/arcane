@@ -2,15 +2,16 @@ package libarcane
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"slices"
 	"strconv"
 	"strings"
 
+	"emperror.dev/errors"
+
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
+	"github.com/samber/mo"
 )
 
 const NetworkScopedMacAddressMinAPIVersion = "1.44"
@@ -53,32 +54,16 @@ func DetectDockerAPIVersion(ctx context.Context, dockerClient client.APIClient) 
 	return strings.TrimSpace(serverVersion.APIVersion)
 }
 
-// SupportsDockerCreateMultiEndpointNetworking reports whether the connected
-// daemon API supports attaching multiple endpoints during ContainerCreate.
-//
-// On older daemon APIs, sending multiple EndpointsConfig entries can fail with
-// daemon-side networking errors even though newer Compose CLIs may appear to
-// "work" by using a different fallback sequence under the hood.
-func SupportsDockerCreateMultiEndpointNetworking(apiVersion string) bool {
-	return IsDockerAPIVersionAtLeast(apiVersion, MultiEndpointContainerCreateMinAPIVersion)
-}
-
-// SupportsDockerCreatePerNetworkMACAddress reports whether the daemon API
-// supports per-network mac-address on container create (Docker API >= 1.44).
-func SupportsDockerCreatePerNetworkMACAddress(apiVersion string) bool {
-	return IsDockerAPIVersionAtLeast(apiVersion, NetworkScopedMacAddressMinAPIVersion)
-}
-
 // IsDockerAPIVersionAtLeast performs numeric dot-segment comparison for Docker
 // API versions (e.g. "1.43", "1.44.1"). Returns false when either version
 // cannot be parsed.
 func IsDockerAPIVersionAtLeast(current, minimum string) bool {
-	cur, ok := parseAPIVersionInternal(current)
+	cur, ok := parseAPIVersionInternal(current).Get()
 	if !ok {
 		return false
 	}
 
-	minV, ok := parseAPIVersionInternal(minimum)
+	minV, ok := parseAPIVersionInternal(minimum).Get()
 	if !ok {
 		return false
 	}
@@ -103,7 +88,7 @@ func SanitizeContainerCreateEndpointSettingsForDockerAPI(endpoints map[string]*n
 		return nil
 	}
 
-	keepPerNetworkMAC := SupportsDockerCreatePerNetworkMACAddress(apiVersion)
+	keepPerNetworkMAC := IsDockerAPIVersionAtLeast(apiVersion, NetworkScopedMacAddressMinAPIVersion)
 	cloned := make(map[string]*network.EndpointSettings, len(endpoints))
 
 	for networkName, endpoint := range endpoints {
@@ -135,7 +120,7 @@ func SanitizeContainerCreateEndpointSettingsForDockerAPI(endpoints map[string]*n
 // explains why a shell `docker compose up` can succeed while Arcane's embedded
 // or manual create paths fail unless we perform the split ourselves.
 func PrepareContainerCreateOptionsForDockerAPI(options client.ContainerCreateOptions, apiVersion string) (client.ContainerCreateOptions, map[string]*network.EndpointSettings) {
-	if SupportsDockerCreateMultiEndpointNetworking(apiVersion) || options.NetworkingConfig == nil || len(options.NetworkingConfig.EndpointsConfig) <= 1 {
+	if IsDockerAPIVersionAtLeast(apiVersion, MultiEndpointContainerCreateMinAPIVersion) || options.NetworkingConfig == nil || len(options.NetworkingConfig.EndpointsConfig) <= 1 {
 		return options, nil
 	}
 
@@ -204,7 +189,7 @@ func ConnectContainerExtraNetworksForDockerAPI(ctx context.Context, dockerClient
 			EndpointConfig: copyEndpointSettingsInternal(endpoints[networkName]),
 		})
 		if err != nil {
-			return fmt.Errorf("connect network %s: %w", networkName, err)
+			return errors.WrapIff(err, "connect network %s", networkName)
 		}
 	}
 
@@ -250,33 +235,33 @@ func ContainerCreateWithCompatibilityForAPIVersion(ctx context.Context, dockerCl
 	return result, nil
 }
 
-func parseAPIVersionInternal(version string) ([3]int, bool) {
+func parseAPIVersionInternal(version string) mo.Option[[3]int] {
 	parsed := [3]int{}
 
 	version = strings.TrimSpace(strings.TrimPrefix(version, "v"))
 	if version == "" {
-		return parsed, false
+		return mo.None[[3]int]()
 	}
 
 	parts := strings.Split(version, ".")
 	if len(parts) < 2 {
-		return parsed, false
+		return mo.None[[3]int]()
 	}
 
 	for i := 0; i < len(parsed) && i < len(parts); i++ {
 		part := strings.TrimSpace(parts[i])
 		if part == "" {
-			return [3]int{}, false
+			return mo.None[[3]int]()
 		}
 
 		n, err := strconv.Atoi(part)
 		if err != nil {
-			return [3]int{}, false
+			return mo.None[[3]int]()
 		}
 		parsed[i] = n
 	}
 
-	return parsed, true
+	return mo.Some(parsed)
 }
 
 func resolvePrimaryContainerCreateNetworkInternal(hostConfig *container.HostConfig, endpoints map[string]*network.EndpointSettings) string {

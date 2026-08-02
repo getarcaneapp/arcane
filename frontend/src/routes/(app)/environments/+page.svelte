@@ -1,19 +1,21 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
-	import NewEnvironmentSheet from '$lib/components/sheets/new-environment-sheet.svelte';
+	import { dev } from '$app/env';
+	import { page } from '$app/state';
+	import NewEnvironmentSheet from '#lib/components/sheets/new-environment-sheet.svelte';
 	import EnvironmentTable from './environment-table.svelte';
-	import { tryCatch } from '$lib/utils/api';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api';
-	import { openConfirmDialog } from '$lib/components/confirm-dialog';
-	import { m } from '$lib/paraglide/messages';
-	import { environmentManagementService } from '$lib/services/env-mgmt-service';
+	import { tryCatch } from '#lib/utils/api';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog';
+	import { m } from '#lib/paraglide/messages';
+	import { environmentManagementService } from '#lib/services/env-mgmt-service';
 	import { untrack } from 'svelte';
-	import { ResourcePageLayout, type ActionButton } from '$lib/layouts/index.js';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { simpleRefresh } from '$lib/utils/api';
-	import { hasPermission } from '$lib/utils/auth';
-	import { DownloadIcon, UpdateIcon } from '$lib/icons';
-	import UpdateAllDialog from '$lib/components/dialogs/update-all-dialog.svelte';
+	import { ResourcePageLayout, type ActionButton } from '#lib/layouts/index.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import { simpleRefresh } from '#lib/utils/api';
+	import { hasPermission } from '#lib/utils/auth';
+	import { DownloadIcon, UpdateIcon } from '#lib/icons';
+	import UpdateAllDialog from '#lib/components/dialogs/update-all-dialog.svelte';
 
 	let { data } = $props();
 
@@ -78,6 +80,14 @@
 			}
 		});
 	}
+
+	// Dev-only: `?updateAllDemo=1` opens the update-all dialog against a scripted fake
+	// fleet, so its progress and result states can be reviewed under `just dev` without
+	// updating anything. `dev` is compiled out of production builds.
+	const updateAllDemo = $derived(dev && page.url.searchParams.get('updateAllDemo') === '1');
+	$effect(() => {
+		if (updateAllDemo) showUpdateAllDialog = true;
+	});
 
 	async function onEnvironmentCreated() {
 		showEnvironmentSheet = false;
@@ -150,6 +160,6 @@
 
 	{#snippet additionalContent()}
 		<NewEnvironmentSheet bind:open={showEnvironmentSheet} {onEnvironmentCreated} />
-		<UpdateAllDialog bind:open={showUpdateAllDialog} onFinished={refresh} />
+		<UpdateAllDialog bind:open={showUpdateAllDialog} debugDemo={updateAllDemo} onFinished={refresh} />
 	{/snippet}
 </ResourcePageLayout>

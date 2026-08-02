@@ -2,32 +2,36 @@ package services
 
 import (
 	"context"
-	json "encoding/json/v2"
-	"errors"
-	"fmt"
+	"encoding/json/v2"
+	stderrors "errors"
 	"log/slog"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/cenkalti/backoff/v5"
+	ref "github.com/distribution/reference"
+	"github.com/samber/hot"
+	"github.com/samber/mo"
 	"golang.org/x/sync/singleflight"
 
+	"emperror.dev/errors"
 	cerrdefs "github.com/containerd/errdefs"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	utilsregistry "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/registryauth"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cache"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	dockerregistry "github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
 	"go.getarcane.app/sys/crypto"
-	updaterdigest "go.getarcane.app/updater/pkg/digest"
-	updaterrefs "go.getarcane.app/updater/pkg/refs"
-	updaterregistry "go.getarcane.app/updater/pkg/registry"
+	"go.getarcane.app/updater/digest"
+	"go.getarcane.app/updater/refs"
+	"go.getarcane.app/updater/registry"
 )
 
 const (
@@ -62,8 +66,8 @@ type resolvedRegistryCredential struct {
 }
 
 type registryRateLimitCacheEntryInternal struct {
-	RateLimit updaterregistry.RateLimitInfo `json:"rateLimit"`
-	CheckedAt time.Time                     `json:"checkedAt"`
+	RateLimit registry.RateLimitInfo `json:"rateLimit"`
+	CheckedAt time.Time              `json:"checkedAt"`
 }
 
 type rateLimitRoundTripFuncInternal func(*http.Request) (*http.Response, error)
@@ -75,8 +79,7 @@ func (f rateLimitRoundTripFuncInternal) RoundTrip(req *http.Request) (*http.Resp
 type ContainerRegistryService struct {
 	db                     *database.DB
 	dockerClient           registryDaemonGetter
-	cache                  map[string]*cache.Cache[string] // imageRef -> digest cache
-	cacheMu                sync.RWMutex
+	cache                  *hot.HotCache[string, string]
 	ecrRefreshGroup        singleflight.Group
 	distributionHTTPClient *http.Client
 	kvService              *KVService
@@ -85,19 +88,59 @@ type ContainerRegistryService struct {
 // NewContainerRegistryService creates a registry service. kvService may be nil
 // in tests that do not need pull tracking or rate-limit caching.
 func NewContainerRegistryService(db *database.DB, dockerClient registryDaemonGetter, kvService *KVService) *ContainerRegistryService {
-	return &ContainerRegistryService{
+	service := &ContainerRegistryService{
 		db:                     db,
 		dockerClient:           dockerClient,
-		distributionHTTPClient: updaterregistry.NewRegistryHTTPClient(),
-		cache:                  make(map[string]*cache.Cache[string]),
+		distributionHTTPClient: registry.NewHTTPClient(),
 		kvService:              kvService,
 	}
+	backgroundLoader := func(imageRefs []string) (map[string]string, error) {
+		digests := make(map[string]string, len(imageRefs))
+		var firstErr error
+		for _, imageRef := range imageRefs {
+			// Per-ref timeout: a single deadline shared across the whole
+			// sequential batch left later refs with whatever the earlier ones
+			// had not already spent, so one slow registry starved the tail.
+			result, err := func() (*registryDigestResult, error) {
+				ctx, cancel := context.WithTimeout(context.Background(), timeouts.DefaultRegistry)
+				defer cancel()
+				return service.inspectImageDigestInternal(ctx, imageRef, nil)
+			}()
+			if err != nil {
+				slog.Debug("registry revalidation failed for image", "imageRef", imageRef, "error", err)
+				if firstErr == nil {
+					firstErr = err
+				}
+				continue
+			}
+			digests[imageRef] = result.Digest
+		}
+
+		// Returning an error alongside results makes hot discard the whole map,
+		// so report success whenever anything resolved: one unreachable registry
+		// used to throw away every digest already fetched, forcing the entire
+		// batch to be refetched on the next tick. Refs that failed are simply
+		// left uncached (this cache has no missing-key cache) and retried on
+		// next access; only a fully failed batch surfaces the error, which
+		// KeepOnError turns into "retain the previous digests".
+		if len(digests) > 0 {
+			return digests, nil
+		}
+		return nil, firstErr
+	}
+	service.cache = hot.NewHotCache[string, string](hot.LRU, 4096).
+		WithTTL(registryCacheTTL).
+		WithRevalidation(registryCacheTTL, backgroundLoader).
+		WithRevalidationErrorPolicy(hot.KeepOnError).
+		WithJanitor().
+		Build()
+	return service
 }
 
 func (s *ContainerRegistryService) GetAllRegistries(ctx context.Context) ([]models.ContainerRegistry, error) {
 	var registries []models.ContainerRegistry
 	if err := s.db.WithContext(ctx).Find(&registries).Error; err != nil {
-		return nil, fmt.Errorf("failed to get container registries: %w", err)
+		return nil, errors.WrapIf(err, "failed to get container registries")
 	}
 	return registries, nil
 }
@@ -113,18 +156,18 @@ func (s *ContainerRegistryService) GetRegistriesPaginated(ctx context.Context, p
 
 	out, paginationResp, err := pagination.PaginateSortAndMapDB[models.ContainerRegistry, containerregistry.ContainerRegistry](params, q, &registries)
 	if err != nil {
-		return nil, pagination.Response{}, fmt.Errorf("failed to list container registries: %w", err)
+		return nil, pagination.Response{}, errors.WrapIf(err, "failed to list container registries")
 	}
 
 	return out, paginationResp, nil
 }
 
 func (s *ContainerRegistryService) GetRegistryByID(ctx context.Context, id string) (*models.ContainerRegistry, error) {
-	var registry models.ContainerRegistry
-	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&registry).Error; err != nil {
-		return nil, fmt.Errorf("failed to get container registry: %w", err)
+	var registryRecord models.ContainerRegistry
+	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&registryRecord).Error; err != nil {
+		return nil, errors.WrapIf(err, "failed to get container registry")
 	}
-	return &registry, nil
+	return &registryRecord, nil
 }
 
 func (s *ContainerRegistryService) CreateRegistry(ctx context.Context, req models.CreateContainerRegistryRequest) (*models.ContainerRegistry, error) {
@@ -132,87 +175,124 @@ func (s *ContainerRegistryService) CreateRegistry(ctx context.Context, req model
 	if err != nil {
 		return nil, err
 	}
-
-	registry := &models.ContainerRegistry{
-		URL:          req.URL,
-		Description:  req.Description,
-		Insecure:     req.Insecure != nil && *req.Insecure,
-		Enabled:      req.Enabled == nil || *req.Enabled,
-		RegistryType: registryType,
-		CreatedAt:    time.Now(),
-		UpdatedAt:    time.Now(),
-	}
-
-	if registryType == registryTypeECR {
-		if strings.TrimSpace(req.AWSAccessKeyID) == "" {
-			return nil, &models.ValidationError{Field: "awsAccessKeyId", Message: "AWS Access Key ID is required"}
-		}
-		if strings.TrimSpace(req.AWSRegion) == "" {
-			return nil, &models.ValidationError{Field: "awsRegion", Message: "AWS Region is required"}
-		}
-		if strings.TrimSpace(req.AWSSecretAccessKey) == "" {
-			return nil, &models.ValidationError{Field: "awsSecretAccessKey", Message: "AWS Secret Access Key is required"}
-		}
-		encryptedSecret, err := crypto.Encrypt(req.AWSSecretAccessKey)
-		if err != nil {
-			return nil, fmt.Errorf("failed to encrypt AWS secret access key: %w", err)
-		}
-		registry.AWSAccessKeyID = req.AWSAccessKeyID
-		registry.AWSSecretAccessKey = encryptedSecret
-		registry.AWSRegion = req.AWSRegion
-	} else {
-		if strings.TrimSpace(req.Username) == "" {
-			return nil, &models.ValidationError{Field: "username", Message: "Username is required"}
-		}
-		if strings.TrimSpace(req.Token) == "" {
-			return nil, &models.ValidationError{Field: "token", Message: "Token is required"}
-		}
-		encryptedToken, err := crypto.Encrypt(req.Token)
-		if err != nil {
-			return nil, fmt.Errorf("failed to encrypt token: %w", err)
-		}
-		registry.Username = req.Username
-		registry.Token = encryptedToken
-	}
-
-	if err := s.db.WithContext(ctx).Create(registry).Error; err != nil {
-		return nil, fmt.Errorf("failed to create registry: %w", err)
-	}
-
-	return registry, nil
-}
-
-func (s *ContainerRegistryService) UpdateRegistry(ctx context.Context, id string, req models.UpdateContainerRegistryRequest) (*models.ContainerRegistry, error) {
-	registry, err := s.GetRegistryByID(ctx, id)
+	repositoryNames, err := normalizeRepositoryNamesInternal(req.RepositoryNames)
 	if err != nil {
 		return nil, err
 	}
 
-	// Update common fields
-	utils.UpdateIfChanged(&registry.URL, req.URL)
-	utils.UpdateIfChanged(&registry.Description, req.Description)
-	utils.UpdateIfChanged(&registry.Insecure, req.Insecure)
-	utils.UpdateIfChanged(&registry.Enabled, req.Enabled)
+	registryRecord := &models.ContainerRegistry{
+		URL:             req.URL,
+		Description:     req.Description,
+		Insecure:        req.Insecure != nil && *req.Insecure,
+		Enabled:         req.Enabled == nil || *req.Enabled,
+		RegistryType:    registryType,
+		RepositoryNames: repositoryNames,
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
+	}
 
-	if err := s.applyRegistryTypeUpdateInternal(registry, req.RegistryType); err != nil {
+	if registryType == registryTypeECR {
+		if strings.TrimSpace(req.AWSAccessKeyID) == "" {
+			return nil, common.Classify(common.ErrValidation, errors.WithDetails(errors.New("AWS Access Key ID is required"), "field", "awsAccessKeyId"))
+		}
+		if strings.TrimSpace(req.AWSRegion) == "" {
+			return nil, common.Classify(common.ErrValidation, errors.WithDetails(errors.New("AWS Region is required"), "field", "awsRegion"))
+		}
+		if strings.TrimSpace(req.AWSSecretAccessKey) == "" {
+			return nil, common.Classify(common.ErrValidation, errors.WithDetails(errors.New("AWS Secret Access Key is required"), "field", "awsSecretAccessKey"))
+		}
+		encryptedSecret, err := crypto.Encrypt(req.AWSSecretAccessKey)
+		if err != nil {
+			return nil, errors.WrapIf(err, "failed to encrypt AWS secret access key")
+		}
+		registryRecord.AWSAccessKeyID = req.AWSAccessKeyID
+		registryRecord.AWSSecretAccessKey = encryptedSecret
+		registryRecord.AWSRegion = req.AWSRegion
+	} else {
+		if strings.TrimSpace(req.Username) == "" {
+			return nil, common.Classify(common.ErrValidation, errors.WithDetails(errors.New("Username is required"), "field", "username"))
+		}
+		if strings.TrimSpace(req.Token) == "" {
+			return nil, common.Classify(common.ErrValidation, errors.WithDetails(errors.New("Token is required"), "field", "token"))
+		}
+		encryptedToken, err := crypto.Encrypt(req.Token)
+		if err != nil {
+			return nil, errors.WrapIf(err, "failed to encrypt token")
+		}
+		registryRecord.Username = req.Username
+		registryRecord.Token = encryptedToken
+	}
+
+	if err := s.db.WithContext(ctx).Create(registryRecord).Error; err != nil {
+		return nil, errors.WrapIf(err, "failed to create registry")
+	}
+
+	return registryRecord, nil
+}
+
+func (s *ContainerRegistryService) UpdateRegistry(ctx context.Context, id string, req models.UpdateContainerRegistryRequest) (*models.ContainerRegistry, error) {
+	registryRecord, err := s.GetRegistryByID(ctx, id)
+	if err != nil {
 		return nil, err
 	}
 
-	if registry.RegistryType == registryTypeECR {
-		if err := s.updateECRRegistryFieldsInternal(registry, req); err != nil {
+	if err := s.applyRegistryTypeUpdateInternal(registryRecord, req.RegistryType); err != nil {
+		return nil, err
+	}
+
+	storedCredentials := map[string]bool{"token": registryRecord.Token != ""}
+	updatedCredentials := map[string]bool{"token": req.Token != nil && *req.Token != ""}
+	if registryRecord.RegistryType == registryTypeECR {
+		storedCredentials = map[string]bool{
+			"awsAccessKeyId":     registryRecord.AWSAccessKeyID != "",
+			"awsSecretAccessKey": registryRecord.AWSSecretAccessKey != "",
+		}
+		updatedCredentials = map[string]bool{
+			"awsAccessKeyId":     req.AWSAccessKeyID != nil && *req.AWSAccessKeyID != "",
+			"awsSecretAccessKey": req.AWSSecretAccessKey != nil && *req.AWSSecretAccessKey != "",
+		}
+	}
+	if err := validation.ValidateCredentialTargetChange(
+		"registry URL",
+		registryRecord.URL,
+		req.URL,
+		normalizeRegistryServerAddressInternal,
+		storedCredentials,
+		updatedCredentials,
+	); err != nil {
+		return nil, err
+	}
+
+	// Update common fields
+	utils.ApplyChanged(&registryRecord.URL, mo.PointerToOption(req.URL))
+	utils.ApplyNullable(&registryRecord.Description, mo.PointerToOption(req.Description))
+	utils.ApplyChanged(&registryRecord.Insecure, mo.PointerToOption(req.Insecure))
+	utils.ApplyChanged(&registryRecord.Enabled, mo.PointerToOption(req.Enabled))
+
+	// RepositoryNames: nil pointer means "don't touch"; empty slice means "clear".
+	if req.RepositoryNames != nil {
+		repositoryNames, err := normalizeRepositoryNamesInternal(*req.RepositoryNames)
+		if err != nil {
 			return nil, err
 		}
-	} else if err := s.updateGenericRegistryFieldsInternal(registry, req); err != nil {
+		registryRecord.RepositoryNames = repositoryNames
+	}
+
+	if registryRecord.RegistryType == registryTypeECR {
+		if err := s.updateECRRegistryFieldsInternal(registryRecord, req); err != nil {
+			return nil, err
+		}
+	} else if err := s.updateGenericRegistryFieldsInternal(registryRecord, req); err != nil {
 		return nil, err
 	}
 
-	registry.UpdatedAt = time.Now()
+	registryRecord.UpdatedAt = time.Now()
 
-	if err := s.db.WithContext(ctx).Save(registry).Error; err != nil {
-		return nil, fmt.Errorf("failed to update registry: %w", err)
+	if err := s.db.WithContext(ctx).Save(registryRecord).Error; err != nil {
+		return nil, errors.WrapIf(err, "failed to update registry")
 	}
 
-	return registry, nil
+	return registryRecord, nil
 }
 
 func (s *ContainerRegistryService) applyRegistryTypeUpdateInternal(registry *models.ContainerRegistry, registryType *string) error {
@@ -226,32 +306,32 @@ func (s *ContainerRegistryService) applyRegistryTypeUpdateInternal(registry *mod
 	}
 
 	if nextType != registry.RegistryType {
-		return &models.ValidationError{Field: "registryType", Message: "Registry type cannot be changed after creation"}
+		return common.Classify(common.ErrValidation, errors.WithDetails(errors.New("Registry type cannot be changed after creation"), "field", "registryType"))
 	}
 
 	return nil
 }
 
 func (s *ContainerRegistryService) updateECRRegistryFieldsInternal(registry *models.ContainerRegistry, req models.UpdateContainerRegistryRequest) error {
-	utils.UpdateIfChanged(&registry.AWSAccessKeyID, req.AWSAccessKeyID)
-	utils.UpdateIfChanged(&registry.AWSRegion, req.AWSRegion)
+	utils.ApplyChanged(&registry.AWSAccessKeyID, mo.PointerToOption(req.AWSAccessKeyID))
+	utils.ApplyChanged(&registry.AWSRegion, mo.PointerToOption(req.AWSRegion))
 
 	if req.AWSSecretAccessKey != nil && *req.AWSSecretAccessKey != "" {
 		encryptedSecret, err := crypto.Encrypt(*req.AWSSecretAccessKey)
 		if err != nil {
-			return fmt.Errorf("failed to encrypt AWS secret access key: %w", err)
+			return errors.WrapIf(err, "failed to encrypt AWS secret access key")
 		}
-		utils.UpdateIfChanged(&registry.AWSSecretAccessKey, &encryptedSecret)
+		utils.ApplyChanged(&registry.AWSSecretAccessKey, mo.Some(encryptedSecret))
 	}
 
 	if strings.TrimSpace(registry.AWSAccessKeyID) == "" {
-		return &models.ValidationError{Field: "awsAccessKeyId", Message: "AWS Access Key ID is required"}
+		return common.Classify(common.ErrValidation, errors.WithDetails(errors.New("AWS Access Key ID is required"), "field", "awsAccessKeyId"))
 	}
 	if strings.TrimSpace(registry.AWSRegion) == "" {
-		return &models.ValidationError{Field: "awsRegion", Message: "AWS Region is required"}
+		return common.Classify(common.ErrValidation, errors.WithDetails(errors.New("AWS Region is required"), "field", "awsRegion"))
 	}
 	if strings.TrimSpace(registry.AWSSecretAccessKey) == "" {
-		return &models.ValidationError{Field: "awsSecretAccessKey", Message: "AWS Secret Access Key is required"}
+		return common.Classify(common.ErrValidation, errors.WithDetails(errors.New("AWS Secret Access Key is required"), "field", "awsSecretAccessKey"))
 	}
 
 	if req.AWSAccessKeyID != nil || req.AWSSecretAccessKey != nil || req.AWSRegion != nil {
@@ -263,18 +343,18 @@ func (s *ContainerRegistryService) updateECRRegistryFieldsInternal(registry *mod
 }
 
 func (s *ContainerRegistryService) updateGenericRegistryFieldsInternal(registry *models.ContainerRegistry, req models.UpdateContainerRegistryRequest) error {
-	utils.UpdateIfChanged(&registry.Username, req.Username)
+	utils.ApplyChanged(&registry.Username, mo.PointerToOption(req.Username))
 
 	if req.Token != nil && *req.Token != "" {
 		encryptedToken, err := crypto.Encrypt(*req.Token)
 		if err != nil {
-			return fmt.Errorf("failed to encrypt token: %w", err)
+			return errors.WrapIf(err, "failed to encrypt token")
 		}
-		utils.UpdateIfChanged(&registry.Token, &encryptedToken)
+		utils.ApplyChanged(&registry.Token, mo.Some(encryptedToken))
 	}
 
 	if strings.TrimSpace(registry.Username) == "" {
-		return &models.ValidationError{Field: "username", Message: "Username is required"}
+		return common.Classify(common.ErrValidation, errors.WithDetails(errors.New("Username is required"), "field", "username"))
 	}
 
 	return nil
@@ -282,21 +362,21 @@ func (s *ContainerRegistryService) updateGenericRegistryFieldsInternal(registry 
 
 func (s *ContainerRegistryService) DeleteRegistry(ctx context.Context, id string) error {
 	if err := s.db.WithContext(ctx).Where("id = ?", id).Delete(&models.ContainerRegistry{}).Error; err != nil {
-		return fmt.Errorf("failed to delete container registry: %w", err)
+		return errors.WrapIf(err, "failed to delete container registry")
 	}
 	return nil
 }
 
 // GetDecryptedToken returns the decrypted token for a registry
 func (s *ContainerRegistryService) GetDecryptedToken(ctx context.Context, id string) (string, error) {
-	registry, err := s.GetRegistryByID(ctx, id)
+	registryRecord, err := s.GetRegistryByID(ctx, id)
 	if err != nil {
 		return "", err
 	}
 
-	decryptedToken, err := crypto.Decrypt(registry.Token)
+	decryptedToken, err := crypto.Decrypt(registryRecord.Token)
 	if err != nil {
-		return "", fmt.Errorf("failed to decrypt token: %w", err)
+		return "", errors.WrapIf(err, "failed to decrypt token")
 	}
 
 	return decryptedToken, nil
@@ -306,7 +386,7 @@ func (s *ContainerRegistryService) GetDecryptedToken(ctx context.Context, id str
 func (s *ContainerRegistryService) GetEnabledRegistries(ctx context.Context) ([]models.ContainerRegistry, error) {
 	var registries []models.ContainerRegistry
 	if err := s.db.WithContext(ctx).Where("enabled = ?", true).Find(&registries).Error; err != nil {
-		return nil, fmt.Errorf("failed to get enabled container registries: %w", err)
+		return nil, errors.WrapIf(err, "failed to get enabled container registries")
 	}
 	return registries, nil
 }
@@ -515,7 +595,7 @@ func (s *ContainerRegistryService) buildRegistryPullUsageInternal(ctx context.Co
 	return usage
 }
 
-func ensureRateLimitUsedInternal(rateLimit *updaterregistry.RateLimitInfo) {
+func ensureRateLimitUsedInternal(rateLimit *registry.RateLimitInfo) {
 	if rateLimit == nil || rateLimit.Used != nil || rateLimit.Limit == nil || rateLimit.Remaining == nil {
 		return
 	}
@@ -536,7 +616,7 @@ func (s *ContainerRegistryService) getObservedPullsInternal(ctx context.Context,
 	return value
 }
 
-func (s *ContainerRegistryService) dockerHubCredentialForRegistryInternal(reg models.ContainerRegistry) (*updaterregistry.Credentials, string, string, error) {
+func (s *ContainerRegistryService) dockerHubCredentialForRegistryInternal(reg models.ContainerRegistry) (*registry.Credentials, string, string, error) {
 	if reg.RegistryType != registryTypeGeneric {
 		return nil, "anonymous", "", nil
 	}
@@ -548,7 +628,7 @@ func (s *ContainerRegistryService) dockerHubCredentialForRegistryInternal(reg mo
 
 	token, err := crypto.Decrypt(reg.Token)
 	if err != nil {
-		return nil, "credential", username, fmt.Errorf("failed to decrypt Docker Hub credential: %w", err)
+		return nil, "credential", username, errors.WrapIf(err, "failed to decrypt Docker Hub credential")
 	}
 
 	token = strings.TrimSpace(token)
@@ -556,14 +636,14 @@ func (s *ContainerRegistryService) dockerHubCredentialForRegistryInternal(reg mo
 		return nil, "anonymous", "", nil
 	}
 
-	return &updaterregistry.Credentials{
+	return &registry.Credentials{
 		Username: username,
 		Token:    token,
 	}, "credential", username, nil
 }
 
-func (s *ContainerRegistryService) fetchDockerHubRateLimitInternal(ctx context.Context, credential *updaterregistry.Credentials) (*updaterregistry.RateLimitInfo, error) {
-	return updaterregistry.FetchRegistryRateLimit(ctx, "docker.io", dockerHubRateLimitRepository, dockerHubRateLimitTag, credential, dockerHubRateLimitHTTPClientInternal(s.distributionHTTPClient))
+func (s *ContainerRegistryService) fetchDockerHubRateLimitInternal(ctx context.Context, credential *registry.Credentials) (*registry.RateLimitInfo, error) {
+	return registry.FetchRegistryRateLimit(ctx, "docker.io", dockerHubRateLimitRepository, dockerHubRateLimitTag, credential, dockerHubRateLimitHTTPClientInternal(s.distributionHTTPClient))
 }
 
 func dockerHubRateLimitHTTPClientInternal(httpClient *http.Client) *http.Client {
@@ -591,7 +671,7 @@ func dockerHubRateLimitHTTPClientInternal(httpClient *http.Client) *http.Client 
 	return &cloned
 }
 
-func (s *ContainerRegistryService) getCachedRateLimitInternal(ctx context.Context, registryID string) (*updaterregistry.RateLimitInfo, time.Time, bool) {
+func (s *ContainerRegistryService) getCachedRateLimitInternal(ctx context.Context, registryID string) (*registry.RateLimitInfo, time.Time, bool) {
 	if s.kvService == nil || registryID == "" {
 		return nil, time.Time{}, false
 	}
@@ -617,7 +697,7 @@ func (s *ContainerRegistryService) getCachedRateLimitInternal(ctx context.Contex
 	return &entry.RateLimit, entry.CheckedAt, true
 }
 
-func (s *ContainerRegistryService) setCachedRateLimitInternal(ctx context.Context, registryID string, rateLimit *updaterregistry.RateLimitInfo, checkedAt time.Time) {
+func (s *ContainerRegistryService) setCachedRateLimitInternal(ctx context.Context, registryID string, rateLimit *registry.RateLimitInfo, checkedAt time.Time) {
 	if s.kvService == nil || registryID == "" || rateLimit == nil {
 		return
 	}
@@ -639,7 +719,7 @@ func (s *ContainerRegistryService) setCachedRateLimitInternal(ctx context.Contex
 func normalizePullRegistryHostInternal(imageRef string) (string, error) {
 	registryHost, err := utilsregistry.GetRegistryAddress(imageRef)
 	if err != nil {
-		return "", fmt.Errorf("parse image registry for %q: %w", imageRef, err)
+		return "", errors.WrapIff(err, "parse image registry for %q", imageRef)
 	}
 
 	return utilsregistry.NormalizeRegistryForComparison(registryHost), nil
@@ -698,7 +778,7 @@ func (s *ContainerRegistryService) TestRegistry(ctx context.Context, registryURL
 		ServerAddress: normalizeRegistryServerAddressInternal(registryURL),
 	})
 	if err != nil {
-		return fmt.Errorf("registry login failed: %w", err)
+		return errors.WrapIf(err, "registry login failed")
 	}
 
 	return nil
@@ -709,7 +789,7 @@ func (s *ContainerRegistryService) TestRegistry(ctx context.Context, registryURL
 func (s *ContainerRegistryService) TestECRRegistry(ctx context.Context, reg *models.ContainerRegistry) error {
 	ecrUser, ecrPass, err := s.GetOrRefreshECRToken(ctx, reg)
 	if err != nil {
-		return fmt.Errorf("failed to obtain ECR token: %w", err)
+		return errors.WrapIf(err, "failed to obtain ECR token")
 	}
 
 	dockerClient, err := s.getDockerClientInternal(ctx)
@@ -723,56 +803,41 @@ func (s *ContainerRegistryService) TestECRRegistry(ctx context.Context, reg *mod
 		ServerAddress: normalizeRegistryServerAddressInternal(reg.URL),
 	})
 	if err != nil {
-		return fmt.Errorf("ECR registry login failed: %w", err)
+		return errors.WrapIf(err, "ECR registry login failed")
 	}
 
 	return nil
 }
 
-// GetImageDigest fetches the current digest for an image:tag from the registry
+// ImageDigest fetches the current digest for an image:tag from the registry
 // This is used for digest-based update detection for non-semver tags
-func (s *ContainerRegistryService) GetImageDigest(ctx context.Context, imageRef string) (string, error) {
+func (s *ContainerRegistryService) ImageDigest(ctx context.Context, imageRef string) (string, error) {
 	normalizedRef, _, err := normalizeImageReferenceForDistributionInternal(imageRef)
 	if err != nil {
 		return "", err
 	}
 
-	// Build a cache key from the full image reference
-	cacheKey := normalizedRef
+	digestValue, found, err := s.cache.GetWithLoaders(normalizedRef, func(_ []string) (map[string]string, error) {
+		loadCtx, cancel := context.WithTimeout(ctx, timeouts.DefaultRegistry)
+		defer cancel()
 
-	// Get or create a cache for this specific image reference
-	s.cacheMu.RLock()
-	imageCache, exists := s.cache[cacheKey]
-	s.cacheMu.RUnlock()
-
-	if !exists {
-		s.cacheMu.Lock()
-		if imageCache, exists = s.cache[cacheKey]; !exists {
-			imageCache = cache.New[string](registryCacheTTL)
-			s.cache[cacheKey] = imageCache
+		result, loadErr := s.inspectImageDigestInternal(loadCtx, normalizedRef, nil)
+		if loadErr != nil {
+			return nil, loadErr
 		}
-		s.cacheMu.Unlock()
-	}
-
-	digest, err := imageCache.GetOrFetch(ctx, func(ctx context.Context) (string, error) {
-		// Pass the original imageRef; inspectImageDigestInternal normalizes internally.
-		result, fetchErr := s.inspectImageDigestInternal(ctx, imageRef, nil)
-		if fetchErr != nil {
-			return "", fetchErr
-		}
-		return result.Digest, nil
+		return map[string]string{normalizedRef: result.Digest}, nil
 	})
-
-	var staleErr *cache.StaleError
-	if err != nil && !errors.As(err, &staleErr) {
+	if err != nil {
 		return "", err
 	}
-
-	return digest, nil
+	if !found {
+		return "", errors.New("registry digest cache loader returned no digest")
+	}
+	return digestValue, nil
 }
 
 func (s *ContainerRegistryService) inspectImageDigestInternal(ctx context.Context, imageRef string, externalCreds []containerregistry.Credential) (*registryDigestResult, error) {
-	parts, err := updaterrefs.NormalizeReference(imageRef)
+	parts, err := refs.NormalizeReference(imageRef)
 	if err != nil {
 		return nil, err
 	}
@@ -832,7 +897,7 @@ func (s *ContainerRegistryService) inspectImageDigestInternal(ctx context.Contex
 		}
 
 		lastResult = fallbackResult
-		lastErr = fmt.Errorf("daemon digest lookup failed; registry fallback failed: %w", errors.Join(err, fallbackErr))
+		lastErr = errors.WrapIf(stderrors.Join(err, fallbackErr), "daemon digest lookup failed; registry fallback failed")
 		return nil, backoff.Permanent(lastErr)
 	}, backoff.WithBackOff(bo), backoff.WithMaxTries(5))
 
@@ -861,25 +926,25 @@ func (s *ContainerRegistryService) inspectImageDigestViaDaemonInternal(ctx conte
 
 	inspectResult, err := dockerClient.DistributionInspect(ctx, normalizedRef, client.DistributionInspectOptions{})
 	if err == nil {
-		digest, normalizeErr := updaterdigest.Normalize(inspectResult.Descriptor.Digest.String())
+		digestValue, normalizeErr := digest.Normalize(inspectResult.Descriptor.Digest.String())
 		if normalizeErr != nil {
-			return nil, fmt.Errorf("distribution inspect returned invalid digest for %s: %w", normalizedRef, normalizeErr)
+			return nil, errors.WrapIff(normalizeErr, "distribution inspect returned invalid digest for %s", normalizedRef)
 		}
 		return &registryDigestResult{
-			Digest:       digest,
+			Digest:       digestValue,
 			AuthMethod:   "anonymous",
 			AuthRegistry: registryHost,
 		}, nil
 	}
 	if !isUnauthorizedRegistryErrorInternal(err) {
-		return &registryDigestResult{AuthMethod: "anonymous", AuthRegistry: registryHost},
-			fmt.Errorf("distribution inspect failed for %s: %w", normalizedRef, err)
+		return &registryDigestResult{AuthMethod: "anonymous", AuthRegistry: registryHost}, errors.
+			WrapIff(err, "distribution inspect failed for %s", normalizedRef)
 	}
 
 	credentials, credErr := s.getMatchingRegistryCredentialsInternal(ctx, registryHost, externalCreds)
 	if credErr != nil {
-		return &registryDigestResult{AuthMethod: "anonymous", AuthRegistry: registryHost},
-			fmt.Errorf("distribution inspect: anonymous access unauthorized; credential lookup failed: %w", errors.Join(err, credErr))
+		return &registryDigestResult{AuthMethod: "anonymous", AuthRegistry: registryHost}, errors.
+			WrapIf(stderrors.Join(err, credErr), "distribution inspect: anonymous access unauthorized; credential lookup failed")
 	}
 
 	return s.inspectImageDigestWithCredentialsInternal(ctx, dockerClient, normalizedRef, registryHost, credentials, err)
@@ -892,19 +957,19 @@ func (s *ContainerRegistryService) inspectImageDigestWithCredentialsInternal(ctx
 		lastCred = credential
 		authHeader, encodeErr := utilsregistry.EncodeAuthHeader(credential.Username, credential.Token, credential.ServerAddress)
 		if encodeErr != nil {
-			return nil, fmt.Errorf("encode registry auth header for %s: %w", registryHost, encodeErr)
+			return nil, errors.WrapIff(encodeErr, "encode registry auth header for %s", registryHost)
 		}
 
 		inspectResult, err := dockerClient.DistributionInspect(ctx, normalizedRef, client.DistributionInspectOptions{
 			EncodedRegistryAuth: authHeader,
 		})
 		if err == nil {
-			digest, normalizeErr := updaterdigest.Normalize(inspectResult.Descriptor.Digest.String())
+			digestValue, normalizeErr := digest.Normalize(inspectResult.Descriptor.Digest.String())
 			if normalizeErr != nil {
-				return nil, fmt.Errorf("distribution inspect returned invalid digest for %s: %w", normalizedRef, normalizeErr)
+				return nil, errors.WrapIff(normalizeErr, "distribution inspect returned invalid digest for %s", normalizedRef)
 			}
 			return &registryDigestResult{
-				Digest:         digest,
+				Digest:         digestValue,
 				AuthMethod:     "credential",
 				AuthUsername:   credential.Username,
 				AuthRegistry:   registryHost,
@@ -918,7 +983,7 @@ func (s *ContainerRegistryService) inspectImageDigestWithCredentialsInternal(ctx
 				AuthUsername:   credential.Username,
 				AuthRegistry:   registryHost,
 				UsedCredential: true,
-			}, fmt.Errorf("distribution inspect failed for %s with credentials: %w", normalizedRef, err)
+			}, errors.WrapIff(err, "distribution inspect failed for %s with credentials", normalizedRef)
 		}
 	}
 
@@ -929,29 +994,29 @@ func (s *ContainerRegistryService) inspectImageDigestWithCredentialsInternal(ctx
 		partial.UsedCredential = true
 	}
 	if lastErr == nil {
-		return partial, fmt.Errorf("distribution inspect failed for %s: no credentials available", normalizedRef)
+		return partial, errors.Errorf("distribution inspect failed for %s: no credentials available", normalizedRef)
 	}
-	return partial, fmt.Errorf("distribution inspect failed for %s: %w", normalizedRef, lastErr)
+	return partial, errors.WrapIff(lastErr, "distribution inspect failed for %s", normalizedRef)
 }
 
 func (s *ContainerRegistryService) inspectImageDigestViaRegistryInternal(ctx context.Context, registryHost, repository, tag string, externalCreds []containerregistry.Credential) (*registryDigestResult, error) {
-	digest, err := s.fetchDigestFromRegistryInternal(ctx, registryHost, repository, tag, nil)
+	digestValue, err := s.fetchDigestFromRegistryInternal(ctx, registryHost, repository, tag, nil)
 	if err == nil {
 		return &registryDigestResult{
-			Digest:       digest,
+			Digest:       digestValue,
 			AuthMethod:   "anonymous",
 			AuthRegistry: registryHost,
 		}, nil
 	}
 	if !isUnauthorizedRegistryErrorInternal(err) {
-		return &registryDigestResult{AuthMethod: "anonymous", AuthRegistry: registryHost},
-			fmt.Errorf("registry manifest inspect failed for %s/%s:%s: %w", registryHost, repository, tag, err)
+		return &registryDigestResult{AuthMethod: "anonymous", AuthRegistry: registryHost}, errors.
+			WrapIff(err, "registry manifest inspect failed for %s/%s:%s", registryHost, repository, tag)
 	}
 
 	credentials, credErr := s.getMatchingRegistryCredentialsInternal(ctx, registryHost, externalCreds)
 	if credErr != nil {
-		return &registryDigestResult{AuthMethod: "anonymous", AuthRegistry: registryHost},
-			fmt.Errorf("registry manifest inspect: anonymous access unauthorized; credential lookup failed: %w", errors.Join(err, credErr))
+		return &registryDigestResult{AuthMethod: "anonymous", AuthRegistry: registryHost}, errors.
+			WrapIf(stderrors.Join(err, credErr), "registry manifest inspect: anonymous access unauthorized; credential lookup failed")
 	}
 
 	lastErr := err
@@ -959,10 +1024,10 @@ func (s *ContainerRegistryService) inspectImageDigestViaRegistryInternal(ctx con
 	for _, credential := range credentials {
 		lastCred = credential
 
-		digest, err = s.fetchDigestFromRegistryInternal(ctx, registryHost, repository, tag, &credential)
+		digestValue, err = s.fetchDigestFromRegistryInternal(ctx, registryHost, repository, tag, &credential)
 		if err == nil {
 			return &registryDigestResult{
-				Digest:         digest,
+				Digest:         digestValue,
 				AuthMethod:     "credential",
 				AuthUsername:   credential.Username,
 				AuthRegistry:   registryHost,
@@ -980,7 +1045,7 @@ func (s *ContainerRegistryService) inspectImageDigestViaRegistryInternal(ctx con
 		partial.UsedCredential = true
 	}
 
-	return partial, fmt.Errorf("registry manifest inspect failed for %s/%s:%s: %w", registryHost, repository, tag, lastErr)
+	return partial, errors.WrapIff(lastErr, "registry manifest inspect failed for %s/%s:%s", registryHost, repository, tag)
 }
 
 func (s *ContainerRegistryService) getDockerClientInternal(ctx context.Context) (RegistryDaemonClient, error) {
@@ -990,7 +1055,7 @@ func (s *ContainerRegistryService) getDockerClientInternal(ctx context.Context) 
 
 	dockerClient, err := s.dockerClient(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get docker client: %w", err)
+		return nil, errors.WrapIf(err, "failed to get docker client")
 	}
 	if dockerClient == nil {
 		return nil, errors.New("docker client unavailable")
@@ -1021,7 +1086,7 @@ func (s *ContainerRegistryService) getMatchingRegistryCredentialsInternal(ctx co
 
 	registries, err := s.GetEnabledRegistries(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load enabled registries: %w", err)
+		return nil, errors.WrapIf(err, "failed to load enabled registries")
 	}
 
 	creds := make([]resolvedRegistryCredential, 0, len(registries))
@@ -1096,7 +1161,7 @@ func (s *ContainerRegistryService) SyncRegistries(ctx context.Context, syncItems
 func (s *ContainerRegistryService) getExistingRegistriesMapInternal(ctx context.Context) (map[string]*models.ContainerRegistry, error) {
 	var existingRegistries []models.ContainerRegistry
 	if err := s.db.WithContext(ctx).Find(&existingRegistries).Error; err != nil {
-		return nil, fmt.Errorf("failed to get existing registries: %w", err)
+		return nil, errors.WrapIf(err, "failed to get existing registries")
 	}
 
 	existingMap := make(map[string]*models.ContainerRegistry)
@@ -1124,7 +1189,7 @@ func (s *ContainerRegistryService) updateExistingRegistryInternal(ctx context.Co
 	if needsUpdate {
 		existing.UpdatedAt = time.Now()
 		if err := s.db.WithContext(ctx).Save(existing).Error; err != nil {
-			return fmt.Errorf("failed to update registry %s: %w", item.ID, err)
+			return errors.WrapIff(err, "failed to update registry %s", item.ID)
 		}
 	}
 
@@ -1137,10 +1202,18 @@ func (s *ContainerRegistryService) checkRegistryNeedsUpdateInternal(item contain
 		return false, err
 	}
 
-	needsUpdate := utils.UpdateIfChanged(&existing.URL, item.URL)
-	needsUpdate = utils.UpdateIfChanged(&existing.Description, item.Description) || needsUpdate
-	needsUpdate = utils.UpdateIfChanged(&existing.Insecure, item.Insecure) || needsUpdate
-	needsUpdate = utils.UpdateIfChanged(&existing.Enabled, item.Enabled) || needsUpdate
+	needsUpdate := utils.ApplyChanged(&existing.URL, mo.Some(item.URL))
+	needsUpdate = utils.ApplyNullable(&existing.Description, mo.PointerToOption(item.Description)) || needsUpdate
+	needsUpdate = utils.ApplyChanged(&existing.Insecure, mo.Some(item.Insecure)) || needsUpdate
+	needsUpdate = utils.ApplyChanged(&existing.Enabled, mo.Some(item.Enabled)) || needsUpdate
+
+	// Normalizing first gives the manager and the local copy the same
+	// representation, so the comparison below only reports real changes.
+	repositoryNames, err := normalizeRepositoryNamesInternal(item.RepositoryNames)
+	if err != nil {
+		return false, err
+	}
+	needsUpdate = utils.ApplySliceChanged(&existing.RepositoryNames, mo.Some(repositoryNames)) || needsUpdate
 
 	// Clear stale credentials when registry type changes during sync
 	if newType != existing.RegistryType {
@@ -1157,23 +1230,23 @@ func (s *ContainerRegistryService) checkRegistryNeedsUpdateInternal(item contain
 		needsUpdate = true
 	}
 
-	needsUpdate = utils.UpdateIfChanged(&existing.RegistryType, newType) || needsUpdate
+	needsUpdate = utils.ApplyChanged(&existing.RegistryType, mo.Some(newType)) || needsUpdate
 
 	if newType == registryTypeGeneric {
-		needsUpdate = utils.UpdateIfChanged(&existing.Username, item.Username) || needsUpdate
+		needsUpdate = utils.ApplyChanged(&existing.Username, mo.Some(item.Username)) || needsUpdate
 
 		encryptedToken, err := crypto.Encrypt(item.Token)
 		if err != nil {
 			slog.Warn("failed to encrypt token during sync, skipping field", "registry", existing.ID, "error", err)
 		} else {
-			needsUpdate = utils.UpdateIfChanged(&existing.Token, encryptedToken) || needsUpdate
+			needsUpdate = utils.ApplyChanged(&existing.Token, mo.Some(encryptedToken)) || needsUpdate
 		}
 
 		return needsUpdate, nil
 	}
 
-	credChanged := utils.UpdateIfChanged(&existing.AWSAccessKeyID, item.AWSAccessKeyID)
-	credChanged = utils.UpdateIfChanged(&existing.AWSRegion, item.AWSRegion) || credChanged
+	credChanged := utils.ApplyChanged(&existing.AWSAccessKeyID, mo.Some(item.AWSAccessKeyID))
+	credChanged = utils.ApplyChanged(&existing.AWSRegion, mo.Some(item.AWSRegion)) || credChanged
 
 	// Encrypt and update AWS secret if provided
 	if item.AWSSecretAccessKey != "" {
@@ -1181,7 +1254,7 @@ func (s *ContainerRegistryService) checkRegistryNeedsUpdateInternal(item contain
 		if err != nil {
 			slog.Warn("failed to encrypt AWS secret during sync, skipping field", "registry", existing.ID, "error", err)
 		} else {
-			credChanged = utils.UpdateIfChanged(&existing.AWSSecretAccessKey, encryptedSecret) || credChanged
+			credChanged = utils.ApplyChanged(&existing.AWSSecretAccessKey, mo.Some(encryptedSecret)) || credChanged
 		}
 	}
 
@@ -1200,20 +1273,25 @@ func (s *ContainerRegistryService) createNewRegistryInternal(ctx context.Context
 	if err != nil {
 		return err
 	}
+	repositoryNames, err := normalizeRepositoryNamesInternal(item.RepositoryNames)
+	if err != nil {
+		return err
+	}
 
 	newRegistry := &models.ContainerRegistry{
 		BaseModel: models.BaseModel{
 			ID: item.ID,
 		},
-		URL:            item.URL,
-		Description:    item.Description,
-		Insecure:       item.Insecure,
-		Enabled:        item.Enabled,
-		RegistryType:   registryType,
-		AWSAccessKeyID: item.AWSAccessKeyID,
-		AWSRegion:      item.AWSRegion,
-		CreatedAt:      time.Now(),
-		UpdatedAt:      time.Now(),
+		URL:             item.URL,
+		Description:     item.Description,
+		Insecure:        item.Insecure,
+		Enabled:         item.Enabled,
+		RegistryType:    registryType,
+		RepositoryNames: repositoryNames,
+		AWSAccessKeyID:  item.AWSAccessKeyID,
+		AWSRegion:       item.AWSRegion,
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
 	}
 
 	if registryType == registryTypeGeneric {
@@ -1221,19 +1299,19 @@ func (s *ContainerRegistryService) createNewRegistryInternal(ctx context.Context
 
 		encryptedToken, err := crypto.Encrypt(item.Token)
 		if err != nil {
-			return fmt.Errorf("failed to encrypt token for new registry %s: %w", item.ID, err)
+			return errors.WrapIff(err, "failed to encrypt token for new registry %s", item.ID)
 		}
 		newRegistry.Token = encryptedToken
 	} else if item.AWSSecretAccessKey != "" {
 		encryptedSecret, err := crypto.Encrypt(item.AWSSecretAccessKey)
 		if err != nil {
-			return fmt.Errorf("failed to encrypt AWS secret for new registry %s: %w", item.ID, err)
+			return errors.WrapIff(err, "failed to encrypt AWS secret for new registry %s", item.ID)
 		}
 		newRegistry.AWSSecretAccessKey = encryptedSecret
 	}
 
 	if err := s.db.WithContext(ctx).Create(newRegistry).Error; err != nil {
-		return fmt.Errorf("failed to create registry %s: %w", item.ID, err)
+		return errors.WrapIff(err, "failed to create registry %s", item.ID)
 	}
 
 	return nil
@@ -1249,18 +1327,33 @@ func normalizeRegistryTypeInternal(value string) (string, error) {
 	case registryTypeGeneric, registryTypeECR:
 		return registryType, nil
 	default:
-		return "", &models.ValidationError{
-			Field:   "registryType",
-			Message: "Registry type must be one of: generic, ecr",
-		}
+		return "", common.Classify(common.ErrValidation, errors.WithDetails(errors.New("Registry type must be one of: generic, ecr"), "field", "registryType"))
 	}
+}
+
+// normalizeRepositoryNamesInternal trims, filters and deduplicates the given
+// entries (preserving first-occurrence order) and validates what remains. It
+// returns a non-nil slice so that GORM always serializes to a JSON array.
+func normalizeRepositoryNamesInternal(raw []string) (models.StringSlice, error) {
+	names := utils.UniqueNonEmptyStrings(raw)
+	result := make(models.StringSlice, 0, len(names))
+	for _, name := range names {
+		// A repository name is only a path, so pair it with placeholder domain
+		// and tag segments to validate it against the reference grammar.
+		if _, err := ref.ParseNormalizedNamed("registry.invalid/" + name + "/placeholder:latest"); err != nil {
+			return nil, common.Classify(common.ErrValidation, errors.WithDetails(errors.Errorf("invalid repository name %q", name), "field", "repositoryNames"))
+		}
+		result = append(result, name)
+	}
+
+	return result, nil
 }
 
 func (s *ContainerRegistryService) deleteUnsyncedInternal(ctx context.Context, existingMap map[string]*models.ContainerRegistry, syncedIDs map[string]bool) error {
 	for id := range existingMap {
 		if !syncedIDs[id] {
 			if err := s.db.WithContext(ctx).Where("id = ?", id).Delete(&models.ContainerRegistry{}).Error; err != nil {
-				return fmt.Errorf("failed to delete registry %s: %w", id, err)
+				return errors.WrapIff(err, "failed to delete registry %s", id)
 			}
 		}
 	}
@@ -1268,7 +1361,7 @@ func (s *ContainerRegistryService) deleteUnsyncedInternal(ctx context.Context, e
 }
 
 func normalizeImageReferenceForDistributionInternal(imageRef string) (string, string, error) {
-	parts, err := updaterrefs.NormalizeReference(imageRef)
+	parts, err := refs.NormalizeReference(imageRef)
 	if err != nil {
 		return "", "", err
 	}
@@ -1358,7 +1451,7 @@ func isDistributionFallbackEligibleInternal(err error) bool {
 		return false
 	}
 
-	if updaterregistry.IsFallbackEligibleDaemonError(err) {
+	if registry.IsFallbackEligibleDaemonError(err) {
 		return true
 	}
 
@@ -1373,15 +1466,15 @@ func isDistributionFallbackEligibleInternal(err error) bool {
 }
 
 func (s *ContainerRegistryService) fetchDigestFromRegistryInternal(ctx context.Context, registryHost, repository, tag string, credential *resolvedRegistryCredential) (string, error) {
-	var distributionCredential *updaterregistry.Credentials
+	var distributionCredential *registry.Credentials
 	if credential != nil {
-		distributionCredential = &updaterregistry.Credentials{
+		distributionCredential = &registry.Credentials{
 			Username: strings.TrimSpace(credential.Username),
 			Token:    strings.TrimSpace(credential.Token),
 		}
 	}
 
-	return updaterregistry.FetchDigest(
+	return registry.FetchDigest(
 		ctx,
 		registryHost,
 		repository,

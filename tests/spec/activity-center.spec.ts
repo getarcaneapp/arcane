@@ -140,11 +140,21 @@ function aggregatedActivityStreamBody(
 	const timestamp = new Date().toISOString();
 	const events: string[] = [];
 	for (const [environmentId, activities] of Object.entries(activitiesByEnvironment)) {
-		events.push(JSON.stringify({ type: 'snapshot', environmentId, activities, timestamp }));
+		events.push(
+			JSON.stringify({
+				channel: 'activities',
+				activity: { type: 'snapshot', environmentId, activities, timestamp },
+				timestamp
+			})
+		);
 	}
 	for (const environmentId of failedEnvironmentIds) {
 		events.push(
-			JSON.stringify({ type: 'error', environmentId, error: 'environment unavailable', timestamp })
+			JSON.stringify({
+				channel: 'activities',
+				activity: { type: 'error', environmentId, error: 'environment unavailable', timestamp },
+				timestamp
+			})
 		);
 	}
 	return events.join('\n') + '\n';
@@ -157,11 +167,14 @@ async function mockActivityReads(
 	failedActivityStatus = 503,
 	readEnvironmentIds?: string[]
 ) {
-	await page.context().route(/\/api\/activities\/stream(?:\?.*)?$/, async (route: Route) => {
+	await page.context().route(/\/api\/stream(?:\?.*)?$/, async (route: Route) => {
+		const channels = new URL(route.request().url()).searchParams.get('channels')?.split(',') ?? [];
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/x-json-stream',
-			body: aggregatedActivityStreamBody(activitiesByEnvironment, failedEnvironmentIds)
+			body: channels.includes('activities')
+				? aggregatedActivityStreamBody(activitiesByEnvironment, failedEnvironmentIds)
+				: ''
 		});
 	});
 
@@ -293,7 +306,12 @@ function activityRow(activityCenter: Locator, text: string) {
 function waitForActivityStream(page: Page) {
 	return page.waitForResponse((response) => {
 		const url = new URL(response.url());
-		return response.request().method() === 'GET' && url.pathname === '/api/activities/stream';
+		const channels = url.searchParams.get('channels')?.split(',') ?? [];
+		return (
+			response.request().method() === 'GET' &&
+			url.pathname === '/api/stream' &&
+			channels.includes('activities')
+		);
 	});
 }
 
@@ -340,7 +358,6 @@ test.describe('Activity Center', () => {
 		await expect(page.getByRole('heading', { name: 'Environment Board' })).toBeVisible();
 
 		const activityCenter = await openActivityCenter(page);
-		await activityCenter.getByRole('button', { name: 'Completed' }).click();
 		await expect(activityRow(activityCenter, 'remote-network')).toBeVisible();
 		await expect(activityRow(activityCenter, 'local-network')).toHaveCount(0);
 		await expect.poll(() => activityReads).toContain('remote-activity-test');
@@ -351,7 +368,7 @@ test.describe('Activity Center', () => {
 	});
 
 	test('does not mount the activity center without an effective read scope', async ({ page }) => {
-		const streamRequests: string[] = [];
+		const streamChannels: string[][] = [];
 
 		await preserveLocalEnvironmentSelection(page);
 		await mockCurrentUser(page, () =>
@@ -362,16 +379,73 @@ test.describe('Activity Center', () => {
 		);
 		await mockEnvironmentList(page, [localEnvironment]);
 		page.on('request', (request) => {
-			if (new URL(request.url()).pathname === '/api/activities/stream') {
-				streamRequests.push(request.url());
+			const url = new URL(request.url());
+			if (url.pathname === '/api/stream') {
+				streamChannels.push(url.searchParams.get('channels')?.split(',') ?? []);
 			}
 		});
 
 		await page.goto('/dashboard');
 		await expect(page.getByRole('heading', { name: 'Environment Board' })).toBeVisible();
 		await expect(page.getByRole('button', { name: 'Open activity center' })).toHaveCount(0);
-		await page.waitForTimeout(250);
-		expect(streamRequests).toHaveLength(0);
+		await expect
+			.poll(() => streamChannels.some((channels) => channels.includes('dashboard')))
+			.toBe(true);
+		expect(streamChannels.some((channels) => channels.includes('activities'))).toBe(false);
+	});
+
+	test('keeps an in-flight activity snapshot when the dashboard channel restarts the stream', async ({
+		page
+	}) => {
+		const snapshotActivity = activity('delayed-activity', '0', 'Local', 'delayed-network', 1);
+		let markSnapshotRequested!: () => void;
+		const snapshotRequested = new Promise<void>((resolve) => {
+			markSnapshotRequested = resolve;
+		});
+		let releaseSnapshot!: () => void;
+		const snapshotReleased = new Promise<void>((resolve) => {
+			releaseSnapshot = resolve;
+		});
+
+		await preserveLocalEnvironmentSelection(page);
+		await mockCurrentUser(page, () => user('snapshot-generation-user', { global: ['*'] }));
+		await mockEnvironmentList(page, [localEnvironment]);
+		await page.context().route(/\/api\/stream(?:\?.*)?$/, async (route) => {
+			await route.fulfill({ status: 503, contentType: 'application/json', body: '{}' });
+		});
+		await page.context().route(/\/api\/environments\/0\/activities(?:\?.*)?$/, async (route) => {
+			markSnapshotRequested();
+			await snapshotReleased;
+			await route.fulfill({
+				status: 200,
+				contentType: 'application/json',
+				body: JSON.stringify(paginated([snapshotActivity]))
+			});
+		});
+
+		await page.goto('/containers');
+		await snapshotRequested;
+		const dashboardStream = page.waitForRequest((request) => {
+			const url = new URL(request.url());
+			const channels = url.searchParams.get('channels')?.split(',') ?? [];
+			return (
+				url.pathname === '/api/stream' &&
+				channels.includes('activities') &&
+				channels.includes('dashboard')
+			);
+		});
+		try {
+			await Promise.all([
+				dashboardStream,
+				page.getByRole('link', { name: 'Dashboard', exact: true }).click()
+			]);
+			releaseSnapshot();
+
+			const activityCenter = await openActivityCenter(page);
+			await expect(activityRow(activityCenter, 'delayed-network')).toBeVisible();
+		} finally {
+			releaseSnapshot();
+		}
 	});
 
 	test('clears activity state when the authenticated user changes', async ({ page }) => {
@@ -382,17 +456,23 @@ test.describe('Activity Center', () => {
 		await preserveLocalEnvironmentSelection(page);
 		await mockCurrentUser(page, () => user(activeUserId, permissions));
 		await mockEnvironmentList(page, [localEnvironment]);
-		await page.context().route(/\/api\/activities\/stream(?:\?.*)?$/, async (route) => {
+		await page.context().route(/\/api\/stream(?:\?.*)?$/, async (route) => {
+			const channels =
+				new URL(route.request().url()).searchParams.get('channels')?.split(',') ?? [];
 			const requestedBy = activeUserId;
-			streamedUsers.push(requestedBy);
+			if (channels.includes('activities')) {
+				streamedUsers.push(requestedBy);
+			}
 			const resourceName = requestedBy === 'user-a' ? 'user-a-private-activity' : 'user-b-activity';
 			await route.fulfill({
 				status: 200,
 				contentType: 'application/x-json-stream',
-				body: aggregatedActivityStreamBody(
-					{ '0': [activity(`${requestedBy}-activity`, '0', 'Local', resourceName, 1)] },
-					new Set()
-				)
+				body: channels.includes('activities')
+					? aggregatedActivityStreamBody(
+							{ '0': [activity(`${requestedBy}-activity`, '0', 'Local', resourceName, 1)] },
+							new Set()
+						)
+					: ''
 			});
 		});
 		await page.context().route(/\/api\/environments\/0\/activities(?:\?.*)?$/, async (route) => {
@@ -417,14 +497,12 @@ test.describe('Activity Center', () => {
 
 		await page.goto('/dashboard');
 		let activityCenter = await openActivityCenter(page);
-		await activityCenter.getByRole('button', { name: 'Completed' }).click();
 		await expect(activityRow(activityCenter, 'user-a-private-activity')).toBeVisible();
 
 		await page.goto('/logout');
 		await page.waitForURL('/dashboard');
 		await expect.poll(() => streamedUsers).toContain('user-b');
 		activityCenter = await openActivityCenter(page);
-		await activityCenter.getByRole('button', { name: 'Completed' }).click();
 		await expect(activityRow(activityCenter, 'user-b-activity')).toBeVisible();
 		await expect(activityRow(activityCenter, 'user-a-private-activity')).toHaveCount(0);
 	});
@@ -445,7 +523,6 @@ test.describe('Activity Center', () => {
 		await page.waitForLoadState('load');
 
 		const activityCenter = await openActivityCenter(page);
-		await activityCenter.getByRole('button', { name: 'Completed' }).click();
 
 		await expect(activityRow(activityCenter, 'local-network')).toBeVisible();
 		await expect(activityRow(activityCenter, 'remote-network')).toBeVisible();
@@ -481,7 +558,6 @@ test.describe('Activity Center', () => {
 		});
 
 		const activityCenter = await openActivityCenter(page);
-		await activityCenter.getByRole('button', { name: 'Completed' }).click();
 
 		await expect(activityRow(activityCenter, 'local-network')).toBeVisible();
 		await expect(activityCenter.getByText('Could not load activity from Remote Lab')).toBeVisible();
@@ -528,7 +604,8 @@ test.describe('Activity Center', () => {
 		await page.waitForLoadState('load');
 
 		const activityCenter = await openActivityCenter(page);
-		await activityCenter.getByRole('button', { name: 'Clear history' }).click();
+		await activityCenter.getByRole('button', { name: 'More options' }).click();
+		await page.getByRole('menuitem', { name: 'Clear history' }).click();
 		await page.getByRole('button', { name: 'Clear History', exact: true }).last().click();
 
 		await expect.poll(() => deletedEnvironments.sort()).toEqual(['0', 'remote-activity-test']);
@@ -547,9 +624,9 @@ test.describe('Activity Center', () => {
 			expect(created.activityId).toBeTruthy();
 
 			const activityCenter = await openActivityCenter(page);
-			await expect(activityCenter.getByRole('button', { name: 'Running' })).toBeVisible();
-			await expect(activityCenter.getByRole('button', { name: 'Failed' })).toBeVisible();
-			await activityCenter.getByRole('button', { name: 'Completed' }).click();
+			await expect(activityCenter.getByPlaceholder('Search activity…')).toBeVisible();
+			await expect(activityCenter.getByRole('button', { name: 'Filter' })).toBeVisible();
+			await expect(activityCenter.getByText('History', { exact: true })).toBeVisible();
 
 			const activityItem = activityCenter
 				.locator('button[aria-label="Activity Center"]')
@@ -562,11 +639,15 @@ test.describe('Activity Center', () => {
 			await expect(activityItem).toContainText('Started by');
 
 			await activityItem.click();
-			await expect(activityCenter.getByText('Output', { exact: true })).toBeVisible();
-			await expect(activityCenter.getByText('Creating network').first()).toBeVisible();
-			await expect(activityCenter.getByText('Network created successfully').first()).toBeVisible();
-			await expect(activityCenter.getByText('Source environment')).toBeVisible();
-			await expect(activityCenter.getByText('Started by', { exact: true })).toBeVisible();
+			// Collapsed rows keep their (hidden) detail panels mounted, so scope
+			// the assertions to the expanded panel.
+			const detailPanel = activityCenter.locator('[data-collapsible-content][data-state="open"]');
+			await expect(detailPanel.getByText('Output', { exact: true })).toBeVisible();
+			// The output pane shows the activity's messages verbatim; step labels
+			// (e.g. "Creating network") are no longer rendered in the detail panel.
+			await expect(detailPanel.getByText('Network created successfully').first()).toBeVisible();
+			await expect(detailPanel.getByText('Source environment')).toBeVisible();
+			await expect(detailPanel.getByText('Started by', { exact: true })).toBeVisible();
 		} finally {
 			await removeNetworkViaApi(page, networkId);
 		}

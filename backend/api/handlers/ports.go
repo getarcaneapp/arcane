@@ -16,12 +16,6 @@ type PortHandler struct {
 	portService *services.PortService
 }
 
-type PortPaginatedResponse struct {
-	Success    bool                    `json:"success"`
-	Data       []porttypes.PortMapping `json:"data"`
-	Pagination base.PaginationResponse `json:"pagination"`
-}
-
 type ListPortsInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Search        string `query:"search" doc:"Search query"`
@@ -32,7 +26,7 @@ type ListPortsInput struct {
 }
 
 type ListPortsOutput struct {
-	Body PortPaginatedResponse
+	Body base.Paginated[porttypes.PortMapping]
 }
 
 func RegisterPorts(api huma.API, portSvc *services.PortService) {
@@ -44,15 +38,11 @@ func RegisterPorts(api huma.API, portSvc *services.PortService) {
 		Path:        "/environments/{id}/ports",
 		Summary:     "List port mappings",
 		Tags:        []string{"Ports"},
-		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermContainersList, h.ListPorts)
 }
 
 func (h *PortHandler) ListPorts(ctx context.Context, input *ListPortsInput) (*ListPortsOutput, error) {
-	if h.portService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 
 	items, paginationResp, err := h.portService.ListPortsPaginated(ctx, params)
@@ -61,7 +51,7 @@ func (h *PortHandler) ListPorts(ctx context.Context, input *ListPortsInput) (*Li
 	}
 
 	return &ListPortsOutput{
-		Body: PortPaginatedResponse{
+		Body: base.Paginated[porttypes.PortMapping]{
 			Success:    true,
 			Data:       items,
 			Pagination: toPaginationResponseInternal(paginationResp),

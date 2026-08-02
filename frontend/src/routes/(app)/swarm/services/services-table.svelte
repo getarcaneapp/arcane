@@ -1,22 +1,22 @@
 <script lang="ts">
-	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
-	import { UniversalMobileCard } from '$lib/components/arcane-table';
-	import { DockIcon, GlobeIcon, TrashIcon, NetworksIcon, InspectIcon } from '$lib/icons';
-	import { m } from '$lib/paraglide/messages';
-	import { swarmService } from '$lib/services/swarm-service';
-	import type { SwarmServiceSummary, SwarmServicePort } from '$lib/types/swarm';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
-	import { Badge } from '$lib/components/ui/badge';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
-	import { openConfirmDialog } from '$lib/components/confirm-dialog';
+	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
+	import type { ColumnSpec, MobileFieldVisibility } from '#lib/components/arcane-table';
+	import { UniversalMobileCard } from '#lib/components/arcane-table';
+	import { DockIcon, GlobeIcon, TrashIcon, NetworksIcon, InspectIcon } from '#lib/icons';
+	import { m } from '#lib/paraglide/messages';
+	import { swarmService } from '#lib/services/swarm-service';
+	import type { SwarmServiceSummary, SwarmServicePort } from '#lib/types/swarm';
+	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
+	import { Badge } from '#lib/components/ui/badge';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog';
 	import { toast } from 'svelte-sonner';
-	import { tryCatch } from '$lib/utils/api';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api';
+	import { tryCatch } from '#lib/utils/api';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api';
 	import { goto } from '$app/navigation';
-	import { getSwarmServiceModeLabel, getSwarmServiceModeVariant } from '$lib/utils/docker';
-	import IfPermitted from '$lib/components/if-permitted.svelte';
+	import { getSwarmServiceModeLabel, getSwarmServiceModeVariant } from '#lib/utils/docker';
+	import IfPermitted from '#lib/components/if-permitted.svelte';
 
 	let {
 		services = $bindable(),

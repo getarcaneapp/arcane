@@ -1,7 +1,7 @@
 import { error } from '@sveltejs/kit';
-import { templateService } from '$lib/services/template-service';
-import { variableService } from '$lib/services/variable-service';
-import { swarmService } from '$lib/services/swarm-service';
+import { templateService } from '#lib/services/template-service';
+import { variableService } from '#lib/services/variable-service';
+import { swarmService } from '#lib/services/swarm-service';
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({ url }) => {
@@ -50,6 +50,8 @@ export const load: PageLoad = async ({ url }) => {
 		defaultTemplate: isEditMode
 			? (sourceStack?.composeContent ?? '')
 			: (selectedTemplate?.content ?? defaultTemplates.swarmStackTemplate),
+		overrideTemplate: sourceStack?.overrideContent ?? '',
+		sourceFiles: sourceStack?.files ?? [],
 		isEditMode,
 		selectedTemplate: selectedTemplate?.template || null,
 		sourceStackName: sourceStack?.name || sourceStackName || null,

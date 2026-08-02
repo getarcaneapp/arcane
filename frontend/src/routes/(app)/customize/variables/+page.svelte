@@ -1,19 +1,19 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
 	import { untrack } from 'svelte';
-	import { ResourcePageLayout, type ActionButton } from '$lib/layouts/index.js';
-	import { openConfirmDialog } from '$lib/components/confirm-dialog';
-	import VariableFormSheet from '$lib/components/sheets/variable-form-sheet.svelte';
+	import { ResourcePageLayout, type ActionButton } from '#lib/layouts/index.js';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog';
+	import VariableFormSheet from '#lib/components/sheets/variable-form-sheet.svelte';
 	import VariableTable from './variable-table.svelte';
-	import { variableService } from '$lib/services/variable-service';
+	import { variableService } from '#lib/services/variable-service';
 	import type {
 		GlobalVariable,
 		GlobalVariableCreateDto,
 		GlobalVariableUpdateDto,
 		VariableEnvSyncResult
-	} from '$lib/types/variable';
-	import { m } from '$lib/paraglide/messages';
-	import { hasPermission } from '$lib/utils/auth';
+	} from '#lib/types/variable';
+	import { m } from '#lib/paraglide/messages';
+	import { hasPermission } from '#lib/utils/auth';
 
 	type VariableFormPayload =
 		| { mode: 'create'; variable: GlobalVariableCreateDto }

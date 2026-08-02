@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 
+	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -20,12 +21,6 @@ type RoleHandler struct {
 
 // ---------- I/O wrappers ----------
 
-type RolePaginatedResponse struct {
-	Success    bool                    `json:"success"`
-	Data       []roletypes.Role        `json:"data"`
-	Pagination base.PaginationResponse `json:"pagination"`
-}
-
 type ListRolesInput struct {
 	Search string `query:"search" doc:"Search by role name or description"`
 	Sort   string `query:"sort" doc:"Column to sort by"`
@@ -35,7 +30,7 @@ type ListRolesInput struct {
 }
 
 type ListRolesOutput struct {
-	Body RolePaginatedResponse
+	Body base.Paginated[roletypes.Role]
 }
 
 type GetRoleInput struct {
@@ -104,7 +99,7 @@ func RegisterRoles(api huma.API, roleService *services.RoleService) {
 		Summary:     "List roles",
 		Description: "Get a paginated list of roles (built-in + custom)",
 		Tags:        []string{"Roles"},
-		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    defaultOperationSecurityInternal(),
 		Middlewares: humamw.RequirePermission(api, authz.PermRolesList),
 	}, h.ListRoles)
 
@@ -114,7 +109,7 @@ func RegisterRoles(api huma.API, roleService *services.RoleService) {
 		Path:        "/roles/{id}",
 		Summary:     "Get a role",
 		Tags:        []string{"Roles"},
-		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    defaultOperationSecurityInternal(),
 		Middlewares: humamw.RequirePermission(api, authz.PermRolesRead),
 	}, h.GetRole)
 
@@ -125,7 +120,7 @@ func RegisterRoles(api huma.API, roleService *services.RoleService) {
 		Summary:     "Create a custom role",
 		Description: "Built-in roles cannot be created via this endpoint; only custom roles are accepted. Reserved for global admins.",
 		Tags:        []string{"Roles"},
-		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    defaultOperationSecurityInternal(),
 		Middlewares: humamw.RequireGlobalAdmin(api),
 	}, h.CreateRole)
 
@@ -136,7 +131,7 @@ func RegisterRoles(api huma.API, roleService *services.RoleService) {
 		Summary:     "Update a custom role",
 		Description: "Built-in roles are read-only and return 403 on update. Reserved for global admins.",
 		Tags:        []string{"Roles"},
-		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    defaultOperationSecurityInternal(),
 		Middlewares: humamw.RequireGlobalAdmin(api),
 	}, h.UpdateRole)
 
@@ -147,7 +142,7 @@ func RegisterRoles(api huma.API, roleService *services.RoleService) {
 		Summary:     "Delete a custom role",
 		Description: "Built-in roles are protected; deleting cascades all user assignments. Reserved for global admins.",
 		Tags:        []string{"Roles"},
-		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    defaultOperationSecurityInternal(),
 		Middlewares: humamw.RequireGlobalAdmin(api),
 	}, h.DeleteRole)
 
@@ -158,7 +153,7 @@ func RegisterRoles(api huma.API, roleService *services.RoleService) {
 		Summary:     "Get the permission manifest",
 		Description: "Returns every permission the server recognizes, grouped by resource. Used by permission-picking UIs.",
 		Tags:        []string{"Roles"},
-		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    defaultOperationSecurityInternal(),
 	}, h.GetPermissionsManifest)
 
 	huma.Register(api, huma.Operation{
@@ -168,7 +163,7 @@ func RegisterRoles(api huma.API, roleService *services.RoleService) {
 		Summary:     "List a user's role assignments",
 		Description: "Reserved for global admins.",
 		Tags:        []string{"Roles"},
-		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    defaultOperationSecurityInternal(),
 		Middlewares: humamw.RequireGlobalAdmin(api),
 	}, h.ListUserRoleAssignments)
 
@@ -179,7 +174,7 @@ func RegisterRoles(api huma.API, roleService *services.RoleService) {
 		Summary:     "Replace a user's manual role assignments",
 		Description: "Replaces every source='manual' assignment for the user. source='oidc' assignments are not touched. Reserved for global admins; enforces the last-admin guard.",
 		Tags:        []string{"Roles"},
-		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    defaultOperationSecurityInternal(),
 		Middlewares: humamw.RequireGlobalAdmin(api),
 	}, h.SetUserRoleAssignments)
 }
@@ -187,9 +182,6 @@ func RegisterRoles(api huma.API, roleService *services.RoleService) {
 // ---------- Handler implementations ----------
 
 func (h *RoleHandler) ListRoles(ctx context.Context, input *ListRolesInput) (*ListRolesOutput, error) {
-	if h.roleService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	roles, paginationResp, err := h.roleService.ListRoles(ctx, params)
 	if err != nil {
@@ -200,7 +192,7 @@ func (h *RoleHandler) ListRoles(ctx context.Context, input *ListRolesInput) (*Li
 		dtos[i] = h.toRoleDTO(ctx, &roles[i])
 	}
 	return &ListRolesOutput{
-		Body: RolePaginatedResponse{
+		Body: base.Paginated[roletypes.Role]{
 			Success:    true,
 			Data:       dtos,
 			Pagination: toPaginationResponseInternal(paginationResp),
@@ -209,12 +201,9 @@ func (h *RoleHandler) ListRoles(ctx context.Context, input *ListRolesInput) (*Li
 }
 
 func (h *RoleHandler) GetRole(ctx context.Context, input *GetRoleInput) (*GetRoleOutput, error) {
-	if h.roleService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	role, err := h.roleService.GetRole(ctx, input.ID)
 	if err != nil {
-		if common.IsRoleNotFoundError(err) {
+		if errors.Is(err, common.ErrRoleNotFound) {
 			return nil, huma.Error404NotFound("role not found")
 		}
 		return nil, huma.Error500InternalServerError("failed to get role: " + err.Error())
@@ -225,25 +214,22 @@ func (h *RoleHandler) GetRole(ctx context.Context, input *GetRoleInput) (*GetRol
 }
 
 func (h *RoleHandler) CreateRole(ctx context.Context, input *CreateRoleInput) (*CreateRoleOutput, error) {
-	if h.roleService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	callerPS, _ := humamw.PermissionsFromContext(ctx)
 	if err := h.roleService.ValidatePermissionsAgainstCaller(callerPS, input.Body.Permissions); err != nil {
 		switch {
-		case common.IsUnknownPermissionError(err):
+		case errors.Is(err, common.ErrUnknownPermission):
 			return nil, huma.Error400BadRequest(err.Error())
-		case common.IsRolePermissionEscalationError(err):
+		case errors.Is(err, common.ErrRolePermissionEscalation):
 			return nil, huma.Error403Forbidden(err.Error())
 		}
 		return nil, huma.Error500InternalServerError("failed to validate role permissions: " + err.Error())
 	}
 	role, err := h.roleService.CreateRole(ctx, input.Body.Name, input.Body.Description, input.Body.Permissions)
 	if err != nil {
-		if common.IsRoleNameTakenError(err) {
+		if errors.Is(err, common.ErrRoleNameTaken) {
 			return nil, huma.Error409Conflict("role name already in use")
 		}
-		if common.IsUnknownPermissionError(err) {
+		if errors.Is(err, common.ErrUnknownPermission) {
 			return nil, huma.Error400BadRequest(err.Error())
 		}
 		return nil, huma.Error500InternalServerError("failed to create role: " + err.Error())
@@ -254,15 +240,12 @@ func (h *RoleHandler) CreateRole(ctx context.Context, input *CreateRoleInput) (*
 }
 
 func (h *RoleHandler) UpdateRole(ctx context.Context, input *UpdateRoleInput) (*UpdateRoleOutput, error) {
-	if h.roleService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	callerPS, _ := humamw.PermissionsFromContext(ctx)
 	if err := h.roleService.ValidatePermissionsAgainstCaller(callerPS, input.Body.Permissions); err != nil {
 		switch {
-		case common.IsUnknownPermissionError(err):
+		case errors.Is(err, common.ErrUnknownPermission):
 			return nil, huma.Error400BadRequest(err.Error())
-		case common.IsRolePermissionEscalationError(err):
+		case errors.Is(err, common.ErrRolePermissionEscalation):
 			return nil, huma.Error403Forbidden(err.Error())
 		}
 		return nil, huma.Error500InternalServerError("failed to validate role permissions: " + err.Error())
@@ -270,13 +253,13 @@ func (h *RoleHandler) UpdateRole(ctx context.Context, input *UpdateRoleInput) (*
 	role, err := h.roleService.UpdateRole(ctx, input.ID, input.Body.Name, input.Body.Description, input.Body.Permissions)
 	if err != nil {
 		switch {
-		case common.IsRoleNotFoundError(err):
+		case errors.Is(err, common.ErrRoleNotFound):
 			return nil, huma.Error404NotFound("role not found")
-		case common.IsRoleBuiltInError(err):
+		case errors.Is(err, common.ErrRoleBuiltIn):
 			return nil, huma.Error403Forbidden("built-in roles cannot be modified")
-		case common.IsRoleNameTakenError(err):
+		case errors.Is(err, common.ErrRoleNameTaken):
 			return nil, huma.Error409Conflict("role name already in use")
-		case common.IsUnknownPermissionError(err):
+		case errors.Is(err, common.ErrUnknownPermission):
 			return nil, huma.Error400BadRequest(err.Error())
 		}
 		return nil, huma.Error500InternalServerError("failed to update role: " + err.Error())
@@ -287,16 +270,13 @@ func (h *RoleHandler) UpdateRole(ctx context.Context, input *UpdateRoleInput) (*
 }
 
 func (h *RoleHandler) DeleteRole(ctx context.Context, input *DeleteRoleInput) (*DeleteRoleOutput, error) {
-	if h.roleService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	if err := h.roleService.DeleteRole(ctx, input.ID); err != nil {
 		switch {
-		case common.IsRoleNotFoundError(err):
+		case errors.Is(err, common.ErrRoleNotFound):
 			return nil, huma.Error404NotFound("role not found")
-		case common.IsRoleBuiltInError(err):
+		case errors.Is(err, common.ErrRoleBuiltIn):
 			return nil, huma.Error403Forbidden("built-in roles cannot be deleted")
-		case common.IsNoGlobalAdminRemainsError(err):
+		case errors.Is(err, common.ErrNoGlobalAdminRemains):
 			return nil, huma.Error409Conflict(err.Error())
 		}
 		return nil, huma.Error500InternalServerError("failed to delete role: " + err.Error())
@@ -313,9 +293,6 @@ func (h *RoleHandler) GetPermissionsManifest(_ context.Context, _ *struct{}) (*P
 }
 
 func (h *RoleHandler) ListUserRoleAssignments(ctx context.Context, input *ListUserRoleAssignmentsInput) (*ListUserRoleAssignmentsOutput, error) {
-	if h.roleService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	rows, err := h.roleService.ListUserAssignments(ctx, input.UserID)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to list assignments: " + err.Error())
@@ -330,18 +307,17 @@ func (h *RoleHandler) ListUserRoleAssignments(ctx context.Context, input *ListUs
 }
 
 func (h *RoleHandler) SetUserRoleAssignments(ctx context.Context, input *SetUserRoleAssignmentsInput) (*SetUserRoleAssignmentsOutput, error) {
-	if h.roleService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	desired := make([]models.UserRoleAssignment, len(input.Body.Assignments))
 	for i, a := range input.Body.Assignments {
 		desired[i] = models.UserRoleAssignment{RoleID: a.RoleID, EnvironmentID: a.EnvironmentID}
 	}
 	if err := h.roleService.SetUserAssignments(ctx, input.UserID, desired); err != nil {
 		switch {
-		case common.IsInvalidRoleAssignmentError(err):
+		case errors.Is(err, services.ErrUserNotFound):
+			return nil, huma.Error404NotFound(err.Error())
+		case errors.Is(err, common.ErrInvalidRoleAssignment):
 			return nil, huma.Error400BadRequest(err.Error())
-		case common.IsNoGlobalAdminRemainsError(err):
+		case errors.Is(err, common.ErrNoGlobalAdminRemains):
 			return nil, huma.Error409Conflict(err.Error())
 		}
 		return nil, huma.Error500InternalServerError("failed to set assignments: " + err.Error())

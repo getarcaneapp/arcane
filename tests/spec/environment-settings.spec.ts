@@ -1,12 +1,26 @@
 import { test, expect, type Locator, type Page } from '@playwright/test';
 
 const LOCAL_ENV_ID = '0';
+const NAME_PLACEHOLDER = 'My Lab Server';
 
 async function openEnvironment(page: Page, environmentId: string) {
 	await page.goto(`/environments/${environmentId}`);
 	await page.waitForLoadState('load');
-	await expect(page.getByLabel('Name', { exact: true })).toBeVisible();
+	await expect(environmentTitleButton(page)).toBeVisible();
 	await expect(page.getByRole('button', { name: 'Save', exact: true }).first()).toBeVisible();
+}
+
+function environmentTitleButton(page: Page) {
+	return page.locator('h1 button').first();
+}
+
+async function renameEnvironmentInHeader(page: Page, newName: string) {
+	await environmentTitleButton(page).click();
+	const nameInput = page.getByPlaceholder(NAME_PLACEHOLDER);
+	await expect(nameInput).toBeVisible();
+	await nameInput.fill(newName);
+	await nameInput.press('Enter');
+	await expect(environmentTitleButton(page)).toHaveText(newName);
 }
 
 async function createDirectEnvironmentViaUI(page: Page, environmentName: string) {
@@ -83,23 +97,20 @@ test.describe('Environment Settings UI', () => {
 		await page.goto('/settings');
 		await page.waitForLoadState('load');
 
-		const jobScheduleCategory = page
-			.getByRole('button')
-			.filter({ hasText: 'Job Schedule' })
-			.first();
+		const jobScheduleCategory = page.getByRole('button').filter({ hasText: 'Automations' }).first();
 		await expect(jobScheduleCategory).toBeVisible();
 		await jobScheduleCategory.click();
 
 		await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('jobs');
-		await expect(page.getByRole('tab', { name: 'Job Schedules', exact: true })).toHaveAttribute(
+		await expect(page.getByRole('tab', { name: 'Automations', exact: true })).toHaveAttribute(
 			'data-state',
 			'active'
 		);
 
-		const generalTab = page.getByRole('tab', { name: 'General', exact: true });
-		await generalTab.click();
-		await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('general');
-		await expect(generalTab).toHaveAttribute('data-state', 'active');
+		const storageTab = page.getByRole('tab', { name: 'Storage & Limits', exact: true });
+		await storageTab.click();
+		await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('storage');
+		await expect(storageTab).toHaveAttribute('data-state', 'active');
 
 		const dockerTab = page.getByRole('tab', { name: 'Docker Settings', exact: true });
 		await dockerTab.click();
@@ -111,11 +122,11 @@ test.describe('Environment Settings UI', () => {
 		await expect(page).toHaveURL(/\/settings$/);
 
 		await page.goto(`/environments/${LOCAL_ENV_ID}?source=e2e&tab=invalid#tab-state`);
-		await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('general');
+		await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('storage');
 		const canonicalUrl = new URL(page.url());
 		expect(canonicalUrl.searchParams.get('source')).toBe('e2e');
 		expect(canonicalUrl.hash).toBe('#tab-state');
-		await expect(page.getByRole('tab', { name: 'General', exact: true })).toHaveAttribute(
+		await expect(page.getByRole('tab', { name: 'Storage & Limits', exact: true })).toHaveAttribute(
 			'data-state',
 			'active'
 		);
@@ -129,24 +140,23 @@ test.describe('Environment Settings UI', () => {
 		try {
 			await createDirectEnvironmentViaUI(page, envName);
 			await page.getByRole('button', { name: envName, exact: true }).click();
-			await expect(page).toHaveURL(/\/environments\/[^/?]+\?tab=general$/);
+			await expect(page).toHaveURL(/\/environments\/[^/?]+\?tab=[a-z]+$/);
 
 			const environmentId = new URL(page.url()).pathname.split('/').pop()!;
-			const nameInput = page.locator('#env-name');
-			await nameInput.fill(updatedName);
+			await renameEnvironmentInHeader(page, updatedName);
 			await saveAndWaitForPut(page, `/api/environments/${environmentId}`);
 
 			await page.reload();
-			await expect(page.locator('#env-name')).toHaveValue(updatedName);
+			await expect(environmentTitleButton(page)).toHaveText(updatedName);
 		} finally {
 			await deleteEnvironmentViaUI(page, updatedName);
 			await deleteEnvironmentViaUI(page, envName);
 		}
 	});
 
-	test('should update and save general environment settings', async ({ page }) => {
+	test('should update and save the base server URL in Docker settings', async ({ page }) => {
 		await openLocalEnvironment(page);
-		await page.getByRole('tab', { name: 'General', exact: true }).click();
+		await page.getByRole('tab', { name: 'Docker Settings', exact: true }).click();
 
 		const baseServerUrlInput = page.locator('#base-server-url');
 		await expect(baseServerUrlInput).toBeVisible();
@@ -162,13 +172,13 @@ test.describe('Environment Settings UI', () => {
 			await saveAndWaitForPut(page, `/api/environments/${LOCAL_ENV_ID}/settings`);
 
 			await page.reload();
-			await page.getByRole('tab', { name: 'General', exact: true }).click();
+			await page.getByRole('tab', { name: 'Docker Settings', exact: true }).click();
 			await expect(page.locator('#base-server-url')).toHaveValue(updatedBaseServerUrl, {
 				timeout: 15000
 			});
 		} finally {
 			if (!page.isClosed()) {
-				await page.getByRole('tab', { name: 'General', exact: true }).click();
+				await page.getByRole('tab', { name: 'Docker Settings', exact: true }).click();
 				const currentValue = await page.locator('#base-server-url').inputValue();
 				if (currentValue !== originalBaseServerUrl) {
 					await page.locator('#base-server-url').fill(originalBaseServerUrl);
@@ -178,11 +188,11 @@ test.describe('Environment Settings UI', () => {
 		}
 	});
 
-	test('should update and save the follow project symlinks setting from General', async ({
+	test('should update and save the follow project symlinks setting from Storage & Limits', async ({
 		page
 	}) => {
 		await openLocalEnvironment(page);
-		await page.getByRole('tab', { name: 'General', exact: true }).click();
+		await page.getByRole('tab', { name: 'Storage & Limits', exact: true }).click();
 
 		const followProjectSymlinksSwitch = page.locator('#follow-project-symlinks');
 		await expect(followProjectSymlinksSwitch).toBeVisible();
@@ -213,14 +223,14 @@ test.describe('Environment Settings UI', () => {
 			expect(response.ok()).toBeTruthy();
 
 			await page.reload();
-			await page.getByRole('tab', { name: 'General', exact: true }).click();
+			await page.getByRole('tab', { name: 'Storage & Limits', exact: true }).click();
 			await expect(page.locator('#follow-project-symlinks')).toHaveAttribute(
 				'aria-checked',
 				String(updatedChecked)
 			);
 		} finally {
 			if (!page.isClosed()) {
-				await page.getByRole('tab', { name: 'General', exact: true }).click();
+				await page.getByRole('tab', { name: 'Storage & Limits', exact: true }).click();
 				const currentChecked =
 					(await page.locator('#follow-project-symlinks').getAttribute('aria-checked')) === 'true';
 				if (currentChecked !== originalChecked) {
@@ -234,9 +244,9 @@ test.describe('Environment Settings UI', () => {
 	test('should reset unsaved environment detail changes', async ({ page }) => {
 		await openLocalEnvironment(page);
 
-		const nameInput = page.locator('#env-name');
-		const originalName = await nameInput.inputValue();
-		await nameInput.fill(`${originalName}-pending`);
+		const titleButton = environmentTitleButton(page);
+		const originalName = (await titleButton.textContent())!.trim();
+		await renameEnvironmentInHeader(page, `${originalName}-pending`);
 
 		const saveButton = page.getByRole('button', { name: 'Save', exact: true }).first();
 		const resetButton = page.getByRole('button', { name: 'Reset', exact: true }).first();
@@ -245,7 +255,7 @@ test.describe('Environment Settings UI', () => {
 		await expect(resetButton).toBeVisible();
 		await resetButton.click();
 
-		await expect(nameInput).toHaveValue(originalName);
+		await expect(titleButton).toHaveText(originalName);
 		await expect(saveButton).toBeDisabled();
 	});
 

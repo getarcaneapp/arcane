@@ -1,13 +1,13 @@
 <script lang="ts">
 	import { SvelteSet } from 'svelte/reactivity';
-	import * as Command from '$lib/components/ui/command/index.js';
-	import * as Popover from '$lib/components/ui/popover/index.js';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { cn } from '$lib/utils.js';
-	import { Separator } from '$lib/components/ui/separator/index.js';
+	import * as Command from '#lib/components/ui/command/index.js';
+	import * as Popover from '#lib/components/ui/popover/index.js';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import { cn } from '#lib/utils.js';
+	import { Separator } from '#lib/components/ui/separator/index.js';
 	import type { Component } from 'svelte';
-	import { m } from '$lib/paraglide/messages';
-	import { CheckIcon, FilterIcon } from '$lib/icons';
+	import { m } from '#lib/paraglide/messages';
+	import { CheckIcon, FilterIcon } from '#lib/icons';
 
 	// Structural shape of the faceted-filter column controls — see the note in
 	// arcane-table-header.svelte for why we avoid v9's invariant `Column` generic here.

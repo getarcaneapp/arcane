@@ -1,18 +1,18 @@
 <script lang="ts">
-	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
-	import { UniversalMobileCard } from '$lib/components/arcane-table';
-	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
-	import type { S3Destination } from '$lib/types/s3-destination';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
-	import { EditIcon, RemoteEnvironmentIcon, TrashIcon, ClockIcon, GlobeIcon, TestIcon } from '$lib/icons';
-	import { formatOptionalDateTime } from '$lib/utils/formatting';
-	import * as m from '$lib/paraglide/messages.js';
-	import IfPermitted from '$lib/components/if-permitted.svelte';
-	import { Spinner } from '$lib/components/ui/spinner';
+	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
+	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
+	import { UniversalMobileCard } from '#lib/components/arcane-table';
+	import type { ColumnSpec, MobileFieldVisibility } from '#lib/components/arcane-table';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu';
+	import type { S3Destination } from '#lib/types/s3-destination';
+	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
+	import { EditIcon, RemoteEnvironmentIcon, TrashIcon, ClockIcon, GlobeIcon, TestIcon } from '#lib/icons';
+	import { formatOptionalDateTime } from '#lib/utils/formatting';
+	import * as m from '#lib/paraglide/messages.js';
+	import IfPermitted from '#lib/components/if-permitted.svelte';
+	import { Spinner } from '#lib/components/ui/spinner';
 	import { toast } from 'svelte-sonner';
-	import { s3DestinationService } from '$lib/services/s3-destination-service';
+	import { s3DestinationService } from '#lib/services/s3-destination-service';
 
 	let {
 		destinations = $bindable(),

@@ -4,20 +4,35 @@ import (
 	"context"
 	"log/slog"
 
+	"emperror.dev/errors"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/types/v2/updater"
 )
 
-type AutoUpdateJob struct {
-	updaterService  *services.UpdaterService
-	settingsService *services.SettingsService
+const autoUpdateAdmissionScopeInternal = "auto-update"
+
+// pendingUpdateApplierInternal is the slice of UpdaterService the job needs,
+// kept as an interface so the overlap guard is testable with a fake.
+type pendingUpdateApplierInternal interface {
+	ApplyPending(ctx context.Context, options updater.Options) (*updater.Result, error)
 }
 
-func NewAutoUpdateJob(updaterService *services.UpdaterService, settingsService *services.SettingsService) *AutoUpdateJob {
+type AutoUpdateJob struct {
+	updaterService  pendingUpdateApplierInternal
+	settingsService *services.SettingsService
+	admissionGate   *actors.Gate[actors.AdmissionKey]
+}
+
+func NewAutoUpdateJob(updaterService *services.UpdaterService, settingsService *services.SettingsService, admissionGate *actors.Gate[actors.AdmissionKey]) (*AutoUpdateJob, error) {
+	if admissionGate == nil {
+		return nil, errors.New("auto-update admission gate unavailable")
+	}
 	return &AutoUpdateJob{
 		updaterService:  updaterService,
 		settingsService: settingsService,
-	}
+		admissionGate:   admissionGate,
+	}, nil
 }
 
 func (j *AutoUpdateJob) Name() string {
@@ -46,6 +61,17 @@ func (j *AutoUpdateJob) Run(ctx context.Context) {
 			"autoUpdate", enabled, "pollingEnabled", pollingEnabled)
 		return
 	}
+
+	lease, admitted, err := j.admissionGate.TryAcquire(ctx, actors.AdmissionKey{Scope: autoUpdateAdmissionScopeInternal})
+	if err != nil {
+		slog.ErrorContext(ctx, "auto-update admission failed", "error", err)
+		return
+	}
+	if !admitted {
+		slog.WarnContext(ctx, "auto-update run still in progress; skipping overlapping run")
+		return
+	}
+	defer lease.Release()
 
 	slog.InfoContext(ctx, "auto-update run started")
 

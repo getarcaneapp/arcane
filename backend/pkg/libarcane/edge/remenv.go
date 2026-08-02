@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 const (
@@ -32,7 +32,7 @@ func CopyRequestHeaders(from http.Header, to http.Header, skip map[string]struct
 	}
 }
 
-func SetAuthHeader(req *http.Request, c echo.Context) {
+func SetAuthHeader(req *http.Request, c *echo.Context) {
 	// Forward API key header if present
 	if apiKey := c.Request().Header.Get(HeaderAPIKey); apiKey != "" {
 		req.Header.Set(HeaderAPIKey, apiKey)
@@ -52,7 +52,7 @@ func SetAgentToken(req *http.Request, accessToken *string) {
 
 // BuildWebSocketHeaders constructs a header set for proxying WebSocket requests
 // to a remote environment, forwarding authentication in the same way as HTTP proxying.
-func BuildWebSocketHeaders(c echo.Context, accessToken *string) http.Header {
+func BuildWebSocketHeaders(c *echo.Context, accessToken *string) http.Header {
 	headers := http.Header{}
 	req := c.Request()
 

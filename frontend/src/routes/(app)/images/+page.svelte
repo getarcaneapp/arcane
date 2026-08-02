@@ -1,27 +1,29 @@
 <script lang="ts">
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { Spinner } from '$lib/components/ui/spinner/index.js';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { toast } from 'svelte-sonner';
-	import ImagePullSheet from '$lib/components/sheets/image-pull-sheet.svelte';
-	import ImageRegistrySearchDialog from '$lib/components/dialogs/image-registry-search-dialog.svelte';
-	import { bytes } from '$lib/utils/formatting';
-	import * as Dialog from '$lib/components/ui/dialog/index.js';
-	import { displaySize, FileDropZone, MEGABYTE, type FileDropZoneProps } from '$lib/components/ui/file-drop-zone';
+	import ImagePullSheet from '#lib/components/sheets/image-pull-sheet.svelte';
+	import ImageRegistrySearchDialog from '#lib/components/dialogs/image-registry-search-dialog.svelte';
+	import { bytes } from '#lib/utils/formatting';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import { displaySize, FileDropZone, MEGABYTE, type FileDropZoneProps } from '#lib/components/ui/file-drop-zone';
 	import ImageTable from './image-table.svelte';
-	import { m } from '$lib/paraglide/messages';
-	import { imageService } from '$lib/services/image-service';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { hasPermission } from '$lib/utils/auth';
-	import { queryKeys } from '$lib/query/query-keys';
-	import type { ImageUsageCounts } from '$lib/types/docker';
+	import { m } from '#lib/paraglide/messages';
+	import { imageService } from '#lib/services/image-service';
+	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import { hasPermission } from '#lib/utils/auth';
+	import { queryKeys } from '#lib/query/query-keys';
+	import type { ImageUsageCounts } from '#lib/types/docker';
+	import type { SearchPaginationSortRequest } from '#lib/types/shared';
 	import { untrack } from 'svelte';
-	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
-	import { CloseIcon, VolumesIcon, LocalFolderComputerIcon, SearchIcon } from '$lib/icons';
-	import { createMutation, createQuery } from '@tanstack/svelte-query';
-	import PruneModeCard from '$lib/components/prune/prune-mode-card.svelte';
-	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
+	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
+	import { CloseIcon, VolumesIcon, LocalFolderComputerIcon, SearchIcon } from '#lib/icons';
+	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
+	import PruneModeCard from '#lib/components/prune/prune-mode-card.svelte';
+	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
 
 	let { data } = $props();
+	const queryClient = useQueryClient();
 
 	let images = $state(untrack(() => data.images));
 	let requestOptions = $state(untrack(() => data.imageRequestOptions));
@@ -36,6 +38,7 @@
 	let imagePruneUntil = $state('');
 	const envId = $derived(environmentStore.selected?.id || '0');
 	let previousEnvId = untrack(() => envId);
+	let latestImageRequestId = 0;
 	const imageUsageFallback: ImageUsageCounts = {
 		imagesInuse: 0,
 		imagesUnused: 0,
@@ -185,11 +188,34 @@
 		{ value: 'olderThan', label: m.prune_mode_older_than() }
 	];
 
+	async function loadImages(options: SearchPaginationSortRequest = requestOptions, requestedEnvId: string = envId) {
+		const requestId = ++latestImageRequestId;
+		requestOptions = options;
+		const [nextImages] = await Promise.all([
+			queryClient.fetchQuery({
+				queryKey: queryKeys.images.list(requestedEnvId, options),
+				queryFn: () => imageService.getImagesForEnvironment(requestedEnvId, options)
+			}),
+			queryClient.fetchQuery({
+				queryKey: queryKeys.images.usageCounts(requestedEnvId),
+				queryFn: () => imageService.getImageUsageCountsForEnvironment(requestedEnvId)
+			})
+		]);
+
+		if (requestedEnvId !== envId) {
+			selectedIds = [];
+			return;
+		}
+		if (requestId !== latestImageRequestId) return;
+
+		images = nextImages;
+	}
+
 	async function refresh() {
 		const requestedEnvId = envId;
 		isRefreshing = true;
 		try {
-			await Promise.all([imagesQuery.refetch(), imageUsageCountsQuery.refetch()]);
+			await loadImages(requestOptions, requestedEnvId);
 		} finally {
 			if (requestedEnvId === envId) {
 				isRefreshing = false;
@@ -287,12 +313,7 @@
 				bind:requestOptions
 				loading={imagesQuery.isLoading}
 				onRefreshData={async (options) => {
-					const requestedEnvId = envId;
-					requestOptions = options;
-					await imageUsageCountsQuery.refetch();
-					if (requestedEnvId !== envId) {
-						selectedIds = [];
-					}
+					await loadImages(options, envId);
 				}}
 				onImageUpdated={async () => {
 					await imagesQuery.refetch();

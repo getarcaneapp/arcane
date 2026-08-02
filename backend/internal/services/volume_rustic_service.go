@@ -75,7 +75,7 @@ func (s *VolumeService) remoteRusticRepositoryInternal(ctx context.Context, dest
 	}
 	instanceID := strings.TrimSpace(s.settingsService.GetSettingsConfig().InstanceID.Value)
 	if instanceID == "" {
-		return rusticRepositoryInternal{}, errors.New("Arcane instance ID is unavailable")
+		return rusticRepositoryInternal{}, errors.New("arcane instance ID is unavailable")
 	}
 	repositoryRoot := path.Join("/", cfg.S3Prefix, "arcane-volume-backups", instanceID)
 	environment := []string{
@@ -172,7 +172,7 @@ func (s *VolumeService) runRusticInternal(ctx context.Context, dockerClient *cli
 		if message == "" {
 			message = strings.TrimSpace(stdout.String())
 		}
-		return "", fmt.Errorf("Rustic exited with code %d: %s", status.StatusCode, message)
+		return "", fmt.Errorf("rustic exited with code %d: %s", status.StatusCode, message)
 	}
 	return strings.TrimSpace(stdout.String()), nil
 }
@@ -190,7 +190,7 @@ func (s *VolumeService) createRusticSnapshotInternal(ctx context.Context, docker
 		return rusticSnapshotInternal{}, fmt.Errorf("failed to decode Rustic snapshot: %w", err)
 	}
 	if snapshot.ID == "" {
-		return rusticSnapshotInternal{}, errors.New("Rustic did not return a snapshot ID")
+		return rusticSnapshotInternal{}, errors.New("rustic did not return a snapshot ID")
 	}
 	return snapshot, nil
 }
@@ -231,6 +231,7 @@ func (s *VolumeService) forgetRusticSnapshotInternal(ctx context.Context, docker
 	return err
 }
 
+//nolint:gocognit,gocyclo // backup orchestration keeps cleanup and persistence transitions in one transaction-like flow
 func (s *VolumeService) CreateBackup(ctx context.Context, volumeName string, user models.User, trigger models.VolumeBackupTrigger, request volumetypes.CreateBackupRequest) (_ *models.VolumeBackup, err error) {
 	if _, loaded := s.runningBackups.LoadOrStore(volumeName, struct{}{}); loaded {
 		return nil, ErrVolumeBackupAlreadyRunning
@@ -279,11 +280,12 @@ func (s *VolumeService) CreateBackup(ctx context.Context, volumeName string, use
 	} else {
 		s3DestinationID = ""
 	}
-	if localEnabled && s3Enabled {
+	switch {
+	case localEnabled && s3Enabled:
 		destination = volumetypes.BackupDestinationLocalS3
-	} else if s3Enabled {
+	case s3Enabled:
 		destination = volumetypes.BackupDestinationS3
-	} else {
+	default:
 		destination = volumetypes.BackupDestinationLocal
 	}
 	backup := &models.VolumeBackup{

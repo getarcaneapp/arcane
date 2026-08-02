@@ -1,7 +1,7 @@
 <script lang="ts">
-	import ErrorView from '$lib/components/error.svelte';
+	import ErrorView from '#lib/components/error.svelte';
 	import { page } from '$app/state';
-	import { m } from '$lib/paraglide/messages';
+	import { m } from '#lib/paraglide/messages';
 
 	// Props can be missing in some cases (e.g., 404 on client nav)
 	const props = $props<{ error?: any; status?: number }>();

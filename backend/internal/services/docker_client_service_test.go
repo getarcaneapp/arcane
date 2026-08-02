@@ -10,13 +10,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	docker "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/events"
 	"github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/fx/fxtest"
 )
 
 func TestNewDockerClient_PinsEffectiveAPIVersion(t *testing.T) {
@@ -169,7 +172,7 @@ func TestDockerClientService_RefreshClientProbeFailureKeepsCachedClient(t *testi
 	assert.False(t, svc.clientLastProbe.IsZero())
 }
 
-func TestDockerClientService_PublishImageStateResyncNotifiesSubscribersAndInvalidatesCache(t *testing.T) {
+func TestDockerClientService_PublishImageStateResyncNotifiesSubscribers(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	svc := NewDockerClientService(ctx, nil, &config.Config{}, nil)
@@ -178,31 +181,77 @@ func TestDockerClientService_PublishImageStateResyncNotifiesSubscribersAndInvali
 	eventCh, unsubscribe := svc.EventBus().Subscribe(events.ImageEventType)
 	t.Cleanup(unsubscribe)
 
-	fetches := 0
-	_, err := svc.imageCache.GetOrFetch(ctx, func(context.Context) ([]image.Summary, error) {
-		fetches++
-		return []image.Summary{{ID: "sha256:first"}}, nil
-	})
-	require.NoError(t, err)
-	require.Equal(t, 1, fetches)
-
 	svc.publishImageStateResyncInternal()
 
 	select {
 	case message := <-eventCh:
 		require.Equal(t, events.ImageEventType, message.Type)
-		require.Equal(t, dockerImageStateResyncActionInternal, message.Action)
+		require.Equal(t, docker.ImageStateResyncAction, message.Action)
 	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for image state resync event")
+		require.FailNow(t, "timed out waiting for image state resync event")
+	}
+}
+
+func TestDockerClientService_EventActorStopCancelsAndJoinsStreamInternal(t *testing.T) {
+	streamStarted := make(chan struct{})
+	streamStopped := make(chan struct{})
+	server := newDockerPingTestServerWithHandlerInternal(t, func(w http.ResponseWriter, r *http.Request) {
+		switch dockerTestPathInternal(r.URL.Path) {
+		case "/_ping":
+			w.Header().Set("Api-Version", "1.41")
+			w.WriteHeader(http.StatusOK)
+		case "/events":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			if flusher, ok := w.(http.Flusher); ok {
+				flusher.Flush()
+			}
+			close(streamStarted)
+			<-r.Context().Done()
+			close(streamStopped)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+
+	lifecycle := fxtest.NewLifecycle(t)
+	actorRuntime, err := actors.NewRuntime(t.Context(), lifecycle)
+	require.NoError(t, err)
+	service := newDockerClientServiceForTestInternal(server.URL)
+	t.Cleanup(service.Close)
+
+	eventsCh, unsubscribe := service.EventBus().Subscribe(events.ImageEventType)
+	t.Cleanup(unsubscribe)
+	runner, err := actors.NewRunner(t.Context(), actorRuntime, "docker-events-test", "stream", "Docker event watcher", 3, func(ctx context.Context) error {
+		service.WatchEvents(ctx)
+		return nil
+	})
+	require.NoError(t, err)
+
+	select {
+	case <-streamStarted:
+	case <-time.After(time.Second):
+		require.FailNow(t, "Docker event stream did not start")
+	}
+	select {
+	case message := <-eventsCh:
+		require.Equal(t, docker.ImageStateResyncAction, message.Action)
+	case <-time.After(time.Second):
+		require.FailNow(t, "Docker event stream did not publish reconnect resync")
 	}
 
+	stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	require.NoError(t, runner.Stop(stopCtx))
 	require.Eventually(t, func() bool {
-		_, fetchErr := svc.imageCache.GetOrFetch(ctx, func(context.Context) ([]image.Summary, error) {
-			fetches++
-			return []image.Summary{{ID: "sha256:second"}}, nil
-		})
-		return fetchErr == nil && fetches == 2
-	}, time.Second, 5*time.Millisecond)
+		select {
+		case <-streamStopped:
+			return true
+		default:
+			return false
+		}
+	}, time.Second, time.Millisecond)
+	require.NoError(t, lifecycle.Stop(stopCtx))
 }
 
 func TestCountImageUsage_UsesContainerImageIDs(t *testing.T) {

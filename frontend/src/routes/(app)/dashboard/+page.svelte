@@ -2,8 +2,8 @@
 	import { createSubscriber } from 'svelte/reactivity';
 	import { get } from 'svelte/store';
 	import DashboardAllEnvironmentsView from './dashboard-all-environments-view.svelte';
-	import userStore from '$lib/stores/user-store';
-	import { m } from '$lib/paraglide/messages';
+	import userStore from '#lib/stores/user-store';
+	import { m } from '#lib/paraglide/messages';
 
 	let { data }: PageProps = $props();
 

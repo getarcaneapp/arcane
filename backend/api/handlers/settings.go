@@ -2,16 +2,16 @@ package handlers
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
 
+	"emperror.dev/errors"
+
 	"github.com/danielgtaylor/huma/v2"
 	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
@@ -138,10 +138,7 @@ func RegisterSettings(api huma.API, settingsService *services.SettingsService, s
 		Summary:     "Get settings",
 		Description: "Get all settings for an environment",
 		Tags:        []string{"Settings"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermSettingsRead, h.GetSettings)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -151,10 +148,7 @@ func RegisterSettings(api huma.API, settingsService *services.SettingsService, s
 		Summary:     "Update settings",
 		Description: "Update settings for an environment",
 		Tags:        []string{"Settings"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermSettingsWrite, h.UpdateSettings)
 
 	// Top-level settings endpoints (not environment-scoped)
@@ -165,10 +159,7 @@ func RegisterSettings(api huma.API, settingsService *services.SettingsService, s
 		Summary:     "Search settings",
 		Description: "Search settings categories and individual settings by query",
 		Tags:        []string{"Settings"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, h.Search)
 
 	huma.Register(api, huma.Operation{
@@ -178,10 +169,7 @@ func RegisterSettings(api huma.API, settingsService *services.SettingsService, s
 		Summary:     "Get settings categories",
 		Description: "Get all available settings categories with metadata",
 		Tags:        []string{"Settings"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, h.GetCategories)
 }
 
@@ -259,14 +247,7 @@ func (h *SettingsHandler) appendRuntimeSettingsInternal(settingsDto []settings.P
 
 // GetPublicSettings returns public settings for an environment.
 func (h *SettingsHandler) GetPublicSettings(ctx context.Context, input *GetPublicSettingsInput) (*GetPublicSettingsOutput, error) {
-	if h.settingsService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	if input.EnvironmentID != "0" {
-		if h.environmentService == nil {
-			return nil, huma.Error500InternalServerError("environment service not available")
-		}
 		settingsDto, err := proxyRemoteJSONInternal[[]settings.PublicSetting](ctx, h.environmentService, input.EnvironmentID, http.MethodGet, "/api/environments/0/settings/public", nil)
 		if err != nil {
 			return nil, err
@@ -278,7 +259,7 @@ func (h *SettingsHandler) GetPublicSettings(ctx context.Context, input *GetPubli
 
 	var settingsDto []settings.PublicSetting
 	if err := mapper.MapStructList(settingsList, &settingsDto); err != nil {
-		return nil, huma.Error500InternalServerError((&common.SettingsMappingError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Failed to map settings")
 	}
 
 	return &GetPublicSettingsOutput{Body: h.appendRuntimeSettingsInternal(settingsDto, false)}, nil
@@ -286,10 +267,6 @@ func (h *SettingsHandler) GetPublicSettings(ctx context.Context, input *GetPubli
 
 // GetSettings returns all settings for an environment.
 func (h *SettingsHandler) GetSettings(ctx context.Context, input *GetSettingsInput) (*GetSettingsOutput, error) {
-	if h.settingsService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	ps, _ := humamw.PermissionsFromContext(ctx)
 	isAdmin := ps.IsGlobalAdmin()
 	visibility := models.SettingVisibilityNonAdmin
@@ -298,9 +275,6 @@ func (h *SettingsHandler) GetSettings(ctx context.Context, input *GetSettingsInp
 	}
 
 	if input.EnvironmentID != "0" {
-		if h.environmentService == nil {
-			return nil, huma.Error500InternalServerError("environment service not available")
-		}
 		settingsDto, err := proxyRemoteJSONInternal[[]settings.PublicSetting](ctx, h.environmentService, input.EnvironmentID, http.MethodGet, "/api/environments/0/settings", nil)
 		if err != nil {
 			return nil, err
@@ -325,7 +299,7 @@ func (h *SettingsHandler) GetSettings(ctx context.Context, input *GetSettingsInp
 
 	var settingsDto []settings.PublicSetting
 	if err := mapper.MapStructList(settingsList, &settingsDto); err != nil {
-		return nil, huma.Error500InternalServerError((&common.SettingsMappingError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Failed to map settings")
 	}
 
 	return &GetSettingsOutput{Body: h.appendRuntimeSettingsInternal(settingsDto, true)}, nil
@@ -333,10 +307,6 @@ func (h *SettingsHandler) GetSettings(ctx context.Context, input *GetSettingsInp
 
 // UpdateSettings updates settings for an environment.
 func (h *SettingsHandler) UpdateSettings(ctx context.Context, input *UpdateSettingsInput) (*UpdateSettingsOutput, error) {
-	if h.settingsService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	if err := h.validateSettingsUpdateInput(input.Body); err != nil {
 		return nil, err
 	}
@@ -381,13 +351,9 @@ func (h *SettingsHandler) validateSettingsUpdateInput(input settings.Update) err
 }
 
 func (h *SettingsHandler) updateSettingsForRemoteEnvironment(ctx context.Context, input *UpdateSettingsInput) (*UpdateSettingsOutput, error) {
-	if h.environmentService == nil {
-		return nil, huma.Error500InternalServerError("environment service not available")
-	}
-
 	// Check if trying to update auth settings on non-local environment.
 	if hasAuthSettingsUpdateInternal(input.Body) {
-		return nil, huma.Error403Forbidden((&common.AuthSettingsUpdateError{}).Error())
+		return nil, huma.Error403Forbidden("Authentication settings can only be updated from the main environment")
 	}
 
 	apiResp, err := proxyRemoteJSONInternal[base.ApiResponse[[]settings.SettingDto]](ctx, h.environmentService, input.EnvironmentID, http.MethodPut, "/api/environments/0/settings", input.Body)
@@ -418,7 +384,11 @@ func (h *SettingsHandler) updateSettingsForLocalEnvironment(ctx context.Context,
 
 	updatedSettings, err := h.settingsService.UpdateSettings(ctx, input)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.SettingsUpdateError{Err: err}).Error())
+		apiErr := models.ToAPIError(err)
+		if apiErr.HTTPStatus() == http.StatusInternalServerError {
+			return nil, huma.Error500InternalServerError("Failed to update settings")
+		}
+		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
 	}
 
 	settingDtos := make([]settings.SettingDto, 0, len(updatedSettings))
@@ -454,12 +424,8 @@ func hasAuthSettingsUpdateInternal(req settings.Update) bool {
 
 // Search searches settings by query.
 func (h *SettingsHandler) Search(ctx context.Context, input *SearchSettingsInput) (*SearchSettingsOutput, error) {
-	if h.settingsSearchService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	if strings.TrimSpace(input.Body.Query) == "" {
-		return nil, huma.Error400BadRequest((&common.QueryParameterRequiredError{}).Error())
+		return nil, huma.Error400BadRequest("Query parameter is required")
 	}
 
 	ps, _ := humamw.PermissionsFromContext(ctx)
@@ -471,10 +437,6 @@ func (h *SettingsHandler) Search(ctx context.Context, input *SearchSettingsInput
 
 // GetCategories returns all available settings categories.
 func (h *SettingsHandler) GetCategories(ctx context.Context, input *struct{}) (*GetCategoriesOutput, error) {
-	if h.settingsSearchService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	ps, _ := humamw.PermissionsFromContext(ctx)
 	categories := filterSettingsCategoriesInternal(ps, h.settingsSearchService.GetSettingsCategories())
 	return &GetCategoriesOutput{Body: categories}, nil

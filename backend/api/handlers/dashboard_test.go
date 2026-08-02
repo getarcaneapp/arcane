@@ -18,9 +18,11 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	dashboardtypes "github.com/getarcaneapp/arcane/types/v2/dashboard"
-	sqlite "github.com/libtnb/sqlite"
+	streamtypes "github.com/getarcaneapp/arcane/types/v2/stream"
+	"github.com/libtnb/sqlite"
 	dockercontainer "github.com/moby/moby/api/types/container"
 	dockerimage "github.com/moby/moby/api/types/image"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
@@ -33,7 +35,7 @@ func setupDashboardHandlerTestDB(t *testing.T) (*database.DB, *services.Settings
 	require.NoError(t, db.AutoMigrate(&models.ApiKey{}, &models.Environment{}, &models.ImageUpdateRecord{}, &models.Project{}, &models.SettingVariable{}))
 
 	databaseDB := &database.DB{DB: db}
-	settingsSvc, err := services.NewSettingsService(context.Background(), databaseDB)
+	settingsSvc, err := newSettingsServiceForTestInternal(t, context.Background(), databaseDB)
 	require.NoError(t, err)
 
 	return databaseDB, settingsSvc
@@ -55,9 +57,13 @@ func newDashboardHandlerTestDockerService(
 			w.Header().Set("API-Version", "1.41")
 			w.WriteHeader(http.StatusOK)
 		case strings.HasSuffix(r.URL.Path, "/containers/json"):
-			require.NoError(t, json.NewEncoder(w).Encode(containers))
+			if !assert.NoError(t, json.NewEncoder(w).Encode(containers)) {
+				return
+			}
 		case strings.HasSuffix(r.URL.Path, "/images/json"):
-			require.NoError(t, json.NewEncoder(w).Encode(images))
+			if !assert.NoError(t, json.NewEncoder(w).Encode(images)) {
+				return
+			}
 		default:
 			http.NotFound(w, r)
 		}
@@ -116,7 +122,7 @@ func TestDashboardHandlerGetDashboardReturnsSnapshot(t *testing.T) {
 
 	dockerSvc := newDashboardHandlerTestDockerService(t, settingsSvc, containers, images)
 	handler := &DashboardHandler{
-		dashboardService: services.NewDashboardService(db, dockerSvc, nil, nil, nil, settingsSvc, nil, nil, nil),
+		dashboardService: services.NewDashboardService(db, dockerSvc, nil, nil, nil, settingsSvc, nil, nil, nil, nil),
 	}
 
 	output, err := handler.GetDashboard(context.Background(), &GetDashboardInput{EnvironmentID: "0"})
@@ -137,29 +143,38 @@ func TestDashboardHandlerGetDashboardReturnsSnapshot(t *testing.T) {
 	}, snapshot.ActionItems.Items)
 }
 
-// runDashboardStreamAllInternal drives streamAllDashboardsInternal through a
-// pipe and returns each decoded event to onEvent until it reports done or the
-// stream ends; remaining output is drained so a blocked writer can finish.
+// runDashboardStreamAllInternal drives the dashboard channel of the multiplexed
+// client stream through a pipe and returns each decoded event to onEvent until
+// it reports done or the stream ends; remaining output is drained so a blocked
+// writer can finish.
 func runDashboardStreamAllInternal(t *testing.T, ctx context.Context, cancel context.CancelFunc, handler *DashboardHandler, ps *authz.PermissionSet, onEvent func(dashboardtypes.StreamEvent) bool) {
 	t.Helper()
+
+	streamHandler := &StreamHandler{dashboard: handler}
+	input := &StreamClientInput{Channels: streamtypes.ChannelDashboard}
 
 	pr, pw := io.Pipe()
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		defer func() { _ = pw.Close() }()
-		handler.streamAllDashboardsInternal(ctx, ps, false, pw, func() {})
+		streamHandler.streamClientInternal(ctx, ps, input, pw, func() {})
 	}()
 
 	scanner := bufio.NewScanner(pr)
 	for scanner.Scan() {
-		var event dashboardtypes.StreamEvent
-		require.NoError(t, json.Unmarshal(scanner.Bytes(), &event))
-		if onEvent(event) {
+		var envelope streamtypes.Event
+		require.NoError(t, json.Unmarshal(scanner.Bytes(), &envelope))
+		// Heartbeats are connection keepalives, not dashboard events.
+		if envelope.Dashboard == nil {
+			continue
+		}
+		if onEvent(*envelope.Dashboard) {
 			cancel()
 			break
 		}
 	}
+	require.NoError(t, scanner.Err())
 
 	go func() {
 		_, _ = io.Copy(io.Discard, pr)
@@ -167,7 +182,7 @@ func runDashboardStreamAllInternal(t *testing.T, ctx context.Context, cancel con
 	select {
 	case <-done:
 	case <-time.After(5 * time.Second):
-		t.Fatal("stream did not terminate after cancel")
+		require.FailNow(t, "stream did not terminate after cancel")
 	}
 }
 
@@ -177,12 +192,14 @@ func TestDashboardHandlerStreamAllEmitsRemoteSnapshotInternal(t *testing.T) {
 
 	db := setupActivityHandlerTestDBInternal(t)
 	limitStreamTestDBToSingleConnInternal(t, db)
-	settingsService, err := services.NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	token := "remote-token"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, "/api/environments/0/dashboard", r.URL.Path)
+		if !assert.Equal(t, "/api/environments/0/dashboard", r.URL.Path) {
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"success":true,"data":{
 			"containers":{"data":[{"id":"c1"}],"counts":{"runningContainers":2,"stoppedContainers":1,"totalContainers":3},"pagination":{"totalPages":1,"totalItems":1,"currentPage":1,"itemsPerPage":20}},
@@ -196,7 +213,7 @@ func TestDashboardHandlerStreamAllEmitsRemoteSnapshotInternal(t *testing.T) {
 	createStreamTestRemoteEnvironmentInternal(t, db, "remote-1", "Remote", server.URL, token)
 
 	handler := &DashboardHandler{
-		dashboardService:   services.NewDashboardService(db, nil, nil, nil, nil, nil, nil, nil, nil),
+		dashboardService:   services.NewDashboardService(db, nil, nil, nil, nil, nil, nil, nil, nil, nil),
 		environmentService: services.NewEnvironmentService(db, server.Client(), nil, nil, settingsService, nil),
 	}
 
@@ -221,7 +238,7 @@ func TestDashboardHandlerStreamAllLegacyAgentComposesSnapshotFromGranularEndpoin
 
 	db := setupActivityHandlerTestDBInternal(t)
 	limitStreamTestDBToSingleConnInternal(t, db)
-	settingsService, err := services.NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	token := "remote-token"
@@ -245,7 +262,7 @@ func TestDashboardHandlerStreamAllLegacyAgentComposesSnapshotFromGranularEndpoin
 	createStreamTestRemoteEnvironmentInternal(t, db, "remote-1", "Remote", server.URL, token)
 
 	handler := &DashboardHandler{
-		dashboardService:   services.NewDashboardService(db, nil, nil, nil, nil, nil, nil, nil, nil),
+		dashboardService:   services.NewDashboardService(db, nil, nil, nil, nil, nil, nil, nil, nil, nil),
 		environmentService: services.NewEnvironmentService(db, server.Client(), nil, nil, settingsService, nil),
 	}
 
@@ -273,7 +290,7 @@ func TestDashboardHandlerStreamAllLegacyAgent404EmitsIncompatibleErrorInternal(t
 
 	db := setupActivityHandlerTestDBInternal(t)
 	limitStreamTestDBToSingleConnInternal(t, db)
-	settingsService, err := services.NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	token := "remote-token"
@@ -287,7 +304,7 @@ func TestDashboardHandlerStreamAllLegacyAgent404EmitsIncompatibleErrorInternal(t
 	createStreamTestRemoteEnvironmentInternal(t, db, "remote-1", "Remote", server.URL, token)
 
 	handler := &DashboardHandler{
-		dashboardService:   services.NewDashboardService(db, nil, nil, nil, nil, nil, nil, nil, nil),
+		dashboardService:   services.NewDashboardService(db, nil, nil, nil, nil, nil, nil, nil, nil, nil),
 		environmentService: services.NewEnvironmentService(db, server.Client(), nil, nil, settingsService, nil),
 	}
 
@@ -316,7 +333,7 @@ func TestDashboardHandlerStreamAllFiltersUnauthorizedEnvironmentsInternal(t *tes
 
 	db := setupActivityHandlerTestDBInternal(t)
 	limitStreamTestDBToSingleConnInternal(t, db)
-	settingsService, err := services.NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	allowedServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -337,7 +354,7 @@ func TestDashboardHandlerStreamAllFiltersUnauthorizedEnvironmentsInternal(t *tes
 	createStreamTestRemoteEnvironmentInternal(t, db, "remote-denied", "Denied", deniedServer.URL, "denied-token")
 
 	handler := &DashboardHandler{
-		dashboardService:   services.NewDashboardService(db, nil, nil, nil, nil, nil, nil, nil, nil),
+		dashboardService:   services.NewDashboardService(db, nil, nil, nil, nil, nil, nil, nil, nil, nil),
 		environmentService: services.NewEnvironmentService(db, allowedServer.Client(), nil, nil, settingsService, nil),
 	}
 	ps := authz.NewPermissionSet()
@@ -360,7 +377,7 @@ func TestDashboardHandlerStreamAllFiltersUnauthorizedEnvironmentsInternal(t *tes
 func TestDashboardHandlerRemoteFetchReusesLoadedEnvironmentInternal(t *testing.T) {
 	ctx := context.Background()
 	db := setupActivityHandlerTestDBInternal(t)
-	settingsService, err := services.NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

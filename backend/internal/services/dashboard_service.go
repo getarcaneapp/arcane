@@ -2,10 +2,10 @@ package services
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"sort"
 	"time"
+
+	"emperror.dev/errors"
 
 	dockercontainer "github.com/moby/moby/api/types/container"
 	"golang.org/x/sync/errgroup"
@@ -13,13 +13,15 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
 	dashboardtypes "github.com/getarcaneapp/arcane/types/v2/dashboard"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 	versiontypes "github.com/getarcaneapp/arcane/types/v2/version"
+	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"go.getarcane.app/sys/cgroup"
-	libupdater "go.getarcane.app/updater/pkg/labels"
+	"go.getarcane.app/updater/labels"
 )
 
 const defaultDashboardAPIKeyExpiryWindow = 14 * 24 * time.Hour
@@ -36,6 +38,7 @@ type DashboardService struct {
 	vulnerabilityService *VulnerabilityService
 	environmentService   *EnvironmentService
 	versionService       *VersionService
+	volumeService        *VolumeService
 }
 
 type DashboardActionItemsOptions struct {
@@ -52,6 +55,7 @@ func NewDashboardService(
 	vulnerabilityService *VulnerabilityService,
 	environmentService *EnvironmentService,
 	versionService *VersionService,
+	volumeService *VolumeService,
 ) *DashboardService {
 	return &DashboardService{
 		db:                   db,
@@ -63,6 +67,7 @@ func NewDashboardService(
 		vulnerabilityService: vulnerabilityService,
 		environmentService:   environmentService,
 		versionService:       versionService,
+		volumeService:        volumeService,
 	}
 }
 
@@ -86,7 +91,7 @@ func (s *DashboardService) GetSnapshot(ctx context.Context, options DashboardAct
 	} else {
 		for _, container := range filteredContainers {
 			summary := containertypes.NewSummary(container)
-			summary.RedeployDisabled = libupdater.ShouldDisableArcaneServerRedeploy(summary.Labels, summary.ID, currentContainerID, currentContainerErr)
+			summary.RedeployDisabled = labels.ShouldDisableArcaneServerRedeploy(summary.Labels, summary.ID, currentContainerID, currentContainerErr)
 			containerItems = append(containerItems, summary)
 		}
 	}
@@ -137,7 +142,15 @@ func (s *DashboardService) GetSnapshot(ctx context.Context, options DashboardAct
 		imageUsageCounts.TotalSize += img.Size
 	}
 
-	actionItems, err := s.buildActionItemsForSnapshotInternal(ctx, options, filteredContainers, dockerImages)
+	// Uses the unfiltered container list so a volume mounted only by an internal
+	// container still counts as in use, matching the volumes page.
+	var volumeUsageCounts *volumetypes.UsageCounts
+	if s.volumeService != nil && dockerSnapshot.Volumes != nil {
+		counts := s.volumeService.countVolumeUsageFromSnapshotInternal(dockerSnapshot.Volumes.Items, dockerContainers)
+		volumeUsageCounts = &counts
+	}
+
+	actionItems, err := s.buildActionItemsForSnapshotInternal(ctx, options, filteredContainers, dockerContainers)
 	if err != nil {
 		return nil, err
 	}
@@ -157,18 +170,22 @@ func (s *DashboardService) GetSnapshot(ctx context.Context, options DashboardAct
 			Data:       imagePage,
 			Pagination: buildDashboardPaginationResponseInternal(len(imageItems), dashboardSnapshotPreloadLimit),
 		},
-		ImageUsageCounts: imageUsageCounts,
-		ActionItems:      *actionItems,
-		Settings:         dashboardtypes.SnapshotSettings{},
-		VersionInfo:      versionInfo,
+		ImageUsageCounts:  imageUsageCounts,
+		VolumeUsageCounts: volumeUsageCounts,
+		ActionItems:       *actionItems,
+		Settings:          dashboardtypes.SnapshotSettings{},
+		VersionInfo:       versionInfo,
 	}, nil
 }
 
+// buildActionItemsForSnapshotInternal derives the dashboard's action badges.
+// filteredContainers drives the stopped-container badge; allContainers is the raw
+// snapshot list, passed to the update count so it need not re-list containers.
 func (s *DashboardService) buildActionItemsForSnapshotInternal(
 	ctx context.Context,
 	options DashboardActionItemsOptions,
-	containers []dockercontainer.Summary,
-	_ any,
+	filteredContainers []dockercontainer.Summary,
+	allContainers []dockercontainer.Summary,
 ) (*dashboardtypes.ActionItems, error) {
 	if options.DebugAllGood {
 		return &dashboardtypes.ActionItems{Items: []dashboardtypes.ActionItem{}}, nil
@@ -182,8 +199,10 @@ func (s *DashboardService) buildActionItemsForSnapshotInternal(
 
 	g, groupCtx := errgroup.WithContext(ctx)
 
-	g.Go(func() error {
-		count, err := s.getPendingResourceUpdatesCountInternal(groupCtx)
+	g.Go(func() (workerErr error) {
+		defer utils.RecoverToError(&workerErr, "dashboard action item worker")
+
+		count, err := s.getPendingResourceUpdatesCountInternal(groupCtx, allContainers)
 		if err != nil {
 			return err
 		}
@@ -191,7 +210,9 @@ func (s *DashboardService) buildActionItemsForSnapshotInternal(
 		return nil
 	})
 
-	g.Go(func() error {
+	g.Go(func() (workerErr error) {
+		defer utils.RecoverToError(&workerErr, "dashboard action item worker")
+
 		count, err := s.getActionableVulnerabilitiesCountInternal(groupCtx)
 		if err != nil {
 			return err
@@ -200,7 +221,9 @@ func (s *DashboardService) buildActionItemsForSnapshotInternal(
 		return nil
 	})
 
-	g.Go(func() error {
+	g.Go(func() (workerErr error) {
+		defer utils.RecoverToError(&workerErr, "dashboard action item worker")
+
 		count, err := s.getExpiringAPIKeysCountInternal(groupCtx)
 		if err != nil {
 			return err
@@ -214,7 +237,7 @@ func (s *DashboardService) buildActionItemsForSnapshotInternal(
 	}
 
 	stoppedContainers := 0
-	for _, container := range containers {
+	for _, container := range filteredContainers {
 		if container.State != "running" {
 			stoppedContainers++
 		}
@@ -266,24 +289,23 @@ func buildDashboardActionItemsInternal(
 	return &dashboardtypes.ActionItems{Items: actionItems}
 }
 
-func (s *DashboardService) getPendingResourceUpdatesCountInternal(ctx context.Context) (int, error) {
+// getPendingResourceUpdatesCountInternal counts standalone containers and projects
+// with a pending image update. allContainers is the snapshot's container list,
+// reused rather than re-listed: this used to issue its own GetAllContainers on
+// top of the two the project count triggered, for a single badge number.
+func (s *DashboardService) getPendingResourceUpdatesCountInternal(ctx context.Context, allContainers []dockercontainer.Summary) (int, error) {
 	if s.db == nil || s.dockerService == nil {
 		return 0, nil
 	}
 
-	containers, _, _, _, err := s.dockerService.GetAllContainers(ctx)
-	if err != nil {
-		return 0, fmt.Errorf("failed to load containers for update counts: %w", err)
-	}
-
-	filteredContainers := filterInternalContainers(containers, false)
+	filteredContainers := filterInternalContainers(allContainers, false)
 	standaloneContainers := filterStandaloneDockerContainersInternal(filteredContainers)
 	containerCount, err := s.getPendingContainerUpdatesCountForImageIDsInternal(ctx, collectImageIDs(standaloneContainers))
 	if err != nil {
 		return 0, err
 	}
 
-	projectCount, err := s.getPendingProjectUpdatesCountInternal(ctx)
+	projectCount, err := s.getPendingProjectUpdatesCountInternal(ctx, allContainers)
 	if err != nil {
 		return 0, err
 	}
@@ -313,20 +335,20 @@ func (s *DashboardService) getPendingContainerUpdatesCountForImageIDsInternal(ct
 		Where("id IN ? AND has_update = ?", imageIDs, true).
 		Count(&count).Error
 	if err != nil {
-		return 0, fmt.Errorf("failed to count pending container updates: %w", err)
+		return 0, errors.WrapIf(err, "failed to count pending container updates")
 	}
 
 	return int(count), nil
 }
 
-func (s *DashboardService) getPendingProjectUpdatesCountInternal(ctx context.Context) (int, error) {
+func (s *DashboardService) getPendingProjectUpdatesCountInternal(ctx context.Context, allContainers []dockercontainer.Summary) (int, error) {
 	if s.projectService == nil {
 		return 0, nil
 	}
 
-	count, err := s.projectService.countProjectsByUpdateStatusInternal(ctx, "has_update")
+	count, err := s.projectService.countProjectsWithPendingUpdatesInternal(ctx, allContainers)
 	if err != nil {
-		return 0, fmt.Errorf("failed to count projects with updates: %w", err)
+		return 0, errors.WrapIf(err, "failed to count projects with updates")
 	}
 
 	return count, nil
@@ -351,7 +373,7 @@ func (s *DashboardService) getExpiringAPIKeysCountInternal(ctx context.Context) 
 		Where("expires_at <= ?", time.Now().Add(defaultDashboardAPIKeyExpiryWindow)).
 		Count(&count).Error
 	if err != nil {
-		return 0, fmt.Errorf("failed to count expiring API keys: %w", err)
+		return 0, errors.WrapIf(err, "failed to count expiring API keys")
 	}
 
 	return int(count), nil

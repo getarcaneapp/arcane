@@ -46,6 +46,7 @@ type RunJobOutput struct {
 	Body jobschedule.JobRunResponse
 }
 
+//nolint:dupl // Huma operation registrations are intentionally explicit.
 func RegisterJobSchedules(api huma.API, jobSvc *services.JobService, envSvc *services.EnvironmentService) {
 	h := &JobSchedulesHandler{
 		jobService:         jobSvc,
@@ -59,10 +60,7 @@ func RegisterJobSchedules(api huma.API, jobSvc *services.JobService, envSvc *ser
 		Summary:     "Get job schedules",
 		Description: "Get configured cron schedules for background jobs",
 		Tags:        []string{"JobSchedules"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermJobsManage, h.Get)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -72,10 +70,7 @@ func RegisterJobSchedules(api huma.API, jobSvc *services.JobService, envSvc *ser
 		Summary:     "Update job schedules",
 		Description: "Update background job cron schedules and reschedule running jobs",
 		Tags:        []string{"JobSchedules"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermJobsManage, h.Update)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -85,10 +80,7 @@ func RegisterJobSchedules(api huma.API, jobSvc *services.JobService, envSvc *ser
 		Summary:     "List all background jobs",
 		Description: "Get status, schedule, and metadata for all background jobs",
 		Tags:        []string{"JobSchedules"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermJobsManage, h.ListJobs)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -98,10 +90,7 @@ func RegisterJobSchedules(api huma.API, jobSvc *services.JobService, envSvc *ser
 		Summary:     "Run a job now",
 		Description: "Manually trigger a background job to run immediately",
 		Tags:        []string{"JobSchedules"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermJobsManage, h.RunJob)
 }
 
@@ -111,14 +100,7 @@ type JobSchedulesHandler struct {
 }
 
 func (h *JobSchedulesHandler) ListJobs(ctx context.Context, input *ListJobsInput) (*GetJobsOutput, error) {
-	if h.jobService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	if input.ID != "0" {
-		if h.environmentService == nil {
-			return nil, huma.Error500InternalServerError("environment service not available")
-		}
 		jobs, err := proxyRemoteJSONInternal[jobschedule.JobListResponse](ctx, h.environmentService, input.ID, http.MethodGet, "/api/environments/0/jobs", nil)
 		if err != nil {
 			return nil, err
@@ -135,14 +117,7 @@ func (h *JobSchedulesHandler) ListJobs(ctx context.Context, input *ListJobsInput
 }
 
 func (h *JobSchedulesHandler) RunJob(ctx context.Context, input *RunJobInput) (*RunJobOutput, error) {
-	if h.jobService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	if input.ID != "0" {
-		if h.environmentService == nil {
-			return nil, huma.Error500InternalServerError("environment service not available")
-		}
 		runResp, err := proxyRemoteJSONInternal[jobschedule.JobRunResponse](ctx, h.environmentService, input.ID, http.MethodPost, "/api/environments/0/jobs/"+input.JobID+"/run", nil)
 		if err != nil {
 			return nil, err
@@ -164,14 +139,7 @@ func (h *JobSchedulesHandler) RunJob(ctx context.Context, input *RunJobInput) (*
 }
 
 func (h *JobSchedulesHandler) Get(ctx context.Context, input *GetJobSchedulesInput) (*GetJobSchedulesOutput, error) {
-	if h.jobService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	if input.ID != "0" {
-		if h.environmentService == nil {
-			return nil, huma.Error500InternalServerError("environment service not available")
-		}
 		cfg, err := proxyRemoteJSONInternal[jobschedule.Config](ctx, h.environmentService, input.ID, http.MethodGet, "/api/environments/0/job-schedules", nil)
 		if err != nil {
 			return nil, err
@@ -184,15 +152,7 @@ func (h *JobSchedulesHandler) Get(ctx context.Context, input *GetJobSchedulesInp
 }
 
 func (h *JobSchedulesHandler) Update(ctx context.Context, input *UpdateJobSchedulesInput) (*UpdateJobSchedulesOutput, error) {
-	if h.jobService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	if input.ID != "0" {
-		if h.environmentService == nil {
-			return nil, huma.Error500InternalServerError("environment service not available")
-		}
-
 		apiResp, err := proxyRemoteJSONInternal[base.ApiResponse[jobschedule.Config]](ctx, h.environmentService, input.ID, http.MethodPut, "/api/environments/0/job-schedules", input.Body)
 		if err != nil {
 			return nil, err

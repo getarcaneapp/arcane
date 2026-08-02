@@ -3,15 +3,15 @@ package edge
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
-	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge/proto/tunnel/v1"
-	"github.com/gorilla/websocket"
+	"github.com/coder/websocket"
+	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -39,20 +39,19 @@ func TestTunnelMessage_MarshalJSON(t *testing.T) {
 func TestTunnelConn(t *testing.T) {
 	// Start a test server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		upgrader := websocket.Upgrader{}
-		conn, err := upgrader.Upgrade(w, r, nil)
+		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {
 			return
 		}
-		defer func() { _ = conn.Close() }()
+		defer func() { _ = conn.CloseNow() }()
 
 		for {
-			mt, message, err := conn.ReadMessage()
+			mt, message, err := conn.Read(r.Context())
 			if err != nil {
 				break
 			}
 			// Echo back
-			err = conn.WriteMessage(mt, message)
+			err = conn.Write(r.Context(), mt, message)
 			if err != nil {
 				break
 			}
@@ -62,12 +61,9 @@ func TestTunnelConn(t *testing.T) {
 
 	// Connect to the server
 	url := "ws" + strings.TrimPrefix(server.URL, "http")
-	conn, resp, err := websocket.DefaultDialer.Dial(url, nil)
+	conn, _, err := websocket.Dial(t.Context(), url, nil)
 	require.NoError(t, err)
-	if resp != nil {
-		defer func() { _ = resp.Body.Close() }()
-	}
-	defer func() { _ = conn.Close() }()
+	defer func() { _ = conn.CloseNow() }()
 
 	tunnelConn := NewTunnelConn(conn)
 
@@ -97,80 +93,7 @@ func TestTunnelConn(t *testing.T) {
 	// Test Send on closed connection
 	err = tunnelConn.Send(msg)
 	require.Error(t, err)
-	assert.Equal(t, websocket.ErrCloseSent, err)
-}
-
-func TestTunnelConn_SendRequest(t *testing.T) {
-	// Start a test server that responds to requests
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		upgrader := websocket.Upgrader{}
-		conn, err := upgrader.Upgrade(w, r, nil)
-		if err != nil {
-			return
-		}
-		defer func() { _ = conn.Close() }()
-
-		for {
-			_, message, err := conn.ReadMessage()
-			if err != nil {
-				break
-			}
-
-			var msg TunnelMessage
-			_ = json.Unmarshal(message, &msg)
-
-			// Respond
-			resp := &TunnelMessage{
-				ID:   msg.ID,
-				Type: MessageTypeResponse,
-				Body: []byte("response"),
-			}
-			data, _ := json.Marshal(resp)
-			_ = conn.WriteMessage(websocket.TextMessage, data)
-		}
-	}))
-	defer server.Close()
-
-	// Connect
-	url := "ws" + strings.TrimPrefix(server.URL, "http")
-	conn, dialResp, err := websocket.DefaultDialer.Dial(url, nil)
-	require.NoError(t, err)
-	if dialResp != nil {
-		defer func() { _ = dialResp.Body.Close() }()
-	}
-
-	tunnelConn := NewTunnelConn(conn)
-	defer func() { _ = tunnelConn.Close() }()
-
-	// Setup background receiver
-	pending := &sync.Map{}
-	go func() {
-		for {
-			msg, err := tunnelConn.Receive()
-			if err != nil {
-				return
-			}
-			if req, ok := pending.Load(msg.ID); ok {
-				pendingReq := req.(*PendingRequest)
-				pendingReq.ResponseCh <- msg
-			}
-		}
-	}()
-
-	// Test SendRequest
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	req := &TunnelMessage{
-		ID:   "req-1",
-		Type: MessageTypeRequest,
-	}
-
-	resp, err := tunnelConn.SendRequest(ctx, req, pending)
-	require.NoError(t, err)
-	assert.Equal(t, "req-1", resp.ID)
-	assert.Equal(t, MessageTypeResponse, resp.Type)
-	assert.Equal(t, []byte("response"), resp.Body)
+	assert.ErrorIs(t, err, ErrTunnelConnectionClosed)
 }
 
 func TestGRPCManagerTunnelConn_CloseCancelsReceive(t *testing.T) {
@@ -191,7 +114,7 @@ func TestGRPCManagerTunnelConn_CloseCancelsReceive(t *testing.T) {
 	select {
 	case <-stream.recvStarted:
 	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for stream recv start")
+		require.FailNow(t, "timed out waiting for stream recv start")
 	}
 
 	require.NoError(t, conn.Close())
@@ -199,9 +122,9 @@ func TestGRPCManagerTunnelConn_CloseCancelsReceive(t *testing.T) {
 	select {
 	case err := <-errCh:
 		require.Error(t, err)
-		assert.ErrorIs(t, err, context.Canceled)
+		require.ErrorIs(t, err, context.Canceled)
 	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for receive to unblock")
+		require.FailNow(t, "timed out waiting for receive to unblock")
 	}
 }
 
@@ -222,3 +145,85 @@ func (b *blockingGRPCManagerStream) Recv() (*tunnelpb.AgentMessage, error) {
 }
 
 func (b *blockingGRPCManagerStream) Context() context.Context { return b.ctx }
+
+func TestTunnelConn_CloseSendsCloseFrame(t *testing.T) {
+	peerRead := make(chan error, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.CloseNow() }()
+		_, _, err = conn.Read(r.Context())
+		peerRead <- err
+	}))
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+	conn, _, err := websocket.Dial(t.Context(), wsURL, nil)
+	require.NoError(t, err)
+
+	tunnelConn := NewTunnelConn(conn)
+	require.NoError(t, tunnelConn.Close())
+
+	select {
+	case err := <-peerRead:
+		assert.Equal(t, websocket.StatusNormalClosure, websocket.CloseStatus(err),
+			"peer should observe a normal closure, got: %v", err)
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, "timed out waiting for peer read to return")
+	}
+}
+
+func TestTunnelConn_ReceiveDeadlineMarksClosed(t *testing.T) {
+	previousReadWait := tunnelReadWait
+	tunnelReadWait = 100 * time.Millisecond
+	t.Cleanup(func() { tunnelReadWait = previousReadWait })
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.CloseNow() }()
+		// Keep the socket open but never send anything.
+		_, _, _ = conn.Read(r.Context())
+	}))
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+	conn, _, err := websocket.Dial(t.Context(), wsURL, nil)
+	require.NoError(t, err)
+
+	tunnelConn := NewTunnelConn(conn)
+	_, err = tunnelConn.Receive()
+	require.Error(t, err)
+	assert.True(t, tunnelConn.IsClosed())
+}
+
+type closeOrderAgentStream struct {
+	events []string
+}
+
+func (s *closeOrderAgentStream) Send(*tunnelpb.AgentMessage) error { return nil }
+
+func (s *closeOrderAgentStream) Recv() (*tunnelpb.ManagerMessage, error) { return nil, io.EOF }
+
+func (s *closeOrderAgentStream) Context() context.Context { return context.Background() }
+
+func (s *closeOrderAgentStream) CloseSend() error {
+	s.events = append(s.events, "close_send")
+	return nil
+}
+
+func TestGRPCAgentTunnelConn_CloseHalfClosesBeforeCancel(t *testing.T) {
+	stream := &closeOrderAgentStream{}
+	conn := NewGRPCAgentTunnelConn(stream, func() { stream.events = append(stream.events, "cancel") })
+
+	require.NoError(t, conn.Close())
+	assert.Equal(t, []string{"close_send", "cancel"}, stream.events)
+
+	// A second close is a no-op.
+	require.NoError(t, conn.Close())
+	assert.Equal(t, []string{"close_send", "cancel"}, stream.events)
+}

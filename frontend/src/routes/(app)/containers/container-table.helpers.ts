@@ -1,5 +1,5 @@
-import { m } from '$lib/paraglide/messages';
-import type { ContainerSummaryDto } from '$lib/types/docker';
+import { m } from '#lib/paraglide/messages';
+import type { ContainerSummaryDto } from '#lib/types/docker';
 
 export type ActionStatus =
 	| 'starting'

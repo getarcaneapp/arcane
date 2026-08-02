@@ -10,7 +10,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/types/v2/jobschedule"
-	sqlite "github.com/libtnb/sqlite"
+	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -23,11 +23,11 @@ func TestDeprecatedImagePollingSchedulePersistsWithoutRuntimeJob(t *testing.T) {
 
 	appConfig := &config.Config{Timezone: "UTC"}
 	lifecycleCtx, cancelLifecycle := context.WithCancel(context.Background())
-	jobScheduler := NewJobScheduler(lifecycleCtx, appConfig.GetLocation())
+	jobScheduler := newJobSchedulerForTestInternal(t, lifecycleCtx, appConfig.GetLocation())
 
 	jobService := services.NewJobService(db, settingsService, appConfig)
 	jobService.SetScheduler(lifecycleCtx, jobScheduler)
-	jobScheduler.StartScheduler()
+	require.NoError(t, jobScheduler.StartScheduler())
 
 	_, ok := jobScheduler.GetJobRuntimeState("image-polling")
 	require.False(t, ok)
@@ -63,10 +63,10 @@ func TestDeprecatedImagePollingSchedulePersistsWithoutRuntimeJob(t *testing.T) {
 
 	restartDB, restartSettingsService := openJobScheduleTestDatabaseInternal(t, ctx, databasePath)
 	restartLifecycleCtx, cancelRestartLifecycle := context.WithCancel(context.Background())
-	restartScheduler := NewJobScheduler(restartLifecycleCtx, appConfig.GetLocation())
+	restartScheduler := newJobSchedulerForTestInternal(t, restartLifecycleCtx, appConfig.GetLocation())
 	restartJobService := services.NewJobService(restartDB, restartSettingsService, appConfig)
 	restartJobService.SetScheduler(restartLifecycleCtx, restartScheduler)
-	restartScheduler.StartScheduler()
+	require.NoError(t, restartScheduler.StartScheduler())
 	t.Cleanup(func() {
 		cancelRestartLifecycle()
 		waitForSchedulerStopInternal(restartScheduler)
@@ -106,7 +106,7 @@ func openJobScheduleTestDatabaseInternal(t *testing.T, ctx context.Context, data
 	require.NoError(t, gormDB.AutoMigrate(&models.SettingVariable{}))
 
 	db := &database.DB{DB: gormDB}
-	settingsService, err := services.NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.EnsureDefaultSettings(ctx))
 	require.NoError(t, settingsService.LoadDatabaseSettings(ctx))
@@ -122,7 +122,7 @@ func closeJobScheduleTestDatabaseInternal(t *testing.T, db *database.DB) {
 	require.NoError(t, sqlDB.Close())
 }
 
-func waitForSchedulerStopInternal(jobScheduler *JobScheduler) {
+func waitForSchedulerStopInternal(jobScheduler *jobSchedulerInternal) {
 	<-jobScheduler.cron.Stop().Done()
 }
 
@@ -134,7 +134,6 @@ func findJobStatusInternal(t *testing.T, jobs *jobschedule.JobListResponse, jobI
 			return job
 		}
 	}
-
-	t.Fatalf("job %q not found", jobID)
+	require.FailNowf(t, "unexpected failure", "job %q not found", jobID)
 	return jobschedule.JobStatus{}
 }

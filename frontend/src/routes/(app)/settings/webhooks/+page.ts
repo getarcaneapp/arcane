@@ -1,4 +1,4 @@
-import { webhookService } from '$lib/services/webhook-service';
+import { webhookService } from '#lib/services/webhook-service';
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async () => {

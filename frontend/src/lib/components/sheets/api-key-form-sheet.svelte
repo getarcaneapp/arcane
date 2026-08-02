@@ -1,14 +1,14 @@
 <script lang="ts">
-	import * as ResponsiveDialog from '$lib/components/ui/responsive-dialog/index.js';
-	import SheetFooterActions from '$lib/components/sheets/sheet-footer-actions.svelte';
-	import FormInput from '$lib/components/form/form-input.svelte';
-	import PermissionPicker from '$lib/components/role-editor/permission-picker.svelte';
-	import type { ApiKey } from '$lib/types/auth';
-	import type { PermissionsManifest, ApiKeyPermissionGrant } from '$lib/types/auth';
-	import { normalizePermissionSelection } from '$lib/utils/permissions';
+	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
+	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
+	import FormInput from '#lib/components/form/form-input.svelte';
+	import PermissionPicker from '#lib/components/role-editor/permission-picker.svelte';
+	import type { ApiKey } from '#lib/types/auth';
+	import type { PermissionsManifest, ApiKeyPermissionGrant } from '#lib/types/auth';
+	import { normalizePermissionSelection } from '#lib/utils/permissions';
 	import { z } from 'zod/v4';
-	import { createForm, preventDefault } from '$lib/utils/settings';
-	import * as m from '$lib/paraglide/messages.js';
+	import { createForm, preventDefault } from '#lib/utils/settings';
+	import * as m from '#lib/paraglide/messages.js';
 
 	type ApiKeyFormProps = {
 		open: boolean;

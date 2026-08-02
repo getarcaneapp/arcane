@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -78,7 +79,7 @@ func runRestore(_ *cobra.Command, _ []string) error {
 	_ = os.Remove("/app/data/.arcane-recovery.json")
 	if manifest.FormatVersion != 1 || len(manifest.Environment) == 0 {
 		_, _ = dockerClient.ContainerStart(ctx, request.ContainerID, client.ContainerStartOptions{})
-		return fmt.Errorf("unsupported or incomplete Arcane recovery manifest")
+		return errors.New("unsupported or incomplete Arcane recovery manifest")
 	}
 	if err := finalizeRestoredBackupInternal(ctx, manifest.Environment["DATABASE_URL"], manifest.BackupID, manifest.ActivityID, request); err != nil {
 		_, _ = dockerClient.ContainerStart(ctx, request.ContainerID, client.ContainerStartOptions{})
@@ -92,7 +93,7 @@ func runRestore(_ *cobra.Command, _ []string) error {
 
 func finalizeRestoredBackupInternal(ctx context.Context, databaseURL, manifestBackupID, manifestActivityID string, request recoverytypes.RestoreRequest) error {
 	if !strings.HasPrefix(databaseURL, "file:") {
-		return fmt.Errorf("restored Arcane database is not SQLite")
+		return errors.New("restored Arcane database is not SQLite")
 	}
 	dsn, err := database.ParseSQLiteConnectionString(databaseURL)
 	if err != nil {
@@ -104,8 +105,10 @@ func finalizeRestoredBackupInternal(ctx context.Context, databaseURL, manifestBa
 	}
 	defer func() { _ = db.Close() }()
 	update := func(where string, arguments ...any) (bool, error) {
-		queryArguments := []any{request.Size, request.LocalSnapshotID, request.RemoteSnapshotID, request.S3DestinationID}
+		queryArguments := make([]any, 0, 4+len(arguments))
+		queryArguments = append(queryArguments, request.Size, request.LocalSnapshotID, request.RemoteSnapshotID, request.S3DestinationID)
 		queryArguments = append(queryArguments, arguments...)
+		//nolint:gosec // where is selected only from fixed internal SQL predicates below
 		result, updateErr := db.ExecContext(ctx, `
 UPDATE system_backup_runs
 SET status = 'succeeded', error = '', updated_at = CURRENT_TIMESTAMP,
@@ -169,6 +172,7 @@ func finalizeRestoredActivityInternal(ctx context.Context, db *sql.DB, activityI
 		where = "id = (SELECT id FROM activities WHERE status = 'running' AND resource_type = 'system_backup' ORDER BY started_at DESC LIMIT 1)"
 		arguments = nil
 	}
+	//nolint:gosec // where is selected only from the fixed ID and latest-running predicates above
 	_, err := db.ExecContext(ctx, `
 UPDATE activities
 SET status = 'success', progress = 100, step = 'System backup completed',
@@ -186,7 +190,7 @@ func restoreSnapshot(ctx context.Context, dockerClient *client.Client, request r
 		if pullErr != nil {
 			return fmt.Errorf("pull Rustic image: %w", pullErr)
 		}
-		if pullErr = dockerutil.ConsumeJSONMessageStream(reader, nil); pullErr != nil {
+		if pullErr = dockerutil.RenderJSONMessageStream(reader, nil); pullErr != nil {
 			_ = reader.Close()
 			return fmt.Errorf("pull Rustic image: %w", pullErr)
 		}
@@ -229,7 +233,7 @@ func restoreSnapshot(ctx context.Context, dockerClient *client.Client, request r
 	}
 	logs, err := dockerClient.ContainerLogs(ctx, created.ID, client.ContainerLogsOptions{ShowStdout: true, ShowStderr: true})
 	if err != nil {
-		return fmt.Errorf("Rustic restore exited with code %d", status.StatusCode)
+		return fmt.Errorf("rustic restore exited with code %d", status.StatusCode)
 	}
 	defer func() { _ = logs.Close() }()
 	var stdout, stderr bytes.Buffer
@@ -239,5 +243,5 @@ func restoreSnapshot(ctx context.Context, dockerClient *client.Client, request r
 		message = strings.TrimSpace(stdout.String())
 	}
 	slog.Error("Rustic system restore failed", "status", status.StatusCode)
-	return fmt.Errorf("Rustic restore exited with code %d: %s", status.StatusCode, message)
+	return fmt.Errorf("rustic restore exited with code %d: %s", status.StatusCode, message)
 }

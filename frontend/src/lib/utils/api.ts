@@ -1,6 +1,6 @@
 import { error as kitError } from '@sveltejs/kit';
 import { toast } from 'svelte-sonner';
-import { APIError } from '$lib/services/api-service';
+import { APIError } from '#lib/services/api-service';
 
 // --- Result wrapper ---
 

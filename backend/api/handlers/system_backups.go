@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
@@ -14,6 +15,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
 	"github.com/getarcaneapp/arcane/types/v2/base"
+	"github.com/samber/mo"
 )
 
 type SystemBackupHandler struct {
@@ -253,5 +255,5 @@ func (h *SystemBackupHandler) Delete(ctx context.Context, input *DeleteSystemBac
 }
 
 func messageOutputInternal(message, activityID string) *SystemBackupMessageOutput {
-	return &SystemBackupMessageOutput{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: message, ActivityID: utils.StringPtrFromTrimmed(activityID)}}}
+	return &SystemBackupMessageOutput{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: message, ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()}}}
 }

@@ -1,21 +1,21 @@
 <script lang="ts">
-	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
-	import { UniversalMobileCard } from '$lib/components/arcane-table';
-	import { LayersIcon, InspectIcon, TrashIcon } from '$lib/icons';
-	import { m } from '$lib/paraglide/messages';
-	import { swarmService } from '$lib/services/swarm-service';
-	import type { SwarmStackSummary } from '$lib/types/swarm';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
+	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
+	import type { ColumnSpec, MobileFieldVisibility } from '#lib/components/arcane-table';
+	import { UniversalMobileCard } from '#lib/components/arcane-table';
+	import { LayersIcon, InspectIcon, TrashIcon } from '#lib/icons';
+	import { m } from '#lib/paraglide/messages';
+	import { swarmService } from '#lib/services/swarm-service';
+	import type { SwarmStackSummary } from '#lib/types/swarm';
+	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
 	import { formatDistanceToNow } from 'date-fns';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
-	import { openConfirmDialog } from '$lib/components/confirm-dialog';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog';
 	import { toast } from 'svelte-sonner';
-	import { tryCatch } from '$lib/utils/api';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api';
+	import { tryCatch } from '#lib/utils/api';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api';
 	import { goto } from '$app/navigation';
-	import IfPermitted from '$lib/components/if-permitted.svelte';
+	import IfPermitted from '#lib/components/if-permitted.svelte';
 
 	let {
 		stacks = $bindable(),

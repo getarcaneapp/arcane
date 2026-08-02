@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { formatDistance } from 'date-fns';
-	import { Badge } from '$lib/components/ui/badge/index.js';
-	import { Spinner } from '$lib/components/ui/spinner/index.js';
-	import { cn } from '$lib/utils';
-	import { m } from '$lib/paraglide/messages';
-	import { HashIcon, HealthIcon, TagIcon } from '$lib/icons';
-	import type { Environment, EnvironmentStatus } from '$lib/types/environment';
-	import type { AppVersionInformation } from '$lib/types/settings';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Spinner } from '#lib/components/ui/spinner/index.js';
+	import { cn } from '#lib/utils';
+	import { m } from '#lib/paraglide/messages';
+	import { HashIcon, HealthIcon, TagIcon } from '#lib/icons';
+	import type { Environment, EnvironmentStatus } from '#lib/types/environment';
+	import type { AppVersionInformation } from '#lib/types/settings';
 
 	let {
 		environment,

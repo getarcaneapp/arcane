@@ -1,44 +1,30 @@
 package common
 
 import (
-	"errors"
-	"io"
+	stderrors "errors"
 	"testing"
+
+	"emperror.dev/errors"
+	"github.com/stretchr/testify/require"
 )
 
-func TestRedeployAfterSyncFailedErrorZeroValue(t *testing.T) {
-	err := &RedeployAfterSyncFailedError{}
+func TestClassifyPreservesChainDetailsAndSingleStack(t *testing.T) {
+	cause := errors.New("root cause")
+	err := errors.WithDetails(cause, "field", "name")
+	err = Classify(ErrInvalidEnvKey, err)
+	err = errors.WrapIf(err, "validate input")
 
-	if got := err.Error(); got != "redeploy failed" {
-		t.Fatalf("Error() = %q, want %q", got, "redeploy failed")
+	require.EqualError(t, err, "validate input: root cause")
+	require.ErrorIs(t, err, ErrInvalidEnvKey)
+	require.ErrorIs(t, err, ErrValidation)
+	require.ErrorIs(t, err, cause)
+	require.Equal(t, []any{"field", "name"}, errors.GetDetails(err))
+
+	stackCount := 0
+	for current := err; current != nil; current = stderrors.Unwrap(current) {
+		if _, ok := current.(interface{ StackTrace() errors.StackTrace }); ok {
+			stackCount++
+		}
 	}
-
-	if errors.Is(err, io.EOF) {
-		t.Fatal("errors.Is matched an unrelated error")
-	}
-}
-
-func TestRedeployAfterSyncFailedErrorNilReceiver(t *testing.T) {
-	var err *RedeployAfterSyncFailedError
-
-	if got := err.Error(); got != "redeploy failed" {
-		t.Fatalf("Error() = %q, want %q", got, "redeploy failed")
-	}
-
-	if got := err.Unwrap(); got != nil {
-		t.Fatalf("Unwrap() = %v, want nil", got)
-	}
-}
-
-func TestRedeployAfterSyncFailedErrorWrapsErr(t *testing.T) {
-	cause := io.EOF
-	err := &RedeployAfterSyncFailedError{Err: cause}
-
-	if got := err.Error(); got != "redeploy failed: EOF" {
-		t.Fatalf("Error() = %q, want %q", got, "redeploy failed: EOF")
-	}
-
-	if !errors.Is(err, cause) {
-		t.Fatal("errors.Is did not match wrapped error")
-	}
+	require.Equal(t, 1, stackCount)
 }

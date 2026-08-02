@@ -1,4 +1,4 @@
-import { m } from '$lib/paraglide/messages';
+import { m } from '#lib/paraglide/messages';
 import { formatDistanceToNow } from 'date-fns';
 
 export function getSwarmSpecName(spec: Record<string, unknown> | null | undefined, fallback: string): string {

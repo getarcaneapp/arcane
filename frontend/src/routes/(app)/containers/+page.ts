@@ -1,10 +1,10 @@
-import type { SearchPaginationSortRequest } from '$lib/types/shared';
-import { containerService } from '$lib/services/container-service';
-import { resolveInitialTableRequest } from '$lib/utils/tables';
+import type { SearchPaginationSortRequest } from '#lib/types/shared';
+import { containerService } from '#lib/services/container-service';
+import { resolveInitialTableRequest } from '#lib/utils/tables';
 import type { PageLoad } from './$types';
-import { environmentStore } from '$lib/stores/environment.store.svelte';
-import { queryKeys } from '$lib/query/query-keys';
-import { throwPageLoadError } from '$lib/utils/api';
+import { environmentStore } from '#lib/stores/environment.store.svelte';
+import { queryKeys } from '#lib/query/query-keys';
+import { throwPageLoadError } from '#lib/utils/api';
 
 export const load: PageLoad = async ({ parent }) => {
 	const { queryClient } = await parent();

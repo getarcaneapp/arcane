@@ -1,14 +1,14 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import settingsStore from '$lib/stores/config-store';
-	import { SettingsPageLayout, type SettingsActionButton } from '$lib/layouts';
-	import { RemoteEnvironmentIcon } from '$lib/icons';
-	import { openConfirmDialog } from '$lib/components/confirm-dialog';
-	import { s3DestinationService } from '$lib/services/s3-destination-service';
-	import type { CreateS3Destination, S3Destination } from '$lib/types/s3-destination';
-	import type { SearchPaginationSortRequest } from '$lib/types/shared';
-	import * as m from '$lib/paraglide/messages.js';
+	import settingsStore from '#lib/stores/config-store';
+	import { SettingsPageLayout, type SettingsActionButton } from '#lib/layouts';
+	import { RemoteEnvironmentIcon } from '#lib/icons';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog';
+	import { s3DestinationService } from '#lib/services/s3-destination-service';
+	import type { CreateS3Destination, S3Destination } from '#lib/types/s3-destination';
+	import type { SearchPaginationSortRequest } from '#lib/types/shared';
+	import * as m from '#lib/paraglide/messages.js';
 	import S3DestinationDialog from './s3-destination-dialog.svelte';
 	import S3DestinationTable from './s3-destination-table.svelte';
 

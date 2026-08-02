@@ -1,16 +1,16 @@
 <script lang="ts">
-	import { ResponsiveDialog } from '$lib/components/ui/responsive-dialog/index.js';
-	import { Button } from '$lib/components/ui/button/index.js';
-	import FormInput from '$lib/components/form/form-input.svelte';
-	import SelectWithLabel from '$lib/components/form/select-with-label.svelte';
-	import { Spinner } from '$lib/components/ui/spinner/index.js';
-	import * as Select from '$lib/components/ui/select/index.js';
-	import * as Collapsible from '$lib/components/ui/collapsible/index.js';
-	import { Label } from '$lib/components/ui/label/index.js';
-	import { Switch } from '$lib/components/ui/switch/index.js';
-	import { Input } from '$lib/components/ui/input/index.js';
-	import FileBrowserDialog from '$lib/components/dialogs/file-browser-dialog.svelte';
-	import GitopsDialogFooter from '$lib/components/dialogs/gitops-dialog-footer.svelte';
+	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import FormInput from '#lib/components/form/form-input.svelte';
+	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
+	import { Spinner } from '#lib/components/ui/spinner/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import { Switch } from '#lib/components/ui/switch/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import FileBrowserDialog from '#lib/components/dialogs/file-browser-dialog.svelte';
+	import GitopsDialogFooter from '#lib/components/dialogs/gitops-dialog-footer.svelte';
 	import type {
 		FileTreeNode,
 		GitOpsSync,
@@ -18,16 +18,16 @@
 		GitOpsSyncUpdateDto,
 		GitRepository,
 		BranchInfo
-	} from '$lib/types/automation';
-	import { gitRepositoryService } from '$lib/services/git-repository-service';
-	import { settingsService } from '$lib/services/settings-service';
-	import { hasPermission } from '$lib/utils/auth';
+	} from '#lib/types/automation';
+	import { gitRepositoryService } from '#lib/services/git-repository-service';
+	import { settingsService } from '#lib/services/settings-service';
+	import { hasPermission } from '#lib/utils/auth';
 	import { z } from 'zod/v4';
-	import { createForm, preventDefault } from '$lib/utils/settings';
-	import { queryKeys } from '$lib/query/query-keys';
-	import { m } from '$lib/paraglide/messages';
-	import { ArrowRightIcon, CodeIcon, FolderOpenIcon, InfoIcon } from '$lib/icons';
-	import * as Alert from '$lib/components/ui/alert';
+	import { createForm, preventDefault } from '#lib/utils/settings';
+	import { queryKeys } from '#lib/query/query-keys';
+	import { m } from '#lib/paraglide/messages';
+	import { ArrowRightIcon, CodeIcon, FolderOpenIcon, InfoIcon } from '#lib/icons';
+	import * as Alert from '#lib/components/ui/alert';
 	import { createQuery } from '@tanstack/svelte-query';
 
 	type GitOpsSyncFormProps = {

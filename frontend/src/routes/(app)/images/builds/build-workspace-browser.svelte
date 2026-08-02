@@ -1,23 +1,23 @@
 <script lang="ts">
-	import FileList from '$lib/components/file-browser/FileList.svelte';
-	import FileBreadcrumb from '$lib/components/file-browser/FileBreadcrumb.svelte';
-	import CreateFolderDialog from '$lib/components/file-browser/CreateFolderDialog.svelte';
-	import FileUploadDialog from '$lib/components/file-browser/FileUploadDialog.svelte';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { UploadIcon, MoveToFolderIcon, EllipsisIcon, CopyIcon } from '$lib/icons';
-	import { Spinner } from '$lib/components/ui/spinner/index.js';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import * as Dialog from '$lib/components/ui/dialog/index.js';
-	import { Textarea } from '$lib/components/ui/textarea';
-	import { Label } from '$lib/components/ui/label';
-	import { m } from '$lib/paraglide/messages';
+	import FileList from '#lib/components/file-browser/FileList.svelte';
+	import FileBreadcrumb from '#lib/components/file-browser/FileBreadcrumb.svelte';
+	import CreateFolderDialog from '#lib/components/file-browser/CreateFolderDialog.svelte';
+	import FileUploadDialog from '#lib/components/file-browser/FileUploadDialog.svelte';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import { UploadIcon, MoveToFolderIcon, EllipsisIcon, CopyIcon } from '#lib/icons';
+	import { Spinner } from '#lib/components/ui/spinner/index.js';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import { Textarea } from '#lib/components/ui/textarea';
+	import { Label } from '#lib/components/ui/label';
+	import { m } from '#lib/paraglide/messages';
 	import { toast } from 'svelte-sonner';
-	import { UseClipboard } from '$lib/hooks/use-clipboard.svelte';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { hasPermission } from '$lib/utils/auth';
-	import { queryKeys } from '$lib/query/query-keys';
-	import type { FileEntry } from '$lib/types/shared';
-	import { sortFileEntries, type FileProvider } from '$lib/components/file-browser';
+	import { UseClipboard } from '#lib/hooks/use-clipboard.svelte';
+	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import { hasPermission } from '#lib/utils/auth';
+	import { queryKeys } from '#lib/query/query-keys';
+	import type { FileEntry } from '#lib/types/shared';
+	import { sortFileEntries, type FileProvider } from '#lib/components/file-browser';
 	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
 
 	let {

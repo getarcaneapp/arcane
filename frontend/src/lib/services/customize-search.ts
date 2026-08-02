@@ -1,5 +1,5 @@
 import { apiClient } from './api-service';
-import type { CustomizeSearchResponse, CustomizeCategory } from '$lib/types/shared';
+import type { CustomizeSearchResponse, CustomizeCategory } from '#lib/types/shared';
 
 class CustomizeSearchService {
 	private baseUrl = '/customize';

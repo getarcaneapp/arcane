@@ -17,7 +17,7 @@ func TestJobService_GetJobSchedules_DefaultDockerClientRefreshInterval(t *testin
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
 
-	settingsSvc, err := NewSettingsService(ctx, db)
+	settingsSvc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	jobSvc := NewJobService(db, settingsSvc, &config.Config{})
@@ -31,7 +31,7 @@ func TestJobService_ListJobs_AnalyticsHeartbeatIsManagedInternally(t *testing.T)
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
 
-	settingsSvc, err := NewSettingsService(ctx, db)
+	settingsSvc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	jobSvc := NewJobService(db, settingsSvc, &config.Config{})
@@ -50,7 +50,7 @@ func TestJobService_ListJobs_IncludesDisabledAutoHealJob(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
 
-	settingsSvc, err := NewSettingsService(ctx, db)
+	settingsSvc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "autoHealEnabled", false))
 
@@ -67,7 +67,7 @@ func TestJobService_ListJobs_IncludesDockerClientRefreshJob(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
 
-	settingsSvc, err := NewSettingsService(ctx, db)
+	settingsSvc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	jobSvc := NewJobService(db, settingsSvc, &config.Config{})
@@ -86,7 +86,7 @@ func TestJobService_ListJobs_UsesRuntimeScheduleAndNextRun(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
 
-	settingsSvc, err := NewSettingsService(ctx, db)
+	settingsSvc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	nextRun := time.Date(2026, time.July, 10, 8, 0, 0, 0, time.UTC)
@@ -111,7 +111,7 @@ func TestJobService_ListJobs_ImageUpdateWatcherIsContinuousAndRespectsEnabled(t 
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
 
-	settingsSvc, err := NewSettingsService(ctx, db)
+	settingsSvc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "pollingEnabled", false))
 
@@ -133,7 +133,7 @@ func TestJobService_UpdateJobSchedules_ReschedulesChangedJob(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
 
-	settingsSvc, err := NewSettingsService(ctx, db)
+	settingsSvc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	jobSvc := NewJobService(db, settingsSvc, &config.Config{})
@@ -152,7 +152,7 @@ func TestJobService_UpdateJobSchedules_DeprecatedPollingIntervalDoesNotReschedul
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
 
-	settingsSvc, err := NewSettingsService(ctx, db)
+	settingsSvc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	jobSvc := NewJobService(db, settingsSvc, &config.Config{})
@@ -171,7 +171,7 @@ func TestJobService_UpdateJobSchedules_UsesLifecycleContextForReschedule(t *test
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
 
-	settingsSvc, err := NewSettingsService(ctx, db)
+	settingsSvc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	type lifecycleContextKey struct{}
@@ -198,7 +198,7 @@ func TestJobService_UpdateJobSchedules_RejectsInvalidCronWithoutChangingSetting(
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
 
-	settingsSvc, err := NewSettingsService(ctx, db)
+	settingsSvc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsSvc.EnsureDefaultSettings(ctx))
 	require.NoError(t, settingsSvc.LoadDatabaseSettings(ctx))
@@ -219,7 +219,7 @@ func TestJobService_UpdateJobSchedules_UnchangedScheduleDoesNotReschedule(t *tes
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
 
-	settingsSvc, err := NewSettingsService(ctx, db)
+	settingsSvc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	jobSvc := NewJobService(db, settingsSvc, &config.Config{})
@@ -234,7 +234,7 @@ func TestJobService_UpdateJobSchedules_RestoresPreviousScheduleWhenRescheduleFai
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
 
-	settingsSvc, err := NewSettingsService(ctx, db)
+	settingsSvc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsSvc.EnsureDefaultSettings(ctx))
 	require.NoError(t, settingsSvc.LoadDatabaseSettings(ctx))
@@ -259,7 +259,7 @@ func TestJobService_UpdateJobSchedules_SkipsManagerOnlyJobsInAgentMode(t *testin
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
 
-	settingsSvc, err := NewSettingsService(ctx, db)
+	settingsSvc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	jobSvc := NewJobService(db, settingsSvc, &config.Config{AgentMode: true})
@@ -278,7 +278,7 @@ func TestJobService_UpdateJobSchedules_DelegatesEnvironmentHealthReschedule(t *t
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
 
-	settingsSvc, err := NewSettingsService(ctx, db)
+	settingsSvc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	jobSvc := NewJobService(db, settingsSvc, &config.Config{})
@@ -319,8 +319,7 @@ func findJobStatusByIDInternal(t *testing.T, jobs []jobschedule.JobStatus, id st
 			return job
 		}
 	}
-
-	t.Fatalf("job %q not found", id)
+	require.FailNowf(t, "unexpected failure", "job %q not found", id)
 	return jobschedule.JobStatus{}
 }
 

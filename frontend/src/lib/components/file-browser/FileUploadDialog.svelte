@@ -1,11 +1,11 @@
 <script lang="ts">
-	import * as Dialog from '$lib/components/ui/dialog';
-	import { ArcaneButton } from '$lib/components/arcane-button';
-	import { FileDropZone, displaySize, type FileDropZoneProps } from '$lib/components/ui/file-drop-zone';
+	import * as Dialog from '#lib/components/ui/dialog';
+	import { ArcaneButton } from '#lib/components/arcane-button';
+	import { FileDropZone, displaySize, type FileDropZoneProps } from '#lib/components/ui/file-drop-zone';
 	import { toast } from 'svelte-sonner';
-	import * as m from '$lib/paraglide/messages.js';
-	import { CloseIcon } from '$lib/icons';
-	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
+	import * as m from '#lib/paraglide/messages.js';
+	import { CloseIcon } from '#lib/icons';
+	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
 
 	let {
 		open = $bindable(false),

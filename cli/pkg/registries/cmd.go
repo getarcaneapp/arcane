@@ -2,8 +2,9 @@ package registries
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
+
+	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
@@ -17,6 +18,7 @@ import (
 var (
 	limitFlag  int
 	startFlag  int
+	allFlag    bool
 	forceFlag  bool
 	jsonOutput bool
 
@@ -56,26 +58,26 @@ var listCmd = &cobra.Command{
 		}
 
 		path := types.Endpoints.ContainerRegistries()
-		path, err = cmdutil.ApplyPaginationParams(cmd, path, "registries", "limit", limitFlag, 20, "start", startFlag)
+		path, err = cmdutil.ApplyPaginationParams(cmd, path, cmdutil.ListParams{Resource: "registries", Limit: limitFlag, FallbackDefault: 20, Start: startFlag, All: allFlag})
 		if err != nil {
-			return fmt.Errorf("failed to build pagination query: %w", err)
+			return errors.WrapIf(err, "failed to build pagination query")
 		}
 
 		resp, err := c.Get(cmd.Context(), path)
 		if err != nil {
-			return fmt.Errorf("failed to list registries: %w", err)
+			return errors.WrapIf(err, "failed to list registries")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.Paginated[containerregistry.ContainerRegistry]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(result, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -107,40 +109,6 @@ var listCmd = &cobra.Command{
 	},
 }
 
-var syncCmd = &cobra.Command{
-	Use:          "sync",
-	Short:        "Sync container registries",
-	SilenceUsage: true,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := client.NewFromConfig()
-		if err != nil {
-			return err
-		}
-
-		resp, err := c.Post(cmd.Context(), types.Endpoints.ContainerRegistrySync(), nil)
-		if err != nil {
-			return fmt.Errorf("failed to sync registries: %w", err)
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to sync registries: %w", err)
-		}
-
-		if jsonOutput {
-			var result base.ApiResponse[any]
-			if err := json.NewDecoder(resp.Body).Decode(&result); err == nil {
-				if resultBytes, err := json.MarshalIndent(result.Data, "", "  "); err == nil {
-					fmt.Println(string(resultBytes))
-				}
-			}
-			return nil
-		}
-
-		output.Success("Registries synced successfully")
-		return nil
-	},
-}
-
 var testCmd = &cobra.Command{
 	Use:          "test <registry-id>",
 	Short:        "Test container registry connection",
@@ -154,11 +122,11 @@ var testCmd = &cobra.Command{
 
 		resp, err := c.Post(cmd.Context(), types.Endpoints.ContainerRegistryTest(args[0]), nil)
 		if err != nil {
-			return fmt.Errorf("failed to test registry: %w", err)
+			return errors.WrapIf(err, "failed to test registry")
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to test registry: %w", err)
+			return errors.WrapIf(err, "failed to test registry")
 		}
 
 		if jsonOutput {
@@ -189,19 +157,19 @@ var getCmd = &cobra.Command{
 
 		resp, err := c.Get(cmd.Context(), types.Endpoints.ContainerRegistry(args[0]))
 		if err != nil {
-			return fmt.Errorf("failed to get registry: %w", err)
+			return errors.WrapIf(err, "failed to get registry")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[containerregistry.ContainerRegistry]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -230,39 +198,40 @@ var createCmd = &cobra.Command{
 			return err
 		}
 
+		// No field on CreateContainerRegistryRequest carries omitempty, so Huma
+		// marks all of them required — every key has to be present, including
+		// description.
 		req := map[string]any{
 			"url":                registryCreateURL,
 			"registryType":       registryCreateType,
 			"username":           registryCreateUsername,
 			"token":              registryCreateToken,
+			"description":        registryCreateDescription,
 			"insecure":           registryCreateInsecure,
 			"enabled":            !registryCreateDisabled,
 			"awsAccessKeyId":     registryCreateAWSKeyID,
 			"awsSecretAccessKey": registryCreateAWSSecret,
 			"awsRegion":          registryCreateAWSRegion,
 		}
-		if registryCreateDescription != "" {
-			req["description"] = registryCreateDescription
-		}
 
 		resp, err := c.Post(cmd.Context(), types.Endpoints.ContainerRegistries(), req)
 		if err != nil {
-			return fmt.Errorf("failed to create registry: %w", err)
+			return errors.WrapIf(err, "failed to create registry")
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to create registry: %w", err)
+			return errors.WrapIf(err, "failed to create registry")
 		}
 
 		var result base.ApiResponse[containerregistry.ContainerRegistry]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -291,37 +260,58 @@ var updateCmd = &cobra.Command{
 			return err
 		}
 
-		req := make(map[string]any)
 		if cmd.Flags().Changed("enabled") && cmd.Flags().Changed("disabled") {
 			return errors.New("--enabled and --disabled are mutually exclusive")
 		}
-		if cmd.Flags().Changed("url") {
-			req["url"] = registryUpdateURL
-		}
-		if cmd.Flags().Changed("username") {
-			req["username"] = registryUpdateUsername
-		}
-		if cmd.Flags().Changed("password") {
-			req["token"] = registryUpdatePassword
-		}
-		if cmd.Flags().Changed("enabled") {
-			req["enabled"] = registryUpdateEnabled
-		}
-		if cmd.Flags().Changed("disabled") {
-			req["enabled"] = !registryUpdateDisabled
+
+		// Every field on UpdateContainerRegistryRequest lacks omitempty, so Huma
+		// requires all of them. They are all pointers though, so an explicit null
+		// is valid and the service leaves those fields untouched.
+		req := map[string]any{
+			"url":                nil,
+			"username":           nil,
+			"token":              nil,
+			"description":        nil,
+			"insecure":           nil,
+			"enabled":            nil,
+			"registryType":       nil,
+			"awsAccessKeyId":     nil,
+			"awsSecretAccessKey": nil,
+			"awsRegion":          nil,
 		}
 
-		if len(req) == 0 {
+		changed := false
+		setField := func(key string, value any) {
+			req[key] = value
+			changed = true
+		}
+		if cmd.Flags().Changed("url") {
+			setField("url", registryUpdateURL)
+		}
+		if cmd.Flags().Changed("username") {
+			setField("username", registryUpdateUsername)
+		}
+		if cmd.Flags().Changed("password") {
+			setField("token", registryUpdatePassword)
+		}
+		if cmd.Flags().Changed("enabled") {
+			setField("enabled", registryUpdateEnabled)
+		}
+		if cmd.Flags().Changed("disabled") {
+			setField("enabled", !registryUpdateDisabled)
+		}
+
+		if !changed {
 			return errors.New("no updates provided; use --url, --username, --password, --enabled, or --disabled")
 		}
 
 		resp, err := c.Put(cmd.Context(), types.Endpoints.ContainerRegistry(args[0]), req)
 		if err != nil {
-			return fmt.Errorf("failed to update registry: %w", err)
+			return errors.WrapIf(err, "failed to update registry")
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to update registry: %w", err)
+			return errors.WrapIf(err, "failed to update registry")
 		}
 
 		if jsonOutput {
@@ -364,11 +354,11 @@ var deleteCmd = &cobra.Command{
 
 		resp, err := c.Delete(cmd.Context(), types.Endpoints.ContainerRegistry(args[0]))
 		if err != nil {
-			return fmt.Errorf("failed to delete registry: %w", err)
+			return errors.WrapIf(err, "failed to delete registry")
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to delete registry: %w", err)
+			return errors.WrapIf(err, "failed to delete registry")
 		}
 
 		output.Success("Registry deleted successfully")
@@ -380,18 +370,17 @@ func init() {
 	RegistriesCmd.AddCommand(listCmd)
 	RegistriesCmd.AddCommand(getCmd)
 	RegistriesCmd.AddCommand(createCmd)
-	RegistriesCmd.AddCommand(syncCmd)
 	RegistriesCmd.AddCommand(testCmd)
 	RegistriesCmd.AddCommand(updateCmd)
 	RegistriesCmd.AddCommand(deleteCmd)
 
 	listCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of registries to show")
-	listCmd.Flags().IntVar(&startFlag, "start", 0, "Offset for pagination")
+	listCmd.Flags().IntVar(&startFlag, "start", 0, cmdutil.StartFlagUsage)
+	listCmd.Flags().BoolVarP(&allFlag, "all", "a", false, cmdutil.AllFlagUsage)
 	listCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 
 	getCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 
-	syncCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	testCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 
 	createCmd.Flags().StringVar(&registryCreateURL, "url", "", "Registry URL (e.g. ghcr.io, docker.io, registry.example.com)")

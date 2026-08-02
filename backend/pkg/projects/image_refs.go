@@ -1,7 +1,7 @@
 package projects
 
 import (
-	json "encoding/json/v2"
+	"encoding/json/v2"
 	"sort"
 	"strings"
 

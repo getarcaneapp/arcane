@@ -1,16 +1,15 @@
 <script lang="ts">
-	import type { IncludeFile, Project } from '$lib/types/swarm';
-	import type { ProjectFileChange } from '$lib/types/project-files';
-	import * as Tabs from '$lib/components/ui/tabs/index.js';
-	import * as Alert from '$lib/components/ui/alert/index.js';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
+	import type { IncludeFile, Project } from '#lib/types/swarm';
+	import type { ProjectFileChange } from '#lib/types/project-files';
+	import * as Tabs from '#lib/components/ui/tabs/index.js';
+	import * as Alert from '#lib/components/ui/alert/index.js';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import {
 		ArrowLeftIcon,
 		ArrowDownIcon,
 		ArrowRightIcon,
 		CreateFileIcon,
 		TrashIcon,
-		BoxIcon,
 		ProjectsIcon,
 		LayersIcon,
 		SettingsIcon,
@@ -20,49 +19,49 @@
 		CodeIcon,
 		ArrowsUpDownIcon,
 		SearchIcon
-	} from '$lib/icons';
-	import { type TabItem } from '$lib/components/tab-bar/index.js';
-	import TabbedPageLayout from '$lib/layouts/tabbed-page-layout.svelte';
-	import ActionButtons from '$lib/components/action-buttons.svelte';
-	import { Badge } from '$lib/components/ui/badge';
-	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
-	import { getStatusVariant, getThemedIconUrl } from '$lib/utils/docker';
-	import { capitalizeFirstLetter } from '$lib/utils/formatting';
+	} from '#lib/icons';
+	import { type TabItem } from '#lib/components/tab-bar/index.js';
+	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
+	import ActionButtons from '#lib/components/action-buttons.svelte';
+	import { Badge } from '#lib/components/ui/badge';
+	import * as ArcaneTooltip from '#lib/components/arcane-tooltip';
+	import { getStatusVariant, getThemedIconUrl } from '#lib/utils/docker';
+	import { capitalizeFirstLetter } from '#lib/utils/formatting';
 	import { page } from '$app/state';
 	import { mode } from 'mode-watcher';
 	import { toast } from 'svelte-sonner';
-	import { tryCatch } from '$lib/utils/api';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api';
+	import { tryCatch } from '#lib/utils/api';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api';
 	import { z } from 'zod/v4';
-	import { createForm } from '$lib/utils/settings';
-	import { m } from '$lib/paraglide/messages';
-	import { toGitCommitUrl } from '$lib/utils/navigation';
-	import { toSafeHref } from '$lib/utils/navigation';
+	import { createForm } from '#lib/utils/settings';
+	import { m } from '#lib/paraglide/messages';
+	import { toGitCommitUrl } from '#lib/utils/navigation';
+	import { toSafeHref } from '#lib/utils/navigation';
 	import { PersistedState } from 'runed';
-	import { useUrlTab } from '$lib/hooks/use-url-tab.svelte';
-	import ComposeFileEditorPanel from '$lib/components/compose-file-editor-panel.svelte';
+	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte';
+	import ComposeFileEditorPanel from '#lib/components/compose-file-editor-panel.svelte';
 	import EditableName from '../components/EditableName.svelte';
 	import ProjectFileTreePanel from '../components/ProjectFileTreePanel.svelte';
 	import EditorTabStrip from '../components/EditorTabStrip.svelte';
 	import ProjectContainersTable from '../components/ProjectContainersTable.svelte';
 	import CodePanel from '../components/CodePanel.svelte';
 	import ProjectsLogsPanel from '../components/ProjectLogsPanel.svelte';
-	import ResizableSplit from '$lib/components/resizable-split.svelte';
-	import { Switch } from '$lib/components/ui/switch';
+	import ResizableSplit from '#lib/components/resizable-split.svelte';
+	import { Switch } from '#lib/components/ui/switch';
 	import { untrack } from 'svelte';
-	import { projectService } from '$lib/services/project-service';
-	import { imageService } from '$lib/services/image-service';
-	import { gitOpsSyncService } from '$lib/services/gitops-sync-service';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { hasPermission } from '$lib/utils/auth';
-	import { queryKeys } from '$lib/query/query-keys';
-	import { RefreshIcon } from '$lib/icons';
-	import IconImage from '$lib/components/icon-image.svelte';
+	import { projectService } from '#lib/services/project-service';
+	import { imageService } from '#lib/services/image-service';
+	import { gitOpsSyncService } from '#lib/services/gitops-sync-service';
+	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import { hasPermission } from '#lib/utils/auth';
+	import { queryKeys } from '#lib/query/query-keys';
+	import { RefreshIcon } from '#lib/icons';
+	import IconImage from '#lib/components/icon-image.svelte';
 	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
-	import ProjectUpdateItem from '$lib/components/project-update-item.svelte';
-	import IfPermitted from '$lib/components/if-permitted.svelte';
-	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
-	import { globalVariablesToMap } from '$lib/utils/template-load';
+	import ProjectUpdateItem from '#lib/components/project-update-item.svelte';
+	import IfPermitted from '#lib/components/if-permitted.svelte';
+	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
+	import { globalVariablesToMap } from '#lib/utils/template-load';
 	import {
 		applyProjectFileChangesForDisplay,
 		isProjectFileSelectionUnder,
@@ -76,7 +75,7 @@
 		remapSelectedProjectFileKey,
 		removeProjectFileRecord
 	} from '../components/project-file-tree-utils';
-	import { composeTreeSplitProps, extractComposeYamlName } from '$lib/utils/compose-flow';
+	import { composeTreeSplitProps, extractComposeYamlName } from '#lib/utils/compose-flow';
 
 	let { data } = $props();
 	let projectId = $derived(data.projectId);
@@ -272,6 +271,7 @@
 
 	type ProjectTab = 'services' | 'compose' | 'logs';
 	let selectedTab = $state<ProjectTab>('compose');
+	let userSelectedTabProjectId: string | null = null;
 	let composeOpen = $state(true);
 	let envOpen = $state(true);
 	let overrideOpen = $state(false);
@@ -447,7 +447,6 @@
 		defaultTab: () => selectedTab,
 		ready: () => lastPrefsProjectId === project?.id
 	});
-	const activeTab = $derived(urlTab.value);
 
 	function ensureIncludeFileUiState(relativePath: string) {
 		if (includeFilesPanelStates[relativePath] === undefined) {
@@ -667,7 +666,12 @@
 			syncTabs: false
 		});
 		const cur = prefs.current ?? {};
-		selectedTab = cur.tab ?? defaultComposeUIPrefs.tab;
+		const userSelectedTabForProject = userSelectedTabProjectId === project.id;
+		const requestedTab = new URL(window.location.href).searchParams.get('tab');
+		const urlTabValue = tabItems.some((tab) => tab.value === requestedTab) ? (requestedTab as ProjectTab) : null;
+		if (!userSelectedTabForProject) {
+			selectedTab = urlTabValue ?? cur.tab ?? defaultComposeUIPrefs.tab;
+		}
 		composeOpen = cur.composeOpen ?? defaultComposeUIPrefs.composeOpen;
 		// Expanding the override collapses the compose editor (accordion), so the
 		// override defaults to collapsed to keep compose primary on load.
@@ -687,7 +691,7 @@
 		layoutMode = hadStoredPrefs ? (cur.layoutMode ?? defaultMode) : defaultMode;
 		// PersistedState seeds storage with the defaults on first mount; persist the
 		// resolved state so the auto-detected layout survives the next visit.
-		if (!hadStoredPrefs) {
+		if (!hadStoredPrefs || userSelectedTabForProject) {
 			persistPrefs();
 		}
 	});
@@ -1300,8 +1304,7 @@
 {#if project}
 	{#snippet archiveButton(compact: boolean)}
 		<ArcaneButton
-			action="base"
-			icon={BoxIcon}
+			action="archive"
 			size={compact ? 'icon' : undefined}
 			showLabel={!compact}
 			loading={isLoading.archiving}
@@ -1316,8 +1319,9 @@
 		{backUrl}
 		backLabel={m.common_back()}
 		{tabItems}
-		selectedTab={activeTab}
+		{selectedTab}
 		onTabChange={(value: string) => {
+			userSelectedTabProjectId = project.id;
 			selectedTab = value as ProjectTab;
 			urlTab.select(value);
 			persistPrefs();

@@ -1,11 +1,12 @@
 package generate
 
 import (
-	crand "crypto/rand"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 
+	"emperror.dev/errors"
 	"github.com/spf13/cobra"
 )
 
@@ -31,13 +32,13 @@ func init() {
 
 func generateSecrets() error {
 	encryptionKey := make([]byte, secretLength)
-	if _, err := crand.Read(encryptionKey); err != nil {
-		return fmt.Errorf("failed to generate encryption key: %w", err)
+	if _, err := rand.Read(encryptionKey); err != nil {
+		return errors.WrapIf(err, "failed to generate encryption key")
 	}
 
 	jwtSecret := make([]byte, secretLength)
-	if _, err := crand.Read(jwtSecret); err != nil {
-		return fmt.Errorf("failed to generate JWT secret: %w", err)
+	if _, err := rand.Read(jwtSecret); err != nil {
+		return errors.WrapIf(err, "failed to generate JWT secret")
 	}
 
 	switch secretFormat {
@@ -52,7 +53,7 @@ func generateSecrets() error {
 	case "all":
 		printAllFormats(encryptionKey, jwtSecret)
 	default:
-		return fmt.Errorf("unknown format: %s (supported: base64, hex, env, docker, all)", secretFormat)
+		return errors.Errorf("unknown format: %s (supported: base64, hex, env, docker, all)", secretFormat)
 	}
 
 	return nil

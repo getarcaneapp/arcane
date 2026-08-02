@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge/proto/tunnel/v1"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
-	"github.com/labstack/echo/v4"
+	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
+	"github.com/labstack/echo/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -270,14 +270,14 @@ func newTestRemenvClientInternal(timeout time.Duration) *remenv.Client {
 				return nil
 			}
 
-			if _, ok := RequestTunnelAndWait(ctx, envID, DefaultTunnelDemandTTL, DefaultTunnelAcquireTimeout()); ok {
+			if _, ok := RequestTunnelAndWait(ctx, envID, DefaultTunnelDemandTTL, DefaultTunnelAcquireTimeout()).Get(); ok {
 				return nil
 			}
 
 			return fmt.Errorf("edge agent is not connected (no active tunnel)")
 		},
 		DoFunc: func(ctx context.Context, envID, method, path string, headers map[string]string, body []byte) (*remenv.Response, error) {
-			tunnel, ok := GetRegistry().Get(envID)
+			tunnel, ok := GetRegistry().Get(envID).Get()
 			if !ok {
 				return nil, fmt.Errorf("no active tunnel for environment %s", envID)
 			}
@@ -310,7 +310,7 @@ func TestRemenvClient_EdgeWithTunnel(t *testing.T) {
 		}
 	})
 	defer server.Close()
-	defer func() { _ = tunnel.Close() }()
+	defer func() { _ = tunnel.CloseWithReason("") }()
 
 	envID := "env-edge-1"
 	GetRegistry().Register(envID, tunnel)
@@ -376,7 +376,7 @@ func TestRemenvClient_EdgeWithGRPCTunnel(t *testing.T) {
 	defer func() { _ = conn.Close() }()
 
 	clientAPI := tunnelpb.NewTunnelServiceClient(conn)
-	stream, err := clientAPI.Connect(ctx)
+	stream, err := clientAPI.Connect(testGRPCOutgoingContextInternal(ctx, "valid-token"))
 	require.NoError(t, err)
 
 	err = stream.Send(&tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_Register{Register: &tunnelpb.RegisterRequest{AgentToken: "valid-token"}}})
@@ -438,7 +438,7 @@ func TestRemenvClient_EdgeWithGRPCTunnel(t *testing.T) {
 	}()
 
 	require.Eventually(t, func() bool {
-		tunnel, ok := GetRegistry().Get(envID)
+		tunnel, ok := GetRegistry().Get(envID).Get()
 		return ok && tunnel != nil && !tunnel.Conn.IsClosed()
 	}, time.Second, 10*time.Millisecond)
 

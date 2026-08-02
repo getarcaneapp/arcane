@@ -1,6 +1,6 @@
-import { roleService } from '$lib/services/role-service';
-import type { SearchPaginationSortRequest } from '$lib/types/shared';
-import { resolveInitialTableRequest } from '$lib/utils/tables';
+import { roleService } from '#lib/services/role-service';
+import type { SearchPaginationSortRequest } from '#lib/types/shared';
+import { resolveInitialTableRequest } from '#lib/utils/tables';
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({ parent }) => {

@@ -4,18 +4,20 @@ package startup
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"os"
 	"os/exec"
 	"os/signal"
 	"syscall"
+
+	"emperror.dev/errors"
+
+	"github.com/samber/mo"
 )
 
 func reexecWithRuntimeIdentityInternal(ctx context.Context, req runtimeIdentityRequest) error {
 	executable, err := os.Executable()
 	if err != nil {
-		return fmt.Errorf("resolve executable: %w", err)
+		return errors.WrapIf(err, "resolve executable")
 	}
 
 	groups := runtimeIdentitySupplementaryGroupsInternal(req.DockerHost, resolveSocketGroupInternal)
@@ -34,7 +36,7 @@ func reexecWithRuntimeIdentityInternal(ctx context.Context, req runtimeIdentityR
 	}
 
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("start runtime identity child: %w", err)
+		return errors.WrapIf(err, "start runtime identity child")
 	}
 
 	sigCh := make(chan os.Signal, 2)
@@ -68,21 +70,21 @@ func reexecWithRuntimeIdentityInternal(ctx context.Context, req runtimeIdentityR
 				os.Exit(exitErr.ExitCode())
 			}
 
-			return fmt.Errorf("wait for runtime identity child: %w", err)
+			return errors.WrapIf(err, "wait for runtime identity child")
 		}
 	}
 }
 
-func resolveSocketGroupInternal(socketPath string) (uint32, bool) {
+func resolveSocketGroupInternal(socketPath string) mo.Option[uint32] {
 	info, err := os.Stat(socketPath)
 	if err != nil {
-		return 0, false
+		return mo.None[uint32]()
 	}
 
 	stat, ok := info.Sys().(*syscall.Stat_t)
 	if !ok {
-		return 0, false
+		return mo.None[uint32]()
 	}
 
-	return stat.Gid, true
+	return mo.Some(stat.Gid)
 }

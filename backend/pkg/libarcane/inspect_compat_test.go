@@ -90,14 +90,14 @@ func TestNormalizeContainerInspectRawJSONInternal_NormalizesTopLevelNetworkSetti
 	payload := map[string]any{}
 	require.NoError(t, json.Unmarshal(normalized, &payload))
 
-	networkSettings, ok := asMapInternal(payload["NetworkSettings"])
+	networkSettings, ok := asMapInternal(payload["NetworkSettings"]).Get()
 	require.True(t, ok)
 	assert.Equal(t, "172.18.0.1", networkSettings["Gateway"])
 	assert.Equal(t, "172.18.0.20", networkSettings["IPAddress"])
-	assert.Equal(t, float64(16), networkSettings["IPPrefixLen"])
+	assert.InDelta(t, float64(16), networkSettings["IPPrefixLen"], 0.000001)
 	assert.Equal(t, "fdd0:0:0:c::1", networkSettings["IPv6Gateway"])
 	assert.Equal(t, "fdd0:0:0:c::10", networkSettings["GlobalIPv6Address"])
-	assert.Equal(t, float64(64), networkSettings["GlobalIPv6PrefixLen"])
+	assert.InDelta(t, float64(64), networkSettings["GlobalIPv6PrefixLen"], 0.000001)
 }
 
 func TestNormalizeNetworkInspectRawJSONInternal(t *testing.T) {
@@ -200,7 +200,7 @@ func TestNormalizeNetworkListRawJSONInternal(t *testing.T) {
 }
 
 func TestNormalizeAddressStringInternal_TrimsWhitespaceAroundValidAddress(t *testing.T) {
-	normalized, changed := normalizeAddressStringInternal(" 172.18.0.1 ")
+	normalized, changed := normalizeAddressStringInternal(" 172.18.0.1 ").Get()
 	assert.True(t, changed)
 	assert.Equal(t, "172.18.0.1", normalized)
 }
@@ -312,7 +312,7 @@ func TestNetworkListWithCompatibility(t *testing.T) {
 	dockerClient := newTestDockerClient(t, func(w http.ResponseWriter, r *http.Request) {
 		callCount++
 		assert.Equal(t, "/v1.41/networks", r.URL.Path)
-		assert.Equal(t, `{"name":{"test-net":true}}`, r.URL.Query().Get("filters"))
+		assert.JSONEq(t, `{"name":{"test-net":true}}`, r.URL.Query().Get("filters"))
 		_, _ = w.Write([]byte(networkJSON))
 	})
 
@@ -413,7 +413,7 @@ func TestInspectCompatibilityLeavesInvalidValuesFailing(t *testing.T) {
 
 	_, err := NetworkInspectWithCompatibility(context.Background(), dockerClient, "test-net", client.NetworkInspectOptions{})
 	require.Error(t, err)
-	assert.True(t, strings.Contains(err.Error(), `ParseAddr("definitely-not-an-ip")`))
+	assert.Contains(t, err.Error(), `ParseAddr("definitely-not-an-ip")`)
 }
 
 func TestNetworkListWithCompatibility_LeavesInvalidValuesFailing(t *testing.T) {
@@ -435,7 +435,7 @@ func TestNetworkListWithCompatibility_LeavesInvalidValuesFailing(t *testing.T) {
 
 	_, err := NetworkListWithCompatibility(context.Background(), dockerClient, client.NetworkListOptions{})
 	require.Error(t, err)
-	assert.True(t, strings.Contains(err.Error(), `ParseAddr("definitely-not-an-ip")`))
+	assert.Contains(t, err.Error(), `ParseAddr("definitely-not-an-ip")`)
 	assert.Equal(t, 2, callCount)
 }
 
@@ -497,8 +497,12 @@ func TestWrapDockerAPIClientForInspectCompatibility_ContainerCreateLegacyNetwork
 		switch {
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/create"):
 			body, err := io.ReadAll(r.Body)
-			require.NoError(t, err)
-			require.NoError(t, json.Unmarshal(body, &createPayload))
+			if !assert.NoError(t, err) {
+				return
+			}
+			if !assert.NoError(t, json.Unmarshal(body, &createPayload)) {
+				return
+			}
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"Id":"new-container-id","Warnings":[]}`))
 		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/networks/") && strings.HasSuffix(r.URL.Path, "/connect"):
@@ -506,14 +510,20 @@ func TestWrapDockerAPIClientForInspectCompatibility_ContainerCreateLegacyNetwork
 			networkName = strings.TrimSuffix(networkName, "/connect")
 			networkName = networkName[strings.LastIndex(networkName, "/networks/")+len("/networks/"):]
 			body, err := io.ReadAll(r.Body)
-			require.NoError(t, err)
+			if !assert.NoError(t, err) {
+				return
+			}
 
 			var payload connectRequest
-			require.NoError(t, json.Unmarshal(body, &payload))
+			if !assert.NoError(t, json.Unmarshal(body, &payload)) {
+				return
+			}
 			connectPayloads[networkName] = payload
 			w.WriteHeader(http.StatusOK)
 		default:
-			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+			if !assert.Failf(t, "unexpected failure", "unexpected request: %s %s", r.Method, r.URL.Path) {
+				return
+			}
 		}
 	})
 
@@ -523,7 +533,7 @@ func TestWrapDockerAPIClientForInspectCompatibility_ContainerCreateLegacyNetwork
 			Image: "nginx:alpine",
 		},
 		HostConfig: &containertypes.HostConfig{
-			NetworkMode: containertypes.NetworkMode("synobridge"),
+			NetworkMode: "synobridge",
 		},
 		NetworkingConfig: &networktypes.NetworkingConfig{
 			EndpointsConfig: map[string]*networktypes.EndpointSettings{

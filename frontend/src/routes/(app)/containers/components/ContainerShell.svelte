@@ -1,11 +1,11 @@
 <script lang="ts">
-	import * as Card from '$lib/components/ui/card';
-	import Terminal from '$lib/components/terminal/terminal.svelte';
-	import TerminalControls from '$lib/components/terminal/terminal-controls.svelte';
-	import { m } from '$lib/paraglide/messages';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import settingsStore from '$lib/stores/config-store';
-	import { TerminalIcon } from '$lib/icons';
+	import * as Card from '#lib/components/ui/card';
+	import Terminal from '#lib/components/terminal/terminal.svelte';
+	import TerminalControls from '#lib/components/terminal/terminal-controls.svelte';
+	import { m } from '#lib/paraglide/messages';
+	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import settingsStore from '#lib/stores/config-store';
+	import { TerminalIcon } from '#lib/icons';
 
 	let {
 		containerId

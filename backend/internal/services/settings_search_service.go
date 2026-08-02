@@ -42,7 +42,7 @@ func (s *SettingsSearchService) buildCategoriesFromModel() []category.Category {
 
 	// map category id -> list of settings
 	categories := map[string][]meta.Metadata{}
-	categoryOrder := []string{} // Track order from first appearance in struct
+	var categoryOrder []string // Track order from first appearance in struct
 
 	rt := reflect.TypeFor[models.Settings]()
 	for field := range rt.Fields() {

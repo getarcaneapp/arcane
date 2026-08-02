@@ -1,15 +1,16 @@
 package edge
 
 import (
-	"errors"
 	"strings"
 	"sync"
+
+	"emperror.dev/errors"
 
 	"github.com/google/uuid"
 )
 
 // ErrNoActiveAgentTunnel is returned when no active agent tunnel exists for outbound event sync.
-var ErrNoActiveAgentTunnel = errors.New("no active edge agent tunnel")
+const ErrNoActiveAgentTunnel = errors.Sentinel("no active edge agent tunnel")
 
 var agentTunnelState struct {
 	mu   sync.RWMutex

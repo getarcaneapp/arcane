@@ -1,12 +1,14 @@
 package cmdutil
 
 import (
+	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
+
+	"emperror.dev/errors"
 )
 
 const maxErrorBodyBytes = 4096
@@ -49,8 +51,36 @@ func DecodeJSON[T any](resp *http.Response, out *T) error {
 		return errors.New("nil decode target")
 	}
 	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
-		return fmt.Errorf("failed to parse response: %w", err)
+		return errors.WrapIf(err, "failed to parse response")
 	}
+	return nil
+}
+
+// ReadJSONBody enforces a successful HTTP status and returns the raw response body.
+// Use it when a command needs both to decode a response and to echo it verbatim,
+// so that fields the CLI does not model — such as the counts and groups objects
+// on the container, volume, network and gitops-sync list endpoints — survive
+// --json output instead of being dropped by a re-marshal.
+func ReadJSONBody(resp *http.Response) ([]byte, error) {
+	if err := EnsureSuccessStatus(resp); err != nil {
+		return nil, err
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, errors.WrapIf(err, "failed to read response")
+	}
+	return body, nil
+}
+
+// PrintRawJSON pretty-prints a raw JSON document, falling back to the bytes as-is.
+func PrintRawJSON(body []byte) error {
+	var buf bytes.Buffer
+	if json.Indent(&buf, body, "", "  ") == nil {
+		fmt.Println(buf.String())
+		return nil
+	}
+	// Not valid JSON: echo the server's bytes verbatim rather than swallow them.
+	fmt.Println(string(body))
 	return nil
 }
 
@@ -58,7 +88,7 @@ func DecodeJSON[T any](resp *http.Response, out *T) error {
 func PrintJSON(v any) error {
 	b, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to marshal JSON: %w", err)
+		return errors.WrapIf(err, "failed to marshal JSON")
 	}
 	fmt.Println(string(b))
 	return nil

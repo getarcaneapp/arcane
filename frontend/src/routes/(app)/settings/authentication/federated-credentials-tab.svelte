@@ -1,18 +1,18 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
 	import { untrack } from 'svelte';
-	import { handleApiResultWithCallbacks, tryCatch } from '$lib/utils/api';
+	import { handleApiResultWithCallbacks, tryCatch } from '#lib/utils/api';
 	import FederatedCredentialTable from './federated-credential-table.svelte';
-	import FederatedCredentialFormSheet from '$lib/components/sheets/federated-credential-form-sheet.svelte';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
-	import type { CreateFederatedCredential, FederatedCredential, Role } from '$lib/types/auth';
-	import type { Environment } from '$lib/types/environment';
-	import { federatedCredentialService } from '$lib/services/federated-credential-service';
-	import * as ResponsiveDialog from '$lib/components/ui/responsive-dialog/index.js';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { Snippet } from '$lib/components/ui/snippet/index.js';
-	import IfPermitted from '$lib/components/if-permitted.svelte';
-	import * as m from '$lib/paraglide/messages.js';
+	import FederatedCredentialFormSheet from '#lib/components/sheets/federated-credential-form-sheet.svelte';
+	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
+	import type { CreateFederatedCredential, FederatedCredential, Role } from '#lib/types/auth';
+	import type { Environment } from '#lib/types/environment';
+	import { federatedCredentialService } from '#lib/services/federated-credential-service';
+	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import { Snippet } from '#lib/components/ui/snippet/index.js';
+	import IfPermitted from '#lib/components/if-permitted.svelte';
+	import * as m from '#lib/paraglide/messages.js';
 
 	interface Props {
 		initialFederatedCredentials: Paginated<FederatedCredential>;

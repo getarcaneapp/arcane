@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	sqlite "github.com/libtnb/sqlite"
+	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
@@ -19,6 +19,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
+	"github.com/stretchr/testify/assert"
 )
 
 func setupAnalyticsStateServicesInternal(t *testing.T) (*database.DB, *services.SettingsService, *services.KVService) {
@@ -30,7 +31,7 @@ func setupAnalyticsStateServicesInternal(t *testing.T) (*database.DB, *services.
 	require.NoError(t, db.AutoMigrate(&models.KVEntry{}))
 
 	wrappedDB := &database.DB{DB: db}
-	settingsService, err := services.NewSettingsService(ctx, wrappedDB)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, wrappedDB)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "instanceId", "test-instance"))
 
@@ -45,9 +46,10 @@ func newHeartbeatServer(t *testing.T) (*httptest.Server, <-chan []byte, *atomic.
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestCount.Add(1)
 		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			t.Errorf("failed to read heartbeat body: %v", err)
-		}
+
+		assert.NoError(t, err,
+			"failed to read heartbeat body: %v", err)
+
 		bodyCh <- body
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -71,7 +73,7 @@ func TestAnalyticsJob_Run_ManagerPayload(t *testing.T) {
 	select {
 	case body = <-bodyCh:
 	default:
-		t.Fatal("expected heartbeat request")
+		require.FailNow(t, "expected heartbeat request")
 	}
 
 	var payload map[string]any
@@ -97,7 +99,7 @@ func TestAnalyticsJob_Run_AgentPayload(t *testing.T) {
 	select {
 	case body = <-bodyCh:
 	default:
-		t.Fatal("expected heartbeat request")
+		require.FailNow(t, "expected heartbeat request")
 	}
 
 	var payload map[string]any
@@ -119,7 +121,7 @@ func TestAnalyticsJob_Run_SkipsWhenDisabled(t *testing.T) {
 
 	select {
 	case <-bodyCh:
-		t.Fatal("unexpected heartbeat request")
+		require.FailNow(t, "unexpected heartbeat request")
 	default:
 	}
 }
@@ -138,7 +140,7 @@ func TestAnalyticsJob_Run_SkipsWhenTestEnv(t *testing.T) {
 
 	select {
 	case <-bodyCh:
-		t.Fatal("unexpected heartbeat request")
+		require.FailNow(t, "unexpected heartbeat request")
 	default:
 	}
 }
@@ -157,7 +159,7 @@ func TestAnalyticsJob_Run_SkipsWithinHeartbeatWindowAfterRestart(t *testing.T) {
 	job.now = func() time.Time { return firstAttemptAt }
 	job.Run(ctx)
 
-	reloadedSettingsService, err := services.NewSettingsService(ctx, wrappedDB)
+	reloadedSettingsService, err := newSettingsServiceForTestInternal(t, ctx, wrappedDB)
 	require.NoError(t, err)
 	restartedJob := NewAnalyticsJob(reloadedSettingsService, services.NewKVService(wrappedDB), server.Client(), cfg)
 	restartedJob.heartbeatURL = server.URL

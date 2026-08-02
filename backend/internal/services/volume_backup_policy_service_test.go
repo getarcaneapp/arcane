@@ -128,7 +128,7 @@ func TestVolumeBackupPolicy_ScheduledRunCreatesActivity(t *testing.T) {
 		LocalEnabled:   true,
 	}
 	require.NoError(t, gormDB.Create(policy).Error)
-	service := &VolumeService{db: db, activityService: NewActivityService(db)}
+	service := &VolumeService{db: db, activityService: NewActivityService(db, nil)}
 	service.runningBackups.Store(policy.VolumeName, struct{}{})
 	defer service.runningBackups.Delete(policy.VolumeName)
 

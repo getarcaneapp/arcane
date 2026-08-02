@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { cn } from '$lib/utils.js';
+	import { cn } from '#lib/utils.js';
 	import type { ClassValue } from 'svelte/elements';
-	import { type IconType } from '$lib/icons';
+	import { type IconType } from '#lib/icons';
 
 	interface Props {
 		title: string;

@@ -2,26 +2,28 @@ package services
 
 import (
 	"context"
-	json "encoding/json/v2"
-	"errors"
+	"encoding/json/v2"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
+	"emperror.dev/errors"
+
 	ref "github.com/distribution/reference"
 	containertypes "github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
+	"github.com/samber/mo"
 	"golang.org/x/mod/semver"
 
 	"github.com/getarcaneapp/arcane/backend/v2/buildables"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cache"
 	"github.com/getarcaneapp/arcane/types/v2/version"
+	"github.com/samber/hot"
 	"go.getarcane.app/sys/cgroup"
-	libupdater "go.getarcane.app/updater/pkg/labels"
+	"go.getarcane.app/updater/labels"
 )
 
 const (
@@ -38,7 +40,7 @@ type latestRelease struct {
 
 type VersionService struct {
 	httpClient               *http.Client
-	cache                    *cache.Cache[latestRelease]
+	cache                    *hot.HotCache[struct{}, latestRelease]
 	disabled                 bool
 	version                  string
 	revision                 string
@@ -51,9 +53,8 @@ func NewVersionService(httpClient *http.Client, disabled bool, version string, r
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
-	return &VersionService{
+	service := &VersionService{
 		httpClient:               httpClient,
-		cache:                    cache.New[latestRelease](versionTTL),
 		disabled:                 disabled,
 		version:                  version,
 		revision:                 revision,
@@ -61,58 +62,76 @@ func NewVersionService(httpClient *http.Client, disabled bool, version string, r
 		dockerService:            dockerService,
 		imageUpdateService:       imageUpdateService,
 	}
+	loader := func(_ []struct{}) (map[struct{}]latestRelease, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), defaultRequestTimeout)
+		defer cancel()
+		release, err := service.fetchLatestReleaseInternal(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return map[struct{}]latestRelease{{}: release}, nil
+	}
+	service.cache = hot.NewHotCache[struct{}, latestRelease](hot.LRU, 1).
+		WithTTL(versionTTL).
+		WithLoaders(loader).
+		WithRevalidation(24*time.Hour, loader).
+		WithRevalidationErrorPolicy(hot.KeepOnError).
+		Build()
+	return service
 }
 
-func (s *VersionService) getLatestReleaseInternal(ctx context.Context) (latestRelease, error) {
-	rel, err := s.cache.GetOrFetch(ctx, func(ctx context.Context) (latestRelease, error) {
-		reqCtx, cancel := context.WithTimeout(ctx, defaultRequestTimeout)
-		defer cancel()
+func (s *VersionService) getLatestReleaseInternal(_ context.Context) (latestRelease, error) {
+	release, found, err := s.cache.Get(struct{}{})
+	if err != nil {
+		return latestRelease{}, err
+	}
+	if !found {
+		return latestRelease{}, errors.New("latest release cache loader returned no release")
+	}
+	return release, nil
+}
 
-		req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, versionCheckURL, nil)
-		if err != nil {
-			return latestRelease{}, fmt.Errorf("create GitHub request: %w", err)
-		}
-
-		resp, err := s.httpClient.Do(req)
-		if err != nil {
-			return latestRelease{}, fmt.Errorf("get latest release: %w", err)
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		if resp.StatusCode != http.StatusOK {
-			return latestRelease{}, fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
-		}
-
-		var payload struct {
-			TagName     string `json:"tag_name"`
-			Body        string `json:"body"`
-			PublishedAt string `json:"published_at"`
-		}
-		if err := json.UnmarshalRead(resp.Body, &payload); err != nil {
-			return latestRelease{}, fmt.Errorf("decode payload: %w", err)
-		}
-		if payload.TagName == "" {
-			return latestRelease{}, errors.New("GitHub API returned empty tag name")
-		}
-
-		return latestRelease{
-			TagName:     payload.TagName,
-			Body:        payload.Body,
-			PublishedAt: payload.PublishedAt,
-		}, nil
-	})
-
-	if staleErr, ok := errors.AsType[*cache.StaleError](err); ok {
-		slog.Warn("Failed to fetch latest release, returning stale cache", "error", staleErr.Err)
-		return rel, nil
+func (s *VersionService) fetchLatestReleaseInternal(ctx context.Context) (latestRelease, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, versionCheckURL, nil)
+	if err != nil {
+		return latestRelease{}, errors.WrapIf(err, "create GitHub request")
 	}
 
-	return rel, err
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return latestRelease{}, errors.WrapIf(err, "get latest release")
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return latestRelease{}, errors.Errorf("GitHub API returned status %d", resp.StatusCode)
+	}
+
+	var payload struct {
+		TagName     string `json:"tag_name"`
+		Body        string `json:"body"`
+		PublishedAt string `json:"published_at"`
+	}
+	if err := json.UnmarshalRead(resp.Body, &payload); err != nil {
+		return latestRelease{}, errors.WrapIf(err, "decode payload")
+	}
+	if payload.TagName == "" {
+		return latestRelease{}, errors.New("GitHub API returned empty tag name")
+	}
+
+	return latestRelease{
+		TagName:     payload.TagName,
+		Body:        payload.Body,
+		PublishedAt: payload.PublishedAt,
+	}, nil
 }
 
 func (s *VersionService) GetLatestVersion(ctx context.Context) (string, error) {
 	rel, err := s.getLatestReleaseInternal(ctx)
-	return rel.TagName, err
+	if err != nil {
+		return "", err
+	}
+	return rel.TagName, nil
 }
 
 func (s *VersionService) IsNewer(latest, current string) bool {
@@ -183,11 +202,7 @@ func (s *VersionService) GetVersionInformation(ctx context.Context, currentVersi
 
 	latest, err := s.GetLatestVersion(ctx)
 	if err != nil {
-		if staleErr, ok := errors.AsType[*cache.StaleError](err); ok {
-			slog.Warn("Failed to refresh latest version; using stale cache", "error", staleErr.Err)
-		} else {
-			return check, err
-		}
+		return check, err
 	}
 
 	if latest != "" {
@@ -201,21 +216,21 @@ func (s *VersionService) GetVersionInformation(ctx context.Context, currentVersi
 
 // isSemverVersion checks if a version string is semver-based (e.g., v1.0.0)
 func (s *VersionService) isSemverVersion() bool {
-	version := strings.TrimSpace(s.version)
-	if !strings.HasPrefix(version, "v") {
-		version = "v" + version
+	versionValue := strings.TrimSpace(s.version)
+	if !strings.HasPrefix(versionValue, "v") {
+		versionValue = "v" + versionValue
 	}
-	return semver.IsValid(version)
+	return semver.IsValid(versionValue)
 }
 
 // getDisplayVersion formats the version for display purposes
 // Semver versions (including prereleases like 2.4.0-next.1) display as v<version>
 func (s *VersionService) getDisplayVersion() string {
-	version := strings.TrimPrefix(strings.TrimSpace(s.version), "v")
+	versionValue := strings.TrimPrefix(strings.TrimSpace(s.version), "v")
 	if s.isSemverVersion() {
-		return "v" + version
+		return "v" + versionValue
 	}
-	return version
+	return versionValue
 }
 
 // GetAppVersionInfo returns application version information including display version
@@ -253,8 +268,7 @@ func (s *VersionService) GetAppVersionInfo(ctx context.Context) *version.Info {
 	// For semver versions, check GitHub releases
 	if isSemver {
 		rel, err := s.getLatestReleaseInternal(ctx)
-		var staleErr *cache.StaleError
-		if err == nil || errors.As(err, &staleErr) {
+		if err == nil {
 			if rel.TagName != "" {
 				info.NewestVersion = rel.TagName
 				semverUpdateAvailable = s.IsNewer(rel.TagName, ver)
@@ -292,7 +306,7 @@ func (s *VersionService) storedOrDigestBasedUpdateInternal(ctx context.Context, 
 		if err != nil {
 			slog.WarnContext(ctx, "Failed to read stored Arcane image update state", "imageID", currentImageID, "error", err)
 		} else if found {
-			return record.HasUpdate, stringPtrToString(record.LatestDigest)
+			return record.HasUpdate, mo.PointerToOption(record.LatestDigest).OrEmpty()
 		}
 	}
 
@@ -388,7 +402,7 @@ func (s *VersionService) detectContainerID(ctx context.Context, dockerClient *cl
 // findArcaneContainerByLabel searches for the Arcane container using labels
 func (s *VersionService) findArcaneContainerByLabel(ctx context.Context, dockerClient *client.Client) string {
 	f := make(client.Filters)
-	f = f.Add("label", libupdater.LabelArcane+"=true")
+	f = f.Add("label", labels.LabelArcane+"=true")
 	list, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true, Filters: f})
 	if err != nil {
 		slog.Debug("findArcaneContainerByLabel: failed to list containers", "error", err)
@@ -484,7 +498,7 @@ func (s *VersionService) checkDigestBasedUpdate(ctx context.Context, currentTag,
 	imageRef := fmt.Sprintf("%s:%s", currentImageRef, currentTag)
 
 	// Fetch latest digest from registry
-	latestDigest, err := s.containerRegistryService.GetImageDigest(ctx, imageRef)
+	latestDigest, err := s.containerRegistryService.ImageDigest(ctx, imageRef)
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to fetch latest digest for tag", "tag", currentTag, "error", err)
 		return false, ""

@@ -1,17 +1,17 @@
 <script lang="ts">
-	import * as ResponsiveDialog from '$lib/components/ui/responsive-dialog/index.js';
-	import * as Alert from '$lib/components/ui/alert/index.js';
-	import SheetFooterActions from '$lib/components/sheets/sheet-footer-actions.svelte';
-	import FormInput from '$lib/components/form/form-input.svelte';
-	import RoleAssignmentsEditor from '$lib/components/forms/role-assignments-editor.svelte';
-	import type { User } from '$lib/types/auth';
-	import type { Role } from '$lib/types/auth';
-	import type { Environment } from '$lib/types/environment';
+	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
+	import * as Alert from '#lib/components/ui/alert/index.js';
+	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
+	import FormInput from '#lib/components/form/form-input.svelte';
+	import RoleAssignmentsEditor from '#lib/components/forms/role-assignments-editor.svelte';
+	import type { User } from '#lib/types/auth';
+	import type { Role } from '#lib/types/auth';
+	import type { Environment } from '#lib/types/environment';
 	import { z } from 'zod/v4';
-	import { createForm, preventDefault } from '$lib/utils/settings';
-	import { isValidUserEmail } from '$lib/utils/formatting';
-	import { m } from '$lib/paraglide/messages';
-	import IfPermitted from '$lib/components/if-permitted.svelte';
+	import { createForm, preventDefault } from '#lib/utils/settings';
+	import { isValidUserEmail } from '#lib/utils/formatting';
+	import { m } from '#lib/paraglide/messages';
+	import IfPermitted from '#lib/components/if-permitted.svelte';
 
 	type RoleAssignmentInput = { roleId: string; environmentId?: string };
 	type UserSubmission = Omit<Partial<User>, 'roleAssignments'> & {

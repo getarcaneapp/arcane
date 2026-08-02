@@ -4,8 +4,8 @@ package dbutil
 
 import (
 	"context"
-	"errors"
-	"fmt"
+
+	"emperror.dev/errors"
 
 	"gorm.io/gorm"
 )
@@ -23,7 +23,7 @@ func FirstWhere[T any](ctx context.Context, db *gorm.DB, notFound error, where s
 		if errors.Is(err, gorm.ErrRecordNotFound) && notFound != nil {
 			return nil, notFound
 		}
-		return nil, fmt.Errorf("failed to query %T: %w", out, err)
+		return nil, errors.WrapIff(err, "failed to query %T", out)
 	}
 	return &out, nil
 }

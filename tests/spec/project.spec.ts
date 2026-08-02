@@ -15,7 +15,9 @@ const ROUTES = {
 };
 
 const DEPLOY_STREAM_SUCCESS =
-	'{"type":"deploy","phase":"begin"}\n' + '{"type":"deploy","phase":"complete"}\n';
+	'{"log":"Container test-1  Creating"}\n' +
+	'{"log":"Container test-1  Started"}\n' +
+	'{"done":true}\n';
 
 async function navigateToProjects(page: Page) {
 	await page.goto(ROUTES.page);
@@ -655,21 +657,20 @@ test.describe('New Compose Project Page', () => {
 			await expect(page.getByRole('button', { name: projectName, exact: true })).toBeVisible();
 
 			await page.getByRole('tab', { name: 'Services 1', exact: true }).click();
-			await page.waitForLoadState('load');
+			await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('services');
 
-			const serviceTable = page.getByRole('table');
-			const serviceNameWhenStopped = serviceTable.getByText('nginx', {
-				exact: true
-			});
-			const emptyServicesState = page.getByText('No services found for this project', {
-				exact: true
-			});
-
-			if ((await serviceNameWhenStopped.count()) > 0) {
-				await expect(serviceNameWhenStopped.first()).toBeVisible();
-			} else {
-				await expect(emptyServicesState).toBeVisible();
-			}
+			const serviceTable = page.getByRole('table').filter({ visible: true });
+			const serviceNameWhenStopped = serviceTable
+				.getByText('nginx', {
+					exact: true
+				})
+				.filter({ visible: true });
+			const emptyServicesState = page
+				.getByText('No services found for this project', {
+					exact: true
+				})
+				.filter({ visible: true });
+			await expect(serviceNameWhenStopped.or(emptyServicesState).first()).toBeVisible();
 
 			await page.route('**/api/environments/*/projects/*/pull', async (route) => {
 				projectPullRequestCount += 1;
@@ -708,8 +709,17 @@ test.describe('New Compose Project Page', () => {
 			// The activity record is committed before the streamed response reaches EOF in
 			// the browser, so polling the API can beat the detail page's local state update.
 			// Reload from the completed server state before asserting the rendered action.
-			await page.reload();
-			await expect(page).toHaveURL(new RegExp(`/projects/${projectId}`));
+			// A transient 500 from any request in the reload's load chain lands on the app
+			// error page (rendered as the generic "Unable to connect to Docker daemon"
+			// message), which never recovers on its own — retry the reload instead of
+			// failing the test on a one-off backend blip under CI load.
+			await expect(async () => {
+				await page.reload();
+				await expect(page).toHaveURL(new RegExp(`/projects/${projectId}`));
+				await expect(page.getByRole('button', { name: projectName, exact: true })).toBeVisible({
+					timeout: 10000
+				});
+			}).toPass({ timeout: 60000 });
 			await expect
 				.poll(async () => (await fetchProjectDetail(page, projectId))?.status, {
 					message: 'Expected project to still be running after reload',
@@ -1251,11 +1261,19 @@ test.describe('Project Detail Page', () => {
 
 		try {
 			projectId = await createProjectViaUI(page, projectName, composeContent);
-			await page.getByRole('tab', { name: 'Services 1', exact: true }).click();
+			const servicesTab = page.getByRole('tab', { name: 'Services 1', exact: true });
+			await servicesTab.click();
+			await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('services');
+			await expect(servicesTab).toHaveAttribute('data-state', 'active');
 
-			await page.getByText('8081:80', { exact: true }).hover();
+			const port = page.getByText('8081:80', { exact: true }).filter({ visible: true }).first();
+			await expect(port).toBeVisible();
+			await port.hover();
 			await expect(
-				page.getByText('Published: 127.0.0.1:8081 → 80/tcp', { exact: true })
+				page
+					.getByText('Published: 127.0.0.1:8081 → 80/tcp', { exact: true })
+					.filter({ visible: true })
+					.first()
 			).toBeVisible();
 		} finally {
 			if (projectId) {

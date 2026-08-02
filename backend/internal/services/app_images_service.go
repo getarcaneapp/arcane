@@ -2,12 +2,12 @@ package services
 
 import (
 	"embed"
-	"fmt"
 	"io/fs"
 	"path/filepath"
 	"strings"
 	"sync"
 
+	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/image"
 	"github.com/getarcaneapp/arcane/types/v2/settings"
 )
@@ -66,7 +66,7 @@ func (s *ApplicationImagesService) GetImageWithColor(name string, colorOverride 
 	s.mu.RUnlock()
 
 	if !ok {
-		return nil, "", fmt.Errorf("image '%s' not found", name)
+		return nil, "", errors.Errorf("image '%s' not found", name)
 	}
 
 	// Apply dynamic color replacement for logo SVGs
@@ -78,19 +78,9 @@ func (s *ApplicationImagesService) GetImageWithColor(name string, colorOverride 
 }
 
 func (s *ApplicationImagesService) applyAccentColorToSVGInternal(svgData []byte, colorOverride string) []byte {
-	accentColor := ""
+	accentColor := settings.DefaultAccentColor
 	if settings.SafeAccentColor.MatchString(colorOverride) {
 		accentColor = colorOverride
-	} else if s.settingsService != nil {
-		if cfg := s.settingsService.GetSettingsConfig(); cfg != nil {
-			stored := cfg.AccentColor.Value
-			if stored != "" && stored != "default" && settings.SafeAccentColor.MatchString(stored) {
-				accentColor = stored
-			}
-		}
-	}
-	if accentColor == "" {
-		accentColor = settings.DefaultAccentColor
 	}
 
 	svgStr := string(svgData)

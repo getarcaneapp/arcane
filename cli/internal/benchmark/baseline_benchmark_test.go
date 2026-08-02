@@ -10,6 +10,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	clitypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	"github.com/stretchr/testify/require"
 )
 
 func BenchmarkClientListMediumPayload(b *testing.B) {
@@ -41,14 +42,14 @@ func BenchmarkClientListMediumPayload(b *testing.B) {
 	cfg := &clitypes.Config{ServerURL: srv.URL, APIKey: "arc_test_key"}
 	c, err := client.New(cfg)
 	if err != nil {
-		b.Fatalf("new client: %v", err)
+		require.FailNowf(b, "benchmark client setup failed", "new client: %v", err)
 	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		resp, err := c.Get(context.Background(), "/api/environments/0/containers?limit=200")
 		if err != nil {
-			b.Fatalf("request: %v", err)
+			require.FailNowf(b, "benchmark request failed", "request: %v", err)
 		}
 		_ = resp.Body.Close()
 	}

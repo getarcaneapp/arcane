@@ -14,16 +14,20 @@ import (
 
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v5/plumbing/transport"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	gossh "golang.org/x/crypto/ssh"
 )
 
 // Azure DevOps requires multi_ack/multi_ack_detailed in pack negotiation;
 // go-git's default UnsupportedCapabilities strips them and clones fail with
 // "invalid reset option: object not found" (#3168).
+
 func TestInitAllowsMultiAckCapabilities(t *testing.T) {
-	if len(transport.UnsupportedCapabilities) != 1 || transport.UnsupportedCapabilities[0] != capability.ThinPack {
-		t.Errorf("expected UnsupportedCapabilities to contain only thin-pack, got %v", transport.UnsupportedCapabilities)
-	}
+
+	assert.False(t, len(transport.UnsupportedCapabilities) != 1 || transport.UnsupportedCapabilities[0] != capability.ThinPack,
+		"expected UnsupportedCapabilities to contain only thin-pack, got %v", transport.UnsupportedCapabilities)
+
 }
 
 func TestGetKnownHostsPath(t *testing.T) {
@@ -35,9 +39,10 @@ func TestGetKnownHostsPath(t *testing.T) {
 			os.Stat,
 			os.UserHomeDir,
 		)
-		if result != customPath {
-			t.Errorf("expected %s, got %s", customPath, result)
-		}
+
+		assert.Equal(t, customPath, result,
+			"expected %s, got %s", customPath, result)
+
 	})
 
 	t.Run("returns Arcane data path when data directory exists", func(t *testing.T) {
@@ -54,9 +59,9 @@ func TestGetKnownHostsPath(t *testing.T) {
 
 		expected := defaultKnownHostsPath
 
-		if result != expected {
-			t.Errorf("expected %s, got %s", expected, result)
-		}
+		assert.Equal(t, expected, result,
+			"expected %s, got %s", expected, result)
+
 	})
 
 	t.Run("falls back to home directory when Arcane data directory is unavailable", func(t *testing.T) {
@@ -68,9 +73,10 @@ func TestGetKnownHostsPath(t *testing.T) {
 		)
 
 		expected := filepath.Join(homeDir, ".ssh", "known_hosts")
-		if result != expected {
-			t.Errorf("expected %s, got %s", expected, result)
-		}
+
+		assert.Equal(t, expected, result,
+			"expected %s, got %s", expected, result)
+
 	})
 
 	t.Run("falls back to temp dir when data directory and home are unavailable", func(t *testing.T) {
@@ -81,9 +87,10 @@ func TestGetKnownHostsPath(t *testing.T) {
 		)
 
 		expected := filepath.Join(os.TempDir(), ".ssh", "known_hosts")
-		if result != expected {
-			t.Errorf("expected %s, got %s", expected, result)
-		}
+
+		assert.Equal(t, expected, result,
+			"expected %s, got %s", expected, result)
+
 	})
 }
 
@@ -103,17 +110,19 @@ func TestGetSSHHostKeyCallback(t *testing.T) {
 
 	t.Run("skip mode returns InsecureIgnoreHostKey", func(t *testing.T) {
 		callback, err := client.getSSHHostKeyCallback(SSHHostKeyVerificationSkip)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if callback == nil {
-			t.Fatal("expected non-nil callback")
-		}
+
+		require.NoError(t, err,
+			"unexpected error: %v", err)
+
+		require.NotNil(t, callback,
+			"expected non-nil callback")
+
 		// InsecureIgnoreHostKey always returns nil
 		err = callback("example.com:22", &net.TCPAddr{}, nil)
-		if err != nil {
-			t.Errorf("skip mode should not return error, got: %v", err)
-		}
+
+		assert.NoError(t, err,
+			"skip mode should not return error, got: %v", err)
+
 	})
 
 	t.Run("empty mode defaults to accept_new", func(t *testing.T) {
@@ -122,12 +131,13 @@ func TestGetSSHHostKeyCallback(t *testing.T) {
 		t.Setenv("SSH_KNOWN_HOSTS", knownHostsPath)
 
 		callback, err := client.getSSHHostKeyCallback("")
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if callback == nil {
-			t.Fatal("expected non-nil callback")
-		}
+
+		require.NoError(t, err,
+			"unexpected error: %v", err)
+
+		require.NotNil(t, callback,
+			"expected non-nil callback")
+
 	})
 
 	t.Run("accept_new mode creates callback", func(t *testing.T) {
@@ -136,12 +146,13 @@ func TestGetSSHHostKeyCallback(t *testing.T) {
 		t.Setenv("SSH_KNOWN_HOSTS", knownHostsPath)
 
 		callback, err := client.getSSHHostKeyCallback(SSHHostKeyVerificationAcceptNew)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if callback == nil {
-			t.Fatal("expected non-nil callback")
-		}
+
+		require.NoError(t, err,
+			"unexpected error: %v", err)
+
+		require.NotNil(t, callback,
+			"expected non-nil callback")
+
 	})
 }
 
@@ -154,18 +165,19 @@ func TestAddHostKey(t *testing.T) {
 		key := generateTestPublicKey(t)
 
 		err := addHostKey(knownHostsPath, "example.com:22", key)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
+
+		require.NoError(t, err,
+			"unexpected error: %v", err)
 
 		// Verify file was created and contains content
 		content, err := os.ReadFile(knownHostsPath)
-		if err != nil {
-			t.Fatalf("failed to read known_hosts: %v", err)
-		}
-		if len(content) == 0 {
-			t.Error("expected non-empty known_hosts file")
-		}
+
+		require.NoError(t, err,
+			"failed to read known_hosts: %v", err)
+
+		assert.NotEmpty(t, content,
+			"expected non-empty known_hosts file")
+
 	})
 
 	t.Run("concurrent writes don't corrupt file", func(t *testing.T) {
@@ -193,17 +205,18 @@ func TestAddHostKey(t *testing.T) {
 		close(errChan)
 
 		for err := range errChan {
-			t.Errorf("concurrent write error: %v", err)
+			assert.Failf(t, "unexpected failure", "concurrent write error: %v", err)
 		}
 
 		// Verify file exists and has content
 		content, err := os.ReadFile(knownHostsPath)
-		if err != nil {
-			t.Fatalf("failed to read known_hosts: %v", err)
-		}
-		if len(content) == 0 {
-			t.Error("expected non-empty known_hosts file after concurrent writes")
-		}
+
+		require.NoError(t, err,
+			"failed to read known_hosts: %v", err)
+
+		assert.NotEmpty(t, content,
+			"expected non-empty known_hosts file after concurrent writes")
+
 	})
 }
 
@@ -215,17 +228,20 @@ func TestCreateAcceptNewHostKeyCallback(t *testing.T) {
 
 		client := NewClient("")
 		callback, err := client.createAcceptNewHostKeyCallback()
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if callback == nil {
-			t.Fatal("expected non-nil callback")
+
+		require.NoError(t, err,
+			"unexpected error: %v", err)
+
+		require.NotNil(t, callback,
+			"expected non-nil callback")
+		{
+
+			// Verify directory was created
+			_, err := os.Stat(filepath.Dir(knownHostsPath))
+			assert.False(t, os.IsNotExist(err),
+				"expected known_hosts directory to be created")
 		}
 
-		// Verify directory was created
-		if _, err := os.Stat(filepath.Dir(knownHostsPath)); os.IsNotExist(err) {
-			t.Error("expected known_hosts directory to be created")
-		}
 	})
 
 	t.Run("callback adds new host keys", func(t *testing.T) {
@@ -235,26 +251,27 @@ func TestCreateAcceptNewHostKeyCallback(t *testing.T) {
 
 		client := NewClient("")
 		callback, err := client.createAcceptNewHostKeyCallback()
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
+
+		require.NoError(t, err,
+			"unexpected error: %v", err)
 
 		key := generateTestPublicKey(t)
 		addr := &net.TCPAddr{IP: net.ParseIP("192.168.1.1"), Port: 22}
 
 		err = callback("192.168.1.1:22", addr, key)
-		if err != nil {
-			t.Errorf("callback returned error: %v", err)
-		}
+
+		require.NoError(t, err,
+			"callback returned error: %v", err)
 
 		// Verify host was added to file
 		content, err := os.ReadFile(knownHostsPath)
-		if err != nil {
-			t.Fatalf("failed to read known_hosts: %v", err)
-		}
-		if len(content) == 0 {
-			t.Error("expected host key to be added to known_hosts")
-		}
+
+		require.NoError(t, err,
+			"failed to read known_hosts: %v", err)
+
+		assert.NotEmpty(t, content,
+			"expected host key to be added to known_hosts")
+
 	})
 
 	t.Run("callback accepts known host", func(t *testing.T) {
@@ -264,24 +281,25 @@ func TestCreateAcceptNewHostKeyCallback(t *testing.T) {
 
 		client := NewClient("")
 		callback, err := client.createAcceptNewHostKeyCallback()
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
+
+		require.NoError(t, err,
+			"unexpected error: %v", err)
 
 		key := generateTestPublicKey(t)
 		addr := &net.TCPAddr{IP: net.ParseIP("192.168.1.1"), Port: 22}
 
 		// First call adds the key
 		err = callback("192.168.1.1:22", addr, key)
-		if err != nil {
-			t.Fatalf("first callback returned error: %v", err)
-		}
+
+		require.NoError(t, err,
+			"first callback returned error: %v", err)
 
 		// Second call should recognize the known host
 		err = callback("192.168.1.1:22", addr, key)
-		if err != nil {
-			t.Errorf("second callback returned error for known host: %v", err)
-		}
+
+		assert.NoError(t, err,
+			"second callback returned error for known host: %v", err)
+
 	})
 
 	t.Run("callback detects host key mismatch", func(t *testing.T) {
@@ -291,9 +309,9 @@ func TestCreateAcceptNewHostKeyCallback(t *testing.T) {
 
 		client := NewClient("")
 		callback, err := client.createAcceptNewHostKeyCallback()
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
+
+		require.NoError(t, err,
+			"unexpected error: %v", err)
 
 		key1 := generateTestPublicKey(t)
 		key2 := generateTestPublicKeyVariant(t)
@@ -301,16 +319,17 @@ func TestCreateAcceptNewHostKeyCallback(t *testing.T) {
 
 		// First call adds key1
 		err = callback("192.168.1.1:22", addr, key1)
-		if err != nil {
-			t.Fatalf("first callback returned error: %v", err)
-		}
+
+		require.NoError(t, err,
+			"first callback returned error: %v", err)
 
 		// Second call with different key for same host should fail
 		err = callback("192.168.1.1:22", addr, key2)
 		if err == nil {
-			t.Error("expected error for host key mismatch, got nil")
+			assert.Fail(t, "expected error for host key mismatch, got nil")
 		} else if !strings.Contains(err.Error(), "host key mismatch") {
-			t.Errorf("expected host key mismatch error, got: %v", err)
+			assert.Contains(t, err.Error(), "host key mismatch",
+				"expected host key mismatch error, got: %v", err)
 		}
 	})
 }
@@ -319,53 +338,64 @@ func TestValidatePath(t *testing.T) {
 	t.Run("allows valid paths", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		err := ValidatePath(tmpDir, "subdir/file.txt")
-		if err != nil {
-			t.Errorf("expected valid path to be allowed: %v", err)
-		}
+
+		assert.NoError(t, err,
+			"expected valid path to be allowed: %v", err)
+
 	})
 
 	t.Run("rejects path traversal", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		err := ValidatePath(tmpDir, "../../../etc/passwd")
-		if err == nil {
-			t.Error("expected path traversal to be rejected")
-		}
+
+		assert.Error(t, err,
+			"expected path traversal to be rejected")
+
 	})
 
 	t.Run("rejects absolute path escape", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		err := ValidatePath(tmpDir, "foo/../../..")
-		if err == nil {
-			t.Error("expected path escape to be rejected")
-		}
+
+		assert.Error(t, err,
+			"expected path escape to be rejected")
+
 	})
 }
 
 func TestNewClient(t *testing.T) {
 	t.Run("creates client with work dir", func(t *testing.T) {
 		client := NewClient("/tmp/test")
-		if client.workDir != "/tmp/test" {
-			t.Errorf("expected workDir /tmp/test, got %s", client.workDir)
-		}
+
+		assert.Equal(t, "/tmp/test", client.workDir,
+			"expected workDir /tmp/test, got %s", client.workDir)
+
 	})
 
 	t.Run("creates client with empty work dir", func(t *testing.T) {
 		client := NewClient("")
-		if client.workDir != "" {
-			t.Errorf("expected empty workDir, got %s", client.workDir)
-		}
+
+		assert.Empty(t, client.workDir,
+			"expected empty workDir, got %s", client.workDir)
+
 	})
 }
 
 func writeFileInternal(t *testing.T, dir, name string, content []byte) {
 	t.Helper()
 	targetPath := filepath.Join(dir, name)
-	if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
-		t.Fatalf("failed to create parent directories for %s: %v", name, err)
+	{
+		err := os.MkdirAll(filepath.Dir(targetPath), 0o755)
+		require.NoError(t, err,
+			"failed to create parent directories for %s: %v", name, err)
 	}
-	if err := os.WriteFile(targetPath, content, 0644); err != nil {
-		t.Fatalf("failed to write file %s: %v", name, err)
+	{
+
+		err := os.WriteFile(targetPath, content, 0644)
+		require.NoError(t, err,
+			"failed to write file %s: %v", name, err)
 	}
+
 }
 
 func minimalCompose() []byte {
@@ -380,15 +410,16 @@ func TestWalkDirectory_BasicWalk(t *testing.T) {
 
 	client := NewClient("")
 	result, err := client.WalkDirectory(context.Background(), tmpDir, "compose.yaml", 0, 0, 0)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.TotalFiles != 3 {
-		t.Errorf("expected 3 files, got %d", result.TotalFiles)
-	}
-	if len(result.Files) != 3 {
-		t.Errorf("expected 3 entries in Files, got %d", len(result.Files))
-	}
+
+	require.NoError(t, err,
+		"unexpected error: %v", err)
+
+	assert.Equal(t, 3, result.TotalFiles,
+		"expected 3 files, got %d", result.TotalFiles)
+
+	assert.Len(t, result.Files, 3,
+		"expected 3 entries in Files, got %d", len(result.Files))
+
 }
 
 func TestWalkDirectory_PreservesExecutableBit(t *testing.T) {
@@ -396,15 +427,17 @@ func TestWalkDirectory_PreservesExecutableBit(t *testing.T) {
 	writeFileInternal(t, tmpDir, "compose.yaml", minimalCompose())
 	writeFileInternal(t, tmpDir, "scripts/hook.sh", []byte("#!/bin/sh\necho hi\n"))
 	writeFileInternal(t, tmpDir, "README.md", []byte("readme"))
-	if err := os.Chmod(filepath.Join(tmpDir, "scripts/hook.sh"), 0o755); err != nil {
-		t.Fatalf("chmod: %v", err)
+	{
+		err := os.Chmod(filepath.Join(tmpDir, "scripts/hook.sh"), 0o755)
+		require.NoError(t, err,
+			"chmod: %v", err)
 	}
 
 	client := NewClient("")
 	result, err := client.WalkDirectory(context.Background(), tmpDir, "compose.yaml", 0, 0, 0)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+
+	require.NoError(t, err,
+		"unexpected error: %v", err)
 
 	byPath := map[string]SyncFileInfo{}
 	for _, f := range result.Files {
@@ -412,15 +445,19 @@ func TestWalkDirectory_PreservesExecutableBit(t *testing.T) {
 	}
 
 	hook, ok := byPath[filepath.ToSlash("scripts/hook.sh")]
-	if !ok {
-		t.Fatalf("expected scripts/hook.sh in walk result, got %v", byPath)
+
+	require.True(t, ok,
+		"expected scripts/hook.sh in walk result, got %v", byPath)
+
+	assert.True(t, hook.Executable,
+		"expected scripts/hook.sh to be reported Executable, got false")
+	{
+
+		readme, ok := byPath["README.md"]
+		assert.False(t, ok && readme.Executable,
+			"expected README.md to not be Executable")
 	}
-	if !hook.Executable {
-		t.Errorf("expected scripts/hook.sh to be reported Executable, got false")
-	}
-	if readme, ok := byPath["README.md"]; ok && readme.Executable {
-		t.Errorf("expected README.md to not be Executable")
-	}
+
 }
 
 func TestWalkDirectory_MaxFilesLimit(t *testing.T) {
@@ -433,12 +470,13 @@ func TestWalkDirectory_MaxFilesLimit(t *testing.T) {
 
 	client := NewClient("")
 	_, err := client.WalkDirectory(context.Background(), tmpDir, "compose.yaml", 3, 0, 0)
-	if err == nil {
-		t.Fatal("expected error for file count limit, got nil")
-	}
-	if !strings.Contains(err.Error(), "file count limit exceeded") {
-		t.Errorf("expected 'file count limit exceeded' error, got: %v", err)
-	}
+
+	require.Error(t, err,
+		"expected error for file count limit, got nil")
+
+	assert.Contains(t, err.Error(), "file count limit exceeded",
+		"expected 'file count limit exceeded' error, got: %v", err)
+
 }
 
 func TestWalkDirectory_MaxFilesUnlimited(t *testing.T) {
@@ -451,12 +489,13 @@ func TestWalkDirectory_MaxFilesUnlimited(t *testing.T) {
 
 	client := NewClient("")
 	result, err := client.WalkDirectory(context.Background(), tmpDir, "compose.yaml", 0, 0, 0)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.TotalFiles != 5 {
-		t.Errorf("expected 5 files, got %d", result.TotalFiles)
-	}
+
+	require.NoError(t, err,
+		"unexpected error: %v", err)
+
+	assert.Equal(t, 5, result.TotalFiles,
+		"expected 5 files, got %d", result.TotalFiles)
+
 }
 
 func TestWalkDirectory_MaxTotalSizeLimit(t *testing.T) {
@@ -467,12 +506,13 @@ func TestWalkDirectory_MaxTotalSizeLimit(t *testing.T) {
 
 	client := NewClient("")
 	_, err := client.WalkDirectory(context.Background(), tmpDir, "compose.yaml", 0, 50, 0)
-	if err == nil {
-		t.Fatal("expected error for total size limit, got nil")
-	}
-	if !strings.Contains(err.Error(), "total size limit exceeded") {
-		t.Errorf("expected 'total size limit exceeded' error, got: %v", err)
-	}
+
+	require.Error(t, err,
+		"expected error for total size limit, got nil")
+
+	assert.Contains(t, err.Error(), "total size limit exceeded",
+		"expected 'total size limit exceeded' error, got: %v", err)
+
 }
 
 func TestWalkDirectory_MaxTotalSizeUnlimited(t *testing.T) {
@@ -483,12 +523,13 @@ func TestWalkDirectory_MaxTotalSizeUnlimited(t *testing.T) {
 
 	client := NewClient("")
 	result, err := client.WalkDirectory(context.Background(), tmpDir, "compose.yaml", 0, 0, 0)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.TotalFiles != 3 {
-		t.Errorf("expected 3 files, got %d", result.TotalFiles)
-	}
+
+	require.NoError(t, err,
+		"unexpected error: %v", err)
+
+	assert.Equal(t, 3, result.TotalFiles,
+		"expected 3 files, got %d", result.TotalFiles)
+
 }
 
 func TestWalkDirectory_MaxBinarySizeSkips(t *testing.T) {
@@ -500,12 +541,13 @@ func TestWalkDirectory_MaxBinarySizeSkips(t *testing.T) {
 
 	client := NewClient("")
 	result, err := client.WalkDirectory(context.Background(), tmpDir, "compose.yaml", 0, 0, 5)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.SkippedBinaries == 0 {
-		t.Error("expected at least one skipped binary file, got 0")
-	}
+
+	require.NoError(t, err,
+		"unexpected error: %v", err)
+
+	assert.NotEqual(t, 0, result.SkippedBinaries,
+		"expected at least one skipped binary file, got 0")
+
 }
 
 func TestWalkDirectory_MaxBinarySizeUnlimited(t *testing.T) {
@@ -516,15 +558,16 @@ func TestWalkDirectory_MaxBinarySizeUnlimited(t *testing.T) {
 
 	client := NewClient("")
 	result, err := client.WalkDirectory(context.Background(), tmpDir, "compose.yaml", 0, 0, 0)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.SkippedBinaries != 0 {
-		t.Errorf("expected no skipped binaries with unlimited size, got %d", result.SkippedBinaries)
-	}
-	if result.TotalFiles != 2 {
-		t.Errorf("expected 2 files (compose + binary), got %d", result.TotalFiles)
-	}
+
+	require.NoError(t, err,
+		"unexpected error: %v", err)
+
+	assert.Equal(t, 0, result.SkippedBinaries,
+		"expected no skipped binaries with unlimited size, got %d", result.SkippedBinaries)
+
+	assert.Equal(t, 2, result.TotalFiles,
+		"expected 2 files (compose + binary), got %d", result.TotalFiles)
+
 }
 
 func TestWalkDirectory_LargeTextFileNotSkippedByBinaryLimit(t *testing.T) {
@@ -534,15 +577,16 @@ func TestWalkDirectory_LargeTextFileNotSkippedByBinaryLimit(t *testing.T) {
 
 	client := NewClient("")
 	result, err := client.WalkDirectory(context.Background(), tmpDir, "compose.yaml", 0, 0, 16)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.SkippedBinaries != 0 {
-		t.Errorf("expected no skipped binaries for large text file, got %d", result.SkippedBinaries)
-	}
-	if result.TotalFiles != 2 {
-		t.Errorf("expected 2 files (compose + text), got %d", result.TotalFiles)
-	}
+
+	require.NoError(t, err,
+		"unexpected error: %v", err)
+
+	assert.Equal(t, 0, result.SkippedBinaries,
+		"expected no skipped binaries for large text file, got %d", result.SkippedBinaries)
+
+	assert.Equal(t, 2, result.TotalFiles,
+		"expected 2 files (compose + text), got %d", result.TotalFiles)
+
 }
 
 func TestWalkDirectory_ComposeInSubdirectory(t *testing.T) {
@@ -552,9 +596,9 @@ func TestWalkDirectory_ComposeInSubdirectory(t *testing.T) {
 
 	client := NewClient("")
 	result, err := client.WalkDirectory(context.Background(), tmpDir, "subdir/docker-compose.yml", 0, 0, 0)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+
+	require.NoError(t, err,
+		"unexpected error: %v", err)
 
 	paths := make([]string, 0, len(result.Files))
 	for _, file := range result.Files {
@@ -563,13 +607,15 @@ func TestWalkDirectory_ComposeInSubdirectory(t *testing.T) {
 
 	expected := []string{"docker-compose.yml", "dynamic_config.yml"}
 	if len(paths) != len(expected) {
-		t.Fatalf("expected %d files, got %d (%v)", len(expected), len(paths), paths)
+		require.Len(t, paths, len(expected),
+			"expected %d files, got %d (%v)", len(expected), len(paths), paths)
 	}
 	for _, want := range expected {
 		found := slices.Contains(paths, want)
-		if !found {
-			t.Fatalf("expected walked paths to include %q, got %v", want, paths)
-		}
+
+		require.True(t, found,
+			"expected walked paths to include %q, got %v", want, paths)
+
 	}
 }
 
@@ -580,9 +626,9 @@ func TestWalkDirectory_NestedSiblingFile(t *testing.T) {
 
 	client := NewClient("")
 	result, err := client.WalkDirectory(context.Background(), tmpDir, "subdir/docker-compose.yml", 0, 0, 0)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+
+	require.NoError(t, err,
+		"unexpected error: %v", err)
 
 	paths := make([]string, 0, len(result.Files))
 	for _, file := range result.Files {
@@ -591,13 +637,15 @@ func TestWalkDirectory_NestedSiblingFile(t *testing.T) {
 
 	expected := []string{"docker-compose.yml", "config/dynamic_config.yml"}
 	if len(paths) != len(expected) {
-		t.Fatalf("expected %d files, got %d (%v)", len(expected), len(paths), paths)
+		require.Len(t, paths, len(expected),
+			"expected %d files, got %d (%v)", len(expected), len(paths), paths)
 	}
 	for _, want := range expected {
 		found := slices.Contains(paths, want)
-		if !found {
-			t.Fatalf("expected walked paths to include %q, got %v", want, paths)
-		}
+
+		require.True(t, found,
+			"expected walked paths to include %q, got %v", want, paths)
+
 	}
 }
 
@@ -608,9 +656,9 @@ func TestWalkDirectory_SpecialCharsInPath(t *testing.T) {
 
 	client := NewClient("")
 	result, err := client.WalkDirectory(context.Background(), tmpDir, "traefik (nl10)/docker-compose.yml", 0, 0, 0)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+
+	require.NoError(t, err,
+		"unexpected error: %v", err)
 
 	paths := make([]string, 0, len(result.Files))
 	for _, file := range result.Files {
@@ -619,13 +667,15 @@ func TestWalkDirectory_SpecialCharsInPath(t *testing.T) {
 
 	expected := []string{"docker-compose.yml", "config/dynamic_config.yml"}
 	if len(paths) != len(expected) {
-		t.Fatalf("expected %d files, got %d (%v)", len(expected), len(paths), paths)
+		require.Len(t, paths, len(expected),
+			"expected %d files, got %d (%v)", len(expected), len(paths), paths)
 	}
 	for _, want := range expected {
 		found := slices.Contains(paths, want)
-		if !found {
-			t.Fatalf("expected walked paths to include %q, got %v", want, paths)
-		}
+
+		require.True(t, found,
+			"expected walked paths to include %q, got %v", want, paths)
+
 	}
 }
 
@@ -647,9 +697,10 @@ func generateTestPublicKey(t *testing.T) gossh.PublicKey {
 	}
 
 	key, err := gossh.ParsePublicKey(pubKeyBytes)
-	if err != nil {
-		t.Fatalf("failed to parse test public key: %v", err)
-	}
+
+	require.NoError(t, err,
+		"failed to parse test public key: %v", err)
+
 	return key
 }
 
@@ -669,9 +720,10 @@ func generateTestPublicKeyVariant(t *testing.T) gossh.PublicKey {
 	}
 
 	key, err := gossh.ParsePublicKey(pubKeyBytes)
-	if err != nil {
-		t.Fatalf("failed to parse test public key variant: %v", err)
-	}
+
+	require.NoError(t, err,
+		"failed to parse test public key variant: %v", err)
+
 	return key
 }
 
@@ -699,17 +751,19 @@ func TestNormalizeURL(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := normalizeURL(tc.in)
 			if tc.wantErr {
-				if err == nil {
-					t.Fatalf("expected error, got %q", got)
-				}
+
+				require.Error(t, err,
+					"expected error, got %q", got)
+
 				return
 			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if got != tc.want {
-				t.Errorf("expected %q, got %q", tc.want, got)
-			}
+
+			require.NoError(t, err,
+				"unexpected error: %v", err)
+
+			assert.Equal(t, tc.want, got,
+				"expected %q, got %q", tc.want, got)
+
 		})
 	}
 }

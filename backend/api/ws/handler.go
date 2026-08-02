@@ -2,8 +2,7 @@ package ws
 
 import (
 	"context"
-	json "encoding/json/v2"
-	"errors"
+	"encoding/json/v2"
 	"io"
 	"log/slog"
 	"net/http"
@@ -14,14 +13,16 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gorilla/websocket"
-	"github.com/labstack/echo/v4"
+	"emperror.dev/errors"
+
+	"github.com/coder/websocket"
+	"github.com/labstack/echo/v5"
+	"github.com/samber/hot"
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/disk"
 	"github.com/shirou/gopsutil/v4/host"
 	"github.com/shirou/gopsutil/v4/mem"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
@@ -48,7 +49,7 @@ type WebSocketHandler struct {
 	swarmService       *services.SwarmService
 	systemService      *services.SystemService
 	diagnosticsService *services.DiagnosticsService
-	wsUpgrader         websocket.Upgrader
+	checkWSOrigin      func(*http.Request) bool
 	wsMetrics          *wshub.WebSocketMetrics
 	activeConnections  sync.Map
 	logStreamsMu       sync.Mutex
@@ -78,12 +79,7 @@ type WebSocketHandler struct {
 	cgroupCache        *cgroup.Cache
 	gpuMonitor         *system.GPUMonitor
 
-	diskUsagePathCache struct {
-		sync.RWMutex
-
-		value     string
-		timestamp time.Time
-	}
+	diskUsagePathCache   *hot.HotCache[struct{}, string]
 	projectLogStreamer   func(ctx context.Context, projectID string, logsChan chan<- string, follow bool, tail, since string, timestamps bool) error
 	containerLogStreamer func(ctx context.Context, containerID string, logsChan chan<- string, follow bool, tail, since string, timestamps bool) error
 	systemStatsCollector func(ctx context.Context) systemtypes.SystemStats
@@ -101,7 +97,7 @@ type wsLogStream struct {
 	seq             atomic.Uint64
 }
 
-func getContextUserIDInternal(c echo.Context) string {
+func getContextUserIDInternal(c *echo.Context) string {
 	if val := c.Get("userID"); val != nil {
 		if userID, ok := val.(string); ok {
 			return userID
@@ -110,7 +106,7 @@ func getContextUserIDInternal(c echo.Context) string {
 	return ""
 }
 
-func buildWSConnectionInfoInternal(c echo.Context, kind, resourceID string) systemtypes.WebSocketConnectionInfo {
+func buildWSConnectionInfoInternal(c *echo.Context, kind, resourceID string) systemtypes.WebSocketConnectionInfo {
 	return systemtypes.WebSocketConnectionInfo{
 		Kind:       kind,
 		EnvID:      c.Param("id"),
@@ -233,12 +229,10 @@ func NewWebSocketHandler(
 		logStreams:         make(map[string]*wsLogStream),
 		cgroupCache:        cgroup.NewCache(cgroupCacheTTL),
 		gpuMonitor:         system.NewGPUMonitor(cfg.GPUMonitoringEnabled, cfg.GPUType),
-		wsUpgrader: websocket.Upgrader{
-			CheckOrigin:       httputil.ValidateWebSocketOrigin(cfg.GetAppURL()),
-			ReadBufferSize:    32 * 1024,
-			WriteBufferSize:   32 * 1024,
-			EnableCompression: true,
-		},
+		diskUsagePathCache: hot.NewHotCache[struct{}, string](hot.LRU, 1).
+			WithTTL(5 * time.Minute).
+			Build(),
+		checkWSOrigin: httputil.ValidateWebSocketOrigin(cfg.GetAppURL()),
 	}
 	wsGroup := group.Group("/environments/:id/ws", authMiddleware.WithAdminNotRequired().Add())
 	for _, r := range handler.proxiedRoutes() {
@@ -261,7 +255,7 @@ type logStreamParams struct {
 	batched    bool
 }
 
-func parseLogStreamParamsInternal(c echo.Context) logStreamParams {
+func parseLogStreamParamsInternal(c *echo.Context) logStreamParams {
 	req := c.Request()
 	tail, _ := httputil.GetQueryParam(req, "tail", false)
 	if tail == "" {
@@ -282,7 +276,7 @@ func parseLogStreamParamsInternal(c echo.Context) logStreamParams {
 	}
 }
 
-func queryParamWithDefaultInternal(c echo.Context, key, def string) string {
+func queryParamWithDefaultInternal(c *echo.Context, key, def string) string {
 	if v := c.QueryParam(key); v != "" {
 		return v
 	}
@@ -294,12 +288,12 @@ func queryParamWithDefaultInternal(c echo.Context, key, def string) string {
 // and serves the client. The caller-supplied hubBuilder constructs the underlying *wsLogStream
 // when no hub already exists for streamKey.
 func (h *WebSocketHandler) serveLogStreamInternal(
-	c echo.Context,
+	c *echo.Context,
 	kind, resourceID string,
 	params logStreamParams,
 	hubBuilder func(streamKey string, onEmpty func(*wsLogStream)) *wsLogStream,
 ) {
-	conn, err := h.wsUpgrader.Upgrade(c.Response().Writer, c.Request(), nil)
+	conn, err := wshub.Accept(c.Response(), c.Request(), h.checkWSOrigin)
 	if err != nil {
 		return
 	}
@@ -309,13 +303,21 @@ func (h *WebSocketHandler) serveLogStreamInternal(
 		return hubBuilder(streamKey, onEmpty)
 	})
 	connID := h.wsMetrics.RegisterConnection(buildWSConnectionInfoInternal(c, kind, resourceID))
+	release := func() {
+		h.wsMetrics.UnregisterConnection(connID)
+		h.releaseLogStreamInternal(streamKey, stream)
+	}
 	// WebSocket connections use context.Background() because they are long-lived and should not
 	// be tied to the HTTP request context. Cleanup is handled via the hub's OnEmpty callback
 	// which triggers when all clients disconnect.
-	wshub.ServeClientWithOnRemove(context.Background(), stream.hub, conn, func() {
-		h.wsMetrics.UnregisterConnection(connID)
-		h.releaseLogStreamInternal(streamKey, stream)
-	})
+	if !wshub.ServeClientWithOnRemove(context.Background(), stream.hub, conn, release) {
+		// The stream refcount normally keeps this hub alive, so a stopped hub
+		// here means it was torn down out from under us; drop our reference
+		// rather than leaking the connection and the metrics entry.
+		slog.Debug("log stream hub stopped before client registration", "streamKey", streamKey)
+		_ = conn.CloseNow()
+		release()
+	}
 }
 
 // broadcastLogStreamErrorInternal emits an error message to every client of a log stream.
@@ -359,15 +361,24 @@ func broadcastLogStreamErrorInternal(resourceLabel, errorPrefix string, resource
 //	@Param			format		query	string	false	"Output format (text or json)"	default(text)
 //	@Param			batched		query	bool	false	"Batch log messages"			default(false)
 //	@Router			/api/environments/{id}/ws/projects/{projectId}/logs [get]
-func (h *WebSocketHandler) ProjectLogs(c echo.Context) error {
+func (h *WebSocketHandler) ProjectLogs(c *echo.Context) error {
 	projectID := c.Param("projectId")
 	if strings.TrimSpace(projectID) == "" {
-		return c.JSON(http.StatusBadRequest, map[string]any{"success": false, "error": (&common.ProjectIDRequiredError{}).Error()})
+		return c.JSON(http.StatusBadRequest, map[string]any{"success": false, "error": "Project ID is required"})
 	}
 
 	params := parseLogStreamParamsInternal(c)
 	h.serveLogStreamInternal(c, systemtypes.WSKindProjectLogs, projectID, params, func(streamKey string, onEmpty func(*wsLogStream)) *wsLogStream {
-		return h.startProjectLogHub(streamKey, projectID, params.format, params.batched, params.follow, params.tail, params.since, params.timestamps, onEmpty)
+		return h.startLogHubInternal(
+			streamKey,
+			projectID,
+			"project",
+			params,
+			h.streamProjectLogsInternal,
+			normalizeProjectLogMessageInternal,
+			normalizeProjectLogTextInternal,
+			onEmpty,
+		)
 	})
 	return nil
 }
@@ -391,33 +402,6 @@ func newWSLogStreamInternal(key, format string) (*wsLogStream, context.Context) 
 	return ls, ctx
 }
 
-func (h *WebSocketHandler) startProjectLogSourceInternal(ctx context.Context, key, projectID, format string, follow bool, tail, since string, timestamps bool, ls *wsLogStream) <-chan string {
-	lines := make(chan string, 256)
-
-	go func() {
-		defer close(lines)
-		if !waitForLogStreamSubscriberInternal(ctx, ls.firstSubscriber) {
-			return
-		}
-
-		if err := h.streamProjectLogsInternal(ctx, projectID, lines, follow, tail, since, timestamps); err != nil {
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				return
-			}
-
-			h.markLogStreamDoneInternal(key, ls)
-			h.broadcastProjectLogStreamErrorInternal(projectID, format, err, ls)
-			return
-		}
-
-		if ctx.Err() == nil {
-			h.markLogStreamDoneInternal(key, ls)
-		}
-	}()
-
-	return lines
-}
-
 func waitForLogStreamSubscriberInternal(ctx context.Context, firstSubscriber <-chan struct{}) bool {
 	for {
 		select {
@@ -429,75 +413,142 @@ func waitForLogStreamSubscriberInternal(ctx context.Context, firstSubscriber <-c
 	}
 }
 
-func (h *WebSocketHandler) broadcastProjectLogStreamErrorInternal(projectID, format string, err error, ls *wsLogStream) {
-	broadcastLogStreamErrorInternal("project log stream", "Failed to stream project logs: ", projectID, format, err, ls)
-}
-
-func startProjectLogForwardersInternal(ctx context.Context, format string, batched bool, lines <-chan string, ls *wsLogStream) {
-	if format == "json" {
-		startProjectJSONForwarderInternal(ctx, batched, lines, ls)
-		return
+func normalizeProjectLogMessageInternal(line string) wshub.LogMessage {
+	level, service, message, timestamp := wshub.NormalizeProjectLine(line)
+	return wshub.LogMessage{
+		Level:     level,
+		Message:   message,
+		Service:   service,
+		Timestamp: timestamp,
 	}
-
-	startProjectTextForwarderInternal(ctx, lines, ls)
 }
 
-func startProjectJSONForwarderInternal(ctx context.Context, batched bool, lines <-chan string, ls *wsLogStream) {
-	msgs := make(chan wshub.LogMessage, 256)
-	go func() {
-		defer close(msgs)
-		for line := range lines {
-			level, service, msg, ts := wshub.NormalizeProjectLine(line)
-			seq := ls.seq.Add(1)
-			timestamp := ts
-			if timestamp == "" {
-				timestamp = wshub.NowRFC3339()
-			}
-			msgs <- wshub.LogMessage{
-				Seq:       seq,
-				Level:     level,
-				Message:   msg,
-				Service:   service,
-				Timestamp: timestamp,
-			}
-		}
-	}()
-
-	if batched {
-		go wshub.ForwardLogJSONBatched(ctx, ls.hub, msgs, 50, 400*time.Millisecond)
-		return
+func normalizeContainerLogMessageInternal(line string) wshub.LogMessage {
+	level, message, timestamp := wshub.NormalizeContainerLine(line)
+	return wshub.LogMessage{
+		Level:     level,
+		Message:   message,
+		Timestamp: timestamp,
 	}
-
-	go wshub.ForwardLogJSON(ctx, ls.hub, msgs)
 }
 
-func startProjectTextForwarderInternal(ctx context.Context, lines <-chan string, ls *wsLogStream) {
-	cleanChan := make(chan string, 256)
-	go func() {
-		defer close(cleanChan)
-		for line := range lines {
-			_, _, msg, _ := wshub.NormalizeProjectLine(line)
-			cleanChan <- msg
-		}
-	}()
-
-	go wshub.ForwardLines(ctx, ls.hub, cleanChan)
+func normalizeProjectLogTextInternal(line string) string {
+	_, _, message, _ := wshub.NormalizeProjectLine(line)
+	return message
 }
 
-func (h *WebSocketHandler) startProjectLogHub(key, projectID, format string, batched, follow bool, tail, since string, timestamps bool, onEmptyHook func(*wsLogStream)) *wsLogStream {
-	ls, ctx := newWSLogStreamInternal(key, format)
+func (h *WebSocketHandler) startLogHubInternal(
+	key, resourceID, label string,
+	params logStreamParams,
+	stream func(context.Context, string, chan<- string, bool, string, string, bool) error,
+	normalizeJSON func(string) wshub.LogMessage,
+	normalizeText func(string) string,
+	onEmptyHook func(*wsLogStream),
+) *wsLogStream {
+	ls, ctx := newWSLogStreamInternal(key, params.format)
 
 	ls.hub.SetOnEmpty(func() {
 		if onEmptyHook != nil {
 			onEmptyHook(ls)
 		}
-		slog.Debug("client disconnected, cleaning up project log hub", "projectID", projectID)
+		slog.Debug("client disconnected, cleaning up "+label+" log hub", label+"ID", resourceID)
 	})
 
-	lines := h.startProjectLogSourceInternal(ctx, key, projectID, format, follow, tail, since, timestamps, ls)
-	startProjectLogForwardersInternal(ctx, format, batched, lines, ls)
+	lines := h.startLogSourceInternal(ctx, key, resourceID, label, params, stream, ls)
+	startLogForwardersInternal(ctx, ls, lines, params, normalizeJSON, normalizeText)
 
 	return ls
+}
+
+func (h *WebSocketHandler) startLogSourceInternal(
+	ctx context.Context,
+	key, resourceID, label string,
+	params logStreamParams,
+	stream func(context.Context, string, chan<- string, bool, string, string, bool) error,
+	ls *wsLogStream,
+) <-chan string {
+	lines := make(chan string, 256)
+	go func() {
+		defer close(lines)
+		if !waitForLogStreamSubscriberInternal(ctx, ls.firstSubscriber) {
+			return
+		}
+
+		if err := stream(ctx, resourceID, lines, params.follow, params.tail, params.since, params.timestamps); err != nil {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return
+			}
+
+			h.markLogStreamDoneInternal(key, ls)
+			broadcastLogStreamErrorInternal(label+" log stream", "Failed to stream "+label+" logs: ", resourceID, params.format, err, ls)
+			return
+		}
+
+		if ctx.Err() == nil {
+			h.markLogStreamDoneInternal(key, ls)
+		}
+	}()
+
+	return lines
+}
+
+func startLogForwardersInternal(
+	ctx context.Context,
+	ls *wsLogStream,
+	lines <-chan string,
+	params logStreamParams,
+	normalizeJSON func(string) wshub.LogMessage,
+	normalizeText func(string) string,
+) {
+	if params.format == "json" {
+		messages := mapLogLinesInternal(ctx, lines, func(line string) wshub.LogMessage {
+			message := normalizeJSON(line)
+			message.Seq = ls.seq.Add(1)
+			if message.Timestamp == "" {
+				message.Timestamp = wshub.NowRFC3339()
+			}
+			return message
+		})
+
+		if params.batched {
+			go wshub.ForwardLogJSONBatched(ctx, ls.hub, messages, 50, 400*time.Millisecond)
+		} else {
+			go wshub.ForwardLogJSON(ctx, ls.hub, messages)
+		}
+
+		return
+	}
+
+	textLines := lines
+	if normalizeText != nil {
+		textLines = mapLogLinesInternal(ctx, lines, normalizeText)
+	}
+	go wshub.ForwardLines(ctx, ls.hub, textLines)
+}
+
+func mapLogLinesInternal[T any](ctx context.Context, lines <-chan string, transform func(string) T) <-chan T {
+	mapped := make(chan T, 256)
+	go func() {
+		defer close(mapped)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case line, ok := <-lines:
+				if !ok {
+					return
+				}
+
+				select {
+				case <-ctx.Done():
+					return
+				case mapped <- transform(line):
+				}
+			}
+		}
+	}()
+
+	return mapped
 }
 
 // ============================================================================
@@ -518,84 +569,26 @@ func (h *WebSocketHandler) startProjectLogHub(key, projectID, format string, bat
 //	@Param			format		query	string	false	"Output format (text or json)"	default(text)
 //	@Param			batched		query	bool	false	"Batch log messages"			default(false)
 //	@Router			/api/environments/{id}/ws/containers/{containerId}/logs [get]
-func (h *WebSocketHandler) ContainerLogs(c echo.Context) error {
+func (h *WebSocketHandler) ContainerLogs(c *echo.Context) error {
 	containerID := c.Param("containerId")
 	if strings.TrimSpace(containerID) == "" {
-		return c.JSON(http.StatusBadRequest, map[string]any{"success": false, "error": (&common.ContainerIDRequiredError{}).Error()})
+		return c.JSON(http.StatusBadRequest, map[string]any{"success": false, "error": "Container ID is required"})
 	}
 
 	params := parseLogStreamParamsInternal(c)
 	h.serveLogStreamInternal(c, systemtypes.WSKindContainerLogs, containerID, params, func(streamKey string, onEmpty func(*wsLogStream)) *wsLogStream {
-		return h.startContainerLogHub(streamKey, containerID, params.format, params.batched, params.follow, params.tail, params.since, params.timestamps, onEmpty)
+		return h.startLogHubInternal(
+			streamKey,
+			containerID,
+			"container",
+			params,
+			h.streamContainerLogsInternal,
+			normalizeContainerLogMessageInternal,
+			nil,
+			onEmpty,
+		)
 	})
 	return nil
-}
-
-func (h *WebSocketHandler) startContainerLogHub(key, containerID, format string, batched, follow bool, tail, since string, timestamps bool, onEmptyHook func(*wsLogStream)) *wsLogStream {
-	ls, ctx := newWSLogStreamInternal(key, format)
-
-	ls.hub.SetOnEmpty(func() {
-		if onEmptyHook != nil {
-			onEmptyHook(ls)
-		}
-		slog.Debug("client disconnected, cleaning up container log hub", "containerID", containerID)
-	})
-
-	lines := make(chan string, 256)
-	go func(ctx context.Context) {
-		defer close(lines)
-		if !waitForLogStreamSubscriberInternal(ctx, ls.firstSubscriber) {
-			return
-		}
-
-		if err := h.streamContainerLogsInternal(ctx, containerID, lines, follow, tail, since, timestamps); err != nil {
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				return
-			}
-
-			h.markLogStreamDoneInternal(key, ls)
-			h.broadcastContainerLogStreamErrorInternal(containerID, format, err, ls)
-			return
-		}
-
-		if ctx.Err() == nil {
-			h.markLogStreamDoneInternal(key, ls)
-		}
-	}(ctx)
-
-	if format == "json" {
-		msgs := make(chan wshub.LogMessage, 256)
-		go func() {
-			defer close(msgs)
-			for line := range lines {
-				level, msg, ts := wshub.NormalizeContainerLine(line)
-				seq := ls.seq.Add(1)
-				timestamp := ts
-				if timestamp == "" {
-					timestamp = wshub.NowRFC3339()
-				}
-				msgs <- wshub.LogMessage{
-					Seq:       seq,
-					Level:     level,
-					Message:   msg,
-					Timestamp: timestamp,
-				}
-			}
-		}()
-		if batched {
-			go wshub.ForwardLogJSONBatched(ctx, ls.hub, msgs, 50, 400*time.Millisecond)
-		} else {
-			go wshub.ForwardLogJSON(ctx, ls.hub, msgs)
-		}
-	} else {
-		go wshub.ForwardLines(ctx, ls.hub, lines)
-	}
-
-	return ls
-}
-
-func (h *WebSocketHandler) broadcastContainerLogStreamErrorInternal(containerID, format string, err error, ls *wsLogStream) {
-	broadcastLogStreamErrorInternal("container log stream", "Failed to stream container logs: ", containerID, format, err, ls)
 }
 
 // ============================================================================
@@ -616,7 +609,7 @@ func (h *WebSocketHandler) broadcastContainerLogStreamErrorInternal(containerID,
 //	@Param			format		query	string	false	"Output format (text or json)"	default(text)
 //	@Param			batched		query	bool	false	"Batch log messages"			default(false)
 //	@Router			/api/environments/{id}/ws/swarm/services/{serviceId}/logs [get]
-func (h *WebSocketHandler) ServiceLogs(c echo.Context) error {
+func (h *WebSocketHandler) ServiceLogs(c *echo.Context) error {
 	serviceID := c.Param("serviceId")
 	if strings.TrimSpace(serviceID) == "" {
 		return c.JSON(http.StatusBadRequest, map[string]any{"success": false, "error": "Service ID is required"})
@@ -624,76 +617,18 @@ func (h *WebSocketHandler) ServiceLogs(c echo.Context) error {
 
 	params := parseLogStreamParamsInternal(c)
 	h.serveLogStreamInternal(c, systemtypes.WSKindServiceLogs, serviceID, params, func(streamKey string, onEmpty func(*wsLogStream)) *wsLogStream {
-		return h.startServiceLogHub(streamKey, serviceID, params.format, params.batched, params.follow, params.tail, params.since, params.timestamps, onEmpty)
+		return h.startLogHubInternal(
+			streamKey,
+			serviceID,
+			"service",
+			params,
+			h.swarmService.StreamServiceLogs,
+			normalizeContainerLogMessageInternal,
+			nil,
+			onEmpty,
+		)
 	})
 	return nil
-}
-
-func (h *WebSocketHandler) startServiceLogHub(key, serviceID, format string, batched, follow bool, tail, since string, timestamps bool, onEmptyHook func(*wsLogStream)) *wsLogStream {
-	ls, ctx := newWSLogStreamInternal(key, format)
-
-	ls.hub.SetOnEmpty(func() {
-		if onEmptyHook != nil {
-			onEmptyHook(ls)
-		}
-		slog.Debug("client disconnected, cleaning up service log hub", "serviceID", serviceID)
-	})
-
-	lines := make(chan string, 256)
-	go func() {
-		defer close(lines)
-		if !waitForLogStreamSubscriberInternal(ctx, ls.firstSubscriber) {
-			return
-		}
-
-		if err := h.swarmService.StreamServiceLogs(ctx, serviceID, lines, follow, tail, since, timestamps); err != nil {
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				return
-			}
-
-			h.markLogStreamDoneInternal(key, ls)
-			h.broadcastServiceLogStreamErrorInternal(serviceID, format, err, ls)
-			return
-		}
-
-		if ctx.Err() == nil {
-			h.markLogStreamDoneInternal(key, ls)
-		}
-	}()
-
-	if format == "json" {
-		msgs := make(chan wshub.LogMessage, 256)
-		go func() {
-			defer close(msgs)
-			for line := range lines {
-				level, msg, ts := wshub.NormalizeContainerLine(line)
-				seq := ls.seq.Add(1)
-				timestamp := ts
-				if timestamp == "" {
-					timestamp = wshub.NowRFC3339()
-				}
-				msgs <- wshub.LogMessage{
-					Seq:       seq,
-					Level:     level,
-					Message:   msg,
-					Timestamp: timestamp,
-				}
-			}
-		}()
-		if batched {
-			go wshub.ForwardLogJSONBatched(ctx, ls.hub, msgs, 50, 400*time.Millisecond)
-		} else {
-			go wshub.ForwardLogJSON(ctx, ls.hub, msgs)
-		}
-	} else {
-		go wshub.ForwardLines(ctx, ls.hub, lines)
-	}
-
-	return ls
-}
-
-func (h *WebSocketHandler) broadcastServiceLogStreamErrorInternal(serviceID, format string, err error, ls *wsLogStream) {
-	broadcastLogStreamErrorInternal("service log stream", "Failed to stream service logs: ", serviceID, format, err, ls)
 }
 
 // ContainerStats streams container stats over WebSocket.
@@ -704,26 +639,41 @@ func (h *WebSocketHandler) broadcastServiceLogStreamErrorInternal(serviceID, for
 //	@Param			id			path	string	true	"Environment ID"
 //	@Param			containerId	path	string	true	"Container ID"
 //	@Router			/api/environments/{id}/ws/containers/{containerId}/stats [get]
-func (h *WebSocketHandler) ContainerStats(c echo.Context) error {
+func (h *WebSocketHandler) ContainerStats(c *echo.Context) error {
 	containerID := c.Param("containerId")
 	if strings.TrimSpace(containerID) == "" {
-		return c.JSON(http.StatusBadRequest, map[string]any{"success": false, "error": (&common.ContainerIDRequiredError{}).Error()})
+		return c.JSON(http.StatusBadRequest, map[string]any{"success": false, "error": "Container ID is required"})
 	}
 
-	conn, err := h.wsUpgrader.Upgrade(c.Response().Writer, c.Request(), nil)
+	conn, err := wshub.Accept(c.Response(), c.Request(), h.checkWSOrigin)
 	if err != nil {
 		slog.DebugContext(c.Request().Context(), "Failed to upgrade WebSocket for container stats", "containerID", containerID, "error", err)
 		return nil
 	}
 
 	connID := h.wsMetrics.RegisterConnection(buildWSConnectionInfoInternal(c, systemtypes.WSKindContainerStats, containerID))
-	hub := h.getOrCreateContainerStatsHubInternal(containerID)
 	onRemove := func() {
 		h.wsMetrics.UnregisterConnection(connID)
 	}
+
+	// A reconnect can land exactly on the 5s idle-teardown boundary and load a
+	// hub whose Run has already exited. Drop that hub and retry once so the
+	// client gets a live producer instead of a silent socket.
 	// WebSocket connections use context.Background() because they are long-lived and should not
 	// be tied to the HTTP request context. Cleanup is handled by the shared hub when it idles.
-	wshub.ServeClientWithOnRemove(context.Background(), hub, conn, onRemove)
+	for attempt := range 2 {
+		hub := h.getOrCreateContainerStatsHubInternal(containerID)
+		if wshub.ServeClientWithOnRemove(context.Background(), hub, conn, onRemove) {
+			return nil
+		}
+		h.containerStatsHubs.CompareAndDelete(containerID, hub)
+		slog.DebugContext(c.Request().Context(), "container stats hub stopped before client registration; retrying",
+			"containerID", containerID, "attempt", attempt+1)
+	}
+
+	slog.WarnContext(c.Request().Context(), "failed to register container stats client", "containerID", containerID)
+	_ = conn.CloseNow()
+	onRemove()
 	return nil
 }
 
@@ -748,6 +698,10 @@ func (h *WebSocketHandler) getOrCreateContainerStatsHubInternal(containerID stri
 	h.runContainerStatsHubInternal(containerID, hub)
 	return hub
 }
+
+// containerStatsErrorDrainGrace is how long a failed stats hub stays alive after
+// broadcasting its error frame, so clients receive it before the hub shuts down.
+const containerStatsErrorDrainGrace = 2 * time.Second
 
 func (h *WebSocketHandler) runContainerStatsHubInternal(containerID string, hub *wshub.Hub) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -790,7 +744,29 @@ func (h *WebSocketHandler) runContainerStatsHubInternal(containerID string, hub 
 	statsChan := make(chan any, 64)
 	go func(ctx context.Context) {
 		defer close(statsChan)
-		_ = h.containerService.StreamStats(ctx, containerID, statsChan)
+
+		err := h.containerService.StreamStats(ctx, containerID, statsChan)
+		if err == nil || errors.Is(err, context.Canceled) || ctx.Err() != nil {
+			return
+		}
+
+		// The producer died but the hub stayed cached, so clients kept an open
+		// socket that would never emit another sample. Tell them why, then drop
+		// the hub so the next connect rebuilds a producer instead of attaching
+		// to this dead one.
+		slog.Warn("container stats stream failed", "containerID", containerID, "error", err)
+		if b, marshalErr := json.Marshal(map[string]any{
+			"error":     "Failed to stream container stats: " + err.Error(),
+			"timestamp": wshub.NowRFC3339(),
+		}); marshalErr == nil {
+			hub.Broadcast(b)
+		}
+		h.containerStatsHubs.CompareAndDelete(containerID, hub)
+
+		// Cancelling immediately would race hub.Run between ctx.Done and the
+		// queued error frame, dropping the very message clients need. Give the
+		// broadcast a moment to drain, then tear the hub down.
+		time.AfterFunc(containerStatsErrorDrainGrace, cancel)
 	}(ctx)
 
 	go func() {
@@ -819,45 +795,44 @@ func (h *WebSocketHandler) runContainerStatsHubInternal(containerID string, hub 
 //	@Param			containerId	path	string	true	"Container ID"
 //	@Param			shell		query	string	false	"Shell to execute"	default(/bin/sh)
 //	@Router			/api/environments/{id}/ws/containers/{containerId}/terminal [get]
-func (h *WebSocketHandler) ContainerExec(c echo.Context) error {
+func (h *WebSocketHandler) ContainerExec(c *echo.Context) error {
 	containerID := c.Param("containerId")
 	if strings.TrimSpace(containerID) == "" {
-		return c.JSON(http.StatusBadRequest, map[string]any{"success": false, "error": (&common.ContainerIDRequiredError{}).Error()})
+		return c.JSON(http.StatusBadRequest, map[string]any{"success": false, "error": "Container ID is required"})
 	}
 
 	shell := queryParamWithDefaultInternal(c, "shell", "/bin/sh")
 
-	conn, err := h.wsUpgrader.Upgrade(c.Response().Writer, c.Request(), nil)
+	conn, err := wshub.Accept(c.Response(), c.Request(), h.checkWSOrigin)
 	if err != nil {
 		return nil
 	}
 	connID := h.wsMetrics.RegisterConnection(buildWSConnectionInfoInternal(c, systemtypes.WSKindContainerExec, containerID))
 	defer h.wsMetrics.UnregisterConnection(connID)
 	defer func() {
-		if err := conn.Close(); err != nil {
+		if err := conn.CloseNow(); err != nil {
 			slog.Debug("Failed to close container exec websocket connection", "containerID", containerID, "error", err)
 		}
 	}()
 
+	// Allow large terminal pastes; coder/websocket's default limit is 32KB.
+	conn.SetReadLimit(1 << 20)
+
 	ctx, cancel := context.WithCancel(c.Request().Context())
 	defer cancel()
 
-	const execPongWait = 60 * time.Second
-	_ = conn.SetReadDeadline(time.Now().Add(execPongWait))
-	conn.SetPongHandler(func(string) error {
-		_ = conn.SetReadDeadline(time.Now().Add(execPongWait))
-		return nil
-	})
-	go h.pingExecConnInternal(ctx, conn, execPongWait*9/10)
+	go h.pingExecConnInternal(ctx, cancel, conn, 54*time.Second)
 
 	h.runContainerExecInternal(ctx, cancel, conn, containerID, shell)
 	return nil
 }
 
-// pingExecConnInternal keeps the exec websocket alive; pongs refresh the read
-// deadline so a silently-dead client fails the next read instead of blocking
-// forever. WriteControl is safe concurrently with the exec output writer.
-func (h *WebSocketHandler) pingExecConnInternal(ctx context.Context, conn *websocket.Conn, period time.Duration) {
+// pingExecConnInternal keeps the exec websocket alive. Ping round-trips (the
+// pong is serviced by the concurrent stdin reader) and is safe concurrently
+// with the exec output writer. A failed ping means the client is gone, so it
+// cancels the exec session — a silently-dead client would otherwise keep the
+// session open until an output write fails.
+func (h *WebSocketHandler) pingExecConnInternal(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, period time.Duration) {
 	ticker := time.NewTicker(period)
 	defer ticker.Stop()
 	for {
@@ -865,7 +840,11 @@ func (h *WebSocketHandler) pingExecConnInternal(ctx context.Context, conn *webso
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if err := conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(time.Second)); err != nil {
+			pctx, pcancel := context.WithTimeout(ctx, 10*time.Second)
+			err := conn.Ping(pctx)
+			pcancel()
+			if err != nil {
+				cancel()
 				return
 			}
 		}
@@ -876,14 +855,14 @@ func (h *WebSocketHandler) runContainerExecInternal(ctx context.Context, cancel 
 	// Create exec instance
 	execID, err := h.containerService.CreateExec(ctx, containerID, []string{shell})
 	if err != nil {
-		h.writeExecErrorInternal(conn, &common.ExecCreationError{Err: err})
+		h.writeExecErrorInternal(ctx, conn, errors.WithMessage(err, "Error creating exec"))
 		return
 	}
 
 	// Attach to exec
 	execSession, err := h.containerService.AttachExec(ctx, containerID, execID)
 	if err != nil {
-		h.writeExecErrorInternal(conn, &common.ExecAttachError{Err: err})
+		h.writeExecErrorInternal(ctx, conn, errors.WithMessage(err, "Error attaching to exec"))
 		return
 	}
 	cleanup := h.execCleanupFuncInternal(ctx, execSession, execID, containerID)
@@ -897,8 +876,10 @@ func (h *WebSocketHandler) runContainerExecInternal(ctx context.Context, cancel 
 	<-done
 }
 
-func (h *WebSocketHandler) writeExecErrorInternal(conn *websocket.Conn, err error) {
-	_ = conn.WriteMessage(websocket.TextMessage, []byte(err.Error()+"\r\n"))
+func (h *WebSocketHandler) writeExecErrorInternal(ctx context.Context, conn *websocket.Conn, err error) {
+	wctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	_ = conn.Write(wctx, websocket.MessageText, []byte(err.Error()+"\r\n"))
 }
 
 func (h *WebSocketHandler) execCleanupFuncInternal(ctx context.Context, execSession *services.ExecSession, execID, containerID string) func() {
@@ -937,7 +918,7 @@ func (h *WebSocketHandler) pipeExecOutputInternal(ctx context.Context, conn *web
 			return
 		}
 		if n > 0 {
-			if err := conn.WriteMessage(websocket.BinaryMessage, buf[:n]); err != nil {
+			if err := conn.Write(ctx, websocket.MessageBinary, buf[:n]); err != nil {
 				slog.Debug("Exec websocket write error", "execID", execID, "containerID", containerID, "error", err)
 				return
 			}
@@ -947,13 +928,7 @@ func (h *WebSocketHandler) pipeExecOutputInternal(ctx context.Context, conn *web
 
 func (h *WebSocketHandler) pipeExecInputInternal(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, stdin io.Writer, execID, containerID string) {
 	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-
-		_, data, err := conn.ReadMessage()
+		_, data, err := conn.Read(ctx)
 		if err != nil {
 			slog.Debug("Exec websocket read error", "execID", execID, "containerID", containerID, "error", err)
 			cancel()
@@ -991,7 +966,10 @@ func (h *WebSocketHandler) checkRateLimitInternal(clientIP string) (*int32, bool
 func (h *WebSocketHandler) releaseRateLimitInternal(clientIP string, count *int32) {
 	newCount := atomic.AddInt32(count, -1)
 	if newCount <= 0 {
-		h.activeConnections.Delete(clientIP)
+		// CompareAndDelete, not Delete: a plain delete removed whatever counter
+		// was stored for this IP, which after a racing reconnect is a live one —
+		// wiping its count and letting that IP exceed the limit.
+		h.activeConnections.CompareAndDelete(clientIP, count)
 	}
 }
 
@@ -1311,7 +1289,7 @@ func (h *WebSocketHandler) getCachedCgroupLimitsInternal() *cgroup.Limits {
 //	@Tags			WebSocket
 //	@Param			id	path	string	true	"Environment ID"
 //	@Router			/api/environments/{id}/ws/system/stats [get]
-func (h *WebSocketHandler) SystemStats(c echo.Context) error {
+func (h *WebSocketHandler) SystemStats(c *echo.Context) error {
 	clientIP := c.RealIP()
 
 	count, allowed := h.checkRateLimitInternal(clientIP)
@@ -1323,14 +1301,14 @@ func (h *WebSocketHandler) SystemStats(c echo.Context) error {
 	}
 	defer h.releaseRateLimitInternal(clientIP, count)
 
-	conn, err := h.wsUpgrader.Upgrade(c.Response().Writer, c.Request(), nil)
+	conn, err := wshub.Accept(c.Response(), c.Request(), h.checkWSOrigin)
 	if err != nil {
 		return nil
 	}
 	connID := h.wsMetrics.RegisterConnection(buildWSConnectionInfoInternal(c, systemtypes.WSKindSystemStats, ""))
 	defer h.wsMetrics.UnregisterConnection(connID)
 	defer func() {
-		if err := conn.Close(); err != nil {
+		if err := conn.CloseNow(); err != nil {
 			slog.Debug("Failed to close system stats websocket connection", "clientIP", clientIP, "error", err)
 		}
 	}()
@@ -1340,18 +1318,9 @@ func (h *WebSocketHandler) SystemStats(c echo.Context) error {
 		interval = 2
 	}
 
-	const (
-		statsPongWait      = 60 * time.Second
-		statsPingWriteWait = 1 * time.Second
-	)
-	statsPingPeriod := statsPongWait * 9 / 10
+	const statsPingPeriod = 54 * time.Second
 
 	conn.SetReadLimit(512)
-	_ = conn.SetReadDeadline(time.Now().Add(statsPongWait))
-	conn.SetPongHandler(func(string) error {
-		_ = conn.SetReadDeadline(time.Now().Add(statsPongWait))
-		return nil
-	})
 
 	ticker := time.NewTicker(time.Duration(interval) * time.Second)
 	defer ticker.Stop()
@@ -1370,8 +1339,13 @@ func (h *WebSocketHandler) SystemStats(c echo.Context) error {
 
 	send := func() error {
 		stats := h.latestSystemStatsSnapshotInternal()
-		_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-		return conn.WriteJSON(stats)
+		b, err := json.Marshal(stats)
+		if err != nil {
+			return err
+		}
+		wctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+		return conn.Write(wctx, websocket.MessageText, b)
 	}
 
 	if err := send(); err != nil {
@@ -1387,8 +1361,11 @@ func (h *WebSocketHandler) SystemStats(c echo.Context) error {
 				return nil
 			}
 		case <-pingTicker.C:
-			_ = conn.SetWriteDeadline(time.Now().Add(statsPingWriteWait))
-			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+			// Ping round-trips; the pong is serviced by readSystemStatsPumpInternal.
+			pctx, pcancel := context.WithTimeout(ctx, 10*time.Second)
+			err := conn.Ping(pctx)
+			pcancel()
+			if err != nil {
 				return nil
 			}
 		}
@@ -1399,39 +1376,28 @@ func (h *WebSocketHandler) SystemStats(c echo.Context) error {
 // Do not add additional readers for this connection.
 func (h *WebSocketHandler) readSystemStatsPumpInternal(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn) {
 	for {
-		select {
-		case <-ctx.Done():
+		if _, _, err := conn.Read(ctx); err != nil {
+			cancel()
 			return
-		default:
-			if _, _, err := conn.ReadMessage(); err != nil {
-				cancel()
-				return
-			}
 		}
 	}
 }
 
 func (h *WebSocketHandler) getDiskUsagePath(ctx context.Context) string {
-	h.diskUsagePathCache.RLock()
-	if h.diskUsagePathCache.value != "" && time.Since(h.diskUsagePathCache.timestamp) < 5*time.Minute {
-		path := h.diskUsagePathCache.value
-		h.diskUsagePathCache.RUnlock()
-		return path
+	if h.diskUsagePathCache == nil {
+		h.diskUsagePathCache = hot.NewHotCache[struct{}, string](hot.LRU, 1).
+			WithTTL(5 * time.Minute).
+			Build()
 	}
-	h.diskUsagePathCache.RUnlock()
-
-	// Default path
-	path := "/"
-
-	// Try to get Docker root from system service
-	if h.systemService != nil {
-		path = h.systemService.GetDiskUsagePath(ctx)
+	path, found, err := h.diskUsagePathCache.GetWithLoaders(struct{}{}, func(_ []struct{}) (map[struct{}]string, error) {
+		path := "/"
+		if h.systemService != nil {
+			path = h.systemService.GetDiskUsagePath(ctx)
+		}
+		return map[struct{}]string{{}: path}, nil
+	})
+	if err != nil || !found {
+		return "/"
 	}
-
-	h.diskUsagePathCache.Lock()
-	h.diskUsagePathCache.value = path
-	h.diskUsagePathCache.timestamp = time.Now()
-	h.diskUsagePathCache.Unlock()
-
 	return path
 }

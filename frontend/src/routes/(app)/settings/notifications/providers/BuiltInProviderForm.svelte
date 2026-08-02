@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { m } from '$lib/paraglide/messages';
+	import { m } from '#lib/paraglide/messages';
 	import { z } from 'zod/v4';
-	import type { NotificationProviderKey, ProviderFormValuesMap } from '$lib/types/notifications';
+	import type { NotificationProviderKey, ProviderFormValuesMap } from '#lib/types/notifications';
 	import ProviderFormWrapper from './ProviderFormWrapper.svelte';
 	import EventSubscriptions from './EventSubscriptions.svelte';
 	import DynamicProviderFormBuilder from './DynamicProviderFormBuilder.svelte';
@@ -312,9 +312,11 @@
 				port: z.coerce.number().int().min(0).max(65535),
 				token: z.string(),
 				path: z.string(),
-				priority: z.coerce.number().int(),
+				priority: z.coerce.number().int().min(-2).max(10),
 				title: z.string(),
 				disableTls: z.boolean(),
+				insecureSkipVerify: z.boolean(),
+				useHeader: z.boolean(),
 				...eventSubscriptionSchemaFields
 			})
 			.superRefine((d, ctx) => {
@@ -939,6 +941,20 @@
 				id: 'gotify-disable-tls',
 				label: m.disable_tls(),
 				description: m.use_http_instead_of_https_not_recommended_for_production()
+			},
+			{
+				kind: 'switch',
+				key: 'insecureSkipVerify',
+				id: 'gotify-insecure-skip-verify',
+				label: m.skip_tls_verification(),
+				description: m.skip_tls_verification_help()
+			},
+			{
+				kind: 'switch',
+				key: 'useHeader',
+				id: 'gotify-use-header',
+				label: m.notifications_gotify_use_header_label(),
+				description: m.notifications_gotify_use_header_help()
 			}
 		],
 		matrix: [

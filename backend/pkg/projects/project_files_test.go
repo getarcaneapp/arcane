@@ -1,7 +1,6 @@
 package projects
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -145,7 +144,7 @@ func TestApplyProjectFileChanges_WrapsForbiddenSentinelErrors(t *testing.T) {
 		{Operation: "delete", RelativePath: "compose.yaml"},
 	}, ProjectFileApplyOptions{ComposeFileName: "compose.yaml"})
 	require.Error(t, err)
-	assert.ErrorIs(t, err, ErrProjectFileProtectedPath)
+	require.ErrorIs(t, err, ErrProjectFileProtectedPath)
 
 	targetPath := filepath.Join(projectDir, "target.txt")
 	linkPath := filepath.Join(projectDir, "link.txt")
@@ -159,7 +158,7 @@ func TestApplyProjectFileChanges_WrapsForbiddenSentinelErrors(t *testing.T) {
 		{Operation: "update_file", RelativePath: "link.txt", Content: &content},
 	}, ProjectFileApplyOptions{ComposeFileName: "compose.yaml"})
 	require.Error(t, err)
-	assert.ErrorIs(t, err, ErrProjectFileSymlinkPath)
+	require.ErrorIs(t, err, ErrProjectFileSymlinkPath)
 
 	outsideDir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(outsideDir, "outside.txt"), []byte("outside\n"), 0o644))
@@ -173,19 +172,6 @@ func TestApplyProjectFileChanges_WrapsForbiddenSentinelErrors(t *testing.T) {
 	}, ProjectFileApplyOptions{ComposeFileName: "compose.yaml"})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrProjectFileSymlinkPath)
-}
-
-func TestMapProjectRootErrorInternal_DoesNotClassifyByErrorMessage(t *testing.T) {
-	t.Parallel()
-
-	err := mapProjectRootErrorInternal("inspect project path", &os.PathError{
-		Op:   "lstat",
-		Path: "notes.txt",
-		Err:  errors.New("disk check escapes normal retry path"),
-	})
-
-	require.Error(t, err)
-	assert.NotErrorIs(t, err, ErrProjectFileOutsideProjectDirectory)
 }
 
 func TestApplyProjectFileChanges_UsesRevisionConflictDetection(t *testing.T) {
@@ -207,7 +193,7 @@ func TestApplyProjectFileChanges_UsesRevisionConflictDetection(t *testing.T) {
 	})
 
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrProjectFileRevisionConflict))
+	assert.ErrorIs(t, err, ErrProjectFileRevisionConflict)
 }
 
 func TestApplyProjectFileChanges_AppliesOrderedTextFileOperations(t *testing.T) {

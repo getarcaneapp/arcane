@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { getEffectiveNavigationSettings } from '$lib/utils/navigation';
-	import { IsMobile } from '$lib/hooks/is-mobile.svelte.js';
-	import { IsTablet } from '$lib/hooks/is-tablet.svelte.js';
-	import { cn } from '$lib/utils';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import { getEffectiveNavigationSettings } from '#lib/utils/navigation';
+	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
+	import { IsTablet } from '#lib/hooks/is-tablet.svelte.js';
+	import { cn } from '#lib/utils';
 
 	interface Props {
 		hasChanges: boolean | null;

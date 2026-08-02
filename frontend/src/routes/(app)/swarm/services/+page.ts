@@ -1,5 +1,5 @@
-import { swarmService } from '$lib/services/swarm-service';
-import { resolveInitialListPageRequest } from '$lib/utils/tables';
+import { swarmService } from '#lib/services/swarm-service';
+import { resolveInitialListPageRequest } from '#lib/utils/tables';
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async () => {

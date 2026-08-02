@@ -1,17 +1,17 @@
 <script lang="ts">
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { openConfirmDialog } from '$lib/components/confirm-dialog';
-	import IfPermitted from '$lib/components/if-permitted.svelte';
-	import { CopyButton } from '$lib/components/ui/copy-button';
-	import * as Card from '$lib/components/ui/card';
-	import { Input } from '$lib/components/ui/input/index.js';
-	import { Textarea } from '$lib/components/ui/textarea/index.js';
-	import { useEnvironmentRefresh } from '$lib/hooks/use-environment-refresh.svelte';
-	import { TrashIcon } from '$lib/icons';
-	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
-	import { m } from '$lib/paraglide/messages';
-	import { handleApiResultWithCallbacks, tryCatch } from '$lib/utils/api';
-	import { decodeBase64ToText, encodeTextToBase64, formatSwarmTimestamp, getSwarmSpecName } from '$lib/utils/swarm-kv';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog';
+	import IfPermitted from '#lib/components/if-permitted.svelte';
+	import { CopyButton } from '#lib/components/ui/copy-button';
+	import * as Card from '#lib/components/ui/card';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Textarea } from '#lib/components/ui/textarea/index.js';
+	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte';
+	import { TrashIcon } from '#lib/icons';
+	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
+	import { m } from '#lib/paraglide/messages';
+	import { handleApiResultWithCallbacks, tryCatch } from '#lib/utils/api';
+	import { decodeBase64ToText, encodeTextToBase64, formatSwarmTimestamp, getSwarmSpecName } from '#lib/utils/swarm-kv';
 	import { onMount, type Component } from 'svelte';
 	import { toast } from 'svelte-sonner';
 

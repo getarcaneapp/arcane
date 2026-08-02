@@ -1,25 +1,26 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { goto, afterNavigate } from '$app/navigation';
-	import { getAuthRedirectPath } from '$lib/utils/auth';
-	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
-	import AppSidebar from '$lib/components/sidebar/sidebar.svelte';
-	import MobileNav from '$lib/components/mobile-nav/mobile-nav.svelte';
-	import ActivityCenter from '$lib/components/activity/activity-center.svelte';
-	import { IsMobile } from '$lib/hooks/is-mobile.svelte.js';
-	import { IsTablet } from '$lib/hooks/is-tablet.svelte.js';
-	import { getEffectiveNavigationSettings, navigationSettingsOverridesStore } from '$lib/utils/navigation';
+	import { getAuthRedirectPath } from '#lib/utils/auth';
+	import * as Sidebar from '#lib/components/ui/sidebar/index.js';
+	import AppSidebar from '#lib/components/sidebar/sidebar.svelte';
+	import MobileNav from '#lib/components/mobile-nav/mobile-nav.svelte';
+	import ActivityCenter from '#lib/components/activity/activity-center.svelte';
+	import OperationWatchDialog from '#lib/components/operation-watch-dialog.svelte';
+	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
+	import { IsTablet } from '#lib/hooks/is-tablet.svelte.js';
+	import { getEffectiveLandingPage, getEffectiveNavigationSettings } from '#lib/utils/navigation';
 	import { browser } from '$app/env';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { navigationItems, getManagementItems, filterByPermissions, type NavigationItem } from '$lib/config/navigation-config';
-	import { isEditableTarget, matchesShortcutEvent } from '$lib/utils/navigation';
-	import { cn } from '$lib/utils';
-	import { userHasPermissionInAnyEnvironment } from '$lib/stores/user-store';
+	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import { environmentStatusStore } from '#lib/stores/environment-status.store.svelte';
+	import { navigationItems, getManagementItems, filterByPermissions, type NavigationItem } from '#lib/config/navigation-config';
+	import { isEditableTarget, matchesShortcutEvent } from '#lib/utils/navigation';
+	import { cn } from '#lib/utils';
+	import userStore, { userHasPermissionInAnyEnvironment } from '#lib/stores/user-store';
 	let { data, children }: LayoutProps = $props();
 
 	const versionInformation = $derived(data.versionInformation);
 	const user = $derived(data.user);
-	const settings = $derived(data.settings);
 	const permissionsManifest = $derived(data.permissionsManifest);
 	const permissionsManifestLoadFailed = $derived(data.permissionsManifestLoadFailed);
 	const swarmEnabled = $derived(data.swarmEnabled === true);
@@ -29,8 +30,9 @@
 	const isTablet = new IsTablet();
 
 	const navigationSettings = $derived.by(() => {
-		settings;
-		navigationSettingsOverridesStore.current;
+		// Track the store, not the loader snapshot: saving a preference calls
+		// userStore.setUser() without re-running load().
+		$userStore;
 		return getEffectiveNavigationSettings();
 	});
 	const navigationMode = $derived(navigationSettings.mode);
@@ -48,13 +50,25 @@
 		return flattenNavigationItems(items).filter((item) => item.shortcut?.length);
 	});
 
+	// Environment liveness is pushed for as long as the app shell is mounted, so
+	// every surface that reads environmentStore — the board, the environments
+	// table, the switcher — sees an agent reconnect without a page load.
+	$effect(() => {
+		if (!user) {
+			return;
+		}
+		void environmentStatusStore.start();
+		return () => environmentStatusStore.stop();
+	});
+
 	$effect(() => {
 		const redirectPath = getAuthRedirectPath(
 			page.url.pathname,
 			user,
 			currentEnvId,
 			permissionsManifest,
-			permissionsManifestLoadFailed
+			permissionsManifestLoadFailed,
+			getEffectiveLandingPage()
 		);
 		if (redirectPath) {
 			goto(redirectPath);
@@ -75,7 +89,7 @@
 
 	function handleNavigationShortcut(event: KeyboardEvent) {
 		if (event.defaultPrevented) return;
-		if (settings?.keyboardShortcutsEnabled === false) return;
+		if ($userStore?.preferences?.keyboardShortcutsEnabled === false) return;
 		if (isMobile.current || isTablet.current) return;
 		if (isEditableTarget(event.target)) return;
 
@@ -135,3 +149,5 @@
 {#if canReadActivities}
 	<ActivityCenter />
 {/if}
+
+<OperationWatchDialog />

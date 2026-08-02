@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import { Spinner } from '$lib/components/ui/spinner/index.js';
-	import { m } from '$lib/paraglide/messages';
+	import { Spinner } from '#lib/components/ui/spinner/index.js';
+	import { m } from '#lib/paraglide/messages';
 
 	interface Props {
 		busy: boolean;

@@ -6,6 +6,8 @@ import (
 	jsonv2 "encoding/json/v2"
 	"io"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 type jsonBenchmarkItem struct {
@@ -43,7 +45,7 @@ func BenchmarkJSONResponseEncoding(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
 			if err := jsonv1.NewEncoder(io.Discard).Encode(jsonBenchmarkPayload); err != nil {
-				b.Fatal(err)
+				require.FailNowf(b, "benchmark JSON encoding failed", "%v", err)
 			}
 		}
 	})
@@ -52,7 +54,7 @@ func BenchmarkJSONResponseEncoding(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
 			if err := jsonv2.MarshalWrite(io.Discard, jsonBenchmarkPayload, jsonV2APIOptions); err != nil {
-				b.Fatal(err)
+				require.FailNowf(b, "benchmark JSON encoding failed", "%v", err)
 			}
 		}
 	})
@@ -61,7 +63,7 @@ func BenchmarkJSONResponseEncoding(b *testing.B) {
 func BenchmarkJSONRequestDecoding(b *testing.B) {
 	data, err := jsonv2.Marshal(jsonBenchmarkPayload)
 	if err != nil {
-		b.Fatal(err)
+		require.FailNowf(b, "benchmark JSON setup failed", "%v", err)
 	}
 
 	b.SetBytes(int64(len(data)))
@@ -71,7 +73,7 @@ func BenchmarkJSONRequestDecoding(b *testing.B) {
 		for b.Loop() {
 			var output jsonBenchmarkResponse
 			if err := jsonv1.NewDecoder(bytes.NewReader(data)).Decode(&output); err != nil {
-				b.Fatal(err)
+				require.FailNowf(b, "benchmark JSON decoding failed", "%v", err)
 			}
 		}
 	})
@@ -81,7 +83,7 @@ func BenchmarkJSONRequestDecoding(b *testing.B) {
 		for b.Loop() {
 			var output jsonBenchmarkResponse
 			if err := jsonv2.UnmarshalRead(bytes.NewReader(data), &output, jsonV2APIOptions); err != nil {
-				b.Fatal(err)
+				require.FailNowf(b, "benchmark JSON decoding failed", "%v", err)
 			}
 		}
 	})

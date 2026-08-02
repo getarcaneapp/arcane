@@ -1,4 +1,4 @@
-import type { SwarmTaskSummary } from '$lib/types/swarm';
+import type { SwarmTaskSummary } from '#lib/types/swarm';
 
 const SWARM_TASK_STATE_ORDER: Record<string, number> = {
 	running: 0,

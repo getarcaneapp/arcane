@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"github.com/stretchr/testify/require"
 )
 
@@ -14,8 +14,8 @@ func newCSRFTestRouterInternal() *echo.Echo {
 	cfg := &config.Config{Environment: "production", AppUrl: "https://arcane.example.com"}
 	router := echo.New()
 	router.Use(NewCSRFMiddleware(cfg).Add())
-	router.POST("/api/test", func(c echo.Context) error { return c.NoContent(http.StatusOK) })
-	router.POST("/api/webhooks/trigger/:token", func(c echo.Context) error { return c.NoContent(http.StatusOK) })
+	router.POST("/api/test", func(c *echo.Context) error { return c.NoContent(http.StatusOK) })
+	router.POST("/api/webhooks/trigger/:token", func(c *echo.Context) error { return c.NoContent(http.StatusOK) })
 	return router
 }
 

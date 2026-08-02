@@ -32,3 +32,11 @@ type Paginated[T any] struct {
 	Data       []T                `json:"data" doc:"Array of items for the current page"`
 	Pagination PaginationResponse `json:"pagination" doc:"Pagination metadata"`
 }
+
+// PaginatedWithCounts is a generic wrapper for paginated responses with aggregate counts.
+type PaginatedWithCounts[T, C any] struct {
+	Success    bool               `json:"success" doc:"Whether the request was successful"`
+	Data       []T                `json:"data" doc:"Array of items for the current page"`
+	Counts     C                  `json:"counts" doc:"Aggregate counts for the filtered collection"`
+	Pagination PaginationResponse `json:"pagination" doc:"Pagination metadata"`
+}

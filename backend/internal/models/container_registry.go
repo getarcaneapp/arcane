@@ -7,20 +7,21 @@ import (
 type ContainerRegistry struct {
 	BaseModel
 
-	URL                 string     `json:"url" sortable:"true"`
-	Username            string     `json:"username" sortable:"true"`
-	Token               string     `json:"token"`
-	Description         *string    `json:"description,omitempty" sortable:"true"`
-	Insecure            bool       `json:"insecure" sortable:"true"`
-	Enabled             bool       `json:"enabled" sortable:"true"`
-	RegistryType        string     `json:"registryType" sortable:"true"`
-	AWSAccessKeyID      string     `json:"awsAccessKeyId"`
-	AWSSecretAccessKey  string     `json:"awsSecretAccessKey"`
-	AWSRegion           string     `json:"awsRegion"`
-	ECRToken            string     `json:"ecrToken"`
-	ECRTokenGeneratedAt *time.Time `json:"ecrTokenGeneratedAt"`
-	CreatedAt           time.Time  `json:"createdAt" sortable:"true"`
-	UpdatedAt           time.Time  `json:"updatedAt" sortable:"true"`
+	URL                 string      `json:"url" sortable:"true"`
+	Username            string      `json:"username" sortable:"true"`
+	Token               string      `json:"token"`
+	Description         *string     `json:"description,omitempty" sortable:"true"`
+	Insecure            bool        `json:"insecure" sortable:"true"`
+	Enabled             bool        `json:"enabled" sortable:"true"`
+	RegistryType        string      `json:"registryType" sortable:"true"`
+	RepositoryNames     StringSlice `json:"repositoryNames" gorm:"column:repository_names;type:text;not null;default:'[]'"`
+	AWSAccessKeyID      string      `json:"awsAccessKeyId"`
+	AWSSecretAccessKey  string      `json:"awsSecretAccessKey"`
+	AWSRegion           string      `json:"awsRegion"`
+	ECRToken            string      `json:"ecrToken"`
+	ECRTokenGeneratedAt *time.Time  `json:"ecrTokenGeneratedAt"`
+	CreatedAt           time.Time   `json:"createdAt" sortable:"true"`
+	UpdatedAt           time.Time   `json:"updatedAt" sortable:"true"`
 }
 
 func (ContainerRegistry) TableName() string {
@@ -28,27 +29,29 @@ func (ContainerRegistry) TableName() string {
 }
 
 type CreateContainerRegistryRequest struct {
-	URL                string  `json:"url" binding:"required"`
-	Username           string  `json:"username"`
-	Token              string  `json:"token"`
-	Description        *string `json:"description"`
-	Insecure           *bool   `json:"insecure"`
-	Enabled            *bool   `json:"enabled"`
-	RegistryType       string  `json:"registryType"`
-	AWSAccessKeyID     string  `json:"awsAccessKeyId"`
-	AWSSecretAccessKey string  `json:"awsSecretAccessKey"`
-	AWSRegion          string  `json:"awsRegion"`
+	URL                string   `json:"url" binding:"required"`
+	Username           string   `json:"username"`
+	Token              string   `json:"token"`
+	Description        *string  `json:"description"`
+	Insecure           *bool    `json:"insecure"`
+	Enabled            *bool    `json:"enabled"`
+	RegistryType       string   `json:"registryType"`
+	RepositoryNames    []string `json:"repositoryNames"`
+	AWSAccessKeyID     string   `json:"awsAccessKeyId"`
+	AWSSecretAccessKey string   `json:"awsSecretAccessKey"`
+	AWSRegion          string   `json:"awsRegion"`
 }
 
 type UpdateContainerRegistryRequest struct {
-	URL                *string `json:"url"`
-	Username           *string `json:"username"`
-	Token              *string `json:"token"`
-	Description        *string `json:"description"`
-	Insecure           *bool   `json:"insecure"`
-	Enabled            *bool   `json:"enabled"`
-	RegistryType       *string `json:"registryType"`
-	AWSAccessKeyID     *string `json:"awsAccessKeyId"`
-	AWSSecretAccessKey *string `json:"awsSecretAccessKey"`
-	AWSRegion          *string `json:"awsRegion"`
+	URL                *string   `json:"url"`
+	Username           *string   `json:"username"`
+	Token              *string   `json:"token"`
+	Description        *string   `json:"description"`
+	Insecure           *bool     `json:"insecure"`
+	Enabled            *bool     `json:"enabled"`
+	RegistryType       *string   `json:"registryType"`
+	RepositoryNames    *[]string `json:"repositoryNames"`
+	AWSAccessKeyID     *string   `json:"awsAccessKeyId"`
+	AWSSecretAccessKey *string   `json:"awsSecretAccessKey"`
+	AWSRegion          *string   `json:"awsRegion"`
 }

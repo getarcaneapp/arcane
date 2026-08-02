@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import * as Empty from '$lib/components/ui/empty/index.js';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { AlertIcon } from '$lib/icons';
-	import { m } from '$lib/paraglide/messages';
+	import * as Empty from '#lib/components/ui/empty/index.js';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import { AlertIcon } from '#lib/icons';
+	import { m } from '#lib/paraglide/messages';
 
 	interface Props {
 		fallbackTitle: string;

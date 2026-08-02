@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { cn } from '$lib/utils';
+	import { cn } from '#lib/utils';
 	import { useImageCropperTrigger } from './image-cropper-state.svelte.js';
 	import type { ImageCropperUploadTriggerProps } from './types';
 

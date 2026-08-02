@@ -47,8 +47,7 @@ func TestValidateSafeRemoteURL(t *testing.T) {
 			parsed, err := ValidateSafeRemoteURL(context.Background(), tt.rawURL, lookupIP)
 			if tt.wantErr {
 				require.Error(t, err)
-				var unsafeErr *common.UnsafeRemoteURLError
-				require.ErrorAs(t, err, &unsafeErr)
+				require.ErrorIs(t, err, common.ErrUnsafeRemoteURL)
 				require.Nil(t, parsed)
 				return
 			}
@@ -75,8 +74,7 @@ func TestNewSafeOutboundHTTPClient_BlocksUnsafeRedirectTarget(t *testing.T) {
 
 	_, err = client.Get("http://registry.example.com/redirect")
 	require.Error(t, err)
-	var unsafeErr *common.UnsafeRemoteURLError
-	require.ErrorAs(t, err, &unsafeErr)
+	require.ErrorIs(t, err, common.ErrUnsafeRemoteURL)
 }
 
 func newRedirectTestClient(listenerAddr string) *http.Client {

@@ -16,8 +16,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/types/v2/auth"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/labstack/echo/v4"
-	sqlite "github.com/libtnb/sqlite"
+	"github.com/labstack/echo/v5"
+	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
@@ -109,7 +109,7 @@ func TestNewAuthBridge_AcceptsEnvironmentAccessTokenViaAPIKey(t *testing.T) {
 		Path:        "/secure",
 		Security:    []map[string][]string{{"ApiKeyAuth": {}}},
 	}, func(ctx context.Context, _ *secureInput) (*secureOutput, error) {
-		user, ok := GetCurrentUserFromContext(ctx)
+		user, ok := models.CurrentUserFromContext(ctx)
 		require.True(t, ok)
 		require.Equal(t, "environment:env-self", user.ID)
 		require.Equal(t, "Self Target", user.Username)
@@ -142,7 +142,7 @@ func TestNewAuthBridge_UsesBearerWhenLoopbackProxySendsEnvironmentAccessToken(t 
 	sessionSvc := services.NewSessionService(db)
 
 	jwtSecret := "test-secret-please-do-not-use-in-prod"
-	authSvc := services.NewAuthService(userSvc, nil, nil, sessionSvc, nil, jwtSecret, &config.Config{JWTRefreshExpiry: 24 * time.Hour})
+	authSvc := services.NewAuthService(userSvc, nil, nil, sessionSvc, nil, jwtSecret, &config.Config{JWTRefreshExpiry: 24 * time.Hour}, nil)
 	bearerToken := mintAuthBridgeTestTokenInternal(t, userSvc, sessionSvc, jwtSecret, "u-loopback")
 
 	ps := authz.NewPermissionSet()
@@ -180,7 +180,7 @@ func TestNewAuthBridge_UsesBearerWhenLoopbackProxySendsEnvironmentAccessToken(t 
 		ID  string `path:"id"`
 		CID string `path:"cid"`
 	}) (*secureOutput, error) {
-		user, ok := GetCurrentUserFromContext(ctx)
+		user, ok := models.CurrentUserFromContext(ctx)
 		require.True(t, ok)
 		require.Equal(t, "u-loopback", user.ID)
 
@@ -223,7 +223,7 @@ func TestNewAuthBridge_RejectsApiKeyOnBearerOnlyOperation(t *testing.T) {
 		Path:        "/bearer-only",
 		Security:    []map[string][]string{{"BearerAuth": {}}},
 	}, func(ctx context.Context, _ *secureInput) (*secureOutput, error) {
-		t.Fatal("handler must not be reached with API key auth")
+		require.FailNow(t, "handler must not be reached with API key auth")
 		return &secureOutput{}, nil
 	})
 
@@ -321,7 +321,7 @@ func TestNewAuthBridge_OpportunisticAuthOnPublicRoute(t *testing.T) {
 
 	jwtSecret := "test-secret-please-do-not-use-in-prod"
 	cfg := &config.Config{JWTRefreshExpiry: 24 * time.Hour}
-	authSvc := services.NewAuthService(userSvc, nil, nil, sessionSvc, nil, jwtSecret, cfg)
+	authSvc := services.NewAuthService(userSvc, nil, nil, sessionSvc, nil, jwtSecret, cfg, nil)
 
 	_, err := userSvc.CreateUser(context.Background(), &models.User{
 		BaseModel: models.BaseModel{ID: "u-logout"},
@@ -384,7 +384,7 @@ func TestNewAuthBridge_OpportunisticAuthOnPublicRoute(t *testing.T) {
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, req)
 		require.Equal(t, http.StatusOK, rec.Code)
-		require.Equal(t, "", sawSessionID)
+		require.Empty(t, sawSessionID)
 	})
 
 	t.Run("succeeds with invalid token (does not block)", func(t *testing.T) {
@@ -394,7 +394,7 @@ func TestNewAuthBridge_OpportunisticAuthOnPublicRoute(t *testing.T) {
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, req)
 		require.Equal(t, http.StatusOK, rec.Code)
-		require.Equal(t, "", sawSessionID)
+		require.Empty(t, sawSessionID)
 	})
 }
 
@@ -409,7 +409,7 @@ func TestNewAuthBridge_VersionMismatchIsRecoverable(t *testing.T) {
 
 	jwtSecret := "test-secret-please-do-not-use-in-prod"
 	cfg := &config.Config{JWTRefreshExpiry: 24 * time.Hour}
-	authSvc := services.NewAuthService(userSvc, nil, nil, sessionSvc, nil, jwtSecret, cfg)
+	authSvc := services.NewAuthService(userSvc, nil, nil, sessionSvc, nil, jwtSecret, cfg, nil)
 
 	_, err := userSvc.CreateUser(context.Background(), &models.User{
 		BaseModel: models.BaseModel{ID: "u-ver"},

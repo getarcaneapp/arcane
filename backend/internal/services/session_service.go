@@ -5,17 +5,17 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
-	"errors"
-	"fmt"
 	"strings"
 	"time"
 
+	"emperror.dev/errors"
+
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
-	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/dbutil"
 	"github.com/getarcaneapp/arcane/types/v2/auth"
 	"github.com/google/uuid"
+	"github.com/samber/mo"
 	"gorm.io/gorm"
 )
 
@@ -35,15 +35,15 @@ func (s *SessionService) CreateSession(ctx context.Context, userID string, expir
 	session := &models.UserSession{
 		UserID:           userID,
 		RefreshTokenHash: refreshHash,
-		UserAgent:        pkgutils.StringPtrFromTrimmed(meta.UserAgent),
-		IPAddress:        pkgutils.StringPtrFromTrimmed(meta.IPAddress),
+		UserAgent:        mo.EmptyableToOption(strings.TrimSpace(meta.UserAgent)).ToPointer(),
+		IPAddress:        mo.EmptyableToOption(strings.TrimSpace(meta.IPAddress)).ToPointer(),
 		Source:           models.UserSessionSourceLocal,
 		LastUsedAt:       now,
 		ExpiresAt:        expiresAt,
 	}
 
 	if err := s.db.WithContext(ctx).Create(session).Error; err != nil {
-		return nil, "", fmt.Errorf("failed to create user session: %w", err)
+		return nil, "", errors.WrapIf(err, "failed to create user session")
 	}
 
 	return session, refreshJTI, nil
@@ -57,13 +57,13 @@ func (s *SessionService) CreateFederatedSession(ctx context.Context, userID stri
 		UserID:                userID,
 		RefreshTokenHash:      refreshHash,
 		Source:                models.UserSessionSourceFederated,
-		FederatedCredentialID: pkgutils.StringPtrFromTrimmed(credentialID),
+		FederatedCredentialID: mo.EmptyableToOption(strings.TrimSpace(credentialID)).ToPointer(),
 		LastUsedAt:            now,
 		ExpiresAt:             expiresAt,
 	}
 
 	if err := s.db.WithContext(ctx).Create(session).Error; err != nil {
-		return nil, fmt.Errorf("failed to create federated user session: %w", err)
+		return nil, errors.WrapIf(err, "failed to create federated user session")
 	}
 
 	return session, nil
@@ -79,7 +79,7 @@ func (s *SessionService) GetSessionByID(ctx context.Context, sessionID string) (
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrInvalidToken
 		}
-		return nil, fmt.Errorf("failed to get user session: %w", err)
+		return nil, errors.WrapIf(err, "failed to get user session")
 	}
 	return &session, nil
 }
@@ -101,7 +101,7 @@ func (s *SessionService) RotateRefreshToken(ctx context.Context, sessionID strin
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return ErrInvalidToken
 			}
-			return fmt.Errorf("failed to get user session for rotation: %w", err)
+			return errors.WrapIf(err, "failed to get user session for rotation")
 		}
 		if err := validateSessionActiveInternal(&session); err != nil {
 			return err
@@ -114,14 +114,14 @@ func (s *SessionService) RotateRefreshToken(ctx context.Context, sessionID strin
 			"refresh_token_hash": newHash,
 			"last_used_at":       now,
 			"updated_at":         now,
-			"user_agent":         pkgutils.StringPtrFromTrimmed(meta.UserAgent),
-			"ip_address":         pkgutils.StringPtrFromTrimmed(meta.IPAddress),
+			"user_agent":         mo.EmptyableToOption(strings.TrimSpace(meta.UserAgent)).ToPointer(),
+			"ip_address":         mo.EmptyableToOption(strings.TrimSpace(meta.IPAddress)).ToPointer(),
 		}
 		result := tx.Model(&models.UserSession{}).
 			Where("id = ? AND refresh_token_hash = ? AND revoked_at IS NULL", session.ID, session.RefreshTokenHash).
 			Updates(updates)
 		if result.Error != nil {
-			return fmt.Errorf("failed to rotate refresh token: %w", result.Error)
+			return errors.WrapIf(result.Error, "failed to rotate refresh token")
 		}
 		if result.RowsAffected != 1 {
 			return ErrInvalidToken
@@ -136,8 +136,8 @@ func (s *SessionService) RotateRefreshToken(ctx context.Context, sessionID strin
 	rotated.RefreshTokenHash = newHash
 	rotated.LastUsedAt = now
 	rotated.UpdatedAt = &now
-	rotated.UserAgent = pkgutils.StringPtrFromTrimmed(meta.UserAgent)
-	rotated.IPAddress = pkgutils.StringPtrFromTrimmed(meta.IPAddress)
+	rotated.UserAgent = mo.EmptyableToOption(strings.TrimSpace(meta.UserAgent)).ToPointer()
+	rotated.IPAddress = mo.EmptyableToOption(strings.TrimSpace(meta.IPAddress)).ToPointer()
 
 	return &rotated, newRefreshJTI, nil
 }
@@ -151,7 +151,7 @@ func (s *SessionService) RevokeSession(ctx context.Context, sessionID string) er
 	if err := s.db.WithContext(ctx).Model(&models.UserSession{}).
 		Where("id = ? AND revoked_at IS NULL", sessionID).
 		Updates(map[string]any{"revoked_at": now, "updated_at": now}).Error; err != nil {
-		return fmt.Errorf("failed to revoke user session: %w", err)
+		return errors.WrapIf(err, "failed to revoke user session")
 	}
 	return nil
 }
@@ -163,7 +163,7 @@ func (s *SessionService) DeleteExpiredSessions(ctx context.Context, revokedReten
 		Where("expires_at < ? OR (revoked_at IS NOT NULL AND revoked_at < ?)", now, revokedCutoff).
 		Delete(&models.UserSession{})
 	if result.Error != nil {
-		return 0, fmt.Errorf("failed to delete expired user sessions: %w", result.Error)
+		return 0, errors.WrapIf(result.Error, "failed to delete expired user sessions")
 	}
 	return result.RowsAffected, nil
 }
@@ -176,18 +176,22 @@ func hashRefreshJTIInternal(jti string) string {
 // RevokeAllUserSessionsExcept revokes every active session for userID, leaving
 // exceptSessionID active. Pass "" to revoke all sessions.
 func (s *SessionService) RevokeAllUserSessionsExcept(ctx context.Context, userID, exceptSessionID string) error {
+	return revokeAllUserSessionsExceptInternal(ctx, s.db.DB, userID, exceptSessionID)
+}
+
+func revokeAllUserSessionsExceptInternal(ctx context.Context, db *gorm.DB, userID, exceptSessionID string) error {
 	if strings.TrimSpace(userID) == "" {
 		return ErrInvalidToken
 	}
 
 	now := time.Now()
-	query := s.db.WithContext(ctx).Model(&models.UserSession{}).
+	query := db.WithContext(ctx).Model(&models.UserSession{}).
 		Where("user_id = ? AND revoked_at IS NULL", userID)
 	if strings.TrimSpace(exceptSessionID) != "" {
 		query = query.Where("id <> ?", exceptSessionID)
 	}
 	if err := query.Updates(map[string]any{"revoked_at": now, "updated_at": now}).Error; err != nil {
-		return fmt.Errorf("failed to revoke user sessions: %w", err)
+		return errors.WrapIf(err, "failed to revoke user sessions")
 	}
 	return nil
 }

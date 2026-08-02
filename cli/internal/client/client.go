@@ -26,8 +26,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
+	stderrors "errors"
 	"io"
 	"net"
 	"net/http"
@@ -36,6 +35,7 @@ import (
 	"strings"
 	"time"
 
+	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/config"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/logger"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/runstate"
@@ -85,7 +85,7 @@ func New(cfg *types.Config) (*Client, error) {
 	}
 	parsedURL, err := url.Parse(cfg.ServerURL)
 	if err != nil {
-		return nil, fmt.Errorf("invalid server_url: %w", err)
+		return nil, errors.WrapIf(err, "invalid server_url")
 	}
 
 	envID := cfg.DefaultEnvironment
@@ -115,7 +115,7 @@ func NewUnauthenticated(cfg *types.Config) (*Client, error) {
 	}
 	parsedURL, err := url.Parse(cfg.ServerURL)
 	if err != nil {
-		return nil, fmt.Errorf("invalid server_url: %w", err)
+		return nil, errors.WrapIf(err, "invalid server_url")
 	}
 
 	envID := cfg.DefaultEnvironment
@@ -155,7 +155,7 @@ func newHTTPClientInternal() *http.Client {
 func NewFromConfig() (*Client, error) {
 	cfg, err := config.Load()
 	if err != nil {
-		return nil, fmt.Errorf("failed to load config: %w", err)
+		return nil, errors.WrapIf(err, "failed to load config")
 	}
 	state := runstate.Get()
 	if strings.TrimSpace(state.EnvOverride) != "" {
@@ -180,7 +180,7 @@ func NewFromConfig() (*Client, error) {
 func NewFromConfigUnauthenticated() (*Client, error) {
 	cfg, err := config.Load()
 	if err != nil {
-		return nil, fmt.Errorf("failed to load config: %w", err)
+		return nil, errors.WrapIf(err, "failed to load config")
 	}
 	state := runstate.Get()
 	if strings.TrimSpace(state.EnvOverride) != "" {
@@ -239,19 +239,6 @@ type APIResponse[T any] struct {
 	Error   string `json:"error,omitempty"`
 }
 
-// PaginatedResponse wraps paginated API responses.
-// It includes the list of items for the current page along with pagination
-// metadata including current page, page size, total items, and total pages.
-type PaginatedResponse[T any] struct {
-	Items      []T `json:"items"`
-	Pagination struct {
-		CurrentPage int   `json:"currentPage"`
-		PageSize    int   `json:"pageSize"`
-		TotalItems  int64 `json:"totalItems"`
-		TotalPages  int   `json:"totalPages"`
-	} `json:"pagination"`
-}
-
 // Request makes an HTTP request to the API with JSON body serialization.
 // It constructs the full URL from the base URL and path, serializes the body
 // as JSON (if provided), and includes authentication headers. The caller is
@@ -273,7 +260,7 @@ func (c *Client) Request(ctx context.Context, method, path string, body any) (*h
 			// Streaming bodies cannot be replayed, so skip auto-refresh.
 			req, err := http.NewRequestWithContext(ctx, method, fullURL, v)
 			if err != nil {
-				return nil, fmt.Errorf("failed to create request: %w", err)
+				return nil, errors.WrapIf(err, "failed to create request")
 			}
 			c.applyAuth(req)
 			req.Header.Set("Content-Type", "application/json")
@@ -283,14 +270,14 @@ func (c *Client) Request(ctx context.Context, method, path string, body any) (*h
 			resp, err := c.httpClient.Do(req)
 			if err != nil {
 				logger.GetLogger().Debug("Request failed", "method", method, "url", fullURL, "env_id", c.envID, "duration", time.Since(start).String(), "error", err)
-				return nil, fmt.Errorf("request failed: %w", err)
+				return nil, errors.WrapIf(err, "request failed")
 			}
 			logger.GetLogger().Debug("Response received", "method", method, "url", fullURL, "env_id", c.envID, "status", resp.Status, "duration", time.Since(start).String())
 			return resp, nil
 		default:
 			jsonBody, err := json.Marshal(body)
 			if err != nil {
-				return nil, fmt.Errorf("failed to marshal request body: %w", err)
+				return nil, errors.WrapIf(err, "failed to marshal request body")
 			}
 			bodyBytes = jsonBody
 		}
@@ -311,7 +298,7 @@ func (c *Client) RequestRaw(ctx context.Context, method, path string, body io.Re
 
 	req, err := http.NewRequestWithContext(ctx, method, fullURL, body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, errors.WrapIf(err, "failed to create request")
 	}
 
 	c.applyAuth(req)
@@ -326,7 +313,7 @@ func (c *Client) RequestRaw(ctx context.Context, method, path string, body io.Re
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		logger.GetLogger().Debug("Raw request failed", "method", method, "url", fullURL, "env_id", c.envID, "duration", time.Since(start).String(), "error", err)
-		return nil, fmt.Errorf("request failed: %w", err)
+		return nil, errors.WrapIf(err, "request failed")
 	}
 	logger.GetLogger().Debug("Raw response received", "method", method, "url", fullURL, "env_id", c.envID, "status", resp.Status, "duration", time.Since(start).String())
 
@@ -339,13 +326,13 @@ func (c *Client) resolveURL(path string) (string, error) {
 	}
 	if strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") {
 		if _, err := url.Parse(path); err != nil {
-			return "", fmt.Errorf("invalid path: %w", err)
+			return "", errors.WrapIf(err, "invalid path")
 		}
 		return path, nil
 	}
 	rel, err := url.Parse(path)
 	if err != nil {
-		return "", fmt.Errorf("invalid path: %w", err)
+		return "", errors.WrapIf(err, "invalid path")
 	}
 	if c.baseURLParsed == nil {
 		return "", errors.New("invalid base URL")
@@ -364,7 +351,7 @@ func (c *Client) doRequest(ctx context.Context, method, fullURL string, bodyByte
 
 		req, err := http.NewRequestWithContext(ctx, method, fullURL, bodyReader)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create request: %w", err)
+			return nil, errors.WrapIf(err, "failed to create request")
 		}
 
 		c.applyAuth(req)
@@ -383,7 +370,7 @@ func (c *Client) doRequest(ctx context.Context, method, fullURL string, bodyByte
 				}
 				continue
 			}
-			return nil, fmt.Errorf("request failed: %w", err)
+			return nil, errors.WrapIf(err, "request failed")
 		}
 		logger.GetLogger().Debug("Response received", "method", method, "url", fullURL, "env_id", c.envID, "attempt", attempt, "status", resp.Status, "duration", time.Since(start).String())
 
@@ -410,7 +397,7 @@ func (c *Client) doRequest(ctx context.Context, method, fullURL string, bodyByte
 		return resp, nil
 	}
 
-	return nil, fmt.Errorf("request failed after %d attempts", attempts)
+	return nil, errors.Errorf("request failed after %d attempts", attempts)
 }
 
 func (c *Client) shouldRetry(method string, status int, err error) bool {
@@ -426,7 +413,7 @@ func (c *Client) shouldRetry(method string, status int, err error) bool {
 			return false
 		}
 
-		if netErr, ok := errors.AsType[net.Error](err); ok {
+		if netErr, ok := stderrors.AsType[net.Error](err); ok {
 			return netErr.Timeout()
 		}
 		return true
@@ -483,7 +470,7 @@ func (c *Client) refreshAccessToken(ctx context.Context) error {
 
 	bodyBytes, err := json.Marshal(map[string]string{"refreshToken": c.refreshToken})
 	if err != nil {
-		return fmt.Errorf("failed to marshal refresh request: %w", err)
+		return errors.WrapIf(err, "failed to marshal refresh request")
 	}
 
 	if c.baseURLParsed == nil {
@@ -494,7 +481,7 @@ func (c *Client) refreshAccessToken(ctx context.Context) error {
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, refreshURL, bytes.NewReader(bodyBytes))
 	if err != nil {
-		return fmt.Errorf("failed to create refresh request: %w", err)
+		return errors.WrapIf(err, "failed to create refresh request")
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
@@ -503,23 +490,23 @@ func (c *Client) refreshAccessToken(ctx context.Context) error {
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		logger.GetLogger().Debug("Token refresh request failed", "url", refreshURL, "duration", time.Since(start).String(), "error", err)
-		return fmt.Errorf("token refresh failed: %w", err)
+		return errors.WrapIf(err, "token refresh failed")
 	}
 	defer func() { _ = resp.Body.Close() }()
 	logger.GetLogger().Debug("Token refresh response received", "url", refreshURL, "status", resp.Status, "duration", time.Since(start).String())
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("failed to read refresh response: %w", err)
+		return errors.WrapIf(err, "failed to read refresh response")
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("token refresh failed (status %d): %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+		return errors.Errorf("token refresh failed (status %d): %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
 	}
 
 	var result base.ApiResponse[auth.TokenRefreshResponse]
 	if err := json.Unmarshal(respBody, &result); err != nil {
-		return fmt.Errorf("failed to parse refresh response: %w", err)
+		return errors.WrapIf(err, "failed to parse refresh response")
 	}
 	if !result.Success || result.Data.Token == "" {
 		return errors.New("token refresh failed: unexpected response from server")
@@ -536,13 +523,13 @@ func (c *Client) refreshAccessToken(ctx context.Context) error {
 
 	cfg, err := config.Load()
 	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
+		return errors.WrapIf(err, "failed to load config")
 	}
 	cfg.JWTToken = result.Data.Token
 	cfg.APIKey = ""
 	cfg.RefreshToken = newRefresh
 	if err := config.Save(cfg); err != nil {
-		return fmt.Errorf("failed to save refreshed token: %w", err)
+		return errors.WrapIf(err, "failed to save refreshed token")
 	}
 
 	return nil
@@ -572,11 +559,11 @@ func (c *Client) Delete(ctx context.Context, path string) (*http.Response, error
 	return c.Request(ctx, http.MethodDelete, path, nil)
 }
 
-// EnvPath returns a path prefixed with the environment.
-// It constructs an environment-scoped API path in the format:
-// /api/environments/{envID}{path}
-func (c *Client) EnvPath(path string) string {
-	return fmt.Sprintf("/api/environments/%s%s", c.envID, path)
+// DeleteWithBody makes a DELETE request to the specified path with a JSON body.
+// A handful of Arcane delete endpoints — project destroy, for one — take options
+// in the request body rather than as query parameters.
+func (c *Client) DeleteWithBody(ctx context.Context, path string, body any) (*http.Response, error) {
+	return c.Request(ctx, http.MethodDelete, path, body)
 }
 
 // DoJSON performs a request and decodes a standard API envelope into out.
@@ -589,21 +576,16 @@ func (c *Client) DoJSON(ctx context.Context, method, path string, body any, out 
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
-		return fmt.Errorf("request failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+		return errors.Errorf("request failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
 	}
 
 	if out == nil {
 		return nil
 	}
 	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
-		return fmt.Errorf("failed to decode response: %w", err)
+		return errors.WrapIf(err, "failed to decode response")
 	}
 	return nil
-}
-
-// DoPaginated performs a request and decodes a paginated API envelope into out.
-func (c *Client) DoPaginated(ctx context.Context, method, path string, body any, out any) error {
-	return c.DoJSON(ctx, method, path, body, out)
 }
 
 // DoRaw performs a request and returns the response payload when status is 2xx.
@@ -616,79 +598,44 @@ func (c *Client) DoRaw(ctx context.Context, method, path string, body any) ([]by
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
-		return nil, fmt.Errorf("request failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+		return nil, errors.Errorf("request failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
 	}
 
 	b, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		return nil, errors.WrapIf(err, "failed to read response body")
 	}
 	return b, nil
 }
 
-// DecodeResponse decodes an API response into the given type.
-// It reads the response body, unmarshals it as JSON, and returns the typed
-// result. If the response indicates failure (Success=false) with a 4xx/5xx
-// status code, an error is returned with the error message from the API.
-// Note: This function closes the response body.
-func DecodeResponse[T any](resp *http.Response) (*APIResponse[T], error) {
-	return DecodeResponseStrict[T](resp)
-}
-
-// DecodeResponseStrict decodes a response envelope and enforces HTTP and API success.
+// DecodeResponseStrict decodes an API response into the given type and enforces
+// HTTP and API success. It reads the response body, unmarshals it as JSON, and
+// returns the typed result. If the response indicates failure (Success=false) or
+// carries a non-2xx status code, an error is returned with the message from the
+// API. Note: This function closes the response body.
 func DecodeResponseStrict[T any](resp *http.Response) (*APIResponse[T], error) {
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
-		return nil, fmt.Errorf("request failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return nil, errors.Errorf("request failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		return nil, errors.WrapIf(err, "failed to read response body")
 	}
 
 	var result APIResponse[T]
 	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w (body: %s)", err, string(body))
+		return nil, errors.WrapIff(err, "failed to decode response (body: %s)", string(body))
 	}
 
 	if !result.Success {
 		if strings.TrimSpace(result.Error) != "" {
-			return &result, fmt.Errorf("API error: %s", result.Error)
+			return &result, errors.Errorf("API error: %s", result.Error)
 		}
 		return &result, errors.New("API error: request was not successful")
-	}
-
-	return &result, nil
-}
-
-// DecodePaginatedResponse decodes a paginated API response.
-// It reads the response body and unmarshals it into a PaginatedResponse
-// containing the items array and pagination metadata.
-// Note: This function closes the response body.
-func DecodePaginatedResponse[T any](resp *http.Response) (*PaginatedResponse[T], error) {
-	return DecodePaginatedResponseStrict[T](resp)
-}
-
-// DecodePaginatedResponseStrict decodes a paginated envelope and enforces HTTP and API success.
-func DecodePaginatedResponseStrict[T any](resp *http.Response) (*PaginatedResponse[T], error) {
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
-		return nil, fmt.Errorf("request failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	var result PaginatedResponse[T]
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w (body: %s)", err, string(body))
 	}
 
 	return &result, nil
@@ -706,7 +653,7 @@ func (c *Client) TestConnection(ctx context.Context) error {
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("connection test failed with status %d: %s", resp.StatusCode, string(body))
+		return errors.Errorf("connection test failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
 	return nil

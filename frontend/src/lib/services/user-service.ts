@@ -1,7 +1,7 @@
 import BaseAPIService from './api-service';
-import type { User, CreateUser, TimeFormat } from '$lib/types/auth';
-import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
-import { transformPaginationParams } from '$lib/utils/tables';
+import type { User, CreateUser, TimeFormat, UserPreferences } from '#lib/types/auth';
+import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
+import { transformPaginationParams } from '#lib/utils/tables';
 
 class UserAPIService extends BaseAPIService {
 	async getUsers(options?: SearchPaginationSortRequest): Promise<Paginated<User>> {
@@ -44,6 +44,7 @@ class UserAPIService extends BaseAPIService {
 		locale?: string;
 		timeFormat?: TimeFormat;
 		fontSize?: number;
+		preferences?: Partial<UserPreferences>;
 	}): Promise<User> {
 		return this.handleResponse(this.api.put('/auth/me/profile', data)) as Promise<User>;
 	}

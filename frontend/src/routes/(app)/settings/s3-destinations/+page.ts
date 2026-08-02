@@ -1,7 +1,7 @@
 import type { PageLoad } from './$types';
-import { s3DestinationService } from '$lib/services/s3-destination-service';
-import { resolveInitialTableRequest } from '$lib/utils/tables';
-import type { SearchPaginationSortRequest } from '$lib/types/shared';
+import { s3DestinationService } from '#lib/services/s3-destination-service';
+import { resolveInitialTableRequest } from '#lib/utils/tables';
+import type { SearchPaginationSortRequest } from '#lib/types/shared';
 
 export const load: PageLoad = async () => {
 	const requestOptions = resolveInitialTableRequest('arcane-s3-destinations-table', {

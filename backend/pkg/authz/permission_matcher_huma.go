@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/samber/mo"
 )
 
 // MetaRequiredPermission is the huma.Operation.Metadata key under which the
@@ -33,7 +34,7 @@ func (m *PermissionMatcher) CollectFromHumaAPI(humaAPI huma.API) {
 		if item == nil {
 			continue
 		}
-		suffix, ok := envResourceSuffixInternal(path)
+		suffix, ok := envResourceSuffixInternal(path).Get()
 		if !ok {
 			continue
 		}
@@ -41,7 +42,7 @@ func (m *PermissionMatcher) CollectFromHumaAPI(humaAPI huma.API) {
 			if op == nil {
 				continue
 			}
-			if perm, ok := requiredPermissionInternal(op); ok {
+			if perm, ok := requiredPermissionInternal(op).Get(); ok {
 				m.Add(method, suffix, perm)
 				continue
 			}
@@ -58,24 +59,24 @@ func (m *PermissionMatcher) CollectFromHumaAPI(humaAPI huma.API) {
 
 // envResourceSuffixInternal returns the resource path after /environments/{id}
 // for environment-scoped operation paths, e.g. "/containers" for
-// "/environments/{id}/containers". It returns ok=false for paths that are not
+// "/environments/{id}/containers". It returns None for paths that are not
 // environment-scoped resource paths (including the bare "/environments/{id}").
-func envResourceSuffixInternal(path string) (string, bool) {
+func envResourceSuffixInternal(path string) mo.Option[string] {
 	if !strings.HasPrefix(path, envPathPrefixInternal+"/") {
-		return "", false
+		return mo.None[string]()
 	}
-	return strings.TrimPrefix(path, envPathPrefixInternal), true
+	return mo.Some(strings.TrimPrefix(path, envPathPrefixInternal))
 }
 
-func requiredPermissionInternal(op *huma.Operation) (string, bool) {
+func requiredPermissionInternal(op *huma.Operation) mo.Option[string] {
 	if op.Metadata == nil {
-		return "", false
+		return mo.None[string]()
 	}
 	perm, ok := op.Metadata[MetaRequiredPermission].(string)
 	if !ok || perm == "" {
-		return "", false
+		return mo.None[string]()
 	}
-	return perm, true
+	return mo.Some(perm)
 }
 
 // isPublicOperationInternal reports whether op explicitly opts out of all

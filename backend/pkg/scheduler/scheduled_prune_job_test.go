@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	sqlite "github.com/libtnb/sqlite"
+	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
@@ -21,7 +21,7 @@ func setupScheduledPruneSettingsServiceInternal(t *testing.T) *services.Settings
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&models.SettingVariable{}))
 
-	svc, err := services.NewSettingsService(context.Background(), &database.DB{DB: db})
+	svc, err := newSettingsServiceForTestInternal(t, context.Background(), &database.DB{DB: db})
 	require.NoError(t, err)
 
 	return svc

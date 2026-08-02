@@ -2,32 +2,24 @@ package edge
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"net/http"
+	"slices"
 	"time"
+
+	"emperror.dev/errors"
 
 	"github.com/google/uuid"
 )
 
-type CommandRequest struct {
-	ID            string
-	Command       string
-	Method        string
-	Path          string
-	Query         string
-	Headers       map[string]string
-	Body          []byte
-	TimeoutMillis int64
-}
-
-type CommandResult struct {
-	Status  int
-	Headers map[string]string
-	Body    []byte
-}
-
-type CommandClient struct{}
+const (
+	tunnelCapabilityChunkedRequest = "chunked-request"
+	// tunnelCapabilityProtoParity signals the peer can decode the full
+	// TunnelMessage vocabulary natively over gRPC (stream_data/stream_end
+	// manager->agent, cancel_request agent->manager) instead of the legacy
+	// re-encoded forms.
+	tunnelCapabilityProtoParity = "proto-parity-v1"
+	bodyTransferMetadataKey     = "body_transfer_id"
+)
 
 func NewCommandClient() *CommandClient {
 	return &CommandClient{}
@@ -46,9 +38,9 @@ func (c *CommandClient) Execute(ctx context.Context, tunnel *AgentTunnel, req *C
 
 	commandName := req.Command
 	if commandName == "" {
-		resolved, ok := ResolveEdgeCommandName(req.Method, req.Path, false)
+		resolved, ok := ResolveEdgeCommandName(req.Method, req.Path, false).Get()
 		if !ok {
-			return nil, fmt.Errorf("unsupported edge command for %s %s", req.Method, req.Path)
+			return nil, errors.Errorf("unsupported edge command for %s %s", req.Method, req.Path)
 		}
 		commandName = resolved
 	}
@@ -77,17 +69,40 @@ func (c *CommandClient) Execute(ctx context.Context, tunnel *AgentTunnel, req *C
 		AgentInstance: tunnel.AgentInstance,
 	}
 
-	respCh, err := registerPendingRequestInternal(tunnel, requestID)
+	pending, err := registerPendingRequestInternal(tunnel, requestID)
 	if err != nil {
 		return nil, err
 	}
 	defer tunnel.Pending.Delete(requestID)
 
-	if err := tunnel.Conn.Send(msg); err != nil {
-		return nil, fmt.Errorf("tunnel request failed: %w", err)
+	chunkRequestBody := len(req.Body) > defaultCommandChunkSize && slices.Contains(tunnel.Capabilities, tunnelCapabilityChunkedRequest)
+	if chunkRequestBody {
+		transferID := uuid.NewString()
+		msg.Body = nil
+		msg.Metadata = map[string]string{bodyTransferMetadataKey: transferID}
 	}
 
-	status, headers, body, err := collectCommandResponseInternal(ctx, respCh, req.Method)
+	if err := tunnel.Conn.Send(msg); err != nil {
+		return nil, errors.WrapIf(err, "tunnel request failed")
+	}
+	if chunkRequestBody {
+		transferID := msg.Metadata[bodyTransferMetadataKey]
+		for sequence, offset := int64(0), 0; offset < len(req.Body); sequence++ {
+			end := min(offset+defaultCommandChunkSize, len(req.Body))
+			if err := tunnel.Conn.Send(&TunnelMessage{
+				ID:       transferID,
+				Type:     MessageTypeFileChunk,
+				Body:     req.Body[offset:end],
+				Sequence: sequence,
+				EOF:      end == len(req.Body),
+			}); err != nil {
+				return nil, errors.WrapIf(err, "tunnel request body transfer failed")
+			}
+			offset = end
+		}
+	}
+
+	status, headers, body, err := collectCommandResponseInternal(ctx, tunnel, pending, req.Method)
 	if err != nil {
 		return nil, err
 	}
@@ -115,9 +130,9 @@ func (c *CommandClient) OpenStream(ctx context.Context, tunnel *AgentTunnel, req
 
 	commandName := req.Command
 	if commandName == "" {
-		resolved, ok := ResolveEdgeCommandName(http.MethodGet, req.Path, true)
+		resolved, ok := ResolveEdgeCommandName(http.MethodGet, req.Path, true).Get()
 		if !ok {
-			return fmt.Errorf("unsupported edge stream target %q", req.Path)
+			return errors.Errorf("unsupported edge stream target %q", req.Path)
 		}
 		commandName = resolved
 	}

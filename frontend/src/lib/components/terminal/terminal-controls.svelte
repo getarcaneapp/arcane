@@ -1,8 +1,8 @@
 <script lang="ts">
-	import * as Select from '$lib/components/ui/select/index.js';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { Input } from '$lib/components/ui/input/index.js';
-	import { m } from '$lib/paraglide/messages';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { m } from '#lib/paraglide/messages';
 
 	let {
 		selectedShell = $bindable(),

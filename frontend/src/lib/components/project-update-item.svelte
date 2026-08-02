@@ -1,14 +1,14 @@
 <script lang="ts">
-	import type { ProjectUpdateInfo } from '$lib/types/swarm';
-	import { getProjectUpdateStatus, getProjectUpdateText } from '$lib/utils/docker';
-	import { m } from '$lib/paraglide/messages';
-	import UpdateStatusPopover from '$lib/components/update-status-popover.svelte';
-	import UpdateStatusBanner from '$lib/components/update-status-banner.svelte';
-	import { Spinner } from '$lib/components/ui/spinner/index.js';
-	import { AlertIcon, CircleArrowUpIcon, ClockIcon, ImagesIcon, RefreshIcon, VerifiedCheckIcon } from '$lib/icons';
+	import type { ProjectUpdateInfo } from '#lib/types/swarm';
+	import { getProjectUpdateStatus, getProjectUpdateText } from '#lib/utils/docker';
+	import { m } from '#lib/paraglide/messages';
+	import UpdateStatusPopover from '#lib/components/update-status-popover.svelte';
+	import UpdateStatusBanner from '#lib/components/update-status-banner.svelte';
+	import { Spinner } from '#lib/components/ui/spinner/index.js';
+	import { AlertIcon, CircleArrowUpIcon, ClockIcon, ImagesIcon, RefreshIcon, VerifiedCheckIcon } from '#lib/icons';
 	import type { Component } from 'svelte';
-	import { formatDateTimeShort } from '$lib/utils/formatting';
-	import UncheckedRingIcon from '$lib/components/unchecked-ring-icon.svelte';
+	import { formatDateTimeShort } from '#lib/utils/formatting';
+	import UncheckedRingIcon from '#lib/components/unchecked-ring-icon.svelte';
 	import { mergeProps } from 'bits-ui';
 
 	interface Props {

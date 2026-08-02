@@ -8,7 +8,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humaecho"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"github.com/stretchr/testify/require"
 
 	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
@@ -39,7 +39,7 @@ func TestGitRepositoryHandlers_PermissionGating(t *testing.T) {
 					Path:        "/customize/git-repositories",
 					Middlewares: humamw.RequirePermission(api, authz.PermGitReposCreate),
 				}, func(_ context.Context, _ *struct{}) (*struct{}, error) {
-					t.Fatal("handler must not run when permission is missing")
+					require.FailNow(t, "handler must not run when permission is missing")
 					return nil, nil
 				})
 			},
@@ -57,7 +57,7 @@ func TestGitRepositoryHandlers_PermissionGating(t *testing.T) {
 				}, func(_ context.Context, _ *struct {
 					ID string `path:"id"`
 				}) (*struct{}, error) {
-					t.Fatal("handler must not run when permission is missing")
+					require.FailNow(t, "handler must not run when permission is missing")
 					return nil, nil
 				})
 			},
@@ -75,7 +75,7 @@ func TestGitRepositoryHandlers_PermissionGating(t *testing.T) {
 				}, func(_ context.Context, _ *struct {
 					ID string `path:"id"`
 				}) (*struct{}, error) {
-					t.Fatal("handler must not run when permission is missing")
+					require.FailNow(t, "handler must not run when permission is missing")
 					return nil, nil
 				})
 			},
@@ -93,7 +93,7 @@ func TestGitRepositoryHandlers_PermissionGating(t *testing.T) {
 				}, func(_ context.Context, _ *struct {
 					ID string `path:"id"`
 				}) (*struct{}, error) {
-					t.Fatal("handler must not run when permission is missing")
+					require.FailNow(t, "handler must not run when permission is missing")
 					return nil, nil
 				})
 			},
@@ -127,4 +127,4 @@ func TestGitRepositoryHandlers_PermissionGating(t *testing.T) {
 
 // Compile-time assertion that GitRepositoryService is the type the production
 // handler expects; keeps this test honest if the field is ever renamed.
-var _ = (*GitRepositoryHandler)(&GitRepositoryHandler{repoService: &services.GitRepositoryService{}})
+var _ = &GitRepositoryHandler{repoService: &services.GitRepositoryService{}}

@@ -1,6 +1,6 @@
-import { variableService } from '$lib/services/variable-service';
-import { queryKeys } from '$lib/query/query-keys';
-import type { GlobalVariable } from '$lib/types/variable';
+import { variableService } from '#lib/services/variable-service';
+import { queryKeys } from '#lib/query/query-keys';
+import type { GlobalVariable } from '#lib/types/variable';
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({ parent }): Promise<{ globalVariables: GlobalVariable[] }> => {

@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
-	import SwitchWithLabel from '$lib/components/form/labeled-switch.svelte';
-	import { EllipsisIcon } from '$lib/icons';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import * as Select from '$lib/components/ui/select';
-	import { m } from '$lib/paraglide/messages';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import * as ArcaneTooltip from '#lib/components/arcane-tooltip';
+	import SwitchWithLabel from '#lib/components/form/labeled-switch.svelte';
+	import { EllipsisIcon } from '#lib/icons';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import * as Select from '#lib/components/ui/select';
+	import { m } from '#lib/paraglide/messages';
 	import { PersistedState } from 'runed';
 
 	let {
@@ -70,9 +70,10 @@
 		showParsedJson = persistedJsonParsing.current === 'true';
 	});
 
-	$effect(() => {
-		persistedJsonParsing.current = showParsedJson ? 'true' : 'false';
-	});
+	function handleParsedModeChange(checked: boolean): void {
+		showParsedJson = checked;
+		persistedJsonParsing.current = checked ? 'true' : 'false';
+	}
 
 	const selectedLabel = $derived(tailOptions.find((o) => o.value === selectedTail)?.label ?? m.log_tail_100_lines());
 </script>
@@ -161,7 +162,7 @@
 			<DropdownMenu.CheckboxItem
 				checked={showParsedJson}
 				onCheckedChange={(checked) => {
-					showParsedJson = checked === true;
+					handleParsedModeChange(checked === true);
 				}}
 			>
 				<div class="flex flex-col gap-0.5">
@@ -243,7 +244,7 @@
 							checked={showParsedJson}
 							label={showParsedJson ? m.common_parsed() : m.common_raw()}
 							onCheckedChange={(checked) => {
-								showParsedJson = checked;
+								handleParsedModeChange(checked);
 							}}
 						/>
 					{/snippet}

@@ -8,7 +8,7 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humaecho"
 	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 func newPermissionGatingRouterInternal(t *testing.T, ps *authz.PermissionSet) (*echo.Echo, huma.API) {

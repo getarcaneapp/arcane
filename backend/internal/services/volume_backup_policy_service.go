@@ -23,7 +23,7 @@ const (
 
 var ErrVolumeBackupAlreadyRunning = errors.New("a backup is already running for this volume")
 
-func (s *VolumeService) SetScheduler(ctx context.Context, scheduler DynamicScheduler) { //nolint:contextcheck // scheduled backups must use the application lifecycle context
+func (s *VolumeService) SetScheduler(ctx context.Context, scheduler schedulertypes.DynamicScheduler) { //nolint:contextcheck // scheduled backups must use the application lifecycle context
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -123,6 +123,7 @@ func (s *VolumeService) GetBackupPolicies(ctx context.Context, volumeName string
 	return result, nil
 }
 
+//nolint:gocognit // policy validation, persistence, and job replacement must remain atomic from the caller's perspective
 func (s *VolumeService) UpdateBackupPolicies(ctx context.Context, volumeName string, updates []volumetypes.UpdateBackupPolicy) (*volumetypes.BackupPolicyCollection, error) {
 	for i := range updates {
 		schedule, err := normalizeVolumeBackupScheduleInternal(updates[i].Schedule)

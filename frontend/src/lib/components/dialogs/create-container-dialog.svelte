@@ -1,19 +1,19 @@
 <script lang="ts">
-	import { ResponsiveDialog } from '$lib/components/ui/responsive-dialog/index.js';
-	import * as Tabs from '$lib/components/ui/tabs/index.js';
-	import { TabBar, type TabItem } from '$lib/components/tab-bar/index.js';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import FormInput from '$lib/components/form/form-input.svelte';
-	import { Checkbox } from '$lib/components/ui/checkbox/index.js';
-	import { Label } from '$lib/components/ui/label/index.js';
-	import { Input } from '$lib/components/ui/input/index.js';
-	import { Textarea } from '$lib/components/ui/textarea/index.js';
-	import type { ContainerCreateRequest } from '$lib/types/docker';
+	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
+	import * as Tabs from '#lib/components/ui/tabs/index.js';
+	import { TabBar, type TabItem } from '#lib/components/tab-bar/index.js';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import FormInput from '#lib/components/form/form-input.svelte';
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Textarea } from '#lib/components/ui/textarea/index.js';
+	import type { ContainerCreateRequest } from '#lib/types/docker';
 	import { z } from 'zod/v4';
-	import { createForm, preventDefault } from '$lib/utils/settings';
-	import { parseKeyValuePairs } from '$lib/utils/form-parsers';
+	import { createForm, preventDefault } from '#lib/utils/settings';
+	import { parseKeyValuePairs } from '#lib/utils/form-parsers';
 	import SelectWithLabel from '../form/select-with-label.svelte';
-	import { m } from '$lib/paraglide/messages';
+	import { m } from '#lib/paraglide/messages';
 	import {
 		SettingsIcon,
 		SecurityIcon,
@@ -23,7 +23,7 @@
 		CloseIcon,
 		VariableIcon,
 		ContainersIcon
-	} from '$lib/icons';
+	} from '#lib/icons';
 
 	type CreateContainerFormProps = {
 		open: boolean;

@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import * as Select from '$lib/components/ui/select/index.js';
-	import { m } from '$lib/paraglide/messages';
-	import { ArrowRightIcon, ArrowLeftIcon, DoubleArrowRightIcon, DoubleArrowLeftIcon } from '$lib/icons';
-	import { TABLE_PAGE_SIZE_ALL, TABLE_PAGE_SIZE_OPTIONS } from '$lib/constants/table-pagination';
-	import type { Paginated } from '$lib/types/shared';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import { m } from '#lib/paraglide/messages';
+	import { ArrowRightIcon, ArrowLeftIcon, DoubleArrowRightIcon, DoubleArrowLeftIcon } from '#lib/icons';
+	import { TABLE_PAGE_SIZE_ALL, TABLE_PAGE_SIZE_OPTIONS } from '#lib/constants/table-pagination';
+	import type { Paginated } from '#lib/types/shared';
 
 	let {
 		items,

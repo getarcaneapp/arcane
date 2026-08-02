@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { ActivityIcon } from '$lib/icons';
-	import { activityStore } from '$lib/stores/activity.store.svelte';
-	import { m } from '$lib/paraglide/messages';
-	import { cn } from '$lib/utils';
-	import userStore, { userHasPermissionInAnyEnvironment } from '$lib/stores/user-store';
+	import { ActivityIcon } from '#lib/icons';
+	import { activityStore } from '#lib/stores/activity.store.svelte';
+	import { m } from '#lib/paraglide/messages';
+	import { cn } from '#lib/utils';
+	import userStore, { userHasPermissionInAnyEnvironment } from '#lib/stores/user-store';
 	import { fromStore } from 'svelte/store';
 
 	let {

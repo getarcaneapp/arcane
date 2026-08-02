@@ -1,19 +1,19 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { NetworksIcon, ConnectionIcon } from '$lib/icons';
-	import { GitBranchIcon } from '$lib/icons';
+	import { NetworksIcon, ConnectionIcon } from '#lib/icons';
+	import { GitBranchIcon } from '#lib/icons';
 	import { toast } from 'svelte-sonner';
-	import type { NetworkCreateOptions, NetworkUsageCounts } from '$lib/types/docker';
-	import CreateNetworkSheet from '$lib/components/sheets/create-network-sheet.svelte';
+	import type { NetworkCreateOptions, NetworkUsageCounts } from '#lib/types/docker';
+	import CreateNetworkSheet from '#lib/components/sheets/create-network-sheet.svelte';
 	import NetworkTable from './network-table.svelte';
-	import { m } from '$lib/paraglide/messages';
-	import { networkService } from '$lib/services/network-service';
-	import { ResourceListPageState } from '$lib/utils/resource-list-page.svelte';
-	import { queryKeys } from '$lib/query/query-keys';
+	import { m } from '#lib/paraglide/messages';
+	import { networkService } from '#lib/services/network-service';
+	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte';
+	import { queryKeys } from '#lib/query/query-keys';
 	import { untrack } from 'svelte';
-	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
+	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
-	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
+	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
 
 	let { data } = $props();
 	const queryClient = useQueryClient();

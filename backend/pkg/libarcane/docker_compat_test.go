@@ -101,20 +101,6 @@ func TestIsDockerAPIVersionAtLeast(t *testing.T) {
 	}
 }
 
-func TestSupportsDockerCreatePerNetworkMACAddress(t *testing.T) {
-	require.True(t, SupportsDockerCreatePerNetworkMACAddress("1.44"))
-	require.True(t, SupportsDockerCreatePerNetworkMACAddress("1.46"))
-	require.False(t, SupportsDockerCreatePerNetworkMACAddress("1.43"))
-	require.False(t, SupportsDockerCreatePerNetworkMACAddress("1.41"))
-}
-
-func TestSupportsDockerCreateMultiEndpointNetworking(t *testing.T) {
-	require.True(t, SupportsDockerCreateMultiEndpointNetworking("1.44"))
-	require.True(t, SupportsDockerCreateMultiEndpointNetworking("1.46"))
-	require.False(t, SupportsDockerCreateMultiEndpointNetworking("1.43"))
-	require.False(t, SupportsDockerCreateMultiEndpointNetworking("1.41"))
-}
-
 func TestSanitizeContainerCreateEndpointSettingsForDockerAPI(t *testing.T) {
 	input := map[string]*network.EndpointSettings{
 		"bridge": {
@@ -265,7 +251,7 @@ func TestContainerCreateWithCompatibilityForAPIVersion(t *testing.T) {
 		_, err := ContainerCreateWithCompatibilityForAPIVersion(t.Context(), fakeClient, client.ContainerCreateOptions{
 			Config: &container.Config{Image: "nginx:latest"},
 			HostConfig: &container.HostConfig{
-				NetworkMode: container.NetworkMode("anet"),
+				NetworkMode: "anet",
 			},
 			NetworkingConfig: &network.NetworkingConfig{
 				EndpointsConfig: map[string]*network.EndpointSettings{
@@ -300,7 +286,7 @@ func TestContainerCreateWithCompatibilityForAPIVersion(t *testing.T) {
 
 		_, err := ContainerCreateWithCompatibilityForAPIVersion(t.Context(), fakeClient, client.ContainerCreateOptions{
 			HostConfig: &container.HostConfig{
-				NetworkMode: container.NetworkMode("anet"),
+				NetworkMode: "anet",
 			},
 			NetworkingConfig: &network.NetworkingConfig{
 				EndpointsConfig: map[string]*network.EndpointSettings{

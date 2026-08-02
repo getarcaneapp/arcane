@@ -110,6 +110,7 @@ func (s *SystemBackupService) GetPolicies(ctx context.Context) (*backuptypes.Sys
 	return result, nil
 }
 
+//nolint:gocognit // policy validation, persistence, and job replacement must remain atomic from the caller's perspective
 func (s *SystemBackupService) UpdatePolicies(ctx context.Context, updates []backuptypes.UpdateSystemBackupPolicy) (*backuptypes.SystemBackupPolicyCollection, error) {
 	configured, err := s.recoveryKeyConfiguredInternal(ctx)
 	if err != nil {
@@ -194,7 +195,7 @@ func (s *SystemBackupService) UpdatePolicies(ctx context.Context, updates []back
 	return s.GetPolicies(ctx)
 }
 
-func (s *SystemBackupService) SetScheduler(ctx context.Context, scheduler DynamicScheduler) { //nolint:contextcheck
+func (s *SystemBackupService) SetScheduler(ctx context.Context, scheduler schedulertypes.DynamicScheduler) { //nolint:contextcheck
 	if ctx == nil {
 		ctx = context.Background()
 	}

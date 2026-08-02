@@ -1,9 +1,9 @@
 <script lang="ts">
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { cn } from '$lib/utils.js';
-	import { m } from '$lib/paraglide/messages';
-	import { ArrowUpIcon, ArrowDownIcon, ArrowsUpDownIcon, EyeOffIcon } from '$lib/icons';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import { cn } from '#lib/utils.js';
+	import { m } from '#lib/paraglide/messages';
+	import { ArrowUpIcon, ArrowDownIcon, ArrowsUpDownIcon, EyeOffIcon } from '#lib/icons';
 	import type { SvelteHTMLElements } from 'svelte/elements';
 
 	type DivAttributes = SvelteHTMLElements['div'];

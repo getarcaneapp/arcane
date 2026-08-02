@@ -4,8 +4,6 @@ env:
   GOEXPERIMENT: jsonv2
 
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main, "release/**", "breaking/**"]
 
@@ -17,7 +15,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: "${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}"
+  group: "${{ github.workflow }}-${{ github.event.pull_request.number }}"
   cancel-in-progress: true
 
 jobs:
@@ -46,7 +44,7 @@ jobs:
             cgo_enabled: "1"
     steps:
       - name: Checkout
-        uses: actions/checkout@v7.0.0
+        uses: actions/checkout@v7
 
       - name: Setup Just
         uses: extractions/setup-just@v4
@@ -56,7 +54,7 @@ jobs:
         uses: depot/setup-action@v1
 
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version-file: ${{ matrix.module.path }}/go.mod
           cache: true
@@ -74,14 +72,11 @@ jobs:
       - name: Run unit tests
         env:
           CGO_ENABLED: ${{ matrix.module.cgo_enabled }}
-          GO_JUNIT_REPORT_FILE: test-results/junit.xml
         run: just test ${{ matrix.module.name }}
 
-      - name: Report Go test results to Depot
-        if: ${{ !cancelled() }}
-        uses: depot/test-report-action@v1
-        with:
-          path: ${{ matrix.module.path }}/test-results/
+      - name: Lint protobuf definitions
+        if: matrix.module.name == 'backend'
+        run: just lint proto
 
       - name: Upload coverage artifact
         if: always()
@@ -105,16 +100,16 @@ jobs:
             args: --config=../.github/.golangci.yml
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7.0.0
+        uses: actions/checkout@v7
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version-file: ${{ matrix.module.name }}/go.mod
           cache-dependency-path: ${{ matrix.module.name }}/go.sum
 
       - name: Run Golangci-lint
-        uses: golangci/golangci-lint-action@v9.3.0
+        uses: golangci/golangci-lint-action@v9
         with:
           version: latest
           args: ${{ matrix.module.args }}
@@ -127,10 +122,10 @@ jobs:
     runs-on: depot-ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7.0.0
+        uses: actions/checkout@v7
 
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
@@ -204,7 +199,7 @@ jobs:
     runs-on: depot-ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7.0.0
+        uses: actions/checkout@v7
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -253,7 +248,7 @@ jobs:
             port: 3002
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7.0.0
+        uses: actions/checkout@v7
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -276,7 +271,7 @@ jobs:
         run: depot configure-docker
 
       - name: Cache Playwright Browsers
-        uses: actions/cache@v6.1.0
+        uses: actions/cache@v6
         id: playwright-cache
         with:
           path: ~/.cache/ms-playwright
@@ -294,11 +289,10 @@ jobs:
         run: just deps install tests
 
       - name: Run Playwright E2E tests
-        run: mkdir -p tests/test-results && pnpm -C tests exec playwright test --project=chromium
+        run: pnpm -C tests exec playwright test --project=chromium
         env:
           COMPOSE_FILE: ${{ matrix.database.compose_file }}
           BASE_URL: http://localhost:${{ matrix.database.port }}
-          PLAYWRIGHT_JUNIT_OUTPUT_FILE: test-results/playwright-${{ matrix.database.name }}.xml
 
       - name: Upload Playwright HTML report
         if: always()
@@ -308,12 +302,6 @@ jobs:
           path: tests/.report
           include-hidden-files: true
           retention-days: 15
-
-      - name: Report Playwright test results to Depot
-        if: ${{ !cancelled() }}
-        uses: depot/test-report-action@v1
-        with:
-          path: tests/test-results/
 
   cli-e2e-tests:
     name: CLI E2E Tests (proxy)
@@ -325,7 +313,7 @@ jobs:
       id-token: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7.0.0
+        uses: actions/checkout@v7
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -339,7 +327,7 @@ jobs:
           cache: pnpm
 
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version-file: cli/go.mod
           cache-dependency-path: cli/go.sum
@@ -354,12 +342,11 @@ jobs:
         run: pnpm -C tests install
 
       - name: Run CLI E2E tests against socket proxy
-        run: mkdir -p tests/test-results && pnpm -C tests exec playwright test --project=cli
+        run: pnpm -C tests exec playwright test --project=cli
         env:
           COMPOSE_FILE: setup/compose-proxy.yaml
           BASE_URL: http://localhost:3002
           E2E_ADMIN_STATIC_API_KEY: ${{ secrets.E2E_ADMIN_STATIC_API_KEY }}
-          PLAYWRIGHT_JUNIT_OUTPUT_FILE: test-results/playwright-cli.xml
 
       - name: Upload Playwright HTML report
         if: always()
@@ -369,9 +356,3 @@ jobs:
           path: tests/.report
           include-hidden-files: true
           retention-days: 15
-
-      - name: Report Playwright test results to Depot
-        if: ${{ !cancelled() }}
-        uses: depot/test-report-action@v1
-        with:
-          path: tests/test-results/

@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { openConfirmDialog } from '$lib/components/confirm-dialog';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
-	import * as TreeView from '$lib/components/ui/tree-view/index.js';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog';
+	import * as Dialog from '#lib/components/ui/dialog';
+	import { Input } from '#lib/components/ui/input';
+	import { Label } from '#lib/components/ui/label';
+	import * as Tooltip from '#lib/components/ui/tooltip/index.js';
+	import * as TreeView from '#lib/components/ui/tree-view/index.js';
 	import {
 		ArrowDownIcon,
 		ArrowRightIcon,
@@ -18,9 +18,9 @@
 		LockIcon,
 		TrashIcon,
 		UploadIcon
-	} from '$lib/icons';
-	import { m } from '$lib/paraglide/messages';
-	import { cn } from '$lib/utils';
+	} from '#lib/icons';
+	import { m } from '#lib/paraglide/messages';
+	import { cn } from '#lib/utils';
 	import {
 		compareProjectFileEntries,
 		joinProjectFilePath,

@@ -3,7 +3,6 @@ package services
 import (
 	"bufio"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -14,11 +13,14 @@ import (
 	"strings"
 	"time"
 
+	"emperror.dev/errors"
+
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/api/pkg/stdcopy"
 	containertypes "github.com/moby/moby/api/types/container"
 	mounttypes "github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
+	"github.com/samber/mo"
 	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -27,7 +29,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	buildapi "go.getarcane.app/builds/api"
 )
 
@@ -120,7 +121,7 @@ func (s *LifecycleService) RunPreDeploy(ctx context.Context, project *models.Pro
 
 	sync, err := s.loadGitOpsSyncForProjectInternal(ctx, project.ID)
 	if err != nil {
-		return fmt.Errorf("failed to load gitops sync for lifecycle hook: %w", err)
+		return errors.WrapIf(err, "failed to load gitops sync for lifecycle hook")
 	}
 	if sync == nil || sync.PreDeployScriptPath == nil || strings.TrimSpace(*sync.PreDeployScriptPath) == "" {
 		return nil
@@ -132,21 +133,21 @@ func (s *LifecycleService) RunPreDeploy(ctx context.Context, project *models.Pro
 func (s *LifecycleService) executePreDeployInternal(ctx context.Context, project *models.Project, sync *models.GitOpsSync, actor models.User) error {
 	runnerImage := s.resolveRunnerImageInternal(ctx, sync)
 	if runnerImage == "" {
-		return fmt.Errorf("pre-deploy script %q is configured but no runner image is set on the GitOps sync or lifecycleDefaultRunnerImage setting", *sync.PreDeployScriptPath)
+		return errors.Errorf("pre-deploy script %q is configured but no runner image is set on the GitOps sync or lifecycleDefaultRunnerImage setting", *sync.PreDeployScriptPath)
 	}
 
 	scriptPath := strings.TrimSpace(*sync.PreDeployScriptPath)
 	if err := validateScriptPathInternal(project.Path, scriptPath); err != nil {
-		return fmt.Errorf("invalid pre-deploy script path: %w", err)
+		return errors.WrapIf(err, "invalid pre-deploy script path")
 	}
 
 	hookEnv, err := parseLifecycleEnvTextInternal(sync.PreDeployEnv)
 	if err != nil {
-		return fmt.Errorf("invalid lifecycle env config: %w", err)
+		return errors.WrapIf(err, "invalid lifecycle env config")
 	}
 	extraMounts, err := parseLifecycleExtraMountsTextInternal(sync.PreDeployExtraMounts)
 	if err != nil {
-		return fmt.Errorf("invalid lifecycle extra mounts config: %w", err)
+		return errors.WrapIf(err, "invalid lifecycle extra mounts config")
 	}
 
 	timeout := s.resolveTimeoutInternal(ctx, sync.PreDeployTimeoutSec)
@@ -185,14 +186,14 @@ func (s *LifecycleService) executePreDeployInternal(ctx context.Context, project
 		return runErr
 	}
 	if exitCode != 0 {
-		return fmt.Errorf("pre-deploy script exited with status %d", exitCode)
+		return errors.Errorf("pre-deploy script exited with status %d", exitCode)
 	}
 	return nil
 }
 
 func (s *LifecycleService) resolveRunnerImageInternal(ctx context.Context, sync *models.GitOpsSync) string {
 	if sync != nil {
-		runnerImage := strings.TrimSpace(utils.DerefString(sync.PreDeployRunnerImage))
+		runnerImage := strings.TrimSpace(mo.PointerToOption(sync.PreDeployRunnerImage).OrEmpty())
 		if runnerImage != "" {
 			return runnerImage
 		}
@@ -217,11 +218,11 @@ func (s *LifecycleService) runScriptInContainerInternal(
 ) (stdoutContent string, stderrContent string, exitCode int64, err error) {
 	dockerClient, dErr := s.dockerService.GetClient(ctx)
 	if dErr != nil {
-		return "", "", 0, fmt.Errorf("failed to connect to Docker: %w", dErr)
+		return "", "", 0, errors.WrapIf(dErr, "failed to connect to Docker")
 	}
 
 	if err := s.ensureRunnerImageInternal(ctx, dockerClient, runnerImage); err != nil {
-		return "", "", 0, fmt.Errorf("failed to ensure runner image %s: %w", runnerImage, err)
+		return "", "", 0, errors.WrapIff(err, "failed to ensure runner image %s", runnerImage)
 	}
 
 	// Resolve the workspace mount. When Arcane runs inside a container whose
@@ -282,22 +283,22 @@ func (s *LifecycleService) runScriptInContainerInternal(
 	}
 
 	apiTimeoutSec := s.settingsService.GetSettingsConfig().DockerAPITimeout.AsInt()
-	createCtx, createCancel := timeouts.WithTimeout(ctx, apiTimeoutSec, timeouts.DefaultDockerAPI)
+	createCtx, createCancel := context.WithTimeout(ctx, timeouts.GetDuration(apiTimeoutSec, timeouts.DefaultDockerAPI))
 	defer createCancel()
 	resp, err := dockerClient.ContainerCreate(createCtx, client.ContainerCreateOptions{
 		Config:     config,
 		HostConfig: hostConfig,
 	})
 	if err != nil {
-		return "", "", 0, fmt.Errorf("create lifecycle container: %w", err)
+		return "", "", 0, errors.WrapIf(err, "create lifecycle container")
 	}
 	containerID := resp.ID
 	defer removeLifecycleContainerInternal(ctx, dockerClient, containerID, apiTimeoutSec)
 
-	startCtx, startCancel := timeouts.WithTimeout(ctx, apiTimeoutSec, timeouts.DefaultDockerAPI)
+	startCtx, startCancel := context.WithTimeout(ctx, timeouts.GetDuration(apiTimeoutSec, timeouts.DefaultDockerAPI))
 	defer startCancel()
 	if _, err := dockerClient.ContainerStart(startCtx, containerID, client.ContainerStartOptions{}); err != nil {
-		return "", "", 0, fmt.Errorf("start lifecycle container: %w", err)
+		return "", "", 0, errors.WrapIf(err, "start lifecycle container")
 	}
 
 	logsCtx, logsCancel := context.WithCancel(ctx)
@@ -308,7 +309,7 @@ func (s *LifecycleService) runScriptInContainerInternal(
 		Follow:     true,
 	})
 	if err != nil {
-		return "", "", 0, fmt.Errorf("stream lifecycle container logs: %w", err)
+		return "", "", 0, errors.WrapIf(err, "stream lifecycle container logs")
 	}
 
 	stdoutBuf := buildapi.NewLogCapture(lifecycleMaxOutputBytes)
@@ -330,17 +331,17 @@ func (s *LifecycleService) runScriptInContainerInternal(
 		exitCode = result.StatusCode
 		if result.Error != nil && result.Error.Message != "" {
 			drainLifecycleLogsInternal(ctx, logsCancel, logs, logDone)
-			return markTruncatedInternal(stdoutBuf), markTruncatedInternal(stderrBuf), exitCode, fmt.Errorf("lifecycle container reported error: %s", result.Error.Message)
+			return markTruncatedInternal(stdoutBuf), markTruncatedInternal(stderrBuf), exitCode, errors.Errorf("lifecycle container reported error: %s", result.Error.Message)
 		}
 	case waitErr := <-waitResp.Error:
 		drainLifecycleLogsInternal(ctx, logsCancel, logs, logDone)
 		if errors.Is(waitErr, context.DeadlineExceeded) || errors.Is(waitCtx.Err(), context.DeadlineExceeded) {
-			return markTruncatedInternal(stdoutBuf), markTruncatedInternal(stderrBuf), 0, fmt.Errorf("pre-deploy script timed out after %s: %w", timeout, context.DeadlineExceeded)
+			return markTruncatedInternal(stdoutBuf), markTruncatedInternal(stderrBuf), 0, errors.WrapIff(context.DeadlineExceeded, "pre-deploy script timed out after %s", timeout)
 		}
 		if errors.Is(waitErr, context.Canceled) {
-			return markTruncatedInternal(stdoutBuf), markTruncatedInternal(stderrBuf), 0, fmt.Errorf("pre-deploy script cancelled: %w", waitErr)
+			return markTruncatedInternal(stdoutBuf), markTruncatedInternal(stderrBuf), 0, errors.WrapIf(waitErr, "pre-deploy script cancelled")
 		}
-		return markTruncatedInternal(stdoutBuf), markTruncatedInternal(stderrBuf), 0, fmt.Errorf("lifecycle container wait failed: %w", waitErr)
+		return markTruncatedInternal(stdoutBuf), markTruncatedInternal(stderrBuf), 0, errors.WrapIf(waitErr, "lifecycle container wait failed")
 	}
 
 	drainLifecycleLogsInternal(ctx, logsCancel, logs, logDone)
@@ -358,20 +359,20 @@ func (s *LifecycleService) ensureRunnerImageInternal(ctx context.Context, docker
 	}
 
 	pullTimeoutSec := s.settingsService.GetSettingsConfig().DockerImagePullTimeout.AsInt()
-	pullCtx, pullCancel := timeouts.WithTimeout(ctx, pullTimeoutSec, timeouts.DefaultDockerImagePull)
+	pullCtx, pullCancel := context.WithTimeout(ctx, timeouts.GetDuration(pullTimeoutSec, timeouts.DefaultDockerImagePull))
 	defer pullCancel()
 
 	pullReader, err := dockerClient.ImagePull(pullCtx, image, client.ImagePullOptions{})
 	if err != nil {
 		if errors.Is(pullCtx.Err(), context.DeadlineExceeded) {
-			return fmt.Errorf("runner image pull timed out for %s (increase dockerImagePullTimeout setting if needed)", image)
+			return errors.Errorf("runner image pull timed out for %s (increase dockerImagePullTimeout setting if needed)", image)
 		}
-		return fmt.Errorf("pull runner image %s: %w", image, err)
+		return errors.WrapIff(err, "pull runner image %s", image)
 	}
 	defer func() { _ = pullReader.Close() }()
 
-	if err := dockerutils.ConsumeJSONMessageStream(pullReader, nil); err != nil {
-		return fmt.Errorf("failed to complete runner image pull: %w", err)
+	if err := dockerutils.RenderJSONMessageStream(pullReader, io.Discard); err != nil {
+		return errors.WrapIf(err, "failed to complete runner image pull")
 	}
 	return nil
 }
@@ -416,7 +417,7 @@ func (s *LifecycleService) emitLifecycleEventInternal(
 ) {
 	severity := models.EventSeveritySuccess
 	title := "Pre-deploy lifecycle hook succeeded: " + project.Name
-	description := fmt.Sprintf("Script %s exited with code %d in %dms", utils.DerefString(sync.PreDeployScriptPath), exitCode, durationMs)
+	description := fmt.Sprintf("Script %s exited with code %d in %dms", mo.PointerToOption(sync.PreDeployScriptPath).OrEmpty(), exitCode, durationMs)
 	if status != lifecycleStatusSuccess {
 		severity = models.EventSeverityWarning
 		title = fmt.Sprintf("Pre-deploy lifecycle hook %s: %s", status, project.Name)
@@ -426,7 +427,7 @@ func (s *LifecycleService) emitLifecycleEventInternal(
 	}
 
 	metadata := models.JSON{
-		"scriptPath":   utils.DerefString(sync.PreDeployScriptPath),
+		"scriptPath":   mo.PointerToOption(sync.PreDeployScriptPath).OrEmpty(),
 		"runnerImage":  runnerImage,
 		"exitCode":     exitCode,
 		"durationMs":   durationMs,
@@ -483,32 +484,45 @@ func validateScriptPathInternal(projectPath, scriptPath string) error {
 	// scriptPath is a POSIX repo path, not a host path; use path.IsAbs so the
 	// check behaves the same on Windows-based contributor machines.
 	if path.IsAbs(filepath.ToSlash(scriptPath)) {
-		return fmt.Errorf("script path %q must be relative to the project directory", scriptPath)
+		return errors.Errorf("script path %q must be relative to the project directory", scriptPath)
 	}
 
 	absProject, err := filepath.Abs(projectPath)
 	if err != nil {
-		return fmt.Errorf("resolve project path: %w", err)
+		return errors.WrapIf(err, "resolve project path")
 	}
 	absScript, err := filepath.Abs(filepath.Join(absProject, scriptPath))
 	if err != nil {
-		return fmt.Errorf("resolve script path: %w", err)
+		return errors.WrapIf(err, "resolve script path")
 	}
 	if !projects.IsSafeSubdirectory(absProject, absScript) {
-		return fmt.Errorf("script path %q escapes project directory", scriptPath)
+		return errors.Errorf("script path %q escapes project directory", scriptPath)
 	}
 
 	info, err := os.Lstat(absScript)
 	if err != nil {
-		return fmt.Errorf("stat script %q: %w", scriptPath, err)
+		return describeScriptStatErrorInternal(err, projectPath, scriptPath, absScript)
 	}
 	if info.Mode()&os.ModeSymlink != 0 {
-		return fmt.Errorf("script path %q is a symlink; symlinks are not allowed", scriptPath)
+		return errors.Errorf("script path %q is a symlink; symlinks are not allowed", scriptPath)
 	}
 	if info.IsDir() {
-		return fmt.Errorf("script path %q refers to a directory", scriptPath)
+		return errors.Errorf("script path %q refers to a directory", scriptPath)
 	}
 	return nil
+}
+
+func describeScriptStatErrorInternal(err error, projectPath, scriptPath, resolvedScriptPath string) error {
+	if os.IsPermission(err) {
+		return errors.WrapIff(
+			err,
+			"Arcane pre-deploy validation could not inspect script %q. %s",
+			scriptPath,
+			describeLifecyclePathAccessInternal(projectPath, resolvedScriptPath),
+		)
+	}
+
+	return errors.WrapIff(err, "stat script %q", scriptPath)
 }
 
 // parseLifecycleEnvTextInternal reads admin-configured env config as the
@@ -521,7 +535,7 @@ func parseLifecycleEnvTextInternal(raw *string) (map[string]string, error) {
 	}
 	env, err := parseKeyValueEnvInternal(*raw)
 	if err != nil {
-		return nil, fmt.Errorf("invalid env entry: %w", err)
+		return nil, errors.WrapIf(err, "invalid env entry")
 	}
 	return env, nil
 }
@@ -549,7 +563,7 @@ func parseLifecycleExtraMountsTextInternal(raw *string) ([]lifecycleExtraMount, 
 
 		parts := strings.Split(line, ":")
 		if len(parts) < 2 || len(parts) > 3 {
-			return nil, fmt.Errorf("line %d: expected src:tgt[:ro|:rw], got %q", lineNum, line)
+			return nil, errors.Errorf("line %d: expected src:tgt[:ro|:rw], got %q", lineNum, line)
 		}
 
 		mount := lifecycleExtraMount{Source: parts[0], Target: parts[1]}
@@ -560,7 +574,7 @@ func parseLifecycleExtraMountsTextInternal(raw *string) ([]lifecycleExtraMount, 
 			case "rw":
 				mount.Readonly = false
 			default:
-				return nil, fmt.Errorf("line %d: invalid mode %q (expected \"ro\" or \"rw\")", lineNum, parts[2])
+				return nil, errors.Errorf("line %d: invalid mode %q (expected \"ro\" or \"rw\")", lineNum, parts[2])
 			}
 		}
 
@@ -568,16 +582,16 @@ func parseLifecycleExtraMountsTextInternal(raw *string) ([]lifecycleExtraMount, 
 		// host/container paths, so use path.IsAbs to avoid host-OS quirks
 		// (filepath.IsAbs("/x") returns false on Windows).
 		if !path.IsAbs(filepath.ToSlash(mount.Source)) {
-			return nil, fmt.Errorf("line %d: source %q must be an absolute path", lineNum, mount.Source)
+			return nil, errors.Errorf("line %d: source %q must be an absolute path", lineNum, mount.Source)
 		}
 		if !path.IsAbs(filepath.ToSlash(mount.Target)) {
-			return nil, fmt.Errorf("line %d: target %q must be an absolute path", lineNum, mount.Target)
+			return nil, errors.Errorf("line %d: target %q must be an absolute path", lineNum, mount.Target)
 		}
 
 		mounts = append(mounts, mount)
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("read extra mounts config: %w", err)
+		return nil, errors.WrapIf(err, "read extra mounts config")
 	}
 	return mounts, nil
 }
@@ -602,17 +616,17 @@ func parseKeyValueEnvInternal(stdout string) (map[string]string, error) {
 		}
 		idx := strings.IndexByte(line, '=')
 		if idx <= 0 {
-			return nil, fmt.Errorf("line %d: expected KEY=VALUE, got %q", lineNum, line)
+			return nil, errors.Errorf("line %d: expected KEY=VALUE, got %q", lineNum, line)
 		}
 		key := line[:idx]
 		value := line[idx+1:]
 		if !lifecycleEnvKeyRegex.MatchString(key) {
-			return nil, fmt.Errorf("line %d: invalid env key %q", lineNum, key)
+			return nil, errors.Errorf("line %d: invalid env key %q", lineNum, key)
 		}
 		env[key] = value
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("read stdout: %w", err)
+		return nil, errors.WrapIf(err, "read stdout")
 	}
 	return env, nil
 }
@@ -693,7 +707,7 @@ func removeLifecycleContainerInternal(ctx context.Context, dockerClient *client.
 		return
 	}
 	cleanupCtx := context.WithoutCancel(ctx)
-	cleanupCtx, cleanupCancel := timeouts.WithTimeout(cleanupCtx, apiTimeoutSec, timeouts.DefaultDockerAPI)
+	cleanupCtx, cleanupCancel := context.WithTimeout(cleanupCtx, timeouts.GetDuration(apiTimeoutSec, timeouts.DefaultDockerAPI))
 	defer cleanupCancel()
 	if _, err := dockerClient.ContainerRemove(cleanupCtx, containerID, client.ContainerRemoveOptions{Force: true}); err != nil && !cerrdefs.IsNotFound(err) {
 		slog.WarnContext(cleanupCtx, "failed to remove lifecycle container", "containerID", containerID, "error", err)

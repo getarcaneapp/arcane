@@ -1,7 +1,7 @@
 import { error } from '@sveltejs/kit';
-import { swarmService } from '$lib/services/swarm-service';
-import type { SearchPaginationSortRequest } from '$lib/types/shared';
-import { resolveInitialTableRequest } from '$lib/utils/tables';
+import { swarmService } from '#lib/services/swarm-service';
+import type { SearchPaginationSortRequest } from '#lib/types/shared';
+import { resolveInitialTableRequest } from '#lib/utils/tables';
 import type { PageLoad } from './$types';
 
 type StackSourceState = 'loading' | 'available' | 'missing' | 'forbidden' | 'error';

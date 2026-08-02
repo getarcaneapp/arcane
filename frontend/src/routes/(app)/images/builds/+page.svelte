@@ -1,19 +1,20 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { z } from 'zod/v4';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import * as Tabs from '$lib/components/ui/tabs/index.js';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import { m } from '$lib/paraglide/messages';
-	import settingsStore from '$lib/stores/config-store';
-	import { createForm } from '$lib/utils/settings';
-	import { isDepotBuildAvailable } from '$lib/utils/build-provider';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import * as Tabs from '#lib/components/ui/tabs/index.js';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import { m } from '#lib/paraglide/messages';
+	import settingsStore from '#lib/stores/config-store';
+	import { createForm } from '#lib/utils/settings';
+	import { isDepotBuildAvailable } from '#lib/utils/build-provider';
 	import { toast } from 'svelte-sonner';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { ResourceDetailLayout } from '$lib/layouts/index.js';
-	import TabbedPageLayout from '$lib/layouts/tabbed-page-layout.svelte';
-	import { sanitizeLogText } from '$lib/utils/formatting';
-	import IfPermitted from '$lib/components/if-permitted.svelte';
+	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import { ResourceDetailLayout } from '#lib/layouts/index.js';
+	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
+	import { sanitizeLogText } from '#lib/utils/formatting';
+	import { formatDateTimeShort } from '#lib/utils/formatting';
+	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import {
 		CodeIcon,
 		TerminalIcon,
@@ -24,37 +25,30 @@
 		InfoIcon,
 		EllipsisIcon,
 		RedeployIcon
-	} from '$lib/icons';
-	import * as Card from '$lib/components/ui/card';
-	import { Spinner } from '$lib/components/ui/spinner/index.js';
-	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
-	import { UniversalMobileCard } from '$lib/components/arcane-table';
-	import { Badge } from '$lib/components/ui/badge';
-	import { ResponsiveDialog } from '$lib/components/ui/responsive-dialog/index.js';
-	import {
-		type LayerProgress,
-		calculateOverallProgress,
-		areAllLayersComplete,
-		updateLayerFromStreamData,
-		extractErrorMessage,
-		getLayerStats,
-		isIndeterminatePhase,
-		getAggregateStatus
-	} from '$lib/utils/docker';
-	import ResizableSplit from '$lib/components/resizable-split.svelte';
+	} from '#lib/icons';
+	import * as Card from '#lib/components/ui/card';
+	import { Spinner } from '#lib/components/ui/spinner/index.js';
+	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
+	import type { ColumnSpec, MobileFieldVisibility } from '#lib/components/arcane-table';
+	import { UniversalMobileCard } from '#lib/components/arcane-table';
+	import { Badge } from '#lib/components/ui/badge';
+	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
+	import { extractErrorMessage } from '#lib/utils/docker';
+	import ResizableSplit from '#lib/components/resizable-split.svelte';
 	import BuildControls from './components/build-controls.svelte';
 	import BuildWorkspacePanel from './components/build-workspace-panel.svelte';
 	import BuildConfigPanel from './components/build-config-panel.svelte';
 	import BuildOutputPanel from './components/build-output-panel.svelte';
-	import type { BuildProviderOption } from './components/build-form.types';
-	import { imageService } from '$lib/services/image-service';
-	import type { ImageBuildRecord, ImageBuildStatus } from '$lib/types/docker';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
-	import { queryKeys } from '$lib/query/query-keys';
+	import type { BuildProviderOption, SelectOption } from './components/build-form.types';
+	import { imageService } from '#lib/services/image-service';
+	import { containerRegistryService } from '#lib/services/container-registry-service';
+	import { buildImageReference, getRegistryDisplayName } from '#lib/utils/registry';
+	import { parseList } from '#lib/utils/form-parsers';
+	import type { ImageBuildRecord, ImageBuildStatus } from '#lib/types/docker';
+	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
+	import { queryKeys } from '#lib/query/query-keys';
 	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
-	import { formatDateTimeShort } from '$lib/utils/formatting';
-	import { useUrlTab } from '$lib/hooks/use-url-tab.svelte';
+	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte';
 
 	let {}: PageProps = $props();
 
@@ -100,7 +94,10 @@
 
 	const formSchema = z.object({
 		dockerfile: z.string().optional().default(''),
-		tags: z.string().min(1, m.image_tags_required()),
+		tags: z.string().optional().default(''),
+		registryId: z.string().default(''),
+		repositoryName: z.string().default(''),
+		pushTag: z.string().default(''),
 		target: z.string().optional().default(''),
 		buildArgs: z.string().optional().default(''),
 		labels: z.string().optional().default(''),
@@ -124,6 +121,9 @@
 	const { inputs, ...form } = createForm<typeof formSchema>(formSchema, {
 		dockerfile: '',
 		tags: '',
+		registryId: '',
+		repositoryName: '',
+		pushTag: '',
 		target: '',
 		buildArgs: '',
 		labels: '',
@@ -146,10 +146,8 @@
 
 	let isBuilding = $state(false);
 	let isDesktop = $state(true);
-	let buildProgress = $state(0);
 	let buildStatusText = $state('');
 	let buildError = $state('');
-	let layerProgress = $state<Record<string, LayerProgress>>({});
 	let hasReachedComplete = $state(false);
 	let logLines = $state<string[]>([]);
 	let autoScroll = $state(true);
@@ -186,6 +184,56 @@
 	}));
 
 	const buildHistoryItems = $derived<Paginated<ImageBuildRecord>>(buildHistoryQuery.data ?? EMPTY_BUILD_HISTORY);
+	const resolvedProvider = $derived(depotAvailable ? $inputs.provider.value : 'local');
+	const isPushMode = $derived(resolvedProvider === 'depot' ? true : $inputs.push.value);
+
+	const registryRequestOptions = {
+		pagination: { page: 1, limit: 100 },
+		sort: { column: 'url', direction: 'asc' }
+	} satisfies SearchPaginationSortRequest;
+
+	const registriesQuery = createQuery(() => ({
+		queryKey: queryKeys.containerRegistries.list(registryRequestOptions),
+		enabled: isPushMode,
+		queryFn: () => containerRegistryService.getRegistries(registryRequestOptions)
+	}));
+
+	const registries = $derived(registriesQuery.data?.data ?? []);
+
+	const registryOptions = $derived<SelectOption[]>(
+		registries
+			.filter((registry) => registry.enabled)
+			.map((registry) => {
+				const displayName = getRegistryDisplayName(registry);
+				return {
+					label: registry.url,
+					value: registry.id,
+					description: displayName === registry.url ? undefined : displayName
+				};
+			})
+	);
+
+	const selectedRegistry = $derived(registries.find((registry) => registry.id === $inputs.registryId.value));
+
+	const repositoryOptions = $derived<SelectOption[]>(
+		(selectedRegistry?.repositoryNames ?? []).map((name) => ({ label: name, value: name }))
+	);
+
+	const fullImageReference = $derived(
+		isPushMode && selectedRegistry
+			? buildImageReference(selectedRegistry.url, $inputs.repositoryName.value, $inputs.pushTag.value)
+			: ''
+	);
+
+	// Clear the repository name when registry changes to prevent cross-registry mismatches.
+	let lastRegistryId = $state($inputs.registryId.value);
+	$effect(() => {
+		const current = $inputs.registryId.value;
+		if (current !== lastRegistryId) {
+			lastRegistryId = current;
+			$inputs.repositoryName.value = '';
+		}
+	});
 
 	let buildHistoryQueryLastError: string | null = null;
 
@@ -274,12 +322,11 @@
 			const reader = response.body.getReader();
 			const decoder = new TextDecoder();
 			let buffer = '';
+			let streamComplete = false;
 
-			while (true) {
+			while (!streamComplete) {
 				const { done, value } = await reader.read();
 				if (done) {
-					buildStatusText = m.finalizing_build();
-					appendLog(m.finalizing_build());
 					break;
 				}
 
@@ -302,23 +349,24 @@
 							continue;
 						}
 
-						if (event.status) {
-							const idSuffix = event.id ? ` ${event.id}` : '';
-							appendLog(`${sanitizeLogText(String(event.status))}${idSuffix}`);
-							buildStatusText = sanitizeLogText(String(event.status));
+						// The terminal frame marks success; don't wait on the network EOF.
+						if (event.done === true) {
+							streamComplete = true;
+							break;
 						}
 
-						layerProgress = updateLayerFromStreamData(layerProgress, event);
-						updateProgress();
+						// Raw docker CLI output arrives framed as {"log":"<line>"}.
+						if (typeof event.log === 'string') {
+							appendLog(event.log);
+							buildStatusText = sanitizeLogText(event.log);
+						}
 					} catch {
 						appendLog(line);
 					}
 				}
 			}
-
-			updateProgress();
-			if (!buildError && buildProgress < 100 && areAllLayersComplete(layerProgress)) {
-				buildProgress = 100;
+			if (streamComplete) {
+				await reader.cancel().catch(() => {});
 			}
 
 			if (buildError) {
@@ -326,7 +374,6 @@
 			}
 
 			hasReachedComplete = true;
-			buildProgress = 100;
 			buildStatusText = m.build_completed();
 			appendLog(m.build_completed());
 		},
@@ -335,17 +382,11 @@
 		}
 	}));
 
-	const layerStats = $derived(getLayerStats(layerProgress, hasReachedComplete));
 	const aggregateStatus = $derived.by(() => {
-		const status = getAggregateStatus(layerProgress, buildStatusText, hasReachedComplete);
-		if (!isBuilding) return status;
-		if (!status) return m.progress_building();
-		const normalized = status.toLowerCase();
-		if (normalized === 'pulling' || normalized === 'preparing') return m.progress_building();
-		return status;
+		if (hasReachedComplete) return m.build_completed();
+		if (isBuilding) return buildStatusText || m.progress_building();
+		return buildStatusText;
 	});
-	const isIndeterminate = $derived(isIndeterminatePhase(layerProgress, buildProgress));
-	const progressValue = $derived(Math.round(hasReachedComplete ? 100 : buildProgress));
 	const statusLabel = $derived.by(() => {
 		if (buildError) return m.common_error();
 		if (hasReachedComplete) return m.build_completed();
@@ -364,17 +405,8 @@
 	]);
 
 	type BuildOutputEntry = {
-		raw: string;
-		isJson: boolean;
-		type?: string;
-		status?: string;
-		id?: string;
-		phase?: string;
-		error?: string;
-		progress?: {
-			current?: number;
-			total?: number;
-		};
+		text: string;
+		isError: boolean;
 	};
 
 	const buildHistoryOutputEntries = $derived.by(() => parseBuildOutput(buildHistorySelected?.output ?? ''));
@@ -443,37 +475,16 @@
 
 	function resetState() {
 		isBuilding = false;
-		buildProgress = 0;
 		buildStatusText = '';
 		buildError = '';
-		layerProgress = {};
 		hasReachedComplete = false;
 		logLines = [];
 	}
 
 	function appendLog(line: string) {
-		const sanitized = sanitizeLogText(line);
-		// Some tools output standalone reset codes (which become empty after sanitizing).
-		if (sanitized.trim() === '') return;
-		logLines = [...logLines, sanitized];
-	}
-
-	function updateProgress() {
-		buildProgress = calculateOverallProgress(layerProgress);
-	}
-
-	function parseTags(raw: string): string[] {
-		return raw
-			.split(/[\n,]/)
-			.map((t) => t.trim())
-			.filter(Boolean);
-	}
-
-	function parsePlatforms(raw: string): string[] {
-		return raw
-			.split(/[\n,]/)
-			.map((t) => t.trim())
-			.filter(Boolean);
+		// Keep ANSI sequences — the output panel renders them as colors.
+		if (sanitizeLogText(line).trim() === '') return;
+		logLines = [...logLines, line];
 	}
 
 	function parseBuildArgs(raw: string): Record<string, string> {
@@ -491,19 +502,37 @@
 		return result;
 	}
 
-	function parseList(raw: string): string[] {
-		return raw
-			.split(/[\n,]/)
-			.map((value) => value.trim())
-			.filter(Boolean);
-	}
-
 	function parseOptionalBytes(raw: string): number | undefined {
 		const trimmed = raw.trim();
 		if (!trimmed) return undefined;
 		const parsed = Number.parseInt(trimmed, 10);
 		if (!Number.isFinite(parsed) || parsed <= 0) return undefined;
 		return parsed;
+	}
+
+	// Push builds target a configured registry, so their reference is assembled
+	// from the selected registry, repository name and tag rather than the
+	// free-form tags field.
+	function resolveBuildTags(
+		data: z.infer<typeof formSchema>,
+		push: boolean
+	): { tags: string[]; error?: undefined } | { tags?: undefined; error: string } {
+		if (!push) {
+			const tags = parseList(data.tags);
+			return tags.length > 0 ? { tags } : { error: m.image_tags_required() };
+		}
+
+		const registry = registries.find((item) => item.id === data.registryId);
+		if (!registry) return { error: m.select_a_registry() };
+
+		const repositoryName = data.repositoryName.trim();
+		if (!repositoryName) return { error: m.select_a_repository_name() };
+		if (!registry.repositoryNames?.includes(repositoryName)) return { error: m.repository_name_not_configured() };
+
+		const reference = buildImageReference(registry.url, repositoryName, data.pushTag);
+		if (!reference) return { error: m.tag_required() };
+
+		return { tags: [reference] };
 	}
 
 	function validateProviderCompatibility(
@@ -570,29 +599,6 @@
 		return `${seconds}s`;
 	}
 
-	function formatBytes(value: number) {
-		if (!Number.isFinite(value) || value <= 0) return '0 B';
-		const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-		let size = value;
-		let unitIndex = 0;
-		while (size >= 1024 && unitIndex < units.length - 1) {
-			size /= 1024;
-			unitIndex += 1;
-		}
-		const precision = size >= 10 || unitIndex === 0 ? 0 : 1;
-		return `${size.toFixed(precision)} ${units[unitIndex]}`;
-	}
-
-	function getProgressPercent(current?: number, total?: number) {
-		if (current === undefined || total === undefined || total <= 0) return 0;
-		return Math.min(100, Math.max(0, Math.round((current / total) * 100)));
-	}
-
-	function formatProgress(current?: number, total?: number) {
-		if (current === undefined || total === undefined || total <= 0) return '-';
-		return `${formatBytes(current)} / ${formatBytes(total)}`;
-	}
-
 	function formatBuildArgs(buildArgs?: Record<string, string>) {
 		return formatKeyValueMap(buildArgs);
 	}
@@ -639,6 +645,9 @@
 		return '/';
 	}
 
+	// Build history output is the raw docker CLI text of the build. Records
+	// written before the raw-output change contain NDJSON progress events; pull
+	// their text out so old history stays readable.
 	function parseBuildOutput(output: string): BuildOutputEntry[] {
 		if (!output) return [];
 		return output
@@ -648,30 +657,24 @@
 			.map((line) => {
 				try {
 					const data = JSON.parse(line) as Record<string, unknown>;
-					if (!data || typeof data !== 'object') {
-						return { raw: sanitizeLogText(line), isJson: false } satisfies BuildOutputEntry;
+					if (data && typeof data === 'object') {
+						const error = data['error'];
+						if (error) {
+							const message =
+								typeof error === 'object' && error !== null ? ((error as { message?: string }).message ?? line) : String(error);
+							return { text: sanitizeLogText(message), isError: true } satisfies BuildOutputEntry;
+						}
+						const text = data['log'] ?? data['status'] ?? data['stream'];
+						if (typeof text === 'string') {
+							return { text: sanitizeLogText(text), isError: false } satisfies BuildOutputEntry;
+						}
 					}
-					const progressDetail = data['progressDetail'] as Record<string, unknown> | undefined;
-					const progress = progressDetail
-						? {
-								current: typeof progressDetail['current'] === 'number' ? progressDetail['current'] : undefined,
-								total: typeof progressDetail['total'] === 'number' ? progressDetail['total'] : undefined
-							}
-						: undefined;
-					return {
-						raw: sanitizeLogText(line),
-						isJson: true,
-						type: typeof data['type'] === 'string' ? data['type'] : undefined,
-						status: data['status'] ? sanitizeLogText(String(data['status'])) : undefined,
-						id: data['id'] ? String(data['id']) : undefined,
-						phase: typeof data['phase'] === 'string' ? data['phase'] : undefined,
-						error: data['error'] ? sanitizeLogText(String(data['error'])) : undefined,
-						progress
-					} satisfies BuildOutputEntry;
 				} catch {
-					return { raw: sanitizeLogText(line), isJson: false } satisfies BuildOutputEntry;
+					// Raw text line.
 				}
-			});
+				return { text: sanitizeLogText(line), isError: false } satisfies BuildOutputEntry;
+			})
+			.filter((entry) => entry.text.trim() !== '');
 	}
 
 	function buildHistoryStatusLabel(status?: ImageBuildStatus) {
@@ -783,17 +786,25 @@
 		buildStatusText = m.starting_build();
 		appendLog(m.using_context({ context: contextDir }));
 
-		const tags = parseTags(data.tags);
+		const resolvedProvider = depotAvailable ? data.provider : 'local';
+		const push = resolvedProvider === 'depot' ? true : data.push;
+		const load = resolvedProvider === 'depot' ? false : data.load;
+
+		const resolvedTags = resolveBuildTags(data, push);
+		if (resolvedTags.error) {
+			toast.error(resolvedTags.error);
+			isBuilding = false;
+			return;
+		}
+		const tags = resolvedTags.tags;
+
 		const parsedCacheTo = parseList(data.cacheTo || '');
 		const parsedEntitlements = parseList(data.entitlements || '');
-		const parsedPlatforms = parsePlatforms(data.platforms || '');
+		const parsedPlatforms = parseList(data.platforms || '');
 		const parsedExtraHosts = parseList(data.extraHosts || '');
 		const parsedUlimits = parseBuildArgs(data.ulimits || '');
 		const parsedShmSize = parseOptionalBytes(data.shmSize || '');
 
-		const resolvedProvider = depotAvailable ? data.provider : 'local';
-		const push = resolvedProvider === 'depot' ? true : data.push;
-		const load = resolvedProvider === 'depot' ? false : data.load;
 		const network = data.network?.trim() || undefined;
 		const isolation = data.isolation?.trim() || undefined;
 
@@ -877,6 +888,20 @@
 			onSelectContext={(path: string) => (selectedContextPath = path)}
 		/>
 	</Card.Root>
+{/snippet}
+
+{#snippet configPanel()}
+	<BuildConfigPanel
+		{inputs}
+		provider={$inputs.provider.value}
+		bind:showAdvanced
+		{isPushMode}
+		{registryOptions}
+		{repositoryOptions}
+		{fullImageReference}
+		registryLoadFailed={Boolean(registriesQuery.error)}
+		onSubmit={handleSubmit}
+	/>
 {/snippet}
 
 {#snippet BuildHistoryStatusCell({ value }: { value: unknown })}
@@ -1195,46 +1220,10 @@
 								</div>
 							{:else if buildHistorySelected?.output}
 								{#if buildHistoryOutputEntries.length > 0}
-									<div class="space-y-2">
-										{#each buildHistoryOutputEntries as entry, entryIndex (entry.raw + entryIndex)}
-											<div
-												class={`rounded-lg border border-border/50 px-3 py-2 ${
-													entry.error ? 'border-destructive/40 bg-destructive/10' : 'bg-zinc-950/40'
-												}`}
-											>
-												<div class="flex items-start justify-between gap-3">
-													<div class="min-w-0">
-														<div
-															class="flex flex-wrap items-center gap-2 text-[10px] tracking-wide text-muted-foreground uppercase"
-														>
-															{#if entry.type}
-																<span class="rounded bg-zinc-800/60 px-1.5 py-0.5">{entry.type}</span>
-															{/if}
-															{#if entry.phase}
-																<span class="rounded bg-zinc-800/60 px-1.5 py-0.5">{entry.phase}</span>
-															{/if}
-															{#if entry.id}
-																<span class="font-mono text-[10px] break-all">{entry.id}</span>
-															{/if}
-														</div>
-														<div class={`mt-1 text-xs break-all ${entry.error ? 'text-destructive' : 'text-foreground'}`}>
-															{entry.error ?? entry.status ?? entry.raw}
-														</div>
-													</div>
-													{#if entry.progress?.total}
-														<div class="flex shrink-0 flex-col items-end gap-1">
-															<span class="text-[10px] text-muted-foreground tabular-nums">
-																{formatProgress(entry.progress.current, entry.progress.total)}
-															</span>
-															<div class="h-1 w-24 overflow-hidden rounded-full bg-zinc-800/70">
-																<div
-																	class="h-full rounded-full bg-emerald-400"
-																	style={`width: ${getProgressPercent(entry.progress.current, entry.progress.total)}%`}
-																></div>
-															</div>
-														</div>
-													{/if}
-												</div>
+									<div class="rounded-lg border border-border/50 bg-zinc-950/40 p-3 font-mono text-xs leading-relaxed">
+										{#each buildHistoryOutputEntries as entry, entryIndex (entry.text + entryIndex)}
+											<div class={`break-words whitespace-pre-wrap ${entry.isError ? 'text-destructive' : 'text-foreground'}`}>
+												{entry.text}
 											</div>
 										{/each}
 									</div>
@@ -1308,15 +1297,12 @@
 			</div>
 
 			<Tabs.Content value="config" class="mt-0 min-h-0 flex-1 overflow-auto">
-				<BuildConfigPanel {inputs} provider={$inputs.provider.value} bind:showAdvanced onSubmit={handleSubmit} />
+				{@render configPanel()}
 			</Tabs.Content>
 			<Tabs.Content value="output" class="mt-0 min-h-0 flex-1 overflow-hidden">
 				<BuildOutputPanel
 					{logLines}
-					{layerStats}
 					{aggregateStatus}
-					{progressValue}
-					{isIndeterminate}
 					{hasReachedComplete}
 					{buildError}
 					{isBuilding}
@@ -1422,16 +1408,13 @@
 								{@render workspaceCard()}
 							{:else if buildTabValue === 'configuration'}
 								<Card.Root class="overflow-hidden">
-									<BuildConfigPanel {inputs} provider={$inputs.provider.value} bind:showAdvanced onSubmit={handleSubmit} />
+									{@render configPanel()}
 								</Card.Root>
 							{:else}
 								<Card.Root class="flex h-full min-h-[500px] flex-col overflow-hidden">
 									<BuildOutputPanel
 										{logLines}
-										{layerStats}
 										{aggregateStatus}
-										{progressValue}
-										{isIndeterminate}
 										{hasReachedComplete}
 										{buildError}
 										{isBuilding}

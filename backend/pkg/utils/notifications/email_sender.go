@@ -3,9 +3,9 @@ package notifications
 import (
 	"context"
 	"crypto/tls"
-	"errors"
-	"fmt"
 	"time"
+
+	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/wneessen/go-mail"
@@ -67,7 +67,7 @@ func buildMailClientInternal(config models.EmailConfig, options smtpBuildOptions
 		return nil, errors.New("SMTP host is empty")
 	}
 	if config.SMTPPort < 1 || config.SMTPPort > 65535 {
-		return nil, fmt.Errorf("invalid SMTP port: %d", config.SMTPPort)
+		return nil, errors.Errorf("invalid SMTP port: %d", config.SMTPPort)
 	}
 
 	opts := []mail.Option{
@@ -103,7 +103,7 @@ func buildMailClientInternal(config models.EmailConfig, options smtpBuildOptions
 
 	client, err := mail.NewClient(config.SMTPHost, opts...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to construct SMTP client: %w", err)
+		return nil, errors.WrapIf(err, "failed to construct SMTP client")
 	}
 
 	return client, nil
@@ -119,7 +119,7 @@ func sendEmailInternal(ctx context.Context, config models.EmailConfig, subject, 
 		return errors.New("email send context is required")
 	}
 	if err := ctx.Err(); err != nil {
-		return fmt.Errorf("email send canceled: %w", err)
+		return errors.WrapIf(err, "email send canceled")
 	}
 
 	if config.FromAddress == "" {
@@ -131,21 +131,21 @@ func sendEmailInternal(ctx context.Context, config models.EmailConfig, subject, 
 
 	client, err := buildMailClientInternal(config, options)
 	if err != nil {
-		return fmt.Errorf("failed to build SMTP client: %w", err)
+		return errors.WrapIf(err, "failed to build SMTP client")
 	}
 
 	msg := mail.NewMsg()
 	if err := msg.From(config.FromAddress); err != nil {
-		return fmt.Errorf("invalid from address %q: %w", config.FromAddress, err)
+		return errors.WrapIff(err, "invalid from address %q", config.FromAddress)
 	}
 	if err := msg.To(config.ToAddresses...); err != nil {
-		return fmt.Errorf("invalid recipient address(es): %w", err)
+		return errors.WrapIf(err, "invalid recipient address(es)")
 	}
 	msg.Subject(subject)
 	msg.SetBodyString(mail.TypeTextHTML, htmlBody)
 
 	if err := client.DialAndSendWithContext(ctx, msg); err != nil {
-		return fmt.Errorf("failed to send email: %w", err)
+		return errors.WrapIf(err, "failed to send email")
 	}
 
 	return nil

@@ -2,7 +2,7 @@
 	import type { ArcaneSvelteTable } from './table-features';
 	import DataTableFacetedFilter from './arcane-table-filter.svelte';
 	import DataTableViewOptions from './arcane-table-view-options.svelte';
-	import { Input } from '$lib/components/ui/input/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
 	import {
 		imageUpdateFilters,
 		usageFilters,
@@ -10,14 +10,14 @@
 		vulnerabilitySeverityFilters,
 		projectStatusFilters
 	} from './data.js';
-	import { debounced } from '$lib/utils/ws';
-	import { ArcaneButton } from '$lib/components/arcane-button';
-	import { m } from '$lib/paraglide/messages';
+	import { debounced } from '#lib/utils/ws';
+	import { ArcaneButton } from '#lib/components/arcane-button';
+	import { m } from '#lib/paraglide/messages';
 	import type { Snippet } from 'svelte';
-	import { cn } from '$lib/utils';
-	import { ResetIcon, SearchIcon, FilterIcon } from '$lib/icons';
+	import { cn } from '#lib/utils';
+	import { ResetIcon, SearchIcon, FilterIcon } from '#lib/icons';
 	import type { BulkAction, FilterOption } from './arcane-table.types.svelte';
-	import * as Popover from '$lib/components/ui/popover/index.js';
+	import * as Popover from '#lib/components/ui/popover/index.js';
 
 	let {
 		table,
@@ -45,7 +45,10 @@
 		imageNameFilterOptions?: string[];
 	} = $props();
 
-	const isFiltered = $derived(table.state.columnFilters.length > 0 || !!table.state.globalFilter);
+	// With `withoutFilters` the column filters aren't user-controlled — the page bakes
+	// in its own scoping filter (e.g. /updates pins `updates`), which would otherwise
+	// light up Reset on first paint and let a click wipe the page's own scope.
+	const isFiltered = $derived(!!table.state.globalFilter || (!withoutFilters && table.state.columnFilters.length > 0));
 	const usageColumn = $derived(table.getAllColumns().some((col) => col.id === 'inUse') ? table.getColumn('inUse') : undefined);
 	const updatesColumn = $derived(
 		table.getAllColumns().some((col) => col.id === 'updates') ? table.getColumn('updates') : undefined
@@ -164,7 +167,7 @@
 				icon={ResetIcon}
 				customLabel={m.common_reset()}
 				onclick={() => {
-					table.setColumnFilters([]);
+					if (!withoutFilters) table.setColumnFilters([]);
 					table.setGlobalFilter('');
 				}}
 				class="h-9 shrink-0"

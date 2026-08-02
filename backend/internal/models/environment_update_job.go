@@ -2,9 +2,10 @@ package models
 
 import (
 	"database/sql/driver"
-	json "encoding/json/v2"
-	"fmt"
+	"encoding/json/v2"
 	"time"
+
+	"emperror.dev/errors"
 )
 
 // EnvironmentUpdateJobStatus is the lifecycle status of a fleet-wide "update all
@@ -41,6 +42,9 @@ const (
 	// EnvironmentUpdateResultStatusTriggered means the upgrade was triggered but not
 	// confirmed within the wait window (still likely succeeding in the background).
 	EnvironmentUpdateResultStatusTriggered EnvironmentUpdateResultStatus = "triggered"
+	// EnvironmentUpdateResultStatusUpToDate means the environment already ran the
+	// target image, so the pull found nothing new and no container was recreated.
+	EnvironmentUpdateResultStatusUpToDate EnvironmentUpdateResultStatus = "up_to_date"
 	// EnvironmentUpdateResultStatusSkippedOffline means the environment was unreachable.
 	EnvironmentUpdateResultStatusSkippedOffline EnvironmentUpdateResultStatus = "skipped_offline"
 	// EnvironmentUpdateResultStatusFailed means the upgrade trigger failed.
@@ -82,7 +86,7 @@ func (r *EnvironmentUpdateResults) Scan(value any) error {
 	case string:
 		return json.Unmarshal([]byte(v), r)
 	default:
-		return fmt.Errorf("unsupported scan type for EnvironmentUpdateResults: %T", value)
+		return errors.Errorf("unsupported scan type for EnvironmentUpdateResults: %T", value)
 	}
 }
 

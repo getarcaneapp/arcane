@@ -1,7 +1,7 @@
 <script lang="ts">
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import { TrashIcon } from '$lib/icons';
-	import { m } from '$lib/paraglide/messages';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import { TrashIcon } from '#lib/icons';
+	import { m } from '#lib/paraglide/messages';
 
 	interface Props {
 		onclick: () => void;

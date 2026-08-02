@@ -1,6 +1,10 @@
 package authz
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/samber/mo"
+)
 
 // PermissionMatcher maps an HTTP method and environment-relative resource path
 // to the permission required to perform it. It mirrors the per-operation
@@ -56,9 +60,9 @@ func (m *PermissionMatcher) AddPublic(method, pathTemplate string) {
 // static routes such as "/containers/counts" take precedence over
 // parameterized routes such as "/containers/{containerId}".
 //
-// The boolean result reports whether any route matched. Callers should treat a
-// false result as "deny" for proxied resource paths.
-func (m *PermissionMatcher) Lookup(method, suffixPath string) (string, bool) {
+// The returned option contains the required permission when a route matched.
+// Callers should treat None as "deny" for proxied resource paths.
+func (m *PermissionMatcher) Lookup(method, suffixPath string) mo.Option[string] {
 	if i := strings.IndexByte(suffixPath, '?'); i >= 0 {
 		suffixPath = suffixPath[:i]
 	}
@@ -91,7 +95,10 @@ func (m *PermissionMatcher) Lookup(method, suffixPath string) (string, bool) {
 			found = true
 		}
 	}
-	return bestPerm, found
+	if found {
+		return mo.Some(bestPerm)
+	}
+	return mo.None[string]()
 }
 
 // pathSegmentsInternal splits a path into its non-empty segments, ignoring

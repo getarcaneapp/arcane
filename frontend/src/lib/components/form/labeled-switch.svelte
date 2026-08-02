@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { Label } from '$lib/components/ui/label';
-	import { Switch } from '$lib/components/ui/switch/index.js';
+	import { Label } from '#lib/components/ui/label';
+	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { mergeProps } from 'bits-ui';
 
 	let {

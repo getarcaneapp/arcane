@@ -1,15 +1,15 @@
 <script lang="ts">
-	import * as Tabs from '$lib/components/ui/tabs';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
+	import * as Tabs from '#lib/components/ui/tabs';
+	import * as Dialog from '#lib/components/ui/dialog';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { toast } from 'svelte-sonner';
 	import { getContext, onMount } from 'svelte';
-	import { SettingsPageLayout } from '$lib/layouts';
-	import settingsStore from '$lib/stores/config-store';
-	import { m } from '$lib/paraglide/messages';
-	import { useUrlTab } from '$lib/hooks/use-url-tab.svelte';
-	import { notificationService } from '$lib/services/notification-service';
-	import type { NotificationSettings } from '$lib/types/notifications';
+	import { SettingsPageLayout } from '#lib/layouts';
+	import settingsStore from '#lib/stores/config-store';
+	import { m } from '#lib/paraglide/messages';
+	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte';
+	import { notificationService } from '#lib/services/notification-service';
+	import type { NotificationSettings } from '#lib/types/notifications';
 	import {
 		type DiscordFormValues,
 		type EmailFormValues,
@@ -43,8 +43,9 @@
 		gotifyFormValuesToSettings,
 		matrixFormValuesToSettings,
 		genericFormValuesToSettings
-	} from '$lib/types/notifications';
-	import { NotificationsIcon } from '$lib/icons';
+	} from '#lib/types/notifications';
+	import { NotificationsIcon } from '#lib/icons';
+	import { TabBar, type TabItem } from '#lib/components/tab-bar';
 	import { BuiltInProviderForm } from './providers';
 
 	let { data } = $props();
@@ -59,6 +60,13 @@
 		defaultTab: () => 'email'
 	});
 	const providerTab = $derived(urlTab.value);
+	const providerTabItems = NOTIFICATION_PROVIDER_KEYS.map(
+		(provider) =>
+			({
+				value: provider,
+				label: provider.charAt(0).toUpperCase() + provider.slice(1)
+			}) satisfies TabItem
+	);
 
 	const isReadOnly = $derived.by(() => $settingsStore.uiConfigDisabled);
 
@@ -434,14 +442,8 @@
 >
 	{#snippet mainContent()}
 		<fieldset disabled={isReadOnly} class="relative w-full min-w-0">
-			<Tabs.Root value={providerTab} onValueChange={urlTab.select} class="flex min-h-0 w-full min-w-0 flex-col">
-				<Tabs.List class="scrollbar-hide flex w-full max-w-full justify-start gap-4 overflow-x-auto">
-					{#each NOTIFICATION_PROVIDER_KEYS as provider (provider)}
-						<Tabs.Trigger value={provider} class="shrink-0">
-							{provider.charAt(0).toUpperCase() + provider.slice(1)}
-						</Tabs.Trigger>
-					{/each}
-				</Tabs.List>
+			<Tabs.Root value={providerTab} class="flex min-h-0 w-full min-w-0 flex-col">
+				<TabBar items={providerTabItems} value={providerTab} onValueChange={urlTab.select} class="self-start" />
 
 				<Tabs.Content value="email" class="mt-4 space-y-4">
 					<BuiltInProviderForm

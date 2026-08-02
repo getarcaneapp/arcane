@@ -1,21 +1,21 @@
 <script lang="ts">
-	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
-	import { Badge } from '$lib/components/ui/badge';
+	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
+	import { Badge } from '#lib/components/ui/badge';
 	import { toast } from 'svelte-sonner';
-	import { openConfirmDialog } from '$lib/components/confirm-dialog';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api';
-	import { tryCatch } from '$lib/utils/api';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
-	import type { FederatedCredential } from '$lib/types/auth';
-	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '$lib/components/arcane-table';
-	import { UniversalMobileCard } from '$lib/components/arcane-table';
-	import { federatedCredentialService } from '$lib/services/federated-credential-service';
-	import { formatOptionalDateTime, isPastDate } from '$lib/utils/formatting';
-	import * as m from '$lib/paraglide/messages.js';
-	import { LockIcon, TrashIcon, EditIcon } from '$lib/icons';
-	import { isGlobalAdmin } from '$lib/utils/auth';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api';
+	import { tryCatch } from '#lib/utils/api';
+	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
+	import type { FederatedCredential } from '#lib/types/auth';
+	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '#lib/components/arcane-table';
+	import { UniversalMobileCard } from '#lib/components/arcane-table';
+	import { federatedCredentialService } from '#lib/services/federated-credential-service';
+	import { formatOptionalDateTime, isPastDate } from '#lib/utils/formatting';
+	import * as m from '#lib/paraglide/messages.js';
+	import { LockIcon, TrashIcon, EditIcon } from '#lib/icons';
+	import { isGlobalAdmin } from '#lib/utils/auth';
 
 	let {
 		federatedCredentials = $bindable(),

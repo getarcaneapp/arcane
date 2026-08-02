@@ -12,7 +12,7 @@ func HasBuildFeature(feature string) bool {
 	if feature == "" || EnabledFeatures == "" {
 		return false
 	}
-	for _, value := range strings.Split(EnabledFeatures, ",") {
+	for value := range strings.SplitSeq(EnabledFeatures, ",") {
 		if strings.EqualFold(strings.TrimSpace(value), feature) {
 			return true
 		}

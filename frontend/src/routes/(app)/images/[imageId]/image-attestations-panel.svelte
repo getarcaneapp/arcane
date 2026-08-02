@@ -1,14 +1,14 @@
 <script lang="ts">
-	import { ResponsiveDialog } from '$lib/components/ui/responsive-dialog/index.js';
-	import * as Select from '$lib/components/ui/select/index.js';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Spinner } from '$lib/components/ui/spinner';
-	import { ArrowRightIcon } from '$lib/icons';
-	import { m } from '$lib/paraglide/messages';
-	import { imageService } from '$lib/services/image-service';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import type { ImageAttestationDto, ImageAttestationListDto, ImageDetailSummaryDto } from '$lib/types/docker';
-	import { bytes } from '$lib/utils/formatting';
+	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import { Badge } from '#lib/components/ui/badge';
+	import { Spinner } from '#lib/components/ui/spinner';
+	import { ArrowRightIcon } from '#lib/icons';
+	import { m } from '#lib/paraglide/messages';
+	import { imageService } from '#lib/services/image-service';
+	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import type { ImageAttestationDto, ImageAttestationListDto, ImageDetailSummaryDto } from '#lib/types/docker';
+	import { bytes } from '#lib/utils/formatting';
 
 	const ALL_FILTER = '__all__';
 

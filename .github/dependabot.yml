@@ -95,6 +95,11 @@ updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     patterns: ["*"]
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-minor"
+          - "version-update:semver-patch"
     cooldown:
       default-days: 2
     schedule:

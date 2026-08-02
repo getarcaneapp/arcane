@@ -1,31 +1,32 @@
 <script lang="ts">
-	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
+	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
-	import { openConfirmDialog } from '$lib/components/confirm-dialog';
-	import InUseStatus from '$lib/components/arcane-table/cells/in-use-status.svelte';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api';
-	import { tryCatch } from '$lib/utils/api';
-	import { formatDateTimeShort, truncateString } from '$lib/utils/formatting';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
-	import type { VolumeSummaryDto, VolumeSizeInfo } from '$lib/types/docker';
-	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '$lib/components/arcane-table';
-	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
-	import { m } from '$lib/paraglide/messages';
-	import { volumeService } from '$lib/services/volume-service';
-	import { bytes } from '$lib/utils/formatting';
-	import { inUseBadge } from '$lib/utils/mobile-card-badges';
-	import { TrashIcon, InspectIcon, VolumesIcon, CalendarIcon } from '$lib/icons';
-	import { Spinner } from '$lib/components/ui/spinner';
-	import settingsStore from '$lib/stores/config-store';
-	import { onMount } from 'svelte';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog';
+	import InUseStatus from '#lib/components/arcane-table/cells/in-use-status.svelte';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api';
+	import { tryCatch } from '#lib/utils/api';
+	import { formatDateTimeShort, truncateString } from '#lib/utils/formatting';
+	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
+	import type { VolumeSummaryDto, VolumeSizeInfo } from '#lib/types/docker';
+	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '#lib/components/arcane-table';
+	import { UniversalMobileCard } from '#lib/components/arcane-table/index.js';
+	import { m } from '#lib/paraglide/messages';
+	import { volumeService } from '#lib/services/volume-service';
+	import { bytes } from '#lib/utils/formatting';
+	import { inUseBadge } from '#lib/utils/mobile-card-badges';
+	import { TrashIcon, InspectIcon, VolumesIcon, CalendarIcon } from '#lib/icons';
+	import { Spinner } from '#lib/components/ui/spinner';
+	import settingsStore from '#lib/stores/config-store';
+	import { untrack } from 'svelte';
 	import { SvelteMap } from 'svelte/reactivity';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { hasPermission } from '$lib/utils/auth';
-	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
-	import { bulkConfirmAndRun } from '$lib/utils/bulk-actions';
+	import type { ColumnVisibilityState } from '@tanstack/table-core';
+	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import { hasPermission } from '#lib/utils/auth';
+	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
+	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions';
 
 	let {
 		volumes = $bindable(),
@@ -50,13 +51,15 @@
 		return (customSettings['showInternalVolumes'] as boolean) ?? false;
 	});
 
-	async function refreshVolumes(options: SearchPaginationSortRequest = requestOptions) {
+	async function refreshVolumes(options: SearchPaginationSortRequest = requestOptions, refreshSizes = true) {
 		if (onRefreshData) {
 			await onRefreshData(options);
 		} else {
 			volumes = await volumeService.getVolumes(options);
 		}
-		void loadVolumeSizes();
+		if (refreshSizes && tablePreferencesReady && columnVisibility['size'] !== false) {
+			void loadVolumeSizes(currentEnvId);
+		}
 	}
 
 	function getCurrentLimit() {
@@ -84,21 +87,43 @@
 
 	// Lazy load volume sizes - this is a slow operation
 	let sizesMap = new SvelteMap<string, VolumeSizeInfo>();
+	let sizeLoadPromises = new SvelteMap<string, Promise<void>>();
 	let sizesLoading = $state(false);
+	let columnVisibility = $state<ColumnVisibilityState>({});
+	let tablePreferencesReady = $state(false);
 
-	async function loadVolumeSizes(): Promise<void> {
-		sizesLoading = true;
-		try {
-			const sizes = await volumeService.getVolumeSizes();
-			sizesMap.clear();
-			for (const s of sizes) {
-				sizesMap.set(s.name, s);
+	function loadVolumeSizes(environmentId: string): Promise<void> {
+		const existing = sizeLoadPromises.get(environmentId);
+		if (existing) return existing;
+
+		const request = (async () => {
+			if (currentEnvId === environmentId) {
+				sizesLoading = true;
 			}
-		} catch (error) {
-			console.error('Failed to load volume sizes:', error);
-		} finally {
-			sizesLoading = false;
-		}
+			try {
+				const sizes = await volumeService.getVolumeSizes(environmentId);
+				if (currentEnvId !== environmentId || columnVisibility['size'] === false) return;
+
+				sizesMap.clear();
+				for (const s of sizes) {
+					sizesMap.set(s.name, s);
+				}
+
+				if (requestOptions?.sort?.column === 'size') {
+					await refreshVolumes(requestOptions, false);
+				}
+			} catch (error) {
+				console.error('Failed to load volume sizes:', error);
+			} finally {
+				sizeLoadPromises.delete(environmentId);
+				if (currentEnvId === environmentId) {
+					sizesLoading = false;
+				}
+			}
+		})();
+
+		sizeLoadPromises.set(environmentId, request);
+		return request;
 	}
 
 	async function handleRemoveVolumeConfirm(name: string) {
@@ -190,14 +215,29 @@
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 
-	onMount(() => {
-		const persistedInternal = (customSettings['showInternalVolumes'] as boolean) ?? false;
-		const currentInternal = requestOptions?.includeInternal ?? false;
-		if (persistedInternal !== currentInternal) {
-			setShowInternal(persistedInternal);
-			// refreshVolumes (called by setShowInternal) already calls loadVolumeSizes
+	let persistedSettingsApplied = false;
+	$effect(() => {
+		if (!tablePreferencesReady) return;
+
+		const environmentId = currentEnvId;
+		const sizeVisible = columnVisibility['size'] !== false;
+		if (!sizeVisible) {
+			sizesMap.clear();
+			sizesLoading = false;
 		} else {
-			void loadVolumeSizes();
+			untrack(() => {
+				sizesMap.clear();
+				void loadVolumeSizes(environmentId);
+			});
+		}
+
+		if (!persistedSettingsApplied) {
+			persistedSettingsApplied = true;
+			const persistedInternal = (customSettings['showInternalVolumes'] as boolean) ?? false;
+			const currentInternal = requestOptions?.includeInternal ?? false;
+			if (persistedInternal !== currentInternal) {
+				untrack(() => setShowInternal(persistedInternal));
+			}
 		}
 	});
 </script>
@@ -301,6 +341,9 @@
 	bind:selectedIds
 	bind:mobileFieldVisibility
 	bind:customSettings
+	bind:columnVisibility
+	bind:preferencesReady={tablePreferencesReady}
+	hiddenSortFallback={{ column: 'name', direction: 'asc' }}
 	{bulkActions}
 	onRefresh={async (options) => {
 		requestOptions = options;

@@ -6,10 +6,11 @@
 package roles
 
 import (
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
+
+	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
@@ -22,6 +23,7 @@ import (
 var (
 	limitFlag  int
 	startFlag  int
+	allFlag    bool
 	forceFlag  bool
 	jsonOutput bool
 )
@@ -65,20 +67,20 @@ var listCmd = &cobra.Command{
 		}
 
 		path := types.Endpoints.Roles()
-		path, err = cmdutil.ApplyPaginationParams(cmd, path, "roles", "limit", limitFlag, 20, "start", startFlag)
+		path, err = cmdutil.ApplyPaginationParams(cmd, path, cmdutil.ListParams{Resource: "roles", Limit: limitFlag, FallbackDefault: 20, Start: startFlag, All: allFlag})
 		if err != nil {
-			return fmt.Errorf("failed to build pagination query: %w", err)
+			return errors.WrapIf(err, "failed to build pagination query")
 		}
 
 		resp, err := c.Get(cmd.Context(), path)
 		if err != nil {
-			return fmt.Errorf("failed to list roles: %w", err)
+			return errors.WrapIf(err, "failed to list roles")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.Paginated[roletypes.Role]
 		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return fmt.Errorf("failed to list roles: %w", err)
+			return errors.WrapIf(err, "failed to list roles")
 		}
 
 		if jsonOutput {
@@ -118,13 +120,13 @@ var getCmd = &cobra.Command{
 		}
 		resp, err := c.Get(cmd.Context(), types.Endpoints.Role(args[0]))
 		if err != nil {
-			return fmt.Errorf("failed to get role: %w", err)
+			return errors.WrapIf(err, "failed to get role")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[roletypes.Role]
 		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return fmt.Errorf("failed to get role: %w", err)
+			return errors.WrapIf(err, "failed to get role")
 		}
 
 		if jsonOutput {
@@ -177,12 +179,12 @@ var createCmd = &cobra.Command{
 
 		resp, err := c.Post(cmd.Context(), types.Endpoints.Roles(), req)
 		if err != nil {
-			return fmt.Errorf("failed to create role: %w", err)
+			return errors.WrapIf(err, "failed to create role")
 		}
 		defer func() { _ = resp.Body.Close() }()
 		var result base.ApiResponse[roletypes.Role]
 		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return fmt.Errorf("failed to create role: %w", err)
+			return errors.WrapIf(err, "failed to create role")
 		}
 
 		if jsonOutput {
@@ -231,11 +233,11 @@ var updateCmd = &cobra.Command{
 
 		resp, err := c.Put(cmd.Context(), types.Endpoints.Role(args[0]), req)
 		if err != nil {
-			return fmt.Errorf("failed to update role: %w", err)
+			return errors.WrapIf(err, "failed to update role")
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to update role: %w", err)
+			return errors.WrapIf(err, "failed to update role")
 		}
 
 		output.Success("Role updated")
@@ -266,11 +268,11 @@ var deleteCmd = &cobra.Command{
 		}
 		resp, err := c.Delete(cmd.Context(), types.Endpoints.Role(args[0]))
 		if err != nil {
-			return fmt.Errorf("failed to delete role: %w", err)
+			return errors.WrapIf(err, "failed to delete role")
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to delete role: %w", err)
+			return errors.WrapIf(err, "failed to delete role")
 		}
 		output.Success("Role deleted")
 		return nil
@@ -291,13 +293,13 @@ var permissionsCmd = &cobra.Command{
 		}
 		resp, err := c.Get(cmd.Context(), types.Endpoints.RolesAvailablePermissions())
 		if err != nil {
-			return fmt.Errorf("failed to load permission manifest: %w", err)
+			return errors.WrapIf(err, "failed to load permission manifest")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[roletypes.PermissionsManifest]
 		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return fmt.Errorf("failed to load permission manifest: %w", err)
+			return errors.WrapIf(err, "failed to load permission manifest")
 		}
 
 		if jsonOutput {
@@ -330,13 +332,13 @@ var assignmentsCmd = &cobra.Command{
 		}
 		resp, err := c.Get(cmd.Context(), types.Endpoints.UserRoleAssignments(args[0]))
 		if err != nil {
-			return fmt.Errorf("failed to list assignments: %w", err)
+			return errors.WrapIf(err, "failed to list assignments")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[[]roletypes.RoleAssignment]
 		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return fmt.Errorf("failed to list assignments: %w", err)
+			return errors.WrapIf(err, "failed to list assignments")
 		}
 
 		if jsonOutput {
@@ -385,12 +387,12 @@ var assignCmd = &cobra.Command{
 		}
 		resp, err := c.Put(cmd.Context(), types.Endpoints.UserRoleAssignments(args[0]), req)
 		if err != nil {
-			return fmt.Errorf("failed to set assignments: %w", err)
+			return errors.WrapIf(err, "failed to set assignments")
 		}
 		defer func() { _ = resp.Body.Close() }()
 		var result base.ApiResponse[[]roletypes.RoleAssignment]
 		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return fmt.Errorf("failed to set assignments: %w", err)
+			return errors.WrapIf(err, "failed to set assignments")
 		}
 		if jsonOutput {
 			return cmdutil.PrintJSON(result.Data)
@@ -432,12 +434,12 @@ func fetchRoleInternal(cmd *cobra.Command, id string) (*roletypes.Role, error) {
 	}
 	resp, err := c.Get(cmd.Context(), types.Endpoints.Role(id))
 	if err != nil {
-		return nil, fmt.Errorf("failed to load current role: %w", err)
+		return nil, errors.WrapIf(err, "failed to load current role")
 	}
 	defer func() { _ = resp.Body.Close() }()
 	var result base.ApiResponse[roletypes.Role]
 	if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-		return nil, fmt.Errorf("failed to load current role: %w", err)
+		return nil, errors.WrapIf(err, "failed to load current role")
 	}
 	return &result.Data, nil
 }
@@ -453,7 +455,8 @@ func init() {
 	RolesCmd.AddCommand(assignCmd)
 
 	listCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of roles to show")
-	listCmd.Flags().IntVar(&startFlag, "start", 0, "Offset for pagination")
+	listCmd.Flags().IntVar(&startFlag, "start", 0, cmdutil.StartFlagUsage)
+	listCmd.Flags().BoolVarP(&allFlag, "all", "a", false, cmdutil.AllFlagUsage)
 	listCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 
 	getCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")

@@ -1,5 +1,5 @@
-import type { SystemStats } from '$lib/types/shared';
-import type { Diagnostics, LogEntry } from '$lib/types/diagnostics';
+import type { SystemStats } from '#lib/types/shared';
+import type { Diagnostics, LogEntry } from '#lib/types/diagnostics';
 
 export interface ReconnectWSOptions<T> {
 	buildUrl: () => string | Promise<string>;

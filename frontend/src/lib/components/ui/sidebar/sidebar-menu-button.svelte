@@ -26,8 +26,8 @@
 </script>
 
 <script lang="ts">
-	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
-	import { cn, type WithElementRef, type WithoutChildrenOrChild } from '$lib/utils.js';
+	import * as ArcaneTooltip from '#lib/components/arcane-tooltip';
+	import { cn, type WithElementRef, type WithoutChildrenOrChild } from '#lib/utils.js';
 	import { mergeProps } from 'bits-ui';
 	import type { ComponentProps, Snippet } from 'svelte';
 	import type { HTMLAttributes } from 'svelte/elements';

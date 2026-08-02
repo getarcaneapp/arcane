@@ -45,8 +45,8 @@ func TestMigrateDatabase_BlocksDowngradeWithoutFlag(t *testing.T) {
 
 	err := migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, targetVersion)
 	require.Error(t, err)
-	assert.ErrorContains(t, err, "ALLOW_DOWNGRADE=true")
-	assert.ErrorContains(t, err, "newer than this Arcane binary supports")
+	require.ErrorContains(t, err, "ALLOW_DOWNGRADE=true")
+	require.ErrorContains(t, err, "newer than this Arcane binary supports")
 
 	highestVersion, err := getHighestEmbeddedMigrationVersionInternal("sqlite")
 	require.NoError(t, err)
@@ -113,6 +113,65 @@ func TestMigration066_GlobalVariables_UpAndDown(t *testing.T) {
 	assert.Zero(t, rowCount)
 }
 
+func TestMigration067_ActivityBatchID_UpAndDown(t *testing.T) {
+	ctx := context.Background()
+	rawDB, _ := newSQLiteSQLDBInternal(t, t.TempDir(), "arcane-activity-batch-id.db")
+
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 66))
+	var columnCount int
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('activities') WHERE name = 'batch_id'`).Scan(&columnCount))
+	assert.Zero(t, columnCount)
+
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 67))
+	var notNull int
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*), COALESCE(MAX("notnull"), 0) FROM pragma_table_info('activities') WHERE name = 'batch_id'`).Scan(&columnCount, &notNull))
+	assert.Equal(t, 1, columnCount)
+	assert.Zero(t, notNull)
+
+	var indexCount int
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_activities_environment_batch'`).Scan(&indexCount))
+	assert.Equal(t, 1, indexCount)
+
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 66))
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('activities') WHERE name = 'batch_id'`).Scan(&columnCount))
+	assert.Zero(t, columnCount)
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_activities_environment_batch'`).Scan(&indexCount))
+	assert.Zero(t, indexCount)
+}
+
+func TestMigration068_UserPreferences_UpAndDown(t *testing.T) {
+	ctx := context.Background()
+	rawDB, _ := newSQLiteSQLDBInternal(t, t.TempDir(), "arcane-user-preferences.db")
+
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 67))
+	var columnCount int
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('users') WHERE name = 'preferences'`).Scan(&columnCount))
+	assert.Zero(t, columnCount)
+
+	_, err := rawDB.Exec(`INSERT INTO users (id, created_at, updated_at, username, password_hash) VALUES ('u-1', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'kyle', 'hash')`)
+	require.NoError(t, err)
+	// One string setting and one boolean setting are seeded; iconCatalog is
+	// deliberately absent so the migration must leave it JSON null.
+	_, err = rawDB.Exec(`INSERT INTO settings (key, value) VALUES ('applicationTheme', 'nord'), ('oledMode', 'true')`)
+	require.NoError(t, err)
+
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 68))
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('users') WHERE name = 'preferences'`).Scan(&columnCount))
+	assert.Equal(t, 1, columnCount)
+
+	var theme string
+	var oled bool
+	var iconCatalog stdsql.NullString
+	require.NoError(t, rawDB.QueryRow(`SELECT json_extract(preferences, '$.applicationTheme'), json_extract(preferences, '$.oledMode'), json_extract(preferences, '$.iconCatalog') FROM users WHERE id = 'u-1'`).Scan(&theme, &oled, &iconCatalog))
+	assert.Equal(t, "nord", theme)
+	assert.True(t, oled)
+	assert.False(t, iconCatalog.Valid)
+
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 67))
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('users') WHERE name = 'preferences'`).Scan(&columnCount))
+	assert.Zero(t, columnCount)
+}
+
 func TestMigrateDatabase_BlocksFutureGooseVersionWithoutFlag(t *testing.T) {
 	ctx := context.Background()
 	rawDB, dsn := newSQLiteSQLDBInternal(t, t.TempDir(), "arcane-future.db")
@@ -124,7 +183,7 @@ func TestMigrateDatabase_BlocksFutureGooseVersionWithoutFlag(t *testing.T) {
 
 	err = migrateDatabaseInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{})
 	require.Error(t, err)
-	assert.ErrorContains(t, err, "newer than this Arcane binary supports")
+	require.ErrorContains(t, err, "newer than this Arcane binary supports")
 	assert.Equal(t, highestVersion+1, readGooseSQLiteVersionInternal(t, dsn))
 }
 
@@ -139,9 +198,9 @@ func TestMigrateDatabase_BlocksDowngradeWhenEmbeddedMigrationMissing(t *testing.
 
 	err = migrateDatabaseInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true})
 	require.Error(t, err)
-	assert.ErrorContains(t, err, "ALLOW_DOWNGRADE=true is not sufficient")
-	assert.ErrorContains(t, err, "restore the database from a backup")
-	assert.ErrorContains(t, err, strconv.FormatInt(highestVersion+1, 10))
+	require.ErrorContains(t, err, "ALLOW_DOWNGRADE=true is not sufficient")
+	require.ErrorContains(t, err, "restore the database from a backup")
+	require.ErrorContains(t, err, strconv.FormatInt(highestVersion+1, 10))
 	assert.Equal(t, highestVersion+1, readGooseSQLiteVersionInternal(t, dsn))
 }
 
@@ -154,8 +213,8 @@ func TestMigrateDatabase_BlocksDirtyLegacyCurrentVersion(t *testing.T) {
 
 	err = migrateDatabaseInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{})
 	require.Error(t, err)
-	assert.ErrorContains(t, err, "is dirty")
-	assert.ErrorContains(t, err, "ALLOW_DOWNGRADE=true")
+	require.ErrorContains(t, err, "is dirty")
+	require.ErrorContains(t, err, "ALLOW_DOWNGRADE=true")
 
 	require.NoError(t, migrateDatabaseInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}))
 	assert.Equal(t, highestVersion, readGooseSQLiteVersionInternal(t, dsn))
@@ -173,8 +232,8 @@ func TestMigrateDatabase_BlocksDirtyLegacyOlderVersion(t *testing.T) {
 
 	err := migrateDatabaseInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{})
 	require.Error(t, err)
-	assert.ErrorContains(t, err, "is dirty")
-	assert.ErrorContains(t, err, "ALLOW_DOWNGRADE=true")
+	require.ErrorContains(t, err, "is dirty")
+	require.ErrorContains(t, err, "ALLOW_DOWNGRADE=true")
 
 	require.NoError(t, migrateDatabaseInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}))
 	highestVersion, err := getHighestEmbeddedMigrationVersionInternal("sqlite")
@@ -274,7 +333,7 @@ CREATE TABLE goose_db_version (
 
 	err = adoptLegacyMigrationStateInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{})
 	require.Error(t, err)
-	assert.ErrorContains(t, err, "failed to insert Goose migration version")
+	require.ErrorContains(t, err, "failed to insert Goose migration version")
 
 	var rowCount int
 	err = rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM goose_db_version WHERE version_id = 0 AND is_applied = 0`).Scan(&rowCount)
@@ -292,7 +351,7 @@ func TestInitialize_BlocksDirtyLegacyMigrationState(t *testing.T) {
 	db, err := Initialize(ctx, dsn, MigrationOptions{})
 	require.Error(t, err)
 	require.Nil(t, db)
-	assert.ErrorContains(t, err, "dirty")
+	require.ErrorContains(t, err, "dirty")
 	assert.ErrorContains(t, err, "ALLOW_DOWNGRADE=true")
 }
 

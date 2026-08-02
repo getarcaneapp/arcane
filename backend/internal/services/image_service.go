@@ -2,14 +2,13 @@ package services
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
-	"net/http"
 	"strings"
-	"sync"
 	"time"
+
+	"emperror.dev/errors"
 
 	ref "github.com/distribution/reference"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -17,6 +16,7 @@ import (
 	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	utilsregistry "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/registryauth"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 	systemtypes "github.com/getarcaneapp/arcane/types/v2/system"
@@ -24,6 +24,8 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/client"
+	"github.com/samber/hot"
+	"github.com/samber/mo"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 )
@@ -36,15 +38,7 @@ type ImageService struct {
 	vulnerabilityService *VulnerabilityService
 	eventService         *EventService
 
-	projectIDCache projectIDNameCache
-}
-
-// projectIDNameCache memoizes the (project name → project ID) map used to enrich image
-// usage data with the owning project. The TTL bounds staleness; see projectIDCacheTTL.
-type projectIDNameCache struct {
-	mu      sync.RWMutex
-	byName  map[string]string
-	expires time.Time
+	projectIDCache *hot.HotCache[struct{}, map[string]string]
 }
 
 func NewImageService(db *database.DB, dockerService *DockerClientService, registryService *ContainerRegistryService, imageUpdateService *ImageUpdateService, vulnerabilityService *VulnerabilityService, eventService *EventService) *ImageService {
@@ -55,6 +49,9 @@ func NewImageService(db *database.DB, dockerService *DockerClientService, regist
 		imageUpdateService:   imageUpdateService,
 		vulnerabilityService: vulnerabilityService,
 		eventService:         eventService,
+		projectIDCache: hot.NewHotCache[struct{}, map[string]string](hot.LRU, 1).
+			WithTTL(projectIDCacheTTL).
+			Build(),
 	}
 }
 
@@ -64,7 +61,7 @@ func NewImageService(db *database.DB, dockerService *DockerClientService, regist
 func (s *ImageService) GetImageDetail(ctx context.Context, id string) (*imagetypes.DetailSummary, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
+		return nil, errors.WrapIf(err, "failed to connect to Docker")
 	}
 
 	var (
@@ -74,20 +71,24 @@ func (s *ImageService) GetImageDetail(ctx context.Context, id string) (*imagetyp
 
 	g, gctx := errgroup.WithContext(ctx)
 
-	g.Go(func() error {
+	g.Go(func() (workerErr error) {
+		defer utils.RecoverToError(&workerErr, "image worker")
+
 		var err error
 		inspectResult, err := dockerClient.ImageInspect(gctx, id)
 		if err != nil {
-			return fmt.Errorf("inspect not found: %w", err)
+			return errors.WrapIf(err, "inspect not found")
 		}
 		inspect = inspectResult.InspectResponse
 		return nil
 	})
 
-	g.Go(func() error {
+	g.Go(func() (workerErr error) {
+		defer utils.RecoverToError(&workerErr, "image worker")
+
 		imageList, err := dockerClient.ImageList(gctx, client.ImageListOptions{})
 		if err != nil {
-			return fmt.Errorf("failed to list images: %w", err)
+			return errors.WrapIf(err, "failed to list images")
 		}
 		for _, img := range imageList.Items {
 			if img.ID == id {
@@ -114,7 +115,7 @@ func (s *ImageService) RemoveImage(ctx context.Context, id string, force bool, u
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", id, "", user.ID, user.Username, "0", err, models.JSON{"action": "delete", "force": force})
-		return fmt.Errorf("failed to connect to Docker: %w", err)
+		return errors.WrapIf(err, "failed to connect to Docker")
 	}
 
 	imageDetails, inspectErr := dockerClient.ImageInspect(ctx, id)
@@ -133,7 +134,7 @@ func (s *ImageService) RemoveImage(ctx context.Context, id string, force bool, u
 	_, err = dockerClient.ImageRemove(ctx, id, options)
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", id, imageName, user.ID, user.Username, "0", err, models.JSON{"action": "delete", "force": force})
-		return fmt.Errorf("failed to remove image: %w", err)
+		return errors.WrapIf(err, "failed to remove image")
 	}
 
 	if s.db != nil {
@@ -173,7 +174,7 @@ func (s *ImageService) PullImage(ctx context.Context, imageName string, progress
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", err, models.JSON{"action": "pull"})
-		return fmt.Errorf("failed to connect to Docker: %w", err)
+		return errors.WrapIf(err, "failed to connect to Docker")
 	}
 
 	slog.DebugContext(ctx, "Attempting to pull image", "image", imageName, "externalCredCount", len(externalCreds))
@@ -197,36 +198,21 @@ func (s *ImageService) PullImage(ctx context.Context, imageName string, progress
 	if err != nil {
 		slog.ErrorContext(ctx, "Docker ImagePull failed", "image", imageName, "hasAuth", pullOptions.RegistryAuth != "", "initialHasAuth", initialHasAuth, "retriedWithoutAuth", retriedWithoutAuth, "error", err.Error())
 		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", err, models.JSON{"action": "pull"})
-		return fmt.Errorf("failed to initiate image pull for %s: %w", imageName, err)
+		return errors.WrapIff(err, "failed to initiate image pull for %s", imageName)
 	}
 	defer func() { _ = reader.Close() }()
 
-	streamWriter := progressWriter
-	if streamWriter == nil {
-		streamWriter = io.Discard
-	}
-
-	flusher, implementsFlusher := streamWriter.(http.Flusher)
-	streamErr := dockerutils.ConsumeJSONMessageStream(reader, func(line []byte) error {
-		if _, writeErr := streamWriter.Write(line); writeErr != nil {
-			return writeErr
-		}
-		if _, writeErr := streamWriter.Write([]byte("\n")); writeErr != nil {
-			return writeErr
-		}
-		if implementsFlusher {
-			flusher.Flush()
-		}
-		return nil
-	})
+	logWriter := dockerutils.NewLogLineWriter(progressWriter)
+	streamErr := dockerutils.RenderJSONMessageStream(reader, logWriter)
+	_ = logWriter.Close()
 	if streamErr != nil {
 		if errors.Is(streamErr, context.Canceled) || strings.Contains(streamErr.Error(), "context canceled") {
 			slog.Debug("image pull stream canceled", "image", imageName, "err", streamErr)
 			s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", streamErr, models.JSON{"action": "pull", "step": "canceled"})
-			return fmt.Errorf("image pull stream canceled for %s: %w", imageName, streamErr)
+			return errors.WrapIff(streamErr, "image pull stream canceled for %s", imageName)
 		}
 		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", streamErr, models.JSON{"action": "pull", "step": "read_stream"})
-		return fmt.Errorf("error reading image pull stream for %s: %w", imageName, streamErr)
+		return errors.WrapIff(streamErr, "error reading image pull stream for %s", imageName)
 	}
 
 	slog.Debug("image pull stream completed", "image", imageName)
@@ -275,13 +261,13 @@ func (s *ImageService) TagImage(ctx context.Context, source string, req imagetyp
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", source, user.ID, user.Username, "0", err, models.JSON{"action": "tag", "target": target})
-		return fmt.Errorf("failed to connect to Docker: %w", err)
+		return errors.WrapIf(err, "failed to connect to Docker")
 	}
 
 	_, err = dockerClient.ImageTag(ctx, client.ImageTagOptions{Source: source, Target: target})
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", source, user.ID, user.Username, "0", err, models.JSON{"action": "tag", "target": target})
-		return fmt.Errorf("failed to tag image: %w", err)
+		return errors.WrapIf(err, "failed to tag image")
 	}
 
 	metadata := models.JSON{
@@ -307,12 +293,12 @@ func (s *ImageService) GetImageHistory(ctx context.Context, imageName string) ([
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
+		return nil, errors.WrapIf(err, "failed to connect to Docker")
 	}
 
 	result, err := dockerClient.ImageHistory(ctx, imageName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get image history: %w", err)
+		return nil, errors.WrapIf(err, "failed to get image history")
 	}
 
 	items := make([]imagetypes.HistoryItem, 0, len(result.Items))
@@ -338,12 +324,12 @@ func (s *ImageService) SearchImages(ctx context.Context, term string) ([]imagety
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
+		return nil, errors.WrapIf(err, "failed to connect to Docker")
 	}
 
 	result, err := dockerClient.ImageSearch(ctx, term, client.ImageSearchOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("failed to search images: %w", err)
+		return nil, errors.WrapIf(err, "failed to search images")
 	}
 
 	items := make([]imagetypes.SearchResult, 0, len(result.Items))
@@ -367,12 +353,12 @@ func (s *ImageService) ExportImage(ctx context.Context, imageName string) (io.Re
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
+		return nil, errors.WrapIf(err, "failed to connect to Docker")
 	}
 
 	reader, err := dockerClient.ImageSave(ctx, []string{imageName})
 	if err != nil {
-		return nil, fmt.Errorf("failed to export image: %w", err)
+		return nil, errors.WrapIf(err, "failed to export image")
 	}
 	return reader, nil
 }
@@ -384,7 +370,7 @@ func (s *ImageService) LoadImageFromReader(ctx context.Context, reader io.Reader
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", fileName, user.ID, user.Username, "0", err, models.JSON{"action": "load"})
-		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
+		return nil, errors.WrapIf(err, "failed to connect to Docker")
 	}
 
 	// ImageLoad accepts a tar archive reader and optional load options
@@ -392,27 +378,19 @@ func (s *ImageService) LoadImageFromReader(ctx context.Context, reader io.Reader
 	if err != nil {
 		// Check if error is due to size limit being exceeded
 		if err.Error() == "unexpected EOF" || strings.Contains(err.Error(), "unexpected EOF") {
-			return nil, fmt.Errorf("file size exceeds maximum allowed size of %d MB", maxSizeBytes/(1024*1024))
+			return nil, errors.Errorf("file size exceeds maximum allowed size of %d MB", maxSizeBytes/(1024*1024))
 		}
 		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", fileName, user.ID, user.Username, "0", err, models.JSON{"action": "load", "file": fileName})
-		return nil, fmt.Errorf("failed to load image from tar: %w", err)
+		return nil, errors.WrapIf(err, "failed to load image from tar")
 	}
 	defer func() { _ = loadResp.Close() }()
 
 	var result imagetypes.LoadResult
 	var responseBuilder strings.Builder
-	streamErr := dockerutils.ConsumeJSONMessageStream(loadResp, func(line []byte) error {
-		if _, err := responseBuilder.Write(line); err != nil {
-			return err
-		}
-		if err := responseBuilder.WriteByte('\n'); err != nil {
-			return err
-		}
-		return nil
-	})
+	streamErr := dockerutils.RenderJSONMessageStream(loadResp, &responseBuilder)
 	if streamErr != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", fileName, user.ID, user.Username, "0", streamErr, models.JSON{"action": "load", "file": fileName, "step": "read_response"})
-		return nil, fmt.Errorf("failed to read load response: %w", streamErr)
+		return nil, errors.WrapIf(streamErr, "failed to read load response")
 	}
 
 	result.Stream = responseBuilder.String()
@@ -431,7 +409,7 @@ func (s *ImageService) LoadImageFromReader(ctx context.Context, reader io.Reader
 func (s *ImageService) ImageExistsLocally(ctx context.Context, imageName string) (bool, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return false, fmt.Errorf("failed to connect to Docker: %w", err)
+		return false, errors.WrapIf(err, "failed to connect to Docker")
 	}
 
 	_, err = dockerClient.ImageInspect(ctx, imageName)
@@ -443,7 +421,7 @@ func (s *ImageService) ImageExistsLocally(ctx context.Context, imageName string)
 	if strings.Contains(errLower, "no such image") || strings.Contains(errLower, "not found") {
 		return false, nil
 	}
-	return false, fmt.Errorf("failed to inspect image %s: %w", imageName, err)
+	return false, errors.WrapIff(err, "failed to inspect image %s", imageName)
 }
 
 func (s *ImageService) getPullOptionsWithAuth(ctx context.Context, imageRef string, externalCreds []containerregistry.Credential) (client.ImagePullOptions, error) {
@@ -460,7 +438,7 @@ func (s *ImageService) getPullOptionsWithAuth(ctx context.Context, imageRef stri
 		if utilsregistry.IsRegistryMatch(cred.URL, registryHost) {
 			authStr, err := utilsregistry.EncodeAuthHeader(cred.Username, cred.Token, utilsregistry.NormalizeRegistryURL(cred.URL))
 			if err != nil {
-				return pullOptions, fmt.Errorf("failed to create auth header: %w", err)
+				return pullOptions, errors.WrapIf(err, "failed to create auth header")
 			}
 			pullOptions.RegistryAuth = authStr
 
@@ -475,7 +453,7 @@ func (s *ImageService) getPullOptionsWithAuth(ctx context.Context, imageRef stri
 
 	authStr, err := s.registryService.GetRegistryAuthForHost(ctx, registryHost)
 	if err != nil {
-		return pullOptions, fmt.Errorf("failed to get registry credentials: %w", err)
+		return pullOptions, errors.WrapIf(err, "failed to get registry credentials")
 	}
 	if authStr != "" {
 		pullOptions.RegistryAuth = authStr
@@ -517,7 +495,7 @@ func isUnauthorizedPullErrorInternal(err error) bool {
 func (s *ImageService) PruneImages(ctx context.Context, options systemtypes.PruneImagesOptions) (*image.PruneReport, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
+		return nil, errors.WrapIf(err, "failed to connect to Docker")
 	}
 
 	filterArgs := make(client.Filters)
@@ -534,12 +512,12 @@ func (s *ImageService) PruneImages(ctx context.Context, options systemtypes.Prun
 		}
 		filterArgs = filterArgs.Add("until", options.Until)
 	default:
-		return nil, fmt.Errorf("unsupported image prune mode: %s", options.Mode)
+		return nil, errors.Errorf("unsupported image prune mode: %s", options.Mode)
 	}
 
 	report, err := dockerClient.ImagePrune(ctx, client.ImagePruneOptions{Filters: filterArgs})
 	if err != nil {
-		return nil, fmt.Errorf("failed to prune images: %w", err)
+		return nil, errors.WrapIf(err, "failed to prune images")
 	}
 	pruneReport := report.Report
 
@@ -621,7 +599,7 @@ func (s *ImageService) GetUpdateInfoByImageIDs(ctx context.Context, imageIDs []s
 
 	var updateRecords []models.ImageUpdateRecord
 	if err := s.db.WithContext(ctx).Where("id IN ?", imageIDs).Find(&updateRecords).Error; err != nil {
-		return nil, fmt.Errorf("failed to fetch update records: %w", err)
+		return nil, errors.WrapIf(err, "failed to fetch update records")
 	}
 
 	result := make(map[string]*imagetypes.UpdateInfo, len(updateRecords))
@@ -679,7 +657,7 @@ func (s *ImageService) GetUpdateInfoByImageRefs(ctx context.Context, imageRefs [
 		Where("tag IN ? AND repository IN ?", tags, repositoryCandidates).
 		Order("check_time DESC").
 		Find(&updateRecords).Error; err != nil {
-		return nil, fmt.Errorf("failed to fetch update records by image refs: %w", err)
+		return nil, errors.WrapIf(err, "failed to fetch update records by image refs")
 	}
 
 	for _, lookup := range lookups {
@@ -701,22 +679,26 @@ func (s *ImageService) ListImagesPaginated(ctx context.Context, params paginatio
 	g, groupCtx := errgroup.WithContext(ctx)
 
 	// Fetch Docker images
-	g.Go(func() error {
+	g.Go(func() (workerErr error) {
+		defer utils.RecoverToError(&workerErr, "image worker")
+
 		var err error
 		imageList, err := s.dockerService.listImagesInternal(groupCtx)
 		if err != nil {
-			return fmt.Errorf("failed to list Docker images: %w", err)
+			return errors.WrapIf(err, "failed to list Docker images")
 		}
 		dockerImages = imageList
 		return nil
 	})
 
 	// Fetch containers to determine usage
-	g.Go(func() error {
+	g.Go(func() (workerErr error) {
+		defer utils.RecoverToError(&workerErr, "image worker")
+
 		var err error
 		containerList, err := s.dockerService.listContainersInternal(groupCtx)
 		if err != nil {
-			return fmt.Errorf("failed to list containers: %w", err)
+			return errors.WrapIf(err, "failed to list containers")
 		}
 		containers = containerList
 		return nil
@@ -733,7 +715,7 @@ func (s *ImageService) ListImagesPaginated(ctx context.Context, params paginatio
 
 	if s.db != nil && len(imageIDs) > 0 {
 		if err := s.db.WithContext(ctx).Where("id IN ?", imageIDs).Find(&updateRecords).Error; err != nil {
-			return nil, pagination.Response{}, fmt.Errorf("failed to fetch image update records: %w", err)
+			return nil, pagination.Response{}, errors.WrapIf(err, "failed to fetch image update records")
 		}
 	}
 
@@ -766,7 +748,7 @@ func buildImageRefUpdateLookupsInternal(imageRefs []string) []imageRefUpdateLook
 	seen := make(map[string]struct{}, len(imageRefs))
 
 	for _, rawRef := range imageRefs {
-		lookup, ok := parseImageRefUpdateLookupInternal(rawRef)
+		lookup, ok := parseImageRefUpdateLookupInternal(rawRef).Get()
 		if !ok {
 			continue
 		}
@@ -780,15 +762,15 @@ func buildImageRefUpdateLookupsInternal(imageRefs []string) []imageRefUpdateLook
 	return lookups
 }
 
-func parseImageRefUpdateLookupInternal(imageRef string) (imageRefUpdateLookup, bool) {
+func parseImageRefUpdateLookupInternal(imageRef string) mo.Option[imageRefUpdateLookup] {
 	trimmedRef := strings.TrimSpace(imageRef)
 	if trimmedRef == "" {
-		return imageRefUpdateLookup{}, false
+		return mo.None[imageRefUpdateLookup]()
 	}
 
 	named, err := ref.ParseNormalizedNamed(trimmedRef)
 	if err != nil {
-		return imageRefUpdateLookup{}, false
+		return mo.None[imageRefUpdateLookup]()
 	}
 
 	tag := "latest"
@@ -820,11 +802,11 @@ func parseImageRefUpdateLookupInternal(imageRef string) (imageRefUpdateLookup, b
 		repositoryCandidates[strings.TrimPrefix(repositoryPath, "library/")] = struct{}{}
 	}
 
-	return imageRefUpdateLookup{
+	return mo.Some(imageRefUpdateLookup{
 		originalRef:          trimmedRef,
 		tag:                  tag,
 		repositoryCandidates: repositoryCandidates,
-	}, true
+	})
 }
 
 func selectLatestMatchingImageUpdateRecordInternal(
@@ -863,7 +845,7 @@ func convertLabels(labels map[string]string) map[string]any {
 func (s *ImageService) GetTotalImageSize(ctx context.Context) (int64, error) {
 	images, err := s.dockerService.listImagesInternal(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("failed to list images: %w", err)
+		return 0, errors.WrapIf(err, "failed to list images")
 	}
 
 	var total int64
@@ -879,35 +861,34 @@ func (s *ImageService) GetTotalImageSize(ctx context.Context) (int64, error) {
 const projectIDCacheTTL = 5 * time.Second
 
 func (s *ImageService) loadProjectIDByNameCachedInternal(ctx context.Context) map[string]string {
-	s.projectIDCache.mu.RLock()
-	if cached := s.projectIDCache.byName; cached != nil && time.Now().Before(s.projectIDCache.expires) {
-		s.projectIDCache.mu.RUnlock()
-		return cached
+	if s.projectIDCache == nil {
+		s.projectIDCache = hot.NewHotCache[struct{}, map[string]string](hot.LRU, 1).
+			WithTTL(projectIDCacheTTL).
+			Build()
 	}
-	s.projectIDCache.mu.RUnlock()
+	stale, staleFound := s.projectIDCache.Peek(struct{}{})
+	byName, found, err := s.projectIDCache.GetWithLoaders(struct{}{}, func(_ []struct{}) (map[struct{}]map[string]string, error) {
+		var projects []models.Project
+		if err := s.db.WithContext(ctx).Select("id", "name").Find(&projects).Error; err != nil {
+			return nil, err
+		}
 
-	s.projectIDCache.mu.Lock()
-	defer s.projectIDCache.mu.Unlock()
-	if cached := s.projectIDCache.byName; cached != nil && time.Now().Before(s.projectIDCache.expires) {
-		return cached
-	}
-
-	var projects []models.Project
-	if err := s.db.WithContext(ctx).Select("id", "name").Find(&projects).Error; err != nil {
+		loaded := make(map[string]string, len(projects))
+		for _, project := range projects {
+			loaded[project.Name] = project.ID
+		}
+		return map[struct{}]map[string]string{{}: loaded}, nil
+	})
+	if err != nil {
 		slog.WarnContext(ctx, "failed to load project ID map", "error", err)
-		// Return last cached value if any; otherwise an empty map (don't store, so we retry next call).
-		if s.projectIDCache.byName != nil {
-			return s.projectIDCache.byName
+		if staleFound {
+			return stale
 		}
 		return map[string]string{}
 	}
-
-	byName := make(map[string]string, len(projects))
-	for _, p := range projects {
-		byName[p.Name] = p.ID
+	if !found {
+		return map[string]string{}
 	}
-	s.projectIDCache.byName = byName
-	s.projectIDCache.expires = time.Now().Add(projectIDCacheTTL)
 	return byName
 }
 
@@ -1052,7 +1033,7 @@ func parseRepoAndTagFromRepoTag(repoTag string) (repo, tag string) {
 	return repoTag, "latest"
 }
 
-func parseRepoFromDigests(repoDigests []string) (repo string, found bool) {
+func parseRepoFromDigests(repoDigests []string) mo.Option[string] {
 	for _, rd := range repoDigests {
 		if rd == "<none>@<none>" {
 			continue
@@ -1060,11 +1041,11 @@ func parseRepoFromDigests(repoDigests []string) (repo string, found bool) {
 		if at := strings.LastIndex(rd, "@"); at != -1 {
 			candidateRepo := rd[:at]
 			if candidateRepo != "" {
-				return candidateRepo, true
+				return mo.Some(candidateRepo)
 			}
 		}
 	}
-	return "", false
+	return mo.None[string]()
 }
 
 func determineRepoAndTag(di image.Summary) (repo, tag string) {
@@ -1073,19 +1054,12 @@ func determineRepoAndTag(di image.Summary) (repo, tag string) {
 	}
 
 	if len(di.RepoDigests) > 0 {
-		if r, found := parseRepoFromDigests(di.RepoDigests); found {
-			return r, "<none>"
+		if repo, found := parseRepoFromDigests(di.RepoDigests).Get(); found {
+			return repo, "<none>"
 		}
 	}
 
 	return "<none>", "<none>"
-}
-
-func stringPtrValue(p *string) string {
-	if p == nil {
-		return ""
-	}
-	return *p
 }
 
 func buildUpdateInfo(updateRecord *models.ImageUpdateRecord) *imagetypes.UpdateInfo {
@@ -1093,15 +1067,15 @@ func buildUpdateInfo(updateRecord *models.ImageUpdateRecord) *imagetypes.UpdateI
 		HasUpdate:      updateRecord.HasUpdate,
 		UpdateType:     updateRecord.UpdateType,
 		CurrentVersion: updateRecord.CurrentVersion,
-		LatestVersion:  stringPtrValue(updateRecord.LatestVersion),
-		CurrentDigest:  stringPtrValue(updateRecord.CurrentDigest),
-		LatestDigest:   stringPtrValue(updateRecord.LatestDigest),
+		LatestVersion:  mo.PointerToOption(updateRecord.LatestVersion).OrEmpty(),
+		CurrentDigest:  mo.PointerToOption(updateRecord.CurrentDigest).OrEmpty(),
+		LatestDigest:   mo.PointerToOption(updateRecord.LatestDigest).OrEmpty(),
 		CheckTime:      updateRecord.CheckTime,
 		ResponseTimeMs: updateRecord.ResponseTimeMs,
-		Error:          stringPtrValue(updateRecord.LastError),
-		AuthMethod:     stringPtrValue(updateRecord.AuthMethod),
-		AuthUsername:   stringPtrValue(updateRecord.AuthUsername),
-		AuthRegistry:   stringPtrValue(updateRecord.AuthRegistry),
+		Error:          mo.PointerToOption(updateRecord.LastError).OrEmpty(),
+		AuthMethod:     mo.PointerToOption(updateRecord.AuthMethod).OrEmpty(),
+		AuthUsername:   mo.PointerToOption(updateRecord.AuthUsername).OrEmpty(),
+		AuthRegistry:   mo.PointerToOption(updateRecord.AuthRegistry).OrEmpty(),
 		UsedCredential: updateRecord.UsedCredential,
 	}
 }

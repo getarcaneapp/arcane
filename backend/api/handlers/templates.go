@@ -2,9 +2,10 @@ package handlers
 
 import (
 	"context"
-	json "encoding/json/v2"
+	"encoding/json/v2"
 	"net/url"
 
+	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -25,13 +26,6 @@ type TemplateHandler struct {
 // Input/Output Types
 // ============================================================================
 
-// TemplatePaginatedResponse is the paginated response for templates.
-type TemplatePaginatedResponse struct {
-	Success    bool                    `json:"success"`
-	Data       []template.Template     `json:"data"`
-	Pagination base.PaginationResponse `json:"pagination"`
-}
-
 type ListTemplatesInput struct {
 	Search string `query:"search" doc:"Search query"`
 	Sort   string `query:"sort" doc:"Column to sort by"`
@@ -42,7 +36,7 @@ type ListTemplatesInput struct {
 }
 
 type ListTemplatesOutput struct {
-	Body TemplatePaginatedResponse
+	Body base.Paginated[template.Template]
 }
 
 type GetAllTemplatesInput struct{}
@@ -169,10 +163,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService) 
 		Summary:     "Fetch remote registry",
 		Description: "Fetch templates from a remote registry URL",
 		Tags:        []string{"Templates"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 		Middlewares: humamw.RequirePermission(api, authz.PermTemplatesRead),
 	}, h.FetchRegistry)
 
@@ -224,10 +215,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService) 
 		Summary:     "Create a template",
 		Description: "Create a new compose template",
 		Tags:        []string{"Templates"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 		Middlewares: humamw.RequirePermission(api, authz.PermTemplatesCreate),
 	}, h.CreateTemplate)
 
@@ -238,10 +226,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService) 
 		Summary:     "Update a template",
 		Description: "Update an existing compose template",
 		Tags:        []string{"Templates"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 		Middlewares: humamw.RequirePermission(api, authz.PermTemplatesUpdate),
 	}, h.UpdateTemplate)
 
@@ -252,10 +237,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService) 
 		Summary:     "Delete a template",
 		Description: "Delete a compose template",
 		Tags:        []string{"Templates"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 		Middlewares: humamw.RequirePermission(api, authz.PermTemplatesDelete),
 	}, h.DeleteTemplate)
 
@@ -266,10 +248,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService) 
 		Summary:     "Download a template",
 		Description: "Download a remote template to local storage",
 		Tags:        []string{"Templates"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 		Middlewares: humamw.RequirePermission(api, authz.PermTemplatesRead),
 	}, h.DownloadTemplate)
 
@@ -280,10 +259,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService) 
 		Summary:     "Get default templates",
 		Description: "Get the default compose and env templates",
 		Tags:        []string{"Templates"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 		Middlewares: humamw.RequirePermission(api, authz.PermTemplatesRead),
 	}, h.GetDefaultTemplates)
 
@@ -294,10 +270,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService) 
 		Summary:     "Save default templates",
 		Description: "Save the default compose and env templates",
 		Tags:        []string{"Templates"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 		Middlewares: humamw.RequirePermission(api, authz.PermTemplatesUpdate),
 	}, h.SaveDefaultTemplates)
 
@@ -308,10 +281,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService) 
 		Summary:     "List template registries",
 		Description: "Get all template registries",
 		Tags:        []string{"Templates"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 		Middlewares: humamw.RequirePermission(api, authz.PermTemplatesList),
 	}, h.GetRegistries)
 
@@ -322,10 +292,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService) 
 		Summary:     "Create a template registry",
 		Description: "Create a new template registry",
 		Tags:        []string{"Templates"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 		Middlewares: humamw.RequirePermission(api, authz.PermTemplatesCreate),
 	}, h.CreateRegistry)
 
@@ -336,10 +303,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService) 
 		Summary:     "Update a template registry",
 		Description: "Update an existing template registry",
 		Tags:        []string{"Templates"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 		Middlewares: humamw.RequirePermission(api, authz.PermTemplatesUpdate),
 	}, h.UpdateRegistry)
 
@@ -350,10 +314,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService) 
 		Summary:     "Delete a template registry",
 		Description: "Delete a template registry",
 		Tags:        []string{"Templates"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 		Middlewares: humamw.RequirePermission(api, authz.PermTemplatesDelete),
 	}, h.DeleteRegistry)
 }
@@ -364,10 +325,6 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService) 
 
 // ListTemplates returns a paginated list of templates.
 func (h *TemplateHandler) ListTemplates(ctx context.Context, input *ListTemplatesInput) (*ListTemplatesOutput, error) {
-	if h.templateService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	if params.Limit == 0 {
 		params.Limit = 20
@@ -378,11 +335,11 @@ func (h *TemplateHandler) ListTemplates(ctx context.Context, input *ListTemplate
 
 	templates, paginationResp, err := h.templateService.GetAllTemplatesPaginated(ctx, params)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.TemplateListError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to get templates").Error())
 	}
 
 	return &ListTemplatesOutput{
-		Body: TemplatePaginatedResponse{
+		Body: base.Paginated[template.Template]{
 			Success:    true,
 			Data:       templates,
 			Pagination: toPaginationResponseInternal(paginationResp),
@@ -392,18 +349,14 @@ func (h *TemplateHandler) ListTemplates(ctx context.Context, input *ListTemplate
 
 // GetAllTemplates returns all templates without pagination.
 func (h *TemplateHandler) GetAllTemplates(ctx context.Context, _ *GetAllTemplatesInput) (*GetAllTemplatesOutput, error) {
-	if h.templateService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	templates, err := h.templateService.GetAllTemplates(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.TemplateListError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to get templates").Error())
 	}
 
 	out, mapErr := mapper.MapSlice[models.ComposeTemplate, template.Template](templates)
 	if mapErr != nil {
-		return nil, huma.Error500InternalServerError((&common.TemplateMappingError{Err: mapErr}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(mapErr, "Failed to map templates").Error())
 	}
 
 	return &GetAllTemplatesOutput{
@@ -416,12 +369,8 @@ func (h *TemplateHandler) GetAllTemplates(ctx context.Context, _ *GetAllTemplate
 
 // GetTemplate returns a template by ID.
 func (h *TemplateHandler) GetTemplate(ctx context.Context, input *GetTemplateInput) (*GetTemplateOutput, error) {
-	if h.templateService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	if input.ID == "" {
-		return nil, huma.Error400BadRequest((&common.TemplateIDRequiredError{}).Error())
+		return nil, huma.Error400BadRequest("Template ID is required")
 	}
 
 	// Path parameter arrives URL-encoded (e.g. "remote%3Areg%3Aslug" for remote IDs that
@@ -429,20 +378,20 @@ func (h *TemplateHandler) GetTemplate(ctx context.Context, input *GetTemplateInp
 	// matching against cached / stored template IDs.
 	id, decodeErr := url.PathUnescape(input.ID)
 	if decodeErr != nil {
-		return nil, huma.Error400BadRequest((&common.TemplateIDRequiredError{}).Error())
+		return nil, huma.Error400BadRequest("Template ID is required")
 	}
 
 	tmpl, err := h.templateService.GetTemplate(ctx, id)
 	if err != nil {
-		if common.IsTemplateNotFoundError(err) {
-			return nil, huma.Error404NotFound((&common.TemplateNotFoundError{}).Error())
+		if errors.Is(err, common.ErrTemplateNotFound) {
+			return nil, huma.Error404NotFound("Template not found")
 		}
-		return nil, huma.Error500InternalServerError((&common.TemplateRetrievalError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to get template").Error())
 	}
 
 	var out template.Template
 	if mapErr := mapper.MapStruct(tmpl, &out); mapErr != nil {
-		return nil, huma.Error500InternalServerError((&common.TemplateMappingError{Err: mapErr}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(mapErr, "Failed to map templates").Error())
 	}
 
 	return &GetTemplateOutput{
@@ -455,25 +404,21 @@ func (h *TemplateHandler) GetTemplate(ctx context.Context, input *GetTemplateInp
 
 // GetTemplateContent returns template content with parsed data.
 func (h *TemplateHandler) GetTemplateContent(ctx context.Context, input *GetTemplateContentInput) (*GetTemplateContentOutput, error) {
-	if h.templateService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	if input.ID == "" {
-		return nil, huma.Error400BadRequest((&common.TemplateIDRequiredError{}).Error())
+		return nil, huma.Error400BadRequest("Template ID is required")
 	}
 
 	id, decodeErr := url.PathUnescape(input.ID)
 	if decodeErr != nil {
-		return nil, huma.Error400BadRequest((&common.TemplateIDRequiredError{}).Error())
+		return nil, huma.Error400BadRequest("Template ID is required")
 	}
 
 	contentData, err := h.templateService.GetTemplateContentWithParsedData(ctx, id)
 	if err != nil {
-		if common.IsTemplateNotFoundError(err) {
-			return nil, huma.Error404NotFound((&common.TemplateNotFoundError{}).Error())
+		if errors.Is(err, common.ErrTemplateNotFound) {
+			return nil, huma.Error404NotFound("Template not found")
 		}
-		return nil, huma.Error500InternalServerError((&common.TemplateContentError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to get template content").Error())
 	}
 
 	return &GetTemplateContentOutput{
@@ -486,10 +431,6 @@ func (h *TemplateHandler) GetTemplateContent(ctx context.Context, input *GetTemp
 
 // CreateTemplate creates a new template.
 func (h *TemplateHandler) CreateTemplate(ctx context.Context, input *CreateTemplateInput) (*CreateTemplateOutput, error) {
-	if h.templateService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	tmpl := &models.ComposeTemplate{
 		Name:        input.Body.Name,
 		Description: input.Body.Description,
@@ -502,12 +443,12 @@ func (h *TemplateHandler) CreateTemplate(ctx context.Context, input *CreateTempl
 	}
 
 	if err := h.templateService.CreateTemplate(ctx, tmpl); err != nil {
-		return nil, huma.Error500InternalServerError((&common.TemplateCreationError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to create template").Error())
 	}
 
 	var out template.Template
 	if mapErr := mapper.MapStruct(tmpl, &out); mapErr != nil {
-		return nil, huma.Error500InternalServerError((&common.TemplateMappingError{Err: mapErr}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(mapErr, "Failed to map templates").Error())
 	}
 
 	return &CreateTemplateOutput{
@@ -520,17 +461,13 @@ func (h *TemplateHandler) CreateTemplate(ctx context.Context, input *CreateTempl
 
 // UpdateTemplate updates a template.
 func (h *TemplateHandler) UpdateTemplate(ctx context.Context, input *UpdateTemplateInput) (*UpdateTemplateOutput, error) {
-	if h.templateService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	if input.ID == "" {
-		return nil, huma.Error400BadRequest((&common.TemplateIDRequiredError{}).Error())
+		return nil, huma.Error400BadRequest("Template ID is required")
 	}
 
 	id, decodeErr := url.PathUnescape(input.ID)
 	if decodeErr != nil {
-		return nil, huma.Error400BadRequest((&common.TemplateIDRequiredError{}).Error())
+		return nil, huma.Error400BadRequest("Template ID is required")
 	}
 
 	updates := &models.ComposeTemplate{
@@ -545,20 +482,20 @@ func (h *TemplateHandler) UpdateTemplate(ctx context.Context, input *UpdateTempl
 	}
 
 	if err := h.templateService.UpdateTemplate(ctx, id, updates); err != nil {
-		if common.IsTemplateNotFoundError(err) {
-			return nil, huma.Error404NotFound((&common.TemplateNotFoundError{}).Error())
+		if errors.Is(err, common.ErrTemplateNotFound) {
+			return nil, huma.Error404NotFound("Template not found")
 		}
-		return nil, huma.Error500InternalServerError((&common.TemplateUpdateError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to update template").Error())
 	}
 
 	updated, err := h.templateService.GetTemplate(ctx, id)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.TemplateRetrievalError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to get template").Error())
 	}
 
 	var out template.Template
 	if mapErr := mapper.MapStruct(updated, &out); mapErr != nil {
-		return nil, huma.Error500InternalServerError((&common.TemplateMappingError{Err: mapErr}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(mapErr, "Failed to map templates").Error())
 	}
 
 	return &UpdateTemplateOutput{
@@ -571,24 +508,20 @@ func (h *TemplateHandler) UpdateTemplate(ctx context.Context, input *UpdateTempl
 
 // DeleteTemplate deletes a template.
 func (h *TemplateHandler) DeleteTemplate(ctx context.Context, input *DeleteTemplateInput) (*DeleteTemplateOutput, error) {
-	if h.templateService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	if input.ID == "" {
-		return nil, huma.Error400BadRequest((&common.TemplateIDRequiredError{}).Error())
+		return nil, huma.Error400BadRequest("Template ID is required")
 	}
 
 	id, decodeErr := url.PathUnescape(input.ID)
 	if decodeErr != nil {
-		return nil, huma.Error400BadRequest((&common.TemplateIDRequiredError{}).Error())
+		return nil, huma.Error400BadRequest("Template ID is required")
 	}
 
 	if err := h.templateService.DeleteTemplate(ctx, id); err != nil {
-		if common.IsTemplateNotFoundError(err) {
-			return nil, huma.Error404NotFound((&common.TemplateNotFoundError{}).Error())
+		if errors.Is(err, common.ErrTemplateNotFound) {
+			return nil, huma.Error404NotFound("Template not found")
 		}
-		return nil, huma.Error500InternalServerError((&common.TemplateDeletionError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to delete template").Error())
 	}
 
 	return &DeleteTemplateOutput{
@@ -603,38 +536,34 @@ func (h *TemplateHandler) DeleteTemplate(ctx context.Context, input *DeleteTempl
 
 // DownloadTemplate downloads a remote template to local storage.
 func (h *TemplateHandler) DownloadTemplate(ctx context.Context, input *DownloadTemplateInput) (*DownloadTemplateOutput, error) {
-	if h.templateService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	if input.ID == "" {
-		return nil, huma.Error400BadRequest((&common.TemplateIDRequiredError{}).Error())
+		return nil, huma.Error400BadRequest("Template ID is required")
 	}
 
 	id, decodeErr := url.PathUnescape(input.ID)
 	if decodeErr != nil {
-		return nil, huma.Error400BadRequest((&common.TemplateIDRequiredError{}).Error())
+		return nil, huma.Error400BadRequest("Template ID is required")
 	}
 
 	tmpl, err := h.templateService.GetTemplate(ctx, id)
 	if err != nil {
-		if common.IsTemplateNotFoundError(err) {
-			return nil, huma.Error404NotFound((&common.TemplateNotFoundError{}).Error())
+		if errors.Is(err, common.ErrTemplateNotFound) {
+			return nil, huma.Error404NotFound("Template not found")
 		}
-		return nil, huma.Error500InternalServerError((&common.TemplateDownloadError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to download template").Error())
 	}
 	if !tmpl.IsRemote {
-		return nil, huma.Error400BadRequest((&common.TemplateAlreadyLocalError{}).Error())
+		return nil, huma.Error400BadRequest("Template is already local")
 	}
 
 	localTemplate, err := h.templateService.DownloadTemplate(ctx, tmpl)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.TemplateDownloadError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to download template").Error())
 	}
 
 	var out template.Template
 	if mapErr := mapper.MapStruct(localTemplate, &out); mapErr != nil {
-		return nil, huma.Error500InternalServerError((&common.TemplateMappingError{Err: mapErr}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(mapErr, "Failed to map templates").Error())
 	}
 
 	return &DownloadTemplateOutput{
@@ -647,10 +576,6 @@ func (h *TemplateHandler) DownloadTemplate(ctx context.Context, input *DownloadT
 
 // GetDefaultTemplates returns the default compose and env templates.
 func (h *TemplateHandler) GetDefaultTemplates(ctx context.Context, _ *GetDefaultTemplatesInput) (*GetDefaultTemplatesOutput, error) {
-	if h.templateService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	composeTemplate := h.templateService.GetComposeTemplate()
 	swarmStackTemplate := h.templateService.GetSwarmStackTemplate()
 	swarmStackEnvTemplate := h.templateService.GetSwarmStackEnvTemplate()
@@ -671,16 +596,12 @@ func (h *TemplateHandler) GetDefaultTemplates(ctx context.Context, _ *GetDefault
 
 // SaveDefaultTemplates saves the default compose and env templates.
 func (h *TemplateHandler) SaveDefaultTemplates(ctx context.Context, input *SaveDefaultTemplatesInput) (*SaveDefaultTemplatesOutput, error) {
-	if h.templateService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	if err := h.templateService.SaveComposeTemplate(input.Body.ComposeContent); err != nil {
-		return nil, huma.Error500InternalServerError((&common.DefaultTemplateSaveError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to save default template").Error())
 	}
 
 	if err := h.templateService.SaveEnvTemplate(input.Body.EnvContent); err != nil {
-		return nil, huma.Error500InternalServerError((&common.DefaultTemplateSaveError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to save default template").Error())
 	}
 
 	return &SaveDefaultTemplatesOutput{
@@ -695,18 +616,14 @@ func (h *TemplateHandler) SaveDefaultTemplates(ctx context.Context, input *SaveD
 
 // GetRegistries returns all template registries.
 func (h *TemplateHandler) GetRegistries(ctx context.Context, _ *GetTemplateRegistriesInput) (*GetTemplateRegistriesOutput, error) {
-	if h.templateService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	registries, err := h.templateService.GetRegistries(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.RegistryFetchError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Failed to fetch registry")
 	}
 
 	out, mapErr := mapper.MapSlice[models.TemplateRegistry, template.TemplateRegistry](registries)
 	if mapErr != nil {
-		return nil, huma.Error500InternalServerError((&common.RegistryFetchError{Err: mapErr}).Error())
+		return nil, huma.Error500InternalServerError("Failed to fetch registry")
 	}
 
 	// Overlay the last fetch error from the in-memory tracker so the UI can
@@ -729,10 +646,6 @@ func (h *TemplateHandler) GetRegistries(ctx context.Context, _ *GetTemplateRegis
 
 // CreateRegistry creates a new template registry.
 func (h *TemplateHandler) CreateRegistry(ctx context.Context, input *CreateTemplateRegistryInput) (*CreateTemplateRegistryOutput, error) {
-	if h.templateService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	registry := &models.TemplateRegistry{
 		Name:        input.Body.Name,
 		URL:         input.Body.URL,
@@ -740,12 +653,12 @@ func (h *TemplateHandler) CreateRegistry(ctx context.Context, input *CreateTempl
 		Enabled:     input.Body.Enabled,
 	}
 	if err := h.templateService.CreateRegistry(ctx, registry); err != nil {
-		return nil, huma.Error500InternalServerError((&common.RegistryCreationError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to create registry").Error())
 	}
 
 	var out template.TemplateRegistry
 	if mapErr := mapper.MapStruct(registry, &out); mapErr != nil {
-		return nil, huma.Error500InternalServerError((&common.RegistryMappingError{Err: mapErr}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(mapErr, "Failed to map registry").Error())
 	}
 
 	return &CreateTemplateRegistryOutput{
@@ -758,12 +671,8 @@ func (h *TemplateHandler) CreateRegistry(ctx context.Context, input *CreateTempl
 
 // UpdateRegistry updates a template registry.
 func (h *TemplateHandler) UpdateRegistry(ctx context.Context, input *UpdateTemplateRegistryInput) (*UpdateTemplateRegistryOutput, error) {
-	if h.templateService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	if input.ID == "" {
-		return nil, huma.Error400BadRequest((&common.RegistryIDRequiredError{}).Error())
+		return nil, huma.Error400BadRequest("Registry ID is required")
 	}
 
 	updates := &models.TemplateRegistry{
@@ -774,9 +683,9 @@ func (h *TemplateHandler) UpdateRegistry(ctx context.Context, input *UpdateTempl
 	}
 	if err := h.templateService.UpdateRegistry(ctx, input.ID, updates); err != nil {
 		if err.Error() == "registry not found" {
-			return nil, huma.Error404NotFound((&common.RegistryNotFoundError{}).Error())
+			return nil, huma.Error404NotFound("Registry not found")
 		}
-		return nil, huma.Error500InternalServerError((&common.RegistryUpdateError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to update registry").Error())
 	}
 
 	return &UpdateTemplateRegistryOutput{
@@ -791,19 +700,15 @@ func (h *TemplateHandler) UpdateRegistry(ctx context.Context, input *UpdateTempl
 
 // DeleteRegistry deletes a template registry.
 func (h *TemplateHandler) DeleteRegistry(ctx context.Context, input *DeleteTemplateRegistryInput) (*DeleteTemplateRegistryOutput, error) {
-	if h.templateService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	if input.ID == "" {
-		return nil, huma.Error400BadRequest((&common.RegistryIDRequiredError{}).Error())
+		return nil, huma.Error400BadRequest("Registry ID is required")
 	}
 
 	if err := h.templateService.DeleteRegistry(ctx, input.ID); err != nil {
 		if err.Error() == "registry not found" {
-			return nil, huma.Error404NotFound((&common.RegistryNotFoundError{}).Error())
+			return nil, huma.Error404NotFound("Registry not found")
 		}
-		return nil, huma.Error500InternalServerError((&common.RegistryDeletionError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to delete registry").Error())
 	}
 
 	return &DeleteTemplateRegistryOutput{
@@ -818,22 +723,18 @@ func (h *TemplateHandler) DeleteRegistry(ctx context.Context, input *DeleteTempl
 
 // FetchRegistry fetches templates from a remote registry URL.
 func (h *TemplateHandler) FetchRegistry(ctx context.Context, input *FetchTemplateRegistryInput) (*FetchTemplateRegistryOutput, error) {
-	if h.templateService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	if input.URL == "" {
-		return nil, huma.Error400BadRequest((&common.QueryParameterRequiredError{}).Error())
+		return nil, huma.Error400BadRequest("Query parameter is required")
 	}
 
 	body, err := h.templateService.FetchRaw(ctx, input.URL)
 	if err != nil {
-		return nil, huma.Error502BadGateway((&common.RegistryFetchError{Err: err}).Error())
+		return nil, huma.Error502BadGateway("Failed to fetch registry")
 	}
 
 	var registry template.RemoteRegistry
 	if err := json.Unmarshal(body, &registry); err != nil {
-		return nil, huma.Error502BadGateway((&common.InvalidJSONResponseError{Err: err}).Error())
+		return nil, huma.Error502BadGateway("Invalid JSON response")
 	}
 
 	return &FetchTemplateRegistryOutput{

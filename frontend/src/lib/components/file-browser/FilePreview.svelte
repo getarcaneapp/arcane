@@ -1,8 +1,8 @@
 <script lang="ts">
-	import type { FileEntry } from '$lib/types/shared';
+	import type { FileEntry } from '#lib/types/shared';
 	import { onMount } from 'svelte';
-	import * as Sheet from '$lib/components/ui/sheet';
-	import { LoadingSpinnerIcon } from '$lib/icons';
+	import * as Sheet from '#lib/components/ui/sheet';
+	import { LoadingSpinnerIcon } from '#lib/icons';
 
 	let { file, fetchContent, onClose }: { file: FileEntry; fetchContent: (path: string) => Promise<string>; onClose: () => void } =
 		$props();

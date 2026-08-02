@@ -1,14 +1,14 @@
 <script lang="ts">
-	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
-	import { UniversalMobileCard } from '$lib/components/arcane-table';
-	import { JobsIcon, ConnectionIcon } from '$lib/icons';
-	import { m } from '$lib/paraglide/messages';
-	import { swarmService } from '$lib/services/swarm-service';
-	import type { SwarmTaskSummary } from '$lib/types/swarm';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
-	import { Badge } from '$lib/components/ui/badge';
-	import { getSwarmTaskIconVariant, getSwarmTaskStateVariant } from '$lib/utils/swarm-tasks';
+	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
+	import type { ColumnSpec, MobileFieldVisibility } from '#lib/components/arcane-table';
+	import { UniversalMobileCard } from '#lib/components/arcane-table';
+	import { JobsIcon, ConnectionIcon } from '#lib/icons';
+	import { m } from '#lib/paraglide/messages';
+	import { swarmService } from '#lib/services/swarm-service';
+	import type { SwarmTaskSummary } from '#lib/types/swarm';
+	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
+	import { Badge } from '#lib/components/ui/badge';
+	import { getSwarmTaskIconVariant, getSwarmTaskStateVariant } from '#lib/utils/swarm-tasks';
 
 	let {
 		tasks = $bindable(),

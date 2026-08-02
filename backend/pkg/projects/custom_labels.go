@@ -3,12 +3,12 @@ package projects
 
 import (
 	"context"
-	"fmt"
 	"maps"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"emperror.dev/errors"
 	"github.com/compose-spec/compose-go/v2/loader"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
@@ -54,20 +54,15 @@ func ParseArcaneComposeMetadata(ctx context.Context, composeFilePath, projectsDi
 	workdir := filepath.Dir(composeFilePath)
 	if strings.TrimSpace(projectsDirectory) == "" {
 		envMap := loadComposeEnvironment(workdir)
-		return ParseArcaneComposeMetadataWithEnv(ctx, composeFilePath, envMap)
+		return parseArcaneComposeMetadataFromFileInternal(ctx, composeFilePath, envMap, map[string]struct{}{})
 	}
 
 	envLoader := NewEnvLoader(projectsDirectory, workdir, autoInjectEnv)
 	envMap, _, err := envLoader.LoadEnvironment(ctx)
 	if err != nil {
-		return emptyArcaneComposeMetadataInternal(), fmt.Errorf("load project environment: %w", err)
+		return emptyArcaneComposeMetadataInternal(), errors.WrapIf(err, "load project environment")
 	}
 
-	return ParseArcaneComposeMetadataWithEnv(ctx, composeFilePath, envMap)
-}
-
-// ParseArcaneComposeMetadataWithEnv reads a Docker Compose file and extracts Arcane-specific metadata using a provided environment.
-func ParseArcaneComposeMetadataWithEnv(ctx context.Context, composeFilePath string, envMap map[string]string) (ArcaneComposeMetadata, error) {
 	return parseArcaneComposeMetadataFromFileInternal(ctx, composeFilePath, envMap, map[string]struct{}{})
 }
 
@@ -92,7 +87,7 @@ func parseArcaneComposeMetadataFromFileInternal(ctx context.Context, composeFile
 
 	project, err := loadComposeProjectForMetadataFromFileInternal(ctx, absPath, mergedEnv)
 	if err != nil {
-		return meta, fmt.Errorf("load compose metadata: %w", err)
+		return meta, errors.WrapIf(err, "load compose metadata")
 	}
 
 	meta = extractArcaneComposeMetadata(project)
@@ -149,14 +144,17 @@ func extractArcaneComposeMetadata(project *composetypes.Project) ArcaneComposeMe
 }
 
 func parseArcaneBlockInternal(block any) (IconSet, []string) {
-	arcaneBlock, ok := utils.AsStringMap(block)
+	arcaneBlock, ok := utils.AsStringMap(block).Get()
 	if !ok {
 		return IconSet{}, nil
 	}
 	icon := IconSet{
-		Icon:  utils.FirstNonEmpty(getFirstString(arcaneBlock[arcaneIconKey]), getFirstString(arcaneBlock[arcaneIconsKey])),
-		Light: getFirstString(arcaneBlock[arcaneIconLightKey]),
-		Dark:  getFirstString(arcaneBlock[arcaneIconDarkKey]),
+		Icon: utils.FirstNonEmpty(
+			utils.FirstNonEmpty(utils.Collect(arcaneBlock[arcaneIconKey], utils.ToString)...),
+			utils.FirstNonEmpty(utils.Collect(arcaneBlock[arcaneIconsKey], utils.ToString)...),
+		),
+		Light: utils.FirstNonEmpty(utils.Collect(arcaneBlock[arcaneIconLightKey], utils.ToString)...),
+		Dark:  utils.FirstNonEmpty(utils.Collect(arcaneBlock[arcaneIconDarkKey], utils.ToString)...),
 	}
 	urls := utils.UniqueNonEmptyStrings(utils.Collect(arcaneBlock[arcaneURLsKey], utils.ToString))
 	return icon, urls
@@ -199,7 +197,7 @@ func emptyArcaneComposeMetadataInternal() ArcaneComposeMetadata {
 }
 
 func loadComposeProjectForMetadataFromFileInternal(ctx context.Context, composeFilePath string, envMap map[string]string) (*composetypes.Project, error) {
-	return loadComposeProjectInternal(ctx, composeFilePath, "", "", false, nil, envMap, func(opts *loader.Options) {
+	return LoadComposeProject(ctx, composeFilePath, "", "", false, nil, envMap, func(opts *loader.Options) {
 		opts.SkipValidation = true
 		opts.SkipConsistencyCheck = true
 		opts.SkipResolveEnvironment = false
@@ -284,12 +282,12 @@ func loadProcessEnv() map[string]string {
 func parseIncludePaths(composeFilePath string) ([]string, error) {
 	content, err := os.ReadFile(composeFilePath)
 	if err != nil {
-		return nil, fmt.Errorf("read compose file: %w", err)
+		return nil, errors.WrapIf(err, "read compose file")
 	}
 
 	composeData := map[string]any{}
 	if err := yaml.Unmarshal(content, &composeData); err != nil {
-		return nil, fmt.Errorf("parse compose file: %w", err)
+		return nil, errors.WrapIf(err, "parse compose file")
 	}
 
 	rawIncludes, ok := composeData["include"]
@@ -337,21 +335,11 @@ func parseIncludePaths(composeFilePath string) ([]string, error) {
 	return paths, nil
 }
 
-// getFirstString retrieves the first non-empty string from a value (single or slice).
-func getFirstString(v any) string {
-	for _, s := range utils.Collect(v, utils.ToString) {
-		if s != "" {
-			return s
-		}
-	}
-	return ""
-}
-
 // FindArcaneIconSet attempts to locate Arcane icon labels within service labels.
 // It supports both map[string]string and []string label formats.
 func FindArcaneIconSet(labels any) IconSet {
 	iconSet := IconSet{}
-	if labelMap, ok := utils.AsStringMap(labels); ok {
+	if labelMap, ok := utils.AsStringMap(labels).Get(); ok {
 		for key, value := range labelMap {
 			assignArcaneIconValueInternal(&iconSet, key, utils.ToString(value))
 		}

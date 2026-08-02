@@ -1,7 +1,7 @@
 <script lang="ts" generics="T">
-	import * as Card from '$lib/components/ui/card';
-	import { Badge } from '$lib/components/ui/badge';
-	import { cn } from '$lib/utils';
+	import * as Card from '#lib/components/ui/card';
+	import { Badge } from '#lib/components/ui/badge';
+	import { cn } from '#lib/utils';
 	import type { Snippet, Component } from 'svelte';
 
 	type IconVariant = 'emerald' | 'red' | 'amber' | 'blue' | 'purple' | 'gray' | 'sky' | 'orange';

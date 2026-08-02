@@ -1,23 +1,23 @@
 <script lang="ts">
-	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
+	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
 	import { toast } from 'svelte-sonner';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
-	import { openConfirmDialog } from '$lib/components/confirm-dialog';
-	import { Badge } from '$lib/components/ui/badge';
-	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api';
-	import { tryCatch } from '$lib/utils/api';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
-	import type { User } from '$lib/types/auth';
-	import type { Role } from '$lib/types/auth';
-	import { BUILT_IN_ROLE_ADMIN, BUILT_IN_ROLE_EDITOR, BUILT_IN_ROLE_DEPLOYER, BUILT_IN_ROLE_VIEWER } from '$lib/types/auth';
-	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '$lib/components/arcane-table';
-	import { UniversalMobileCard } from '$lib/components/arcane-table';
-	import { m } from '$lib/paraglide/messages';
-	import { userService } from '$lib/services/user-service';
-	import { UserIcon, TrashIcon, EditIcon } from '$lib/icons';
-	import IfPermitted from '$lib/components/if-permitted.svelte';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog';
+	import { Badge } from '#lib/components/ui/badge';
+	import * as ArcaneTooltip from '#lib/components/arcane-tooltip';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api';
+	import { tryCatch } from '#lib/utils/api';
+	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
+	import type { User } from '#lib/types/auth';
+	import type { Role } from '#lib/types/auth';
+	import { BUILT_IN_ROLE_ADMIN, BUILT_IN_ROLE_EDITOR, BUILT_IN_ROLE_DEPLOYER, BUILT_IN_ROLE_VIEWER } from '#lib/types/auth';
+	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '#lib/components/arcane-table';
+	import { UniversalMobileCard } from '#lib/components/arcane-table';
+	import { m } from '#lib/paraglide/messages';
+	import { userService } from '#lib/services/user-service';
+	import { UserIcon, TrashIcon, EditIcon } from '#lib/icons';
+	import IfPermitted from '#lib/components/if-permitted.svelte';
 
 	let {
 		users = $bindable(),

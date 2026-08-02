@@ -1,23 +1,23 @@
 <script lang="ts">
-	import { ResponsiveDialog } from '$lib/components/ui/responsive-dialog/index.js';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { Input } from '$lib/components/ui/input/index.js';
-	import { Spinner } from '$lib/components/ui/spinner/index.js';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { environmentManagementService } from '$lib/services/env-mgmt-service';
-	import { queryKeys } from '$lib/query/query-keys';
-	import type { Environment } from '$lib/types/environment';
+	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Spinner } from '#lib/components/ui/spinner/index.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import { environmentManagementService } from '#lib/services/env-mgmt-service';
+	import { queryKeys } from '#lib/query/query-keys';
+	import type { Environment } from '#lib/types/environment';
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
-	import { m } from '$lib/paraglide/messages';
-	import { cn } from '$lib/utils';
-	import settingsStore from '$lib/stores/config-store';
-	import { debounced } from '$lib/utils/ws';
-	import type { SearchPaginationSortRequest } from '$lib/types/shared';
+	import { m } from '#lib/paraglide/messages';
+	import { cn } from '#lib/utils';
+	import settingsStore from '#lib/stores/config-store';
+	import { debounced } from '#lib/utils/ws';
+	import type { SearchPaginationSortRequest } from '#lib/types/shared';
 	import { tick } from 'svelte';
-	import { EnvironmentsIcon, RemoteEnvironmentIcon, AddIcon, SearchIcon, CloseIcon, SettingsIcon } from '$lib/icons';
+	import { EnvironmentsIcon, RemoteEnvironmentIcon, AddIcon, SearchIcon, CloseIcon, SettingsIcon } from '#lib/icons';
 	import { useQueryClient } from '@tanstack/svelte-query';
-	import IfPermitted from '$lib/components/if-permitted.svelte';
+	import IfPermitted from '#lib/components/if-permitted.svelte';
 
 	type Props = {
 		open: boolean;

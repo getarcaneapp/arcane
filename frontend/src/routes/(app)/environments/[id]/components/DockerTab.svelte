@@ -1,12 +1,12 @@
 <script lang="ts">
-	import * as Card from '$lib/components/ui/card/index.js';
-	import { Switch } from '$lib/components/ui/switch/index.js';
-	import SelectWithLabel from '$lib/components/form/select-with-label.svelte';
-	import TextInputWithLabel from '$lib/components/form/text-input-with-label.svelte';
-	import SettingsRow from '$lib/components/settings/settings-row.svelte';
-	import PruneModeCard from '$lib/components/prune/prune-mode-card.svelte';
-	import { m } from '$lib/paraglide/messages';
-	import { DockerBrandIcon } from '$lib/icons';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import { Switch } from '#lib/components/ui/switch/index.js';
+	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
+	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
+	import SettingsRow from '#lib/components/settings/settings-row.svelte';
+	import PruneModeCard from '#lib/components/prune/prune-mode-card.svelte';
+	import { m } from '#lib/paraglide/messages';
+	import { DockerBrandIcon } from '#lib/icons';
 	import type { DockerTabProps } from './tab-props';
 
 	let { formInputs, shellSelectValue, handleShellSelectChange, shellOptions }: DockerTabProps = $props();
@@ -94,6 +94,14 @@
 					onValueChange={(v) => ($formInputs.defaultDeployPullPolicy.value = v as 'missing' | 'always' | 'never')}
 				/>
 			</div>
+
+			<TextInputWithLabel
+				id="base-server-url"
+				label={m.general_base_url_label()}
+				bind:value={$formInputs.baseServerUrl.value}
+				error={$formInputs.baseServerUrl.error}
+				helpText={m.general_base_url_help()}
+			/>
 		</div>
 
 		<div class="border-t pt-6">
@@ -108,7 +116,7 @@
 				<p class="text-xs text-muted-foreground">{m.prune_options_description()}</p>
 			</div>
 
-			<div class="grid gap-2 sm:grid-cols-2">
+			<div class="grid gap-4 sm:grid-cols-2">
 				<PruneModeCard
 					title={m.containers()}
 					description={m.scheduled_prune_containers_description()}

@@ -1,12 +1,12 @@
 <script lang="ts">
-	import { ResponsiveDialog } from '$lib/components/ui/responsive-dialog/index.js';
-	import { Button } from '$lib/components/ui/button/index.js';
-	import { Spinner } from '$lib/components/ui/spinner/index.js';
-	import { Label } from '$lib/components/ui/label/index.js';
-	import { Textarea } from '$lib/components/ui/textarea/index.js';
-	import GitopsDialogFooter from '$lib/components/dialogs/gitops-dialog-footer.svelte';
-	import type { ImportGitOpsSyncRequest } from '$lib/types/automation';
-	import { m } from '$lib/paraglide/messages';
+	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Spinner } from '#lib/components/ui/spinner/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import { Textarea } from '#lib/components/ui/textarea/index.js';
+	import GitopsDialogFooter from '#lib/components/dialogs/gitops-dialog-footer.svelte';
+	import type { ImportGitOpsSyncRequest } from '#lib/types/automation';
+	import { m } from '#lib/paraglide/messages';
 
 	type GitOpsImportFormProps = {
 		open: boolean;

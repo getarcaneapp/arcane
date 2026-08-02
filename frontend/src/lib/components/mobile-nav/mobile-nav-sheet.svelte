@@ -1,19 +1,19 @@
 <script lang="ts">
-	import { navigationItems, getManagementItems, filterByPermissions } from '$lib/config/navigation-config';
-	import type { NavigationItem } from '$lib/config/navigation-config';
-	import { cn } from '$lib/utils';
+	import { navigationItems, getManagementItems, filterByPermissions } from '#lib/config/navigation-config';
+	import type { NavigationItem } from '#lib/config/navigation-config';
+	import { cn } from '#lib/utils';
 	import { page } from '$app/state';
-	import userStore from '$lib/stores/user-store';
-	import { m } from '$lib/paraglide/messages';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import userStore from '#lib/stores/user-store';
+	import { m } from '#lib/paraglide/messages';
+	import { environmentStore } from '#lib/stores/environment.store.svelte';
 	import MobileUserCard from './mobile-user-card.svelte';
-	import ActivityCenterTrigger from '$lib/components/activity/activity-center-trigger.svelte';
-	import * as Drawer from '$lib/components/ui/drawer/index.js';
-	import UpdateAllDialog from '$lib/components/dialogs/update-all-dialog.svelte';
-	import { useUpgradeCheck } from '$lib/hooks/use-upgrade-check.svelte';
-	import UpdateAvailableBanner from '$lib/components/sidebar/update-available-banner.svelte';
-	import type { AppVersionInformation } from '$lib/types/settings';
-	import type { PermissionsManifest, User } from '$lib/types/auth';
+	import ActivityCenterTrigger from '#lib/components/activity/activity-center-trigger.svelte';
+	import * as Drawer from '#lib/components/ui/drawer/index.js';
+	import UpdateAllDialog from '#lib/components/dialogs/update-all-dialog.svelte';
+	import { useUpgradeCheck } from '#lib/hooks/use-upgrade-check.svelte';
+	import UpdateAvailableBanner from '#lib/components/sidebar/update-available-banner.svelte';
+	import type { AppVersionInformation } from '#lib/types/settings';
+	import type { PermissionsManifest, User } from '#lib/types/auth';
 
 	let {
 		open = $bindable(false),

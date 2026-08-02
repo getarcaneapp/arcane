@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { CopyButton } from '$lib/components/ui/copy-button';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import type { Event } from '$lib/types/shared';
-	import { m } from '$lib/paraglide/messages';
-	import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID } from '$lib/stores/environment.store.svelte';
-	import { AlertIcon, InfoIcon } from '$lib/icons';
-	import { formatDateTime } from '$lib/utils/formatting';
+	import { CopyButton } from '#lib/components/ui/copy-button';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import type { Event } from '#lib/types/shared';
+	import { m } from '#lib/paraglide/messages';
+	import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte';
+	import { AlertIcon, InfoIcon } from '#lib/icons';
+	import { formatDateTime } from '#lib/utils/formatting';
 	import { eventSeverityIconVariant } from './events-labels';
 	import { flattenMetadata, stringifyForDisplay } from './event-metadata';
 

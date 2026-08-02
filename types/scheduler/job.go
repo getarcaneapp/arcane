@@ -32,6 +32,41 @@ type BusWatcher interface {
 	RunNow(ctx context.Context) error
 }
 
+// StoppableBusWatcher lets a continuous watcher perform explicit shutdown work
+// before its actor runner is joined.
+type StoppableBusWatcher interface {
+	BusWatcher
+	Stop(ctx context.Context) error
+}
+
+// DynamicScheduler owns jobs registered and removed while the application is running.
+type DynamicScheduler interface {
+	AddJob(ctx context.Context, job Job) error
+	RemoveJob(ctx context.Context, name string)
+	HasJob(name string) bool
+}
+
+// JobController exposes scheduler operations used by job-management services.
+type JobController interface {
+	GetJob(jobID string) (Job, bool)
+	GetJobRuntimeState(jobID string) (JobRuntimeState, bool)
+	RescheduleJob(ctx context.Context, job Job) error
+	RunBusWatcherNow(ctx context.Context, watcherID string) error
+}
+
+// JobScheduler is the shared public contract for the actor-owned scheduler.
+// Concrete cron and actor state remains private to the backend implementation.
+type JobScheduler interface {
+	DynamicScheduler
+	JobController
+
+	RegisterJob(job Job) error
+	RegisterBusWatcher(watcher BusWatcher, canRunManually bool) error
+	StartScheduler() error
+	GetLocation() *time.Location
+	Stop(ctx context.Context) error
+}
+
 // GenericJob is a reusable Job built from closures. It lets a service register a
 // per-entity dynamic job (e.g. one per GitOps sync or one per environment) without
 // importing the scheduler package: the service constructs a GenericJob and hands it

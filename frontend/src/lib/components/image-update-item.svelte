@@ -1,19 +1,19 @@
 <script lang="ts">
-	import { Spinner } from '$lib/components/ui/spinner/index.js';
-	import { Badge, type BadgeVariant } from '$lib/components/ui/badge';
+	import { Spinner } from '#lib/components/ui/spinner/index.js';
+	import { Badge, type BadgeVariant } from '#lib/components/ui/badge';
 	import { toast } from 'svelte-sonner';
-	import type { ImageUpdateData } from '$lib/types/docker';
-	import { m } from '$lib/paraglide/messages';
-	import { imageService } from '$lib/services/image-service';
-	import { queryKeys } from '$lib/query/query-keys';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import type { ImageUpdateData } from '#lib/types/docker';
+	import { m } from '#lib/paraglide/messages';
+	import { imageService } from '#lib/services/image-service';
+	import { queryKeys } from '#lib/query/query-keys';
+	import { environmentStore } from '#lib/stores/environment.store.svelte';
 	import type { Component } from 'svelte';
-	import { ArrowRightIcon, RefreshIcon, AlertIcon, VerifiedCheckIcon, ApiKeyIcon, CircleArrowUpIcon, BoxIcon } from '$lib/icons';
+	import { ArrowRightIcon, RefreshIcon, AlertIcon, VerifiedCheckIcon, ApiKeyIcon, CircleArrowUpIcon, BoxIcon } from '#lib/icons';
 	import { createQuery } from '@tanstack/svelte-query';
-	import UpdateStatusPopover from '$lib/components/update-status-popover.svelte';
-	import UpdateStatusBanner from '$lib/components/update-status-banner.svelte';
-	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
-	import UncheckedRingIcon from '$lib/components/unchecked-ring-icon.svelte';
+	import UpdateStatusPopover from '#lib/components/update-status-popover.svelte';
+	import UpdateStatusBanner from '#lib/components/update-status-banner.svelte';
+	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
+	import UncheckedRingIcon from '#lib/components/unchecked-ring-icon.svelte';
 	import { mergeProps } from 'bits-ui';
 
 	interface Props {

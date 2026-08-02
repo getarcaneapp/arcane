@@ -1,8 +1,8 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
-	import { ArcaneButton } from '$lib/components/arcane-button';
-	import { EllipsisIcon } from '$lib/icons';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu';
+	import { ArcaneButton } from '#lib/components/arcane-button';
+	import { EllipsisIcon } from '#lib/icons';
 
 	let {
 		openMenuLabel,

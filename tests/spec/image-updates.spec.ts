@@ -114,6 +114,13 @@ test.describe('Image Update UI - Check All Updates Button', () => {
 	});
 
 	test('should trigger bulk update check when clicking Check Updates button', async ({ page }) => {
+		await page.route(`**${ROUTES.apiImageUpdatesCheckAll}`, async (route) => {
+			await route.fulfill({
+				status: 200,
+				contentType: 'application/json',
+				body: JSON.stringify({ success: true, data: {} })
+			});
+		});
 		await navigateToImages(page);
 
 		const checkUpdatesButton = await getCheckUpdatesAction(page);

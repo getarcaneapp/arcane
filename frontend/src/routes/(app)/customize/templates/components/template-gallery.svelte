@@ -1,23 +1,23 @@
 <script lang="ts">
-	import { Input } from '$lib/components/ui/input/index.js';
-	import * as Select from '$lib/components/ui/select/index.js';
-	import ArcaneTablePagination from '$lib/components/arcane-table/arcane-table-pagination.svelte';
-	import EmptyState from '$lib/components/states/empty-state.svelte';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import ArcaneTablePagination from '#lib/components/arcane-table/arcane-table-pagination.svelte';
+	import EmptyState from '#lib/components/states/empty-state.svelte';
 	import TemplateCard from './template-card.svelte';
 	import { toast } from 'svelte-sonner';
-	import { openConfirmDialog } from '$lib/components/confirm-dialog';
-	import { handleApiResultWithCallbacks, tryCatch } from '$lib/utils/api';
-	import { templateService } from '$lib/services/template-service';
-	import { templateTypeFilters } from '$lib/components/arcane-table/data';
-	import { debounced } from '$lib/utils/ws';
-	import { hasPermission } from '$lib/utils/auth';
-	import { m } from '$lib/paraglide/messages';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog';
+	import { handleApiResultWithCallbacks, tryCatch } from '#lib/utils/api';
+	import { templateService } from '#lib/services/template-service';
+	import { templateTypeFilters } from '#lib/components/arcane-table/data';
+	import { debounced } from '#lib/utils/ws';
+	import { hasPermission } from '#lib/utils/auth';
+	import { m } from '#lib/paraglide/messages';
 	import { PersistedState } from 'runed';
 	import { onMount, untrack } from 'svelte';
-	import type { CompactTablePrefs } from '$lib/components/arcane-table/arcane-table.types.svelte';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
-	import type { Template } from '$lib/types/swarm';
-	import { SearchIcon, TemplateIcon } from '$lib/icons';
+	import type { CompactTablePrefs } from '#lib/components/arcane-table/arcane-table.types.svelte';
+	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
+	import type { Template } from '#lib/types/swarm';
+	import { SearchIcon, TemplateIcon } from '#lib/icons';
 
 	let {
 		templates = $bindable(),

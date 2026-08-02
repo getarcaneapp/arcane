@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
@@ -16,6 +17,7 @@ import (
 var (
 	limitFlag  int
 	startFlag  int
+	allFlag    bool
 	forceFlag  bool
 	jsonOutput bool
 )
@@ -39,26 +41,26 @@ var listCmd = &cobra.Command{
 		}
 
 		path := types.Endpoints.Events()
-		path, err = cmdutil.ApplyPaginationParams(cmd, path, "events", "limit", limitFlag, 20, "start", startFlag)
+		path, err = cmdutil.ApplyPaginationParams(cmd, path, cmdutil.ListParams{Resource: "events", Limit: limitFlag, FallbackDefault: 20, Start: startFlag, All: allFlag})
 		if err != nil {
-			return fmt.Errorf("failed to build pagination query: %w", err)
+			return errors.WrapIf(err, "failed to build pagination query")
 		}
 
 		resp, err := c.Get(cmd.Context(), path)
 		if err != nil {
-			return fmt.Errorf("failed to list events: %w", err)
+			return errors.WrapIf(err, "failed to list events")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.Paginated[event.Event]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(result, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -101,26 +103,26 @@ var listEnvCmd = &cobra.Command{
 		}
 
 		path := types.Endpoints.EventsEnvironment(c.EnvID())
-		path, err = cmdutil.ApplyPaginationParams(cmd, path, "events", "limit", limitFlag, 20, "start", startFlag)
+		path, err = cmdutil.ApplyPaginationParams(cmd, path, cmdutil.ListParams{Resource: "events", Limit: limitFlag, FallbackDefault: 20, Start: startFlag, All: allFlag})
 		if err != nil {
-			return fmt.Errorf("failed to build pagination query: %w", err)
+			return errors.WrapIf(err, "failed to build pagination query")
 		}
 
 		resp, err := c.Get(cmd.Context(), path)
 		if err != nil {
-			return fmt.Errorf("failed to list environment events: %w", err)
+			return errors.WrapIf(err, "failed to list environment events")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.Paginated[event.Event]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(result, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -177,11 +179,11 @@ var deleteCmd = &cobra.Command{
 
 		resp, err := c.Delete(cmd.Context(), types.Endpoints.Event(args[0]))
 		if err != nil {
-			return fmt.Errorf("failed to delete event: %w", err)
+			return errors.WrapIf(err, "failed to delete event")
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to delete event: %w", err)
+			return errors.WrapIf(err, "failed to delete event")
 		}
 
 		output.Success("Event deleted successfully")
@@ -195,11 +197,13 @@ func init() {
 	EventsCmd.AddCommand(deleteCmd)
 
 	listCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of events to show")
-	listCmd.Flags().IntVar(&startFlag, "start", 0, "Offset for pagination")
+	listCmd.Flags().IntVar(&startFlag, "start", 0, cmdutil.StartFlagUsage)
+	listCmd.Flags().BoolVarP(&allFlag, "all", "a", false, cmdutil.AllFlagUsage)
 	listCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 
 	listEnvCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of events to show")
-	listEnvCmd.Flags().IntVar(&startFlag, "start", 0, "Offset for pagination")
+	listEnvCmd.Flags().IntVar(&startFlag, "start", 0, cmdutil.StartFlagUsage)
+	listEnvCmd.Flags().BoolVarP(&allFlag, "all", "a", false, cmdutil.AllFlagUsage)
 	listEnvCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 
 	deleteCmd.Flags().BoolVarP(&forceFlag, "force", "f", false, "Force deletion without confirmation")

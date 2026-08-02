@@ -1,10 +1,10 @@
-import { vulnerabilityService } from '$lib/services/vulnerability-service';
-import { environmentStore } from '$lib/stores/environment.store.svelte';
-import { queryKeys } from '$lib/query/query-keys';
-import type { SearchPaginationSortRequest } from '$lib/types/shared';
-import { resolveInitialTableRequest } from '$lib/utils/tables';
-import { mapVulnerabilityPage, mapVulnerabilityRequest } from '$lib/utils/vulnerability';
-import { throwPageLoadError } from '$lib/utils/api';
+import { vulnerabilityService } from '#lib/services/vulnerability-service';
+import { environmentStore } from '#lib/stores/environment.store.svelte';
+import { queryKeys } from '#lib/query/query-keys';
+import type { SearchPaginationSortRequest } from '#lib/types/shared';
+import { resolveInitialTableRequest } from '#lib/utils/tables';
+import { mapVulnerabilityPage, mapVulnerabilityRequest } from '#lib/utils/vulnerability';
+import { throwPageLoadError } from '#lib/utils/api';
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({ parent }) => {

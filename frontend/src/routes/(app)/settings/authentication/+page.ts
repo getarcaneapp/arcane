@@ -1,10 +1,10 @@
-import { oidcMappingService } from '$lib/services/oidc-mapping-service';
-import { federatedCredentialService } from '$lib/services/federated-credential-service';
-import { roleService } from '$lib/services/role-service';
-import { environmentManagementService } from '$lib/services/env-mgmt-service';
-import { queryKeys } from '$lib/query/query-keys';
-import type { SearchPaginationSortRequest } from '$lib/types/shared';
-import { resolveInitialTableRequest } from '$lib/utils/tables';
+import { oidcMappingService } from '#lib/services/oidc-mapping-service';
+import { federatedCredentialService } from '#lib/services/federated-credential-service';
+import { roleService } from '#lib/services/role-service';
+import { environmentManagementService } from '#lib/services/env-mgmt-service';
+import { queryKeys } from '#lib/query/query-keys';
+import type { SearchPaginationSortRequest } from '#lib/types/shared';
+import { resolveInitialTableRequest } from '#lib/utils/tables';
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({ parent }) => {

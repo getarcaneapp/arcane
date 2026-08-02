@@ -1,9 +1,9 @@
 <script lang="ts">
-	import settingsStore from '$lib/stores/config-store';
-	import { m } from '$lib/paraglide/messages';
-	import { LockIcon } from '$lib/icons';
-	import { Badge } from '$lib/components/ui/badge';
-	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
+	import settingsStore from '#lib/stores/config-store';
+	import { m } from '#lib/paraglide/messages';
+	import { LockIcon } from '#lib/icons';
+	import { Badge } from '#lib/components/ui/badge';
+	import * as ArcaneTooltip from '#lib/components/arcane-tooltip';
 
 	const active = $derived.by(() => $settingsStore.uiConfigDisabled);
 </script>

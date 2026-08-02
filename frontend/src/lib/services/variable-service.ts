@@ -4,7 +4,7 @@ import type {
 	GlobalVariableCreateDto,
 	GlobalVariableUpdateDto,
 	VariableMutationResponse
-} from '$lib/types/variable';
+} from '#lib/types/variable';
 
 class VariableService extends BaseAPIService {
 	async list(): Promise<GlobalVariable[]> {

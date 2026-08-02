@@ -1,13 +1,13 @@
 <script lang="ts">
-	import { ArcaneButton } from '$lib/components/arcane-button';
-	import * as Alert from '$lib/components/ui/alert';
-	import { Input } from '$lib/components/ui/input';
-	import { ResponsiveDialog } from '$lib/components/ui/responsive-dialog';
-	import { Spinner } from '$lib/components/ui/spinner';
-	import { m } from '$lib/paraglide/messages';
-	import { swarmService } from '$lib/services/swarm-service';
-	import type { SwarmJoinCandidate, SwarmJoinEnvironmentResult, SwarmJoinEnvironmentTarget } from '$lib/types/swarm';
-	import { extractApiErrorMessage } from '$lib/utils/api';
+	import { ArcaneButton } from '#lib/components/arcane-button';
+	import * as Alert from '#lib/components/ui/alert';
+	import { Input } from '#lib/components/ui/input';
+	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog';
+	import { Spinner } from '#lib/components/ui/spinner';
+	import { m } from '#lib/paraglide/messages';
+	import { swarmService } from '#lib/services/swarm-service';
+	import type { SwarmJoinCandidate, SwarmJoinEnvironmentResult, SwarmJoinEnvironmentTarget } from '#lib/types/swarm';
+	import { extractApiErrorMessage } from '#lib/utils/api';
 
 	type Props = {
 		open: boolean;

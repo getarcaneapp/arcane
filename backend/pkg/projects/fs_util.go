@@ -3,7 +3,6 @@ package projects
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -11,9 +10,12 @@ import (
 	"slices"
 	"strings"
 
+	"emperror.dev/errors"
+
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/types/v2/project"
+	"github.com/samber/mo"
 	"go.yaml.in/yaml/v4"
 )
 
@@ -51,7 +53,7 @@ func resolveProjectsDirectoryPath(projectsDirectory string) string {
 		return filepath.Clean(projectsDirectory)
 	}
 
-	if backendRoot, ok := findBackendModuleRoot(); ok {
+	if backendRoot, ok := findBackendModuleRoot().Get(); ok {
 		return filepath.Clean(filepath.Join(backendRoot, projectsDirectory))
 	}
 
@@ -63,10 +65,10 @@ func resolveProjectsDirectoryPath(projectsDirectory string) string {
 	return filepath.Clean(projectsDirectory)
 }
 
-func findBackendModuleRoot() (string, bool) {
+func findBackendModuleRoot() mo.Option[string] {
 	cwd, err := os.Getwd()
 	if err != nil {
-		return "", false
+		return mo.None[string]()
 	}
 
 	candidates := []string{
@@ -76,11 +78,11 @@ func findBackendModuleRoot() (string, bool) {
 
 	for _, candidate := range candidates {
 		if isBackendModuleRoot(candidate) {
-			return candidate, true
+			return mo.Some(candidate)
 		}
 	}
 
-	return "", false
+	return mo.None[string]()
 }
 
 func isBackendModuleRoot(path string) bool {
@@ -143,10 +145,6 @@ func GetTemplatesDirectory(ctx context.Context, templatesDir string) (string, er
 }
 
 func ReadProjectDirectoryFiles(projectPath string, shownFiles map[string]bool, maxDepth int, skipDirectories string) ([]project.IncludeFile, error) {
-	return readProjectDirectoryFilesInternal(projectPath, shownFiles, maxDepth, skipDirectories, false)
-}
-
-func readProjectDirectoryFilesInternal(projectPath string, shownFiles map[string]bool, maxDepth int, skipDirectories string, includeContent bool) ([]project.IncludeFile, error) {
 	if maxDepth <= 0 {
 		maxDepth = config.LoadProjectFilesConfig().ProjectScanMaxDepth
 	}
@@ -159,7 +157,7 @@ func readProjectDirectoryFilesInternal(projectPath string, shownFiles map[string
 	}
 	defer func() { _ = root.Close() }()
 
-	err = collectProjectDirectoryFilesInternal(root, ".", projectPath, shownFiles, &dirFiles, 0, maxDepth, projectScanSkipDirectorySetInternal(skipDirectories), includeContent)
+	err = collectProjectDirectoryFilesInternal(root, ".", projectPath, shownFiles, &dirFiles, 0, maxDepth, projectScanSkipDirectorySetInternal(skipDirectories), false)
 
 	return dirFiles, err
 }
@@ -301,7 +299,7 @@ func DirectorySyncContentsChanged(projectPath string, syncFiles []SyncFile, oldS
 		}
 		return false, err
 	} else if !info.IsDir() {
-		return false, fmt.Errorf("project path is not a directory: %s", projectPath)
+		return false, errors.Errorf("project path is not a directory: %s", projectPath)
 	}
 
 	newFileSet := make(map[string]struct{}, len(syncFiles))
@@ -401,10 +399,6 @@ func RemoveStaleComposeFiles(projectPath, composeFileName string, syncedFiles []
 	return nil
 }
 
-func CopyDirectoryContents(srcDir, destDir string) error {
-	return copyDirectoryContentsInternal(srcDir, destDir, nil)
-}
-
 // CopyDirectoryContentsTolerant copies srcDir into destDir like
 // CopyDirectoryContents, except that files (or whole subdirectories) which
 // cannot be read because of a permission error are skipped instead of aborting
@@ -412,18 +406,18 @@ func CopyDirectoryContents(srcDir, destDir string) error {
 // callers can avoid deleting them on a later restore. Any non-permission error
 // still aborts the copy.
 func CopyDirectoryContentsTolerant(srcDir, destDir string) (skipped []string, err error) {
-	err = copyDirectoryContentsInternal(srcDir, destDir, func(relPath string) {
+	err = CopyDirectoryContents(srcDir, destDir, func(relPath string) {
 		skipped = append(skipped, relPath)
 	})
 	slices.Sort(skipped)
 	return skipped, err
 }
 
-// copyDirectoryContentsInternal copies srcDir into destDir. When skipUnreadable
+// CopyDirectoryContents copies srcDir into destDir. When skipUnreadable
 // is non-nil and a file or subdirectory cannot be read because of a permission
 // error, the offending project-relative path is reported via skipUnreadable and
 // the copy continues; otherwise the error aborts the copy.
-func copyDirectoryContentsInternal(srcDir, destDir string, skipUnreadable func(relPath string)) error {
+func CopyDirectoryContents(srcDir, destDir string, skipUnreadable func(relPath string)) error {
 	srcRoot, err := os.OpenRoot(srcDir)
 	if err != nil {
 		return err
@@ -513,7 +507,7 @@ func MirrorDirectoryContentsPreserving(srcDir, destDir string, preserve []string
 	if err := pruneDirectoryContentsInternal(srcDir, destDir, preserveSet); err != nil {
 		return err
 	}
-	return CopyDirectoryContents(srcDir, destDir)
+	return CopyDirectoryContents(srcDir, destDir, nil)
 }
 
 func pruneDirectoryContentsInternal(srcDir, destDir string, preserve map[string]struct{}) error {
@@ -600,7 +594,7 @@ func CreateUniqueDir(projectsRoot, basePath, name string, perm os.FileMode) (pat
 	// Get absolute path of the true projects root for validation
 	projectsRootAbs, err := filepath.Abs(projectsRoot)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to resolve projects root directory: %w", err)
+		return "", "", errors.WrapIf(err, "failed to resolve projects root directory")
 	}
 	projectsRootAbs = filepath.Clean(projectsRootAbs)
 
@@ -611,7 +605,7 @@ func CreateUniqueDir(projectsRoot, basePath, name string, perm os.FileMode) (pat
 		// Validate candidate is within the allowed projects root
 		candidateAbs, absErr := filepath.Abs(candidate)
 		if absErr != nil {
-			return "", "", fmt.Errorf("failed to resolve candidate path: %w", absErr)
+			return "", "", errors.WrapIf(absErr, "failed to resolve candidate path")
 		}
 		candidateAbs = filepath.Clean(candidateAbs)
 
@@ -645,7 +639,7 @@ func CreateUniqueDir(projectsRoot, basePath, name string, perm os.FileMode) (pat
 // already exists. Callers that must not auto-rename (e.g. GitOps creates, which
 // must never mint "-N" duplicate projects on a broken binding) use this to fail
 // loudly instead of suffixing.
-var ErrProjectDirExists = errors.New("project directory already exists")
+const ErrProjectDirExists = errors.Sentinel("project directory already exists")
 
 // CreateExactDir creates basePath (the sanitized project directory) under
 // projectsRoot WITHOUT any "-N" collision suffixing. It returns ErrProjectDirExists
@@ -660,13 +654,13 @@ func CreateExactDir(projectsRoot, basePath, name string, perm os.FileMode) (path
 
 	projectsRootAbs, err := filepath.Abs(projectsRoot)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to resolve projects root directory: %w", err)
+		return "", "", errors.WrapIf(err, "failed to resolve projects root directory")
 	}
 	projectsRootAbs = filepath.Clean(projectsRootAbs)
 
 	candidateAbs, err := filepath.Abs(basePath)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to resolve candidate path: %w", err)
+		return "", "", errors.WrapIf(err, "failed to resolve candidate path")
 	}
 	candidateAbs = filepath.Clean(candidateAbs)
 
@@ -726,6 +720,24 @@ func IsSafeSubdirectory(baseDir, subdir string) bool {
 	return !strings.HasPrefix(rel, "..") && !filepath.IsAbs(rel)
 }
 
-func SaveOrUpdateProjectFiles(projectsRoot, projectPath, composeContent string, envContent *string) error {
-	return WriteProjectFiles(projectsRoot, projectPath, composeContent, envContent)
+// ResolvePathWithinDir resolves path and rejects paths that escape baseDir.
+func ResolvePathWithinDir(baseDir, path string) (string, error) {
+	resolvedBase, err := filepath.Abs(filepath.Clean(baseDir))
+	if err != nil {
+		return "", errors.WrapIff(err, "failed to resolve base directory %q", baseDir)
+	}
+
+	resolvedPath := path
+	if !filepath.IsAbs(resolvedPath) {
+		resolvedPath = filepath.Join(resolvedBase, resolvedPath)
+	}
+	resolvedPath, err = filepath.Abs(filepath.Clean(resolvedPath))
+	if err != nil {
+		return "", errors.WrapIff(err, "failed to resolve path %q", path)
+	}
+	if !IsSafeSubdirectory(resolvedBase, resolvedPath) {
+		return "", errors.Errorf("path %q escapes directory %q", path, baseDir)
+	}
+
+	return resolvedPath, nil
 }

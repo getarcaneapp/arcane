@@ -9,24 +9,23 @@
 		NotificationsIcon,
 		DockerBrandIcon,
 		ApiKeyIcon,
-		AppearanceIcon,
 		JobsIcon,
 		CodeIcon,
 		GlobeIcon,
 		ActivityIcon,
 		RemoteEnvironmentIcon,
 		BackupIcon
-	} from '$lib/icons';
-	import { m } from '$lib/paraglide/messages';
-	import { settingsSearchService } from '$lib/services/settings-search';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import type { SettingsCategory } from '$lib/types/shared';
-	import { canReachAccessSurface, canReachAccessSurfaceUrl } from '$lib/utils/access-policy';
-	import { getSettingsSubpageUrlsInNavOrder } from '$lib/config/navigation-config';
-	import { useCategorySearch } from '$lib/hooks/use-category-search.svelte';
-	import { getCategoryIcon, orderCategoriesByNav } from '$lib/utils/category-page';
-	import CategoryIndexPage from '$lib/components/category-index-page.svelte';
-	import type { NormalizedCategory } from '$lib/components/category-index-page.types';
+	} from '#lib/icons';
+	import { m } from '#lib/paraglide/messages';
+	import { settingsSearchService } from '#lib/services/settings-search';
+	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import type { SettingsCategory } from '#lib/types/shared';
+	import { canReachAccessSurface, canReachAccessSurfaceUrl } from '#lib/utils/access-policy';
+	import { getSettingsSubpageUrlsInNavOrder } from '#lib/config/navigation-config';
+	import { useCategorySearch } from '#lib/hooks/use-category-search.svelte';
+	import { getCategoryIcon, orderCategoriesByNav } from '#lib/utils/category-page';
+	import CategoryIndexPage from '#lib/components/category-index-page.svelte';
+	import type { NormalizedCategory } from '#lib/components/category-index-page.types';
 
 	let { data }: PageProps = $props();
 
@@ -44,7 +43,6 @@
 		database: DockerBrandIcon,
 		lock: LockIcon,
 		shield: SecurityIcon,
-		appearance: AppearanceIcon,
 		bell: NotificationsIcon,
 		user: UserIcon,
 		apikey: ApiKeyIcon,

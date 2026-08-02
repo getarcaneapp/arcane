@@ -1,14 +1,14 @@
 <script lang="ts">
-	import { ArcaneButton } from '$lib/components/arcane-button';
-	import * as Command from '$lib/components/ui/command';
-	import * as Popover from '$lib/components/ui/popover';
-	import { Spinner } from '$lib/components/ui/spinner';
-	import { m } from '$lib/paraglide/messages';
-	import { cn } from '$lib/utils';
-	import { CheckIcon, ArrowDownIcon } from '$lib/icons';
+	import { ArcaneButton } from '#lib/components/arcane-button';
+	import * as Command from '#lib/components/ui/command';
+	import * as Popover from '#lib/components/ui/popover';
+	import { Spinner } from '#lib/components/ui/spinner';
+	import { m } from '#lib/paraglide/messages';
+	import { cn } from '#lib/utils';
+	import { CheckIcon, ArrowDownIcon } from '#lib/icons';
 	import { tick } from 'svelte';
 	import type { FormEventHandler } from 'svelte/elements';
-	import type { Action, ArcaneButtonSize, ArcaneButtonTone } from '$lib/components/arcane-button';
+	import type { Action, ArcaneButtonSize, ArcaneButtonTone } from '#lib/components/arcane-button';
 
 	type SearchableSelectItem = {
 		value: string;

@@ -3,8 +3,7 @@ package services
 import (
 	"bytes"
 	"context"
-	json "encoding/json/v2"
-	"errors"
+	"encoding/json/v2"
 	"fmt"
 	"html"
 	"html/template"
@@ -16,10 +15,13 @@ import (
 	"strings"
 	"time"
 
+	"emperror.dev/errors"
+
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/notifications"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
 	"github.com/getarcaneapp/arcane/backend/v2/resources"
 	"github.com/getarcaneapp/arcane/types/v2/imageupdate"
 	notificationdto "github.com/getarcaneapp/arcane/types/v2/notification"
@@ -39,8 +41,16 @@ var notificationCredentialFieldsByProviderInternal = map[models.NotificationProv
 	models.NotificationProviderMatrix:   {"password"},
 }
 
-var ErrUnauthorizedNotificationDispatch = errors.New("unauthorized notification dispatch")
-var ErrUnsupportedDispatchKind = errors.New("unsupported notification dispatch kind")
+var notificationTargetFieldByProviderInternal = map[models.NotificationProvider]string{
+	models.NotificationProviderEmail:  "smtpHost",
+	models.NotificationProviderSignal: "host",
+	models.NotificationProviderNtfy:   "host",
+	models.NotificationProviderGotify: "host",
+	models.NotificationProviderMatrix: "host",
+}
+
+const ErrUnauthorizedNotificationDispatch = errors.Sentinel("unauthorized notification dispatch")
+const ErrUnsupportedDispatchKind = errors.Sentinel("unsupported notification dispatch kind")
 
 type NotificationService struct {
 	db             *database.DB
@@ -97,7 +107,7 @@ func (s *NotificationService) resolveNotificationTargetInternal(ctx context.Cont
 			}, nil
 		}
 		if trimmedEnvironmentID != "0" {
-			return NotificationTarget{}, fmt.Errorf("failed to resolve notification environment: %w", err)
+			return NotificationTarget{}, errors.WrapIf(err, "failed to resolve notification environment")
 		}
 		if err != nil {
 			slog.WarnContext(ctx, "Failed to resolve local environment, falling back to 'Local Docker'", "error", err)
@@ -118,7 +128,7 @@ func (s *NotificationService) resolveNotificationTargetForAccessTokenInternal(ct
 	env, err := s.environmentSvc.ResolveEnvironmentByAccessToken(ctx, accessToken)
 	if err != nil {
 		if errors.Is(err, ErrEnvironmentAccessTokenRequired) || errors.Is(err, ErrInvalidEnvironmentAccessToken) {
-			return NotificationTarget{}, fmt.Errorf("%w", ErrUnauthorizedNotificationDispatch)
+			return NotificationTarget{}, errors.WithStackIf(ErrUnauthorizedNotificationDispatch)
 		}
 		return NotificationTarget{}, err
 	}
@@ -144,20 +154,20 @@ func (s *NotificationService) dispatchNotificationToManagerInternal(ctx context.
 
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return notificationdto.DispatchResponse{}, fmt.Errorf("failed to marshal notification dispatch payload: %w", err)
+		return notificationdto.DispatchResponse{}, errors.WrapIf(err, "failed to marshal notification dispatch payload")
 	}
 
 	dispatchURL := strings.TrimRight(s.config.GetManagerBaseURL(), "/") + "/api/notifications/dispatch"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, dispatchURL, bytes.NewReader(body))
 	if err != nil {
-		return notificationdto.DispatchResponse{}, fmt.Errorf("failed to create notification dispatch request: %w", err)
+		return notificationdto.DispatchResponse{}, errors.WrapIf(err, "failed to create notification dispatch request")
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Api-Key", s.config.AgentToken)
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
-		return notificationdto.DispatchResponse{}, fmt.Errorf("failed to dispatch notification to manager: %w", err)
+		return notificationdto.DispatchResponse{}, errors.WrapIf(err, "failed to dispatch notification to manager")
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -166,13 +176,13 @@ func (s *NotificationService) dispatchNotificationToManagerInternal(ctx context.
 			Data notificationdto.DispatchResponse `json:"data"`
 		}
 		if err := json.UnmarshalRead(resp.Body, &apiResponse); err != nil {
-			return notificationdto.DispatchResponse{}, fmt.Errorf("failed to decode manager notification dispatch response: %w", err)
+			return notificationdto.DispatchResponse{}, errors.WrapIf(err, "failed to decode manager notification dispatch response")
 		}
 		return apiResponse.Data, nil
 	}
 
 	responseBody, _ := io.ReadAll(resp.Body)
-	return notificationdto.DispatchResponse{}, fmt.Errorf("manager notification dispatch failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(responseBody)))
+	return notificationdto.DispatchResponse{}, errors.Errorf("manager notification dispatch failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(responseBody)))
 }
 
 func (s *NotificationService) DispatchNotification(ctx context.Context, accessToken string, payload notificationdto.DispatchRequest) (notificationdto.DispatchResponse, error) {
@@ -234,14 +244,14 @@ func (s *NotificationService) DispatchNotification(ctx context.Context, accessTo
 		logManagerDispatchNotificationInternal(ctx, target, payload.Kind)
 		return dispatchResponse, s.sendAutoHealNotificationForTargetInternal(ctx, target, payload.AutoHeal.ContainerName, payload.AutoHeal.ContainerID)
 	default:
-		return notificationdto.DispatchResponse{}, fmt.Errorf("%w: %s", ErrUnsupportedDispatchKind, payload.Kind)
+		return notificationdto.DispatchResponse{}, errors.WrapIff(ErrUnsupportedDispatchKind, "%s", payload.Kind)
 	}
 }
 
 func (s *NotificationService) GetAllSettings(ctx context.Context) ([]models.NotificationSettings, error) {
 	var settings []models.NotificationSettings
 	if err := s.db.WithContext(ctx).Find(&settings).Error; err != nil {
-		return nil, fmt.Errorf("failed to get notification settings: %w", err)
+		return nil, errors.WrapIf(err, "failed to get notification settings")
 	}
 	return settings, nil
 }
@@ -276,13 +286,13 @@ func (s *NotificationService) CreateOrUpdateSettings(ctx context.Context, provid
 			Config:   config,
 		}
 		if err := s.db.WithContext(ctx).Create(&setting).Error; err != nil {
-			return nil, fmt.Errorf("failed to create notification settings: %w", err)
+			return nil, errors.WrapIf(err, "failed to create notification settings")
 		}
 	} else {
 		setting.Enabled = enabled
 		setting.Config = config
 		if err := s.db.WithContext(ctx).Save(&setting).Error; err != nil {
-			return nil, fmt.Errorf("failed to update notification settings: %w", err)
+			return nil, errors.WrapIf(err, "failed to update notification settings")
 		}
 	}
 
@@ -315,6 +325,36 @@ func encryptNotificationConfigCredentialsInternal(provider models.NotificationPr
 	if provider == models.NotificationProviderEmail {
 		preserveConfig = emailCredentialPreservationConfigInternal(config, existingConfig)
 	}
+	if targetField := notificationTargetFieldByProviderInternal[provider]; targetField != "" {
+		currentTarget, _ := existingConfig[targetField].(string)
+		nextTarget, _ := encryptedConfig[targetField].(string)
+		if strings.TrimSpace(nextTarget) == "" && strings.TrimSpace(currentTarget) != "" {
+			nextTarget = currentTarget
+			encryptedConfig[targetField] = currentTarget
+		}
+
+		storedCredentials := make(map[string]bool, len(notificationCredentialFieldsByProviderInternal[provider]))
+		updatedCredentials := make(map[string]bool, len(notificationCredentialFieldsByProviderInternal[provider]))
+		for _, field := range notificationCredentialFieldsByProviderInternal[provider] {
+			preservedValue, _ := preserveConfig[field].(string)
+			updatedValue, _ := encryptedConfig[field].(string)
+			storedCredentials[field] = preservedValue != ""
+			updatedCredentials[field] = updatedValue != ""
+		}
+
+		if err := validation.ValidateCredentialTargetChange(
+			targetField,
+			currentTarget,
+			new(nextTarget),
+			func(value string) string {
+				return strings.ToLower(strings.TrimSuffix(strings.TrimSpace(value), "."))
+			},
+			storedCredentials,
+			updatedCredentials,
+		); err != nil {
+			return nil, err
+		}
+	}
 	for _, field := range notificationCredentialFieldsByProviderInternal[provider] {
 		value, _ := encryptedConfig[field].(string)
 		if value == "" {
@@ -326,7 +366,7 @@ func encryptNotificationConfigCredentialsInternal(provider models.NotificationPr
 
 		encrypted, err := encryptNotificationCredentialInternal(value)
 		if err != nil {
-			return nil, fmt.Errorf("failed to encrypt notification credential %q: %w", field, err)
+			return nil, errors.WrapIff(err, "failed to encrypt notification credential %q", field)
 		}
 		encryptedConfig[field] = encrypted
 	}
@@ -378,7 +418,7 @@ func cloneNotificationConfigInternal(config models.JSON) models.JSON {
 
 func (s *NotificationService) DeleteSettings(ctx context.Context, provider models.NotificationProvider) error {
 	if err := s.db.WithContext(ctx).Where("provider = ?", provider).Delete(&models.NotificationSettings{}).Error; err != nil {
-		return fmt.Errorf("failed to delete notification settings: %w", err)
+		return errors.WrapIf(err, "failed to delete notification settings")
 	}
 	return nil
 }
@@ -453,7 +493,7 @@ func (s *NotificationService) notifyEnabledProvidersInternal(
 ) (int, error) {
 	settings, err := s.GetAllSettings(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get notification settings: %w", err)
+		return 0, errors.WrapIf(err, "failed to get notification settings")
 	}
 
 	delivered := 0
@@ -481,7 +521,7 @@ func (s *NotificationService) notifyEnabledProvidersInternal(
 	}
 
 	if len(errs) > 0 {
-		return delivered, fmt.Errorf("notification errors: %s", strings.Join(errs, "; "))
+		return delivered, errors.Errorf("notification errors: %s", strings.Join(errs, "; "))
 	}
 	return delivered, nil
 }
@@ -494,10 +534,6 @@ func collectNotificationSendResultInternal(errors *[]string, provider models.Not
 	msg := sendErr.Error()
 	*errors = append(*errors, fmt.Sprintf("%s: %s", provider, msg))
 	return "failed", &msg
-}
-
-func unknownNotificationProviderErrorInternal(provider models.NotificationProvider) error {
-	return fmt.Errorf("unknown provider: %s", provider)
 }
 
 const (
@@ -541,7 +577,7 @@ func (s *NotificationService) imageUpdateNotificationContentInternal(environment
 		RenderEmail: func() (string, string, error) {
 			htmlBody, _, err := s.renderEmailTemplate(environmentName, imageRef, updateInfo)
 			if err != nil {
-				return "", "", fmt.Errorf("failed to render email template: %w", err)
+				return "", "", errors.WrapIf(err, "failed to render email template")
 			}
 			subject := notifications.BuildEmailSubject(environmentName, "Container Update Available: "+notifications.SanitizeForEmail(imageRef))
 			return subject, htmlBody, nil
@@ -560,7 +596,7 @@ func (s *NotificationService) containerUpdateNotificationContentInternal(environ
 		RenderEmail: func() (string, string, error) {
 			htmlBody, _, err := s.renderContainerUpdateEmailTemplate(environmentName, containerName, imageRef, oldDigest, newDigest)
 			if err != nil {
-				return "", "", fmt.Errorf("failed to render email template: %w", err)
+				return "", "", errors.WrapIf(err, "failed to render email template")
 			}
 			subject := notifications.BuildEmailSubject(environmentName, "Container Updated: "+notifications.SanitizeForEmail(containerName))
 			return subject, htmlBody, nil
@@ -589,7 +625,7 @@ func (s *NotificationService) vulnerabilityNotificationContentInternal(environme
 		RenderEmail: func() (string, string, error) {
 			htmlBody, _, err := s.renderVulnerabilitySummaryEmailTemplate(environmentName, payload)
 			if err != nil {
-				return "", "", fmt.Errorf("failed to render summary email template: %w", err)
+				return "", "", errors.WrapIf(err, "failed to render summary email template")
 			}
 			subject := notifications.BuildEmailSubject(environmentName, "Daily Vulnerability Summary: "+notifications.SanitizeForEmail(payload.CVEID))
 			return subject, htmlBody, nil
@@ -608,7 +644,7 @@ func (s *NotificationService) batchImageUpdateNotificationContentInternal(enviro
 		RenderEmail: func() (string, string, error) {
 			htmlBody, _, err := s.renderBatchEmailTemplate(environmentName, updates)
 			if err != nil {
-				return "", "", fmt.Errorf("failed to render email template: %w", err)
+				return "", "", errors.WrapIf(err, "failed to render email template")
 			}
 			updateCount := len(updates)
 			plural := ""
@@ -632,7 +668,7 @@ func (s *NotificationService) pruneReportNotificationContentInternal(environment
 		RenderEmail: func() (string, string, error) {
 			htmlBody, _, err := s.renderPruneReportEmailTemplate(environmentName, result)
 			if err != nil {
-				return "", "", fmt.Errorf("failed to render email template: %w", err)
+				return "", "", errors.WrapIf(err, "failed to render email template")
 			}
 			subject := notifications.BuildEmailSubject(environmentName, fmt.Sprintf("System Prune Report: %s Reclaimed", notifications.FormatBytes(result.SpaceReclaimed)))
 			return subject, htmlBody, nil
@@ -856,8 +892,13 @@ func (s *NotificationService) sendBatchImageUpdateNotificationForTargetInternal(
 }
 
 func (s *NotificationService) SendPruneReportNotification(ctx context.Context, result *system.PruneAllResult) error {
+	if result == nil {
+		slog.InfoContext(ctx, "skipping prune report notification because no prune result was reported")
+		return nil
+	}
+
 	hasChanges := pruneResultHasChangesInternal(result)
-	hasErrors := result != nil && len(result.Errors) > 0
+	hasErrors := len(result.Errors) > 0
 	if !hasChanges && !hasErrors {
 		slog.InfoContext(ctx, "skipping prune report notification because no resources were pruned and no errors were reported")
 		return nil
@@ -883,7 +924,7 @@ func (s *NotificationService) SendPruneReportNotification(ctx context.Context, r
 
 func (s *NotificationService) sendPruneReportNotificationForTargetInternal(ctx context.Context, target NotificationTarget, result *system.PruneAllResult) error {
 	hasChanges := pruneResultHasChangesInternal(result)
-	hasErrors := result != nil && len(result.Errors) > 0
+	hasErrors := len(result.Errors) > 0
 
 	metadata := models.JSON{
 		"spaceReclaimed": result.SpaceReclaimed,
@@ -1058,14 +1099,14 @@ func (s *NotificationService) testNotificationContentInternal(environmentName, t
 func (s *NotificationService) TestNotification(ctx context.Context, environmentID string, provider models.NotificationProvider, testType string) (string, error) {
 	setting, err := s.GetSettingsByProvider(ctx, provider)
 	if err != nil {
-		return "", fmt.Errorf("please save your %s settings before testing", provider)
+		return "", errors.Errorf("please save your %s settings before testing", provider)
 	}
 	testType = strings.TrimSpace(testType)
 	if testType == "" {
 		testType = notificationTestTypeSimple
 	}
 	if _, ok := supportedNotificationTestTypes[testType]; !ok {
-		return "", fmt.Errorf("unsupported notification test type: %s", testType)
+		return "", errors.Errorf("unsupported notification test type: %s", testType)
 	}
 	warning := s.testNotificationWarningInternal(setting, testType)
 
@@ -1081,7 +1122,7 @@ func (s *NotificationService) TestNotification(ctx context.Context, environmentI
 	content := s.testNotificationContentInternal(target.EnvironmentName, testType)
 	handled, sendErr := notifications.Deliver(ctx, provider, setting.Config, content)
 	if !handled {
-		return "", unknownNotificationProviderErrorInternal(provider)
+		return "", errors.Errorf("unknown provider: %s", provider)
 	}
 	return warning, sendErr
 }
@@ -1105,32 +1146,32 @@ func (s *NotificationService) renderEmailTemplate(environmentName, imageRef stri
 
 	htmlContent, err := resources.FS.ReadFile("email-templates/image-update_html.tmpl")
 	if err != nil {
-		return "", "", fmt.Errorf("failed to read HTML template: %w", err)
+		return "", "", errors.WrapIf(err, "failed to read HTML template")
 	}
 
 	htmlTmpl, err := template.New("html").Parse(string(htmlContent))
 	if err != nil {
-		return "", "", fmt.Errorf("failed to parse HTML template: %w", err)
+		return "", "", errors.WrapIf(err, "failed to parse HTML template")
 	}
 
 	var htmlBuf bytes.Buffer
 	if err := htmlTmpl.ExecuteTemplate(&htmlBuf, "root", data); err != nil {
-		return "", "", fmt.Errorf("failed to execute HTML template: %w", err)
+		return "", "", errors.WrapIf(err, "failed to execute HTML template")
 	}
 
 	textContent, err := resources.FS.ReadFile("email-templates/image-update_text.tmpl")
 	if err != nil {
-		return "", "", fmt.Errorf("failed to read text template: %w", err)
+		return "", "", errors.WrapIf(err, "failed to read text template")
 	}
 
 	textTmpl, err := template.New("text").Parse(string(textContent))
 	if err != nil {
-		return "", "", fmt.Errorf("failed to parse text template: %w", err)
+		return "", "", errors.WrapIf(err, "failed to parse text template")
 	}
 
 	var textBuf bytes.Buffer
 	if err := textTmpl.ExecuteTemplate(&textBuf, "root", data); err != nil {
-		return "", "", fmt.Errorf("failed to execute text template: %w", err)
+		return "", "", errors.WrapIf(err, "failed to execute text template")
 	}
 
 	return htmlBuf.String(), textBuf.String(), nil
@@ -1152,32 +1193,32 @@ func (s *NotificationService) renderContainerUpdateEmailTemplate(environmentName
 
 	htmlContent, err := resources.FS.ReadFile("email-templates/container-update_html.tmpl")
 	if err != nil {
-		return "", "", fmt.Errorf("failed to read HTML template: %w", err)
+		return "", "", errors.WrapIf(err, "failed to read HTML template")
 	}
 
 	htmlTmpl, err := template.New("html").Parse(string(htmlContent))
 	if err != nil {
-		return "", "", fmt.Errorf("failed to parse HTML template: %w", err)
+		return "", "", errors.WrapIf(err, "failed to parse HTML template")
 	}
 
 	var htmlBuf bytes.Buffer
 	if err := htmlTmpl.ExecuteTemplate(&htmlBuf, "root", data); err != nil {
-		return "", "", fmt.Errorf("failed to execute HTML template: %w", err)
+		return "", "", errors.WrapIf(err, "failed to execute HTML template")
 	}
 
 	textContent, err := resources.FS.ReadFile("email-templates/container-update_text.tmpl")
 	if err != nil {
-		return "", "", fmt.Errorf("failed to read text template: %w", err)
+		return "", "", errors.WrapIf(err, "failed to read text template")
 	}
 
 	textTmpl, err := template.New("text").Parse(string(textContent))
 	if err != nil {
-		return "", "", fmt.Errorf("failed to parse text template: %w", err)
+		return "", "", errors.WrapIf(err, "failed to parse text template")
 	}
 
 	var textBuf bytes.Buffer
 	if err := textTmpl.ExecuteTemplate(&textBuf, "root", data); err != nil {
-		return "", "", fmt.Errorf("failed to execute text template: %w", err)
+		return "", "", errors.WrapIf(err, "failed to execute text template")
 	}
 
 	return htmlBuf.String(), textBuf.String(), nil
@@ -1187,10 +1228,10 @@ func (s *NotificationService) sendTestEmail(ctx context.Context, environmentName
 	var emailConfig models.EmailConfig
 	configBytes, err := json.Marshal(config)
 	if err != nil {
-		return fmt.Errorf("failed to marshal email config: %w", err)
+		return errors.WrapIf(err, "failed to marshal email config")
 	}
 	if err := json.Unmarshal(configBytes, &emailConfig); err != nil {
-		return fmt.Errorf("failed to unmarshal email config: %w", err)
+		return errors.WrapIf(err, "failed to unmarshal email config")
 	}
 
 	if emailConfig.SMTPHost == "" || emailConfig.SMTPPort == 0 {
@@ -1201,11 +1242,11 @@ func (s *NotificationService) sendTestEmail(ctx context.Context, environmentName
 	}
 
 	if _, err := mail.ParseAddress(emailConfig.FromAddress); err != nil {
-		return fmt.Errorf("invalid from address: %w", err)
+		return errors.WrapIf(err, "invalid from address")
 	}
 	for _, addr := range emailConfig.ToAddresses {
 		if _, err := mail.ParseAddress(addr); err != nil {
-			return fmt.Errorf("invalid to address %s: %w", addr, err)
+			return errors.WrapIff(err, "invalid to address %s", addr)
 		}
 	}
 
@@ -1215,12 +1256,12 @@ func (s *NotificationService) sendTestEmail(ctx context.Context, environmentName
 
 	htmlBody, _, err := s.renderTestEmailTemplate(environmentName)
 	if err != nil {
-		return fmt.Errorf("failed to render test email template: %w", err)
+		return errors.WrapIf(err, "failed to render test email template")
 	}
 
 	subject := notifications.BuildEmailSubject(environmentName, "Test Email from Arcane")
 	if err := notifications.SendEmail(ctx, emailConfig, subject, htmlBody); err != nil {
-		return fmt.Errorf("failed to send email: %w", err)
+		return errors.WrapIf(err, "failed to send email")
 	}
 
 	return nil
@@ -1237,32 +1278,32 @@ func (s *NotificationService) renderTestEmailTemplate(environmentName string) (s
 
 	htmlContent, err := resources.FS.ReadFile("email-templates/test_html.tmpl")
 	if err != nil {
-		return "", "", fmt.Errorf("failed to read HTML template: %w", err)
+		return "", "", errors.WrapIf(err, "failed to read HTML template")
 	}
 
 	htmlTmpl, err := template.New("html").Parse(string(htmlContent))
 	if err != nil {
-		return "", "", fmt.Errorf("failed to parse HTML template: %w", err)
+		return "", "", errors.WrapIf(err, "failed to parse HTML template")
 	}
 
 	var htmlBuf bytes.Buffer
 	if err := htmlTmpl.ExecuteTemplate(&htmlBuf, "root", data); err != nil {
-		return "", "", fmt.Errorf("failed to execute HTML template: %w", err)
+		return "", "", errors.WrapIf(err, "failed to execute HTML template")
 	}
 
 	textContent, err := resources.FS.ReadFile("email-templates/test_text.tmpl")
 	if err != nil {
-		return "", "", fmt.Errorf("failed to read text template: %w", err)
+		return "", "", errors.WrapIf(err, "failed to read text template")
 	}
 
 	textTmpl, err := template.New("text").Parse(string(textContent))
 	if err != nil {
-		return "", "", fmt.Errorf("failed to parse text template: %w", err)
+		return "", "", errors.WrapIf(err, "failed to parse text template")
 	}
 
 	var textBuf bytes.Buffer
 	if err := textTmpl.ExecuteTemplate(&textBuf, "root", data); err != nil {
-		return "", "", fmt.Errorf("failed to execute text template: %w", err)
+		return "", "", errors.WrapIf(err, "failed to execute text template")
 	}
 
 	return htmlBuf.String(), textBuf.String(), nil
@@ -1288,32 +1329,32 @@ func (s *NotificationService) renderBatchEmailTemplate(environmentName string, u
 
 	htmlContent, err := resources.FS.ReadFile("email-templates/batch-image-updates_html.tmpl")
 	if err != nil {
-		return "", "", fmt.Errorf("failed to read HTML template: %w", err)
+		return "", "", errors.WrapIf(err, "failed to read HTML template")
 	}
 
 	htmlTmpl, err := template.New("html").Parse(string(htmlContent))
 	if err != nil {
-		return "", "", fmt.Errorf("failed to parse HTML template: %w", err)
+		return "", "", errors.WrapIf(err, "failed to parse HTML template")
 	}
 
 	var htmlBuf bytes.Buffer
 	if err := htmlTmpl.ExecuteTemplate(&htmlBuf, "root", data); err != nil {
-		return "", "", fmt.Errorf("failed to execute HTML template: %w", err)
+		return "", "", errors.WrapIf(err, "failed to execute HTML template")
 	}
 
 	textContent, err := resources.FS.ReadFile("email-templates/batch-image-updates_text.tmpl")
 	if err != nil {
-		return "", "", fmt.Errorf("failed to read text template: %w", err)
+		return "", "", errors.WrapIf(err, "failed to read text template")
 	}
 
 	textTmpl, err := template.New("text").Parse(string(textContent))
 	if err != nil {
-		return "", "", fmt.Errorf("failed to parse text template: %w", err)
+		return "", "", errors.WrapIf(err, "failed to parse text template")
 	}
 
 	var textBuf bytes.Buffer
 	if err := textTmpl.ExecuteTemplate(&textBuf, "root", data); err != nil {
-		return "", "", fmt.Errorf("failed to execute text template: %w", err)
+		return "", "", errors.WrapIf(err, "failed to execute text template")
 	}
 
 	return htmlBuf.String(), textBuf.String(), nil
@@ -1335,28 +1376,28 @@ func (s *NotificationService) renderVulnerabilitySummaryEmailTemplate(environmen
 
 	htmlContent, err := resources.FS.ReadFile("email-templates/vulnerability-summary_html.tmpl")
 	if err != nil {
-		return "", "", fmt.Errorf("failed to read HTML template: %w", err)
+		return "", "", errors.WrapIf(err, "failed to read HTML template")
 	}
 	htmlTmpl, err := template.New("html").Parse(string(htmlContent))
 	if err != nil {
-		return "", "", fmt.Errorf("failed to parse HTML template: %w", err)
+		return "", "", errors.WrapIf(err, "failed to parse HTML template")
 	}
 	var htmlBuf bytes.Buffer
 	if err := htmlTmpl.ExecuteTemplate(&htmlBuf, "root", data); err != nil {
-		return "", "", fmt.Errorf("failed to execute HTML template: %w", err)
+		return "", "", errors.WrapIf(err, "failed to execute HTML template")
 	}
 
 	textContent, err := resources.FS.ReadFile("email-templates/vulnerability-summary_text.tmpl")
 	if err != nil {
-		return "", "", fmt.Errorf("failed to read text template: %w", err)
+		return "", "", errors.WrapIf(err, "failed to read text template")
 	}
 	textTmpl, err := template.New("text").Parse(string(textContent))
 	if err != nil {
-		return "", "", fmt.Errorf("failed to parse text template: %w", err)
+		return "", "", errors.WrapIf(err, "failed to parse text template")
 	}
 	var textBuf bytes.Buffer
 	if err := textTmpl.ExecuteTemplate(&textBuf, "root", data); err != nil {
-		return "", "", fmt.Errorf("failed to execute text template: %w", err)
+		return "", "", errors.WrapIf(err, "failed to execute text template")
 	}
 	return htmlBuf.String(), textBuf.String(), nil
 }
@@ -1382,17 +1423,17 @@ func (s *NotificationService) renderPruneReportEmailTemplate(environmentName str
 func (s *NotificationService) renderTemplatesInternal(name string, data any) (string, string, error) {
 	htmlContent, err := resources.FS.ReadFile(fmt.Sprintf("email-templates/%s_html.tmpl", name))
 	if err != nil {
-		return "", "", fmt.Errorf("failed to read HTML template: %w", err)
+		return "", "", errors.WrapIf(err, "failed to read HTML template")
 	}
 
 	htmlTmpl, err := template.New("html").Parse(string(htmlContent))
 	if err != nil {
-		return "", "", fmt.Errorf("failed to parse HTML template: %w", err)
+		return "", "", errors.WrapIf(err, "failed to parse HTML template")
 	}
 
 	var htmlBuf bytes.Buffer
 	if err := htmlTmpl.ExecuteTemplate(&htmlBuf, "root", data); err != nil {
-		return "", "", fmt.Errorf("failed to execute HTML template: %w", err)
+		return "", "", errors.WrapIf(err, "failed to execute HTML template")
 	}
 
 	textContent, err := resources.FS.ReadFile(fmt.Sprintf("email-templates/%s_text.tmpl", name))

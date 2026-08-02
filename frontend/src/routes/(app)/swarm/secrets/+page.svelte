@@ -1,10 +1,10 @@
 <script lang="ts">
-	import SwarmKvPage from '$lib/components/swarm/swarm-kv-page.svelte';
-	import { LockIcon } from '$lib/icons';
-	import { m } from '$lib/paraglide/messages';
-	import { swarmService } from '$lib/services/swarm-service';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { hasPermission } from '$lib/utils/auth';
+	import SwarmKvPage from '#lib/components/swarm/swarm-kv-page.svelte';
+	import { LockIcon } from '#lib/icons';
+	import { m } from '#lib/paraglide/messages';
+	import { swarmService } from '#lib/services/swarm-service';
+	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import { hasPermission } from '#lib/utils/auth';
 
 	let {}: PageProps = $props();
 

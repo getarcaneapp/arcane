@@ -1,12 +1,12 @@
 <script lang="ts">
-	import * as Empty from '$lib/components/ui/empty/index.js';
-	import { m } from '$lib/paraglide/messages';
-	import { ErrorNotFoundIcon } from '$lib/icons';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
+	import * as Empty from '#lib/components/ui/empty/index.js';
+	import { m } from '#lib/paraglide/messages';
+	import { ErrorNotFoundIcon } from '#lib/icons';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { goto } from '$app/navigation';
-	import EnvironmentSwitcherDialog from '$lib/components/dialogs/environment-switcher-dialog.svelte';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import settingsStore from '$lib/stores/config-store';
+	import EnvironmentSwitcherDialog from '#lib/components/dialogs/environment-switcher-dialog.svelte';
+	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import settingsStore from '#lib/stores/config-store';
 
 	let {
 		message,

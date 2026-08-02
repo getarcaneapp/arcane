@@ -1,15 +1,15 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
 	import EventTable from './event-table.svelte';
-	import { openConfirmDialog } from '$lib/components/confirm-dialog';
-	import { m } from '$lib/paraglide/messages';
-	import { eventService } from '$lib/services/event-service';
-	import { queryKeys } from '$lib/query/query-keys';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog';
+	import { m } from '#lib/paraglide/messages';
+	import { eventService } from '#lib/services/event-service';
+	import { queryKeys } from '#lib/query/query-keys';
 	import { untrack } from 'svelte';
-	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
+	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
-	import { AlertIcon, CheckIcon, CloseIcon, EventsIcon, InfoIcon } from '$lib/icons';
-	import { hasPermission } from '$lib/utils/auth';
+	import { AlertIcon, CheckIcon, CloseIcon, EventsIcon, InfoIcon } from '#lib/icons';
+	import { hasPermission } from '#lib/utils/auth';
 
 	let { data } = $props();
 

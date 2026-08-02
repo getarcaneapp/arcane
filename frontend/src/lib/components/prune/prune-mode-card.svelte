@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { Input } from '$lib/components/ui/input/index.js';
-	import * as Tabs from '$lib/components/ui/tabs/index.js';
-	import { cn } from '$lib/utils.js';
-	import { m } from '$lib/paraglide/messages';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import * as Tabs from '#lib/components/ui/tabs/index.js';
+	import { cn } from '#lib/utils.js';
+	import { m } from '#lib/paraglide/messages';
 
 	export type PruneModeOption = {
 		value: string;

@@ -65,7 +65,7 @@ func sanitizeRecreateHostConfigInternal(hostConfig *containertypes.HostConfig, e
 		return false
 	}
 
-	if !isPodmanEngineInternal(engineInfo.Name) || !isCgroupV2Internal(engineInfo.CgroupVersion) {
+	if !strings.EqualFold(strings.TrimSpace(engineInfo.Name), "podman") || !isCgroupV2Internal(engineInfo.CgroupVersion) {
 		return false
 	}
 
@@ -113,10 +113,6 @@ func normalizeEngineNameInternal(value string) string {
 	default:
 		return ""
 	}
-}
-
-func isPodmanEngineInternal(engineName string) bool {
-	return strings.EqualFold(strings.TrimSpace(engineName), "podman")
 }
 
 func isCgroupV2Internal(cgroupVersion string) bool {

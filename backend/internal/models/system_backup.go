@@ -8,6 +8,7 @@ import (
 
 type SystemBackupRun struct {
 	BaseModel
+
 	Size              int64                               `json:"size" gorm:"column:size" sortable:"true"`
 	CreatedAt         time.Time                           `json:"createdAt" gorm:"column:created_at" sortable:"true"`
 	Status            VolumeBackupStatus                  `json:"status" gorm:"column:status;type:text;not null" sortable:"true"`
@@ -23,7 +24,7 @@ type SystemBackupRun struct {
 
 func (SystemBackupRun) TableName() string { return "system_backup_runs" }
 
-func (b *SystemBackupRun) ToDTO() backuptypes.SystemBackupRun {
+func (b SystemBackupRun) ToDTO() backuptypes.SystemBackupRun {
 	return backuptypes.SystemBackupRun{
 		ID: b.ID, Size: b.Size, CreatedAt: b.CreatedAt, Status: string(b.Status), Trigger: string(b.Trigger),
 		Destination: b.Destination, LocalSnapshotID: b.LocalSnapshotID, RemoteSnapshotID: b.RemoteSnapshotID,
@@ -33,6 +34,7 @@ func (b *SystemBackupRun) ToDTO() backuptypes.SystemBackupRun {
 
 type SystemBackupPolicy struct {
 	BaseModel
+
 	Enabled         bool   `gorm:"column:enabled;not null;default:false"`
 	Schedule        string `gorm:"column:schedule;type:text;not null"`
 	RetentionCount  int    `gorm:"column:retention_count;not null;default:7"`
@@ -43,7 +45,7 @@ type SystemBackupPolicy struct {
 
 func (SystemBackupPolicy) TableName() string { return "system_backup_policies" }
 
-func (p *SystemBackupPolicy) ToDTO(lastRun *SystemBackupRun) backuptypes.SystemBackupPolicy {
+func (p SystemBackupPolicy) ToDTO(lastRun *SystemBackupRun) backuptypes.SystemBackupPolicy {
 	dto := backuptypes.SystemBackupPolicy{
 		ID: p.ID, Enabled: p.Enabled, Schedule: p.Schedule, RetentionCount: p.RetentionCount,
 		LocalEnabled: p.LocalEnabled, S3Enabled: p.S3Enabled, S3DestinationID: p.S3DestinationID,
@@ -57,6 +59,7 @@ func (p *SystemBackupPolicy) ToDTO(lastRun *SystemBackupRun) backuptypes.SystemB
 
 type SystemBackupRecoveryConfig struct {
 	BaseModel
+
 	EncryptedRecoveryKey string `gorm:"column:encrypted_recovery_key;type:text;not null"`
 }
 

@@ -11,14 +11,16 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
-	"github.com/gorilla/websocket"
-	"github.com/labstack/echo/v4"
+	"github.com/coder/websocket"
+	"github.com/coder/websocket/wsjson"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
+	"github.com/labstack/echo/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/fx/fxtest"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -42,7 +44,7 @@ func TestTunnelServer_HandleConnect(t *testing.T) {
 		}
 	}
 
-	server := NewTunnelServer(resolver, callback)
+	server := NewTunnelServerWithRegistry(GetRegistry(), resolver, callback)
 
 	router := echo.New()
 	router.GET("/connect", server.HandleConnect)
@@ -55,16 +57,13 @@ func TestTunnelServer_HandleConnect(t *testing.T) {
 	headers := http.Header{}
 	headers.Set(HeaderAgentToken, "valid-token")
 
-	conn, resp, err := websocket.DefaultDialer.Dial(url, headers)
+	conn, resp, err := websocket.Dial(t.Context(), url, &websocket.DialOptions{HTTPHeader: headers})
 	require.NoError(t, err)
-	if resp != nil {
-		defer func() { _ = resp.Body.Close() }()
-	}
-	defer func() { _ = conn.Close() }()
+	defer func() { _ = conn.CloseNow() }()
 
 	assert.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
 
-	err = conn.WriteJSON(&TunnelMessage{
+	err = wsjson.Write(t.Context(), conn, &TunnelMessage{
 		Type:          MessageTypeRegister,
 		AgentToken:    "valid-token",
 		AgentInstance: "agent-connected",
@@ -72,7 +71,7 @@ func TestTunnelServer_HandleConnect(t *testing.T) {
 	require.NoError(t, err)
 
 	var registerResp TunnelMessage
-	err = conn.ReadJSON(&registerResp)
+	err = wsjson.Read(t.Context(), conn, &registerResp)
 	require.NoError(t, err)
 	assert.Equal(t, MessageTypeRegisterResponse, registerResp.Type)
 	assert.True(t, registerResp.Accepted)
@@ -82,7 +81,7 @@ func TestTunnelServer_HandleConnect(t *testing.T) {
 	var tunnel *AgentTunnel
 	require.Eventually(t, func() bool {
 		var ok bool
-		tunnel, ok = reg.Get("env-connected")
+		tunnel, ok = reg.Get("env-connected").Get()
 		return ok && tunnel != nil && tunnel.SessionID != ""
 	}, time.Second, 10*time.Millisecond)
 	assert.Equal(t, "agent-connected", tunnel.AgentInstance)
@@ -91,7 +90,7 @@ func TestTunnelServer_HandleConnect(t *testing.T) {
 	case <-statusCallbackCalled:
 		// callback observed
 	case <-time.After(1 * time.Second):
-		t.Fatal("timeout waiting for status callback")
+		require.FailNow(t, "timeout waiting for status callback")
 	}
 
 	// Test Heartbeat
@@ -99,12 +98,12 @@ func TestTunnelServer_HandleConnect(t *testing.T) {
 		ID:   "hb-1",
 		Type: MessageTypeHeartbeat,
 	}
-	err = conn.WriteJSON(heartbeat)
+	err = wsjson.Write(t.Context(), conn, heartbeat)
 	require.NoError(t, err)
 
 	// Should receive Ack
 	var ack TunnelMessage
-	err = conn.ReadJSON(&ack)
+	err = wsjson.Read(t.Context(), conn, &ack)
 	require.NoError(t, err)
 	assert.Equal(t, MessageTypeHeartbeatAck, ack.Type)
 	assert.Equal(t, "hb-1", ack.ID)
@@ -120,7 +119,7 @@ func TestTunnelServer_HandleConnect(t *testing.T) {
 		Type: MessageTypeResponse,
 		Body: []byte("response"),
 	}
-	err = conn.WriteJSON(respMsg)
+	err = wsjson.Write(t.Context(), conn, respMsg)
 	require.NoError(t, err)
 
 	// 3. Verify received on channel
@@ -129,7 +128,7 @@ func TestTunnelServer_HandleConnect(t *testing.T) {
 		assert.Equal(t, "req-1", received.ID)
 		assert.Equal(t, []byte("response"), received.Body)
 	case <-time.After(1 * time.Second):
-		t.Fatal("timeout waiting for response")
+		require.FailNow(t, "timeout waiting for response")
 	}
 
 	// Test Stream Delivery
@@ -143,7 +142,7 @@ func TestTunnelServer_HandleConnect(t *testing.T) {
 		Type: MessageTypeStreamData,
 		Body: []byte("stream"),
 	}
-	err = conn.WriteJSON(streamMsg)
+	err = wsjson.Write(t.Context(), conn, streamMsg)
 	require.NoError(t, err)
 
 	// 3. Verify received
@@ -151,25 +150,27 @@ func TestTunnelServer_HandleConnect(t *testing.T) {
 	case received := <-streamCh:
 		assert.Equal(t, "stream-1", received.ID)
 	case <-time.After(1 * time.Second):
-		t.Fatal("timeout waiting for stream")
+		require.FailNow(t, "timeout waiting for stream")
 	}
 
 	// Test Ignored/Unknown Messages
 	ignoredMsg := &TunnelMessage{ID: "ignore", Type: MessageTypeRequest} // Request coming FROM agent is ignored/unexpected
-	_ = conn.WriteJSON(ignoredMsg)
+	_ = wsjson.Write(t.Context(), conn, ignoredMsg)
 
 	unknownMsg := &TunnelMessage{ID: "unknown", Type: "unknown_type"}
-	_ = conn.WriteJSON(unknownMsg)
+	_ = wsjson.Write(t.Context(), conn, unknownMsg)
 
 	// Allow time for processing
 	time.Sleep(100 * time.Millisecond)
 
-	// Clean up
+	// Clean up; close the client first so the server-side close handshake
+	// does not wait on a peer that is no longer reading.
+	_ = conn.CloseNow()
 	reg.Unregister("env-connected")
 }
 
 func TestTunnelServer_HandleConnect_AcceptsTokenAfterProxyTerminatedMTLS(t *testing.T) {
-	server := NewTunnelServer(func(ctx context.Context, token string) (string, error) {
+	server := NewTunnelServerWithRegistry(GetRegistry(), func(ctx context.Context, token string) (string, error) {
 		if token == "valid-token" {
 			return "env-proxy-mtls", nil
 		}
@@ -190,15 +191,12 @@ func TestTunnelServer_HandleConnect_AcceptsTokenAfterProxyTerminatedMTLS(t *test
 	headers := http.Header{}
 	headers.Set(HeaderAgentToken, "valid-token")
 
-	conn, resp, err := websocket.DefaultDialer.Dial(url, headers)
+	conn, resp, err := websocket.Dial(t.Context(), url, &websocket.DialOptions{HTTPHeader: headers})
 	require.NoError(t, err)
-	if resp != nil {
-		defer func() { _ = resp.Body.Close() }()
-	}
-	defer func() { _ = conn.Close() }()
+	defer func() { _ = conn.CloseNow() }()
 	require.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
 
-	err = conn.WriteJSON(&TunnelMessage{
+	err = wsjson.Write(t.Context(), conn, &TunnelMessage{
 		Type:          MessageTypeRegister,
 		AgentToken:    "valid-token",
 		AgentInstance: "agent-proxy-mtls",
@@ -206,12 +204,13 @@ func TestTunnelServer_HandleConnect_AcceptsTokenAfterProxyTerminatedMTLS(t *test
 	require.NoError(t, err)
 
 	var registerResp TunnelMessage
-	err = conn.ReadJSON(&registerResp)
+	err = wsjson.Read(t.Context(), conn, &registerResp)
 	require.NoError(t, err)
 	require.Equal(t, MessageTypeRegisterResponse, registerResp.Type)
 	require.True(t, registerResp.Accepted)
 	require.Equal(t, "token", registerResp.SecurityMode)
 
+	_ = conn.CloseNow()
 	GetRegistry().Unregister("env-proxy-mtls")
 }
 
@@ -220,7 +219,7 @@ func TestTunnelServer_HandleConnect_InvalidToken(t *testing.T) {
 		return "", errors.New("invalid")
 	}
 
-	server := NewTunnelServer(resolver, nil)
+	server := NewTunnelServerWithRegistry(GetRegistry(), resolver, nil)
 	router := echo.New()
 	router.GET("/connect", server.HandleConnect)
 
@@ -231,19 +230,16 @@ func TestTunnelServer_HandleConnect_InvalidToken(t *testing.T) {
 	headers := http.Header{}
 	headers.Set(HeaderAgentToken, "bad-token")
 
-	conn, resp, err := websocket.DefaultDialer.Dial(url, headers)
+	conn, resp, err := websocket.Dial(t.Context(), url, &websocket.DialOptions{HTTPHeader: headers})
 	require.NoError(t, err)
-	if resp != nil {
-		defer func() { _ = resp.Body.Close() }()
-	}
-	defer func() { _ = conn.Close() }()
+	defer func() { _ = conn.CloseNow() }()
 	assert.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
 
-	err = conn.WriteJSON(&TunnelMessage{Type: MessageTypeRegister, AgentToken: "bad-token"})
+	err = wsjson.Write(t.Context(), conn, &TunnelMessage{Type: MessageTypeRegister, AgentToken: "bad-token"})
 	require.NoError(t, err)
 
 	var registerResp TunnelMessage
-	err = conn.ReadJSON(&registerResp)
+	err = wsjson.Read(t.Context(), conn, &registerResp)
 	require.NoError(t, err)
 	assert.Equal(t, MessageTypeRegisterResponse, registerResp.Type)
 	assert.False(t, registerResp.Accepted)
@@ -260,7 +256,7 @@ func TestTunnelServer_HandleConnect_PrefersHeaderTokenOverRegisterMessage(t *tes
 		return "", errors.New("invalid token")
 	}
 
-	server := NewTunnelServer(resolver, nil)
+	server := NewTunnelServerWithRegistry(GetRegistry(), resolver, nil)
 	router := echo.New()
 	router.GET("/connect", server.HandleConnect)
 
@@ -271,29 +267,27 @@ func TestTunnelServer_HandleConnect_PrefersHeaderTokenOverRegisterMessage(t *tes
 	headers := http.Header{}
 	headers.Set(HeaderAgentToken, "valid-token")
 
-	conn, resp, err := websocket.DefaultDialer.Dial(url, headers)
+	conn, resp, err := websocket.Dial(t.Context(), url, &websocket.DialOptions{HTTPHeader: headers})
 	require.NoError(t, err)
-	if resp != nil {
-		defer func() { _ = resp.Body.Close() }()
-	}
-	defer func() { _ = conn.Close() }()
+	defer func() { _ = conn.CloseNow() }()
 	require.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
 
-	err = conn.WriteJSON(&TunnelMessage{Type: MessageTypeRegister, AgentToken: "bad-token"})
+	err = wsjson.Write(t.Context(), conn, &TunnelMessage{Type: MessageTypeRegister, AgentToken: "bad-token"})
 	require.NoError(t, err)
 
 	var registerResp TunnelMessage
-	err = conn.ReadJSON(&registerResp)
+	err = wsjson.Read(t.Context(), conn, &registerResp)
 	require.NoError(t, err)
 	require.Equal(t, MessageTypeRegisterResponse, registerResp.Type)
 	require.True(t, registerResp.Accepted)
 	require.Equal(t, "valid-token", resolvedToken)
 
+	_ = conn.CloseNow()
 	GetRegistry().Unregister("env-header-token")
 }
 
 func TestTunnelServer_HandleConnect_NoToken(t *testing.T) {
-	server := NewTunnelServer(nil, nil)
+	server := NewTunnelServerWithRegistry(GetRegistry(), nil, nil)
 	router := echo.New()
 	router.GET("/connect", server.HandleConnect)
 
@@ -302,19 +296,16 @@ func TestTunnelServer_HandleConnect_NoToken(t *testing.T) {
 
 	url := "ws" + strings.TrimPrefix(ts.URL, "http") + "/connect"
 
-	conn, resp, err := websocket.DefaultDialer.Dial(url, nil)
+	conn, resp, err := websocket.Dial(t.Context(), url, nil)
 	require.NoError(t, err)
-	if resp != nil {
-		defer func() { _ = resp.Body.Close() }()
-	}
-	defer func() { _ = conn.Close() }()
+	defer func() { _ = conn.CloseNow() }()
 	assert.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
 
-	err = conn.WriteJSON(&TunnelMessage{Type: MessageTypeRegister})
+	err = wsjson.Write(t.Context(), conn, &TunnelMessage{Type: MessageTypeRegister})
 	require.NoError(t, err)
 
 	var registerResp TunnelMessage
-	err = conn.ReadJSON(&registerResp)
+	err = wsjson.Read(t.Context(), conn, &registerResp)
 	require.NoError(t, err)
 	require.Equal(t, MessageTypeRegisterResponse, registerResp.Type)
 	require.False(t, registerResp.Accepted)
@@ -325,7 +316,7 @@ func TestTunnelConnectRouteRegistration(t *testing.T) {
 	router := echo.New()
 	group := router.Group("/api")
 
-	server := NewTunnelServer(nil, nil)
+	server := NewTunnelServerWithRegistry(GetRegistry(), nil, nil)
 	group.GET("/tunnel/connect", server.HandleConnect)
 
 	// Verify route exists (simplistic check by trying to hit it)
@@ -333,12 +324,13 @@ func TestTunnelConnectRouteRegistration(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/tunnel/connect", nil)
 	router.ServeHTTP(w, req)
 
-	// Plain HTTP requests hit the route but fail websocket upgrade.
-	assert.Equal(t, http.StatusBadRequest, w.Code)
+	// Plain HTTP requests hit the route but fail the websocket upgrade;
+	// coder/websocket responds with 426 Upgrade Required.
+	assert.Equal(t, http.StatusUpgradeRequired, w.Code)
 }
 
 func TestTunnelServer_HandleMTLSEnroll(t *testing.T) {
-	server := NewTunnelServer(func(ctx context.Context, token string) (string, error) {
+	server := NewTunnelServerWithRegistry(GetRegistry(), func(ctx context.Context, token string) (string, error) {
 		if token != "valid-token" {
 			return "", errors.New("invalid token")
 		}
@@ -382,7 +374,7 @@ func TestTunnelServer_HandleMTLSEnroll(t *testing.T) {
 }
 
 func TestTunnelServer_HandleMTLSEnroll_ServesCachedAssetsDuringCooldown(t *testing.T) {
-	server := NewTunnelServer(func(ctx context.Context, token string) (string, error) {
+	server := NewTunnelServerWithRegistry(GetRegistry(), func(ctx context.Context, token string) (string, error) {
 		if token != "valid-token" {
 			return "", errors.New("invalid token")
 		}
@@ -422,7 +414,7 @@ func TestTunnelServer_HandleMTLSEnroll_AllowsRepeatAfterCooldownAndMarksReenroll
 		EdgeMTLSMode:      EdgeMTLSModeRequired,
 		EdgeMTLSAssetsDir: t.TempDir(),
 	}
-	server := NewTunnelServer(func(ctx context.Context, token string) (string, error) {
+	server := NewTunnelServerWithRegistry(GetRegistry(), func(ctx context.Context, token string) (string, error) {
 		if token != "valid-token" {
 			return "", errors.New("invalid token")
 		}
@@ -460,7 +452,7 @@ func TestTunnelServer_HandleMTLSEnroll_AllowsRepeatAfterCooldownAndMarksReenroll
 }
 
 func TestTunnelServer_CleanupLoop(t *testing.T) {
-	server := NewTunnelServer(nil, nil)
+	server := NewTunnelServerWithRegistry(GetRegistry(), nil, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// Run cleanup loop
@@ -474,7 +466,7 @@ func TestTunnelServer_CleanupLoop(t *testing.T) {
 
 func TestTunnelServer_resolveEnvironment_TrimsToken(t *testing.T) {
 	var resolvedToken string
-	server := NewTunnelServer(func(ctx context.Context, token string) (string, error) {
+	server := NewTunnelServerWithRegistry(GetRegistry(), func(ctx context.Context, token string) (string, error) {
 		resolvedToken = token
 		return "env-trimmed", nil
 	}, nil)
@@ -487,14 +479,14 @@ func TestTunnelServer_resolveEnvironment_TrimsToken(t *testing.T) {
 
 func TestTunnelServer_resolveEnvironment_Errors(t *testing.T) {
 	t.Run("missing resolver", func(t *testing.T) {
-		server := NewTunnelServer(nil, nil)
+		server := NewTunnelServerWithRegistry(GetRegistry(), nil, nil)
 		_, err := server.resolveEnvironment(context.Background(), "token")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "edge resolver is not configured")
 	})
 
 	t.Run("missing token", func(t *testing.T) {
-		server := NewTunnelServer(func(ctx context.Context, token string) (string, error) {
+		server := NewTunnelServerWithRegistry(GetRegistry(), func(ctx context.Context, token string) (string, error) {
 			return "env", nil
 		}, nil)
 
@@ -523,7 +515,7 @@ func TestTokenFromMetadata(t *testing.T) {
 	})
 
 	t.Run("returns empty when metadata missing", func(t *testing.T) {
-		assert.Equal(t, "", tokenFromMetadataInternal(context.Background()))
+		assert.Empty(t, tokenFromMetadataInternal(context.Background()))
 	})
 }
 
@@ -561,7 +553,7 @@ func TestIsExpectedTunnelReceiveError(t *testing.T) {
 
 func TestTunnelServer_HandleEventCallback(t *testing.T) {
 	called := make(chan struct{}, 1)
-	server := NewTunnelServer(nil, nil)
+	server := NewTunnelServerWithRegistry(GetRegistry(), nil, nil)
 	server.SetEventCallback(func(ctx context.Context, environmentID string, event *TunnelEvent) error {
 		assert.Equal(t, "env-edge", environmentID)
 		require.NotNil(t, event)
@@ -575,18 +567,21 @@ func TestTunnelServer_HandleEventCallback(t *testing.T) {
 	})
 
 	tunnel := NewAgentTunnelWithConn("env-edge", &fakeServerTunnelConn{})
+	deliveryTimer := time.NewTimer(streamDeliveryTimeout)
+	deliveryTimer.Stop()
+	defer deliveryTimer.Stop()
 	server.handleTunnelMessage(context.Background(), tunnel, &TunnelMessage{
 		Type: MessageTypeEvent,
 		Event: &TunnelEvent{
 			Type:  "container.start",
 			Title: "Container started",
 		},
-	})
+	}, deliveryTimer)
 
 	select {
 	case <-called:
 	case <-time.After(2 * time.Second):
-		t.Fatal("timeout waiting for event callback")
+		require.FailNow(t, "timeout waiting for event callback")
 	}
 }
 
@@ -602,9 +597,7 @@ func (f *fakeServerTunnelConn) Close() error { return nil }
 
 func (f *fakeServerTunnelConn) IsClosed() bool { return false }
 
-func (f *fakeServerTunnelConn) SendRequest(ctx context.Context, msg *TunnelMessage, pending *sync.Map) (*TunnelMessage, error) {
-	return nil, errors.New("not implemented")
-}
+func (f *fakeServerTunnelConn) Transport() string { return EdgeTransportWebSocket }
 
 type registerResponseOrderConn struct {
 	sendHook func(*TunnelMessage) error
@@ -631,12 +624,10 @@ func (f *registerResponseOrderConn) Close() error { return nil }
 
 func (f *registerResponseOrderConn) IsClosed() bool { return false }
 
-func (f *registerResponseOrderConn) SendRequest(ctx context.Context, msg *TunnelMessage, pending *sync.Map) (*TunnelMessage, error) {
-	return nil, errors.New("not implemented")
-}
+func (f *registerResponseOrderConn) Transport() string { return EdgeTransportGRPC }
 
 func TestTunnelServer_ManageConnectedTunnel_RegistersBeforeSendingGRPCRegisterResponse(t *testing.T) {
-	server := NewTunnelServer(nil, nil)
+	server := NewTunnelServerWithRegistry(GetRegistry(), nil, nil)
 	envID := "env-grpc-register-order"
 	server.registry.Unregister(envID)
 	t.Cleanup(func() { server.registry.Unregister(envID) })
@@ -644,7 +635,7 @@ func TestTunnelServer_ManageConnectedTunnel_RegistersBeforeSendingGRPCRegisterRe
 	conn := &registerResponseOrderConn{recvErr: io.EOF}
 	conn.sendHook = func(msg *TunnelMessage) error {
 		require.Equal(t, MessageTypeRegisterResponse, msg.Type)
-		_, ok := server.registry.Get(envID)
+		_, ok := server.registry.Get(envID).Get()
 		assert.True(t, ok, "gRPC tunnel should already be registered when the register response is sent")
 		return nil
 	}
@@ -652,6 +643,28 @@ func TestTunnelServer_ManageConnectedTunnel_RegistersBeforeSendingGRPCRegisterRe
 	tunnel := NewAgentTunnelWithConn(envID, conn)
 	server.manageConnectedTunnel(context.Background(), context.Background(), tunnel)
 
-	_, ok := server.registry.Get(envID)
+	_, ok := server.registry.Get(envID).Get()
 	assert.False(t, ok)
+}
+
+func TestTunnelServer_ManageConnectedTunnel_UnregistersAfterConnectionContextCancellationInternal(t *testing.T) {
+	lifecycle := fxtest.NewLifecycle(t)
+	runtime, err := actors.NewRuntime(t.Context(), lifecycle)
+	require.NoError(t, err)
+	registry, err := NewActorTunnelRegistry(t.Context(), runtime)
+	require.NoError(t, err)
+	server := NewTunnelServerWithRegistry(registry, nil, nil)
+	tunnel := NewAgentTunnelWithConn("env-cancelled-disconnect", &registerResponseOrderConn{recvErr: context.Canceled})
+
+	connectionCtx, cancelConnection := context.WithCancel(context.Background())
+	cancelConnection()
+	server.manageConnectedTunnel(connectionCtx, context.WithoutCancel(connectionCtx), tunnel)
+
+	_, ok := registry.Get(tunnel.EnvironmentID).Get()
+	require.False(t, ok)
+
+	stopCtx, cancelStop := context.WithTimeout(context.Background(), time.Second)
+	defer cancelStop()
+	require.NoError(t, registry.Stop(stopCtx))
+	require.NoError(t, lifecycle.Stop(stopCtx))
 }

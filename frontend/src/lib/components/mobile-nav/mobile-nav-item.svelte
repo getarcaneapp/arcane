@@ -1,7 +1,7 @@
 <script lang="ts">
-	import type { NavigationItem } from '$lib/config/navigation-config';
-	import { cn } from '$lib/utils';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
+	import type { NavigationItem } from '#lib/config/navigation-config';
+	import { cn } from '#lib/utils';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 
 	let {
 		item,

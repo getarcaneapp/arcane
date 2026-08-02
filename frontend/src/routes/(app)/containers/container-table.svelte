@@ -1,37 +1,37 @@
 <script lang="ts">
-	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { Spinner } from '$lib/components/ui/spinner/index.js';
+	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { goto } from '$app/navigation';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
-	import ContainerActionMenuItem from '$lib/components/arcane-table/cells/container-action-menu-item.svelte';
-	import type { SearchPaginationSortRequest } from '$lib/types/shared';
-	import { Badge } from '$lib/components/ui/badge';
-	import { formatDateTimeShort, truncateImageDigest } from '$lib/utils/formatting';
-	import type { ContainerSummaryDto } from '$lib/types/docker';
-	import type { ColumnSpec, BulkAction } from '$lib/components/arcane-table';
-	import { m } from '$lib/paraglide/messages';
-	import { PortBadge } from '$lib/components/badges/index.js';
-	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
+	import ContainerActionMenuItem from '#lib/components/arcane-table/cells/container-action-menu-item.svelte';
+	import type { SearchPaginationSortRequest } from '#lib/types/shared';
+	import { Badge } from '#lib/components/ui/badge';
+	import { formatDateTimeShort, truncateImageDigest } from '#lib/utils/formatting';
+	import type { ContainerSummaryDto } from '#lib/types/docker';
+	import type { ColumnSpec, BulkAction } from '#lib/components/arcane-table';
+	import { m } from '#lib/paraglide/messages';
+	import { PortBadge } from '#lib/components/badges/index.js';
+	import { UniversalMobileCard } from '#lib/components/arcane-table/index.js';
 	import {
 		containerService,
 		type ContainerListRequestOptions,
 		type ContainersPaginatedResponse
-	} from '$lib/services/container-service';
-	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
-	import ImageUpdateItem from '$lib/components/image-update-item.svelte';
+	} from '#lib/services/container-service';
+	import * as ArcaneTooltip from '#lib/components/arcane-tooltip';
+	import ImageUpdateItem from '#lib/components/image-update-item.svelte';
 	import { PersistedState } from 'runed';
 	import { onMount } from 'svelte';
 	import { mode } from 'mode-watcher';
 	import { ContainerStatsManager } from './components/container-stats-manager.svelte';
 	import ContainerStatsSync from './components/container-stats-sync.svelte';
 	import ContainerStatsCell from './components/container-stats-cell.svelte';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { hasPermission } from '$lib/utils/auth';
-	import IconImage from '$lib/components/icon-image.svelte';
-	import { getContainerIpAddresses, getThemedIconUrl } from '$lib/utils/docker';
-	import { hasAnyLoadingState } from '$lib/utils/bulk-actions';
+	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import { hasPermission } from '#lib/utils/auth';
+	import IconImage from '#lib/components/icon-image.svelte';
+	import { getContainerIpAddresses, getThemedIconUrl } from '#lib/utils/docker';
+	import { hasAnyLoadingState } from '#lib/utils/bulk-actions';
 	import { createContainerActions } from './container-table.actions';
 	import {
 		getActionStatusMessage,
@@ -58,7 +58,7 @@
 		PauseIcon,
 		PlayIcon,
 		ZapIcon
-	} from '$lib/icons';
+	} from '#lib/icons';
 	import KillContainerDialog from './components/kill-container-dialog.svelte';
 
 	type FieldVisibility = Record<string, boolean>;

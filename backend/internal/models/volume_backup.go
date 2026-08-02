@@ -79,7 +79,7 @@ func (VolumeBackupPolicy) TableName() string {
 	return "volume_backup_policies"
 }
 
-func (p *VolumeBackupPolicy) ToDTO(lastRun *VolumeBackup) volume.BackupPolicy {
+func (p VolumeBackupPolicy) ToDTO(lastRun *VolumeBackup) volume.BackupPolicy {
 	dto := volume.BackupPolicy{
 		ID:              p.ID,
 		VolumeName:      p.VolumeName,

@@ -3,11 +3,11 @@
 export type AutoUpdateResourceType = 'image' | 'container' | 'project';
 
 export interface AutoUpdateCheck {
-	type?: 'containers' | 'projects' | 'all';
+	/** Scopes `resourceIds`. Matches the backend's `updater.Options.Type` (singular). */
+	type?: AutoUpdateResourceType;
 	resourceIds?: string[];
 	forceUpdate?: boolean;
 	dryRun?: boolean;
-	resourceType?: AutoUpdateResourceType;
 }
 
 export interface AutoUpdateResult {

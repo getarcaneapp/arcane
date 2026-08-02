@@ -5,10 +5,11 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
+
+	"emperror.dev/errors"
 
 	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/bcrypt"
@@ -47,7 +48,14 @@ type UserService struct {
 	argon2Params *Argon2Params
 }
 
-var ErrCannotRemoveLastAdmin = errors.New("cannot remove the last admin user")
+const (
+	ErrCannotRemoveLastAdmin = errors.Sentinel("cannot remove the last admin user")
+
+	// ErrInsufficientPrivilege is returned when a caller attempts to modify a
+	// target whose effective privilege is equal to or higher than the caller's
+	// (e.g. a delegated users:update holder trying to edit a global admin).
+	ErrInsufficientPrivilege = errors.Sentinel("insufficient privilege to modify this user")
+)
 
 func NewUserService(db *database.DB) *UserService {
 	return &UserService{
@@ -145,7 +153,7 @@ func (s *UserService) validateArgon2Password(encodedHash, password string) error
 func (s *UserService) CreateUser(ctx context.Context, user *models.User) (*models.User, error) {
 	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
 		if err := tx.Create(user).Error; err != nil {
-			return fmt.Errorf("failed to create user: %w", err)
+			return errors.WrapIf(err, "failed to create user")
 		}
 		return nil
 	})
@@ -171,25 +179,162 @@ func (s *UserService) GetUserByEmail(ctx context.Context, email string) (*models
 	return dbutil.FirstWhere[models.User](ctx, s.db.DB, ErrUserNotFound, "email = ?", email)
 }
 
-func (s *UserService) UpdateUser(ctx context.Context, user *models.User) (*models.User, error) {
+// ResolveUserPermissions returns the effective PermissionSet for the given
+// user ID, or nil when no RoleService is wired (RBAC disabled paths).
+func (s *UserService) ResolveUserPermissions(ctx context.Context, userID string) (*authz.PermissionSet, error) {
+	if s.roleService == nil {
+		return nil, nil
+	}
+	return s.roleService.ResolvePermissions(ctx, &models.User{BaseModel: models.BaseModel{ID: userID}})
+}
+
+// checkTargetPrivilegeInternal enforces actor-vs-target privilege ordering: a
+// caller may not modify a target whose effective permissions make them a global
+// admin unless the caller is itself a global admin. This prevents holders of
+// delegated users:update/users:delete from seizing or removing admin accounts.
+// A nil actorPerms denotes a trusted internal caller (e.g. the auth service
+// acting on behalf of the account owner) and skips the privilege check.
+//
+// The target and any request-time global-admin actor are locked together before
+// permissions are resolved through tx (never the TTL cache). Role-assignment
+// writes lock the same user rows, so a concurrent promotion or demotion is
+// serialized with the mutation. The request-time actor permissions remain part
+// of the decision so revalidation can only reduce, never elevate, authority.
+func (s *UserService) checkTargetPrivilegeInternal(ctx context.Context, tx *gorm.DB, actorPerms *authz.PermissionSet, targetID string) error {
+	revalidateActor := actorPerms != nil && !actorPerms.Sudo && actorPerms.IsGlobalAdmin() && s.roleService != nil
+	actorID := ""
+	if revalidateActor {
+		actor, ok := models.CurrentUserFromContext(ctx)
+		if !ok || actor == nil || actor.ID == "" {
+			return ErrInsufficientPrivilege
+		}
+		actorID = actor.ID
+	}
+
+	userIDs := []string{targetID}
+	if actorID != "" && actorID != targetID {
+		userIDs = append(userIDs, actorID)
+	}
+	var lockedUsers []models.User
+	if err := tx.
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id IN ?", userIDs).
+		Order("id ASC").
+		Find(&lockedUsers).Error; err != nil {
+		return errors.WrapIf(err, "failed to lock users")
+	}
+	targetFound := false
+	actorFound := actorID == ""
+	for i := range lockedUsers {
+		targetFound = targetFound || lockedUsers[i].ID == targetID
+		actorFound = actorFound || lockedUsers[i].ID == actorID
+	}
+	if !targetFound {
+		return ErrUserNotFound
+	}
+	if !actorFound {
+		return ErrInsufficientPrivilege
+	}
+
+	if actorPerms == nil || actorPerms.Sudo || s.roleService == nil {
+		return nil
+	}
+	if revalidateActor {
+		currentActorPerms, err := s.roleService.resolveUserPermissionsInternal(ctx, tx, actorID)
+		if err != nil {
+			return errors.WrapIf(err, "failed to resolve actor permissions")
+		}
+		if currentActorPerms != nil && currentActorPerms.IsGlobalAdmin() {
+			return nil
+		}
+	}
+	targetPerms, err := s.roleService.resolveUserPermissionsInternal(ctx, tx, targetID)
+	if err != nil {
+		return errors.WrapIf(err, "failed to resolve target permissions")
+	}
+	if targetPerms != nil && targetPerms.IsGlobalAdmin() {
+		return ErrInsufficientPrivilege
+	}
+	return nil
+}
+
+// UpdateUser persists the given user. actorPerms identifies the caller
+// performing the change; authenticated global-admin callers must also be
+// present in ctx. Pass nil for internal service-to-service calls.
+func (s *UserService) UpdateUser(ctx context.Context, user *models.User, actorPerms *authz.PermissionSet) (*models.User, error) {
 	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
-		if err := tx.
-			Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("id = ?", user.ID).
-			First(&models.User{}).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return ErrUserNotFound
-			}
-			return fmt.Errorf("failed to load user: %w", err)
+		if err := s.checkTargetPrivilegeInternal(ctx, tx, actorPerms, user.ID); err != nil {
+			return err
 		}
 		if err := tx.Save(user).Error; err != nil {
-			return fmt.Errorf("failed to update user: %w", err)
+			return errors.WrapIf(err, "failed to update user")
 		}
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
+	return user, nil
+}
+
+// SetPassword hashes and persists a new password for the given user and clears
+// the first-login password-change requirement for trusted internal callers.
+func (s *UserService) SetPassword(ctx context.Context, user *models.User, password string) (*models.User, error) {
+	if user == nil {
+		return nil, errors.New("user is nil")
+	}
+
+	hashedPassword, err := s.hashPassword(password)
+	if err != nil {
+		return nil, errors.WrapIf(err, "failed to hash password")
+	}
+
+	user.PasswordHash = hashedPassword
+	user.RequiresPasswordChange = false
+	return s.UpdateUser(ctx, user, nil)
+}
+
+// SetPasswordAndRevokeSessionsExcept atomically sets a new password, clears
+// the first-login password-change requirement, and revokes every session for
+// the user except exceptSessionID. Pass an empty exceptSessionID to revoke all
+// sessions. This is for trusted internal callers.
+func (s *UserService) SetPasswordAndRevokeSessionsExcept(ctx context.Context, user *models.User, password, exceptSessionID string) (*models.User, error) {
+	if user == nil {
+		return nil, errors.New("user is nil")
+	}
+	if strings.TrimSpace(user.ID) == "" {
+		return nil, ErrUserNotFound
+	}
+
+	hashedPassword, err := s.hashPassword(password)
+	if err != nil {
+		return nil, errors.WrapIf(err, "failed to hash password")
+	}
+
+	var updatedUser models.User
+	err = dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+		if err := tx.
+			Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ?", user.ID).
+			First(&updatedUser).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrUserNotFound
+			}
+			return errors.WrapIf(err, "failed to load user for password reset")
+		}
+
+		updatedUser.PasswordHash = hashedPassword
+		updatedUser.RequiresPasswordChange = false
+		if err := tx.Save(&updatedUser).Error; err != nil {
+			return errors.WrapIf(err, "failed to update user password")
+		}
+		return revokeAllUserSessionsExceptInternal(ctx, tx, updatedUser.ID, exceptSessionID)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	*user = updatedUser
 	return user, nil
 }
 
@@ -211,7 +356,7 @@ func (s *UserService) AttachOidcSubjectTransactional(ctx context.Context, userID
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return ErrUserNotFound
 			}
-			return fmt.Errorf("failed to load user for OIDC merge: %w", err)
+			return errors.WrapIf(err, "failed to load user for OIDC merge")
 		}
 
 		// If already linked to a different subject, abort
@@ -229,9 +374,9 @@ func (s *UserService) AttachOidcSubjectTransactional(ctx context.Context, userID
 		if err := tx.Save(&u).Error; err != nil {
 			// Bubble up uniqueness violations with a clearer message
 			if strings.Contains(strings.ToLower(err.Error()), "unique") || strings.Contains(strings.ToLower(err.Error()), "duplicate key") {
-				return fmt.Errorf("oidc subject is already linked to another user: %w", err)
+				return errors.WrapIf(err, "oidc subject is already linked to another user")
 			}
-			return fmt.Errorf("failed to persist OIDC merge: %w", err)
+			return errors.WrapIf(err, "failed to persist OIDC merge")
 		}
 		out = &u
 		return nil
@@ -246,7 +391,7 @@ func (s *UserService) CreateDefaultAdmin(ctx context.Context) error {
 	// Hash password outside transaction to minimize lock time
 	hashedPassword, err := s.hashPassword("arcane-admin")
 	if err != nil {
-		return fmt.Errorf("failed to hash default admin password: %w", err)
+		return errors.WrapIf(err, "failed to hash default admin password")
 	}
 
 	// Step 1: ensure the default admin user row exists. If the users table is
@@ -257,7 +402,7 @@ func (s *UserService) CreateDefaultAdmin(ctx context.Context) error {
 	err = dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
 		var count int64
 		if err := tx.Model(&models.User{}).Count(&count).Error; err != nil {
-			return fmt.Errorf("failed to count users: %w", err)
+			return errors.WrapIf(err, "failed to count users")
 		}
 
 		if count == 0 {
@@ -271,7 +416,7 @@ func (s *UserService) CreateDefaultAdmin(ctx context.Context) error {
 				RequiresPasswordChange: true,
 			}
 			if err := tx.Create(userModel).Error; err != nil {
-				return fmt.Errorf("failed to create default admin user: %w", err)
+				return errors.WrapIf(err, "failed to create default admin user")
 			}
 			adminUserID = userModel.ID
 			slog.InfoContext(ctx, "👑 Default admin user created!")
@@ -289,7 +434,7 @@ func (s *UserService) CreateDefaultAdmin(ctx context.Context) error {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return nil
 			}
-			return fmt.Errorf("failed to look up default admin user: %w", err)
+			return errors.WrapIf(err, "failed to look up default admin user")
 		}
 		adminUserID = existing.ID
 		return nil
@@ -309,7 +454,7 @@ func (s *UserService) CreateDefaultAdmin(ctx context.Context) error {
 	// wired up.
 	assignments, err := s.roleService.ListUserAssignments(ctx, adminUserID)
 	if err != nil {
-		return fmt.Errorf("failed to list default admin assignments: %w", err)
+		return errors.WrapIf(err, "failed to list default admin assignments")
 	}
 	for _, a := range assignments {
 		if a.RoleID == authz.BuiltInRoleAdmin && a.EnvironmentID == nil {
@@ -327,13 +472,17 @@ func (s *UserService) CreateDefaultAdmin(ctx context.Context) error {
 		manual = append(manual, models.UserRoleAssignment{RoleID: a.RoleID, EnvironmentID: a.EnvironmentID})
 	}
 	if err := s.roleService.SetUserAssignments(ctx, adminUserID, manual); err != nil {
-		return fmt.Errorf("failed to grant default admin global role: %w", err)
+		return errors.WrapIf(err, "failed to grant default admin global role")
 	}
 	slog.InfoContext(ctx, "Default admin granted global Admin role assignment", "user_id", adminUserID)
 	return nil
 }
 
-func (s *UserService) DeleteUser(ctx context.Context, id string) error {
+// DeleteUser removes the user with the given id. actorPerms identifies the
+// caller performing the deletion; authenticated global-admin callers must also
+// be present in ctx. Pass nil for internal service-to-service calls. A
+// non-admin caller may not delete a global admin target.
+func (s *UserService) DeleteUser(ctx context.Context, id string, actorPerms *authz.PermissionSet) error {
 	// Last-admin guard: if this user's effective permissions make them the only
 	// global admin, refuse the delete. Checked outside the transaction because
 	// RoleService uses its own session and the guard spans rows.
@@ -353,18 +502,12 @@ func (s *UserService) DeleteUser(ctx context.Context, id string) error {
 		}
 	}
 	return dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
-		if err := tx.
-			Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("id = ?", id).
-			First(&models.User{}).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return ErrUserNotFound
-			}
-			return fmt.Errorf("failed to load user: %w", err)
+		if err := s.checkTargetPrivilegeInternal(ctx, tx, actorPerms, id); err != nil {
+			return err
 		}
 
 		if err := tx.Delete(&models.User{}, "id = ?", id).Error; err != nil {
-			return fmt.Errorf("failed to delete user: %w", err)
+			return errors.WrapIf(err, "failed to delete user")
 		}
 		return nil
 	})
@@ -381,14 +524,14 @@ func (s *UserService) NeedsPasswordUpgrade(hash string) bool {
 func (s *UserService) UpgradePasswordHash(ctx context.Context, userID, password string) error {
 	newHash, err := s.hashPassword(password)
 	if err != nil {
-		return fmt.Errorf("failed to create new hash: %w", err)
+		return errors.WrapIf(err, "failed to create new hash")
 	}
 
 	return dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
 		if err := tx.Model(&models.User{}).
 			Where("id = ?", userID).
 			Update("password_hash", newHash).Error; err != nil {
-			return fmt.Errorf("failed to update password hash: %w", err)
+			return errors.WrapIf(err, "failed to update password hash")
 		}
 		return nil
 	})
@@ -410,7 +553,7 @@ func (s *UserService) ListUsersPaginated(ctx context.Context, params pagination.
 
 	paginationResp, err := pagination.PaginateAndSortDB(params, query, &users)
 	if err != nil {
-		return nil, pagination.Response{}, fmt.Errorf("failed to paginate users: %w", err)
+		return nil, pagination.Response{}, errors.WrapIf(err, "failed to paginate users")
 	}
 
 	result := s.toUserResponseDtosInternal(ctx, users)
@@ -444,6 +587,7 @@ func (s *UserService) toUserResponseDtoInternal(ctx context.Context, u models.Us
 		Locale:                 u.Locale,
 		TimeFormat:             u.TimeFormat,
 		FontSize:               u.FontSize,
+		Preferences:            u.Preferences,
 		RequiresPasswordChange: u.RequiresPasswordChange,
 		CreatedAt:              u.CreatedAt.Format("2006-01-02T15:04:05.999999Z"),
 		UpdatedAt:              u.UpdatedAt.Format("2006-01-02T15:04:05.999999Z"),
@@ -516,13 +660,13 @@ func (s *UserService) GetUser(ctx context.Context, userID string) (*models.User,
 }
 
 func (s *UserService) getUserInternal(ctx context.Context, userID string, tx *gorm.DB) (*models.User, error) {
-	var user models.User
+	var userRecord models.User
 	err := tx.
 		WithContext(ctx).
 		Where("id = ?", userID).
-		First(&user).
+		First(&userRecord).
 		Error
-	return &user, err
+	return &userRecord, err
 }
 
 // UploadAvatar stores avatar bytes for a user, replacing any existing avatar.
@@ -534,7 +678,7 @@ func (s *UserService) UploadAvatar(ctx context.Context, userID string, data []by
 			MimeType: mimeType,
 		}
 		if err := tx.Save(&avatar).Error; err != nil {
-			return fmt.Errorf("failed to save avatar data: %w", err)
+			return errors.WrapIf(err, "failed to save avatar data")
 		}
 
 		err := tx.Model(&models.User{}).
@@ -543,7 +687,7 @@ func (s *UserService) UploadAvatar(ctx context.Context, userID string, data []by
 				"has_avatar": true,
 			}).Error
 		if err != nil {
-			return fmt.Errorf("failed to update user avatar flag: %w", err)
+			return errors.WrapIf(err, "failed to update user avatar flag")
 		}
 		return nil
 	})
@@ -553,7 +697,7 @@ func (s *UserService) UploadAvatar(ctx context.Context, userID string, data []by
 func (s *UserService) DeleteAvatar(ctx context.Context, userID string) error {
 	return dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
 		if err := tx.Where("user_id = ?", userID).Delete(&models.UserAvatar{}).Error; err != nil {
-			return fmt.Errorf("failed to delete avatar data: %w", err)
+			return errors.WrapIf(err, "failed to delete avatar data")
 		}
 
 		err := tx.Model(&models.User{}).
@@ -562,7 +706,7 @@ func (s *UserService) DeleteAvatar(ctx context.Context, userID string) error {
 				"has_avatar": false,
 			}).Error
 		if err != nil {
-			return fmt.Errorf("failed to update user avatar flag: %w", err)
+			return errors.WrapIf(err, "failed to update user avatar flag")
 		}
 		return nil
 	})

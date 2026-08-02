@@ -1,5 +1,5 @@
-import type { AccessSurface, PermissionsManifest, User } from '$lib/types/auth';
-import { GLOBAL_SCOPE, SUDO_PERMISSION } from '$lib/types/auth';
+import type { AccessSurface, PermissionsManifest, User } from '#lib/types/auth';
+import { GLOBAL_SCOPE, SUDO_PERMISSION } from '#lib/types/auth';
 
 type SurfaceIndex = Map<string, AccessSurface>;
 

@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import type { Action, ArcaneButtonTone } from '$lib/components/arcane-button/variants';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import type { Action, ArcaneButtonTone } from '#lib/components/arcane-button/variants';
 
 	interface Props {
 		open?: boolean;

@@ -14,8 +14,9 @@ import (
 	"testing"
 	"time"
 
+	"emperror.dev/errors"
 	"github.com/golang-jwt/jwt/v5"
-	sqlite "github.com/libtnb/sqlite"
+	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
@@ -25,6 +26,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	federatedtypes "github.com/getarcaneapp/arcane/types/v2/federated"
+	"github.com/stretchr/testify/assert"
 )
 
 type federatedTestIssuerInternal struct {
@@ -47,18 +49,20 @@ func newFederatedTestIssuerInternal(t *testing.T) *federatedTestIssuerInternal {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/.well-known/openid-configuration", func(w http.ResponseWriter, _ *http.Request) {
-		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+		if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{
 			"issuer":                                issuer.IssuerURL,
 			"jwks_uri":                              issuer.IssuerURL + "/jwks",
 			"authorization_endpoint":                issuer.IssuerURL + "/authorize",
 			"token_endpoint":                        issuer.IssuerURL + "/token",
 			"subject_types_supported":               []string{"public"},
 			"id_token_signing_alg_values_supported": []string{"RS256"},
-		}))
+		})) {
+			return
+		}
 	})
 	mux.HandleFunc("/jwks", func(w http.ResponseWriter, _ *http.Request) {
 		pub := privateKey.PublicKey
-		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+		if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{
 			"keys": []map[string]any{
 				{
 					"kty": "RSA",
@@ -69,7 +73,9 @@ func newFederatedTestIssuerInternal(t *testing.T) *federatedTestIssuerInternal {
 					"e":   base64.RawURLEncoding.EncodeToString(big.NewInt(int64(pub.E)).Bytes()),
 				},
 			},
-		}))
+		})) {
+			return
+		}
 	})
 
 	issuer.server = httptest.NewServer(mux)
@@ -132,12 +138,12 @@ func setupFederatedCredentialServiceInternal(t *testing.T, issuer *federatedTest
 	roleSvc := NewRoleService(db)
 	userSvc := NewUserService(db).WithRoleService(roleSvc)
 	sessionSvc := NewSessionService(db)
-	settingsSvc, err := NewSettingsService(ctx, db)
+	settingsSvc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	eventSvc := NewEventService(db, &config.Config{}, nil)
 	authSvc := NewAuthService(userSvc, settingsSvc, eventSvc, sessionSvc, roleSvc, "test-federated-secret", &config.Config{
 		JWTRefreshExpiry: 24 * time.Hour,
-	})
+	}, nil)
 
 	service := NewFederatedCredentialService(db, authSvc, userSvc, settingsSvc, eventSvc, issuer.server.Client()).WithRoleService(roleSvc)
 
@@ -195,14 +201,14 @@ func TestFederatedCredentialServiceExchangeToken(t *testing.T) {
 			name:  "rejects audience mismatch",
 			token: issuer.tokenInternal(t, "repo:getarcaneapp/arcane:ref:refs/heads/main", []string{"other-audience"}),
 			wantError: func(err error) bool {
-				return common.IsErrorFederatedCredentialInvalidGrant(err)
+				return errors.Is(err, common.ErrFederatedCredentialInvalidGrant)
 			},
 		},
 		{
 			name:  "rejects subject mismatch",
 			token: issuer.tokenInternal(t, "repo:other/repo:ref:refs/heads/main", []string{"arcane-ci"}),
 			wantError: func(err error) bool {
-				return common.IsErrorFederatedCredentialInvalidGrant(err)
+				return errors.Is(err, common.ErrFederatedCredentialInvalidGrant)
 			},
 		},
 	}
@@ -255,7 +261,7 @@ func TestFederatedCredentialServiceExchangeTokenRejectsIssuerWithoutCredentialIn
 	})
 
 	require.Error(t, err)
-	require.True(t, common.IsErrorFederatedCredentialInvalidGrant(err), "unexpected error: %v", err)
+	require.True(t, errors.Is(err, common.ErrFederatedCredentialInvalidGrant), "unexpected error: %v", err)
 	require.Nil(t, resp)
 }
 
@@ -293,7 +299,7 @@ func TestFederatedCredentialServiceExchangeTokenRejectsExpiredCredentialInternal
 	})
 
 	require.Error(t, err)
-	require.True(t, common.IsErrorFederatedCredentialInvalidGrant(err), "unexpected error: %v", err)
+	require.True(t, errors.Is(err, common.ErrFederatedCredentialInvalidGrant), "unexpected error: %v", err)
 	require.Nil(t, resp)
 }
 
@@ -318,7 +324,7 @@ func TestFederatedCredentialServiceUpdateDisableRevokesIssuedSessionsInternal(t 
 
 	_, _, err = authSvc.VerifyToken(ctx, resp.AccessToken)
 	require.Error(t, err)
-	require.True(t, common.IsSessionRevokedError(err), "unexpected error: %v", err)
+	require.True(t, errors.Is(err, common.ErrSessionRevoked), "unexpected error: %v", err)
 }
 
 func TestFederatedCredentialServiceRejectsReplayedSubjectTokenInternal(t *testing.T) {
@@ -339,7 +345,7 @@ func TestFederatedCredentialServiceRejectsReplayedSubjectTokenInternal(t *testin
 
 	second, err := service.ExchangeToken(ctx, req)
 	require.Error(t, err)
-	require.True(t, common.IsErrorFederatedCredentialInvalidGrant(err), "unexpected error: %v", err)
+	require.True(t, errors.Is(err, common.ErrFederatedCredentialInvalidGrant), "unexpected error: %v", err)
 	require.Nil(t, second)
 }
 
@@ -358,5 +364,5 @@ func TestFederatedCredentialServiceCreateRejectsBareWildcardGlob(t *testing.T) {
 	})
 
 	require.Error(t, err)
-	require.True(t, common.IsErrorFederatedCredentialInvalid(err), "unexpected error: %v", err)
+	require.True(t, errors.Is(err, common.ErrFederatedCredentialInvalid), "unexpected error: %v", err)
 }
