@@ -866,6 +866,7 @@
   "completed": "Terminée",
   "vuln_clean": "Nettoyer",
   "vuln_click_to_scan": "Cliquez sur analyser pour rechercher des vulnérabilités",
+  "unexpected_error": "Une erreur inattendue s'est produite",
   "volumes_subtitle": "Gérez vos volumes Docker",
   "volumes_stat_total": "Volumes totaux",
   "unused_volumes": "Volumes inutilisés",
