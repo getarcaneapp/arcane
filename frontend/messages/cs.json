@@ -2767,6 +2767,7 @@
   "deploy_pull_policy_always": "Vždy stáhnout nejnovější verzi",
   "deploy_pull_policy_never": "Nikdy nestahovat",
   "deploy_force_recreate": "Vynutit znovu vytvoření kontejnerů",
+  "deploy_recreate_volumes": "Obnovit změněné svazky (ztráta dat)",
   "settings_default_deploy_pull_policy": "Výchozí zásady stahování při nasazení",
   "settings_default_deploy_pull_policy_description": "Výchozí zásady stahování obrazů při nasazování projektů",
   "authentication": "Ověření",
