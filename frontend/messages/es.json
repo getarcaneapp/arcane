@@ -2767,6 +2767,7 @@
   "deploy_pull_policy_always": "Siempre tirar último",
   "deploy_pull_policy_never": "Nunca tirar",
   "deploy_force_recreate": "Forzar recrear contenedores",
+  "deploy_recreate_volumes": "Recrear volúmenes modificados (pérdida de datos)",
   "settings_default_deploy_pull_policy": "Despliegue por defecto Pull Policy",
   "settings_default_deploy_pull_policy_description": "Política de extracción de imagen por defecto al desplegar proyectos",
   "authentication": "Autenticación",
