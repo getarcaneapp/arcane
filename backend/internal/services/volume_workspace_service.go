@@ -41,49 +41,40 @@ truncated=0
 stop=0
 
 walk() {
-  local dir="$1" rel_dir="$2" remaining_depth="$3"
-  local full name rel kind metadata size mtime mode link child next_depth
-  for full in "$dir"/..?* "$dir"/.[!.]* "$dir"/*; do
-    if [ "$stop" = 1 ]; then return; fi
-    if [ ! -e "$full" ] && [ ! -L "$full" ]; then continue; fi
-    if [ -z "$entry_budget" ]; then
-      truncated=1
-      stop=1
-      return
-    fi
+  for full in "$1"/..?* "$1"/.[!.]* "$1"/*; do
+    case "$stop" in 1) return ;; esac
+    metadata=$(stat -c '%s|%y|%A' -- "$full" 2>/dev/null) || continue
+    case "$entry_budget" in '') truncated=1; stop=1; return ;; esac
 
     name=${full##*/}
-    if [ -n "$rel_dir" ]; then rel="$rel_dir/$name"; else rel="$name"; fi
-    if [ -L "$full" ]; then
-      kind=l
-    elif [ -d "$full" ]; then
-      kind=d
-    elif [ -f "$full" ]; then
-      kind=f
-    else
-      kind=s
-    fi
-
-    metadata=$(stat -c '%s|%y|%A' -- "$full" 2>/dev/null) || continue
+    case "$2" in '') rel=$name ;; *) rel="$2/$name" ;; esac
     size=${metadata%%|*}
     metadata=${metadata#*|}
     mtime=${metadata%|*}
     mode=${metadata##*|}
     link=
-    if [ "$kind" = l ]; then link=$(readlink "$full" 2>/dev/null) || link=; fi
+    case "$mode" in
+      l*) kind=l; link=$(readlink "$full" 2>/dev/null) || link= ;;
+      d*) kind=d ;;
+      -*) kind=f ;;
+      *) kind=s ;;
+    esac
     printf '%s\0%s\0%s\0%s\0%s\0%s\0' "$rel" "$kind" "$size" "$mtime" "$mode" "$link"
     entry_budget=${entry_budget#?}
 
-    if [ "$kind" = d ]; then
-      next_depth=${remaining_depth#?}
-      if [ -n "$next_depth" ]; then
-        walk "$full" "$rel" "$next_depth"
-      else
-        for child in "$full"/..?* "$full"/.[!.]* "$full"/*; do
-          if [ -e "$child" ] || [ -L "$child" ]; then truncated=1; break; fi
-        done
-      fi
-    fi
+    case "$kind" in
+      d)
+        next_depth=${3#?}
+        case "$next_depth" in
+          '')
+            for child in "$full"/..?* "$full"/.[!.]* "$full"/*; do
+              if stat -c '%A' -- "$child" >/dev/null 2>&1; then truncated=1; break; fi
+            done
+            ;;
+          *) walk "$full" "$rel" "$next_depth" ;;
+        esac
+        ;;
+    esac
   done
 }
 
@@ -346,31 +337,37 @@ func (s *VolumeService) validateVolumeWorkspacePathInternal(ctx context.Context,
 	if allowMissing {
 		allowMissingValue = "1"
 	}
-	script := `set -e
-rel="$1"
-allow_missing="$2"
-cur=/volume
-remaining=$rel
-while [ -n "$remaining" ]; do
-  case "$remaining" in
-    */*) segment=${remaining%%/*}; remaining=${remaining#*/} ;;
-    *) segment=$remaining; remaining= ;;
-  esac
-  cur="$cur/$segment"
-  if [ -L "$cur" ]; then echo ARCANE_SYMLINK >&2; exit 42; fi
-  if [ ! -e "$cur" ]; then
-    if [ "$allow_missing" = 1 ]; then exit 0; fi
-    echo ARCANE_NOT_FOUND >&2
-    exit 44
-  fi
-  if [ -n "$remaining" ] && [ ! -d "$cur" ]; then echo ARCANE_NOT_DIRECTORY >&2; exit 47; fi
-done`
-	_, stderr, err := s.execInContainerInternal(ctx, containerID, []string{"sh", "-c", script, "sh", relativePath, allowMissingValue})
+	_, stderr, err := s.execInContainerInternal(ctx, containerID, []string{"sh", "-c", volumeWorkspaceValidatePathScriptInternal, "sh", relativePath, allowMissingValue})
 	if err != nil {
 		return classifyVolumeWorkspaceExecErrorInternal(err, stderr, "validate volume workspace path")
 	}
 	return nil
 }
+
+const volumeWorkspaceValidatePathScriptInternal = `set -e
+rel="$1"
+allow_missing="$2"
+cur=/volume
+remaining=$rel
+while :; do
+  case "$remaining" in '') break ;; esac
+  case "$remaining" in
+    */*) segment=${remaining%%/*}; remaining=${remaining#*/} ;;
+    *) segment=$remaining; remaining= ;;
+  esac
+  cur="$cur/$segment"
+  if mode=$(stat -c '%A' -- "$cur" 2>/dev/null); then
+    case "$mode" in l*) echo ARCANE_SYMLINK >&2; exit 42 ;; esac
+  else
+    case "$allow_missing" in 1) exit 0 ;; esac
+    echo ARCANE_NOT_FOUND >&2
+    exit 44
+  fi
+  case "$remaining" in
+    '') ;;
+    *) case "$mode" in d*) ;; *) echo ARCANE_NOT_DIRECTORY >&2; exit 47 ;; esac ;;
+  esac
+done`
 
 func (s *VolumeService) UpdateVolumeWorkspace(ctx context.Context, volumeName string, manifest volumetypes.FileUpdateManifest, uploads []*multipart.FileHeader, user models.User) (*volumetypes.Workspace, error) {
 	if len(manifest.FileChanges) == 0 || len(manifest.FileChanges) > 500 {
@@ -670,16 +667,24 @@ archive="$2"
 cur=/volume
 current=
 remaining=$rel
-while [ -n "$remaining" ]; do
+while :; do
+  case "$remaining" in '') break ;; esac
   case "$remaining" in
     */*) segment=${remaining%%/*}; remaining=${remaining#*/} ;;
     *) segment=$remaining; remaining= ;;
   esac
-  if [ -n "$current" ]; then current="$current/$segment"; else current=$segment; fi
+  case "$current" in '') current=$segment ;; *) current="$current/$segment" ;; esac
   cur="$cur/$segment"
-  if [ -L "$cur" ]; then echo ARCANE_SYMLINK >&2; exit 42; fi
-  if [ ! -e "$cur" ]; then printf 'absent\0%s\0' "$current"; exit 0; fi
-  if [ -n "$remaining" ] && [ ! -d "$cur" ]; then echo ARCANE_NOT_DIRECTORY >&2; exit 47; fi
+  if mode=$(stat -c '%A' -- "$cur" 2>/dev/null); then
+    case "$mode" in l*) echo ARCANE_SYMLINK >&2; exit 42 ;; esac
+  else
+    printf 'absent\0%s\0' "$current"
+    exit 0
+  fi
+  case "$remaining" in
+    '') ;;
+    *) case "$mode" in d*) ;; *) echo ARCANE_NOT_DIRECTORY >&2; exit 47 ;; esac ;;
+  esac
 done
 case "$rel" in
   */*) parent="/volume/${rel%/*}"; entry=${rel##*/} ;;
@@ -764,49 +769,80 @@ const (
 	volumeWorkspaceCreateFileScriptInternal = `set -e
 target="/volume/$1"
 parent=/volume
-if [ -n "$2" ]; then parent="/volume/$2"; fi
-if [ -e "$target" ] || [ -L "$target" ]; then echo ARCANE_COLLISION >&2; exit 45; fi
-if [ -e "$parent" ] && [ ! -d "$parent" ]; then echo ARCANE_NOT_DIRECTORY >&2; exit 47; fi
+case "$2" in '') ;; *) parent="/volume/$2" ;; esac
+if stat -c '%A' -- "$target" >/dev/null 2>&1; then echo ARCANE_COLLISION >&2; exit 45; fi
+if parent_mode=$(stat -c '%A' -- "$parent" 2>/dev/null); then
+  case "$parent_mode" in
+    l*) echo ARCANE_SYMLINK >&2; exit 42 ;;
+    d*) ;;
+    *) echo ARCANE_NOT_DIRECTORY >&2; exit 47 ;;
+  esac
+fi
 mkdir -p -- "$parent"
-if [ -L "$parent" ]; then echo ARCANE_SYMLINK >&2; exit 42; fi
+parent_mode=$(stat -c '%A' -- "$parent" 2>/dev/null) || { echo ARCANE_NOT_DIRECTORY >&2; exit 47; }
+case "$parent_mode" in
+  l*) echo ARCANE_SYMLINK >&2; exit 42 ;;
+  d*) ;;
+  *) echo ARCANE_NOT_DIRECTORY >&2; exit 47 ;;
+esac
 umask 022
 set -C
 head -c "$4" "$3" > "$target"`
 	volumeWorkspaceCreateFolderScriptInternal = `set -e
 target="/volume/$1"
 parent=/volume
-if [ -n "$2" ]; then parent="/volume/$2"; fi
-if [ -e "$target" ] || [ -L "$target" ]; then echo ARCANE_COLLISION >&2; exit 45; fi
-if [ -e "$parent" ] && [ ! -d "$parent" ]; then echo ARCANE_NOT_DIRECTORY >&2; exit 47; fi
+case "$2" in '') ;; *) parent="/volume/$2" ;; esac
+if stat -c '%A' -- "$target" >/dev/null 2>&1; then echo ARCANE_COLLISION >&2; exit 45; fi
+if parent_mode=$(stat -c '%A' -- "$parent" 2>/dev/null); then
+  case "$parent_mode" in
+    l*) echo ARCANE_SYMLINK >&2; exit 42 ;;
+    d*) ;;
+    *) echo ARCANE_NOT_DIRECTORY >&2; exit 47 ;;
+  esac
+fi
 mkdir -p -- "$parent"
-if [ -L "$parent" ]; then echo ARCANE_SYMLINK >&2; exit 42; fi
+parent_mode=$(stat -c '%A' -- "$parent" 2>/dev/null) || { echo ARCANE_NOT_DIRECTORY >&2; exit 47; }
+case "$parent_mode" in
+  l*) echo ARCANE_SYMLINK >&2; exit 42 ;;
+  d*) ;;
+  *) echo ARCANE_NOT_DIRECTORY >&2; exit 47 ;;
+esac
 umask 022
 mkdir -m 0755 -- "$target"`
 	volumeWorkspaceUpdateFileScriptInternal = `set -e
 target="/volume/$1"
-if [ -L "$target" ]; then echo ARCANE_SYMLINK >&2; exit 42; fi
-if [ ! -e "$target" ]; then echo ARCANE_NOT_FOUND >&2; exit 44; fi
-if [ ! -f "$target" ]; then echo ARCANE_NOT_FILE >&2; exit 46; fi
+target_mode=$(stat -c '%A' -- "$target" 2>/dev/null) || { echo ARCANE_NOT_FOUND >&2; exit 44; }
+case "$target_mode" in
+  l*) echo ARCANE_SYMLINK >&2; exit 42 ;;
+  -*) ;;
+  *) echo ARCANE_NOT_FILE >&2; exit 46 ;;
+esac
 head -c "$3" "$2" > "$target"`
 	volumeWorkspaceRenameScriptInternal = `set -e
 source="/volume/$1"
 target="/volume/$2"
-if [ -e "$target" ] || [ -L "$target" ]; then echo ARCANE_COLLISION >&2; exit 45; fi
+if stat -c '%A' -- "$target" >/dev/null 2>&1; then echo ARCANE_COLLISION >&2; exit 45; fi
 mv -- "$source" "$target"`
 	volumeWorkspaceMoveScriptInternal = `set -e
 source="/volume/$1"
 parent="/volume/$2"
 target="/volume/$3"
-if [ ! -d "$parent" ]; then echo ARCANE_NOT_DIRECTORY >&2; exit 47; fi
-if [ -e "$target" ] || [ -L "$target" ]; then echo ARCANE_COLLISION >&2; exit 45; fi
+parent_mode=$(stat -c '%A' -- "$parent" 2>/dev/null) || { echo ARCANE_NOT_DIRECTORY >&2; exit 47; }
+case "$parent_mode" in d*) ;; *) echo ARCANE_NOT_DIRECTORY >&2; exit 47 ;; esac
+if stat -c '%A' -- "$target" >/dev/null 2>&1; then echo ARCANE_COLLISION >&2; exit 45; fi
 mv -- "$source" "$target"`
 	volumeWorkspaceDeleteScriptInternal = `set -e
 target="/volume/$1"
-if [ "$2" = 1 ]; then rm -rf -- "$target"
-elif [ -d "$target" ]; then
-  if ! rmdir -- "$target"; then echo ARCANE_NOT_EMPTY >&2; exit 48; fi
-else rm -- "$target"
-fi`
+case "$2" in
+  1) rm -rf -- "$target" ;;
+  *)
+    target_mode=$(stat -c '%A' -- "$target" 2>/dev/null) || { echo ARCANE_NOT_FOUND >&2; exit 44; }
+    case "$target_mode" in
+      d*) if ! rmdir -- "$target"; then echo ARCANE_NOT_EMPTY >&2; exit 48; fi ;;
+      *) rm -- "$target" ;;
+    esac
+    ;;
+esac`
 )
 
 func (s *VolumeService) applyVolumeWorkspaceChangeInternal(ctx context.Context, containerID string, change volumetypes.FileChange, stagedFile volumeWorkspaceStagedFileInternal, volumeName string) error {

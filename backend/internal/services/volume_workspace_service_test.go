@@ -245,8 +245,9 @@ func TestVolumeWorkspaceRollbackPathsInternalRemovesDeepestFirst(t *testing.T) {
 }
 
 func TestVolumeWorkspaceHelperScriptsUseSupportedTooling(t *testing.T) {
-	scripts := strings.Join([]string{
+	helperScripts := []string{
 		volumeWorkspaceTreeScriptInternal,
+		volumeWorkspaceValidatePathScriptInternal,
 		volumeWorkspaceBackupCreateScriptInternal,
 		volumeWorkspaceCreateFileScriptInternal,
 		volumeWorkspaceCreateFolderScriptInternal,
@@ -254,8 +255,15 @@ func TestVolumeWorkspaceHelperScriptsUseSupportedTooling(t *testing.T) {
 		volumeWorkspaceRenameScriptInternal,
 		volumeWorkspaceMoveScriptInternal,
 		volumeWorkspaceDeleteScriptInternal,
-	}, "\n")
+		restoreBackupFilesScriptInternal,
+	}
+	scripts := strings.Join(helperScripts, "\n")
 	for _, unsupported := range []string{
+		"if [",
+		"elif [",
+		"while [",
+		"test ",
+		"local ",
 		"find -P",
 		"-printf",
 		"sort -z",
@@ -275,6 +283,12 @@ func TestVolumeWorkspaceHelperScriptsUseSupportedTooling(t *testing.T) {
 	require.Contains(t, volumeWorkspaceBackupCreateScriptInternal, `printf 'absent\0%s\0'`)
 	require.Contains(t, volumeWorkspaceBackupCreateScriptInternal, `cd "$parent"`)
 	require.NotContains(t, volumeWorkspaceBackupCreateScriptInternal, " -C ")
+	if shellPath, err := exec.LookPath("sh"); err == nil {
+		for index, script := range helperScripts {
+			output, syntaxErr := exec.Command(shellPath, "-n", "-c", script).CombinedOutput()
+			require.NoErrorf(t, syntaxErr, "helper script %d has invalid syntax: %s", index, output)
+		}
+	}
 }
 
 func TestClassifyVolumeWorkspaceExecErrorInternal(t *testing.T) {
@@ -384,6 +398,8 @@ printf alpha > /volume/z.txt`)
 	require.False(t, workspace.Files[3].IsDirectory)
 	require.False(t, workspace.Files[4].IsDirectory)
 
+	runInVolume(volumeName, `sh -c "$1" sh folder/nested/child.txt 0`, volumeWorkspaceValidatePathScriptInternal)
+	runInVolume(volumeName, `sh -c "$1" sh missing/path 1`, volumeWorkspaceValidatePathScriptInternal)
 	runInVolume(volumeName, `sh -c "$1" sh nested ''`, volumeWorkspaceCreateFolderScriptInternal)
 	runInVolume(volumeName, `printf one > /tmp/staged
 sh -c "$1" sh nested/a.txt nested /tmp/staged 3`, volumeWorkspaceCreateFileScriptInternal)
@@ -414,11 +430,11 @@ head -c 6 "/volume/Test Folder/file.txt"`, volumeWorkspaceBackupCreateScriptInte
 
 	missing := runInVolume(volumeName, `set -e
 sh -c "$1" sh test.txt /tmp/missing-backup.tar
-test ! -e /tmp/missing-backup.tar`, volumeWorkspaceBackupCreateScriptInternal)
+if stat -c '%A' -- /tmp/missing-backup.tar >/dev/null 2>&1; then exit 1; fi`, volumeWorkspaceBackupCreateScriptInternal)
 	require.Equal(t, "absent\x00test.txt\x00", missing)
 
 	missingNested := runInVolume(volumeName, `set -e
 sh -c "$1" sh "New Folder/test.txt" /tmp/missing-nested-backup.tar
-test ! -e /tmp/missing-nested-backup.tar`, volumeWorkspaceBackupCreateScriptInternal)
+if stat -c '%A' -- /tmp/missing-nested-backup.tar >/dev/null 2>&1; then exit 1; fi`, volumeWorkspaceBackupCreateScriptInternal)
 	require.Equal(t, "absent\x00New Folder\x00", missingNested)
 }
