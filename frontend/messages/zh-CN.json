@@ -2767,6 +2767,7 @@
   "deploy_pull_policy_always": "总是拉取最新",
   "deploy_pull_policy_never": "从不拉取",
   "deploy_force_recreate": "强制重建容器",
+  "deploy_recreate_volumes": "重建已更改的卷（数据丢失）",
   "settings_default_deploy_pull_policy": "默认部署拉取策略",
   "settings_default_deploy_pull_policy_description": "部署项目时的默认镜像拉取策略",
   "authentication": "身份验证",
