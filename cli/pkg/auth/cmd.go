@@ -122,12 +122,14 @@ var loginCmd = &cobra.Command{
 					return errors.New("device authorization expired; run login again")
 				case "access_denied":
 					return errors.New("device authorization denied")
+				case "mfa_required":
+					return errors.New("this account has MFA enabled, which browser-based CLI login cannot complete; create a personal API key in Arcane (Account -> API keys) and run: arcane config set api-key <key>")
 				default:
 					return errors.Errorf("device token exchange failed (status %d): %s", tokenResp.StatusCode, strings.TrimSpace(string(tokenBody)))
 				}
 			}
 
-			var tokenResult auth.OidcDeviceTokenResponse
+			var tokenResult auth.AuthenticationResponse
 			if err := json.Unmarshal(tokenBody, &tokenResult); err != nil {
 				return errors.WrapIf(err, "failed to parse token response")
 			}
@@ -501,6 +503,8 @@ func extractDeviceAuthErrorCode(body string) string {
 		return "expired_token"
 	case strings.Contains(lower, "access_denied"):
 		return "access_denied"
+	case strings.Contains(lower, "mfa_required"):
+		return "mfa_required"
 	default:
 		return ""
 	}

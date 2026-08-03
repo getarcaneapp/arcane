@@ -25,6 +25,7 @@
 	import type { ColumnVisibilityState } from '@tanstack/table-core';
 	import { environmentStore } from '#lib/stores/environment.store.svelte';
 	import { hasPermission } from '#lib/utils/auth';
+	import userStore from '#lib/stores/user-store';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
 	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions';
 
@@ -45,7 +46,12 @@
 	});
 
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
-	const canDeleteVolume = $derived(hasPermission('volumes:delete', currentEnvId));
+	// Track the user store: hasPermission reads it non-reactively, so without
+	// this the derived would cache a pre-hydration false forever.
+	const canDeleteVolume = $derived.by(() => {
+		$userStore;
+		return hasPermission('volumes:delete', currentEnvId);
+	});
 	let customSettings = $state<Record<string, unknown>>({});
 	let showInternal = $derived.by(() => {
 		return (customSettings['showInternalVolumes'] as boolean) ?? false;
@@ -155,8 +161,10 @@
 	}
 
 	function handleDeleteSelected(ids: string[]) {
-		const idToName = new Map(volumes.data.map((v) => [v.id, v.name] as const));
-		const idsToDelete = ids.filter((id) => !isBackupVolumeName(idToName.get(id)));
+		// A volume's id IS its name (backend sets ID: v.Name), so ids can be
+		// passed to the delete endpoint directly — no per-page name lookup, which
+		// would break for selections carried across pages.
+		const idsToDelete = ids.filter((id) => !isBackupVolumeName(id));
 
 		bulkConfirmAndRun({
 			ids: idsToDelete,
@@ -164,7 +172,7 @@
 			message: m.volumes_remove_selected_message({ count: idsToDelete.length }),
 			confirmLabel: m.common_remove(),
 			destructive: true,
-			run: (id) => volumeService.deleteVolume(idToName.get(id)?.trim() || m.common_unknown()),
+			run: (id) => volumeService.deleteVolume(id),
 			messages: {
 				success: (count) => m.common_bulk_remove_success({ count, resource: m.resource_volumes_cap() }),
 				partial: (success, total, failed) =>
@@ -196,10 +204,8 @@
 		{ id: 'driver', label: m.common_driver(), defaultVisible: true }
 	];
 
-	const deletableSelectedIds = $derived.by(() => {
-		const idToName = new Map(volumes.data.map((v) => [v.id, v.name] as const));
-		return (selectedIds ?? []).filter((id) => !isBackupVolumeName(idToName.get(id)));
-	});
+	// Volume id === name, so the backup-volume filter works on the id directly.
+	const deletableSelectedIds = $derived((selectedIds ?? []).filter((id) => !isBackupVolumeName(id)));
 
 	const bulkActions = $derived.by<BulkAction[]>(() => [
 		{

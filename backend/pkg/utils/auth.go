@@ -20,4 +20,10 @@ const (
 	// so a client cannot forge them (see environment_middleware.go).
 	HeaderActorUserID   = "X-Arcane-Actor-Id"
 	HeaderActorUsername = "X-Arcane-Actor-Username"
+
+	// HeaderIconCatalog carries the requesting user's icon catalog preference to
+	// remote environments. Agents authenticate proxied calls as a synthetic user
+	// with no preferences, so without it every remote environment would resolve
+	// container/project icons against the default catalog.
+	HeaderIconCatalog = "X-Arcane-Icon-Catalog"
 )

@@ -3574,7 +3574,7 @@ func TestProjectService_PersistGitSyncEnvFiles_UsesPreparedState(t *testing.T) {
 
 	effectiveBytes, readErr := os.ReadFile(filepath.Join(projectPath, ".env"))
 	require.NoError(t, readErr)
-	assert.Equal(t, "BASE=git-updated\nTOKEN=git\nREMOTE=1\nTOKEN=local\n", string(effectiveBytes))
+	assert.Equal(t, "BASE=git-updated\nTOKEN=local\nREMOTE=1\n", string(effectiveBytes))
 }
 
 func TestProjectService_GetProjectDetails_ReturnsEffectiveEnvContent(t *testing.T) {

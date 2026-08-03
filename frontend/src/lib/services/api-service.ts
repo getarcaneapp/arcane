@@ -191,6 +191,8 @@ const skipAuthPathsInternal = [
 	'/auth/oidc',
 	'/auth/oidc/login',
 	'/auth/oidc/callback',
+	'/auth/passkey',
+	'/auth/mfa',
 	'/auth/auto-login',
 	'/auth/auto-login-config',
 	'/settings/public'
