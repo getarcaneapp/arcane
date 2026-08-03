@@ -151,24 +151,17 @@ func parseVolumeWorkspaceTreeInternal(stdout string, maxEntries int) (*volumetyp
 		}
 		mode := fields[i+4]
 		classification := "special"
+		classificationKey := "kind:" + kind
 		if mode != "" {
-			switch mode[0] {
-			case 'd':
-				classification = "dir"
-			case 'l':
-				classification = "symlink"
-			case '-':
-				classification = "file"
-			}
-		} else {
-			switch kind {
-			case "d":
-				classification = "dir"
-			case "l":
-				classification = "symlink"
-			case "f":
-				classification = "file"
-			}
+			classificationKey = "mode:" + mode[:1]
+		}
+		switch classificationKey {
+		case "kind:d", "mode:d":
+			classification = "dir"
+		case "kind:l", "mode:l":
+			classification = "symlink"
+		case "kind:f", "mode:-":
+			classification = "file"
 		}
 		isDirectory := classification == "dir"
 		isSymlink := classification == "symlink"
