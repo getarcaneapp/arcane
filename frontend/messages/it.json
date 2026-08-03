@@ -866,6 +866,7 @@
   "completed": "Completato",
   "vuln_clean": "Pulisci",
   "vuln_click_to_scan": "Fare clic sulla scansione per controllare le vulnerabilità",
+  "unexpected_error": "Si è verificato un errore imprevisto",
   "volumes_subtitle": "Gestisci i tuoi volumi Docker",
   "volumes_stat_total": "Volumi totali",
   "unused_volumes": "Volumi non usati",
