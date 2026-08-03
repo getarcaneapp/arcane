@@ -35,19 +35,18 @@ const maxEditableVolumeFileBytes int64 = 10 * 1024 * 1024
 
 //nolint:dupword // Shell control-flow keywords repeat by design.
 const volumeWorkspaceTreeScriptInternal = `export LC_ALL=C
-max_depth="$1"
-max_entries="$2"
-count=0
+depth_budget="$1"
+entry_budget="$2"
 truncated=0
 stop=0
 
 walk() {
-  local dir="$1" rel_dir="$2" depth="$3"
-  local full name rel kind metadata size mtime mode link child
+  local dir="$1" rel_dir="$2" remaining_depth="$3"
+  local full name rel kind metadata size mtime mode link child next_depth
   for full in "$dir"/..?* "$dir"/.[!.]* "$dir"/*; do
     if [ "$stop" = 1 ]; then return; fi
     if [ ! -e "$full" ] && [ ! -L "$full" ]; then continue; fi
-    if [ "$count" -ge "$max_entries" ]; then
+    if [ -z "$entry_budget" ]; then
       truncated=1
       stop=1
       return
@@ -73,11 +72,12 @@ walk() {
     link=
     if [ "$kind" = l ]; then link=$(readlink "$full" 2>/dev/null) || link=; fi
     printf '%s\0%s\0%s\0%s\0%s\0%s\0' "$rel" "$kind" "$size" "$mtime" "$mode" "$link"
-    count=$((count + 1))
+    entry_budget=${entry_budget#?}
 
     if [ "$kind" = d ]; then
-      if [ "$depth" -lt "$max_depth" ]; then
-        walk "$full" "$rel" $((depth + 1))
+      next_depth=${remaining_depth#?}
+      if [ -n "$next_depth" ]; then
+        walk "$full" "$rel" "$next_depth"
       else
         for child in "$full"/..?* "$full"/.[!.]* "$full"/*; do
           if [ -e "$child" ] || [ -L "$child" ]; then truncated=1; break; fi
@@ -87,7 +87,7 @@ walk() {
   done
 }
 
-walk /volume '' 1
+walk /volume '' "$depth_budget"
 printf 'ARCANE_TREE_END\0%s\0' "$truncated"`
 
 func (s *VolumeService) GetVolumeWorkspace(ctx context.Context, volumeName string) (*volumetypes.Workspace, error) {
@@ -111,7 +111,9 @@ func (s *VolumeService) readVolumeWorkspaceFromContainerInternal(ctx context.Con
 	if maxEntries <= 0 {
 		maxEntries = 10000
 	}
-	stdout, stderr, err := s.execInContainerInternal(ctx, containerID, []string{"sh", "-c", volumeWorkspaceTreeScriptInternal, "sh", strconv.Itoa(maxDepth), strconv.Itoa(maxEntries)})
+	depthBudget := strings.Repeat("d", maxDepth)
+	entryBudget := strings.Repeat("e", maxEntries)
+	stdout, stderr, err := s.execInContainerInternal(ctx, containerID, []string{"sh", "-c", volumeWorkspaceTreeScriptInternal, "sh", depthBudget, entryBudget})
 	if err != nil {
 		return nil, classifyVolumeWorkspaceExecErrorInternal(err, stderr, "read volume workspace")
 	}

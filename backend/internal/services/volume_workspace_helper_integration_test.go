@@ -46,7 +46,7 @@ func TestVolumeWorkspaceScriptsAgainstToolsImage(t *testing.T) {
 	runInVolume(volumeName, `mkdir -p /volume/folder
 printf hidden > /volume/.hidden
 printf alpha > /volume/z.txt`)
-	treeOutput := runInVolume(volumeName, `sh -c "$1" sh 5 100`, volumeWorkspaceTreeScriptInternal)
+	treeOutput := runInVolume(volumeName, `sh -c "$1" sh "$2" "$3"`, volumeWorkspaceTreeScriptInternal, strings.Repeat("d", 5), strings.Repeat("e", 100))
 	workspace, err := parseVolumeWorkspaceTreeInternal(treeOutput, 100)
 	require.NoError(t, err)
 	require.Equal(t, []string{"folder", ".hidden", "z.txt"}, []string{

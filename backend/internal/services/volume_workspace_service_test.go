@@ -211,6 +211,7 @@ func TestVolumeWorkspaceHelperScriptsUseSupportedTooling(t *testing.T) {
 		"install ",
 		"--files-from",
 		"tar -r",
+		"$((",
 	} {
 		require.NotContains(t, scripts, unsupported)
 	}
