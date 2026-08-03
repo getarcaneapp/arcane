@@ -1041,7 +1041,7 @@ func TestProjectService_UpdateProjectServicesHardFailsWhenPullFailsInternal(t *t
 		composeUpProjectServicesInternal = originalComposeUp
 	})
 	upCalled := false
-	composeUpProjectServicesInternal = func(context.Context, *composetypes.Project, []string, bool, bool, map[string]dockerregistry.AuthConfig) error {
+	composeUpProjectServicesInternal = func(context.Context, *composetypes.Project, []string, bool, bool, bool, map[string]dockerregistry.AuthConfig) error {
 		upCalled = true
 		return errors.New("compose up should not run")
 	}
@@ -1111,7 +1111,7 @@ func TestProjectService_UpdateProjectServicesForcesRecreateInternal(t *testing.T
 	}
 	upCalled := false
 	forceRecreate := false
-	composeUpProjectServicesInternal = func(_ context.Context, _ *composetypes.Project, services []string, removeOrphans bool, force bool, _ map[string]dockerregistry.AuthConfig) error {
+	composeUpProjectServicesInternal = func(_ context.Context, _ *composetypes.Project, services []string, removeOrphans bool, force bool, _ bool, _ map[string]dockerregistry.AuthConfig) error {
 		upCalled = true
 		forceRecreate = force
 		assert.Equal(t, []string{"app"}, services)

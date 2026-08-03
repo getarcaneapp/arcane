@@ -132,7 +132,7 @@
 			tryCatch(
 				type === 'container'
 					? containerService.startContainer(id)
-					: projectService.deployProject(id, deployOptionsStore.getRequestOptions())
+					: projectService.deployProject(id, deployOptionsStore.takeRequestOptions())
 			),
 		onMutate: () => setLoading('start', true),
 		onSettled: () => setLoading('start', false)
@@ -379,7 +379,7 @@
 			await projectService.deployProject(
 				id,
 				watch ? (frame: unknown) => operationWatchStore.onLine(frame) : () => {},
-				options ?? deployOptionsStore.getRequestOptions()
+				options ?? deployOptionsStore.takeRequestOptions()
 			);
 			if (watch) {
 				enterInteractiveWatchInternal(operationStartedAt);
@@ -672,6 +672,12 @@
 								onCheckedChange={(checked) => deployOptionsStore.setForceRecreate(checked === true)}
 							>
 								{m.deploy_force_recreate()}
+							</DropdownMenu.CheckboxItem>
+							<DropdownMenu.CheckboxItem
+								checked={deployOptionsStore.recreateVolumes}
+								onCheckedChange={(checked) => deployOptionsStore.setRecreateVolumes(checked === true)}
+							>
+								{m.deploy_recreate_volumes()}
 							</DropdownMenu.CheckboxItem>
 						{/if}
 					{/if}

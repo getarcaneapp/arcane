@@ -218,6 +218,12 @@ type DeployOptions struct {
 	//
 	// Required: false
 	RemoveOrphans bool `json:"removeOrphans,omitempty"`
+
+	// RecreateVolumes allows compose to recreate volumes whose configuration
+	// diverged from the compose file. The volume's data is lost.
+	//
+	// Required: false
+	RecreateVolumes bool `json:"recreateVolumes,omitempty"`
 }
 
 // UpdateIncludeFile is used to update an include file within a project.

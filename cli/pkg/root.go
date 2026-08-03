@@ -41,7 +41,6 @@ import (
 	"charm.land/fang/v2"
 	"charm.land/lipgloss/v2"
 	"emperror.dev/errors"
-	"github.com/fatih/color"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/config"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/logger"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
@@ -121,10 +120,8 @@ var rootCmd = &cobra.Command{
 
 		if noColorOutput {
 			output.SetColorEnabled(false)
-			color.NoColor = true
 		} else {
 			output.SetColorEnabled(true)
-			color.NoColor = false
 		}
 
 		logger.Setup(logLevel, logJSONOutput)

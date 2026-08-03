@@ -56,3 +56,4 @@ cli/arcane-cli
 completions
 *.txt
 inspections/**
+.deepsec/
