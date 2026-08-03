@@ -866,6 +866,7 @@
   "completed": "Completed",
   "vuln_clean": "Clean",
   "vuln_click_to_scan": "Click scan to check for vulnerabilities",
+  "unexpected_error": "Váratlan hiba történt",
   "volumes_subtitle": "Manage your Docker volumes",
   "volumes_stat_total": "Total Volumes",
   "unused_volumes": "Unused Volumes",
