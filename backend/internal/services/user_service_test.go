@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
@@ -180,6 +181,29 @@ func TestUpdateUserPersistsFontSizeAndMapsToDto(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, dto.FontSize)
 	require.Equal(t, 16, *dto.FontSize)
+}
+
+func TestUserDtoExposesLastLogin(t *testing.T) {
+	userSvc, _ := setupUserAndRoleServices(t)
+	ctx := context.Background()
+
+	u := createTestUser(t, userSvc, "user-1", "last-login-user")
+
+	dto, err := userSvc.ToUserResponseDto(ctx, *u)
+	require.NoError(t, err)
+	require.Nil(t, dto.LastLogin, "a user who has never signed in has no last login")
+
+	loginAt := time.Date(2026, 8, 2, 15, 4, 5, 0, time.UTC)
+	u.LastLogin = &loginAt
+	_, err = userSvc.UpdateUser(ctx, u, nil)
+	require.NoError(t, err)
+
+	reloaded, err := userSvc.GetUserByID(ctx, u.ID)
+	require.NoError(t, err)
+	dto, err = userSvc.ToUserResponseDto(ctx, *reloaded)
+	require.NoError(t, err)
+	require.NotNil(t, dto.LastLogin)
+	require.Equal(t, "2026-08-02T15:04:05Z", *dto.LastLogin)
 }
 
 func TestUpdateUserPersistsTimeFormatAndMapsToDto(t *testing.T) {

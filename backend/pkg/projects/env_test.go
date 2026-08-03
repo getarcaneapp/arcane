@@ -161,15 +161,29 @@ func TestBuildEffectiveEnvContent(t *testing.T) {
 			wantEnv:    EnvMap{"Z_LAST": "last", "A_FIRST": "first"},
 		},
 		{
-			name:            "adds a separator without changing either layer",
+			name:            "rewrites shared keys in place and appends override-only keys",
 			gitContent:      "BASE_URL=https://example.com\nSHARED=git",
 			overrideContent: "# local values\nAPI_TOKEN=secret\nSHARED=override\n",
-			want:            "BASE_URL=https://example.com\nSHARED=git\n# local values\nAPI_TOKEN=secret\nSHARED=override\n",
+			want:            "BASE_URL=https://example.com\nSHARED=override\n# local values\nAPI_TOKEN=secret\n",
 			wantEnv: EnvMap{
 				"BASE_URL":  "https://example.com",
 				"API_TOKEN": "secret",
 				"SHARED":    "override",
 			},
+		},
+		{
+			name:            "updates overridden value in place preserving inline comment",
+			gitContent:      "PORT=3001 # Port to run the server on\n",
+			overrideContent: "PORT=3011\n",
+			want:            "PORT=3011 # Port to run the server on\n",
+			wantEnv:         EnvMap{"PORT": "3011"},
+		},
+		{
+			name:            "falls back to appending when the git line cannot be rewritten safely",
+			gitContent:      "MULTI=\"line1\nline2\"\nOTHER=1\n",
+			overrideContent: "MULTI=replaced\n",
+			want:            "MULTI=\"line1\nline2\"\nOTHER=1\nMULTI=replaced\n",
+			wantEnv:         EnvMap{"MULTI": "replaced", "OTHER": "1"},
 		},
 	}
 

@@ -24,11 +24,12 @@ import (
 // OidcHandler handles OIDC authentication endpoints, plus OIDC group → role
 // mapping management (since mappings only make sense in the OIDC context).
 type OidcHandler struct {
-	authService *services.AuthService
-	oidcService *services.OidcService
-	roleService *services.RoleService
-	userService *services.UserService
-	config      *config.Config
+	authService    *services.AuthService
+	passkeyService *services.PasskeyService
+	oidcService    *services.OidcService
+	roleService    *services.RoleService
+	userService    *services.UserService
+	config         *config.Config
 }
 
 // ============================================================================
@@ -93,7 +94,7 @@ type ExchangeDeviceTokenInput struct {
 
 type ExchangeDeviceTokenOutput struct {
 	SetCookie []string `header:"Set-Cookie" doc:"Session token cookie"`
-	Body      auth.OidcDeviceTokenResponse
+	Body      auth.AuthenticationResponse
 }
 
 // --- OIDC role mapping I/O ---
@@ -138,8 +139,8 @@ type DeleteOidcRoleMappingOutput struct {
 
 // RegisterOidc registers all OIDC authentication endpoints (plus the OIDC
 // group → role mapping CRUD) using Huma.
-func RegisterOidc(api huma.API, authService *services.AuthService, oidcService *services.OidcService, roleService *services.RoleService, userService *services.UserService, cfg *config.Config) {
-	h := &OidcHandler{authService: authService, oidcService: oidcService, roleService: roleService, userService: userService, config: cfg}
+func RegisterOidc(api huma.API, authService *services.AuthService, passkeyService *services.PasskeyService, oidcService *services.OidcService, roleService *services.RoleService, userService *services.UserService, cfg *config.Config) {
+	h := &OidcHandler{authService: authService, passkeyService: passkeyService, oidcService: oidcService, roleService: roleService, userService: userService, config: cfg}
 
 	huma.Register(api, huma.Operation{
 		OperationID: "get-oidc-status",
@@ -358,8 +359,10 @@ func (h *OidcHandler) HandleOidcCallback(ctx context.Context, input *HandleOidcC
 		return nil, huma.Error400BadRequest(errors.WithMessage(err, "OIDC callback failed").Error())
 	}
 
-	// Complete login
-	userModel, tokenPair, err := h.authService.OidcLogin(ctx, *userInfo, tokenResp, sessionMetaFromContextInternal(ctx, input.UserAgent))
+	// Reconcile the provider identity first, then require passkey MFA before
+	// creating a session for accounts that enabled it.
+	meta := sessionMetaFromContextInternal(ctx, input.UserAgent)
+	userModel, isNewUser, err := h.authService.PrepareOidcLogin(ctx, *userInfo, tokenResp)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Authentication failed")
 	}
@@ -369,11 +372,33 @@ func (h *OidcHandler) HandleOidcCallback(ctx context.Context, input *HandleOidcC
 	// the JSON body and never consume the cookie).
 	clearStateCookie := cookie.BuildClearOidcStateCookieString(cookie.SecureCookieFromContext(ctx))
 	setCookies := []string{clearStateCookie}
+	if userModel.PasskeyMFAEnabled {
+		challenge, err := h.passkeyService.BeginMFAAuthentication(ctx, userModel.ID, meta, models.UserSessionSourceOidc)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Authentication failed")
+		}
+		return &HandleOidcCallbackOutput{
+			SetCookie: setCookies,
+			Body: auth.OidcCallbackResponse{
+				Success: true,
+				Status:  auth.AuthenticationStatusMFARequired,
+				MFA:     challenge,
+			},
+		}, nil
+	}
+	tokenPair, err := h.authService.CompleteLogin(ctx, userModel, meta, models.UserSessionSourceOidc, "", models.JSON{
+		"newUser": isNewUser,
+		"subject": userInfo.Subject,
+	})
+	if err != nil {
+		return nil, huma.Error500InternalServerError("Authentication failed")
+	}
 	if mobileRedirectURI == "" {
 		maxAge := max(int(time.Until(tokenPair.ExpiresAt).Seconds()), 0)
 		maxAge += 60 // Add 60 seconds buffer for clock skew
 		setCookies = append(setCookies, cookie.BuildTokenCookieStringFor(maxAge, tokenPair.AccessToken, cookie.SecureCookieFromContext(ctx)))
 	}
+	expiresAt := tokenPair.ExpiresAt
 
 	userDto, err := h.userService.ToUserResponseDto(ctx, *userModel)
 	if err != nil {
@@ -384,10 +409,11 @@ func (h *OidcHandler) HandleOidcCallback(ctx context.Context, input *HandleOidcC
 		SetCookie: setCookies,
 		Body: auth.OidcCallbackResponse{
 			Success:      true,
+			Status:       auth.AuthenticationStatusAuthenticated,
 			Token:        tokenPair.AccessToken,
 			RefreshToken: tokenPair.RefreshToken,
-			ExpiresAt:    tokenPair.ExpiresAt,
-			User:         userDto,
+			ExpiresAt:    &expiresAt,
+			User:         &userDto,
 		},
 	}, nil
 }
@@ -437,13 +463,29 @@ func (h *OidcHandler) ExchangeDeviceToken(ctx context.Context, input *ExchangeDe
 		}
 	}
 
-	userModel, tokenPair, err := h.authService.OidcLogin(ctx, *userInfo, tokenResp, sessionMetaFromContextInternal(ctx, input.UserAgent))
+	meta := sessionMetaFromContextInternal(ctx, input.UserAgent)
+	userModel, isNewUser, err := h.authService.PrepareOidcLogin(ctx, *userInfo, tokenResp)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("Authentication failed")
+	}
+	// The device flow has no way to satisfy a WebAuthn assertion: the CLI has no
+	// authenticator, and completing MFA with a recovery code would burn a
+	// single-use code on every login. MFA accounts authenticate the CLI with a
+	// personal API key instead.
+	if userModel.PasskeyMFAEnabled {
+		return nil, huma.Error403Forbidden("mfa_required")
+	}
+	tokenPair, err := h.authService.CompleteLogin(ctx, userModel, meta, models.UserSessionSourceOidc, "", models.JSON{
+		"newUser": isNewUser,
+		"subject": userInfo.Subject,
+	})
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Authentication failed")
 	}
 
 	maxAge := max(int(time.Until(tokenPair.ExpiresAt).Seconds()), 0)
 	maxAge += 60
+	expiresAt := tokenPair.ExpiresAt
 
 	tokenCookie := cookie.BuildTokenCookieStringFor(maxAge, tokenPair.AccessToken, cookie.SecureCookieFromContext(ctx))
 
@@ -454,12 +496,13 @@ func (h *OidcHandler) ExchangeDeviceToken(ctx context.Context, input *ExchangeDe
 
 	return &ExchangeDeviceTokenOutput{
 		SetCookie: []string{tokenCookie},
-		Body: auth.OidcDeviceTokenResponse{
+		Body: auth.AuthenticationResponse{
 			Success:      true,
+			Status:       auth.AuthenticationStatusAuthenticated,
 			Token:        tokenPair.AccessToken,
 			RefreshToken: tokenPair.RefreshToken,
-			ExpiresAt:    tokenPair.ExpiresAt,
-			User:         userDto,
+			ExpiresAt:    &expiresAt,
+			User:         &userDto,
 		},
 	}, nil
 }

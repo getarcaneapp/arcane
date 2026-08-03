@@ -7,7 +7,10 @@
 	import { format, formatDistanceToNow } from 'date-fns';
 	import HeaderCard from '#lib/components/header-card.svelte';
 	import ApiKeyFormSheet from '#lib/components/sheets/api-key-form-sheet.svelte';
-	import { Card } from '#lib/components/ui/card';
+	import PasskeySettings from '#lib/components/auth/passkey-settings.svelte';
+	import * as Tabs from '#lib/components/ui/tabs/index.js';
+	import { TabBar, type TabItem } from '#lib/components/tab-bar/index.js';
+	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte';
 	import * as Avatar from '#lib/components/ui/avatar';
 	import * as ImageCropper from '#lib/components/ui/image-cropper';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
@@ -44,10 +47,26 @@
 		CopyIcon,
 		TrashIcon,
 		MonitorSpeakerIcon,
-		DockIcon
+		DockIcon,
+		SettingsIcon
 	} from '#lib/icons';
 
 	let { data: _data }: PageProps = $props();
+
+	type AccountTab = 'account' | 'preferences';
+
+	const accountTabItems = $derived.by(
+		() =>
+			[
+				{ value: 'account', label: m.common_account(), icon: UserIcon },
+				{ value: 'preferences', label: m.account_preferences(), icon: SettingsIcon }
+			] satisfies TabItem[]
+	);
+	const urlTab = useUrlTab<AccountTab>({
+		validTabs: () => accountTabItems.map((tab) => tab.value as AccountTab),
+		defaultTab: () => 'account'
+	});
+	const activeTab = $derived(urlTab.value);
 
 	const BUILT_IN_ROLE_LABELS: Record<string, string> = {
 		role_admin: 'Administrator',
@@ -401,582 +420,560 @@
 	</HeaderCard>
 
 	{#if currentUser}
-		<div class="grid gap-6 lg:grid-cols-3">
-			<!-- Left column: profile + password -->
-			<div class="space-y-6 lg:col-span-2">
-				<!-- Profile -->
-				<Card class="overflow-hidden">
-					<div class="border-b p-4 sm:p-6">
+		<Tabs.Root value={activeTab}>
+			<TabBar items={accountTabItems} value={activeTab} onValueChange={urlTab.select} />
+
+			<Tabs.Content value="account" class="mt-6 space-y-10">
+				<section class="space-y-5">
+					<div>
 						<h2 class="text-base font-semibold tracking-tight sm:text-lg">{m.account_profile_title()}</h2>
 						<p class="mt-1 text-xs text-muted-foreground sm:text-sm">{m.account_profile_description()}</p>
 					</div>
-					<div class="space-y-5 p-4 sm:p-6">
-						<ImageCropper.Root
-							id="account-avatar-cropper"
-							bind:src={cropperAvatarSrc}
-							accept="image/png, image/jpeg, image/webp"
-							onCropped={handleCroppedAvatar}
-							onError={handleAvatarCropError}
-							onUnsupportedFile={handleUnsupportedAvatarFile}
-						>
-							<ImageCropper.Dialog>
-								<div class="space-y-1">
-									<h3 class="text-base font-semibold tracking-tight">{m.account_avatar_crop_title()}</h3>
-									<p class="text-sm text-muted-foreground">{m.account_avatar_crop_description()}</p>
-								</div>
-								<div class="h-72 overflow-hidden rounded-lg border bg-muted/40">
-									<ImageCropper.Cropper />
-								</div>
-								<ImageCropper.Controls class="justify-end">
-									<ImageCropper.Cancel disabled={avatarUploading} />
-									<ImageCropper.Crop disabled={avatarUploading} />
-								</ImageCropper.Controls>
-							</ImageCropper.Dialog>
+					<ImageCropper.Root
+						id="account-avatar-cropper"
+						bind:src={cropperAvatarSrc}
+						accept="image/png, image/jpeg, image/webp"
+						onCropped={handleCroppedAvatar}
+						onError={handleAvatarCropError}
+						onUnsupportedFile={handleUnsupportedAvatarFile}
+					>
+						<ImageCropper.Dialog>
+							<div class="space-y-1">
+								<h3 class="text-base font-semibold tracking-tight">{m.account_avatar_crop_title()}</h3>
+								<p class="text-sm text-muted-foreground">{m.account_avatar_crop_description()}</p>
+							</div>
+							<div class="h-72 overflow-hidden rounded-lg border bg-muted/40">
+								<ImageCropper.Cropper />
+							</div>
+							<ImageCropper.Controls class="justify-end">
+								<ImageCropper.Cancel disabled={avatarUploading} />
+								<ImageCropper.Crop disabled={avatarUploading} />
+							</ImageCropper.Controls>
+						</ImageCropper.Dialog>
 
-							<div class="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
-								<div class="flex min-w-0 items-center gap-4">
-									<ImageCropper.UploadTrigger
-										aria-label={m.account_upload_photo()}
-										class={cn(
-											'group/avatar relative size-16 overflow-hidden rounded-xl focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:outline-none',
-											avatarUploading && 'pointer-events-none opacity-70'
-										)}
-										disabled={avatarUploading}
+						<div class="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
+							<div class="flex min-w-0 items-center gap-4">
+								<ImageCropper.UploadTrigger
+									aria-label={m.account_upload_photo()}
+									class={cn(
+										'group/avatar relative size-16 overflow-hidden rounded-xl focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:outline-none',
+										avatarUploading && 'pointer-events-none opacity-70'
+									)}
+									disabled={avatarUploading}
+								>
+									{#key avatarCacheBuster}
+										<Avatar.Root class="size-16 rounded-xl transition-all group-hover/avatar:opacity-80">
+											{#if avatarSrc}
+												<Avatar.Image src={avatarSrc} alt={currentUser.displayName ?? currentUser.username} />
+											{:else if avatarUrl}
+												<Avatar.Image src={avatarUrl} alt={currentUser.displayName ?? currentUser.username} />
+											{/if}
+											<Avatar.Fallback class="rounded-xl bg-primary text-xl font-semibold text-primary-foreground">
+												{(currentUser.displayName ?? currentUser.username).charAt(0).toUpperCase()}
+											</Avatar.Fallback>
+										</Avatar.Root>
+									{/key}
+									<div
+										class="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover/avatar:opacity-100"
 									>
-										{#key avatarCacheBuster}
-											<Avatar.Root class="size-16 rounded-xl transition-all group-hover/avatar:opacity-80">
-												{#if avatarSrc}
-													<Avatar.Image src={avatarSrc} alt={currentUser.displayName ?? currentUser.username} />
-												{:else if avatarUrl}
-													<Avatar.Image src={avatarUrl} alt={currentUser.displayName ?? currentUser.username} />
-												{/if}
-												<Avatar.Fallback class="rounded-xl bg-primary text-xl font-semibold text-primary-foreground">
-													{(currentUser.displayName ?? currentUser.username).charAt(0).toUpperCase()}
-												</Avatar.Fallback>
-											</Avatar.Root>
-										{/key}
-										<div
-											class="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover/avatar:opacity-100"
-										>
-											<div class="text-xs font-medium text-white">{m.upload()}</div>
-										</div>
-									</ImageCropper.UploadTrigger>
-									<div class="flex min-w-0 flex-col items-start gap-1">
-										<div class="text-sm font-medium">@{currentUser.username}</div>
-										<div class="text-xs text-muted-foreground">
-											{isOidcUser ? m.account_single_sign_on() : m.account_local_account()}
-										</div>
-										{#if currentUser.avatarUrl}
-											<div class="mt-1 flex items-center gap-2">
-												<ArcaneButton
-													action="remove"
-													size="sm"
-													tone="ghost"
-													customLabel={m.common_remove()}
-													showLabel={true}
-													class="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-													onclick={removeAvatar}
-													disabled={avatarUploading}
-												/>
-											</div>
-										{/if}
+										<div class="text-xs font-medium text-white">{m.upload()}</div>
 									</div>
-								</div>
-								<div class="hidden text-right sm:block">
-									{#if safeFormatDate(currentUser.createdAt, 'PP')}
-										<div class="text-xs text-muted-foreground">
-											{m.account_member_since()}
-											{safeFormatDate(currentUser.createdAt, 'PP')}
+								</ImageCropper.UploadTrigger>
+								<div class="flex min-w-0 flex-col items-start gap-1">
+									<div class="text-sm font-medium">@{currentUser.username}</div>
+									<div class="text-xs text-muted-foreground">
+										{isOidcUser ? m.account_single_sign_on() : m.account_local_account()}
+									</div>
+									{#if currentUser.avatarUrl}
+										<div class="mt-1 flex items-center gap-2">
+											<ArcaneButton
+												action="remove"
+												size="sm"
+												tone="ghost"
+												customLabel={m.common_remove()}
+												showLabel={true}
+												class="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+												onclick={removeAvatar}
+												disabled={avatarUploading}
+											/>
 										</div>
 									{/if}
-									<div class="text-xs text-muted-foreground" title={currentUser.lastLogin ?? ''}>
-										{m.account_last_login_prefix()}
-										{safeFormatRelative(currentUser.lastLogin) ?? m.common_never()}
-									</div>
 								</div>
 							</div>
-						</ImageCropper.Root>
+							<div class="hidden text-right sm:block">
+								{#if safeFormatDate(currentUser.createdAt, 'PP')}
+									<div class="text-xs text-muted-foreground">
+										{m.account_member_since()}
+										{safeFormatDate(currentUser.createdAt, 'PP')}
+									</div>
+								{/if}
+								<div class="text-xs text-muted-foreground" title={currentUser.lastLogin ?? ''}>
+									{m.account_last_login_prefix()}
+									{safeFormatRelative(currentUser.lastLogin) ?? m.common_never()}
+								</div>
+							</div>
+						</div>
+					</ImageCropper.Root>
 
-						<div class="grid gap-5 sm:grid-cols-2">
-							<TextInputWithLabel
-								id="account-display-name"
-								bind:value={profileDisplayName}
-								label={m.common_display_name()}
-								placeholder={m.account_display_name_placeholder()}
-								disabled={isOidcUser}
+					<div class="grid gap-5 sm:grid-cols-2">
+						<TextInputWithLabel
+							id="account-display-name"
+							bind:value={profileDisplayName}
+							label={m.common_display_name()}
+							placeholder={m.account_display_name_placeholder()}
+							disabled={isOidcUser}
+						/>
+						<TextInputWithLabel
+							id="account-email"
+							type="email"
+							bind:value={profileEmail}
+							label={m.common_email()}
+							placeholder={m.account_email_placeholder()}
+							disabled={isOidcUser}
+						/>
+					</div>
+					{#if !isOidcUser}
+						<div class="flex justify-end gap-2">
+							<ArcaneButton
+								action="cancel"
+								tone="outline"
+								customLabel={m.common_reset()}
+								onclick={resetProfile}
+								disabled={!profileDirty || profileSaving}
 							/>
-							<TextInputWithLabel
-								id="account-email"
-								type="email"
-								bind:value={profileEmail}
-								label={m.common_email()}
-								placeholder={m.account_email_placeholder()}
-								disabled={isOidcUser}
+							<ArcaneButton
+								action="save"
+								customLabel={m.account_save_profile()}
+								onclick={saveProfile}
+								loading={profileSaving}
+								disabled={!profileDirty || profileSaving}
 							/>
 						</div>
-						{#if !isOidcUser}
-							<div class="flex justify-end gap-2">
-								<ArcaneButton
-									action="cancel"
-									tone="outline"
-									customLabel={m.common_reset()}
-									onclick={resetProfile}
-									disabled={!profileDirty || profileSaving}
-								/>
-								<ArcaneButton
-									action="save"
-									customLabel={m.account_save_profile()}
-									onclick={saveProfile}
-									loading={profileSaving}
-									disabled={!profileDirty || profileSaving}
-								/>
-							</div>
+					{:else}
+						<p class="text-xs text-muted-foreground">{m.account_profile_managed_by_idp()}</p>
+					{/if}
+
+					<div class="space-y-2 border-t border-border/50 pt-5">
+						<h3 class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+							{m.account_roles_and_access()}
+						</h3>
+						{#if currentUser.roleAssignments && currentUser.roleAssignments.length > 0}
+							<ul class="flex flex-wrap gap-2">
+								{#each currentUser.roleAssignments as ra (`${ra.roleId}-${ra.environmentId ?? 'global'}`)}
+									<li class="rounded-lg border border-border/60 bg-muted/20 px-3 py-1.5">
+										<span class="text-sm font-medium">{prettyRoleName(ra.roleId)}</span>
+										<span class="ml-2 text-xs text-muted-foreground">
+											{ra.environmentId ? m.account_role_environment({ env: ra.environmentId }) : m.account_global_scope()}
+											{#if ra.source === 'oidc'}
+												<span class="ml-1 opacity-70">{m.account_via_sso()}</span>
+											{/if}
+										</span>
+									</li>
+								{/each}
+							</ul>
 						{:else}
-							<p class="text-xs text-muted-foreground">{m.account_profile_managed_by_idp()}</p>
+							<p class="text-sm text-muted-foreground">{m.account_no_roles()}</p>
 						{/if}
 
-						<!-- Roles & access -->
-						<div class="border-t pt-5">
-							<h3 class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-								{m.account_roles_and_access()}
-							</h3>
-
-							{#if currentUser.roleAssignments && currentUser.roleAssignments.length > 0}
-								<ul class="mt-3 flex flex-wrap gap-2">
-									{#each currentUser.roleAssignments as ra (`${ra.roleId}-${ra.environmentId ?? 'global'}`)}
-										<li class="rounded-lg bg-muted/30 px-3 py-2">
-											<div class="text-sm font-medium">{prettyRoleName(ra.roleId)}</div>
-											<div class="text-xs text-muted-foreground">
-												{ra.environmentId ? m.account_role_environment({ env: ra.environmentId }) : m.account_global_scope()}
-												{#if ra.source === 'oidc'}
-													<span class="ml-1 opacity-70">{m.account_via_sso()}</span>
-												{/if}
-											</div>
-										</li>
-									{/each}
-								</ul>
-							{:else}
-								<p class="mt-3 text-sm text-muted-foreground">{m.account_no_roles()}</p>
-							{/if}
-
-							{#if currentUser.permissionsByEnv}
-								{@const envCount = Object.keys(currentUser.permissionsByEnv).length}
-								{@const globalCount = currentUser.permissionsByEnv[GLOBAL_SCOPE]?.length ?? 0}
-								<p class="mt-3 text-xs text-muted-foreground">
-									{globalCount} global permission{globalCount === 1 ? '' : 's'} across {envCount} environment{envCount === 1
-										? ''
-										: 's'}.
-								</p>
-							{/if}
-						</div>
-
-						<!-- Danger zone -->
-						{#if !autoLoginEnabled}
-							<div class="rounded-lg border border-destructive/30 bg-destructive/5 p-4">
-								<div class="flex items-center gap-2">
-									<ShieldAlertIcon class="size-4 text-destructive" />
-									<h3 class="text-sm font-semibold tracking-tight">{m.account_danger_zone()}</h3>
-								</div>
-								<p class="mt-1 text-xs text-muted-foreground">{m.account_danger_zone_desc()}</p>
-
-								<div class="mt-4 grid gap-4 sm:grid-cols-2">
-									<div class="space-y-2">
-										<div class="text-sm font-medium">{m.account_signout_other()}</div>
-										<p class="text-xs text-muted-foreground">{m.account_signout_other_desc()}</p>
-										<ArcaneButton
-											action="restart"
-											tone="outline"
-											size="sm"
-											customLabel={m.account_signout_other()}
-											onclick={logoutAllOther}
-											loading={revokingAll}
-											disabled={revokingAll}
-										/>
-									</div>
-
-									<div class="space-y-2">
-										<div class="text-sm font-medium">{m.common_log_out()}</div>
-										<p class="text-xs text-muted-foreground">{m.account_signout_this()}</p>
-										<form action="/logout" method="POST">
-											<ArcaneButton
-												action="cancel"
-												tone="outline"
-												size="sm"
-												customLabel={m.common_log_out()}
-												icon={LogoutIcon}
-												type="submit"
-												class="border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
-											/>
-										</form>
-									</div>
-								</div>
-							</div>
+						{#if currentUser.permissionsByEnv}
+							{@const envCount = Object.keys(currentUser.permissionsByEnv).length}
+							{@const globalCount = currentUser.permissionsByEnv[GLOBAL_SCOPE]?.length ?? 0}
+							<p class="text-xs text-muted-foreground">
+								{globalCount} global permission{globalCount === 1 ? '' : 's'} across {envCount} environment{envCount === 1
+									? ''
+									: 's'}.
+							</p>
 						{/if}
 					</div>
-				</Card>
+				</section>
 
-				<!-- Password -->
 				{#if !isOidcUser}
-					<Card class="overflow-hidden">
-						<div class="border-b p-4 sm:p-6">
+					<section class="space-y-5">
+						<div>
 							<h2 class="text-base font-semibold tracking-tight sm:text-lg">{m.common_password()}</h2>
 							<p class="mt-1 text-xs text-muted-foreground sm:text-sm">{m.account_password_desc()}</p>
 						</div>
-						<div class="space-y-5 p-4 sm:p-6">
+						<TextInputWithLabel
+							id="account-current-password"
+							type="password"
+							bind:value={currentPassword}
+							label={m.account_current_password()}
+							autocomplete="current-password"
+						/>
+						<div class="grid gap-5 sm:grid-cols-2">
 							<TextInputWithLabel
-								id="account-current-password"
+								id="account-new-password"
 								type="password"
-								bind:value={currentPassword}
-								label={m.account_current_password()}
-								autocomplete="current-password"
+								bind:value={newPassword}
+								label={m.account_new_password()}
+								helpText={m.account_password_min_length()}
+								autocomplete="new-password"
 							/>
-							<div class="grid gap-5 sm:grid-cols-2">
-								<TextInputWithLabel
-									id="account-new-password"
-									type="password"
-									bind:value={newPassword}
-									label={m.account_new_password()}
-									helpText={m.account_password_min_length()}
-									autocomplete="new-password"
-								/>
-								<TextInputWithLabel
-									id="account-confirm-password"
-									type="password"
-									bind:value={confirmPassword}
-									label={m.account_confirm_password()}
-									error={confirmPassword.length > 0 && confirmPassword !== newPassword ? m.account_passwords_dont_match() : null}
-									autocomplete="new-password"
-								/>
-							</div>
-							<div class="flex justify-end">
-								<ArcaneButton
-									action="save"
-									customLabel={m.account_update_password()}
-									onclick={changePassword}
-									loading={passwordSaving}
-									disabled={!passwordValid || passwordSaving}
-								/>
-							</div>
+							<TextInputWithLabel
+								id="account-confirm-password"
+								type="password"
+								bind:value={confirmPassword}
+								label={m.account_confirm_password()}
+								error={confirmPassword.length > 0 && confirmPassword !== newPassword ? m.account_passwords_dont_match() : null}
+								autocomplete="new-password"
+							/>
 						</div>
-					</Card>
+						<div class="flex justify-end">
+							<ArcaneButton
+								action="save"
+								customLabel={m.account_update_password()}
+								onclick={changePassword}
+								loading={passwordSaving}
+								disabled={!passwordValid || passwordSaving}
+							/>
+						</div>
+					</section>
 				{/if}
-			</div>
 
-			<!-- Right column: API keys -->
-			<!--
-				Pinned to the row box so the card never grows taller than the profile
-				column: the panel is taken out of flow at `lg`, which leaves the grid
-				row height driven entirely by the left column. The key list absorbs
-				the slack and scrolls on its own.
-			-->
-			<div class="lg:relative">
-				<div class="flex flex-col gap-6 lg:absolute lg:inset-0">
-					<!-- API keys -->
-					<Card class="overflow-hidden lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
-						<div class="flex shrink-0 items-start justify-between gap-3 border-b p-4 sm:p-6">
-							<div class="min-w-0">
-								<h2 class="text-base font-semibold tracking-tight sm:text-lg">{m.account_api_keys_title()}</h2>
-								<p class="mt-1 text-xs text-muted-foreground sm:text-sm">{m.account_api_keys_description()}</p>
+				<section class="space-y-5">
+					<div class="flex flex-wrap items-start justify-between gap-3">
+						<div class="min-w-0">
+							<h2 class="text-base font-semibold tracking-tight sm:text-lg">{m.account_api_keys_title()}</h2>
+							<p class="mt-1 text-xs text-muted-foreground sm:text-sm">{m.account_api_keys_description()}</p>
+						</div>
+						{#if !showCreateKeyForm && !createdKey}
+							<ArcaneButton
+								action="create"
+								tone="outline"
+								size="sm"
+								customLabel={m.account_new_key()}
+								icon={AddIcon}
+								class="shrink-0"
+								onclick={() => (showCreateKeyForm = true)}
+							/>
+						{/if}
+					</div>
+					{#if createdKey}
+						<div class="mb-4 space-y-3 rounded-lg border border-primary/30 bg-primary/5 p-4">
+							<div>
+								<div class="truncate text-sm font-semibold">{m.api_key_created_title()}: {createdKey.name}</div>
+								<p class="mt-1 text-xs text-muted-foreground">{m.api_key_save_warning()}</p>
 							</div>
-							{#if !showCreateKeyForm && !createdKey}
+							<code class="block truncate rounded border bg-background px-3 py-2 font-mono text-xs">
+								{createdKey.key}
+							</code>
+							<div class="flex flex-wrap justify-end gap-2">
 								<ArcaneButton
-									action="create"
+									action="base"
 									tone="outline"
 									size="sm"
-									customLabel={m.account_new_key()}
-									icon={AddIcon}
-									class="shrink-0"
-									onclick={() => (showCreateKeyForm = true)}
+									customLabel={m.common_copy()}
+									icon={CopyIcon}
+									onclick={() => copyKeyToClipboard(createdKey!.key)}
 								/>
-							{/if}
+								<ArcaneButton
+									action="cancel"
+									tone="ghost"
+									size="sm"
+									customLabel={m.common_ive_saved_it()}
+									onclick={() => (createdKey = null)}
+								/>
+							</div>
 						</div>
+					{/if}
 
-						<div class="p-4 sm:p-6 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
-							{#if createdKey}
-								<div class="mb-4 space-y-3 rounded-lg border border-primary/30 bg-primary/5 p-4">
-									<div>
-										<div class="truncate text-sm font-semibold">{m.api_key_created_title()}: {createdKey.name}</div>
-										<p class="mt-1 text-xs text-muted-foreground">{m.api_key_save_warning()}</p>
-									</div>
-									<code class="block truncate rounded border bg-background px-3 py-2 font-mono text-xs">
-										{createdKey.key}
-									</code>
-									<div class="flex flex-wrap justify-end gap-2">
-										<ArcaneButton
-											action="base"
-											tone="outline"
-											size="sm"
-											customLabel={m.common_copy()}
-											icon={CopyIcon}
-											onclick={() => copyKeyToClipboard(createdKey!.key)}
-										/>
+					<div class="overflow-hidden rounded-xl border border-border/60 bg-card/30">
+						{#if apiKeysLoading && apiKeys.length === 0}
+							<div class="p-6 text-center text-sm text-muted-foreground">{m.common_loading()}</div>
+						{:else if apiKeys.length === 0}
+							<div class="p-6 text-center text-sm text-muted-foreground">
+								<ApiKeyIcon class="mx-auto mb-2 size-8 opacity-40" />
+								{m.api_keys_empty()}
+							</div>
+						{:else}
+							<ul class="divide-y divide-border/60">
+								{#each apiKeys as key (key.id)}
+									<li class="px-4 py-3">
+										<div class="flex items-start justify-between gap-2">
+											<div class="min-w-0 flex-1">
+												<div class="truncate text-sm font-medium">{key.name}</div>
+												{#if key.description}
+													<div class="mt-0.5 truncate text-xs text-muted-foreground">{key.description}</div>
+												{/if}
+											</div>
+											<ArcaneButton
+												action="remove"
+												tone="ghost"
+												size="sm"
+												icon={TrashIcon}
+												customLabel={m.common_delete()}
+												showLabel={false}
+												class="shrink-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+												onclick={() => deleteApiKey(key.id, key.name)}
+											/>
+										</div>
+										<div class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+											<code class="rounded bg-muted/40 px-1.5 py-0.5 font-mono">{key.keyPrefix}…</code>
+											{#if safeFormatDate(key.createdAt, 'PP')}
+												<span>{m.common_created()} {safeFormatDate(key.createdAt, 'PP')}</span>
+												<span aria-hidden="true">·</span>
+											{/if}
+											<span>{m.last_used()} {safeFormatRelative(key.lastUsedAt) ?? m.common_never()}</span>
+										</div>
+									</li>
+								{/each}
+							</ul>
+						{/if}
+					</div>
+				</section>
+
+				<PasskeySettings />
+
+				{#if !autoLoginEnabled}
+					<section class="space-y-5">
+						<div class="flex items-center gap-2">
+							<ShieldAlertIcon class="size-4 text-destructive" />
+							<div>
+								<h2 class="text-base font-semibold tracking-tight sm:text-lg">{m.account_danger_zone()}</h2>
+								<p class="mt-1 text-xs text-muted-foreground sm:text-sm">{m.account_danger_zone_desc()}</p>
+							</div>
+						</div>
+						<div class="rounded-xl border border-destructive/30 bg-destructive/5 p-4">
+							<div class="grid gap-4 sm:grid-cols-2">
+								<div class="space-y-2">
+									<div class="text-sm font-medium">{m.account_signout_other()}</div>
+									<p class="text-xs text-muted-foreground">{m.account_signout_other_desc()}</p>
+									<ArcaneButton
+										action="restart"
+										tone="outline"
+										size="sm"
+										customLabel={m.account_signout_other()}
+										onclick={logoutAllOther}
+										loading={revokingAll}
+										disabled={revokingAll}
+									/>
+								</div>
+
+								<div class="space-y-2">
+									<div class="text-sm font-medium">{m.common_log_out()}</div>
+									<p class="text-xs text-muted-foreground">{m.account_signout_this()}</p>
+									<form action="/logout" method="POST">
 										<ArcaneButton
 											action="cancel"
-											tone="ghost"
+											tone="outline"
 											size="sm"
-											customLabel={m.common_ive_saved_it()}
-											onclick={() => (createdKey = null)}
+											customLabel={m.common_log_out()}
+											icon={LogoutIcon}
+											type="submit"
+											class="border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
 										/>
-									</div>
+									</form>
 								</div>
-							{/if}
-
-							{#if apiKeysLoading && apiKeys.length === 0}
-								<div class="py-8 text-center text-sm text-muted-foreground">{m.common_loading()}</div>
-							{:else if apiKeys.length === 0}
-								<div class="py-8 text-center text-sm text-muted-foreground">
-									<ApiKeyIcon class="mx-auto mb-2 size-8 opacity-40" />
-									{m.api_keys_empty()}
-								</div>
-							{:else}
-								<ul class="divide-y divide-border/40">
-									{#each apiKeys as key (key.id)}
-										<li class="py-3 first:pt-0 last:pb-0">
-											<div class="flex items-start justify-between gap-2">
-												<div class="min-w-0 flex-1">
-													<div class="truncate text-sm font-medium">{key.name}</div>
-													{#if key.description}
-														<div class="mt-0.5 truncate text-xs text-muted-foreground">{key.description}</div>
-													{/if}
-												</div>
-												<ArcaneButton
-													action="remove"
-													tone="ghost"
-													size="sm"
-													icon={TrashIcon}
-													customLabel={m.common_delete()}
-													showLabel={false}
-													class="shrink-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-													onclick={() => deleteApiKey(key.id, key.name)}
-												/>
-											</div>
-											<div class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-												<code class="rounded bg-muted/40 px-1.5 py-0.5 font-mono">{key.keyPrefix}…</code>
-												{#if safeFormatDate(key.createdAt, 'PP')}
-													<span>{m.common_created()} {safeFormatDate(key.createdAt, 'PP')}</span>
-													<span aria-hidden="true">·</span>
-												{/if}
-												<span>{m.last_used()} {safeFormatRelative(key.lastUsedAt) ?? m.common_never()}</span>
-											</div>
-										</li>
-									{/each}
-								</ul>
-							{/if}
+							</div>
 						</div>
-					</Card>
+					</section>
+				{/if}
+			</Tabs.Content>
+
+			<Tabs.Content value="preferences" class="mt-6">
+				<div class="space-y-10">
+					<!-- General -->
+					<section>
+						<h3 class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{m.general_title()}</h3>
+						<div class="mt-4 divide-y divide-border/40 [&>*]:py-4 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
+							<SettingsRow label={m.language()} description={m.account_language_desc()} layout="inline">
+								<LocalePicker inline id="accountLocalePicker" />
+							</SettingsRow>
+
+							<SettingsRow label={m.time_format()} description={m.account_time_format_desc()} layout="inline">
+								<TimeFormatPicker id="accountTimeFormatPicker" />
+							</SettingsRow>
+						</div>
+					</section>
+
+					<!-- Appearance -->
+					<section>
+						<h3 class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{m.appearance_title()}</h3>
+						<div class="mt-4 divide-y divide-border/40 [&>*]:py-4 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
+							<SettingsRow label={m.account_theme()} description={m.appearance_theme_current_user_description()} layout="inline">
+								<ThemeModeSelector />
+							</SettingsRow>
+
+							<SettingsRow label={m.font_size()} description={m.font_size_description()} layout="inline">
+								<FontSizePicker />
+							</SettingsRow>
+
+							<SettingsRow label={m.icon_catalog()} description={m.icon_catalog_description()} layout="inline">
+								<div class="w-52">
+									<SelectWithLabel
+										id="account-icon-catalog"
+										label={m.icon_catalog()}
+										hideLabel
+										triggerSize="sm"
+										value={iconCatalogValue}
+										options={iconCatalogOptions}
+										onValueChange={(value) => void savePreferences({ iconCatalog: value as IconCatalog })}
+									/>
+								</div>
+							</SettingsRow>
+
+							<SettingsRow label={m.application_theme()} description={m.application_theme_description()}>
+								<ApplicationThemePicker
+									selectedTheme={applicationThemeValue}
+									accentColor={accentColorValue}
+									onSelect={(value) => savePreferencesDebounced({ applicationTheme: value })}
+								/>
+							</SettingsRow>
+
+							<SettingsRow label={m.accent_color()} description={m.accent_color_description()}>
+								<AccentColorPicker
+									previousColor={accentColorValue}
+									selectedColor={accentColorValue}
+									onSelect={(value) => savePreferencesDebounced({ accentColor: value })}
+								/>
+							</SettingsRow>
+
+							<SettingsRow label={m.oled_mode()} description={m.oled_mode_description()} layout="inline">
+								{#snippet helpText()}
+									{#if !isDefaultApplicationTheme}
+										<p class="mt-1 text-xs text-muted-foreground/70 italic">{m.oled_mode_requires_default_theme()}</p>
+									{:else if !isDarkMode}
+										<p class="mt-1 text-xs text-muted-foreground/70 italic">{m.oled_mode_requires_dark()}</p>
+									{/if}
+								{/snippet}
+								<Switch
+									id="account-oled-mode"
+									checked={oledModeEnabled}
+									disabled={!isDefaultApplicationTheme}
+									onCheckedChange={(checked) => {
+										applyOledMode(checked);
+										void savePreferences({ oledMode: checked });
+									}}
+								/>
+							</SettingsRow>
+
+							<SettingsRow label={m.glass_effects()} description={m.glass_effects_description()} layout="inline">
+								<Switch
+									id="account-glass-effects"
+									checked={glassEffectsEnabled}
+									onCheckedChange={(checked) => {
+										applyGlassEffects(checked);
+										void savePreferences({ glassEffectsEnabled: checked });
+									}}
+								/>
+							</SettingsRow>
+
+							<SettingsRow label={m.interface_animations()} description={m.interface_animations_description()} layout="inline">
+								<Switch
+									id="account-animations"
+									checked={animationsEnabled}
+									onCheckedChange={(checked) => {
+										applyInterfaceAnimations(checked);
+										void savePreferences({ animationsEnabled: checked });
+									}}
+								/>
+							</SettingsRow>
+						</div>
+					</section>
+
+					<!-- Navigation -->
+					<section>
+						<h3 class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{m.navigation_title()}</h3>
+						<div class="mt-4 divide-y divide-border/40 [&>*]:py-4 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
+							<SettingsRow
+								label={m.navigation_default_landing_page_label()}
+								description={m.navigation_default_landing_page_description()}
+								layout="inline"
+							>
+								<div class="w-52">
+									<SelectWithLabel
+										id="account-default-landing-page"
+										label={m.navigation_default_landing_page_label()}
+										hideLabel
+										triggerSize="sm"
+										value={landingValue}
+										options={landingPageOptions}
+										onValueChange={(value) => void savePreferences({ defaultLandingPage: value })}
+									/>
+								</div>
+							</SettingsRow>
+
+							<SettingsRow
+								label={m.navigation_sidebar_hover_expansion_label()}
+								description={m.navigation_sidebar_hover_expansion_description()}
+								layout="inline"
+							>
+								<Switch
+									id="account-sidebar-hover-expansion"
+									checked={sidebarHoverExpansionEnabled}
+									onCheckedChange={(checked) => void savePreferences({ sidebarHoverExpansion: checked })}
+								/>
+							</SettingsRow>
+
+							<SettingsRow
+								label={m.navigation_keyboard_shortcuts_label()}
+								description={m.navigation_keyboard_shortcuts_description()}
+								layout="inline"
+							>
+								<Switch
+									id="account-keyboard-shortcuts"
+									checked={keyboardShortcutsEnabled}
+									onCheckedChange={(checked) => void savePreferences({ keyboardShortcutsEnabled: checked })}
+								/>
+							</SettingsRow>
+						</div>
+					</section>
+
+					<!-- Mobile navigation -->
+					<section>
+						<h3 class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+							{m.navigation_mobile_appearance_title()}
+						</h3>
+						<div class="mt-4 divide-y divide-border/40 [&>*]:py-4 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
+							<SettingsRow label={m.navigation_mode_label()} description={m.navigation_mode_description()} layout="inline">
+								<div class="inline-flex rounded-lg bg-muted/40 p-0.5">
+									<button
+										type="button"
+										aria-pressed={mobileNavigationMode === 'floating'}
+										onclick={() => selectMobileNavigationMode('floating')}
+										class={cn(
+											'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+											mobileNavigationMode === 'floating'
+												? 'bg-background text-foreground shadow-sm'
+												: 'text-muted-foreground hover:text-foreground'
+										)}
+									>
+										<MonitorSpeakerIcon class="size-3.5" />
+										{m.navigation_mode_floating()}
+									</button>
+									<button
+										type="button"
+										aria-pressed={mobileNavigationMode === 'docked'}
+										onclick={() => selectMobileNavigationMode('docked')}
+										class={cn(
+											'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+											mobileNavigationMode === 'docked'
+												? 'bg-background text-foreground shadow-sm'
+												: 'text-muted-foreground hover:text-foreground'
+										)}
+									>
+										<DockIcon class="size-3.5" />
+										{m.navigation_mode_docked()}
+									</button>
+								</div>
+							</SettingsRow>
+
+							<SettingsRow
+								label={m.navigation_show_labels_label()}
+								description={m.navigation_show_labels_description()}
+								layout="inline"
+							>
+								<Switch
+									id="account-mobile-nav-labels"
+									checked={mobileNavigationShowLabels}
+									onCheckedChange={(checked) => void savePreferences({ mobileNavigationShowLabels: checked })}
+								/>
+							</SettingsRow>
+						</div>
+					</section>
 				</div>
-			</div>
-		</div>
-
-		<!-- Preferences -->
-		<Card class="overflow-hidden">
-			<div class="border-b p-4 sm:p-6">
-				<h2 class="text-base font-semibold tracking-tight sm:text-lg">{m.account_preferences()}</h2>
-				<p class="mt-1 text-xs text-muted-foreground sm:text-sm">{m.account_preferences_desc()}</p>
-			</div>
-
-			<div class="divide-y divide-border/50">
-				<!-- General -->
-				<section class="p-4 sm:p-6">
-					<h3 class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{m.general_title()}</h3>
-					<div class="mt-4 divide-y divide-border/40 [&>*]:py-4 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
-						<SettingsRow label={m.language()} description={m.account_language_desc()} layout="inline">
-							<LocalePicker inline id="accountLocalePicker" />
-						</SettingsRow>
-
-						<SettingsRow label={m.time_format()} description={m.account_time_format_desc()} layout="inline">
-							<TimeFormatPicker id="accountTimeFormatPicker" />
-						</SettingsRow>
-					</div>
-				</section>
-
-				<!-- Appearance -->
-				<section class="p-4 sm:p-6">
-					<h3 class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{m.appearance_title()}</h3>
-					<div class="mt-4 divide-y divide-border/40 [&>*]:py-4 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
-						<SettingsRow label={m.account_theme()} description={m.appearance_theme_current_user_description()} layout="inline">
-							<ThemeModeSelector />
-						</SettingsRow>
-
-						<SettingsRow label={m.font_size()} description={m.font_size_description()} layout="inline">
-							<FontSizePicker />
-						</SettingsRow>
-
-						<SettingsRow label={m.icon_catalog()} description={m.icon_catalog_description()} layout="inline">
-							<div class="w-52">
-								<SelectWithLabel
-									id="account-icon-catalog"
-									label={m.icon_catalog()}
-									hideLabel
-									triggerSize="sm"
-									value={iconCatalogValue}
-									options={iconCatalogOptions}
-									onValueChange={(value) => void savePreferences({ iconCatalog: value as IconCatalog })}
-								/>
-							</div>
-						</SettingsRow>
-
-						<SettingsRow label={m.application_theme()} description={m.application_theme_description()}>
-							<ApplicationThemePicker
-								selectedTheme={applicationThemeValue}
-								accentColor={accentColorValue}
-								onSelect={(value) => savePreferencesDebounced({ applicationTheme: value })}
-							/>
-						</SettingsRow>
-
-						<SettingsRow label={m.accent_color()} description={m.accent_color_description()}>
-							<AccentColorPicker
-								previousColor={accentColorValue}
-								selectedColor={accentColorValue}
-								onSelect={(value) => savePreferencesDebounced({ accentColor: value })}
-							/>
-						</SettingsRow>
-
-						<SettingsRow label={m.oled_mode()} description={m.oled_mode_description()} layout="inline">
-							{#snippet helpText()}
-								{#if !isDefaultApplicationTheme}
-									<p class="mt-1 text-xs text-muted-foreground/70 italic">{m.oled_mode_requires_default_theme()}</p>
-								{:else if !isDarkMode}
-									<p class="mt-1 text-xs text-muted-foreground/70 italic">{m.oled_mode_requires_dark()}</p>
-								{/if}
-							{/snippet}
-							<Switch
-								id="account-oled-mode"
-								checked={oledModeEnabled}
-								disabled={!isDefaultApplicationTheme}
-								onCheckedChange={(checked) => {
-									applyOledMode(checked);
-									void savePreferences({ oledMode: checked });
-								}}
-							/>
-						</SettingsRow>
-
-						<SettingsRow label={m.glass_effects()} description={m.glass_effects_description()} layout="inline">
-							<Switch
-								id="account-glass-effects"
-								checked={glassEffectsEnabled}
-								onCheckedChange={(checked) => {
-									applyGlassEffects(checked);
-									void savePreferences({ glassEffectsEnabled: checked });
-								}}
-							/>
-						</SettingsRow>
-
-						<SettingsRow label={m.interface_animations()} description={m.interface_animations_description()} layout="inline">
-							<Switch
-								id="account-animations"
-								checked={animationsEnabled}
-								onCheckedChange={(checked) => {
-									applyInterfaceAnimations(checked);
-									void savePreferences({ animationsEnabled: checked });
-								}}
-							/>
-						</SettingsRow>
-					</div>
-				</section>
-
-				<!-- Navigation -->
-				<section class="p-4 sm:p-6">
-					<h3 class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{m.navigation_title()}</h3>
-					<div class="mt-4 divide-y divide-border/40 [&>*]:py-4 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
-						<SettingsRow
-							label={m.navigation_default_landing_page_label()}
-							description={m.navigation_default_landing_page_description()}
-							layout="inline"
-						>
-							<div class="w-52">
-								<SelectWithLabel
-									id="account-default-landing-page"
-									label={m.navigation_default_landing_page_label()}
-									hideLabel
-									triggerSize="sm"
-									value={landingValue}
-									options={landingPageOptions}
-									onValueChange={(value) => void savePreferences({ defaultLandingPage: value })}
-								/>
-							</div>
-						</SettingsRow>
-
-						<SettingsRow
-							label={m.navigation_sidebar_hover_expansion_label()}
-							description={m.navigation_sidebar_hover_expansion_description()}
-							layout="inline"
-						>
-							<Switch
-								id="account-sidebar-hover-expansion"
-								checked={sidebarHoverExpansionEnabled}
-								onCheckedChange={(checked) => void savePreferences({ sidebarHoverExpansion: checked })}
-							/>
-						</SettingsRow>
-
-						<SettingsRow
-							label={m.navigation_keyboard_shortcuts_label()}
-							description={m.navigation_keyboard_shortcuts_description()}
-							layout="inline"
-						>
-							<Switch
-								id="account-keyboard-shortcuts"
-								checked={keyboardShortcutsEnabled}
-								onCheckedChange={(checked) => void savePreferences({ keyboardShortcutsEnabled: checked })}
-							/>
-						</SettingsRow>
-					</div>
-				</section>
-
-				<!-- Mobile navigation -->
-				<section class="p-4 sm:p-6">
-					<h3 class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-						{m.navigation_mobile_appearance_title()}
-					</h3>
-					<div class="mt-4 divide-y divide-border/40 [&>*]:py-4 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
-						<SettingsRow label={m.navigation_mode_label()} description={m.navigation_mode_description()} layout="inline">
-							<div class="inline-flex rounded-lg bg-muted/40 p-0.5">
-								<button
-									type="button"
-									aria-pressed={mobileNavigationMode === 'floating'}
-									onclick={() => selectMobileNavigationMode('floating')}
-									class={cn(
-										'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-										mobileNavigationMode === 'floating'
-											? 'bg-background text-foreground shadow-sm'
-											: 'text-muted-foreground hover:text-foreground'
-									)}
-								>
-									<MonitorSpeakerIcon class="size-3.5" />
-									{m.navigation_mode_floating()}
-								</button>
-								<button
-									type="button"
-									aria-pressed={mobileNavigationMode === 'docked'}
-									onclick={() => selectMobileNavigationMode('docked')}
-									class={cn(
-										'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-										mobileNavigationMode === 'docked'
-											? 'bg-background text-foreground shadow-sm'
-											: 'text-muted-foreground hover:text-foreground'
-									)}
-								>
-									<DockIcon class="size-3.5" />
-									{m.navigation_mode_docked()}
-								</button>
-							</div>
-						</SettingsRow>
-
-						<SettingsRow
-							label={m.navigation_show_labels_label()}
-							description={m.navigation_show_labels_description()}
-							layout="inline"
-						>
-							<Switch
-								id="account-mobile-nav-labels"
-								checked={mobileNavigationShowLabels}
-								onCheckedChange={(checked) => void savePreferences({ mobileNavigationShowLabels: checked })}
-							/>
-						</SettingsRow>
-					</div>
-				</section>
-			</div>
-		</Card>
+			</Tabs.Content>
+		</Tabs.Root>
 	{:else}
 		<div class="py-12 text-center text-sm text-muted-foreground">Loading account…</div>
 	{/if}

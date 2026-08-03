@@ -1,5 +1,6 @@
 import { toast } from 'svelte-sonner';
 import { openConfirmDialog } from '#lib/components/confirm-dialog';
+import { streamCacheBuster } from '#lib/utils/streaming';
 import { markActivityToastShown } from '#lib/components/activity/activity-completion-toasts';
 import { runWithActivityBatchId } from '#lib/services/api-service';
 import { handleApiResultWithCallbacks, tryCatch, type Result } from '#lib/utils/api';
@@ -84,7 +85,10 @@ async function runBulkOperation<T>({
 		// Multi-item runs share a batch id so the Activity Center renders one
 		// batch row. Each request is STARTED inside the synchronous batch scope
 		// (awaited outside it), so concurrent unrelated actions never inherit it.
-		const batchId = total > 1 ? crypto.randomUUID() : null;
+		// streamCacheBuster instead of bare crypto.randomUUID: the latter is
+		// secure-context-only (throws on plain-HTTP deployments), and the fallback
+		// format matches the backend batch-id pattern ^[A-Za-z0-9_-]{1,64}$.
+		const batchId = total > 1 ? streamCacheBuster() : null;
 		const startRun = (id: string) => (batchId ? runWithActivityBatchId(batchId, () => tryCatch(run(id))) : tryCatch(run(id)));
 		if (sequential) {
 			for (const id of ids) {

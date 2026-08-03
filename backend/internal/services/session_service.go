@@ -32,12 +32,18 @@ func (s *SessionService) CreateSession(ctx context.Context, userID string, expir
 	refreshHash := hashRefreshJTIInternal(refreshJTI)
 
 	now := time.Now()
+	source := strings.TrimSpace(meta.Source)
+	if source == "" {
+		source = models.UserSessionSourceLocal
+	}
 	session := &models.UserSession{
 		UserID:           userID,
 		RefreshTokenHash: refreshHash,
 		UserAgent:        mo.EmptyableToOption(strings.TrimSpace(meta.UserAgent)).ToPointer(),
 		IPAddress:        mo.EmptyableToOption(strings.TrimSpace(meta.IPAddress)).ToPointer(),
-		Source:           models.UserSessionSourceLocal,
+		Source:           source,
+		MFAMethod:        mo.EmptyableToOption(strings.TrimSpace(meta.MFAMethod)).ToPointer(),
+		MFAVerifiedAt:    meta.MFAVerifiedAt,
 		LastUsedAt:       now,
 		ExpiresAt:        expiresAt,
 	}
