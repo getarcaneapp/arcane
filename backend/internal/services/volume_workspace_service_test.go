@@ -248,6 +248,7 @@ func TestVolumeWorkspaceHelperScriptsUseSupportedTooling(t *testing.T) {
 	scripts := strings.Join([]string{
 		volumeWorkspaceTreeScriptInternal,
 		volumeWorkspaceBackupInspectScriptInternal,
+		volumeWorkspaceBackupCreateScriptInternal,
 		volumeWorkspaceCreateFileScriptInternal,
 		volumeWorkspaceCreateFolderScriptInternal,
 		volumeWorkspaceUpdateFileScriptInternal,
@@ -272,6 +273,8 @@ func TestVolumeWorkspaceHelperScriptsUseSupportedTooling(t *testing.T) {
 	require.Contains(t, volumeWorkspaceCreateFileScriptInternal, "head -c")
 	require.Contains(t, volumeWorkspaceCreateFolderScriptInternal, "mkdir -m 0755")
 	require.Contains(t, volumeWorkspaceUpdateFileScriptInternal, "head -c")
+	require.Contains(t, volumeWorkspaceBackupCreateScriptInternal, `cd "$1"`)
+	require.NotContains(t, volumeWorkspaceBackupCreateScriptInternal, " -C ")
 }
 
 func TestClassifyVolumeWorkspaceExecErrorInternal(t *testing.T) {
@@ -394,9 +397,17 @@ sh -c "$1" sh nested/a.txt /tmp/staged 7`, volumeWorkspaceUpdateFileScriptIntern
 	runInVolume(volumeName, `sh -c "$1" sh nested/b.txt dest dest/b.txt`, volumeWorkspaceMoveScriptInternal)
 	require.Equal(t, "present\x00", runInVolume(volumeName, `sh -c "$1" sh dest/b.txt`, volumeWorkspaceBackupInspectScriptInternal))
 
-	restored := runInVolume(volumeName, `tar -cf /tmp/backup.tar -C /volume/dest ./b.txt
-sh -c "$1" sh dest/b.txt 0
+	runInVolume(volumeName, volumeWorkspaceBackupCreateScriptInternal, "/volume/dest", "/tmp/backup.tar", "./b.txt")
+	restored := runInVolume(volumeName, `sh -c "$1" sh dest/b.txt 0
 tar -xf /tmp/backup.tar -C /volume/dest
 head -c 7 /volume/dest/b.txt`, volumeWorkspaceDeleteScriptInternal)
 	require.Equal(t, "updated", restored)
+
+	runInVolume(volumeName, `mkdir -p "/volume/Test Folder"
+printf spaced > "/volume/Test Folder/file.txt"`)
+	runInVolume(volumeName, volumeWorkspaceBackupCreateScriptInternal, "/volume", "/tmp/space-backup.tar", "./Test Folder")
+	spacedRestored := runInVolume(volumeName, `rm -rf "/volume/Test Folder"
+tar -xf /tmp/space-backup.tar -C /volume
+head -c 6 "/volume/Test Folder/file.txt"`)
+	require.Equal(t, "spaced", spacedRestored)
 }

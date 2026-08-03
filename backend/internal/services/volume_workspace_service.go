@@ -682,6 +682,10 @@ while [ -n "$remaining" ]; do
 done
 printf 'present\0'`
 
+const volumeWorkspaceBackupCreateScriptInternal = `set -e
+cd "$1"
+tar -cf "$2" "$3"`
+
 func (s *VolumeService) inspectVolumeWorkspaceBackupPathInternal(ctx context.Context, containerID, relativePath string) (bool, string, error) {
 	stdout, stderr, err := s.execInContainerInternal(ctx, containerID, []string{"sh", "-c", volumeWorkspaceBackupInspectScriptInternal, "sh", relativePath})
 	if err != nil {
@@ -723,7 +727,7 @@ func (s *VolumeService) backupVolumeWorkspaceScopeInternal(ctx context.Context, 
 			containerParent = path.Join(containerParent, parent)
 		}
 		archiveEntry := "./" + path.Base(relativePath)
-		_, stderr, err := s.execInContainerInternal(ctx, containerID, []string{"tar", "-cf", archivePath, "-C", containerParent, archiveEntry})
+		_, stderr, err := s.execInContainerInternal(ctx, containerID, []string{"sh", "-c", volumeWorkspaceBackupCreateScriptInternal, "sh", containerParent, archivePath, archiveEntry})
 		if err != nil {
 			return nil, classifyVolumeWorkspaceExecErrorInternal(err, stderr, "back up volume workspace path")
 		}
