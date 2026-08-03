@@ -3,11 +3,16 @@ package handlers
 import (
 	"context"
 	"mime/multipart"
+	"net/http"
 	"testing"
 
+	"github.com/danielgtaylor/huma/v2"
 	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -15,6 +20,41 @@ func volumeWorkspacePermissionContextInternal(environmentID string, permissions 
 	permissionSet := authz.NewPermissionSet()
 	permissionSet.AddEnv(environmentID, permissions...)
 	return context.WithValue(context.Background(), humamw.ContextKeyUserPermissions, permissionSet)
+}
+
+func TestUploadFileReturnsBadRequestWhenNoFileProvided(t *testing.T) {
+	h := &VolumeHandler{volumeService: &services.VolumeService{}}
+
+	_, err := h.UploadFile(adminTestContextInternal(), &UploadFileInput{
+		EnvironmentID: "0",
+		VolumeName:    "vol-1",
+		Path:          "/",
+		RawBody:       multipart.Form{},
+	})
+
+	require.Error(t, err)
+
+	var statusErr huma.StatusError
+	require.ErrorAs(t, err, &statusErr)
+	assert.Equal(t, http.StatusBadRequest, statusErr.GetStatus())
+}
+
+func TestUploadAndRestoreReturnsBadRequestWhenNoFileProvided(t *testing.T) {
+	h := &VolumeHandler{volumeService: &services.VolumeService{}}
+
+	ctx := context.WithValue(adminTestContextInternal(), models.CurrentUserContextKey{}, &models.User{BaseModel: models.BaseModel{ID: "u-1"}})
+
+	_, err := h.UploadAndRestore(ctx, &UploadAndRestoreInput{
+		EnvironmentID: "0",
+		VolumeName:    "vol-1",
+		RawBody:       multipart.Form{},
+	})
+
+	require.Error(t, err)
+
+	var statusErr huma.StatusError
+	require.ErrorAs(t, err, &statusErr)
+	assert.Equal(t, http.StatusBadRequest, statusErr.GetStatus())
 }
 
 func TestParseVolumeWorkspaceManifestInternal(t *testing.T) {
