@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestContainersListJSONContract(t *testing.T) {
@@ -32,17 +34,23 @@ func TestContainersListJSONContract(t *testing.T) {
 		t,
 		[]string{"--config", configPath, "containers", "list", "--json"},
 	)
-	if err != nil {
-		t.Fatalf("execute: %v (%s)", err, errOut)
-	}
+
+	require.NoError(t, err,
+		"execute: %v (%s)", err, errOut)
 
 	var got map[string]any
-	if err := json.Unmarshal([]byte(strings.TrimSpace(outBuf)), &got); err != nil {
-		t.Fatalf("json parse failed: %v\noutput=%s", err, outBuf)
+	{
+		err := json.Unmarshal([]byte(strings.TrimSpace(outBuf)), &got)
+		require.NoError(t, err,
+			"json parse failed: %v\noutput=%s", err, outBuf)
 	}
+
 	for _, key := range []string{"success", "data", "pagination"} {
-		if _, ok := got[key]; !ok {
-			t.Fatalf("missing key %q in output: %v", key, got)
+		{
+			_, ok := got[key]
+			require.True(t, ok,
+				"missing key %q in output: %v", key, got)
 		}
+
 	}
 }

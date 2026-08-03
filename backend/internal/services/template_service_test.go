@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	sqlite "github.com/libtnb/sqlite"
+	"github.com/libtnb/sqlite"
 	"github.com/samber/mo"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -483,7 +483,7 @@ func minimalSettingsServiceForTest(t *testing.T) *SettingsService {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&models.SettingVariable{}))
-	svc, err := NewSettingsService(context.Background(), &database.DB{DB: db})
+	svc, err := newSettingsServiceForTestInternal(t, context.Background(), &database.DB{DB: db})
 	require.NoError(t, err)
 	return svc
 }

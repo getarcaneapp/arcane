@@ -20,6 +20,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cookie"
 	"github.com/getarcaneapp/arcane/types/v2/auth"
@@ -75,15 +76,17 @@ type LogoutAllOtherSessionsOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
 }
 
+type UpdateMyProfileBody struct {
+	DisplayName *string           `json:"displayName,omitempty"`
+	Email       *string           `json:"email,omitempty"`
+	Locale      *string           `json:"locale,omitempty"`
+	TimeFormat  *user.TimeFormat  `json:"timeFormat,omitempty" enum:"auto,12h,24h"`
+	FontSize    *int              `json:"fontSize,omitempty" minimum:"12" maximum:"20"`
+	Preferences *user.Preferences `json:"preferences,omitempty"`
+}
+
 type UpdateMyProfileInput struct {
-	Body struct {
-		DisplayName *string           `json:"displayName,omitempty"`
-		Email       *string           `json:"email,omitempty"`
-		Locale      *string           `json:"locale,omitempty"`
-		TimeFormat  *user.TimeFormat  `json:"timeFormat,omitempty" enum:"auto,12h,24h"`
-		FontSize    *int              `json:"fontSize,omitempty" minimum:"12" maximum:"20"`
-		Preferences *user.Preferences `json:"preferences,omitempty"`
-	}
+	Body UpdateMyProfileBody
 }
 
 type UpdateMyProfileOutput struct {
@@ -271,7 +274,7 @@ func (h *AuthHandler) Logout(ctx context.Context, input *struct{}) (*LogoutOutpu
 				slog.ErrorContext(ctx, "Failed to revoke session on logout; clearing cookie anyway", "sessionID", sessionID, "error", err)
 			}
 		}
-		if userModel, exists := humamw.GetCurrentUserFromContext(ctx); exists {
+		if userModel, exists := models.CurrentUserFromContext(ctx); exists {
 			h.authService.LogLogout(ctx, userModel)
 		}
 	}
@@ -482,7 +485,7 @@ func (h *AuthHandler) UpdateMyProfile(ctx context.Context, input *UpdateMyProfil
 		mergePreferencesInternal(&userModel.Preferences, p)
 	}
 
-	updated, err := h.userService.UpdateUser(ctx, userModel)
+	updated, err := h.userService.UpdateUser(ctx, userModel, nil)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to update user")
 	}

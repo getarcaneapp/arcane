@@ -53,6 +53,12 @@ func BuildGotifyURL(config models.GotifyConfig) (string, error) {
 	if config.DisableTLS {
 		q.Set("disabletls", "yes")
 	}
+	if config.InsecureSkipVerify {
+		q.Set("insecureskipverify", "yes")
+	}
+	if config.UseHeader {
+		q.Set("useheader", "yes")
+	}
 
 	u.RawQuery = q.Encode()
 	return u.String(), nil
@@ -65,7 +71,7 @@ func SendGotify(ctx context.Context, config models.GotifyConfig, message string)
 		return errors.WrapIf(err, "failed to build shoutrrr Gotify URL")
 	}
 
-	sender, err := shoutrrr.CreateSender(shoutrrrURL)
+	sender, err := shoutrrr.CreateSenderWithOptions(shoutrrrTypes.SenderOptions{}, shoutrrrURL)
 	if err != nil {
 		return errors.WrapIf(err, "failed to create shoutrrr Gotify sender")
 	}

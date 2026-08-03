@@ -12,6 +12,7 @@ import (
 	clipkg "github.com/getarcaneapp/arcane/cli/v2/pkg"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"github.com/stretchr/testify/require"
 )
 
 var stdoutCaptureMuInternal sync.Mutex
@@ -28,8 +29,10 @@ func writeCLIIntegrationConfigInternal(t *testing.T, serverURL string) string {
 		"log_level: info",
 		"",
 	}, "\n")
-	if err := os.WriteFile(configPath, []byte(configContent), 0o600); err != nil {
-		t.Fatalf("write config: %v", err)
+	{
+		err := os.WriteFile(configPath, []byte(configContent), 0o600)
+		require.NoError(t, err,
+			"write config: %v", err)
 	}
 
 	return configPath
@@ -49,9 +52,10 @@ func executeCLIIntegrationCommandInternal(t *testing.T, args []string) (string, 
 
 	stdout := os.Stdout
 	reader, writer, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("pipe: %v", err)
-	}
+
+	require.NoError(t, err,
+		"pipe: %v", err)
+
 	os.Stdout = writer
 	defer func() {
 		_ = writer.Close()
@@ -62,9 +66,9 @@ func executeCLIIntegrationCommandInternal(t *testing.T, args []string) (string, 
 
 	_ = writer.Close()
 	stdoutBytes, readErr := io.ReadAll(reader)
-	if readErr != nil {
-		t.Fatalf("read stdout: %v", readErr)
-	}
+
+	require.NoError(t, readErr,
+		"read stdout: %v", readErr)
 
 	outBuf := string(stdoutBytes)
 	if runtime.GOOS == "windows" {
@@ -103,10 +107,13 @@ func resetFlagSetInternal(t *testing.T, flagSet *pflag.FlagSet) {
 				defValue = ""
 			}
 		}
+		{
 
-		if err := flag.Value.Set(defValue); err != nil {
-			t.Fatalf("reset flag %s: %v", flag.Name, err)
+			err := flag.Value.Set(defValue)
+			require.NoError(t, err,
+				"reset flag %s: %v", flag.Name, err)
 		}
+
 		flag.Changed = false
 	})
 }

@@ -100,7 +100,9 @@ async function currentReloadCount(page: Page) {
 }
 
 test.describe('Manager self-update recovery', () => {
-	test('Update All reloads automatically when the manager is updated', async ({ page }) => {
+	test('Update All keeps the manager result visible and refreshes without a document reload', async ({
+		page
+	}) => {
 		await registerReloadCounter(page);
 		await page.route(/\/api\/environments\/0\/system\/upgrade\/all$/, async (route) => {
 			await fulfillJob(route, 'running', 'updating');
@@ -112,7 +114,19 @@ test.describe('Manager self-update recovery', () => {
 		await page.goto('/environments');
 		await openAndConfirmUpdateAll(page);
 
-		await expect.poll(() => currentReloadCount(page), { timeout: 10_000 }).toBe(2);
+		// The finished result stays on screen instead of the page being yanked away.
+		const dialog = page.getByRole('dialog');
+		await expect(dialog.getByRole('heading', { name: 'All environments processed' })).toBeVisible({
+			timeout: 10_000
+		});
+		// A hard reload here would re-run every load function while the agents are still
+		// reconnecting, briefly rendering the whole fleet as offline.
+		await expect.poll(() => currentReloadCount(page)).toBe(1);
+
+		// Closing refreshes through SvelteKit, which reloads data but not the document.
+		await dialog.getByRole('button', { name: 'Close', exact: true }).first().click();
+		await expect(dialog).toBeHidden();
+		await expect.poll(() => currentReloadCount(page)).toBe(1);
 		await expect(page).toHaveURL('/environments');
 	});
 
@@ -142,16 +156,20 @@ test.describe('Manager self-update recovery', () => {
 		const snapshot = dashboardSnapshot();
 		let upgradeTriggered = false;
 
-		await page.route(/\/api\/dashboard\/stream\?/, async (route) => {
+		await page.route(/\/api\/stream(?:\?.*)?$/, async (route) => {
+			const channels =
+				new URL(route.request().url()).searchParams.get('channels')?.split(',') ?? [];
+			const timestamp = new Date().toISOString();
 			await route.fulfill({
 				status: 200,
 				contentType: 'application/x-json-stream',
-				body: `${JSON.stringify({
-					type: 'snapshot',
-					environmentId: '0',
-					snapshot,
-					timestamp: new Date().toISOString()
-				})}\n`
+				body: channels.includes('dashboard')
+					? `${JSON.stringify({
+							channel: 'dashboard',
+							dashboard: { type: 'snapshot', environmentId: '0', snapshot, timestamp },
+							timestamp
+						})}\n`
+					: ''
 			});
 		});
 		await page.route(/\/api\/environments\/0\/dashboard(?:\?.*)?$/, async (route) => {
@@ -187,8 +205,15 @@ test.describe('Manager self-update recovery', () => {
 			});
 		});
 
+		const dashboardUpgradeCheck = page.waitForResponse((response) => {
+			return (
+				new URL(response.url()).pathname === '/api/environments/0/system/upgrade/check' &&
+				response.status() === 200
+			);
+		});
 		await page.goto('/dashboard');
-		const versionBadge = page.getByText('v1.0.0', { exact: true }).first();
+		await dashboardUpgradeCheck;
+		const versionBadge = page.locator('main').getByRole('button', { name: 'v1.0.0', exact: true });
 		await expect(versionBadge).toBeVisible();
 		await versionBadge.hover();
 		const upgradeButton = page.getByRole('button', { name: 'Update to 2.0.0', exact: true });
@@ -205,17 +230,32 @@ test.describe('Manager self-update recovery', () => {
 		await registerReloadCounter(page);
 		await registerTokenSeeding(page);
 
-		let releaseActivity: () => void = () => {};
+		let releaseActivity!: () => void;
 		const activityRelease = new Promise<void>((resolve) => {
 			releaseActivity = resolve;
 		});
-		await page.route(/\/api\/activities\/stream\?/, async (route) => {
-			await activityRelease;
-			if (route.request().headers()['cookie']?.includes(REFRESH_COOKIE)) {
+		await page.route(/\/api\/stream(?:\?.*)?$/, async (route) => {
+			const channels =
+				new URL(route.request().url()).searchParams.get('channels')?.split(',') ?? [];
+			if (!channels.includes('activities')) {
 				await route.fulfill({
 					status: 200,
 					contentType: 'application/x-json-stream',
-					body: `${JSON.stringify({ type: 'snapshot', activities: [] })}\n`
+					body: ''
+				});
+				return;
+			}
+			await activityRelease;
+			if (route.request().headers()['cookie']?.includes(REFRESH_COOKIE)) {
+				const timestamp = new Date().toISOString();
+				await route.fulfill({
+					status: 200,
+					contentType: 'application/x-json-stream',
+					body: `${JSON.stringify({
+						channel: 'activities',
+						activity: { type: 'snapshot', environmentId: '0', activities: [], timestamp },
+						timestamp
+					})}\n`
 				});
 				return;
 			}

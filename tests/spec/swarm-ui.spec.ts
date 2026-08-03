@@ -30,15 +30,17 @@ test.describe('Swarm UI', () => {
 	test('cluster page renders correct lifecycle controls for current swarm state', async ({
 		page
 	}) => {
+		const swarmInfoResponsePromise = page.waitForResponse('**/api/environments/*/swarm/info');
 		await page.goto('/swarm/cluster');
 		await page.waitForLoadState('load');
+		const swarmInfoResponse = await swarmInfoResponsePromise;
 
 		await expect(page.getByRole('heading', { name: 'Cluster', level: 1 })).toBeVisible();
 
 		const initializeCard = page
 			.locator('[data-slot="card-title"]')
 			.filter({ hasText: 'Initialize Cluster' });
-		if ((await initializeCard.count()) === 0) {
+		if (swarmInfoResponse.ok()) {
 			await expect(page.getByRole('button', { name: 'Actions' })).toBeVisible();
 			await expect(page.getByText('Initialize Cluster')).toHaveCount(0);
 			await expect(page.getByText('Join Existing Cluster')).toHaveCount(0);

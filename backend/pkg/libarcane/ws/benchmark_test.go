@@ -10,32 +10,33 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gorilla/websocket"
+	"github.com/coder/websocket"
+	"github.com/stretchr/testify/require"
 )
 
 // benchWSServer creates a test WebSocket server for benchmarks.
 // The server keeps connections open until the returned cleanup is called.
+
 func benchWSServer(b *testing.B) (url string, cleanup func()) {
 	b.Helper()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := upgrader.Upgrade(w, r, nil)
+		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {
 			return
 		}
 		go func() {
 			// Drain reads until context cancelled
 			for {
-				if _, _, err := conn.ReadMessage(); err != nil {
+				if _, _, err := conn.Read(ctx); err != nil {
 					return
 				}
 			}
 		}()
 		<-ctx.Done()
-		conn.Close()
+		_ = conn.CloseNow()
 	}))
 
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
@@ -58,12 +59,9 @@ func benchHub(b *testing.B, numClients int, hubBuf int) (*Hub, context.CancelFun
 
 	var conns []*websocket.Conn
 	for range numClients {
-		conn, resp, err := websocket.DefaultDialer.Dial(wsURL, nil)
+		conn, _, err := websocket.Dial(ctx, wsURL, nil)
 		if err != nil {
-			b.Fatal(err)
-		}
-		if resp != nil {
-			resp.Body.Close()
+			require.FailNowf(b, "benchmark websocket dial failed", "%v", err)
 		}
 		conns = append(conns, conn)
 
@@ -85,7 +83,7 @@ func benchHub(b *testing.B, numClients int, hubBuf int) (*Hub, context.CancelFun
 	return h, cancel, func() {
 		cancel()
 		for _, c := range conns {
-			c.Close()
+			_ = c.CloseNow()
 		}
 		serverCleanup()
 	}
@@ -202,7 +200,7 @@ func BenchmarkLogMessage_Marshal(b *testing.B) {
 
 	for b.Loop() {
 		if _, err := json.Marshal(msg); err != nil {
-			b.Fatal(err)
+			require.FailNowf(b, "benchmark JSON marshal failed", "%v", err)
 		}
 	}
 }
@@ -227,7 +225,7 @@ func BenchmarkLogMessageBatch_Marshal(b *testing.B) {
 
 			for b.Loop() {
 				if _, err := json.Marshal(batch); err != nil {
-					b.Fatal(err)
+					require.FailNowf(b, "benchmark JSON marshal failed", "%v", err)
 				}
 			}
 		})
@@ -303,12 +301,9 @@ func BenchmarkHub_MemoryPerClient(b *testing.B) {
 			b.ResetTimer()
 
 			for b.Loop() {
-				conn, resp, err := websocket.DefaultDialer.Dial(wsURL, nil)
+				conn, _, err := websocket.Dial(ctx, wsURL, nil)
 				if err != nil {
-					b.Fatal(err)
-				}
-				if resp != nil {
-					resp.Body.Close()
+					require.FailNowf(b, "benchmark websocket dial failed", "%v", err)
 				}
 				c := NewClient(conn, sendBuf)
 				h.register <- c

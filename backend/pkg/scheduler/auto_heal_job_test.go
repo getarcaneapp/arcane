@@ -8,8 +8,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
-	sqlite "github.com/libtnb/sqlite"
+	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
@@ -133,7 +132,8 @@ func TestAutoHeal_Schedule_Default(t *testing.T) {
 func TestAutoHeal_ShouldSchedule(t *testing.T) {
 	ctx := context.Background()
 	_, settingsSvc, _ := setupAnalyticsStateServicesInternal(t)
-	job := NewAutoHealJob(nil, settingsSvc, nil, nil)
+	job, err := NewAutoHealJob(nil, settingsSvc, nil, nil, newTestAdmissionGateInternal(t))
+	require.NoError(t, err)
 
 	require.False(t, job.ShouldSchedule(ctx))
 
@@ -164,12 +164,13 @@ func TestAutoHeal_Run_UsesBoundedConcurrency(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&models.SettingVariable{}))
 
-	settingsSvc, err := services.NewSettingsService(ctx, &database.DB{DB: db})
+	settingsSvc, err := newSettingsServiceForTestInternal(t, ctx, &database.DB{DB: db})
 	require.NoError(t, err)
 	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "autoHealEnabled", true))
 	require.NoError(t, settingsSvc.SetStringSetting(ctx, "autoHealExcludedContainers", "skip-me"))
 
-	job := NewAutoHealJob(nil, settingsSvc, nil, nil)
+	job, err := NewAutoHealJob(nil, settingsSvc, nil, nil, newTestAdmissionGateInternal(t))
+	require.NoError(t, err)
 	job.getDockerClient = func() (*client.Client, error) { return nil, nil }
 	job.listContainers = func(ctx context.Context, dockerClient *client.Client) ([]container.Summary, error) {
 		return []container.Summary{
@@ -218,4 +219,43 @@ func TestAutoHeal_Run_UsesBoundedConcurrency(t *testing.T) {
 	require.Greater(t, atomic.LoadInt32(&maxConcurrent), int32(1))
 	require.LessOrEqual(t, atomic.LoadInt32(&maxConcurrent), int32(autoHealInspectConcurrency))
 	require.Equal(t, int32(4), atomic.LoadInt32(&restarts))
+}
+
+func TestAutoHealJob_OverlappingRunIsSkippedInternal(t *testing.T) {
+	ctx := context.Background()
+	_, settingsSvc, _ := setupAnalyticsStateServicesInternal(t)
+	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "autoHealEnabled", true))
+
+	job, err := NewAutoHealJob(nil, settingsSvc, nil, nil, newTestAdmissionGateInternal(t))
+	require.NoError(t, err)
+	job.getDockerClient = func() (*client.Client, error) { return nil, nil }
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+	var calls atomic.Int32
+	job.listContainers = func(context.Context, *client.Client) ([]container.Summary, error) {
+		calls.Add(1)
+		select {
+		case started <- struct{}{}:
+		default:
+		}
+		<-release
+		return nil, nil
+	}
+
+	firstDone := make(chan struct{})
+	go func() {
+		job.Run(ctx)
+		close(firstDone)
+	}()
+	<-started
+
+	job.Run(ctx)
+	require.Equal(t, int32(1), calls.Load())
+
+	close(release)
+	select {
+	case <-firstDone:
+	case <-time.After(time.Second):
+		require.FailNow(t, "first auto-heal run did not finish")
+	}
 }

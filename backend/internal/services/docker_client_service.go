@@ -16,6 +16,7 @@ import (
 	docker "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	dashboardtypes "github.com/getarcaneapp/arcane/types/v2/dashboard"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/events"
@@ -29,7 +30,6 @@ import (
 )
 
 const dockerClientNegotiationTimeout = 5 * time.Second
-const dockerImageStateResyncActionInternal events.Action = "arcane-resync"
 
 type DockerClientService struct {
 	db              *database.DB
@@ -209,6 +209,10 @@ func (s *DockerClientService) EventBus() *bus.DockerEventBus {
 	return s.eventBus
 }
 
+// dockerEventStreamHealthyAfter is how long an event stream must survive before
+// the reconnect backoff is considered recovered and reset.
+const dockerEventStreamHealthyAfter = 30 * time.Second
+
 func (s *DockerClientService) WatchEvents(ctx context.Context) {
 	eventBackoff := backoff.NewExponentialBackOff()
 	eventBackoff.InitialInterval = 500 * time.Millisecond
@@ -224,13 +228,22 @@ func (s *DockerClientService) WatchEvents(ctx context.Context) {
 			continue
 		}
 
-		eventBackoff.Reset()
 		result := dockerClient.Events(ctx, client.EventsListOptions{})
 		s.publishImageStateResyncInternal()
+		streamStart := time.Now()
 		err = s.consumeEventsInternal(ctx, result.Messages, result.Err)
 		if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, io.EOF) {
 			slog.WarnContext(ctx, "Docker event stream stopped", "error", err)
 		}
+
+		// Only a stream that actually stayed up counts as recovery. Resetting
+		// unconditionally before Events() meant a daemon that accepts the
+		// connection and drops it immediately was reconnected at the floor
+		// interval forever, purging the container update-info cache each time.
+		if time.Since(streamStart) >= dockerEventStreamHealthyAfter {
+			eventBackoff.Reset()
+		}
+
 		if !sleepDockerEventBackoffInternal(ctx, eventBackoff) {
 			return
 		}
@@ -240,7 +253,7 @@ func (s *DockerClientService) WatchEvents(ctx context.Context) {
 func (s *DockerClientService) publishImageStateResyncInternal() {
 	s.EventBus().Publish(events.Message{
 		Type:   events.ImageEventType,
-		Action: dockerImageStateResyncActionInternal,
+		Action: docker.ImageStateResyncAction,
 	})
 }
 
@@ -282,7 +295,7 @@ func (s *DockerClientService) listContainersInternal(ctx context.Context) ([]con
 	}
 
 	settings := s.settingsService.GetSettingsConfig()
-	apiCtx, cancel := timeouts.WithTimeout(ctx, settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI)
+	apiCtx, cancel := context.WithTimeout(ctx, timeouts.GetDuration(settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI))
 	defer cancel()
 
 	containerList, err := dockerClient.ContainerList(apiCtx, client.ContainerListOptions{All: true})
@@ -299,7 +312,7 @@ func (s *DockerClientService) listImagesInternal(ctx context.Context) ([]image.S
 	}
 
 	settings := s.settingsService.GetSettingsConfig()
-	apiCtx, cancel := timeouts.WithTimeout(ctx, settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI)
+	apiCtx, cancel := context.WithTimeout(ctx, timeouts.GetDuration(settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI))
 	defer cancel()
 
 	imageList, err := dockerClient.ImageList(apiCtx, client.ImageListOptions{All: true})
@@ -316,7 +329,7 @@ func (s *DockerClientService) listNetworksInternal(ctx context.Context) ([]netwo
 	}
 
 	settings := s.settingsService.GetSettingsConfig()
-	apiCtx, cancel := timeouts.WithTimeout(ctx, settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI)
+	apiCtx, cancel := context.WithTimeout(ctx, timeouts.GetDuration(settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI))
 	defer cancel()
 
 	networkList, err := libarcane.NetworkListWithCompatibility(apiCtx, dockerClient, client.NetworkListOptions{})
@@ -333,7 +346,7 @@ func (s *DockerClientService) listVolumesInternal(ctx context.Context) (*client.
 	}
 
 	settings := s.settingsService.GetSettingsConfig()
-	apiCtx, cancel := timeouts.WithTimeout(ctx, settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI)
+	apiCtx, cancel := context.WithTimeout(ctx, timeouts.GetDuration(settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI))
 	defer cancel()
 
 	volResp, err := dockerClient.VolumeList(apiCtx, client.VolumeListOptions{})
@@ -351,17 +364,23 @@ func (s *DockerClientService) GetSnapshot(ctx context.Context, envID string) (*d
 	var networks []network.Summary
 	var volumes *client.VolumeListResult
 
-	g.Go(func() error {
+	g.Go(func() (workerErr error) {
+		defer utils.RecoverToError(&workerErr, "docker snapshot worker")
+
 		var err error
 		containers, err = s.listContainersInternal(groupCtx)
 		return err
 	})
-	g.Go(func() error {
+	g.Go(func() (workerErr error) {
+		defer utils.RecoverToError(&workerErr, "docker snapshot worker")
+
 		var err error
 		images, err = s.listImagesInternal(groupCtx)
 		return err
 	})
-	g.Go(func() error {
+	g.Go(func() (workerErr error) {
+		defer utils.RecoverToError(&workerErr, "docker snapshot worker")
+
 		var err error
 		networks, err = s.listNetworksInternal(groupCtx)
 		if err != nil {
@@ -369,7 +388,9 @@ func (s *DockerClientService) GetSnapshot(ctx context.Context, envID string) (*d
 		}
 		return nil
 	})
-	g.Go(func() error {
+	g.Go(func() (workerErr error) {
+		defer utils.RecoverToError(&workerErr, "docker snapshot worker")
+
 		var err error
 		volumes, err = s.listVolumesInternal(groupCtx)
 		if err != nil {

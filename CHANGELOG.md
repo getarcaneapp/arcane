@@ -1,3 +1,75 @@
+## v2.6.0
+
+### New features
+
+* raw docker CLI output for all operations + interactive watch mode ([#3376](https://github.com/getarcaneapp/arcane/pull/3376) by @kmendell)
+* clickable dashboard tiles, volumes tile, and default landing page ([#3383](https://github.com/getarcaneapp/arcane/pull/3383) by @kmendell)
+* add row, bulk, and Update All actions to the updates page ([#3398](https://github.com/getarcaneapp/arcane/pull/3398) by @kmendell)
+
+### Bug fixes
+
+* harden gRPC tunnel reliability and request lifecycle ([#3325](https://github.com/getarcaneapp/arcane/pull/3325) by @kmendell)
+* prevent image update checks from getting stuck in a running state ([#3327](https://github.com/getarcaneapp/arcane/pull/3327) by @kmendell)
+* preserve IPAM fields in network inspect responses ([#3335](https://github.com/getarcaneapp/arcane/pull/3335) by @kmendell)
+* remove full stack trace from logging([1bed071](https://github.com/getarcaneapp/arcane/commit/1bed0714fc36f9bd0d0c170f0fcedd1bfe33e380) by @kmendell)
+* correct swarm resource scoping and stack deploy conformance ([#3385](https://github.com/getarcaneapp/arcane/pull/3385) by @kmendell)
+* tear down abandoned dashboard and activity streams promptly ([#3388](https://github.com/getarcaneapp/arcane/pull/3388) by @kmendell)
+* skip unreadable directories instead of discarding the project file tree ([#3393](https://github.com/getarcaneapp/arcane/pull/3393) by @kmendell)
+* preserve duplicate diagnostic log entries ([#3390](https://github.com/getarcaneapp/arcane/pull/3390) by @Kstateag)
+* resolve relative compose paths that escape the projects mount ([#3401](https://github.com/getarcaneapp/arcane/pull/3401) by @kmendell)
+* harden credential targets and browse paths ([#3403](https://github.com/getarcaneapp/arcane/pull/3403) by @kmendell)
+* resolve nil dereferences and a database pool leak([c89ac52](https://github.com/getarcaneapp/arcane/commit/c89ac52288eadaea1a47354e0461644259272fc7) by @kmendell)
+* handle unchecked error returns across backend and CLI([e4a5420](https://github.com/getarcaneapp/arcane/commit/e4a54203bc955afe30d4fb5bf4c1726b3544d8ad) by @kmendell)
+* honor updater opt-out labels during image scans ([#3405](https://github.com/getarcaneapp/arcane/pull/3405) by @Kstateag)
+* stream environment liveness over a multiplexed client stream ([#3406](https://github.com/getarcaneapp/arcane/pull/3406) by @kmendell)
+* crashes, goroutine leaks, and hot-path performance in the backend ([#3425](https://github.com/getarcaneapp/arcane/pull/3425) by @kmendell)
+* enforce actor privilege checks in user service ([#3426](https://github.com/getarcaneapp/arcane/pull/3426) by @kmendell)
+
+### CLI - Bug fixes
+
+* align commands with backend API contract ([#3400](https://github.com/getarcaneapp/arcane/pull/3400) by @kmendell)
+
+### Dependencies
+
+* bump actions/setup-go from 6 to 7 ([#3342](https://github.com/getarcaneapp/arcane/pull/3342) by @dependabot[bot])
+* bump pnpm to v11.16.0([d0339d4](https://github.com/getarcaneapp/arcane/commit/d0339d4f22d19c0f427510e331776d9c330262b0) by @kmendell)
+* bump @tanstack/svelte-query from 6.1.36 to 6.1.37 ([#3363](https://github.com/getarcaneapp/arcane/pull/3363) by @dependabot[bot])
+* bump @fontsource-variable/montserrat from 5.2.8 to 5.3.0 ([#3360](https://github.com/getarcaneapp/arcane/pull/3360) by @dependabot[bot])
+* bump react-email from 6.8.1 to 6.9.0 ([#3352](https://github.com/getarcaneapp/arcane/pull/3352) by @dependabot[bot])
+* bump svelte from 5.56.4 to 5.56.7 ([#3351](https://github.com/getarcaneapp/arcane/pull/3351) by @dependabot[bot])
+* bump github.com/docker/cli from 29.6.1+incompatible to 29.6.2+incompatible in /backend ([#3340](https://github.com/getarcaneapp/arcane/pull/3340) by @dependabot[bot])
+* bump @fontsource-variable/geist-mono from 5.2.8 to 5.3.0 ([#3364](https://github.com/getarcaneapp/arcane/pull/3364) by @dependabot[bot])
+* bump github.com/klauspost/compress from 1.19.0 to 1.19.1 in /backend ([#3339](https://github.com/getarcaneapp/arcane/pull/3339) by @dependabot[bot])
+* bump google.golang.org/grpc from 1.82.0 to 1.82.1 in /backend ([#3337](https://github.com/getarcaneapp/arcane/pull/3337) by @dependabot[bot])
+* bump github.com/moby/buildkit from 0.31.1 to 0.31.2 in /backend ([#3336](https://github.com/getarcaneapp/arcane/pull/3336) by @dependabot[bot])
+* bump the tanstack-table group across 1 directory with 2 updates ([#3341](https://github.com/getarcaneapp/arcane/pull/3341) by @dependabot[bot])
+* bump @tanstack/virtual-core from 3.17.4 to 3.17.5 ([#3355](https://github.com/getarcaneapp/arcane/pull/3355) by @dependabot[bot])
+* bump @sveltejs/kit from 3.0.0-next.8 to 3.0.0-next.11 ([#3362](https://github.com/getarcaneapp/arcane/pull/3362) by @dependabot[bot])
+* bump @codemirror/lang-markdown from 6.5.0 to 6.5.1 in the codemirror group across 1 directory ([#3344](https://github.com/getarcaneapp/arcane/pull/3344) by @dependabot[bot])
+* bump github.com/nicholas-fedor/shoutrrr from 0.16.1 to 0.16.2 in /backend ([#3396](https://github.com/getarcaneapp/arcane/pull/3396) by @dependabot[bot])
+* bump the aws-sdk-go-v2 group in /backend with 3 updates ([#3394](https://github.com/getarcaneapp/arcane/pull/3394) by @dependabot[bot])
+* bump github.com/libtnb/sqlite from 1.2.0 to 1.2.1 in /backend ([#3395](https://github.com/getarcaneapp/arcane/pull/3395) by @dependabot[bot])
+* bump github.com/pressly/goose/v3 from 3.27.2 to 3.27.3 in /backend ([#3397](https://github.com/getarcaneapp/arcane/pull/3397) by @dependabot[bot])
+
+### Other
+
+* consolidate internal helpers ([#3320](https://github.com/getarcaneapp/arcane/pull/3320) by @kmendell)
+* standardize optional values with samber/mo ([#3322](https://github.com/getarcaneapp/arcane/pull/3322) by @kmendell)
+* replace google/wire DI with uber-go/fx ([#3323](https://github.com/getarcaneapp/arcane/pull/3323) by @kmendell)
+* centralize/replace manual caching with samber/hot ([#3324](https://github.com/getarcaneapp/arcane/pull/3324) by @kmendell)
+* unify error handling ([#3328](https://github.com/getarcaneapp/arcane/pull/3328) by @kmendell)
+* migrate from echo/v4 to echo/v5 ([#3365](https://github.com/getarcaneapp/arcane/pull/3365) by @kmendell)
+* redesign environment settings page layout and tabs ([#3377](https://github.com/getarcaneapp/arcane/pull/3377) by @kmendell)
+* move all appearance settings to the user profile view ([#3384](https://github.com/getarcaneapp/arcane/pull/3384) by @kmendell)
+* bump go.getarcane.app/updater to v0.7.0 ([#3387](https://github.com/getarcaneapp/arcane/pull/3387) by @kmendell)
+* cleanup docker info dialog([497d234](https://github.com/getarcaneapp/arcane/commit/497d2343340582df49d93c28b3a55f5a85cc2407) by @kmendell)
+* redesign update view and show environment version in the tables ([#3389](https://github.com/getarcaneapp/arcane/pull/3389) by @kmendell)
+* unify edge tunnel transport lifecycle and relocate proto to backend/proto ([#3416](https://github.com/getarcaneapp/arcane/pull/3416) by @kmendell)
+
+
+
+**Full Changelog**: https://github.com/getarcaneapp/arcane/compare/v2.5.0...v2.6.0
+
 ## v2.5.0
 
 ### New features

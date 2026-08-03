@@ -12,6 +12,8 @@
 	import { imageService } from '#lib/services/image-service';
 	import { containerService, type ContainerListRequestOptions } from '#lib/services/container-service';
 	import { projectService } from '#lib/services/project-service';
+	import { settingsService } from '#lib/services/settings-service';
+	import { confirmAndApplyAllUpdates } from '#lib/utils/update-actions';
 	import type { ContainersPaginatedResponse } from '#lib/services/container-service';
 	import type { ImageUpdateInfoDto } from '#lib/types/docker';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
@@ -97,6 +99,15 @@
 		return Array.from(refs).sort();
 	});
 
+	const settingsQuery = createQuery(() => ({
+		queryKey: queryKeys.settings.byEnvironment(envId),
+		queryFn: () => settingsService.getSettingsForEnvironmentMerged(envId),
+		initialData: envId === data.envId ? data.settings : undefined,
+		refetchOnMount: false
+	}));
+
+	const excludedContainers = $derived(settingsQuery.data?.autoUpdateExcludedContainers ?? '');
+
 	const projectUpdateDetailsQuery = createQuery<Record<string, ImageUpdateInfoDto>>(() => ({
 		queryKey: ['updates', 'projects', 'details', envId, projectUpdatedImageRefs],
 		queryFn: () =>
@@ -160,6 +171,17 @@
 		}
 	}
 
+	// The run is synchronous server-side (bounded by the updater apply timeout),
+	// so the button holds its spinner while the Activity Center streams progress.
+	let isUpdatingAll = $state(false);
+
+	function updateAll() {
+		confirmAndApplyAllUpdates({
+			setLoading: (loading) => (isUpdatingAll = loading),
+			onRefresh: refresh
+		});
+	}
+
 	function handleTabChange(value: string) {
 		urlTab.select(value);
 	}
@@ -173,6 +195,15 @@
 			onclick: () => checkUpdatesMutation.mutate(),
 			loading: isChecking,
 			disabled: isChecking
+		},
+		{
+			id: 'update-all',
+			action: 'update',
+			label: m.update_all(),
+			loadingLabel: m.common_action_updating(),
+			onclick: updateAll,
+			loading: isUpdatingAll,
+			disabled: isUpdatingAll || totalAffectedResources === 0
 		},
 		{
 			id: 'refresh',
@@ -216,7 +247,9 @@
 					{#key `${envId}-containers`}
 						<ContainerUpdatesTable
 							{containers}
+							{excludedContainers}
 							bind:requestOptions={containerRequestOptions}
+							onIgnoreChanged={() => settingsQuery.refetch()}
 							onRefreshData={async (options) => {
 								containerRequestOptions = ensureStandaloneContainerUpdatesFilter(options);
 								const next = await containerService.getContainersForEnvironment(envId, containerRequestOptions);

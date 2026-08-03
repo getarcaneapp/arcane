@@ -286,8 +286,29 @@ func (h *UserHandler) UpdateUser(ctx context.Context, input *UpdateUserInput) (*
 
 	userModel.UpdatedAt = new(time.Now())
 
-	updatedUser, err := h.userService.UpdateUser(ctx, userModel)
+	// Privilege ordering: a non-admin caller may not modify a global admin
+	// target, nor set another user's password. The service re-enforces the
+	// target-admin check.
+	callerPerms, _ := humamw.PermissionsFromContext(ctx)
+	caller, _ := models.CurrentUserFromContext(ctx)
+	if callerPerms != nil && !callerPerms.IsGlobalAdmin() {
+		if input.Body.Password != nil && *input.Body.Password != "" && caller != nil && caller.ID != userModel.ID {
+			return nil, huma.Error403Forbidden(services.ErrInsufficientPrivilege.Error())
+		}
+		targetPerms, err := h.userService.ResolveUserPermissions(ctx, userModel.ID)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Failed to resolve target permissions")
+		}
+		if targetPerms != nil && targetPerms.IsGlobalAdmin() {
+			return nil, huma.Error403Forbidden(services.ErrInsufficientPrivilege.Error())
+		}
+	}
+
+	updatedUser, err := h.userService.UpdateUser(ctx, userModel, callerPerms)
 	if err != nil {
+		if errors.Is(err, services.ErrInsufficientPrivilege) {
+			return nil, huma.Error403Forbidden(services.ErrInsufficientPrivilege.Error())
+		}
 		if errors.Is(err, services.ErrCannotRemoveLastAdmin) {
 			return nil, huma.Error409Conflict(services.ErrCannotRemoveLastAdmin.Error())
 		}
@@ -316,7 +337,25 @@ func (h *UserHandler) UpdateUser(ctx context.Context, input *UpdateUserInput) (*
 
 // DeleteUser deletes a user.
 func (h *UserHandler) DeleteUser(ctx context.Context, input *DeleteUserInput) (*DeleteUserOutput, error) {
-	if err := h.userService.DeleteUser(ctx, input.UserID); err != nil {
+	// Privilege ordering: a non-admin caller may not delete a global admin
+	// target. The service enforces the same check; this pre-check produces a
+	// clean 403 without entering the delete path.
+	callerPerms, _ := humamw.PermissionsFromContext(ctx)
+	caller, _ := models.CurrentUserFromContext(ctx)
+	if callerPerms != nil && !callerPerms.IsGlobalAdmin() && caller != nil && caller.ID != input.UserID {
+		targetPerms, err := h.userService.ResolveUserPermissions(ctx, input.UserID)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Failed to resolve target permissions")
+		}
+		if targetPerms != nil && targetPerms.IsGlobalAdmin() {
+			return nil, huma.Error403Forbidden(services.ErrInsufficientPrivilege.Error())
+		}
+	}
+
+	if err := h.userService.DeleteUser(ctx, input.UserID, callerPerms); err != nil {
+		if errors.Is(err, services.ErrInsufficientPrivilege) {
+			return nil, huma.Error403Forbidden(services.ErrInsufficientPrivilege.Error())
+		}
 		if errors.Is(err, services.ErrCannotRemoveLastAdmin) {
 			return nil, huma.Error409Conflict(services.ErrCannotRemoveLastAdmin.Error())
 		}

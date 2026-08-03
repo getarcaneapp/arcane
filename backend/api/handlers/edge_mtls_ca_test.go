@@ -102,7 +102,7 @@ func TestReadGeneratedEdgeMTLSCertificateInfo(t *testing.T) {
 	require.NotNil(t, info.ExpiresAt)
 	require.True(t, info.ExpiresAt.After(time.Now().UTC()))
 	require.NotNil(t, info.DaysRemaining)
-	require.True(t, *info.DaysRemaining > 0)
+	require.Positive(t, *info.DaysRemaining)
 	require.False(t, info.Expired)
 	require.False(t, info.ExpiringSoon)
 }

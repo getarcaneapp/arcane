@@ -10,7 +10,7 @@ import (
 )
 
 func TestParseVersion(t *testing.T) {
-	require.Equal(t, "", ParseVersion(""))
+	require.Empty(t, ParseVersion(""))
 	require.Equal(t, "0.50.1", ParseVersion("Version: 0.50.1\nVulnerability DB:\n  Version: 2"))
 	require.Equal(t, "raw-output", ParseVersion("raw-output"))
 }
@@ -187,12 +187,6 @@ func TestParseSecurityOpts(t *testing.T) {
 			require.Equal(t, tt.want, ParseSecurityOpts(tt.value))
 		})
 	}
-}
-
-func TestNormalizeNetworkMode(t *testing.T) {
-	require.Equal(t, "", NormalizeNetworkMode(""))
-	require.Equal(t, "", NormalizeNetworkMode(" \t\n "))
-	require.Equal(t, "arcane-external", NormalizeNetworkMode("arcane-external"))
 }
 
 func TestParseDockerHost(t *testing.T) {

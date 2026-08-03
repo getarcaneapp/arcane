@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	sqlite "github.com/libtnb/sqlite"
+	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
@@ -519,14 +519,14 @@ func TestValidateAPIKeyLastUsedUpdateIsRequestScoped(t *testing.T) {
 	case <-updateStarted:
 	case <-time.After(time.Second):
 		close(releaseUpdate)
-		t.Fatal("last-used update did not start")
+		require.FailNow(t, "last-used update did not start")
 	}
 
 	select {
 	case err := <-validationDone:
 		close(releaseUpdate)
 		require.NoError(t, err)
-		t.Fatal("validation returned before its last-used update completed")
+		require.FailNow(t, "validation returned before its last-used update completed")
 	case <-time.After(50 * time.Millisecond):
 	}
 
@@ -703,7 +703,7 @@ func TestBackfillApiKeyPermissionsRepairsExistingBootstrapKey(t *testing.T) {
 	require.NoError(t, err)
 	envPerms, ok := ps.PerEnv[envID]
 	require.True(t, ok)
-	require.Equal(t, len(authz.AllPermissions()), len(envPerms))
+	require.Len(t, envPerms, len(authz.AllPermissions()))
 }
 
 func TestGetEnvironmentByAPIKeyRecentLastUsedAtDoesNotRewriteImmediately(t *testing.T) {

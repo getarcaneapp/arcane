@@ -336,10 +336,17 @@ export interface SwarmStackInspect {
 	updatedAt: string;
 }
 
+export interface SwarmSyncFile {
+	relativePath: string;
+	content: string;
+}
+
 export interface SwarmStackDeployRequest {
 	name: string;
 	composeContent: string;
+	overrideContent?: string;
 	envContent?: string;
+	files?: SwarmSyncFile[];
 	withRegistryAuth?: boolean;
 	prune?: boolean;
 	resolveImage?: string;
@@ -352,6 +359,7 @@ export interface SwarmStackDeployResponse {
 export interface SwarmStackRenderConfigRequest {
 	name: string;
 	composeContent: string;
+	overrideContent?: string;
 	envContent?: string;
 }
 
@@ -369,12 +377,16 @@ export interface SwarmStackRenderConfigResponse {
 export interface SwarmStackSource {
 	name: string;
 	composeContent: string;
+	overrideContent?: string;
 	envContent?: string;
+	files?: SwarmSyncFile[];
 }
 
 export interface SwarmStackSourceUpdateRequest {
 	composeContent: string;
+	overrideContent?: string;
 	envContent?: string;
+	files?: SwarmSyncFile[];
 }
 
 export interface SwarmInfo {
@@ -496,17 +508,7 @@ export interface SwarmConfigCreateRequest {
 	spec: Record<string, unknown>;
 }
 
-export interface SwarmConfigUpdateRequest {
-	version?: number;
-	spec: Record<string, unknown>;
-}
-
 export interface SwarmSecretCreateRequest {
-	spec: Record<string, unknown>;
-}
-
-export interface SwarmSecretUpdateRequest {
-	version?: number;
 	spec: Record<string, unknown>;
 }
 

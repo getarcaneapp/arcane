@@ -5,25 +5,30 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestNodeAgentStatusLegacyJSONCompatibility(t *testing.T) {
 	var status NodeAgentStatus
-	if err := json.Unmarshal([]byte(`{"state":"connected","environmentId":"env-1","connected":true}`), &status); err != nil {
-		t.Fatalf("unmarshal legacy status: %v", err)
+	{
+		err := json.Unmarshal([]byte(`{"state":"connected","environmentId":"env-1","connected":true}`), &status)
+		require.NoError(t, err,
+			"unmarshal legacy status: %v", err)
 	}
-	if status.State != NodeAgentStateConnected {
-		t.Fatalf("state = %q, want %q", status.State, NodeAgentStateConnected)
-	}
-	if status.EnvironmentID == nil || *status.EnvironmentID != "env-1" {
-		t.Fatalf("environmentId = %v, want env-1", status.EnvironmentID)
-	}
-	if status.BindingKind != nil {
-		t.Fatalf("bindingKind = %v, want nil", *status.BindingKind)
-	}
-	if len(status.Candidates) != 0 {
-		t.Fatalf("candidates = %v, want empty", status.Candidates)
-	}
+
+	require.Equal(t, NodeAgentStateConnected, status.State,
+		"state = %q, want %q", status.State, NodeAgentStateConnected)
+
+	require.False(t, status.EnvironmentID == nil || *status.EnvironmentID != "env-1",
+		"environmentId = %v, want env-1", status.EnvironmentID)
+
+	require.Nil(t, status.BindingKind,
+		"bindingKind = %v, want nil", status.BindingKind)
+
+	require.Empty(t, status.Candidates,
+		"candidates = %v, want empty", status.Candidates)
+
 }
 
 func TestNodeAgentStatusAmbiguousJSON(t *testing.T) {
@@ -37,28 +42,36 @@ func TestNodeAgentStatusAmbiguousJSON(t *testing.T) {
 	}
 
 	encoded, err := json.Marshal(status)
-	if err != nil {
-		t.Fatalf("marshal ambiguous status: %v", err)
-	}
+
+	require.NoError(t, err,
+		"marshal ambiguous status: %v", err)
+
 	var actual, expected any
-	if err := json.Unmarshal(encoded, &actual); err != nil {
-		t.Fatalf("unmarshal actual JSON: %v", err)
+	{
+		err := json.Unmarshal(encoded, &actual)
+		require.NoError(t, err,
+			"unmarshal actual JSON: %v", err)
 	}
-	if err := json.Unmarshal([]byte(`{"state":"ambiguous","candidates":[{"environmentId":"env-1","environmentName":"worker-1","environmentType":"edge"}]}`), &expected); err != nil {
-		t.Fatalf("unmarshal expected JSON: %v", err)
+	{
+
+		err := json.Unmarshal([]byte(`{"state":"ambiguous","candidates":[{"environmentId":"env-1","environmentName":"worker-1","environmentType":"edge"}]}`), &expected)
+		require.NoError(t, err,
+			"unmarshal expected JSON: %v", err)
 	}
-	if !reflect.DeepEqual(actual, expected) {
-		t.Fatalf("JSON = %s, want ambiguous candidate payload", encoded)
-	}
+
+	require.True(t, reflect.DeepEqual(actual, expected),
+		"JSON = %s, want ambiguous candidate payload", encoded)
+
 }
 
 func TestSwarmJoinEnvironmentResultDoesNotExposeToken(t *testing.T) {
 	result := SwarmJoinEnvironmentResult{EnvironmentID: "env-1", State: SwarmJoinEnvironmentResultJoined}
 	encoded, err := json.Marshal(result)
-	if err != nil {
-		t.Fatalf("marshal join result: %v", err)
-	}
-	if string(encoded) == "" || strings.Contains(string(encoded), "token") {
-		t.Fatalf("join result unexpectedly exposes a token field: %s", encoded)
-	}
+
+	require.NoError(t, err,
+		"marshal join result: %v", err)
+
+	require.False(t, string(encoded) == "" || strings.Contains(string(encoded), "token"),
+		"join result unexpectedly exposes a token field: %s", encoded)
+
 }

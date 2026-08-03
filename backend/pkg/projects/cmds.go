@@ -130,14 +130,14 @@ func ComposeDown(ctx context.Context, proj *types.Project, removeVolumes bool) e
 	return c.svc.Down(downCtx, proj.Name, api.DownOptions{RemoveOrphans: true, Volumes: removeVolumes})
 }
 
-func ComposeLogs(ctx context.Context, projectName string, out io.Writer, follow bool, tail, since string) error {
+func ComposeLogs(ctx context.Context, projectName string, out io.Writer, follow bool, tail, since string, timestamps bool) error {
 	c, err := NewClient(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = c.Close() }()
 
-	return c.svc.Logs(ctx, projectName, writerConsumer{out: out}, api.LogOptions{Follow: follow, Tail: tail, Since: since})
+	return c.svc.Logs(ctx, projectName, writerConsumer{out: out}, api.LogOptions{Follow: follow, Tail: tail, Since: since, Timestamps: timestamps})
 }
 
 func ListGlobalComposeContainers(ctx context.Context) ([]container.Summary, error) {

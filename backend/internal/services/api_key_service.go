@@ -82,12 +82,8 @@ func (s *ApiKeyService) validateApiKeyHash(hash, key string) error {
 	return s.userService.ValidatePassword(hash, key)
 }
 
-func normalizeAPIKeyInputInternal(rawKey string) string {
-	return strings.TrimSpace(rawKey)
-}
-
 func parseAPIKeyPrefixInternal(rawKey string) (string, error) {
-	rawKey = normalizeAPIKeyInputInternal(rawKey)
+	rawKey = strings.TrimSpace(rawKey)
 	if !strings.HasPrefix(rawKey, apiKeyPrefix) {
 		return "", ErrApiKeyInvalid
 	}
@@ -232,7 +228,7 @@ func (s *ApiKeyService) createAPIKeyWithRawKey(
 	environmentID *string,
 	kind string,
 ) (*apikey.ApiKeyCreatedDto, error) {
-	rawKey = normalizeAPIKeyInputInternal(rawKey)
+	rawKey = strings.TrimSpace(rawKey)
 	keyPrefix, err := parseAPIKeyPrefixInternal(rawKey)
 	if err != nil {
 		return nil, err
@@ -437,7 +433,7 @@ func (s *ApiKeyService) reconcileManagedAPIKeys(tx *gorm.DB, userID string, rawK
 }
 
 func (s *ApiKeyService) ReconcileDefaultAdminAPIKey(ctx context.Context, rawKey string) error {
-	rawKey = normalizeAPIKeyInputInternal(rawKey)
+	rawKey = strings.TrimSpace(rawKey)
 
 	adminUser, err := s.getDefaultAdminUser(ctx)
 	if err != nil || adminUser == nil {
@@ -707,7 +703,7 @@ func (s *ApiKeyService) ValidateApiKeyWithID(ctx context.Context, rawKey string)
 		return nil, nil, errors.WrapIf(err, "failed to find API keys")
 	}
 
-	rawKey = normalizeAPIKeyInputInternal(rawKey)
+	rawKey = strings.TrimSpace(rawKey)
 	for _, apiKey := range apiKeys {
 		if err := s.validateApiKeyHash(apiKey.KeyHash, rawKey); err == nil {
 			if apiKey.ExpiresAt != nil && apiKey.ExpiresAt.Before(time.Now()) {
@@ -745,7 +741,7 @@ func (s *ApiKeyService) GetEnvironmentByApiKey(ctx context.Context, rawKey strin
 		return nil, errors.WrapIf(err, "failed to find API keys")
 	}
 
-	rawKey = normalizeAPIKeyInputInternal(rawKey)
+	rawKey = strings.TrimSpace(rawKey)
 	for _, apiKey := range apiKeys {
 		if err := s.validateApiKeyHash(apiKey.KeyHash, rawKey); err == nil {
 			if apiKey.ExpiresAt != nil && apiKey.ExpiresAt.Before(time.Now()) {

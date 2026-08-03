@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	"github.com/stretchr/testify/require"
 )
 
 func TestClient_RetriesIdempotentRequests(t *testing.T) {
@@ -30,19 +31,24 @@ func TestClient_RetriesIdempotentRequests(t *testing.T) {
 
 	cfg := &types.Config{ServerURL: srv.URL, APIKey: "arc_test_key"}
 	c, err := New(cfg)
-	if err != nil {
-		t.Fatalf("New() error: %v", err)
-	}
+
+	require.NoError(t, err,
+		"New() error: %v", err)
+
 	c.SetRetryPolicy(3, 1*time.Millisecond, 2*time.Millisecond)
 
 	resp, err := c.Get(context.Background(), "/api/version")
-	if err != nil {
-		t.Fatalf("Get() error: %v", err)
-	}
+
+	require.NoError(t, err,
+		"Get() error: %v", err)
+
 	_ = resp.Body.Close()
-	if got := atomic.LoadInt32(&attempts); got != 2 {
-		t.Fatalf("expected 2 attempts, got %d", got)
+	{
+		got := atomic.LoadInt32(&attempts)
+		require.Equal(t, int32(2), got,
+			"expected 2 attempts, got %d", got)
 	}
+
 }
 
 func TestClient_DoesNotRetryNonIdempotentRequests(t *testing.T) {
@@ -58,19 +64,24 @@ func TestClient_DoesNotRetryNonIdempotentRequests(t *testing.T) {
 
 	cfg := &types.Config{ServerURL: srv.URL, APIKey: "arc_test_key"}
 	c, err := New(cfg)
-	if err != nil {
-		t.Fatalf("New() error: %v", err)
-	}
+
+	require.NoError(t, err,
+		"New() error: %v", err)
+
 	c.SetRetryPolicy(3, 1*time.Millisecond, 2*time.Millisecond)
 
 	resp, err := c.Post(context.Background(), "/api/version", map[string]any{"a": 1})
-	if err != nil {
-		t.Fatalf("Post() returned transport error: %v", err)
-	}
+
+	require.NoError(t, err,
+		"Post() returned transport error: %v", err)
+
 	_ = resp.Body.Close()
-	if got := atomic.LoadInt32(&attempts); got != 1 {
-		t.Fatalf("expected 1 attempt, got %d", got)
+	{
+		got := atomic.LoadInt32(&attempts)
+		require.Equal(t, int32(1), got,
+			"expected 1 attempt, got %d", got)
 	}
+
 }
 
 func TestClient_DoJSON_StrictStatus(t *testing.T) {
@@ -84,14 +95,17 @@ func TestClient_DoJSON_StrictStatus(t *testing.T) {
 
 	cfg := &types.Config{ServerURL: srv.URL, APIKey: "arc_test_key"}
 	c, err := New(cfg)
-	if err != nil {
-		t.Fatalf("New() error: %v", err)
-	}
+
+	require.NoError(t, err,
+		"New() error: %v", err)
 
 	var out map[string]any
-	if err := c.DoJSON(context.Background(), http.MethodGet, "/api/version", nil, &out); err == nil {
-		t.Fatal("expected strict status error")
+	{
+		err := c.DoJSON(context.Background(), http.MethodGet, "/api/version", nil, &out)
+		require.Error(t, err,
+			"expected strict status error")
 	}
+
 }
 
 func TestDecodeResponseStrict_RequiresSuccessEnvelope(t *testing.T) {
@@ -102,9 +116,12 @@ func TestDecodeResponseStrict_RequiresSuccessEnvelope(t *testing.T) {
 	rec.Body.WriteString(`{"success":false,"error":"not ok"}`)
 
 	resp := rec.Result()
-	if _, err := DecodeResponseStrict[map[string]any](resp); err == nil {
-		t.Fatal("expected envelope failure")
+	{
+		_, err := DecodeResponseStrict[map[string]any](resp)
+		require.Error(t, err,
+			"expected envelope failure")
 	}
+
 }
 
 func TestClient_DoRaw_Success(t *testing.T) {
@@ -118,15 +135,16 @@ func TestClient_DoRaw_Success(t *testing.T) {
 
 	cfg := &types.Config{ServerURL: srv.URL, APIKey: "arc_test_key"}
 	c, err := New(cfg)
-	if err != nil {
-		t.Fatalf("New() error: %v", err)
-	}
+
+	require.NoError(t, err,
+		"New() error: %v", err)
 
 	b, err := c.DoRaw(context.Background(), http.MethodGet, "/api/version", nil)
-	if err != nil {
-		t.Fatalf("DoRaw() error: %v", err)
-	}
-	if len(b) == 0 {
-		t.Fatal("expected response payload")
-	}
+
+	require.NoError(t, err,
+		"DoRaw() error: %v", err)
+
+	require.NotEmpty(t, b,
+		"expected response payload")
+
 }

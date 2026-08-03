@@ -8,6 +8,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/nicholas-fedor/shoutrrr"
 	"github.com/nicholas-fedor/shoutrrr/pkg/services/chat/slack"
+	shoutrrrTypes "github.com/nicholas-fedor/shoutrrr/pkg/types"
 )
 
 // BuildSlackURL converts SlackConfig to Shoutrrr URL format using shoutrrr's Config
@@ -47,7 +48,7 @@ func SendSlack(ctx context.Context, config models.SlackConfig, message string) e
 		return errors.WrapIf(err, "failed to build shoutrrr Slack URL")
 	}
 
-	sender, err := shoutrrr.CreateSender(shoutrrrURL)
+	sender, err := shoutrrr.CreateSenderWithOptions(shoutrrrTypes.SenderOptions{}, shoutrrrURL)
 	if err != nil {
 		return errors.WrapIf(err, "failed to create shoutrrr Slack sender")
 	}

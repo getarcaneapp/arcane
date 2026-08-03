@@ -263,7 +263,7 @@ func (h *OidcHandler) GetOidcStatus(ctx context.Context, _ *GetOidcStatusInput) 
 
 // GetOidcConfig returns the OIDC client configuration.
 func (h *OidcHandler) GetOidcConfig(ctx context.Context, input *GetOidcConfigInput) (*GetOidcConfigOutput, error) {
-	config, err := h.authService.GetOidcConfig(ctx)
+	oidcConfig, err := h.authService.GetOidcConfig(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to get OIDC configuration")
 	}
@@ -276,14 +276,14 @@ func (h *OidcHandler) GetOidcConfig(ctx context.Context, input *GetOidcConfigInp
 
 	return &GetOidcConfigOutput{
 		Body: auth.OidcConfigResponse{
-			ClientID:                    config.ClientID,
+			ClientID:                    oidcConfig.ClientID,
 			RedirectUri:                 h.oidcService.GetOidcRedirectURL(origin),
-			IssuerUrl:                   config.IssuerURL,
-			AuthorizationEndpoint:       config.AuthorizationEndpoint,
-			TokenEndpoint:               config.TokenEndpoint,
-			UserinfoEndpoint:            config.UserinfoEndpoint,
-			DeviceAuthorizationEndpoint: config.DeviceAuthorizationEndpoint,
-			Scopes:                      config.Scopes,
+			IssuerUrl:                   oidcConfig.IssuerURL,
+			AuthorizationEndpoint:       oidcConfig.AuthorizationEndpoint,
+			TokenEndpoint:               oidcConfig.TokenEndpoint,
+			UserinfoEndpoint:            oidcConfig.UserinfoEndpoint,
+			DeviceAuthorizationEndpoint: oidcConfig.DeviceAuthorizationEndpoint,
+			Scopes:                      oidcConfig.Scopes,
 		},
 	}, nil
 }
@@ -317,8 +317,10 @@ func (h *OidcHandler) GetOidcAuthUrl(ctx context.Context, input *GetOidcAuthUrlI
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to generate OIDC auth URL").Error())
 	}
 
-	// Build state cookie (600 seconds = 10 minutes)
-	stateCookie := cookie.BuildOidcStateCookieString(stateCookieValue, 600, false)
+	// Build state cookie (600 seconds = 10 minutes). Secure is resolved from the
+	// request the same way the session token cookie resolves it, rather than
+	// being hard-coded off.
+	stateCookie := cookie.BuildOidcStateCookieString(stateCookieValue, 600, cookie.SecureCookieFromContext(ctx))
 
 	return &GetOidcAuthUrlOutput{
 		SetCookie: stateCookie,
@@ -365,7 +367,7 @@ func (h *OidcHandler) HandleOidcCallback(ctx context.Context, input *HandleOidcC
 	// Build cookies: clear the state cookie always; only set the session
 	// token cookie for browser flows (mobile clients use Bearer tokens from
 	// the JSON body and never consume the cookie).
-	clearStateCookie := cookie.BuildClearOidcStateCookieString(false)
+	clearStateCookie := cookie.BuildClearOidcStateCookieString(cookie.SecureCookieFromContext(ctx))
 	setCookies := []string{clearStateCookie}
 	if mobileRedirectURI == "" {
 		maxAge := max(int(time.Until(tokenPair.ExpiresAt).Seconds()), 0)

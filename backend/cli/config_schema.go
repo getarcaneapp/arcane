@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"fmt"
 	"os"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/configschema"
@@ -15,38 +14,38 @@ var configSchemaCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		outputFile, err := cmd.Flags().GetString("output")
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error reading --output flag: %v\n", err)
+			cmd.PrintErrf("Error reading --output flag: %v\n", err)
 			os.Exit(1)
 		}
 
 		sourceRoot, err := cmd.Flags().GetString("source-root")
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error reading --source-root flag: %v\n", err)
+			cmd.PrintErrf("Error reading --source-root flag: %v\n", err)
 			os.Exit(1)
 		}
 
 		doc, err := configschema.GenerateWithSourceRoot(sourceRoot)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error generating config schema: %v\n", err)
+			cmd.PrintErrf("Error generating config schema: %v\n", err)
 			os.Exit(1)
 		}
 
 		output, err := configschema.MarshalJSON(doc)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error encoding config schema: %v\n", err)
+			cmd.PrintErrf("Error encoding config schema: %v\n", err)
 			os.Exit(1)
 		}
 
 		if outputFile != "" {
 			if err := os.WriteFile(outputFile, output, 0o600); err != nil {
-				fmt.Fprintf(os.Stderr, "Error writing file: %v\n", err)
+				cmd.PrintErrf("Error writing file: %v\n", err)
 				os.Exit(1)
 			}
-			fmt.Fprintf(os.Stderr, "Config schema written to %s\n", outputFile)
+			cmd.PrintErrf("Config schema written to %s\n", outputFile)
 			return
 		}
 
-		fmt.Print(string(output))
+		cmd.Print(string(output))
 	},
 }
 

@@ -49,7 +49,7 @@ func TestWriteFilesPermissions(t *testing.T) {
 		pkgutils.FilePerm = 0o600
 		pkgutils.DirPerm = 0o700
 
-		err := WriteEnvFile(projectsRoot, projectDir, "VAR=VAL")
+		err := WriteProjectFile(projectsRoot, projectDir, ".env", "VAR=VAL")
 		require.NoError(t, err)
 
 		envPath := filepath.Join(projectDir, ".env")
@@ -99,7 +99,7 @@ func TestWriteEnvFile_WritesThroughExternalSymlink(t *testing.T) {
 	originalLinkTarget, err := os.Readlink(envPath)
 	require.NoError(t, err)
 
-	require.NoError(t, WriteEnvFile(projectsRoot, projectDir, "VALUE=new\n"))
+	require.NoError(t, WriteProjectFile(projectsRoot, projectDir, ".env", "VALUE=new\n"))
 
 	linkInfo, err := os.Lstat(envPath)
 	require.NoError(t, err)
@@ -130,7 +130,7 @@ func TestWriteEnvFile_DanglingSymlinkRemainsUntouched(t *testing.T) {
 	}
 
 	for range 2 {
-		err := WriteEnvFile(projectsRoot, projectDir, "VALUE=new\n")
+		err := WriteProjectFile(projectsRoot, projectDir, ".env", "VALUE=new\n")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "resolve env file symlink")
 
@@ -155,7 +155,7 @@ func TestWriteEnvFile_RejectsNonRegularSymlinkTarget(t *testing.T) {
 		t.Skipf("symlink creation is unavailable: %v", err)
 	}
 
-	err := WriteEnvFile(projectsRoot, projectDir, "VALUE=new\n")
+	err := WriteProjectFile(projectsRoot, projectDir, ".env", "VALUE=new\n")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not a regular file")
 	linkInfo, statErr := os.Lstat(envPath)

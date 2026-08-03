@@ -21,12 +21,14 @@ import (
 	"github.com/samber/mo"
 	"gorm.io/gorm"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
 	"github.com/getarcaneapp/arcane/types/v2/settings"
 )
 
@@ -34,15 +36,15 @@ type SettingsService struct {
 	db           *database.DB
 	config       atomic.Pointer[models.Settings]
 	envOverrides []settingsEnvOverride
+	writes       *actors.Executor
+	effects      *actors.Executor
+	lifecycleCtx context.Context
+	changes      *actors.Signal[[]libarcane.SettingUpdate]
+}
 
-	OnImagePollingSettingsChanged      func(ctx context.Context)
-	OnAutoUpdateSettingsChanged        func(ctx context.Context)
-	OnProjectsDirectoryChanged         func(ctx context.Context)
-	OnTemplatesDirectoryChanged        func(ctx context.Context)
-	OnScheduledPruneSettingsChanged    func(ctx context.Context)
-	OnVulnerabilityScanSettingsChanged func(ctx context.Context)
-	OnAutoHealSettingsChanged          func(ctx context.Context)
-	OnTimeoutSettingsChanged           func(ctx context.Context, timeoutSettings []libarcane.SettingUpdate)
+type settingsUpdateResultInternal struct {
+	settings []models.SettingVariable
+	changes  []libarcane.SettingUpdate
 }
 
 type settingsEnvOverride struct {
@@ -52,9 +54,22 @@ type settingsEnvOverride struct {
 	value      string
 }
 
-func NewSettingsService(ctx context.Context, db *database.DB) (*SettingsService, error) {
+func NewSettingsService(ctx context.Context, db *database.DB, writes, effects *actors.Executor) (*SettingsService, error) {
+	if ctx == nil {
+		return nil, errors.New("settings lifecycle context unavailable")
+	}
+	if writes == nil {
+		return nil, errors.New("settings write executor unavailable")
+	}
+	if effects == nil {
+		return nil, errors.New("settings effects executor unavailable")
+	}
 	svc := &SettingsService{
-		db: db,
+		db:           db,
+		writes:       writes,
+		effects:      effects,
+		lifecycleCtx: ctx,
+		changes:      actors.NewSignal[[]libarcane.SettingUpdate](),
 	}
 	svc.envOverrides = resolveSettingsEnvOverridesInternal()
 	if len(svc.envOverrides) > 0 {
@@ -72,6 +87,58 @@ func NewSettingsService(ctx context.Context, db *database.DB) (*SettingsService,
 	}
 
 	return svc, nil
+}
+
+// SubscribeSettingsChanges invokes callback once when any subscribed key is
+// present in a successful update. The callback receives only matching values.
+// Callbacks run serially on the settings-effects actor, outside the write actor.
+func (s *SettingsService) SubscribeSettingsChanges(keys []string, callback func([]libarcane.SettingUpdate)) func() {
+	if callback == nil || len(keys) == 0 {
+		return func() {}
+	}
+	subscribed := make(map[string]struct{}, len(keys))
+	for _, key := range keys {
+		subscribed[key] = struct{}{}
+	}
+	return s.changes.Subscribe(func(updates []libarcane.SettingUpdate) {
+		matching := make([]libarcane.SettingUpdate, 0, len(updates))
+		for _, update := range updates {
+			if _, ok := subscribed[update.Key]; ok {
+				matching = append(matching, update)
+			}
+		}
+		if len(matching) > 0 {
+			_, err := actors.Submit(context.WithoutCancel(s.lifecycleCtx), s.effects, "apply settings change effects", func(context.Context) (actors.NoPayload, error) {
+				callback(matching)
+				return actors.NoPayload{}, nil
+			}, nil)
+			if err != nil && s.lifecycleCtx.Err() == nil {
+				slog.ErrorContext(s.lifecycleCtx, "Failed to queue settings change effects", "error", err)
+			}
+		}
+	})
+}
+
+// NotifySettingsChanges publishes current values for keys through the settings
+// actor. It is used when another settings-table workflow performs persistence.
+func (s *SettingsService) NotifySettingsChanges(ctx context.Context, keys ...string) error {
+	_, err := actors.Execute(ctx, s.writes, "notify settings changes", func(context.Context) ([]libarcane.SettingUpdate, error) {
+		updates := make([]libarcane.SettingUpdate, 0, len(keys))
+		cfg := s.GetSettingsConfig()
+		for _, key := range keys {
+			value, _, _, err := cfg.FieldByKey(key)
+			if err != nil {
+				return nil, errors.WrapIff(err, "load changed setting '%s'", key)
+			}
+			updates = append(updates, libarcane.SettingUpdate{Key: key, Value: value})
+		}
+		return updates, nil
+	}, func(updates []libarcane.SettingUpdate, err error) {
+		if err == nil && len(updates) > 0 {
+			s.publishSettingsChangesInternal(updates)
+		}
+	})
+	return err
 }
 
 func (s *SettingsService) GetSettingsConfig() *models.Settings {
@@ -119,6 +186,7 @@ func DefaultSettingsConfig() *models.Settings {
 		AutoUpdateExcludedContainers:    models.SettingVariable{Value: ""},
 		PollingEnabled:                  models.SettingVariable{Value: "true"},
 		PollingInterval:                 models.SettingVariable{Value: "0 0 * * * *"},
+		ImageEventWatcherEnabled:        models.SettingVariable{Value: "false"},
 		DockerClientRefreshInterval:     models.SettingVariable{Value: "*/30 * * * * *"},
 		EventCleanupInterval:            models.SettingVariable{Value: "0 0 */6 * * *"},
 		ExpiredSessionsCleanupInterval:  models.SettingVariable{Value: "0 0 0 * * *"},
@@ -272,7 +340,7 @@ func (s *SettingsService) loadDatabaseConfigFromEnv(ctx context.Context, db *dat
 			continue
 		}
 
-		envVarName := utils.CamelCaseToScreamingSnakeCase(key)
+		envVarName := strings.ToUpper(utils.CamelCaseToSnakeCase(key))
 
 		// debug: log each env name checked and whether a value exists
 		if val, ok := os.LookupEnv(envVarName); ok {
@@ -335,7 +403,7 @@ func resolveSettingsEnvOverridesInternal() []settingsEnvOverride {
 			continue
 		}
 
-		envVarName := utils.CamelCaseToScreamingSnakeCase(key)
+		envVarName := strings.ToUpper(utils.CamelCaseToSnakeCase(key))
 		if val, ok := os.LookupEnv(envVarName); ok && val != "" {
 			overrides = append(overrides, settingsEnvOverride{
 				fieldIndex: i,
@@ -362,8 +430,8 @@ func (s *SettingsService) isEnvOverrideActiveInternal(key string) bool {
 }
 
 func (s *SettingsService) GetSettings(ctx context.Context) (*models.Settings, error) {
-	settings := s.getEffectiveSettingsConfigInternal(ctx)
-	return settings, nil
+	settingsCfg := s.getEffectiveSettingsConfigInternal(ctx)
+	return settingsCfg, nil
 }
 
 // GetSettingsOrDefaults is a convenience for hot paths that need a snapshot but cannot
@@ -382,17 +450,38 @@ func (s *SettingsService) GetSettingsOrDefaults(ctx context.Context) *models.Set
 }
 
 func (s *SettingsService) getEffectiveSettingsConfigInternal(ctx context.Context) *models.Settings {
-	settings := s.GetSettingsConfig().Clone()
-	s.applyEnvOverrides(ctx, settings)
-	return settings
+	settingsCfg := s.GetSettingsConfig().Clone()
+	s.applyEnvOverrides(ctx, settingsCfg)
+	return settingsCfg
 }
 
 func (s *SettingsService) UpdateSetting(ctx context.Context, key, value string) error {
-	if err := s.updateSettingValueNoRefreshInternal(ctx, key, value); err != nil {
-		return err
+	if err := libarcane.ValidateCronSetting(key, value); err != nil {
+		return errors.WrapIff(err, "invalid cron expression for %s", key)
 	}
+	_, err := actors.Execute(ctx, s.writes, "update setting", func(writeCtx context.Context) (actors.NoPayload, error) {
+		if err := s.updateSettingValueNoRefreshInternal(writeCtx, key, value); err != nil {
+			return actors.NoPayload{}, err
+		}
+		return actors.NoPayload{}, s.refreshSettingsCacheInternal(context.WithoutCancel(writeCtx))
+	}, nil)
+	return err
+}
 
-	return s.refreshSettingsCacheInternal(ctx)
+// UpdateSettingValues persists a group of internal setting values atomically
+// and publishes the refreshed snapshot before returning.
+func (s *SettingsService) UpdateSettingValues(ctx context.Context, updates []libarcane.SettingUpdate) error {
+	values := make([]models.SettingVariable, 0, len(updates))
+	for _, update := range updates {
+		values = append(values, models.SettingVariable{Key: update.Key, Value: update.Value})
+	}
+	_, err := actors.Execute(ctx, s.writes, "update setting values", func(writeCtx context.Context) (actors.NoPayload, error) {
+		if err := s.persistSettings(writeCtx, values); err != nil {
+			return actors.NoPayload{}, err
+		}
+		return actors.NoPayload{}, s.refreshSettingsCacheInternal(context.WithoutCancel(writeCtx))
+	}, nil)
+	return err
 }
 
 func (s *SettingsService) updateSettingValueNoRefreshInternal(ctx context.Context, key, value string) error {
@@ -405,72 +494,104 @@ func (s *SettingsService) updateSettingValueNoRefreshInternal(ctx context.Contex
 	})
 }
 
+// UpdateSettings publishes the refreshed snapshot before returning. Each
+// subscriber's effects remain ordered and may finish after this method returns.
 func (s *SettingsService) UpdateSettings(ctx context.Context, updates settings.Update) ([]models.SettingVariable, error) {
+	result, err := actors.Execute(ctx, s.writes, "update settings", func(writeCtx context.Context) (settingsUpdateResultInternal, error) {
+		return s.updateSettingsInternal(writeCtx, updates)
+	}, func(result settingsUpdateResultInternal, err error) {
+		if err == nil && len(result.changes) > 0 {
+			s.publishSettingsChangesInternal(result.changes)
+		}
+	})
+	return result.settings, err
+}
+
+func (s *SettingsService) publishSettingsChangesInternal(updates []libarcane.SettingUpdate) {
+	safe := make([]libarcane.SettingUpdate, 0, len(updates))
+	cfg := s.GetSettingsConfig()
+	for _, update := range updates {
+		_, _, sensitive, err := cfg.FieldByKey(update.Key)
+		if err != nil {
+			slog.WarnContext(s.lifecycleCtx, "Skipping settings change notification for unknown key", "key", update.Key, "error", err)
+			continue
+		}
+		if !sensitive {
+			safe = append(safe, update)
+		}
+	}
+	if len(safe) > 0 {
+		s.changes.Publish(safe)
+	}
+}
+
+func (s *SettingsService) updateSettingsInternal(ctx context.Context, updates settings.Update) (settingsUpdateResultInternal, error) {
 	defaultCfg := s.getDefaultSettings()
 	cfg := s.GetSettingsConfig().Clone()
+	trivyServerTokenUpdated := updates.TrivyServerToken != nil && *updates.TrivyServerToken != "" && !s.isEnvOverrideActiveInternal("trivyServerToken")
+	normalizeTargetURL := func(value string) string {
+		normalized, err := normalizeEnvironmentBaseURLInternal(value)
+		if err != nil {
+			return strings.TrimSpace(value)
+		}
+		return normalized
+	}
 
-	valuesToUpdate, changedPolling, changedAutoUpdate, changedScheduledPrune, changedVulnerabilityScan, changedAutoHeal, changedTimeouts, err := s.prepareUpdateValues(updates, cfg, defaultCfg)
+	if err := validation.ValidateCredentialTargetChange(
+		"OIDC issuer URL",
+		cfg.OidcIssuerUrl.Value,
+		updates.OidcIssuerUrl,
+		normalizeTargetURL,
+		map[string]bool{"oidcClientSecret": cfg.OidcClientSecret.Value != ""},
+		map[string]bool{"oidcClientSecret": updates.OidcClientSecret != nil && *updates.OidcClientSecret != ""},
+	); err != nil {
+		return settingsUpdateResultInternal{}, err
+	}
+
+	if err := validation.ValidateCredentialTargetChange(
+		"Trivy server URL",
+		cfg.TrivyServerUrl.Value,
+		updates.TrivyServerUrl,
+		normalizeTargetURL,
+		map[string]bool{"trivyServerToken": cfg.TrivyServerToken.Value != ""},
+		map[string]bool{"trivyServerToken": trivyServerTokenUpdated},
+	); err != nil {
+		return settingsUpdateResultInternal{}, err
+	}
+
+	valuesToUpdate, err := s.prepareUpdateValues(updates, cfg, defaultCfg)
 	if err != nil {
-		return nil, err
+		return settingsUpdateResultInternal{}, err
+	}
+	if updates.OidcClientSecret != nil && *updates.OidcClientSecret != "" {
+		valuesToUpdate = append(valuesToUpdate, models.SettingVariable{Key: "oidcClientSecret", Value: *updates.OidcClientSecret})
+	}
+	if trivyServerTokenUpdated {
+		valuesToUpdate = append(valuesToUpdate, models.SettingVariable{Key: "trivyServerToken", Value: *updates.TrivyServerToken})
 	}
 
 	if err := s.persistSettings(ctx, valuesToUpdate); err != nil {
-		return nil, err
+		return settingsUpdateResultInternal{}, err
 	}
 
-	if err := s.handleOidcConfigUpdate(ctx, updates); err != nil {
-		return nil, err
+	if err := s.refreshSettingsCacheInternal(context.WithoutCancel(ctx)); err != nil {
+		return settingsUpdateResultInternal{}, err
 	}
-
-	if err := s.refreshSettingsCacheInternal(ctx); err != nil {
-		return nil, err
+	settingsCfg := s.GetSettingsConfig()
+	changes := make([]libarcane.SettingUpdate, 0, len(valuesToUpdate))
+	for _, value := range valuesToUpdate {
+		changes = append(changes, libarcane.SettingUpdate{Key: value.Key, Value: value.Value})
 	}
-	settings := s.GetSettingsConfig()
-
-	// Now call callbacks after in-memory config is updated
-	if changedPolling && s.OnImagePollingSettingsChanged != nil {
-		s.OnImagePollingSettingsChanged(ctx)
-	}
-	if changedAutoUpdate && s.OnAutoUpdateSettingsChanged != nil {
-		s.OnAutoUpdateSettingsChanged(ctx)
-	}
-	if changedScheduledPrune && s.OnScheduledPruneSettingsChanged != nil {
-		s.OnScheduledPruneSettingsChanged(ctx)
-	}
-	if changedVulnerabilityScan && s.OnVulnerabilityScanSettingsChanged != nil {
-		s.OnVulnerabilityScanSettingsChanged(ctx)
-	}
-	if changedAutoHeal && s.OnAutoHealSettingsChanged != nil {
-		s.OnAutoHealSettingsChanged(ctx)
-	}
-	if slices.ContainsFunc(valuesToUpdate, func(sv models.SettingVariable) bool {
-		return sv.Key == "projectsDirectory" || sv.Key == "followProjectSymlinks"
-	}) && s.OnProjectsDirectoryChanged != nil {
-		s.OnProjectsDirectoryChanged(ctx)
-	}
-	if slices.ContainsFunc(valuesToUpdate, func(sv models.SettingVariable) bool {
-		return sv.Key == "templatesDirectory"
-	}) && s.OnTemplatesDirectoryChanged != nil {
-		s.OnTemplatesDirectoryChanged(ctx)
-	}
-	if len(changedTimeouts) > 0 && s.OnTimeoutSettingsChanged != nil {
-		s.OnTimeoutSettingsChanged(ctx, changedTimeouts)
-	}
-
-	return settings.ToSettingVariableSlice(models.SettingVisibilityNonAdmin, false), nil
+	return settingsUpdateResultInternal{
+		settings: settingsCfg.ToSettingVariableSlice(models.SettingVisibilityNonAdmin, false),
+		changes:  changes,
+	}, nil
 }
 
-func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defaultCfg *models.Settings) ([]models.SettingVariable, bool, bool, bool, bool, bool, []libarcane.SettingUpdate, error) {
+func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defaultCfg *models.Settings) ([]models.SettingVariable, error) {
 	rt := reflect.TypeFor[settings.Update]()
 	rv := reflect.ValueOf(updates)
 	valuesToUpdate := make([]models.SettingVariable, 0)
-
-	changedPolling := false
-	changedAutoUpdate := false
-	changedScheduledPrune := false
-	changedVulnerabilityScan := false
-	changedAutoHeal := false
-	changedTimeouts := make([]libarcane.SettingUpdate, 0)
 
 	for i := range rt.NumField() {
 		field := rt.Field(i)
@@ -489,19 +610,16 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 			}
 
 			if err := cfg.UpdateField(key, value, false); err != nil {
-				return nil, false, false, false, false, false, nil, errors.WrapIff(err, "failed to update in-memory config for key '%s'", key)
+				return nil, errors.WrapIff(err, "failed to update in-memory config for key '%s'", key)
 			}
 
 			valuesToUpdate = append(valuesToUpdate, models.SettingVariable{Key: key, Value: value})
-			if libarcane.IsTimeoutSettingKey(key) {
-				changedTimeouts = append(changedTimeouts, libarcane.SettingUpdate{Key: key, Value: value})
-			}
 
 			continue
 		}
 
 		if err := libarcane.ValidateCronSetting(key, value); err != nil {
-			return nil, false, false, false, false, false, nil, errors.WrapIff(err, "invalid cron expression for %s", key)
+			return nil, errors.WrapIff(err, "invalid cron expression for %s", key)
 		}
 
 		var valueToSave string
@@ -520,31 +638,13 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 			continue
 		}
 		if err != nil {
-			return nil, false, false, false, false, false, nil, errors.WrapIff(err, "failed to update in-memory config for key '%s'", key)
+			return nil, errors.WrapIff(err, "failed to update in-memory config for key '%s'", key)
 		}
 
 		valuesToUpdate = append(valuesToUpdate, models.SettingVariable{Key: key, Value: valueToSave})
-
-		switch key {
-		case "pollingEnabled", "pollingInterval":
-			changedPolling = true
-		case "autoUpdate", "autoUpdateInterval":
-			changedAutoUpdate = true
-		case "scheduledPruneEnabled",
-			"scheduledPruneInterval":
-			changedScheduledPrune = true
-		case "vulnerabilityScanEnabled", "vulnerabilityScanInterval", "trivyNetwork", "trivySecurityOpts", "trivyPrivileged", "trivyResourceLimitsEnabled", "trivyCpuLimit", "trivyMemoryLimitMb", "trivyConcurrentScanContainers":
-			changedVulnerabilityScan = true
-		case "autoHealEnabled", "autoHealInterval", "autoHealExcludedContainers", "autoHealMaxRestarts", "autoHealRestartWindow":
-			changedAutoHeal = true
-		}
-
-		if libarcane.IsTimeoutSettingKey(key) {
-			changedTimeouts = append(changedTimeouts, libarcane.SettingUpdate{Key: key, Value: valueToSave})
-		}
 	}
 
-	return valuesToUpdate, changedPolling, changedAutoUpdate, changedScheduledPrune, changedVulnerabilityScan, changedAutoHeal, changedTimeouts, nil
+	return valuesToUpdate, nil
 }
 
 func extractUpdateValue(field reflect.StructField, fieldValue reflect.Value) (string, string, bool) {
@@ -576,102 +676,81 @@ func (s *SettingsService) persistSettings(ctx context.Context, values []models.S
 	})
 }
 
-func (s *SettingsService) handleOidcConfigUpdate(ctx context.Context, updates settings.Update) error {
-	// Handle new individual field for client secret (sensitive field)
-	if updates.OidcClientSecret != nil {
-		secret := *updates.OidcClientSecret
-
-		// If empty secret provided, preserve existing secret
-		if secret == "" {
-			current, err := s.GetSettings(ctx)
-			if err != nil {
-				return errors.WrapIf(err, "failed to load current settings for secret")
-			}
-			if current.OidcClientSecret.Value != "" {
-				// Keep existing secret, don't update
-				return nil
-			}
-		}
-
-		if err := s.updateSettingValueNoRefreshInternal(ctx, "oidcClientSecret", secret); err != nil {
-			return errors.WrapIf(err, "failed to update oidcClientSecret")
-		}
-	}
-
-	return nil
-}
-
 func (s *SettingsService) EnsureDefaultSettings(ctx context.Context) error {
-	defaultSettings := s.getDefaultSettings()
-	defaultSettingVars := defaultSettings.ToSettingVariableSlice(models.SettingVisibilityAll, false)
+	_, err := actors.Execute(ctx, s.writes, "ensure default settings", func(writeCtx context.Context) (actors.NoPayload, error) {
+		defaultSettings := s.getDefaultSettings()
+		defaultSettingVars := defaultSettings.ToSettingVariableSlice(models.SettingVisibilityAll, false)
 
-	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		for _, defaultSetting := range defaultSettingVars {
-			var existing models.SettingVariable
-			err := tx.Where("key = ?", defaultSetting.Key).First(&existing).Error
+		if err := s.db.WithContext(writeCtx).Transaction(func(tx *gorm.DB) error {
+			for _, defaultSetting := range defaultSettingVars {
+				var existing models.SettingVariable
+				err := tx.Where("key = ?", defaultSetting.Key).First(&existing).Error
 
-			switch {
-			case errors.Is(err, gorm.ErrRecordNotFound):
-				if err := tx.Create(&defaultSetting).Error; err != nil {
-					return errors.WrapIff(err, "failed to create default setting %s", defaultSetting.Key)
-				}
-			case err != nil:
-				return errors.WrapIff(err, "failed to check for existing setting %s", defaultSetting.Key)
-			case defaultSetting.Key == "trivyImage" && existing.Value != defaultSetting.Value:
-				if err := tx.Model(&existing).Update("value", defaultSetting.Value).Error; err != nil {
-					return errors.WrapIff(err, "failed to enforce default setting %s", defaultSetting.Key)
+				switch {
+				case errors.Is(err, gorm.ErrRecordNotFound):
+					if err := tx.Create(&defaultSetting).Error; err != nil {
+						return errors.WrapIff(err, "failed to create default setting %s", defaultSetting.Key)
+					}
+				case err != nil:
+					return errors.WrapIff(err, "failed to check for existing setting %s", defaultSetting.Key)
+				case defaultSetting.Key == "trivyImage" && existing.Value != defaultSetting.Value:
+					if err := tx.Model(&existing).Update("value", defaultSetting.Value).Error; err != nil {
+						return errors.WrapIff(err, "failed to enforce default setting %s", defaultSetting.Key)
+					}
 				}
 			}
+			return nil
+		}); err != nil {
+			return actors.NoPayload{}, err
 		}
-		return nil
-	}); err != nil {
-		return err
-	}
-
-	return nil
+		return actors.NoPayload{}, nil
+	}, nil)
+	return err
 }
 
 func (s *SettingsService) PruneUnknownSettings(ctx context.Context) error {
-	allowedKeys := allowedSettingKeys()
-	if len(allowedKeys) == 0 {
-		return nil
-	}
+	_, err := actors.Execute(ctx, s.writes, "prune unknown settings", func(writeCtx context.Context) (actors.NoPayload, error) {
+		allowedKeys := allowedSettingKeys()
+		if len(allowedKeys) == 0 {
+			return actors.NoPayload{}, nil
+		}
 
-	keys := make([]string, 0, len(allowedKeys))
-	for key := range allowedKeys {
-		keys = append(keys, key)
-	}
+		keys := make([]string, 0, len(allowedKeys))
+		for key := range allowedKeys {
+			keys = append(keys, key)
+		}
 
-	result := s.db.WithContext(ctx).Where("key NOT IN ?", keys).Delete(&models.SettingVariable{})
-	if result.Error != nil {
-		return errors.WrapIf(result.Error, "failed to prune unknown settings")
-	}
-
-	if result.RowsAffected > 0 {
-		slog.InfoContext(ctx, "Pruned unknown settings", "count", result.RowsAffected)
-	}
-
-	return nil
+		result := s.db.WithContext(writeCtx).Where("key NOT IN ?", keys).Delete(&models.SettingVariable{})
+		if result.Error != nil {
+			return actors.NoPayload{}, errors.WrapIf(result.Error, "failed to prune unknown settings")
+		}
+		if result.RowsAffected > 0 {
+			slog.InfoContext(writeCtx, "Pruned unknown settings", "count", result.RowsAffected)
+		}
+		return actors.NoPayload{}, nil
+	}, nil)
+	return err
 }
 
 func (s *SettingsService) PersistEnvSettingsIfMissing(ctx context.Context) error {
-	rt := reflect.TypeFor[models.Settings]()
-	appCfg := config.Load()
-	isEnvOnlyMode := appCfg.AgentMode || appCfg.UIConfigurationDisabled
+	_, err := actors.Execute(ctx, s.writes, "persist environment settings", func(writeCtx context.Context) (actors.NoPayload, error) {
+		rt := reflect.TypeFor[models.Settings]()
+		appCfg := config.Load()
+		isEnvOnlyMode := appCfg.AgentMode || appCfg.UIConfigurationDisabled
 
-	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		for field := range rt.Fields() {
-			if err := s.processEnvField(ctx, tx, field, isEnvOnlyMode); err != nil {
-				return err
+		if err := s.db.WithContext(writeCtx).Transaction(func(tx *gorm.DB) error {
+			for field := range rt.Fields() {
+				if err := s.processEnvField(writeCtx, tx, field, isEnvOnlyMode); err != nil {
+					return err
+				}
 			}
+			return nil
+		}); err != nil {
+			return actors.NoPayload{}, err
 		}
-		return nil
-	}); err != nil {
-		return err
-	}
-
-	// Reload settings after persisting env vars
-	return s.LoadDatabaseSettings(ctx)
+		return actors.NoPayload{}, s.LoadDatabaseSettings(context.WithoutCancel(writeCtx))
+	}, nil)
+	return err
 }
 
 func allowedSettingKeys() map[string]struct{} {
@@ -699,7 +778,7 @@ func (s *SettingsService) processEnvField(ctx context.Context, tx *gorm.DB, fiel
 		return nil
 	}
 
-	envVarName := utils.CamelCaseToScreamingSnakeCase(key)
+	envVarName := strings.ToUpper(utils.CamelCaseToSnakeCase(key))
 	envVal, ok := os.LookupEnv(envVarName)
 	if !ok {
 		return nil
@@ -836,86 +915,90 @@ func (s *SettingsService) SetStringSetting(ctx context.Context, key, value strin
 // the autoUpdateExcludedContainers setting. When excluded is true the container
 // is added to the list; when false it is removed.
 func (s *SettingsService) SetContainerAutoUpdateExclusionInternal(ctx context.Context, containerName string, excluded bool) error {
-	raw := s.GetStringSetting(ctx, "autoUpdateExcludedContainers", "")
-	existing := make(map[string]struct{})
-	var ordered []string
-	for part := range strings.SplitSeq(raw, ",") {
-		name := strings.TrimSpace(part)
-		if name == "" {
-			continue
-		}
-		if _, ok := existing[name]; !ok {
-			existing[name] = struct{}{}
-			ordered = append(ordered, name)
-		}
-	}
-
-	if excluded {
-		if _, ok := existing[containerName]; !ok {
-			ordered = append(ordered, containerName)
-		}
-	} else {
-		filtered := ordered[:0]
-		for _, name := range ordered {
-			if name != containerName {
-				filtered = append(filtered, name)
+	_, err := actors.Execute(ctx, s.writes, "update container auto-update exclusion", func(writeCtx context.Context) (actors.NoPayload, error) {
+		raw := s.GetStringSetting(writeCtx, "autoUpdateExcludedContainers", "")
+		existing := make(map[string]struct{})
+		var ordered []string
+		for part := range strings.SplitSeq(raw, ",") {
+			name := strings.TrimSpace(part)
+			if name == "" {
+				continue
+			}
+			if _, ok := existing[name]; !ok {
+				existing[name] = struct{}{}
+				ordered = append(ordered, name)
 			}
 		}
-		ordered = filtered
-	}
 
-	return s.SetStringSetting(ctx, "autoUpdateExcludedContainers", strings.Join(ordered, ","))
+		if excluded {
+			if _, ok := existing[containerName]; !ok {
+				ordered = append(ordered, containerName)
+			}
+		} else {
+			filtered := ordered[:0]
+			for _, name := range ordered {
+				if name != containerName {
+					filtered = append(filtered, name)
+				}
+			}
+			ordered = filtered
+		}
+
+		if err := s.updateSettingValueNoRefreshInternal(writeCtx, "autoUpdateExcludedContainers", strings.Join(ordered, ",")); err != nil {
+			return actors.NoPayload{}, err
+		}
+		return actors.NoPayload{}, s.refreshSettingsCacheInternal(context.WithoutCancel(writeCtx))
+	}, nil)
+	return err
 }
 
 func (s *SettingsService) EnsureEncryptionKey(ctx context.Context) (string, error) {
-	const keyName = "encryptionKey"
-	var key string
+	return actors.Execute(ctx, s.writes, "ensure encryption key", func(writeCtx context.Context) (string, error) {
+		const keyName = "encryptionKey"
+		var key string
 
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var sv models.SettingVariable
-		err := tx.Where("key = ?", keyName).First(&sv).Error
+		err := s.db.WithContext(writeCtx).Transaction(func(tx *gorm.DB) error {
+			var sv models.SettingVariable
+			err := tx.Where("key = ?", keyName).First(&sv).Error
 
-		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-			return errors.WrapIf(err, "failed to load encryption key")
-		}
+			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+				return errors.WrapIf(err, "failed to load encryption key")
+			}
 
-		// If already present and non-empty, return it
-		if sv.Value != "" {
-			key = sv.Value
-			return nil
-		}
+			if sv.Value != "" {
+				key = sv.Value
+				return nil
+			}
 
-		notFound := errors.Is(err, gorm.ErrRecordNotFound)
+			notFound := errors.Is(err, gorm.ErrRecordNotFound)
+			u, genErr := uuid.NewRandom()
+			if genErr != nil {
+				return errors.WrapIf(genErr, "failed to generate encryption key")
+			}
+			sum := sha256.Sum256([]byte(u.String()))
+			generatedKey := base64.StdEncoding.EncodeToString(sum[:])
+			key = generatedKey
 
-		// Generate uuid -> sha256 -> base64 key (32 bytes raw -> 44 chars base64)
-		u, genErr := uuid.NewRandom()
-		if genErr != nil {
-			return errors.WrapIf(genErr, "failed to generate encryption key")
-		}
-		sum := sha256.Sum256([]byte(u.String()))
-		generatedKey := base64.StdEncoding.EncodeToString(sum[:])
-		key = generatedKey
+			if notFound {
+				if createErr := tx.Create(&models.SettingVariable{Key: keyName, Value: generatedKey}).Error; createErr != nil {
+					return errors.WrapIf(createErr, "failed to persist encryption key")
+				}
+				return nil
+			}
 
-		if notFound {
-			if createErr := tx.Create(&models.SettingVariable{Key: keyName, Value: generatedKey}).Error; createErr != nil {
-				return errors.WrapIf(createErr, "failed to persist encryption key")
+			if updErr := tx.Model(&models.SettingVariable{}).
+				Where("key = ?", keyName).
+				Update("value", generatedKey).Error; updErr != nil {
+				return errors.WrapIf(updErr, "failed to update encryption key")
 			}
 			return nil
+		})
+		if err != nil {
+			return "", err
 		}
 
-		// Record existed but empty value; update it
-		if updErr := tx.Model(&models.SettingVariable{}).
-			Where("key = ?", keyName).
-			Update("value", generatedKey).Error; updErr != nil {
-			return errors.WrapIf(updErr, "failed to update encryption key")
-		}
-		return nil
-	})
-	if err != nil {
-		return "", err
-	}
-
-	return key, nil
+		return key, nil
+	}, nil)
 }
 
 func (s *SettingsService) NormalizeProjectsDirectory(ctx context.Context, projectsDirEnv string) error {
@@ -924,94 +1007,89 @@ func (s *SettingsService) NormalizeProjectsDirectory(ctx context.Context, projec
 		return nil
 	}
 
-	var projectsDirSetting models.SettingVariable
-	err := s.db.WithContext(ctx).Where("key = ?", "projectsDirectory").First(&projectsDirSetting).Error
-
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		slog.DebugContext(ctx, "No projectsDirectory setting found, skipping normalization")
-		return nil
-	}
-
-	if err != nil {
-		return errors.WrapIf(err, "failed to load projectsDirectory setting")
-	}
-
-	value := strings.TrimSpace(projectsDirSetting.Value)
-	// Detect mapping format (container:host), allowing Windows or Unix container paths.
-	isMapping := false
-	if strings.Contains(value, ":") {
-		// Treat as mapping if the container side looks like an absolute Unix path
-		// or a Windows drive path (C:/ or C:\). We purposely avoid splitting on the
-		// first colon to not break on Windows drive letters.
-		if strings.HasPrefix(value, "/") || projects.IsWindowsDrivePath(value) {
-			isMapping = true
+	_, err := actors.Execute(ctx, s.writes, "normalize projects directory", func(writeCtx context.Context) (string, error) {
+		var projectsDirSetting models.SettingVariable
+		err := s.db.WithContext(writeCtx).Where("key = ?", "projectsDirectory").First(&projectsDirSetting).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			slog.DebugContext(writeCtx, "No projectsDirectory setting found, skipping normalization")
+			return "", nil
 		}
-	}
+		if err != nil {
+			return "", errors.WrapIf(err, "failed to load projectsDirectory setting")
+		}
 
-	if !filepath.IsAbs(value) && !isMapping {
-		// Resolve relative path using current working directory for transparency.
-		// Note: In containers, WORKDIR is set to /app so "data/..." becomes "/app/data/...".
+		value := strings.TrimSpace(projectsDirSetting.Value)
+		isMapping := strings.Contains(value, ":") && (strings.HasPrefix(value, "/") || projects.IsWindowsDrivePath(value))
+		if filepath.IsAbs(value) || isMapping {
+			slog.DebugContext(writeCtx, "Projects directory already normalized or custom, skipping", "value", projectsDirSetting.Value)
+			return "", nil
+		}
+
 		cwd, _ := os.Getwd()
 		absPath, absErr := filepath.Abs(value)
 		if absErr != nil {
-			return errors.WrapIf(absErr, "failed to resolve relative path to absolute")
+			return "", errors.WrapIf(absErr, "failed to resolve relative path to absolute")
 		}
-		slog.InfoContext(ctx, "Normalizing projects directory from relative to absolute path", "from", value, "to", absPath, "base", cwd)
-
-		if err := s.UpdateSetting(ctx, "projectsDirectory", absPath); err != nil {
-			return errors.WrapIf(err, "failed to update projectsDirectory")
+		slog.InfoContext(writeCtx, "Normalizing projects directory from relative to absolute path", "from", value, "to", absPath, "base", cwd)
+		if err := s.updateSettingValueNoRefreshInternal(writeCtx, "projectsDirectory", absPath); err != nil {
+			return "", errors.WrapIf(err, "failed to update projectsDirectory")
 		}
-
-		slog.InfoContext(ctx, "Successfully normalized projects directory")
-	} else {
-		slog.DebugContext(ctx, "Projects directory already normalized or custom, skipping", "value", projectsDirSetting.Value)
-	}
-
-	return nil
+		if err := s.refreshSettingsCacheInternal(context.WithoutCancel(writeCtx)); err != nil {
+			return "", err
+		}
+		slog.InfoContext(writeCtx, "Successfully normalized projects directory")
+		return absPath, nil
+	}, func(value string, err error) {
+		if err == nil && value != "" {
+			s.publishSettingsChangesInternal([]libarcane.SettingUpdate{{Key: "projectsDirectory", Value: value}})
+		}
+	})
+	return err
 }
 
 func (s *SettingsService) NormalizeBuildsDirectory(ctx context.Context) error {
 	const buildsKey = "buildsDirectory"
-	envVarName := utils.CamelCaseToScreamingSnakeCase(buildsKey)
+	envVarName := strings.ToUpper(utils.CamelCaseToSnakeCase(buildsKey))
 	if envVal, ok := os.LookupEnv(envVarName); ok && strings.TrimSpace(envVal) != "" {
 		slog.DebugContext(ctx, "BUILDS_DIRECTORY environment variable is set, skipping normalization", "value", envVal)
 		return nil
 	}
 
-	var buildsDirSetting models.SettingVariable
-	err := s.db.WithContext(ctx).Where("key = ?", buildsKey).First(&buildsDirSetting).Error
+	_, err := actors.Execute(ctx, s.writes, "normalize builds directory", func(writeCtx context.Context) (string, error) {
+		var buildsDirSetting models.SettingVariable
+		err := s.db.WithContext(writeCtx).Where("key = ?", buildsKey).First(&buildsDirSetting).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			slog.DebugContext(writeCtx, "No buildsDirectory setting found, skipping normalization")
+			return "", nil
+		}
+		if err != nil {
+			return "", errors.WrapIf(err, "failed to load buildsDirectory setting")
+		}
 
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		slog.DebugContext(ctx, "No buildsDirectory setting found, skipping normalization")
-		return nil
-	}
+		value := strings.TrimSpace(buildsDirSetting.Value)
+		if value == "" || filepath.IsAbs(value) {
+			slog.DebugContext(writeCtx, "Builds directory already normalized or empty, skipping", "value", buildsDirSetting.Value)
+			return "", nil
+		}
 
-	if err != nil {
-		return errors.WrapIf(err, "failed to load buildsDirectory setting")
-	}
-
-	value := strings.TrimSpace(buildsDirSetting.Value)
-	if value == "" {
-		slog.DebugContext(ctx, "buildsDirectory is empty, skipping normalization")
-		return nil
-	}
-
-	if !filepath.IsAbs(value) {
 		cwd, _ := os.Getwd()
 		absPath, absErr := filepath.Abs(value)
 		if absErr != nil {
-			return errors.WrapIf(absErr, "failed to resolve relative path to absolute")
+			return "", errors.WrapIf(absErr, "failed to resolve relative path to absolute")
 		}
-		slog.InfoContext(ctx, "Normalizing builds directory from relative to absolute path", "from", value, "to", absPath, "base", cwd)
-
-		if err := s.UpdateSetting(ctx, buildsKey, absPath); err != nil {
-			return errors.WrapIf(err, "failed to update buildsDirectory")
+		slog.InfoContext(writeCtx, "Normalizing builds directory from relative to absolute path", "from", value, "to", absPath, "base", cwd)
+		if err := s.updateSettingValueNoRefreshInternal(writeCtx, buildsKey, absPath); err != nil {
+			return "", errors.WrapIf(err, "failed to update buildsDirectory")
 		}
-
-		slog.InfoContext(ctx, "Successfully normalized builds directory")
-	} else {
-		slog.DebugContext(ctx, "Builds directory already normalized or custom, skipping", "value", buildsDirSetting.Value)
-	}
-
-	return nil
+		if err := s.refreshSettingsCacheInternal(context.WithoutCancel(writeCtx)); err != nil {
+			return "", err
+		}
+		slog.InfoContext(writeCtx, "Successfully normalized builds directory")
+		return absPath, nil
+	}, func(value string, err error) {
+		if err == nil && value != "" {
+			s.publishSettingsChangesInternal([]libarcane.SettingUpdate{{Key: buildsKey, Value: value}})
+		}
+	})
+	return err
 }

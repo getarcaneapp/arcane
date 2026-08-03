@@ -3,6 +3,8 @@ package generate
 import (
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestAPIKeyCommandAvailableInBackendCLI(t *testing.T) {
@@ -13,17 +15,17 @@ func TestAPIKeyCommandAvailableInBackendCLI(t *testing.T) {
 		_, err := cmd.ExecuteC()
 		return err
 	})
-	if err != nil {
-		t.Fatalf("command failed: %v", err)
-	}
 
-	if strings.TrimSpace(out) == "" {
-		t.Fatalf("expected raw arc_ key in output, got: %q", out)
-	}
-	if !strings.HasPrefix(strings.TrimSpace(out), "arc_") {
-		t.Fatalf("expected raw arc_ key in output, got: %q", out)
-	}
-	if strings.Contains(out, "ADMIN_STATIC_API_KEY") {
-		t.Fatalf("expected raw arc_ key in output, got: %q", out)
-	}
+	require.NoError(t, err,
+		"command failed: %v", err)
+
+	require.NotEmpty(t, strings.TrimSpace(out),
+		"expected raw arc_ key in output, got: %q", out)
+
+	require.True(t, strings.HasPrefix(strings.TrimSpace(out), "arc_"),
+		"expected raw arc_ key in output, got: %q", out)
+
+	require.NotContains(t, out, "ADMIN_STATIC_API_KEY",
+		"expected raw arc_ key in output, got: %q", out)
+
 }

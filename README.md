@@ -7,6 +7,7 @@
 <a href="https://pkg.go.dev/github.com/getarcaneapp/arcane/backend"><img src="https://pkg.go.dev/badge/github.com/getarcaneapp/arcane/backend.svg" alt="Go Reference"></a>
 <a href="https://github.com/getarcaneapp/arcane/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-BSD--3--Clause-blue.svg" alt="License"></a>
 <a href="https://snyk.io/test/github/getarcaneapp/arcane"><img src="https://snyk.io/test/github/getarcaneapp/arcane/badge.svg" alt="Known Vulnerabilities"></a>
+[![Greptile: The War on Bugs](https://www.greptile.com/badge.svg)](https://www.greptile.com/?utm_source=oss_badge&utm_medium=readme&utm_campaign=greptile_for_open_source)
 
 <br />
 

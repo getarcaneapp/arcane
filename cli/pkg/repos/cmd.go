@@ -26,6 +26,7 @@ import (
 var (
 	limitFlag  int
 	startFlag  int
+	allFlag    bool
 	forceFlag  bool
 	jsonOutput bool
 )
@@ -83,7 +84,7 @@ var listCmd = &cobra.Command{
 		}
 
 		path := types.Endpoints.GitRepositories()
-		path, err = cmdutil.ApplyPaginationParams(cmd, path, "repos", "limit", limitFlag, 20, "start", startFlag)
+		path, err = cmdutil.ApplyPaginationParams(cmd, path, cmdutil.ListParams{Resource: "repos", Limit: limitFlag, FallbackDefault: 20, Start: startFlag, All: allFlag})
 		if err != nil {
 			return errors.WrapIf(err, "failed to build pagination query")
 		}
@@ -95,8 +96,8 @@ var listCmd = &cobra.Command{
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.Paginated[gitops.GitRepository]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if jsonOutput {
@@ -180,8 +181,8 @@ var createCmd = &cobra.Command{
 		}
 
 		var result base.ApiResponse[gitops.GitRepository]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if jsonOutput {
@@ -441,8 +442,8 @@ var branchesCmd = &cobra.Command{
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[gitops.BranchesResponse]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if jsonOutput {
@@ -508,8 +509,8 @@ var filesCmd = &cobra.Command{
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[gitops.BrowseResponse]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		files := result.Data.Files
@@ -543,40 +544,6 @@ var filesCmd = &cobra.Command{
 	},
 }
 
-var syncCmd = &cobra.Command{
-	Use:          "sync",
-	Short:        "Sync all git repositories",
-	SilenceUsage: true,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := client.NewFromConfig()
-		if err != nil {
-			return err
-		}
-
-		resp, err := c.Post(cmd.Context(), types.Endpoints.GitRepositoriesSync(), nil)
-		if err != nil {
-			return errors.WrapIf(err, "failed to sync repositories")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to sync repositories")
-		}
-
-		if jsonOutput {
-			var result base.ApiResponse[any]
-			if err := json.NewDecoder(resp.Body).Decode(&result); err == nil {
-				if resultBytes, err := json.MarshalIndent(result.Data, "", "  "); err == nil {
-					fmt.Println(string(resultBytes))
-				}
-			}
-			return nil
-		}
-
-		output.Success("Repositories synced successfully")
-		return nil
-	},
-}
-
 // resolveGitRepository attempts to resolve a repository by ID or name.
 // It first tries a direct GET by ID. If that returns 404, it falls back to
 // searching the list endpoint by name or ID prefix.
@@ -601,7 +568,7 @@ func resolveGitRepository(ctx context.Context, c *client.Client, identifier stri
 	}
 
 	// Fallback: search via list endpoint.
-	listPath := types.Endpoints.GitRepositories() + "?limit=200"
+	listPath := cmdutil.AppendQuery(types.Endpoints.GitRepositories(), url.Values{"limit": []string{strconv.Itoa(cmdutil.ShowAllLimit)}})
 	listResp, err := c.Get(ctx, listPath)
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to search repositories")
@@ -609,8 +576,8 @@ func resolveGitRepository(ctx context.Context, c *client.Client, identifier stri
 	defer func() { _ = listResp.Body.Close() }()
 
 	var listResult base.Paginated[gitops.GitRepository]
-	if err := json.NewDecoder(listResp.Body).Decode(&listResult); err != nil {
-		return nil, errors.WrapIf(err, "failed to parse repository list")
+	if err := cmdutil.DecodeJSON(listResp, &listResult); err != nil {
+		return nil, errors.WrapIf(err, "failed to search repositories")
 	}
 
 	lowerIdentifier := strings.ToLower(trimmed)
@@ -655,11 +622,11 @@ func init() {
 	ReposCmd.AddCommand(testCmd)
 	ReposCmd.AddCommand(branchesCmd)
 	ReposCmd.AddCommand(filesCmd)
-	ReposCmd.AddCommand(syncCmd)
 
 	// List command flags
 	listCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of repositories to show")
-	listCmd.Flags().IntVar(&startFlag, "start", 0, "Offset for pagination")
+	listCmd.Flags().IntVar(&startFlag, "start", 0, cmdutil.StartFlagUsage)
+	listCmd.Flags().BoolVarP(&allFlag, "all", "a", false, cmdutil.AllFlagUsage)
 	listCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 
 	// Create command flags
@@ -703,10 +670,10 @@ func init() {
 	branchesCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 
 	// Files command flags
-	filesCmd.Flags().StringVar(&filesBranch, "branch", "", "Branch to browse")
+	filesCmd.Flags().StringVar(&filesBranch, "branch", "", "Branch to browse (required)")
+	_ = filesCmd.MarkFlagRequired("branch")
 	filesCmd.Flags().StringVar(&filesPath, "path", "", "Path within repository")
 	filesCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 
 	// Sync command flags
-	syncCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 }

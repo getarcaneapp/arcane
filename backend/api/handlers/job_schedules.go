@@ -46,6 +46,7 @@ type RunJobOutput struct {
 	Body jobschedule.JobRunResponse
 }
 
+//nolint:dupl // Huma operation registrations are intentionally explicit.
 func RegisterJobSchedules(api huma.API, jobSvc *services.JobService, envSvc *services.EnvironmentService) {
 	h := &JobSchedulesHandler{
 		jobService:         jobSvc,

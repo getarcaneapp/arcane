@@ -7,6 +7,7 @@ import type { OidcUserInfo, LoginCredentials, LoginResponseData, AutoLoginConfig
 import type { QueryClient } from '@tanstack/svelte-query';
 import { activityStore } from '#lib/stores/activity.store.svelte';
 import { dashboardStore } from '#lib/stores/dashboard.store.svelte';
+import { environmentStatusStore } from '#lib/stores/environment-status.store.svelte';
 import { getEffectiveLandingPage } from '#lib/utils/navigation';
 
 const REFRESH_TOKEN_KEY = 'arcane_refresh_token';
@@ -208,11 +209,13 @@ class AuthService extends BaseAPIService {
 		queryClient.clear();
 		const restartActivityStore = activityStore.stop({ resetState: true });
 		const restartDashboardStore = dashboardStore.stop({ resetState: true });
+		const restartEnvironmentStatusStore = environmentStatusStore.stop();
 		userStore.clearUser();
 
 		if (options?.restartMountedStores) {
 			if (restartActivityStore) void activityStore.start();
 			if (restartDashboardStore) void dashboardStore.start();
+			if (restartEnvironmentStatusStore) void environmentStatusStore.start();
 		}
 	}
 

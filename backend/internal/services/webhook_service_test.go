@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/getarcaneapp/arcane/types/v2"
-	sqlite "github.com/libtnb/sqlite"
+	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	libcrypto "go.getarcane.app/sys/crypto"
@@ -213,7 +213,7 @@ func TestCreateWebhook_EmptyTargetIDAcceptedForUpdaterType(t *testing.T) {
 
 	wh, _, err := svc.CreateWebhook(ctx, "updater-hook", models.WebhookTargetTypeUpdater, models.WebhookActionTypeRun, "", "env-1", models.User{})
 	require.NoError(t, err)
-	assert.Equal(t, "", wh.TargetID)
+	assert.Empty(t, wh.TargetID)
 }
 
 func TestCreateWebhook_ContainerTypeAccepted(t *testing.T) {
@@ -427,7 +427,7 @@ func TestDeleteWebhook_NotFoundForWrongEnvironment(t *testing.T) {
 	require.NoError(t, err)
 
 	err = svc.DeleteWebhook(ctx, created.ID, "env-2", models.User{})
-	assert.ErrorIs(t, err, ErrWebhookNotFound)
+	require.ErrorIs(t, err, ErrWebhookNotFound)
 
 	// Webhook must still exist in the correct environment
 	_, err = svc.GetWebhookByID(ctx, created.ID, "env-1")
@@ -591,7 +591,7 @@ func TestTriggerByToken_ContainerType_NilServiceReturnsError(t *testing.T) {
 	svc := newTestWebhookService(db) // updaterService is nil
 
 	rawToken := "arc_wh_ccddeeff01020304aabbccdd0102030405060708090a0b0c0d0e0f1011121314"
-	insertWebhookDirect(t, ctx, db, rawToken, models.WebhookTargetTypeContainer, models.WebhookActionTypeUpdate, "container-id", types.LOCAL_DOCKER_ENVIRONMENT_ID)
+	insertWebhookDirect(t, ctx, db, rawToken, models.WebhookTargetTypeContainer, models.WebhookActionTypeUpdate, "container-id", types.LocalDockerEnvironmentID)
 
 	assert.Panics(t, func() {
 		_, _ = svc.TriggerByToken(ctx, rawToken) //nolint:errcheck
@@ -604,7 +604,7 @@ func TestTriggerByToken_UpdaterType_NilServiceReturnsError(t *testing.T) {
 	svc := newTestWebhookService(db) // updaterService is nil
 
 	rawToken := "arc_wh_1122334401020304aabbccdd0102030405060708090a0b0c0d0e0f1011121314"
-	insertWebhookDirect(t, ctx, db, rawToken, models.WebhookTargetTypeUpdater, models.WebhookActionTypeRun, "", types.LOCAL_DOCKER_ENVIRONMENT_ID)
+	insertWebhookDirect(t, ctx, db, rawToken, models.WebhookTargetTypeUpdater, models.WebhookActionTypeRun, "", types.LocalDockerEnvironmentID)
 
 	// nil updaterService causes a panic, which we verify the dispatch path is reached
 	// by recovering — in production the service is always non-nil
@@ -619,7 +619,7 @@ func TestTriggerByToken_GitOpsType_NilServiceReturnsError(t *testing.T) {
 	svc := newTestWebhookService(db) // gitOpsSyncService is nil
 
 	rawToken := "arc_wh_aabbccdd11223344aabbccdd0102030405060708090a0b0c0d0e0f1011121314"
-	insertWebhookDirect(t, ctx, db, rawToken, models.WebhookTargetTypeGitOps, models.WebhookActionTypeSync, "sync-id", types.LOCAL_DOCKER_ENVIRONMENT_ID)
+	insertWebhookDirect(t, ctx, db, rawToken, models.WebhookTargetTypeGitOps, models.WebhookActionTypeSync, "sync-id", types.LocalDockerEnvironmentID)
 
 	assert.Panics(t, func() {
 		_, _ = svc.TriggerByToken(ctx, rawToken) //nolint:errcheck

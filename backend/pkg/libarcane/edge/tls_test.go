@@ -136,7 +136,7 @@ func TestGeneratedClientCertificate_IncludesSANs(t *testing.T) {
 
 	require.True(t, cert.NotBefore.Before(cert.NotAfter))
 	skew := cert.NotAfter.Sub(cert.NotBefore)
-	require.True(t, skew > 0)
+	require.Positive(t, skew)
 }
 
 func TestEnsureAgentMTLSAssets_RejectsPlainHTTPEnrollment(t *testing.T) {
@@ -270,7 +270,7 @@ func TestTunnelServerRequireCertificateIdentityInternal_RejectsWrongEnvironmentU
 		PeerCertificates: []*x509.Certificate{cert},
 		VerifiedChains:   [][]*x509.Certificate{{cert}},
 	}
-	server := NewTunnelServer(nil, nil)
+	server := NewTunnelServerWithRegistry(GetRegistry(), nil, nil)
 	server.SetConfig(&Config{
 		EdgeMTLSMode: EdgeMTLSModeRequired,
 		AppURL:       "https://manager.example.com",
@@ -320,7 +320,7 @@ func TestValidateManagerMTLSConfig_RejectsMissingOrMalformedCAFile(t *testing.T)
 }
 
 func TestTunnelServerRequiredMTLS_AllowsHTTPRequestsWithoutVisibleTLSState(t *testing.T) {
-	server := NewTunnelServer(nil, nil)
+	server := NewTunnelServerWithRegistry(GetRegistry(), nil, nil)
 	server.SetConfig(&Config{
 		EdgeMTLSMode: EdgeMTLSModeRequired,
 		AppURL:       "https://manager.example.com",
@@ -331,7 +331,7 @@ func TestTunnelServerRequiredMTLS_AllowsHTTPRequestsWithoutVisibleTLSState(t *te
 }
 
 func TestTunnelServerRequiredMTLS_RejectsDirectTLSWithoutVerifiedClientCertificate(t *testing.T) {
-	server := NewTunnelServer(nil, nil)
+	server := NewTunnelServerWithRegistry(GetRegistry(), nil, nil)
 	server.SetConfig(&Config{EdgeMTLSMode: EdgeMTLSModeRequired})
 
 	req := httptest.NewRequest(http.MethodGet, "https://manager.example.com/api/tunnel/connect", nil)
@@ -343,7 +343,7 @@ func TestTunnelServerRequiredMTLS_RejectsDirectTLSWithoutVerifiedClientCertifica
 }
 
 func TestTunnelServerRequiredMTLS_DetectsOnlyDirectTLSForRequestSecurityMode(t *testing.T) {
-	server := NewTunnelServer(nil, nil)
+	server := NewTunnelServerWithRegistry(GetRegistry(), nil, nil)
 	server.SetConfig(&Config{
 		EdgeMTLSMode: EdgeMTLSModeRequired,
 		AppURL:       "https://manager.example.com",
@@ -387,7 +387,7 @@ func TestTunnelServerRequiredMTLS_IgnoresProxyVerificationHeaders(t *testing.T) 
 }
 
 func TestTunnelServerRequiredMTLS_AllowsGRPCContextsWithoutVisibleTLSState(t *testing.T) {
-	server := NewTunnelServer(nil, nil)
+	server := NewTunnelServerWithRegistry(GetRegistry(), nil, nil)
 	server.SetConfig(&Config{EdgeMTLSMode: EdgeMTLSModeRequired})
 
 	t.Run("missing peer", func(t *testing.T) {
@@ -507,7 +507,7 @@ func TestCAKey_EncryptedOnDiskWhenCryptoInitialized(t *testing.T) {
 
 	raw, err := os.ReadFile(caKeyPath)
 	require.NoError(t, err)
-	require.False(t, strings.Contains(string(raw), "BEGIN EC PRIVATE KEY"),
+	require.NotContains(t, string(raw), "BEGIN EC PRIVATE KEY",
 		"encrypted CA key file must not contain plain PEM markers")
 
 	pemBytes, err := readCAKeyPEMInternal(caKeyPath)

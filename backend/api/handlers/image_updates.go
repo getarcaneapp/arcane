@@ -205,7 +205,7 @@ func (h *ImageUpdateHandler) CheckMultipleImages(ctx context.Context, input *Che
 	return &CheckMultipleImagesOutput{
 		Body: base.ApiResponse[imageupdate.BatchResponse]{
 			Success: true,
-			Data:    imageupdate.BatchResponse(results),
+			Data:    results,
 		},
 	}, nil
 }
@@ -220,7 +220,7 @@ func (h *ImageUpdateHandler) CheckAllImages(ctx context.Context, input *CheckAll
 	return &CheckAllImagesOutput{
 		Body: base.ApiResponse[imageupdate.BatchResponse]{
 			Success: true,
-			Data:    imageupdate.BatchResponse(results),
+			Data:    results,
 		},
 	}, nil
 }

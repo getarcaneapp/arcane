@@ -1,4 +1,5 @@
 import { activityService } from '#lib/services/activity-service';
+import { STREAM_CHANNEL_ACTIVITIES } from '#lib/services/stream-service';
 import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte';
 import {
 	createEnvironmentStreamStore,
@@ -190,7 +191,7 @@ function createActivityStore() {
 				streamError: false
 			};
 		},
-		openStream: (signal) => activityService.openActivityStream(signal, ACTIVITY_LIST_LIMIT),
+		channel: STREAM_CHANNEL_ACTIVITIES,
 		// REST-fetch history on start so the panel isn't stuck loading if the
 		// stream is slow or drops before delivering its first snapshot.
 		refreshOnStart: true,

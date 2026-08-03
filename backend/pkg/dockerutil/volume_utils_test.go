@@ -43,7 +43,7 @@ func TestVolumeUsageCacheBehaviorInternal(t *testing.T) {
 		select {
 		case <-started:
 		case <-time.After(time.Second):
-			t.Fatal("volume usage refresh did not start")
+			require.FailNow(t, "volume usage refresh did not start")
 		}
 
 		waiterCtx, waiterCancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
@@ -101,7 +101,7 @@ func TestVolumeUsageCacheBehaviorInternal(t *testing.T) {
 		select {
 		case <-secondStarted:
 		case <-time.After(time.Second):
-			t.Fatal("background volume usage refresh did not start")
+			require.FailNow(t, "background volume usage refresh did not start")
 		}
 		_, _ = GetVolumeUsageDataStaleWhileRevalidate(ctx, dockerClient).Get()
 		require.Equal(t, int32(2), requests.Load())

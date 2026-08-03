@@ -148,6 +148,25 @@ function createEnvironmentManagementStore() {
 				}
 			}
 		},
+		// Applies a live environment list pushed by the backend stream.
+		//
+		// Edge liveness is process-local state on the manager, so a list fetched
+		// once goes stale the moment an agent reconnects — after a fleet update
+		// that leaves every agent stuck rendering as offline. This replaces the
+		// records wholesale rather than merging runtime fields, which keeps
+		// renames and enable toggles live too. Unlike initialize() it never
+		// re-runs initial selection: switching the user's environment out from
+		// under them because of a transient blip would be worse than the blip.
+		applyLiveEnvironments: (environments: Environment[]) => {
+			const available = _updateAvailable(environments);
+			if (!_selectedEnvironment) {
+				return;
+			}
+			const updated = available.find((env) => env.id === _selectedEnvironment!.id);
+			if (updated) {
+				_assignSelectedEnvironment(updated);
+			}
+		},
 		setEnvironment: async (environment: Environment) => {
 			if (!environment.enabled) return;
 			if (_selectedEnvironment?.id !== environment.id) {

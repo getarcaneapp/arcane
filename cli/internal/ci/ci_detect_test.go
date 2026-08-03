@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -18,7 +19,7 @@ func TestDetectFederatedTokenFromGitHubActionsInternal(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotAudience = r.URL.Query().Get("audience")
 		gotAuth = r.Header.Get("Authorization")
-		require.NoError(t, json.NewEncoder(w).Encode(map[string]string{"value": "github.jwt"}))
+		assert.NoError(t, json.NewEncoder(w).Encode(map[string]string{"value": "github.jwt"}))
 	}))
 	t.Cleanup(server.Close)
 

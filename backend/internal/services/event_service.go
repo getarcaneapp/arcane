@@ -3,7 +3,7 @@ package services
 import (
 	"bytes"
 	"context"
-	json "encoding/json/v2"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"log/slog"
@@ -69,7 +69,7 @@ func (s *EventService) CreateEvent(ctx context.Context, req CreateEventRequest) 
 	}
 	userID, username := normalizeEventActor(req.UserID, req.Username)
 
-	event := &models.Event{
+	eventRecord := &models.Event{
 		Type:          req.Type,
 		Severity:      severity,
 		Title:         req.Title,
@@ -88,7 +88,7 @@ func (s *EventService) CreateEvent(ctx context.Context, req CreateEventRequest) 
 	}
 
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(event).Error; err != nil {
+		if err := tx.Create(eventRecord).Error; err != nil {
 			return errors.WrapIf(err, "failed to create event")
 		}
 		return nil
@@ -97,9 +97,9 @@ func (s *EventService) CreateEvent(ctx context.Context, req CreateEventRequest) 
 		return nil, err
 	}
 
-	s.forwardEventToManager(ctx, event)
+	s.forwardEventToManager(ctx, eventRecord)
 
-	return event, nil
+	return eventRecord, nil
 }
 
 func (s *EventService) forwardEventToManager(ctx context.Context, eventModel *models.Event) {
@@ -623,7 +623,7 @@ func cloneEventMetadataValueInternal(value any) any {
 	case models.JSON:
 		return cloneEventMetadataInternal(typed)
 	case map[string]any:
-		return cloneEventMetadataInternal(models.JSON(typed))
+		return cloneEventMetadataInternal(typed)
 	case []any:
 		out := make([]any, len(typed))
 		for i := range typed {

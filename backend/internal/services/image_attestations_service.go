@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	json "encoding/json/v2"
+	"encoding/json/v2"
 	"io"
 	"log/slog"
 	"net/http"
@@ -20,7 +20,6 @@ import (
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
-	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/klauspost/compress/zstd"
 	attestationTypes "github.com/moby/buildkit/util/attestation"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -478,7 +477,7 @@ func readAttestationLayerInternal(ctx context.Context, attestationImage v1.Image
 	if err := ctx.Err(); err != nil {
 		return imagetypes.Attestation{}, false, err
 	}
-	if layerDescriptor.MediaType != types.MediaType(inTotoLayerMediaTypeInternal) {
+	if layerDescriptor.MediaType != inTotoLayerMediaTypeInternal {
 		return imagetypes.Attestation{}, false, nil
 	}
 

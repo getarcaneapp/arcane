@@ -8,7 +8,7 @@ import (
 	"charm.land/bubbles/v2/progress"
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
-	"go.withmatt.com/size"
+	"go.getarcane.app/sys/bytes"
 )
 
 type spinnerDoneMsg struct{}
@@ -60,13 +60,13 @@ func StartSpinner(label string) *Spinner {
 	program := tea.NewProgram(model)
 	done := make(chan struct{})
 
-	spinner := &Spinner{program: program, done: done}
+	spin := &Spinner{program: program, done: done}
 	go func() {
 		_, _ = program.Run()
 		close(done)
 	}()
 
-	return spinner
+	return spin
 }
 
 // Stop stops the spinner and moves to the next line.
@@ -149,11 +149,22 @@ func (m progressModel) View() tea.View {
 	return tea.NewView(fmt.Sprintf("%s\n%s", m.label, bar))
 }
 
-func safeCapacity(value int64) size.Capacity {
+func safeCapacity(value int64) bytes.Capacity {
 	if value < 0 {
-		return size.Capacity(0)
+		return bytes.Capacity(0)
 	}
-	return size.Capacity(uint64(value))
+	return bytes.Capacity(uint64(value))
+}
+
+// Bytes renders a signed byte count in human-readable form. Negative values,
+// which bytes.Capacity would otherwise wrap into the exabyte range, render as 0.
+func Bytes(value int64) string {
+	return safeCapacity(value).String()
+}
+
+// UnsignedBytes renders an unsigned byte count in human-readable form.
+func UnsignedBytes(value uint64) string {
+	return bytes.Capacity(value).String()
 }
 
 // Progress renders a Bubble Tea progress bar inline.

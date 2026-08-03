@@ -64,7 +64,7 @@ func SendMatrix(ctx context.Context, config models.MatrixConfig, message string)
 		return errors.WrapIf(err, "failed to build shoutrrr Matrix URL")
 	}
 
-	sender, err := shoutrrr.CreateSender(shoutrrrURL)
+	sender, err := shoutrrr.CreateSenderWithOptions(shoutrrrTypes.SenderOptions{}, shoutrrrURL)
 	if err != nil {
 		return errors.WrapIf(err, "failed to create shoutrrr Matrix sender")
 	}

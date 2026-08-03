@@ -2,7 +2,7 @@ package services
 
 import (
 	"context"
-	json "encoding/json/v2"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"log/slog"
@@ -69,10 +69,6 @@ const (
 const remoteIDPrefix = "remote"
 
 var errNoRemoteTemplates = errors.New("remote template registries returned no templates")
-
-func makeRemoteID(registryID, slug string) string {
-	return fmt.Sprintf("%s:%s:%s", remoteIDPrefix, registryID, slug)
-}
 
 func NewTemplateService(ctx context.Context, db *database.DB, httpClient *http.Client, settingsService *SettingsService) *TemplateService {
 	if httpClient == nil {
@@ -578,7 +574,9 @@ func (s *TemplateService) loadRemoteTemplates(ctx context.Context) ([]models.Com
 			continue
 		}
 
-		g.Go(func() error {
+		g.Go(func() (workerErr error) {
+			defer utils.RecoverToError(&workerErr, "template worker")
+
 			remoteTemplates, err := s.fetchRegistryTemplates(groupCtx, &reg)
 			if err != nil {
 				slog.WarnContext(groupCtx, "failed to fetch templates from registry", "registry", reg.Name, "url", reg.URL, "error", err)
@@ -711,7 +709,7 @@ func (s *TemplateService) fetchRegistryManifest(ctx context.Context, url string)
 }
 
 func (s *TemplateService) convertRemoteToLocal(remote tmpl.RemoteTemplate, registry *models.TemplateRegistry) models.ComposeTemplate {
-	publicID := makeRemoteID(registry.ID, remote.ID)
+	publicID := fmt.Sprintf("%s:%s:%s", remoteIDPrefix, registry.ID, remote.ID)
 
 	return models.ComposeTemplate{
 		BaseModel:   models.BaseModel{ID: publicID},
@@ -781,7 +779,9 @@ func (s *TemplateService) enrichRemoteTemplateIcons(ctx context.Context, templat
 
 	for i := range templates {
 		idx := i
-		group.Go(func() error {
+		group.Go(func() (workerErr error) {
+			defer utils.RecoverToError(&workerErr, "template worker")
+
 			composeContent, envContent, err := s.fetchRemoteTemplateFiles(groupCtx, &templates[idx])
 			if err != nil {
 				slog.WarnContext(groupCtx, "failed to fetch remote template content for icon extraction", "templateID", templates[idx].ID, "error", err)
@@ -820,13 +820,24 @@ func (s *TemplateService) newSafeRequestInternal(ctx context.Context, method, ra
 		return nil, nil, err
 	}
 
+	// Double-checked under registryMu: the lazy init ran unsynchronized, so
+	// concurrent template downloads raced on s.safeHTTPClient — a data race, and
+	// each loser silently built and leaked its own client.
+	s.registryMu.RLock()
 	client := s.safeHTTPClient
+	s.registryMu.RUnlock()
+
 	if client == nil {
-		client = s.newSafeHTTPClientInternal()
+		s.registryMu.Lock()
+		if s.safeHTTPClient == nil {
+			s.safeHTTPClient = s.newSafeHTTPClientInternal()
+		}
+		client = s.safeHTTPClient
+		s.registryMu.Unlock()
+
 		if client == nil {
 			return nil, nil, errors.New("failed to configure safe HTTP client")
 		}
-		s.safeHTTPClient = client
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, parsedURL.String(), nil)
@@ -848,7 +859,7 @@ func (s *TemplateService) DownloadTemplate(ctx context.Context, remoteTemplate *
 	if err != nil {
 		return nil, err
 	}
-	srcDesc := projects.ImportedComposeDescription(dir)
+	srcDesc := fmt.Sprintf("Imported from %s/compose.yaml", dir)
 
 	return s.downloadTemplateTransaction(ctx, remoteTemplate, base, composePath, envPath, srcDesc)
 }

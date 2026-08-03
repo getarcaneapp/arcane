@@ -5,7 +5,7 @@ package vuln
 
 import (
 	"encoding/base64"
-	json "encoding/json/v2"
+	"encoding/json/v2"
 	"net/url"
 	"runtime"
 	"strings"
@@ -42,11 +42,6 @@ func ParseVersion(output string) string {
 		}
 	}
 	return strings.TrimSpace(output)
-}
-
-// NormalizeNetworkMode trims a configured Trivy network mode.
-func NormalizeNetworkMode(networkMode string) string {
-	return strings.TrimSpace(networkMode)
 }
 
 // ParseSecurityOpts splits a comma- or newline-separated list of security options

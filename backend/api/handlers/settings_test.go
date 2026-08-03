@@ -5,17 +5,15 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"testing"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	apitypes "github.com/getarcaneapp/arcane/types/v2/settings"
-	sqlite "github.com/libtnb/sqlite"
+	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
@@ -76,7 +74,7 @@ func TestSettingsHandler_UpdateLocalEnvironment_RejectsUnreadableProjectsDirecto
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&models.SettingVariable{}))
 
-	settingsSvc, err := services.NewSettingsService(ctx, &database.DB{DB: db})
+	settingsSvc, err := newSettingsServiceForTestInternal(t, ctx, &database.DB{DB: db})
 	require.NoError(t, err)
 
 	originalDir := settingsSvc.GetSettingsConfig().ProjectsDirectory.Value
@@ -93,7 +91,7 @@ func TestSettingsHandler_UpdateLocalEnvironment_RejectsUnreadableProjectsDirecto
 	var statusErr huma.StatusError
 	require.ErrorAs(t, err, &statusErr, "expected a huma status error")
 	require.Equal(t, 400, statusErr.GetStatus())
-	require.True(t, strings.Contains(err.Error(), "cannot read projects directory"), "error message should explain the failure: %s", err.Error())
+	require.Contains(t, err.Error(), "cannot read projects directory", "error message should explain the failure: %s", err.Error())
 
 	require.Equal(t, originalDir, settingsSvc.GetSettingsConfig().ProjectsDirectory.Value, "projectsDirectory must not be persisted on validation failure")
 }

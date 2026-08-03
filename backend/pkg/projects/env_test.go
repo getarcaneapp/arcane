@@ -202,7 +202,7 @@ func TestBuildOverrideEnvContent(t *testing.T) {
 
 		override, err := BuildOverrideEnvContent(gitContent, effectiveContent)
 		require.NoError(t, err)
-		assert.Equal(t, "", override)
+		assert.Empty(t, override)
 	})
 
 	t.Run("drops empty overrides for git-backed keys during normalization", func(t *testing.T) {

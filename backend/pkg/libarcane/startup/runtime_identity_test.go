@@ -277,7 +277,7 @@ func TestEnsureRuntimeDockerConfigCreatesCustomDirectory(t *testing.T) {
 	require.NoError(t, ensureRuntimeDockerConfigInternal(
 		cfg,
 		func(string, string) error {
-			t.Fatal("setenv should not be called for explicit DOCKER_CONFIG")
+			require.FailNow(t, "setenv should not be called for explicit DOCKER_CONFIG")
 			return nil
 		},
 		1001,

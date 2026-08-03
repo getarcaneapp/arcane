@@ -13,7 +13,6 @@ import (
 	slogGorm "github.com/orandin/slog-gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"gorm.io/gorm/logger"
 )
 
@@ -276,8 +275,4 @@ func BuildGormLogger(cfg *config.Config) logger.Interface {
 	)
 
 	return slogGorm.New(opts...)
-}
-
-func ConfigureGormLogger(cfg *config.Config) {
-	database.SetGormLogger(BuildGormLogger(cfg))
 }

@@ -176,12 +176,16 @@ func hashRefreshJTIInternal(jti string) string {
 // RevokeAllUserSessionsExcept revokes every active session for userID, leaving
 // exceptSessionID active. Pass "" to revoke all sessions.
 func (s *SessionService) RevokeAllUserSessionsExcept(ctx context.Context, userID, exceptSessionID string) error {
+	return revokeAllUserSessionsExceptInternal(ctx, s.db.DB, userID, exceptSessionID)
+}
+
+func revokeAllUserSessionsExceptInternal(ctx context.Context, db *gorm.DB, userID, exceptSessionID string) error {
 	if strings.TrimSpace(userID) == "" {
 		return ErrInvalidToken
 	}
 
 	now := time.Now()
-	query := s.db.WithContext(ctx).Model(&models.UserSession{}).
+	query := db.WithContext(ctx).Model(&models.UserSession{}).
 		Where("user_id = ? AND revoked_at IS NULL", userID)
 	if strings.TrimSpace(exceptSessionID) != "" {
 		query = query.Where("id <> ?", exceptSessionID)

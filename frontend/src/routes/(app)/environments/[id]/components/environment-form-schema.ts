@@ -7,6 +7,7 @@ export const environmentFormSchema = z
 		enabled: z.boolean(),
 		apiUrl: z.string(),
 		pollingEnabled: z.boolean(),
+		imageEventWatcherEnabled: z.boolean(),
 		autoUpdate: z.boolean(),
 		autoInjectEnv: z.boolean(),
 		followProjectSymlinks: z.boolean(),

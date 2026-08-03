@@ -4,7 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
-	json "encoding/json/v2"
+	"encoding/json/v2"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -29,9 +29,17 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/environment"
 	"github.com/getarcaneapp/arcane/types/v2/version"
+	"go.getarcane.app/streams/agg"
 )
 
 const localDockerEnvironmentID = "0"
+
+const (
+	// Only covers poll-mode TTL expiry; tunnel and health-check changes arrive
+	// on the service's runtime-change signal instead.
+	environmentStreamPollInterval = 5 * time.Second
+	environmentStreamRefreshFloor = 30 * time.Second
+)
 
 // EnvironmentHandler handles environment management endpoints.
 type EnvironmentHandler struct {
@@ -430,6 +438,130 @@ func accessibleEnvironmentIDsInternal(ps *authz.PermissionSet) []string {
 	return ids
 }
 
+// visibleEnvironmentsForInternal returns the environments the caller may see,
+// with the manager's runtime overlay already applied. It reuses the same access
+// rules as ListEnvironments so the stream and the REST list can never disagree
+// about which environments a caller has.
+func (h *EnvironmentHandler) visibleEnvironmentsForInternal(ctx context.Context, ps *authz.PermissionSet) ([]environment.Environment, error) {
+	envs, err := h.environmentService.ListVisibleEnvironments(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if environmentListerSeesAllInternal(ps) {
+		return envs, nil
+	}
+
+	allowed := make(map[string]struct{}, len(ps.PerEnv))
+	for _, envID := range accessibleEnvironmentIDsInternal(ps) {
+		allowed[envID] = struct{}{}
+	}
+
+	filtered := envs[:0]
+	for _, env := range envs {
+		if _, ok := allowed[env.ID]; ok {
+			filtered = append(filtered, env)
+		}
+	}
+	return filtered, nil
+}
+
+// fingerprintEnvironmentsInternal hashes every field of the visible environment
+// list. This runs on every stream tick for every connected client, so it hashes
+// the fields directly rather than marshalling the payload to JSON and retaining
+// the bytes for comparison — most ticks change nothing and the encoded snapshot
+// was thrown away immediately.
+func fingerprintEnvironmentsInternal(envs []environment.Environment) uint64 {
+	return utils.FingerprintOf(envs, func(f *utils.Fingerprint, env *environment.Environment) {
+		f.String(env.ID).
+			String(env.Name).
+			String(env.ApiUrl).
+			String(env.Status).
+			Bool(env.Enabled).
+			Bool(env.IsEdge).
+			OptTime(env.LastSeen).
+			OptString(env.EdgeTransport).
+			OptString(env.LastEdgeTransport).
+			OptString(env.EdgeSecurityMode).
+			OptString(env.EdgeSessionID).
+			OptString(env.EdgeAgentInstance).
+			Strings(env.EdgeCapabilities).
+			OptBool(env.Connected).
+			OptTime(env.ConnectedAt).
+			OptTime(env.LastHeartbeat).
+			OptTime(env.LastPollAt).
+			OptString(env.ApiKey)
+
+		cert := env.EdgeMTLSCertificate
+		f.Present(cert != nil)
+		if cert == nil {
+			return
+		}
+		f.OptString(cert.CommonName).
+			OptTime(cert.ExpiresAt).
+			OptInt(cert.DaysRemaining).
+			Bool(cert.Expired).
+			Bool(cert.ExpiringSoon)
+	})
+}
+
+func (h *EnvironmentHandler) runEnvironmentStreamProducerInternal(ctx context.Context, ps *authz.PermissionSet, events chan<- environment.StreamEvent) {
+	changes, unsubscribe := h.environmentService.SubscribeRuntimeChanges()
+	defer unsubscribe()
+
+	var lastFingerprint uint64
+	var haveFingerprint bool
+	var lastSentAt time.Time
+
+	send := func() bool {
+		envs, err := h.visibleEnvironmentsForInternal(ctx, ps)
+		if err != nil {
+			// A failed read must not end the stream; the next tick retries.
+			if ctx.Err() == nil {
+				slog.WarnContext(ctx, "environment stream failed to list environments", "error", err)
+			}
+			return ctx.Err() == nil
+		}
+
+		fingerprint := fingerprintEnvironmentsInternal(envs)
+		// Re-send unchanged state on a floor so relative timestamps in the UI
+		// ("last seen 2 minutes ago") keep advancing.
+		if haveFingerprint && fingerprint == lastFingerprint && time.Since(lastSentAt) < environmentStreamRefreshFloor {
+			return true
+		}
+		lastFingerprint = fingerprint
+		haveFingerprint = true
+		lastSentAt = time.Now()
+
+		return agg.Send(ctx, events, environment.StreamEvent{
+			Type:         "snapshot",
+			Environments: envs,
+			Timestamp:    time.Now(),
+		})
+	}
+
+	if !send() {
+		return
+	}
+
+	ticker := time.NewTicker(environmentStreamPollInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-changes:
+			if !send() {
+				return
+			}
+		case <-ticker.C:
+			if !send() {
+				return
+			}
+		}
+	}
+}
+
 // CreateEnvironment creates a new environment.
 func (h *EnvironmentHandler) CreateEnvironment(ctx context.Context, input *CreateEnvironmentInput) (*CreateEnvironmentOutput, error) {
 	user, err := requireUserInternal(ctx)
@@ -477,19 +609,20 @@ func (h *EnvironmentHandler) createEnvironmentWithApiKeyInternal(ctx context.Con
 		return nil, huma.Error500InternalServerError("Failed to create environment API key")
 	}
 
-	// Store the API key in AccessToken field (encrypted) for manager-to-agent auth
-	encryptedKey := apiKeyDto.Key // Store the full key
+	// Store the full API key in AccessToken for manager-to-agent auth.
+	apiKey := apiKeyDto.Key
 
-	// Link API key to environment and store encrypted key for manager use
+	// Link the API key to the environment for manager use.
 	updates := map[string]any{
 		"api_key_id":   apiKeyDto.ID,
-		"access_token": encryptedKey,
+		"access_token": apiKey,
 	}
-	created, err = h.environmentService.UpdateEnvironment(ctx, created.ID, updates, &user.ID, &user.Username)
+	updated, err := h.environmentService.UpdateEnvironment(ctx, created.ID, updates, &user.ID, &user.Username)
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to link API key to environment", "environmentID", created.ID, "error", err.Error())
 		return nil, huma.Error500InternalServerError("Failed to link API key")
 	}
+	created = updated
 
 	out, mapErr := mapper.MapOne[*models.Environment, environment.Environment](created)
 	if mapErr != nil {
@@ -572,7 +705,7 @@ func (h *EnvironmentHandler) UpdateEnvironment(ctx context.Context, input *Updat
 
 	h.handleEnvironmentPairingInternal(ctx, input.ID, &input.Body, updates, isLocalEnv)
 
-	user, _ := humamw.GetCurrentUserFromContext(ctx)
+	user, _ := models.CurrentUserFromContext(ctx)
 	var userID, username *string
 	if user != nil {
 		userID = new(user.ID)
@@ -580,7 +713,11 @@ func (h *EnvironmentHandler) UpdateEnvironment(ctx context.Context, input *Updat
 	}
 	updated, updateErr := h.environmentService.UpdateEnvironment(ctx, input.ID, updates, userID, username)
 	if updateErr != nil {
-		return nil, huma.Error500InternalServerError("Failed to update environment")
+		apiErr := models.ToAPIError(updateErr)
+		if apiErr.HTTPStatus() == http.StatusInternalServerError {
+			return nil, huma.Error500InternalServerError("Failed to update environment")
+		}
+		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
 	}
 
 	h.triggerPostUpdateTasksInternal(ctx, input.ID, updated, &input.Body)
@@ -612,8 +749,8 @@ func (h *EnvironmentHandler) UpdateEnvironment(ctx context.Context, input *Updat
 		}
 
 		// Use service method to update environment and create event
-		encryptedKey := apiKeyDto.Key
-		err = h.environmentService.RegenerateEnvironmentApiKey(ctx, input.ID, apiKeyDto.ID, encryptedKey, user.ID, user.Username, updated.Name)
+		apiKey := apiKeyDto.Key
+		err = h.environmentService.RegenerateEnvironmentApiKey(ctx, input.ID, apiKeyDto.ID, apiKey, user.ID, user.Username, updated.Name)
 		if err != nil {
 			slog.ErrorContext(ctx, "Failed to regenerate API key", "environmentID", input.ID, "error", err.Error())
 			return nil, huma.Error500InternalServerError("Failed to regenerate API key")
@@ -657,7 +794,7 @@ func (h *EnvironmentHandler) DeleteEnvironment(ctx context.Context, input *Delet
 		return nil, huma.Error400BadRequest("Cannot delete local environment")
 	}
 
-	user, _ := humamw.GetCurrentUserFromContext(ctx)
+	user, _ := models.CurrentUserFromContext(ctx)
 	var userID, username *string
 	if user != nil {
 		userID = new(user.ID)
@@ -683,11 +820,22 @@ func (h *EnvironmentHandler) TestConnection(ctx context.Context, input *TestConn
 	if input.Body != nil {
 		apiUrl = input.Body.ApiUrl
 	}
+	if apiUrl != nil {
+		permissions, ok := humamw.PermissionsFromContext(ctx)
+		if !ok || !permissions.Allows(authz.PermEnvironmentsUpdate, "") {
+			return nil, huma.Error403Forbidden("permission denied: " + authz.PermEnvironmentsUpdate)
+		}
+	}
 
 	status, err := h.environmentService.TestConnection(ctx, input.ID, apiUrl)
 	resp := environment.Test{Status: status}
 	if err != nil {
-		resp.Message = new(err.Error())
+		if apiUrl == nil {
+			resp.Message = new(err.Error())
+		} else {
+			apiErr := models.ToAPIError(err)
+			err = huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
+		}
 		return &TestConnectionOutput{
 			Body: base.ApiResponse[environment.Test]{
 				Success: false,
@@ -1240,12 +1388,12 @@ func isSensitiveMTLSAssetNameInternal(fileName string) bool {
 }
 
 func environmentMTLSDownloadBaseNameInternal(env *models.Environment) string {
-	base := strings.TrimSpace(env.Name)
-	if base == "" {
-		base = "environment"
+	baseName := strings.TrimSpace(env.Name)
+	if baseName == "" {
+		baseName = "environment"
 	}
 
-	base = strings.Map(func(r rune) rune {
+	baseName = strings.Map(func(r rune) rune {
 		switch {
 		case r >= 'a' && r <= 'z':
 			return r
@@ -1256,24 +1404,24 @@ func environmentMTLSDownloadBaseNameInternal(env *models.Environment) string {
 		default:
 			return '-'
 		}
-	}, base)
+	}, baseName)
 
-	base = strings.Trim(base, "-")
-	if base == "" {
-		base = "environment"
+	baseName = strings.Trim(baseName, "-")
+	if baseName == "" {
+		baseName = "environment"
 	}
 
-	return base + "-" + env.ID
+	return baseName + "-" + env.ID
 }
 
 func environmentMTLSAssetDownloadNameInternal(env *models.Environment, fileName string) string {
-	base := environmentMTLSDownloadBaseNameInternal(env)
+	baseName := environmentMTLSDownloadBaseNameInternal(env)
 
 	switch fileName {
 	case "agent.crt":
-		return base + ".pem"
+		return baseName + ".pem"
 	case "agent.key":
-		return base + ".key"
+		return baseName + ".key"
 	default:
 		return fileName
 	}
@@ -1297,7 +1445,7 @@ func (h *EnvironmentHandler) logMTLSAuditEventInternal(ctx context.Context, env 
 		return
 	}
 
-	user, _ := humamw.GetCurrentUserFromContext(ctx)
+	user, _ := models.CurrentUserFromContext(ctx)
 	var userID, username *string
 	if user != nil {
 		userID = new(user.ID)

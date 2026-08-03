@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"emperror.dev/errors"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/stretchr/testify/require"
 )
@@ -38,6 +39,36 @@ type testBusWatcherInternal struct {
 	ranNow  chan context.Context
 }
 
+type orderedStopBusWatcherInternal struct {
+	name         string
+	started      chan struct{}
+	runnerExited chan struct{}
+}
+
+func (w *orderedStopBusWatcherInternal) Name() string {
+	return w.name
+}
+
+func (w *orderedStopBusWatcherInternal) Start(ctx context.Context) error {
+	close(w.started)
+	<-ctx.Done()
+	close(w.runnerExited)
+	return nil
+}
+
+func (*orderedStopBusWatcherInternal) RunNow(context.Context) error {
+	return nil
+}
+
+func (w *orderedStopBusWatcherInternal) Stop(context.Context) error {
+	select {
+	case <-w.runnerExited:
+		return nil
+	default:
+		return errors.New("watcher stopped before its runner exited")
+	}
+}
+
 func (w *testBusWatcherInternal) RunNow(ctx context.Context) error {
 	if w.ranNow != nil {
 		w.ranNow <- ctx
@@ -63,7 +94,7 @@ func (j *conditionalTestSchedulerJob) ShouldSchedule(ctx context.Context) bool {
 }
 
 func TestJobScheduler_StartScheduler_SkipsDisabledConditionalJobs(t *testing.T) {
-	js := NewJobScheduler(context.Background(), nil)
+	js := newJobSchedulerForTestInternal(t, context.Background(), nil)
 
 	job := &conditionalTestSchedulerJob{
 		testSchedulerJob: &testSchedulerJob{
@@ -73,17 +104,37 @@ func TestJobScheduler_StartScheduler_SkipsDisabledConditionalJobs(t *testing.T) 
 		shouldSchedule: func(context.Context) bool { return false },
 	}
 
-	js.RegisterJob(job)
-	js.StartScheduler()
+	require.NoError(t, js.RegisterJob(job))
+	require.NoError(t, js.StartScheduler())
 	defer js.cron.Stop()
 
-	require.NotContains(t, js.entryIDs, job.Name())
+	state, ok := js.GetJobRuntimeState(job.Name())
+	require.True(t, ok)
+	require.False(t, state.Scheduled)
 	require.Empty(t, js.cron.Entries())
+}
+
+func TestJobScheduler_StartScheduler_ContinuesAfterInvalidJobSchedule(t *testing.T) {
+	js := newJobSchedulerForTestInternal(t, context.Background(), nil)
+	invalid := &testSchedulerJob{name: "invalid-startup-job", schedule: "not a cron schedule"}
+	valid := &testSchedulerJob{name: "valid-startup-job", schedule: "*/1 * * * * *"}
+
+	require.NoError(t, js.RegisterJob(invalid))
+	require.NoError(t, js.RegisterJob(valid))
+	require.NoError(t, js.StartScheduler())
+
+	invalidState, ok := js.GetJobRuntimeState(invalid.Name())
+	require.True(t, ok)
+	require.False(t, invalidState.Scheduled)
+	validState, ok := js.GetJobRuntimeState(valid.Name())
+	require.True(t, ok)
+	require.True(t, validState.Scheduled)
+	require.Len(t, js.cron.Entries(), 1)
 }
 
 func TestJobScheduler_StopWaitsForBusWatchers(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	js := NewJobScheduler(ctx, nil)
+	js := newJobSchedulerForTestInternal(t, ctx, nil)
 	watcher := &testBusWatcherInternal{
 		name:    "test-bus-watcher",
 		started: make(chan struct{}),
@@ -91,13 +142,13 @@ func TestJobScheduler_StopWaitsForBusWatchers(t *testing.T) {
 		ranNow:  make(chan context.Context, 1),
 	}
 
-	js.RegisterBusWatcher(watcher, true)
-	js.StartScheduler()
+	require.NoError(t, js.RegisterBusWatcher(watcher, true))
+	require.NoError(t, js.StartScheduler())
 
 	select {
 	case <-watcher.started:
 	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for bus watcher to start")
+		require.FailNow(t, "timed out waiting for bus watcher to start")
 	}
 
 	stopDone := make(chan error, 1)
@@ -107,21 +158,37 @@ func TestJobScheduler_StopWaitsForBusWatchers(t *testing.T) {
 	select {
 	case <-watcher.stopped:
 	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for bus watcher to stop")
+		require.FailNow(t, "timed out waiting for bus watcher to stop")
 	}
 	select {
 	case err := <-stopDone:
 		require.NoError(t, err)
 	case <-time.After(time.Second):
-		t.Fatal("scheduler did not stop after bus watcher finished")
+		require.FailNow(t, "scheduler did not stop after bus watcher finished")
 	}
 }
 
-func TestJobScheduler_RegisterBusWatcherManualRunOption(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+func TestJobScheduler_StopJoinsRunnerBeforeStoppingWatcher(t *testing.T) {
+	js := newJobSchedulerForTestInternal(t, context.Background(), nil)
+	watcher := &orderedStopBusWatcherInternal{
+		name:         "ordered-stop-watcher",
+		started:      make(chan struct{}),
+		runnerExited: make(chan struct{}),
+	}
 
-	js := NewJobScheduler(ctx, nil)
+	require.NoError(t, js.RegisterBusWatcher(watcher, false))
+	select {
+	case <-watcher.started:
+	case <-time.After(time.Second):
+		require.FailNow(t, "timed out waiting for bus watcher to start")
+	}
+	require.NoError(t, js.Stop(t.Context()))
+}
+
+func TestJobScheduler_RegisterBusWatcherManualRunOption(t *testing.T) {
+	ctx := t.Context()
+
+	js := newJobSchedulerForTestInternal(t, ctx, nil)
 	manualWatcher := &testBusWatcherInternal{
 		name:    "manual-bus-watcher",
 		started: make(chan struct{}),
@@ -134,8 +201,8 @@ func TestJobScheduler_RegisterBusWatcherManualRunOption(t *testing.T) {
 		stopped: make(chan struct{}),
 	}
 
-	js.RegisterBusWatcher(manualWatcher, true)
-	js.RegisterBusWatcher(automaticOnlyWatcher, false)
+	require.NoError(t, js.RegisterBusWatcher(manualWatcher, true))
+	require.NoError(t, js.RegisterBusWatcher(automaticOnlyWatcher, false))
 
 	runCtx := context.Background()
 	require.NoError(t, js.RunBusWatcherNow(runCtx, manualWatcher.Name()))
@@ -144,7 +211,7 @@ func TestJobScheduler_RegisterBusWatcherManualRunOption(t *testing.T) {
 }
 
 func TestJobScheduler_RescheduleJob_RemovesEntryWhenDisabled(t *testing.T) {
-	js := NewJobScheduler(context.Background(), nil)
+	js := newJobSchedulerForTestInternal(t, context.Background(), nil)
 	enabled := true
 
 	job := &conditionalTestSchedulerJob{
@@ -156,17 +223,21 @@ func TestJobScheduler_RescheduleJob_RemovesEntryWhenDisabled(t *testing.T) {
 	}
 
 	require.NoError(t, js.RescheduleJob(context.Background(), job))
-	require.Contains(t, js.entryIDs, job.Name())
+	state, ok := js.GetJobRuntimeState(job.Name())
+	require.True(t, ok)
+	require.True(t, state.Scheduled)
 
 	enabled = false
 
 	require.NoError(t, js.RescheduleJob(context.Background(), job))
-	require.NotContains(t, js.entryIDs, job.Name())
+	state, ok = js.GetJobRuntimeState(job.Name())
+	require.True(t, ok)
+	require.False(t, state.Scheduled)
 	require.Empty(t, js.cron.Entries())
 }
 
 func TestJobScheduler_RescheduleJob_AddsEntryWhenEnabled(t *testing.T) {
-	js := NewJobScheduler(context.Background(), nil)
+	js := newJobSchedulerForTestInternal(t, context.Background(), nil)
 	enabled := false
 
 	job := &conditionalTestSchedulerJob{
@@ -178,33 +249,39 @@ func TestJobScheduler_RescheduleJob_AddsEntryWhenEnabled(t *testing.T) {
 	}
 
 	require.NoError(t, js.RescheduleJob(context.Background(), job))
-	require.NotContains(t, js.entryIDs, job.Name())
+	state, ok := js.GetJobRuntimeState(job.Name())
+	require.True(t, ok)
+	require.False(t, state.Scheduled)
 
 	enabled = true
 
 	require.NoError(t, js.RescheduleJob(context.Background(), job))
-	require.Contains(t, js.entryIDs, job.Name())
+	state, ok = js.GetJobRuntimeState(job.Name())
+	require.True(t, ok)
+	require.True(t, state.Scheduled)
 	require.Len(t, js.cron.Entries(), 1)
 }
 
 func TestJobScheduler_StartScheduler_SchedulesNonConditionalJobs(t *testing.T) {
-	js := NewJobScheduler(context.Background(), nil)
+	js := newJobSchedulerForTestInternal(t, context.Background(), nil)
 
 	job := &testSchedulerJob{
 		name:     "test-non-conditional-startup",
 		schedule: "*/1 * * * * *",
 	}
 
-	js.RegisterJob(job)
-	js.StartScheduler()
+	require.NoError(t, js.RegisterJob(job))
+	require.NoError(t, js.StartScheduler())
 	defer js.cron.Stop()
 
-	require.Contains(t, js.entryIDs, job.Name())
+	state, ok := js.GetJobRuntimeState(job.Name())
+	require.True(t, ok)
+	require.True(t, state.Scheduled)
 	require.Len(t, js.cron.Entries(), 1)
 }
 
 func TestJobScheduler_RescheduleJob_UsesProvidedContext(t *testing.T) {
-	js := NewJobScheduler(context.Background(), nil)
+	js := newJobSchedulerForTestInternal(t, context.Background(), nil)
 
 	var once sync.Once
 	runErrCh := make(chan error, 1)
@@ -226,13 +303,13 @@ func TestJobScheduler_RescheduleJob_UsesProvidedContext(t *testing.T) {
 	case err := <-runErrCh:
 		require.NoError(t, err)
 	case <-time.After(2500 * time.Millisecond):
-		t.Fatal("timed out waiting for scheduled run")
+		require.FailNow(t, "timed out waiting for scheduled run")
 	}
 }
 
 func TestJobScheduler_RescheduleJob_UsesLifecycleContextForShutdown(t *testing.T) {
 	lifecycleCtx, cancelLifecycle := context.WithCancel(context.Background())
-	js := NewJobScheduler(lifecycleCtx, nil)
+	js := newJobSchedulerForTestInternal(t, lifecycleCtx, nil)
 
 	startedCh := make(chan struct{}, 1)
 	stoppedCh := make(chan struct{}, 1)
@@ -259,7 +336,7 @@ func TestJobScheduler_RescheduleJob_UsesLifecycleContextForShutdown(t *testing.T
 	select {
 	case <-startedCh:
 	case <-time.After(2500 * time.Millisecond):
-		t.Fatal("timed out waiting for scheduled run")
+		require.FailNow(t, "timed out waiting for scheduled run")
 	}
 
 	cancelLifecycle()
@@ -267,27 +344,27 @@ func TestJobScheduler_RescheduleJob_UsesLifecycleContextForShutdown(t *testing.T
 	select {
 	case <-stoppedCh:
 	case <-time.After(1500 * time.Millisecond):
-		t.Fatal("scheduled job did not observe lifecycle cancellation")
+		require.FailNow(t, "scheduled job did not observe lifecycle cancellation")
 	}
 }
 
 func TestJobScheduler_AddJob_UpsertReplacesEntryWithoutLeaking(t *testing.T) {
-	js := NewJobScheduler(context.Background(), nil)
+	js := newJobSchedulerForTestInternal(t, context.Background(), nil)
 
 	job := &testSchedulerJob{name: "dyn-upsert", schedule: "*/5 * * * * *"}
 	require.NoError(t, js.AddJob(context.Background(), job))
 	require.True(t, js.HasJob(job.Name()))
 	require.Len(t, js.cron.Entries(), 1)
-	firstEntry := js.entryIDs[job.Name()]
+	firstEntry := js.cron.Entries()[0].ID
 
 	// Re-adding with a changed schedule (e.g. a new sync interval) must replace the
 	// existing cron entry, not leak a second one that keeps firing forever.
 	job.schedule = "*/10 * * * * *"
 	require.NoError(t, js.AddJob(context.Background(), job))
 	require.Len(t, js.cron.Entries(), 1)
-	require.NotEqual(t, firstEntry, js.entryIDs[job.Name()])
+	require.NotEqual(t, firstEntry, js.cron.Entries()[0].ID)
 
-	state, ok := js.GetJobRuntimeState(job.Name()).Get()
+	state, ok := js.GetJobRuntimeState(job.Name())
 	require.True(t, ok)
 	require.True(t, state.Scheduled)
 	require.Equal(t, "*/10 * * * * *", state.Schedule)
@@ -295,28 +372,28 @@ func TestJobScheduler_AddJob_UpsertReplacesEntryWithoutLeaking(t *testing.T) {
 }
 
 func TestJobScheduler_AddJob_InvalidRescheduleKeepsExistingEntry(t *testing.T) {
-	js := NewJobScheduler(context.Background(), nil)
+	js := newJobSchedulerForTestInternal(t, context.Background(), nil)
 
 	job := &testSchedulerJob{name: "dyn-invalid-reschedule", schedule: "*/5 * * * * *"}
 	require.NoError(t, js.AddJob(context.Background(), job))
 	require.True(t, js.HasJob(job.Name()))
 	require.Len(t, js.cron.Entries(), 1)
-	firstEntry := js.entryIDs[job.Name()]
+	firstEntry := js.cron.Entries()[0].ID
 
 	job.schedule = "not a cron schedule"
 	require.Error(t, js.AddJob(context.Background(), job))
 	require.True(t, js.HasJob(job.Name()))
-	require.Equal(t, firstEntry, js.entryIDs[job.Name()])
+	require.Equal(t, firstEntry, js.cron.Entries()[0].ID)
 	require.Len(t, js.cron.Entries(), 1)
 
-	state, ok := js.GetJobRuntimeState(job.Name()).Get()
+	state, ok := js.GetJobRuntimeState(job.Name())
 	require.True(t, ok)
 	require.True(t, state.Scheduled)
 	require.Equal(t, "*/5 * * * * *", state.Schedule)
 }
 
 func TestJobScheduler_RemoveJob_RemovesEntryAndIsNoopWhenAbsent(t *testing.T) {
-	js := NewJobScheduler(context.Background(), nil)
+	js := newJobSchedulerForTestInternal(t, context.Background(), nil)
 
 	// Removing an unknown job must be a safe no-op (e.g. deleting a sync that never
 	// had auto-sync enabled).
@@ -329,12 +406,11 @@ func TestJobScheduler_RemoveJob_RemovesEntryAndIsNoopWhenAbsent(t *testing.T) {
 
 	js.RemoveJob(context.Background(), job.Name())
 	require.False(t, js.HasJob(job.Name()))
-	require.NotContains(t, js.entryIDs, job.Name())
 	require.Empty(t, js.cron.Entries())
 }
 
 func TestJobScheduler_AddJob_GenericJobWithoutShouldRunIsScheduled(t *testing.T) {
-	js := NewJobScheduler(context.Background(), nil)
+	js := newJobSchedulerForTestInternal(t, context.Background(), nil)
 
 	job := &schedulertypes.GenericJob{
 		JobName:    "generic-dyn",
@@ -354,8 +430,8 @@ func TestJobScheduler_StopWaitsForCanceledJobToFinish(t *testing.T) {
 	jobFinished := make(chan struct{}, 1)
 	var runOnce sync.Once
 
-	js := NewJobScheduler(lifecycleCtx, nil)
-	js.RegisterJob(&testSchedulerJob{
+	js := newJobSchedulerForTestInternal(t, lifecycleCtx, nil)
+	require.NoError(t, js.RegisterJob(&testSchedulerJob{
 		name:     "test-shutdown-waits",
 		schedule: "*/1 * * * * *",
 		run: func(ctx context.Context) {
@@ -367,8 +443,8 @@ func TestJobScheduler_StopWaitsForCanceledJobToFinish(t *testing.T) {
 				jobFinished <- struct{}{}
 			})
 		},
-	})
-	js.StartScheduler()
+	}))
+	require.NoError(t, js.StartScheduler())
 	t.Cleanup(func() {
 		cancelLifecycle()
 		select {
@@ -380,14 +456,14 @@ func TestJobScheduler_StopWaitsForCanceledJobToFinish(t *testing.T) {
 	select {
 	case <-jobStarted:
 	case <-time.After(2500 * time.Millisecond):
-		t.Fatal("timed out waiting for scheduled job to start")
+		require.FailNow(t, "timed out waiting for scheduled job to start")
 	}
 
 	cancelLifecycle()
 	select {
 	case <-cancellationObserved:
 	case <-time.After(time.Second):
-		t.Fatal("scheduled job did not observe lifecycle cancellation")
+		require.FailNow(t, "scheduled job did not observe lifecycle cancellation")
 	}
 
 	stopDone := make(chan error, 1)
@@ -395,7 +471,7 @@ func TestJobScheduler_StopWaitsForCanceledJobToFinish(t *testing.T) {
 
 	select {
 	case err := <-stopDone:
-		t.Fatalf("scheduler stopped before the running job finished: %v", err)
+		require.FailNowf(t, "unexpected failure", "scheduler stopped before the running job finished: %v", err)
 	case <-time.After(100 * time.Millisecond):
 	}
 
@@ -403,12 +479,12 @@ func TestJobScheduler_StopWaitsForCanceledJobToFinish(t *testing.T) {
 	select {
 	case <-jobFinished:
 	case <-time.After(time.Second):
-		t.Fatal("scheduled job did not finish after release")
+		require.FailNow(t, "scheduled job did not finish after release")
 	}
 	select {
 	case err := <-stopDone:
 		require.NoError(t, err)
 	case <-time.After(time.Second):
-		t.Fatal("scheduler did not stop after the running job finished")
+		require.FailNow(t, "scheduler did not stop after the running job finished")
 	}
 }

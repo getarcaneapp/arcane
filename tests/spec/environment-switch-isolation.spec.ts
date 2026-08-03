@@ -90,6 +90,25 @@ async function mockEnvironmentCatalog(page: Page) {
 			body: JSON.stringify(paginated([localEnvironment, remoteEnvironment]))
 		});
 	});
+	await page.context().route(/\/api\/stream(?:\?.*)?$/, async (route) => {
+		const channels = new URL(route.request().url()).searchParams.get('channels')?.split(',') ?? [];
+		const timestamp = new Date().toISOString();
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/x-json-stream',
+			body: channels.includes('environments')
+				? `${JSON.stringify({
+						channel: 'environments',
+						environment: {
+							type: 'snapshot',
+							environments: [localEnvironment, remoteEnvironment],
+							timestamp
+						},
+						timestamp
+					})}\n`
+				: ''
+		});
+	});
 	await page
 		.context()
 		.route(/\/api\/environments\/(?:0|remote-switch-test)\/settings$/, async (route) => {

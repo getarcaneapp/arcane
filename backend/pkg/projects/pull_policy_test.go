@@ -91,7 +91,7 @@ func TestBuildProjectImagePullPlan(t *testing.T) {
 func TestNormalizePullPolicy(t *testing.T) {
 	assert.Equal(t, "missing", NormalizePullPolicy("if_not_present"))
 	assert.Equal(t, "build", NormalizePullPolicy(" BUILD "))
-	assert.Equal(t, "", NormalizePullPolicy(""))
+	assert.Empty(t, NormalizePullPolicy(""))
 }
 
 func TestDecideDeployImageAction(t *testing.T) {

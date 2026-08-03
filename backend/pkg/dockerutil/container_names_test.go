@@ -1,6 +1,10 @@
 package docker
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+)
 
 func TestContainerNameFromNames(t *testing.T) {
 	tests := []struct {
@@ -32,9 +36,12 @@ func TestContainerNameFromNames(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := ContainerNameFromNames(tt.names); got != tt.want {
-				t.Errorf("ContainerNameFromNames() = %v, want %v", got, tt.want)
+			{
+				got := ContainerNameFromNames(tt.names)
+				assert.Equal(t, tt.want, got,
+					"ContainerNameFromNames() = %v, want %v", got, tt.want)
 			}
+
 		})
 	}
 }

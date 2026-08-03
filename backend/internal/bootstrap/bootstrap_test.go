@@ -3,7 +3,6 @@ package bootstrap
 import (
 	"context"
 	"crypto/tls"
-	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -13,10 +12,12 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/v2/api"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge/proto/tunnel/v1"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
+	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
 	"github.com/labstack/echo/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -182,6 +183,7 @@ func TestHTTP2APIResponsesDoNotUseAPIGzipInternal(t *testing.T) {
 		Config:         cfg,
 		HandlerDeps:    api.HandlerDeps{},
 		AuthMiddleware: middleware.NewAuthMiddleware(nil, cfg),
+		TunnelRegistry: edge.NewTunnelRegistry(),
 	})
 	handler, protocols := configureHTTPProtocolsInternal(false, router)
 
@@ -238,8 +240,7 @@ func TestHTTP2APIResponsesDoNotUseAPIGzipInternal(t *testing.T) {
 }
 
 func TestHTTPServerStopCancelsStreamingRequestContextsInternal(t *testing.T) {
-	appCtx, cancelApp := context.WithCancel(context.Background())
-	defer cancelApp()
+	appCtx := t.Context()
 
 	handlerEntered := make(chan struct{})
 	router := echo.New()
@@ -294,73 +295,49 @@ func TestNewHTTPServerRejectsInvalidTLSCertificateInternal(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestRegisterAppCancelHookRunsBeforeEarlierStopHooks(t *testing.T) {
+func TestRegisterAppCancelHookRunsAfterLaterStopHooks(t *testing.T) {
 	appCtx, cancelApp := context.WithCancel(context.Background())
 	lifecycle := fxtest.NewLifecycle(t)
-	appCanceledBeforeDependencyStop := false
+	registerAppCancelHook(lifecycle, cancelApp)
+	appActiveDuringDependencyStop := false
 	lifecycle.Append(fx.Hook{
 		OnStop: func(context.Context) error {
-			appCanceledBeforeDependencyStop = errors.Is(appCtx.Err(), context.Canceled)
+			appActiveDuringDependencyStop = appCtx.Err() == nil
 			return nil
 		},
 	})
-	registerAppCancelHook(lifecycle, cancelApp)
 
 	lifecycle.RequireStart()
 	lifecycle.RequireStop()
-	require.True(t, appCanceledBeforeDependencyStop)
-}
-
-func TestRollbackCancelHookRunsBeforeEarlierStopsInternal(t *testing.T) {
-	appCtx, cancelApp := context.WithCancel(context.Background())
-	appCanceledBeforeDependencyStop := false
-	app := fxtest.New(t,
-		fx.Supply(cancelApp),
-		fx.Invoke(func(lc fx.Lifecycle) {
-			lc.Append(fx.Hook{
-				OnStop: func(context.Context) error {
-					appCanceledBeforeDependencyStop = errors.Is(appCtx.Err(), context.Canceled)
-					return nil
-				},
-			})
-		}),
-		fx.Invoke(registerAppRollbackCancelHook),
-		fx.Invoke(func(lc fx.Lifecycle) {
-			lc.Append(fx.Hook{
-				OnStart: func(context.Context) error {
-					return errors.New("listen failed")
-				},
-			})
-		}),
-	)
-
-	require.Error(t, app.Start(context.Background()))
-	require.True(t, appCanceledBeforeDependencyStop)
+	require.True(t, appActiveDuringDependencyStop)
+	require.ErrorIs(t, appCtx.Err(), context.Canceled)
 }
 
 func TestJobSchedulerStopCancelsItsPrivateContextInternal(t *testing.T) {
-	appCtx, cancelApp := context.WithCancel(context.Background())
-	defer cancelApp()
+	appCtx := t.Context()
 
 	lifecycle := fxtest.NewLifecycle(t)
-	jobScheduler := newJobScheduler(appCtx, lifecycle, &config.Config{}, nil, nil, nil)
+	runtime, err := actors.NewRuntime(appCtx, lifecycle)
+	require.NoError(t, err)
+	jobScheduler, err := newJobScheduler(appCtx, lifecycle, &config.Config{}, runtime, nil, nil, nil, nil)
+	require.NoError(t, err)
 	watcher := &blockingBusWatcherInternal{
 		started: make(chan struct{}),
 		stopped: make(chan struct{}),
 	}
-	jobScheduler.RegisterBusWatcher(watcher, false)
+	require.NoError(t, jobScheduler.RegisterBusWatcher(watcher, false))
 
 	lifecycle.RequireStart()
 	select {
 	case <-watcher.started:
 	case <-time.After(time.Second):
-		t.Fatal("watcher did not start")
+		require.FailNow(t, "watcher did not start")
 	}
 	lifecycle.RequireStop()
 	select {
 	case <-watcher.stopped:
 	case <-time.After(time.Second):
-		t.Fatal("watcher did not stop")
+		require.FailNow(t, "watcher did not stop")
 	}
 	require.NoError(t, appCtx.Err())
 }
