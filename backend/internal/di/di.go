@@ -35,6 +35,7 @@ var ServiceOptions = fx.Options(
 		provideDockerClientServiceInternal,
 		services.NewRoleService,
 		services.NewSessionService,
+		services.NewPasskeyService,
 		services.NewEnvironmentService,
 		services.NewNotificationService,
 		services.NewVulnerabilityService,

@@ -1,5 +1,5 @@
 import BaseAPIService from './api-service';
-import { environmentStore } from '#lib/stores/environment.store.svelte';
+import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte';
 import type {
 	VolumeSummaryDto,
 	VolumeDetailDto,
@@ -120,7 +120,11 @@ class VolumeService extends BaseAPIService {
 	}
 
 	async deleteVolume(volumeName: string): Promise<any> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+		// Resolve the env id synchronously when possible so bulk deletes start
+		// their request inside the runWithActivityBatchId scope (see api-service).
+		const envId = environmentStore.isInitialized()
+			? (environmentStore.selected?.id ?? LOCAL_DOCKER_ENVIRONMENT_ID)
+			: await environmentStore.getCurrentEnvironmentId();
 		return this.handleResponse(this.api.delete(`/environments/${envId}/volumes/${volumeName}`));
 	}
 }

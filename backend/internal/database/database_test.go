@@ -172,6 +172,36 @@ func TestMigration068_UserPreferences_UpAndDown(t *testing.T) {
 	assert.Zero(t, columnCount)
 }
 
+func TestMigration070_PasskeysAndMFA_UpAndDown(t *testing.T) {
+	ctx := context.Background()
+	rawDB, _ := newSQLiteSQLDBInternal(t, t.TempDir(), "arcane-passkeys-mfa.db")
+
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 69))
+	var tableCount int
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('passkeys', 'auth_transactions', 'passkey_ceremonies', 'passkey_recovery_codes')`).Scan(&tableCount))
+	assert.Zero(t, tableCount)
+
+	var columnCount int
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('users') WHERE name = 'passkey_mfa_enabled'`).Scan(&columnCount))
+	assert.Zero(t, columnCount)
+
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 70))
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('passkeys', 'auth_transactions', 'passkey_ceremonies', 'passkey_recovery_codes')`).Scan(&tableCount))
+	assert.Equal(t, 4, tableCount)
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('users') WHERE name = 'passkey_mfa_enabled'`).Scan(&columnCount))
+	assert.Equal(t, 1, columnCount)
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('user_sessions') WHERE name IN ('mfa_method', 'mfa_verified_at')`).Scan(&columnCount))
+	assert.Equal(t, 2, columnCount)
+
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 69))
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('passkeys', 'auth_transactions', 'passkey_ceremonies', 'passkey_recovery_codes')`).Scan(&tableCount))
+	assert.Zero(t, tableCount)
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('users') WHERE name = 'passkey_mfa_enabled'`).Scan(&columnCount))
+	assert.Zero(t, columnCount)
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('user_sessions') WHERE name IN ('mfa_method', 'mfa_verified_at')`).Scan(&columnCount))
+	assert.Zero(t, columnCount)
+}
+
 func TestMigrateDatabase_BlocksFutureGooseVersionWithoutFlag(t *testing.T) {
 	ctx := context.Background()
 	rawDB, dsn := newSQLiteSQLDBInternal(t, t.TempDir(), "arcane-future.db")

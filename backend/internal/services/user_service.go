@@ -594,6 +594,10 @@ func (s *UserService) toUserResponseDtoInternal(ctx context.Context, u models.Us
 		RoleAssignments:        []user.RoleAssignmentSummary{},
 		PermissionsByEnv:       map[string][]string{},
 	}
+	if u.LastLogin != nil {
+		lastLogin := u.LastLogin.Format("2006-01-02T15:04:05.999999Z")
+		dto.LastLogin = &lastLogin
+	}
 	// Populate AvatarURL when the user has a custom avatar stored
 	if u.HasAvatar {
 		avatarURL := fmt.Sprintf("/api/users/%s/avatar", u.ID)

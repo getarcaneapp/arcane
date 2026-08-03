@@ -4922,8 +4922,9 @@ func (s *ProjectService) getProjectMetadataForProject(ctx context.Context, p mod
 }
 
 // iconCatalogForContextInternal resolves the icon catalog of the requesting
-// user. Background jobs and agent-proxied calls have no user attached and fall
-// back to the default catalog.
+// user. On agent-proxied calls the caller is a synthetic user whose preference
+// is populated from the X-Arcane-Icon-Catalog header the manager forwards.
+// Background jobs have no user attached and fall back to the default catalog.
 func iconCatalogForContextInternal(ctx context.Context) string {
 	if u, ok := models.CurrentUserFromContext(ctx); ok && u != nil && u.Preferences.IconCatalog != nil && *u.Preferences.IconCatalog != "" {
 		return *u.Preferences.IconCatalog

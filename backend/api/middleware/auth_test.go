@@ -14,6 +14,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
+	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/types/v2/auth"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/labstack/echo/v5"
@@ -478,4 +479,46 @@ func TestNewAuthBridge_VersionMismatchIsRecoverable(t *testing.T) {
 		router.ServeHTTP(rec, req)
 		require.Equal(t, http.StatusOK, rec.Code)
 	})
+}
+
+func TestNewAuthBridge_AgentAuthAppliesForwardedIconCatalog(t *testing.T) {
+	const agentToken = "agent-token"
+	router := echo.New()
+	apiGroup := router.Group("/api")
+
+	humaConfig := huma.DefaultConfig("test", "1.0.0")
+	humaConfig.Components.SecuritySchemes = map[string]*huma.SecurityScheme{
+		"ApiKeyAuth": {Type: "apiKey", In: "header", Name: "X-API-Key"},
+	}
+
+	api := humaecho.NewWithGroup(router, apiGroup, humaConfig)
+	api.UseMiddleware(NewAuthBridge(api, &services.AuthService{}, nil, nil, nil, &config.Config{
+		AgentMode:  true,
+		AgentToken: agentToken,
+	}))
+
+	huma.Register(api, huma.Operation{
+		OperationID: "secure-agent-icon-catalog",
+		Method:      http.MethodGet,
+		Path:        "/secure-agent-icon-catalog",
+		Security:    []map[string][]string{{"ApiKeyAuth": {}}},
+	}, func(ctx context.Context, _ *secureInput) (*secureOutput, error) {
+		user, ok := models.CurrentUserFromContext(ctx)
+		require.True(t, ok)
+		require.NotNil(t, user.Preferences.IconCatalog)
+		require.Equal(t, "dashboard-icons", *user.Preferences.IconCatalog)
+
+		resp := &secureOutput{}
+		resp.Body.UserID = user.ID
+		return resp, nil
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/secure-agent-icon-catalog", nil)
+	req.Header.Set(pkgutils.HeaderAgentToken, agentToken)
+	req.Header.Set(pkgutils.HeaderIconCatalog, "dashboard-icons")
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
 }

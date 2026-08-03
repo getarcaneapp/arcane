@@ -67,6 +67,7 @@ type User struct {
 	AvatarURL              *string                 `json:"avatarUrl,omitempty" doc:"URL to the user's custom avatar image; omitted when using the default profile picture"`
 	OidcSubjectId          *string                 `json:"oidcSubjectId,omitempty" doc:"OIDC subject identifier for SSO users"`
 	Locale                 *string                 `json:"locale,omitempty" doc:"Locale preference of the user" example:"en-US"`
+	LastLogin              *string                 `json:"lastLogin,omitempty" doc:"Date and time of the user's most recent sign-in; omitted when the user has never signed in"`
 	PermissionsByEnv       map[string][]string     `json:"permissionsByEnv" doc:"Permissions the user effectively holds, keyed by environment ID. The 'global' key holds permissions that apply across every environment (and to org-level endpoints)."`
 	Preferences            Preferences             `json:"preferences" doc:"Personal display and UI preferences"`
 	ID                     string                  `json:"id" doc:"Unique identifier of the user" example:"550e8400-e29b-41d4-a716-446655440000"`
