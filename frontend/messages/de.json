@@ -2767,6 +2767,7 @@
   "deploy_pull_policy_always": "Immer neueste holen",
   "deploy_pull_policy_never": "Nie holen",
   "deploy_force_recreate": "Neuerstellung von Containern erzwingen",
+  "deploy_recreate_volumes": "Geänderte Volumes neu erstellen (Datenverlust)",
   "settings_default_deploy_pull_policy": "Standard Deploy-Pull-Richtlinie",
   "settings_default_deploy_pull_policy_description": "Standard Image-Pull-Richtlinie beim Deployment von Projekten",
   "authentication": "Authentifizierung",
