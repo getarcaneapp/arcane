@@ -647,7 +647,7 @@ func TestGitOpsSyncService_SyncProjectDirectory_PreservesEnvOverrideAndAddsNewGi
 
 	effectiveBytes, err := os.ReadFile(filepath.Join(updatedProject.Path, ".env"))
 	require.NoError(t, err)
-	assert.Equal(t, newGitEnvContent+"FOO=useredit\n", string(effectiveBytes))
+	assert.Equal(t, "FOO=useredit\nBAR=new\n", string(effectiveBytes))
 
 	gitBytes, err := os.ReadFile(filepath.Join(updatedProject.Path, ".env.git"))
 	require.NoError(t, err)

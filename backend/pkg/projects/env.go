@@ -8,6 +8,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -21,20 +22,17 @@ import (
 )
 
 const (
-	GlobalEnvFileName    = ".env.global"
-	EffectiveEnvFileName = ".env"
-	GitSourceEnvFileName = ".env.git"
-	OverrideEnvFileName  = "project.env"
+	GlobalEnvFileName                     = ".env.global"
+	EffectiveEnvFileName                  = ".env"
+	GitSourceEnvFileName                  = ".env.git"
+	OverrideEnvFileName                   = "project.env"
+	ProjectEnvModeDirect   ProjectEnvMode = "direct"
+	ProjectEnvModeOverride ProjectEnvMode = "override"
 )
 
 type EnvMap = map[string]string
 
 type ProjectEnvMode string
-
-const (
-	ProjectEnvModeDirect   ProjectEnvMode = "direct"
-	ProjectEnvModeOverride ProjectEnvMode = "override"
-)
 
 type ProjectEnvState struct {
 	Mode             ProjectEnvMode
@@ -338,9 +336,11 @@ func WithTransientValidationEnvFile(projectPath string, effectiveEnvContent *str
 }
 
 // BuildEffectiveEnvContent merges git and override env sources into the effective
-// .env content written to disk. Each source is preserved verbatim, with the
-// override appended after the Git content so duplicate keys resolve to the
-// override value when Compose parses the effective file.
+// .env content written to disk. Keys present in both layers are rewritten in place
+// on the Git line, preserving ordering and inline comments; override-only keys are
+// appended after the Git content. When the in-place rewrite cannot be verified to
+// parse identically to plain concatenation (e.g. multiline values), the override
+// is appended verbatim instead so duplicate keys resolve to the override value.
 func BuildEffectiveEnvContent(gitContent, overrideContent string) (string, error) {
 	contextEnv := make(EnvMap)
 
@@ -350,7 +350,7 @@ func BuildEffectiveEnvContent(gitContent, overrideContent string) (string, error
 	}
 	maps.Copy(contextEnv, gitEnv)
 
-	_, err = ParseProjectEnvContent(overrideContent, contextEnv)
+	overrideEnv, err := ParseProjectEnvContent(overrideContent, contextEnv)
 	if err != nil {
 		return "", errors.WrapIf(err, "parse override env content")
 	}
@@ -360,11 +360,110 @@ func BuildEffectiveEnvContent(gitContent, overrideContent string) (string, error
 		return overrideContent, nil
 	case overrideContent == "":
 		return gitContent, nil
-	case strings.HasSuffix(gitContent, "\n"), strings.HasPrefix(overrideContent, "\n"):
-		return gitContent + overrideContent, nil
-	default:
-		return gitContent + "\n" + overrideContent, nil
 	}
+
+	concatenated := gitContent + "\n" + overrideContent
+	if strings.HasSuffix(gitContent, "\n") || strings.HasPrefix(overrideContent, "\n") {
+		concatenated = gitContent + overrideContent
+	}
+
+	candidate, ok := mergeEnvOverridesInPlaceInternal(gitContent, overrideContent, overrideEnv)
+	if !ok {
+		return concatenated, nil
+	}
+
+	candidateEnv, candidateErr := ParseProjectEnvContent(candidate, make(EnvMap))
+	expectedEnv, expectedErr := ParseProjectEnvContent(concatenated, make(EnvMap))
+	if candidateErr == nil && expectedErr == nil && maps.Equal(candidateEnv, expectedEnv) {
+		return candidate, nil
+	}
+
+	return concatenated, nil
+}
+
+var envKeyLineRegexInternal = regexp.MustCompile(`^(\s*(?:export\s+)?)([A-Za-z_][A-Za-z0-9_.-]*)(\s*=)(.*)$`)
+
+// mergeEnvOverridesInPlaceInternal rewrites the value of every gitContent line
+// whose key has an override — keeping line order and trailing inline comments —
+// then appends the override lines whose keys were not rewritten. ok is false when
+// no git line matched an override and the caller should fall back to plain
+// concatenation.
+func mergeEnvOverridesInPlaceInternal(gitContent, overrideContent string, overrideEnv EnvMap) (merged string, ok bool) {
+	rewritten := make(map[string]struct{})
+	gitLines := strings.Split(gitContent, "\n")
+
+	for i, line := range gitLines {
+		body, hadCR := strings.CutSuffix(line, "\r")
+		match := envKeyLineRegexInternal.FindStringSubmatch(body)
+		if match == nil {
+			continue
+		}
+		overrideValue, exists := overrideEnv[match[2]]
+		if !exists {
+			continue
+		}
+
+		value, comment := splitEnvValueCommentInternal(match[4])
+		separator := value[len(strings.TrimRight(value, " \t")):]
+		if comment != "" && separator == "" {
+			separator = " "
+		}
+
+		body = match[1] + match[2] + match[3] + formatEnvValueInternal(overrideValue) + separator + comment
+		if hadCR {
+			body += "\r"
+		}
+		gitLines[i] = body
+		rewritten[match[2]] = struct{}{}
+	}
+
+	if len(rewritten) == 0 {
+		return "", false
+	}
+
+	remainderLines := make([]string, 0)
+	for line := range strings.SplitSeq(overrideContent, "\n") {
+		if match := envKeyLineRegexInternal.FindStringSubmatch(strings.TrimSuffix(line, "\r")); match != nil {
+			if _, drop := rewritten[match[2]]; drop {
+				continue
+			}
+		}
+		remainderLines = append(remainderLines, line)
+	}
+
+	merged = strings.Join(gitLines, "\n")
+	remainder := strings.Join(remainderLines, "\n")
+	switch {
+	case strings.TrimSpace(remainder) == "":
+		return merged, true
+	case strings.HasSuffix(merged, "\n"), strings.HasPrefix(remainder, "\n"):
+		return merged + remainder, true
+	default:
+		return merged + "\n" + remainder, true
+	}
+}
+
+// splitEnvValueCommentInternal splits a raw single-line env value into the value
+// part and a trailing inline comment. A comment starts at an unquoted '#' that is
+// at the start of the value or preceded by whitespace.
+func splitEnvValueCommentInternal(raw string) (value, comment string) {
+	var quote byte
+	for i := 0; i < len(raw); i++ {
+		c := raw[i]
+		switch {
+		case quote != 0:
+			if c == quote {
+				quote = 0
+			} else if c == '\\' && quote == '"' {
+				i++
+			}
+		case c == '\'' || c == '"':
+			quote = c
+		case c == '#' && (i == 0 || raw[i-1] == ' ' || raw[i-1] == '\t'):
+			return raw[:i], raw[i:]
+		}
+	}
+	return raw, ""
 }
 
 // BuildAdditiveOverrideEnvContent derives override content from a pre-git local
