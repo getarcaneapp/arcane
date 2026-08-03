@@ -866,6 +866,7 @@
   "completed": "완료",
   "vuln_clean": "양호",
   "vuln_click_to_scan": "취약점을 확인하려면 스캔을 클릭하세요",
+  "unexpected_error": "예기치 않은 오류가 발생했습니다.",
   "volumes_subtitle": "Docker 볼륨 관리",
   "volumes_stat_total": "총 볼륨",
   "unused_volumes": "미사용 볼륨",
