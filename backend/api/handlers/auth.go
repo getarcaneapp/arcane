@@ -32,6 +32,7 @@ import (
 type AuthHandler struct {
 	userService     *services.UserService
 	authService     *services.AuthService
+	passkeyService  *services.PasskeyService
 	oidcService     *services.OidcService
 	settingsService *services.SettingsService
 }
@@ -46,7 +47,7 @@ type LoginInput struct {
 
 type LoginOutput struct {
 	SetCookie []string `header:"Set-Cookie" doc:"Session cookie"`
-	Body      base.ApiResponse[auth.LoginResponse]
+	Body      base.ApiResponse[auth.AuthenticationResponse]
 }
 
 type LogoutOutput struct {
@@ -110,10 +111,11 @@ type DeleteMyAvatarOutput struct {
 }
 
 // RegisterAuth registers authentication routes using Huma.
-func RegisterAuth(api huma.API, userService *services.UserService, authService *services.AuthService, oidcService *services.OidcService, settingsService *services.SettingsService) {
+func RegisterAuth(api huma.API, userService *services.UserService, authService *services.AuthService, oidcService *services.OidcService, settingsService *services.SettingsService, passkeyService *services.PasskeyService) {
 	h := &AuthHandler{
 		userService:     userService,
 		authService:     authService,
+		passkeyService:  passkeyService,
 		oidcService:     oidcService,
 		settingsService: settingsService,
 	}
@@ -232,7 +234,8 @@ func (h *AuthHandler) Login(ctx context.Context, input *LoginInput) (*LoginOutpu
 		return nil, huma.Error400BadRequest("Local authentication is disabled")
 	}
 
-	userModel, tokenPair, err := h.authService.Login(ctx, input.Body.Username, input.Body.Password, sessionMetaFromContextInternal(ctx, input.UserAgent))
+	meta := sessionMetaFromContextInternal(ctx, input.UserAgent)
+	userModel, err := h.authService.AuthenticateLocalPrimary(ctx, input.Body.Username, input.Body.Password)
 	if err != nil {
 		switch {
 		case errors.Is(err, services.ErrInvalidCredentials):
@@ -244,6 +247,28 @@ func (h *AuthHandler) Login(ctx context.Context, input *LoginInput) (*LoginOutpu
 		}
 	}
 
+	if userModel.PasskeyMFAEnabled {
+		challenge, err := h.passkeyService.BeginMFAAuthentication(ctx, userModel.ID, meta, models.UserSessionSourceLocal)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Authentication failed")
+		}
+		return &LoginOutput{
+			Body: base.ApiResponse[auth.AuthenticationResponse]{
+				Success: true,
+				Data: auth.AuthenticationResponse{
+					Success: true,
+					Status:  auth.AuthenticationStatusMFARequired,
+					MFA:     challenge,
+				},
+			},
+		}, nil
+	}
+
+	tokenPair, err := h.authService.CompleteLogin(ctx, userModel, meta, models.UserSessionSourceLocal, "")
+	if err != nil {
+		return nil, huma.Error500InternalServerError("Authentication failed")
+	}
+
 	userResp, err := h.userService.ToUserResponseDto(ctx, *userModel)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to map user")
@@ -251,16 +276,19 @@ func (h *AuthHandler) Login(ctx context.Context, input *LoginInput) (*LoginOutpu
 
 	maxAge := max(int(time.Until(tokenPair.ExpiresAt).Seconds()), 0)
 	maxAge += 60
+	expiresAt := tokenPair.ExpiresAt
 
 	return &LoginOutput{
 		SetCookie: []string{cookie.BuildTokenCookieStringFor(maxAge, tokenPair.AccessToken, cookie.SecureCookieFromContext(ctx))},
-		Body: base.ApiResponse[auth.LoginResponse]{
+		Body: base.ApiResponse[auth.AuthenticationResponse]{
 			Success: true,
-			Data: auth.LoginResponse{
+			Data: auth.AuthenticationResponse{
+				Success:      true,
+				Status:       auth.AuthenticationStatusAuthenticated,
 				Token:        tokenPair.AccessToken,
 				RefreshToken: tokenPair.RefreshToken,
-				ExpiresAt:    tokenPair.ExpiresAt,
-				User:         userResp,
+				ExpiresAt:    &expiresAt,
+				User:         &userResp,
 			},
 		},
 	}, nil

@@ -73,6 +73,8 @@ func registerAutoLoginRoutes(apiGroup *echo.Group, authService *services.AuthSer
 				return c.JSON(http.StatusUnauthorized, base.ErrorResponse{Error: "Invalid username or password"})
 			case errors.Is(err, services.ErrLocalAuthDisabled):
 				return c.JSON(http.StatusBadRequest, base.ErrorResponse{Error: "Local authentication is disabled"})
+			case errors.Is(err, services.ErrMFARequired):
+				return c.JSON(http.StatusForbidden, base.ErrorResponse{Error: "passkey MFA is required; auto-login cannot bypass MFA"})
 			default:
 				return c.JSON(http.StatusInternalServerError, base.ErrorResponse{Error: "Authentication failed"})
 			}
@@ -85,15 +87,17 @@ func registerAutoLoginRoutes(apiGroup *echo.Group, authService *services.AuthSer
 
 		maxAge := max(int(time.Until(tokenPair.ExpiresAt).Seconds()), 0)
 		maxAge += 60
+		expiresAt := tokenPair.ExpiresAt
 
 		c.Response().Header().Set("Set-Cookie", cookie.BuildTokenCookieStringFor(maxAge, tokenPair.AccessToken, cookie.SecureCookieFromRequest(c.Request())))
-		return c.JSON(http.StatusOK, base.ApiResponse[auth.LoginResponse]{
+		return c.JSON(http.StatusOK, base.ApiResponse[auth.AuthenticationResponse]{
 			Success: true,
-			Data: auth.LoginResponse{
+			Data: auth.AuthenticationResponse{
+				Status:       auth.AuthenticationStatusAuthenticated,
 				Token:        tokenPair.AccessToken,
 				RefreshToken: tokenPair.RefreshToken,
-				ExpiresAt:    tokenPair.ExpiresAt,
-				User:         userResp,
+				ExpiresAt:    &expiresAt,
+				User:         &userResp,
 			},
 		})
 	})

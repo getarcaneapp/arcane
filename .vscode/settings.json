@@ -19,7 +19,7 @@
     }
   },
   "[svelte]": {
-    "editor.defaultFormatter": "oxc.oxc-vscode"
+    "editor.defaultFormatter": "svelte.svelte-vscode"
   },
   "[javascript]": {
     "editor.defaultFormatter": "oxc.oxc-vscode"

@@ -3,8 +3,7 @@
 	import { goto, refreshAll } from '$app/navigation';
 	import { page } from '$app/state';
 	import { toast } from 'svelte-sonner';
-	import userStore from '#lib/stores/user-store';
-	import type { User } from '#lib/types/auth';
+	import type { AuthenticationResponse, MFAChallenge as MFAChallengeData, User } from '#lib/types/auth';
 	import { m } from '#lib/paraglide/messages';
 	import settingsStore from '#lib/stores/config-store';
 	import { settingsService } from '#lib/services/settings-service';
@@ -13,12 +12,15 @@
 	import { environmentStore } from '#lib/stores/environment.store.svelte';
 	import { getAuthRedirectPath } from '#lib/utils/auth';
 	import { getEffectiveLandingPage } from '#lib/utils/navigation';
+	import MFAChallenge from '#lib/components/auth/mfa-challenge.svelte';
 	import OidcStatusPanel from '#lib/components/oidc-status-panel.svelte';
 	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
 
 	let {}: PageProps = $props();
 
 	let error = $state('');
+	let mfaChallenge = $state<MFAChallengeData | null>(null);
+	let pendingRedirect = $state('');
 	const queryClient = useQueryClient();
 
 	const buildLoginRedirect = (errorCode: string, message?: string) => {
@@ -44,6 +46,46 @@
 
 	function failure(code: string, userMessage: string): CallbackFailure {
 		return { code, userMessage };
+	}
+
+	async function finalizeAuthentication(user: User, redirectTo: string) {
+		// refreshAll re-runs the root +layout.ts loader, which fetches settings
+		// (with a graceful catch). We don't fetch them here directly — a user with
+		// zero/limited permissions would 403 on settings:read and crash this handler.
+		await refreshAll();
+		try {
+			const settings = await queryClient.fetchQuery({
+				queryKey: queryKeys.settings.global(),
+				queryFn: () => settingsService.getSettings()
+			});
+			settingsStore.set(settings);
+		} catch (settingsError) {
+			// User lacks settings:read or settings fetch failed — not fatal; the root
+			// layout already pulls public settings as a fallback.
+			console.warn('Skipping post-login settings fetch:', settingsError);
+		}
+		toast.success(m.auth_login_success());
+		// Navigate straight to a route the user can actually reach. Computing the
+		// reachable target here avoids the (app) layout's auth-redirect superseding
+		// this navigation for environment-scoped users.
+		const landingUser = page.data['user'] ?? user;
+		const landingPage = getEffectiveLandingPage();
+		const requestedTarget = redirectTo || landingPage;
+		const target =
+			getAuthRedirectPath(
+				requestedTarget,
+				landingUser,
+				environmentStore.selected?.id,
+				page.data['permissionsManifest'],
+				page.data['permissionsManifestLoadFailed'] ?? false,
+				landingPage
+			) ?? requestedTarget;
+		await goto(target, { replaceState: true });
+	}
+
+	async function completeMFA(response: AuthenticationResponse) {
+		const user = await authService.completeAuthentication(response);
+		await finalizeAuthentication(user, pendingRedirect);
 	}
 
 	const callbackMutation = createMutation(() => ({
@@ -87,6 +129,16 @@
 				throw failure('oidc_auth_failed', authResult.error || userMessage);
 			}
 
+			if (authResult.status === 'mfa_required') {
+				if (!authResult.mfa) {
+					throw failure('oidc_mfa_missing', m.auth_oidc_auth_failed());
+				}
+				return {
+					authResult,
+					redirectTo
+				};
+			}
+
 			if (!authResult.user) {
 				throw failure('oidc_user_info_missing', m.auth_oidc_user_info_missing());
 			}
@@ -97,67 +149,13 @@
 			};
 		},
 		onSuccess: async ({ authResult, redirectTo }) => {
-			// Build a placeholder user from the OIDC response. The real user
-			// (with role assignments + permissions) is fetched by refreshAll
-			// below, which re-runs the root +layout.ts loader.
-			const user: User = {
-				id: authResult.user!.sub || authResult.user!.email || '',
-				username: authResult.user!.preferred_username || authResult.user!.email || '',
-				email: authResult.user!.email,
-				displayName:
-					authResult.user!.name ||
-					authResult.user!.displayName ||
-					authResult.user!.given_name ||
-					authResult.user!.preferred_username ||
-					authResult.user!.email ||
-					m.common_unknown(),
-				roleAssignments: [],
-				permissionsByEnv: {},
-				isGlobalAdmin: false,
-				timeFormat: 'auto',
-				createdAt: new Date().toISOString()
-			};
-
-			userStore.setUser(user);
-			// refreshAll re-runs the root +layout.ts loader, which fetches
-			// settings (with a graceful catch). We don't fetch them here directly
-			// — a user with zero/limited permissions would 403 on settings:read
-			// and crash this handler, leaving them stuck on a white screen.
-			await refreshAll();
-			try {
-				const settings = await queryClient.fetchQuery({
-					queryKey: queryKeys.settings.global(),
-					queryFn: () => settingsService.getSettings()
-				});
-				settingsStore.set(settings);
-			} catch (err) {
-				// User lacks settings:read or settings fetch failed — not fatal;
-				// the root layout already pulls public settings as a fallback.
-				console.warn('Skipping post-login settings fetch:', err);
+			if (authResult.status === 'mfa_required' && authResult.mfa) {
+				pendingRedirect = redirectTo;
+				mfaChallenge = authResult.mfa;
+				return;
 			}
-			toast.success(m.auth_login_success());
-			// Navigate straight to a route the user can actually reach. Computing the
-			// reachable target here (rather than always going to /dashboard) avoids the
-			// (app) layout's auth-redirect superseding this navigation: an interrupted
-			// goto() never resolves, which would hang this callback on "Processing
-			// Login…". Environment-scoped users (no global perms) would otherwise bounce
-			// to /no-access mid-navigation. refreshAll() above has repopulated
-			// page.data (user + permissions manifest) and the environment store.
-			const landingUser = page.data['user'] ?? user;
-			// Resolved here, after setUser/refreshAll, so the user's saved landing
-			// page applies when no explicit redirect was requested.
-			const landingPage = getEffectiveLandingPage();
-			const requestedTarget = redirectTo || landingPage;
-			const target =
-				getAuthRedirectPath(
-					requestedTarget,
-					landingUser,
-					environmentStore.selected?.id,
-					page.data['permissionsManifest'],
-					page.data['permissionsManifestLoadFailed'] ?? false,
-					landingPage
-				) ?? requestedTarget;
-			await goto(target, { replaceState: true });
+			const user = await authService.completeAuthentication(authResult);
+			await finalizeAuthentication(user, redirectTo);
 		},
 		onError: (err: unknown) => {
 			console.error('OIDC callback error:', err);
@@ -190,15 +188,23 @@
 	});
 </script>
 
-<OidcStatusPanel
-	busy={isProcessing}
-	busyTitle={m.auth_processing_login()}
-	busyDescription={m.auth_processing_login_description()}
-	{error}
->
-	<!-- Defensive fallback: if neither branch matches (e.g. an
-	     unexpected throw inside onSuccess), the user would otherwise
-	     see a blank page with no way out. Always show a logout link. -->
-	<p class="text-sm text-muted-foreground">{m.auth_processing_login()}</p>
-	<a href="/logout" class="mt-6 text-xs text-primary underline">{m.common_logout()}</a>
-</OidcStatusPanel>
+{#if mfaChallenge}
+	<div class="flex min-h-dvh items-center justify-center p-6">
+		<div class="w-full max-w-md">
+			<MFAChallenge challenge={mfaChallenge} onComplete={completeMFA} />
+		</div>
+	</div>
+{:else}
+	<OidcStatusPanel
+		busy={isProcessing}
+		busyTitle={m.auth_processing_login()}
+		busyDescription={m.auth_processing_login_description()}
+		{error}
+	>
+		<!-- Defensive fallback: if neither branch matches (e.g. an
+			     unexpected throw inside onSuccess), the user would otherwise
+			     see a blank page with no way out. Always show a logout link. -->
+		<p class="text-sm text-muted-foreground">{m.auth_processing_login()}</p>
+		<a href="/logout" class="mt-6 text-xs text-primary underline">{m.common_logout()}</a>
+	</OidcStatusPanel>
+{/if}

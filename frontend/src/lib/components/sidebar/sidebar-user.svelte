@@ -7,7 +7,7 @@
 	import type { User } from '#lib/types/auth';
 	import settingsStore from '#lib/stores/config-store';
 	import { goto } from '$app/navigation';
-	import { LogoutIcon, UserIcon } from '#lib/icons';
+	import { ArrowsUpDownIcon, LogoutIcon, SettingsIcon, UserIcon } from '#lib/icons';
 
 	let {
 		user,
@@ -71,6 +71,7 @@
 									<span class="truncate font-medium">{user.displayName}</span>
 									<span class="truncate text-xs">{user.email}</span>
 								</div>
+								<ArrowsUpDownIcon class="ml-auto size-4 shrink-0 text-muted-foreground" />
 							{/if}
 						{/if}
 					</Sidebar.MenuButton>
@@ -131,6 +132,18 @@
 					>
 						<UserIcon class="size-4 shrink-0 text-muted-foreground" />
 						<span>{m.common_account()}</span>
+					</button>
+
+					<button
+						type="button"
+						class="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-sm text-foreground transition-colors hover:bg-muted/60"
+						onclick={() => {
+							dropdownOpen = false;
+							goto('/account?tab=preferences');
+						}}
+					>
+						<SettingsIcon class="size-4 shrink-0 text-muted-foreground" />
+						<span>{m.account_preferences()}</span>
 					</button>
 
 					{#if !autoLoginEnabled}

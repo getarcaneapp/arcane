@@ -6,6 +6,7 @@
 	import { Label } from '#lib/components/ui/label';
 	import Checkbox from '../ui/checkbox/checkbox.svelte';
 	import { m } from '#lib/paraglide/messages';
+	import { toast } from 'svelte-sonner';
 
 	let checkboxStates = $state<Record<string, boolean>>({});
 
@@ -25,7 +26,15 @@
 		const action = $confirmDialogStore.confirm.action;
 		const states = $state.snapshot(checkboxStates);
 		$confirmDialogStore.open = false;
-		action(states);
+		// The dialog is already closed, so a throwing action would otherwise be an
+		// unhandled rejection the user never sees — surface it instead. Invoke
+		// inside the chain so synchronous throws also land in the catch.
+		Promise.resolve()
+			.then(() => action(states))
+			.catch((error) => {
+				console.error('Confirm action failed:', error);
+				toast.error(m.unexpected_error());
+			});
 	}
 </script>
 

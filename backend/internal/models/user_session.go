@@ -6,6 +6,7 @@ const (
 	UserSessionSourceLocal     = "local"
 	UserSessionSourceOidc      = "oidc"
 	UserSessionSourceFederated = "federated"
+	UserSessionSourcePasskey   = "passkey"
 )
 
 type UserSession struct {
@@ -22,6 +23,8 @@ type UserSession struct {
 	LastUsedAt            time.Time            `json:"lastUsedAt" gorm:"column:last_used_at;not null"`
 	ExpiresAt             time.Time            `json:"expiresAt" gorm:"column:expires_at;not null;index"`
 	RevokedAt             *time.Time           `json:"revokedAt,omitempty" gorm:"column:revoked_at"`
+	MFAMethod             *string              `json:"mfaMethod,omitempty" gorm:"column:mfa_method"`
+	MFAVerifiedAt         *time.Time           `json:"mfaVerifiedAt,omitempty" gorm:"column:mfa_verified_at"`
 }
 
 func (UserSession) TableName() string {
