@@ -866,6 +866,7 @@
   "completed": "Finita",
   "vuln_clean": "Pura",
   "vuln_click_to_scan": "Alklaku \"Skani\" por kontroli vundeblecojn.",
+  "unexpected_error": "Okazis neatendita eraro.",
   "volumes_subtitle": "Administri viajn Docker-portilojn",
   "volumes_stat_total": "Ĉiuj portiloj",
   "unused_volumes": "Neuzataj portiloj",
