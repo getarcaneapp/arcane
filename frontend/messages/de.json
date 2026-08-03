@@ -866,6 +866,7 @@
   "completed": "Abgeschlossen",
   "vuln_clean": "Sauber",
   "vuln_click_to_scan": "Klicke auf „Scannen“, um auf Schwachstellen zu prüfen",
+  "unexpected_error": "Es ist ein unerwarteter Fehler aufgetreten.",
   "volumes_subtitle": "Docker-Volumes verwalten",
   "volumes_stat_total": "Volumes gesamt",
   "unused_volumes": "Ungenutzte Volumes",
