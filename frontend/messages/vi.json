@@ -866,6 +866,7 @@
   "completed": "Hoàn thành",
   "vuln_clean": "Sạch sẽ",
   "vuln_click_to_scan": "Nhấn quét tìm để tìm kiếm lỗ hổng",
+  "unexpected_error": "Đã xảy ra một lỗi không mong muốn",
   "volumes_subtitle": "Quản lý các Docker Volumes của bạn",
   "volumes_stat_total": "Tổng số Volumes",
   "unused_volumes": "Volumes trống",
