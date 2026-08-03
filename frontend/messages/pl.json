@@ -866,6 +866,7 @@
   "completed": "Zakończono",
   "vuln_clean": "Czyste",
   "vuln_click_to_scan": "Kliknij skanuj, aby sprawdzić podatności",
+  "unexpected_error": "Wystąpił nieoczekiwany błąd",
   "volumes_subtitle": "Zarządzaj woluminami Docker",
   "volumes_stat_total": "Wszystkie wolumeny",
   "unused_volumes": "Nieużywane wolumeny",
