@@ -2767,6 +2767,7 @@
   "deploy_pull_policy_always": "Altijd nieuwste trekken",
   "deploy_pull_policy_never": "Nooit trekken",
   "deploy_force_recreate": "Forceer opnieuw containers",
+  "deploy_recreate_volumes": "Gewijzigde volumes opnieuw aanmaken (gegevensverlies)",
   "settings_default_deploy_pull_policy": "Standaard Deploy Pull Policy",
   "settings_default_deploy_pull_policy_description": "Standaard afbeelding pull-policy bij het implementeren van projecten",
   "authentication": "Authenticatie",
