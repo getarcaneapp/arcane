@@ -866,6 +866,7 @@
   "completed": "Dokončeno",
   "vuln_clean": "Vyčistit",
   "vuln_click_to_scan": "Kliknutím na tlačítko skenovat zkontrolujete zranitelnosti",
+  "unexpected_error": "Došlo k neočekávané chybě",
   "volumes_subtitle": "Spravujte své Docker svazky",
   "volumes_stat_total": "Celkem svazků",
   "unused_volumes": "Nepoužité svazky",
