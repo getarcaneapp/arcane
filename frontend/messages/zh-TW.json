@@ -866,6 +866,7 @@
   "completed": "已完成",
   "vuln_clean": "無漏洞",
   "vuln_click_to_scan": "按下「掃描」檢查漏洞",
+  "unexpected_error": "發生了意外錯誤",
   "volumes_subtitle": "管理 Docker 資料卷",
   "volumes_stat_total": "資料卷總數",
   "unused_volumes": "未使用的資料卷",
