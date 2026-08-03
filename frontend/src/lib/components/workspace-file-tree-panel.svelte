@@ -681,67 +681,82 @@
 									<LockIcon class="mx-1 size-3.5 shrink-0 text-muted-foreground" aria-label={lockedLabel} />
 								{:else}
 									{#if onDownload && !row.isDirectory && !row.pending}
-										<ArcaneButton
-											action="base"
-											size="icon"
-											tone="ghost"
-											class="size-6"
-											icon={DownloadIcon}
-											showLabel={false}
-											customLabel={m.templates_download()}
-											onclick={() => onDownload?.(row.relativePath)}
-										/>
+										<Tooltip.Root>
+											<Tooltip.Trigger>
+												<button
+													type="button"
+													class="inline-flex size-6 items-center justify-center rounded text-foreground hover:bg-foreground/10"
+													aria-label={m.templates_download()}
+													onclick={() => onDownload?.(row.relativePath)}
+												>
+													<DownloadIcon class="size-3.5" />
+												</button>
+											</Tooltip.Trigger>
+											<Tooltip.Content>{m.templates_download()}</Tooltip.Content>
+										</Tooltip.Root>
 									{/if}
 									{#if onRestore && !row.isDirectory && !row.pending}
-										<ArcaneButton
-											action="base"
-											size="icon"
-											tone="ghost"
-											class="size-6"
-											icon={RefreshIcon}
-											showLabel={false}
-											customLabel={m.volumes_backups_restore()}
-											onclick={() => onRestore?.(row.relativePath)}
-										/>
+										<Tooltip.Root>
+											<Tooltip.Trigger>
+												<button
+													type="button"
+													class="inline-flex size-6 items-center justify-center rounded text-foreground hover:bg-foreground/10"
+													aria-label={m.volumes_backups_restore()}
+													onclick={() => onRestore?.(row.relativePath)}
+												>
+													<RefreshIcon class="size-3.5" />
+												</button>
+											</Tooltip.Trigger>
+											<Tooltip.Content>{m.volumes_backups_restore()}</Tooltip.Content>
+										</Tooltip.Root>
 									{/if}
 									{#if onRename}
-										<ArcaneButton
-											action="base"
-											size="icon"
-											tone="ghost"
-											class="size-6"
-											icon={EditIcon}
-											showLabel={false}
-											{disabled}
-											customLabel={m.rename()}
-											onclick={() => openRenameDialog(row.relativePath)}
-										/>
+										<Tooltip.Root>
+											<Tooltip.Trigger>
+												<button
+													type="button"
+													class="inline-flex size-6 items-center justify-center rounded text-foreground hover:bg-foreground/10"
+													aria-label={m.project_file_rename_label({ name: row.relativePath })}
+													{disabled}
+													onclick={() => openRenameDialog(row.relativePath)}
+												>
+													<EditIcon class="size-3.5" />
+												</button>
+											</Tooltip.Trigger>
+											<Tooltip.Content>{m.rename()}</Tooltip.Content>
+										</Tooltip.Root>
 									{/if}
 									{#if onMove}
-										<ArcaneButton
-											action="base"
-											size="icon"
-											tone="ghost"
-											class="size-6"
-											icon={FolderMoveIcon}
-											showLabel={false}
-											{disabled}
-											customLabel={m.move()}
-											onclick={() => openMoveDialog(row.relativePath)}
-										/>
+										<Tooltip.Root>
+											<Tooltip.Trigger>
+												<button
+													type="button"
+													class="inline-flex size-6 items-center justify-center rounded text-foreground hover:bg-foreground/10"
+													aria-label={m.project_file_move_label({ name: row.relativePath })}
+													{disabled}
+													onclick={() => openMoveDialog(row.relativePath)}
+												>
+													<FolderMoveIcon class="size-3.5" />
+												</button>
+											</Tooltip.Trigger>
+											<Tooltip.Content>{m.move()}</Tooltip.Content>
+										</Tooltip.Root>
 									{/if}
 									{#if onDelete}
-										<ArcaneButton
-											action="remove"
-											size="icon"
-											tone="ghost"
-											class="size-6"
-											icon={TrashIcon}
-											showLabel={false}
-											{disabled}
-											customLabel={m.common_delete()}
-											onclick={() => handleDelete(row)}
-										/>
+										<Tooltip.Root>
+											<Tooltip.Trigger>
+												<button
+													type="button"
+													class="inline-flex size-6 items-center justify-center rounded text-destructive hover:bg-destructive/10"
+													aria-label={m.delete_name({ name: row.relativePath })}
+													{disabled}
+													onclick={() => handleDelete(row)}
+												>
+													<TrashIcon class="size-3.5" />
+												</button>
+											</Tooltip.Trigger>
+											<Tooltip.Content>{m.common_delete()}</Tooltip.Content>
+										</Tooltip.Root>
 									{/if}
 								{/if}
 							</div>
