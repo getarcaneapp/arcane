@@ -866,6 +866,7 @@
   "completed": "Voltooid",
   "vuln_clean": "Opschonen",
   "vuln_click_to_scan": "Klik op scan om te controleren op kwetsbaarheden",
+  "unexpected_error": "Er is een onverwachte fout opgetreden",
   "volumes_subtitle": "Beheer uw Docker volumes",
   "volumes_stat_total": "Totaal Volumes",
   "unused_volumes": "Ongebruikte Volumes",
