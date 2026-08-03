@@ -963,6 +963,7 @@ func (h *VolumeHandler) UpdateVolumeWorkspace(ctx context.Context, input *Update
 	}
 
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	var workspace *volumetypes.Workspace
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
 		Type:           models.ActivityTypeResourceAction,
@@ -978,14 +979,12 @@ func (h *VolumeHandler) UpdateVolumeWorkspace(ctx context.Context, input *Update
 			"fileChangeCount": len(manifest.FileChanges),
 		},
 	}, func(runtimeCtx context.Context) error {
-		return h.volumeService.UpdateVolumeWorkspace(runtimeCtx, input.VolumeName, manifest, input.RawBody.File["files"], *user)
+		var updateErr error
+		workspace, updateErr = h.volumeService.UpdateVolumeWorkspace(runtimeCtx, input.VolumeName, manifest, input.RawBody.File["files"], *user)
+		return updateErr
 	})
 	if err != nil {
 		return nil, volumeWorkspaceHTTPErrorInternal(ctx, "save", input.EnvironmentID, input.VolumeName, err)
-	}
-	workspace, err := h.volumeService.GetVolumeWorkspace(runtimeCtx, input.VolumeName)
-	if err != nil {
-		return nil, volumeWorkspaceHTTPErrorInternal(ctx, "refresh_after_save", input.EnvironmentID, input.VolumeName, err)
 	}
 	workspace.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
 	return &UpdateVolumeWorkspaceOutput{Body: base.ApiResponse[volumetypes.Workspace]{Success: true, Data: *workspace}}, nil

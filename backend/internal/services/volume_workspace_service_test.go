@@ -14,10 +14,24 @@ import (
 
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/stretchr/testify/require"
 )
+
+func TestUpdateVolumeWorkspaceValidationFailureReturnsNoWorkspace(t *testing.T) {
+	workspace, err := (&VolumeService{}).UpdateVolumeWorkspace(
+		context.Background(),
+		"volume",
+		volumetypes.FileUpdateManifest{},
+		nil,
+		models.User{},
+	)
+
+	require.Nil(t, workspace)
+	require.ErrorIs(t, err, common.ErrVolumeFileBadRequest)
+}
 
 func volumeWorkspaceTreeRecordInternal(relativePath, kind, size, modTime, mode, linkTarget string) string {
 	return strings.Join([]string{relativePath, kind, size, modTime, mode, linkTarget}, "\x00") + "\x00"

@@ -372,20 +372,20 @@ done`
 	return nil
 }
 
-func (s *VolumeService) UpdateVolumeWorkspace(ctx context.Context, volumeName string, manifest volumetypes.FileUpdateManifest, uploads []*multipart.FileHeader, user models.User) error {
+func (s *VolumeService) UpdateVolumeWorkspace(ctx context.Context, volumeName string, manifest volumetypes.FileUpdateManifest, uploads []*multipart.FileHeader, user models.User) (*volumetypes.Workspace, error) {
 	if len(manifest.FileChanges) == 0 || len(manifest.FileChanges) > 500 {
-		return common.Classify(common.ErrVolumeFileBadRequest, errors.New("fileChanges must contain between 1 and 500 changes"))
+		return nil, common.Classify(common.ErrVolumeFileBadRequest, errors.New("fileChanges must contain between 1 and 500 changes"))
 	}
 	if strings.TrimSpace(manifest.FileTreeRevision) == "" {
-		return common.Classify(common.ErrVolumeFileBadRequest, errors.New("file tree revision is required"))
+		return nil, common.Classify(common.ErrVolumeFileBadRequest, errors.New("file tree revision is required"))
 	}
 	for _, change := range manifest.FileChanges {
 		if err := validateVolumeFileChangeInternal(change, uploads); err != nil {
-			return common.Classify(common.ErrVolumeFileBadRequest, err)
+			return nil, common.Classify(common.ErrVolumeFileBadRequest, err)
 		}
 	}
 	if err := s.isBrowsableVolumeInternal(ctx, volumeName); err != nil {
-		return classifyVolumeWorkspaceBrowseErrorInternal(err)
+		return nil, classifyVolumeWorkspaceBrowseErrorInternal(err)
 	}
 	defer s.workspaceLocks.Lock(volumeName)()
 
@@ -394,39 +394,39 @@ func (s *VolumeService) UpdateVolumeWorkspace(ctx context.Context, volumeName st
 	})
 	containerID, cleanup, err := s.createVolumeWorkspaceMutationContainerInternal(ctx, volumeName, needsBackups)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer cleanup()
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	stagedFiles, err := s.stageVolumeWorkspaceChangesInternal(ctx, dockerClient, containerID, manifest.FileChanges, uploads)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	current, err := s.readVolumeWorkspaceFromContainerInternal(ctx, containerID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := validateVolumeWorkspaceRevisionInternal(manifest.FileTreeRevision, current.FileTreeRevision); err != nil {
-		return err
+		return nil, err
 	}
 
 	scope, err := volumeWorkspaceBackupScopeInternal(manifest.FileChanges)
 	if err != nil {
-		return common.Classify(common.ErrVolumeFileBadRequest, err)
+		return nil, common.Classify(common.ErrVolumeFileBadRequest, err)
 	}
 	for _, relativePath := range scope {
 		if err := s.validateVolumeWorkspacePathInternal(ctx, containerID, relativePath, true); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	backup, err := s.backupVolumeWorkspaceScopeInternal(ctx, containerID, scope)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if err := applyVolumeWorkspaceChangesTransactionInternal(
@@ -436,7 +436,7 @@ func (s *VolumeService) UpdateVolumeWorkspace(ctx context.Context, volumeName st
 		},
 		func() error { return s.restoreVolumeWorkspaceScopeInternal(ctx, containerID, backup) },
 	); err != nil {
-		return err
+		return nil, err
 	}
 
 	if s.eventService != nil {
@@ -445,7 +445,7 @@ func (s *VolumeService) UpdateVolumeWorkspace(ctx context.Context, volumeName st
 			slog.WarnContext(ctx, "could not log volume workspace update event", "volume", volumeName, "error", logErr.Error())
 		}
 	}
-	return nil
+	return s.readVolumeWorkspaceFromContainerInternal(ctx, containerID)
 }
 
 type volumeWorkspaceStagedFileInternal struct {
