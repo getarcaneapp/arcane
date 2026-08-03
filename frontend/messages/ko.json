@@ -2767,6 +2767,7 @@
   "deploy_pull_policy_always": "항상 최신 이미지 Pull (Always)",
   "deploy_pull_policy_never": "Pull 하지 않음 (Never)",
   "deploy_force_recreate": "컨테이너 강제 재생성 (Force Recreate)",
+  "deploy_recreate_volumes": "변경된 볼륨 재구성 (데이터 손실)",
   "settings_default_deploy_pull_policy": "기본 배포 Pull 정책",
   "settings_default_deploy_pull_policy_description": "프로젝트 배포 시 적용할 기본 이미지 Pull 정책입니다.",
   "authentication": "인증",
