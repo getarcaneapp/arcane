@@ -2767,6 +2767,7 @@
   "deploy_pull_policy_always": "Sempre puxar a mais recente",
   "deploy_pull_policy_never": "Nunca puxar",
   "deploy_force_recreate": "Forçar containers recriados",
+  "deploy_recreate_volumes": "Recriar volumes alterados (perda de dados)",
   "settings_default_deploy_pull_policy": "Política de pull de implantação padrão",
   "settings_default_deploy_pull_policy_description": "Política padrão de pull de imagem ao implantar projetos",
   "authentication": "Autenticação",
