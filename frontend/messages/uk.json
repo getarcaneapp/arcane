@@ -866,6 +866,7 @@
   "completed": "Завершені",
   "vuln_clean": "Очистити",
   "vuln_click_to_scan": "Натисніть «Сканувати», щоб перевірити наявність вразливостей",
+  "unexpected_error": "Сталася несподівана помилка",
   "volumes_subtitle": "Керування томами Docker",
   "volumes_stat_total": "Всього томів",
   "unused_volumes": "Невикористані томи",
