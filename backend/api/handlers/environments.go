@@ -603,7 +603,7 @@ func (h *EnvironmentHandler) createEnvironmentWithApiKeyInternal(ctx context.Con
 	}
 
 	// Generate API key for environment
-	apiKeyDto, err := h.apiKeyService.CreateEnvironmentApiKey(ctx, created.ID, user.ID)
+	apiKeyDto, err := h.apiKeyService.CreateEnvironmentApiKey(ctx, created.ID)
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to create environment API key", "environmentID", created.ID, "error", err.Error())
 		return nil, huma.Error500InternalServerError("Failed to create environment API key")
@@ -619,6 +619,14 @@ func (h *EnvironmentHandler) createEnvironmentWithApiKeyInternal(ctx context.Con
 	}
 	updated, err := h.environmentService.UpdateEnvironment(ctx, created.ID, updates, &user.ID, &user.Username)
 	if err != nil {
+		// Remove the key so a failed create does not leave an orphaned row
+		// behind. ErrApiKeyProtected means the link actually landed and the
+		// update failed afterwards, so the key legitimately belongs to the
+		// environment and must survive; deleting the environment cascades it.
+		if delErr := h.apiKeyService.DeleteApiKey(ctx, apiKeyDto.ID); delErr != nil &&
+			!errors.Is(delErr, services.ErrApiKeyNotFound) && !errors.Is(delErr, services.ErrApiKeyProtected) {
+			slog.ErrorContext(ctx, "Failed to clean up unlinked environment API key", "environmentID", created.ID, "error", delErr.Error())
+		}
 		slog.ErrorContext(ctx, "Failed to link API key to environment", "environmentID", created.ID, "error", err.Error())
 		return nil, huma.Error500InternalServerError("Failed to link API key")
 	}
@@ -736,13 +744,10 @@ func (h *EnvironmentHandler) UpdateEnvironment(ctx context.Context, input *Updat
 			return nil, err
 		}
 
-		// Delete existing API key if any
-		if updated.ApiKeyID != nil {
-			_ = h.apiKeyService.DeleteApiKey(ctx, *updated.ApiKeyID)
-		}
+		oldApiKeyID := updated.ApiKeyID
 
 		// Generate new API key
-		apiKeyDto, err := h.apiKeyService.CreateEnvironmentApiKey(ctx, input.ID, user.ID)
+		apiKeyDto, err := h.apiKeyService.CreateEnvironmentApiKey(ctx, input.ID)
 		if err != nil {
 			slog.ErrorContext(ctx, "Failed to create new environment API key", "environmentID", input.ID, "error", err.Error())
 			return nil, huma.Error500InternalServerError("Failed to regenerate API key")
@@ -752,8 +757,25 @@ func (h *EnvironmentHandler) UpdateEnvironment(ctx context.Context, input *Updat
 		apiKey := apiKeyDto.Key
 		err = h.environmentService.RegenerateEnvironmentApiKey(ctx, input.ID, apiKeyDto.ID, apiKey, user.ID, user.Username, updated.Name)
 		if err != nil {
+			// The new key was never linked; remove it so a failed rotation does
+			// not leave an orphaned valid credential behind.
+			if delErr := h.apiKeyService.DeleteApiKey(ctx, apiKeyDto.ID); delErr != nil && !errors.Is(delErr, services.ErrApiKeyNotFound) {
+				slog.ErrorContext(ctx, "Failed to clean up unlinked environment API key", "environmentID", input.ID, "error", delErr.Error())
+			}
 			slog.ErrorContext(ctx, "Failed to regenerate API key", "environmentID", input.ID, "error", err.Error())
 			return nil, huma.Error500InternalServerError("Failed to regenerate API key")
+		}
+
+		// Delete the previous key only after the environment points at the new
+		// one — while still referenced it is protected and the delete would be
+		// rejected, which is how stale bootstrap keys used to accumulate. A
+		// failed delete leaves the old key as a still-valid credential, so log
+		// it as an error; the key stays visible and deletable on the API Keys
+		// page.
+		if oldApiKeyID != nil && *oldApiKeyID != apiKeyDto.ID {
+			if err := h.apiKeyService.DeleteApiKey(ctx, *oldApiKeyID); err != nil && !errors.Is(err, services.ErrApiKeyNotFound) {
+				slog.ErrorContext(ctx, "Failed to delete previous environment API key; the old key remains valid until deleted manually", "environmentID", input.ID, "error", err.Error())
+			}
 		}
 
 		// Fetch updated environment
