@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"emperror.dev/errors"
-	sqlite "github.com/libtnb/sqlite"
+	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -43,7 +43,7 @@ func setupGitRepositoryServiceTestInternal(t *testing.T) (*GitRepositoryService,
 	})
 
 	wrappedDB := &database.DB{DB: db}
-	settingsService, err := NewSettingsService(context.Background(), wrappedDB)
+	settingsService, err := newSettingsServiceForTestInternal(t, context.Background(), wrappedDB)
 	require.NoError(t, err)
 
 	eventService := NewEventService(wrappedDB, &config.Config{}, nil)

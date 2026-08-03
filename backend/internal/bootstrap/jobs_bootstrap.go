@@ -2,25 +2,39 @@ package bootstrap
 
 import (
 	"context"
-	json "encoding/json/v2"
+	"encoding/json/v2"
 	"log/slog"
 	"net/http"
+	"slices"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler"
+	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"go.uber.org/fx"
 )
 
-func newJobScheduler(appCtx context.Context, lc fx.Lifecycle, cfg *config.Config, imageUpdateWatcher *scheduler.ImageUpdateWatcher, analytics *scheduler.AnalyticsJob, systemUpgrade *services.SystemUpgradeService) *scheduler.JobScheduler {
+func newJobScheduler(appCtx context.Context, lc fx.Lifecycle, cfg *config.Config, runtime *actors.Runtime, _ *actors.Gate[actors.AdmissionKey], imageUpdateWatcher *scheduler.ImageUpdateWatcher, analytics *scheduler.AnalyticsJob, systemUpgrade *services.SystemUpgradeService) (schedulertypes.JobScheduler, error) {
 	schedulerCtx, cancelScheduler := context.WithCancel(appCtx)
-	jobScheduler := scheduler.NewJobScheduler(schedulerCtx, cfg.GetLocation())
+	jobScheduler, err := scheduler.NewJobScheduler(schedulerCtx, runtime, cfg.GetLocation())
+	if err != nil {
+		cancelScheduler()
+		return nil, err
+	}
 	lc.Append(fx.Hook{
 		OnStart: func(context.Context) error {
 			slog.InfoContext(appCtx, "Starting scheduler")
-			jobScheduler.RegisterBusWatcher(imageUpdateWatcher, true)
-			jobScheduler.StartScheduler()
+			if imageUpdateWatcher != nil {
+				if err := jobScheduler.RegisterBusWatcher(imageUpdateWatcher, true); err != nil {
+					return err
+				}
+			}
+			if err := jobScheduler.StartScheduler(); err != nil {
+				return err
+			}
 			if analytics != nil {
 				go analytics.Run(schedulerCtx)
 			}
@@ -30,8 +44,8 @@ func newJobScheduler(appCtx context.Context, lc fx.Lifecycle, cfg *config.Config
 			return nil
 		},
 		OnStop: func(ctx context.Context) error {
-			cancelScheduler()
 			err := jobScheduler.Stop(ctx)
+			cancelScheduler()
 			if err != nil {
 				slog.ErrorContext(ctx, "Job scheduler exited with error", "error", err)
 				return err
@@ -40,15 +54,17 @@ func newJobScheduler(appCtx context.Context, lc fx.Lifecycle, cfg *config.Config
 			return nil
 		},
 	})
-	return jobScheduler
+	return jobScheduler, nil
 }
 
 type registerJobsParams struct {
 	fx.In
 
-	AppCtx    context.Context
-	Config    *config.Config
-	Scheduler *scheduler.JobScheduler
+	Lifecycle    fx.Lifecycle
+	AppCtx       context.Context
+	Config       *config.Config
+	Scheduler    schedulertypes.JobScheduler
+	ActorRuntime *actors.Runtime
 
 	Activity    *services.ActivityService
 	GitOpsSync  *services.GitOpsSyncService
@@ -56,6 +72,7 @@ type registerJobsParams struct {
 	Environment *services.EnvironmentService
 	JobSchedule *services.JobService
 	Settings    *services.SettingsService
+	Admission   *actors.Gate[actors.AdmissionKey]
 
 	AutoUpdate             *scheduler.AutoUpdateJob
 	ImageUpdateWatcher     *scheduler.ImageUpdateWatcher
@@ -71,7 +88,7 @@ type registerJobsParams struct {
 	ActivitySweep          *scheduler.ActivitySweepJob
 }
 
-func registerJobs(params registerJobsParams) {
+func registerJobs(params registerJobsParams) error {
 	params.JobSchedule.SetScheduler(params.AppCtx, params.Scheduler)
 
 	// Bootstrap owns registration, agent-mode gating, and settings callbacks.
@@ -98,24 +115,30 @@ func registerJobs(params registerJobsParams) {
 		}
 	}
 
-	params.Scheduler.RegisterJob(params.AutoUpdate)
-	params.Scheduler.RegisterJob(params.DockerClientRefresh)
-	params.Scheduler.RegisterJob(params.Analytics)
-	params.Scheduler.RegisterJob(params.EventCleanup)
-	params.Scheduler.RegisterJob(params.PruningVolumeHelper)
-	params.Scheduler.RegisterJob(params.ExpiredSessionsCleanup)
-	params.Scheduler.RegisterJob(params.ScheduledPrune)
+	for _, job := range []schedulertypes.Job{
+		params.AutoUpdate,
+		params.DockerClientRefresh,
+		params.Analytics,
+		params.EventCleanup,
+		params.PruningVolumeHelper,
+		params.ExpiredSessionsCleanup,
+		params.ScheduledPrune,
+		params.VulnerabilityScan,
+		params.AutoHeal,
+		params.ActivitySweep,
+	} {
+		if err := params.Scheduler.RegisterJob(job); err != nil {
+			return err
+		}
+	}
 	// FilesystemWatcher is intentionally not scheduler-registered; it watches inline
 	// and is only rebound on settings changes below.
-	params.Scheduler.RegisterJob(params.VulnerabilityScan)
-	params.Scheduler.RegisterJob(params.AutoHeal)
 	// Internal self-healing sweep (managers and agents alike); intentionally
 	// absent from job_metadata so it stays out of the Jobs UI.
-	params.Scheduler.RegisterJob(params.ActivitySweep)
 
 	// GitOps sync and environment health are no longer single global jobs; each
 	// entity registers its own dynamic job.
-	registerDynamicJobs(dynamicJobsParams{
+	if err := registerDynamicJobs(dynamicJobsParams{
 		AppCtx:      params.AppCtx,
 		Config:      params.Config,
 		Scheduler:   params.Scheduler,
@@ -123,12 +146,17 @@ func registerJobs(params registerJobsParams) {
 		Snippet:     params.Snippet,
 		Environment: params.Environment,
 		JobSchedule: params.JobSchedule,
-	})
+		Admission:   params.Admission,
+	}); err != nil {
+		return err
+	}
 
-	setupSettingsCallbacks(settingsCallbacksParams{
+	if err := setupSettingsSubscriptionsInternal(settingsSubscriptionsParams{
+		Lifecycle:          params.Lifecycle,
 		LifecycleCtx:       params.AppCtx,
 		Config:             params.Config,
 		Scheduler:          params.Scheduler,
+		ActorRuntime:       params.ActorRuntime,
 		Settings:           params.Settings,
 		Environment:        params.Environment,
 		AutoUpdate:         params.AutoUpdate,
@@ -137,26 +165,32 @@ func registerJobs(params registerJobsParams) {
 		ScheduledPrune:     params.ScheduledPrune,
 		VulnerabilityScan:  params.VulnerabilityScan,
 		AutoHeal:           params.AutoHeal,
-	})
+	}); err != nil {
+		return err
+	}
+	return nil
 }
 
 type dynamicJobsParams struct {
 	AppCtx      context.Context
 	Config      *config.Config
-	Scheduler   *scheduler.JobScheduler
+	Scheduler   schedulertypes.JobScheduler
 	GitOpsSync  *services.GitOpsSyncService
 	Snippet     *services.SnippetService
 	Environment *services.EnvironmentService
 	JobSchedule *services.JobService
+	Admission   *actors.Gate[actors.AdmissionKey]
 }
 
 // registerDynamicJobs injects the scheduler into the services that own per-entity
 // jobs and registers the jobs for already-existing entities at startup. AddJob is
 // an idempotent upsert, so these run safely before the scheduler is started.
-func registerDynamicJobs(params dynamicJobsParams) {
+func registerDynamicJobs(params dynamicJobsParams) error {
 	// GitOps: one job per auto-sync-enabled sync (runs on manager and agents).
 	if params.GitOpsSync != nil {
-		params.GitOpsSync.SetScheduler(params.AppCtx, params.Scheduler)
+		if err := params.GitOpsSync.SetScheduler(params.AppCtx, params.Scheduler, params.Admission); err != nil {
+			return err
+		}
 		params.GitOpsSync.RegisterAutoSyncJobsOnStartup(params.AppCtx)
 	}
 
@@ -174,7 +208,9 @@ func registerDynamicJobs(params dynamicJobsParams) {
 	// UI still addresses "environment-health" by ID, so bridge its reschedule and
 	// run-now back to EnvironmentService.
 	if !params.Config.AgentMode && params.Environment != nil {
-		params.Environment.SetScheduler(params.AppCtx, params.Scheduler)
+		if err := params.Environment.SetScheduler(params.AppCtx, params.Scheduler, params.Admission); err != nil {
+			return err
+		}
 		params.JobSchedule.OnEnvironmentHealthReschedule = func(ctx context.Context) {
 			params.Environment.RescheduleHealthJobs(ctx)
 		}
@@ -183,14 +219,17 @@ func registerDynamicJobs(params dynamicJobsParams) {
 		}
 		params.Environment.RegisterHealthJobsOnStartup(params.AppCtx)
 	}
+	return nil
 }
 
-type settingsCallbacksParams struct {
+type settingsSubscriptionsParams struct {
+	Lifecycle    fx.Lifecycle
 	LifecycleCtx context.Context
 	Config       *config.Config
-	Scheduler    *scheduler.JobScheduler
-	Settings     *services.SettingsService
-	Environment  *services.EnvironmentService
+	Scheduler    settingsEffectsSchedulerInternal
+	ActorRuntime *actors.Runtime
+	Settings     settingsChangeSubscriberInternal
+	Environment  timeoutSettingsEnvironmentInternal
 
 	AutoUpdate         *scheduler.AutoUpdateJob
 	ImageUpdateWatcher *scheduler.ImageUpdateWatcher
@@ -200,9 +239,30 @@ type settingsCallbacksParams struct {
 	AutoHeal           *scheduler.AutoHealJob
 }
 
-//nolint:contextcheck // callbacks intentionally use the app lifecycle context so reschedules outlive the triggering request context.
-func setupSettingsCallbacks(params settingsCallbacksParams) {
-	params.Settings.OnImagePollingSettingsChanged = func(_ context.Context) {
+type settingsChangeSubscriberInternal interface {
+	SubscribeSettingsChanges(keys []string, callback func([]libarcane.SettingUpdate)) func()
+}
+
+type settingsEffectsSchedulerInternal interface {
+	RescheduleJob(ctx context.Context, job schedulertypes.Job) error
+}
+
+type timeoutSettingsEnvironmentInternal interface {
+	ListRemoteEnvironments(ctx context.Context) ([]models.Environment, error)
+	ProxyRequest(ctx context.Context, envID string, method string, path string, body []byte) ([]byte, int, error)
+}
+
+func setupSettingsSubscriptionsInternal(params settingsSubscriptionsParams) error {
+	unsubscribes := make([]func(), 0, 8)
+	subscribe := func(keys []string, callback func([]libarcane.SettingUpdate)) {
+		unsubscribes = append(unsubscribes, params.Settings.SubscribeSettingsChanges(keys, callback))
+	}
+	timeoutSyncExecutor, cancelTimeoutSync, err := setupTimeoutSettingsSubscriptionInternal(params, subscribe)
+	if err != nil {
+		return err
+	}
+
+	subscribe([]string{"pollingEnabled", "pollingInterval"}, func(_ []libarcane.SettingUpdate) {
 		if params.ImageUpdateWatcher != nil {
 			params.ImageUpdateWatcher.RefreshSchedule()
 			params.ImageUpdateWatcher.Trigger()
@@ -210,53 +270,95 @@ func setupSettingsCallbacks(params settingsCallbacksParams) {
 		if err := params.Scheduler.RescheduleJob(params.LifecycleCtx, params.AutoUpdate); err != nil {
 			slog.WarnContext(params.LifecycleCtx, "Failed to reschedule auto-update job", "error", err)
 		}
-	}
-	params.Settings.OnAutoUpdateSettingsChanged = func(ctx context.Context) {
-		slog.DebugContext(params.LifecycleCtx, "AutoUpdateSettingsChanged callback triggered", "triggerContextCanceled", ctx.Err() != nil)
+	})
+
+	subscribe([]string{"autoUpdate", "autoUpdateInterval"}, func(_ []libarcane.SettingUpdate) {
 		if err := params.Scheduler.RescheduleJob(params.LifecycleCtx, params.AutoUpdate); err != nil {
 			slog.WarnContext(params.LifecycleCtx, "Failed to reschedule auto-update job", "error", err)
 		}
-	}
-	params.Settings.OnProjectsDirectoryChanged = func(_ context.Context) {
+	})
+
+	subscribe([]string{"projectsDirectory", "followProjectSymlinks"}, func(_ []libarcane.SettingUpdate) {
 		if params.FilesystemWatcher != nil {
 			if err := params.FilesystemWatcher.RestartProjectsWatcher(params.LifecycleCtx); err != nil {
 				slog.WarnContext(params.LifecycleCtx, "Failed to restart projects filesystem watcher", "error", err)
 			}
 		}
-	}
-	params.Settings.OnTemplatesDirectoryChanged = func(_ context.Context) {
+	})
+
+	subscribe([]string{"templatesDirectory"}, func(_ []libarcane.SettingUpdate) {
 		if params.FilesystemWatcher != nil {
 			if err := params.FilesystemWatcher.RestartTemplatesWatcher(params.LifecycleCtx); err != nil {
 				slog.WarnContext(params.LifecycleCtx, "Failed to restart templates filesystem watcher", "error", err)
 			}
 		}
-	}
-	params.Settings.OnScheduledPruneSettingsChanged = func(_ context.Context) {
+	})
+
+	subscribe([]string{"scheduledPruneEnabled", "scheduledPruneInterval"}, func(_ []libarcane.SettingUpdate) {
 		if err := params.Scheduler.RescheduleJob(params.LifecycleCtx, params.ScheduledPrune); err != nil {
 			slog.WarnContext(params.LifecycleCtx, "Failed to reschedule scheduled-prune job", "error", err)
 		}
-	}
-	params.Settings.OnVulnerabilityScanSettingsChanged = func(_ context.Context) {
-		if err := params.Scheduler.RescheduleJob(params.LifecycleCtx, params.VulnerabilityScan); err != nil {
-			slog.WarnContext(params.LifecycleCtx, "Failed to reschedule vulnerability-scan job", "error", err)
-		}
-	}
-	params.Settings.OnAutoHealSettingsChanged = func(ctx context.Context) {
-		if err := params.Scheduler.RescheduleJob(ctx, params.AutoHeal); err != nil {
-			slog.WarnContext(ctx, "Failed to reschedule auto-heal job", "error", err)
-		}
+	})
+
+	subscribe(
+		[]string{
+			"vulnerabilityScanEnabled", "vulnerabilityScanInterval", "trivyNetwork", "trivySecurityOpts", "trivyPrivileged",
+			"trivyResourceLimitsEnabled", "trivyCpuLimit", "trivyMemoryLimitMb", "trivyConcurrentScanContainers",
+		},
+		func(_ []libarcane.SettingUpdate) {
+			if err := params.Scheduler.RescheduleJob(params.LifecycleCtx, params.VulnerabilityScan); err != nil {
+				slog.WarnContext(params.LifecycleCtx, "Failed to reschedule vulnerability-scan job", "error", err)
+			}
+		},
+	)
+
+	subscribe(
+		[]string{"autoHealEnabled", "autoHealInterval", "autoHealExcludedContainers", "autoHealMaxRestarts", "autoHealRestartWindow"},
+		func(_ []libarcane.SettingUpdate) {
+			if err := params.Scheduler.RescheduleJob(params.LifecycleCtx, params.AutoHeal); err != nil {
+				slog.WarnContext(params.LifecycleCtx, "Failed to reschedule auto-heal job", "error", err)
+			}
+		},
+	)
+
+	params.Lifecycle.Append(fx.Hook{
+		OnStop: func(ctx context.Context) error {
+			for _, unsubscribe := range slices.Backward(unsubscribes) {
+				unsubscribe()
+			}
+			if cancelTimeoutSync != nil {
+				cancelTimeoutSync()
+			}
+			return timeoutSyncExecutor.Stop(ctx)
+		},
+	})
+	return nil
+}
+
+func setupTimeoutSettingsSubscriptionInternal(params settingsSubscriptionsParams, subscribe func([]string, func([]libarcane.SettingUpdate))) (*actors.Executor, context.CancelFunc, error) {
+	if params.Config.AgentMode {
+		return nil, nil, nil
 	}
 
-	// Only set up timeout sync callback on main instance (not in agent mode)
-	if !params.Config.AgentMode {
-		params.Settings.OnTimeoutSettingsChanged = func(ctx context.Context, timeoutSettings []libarcane.SettingUpdate) {
-			go syncTimeoutSettingsToAgentsInternal(context.WithoutCancel(ctx), params.Environment, timeoutSettings)
-		}
+	timeoutSyncExecutor, err := actors.NewExecutor(params.LifecycleCtx, params.ActorRuntime, "services", "settings-timeout-sync", 3)
+	if err != nil {
+		return nil, nil, err
 	}
+	timeoutSyncContext, cancelTimeoutSync := context.WithCancel(params.LifecycleCtx)
+	subscribe(libarcane.TimeoutSettingKeys(), func(updates []libarcane.SettingUpdate) {
+		_, err := actors.Submit(timeoutSyncContext, timeoutSyncExecutor, "sync timeout settings to remote environments", func(ctx context.Context) (actors.NoPayload, error) {
+			syncTimeoutSettingsToAgentsInternal(ctx, params.Environment, updates)
+			return actors.NoPayload{}, nil
+		}, nil)
+		if err != nil && timeoutSyncContext.Err() == nil {
+			slog.ErrorContext(timeoutSyncContext, "Failed to queue timeout settings sync", "error", err)
+		}
+	})
+	return timeoutSyncExecutor, cancelTimeoutSync, nil
 }
 
 // syncTimeoutSettingsToAgentsInternal syncs timeout settings to all connected remote environments
-func syncTimeoutSettingsToAgentsInternal(ctx context.Context, environment *services.EnvironmentService, timeoutSettings []libarcane.SettingUpdate) {
+func syncTimeoutSettingsToAgentsInternal(ctx context.Context, environment timeoutSettingsEnvironmentInternal, timeoutSettings []libarcane.SettingUpdate) {
 	envs, err := environment.ListRemoteEnvironments(ctx)
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to list remote environments for timeout sync", "error", err)
@@ -283,13 +385,13 @@ func syncTimeoutSettingsToAgentsInternal(ctx context.Context, environment *servi
 	slog.InfoContext(ctx, "Syncing environment settings to remote environments", "count", len(envs), "keys", keys)
 
 	for _, env := range envs {
-		resp, err := environment.ExecuteRemoteRequest(ctx, env.ID, http.MethodPut, "/api/environments/0/settings", body)
+		responseBody, statusCode, err := environment.ProxyRequest(ctx, env.ID, http.MethodPut, "/api/environments/0/settings", body)
 		if err != nil {
 			slog.WarnContext(ctx, "Failed to sync timeout settings to environment", "environmentID", env.ID, "environmentName", env.Name, "error", err)
 			continue
 		}
-		if err := resp.RequireSuccess(); err != nil {
-			slog.WarnContext(ctx, "Environment returned non-OK status for timeout sync", "environmentID", env.ID, "environmentName", env.Name, "statusCode", resp.StatusCode, "response", string(resp.Body))
+		if statusCode < http.StatusOK || statusCode >= http.StatusMultipleChoices {
+			slog.WarnContext(ctx, "Environment returned non-OK status for timeout sync", "environmentID", env.ID, "environmentName", env.Name, "statusCode", statusCode, "response", string(responseBody))
 			continue
 		}
 		slog.DebugContext(ctx, "Successfully synced timeout settings to environment", "environmentID", env.ID, "environmentName", env.Name)

@@ -55,3 +55,4 @@ backend/build-errors.log
 cli/arcane-cli
 completions
 *.txt
+inspections/**

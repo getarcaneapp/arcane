@@ -26,7 +26,7 @@ import (
 	"go.getarcane.app/docker/convert"
 	converttypes "go.getarcane.app/docker/convert/types"
 	"go.getarcane.app/sys/cgroup"
-	updatertypes "go.getarcane.app/updater/types"
+	"go.getarcane.app/updater"
 )
 
 // SystemHandler handles system management endpoints.
@@ -119,8 +119,16 @@ type TriggerUpgradeInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
 
+// TriggerUpgradeData reports the upgrade was accepted. UpToDate lets a client skip
+// waiting for a restart: the upgrader still pulls, but when the environment already
+// runs the newest image it finds nothing to swap in and no restart follows.
+type TriggerUpgradeData struct {
+	Message  string `json:"message" doc:"Response message"`
+	UpToDate bool   `json:"upToDate" doc:"Environment already runs the newest image, so no restart is expected"`
+}
+
 type TriggerUpgradeOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
+	Body base.ApiResponse[TriggerUpgradeData]
 }
 
 type TriggerUpdateAllInput struct {
@@ -504,7 +512,11 @@ func (h *SystemHandler) TriggerUpgrade(ctx context.Context, input *TriggerUpgrad
 
 	slog.Info("System upgrade triggered", "user", user.Username, "userId", user.ID)
 
-	err = h.upgradeService.TriggerUpgradeViaCLI(ctx, *user, updatertypes.SelfUpdateTarget{})
+	// Resolved before triggering, while the version check still describes the running
+	// container: the upgrade itself may replace it.
+	upToDate := h.upgradeService.AlreadyOnNewestImage(ctx)
+
+	_, err = h.upgradeService.TriggerUpgradeViaCLI(ctx, *user, updater.SelfUpdateTarget{})
 	if err != nil {
 		slog.Error("System upgrade failed", "error", err, "user", user.Username)
 
@@ -515,11 +527,17 @@ func (h *SystemHandler) TriggerUpgrade(ctx context.Context, input *TriggerUpgrad
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to initiate upgrade").Error())
 	}
 
+	message := "Upgrade initiated successfully. A new container is being created and will replace this one shortly."
+	if upToDate {
+		message = "Already running the newest image. The upgrade pulled it again and left the container in place."
+	}
+
 	return &TriggerUpgradeOutput{
-		Body: base.ApiResponse[base.MessageResponse]{
+		Body: base.ApiResponse[TriggerUpgradeData]{
 			Success: true,
-			Data: base.MessageResponse{
-				Message: "Upgrade initiated successfully. A new container is being created and will replace this one shortly.",
+			Data: TriggerUpgradeData{
+				Message:  message,
+				UpToDate: upToDate,
 			},
 		},
 	}, nil

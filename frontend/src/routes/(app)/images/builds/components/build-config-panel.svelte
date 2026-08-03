@@ -2,19 +2,30 @@
 	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
 	import { ArrowDownIcon } from '#lib/icons';
 	import FormInput from '#lib/components/form/form-input.svelte';
+	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
 	import { preventDefault } from '#lib/utils/settings';
 	import { m } from '#lib/paraglide/messages';
-	import type { BuildFormInputsStore } from './build-form.types';
+	import type { BuildFormInputsStore, SelectOption } from './build-form.types';
 
 	let {
 		inputs,
 		provider,
 		showAdvanced = $bindable(false),
+		isPushMode = false,
+		registryOptions = [],
+		repositoryOptions = [],
+		fullImageReference = '',
+		registryLoadFailed = false,
 		onSubmit
 	}: {
 		inputs: BuildFormInputsStore;
 		provider: 'local' | 'depot';
 		showAdvanced?: boolean;
+		isPushMode?: boolean;
+		registryOptions?: SelectOption[];
+		repositoryOptions?: SelectOption[];
+		fullImageReference?: string;
+		registryLoadFailed?: boolean;
 		onSubmit?: () => void;
 	} = $props();
 
@@ -25,13 +36,47 @@
 <div class="space-y-7 p-8">
 	<form onsubmit={preventDefault(() => onSubmit?.())} class="space-y-7">
 		<div class="space-y-4">
-			<FormInput
-				label={m.image_tags()}
-				type="text"
-				placeholder={m.image_tags_placeholder()}
-				description={m.image_tags_description()}
-				bind:input={$inputs.tags}
-			/>
+			{#if isPushMode}
+				<SelectWithLabel
+					id="build-push-registry"
+					label={m.common_registry()}
+					placeholder={m.select_a_registry()}
+					options={registryOptions}
+					description={!registryLoadFailed && registryOptions.length === 0 ? m.registries_none_enabled() : undefined}
+					error={registryLoadFailed ? m.registries_no_list_permission() : null}
+					bind:value={$inputs.registryId.value}
+				/>
+
+				<SelectWithLabel
+					id="build-push-repository"
+					label={m.repository_name()}
+					placeholder={m.select_a_repository_name()}
+					options={repositoryOptions}
+					description={$inputs.registryId.value && !registryLoadFailed && repositoryOptions.length === 0
+						? m.registries_no_repository_names()
+						: undefined}
+					bind:value={$inputs.repositoryName.value}
+				/>
+
+				<FormInput label={m.tag()} type="text" placeholder={m.tag_placeholder()} bind:input={$inputs.pushTag} />
+
+				{#if fullImageReference}
+					<div class="space-y-1">
+						<span class="text-xs font-medium text-muted-foreground">{m.image_reference()}</span>
+						<div class="rounded-md bg-muted/50 px-3 py-2">
+							<code class="text-xs break-all">{fullImageReference}</code>
+						</div>
+					</div>
+				{/if}
+			{:else}
+				<FormInput
+					label={m.image_tags()}
+					type="text"
+					placeholder={m.image_tags_placeholder()}
+					description={m.image_tags_description()}
+					bind:input={$inputs.tags}
+				/>
+			{/if}
 
 			<Collapsible.Root bind:open={showAdvanced}>
 				<Collapsible.Trigger

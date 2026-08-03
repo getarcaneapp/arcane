@@ -18,13 +18,15 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/env"
 	"github.com/getarcaneapp/arcane/types/v2/jobschedule"
 	settingstypes "github.com/getarcaneapp/arcane/types/v2/settings"
-	sqlite "github.com/libtnb/sqlite"
+	"github.com/libtnb/sqlite"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
 
 // adminTestContextInternal returns a context with a sudo PermissionSet attached,
 // suitable for unit-testing handlers that gate via RequirePermission middleware.
+
 func adminTestContextInternal() context.Context {
 	return context.WithValue(context.Background(), humamiddleware.ContextKeyUserPermissions, authz.SudoPermissionSet())
 }
@@ -37,7 +39,7 @@ func setupRemoteHandlerEnvironmentServiceInternal(t *testing.T, server *httptest
 	require.NoError(t, db.AutoMigrate(&models.Environment{}))
 
 	now := time.Now()
-	env := &models.Environment{
+	envRecord := &models.Environment{
 		BaseModel: models.BaseModel{
 			ID:        "env-remote",
 			CreatedAt: now,
@@ -49,7 +51,7 @@ func setupRemoteHandlerEnvironmentServiceInternal(t *testing.T, server *httptest
 		Enabled: true,
 		IsEdge:  false,
 	}
-	require.NoError(t, db.WithContext(context.Background()).Create(env).Error)
+	require.NoError(t, db.WithContext(context.Background()).Create(envRecord).Error)
 
 	return services.NewEnvironmentService(&database.DB{DB: db}, server.Client(), nil, nil, nil, nil)
 }
@@ -91,10 +93,14 @@ func TestProxyRemoteJSONInternal_MapsDecodeError(t *testing.T) {
 
 func TestJobSchedulesHandler_ListJobs_RemoteSuccess(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, "/api/environments/0/jobs", r.URL.Path)
-		require.NoError(t, json.NewEncoder(w).Encode(jobschedule.JobListResponse{
+		if !assert.Equal(t, "/api/environments/0/jobs", r.URL.Path) {
+			return
+		}
+		if !assert.NoError(t, json.NewEncoder(w).Encode(jobschedule.JobListResponse{
 			Jobs: []jobschedule.JobStatus{{ID: "job-1", Name: "Test Job"}},
-		}))
+		})) {
+			return
+		}
 	}))
 	defer server.Close()
 
@@ -112,8 +118,12 @@ func TestJobSchedulesHandler_ListJobs_RemoteSuccess(t *testing.T) {
 func TestSettingsHandler_GetPublicSettings_RemoteSuccess(t *testing.T) {
 	expected := []settingstypes.PublicSetting{{Key: "theme", Type: "string", Value: "dark"}}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, "/api/environments/0/settings/public", r.URL.Path)
-		require.NoError(t, json.NewEncoder(w).Encode(expected))
+		if !assert.Equal(t, "/api/environments/0/settings/public", r.URL.Path) {
+			return
+		}
+		if !assert.NoError(t, json.NewEncoder(w).Encode(expected)) {
+			return
+		}
 	}))
 	defer server.Close()
 
@@ -135,13 +145,17 @@ func TestSettingsHandler_GetSettings_RemoteFiltersNonAdminVisibility(t *testing.
 		{Key: "futureAdminSetting", Type: "string", Value: "hidden"},
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, "/api/environments/0/settings", r.URL.Path)
-		require.NoError(t, json.NewEncoder(w).Encode(remoteSettings))
+		if !assert.Equal(t, "/api/environments/0/settings", r.URL.Path) {
+			return
+		}
+		if !assert.NoError(t, json.NewEncoder(w).Encode(remoteSettings)) {
+			return
+		}
 	}))
 	defer server.Close()
 
 	db := setupActivityHandlerTestDBInternal(t)
-	settingsService, err := services.NewSettingsService(context.Background(), db)
+	settingsService, err := newSettingsServiceForTestInternal(t, context.Background(), db)
 	require.NoError(t, err)
 	handler := &SettingsHandler{
 		settingsService:    settingsService,
@@ -162,12 +176,14 @@ func TestSettingsHandler_GetSettings_RemotePreservesAdminResponse(t *testing.T) 
 		{Key: "futureAdminSetting", Type: "string", Value: "visible-to-admin"},
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		require.NoError(t, json.NewEncoder(w).Encode(remoteSettings))
+		if !assert.NoError(t, json.NewEncoder(w).Encode(remoteSettings)) {
+			return
+		}
 	}))
 	defer server.Close()
 
 	db := setupActivityHandlerTestDBInternal(t)
-	settingsService, err := services.NewSettingsService(context.Background(), db)
+	settingsService, err := newSettingsServiceForTestInternal(t, context.Background(), db)
 	require.NoError(t, err)
 	handler := &SettingsHandler{
 		settingsService:    settingsService,
@@ -185,8 +201,12 @@ func TestVariableHandler_GetMaterializedVariables_RemoteSuccess(t *testing.T) {
 		Data:    []env.Variable{{Key: "FOO", Value: "bar"}},
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, "/api/environments/0/templates/variables", r.URL.Path)
-		require.NoError(t, json.NewEncoder(w).Encode(expected))
+		if !assert.Equal(t, "/api/environments/0/templates/variables", r.URL.Path) {
+			return
+		}
+		if !assert.NoError(t, json.NewEncoder(w).Encode(expected)) {
+			return
+		}
 	}))
 	defer server.Close()
 

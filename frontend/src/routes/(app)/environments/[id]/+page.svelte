@@ -38,7 +38,6 @@
 	import {
 		ArrowLeftIcon,
 		AlertIcon,
-		RefreshIcon,
 		DockerBrandIcon,
 		SecurityIcon,
 		GitBranchIcon,
@@ -109,16 +108,6 @@
 		}
 
 		if (environment.id !== '0') {
-			actions.push({
-				id: 'sync',
-				action: 'base',
-				label: m.resource_sync_cap(),
-				onclick: syncEnvironment,
-				disabled: isSyncing,
-				loading: isSyncing,
-				icon: RefreshIcon
-			});
-
 			// Edge environments manage mTLS downloads and API key regeneration in the Connection & Edge tab.
 			if (!runtimeEnvironment.isEdge) {
 				actions.push({
@@ -229,6 +218,7 @@
 		enabled: environment.enabled,
 		apiUrl: environment.apiUrl,
 		pollingEnabled: settings?.pollingEnabled ?? false,
+		imageEventWatcherEnabled: settings?.imageEventWatcherEnabled ?? false,
 		autoUpdate: settings?.autoUpdate ?? false,
 		autoInjectEnv: settings?.autoInjectEnv ?? false,
 		followProjectSymlinks: settings?.followProjectSymlinks ?? false,
@@ -292,6 +282,7 @@
 		if (settings) {
 			await settingsService.updateSettingsForEnvironment(environment.id, {
 				pollingEnabled: formData.pollingEnabled,
+				imageEventWatcherEnabled: formData.imageEventWatcherEnabled,
 				autoUpdate: formData.autoUpdate,
 				autoInjectEnv: formData.autoInjectEnv,
 				followProjectSymlinks: formData.followProjectSymlinks,
@@ -614,7 +605,7 @@
 			</div>
 
 			<div class="flex min-w-0 flex-col items-start gap-3 sm:items-end">
-				<div class="hidden flex-wrap items-center gap-2 self-start sm:flex sm:self-end">
+				<div class="flex flex-wrap items-center gap-2 self-start sm:self-end">
 					{#if settingsForm.hasChanges}
 						<span class="text-xs text-orange-600 dark:text-orange-400">{m.common_unsaved_changes()}</span>
 					{:else}
@@ -643,6 +634,10 @@
 					<ArcaneButton action="test" onclick={testConnection} disabled={isTestingConnection} loading={isTestingConnection} />
 
 					<ArcaneButton action="refresh" onclick={refreshEnvironment} disabled={isRefreshing} loading={isRefreshing} />
+
+					{#if environment.id !== '0'}
+						<ArcaneButton action="sync" onclick={syncEnvironment} disabled={isSyncing} loading={isSyncing} />
+					{/if}
 				</div>
 			</div>
 		</div>

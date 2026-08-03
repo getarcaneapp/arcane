@@ -3,7 +3,7 @@ package notifications
 import (
 	"bytes"
 	"context"
-	json "encoding/json/v2"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"net/http"
@@ -146,7 +146,7 @@ func SendGenericWithTitle(ctx context.Context, config models.GenericConfig, titl
 		return errors.WrapIf(err, "failed to build shoutrrr Generic URL")
 	}
 
-	sender, err := shoutrrr.CreateSender(shoutrrrURL)
+	sender, err := shoutrrr.CreateSenderWithOptions(shoutrrrTypes.SenderOptions{}, shoutrrrURL)
 	if err != nil {
 		return errors.WrapIf(err, "failed to create shoutrrr Generic sender")
 	}

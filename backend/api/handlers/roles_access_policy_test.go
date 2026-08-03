@@ -45,10 +45,9 @@ func TestBuildPermissionsManifestIncludesEventsDelete(t *testing.T) {
 				return
 			}
 		}
-		t.Fatalf("events resource did not include %s", authz.PermEventsDelete)
+		require.FailNowf(t, "unexpected failure", "events resource did not include %s", authz.PermEventsDelete)
 	}
-
-	t.Fatal("events resource not found")
+	require.FailNow(t, "events resource not found")
 }
 
 func TestBuildPermissionsManifestKeepsVariablesSeparateFromTemplates(t *testing.T) {

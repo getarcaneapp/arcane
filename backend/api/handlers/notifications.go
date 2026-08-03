@@ -228,7 +228,11 @@ func (h *NotificationHandler) CreateOrUpdateNotificationSettings(ctx context.Con
 		models.JSON(input.Body.Config),
 	)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to update notification settings").Error())
+		apiErr := models.ToAPIError(err)
+		if apiErr.HTTPStatus() == http.StatusInternalServerError {
+			return nil, huma.Error500InternalServerError("Failed to update notification settings")
+		}
+		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
 	}
 
 	response := notification.Response{

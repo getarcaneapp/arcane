@@ -81,10 +81,9 @@ type AuthService struct {
 	refreshExpiry   time.Duration
 	config          *config.Config
 	errorHandler    emperror.ErrorHandler
-	// tokenCache is a per-process in-memory cache. In horizontally-scaled
-	// deployments, RevokeSession / ChangePassword / InvalidateUserTokenCache
-	// only purge the local instance; peers continue to accept the token until
-	// their own TTL expires. The TTL is kept short to bound this window.
+	// tokenCache is a per-process in-memory cache for parsed user/token data.
+	// Cached entries still revalidate persisted session state so revocation
+	// performed by another process takes effect immediately.
 	tokenCache *hot.HotCache[string, verifiedTokenEntry]
 }
 
@@ -274,7 +273,7 @@ func (s *AuthService) Login(ctx context.Context, username, password string, meta
 	// Use new(*user) to create a safe copy of the user struct to avoid data race
 	userCopy := new(*user)
 	s.runInBackground(ctx, "update_last_login", func(ctx context.Context) error {
-		if _, err := s.userService.UpdateUser(ctx, userCopy); err != nil {
+		if _, err := s.userService.UpdateUser(ctx, userCopy, nil); err != nil {
 			return errors.WrapIf(err, "failed to update user's last login time")
 		}
 		return nil
@@ -477,7 +476,7 @@ func (s *AuthService) updateOidcUser(ctx context.Context, user *models.User, use
 	s.persistOidcTokens(user, tokenResp)
 
 	user.LastLogin = new(time.Now())
-	if _, err := s.userService.UpdateUser(ctx, user); err != nil {
+	if _, err := s.userService.UpdateUser(ctx, user, nil); err != nil {
 		return err
 	}
 	if err := s.syncOidcRoleAssignments(ctx, user, userInfo, tokenResp); err != nil {
@@ -739,6 +738,25 @@ func (s *AuthService) VerifyToken(ctx context.Context, accessToken string) (*mod
 
 	tokenHash := hashTokenInternal(accessToken)
 	if cached, ok, _ := s.tokenCache.Get(tokenHash); ok {
+		if cached.User.ID != claims.ID || cached.SessionID != claims.SessionID {
+			s.tokenCache.Delete(tokenHash)
+			return nil, "", ErrInvalidToken
+		}
+
+		session, err := s.sessionService.GetSessionByID(ctx, cached.SessionID)
+		if err != nil {
+			s.tokenCache.Delete(tokenHash)
+			return nil, "", err
+		}
+		if session.UserID != cached.User.ID {
+			s.tokenCache.Delete(tokenHash)
+			return nil, "", ErrInvalidToken
+		}
+		if err := validateSessionActiveInternal(session); err != nil {
+			s.tokenCache.Delete(tokenHash)
+			return nil, "", err
+		}
+
 		return new(cached.User), cached.SessionID, nil
 	}
 
@@ -790,14 +808,7 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID, currentPasswor
 		}
 	}
 
-	hashedPassword, err := s.userService.hashPassword(newPassword)
-	if err != nil {
-		return errors.WrapIf(err, "failed to hash password")
-	}
-
-	user.PasswordHash = hashedPassword
-	user.RequiresPasswordChange = false
-	if _, err = s.userService.UpdateUser(ctx, user); err != nil {
+	if _, err = s.userService.SetPasswordAndRevokeSessionsExcept(ctx, user, newPassword, currentSessionID); err != nil {
 		return err
 	}
 	keys := make([]string, 0)
@@ -808,7 +819,7 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID, currentPasswor
 		return true
 	})
 	s.tokenCache.DeleteMany(keys)
-	return s.sessionService.RevokeAllUserSessionsExcept(ctx, userID, currentSessionID)
+	return nil
 }
 
 // InvalidateUserTokenCache purges all cached token verifications for a user.

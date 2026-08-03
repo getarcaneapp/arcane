@@ -38,6 +38,8 @@ func (f *fakeEventTunnelConn) Close() error { f.closed = true; return nil }
 
 func (f *fakeEventTunnelConn) IsClosed() bool { return f.closed }
 
+func (f *fakeEventTunnelConn) Transport() string { return EdgeTransportWebSocket }
+
 func TestPublishEventToManager_NoActiveTunnel(t *testing.T) {
 	clearActiveAgentTunnelConn(getActiveAgentTunnelConn())
 
@@ -66,5 +68,5 @@ func TestPublishEventToManager_SendsEventMessage(t *testing.T) {
 	require.NotNil(t, conn.msgs[0].Event)
 	assert.Equal(t, "container.start", conn.msgs[0].Event.Type)
 	assert.Equal(t, "Container started", conn.msgs[0].Event.Title)
-	assert.Equal(t, []byte(`{"source":"test"}`), conn.msgs[0].Event.MetadataJSON)
+	assert.JSONEq(t, `{"source":"test"}`, string(conn.msgs[0].Event.MetadataJSON))
 }

@@ -8,6 +8,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/nicholas-fedor/shoutrrr"
 	"github.com/nicholas-fedor/shoutrrr/pkg/services/chat/signal"
+	shoutrrrTypes "github.com/nicholas-fedor/shoutrrr/pkg/types"
 )
 
 // BuildSignalURL converts SignalConfig to Shoutrrr URL format using shoutrrr's Config
@@ -57,7 +58,7 @@ func SendSignal(ctx context.Context, config models.SignalConfig, message string)
 		return errors.WrapIf(err, "failed to build shoutrrr Signal URL")
 	}
 
-	sender, err := shoutrrr.CreateSender(shoutrrrURL)
+	sender, err := shoutrrr.CreateSenderWithOptions(shoutrrrTypes.SenderOptions{}, shoutrrrURL)
 	if err != nil {
 		return errors.WrapIf(err, "failed to create shoutrrr Signal sender")
 	}

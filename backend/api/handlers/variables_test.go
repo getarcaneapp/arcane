@@ -14,7 +14,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/labstack/echo/v5"
-	sqlite "github.com/libtnb/sqlite"
+	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
@@ -123,7 +123,7 @@ func setupVariableHandlerServicesInternal(t *testing.T) (*services.VariableServi
 		&models.SettingVariable{},
 	))
 	databaseDB := &database.DB{DB: databaseConnection}
-	settingsService, err := services.NewSettingsService(context.Background(), databaseDB)
+	settingsService, err := newSettingsServiceForTestInternal(t, context.Background(), databaseDB)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.UpdateSetting(context.Background(), "projectsDirectory", t.TempDir()))
 	environmentService := services.NewEnvironmentService(databaseDB, nil, nil, nil, settingsService, nil)

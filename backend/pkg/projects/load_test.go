@@ -150,7 +150,7 @@ func TestLoadComposeProject_MergesComposeOverrideFile(t *testing.T) {
 	require.NoError(t, os.WriteFile(basePath, []byte("services:\n  app:\n    image: nginx:alpine\n    environment:\n      FROM_BASE: \"1\"\n"), 0o600))
 	require.NoError(t, os.WriteFile(overridePath, []byte("services:\n  app:\n    image: busybox:latest\n    environment:\n      FROM_OVERRIDE: \"1\"\n"), 0o600))
 
-	project, err := LoadComposeProject(context.Background(), basePath, "demo", dir, false, nil)
+	project, err := LoadComposeProject(context.Background(), basePath, "demo", dir, false, nil, nil, nil, false)
 	require.NoError(t, err)
 	require.NotNil(t, project)
 
@@ -173,7 +173,7 @@ func TestLoadComposeProject_DoesNotMergeOverrideForCustomBaseName(t *testing.T) 
 	require.NoError(t, os.WriteFile(basePath, []byte("services:\n  app:\n    image: nginx:alpine\n    environment:\n      FROM_BASE: \"1\"\n"), 0o600))
 	require.NoError(t, os.WriteFile(overridePath, []byte("services:\n  app:\n    image: busybox:latest\n    environment:\n      FROM_OVERRIDE: \"1\"\n"), 0o600))
 
-	project, err := LoadComposeProject(context.Background(), basePath, "demo", dir, false, nil)
+	project, err := LoadComposeProject(context.Background(), basePath, "demo", dir, false, nil, nil, nil, false)
 	require.NoError(t, err)
 	require.NotNil(t, project)
 
@@ -276,7 +276,7 @@ func TestLoadComposeProjectLenient_ToleratesUndefinedVariables(t *testing.T) {
       - ${CONFIG_FILE}:/etc/app/app.conf
 `), 0o600))
 
-	project, err := LoadComposeProjectLenient(context.Background(), composePath, "demo", dir, false, nil)
+	project, err := LoadComposeProject(context.Background(), composePath, "demo", dir, false, nil, nil, nil, true)
 	require.NoError(t, err)
 	require.NotNil(t, project)
 	assert.Len(t, project.Services, 1)
@@ -302,7 +302,7 @@ func TestLoadComposeProjectLenient_ToleratesUndefinedTypedFieldVariables(t *test
           memory: ${MEMORY}
 `), 0o600))
 
-	project, err := LoadComposeProjectLenient(context.Background(), composePath, "demo", dir, false, nil)
+	project, err := LoadComposeProject(context.Background(), composePath, "demo", dir, false, nil, nil, nil, true)
 	require.NoError(t, err)
 	require.NotNil(t, project)
 	assert.Len(t, project.Services, 1)
@@ -327,7 +327,7 @@ func TestLoadComposeProjectLenient_AppliesVariableDefaults(t *testing.T) {
       - MAX_FILE_SIZE=${ARCANE_TEST_UNSET_SIZE:-104857600}
 `), 0o600))
 
-	project, err := LoadComposeProjectLenient(context.Background(), composePath, "demo", dir, false, nil)
+	project, err := LoadComposeProject(context.Background(), composePath, "demo", dir, false, nil, nil, nil, true)
 	require.NoError(t, err)
 	require.NotNil(t, project)
 	require.Len(t, project.Services, 1)
@@ -356,7 +356,7 @@ services:
     image: busybox:latest
 `), 0o600))
 
-	project, err := LoadComposeProject(context.Background(), composePath, "demo", projectDir, false, nil)
+	project, err := LoadComposeProject(context.Background(), composePath, "demo", projectDir, false, nil, nil, nil, false)
 	require.NoError(t, err)
 	require.NotNil(t, project)
 
@@ -406,7 +406,7 @@ services:
 			composePath := filepath.Join(projectDir, "compose.yaml")
 			require.NoError(t, os.WriteFile(composePath, []byte(tt.composeBody), 0o600))
 
-			project, err := LoadComposeProject(context.Background(), composePath, "aitools", projectDir, false, nil)
+			project, err := LoadComposeProject(context.Background(), composePath, "aitools", projectDir, false, nil, nil, nil, false)
 			require.NoError(t, err)
 			require.NotNil(t, project)
 			require.Equal(t, tt.wantName, project.Name)
@@ -429,7 +429,7 @@ func TestResolveRelativeProjectPaths(t *testing.T) {
       - ./config.conf:/etc/app/config.conf
 `), 0o600))
 
-	project, err := LoadComposeProject(context.Background(), composePath, "demo", dir, false, nil)
+	project, err := LoadComposeProject(context.Background(), composePath, "demo", dir, false, nil, nil, nil, false)
 	require.NoError(t, err)
 
 	ResolveRelativeProjectPaths(project, dir)
@@ -437,4 +437,45 @@ func TestResolveRelativeProjectPaths(t *testing.T) {
 	service := project.Services["app"]
 	require.Len(t, service.Volumes, 1)
 	assert.Equal(t, filepath.Join(dir, "config.conf"), service.Volumes[0].Source)
+}
+
+// Reproduces the reported case where a relative bind path escaping the projects
+// mount resolved against Arcane's container path instead of the host path
+// `docker compose up` would use, while checking that in-mount relative paths and
+// intentionally absolute paths keep their current behavior.
+func TestLoadComposeProject_RemapsRelativeBindEscapingProjectsMount(t *testing.T) {
+	t.Parallel()
+
+	projectsRoot := t.TempDir()
+	projectDir := filepath.Join(projectsRoot, "goclaw")
+	require.NoError(t, os.MkdirAll(projectDir, 0o755))
+
+	composePath := filepath.Join(projectDir, "compose.yaml")
+	require.NoError(t, os.WriteFile(composePath, []byte(`services:
+  goclaw:
+    image: nginx:alpine
+    volumes:
+      - ../../../../goclaw/data:/app/data
+      - ./data:/app/cache
+      - /mnt/nas/media:/media
+`), 0o600))
+
+	pathMapper := NewPathMapper(projectsRoot, "/docker/112/arcane/arcane-data/projects")
+	require.True(t, pathMapper.IsNonMatchingMount())
+
+	project, err := LoadComposeProject(context.Background(), composePath, "goclaw", projectsRoot, false, pathMapper, nil, nil, false)
+	require.NoError(t, err)
+
+	sources := make(map[string]string)
+	for _, volume := range project.Services["goclaw"].Volumes {
+		sources[volume.Target] = volume.Source
+	}
+
+	// Escapes the mount: must land where `docker compose up` in the host project
+	// directory would put it, not at the container-resolved "/goclaw/data".
+	assert.Equal(t, "/docker/112/goclaw/data", sources["/app/data"])
+	// Stays inside the mount: already correct today, must not change.
+	assert.Equal(t, "/docker/112/arcane/arcane-data/projects/goclaw/data", sources["/app/cache"])
+	// Absolute host path: must be passed through untouched.
+	assert.Equal(t, "/mnt/nas/media", sources["/media"])
 }

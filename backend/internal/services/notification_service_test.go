@@ -14,10 +14,11 @@ import (
 	"testing"
 	"time"
 
-	sqlite "github.com/libtnb/sqlite"
+	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
@@ -25,6 +26,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/imageupdate"
 	notificationdto "github.com/getarcaneapp/arcane/types/v2/notification"
 	"github.com/getarcaneapp/arcane/types/v2/system"
+	"github.com/stretchr/testify/assert"
 	"go.getarcane.app/sys/crypto"
 )
 
@@ -162,13 +164,13 @@ func TestNotificationService_DispatchNotification_UnsupportedKindReturnsSentinel
 	}).Error)
 
 	_, err := svc.DispatchNotification(ctx, token, notificationdto.DispatchRequest{
-		Kind: notificationdto.DispatchKind("bogus_kind"),
+		Kind: "bogus_kind",
 	})
 
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrUnsupportedDispatchKind)
 	var unsupportedErr = ErrUnsupportedDispatchKind
-	require.True(t, errors.Is(err, unsupportedErr))
+	require.ErrorIs(t, err, unsupportedErr)
 	require.Contains(t, err.Error(), "bogus_kind")
 }
 
@@ -214,18 +216,28 @@ func TestNotificationService_SendImageUpdateNotification_AgentModeDispatchesToMa
 	var calls atomic.Int32
 	var dispatched notificationdto.DispatchRequest
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, http.MethodPost, r.Method)
-		require.Equal(t, "/api/notifications/dispatch", r.URL.Path)
-		require.Equal(t, "agent-token", r.Header.Get("X-API-Key"))
-		require.NoError(t, json.NewDecoder(r.Body).Decode(&dispatched))
+		if !assert.Equal(t, http.MethodPost, r.Method) {
+			return
+		}
+		if !assert.Equal(t, "/api/notifications/dispatch", r.URL.Path) {
+			return
+		}
+		if !assert.Equal(t, "agent-token", r.Header.Get("X-API-Key")) {
+			return
+		}
+		if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&dispatched)) {
+			return
+		}
 		calls.Add(1)
-		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+		if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{
 			"success": true,
 			"data": notificationdto.DispatchResponse{
 				Message:   "Notification dispatched successfully",
 				Delivered: 2,
 			},
-		}))
+		})) {
+			return
+		}
 	}))
 	defer server.Close()
 
@@ -238,7 +250,7 @@ func TestNotificationService_SendImageUpdateNotification_AgentModeDispatchesToMa
 
 	delivered, err := svc.SendImageUpdateNotification(ctx, "nginx:latest", newNotificationTestUpdateInfoInternal(), models.NotificationEventImageUpdate)
 	require.NoError(t, err)
-	require.EqualValues(t, 2, delivered)
+	require.Equal(t, 2, delivered)
 	require.EqualValues(t, 1, calls.Load())
 	require.Equal(t, notificationdto.DispatchKindImageUpdate, dispatched.Kind)
 	require.NotNil(t, dispatched.ImageUpdate)
@@ -252,17 +264,27 @@ func TestNotificationService_SendBatchImageUpdateNotification_AgentModeUsesManag
 
 	var dispatched notificationdto.DispatchRequest
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, http.MethodPost, r.Method)
-		require.Equal(t, "/api/notifications/dispatch", r.URL.Path)
-		require.Equal(t, "agent-token", r.Header.Get("X-API-Key"))
-		require.NoError(t, json.NewDecoder(r.Body).Decode(&dispatched))
-		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+		if !assert.Equal(t, http.MethodPost, r.Method) {
+			return
+		}
+		if !assert.Equal(t, "/api/notifications/dispatch", r.URL.Path) {
+			return
+		}
+		if !assert.Equal(t, "agent-token", r.Header.Get("X-API-Key")) {
+			return
+		}
+		if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&dispatched)) {
+			return
+		}
+		if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{
 			"success": true,
 			"data": notificationdto.DispatchResponse{
 				Message:   "Notification dispatched successfully",
 				Delivered: 0,
 			},
-		}))
+		})) {
+			return
+		}
 	}))
 	defer server.Close()
 
@@ -277,7 +299,7 @@ func TestNotificationService_SendBatchImageUpdateNotification_AgentModeUsesManag
 		"nginx:latest": newNotificationTestUpdateInfoInternal(),
 	})
 	require.NoError(t, err)
-	require.EqualValues(t, 0, delivered)
+	require.Equal(t, 0, delivered)
 	require.Equal(t, notificationdto.DispatchKindBatchImageUpdate, dispatched.Kind)
 	require.NotNil(t, dispatched.BatchImageUpdate)
 	require.Contains(t, dispatched.BatchImageUpdate.Updates, "nginx:latest")
@@ -320,7 +342,7 @@ func TestNotificationService_SendBatchImageUpdateNotification_AgentModeSkipsNoOp
 	t.Run("empty updates", func(t *testing.T) {
 		delivered, err := svc.SendBatchImageUpdateNotification(ctx, map[string]*imageupdate.Response{})
 		require.NoError(t, err)
-		require.EqualValues(t, 0, delivered)
+		require.Equal(t, 0, delivered)
 		require.EqualValues(t, 0, calls.Load())
 	})
 
@@ -334,7 +356,7 @@ func TestNotificationService_SendBatchImageUpdateNotification_AgentModeSkipsNoOp
 			"redis:latest": nil,
 		})
 		require.NoError(t, err)
-		require.EqualValues(t, 0, delivered)
+		require.Equal(t, 0, delivered)
 		require.EqualValues(t, 0, calls.Load())
 	})
 }
@@ -577,6 +599,41 @@ func TestNotificationService_CreateOrUpdateSettingsPreservesStoredCredentialWhen
 	require.Equal(t, "initial-gotify-token", decrypted)
 }
 
+func TestNotificationService_CreateOrUpdateSettingsRejectsTargetChangeWithStoredCredentialInternal(t *testing.T) {
+	ctx := context.Background()
+	db := setupNotificationTestDB(t)
+	svc := NewNotificationService(db, &config.Config{}, nil, nil)
+
+	created, err := svc.CreateOrUpdateSettings(ctx, models.NotificationProviderGotify, true, models.JSON{
+		"host":  "gotify.example",
+		"port":  443,
+		"token": "initial-gotify-token",
+	})
+	require.NoError(t, err)
+	originalToken := created.Config["token"]
+
+	_, err = svc.CreateOrUpdateSettings(ctx, models.NotificationProviderGotify, true, models.JSON{
+		"host":  "attacker.example",
+		"port":  443,
+		"token": "",
+	})
+	require.ErrorIs(t, err, common.ErrValidation)
+
+	var stored models.NotificationSettings
+	require.NoError(t, db.WithContext(ctx).Where("provider = ?", models.NotificationProviderGotify).First(&stored).Error)
+	require.Equal(t, "gotify.example", stored.Config["host"])
+	require.Equal(t, originalToken, stored.Config["token"])
+
+	updated, err := svc.CreateOrUpdateSettings(ctx, models.NotificationProviderGotify, true, models.JSON{
+		"host":  "gotify.example",
+		"port":  8443,
+		"token": "",
+	})
+	require.NoError(t, err)
+	require.Equal(t, 8443, updated.Config["port"])
+	require.Equal(t, originalToken, updated.Config["token"])
+}
+
 func TestNotificationService_CreateOrUpdateSettingsClearsEmailPasswordWhenAuthModeNoneInternal(t *testing.T) {
 	ctx := context.Background()
 	db := setupNotificationTestDB(t)
@@ -729,6 +786,6 @@ func TestSupportedNotificationTestTypes_IncludesAutoHeal(t *testing.T) {
 		require.True(t, ok, "expected %q to be in supportedNotificationTestTypes", tt)
 	}
 
-	require.Equal(t, len(expected), len(supportedNotificationTestTypes),
+	require.Len(t, supportedNotificationTestTypes, len(expected),
 		"supportedNotificationTestTypes has unexpected entries")
 }

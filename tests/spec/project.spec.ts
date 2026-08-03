@@ -657,21 +657,20 @@ test.describe('New Compose Project Page', () => {
 			await expect(page.getByRole('button', { name: projectName, exact: true })).toBeVisible();
 
 			await page.getByRole('tab', { name: 'Services 1', exact: true }).click();
-			await page.waitForLoadState('load');
+			await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('services');
 
-			const serviceTable = page.getByRole('table');
-			const serviceNameWhenStopped = serviceTable.getByText('nginx', {
-				exact: true
-			});
-			const emptyServicesState = page.getByText('No services found for this project', {
-				exact: true
-			});
-
-			if ((await serviceNameWhenStopped.count()) > 0) {
-				await expect(serviceNameWhenStopped.first()).toBeVisible();
-			} else {
-				await expect(emptyServicesState).toBeVisible();
-			}
+			const serviceTable = page.getByRole('table').filter({ visible: true });
+			const serviceNameWhenStopped = serviceTable
+				.getByText('nginx', {
+					exact: true
+				})
+				.filter({ visible: true });
+			const emptyServicesState = page
+				.getByText('No services found for this project', {
+					exact: true
+				})
+				.filter({ visible: true });
+			await expect(serviceNameWhenStopped.or(emptyServicesState).first()).toBeVisible();
 
 			await page.route('**/api/environments/*/projects/*/pull', async (route) => {
 				projectPullRequestCount += 1;
@@ -1262,11 +1261,19 @@ test.describe('Project Detail Page', () => {
 
 		try {
 			projectId = await createProjectViaUI(page, projectName, composeContent);
-			await page.getByRole('tab', { name: 'Services 1', exact: true }).click();
+			const servicesTab = page.getByRole('tab', { name: 'Services 1', exact: true });
+			await servicesTab.click();
+			await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('services');
+			await expect(servicesTab).toHaveAttribute('data-state', 'active');
 
-			await page.getByText('8081:80', { exact: true }).hover();
+			const port = page.getByText('8081:80', { exact: true }).filter({ visible: true }).first();
+			await expect(port).toBeVisible();
+			await port.hover();
 			await expect(
-				page.getByText('Published: 127.0.0.1:8081 → 80/tcp', { exact: true })
+				page
+					.getByText('Published: 127.0.0.1:8081 → 80/tcp', { exact: true })
+					.filter({ visible: true })
+					.first()
 			).toBeVisible();
 		} finally {
 			if (projectId) {

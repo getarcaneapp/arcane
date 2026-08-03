@@ -3,7 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json/jsontext"
-	json "encoding/json/v2"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"log/slog"
@@ -37,7 +37,7 @@ import (
 	"go.getarcane.app/streams/bus"
 	containerstats "go.getarcane.app/streams/stats"
 	"go.getarcane.app/sys/cgroup"
-	libupdater "go.getarcane.app/updater/pkg/labels"
+	"go.getarcane.app/updater/labels"
 )
 
 // containerScriptDefaultMaxOutputBytes bounds RunScript output when the
@@ -164,7 +164,7 @@ func shouldStartRedeployedContainerInternal(containerInfo container.InspectRespo
 
 func (s *ContainerService) pullRedeployImageInternal(ctx context.Context, dockerClient *client.Client, imageName, containerID, containerName string, user models.User) error {
 	settings := s.settingsService.GetSettingsConfig()
-	pullCtx, pullCancel := timeouts.WithTimeout(ctx, settings.DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull)
+	pullCtx, pullCancel := context.WithTimeout(ctx, timeouts.GetDuration(settings.DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull))
 	defer pullCancel()
 
 	pullOptions, authErr := s.imageService.getPullOptionsWithAuth(ctx, imageName, nil)
@@ -460,9 +460,9 @@ func (s *ContainerService) tryRedeployViaComposeProjectInternal(ctx context.Cont
 	if s.projectService == nil || containerInfo.Config == nil {
 		return "", false, nil
 	}
-	labels := containerInfo.Config.Labels
-	projectName := dockerutils.ComposeProjectLabel(labels)
-	serviceName := dockerutils.ComposeServiceLabel(labels)
+	containerLabels := containerInfo.Config.Labels
+	projectName := dockerutils.ComposeProjectLabel(containerLabels)
+	serviceName := dockerutils.ComposeServiceLabel(containerLabels)
 	if projectName == "" || serviceName == "" {
 		return "", false, nil
 	}
@@ -597,7 +597,7 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 	apiVersion := libarcane.DetectDockerAPIVersion(ctx, dockerClient)
 
 	currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
-	if libupdater.ShouldDisableArcaneServerRedeploy(containerInfo.Config.Labels, containerInfo.ID, currentContainerID, currentContainerErr) {
+	if labels.ShouldDisableArcaneServerRedeploy(containerInfo.Config.Labels, containerInfo.ID, currentContainerID, currentContainerErr) {
 		err = errors.New("arcane cannot redeploy itself; use the system upgrade flow (Settings -> Updates) instead")
 		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", err, models.JSON{
 			"action": "redeploy",
@@ -730,7 +730,7 @@ func (s *ContainerService) GetContainerDetails(ctx context.Context, id string) (
 
 	details := containertypes.NewDetails(containerInspect)
 	currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
-	details.RedeployDisabled = libupdater.ShouldDisableArcaneServerRedeploy(details.Labels, details.ID, currentContainerID, currentContainerErr)
+	details.RedeployDisabled = labels.ShouldDisableArcaneServerRedeploy(details.Labels, details.ID, currentContainerID, currentContainerErr)
 	s.applyContainerDetailsIconInternal(ctx, &details)
 
 	return details, nil
@@ -823,7 +823,7 @@ func (s *ContainerService) CreateContainer(ctx context.Context, config *containe
 		}
 
 		settings := s.settingsService.GetSettingsConfig()
-		pullCtx, pullCancel := timeouts.WithTimeout(ctx, settings.DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull)
+		pullCtx, pullCancel := context.WithTimeout(ctx, timeouts.GetDuration(settings.DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull))
 		defer pullCancel()
 
 		reader, pullErr := dockerClient.ImagePull(pullCtx, config.Image, pullOptions)
@@ -1216,7 +1216,7 @@ func (s *ContainerService) buildContainerSummaries(containers []container.Summar
 		if info, exists := updateInfoMap[dc.ImageID]; exists {
 			summary.UpdateInfo = info
 		}
-		summary.RedeployDisabled = libupdater.ShouldDisableArcaneServerRedeploy(summary.Labels, summary.ID, currentContainerID, currentContainerErr)
+		summary.RedeployDisabled = labels.ShouldDisableArcaneServerRedeploy(summary.Labels, summary.ID, currentContainerID, currentContainerErr)
 		items = append(items, summary)
 	}
 	return items
@@ -1292,7 +1292,7 @@ func (s *ContainerService) getCachedProjectIconMetadataInternal(ctx context.Cont
 	meta := projects.ArcaneComposeMetadata{ServiceIconSets: map[string]projects.IconSet{}}
 	proj, err := s.projectService.GetProjectByComposeName(ctx, projectName)
 	if err == nil && proj != nil {
-		meta = s.projectService.getProjectMetadataForProject(ctx, *proj)
+		meta = s.projectService.getProjectMetadataForProject(ctx, *proj, nil)
 	}
 	if s.iconMetaCache != nil {
 		s.iconMetaCache.Set(projectName, meta)

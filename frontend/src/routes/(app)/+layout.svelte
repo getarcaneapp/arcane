@@ -12,6 +12,7 @@
 	import { getEffectiveLandingPage, getEffectiveNavigationSettings } from '#lib/utils/navigation';
 	import { browser } from '$app/env';
 	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import { environmentStatusStore } from '#lib/stores/environment-status.store.svelte';
 	import { navigationItems, getManagementItems, filterByPermissions, type NavigationItem } from '#lib/config/navigation-config';
 	import { isEditableTarget, matchesShortcutEvent } from '#lib/utils/navigation';
 	import { cn } from '#lib/utils';
@@ -47,6 +48,17 @@
 	const shortcutItems = $derived.by(() => {
 		const items: NavigationItem[] = [...managementItems, ...resourceItems, ...settingsShortcutItems];
 		return flattenNavigationItems(items).filter((item) => item.shortcut?.length);
+	});
+
+	// Environment liveness is pushed for as long as the app shell is mounted, so
+	// every surface that reads environmentStore — the board, the environments
+	// table, the switcher — sees an agent reconnect without a page load.
+	$effect(() => {
+		if (!user) {
+			return;
+		}
+		void environmentStatusStore.start();
+		return () => environmentStatusStore.stop();
 	});
 
 	$effect(() => {

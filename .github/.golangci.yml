@@ -5,6 +5,7 @@ run:
 linters:
   default: none
   enable:
+    - shimbad
     - arangolint
     - asasalint
     - asciicheck
@@ -88,12 +89,16 @@ linters:
     - whitespace
     - zerologlint
   settings:
+    custom:
+      shimbad:
+        type: module
+        description: Detects suspicious Go function implementations.
+        original-url: https://go.ofkm.dev/shimbad
     forbidigo:
       forbid:
         - pattern: ^errors\.(Wrap|Wrapf|WithStack)$
           msg: use WrapIf, WrapIff, or WithStackIf so an existing stack is preserved
     gomoddirectives:
-      # replace directives (=> ../cli, => ../types). Allow them.
       replace-local: true
     importas:
       alias:
@@ -107,21 +112,15 @@ linters:
       - legacy
       - std-error-handling
     rules:
-      # Initialism naming (ApiKey -> APIKey, AppUrl -> AppURL, etc.) is intentional,
-      # widespread, and API-surface; track separately rather than churn it here.
       - linters:
           - revive
         text: "var-naming:"
-      # Unused params are required by interface/callback/gorm-hook signatures.
       - linters:
           - revive
         text: "unused-parameter:"
-      # Package-prefixed exported names (swarm.SwarmInfo, port.PortMapping, etc.) are
-      # an intentional, monorepo-wide convention; renaming is a large public-API change.
       - linters:
           - revive
         text: "exported:"
-      # The cli command package is a CLI entrypoint; printing to stdout is correct.
       - linters:
           - forbidigo
         path: cli/
@@ -130,6 +129,9 @@ linters:
       - third_party$
       - builtin$
       - examples$
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
 formatters:
   enable:
     - gofmt

@@ -31,6 +31,10 @@ func TestAccessSurfaceRegistryDefinesSettingsCustomizeAndLandingSemantics(t *tes
 	require.Empty(t, jobSchedule.URL)
 	require.ElementsMatch(t, []string{authz.PermJobsManage}, jobSchedule.Permissions)
 
+	notifications := requireAccessSurfaceInternal(t, "settings.category.notifications")
+	require.Equal(t, authz.AccessScopeModeGlobalOnly, notifications.ScopeMode)
+	require.ElementsMatch(t, []string{authz.PermNotificationsManage}, notifications.Permissions)
+
 	templates := requireAccessSurfaceInternal(t, "customize.category.templates")
 	require.Equal(t, authz.AccessSurfaceKindCustomizeCategory, templates.Kind)
 	require.Equal(t, authz.AccessScopeModeGlobalOnly, templates.ScopeMode)
@@ -88,6 +92,12 @@ func TestCanAccessSurfaceEvaluatesScopeModesAndLandingChildren(t *testing.T) {
 	require.True(t, authz.CanAccessSurface(jobsPS, "settings.category.jobschedule", "env-a"))
 	require.True(t, authz.CanAccessSurface(jobsPS, "landing.settings", "env-a"))
 	require.False(t, authz.CanAccessSurface(jobsPS, "settings.category.jobschedule", "env-b"))
+
+	notificationPS := authz.NewPermissionSet()
+	notificationPS.AddEnv("env-a", authz.PermNotificationsManage)
+	require.False(t, authz.CanAccessSurface(notificationPS, "settings.category.notifications", "env-a"))
+	notificationPS.AddGlobal(authz.PermNotificationsManage)
+	require.True(t, authz.CanAccessSurface(notificationPS, "settings.category.notifications", "env-a"))
 
 	customizePS := authz.NewPermissionSet()
 	customizePS.AddGlobal(authz.PermCustomizeManage)

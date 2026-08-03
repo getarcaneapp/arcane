@@ -2,10 +2,18 @@
 package di
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	arcanelogging "github.com/getarcaneapp/arcane/backend/v2/internal/logging"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler"
 	"go.uber.org/fx"
+)
+
+// ActorOptions provides the shared in-process actor runtime.
+var ActorOptions = fx.Options(
+	fx.Provide(actors.NewRuntime),
+	fx.Provide(provideAdmissionGateInternal),
+	fx.Provide(provideTunnelRegistryInternal),
 )
 
 // ServiceOptions provides the backend service graph.
@@ -18,7 +26,7 @@ var ServiceOptions = fx.Options(
 		// Services constructed directly through their public constructors.
 		services.NewEventService,
 		services.NewActivityService,
-		services.NewSettingsService,
+		provideSettingsServiceInternal,
 		services.NewKVService,
 		services.NewJobService,
 		services.NewSettingsSearchService,
@@ -73,7 +81,7 @@ var JobOptions = fx.Options(
 		scheduler.NewAutoUpdateJob,
 		scheduler.NewImageUpdateWatcher,
 		scheduler.NewDockerClientRefreshJob,
-		provideAnalyticsJobInternal,
+		scheduler.NewAnalyticsJob,
 		scheduler.NewEventCleanupJob,
 		scheduler.NewPruningVolumeHelperJob,
 		scheduler.NewExpiredSessionsCleanupJob,

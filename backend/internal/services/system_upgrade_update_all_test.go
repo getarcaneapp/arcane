@@ -8,7 +8,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/types/v2/version"
-	sqlite "github.com/libtnb/sqlite"
+	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
@@ -77,12 +77,13 @@ func TestUpdateAllResolveResumeAction(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := resolveResumeActionInternal(tt.job, tt.currentVersion, tt.currentDigest, now)
-			if got.markStale != tt.wantStale {
-				t.Fatalf("markStale = %v, want %v", got.markStale, tt.wantStale)
-			}
-			if !tt.wantStale && got.managerSucceeded != tt.wantManagerOK {
-				t.Fatalf("managerSucceeded = %v, want %v", got.managerSucceeded, tt.wantManagerOK)
-			}
+
+			require.Equal(t, tt.wantStale, got.markStale,
+				"markStale = %v, want %v", got.markStale, tt.wantStale)
+
+			require.False(t, !tt.wantStale && got.managerSucceeded != tt.wantManagerOK,
+				"managerSucceeded = %v, want %v", got.managerSucceeded, tt.wantManagerOK)
+
 		})
 	}
 }
@@ -103,31 +104,35 @@ func TestUpsertPendingResult(t *testing.T) {
 			{EnvironmentID: "abc", EnvironmentName: "palladium", Status: models.EnvironmentUpdateResultStatusPending},
 		},
 	}
+	{
 
-	// A seeded environment resolves to its existing row without appending.
-	if idx := upsertPendingResultInternal(job, "abc", "palladium"); idx != 1 {
-		t.Fatalf("existing env index = %d, want 1", idx)
+		// A seeded environment resolves to its existing row without appending.
+		idx := upsertPendingResultInternal(job, "abc", "palladium")
+		require.Equal(t, 1, idx,
+			"existing env index = %d, want 1", idx)
 	}
-	if len(job.Results) != 2 {
-		t.Fatalf("results grew to %d, want 2", len(job.Results))
-	}
+
+	require.Len(t, job.Results, 2,
+		"results grew to %d, want 2", len(job.Results))
 
 	// A missing environment (seeding raced or a new env was registered) appends a
 	// fresh pending row and returns the new index.
 	idx := upsertPendingResultInternal(job, "xyz", "oracle-cloud")
-	if idx != 2 {
-		t.Fatalf("new env index = %d, want 2", idx)
-	}
-	if len(job.Results) != 3 {
-		t.Fatalf("results = %d, want 3", len(job.Results))
-	}
+
+	require.Equal(t, 2, idx,
+		"new env index = %d, want 2", idx)
+
+	require.Len(t, job.Results, 3,
+		"results = %d, want 3", len(job.Results))
+
 	got := job.Results[2]
-	if got.EnvironmentID != "xyz" || got.EnvironmentName != "oracle-cloud" {
-		t.Fatalf("appended row = %+v, want id=xyz name=oracle-cloud", got)
-	}
-	if got.Status != models.EnvironmentUpdateResultStatusPending {
-		t.Fatalf("appended row status = %q, want pending", got.Status)
-	}
+
+	require.False(t, got.EnvironmentID != "xyz" || got.EnvironmentName != "oracle-cloud",
+		"appended row = %+v, want id=xyz name=oracle-cloud", got)
+
+	require.Equal(t, models.EnvironmentUpdateResultStatusPending, got.Status,
+		"appended row status = %q, want pending", got.Status)
+
 }
 
 func TestUpdateAllFailedJobMarksUpdatingResultsFailed(t *testing.T) {
@@ -174,6 +179,110 @@ func TestUpdateAllFailedJobMarksUpdatingResultsFailed(t *testing.T) {
 
 	require.Equal(t, models.EnvironmentUpdateResultStatusFailed, got.Results[3].Status)
 	require.Equal(t, "already failed", got.Results[3].Error)
+}
+
+// An up-to-date manager never restarts: its upgrader pulls, finds the image already
+// running and skips the recreate. The pending_restart job must then be finalized in
+// place, because no next boot is coming to do it.
+func TestUpdateAllFinalizesUpToDateManagerWithoutRestart(t *testing.T) {
+	ctx := context.Background()
+	gormDB, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+
+	db := &database.DB{DB: gormDB}
+	require.NoError(t, db.AutoMigrate(&models.EnvironmentUpdateJob{}, &models.Event{}))
+
+	svc := NewSystemUpgradeService(db, nil, nil, NewEventService(db, nil, nil), nil)
+	job := &models.EnvironmentUpdateJob{
+		Status:                models.EnvironmentUpdateJobStatusPendingRestart,
+		UserID:                "user-1",
+		Username:              "arcane",
+		ManagerVersionAtStart: "v1.0.0",
+		Results: models.EnvironmentUpdateResults{
+			{EnvironmentID: "0", EnvironmentName: "Local", Status: models.EnvironmentUpdateResultStatusUpdating, FromVersion: "v1.0.0"},
+			{EnvironmentID: "remote-1", EnvironmentName: "palladium", Status: models.EnvironmentUpdateResultStatusUpToDate},
+		},
+	}
+	require.NoError(t, db.WithContext(ctx).Create(job).Error)
+
+	svc.recordManagerResultInternal(job, models.EnvironmentUpdateResultStatusUpToDate, "v1.0.0")
+	svc.finalizeUpdateAllJobInternal(ctx, job)
+
+	var got models.EnvironmentUpdateJob
+	require.NoError(t, db.WithContext(ctx).First(&got, "id = ?", job.ID).Error)
+
+	// Nothing is left waiting on a restart that will never happen.
+	require.Equal(t, models.EnvironmentUpdateJobStatusCompleted, got.Status)
+	require.NotNil(t, got.CompletedAt)
+	require.Nil(t, got.Error)
+
+	require.Equal(t, "0", got.Results[0].EnvironmentID)
+	require.Equal(t, models.EnvironmentUpdateResultStatusUpToDate, got.Results[0].Status)
+	require.Equal(t, "v1.0.0", got.Results[0].ToVersion)
+	require.Empty(t, got.Results[0].Error)
+	require.Equal(t, models.EnvironmentUpdateResultStatusUpToDate, got.Results[1].Status)
+}
+
+// The up-to-date short-circuit must only fire when the version check is conclusive:
+// an agent that could not resolve a newest version or digest keeps the full
+// trigger-and-confirm flow rather than being reported as already current.
+func TestAgentAlreadyOnTarget(t *testing.T) {
+	tests := []struct {
+		name string
+		info version.Info
+		want bool
+	}{
+		{
+			name: "on newest version",
+			info: version.Info{CurrentVersion: "1.2.3", NewestVersion: "v1.2.3"},
+			want: true,
+		},
+		{
+			name: "update available",
+			info: version.Info{CurrentVersion: "1.2.3", NewestVersion: "v1.3.0", UpdateAvailable: true},
+			want: false,
+		},
+		{
+			name: "on newest digest",
+			info: version.Info{CurrentDigest: "sha256:abc", NewestDigest: "sha256:abc"},
+			want: true,
+		},
+		{
+			// A mutable tag rebuilt at the same version: the semver track reports no
+			// update, but the differing digest means the pull really will replace the
+			// image, so this must not be treated as already current.
+			name: "same version, rebuilt digest",
+			info: version.Info{
+				CurrentVersion: "1.2.3",
+				NewestVersion:  "v1.2.3",
+				CurrentDigest:  "sha256:old",
+				NewestDigest:   "sha256:new",
+			},
+			want: false,
+		},
+		{
+			// Only one digest resolved, so a rebuild cannot be ruled out: the matching
+			// version tag must not be enough on its own.
+			name: "same version, remote digest unresolved",
+			info: version.Info{
+				CurrentVersion: "1.2.3",
+				NewestVersion:  "v1.2.3",
+				CurrentDigest:  "sha256:running",
+			},
+			want: false,
+		},
+		{
+			name: "inconclusive check resolves nothing",
+			info: version.Info{CurrentVersion: "1.2.3"},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, agentAlreadyOnTargetInternal(&tt.info))
+		})
+	}
 }
 
 // With the manager-last ordering, a resumed pending_restart job means the agents

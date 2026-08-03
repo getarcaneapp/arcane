@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gorilla/websocket"
+	"github.com/coder/websocket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -22,9 +22,8 @@ func newTestWSPair(t *testing.T) (clientConn *websocket.Conn, serverConn *websoc
 	t.Helper()
 	serverReady := make(chan *websocket.Conn, 1)
 
-	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := upgrader.Upgrade(w, r, nil)
+		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {
 			return
 		}
@@ -32,17 +31,16 @@ func newTestWSPair(t *testing.T) (clientConn *websocket.Conn, serverConn *websoc
 	}))
 
 	url := "ws" + strings.TrimPrefix(server.URL, "http")
-	cc, resp, err := websocket.DefaultDialer.Dial(url, nil)
+	cc, _, err := websocket.Dial(t.Context(), url, nil)
 	require.NoError(t, err)
-	if resp != nil {
-		resp.Body.Close()
-	}
 
 	sc := <-serverReady
 
 	return cc, sc, func() {
-		cc.Close()
-		sc.Close()
+		_ = cc.CloseNow()
+		// The hub and the forwarders own the server side and may already have
+		// closed it, so close errors here are expected.
+		_ = sc.CloseNow()
 		server.Close()
 	}
 }
@@ -115,7 +113,7 @@ func TestHub_Broadcast(t *testing.T) {
 	case received := <-c.send:
 		assert.Equal(t, msg, received)
 	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for broadcast message")
+		require.FailNow(t, "timed out waiting for broadcast message")
 	}
 }
 
@@ -152,7 +150,7 @@ func TestHub_BroadcastToMultipleClients(t *testing.T) {
 		case received := <-c.send:
 			assert.Equal(t, msg, received, "client %d did not receive expected message", i)
 		case <-time.After(time.Second):
-			t.Fatalf("client %d timed out waiting for broadcast message", i)
+			require.FailNowf(t, "unexpected failure", "client %d timed out waiting for broadcast message", i)
 		}
 	}
 }
@@ -302,7 +300,7 @@ func TestHub_ContextCancellation(t *testing.T) {
 	case <-done:
 		// Hub exited as expected
 	case <-time.After(2 * time.Second):
-		t.Fatal("Hub.Run did not exit after context cancellation")
+		require.FailNow(t, "Hub.Run did not exit after context cancellation")
 	}
 
 	// After closeAll, clients map should be empty
@@ -337,11 +335,9 @@ func TestHub_BroadcastOverloadAggregatesDropWarning(t *testing.T) {
 	const dropCount = 1000
 	var wg sync.WaitGroup
 	for range dropCount {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			h.Broadcast([]byte("overload"))
-		}()
+		})
 	}
 	wg.Wait()
 
@@ -377,7 +373,7 @@ func TestHub_ConcurrentOperations(t *testing.T) {
 	}, goroutines)
 	for i := range goroutines {
 		_, pairs[i].sc, pairs[i].cleanup = newTestWSPair(t)
-		defer pairs[i].cleanup()
+		t.Cleanup(pairs[i].cleanup)
 	}
 
 	for i := range goroutines {

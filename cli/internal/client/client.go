@@ -27,7 +27,6 @@ import (
 	"context"
 	"encoding/json"
 	stderrors "errors"
-	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -238,19 +237,6 @@ type APIResponse[T any] struct {
 	Success bool   `json:"success"`
 	Data    T      `json:"data"`
 	Error   string `json:"error,omitempty"`
-}
-
-// PaginatedResponse wraps paginated API responses.
-// It includes the list of items for the current page along with pagination
-// metadata including current page, page size, total items, and total pages.
-type PaginatedResponse[T any] struct {
-	Items      []T `json:"items"`
-	Pagination struct {
-		CurrentPage int   `json:"currentPage"`
-		PageSize    int   `json:"pageSize"`
-		TotalItems  int64 `json:"totalItems"`
-		TotalPages  int   `json:"totalPages"`
-	} `json:"pagination"`
 }
 
 // Request makes an HTTP request to the API with JSON body serialization.
@@ -573,11 +559,11 @@ func (c *Client) Delete(ctx context.Context, path string) (*http.Response, error
 	return c.Request(ctx, http.MethodDelete, path, nil)
 }
 
-// EnvPath returns a path prefixed with the environment.
-// It constructs an environment-scoped API path in the format:
-// /api/environments/{envID}{path}
-func (c *Client) EnvPath(path string) string {
-	return fmt.Sprintf("/api/environments/%s%s", c.envID, path)
+// DeleteWithBody makes a DELETE request to the specified path with a JSON body.
+// A handful of Arcane delete endpoints — project destroy, for one — take options
+// in the request body rather than as query parameters.
+func (c *Client) DeleteWithBody(ctx context.Context, path string, body any) (*http.Response, error) {
+	return c.Request(ctx, http.MethodDelete, path, body)
 }
 
 // DoJSON performs a request and decodes a standard API envelope into out.
@@ -602,11 +588,6 @@ func (c *Client) DoJSON(ctx context.Context, method, path string, body any, out 
 	return nil
 }
 
-// DoPaginated performs a request and decodes a paginated API envelope into out.
-func (c *Client) DoPaginated(ctx context.Context, method, path string, body any, out any) error {
-	return c.DoJSON(ctx, method, path, body, out)
-}
-
 // DoRaw performs a request and returns the response payload when status is 2xx.
 func (c *Client) DoRaw(ctx context.Context, method, path string, body any) ([]byte, error) {
 	resp, err := c.Request(ctx, method, path, body)
@@ -627,16 +608,11 @@ func (c *Client) DoRaw(ctx context.Context, method, path string, body any) ([]by
 	return b, nil
 }
 
-// DecodeResponse decodes an API response into the given type.
-// It reads the response body, unmarshals it as JSON, and returns the typed
-// result. If the response indicates failure (Success=false) with a 4xx/5xx
-// status code, an error is returned with the error message from the API.
-// Note: This function closes the response body.
-func DecodeResponse[T any](resp *http.Response) (*APIResponse[T], error) {
-	return DecodeResponseStrict[T](resp)
-}
-
-// DecodeResponseStrict decodes a response envelope and enforces HTTP and API success.
+// DecodeResponseStrict decodes an API response into the given type and enforces
+// HTTP and API success. It reads the response body, unmarshals it as JSON, and
+// returns the typed result. If the response indicates failure (Success=false) or
+// carries a non-2xx status code, an error is returned with the message from the
+// API. Note: This function closes the response body.
 func DecodeResponseStrict[T any](resp *http.Response) (*APIResponse[T], error) {
 	defer func() { _ = resp.Body.Close() }()
 
@@ -660,36 +636,6 @@ func DecodeResponseStrict[T any](resp *http.Response) (*APIResponse[T], error) {
 			return &result, errors.Errorf("API error: %s", result.Error)
 		}
 		return &result, errors.New("API error: request was not successful")
-	}
-
-	return &result, nil
-}
-
-// DecodePaginatedResponse decodes a paginated API response.
-// It reads the response body and unmarshals it into a PaginatedResponse
-// containing the items array and pagination metadata.
-// Note: This function closes the response body.
-func DecodePaginatedResponse[T any](resp *http.Response) (*PaginatedResponse[T], error) {
-	return DecodePaginatedResponseStrict[T](resp)
-}
-
-// DecodePaginatedResponseStrict decodes a paginated envelope and enforces HTTP and API success.
-func DecodePaginatedResponseStrict[T any](resp *http.Response) (*PaginatedResponse[T], error) {
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
-		return nil, errors.Errorf("request failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, errors.WrapIf(err, "failed to read response body")
-	}
-
-	var result PaginatedResponse[T]
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, errors.WrapIff(err, "failed to decode response (body: %s)", string(body))
 	}
 
 	return &result, nil

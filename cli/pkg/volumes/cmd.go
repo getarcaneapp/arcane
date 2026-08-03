@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"emperror.dev/errors"
@@ -22,12 +23,14 @@ import (
 )
 
 var (
-	limitFlag      int
-	startFlag      int
-	forceFlag      bool
-	jsonOutput     bool
-	inUseOnlyFlag  bool
-	unusedOnlyFlag bool
+	limitFlag           int
+	startFlag           int
+	allFlag             bool
+	forceFlag           bool
+	jsonOutput          bool
+	inUseOnlyFlag       bool
+	unusedOnlyFlag      bool
+	includeInternalFlag bool
 )
 
 var (
@@ -60,10 +63,31 @@ var listCmd = &cobra.Command{
 			return err
 		}
 
-		path := types.Endpoints.Volumes(c.EnvID())
-		path, err = cmdutil.ApplyPaginationParams(cmd, path, "volumes", "limit", limitFlag, 20, "start", startFlag)
+		path, err := cmdutil.ApplyPaginationParams(cmd, types.Endpoints.Volumes(c.EnvID()), cmdutil.ListParams{
+			Resource:        "volumes",
+			Limit:           limitFlag,
+			FallbackDefault: 20,
+			Start:           startFlag,
+			All:             allFlag,
+		})
 		if err != nil {
 			return errors.WrapIf(err, "failed to build pagination query")
+		}
+
+		// Filter server-side so that pagination and the reported totals apply to
+		// the matching set rather than to whichever page happened to be fetched.
+		query := url.Values{}
+		if inUseOnlyFlag {
+			query.Set("inUse", "true")
+		}
+		if unusedOnlyFlag {
+			query.Set("inUse", "false")
+		}
+		if includeInternalFlag {
+			query.Set("includeInternal", "true")
+		}
+		if len(query) > 0 {
+			path = cmdutil.AppendQuery(path, query)
 		}
 
 		resp, err := c.Get(cmd.Context(), path)
@@ -72,20 +96,18 @@ var listCmd = &cobra.Command{
 		}
 		defer func() { _ = resp.Body.Close() }()
 
-		var result base.Paginated[volume.Volume]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+		body, err := cmdutil.ReadJSONBody(resp)
+		if err != nil {
+			return errors.WrapIf(err, "failed to list volumes")
 		}
-		result.Data = filterVolumesByUsage(result.Data, inUseOnlyFlag, unusedOnlyFlag)
-		result.Pagination.TotalItems = int64(len(result.Data))
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintRawJSON(body)
+		}
+
+		var result base.Paginated[volume.Volume]
+		if err := json.Unmarshal(body, &result); err != nil {
+			return errors.WrapIf(err, "failed to parse response")
 		}
 
 		headers := []string{"NAME", "DRIVER", "MOUNTPOINT", "CREATED", "IN USE"}
@@ -144,7 +166,7 @@ var getCmd = &cobra.Command{
 		output.KeyValue("Created", resolved.CreatedAt)
 		output.KeyValue("In Use", resolved.InUse)
 		if resolved.Size > 0 {
-			output.KeyValue("Size (bytes)", resolved.Size)
+			output.KeyValue("Size", output.Bytes(resolved.Size))
 		}
 		return nil
 	},
@@ -179,7 +201,11 @@ var deleteCmd = &cobra.Command{
 			}
 		}
 
-		resp, err := c.Delete(cmd.Context(), types.Endpoints.Volume(c.EnvID(), resolved.Name))
+		deletePath := cmdutil.AppendQuery(
+			types.Endpoints.Volume(c.EnvID(), resolved.Name),
+			url.Values{"force": []string{strconv.FormatBool(forceFlag)}},
+		)
+		resp, err := c.Delete(cmd.Context(), deletePath)
 		if err != nil {
 			return errors.WrapIf(err, "failed to delete volume")
 		}
@@ -238,8 +264,8 @@ var pruneCmd = &cobra.Command{
 		}
 
 		var result base.ApiResponse[any]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if jsonOutput {
@@ -290,8 +316,8 @@ func runVolumeDataCommand(cmd *cobra.Command, cfg volumeDataCommandConfig) error
 	defer func() { _ = resp.Body.Close() }()
 
 	var result base.ApiResponse[any]
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return errors.WrapIf(err, "failed to parse response")
+	if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+		return err
 	}
 
 	resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
@@ -336,8 +362,8 @@ var usageCmd = &cobra.Command{
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[any]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if jsonOutput {
@@ -405,8 +431,8 @@ var createCmd = &cobra.Command{
 		}
 
 		var result base.ApiResponse[volume.Volume]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if jsonOutput {
@@ -438,16 +464,18 @@ func init() {
 
 	// List command flags
 	listCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of volumes to show")
-	listCmd.Flags().IntVar(&startFlag, "start", 0, "Offset for pagination")
+	listCmd.Flags().IntVar(&startFlag, "start", 0, cmdutil.StartFlagUsage)
+	listCmd.Flags().BoolVarP(&allFlag, "all", "a", false, cmdutil.AllFlagUsage)
 	listCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	listCmd.Flags().BoolVar(&inUseOnlyFlag, "inuse", false, "Only show volumes currently in use")
 	listCmd.Flags().BoolVar(&unusedOnlyFlag, "unused", false, "Only show volumes not in use")
+	listCmd.Flags().BoolVar(&includeInternalFlag, "include-internal", false, "Include Arcane-internal volumes")
 
 	// Get command flags
 	getCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 
 	// Delete command flags
-	deleteCmd.Flags().BoolVarP(&forceFlag, "force", "f", false, "Force deletion without confirmation")
+	deleteCmd.Flags().BoolVarP(&forceFlag, "force", "f", false, "Force removal of a volume that is in use and skip the confirmation prompt")
 	deleteCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 
 	// Prune command flags
@@ -497,7 +525,7 @@ func resolveVolume(ctx context.Context, c *client.Client, identifier string, all
 		return nil, errors.Errorf("failed to resolve volume %q (status %d): %s", trimmed, resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
-	searchPath := fmt.Sprintf("%s?search=%s&limit=%d", types.Endpoints.Volumes(c.EnvID()), url.QueryEscape(trimmed), 200)
+	searchPath := fmt.Sprintf("%s?search=%s&limit=%d", types.Endpoints.Volumes(c.EnvID()), url.QueryEscape(trimmed), cmdutil.ShowAllLimit)
 	searchResp, err := c.Get(ctx, searchPath)
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to search volumes")
@@ -568,21 +596,4 @@ func volumeMatches(item volume.Volume, identifierLower, original string) bool {
 		return true
 	}
 	return false
-}
-
-func filterVolumesByUsage(items []volume.Volume, inUseOnly, unusedOnly bool) []volume.Volume {
-	if !inUseOnly && !unusedOnly {
-		return items
-	}
-	filtered := make([]volume.Volume, 0, len(items))
-	for _, item := range items {
-		if inUseOnly && !item.InUse {
-			continue
-		}
-		if unusedOnly && item.InUse {
-			continue
-		}
-		filtered = append(filtered, item)
-	}
-	return filtered
 }

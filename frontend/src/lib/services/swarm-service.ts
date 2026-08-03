@@ -38,9 +38,7 @@ import type {
 	SwarmConfigSummary,
 	SwarmSecretSummary,
 	SwarmConfigCreateRequest,
-	SwarmConfigUpdateRequest,
 	SwarmSecretCreateRequest,
-	SwarmSecretUpdateRequest,
 	SwarmJoinCandidate,
 	SwarmJoinEnvironmentsRequest,
 	SwarmJoinEnvironmentsResponse
@@ -101,11 +99,6 @@ class SwarmService extends BaseAPIService {
 		const params = transformPaginationParams(options);
 		const res = await this.api.get(`/environments/${envId}/swarm/nodes`, { params });
 		return res.data;
-	}
-
-	async getNode(nodeId: string): Promise<SwarmNodeSummary> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.handleResponse(this.api.get(`/environments/${envId}/swarm/nodes/${nodeId}`));
 	}
 
 	async getNodeAgentDeployment(nodeId: string, rotate = false): Promise<SwarmNodeAgentDeployment> {
@@ -283,19 +276,9 @@ class SwarmService extends BaseAPIService {
 		return this.handleResponse(this.api.get(`/environments/${envId}/swarm/configs`));
 	}
 
-	async getConfig(configId: string): Promise<SwarmConfigSummary> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.handleResponse(this.api.get(`/environments/${envId}/swarm/configs/${configId}`));
-	}
-
 	async createConfig(request: SwarmConfigCreateRequest): Promise<SwarmConfigSummary> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		return this.handleResponse(this.api.post(`/environments/${envId}/swarm/configs`, request));
-	}
-
-	async updateConfig(configId: string, request: SwarmConfigUpdateRequest): Promise<SwarmConfigSummary> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.handleResponse(this.api.put(`/environments/${envId}/swarm/configs/${configId}`, request));
 	}
 
 	async removeConfig(configId: string): Promise<void> {
@@ -308,19 +291,9 @@ class SwarmService extends BaseAPIService {
 		return this.handleResponse(this.api.get(`/environments/${envId}/swarm/secrets`));
 	}
 
-	async getSecret(secretId: string): Promise<SwarmSecretSummary> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.handleResponse(this.api.get(`/environments/${envId}/swarm/secrets/${secretId}`));
-	}
-
 	async createSecret(request: SwarmSecretCreateRequest): Promise<SwarmSecretSummary> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		return this.handleResponse(this.api.post(`/environments/${envId}/swarm/secrets`, request));
-	}
-
-	async updateSecret(secretId: string, request: SwarmSecretUpdateRequest): Promise<SwarmSecretSummary> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.handleResponse(this.api.put(`/environments/${envId}/swarm/secrets/${secretId}`, request));
 	}
 
 	async removeSecret(secretId: string): Promise<void> {

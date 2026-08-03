@@ -10,7 +10,7 @@ import (
 
 	"emperror.dev/errors"
 
-	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge/proto/tunnel/v1"
+	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/connectivity"
@@ -72,11 +72,9 @@ func (c *TunnelClient) connectAndServeGRPC(ctx context.Context) error {
 		return errors.WrapIf(err, "manager gRPC endpoint is not ready")
 	}
 
-	streamCtx, streamCancel := context.WithCancel(metadata.NewOutgoingContext(ctx, metadata.Pairs(
-		strings.ToLower(HeaderAgentToken), c.cfg.AgentToken,
-		strings.ToLower(HeaderAPIKey), c.cfg.AgentToken,
-		strings.ToLower(HeaderAuthorization), "Bearer "+c.cfg.AgentToken,
-	)))
+	// metadata.New lowercases the keys itself.
+	streamCtx, streamCancel := context.WithCancel(metadata.NewOutgoingContext(ctx,
+		metadata.New(agentAuthCredentialsInternal(c.cfg.AgentToken))))
 	defer streamCancel()
 
 	method := c.grpcConnectMethodInternal()
@@ -85,30 +83,17 @@ func (c *TunnelClient) connectAndServeGRPC(ctx context.Context) error {
 		return errors.WrapIf(err, "failed to open tunnel stream")
 	}
 
-	tunnelConn := NewGRPCAgentTunnelConn(stream, streamCancel)
-	c.setConn(tunnelConn)
-	setActiveAgentTunnelConn(tunnelConn)
-	defer clearActiveAgentTunnelConn(tunnelConn)
-	if err := tunnelConn.Send(c.registerMessageInternal()); err != nil {
-		return errors.WrapIf(err, "failed to send register message")
-	}
-
-	registerMsg, err := c.awaitGRPCRegistrationInternal(ctx)
-	if err != nil {
+	if err := c.serveTunnelSessionInternal(ctx, NewGRPCAgentTunnelConn(stream, streamCancel), managerAddr); err != nil {
+		if errors.Is(err, errTunnelRegistrationTimeout) {
+			// The channel already reached Ready, so TCP/TLS works but gRPC
+			// framing was never answered end to end.
+			return errors.WrapIf(err,
+				"manager accepted the TCP/TLS connection but never answered gRPC tunnel registration; "+
+					"if a reverse proxy (Traefik/Pangolin/Nginx) fronts the manager, it is likely not forwarding gRPC (HTTP/2 with trailers) on /api/tunnel/connect")
+		}
 		return err
 	}
-
-	slog.InfoContext(ctx, "Edge gRPC tunnel connected to manager",
-		"manager_addr", c.managerGRPCAddr,
-		"environment_id", registerMsg.EnvironmentID,
-	)
-	c.markTransportConnectedInternal(EdgeTransportGRPC)
-
-	connCtx, connCancel := context.WithCancel(ctx)
-	defer connCancel()
-	go c.heartbeatLoop(connCtx)
-
-	return c.messageLoop(connCtx)
+	return nil
 }
 
 func (c *TunnelClient) waitForGRPCReadyInternal(ctx context.Context, conn *grpc.ClientConn) error {
@@ -116,7 +101,7 @@ func (c *TunnelClient) waitForGRPCReadyInternal(ctx context.Context, conn *grpc.
 		return errors.New("manager gRPC connection is not initialized")
 	}
 
-	timeout := c.grpcRegistrationTimeoutInternal()
+	timeout := c.registrationTimeoutInternal()
 	readyCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -153,10 +138,6 @@ func (c *TunnelClient) openTunnelConnectStreamInternal(
 
 func (c *TunnelClient) grpcConnectMethodInternal() string {
 	return "/api/tunnel/connect"
-}
-
-func (c *TunnelClient) awaitGRPCRegistrationInternal(ctx context.Context) (*TunnelMessage, error) {
-	return c.awaitRegistrationInternal(ctx)
 }
 
 func (c *TunnelClient) useTLSForManagerGRPC() bool {

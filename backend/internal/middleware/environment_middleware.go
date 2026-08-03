@@ -3,7 +3,6 @@ package middleware
 import (
 	"github.com/samber/mo"
 
-	"bytes"
 	"context"
 	"io"
 	"log/slog"
@@ -20,7 +19,6 @@ import (
 	wsutil "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
 	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	httputils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
-	"github.com/gorilla/websocket"
 	"github.com/labstack/echo/v5"
 )
 
@@ -67,11 +65,11 @@ type EnvironmentMiddleware struct {
 	httpClient    *http.Client
 	registry      *edge.TunnelRegistry
 	matcher       *authz.PermissionMatcher
-}
-
-// NewEnvProxyMiddlewareWithParam creates middleware that proxies requests to remote environments.
-func NewEnvProxyMiddlewareWithParam(localID, paramName string, resolver EnvResolver, authValidator AuthValidator, matcher *authz.PermissionMatcher) echo.MiddlewareFunc {
-	return NewEnvProxyMiddlewareWithParamAndRegistry(localID, paramName, resolver, authValidator, matcher, edge.GetRegistry())
+	// checkOrigin is the same Origin validator the local WebSocket endpoints
+	// use. Proxied upgrades previously accepted any Origin, so a cross-origin
+	// page could ride the caller's session cookie into a remote environment's
+	// terminal or log stream.
+	checkOrigin func(*http.Request) bool
 }
 
 // NewEnvProxyMiddlewareWithParamAndRegistry creates middleware with an injected tunnel registry.
@@ -82,6 +80,7 @@ func NewEnvProxyMiddlewareWithParamAndRegistry(
 	authValidator AuthValidator,
 	matcher *authz.PermissionMatcher,
 	registry *edge.TunnelRegistry,
+	checkOrigin func(*http.Request) bool,
 ) echo.MiddlewareFunc {
 	if registry == nil {
 		registry = edge.NewTunnelRegistry()
@@ -95,6 +94,7 @@ func NewEnvProxyMiddlewareWithParamAndRegistry(
 		httpClient:    &http.Client{Timeout: proxyTimeout},
 		registry:      registry,
 		matcher:       matcher,
+		checkOrigin:   checkOrigin,
 	}
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
@@ -178,7 +178,7 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 
 	target := m.buildTargetURL(c, envID, apiURL)
 
-	if m.isWebSocketUpgrade(c) {
+	if httputils.IsWebSocketUpgradeRequest(c.Request()) {
 		return m.proxyWebSocket(c, target, accessToken, envID)
 	}
 	return m.proxyHTTP(c, target, accessToken)
@@ -299,8 +299,8 @@ func contextUsernameInternal(c *echo.Context) string {
 
 func (m *EnvironmentMiddleware) proxyThroughTunnelInternal(c *echo.Context, tunnel *edge.AgentTunnel, envID string) error {
 	proxyPath := m.buildProxyPath(c, envID)
-	if m.isWebSocketUpgrade(c) {
-		return edge.ProxyWebSocketRequest(c, tunnel, proxyPath)
+	if httputils.IsWebSocketUpgradeRequest(c.Request()) {
+		return edge.ProxyWebSocketRequest(c, tunnel, proxyPath, m.checkOrigin)
 	}
 	return edge.ProxyHTTPRequest(c, tunnel, proxyPath)
 }
@@ -410,11 +410,6 @@ func (m *EnvironmentMiddleware) buildProxyPath(c *echo.Context, envID string) st
 	return path.Join(apiEnvironmentsPrefix, m.localID) + m.buildResourceSuffix(c.Request().URL.Path, envID)
 }
 
-// isWebSocketUpgrade checks if this is a WebSocket upgrade request.
-func (m *EnvironmentMiddleware) isWebSocketUpgrade(c *echo.Context) bool {
-	return websocket.IsWebSocketUpgrade(c.Request())
-}
-
 func isEdgeEnvironmentURLInternal(apiURL string) bool {
 	normalized := strings.ToLower(strings.TrimSpace(apiURL))
 	return strings.HasPrefix(normalized, "edge://")
@@ -478,7 +473,7 @@ func (m *EnvironmentMiddleware) proxyWebSocket(c *echo.Context, target string, a
 	wsTarget := edge.HTTPToWebSocketURL(target)
 	headers := edge.BuildWebSocketHeaders(c, accessToken)
 
-	if err := wsutil.ProxyHTTP(c.Response(), c.Request(), wsTarget, headers); err != nil {
+	if err := wsutil.ProxyHTTP(c.Response(), c.Request(), wsTarget, headers, m.checkOrigin); err != nil {
 		slog.Error("websocket proxy failed", "err", err)
 	}
 	return nil
@@ -524,34 +519,39 @@ func (m *EnvironmentMiddleware) createProxyRequest(c *echo.Context, target strin
 		return nil, common.Classify(common.ErrEnvironmentInvalidProxyTarget, errors.WrapIf(err, "Invalid proxy target URL"))
 	}
 
-	var bodyBytes []byte
-	if srcReq.Body != nil {
-		var err error
-		bodyBytes, err = io.ReadAll(srcReq.Body)
-		_ = srcReq.Body.Close()
-		if err != nil {
-			return nil, errors.WrapIf(err, "failed to read request body")
-		}
-	}
-
-	slog.DebugContext(srcReq.Context(), "Creating proxy request", "method", srcReq.Method, "target", target, "contentLength", srcReq.ContentLength, "contentType", srcReq.Header.Get("Content-Type"), "bodyLength", len(bodyBytes), "body", string(bodyBytes))
-
+	// The body is streamed straight through rather than buffered: volume backup
+	// and image import uploads run to gigabytes, and reading them into memory
+	// cost roughly twice their size per in-flight request. This drops GetBody,
+	// so the transport can no longer replay the body across a redirect or an
+	// idle-connection retry; a proxied API call has no legitimate need for
+	// either, and a failure surfaces as a 502 rather than silent corruption.
+	//
+	// A server request's ContentLength is 0 only when there is genuinely no
+	// body (-1 means chunked/unknown), so it is the safe signal for whether to
+	// forward one at all.
 	var requestBody io.ReadCloser
-	var getBody func() (io.ReadCloser, error)
-	if len(bodyBytes) > 0 {
-		requestBody = io.NopCloser(bytes.NewReader(bodyBytes))
-		getBody = func() (io.ReadCloser, error) {
-			return io.NopCloser(bytes.NewReader(bodyBytes)), nil
-		}
+	var contentLength int64
+	switch {
+	case srcReq.Body == nil:
+	case srcReq.ContentLength != 0:
+		requestBody, contentLength = srcReq.Body, srcReq.ContentLength
+	default:
+		_ = srcReq.Body.Close()
 	}
+
+	// The body is deliberately not logged: at debug level it would put compose
+	// files and registry credentials into the ring buffer served by
+	// /api/diagnostics/logs, and stringifying it allocated even when debug was off.
+	slog.DebugContext(srcReq.Context(), "Creating proxy request", "method", srcReq.Method, "target", target, "contentLength", srcReq.ContentLength, "contentType", srcReq.Header.Get("Content-Type"))
+
 	requestURL := *validatedTarget
 	req := (&http.Request{
-		Method:  srcReq.Method,
-		URL:     &requestURL,
-		Host:    requestURL.Host,
-		Header:  make(http.Header),
-		Body:    requestBody,
-		GetBody: getBody,
+		Method:        srcReq.Method,
+		URL:           &requestURL,
+		Host:          requestURL.Host,
+		Header:        make(http.Header),
+		Body:          requestBody,
+		ContentLength: contentLength,
 	}).WithContext(srcReq.Context())
 
 	skip := edge.GetSkipHeaders()
@@ -559,10 +559,6 @@ func (m *EnvironmentMiddleware) createProxyRequest(c *echo.Context, target strin
 	edge.SetAuthHeader(req, c)
 	edge.SetAgentToken(req, accessToken)
 	edge.SetForwardedHeaders(req, c.RealIP(), srcReq.Host)
-
-	if len(bodyBytes) > 0 {
-		req.ContentLength = int64(len(bodyBytes))
-	}
 
 	return req, nil
 }

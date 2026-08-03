@@ -22,10 +22,12 @@ import (
 )
 
 var (
-	limitFlag  int
-	startFlag  int
-	forceFlag  bool
-	jsonOutput bool
+	limitFlag       int
+	startFlag       int
+	allFlag         bool
+	forceFlag       bool
+	jsonOutput      bool
+	gitopsFilesPath string
 )
 
 var (
@@ -59,7 +61,7 @@ var listCmd = &cobra.Command{
 		}
 
 		path := types.Endpoints.GitOpsSyncs(c.EnvID())
-		path, err = cmdutil.ApplyPaginationParams(cmd, path, "gitops-syncs", "limit", limitFlag, 20, "start", startFlag)
+		path, err = cmdutil.ApplyPaginationParams(cmd, path, cmdutil.ListParams{Resource: "gitops-syncs", Limit: limitFlag, FallbackDefault: 20, Start: startFlag, All: allFlag})
 		if err != nil {
 			return errors.WrapIf(err, "failed to build pagination query")
 		}
@@ -71,8 +73,8 @@ var listCmd = &cobra.Command{
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.Paginated[gitops.GitOpsSync]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if jsonOutput {
@@ -156,8 +158,8 @@ var createCmd = &cobra.Command{
 		}
 
 		var result base.ApiResponse[gitops.GitOpsSync]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if jsonOutput {
@@ -199,8 +201,8 @@ var getCmd = &cobra.Command{
 			defer func() { _ = resp.Body.Close() }()
 
 			var result base.ApiResponse[gitops.GitOpsSync]
-			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-				return errors.WrapIf(err, "failed to parse response")
+			if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+				return err
 			}
 			resolved = &result.Data
 		}
@@ -358,8 +360,8 @@ var statusCmd = &cobra.Command{
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[gitops.SyncStatus]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if jsonOutput {
@@ -416,8 +418,8 @@ var syncCmd = &cobra.Command{
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[gitops.SyncResult]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if jsonOutput {
@@ -458,15 +460,20 @@ var filesCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.Endpoints.GitOpsSyncFiles(c.EnvID(), resolved.ID))
+		filesPath := types.Endpoints.GitOpsSyncFiles(c.EnvID(), resolved.ID)
+		if gitopsFilesPath != "" {
+			filesPath = cmdutil.AppendQuery(filesPath, url.Values{"path": []string{gitopsFilesPath}})
+		}
+
+		resp, err := c.Get(cmd.Context(), filesPath)
 		if err != nil {
 			return errors.WrapIf(err, "failed to get gitops sync files")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[gitops.BrowseResponse]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		files := result.Data.Files
@@ -513,7 +520,9 @@ var importCmd = &cobra.Command{
 			SyncInterval:      interval,
 		}
 
-		resp, err := c.Post(cmd.Context(), types.Endpoints.GitOpsSyncsImport(c.EnvID()), req)
+		// The endpoint accepts a batch, so a single sync still has to be wrapped
+		// in an array.
+		resp, err := c.Post(cmd.Context(), types.Endpoints.GitOpsSyncsImport(c.EnvID()), []gitops.ImportGitOpsSyncRequest{req})
 		if err != nil {
 			return errors.WrapIf(err, "failed to import gitops sync")
 		}
@@ -524,8 +533,8 @@ var importCmd = &cobra.Command{
 		}
 
 		var result base.ApiResponse[gitops.ImportGitOpsSyncResponse]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if jsonOutput {
@@ -561,7 +570,8 @@ func init() {
 
 	// List command flags
 	listCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of syncs to show")
-	listCmd.Flags().IntVar(&startFlag, "start", 0, "Offset for pagination")
+	listCmd.Flags().IntVar(&startFlag, "start", 0, cmdutil.StartFlagUsage)
+	listCmd.Flags().BoolVarP(&allFlag, "all", "a", false, cmdutil.AllFlagUsage)
 	listCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 
 	// Create command flags
@@ -602,6 +612,7 @@ func init() {
 	syncCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 
 	// Files command flags
+	filesCmd.Flags().StringVar(&gitopsFilesPath, "path", "", "Path within the repository to browse")
 	filesCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 
 	// Import command flags
@@ -649,7 +660,7 @@ func resolveGitOpsSync(ctx context.Context, c *client.Client, identifier string,
 
 	identifierLower := strings.ToLower(trimmed)
 
-	searchPath := fmt.Sprintf("%s?search=%s&limit=%d", types.Endpoints.GitOpsSyncs(c.EnvID()), url.QueryEscape(trimmed), 200)
+	searchPath := fmt.Sprintf("%s?search=%s&limit=%d", types.Endpoints.GitOpsSyncs(c.EnvID()), url.QueryEscape(trimmed), cmdutil.ShowAllLimit)
 	searchResp, err := c.Get(ctx, searchPath)
 	if err != nil {
 		return nil, false, errors.WrapIf(err, "failed to search gitops syncs")
@@ -730,7 +741,7 @@ func flattenFileTree(nodes []gitops.FileTreeNode, depth int) [][]string {
 		prefix := strings.Repeat("  ", depth)
 		size := "-"
 		if node.Type == gitops.FileTreeNodeTypeFile {
-			size = formatSize(node.Size)
+			size = output.Bytes(node.Size)
 		}
 		rows = append(rows, []string{
 			prefix + node.Name,
@@ -743,20 +754,4 @@ func flattenFileTree(nodes []gitops.FileTreeNode, depth int) [][]string {
 		}
 	}
 	return rows
-}
-
-func formatSize(bytes int64) string {
-	if bytes == 0 {
-		return "0 B"
-	}
-	const unit = 1024
-	if bytes < unit {
-		return fmt.Sprintf("%d B", bytes)
-	}
-	div, exp := int64(unit), 0
-	for n := bytes / unit; n >= unit; n /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }

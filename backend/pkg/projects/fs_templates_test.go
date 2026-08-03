@@ -3,7 +3,6 @@ package projects
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -39,7 +38,7 @@ func TestReadFolderComposeTemplate_DetectsAllVariants(t *testing.T) {
 			require.True(t, found, "expected template to be detected for %s", tc.fileName)
 			assert.Equal(t, composeContent, content)
 			assert.Nil(t, env)
-			assert.True(t, strings.Contains(desc, tc.fileName), "description should reference detected filename, got %q", desc)
+			assert.Contains(t, desc, tc.fileName, "description should reference detected filename, got %q", desc)
 		})
 	}
 }

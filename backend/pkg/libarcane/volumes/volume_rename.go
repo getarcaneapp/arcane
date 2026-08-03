@@ -616,7 +616,7 @@ func RollbackVolume(ctx context.Context, dockerClient *client.Client, vol Journa
 		return removeProjectRenameJournalTargetVolumeInternal(ctx, dockerClient, vol.NewName, oldExists, newExists)
 	case !oldExists && newExists:
 		return NewTargetPreservedDuringRollbackError(vol, errProjectRenameRollbackSourceMissingInternal)
-	case !oldExists && !newExists:
+	case !oldExists:
 		slog.WarnContext(ctx, "project rename source and target volumes are missing during rollback", "sourceVolume", vol.OldName, "targetVolume", vol.NewName)
 	}
 	return nil
@@ -647,7 +647,7 @@ func cleanupProjectRenameRollbackTargetVolumeInternal(ctx context.Context, docke
 		return removeProjectRenameJournalTargetVolumeInternal(ctx, dockerClient, vol.NewName, oldExists, newExists)
 	case !oldExists && newExists:
 		return NewTargetPreservedDuringRollbackError(vol, errProjectRenameRollbackSourceMissingInternal)
-	case !oldExists && !newExists:
+	case !oldExists:
 		slog.WarnContext(ctx, "project rename source and target volumes are missing during rollback cleanup", "sourceVolume", vol.OldName, "targetVolume", vol.NewName)
 	}
 	return nil

@@ -13,7 +13,8 @@ import (
 func TestAutoUpdateJob_ShouldSchedule_RequiresAutoUpdateAndPolling(t *testing.T) {
 	ctx := context.Background()
 	_, settingsSvc, _ := setupAnalyticsStateServicesInternal(t)
-	job := NewAutoUpdateJob(nil, settingsSvc)
+	job, err := NewAutoUpdateJob(nil, settingsSvc, newTestAdmissionGateInternal(t))
+	require.NoError(t, err)
 
 	require.False(t, job.ShouldSchedule(ctx))
 
@@ -52,7 +53,7 @@ func TestAutoUpdateJob_OverlappingRunIsSkippedInternal(t *testing.T) {
 		started: make(chan struct{}, 1),
 		release: make(chan struct{}),
 	}
-	job := &AutoUpdateJob{updaterService: applier, settingsService: settingsSvc}
+	job := &AutoUpdateJob{updaterService: applier, settingsService: settingsSvc, admissionGate: newTestAdmissionGateInternal(t)}
 
 	firstDone := make(chan struct{})
 	go func() {
@@ -69,7 +70,7 @@ func TestAutoUpdateJob_OverlappingRunIsSkippedInternal(t *testing.T) {
 	select {
 	case <-firstDone:
 	case <-time.After(time.Second):
-		t.Fatal("first auto-update run did not finish")
+		require.FailNow(t, "first auto-update run did not finish")
 	}
 
 	// The guard resets once the run finishes.

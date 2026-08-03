@@ -16,12 +16,13 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	dashboardtypes "github.com/getarcaneapp/arcane/types/v2/dashboard"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
-	sqlite "github.com/libtnb/sqlite"
+	"github.com/libtnb/sqlite"
 	dockercontainer "github.com/moby/moby/api/types/container"
 	dockerimage "github.com/moby/moby/api/types/image"
 	dockermount "github.com/moby/moby/api/types/mount"
 	dockervolume "github.com/moby/moby/api/types/volume"
 	"github.com/moby/moby/client"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
@@ -34,7 +35,7 @@ func setupDashboardServiceTestDB(t *testing.T) (*database.DB, *SettingsService) 
 	require.NoError(t, db.AutoMigrate(&models.ApiKey{}, &models.Environment{}, &models.ImageUpdateRecord{}, &models.Project{}, &models.SettingVariable{}))
 
 	databaseDB := &database.DB{DB: db}
-	settingsSvc, err := NewSettingsService(context.Background(), databaseDB)
+	settingsSvc, err := newSettingsServiceForTestInternal(t, context.Background(), databaseDB)
 	require.NoError(t, err)
 
 	return databaseDB, settingsSvc
@@ -64,11 +65,17 @@ func newDashboardTestDockerService(
 
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/containers/json"):
-			require.NoError(t, json.NewEncoder(w).Encode(containers))
+			if !assert.NoError(t, json.NewEncoder(w).Encode(containers)) {
+				return
+			}
 		case strings.HasSuffix(r.URL.Path, "/images/json"):
-			require.NoError(t, json.NewEncoder(w).Encode(images))
+			if !assert.NoError(t, json.NewEncoder(w).Encode(images)) {
+				return
+			}
 		case strings.HasSuffix(r.URL.Path, "/volumes"):
-			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Volumes": volumes, "Warnings": []string{}}))
+			if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Volumes": volumes, "Warnings": []string{}})) {
+				return
+			}
 		default:
 			http.NotFound(w, r)
 		}

@@ -2,7 +2,9 @@ package validation
 
 import (
 	"fmt"
+	"net/http"
 	"slices"
+	"strings"
 
 	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -20,6 +22,9 @@ func ValidateCredentialTargetChange(
 	updatedCredentials map[string]bool,
 ) error {
 	if nextTarget == nil {
+		return nil
+	}
+	if strings.TrimSpace(*nextTarget) == "" {
 		return nil
 	}
 
@@ -45,8 +50,10 @@ func ValidateCredentialTargetChange(
 		return common.Classify(common.ErrValidation, errors.WithDetails(errors.Errorf("Changing %s requires re-supplying or clearing the %s", targetName, missingFields[0]), "field", missingFields[0]))
 	}
 
-	return models.NewValidationError(
+	return models.NewAPIErrorWithDetails(
 		fmt.Sprintf("Changing %s requires updating all stored credentials", targetName),
+		models.APIErrorCodeValidationError,
+		http.StatusBadRequest,
 		map[string]any{"fields": missingFields},
 	)
 }

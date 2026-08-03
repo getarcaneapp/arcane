@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/labstack/echo/v5"
+	"github.com/stretchr/testify/require"
 )
 
 func TestJSONV2SerializerUsesV2ResponseSemantics(t *testing.T) {
@@ -22,12 +23,16 @@ func TestJSONV2SerializerUsesV2ResponseSemantics(t *testing.T) {
 	context := e.NewContext(httptest.NewRequest("GET", "/", nil), recorder)
 
 	err := (jsonV2Serializer{}).Serialize(context, response{}, "")
-	if err != nil {
-		t.Fatalf("serialize response: %v", err)
+
+	require.NoError(t, err,
+		"serialize response: %v", err)
+	{
+
+		got, want := recorder.Body.String(), `{"items":[],"count":0}`
+		require.Equal(t, want, got,
+			"serialized response = %s, want %s", got, want)
 	}
-	if got, want := recorder.Body.String(), `{"items":[],"count":0}`; got != want {
-		t.Fatalf("serialized response = %s, want %s", got, want)
-	}
+
 }
 
 func TestJSONV2SerializerPreservesDurationNanoseconds(t *testing.T) {
@@ -40,12 +45,16 @@ func TestJSONV2SerializerPreservesDurationNanoseconds(t *testing.T) {
 	context := e.NewContext(httptest.NewRequest("GET", "/", nil), recorder)
 
 	err := (jsonV2Serializer{}).Serialize(context, response{HeartbeatPeriod: 5 * time.Second}, "")
-	if err != nil {
-		t.Fatalf("serialize duration: %v", err)
+
+	require.NoError(t, err,
+		"serialize duration: %v", err)
+	{
+
+		got, want := recorder.Body.String(), `{"heartbeatPeriod":5000000000}`
+		require.Equal(t, want, got,
+			"serialized response = %s, want %s", got, want)
 	}
-	if got, want := recorder.Body.String(), `{"heartbeatPeriod":5000000000}`; got != want {
-		t.Fatalf("serialized response = %s, want %s", got, want)
-	}
+
 }
 
 func TestJSONV2SerializerUsesStrictV2Decoding(t *testing.T) {
@@ -59,12 +68,13 @@ func TestJSONV2SerializerUsesStrictV2Decoding(t *testing.T) {
 
 		var body requestBody
 		err := (jsonV2Serializer{}).Deserialize(context, &body)
-		if err != nil {
-			t.Fatalf("deserialize case-variant field: %v", err)
-		}
-		if body.Name != "" {
-			t.Fatalf("case-variant field populated Name with %q", body.Name)
-		}
+
+		require.NoError(t, err,
+			"deserialize case-variant field: %v", err)
+
+		require.Empty(t, body.Name,
+			"case-variant field populated Name with %q", body.Name)
+
 	})
 
 	for _, test := range []struct {
@@ -82,11 +92,13 @@ func TestJSONV2SerializerUsesStrictV2Decoding(t *testing.T) {
 			err := (jsonV2Serializer{}).Deserialize(context, &body)
 			var httpErr *echo.HTTPError
 			if !errors.As(err, &httpErr) {
-				t.Fatalf("deserialize error = %T %v, want *echo.HTTPError", err, err)
+				require.ErrorAs(t, err, &httpErr,
+					"deserialize error = %T %v, want *echo.HTTPError", err, err)
 			}
-			if httpErr.StatusCode() != http.StatusBadRequest {
-				t.Fatalf("HTTP status = %d, want %d", httpErr.StatusCode(), http.StatusBadRequest)
-			}
+
+			require.Equal(t, http.StatusBadRequest, httpErr.StatusCode(),
+				"HTTP status = %d, want %d", httpErr.StatusCode(), http.StatusBadRequest)
+
 		})
 	}
 }

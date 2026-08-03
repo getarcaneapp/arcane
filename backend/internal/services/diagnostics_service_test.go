@@ -1,6 +1,10 @@
 package services
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+)
 
 func TestDiagnosticsServiceCollect(t *testing.T) {
 	s := NewDiagnosticsService()
@@ -8,15 +12,19 @@ func TestDiagnosticsServiceCollect(t *testing.T) {
 	rt, mem, _ := s.Collect()
 
 	if rt.Goroutines <= 0 {
-		t.Errorf("expected a positive goroutine count, got %d", rt.Goroutines)
+		assert.Positive(t, rt.Goroutines,
+			"expected a positive goroutine count, got %d", rt.Goroutines)
 	}
-	if rt.GoVersion == "" {
-		t.Error("expected a non-empty Go version")
-	}
+
+	assert.NotEmpty(t, rt.GoVersion,
+		"expected a non-empty Go version")
+
 	if rt.NumCPU <= 0 {
-		t.Errorf("expected a positive CPU count, got %d", rt.NumCPU)
+		assert.Positive(t, rt.NumCPU,
+			"expected a positive CPU count, got %d", rt.NumCPU)
 	}
-	if mem.Sys == 0 {
-		t.Error("expected non-zero Sys memory")
-	}
+
+	assert.NotEqual(t, 0, mem.Sys,
+		"expected non-zero Sys memory")
+
 }

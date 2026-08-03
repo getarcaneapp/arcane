@@ -6,7 +6,7 @@ import (
 
 	"emperror.dev/errors"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
-	contextsource "go.getarcane.app/builds/pkg/utils/contextsource"
+	"go.getarcane.app/builds/pkg/utils/contextsource"
 )
 
 // ResolveBuildContext resolves a service build context against workingDir.

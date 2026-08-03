@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
+	import { dev } from '$app/env';
+	import { page } from '$app/state';
 	import NewEnvironmentSheet from '#lib/components/sheets/new-environment-sheet.svelte';
 	import EnvironmentTable from './environment-table.svelte';
 	import { tryCatch } from '#lib/utils/api';
@@ -79,6 +81,14 @@
 		});
 	}
 
+	// Dev-only: `?updateAllDemo=1` opens the update-all dialog against a scripted fake
+	// fleet, so its progress and result states can be reviewed under `just dev` without
+	// updating anything. `dev` is compiled out of production builds.
+	const updateAllDemo = $derived(dev && page.url.searchParams.get('updateAllDemo') === '1');
+	$effect(() => {
+		if (updateAllDemo) showUpdateAllDialog = true;
+	});
+
 	async function onEnvironmentCreated() {
 		showEnvironmentSheet = false;
 		environments = await environmentManagementService.getEnvironments(requestOptions);
@@ -150,6 +160,6 @@
 
 	{#snippet additionalContent()}
 		<NewEnvironmentSheet bind:open={showEnvironmentSheet} {onEnvironmentCreated} />
-		<UpdateAllDialog bind:open={showUpdateAllDialog} onFinished={refresh} />
+		<UpdateAllDialog bind:open={showUpdateAllDialog} debugDemo={updateAllDemo} onFinished={refresh} />
 	{/snippet}
 </ResourcePageLayout>

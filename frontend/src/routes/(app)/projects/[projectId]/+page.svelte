@@ -271,6 +271,7 @@
 
 	type ProjectTab = 'services' | 'compose' | 'logs';
 	let selectedTab = $state<ProjectTab>('compose');
+	let userSelectedTabProjectId: string | null = null;
 	let composeOpen = $state(true);
 	let envOpen = $state(true);
 	let overrideOpen = $state(false);
@@ -446,7 +447,6 @@
 		defaultTab: () => selectedTab,
 		ready: () => lastPrefsProjectId === project?.id
 	});
-	const activeTab = $derived(urlTab.value);
 
 	function ensureIncludeFileUiState(relativePath: string) {
 		if (includeFilesPanelStates[relativePath] === undefined) {
@@ -666,7 +666,12 @@
 			syncTabs: false
 		});
 		const cur = prefs.current ?? {};
-		selectedTab = cur.tab ?? defaultComposeUIPrefs.tab;
+		const userSelectedTabForProject = userSelectedTabProjectId === project.id;
+		const requestedTab = new URL(window.location.href).searchParams.get('tab');
+		const urlTabValue = tabItems.some((tab) => tab.value === requestedTab) ? (requestedTab as ProjectTab) : null;
+		if (!userSelectedTabForProject) {
+			selectedTab = urlTabValue ?? cur.tab ?? defaultComposeUIPrefs.tab;
+		}
 		composeOpen = cur.composeOpen ?? defaultComposeUIPrefs.composeOpen;
 		// Expanding the override collapses the compose editor (accordion), so the
 		// override defaults to collapsed to keep compose primary on load.
@@ -686,7 +691,7 @@
 		layoutMode = hadStoredPrefs ? (cur.layoutMode ?? defaultMode) : defaultMode;
 		// PersistedState seeds storage with the defaults on first mount; persist the
 		// resolved state so the auto-detected layout survives the next visit.
-		if (!hadStoredPrefs) {
+		if (!hadStoredPrefs || userSelectedTabForProject) {
 			persistPrefs();
 		}
 	});
@@ -1314,8 +1319,9 @@
 		{backUrl}
 		backLabel={m.common_back()}
 		{tabItems}
-		selectedTab={activeTab}
+		{selectedTab}
 		onTabChange={(value: string) => {
+			userSelectedTabProjectId = project.id;
 			selectedTab = value as ProjectTab;
 			urlTab.select(value);
 			persistPrefs();

@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -36,9 +37,15 @@ func TestRedactedTokenFingerprint(t *testing.T) {
 
 func TestClientDo_DirectHTTPSuccess(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, http.MethodPost, r.Method)
-		require.Equal(t, "/api/registries/sync", r.URL.Path)
-		require.Equal(t, "application/json", r.Header.Get("Content-Type"))
+		if !assert.Equal(t, http.MethodPost, r.Method) {
+			return
+		}
+		if !assert.Equal(t, "/api/registries/sync", r.URL.Path) {
+			return
+		}
+		if !assert.Equal(t, "application/json", r.Header.Get("Content-Type")) {
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusAccepted)
 		_, _ = w.Write([]byte(`{"ok":true}`))

@@ -20,7 +20,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 	buildapi "go.getarcane.app/builds/api"
-	contextsource "go.getarcane.app/builds/pkg/utils/contextsource"
+	"go.getarcane.app/builds/pkg/utils/contextsource"
 	buildtypes "go.getarcane.app/builds/types"
 	"gorm.io/gorm"
 )
@@ -549,21 +549,21 @@ func buildToRecord(build models.ImageBuild, includeOutput bool) imagetypes.Build
 		ContextDir:      build.ContextDir,
 		Dockerfile:      build.Dockerfile,
 		Target:          build.Target,
-		Tags:            []string(build.Tags),
-		Platforms:       []string(build.Platforms),
+		Tags:            build.Tags,
+		Platforms:       build.Platforms,
 		BuildArgs:       buildArgs,
 		Labels:          labels,
-		CacheFrom:       []string(build.CacheFrom),
-		CacheTo:         []string(build.CacheTo),
+		CacheFrom:       build.CacheFrom,
+		CacheTo:         build.CacheTo,
 		NoCache:         build.NoCache,
 		Pull:            build.Pull,
 		Network:         build.BuildNetwork,
 		Isolation:       build.Isolation,
 		ShmSize:         build.ShmSize,
 		Ulimits:         ulimits,
-		Entitlements:    []string(build.Entitlements),
+		Entitlements:    build.Entitlements,
 		Privileged:      build.Privileged,
-		ExtraHosts:      []string(build.ExtraHosts),
+		ExtraHosts:      build.ExtraHosts,
 		Push:            build.Push,
 		Load:            build.Load,
 		Digest:          build.Digest,

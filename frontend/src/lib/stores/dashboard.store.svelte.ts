@@ -1,5 +1,7 @@
 import { browser } from '$app/env';
 import { dashboardService } from '#lib/services/dashboard-service';
+import { STREAM_CHANNEL_DASHBOARD } from '#lib/services/stream-service';
+import { clientStream } from '#lib/stores/client-stream.svelte';
 import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte';
 import {
 	createEnvironmentStreamStore,
@@ -38,7 +40,7 @@ function createDashboardStore() {
 				streamError: false
 			};
 		},
-		openStream: (signal) => dashboardService.openDashboardStream(signal, debugAllGood),
+		channel: STREAM_CHANNEL_DASHBOARD,
 		applyEvent(environmentId, event) {
 			switch (event.type) {
 				case 'snapshot':
@@ -116,7 +118,7 @@ function createDashboardStore() {
 				}
 				// The flag is encoded in the stream URL; restart to apply it.
 				debugAllGood = nextDebugAllGood;
-				core.restartStream();
+				clientStream.setParams(debugAllGood ? { debugAllGood: 'true' } : {});
 				return;
 			}
 

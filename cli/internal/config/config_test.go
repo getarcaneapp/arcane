@@ -3,54 +3,65 @@ package config
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func setTempConfigPath(t *testing.T) string {
 	t.Helper()
 
 	path := filepath.Join(t.TempDir(), "arcanecli.yml")
-	if err := SetConfigPath(path); err != nil {
-		t.Fatalf("SetConfigPath() failed: %v", err)
+	{
+		err := SetConfigPath(path)
+		require.NoError(t, err,
+			"SetConfigPath() failed: %v", err)
 	}
+
 	t.Cleanup(func() {
-		if err := SetConfigPath(""); err != nil {
-			t.Errorf("SetConfigPath(reset) failed: %v", err)
+		{
+			err := SetConfigPath("")
+			assert.NoError(t, err,
+				"SetConfigPath(reset) failed: %v", err)
 		}
+
 	})
 	return path
 }
 
 func TestLoadReturnsDefaultsWhenFileMissing(t *testing.T) {
 	path := setTempConfigPath(t)
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Fatalf("expected config file to be missing, got err=%v", err)
+	{
+		_, err := os.Stat(path)
+		require.True(t, os.IsNotExist(err),
+			"expected config file to be missing, got err=%v", err)
 	}
 
 	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("Load() failed: %v", err)
-	}
-	if cfg.ServerURL != "http://localhost:3552" {
-		t.Fatalf("ServerURL=%q, want %q", cfg.ServerURL, "http://localhost:3552")
-	}
-	if cfg.DefaultEnvironment != "0" {
-		t.Fatalf("DefaultEnvironment=%q, want %q", cfg.DefaultEnvironment, "0")
-	}
-	if cfg.LogLevel != "info" {
-		t.Fatalf("LogLevel=%q, want %q", cfg.LogLevel, "info")
-	}
+
+	require.NoError(t, err,
+		"Load() failed: %v", err)
+
+	require.Equal(t, "http://localhost:3552", cfg.ServerURL,
+		"ServerURL=%q, want %q", cfg.ServerURL, "http://localhost:3552")
+
+	require.Equal(t, "0", cfg.DefaultEnvironment,
+		"DefaultEnvironment=%q, want %q", cfg.DefaultEnvironment, "0")
+
+	require.Equal(t, "info", cfg.LogLevel,
+		"LogLevel=%q, want %q", cfg.LogLevel, "info")
 
 	// Ensure callers cannot mutate cached config state.
 	cfg.ServerURL = "https://mutated.invalid"
 	cfg2, err := Load()
-	if err != nil {
-		t.Fatalf("Load() second call failed: %v", err)
-	}
-	if cfg2.ServerURL != "http://localhost:3552" {
-		t.Fatalf("cached config was mutated, ServerURL=%q", cfg2.ServerURL)
-	}
+
+	require.NoError(t, err,
+		"Load() second call failed: %v", err)
+
+	require.Equal(t, "http://localhost:3552", cfg2.ServerURL,
+		"cached config was mutated, ServerURL=%q", cfg2.ServerURL)
+
 }
 
 func TestSaveAndLoadRoundTripPagination(t *testing.T) {
@@ -62,47 +73,60 @@ func TestSaveAndLoadRoundTripPagination(t *testing.T) {
 	cfg.SetDefaultLimit(42)
 	cfg.SetResourceLimit("images", 17)
 	cfg.SetResourceLimit("Containers", 9)
+	{
 
-	if err := Save(cfg); err != nil {
-		t.Fatalf("Save() failed: %v", err)
+		err := Save(cfg)
+		require.NoError(t, err,
+			"Save() failed: %v", err)
 	}
 
 	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("failed to read saved config: %v", err)
-	}
+
+	require.NoError(t, err,
+		"failed to read saved config: %v", err)
+
 	text := string(raw)
-	if !strings.Contains(text, "pagination:") {
-		t.Fatalf("expected saved YAML to include pagination block:\n%s", text)
-	}
-	if !strings.Contains(text, "cli_update_channel: next") {
-		t.Fatalf("expected saved YAML to include cli_update_channel key:\n%s", text)
-	}
+
+	require.Contains(t, text, "pagination:",
+		"expected saved YAML to include pagination block:\n%s", text)
+
+	require.Contains(t, text, "cli_update_channel: next",
+		"expected saved YAML to include cli_update_channel key:\n%s", text)
 
 	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatalf("failed to stat config file: %v", err)
-	}
-	if got := info.Mode().Perm(); got != 0o600 {
-		t.Fatalf("config file permissions=%#o, want %#o", got, 0o600)
+
+	require.NoError(t, err,
+		"failed to stat config file: %v", err)
+	{
+
+		got := info.Mode().Perm()
+		require.Equal(t, os.FileMode(0o600), got,
+			"config file permissions=%#o, want %#o", got, 0o600)
 	}
 
 	loaded, err := Load()
-	if err != nil {
-		t.Fatalf("Load() failed: %v", err)
+
+	require.NoError(t, err,
+		"Load() failed: %v", err)
+
+	require.Equal(t, 42, loaded.Pagination.Default.Limit,
+		"default limit mismatch: pagination=%d, want 42", loaded.Pagination.Default.Limit)
+	{
+
+		got := loaded.LimitFor("images")
+		require.Equal(t, 17, got,
+			"images limit=%d, want 17", got)
 	}
-	if loaded.Pagination.Default.Limit != 42 {
-		t.Fatalf("default limit mismatch: pagination=%d, want 42", loaded.Pagination.Default.Limit)
+	{
+
+		got := loaded.LimitFor("containers")
+		require.Equal(t, 9, got,
+			"containers limit=%d, want 9", got)
 	}
-	if got := loaded.LimitFor("images"); got != 17 {
-		t.Fatalf("images limit=%d, want 17", got)
-	}
-	if got := loaded.LimitFor("containers"); got != 9 {
-		t.Fatalf("containers limit=%d, want 9", got)
-	}
-	if loaded.CLIUpdateChannel != "next" {
-		t.Fatalf("CLIUpdateChannel=%q, want next", loaded.CLIUpdateChannel)
-	}
+
+	require.Equal(t, "next", loaded.CLIUpdateChannel,
+		"CLIUpdateChannel=%q, want next", loaded.CLIUpdateChannel)
+
 }
 
 func TestLoadCanonicalPaginationBlock(t *testing.T) {
@@ -121,46 +145,56 @@ pagination:
     registries:
       limit: 9
 `
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("failed to write config fixture: %v", err)
+	{
+		err := os.WriteFile(path, []byte(content), 0o600)
+		require.NoError(t, err,
+			"failed to write config fixture: %v", err)
 	}
 
 	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("Load() failed: %v", err)
+
+	require.NoError(t, err,
+		"Load() failed: %v", err)
+
+	require.Equal(t, "https://api.arcane.test", cfg.ServerURL,
+		"ServerURL=%q, want %q", cfg.ServerURL, "https://api.arcane.test")
+
+	require.Equal(t, "k_123", cfg.APIKey,
+		"APIKey=%q, want %q", cfg.APIKey, "k_123")
+
+	require.Equal(t, 13, cfg.Pagination.Default.Limit,
+		"Pagination.Default.Limit=%d, want 13", cfg.Pagination.Default.Limit)
+	{
+
+		got := cfg.LimitFor("networks")
+		require.Equal(t, 4, got,
+			"networks limit=%d, want 4", got)
 	}
-	if cfg.ServerURL != "https://api.arcane.test" {
-		t.Fatalf("ServerURL=%q, want %q", cfg.ServerURL, "https://api.arcane.test")
+	{
+
+		got := cfg.LimitFor("registries")
+		require.Equal(t, 9, got,
+			"registries limit=%d, want 9", got)
 	}
-	if cfg.APIKey != "k_123" {
-		t.Fatalf("APIKey=%q, want %q", cfg.APIKey, "k_123")
-	}
-	if cfg.Pagination.Default.Limit != 13 {
-		t.Fatalf("Pagination.Default.Limit=%d, want 13", cfg.Pagination.Default.Limit)
-	}
-	if got := cfg.LimitFor("networks"); got != 4 {
-		t.Fatalf("networks limit=%d, want 4", got)
-	}
-	if got := cfg.LimitFor("registries"); got != 9 {
-		t.Fatalf("registries limit=%d, want 9", got)
-	}
+
 }
 
 func TestInitDefaultFileCreatesTemplate(t *testing.T) {
 	path := setTempConfigPath(t)
 
 	created, err := InitDefaultFile()
-	if err != nil {
-		t.Fatalf("InitDefaultFile() failed: %v", err)
-	}
-	if !created {
-		t.Fatal("InitDefaultFile() created = false, want true")
-	}
+
+	require.NoError(t, err,
+		"InitDefaultFile() failed: %v", err)
+
+	require.True(t, created,
+		"InitDefaultFile() created = false, want true")
 
 	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("failed to read config file: %v", err)
-	}
+
+	require.NoError(t, err,
+		"failed to read config file: %v", err)
+
 	text := string(raw)
 
 	requiredKeys := []string{
@@ -173,138 +207,161 @@ func TestInitDefaultFileCreatesTemplate(t *testing.T) {
 		"pagination:",
 	}
 	for _, key := range requiredKeys {
-		if !strings.Contains(text, key) {
-			t.Fatalf("expected generated config to contain %q:\n%s", key, text)
-		}
+
+		require.Contains(t, text, key,
+			"expected generated config to contain %q:\n%s", key, text)
+
 	}
 	for _, resource := range []string{"containers", "images", "volumes", "networks", "projects", "environments", "registries", "templates", "users", "events", "apikeys"} {
-		if !strings.Contains(text, resource+":") {
-			t.Fatalf("expected generated config to contain resource key %q:\n%s", resource, text)
-		}
+
+		require.Contains(t, text, resource+":",
+			"expected generated config to contain resource key %q:\n%s", resource, text)
+
 	}
 
 	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("Load() after init failed: %v", err)
-	}
-	if cfg.Pagination.Default.Limit != defaultPaginationInitLimit {
-		t.Fatalf("Pagination.Default.Limit=%d, want %d", cfg.Pagination.Default.Limit, defaultPaginationInitLimit)
-	}
+
+	require.NoError(t, err,
+		"Load() after init failed: %v", err)
+
+	require.Equal(t, defaultPaginationInitLimit, cfg.Pagination.Default.Limit,
+		"Pagination.Default.Limit=%d, want %d", cfg.Pagination.Default.Limit, defaultPaginationInitLimit)
+
 	for _, resource := range []string{"containers", "images", "volumes", "networks", "projects", "environments", "registries", "templates", "users", "events", "apikeys"} {
-		if got := cfg.LimitFor(resource); got != defaultPaginationInitLimit {
-			t.Fatalf("LimitFor(%s)=%d, want %d", resource, got, defaultPaginationInitLimit)
+		{
+			got := cfg.LimitFor(resource)
+			require.Equal(t, defaultPaginationInitLimit, got,
+				"LimitFor(%s)=%d, want %d", resource, got, defaultPaginationInitLimit)
 		}
+
 	}
 }
 
 func TestInitDefaultFileDoesNotOverwriteExistingFile(t *testing.T) {
 	path := setTempConfigPath(t)
 	original := "server_url: https://custom.arcane.example\napi_key: custom\n"
-	if err := os.WriteFile(path, []byte(original), 0o600); err != nil {
-		t.Fatalf("failed to write fixture file: %v", err)
+	{
+		err := os.WriteFile(path, []byte(original), 0o600)
+		require.NoError(t, err,
+			"failed to write fixture file: %v", err)
 	}
 
 	created, err := InitDefaultFile()
-	if err != nil {
-		t.Fatalf("InitDefaultFile() failed: %v", err)
-	}
-	if created {
-		t.Fatal("InitDefaultFile() created = true, want false")
-	}
+
+	require.NoError(t, err,
+		"InitDefaultFile() failed: %v", err)
+
+	require.False(t, created,
+		"InitDefaultFile() created = true, want false")
 
 	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("failed to read config file: %v", err)
-	}
-	if string(raw) != original {
-		t.Fatalf("existing file was modified:\nwant:\n%s\ngot:\n%s", original, string(raw))
-	}
+
+	require.NoError(t, err,
+		"failed to read config file: %v", err)
+
+	require.Equal(t, original, string(raw),
+		"existing file was modified:\nwant:\n%s\ngot:\n%s", original, string(raw))
+
 }
 
 func TestBackupFileMovesConfig(t *testing.T) {
 	path := setTempConfigPath(t)
 	original := "server_url: https://backup.arcane.example\napi_key: abc123\n"
-	if err := os.WriteFile(path, []byte(original), 0o600); err != nil {
-		t.Fatalf("failed to write config fixture: %v", err)
+	{
+		err := os.WriteFile(path, []byte(original), 0o600)
+		require.NoError(t, err,
+			"failed to write config fixture: %v", err)
 	}
 
 	backupPath, moved, err := BackupFile()
-	if err != nil {
-		t.Fatalf("BackupFile() failed: %v", err)
-	}
-	if !moved {
-		t.Fatal("BackupFile() moved = false, want true")
-	}
-	if backupPath != path+".bak" {
-		t.Fatalf("backup path = %q, want %q", backupPath, path+".bak")
-	}
 
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Fatalf("expected original config to be removed, stat err=%v", err)
+	require.NoError(t, err,
+		"BackupFile() failed: %v", err)
+
+	require.True(t, moved,
+		"BackupFile() moved = false, want true")
+
+	require.Equal(t, path+".bak", backupPath,
+		"backup path = %q, want %q", backupPath, path+".bak")
+	{
+
+		_, err := os.Stat(path)
+		require.True(t, os.IsNotExist(err),
+			"expected original config to be removed, stat err=%v", err)
 	}
 
 	raw, err := os.ReadFile(backupPath)
-	if err != nil {
-		t.Fatalf("failed to read backup file: %v", err)
-	}
-	if string(raw) != original {
-		t.Fatalf("backup content mismatch:\nwant:\n%s\ngot:\n%s", original, string(raw))
-	}
+
+	require.NoError(t, err,
+		"failed to read backup file: %v", err)
+
+	require.Equal(t, original, string(raw),
+		"backup content mismatch:\nwant:\n%s\ngot:\n%s", original, string(raw))
+
 }
 
 func TestBackupFileNoConfig(t *testing.T) {
 	path := setTempConfigPath(t)
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Fatalf("expected missing config before backup, stat err=%v", err)
+	{
+		_, err := os.Stat(path)
+		require.True(t, os.IsNotExist(err),
+			"expected missing config before backup, stat err=%v", err)
 	}
 
 	backupPath, moved, err := BackupFile()
-	if err != nil {
-		t.Fatalf("BackupFile() failed: %v", err)
-	}
-	if moved {
-		t.Fatal("BackupFile() moved = true, want false")
-	}
-	if backupPath != path+".bak" {
-		t.Fatalf("backup path = %q, want %q", backupPath, path+".bak")
-	}
+
+	require.NoError(t, err,
+		"BackupFile() failed: %v", err)
+
+	require.False(t, moved,
+		"BackupFile() moved = true, want false")
+
+	require.Equal(t, path+".bak", backupPath,
+		"backup path = %q, want %q", backupPath, path+".bak")
+
 }
 
 func TestBackupFileRotatesExistingBak(t *testing.T) {
 	path := setTempConfigPath(t)
 	backupPath := path + ".bak"
+	{
 
-	if err := os.WriteFile(path, []byte("server_url: https://new.example\n"), 0o600); err != nil {
-		t.Fatalf("failed to write primary config: %v", err)
+		err := os.WriteFile(path, []byte("server_url: https://new.example\n"), 0o600)
+		require.NoError(t, err,
+			"failed to write primary config: %v", err)
 	}
-	if err := os.WriteFile(backupPath, []byte("server_url: https://old.example\n"), 0o600); err != nil {
-		t.Fatalf("failed to write existing backup: %v", err)
+	{
+
+		err := os.WriteFile(backupPath, []byte("server_url: https://old.example\n"), 0o600)
+		require.NoError(t, err,
+			"failed to write existing backup: %v", err)
 	}
 
 	newBackupPath, moved, err := BackupFile()
-	if err != nil {
-		t.Fatalf("BackupFile() failed: %v", err)
-	}
-	if !moved {
-		t.Fatal("BackupFile() moved = false, want true")
-	}
-	if newBackupPath != backupPath {
-		t.Fatalf("backup path = %q, want %q", newBackupPath, backupPath)
-	}
+
+	require.NoError(t, err,
+		"BackupFile() failed: %v", err)
+
+	require.True(t, moved,
+		"BackupFile() moved = false, want true")
+
+	require.Equal(t, backupPath, newBackupPath,
+		"backup path = %q, want %q", newBackupPath, backupPath)
 
 	raw, err := os.ReadFile(backupPath)
-	if err != nil {
-		t.Fatalf("failed to read newest backup: %v", err)
-	}
-	if !strings.Contains(string(raw), "new.example") {
-		t.Fatalf("expected newest backup to contain new config, got:\n%s", string(raw))
-	}
+
+	require.NoError(t, err,
+		"failed to read newest backup: %v", err)
+
+	require.Contains(t, string(raw), "new.example",
+		"expected newest backup to contain new config, got:\n%s", string(raw))
 
 	rotated, err := filepath.Glob(backupPath + ".*")
-	if err != nil {
-		t.Fatalf("failed to glob rotated backups: %v", err)
-	}
-	if len(rotated) == 0 {
-		t.Fatalf("expected rotated backup matching %q", backupPath+".*")
-	}
+
+	require.NoError(t, err,
+		"failed to glob rotated backups: %v", err)
+
+	require.NotEmpty(t, rotated,
+		"expected rotated backup matching %q", backupPath+".*")
+
 }

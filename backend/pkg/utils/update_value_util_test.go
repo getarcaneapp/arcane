@@ -17,6 +17,17 @@ func TestApplyChanged(t *testing.T) {
 	assert.Equal(t, "new", target)
 }
 
+func TestApplySliceChanged(t *testing.T) {
+	target := []string{"a"}
+
+	assert.True(t, ApplySliceChanged(&target, mo.Some([]string{"a", "b"})))
+	assert.Equal(t, []string{"a", "b"}, target)
+	assert.False(t, ApplySliceChanged(&target, mo.Some([]string{"a", "b"})))
+	assert.False(t, ApplySliceChanged(&target, mo.None[[]string]()))
+	assert.True(t, ApplySliceChanged(&target, mo.Some([]string{})))
+	assert.False(t, ApplySliceChanged(&target, mo.Some[[]string](nil)))
+}
+
 func TestApplyNullable(t *testing.T) {
 	target := new("initial")
 

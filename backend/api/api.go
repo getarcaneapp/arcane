@@ -2,7 +2,7 @@ package api
 
 import (
 	"context"
-	json "encoding/json/v2"
+	"encoding/json/v2"
 	"io"
 	"maps"
 	"net/http"
@@ -400,4 +400,5 @@ func registerHandlersInternal(api huma.API, deps HandlerDeps, handlerAppCtx hand
 	handlers.RegisterWebhooks(api, deps.Webhook)
 	handlers.RegisterVulnerability(api, deps.Vulnerability, handlerAppCtx)
 	handlers.RegisterDashboard(api, deps.Dashboard, deps.Environment)
+	handlers.RegisterStream(api, deps.Dashboard, deps.Activity, deps.Environment)
 }

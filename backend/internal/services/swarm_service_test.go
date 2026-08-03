@@ -14,6 +14,7 @@ import (
 	swarmtypes "github.com/getarcaneapp/arcane/types/v2/swarm"
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/api/types/system"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -38,16 +39,24 @@ func TestDefaultSwarmListenAddrInternal(t *testing.T) {
 func TestSwarmService_FetchSwarmNodeIdentityViaEdgeInternal_UsesEnvironmentAccessToken(t *testing.T) {
 	ctx := context.Background()
 	db := setupEnvironmentServiceTestDB(t)
-	settingsSvc, err := NewSettingsService(ctx, db)
+	settingsSvc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	envSvc := NewEnvironmentService(db, nil, nil, nil, settingsSvc, nil)
 
 	accessToken := "token-123"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, http.MethodGet, r.Method)
-		require.Equal(t, "/api/swarm/node-identity", r.URL.Path)
-		require.Equal(t, accessToken, r.Header.Get("X-API-Key"))
-		require.Equal(t, accessToken, r.Header.Get("X-Arcane-Agent-Token"))
+		if !assert.Equal(t, http.MethodGet, r.Method) {
+			return
+		}
+		if !assert.Equal(t, "/api/swarm/node-identity", r.URL.Path) {
+			return
+		}
+		if !assert.Equal(t, accessToken, r.Header.Get("X-API-Key")) {
+			return
+		}
+		if !assert.Equal(t, accessToken, r.Header.Get("X-Arcane-Agent-Token")) {
+			return
+		}
 
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"success":true,"data":{"swarmNodeId":"node-1","hostname":"worker-1","role":"worker","engineVersion":"29.3.1","swarmActive":true}}`))
@@ -82,7 +91,7 @@ func TestSwarmService_UpdateAndGetStackSource_UsesStoredFilesWithoutSwarmManager
 	rootDir := t.TempDir()
 	t.Setenv("SWARM_STACK_SOURCES_DIRECTORY", rootDir)
 
-	settingsSvc, err := NewSettingsService(ctx, db)
+	settingsSvc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	svc := NewSwarmService(nil, settingsSvc, nil, nil, nil)
@@ -119,6 +128,19 @@ func TestSwarmService_UpdateAndGetStackSource_UsesStoredFilesWithoutSwarmManager
 	source, err = svc.GetStackSource(ctx, "0", "demo-stack")
 	require.NoError(t, err)
 	require.Len(t, source.Files, 2)
+
+	_, err = svc.UpdateStackSource(ctx, "0", "demo-stack", swarmtypes.StackSourceUpdateRequest{
+		ComposeContent: "services:\n  web:\n    image: nginx:alpine\n",
+		Files: []swarmtypes.SyncFile{
+			{RelativePath: "config/nginx.conf", Content: []byte("worker_processes auto;")},
+		},
+	})
+	require.NoError(t, err)
+	require.NoFileExists(t, filepath.Join(rootDir, "0", "demo-stack", "scripts", "setup.sh"))
+	source, err = svc.GetStackSource(ctx, "0", "demo-stack")
+	require.NoError(t, err)
+	require.Len(t, source.Files, 1)
+	require.Equal(t, []byte("worker_processes auto;"), source.Files[0].Content)
 }
 
 func TestSwarmService_UpdateAndGetStackSource_RoundTripsOverride(t *testing.T) {
@@ -127,7 +149,7 @@ func TestSwarmService_UpdateAndGetStackSource_RoundTripsOverride(t *testing.T) {
 	rootDir := t.TempDir()
 	t.Setenv("SWARM_STACK_SOURCES_DIRECTORY", rootDir)
 
-	settingsSvc, err := NewSettingsService(ctx, db)
+	settingsSvc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	svc := NewSwarmService(nil, settingsSvc, nil, nil, nil)
@@ -158,38 +180,6 @@ func TestSwarmService_UpdateAndGetStackSource_RoundTripsOverride(t *testing.T) {
 	source, err = svc.GetStackSource(ctx, "0", "demo-stack")
 	require.NoError(t, err)
 	require.Empty(t, source.OverrideContent)
-}
-
-func TestSwarmService_getPathMapperInternal(t *testing.T) {
-	ctx := context.Background()
-	db := setupSettingsTestDB(t)
-	settingsSvc, err := NewSettingsService(ctx, db)
-	require.NoError(t, err)
-
-	svc := NewSwarmService(nil, settingsSvc, nil, nil, nil)
-
-	t.Run("returns nil when paths match", func(t *testing.T) {
-		pm := svc.getPathMapperInternal(ctx)
-		require.Nil(t, pm) // Default is /app/data/swarm/sources which matches itself
-	})
-
-	t.Run("returns mapper when mapping configured", func(t *testing.T) {
-		containerDir := filepath.Join(t.TempDir(), "container")
-		hostDir := "/host/path"
-		err := settingsSvc.UpdateSetting(ctx, "swarmStackSourcesDirectory", containerDir+":"+hostDir)
-		require.NoError(t, err)
-
-		pm := svc.getPathMapperInternal(ctx)
-		require.NotNil(t, pm)
-		require.True(t, pm.IsNonMatchingMount())
-
-		testFile := filepath.Join(containerDir, "0/stack/compose.yaml")
-		expected := filepath.Join(hostDir, "0/stack/compose.yaml")
-
-		translated, err := pm.ContainerToHost(testFile)
-		require.NoError(t, err)
-		require.Equal(t, filepath.ToSlash(expected), filepath.ToSlash(translated))
-	})
 }
 
 func TestSwarmService_ScaleService_HandlesServiceModesInternal(t *testing.T) {
@@ -249,14 +239,16 @@ func TestSwarmService_ScaleService_HandlesServiceModesInternal(t *testing.T) {
 
 				switch {
 				case r.Method == http.MethodGet && r.URL.Path == "/v1.41/info":
-					require.NoError(t, json.NewEncoder(w).Encode(system.Info{
+					if !assert.NoError(t, json.NewEncoder(w).Encode(system.Info{
 						Swarm: swarm.Info{
 							LocalNodeState:   swarm.LocalNodeStateActive,
 							ControlAvailable: true,
 						},
-					}))
+					})) {
+						return
+					}
 				case r.Method == http.MethodGet && r.URL.Path == "/v1.41/services/service-1":
-					require.NoError(t, json.NewEncoder(w).Encode(swarm.Service{
+					if !assert.NoError(t, json.NewEncoder(w).Encode(swarm.Service{
 						ID: "service-1",
 						Meta: swarm.Meta{
 							Version: swarm.Version{Index: 7},
@@ -265,12 +257,20 @@ func TestSwarmService_ScaleService_HandlesServiceModesInternal(t *testing.T) {
 							Annotations: swarm.Annotations{Name: "service-1"},
 							Mode:        tt.mode,
 						},
-					}))
+					})) {
+						return
+					}
 				case r.Method == http.MethodPost && r.URL.Path == "/v1.41/services/service-1/update":
 					updateCalls++
-					require.Equal(t, "7", r.URL.Query().Get("version"))
-					require.NoError(t, json.NewDecoder(r.Body).Decode(&updatedSpec))
-					require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Warnings": []string{"updated"}}))
+					if !assert.Equal(t, "7", r.URL.Query().Get("version")) {
+						return
+					}
+					if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&updatedSpec)) {
+						return
+					}
+					if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Warnings": []string{"updated"}})) {
+						return
+					}
 				default:
 					http.NotFound(w, r)
 				}

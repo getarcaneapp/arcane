@@ -3,7 +3,7 @@ package services
 import (
 	"bytes"
 	"context"
-	json "encoding/json/v2"
+	"encoding/json/v2"
 	"fmt"
 	"html"
 	"html/template"
@@ -21,6 +21,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/notifications"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
 	"github.com/getarcaneapp/arcane/backend/v2/resources"
 	"github.com/getarcaneapp/arcane/types/v2/imageupdate"
 	notificationdto "github.com/getarcaneapp/arcane/types/v2/notification"
@@ -38,6 +39,14 @@ var notificationCredentialFieldsByProviderInternal = map[models.NotificationProv
 	models.NotificationProviderPushover: {"token"},
 	models.NotificationProviderGotify:   {"token"},
 	models.NotificationProviderMatrix:   {"password"},
+}
+
+var notificationTargetFieldByProviderInternal = map[models.NotificationProvider]string{
+	models.NotificationProviderEmail:  "smtpHost",
+	models.NotificationProviderSignal: "host",
+	models.NotificationProviderNtfy:   "host",
+	models.NotificationProviderGotify: "host",
+	models.NotificationProviderMatrix: "host",
 }
 
 const ErrUnauthorizedNotificationDispatch = errors.Sentinel("unauthorized notification dispatch")
@@ -316,6 +325,36 @@ func encryptNotificationConfigCredentialsInternal(provider models.NotificationPr
 	if provider == models.NotificationProviderEmail {
 		preserveConfig = emailCredentialPreservationConfigInternal(config, existingConfig)
 	}
+	if targetField := notificationTargetFieldByProviderInternal[provider]; targetField != "" {
+		currentTarget, _ := existingConfig[targetField].(string)
+		nextTarget, _ := encryptedConfig[targetField].(string)
+		if strings.TrimSpace(nextTarget) == "" && strings.TrimSpace(currentTarget) != "" {
+			nextTarget = currentTarget
+			encryptedConfig[targetField] = currentTarget
+		}
+
+		storedCredentials := make(map[string]bool, len(notificationCredentialFieldsByProviderInternal[provider]))
+		updatedCredentials := make(map[string]bool, len(notificationCredentialFieldsByProviderInternal[provider]))
+		for _, field := range notificationCredentialFieldsByProviderInternal[provider] {
+			preservedValue, _ := preserveConfig[field].(string)
+			updatedValue, _ := encryptedConfig[field].(string)
+			storedCredentials[field] = preservedValue != ""
+			updatedCredentials[field] = updatedValue != ""
+		}
+
+		if err := validation.ValidateCredentialTargetChange(
+			targetField,
+			currentTarget,
+			new(nextTarget),
+			func(value string) string {
+				return strings.ToLower(strings.TrimSuffix(strings.TrimSpace(value), "."))
+			},
+			storedCredentials,
+			updatedCredentials,
+		); err != nil {
+			return nil, err
+		}
+	}
 	for _, field := range notificationCredentialFieldsByProviderInternal[provider] {
 		value, _ := encryptedConfig[field].(string)
 		if value == "" {
@@ -495,10 +534,6 @@ func collectNotificationSendResultInternal(errors *[]string, provider models.Not
 	msg := sendErr.Error()
 	*errors = append(*errors, fmt.Sprintf("%s: %s", provider, msg))
 	return "failed", &msg
-}
-
-func unknownNotificationProviderErrorInternal(provider models.NotificationProvider) error {
-	return errors.Errorf("unknown provider: %s", provider)
 }
 
 const (
@@ -857,8 +892,13 @@ func (s *NotificationService) sendBatchImageUpdateNotificationForTargetInternal(
 }
 
 func (s *NotificationService) SendPruneReportNotification(ctx context.Context, result *system.PruneAllResult) error {
+	if result == nil {
+		slog.InfoContext(ctx, "skipping prune report notification because no prune result was reported")
+		return nil
+	}
+
 	hasChanges := pruneResultHasChangesInternal(result)
-	hasErrors := result != nil && len(result.Errors) > 0
+	hasErrors := len(result.Errors) > 0
 	if !hasChanges && !hasErrors {
 		slog.InfoContext(ctx, "skipping prune report notification because no resources were pruned and no errors were reported")
 		return nil
@@ -884,7 +924,7 @@ func (s *NotificationService) SendPruneReportNotification(ctx context.Context, r
 
 func (s *NotificationService) sendPruneReportNotificationForTargetInternal(ctx context.Context, target NotificationTarget, result *system.PruneAllResult) error {
 	hasChanges := pruneResultHasChangesInternal(result)
-	hasErrors := result != nil && len(result.Errors) > 0
+	hasErrors := len(result.Errors) > 0
 
 	metadata := models.JSON{
 		"spaceReclaimed": result.SpaceReclaimed,
@@ -1082,7 +1122,7 @@ func (s *NotificationService) TestNotification(ctx context.Context, environmentI
 	content := s.testNotificationContentInternal(target.EnvironmentName, testType)
 	handled, sendErr := notifications.Deliver(ctx, provider, setting.Config, content)
 	if !handled {
-		return "", unknownNotificationProviderErrorInternal(provider)
+		return "", errors.Errorf("unknown provider: %s", provider)
 	}
 	return warning, sendErr
 }

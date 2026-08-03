@@ -3,7 +3,7 @@ package pagination
 import (
 	"testing"
 
-	sqlite "github.com/libtnb/sqlite"
+	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -31,7 +31,7 @@ func TestPaginateAndSortDB_SkipCountReturnsUnknownTotals(t *testing.T) {
 	var got []widget
 	resp, err := PaginateAndSortDB(QueryParams{
 		Params:     Params{Start: 0, Limit: 2, SkipCount: true},
-		SortParams: SortParams{Sort: "Name", Order: SortOrder("asc")},
+		SortParams: SortParams{Sort: "Name", Order: "asc"},
 	}, db.Model(&widget{}), &got)
 	require.NoError(t, err)
 	require.Len(t, got, 2)
@@ -47,7 +47,7 @@ func TestPaginateAndSortDB_DefaultStillCounts(t *testing.T) {
 	var got []widget
 	resp, err := PaginateAndSortDB(QueryParams{
 		Params:     Params{Start: 0, Limit: 2},
-		SortParams: SortParams{Sort: "Name", Order: SortOrder("asc")},
+		SortParams: SortParams{Sort: "Name", Order: "asc"},
 	}, db.Model(&widget{}), &got)
 	require.NoError(t, err)
 	require.Len(t, got, 2)
@@ -61,10 +61,27 @@ func TestPaginateAndSortDB_SkipCountShowAll(t *testing.T) {
 	var got []widget
 	resp, err := PaginateAndSortDB(QueryParams{
 		Params:     Params{Start: 0, Limit: -1, SkipCount: true},
-		SortParams: SortParams{Sort: "Name", Order: SortOrder("asc")},
+		SortParams: SortParams{Sort: "Name", Order: "asc"},
 	}, db.Model(&widget{}), &got)
 	require.NoError(t, err)
 	require.Len(t, got, 5)
 	require.Equal(t, UnknownTotal, resp.TotalItems)
 	require.Equal(t, UnknownTotal, resp.TotalPages)
+}
+
+// A start that does not land on a page boundary used to be rounded down to the
+// containing page: ?start=3&limit=2 returned rows 2-3 rather than 3-4.
+func TestPaginateAndSortDB_HonoursUnalignedStart(t *testing.T) {
+	db := newSkipCountTestDB(t)
+
+	var got []widget
+	resp, err := PaginateAndSortDB(QueryParams{
+		Params:     Params{Start: 3, Limit: 2},
+		SortParams: SortParams{Sort: "Name", Order: "asc"},
+	}, db.Model(&widget{}), &got)
+	require.NoError(t, err)
+	require.Len(t, got, 2)
+	require.Equal(t, "D", got[0].Name, "offset 3 must return the 4th row, not the start of its page")
+	require.Equal(t, "E", got[1].Name)
+	require.Equal(t, int64(5), resp.TotalItems)
 }

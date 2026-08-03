@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"hash/fnv"
-	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -19,7 +18,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/types/v2/activity"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	"go.getarcane.app/streams/agg"
@@ -74,7 +72,6 @@ const (
 	activityStreamRemotePollInterval   = 5 * time.Second
 	activityStreamEnvReconcileInterval = 30 * time.Second
 	activityStreamRemotePollTimeout    = 15 * time.Second
-	activityStreamEventBuffer          = 256
 )
 
 type CancelActivityInput struct {
@@ -87,6 +84,7 @@ type CancelActivityOutput struct {
 	Body base.ApiResponse[activity.Activity]
 }
 
+//nolint:dupl // Huma operation registrations are intentionally explicit.
 func RegisterActivities(api huma.API, activityService *services.ActivityService, environmentService *services.EnvironmentService) {
 	h := &ActivityHandler{
 		activityService:    activityService,
@@ -112,17 +110,6 @@ func RegisterActivities(api huma.API, activityService *services.ActivityService,
 		Tags:        []string{"Activities"},
 		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermActivitiesRead, h.GetActivity)
-
-	huma.Register(api, huma.Operation{
-		OperationID: "stream-all-activities",
-		Method:      http.MethodGet,
-		Path:        "/activities/stream",
-		Summary:     "Stream background activities across all environments",
-		Description: "Stream background activity updates for the local environment and all enabled remote environments as JSON lines",
-		Tags:        []string{"Activities"},
-		Security:    defaultOperationSecurityInternal(),
-		Middlewares: humamw.RequireAnyEnvironmentPermission(api, authz.PermActivitiesRead),
-	}, h.StreamAllActivities)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "cancel-activity",
@@ -266,7 +253,7 @@ func (h *ActivityHandler) proxyCancelActivityInternal(ctx context.Context, input
 // audit message, preferring the authenticated user and falling back to a name
 // forwarded from a proxying controller.
 func (h *ActivityHandler) cancelRequestedByInternal(ctx context.Context, forwarded string) string {
-	if user, ok := humamw.GetCurrentUserFromContext(ctx); ok && user != nil {
+	if user, ok := models.CurrentUserFromContext(ctx); ok && user != nil {
 		if user.DisplayName != nil && strings.TrimSpace(*user.DisplayName) != "" {
 			return strings.TrimSpace(*user.DisplayName)
 		}
@@ -275,45 +262,6 @@ func (h *ActivityHandler) cancelRequestedByInternal(ctx context.Context, forward
 		}
 	}
 	return strings.TrimSpace(forwarded)
-}
-
-func (h *ActivityHandler) StreamAllActivities(ctx context.Context, input *StreamAllActivitiesInput) (*huma.StreamResponse, error) {
-	return &huma.StreamResponse{
-		Body: func(humaCtx huma.Context) { //nolint:contextcheck // streaming work must use humaCtx.Context()
-			httpx.SetJSONStreamHeaders(humaCtx)
-
-			writer := humaCtx.BodyWriter()
-			flush := func() {
-				if f, ok := writer.(http.Flusher); ok {
-					f.Flush()
-				}
-			}
-
-			ps, _ := humamw.PermissionsFromContext(humaCtx.Context())
-			h.streamAllActivitiesInternal(humaCtx.Context(), ps, input.Limit, writer, flush)
-		},
-	}, nil
-}
-
-// streamAllActivitiesInternal multiplexes activity events for the local
-// environment and every enabled remote environment over a single response so
-// the browser needs one connection regardless of environment count.
-func (h *ActivityHandler) streamAllActivitiesInternal(ctx context.Context, ps *authz.PermissionSet, limit int, writer io.Writer, flush func()) {
-	_ = httpx.RunAuthorizedAggregateStream(ctx, ps, authz.PermActivitiesRead, agg.Config[activity.StreamEvent]{
-		Writer:            writer,
-		Flush:             flush,
-		Buffer:            activityStreamEventBuffer,
-		HeartbeatInterval: activityStreamHeartbeatInterval,
-		MakeHeartbeat: func() activity.StreamEvent {
-			return activity.StreamEvent{Type: "heartbeat", Timestamp: time.Now()}
-		},
-	},
-		func(ctx context.Context, events chan<- activity.StreamEvent) {
-			h.runLocalActivityStreamProducerInternal(ctx, limit, events)
-		},
-		func(ctx context.Context, events chan<- activity.StreamEvent) {
-			h.runRemoteActivityStreamPollersInternal(ctx, ps, limit, events)
-		})
 }
 
 func (h *ActivityHandler) runLocalActivityStreamProducerInternal(ctx context.Context, limit int, events chan<- activity.StreamEvent) {
@@ -579,32 +527,19 @@ func applyActivitySourceLabelsForEnvironmentInternal(environment models.Environm
 func activitySourceFromEnvironmentInternal(environment models.Environment) (string, string) {
 	environmentID := environment.ID
 	if environmentID == "" {
-		environmentID = "0"
+		environmentID = services.LocalEnvironmentID
 	}
-	environmentName := environment.Name
-	if environmentName == "" {
-		if environmentID == "0" {
-			environmentName = "Local"
-		} else {
-			environmentName = environmentID
-		}
-	}
-	return environmentID, environmentName
+	return environmentID, services.EnvironmentDisplayName(environmentID, environment.Name)
 }
 
 func (h *ActivityHandler) resolveActivitySourceInternal(ctx context.Context, environmentID string) (string, string) {
 	if environmentID == "" {
-		environmentID = "0"
+		environmentID = services.LocalEnvironmentID
 	}
 	if h.environmentService != nil {
-		if env, err := h.environmentService.GetEnvironmentByID(ctx, environmentID); err == nil && env != nil {
-			return env.ID, env.Name
-		}
+		return environmentID, h.environmentService.ResolveEnvironmentName(ctx, environmentID)
 	}
-	if environmentID == "0" {
-		return "0", "Local"
-	}
-	return environmentID, environmentID
+	return environmentID, services.EnvironmentDisplayName(environmentID, "")
 }
 
 func applyActivitySourceInternal(item *activity.Activity, sourceID, sourceName string) {

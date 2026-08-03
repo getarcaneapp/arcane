@@ -313,19 +313,13 @@ func sanitizeUploadFilename(filename string) (string, error) {
 func joinBuildRoot(root, cleaned string) (string, error) {
 	rel := strings.TrimPrefix(cleaned, "/")
 	fullPath := filepath.Join(root, filepath.FromSlash(rel))
-	if !isWithinRoot(root, fullPath) {
+	if !utils.IsWithinRoot(root, fullPath) {
 		return "", errors.New("invalid path: outside builds directory")
 	}
-	return fullPath, nil
-}
-
-func isWithinRoot(root, target string) bool {
-	rootClean := filepath.Clean(root)
-	targetClean := filepath.Clean(target)
-	if targetClean == rootClean {
-		return true
+	if _, err := utils.ResolveWithinRoot(root, fullPath); err != nil {
+		return "", errors.WrapIf(err, "invalid path: outside builds directory")
 	}
-	return strings.HasPrefix(targetClean, rootClean+string(os.PathSeparator))
+	return fullPath, nil
 }
 
 func resolveLinkTarget(root, target string) string {
@@ -334,7 +328,7 @@ func resolveLinkTarget(root, target string) string {
 	}
 	if filepath.IsAbs(target) {
 		targetClean := filepath.Clean(target)
-		if isWithinRoot(root, targetClean) {
+		if utils.IsWithinRoot(root, targetClean) {
 			rel, err := filepath.Rel(root, targetClean)
 			if err != nil {
 				return "(external)"

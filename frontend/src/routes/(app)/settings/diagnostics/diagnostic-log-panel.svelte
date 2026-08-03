@@ -16,7 +16,13 @@
 
 	let { height = '360px', maxLines = 1000 }: Props = $props();
 
-	let logs = $state<LogEntry[]>([]);
+	interface DisplayLogEntry {
+		id: number;
+		entry: LogEntry;
+	}
+
+	let nextLogId = 0;
+	let logs = $state<DisplayLogEntry[]>([]);
 	let connected = $state(false);
 	let autoScroll = $state(true);
 	let filterText = $state('');
@@ -25,10 +31,10 @@
 	let ws: ReconnectingWebSocket<LogEntry> | null = null;
 
 	const filtered = $derived(
-		logs.filter((l) => {
-			const lvl = l.level.toLowerCase();
+		logs.filter(({ entry }) => {
+			const lvl = entry.level.toLowerCase();
 			if (levelFilter !== 'all' && !lvl.startsWith(levelFilter)) return false;
-			if (filterText && !l.message.toLowerCase().includes(filterText.toLowerCase())) return false;
+			if (filterText && !entry.message.toLowerCase().includes(filterText.toLowerCase())) return false;
 			return true;
 		})
 	);
@@ -42,7 +48,7 @@
 	}
 
 	function push(entry: LogEntry) {
-		logs.push(entry);
+		logs.push({ id: nextLogId++, entry });
 		if (logs.length > maxLines) logs = logs.slice(logs.length - maxLines);
 		scrollToBottom();
 	}
@@ -127,7 +133,8 @@
 		{#if filtered.length === 0}
 			<div class="py-6 text-center text-muted-foreground">{m.diagnostics_logs_empty()}</div>
 		{:else}
-			{#each filtered as entry (entry)}
+			{#each filtered as item (item.id)}
+				{@const entry = item.entry}
 				<div class="flex gap-2 rounded px-1 py-0.5 hover:bg-foreground/5">
 					<span class="shrink-0 text-muted-foreground tabular-nums">{fmtTime(entry.time)}</span>
 					<span class={cn('w-12 shrink-0 font-semibold uppercase', levelClass(entry.level))}>{entry.level}</span>

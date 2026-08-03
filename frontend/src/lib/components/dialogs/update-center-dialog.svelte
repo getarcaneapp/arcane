@@ -31,7 +31,11 @@
 	}: {
 		open?: boolean;
 		versionInformation?: AppVersionInformation;
-		onConfirm: () => void | Promise<void>;
+		/**
+		 * Triggers the upgrade. Resolving with `upToDate` lets this dialog settle
+		 * immediately instead of waiting out the no-op detection below.
+		 */
+		onConfirm: () => void | Promise<void | { upToDate?: boolean }>;
 		environmentName?: string;
 		environmentId?: string;
 		canInstall?: boolean;
@@ -115,6 +119,10 @@
 	// to decide whether enough time has passed since the agent was told to
 	// upgrade for "no version change" to be conclusive.
 	let triggerResolvedAt = $state<number | null>(null);
+	// The backend told us this environment already ran the newest image, so the pull
+	// found nothing to swap in and no restart is coming. Lets the no-op detection below
+	// conclude at once instead of waiting out its grace period.
+	let reportedUpToDate = $state(false);
 
 	function short(v?: string | null, n = 12): string {
 		if (!v) return '';
@@ -270,9 +278,10 @@
 					!!baselineVersionInfo &&
 					!changed &&
 					sinceTriggerMs !== null &&
-					sinceTriggerMs >= NO_OP_GRACE_MS
+					(reportedUpToDate || sinceTriggerMs >= NO_OP_GRACE_MS)
 				) {
 					log('no-op-detected', {
+						reportedUpToDate,
 						sinceTriggerMs,
 						currentDigest: short(info.currentDigest),
 						baselineDigest: short(baselineVersionInfo?.currentDigest)
@@ -358,12 +367,14 @@
 		// trigger eventually returns successfully we record the timestamp so the
 		// poll loop can run its no-op detection against it.
 		triggerResolvedAt = null;
+		reportedUpToDate = false;
 		let triggerErrored = false;
 		const triggerPromise = Promise.resolve()
 			.then(() => onConfirm())
-			.then(() => {
+			.then((result) => {
 				triggerResolvedAt = Date.now();
-				log('trigger-resolved');
+				reportedUpToDate = !!result && result.upToDate === true;
+				log('trigger-resolved', { upToDate: reportedUpToDate });
 			})
 			.catch((err) => {
 				log('trigger-error', err);

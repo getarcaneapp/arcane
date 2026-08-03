@@ -71,7 +71,7 @@
 				bind:autoScroll
 				type="service"
 				{serviceId}
-				{showParsedJson}
+				bind:showParsedJson
 				maxLines={500}
 				showTimestamps={true}
 				height="calc(100vh - 320px)"

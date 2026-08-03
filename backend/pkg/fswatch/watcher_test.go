@@ -44,7 +44,7 @@ func TestWatcher_StartWatchesExistingSymlinkDirectoriesWhenEnabled(t *testing.T)
 	select {
 	case <-changeCh:
 	case <-time.After(2 * time.Second):
-		t.Fatal("expected symlinked directory change to trigger watcher callback")
+		require.FailNow(t, "expected symlinked directory change to trigger watcher callback")
 	}
 }
 
@@ -86,7 +86,7 @@ func TestWatcher_StartWatchesNewDirectoriesInsideSymlinkDirectoriesWhenEnabled(t
 	select {
 	case <-changeCh:
 	case <-time.After(2 * time.Second):
-		t.Fatal("expected compose file in new symlinked directory to trigger watcher callback")
+		require.FailNow(t, "expected compose file in new symlinked directory to trigger watcher callback")
 	}
 }
 
@@ -127,7 +127,7 @@ func TestWatcher_StartIgnoresNonProjectFileWritesInsideProjectDir(t *testing.T) 
 
 	select {
 	case <-changeCh:
-		t.Fatal("did not expect non-project file writes to trigger watcher callback")
+		require.FailNow(t, "did not expect non-project file writes to trigger watcher callback")
 	case <-time.After(500 * time.Millisecond):
 	}
 }
@@ -164,7 +164,7 @@ func TestWatcher_StartIgnoresChmodOnNonProjectFiles(t *testing.T) {
 	// Chmod on a non-project file is exactly the noise we're filtering.
 	select {
 	case <-changeCh:
-		t.Fatal("did not expect chmod on a non-project file to trigger watcher callback")
+		require.FailNow(t, "did not expect chmod on a non-project file to trigger watcher callback")
 	case <-time.After(500 * time.Millisecond):
 	}
 }
@@ -197,7 +197,7 @@ func TestWatcher_StartFiresOnComposeFileDroppedIntoNewlyCreatedDirectory(t *test
 
 	select {
 	case <-changeCh:
-		t.Fatal("did not expect plain directory create to trigger watcher callback")
+		require.FailNow(t, "did not expect plain directory create to trigger watcher callback")
 	case <-time.After(500 * time.Millisecond):
 	}
 
@@ -209,7 +209,7 @@ func TestWatcher_StartFiresOnComposeFileDroppedIntoNewlyCreatedDirectory(t *test
 	select {
 	case <-changeCh:
 	case <-time.After(2 * time.Second):
-		t.Fatal("expected compose file inside newly-created directory to trigger watcher callback")
+		require.FailNow(t, "expected compose file inside newly-created directory to trigger watcher callback")
 	}
 }
 
@@ -245,7 +245,7 @@ func TestWatcher_StartSkipsExistingSymlinkDirectoriesWhenDisabled(t *testing.T) 
 
 	select {
 	case <-changeCh:
-		t.Fatal("did not expect symlinked directory change to trigger watcher callback when disabled")
+		require.FailNow(t, "did not expect symlinked directory change to trigger watcher callback when disabled")
 	case <-time.After(300 * time.Millisecond):
 	}
 }
@@ -279,7 +279,7 @@ func TestWatcher_StartTriggersOnNestedProjectFileBeyondDepthOne(t *testing.T) {
 	select {
 	case <-changeCh:
 	case <-time.After(2 * time.Second):
-		t.Fatal("expected nested compose file change to trigger watcher callback")
+		require.FailNow(t, "expected nested compose file change to trigger watcher callback")
 	}
 }
 
@@ -311,7 +311,7 @@ func TestWatcher_StartDoesNotTriggerOnNestedProjectFileBeyondConfiguredDepth(t *
 
 	select {
 	case <-changeCh:
-		t.Fatal("did not expect nested compose file beyond max depth to trigger watcher callback")
+		require.FailNow(t, "did not expect nested compose file beyond max depth to trigger watcher callback")
 	case <-time.After(500 * time.Millisecond):
 	}
 }
@@ -345,7 +345,7 @@ func TestWatcher_StartTriggersOnDirectChildProjectFileAtConfiguredDepth(t *testi
 	select {
 	case <-changeCh:
 	case <-time.After(2 * time.Second):
-		t.Fatal("expected direct child compose file at max depth to trigger watcher callback")
+		require.FailNow(t, "expected direct child compose file at max depth to trigger watcher callback")
 	}
 }
 
@@ -380,7 +380,7 @@ func TestWatcher_StartIgnoresBareNestedDirectoryCreateAndRemove(t *testing.T) {
 
 	select {
 	case <-changeCh:
-		t.Fatal("did not expect plain nested directory create to trigger watcher callback")
+		require.FailNow(t, "did not expect plain nested directory create to trigger watcher callback")
 	case <-time.After(500 * time.Millisecond):
 	}
 
@@ -388,7 +388,7 @@ func TestWatcher_StartIgnoresBareNestedDirectoryCreateAndRemove(t *testing.T) {
 
 	select {
 	case <-changeCh:
-		t.Fatal("did not expect plain nested directory removal to trigger watcher callback")
+		require.FailNow(t, "did not expect plain nested directory removal to trigger watcher callback")
 	case <-time.After(500 * time.Millisecond):
 	}
 }
@@ -427,6 +427,6 @@ func stopWatcherWithinTimeoutInternal(t *testing.T, watcher *Watcher) {
 	case err := <-done:
 		require.NoError(t, err)
 	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for watcher to stop")
+		require.FailNow(t, "timed out waiting for watcher to stop")
 	}
 }

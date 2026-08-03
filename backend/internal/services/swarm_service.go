@@ -4,8 +4,7 @@ import (
 	"bytes"
 	"context"
 	stdjson "encoding/json"
-	json "encoding/json/v2"
-	stderrors "errors"
+	"encoding/json/v2"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -16,7 +15,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"emperror.dev/errors"
@@ -28,13 +26,13 @@ import (
 	libswarm "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/swarm"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	appfs "github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	swarmtypes "github.com/getarcaneapp/arcane/types/v2/swarm"
 	networktypes "github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/api/types/system"
 	dockerclient "github.com/moby/moby/client"
 	"github.com/samber/hot"
-	"go.getarcane.app/sys/atomic"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -95,6 +93,9 @@ type swarmNodeAgentCoverage struct {
 	boundEnvsByNodeID  map[string][]models.Environment
 	candidatesByNodeID map[string][]models.Environment
 	localIdentity      *SwarmNodeIdentity
+	// Resolved once per request rather than per node: the name is user-editable, and
+	// applyNodeAgentCoverageInternal runs in a loop with no context to look it up.
+	localEnvironmentName string
 }
 
 func (s *SwarmService) IsEnabled(ctx context.Context) (bool, error) {
@@ -700,7 +701,9 @@ func (s *SwarmService) resolveNodeAgentCoverageInternal(ctx context.Context, env
 	g.SetLimit(swarmNodeIdentityProbeConcurrency)
 	for _, candidate := range probeEnvsByID {
 		env := candidate
-		g.Go(func() error {
+		g.Go(func() (workerErr error) {
+			defer utils.RecoverToError(&workerErr, "swarm worker")
+
 			runtime := s.resolveSwarmNodeAgentRuntimeInternal(groupCtx, &env)
 			runtimeMu.Lock()
 			runtimeByEnvID[env.ID] = runtime
@@ -737,11 +740,12 @@ func (s *SwarmService) resolveNodeAgentCoverageInternal(ctx context.Context, env
 		boundEnvsByNodeID:  boundEnvsByNodeID,
 		candidatesByNodeID: candidatesByNodeID,
 	}
-	if environmentID == "0" {
+	if environmentID == LocalEnvironmentID {
 		identity, identityErr := s.GetLocalNodeIdentity(ctx)
 		if identityErr == nil {
 			coverage.localIdentity = identity
 		}
+		coverage.localEnvironmentName = s.environmentService.ResolveEnvironmentName(ctx, LocalEnvironmentID)
 	}
 	return coverage, nil
 }
@@ -751,10 +755,11 @@ func (s *SwarmService) applyNodeAgentCoverageInternal(environmentID string, item
 		return
 	}
 	nodeID := strings.TrimSpace(item.ID)
-	if environmentID == "0" && coverage.localIdentity != nil && coverage.localIdentity.SwarmActive && strings.TrimSpace(coverage.localIdentity.SwarmNodeID) == nodeID {
+	if environmentID == LocalEnvironmentID && coverage.localIdentity != nil && coverage.localIdentity.SwarmActive && strings.TrimSpace(coverage.localIdentity.SwarmNodeID) == nodeID {
 		connected := true
 		bindingKind := swarmtypes.NodeAgentBindingKindLocal
-		localID, localName, localType := "0", "Local", "local"
+		localID, localType := LocalEnvironmentID, "local"
+		localName := EnvironmentDisplayName(LocalEnvironmentID, coverage.localEnvironmentName)
 		item.Agent = swarmtypes.NodeAgentStatus{
 			State:           swarmtypes.NodeAgentStateConnected,
 			BindingKind:     &bindingKind,
@@ -911,7 +916,9 @@ func (s *SwarmService) JoinEnvironments(ctx context.Context, managerEnvironmentI
 		if target.Role != swarmtypes.SwarmJoinEnvironmentRoleWorker {
 			continue
 		}
-		group.Go(func() error {
+		group.Go(func() (workerErr error) {
+			defer utils.RecoverToError(&workerErr, "swarm worker")
+
 			if groupCtx.Err() == nil {
 				processTargetInternal(index)
 			}
@@ -1272,7 +1279,12 @@ func (s *SwarmService) DeployStack(ctx context.Context, environmentID string, re
 		workingDir = stackSourceDir
 	}
 
-	pm := s.getPathMapperInternal(ctx)
+	pm := appfs.NewPathMapperForConfiguredDirectory(
+		ctx,
+		s.settingsService.GetStringSetting(ctx, "swarmStackSourcesDirectory", defaultSwarmStackSourceRootDir),
+		defaultSwarmStackSourceRootDir,
+		dockerClient,
+	)
 
 	if err := libswarm.DeployStack(ctx, dockerClient, libswarm.StackDeployOptions{
 		Name:             stackName,
@@ -1291,7 +1303,7 @@ func (s *SwarmService) DeployStack(ctx context.Context, environmentID string, re
 		WorkingDir:   workingDir,
 		PathMapper:   pm,
 	}); err != nil {
-		return nil, err
+		return nil, classifySwarmStackErrorInternal(err)
 	}
 
 	return &swarmtypes.StackDeployResponse{Name: stackName}, nil
@@ -1931,22 +1943,20 @@ func (s *SwarmService) RemoveStack(ctx context.Context, environmentID, stackName
 		return err
 	}
 	if len(services) == 0 {
-		return s.removeSourceOnlyStackInternal(ctx, environmentID, stackName)
+		if _, err := s.getPersistedStackSourceSummaryInternal(ctx, environmentID, stackName); err != nil {
+			if cerrdefs.IsNotFound(err) {
+				return cerrdefs.ErrNotFound
+			}
+			return err
+		}
+	} else {
+		if err := s.removeStackServicesInternal(ctx, dockerClient, services); err != nil {
+			return err
+		}
 	}
 
-	if err := s.removeStackServicesInternal(ctx, dockerClient, services); err != nil {
-		return err
-	}
-
-	stackLabel := fmt.Sprintf("%s=%s", swarmtypes.StackNamespaceLabel, stackName)
-	if err := s.removeStackConfigsInternal(ctx, dockerClient, stackLabel); err != nil {
-		return err
-	}
-	if err := s.removeStackSecretsInternal(ctx, dockerClient, stackLabel); err != nil {
-		return err
-	}
-	if err := s.removeStackNetworksInternal(ctx, dockerClient, stackLabel); err != nil {
-		return err
+	if err := libswarm.RemoveStackResources(ctx, dockerClient, stackName); err != nil {
+		return classifySwarmStackErrorInternal(err)
 	}
 
 	if err := s.deleteStackSourceInternal(ctx, environmentID, stackName); err != nil {
@@ -1954,17 +1964,6 @@ func (s *SwarmService) RemoveStack(ctx context.Context, environmentID, stackName
 	}
 
 	return nil
-}
-
-func (s *SwarmService) removeSourceOnlyStackInternal(ctx context.Context, environmentID, stackName string) error {
-	if _, err := s.getPersistedStackSourceSummaryInternal(ctx, environmentID, stackName); err != nil {
-		if cerrdefs.IsNotFound(err) {
-			return cerrdefs.ErrNotFound
-		}
-		return err
-	}
-
-	return s.deleteStackSourceInternal(ctx, environmentID, stackName)
 }
 
 func (s *SwarmService) removeStackServicesInternal(ctx context.Context, dockerClient *dockerclient.Client, services []swarm.Service) error {
@@ -1978,54 +1977,6 @@ func (s *SwarmService) removeStackServicesInternal(ctx context.Context, dockerCl
 
 	if err := s.waitForRemovedServiceTasksInternal(ctx, dockerClient, serviceIDs, 30*time.Second); err != nil {
 		return err
-	}
-
-	return nil
-}
-
-func (s *SwarmService) removeStackConfigsInternal(ctx context.Context, dockerClient *dockerclient.Client, stackLabel string) error {
-	configFilter := make(dockerclient.Filters).Add("label", stackLabel)
-	configsResult, err := dockerClient.ConfigList(ctx, dockerclient.ConfigListOptions{Filters: configFilter})
-	if err != nil {
-		return errors.WrapIf(err, "failed to list stack configs")
-	}
-	for _, cfg := range configsResult.Items {
-		if _, err := dockerClient.ConfigRemove(ctx, cfg.ID, dockerclient.ConfigRemoveOptions{}); err != nil && !cerrdefs.IsNotFound(err) {
-			return errors.WrapIff(err, "failed to remove stack config %s", cfg.Spec.Name)
-		}
-	}
-
-	return nil
-}
-
-func (s *SwarmService) removeStackSecretsInternal(ctx context.Context, dockerClient *dockerclient.Client, stackLabel string) error {
-	secretFilter := make(dockerclient.Filters).Add("label", stackLabel)
-	secretsResult, err := dockerClient.SecretList(ctx, dockerclient.SecretListOptions{Filters: secretFilter})
-	if err != nil {
-		return errors.WrapIf(err, "failed to list stack secrets")
-	}
-	for _, secret := range secretsResult.Items {
-		if _, err := dockerClient.SecretRemove(ctx, secret.ID, dockerclient.SecretRemoveOptions{}); err != nil && !cerrdefs.IsNotFound(err) {
-			return errors.WrapIff(err, "failed to remove stack secret %s", secret.Spec.Name)
-		}
-	}
-
-	return nil
-}
-
-func (s *SwarmService) removeStackNetworksInternal(ctx context.Context, dockerClient *dockerclient.Client, stackLabel string) error {
-	networkFilter := make(dockerclient.Filters).Add("label", stackLabel)
-	networksResult, err := dockerClient.NetworkList(ctx, dockerclient.NetworkListOptions{Filters: networkFilter})
-	if err != nil {
-		return errors.WrapIf(err, "failed to list stack networks")
-	}
-	for _, network := range networksResult.Items {
-		if network.Ingress {
-			continue
-		}
-		if _, err := dockerClient.NetworkRemove(ctx, network.ID, dockerclient.NetworkRemoveOptions{}); err != nil && !cerrdefs.IsNotFound(err) {
-			return errors.WrapIff(err, "failed to remove stack network %s", network.Name)
-		}
 	}
 
 	return nil
@@ -2086,22 +2037,36 @@ func (s *SwarmService) ListStackTasksPaginated(ctx context.Context, stackName st
 	return s.listTasksPaginatedWithFiltersInternal(ctx, filters, params)
 }
 
-func (s *SwarmService) RenderStackConfig(ctx context.Context, req swarmtypes.StackRenderConfigRequest) (*swarmtypes.StackRenderConfigResponse, error) {
+func (s *SwarmService) RenderStackConfig(ctx context.Context, environmentID string, req swarmtypes.StackRenderConfigRequest) (*swarmtypes.StackRenderConfigResponse, error) {
 	if err := s.ensureSwarmManagerInternal(ctx); err != nil {
 		return nil, err
 	}
 
-	pm := s.getPathMapperInternal(ctx)
+	_, stackSourceDir, err := s.resolveSwarmStackSourceDirInternal(ctx, environmentID, req.Name)
+	if err != nil {
+		return nil, err
+	}
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		return nil, errors.WrapIf(err, "failed to connect to Docker")
+	}
+	pm := appfs.NewPathMapperForConfiguredDirectory(
+		ctx,
+		s.settingsService.GetStringSetting(ctx, "swarmStackSourcesDirectory", defaultSwarmStackSourceRootDir),
+		defaultSwarmStackSourceRootDir,
+		dockerClient,
+	)
 
 	result, err := libswarm.RenderStackConfig(ctx, libswarm.StackRenderOptions{
 		Name:            req.Name,
 		ComposeContent:  req.ComposeContent,
 		OverrideContent: req.OverrideContent,
 		EnvContent:      req.EnvContent,
+		WorkingDir:      stackSourceDir,
 		PathMapper:      pm,
 	})
 	if err != nil {
-		return nil, err
+		return nil, classifySwarmStackErrorInternal(err)
 	}
 
 	return &swarmtypes.StackRenderConfigResponse{
@@ -2113,6 +2078,13 @@ func (s *SwarmService) RenderStackConfig(ctx context.Context, req swarmtypes.Sta
 		Configs:         result.Configs,
 		Secrets:         result.Secrets,
 	}, nil
+}
+
+func classifySwarmStackErrorInternal(err error) error {
+	if errors.Is(err, libswarm.ErrInvalidStack) {
+		return common.Classify(common.ErrBadRequest, err)
+	}
+	return err
 }
 
 func (s *SwarmService) ListConfigs(ctx context.Context) ([]swarmtypes.ConfigSummary, error) {
@@ -2176,12 +2148,6 @@ func (s *SwarmService) CreateConfig(ctx context.Context, req swarmtypes.ConfigCr
 	}
 
 	return s.GetConfig(ctx, createResult.ID)
-}
-
-func (s *SwarmService) UpdateConfig(ctx context.Context, configID string, req swarmtypes.ConfigUpdateRequest) error {
-	_ = configID
-	_ = req
-	return common.Classify(common.ErrSwarmConfigImmutable, errors.New("Swarm configs are immutable; create a new config and update services to use it"))
 }
 
 func (s *SwarmService) RemoveConfig(ctx context.Context, configID string) error {
@@ -2262,12 +2228,6 @@ func (s *SwarmService) CreateSecret(ctx context.Context, req swarmtypes.SecretCr
 	}
 
 	return s.GetSecret(ctx, createResult.ID)
-}
-
-func (s *SwarmService) UpdateSecret(ctx context.Context, secretID string, req swarmtypes.SecretUpdateRequest) error {
-	_ = secretID
-	_ = req
-	return common.Classify(common.ErrSwarmSecretImmutable, errors.New("Swarm secrets are immutable; create a new secret and update services to use it"))
 }
 
 func (s *SwarmService) RemoveSecret(ctx context.Context, secretID string) error {
@@ -2545,7 +2505,7 @@ func (s *SwarmService) upsertStackSourceInternal(ctx context.Context, environmen
 		return errors.New("stack name is required")
 	}
 
-	_, stackSourceDir, err := s.resolveSwarmStackSourceDirInternal(ctx, environmentID, stackName)
+	rootDir, stackSourceDir, err := s.resolveSwarmStackSourceDirInternal(ctx, environmentID, stackName)
 	if err != nil {
 		return err
 	}
@@ -2554,48 +2514,55 @@ func (s *SwarmService) upsertStackSourceInternal(ctx context.Context, environmen
 		return errors.WrapIf(err, "failed to create swarm stack source directory")
 	}
 
-	if err := atomic.WriteFile(filepath.Join(stackSourceDir, swarmStackComposeFilename), []byte(composeContent), common.FilePerm); err != nil {
-		return errors.WrapIf(err, "failed to write swarm stack compose source")
-	}
-
-	overridePath := filepath.Join(stackSourceDir, swarmStackOverrideFilename)
+	syncFiles := make([]appfs.SyncFile, 0, len(files)+3)
+	syncFiles = append(syncFiles, appfs.SyncFile{
+		RelativePath: swarmStackComposeFilename,
+		Content:      []byte(composeContent),
+	})
 	if overrideContent != "" {
-		if err := atomic.WriteFile(overridePath, []byte(overrideContent), common.FilePerm); err != nil {
-			return errors.WrapIf(err, "failed to write swarm stack override source")
-		}
-	} else {
-		if err := os.Remove(overridePath); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return errors.WrapIf(err, "failed to clear swarm stack override source")
-		}
+		syncFiles = append(syncFiles, appfs.SyncFile{
+			RelativePath: swarmStackOverrideFilename,
+			Content:      []byte(overrideContent),
+		})
 	}
-
-	envPath := filepath.Join(stackSourceDir, swarmStackEnvFilename)
 	if envContent != "" {
-		if err := atomic.WriteFile(envPath, []byte(envContent), common.FilePerm); err != nil {
-			return errors.WrapIf(err, "failed to write swarm stack env source")
-		}
-	} else {
-		if err := os.Remove(envPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return errors.WrapIf(err, "failed to clear swarm stack env source")
-		}
+		syncFiles = append(syncFiles, appfs.SyncFile{
+			RelativePath: swarmStackEnvFilename,
+			Content:      []byte(envContent),
+		})
 	}
 
-	// Write additional files
-	for _, f := range files {
-		if f.RelativePath == swarmStackComposeFilename || f.RelativePath == swarmStackOverrideFilename || f.RelativePath == swarmStackEnvFilename {
+	for _, file := range files {
+		relativePath := filepath.ToSlash(filepath.Clean(file.RelativePath))
+		if relativePath == "." {
+			return errors.New("swarm stack file path is required")
+		}
+		if relativePath == swarmStackComposeFilename || relativePath == swarmStackOverrideFilename || relativePath == swarmStackEnvFilename {
 			continue
 		}
-		fPath := filepath.Join(stackSourceDir, f.RelativePath)
-		// Prevent path traversal
-		if !appfs.IsSafeSubdirectory(stackSourceDir, fPath) {
-			return errors.Errorf("invalid file path %q: must be inside stack directory", f.RelativePath)
+		syncFiles = append(syncFiles, appfs.SyncFile{RelativePath: relativePath, Content: file.Content})
+	}
+
+	existingFiles := make([]string, 0)
+	if err := fs.WalkDir(os.DirFS(stackSourceDir), ".", func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
 		}
-		if err := os.MkdirAll(filepath.Dir(fPath), common.DirPerm); err != nil {
-			return errors.WrapIff(err, "failed to create directory for %s", f.RelativePath)
+		if path == "." || entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
+			return nil
 		}
-		if err := atomic.WriteFile(fPath, f.Content, common.FilePerm); err != nil {
-			return errors.WrapIff(err, "failed to write %s", f.RelativePath)
-		}
+		existingFiles = append(existingFiles, path)
+		return nil
+	}); err != nil {
+		return errors.WrapIf(err, "failed to inspect existing swarm stack files")
+	}
+
+	writtenFiles, err := appfs.WriteSyncedDirectory(rootDir, stackSourceDir, syncFiles)
+	if err != nil {
+		return errors.WrapIf(err, "failed to write swarm stack files")
+	}
+	if err := appfs.CleanupRemovedFiles(rootDir, stackSourceDir, existingFiles, writtenFiles); err != nil {
+		return errors.WrapIf(err, "failed to remove stale swarm stack files")
 	}
 
 	return nil
@@ -2619,16 +2586,6 @@ func (s *SwarmService) deleteStackSourceInternal(ctx context.Context, environmen
 	environmentDir := filepath.Dir(stackSourceDir)
 	if environmentDir != rootDir {
 		if err := os.Remove(environmentDir); err != nil && !errors.Is(err, os.ErrNotExist) {
-			if errno, ok := stderrors.AsType[syscall.Errno](err); ok && (errno == syscall.ENOTEMPTY || errno == syscall.EACCES) {
-				slog.DebugContext(ctx, "swarm stack source environment directory cleanup skipped", "dir", environmentDir, "error", err)
-				return nil
-			}
-
-			if errors.Is(err, os.ErrPermission) {
-				slog.DebugContext(ctx, "swarm stack source environment directory cleanup skipped", "dir", environmentDir, "error", err)
-				return nil
-			}
-
 			slog.DebugContext(ctx, "swarm stack source environment directory cleanup skipped", "dir", environmentDir, "error", err)
 		}
 	}
@@ -2688,58 +2645,6 @@ func (s *SwarmService) resolveSwarmStackSourceEnvironmentDirInternal(ctx context
 	}
 
 	return rootDir, environmentDir, nil
-}
-
-func (s *SwarmService) getPathMapperInternal(ctx context.Context) *appfs.PathMapper {
-	configuredPath := s.settingsService.GetStringSetting(ctx, "swarmStackSourcesDirectory", defaultSwarmStackSourceRootDir)
-
-	var containerDir, hostDir string
-
-	// Handle mapping format: "container_path:host_path"
-	if parts := strings.SplitN(configuredPath, ":", 2); len(parts) == 2 {
-		if !appfs.IsWindowsDrivePath(configuredPath) && strings.HasPrefix(parts[0], "/") {
-			containerDir = parts[0]
-			hostDir = parts[1]
-		}
-	}
-
-	if containerDir == "" {
-		containerDir = configuredPath
-	}
-
-	// Resolve container directory to absolute path
-	containerDirResolved, err := appfs.GetProjectsDirectory(ctx, strings.TrimSpace(containerDir))
-	if err != nil {
-		slog.WarnContext(ctx, "unable to resolve container swarm sources directory, using default", "error", err)
-		containerDirResolved = defaultSwarmStackSourceRootDir
-	}
-
-	// Explicit "container:host" mapping: honor the user-declared prefix directly.
-	if strings.TrimSpace(hostDir) != "" {
-		hostDirResolved := filepath.Clean(strings.TrimSpace(hostDir))
-		pm := appfs.NewPathMapper(containerDirResolved, hostDirResolved)
-		if !pm.IsNonMatchingMount() {
-			return nil
-		}
-		return pm
-	}
-
-	// Auto-discovery: resolve each bind-mount source against Arcane's real container
-	// mount table (longest-prefix match) so an independently bind-mounted stack
-	// directory maps to its own host path instead of a single sources-root prefix.
-	if s.dockerService != nil {
-		if dockerCli, derr := s.dockerService.GetClient(ctx); derr == nil {
-			if mounts, merr := appfs.GetCurrentContainerMounts(ctx, dockerCli); merr == nil && len(mounts) > 0 {
-				pm := appfs.NewPathMapperFromMounts(mounts)
-				if !pm.IsNonMatchingMount() {
-					return nil
-				}
-				return pm
-			}
-		}
-	}
-
-	return nil
 }
 
 func (s *SwarmService) ensureSwarmManagerInternal(ctx context.Context) error {

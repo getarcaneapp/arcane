@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -17,7 +18,9 @@ func TestGetProjectVolumeCopyRuntimeInternal_UsesToolsImageWhenAvailable(t *test
 		switch {
 		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json"):
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Id": "tools-image"}))
+			if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Id": "tools-image"})) {
+				return
+			}
 		default:
 			http.NotFound(w, r)
 		}
@@ -35,12 +38,16 @@ func TestCreateProjectVolumeCopyHolderContainerInternal_UsesPassiveHolderCommand
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/create"):
-			require.NoError(t, json.NewDecoder(r.Body).Decode(&createBody))
+			if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&createBody)) {
+				return
+			}
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+			if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{
 				"Id":       "helper-container",
 				"Warnings": []string{},
-			}))
+			})) {
+				return
+			}
 		case r.Method == http.MethodDelete && strings.Contains(r.URL.Path, "/containers/helper-container"):
 			w.WriteHeader(http.StatusNoContent)
 		default:

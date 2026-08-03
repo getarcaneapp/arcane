@@ -23,7 +23,9 @@ func newPortServiceTestDockerService(t *testing.T, containers []dockercontainer.
 
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/containers/json"):
-			require.NoError(t, json.NewEncoder(w).Encode(containers))
+			if !assert.NoError(t, json.NewEncoder(w).Encode(containers)) {
+				return
+			}
 		default:
 			http.NotFound(w, r)
 		}

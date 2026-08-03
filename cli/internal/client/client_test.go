@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	"github.com/stretchr/testify/require"
 )
 
 func TestClient_UsesAPIKeyHeader(t *testing.T) {
@@ -28,18 +29,20 @@ func TestClient_UsesAPIKeyHeader(t *testing.T) {
 
 	cfg := &types.Config{ServerURL: srv.URL, APIKey: "arc_test_key"}
 	c, err := New(cfg)
-	if err != nil {
-		t.Fatalf("New() error: %v", err)
-	}
+
+	require.NoError(t, err,
+		"New() error: %v", err)
 
 	resp, err := c.Get(context.Background(), "/api/version")
-	if err != nil {
-		t.Fatalf("Get() error: %v", err)
-	}
+
+	require.NoError(t, err,
+		"Get() error: %v", err)
+
 	_ = resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("unexpected status: %d", resp.StatusCode)
-	}
+
+	require.Equal(t, http.StatusOK, resp.StatusCode,
+		"unexpected status: %d", resp.StatusCode)
+
 }
 
 func TestClient_UsesBearerTokenHeader(t *testing.T) {
@@ -60,18 +63,20 @@ func TestClient_UsesBearerTokenHeader(t *testing.T) {
 
 	cfg := &types.Config{ServerURL: srv.URL, JWTToken: "header.payload.sig"}
 	c, err := New(cfg)
-	if err != nil {
-		t.Fatalf("New() error: %v", err)
-	}
+
+	require.NoError(t, err,
+		"New() error: %v", err)
 
 	resp, err := c.Get(context.Background(), "/api/version")
-	if err != nil {
-		t.Fatalf("Get() error: %v", err)
-	}
+
+	require.NoError(t, err,
+		"Get() error: %v", err)
+
 	_ = resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("unexpected status: %d", resp.StatusCode)
-	}
+
+	require.Equal(t, http.StatusOK, resp.StatusCode,
+		"unexpected status: %d", resp.StatusCode)
+
 }
 
 func TestClient_NewUnauthenticated_DoesNotSendAuthHeaders(t *testing.T) {
@@ -88,18 +93,20 @@ func TestClient_NewUnauthenticated_DoesNotSendAuthHeaders(t *testing.T) {
 
 	cfg := &types.Config{ServerURL: srv.URL}
 	c, err := NewUnauthenticated(cfg)
-	if err != nil {
-		t.Fatalf("NewUnauthenticated() error: %v", err)
-	}
+
+	require.NoError(t, err,
+		"NewUnauthenticated() error: %v", err)
 
 	resp, err := c.Get(context.Background(), "/api/auth/login")
-	if err != nil {
-		t.Fatalf("Get() error: %v", err)
-	}
+
+	require.NoError(t, err,
+		"Get() error: %v", err)
+
 	_ = resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("unexpected status: %d", resp.StatusCode)
-	}
+
+	require.Equal(t, http.StatusOK, resp.StatusCode,
+		"unexpected status: %d", resp.StatusCode)
+
 }
 
 func TestClient_Request_DoesNotDoubleMarshalBytes(t *testing.T) {
@@ -126,20 +133,23 @@ func TestClient_Request_DoesNotDoubleMarshalBytes(t *testing.T) {
 
 	cfg := &types.Config{ServerURL: srv.URL, JWTToken: "header.payload.sig"}
 	c, err := New(cfg)
-	if err != nil {
-		t.Fatalf("New() error: %v", err)
-	}
+
+	require.NoError(t, err,
+		"New() error: %v", err)
 
 	raw, err := json.Marshal(payload{Username: "arcane", Password: "secret"})
-	if err != nil {
-		t.Fatalf("json.Marshal() error: %v", err)
-	}
+
+	require.NoError(t, err,
+		"json.Marshal() error: %v", err)
+
 	resp, err := c.Post(context.Background(), "/api/auth/login", raw)
-	if err != nil {
-		t.Fatalf("Post() error: %v", err)
-	}
+
+	require.NoError(t, err,
+		"Post() error: %v", err)
+
 	_ = resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("unexpected status: %d", resp.StatusCode)
-	}
+
+	require.Equal(t, http.StatusOK, resp.StatusCode,
+		"unexpected status: %d", resp.StatusCode)
+
 }

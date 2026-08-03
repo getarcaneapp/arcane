@@ -16,8 +16,9 @@ import (
 
 	"emperror.dev/errors"
 
-	sqlite "github.com/libtnb/sqlite"
-	goose "github.com/pressly/goose/v3"
+	"github.com/libtnb/sqlite"
+	"github.com/pressly/goose/v3"
+	"github.com/pressly/goose/v3/lock"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -59,11 +60,21 @@ func SetGormLogger(l logger.Interface) {
 	customGormLogger = l
 }
 
-func Initialize(ctx context.Context, databaseURL string, options MigrationOptions) (*DB, error) {
+func Initialize(ctx context.Context, databaseURL string, options MigrationOptions) (database *DB, err error) {
 	db, err := connectDatabaseInternal(ctx, databaseURL)
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to connect to database")
 	}
+	// Initialization opens a connection pool before it can fail on migrations or
+	// provider detection; release it rather than leaking it into a failed startup.
+	defer func() {
+		if err == nil {
+			return
+		}
+		if closeErr := db.Close(); closeErr != nil {
+			slog.WarnContext(ctx, "Failed to close database after initialization failure", "error", closeErr)
+		}
+	}()
 
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -181,7 +192,7 @@ func migrateDatabaseToVersionInternal(ctx context.Context, db *sql.DB, dbProvide
 		return errors.WrapIff(err, "failed to determine current migration version for %s", dbProvider)
 	}
 
-	logMigrationStateInternal(dbProvider, currentVersion, requiredVersion)
+	slog.Info("Resolved database migration state", "provider", dbProvider, "currentVersion", currentVersion, "requiredVersion", requiredVersion)
 
 	if currentVersion > requiredVersion {
 		if !options.AllowDowngrade {
@@ -205,7 +216,7 @@ func migrateDatabaseToVersionInternal(ctx context.Context, db *sql.DB, dbProvide
 	}
 
 	if currentVersion == requiredVersion {
-		logUpToDateStateInternal(dbProvider, currentVersion)
+		slog.Info("Database schema is up to date", "provider", dbProvider, "migrationVersion", currentVersion)
 		return nil
 	}
 
@@ -228,7 +239,20 @@ func newGooseProviderInternal(db *sql.DB, dbProvider string) (*goose.Provider, e
 		return nil, err
 	}
 
-	return goose.NewProvider(dialect, db, migrationsFS)
+	// Two Arcane processes pointed at the same Postgres (a rolling deploy, or a
+	// replica set) would otherwise run migrations concurrently and race on the
+	// same DDL. A session-level advisory lock serializes them; SQLite needs no
+	// equivalent because it is single-writer by construction.
+	var options []goose.ProviderOption
+	if dialect == goose.DialectPostgres {
+		sessionLocker, err := lock.NewPostgresSessionLocker()
+		if err != nil {
+			return nil, errors.WrapIf(err, "failed to create Postgres migration session locker")
+		}
+		options = append(options, goose.WithSessionLocker(sessionLocker))
+	}
+
+	return goose.NewProvider(dialect, db, migrationsFS, options...)
 }
 
 func embeddedMigrationFSInternal(dbProvider string) (fs.FS, error) {
@@ -490,10 +514,6 @@ func appliedLiteralInternal(dbProvider string) string {
 	return "1"
 }
 
-func logUpToDateStateInternal(dbProvider string, version int64) {
-	slog.Info("Database schema is up to date", "provider", dbProvider, "migrationVersion", version)
-}
-
 func getHighestEmbeddedMigrationVersionInternal(dbProvider string) (int64, error) {
 	versions, err := getEmbeddedMigrationVersionsInternal(dbProvider)
 	if err != nil {
@@ -586,10 +606,6 @@ func missingEmbeddedDowngradeMigrationsInternal(ctx context.Context, db *sql.DB,
 	}
 
 	return missing, nil
-}
-
-func logMigrationStateInternal(dbProvider string, currentVersion, requiredVersion int64) {
-	slog.Info("Resolved database migration state", "provider", dbProvider, "currentVersion", currentVersion, "requiredVersion", requiredVersion)
 }
 
 func parseSqliteConnectionStringInternal(connString string) (string, error) {

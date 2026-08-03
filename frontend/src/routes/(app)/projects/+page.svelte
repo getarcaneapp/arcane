@@ -177,7 +177,7 @@
 		} else {
 			url.searchParams.delete('archived');
 		}
-		await goto(`${url.pathname}${url.search}`, { keepFocus: true, replaceState: true, noScroll: true });
+		await goto(`${url.pathname}${url.search}`, { reset: false, replaceState: true });
 	}
 
 	const canCreateProject = $derived(hasPermission('projects:create', envId));

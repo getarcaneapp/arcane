@@ -117,15 +117,18 @@ type ImportGitOpsSyncsOutput struct {
 func RegisterGitOpsSyncs(api huma.API, syncService *services.GitOpsSyncService) {
 	h := &GitOpsSyncHandler{syncService: syncService}
 
-	registerGitOpsSecuredInternal(api, "listGitOpsSyncs", "GET", "/environments/{id}/gitops-syncs", "List GitOps syncs", "Get a paginated list of GitOps syncs for an environment", authz.PermGitOpsList, h.ListSyncs)
-	registerGitOpsSecuredInternal(api, "createGitOpsSync", "POST", "/environments/{id}/gitops-syncs", "Create a GitOps sync", "Create a new GitOps sync configuration for an environment", authz.PermGitOpsCreate, h.CreateSync)
-	registerGitOpsSecuredInternal(api, "importGitOpsSyncs", "POST", "/environments/{id}/gitops-syncs/import", "Import GitOps syncs", "Import multiple GitOps sync configurations from JSON", authz.PermGitOpsCreate, h.ImportSyncs)
-	registerGitOpsSecuredInternal(api, "getGitOpsSync", "GET", "/environments/{id}/gitops-syncs/{syncId}", "Get a GitOps sync", "Get a GitOps sync by ID", authz.PermGitOpsRead, h.GetSync)
-	registerGitOpsSecuredInternal(api, "updateGitOpsSync", "PUT", "/environments/{id}/gitops-syncs/{syncId}", "Update a GitOps sync", "Update an existing GitOps sync configuration", authz.PermGitOpsUpdate, h.UpdateSync)
-	registerGitOpsSecuredInternal(api, "deleteGitOpsSync", "DELETE", "/environments/{id}/gitops-syncs/{syncId}", "Delete a GitOps sync", "Delete a GitOps sync configuration by ID", authz.PermGitOpsDelete, h.DeleteSync)
-	registerGitOpsSecuredInternal(api, "performGitOpsSync", "POST", "/environments/{id}/gitops-syncs/{syncId}/sync", "Perform a GitOps sync", "Manually trigger a sync operation", authz.PermGitOpsSync, h.PerformSync)
-	registerGitOpsSecuredInternal(api, "getGitOpsSyncStatus", "GET", "/environments/{id}/gitops-syncs/{syncId}/status", "Get GitOps sync status", "Get the current status of a GitOps sync", authz.PermGitOpsRead, h.GetStatus)
-	registerGitOpsSecuredInternal(api, "browseGitOpsSyncFiles", "GET", "/environments/{id}/gitops-syncs/{syncId}/files", "Browse GitOps sync files", "Browse files in the synced repository", authz.PermGitOpsRead, h.BrowseFiles)
+	const basePath = "/environments/{id}/gitops-syncs"
+	const syncPath = basePath + "/{syncId}"
+
+	registerSecuredInternal(api, operationInternal("listGitOpsSyncs", "GET", basePath, "List GitOps syncs", "Get a paginated list of GitOps syncs for an environment", "GitOps Syncs"), authz.PermGitOpsList, h.ListSyncs)
+	registerSecuredInternal(api, operationInternal("createGitOpsSync", "POST", basePath, "Create a GitOps sync", "Create a new GitOps sync configuration for an environment", "GitOps Syncs"), authz.PermGitOpsCreate, h.CreateSync)
+	registerSecuredInternal(api, operationInternal("importGitOpsSyncs", "POST", basePath+"/import", "Import GitOps syncs", "Import multiple GitOps sync configurations from JSON", "GitOps Syncs"), authz.PermGitOpsCreate, h.ImportSyncs)
+	registerSecuredInternal(api, operationInternal("getGitOpsSync", "GET", syncPath, "Get a GitOps sync", "Get a GitOps sync by ID", "GitOps Syncs"), authz.PermGitOpsRead, h.GetSync)
+	registerSecuredInternal(api, operationInternal("updateGitOpsSync", "PUT", syncPath, "Update a GitOps sync", "Update an existing GitOps sync configuration", "GitOps Syncs"), authz.PermGitOpsUpdate, h.UpdateSync)
+	registerSecuredInternal(api, operationInternal("deleteGitOpsSync", "DELETE", syncPath, "Delete a GitOps sync", "Delete a GitOps sync configuration by ID", "GitOps Syncs"), authz.PermGitOpsDelete, h.DeleteSync)
+	registerSecuredInternal(api, operationInternal("performGitOpsSync", "POST", syncPath+"/sync", "Perform a GitOps sync", "Manually trigger a sync operation", "GitOps Syncs"), authz.PermGitOpsSync, h.PerformSync)
+	registerSecuredInternal(api, operationInternal("getGitOpsSyncStatus", "GET", syncPath+"/status", "Get GitOps sync status", "Get the current status of a GitOps sync", "GitOps Syncs"), authz.PermGitOpsRead, h.GetStatus)
+	registerSecuredInternal(api, operationInternal("browseGitOpsSyncFiles", "GET", syncPath+"/files", "Browse GitOps sync files", "Browse files in the synced repository", "GitOps Syncs"), authz.PermGitOpsRead, h.BrowseFiles)
 }
 
 // requireLifecyclePermissionInternal rejects callers lacking gitops:lifecycle
