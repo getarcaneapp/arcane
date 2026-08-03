@@ -130,10 +130,13 @@
 	}));
 
 	const visibleWorkspaceFiles = $derived.by(() =>
-		applyWorkspaceFileChangesForDisplay(workspaceQuery.data?.files ?? [], workspaceFileChanges).map((file) => ({
-			...file,
-			locked: file.isSymlink === true || (!file.isDirectory && !!file.mode && !file.mode.startsWith('-'))
-		}))
+		applyWorkspaceFileChangesForDisplay(workspaceQuery.data?.files ?? [], workspaceFileChanges).map((file) => {
+			const modeType = file.mode?.[0];
+			return {
+				...file,
+				locked: file.isSymlink === true || (!!modeType && modeType !== '-' && modeType !== 'd')
+			};
+		})
 	);
 	const workspaceFilePaths = $derived.by(() => new Set(visibleWorkspaceFiles.map((file) => file.relativePath)));
 	const changedWorkspaceTextPaths = $derived.by(() =>

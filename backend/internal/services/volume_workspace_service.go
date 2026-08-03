@@ -134,6 +134,7 @@ func parseVolumeWorkspaceTreeInternal(stdout string, maxEntries int) (*volumetyp
 		return nil, errors.New("invalid volume workspace file entry")
 	}
 	entries := make([]volumetypes.FileEntry, 0, min(len(fields)/6, maxEntries+1))
+	classifications := make(map[string]string, min(len(fields)/6, maxEntries+1))
 	for i := 0; i+5 < len(fields); i += 6 {
 		relativePath := fields[i]
 		if relativePath == "" {
@@ -148,20 +149,43 @@ func parseVolumeWorkspaceTreeInternal(stdout string, maxEntries int) (*volumetyp
 		if err != nil {
 			return nil, errors.WrapIf(err, "parse volume workspace modification time")
 		}
-		isDirectory := kind == "d"
+		mode := fields[i+4]
+		classification := "special"
+		if mode != "" {
+			switch mode[0] {
+			case 'd':
+				classification = "dir"
+			case 'l':
+				classification = "symlink"
+			case '-':
+				classification = "file"
+			}
+		} else {
+			switch kind {
+			case "d":
+				classification = "dir"
+			case "l":
+				classification = "symlink"
+			case "f":
+				classification = "file"
+			}
+		}
+		isDirectory := classification == "dir"
+		isSymlink := classification == "symlink"
 		if isDirectory {
 			size = 0
 		}
+		classifications[relativePath] = classification
 		entries = append(entries, volumetypes.FileEntry{
 			ModTime:      modTime,
 			Name:         path.Base(relativePath),
 			Path:         "/" + relativePath,
 			RelativePath: relativePath,
-			Mode:         fields[i+4],
+			Mode:         mode,
 			LinkTarget:   fields[i+5],
 			Size:         size,
 			IsDirectory:  isDirectory,
-			IsSymlink:    kind == "l",
+			IsSymlink:    isSymlink,
 		})
 	}
 
@@ -177,16 +201,7 @@ func parseVolumeWorkspaceTreeInternal(stdout string, maxEntries int) (*volumetyp
 
 	h := sha256.New()
 	for _, entry := range revisionEntries {
-		kind := "file"
-		switch {
-		case entry.IsDirectory:
-			kind = "dir"
-		case entry.IsSymlink:
-			kind = "symlink"
-		case !strings.HasPrefix(entry.Mode, "-"):
-			kind = "special"
-		}
-		utils.WriteFileTreeRevisionEntry(h, entry.RelativePath, kind, entry.Size, entry.ModTime.UnixNano(), entry.Mode, false)
+		utils.WriteFileTreeRevisionEntry(h, entry.RelativePath, classifications[entry.RelativePath], entry.Size, entry.ModTime.UnixNano(), entry.Mode, false)
 	}
 	slices.SortFunc(entries, func(a, b volumetypes.FileEntry) int {
 		if a.IsDirectory != b.IsDirectory {

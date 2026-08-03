@@ -43,17 +43,25 @@ func TestVolumeWorkspaceScriptsAgainstToolsImage(t *testing.T) {
 		_, _ = exec.CommandContext(cleanupCtx, dockerPath, "volume", "rm", volumeName).CombinedOutput()
 	})
 
-	runInVolume(volumeName, `mkdir -p /volume/folder
+	runInVolume(volumeName, `mkdir -p /volume/folder/nested
+printf child > /volume/folder/nested/child.txt
 printf hidden > /volume/.hidden
 printf alpha > /volume/z.txt`)
 	treeOutput := runInVolume(volumeName, `sh -c "$1" sh "$2" "$3"`, volumeWorkspaceTreeScriptInternal, strings.Repeat("d", 5), strings.Repeat("e", 100))
 	workspace, err := parseVolumeWorkspaceTreeInternal(treeOutput, 100)
 	require.NoError(t, err)
-	require.Equal(t, []string{"folder", ".hidden", "z.txt"}, []string{
+	require.Equal(t, []string{"folder", "folder/nested", ".hidden", "folder/nested/child.txt", "z.txt"}, []string{
 		workspace.Files[0].RelativePath,
 		workspace.Files[1].RelativePath,
 		workspace.Files[2].RelativePath,
+		workspace.Files[3].RelativePath,
+		workspace.Files[4].RelativePath,
 	})
+	require.True(t, workspace.Files[0].IsDirectory)
+	require.True(t, workspace.Files[1].IsDirectory)
+	require.False(t, workspace.Files[2].IsDirectory)
+	require.False(t, workspace.Files[3].IsDirectory)
+	require.False(t, workspace.Files[4].IsDirectory)
 
 	runInVolume(volumeName, `sh -c "$1" sh nested ''`, volumeWorkspaceCreateFolderScriptInternal)
 	runInVolume(volumeName, `printf one > /tmp/staged

@@ -25,31 +25,65 @@ func volumeWorkspaceTreeOutputInternal(truncated bool, records string) string {
 	return records + "ARCANE_TREE_END\x00" + marker + "\x00"
 }
 
-func TestParseVolumeWorkspaceTreeInternalSortsAndPreservesSymlinks(t *testing.T) {
+func TestParseVolumeWorkspaceTreeInternalSortsAndClassifiesFromMode(t *testing.T) {
 	stdout := volumeWorkspaceTreeOutputInternal(false,
-		volumeWorkspaceTreeRecordInternal("z.txt", "f", "4", "1700000000.25", "-rw-r--r--", "")+
-			volumeWorkspaceTreeRecordInternal("folder/link", "l", "7", "1700000001.5", "lrwxrwxrwx", "../z.txt")+
-			volumeWorkspaceTreeRecordInternal("folder", "d", "4096", "1700000002", "drwxr-xr-x", ""))
+		volumeWorkspaceTreeRecordInternal("z.txt", "d", "4", "1700000000.25", "-rw-r--r--", "")+
+			volumeWorkspaceTreeRecordInternal("folder/link", "f", "7", "1700000001.5", "lrwxrwxrwx", "../z.txt")+
+			volumeWorkspaceTreeRecordInternal("folder/child.txt", "d", "5", "1700000001.75", "-rw-r--r--", "")+
+			volumeWorkspaceTreeRecordInternal("folder", "f", "4096", "1700000002", "drwxr-xr-x", "")+
+			volumeWorkspaceTreeRecordInternal("empty", "f", "4096", "1700000003", "drwx------", "")+
+			volumeWorkspaceTreeRecordInternal("special", "f", "0", "1700000004", "prw-------", ""))
 
 	workspace, err := parseVolumeWorkspaceTreeInternal(stdout, 10)
 	require.NoError(t, err)
 	require.False(t, workspace.FileTreeTruncated)
-	require.Equal(t, []string{"folder", "folder/link", "z.txt"}, []string{
+	require.Equal(t, []string{"empty", "folder", "folder/child.txt", "folder/link", "special", "z.txt"}, []string{
 		workspace.Files[0].RelativePath,
 		workspace.Files[1].RelativePath,
 		workspace.Files[2].RelativePath,
+		workspace.Files[3].RelativePath,
+		workspace.Files[4].RelativePath,
+		workspace.Files[5].RelativePath,
 	})
 	require.Zero(t, workspace.Files[0].Size)
-	require.True(t, workspace.Files[1].IsSymlink)
-	require.Equal(t, "../z.txt", workspace.Files[1].LinkTarget)
+	require.Zero(t, workspace.Files[1].Size)
+	require.True(t, workspace.Files[0].IsDirectory)
+	require.True(t, workspace.Files[1].IsDirectory)
+	require.False(t, workspace.Files[2].IsDirectory)
+	require.False(t, workspace.Files[3].IsDirectory)
+	require.False(t, workspace.Files[4].IsDirectory)
+	require.False(t, workspace.Files[5].IsDirectory)
+	require.True(t, workspace.Files[3].IsSymlink)
+	require.Equal(t, "../z.txt", workspace.Files[3].LinkTarget)
 	require.NotEmpty(t, workspace.FileTreeRevision)
 
 	reordered, err := parseVolumeWorkspaceTreeInternal(volumeWorkspaceTreeOutputInternal(false,
-		volumeWorkspaceTreeRecordInternal("folder", "d", "4096", "1700000002", "drwxr-xr-x", "")+
+		volumeWorkspaceTreeRecordInternal("empty", "d", "4096", "1700000003", "drwx------", "")+
+			volumeWorkspaceTreeRecordInternal("folder", "d", "4096", "1700000002", "drwxr-xr-x", "")+
+			volumeWorkspaceTreeRecordInternal("folder/child.txt", "f", "5", "1700000001.75", "-rw-r--r--", "")+
 			volumeWorkspaceTreeRecordInternal("z.txt", "f", "4", "1700000000.25", "-rw-r--r--", "")+
+			volumeWorkspaceTreeRecordInternal("special", "s", "0", "1700000004", "prw-------", "")+
 			volumeWorkspaceTreeRecordInternal("folder/link", "l", "7", "1700000001.5", "lrwxrwxrwx", "../z.txt")), 10)
 	require.NoError(t, err)
 	require.Equal(t, workspace.FileTreeRevision, reordered.FileTreeRevision)
+}
+
+func TestParseVolumeWorkspaceTreeInternalFallsBackToKindWithoutMode(t *testing.T) {
+	workspace, err := parseVolumeWorkspaceTreeInternal(volumeWorkspaceTreeOutputInternal(false,
+		volumeWorkspaceTreeRecordInternal("folder", "d", "4096", "1", "", "")+
+			volumeWorkspaceTreeRecordInternal("link", "l", "3", "2", "", "folder")+
+			volumeWorkspaceTreeRecordInternal("regular", "f", "4", "3", "", "")), 10)
+	require.NoError(t, err)
+	require.True(t, workspace.Files[0].IsDirectory)
+	require.Zero(t, workspace.Files[0].Size)
+	require.True(t, workspace.Files[1].IsSymlink)
+
+	special, err := parseVolumeWorkspaceTreeInternal(volumeWorkspaceTreeOutputInternal(false,
+		volumeWorkspaceTreeRecordInternal("folder", "d", "4096", "1", "", "")+
+			volumeWorkspaceTreeRecordInternal("link", "l", "3", "2", "", "folder")+
+			volumeWorkspaceTreeRecordInternal("regular", "s", "4", "3", "", "")), 10)
+	require.NoError(t, err)
+	require.NotEqual(t, workspace.FileTreeRevision, special.FileTreeRevision)
 }
 
 func TestParseVolumeWorkspaceTreeInternalReportsBothLimits(t *testing.T) {

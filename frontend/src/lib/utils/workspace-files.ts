@@ -114,9 +114,14 @@ export function applyWorkspaceFileChangesForDisplay(
 	const entries = new Map<string, WorkspaceFileEntry>();
 
 	for (const file of files) {
+		const modeType = file.mode?.[0];
+		const isDirectory = modeType ? modeType === 'd' : file.isDirectory;
+		const isSymlink = modeType ? modeType === 'l' : file.isSymlink;
 		entries.set(file.relativePath, {
 			...file,
-			name: file.name || workspaceFileBasename(file.relativePath)
+			name: file.name || workspaceFileBasename(file.relativePath),
+			isDirectory,
+			isSymlink
 		});
 	}
 
