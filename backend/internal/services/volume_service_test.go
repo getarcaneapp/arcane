@@ -5,8 +5,10 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -23,6 +25,99 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
+
+func TestIsBrowsableVolumeInternalOnlyInspectsVolume(t *testing.T) {
+	var requests []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.Method+" "+r.URL.Path)
+		if r.Method != http.MethodGet || !strings.HasSuffix(r.URL.Path, "/volumes/workspace-volume") {
+			http.Error(w, "unexpected Docker request", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(volume.Volume{Name: "workspace-volume", Driver: "local"}); err != nil {
+			t.Errorf("encode volume inspect response: %v", err)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	service := &VolumeService{dockerService: &DockerClientService{client: newTestDockerClient(t, server)}}
+
+	require.NoError(t, service.isBrowsableVolumeInternal(context.Background(), "workspace-volume"))
+	require.Equal(t, []string{"GET /v1.41/volumes/workspace-volume"}, requests)
+}
+
+func TestCreateTempContainerInternalReusesWritableHelper(t *testing.T) {
+	var createCalls, startCalls, removeCalls int
+	var createRequest struct {
+		NetworkDisabled bool                  `json:"NetworkDisabled"`
+		HostConfig      *container.HostConfig `json:"HostConfig"`
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json"):
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(map[string]string{"Id": "tools-image"}); err != nil {
+				t.Errorf("encode image inspect response: %v", err)
+			}
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/create"):
+			createCalls++
+			if err := json.NewDecoder(r.Body).Decode(&createRequest); err != nil {
+				t.Errorf("decode container create request: %v", err)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(map[string]any{"Id": "helper-1", "Warnings": []string{}}); err != nil {
+				t.Errorf("encode container create response: %v", err)
+			}
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/helper-1/start"):
+			startCalls++
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/helper-1/json"):
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(container.InspectResponse{
+				ID:    "helper-1",
+				State: &container.State{Running: true},
+			}); err != nil {
+				t.Errorf("encode container inspect response: %v", err)
+			}
+		case r.Method == http.MethodDelete && strings.Contains(r.URL.Path, "/containers/helper-1"):
+			removeCalls++
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.Error(w, "unexpected Docker request: "+r.Method+" "+r.URL.Path, http.StatusInternalServerError)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	service := &VolumeService{
+		dockerService:  &DockerClientService{client: newTestDockerClient(t, server)},
+		helperByVolume: make(map[string]*volumeHelper),
+	}
+
+	firstID, releaseFirst, err := service.createTempContainerInternal(context.Background(), "workspace-volume")
+	require.NoError(t, err)
+	secondID, releaseSecond, err := service.createTempContainerInternal(context.Background(), "workspace-volume")
+	require.NoError(t, err)
+
+	require.Equal(t, "helper-1", firstID)
+	require.Equal(t, firstID, secondID)
+	require.Equal(t, 1, createCalls)
+	require.Equal(t, 1, startCalls)
+	require.Zero(t, removeCalls)
+	require.True(t, createRequest.NetworkDisabled)
+	require.NotNil(t, createRequest.HostConfig)
+	require.Equal(t, []string{"workspace-volume:/volume"}, createRequest.HostConfig.Binds)
+	require.Equal(t, 2, service.helperByVolume["workspace-volume"].inUse)
+
+	service.helperByVolume["workspace-volume"].lastUsedAt = time.Now().Add(-time.Hour)
+	require.Empty(t, service.collectStaleHelperIDsInternal(time.Now(), time.Minute))
+	require.Contains(t, service.helperByVolume, "workspace-volume")
+
+	releaseFirst()
+	releaseSecond()
+	require.Zero(t, service.helperByVolume["workspace-volume"].inUse)
+}
 
 func TestVolumeOperationsUseWorkspaceLock(t *testing.T) {
 	const (

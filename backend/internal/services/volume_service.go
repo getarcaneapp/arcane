@@ -51,7 +51,7 @@ type VolumeService struct {
 	workspaceLocks     utils.KeyedMutex
 	helperMu           sync.Mutex
 	helperByVolume     map[string]*volumeHelper
-	// helperGroup deduplicates concurrent read-only helper creation per volume.
+	// helperGroup deduplicates concurrent helper creation per volume.
 	// Without it two simultaneous browse requests each create a helper and the
 	// second overwrites the first in helperByVolume, orphaning a `sleep infinity`
 	// container that pins the volume until restart.
@@ -65,7 +65,7 @@ type volumeWorkspaceLockContextInternal struct {
 	volumeName string
 }
 
-// volumeHelper tracks a reused read-only browse helper container and the last
+// volumeHelper tracks a reused helper container and the last
 // time it serviced a request, so idle helpers can be reaped. inUse counts the
 // requests currently holding the helper: the reaper must not remove a helper
 // mid-download just because it was acquired longer ago than the idle timeout.
@@ -208,7 +208,7 @@ func (s *VolumeService) DeleteVolume(ctx context.Context, name string, force boo
 		return errors.WrapIf(err, "failed to connect to Docker")
 	}
 
-	// Stop any read-only browse helper first; a helper mounting the volume would
+	// Stop any reusable helper first; a helper mounting the volume would
 	// otherwise block a non-forced VolumeRemove with "volume is in use".
 	if stopErr := s.StopHelper(ctx, name); stopErr != nil {
 		slog.WarnContext(ctx, "could not stop volume browse helper before delete", "volume", name, "error", stopErr.Error())
@@ -246,7 +246,7 @@ func (s *VolumeService) PruneVolumesWithOptions(ctx context.Context, all bool) (
 		return nil, errors.WrapIf(err, "failed to connect to Docker")
 	}
 
-	// Stop all read-only browse helpers first; a helper mounting a volume marks it
+	// Stop all reusable helpers first; a helper mounting a volume marks it
 	// "in use" and would prevent VolumePrune from reclaiming an otherwise-unused
 	// volume. Helpers are re-created on demand on the next browse request.
 	s.CleanupHelperContainers(ctx)
@@ -320,11 +320,15 @@ func buildVolumePruneMetadataInternal(all bool, volumesDeleted int, spaceReclaim
 // that prevent it from being mounted inside a helper container, such as
 // type=none or o=bind (host bind-mounts that require a device path on the host).
 func (s *VolumeService) isBrowsableVolumeInternal(ctx context.Context, volumeName string) error {
-	vol, err := s.GetVolumeByName(ctx, volumeName)
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		return errors.WrapIf(err, "failed to connect to Docker")
+	}
+	result, err := dockerClient.VolumeInspect(ctx, volumeName, client.VolumeInspectOptions{})
 	if err != nil {
 		return errors.WrapIf(err, "failed to inspect volume")
 	}
-	if vol.Options["type"] == "none" || strings.Contains(vol.Options["o"], "bind") {
+	if result.Volume.Options["type"] == "none" || strings.Contains(result.Volume.Options["o"], "bind") {
 		return errors.Errorf("volume %q uses a custom mount configuration and cannot be browsed", volumeName)
 	}
 	return nil
@@ -342,7 +346,7 @@ func (s *VolumeService) ListDirectory(ctx context.Context, volumeName, dirPath s
 		return nil, errors.WrapIf(err, "invalid path")
 	}
 
-	containerID, cleanup, err := s.createTempContainerInternal(ctx, volumeName, true)
+	containerID, cleanup, err := s.createTempContainerInternal(ctx, volumeName)
 	if err != nil {
 		return nil, err
 	}
@@ -434,7 +438,7 @@ func (s *VolumeService) GetFileContent(ctx context.Context, volumeName, filePath
 		return nil, "", errors.WrapIf(err, "invalid path")
 	}
 
-	containerID, cleanup, err := s.createTempContainerInternal(ctx, volumeName, true)
+	containerID, cleanup, err := s.createTempContainerInternal(ctx, volumeName)
 	if err != nil {
 		return nil, "", err
 	}
@@ -474,7 +478,7 @@ func (s *VolumeService) DownloadFile(ctx context.Context, volumeName, filePath s
 		return nil, 0, err
 	}
 
-	containerID, cleanup, err := s.createTempContainerInternal(ctx, volumeName, true)
+	containerID, cleanup, err := s.createTempContainerInternal(ctx, volumeName)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -755,23 +759,19 @@ func (c *cleanupReadCloser) Close() error {
 	return err
 }
 
-func (s *VolumeService) createTempContainerInternal(ctx context.Context, volumeName string, readOnly bool) (string, func(), error) {
-	slog.DebugContext(ctx, "volume service: create temp container", "volume", volumeName, "read_only", readOnly)
+func (s *VolumeService) createTempContainerInternal(ctx context.Context, volumeName string) (string, func(), error) {
+	slog.DebugContext(ctx, "volume service: acquire helper container", "volume", volumeName)
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return "", nil, err
 	}
 
-	if !readOnly {
-		return s.startHelperContainerInternal(ctx, dockerClient, volumeName, false)
-	}
-
-	// Read-only helpers are shared and reaped when idle; the caller's cleanup
+	// Helpers are shared and reaped when idle; the caller's cleanup
 	// releases its in-use hold instead of removing the container. The resolve →
 	// acquire gap is racy against the reaper, so retry a resolve whose helper
 	// was reaped before this caller could take its hold.
 	for range 3 {
-		containerID, err := s.resolveReadOnlyHelperInternal(ctx, dockerClient, volumeName)
+		containerID, err := s.resolveHelperInternal(ctx, dockerClient, volumeName)
 		if err != nil {
 			return "", nil, err
 		}
@@ -782,14 +782,14 @@ func (s *VolumeService) createTempContainerInternal(ctx context.Context, volumeN
 	return "", nil, errors.New("failed to acquire volume helper container")
 }
 
-// resolveReadOnlyHelperInternal returns the shared read-only helper container ID
+// resolveHelperInternal returns the shared helper container ID
 // for volumeName, creating it if needed. singleflight collapses concurrent
 // misses: without it both requests create a helper and the loser is orphaned,
 // holding the volume mount with no cleanup path until Arcane restarts. The
 // creation itself can pull an image, so it must not run under helperMu.
-func (s *VolumeService) resolveReadOnlyHelperInternal(ctx context.Context, dockerClient *client.Client, volumeName string) (string, error) {
+func (s *VolumeService) resolveHelperInternal(ctx context.Context, dockerClient *client.Client, volumeName string) (string, error) {
 	resultCh := s.helperGroup.DoChan(volumeName, func() (any, error) {
-		if containerID, ok := s.getReusableReadOnlyContainerInternal(ctx, dockerClient, volumeName).Get(); ok {
+		if containerID, ok := s.getReusableHelperInternal(ctx, dockerClient, volumeName).Get(); ok {
 			return containerID, nil
 		}
 
@@ -801,7 +801,7 @@ func (s *VolumeService) resolveReadOnlyHelperInternal(ctx context.Context, docke
 		createCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeouts.DefaultDockerImagePull)
 		defer cancel()
 
-		containerID, _, createErr := s.startHelperContainerInternal(createCtx, dockerClient, volumeName, true)
+		containerID, _, createErr := s.startHelperContainerInternal(createCtx, dockerClient, volumeName)
 		if createErr != nil {
 			return nil, createErr
 		}
@@ -862,9 +862,9 @@ func (s *VolumeService) acquireHelperInternal(volumeName, containerID string) (f
 }
 
 // startHelperContainerInternal creates and starts a volume helper container and
-// returns a cleanup that removes it. Tracking of reusable read-only helpers is
+// returns a cleanup that removes it. Tracking of reusable helpers is
 // the caller's responsibility.
-func (s *VolumeService) startHelperContainerInternal(ctx context.Context, dockerClient *client.Client, volumeName string, readOnly bool) (string, func(), error) {
+func (s *VolumeService) startHelperContainerInternal(ctx context.Context, dockerClient *client.Client, volumeName string) (string, func(), error) {
 	helperImage, err := getVolumeHelperImageInternal(ctx, s.dockerService, s.imageService, dockerClient)
 	if err != nil {
 		return "", nil, err
@@ -877,14 +877,7 @@ func (s *VolumeService) startHelperContainerInternal(ctx context.Context, docker
 		Labels:          volumehelper.Labels(),
 	}
 
-	hostConfig := volumehelper.HostConfig(helperImage, []string{
-		fmt.Sprintf("%s:/volume%s", volumeName, func() string {
-			if readOnly {
-				return ":ro"
-			}
-			return ""
-		}()),
-	}, nil)
+	hostConfig := volumehelper.HostConfig(helperImage, []string{volumeName + ":/volume"}, nil)
 
 	resp, err := dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Config:     config,
@@ -906,7 +899,7 @@ func (s *VolumeService) startHelperContainerInternal(ctx context.Context, docker
 	return resp.ID, cleanup, nil
 }
 
-func (s *VolumeService) getReusableReadOnlyContainerInternal(ctx context.Context, dockerClient *client.Client, volumeName string) mo.Option[string] {
+func (s *VolumeService) getReusableHelperInternal(ctx context.Context, dockerClient *client.Client, volumeName string) mo.Option[string] {
 	s.helperMu.Lock()
 	helper := s.helperByVolume[volumeName]
 	s.helperMu.Unlock()
@@ -961,7 +954,7 @@ func (s *VolumeService) CleanupHelperContainers(ctx context.Context) {
 	}
 }
 
-// ReapIdleHelpers removes reused read-only browse helper containers that have
+// ReapIdleHelpers removes reused helper containers that have
 // not serviced a request within idleTimeout. It is map-driven (orphaned helpers
 // not tracked in helperByVolume are left to the startup orphan sweep). Entries
 // are removed from the map before the container is removed, so a concurrent
@@ -1018,7 +1011,7 @@ func (s *VolumeService) collectStaleHelperIDsInternal(now time.Time, idleTimeout
 	return staleIDs
 }
 
-// StopHelper removes the reused read-only browse helper for a single volume, if
+// StopHelper removes the reused helper for a single volume, if
 // one exists. It is idempotent: stopping a volume with no active helper returns
 // nil.
 func (s *VolumeService) StopHelper(ctx context.Context, volumeName string) error {
@@ -1162,7 +1155,7 @@ func (s *VolumeService) DeleteFile(ctx context.Context, volumeName, filePath str
 	}
 	defer s.workspaceLocks.Lock(volumeName)()
 
-	containerID, cleanup, err := s.createTempContainerInternal(ctx, volumeName, false)
+	containerID, cleanup, err := s.createTempContainerInternal(ctx, volumeName)
 	if err != nil {
 		return err
 	}
@@ -1200,7 +1193,7 @@ func (s *VolumeService) CreateDirectory(ctx context.Context, volumeName, dirPath
 	}
 	defer s.workspaceLocks.Lock(volumeName)()
 
-	containerID, cleanup, err := s.createTempContainerInternal(ctx, volumeName, false)
+	containerID, cleanup, err := s.createTempContainerInternal(ctx, volumeName)
 	if err != nil {
 		return err
 	}
@@ -1243,7 +1236,7 @@ func (s *VolumeService) UploadFile(ctx context.Context, volumeName, destPath str
 		return err
 	}
 
-	containerID, cleanup, err := s.createTempContainerInternal(ctx, volumeName, false)
+	containerID, cleanup, err := s.createTempContainerInternal(ctx, volumeName)
 	if err != nil {
 		return err
 	}
@@ -2026,7 +2019,7 @@ func (s *VolumeService) UploadAndRestore(ctx context.Context, volumeName string,
 		return err
 	}
 
-	containerID, cleanup, err := s.createTempContainerInternal(ctx, volumeName, false)
+	containerID, cleanup, err := s.createTempContainerInternal(ctx, volumeName)
 	if err != nil {
 		return err
 	}

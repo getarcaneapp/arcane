@@ -3,8 +3,15 @@ package services
 import (
 	"archive/tar"
 	"context"
+	"encoding/binary"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"mime/multipart"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"strconv"
@@ -17,8 +24,62 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/volume"
+	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 )
+
+func newVolumeWorkspaceTestDockerClientInternal(t *testing.T, server *httptest.Server) *client.Client {
+	t.Helper()
+	dialer := &net.Dialer{}
+	dockerClient, err := client.New(
+		client.WithHost(server.URL),
+		client.WithAPIVersion("1.41"),
+		client.WithHTTPClient(server.Client()),
+		client.WithDialContext(func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return dialer.DialContext(ctx, "tcp", server.Listener.Addr().String())
+		}),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = dockerClient.Close() })
+	return dockerClient
+}
+
+func writeDockerExecAttachResponseInternal(t *testing.T, w http.ResponseWriter, stdout string) {
+	t.Helper()
+	hijacker, ok := w.(http.Hijacker)
+	if !ok {
+		t.Error("Docker exec response does not support hijacking")
+		return
+	}
+	connection, buffer, err := hijacker.Hijack()
+	if err != nil {
+		t.Errorf("hijack Docker exec response: %v", err)
+		return
+	}
+	defer connection.Close()
+	if _, err := fmt.Fprint(buffer, "HTTP/1.1 101 UPGRADED\r\nContent-Type: application/vnd.docker.raw-stream\r\nConnection: Upgrade\r\nUpgrade: tcp\r\n\r\n"); err != nil {
+		t.Errorf("write Docker exec response headers: %v", err)
+		return
+	}
+	if stdout != "" {
+		header := make([]byte, 8)
+		header[0] = 1
+		binary.BigEndian.PutUint32(header[4:], uint32(len(stdout)))
+		if _, err := buffer.Write(header); err != nil {
+			t.Errorf("write Docker exec stream header: %v", err)
+			return
+		}
+		if _, err := buffer.WriteString(stdout); err != nil {
+			t.Errorf("write Docker exec stream: %v", err)
+			return
+		}
+	}
+	if err := buffer.Flush(); err != nil {
+		t.Errorf("flush Docker exec response: %v", err)
+	}
+}
 
 func TestUpdateVolumeWorkspaceValidationFailureReturnsNoWorkspace(t *testing.T) {
 	workspace, err := (&VolumeService{}).UpdateVolumeWorkspace(
@@ -309,6 +370,219 @@ func TestClassifyVolumeWorkspaceBrowseErrorInternal(t *testing.T) {
 func TestValidateVolumeWorkspaceRevisionInternal(t *testing.T) {
 	require.NoError(t, validateVolumeWorkspaceRevisionInternal(" revision ", "revision"))
 	require.ErrorIs(t, validateVolumeWorkspaceRevisionInternal("stale", "current"), common.ErrVolumeFileConflict)
+}
+
+func TestStageVolumeWorkspaceChangesClearsAndCopiesContentsInOneArchive(t *testing.T) {
+	var execCommands [][]string
+	var copiedArchives []map[string]string
+	execID := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/helper/exec"):
+			execID++
+			var request struct {
+				Cmd []string `json:"Cmd"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				t.Errorf("decode exec request: %v", err)
+				return
+			}
+			execCommands = append(execCommands, request.Cmd)
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(map[string]string{"Id": fmt.Sprintf("exec-%d", execID)}); err != nil {
+				t.Errorf("encode exec response: %v", err)
+			}
+		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/exec/exec-") && strings.HasSuffix(r.URL.Path, "/start"):
+			_, _ = io.Copy(io.Discard, r.Body)
+			writeDockerExecAttachResponseInternal(t, w, "")
+		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/exec/exec-") && strings.HasSuffix(r.URL.Path, "/json"):
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(map[string]any{"Running": false, "ExitCode": 0}); err != nil {
+				t.Errorf("encode exec inspect response: %v", err)
+			}
+		case r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/containers/helper/archive"):
+			if got := r.URL.Query().Get("path"); got != "/tmp/arcane-workspace" {
+				t.Errorf("unexpected archive destination %q", got)
+			}
+			archive := make(map[string]string)
+			tarReader := tar.NewReader(r.Body)
+			for {
+				header, err := tarReader.Next()
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				if err != nil {
+					t.Errorf("read staging archive: %v", err)
+					return
+				}
+				content, err := io.ReadAll(tarReader)
+				if err != nil {
+					t.Errorf("read staging archive content: %v", err)
+					return
+				}
+				archive[header.Name] = string(content)
+			}
+			copiedArchives = append(copiedArchives, archive)
+			w.WriteHeader(http.StatusOK)
+		default:
+			http.Error(w, "unexpected Docker request: "+r.Method+" "+r.URL.Path, http.StatusInternalServerError)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	dockerClient := newVolumeWorkspaceTestDockerClientInternal(t, server)
+	service := &VolumeService{dockerService: &DockerClientService{client: dockerClient}}
+	alpha := "alpha"
+	empty := ""
+	firstStaged, err := service.stageVolumeWorkspaceChangesInternal(context.Background(), dockerClient, "helper", []volumetypes.FileChange{
+		{Content: &alpha},
+		{},
+		{Content: &empty},
+	}, nil)
+	require.NoError(t, err)
+	require.Equal(t, volumeWorkspaceStagedFileInternal{path: "/tmp/arcane-workspace/change-0", size: 5}, firstStaged[0])
+	require.Equal(t, volumeWorkspaceStagedFileInternal{path: "/tmp/arcane-workspace/change-2", size: 0}, firstStaged[2])
+
+	second := "second"
+	secondStaged, err := service.stageVolumeWorkspaceChangesInternal(context.Background(), dockerClient, "helper", []volumetypes.FileChange{{Content: &second}}, nil)
+	require.NoError(t, err)
+	require.Equal(t, volumeWorkspaceStagedFileInternal{path: "/tmp/arcane-workspace/change-0", size: 6}, secondStaged[0])
+
+	require.Equal(t, [][]string{
+		{"sh", "-c", "rm -rf -- /tmp/arcane-workspace && mkdir -p -- /tmp/arcane-workspace"},
+		{"sh", "-c", "rm -rf -- /tmp/arcane-workspace && mkdir -p -- /tmp/arcane-workspace"},
+	}, execCommands)
+	require.Equal(t, []map[string]string{
+		{"change-0": "alpha", "change-2": ""},
+		{"change-0": "second"},
+	}, copiedArchives)
+}
+
+func TestUpdateVolumeWorkspaceRejectsStaleRevisionBeforeStaging(t *testing.T) {
+	var execCommands [][]string
+	archiveCopies := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/workspace-volume"):
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(volume.Volume{Name: "workspace-volume", Driver: "local"})
+		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json"):
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]string{"Id": "tools-image"})
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/create"):
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"Id": "helper", "Warnings": []string{}})
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/helper/start"):
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/helper/exec"):
+			var request struct {
+				Cmd []string `json:"Cmd"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				t.Errorf("decode exec request: %v", err)
+				return
+			}
+			execCommands = append(execCommands, request.Cmd)
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]string{"Id": "tree-exec"})
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/exec/tree-exec/start"):
+			_, _ = io.Copy(io.Discard, r.Body)
+			writeDockerExecAttachResponseInternal(t, w, volumeWorkspaceTreeOutputInternal(false, ""))
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/exec/tree-exec/json"):
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"Running": false, "ExitCode": 0})
+		case r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/containers/helper/archive"):
+			archiveCopies++
+			w.WriteHeader(http.StatusOK)
+		default:
+			http.Error(w, "unexpected Docker request: "+r.Method+" "+r.URL.Path, http.StatusInternalServerError)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	dockerClient := newVolumeWorkspaceTestDockerClientInternal(t, server)
+	service := &VolumeService{
+		dockerService:  &DockerClientService{client: dockerClient},
+		helperByVolume: make(map[string]*volumeHelper),
+	}
+	content := "new content"
+	workspace, err := service.UpdateVolumeWorkspace(context.Background(), "workspace-volume", volumetypes.FileUpdateManifest{
+		FileTreeRevision: "stale",
+		FileChanges: []volumetypes.FileChange{{
+			Operation:    volumetypes.FileOpCreateFile,
+			RelativePath: "new.txt",
+			Content:      &content,
+		}},
+	}, nil, models.User{})
+
+	require.Nil(t, workspace)
+	require.ErrorIs(t, err, common.ErrVolumeFileConflict)
+	require.Len(t, execCommands, 1)
+	require.Contains(t, execCommands[0], volumeWorkspaceTreeScriptInternal)
+	require.Zero(t, archiveCopies)
+}
+
+func TestCreateVolumeWorkspaceMutationContainerUsesDedicatedBackupHelper(t *testing.T) {
+	var createRequest struct {
+		HostConfig *container.HostConfig `json:"HostConfig"`
+	}
+	createCalls := 0
+	removeCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json"):
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]string{"Id": "tools-image"})
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode([]container.Summary{})
+		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/containers/") && strings.HasSuffix(r.URL.Path, "/json"):
+			http.NotFound(w, r)
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/arcane-backups"):
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(volume.Volume{Name: "arcane-backups", Driver: "local"})
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/create"):
+			createCalls++
+			if err := json.NewDecoder(r.Body).Decode(&createRequest); err != nil {
+				t.Errorf("decode container create request: %v", err)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"Id": "restore-helper", "Warnings": []string{}})
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/restore-helper/start"):
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodDelete && strings.Contains(r.URL.Path, "/containers/restore-helper"):
+			removeCalls++
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.Error(w, "unexpected Docker request: "+r.Method+" "+r.URL.Path, http.StatusInternalServerError)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	dockerClient := newTestDockerClient(t, server)
+	service := &VolumeService{
+		dockerService:    &DockerClientService{client: dockerClient},
+		backupVolumeName: "arcane-backups",
+		helperByVolume: map[string]*volumeHelper{
+			"workspace-volume": {id: "cached-helper", lastUsedAt: time.Now()},
+		},
+	}
+
+	containerID, cleanup, err := service.createVolumeWorkspaceMutationContainerInternal(context.Background(), "workspace-volume", true)
+	require.NoError(t, err)
+	require.Equal(t, "restore-helper", containerID)
+	require.Equal(t, 1, createCalls)
+	require.Equal(t, "cached-helper", service.helperByVolume["workspace-volume"].id)
+	require.NotNil(t, createRequest.HostConfig)
+	require.Equal(t, []string{"workspace-volume:/volume"}, createRequest.HostConfig.Binds)
+	require.Len(t, createRequest.HostConfig.Mounts, 1)
+	require.Equal(t, "arcane-backups", createRequest.HostConfig.Mounts[0].Source)
+	require.Equal(t, "/backups", createRequest.HostConfig.Mounts[0].Target)
+	require.True(t, createRequest.HostConfig.Mounts[0].ReadOnly)
+
+	cleanup()
+	require.Equal(t, 1, removeCalls)
 }
 
 func TestApplyVolumeWorkspaceChangesTransactionInternalRollsBackEveryMutationStage(t *testing.T) {
