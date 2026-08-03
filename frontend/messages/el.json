@@ -2767,6 +2767,7 @@
   "deploy_pull_policy_always": "Πάντα τραβήξτε το τελευταίο",
   "deploy_pull_policy_never": "Ποτέ μην τραβάτε",
   "deploy_force_recreate": "Αναδημιουργία εμπορευματοκιβωτίων",
+  "deploy_recreate_volumes": "Επαναδημιουργία τροποποιημένων τόμων (απώλεια δεδομένων)",
   "settings_default_deploy_pull_policy": "Προεπιλεγμένη Πολιτική Λήψης",
   "settings_default_deploy_pull_policy_description": "Προεπιλεγμένη πολιτική έλξης εικόνας κατά την ανάπτυξη έργων",
   "authentication": "Αυθεντικοποίηση",
