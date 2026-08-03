@@ -387,6 +387,7 @@ func (s *VolumeService) UpdateVolumeWorkspace(ctx context.Context, volumeName st
 	if err := s.isBrowsableVolumeInternal(ctx, volumeName); err != nil {
 		return classifyVolumeWorkspaceBrowseErrorInternal(err)
 	}
+	defer s.workspaceLocks.Lock(volumeName)()
 
 	needsBackups := slices.ContainsFunc(manifest.FileChanges, func(change volumetypes.FileChange) bool {
 		return change.Operation == volumetypes.FileOpRestoreFile

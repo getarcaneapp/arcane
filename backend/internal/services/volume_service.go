@@ -48,6 +48,7 @@ type VolumeService struct {
 	backupVolumeName   string
 	fileTreeMaxDepth   int
 	fileTreeMaxEntries int
+	workspaceLocks     utils.KeyedMutex
 	helperMu           sync.Mutex
 	helperByVolume     map[string]*volumeHelper
 	// helperGroup deduplicates concurrent read-only helper creation per volume.
