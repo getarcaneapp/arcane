@@ -1153,6 +1153,7 @@ func (s *VolumeService) DeleteFile(ctx context.Context, volumeName, filePath str
 	if sanitizedPath == "/" {
 		return errors.New("cannot delete root directory")
 	}
+	defer s.workspaceLocks.Lock(volumeName)()
 
 	containerID, cleanup, err := s.createTempContainerInternal(ctx, volumeName, false)
 	if err != nil {
@@ -1190,6 +1191,7 @@ func (s *VolumeService) CreateDirectory(ctx context.Context, volumeName, dirPath
 	if err != nil {
 		return errors.WrapIf(err, "invalid path")
 	}
+	defer s.workspaceLocks.Lock(volumeName)()
 
 	containerID, cleanup, err := s.createTempContainerInternal(ctx, volumeName, false)
 	if err != nil {
@@ -1227,6 +1229,7 @@ func (s *VolumeService) UploadFile(ctx context.Context, volumeName, destPath str
 	if err != nil {
 		return errors.WrapIf(err, "invalid path")
 	}
+	defer s.workspaceLocks.Lock(volumeName)()
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
@@ -1538,6 +1541,7 @@ func (s *VolumeService) RestoreBackup(ctx context.Context, volumeName, backupID 
 	if backup.VolumeName != volumeName {
 		return errors.Errorf("backup does not belong to volume %s", volumeName)
 	}
+	defer s.workspaceLocks.Lock(volumeName)()
 
 	// Check if volume is in use by running containers
 	inUse, containerIDs, err := s.GetVolumeUsage(ctx, volumeName)
@@ -1820,6 +1824,7 @@ func (s *VolumeService) RestoreBackupFiles(ctx context.Context, volumeName, back
 	if backup.VolumeName != volumeName {
 		return errors.New("backup does not belong to volume")
 	}
+	defer s.workspaceLocks.Lock(volumeName)()
 
 	// Create pre-restore backup for safety (consistent with RestoreBackup behavior)
 	preBackup, err := s.CreateBackup(ctx, volumeName, user)
@@ -1979,6 +1984,7 @@ func (s *VolumeService) UploadAndRestore(ctx context.Context, volumeName string,
 		return errors.WrapIf(err, "invalid archive")
 	}
 	_ = gzr.Close()
+	defer s.workspaceLocks.Lock(volumeName)()
 
 	preBackup, err := s.CreateBackup(ctx, volumeName, user)
 	if err != nil {
