@@ -247,7 +247,6 @@ func TestVolumeWorkspaceRollbackPathsInternalRemovesDeepestFirst(t *testing.T) {
 func TestVolumeWorkspaceHelperScriptsUseSupportedTooling(t *testing.T) {
 	scripts := strings.Join([]string{
 		volumeWorkspaceTreeScriptInternal,
-		volumeWorkspaceBackupInspectScriptInternal,
 		volumeWorkspaceBackupCreateScriptInternal,
 		volumeWorkspaceCreateFileScriptInternal,
 		volumeWorkspaceCreateFolderScriptInternal,
@@ -273,7 +272,8 @@ func TestVolumeWorkspaceHelperScriptsUseSupportedTooling(t *testing.T) {
 	require.Contains(t, volumeWorkspaceCreateFileScriptInternal, "head -c")
 	require.Contains(t, volumeWorkspaceCreateFolderScriptInternal, "mkdir -m 0755")
 	require.Contains(t, volumeWorkspaceUpdateFileScriptInternal, "head -c")
-	require.Contains(t, volumeWorkspaceBackupCreateScriptInternal, `cd "$1"`)
+	require.Contains(t, volumeWorkspaceBackupCreateScriptInternal, `printf 'absent\0%s\0'`)
+	require.Contains(t, volumeWorkspaceBackupCreateScriptInternal, `cd "$parent"`)
 	require.NotContains(t, volumeWorkspaceBackupCreateScriptInternal, " -C ")
 }
 
@@ -395,19 +395,30 @@ sh -c "$1" sh nested/a.txt /tmp/staged 7`, volumeWorkspaceUpdateFileScriptIntern
 	runInVolume(volumeName, `sh -c "$1" sh nested/a.txt nested/b.txt`, volumeWorkspaceRenameScriptInternal)
 	runInVolume(volumeName, `sh -c "$1" sh dest ''`, volumeWorkspaceCreateFolderScriptInternal)
 	runInVolume(volumeName, `sh -c "$1" sh nested/b.txt dest dest/b.txt`, volumeWorkspaceMoveScriptInternal)
-	require.Equal(t, "present\x00", runInVolume(volumeName, `sh -c "$1" sh dest/b.txt`, volumeWorkspaceBackupInspectScriptInternal))
 
-	runInVolume(volumeName, volumeWorkspaceBackupCreateScriptInternal, "/volume/dest", "/tmp/backup.tar", "./b.txt")
-	restored := runInVolume(volumeName, `sh -c "$1" sh dest/b.txt 0
+	restored := runInVolume(volumeName, `set -e
+sh -c "$1" sh dest/b.txt /tmp/backup.tar >/dev/null
+sh -c "$2" sh dest/b.txt 0
 tar -xf /tmp/backup.tar -C /volume/dest
-head -c 7 /volume/dest/b.txt`, volumeWorkspaceDeleteScriptInternal)
+head -c 7 /volume/dest/b.txt`, volumeWorkspaceBackupCreateScriptInternal, volumeWorkspaceDeleteScriptInternal)
 	require.Equal(t, "updated", restored)
 
 	runInVolume(volumeName, `mkdir -p "/volume/Test Folder"
 printf spaced > "/volume/Test Folder/file.txt"`)
-	runInVolume(volumeName, volumeWorkspaceBackupCreateScriptInternal, "/volume", "/tmp/space-backup.tar", "./Test Folder")
-	spacedRestored := runInVolume(volumeName, `rm -rf "/volume/Test Folder"
+	spacedRestored := runInVolume(volumeName, `set -e
+sh -c "$1" sh "Test Folder" /tmp/space-backup.tar >/dev/null
+rm -rf "/volume/Test Folder"
 tar -xf /tmp/space-backup.tar -C /volume
-head -c 6 "/volume/Test Folder/file.txt"`)
+head -c 6 "/volume/Test Folder/file.txt"`, volumeWorkspaceBackupCreateScriptInternal)
 	require.Equal(t, "spaced", spacedRestored)
+
+	missing := runInVolume(volumeName, `set -e
+sh -c "$1" sh test.txt /tmp/missing-backup.tar
+test ! -e /tmp/missing-backup.tar`, volumeWorkspaceBackupCreateScriptInternal)
+	require.Equal(t, "absent\x00test.txt\x00", missing)
+
+	missingNested := runInVolume(volumeName, `set -e
+sh -c "$1" sh "New Folder/test.txt" /tmp/missing-nested-backup.tar
+test ! -e /tmp/missing-nested-backup.tar`, volumeWorkspaceBackupCreateScriptInternal)
+	require.Equal(t, "absent\x00New Folder\x00", missingNested)
 }

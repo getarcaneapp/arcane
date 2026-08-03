@@ -664,8 +664,9 @@ type volumeWorkspaceBackupInternal struct {
 	absentEntries []string
 }
 
-const volumeWorkspaceBackupInspectScriptInternal = `set -e
+const volumeWorkspaceBackupCreateScriptInternal = `set -e
 rel="$1"
+archive="$2"
 cur=/volume
 current=
 remaining=$rel
@@ -680,27 +681,13 @@ while [ -n "$remaining" ]; do
   if [ ! -e "$cur" ]; then printf 'absent\0%s\0' "$current"; exit 0; fi
   if [ -n "$remaining" ] && [ ! -d "$cur" ]; then echo ARCANE_NOT_DIRECTORY >&2; exit 47; fi
 done
+case "$rel" in
+  */*) parent="/volume/${rel%/*}"; entry=${rel##*/} ;;
+  *) parent=/volume; entry=$rel ;;
+esac
+cd "$parent"
+tar -cf "$archive" "./$entry"
 printf 'present\0'`
-
-const volumeWorkspaceBackupCreateScriptInternal = `set -e
-cd "$1"
-tar -cf "$2" "$3"`
-
-func (s *VolumeService) inspectVolumeWorkspaceBackupPathInternal(ctx context.Context, containerID, relativePath string) (bool, string, error) {
-	stdout, stderr, err := s.execInContainerInternal(ctx, containerID, []string{"sh", "-c", volumeWorkspaceBackupInspectScriptInternal, "sh", relativePath})
-	if err != nil {
-		return false, "", classifyVolumeWorkspaceExecErrorInternal(err, stderr, "inspect volume workspace backup path")
-	}
-	fields := strings.Split(stdout, "\x00")
-	switch {
-	case len(fields) >= 1 && fields[0] == "present":
-		return true, "", nil
-	case len(fields) >= 2 && fields[0] == "absent" && fields[1] != "":
-		return false, fields[1], nil
-	default:
-		return false, "", errors.New("invalid volume workspace backup path response")
-	}
-}
 
 func (s *VolumeService) backupVolumeWorkspaceScopeInternal(ctx context.Context, containerID string, scope []string) (*volumeWorkspaceBackupInternal, error) {
 	if _, _, err := s.execInContainerInternal(ctx, containerID, []string{"mkdir", "-p", "/tmp/arcane-workspace"}); err != nil {
@@ -711,30 +698,23 @@ func (s *VolumeService) backupVolumeWorkspaceScopeInternal(ctx context.Context, 
 		absentEntries: make([]string, 0, len(scope)),
 	}
 	for index, relativePath := range scope {
-		exists, absentPath, err := s.inspectVolumeWorkspaceBackupPathInternal(ctx, containerID, relativePath)
-		if err != nil {
-			return nil, err
-		}
-		if !exists {
-			backup.absentEntries = append(backup.absentEntries, absentPath)
-			continue
-		}
-
 		archivePath := fmt.Sprintf("/tmp/arcane-workspace/backup-%d.tar", index)
-		parent := path.Dir(relativePath)
-		containerParent := "/volume"
-		if parent != "." {
-			containerParent = path.Join(containerParent, parent)
-		}
-		archiveEntry := "./" + path.Base(relativePath)
-		_, stderr, err := s.execInContainerInternal(ctx, containerID, []string{"sh", "-c", volumeWorkspaceBackupCreateScriptInternal, "sh", containerParent, archivePath, archiveEntry})
+		stdout, stderr, err := s.execInContainerInternal(ctx, containerID, []string{"sh", "-c", volumeWorkspaceBackupCreateScriptInternal, "sh", relativePath, archivePath})
 		if err != nil {
 			return nil, classifyVolumeWorkspaceExecErrorInternal(err, stderr, "back up volume workspace path")
 		}
-		backup.archives = append(backup.archives, volumeWorkspaceBackupArchiveInternal{
-			relativePath: relativePath,
-			archivePath:  archivePath,
-		})
+		fields := strings.Split(stdout, "\x00")
+		switch {
+		case len(fields) >= 1 && fields[0] == "present":
+			backup.archives = append(backup.archives, volumeWorkspaceBackupArchiveInternal{
+				relativePath: relativePath,
+				archivePath:  archivePath,
+			})
+		case len(fields) >= 2 && fields[0] == "absent" && fields[1] != "":
+			backup.absentEntries = append(backup.absentEntries, fields[1])
+		default:
+			return nil, errors.New("invalid volume workspace backup path response")
+		}
 	}
 	backup.absentEntries = normalizeVolumeWorkspaceScopeInternal(backup.absentEntries)
 	return backup, nil
