@@ -58,6 +58,13 @@ type VolumeService struct {
 	helperGroup singleflight.Group
 }
 
+type volumeWorkspaceLockContextKeyInternal struct{}
+
+type volumeWorkspaceLockContextInternal struct {
+	service    *VolumeService
+	volumeName string
+}
+
 // volumeHelper tracks a reused read-only browse helper container and the last
 // time it serviced a request, so idle helpers can be reaped. inUse counts the
 // requests currently holding the helper: the reaper must not remove a helper
@@ -1311,6 +1318,11 @@ func (s *VolumeService) ensureBackupVolumeInternal(ctx context.Context) error {
 
 func (s *VolumeService) CreateBackup(ctx context.Context, volumeName string, user models.User) (*models.VolumeBackup, error) {
 	slog.DebugContext(ctx, "volume service: create backup", "volume", volumeName, "user", user.ID)
+	workspaceLock, _ := ctx.Value(volumeWorkspaceLockContextKeyInternal{}).(volumeWorkspaceLockContextInternal)
+	if workspaceLock.service != s || workspaceLock.volumeName != volumeName {
+		defer s.workspaceLocks.Lock(volumeName)()
+	}
+
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return nil, err
@@ -1541,7 +1553,12 @@ func (s *VolumeService) RestoreBackup(ctx context.Context, volumeName, backupID 
 	if backup.VolumeName != volumeName {
 		return errors.Errorf("backup does not belong to volume %s", volumeName)
 	}
-	defer s.workspaceLocks.Lock(volumeName)()
+	unlock := s.workspaceLocks.Lock(volumeName)
+	defer unlock()
+	ctx = context.WithValue(ctx, volumeWorkspaceLockContextKeyInternal{}, volumeWorkspaceLockContextInternal{
+		service:    s,
+		volumeName: volumeName,
+	})
 
 	// Check if volume is in use by running containers
 	inUse, containerIDs, err := s.GetVolumeUsage(ctx, volumeName)
@@ -1824,7 +1841,12 @@ func (s *VolumeService) RestoreBackupFiles(ctx context.Context, volumeName, back
 	if backup.VolumeName != volumeName {
 		return errors.New("backup does not belong to volume")
 	}
-	defer s.workspaceLocks.Lock(volumeName)()
+	unlock := s.workspaceLocks.Lock(volumeName)
+	defer unlock()
+	ctx = context.WithValue(ctx, volumeWorkspaceLockContextKeyInternal{}, volumeWorkspaceLockContextInternal{
+		service:    s,
+		volumeName: volumeName,
+	})
 
 	// Create pre-restore backup for safety (consistent with RestoreBackup behavior)
 	preBackup, err := s.CreateBackup(ctx, volumeName, user)
@@ -1984,7 +2006,12 @@ func (s *VolumeService) UploadAndRestore(ctx context.Context, volumeName string,
 		return errors.WrapIf(err, "invalid archive")
 	}
 	_ = gzr.Close()
-	defer s.workspaceLocks.Lock(volumeName)()
+	unlock := s.workspaceLocks.Lock(volumeName)
+	defer unlock()
+	ctx = context.WithValue(ctx, volumeWorkspaceLockContextKeyInternal{}, volumeWorkspaceLockContextInternal{
+		service:    s,
+		volumeName: volumeName,
+	})
 
 	preBackup, err := s.CreateBackup(ctx, volumeName, user)
 	if err != nil {

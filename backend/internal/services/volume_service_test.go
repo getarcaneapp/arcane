@@ -24,7 +24,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestLegacyVolumeMutationsUseWorkspaceLock(t *testing.T) {
+func TestVolumeOperationsUseWorkspaceLock(t *testing.T) {
 	const (
 		volumeName = "shared-volume"
 		backupID   = "shared-volume-backup"
@@ -62,6 +62,10 @@ func TestLegacyVolumeMutationsUseWorkspaceLock(t *testing.T) {
 		}},
 		{name: "upload file", run: func(ctx context.Context, service *VolumeService) error {
 			return service.UploadFile(ctx, volumeName, "/", bytes.NewBufferString("content"), "file.txt", nil)
+		}},
+		{name: "create backup", run: func(ctx context.Context, service *VolumeService) error {
+			_, err := service.CreateBackup(ctx, volumeName, systemUser)
+			return err
 		}},
 		{name: "restore backup", run: func(ctx context.Context, service *VolumeService) error {
 			return service.RestoreBackup(ctx, volumeName, backupID, systemUser)
