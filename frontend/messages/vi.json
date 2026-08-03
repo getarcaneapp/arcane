@@ -2767,6 +2767,7 @@
   "deploy_pull_policy_always": "Luôn cập nhật phiên bản mới nhất",
   "deploy_pull_policy_never": "Không bao giờ kéo",
   "deploy_force_recreate": "Buộc tạo lại các container",
+  "deploy_recreate_volumes": "Tạo lại các phân vùng đã bị thay đổi (mất dữ liệu)",
   "settings_default_deploy_pull_policy": "Chính sách triển khai mặc định",
   "settings_default_deploy_pull_policy_description": "Chính sách kéo hình ảnh mặc định khi triển khai dự án",
   "authentication": "Xác thực",
