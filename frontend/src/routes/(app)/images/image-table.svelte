@@ -27,6 +27,7 @@
 	import { isLikelyStaleFailedSummary, isVulnerabilityScanInProgress } from '#lib/utils/docker';
 	import { environmentStore } from '#lib/stores/environment.store.svelte';
 	import { hasPermission } from '#lib/utils/auth';
+	import userStore from '#lib/stores/user-store';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
 	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions';
 	import InUseStatus from '#lib/components/arcane-table/cells/in-use-status.svelte';
@@ -67,11 +68,28 @@
 	});
 
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
-	const canDeleteImage = $derived(hasPermission('images:delete', currentEnvId));
-	const canPullImage = $derived(hasPermission('images:pull', currentEnvId));
-	const canScanImage = $derived(hasPermission('vulnerabilities:scan', currentEnvId));
-	const canTagImage = $derived(hasPermission('images:tag', currentEnvId));
-	const canReadImage = $derived(hasPermission('images:read', currentEnvId));
+	// Track the user store: hasPermission reads it non-reactively, so without
+	// this the deriveds would cache pre-hydration falses forever.
+	const canDeleteImage = $derived.by(() => {
+		$userStore;
+		return hasPermission('images:delete', currentEnvId);
+	});
+	const canPullImage = $derived.by(() => {
+		$userStore;
+		return hasPermission('images:pull', currentEnvId);
+	});
+	const canScanImage = $derived.by(() => {
+		$userStore;
+		return hasPermission('vulnerabilities:scan', currentEnvId);
+	});
+	const canTagImage = $derived.by(() => {
+		$userStore;
+		return hasPermission('images:tag', currentEnvId);
+	});
+	const canReadImage = $derived.by(() => {
+		$userStore;
+		return hasPermission('images:read', currentEnvId);
+	});
 
 	let isPullingInline = $state<Record<string, boolean>>({});
 	let isScanningInline = $state<Record<string, boolean>>({});
