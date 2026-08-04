@@ -3,6 +3,7 @@ package edge
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
 	"strings"
 	"testing"
@@ -340,8 +341,9 @@ func TestGRPCTunnel_InvalidTokenRejected(t *testing.T) {
 	stream, err := client.Connect(testGRPCOutgoingContextInternal(ctx, "invalid-token"))
 	require.NoError(t, err)
 
-	err = stream.Send(&tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_Register{Register: &tunnelpb.RegisterRequest{AgentToken: "invalid-token"}}})
-	require.NoError(t, err)
+	if err := stream.Send(&tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_Register{Register: &tunnelpb.RegisterRequest{AgentToken: "invalid-token"}}}); err != nil {
+		require.ErrorIs(t, err, io.EOF)
+	}
 
 	_, err = stream.Recv()
 	require.Error(t, err)
