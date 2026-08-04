@@ -347,6 +347,19 @@ func (s *ApiKeyService) getDefaultAdminUser(ctx context.Context) (*models.User, 
 		return nil, errors.WrapIf(err, "failed to load default admin user")
 	}
 
+	// The username is mutable and not proof of provenance — never mint the
+	// managed full-permission key onto an account that isn't a global admin.
+	if s.roleService != nil {
+		perms, err := s.roleService.ResolvePermissions(ctx, adminUser)
+		if err != nil {
+			return nil, errors.WrapIf(err, "failed to resolve default admin permissions")
+		}
+		if !perms.IsGlobalAdmin() {
+			slog.WarnContext(ctx, "User is not a global admin, skipping default admin API key reconciliation", "username", defaultAdminUsername)
+			return nil, nil
+		}
+	}
+
 	return adminUser, nil
 }
 

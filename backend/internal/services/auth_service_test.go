@@ -569,7 +569,7 @@ func TestChangePassword_RevokesAllSessions(t *testing.T) {
 	s.userService = userSvc
 	s.sessionService = NewSessionService(db)
 
-	passwordHash, err := userSvc.hashPassword("old-password")
+	passwordHash, err := userSvc.HashPassword("old-password")
 	require.NoError(t, err)
 	user := &models.User{
 		BaseModel:    models.BaseModel{ID: "u-password"},
@@ -599,7 +599,7 @@ func TestChangePassword_KeepsCurrentSessionAlive(t *testing.T) {
 	s.userService = userSvc
 	s.sessionService = NewSessionService(db)
 
-	passwordHash, err := userSvc.hashPassword("old-password")
+	passwordHash, err := userSvc.HashPassword("old-password")
 	require.NoError(t, err)
 	user := &models.User{
 		BaseModel:    models.BaseModel{ID: "u-keep"},

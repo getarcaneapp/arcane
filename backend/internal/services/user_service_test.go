@@ -352,3 +352,33 @@ func TestDeleteUserAllowsGlobalAdminActorDeletingAdmin(t *testing.T) {
 	actorCtx := context.WithValue(ctx, models.CurrentUserContextKey{}, other)
 	require.NoError(t, userSvc.DeleteUser(actorCtx, admin.ID, otherPerms))
 }
+
+func TestCreateDefaultAdminDoesNotPromoteRenamedArcaneUser(t *testing.T) {
+	userSvc, roleSvc := setupUserAndRoleServices(t)
+	ctx := context.Background()
+
+	admin := createTestUser(t, userSvc, "admin-1", "boss")
+	grantGlobalAdmin(t, roleSvc, admin.ID)
+	imposter := createTestUser(t, userSvc, "user-2", "arcane")
+
+	require.NoError(t, userSvc.CreateDefaultAdmin(ctx))
+
+	assignments, err := roleSvc.ListUserAssignments(ctx, imposter.ID)
+	require.NoError(t, err)
+	require.Empty(t, assignments)
+}
+
+func TestCreateDefaultAdminRecoversArcaneUserWhenNoGlobalAdminExists(t *testing.T) {
+	userSvc, roleSvc := setupUserAndRoleServices(t)
+	ctx := context.Background()
+
+	orphan := createTestUser(t, userSvc, "user-1", "arcane")
+
+	require.NoError(t, userSvc.CreateDefaultAdmin(ctx))
+
+	assignments, err := roleSvc.ListUserAssignments(ctx, orphan.ID)
+	require.NoError(t, err)
+	require.Len(t, assignments, 1)
+	require.Equal(t, authz.BuiltInRoleAdmin, assignments[0].RoleID)
+	require.Nil(t, assignments[0].EnvironmentID)
+}

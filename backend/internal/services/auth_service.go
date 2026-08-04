@@ -260,16 +260,6 @@ func (s *AuthService) AuthenticateLocalPrimary(ctx context.Context, username, pa
 		return nil, ErrInvalidCredentials
 	}
 
-	if s.userService.NeedsPasswordUpgrade(user.PasswordHash) {
-		s.runInBackground(ctx, "upgrade_password_hash", func(ctx context.Context) error {
-			if err := s.userService.UpgradePasswordHash(ctx, user.ID, password); err != nil {
-				return errors.WrapIff(err, "failed to upgrade password hash for user %s", user.ID)
-			}
-			slog.InfoContext(ctx, "Successfully upgraded password hash from bcrypt to Argon2", "user", user.Username)
-			return nil
-		})
-	}
-
 	user.LastLogin = new(time.Now())
 	userCopy := new(*user)
 	s.runInBackground(ctx, "update_last_login", func(ctx context.Context) error {
