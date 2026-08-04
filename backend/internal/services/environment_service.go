@@ -755,13 +755,31 @@ func (s *EnvironmentService) applySwarmNodeAgentApiKeyInternal(
 		return "", errors.New("api key service not configured")
 	}
 
-	apiKeyDto, err := s.apiKeyService.CreateEnvironmentApiKey(ctx, env.ID, userID)
+	oldApiKeyID := env.ApiKeyID
+
+	apiKeyDto, err := s.apiKeyService.CreateEnvironmentApiKey(ctx, env.ID)
 	if err != nil {
 		return "", errors.WrapIf(err, "failed to create environment API key")
 	}
 
 	if err := s.RegenerateEnvironmentApiKey(ctx, env.ID, apiKeyDto.ID, apiKeyDto.Key, userID, username, env.Name); err != nil {
+		// The new key was never linked; remove it so a failed rotation does
+		// not leave an orphaned valid credential behind.
+		if delErr := s.apiKeyService.DeleteApiKey(ctx, apiKeyDto.ID); delErr != nil && !errors.Is(delErr, ErrApiKeyNotFound) {
+			slog.ErrorContext(ctx, "Failed to clean up unlinked environment API key", "environmentID", env.ID, "error", delErr.Error())
+		}
 		return "", err
+	}
+
+	// Delete the previous key only after the environment points at the new
+	// one — while still referenced it is protected and the delete would be
+	// rejected. Failure is non-fatal for the rotation itself, but the old key
+	// remains a valid credential until deleted, so log it as an error; the key
+	// stays visible and deletable on the API Keys page.
+	if oldApiKeyID != nil && *oldApiKeyID != apiKeyDto.ID {
+		if err := s.apiKeyService.DeleteApiKey(ctx, *oldApiKeyID); err != nil && !errors.Is(err, ErrApiKeyNotFound) {
+			slog.ErrorContext(ctx, "Failed to delete previous environment API key; the old key remains valid until deleted manually", "environmentID", env.ID, "error", err.Error())
+		}
 	}
 
 	return apiKeyDto.Key, nil
@@ -1611,8 +1629,14 @@ func (s *EnvironmentService) RegenerateEnvironmentApiKey(ctx context.Context, en
 		"last_seen":    nil, // Clear last seen time
 	}
 
-	if err := s.db.WithContext(ctx).Model(&models.Environment{}).Where("id = ?", envID).Updates(updates).Error; err != nil {
-		return errors.WrapIf(err, "failed to update environment with new API key")
+	result := s.db.WithContext(ctx).Model(&models.Environment{}).Where("id = ?", envID).Updates(updates)
+	if result.Error != nil {
+		return errors.WrapIf(result.Error, "failed to update environment with new API key")
+	}
+	if result.RowsAffected == 0 {
+		// A zero-row update would otherwise report a successful rotation while
+		// the new key was never linked to anything.
+		return errors.New("environment not found")
 	}
 
 	s.syncEnvironmentTokenCacheInternal(envID, apiKey)

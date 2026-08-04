@@ -365,7 +365,7 @@ func registerHandlersInternal(api huma.API, deps HandlerDeps, handlerAppCtx hand
 	handlers.RegisterFederatedCredentials(api, deps.Federated)
 	handlers.RegisterRoles(api, deps.Role)
 	handlers.RegisterAppImages(api, deps.AppImages)
-	handlers.RegisterUsers(api, deps.User, deps.Auth)
+	handlers.RegisterUsers(api, deps.User, deps.Auth, deps.Settings)
 	handlers.RegisterProjects(api, deps.Project, deps.Activity, handlerAppCtx)
 	handlers.RegisterVersion(api, deps.Version)
 	handlers.RegisterEvents(api, deps.Event)

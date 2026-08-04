@@ -28,6 +28,12 @@ type Content struct {
 	// this package. Nil means the provider map's email deliverer errors.
 	RenderEmail func() (subject, html string, err error)
 
+	// Vars carries per-event variables (environment, environmentId, event,
+	// timestamp) for the generic webhook's payload template. They are only
+	// injected into the outgoing request when a payload template is configured,
+	// so existing template-less generic webhooks keep their exact payload.
+	Vars map[string]string
+
 	// RequireNtfyTopic preserves the per-event ntfy topic validation.
 	RequireNtfyTopic bool
 
@@ -38,16 +44,17 @@ type Content struct {
 type delivererFunc func(ctx context.Context, config models.JSON, c Content) error
 
 var providerDeliverers = map[models.NotificationProvider]delivererFunc{
-	models.NotificationProviderDiscord:  deliverDiscord,
-	models.NotificationProviderEmail:    deliverEmail,
-	models.NotificationProviderTelegram: deliverTelegram,
-	models.NotificationProviderSignal:   deliverSignal,
-	models.NotificationProviderSlack:    deliverSlack,
-	models.NotificationProviderNtfy:     deliverNtfy,
-	models.NotificationProviderPushover: deliverPushover,
-	models.NotificationProviderGotify:   deliverGotify,
-	models.NotificationProviderMatrix:   deliverMatrix,
-	models.NotificationProviderGeneric:  deliverGeneric,
+	models.NotificationProviderDiscord:    deliverDiscord,
+	models.NotificationProviderEmail:      deliverEmail,
+	models.NotificationProviderTelegram:   deliverTelegram,
+	models.NotificationProviderSignal:     deliverSignal,
+	models.NotificationProviderSlack:      deliverSlack,
+	models.NotificationProviderNtfy:       deliverNtfy,
+	models.NotificationProviderPushover:   deliverPushover,
+	models.NotificationProviderGotify:     deliverGotify,
+	models.NotificationProviderMatrix:     deliverMatrix,
+	models.NotificationProviderGoogleChat: deliverGoogleChat,
+	models.NotificationProviderGeneric:    deliverGeneric,
 }
 
 // Deliver sends c to a single provider. handled is false for unknown providers.
@@ -231,6 +238,23 @@ func deliverMatrix(ctx context.Context, config models.JSON, c Content) error {
 	return nil
 }
 
+func deliverGoogleChat(ctx context.Context, config models.JSON, c Content) error {
+	googleChatConfig, err := DecodeConfig[models.GoogleChatConfig](config, "Google Chat")
+	if err != nil {
+		return err
+	}
+	if googleChatConfig.WebhookURL == "" {
+		return errors.New("google chat webhook URL not configured")
+	}
+	if err := DecryptStringCredential(&googleChatConfig.WebhookURL); err != nil {
+		return err
+	}
+	if err := SendGoogleChat(ctx, googleChatConfig, c.Text[MessageFormatPlain]); err != nil {
+		return errors.WrapIf(err, "failed to send Google Chat notification")
+	}
+	return nil
+}
+
 func deliverGeneric(ctx context.Context, config models.JSON, c Content) error {
 	genericConfig, err := DecodeConfig[models.GenericConfig](config, "Generic")
 	if err != nil {
@@ -239,7 +263,7 @@ func deliverGeneric(ctx context.Context, config models.JSON, c Content) error {
 	if genericConfig.WebhookURL == "" {
 		return errors.New("webhook URL not configured")
 	}
-	if err := SendGenericWithTitle(ctx, genericConfig, c.Title, c.Text[MessageFormatPlain]); err != nil {
+	if err := SendGenericWithTitle(ctx, genericConfig, c.Title, c.Text[MessageFormatPlain], c.Vars); err != nil {
 		return errors.WrapIf(err, "failed to send Generic webhook notification")
 	}
 	return nil

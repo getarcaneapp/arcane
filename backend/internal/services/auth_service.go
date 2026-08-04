@@ -17,6 +17,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/jwtclaims"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
 	"github.com/getarcaneapp/arcane/types/v2/auth"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
@@ -258,16 +259,6 @@ func (s *AuthService) AuthenticateLocalPrimary(ctx context.Context, username, pa
 	}
 	if err := s.userService.ValidatePassword(user.PasswordHash, password); err != nil {
 		return nil, ErrInvalidCredentials
-	}
-
-	if s.userService.NeedsPasswordUpgrade(user.PasswordHash) {
-		s.runInBackground(ctx, "upgrade_password_hash", func(ctx context.Context) error {
-			if err := s.userService.UpgradePasswordHash(ctx, user.ID, password); err != nil {
-				return errors.WrapIff(err, "failed to upgrade password hash for user %s", user.ID)
-			}
-			slog.InfoContext(ctx, "Successfully upgraded password hash from bcrypt to Argon2", "user", user.Username)
-			return nil
-		})
 	}
 
 	user.LastLogin = new(time.Now())
@@ -843,6 +834,14 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID, currentPasswor
 		if err := s.userService.ValidatePassword(user.PasswordHash, currentPassword); err != nil {
 			return ErrInvalidCredentials
 		}
+	}
+
+	policy := validation.PasswordPolicyStrong
+	if s.settingsService != nil {
+		policy = s.settingsService.GetStringSetting(ctx, "authPasswordPolicy", validation.PasswordPolicyStrong)
+	}
+	if err := validation.ValidatePasswordPolicy(newPassword, policy); err != nil {
+		return common.Classify(common.ErrValidation, err)
 	}
 
 	if _, err = s.userService.SetPasswordAndRevokeSessionsExcept(ctx, user, newPassword, currentSessionID); err != nil {

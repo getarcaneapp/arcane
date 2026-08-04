@@ -1,6 +1,7 @@
 <script lang="ts">
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import * as ArcaneTooltip from '#lib/components/arcane-tooltip';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
 	import { CopyButton } from '#lib/components/ui/copy-button';
 	import { toast } from 'svelte-sonner';
@@ -249,24 +250,53 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: ApiKey })}
+	{@const lockedReason = isStaticApiKey(item)
+		? m.api_key_static_description()
+		: isBootstrapApiKey(item)
+			? m.api_key_bootstrap_description()
+			: null}
 	<RowActionsMenu>
 		<IfPermitted perm="apikeys:update">
-			<DropdownMenu.Item onclick={() => onEditApiKey(item)} disabled={isStaticApiKey(item) || isBootstrapApiKey(item)}>
-				<EditIcon class="size-4" />
-				{m.common_edit()}
-			</DropdownMenu.Item>
+			{#if lockedReason}
+				<ArcaneTooltip.Root>
+					<ArcaneTooltip.Trigger class="w-full" disabledChild>
+						<DropdownMenu.Item disabled>
+							<EditIcon class="size-4" />
+							{m.common_edit()}
+						</DropdownMenu.Item>
+					</ArcaneTooltip.Trigger>
+					<ArcaneTooltip.Content>
+						<p class="max-w-xs text-xs break-words">{lockedReason}</p>
+					</ArcaneTooltip.Content>
+				</ArcaneTooltip.Root>
+			{:else}
+				<DropdownMenu.Item onclick={() => onEditApiKey(item)}>
+					<EditIcon class="size-4" />
+					{m.common_edit()}
+				</DropdownMenu.Item>
+			{/if}
 		</IfPermitted>
 		<DropdownMenu.Separator />
 
 		<IfPermitted perm="apikeys:delete">
-			<DropdownMenu.Item
-				variant="destructive"
-				onclick={() => handleDeleteApiKey(item.id, item.name)}
-				disabled={isStaticApiKey(item) || isBootstrapApiKey(item)}
-			>
-				<TrashIcon class="size-4" />
-				{m.common_delete()}
-			</DropdownMenu.Item>
+			{#if lockedReason}
+				<ArcaneTooltip.Root>
+					<ArcaneTooltip.Trigger class="w-full" disabledChild>
+						<DropdownMenu.Item variant="destructive" disabled>
+							<TrashIcon class="size-4" />
+							{m.common_delete()}
+						</DropdownMenu.Item>
+					</ArcaneTooltip.Trigger>
+					<ArcaneTooltip.Content>
+						<p class="max-w-xs text-xs break-words">{lockedReason}</p>
+					</ArcaneTooltip.Content>
+				</ArcaneTooltip.Root>
+			{:else}
+				<DropdownMenu.Item variant="destructive" onclick={() => handleDeleteApiKey(item.id, item.name)}>
+					<TrashIcon class="size-4" />
+					{m.common_delete()}
+				</DropdownMenu.Item>
+			{/if}
 		</IfPermitted>
 	</RowActionsMenu>
 {/snippet}

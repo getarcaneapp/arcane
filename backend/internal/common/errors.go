@@ -97,6 +97,7 @@ var (
 	ErrEnvironmentConnectionTestFailed         = Classify(ErrBadRequest, errors.Sentinel("Environment connection test failed"))
 	ErrUnsafeRemoteURL                         = Classify(ErrBadRequest, errors.Sentinel("Remote URL is not allowed"))
 	ErrImageScanInProgress                     = Classify(ErrConflict, errors.Sentinel("an image update check is already in progress"))
+	ErrInvalidNotificationPayloadTemplate      = Classify(ErrValidation, errors.Sentinel("invalid generic webhook payload template"))
 	ErrRedeployAfterSyncFailed                 = errors.Sentinel("redeploy failed")
 	ErrGitOpsSyncProjectBindingBroken          = errors.Sentinel("GitOps sync project binding broken")
 )

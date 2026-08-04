@@ -397,6 +397,8 @@ func (h *AuthHandler) ChangePassword(ctx context.Context, input *ChangePasswordI
 		switch {
 		case errors.Is(err, services.ErrInvalidCredentials):
 			return nil, huma.Error401Unauthorized("Current password is incorrect")
+		case errors.Is(err, common.ErrValidation):
+			return nil, huma.Error400BadRequest(err.Error())
 		default:
 			return nil, huma.Error500InternalServerError("Failed to change password")
 		}

@@ -51,12 +51,12 @@
 				<div>
 					<Label for="custom-color-input" class="text-sm font-medium">{m.color_value()}</Label>
 					<div class="flex items-center gap-2">
-						<div class="w-full transition">
+						<div class="w-full">
 							<Input id="custom-color-input" bind:value={customColorInput} placeholder="#3b82f6" class="mt-1 flex-1" />
 						</div>
 						<div
 							class={{
-								'mt-1 rounded-lg border-1 border-border transition-all duration-200 ease-in-out': true,
+								'mt-1 rounded-lg border-1 border-border transition-[height,width] duration-200 ease-in-out': true,
 								'h-9 w-9': isValidColor(customColorInput),
 								'h-0 w-0': !isValidColor(customColorInput)
 							}}

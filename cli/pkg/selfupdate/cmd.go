@@ -427,7 +427,7 @@ func cliArchiveArtifactNameInternal() (string, error) {
 
 func cliArtifactArchInternal() (string, error) {
 	switch runtime.GOARCH {
-	case "amd64", "arm64", "386":
+	case "amd64", "arm64", "386", "riscv64":
 		return runtime.GOARCH, nil
 	case "arm":
 		return "armv7", nil
