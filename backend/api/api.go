@@ -193,6 +193,7 @@ type HandlerDeps struct {
 	Swarm             *services.SwarmService
 	ImageUpdate       *services.ImageUpdateService
 	Auth              *services.AuthService
+	Passkey           *services.PasskeyService
 	Oidc              *services.OidcService
 	Docker            *services.DockerClientService
 	Template          *services.TemplateService
@@ -358,17 +359,18 @@ func SetupAPIForSpec() huma.API {
 // Add new handlers here as they are migrated from Gin.
 func registerHandlersInternal(api huma.API, deps HandlerDeps, handlerAppCtx handlers.ActivityAppContext, cfg *config.Config) {
 	handlers.RegisterHealth(api)
-	handlers.RegisterAuth(api, deps.User, deps.Auth, deps.Oidc, deps.Settings)
+	handlers.RegisterAuth(api, deps.User, deps.Auth, deps.Oidc, deps.Settings, deps.Passkey)
+	handlers.RegisterPasskeys(api, deps.Passkey, deps.Auth, deps.User)
 	handlers.RegisterApiKeys(api, deps.ApiKey)
 	handlers.RegisterFederatedCredentials(api, deps.Federated)
 	handlers.RegisterRoles(api, deps.Role)
 	handlers.RegisterAppImages(api, deps.AppImages)
-	handlers.RegisterUsers(api, deps.User, deps.Auth)
+	handlers.RegisterUsers(api, deps.User, deps.Auth, deps.Settings)
 	handlers.RegisterProjects(api, deps.Project, deps.Activity, handlerAppCtx)
 	handlers.RegisterVersion(api, deps.Version)
 	handlers.RegisterEvents(api, deps.Event)
 	handlers.RegisterActivities(api, deps.Activity, deps.Environment)
-	handlers.RegisterOidc(api, deps.Auth, deps.Oidc, deps.Role, deps.User, cfg)
+	handlers.RegisterOidc(api, deps.Auth, deps.Passkey, deps.Oidc, deps.Role, deps.User, cfg)
 	handlers.RegisterEnvironments(api, deps.Environment, deps.Settings, deps.ApiKey, deps.Event, cfg)
 	handlers.RegisterContainerRegistries(api, deps.ContainerRegistry, deps.Environment)
 	handlers.RegisterTemplates(api, deps.Template)

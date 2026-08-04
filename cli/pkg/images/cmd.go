@@ -46,7 +46,6 @@ import (
 
 	"emperror.dev/errors"
 
-	"github.com/fatih/color"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/logger"
@@ -170,12 +169,11 @@ var imagesListCmd = &cobra.Command{
 			if len(img.RepoTags) > 0 {
 				tag = img.RepoTags[0]
 			}
-			inUse := color.New(color.FgHiBlack).Sprint("No")
+			inUse := "No"
 			if img.InUse {
-				inUse = color.New(color.FgGreen).Sprint("Yes")
+				inUse = "Yes"
 			}
-			id := color.New(color.FgHiWhite, color.Bold).Sprint(img.ID)
-			rows = append(rows, []string{id, tag, output.Bytes(img.Size), inUse})
+			rows = append(rows, []string{img.ID, tag, output.Bytes(img.Size), inUse})
 		}
 
 		output.Table(headers, rows)

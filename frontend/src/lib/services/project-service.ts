@@ -10,6 +10,7 @@ import BaseAPIService from './api-service';
 export type DeployProjectOptions = {
 	pullPolicy?: 'missing' | 'always' | 'never';
 	forceRecreate?: boolean;
+	recreateVolumes?: boolean;
 };
 
 class ProjectService extends BaseAPIService {

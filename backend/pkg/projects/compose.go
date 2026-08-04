@@ -3,6 +3,7 @@ package projects
 import (
 	"context"
 	"io"
+	"log/slog"
 	"maps"
 	"strings"
 
@@ -25,7 +26,7 @@ type Client struct {
 	logWriter io.WriteCloser
 }
 
-func NewClient(ctx context.Context, authConfigs map[string]registry.AuthConfig) (*Client, error) {
+func NewClient(ctx context.Context, authConfigs map[string]registry.AuthConfig, prompt compose.Prompt) (*Client, error) {
 	cli, err := command.NewDockerCli()
 	if err != nil {
 		return nil, err
@@ -44,15 +45,31 @@ func NewClient(ctx context.Context, authConfigs map[string]registry.AuthConfig) 
 
 	composeCLI := wrapDockerCLIWithInspectCompatibilityInternal(cli)
 
-	serviceOptions := []compose.Option{
-		compose.WithPrompt(compose.AlwaysOkPrompt()),
-	}
-
 	// When the caller streams operation output, render compose's own progress
 	// events exactly as `docker compose --progress=plain` prints them.
 	var logWriter io.WriteCloser
 	if progressWriter, ok := ctx.Value(dockerutils.ProgressWriterKey{}).(io.Writer); ok && progressWriter != nil {
 		logWriter = dockerutils.NewLogLineWriter(progressWriter)
+	}
+
+	if prompt == nil {
+		// Compose consults the prompt before destructive plan decisions (today:
+		// recreating a volume whose config diverged, which loses its data).
+		// Without an interactive channel, answer with the default (decline) and
+		// surface the question in the deploy log so the user can opt in.
+		prompt = func(message string, defaultValue bool) (bool, error) {
+			slog.WarnContext(ctx, "compose prompt declined by default", "message", message)
+			if logWriter != nil {
+				_, _ = io.WriteString(logWriter, "WARNING: "+message+" Declined; enable volume recreation on deploy to apply this change.\n")
+			}
+			return defaultValue, nil
+		}
+	}
+
+	serviceOptions := []compose.Option{
+		compose.WithPrompt(prompt),
+	}
+	if logWriter != nil {
 		serviceOptions = append(serviceOptions,
 			compose.WithEventProcessor(display.Plain(logWriter)),
 			compose.WithOutputStream(logWriter),

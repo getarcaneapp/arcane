@@ -1,9 +1,9 @@
 import { goto, refreshAll } from '$app/navigation';
 import BaseAPIService, { APIError } from './api-service';
 import userStore from '#lib/stores/user-store';
-import type { User } from '#lib/types/auth';
+import type { User, MFAChallenge, AuthenticationResponse } from '#lib/types/auth';
 import type { OidcStatusInfo } from '#lib/types/settings';
-import type { OidcUserInfo, LoginCredentials, LoginResponseData, AutoLoginConfig } from '#lib/types/auth';
+import type { LoginCredentials, AutoLoginConfig } from '#lib/types/auth';
 import type { QueryClient } from '@tanstack/svelte-query';
 import { activityStore } from '#lib/stores/activity.store.svelte';
 import { dashboardStore } from '#lib/stores/dashboard.store.svelte';
@@ -13,6 +13,13 @@ import { getEffectiveLandingPage } from '#lib/utils/navigation';
 const REFRESH_TOKEN_KEY = 'arcane_refresh_token';
 const TOKEN_EXPIRY_KEY = 'arcane_token_expiry';
 const REFRESH_BUFFER_MS = 5 * 60 * 1000; // Refresh 5 minutes before expiry
+
+export class MFARequiredError extends Error {
+	constructor(public readonly challenge: MFAChallenge) {
+		super('Multi-factor authentication is required');
+		this.name = 'MFARequiredError';
+	}
+}
 
 class AuthService extends BaseAPIService {
 	private refreshTimer: ReturnType<typeof setTimeout> | null = null;
@@ -130,18 +137,32 @@ class AuthService extends BaseAPIService {
 	}
 
 	async login(credentials: LoginCredentials): Promise<User> {
-		const data = await this.handleResponse<LoginResponseData>(this.api.post('/auth/login', credentials));
-		const user = data.user as User;
+		const data = await this.handleResponse<AuthenticationResponse>(this.api.post('/auth/login', credentials));
+		if (data.status === 'mfa_required') {
+			if (!data.mfa) {
+				throw new Error('The server did not provide an MFA challenge');
+			}
+			throw new MFARequiredError(data.mfa);
+		}
+
+		const user = await this.completeAuthentication(data);
+		await refreshAll();
+		goto(getEffectiveLandingPage());
+
+		return user;
+	}
+
+	async completeAuthentication(data: AuthenticationResponse): Promise<User> {
+		if (data.status !== 'authenticated' || !data.user) {
+			throw new Error('Authentication did not complete');
+		}
 
 		if (data.refreshToken && data.expiresAt) {
 			this.storeTokenData(data.refreshToken, data.expiresAt);
 		}
 
-		userStore.setUser(user);
-		await refreshAll();
-		goto(getEffectiveLandingPage());
-
-		return user;
+		await userStore.setUser(data.user);
+		return data.user;
 	}
 
 	async getCurrentUser(): Promise<User | null> {
@@ -165,31 +186,8 @@ class AuthService extends BaseAPIService {
 		return response.authUrl;
 	}
 
-	async handleCallback(
-		code: string,
-		state: string
-	): Promise<{
-		success: boolean;
-		token?: string;
-		refreshToken?: string;
-		expiresAt?: string;
-		user?: OidcUserInfo;
-		error?: string;
-	}> {
-		const response = await this.handleResponse<{
-			success: boolean;
-			token?: string;
-			refreshToken?: string;
-			expiresAt?: string;
-			user?: OidcUserInfo;
-			error?: string;
-		}>(this.api.post('/oidc/callback', { code, state }));
-
-		if (response.refreshToken && response.expiresAt) {
-			this.storeTokenData(response.refreshToken, response.expiresAt);
-		}
-
-		return response;
+	async handleCallback(code: string, state: string): Promise<AuthenticationResponse> {
+		return this.handleResponse<AuthenticationResponse>(this.api.post('/oidc/callback', { code, state }));
 	}
 
 	async getStatus(): Promise<OidcStatusInfo> {
@@ -245,15 +243,9 @@ class AuthService extends BaseAPIService {
 	 */
 	async attemptAutoLogin(): Promise<User | null> {
 		try {
-			const data = await this.handleResponse<LoginResponseData>(this.api.post('/auth/auto-login'));
-			const user = data.user as User;
-
-			if (data.refreshToken && data.expiresAt) {
-				this.storeTokenData(data.refreshToken, data.expiresAt);
-			}
-
-			await userStore.setUser(user);
-			return user;
+			const data = await this.handleResponse<AuthenticationResponse>(this.api.post('/auth/auto-login'));
+			if (data.status === 'mfa_required') return null;
+			return this.completeAuthentication(data);
 		} catch {
 			// Silently fail - fall back to normal login flow
 			return null;

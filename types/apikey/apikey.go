@@ -35,7 +35,7 @@ type ApiKey struct {
 	UserID      *string           `json:"userId,omitempty" doc:"ID of the user who owns the API key"`
 	Kind        string            `json:"kind" doc:"Key kind: 'scoped' keys use their own permission grants, 'personal' keys inherit the owner's role permissions"`
 	IsStatic    bool              `json:"isStatic" doc:"Whether the API key is environment-managed and protected from deletion"`
-	IsBootstrap bool              `json:"isBootstrap" doc:"Whether the API key is an auto-generated environment bootstrap key (locked from manual edit / delete)"`
+	IsBootstrap bool              `json:"isBootstrap" doc:"Whether the API key is currently referenced by an environment as its pairing key (locked from manual edit / delete)"`
 	ExpiresAt   *time.Time        `json:"expiresAt,omitempty" doc:"Expiration date of the API key"`
 	LastUsedAt  *time.Time        `json:"lastUsedAt,omitempty" doc:"Last time the API key was used"`
 	CreatedAt   time.Time         `json:"createdAt" doc:"Creation timestamp"`

@@ -31,8 +31,14 @@ const (
 	// NotificationProviderPushover is the builtin Pushover notification provider.
 	NotificationProviderPushover Provider = "pushover"
 
+	// NotificationProviderGotify is the builtin Gotify notification provider.
+	NotificationProviderGotify Provider = "gotify"
+
 	// NotificationProviderMatrix is the builtin Matrix webhook notification provider.
 	NotificationProviderMatrix Provider = "matrix"
+
+	// NotificationProviderGoogleChat is the builtin Google Chat notification provider.
+	NotificationProviderGoogleChat Provider = "googlechat"
 
 	// NotificationProviderGeneric is the builtin Generic webhook notification provider.
 	NotificationProviderGeneric Provider = "generic"

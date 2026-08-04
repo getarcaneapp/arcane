@@ -259,7 +259,16 @@ func initializeStartupState(p initializeStartupStateParams) {
 
 	startup.InitializeNonAgentFeatures(appCtx, runtimeCfg,
 		p.Role.EnsureBuiltInRoles,
-		p.User.CreateDefaultAdmin,
+		func(ctx context.Context) error {
+			// Backfill legacy users.roles first so CreateDefaultAdmin's
+			// zero-global-admin recovery gate sees upgraded assignments.
+			// No-op on modern schemas; runRoleStartupTasks repeats it
+			// idempotently for agent-mode and error-retry coverage.
+			if err := p.Role.BackfillLegacyRoleAssignments(ctx); err != nil {
+				slog.WarnContext(ctx, "Failed to backfill legacy role assignments before admin bootstrap", "error", err)
+			}
+			return p.User.CreateDefaultAdmin(ctx)
+		},
 		func(ctx context.Context) error {
 			return p.ApiKey.ReconcileDefaultAdminAPIKey(ctx, runtimeCfg.AdminStaticAPIKey)
 		},

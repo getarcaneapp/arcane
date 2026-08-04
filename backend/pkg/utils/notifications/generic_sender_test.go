@@ -1,6 +1,10 @@
 package notifications
 
 import (
+	"encoding/json/v2"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
@@ -413,4 +417,175 @@ func TestBuildGenericURL_PreservesUserShoutrrrConfigKeys(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestBuildGenericURL_PayloadTemplate verifies that a configured payload
+// template switches the Shoutrrr template to the named "arcane" template and
+// defaults the content type to JSON, while a user-supplied inline template
+// query key still wins.
+func TestBuildGenericURL_PayloadTemplate(t *testing.T) {
+	gotURL, err := BuildGenericURL(models.GenericConfig{
+		WebhookURL:      "https://webhook.example.com/notify",
+		PayloadTemplate: `{"text": "{{.message}}"}`,
+	})
+	require.NoError(t, err)
+	assert.Contains(t, gotURL, "template=arcane")
+	assert.Contains(t, gotURL, "contenttype=application%2Fjson")
+	assert.NotContains(t, gotURL, "template=json")
+
+	gotURL, err = BuildGenericURL(models.GenericConfig{
+		WebhookURL:      "https://webhook.example.com/notify?template=custom",
+		PayloadTemplate: `{"text": "{{.message}}"}`,
+	})
+	require.NoError(t, err)
+	assert.Contains(t, gotURL, "template=custom")
+	assert.NotContains(t, gotURL, "template=arcane")
+}
+
+// TestRenderGenericPayloadTemplate_EscapesJSON guards the escaping contract: a
+// template embedding values inside JSON string literals must render valid JSON
+// for hostile message content, and the event vars must be available.
+func TestRenderGenericPayloadTemplate_EscapesJSON(t *testing.T) {
+	config := models.GenericConfig{
+		PayloadTemplate: `{"text": "{{.title}}: {{.message}}", "env": "{{.environment}}", "event": "{{.event}}"}`,
+	}
+	vars := map[string]string{"environment": "Local Docker", "environmentId": "0", "event": "image_update", "timestamp": "2026-07-28T00:00:00Z"}
+
+	body, err := RenderGenericPayloadTemplate(config, "Image \"Update\"", "he said \"stop\"\nnew line \\ end", vars)
+	require.NoError(t, err)
+
+	var decoded map[string]string
+	require.NoError(t, json.Unmarshal([]byte(body), &decoded), "rendered body must be valid JSON: %s", body)
+	assert.Equal(t, "Image \"Update\": he said \"stop\"\nnew line \\ end", decoded["text"])
+	assert.Equal(t, "Local Docker", decoded["env"])
+	assert.Equal(t, "image_update", decoded["event"])
+}
+
+// TestSendGenericWithTitle_PayloadTemplate exercises the Shoutrrr send path
+// end to end: the payload template registered on the located service must
+// reach the endpoint as the rendered request body, with the configured custom
+// headers and JSON content type applied.
+func TestSendGenericWithTitle_PayloadTemplate(t *testing.T) {
+	var gotBody []byte
+	var gotContentType, gotMethod, gotAuth string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		gotContentType = r.Header.Get("Content-Type")
+		gotMethod = r.Method
+		gotAuth = r.Header.Get("Authorization")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	config := models.GenericConfig{
+		WebhookURL:      server.URL + "/v1/spaces/FOO/messages",
+		PayloadTemplate: `{"text": "{{.title}}\n{{.message}} ({{.environment}})"}`,
+		CustomHeaders:   map[string]string{"Authorization": "Bearer t0ken"},
+	}
+	vars := map[string]string{"environment": "Local Docker", "environmentId": "0", "event": "image_update", "timestamp": "2026-07-28T00:00:00Z"}
+
+	require.NoError(t, SendGenericWithTitle(t.Context(), config, "Image Update", "nginx:latest updated", vars))
+
+	assert.JSONEq(t, `{"text": "Image Update\nnginx:latest updated (Local Docker)"}`, string(gotBody))
+	assert.Equal(t, http.MethodPost, gotMethod)
+	assert.Equal(t, "application/json", gotContentType)
+	assert.Equal(t, "Bearer t0ken", gotAuth)
+}
+
+// TestSendGenericWithTitle_TemplateWithSuccessBodyContains verifies the two
+// direct-send features compose: template rendering plus response validation.
+func TestSendGenericWithTitle_TemplateWithSuccessBodyContains(t *testing.T) {
+	var gotBody []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"code":900,"msg":"failed"}`))
+	}))
+	defer server.Close()
+
+	config := models.GenericConfig{
+		WebhookURL:          server.URL,
+		PayloadTemplate:     `{"text": "{{.message}}"}`,
+		SuccessBodyContains: `"code":200`,
+	}
+
+	err := SendGenericWithTitle(t.Context(), config, "", "hello", nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "did not contain expected success indicator")
+	assert.JSONEq(t, `{"text": "hello"}`, string(gotBody))
+}
+
+func TestValidateGenericPayloadTemplate(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  models.GenericConfig
+		wantErr string
+	}{
+		{
+			name:   "no template is always valid",
+			config: models.GenericConfig{},
+		},
+		{
+			name: "valid JSON template",
+			config: models.GenericConfig{
+				PayloadTemplate: `{"text": "{{.message}}", "when": "{{.timestamp}}"}`,
+			},
+		},
+		{
+			name: "invalid template syntax is reported",
+			config: models.GenericConfig{
+				PayloadTemplate: `{"text": "{{.message}`,
+			},
+			wantErr: "invalid webhook payload template",
+		},
+		{
+			name: "template rendering malformed JSON is rejected",
+			config: models.GenericConfig{
+				PayloadTemplate: `{"text": "{{.message}}"`,
+			},
+			wantErr: "did not render valid JSON",
+		},
+		{
+			name: "malformed JSON is allowed for non-JSON content types",
+			config: models.GenericConfig{
+				ContentType:     "text/plain",
+				PayloadTemplate: `event={{.event}} message={{.message}}`,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateGenericPayloadTemplate(tt.config)
+
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
+
+// TestSendGenericWithTitle_PayloadTemplateWithInlineTemplateID guards against
+// the configured payload being registered under an ID the URL does not select:
+// a user-supplied inline `?template=custom` must still resolve to the
+// configured payload template instead of failing template resolution.
+func TestSendGenericWithTitle_PayloadTemplateWithInlineTemplateID(t *testing.T) {
+	var gotBody []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	config := models.GenericConfig{
+		WebhookURL:      server.URL + "/notify?template=custom",
+		PayloadTemplate: `{"text": "{{.message}}"}`,
+	}
+
+	require.NoError(t, SendGenericWithTitle(t.Context(), config, "", "hello", nil))
+	assert.JSONEq(t, `{"text": "hello"}`, string(gotBody))
 }

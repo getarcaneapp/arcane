@@ -122,6 +122,9 @@ importers:
       '@lezer/highlight':
         specifier: ^1.2.3
         version: 1.2.3
+      '@simplewebauthn/browser':
+        specifier: ^13.3.0
+        version: 13.3.0
       '@sveltejs/kit':
         specifier: ^3.0.0-next.13
         version: 3.0.0-next.13(@sveltejs/vite-plugin-svelte@7.2.0(svelte@5.56.8)(vite@8.2.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0)))(@typescript/typescript6@6.0.2)(svelte@5.56.8)(vite@8.2.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0))
@@ -129,11 +132,11 @@ importers:
         specifier: ^6.1.38
         version: 6.1.38(svelte@5.56.8)
       '@tanstack/svelte-table':
-        specifier: ^9.0.0-beta.58
-        version: 9.0.0-beta.58(svelte@5.56.8)
+        specifier: ^9.0.0-beta.76
+        version: 9.0.0-beta.76(svelte@5.56.8)
       '@tanstack/table-core':
-        specifier: 9.0.0-beta.58
-        version: 9.0.0-beta.58
+        specifier: 9.0.0-beta.76
+        version: 9.0.0-beta.76
       '@tanstack/virtual-core':
         specifier: ^3.17.7
         version: 3.17.7
@@ -211,8 +214,8 @@ importers:
         version: 4.4.3
     devDependencies:
       '@iconify/json':
-        specifier: ^2.2.506
-        version: 2.2.506
+        specifier: ^2.2.507
+        version: 2.2.507
       '@inlang/paraglide-js':
         specifier: 2.23.0
         version: 2.23.0(@typescript/typescript6@6.0.2)(vite@8.2.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0))
@@ -694,8 +697,8 @@ packages:
   '@hapi/topo@6.0.2':
     resolution: {integrity: sha512-KR3rD5inZbGMrHmgPxsJ9dbi6zEK+C3ZwUwTa+eMwWLz7oijWUTWD2pMSNNYJAU6Qq+65NkxXjqHr/7LM2Xkqg==}
 
-  '@iconify/json@2.2.506':
-    resolution: {integrity: sha512-ohz5vOiAOjuE3sqRTPCpYYtXL7C9HAAowd6pwYlKH80wXnO9DpMbnHCaC+wtWWukosK/Uc4nLXzW62W/Qo7HGQ==}
+  '@iconify/json@2.2.507':
+    resolution: {integrity: sha512-mj/xpXwSXRi8ZgulLMKfHFduLVcdXkyVWql+hKHOnQ7ZE7j94Fp8QtOppjJIZ1DR449RUnnWDT4RhKbC+RUmdw==}
 
   '@iconify/types@2.0.0':
     resolution: {integrity: sha512-+wluvCrRhXrhyOmRDJ3q8mux9JkKy5SJ/v8ol2tu4FVjyYvtEzkc/3pK15ET6RKg4b4w4BmTk1+gsCUhf21Ykg==}
@@ -1028,6 +1031,9 @@ packages:
   '@selderee/plugin-htmlparser2@0.11.0':
     resolution: {integrity: sha512-P33hHGdldxGabLFjPPpaTxVolMrzrcegejx+0GxjrIb9Zv48D8yAIA/QTDR2dFl7Uz7urX8aX6+5bCZslr+gWQ==}
 
+  '@simplewebauthn/browser@13.3.0':
+    resolution: {integrity: sha512-BE/UWv6FOToAdVk0EokzkqQQDOWtNydYlY6+OrmiZ5SCNmb41VehttboTetUM3T/fr6EAFYVXjz4My2wg230rQ==}
+
   '@sinclair/typebox@0.31.30':
     resolution: {integrity: sha512-MGsM7bVmHg3sUKCphlu3SGQ+T+5JTbygZWYArfKQCW5anJeACHeqLhcnf+R7XlCWZ+QR3C8JTBx3kCKJTN69ow==}
 
@@ -1226,14 +1232,14 @@ packages:
     peerDependencies:
       svelte: ^5.0.0
 
-  '@tanstack/svelte-table@9.0.0-beta.58':
-    resolution: {integrity: sha512-LoN43WX+JDdVrwxGAGog+oKJTYAEzbUgBCdo5m8y4bT5NaW7GHRlP9EzrbA9vXNBA/P0EuJWSY77cP4279qKuw==}
+  '@tanstack/svelte-table@9.0.0-beta.76':
+    resolution: {integrity: sha512-eKU38HdomB9LJCV5XwIIoyL1QCGoDAZQL4+5v8kA8ry7bw1lVwHXHqYA64BNiFZdyGPm5haLC7fScl/10YiDyA==}
     engines: {node: '>=20'}
     peerDependencies:
       svelte: ^5.0.0
 
-  '@tanstack/table-core@9.0.0-beta.58':
-    resolution: {integrity: sha512-iP2N6AA4iU6NbLF/DOHoA/mJUDspz5cRIvPkqfTtuoURcjNp4MxbJPxTRUizuX8JejDL2PDfmLUMj3zU+znhyA==}
+  '@tanstack/table-core@9.0.0-beta.76':
+    resolution: {integrity: sha512-hJ0CciSKmPjbEoc+pVAMhHiz64WwAf/g52CnOpHFlBgW8YV5i/U1ufJAN9uXpYMhXr5Cc92aOIWz9e9C/FcJ1w==}
     engines: {node: '>=20'}
 
   '@tanstack/virtual-core@3.17.7':
@@ -3238,7 +3244,7 @@ snapshots:
       '@hapi/hoek': 11.0.7
     optional: true
 
-  '@iconify/json@2.2.506':
+  '@iconify/json@2.2.507':
     dependencies:
       '@iconify/types': 2.0.0
       pathe: 2.0.3
@@ -3504,6 +3510,8 @@ snapshots:
       domhandler: 5.0.3
       selderee: 0.11.0
 
+  '@simplewebauthn/browser@13.3.0': {}
+
   '@sinclair/typebox@0.31.30': {}
 
   '@socket.io/component-emitter@3.1.2': {}
@@ -3660,13 +3668,13 @@ snapshots:
       '@tanstack/store': 0.11.0
       svelte: 5.56.8
 
-  '@tanstack/svelte-table@9.0.0-beta.58(svelte@5.56.8)':
+  '@tanstack/svelte-table@9.0.0-beta.76(svelte@5.56.8)':
     dependencies:
       '@tanstack/svelte-store': 0.12.0(svelte@5.56.8)
-      '@tanstack/table-core': 9.0.0-beta.58
+      '@tanstack/table-core': 9.0.0-beta.76
       svelte: 5.56.8
 
-  '@tanstack/table-core@9.0.0-beta.58':
+  '@tanstack/table-core@9.0.0-beta.76':
     dependencies:
       '@tanstack/store': 0.11.0
 

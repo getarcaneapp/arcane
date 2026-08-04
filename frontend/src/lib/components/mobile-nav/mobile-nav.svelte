@@ -163,7 +163,7 @@
 				? 'fixed left-1/2 z-[var(--arcane-z-app-chrome)] -translate-x-1/2 transform'
 				: 'fixed right-0 bottom-0 left-0 z-[var(--arcane-z-app-chrome)] gap-2',
 			'border-border/30 bg-background/60 backdrop-blur-xl',
-			'shadow-sm transition-all duration-300 ease-out select-none',
+			'shadow-sm transition-[translate,scale,opacity] duration-300 ease-out select-none',
 			'flex items-center',
 			mode === 'floating'
 				? cn(

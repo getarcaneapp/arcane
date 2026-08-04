@@ -132,6 +132,18 @@ html.reduce-effects *::after {
 	transition-delay: 0ms !important;
 }
 
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.001ms !important;
+		animation-delay: 0ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.001ms !important;
+		transition-delay: 0ms !important;
+	}
+}
+
 @theme inline {
 	--radius-sm: calc(var(--radius) * 0.6);
 	--radius-md: calc(var(--radius) * 0.8);
@@ -222,7 +234,17 @@ html.reduce-effects *::after {
 		scrollbar-color: transparent transparent;
 	}
 
-	*:hover {
+	:where(
+		html,
+		body,
+		.overflow-auto,
+		.overflow-y-auto,
+		.overflow-x-auto,
+		.overflow-scroll,
+		.overflow-y-scroll,
+		.overflow-x-scroll,
+		.arcane-code-editor .cm-scroller
+	):hover {
 		scrollbar-color: var(--muted-foreground) transparent;
 	}
 
@@ -244,7 +266,17 @@ html.reduce-effects *::after {
 		transition: background 0.2s ease;
 	}
 
-	*:hover::-webkit-scrollbar-thumb {
+	:where(
+			html,
+			body,
+			.overflow-auto,
+			.overflow-y-auto,
+			.overflow-x-auto,
+			.overflow-scroll,
+			.overflow-y-scroll,
+			.overflow-x-scroll,
+			.arcane-code-editor .cm-scroller
+		):hover::-webkit-scrollbar-thumb {
 		background: var(--muted-foreground);
 		border: 2px solid transparent;
 		background-clip: content-box;

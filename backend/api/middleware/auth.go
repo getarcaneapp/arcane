@@ -200,6 +200,25 @@ func createAgentSudoUserInternal() *models.User {
 	}
 }
 
+// applyProxiedIconCatalogInternal copies the requesting user's icon catalog
+// preference, forwarded by the manager, onto the synthetic user this request
+// authenticates as. Without it the synthetic user has no preferences and every
+// proxied icon resolves against the default catalog.
+//
+// Only called on synthetic-user auth paths (agent token, environment access
+// token), where the header is set by the manager after it strips any
+// client-supplied value. Real-user auth paths never read it.
+func applyProxiedIconCatalogInternal(ctx huma.Context, user *models.User) {
+	if user == nil {
+		return
+	}
+	catalog := strings.TrimSpace(ctx.Header(pkgutils.HeaderIconCatalog))
+	if catalog == "" {
+		return
+	}
+	user.Preferences.IconCatalog = &catalog
+}
+
 func createEnvironmentUserInternal(env *models.Environment) *models.User {
 	return &models.User{
 		BaseModel: models.BaseModel{ID: "environment:" + env.ID},
@@ -236,6 +255,7 @@ func NewAuthBridge(api huma.API, authService *services.AuthService, apiKeyServic
 		}
 
 		if user, env, ok := tryEnvironmentAccessTokenAuthInternal(ctx, envTokenResolver, ctx.Header(pkgutils.HeaderAgentToken)); ok {
+			applyProxiedIconCatalogInternal(ctx, user)
 			newCtx := setUserInContextInternal(ctx.Context(), user, authz.EnvironmentPermissionSet(env.ID))
 			next(huma.WithContext(ctx, newCtx))
 			return
@@ -263,6 +283,7 @@ func tryAgentAuthCtxInternal(ctx huma.Context, cfg *config.Config) (huma.Context
 	if !ok {
 		return ctx, false
 	}
+	applyProxiedIconCatalogInternal(ctx, user)
 	// The agent token path is infrastructure-level and not per-user, so it
 	// gets a sudo PermissionSet that bypasses every check.
 	return huma.WithContext(ctx, setUserInContextInternal(ctx.Context(), user, authz.SudoPermissionSet())), true
@@ -311,6 +332,7 @@ func handleApiKeyAuthInternal(api huma.API, ctx huma.Context, authService *servi
 				return
 			}
 		}
+		applyProxiedIconCatalogInternal(ctx, user)
 		newCtx := setUserInContextInternal(ctx.Context(), user, authz.EnvironmentPermissionSet(env.ID))
 		next(huma.WithContext(ctx, newCtx))
 		return

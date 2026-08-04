@@ -12,7 +12,6 @@ import (
 	"emperror.dev/errors"
 
 	"golang.org/x/crypto/argon2"
-	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
@@ -72,7 +71,7 @@ func (s *UserService) WithRoleService(roleService *RoleService) *UserService {
 	return s
 }
 
-func (s *UserService) hashPassword(password string) (string, error) {
+func (s *UserService) HashPassword(password string) (string, error) {
 	salt := make([]byte, s.argon2Params.saltLength)
 	_, err := rand.Read(salt)
 	if err != nil {
@@ -90,20 +89,6 @@ func (s *UserService) hashPassword(password string) (string, error) {
 }
 
 func (s *UserService) ValidatePassword(encodedHash, password string) error {
-	// Check if it's a bcrypt hash (starts with $2a$, $2b$, or $2y$)
-	if strings.HasPrefix(encodedHash, "$2a$") || strings.HasPrefix(encodedHash, "$2b$") || strings.HasPrefix(encodedHash, "$2y$") {
-		return s.validateBcryptPassword(encodedHash, password)
-	}
-
-	// Otherwise, assume it's Argon2
-	return s.validateArgon2Password(encodedHash, password)
-}
-
-func (s *UserService) validateBcryptPassword(hash, password string) error {
-	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
-}
-
-func (s *UserService) validateArgon2Password(encodedHash, password string) error {
 	parts := strings.Split(encodedHash, "$")
 	if len(parts) != 6 {
 		return errors.New("invalid hash format")
@@ -284,7 +269,7 @@ func (s *UserService) SetPassword(ctx context.Context, user *models.User, passwo
 		return nil, errors.New("user is nil")
 	}
 
-	hashedPassword, err := s.hashPassword(password)
+	hashedPassword, err := s.HashPassword(password)
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to hash password")
 	}
@@ -306,7 +291,7 @@ func (s *UserService) SetPasswordAndRevokeSessionsExcept(ctx context.Context, us
 		return nil, ErrUserNotFound
 	}
 
-	hashedPassword, err := s.hashPassword(password)
+	hashedPassword, err := s.HashPassword(password)
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to hash password")
 	}
@@ -388,24 +373,42 @@ func (s *UserService) AttachOidcSubjectTransactional(ctx context.Context, userID
 }
 
 func (s *UserService) CreateDefaultAdmin(ctx context.Context) error {
-	// Hash password outside transaction to minimize lock time
-	hashedPassword, err := s.hashPassword("arcane-admin")
-	if err != nil {
-		return errors.WrapIf(err, "failed to hash default admin password")
+	// If users already exist and at least one effective global admin remains,
+	// there is nothing to bootstrap or recover — bail before touching the
+	// `arcane` username at all. The username is mutable, so treating it as a
+	// provenance marker would let anyone with users:create/users:update rename
+	// an account to `arcane` and get promoted on the next restart.
+	if s.roleService != nil {
+		var count int64
+		if err := s.db.WithContext(ctx).Model(&models.User{}).Count(&count).Error; err != nil {
+			return errors.WrapIf(err, "failed to count users")
+		}
+		if count > 0 {
+			admins, err := s.roleService.CountGlobalAdminsExcludingUser(ctx, "")
+			if err != nil {
+				return errors.WrapIf(err, "failed to count global admins")
+			}
+			if admins > 0 {
+				return nil
+			}
+		}
 	}
 
 	// Step 1: ensure the default admin user row exists. If the users table is
-	// empty we create it; otherwise we find the existing `arcane` user (if any).
-	// Either way the role assignment is reconciled below — idempotently — so
-	// upgrades from older builds that didn't grant the role get patched up.
+	// empty we create it; otherwise (zero global admins — a broken/ancient
+	// upgrade) we find the existing `arcane` user to recover, if any.
 	var adminUserID string
-	err = dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
 		var count int64
 		if err := tx.Model(&models.User{}).Count(&count).Error; err != nil {
 			return errors.WrapIf(err, "failed to count users")
 		}
 
 		if count == 0 {
+			hashedPassword, err := s.HashPassword("arcane-admin")
+			if err != nil {
+				return errors.WrapIf(err, "failed to hash default admin password")
+			}
 			email := "admin@localhost"
 			displayName := "Arcane Admin"
 			userModel := &models.User{
@@ -426,8 +429,9 @@ func (s *UserService) CreateDefaultAdmin(ctx context.Context) error {
 			return nil
 		}
 
-		// Users already exist — see if `arcane` is one of them. If not,
-		// someone removed the default admin on purpose and we leave it alone.
+		// Users exist but no global admin does (recovery only — the early
+		// return above skips this path on healthy installs). See if `arcane`
+		// is present; if not, leave the install alone.
 		var existing models.User
 		err := tx.Where("username = ?", "arcane").First(&existing).Error
 		if err != nil {
@@ -446,12 +450,15 @@ func (s *UserService) CreateDefaultAdmin(ctx context.Context) error {
 	if adminUserID == "" || s.roleService == nil {
 		return nil
 	}
+	return s.grantDefaultAdminRoleInternal(ctx, adminUserID)
+}
 
-	// Step 2: ensure the default admin holds the global Admin role assignment.
-	// Idempotent — if the assignment already exists, SetUserAssignments is a
-	// no-op write (it dedupes via the unique index). This recovers users that
-	// were created by older builds before the role-grant on bootstrap was
-	// wired up.
+// grantDefaultAdminRoleInternal grants the global Admin role to the bootstrap
+// user. Reached only on fresh bootstrap or zero-admin recovery.
+// SetUserAssignments replaces manual-source rows, so carry forward only the
+// existing manual assignments — copying OIDC-sourced rows here would duplicate
+// them as manual and pin them forever.
+func (s *UserService) grantDefaultAdminRoleInternal(ctx context.Context, adminUserID string) error {
 	assignments, err := s.roleService.ListUserAssignments(ctx, adminUserID)
 	if err != nil {
 		return errors.WrapIf(err, "failed to list default admin assignments")
@@ -461,16 +468,16 @@ func (s *UserService) CreateDefaultAdmin(ctx context.Context) error {
 			return nil // already has it
 		}
 	}
-	desired := append([]models.UserRoleAssignment{}, assignments...)
-	desired = append(desired, models.UserRoleAssignment{
+	manual := make([]models.UserRoleAssignment, 0, len(assignments)+1)
+	for _, a := range assignments {
+		if a.Source == models.RoleAssignmentSourceManual {
+			manual = append(manual, models.UserRoleAssignment{RoleID: a.RoleID, EnvironmentID: a.EnvironmentID})
+		}
+	}
+	manual = append(manual, models.UserRoleAssignment{
 		RoleID:        authz.BuiltInRoleAdmin,
 		EnvironmentID: nil,
 	})
-	// Strip the source field so SetUserAssignments classifies everything as manual.
-	manual := make([]models.UserRoleAssignment, 0, len(desired))
-	for _, a := range desired {
-		manual = append(manual, models.UserRoleAssignment{RoleID: a.RoleID, EnvironmentID: a.EnvironmentID})
-	}
 	if err := s.roleService.SetUserAssignments(ctx, adminUserID, manual); err != nil {
 		return errors.WrapIf(err, "failed to grant default admin global role")
 	}
@@ -508,30 +515,6 @@ func (s *UserService) DeleteUser(ctx context.Context, id string, actorPerms *aut
 
 		if err := tx.Delete(&models.User{}, "id = ?", id).Error; err != nil {
 			return errors.WrapIf(err, "failed to delete user")
-		}
-		return nil
-	})
-}
-
-func (s *UserService) HashPassword(password string) (string, error) {
-	return s.hashPassword(password)
-}
-
-func (s *UserService) NeedsPasswordUpgrade(hash string) bool {
-	return strings.HasPrefix(hash, "$2a$") || strings.HasPrefix(hash, "$2b$") || strings.HasPrefix(hash, "$2y$")
-}
-
-func (s *UserService) UpgradePasswordHash(ctx context.Context, userID, password string) error {
-	newHash, err := s.hashPassword(password)
-	if err != nil {
-		return errors.WrapIf(err, "failed to create new hash")
-	}
-
-	return dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
-		if err := tx.Model(&models.User{}).
-			Where("id = ?", userID).
-			Update("password_hash", newHash).Error; err != nil {
-			return errors.WrapIf(err, "failed to update password hash")
 		}
 		return nil
 	})
@@ -593,6 +576,10 @@ func (s *UserService) toUserResponseDtoInternal(ctx context.Context, u models.Us
 		UpdatedAt:              u.UpdatedAt.Format("2006-01-02T15:04:05.999999Z"),
 		RoleAssignments:        []user.RoleAssignmentSummary{},
 		PermissionsByEnv:       map[string][]string{},
+	}
+	if u.LastLogin != nil {
+		lastLogin := u.LastLogin.Format("2006-01-02T15:04:05.999999Z")
+		dto.LastLogin = &lastLogin
 	}
 	// Populate AvatarURL when the user has a custom avatar stored
 	if u.HasAvatar {

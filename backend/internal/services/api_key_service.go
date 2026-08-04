@@ -256,7 +256,9 @@ func (s *ApiKeyService) createAPIKeyWithRawKey(
 	}
 
 	return &apikey.ApiKeyCreatedDto{
-		ApiKey: toAPIKeyDTOInternal(ak),
+		// A just-minted environment key is about to be linked as the
+		// environment's pairing key, so present it as bootstrap already.
+		ApiKey: toAPIKeyDTOInternal(ak, environmentID != nil),
 		Key:    rawKey,
 	}, nil
 }
@@ -265,18 +267,39 @@ func isStaticAPIKeyInternal(ak models.ApiKey) bool {
 	return ak.ManagedBy != nil && *ak.ManagedBy == managedByAdminBootstrap
 }
 
-// isEnvironmentBootstrapKeyInternal identifies the auto-generated key minted by
-// CreateEnvironmentApiKey for environment pairing. Those keys have no owner
-// (UserID == nil) and are scoped to a single environment. They carry full
-// env-scoped permissions and must never be hand-edited or deleted via the API
-// — manually clearing the grants would silently break the paired edge agent
-// the next time it tries to authenticate. Cascade-delete still applies when
-// the environment row itself is removed.
-func isEnvironmentBootstrapKeyInternal(ak models.ApiKey) bool {
-	return ak.UserID == nil && ak.EnvironmentID != nil
+// isEnvironmentReferencedApiKeyInternal reports whether an environment
+// currently references keyID as its pairing key (environments.api_key_id).
+// Referenced keys are the live environment bootstrap credentials: editing or
+// deleting one would silently break the paired edge agent the next time it
+// authenticates, so they are protected. Keys orphaned by regeneration are no
+// longer referenced and may be edited or deleted normally. Cascade-delete
+// still applies when the environment row itself is removed.
+func (s *ApiKeyService) isEnvironmentReferencedApiKeyInternal(ctx context.Context, keyID string) (bool, error) {
+	var count int64
+	if err := s.db.WithContext(ctx).Model(&models.Environment{}).
+		Where("api_key_id = ?", keyID).Count(&count).Error; err != nil {
+		return false, errors.WrapIf(err, "failed to check environment references for API key")
+	}
+	return count > 0, nil
 }
 
-func toAPIKeyDTOInternal(ak *models.ApiKey) apikey.ApiKey {
+// environmentReferencedApiKeyIDsInternal returns the set of API key ids
+// currently referenced by an environment, for tagging whole listings with a
+// single query instead of one per row.
+func (s *ApiKeyService) environmentReferencedApiKeyIDsInternal(ctx context.Context) (map[string]struct{}, error) {
+	var ids []string
+	if err := s.db.WithContext(ctx).Model(&models.Environment{}).
+		Where("api_key_id IS NOT NULL").Pluck("api_key_id", &ids).Error; err != nil {
+		return nil, errors.WrapIf(err, "failed to list environment-referenced API key ids")
+	}
+	set := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		set[id] = struct{}{}
+	}
+	return set, nil
+}
+
+func toAPIKeyDTOInternal(ak *models.ApiKey, isBootstrap bool) apikey.ApiKey {
 	return apikey.ApiKey{
 		ID:          ak.ID,
 		Name:        ak.Name,
@@ -285,7 +308,7 @@ func toAPIKeyDTOInternal(ak *models.ApiKey) apikey.ApiKey {
 		UserID:      ak.UserID,
 		Kind:        ak.Kind,
 		IsStatic:    isStaticAPIKeyInternal(*ak),
-		IsBootstrap: isEnvironmentBootstrapKeyInternal(*ak),
+		IsBootstrap: isBootstrap,
 		ExpiresAt:   ak.ExpiresAt,
 		LastUsedAt:  ak.LastUsedAt,
 		CreatedAt:   ak.CreatedAt,
@@ -295,8 +318,8 @@ func toAPIKeyDTOInternal(ak *models.ApiKey) apikey.ApiKey {
 
 // toAPIKeyDTOWithPermissionsInternal is like toAPIKeyDTOInternal but
 // additionally attaches the key's persisted permission grants.
-func toAPIKeyDTOWithPermissionsInternal(ak *models.ApiKey) apikey.ApiKey {
-	dto := toAPIKeyDTOInternal(ak)
+func toAPIKeyDTOWithPermissionsInternal(ak *models.ApiKey, isBootstrap bool) apikey.ApiKey {
+	dto := toAPIKeyDTOInternal(ak, isBootstrap)
 	dto.Permissions = make([]apikey.PermissionGrant, len(ak.PermissionGrants))
 	for i, grant := range ak.PermissionGrants {
 		dto.Permissions[i] = apikey.PermissionGrant{
@@ -322,6 +345,19 @@ func (s *ApiKeyService) getDefaultAdminUser(ctx context.Context) (*models.User, 
 			return nil, nil
 		}
 		return nil, errors.WrapIf(err, "failed to load default admin user")
+	}
+
+	// The username is mutable and not proof of provenance — never mint the
+	// managed full-permission key onto an account that isn't a global admin.
+	if s.roleService != nil {
+		perms, err := s.roleService.ResolvePermissions(ctx, adminUser)
+		if err != nil {
+			return nil, errors.WrapIf(err, "failed to resolve default admin permissions")
+		}
+		if !perms.IsGlobalAdmin() {
+			slog.WarnContext(ctx, "User is not a global admin, skipping default admin API key reconciliation", "username", defaultAdminUsername)
+			return nil, nil
+		}
 	}
 
 	return adminUser, nil
@@ -445,7 +481,7 @@ func (s *ApiKeyService) ReconcileDefaultAdminAPIKey(ctx context.Context, rawKey 
 	})
 }
 
-func (s *ApiKeyService) CreateEnvironmentApiKey(ctx context.Context, environmentID string, userID string) (*apikey.ApiKeyCreatedDto, error) {
+func (s *ApiKeyService) CreateEnvironmentApiKey(ctx context.Context, environmentID string) (*apikey.ApiKeyCreatedDto, error) {
 	rawKey, err := s.generateApiKey()
 	if err != nil {
 		return nil, err
@@ -500,7 +536,11 @@ func (s *ApiKeyService) GetApiKey(ctx context.Context, id string) (*apikey.ApiKe
 		}
 		return nil, errors.WrapIf(err, "failed to get API key")
 	}
-	return new(toAPIKeyDTOWithPermissionsInternal(&ak)), nil
+	isBootstrap, err := s.isEnvironmentReferencedApiKeyInternal(ctx, ak.ID)
+	if err != nil {
+		return nil, err
+	}
+	return new(toAPIKeyDTOWithPermissionsInternal(&ak, isBootstrap)), nil
 }
 
 func (s *ApiKeyService) ListApiKeys(ctx context.Context, params pagination.QueryParams) ([]apikey.ApiKey, pagination.Response, error) {
@@ -523,19 +563,28 @@ func (s *ApiKeyService) ListApiKeys(ctx context.Context, params pagination.Query
 		return nil, pagination.Response{}, errors.WrapIf(err, "failed to paginate API keys")
 	}
 
+	referenced, err := s.environmentReferencedApiKeyIDsInternal(ctx)
+	if err != nil {
+		return nil, pagination.Response{}, err
+	}
+
 	result := make([]apikey.ApiKey, len(apiKeys))
 	for i := range apiKeys {
 		// Include per-key permission grants so the edit form preloads with the
 		// key's actual current grants. Without this, the form starts empty and
 		// "Save" would wipe whatever grants the DB has.
-		result[i] = toAPIKeyDTOWithPermissionsInternal(&apiKeys[i])
+		_, isBootstrap := referenced[apiKeys[i].ID]
+		result[i] = toAPIKeyDTOWithPermissionsInternal(&apiKeys[i], isBootstrap)
 	}
 
 	return result, paginationResp, nil
 }
 
 // ListApiKeysByUser returns every non-static, non-bootstrap API key owned by
-// userID. Used by the self-service personal-keys flow.
+// userID. Used by the self-service personal-keys flow. Keys referenced by an
+// environment are hidden even when they carry an owner (legacy bootstrap rows
+// created before user_id became nullable) — self-service must never touch a
+// live pairing credential.
 func (s *ApiKeyService) ListApiKeysByUser(ctx context.Context, userID string) ([]apikey.ApiKey, error) {
 	var apiKeys []models.ApiKey
 	query := s.db.WithContext(ctx)
@@ -549,12 +598,17 @@ func (s *ApiKeyService) ListApiKeysByUser(ctx context.Context, userID string) ([
 		return nil, errors.WrapIf(err, "failed to list user api keys")
 	}
 
+	referenced, err := s.environmentReferencedApiKeyIDsInternal(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	result := make([]apikey.ApiKey, 0, len(apiKeys))
 	for i := range apiKeys {
-		if isStaticAPIKeyInternal(apiKeys[i]) || isEnvironmentBootstrapKeyInternal(apiKeys[i]) {
+		if _, isBootstrap := referenced[apiKeys[i].ID]; isBootstrap || isStaticAPIKeyInternal(apiKeys[i]) {
 			continue
 		}
-		result = append(result, toAPIKeyDTOWithPermissionsInternal(&apiKeys[i]))
+		result = append(result, toAPIKeyDTOWithPermissionsInternal(&apiKeys[i], false))
 	}
 	return result, nil
 }
@@ -567,7 +621,12 @@ func (s *ApiKeyService) UpdateApiKey(ctx context.Context, callerPerms *authz.Per
 		}
 		return nil, errors.WrapIf(err, "failed to get API key")
 	}
-	if isStaticAPIKeyInternal(ak) || isEnvironmentBootstrapKeyInternal(ak) {
+	if isStaticAPIKeyInternal(ak) {
+		return nil, ErrApiKeyProtected
+	}
+	if referenced, err := s.isEnvironmentReferencedApiKeyInternal(ctx, ak.ID); err != nil {
+		return nil, err
+	} else if referenced {
 		return nil, ErrApiKeyProtected
 	}
 
@@ -584,10 +643,10 @@ func (s *ApiKeyService) UpdateApiKey(ctx context.Context, callerPerms *authz.Per
 			return nil, err
 		}
 		if ak.UserID == nil {
-			// No owner to cap against. The only legitimate ownerless keys are
-			// environment bootstrap keys, rejected as protected above — refuse
-			// grant edits on any other ownerless row rather than fall back to
-			// a weaker caller-only check.
+			// No owner to cap against. Ownerless rows are (possibly stale)
+			// environment bootstrap keys — name/description edits are harmless,
+			// but refuse grant edits rather than fall back to a weaker
+			// caller-only check.
 			return nil, ErrApiKeyProtected
 		}
 		if err := s.validateGrantsAgainstOwnerInternal(ctx, *ak.UserID, req.Permissions); err != nil {
@@ -632,7 +691,7 @@ func (s *ApiKeyService) UpdateApiKey(ctx context.Context, callerPerms *authz.Per
 		UserID:      ak.UserID,
 		Kind:        ak.Kind,
 		IsStatic:    isStaticAPIKeyInternal(ak),
-		IsBootstrap: isEnvironmentBootstrapKeyInternal(ak),
+		IsBootstrap: false, // an environment-referenced key can't reach this return
 		ExpiresAt:   ak.ExpiresAt,
 		LastUsedAt:  ak.LastUsedAt,
 		CreatedAt:   ak.CreatedAt,
@@ -671,7 +730,12 @@ func (s *ApiKeyService) DeleteApiKey(ctx context.Context, id string) error {
 		}
 		return errors.WrapIf(err, "failed to load API key")
 	}
-	if isStaticAPIKeyInternal(apiKey) || isEnvironmentBootstrapKeyInternal(apiKey) {
+	if isStaticAPIKeyInternal(apiKey) {
+		return ErrApiKeyProtected
+	}
+	if referenced, err := s.isEnvironmentReferencedApiKeyInternal(ctx, apiKey.ID); err != nil {
+		return err
+	} else if referenced {
 		return ErrApiKeyProtected
 	}
 

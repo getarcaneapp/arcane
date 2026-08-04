@@ -13,9 +13,11 @@ import (
 
 	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	wsutil "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
+	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	httputils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/labstack/echo/v5"
 )
@@ -51,8 +53,11 @@ type EnvResolver func(ctx context.Context, id string) (string, *string, bool, er
 // caller's effective permission set. The boolean result reports whether the
 // request is authenticated; the permission set is used to authorize proxied
 // requests against the target environment. Sudo permission sets (internal
-// agent proxies) bypass authorization.
-type AuthValidator func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, bool)
+// agent proxies) bypass authorization. The resolved user is returned so
+// per-user context (e.g. the icon catalog preference) can travel with the
+// proxied request; it is nil for callers that are not a user (environment
+// bootstrap keys).
+type AuthValidator func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *models.User, bool)
 
 // EnvironmentMiddleware proxies requests for remote environments to their respective agents.
 type EnvironmentMiddleware struct {
@@ -115,16 +120,19 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 
 	// SECURITY: Validate authentication BEFORE proxying to remote environments.
 	var perms *authz.PermissionSet
+	var user *models.User
 	if m.authValidator != nil {
-		ps, ok := m.authValidator(c.Request().Context(), c)
+		ps, u, ok := m.authValidator(c.Request().Context(), c)
 		if !ok {
 			return c.JSON(http.StatusUnauthorized, map[string]any{
 				"success": false,
 				"data":    map[string]any{"error": "Authentication required to access remote environments"},
 			})
 		}
-		perms = ps
+		perms, user = ps, u
 	}
+
+	m.setIconCatalogHeaderInternal(c, user)
 
 	apiURL, accessToken, enabled, err := m.resolver(c.Request().Context(), envID)
 	if err != nil || apiURL == "" {
@@ -174,6 +182,21 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 		return m.proxyWebSocket(c, target, accessToken, envID)
 	}
 	return m.proxyHTTP(c, target, accessToken)
+}
+
+// setIconCatalogHeaderInternal stamps the authenticated user's icon catalog
+// preference onto the outgoing proxied request. Remote agents authenticate the
+// proxy as a synthetic user with no preferences, so without this every remote
+// environment resolves icons against the default catalog.
+//
+// SECURITY: the header is always cleared first, so a browser-supplied value
+// never rides through; only the server-resolved preference is forwarded.
+func (m *EnvironmentMiddleware) setIconCatalogHeaderInternal(c *echo.Context, user *models.User) {
+	c.Request().Header.Del(pkgutils.HeaderIconCatalog)
+	if user == nil || user.Preferences.IconCatalog == nil || *user.Preferences.IconCatalog == "" {
+		return
+	}
+	c.Request().Header.Set(pkgutils.HeaderIconCatalog, *user.Preferences.IconCatalog)
 }
 
 // proxyPermissionDenied reports whether the caller lacks permission to perform

@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
 
 const DEFAULT_PASSWORD = 'arcane-admin';
-const TEST_PASSWORD = 'test-password-123';
+const TEST_PASSWORD = 'Test-password-123';
 
 async function login(page: Page): Promise<string> {
 	await page.goto('/login');

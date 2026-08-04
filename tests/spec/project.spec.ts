@@ -808,7 +808,9 @@ test.describe('New Compose Project Page', () => {
 
 			expect(deployRequestBody).toEqual({
 				pullPolicy: 'always',
-				forceRecreate: true
+				forceRecreate: true,
+				// Destructive, so it stays off unless explicitly toggled for this deploy.
+				recreateVolumes: false
 			});
 		} finally {
 			if (!page.isClosed() && /\/projects\/.+/.test(getPathname(page.url()))) {

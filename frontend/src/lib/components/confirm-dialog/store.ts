@@ -11,7 +11,7 @@ interface ConfirmDialogStore {
 		destructive?: boolean;
 		/** ArcaneButton action variant for the confirm button; overrides the destructive/remove default. */
 		button?: Action;
-		action: (checkboxStates: Record<string, boolean>) => void;
+		action: (checkboxStates: Record<string, boolean>) => void | Promise<void>;
 	};
 	checkboxes?: Array<{
 		id: string;
@@ -43,7 +43,7 @@ export function openConfirmDialog({
 		label?: string;
 		destructive?: boolean;
 		button?: Action;
-		action: (checkboxStates: Record<string, boolean>) => void;
+		action: (checkboxStates: Record<string, boolean>) => void | Promise<void>;
 	};
 	checkboxes?: Array<{
 		id: string;

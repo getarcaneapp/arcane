@@ -26,7 +26,7 @@ func setupAPIKeyServiceTestDB(t *testing.T) *database.DB {
 	dsn := fmt.Sprintf("file:%s?mode=memory&cache=shared", strings.NewReplacer("/", "_", " ", "_").Replace(t.Name()))
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&models.User{}, &models.ApiKey{}))
+	require.NoError(t, db.AutoMigrate(&models.User{}, &models.ApiKey{}, &models.Environment{}))
 
 	sqlDB, err := db.DB()
 	require.NoError(t, err)
@@ -157,10 +157,12 @@ func TestListApiKeysPermissionQueryCountIsConstant(t *testing.T) {
 		})
 	}
 
-	require.Equal(t, int64(3), queryCounts[1])
-	require.Equal(t, int64(3), queryCounts[5])
-	require.Equal(t, int64(2), userQueryCounts[1])
-	require.Equal(t, int64(2), userQueryCounts[5])
+	// Each list call spends one extra constant query on the set of
+	// environment-referenced key ids (bootstrap-protection flag).
+	require.Equal(t, int64(4), queryCounts[1])
+	require.Equal(t, int64(4), queryCounts[5])
+	require.Equal(t, int64(3), userQueryCounts[1])
+	require.Equal(t, int64(3), userQueryCounts[5])
 }
 
 func TestCreateDefaultAdminAPIKeyUsesProvidedRawKey(t *testing.T) {
@@ -588,10 +590,9 @@ func TestValidateAPIKeyRepeatedAuthenticationDoesNotGrowGoroutines(t *testing.T)
 
 func TestGetEnvironmentByAPIKeyUpdatesLastUsedAt(t *testing.T) {
 	ctx := context.Background()
-	service, db, userService := setupAPIKeyService(t)
-	user := createTestAPIKeyUser(t, ctx, userService, "user-environment")
+	service, db, _ := setupAPIKeyService(t)
 
-	created, err := service.CreateEnvironmentApiKey(ctx, "env-123", user.ID)
+	created, err := service.CreateEnvironmentApiKey(ctx, "env-123")
 	require.NoError(t, err)
 	require.Nil(t, fetchAPIKey(t, db, created.ID).LastUsedAt)
 
@@ -602,6 +603,48 @@ func TestGetEnvironmentByAPIKeyUpdatesLastUsedAt(t *testing.T) {
 
 	apiKey := fetchAPIKey(t, db, created.ID)
 	require.NotNil(t, apiKey.LastUsedAt)
+}
+
+func TestApiKeyProtectedWhileEnvironmentReferenced(t *testing.T) {
+	ctx := context.Background()
+	service, db, _ := setupAPIKeyService(t)
+
+	created, err := service.CreateEnvironmentApiKey(ctx, "env-referenced")
+	require.NoError(t, err)
+
+	env := &models.Environment{
+		BaseModel: models.BaseModel{ID: "env-referenced"},
+		Name:      "referenced",
+		ApiUrl:    "http://localhost:2375",
+		ApiKeyID:  &created.ID,
+	}
+	require.NoError(t, db.WithContext(ctx).Create(env).Error)
+
+	// Referenced by the environment: protected from update and delete.
+	require.ErrorIs(t, service.DeleteApiKey(ctx, created.ID), ErrApiKeyProtected)
+	_, err = service.UpdateApiKey(ctx, authz.SudoPermissionSet(), created.ID, apikey.UpdateApiKey{Name: new("renamed")})
+	require.ErrorIs(t, err, ErrApiKeyProtected)
+
+	// Legacy pre-046 bootstrap rows carry an owner; the reference alone must
+	// still protect them.
+	legacyUserID := "legacy-owner"
+	legacy := &models.ApiKey{
+		BaseModel:     models.BaseModel{ID: "legacy-key"},
+		Name:          "Environment Bootstrap Key - legacy",
+		KeyHash:       "hash",
+		KeyPrefix:     "arc_lgcy",
+		Kind:          models.ApiKeyKindScoped,
+		UserID:        &legacyUserID,
+		EnvironmentID: new("env-referenced"),
+	}
+	require.NoError(t, db.WithContext(ctx).Create(legacy).Error)
+	require.NoError(t, db.WithContext(ctx).Model(&models.Environment{}).
+		Where("id = ?", env.ID).Update("api_key_id", legacy.ID).Error)
+	require.ErrorIs(t, service.DeleteApiKey(ctx, legacy.ID), ErrApiKeyProtected)
+
+	// The first key is no longer referenced (simulates regeneration): stale
+	// keys are deletable.
+	require.NoError(t, service.DeleteApiKey(ctx, created.ID))
 }
 
 func TestValidateAPIKeyInvalidDoesNotUpdateLastUsedAt(t *testing.T) {
@@ -629,10 +672,9 @@ func TestValidateAPIKeyRejectsShortPrefixedInput(t *testing.T) {
 
 func TestGetEnvironmentByAPIKeyExpiredDoesNotUpdateLastUsedAt(t *testing.T) {
 	ctx := context.Background()
-	service, db, userService := setupAPIKeyService(t)
-	user := createTestAPIKeyUser(t, ctx, userService, "user-expired")
+	service, db, _ := setupAPIKeyService(t)
 
-	created, err := service.CreateEnvironmentApiKey(ctx, "env-expired", user.ID)
+	created, err := service.CreateEnvironmentApiKey(ctx, "env-expired")
 	require.NoError(t, err)
 
 	expiredAt := time.Now().Add(-time.Minute)
@@ -659,7 +701,7 @@ func TestCreateEnvironmentApiKeySeedsAllPermissionsScopedToEnv(t *testing.T) {
 	grantGlobalAdmin(t, roleSvc, admin.ID)
 
 	envID := "env-bootstrap-test"
-	created, err := service.CreateEnvironmentApiKey(ctx, envID, admin.ID)
+	created, err := service.CreateEnvironmentApiKey(ctx, envID)
 	require.NoError(t, err)
 
 	// Resolve the per-key permission set and confirm every permission is
@@ -708,10 +750,9 @@ func TestBackfillApiKeyPermissionsRepairsExistingBootstrapKey(t *testing.T) {
 
 func TestGetEnvironmentByAPIKeyRecentLastUsedAtDoesNotRewriteImmediately(t *testing.T) {
 	ctx := context.Background()
-	service, db, userService := setupAPIKeyService(t)
-	user := createTestAPIKeyUser(t, ctx, userService, "user-environment-recent")
+	service, db, _ := setupAPIKeyService(t)
 
-	created, err := service.CreateEnvironmentApiKey(ctx, "env-456", user.ID)
+	created, err := service.CreateEnvironmentApiKey(ctx, "env-456")
 	require.NoError(t, err)
 
 	recent := time.Now().Add(-time.Minute)

@@ -111,7 +111,7 @@
 							value={remoteContext}
 							oninput={(event) => onRemoteContextChange?.((event.currentTarget as HTMLInputElement).value)}
 							placeholder={m.build_remote_git_context_placeholder()}
-							class="w-full rounded-xl border border-border bg-background/80 px-4 py-3 text-sm transition outline-none focus-visible:ring-2 focus-visible:ring-ring"
+							class="w-full rounded-xl border border-border bg-background/80 px-4 py-3 text-sm transition-shadow outline-none focus-visible:ring-2 focus-visible:ring-ring"
 							spellcheck="false"
 							autocomplete="off"
 						/>

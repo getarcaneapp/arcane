@@ -25,16 +25,41 @@ type PasswordChange struct {
 
 // SessionMeta captures request metadata associated with an authenticated session.
 type SessionMeta struct {
-	UserAgent string
-	IPAddress string
+	UserAgent     string
+	IPAddress     string
+	Source        string
+	MFAMethod     string
+	MFAVerifiedAt *time.Time
 }
 
-// LoginResponse represents the successful login response data.
-type LoginResponse struct {
-	Token        string    `json:"token" doc:"JWT access token"`
-	RefreshToken string    `json:"refreshToken" doc:"Refresh token for obtaining new access tokens"`
-	ExpiresAt    time.Time `json:"expiresAt" doc:"Expiration time of the access token"`
-	User         user.User `json:"user" doc:"Authenticated user information"`
+type AuthenticationStatus string
+
+const (
+	AuthenticationStatusAuthenticated AuthenticationStatus = "authenticated"
+	AuthenticationStatusMFARequired   AuthenticationStatus = "mfa_required"
+)
+
+// MFAChallenge describes a pending server-side second-factor transaction.
+// Options contains the WebAuthn public-key request options and is safe to
+// expose; the matching SessionData is retained by the backend.
+type MFAChallenge struct {
+	TransactionID string    `json:"transactionId" doc:"Opaque MFA transaction identifier"`
+	Method        string    `json:"method" doc:"MFA method"`
+	Options       any       `json:"options" doc:"WebAuthn assertion options"`
+	ExpiresAt     time.Time `json:"expiresAt" doc:"MFA transaction expiration time"`
+}
+
+// AuthenticationResponse is returned by local, OIDC, and passkey login
+// endpoints. An authenticated response contains tokens and user data; an MFA
+// response contains only status and a pending challenge.
+type AuthenticationResponse struct {
+	Success      bool                 `json:"success" doc:"Whether the authentication request was accepted"`
+	Status       AuthenticationStatus `json:"status" doc:"Authentication state"`
+	Token        string               `json:"token,omitempty" doc:"JWT access token"`
+	RefreshToken string               `json:"refreshToken,omitempty" doc:"Refresh token for obtaining new access tokens"`
+	ExpiresAt    *time.Time           `json:"expiresAt,omitempty" doc:"Expiration time of the access token"`
+	User         *user.User           `json:"user,omitempty" doc:"Authenticated user information"`
+	MFA          *MFAChallenge        `json:"mfa,omitempty" doc:"Pending MFA challenge"`
 }
 
 // TokenRefreshResponse represents the successful token refresh response data.

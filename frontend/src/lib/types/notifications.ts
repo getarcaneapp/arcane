@@ -10,6 +10,7 @@ export type NotificationProvider =
 	| 'pushover'
 	| 'gotify'
 	| 'matrix'
+	| 'googlechat'
 	| 'generic';
 export type EmailTLSMode = 'none' | 'starttls' | 'ssl';
 export type EmailAuthMode = 'none' | 'auto' | 'plain' | 'login' | 'crammd5';
@@ -36,6 +37,7 @@ export const NOTIFICATION_PROVIDER_KEYS = [
 	'discord',
 	'email',
 	'generic',
+	'googlechat',
 	'gotify',
 	'matrix',
 	'ntfy',
@@ -140,6 +142,10 @@ export interface GotifyFormValues extends BaseProviderFormValues {
 	useHeader: boolean;
 }
 
+export interface GoogleChatFormValues extends BaseProviderFormValues {
+	webhookUrl: string;
+}
+
 export interface MatrixFormValues extends BaseProviderFormValues {
 	host: string;
 	port: number;
@@ -156,6 +162,8 @@ export interface GenericFormValues extends BaseProviderFormValues {
 	titleKey: string;
 	messageKey: string;
 	customHeaders: string;
+	payloadTemplate: string;
+	successBodyContains: string;
 }
 
 export type ProviderFormValuesMap = {
@@ -168,6 +176,7 @@ export type ProviderFormValuesMap = {
 	pushover: PushoverFormValues;
 	gotify: GotifyFormValues;
 	matrix: MatrixFormValues;
+	googlechat: GoogleChatFormValues;
 	generic: GenericFormValues;
 };
 
@@ -496,6 +505,16 @@ export function matrixSettingsToFormValues(settings?: NotificationSettings): Mat
 	};
 }
 
+export function googleChatSettingsToFormValues(settings?: NotificationSettings): GoogleChatFormValues {
+	const cfg = getConfig(settings);
+	const events = getEvents(cfg);
+	return {
+		enabled: settings?.enabled ?? false,
+		webhookUrl: getString(cfg, 'webhookUrl'),
+		...eventFlagsToFormValues(events)
+	};
+}
+
 export function genericSettingsToFormValues(settings?: NotificationSettings): GenericFormValues {
 	const cfg = getConfig(settings);
 	const events = getEvents(cfg);
@@ -513,6 +532,8 @@ export function genericSettingsToFormValues(settings?: NotificationSettings): Ge
 		titleKey: getString(cfg, 'titleKey', 'title'),
 		messageKey: getString(cfg, 'messageKey', 'message'),
 		customHeaders: customHeadersStr,
+		payloadTemplate: getString(cfg, 'payloadTemplate'),
+		successBodyContains: getString(cfg, 'successBodyContains'),
 		...eventFlagsToFormValues(events)
 	};
 }
@@ -620,6 +641,23 @@ export function matrixFormValuesToSettings(values: MatrixFormValues): Notificati
 	};
 }
 
+export function googleChatFormValuesToSettings(values: GoogleChatFormValues): NotificationSettings {
+	return {
+		provider: 'googlechat',
+		enabled: values.enabled,
+		config: {
+			webhookUrl: values.webhookUrl,
+			events: {
+				image_update: values.eventImageUpdate,
+				container_update: values.eventContainerUpdate,
+				vulnerability_found: values.eventVulnerabilityFound,
+				prune_report: values.eventPruneReport,
+				auto_heal: values.eventAutoHeal
+			}
+		}
+	};
+}
+
 export function genericFormValuesToSettings(values: GenericFormValues): NotificationSettings {
 	const customHeaders: Record<string, string> = {};
 	if (values.customHeaders) {
@@ -645,6 +683,8 @@ export function genericFormValuesToSettings(values: GenericFormValues): Notifica
 			titleKey: values.titleKey,
 			messageKey: values.messageKey,
 			customHeaders: customHeaders,
+			payloadTemplate: values.payloadTemplate,
+			successBodyContains: values.successBodyContains,
 			events: {
 				image_update: values.eventImageUpdate,
 				container_update: values.eventContainerUpdate,

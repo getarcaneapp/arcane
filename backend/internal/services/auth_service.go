@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"maps"
 	"strings"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/jwtclaims"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
 	"github.com/getarcaneapp/arcane/types/v2/auth"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
@@ -30,6 +32,7 @@ const (
 	ErrTokenVersionMismatch = errors.Sentinel("token version mismatch")
 	ErrLocalAuthDisabled    = errors.Sentinel("local authentication is disabled")
 	ErrOidcAuthDisabled     = errors.Sentinel("OIDC authentication is disabled")
+	ErrMFARequired          = errors.Sentinel("multi-factor authentication is required")
 )
 
 type TokenPair struct {
@@ -235,42 +238,30 @@ func (s *AuthService) GetOidcConfig(ctx context.Context) (*models.OidcConfig, er
 	return authSettings.Oidc, nil
 }
 
-func (s *AuthService) Login(ctx context.Context, username, password string, meta auth.SessionMeta) (*models.User, *TokenPair, error) {
+// AuthenticateLocalPrimary validates the local primary factor without
+// creating a session. Callers must complete passkey MFA, when enabled, before
+// issuing a bearer or refresh token.
+func (s *AuthService) AuthenticateLocalPrimary(ctx context.Context, username, password string) (*models.User, error) {
 	localEnabled, err := s.IsLocalAuthEnabled(ctx)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-
 	if !localEnabled {
-		return nil, nil, ErrLocalAuthDisabled
+		return nil, ErrLocalAuthDisabled
 	}
 
 	user, err := s.userService.GetUserByUsername(ctx, username)
 	if err != nil {
 		if strings.Contains(err.Error(), "user not found") {
-			return nil, nil, ErrInvalidCredentials
+			return nil, ErrInvalidCredentials
 		}
-		return nil, nil, err
+		return nil, err
 	}
-
 	if err := s.userService.ValidatePassword(user.PasswordHash, password); err != nil {
-		return nil, nil, ErrInvalidCredentials
-	}
-
-	if s.userService.NeedsPasswordUpgrade(user.PasswordHash) {
-		s.runInBackground(ctx, "upgrade_password_hash", func(ctx context.Context) error {
-			if err := s.userService.UpgradePasswordHash(ctx, user.ID, password); err != nil {
-				return errors.WrapIff(err, "failed to upgrade password hash for user %s", user.ID)
-			}
-			slog.InfoContext(ctx, "Successfully upgraded password hash from bcrypt to Argon2", "user", user.Username)
-			return nil
-		})
+		return nil, ErrInvalidCredentials
 	}
 
 	user.LastLogin = new(time.Now())
-
-	// Run last login update in background
-	// Use new(*user) to create a safe copy of the user struct to avoid data race
 	userCopy := new(*user)
 	s.runInBackground(ctx, "update_last_login", func(ctx context.Context) error {
 		if _, err := s.userService.UpdateUser(ctx, userCopy, nil); err != nil {
@@ -279,55 +270,92 @@ func (s *AuthService) Login(ctx context.Context, username, password string, meta
 		return nil
 	})
 
+	return user, nil
+}
+
+// PrepareOidcLogin reconciles the provider identity without creating a
+// session. The caller must complete passkey MFA, when enabled, before issuing
+// tokens.
+func (s *AuthService) PrepareOidcLogin(ctx context.Context, userInfo auth.OidcUserInfo, tokenResp *auth.OidcTokenResponse) (*models.User, bool, error) {
+	if userInfo.Subject == "" {
+		return nil, false, errors.New("missing OIDC subject identifier")
+	}
+	return s.findOrCreateOidcUser(ctx, userInfo, tokenResp)
+}
+
+// CompleteLogin creates the authenticated session after all required factors
+// have succeeded. Source is server-selected and is persisted with the session.
+func (s *AuthService) CompleteLogin(ctx context.Context, user *models.User, meta auth.SessionMeta, source, mfaMethod string, eventMetadata ...models.JSON) (*TokenPair, error) {
+	if user == nil {
+		return nil, ErrUserNotFound
+	}
+	if strings.TrimSpace(source) == "" {
+		source = models.UserSessionSourceLocal
+	}
+	mfaMethod = strings.TrimSpace(mfaMethod)
+	if user.PasskeyMFAEnabled && source != models.UserSessionSourcePasskey && mfaMethod != PasskeyMFAMethod && mfaMethod != RecoveryCodeMFAMethod {
+		return nil, ErrMFARequired
+	}
+	meta.Source = source
+	meta.MFAMethod = mfaMethod
+	if meta.MFAMethod != "" && meta.MFAVerifiedAt == nil {
+		now := time.Now()
+		meta.MFAVerifiedAt = &now
+	}
+
 	tokenPair, err := s.createSessionAndTokensInternal(ctx, user, meta)
+	if err != nil {
+		return nil, err
+	}
+
+	metadata := models.JSON{"action": "login", "method": source}
+	if len(eventMetadata) > 0 {
+		maps.Copy(metadata, eventMetadata[0])
+	}
+	if meta.MFAMethod != "" {
+		metadata["mfa"] = meta.MFAMethod
+	}
+	if s.eventService != nil {
+		logUserID := user.ID
+		logUsername := user.Username
+		s.runInBackground(ctx, "log_user_login", func(ctx context.Context) error {
+			return s.eventService.LogUserEvent(ctx, models.EventTypeUserLogin, logUserID, logUsername, metadata)
+		})
+	}
+
+	return tokenPair, nil
+}
+
+func (s *AuthService) Login(ctx context.Context, username, password string, meta auth.SessionMeta) (*models.User, *TokenPair, error) {
+	user, err := s.AuthenticateLocalPrimary(ctx, username, password)
 	if err != nil {
 		return nil, nil, err
 	}
-
-	metadata := models.JSON{
-		"action": "login",
-		"method": "local",
+	if user.PasskeyMFAEnabled {
+		return nil, nil, ErrMFARequired
 	}
-
-	// Run event logging in background
-	logUserID := user.ID
-	logUsername := user.Username
-	s.runInBackground(ctx, "log_user_login", func(ctx context.Context) error {
-		return s.eventService.LogUserEvent(ctx, models.EventTypeUserLogin, logUserID, logUsername, metadata)
-	})
-
+	tokenPair, err := s.CompleteLogin(ctx, user, meta, models.UserSessionSourceLocal, "")
+	if err != nil {
+		return nil, nil, err
+	}
 	return user, tokenPair, nil
 }
 
 func (s *AuthService) OidcLogin(ctx context.Context, userInfo auth.OidcUserInfo, tokenResp *auth.OidcTokenResponse, meta auth.SessionMeta) (*models.User, *TokenPair, error) {
-	if userInfo.Subject == "" {
-		return nil, nil, errors.New("missing OIDC subject identifier")
-	}
-
-	user, isNewUser, err := s.findOrCreateOidcUser(ctx, userInfo, tokenResp)
+	user, isNewUser, err := s.PrepareOidcLogin(ctx, userInfo, tokenResp)
 	if err != nil {
 		return nil, nil, err
 	}
-
-	tokenPair, err := s.createSessionAndTokensInternal(ctx, user, meta)
-	if err != nil {
-		return nil, nil, err
+	if user.PasskeyMFAEnabled {
+		return nil, nil, ErrMFARequired
 	}
-
-	metadata := models.JSON{
-		"action":  "login",
-		"method":  "oidc",
+	tokenPair, err := s.CompleteLogin(ctx, user, meta, models.UserSessionSourceOidc, "", models.JSON{
 		"newUser": isNewUser,
 		"subject": userInfo.Subject,
-	}
-
-	// Run event logging in background
-	userID := user.ID
-	username := user.Username
-	s.runInBackground(ctx, "log_oidc_login", func(ctx context.Context) error {
-		return s.eventService.LogUserEvent(ctx, models.EventTypeUserLogin, userID, username, metadata)
 	})
-
+	if err != nil {
+		return nil, nil, err
+	}
 	return user, tokenPair, nil
 }
 
@@ -806,6 +834,14 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID, currentPasswor
 		if err := s.userService.ValidatePassword(user.PasswordHash, currentPassword); err != nil {
 			return ErrInvalidCredentials
 		}
+	}
+
+	policy := validation.PasswordPolicyStrong
+	if s.settingsService != nil {
+		policy = s.settingsService.GetStringSetting(ctx, "authPasswordPolicy", validation.PasswordPolicyStrong)
+	}
+	if err := validation.ValidatePasswordPolicy(newPassword, policy); err != nil {
+		return common.Classify(common.ErrValidation, err)
 	}
 
 	if _, err = s.userService.SetPasswordAndRevokeSessionsExcept(ctx, user, newPassword, currentSessionID); err != nil {

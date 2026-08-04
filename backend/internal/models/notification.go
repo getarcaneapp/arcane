@@ -7,29 +7,31 @@ import (
 type NotificationProvider string
 
 const (
-	NotificationProviderDiscord  NotificationProvider = "discord"
-	NotificationProviderEmail    NotificationProvider = "email"
-	NotificationProviderTelegram NotificationProvider = "telegram"
-	NotificationProviderSignal   NotificationProvider = "signal"
-	NotificationProviderSlack    NotificationProvider = "slack"
-	NotificationProviderNtfy     NotificationProvider = "ntfy"
-	NotificationProviderPushover NotificationProvider = "pushover"
-	NotificationProviderGotify   NotificationProvider = "gotify"
-	NotificationProviderMatrix   NotificationProvider = "matrix"
-	NotificationProviderGeneric  NotificationProvider = "generic"
+	NotificationProviderDiscord    NotificationProvider = "discord"
+	NotificationProviderEmail      NotificationProvider = "email"
+	NotificationProviderTelegram   NotificationProvider = "telegram"
+	NotificationProviderSignal     NotificationProvider = "signal"
+	NotificationProviderSlack      NotificationProvider = "slack"
+	NotificationProviderNtfy       NotificationProvider = "ntfy"
+	NotificationProviderPushover   NotificationProvider = "pushover"
+	NotificationProviderGotify     NotificationProvider = "gotify"
+	NotificationProviderMatrix     NotificationProvider = "matrix"
+	NotificationProviderGoogleChat NotificationProvider = "googlechat"
+	NotificationProviderGeneric    NotificationProvider = "generic"
 )
 
 var validNotificationProviders = map[NotificationProvider]struct{}{
-	NotificationProviderDiscord:  {},
-	NotificationProviderEmail:    {},
-	NotificationProviderTelegram: {},
-	NotificationProviderSignal:   {},
-	NotificationProviderSlack:    {},
-	NotificationProviderNtfy:     {},
-	NotificationProviderPushover: {},
-	NotificationProviderGotify:   {},
-	NotificationProviderMatrix:   {},
-	NotificationProviderGeneric:  {},
+	NotificationProviderDiscord:    {},
+	NotificationProviderEmail:      {},
+	NotificationProviderTelegram:   {},
+	NotificationProviderSignal:     {},
+	NotificationProviderSlack:      {},
+	NotificationProviderNtfy:       {},
+	NotificationProviderPushover:   {},
+	NotificationProviderGotify:     {},
+	NotificationProviderMatrix:     {},
+	NotificationProviderGoogleChat: {},
+	NotificationProviderGeneric:    {},
 }
 
 func IsValidNotificationProvider(provider NotificationProvider) bool {
@@ -170,6 +172,13 @@ type GotifyConfig struct {
 	Events             map[NotificationEventType]bool `json:"events,omitempty"`
 }
 
+type GoogleChatConfig struct {
+	// WebhookURL is the full incoming webhook URL copied from Google Chat,
+	// e.g. https://chat.googleapis.com/v1/spaces/SPACE/messages?key=KEY&token=TOKEN.
+	WebhookURL string                         `json:"webhookUrl"`
+	Events     map[NotificationEventType]bool `json:"events,omitempty"`
+}
+
 type MatrixConfig struct {
 	Host                   string                         `json:"host"`
 	Port                   int                            `json:"port,omitempty"`
@@ -196,4 +205,13 @@ type GenericConfig struct {
 	// {"code":900,...} on failure). When empty, only the HTTP status code is
 	// checked (existing behaviour).
 	SuccessBodyContains string `json:"successBodyContains,omitempty"`
+	// PayloadTemplate is an optional Go text/template rendered into the request
+	// body, letting users target endpoints that require a nested or
+	// provider-specific payload shape rather than the flat
+	// {"title":...,"message":...} object. The template receives the title and
+	// message (under the configured TitleKey/MessageKey) plus event variables
+	// (environment, environmentId, event, timestamp), all pre-escaped for JSON
+	// string contexts. When empty, the flat JSON payload is used (existing
+	// behaviour).
+	PayloadTemplate string `json:"payloadTemplate,omitempty"`
 }

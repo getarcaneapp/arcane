@@ -803,7 +803,7 @@ func (s *ProjectService) UpdateProjectServices(ctx context.Context, projectID st
 	}
 
 	// 5. Up specific services
-	if err := composeUpProjectServicesInternal(ctx, compProj, servicesToUpdate, false, true, s.composeRegistryAuthConfigsInternal(ctx)); err != nil {
+	if err := composeUpProjectServicesInternal(ctx, compProj, servicesToUpdate, false, true, false, s.composeRegistryAuthConfigsInternal(ctx)); err != nil {
 		s.restoreProjectStatusAfterFailedDeployInternal(ctx, projectID)
 		return errors.WrapIf(err, "failed to up services")
 	}
@@ -2080,9 +2080,11 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 
 	resolvedPullPolicy := ""
 	forceRecreate := false
+	recreateVolumes := false
 	if options != nil {
 		resolvedPullPolicy = projects.NormalizeDeployPullPolicy(options.PullPolicy)
 		forceRecreate = options.ForceRecreate
+		recreateVolumes = options.RecreateVolumes
 	}
 	if resolvedPullPolicy == "" {
 		resolvedPullPolicy = projects.NormalizeDeployPullPolicy(s.settingsService.GetStringSetting(ctx, "defaultDeployPullPolicy", "missing"))
@@ -2129,7 +2131,7 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 
 	slog.Info("starting compose up with health check support", "projectID", projectID, "projectName", projectModel.Name, "services", len(projectModel.Services), "removeOrphans", removeOrphans)
 	// Health/progress streaming (if any) is handled inside projects.ComposeUp via ctx.
-	if err := projects.ComposeUp(ctx, projectModel, nil, removeOrphans, forceRecreate, s.composeRegistryAuthConfigsInternal(ctx)); err != nil {
+	if err := projects.ComposeUp(ctx, projectModel, nil, removeOrphans, forceRecreate, recreateVolumes, s.composeRegistryAuthConfigsInternal(ctx)); err != nil {
 		slog.Error("compose up failed", "projectName", projectModel.Name, "projectID", projectID, "error", err)
 		if containers, psErr := s.GetProjectServices(ctx, projectID); psErr == nil {
 			slog.Info("containers after failed deploy", "projectID", projectID, "containers", containers)
@@ -2390,14 +2392,21 @@ func (s *ProjectService) PullProjectImages(ctx context.Context, projectID string
 
 	images := map[string]struct{}{}
 	for _, svc := range compProj.Services {
-		if svc.Build != nil {
-			continue
+		if svc.Build == nil {
+			if img := strings.TrimSpace(svc.Image); img != "" {
+				images[img] = struct{}{}
+			}
 		}
-		img := strings.TrimSpace(svc.Image)
-		if img == "" {
-			continue
+		// pre_start hook images and type:image volume sources are pulled from a
+		// registry even for build services — they cannot be built.
+		for _, img := range api.GetDependentImages(svc, compProj.Name) {
+			images[img] = struct{}{}
 		}
-		images[img] = struct{}{}
+		for _, vol := range svc.Volumes {
+			if vol.Type == composetypes.VolumeTypeImage && strings.TrimSpace(vol.Source) != "" {
+				images[strings.TrimSpace(vol.Source)] = struct{}{}
+			}
+		}
 	}
 
 	for img := range images {
@@ -2438,7 +2447,7 @@ func (s *ProjectService) EnsureProjectImagesPresent(ctx context.Context, project
 		return errors.WrapIf(lerr, "failed to load compose project")
 	}
 
-	pullPlan := projects.BuildImagePullPlan(compProj.Services)
+	pullPlan := projects.BuildImagePullPlan(compProj)
 
 	return s.ensureImagesPresent(ctx, pullPlan, progressWriter, credentials, user)
 }
@@ -2504,6 +2513,27 @@ func (s *ProjectService) prepareProjectImagesForDeploy(
 		}
 		if err := s.ensureDeployServiceImageReady(ctx, projectID, project, name, svc, imageName, decision, progressWriter, credentials, user); err != nil {
 			return err
+		}
+
+		// pre_start hook images and type:image volume sources cannot be built:
+		// they follow the service's pull decision minus the build/fallback paths.
+		dependentDecision := projects.DeployImageDecision{PullIfMissing: true}
+		switch {
+		case decision.RequireLocalOnly:
+			dependentDecision = projects.DeployImageDecision{RequireLocalOnly: true}
+		case decision.PullAlways:
+			dependentDecision = projects.DeployImageDecision{PullAlways: true}
+		}
+		dependentImages := api.GetDependentImages(svc, project.Name)
+		for _, vol := range svc.Volumes {
+			if vol.Type == composetypes.VolumeTypeImage && strings.TrimSpace(vol.Source) != "" {
+				dependentImages = append(dependentImages, strings.TrimSpace(vol.Source))
+			}
+		}
+		for _, img := range dependentImages {
+			if err := s.ensureDeployServiceImageReady(ctx, projectID, project, name, svc, img, dependentDecision, progressWriter, credentials, user); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -4922,8 +4952,9 @@ func (s *ProjectService) getProjectMetadataForProject(ctx context.Context, p mod
 }
 
 // iconCatalogForContextInternal resolves the icon catalog of the requesting
-// user. Background jobs and agent-proxied calls have no user attached and fall
-// back to the default catalog.
+// user. On agent-proxied calls the caller is a synthetic user whose preference
+// is populated from the X-Arcane-Icon-Catalog header the manager forwards.
+// Background jobs have no user attached and fall back to the default catalog.
 func iconCatalogForContextInternal(ctx context.Context) string {
 	if u, ok := models.CurrentUserFromContext(ctx); ok && u != nil && u.Preferences.IconCatalog != nil && *u.Preferences.IconCatalog != "" {
 		return *u.Preferences.IconCatalog
