@@ -320,7 +320,7 @@ func (s *HostShellService) createHelperContainerInternal(ctx context.Context, do
 
 	apiTimeoutSec := s.settingsService.GetSettingsConfig().DockerAPITimeout.AsInt()
 
-	createCtx, createCancel := timeouts.WithTimeout(ctx, apiTimeoutSec, timeouts.DefaultDockerAPI)
+	createCtx, createCancel := context.WithTimeout(ctx, timeouts.GetDuration(apiTimeoutSec, timeouts.DefaultDockerAPI))
 	resp, err := dockerClient.ContainerCreate(createCtx, client.ContainerCreateOptions{Config: config, HostConfig: hostConfig})
 	createCancel()
 	if err != nil {
@@ -328,7 +328,7 @@ func (s *HostShellService) createHelperContainerInternal(ctx context.Context, do
 	}
 	containerID := resp.ID
 
-	startCtx, startCancel := timeouts.WithTimeout(ctx, apiTimeoutSec, timeouts.DefaultDockerAPI)
+	startCtx, startCancel := context.WithTimeout(ctx, timeouts.GetDuration(apiTimeoutSec, timeouts.DefaultDockerAPI))
 	_, startErr := dockerClient.ContainerStart(startCtx, containerID, client.ContainerStartOptions{})
 	startCancel()
 	if startErr != nil {
