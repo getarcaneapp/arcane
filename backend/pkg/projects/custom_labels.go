@@ -205,7 +205,7 @@ func loadComposeProjectForMetadataFromFileInternal(ctx context.Context, composeF
 }
 
 func loadComposeEnvironment(workdir string) map[string]string {
-	envMap := loadProcessEnv()
+	envMap := allowedProcessEnvInternal()
 	if workdir == "" {
 		return envMap
 	}
@@ -267,16 +267,6 @@ func mergeEnvFromDotEnv(envMap map[string]string, workdir string) map[string]str
 	}
 
 	return merged
-}
-
-func loadProcessEnv() map[string]string {
-	envMap := make(map[string]string)
-	for _, kv := range os.Environ() {
-		if k, v, ok := strings.Cut(kv, "="); ok {
-			envMap[k] = v
-		}
-	}
-	return envMap
 }
 
 func parseIncludePaths(composeFilePath string) ([]string, error) {

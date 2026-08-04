@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -159,6 +160,53 @@ func TestLoadComposeProject_MergesComposeOverrideFile(t *testing.T) {
 	assert.Contains(t, app.Environment, "FROM_BASE")
 	assert.Contains(t, app.Environment, "FROM_OVERRIDE")
 	assert.Equal(t, []string{basePath, overridePath}, project.ComposeFiles)
+}
+
+func TestLoadComposeProject_ArcaneProcessEnvInterpolation(t *testing.T) {
+	// Arcane's own env (e.g. PORT) must not leak into compose interpolation of
+	// managed projects: ${PORT:-8191} falls back to its default (issue #3499).
+	// Allowlisted vars like TZ still flow through.
+	t.Setenv("PORT", "3552")
+	t.Setenv("TZ", "America/Chicago")
+
+	testCases := []struct {
+		name    string
+		compose string
+		check   func(t *testing.T, app composetypes.ServiceConfig)
+	}{
+		{
+			name:    "blocked var falls back to compose default",
+			compose: "services:\n  app:\n    image: nginx:alpine\n    ports:\n      - \"${PORT:-8191}:8191\"\n",
+			check: func(t *testing.T, app composetypes.ServiceConfig) {
+				t.Helper()
+				require.Len(t, app.Ports, 1)
+				assert.Equal(t, "8191", app.Ports[0].Published)
+			},
+		},
+		{
+			name:    "allowlisted var flows through",
+			compose: "services:\n  app:\n    image: nginx:alpine\n    environment:\n      TZ: ${TZ:-UTC}\n",
+			check: func(t *testing.T, app composetypes.ServiceConfig) {
+				t.Helper()
+				require.NotNil(t, app.Environment["TZ"])
+				assert.Equal(t, "America/Chicago", *app.Environment["TZ"])
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			basePath := filepath.Join(dir, "compose.yaml")
+			require.NoError(t, os.WriteFile(basePath, []byte(tc.compose), 0o600))
+
+			project, err := LoadComposeProject(context.Background(), basePath, "demo", dir, false, nil, nil, nil, false)
+			require.NoError(t, err)
+			require.NotNil(t, project)
+
+			tc.check(t, project.Services["app"])
+		})
+	}
 }
 
 func TestLoadComposeProject_DoesNotMergeOverrideForCustomBaseName(t *testing.T) {
