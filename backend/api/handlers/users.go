@@ -19,8 +19,9 @@ import (
 
 // UserHandler handles user management endpoints.
 type UserHandler struct {
-	userService *services.UserService
-	authService *services.AuthService
+	userService     *services.UserService
+	authService     *services.AuthService
+	settingsService *services.SettingsService
 }
 
 // ============================================================================
@@ -88,8 +89,8 @@ type GetUserAvatarOutput struct {
 // ============================================================================
 
 // RegisterUsers registers all user management endpoints.
-func RegisterUsers(api huma.API, userService *services.UserService, authService *services.AuthService) {
-	h := &UserHandler{userService: userService, authService: authService}
+func RegisterUsers(api huma.API, userService *services.UserService, authService *services.AuthService, settingsService *services.SettingsService) {
+	h := &UserHandler{userService: userService, authService: authService, settingsService: settingsService}
 
 	huma.Register(api, huma.Operation{
 		OperationID: "listUsers",
@@ -189,6 +190,10 @@ func (h *UserHandler) CreateUser(ctx context.Context, input *CreateUserInput) (*
 	}
 	input.Body.Email = normalizedEmail
 
+	if err := validation.ValidatePasswordPolicy(input.Body.Password, h.passwordPolicyInternal(ctx)); err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+
 	hashedPassword, err := h.userService.HashPassword(input.Body.Password)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to hash password")
@@ -276,32 +281,22 @@ func (h *UserHandler) UpdateUser(ctx context.Context, input *UpdateUserInput) (*
 		userModel.TimeFormat = *input.Body.TimeFormat
 	}
 
+	userModel.UpdatedAt = new(time.Now())
+
+	callerPerms, err := h.checkUpdateUserPrivilegesInternal(ctx, input, userModel.ID)
+	if err != nil {
+		return nil, err
+	}
+
 	if input.Body.Password != nil && *input.Body.Password != "" {
+		if err := validation.ValidatePasswordPolicy(*input.Body.Password, h.passwordPolicyInternal(ctx)); err != nil {
+			return nil, huma.Error400BadRequest(err.Error())
+		}
 		hashedPassword, err := h.userService.HashPassword(*input.Body.Password)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("Failed to hash password")
 		}
 		userModel.PasswordHash = hashedPassword
-	}
-
-	userModel.UpdatedAt = new(time.Now())
-
-	// Privilege ordering: a non-admin caller may not modify a global admin
-	// target, nor set another user's password. The service re-enforces the
-	// target-admin check.
-	callerPerms, _ := humamw.PermissionsFromContext(ctx)
-	caller, _ := models.CurrentUserFromContext(ctx)
-	if callerPerms != nil && !callerPerms.IsGlobalAdmin() {
-		if input.Body.Password != nil && *input.Body.Password != "" && caller != nil && caller.ID != userModel.ID {
-			return nil, huma.Error403Forbidden(services.ErrInsufficientPrivilege.Error())
-		}
-		targetPerms, err := h.userService.ResolveUserPermissions(ctx, userModel.ID)
-		if err != nil {
-			return nil, huma.Error500InternalServerError("Failed to resolve target permissions")
-		}
-		if targetPerms != nil && targetPerms.IsGlobalAdmin() {
-			return nil, huma.Error403Forbidden(services.ErrInsufficientPrivilege.Error())
-		}
 	}
 
 	updatedUser, err := h.userService.UpdateUser(ctx, userModel, callerPerms)
@@ -416,4 +411,32 @@ func normalizeOptionalEmailInternal(email *string) (*string, error) {
 	}
 
 	return &trimmedEmail, nil
+}
+
+// checkUpdateUserPrivilegesInternal enforces that a non-admin caller may not
+// modify a global admin target, nor set another user's password. The service
+// re-enforces the target-admin check.
+func (h *UserHandler) checkUpdateUserPrivilegesInternal(ctx context.Context, input *UpdateUserInput, targetID string) (*authz.PermissionSet, error) {
+	callerPerms, _ := humamw.PermissionsFromContext(ctx)
+	caller, _ := models.CurrentUserFromContext(ctx)
+	if callerPerms != nil && !callerPerms.IsGlobalAdmin() {
+		if input.Body.Password != nil && *input.Body.Password != "" && caller != nil && caller.ID != targetID {
+			return nil, huma.Error403Forbidden(services.ErrInsufficientPrivilege.Error())
+		}
+		targetPerms, err := h.userService.ResolveUserPermissions(ctx, targetID)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Failed to resolve target permissions")
+		}
+		if targetPerms != nil && targetPerms.IsGlobalAdmin() {
+			return nil, huma.Error403Forbidden(services.ErrInsufficientPrivilege.Error())
+		}
+	}
+	return callerPerms, nil
+}
+
+func (h *UserHandler) passwordPolicyInternal(ctx context.Context) string {
+	if h.settingsService == nil {
+		return validation.PasswordPolicyStrong
+	}
+	return h.settingsService.GetStringSetting(ctx, "authPasswordPolicy", validation.PasswordPolicyStrong)
 }
