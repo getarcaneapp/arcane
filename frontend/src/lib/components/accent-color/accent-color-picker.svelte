@@ -97,7 +97,7 @@
 				{/if}
 			</div>
 			<div
-				class="absolute top-12 left-1/2 z-[var(--arcane-z-sticky)] max-w-0 -translate-x-1/2 transform overflow-hidden rounded-md border bg-background px-2 py-1 text-xs whitespace-nowrap text-muted-foreground opacity-0 shadow-sm transition-all duration-300 ease-out group-hover/item:max-w-[100px] group-hover/item:text-foreground group-hover/item:opacity-100"
+				class="absolute top-12 left-1/2 z-[var(--arcane-z-sticky)] max-w-0 -translate-x-1/2 transform overflow-hidden rounded-md border bg-background px-2 py-1 text-xs whitespace-nowrap text-muted-foreground opacity-0 shadow-sm transition-[max-width,opacity,color] duration-300 ease-out group-hover/item:max-w-[100px] group-hover/item:text-foreground group-hover/item:opacity-100"
 			>
 				{label}
 			</div>
