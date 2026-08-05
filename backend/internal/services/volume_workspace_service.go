@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"mime/multipart"
 	"net/http"
 	"os"
 	"path"
@@ -25,13 +24,13 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	workspacepkg "github.com/getarcaneapp/arcane/backend/v2/pkg/workspace"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
+	workspacetypes "github.com/getarcaneapp/arcane/types/v2/workspace"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
 )
-
-const maxEditableVolumeFileBytes int64 = 10 * 1024 * 1024
 
 const volumeWorkspaceTreeScriptInternal = `export LC_ALL=C
 depth_budget="$1"
@@ -80,20 +79,20 @@ walk() {
 walk /volume '' "$depth_budget"
 printf 'ARCANE_TREE_END\0%s\0' "$truncated"`
 
-func (s *VolumeService) GetVolumeWorkspace(ctx context.Context, volumeName string) (*volumetypes.Workspace, error) {
+func (s *VolumeService) GetVolumeWorkspace(ctx context.Context, volumeName string) (*workspacetypes.Workspace, error) {
 	totalStartedAt := time.Now()
 	defer func() {
 		slog.DebugContext(ctx, "volume workspace load completed", "volume", volumeName, "total_duration", time.Since(totalStartedAt))
 	}()
 
 	inspectionStartedAt := time.Now()
-	if err := s.isBrowsableVolumeInternal(ctx, volumeName); err != nil {
-		return nil, classifyVolumeWorkspaceBrowseErrorInternal(err)
+	if err := s.validateVolumeHelperSupportInternal(ctx, volumeName); err != nil {
+		return nil, classifyVolumeWorkspaceHelperSupportErrorInternal(err)
 	}
 	slog.DebugContext(ctx, "volume workspace inspection completed", "volume", volumeName, "duration", time.Since(inspectionStartedAt))
 
 	helperStartedAt := time.Now()
-	containerID, cleanup, err := s.createTempContainerInternal(ctx, volumeName)
+	containerID, cleanup, err := s.acquireVolumeHelperInternal(ctx, volumeName)
 	if err != nil {
 		return nil, err
 	}
@@ -109,12 +108,12 @@ func (s *VolumeService) GetVolumeWorkspace(ctx context.Context, volumeName strin
 	return workspace, nil
 }
 
-func (s *VolumeService) readVolumeWorkspaceFromContainerInternal(ctx context.Context, containerID string) (*volumetypes.Workspace, error) {
-	maxDepth := s.fileTreeMaxDepth
+func (s *VolumeService) readVolumeWorkspaceFromContainerInternal(ctx context.Context, containerID string) (*workspacetypes.Workspace, error) {
+	maxDepth := s.workspaceMaxDepth
 	if maxDepth <= 0 {
 		maxDepth = 50
 	}
-	maxEntries := s.fileTreeMaxEntries
+	maxEntries := s.workspaceMaxEntries
 	if maxEntries <= 0 {
 		maxEntries = 10000
 	}
@@ -124,10 +123,14 @@ func (s *VolumeService) readVolumeWorkspaceFromContainerInternal(ctx context.Con
 	if err != nil {
 		return nil, classifyVolumeWorkspaceExecErrorInternal(err, stderr, "read volume workspace")
 	}
-	return parseVolumeWorkspaceTreeInternal(stdout, maxEntries)
+	return parseVolumeWorkspaceTreeInternal(stdout, maxEntries, s.volumeWorkspaceMaxFileSizeBytesInternal())
 }
 
-func parseVolumeWorkspaceTreeInternal(stdout string, maxEntries int) (*volumetypes.Workspace, error) {
+func parseVolumeWorkspaceTreeInternal(stdout string, maxEntries int, configuredMaxFileSizeBytes ...int64) (*workspacetypes.Workspace, error) {
+	maxFileSizeBytes := workspacepkg.MaxFileSizeBytes(workspacepkg.DefaultMaxFileSizeMB)
+	if len(configuredMaxFileSizeBytes) == 1 && configuredMaxFileSizeBytes[0] > 0 {
+		maxFileSizeBytes = configuredMaxFileSizeBytes[0]
+	}
 	fields := strings.Split(stdout, "\x00")
 	if len(fields) > 0 && fields[len(fields)-1] == "" {
 		fields = fields[:len(fields)-1]
@@ -140,57 +143,22 @@ func parseVolumeWorkspaceTreeInternal(stdout string, maxEntries int) (*volumetyp
 	if len(fields)%6 != 0 {
 		return nil, errors.New("invalid volume workspace file entry")
 	}
-	entries := make([]volumetypes.FileEntry, 0, min(len(fields)/6, maxEntries+1))
+	entries := make([]workspacetypes.FileEntry, 0, min(len(fields)/6, maxEntries+1))
 	classifications := make(map[string]string, min(len(fields)/6, maxEntries+1))
 	for i := 0; i+5 < len(fields); i += 6 {
-		relativePath := fields[i]
-		if relativePath == "" {
+		if fields[i] == "" {
 			continue
 		}
-		kind := fields[i+1]
-		size, err := strconv.ParseInt(fields[i+2], 10, 64)
+		entry, classification, err := parseVolumeWorkspaceEntryInternal(fields[i:i+6], maxFileSizeBytes)
 		if err != nil {
-			return nil, errors.WrapIf(err, "parse volume workspace file size")
+			return nil, err
 		}
-		modTime, err := parseVolumeWorkspaceModTimeInternal(fields[i+3])
-		if err != nil {
-			return nil, errors.WrapIf(err, "parse volume workspace modification time")
-		}
-		mode := fields[i+4]
-		classification := "special"
-		classificationKey := "kind:" + kind
-		if mode != "" {
-			classificationKey = "mode:" + mode[:1]
-		}
-		switch classificationKey {
-		case "kind:d", "mode:d":
-			classification = "dir"
-		case "kind:l", "mode:l":
-			classification = "symlink"
-		case "kind:f", "mode:-":
-			classification = "file"
-		}
-		isDirectory := classification == "dir"
-		isSymlink := classification == "symlink"
-		if isDirectory {
-			size = 0
-		}
-		classifications[relativePath] = classification
-		entries = append(entries, volumetypes.FileEntry{
-			ModTime:      modTime,
-			Name:         path.Base(relativePath),
-			Path:         "/" + relativePath,
-			RelativePath: relativePath,
-			Mode:         mode,
-			LinkTarget:   fields[i+5],
-			Size:         size,
-			IsDirectory:  isDirectory,
-			IsSymlink:    isSymlink,
-		})
+		classifications[entry.RelativePath] = classification
+		entries = append(entries, entry)
 	}
 
 	revisionEntries := slices.Clone(entries)
-	slices.SortFunc(revisionEntries, func(a, b volumetypes.FileEntry) int {
+	slices.SortFunc(revisionEntries, func(a, b workspacetypes.FileEntry) int {
 		return strings.Compare(a.RelativePath, b.RelativePath)
 	})
 	truncated = truncated || len(entries) > maxEntries
@@ -203,7 +171,7 @@ func parseVolumeWorkspaceTreeInternal(stdout string, maxEntries int) (*volumetyp
 	for _, entry := range revisionEntries {
 		utils.WriteFileTreeRevisionEntry(h, entry.RelativePath, classifications[entry.RelativePath], entry.Size, entry.ModTime.UnixNano(), entry.Mode, false)
 	}
-	slices.SortFunc(entries, func(a, b volumetypes.FileEntry) int {
+	slices.SortFunc(entries, func(a, b workspacetypes.FileEntry) int {
 		if a.IsDirectory != b.IsDirectory {
 			if a.IsDirectory {
 				return -1
@@ -213,11 +181,66 @@ func parseVolumeWorkspaceTreeInternal(stdout string, maxEntries int) (*volumetyp
 		return strings.Compare(a.RelativePath, b.RelativePath)
 	})
 
-	return &volumetypes.Workspace{
+	return &workspacetypes.Workspace{
 		Files:             entries,
 		FileTreeRevision:  hex.EncodeToString(h.Sum(nil)),
 		FileTreeTruncated: truncated,
 	}, nil
+}
+
+func parseVolumeWorkspaceEntryInternal(fields []string, maxFileSizeBytes int64) (workspacetypes.FileEntry, string, error) {
+	relativePath := fields[0]
+	size, err := strconv.ParseInt(fields[2], 10, 64)
+	if err != nil {
+		return workspacetypes.FileEntry{}, "", errors.WrapIf(err, "parse volume workspace file size")
+	}
+	modTime, err := parseVolumeWorkspaceModTimeInternal(fields[3])
+	if err != nil {
+		return workspacetypes.FileEntry{}, "", errors.WrapIf(err, "parse volume workspace modification time")
+	}
+
+	mode := fields[4]
+	classificationKey := "kind:" + fields[1]
+	if mode != "" {
+		classificationKey = "mode:" + mode[:1]
+	}
+	classification := "special"
+	switch classificationKey {
+	case "kind:d", "mode:d":
+		classification = "dir"
+	case "kind:l", "mode:l":
+		classification = "symlink"
+	case "kind:f", "mode:-":
+		classification = "file"
+	}
+
+	entry := workspacetypes.FileEntry{
+		ModTime:      modTime,
+		Name:         path.Base(relativePath),
+		Path:         "/" + relativePath,
+		RelativePath: relativePath,
+		Mode:         mode,
+		LinkTarget:   fields[5],
+		Size:         size,
+		IsDirectory:  classification == "dir",
+		IsSymlink:    classification == "symlink",
+	}
+	switch classification {
+	case "dir":
+		entry.Size = 0
+		entry.Editable = true
+	case "symlink":
+		entry.ReadOnlyReason = workspacetypes.FileReadOnlySymlink
+	case "special":
+		entry.ReadOnlyReason = workspacetypes.FileReadOnlySpecial
+	case "file":
+		if size > maxFileSizeBytes {
+			entry.ReadOnlyReason = workspacetypes.FileReadOnlyTooLarge
+		} else {
+			entry.Editable = true
+		}
+	}
+	return entry, classification, nil
 }
 
 func parseVolumeWorkspaceModTimeInternal(value string) (time.Time, error) {
@@ -228,22 +251,26 @@ func parseVolumeWorkspaceModTimeInternal(value string) (time.Time, error) {
 	return time.Parse("2006-01-02 15:04:05 -0700", trimmed)
 }
 
-func (s *VolumeService) GetVolumeWorkspaceFile(ctx context.Context, volumeName, relativePath string) (*volumetypes.WorkspaceFileContent, error) {
-	if err := s.isBrowsableVolumeInternal(ctx, volumeName); err != nil {
-		return nil, classifyVolumeWorkspaceBrowseErrorInternal(err)
+func (s *VolumeService) volumeWorkspaceMaxFileSizeBytesInternal() int64 {
+	if s.workspaceMaxFileSizeBytes <= 0 {
+		return workspacepkg.MaxFileSizeBytes(workspacepkg.DefaultMaxFileSizeMB)
+	}
+	return s.workspaceMaxFileSizeBytes
+}
+
+func (s *VolumeService) GetVolumeWorkspaceFile(ctx context.Context, volumeName, relativePath string) (*workspacetypes.FileContent, error) {
+	if err := s.validateVolumeHelperSupportInternal(ctx, volumeName); err != nil {
+		return nil, classifyVolumeWorkspaceHelperSupportErrorInternal(err)
 	}
 	rel, err := utils.NormalizeRelativePath(relativePath)
 	if err != nil {
-		return nil, common.Classify(common.ErrVolumeFileForbidden, errors.WrapIf(err, "invalid volume file path"))
+		return nil, common.Classify(common.ErrVolumeWorkspaceForbidden, errors.WrapIf(err, "invalid volume workspace path"))
 	}
-	containerID, cleanup, err := s.createTempContainerInternal(ctx, volumeName)
+	containerID, cleanup, err := s.acquireVolumeHelperInternal(ctx, volumeName)
 	if err != nil {
 		return nil, err
 	}
 	defer cleanup()
-	if err := s.validateVolumeWorkspacePathInternal(ctx, containerID, rel, false); err != nil {
-		return nil, err
-	}
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return nil, err
@@ -251,29 +278,30 @@ func (s *VolumeService) GetVolumeWorkspaceFile(ctx context.Context, volumeName, 
 	statResult, err := dockerClient.ContainerStatPath(ctx, containerID, client.ContainerStatPathOptions{Path: path.Join("/volume", rel)})
 	if err != nil {
 		if cerrdefs.IsNotFound(err) {
-			return nil, common.Classify(common.ErrVolumeFileNotFound, errors.New("volume file not found"))
+			return nil, common.Classify(common.ErrVolumeWorkspaceNotFound, errors.New("volume workspace file not found"))
 		}
 		return nil, errors.WrapIf(err, "inspect volume workspace file")
 	}
 	stat := statResult.Stat
 	if stat.Mode&os.ModeSymlink != 0 {
-		return nil, common.Classify(common.ErrVolumeFileForbidden, errors.New("symlink volume paths are not supported"))
+		return &workspacetypes.FileContent{Path: "/" + rel, RelativePath: rel, Name: path.Base(rel), Size: stat.Size, ReadOnlyReason: workspacetypes.FileReadOnlySymlink}, nil
 	}
 	if stat.Mode.IsDir() {
-		return nil, common.Classify(common.ErrVolumeFileBadRequest, errors.New("path is a directory"))
+		return nil, common.Classify(common.ErrVolumeWorkspaceBadRequest, errors.New("path is a directory"))
 	}
 	if !stat.Mode.IsRegular() {
-		return volumeWorkspaceFileContentResponseInternal(rel, "special", stat.Size, nil)
+		return volumeWorkspaceFileContentResponseInternal(rel, "special", stat.Size, nil, s.volumeWorkspaceMaxFileSizeBytesInternal())
 	}
-	if stat.Size > maxEditableVolumeFileBytes {
-		return volumeWorkspaceFileContentResponseInternal(rel, "regular", stat.Size, nil)
+	maxFileSizeBytes := s.volumeWorkspaceMaxFileSizeBytesInternal()
+	if stat.Size > maxFileSizeBytes {
+		return volumeWorkspaceFileContentResponseInternal(rel, "regular", stat.Size, nil, maxFileSizeBytes)
 	}
 
 	reader, size, err := s.downloadFileFromContainerInternal(ctx, dockerClient, containerID, path.Join("/volume", rel), func() {})
 	if err != nil {
 		return nil, errors.WrapIf(err, "read volume workspace file")
 	}
-	content, readErr := io.ReadAll(io.LimitReader(reader, maxEditableVolumeFileBytes+1))
+	content, readErr := io.ReadAll(io.LimitReader(reader, maxFileSizeBytes+1))
 	closeErr := reader.Close()
 	if readErr != nil {
 		return nil, errors.WrapIf(readErr, "read volume workspace file content")
@@ -281,14 +309,41 @@ func (s *VolumeService) GetVolumeWorkspaceFile(ctx context.Context, volumeName, 
 	if closeErr != nil {
 		return nil, errors.WrapIf(closeErr, "close volume workspace file content")
 	}
-	if int64(len(content)) > maxEditableVolumeFileBytes || size > maxEditableVolumeFileBytes {
-		return volumeWorkspaceFileContentResponseInternal(rel, "regular", size, nil)
+	if int64(len(content)) > maxFileSizeBytes || size > maxFileSizeBytes {
+		return volumeWorkspaceFileContentResponseInternal(rel, "regular", size, nil, maxFileSizeBytes)
 	}
-	return volumeWorkspaceFileContentResponseInternal(rel, "regular", size, content)
+	return volumeWorkspaceFileContentResponseInternal(rel, "regular", size, content, maxFileSizeBytes)
 }
 
-func volumeWorkspaceFileContentResponseInternal(relativePath, kind string, size int64, content []byte) (*volumetypes.WorkspaceFileContent, error) {
-	response := &volumetypes.WorkspaceFileContent{
+func (s *VolumeService) DownloadVolumeWorkspaceFile(ctx context.Context, volumeName, relativePath string) (io.ReadCloser, int64, error) {
+	if err := s.validateVolumeHelperSupportInternal(ctx, volumeName); err != nil {
+		return nil, 0, classifyVolumeWorkspaceHelperSupportErrorInternal(err)
+	}
+	rel, err := utils.NormalizeRelativePath(relativePath)
+	if err != nil {
+		return nil, 0, common.Classify(common.ErrVolumeWorkspaceForbidden, errors.WrapIf(err, "invalid volume workspace path"))
+	}
+	containerID, cleanup, err := s.acquireVolumeHelperInternal(ctx, volumeName)
+	if err != nil {
+		return nil, 0, err
+	}
+	parent := path.Dir(rel)
+	if parent != "." {
+		if err := s.validateVolumeWorkspacePathInternal(ctx, containerID, parent, false); err != nil {
+			cleanup()
+			return nil, 0, err
+		}
+	}
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		cleanup()
+		return nil, 0, err
+	}
+	return s.downloadFileFromContainerInternal(ctx, dockerClient, containerID, path.Join("/volume", rel), cleanup)
+}
+
+func volumeWorkspaceFileContentResponseInternal(relativePath, kind string, size int64, content []byte, maxFileSizeBytes int64) (*workspacetypes.FileContent, error) {
+	response := &workspacetypes.FileContent{
 		Path:         "/" + relativePath,
 		RelativePath: relativePath,
 		Name:         path.Base(relativePath),
@@ -296,18 +351,18 @@ func volumeWorkspaceFileContentResponseInternal(relativePath, kind string, size 
 		Size:         size,
 	}
 	if kind == "special" {
-		response.ReadOnlyReason = volumetypes.FileReadOnlySpecial
+		response.ReadOnlyReason = workspacetypes.FileReadOnlySpecial
 		return response, nil
 	}
 	if kind != "regular" {
-		return nil, errors.New("invalid volume file kind")
+		return nil, errors.New("invalid volume workspace file kind")
 	}
-	if size > maxEditableVolumeFileBytes {
-		response.ReadOnlyReason = volumetypes.FileReadOnlyTooLarge
+	if size > maxFileSizeBytes {
+		response.ReadOnlyReason = workspacetypes.FileReadOnlyTooLarge
 		return response, nil
 	}
-	if utils.IsBinaryFileContent(content) {
-		response.ReadOnlyReason = volumetypes.FileReadOnlyBinary
+	if !workspacepkg.IsTextContent(content) {
+		response.ReadOnlyReason = workspacetypes.FileReadOnlyBinary
 		return response, nil
 	}
 	response.Editable = true
@@ -319,30 +374,30 @@ func classifyVolumeWorkspaceExecErrorInternal(err error, stderr, fallbackContext
 	message := stderr + " " + err.Error()
 	switch {
 	case strings.Contains(message, "ARCANE_SYMLINK"):
-		return common.Classify(common.ErrVolumeFileForbidden, errors.New("symlink volume paths are not supported"))
+		return common.Classify(common.ErrVolumeWorkspaceForbidden, errors.New("symlink volume paths are not supported"))
 	case strings.Contains(message, "ARCANE_NOT_FOUND"):
-		return common.Classify(common.ErrVolumeFileNotFound, errors.New("volume file not found"))
+		return common.Classify(common.ErrVolumeWorkspaceNotFound, errors.New("volume workspace file not found"))
 	case strings.Contains(message, "ARCANE_COLLISION"):
-		return common.Classify(common.ErrVolumeFileBadRequest, errors.New("volume file destination already exists"))
+		return common.Classify(common.ErrVolumeWorkspaceBadRequest, errors.New("volume workspace destination already exists"))
 	case strings.Contains(message, "ARCANE_NOT_DIRECTORY"):
-		return common.Classify(common.ErrVolumeFileBadRequest, errors.New("volume file parent is not a directory"))
+		return common.Classify(common.ErrVolumeWorkspaceBadRequest, errors.New("volume workspace parent is not a directory"))
 	case strings.Contains(message, "ARCANE_NOT_FILE"):
-		return common.Classify(common.ErrVolumeFileBadRequest, errors.New("volume file path is not a regular file"))
+		return common.Classify(common.ErrVolumeWorkspaceBadRequest, errors.New("volume workspace path is not a regular file"))
 	case strings.Contains(message, "ARCANE_NOT_EMPTY"):
-		return common.Classify(common.ErrVolumeFileBadRequest, errors.New("volume directory is not empty; recursive delete is required"))
+		return common.Classify(common.ErrVolumeWorkspaceBadRequest, errors.New("volume directory is not empty; recursive delete is required"))
 	case strings.Contains(message, "ARCANE_DIRECTORY"):
-		return common.Classify(common.ErrVolumeFileBadRequest, errors.New("path is a directory"))
+		return common.Classify(common.ErrVolumeWorkspaceBadRequest, errors.New("path is a directory"))
 	default:
 		return errors.WrapIf(err, fallbackContext)
 	}
 }
 
-func classifyVolumeWorkspaceBrowseErrorInternal(err error) error {
+func classifyVolumeWorkspaceHelperSupportErrorInternal(err error) error {
 	switch {
 	case cerrdefs.IsNotFound(err):
-		return common.Classify(common.ErrVolumeFileNotFound, err)
+		return common.Classify(common.ErrVolumeWorkspaceNotFound, err)
 	case strings.Contains(err.Error(), "uses a custom mount configuration"):
-		return common.Classify(common.ErrVolumeFileBadRequest, err)
+		return common.Classify(common.ErrVolumeWorkspaceBadRequest, err)
 	default:
 		return err
 	}
@@ -385,31 +440,33 @@ while :; do
   esac
 done`
 
-func (s *VolumeService) UpdateVolumeWorkspace(ctx context.Context, volumeName string, manifest volumetypes.FileUpdateManifest, uploads []*multipart.FileHeader, user models.User) (*volumetypes.Workspace, error) {
+func (s *VolumeService) UpdateVolumeWorkspace(ctx context.Context, volumeName string, manifest volumetypes.WorkspaceUpdateManifest, uploads map[int][]byte, user models.User) (*workspacetypes.Workspace, error) {
 	totalStartedAt := time.Now()
 	defer func() {
 		slog.DebugContext(ctx, "volume workspace update completed", "volume", volumeName, "file_change_count", len(manifest.FileChanges), "total_duration", time.Since(totalStartedAt))
 	}()
 
-	if len(manifest.FileChanges) == 0 || len(manifest.FileChanges) > 500 {
-		return nil, common.Classify(common.ErrVolumeFileBadRequest, errors.New("fileChanges must contain between 1 and 500 changes"))
+	if err := workspacepkg.ValidateUpdateManifest(manifest.FileTreeRevision, len(manifest.FileChanges), 500); err != nil {
+		return nil, common.Classify(common.ErrVolumeWorkspaceBadRequest, err)
 	}
-	if strings.TrimSpace(manifest.FileTreeRevision) == "" {
-		return nil, common.Classify(common.ErrVolumeFileBadRequest, errors.New("file tree revision is required"))
-	}
+	uploadReferences := make([]workspacepkg.UploadReference, 0, len(manifest.FileChanges))
 	for _, change := range manifest.FileChanges {
-		if err := validateVolumeFileChangeInternal(change, uploads); err != nil {
-			return nil, common.Classify(common.ErrVolumeFileBadRequest, err)
+		uploadReferences = append(uploadReferences, workspacepkg.UploadReference{Operation: change.Operation, UploadIndex: change.UploadIndex})
+		if err := validateVolumeWorkspaceFileChangeInternal(change); err != nil {
+			return nil, common.Classify(common.ErrVolumeWorkspaceBadRequest, err)
 		}
 	}
+	if err := workspacepkg.ValidateUploadIndices(uploadReferences, len(uploads), volumetypes.FileOpCreateFile, volumetypes.FileOpUpdateFile); err != nil {
+		return nil, common.Classify(common.ErrVolumeWorkspaceBadRequest, err)
+	}
 	inspectionStartedAt := time.Now()
-	if err := s.isBrowsableVolumeInternal(ctx, volumeName); err != nil {
-		return nil, classifyVolumeWorkspaceBrowseErrorInternal(err)
+	if err := s.validateVolumeHelperSupportInternal(ctx, volumeName); err != nil {
+		return nil, classifyVolumeWorkspaceHelperSupportErrorInternal(err)
 	}
 	slog.DebugContext(ctx, "volume workspace inspection completed", "volume", volumeName, "duration", time.Since(inspectionStartedAt))
 	defer s.workspaceLocks.Lock(volumeName)()
 
-	needsBackups := slices.ContainsFunc(manifest.FileChanges, func(change volumetypes.FileChange) bool {
+	needsBackups := slices.ContainsFunc(manifest.FileChanges, func(change volumetypes.WorkspaceFileChange) bool {
 		return change.Operation == volumetypes.FileOpRestoreFile
 	})
 	helperStartedAt := time.Now()
@@ -444,7 +501,7 @@ func (s *VolumeService) UpdateVolumeWorkspace(ctx context.Context, volumeName st
 	backupStartedAt := time.Now()
 	scope, err := volumeWorkspaceBackupScopeInternal(manifest.FileChanges)
 	if err != nil {
-		return nil, common.Classify(common.ErrVolumeFileBadRequest, err)
+		return nil, common.Classify(common.ErrVolumeWorkspaceBadRequest, err)
 	}
 	for _, relativePath := range scope {
 		if err := s.validateVolumeWorkspacePathInternal(ctx, containerID, relativePath, true); err != nil {
@@ -460,7 +517,7 @@ func (s *VolumeService) UpdateVolumeWorkspace(ctx context.Context, volumeName st
 	applyStartedAt := time.Now()
 	if err := applyVolumeWorkspaceChangesTransactionInternal(
 		manifest.FileChanges,
-		func(index int, change volumetypes.FileChange) error {
+		func(index int, change volumetypes.WorkspaceFileChange) error {
 			return s.applyVolumeWorkspaceChangeInternal(ctx, containerID, change, stagedFiles[index], volumeName)
 		},
 		func() error { return s.restoreVolumeWorkspaceScopeInternal(ctx, containerID, backup) },
@@ -478,7 +535,7 @@ func (s *VolumeService) UpdateVolumeWorkspace(ctx context.Context, volumeName st
 
 	if s.eventService != nil {
 		metadata := models.JSON{"action": "workspace_update", "fileChangeCount": len(manifest.FileChanges)}
-		if logErr := s.eventService.LogVolumeEvent(ctx, models.EventTypeVolumeFileUpdate, volumeName, volumeName, user.ID, user.Username, "0", metadata); logErr != nil {
+		if logErr := s.eventService.LogVolumeEvent(ctx, models.EventTypeVolumeWorkspaceUpdate, volumeName, volumeName, user.ID, user.Username, "0", metadata); logErr != nil {
 			slog.WarnContext(ctx, "could not log volume workspace update event", "volume", volumeName, "error", logErr.Error())
 		}
 	}
@@ -496,7 +553,7 @@ type volumeWorkspaceStagedContentInternal struct {
 	size    int64
 }
 
-func (s *VolumeService) stageVolumeWorkspaceChangesInternal(ctx context.Context, dockerClient *client.Client, containerID string, changes []volumetypes.FileChange, uploads []*multipart.FileHeader) (map[int]volumeWorkspaceStagedFileInternal, error) {
+func (s *VolumeService) stageVolumeWorkspaceChangesInternal(ctx context.Context, dockerClient *client.Client, containerID string, changes []volumetypes.WorkspaceFileChange, uploads map[int][]byte) (map[int]volumeWorkspaceStagedFileInternal, error) {
 	if _, _, err := s.execInContainerInternal(ctx, containerID, []string{"sh", "-c", "rm -rf -- /tmp/arcane-workspace && mkdir -p -- /tmp/arcane-workspace"}); err != nil {
 		return nil, errors.WrapIf(err, "prepare volume workspace staging directory")
 	}
@@ -504,27 +561,13 @@ func (s *VolumeService) stageVolumeWorkspaceChangesInternal(ctx context.Context,
 	stagedFiles := make(map[int]volumeWorkspaceStagedFileInternal)
 	stagedContents := make([]volumeWorkspaceStagedContentInternal, 0, len(changes))
 	for index, change := range changes {
-		if change.Content == nil && change.UploadIndex == nil {
+		if change.UploadIndex == nil {
 			continue
 		}
 		stagedPath := fmt.Sprintf("/tmp/arcane-workspace/change-%d", index)
-		var reader io.ReadCloser
-		var size int64
-		var err error
-		if change.UploadIndex != nil {
-			header := uploads[*change.UploadIndex]
-			reader, err = header.Open()
-			size = header.Size
-		} else {
-			reader = io.NopCloser(strings.NewReader(*change.Content))
-			size = int64(len(*change.Content))
-		}
-		if err != nil {
-			for _, stagedContent := range stagedContents {
-				_ = stagedContent.content.Close()
-			}
-			return nil, errors.WrapIf(err, "open workspace upload")
-		}
+		content := uploads[*change.UploadIndex]
+		reader := io.NopCloser(strings.NewReader(string(content)))
+		size := int64(len(content))
 		stagedFiles[index] = volumeWorkspaceStagedFileInternal{path: stagedPath, size: size}
 		stagedContents = append(stagedContents, volumeWorkspaceStagedContentInternal{
 			name:    path.Base(stagedPath),
@@ -543,14 +586,14 @@ func (s *VolumeService) stageVolumeWorkspaceChangesInternal(ctx context.Context,
 
 func validateVolumeWorkspaceRevisionInternal(expected, current string) error {
 	if strings.TrimSpace(expected) != current {
-		return common.Classify(common.ErrVolumeFileConflict, errors.New("volume file tree changed; refresh the workspace and try again"))
+		return common.Classify(common.ErrVolumeWorkspaceConflict, errors.New("volume workspace changed; refresh it and try again"))
 	}
 	return nil
 }
 
 func applyVolumeWorkspaceChangesTransactionInternal(
-	changes []volumetypes.FileChange,
-	apply func(int, volumetypes.FileChange) error,
+	changes []volumetypes.WorkspaceFileChange,
+	apply func(int, volumetypes.WorkspaceFileChange) error,
 	rollback func() error,
 ) error {
 	for index, change := range changes {
@@ -564,33 +607,29 @@ func applyVolumeWorkspaceChangesTransactionInternal(
 	return nil
 }
 
-func validateVolumeFileChangeInternal(change volumetypes.FileChange, uploads []*multipart.FileHeader) error {
+func validateVolumeWorkspaceFileChangeInternal(change volumetypes.WorkspaceFileChange) error {
 	if _, err := utils.NormalizeRelativePath(change.RelativePath); err != nil {
-		return errors.WrapIf(err, "invalid volume file path")
+		return errors.WrapIf(err, "invalid volume workspace path")
 	}
-	hasContent := change.Content != nil
 	hasUpload := change.UploadIndex != nil
-	if hasUpload && (*change.UploadIndex < 0 || *change.UploadIndex >= len(uploads)) {
-		return errors.New("uploadIndex does not reference an uploaded file")
-	}
 	switch change.Operation {
 	case volumetypes.FileOpCreateFile, volumetypes.FileOpUpdateFile:
-		if hasContent == hasUpload {
-			return errors.New("create_file and update_file require exactly one of content or uploadIndex")
+		if !hasUpload {
+			return errors.New("create_file and update_file require uploadIndex")
 		}
 	case volumetypes.FileOpCreateFolder, volumetypes.FileOpDelete:
-		if hasContent || hasUpload {
+		if hasUpload {
 			return errors.New("operation does not accept file content")
 		}
 	case volumetypes.FileOpRename:
-		if hasContent || hasUpload {
+		if hasUpload {
 			return errors.New("rename does not accept file content")
 		}
 		if _, err := utils.ValidateFileName(change.NewName); err != nil {
-			return errors.WrapIf(err, "invalid volume file name")
+			return errors.WrapIf(err, "invalid volume workspace file name")
 		}
 	case volumetypes.FileOpMove:
-		if hasContent || hasUpload {
+		if hasUpload {
 			return errors.New("move does not accept file content")
 		}
 		if strings.TrimSpace(change.NewParentPath) != "" {
@@ -599,14 +638,14 @@ func validateVolumeFileChangeInternal(change volumetypes.FileChange, uploads []*
 			}
 		}
 	case volumetypes.FileOpRestoreFile:
-		if hasContent || hasUpload {
+		if hasUpload {
 			return errors.New("restore_file does not accept file content")
 		}
 		if strings.TrimSpace(change.BackupID) == "" {
 			return errors.New("restore_file requires backupId")
 		}
 	default:
-		return errors.Errorf("unsupported volume file operation %q", change.Operation)
+		return errors.Errorf("unsupported volume workspace operation %q", change.Operation)
 	}
 	return nil
 }
@@ -648,7 +687,7 @@ func (s *VolumeService) copyVolumeWorkspaceFilesToContainerInternal(ctx context.
 
 func (s *VolumeService) createVolumeWorkspaceMutationContainerInternal(ctx context.Context, volumeName string, withBackups bool) (string, func(), error) {
 	if !withBackups {
-		return s.createTempContainerInternal(ctx, volumeName)
+		return s.acquireVolumeHelperInternal(ctx, volumeName)
 	}
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
@@ -677,7 +716,7 @@ func (s *VolumeService) createVolumeWorkspaceMutationContainerInternal(ctx conte
 	}, nil
 }
 
-func volumeWorkspaceBackupScopeInternal(changes []volumetypes.FileChange) ([]string, error) {
+func volumeWorkspaceBackupScopeInternal(changes []volumetypes.WorkspaceFileChange) ([]string, error) {
 	paths := make([]string, 0, len(changes)*2)
 	for _, change := range changes {
 		rel, err := utils.NormalizeRelativePath(change.RelativePath)
@@ -917,7 +956,7 @@ case "$2" in
 esac`
 )
 
-func (s *VolumeService) applyVolumeWorkspaceChangeInternal(ctx context.Context, containerID string, change volumetypes.FileChange, stagedFile volumeWorkspaceStagedFileInternal, volumeName string) error {
+func (s *VolumeService) applyVolumeWorkspaceChangeInternal(ctx context.Context, containerID string, change volumetypes.WorkspaceFileChange, stagedFile volumeWorkspaceStagedFileInternal, volumeName string) error {
 	rel, _ := utils.NormalizeRelativePath(change.RelativePath)
 	if change.Operation == volumetypes.FileOpRestoreFile {
 		return s.restoreVolumeWorkspaceFileInternal(ctx, containerID, volumeName, change.BackupID, rel)
@@ -928,7 +967,7 @@ func (s *VolumeService) applyVolumeWorkspaceChangeInternal(ctx context.Context, 
 	}
 	_, stderr, err := s.execInContainerInternal(ctx, containerID, cmd)
 	if err != nil {
-		return classifyVolumeWorkspaceExecErrorInternal(err, stderr, "apply volume file change")
+		return classifyVolumeWorkspaceExecErrorInternal(err, stderr, "apply volume workspace change")
 	}
 	if strings.TrimSpace(stderr) != "" {
 		slog.DebugContext(ctx, "volume workspace change stderr", "operation", change.Operation, "path", rel, "stderr", strings.TrimSpace(stderr))
@@ -936,7 +975,7 @@ func (s *VolumeService) applyVolumeWorkspaceChangeInternal(ctx context.Context, 
 	return nil
 }
 
-func (s *VolumeService) volumeWorkspaceMutationCommandInternal(ctx context.Context, containerID string, change volumetypes.FileChange, stagedFile volumeWorkspaceStagedFileInternal, rel string) ([]string, error) {
+func (s *VolumeService) volumeWorkspaceMutationCommandInternal(ctx context.Context, containerID string, change volumetypes.WorkspaceFileChange, stagedFile volumeWorkspaceStagedFileInternal, rel string) ([]string, error) {
 	var cmd []string
 	parent := path.Dir(rel)
 	if parent == "." {
@@ -962,7 +1001,7 @@ func (s *VolumeService) volumeWorkspaceMutationCommandInternal(ctx context.Conte
 		newName, _ := utils.ValidateFileName(change.NewName)
 		target := path.Join(path.Dir(rel), newName)
 		if target == rel {
-			return nil, common.Classify(common.ErrVolumeFileBadRequest, errors.New("new name must change the file path"))
+			return nil, common.Classify(common.ErrVolumeWorkspaceBadRequest, errors.New("new name must change the file path"))
 		}
 		if err := s.validateVolumeWorkspacePathInternal(ctx, containerID, rel, false); err != nil {
 			return nil, err
@@ -978,7 +1017,7 @@ func (s *VolumeService) volumeWorkspaceMutationCommandInternal(ctx context.Conte
 		}
 		target := path.Join(parent, path.Base(rel))
 		if target == rel || (parent != "" && utils.FilePathMatches(parent, rel)) {
-			return nil, common.Classify(common.ErrVolumeFileBadRequest, errors.New("invalid move destination"))
+			return nil, common.Classify(common.ErrVolumeWorkspaceBadRequest, errors.New("invalid move destination"))
 		}
 		if err := s.validateVolumeWorkspacePathInternal(ctx, containerID, rel, false); err != nil {
 			return nil, err
@@ -1006,18 +1045,18 @@ func (s *VolumeService) restoreVolumeWorkspaceFileInternal(ctx context.Context, 
 	}
 	filename, err := s.backupArchiveFilenameInternal(backupID)
 	if err != nil {
-		return common.Classify(common.ErrVolumeFileNotFound, err)
+		return common.Classify(common.ErrVolumeWorkspaceNotFound, err)
 	}
 	var backup models.VolumeBackup
 	if err := s.db.WithContext(ctx).Where("id = ?", backupID).First(&backup).Error; err != nil {
-		return common.Classify(common.ErrVolumeFileNotFound, err)
+		return common.Classify(common.ErrVolumeWorkspaceNotFound, err)
 	}
 	if backup.VolumeName != volumeName {
-		return common.Classify(common.ErrVolumeFileForbidden, errors.New("backup does not belong to volume"))
+		return common.Classify(common.ErrVolumeWorkspaceForbidden, errors.New("backup does not belong to volume"))
 	}
 	cleaned, err := s.sanitizeBackupPathInternal(rel)
 	if err != nil {
-		return common.Classify(common.ErrVolumeFileBadRequest, err)
+		return common.Classify(common.ErrVolumeWorkspaceBadRequest, err)
 	}
 	stderr, err := s.restoreBackupFilesInContainerInternal(ctx, containerID, filename, []string{cleaned})
 	if err != nil {

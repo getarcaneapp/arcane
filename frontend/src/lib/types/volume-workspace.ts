@@ -1,34 +1,18 @@
-export interface VolumeWorkspaceFile {
-	path: string;
-	relativePath: string;
-	name: string;
-	isDirectory: boolean;
-	size: number;
-	modTime?: string;
-	mode?: string;
-	isSymlink?: boolean;
-	linkTarget?: string;
+import type {
+	Workspace,
+	WorkspaceFileChange,
+	WorkspaceFileContent,
+	WorkspaceFileEntry,
+	WorkspaceReadOnlyReason
+} from './workspace';
+
+export type VolumeWorkspaceFile = WorkspaceFileEntry;
+export type VolumeWorkspace = Workspace;
+export interface VolumeWorkspaceFileContent extends Omit<WorkspaceFileContent, 'readOnlyReason'> {
+	readOnlyReason?: WorkspaceReadOnlyReason | 'restore_pending';
 }
 
-export interface VolumeWorkspace {
-	files: VolumeWorkspaceFile[];
-	fileTreeRevision: string;
-	fileTreeTruncated: boolean;
-	activityId?: string;
-}
-
-export interface VolumeWorkspaceFileContent {
-	path: string;
-	relativePath: string;
-	name: string;
-	size: number;
-	mimeType: string;
-	content?: string;
-	editable: boolean;
-	readOnlyReason?: 'binary' | 'too_large' | 'symlink' | 'special' | 'restore_pending';
-}
-
-export type VolumeFileChangeOperation =
+export type VolumeWorkspaceFileChangeOperation =
 	| 'create_file'
 	| 'create_folder'
 	| 'update_file'
@@ -37,18 +21,12 @@ export type VolumeFileChangeOperation =
 	| 'delete'
 	| 'restore_file';
 
-export interface VolumeFileChange {
-	operation: VolumeFileChangeOperation;
-	relativePath: string;
-	newName?: string;
-	newParentPath?: string;
-	content?: string;
-	uploadIndex?: number;
+export interface VolumeWorkspaceFileChange extends Omit<WorkspaceFileChange, 'operation'> {
+	operation: VolumeWorkspaceFileChangeOperation;
 	backupId?: string;
-	recursive?: boolean;
 }
 
 export interface VolumeWorkspaceUpdateManifest {
 	fileTreeRevision: string;
-	fileChanges: VolumeFileChange[];
+	fileChanges: VolumeWorkspaceFileChange[];
 }

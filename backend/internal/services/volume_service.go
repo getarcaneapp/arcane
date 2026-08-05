@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net/http"
 	"os"
 	"path"
 	"strconv"
@@ -27,6 +26,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	workspacepkg "github.com/getarcaneapp/arcane/backend/v2/pkg/workspace"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/google/uuid"
 	"github.com/moby/moby/api/pkg/stdcopy"
@@ -39,20 +39,21 @@ import (
 )
 
 type VolumeService struct {
-	db                 *database.DB
-	dockerService      *DockerClientService
-	eventService       *EventService
-	settingsService    *SettingsService
-	containerService   *ContainerService
-	imageService       *ImageService
-	backupVolumeName   string
-	fileTreeMaxDepth   int
-	fileTreeMaxEntries int
-	workspaceLocks     utils.KeyedMutex
-	helperMu           sync.Mutex
-	helperByVolume     map[string]*volumeHelper
+	db                        *database.DB
+	dockerService             *DockerClientService
+	eventService              *EventService
+	settingsService           *SettingsService
+	containerService          *ContainerService
+	imageService              *ImageService
+	backupVolumeName          string
+	workspaceMaxDepth         int
+	workspaceMaxEntries       int
+	workspaceMaxFileSizeBytes int64
+	workspaceLocks            utils.KeyedMutex
+	helperMu                  sync.Mutex
+	helperByVolume            map[string]*volumeHelper
 	// helperGroup deduplicates concurrent helper creation per volume.
-	// Without it two simultaneous browse requests each create a helper and the
+	// Without it two simultaneous workspace requests each create a helper and the
 	// second overwrites the first in helperByVolume, orphaning a `sleep infinity`
 	// container that pins the volume until restart.
 	helperGroup singleflight.Group
@@ -101,27 +102,30 @@ type backupStorageMountInternal struct {
 func NewVolumeService(db *database.DB, dockerService *DockerClientService, eventService *EventService, settingsService *SettingsService, containerService *ContainerService, imageService *ImageService, cfg *config.Config) *VolumeService {
 	slog.Debug("volume service: new")
 	backupVolumeName := ""
-	fileTreeMaxDepth := 50
-	fileTreeMaxEntries := 10000
+	workspaceMaxDepth := 50
+	workspaceMaxEntries := 10000
+	workspaceMaxFileSizeMB := workspacepkg.DefaultMaxFileSizeMB
 	if cfg != nil {
 		backupVolumeName = cfg.BackupVolumeName
-		fileTreeMaxDepth = cfg.VolumeFileTreeMaxDepth
-		fileTreeMaxEntries = cfg.VolumeFileTreeMaxEntries
+		workspaceMaxDepth = cfg.VolumeWorkspaceMaxDepth
+		workspaceMaxEntries = cfg.VolumeWorkspaceMaxEntries
+		workspaceMaxFileSizeMB = cfg.VolumeWorkspaceMaxFileSizeMB
 	}
 	if strings.TrimSpace(backupVolumeName) == "" {
 		backupVolumeName = "arcane-backups"
 	}
 	return &VolumeService{
-		db:                 db,
-		dockerService:      dockerService,
-		eventService:       eventService,
-		settingsService:    settingsService,
-		containerService:   containerService,
-		imageService:       imageService,
-		backupVolumeName:   backupVolumeName,
-		fileTreeMaxDepth:   fileTreeMaxDepth,
-		fileTreeMaxEntries: fileTreeMaxEntries,
-		helperByVolume:     make(map[string]*volumeHelper),
+		db:                        db,
+		dockerService:             dockerService,
+		eventService:              eventService,
+		settingsService:           settingsService,
+		containerService:          containerService,
+		imageService:              imageService,
+		backupVolumeName:          backupVolumeName,
+		workspaceMaxDepth:         workspaceMaxDepth,
+		workspaceMaxEntries:       workspaceMaxEntries,
+		workspaceMaxFileSizeBytes: workspacepkg.MaxFileSizeBytes(workspaceMaxFileSizeMB),
+		helperByVolume:            make(map[string]*volumeHelper),
 	}
 }
 
@@ -211,7 +215,7 @@ func (s *VolumeService) DeleteVolume(ctx context.Context, name string, force boo
 	// Stop any reusable helper first; a helper mounting the volume would
 	// otherwise block a non-forced VolumeRemove with "volume is in use".
 	if stopErr := s.StopHelper(ctx, name); stopErr != nil {
-		slog.WarnContext(ctx, "could not stop volume browse helper before delete", "volume", name, "error", stopErr.Error())
+		slog.WarnContext(ctx, "could not stop volume workspace helper before delete", "volume", name, "error", stopErr.Error())
 	}
 
 	if _, err := dockerClient.VolumeRemove(ctx, name, client.VolumeRemoveOptions{
@@ -248,7 +252,7 @@ func (s *VolumeService) PruneVolumesWithOptions(ctx context.Context, all bool) (
 
 	// Stop all reusable helpers first; a helper mounting a volume marks it
 	// "in use" and would prevent VolumePrune from reclaiming an otherwise-unused
-	// volume. Helpers are re-created on demand on the next browse request.
+	// volume. Helpers are re-created on demand on the next workspace request.
 	s.CleanupHelperContainers(ctx)
 
 	preserveTrivyCache := s.preserveTrivyCacheOnVolumePruneInternal()
@@ -314,12 +318,12 @@ func buildVolumePruneMetadataInternal(all bool, volumesDeleted int, spaceReclaim
 	}
 }
 
-// --- Volume Browsing & Backup ---
+// --- Volume helper support and backups ---
 
-// isBrowsableVolumeInternal returns an error if the volume uses driver options
+// validateVolumeHelperSupportInternal returns an error if the volume uses driver options
 // that prevent it from being mounted inside a helper container, such as
 // type=none or o=bind (host bind-mounts that require a device path on the host).
-func (s *VolumeService) isBrowsableVolumeInternal(ctx context.Context, volumeName string) error {
+func (s *VolumeService) validateVolumeHelperSupportInternal(ctx context.Context, volumeName string) error {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return errors.WrapIf(err, "failed to connect to Docker")
@@ -328,168 +332,7 @@ func (s *VolumeService) isBrowsableVolumeInternal(ctx context.Context, volumeNam
 	if err != nil {
 		return errors.WrapIf(err, "failed to inspect volume")
 	}
-	if result.Volume.Options["type"] == "none" || strings.Contains(result.Volume.Options["o"], "bind") {
-		return errors.Errorf("volume %q uses a custom mount configuration and cannot be browsed", volumeName)
-	}
-	return nil
-}
-
-func (s *VolumeService) ListDirectory(ctx context.Context, volumeName, dirPath string) ([]volumetypes.FileEntry, error) {
-	slog.DebugContext(ctx, "volume service: list directory", "volume", volumeName, "path", dirPath)
-
-	if err := s.isBrowsableVolumeInternal(ctx, volumeName); err != nil {
-		return nil, err
-	}
-
-	sanitizedPath, err := utils.SanitizeBrowsePath(dirPath)
-	if err != nil {
-		return nil, errors.WrapIf(err, "invalid path")
-	}
-
-	containerID, cleanup, err := s.createTempContainerInternal(ctx, volumeName)
-	if err != nil {
-		return nil, err
-	}
-	defer cleanup()
-
-	targetPath := path.Join("/volume", sanitizedPath)
-	cmd := []string{
-		"sh",
-		"-c",
-		`find "$1" -mindepth 1 -maxdepth 1 | while IFS= read -r f; do out=$(stat -c "%s %Y %f %A" -- "$f" 2>/dev/null) || continue; printf "%s\0%s\0" "$f" "$out"; done`,
-		"sh",
-		targetPath,
-	}
-	stdout, _, err := s.execInContainerInternal(ctx, containerID, cmd)
-	if err != nil {
-		return nil, errors.WrapIf(err, "failed to list directory")
-	}
-
-	lines := strings.Split(stdout, "\x00")
-	entries := make([]volumetypes.FileEntry, 0)
-	for i := 0; i+1 < len(lines); i += 2 {
-		fullPath := lines[i]
-		meta := strings.Fields(strings.TrimSpace(lines[i+1]))
-		if fullPath == "" || len(meta) < 4 {
-			continue
-		}
-		name := path.Base(fullPath)
-		size, _ := strconv.ParseInt(meta[0], 10, 64)
-		modTimeSec, _ := strconv.ParseInt(meta[1], 10, 64)
-		mode := meta[3]
-
-		isDir := strings.HasPrefix(mode, "d")
-		isSymlink := strings.HasPrefix(mode, "l")
-
-		relPath := strings.TrimPrefix(fullPath, "/volume")
-		if relPath == "" {
-			relPath = "/"
-		}
-
-		entry := volumetypes.FileEntry{
-			Name:        name,
-			Path:        relPath,
-			IsDirectory: isDir,
-			Size:        size,
-			ModTime:     time.Unix(modTimeSec, 0),
-			Mode:        mode,
-			IsSymlink:   isSymlink,
-		}
-
-		if isSymlink {
-			// Use readlink without -f to get the raw symlink target (not resolved)
-			// This prevents exposing paths outside the volume
-			target, _, _ := s.execInContainerInternal(ctx, containerID, []string{"readlink", fullPath})
-			target = strings.TrimSpace(target)
-			if target != "" {
-				// If target is relative, it's safe to show
-				// If target is absolute and within /volume, strip the /volume prefix
-				// If target points outside /volume, indicate it's external
-				switch {
-				case strings.HasPrefix(target, "/volume/"):
-					entry.LinkTarget = strings.TrimPrefix(target, "/volume")
-				case strings.HasPrefix(target, "/volume"):
-					entry.LinkTarget = "/"
-				case !strings.HasPrefix(target, "/"):
-					// Relative path - safe to show as-is
-					entry.LinkTarget = target
-				default:
-					// Absolute path outside /volume - indicate it's external
-					entry.LinkTarget = "(external)"
-				}
-			}
-		}
-
-		entries = append(entries, entry)
-	}
-
-	return entries, nil
-}
-
-func (s *VolumeService) GetFileContent(ctx context.Context, volumeName, filePath string, maxBytes int64) ([]byte, string, error) {
-	slog.DebugContext(ctx, "volume service: get file content", "volume", volumeName, "path", filePath, "max_bytes", maxBytes)
-
-	if err := s.isBrowsableVolumeInternal(ctx, volumeName); err != nil {
-		return nil, "", err
-	}
-
-	sanitizedPath, err := utils.SanitizeBrowsePath(filePath)
-	if err != nil {
-		return nil, "", errors.WrapIf(err, "invalid path")
-	}
-
-	containerID, cleanup, err := s.createTempContainerInternal(ctx, volumeName)
-	if err != nil {
-		return nil, "", err
-	}
-	defer cleanup()
-	relativePath := strings.TrimPrefix(sanitizedPath, "/")
-	if err := s.validateVolumeWorkspacePathInternal(ctx, containerID, relativePath, false); err != nil {
-		return nil, "", err
-	}
-
-	targetPath := path.Join("/volume", sanitizedPath)
-	cmd := []string{"head", "-c", strconv.FormatInt(maxBytes, 10), targetPath}
-	stdout, _, err := s.execInContainerInternal(ctx, containerID, cmd)
-	if err != nil {
-		return nil, "", errors.WrapIf(err, "failed to read file")
-	}
-
-	content := []byte(stdout)
-	mimeType := http.DetectContentType(content)
-
-	return content, mimeType, nil
-}
-
-func (s *VolumeService) DownloadFile(ctx context.Context, volumeName, filePath string) (io.ReadCloser, int64, error) {
-	slog.DebugContext(ctx, "volume service: download file", "volume", volumeName, "path", filePath)
-
-	if err := s.isBrowsableVolumeInternal(ctx, volumeName); err != nil {
-		return nil, 0, err
-	}
-
-	sanitizedPath, err := utils.SanitizeBrowsePath(filePath)
-	if err != nil {
-		return nil, 0, errors.WrapIf(err, "invalid path")
-	}
-
-	dockerClient, err := s.dockerService.GetClient(ctx)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	containerID, cleanup, err := s.createTempContainerInternal(ctx, volumeName)
-	if err != nil {
-		return nil, 0, err
-	}
-	relativePath := strings.TrimPrefix(sanitizedPath, "/")
-	if err := s.validateVolumeWorkspacePathInternal(ctx, containerID, relativePath, false); err != nil {
-		cleanup()
-		return nil, 0, err
-	}
-
-	targetPath := path.Join("/volume", sanitizedPath)
-	return s.downloadFileFromContainerInternal(ctx, dockerClient, containerID, targetPath, cleanup)
+	return docker.ValidateVolumeWorkspaceHelperSupport(volumeName, result.Volume.Options)
 }
 
 func getVolumeHelperImageInternal(ctx context.Context, dockerService *DockerClientService, imageService *ImageService, dockerClient *client.Client) (string, error) {
@@ -723,7 +566,7 @@ type cleanupReadCloser struct {
 	cleanup func()
 }
 
-func isLegacyVolumeHelperContainerInternal(c container.Summary) bool {
+func isUnlabeledVolumeHelperContainerInternal(c container.Summary) bool {
 	if !libarcane.IsInternalContainer(c.Labels) {
 		return false
 	}
@@ -743,7 +586,7 @@ func isLegacyVolumeHelperContainerInternal(c container.Summary) bool {
 }
 
 func isVolumeHelperContainerInternal(c container.Summary) bool {
-	if isLegacyVolumeHelperContainerInternal(c) {
+	if isUnlabeledVolumeHelperContainerInternal(c) {
 		return true
 	}
 	if !libarcane.IsInternalContainer(c.Labels) {
@@ -759,7 +602,7 @@ func (c *cleanupReadCloser) Close() error {
 	return err
 }
 
-func (s *VolumeService) createTempContainerInternal(ctx context.Context, volumeName string) (string, func(), error) {
+func (s *VolumeService) acquireVolumeHelperInternal(ctx context.Context, volumeName string) (string, func(), error) {
 	slog.DebugContext(ctx, "volume service: acquire helper container", "volume", volumeName)
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
@@ -797,7 +640,7 @@ func (s *VolumeService) resolveHelperInternal(ctx context.Context, dockerClient 
 		// mid-create doesn't abort the helper the other waiters are blocked on,
 		// but still bounded: WithoutCancel alone would let a hung daemon or
 		// image pull wedge this singleflight key forever, queueing every later
-		// browse of the volume behind it with no recovery until restart.
+		// workspace request for the volume behind it with no recovery until restart.
 		createCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeouts.DefaultDockerImagePull)
 		defer cancel()
 
@@ -1140,154 +983,6 @@ func (s *VolumeService) execInContainerInternal(ctx context.Context, containerID
 	}
 
 	return stdout.String(), stderr.String(), nil
-}
-
-func (s *VolumeService) DeleteFile(ctx context.Context, volumeName, filePath string, user *models.User) error {
-	slog.DebugContext(ctx, "volume service: delete file", "volume", volumeName, "path", filePath)
-
-	sanitizedPath, err := utils.SanitizeBrowsePath(filePath)
-	if err != nil {
-		return errors.WrapIf(err, "invalid path")
-	}
-	// Prevent deleting root
-	if sanitizedPath == "/" {
-		return errors.New("cannot delete root directory")
-	}
-	defer s.workspaceLocks.Lock(volumeName)()
-
-	containerID, cleanup, err := s.createTempContainerInternal(ctx, volumeName)
-	if err != nil {
-		return err
-	}
-	defer cleanup()
-
-	targetPath := path.Join("/volume", sanitizedPath)
-	_, stderr, err := s.execInContainerInternal(ctx, containerID, []string{"rm", "-rf", targetPath})
-	if err != nil {
-		return err
-	}
-	if stderr != "" {
-		return errors.Errorf("delete failed: %s", stderr)
-	}
-
-	actingUser := user
-	if actingUser == nil {
-		actingUser = &systemUser
-	}
-	metadata := models.JSON{
-		"action": "file_delete",
-		"path":   filePath,
-	}
-	if logErr := s.eventService.LogVolumeEvent(ctx, models.EventTypeVolumeFileDelete, volumeName, volumeName, actingUser.ID, actingUser.Username, "0", metadata); logErr != nil {
-		slog.WarnContext(ctx, "could not log volume file delete event", "volume", volumeName, "error", logErr.Error())
-	}
-	return nil
-}
-
-func (s *VolumeService) CreateDirectory(ctx context.Context, volumeName, dirPath string, user *models.User) error {
-	slog.DebugContext(ctx, "volume service: create directory", "volume", volumeName, "path", dirPath)
-
-	sanitizedPath, err := utils.SanitizeBrowsePath(dirPath)
-	if err != nil {
-		return errors.WrapIf(err, "invalid path")
-	}
-	defer s.workspaceLocks.Lock(volumeName)()
-
-	containerID, cleanup, err := s.createTempContainerInternal(ctx, volumeName)
-	if err != nil {
-		return err
-	}
-	defer cleanup()
-
-	targetPath := path.Join("/volume", sanitizedPath)
-	_, stderr, err := s.execInContainerInternal(ctx, containerID, []string{"mkdir", "-p", targetPath})
-	if err != nil {
-		return err
-	}
-	if stderr != "" {
-		return errors.Errorf("mkdir failed: %s", stderr)
-	}
-
-	actingUser := user
-	if actingUser == nil {
-		actingUser = &systemUser
-	}
-	metadata := models.JSON{
-		"action": "file_create",
-		"path":   dirPath,
-	}
-	if logErr := s.eventService.LogVolumeEvent(ctx, models.EventTypeVolumeFileCreate, volumeName, volumeName, actingUser.ID, actingUser.Username, "0", metadata); logErr != nil {
-		slog.WarnContext(ctx, "could not log volume file create event", "volume", volumeName, "error", logErr.Error())
-	}
-	return nil
-}
-
-func (s *VolumeService) UploadFile(ctx context.Context, volumeName, destPath string, content io.Reader, filename string, user *models.User) error {
-	slog.DebugContext(ctx, "volume service: upload file", "volume", volumeName, "dest_path", destPath, "filename", filename)
-
-	sanitizedPath, err := utils.SanitizeBrowsePath(destPath)
-	if err != nil {
-		return errors.WrapIf(err, "invalid path")
-	}
-	defer s.workspaceLocks.Lock(volumeName)()
-
-	dockerClient, err := s.dockerService.GetClient(ctx)
-	if err != nil {
-		return err
-	}
-
-	containerID, cleanup, err := s.createTempContainerInternal(ctx, volumeName)
-	if err != nil {
-		return err
-	}
-	defer cleanup()
-
-	var buf bytes.Buffer
-	tw := tar.NewWriter(&buf)
-
-	contentBytes, err := io.ReadAll(content)
-	if err != nil {
-		return err
-	}
-
-	hdr := &tar.Header{
-		Name: filename,
-		Mode: 0o644,
-		Size: int64(len(contentBytes)),
-	}
-	if err := tw.WriteHeader(hdr); err != nil {
-		return err
-	}
-	if _, err := tw.Write(contentBytes); err != nil {
-		return err
-	}
-	if err := tw.Close(); err != nil {
-		return err
-	}
-
-	targetDir := path.Join("/volume", sanitizedPath)
-	_, err = dockerClient.CopyToContainer(ctx, containerID, client.CopyToContainerOptions{
-		DestinationPath: targetDir,
-		Content:         &buf,
-	})
-	if err != nil {
-		return errors.WrapIf(err, "failed to upload")
-	}
-
-	actingUser := user
-	if actingUser == nil {
-		actingUser = &systemUser
-	}
-	metadata := models.JSON{
-		"action":   "file_upload",
-		"path":     destPath,
-		"filename": filename,
-	}
-	if logErr := s.eventService.LogVolumeEvent(ctx, models.EventTypeVolumeFileUpload, volumeName, volumeName, actingUser.ID, actingUser.Username, "0", metadata); logErr != nil {
-		slog.WarnContext(ctx, "could not log volume file upload event", "volume", volumeName, "error", logErr.Error())
-	}
-
-	return nil
 }
 
 func (s *VolumeService) ensureBackupVolumeInternal(ctx context.Context) error {
@@ -2019,7 +1714,7 @@ func (s *VolumeService) UploadAndRestore(ctx context.Context, volumeName string,
 		return err
 	}
 
-	containerID, cleanup, err := s.createTempContainerInternal(ctx, volumeName)
+	containerID, cleanup, err := s.acquireVolumeHelperInternal(ctx, volumeName)
 	if err != nil {
 		return err
 	}
@@ -2505,12 +2200,6 @@ func (s *VolumeService) downloadFileFromContainerInternal(
 func validateVolumeDownloadHeaderInternal(hdr *tar.Header) error {
 	if hdr.FileInfo().IsDir() {
 		return errors.New("path is a directory")
-	}
-	if hdr.Typeflag == tar.TypeSymlink || hdr.Typeflag == tar.TypeLink || hdr.FileInfo().Mode()&os.ModeSymlink != 0 {
-		return errors.New("symlink downloads are not supported")
-	}
-	if !hdr.FileInfo().Mode().IsRegular() || hdr.Typeflag != tar.TypeReg {
-		return errors.New("path is not a regular file")
 	}
 	return nil
 }

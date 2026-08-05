@@ -11,7 +11,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/types/v2/base"
-	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
+	workspacetypes "github.com/getarcaneapp/arcane/types/v2/workspace"
 )
 
 // BuildWorkspaceHandler provides file browsing endpoints for manual build workspaces.
@@ -107,7 +107,7 @@ type BrowseBuildsInput struct {
 }
 
 type BrowseBuildsOutput struct {
-	Body base.ApiResponse[[]volumetypes.FileEntry]
+	Body base.ApiResponse[[]workspacetypes.FileEntry]
 }
 
 type GetBuildFileContentInput struct {
@@ -158,7 +158,7 @@ func (h *BuildWorkspaceHandler) BrowseDirectory(ctx context.Context, input *Brow
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	return &BrowseBuildsOutput{Body: base.ApiResponse[[]volumetypes.FileEntry]{Success: true, Data: entries}}, nil
+	return &BrowseBuildsOutput{Body: base.ApiResponse[[]workspacetypes.FileEntry]{Success: true, Data: entries}}, nil
 }
 
 func (h *BuildWorkspaceHandler) GetFileContent(ctx context.Context, input *GetBuildFileContentInput) (*GetBuildFileContentOutput, error) {

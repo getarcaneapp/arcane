@@ -104,7 +104,7 @@
 		if (!onDelete) return;
 		openConfirmDialog({
 			title: m.common_remove_title({ resource: file.name }),
-			message: m.volumes_browser_delete_confirm({ name: file.name }),
+			message: m.workspace_delete_immediate_confirm({ name: file.name }),
 			confirm: {
 				label: m.common_delete(),
 				destructive: true,

@@ -47,6 +47,10 @@
 			pending: false
 		}))
 	);
+	const sourceWorkspaceLeadingRows = [
+		{ key: 'compose', label: 'compose.yaml', iconClass: 'text-blue-500', locked: true },
+		{ key: 'env', label: '.env', iconClass: 'text-green-500', locked: true }
+	];
 
 	function openSourceTab(key: string) {
 		if (!openSourceTabs.includes(key)) {
@@ -277,7 +281,7 @@
 							>
 								{#snippet first()}
 									<WorkspaceFileTreePanel
-										composeFileName="compose.yaml"
+										leadingRows={sourceWorkspaceLeadingRows}
 										entries={[]}
 										selectedFile={selectedSourceFile}
 										onSelect={openSourceTab}

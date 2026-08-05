@@ -1,9 +1,6 @@
 package services
 
 import (
-	"archive/tar"
-	"bytes"
-	"compress/gzip"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -12,21 +9,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
-	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/volume"
-	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
-	"gorm.io/gorm"
 )
 
-func TestIsBrowsableVolumeInternalOnlyInspectsVolume(t *testing.T) {
+func TestValidateVolumeHelperSupportInternalOnlyInspectsVolume(t *testing.T) {
 	var requests []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests = append(requests, r.Method+" "+r.URL.Path)
@@ -43,7 +35,7 @@ func TestIsBrowsableVolumeInternalOnlyInspectsVolume(t *testing.T) {
 
 	service := &VolumeService{dockerService: &DockerClientService{client: newTestDockerClient(t, server)}}
 
-	require.NoError(t, service.isBrowsableVolumeInternal(context.Background(), "workspace-volume"))
+	require.NoError(t, service.validateVolumeHelperSupportInternal(context.Background(), "workspace-volume"))
 	require.Equal(t, []string{"GET /v1.41/volumes/workspace-volume"}, requests)
 }
 
@@ -95,9 +87,9 @@ func TestCreateTempContainerInternalReusesWritableHelper(t *testing.T) {
 		helperByVolume: make(map[string]*volumeHelper),
 	}
 
-	firstID, releaseFirst, err := service.createTempContainerInternal(context.Background(), "workspace-volume")
+	firstID, releaseFirst, err := service.acquireVolumeHelperInternal(context.Background(), "workspace-volume")
 	require.NoError(t, err)
-	secondID, releaseSecond, err := service.createTempContainerInternal(context.Background(), "workspace-volume")
+	secondID, releaseSecond, err := service.acquireVolumeHelperInternal(context.Background(), "workspace-volume")
 	require.NoError(t, err)
 
 	require.Equal(t, "helper-1", firstID)
@@ -119,118 +111,14 @@ func TestCreateTempContainerInternalReusesWritableHelper(t *testing.T) {
 	require.Zero(t, service.helperByVolume["workspace-volume"].inUse)
 }
 
-func TestVolumeOperationsUseWorkspaceLock(t *testing.T) {
-	const (
-		volumeName = "shared-volume"
-		backupID   = "shared-volume-backup"
-	)
-
-	gormDB, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, gormDB.AutoMigrate(&models.VolumeBackup{}))
-	db := &database.DB{DB: gormDB}
-	require.NoError(t, db.Create(&models.VolumeBackup{
-		BaseModel:  models.BaseModel{ID: backupID},
-		VolumeName: volumeName,
-	}).Error)
-
-	var archive bytes.Buffer
-	gzipWriter := gzip.NewWriter(&archive)
-	tarWriter := tar.NewWriter(gzipWriter)
-	content := []byte("content")
-	require.NoError(t, tarWriter.WriteHeader(&tar.Header{Name: "file.txt", Mode: 0o644, Size: int64(len(content))}))
-	_, err = tarWriter.Write(content)
-	require.NoError(t, err)
-	require.NoError(t, tarWriter.Close())
-	require.NoError(t, gzipWriter.Close())
-	archiveBytes := archive.Bytes()
-
-	tests := []struct {
-		name string
-		run  func(context.Context, *VolumeService) error
-	}{
-		{name: "delete file", run: func(ctx context.Context, service *VolumeService) error {
-			return service.DeleteFile(ctx, volumeName, "file.txt", nil)
-		}},
-		{name: "create directory", run: func(ctx context.Context, service *VolumeService) error {
-			return service.CreateDirectory(ctx, volumeName, "folder", nil)
-		}},
-		{name: "upload file", run: func(ctx context.Context, service *VolumeService) error {
-			return service.UploadFile(ctx, volumeName, "/", bytes.NewBufferString("content"), "file.txt", nil)
-		}},
-		{name: "create backup", run: func(ctx context.Context, service *VolumeService) error {
-			_, err := service.CreateBackup(ctx, volumeName, systemUser)
-			return err
-		}},
-		{name: "restore backup", run: func(ctx context.Context, service *VolumeService) error {
-			return service.RestoreBackup(ctx, volumeName, backupID, systemUser)
-		}},
-		{name: "restore backup files", run: func(ctx context.Context, service *VolumeService) error {
-			return service.RestoreBackupFiles(ctx, volumeName, backupID, []string{"file.txt"}, systemUser)
-		}},
-		{name: "upload and restore", run: func(ctx context.Context, service *VolumeService) error {
-			return service.UploadAndRestore(ctx, volumeName, bytes.NewReader(archiveBytes), "backup.tar.gz", systemUser)
-		}},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			requestStarted := make(chan string, 1)
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				select {
-				case requestStarted <- r.URL.Path:
-				default:
-				}
-				http.Error(w, "docker unavailable", http.StatusInternalServerError)
-			}))
-			t.Cleanup(server.Close)
-
-			dockerClient, err := client.New(client.WithHost(server.URL), client.WithAPIVersion("1.55"))
-			require.NoError(t, err)
-			t.Cleanup(func() { _ = dockerClient.Close() })
-			service := &VolumeService{
-				db:             db,
-				dockerService:  &DockerClientService{client: dockerClient},
-				helperByVolume: make(map[string]*volumeHelper),
-			}
-
-			unlock := service.workspaceLocks.Lock(volumeName)
-			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			defer cancel()
-			done := make(chan error, 1)
-			go func() {
-				done <- tt.run(ctx, service)
-			}()
-
-			select {
-			case err := <-done:
-				unlock()
-				t.Fatalf("mutation completed while workspace lock was held: %v", err)
-			case requestPath := <-requestStarted:
-				unlock()
-				t.Fatalf("mutation reached Docker while workspace lock was held: %s", requestPath)
-			case <-time.After(100 * time.Millisecond):
-			}
-
-			unlock()
-			select {
-			case err := <-done:
-				require.Error(t, err)
-			case <-ctx.Done():
-				t.Fatal("mutation did not proceed after workspace lock was released")
-			}
-		})
-	}
-}
-
-func TestIsLegacyVolumeHelperContainerInternal(t *testing.T) {
+func TestIsUnlabeledVolumeHelperContainerInternal(t *testing.T) {
 	tests := []struct {
 		name    string
 		summary container.Summary
 		want    bool
 	}{
 		{
-			name: "legacy helper signature matches",
+			name: "unlabeled helper signature matches",
 			summary: container.Summary{
 				Labels: map[string]string{
 					libarcane.InternalResourceLabel: "true",
@@ -243,7 +131,7 @@ func TestIsLegacyVolumeHelperContainerInternal(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "internal trivy-like helper is not treated as legacy volume helper",
+			name: "internal trivy-like helper is not treated as an unlabeled volume helper",
 			summary: container.Summary{
 				Labels: map[string]string{
 					libarcane.InternalResourceLabel: "true",
@@ -259,7 +147,7 @@ func TestIsLegacyVolumeHelperContainerInternal(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, isLegacyVolumeHelperContainerInternal(tt.summary))
+			require.Equal(t, tt.want, isUnlabeledVolumeHelperContainerInternal(tt.summary))
 		})
 	}
 }
@@ -293,7 +181,7 @@ func TestIsVolumeHelperContainerInternal_UsesExplicitHelperLabel(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "legacy helper still matches",
+			name: "unlabeled helper still matches",
 			summary: container.Summary{
 				Labels: map[string]string{
 					libarcane.InternalResourceLabel: "true",

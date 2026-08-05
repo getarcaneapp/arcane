@@ -14,7 +14,7 @@ import (
 	"log/slog"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
+	workspacetypes "github.com/getarcaneapp/arcane/types/v2/workspace"
 )
 
 const defaultBuildsDirectory = "/builds"
@@ -28,7 +28,7 @@ func NewBuildWorkspaceService(settings *SettingsService) *BuildWorkspaceService 
 	return &BuildWorkspaceService{settings: settings}
 }
 
-func (s *BuildWorkspaceService) ListDirectory(ctx context.Context, dirPath string) ([]volumetypes.FileEntry, error) {
+func (s *BuildWorkspaceService) ListDirectory(ctx context.Context, dirPath string) ([]workspacetypes.FileEntry, error) {
 	slog.DebugContext(ctx, "build workspace: list directory", "path", dirPath)
 	root, err := s.resolveRoot()
 	if err != nil {
@@ -50,7 +50,7 @@ func (s *BuildWorkspaceService) ListDirectory(ctx context.Context, dirPath strin
 		return nil, errors.WrapIf(err, "failed to list directory")
 	}
 
-	results := make([]volumetypes.FileEntry, 0, len(entries))
+	results := make([]workspacetypes.FileEntry, 0, len(entries))
 	for _, entry := range entries {
 		info, err := entry.Info()
 		if err != nil {
@@ -65,7 +65,7 @@ func (s *BuildWorkspaceService) ListDirectory(ctx context.Context, dirPath strin
 		isSymlink := entry.Type()&os.ModeSymlink != 0
 		mode := info.Mode().String()
 
-		fileEntry := volumetypes.FileEntry{
+		fileEntry := workspacetypes.FileEntry{
 			Name:        entry.Name(),
 			Path:        entryPath,
 			IsDirectory: info.IsDir(),

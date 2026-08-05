@@ -22,23 +22,6 @@ func volumeWorkspacePermissionContextInternal(environmentID string, permissions 
 	return context.WithValue(context.Background(), humamw.ContextKeyUserPermissions, permissionSet)
 }
 
-func TestUploadFileReturnsBadRequestWhenNoFileProvided(t *testing.T) {
-	h := &VolumeHandler{volumeService: &services.VolumeService{}}
-
-	_, err := h.UploadFile(adminTestContextInternal(), &UploadFileInput{
-		EnvironmentID: "0",
-		VolumeName:    "vol-1",
-		Path:          "/",
-		RawBody:       multipart.Form{},
-	})
-
-	require.Error(t, err)
-
-	var statusErr huma.StatusError
-	require.ErrorAs(t, err, &statusErr)
-	assert.Equal(t, http.StatusBadRequest, statusErr.GetStatus())
-}
-
 func TestUploadAndRestoreReturnsBadRequestWhenNoFileProvided(t *testing.T) {
 	h := &VolumeHandler{volumeService: &services.VolumeService{}}
 
@@ -58,16 +41,16 @@ func TestUploadAndRestoreReturnsBadRequestWhenNoFileProvided(t *testing.T) {
 }
 
 func TestParseVolumeWorkspaceManifestInternal(t *testing.T) {
-	_, err := parseVolumeWorkspaceManifestInternal(multipart.Form{})
+	_, err := parseWorkspaceJSONPartInternal[volumetypes.WorkspaceUpdateManifest](multipart.Form{}, "manifest")
 	require.Error(t, err)
-	_, err = parseVolumeWorkspaceManifestInternal(multipart.Form{Value: map[string][]string{"manifest": {"{"}}})
+	_, err = parseWorkspaceJSONPartInternal[volumetypes.WorkspaceUpdateManifest](multipart.Form{Value: map[string][]string{"manifest": {"{"}}}, "manifest")
 	require.Error(t, err)
-	_, err = parseVolumeWorkspaceManifestInternal(multipart.Form{Value: map[string][]string{"manifest": {"{}", "{}"}}})
+	_, err = parseWorkspaceJSONPartInternal[volumetypes.WorkspaceUpdateManifest](multipart.Form{Value: map[string][]string{"manifest": {"{}", "{}"}}}, "manifest")
 	require.Error(t, err)
 
-	manifest, err := parseVolumeWorkspaceManifestInternal(multipart.Form{Value: map[string][]string{
+	manifest, err := parseWorkspaceJSONPartInternal[volumetypes.WorkspaceUpdateManifest](multipart.Form{Value: map[string][]string{
 		"manifest": {`{"fileTreeRevision":"revision","fileChanges":[{"operation":"delete","relativePath":"old.txt"}]}`},
-	}})
+	}}, "manifest")
 	require.NoError(t, err)
 	require.Equal(t, "revision", manifest.FileTreeRevision)
 	require.Equal(t, volumetypes.FileOpDelete, manifest.FileChanges[0].Operation)
@@ -75,10 +58,10 @@ func TestParseVolumeWorkspaceManifestInternal(t *testing.T) {
 
 func TestRequireVolumeWorkspacePermissionsInternal(t *testing.T) {
 	const environmentID = "env-1"
-	create := []volumetypes.FileChange{{Operation: volumetypes.FileOpCreateFile}}
-	rename := []volumetypes.FileChange{{Operation: volumetypes.FileOpRename}}
-	remove := []volumetypes.FileChange{{Operation: volumetypes.FileOpDelete}}
-	restore := []volumetypes.FileChange{{Operation: volumetypes.FileOpRestoreFile}}
+	create := []volumetypes.WorkspaceFileChange{{Operation: volumetypes.FileOpCreateFile}}
+	rename := []volumetypes.WorkspaceFileChange{{Operation: volumetypes.FileOpRename}}
+	remove := []volumetypes.WorkspaceFileChange{{Operation: volumetypes.FileOpDelete}}
+	restore := []volumetypes.WorkspaceFileChange{{Operation: volumetypes.FileOpRestoreFile}}
 
 	require.Error(t, requireVolumeWorkspacePermissionsInternal(context.Background(), environmentID, create))
 	require.NoError(t, requireVolumeWorkspacePermissionsInternal(

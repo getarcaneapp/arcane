@@ -10,8 +10,6 @@ import type {
 } from '#lib/types/docker';
 import type { SearchPaginationSortRequest, Paginated } from '#lib/types/shared';
 import { transformPaginationParams } from '#lib/utils/tables';
-import type { VolumeWorkspace, VolumeWorkspaceFileContent, VolumeWorkspaceUpdateManifest } from '#lib/types/volume-workspace';
-import { downloadBlob, filenameFromPath } from '#lib/utils/browser-download';
 
 export type VolumesPaginatedResponse = Paginated<VolumeSummaryDto, VolumeUsageCounts>;
 
@@ -41,61 +39,6 @@ class VolumeService extends BaseAPIService {
 
 	async getVolumeForEnvironment(environmentId: string, volumeName: string): Promise<VolumeDetailDto> {
 		return this.handleResponse(this.api.get(`/environments/${environmentId}/volumes/${volumeName}`)) as Promise<VolumeDetailDto>;
-	}
-
-	async getWorkspace(volumeName: string): Promise<VolumeWorkspace> {
-		const envId = await this.resolveEnvironmentId();
-		return this.getWorkspaceForEnvironment(envId, volumeName);
-	}
-
-	async getWorkspaceForEnvironment(environmentId: string, volumeName: string): Promise<VolumeWorkspace> {
-		return this.handleResponse(this.api.get(`/environments/${environmentId}/volumes/${volumeName}/files`));
-	}
-
-	async getWorkspaceFile(volumeName: string, relativePath: string): Promise<VolumeWorkspaceFileContent> {
-		const envId = await this.resolveEnvironmentId();
-		return this.getWorkspaceFileForEnvironment(envId, volumeName, relativePath);
-	}
-
-	async getWorkspaceFileForEnvironment(
-		environmentId: string,
-		volumeName: string,
-		relativePath: string
-	): Promise<VolumeWorkspaceFileContent> {
-		return this.handleResponse(
-			this.api.get(`/environments/${environmentId}/volumes/${volumeName}/file`, { params: { relativePath } })
-		);
-	}
-
-	async updateWorkspace(volumeName: string, manifest: VolumeWorkspaceUpdateManifest, files: File[]): Promise<VolumeWorkspace> {
-		const envId = await this.resolveEnvironmentId();
-		return this.updateWorkspaceForEnvironment(envId, volumeName, manifest, files);
-	}
-
-	async updateWorkspaceForEnvironment(
-		environmentId: string,
-		volumeName: string,
-		manifest: VolumeWorkspaceUpdateManifest,
-		files: File[]
-	): Promise<VolumeWorkspace> {
-		const form = new FormData();
-		form.append('manifest', JSON.stringify(manifest));
-		for (const file of files) form.append('files', file, file.name);
-		return this.handleResponse(this.api.put(`/environments/${environmentId}/volumes/${volumeName}/files`, form));
-	}
-
-	async downloadWorkspaceFile(volumeName: string, relativePath: string): Promise<void> {
-		const envId = await this.resolveEnvironmentId();
-		return this.downloadWorkspaceFileForEnvironment(envId, volumeName, relativePath);
-	}
-
-	async downloadWorkspaceFileForEnvironment(environmentId: string, volumeName: string, relativePath: string): Promise<void> {
-		const path = `/${relativePath}`;
-		const res = await this.api.get(`/environments/${environmentId}/volumes/${volumeName}/browse/download`, {
-			params: { path },
-			responseType: 'blob'
-		});
-		downloadBlob(res.data, filenameFromPath(path));
 	}
 
 	async getVolumeUsage(volumeName: string): Promise<VolumeUsageDto> {

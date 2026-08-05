@@ -43,6 +43,7 @@
 		label: string;
 		iconClass?: string;
 		locked?: boolean;
+		action?: boolean;
 		onSelect?: () => void;
 	};
 	type FolderDestinationOption = {
@@ -55,14 +56,6 @@
 	};
 
 	interface Props {
-		composeFileName?: string;
-		// The override row is pinned only by the project editor. showOverride renders
-		// the existing-override row (labeled overrideFileName); onAddOverride renders
-		// an "add override" affordance for a project that has none yet. Other
-		// consumers (new project, swarm stacks) omit all three.
-		overrideFileName?: string;
-		showOverride?: boolean;
-		onAddOverride?: () => void;
 		title?: string;
 		leadingRows?: WorkspaceTreeLeadingRow[];
 		entries: WorkspaceFileEntry[];
@@ -90,12 +83,8 @@
 	}
 
 	let {
-		composeFileName = 'compose.yaml',
-		overrideFileName,
-		showOverride = false,
-		onAddOverride,
-		title = m.project_files(),
-		leadingRows,
+		title = m.workspace_files(),
+		leadingRows = [],
 		entries,
 		selectedFile,
 		disabled = false,
@@ -112,12 +101,12 @@
 		multipleUploads = false,
 		allowUploadOverwrite = false,
 		validateName,
-		emptyMessage = m.project_files_empty(),
-		uploadDescription = m.project_file_upload_description(),
-		rootDestinationLabel = m.project_file_root_destination(),
-		rootPathMessage = m.project_file_root_path(),
-		deleteConfirmMessage = (name) => m.project_file_delete_confirm({ name }),
-		lockedLabel = m.project_file_protected()
+		emptyMessage = m.workspace_files_empty(),
+		uploadDescription = m.workspace_upload_description(),
+		rootDestinationLabel = m.workspace_root_destination(),
+		rootPathMessage = m.workspace_root_path(),
+		deleteConfirmMessage = (name) => m.workspace_delete_confirm({ name }),
+		lockedLabel = m.workspace_file_read_only()
 	}: Props = $props();
 
 	let openFolders = $state<Record<string, boolean>>({});
@@ -135,11 +124,13 @@
 	let dialogError = $state<string | null>(null);
 
 	const entryByPath = $derived.by(() => new Map(entries.map((entry) => [entry.relativePath, entry])));
-	const selectedManagedPath = $derived(selectedFile.startsWith('file:') ? selectedFile.slice(5) : '');
-	const selectedManagedEntry = $derived(selectedManagedPath ? entryByPath.get(selectedManagedPath) : undefined);
+	const selectedWorkspacePath = $derived(selectedFile.startsWith('file:') ? selectedFile.slice(5) : '');
+	const selectedWorkspaceEntry = $derived(selectedWorkspacePath ? entryByPath.get(selectedWorkspacePath) : undefined);
 	const selectedParentPath = $derived.by(() => {
 		if (activeFolderPath && entryByPath.get(activeFolderPath)?.isDirectory) return activeFolderPath;
-		return selectedManagedEntry?.isDirectory ? selectedManagedEntry.relativePath : workspaceFileParentPath(selectedManagedPath);
+		return selectedWorkspaceEntry?.isDirectory
+			? selectedWorkspaceEntry.relativePath
+			: workspaceFileParentPath(selectedWorkspacePath);
 	});
 	const rows = $derived.by(() => flattenRows(entries, openFolders));
 	const hasDirectories = $derived(entries.some((entry) => entry.isDirectory));
@@ -147,29 +138,11 @@
 	const canCreateFolder = $derived(!!onCreateFolder);
 	const canUpload = $derived(!!onUpload);
 	const hasHeaderActions = $derived(canCreateFile || canCreateFolder || canUpload);
-	const effectiveLeadingRows = $derived.by(() => {
-		if (leadingRows) return leadingRows;
-		const rows: WorkspaceTreeLeadingRow[] = [
-			{ key: 'compose', label: composeFileName, iconClass: 'text-blue-500', locked: true }
-		];
-		if (showOverride) {
-			rows.push({
-				key: 'override',
-				label: overrideFileName ?? 'compose.override.yaml',
-				iconClass: 'text-purple-500',
-				locked: true
-			});
-		} else if (onAddOverride) {
-			rows.push({ key: 'add-override', label: m.compose_override_add(), onSelect: onAddOverride });
-		}
-		rows.push({ key: 'env', label: '.env', iconClass: 'text-green-500', locked: true });
-		return rows;
-	});
 	const dialogTitle = $derived.by(() => {
 		if (dialogMode === 'upload') return m.upload_file();
 		if (dialogMode === 'move') return m.move();
 		if (dialogMode === 'rename') return m.rename();
-		return dialogMode === 'create_folder' ? m.project_file_create_folder_title() : m.project_file_create_file_title();
+		return dialogMode === 'create_folder' ? m.workspace_create_folder_title() : m.workspace_create_file_title();
 	});
 	const dialogActionLabel = $derived.by(() => {
 		if (dialogMode === 'upload') return m.upload();
@@ -318,11 +291,11 @@
 			const targetPath = joinWorkspaceFilePath(candidate.relativePath, basename);
 			let reason: string | undefined;
 			if (candidate.relativePath === currentParentPath) {
-				reason = m.project_file_move_current_location();
+				reason = m.workspace_move_current_location();
 			} else if (entry.isDirectory && candidate.relativePath && workspaceFilePathMatches(candidate.relativePath, relativePath)) {
-				reason = m.project_file_move_descendant_blocked();
+				reason = m.workspace_move_descendant_blocked();
 			} else if (entryByPath.has(targetPath)) {
-				reason = m.project_file_move_duplicate_destination();
+				reason = m.workspace_move_duplicate_destination();
 			}
 
 			return {
@@ -407,7 +380,7 @@
 		if (dialogMode === 'move') {
 			const destination = allDestinationOptions.find((option) => option.relativePath === dialogDestinationPath);
 			if (!destination || destination.disabled) {
-				dialogError = destination?.reason ?? m.project_file_invalid_move_destination();
+				dialogError = destination?.reason ?? m.workspace_file_invalid_move_destination();
 				return;
 			}
 
@@ -425,13 +398,13 @@
 		if (dialogMode === 'rename') {
 			const name = normalizeDialogName(dialogName, dialogParentPath);
 			if (!name) {
-				dialogError = m.project_file_invalid_name();
+				dialogError = m.workspace_file_invalid_name();
 				return;
 			}
 
 			const targetPath = joinWorkspaceFilePath(dialogParentPath, name);
 			if (targetPath !== dialogTargetPath && entryByPath.has(targetPath)) {
-				dialogError = m.project_file_duplicate_name();
+				dialogError = m.workspace_file_duplicate_name();
 				return;
 			}
 
@@ -442,21 +415,21 @@
 
 		if (dialogMode === 'upload') {
 			if (uploadFiles.length === 0) {
-				dialogError = m.project_file_upload_file_required();
+				dialogError = m.workspace_upload_file_required();
 				return;
 			}
 			const normalizedNames = multipleUploads
 				? uploadFiles.map((file) => normalizeDialogName(file.name, dialogDestinationPath))
 				: [normalizeDialogName(dialogName, dialogDestinationPath)];
 			if (normalizedNames.some((name) => !name)) {
-				dialogError = m.project_file_invalid_name();
+				dialogError = m.workspace_file_invalid_name();
 				return;
 			}
 			if (
 				!allowUploadOverwrite &&
 				normalizedNames.some((name) => name && entryByPath.has(joinWorkspaceFilePath(dialogDestinationPath, name)))
 			) {
-				dialogError = m.project_file_duplicate_name();
+				dialogError = m.workspace_file_duplicate_name();
 				return;
 			}
 
@@ -487,13 +460,13 @@
 
 		const name = normalizeDialogName(dialogName, dialogDestinationPath);
 		if (!name) {
-			dialogError = m.project_file_invalid_name();
+			dialogError = m.workspace_file_invalid_name();
 			return;
 		}
 
 		const targetPath = joinWorkspaceFilePath(dialogDestinationPath, name);
 		if (entryByPath.has(targetPath)) {
-			dialogError = m.project_file_duplicate_name();
+			dialogError = m.workspace_file_duplicate_name();
 			return;
 		}
 
@@ -544,11 +517,11 @@
 								icon={CreateFileIcon}
 								showLabel={false}
 								{disabled}
-								customLabel={m.project_file_new_file()}
+								customLabel={m.workspace_new_file()}
 								onclick={() => openCreateDialog('create_file')}
 							/>
 						</Tooltip.Trigger>
-						<Tooltip.Content>{m.project_file_new_file()}</Tooltip.Content>
+						<Tooltip.Content>{m.workspace_new_file()}</Tooltip.Content>
 					</Tooltip.Root>
 				{/if}
 				{#if canCreateFolder}
@@ -597,20 +570,20 @@
 
 	<div class="min-h-0 flex-1 overflow-auto">
 		<TreeView.Root class="min-w-max p-2 whitespace-nowrap">
-			{#each effectiveLeadingRows as leadingRow (leadingRow.key)}
+			{#each leadingRows as leadingRow (leadingRow.key)}
 				<button
 					type="button"
 					class={cn(
 						'flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-[13px] hover:bg-accent',
 						selectedFile === leadingRow.key && 'bg-accent',
-						leadingRow.key === 'add-override' && 'text-muted-foreground hover:text-foreground'
+						leadingRow.action && 'text-muted-foreground hover:text-foreground'
 					)}
 					onclick={() => (leadingRow.onSelect ? leadingRow.onSelect() : onSelect(leadingRow.key))}
 				>
 					{#if hasDirectories}
 						<span class="inline-flex size-4 shrink-0 items-center justify-center"></span>
 					{/if}
-					{#if leadingRow.key === 'add-override'}
+					{#if leadingRow.action}
 						<CreateFileIcon class="size-4 shrink-0" />
 					{:else}
 						<FileTextIcon class={cn('size-4 shrink-0', leadingRow.iconClass ?? 'text-muted-foreground')} />
@@ -640,8 +613,8 @@
 								type="button"
 								class="inline-flex size-4 shrink-0 items-center justify-center rounded hover:bg-muted"
 								aria-label={openFolders[row.relativePath]
-									? m.project_file_collapse_folder({ name: row.name })
-									: m.project_file_expand_folder({ name: row.name })}
+									? m.workspace_file_collapse_folder({ name: row.name })
+									: m.workspace_file_expand_folder({ name: row.name })}
 								onclick={() => toggleFolder(row.relativePath)}
 							>
 								{#if openFolders[row.relativePath] === true}
@@ -677,37 +650,37 @@
 
 						{#if row.locked || row.isSymlink || onRename || onMove || onDelete || onDownload || onRestore}
 							<div class="flex shrink-0 items-center gap-0.5">
+								{#if onDownload && !row.isDirectory && !row.pending}
+									<Tooltip.Root>
+										<Tooltip.Trigger>
+											<button
+												type="button"
+												class="inline-flex size-6 items-center justify-center rounded text-foreground hover:bg-foreground/10"
+												aria-label={m.templates_download()}
+												onclick={() => onDownload?.(row.relativePath)}
+											>
+												<DownloadIcon class="size-3.5" />
+											</button>
+										</Tooltip.Trigger>
+										<Tooltip.Content>{m.templates_download()}</Tooltip.Content>
+									</Tooltip.Root>
+								{/if}
 								{#if row.locked || row.isSymlink}
 									<LockIcon class="mx-1 size-3.5 shrink-0 text-muted-foreground" aria-label={lockedLabel} />
 								{:else}
-									{#if onDownload && !row.isDirectory && !row.pending}
-										<Tooltip.Root>
-											<Tooltip.Trigger>
-												<button
-													type="button"
-													class="inline-flex size-6 items-center justify-center rounded text-foreground hover:bg-foreground/10"
-													aria-label={m.templates_download()}
-													onclick={() => onDownload?.(row.relativePath)}
-												>
-													<DownloadIcon class="size-3.5" />
-												</button>
-											</Tooltip.Trigger>
-											<Tooltip.Content>{m.templates_download()}</Tooltip.Content>
-										</Tooltip.Root>
-									{/if}
 									{#if onRestore && !row.isDirectory && !row.pending}
 										<Tooltip.Root>
 											<Tooltip.Trigger>
 												<button
 													type="button"
 													class="inline-flex size-6 items-center justify-center rounded text-foreground hover:bg-foreground/10"
-													aria-label={m.volumes_backups_restore()}
+													aria-label={m.workspace_restore()}
 													onclick={() => onRestore?.(row.relativePath)}
 												>
 													<RefreshIcon class="size-3.5" />
 												</button>
 											</Tooltip.Trigger>
-											<Tooltip.Content>{m.volumes_backups_restore()}</Tooltip.Content>
+											<Tooltip.Content>{m.workspace_restore()}</Tooltip.Content>
 										</Tooltip.Root>
 									{/if}
 									{#if onRename}
@@ -716,7 +689,7 @@
 												<button
 													type="button"
 													class="inline-flex size-6 items-center justify-center rounded text-foreground hover:bg-foreground/10"
-													aria-label={m.project_file_rename_label({ name: row.relativePath })}
+													aria-label={m.workspace_file_rename_label({ name: row.relativePath })}
 													{disabled}
 													onclick={() => openRenameDialog(row.relativePath)}
 												>
@@ -732,7 +705,7 @@
 												<button
 													type="button"
 													class="inline-flex size-6 items-center justify-center rounded text-foreground hover:bg-foreground/10"
-													aria-label={m.project_file_move_label({ name: row.relativePath })}
+													aria-label={m.workspace_file_move_label({ name: row.relativePath })}
 													{disabled}
 													onclick={() => openMoveDialog(row.relativePath)}
 												>
@@ -781,23 +754,23 @@
 				<Dialog.Title>{dialogTitle}</Dialog.Title>
 				<Dialog.Description>
 					{#if dialogMode === 'move'}
-						{m.project_file_move_description({ name: dialogTargetPath })}
+						{m.workspace_file_move_description({ name: dialogTargetPath })}
 					{:else if dialogMode === 'upload'}
 						{uploadDescription}
 					{:else if dialogMode === 'create_file' || dialogMode === 'create_folder'}
-						{dialogDestinationPath ? m.project_file_parent_path({ path: dialogDestinationPath }) : rootPathMessage}
+						{dialogDestinationPath ? m.workspace_file_parent_path({ path: dialogDestinationPath }) : rootPathMessage}
 					{:else}
-						{dialogParentPath ? m.project_file_parent_path({ path: dialogParentPath }) : rootPathMessage}
+						{dialogParentPath ? m.workspace_file_parent_path({ path: dialogParentPath }) : rootPathMessage}
 					{/if}
 				</Dialog.Description>
 			</Dialog.Header>
 
 			{#if dialogMode === 'upload'}
 				<div class="space-y-2">
-					<Label for="project-file-upload">{m.project_file_upload_file_label()}</Label>
+					<Label for="workspace-file-upload">{m.workspace_upload_file_label()}</Label>
 					{#key uploadInputKey}
 						<Input
-							id="project-file-upload"
+							id="workspace-file-upload"
 							type="file"
 							multiple={multipleUploads}
 							onchange={handleUploadFileChange}
@@ -809,13 +782,13 @@
 
 			{#if dialogMode !== 'move' && (dialogMode !== 'upload' || !multipleUploads)}
 				<div class="space-y-2">
-					<Label for="project-file-name">{m.common_name()}</Label>
+					<Label for="workspace-file-name">{m.common_name()}</Label>
 					<Input
-						id="project-file-name"
+						id="workspace-file-name"
 						bind:value={dialogName}
 						placeholder={dialogMode === 'create_folder'
-							? m.project_file_folder_name_placeholder()
-							: m.project_file_name_placeholder()}
+							? m.workspace_folder_name_placeholder()
+							: m.workspace_file_name_placeholder()}
 						aria-invalid={!!dialogError}
 					/>
 				</div>
@@ -823,7 +796,7 @@
 
 			{#if hasDestinationPicker}
 				<div class="min-h-0 space-y-2">
-					<Label>{m.project_file_move_destination_label()}</Label>
+					<Label>{m.workspace_file_move_destination_label()}</Label>
 					<div class="max-h-[56vh] min-h-80 space-y-1 overflow-auto rounded-md border p-1">
 						{#each visibleDestinationOptions as option (option.relativePath)}
 							<div
@@ -839,8 +812,8 @@
 										type="button"
 										class="inline-flex size-4 shrink-0 items-center justify-center rounded hover:bg-muted"
 										aria-label={destinationOpenFolders[option.relativePath]
-											? m.project_file_collapse_folder({ name: option.label })
-											: m.project_file_expand_folder({ name: option.label })}
+											? m.workspace_file_collapse_folder({ name: option.label })
+											: m.workspace_file_expand_folder({ name: option.label })}
 										onclick={() => toggleDestinationFolder(option.relativePath)}
 									>
 										{#if destinationOpenFolders[option.relativePath] === true}

@@ -672,6 +672,7 @@ var eventDefinitions = map[models.EventType]eventDefinition{
 	models.EventTypeVolumeFileDelete:         {"Volume file deleted: %s", "A file or directory was deleted in volume '%s'", models.EventSeverityWarning},
 	models.EventTypeVolumeFileUpload:         {"Volume file uploaded: %s", "A file was uploaded to volume '%s'", models.EventSeveritySuccess},
 	models.EventTypeVolumeFileUpdate:         {"Volume workspace updated: %s", "Files in volume '%s' were updated", models.EventSeverityInfo},
+	models.EventTypeVolumeWorkspaceUpdate:    {"Volume workspace updated: %s", "Workspace files in volume '%s' were updated", models.EventSeverityInfo},
 	models.EventTypeVolumeBackupCreate:       {"Volume backup created: %s", "A backup was created for volume '%s'", models.EventSeveritySuccess},
 	models.EventTypeVolumeBackupDelete:       {"Volume backup deleted: %s", "A backup was deleted for volume '%s'", models.EventSeverityWarning},
 	models.EventTypeVolumeBackupRestore:      {"Volume backup restored: %s", "A backup was restored for volume '%s'", models.EventSeverityWarning},

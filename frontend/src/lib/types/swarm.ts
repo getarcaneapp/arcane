@@ -1,5 +1,3 @@
-import type { ProjectFile } from './project-files';
-
 // --- Swarm services, ports, mounts ---
 
 export interface SwarmServicePort {
@@ -617,10 +615,6 @@ export interface Project {
 	overrideFileName?: string;
 	envContent?: string;
 	includeFiles?: IncludeFile[];
-	directoryFiles?: IncludeFile[];
-	projectFiles?: ProjectFile[];
-	fileTreeRevision?: string;
-	fileTreeTruncated?: boolean;
 }
 
 export interface ProjectStatusCounts {

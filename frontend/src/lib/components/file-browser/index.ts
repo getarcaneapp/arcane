@@ -1,22 +1,19 @@
-import Root from './GenericFileBrowser.svelte';
 import Breadcrumb from './FileBreadcrumb.svelte';
 import List from './FileList.svelte';
 import Preview from './FilePreview.svelte';
 import UploadDialog from './FileUploadDialog.svelte';
 import CreateFolderDialog from './CreateFolderDialog.svelte';
 
-export type { FileProvider } from './GenericFileBrowser.svelte';
-export { sortFileEntries } from './GenericFileBrowser.svelte';
+export type { FileProvider } from './file-provider';
+export { sortFileEntries } from './file-provider';
 
 export {
-	Root,
 	Breadcrumb,
 	List,
 	Preview,
 	UploadDialog,
 	CreateFolderDialog,
 	// aliases
-	Root as FileBrowser,
 	Breadcrumb as FileBreadcrumb,
 	List as FileList,
 	Preview as FilePreview,

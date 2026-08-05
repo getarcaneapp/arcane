@@ -116,7 +116,11 @@ func TestJobSchedulesHandler_ListJobs_RemoteSuccess(t *testing.T) {
 }
 
 func TestSettingsHandler_GetPublicSettings_RemoteSuccess(t *testing.T) {
-	expected := []settingstypes.PublicSetting{{Key: "theme", Type: "string", Value: "dark"}}
+	expected := []settingstypes.PublicSetting{
+		{Key: "theme", Type: "string", Value: "dark"},
+		{Key: "projectWorkspaceMaxFileSizeMb", Type: "number", Value: "12"},
+		{Key: "volumeWorkspaceMaxFileSizeMb", Type: "number", Value: "18"},
+	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !assert.Equal(t, "/api/environments/0/settings/public", r.URL.Path) {
 			return
@@ -142,6 +146,8 @@ func TestSettingsHandler_GetSettings_RemoteFiltersNonAdminVisibility(t *testing.
 		{Key: "dockerHost", Type: "string", Value: "unix:///var/run/docker.sock"},
 		{Key: "baseServerUrl", Type: "string", Value: "https://manager.example"},
 		{Key: "defaultShell", Type: "string", Value: "/bin/bash"},
+		{Key: "projectWorkspaceMaxFileSizeMb", Type: "number", Value: "12"},
+		{Key: "volumeWorkspaceMaxFileSizeMb", Type: "number", Value: "18"},
 		{Key: "futureAdminSetting", Type: "string", Value: "hidden"},
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -167,7 +173,7 @@ func TestSettingsHandler_GetSettings_RemoteFiltersNonAdminVisibility(t *testing.
 
 	output, err := handler.GetSettings(ctx, &GetSettingsInput{EnvironmentID: "env-remote"})
 	require.NoError(t, err)
-	require.Equal(t, []settingstypes.PublicSetting{remoteSettings[0]}, output.Body)
+	require.Equal(t, []settingstypes.PublicSetting{remoteSettings[0], remoteSettings[3], remoteSettings[4]}, output.Body)
 }
 
 func TestSettingsHandler_GetSettings_RemotePreservesAdminResponse(t *testing.T) {

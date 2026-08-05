@@ -24,6 +24,7 @@
 	import { m } from '#lib/paraglide/messages';
 	import { untrack } from 'svelte';
 	import { volumeService } from '#lib/services/volume-service.js';
+	import { volumeWorkspaceService } from '#lib/services/volume-workspace-service';
 	import { ResourceDetailLayout, type DetailAction } from '#lib/layouts';
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
 	import BackupList from '../components/volume-backup-table.svelte';
@@ -42,14 +43,16 @@
 	import CodePanel from '#lib/components/code-panel.svelte';
 	import ResizableSplit from '#lib/components/resizable-split.svelte';
 	import { composeTreeSplitProps } from '#lib/utils/compose-flow';
-	import type { VolumeFileChange, VolumeWorkspaceFileContent } from '#lib/types/volume-workspace';
+	import type { VolumeWorkspaceFileChange, VolumeWorkspaceFileContent } from '#lib/types/volume-workspace';
 	import {
 		applyWorkspaceFileChangesForDisplay,
+		buildWorkspaceMultipartUpdate,
 		isWorkspaceFileSelectionUnder,
 		joinWorkspaceFilePath,
 		remapSelectedWorkspaceFileKey,
 		remapWorkspaceFileRecord,
 		removeWorkspaceFileRecord,
+		readWorkspaceTextUpload,
 		validateWorkspaceFileName,
 		workspaceFileBasename,
 		workspaceFileLanguage,
@@ -65,6 +68,7 @@
 	import { Spinner } from '#lib/components/ui/spinner';
 	import { bytes } from '#lib/utils/formatting';
 	import { PersistedState } from 'runed';
+	import { volumeWorkspaceReadOnlyMessage } from '../components/volume-workspace-utils';
 
 	let { data } = $props();
 	let volume = $state(untrack(() => data.volume));
@@ -75,9 +79,10 @@
 
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
 	const canDeleteVolume = $derived(hasPermission('volumes:delete', currentEnvId));
-	const canBrowseVolume = $derived(hasPermission('volumes:browse', currentEnvId));
+	const canReadVolume = $derived(hasPermission('volumes:read', currentEnvId));
 	const canUploadVolume = $derived(hasPermission('volumes:upload', currentEnvId));
 	const canBackupVolume = $derived(hasPermission('volumes:backup', currentEnvId));
+	const volumeWorkspaceMaxFileSizeMb = $derived($settingsStore?.volumeWorkspaceMaxFileSizeMb ?? 10);
 
 	let isLoading = $state({ remove: false, save: false });
 	const createdDate = $derived(volume.createdAt ? formatDateTimeShort(volume.createdAt) : m.common_unknown());
@@ -89,22 +94,18 @@
 	]);
 	const urlTab = useUrlTab({
 		validTabs: () => tabItems.map((tab) => tab.value),
-		defaultTab: () => 'overview',
-		aliases: () => ({ browser: 'workspace' })
+		defaultTab: () => 'overview'
 	});
 	const selectedTab = $derived(urlTab.value);
 	const queryClient = useQueryClient();
 
 	let workspaceRequested = $state(false);
-	let workspaceFileChanges = $state<VolumeFileChange[]>([]);
+	let workspaceFileChanges = $state<VolumeWorkspaceFileChange[]>([]);
 	let workspaceFileContents = $state<Record<string, string>>({});
 	let loadedWorkspaceFileContents = $state<Record<string, string>>({});
 	let workspaceFileMetadata = $state<Record<string, VolumeWorkspaceFileContent>>({});
 	let workspaceFileLoadErrors = $state<Record<string, string>>({});
 	let workspaceFileLoading = $state<Record<string, boolean>>({});
-	let workspaceUploadFiles = $state<File[]>([]);
-	let workspaceUploadRecords = $state<Record<string, number>>({});
-	let workspaceUploadedTextContents = $state<Record<string, string>>({});
 	let workspaceRestoreRecords = $state<Record<string, true>>({});
 	let selectedWorkspaceFile = $state('');
 	let openWorkspaceTabs = $state<string[]>([]);
@@ -123,18 +124,24 @@
 	let lastWorkspaceBackupCheck = '';
 
 	const workspaceQuery = createQuery(() => ({
-		queryKey: queryKeys.volumes.files(currentEnvId, volume.name),
-		queryFn: () => volumeService.getWorkspaceForEnvironment(currentEnvId, volume.name),
-		enabled: workspaceRequested && canBrowseVolume,
+		queryKey: queryKeys.volumes.workspace(currentEnvId, volume.name),
+		queryFn: () => volumeWorkspaceService.getWorkspace(volume.name, currentEnvId),
+		enabled: workspaceRequested && canReadVolume,
 		refetchOnMount: false
 	}));
 
 	const visibleWorkspaceFiles = $derived.by(() =>
 		applyWorkspaceFileChangesForDisplay(workspaceQuery.data?.files ?? [], workspaceFileChanges).map((file) => {
 			const modeType = file.mode?.[0];
+			const metadata = workspaceFileMetadata[file.relativePath];
+			const editable = metadata?.editable ?? file.editable;
 			return {
 				...file,
-				locked: file.isSymlink === true || (!!modeType && modeType !== '-' && modeType !== 'd')
+				editable,
+				readOnlyReason: metadata?.readOnlyReason ?? file.readOnlyReason,
+				locked:
+					!file.isDirectory &&
+					(editable === false || file.isSymlink === true || (!!modeType && modeType !== '-' && modeType !== 'd'))
 			};
 		})
 	);
@@ -223,11 +230,7 @@
 	}
 
 	function workspaceReadOnlyMessage(reason?: string): string {
-		if (reason === 'binary') return m.volumes_workspace_binary_readonly();
-		if (reason === 'too_large') return m.volumes_workspace_large_readonly();
-		if (reason === 'symlink') return m.volumes_workspace_symlink_readonly();
-		if (reason === 'restore_pending') return m.volumes_workspace_restore_readonly();
-		return m.volumes_workspace_readonly();
+		return volumeWorkspaceReadOnlyMessage(reason as VolumeWorkspaceFileContent['readOnlyReason'], volumeWorkspaceMaxFileSizeMb);
 	}
 
 	function closeWorkspaceTab(key: string) {
@@ -292,7 +295,7 @@
 		workspaceFileLoading = { ...workspaceFileLoading, [relativePath]: true };
 		workspaceFileLoadErrors = removeWorkspaceFileRecord(workspaceFileLoadErrors, relativePath);
 		try {
-			const file = await volumeService.getWorkspaceFileForEnvironment(currentEnvId, volume.name, relativePath);
+			const file = await volumeWorkspaceService.getWorkspaceFile(volume.name, relativePath, currentEnvId);
 			workspaceFileMetadata = { ...workspaceFileMetadata, [relativePath]: file };
 			if (file.editable) {
 				const content = file.content ?? '';
@@ -322,10 +325,10 @@
 		if (!normalizedName) return;
 		const relativePath = joinWorkspaceFilePath(parentPath, normalizedName);
 		if (workspaceFilePaths.has(relativePath)) {
-			toast.error(m.project_file_duplicate_name());
+			toast.error(m.workspace_file_duplicate_name());
 			return;
 		}
-		workspaceFileChanges = [...workspaceFileChanges, { operation: 'create_file', relativePath, content: '' }];
+		workspaceFileChanges = [...workspaceFileChanges, { operation: 'create_file', relativePath }];
 		workspaceFileContents = { ...workspaceFileContents, [relativePath]: '' };
 		loadedWorkspaceFileContents = { ...loadedWorkspaceFileContents, [relativePath]: '' };
 		workspaceFileMetadata = {
@@ -348,7 +351,7 @@
 		if (!normalizedName) return;
 		const relativePath = joinWorkspaceFilePath(parentPath, normalizedName);
 		if (workspaceFilePaths.has(relativePath)) {
-			toast.error(m.project_file_duplicate_name());
+			toast.error(m.workspace_file_duplicate_name());
 			return;
 		}
 		workspaceFileChanges = [...workspaceFileChanges, { operation: 'create_folder', relativePath }];
@@ -362,8 +365,6 @@
 		workspaceFileMetadata = remapWorkspaceFileRecord(workspaceFileMetadata, oldPath, newPath);
 		workspaceFileLoadErrors = remapWorkspaceFileRecord(workspaceFileLoadErrors, oldPath, newPath);
 		workspaceFileLoading = remapWorkspaceFileRecord(workspaceFileLoading, oldPath, newPath);
-		workspaceUploadRecords = remapWorkspaceFileRecord(workspaceUploadRecords, oldPath, newPath);
-		workspaceUploadedTextContents = remapWorkspaceFileRecord(workspaceUploadedTextContents, oldPath, newPath);
 		workspaceRestoreRecords = remapWorkspaceFileRecord(workspaceRestoreRecords, oldPath, newPath);
 		openWorkspaceTabs = openWorkspaceTabs.map((tab) => remapSelectedWorkspaceFileKey(tab, oldPath, newPath) ?? tab);
 		const remappedSelection = remapSelectedWorkspaceFileKey(selectedWorkspaceFile, oldPath, newPath);
@@ -376,7 +377,7 @@
 		if (!normalizedName) return;
 		const newPath = joinWorkspaceFilePath(workspaceFileParentPath(relativePath), normalizedName);
 		if (newPath !== relativePath && workspaceFilePaths.has(newPath)) {
-			toast.error(m.project_file_duplicate_name());
+			toast.error(m.workspace_file_duplicate_name());
 			return;
 		}
 		workspaceFileChanges = [...workspaceFileChanges, { operation: 'rename', relativePath, newName: normalizedName }];
@@ -387,12 +388,12 @@
 		const entry = visibleWorkspaceFiles.find((file) => file.relativePath === relativePath);
 		if (!entry || newParentPath === workspaceFileParentPath(relativePath)) return;
 		if (entry.isDirectory && newParentPath && workspaceFilePathMatches(newParentPath, relativePath)) {
-			toast.error(m.project_file_invalid_move_destination());
+			toast.error(m.workspace_file_invalid_move_destination());
 			return;
 		}
 		const newPath = joinWorkspaceFilePath(newParentPath, workspaceFileBasename(relativePath));
 		if (workspaceFilePaths.has(newPath)) {
-			toast.error(m.project_file_duplicate_name());
+			toast.error(m.workspace_file_duplicate_name());
 			return;
 		}
 		workspaceFileChanges = [...workspaceFileChanges, { operation: 'move', relativePath, newParentPath }];
@@ -405,8 +406,6 @@
 		workspaceFileMetadata = removeWorkspaceFileRecord(workspaceFileMetadata, relativePath);
 		workspaceFileLoadErrors = removeWorkspaceFileRecord(workspaceFileLoadErrors, relativePath);
 		workspaceFileLoading = removeWorkspaceFileRecord(workspaceFileLoading, relativePath);
-		workspaceUploadRecords = removeWorkspaceFileRecord(workspaceUploadRecords, relativePath);
-		workspaceUploadedTextContents = removeWorkspaceFileRecord(workspaceUploadedTextContents, relativePath);
 		workspaceRestoreRecords = removeWorkspaceFileRecord(workspaceRestoreRecords, relativePath);
 		openWorkspaceTabs = openWorkspaceTabs.filter((tab) => !isWorkspaceFileSelectionUnder(tab, relativePath));
 		if (isWorkspaceFileSelectionUnder(selectedWorkspaceFile, relativePath)) selectedWorkspaceFile = openWorkspaceTabs[0] ?? '';
@@ -424,28 +423,10 @@
 		const relativePath = joinWorkspaceFilePath(parentPath, file.name);
 		const existing = visibleWorkspaceFiles.find((entry) => entry.relativePath === relativePath);
 		if (existing?.isDirectory) return;
-		let uploadedText: string | undefined;
-		let readOnlyReason: VolumeWorkspaceFileContent['readOnlyReason'];
-		if (file.size > 10 * 1024 * 1024) {
-			readOnlyReason = 'too_large';
-		} else {
-			try {
-				uploadedText = new TextDecoder('utf-8', { fatal: true }).decode(await file.arrayBuffer());
-				if (uploadedText.includes('\0')) {
-					uploadedText = undefined;
-					readOnlyReason = 'binary';
-				}
-			} catch {
-				readOnlyReason = 'binary';
-			}
-		}
-		const uploadIndex = workspaceUploadFiles.length;
-		workspaceUploadFiles = [...workspaceUploadFiles, file];
-		workspaceUploadRecords = { ...workspaceUploadRecords, [relativePath]: uploadIndex };
-		workspaceFileChanges = [
-			...workspaceFileChanges,
-			{ operation: overwrite ? 'update_file' : 'create_file', relativePath, uploadIndex }
-		];
+		const upload = await readWorkspaceTextUpload(file, volumeWorkspaceMaxFileSizeMb);
+		if (upload.error) return upload.error;
+		const uploadedText = upload.content ?? '';
+		workspaceFileChanges = [...workspaceFileChanges, { operation: overwrite ? 'update_file' : 'create_file', relativePath }];
 		workspaceFileMetadata = {
 			...workspaceFileMetadata,
 			[relativePath]: {
@@ -454,34 +435,31 @@
 				name: file.name,
 				size: file.size,
 				mimeType: file.type || 'application/octet-stream',
-				editable: uploadedText !== undefined,
-				readOnlyReason
+				editable: true
 			}
 		};
-		if (uploadedText !== undefined) {
-			workspaceUploadedTextContents = { ...workspaceUploadedTextContents, [relativePath]: uploadedText };
-			workspaceFileContents = { ...workspaceFileContents, [relativePath]: uploadedText };
-			if (loadedWorkspaceFileContents[relativePath] === undefined) {
-				loadedWorkspaceFileContents = { ...loadedWorkspaceFileContents, [relativePath]: '' };
-			}
+		workspaceFileContents = { ...workspaceFileContents, [relativePath]: uploadedText };
+		if (loadedWorkspaceFileContents[relativePath] === undefined) {
+			loadedWorkspaceFileContents = { ...loadedWorkspaceFileContents, [relativePath]: '' };
 		}
 		openWorkspaceFile(`file:${relativePath}`);
 	}
 
 	async function uploadVolumeWorkspaceFiles(parentPath: string, files: File[]): Promise<string | void> {
 		const invalidFile = files.find((file) => !validateWorkspaceFileName(file.name));
-		if (invalidFile) return m.project_file_invalid_name();
-		if (new Set(files.map((file) => file.name)).size !== files.length) return m.project_file_duplicate_name();
+		if (invalidFile) return m.workspace_file_invalid_name();
+		if (new Set(files.map((file) => file.name)).size !== files.length) return m.workspace_file_duplicate_name();
 		const directoryCollision = files.find((file) =>
 			visibleWorkspaceFiles.some(
 				(entry) => entry.relativePath === joinWorkspaceFilePath(parentPath, file.name) && entry.isDirectory
 			)
 		);
-		if (directoryCollision) return m.project_file_duplicate_name();
+		if (directoryCollision) return m.workspace_file_duplicate_name();
 
 		const collisions = files.filter((file) => workspaceFilePaths.has(joinWorkspaceFilePath(parentPath, file.name)));
 		for (const file of files.filter((candidate) => !collisions.includes(candidate))) {
-			await stageVolumeUpload(parentPath, file, false);
+			const error = await stageVolumeUpload(parentPath, file, false);
+			if (error) return error;
 		}
 		if (collisions.length > 0) {
 			openConfirmDialog({
@@ -492,36 +470,14 @@
 				confirm: {
 					label: m.upload(),
 					action: async () => {
-						for (const file of collisions) await stageVolumeUpload(parentPath, file, true);
+						for (const file of collisions) {
+							const error = await stageVolumeUpload(parentPath, file, true);
+							if (error) toast.error(error);
+						}
 					}
 				}
 			});
 		}
-	}
-
-	function buildVolumeWorkspaceChanges(): VolumeFileChange[] {
-		const changes = workspaceFileChanges.map((change) => ({ ...change }));
-		for (const relativePath of changedWorkspaceTextPaths) {
-			if (
-				changes.some((change) => change.operation === 'delete' && workspaceFilePathMatches(relativePath, change.relativePath))
-			) {
-				continue;
-			}
-			if (workspaceFileContents[relativePath] === workspaceUploadedTextContents[relativePath]) {
-				continue;
-			}
-			const stagedWrite = changes.findLast(
-				(change) =>
-					(change.operation === 'create_file' || change.operation === 'update_file') && change.relativePath === relativePath
-			);
-			if (stagedWrite) {
-				stagedWrite.content = workspaceFileContents[relativePath] ?? '';
-				delete stagedWrite.uploadIndex;
-				continue;
-			}
-			changes.push({ operation: 'update_file', relativePath, content: workspaceFileContents[relativePath] ?? '' });
-		}
-		return changes;
 	}
 
 	function clearVolumeWorkspaceDrafts() {
@@ -531,30 +487,28 @@
 		workspaceFileMetadata = {};
 		workspaceFileLoadErrors = {};
 		workspaceFileLoading = {};
-		workspaceUploadFiles = [];
-		workspaceUploadRecords = {};
-		workspaceUploadedTextContents = {};
 		workspaceRestoreRecords = {};
 	}
 
 	async function handleSaveVolumeWorkspace() {
 		if (!workspaceQuery.data || !canSaveWorkspace) return;
+		const update = buildWorkspaceMultipartUpdate(workspaceFileChanges, workspaceFileContents, loadedWorkspaceFileContents);
 		handleApiResultWithCallbacks({
 			result: await tryCatch(
-				volumeService.updateWorkspaceForEnvironment(
-					currentEnvId,
+				volumeWorkspaceService.updateWorkspace(
 					volume.name,
 					{
 						fileTreeRevision: workspaceQuery.data.fileTreeRevision,
-						fileChanges: buildVolumeWorkspaceChanges()
+						fileChanges: update.fileChanges
 					},
-					workspaceUploadFiles
+					update.files,
+					currentEnvId
 				)
 			),
 			message: m.common_save_failed(),
 			setLoadingState: (value) => (isLoading.save = value),
 			onSuccess: async (workspace) => {
-				queryClient.setQueryData(queryKeys.volumes.files(currentEnvId, volume.name), workspace);
+				queryClient.setQueryData(queryKeys.volumes.workspace(currentEnvId, volume.name), workspace);
 				clearVolumeWorkspaceDrafts();
 				toast.success(m.volumes_workspace_save_success(), activityToastOptions(workspace.activityId));
 			}
@@ -624,7 +578,7 @@
 
 	async function downloadVolumeWorkspaceFile(relativePath: string) {
 		try {
-			await volumeService.downloadWorkspaceFileForEnvironment(currentEnvId, volume.name, relativePath);
+			await volumeWorkspaceService.downloadWorkspaceFile(volume.name, relativePath, currentEnvId);
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : m.common_download_error());
 		}
@@ -854,7 +808,7 @@
 						</Card.Root>
 					{/if}
 				{:else if tab === 'workspace'}
-					{#if !canBrowseVolume}
+					{#if !canReadVolume}
 						<div class="flex min-h-96 items-center justify-center rounded-lg border text-sm text-muted-foreground">
 							{m.common_access_denied()}
 						</div>
@@ -1011,8 +965,8 @@
 <ResponsiveDialog
 	open={showWorkspaceRestore}
 	onOpenChange={(open) => (showWorkspaceRestore = open)}
-	title={m.file_browser_restore()}
-	description={m.file_browser_backup_restore_desc()}
+	title={m.volumes_workspace_restore()}
+	description={m.volumes_workspace_backup_restore_desc()}
 	contentClass="sm:max-w-[520px]"
 >
 	{#snippet children()}
@@ -1030,10 +984,10 @@
 					{m.common_loading()}
 				</div>
 			{:else if workspaceBackups.length === 0}
-				<div class="text-sm text-muted-foreground">{m.file_browser_no_backups()}</div>
+				<div class="text-sm text-muted-foreground">{m.volumes_workspace_no_backups()}</div>
 			{:else}
 				<div class="space-y-2">
-					<Label for="workspace-restore-backup">{m.file_browser_backup()}</Label>
+					<Label for="workspace-restore-backup">{m.volumes_workspace_backup()}</Label>
 					<Select.Root
 						type="single"
 						value={selectedWorkspaceBackupId}
@@ -1047,7 +1001,7 @@
 							<span class="min-w-0 flex-1 truncate">
 								{workspaceBackups.find((backup) => backup.id === selectedWorkspaceBackupId)
 									? formatWorkspaceBackupLabel(workspaceBackups.find((backup) => backup.id === selectedWorkspaceBackupId)!)
-									: m.file_browser_backup()}
+									: m.volumes_workspace_backup()}
 							</span>
 						</Select.Trigger>
 						<Select.Content>
@@ -1063,7 +1017,7 @@
 						{m.common_loading()}
 					</div>
 				{:else if workspaceBackupHasPath === false}
-					<div class="text-xs text-destructive">{m.file_browser_backup_missing_file()}</div>
+					<div class="text-xs text-destructive">{m.volumes_workspace_backup_missing_file()}</div>
 				{/if}
 			{/if}
 		</div>
@@ -1073,7 +1027,7 @@
 		<ArcaneButton action="cancel" onclick={() => (showWorkspaceRestore = false)} />
 		<ArcaneButton
 			action="confirm"
-			customLabel={m.file_browser_restore_file()}
+			customLabel={m.volumes_workspace_restore_file()}
 			onclick={stageWorkspaceRestore}
 			disabled={loadingWorkspaceBackups || checkingWorkspaceBackup || workspaceBackupHasPath !== true}
 		/>

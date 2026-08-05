@@ -42,7 +42,7 @@
 	} from '#lib/icons';
 	import { parse as parseYaml } from 'yaml';
 	import type { IncludeFile } from '#lib/types/swarm';
-	import { projectService } from '#lib/services/project-service';
+	import { projectWorkspaceService } from '#lib/services/project-workspace-service';
 	import { environmentStore } from '#lib/stores/environment.store.svelte';
 	import { hasPermission } from '#lib/utils/auth';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
@@ -187,8 +187,8 @@
 	// Returns { includeFile: null } for root compose, { includeFile: <file> } for a sub-file,
 	// or null if the service isn't found anywhere (hides the tab).
 	//
-	// Include file content is lazy-loaded (PR #2259), so we fetch on-demand via
-	// getProjectFileForEnvironment, stopping as soon as the service is found.
+	// Include file content is lazy-loaded, so fetch it from Project Workspace on
+	// demand and stop as soon as the service is found.
 	const hasServiceInContent = (content: string, serviceName: string): boolean => {
 		try {
 			const parsed = parseYaml(content) as Record<string, unknown> | null;
@@ -222,7 +222,7 @@
 				return { includeFile: f };
 			}
 			try {
-				const loaded = await projectService.getProjectFileForEnvironment(envId, proj.id, f.relativePath);
+				const loaded = await projectWorkspaceService.getWorkspaceFile(proj.id, f.relativePath, envId);
 				if (loaded?.content && hasServiceInContent(loaded.content, svcName)) {
 					return { includeFile: { ...f, content: loaded.content } };
 				}

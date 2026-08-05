@@ -18,10 +18,16 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
+	workspacepkg "github.com/getarcaneapp/arcane/backend/v2/pkg/workspace"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/category"
 	"github.com/getarcaneapp/arcane/types/v2/search"
 	"github.com/getarcaneapp/arcane/types/v2/settings"
+)
+
+const (
+	projectWorkspaceMaxFileSizeSettingKey = "projectWorkspaceMaxFileSizeMb"
+	volumeWorkspaceMaxFileSizeSettingKey  = "volumeWorkspaceMaxFileSizeMb"
 )
 
 // SettingsHandler provides Huma-based settings management endpoints.
@@ -216,6 +222,17 @@ func (h *SettingsHandler) appendRuntimeSettingsInternal(settingsDto []settings.P
 		Type:  "boolean",
 	})
 
+	projectWorkspaceMaxFileSizeMB := 10
+	volumeWorkspaceMaxFileSizeMB := 10
+	if h.cfg != nil {
+		projectWorkspaceMaxFileSizeMB = workspacepkg.EffectiveMaxFileSizeMB(h.cfg.ProjectWorkspaceMaxFileSizeMB)
+		volumeWorkspaceMaxFileSizeMB = workspacepkg.EffectiveMaxFileSizeMB(h.cfg.VolumeWorkspaceMaxFileSizeMB)
+	}
+	settingsDto = append(settingsDto,
+		settings.PublicSetting{Key: projectWorkspaceMaxFileSizeSettingKey, Value: strconv.Itoa(projectWorkspaceMaxFileSizeMB), Type: "number"},
+		settings.PublicSetting{Key: volumeWorkspaceMaxFileSizeSettingKey, Value: strconv.Itoa(volumeWorkspaceMaxFileSizeMB), Type: "number"},
+	)
+
 	backupVolumeName := "arcane-backups"
 	if h.cfg != nil && strings.TrimSpace(h.cfg.BackupVolumeName) != "" {
 		backupVolumeName = h.cfg.BackupVolumeName
@@ -284,6 +301,8 @@ func (h *SettingsHandler) GetSettings(ctx context.Context, input *GetSettingsInp
 			for _, setting := range h.settingsService.ListSettings(visibility) {
 				allowedKeys[setting.Key] = struct{}{}
 			}
+			allowedKeys[projectWorkspaceMaxFileSizeSettingKey] = struct{}{}
+			allowedKeys[volumeWorkspaceMaxFileSizeSettingKey] = struct{}{}
 			filtered := make([]settings.PublicSetting, 0, len(*settingsDto))
 			for _, setting := range *settingsDto {
 				if _, ok := allowedKeys[setting.Key]; ok {

@@ -2,10 +2,12 @@ package projects
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"os"
@@ -23,6 +25,7 @@ import (
 	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/project"
+	workspacetypes "github.com/getarcaneapp/arcane/types/v2/workspace"
 	"github.com/spf13/cobra"
 )
 
@@ -486,7 +489,27 @@ var createCmd = &cobra.Command{
 		// Creating can take a long time as it may pull images
 		c.SetTimeout(30 * time.Minute)
 
-		resp, err := c.Post(cmd.Context(), types.Endpoints.Projects(c.EnvID()), body)
+		projectJSON, err := json.Marshal(body)
+		if err != nil {
+			return errors.WrapIf(err, "failed to encode project configuration")
+		}
+		manifestJSON, err := json.Marshal(project.CreateProjectWorkspaceManifest{FileChanges: []project.WorkspaceFileChange{}})
+		if err != nil {
+			return errors.WrapIf(err, "failed to encode project workspace manifest")
+		}
+		var requestBody bytes.Buffer
+		writer := multipart.NewWriter(&requestBody)
+		if err := writer.WriteField("project", string(projectJSON)); err != nil {
+			return errors.WrapIf(err, "failed to write project configuration")
+		}
+		if err := writer.WriteField("manifest", string(manifestJSON)); err != nil {
+			return errors.WrapIf(err, "failed to write project workspace manifest")
+		}
+		if err := writer.Close(); err != nil {
+			return errors.WrapIf(err, "failed to finalize project request")
+		}
+
+		resp, err := c.RequestRaw(cmd.Context(), http.MethodPost, types.Endpoints.Projects(c.EnvID()), &requestBody, map[string]string{"Content-Type": writer.FormDataContentType()})
 		if err != nil {
 			return errors.WrapIf(err, "failed to create project")
 		}
@@ -605,12 +628,53 @@ var updateIncludesCmd = &cobra.Command{
 			return errors.WrapIf(err, "failed to read include file")
 		}
 
-		body := project.UpdateIncludeFile{
-			RelativePath: filepath.Base(includesFile),
-			Content:      string(content),
+		workspaceResponse, err := c.Get(cmd.Context(), types.Endpoints.ProjectWorkspace(c.EnvID(), resolved.ID))
+		if err != nil {
+			return errors.WrapIf(err, "failed to get project workspace")
+		}
+		defer func() { _ = workspaceResponse.Body.Close() }()
+		if err := cmdutil.EnsureSuccessStatus(workspaceResponse); err != nil {
+			return errors.WrapIf(err, "failed to get project workspace")
+		}
+		var current base.ApiResponse[workspacetypes.Workspace]
+		if err := cmdutil.DecodeJSON(workspaceResponse, &current); err != nil {
+			return err
 		}
 
-		resp, err := c.Put(cmd.Context(), types.Endpoints.ProjectIncludes(c.EnvID(), resolved.ID), body)
+		relativePath := filepath.ToSlash(filepath.Base(includesFile))
+		operation := project.FileOpCreateFile
+		for _, entry := range current.Data.Files {
+			if entry.RelativePath == relativePath && !entry.IsDirectory {
+				operation = project.FileOpUpdateFile
+				break
+			}
+		}
+		uploadIndex := 0
+		manifest := project.WorkspaceUpdateManifest{
+			FileTreeRevision: current.Data.FileTreeRevision,
+			FileChanges:      []project.WorkspaceFileChange{{Operation: operation, RelativePath: relativePath, UploadIndex: &uploadIndex}},
+		}
+		manifestJSON, err := json.Marshal(manifest)
+		if err != nil {
+			return errors.WrapIf(err, "failed to encode workspace manifest")
+		}
+		var requestBody bytes.Buffer
+		writer := multipart.NewWriter(&requestBody)
+		if err := writer.WriteField("manifest", string(manifestJSON)); err != nil {
+			return errors.WrapIf(err, "failed to write workspace manifest")
+		}
+		filePart, err := writer.CreateFormFile("files", filepath.Base(includesFile))
+		if err != nil {
+			return errors.WrapIf(err, "failed to create workspace upload")
+		}
+		if _, err := filePart.Write(content); err != nil {
+			return errors.WrapIf(err, "failed to write workspace upload")
+		}
+		if err := writer.Close(); err != nil {
+			return errors.WrapIf(err, "failed to finalize workspace upload")
+		}
+
+		resp, err := c.RequestRaw(cmd.Context(), http.MethodPut, types.Endpoints.ProjectWorkspace(c.EnvID(), resolved.ID), &requestBody, map[string]string{"Content-Type": writer.FormDataContentType()})
 		if err != nil {
 			return errors.WrapIf(err, "failed to update include file")
 		}
@@ -620,7 +684,7 @@ var updateIncludesCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			var result base.ApiResponse[project.Details]
+			var result base.ApiResponse[workspacetypes.Workspace]
 			if err := cmdutil.DecodeJSON(resp, &result); err != nil {
 				return err
 			}

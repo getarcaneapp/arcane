@@ -57,10 +57,11 @@ const (
 	EventTypeVolumeDelete EventType = "volume.delete"
 	EventTypeVolumeError  EventType = "volume.error"
 
-	EventTypeVolumeFileCreate EventType = "volume.file.create"
-	EventTypeVolumeFileDelete EventType = "volume.file.delete"
-	EventTypeVolumeFileUpload EventType = "volume.file.upload"
-	EventTypeVolumeFileUpdate EventType = "volume.file.update"
+	EventTypeVolumeFileCreate      EventType = "volume.file.create"
+	EventTypeVolumeFileDelete      EventType = "volume.file.delete"
+	EventTypeVolumeFileUpload      EventType = "volume.file.upload"
+	EventTypeVolumeFileUpdate      EventType = "volume.file.update"
+	EventTypeVolumeWorkspaceUpdate EventType = "volume.workspace.update"
 
 	EventTypeVolumeBackupCreate       EventType = "volume.backup.create"
 	EventTypeVolumeBackupDelete       EventType = "volume.backup.delete"

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"mime/multipart"
 	"net/http"
 	"strings"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
@@ -23,6 +25,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
+	workspacepkg "github.com/getarcaneapp/arcane/backend/v2/pkg/workspace"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/project"
 	"github.com/samber/mo"
@@ -33,6 +36,7 @@ type ProjectHandler struct {
 	projectService  *services.ProjectService
 	activityService *services.ActivityService
 	appCtx          context.Context
+	cfg             *config.Config
 }
 
 // --- Huma Input/Output Wrappers ---
@@ -81,8 +85,8 @@ type DownProjectOutput struct {
 }
 
 type CreateProjectInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Body          project.CreateProject
+	EnvironmentID string         `path:"id" doc:"Environment ID"`
+	RawBody       multipart.Form `contentType:"multipart/form-data"`
 }
 
 type CreateProjectOutput struct {
@@ -96,16 +100,6 @@ type GetProjectInput struct {
 
 type GetProjectOutput struct {
 	Body base.ApiResponse[project.Details]
-}
-
-type GetProjectFileInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ProjectID     string `path:"projectId" doc:"Project ID"`
-	RelativePath  string `query:"relativePath" doc:"Path to the file relative to the project"`
-}
-
-type GetProjectFileOutput struct {
-	Body base.ApiResponse[project.IncludeFile]
 }
 
 type RedeployProjectInput struct {
@@ -131,16 +125,6 @@ type UpdateProjectInput struct {
 }
 
 type UpdateProjectOutput struct {
-	Body base.ApiResponse[project.Details]
-}
-
-type UpdateProjectIncludeInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ProjectID     string `path:"projectId" doc:"Project ID"`
-	Body          project.UpdateIncludeFile
-}
-
-type UpdateProjectIncludeOutput struct {
 	Body base.ApiResponse[project.Details]
 }
 
@@ -202,12 +186,14 @@ type BuildProjectInput struct {
 
 // RegisterProjects registers project management routes using Huma.
 // Note: WebSocket and streaming endpoints remain as Gin handlers.
-func RegisterProjects(api huma.API, projectService *services.ProjectService, activityService *services.ActivityService, appCtx ActivityAppContext) {
+func RegisterProjects(api huma.API, projectService *services.ProjectService, activityService *services.ActivityService, appCtx ActivityAppContext, cfg *config.Config) {
 	h := &ProjectHandler{
 		projectService:  projectService,
 		activityService: activityService,
 		appCtx:          appCtx.contextInternal(),
+		cfg:             cfg,
 	}
+	registerProjectWorkspaceRoutesInternal(api, h)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-projects",
@@ -257,6 +243,21 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 		Description: "Create a new Docker Compose project",
 		Tags:        []string{"Projects"},
 		Security:    defaultOperationSecurityInternal(),
+		RequestBody: &huma.RequestBody{
+			Content: map[string]*huma.MediaType{
+				"multipart/form-data": {
+					Schema: &huma.Schema{
+						Type: "object",
+						Properties: map[string]*huma.Schema{
+							"project":  {Type: "string", Description: "JSON encoded project configuration"},
+							"manifest": {Type: "string", Description: "JSON encoded initial project workspace manifest"},
+							"files":    {Type: "array", Items: &huma.Schema{Type: "string", Format: "binary"}},
+						},
+						Required: []string{"project", "manifest"},
+					},
+				},
+			},
+		},
 	}, authz.PermProjectsCreate, h.CreateProject)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -280,16 +281,6 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 	}, authz.PermProjectsRead, h.GetProjectCompose)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
-		OperationID: "get-project-files",
-		Method:      http.MethodGet,
-		Path:        "/environments/{id}/projects/{projectId}/files",
-		Summary:     "Get project files",
-		Description: "Get directory files for a project",
-		Tags:        []string{"Projects"},
-		Security:    defaultOperationSecurityInternal(),
-	}, authz.PermProjectsRead, h.GetProjectFiles)
-
-	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-project-runtime",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/projects/{projectId}/runtime",
@@ -308,16 +299,6 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 		Tags:        []string{"Projects"},
 		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermProjectsRead, h.GetProjectUpdates)
-
-	humamw.RegisterWithPermission(api, huma.Operation{
-		OperationID: "get-project-file",
-		Method:      http.MethodGet,
-		Path:        "/environments/{id}/projects/{projectId}/file",
-		Summary:     "Get a project file",
-		Description: "Get the contents of a single project-related file by relative path",
-		Tags:        []string{"Projects"},
-		Security:    defaultOperationSecurityInternal(),
-	}, authz.PermProjectsRead, h.GetProjectFile)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "redeploy-project",
@@ -348,16 +329,6 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 		Tags:        []string{"Projects"},
 		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermProjectsUpdate, h.UpdateProject)
-
-	humamw.RegisterWithPermission(api, huma.Operation{
-		OperationID: "update-project-include",
-		Method:      http.MethodPut,
-		Path:        "/environments/{id}/projects/{projectId}/includes",
-		Summary:     "Update project include file",
-		Description: "Update an include file within a Docker Compose project",
-		Tags:        []string{"Projects"},
-		Security:    defaultOperationSecurityInternal(),
-	}, authz.PermProjectsUpdate, h.UpdateProjectInclude)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "restart-project",
@@ -613,19 +584,19 @@ func projectUpdateHTTPErrorInternal(err error) error {
 	if spaceErr, ok := stderrors.AsType[*volumes.ProjectVolumeRenameInsufficientSpaceError](err); ok {
 		return huma.NewError(http.StatusInsufficientStorage, spaceErr.Error())
 	}
-	return projectFileHTTPError(err)
+	return projectWorkspaceRequestHTTPErrorInternal(err)
 }
 
-// projectFileHTTPError maps project file management errors to HTTP errors.
-// It returns nil when err is not a project file error.
-func projectFileHTTPError(err error) error {
-	if errors.Is(err, common.ErrProjectFileConflict) {
+// projectWorkspaceRequestHTTPErrorInternal maps workspace validation errors that
+// can also surface during atomic project creation or configuration updates.
+func projectWorkspaceRequestHTTPErrorInternal(err error) error {
+	if errors.Is(err, common.ErrProjectWorkspaceConflict) {
 		return huma.Error409Conflict(err.Error())
 	}
-	if errors.Is(err, common.ErrProjectFileForbidden) {
+	if errors.Is(err, common.ErrProjectWorkspaceForbidden) {
 		return huma.Error403Forbidden(err.Error())
 	}
-	if errors.Is(err, common.ErrProjectFileBadRequest) {
+	if errors.Is(err, common.ErrProjectWorkspaceBadRequest) {
 		return huma.Error400BadRequest(err.Error())
 	}
 	return nil
@@ -633,6 +604,22 @@ func projectFileHTTPError(err error) error {
 
 // CreateProject creates a new Docker Compose project.
 func (h *ProjectHandler) CreateProject(ctx context.Context, input *CreateProjectInput) (*CreateProjectOutput, error) {
+	projectInput, err := parseWorkspaceJSONPartInternal[project.CreateProject](input.RawBody, "project")
+	if err != nil {
+		return nil, err
+	}
+	manifest, err := parseWorkspaceJSONPartInternal[project.CreateProjectWorkspaceManifest](input.RawBody, "manifest")
+	if err != nil {
+		return nil, err
+	}
+	maxFileSizeMB := workspacepkg.DefaultMaxFileSizeMB
+	if h.cfg != nil {
+		maxFileSizeMB = h.cfg.ProjectWorkspaceMaxFileSizeMB
+	}
+	uploads, err := readWorkspaceUploadsInternal(input.RawBody, workspacepkg.MaxFileSizeBytes(maxFileSizeMB))
+	if err != nil {
+		return nil, err
+	}
 	user, err := requireUserInternal(ctx)
 	if err != nil {
 		return nil, err
@@ -644,8 +631,8 @@ func (h *ProjectHandler) CreateProject(ctx context.Context, input *CreateProject
 		EnvironmentID:  input.EnvironmentID,
 		Type:           models.ActivityTypeResourceAction,
 		ResourceType:   "project",
-		ResourceID:     input.Body.Name,
-		ResourceName:   input.Body.Name,
+		ResourceID:     projectInput.Name,
+		ResourceName:   projectInput.Name,
 		User:           user,
 		Step:           "Creating project",
 		Message:        "Creating project",
@@ -653,11 +640,11 @@ func (h *ProjectHandler) CreateProject(ctx context.Context, input *CreateProject
 		Metadata:       models.JSON{"action": "create_project"},
 	}, func(runtimeCtx context.Context) error {
 		var createErr error
-		proj, createErr = h.projectService.CreateProject(runtimeCtx, input.Body.Name, input.Body.ComposeContent, input.Body.EnvContent, input.Body.ProjectFiles, *user)
+		proj, createErr = h.projectService.CreateProject(runtimeCtx, projectInput.Name, projectInput.ComposeContent, projectInput.EnvContent, manifest, uploads, *user)
 		return createErr
 	})
 	if err != nil {
-		if httpErr := projectFileHTTPError(err); httpErr != nil {
+		if httpErr := projectWorkspaceRequestHTTPErrorInternal(err); httpErr != nil {
 			return nil, httpErr
 		}
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to create project").Error())
@@ -732,13 +719,6 @@ func (h *ProjectHandler) GetProjectCompose(ctx context.Context, input *GetProjec
 	})
 }
 
-func (h *ProjectHandler) GetProjectFiles(ctx context.Context, input *GetProjectInput) (*GetProjectOutput, error) {
-	return h.getProjectDetailsWithOptionsInternal(ctx, input, project.DetailsOptions{
-		IncludeDirectoryFiles: true,
-		IncludeProjectFiles:   true,
-	})
-}
-
 func (h *ProjectHandler) GetProjectRuntime(ctx context.Context, input *GetProjectInput) (*GetProjectOutput, error) {
 	return h.getProjectDetailsWithOptionsInternal(ctx, input, project.DetailsOptions{
 		IncludeRuntimeServices: true,
@@ -750,36 +730,6 @@ func (h *ProjectHandler) GetProjectUpdates(ctx context.Context, input *GetProjec
 		IncludeServiceConfigs: true,
 		IncludeUpdateInfo:     true,
 	})
-}
-
-func (h *ProjectHandler) GetProjectFile(ctx context.Context, input *GetProjectFileInput) (*GetProjectFileOutput, error) {
-	if input.ProjectID == "" {
-		return nil, huma.Error400BadRequest("Project ID is required")
-	}
-	if input.RelativePath == "" {
-		return nil, huma.Error400BadRequest("relativePath is required")
-	}
-
-	file, err := h.projectService.GetProjectFileContent(ctx, input.ProjectID, input.RelativePath)
-	if err != nil {
-		switch {
-		case errors.Is(err, common.ErrProjectFileBadRequest):
-			return nil, huma.Error400BadRequest(err.Error())
-		case errors.Is(err, common.ErrProjectFileForbidden):
-			return nil, huma.Error403Forbidden(err.Error())
-		case errors.Is(err, common.ErrProjectFileNotFound):
-			return nil, huma.Error404NotFound("project file not found")
-		default:
-			return nil, huma.Error500InternalServerError("internal error")
-		}
-	}
-
-	return &GetProjectFileOutput{
-		Body: base.ApiResponse[project.IncludeFile]{
-			Success: true,
-			Data:    file,
-		},
-	}, nil
 }
 
 // RedeployProject redeploys a Docker Compose project.
@@ -878,7 +828,7 @@ func (h *ProjectHandler) UpdateProject(ctx context.Context, input *UpdateProject
 		SuccessMessage: "Project updated successfully",
 		Metadata:       models.JSON{"action": "update_project", "projectID": input.ProjectID},
 	}, func(runtimeCtx context.Context) error {
-		_, updateErr := h.projectService.UpdateProject(runtimeCtx, input.ProjectID, input.Body.Name, input.Body.ComposeContent, input.Body.EnvContent, input.Body.OverrideContent, input.Body.FileTreeRevision, input.Body.FileChanges, *user)
+		_, updateErr := h.projectService.UpdateProject(runtimeCtx, input.ProjectID, input.Body.Name, input.Body.ComposeContent, input.Body.EnvContent, input.Body.OverrideContent, *user)
 		return updateErr
 	})
 	if err != nil {
@@ -888,15 +838,11 @@ func (h *ProjectHandler) UpdateProject(ctx context.Context, input *UpdateProject
 		return nil, huma.Error400BadRequest(errors.WithMessage(err, "Failed to update project").Error())
 	}
 
-	// Skip the recursive directory walks on save: the file tree is only
-	// re-read when the save actually staged file changes (fresh revision),
-	// and the frontend fetches /files lazily otherwise.
 	details, err := h.projectService.GetProjectDetails(runtimeCtx, input.ProjectID, project.DetailsOptions{
 		IncludeComposeContent:  true,
 		IncludeEnvState:        true,
 		IncludeIncludeFiles:    true,
 		IncludeServiceConfigs:  true,
-		IncludeProjectFiles:    len(input.Body.FileChanges) > 0,
 		IncludeRuntimeServices: true,
 		IncludeUpdateInfo:      true,
 	})
@@ -913,63 +859,6 @@ func (h *ProjectHandler) UpdateProject(ctx context.Context, input *UpdateProject
 	}, nil
 }
 
-// UpdateProjectInclude updates an include file within a project.
-func (h *ProjectHandler) UpdateProjectInclude(ctx context.Context, input *UpdateProjectIncludeInput) (*UpdateProjectIncludeOutput, error) {
-	if input.ProjectID == "" {
-		return nil, huma.Error400BadRequest("Project ID is required")
-	}
-
-	user, err := requireUserInternal(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
-		EnvironmentID:  input.EnvironmentID,
-		Type:           models.ActivityTypeResourceAction,
-		ResourceType:   "project",
-		ResourceID:     input.ProjectID,
-		ResourceName:   input.ProjectID,
-		User:           user,
-		Step:           "Updating project file",
-		Message:        "Updating project include file",
-		SuccessMessage: "Project file updated successfully",
-		Metadata: models.JSON{
-			"action":       "update_project_include",
-			"projectID":    input.ProjectID,
-			"relativePath": input.Body.RelativePath,
-		},
-	}, func(runtimeCtx context.Context) error {
-		return h.projectService.UpdateProjectIncludeFile(runtimeCtx, input.ProjectID, input.Body.RelativePath, input.Body.Content, *user)
-	})
-	if err != nil {
-		return nil, huma.Error400BadRequest(errors.WithMessage(err, "Failed to update project").Error())
-	}
-
-	details, err := h.projectService.GetProjectDetails(runtimeCtx, input.ProjectID, project.DetailsOptions{
-		IncludeComposeContent:  true,
-		IncludeEnvState:        true,
-		IncludeIncludeFiles:    true,
-		IncludeServiceConfigs:  true,
-		IncludeRuntimeServices: true,
-		IncludeUpdateInfo:      true,
-	})
-	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to get project details").Error())
-	}
-	details.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
-
-	return &UpdateProjectIncludeOutput{
-		Body: base.ApiResponse[project.Details]{
-			Success: true,
-			Data:    details,
-		},
-	}, nil
-}
-
-// RestartProject restarts the given services in a project (all services when none
-// are specified).
 func (h *ProjectHandler) RestartProject(ctx context.Context, input *RestartProjectInput) (*RestartProjectOutput, error) {
 	response, err := h.runProjectActivityActionResponseInternal(ctx, input.EnvironmentID, input.ProjectID, h.restartProjectActivityConfigInternal(input.Services))
 	if err != nil {

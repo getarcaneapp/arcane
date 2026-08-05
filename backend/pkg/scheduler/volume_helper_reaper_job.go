@@ -12,15 +12,15 @@ const (
 	PruningVolumeHelperJobName = "pruning-volume-helper"
 
 	// volumeHelperIdleTimeoutSetting is the settings key (in minutes) controlling how
-	// long a volume-browser helper container may sit idle before it is reaped.
-	volumeHelperIdleTimeoutSetting        = "volumeBrowserHelperIdleTimeout"
+	// long a volume workspace helper container may sit idle before it is reaped.
+	volumeHelperIdleTimeoutSetting        = "volumeHelperIdleTimeout"
 	defaultVolumeHelperIdleTimeoutMinutes = 10
 	volumeHelperPruningSchedule           = "0 */5 * * * *"
 )
 
-// PruningVolumeHelperJob periodically removes idle volume-browser helper
+// PruningVolumeHelperJob periodically removes idle volume workspace helper
 // containers. The run frequency is fixed (every 5 minutes); how stale a helper must
-// be to be pruned is driven by the volumeBrowserHelperIdleTimeout setting.
+// be pruned is driven by the volumeHelperIdleTimeout setting.
 type PruningVolumeHelperJob struct {
 	volumeService   *services.VolumeService
 	settingsService *services.SettingsService

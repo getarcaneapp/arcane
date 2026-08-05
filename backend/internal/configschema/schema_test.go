@@ -247,9 +247,11 @@ var expectedEnvConfigVars = []string{
 	"PGID",
 	"PORT",
 	"PROJECTS_DIRECTORY",
-	"PROJECT_FILE_TREE_MAX_DEPTH",
 	"PROJECT_SCAN_MAX_DEPTH",
 	"PROJECT_SCAN_SKIP_DIRS",
+	"PROJECT_WORKSPACE_MAX_DEPTH",
+	"PROJECT_WORKSPACE_MAX_ENTRIES",
+	"PROJECT_WORKSPACE_MAX_FILE_SIZE_MB",
 	"PROXY_REQUEST_TIMEOUT",
 	"PUID",
 	"REGISTRY_TIMEOUT",
@@ -262,8 +264,9 @@ var expectedEnvConfigVars = []string{
 	"TZ",
 	"UI_CONFIGURATION_DISABLED",
 	"UPDATE_CHECK_DISABLED",
-	"VOLUME_FILE_TREE_MAX_DEPTH",
-	"VOLUME_FILE_TREE_MAX_ENTRIES",
+	"VOLUME_WORKSPACE_MAX_DEPTH",
+	"VOLUME_WORKSPACE_MAX_ENTRIES",
+	"VOLUME_WORKSPACE_MAX_FILE_SIZE_MB",
 }
 
 var expectedSettingOverrideKeys = []string{
@@ -362,7 +365,7 @@ var expectedSettingOverrideKeys = []string{
 	"trivyServerEnabled",
 	"trivyServerToken",
 	"trivyServerUrl",
-	"volumeBrowserHelperIdleTimeout",
+	"volumeHelperIdleTimeout",
 	"vulnerabilityScanEnabled",
 	"vulnerabilityScanInterval",
 }

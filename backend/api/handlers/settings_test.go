@@ -21,8 +21,10 @@ import (
 func TestSettingsHandler_AppendRuntimeSettings(t *testing.T) {
 	handler := &SettingsHandler{
 		cfg: &config.Config{
-			UIConfigurationDisabled: true,
-			BackupVolumeName:        "custom-backups",
+			UIConfigurationDisabled:       true,
+			BackupVolumeName:              "custom-backups",
+			ProjectWorkspaceMaxFileSizeMB: 12,
+			VolumeWorkspaceMaxFileSizeMB:  18,
 		},
 	}
 
@@ -38,6 +40,8 @@ func TestSettingsHandler_AppendRuntimeSettings(t *testing.T) {
 	require.Contains(t, authenticatedKeys, "uiConfigDisabled")
 	require.Contains(t, authenticatedKeys, "backupVolumeName")
 	require.Contains(t, authenticatedKeys, "edgeMTLSManagerCAAvailable")
+	require.Equal(t, "12", authenticatedKeys["projectWorkspaceMaxFileSizeMb"])
+	require.Equal(t, "18", authenticatedKeys["volumeWorkspaceMaxFileSizeMb"])
 	require.Equal(t, "true", authenticatedKeys["uiConfigDisabled"])
 	require.Equal(t, "custom-backups", authenticatedKeys["backupVolumeName"])
 	require.Equal(t, "false", authenticatedKeys["edgeMTLSManagerCAAvailable"])

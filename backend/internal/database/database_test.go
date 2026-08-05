@@ -202,6 +202,43 @@ func TestMigration070_PasskeysAndMFA_UpAndDown(t *testing.T) {
 	assert.Zero(t, columnCount)
 }
 
+func TestMigration071_RenamesVolumeWorkspaceLegacyKeys(t *testing.T) {
+	ctx := context.Background()
+	rawDB, _ := newSQLiteSQLDBInternal(t, t.TempDir(), "arcane-volume-workspace-keys.db")
+
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 70))
+	_, err := rawDB.Exec(`DELETE FROM settings WHERE key = 'volumeHelperIdleTimeout'`)
+	require.NoError(t, err)
+	_, err = rawDB.Exec(`INSERT INTO settings (key, value) VALUES ('volumeBrowserHelperIdleTimeout', '27')`)
+	require.NoError(t, err)
+	_, err = rawDB.Exec(`INSERT INTO roles (id, name, permissions) VALUES ('role-workspace', 'Workspace role', '["volumes:browse","volumes:read","volumes:upload"]')`)
+	require.NoError(t, err)
+	_, err = rawDB.Exec(`INSERT INTO api_keys (id, name, key_hash, key_prefix) VALUES ('key-workspace', 'Workspace key', 'hash', 'arc_')`)
+	require.NoError(t, err)
+	_, err = rawDB.Exec(`INSERT INTO api_key_permissions (id, api_key_id, permission) VALUES ('grant-browse', 'key-workspace', 'volumes:browse'), ('grant-read', 'key-workspace', 'volumes:read')`)
+	require.NoError(t, err)
+
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 71))
+	var timeout string
+	require.NoError(t, rawDB.QueryRow(`SELECT value FROM settings WHERE key = 'volumeHelperIdleTimeout'`).Scan(&timeout))
+	assert.Equal(t, "27", timeout)
+	var count int
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM settings WHERE key = 'volumeBrowserHelperIdleTimeout'`).Scan(&count))
+	assert.Zero(t, count)
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM json_each((SELECT permissions FROM roles WHERE id = 'role-workspace')) WHERE value = 'volumes:read'`).Scan(&count))
+	assert.Equal(t, 1, count)
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM json_each((SELECT permissions FROM roles WHERE id = 'role-workspace')) WHERE value = 'volumes:browse'`).Scan(&count))
+	assert.Zero(t, count)
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM api_key_permissions WHERE api_key_id = 'key-workspace' AND permission = 'volumes:read'`).Scan(&count))
+	assert.Equal(t, 1, count)
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM api_key_permissions WHERE permission = 'volumes:browse'`).Scan(&count))
+	assert.Zero(t, count)
+
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 70))
+	require.NoError(t, rawDB.QueryRow(`SELECT value FROM settings WHERE key = 'volumeBrowserHelperIdleTimeout'`).Scan(&timeout))
+	assert.Equal(t, "27", timeout)
+}
+
 func TestMigrateDatabase_BlocksFutureGooseVersionWithoutFlag(t *testing.T) {
 	ctx := context.Background()
 	rawDB, dsn := newSQLiteSQLDBInternal(t, t.TempDir(), "arcane-future.db")

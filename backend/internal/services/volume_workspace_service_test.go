@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"mime/multipart"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -24,6 +23,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
+	workspacetypes "github.com/getarcaneapp/arcane/types/v2/workspace"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/volume"
 	"github.com/moby/moby/client"
@@ -85,13 +85,13 @@ func TestUpdateVolumeWorkspaceValidationFailureReturnsNoWorkspace(t *testing.T) 
 	workspace, err := (&VolumeService{}).UpdateVolumeWorkspace(
 		context.Background(),
 		"volume",
-		volumetypes.FileUpdateManifest{},
+		volumetypes.WorkspaceUpdateManifest{},
 		nil,
 		models.User{},
 	)
 
 	require.Nil(t, workspace)
-	require.ErrorIs(t, err, common.ErrVolumeFileBadRequest)
+	require.ErrorIs(t, err, common.ErrVolumeWorkspaceBadRequest)
 }
 
 func volumeWorkspaceTreeRecordInternal(relativePath, kind, size, modTime, mode, linkTarget string) string {
@@ -204,44 +204,43 @@ func TestParseVolumeWorkspaceTreeInternalPreservesUnusualNamesAndSpecialFiles(t 
 }
 
 func TestVolumeWorkspaceFileContentResponseInternal(t *testing.T) {
+	const maxFileSizeBytes int64 = 10 * 1024 * 1024
 	text := []byte("hello")
-	below, err := volumeWorkspaceFileContentResponseInternal("notes.txt", "regular", maxEditableVolumeFileBytes-1, text)
+	below, err := volumeWorkspaceFileContentResponseInternal("notes.txt", "regular", maxFileSizeBytes-1, text, maxFileSizeBytes)
 	require.NoError(t, err)
 	require.True(t, below.Editable)
 	require.Equal(t, "hello", below.Content)
 
-	atLimit, err := volumeWorkspaceFileContentResponseInternal("notes.txt", "regular", maxEditableVolumeFileBytes, text)
+	atLimit, err := volumeWorkspaceFileContentResponseInternal("notes.txt", "regular", maxFileSizeBytes, text, maxFileSizeBytes)
 	require.NoError(t, err)
 	require.True(t, atLimit.Editable)
 
-	above, err := volumeWorkspaceFileContentResponseInternal("notes.txt", "regular", maxEditableVolumeFileBytes+1, text)
+	above, err := volumeWorkspaceFileContentResponseInternal("notes.txt", "regular", maxFileSizeBytes+1, text, maxFileSizeBytes)
 	require.NoError(t, err)
 	require.False(t, above.Editable)
-	require.Equal(t, volumetypes.FileReadOnlyTooLarge, above.ReadOnlyReason)
+	require.Equal(t, workspacetypes.FileReadOnlyTooLarge, above.ReadOnlyReason)
 
-	binary, err := volumeWorkspaceFileContentResponseInternal("data.bin", "regular", 2, []byte{0xff, 0x00})
+	binary, err := volumeWorkspaceFileContentResponseInternal("data.bin", "regular", 2, []byte{0xff, 0x00}, maxFileSizeBytes)
 	require.NoError(t, err)
-	require.Equal(t, volumetypes.FileReadOnlyBinary, binary.ReadOnlyReason)
+	require.Equal(t, workspacetypes.FileReadOnlyBinary, binary.ReadOnlyReason)
 
-	special, err := volumeWorkspaceFileContentResponseInternal("pipe", "special", 0, nil)
+	special, err := volumeWorkspaceFileContentResponseInternal("pipe", "special", 0, nil, maxFileSizeBytes)
 	require.NoError(t, err)
-	require.Equal(t, volumetypes.FileReadOnlySpecial, special.ReadOnlyReason)
+	require.Equal(t, workspacetypes.FileReadOnlySpecial, special.ReadOnlyReason)
 }
 
 func TestValidateVolumeDownloadHeaderInternalRejectsUnsafeEntries(t *testing.T) {
 	require.NoError(t, validateVolumeDownloadHeaderInternal(&tar.Header{Typeflag: tar.TypeReg, Mode: 0o644}))
 	require.EqualError(t, validateVolumeDownloadHeaderInternal(&tar.Header{Typeflag: tar.TypeDir, Mode: 0o755}), "path is a directory")
-	require.EqualError(t, validateVolumeDownloadHeaderInternal(&tar.Header{Typeflag: tar.TypeSymlink, Mode: 0o777}), "symlink downloads are not supported")
-	require.EqualError(t, validateVolumeDownloadHeaderInternal(&tar.Header{Typeflag: tar.TypeFifo, Mode: 0o644}), "path is not a regular file")
+	require.NoError(t, validateVolumeDownloadHeaderInternal(&tar.Header{Typeflag: tar.TypeSymlink, Mode: 0o777}))
+	require.NoError(t, validateVolumeDownloadHeaderInternal(&tar.Header{Typeflag: tar.TypeFifo, Mode: 0o644}))
 }
 
-func TestValidateVolumeFileChangeInternalOperationsAndMultipartMapping(t *testing.T) {
-	empty := ""
+func TestValidateVolumeWorkspaceFileChangeInternalOperationsAndMultipartMapping(t *testing.T) {
 	first := 0
 	second := 1
-	uploads := []*multipart.FileHeader{{Filename: "first.bin"}, {Filename: "second.bin"}}
-	tests := []volumetypes.FileChange{
-		{Operation: volumetypes.FileOpCreateFile, RelativePath: "empty.txt", Content: &empty},
+	tests := []volumetypes.WorkspaceFileChange{
+		{Operation: volumetypes.FileOpCreateFile, RelativePath: "empty.txt", UploadIndex: &first},
 		{Operation: volumetypes.FileOpUpdateFile, RelativePath: "first.bin", UploadIndex: &first},
 		{Operation: volumetypes.FileOpCreateFile, RelativePath: "second.bin", UploadIndex: &second},
 		{Operation: volumetypes.FileOpCreateFolder, RelativePath: "folder"},
@@ -251,32 +250,28 @@ func TestValidateVolumeFileChangeInternalOperationsAndMultipartMapping(t *testin
 		{Operation: volumetypes.FileOpRestoreFile, RelativePath: "restored.txt", BackupID: "backup-id"},
 	}
 	for _, change := range tests {
-		require.NoError(t, validateVolumeFileChangeInternal(change, uploads), change.Operation)
+		require.NoError(t, validateVolumeWorkspaceFileChangeInternal(change), change.Operation)
 	}
 
-	require.Error(t, validateVolumeFileChangeInternal(volumetypes.FileChange{
-		Operation: volumetypes.FileOpCreateFile, RelativePath: "both.txt", Content: &empty, UploadIndex: &first,
-	}, uploads))
-	invalidIndex := 2
-	require.Error(t, validateVolumeFileChangeInternal(volumetypes.FileChange{
-		Operation: volumetypes.FileOpUpdateFile, RelativePath: "missing.bin", UploadIndex: &invalidIndex,
-	}, uploads))
-	require.Error(t, validateVolumeFileChangeInternal(volumetypes.FileChange{
+	require.Error(t, validateVolumeWorkspaceFileChangeInternal(volumetypes.WorkspaceFileChange{
+		Operation: volumetypes.FileOpUpdateFile, RelativePath: "missing.bin",
+	}))
+	require.Error(t, validateVolumeWorkspaceFileChangeInternal(volumetypes.WorkspaceFileChange{
 		Operation: volumetypes.FileOpRestoreFile, RelativePath: "file.txt",
-	}, uploads))
-	require.Error(t, validateVolumeFileChangeInternal(volumetypes.FileChange{
+	}))
+	require.Error(t, validateVolumeWorkspaceFileChangeInternal(volumetypes.WorkspaceFileChange{
 		Operation: "unknown", RelativePath: "file.txt",
-	}, uploads))
-	require.Error(t, validateVolumeFileChangeInternal(volumetypes.FileChange{
+	}))
+	require.Error(t, validateVolumeWorkspaceFileChangeInternal(volumetypes.WorkspaceFileChange{
 		Operation: volumetypes.FileOpDelete, RelativePath: "../escape",
-	}, uploads))
+	}))
 }
 
 func TestVolumeWorkspaceBackupScopeInternalCoversSourcesAndDestinations(t *testing.T) {
-	changes := []volumetypes.FileChange{
+	changes := []volumetypes.WorkspaceFileChange{
 		{Operation: volumetypes.FileOpRename, RelativePath: "docs/a.txt", NewName: "b.txt"},
 		{Operation: volumetypes.FileOpMove, RelativePath: "cache", NewParentPath: "docs"},
-		{Operation: volumetypes.FileOpCreateFile, RelativePath: "docs/a.txt/child", Content: new(string)},
+		{Operation: volumetypes.FileOpCreateFile, RelativePath: "docs/a.txt/child", UploadIndex: new(0)},
 	}
 	scope, err := volumeWorkspaceBackupScopeInternal(changes)
 	require.NoError(t, err)
@@ -354,22 +349,22 @@ func TestVolumeWorkspaceHelperScriptsUseSupportedTooling(t *testing.T) {
 
 func TestClassifyVolumeWorkspaceExecErrorInternal(t *testing.T) {
 	base := errors.New("exit status 1")
-	require.ErrorIs(t, classifyVolumeWorkspaceExecErrorInternal(base, "ARCANE_SYMLINK", "execute"), common.ErrVolumeFileForbidden)
-	require.ErrorIs(t, classifyVolumeWorkspaceExecErrorInternal(base, "ARCANE_NOT_FOUND", "execute"), common.ErrVolumeFileNotFound)
-	require.ErrorIs(t, classifyVolumeWorkspaceExecErrorInternal(base, "ARCANE_COLLISION", "execute"), common.ErrVolumeFileBadRequest)
+	require.ErrorIs(t, classifyVolumeWorkspaceExecErrorInternal(base, "ARCANE_SYMLINK", "execute"), common.ErrVolumeWorkspaceForbidden)
+	require.ErrorIs(t, classifyVolumeWorkspaceExecErrorInternal(base, "ARCANE_NOT_FOUND", "execute"), common.ErrVolumeWorkspaceNotFound)
+	require.ErrorIs(t, classifyVolumeWorkspaceExecErrorInternal(base, "ARCANE_COLLISION", "execute"), common.ErrVolumeWorkspaceBadRequest)
 	require.ErrorIs(t, classifyVolumeWorkspaceExecErrorInternal(base, "unexpected", "execute"), base)
 }
 
-func TestClassifyVolumeWorkspaceBrowseErrorInternal(t *testing.T) {
-	require.ErrorIs(t, classifyVolumeWorkspaceBrowseErrorInternal(cerrdefs.ErrNotFound), common.ErrVolumeFileNotFound)
-	require.ErrorIs(t, classifyVolumeWorkspaceBrowseErrorInternal(errors.New("volume uses a custom mount configuration")), common.ErrVolumeFileBadRequest)
+func TestClassifyVolumeWorkspaceHelperSupportErrorInternal(t *testing.T) {
+	require.ErrorIs(t, classifyVolumeWorkspaceHelperSupportErrorInternal(cerrdefs.ErrNotFound), common.ErrVolumeWorkspaceNotFound)
+	require.ErrorIs(t, classifyVolumeWorkspaceHelperSupportErrorInternal(errors.New("volume uses a custom mount configuration")), common.ErrVolumeWorkspaceBadRequest)
 	unexpected := errors.New("docker unavailable")
-	require.ErrorIs(t, classifyVolumeWorkspaceBrowseErrorInternal(unexpected), unexpected)
+	require.ErrorIs(t, classifyVolumeWorkspaceHelperSupportErrorInternal(unexpected), unexpected)
 }
 
 func TestValidateVolumeWorkspaceRevisionInternal(t *testing.T) {
 	require.NoError(t, validateVolumeWorkspaceRevisionInternal(" revision ", "revision"))
-	require.ErrorIs(t, validateVolumeWorkspaceRevisionInternal("stale", "current"), common.ErrVolumeFileConflict)
+	require.ErrorIs(t, validateVolumeWorkspaceRevisionInternal("stale", "current"), common.ErrVolumeWorkspaceConflict)
 }
 
 func TestStageVolumeWorkspaceChangesClearsAndCopiesContentsInOneArchive(t *testing.T) {
@@ -432,19 +427,18 @@ func TestStageVolumeWorkspaceChangesClearsAndCopiesContentsInOneArchive(t *testi
 
 	dockerClient := newVolumeWorkspaceTestDockerClientInternal(t, server)
 	service := &VolumeService{dockerService: &DockerClientService{client: dockerClient}}
-	alpha := "alpha"
-	empty := ""
-	firstStaged, err := service.stageVolumeWorkspaceChangesInternal(context.Background(), dockerClient, "helper", []volumetypes.FileChange{
-		{Content: &alpha},
+	firstUpload := 0
+	secondUpload := 1
+	firstStaged, err := service.stageVolumeWorkspaceChangesInternal(context.Background(), dockerClient, "helper", []volumetypes.WorkspaceFileChange{
+		{UploadIndex: &firstUpload},
 		{},
-		{Content: &empty},
-	}, nil)
+		{UploadIndex: &secondUpload},
+	}, map[int][]byte{0: []byte("alpha"), 1: {}})
 	require.NoError(t, err)
 	require.Equal(t, volumeWorkspaceStagedFileInternal{path: "/tmp/arcane-workspace/change-0", size: 5}, firstStaged[0])
 	require.Equal(t, volumeWorkspaceStagedFileInternal{path: "/tmp/arcane-workspace/change-2", size: 0}, firstStaged[2])
 
-	second := "second"
-	secondStaged, err := service.stageVolumeWorkspaceChangesInternal(context.Background(), dockerClient, "helper", []volumetypes.FileChange{{Content: &second}}, nil)
+	secondStaged, err := service.stageVolumeWorkspaceChangesInternal(context.Background(), dockerClient, "helper", []volumetypes.WorkspaceFileChange{{UploadIndex: &firstUpload}}, map[int][]byte{0: []byte("second")})
 	require.NoError(t, err)
 	require.Equal(t, volumeWorkspaceStagedFileInternal{path: "/tmp/arcane-workspace/change-0", size: 6}, secondStaged[0])
 
@@ -505,18 +499,18 @@ func TestUpdateVolumeWorkspaceRejectsStaleRevisionBeforeStaging(t *testing.T) {
 		dockerService:  &DockerClientService{client: dockerClient},
 		helperByVolume: make(map[string]*volumeHelper),
 	}
-	content := "new content"
-	workspace, err := service.UpdateVolumeWorkspace(context.Background(), "workspace-volume", volumetypes.FileUpdateManifest{
+	uploadIndex := 0
+	workspace, err := service.UpdateVolumeWorkspace(context.Background(), "workspace-volume", volumetypes.WorkspaceUpdateManifest{
 		FileTreeRevision: "stale",
-		FileChanges: []volumetypes.FileChange{{
+		FileChanges: []volumetypes.WorkspaceFileChange{{
 			Operation:    volumetypes.FileOpCreateFile,
 			RelativePath: "new.txt",
-			Content:      &content,
+			UploadIndex:  &uploadIndex,
 		}},
-	}, nil, models.User{})
+	}, map[int][]byte{0: []byte("new content")}, models.User{})
 
 	require.Nil(t, workspace)
-	require.ErrorIs(t, err, common.ErrVolumeFileConflict)
+	require.ErrorIs(t, err, common.ErrVolumeWorkspaceConflict)
 	require.Len(t, execCommands, 1)
 	require.Contains(t, execCommands[0], volumeWorkspaceTreeScriptInternal)
 	require.Zero(t, archiveCopies)
@@ -586,7 +580,7 @@ func TestCreateVolumeWorkspaceMutationContainerUsesDedicatedBackupHelper(t *test
 }
 
 func TestApplyVolumeWorkspaceChangesTransactionInternalRollsBackEveryMutationStage(t *testing.T) {
-	changes := []volumetypes.FileChange{
+	changes := []volumetypes.WorkspaceFileChange{
 		{Operation: volumetypes.FileOpCreateFolder, RelativePath: "one"},
 		{Operation: volumetypes.FileOpRename, RelativePath: "one", NewName: "two"},
 		{Operation: volumetypes.FileOpDelete, RelativePath: "two", Recursive: true},
@@ -596,7 +590,7 @@ func TestApplyVolumeWorkspaceChangesTransactionInternalRollsBackEveryMutationSta
 		t.Run(changes[failureIndex].Operation, func(t *testing.T) {
 			applied := make([]int, 0, failureIndex+1)
 			rollbackCalls := 0
-			err := applyVolumeWorkspaceChangesTransactionInternal(changes, func(index int, _ volumetypes.FileChange) error {
+			err := applyVolumeWorkspaceChangesTransactionInternal(changes, func(index int, _ volumetypes.WorkspaceFileChange) error {
 				applied = append(applied, index)
 				if index == failureIndex {
 					return applyFailure
@@ -613,7 +607,7 @@ func TestApplyVolumeWorkspaceChangesTransactionInternalRollsBackEveryMutationSta
 	}
 
 	rollbackFailure := errors.New("rollback failed")
-	err := applyVolumeWorkspaceChangesTransactionInternal(changes, func(_ int, _ volumetypes.FileChange) error {
+	err := applyVolumeWorkspaceChangesTransactionInternal(changes, func(_ int, _ volumetypes.WorkspaceFileChange) error {
 		return applyFailure
 	}, func() error {
 		return rollbackFailure

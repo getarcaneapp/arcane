@@ -1,32 +1,67 @@
 import type { CodeLanguage } from '#lib/components/code-editor/analysis/types';
+import { m } from '#lib/paraglide/messages';
+import { toast } from 'svelte-sonner';
+import type {
+	WorkspaceFileChange as WorkspaceFileChangeDto,
+	WorkspaceFileChangeOperation,
+	WorkspaceFileEntry as WorkspaceFileDto,
+	WorkspaceReadOnlyReason
+} from '#lib/types/workspace';
 
-export interface WorkspaceFileEntry {
-	path: string;
-	relativePath: string;
-	name: string;
-	isDirectory: boolean;
-	size: number;
-	modTime?: string;
-	mode?: string;
+export interface WorkspaceFileEntry extends Omit<WorkspaceFileDto, 'editable' | 'isSymlink' | 'readOnlyReason'> {
+	editable?: boolean;
+	isSymlink?: boolean;
+	readOnlyReason?: WorkspaceReadOnlyReason | 'restore_pending';
 	content?: string;
 	mimeType?: string;
-	readOnlyReason?: string;
-	isSymlink?: boolean;
-	linkTarget?: string;
 	protected?: boolean;
 	locked?: boolean;
 	pending?: boolean;
 }
 
-export interface WorkspaceFileChange {
-	operation: 'create_file' | 'create_folder' | 'update_file' | 'rename' | 'move' | 'delete' | 'restore_file';
-	relativePath: string;
-	newName?: string;
-	newParentPath?: string;
-	content?: string;
-	uploadIndex?: number;
-	backupId?: string;
-	recursive?: boolean;
+type WorkspaceDisplayFileChange = Omit<WorkspaceFileChangeDto, 'operation'> & {
+	operation: WorkspaceFileChangeOperation | 'restore_file';
+};
+
+export function buildWorkspaceMultipartUpdate<T extends WorkspaceDisplayFileChange>(
+	draftChanges: T[],
+	fileContents: Record<string, string>,
+	loadedFileContents: Record<string, string>
+): { fileChanges: T[]; files: File[] } {
+	const fileChanges = draftChanges.map(({ uploadIndex: _uploadIndex, ...change }) => ({ ...change }) as T);
+	const files: File[] = [];
+	const changedPaths = Object.keys(fileContents).filter(
+		(relativePath) => fileContents[relativePath] !== loadedFileContents[relativePath]
+	);
+
+	const stageText = (change: T, content: string) => {
+		change.uploadIndex = files.length;
+		files.push(new File([content], workspaceFileBasename(change.relativePath), { type: 'text/plain' }));
+	};
+
+	for (const change of fileChanges) {
+		if (change.operation === 'create_file') stageText(change, fileContents[change.relativePath] ?? '');
+	}
+
+	for (const relativePath of changedPaths) {
+		if (
+			fileChanges.some((change) => change.operation === 'delete' && workspaceFilePathMatches(relativePath, change.relativePath))
+		) {
+			continue;
+		}
+		let change = fileChanges.findLast(
+			(candidate) =>
+				(candidate.operation === 'create_file' || candidate.operation === 'update_file') &&
+				candidate.relativePath === relativePath
+		);
+		if (!change) {
+			change = { operation: 'update_file', relativePath } as T;
+			fileChanges.push(change);
+		}
+		if (change.uploadIndex === undefined) stageText(change, fileContents[relativePath] ?? '');
+	}
+
+	return { fileChanges, files };
 }
 
 export function normalizeWorkspaceRelativePath(relativePath: string): string {
@@ -55,6 +90,76 @@ export function validateWorkspaceFileName(name: string): string | null {
 	if (!trimmed || trimmed === '.' || trimmed === '..') return null;
 	if (trimmed.includes('/') || trimmed.includes('\\') || trimmed.includes('\0')) return null;
 	return trimmed;
+}
+
+export function planWorkspaceFileCreate(existingPaths: ReadonlySet<string>, parentPath: string, name: string): string | null {
+	const normalizedName = validateWorkspaceFileName(name);
+	if (!normalizedName) {
+		toast.error(m.workspace_file_invalid_name());
+		return null;
+	}
+	const relativePath = joinWorkspaceFilePath(parentPath, normalizedName);
+	if (existingPaths.has(relativePath)) {
+		toast.error(m.workspace_file_duplicate_name());
+		return null;
+	}
+	return relativePath;
+}
+
+export function planWorkspaceFileRename(
+	existingPaths: ReadonlySet<string>,
+	relativePath: string,
+	newName: string
+): { newName: string; newPath: string } | null {
+	const normalizedName = validateWorkspaceFileName(newName);
+	if (!normalizedName) {
+		toast.error(m.workspace_file_invalid_name());
+		return null;
+	}
+	const newPath = joinWorkspaceFilePath(workspaceFileParentPath(relativePath), normalizedName);
+	if (newPath !== relativePath && existingPaths.has(newPath)) {
+		toast.error(m.workspace_file_duplicate_name());
+		return null;
+	}
+	return { newName: normalizedName, newPath };
+}
+
+export function planWorkspaceFileMove(
+	entry: Pick<WorkspaceFileEntry, 'isDirectory'> | undefined,
+	existingPaths: ReadonlySet<string>,
+	relativePath: string,
+	newParentPath: string
+): string | null {
+	if (!entry || newParentPath === workspaceFileParentPath(relativePath)) return null;
+	if (entry.isDirectory && newParentPath && workspaceFilePathMatches(newParentPath, relativePath)) {
+		toast.error(m.workspace_file_invalid_move_destination());
+		return null;
+	}
+	const newPath = joinWorkspaceFilePath(newParentPath, workspaceFileBasename(relativePath));
+	if (newPath !== relativePath && existingPaths.has(newPath)) {
+		toast.error(m.workspace_file_duplicate_name());
+		return null;
+	}
+	return newPath;
+}
+
+export async function readWorkspaceTextUpload(file: File, maxFileSizeMb: number): Promise<{ content?: string; error?: string }> {
+	if (file.size > maxFileSizeMb * 1024 * 1024) return { error: m.workspace_upload_too_large({ maxFileSizeMb }) };
+	try {
+		const bytes = new Uint8Array(await file.arrayBuffer());
+		if (bytes.includes(0)) return { error: m.workspace_upload_text_required() };
+		return { content: new TextDecoder('utf-8', { fatal: true }).decode(bytes) };
+	} catch {
+		return { error: m.workspace_upload_text_required() };
+	}
+}
+
+export function workspaceReadOnlyMessage(reason: WorkspaceReadOnlyReason | undefined, maxFileSizeMb: number): string {
+	if (reason === 'binary') return m.workspace_binary_readonly();
+	if (reason === 'too_large') return m.workspace_large_readonly({ maxFileSizeMb });
+	if (reason === 'symlink') return m.workspace_symlink_readonly();
+	if (reason === 'special') return m.workspace_special_readonly();
+	return m.workspace_readonly();
 }
 
 export function workspaceFilePathMatches(relativePath: string, rootPath: string): boolean {
@@ -109,7 +214,7 @@ export function compareWorkspaceFileEntries(a: WorkspaceFileEntry, b: WorkspaceF
 
 export function applyWorkspaceFileChangesForDisplay(
 	files: WorkspaceFileEntry[],
-	changes: WorkspaceFileChange[]
+	changes: WorkspaceDisplayFileChange[]
 ): WorkspaceFileEntry[] {
 	const entries = new Map<string, WorkspaceFileEntry>();
 
@@ -134,7 +239,7 @@ export function applyWorkspaceFileChangesForDisplay(
 					relativePath,
 					name: workspaceFileBasename(relativePath),
 					isDirectory: false,
-					size: change.content?.length ?? 0,
+					size: 0,
 					pending: true
 				});
 				break;
@@ -150,7 +255,7 @@ export function applyWorkspaceFileChangesForDisplay(
 				break;
 			case 'update_file': {
 				const entry = entries.get(relativePath);
-				if (entry) entries.set(relativePath, { ...entry, size: change.content?.length ?? entry.size, pending: true });
+				if (entry) entries.set(relativePath, { ...entry, pending: true });
 				break;
 			}
 			case 'rename':

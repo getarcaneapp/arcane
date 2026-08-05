@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { IncludeFile, Project } from '#lib/types/swarm';
-	import type { ProjectFileChange } from '#lib/types/project-files';
+	import type { ProjectWorkspaceFileChange, ProjectWorkspaceFileContent } from '#lib/types/project-workspace';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
@@ -50,6 +50,8 @@
 	import { Switch } from '#lib/components/ui/switch';
 	import { untrack } from 'svelte';
 	import { projectService } from '#lib/services/project-service';
+	import { projectWorkspaceService } from '#lib/services/project-workspace-service';
+	import settingsStore from '#lib/stores/config-store';
 	import { imageService } from '#lib/services/image-service';
 	import { gitOpsSyncService } from '#lib/services/gitops-sync-service';
 	import { environmentStore } from '#lib/stores/environment.store.svelte';
@@ -63,21 +65,23 @@
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
 	import { globalVariablesToMap } from '#lib/utils/template-load';
 	import {
-		planProjectFileCreate,
-		planProjectFileMove,
-		planProjectFileRename,
-		readProjectTextUpload,
-		validateProjectFileName
-	} from '../components/project-file-tree-utils';
+		planProjectWorkspaceFileCreate,
+		planProjectWorkspaceFileMove,
+		planProjectWorkspaceFileRename,
+		validateProjectWorkspaceFileName
+	} from '../components/project-workspace-utils';
 	import {
-		applyWorkspaceFileChangesForDisplay as applyProjectFileChangesForDisplay,
-		isWorkspaceFileSelectionUnder as isProjectFileSelectionUnder,
-		workspaceFileBasename as projectFileBasename,
-		workspaceFileLanguage as projectFileLanguage,
-		workspaceFilePathMatches as projectFilePathMatches,
-		remapWorkspaceFileRecord as remapProjectFileRecord,
-		remapSelectedWorkspaceFileKey as remapSelectedProjectFileKey,
-		removeWorkspaceFileRecord as removeProjectFileRecord
+		applyWorkspaceFileChangesForDisplay,
+		buildWorkspaceMultipartUpdate,
+		isWorkspaceFileSelectionUnder,
+		workspaceFileBasename,
+		workspaceFileLanguage,
+		remapWorkspaceFileRecord,
+		remapSelectedWorkspaceFileKey,
+		removeWorkspaceFileRecord,
+		readWorkspaceTextUpload,
+		workspaceReadOnlyMessage,
+		type WorkspaceFileEntry
 	} from '#lib/utils/workspace-files';
 	import { composeTreeSplitProps, extractComposeYamlName } from '#lib/utils/compose-flow';
 
@@ -108,13 +112,15 @@
 	let includeFilesState = $state<Record<string, string>>({});
 	let loadedIncludeFileContents = $state<Record<string, string>>({});
 	let loadedDirectoryFileContents = $state<Record<string, string>>({});
-	let managedProjectFileChanges = $state<ProjectFileChange[]>([]);
-	let managedProjectFileContents = $state<Record<string, string>>({});
-	let loadedManagedProjectFileContents = $state<Record<string, string>>({});
-	let managedProjectFileLoadErrors = $state<Record<string, string>>({});
-	let managedProjectFileLoading = $state<Record<string, boolean>>({});
-	let projectFilePromises: Record<string, Promise<IncludeFile> | undefined> = {};
+	let projectWorkspaceChanges = $state<ProjectWorkspaceFileChange[]>([]);
+	let projectWorkspaceContents = $state<Record<string, string>>({});
+	let loadedProjectWorkspaceContents = $state<Record<string, string>>({});
+	let projectWorkspaceLoadErrors = $state<Record<string, string>>({});
+	let projectWorkspaceLoading = $state<Record<string, boolean>>({});
+	let projectWorkspaceFileMetadata = $state<Record<string, ProjectWorkspaceFileContent>>({});
+	let projectWorkspaceFilePromises: Record<string, Promise<IncludeFile | ProjectWorkspaceFileContent> | undefined> = {};
 	const globalVariableMap = $derived(globalVariablesToMap(data.globalVariables));
+	const projectWorkspaceMaxFileSizeMb = $derived($settingsStore?.projectWorkspaceMaxFileSizeMb ?? 10);
 
 	const projectDetailQuery = createQuery(() => ({
 		queryKey: queryKeys.projects.detail(envId, projectId),
@@ -123,11 +129,11 @@
 		refetchOnMount: false
 	}));
 
-	// The file tree walk can be slow on large projects, so it loads lazily and
+	// The workspace walk can be slow on large projects, so it loads lazily and
 	// never blocks navigation; +page.ts prefetches this key without awaiting.
-	const projectFilesQuery = createQuery(() => ({
-		queryKey: queryKeys.projects.files(envId, projectId),
-		queryFn: () => projectService.getProjectFiles(envId, projectId)
+	const projectWorkspaceQuery = createQuery(() => ({
+		queryKey: queryKeys.projects.workspace(envId, projectId),
+		queryFn: () => projectWorkspaceService.getWorkspace(projectId, envId)
 	}));
 
 	const lifecycleSyncQuery = createQuery(() => {
@@ -172,7 +178,7 @@
 
 	const { inputs, ...form } = createForm<typeof formSchema>(formSchema, initialFormData);
 
-	function withLoadedProjectFileContent(details: Project | null | undefined): Project | null {
+	function withLoadedProjectIncludeContent(details: Project | null | undefined): Project | null {
 		if (!details) return null;
 
 		return {
@@ -180,14 +186,6 @@
 			includeFiles: (details.includeFiles ?? []).map((file) => ({
 				...file,
 				content: file.content ?? loadedIncludeFileContents[file.relativePath]
-			})),
-			directoryFiles: (details.directoryFiles ?? []).map((file) => ({
-				...file,
-				content: file.content ?? loadedDirectoryFileContents[file.relativePath]
-			})),
-			projectFiles: (details.projectFiles ?? []).map((file) => ({
-				...file,
-				content: file.content ?? loadedManagedProjectFileContents[file.relativePath]
 			}))
 		};
 	}
@@ -195,7 +193,7 @@
 	const project = $derived.by(() => {
 		const detail = projectDetailQuery.data ?? data.project;
 		if (!detail) return null;
-		return withLoadedProjectFileContent({ ...detail, ...(projectFilesQuery.data ?? {}) });
+		return withLoadedProjectIncludeContent(detail);
 	});
 	const projectImageRefs = $derived.by(() => getProjectImageRefs(project));
 	const serverName = $derived(project?.name ?? '');
@@ -209,13 +207,22 @@
 			)
 		)
 	);
-	const managedProjectFiles = $derived.by(() =>
-		applyProjectFileChangesForDisplay(project?.projectFiles ?? [], managedProjectFileChanges)
+	const projectWorkspaceEntries = $derived.by(() =>
+		applyWorkspaceFileChangesForDisplay(projectWorkspaceQuery.data?.files ?? [], projectWorkspaceChanges).map((file) => {
+			const metadata = projectWorkspaceFileMetadata[file.relativePath];
+			const editable = metadata?.editable ?? file.editable;
+			return {
+				...file,
+				editable,
+				readOnlyReason: metadata?.readOnlyReason ?? file.readOnlyReason,
+				locked: !file.isDirectory && editable === false
+			};
+		})
 	);
-	const managedProjectFilePaths = $derived.by(() => new Set(managedProjectFiles.map((file) => file.relativePath)));
-	const changedManagedProjectFilePaths = $derived.by(() =>
-		Object.keys(managedProjectFileContents).filter(
-			(relativePath) => managedProjectFileContents[relativePath] !== loadedManagedProjectFileContents[relativePath]
+	const projectWorkspacePaths = $derived.by(() => new Set(projectWorkspaceEntries.map((file) => file.relativePath)));
+	const changedProjectWorkspacePaths = $derived.by(() =>
+		Object.keys(projectWorkspaceContents).filter(
+			(relativePath) => projectWorkspaceContents[relativePath] !== loadedProjectWorkspaceContents[relativePath]
 		)
 	);
 
@@ -230,8 +237,8 @@
 			$inputs.overrideContent.value !== serverOverrideContent ||
 			$inputs.envContent.value !== serverEnvContent ||
 			Object.entries(includeFilesState).some(([relativePath, content]) => content !== serverIncludeFiles[relativePath]) ||
-			managedProjectFileChanges.length > 0 ||
-			changedManagedProjectFilePaths.length > 0
+			projectWorkspaceChanges.length > 0 ||
+			changedProjectWorkspacePaths.length > 0
 	);
 
 	let isGitOpsManaged = $derived(!!project?.gitOpsManagedBy);
@@ -250,7 +257,7 @@
 	// Override edits are blocked for GitOps-managed projects, mirroring canEditCompose.
 	let canEditOverride = $derived(canUpdateProject && !project?.isArchived && !isGitOpsManaged);
 	let canEditEnv = $derived(canUpdateProject && !project?.isArchived);
-	let canEditProjectFiles = $derived(canUpdateProject && !project?.isArchived && !isGitOpsManaged);
+	let canEditProjectWorkspace = $derived(canUpdateProject && !project?.isArchived && !isGitOpsManaged);
 	let composeFileName = $derived(project?.composeFileName || 'compose.yaml');
 	// Set when the user opts to add an override to a project that has none yet.
 	let overrideEditorRequested = $state(false);
@@ -266,7 +273,14 @@
 		...(overrideActive
 			? [{ key: 'override', label: overrideFileName, iconClass: 'text-purple-500', locked: true }]
 			: canEditOverride
-				? [{ key: 'add-override', label: m.compose_override_add(), onSelect: handleAddOverride }]
+				? [
+						{
+							key: 'add-override',
+							label: m.compose_override_add(),
+							action: true,
+							onSelect: handleAddOverride
+						}
+					]
 				: []),
 		{ key: 'env', label: '.env', iconClass: 'text-green-500', locked: true }
 	]);
@@ -310,32 +324,35 @@
 	let overrideHasErrors = $state(false);
 	let envHasErrors = $state(false);
 	let includeFilesHasErrors = $state<Record<string, boolean>>({});
-	let managedProjectFileHasErrors = $state<Record<string, boolean>>({});
+	let projectWorkspaceHasErrors = $state<Record<string, boolean>>({});
 	let composeValidationReady = $state(false);
 	let overrideValidationReady = $state(false);
 	let envValidationReady = $state(false);
 	let includeFilesValidationReady = $state<Record<string, boolean>>({});
-	let managedProjectFileValidationReady = $state<Record<string, boolean>>({});
+	let projectWorkspaceValidationReady = $state<Record<string, boolean>>({});
 	const includeFilePaths = $derived.by(() => new Set((project?.includeFiles ?? []).map((file) => file.relativePath)));
-	const directoryFilePaths = $derived.by(() => new Set((project?.directoryFiles ?? []).map((file) => file.relativePath)));
+	const directoryFilePaths = $derived.by(() => new Set(projectWorkspaceEntries.map((file) => file.relativePath)));
 	const selectedFile = $derived.by(() => {
 		const current = selectedFilePreference;
 		if (current === 'override') return overrideActive ? 'override' : 'compose';
 		if (current === 'compose' || current === 'env') return current;
 		if (current.startsWith('file:')) {
 			const relativePath = current.slice(5);
-			return managedProjectFilePaths.has(relativePath) ? current : 'compose';
+			return projectWorkspacePaths.has(relativePath) ? current : 'compose';
 		}
 		if (current.startsWith('dir:')) {
 			return directoryFilePaths.has(current.slice(4)) ? current : 'compose';
 		}
 		return includeFilePaths.has(current) ? current : 'compose';
 	});
-	const selectedManagedProjectFilePath = $derived(selectedFile.startsWith('file:') ? selectedFile.slice(5) : '');
-	const selectedManagedProjectFile = $derived.by(() =>
-		selectedManagedProjectFilePath
-			? managedProjectFiles.find((file) => file.relativePath === selectedManagedProjectFilePath)
+	const selectedProjectWorkspacePath = $derived(selectedFile.startsWith('file:') ? selectedFile.slice(5) : '');
+	const selectedProjectWorkspaceEntry = $derived.by(() =>
+		selectedProjectWorkspacePath
+			? projectWorkspaceEntries.find((file) => file.relativePath === selectedProjectWorkspacePath)
 			: undefined
+	);
+	const selectedProjectWorkspaceMetadata = $derived(
+		selectedProjectWorkspacePath ? projectWorkspaceFileMetadata[selectedProjectWorkspacePath] : undefined
 	);
 	const openTabs = $derived.by(() => {
 		const valid = openTabsPreference.filter((key) => {
@@ -344,8 +361,8 @@
 			// via a blank save) and no add is in progress.
 			if (key === 'override') return overrideActive;
 			if (!key.startsWith('file:')) return false;
-			// fallow-ignore-next-line code-duplication -- managed-file predicate; script-level, diverges per page
-			const entry = managedProjectFiles.find((file) => file.relativePath === key.slice(5));
+			// fallow-ignore-next-line code-duplication -- workspace-entry predicate; script-level, diverges per page
+			const entry = projectWorkspaceEntries.find((file) => file.relativePath === key.slice(5));
 			return !!entry && !entry.isDirectory;
 		});
 		return valid.length > 0 ? valid : ['compose'];
@@ -434,7 +451,7 @@
 
 	type RebaseEditorDraftOptions = {
 		preserveEditableDrafts?: boolean;
-		preserveManagedProjectFileContents?: boolean;
+		preserveProjectWorkspaceContents?: boolean;
 		clearLoadedFileCache?: boolean;
 	};
 
@@ -482,16 +499,16 @@
 		}
 	}
 
-	function ensureManagedProjectFileUiState(relativePath: string) {
-		if (managedProjectFileHasErrors[relativePath] === undefined) {
-			managedProjectFileHasErrors = {
-				...managedProjectFileHasErrors,
+	function ensureProjectWorkspaceUiState(relativePath: string) {
+		if (projectWorkspaceHasErrors[relativePath] === undefined) {
+			projectWorkspaceHasErrors = {
+				...projectWorkspaceHasErrors,
 				[relativePath]: false
 			};
 		}
-		if (managedProjectFileValidationReady[relativePath] === undefined) {
-			managedProjectFileValidationReady = {
-				...managedProjectFileValidationReady,
+		if (projectWorkspaceValidationReady[relativePath] === undefined) {
+			projectWorkspaceValidationReady = {
+				...projectWorkspaceValidationReady,
 				[relativePath]: true
 			};
 		}
@@ -533,14 +550,15 @@
 		);
 	}
 
-	function clearLoadedProjectFileCache() {
+	function clearLoadedProjectWorkspaceCache() {
 		loadedIncludeFileContents = {};
 		loadedDirectoryFileContents = {};
-		loadedManagedProjectFileContents = {};
-		managedProjectFileContents = {};
-		managedProjectFileLoadErrors = {};
-		managedProjectFileLoading = {};
-		projectFilePromises = {};
+		loadedProjectWorkspaceContents = {};
+		projectWorkspaceContents = {};
+		projectWorkspaceLoadErrors = {};
+		projectWorkspaceLoading = {};
+		projectWorkspaceFileMetadata = {};
+		projectWorkspaceFilePromises = {};
 	}
 
 	function rebaseEditorDraft(details: Project, options: RebaseEditorDraftOptions = {}) {
@@ -549,46 +567,32 @@
 		const dirtyIncludeDrafts = options.preserveEditableDrafts === true ? getDirtyIncludeDrafts() : {};
 
 		if (options.clearLoadedFileCache === true) {
-			clearLoadedProjectFileCache();
+			clearLoadedProjectWorkspaceCache();
 		}
 
-		const normalizedProject = withLoadedProjectFileContent(details);
+		const normalizedProject = withLoadedProjectIncludeContent(details);
 		if (!normalizedProject) return;
-		// A slim save response (no file changes) carries no projectFiles; the tree is
-		// unchanged server-side, so keep the current contents instead of deriving
-		// them from an empty tree.
-		const savedManagedProjectFileContents =
-			options.preserveManagedProjectFileContents === true
-				? details.projectFiles === undefined
-					? { ...managedProjectFileContents }
-					: Object.fromEntries(
-							(normalizedProject.projectFiles ?? []).flatMap((file) => {
-								if (file.isDirectory) return [];
-								const content =
-									loadedManagedProjectFileContents[file.relativePath] ?? managedProjectFileContents[file.relativePath];
-								return content === undefined ? [] : [[file.relativePath, content] as const];
-							})
-						)
-				: {};
+		const savedProjectWorkspaceContents =
+			options.preserveProjectWorkspaceContents === true ? { ...projectWorkspaceContents } : {};
 
 		$inputs.name.value = normalizedProject.name || '';
 		$inputs.composeContent.value = normalizedProject.composeContent || '';
 		$inputs.overrideContent.value = normalizedProject.overrideContent || '';
 		$inputs.envContent.value = shouldPreserveEnvDraft ? envDraft : normalizedProject.envContent || '';
-		managedProjectFileChanges = [];
-		managedProjectFileContents = savedManagedProjectFileContents;
+		projectWorkspaceChanges = [];
+		projectWorkspaceContents = savedProjectWorkspaceContents;
 		// Seed the per-file UI-state records for every retained path. A mounted
 		// CodePanel binds these entries; handing a bound $bindable-with-fallback
 		// prop an undefined entry throws props_invalid_value and kills the page's
 		// effect tree (stale editor shown until a full refresh).
-		managedProjectFileHasErrors = Object.fromEntries(
-			Object.keys(savedManagedProjectFileContents).map((relativePath) => [relativePath, false])
+		projectWorkspaceHasErrors = Object.fromEntries(
+			Object.keys(savedProjectWorkspaceContents).map((relativePath) => [relativePath, false])
 		);
-		managedProjectFileValidationReady = Object.fromEntries(
-			Object.keys(savedManagedProjectFileContents).map((relativePath) => [relativePath, true])
+		projectWorkspaceValidationReady = Object.fromEntries(
+			Object.keys(savedProjectWorkspaceContents).map((relativePath) => [relativePath, true])
 		);
-		managedProjectFileLoadErrors = {};
-		managedProjectFileLoading = {};
+		projectWorkspaceLoadErrors = {};
+		projectWorkspaceLoading = {};
 
 		const freshIncludeFiles = getProjectIncludeFileContents(normalizedProject);
 		includeFilesState = {
@@ -610,22 +614,6 @@
 			queryKeys.projects.detail(currentEnvId, updatedProject.id),
 			(old: Project | undefined) => ({ ...(old ?? {}), ...updatedProject }) as Project
 		);
-		if (updatedProject.projectFiles || updatedProject.fileTreeRevision) {
-			// A file-changes save returns a fresh tree + revision; sync it into the
-			// files cache so the next file save doesn't hit a revision conflict.
-			queryClient.setQueryData(
-				queryKeys.projects.files(currentEnvId, updatedProject.id),
-				(old: Project | undefined) =>
-					({
-						...(old ?? {}),
-						projectFiles: updatedProject.projectFiles,
-						fileTreeRevision: updatedProject.fileTreeRevision,
-						fileTreeTruncated: updatedProject.fileTreeTruncated
-					}) as Project
-			);
-		} else {
-			await queryClient.invalidateQueries({ queryKey: queryKeys.projects.files(currentEnvId, updatedProject.id) });
-		}
 		await Promise.all([
 			queryClient.invalidateQueries({ queryKey: ['projects', currentEnvId] }),
 			queryClient.invalidateQueries({ queryKey: queryKeys.projects.statusCounts(currentEnvId) })
@@ -669,9 +657,9 @@
 
 		const prefsStorageKey = `arcane.compose.ui:${project.id}`;
 		const hadStoredPrefs = sessionStorage.getItem(prefsStorageKey) !== null;
-		// The tree/classic auto-detect needs the lazily loaded file tree; without
-		// stored prefs, wait for the files query to settle before finalizing.
-		if (!hadStoredPrefs && !(projectFilesQuery.isSuccess || projectFilesQuery.isError)) return;
+		// The tree/classic auto-detect needs the lazily loaded workspace; without
+		// stored prefs, wait for its query to settle before finalizing.
+		if (!hadStoredPrefs && !(projectWorkspaceQuery.isSuccess || projectWorkspaceQuery.isError)) return;
 
 		lastPrefsProjectId = project.id;
 		prefs = new PersistedState<ComposeUIPrefs>(prefsStorageKey, defaultComposeUIPrefs, {
@@ -694,13 +682,12 @@
 		selectedFilePreference = cur.selectedFile ?? defaultComposeUIPrefs.selectedFile ?? 'compose';
 		openTabsPreference = cur.openTabs && cur.openTabs.length > 0 ? cur.openTabs : [selectedFilePreference];
 
-		// Auto-detect layout mode based on includeFiles or directoryFiles. PersistedState
-		// always materializes the defaults, so only trust the stored layoutMode when this
-		// project actually had persisted prefs.
+		// Auto-detect layout mode from includes and workspace entries. PersistedState
+		// always materializes the defaults, so only trust the stored layoutMode when
+		// this project actually had persisted prefs.
 		const hasIncludes = project?.includeFiles && project.includeFiles.length > 0;
-		const hasDirectoryFiles = project?.directoryFiles && project.directoryFiles.length > 0;
-		const hasProjectFiles = project?.projectFiles && project.projectFiles.length > 0;
-		const defaultMode = hasIncludes || hasDirectoryFiles || hasProjectFiles ? 'tree' : 'classic';
+		const hasWorkspaceEntries = projectWorkspaceEntries.length > 0;
+		const defaultMode = hasIncludes || hasWorkspaceEntries ? 'tree' : 'classic';
 		layoutMode = hadStoredPrefs ? (cur.layoutMode ?? defaultMode) : defaultMode;
 		// PersistedState seeds storage with the defaults on first mount; persist the
 		// resolved state so the auto-detected layout survives the next visit.
@@ -708,50 +695,6 @@
 			persistPrefs();
 		}
 	});
-
-	function isDeletedByProjectFileChanges(relativePath: string, changes: ProjectFileChange[]): boolean {
-		return changes.some((change) => change.operation === 'delete' && projectFilePathMatches(relativePath, change.relativePath));
-	}
-
-	function buildProjectFileSaveChanges(): ProjectFileChange[] {
-		const changes = managedProjectFileChanges.map((change) => ({ ...change }));
-		const contentChanges = new Map<string, string>();
-
-		for (const relativePath of changedManagedProjectFilePaths) {
-			const content = managedProjectFileContents[relativePath];
-			if (content !== undefined) {
-				contentChanges.set(relativePath, content);
-			}
-		}
-
-		const createFilePaths = new Set<string>();
-		for (const change of changes) {
-			if (change.operation === 'create_file') {
-				createFilePaths.add(change.relativePath);
-				change.content = contentChanges.get(change.relativePath) ?? change.content ?? '';
-			}
-		}
-
-		for (const [relativePath, content] of contentChanges.entries()) {
-			if (createFilePaths.has(relativePath) || isDeletedByProjectFileChanges(relativePath, changes)) {
-				continue;
-			}
-			changes.push({
-				operation: 'update_file',
-				relativePath,
-				content
-			});
-		}
-
-		return changes;
-	}
-
-	function buildIncludeFileSaveUpdates(): Array<{ relativePath: string; content: string }> {
-		return changedIncludeFilePaths.flatMap((relativePath) => {
-			const content = includeFilesState[relativePath];
-			return content === undefined ? [] : [{ relativePath, content }];
-		});
-	}
 
 	async function handleSaveChanges() {
 		if (!project || !hasChanges) return;
@@ -775,59 +718,56 @@
 		// Blank override => delete, which the backend treats as a no-op when none
 		// exists, so we can always send it (except for read-only GitOps projects).
 		const overridePayload = isGitOpsManaged ? undefined : overrideContent;
-		const fileChangesPayload = buildProjectFileSaveChanges();
-		const includeFileUpdates = buildIncludeFileSaveUpdates();
-		const fileTreeRevision = fileChangesPayload.length > 0 ? project.fileTreeRevision : undefined;
+		const workspaceUpdate = buildWorkspaceMultipartUpdate(
+			projectWorkspaceChanges,
+			{ ...projectWorkspaceContents, ...includeFilesState },
+			{ ...loadedProjectWorkspaceContents, ...loadedIncludeFileContents }
+		);
+		let workspaceCommitted = false;
+		isLoading.saving = true;
+		try {
+			if (workspaceUpdate.fileChanges.length > 0) {
+				const workspace = await projectWorkspaceService.updateWorkspace(
+					projectId,
+					{
+						fileTreeRevision: projectWorkspaceQuery.data?.fileTreeRevision ?? '',
+						fileChanges: workspaceUpdate.fileChanges
+					},
+					workspaceUpdate.files,
+					envId
+				);
+				workspaceCommitted = true;
+				queryClient.setQueryData(queryKeys.projects.workspace(envId, projectId), workspace);
 
-		handleApiResultWithCallbacks({
-			result: await tryCatch(
-				(async () => {
-					let updatedProject = await projectService.updateProject(
-						projectId,
-						namePayload,
-						composePayload,
-						envPayload,
-						overridePayload,
-						fileTreeRevision,
-						fileChangesPayload
-					);
-
-					// The file-tree changes are committed server-side at this point. Rebase the
-					// local tree state and project query immediately — if an include-file update
-					// below fails, the already-applied changes must not stay queued with a stale
-					// fileTreeRevision, or every retry would be rejected with a 409 conflict.
-					loadedManagedProjectFileContents = {
-						...loadedManagedProjectFileContents,
-						...managedProjectFileContents
-					};
-					rebaseEditorDraft(updatedProject, { preserveManagedProjectFileContents: true, preserveEditableDrafts: true });
-					await syncProjectQueries(updatedProject);
-
-					for (const update of includeFileUpdates) {
-						updatedProject = await projectService.updateProjectIncludeFile(projectId, update.relativePath, update.content);
-					}
-					return updatedProject;
-				})()
-			),
-			message: m.common_save_failed(),
-			setLoadingState: (value) => (isLoading.saving = value),
-			onSuccess: async (updatedProject: Project) => {
+				loadedProjectWorkspaceContents = { ...loadedProjectWorkspaceContents, ...projectWorkspaceContents };
 				loadedIncludeFileContents = {
 					...loadedIncludeFileContents,
 					...Object.fromEntries(
-						Object.entries(includeFilesState).filter(([relativePath]) =>
-							(updatedProject.includeFiles ?? []).some((file) => file.relativePath === relativePath)
-						)
+						changedIncludeFilePaths.flatMap((relativePath) => {
+							const content = includeFilesState[relativePath];
+							return content === undefined ? [] : [[relativePath, content] as const];
+						})
 					)
 				};
-				rebaseEditorDraft(updatedProject, { preserveManagedProjectFileContents: true });
-				await syncProjectQueries(updatedProject);
-				toast.success(
-					m.common_update_success({ resource: m.project() }),
-					activityToastOptions(extractActivityId(updatedProject))
-				);
+				projectWorkspaceChanges = [];
 			}
-		});
+
+			const updatedProject = await projectService.updateProject(
+				projectId,
+				namePayload,
+				composePayload,
+				envPayload,
+				overridePayload
+			);
+			rebaseEditorDraft(updatedProject, { preserveProjectWorkspaceContents: true });
+			await syncProjectQueries(updatedProject);
+			toast.success(m.common_update_success({ resource: m.project() }), activityToastOptions(extractActivityId(updatedProject)));
+		} catch (error) {
+			const message = error instanceof Error ? error.message : m.common_save_failed();
+			toast.error(workspaceCommitted ? m.projects_workspace_saved_configuration_failed({ error: message }) : message);
+		} finally {
+			isLoading.saving = false;
+		}
 	}
 
 	function saveNameIfChanged() {
@@ -883,13 +823,13 @@
 		};
 	}
 
-	type ProjectFileKind = 'include' | 'directory' | 'managed';
+	type ProjectWorkspaceSource = 'include' | 'directory' | 'workspace';
 
-	function getProjectFileKey(projectId: string, kind: ProjectFileKind, relativePath: string): string {
+	function getProjectWorkspaceCacheKey(projectId: string, kind: ProjectWorkspaceSource, relativePath: string): string {
 		return `${projectId}:${kind}:${relativePath}`;
 	}
 
-	function updateLoadedProjectFile(kind: ProjectFileKind, relativePath: string, content: string) {
+	function updateLoadedProjectWorkspaceSource(kind: ProjectWorkspaceSource, relativePath: string, content: string) {
 		if (kind === 'include') {
 			ensureIncludeFileUiState(relativePath);
 			loadedIncludeFileContents = {
@@ -911,36 +851,53 @@
 		};
 	}
 
-	function updateLoadedManagedProjectFile(relativePath: string, content: string) {
-		ensureManagedProjectFileUiState(relativePath);
-		loadedManagedProjectFileContents = {
-			...loadedManagedProjectFileContents,
+	function updateLoadedProjectWorkspaceFile(relativePath: string, content: string) {
+		ensureProjectWorkspaceUiState(relativePath);
+		loadedProjectWorkspaceContents = {
+			...loadedProjectWorkspaceContents,
 			[relativePath]: content
 		};
-		if (managedProjectFileContents[relativePath] === undefined) {
-			managedProjectFileContents = {
-				...managedProjectFileContents,
+		if (projectWorkspaceContents[relativePath] === undefined) {
+			projectWorkspaceContents = {
+				...projectWorkspaceContents,
 				[relativePath]: content
 			};
 		}
-		managedProjectFileLoadErrors = removeProjectFileRecord(managedProjectFileLoadErrors, relativePath);
+		projectWorkspaceLoadErrors = removeWorkspaceFileRecord(projectWorkspaceLoadErrors, relativePath);
 	}
 
-	function getProjectFileResource(kind: ProjectFileKind, relativePath: string): IncludeFile | Promise<IncludeFile> {
+	function getProjectWorkspaceFileResource(
+		kind: 'workspace',
+		relativePath: string
+	): ProjectWorkspaceFileContent | Promise<ProjectWorkspaceFileContent>;
+	function getProjectWorkspaceFileResource(
+		kind: 'include' | 'directory',
+		relativePath: string
+	): IncludeFile | Promise<IncludeFile>;
+	function getProjectWorkspaceFileResource(
+		kind: ProjectWorkspaceSource,
+		relativePath: string
+	): IncludeFile | ProjectWorkspaceFileContent | Promise<IncludeFile | ProjectWorkspaceFileContent> {
 		const currentProjectId = project?.id;
 		if (!currentProjectId) {
-			throw new Error('Project is not loaded');
+			throw new Error(m.projects_workspace_not_loaded());
 		}
 		if (kind === 'include') {
 			ensureIncludeFileUiState(relativePath);
-		} else if (kind === 'managed') {
-			ensureManagedProjectFileUiState(relativePath);
-			if (managedProjectFileContents[relativePath] !== undefined) {
-				return {
-					path: relativePath,
-					relativePath,
-					content: managedProjectFileContents[relativePath]
-				};
+		} else if (kind === 'workspace') {
+			ensureProjectWorkspaceUiState(relativePath);
+			if (projectWorkspaceContents[relativePath] !== undefined) {
+				return (
+					projectWorkspaceFileMetadata[relativePath] ?? {
+						path: relativePath,
+						relativePath,
+						name: workspaceFileBasename(relativePath),
+						size: projectWorkspaceContents[relativePath].length,
+						mimeType: 'text/plain',
+						content: projectWorkspaceContents[relativePath],
+						editable: true
+					}
+				);
 			}
 		}
 
@@ -948,60 +905,66 @@
 			kind === 'include'
 				? project?.includeFiles?.find((file) => file.relativePath === relativePath)
 				: kind === 'directory'
-					? project?.directoryFiles?.find((file) => file.relativePath === relativePath)
-					: managedProjectFiles.find((file) => file.relativePath === relativePath);
+					? projectWorkspaceEntries.find((file) => file.relativePath === relativePath)
+					: projectWorkspaceEntries.find((file) => file.relativePath === relativePath);
 
 		if (!targetFile) {
-			throw new Error('Project file not found');
+			throw new Error(m.workspace_file_not_found());
 		}
 
 		if (targetFile.content !== undefined) {
-			if (kind === 'managed') {
-				updateLoadedManagedProjectFile(relativePath, targetFile.content ?? '');
+			if (kind === 'workspace') {
+				const workspaceTarget = targetFile as WorkspaceFileEntry;
+				updateLoadedProjectWorkspaceFile(relativePath, workspaceTarget.content ?? '');
+				return {
+					path: workspaceTarget.path,
+					relativePath,
+					name: workspaceTarget.name,
+					size: workspaceTarget.size,
+					mimeType: workspaceTarget.mimeType ?? 'text/plain',
+					content: workspaceTarget.content ?? '',
+					editable: workspaceTarget.editable !== false,
+					readOnlyReason: workspaceTarget.readOnlyReason === 'restore_pending' ? undefined : workspaceTarget.readOnlyReason
+				};
 			} else {
-				updateLoadedProjectFile(kind, relativePath, targetFile.content ?? '');
+				updateLoadedProjectWorkspaceSource(kind, relativePath, targetFile.content ?? '');
 			}
 			return targetFile;
 		}
 
-		const requestKey = getProjectFileKey(currentProjectId, kind, relativePath);
-		const existingPromise = projectFilePromises[requestKey];
+		const requestKey = getProjectWorkspaceCacheKey(currentProjectId, kind, relativePath);
+		const existingPromise = projectWorkspaceFilePromises[requestKey];
 		if (existingPromise) {
 			return existingPromise;
 		}
 
 		const promise = (async () => {
-			const file = await projectService.getProjectFile(currentProjectId, relativePath);
-			if (kind === 'managed') {
-				updateLoadedManagedProjectFile(relativePath, file.content ?? '');
-			} else {
-				updateLoadedProjectFile(kind, relativePath, file.content ?? '');
+			const file = await projectWorkspaceService.getWorkspaceFile(currentProjectId, relativePath, envId);
+			if (kind !== 'workspace') {
+				updateLoadedProjectWorkspaceSource(kind, relativePath, file.content ?? '');
 			}
-			return {
-				...file,
-				content: file.content ?? ''
-			};
+			return file;
 		})().finally(() => {
-			delete projectFilePromises[requestKey];
+			delete projectWorkspaceFilePromises[requestKey];
 		});
 
-		projectFilePromises[requestKey] = promise;
+		projectWorkspaceFilePromises[requestKey] = promise;
 
 		return promise;
 	}
 
-	function isManagedDirectoryKey(key: string): boolean {
+	function isWorkspaceDirectoryKey(key: string): boolean {
 		if (!key.startsWith('file:')) return false;
-		return managedProjectFiles.find((file) => file.relativePath === key.slice(5))?.isDirectory === true;
+		return projectWorkspaceEntries.find((file) => file.relativePath === key.slice(5))?.isDirectory === true;
 	}
 
 	function openFileTab(key: string) {
 		// The file panel's bound UI-state entries must exist before mount; binding
 		// an undefined entry to a $bindable-with-fallback prop throws props_invalid_value.
-		if (key.startsWith('file:') && !isManagedDirectoryKey(key)) {
-			ensureManagedProjectFileUiState(key.slice(5));
+		if (key.startsWith('file:') && !isWorkspaceDirectoryKey(key)) {
+			ensureProjectWorkspaceUiState(key.slice(5));
 		}
-		if (!isManagedDirectoryKey(key) && !openTabsPreference.includes(key)) {
+		if (!isWorkspaceDirectoryKey(key) && !openTabsPreference.includes(key)) {
 			openTabsPreference = [...openTabsPreference, key];
 		}
 		selectedFilePreference = key;
@@ -1030,7 +993,7 @@
 		if (key === 'compose') return composeFileName;
 		if (key === 'override') return overrideFileName;
 		if (key === 'env') return '.env';
-		return projectFileBasename(key.startsWith('file:') ? key.slice(5) : key);
+		return workspaceFileBasename(key.startsWith('file:') ? key.slice(5) : key);
 	}
 
 	function treeTabTitle(key: string): string {
@@ -1047,12 +1010,12 @@
 		if (!key.startsWith('file:')) return false;
 		const relativePath = key.slice(5);
 		return (
-			changedManagedProjectFilePaths.includes(relativePath) ||
-			managedProjectFiles.find((file) => file.relativePath === relativePath)?.pending === true
+			changedProjectWorkspacePaths.includes(relativePath) ||
+			projectWorkspaceEntries.find((file) => file.relativePath === relativePath)?.pending === true
 		);
 	}
 
-	function selectManagedProjectFile(key: string) {
+	function selectProjectWorkspaceFile(key: string) {
 		openFileTab(key);
 	}
 
@@ -1078,130 +1041,151 @@
 		}
 	}
 
-	async function loadManagedProjectFileDraft(relativePath: string) {
-		if (!relativePath || managedProjectFileContents[relativePath] !== undefined || managedProjectFileLoading[relativePath]) {
+	async function loadProjectWorkspaceFileDraft(relativePath: string) {
+		if (!relativePath || projectWorkspaceContents[relativePath] !== undefined || projectWorkspaceLoading[relativePath]) {
 			return;
 		}
 
-		managedProjectFileLoading = {
-			...managedProjectFileLoading,
+		projectWorkspaceLoading = {
+			...projectWorkspaceLoading,
 			[relativePath]: true
 		};
-		managedProjectFileLoadErrors = removeProjectFileRecord(managedProjectFileLoadErrors, relativePath);
+		projectWorkspaceLoadErrors = removeWorkspaceFileRecord(projectWorkspaceLoadErrors, relativePath);
 
 		try {
-			const file = await getProjectFileResource('managed', relativePath);
-			updateLoadedManagedProjectFile(relativePath, file.content ?? '');
+			const file = await getProjectWorkspaceFileResource('workspace', relativePath);
+			projectWorkspaceFileMetadata = { ...projectWorkspaceFileMetadata, [relativePath]: file };
+			if (file.editable) updateLoadedProjectWorkspaceFile(relativePath, file.content ?? '');
 		} catch (error) {
-			managedProjectFileLoadErrors = {
-				...managedProjectFileLoadErrors,
+			projectWorkspaceLoadErrors = {
+				...projectWorkspaceLoadErrors,
 				[relativePath]: error instanceof Error ? error.message : String(error)
 			};
 		} finally {
-			managedProjectFileLoading = removeProjectFileRecord(managedProjectFileLoading, relativePath);
+			projectWorkspaceLoading = removeWorkspaceFileRecord(projectWorkspaceLoading, relativePath);
 		}
 	}
 
 	$effect(() => {
-		const relativePath = selectedManagedProjectFilePath;
-		const entry = selectedManagedProjectFile;
-		const hasContent = relativePath ? managedProjectFileContents[relativePath] !== undefined : true;
-		const isLoadingFile = relativePath ? managedProjectFileLoading[relativePath] === true : false;
-		const hasLoadError = relativePath ? managedProjectFileLoadErrors[relativePath] !== undefined : false;
+		const relativePath = selectedProjectWorkspacePath;
+		const entry = selectedProjectWorkspaceEntry;
+		const hasContent = relativePath ? projectWorkspaceContents[relativePath] !== undefined : true;
+		const hasMetadata = relativePath ? projectWorkspaceFileMetadata[relativePath] !== undefined : true;
+		const isLoadingFile = relativePath ? projectWorkspaceLoading[relativePath] === true : false;
+		const hasLoadError = relativePath ? projectWorkspaceLoadErrors[relativePath] !== undefined : false;
 
-		if (!relativePath || !entry || entry.isDirectory || hasContent || isLoadingFile || hasLoadError) {
+		if (!relativePath || !entry || entry.isDirectory || hasContent || hasMetadata || isLoadingFile || hasLoadError) {
 			return;
 		}
 
-		void loadManagedProjectFileDraft(relativePath);
+		void loadProjectWorkspaceFileDraft(relativePath);
 	});
 
-	function remapManagedProjectFileState(oldPath: string, newPath: string) {
-		managedProjectFileContents = remapProjectFileRecord(managedProjectFileContents, oldPath, newPath);
-		loadedManagedProjectFileContents = remapProjectFileRecord(loadedManagedProjectFileContents, oldPath, newPath);
-		managedProjectFileHasErrors = remapProjectFileRecord(managedProjectFileHasErrors, oldPath, newPath);
-		managedProjectFileValidationReady = remapProjectFileRecord(managedProjectFileValidationReady, oldPath, newPath);
-		managedProjectFileLoadErrors = remapProjectFileRecord(managedProjectFileLoadErrors, oldPath, newPath);
-		managedProjectFileLoading = remapProjectFileRecord(managedProjectFileLoading, oldPath, newPath);
-		includeFilesState = remapProjectFileRecord(includeFilesState, oldPath, newPath);
-		loadedIncludeFileContents = remapProjectFileRecord(loadedIncludeFileContents, oldPath, newPath);
-		includeFilesPanelStates = remapProjectFileRecord(includeFilesPanelStates, oldPath, newPath);
-		includeFilesHasErrors = remapProjectFileRecord(includeFilesHasErrors, oldPath, newPath);
-		includeFilesValidationReady = remapProjectFileRecord(includeFilesValidationReady, oldPath, newPath);
-		openTabsPreference = openTabsPreference.map((tab) => remapSelectedProjectFileKey(tab, oldPath, newPath) ?? tab);
-		const remappedSelection = remapSelectedProjectFileKey(selectedFile, oldPath, newPath);
+	function remapProjectWorkspaceState(oldPath: string, newPath: string) {
+		projectWorkspaceContents = remapWorkspaceFileRecord(projectWorkspaceContents, oldPath, newPath);
+		loadedProjectWorkspaceContents = remapWorkspaceFileRecord(loadedProjectWorkspaceContents, oldPath, newPath);
+		projectWorkspaceHasErrors = remapWorkspaceFileRecord(projectWorkspaceHasErrors, oldPath, newPath);
+		projectWorkspaceValidationReady = remapWorkspaceFileRecord(projectWorkspaceValidationReady, oldPath, newPath);
+		projectWorkspaceLoadErrors = remapWorkspaceFileRecord(projectWorkspaceLoadErrors, oldPath, newPath);
+		projectWorkspaceLoading = remapWorkspaceFileRecord(projectWorkspaceLoading, oldPath, newPath);
+		projectWorkspaceFileMetadata = remapWorkspaceFileRecord(projectWorkspaceFileMetadata, oldPath, newPath);
+		includeFilesState = remapWorkspaceFileRecord(includeFilesState, oldPath, newPath);
+		loadedIncludeFileContents = remapWorkspaceFileRecord(loadedIncludeFileContents, oldPath, newPath);
+		includeFilesPanelStates = remapWorkspaceFileRecord(includeFilesPanelStates, oldPath, newPath);
+		includeFilesHasErrors = remapWorkspaceFileRecord(includeFilesHasErrors, oldPath, newPath);
+		includeFilesValidationReady = remapWorkspaceFileRecord(includeFilesValidationReady, oldPath, newPath);
+		openTabsPreference = openTabsPreference.map((tab) => remapSelectedWorkspaceFileKey(tab, oldPath, newPath) ?? tab);
+		const remappedSelection = remapSelectedWorkspaceFileKey(selectedFile, oldPath, newPath);
 		if (remappedSelection) {
 			selectedFilePreference = remappedSelection;
 		}
 	}
 
-	function removeManagedProjectFileState(relativePath: string) {
-		managedProjectFileContents = removeProjectFileRecord(managedProjectFileContents, relativePath);
-		loadedManagedProjectFileContents = removeProjectFileRecord(loadedManagedProjectFileContents, relativePath);
-		managedProjectFileHasErrors = removeProjectFileRecord(managedProjectFileHasErrors, relativePath);
-		managedProjectFileValidationReady = removeProjectFileRecord(managedProjectFileValidationReady, relativePath);
-		managedProjectFileLoadErrors = removeProjectFileRecord(managedProjectFileLoadErrors, relativePath);
-		managedProjectFileLoading = removeProjectFileRecord(managedProjectFileLoading, relativePath);
-		includeFilesState = removeProjectFileRecord(includeFilesState, relativePath);
-		loadedIncludeFileContents = removeProjectFileRecord(loadedIncludeFileContents, relativePath);
-		includeFilesPanelStates = removeProjectFileRecord(includeFilesPanelStates, relativePath);
-		includeFilesHasErrors = removeProjectFileRecord(includeFilesHasErrors, relativePath);
-		includeFilesValidationReady = removeProjectFileRecord(includeFilesValidationReady, relativePath);
-		openTabsPreference = openTabsPreference.filter((tab) => !isProjectFileSelectionUnder(tab, relativePath));
-		if (isProjectFileSelectionUnder(selectedFile, relativePath)) {
+	function removeProjectWorkspaceState(relativePath: string) {
+		projectWorkspaceContents = removeWorkspaceFileRecord(projectWorkspaceContents, relativePath);
+		loadedProjectWorkspaceContents = removeWorkspaceFileRecord(loadedProjectWorkspaceContents, relativePath);
+		projectWorkspaceHasErrors = removeWorkspaceFileRecord(projectWorkspaceHasErrors, relativePath);
+		projectWorkspaceValidationReady = removeWorkspaceFileRecord(projectWorkspaceValidationReady, relativePath);
+		projectWorkspaceLoadErrors = removeWorkspaceFileRecord(projectWorkspaceLoadErrors, relativePath);
+		projectWorkspaceLoading = removeWorkspaceFileRecord(projectWorkspaceLoading, relativePath);
+		projectWorkspaceFileMetadata = removeWorkspaceFileRecord(projectWorkspaceFileMetadata, relativePath);
+		includeFilesState = removeWorkspaceFileRecord(includeFilesState, relativePath);
+		loadedIncludeFileContents = removeWorkspaceFileRecord(loadedIncludeFileContents, relativePath);
+		includeFilesPanelStates = removeWorkspaceFileRecord(includeFilesPanelStates, relativePath);
+		includeFilesHasErrors = removeWorkspaceFileRecord(includeFilesHasErrors, relativePath);
+		includeFilesValidationReady = removeWorkspaceFileRecord(includeFilesValidationReady, relativePath);
+		openTabsPreference = openTabsPreference.filter((tab) => !isWorkspaceFileSelectionUnder(tab, relativePath));
+		if (isWorkspaceFileSelectionUnder(selectedFile, relativePath)) {
 			selectedFilePreference = openTabs[0] ?? 'compose';
 		}
 	}
 
-	function createManagedProjectFile(parentPath: string, name: string, content = '') {
-		const relativePath = planProjectFileCreate(managedProjectFilePaths, parentPath, name, composeFileName);
+	function createProjectWorkspaceFile(parentPath: string, name: string, content = '') {
+		const relativePath = planProjectWorkspaceFileCreate(projectWorkspacePaths, parentPath, name, composeFileName);
 		if (!relativePath) return;
-		managedProjectFileChanges = [...managedProjectFileChanges, { operation: 'create_file', relativePath, content }];
-		managedProjectFileContents = { ...managedProjectFileContents, [relativePath]: content };
-		loadedManagedProjectFileContents = { ...loadedManagedProjectFileContents, [relativePath]: content };
-		managedProjectFileLoadErrors = removeProjectFileRecord(managedProjectFileLoadErrors, relativePath);
-		ensureManagedProjectFileUiState(relativePath);
+		projectWorkspaceChanges = [...projectWorkspaceChanges, { operation: 'create_file', relativePath }];
+		projectWorkspaceContents = { ...projectWorkspaceContents, [relativePath]: content };
+		loadedProjectWorkspaceContents = { ...loadedProjectWorkspaceContents, [relativePath]: content };
+		projectWorkspaceFileMetadata = {
+			...projectWorkspaceFileMetadata,
+			[relativePath]: {
+				path: relativePath,
+				relativePath,
+				name: workspaceFileBasename(relativePath),
+				size: content.length,
+				mimeType: 'text/plain',
+				content,
+				editable: true
+			}
+		};
+		projectWorkspaceLoadErrors = removeWorkspaceFileRecord(projectWorkspaceLoadErrors, relativePath);
+		ensureProjectWorkspaceUiState(relativePath);
 		openFileTab(`file:${relativePath}`);
 	}
 
-	async function uploadManagedProjectFiles(parentPath: string, files: File[]): Promise<string | void> {
+	async function uploadProjectWorkspaceFiles(parentPath: string, files: File[]): Promise<string | void> {
 		const file = files[0];
-		if (!file) return m.project_file_upload_file_required();
-		const result = await readProjectTextUpload(file);
+		if (!file) return m.workspace_upload_file_required();
+		const result = await readWorkspaceTextUpload(file, projectWorkspaceMaxFileSizeMb);
 		if (result.error) return result.error;
-		createManagedProjectFile(parentPath, file.name, result.content ?? '');
+		createProjectWorkspaceFile(parentPath, file.name, result.content ?? '');
 	}
 
-	function createManagedProjectFolder(parentPath: string, name: string) {
-		const relativePath = planProjectFileCreate(managedProjectFilePaths, parentPath, name, composeFileName);
+	async function downloadProjectWorkspaceFile(relativePath: string) {
+		try {
+			await projectWorkspaceService.downloadWorkspaceFile(projectId, relativePath, envId);
+		} catch (error) {
+			toast.error(error instanceof Error ? error.message : m.common_download_error());
+		}
+	}
+
+	function createProjectWorkspaceFolder(parentPath: string, name: string) {
+		const relativePath = planProjectWorkspaceFileCreate(projectWorkspacePaths, parentPath, name, composeFileName);
 		if (!relativePath) return;
-		managedProjectFileChanges = [...managedProjectFileChanges, { operation: 'create_folder', relativePath }];
+		projectWorkspaceChanges = [...projectWorkspaceChanges, { operation: 'create_folder', relativePath }];
 		selectedFilePreference = `file:${relativePath}`;
 	}
 
-	function renameManagedProjectFile(relativePath: string, newName: string) {
-		const plan = planProjectFileRename(managedProjectFilePaths, relativePath, newName, composeFileName);
+	function renameProjectWorkspaceFile(relativePath: string, newName: string) {
+		const plan = planProjectWorkspaceFileRename(projectWorkspacePaths, relativePath, newName, composeFileName);
 		if (!plan) return;
-		managedProjectFileChanges = [...managedProjectFileChanges, { operation: 'rename', relativePath, newName: plan.newName }];
-		remapManagedProjectFileState(relativePath, plan.newPath);
+		projectWorkspaceChanges = [...projectWorkspaceChanges, { operation: 'rename', relativePath, newName: plan.newName }];
+		remapProjectWorkspaceState(relativePath, plan.newPath);
 	}
 
-	function moveManagedProjectFile(relativePath: string, newParentPath: string) {
-		const entry = managedProjectFiles.find((file) => file.relativePath === relativePath);
-		const newPath = planProjectFileMove(entry, managedProjectFilePaths, relativePath, newParentPath);
+	function moveProjectWorkspaceFile(relativePath: string, newParentPath: string) {
+		const entry = projectWorkspaceEntries.find((file) => file.relativePath === relativePath);
+		const newPath = planProjectWorkspaceFileMove(entry, projectWorkspacePaths, relativePath, newParentPath);
 		if (!newPath) return;
-		managedProjectFileChanges = [...managedProjectFileChanges, { operation: 'move', relativePath, newParentPath }];
-		remapManagedProjectFileState(relativePath, newPath);
+		projectWorkspaceChanges = [...projectWorkspaceChanges, { operation: 'move', relativePath, newParentPath }];
+		remapProjectWorkspaceState(relativePath, newPath);
 	}
 
-	function deleteManagedProjectFile(relativePath: string) {
-		const entry = managedProjectFiles.find((file) => file.relativePath === relativePath);
+	function deleteProjectWorkspaceFile(relativePath: string) {
+		const entry = projectWorkspaceEntries.find((file) => file.relativePath === relativePath);
 		if (!entry) return;
-		managedProjectFileChanges = [
-			...managedProjectFileChanges,
-			{ operation: 'delete', relativePath, recursive: entry.isDirectory }
-		];
-		removeManagedProjectFileState(relativePath);
+		projectWorkspaceChanges = [...projectWorkspaceChanges, { operation: 'delete', relativePath, recursive: entry.isDirectory }];
+		removeProjectWorkspaceState(relativePath);
 	}
 
 	function toggleIncludeFileTab(relativePath: string) {
@@ -1600,18 +1584,19 @@
 									{#snippet first()}
 										<WorkspaceFileTreePanel
 											leadingRows={projectWorkspaceLeadingRows}
-											entries={managedProjectFiles}
+											entries={projectWorkspaceEntries}
 											{selectedFile}
-											disabled={!canEditProjectFiles}
-											readOnlyMessage={isGitOpsManaged ? m.project_files_readonly_git() : undefined}
-											onSelect={selectManagedProjectFile}
-											onCreateFile={createManagedProjectFile}
-											onCreateFolder={createManagedProjectFolder}
-											onUpload={uploadManagedProjectFiles}
-											validateName={(name, parentPath) => validateProjectFileName(name, parentPath, composeFileName)}
-											onRename={renameManagedProjectFile}
-											onMove={moveManagedProjectFile}
-											onDelete={deleteManagedProjectFile}
+											disabled={!canEditProjectWorkspace}
+											readOnlyMessage={isGitOpsManaged ? m.projects_workspace_readonly_git() : undefined}
+											onSelect={selectProjectWorkspaceFile}
+											onCreateFile={createProjectWorkspaceFile}
+											onCreateFolder={createProjectWorkspaceFolder}
+											onUpload={uploadProjectWorkspaceFiles}
+											onDownload={downloadProjectWorkspaceFile}
+											validateName={(name, parentPath) => validateProjectWorkspaceFileName(name, parentPath, composeFileName)}
+											onRename={renameProjectWorkspaceFile}
+											onMove={moveProjectWorkspaceFile}
+											onDelete={deleteProjectWorkspaceFile}
 										/>
 									{/snippet}
 
@@ -1687,11 +1672,20 @@
 														/>
 													{:else if activeTreeTab.startsWith('file:')}
 														{@const relativePath = activeTreeTab.slice(5)}
-														{#if managedProjectFileLoadErrors[relativePath]}
+														{#if projectWorkspaceLoadErrors[relativePath]}
 															<div class="flex h-full min-h-0 items-center justify-center px-4 text-sm text-destructive">
-																{managedProjectFileLoadErrors[relativePath]}
+																{projectWorkspaceLoadErrors[relativePath]}
 															</div>
-														{:else if managedProjectFileContents[relativePath] === undefined}
+														{:else if selectedProjectWorkspaceMetadata?.editable === false}
+															<div
+																class="flex h-full min-h-0 items-center justify-center px-4 text-center text-sm text-muted-foreground"
+															>
+																{workspaceReadOnlyMessage(
+																	selectedProjectWorkspaceMetadata.readOnlyReason,
+																	projectWorkspaceMaxFileSizeMb
+																)}
+															</div>
+														{:else if projectWorkspaceContents[relativePath] === undefined}
 															<div class="flex h-full min-h-0 items-center justify-center text-muted-foreground">
 																{m.common_loading()}
 															</div>
@@ -1700,14 +1694,14 @@
 																variant="plain"
 																open={true}
 																title={relativePath}
-																language={projectFileLanguage(relativePath)}
+																language={workspaceFileLanguage(relativePath)}
 																validationMode="none"
-																bind:value={managedProjectFileContents[relativePath]}
-																readOnly={!canEditProjectFiles}
-																bind:hasErrors={managedProjectFileHasErrors[relativePath]}
-																bind:validationReady={managedProjectFileValidationReady[relativePath]}
+																bind:value={projectWorkspaceContents[relativePath]}
+																readOnly={!canEditProjectWorkspace}
+																bind:hasErrors={projectWorkspaceHasErrors[relativePath]}
+																bind:validationReady={projectWorkspaceValidationReady[relativePath]}
 																fileId={`project:${projectId}:file:${relativePath}`}
-																originalValue={loadedManagedProjectFileContents[relativePath] ?? ''}
+																originalValue={loadedProjectWorkspaceContents[relativePath] ?? ''}
 																enableDiff={true}
 																editorContext={codeEditorContext}
 																bind:outlineOpen={treeOutlineOpen}
@@ -1757,10 +1751,10 @@
 								{#if selectedIncludeTab}
 									{@const includeFile = project?.includeFiles?.find((f) => f.relativePath === selectedIncludeTab)}
 									{@const dirFile = !includeFile
-										? project?.directoryFiles?.find((f) => f.relativePath === selectedIncludeTab)
+										? projectWorkspaceEntries.find((f) => f.relativePath === selectedIncludeTab)
 										: undefined}
 									{@const fileKind = includeFile ? 'include' : 'directory'}
-									{#await getProjectFileResource(fileKind, selectedIncludeTab)}
+									{#await getProjectWorkspaceFileResource(fileKind, selectedIncludeTab)}
 										<div class="flex h-full min-h-0 items-center justify-center rounded-lg border text-muted-foreground">
 											{m.common_loading()}
 										</div>
