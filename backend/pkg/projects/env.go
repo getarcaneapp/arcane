@@ -12,7 +12,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"emperror.dev/errors"
@@ -70,8 +69,6 @@ type envFileCacheEntry struct {
 }
 
 var (
-	processEnvOnce      sync.Once
-	processEnvSnapshot  EnvMap
 	globalEnvFileCache  = hot.NewHotCache[string, envFileCacheEntry](hot.LRU, 4096).Build()
 	projectEnvFileCache = hot.NewHotCache[string, envFileCacheEntry](hot.LRU, 4096).Build()
 )
@@ -84,12 +81,33 @@ func NewEnvLoader(projectsDir, workdir string, autoInjectEnv bool) *EnvLoader {
 	}
 }
 
+// processEnvAllowlist is the only part of Arcane's own process environment
+// that flows into compose interpolation of managed projects: timezone and
+// locale, whose container values are safe to share. Everything else is
+// excluded so Arcane's variables never leak into ${VAR} references or
+// pass-through environment entries — its PORT collides with project port
+// mappings, secrets would be readable from any compose file, and vars like
+// HOME or PUID carry container-internal values that are wrong for projects.
+var processEnvAllowlist = []string{"TZ", "LANG", "LANGUAGE", "LC_ALL"}
+
+func allowedProcessEnvInternal() EnvMap {
+	envMap := make(EnvMap)
+	for _, key := range processEnvAllowlist {
+		if val, ok := os.LookupEnv(key); ok {
+			envMap[key] = val
+		}
+	}
+	return envMap
+}
+
 // LoadEnvironment loads and merges environment variables from all sources:
-// 1. Process environment
+// 1. Allowlisted process environment (TZ)
 // 2. Global .env.global file (from projects directory)
 // 3. Project-specific .env file (from workdir)
+// The rest of the Arcane process environment is intentionally excluded so its
+// own variables never leak into compose interpolation of managed projects.
 func (l *EnvLoader) LoadEnvironment(ctx context.Context) (envMap EnvMap, injectionVars EnvMap, err error) {
-	envMap = cloneEnvMapInternal(loadProcessEnvSnapshotInternal())
+	envMap = allowedProcessEnvInternal()
 	injectionVars = make(EnvMap)
 
 	if strings.TrimSpace(l.projectsDir) != "" {
@@ -111,18 +129,6 @@ func (l *EnvLoader) LoadEnvironment(ctx context.Context) (envMap EnvMap, injecti
 	return envMap, injectionVars, nil
 }
 
-func loadProcessEnvSnapshotInternal() EnvMap {
-	processEnvOnce.Do(func() {
-		processEnvSnapshot = make(EnvMap)
-		for _, kv := range os.Environ() {
-			if k, v, ok := strings.Cut(kv, "="); ok {
-				processEnvSnapshot[k] = v
-			}
-		}
-	})
-	return processEnvSnapshot
-}
-
 func (l *EnvLoader) loadAndMergeGlobalEnv(ctx context.Context, path string, envMap, injectionVars EnvMap) error {
 	entry, err := loadCachedEnvFileInternal(ctx, globalEnvFileCache, path, path, envMap)
 	if err != nil {
@@ -133,9 +139,7 @@ func (l *EnvLoader) loadAndMergeGlobalEnv(ctx context.Context, path string, envM
 	}
 
 	for k, v := range entry.values {
-		if _, exists := envMap[k]; !exists {
-			envMap[k] = v
-		}
+		envMap[k] = v
 		injectionVars[k] = v
 	}
 
@@ -234,12 +238,6 @@ func validEnvFileCacheEntryInternal(entry envFileCacheEntry) bool {
 	return entry.exists && info.ModTime().Equal(entry.mtime)
 }
 
-func cloneEnvMapInternal(src EnvMap) EnvMap {
-	dst := make(EnvMap, len(src))
-	maps.Copy(dst, src)
-	return dst
-}
-
 func parseProjectEnvFileExistingInternal(path string, contextEnv EnvMap) (EnvMap, error) {
 	content, err := os.ReadFile(path)
 	if err != nil {
@@ -259,14 +257,13 @@ func ParseProjectEnvFile(path string, contextEnv EnvMap) (EnvMap, error) {
 }
 
 // ParseProjectEnvContent parses project .env content from a string using
-// compose-go's dotenv parser with variable expansion. Lookups check contextEnv
-// first (previously loaded vars), then the process environment.
+// compose-go's dotenv parser with variable expansion. Lookups resolve from
+// contextEnv (previously loaded vars) only; the Arcane process environment is
+// intentionally never consulted so its variables don't leak into project env.
 func ParseProjectEnvContent(content string, contextEnv EnvMap) (EnvMap, error) {
 	lookupFn := func(key string) (string, bool) {
-		if val, ok := contextEnv[key]; ok {
-			return val, true
-		}
-		return os.LookupEnv(key)
+		val, ok := contextEnv[key]
+		return val, ok
 	}
 
 	envMap, err := dotenv.ParseWithLookup(strings.NewReader(content), lookupFn)

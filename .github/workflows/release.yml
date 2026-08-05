@@ -37,7 +37,7 @@ jobs:
       - name: Setup PNPM
         uses: pnpm/action-setup@v6
         with:
-          run_install: false
+          run_install: true
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
