@@ -195,7 +195,7 @@ func (m *mockSystemUpgradeServiceInternal) TriggerUpgradeViaCLI(_ context.Contex
 func TestUpdaterService_ApplyPendingNoRecordsInternal(t *testing.T) {
 	ctx := context.Background()
 	db := setupProjectTestDB(t)
-	svc, svcErr := NewUpdaterService(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	svc, svcErr := NewUpdaterService(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	require.NoError(t, svcErr)
 
 	result, err := svc.ApplyPending(ctx, arcaneupdater.Options{DryRun: true})
@@ -251,7 +251,7 @@ func TestUpdaterService_TriggerSelfUpdateViaCLIInternal(t *testing.T) {
 
 	t.Run("server label triggers upgrade with system user", func(t *testing.T) {
 		mockUpgrade := &mockSystemUpgradeServiceInternal{}
-		svc, svcErr := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, mockUpgrade, nil)
+		svc, svcErr := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, mockUpgrade, nil, nil)
 		require.NoError(t, svcErr)
 
 		err := svc.TriggerSelfUpdateViaCLI(ctx, "test", "container-1", "arcane", map[string]string{
@@ -270,7 +270,7 @@ func TestUpdaterService_TriggerSelfUpdateViaCLIInternal(t *testing.T) {
 
 	t.Run("agent label triggers upgrade", func(t *testing.T) {
 		mockUpgrade := &mockSystemUpgradeServiceInternal{}
-		svc, svcErr := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, mockUpgrade, nil)
+		svc, svcErr := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, mockUpgrade, nil, nil)
 		require.NoError(t, svcErr)
 
 		err := svc.TriggerSelfUpdateViaCLI(ctx, "test", "container-1", "arcane-agent", map[string]string{
@@ -283,7 +283,7 @@ func TestUpdaterService_TriggerSelfUpdateViaCLIInternal(t *testing.T) {
 
 	t.Run("non Arcane labels fail without triggering upgrade", func(t *testing.T) {
 		mockUpgrade := &mockSystemUpgradeServiceInternal{}
-		svc, svcErr := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, mockUpgrade, nil)
+		svc, svcErr := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, mockUpgrade, nil, nil)
 		require.NoError(t, svcErr)
 
 		err := svc.TriggerSelfUpdateViaCLI(ctx, "test", "container-1", "demo", map[string]string{
@@ -296,7 +296,7 @@ func TestUpdaterService_TriggerSelfUpdateViaCLIInternal(t *testing.T) {
 	})
 
 	t.Run("missing upgrade service reports required hook", func(t *testing.T) {
-		svc, svcErr := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+		svc, svcErr := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 		require.NoError(t, svcErr)
 
 		err := svc.TriggerSelfUpdateViaCLI(ctx, "test", "container-1", "arcane", map[string]string{
@@ -309,7 +309,7 @@ func TestUpdaterService_TriggerSelfUpdateViaCLIInternal(t *testing.T) {
 
 	t.Run("upgrade errors are wrapped", func(t *testing.T) {
 		mockUpgrade := &mockSystemUpgradeServiceInternal{triggerError: errors.New("upgrade failed")}
-		svc, svcErr := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, mockUpgrade, nil)
+		svc, svcErr := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, mockUpgrade, nil, nil)
 		require.NoError(t, svcErr)
 
 		err := svc.TriggerSelfUpdateViaCLI(ctx, "test", "container-1", "arcane", map[string]string{
@@ -322,7 +322,7 @@ func TestUpdaterService_TriggerSelfUpdateViaCLIInternal(t *testing.T) {
 }
 
 func TestUpdaterService_StatusTrackingInternal(t *testing.T) {
-	svc, svcErr := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	svc, svcErr := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	require.NoError(t, svcErr)
 
 	stopContainer := svc.BeginContainerUpdate("container-1")
@@ -348,7 +348,7 @@ func TestUpdaterService_DockerClientAdapterInternal(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("missing docker service returns unavailable error", func(t *testing.T) {
-		svc, svcErr := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+		svc, svcErr := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 		require.NoError(t, svcErr)
 
 		cli, err := svc.DockerClient(ctx)
@@ -362,7 +362,7 @@ func TestUpdaterService_DockerClientAdapterInternal(t *testing.T) {
 		server := newProjectImagePullServer(t, nil)
 		wantClient := newTestDockerClient(t, server)
 		dockerSvc := &DockerClientService{client: wantClient}
-		svc, svcErr := NewUpdaterService(nil, nil, dockerSvc, nil, nil, nil, nil, nil, nil, nil, nil)
+		svc, svcErr := NewUpdaterService(nil, nil, dockerSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 		require.NoError(t, svcErr)
 
 		gotClient, err := svc.DockerClient(ctx)
@@ -376,7 +376,7 @@ func TestUpdaterService_PullImageAdapterInternal(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("missing image service returns unavailable error", func(t *testing.T) {
-		svc, svcErr := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+		svc, svcErr := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 		require.NoError(t, svcErr)
 
 		err := svc.PullImage(ctx, "registry.example.com/app:1.2.3", nil)
@@ -390,7 +390,7 @@ func TestUpdaterService_PullImageAdapterInternal(t *testing.T) {
 		server := newProjectImagePullServer(t, nil)
 		dockerSvc := &DockerClientService{client: newTestDockerClient(t, server)}
 		imageSvc := NewImageService(db, dockerSvc, nil, nil, nil, NewEventService(db, nil, nil))
-		svc, svcErr := NewUpdaterService(db, nil, dockerSvc, nil, nil, nil, nil, imageSvc, nil, nil, nil)
+		svc, svcErr := NewUpdaterService(db, nil, dockerSvc, nil, nil, nil, nil, imageSvc, nil, nil, nil, nil)
 		require.NoError(t, svcErr)
 		var progress bytes.Buffer
 
@@ -422,7 +422,7 @@ func TestUpdaterService_PullImageAdapterInternal(t *testing.T) {
 		envSvc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
 		projectSvc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, nil).
 			WithRegistryCredentialsProvider(envSvc.GetEnabledRegistryCredentials)
-		svc, svcErr := NewUpdaterService(db, nil, dockerSvc, projectSvc, nil, nil, nil, imageSvc, nil, nil, nil)
+		svc, svcErr := NewUpdaterService(db, nil, dockerSvc, projectSvc, nil, nil, nil, imageSvc, nil, nil, nil, nil)
 		require.NoError(t, svcErr)
 		var progress bytes.Buffer
 
@@ -466,7 +466,7 @@ func TestUpdaterService_PendingImageUpdatesAdapterInternal(t *testing.T) {
 		UpdateType: models.UpdateTypeDigest,
 		CheckTime:  checkTime,
 	}).Error)
-	svc, svcErr := NewUpdaterService(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	svc, svcErr := NewUpdaterService(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	require.NoError(t, svcErr)
 
 	records, err := svc.PendingImageUpdates(ctx)
@@ -512,7 +512,7 @@ func TestUpdaterService_PendingImageUpdatesFlushesPendingNotificationsInternal(t
 
 	notif := NewNotificationService(db, nil, nil, nil)
 	imageUpdates := NewImageUpdateService(db, nil, nil, nil, nil, notif, nil)
-	svc, svcErr := NewUpdaterService(db, nil, nil, nil, imageUpdates, nil, nil, nil, notif, nil, nil)
+	svc, svcErr := NewUpdaterService(db, nil, nil, nil, imageUpdates, nil, nil, nil, notif, nil, nil, nil)
 	require.NoError(t, svcErr)
 
 	require.NoError(t, db.Create(&models.ImageUpdateRecord{
@@ -543,7 +543,7 @@ func TestUpdaterService_PendingImageUpdatesNoProvidersLeavesUnnotifiedInternal(t
 
 	notif := NewNotificationService(db, nil, nil, nil)
 	imageUpdates := NewImageUpdateService(db, nil, nil, nil, nil, notif, nil)
-	svc, svcErr := NewUpdaterService(db, nil, nil, nil, imageUpdates, nil, nil, nil, notif, nil, nil)
+	svc, svcErr := NewUpdaterService(db, nil, nil, nil, imageUpdates, nil, nil, nil, notif, nil, nil, nil)
 	require.NoError(t, svcErr)
 
 	require.NoError(t, db.Create(&models.ImageUpdateRecord{
@@ -567,7 +567,7 @@ func TestUpdaterService_RecordUpdateRunAdapterInternal(t *testing.T) {
 	ctx := context.Background()
 	db := setupProjectTestDB(t)
 	require.NoError(t, db.AutoMigrate(&models.AutoUpdateRecord{}))
-	svc, svcErr := NewUpdaterService(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	svc, svcErr := NewUpdaterService(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	require.NoError(t, svcErr)
 
 	err := svc.RecordUpdateRun(ctx, updater.ResourceResult{
@@ -692,7 +692,7 @@ func TestUpdaterService_ApplyPending_ProjectFailureDoesNotBlockOtherProjectsInte
 		},
 	}
 
-	svc, svcErr := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	svc, svcErr := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	require.NoError(t, svcErr)
 	engine, engineErr := updater.New(updater.Config{
 		DockerClientProvider: dockerProvider,
@@ -823,7 +823,7 @@ func TestUpdaterService_ApplyPending_RoutesLegacyArcaneServerThroughSelfUpgradeI
 	}
 	mockUpgrade := &mockSystemUpgradeServiceInternal{}
 
-	svc, svcErr := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, mockUpgrade, nil)
+	svc, svcErr := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, mockUpgrade, nil, nil)
 	require.NoError(t, svcErr)
 	engine, engineErr := updater.New(updater.Config{
 		DockerClientProvider: dockerProvider,

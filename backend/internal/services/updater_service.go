@@ -51,6 +51,7 @@ type updaterDependenciesInternal struct {
 	Notifications          *NotificationService
 	SelfUpgrade            selfUpgradeServiceInternal
 	Activity               *ActivityService
+	Swarm                  *SwarmService
 	SystemUser             models.User
 	Logger                 *slog.Logger
 }
@@ -74,6 +75,7 @@ func NewUpdaterService(
 	notifications *NotificationService,
 	upgrade selfUpgradeServiceInternal,
 	activityService *ActivityService,
+	swarm *SwarmService,
 ) (*UpdaterService, error) {
 	service := &UpdaterService{
 		deps: updaterDependenciesInternal{
@@ -88,6 +90,7 @@ func NewUpdaterService(
 			Notifications:          notifications,
 			SelfUpgrade:            upgrade,
 			Activity:               activityService,
+			Swarm:                  swarm,
 			SystemUser:             systemUser,
 		},
 	}
@@ -108,6 +111,7 @@ func (s *UpdaterService) configInternal() updater.Config {
 		Settings:               s,
 		RegistryDigestResolver: s.registryDigestResolverInternal(),
 		ProjectUpdater:         s,
+		SwarmServiceUpdater:    s.swarmServiceUpdaterInternal(),
 		SelfUpdater:            s,
 		Notifier:               s,
 		EventRecorder:          s,
@@ -145,6 +149,16 @@ func (s *UpdaterService) registryDigestResolverInternal() updater.RegistryDigest
 		return nil
 	}
 	return s.deps.RegistryDigestResolver
+}
+
+// swarmServiceUpdaterInternal keeps the engine's SwarmServiceUpdater port a
+// true nil interface when no SwarmService is wired, so the engine falls back
+// to skipping swarm tasks instead of calling through a typed-nil pointer.
+func (s *UpdaterService) swarmServiceUpdaterInternal() updater.SwarmServiceUpdater {
+	if s == nil || s.deps.Swarm == nil {
+		return nil
+	}
+	return s.deps.Swarm
 }
 
 // ApplyPending executes pending image updates. When the options carry
@@ -245,34 +259,21 @@ func (s *UpdaterService) applyScopedUpdatesInternal(ctx context.Context, options
 	}
 
 	engineOpts := updater.Options{Force: options.ForceUpdate, DryRun: options.DryRun}
-	var engineErrs []error
-	for _, containerID := range containerIDs {
-		moduleResult, engineErr := s.engineInternal().UpdateContainer(ctx, containerID, engineOpts)
-		if moduleResult != nil {
-			partial := resultFromModuleInternal(moduleResult)
-			out.Checked += partial.Checked
-			out.Updated += partial.Updated
-			out.Restarted += partial.Restarted
-			out.Skipped += partial.Skipped
-			out.Failed += partial.Failed
-			out.Items = append(out.Items, partial.Items...)
-		}
-		if engineErr != nil {
-			out.Failed++
-			out.Items = append(out.Items, arcaneupdater.ResourceResult{
-				ResourceID:   containerID,
-				ResourceType: "container",
-				Status:       arcaneupdater.StatusFailed,
-				Error:        engineErr.Error(),
-			})
-			engineErrs = append(engineErrs, errors.WrapIff(engineErr, "%s", containerID))
-		}
+	// The engine's batch path folds per-container errors into failed items and
+	// deduplicates swarm task replicas down to one service update each.
+	moduleResult, engineErr := s.engineInternal().UpdateContainers(ctx, containerIDs, engineOpts)
+	if moduleResult != nil {
+		partial := resultFromModuleInternal(moduleResult)
+		out.Checked += partial.Checked
+		out.Updated += partial.Updated
+		out.Restarted += partial.Restarted
+		out.Skipped += partial.Skipped
+		out.Failed += partial.Failed
+		out.Items = append(out.Items, partial.Items...)
 	}
 	s.logResultItemsInternal(ctx, out)
 	out.Success = out.Failed == 0
-	// Engine errors propagate like the unscoped path's engine error does —
-	// the remaining containers were still attempted and recorded above.
-	return stderrors.Join(engineErrs...)
+	return engineErr
 }
 
 // resolveScopedContainerIDsInternal maps a scoped options payload to the
