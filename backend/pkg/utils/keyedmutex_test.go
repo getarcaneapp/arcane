@@ -3,6 +3,7 @@ package utils
 import (
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -59,5 +60,50 @@ func TestKeyedMutexTryLockDoesNotBlockOnHeldKey(t *testing.T) {
 	retaken, ok := locks.TryLock("a")
 	require.True(t, ok, "key must be acquirable once released")
 	retaken()
+	require.Empty(t, locks.locks)
+}
+
+func TestKeyedMutexReadLocksShareKeyAndBlockWriter(t *testing.T) {
+	var locks KeyedMutex
+
+	firstReadUnlock := locks.RLock("volume")
+	secondReadUnlock := locks.RLock("volume")
+	writerAcquired := make(chan struct{})
+	writerReleased := make(chan struct{})
+	go func() {
+		defer close(writerReleased)
+		defer locks.Lock("volume")()
+		close(writerAcquired)
+	}()
+
+	require.Never(t, func() bool {
+		select {
+		case <-writerAcquired:
+			return true
+		default:
+			return false
+		}
+	}, 50*time.Millisecond, time.Millisecond, "writer acquired a key while readers held it")
+
+	firstReadUnlock()
+	require.Never(t, func() bool {
+		select {
+		case <-writerAcquired:
+			return true
+		default:
+			return false
+		}
+	}, 50*time.Millisecond, time.Millisecond, "writer acquired a key before every reader released it")
+
+	secondReadUnlock()
+	require.Eventually(t, func() bool {
+		select {
+		case <-writerAcquired:
+			return true
+		default:
+			return false
+		}
+	}, time.Second, time.Millisecond)
+	<-writerReleased
 	require.Empty(t, locks.locks)
 }

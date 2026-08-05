@@ -80,6 +80,8 @@ walk /volume '' "$depth_budget"
 printf 'ARCANE_TREE_END\0%s\0' "$truncated"`
 
 func (s *VolumeService) GetVolumeWorkspace(ctx context.Context, volumeName string) (*workspacetypes.Workspace, error) {
+	defer s.workspaceLocks.RLock(volumeName)()
+
 	totalStartedAt := time.Now()
 	defer func() {
 		slog.DebugContext(ctx, "volume workspace load completed", "volume", volumeName, "total_duration", time.Since(totalStartedAt))
@@ -259,6 +261,8 @@ func (s *VolumeService) volumeWorkspaceMaxFileSizeBytesInternal() int64 {
 }
 
 func (s *VolumeService) GetVolumeWorkspaceFile(ctx context.Context, volumeName, relativePath string) (*workspacetypes.FileContent, error) {
+	defer s.workspaceLocks.RLock(volumeName)()
+
 	if err := s.validateVolumeHelperSupportInternal(ctx, volumeName); err != nil {
 		return nil, classifyVolumeWorkspaceHelperSupportErrorInternal(err)
 	}
@@ -316,30 +320,38 @@ func (s *VolumeService) GetVolumeWorkspaceFile(ctx context.Context, volumeName, 
 }
 
 func (s *VolumeService) DownloadVolumeWorkspaceFile(ctx context.Context, volumeName, relativePath string) (io.ReadCloser, int64, error) {
+	unlock := s.workspaceLocks.RLock(volumeName)
 	if err := s.validateVolumeHelperSupportInternal(ctx, volumeName); err != nil {
+		unlock()
 		return nil, 0, classifyVolumeWorkspaceHelperSupportErrorInternal(err)
 	}
 	rel, err := utils.NormalizeRelativePath(relativePath)
 	if err != nil {
+		unlock()
 		return nil, 0, common.Classify(common.ErrVolumeWorkspaceForbidden, errors.WrapIf(err, "invalid volume workspace path"))
 	}
 	containerID, cleanup, err := s.acquireVolumeHelperInternal(ctx, volumeName)
 	if err != nil {
+		unlock()
 		return nil, 0, err
+	}
+	cleanupAndUnlock := func() {
+		cleanup()
+		unlock()
 	}
 	parent := path.Dir(rel)
 	if parent != "." {
 		if err := s.validateVolumeWorkspacePathInternal(ctx, containerID, parent, false); err != nil {
-			cleanup()
+			cleanupAndUnlock()
 			return nil, 0, err
 		}
 	}
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		cleanup()
+		cleanupAndUnlock()
 		return nil, 0, err
 	}
-	return s.downloadFileFromContainerInternal(ctx, dockerClient, containerID, path.Join("/volume", rel), cleanup)
+	return s.downloadFileFromContainerInternal(ctx, dockerClient, containerID, path.Join("/volume", rel), cleanupAndUnlock)
 }
 
 func volumeWorkspaceFileContentResponseInternal(relativePath, kind string, size int64, content []byte, maxFileSizeBytes int64) (*workspacetypes.FileContent, error) {

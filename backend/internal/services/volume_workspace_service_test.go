@@ -3,6 +3,7 @@ package services
 import (
 	"archive/tar"
 	"context"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
@@ -92,6 +93,127 @@ func TestUpdateVolumeWorkspaceValidationFailureReturnsNoWorkspace(t *testing.T) 
 
 	require.Nil(t, workspace)
 	require.ErrorIs(t, err, common.ErrVolumeWorkspaceBadRequest)
+}
+
+func TestVolumeWorkspaceReadsWaitForMutationLock(t *testing.T) {
+	testCases := map[string]func(context.Context, *VolumeService) error{
+		"tree": func(ctx context.Context, service *VolumeService) error {
+			_, err := service.GetVolumeWorkspace(ctx, "workspace-volume")
+			return err
+		},
+		"file": func(ctx context.Context, service *VolumeService) error {
+			_, err := service.GetVolumeWorkspaceFile(ctx, "workspace-volume", "file.txt")
+			return err
+		},
+		"download": func(ctx context.Context, service *VolumeService) error {
+			_, _, err := service.DownloadVolumeWorkspaceFile(ctx, "workspace-volume", "file.txt")
+			return err
+		},
+	}
+
+	for name, read := range testCases {
+		t.Run(name, func(t *testing.T) {
+			requestStarted := make(chan struct{}, 1)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				requestStarted <- struct{}{}
+				http.Error(w, "stop after lock acquisition", http.StatusInternalServerError)
+			}))
+			t.Cleanup(server.Close)
+
+			service := &VolumeService{
+				dockerService: &DockerClientService{client: newVolumeWorkspaceTestDockerClientInternal(t, server)},
+			}
+			unlockMutation := service.workspaceLocks.Lock("workspace-volume")
+			readStarted := make(chan struct{})
+			readDone := make(chan error, 1)
+			go func() {
+				close(readStarted)
+				readDone <- read(context.Background(), service)
+			}()
+			<-readStarted
+
+			require.Never(t, func() bool {
+				select {
+				case <-requestStarted:
+					return true
+				default:
+					return false
+				}
+			}, 50*time.Millisecond, time.Millisecond, "workspace read reached Docker while a mutation held the volume lock")
+
+			unlockMutation()
+			require.Eventually(t, func() bool {
+				select {
+				case <-requestStarted:
+					return true
+				default:
+					return false
+				}
+			}, time.Second, time.Millisecond)
+			require.Error(t, <-readDone)
+		})
+	}
+}
+
+func TestDownloadVolumeWorkspaceFileHoldsReadLockUntilClosed(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/workspace-volume"):
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(volume.Volume{Name: "workspace-volume", Driver: "local"})
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/helper/json"):
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"Id":    "helper",
+				"State": map[string]any{"Running": true},
+			})
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/helper/archive"):
+			w.Header().Set("Content-Type", "application/x-tar")
+			content := []byte("content")
+			stat, err := json.Marshal(container.PathStat{Name: "file.txt", Size: int64(len(content)), Mode: 0o600})
+			if err != nil {
+				t.Errorf("marshal download path stat: %v", err)
+				return
+			}
+			w.Header().Set("X-Docker-Container-Path-Stat", base64.StdEncoding.EncodeToString(stat))
+			tarWriter := tar.NewWriter(w)
+			if err := tarWriter.WriteHeader(&tar.Header{Name: "file.txt", Mode: 0o600, Size: int64(len(content))}); err != nil {
+				t.Errorf("write download header: %v", err)
+				return
+			}
+			if _, err := tarWriter.Write(content); err != nil {
+				t.Errorf("write download content: %v", err)
+				return
+			}
+			if err := tarWriter.Close(); err != nil {
+				t.Errorf("close download archive: %v", err)
+			}
+		default:
+			http.Error(w, "unexpected Docker request: "+r.Method+" "+r.URL.Path, http.StatusInternalServerError)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	service := &VolumeService{
+		dockerService: &DockerClientService{client: newVolumeWorkspaceTestDockerClientInternal(t, server)},
+		helperByVolume: map[string]*volumeHelper{
+			"workspace-volume": {id: "helper", lastUsedAt: time.Now()},
+		},
+	}
+	reader, size, err := service.DownloadVolumeWorkspaceFile(context.Background(), "workspace-volume", "file.txt")
+	require.NoError(t, err)
+	require.EqualValues(t, 7, size)
+
+	_, acquired := service.workspaceLocks.TryLock("workspace-volume")
+	require.False(t, acquired, "mutation lock acquired before download stream closed")
+	content, err := io.ReadAll(reader)
+	require.NoError(t, err)
+	require.Equal(t, "content", string(content))
+	require.NoError(t, reader.Close())
+
+	unlockMutation, acquired := service.workspaceLocks.TryLock("workspace-volume")
+	require.True(t, acquired, "mutation lock remained held after download stream closed")
+	unlockMutation()
 }
 
 func volumeWorkspaceTreeRecordInternal(relativePath, kind, size, modTime, mode, linkTarget string) string {
