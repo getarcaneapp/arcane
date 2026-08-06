@@ -5,6 +5,7 @@
 	import { cn } from '#lib/utils';
 	import { m } from '#lib/paraglide/messages';
 	import { HashIcon, HealthIcon, TagIcon } from '#lib/icons';
+	import { DetailMetaStrip } from '#lib/components/resource-detail';
 	import type { Environment, EnvironmentStatus } from '#lib/types/environment';
 	import type { AppVersionInformation } from '#lib/types/settings';
 
@@ -102,7 +103,7 @@
 	let heartbeatRelative = $derived(formatRelative(environment.lastHeartbeat, nowTick));
 </script>
 
-<div class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg bg-muted/40 px-4 py-3">
+<DetailMetaStrip>
 	<div class="flex items-center gap-2">
 		<span class={cn('size-2.5 rounded-full transition-colors', statusDotClass)}></span>
 		<span class="text-sm font-semibold">{statusBadge.text}</span>
@@ -153,4 +154,4 @@
 		<HashIcon class="size-4 shrink-0" />
 		<span class="font-mono">{environment.id}</span>
 	</div>
-</div>
+</DetailMetaStrip>

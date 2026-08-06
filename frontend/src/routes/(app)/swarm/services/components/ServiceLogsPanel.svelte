@@ -17,6 +17,7 @@
 	let viewer = $state<ReturnType<typeof LogViewer>>();
 	let autoScroll = $state(true);
 	let autoStartLogs = $state(false);
+	let logSearchTerm = $state('');
 	let showParsedJson = $state(false);
 
 	function handleStart() {
@@ -53,6 +54,7 @@
 				<LogPanelTitle title={m.swarm_service_logs_title()} live={isStreaming} />
 			</div>
 			<LogControls
+				bind:searchTerm={logSearchTerm}
 				bind:autoScroll
 				bind:autoStartLogs
 				bind:showParsedJson
@@ -67,6 +69,7 @@
 	<Card.Content class="p-0">
 		<div class="rounded-lg border bg-card/90 p-0 backdrop-blur-sm">
 			<LogViewer
+				searchTerm={logSearchTerm}
 				bind:this={viewer}
 				bind:autoScroll
 				type="service"

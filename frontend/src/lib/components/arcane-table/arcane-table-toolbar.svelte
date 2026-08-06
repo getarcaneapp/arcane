@@ -30,7 +30,9 @@
 		customViewOptions,
 		customToolbarActions,
 		class: className,
-		imageNameFilterOptions = []
+		imageNameFilterOptions = [],
+		wrapText = false,
+		onToggleWrapText
 	}: {
 		table: ArcaneSvelteTable<TData>;
 		selectedIds?: string[];
@@ -43,6 +45,8 @@
 		customToolbarActions?: Snippet;
 		class?: string;
 		imageNameFilterOptions?: string[];
+		wrapText?: boolean;
+		onToggleWrapText?: () => void;
 	} = $props();
 
 	// With `withoutFilters` the column filters aren't user-controlled — the page bakes
@@ -204,7 +208,7 @@
 		{/if}
 
 		<div class="order-3 hidden shrink-0 md:order-none md:block">
-			<DataTableViewOptions {table} {customViewOptions} />
+			<DataTableViewOptions {table} {customViewOptions} {wrapText} {onToggleWrapText} />
 		</div>
 		<div class="order-3 shrink-0 md:hidden">
 			{#if mobileFields.length > 0 && onToggleMobileField}

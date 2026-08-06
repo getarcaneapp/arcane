@@ -28,7 +28,7 @@ func TestAccessSurfaceRegistryDefinesSettingsCustomizeAndLandingSemantics(t *tes
 
 	jobSchedule := requireAccessSurfaceInternal(t, "settings.category.jobschedule")
 	require.Equal(t, authz.AccessScopeModeSelectedEnvPlusGlobal, jobSchedule.ScopeMode)
-	require.Empty(t, jobSchedule.URL)
+	require.Equal(t, "/settings/jobs", jobSchedule.URL)
 	require.ElementsMatch(t, []string{authz.PermJobsManage}, jobSchedule.Permissions)
 
 	notifications := requireAccessSurfaceInternal(t, "settings.category.notifications")

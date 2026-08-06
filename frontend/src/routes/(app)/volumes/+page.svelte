@@ -12,7 +12,7 @@
 	import { queryKeys } from '#lib/query/query-keys';
 	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
-	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
+	import { createMutation, createQuery, useQueryClient, keepPreviousData } from '@tanstack/svelte-query';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
 
 	let { data } = $props();
@@ -32,6 +32,7 @@
 		return {
 			queryKey: queryKeys.volumes.table(queryEnvId, pageState.requestOptions),
 			queryFn: () => volumeService.getVolumesForEnvironment(queryEnvId, pageState.requestOptions),
+			placeholderData: keepPreviousData,
 			initialData: data.envId === queryEnvId ? data.volumes : undefined,
 			select: (value) => ({ envId: queryEnvId, value })
 		};

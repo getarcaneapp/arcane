@@ -659,8 +659,8 @@ test.describe('New Compose Project Page', () => {
 			await page.getByRole('tab', { name: 'Services 1', exact: true }).click();
 			await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('services');
 
-			const serviceTable = page.getByRole('table').filter({ visible: true });
-			const serviceNameWhenStopped = serviceTable
+			const servicesPanel = page.getByRole('tabpanel').filter({ visible: true });
+			const serviceNameWhenStopped = servicesPanel
 				.getByText('nginx', {
 					exact: true
 				})
@@ -1150,7 +1150,7 @@ test.describe('Project Detail Page', () => {
 			})
 		).toBeVisible();
 		await expect(page.getByRole('tab', { name: 'Configuration', exact: true })).toBeVisible();
-		await expect(page.getByRole('tab', { name: 'Logs', exact: true })).toBeVisible();
+		await expect(page.getByRole('tab', { name: 'Logs', exact: true })).toHaveCount(0);
 	});
 
 	test('should display tabs navigation', async ({ page }) => {
@@ -1166,7 +1166,7 @@ test.describe('Project Detail Page', () => {
 			})
 		).toBeVisible();
 		await expect(page.getByRole('tab', { name: 'Configuration', exact: true })).toBeVisible();
-		await expect(page.getByRole('tab', { name: 'Logs', exact: true })).toBeVisible();
+		await expect(page.getByRole('tab', { name: 'Logs', exact: true })).toHaveCount(0);
 	});
 
 	test('should check updates for the current project via the image batch endpoint', async ({
@@ -1484,46 +1484,32 @@ test.describe('Project Detail Page', () => {
 		}
 	});
 
-	test('should show logs tab for running projects', async ({ page }) => {
+	test('should show the logs pane alongside services for running projects', async ({ page }) => {
 		test.skip(!realProjects.length, 'No projects available for logs test');
 
 		const runningProject = realProjects.find((p) => p.status === 'running');
 		test.skip(!runningProject, 'No running projects found for logs test');
 		const targetProject = runningProject!;
 
-		await page.goto(`/projects/${targetProject.id || targetProject.name}`);
+		await page.goto(`/projects/${targetProject.id || targetProject.name}?tab=services`);
 		await page.waitForLoadState('load');
 
-		const logsTab = page.getByRole('tab', { name: 'Logs', exact: true });
-		await expect(logsTab).toBeEnabled();
-		await logsTab.click();
+		await expect(page.getByText('Real-time project logs', { exact: true })).toBeVisible();
+		await expect(
+			page
+				.getByRole('button', { name: 'Start', exact: true })
+				.or(page.getByRole('button', { name: 'Stop', exact: true }))
+				.first()
+		).toBeVisible();
+		await expect(page.getByTitle('Refresh')).toBeVisible();
 
-		const logsSelected = await logsTab.getAttribute('aria-selected');
-		if (logsSelected === 'true') {
-			await expect(page.getByText('Real-time project logs', { exact: true })).toBeVisible();
-			await expect(
-				page
-					.getByRole('button', { name: 'Start', exact: true })
-					.or(page.getByRole('button', { name: 'Stop', exact: true }))
-					.first()
-			).toBeVisible();
-			await expect(page.getByTitle('Refresh')).toBeVisible();
-
-			const startButton = page.getByRole('button', {
-				name: 'Start',
-				exact: true
-			});
-			if ((await startButton.count()) > 0) {
-				await startButton.click();
-			}
-
-			await expect(
-				page.getByText('No project selected. Please select a project to view logs.', {
-					exact: true
-				})
-			).not.toBeVisible();
-		} else {
-			await expect(logsTab).toBeEnabled();
+		const startButton = page.getByRole('button', { name: 'Start', exact: true });
+		if ((await startButton.count()) > 0) {
+			await startButton.first().click();
 		}
+
+		await expect(
+			page.getByText('No project selected. Please select a project to view logs.', { exact: true })
+		).not.toBeVisible();
 	});
 });

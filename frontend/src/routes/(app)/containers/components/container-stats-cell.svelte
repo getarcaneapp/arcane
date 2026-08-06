@@ -1,13 +1,7 @@
-<script module lang="ts">
-	let uidCounter = 0;
-	function nextUid() {
-		return ++uidCounter;
-	}
-</script>
-
 <script lang="ts">
 	import { m } from '#lib/paraglide/messages';
 	import { bytes } from '#lib/utils/formatting';
+	import MetricRing from '#lib/components/metric-ring.svelte';
 
 	interface Props {
 		value?: number;
@@ -30,56 +24,7 @@
 	});
 
 	const percent = $derived(type === 'cpu' ? value : memoryPercent);
-	const clampedPercent = $derived(percent === undefined ? 0 : Math.max(0, Math.min(100, percent)));
-
-	const size = 26;
-	const stroke = 3.5;
-	const radius = (size - stroke) / 2;
-	const circumference = 2 * Math.PI * radius;
-	const dashOffset = $derived(circumference * (1 - clampedPercent / 100));
-
-	const uid = nextUid();
-	const gradientId = $derived(`arcane-ring-${type}-${uid}`);
 </script>
-
-{#snippet ring()}
-	<svg width={size} height={size} viewBox="0 0 {size} {size}" class="shrink-0 -rotate-90" aria-hidden="true">
-		<defs>
-			{#if type === 'cpu'}
-				<linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
-					<stop offset="0%" stop-color="oklch(0.75 0.18 35)" />
-					<stop offset="100%" stop-color="oklch(0.65 0.24 25)" />
-				</linearGradient>
-			{:else}
-				<linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
-					<stop offset="0%" stop-color="oklch(0.72 0.18 300)" />
-					<stop offset="100%" stop-color="oklch(0.58 0.25 290)" />
-				</linearGradient>
-			{/if}
-		</defs>
-		<circle
-			cx={size / 2}
-			cy={size / 2}
-			r={radius}
-			fill="none"
-			stroke="currentColor"
-			stroke-width={stroke}
-			class="text-muted/40"
-		/>
-		<circle
-			cx={size / 2}
-			cy={size / 2}
-			r={radius}
-			fill="none"
-			stroke="url(#{gradientId})"
-			stroke-width={stroke}
-			stroke-linecap="round"
-			stroke-dasharray={circumference}
-			stroke-dashoffset={dashOffset}
-			style="transition: stroke-dashoffset 300ms ease-out;"
-		/>
-	</svg>
-{/snippet}
 
 {#if stopped}
 	<div class="text-xs text-muted-foreground">{m.common_na()}</div>
@@ -90,14 +35,14 @@
 	</div>
 {:else if type === 'memory' && memoryFormatted}
 	<div class="flex items-center gap-2">
-		{@render ring()}
+		<MetricRing {percent} variant={type} />
 		<span class="text-xs font-medium text-foreground tabular-nums">
 			{memoryFormatted}
 		</span>
 	</div>
 {:else if type === 'cpu' && value !== undefined}
 	<div class="flex items-center gap-2">
-		{@render ring()}
+		<MetricRing {percent} variant={type} />
 		<span class="text-xs font-medium text-foreground tabular-nums">
 			{value.toFixed(1)}%
 		</span>

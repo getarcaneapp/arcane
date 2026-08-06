@@ -127,6 +127,13 @@
 	// Expandable row state
 	let expandedRows = $state<Set<string>>(new Set());
 
+	// Wrap-text preference, shared by every table (view-options toggle).
+	const wrapTextPref = new PersistedState<boolean>('arcane-table-wrap-text', false);
+	const wrapText = $derived(wrapTextPref.current);
+	function toggleWrapText() {
+		wrapTextPref.current = !wrapTextPref.current;
+	}
+
 	// The desktop scroll container, bound below and handed to the desktop view so it can virtualize
 	// long flat lists. The unstyled/styled branches are mutually exclusive, so one ref suffices.
 	let desktopScrollEl = $state<HTMLElement>();
@@ -142,6 +149,34 @@
 	}
 
 	const passAllGlobal: (row: unknown, columnId: string, filterValue: unknown) => boolean = () => true;
+
+	// Client-sorted columns (spec.clientSort): the server can't order these values,
+	// so header clicks reorder the current page locally via the column accessor.
+	const clientSortAccessors = $derived.by(() => {
+		const accessors = new Map<string, (row: TData) => unknown>();
+		columns.forEach((spec, i) => {
+			if (!spec.clientSort) return;
+			const id = spec.id ?? (spec.accessorKey as string) ?? `col_${i}`;
+			const accessorKey = spec.accessorKey;
+			const accessorFn = spec.accessorFn;
+			accessors.set(id, accessorFn ?? ((row: TData) => (accessorKey ? row[accessorKey] : undefined)));
+		});
+		return accessors;
+	});
+
+	const sortedData = $derived.by(() => {
+		const data = items.data ?? [];
+		const first = sorting[0];
+		const accessor = first ? clientSortAccessors.get(String(first.id)) : undefined;
+		if (!first || !accessor) return data;
+		const direction = first.desc ? -1 : 1;
+		return [...data].sort((a, b) => {
+			const va = accessor(a);
+			const vb = accessor(b);
+			if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * direction;
+			return String(va ?? '').localeCompare(String(vb ?? '')) * direction;
+		});
+	});
 
 	const currentPage = $derived(items.pagination?.currentPage ?? requestOptions?.pagination?.page ?? 1);
 	const totalPages = $derived(items.pagination?.totalPages ?? 1);
@@ -341,7 +376,7 @@
 				header: ({ column }) => {
 					if (spec.header) return renderSnippet(spec.header, { column, title: spec.title, class: spec.class });
 					return renderComponent(ArcaneTableHeader, {
-						column: spec.sortable ? column : undefined,
+						column: spec.sortable || spec.clientSort ? column : undefined,
 						title: spec.title,
 						class: spec.class
 					});
@@ -352,7 +387,7 @@
 					if (spec.cell) return renderSnippet(spec.cell, { row, item, value });
 					return renderComponent(ArcaneTableCell, { value });
 				},
-				enableSorting: !!spec.sortable,
+				enableSorting: !!spec.sortable || !!spec.clientSort,
 				enableHiding: true
 			});
 		});
@@ -429,7 +464,7 @@
 		// by the backing id lets unchanged rows (and their DOM/selection) be reused.
 		getRowId: (row) => row.id,
 		get data() {
-			return items.data ?? [];
+			return sortedData;
 		},
 		state: {
 			get sorting() {
@@ -460,8 +495,12 @@
 		},
 		onSortingChange: (updater) => {
 			const next = typeof updater === 'function' ? updater(sorting) : updater;
+			const wasClientSort = sorting[0] && clientSortAccessors.has(String(sorting[0].id));
 			sorting = next;
 			const first = next[0];
+			// Client-sorted columns reorder locally — no server round-trip, no persisted sort.
+			if (first && clientSortAccessors.has(String(first.id))) return;
+			if (!first && wasClientSort) return;
 			const sortState = first
 				? { column: String(first.id), direction: (first.desc ? 'desc' : 'asc') as 'asc' | 'desc' }
 				: undefined;
@@ -742,6 +781,8 @@
 					{customViewOptions}
 					{customToolbarActions}
 					{imageNameFilterOptions}
+					{wrapText}
+					onToggleWrapText={toggleWrapText}
 				/>
 			</div>
 		{/if}
@@ -768,6 +809,7 @@
 				onToggleRowExpanded={toggleRowExpanded}
 				scrollElement={desktopScrollEl}
 				{loading}
+				{wrapText}
 			/>
 		</div>
 

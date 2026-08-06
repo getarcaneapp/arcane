@@ -34,6 +34,7 @@
 		onStop?: () => void;
 		showParsedJson?: boolean;
 		groupAdjacentLines?: boolean;
+		searchTerm?: string;
 	}
 
 	let {
@@ -51,7 +52,8 @@
 		onStart,
 		onStop,
 		showParsedJson = $bindable(false),
-		groupAdjacentLines = false
+		groupAdjacentLines = false,
+		searchTerm = ''
 	}: Props = $props();
 
 	let logs: LogViewerEntry[] = $state([]);
@@ -65,8 +67,10 @@
 	let lastCompactSeq = 0;
 
 	let visibleLogs = $derived.by(() => {
-		if (dropBefore === 0) return logs;
-		return logs.filter((l) => l.id >= dropBefore);
+		const kept = dropBefore === 0 ? logs : logs.filter((l) => l.id >= dropBefore);
+		const term = searchTerm.trim().toLowerCase();
+		if (!term) return kept;
+		return kept.filter((l) => l.message.toLowerCase().includes(term) || l.service?.toLowerCase().includes(term));
 	});
 
 	let displayLogs = $derived.by(() =>

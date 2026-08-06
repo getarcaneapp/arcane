@@ -45,6 +45,11 @@ export type ColumnSpec<T extends RowData> = {
 	title: string;
 	hidden?: boolean;
 	sortable?: boolean;
+	/**
+	 * Sort the current page locally via the column accessor instead of asking the
+	 * server. For values the server cannot sort (e.g. live WebSocket stats).
+	 */
+	clientSort?: boolean;
 	cell?: Snippet<[{ row: ArcaneRow<T>; item: T; value: unknown }]>;
 	header?: Snippet<[{ column: ArcaneColumn<T>; title: string; class?: string }]>;
 	class?: string;

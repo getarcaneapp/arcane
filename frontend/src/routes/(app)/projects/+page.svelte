@@ -13,7 +13,7 @@
 	import type { SearchPaginationSortRequest } from '#lib/types/shared';
 	import type { ProjectStatusCounts } from '#lib/types/swarm';
 	import { untrack } from 'svelte';
-	import { createMutation, createQuery } from '@tanstack/svelte-query';
+	import { createMutation, createQuery, keepPreviousData } from '@tanstack/svelte-query';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
 
@@ -52,6 +52,7 @@
 		return {
 			queryKey: queryKeys.projects.list(queryEnvId, projectRequestOptions),
 			queryFn: () => projectService.getProjectsForEnvironment(queryEnvId, projectRequestOptions),
+			placeholderData: keepPreviousData,
 			initialData: data.envId === queryEnvId ? data.projects : undefined,
 			select: (value) => ({ envId: queryEnvId, value }),
 			refetchOnMount: false

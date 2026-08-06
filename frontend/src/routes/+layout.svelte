@@ -37,7 +37,8 @@
 	const isAuthPage = $derived(
 		String(page.url.pathname).startsWith('/login') ||
 			String(page.url.pathname).startsWith('/logout') ||
-			String(page.url.pathname).startsWith('/oidc')
+			String(page.url.pathname).startsWith('/oidc') ||
+			String(page.url.pathname).startsWith('/mobile/passkey')
 	);
 
 	const autoLoginEnabled = $derived(settingsStore.autoLoginEnabled.isEnabled());

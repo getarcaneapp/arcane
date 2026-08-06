@@ -10,12 +10,16 @@
 		table,
 		fields,
 		onToggleField,
-		customViewOptions
+		customViewOptions,
+		wrapText = false,
+		onToggleWrapText
 	}: {
 		table?: ArcaneSvelteTable<TData>;
 		fields?: { id: string; label: string; visible: boolean }[];
 		onToggleField?: (fieldId: string) => void;
 		customViewOptions?: Snippet;
+		wrapText?: boolean;
+		onToggleWrapText?: () => void;
 	} = $props();
 </script>
 
@@ -33,11 +37,18 @@
 		{/snippet}
 	</DropdownMenu.Trigger>
 	<DropdownMenu.Content align="end">
-		{#if customViewOptions}
+		{#if customViewOptions || onToggleWrapText}
 			<DropdownMenu.Group>
 				<DropdownMenu.Label>{m.common_view()}</DropdownMenu.Label>
 				<DropdownMenu.Separator />
-				{@render customViewOptions()}
+				{#if onToggleWrapText}
+					<DropdownMenu.CheckboxItem checked={wrapText} onCheckedChange={() => onToggleWrapText()}>
+						{m.wrap_text()}
+					</DropdownMenu.CheckboxItem>
+				{/if}
+				{#if customViewOptions}
+					{@render customViewOptions()}
+				{/if}
 			</DropdownMenu.Group>
 			<DropdownMenu.Separator />
 		{/if}

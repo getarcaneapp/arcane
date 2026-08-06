@@ -56,8 +56,6 @@
 
 	let currentEnvironment = $derived(environmentStore.selected);
 
-	let activeSecurityTab = $state('trivy');
-
 	let isRefreshing = $state(false);
 	let isTestingConnection = $state(false);
 	let isSyncing = $state(false);
@@ -95,6 +93,51 @@
 	);
 	let headerActions = $derived.by((): ActionButton[] => {
 		const actions: ActionButton[] = [];
+		if (settingsForm.hasChanges) {
+			actions.push({
+				id: 'reset',
+				action: 'restart',
+				label: m.common_reset(),
+				onclick: resetForm,
+				disabled: settingsForm.isLoading,
+				icon: ResetIcon
+			});
+		}
+		actions.push({
+			id: 'save',
+			action: 'save',
+			label: m.common_save(),
+			loadingLabel: m.common_saving(),
+			onclick: onSubmit,
+			disabled: !settingsForm.hasChanges || settingsForm.isLoading,
+			loading: settingsForm.isLoading
+		});
+		actions.push({
+			id: 'test',
+			action: 'test',
+			label: m.test_connection(),
+			onclick: testConnection,
+			disabled: isTestingConnection,
+			loading: isTestingConnection
+		});
+		actions.push({
+			id: 'refresh',
+			action: 'refresh',
+			label: m.common_refresh(),
+			onclick: refreshEnvironment,
+			disabled: isRefreshing,
+			loading: isRefreshing
+		});
+		if (environment.id !== '0') {
+			actions.push({
+				id: 'sync',
+				action: 'sync',
+				label: m.resource_sync_cap(),
+				onclick: syncEnvironment,
+				disabled: isSyncing,
+				loading: isSyncing
+			});
+		}
 		if (canEasyJoin) {
 			actions.push({
 				id: 'easy-join',
@@ -175,18 +218,6 @@
 		defaultTab: () => tabItems.find((tab) => tab.value !== 'gitops')?.value ?? 'gitops'
 	});
 	const activeTab = $derived(urlTab.value);
-	const securityTabItems = $derived.by((): TabItem[] => [
-		{
-			value: 'trivy',
-			label: m.security_trivy_tab(),
-			icon: SecurityIcon
-		},
-		{
-			value: 'lifecycle',
-			label: m.security_lifecycle_tab(),
-			icon: GitBranchIcon
-		}
-	]);
 
 	$effect(() => {
 		// Don't bounce away when gitops is the only tab (offline/disabled environment) — the
@@ -593,40 +624,19 @@
 				</div>
 			</div>
 
-			<div class="flex min-w-0 flex-col items-start gap-3 sm:items-end">
-				<div class="flex flex-wrap items-center gap-2 self-start sm:self-end">
-					{#if settingsForm.hasChanges}
-						<span class="text-xs text-orange-600 dark:text-orange-400">{m.common_unsaved_changes()}</span>
-					{:else}
-						<span class="text-xs text-green-600 dark:text-green-400">{m.common_all_changes_saved()}</span>
-					{/if}
-
-					{#if settingsForm.hasChanges}
-						<ArcaneButton
-							action="restart"
-							tone="outline"
-							onclick={resetForm}
-							disabled={settingsForm.isLoading}
-							customLabel={m.common_reset()}
-						/>
-					{/if}
-
-					<ArcaneButton
-						action="save"
-						onclick={onSubmit}
-						disabled={!settingsForm.hasChanges || settingsForm.isLoading}
-						loading={settingsForm.isLoading}
-						customLabel={m.common_save()}
-						loadingLabel={m.common_saving()}
-					/>
-
-					<ArcaneButton action="test" onclick={testConnection} disabled={isTestingConnection} loading={isTestingConnection} />
-
-					<ArcaneButton action="refresh" onclick={refreshEnvironment} disabled={isRefreshing} loading={isRefreshing} />
-
-					{#if environment.id !== '0'}
-						<ArcaneButton action="sync" onclick={syncEnvironment} disabled={isSyncing} loading={isSyncing} />
-					{/if}
+			<!-- ActionButtonGroup measures its own width to decide what overflows, so it
+			     needs a row that actually spans the header, not a shrink-to-fit column. -->
+			<div class="flex w-full min-w-0 shrink-0 flex-col items-start gap-2 sm:w-auto sm:min-w-md sm:items-end">
+				<span
+					class={cn(
+						'text-xs',
+						settingsForm.hasChanges ? 'text-orange-600 dark:text-orange-400' : 'text-green-600 dark:text-green-400'
+					)}
+				>
+					{settingsForm.hasChanges ? m.common_unsaved_changes() : m.common_all_changes_saved()}
+				</span>
+				<div class="flex w-full">
+					<ActionButtonGroup buttons={headerActions} class="justify-end" />
 				</div>
 			</div>
 		</div>
@@ -638,10 +648,6 @@
 			{remoteVersion}
 			{versionInformation}
 		/>
-
-		{#if headerActions.length > 0}
-			<ActionButtonGroup buttons={headerActions} class="justify-end" />
-		{/if}
 
 		{#if environment.enabled && settings && isCurrentlyStandby}
 			<div
@@ -727,18 +733,9 @@
 				<DockerTab {formInputs} {shellSelectValue} {handleShellSelectChange} {shellOptions} />
 			</Tabs.Content>
 
-			<Tabs.Content value="security">
-				<Tabs.Root bind:value={activeSecurityTab} class="space-y-4">
-					<TabBar items={securityTabItems} value={activeSecurityTab} onValueChange={(value) => (activeSecurityTab = value)} />
-
-					<Tabs.Content value="trivy">
-						<TrivySecuritySettings {formInputs} environmentId={environment.id} />
-					</Tabs.Content>
-
-					<Tabs.Content value="lifecycle">
-						<LifecycleSecuritySettings {formInputs} />
-					</Tabs.Content>
-				</Tabs.Root>
+			<Tabs.Content value="security" class="space-y-6">
+				<TrivySecuritySettings {formInputs} environmentId={environment.id} />
+				<LifecycleSecuritySettings {formInputs} />
 			</Tabs.Content>
 
 			<Tabs.Content value="jobs">
