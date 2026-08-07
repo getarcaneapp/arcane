@@ -12,6 +12,6 @@
 		"@playwright/test": "^1.62.1",
 		"@types/node": "^26.1.2",
 		"oxfmt": "^0.62.0",
-		"typescript": "^6.0.3"
+		"typescript": "^7.0.2"
 	}
 }
