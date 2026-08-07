@@ -9,6 +9,7 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"emperror.dev/errors"
@@ -37,6 +38,11 @@ import (
 type UpdaterService struct {
 	deps   updaterDependenciesInternal
 	engine *updater.Service
+	// updateMu serializes per-container updates. docker compose's recreate
+	// pipeline is not concurrency-safe for sibling containers sharing a
+	// namespace. ponytail: global lock ceiling — all updates serialize; fine
+	// for a UI, upgrade to per-project if batch throughput ever matters.
+	updateMu sync.Mutex
 }
 
 type updaterDependenciesInternal struct {
@@ -399,6 +405,9 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 		out.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
 		s.completeAutoUpdateActivityInternal(ctx, activityID, out, err)
 	}()
+
+	s.updateMu.Lock()
+	defer s.updateMu.Unlock()
 
 	moduleResult, engineErr := s.engineInternal().UpdateContainer(ctx, containerID, updater.Options{})
 	if moduleResult != nil {
