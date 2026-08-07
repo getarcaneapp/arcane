@@ -77,7 +77,7 @@
     "isomorphic-dompurify": "^3.21.0",
     "oxfmt": "^0.62.0",
     "paneforge": "^1.0.2",
-    "shadcn-svelte": "^1.4.2",
+    "shadcn-svelte": "^1.5.0",
     "svelte-check-rs": "^0.11.0",
     "svelte-toolbelt": "^0.10.6",
     "sveltekit-superforms": "^2.30.2",
