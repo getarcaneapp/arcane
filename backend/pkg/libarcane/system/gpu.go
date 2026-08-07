@@ -21,11 +21,14 @@ import (
 
 // AMDGPUSysfsPath is the sysfs base used to discover AMD GPUs.
 const (
-	AMDGPUSysfsPath = "/sys/class/drm"
+	AMDGPUSysfsPath  = "/sys/class/drm"
+	intelGPUVendorID = "0x8086"
 
 	// gpuDetectionTTL bounds how long a successful detection result is reused before re-detecting.
 	gpuDetectionTTL = 30 * time.Second
 )
+
+var gpuSysfsPath = AMDGPUSysfsPath
 
 // GPUMonitor probes for an attached GPU (NVIDIA / AMD / Intel) and reports VRAM usage.
 // Detection is cached for gpuDetectionTTL; once a vendor is detected, subsequent Stats
@@ -135,12 +138,12 @@ func (m *GPUMonitor) detectInternal(ctx context.Context) error {
 			}
 			return errors.New("AMD GPU not found in sysfs but GPU_TYPE set to amd")
 		case "intel":
-			if path, err := exec.LookPath("intel_gpu_top"); err == nil {
-				m.markDetectedInternal("intel", path)
+			if HasIntelGPU() {
+				m.markDetectedInternal("intel", gpuSysfsPath)
 				slog.InfoContext(ctx, "Using configured GPU type", "type", "intel")
 				return nil
 			}
-			return errors.New("intel_gpu_top not found but GPU_TYPE set to intel")
+			return errors.New("Intel GPU not found in sysfs but GPU_TYPE set to intel")
 		default:
 			slog.WarnContext(ctx, "Invalid GPU_TYPE specified, falling back to auto-detection", "gpu_type", t)
 		}
@@ -156,9 +159,9 @@ func (m *GPUMonitor) detectInternal(ctx context.Context) error {
 		slog.InfoContext(ctx, "AMD GPU detected", "method", "sysfs", "path", AMDGPUSysfsPath)
 		return nil
 	}
-	if path, err := exec.LookPath("intel_gpu_top"); err == nil {
-		m.markDetectedInternal("intel", path)
-		slog.InfoContext(ctx, "Intel GPU detected", "tool", "intel_gpu_top", "path", path)
+	if HasIntelGPU() {
+		m.markDetectedInternal("intel", gpuSysfsPath)
+		slog.InfoContext(ctx, "Intel GPU detected", "method", "sysfs", "path", gpuSysfsPath)
 		return nil
 	}
 
@@ -168,7 +171,7 @@ func (m *GPUMonitor) detectInternal(ctx context.Context) error {
 
 // HasAMDGPU reports whether a card with mem_info_vram_total exists under AMDGPUSysfsPath.
 func HasAMDGPU() bool {
-	entries, err := os.ReadDir(AMDGPUSysfsPath)
+	entries, err := os.ReadDir(gpuSysfsPath)
 	if err != nil {
 		return false
 	}
@@ -177,7 +180,31 @@ func HasAMDGPU() bool {
 		if !strings.HasPrefix(name, "card") || strings.Contains(name, "-") {
 			continue
 		}
-		if _, err := os.Stat(fmt.Sprintf("%s/%s/device/mem_info_vram_total", AMDGPUSysfsPath, name)); err == nil {
+		if _, err := os.Stat(fmt.Sprintf("%s/%s/device/mem_info_vram_total", gpuSysfsPath, name)); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// HasIntelGPU reports whether an Intel DRM card with dedicated memory is present.
+func HasIntelGPU() bool {
+	entries, err := os.ReadDir(gpuSysfsPath)
+	if err != nil {
+		return false
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if !strings.HasPrefix(name, "card") || strings.Contains(name, "-") {
+			continue
+		}
+
+		devicePath := fmt.Sprintf("%s/%s/device", gpuSysfsPath, name)
+		vendor, err := os.ReadFile(devicePath + "/vendor")
+		if err != nil || strings.TrimSpace(string(vendor)) != intelGPUVendorID {
+			continue
+		}
+		if _, err := os.Stat(devicePath + "/mem_info_vram_total"); err == nil {
 			return true
 		}
 	}
@@ -252,7 +279,7 @@ func getNvidiaStatsInternal(ctx context.Context) ([]systemtypes.GPUStats, error)
 }
 
 func getAMDStatsInternal(ctx context.Context) ([]systemtypes.GPUStats, error) {
-	entries, err := os.ReadDir(AMDGPUSysfsPath)
+	entries, err := os.ReadDir(gpuSysfsPath)
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to read DRM sysfs directory", "error", err)
 		return nil, errors.WrapIf(err, "failed to read sysfs")
@@ -266,7 +293,7 @@ func getAMDStatsInternal(ctx context.Context) ([]systemtypes.GPUStats, error) {
 			continue
 		}
 
-		devicePath := fmt.Sprintf("%s/%s/device", AMDGPUSysfsPath, name)
+		devicePath := fmt.Sprintf("%s/%s/device", gpuSysfsPath, name)
 		memTotalBytes, err := readSysfsValueInternal(devicePath + "/mem_info_vram_total")
 		if err != nil {
 			continue
@@ -295,9 +322,52 @@ func getAMDStatsInternal(ctx context.Context) ([]systemtypes.GPUStats, error) {
 }
 
 func getIntelStatsInternal(ctx context.Context) ([]systemtypes.GPUStats, error) {
-	stats := []systemtypes.GPUStats{
-		{Name: "Intel GPU", Index: 0, MemoryUsed: 0, MemoryTotal: 0},
+	entries, err := os.ReadDir(gpuSysfsPath)
+	if err != nil {
+		slog.WarnContext(ctx, "Failed to read DRM sysfs directory", "error", err)
+		return nil, errors.WrapIf(err, "failed to read sysfs")
 	}
-	slog.DebugContext(ctx, "Intel GPU detected but detailed stats not yet implemented")
+
+	var stats []systemtypes.GPUStats
+	for _, entry := range entries {
+		cardName := entry.Name()
+		if !strings.HasPrefix(cardName, "card") || strings.Contains(cardName, "-") {
+			continue
+		}
+
+		index, err := strconv.Atoi(strings.TrimPrefix(cardName, "card"))
+		if err != nil {
+			continue
+		}
+		devicePath := fmt.Sprintf("%s/%s/device", gpuSysfsPath, cardName)
+		vendor, err := os.ReadFile(devicePath + "/vendor")
+		if err != nil || strings.TrimSpace(string(vendor)) != intelGPUVendorID {
+			continue
+		}
+
+		memTotalBytes, err := readSysfsValueInternal(devicePath + "/mem_info_vram_total")
+		if err != nil {
+			slog.WarnContext(ctx, "Failed to read Intel GPU memory total", "card", cardName, "error", err)
+			continue
+		}
+		memUsedBytes, err := readSysfsValueInternal(devicePath + "/mem_info_vram_used")
+		if err != nil {
+			slog.WarnContext(ctx, "Failed to read Intel GPU memory used", "card", cardName, "error", err)
+			continue
+		}
+
+		stats = append(stats, systemtypes.GPUStats{
+			Name:        fmt.Sprintf("Intel GPU %d", index),
+			Index:       index,
+			MemoryUsed:  float64(memUsedBytes),
+			MemoryTotal: float64(memTotalBytes),
+		})
+	}
+
+	if len(stats) == 0 {
+		return nil, errors.New("no Intel GPU data found in sysfs")
+	}
+
+	slog.DebugContext(ctx, "Collected Intel GPU stats", "gpu_count", len(stats))
 	return stats, nil
 }
