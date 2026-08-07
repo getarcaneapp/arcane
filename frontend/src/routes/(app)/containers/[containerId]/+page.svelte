@@ -46,8 +46,10 @@
 	import { environmentStore } from '#lib/stores/environment.store.svelte';
 	import { hasPermission } from '#lib/utils/auth';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import { ImagesIcon, PauseIcon, PlayIcon, ZapIcon } from '#lib/icons';
-	import { runContainerLifecycleAction } from '#lib/utils/container-actions';
+	import { ImagesIcon, PauseIcon, PlayIcon, UpdateIcon, ZapIcon } from '#lib/icons';
+	import { runContainerLifecycleAction, confirmAndUpdateContainer } from '#lib/utils/container-actions';
+	import { imageService } from '#lib/services/image-service';
+	import type { ImageUpdateInfoDto } from '#lib/types/docker';
 	import { isAutoUpdateIgnored, isAutoUpdateLabelDisabled } from '#lib/utils/container-auto-update';
 	import KillContainerDialog from '../components/kill-container-dialog.svelte';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte';
@@ -133,6 +135,7 @@
 	const canViewLogs = $derived(hasPermission('containers:logs', currentEnvId));
 	const canExecShell = $derived(hasPermission('containers:exec', currentEnvId));
 	const canPauseContainer = $derived(hasPermission('containers:pause', currentEnvId));
+	const canUpdateContainer = $derived(hasPermission('containers:autoupdate', currentEnvId));
 	const canKillContainer = $derived(hasPermission('containers:kill', currentEnvId));
 	const canCommitImage = $derived(hasPermission('images:commit', currentEnvId));
 	const containerStatus = $derived(container?.state?.status ?? '');
@@ -143,6 +146,42 @@
 	let commitDialogOpen = $state(false);
 	let lifecycleStatus = $state<'pausing' | 'unpausing' | ''>('');
 	const isLifecycleActionPending = $derived(lifecycleStatus !== '');
+
+	let updateInfo = $state<ImageUpdateInfoDto | null>(null);
+	let updateLoading = $state(false);
+	$effect(() => {
+		const image = container?.image;
+		if (!image || !canUpdateContainer) {
+			updateInfo = null;
+			return;
+		}
+		// A slower lookup for a previous image must not overwrite the current one.
+		let current = true;
+		imageService
+			.getUpdateInfoByRefs([image])
+			.then((infoByRef) => {
+				if (current) updateInfo = infoByRef[image] ?? null;
+			})
+			.catch(() => {
+				if (current) updateInfo = null;
+			});
+		return () => {
+			current = false;
+		};
+	});
+
+	function handleUpdateContainer() {
+		if (!container) return;
+		confirmAndUpdateContainer({
+			containerId: container.id,
+			containerName: containerDisplayName,
+			showPullingToast: true,
+			setLoading: (loading) => {
+				updateLoading = loading;
+			},
+			onRefresh: () => refreshAll()
+		});
+	}
 
 	async function handlePauseContainer() {
 		if (!container || isLifecycleActionPending) return;
@@ -310,6 +349,16 @@
 						minWidth="20">{getContainerStatusLabel(container.state.status)}</Badge
 					>
 				{/if}
+				{#if updateInfo?.hasUpdate}
+					<Badge variant="amber" minWidth="20">{m.sidebar_update_available()}</Badge>
+				{/if}
+				{#if project && composeInfo}
+					<a href="/projects/{project.id}" title={m.projects_title()}>
+						<Badge variant="gray" size="sm" class="max-w-40 truncate font-normal hover:text-foreground">
+							{composeInfo.projectName}
+						</Badge>
+					</a>
+				{/if}
 			</div>
 		{/snippet}
 
@@ -324,6 +373,18 @@
 					disableRedeploy={!!container.redeployDisabled}
 				>
 					{#snippet beforeRemoveActions(size, showLabel, actionButtonsLifecyclePending)}
+						{#if canUpdateContainer && updateInfo?.hasUpdate}
+							<ArcaneButton
+								action="base"
+								{size}
+								{showLabel}
+								customLabel={m.update_container()}
+								icon={UpdateIcon}
+								loading={updateLoading}
+								disabled={updateLoading || actionButtonsLifecyclePending}
+								onclick={handleUpdateContainer}
+							/>
+						{/if}
 						{#if canPauseContainer && isContainerPaused}
 							<ArcaneButton
 								action="unpause"
@@ -364,6 +425,12 @@
 					{/snippet}
 
 					{#snippet beforeRemoveMenuItems(actionButtonsLifecyclePending)}
+						{#if canUpdateContainer && updateInfo?.hasUpdate}
+							<DropdownMenu.Item disabled={updateLoading || actionButtonsLifecyclePending} onclick={handleUpdateContainer}>
+								<UpdateIcon class="size-4" />
+								{m.update_container()}
+							</DropdownMenu.Item>
+						{/if}
 						{#if canPauseContainer && isContainerPaused}
 							<DropdownMenu.Item
 								disabled={isLifecycleActionPending || actionButtonsLifecyclePending}

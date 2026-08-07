@@ -206,6 +206,11 @@ export type PasskeyChallenge = {
 	expiresAt: string;
 };
 
+export type MobilePasskeyCompletion = {
+	transactionId: string;
+	expiresAt: string;
+};
+
 export type MFAChallenge = {
 	transactionId: string;
 	method: string;

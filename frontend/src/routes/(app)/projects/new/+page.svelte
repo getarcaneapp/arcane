@@ -86,7 +86,7 @@
 	let envOpen = $state(true);
 	let layoutMode = $state<'classic' | 'tree'>('classic');
 	let selectedEditorFile = $state<'compose' | 'env' | string>('compose');
-	let treePaneWidth = $state(420);
+	let treePaneWidth = $state(280);
 	let newProjectWorkspaceFiles = $state<ProjectWorkspaceFileDraft[]>([]);
 	let newProjectWorkspaceContents = $state<Record<string, string>>({});
 	let newProjectWorkspaceHasErrors = $state<Record<string, boolean>>({});
@@ -443,7 +443,8 @@
 							{...composeTreeSplitProps}
 							bind:size={treePaneWidth}
 							ariaLabel={m.compose_editor_resize_files_panel()}
-							persistKey="arcane.compose.split:new-project:tree"
+							persistKey="arcane.compose.split:tree"
+							persistStorage="local"
 						>
 							{#snippet first()}
 								<WorkspaceFileTreePanel

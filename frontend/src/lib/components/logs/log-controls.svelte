@@ -5,6 +5,7 @@
 	import { EllipsisIcon } from '#lib/icons';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import * as Select from '#lib/components/ui/select';
+	import { Input } from '#lib/components/ui/input/index.js';
 	import { m } from '#lib/paraglide/messages';
 	import { PersistedState } from 'runed';
 
@@ -12,6 +13,7 @@
 		autoScroll = $bindable(),
 		tailLines = $bindable(100),
 		autoStartLogs = $bindable(false),
+		searchTerm = $bindable(''),
 		showParsedJson = $bindable(false),
 		mobileLayout = 'full',
 		showDesktop = true,
@@ -24,6 +26,7 @@
 		autoScroll: boolean;
 		tailLines?: number;
 		autoStartLogs?: boolean;
+		searchTerm?: string;
 		showParsedJson?: boolean;
 		mobileLayout?: 'full' | 'menu-only' | 'actions-only' | 'none';
 		showDesktop?: boolean;
@@ -254,6 +257,8 @@
 				</ArcaneTooltip.Content>
 			</ArcaneTooltip.Root>
 		</div>
+
+		<Input type="search" placeholder={m.common_search()} bind:value={searchTerm} class="h-9 w-44 text-xs" />
 
 		<Select.Root type="single" bind:value={selectedTail} disabled={isStreaming} onValueChange={(v: string) => (selectedTail = v)}>
 			<Select.Trigger class="h-9 w-32 text-xs">

@@ -206,6 +206,8 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 			"/api/auth/refresh",
 			"/api/auth/passkey/login/begin",
 			"/api/auth/passkey/login/finish",
+			"/api/auth/passkey/mobile/finish",
+			"/api/auth/passkey/mobile/exchange",
 			"/api/auth/mfa/passkey/begin",
 			"/api/auth/mfa/passkey/finish",
 			"/api/auth/mfa/recovery",

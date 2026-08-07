@@ -40,7 +40,8 @@
 		expandedRows,
 		onToggleRowExpanded,
 		scrollElement,
-		loading = false
+		loading = false,
+		wrapText = false
 	}: {
 		table: ArcaneSvelteTable<TData>;
 		selectedIds: string[];
@@ -61,6 +62,8 @@
 		scrollElement?: HTMLElement;
 		/** First-load flag — when set and there's no data, render skeleton rows. */
 		loading?: boolean;
+		/** Wrap cell content instead of truncating (disables virtualization: rows lose their fixed height). */
+		wrapText?: boolean;
 	} = $props();
 
 	const hasExpand = $derived(!!expandedRowContent);
@@ -110,7 +113,8 @@
 			cell.column.id === 'actions' && actionsCellClasses,
 			getWidthClass(meta?.width),
 			getAlignClass(meta?.align),
-			meta?.truncate && 'max-w-0 truncate',
+			meta?.truncate && !wrapText && 'max-w-0 truncate',
+			wrapText && cell.column.id !== 'select' && cell.column.id !== 'actions' && 'break-words whitespace-normal',
 			isGrouped && isFirstCell && cell.column.id !== 'select' && 'pl-10'
 		);
 	}
@@ -132,7 +136,9 @@
 	const ROW_ESTIMATE_PX = 44;
 	let measuredRowHeight = $state<number | null>(null);
 	const flatRows = $derived(table.getRowModel().rows);
-	const shouldVirtualize = $derived(!isGrouped && !hasExpand && !!scrollElement && flatRows.length > VIRTUALIZE_THRESHOLD);
+	const shouldVirtualize = $derived(
+		!isGrouped && !hasExpand && !wrapText && !!scrollElement && flatRows.length > VIRTUALIZE_THRESHOLD
+	);
 
 	function calibrateRowHeight(node: HTMLTableRowElement) {
 		if (measuredRowHeight !== null) return;

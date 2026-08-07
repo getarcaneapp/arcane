@@ -355,7 +355,7 @@ test.describe('Activity Center', () => {
 		const activityStream = waitForActivityStream(page);
 		await page.goto('/dashboard');
 		await activityStream;
-		await expect(page.getByRole('heading', { name: 'Environment Board' })).toBeVisible();
+		await expect(page.getByRole('button', { name: 'Card view', exact: true })).toBeVisible();
 
 		const activityCenter = await openActivityCenter(page);
 		await expect(activityRow(activityCenter, 'remote-network')).toBeVisible();
@@ -386,7 +386,7 @@ test.describe('Activity Center', () => {
 		});
 
 		await page.goto('/dashboard');
-		await expect(page.getByRole('heading', { name: 'Environment Board' })).toBeVisible();
+		await expect(page.getByRole('button', { name: 'Card view', exact: true })).toBeVisible();
 		await expect(page.getByRole('button', { name: 'Open activity center' })).toHaveCount(0);
 		await expect
 			.poll(() => streamChannels.some((channels) => channels.includes('dashboard')))

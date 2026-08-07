@@ -4,6 +4,7 @@ import type {
 	AuthenticationResponse,
 	MFAChallenge,
 	MFAStatus,
+	MobilePasskeyCompletion,
 	Passkey,
 	PasskeyCapabilities,
 	PasskeyChallenge,
@@ -21,6 +22,20 @@ class PasskeyService extends BaseAPIService {
 			this.api.post('/auth/passkey/login/finish', {
 				ceremonyId,
 				credential
+			})
+		);
+	}
+
+	async finishMobileLogin(
+		ceremonyId: string,
+		credential: AuthenticationResponseJSON,
+		codeChallenge: string
+	): Promise<MobilePasskeyCompletion> {
+		return this.handleResponse(
+			this.api.post('/auth/passkey/mobile/finish', {
+				ceremonyId,
+				credential,
+				codeChallenge
 			})
 		);
 	}

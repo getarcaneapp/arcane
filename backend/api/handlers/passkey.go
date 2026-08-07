@@ -38,6 +38,17 @@ type mfaFinishBody struct {
 	Credential    map[string]any `json:"credential"`
 }
 
+type mobilePasskeyFinishBody struct {
+	CeremonyID    string         `json:"ceremonyId"`
+	Credential    map[string]any `json:"credential"`
+	CodeChallenge string         `json:"codeChallenge" minLength:"43" maxLength:"43"`
+}
+
+type mobilePasskeyExchangeBody struct {
+	TransactionID string `json:"transactionId"`
+	CodeVerifier  string `json:"codeVerifier" minLength:"43" maxLength:"43"`
+}
+
 type stepUpFinishBody struct {
 	TransactionID string         `json:"transactionId"`
 	Credential    map[string]any `json:"credential"`
@@ -66,6 +77,24 @@ type PasskeyLoginFinishInput struct {
 }
 
 type PasskeyLoginFinishOutput struct {
+	SetCookie []string `header:"Set-Cookie" doc:"Session cookie"`
+	Body      base.ApiResponse[auth.AuthenticationResponse]
+}
+
+type MobilePasskeyFinishInput struct {
+	Body mobilePasskeyFinishBody
+}
+
+type MobilePasskeyFinishOutput struct {
+	Body base.ApiResponse[auth.MobilePasskeyCompletion]
+}
+
+type MobilePasskeyExchangeInput struct {
+	UserAgent string `header:"User-Agent"`
+	Body      mobilePasskeyExchangeBody
+}
+
+type MobilePasskeyExchangeOutput struct {
 	SetCookie []string `header:"Set-Cookie" doc:"Session cookie"`
 	Body      base.ApiResponse[auth.AuthenticationResponse]
 }
@@ -208,6 +237,24 @@ func RegisterPasskeys(api huma.API, passkeyService *services.PasskeyService, aut
 		Tags:        []string{"Auth", "Passkeys"},
 		Security:    public,
 	}, h.FinishPasskeyLogin)
+	huma.Register(api, huma.Operation{
+		OperationID: "finish-mobile-passkey-login",
+		Method:      http.MethodPost,
+		Path:        "/auth/passkey/mobile/finish",
+		Summary:     "Finish mobile passkey login",
+		Description: "Validate a browser assertion and create a one-time mobile exchange",
+		Tags:        []string{"Auth", "Passkeys"},
+		Security:    public,
+	}, h.FinishMobilePasskeyLogin)
+	huma.Register(api, huma.Operation{
+		OperationID: "exchange-mobile-passkey-login",
+		Method:      http.MethodPost,
+		Path:        "/auth/passkey/mobile/exchange",
+		Summary:     "Exchange mobile passkey login",
+		Description: "Consume a verifier-bound mobile passkey transaction and create a session",
+		Tags:        []string{"Auth", "Passkeys"},
+		Security:    public,
+	}, h.ExchangeMobilePasskeyLogin)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "begin-passkey-mfa",
@@ -371,6 +418,38 @@ func (h *PasskeyHandler) FinishPasskeyLogin(ctx context.Context, input *PasskeyL
 		return nil, err
 	}
 	return &PasskeyLoginFinishOutput{
+		SetCookie: tokenCookieInternal(ctx, tokenPair),
+		Body:      base.ApiResponse[auth.AuthenticationResponse]{Success: true, Data: *response},
+	}, nil
+}
+
+func (h *PasskeyHandler) FinishMobilePasskeyLogin(ctx context.Context, input *MobilePasskeyFinishInput) (*MobilePasskeyFinishOutput, error) {
+	payload, err := marshalCredentialInternal(input.Body.Credential)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid passkey response")
+	}
+	completion, err := h.passkeyService.FinishMobilePasskeyLogin(ctx, input.Body.CeremonyID, payload, input.Body.CodeChallenge)
+	if err != nil {
+		return nil, passkeyHTTPErrorInternal(err)
+	}
+	return &MobilePasskeyFinishOutput{Body: base.ApiResponse[auth.MobilePasskeyCompletion]{Success: true, Data: *completion}}, nil
+}
+
+func (h *PasskeyHandler) ExchangeMobilePasskeyLogin(ctx context.Context, input *MobilePasskeyExchangeInput) (*MobilePasskeyExchangeOutput, error) {
+	userModel, err := h.passkeyService.ExchangeMobilePasskeyLogin(ctx, input.Body.TransactionID, input.Body.CodeVerifier)
+	if err != nil {
+		return nil, passkeyHTTPErrorInternal(err)
+	}
+	meta := auth.SessionMeta{UserAgent: input.UserAgent, IPAddress: humamw.GetRemoteAddrFromContext(ctx)}
+	tokenPair, err := h.authService.CompleteLogin(ctx, userModel, meta, models.UserSessionSourcePasskey, "")
+	if err != nil {
+		return nil, huma.Error500InternalServerError("authentication failed")
+	}
+	response, err := h.authenticationResponseInternal(ctx, userModel, tokenPair)
+	if err != nil {
+		return nil, err
+	}
+	return &MobilePasskeyExchangeOutput{
 		SetCookie: tokenCookieInternal(ctx, tokenPair),
 		Body:      base.ApiResponse[auth.AuthenticationResponse]{Success: true, Data: *response},
 	}, nil

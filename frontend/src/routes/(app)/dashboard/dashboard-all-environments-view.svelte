@@ -21,7 +21,7 @@
 	import { hasAnyPermission, hasPermission } from '#lib/utils/auth';
 	import { formatDateTime } from '#lib/utils/formatting';
 	import type {
-		DashboardActionItem,
+		DashboardActionItemKind,
 		DashboardEnvironmentCardState,
 		DashboardEnvironmentOverview,
 		DashboardOverviewSummary,
@@ -51,12 +51,17 @@
 		TrashIcon,
 		UpdateIcon,
 		VolumesIcon,
-		VerifiedCheckIcon
+		VerifiedCheckIcon,
+		LayoutGridIcon,
+		LayoutListIcon
 	} from '#lib/icons';
 	import DashboardMetricTile from './dash-metric-tile.svelte';
 	import DashboardEnvironmentUpgradeAction from './dashboard-environment-upgrade-action.svelte';
+	import DashboardEnvironmentsTable, { type EnvironmentTableRow } from './dashboard-environments-table.svelte';
+	import { PersistedState } from 'runed';
 	import * as ArcaneTooltip from '#lib/components/arcane-tooltip';
-	import { mergeProps } from 'bits-ui';
+	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 
 	let {
 		heroGreeting,
@@ -451,32 +456,6 @@
 		}
 	}
 
-	function getActionItemLabel(item: DashboardActionItem): string {
-		switch (item.kind) {
-			case 'stopped_containers':
-				return m.containers();
-			case 'image_updates':
-				return m.updates();
-			case 'actionable_vulnerabilities':
-				return m.security();
-			case 'expiring_keys':
-				return m.api_key_page_title();
-			default:
-				return m.common_unknown();
-		}
-	}
-
-	function getActionSummary(item: DashboardEnvironmentOverview): string {
-		if (debugAllGood || item.actionItems.items.length === 0) {
-			return m.dashboard_no_actionable_events();
-		}
-
-		return item.actionItems.items
-			.slice(0, 2)
-			.map((actionItem) => `${actionItem.count} ${getActionItemLabel(actionItem)}`)
-			.join(' · ');
-	}
-
 	function getActivityMeta(environment: Environment): { label: string; value: string; title: string } {
 		if (!isEnvironmentOnline(environment)) {
 			const statusLabel = getResolvedStatusLabel(environment);
@@ -622,6 +601,45 @@
 		return buttons;
 	}
 
+	// Board view mode: cards or table. 'auto' resolves to table once the board
+	// grows past a handful of environments (tiles stop scaling — #2778).
+	const boardViewPref = new PersistedState<'auto' | 'cards' | 'table'>('dashboard-environments-view', 'auto');
+	const boardView = $derived.by((): 'cards' | 'table' => {
+		if (boardViewPref.current !== 'auto') return boardViewPref.current;
+		return environmentCards.length > 6 ? 'table' : 'cards';
+	});
+
+	const environmentTableRows = $derived.by((): EnvironmentTableRow[] => {
+		return environmentCards.map(({ environment }) => {
+			const baseItem = createBaseEnvironmentOverview(environment);
+			const loadedItem = boardState.overviewById.get(environment.id) ?? baseItem;
+			const stats = getLiveStatsState(environment.id)?.stats ?? null;
+			const isCurrent = currentEnvironmentId === environment.id;
+			const [useButton, ...menuButtons] = getEnvironmentActionButtons(loadedItem, isCurrent);
+			const vInfo = loadedItem.versionInfo;
+			const actionItemCount = (kind: DashboardActionItemKind) =>
+				loadedItem.actionItems.items.find((item) => item.kind === kind)?.count ?? 0;
+			return {
+				environment,
+				isCurrent,
+				online: isEnvironmentOnline(environment),
+				loading: isEnvironmentSnapshotLoading(environment.id),
+				running: loadedItem.containers.runningContainers,
+				total: loadedItem.containers.totalContainers,
+				images: loadedItem.imageUsageCounts.totalImages,
+				updates: actionItemCount('image_updates'),
+				vulnerabilities: actionItemCount('actionable_vulnerabilities'),
+				cpu: getCpuMetric(stats),
+				memory: getMemoryMetric(stats),
+				disk: getDiskMetric(stats),
+				versionText: vInfo ? vInfo.displayVersion || vInfo.currentTag || vInfo.currentVersion || 'unknown' : null,
+				updateAvailable: !!vInfo?.updateAvailable,
+				useButton,
+				menuButtons
+			};
+		});
+	});
+
 	// Updates hero: aggregate pending image updates across every environment,
 	// mirroring the iOS Updates overview header.
 	const updatesOverview = $derived.by(() => {
@@ -766,14 +784,35 @@
 			<h1 class="text-xl font-semibold tracking-tight sm:text-2xl">{heroGreeting}</h1>
 		</div>
 
-		<ArcaneButton
-			action="restart"
-			size="sm"
-			customLabel={m.common_refresh()}
-			icon={RefreshIcon}
-			loading={isRefreshing}
-			onclick={refreshOverview}
-		/>
+		<div class="flex shrink-0 items-center gap-2">
+			<div class="inline-flex items-center gap-0.5 rounded-lg border border-border/60 bg-muted/40 p-0.5">
+				{#each [{ view: 'cards' as const, icon: LayoutGridIcon, label: m.dashboard_view_cards() }, { view: 'table' as const, icon: LayoutListIcon, label: m.dashboard_view_table() }] as option (option.view)}
+					<button
+						type="button"
+						title={option.label}
+						aria-label={option.label}
+						aria-pressed={boardView === option.view}
+						class={cn(
+							'inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+							boardView === option.view &&
+								'bg-primary/15 text-primary ring-1 ring-primary/30 dark:text-[color-mix(in_oklch,var(--primary)_55%,white)]'
+						)}
+						onclick={() => (boardViewPref.current = option.view)}
+					>
+						<option.icon class="size-4" />
+					</button>
+				{/each}
+			</div>
+
+			<ArcaneButton
+				action="restart"
+				size="sm"
+				customLabel={m.common_refresh()}
+				icon={RefreshIcon}
+				loading={isRefreshing}
+				onclick={refreshOverview}
+			/>
+		</div>
 	</header>
 
 	<section class="shrink-0">
@@ -866,13 +905,13 @@
 	</section>
 
 	<section class="flex min-h-0 flex-1 flex-col overflow-hidden border-t border-border/60 pt-3">
-		<div class="mb-2 flex shrink-0 items-center justify-between gap-3">
-			<h2 class="text-sm font-semibold tracking-tight text-muted-foreground">{m.dashboard_all_environment_board_title()}</h2>
-		</div>
-
 		{#if environmentCards.length === 0}
 			<div class="rounded-xl border border-dashed border-border/60 px-4 py-8 text-center">
 				<p class="text-sm text-muted-foreground">{m.dashboard_all_no_visible_environments()}</p>
+			</div>
+		{:else if boardView === 'table'}
+			<div class="min-h-0 flex-1 overflow-y-auto pb-2">
+				<DashboardEnvironmentsTable rows={environmentTableRows} />
 			</div>
 		{:else}
 			<div class="min-h-0 flex-1 overflow-y-auto pb-2">
@@ -890,6 +929,10 @@
 						{@const memoryMetric = getMemoryMetric(systemStats)}
 						{@const diskMetric = getDiskMetric(systemStats)}
 						{@const gpuMetric = getGpuMetric(systemStats)}
+						{@const [useButton, ...menuButtons] = getEnvironmentActionButtons(
+							boardState.overviewById.get(environment.id) ?? baseItem,
+							isCurrent
+						)}
 
 						<Card.Root
 							variant="outlined"
@@ -915,7 +958,7 @@
 																<ArcaneTooltip.Trigger
 																	class={cn(badgeVariants({ variant: 'gray', size: 'sm' }), 'font-mono hover:text-foreground')}
 																>
-																	v{vInfo.displayVersion || vInfo.currentTag || vInfo.currentVersion || 'unknown'}
+																	{vInfo.displayVersion || vInfo.currentTag || vInfo.currentVersion || 'unknown'}
 																	<span class="relative ml-1.5 flex h-2 w-2">
 																		<span
 																			class="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75"
@@ -970,94 +1013,60 @@
 									</div>
 
 									<div class="flex shrink-0 items-center gap-1 pt-1 sm:pt-0">
-										{#each getEnvironmentActionButtons(boardState.overviewById.get(environment.id) ?? baseItem, isCurrent) as btn (btn.id)}
-											{@const isActiveEnv = isCurrent && btn.id === `${environment.id}-use`}
-											<ArcaneTooltip.Root>
-												<ArcaneTooltip.Trigger disabledChild={!!(btn.disabled || btn.loading)}>
-													{#snippet child({ props })}
-														{@const triggerProps = mergeProps(props, { onclick: btn.onclick })}
-														<ArcaneButton
-															{...triggerProps}
-															action={btn.action}
-															size="icon"
-															tone="ghost"
-															icon={btn.icon}
-															customLabel={btn.label}
-															loading={btn.loading}
-															disabled={btn.disabled}
-															class={cn(
-																'size-8',
-																btn.action === 'prune' && 'text-destructive hover:bg-destructive/10 hover:text-destructive',
-																isActiveEnv && 'disabled:opacity-100 [&_svg]:text-primary!'
-															)}
-														/>
-													{/snippet}
-												</ArcaneTooltip.Trigger>
-												<ArcaneTooltip.Content>{isActiveEnv ? m.common_current() : btn.label}</ArcaneTooltip.Content>
-											</ArcaneTooltip.Root>
-										{/each}
+										{#if useButton}
+											<ArcaneButton
+												action="base"
+												size="sm"
+												tone="ghost"
+												icon={EnvironmentsIcon}
+												customLabel={isCurrent ? m.common_current() : useButton.label}
+												loading={useButton.loading}
+												disabled={useButton.disabled}
+												onclick={useButton.onclick}
+												class={cn(isCurrent && 'disabled:opacity-100 [&_svg]:text-primary!')}
+											/>
+										{/if}
+										<RowActionsMenu>
+											{#each menuButtons as btn (btn.id)}
+												<DropdownMenu.Item
+													disabled={!!(btn.disabled || btn.loading)}
+													onclick={btn.onclick}
+													class={cn(btn.action === 'prune' && 'text-destructive data-highlighted:text-destructive')}
+												>
+													{#if btn.icon}
+														<btn.icon class="size-4" />
+													{/if}
+													{btn.label}
+												</DropdownMenu.Item>
+											{/each}
+										</RowActionsMenu>
 									</div>
 								</div>
 
 								{#if shouldLoadEnvironment(environment) || isEnvironmentOnline(environment)}
-									<div class="grid grid-cols-1 max-sm:gap-4 sm:grid-cols-3 sm:divide-x sm:divide-border/60">
-										<div class="min-w-0 not-first:sm:pl-4 first:sm:pr-4">
-											<div class="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
-												{m.containers()}
-											</div>
-											{#if isEnvironmentSnapshotLoading(environment.id)}
-												<div class="mt-2 space-y-2">
-													<Skeleton class="h-6 w-20" />
-													<Skeleton class="h-3 w-24" />
-												</div>
-											{:else}
-												{@const loadedItem = boardState.overviewById.get(environment.id) ?? baseItem}
-												<div class="mt-1 text-lg font-semibold tabular-nums">
-													{loadedItem.containers.runningContainers}/{loadedItem.containers.totalContainers}
-												</div>
-												<div class="text-xs text-muted-foreground">
-													{loadedItem.containers.stoppedContainers}
-													{m.common_stopped()}
-												</div>
-											{/if}
+									{#if isEnvironmentSnapshotLoading(environment.id)}
+										<Skeleton class="h-4 w-64" />
+									{:else}
+										{@const loadedItem = boardState.overviewById.get(environment.id) ?? baseItem}
+										<div class="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-muted-foreground">
+											<span>
+												<span class="font-semibold text-foreground tabular-nums"
+													>{loadedItem.containers.runningContainers}/{loadedItem.containers.totalContainers}</span
+												>
+												{String(m.common_running()).toLowerCase()}
+											</span>
+											<span class="text-border">·</span>
+											<span>
+												<span class="font-semibold text-foreground tabular-nums">{loadedItem.imageUsageCounts.totalImages}</span>
+												{String(m.images()).toLowerCase()}
+											</span>
+											<span class="text-border">·</span>
+											<span>
+												<span class="font-semibold text-foreground tabular-nums">{loadedItem.actionItems.items.length}</span>
+												{String(m.dashboard_action_items_title()).toLowerCase()}
+											</span>
 										</div>
-
-										<div class="min-w-0 not-first:sm:pl-4 first:sm:pr-4">
-											<div class="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
-												{m.images()}
-											</div>
-											{#if isEnvironmentSnapshotLoading(environment.id)}
-												<div class="mt-2 space-y-2">
-													<Skeleton class="h-6 w-14" />
-													<Skeleton class="h-3 w-28" />
-												</div>
-											{:else}
-												{@const loadedItem = boardState.overviewById.get(environment.id) ?? baseItem}
-												<div class="mt-1 text-lg font-semibold tabular-nums">{loadedItem.imageUsageCounts.totalImages}</div>
-												<div class="text-xs text-muted-foreground">
-													{loadedItem.imageUsageCounts.imagesInuse}
-													{m.common_in_use()} · {loadedItem.imageUsageCounts.imagesUnused}
-													{m.common_unused()}
-												</div>
-											{/if}
-										</div>
-
-										<div class="min-w-0 not-first:sm:pl-4 first:sm:pr-4">
-											<div class="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
-												{m.dashboard_action_items_title()}
-											</div>
-											{#if isEnvironmentSnapshotLoading(environment.id)}
-												<div class="mt-2 space-y-2">
-													<Skeleton class="h-6 w-12" />
-													<Skeleton class="h-3 w-32" />
-												</div>
-											{:else}
-												{@const loadedItem = boardState.overviewById.get(environment.id) ?? baseItem}
-												<div class="mt-1 text-lg font-semibold tabular-nums">{loadedItem.actionItems.items.length}</div>
-												<div class="text-xs text-muted-foreground">{getActionSummary(loadedItem)}</div>
-											{/if}
-										</div>
-									</div>
+									{/if}
 								{:else}
 									<div class="border-t border-border/60 pt-3 text-sm">
 										<p class="font-medium">{m.dashboard_all_environment_unavailable_title()}</p>

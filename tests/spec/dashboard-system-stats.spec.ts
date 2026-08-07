@@ -152,6 +152,19 @@ function countMatchingRequests(paths: string[], pattern: RegExp): number {
 	return paths.filter((path) => pattern.test(path)).length;
 }
 
+// Environment cards expose everything but "Use" through a row actions menu.
+async function openEnvironmentActionsMenu(page: Page) {
+	const trigger = page
+		.locator('main')
+		.getByRole('button', { name: 'Open menu', exact: true })
+		.first();
+	await expect(trigger).toBeVisible();
+	await trigger.click();
+	const menu = page.getByRole('menu').filter({ visible: true }).last();
+	await expect(menu).toBeVisible();
+	return menu;
+}
+
 test.describe('Dashboard system stats websocket', () => {
 	test('renders metrics from the system stats websocket stream', async ({ page }) => {
 		await mockDashboardStatsWebSocket(page);
@@ -159,7 +172,7 @@ test.describe('Dashboard system stats websocket', () => {
 		await page.goto(defaultDashboardPath);
 		await page.waitForLoadState('load');
 
-		await expect(page.getByRole('heading', { name: 'Environment Board' })).toBeVisible();
+		await expect(page.getByRole('button', { name: 'Card view', exact: true })).toBeVisible();
 		await expect(page.getByText('12.3%', { exact: true })).toBeVisible();
 		await expect(page.getByText('50.0%', { exact: true })).toBeVisible();
 		await expect(page.getByText('25.0%', { exact: true })).toBeVisible();
@@ -175,7 +188,7 @@ test.describe('Dashboard system stats websocket', () => {
 
 		await page.goto(defaultDashboardPath);
 		await page.waitForLoadState('load');
-		await expect(page.getByRole('heading', { name: 'Environment Board' })).toBeVisible();
+		await expect(page.getByRole('button', { name: 'Card view', exact: true })).toBeVisible();
 
 		await expect.poll(() => requestPaths).toContain('/api/stream');
 
@@ -192,13 +205,15 @@ test.describe('Dashboard system stats websocket', () => {
 
 		await page.goto(defaultDashboardPath);
 		await page.waitForLoadState('load');
-		await expect(page.getByRole('heading', { name: 'Environment Board' })).toBeVisible();
+		await expect(page.getByRole('button', { name: 'Card view', exact: true })).toBeVisible();
 
 		expect(
 			countMatchingRequests(requestPaths, /\/api\/environments\/[^/]+\/system\/docker\/info$/)
 		).toBe(0);
 
-		await page.getByRole('button', { name: 'Inspect' }).first().click();
+		await openEnvironmentActionsMenu(page).then((menu) =>
+			menu.getByRole('menuitem', { name: 'Inspect', exact: true }).click()
+		);
 		await expect(page.getByRole('dialog')).toBeVisible();
 		await expect
 			.poll(() =>
@@ -209,7 +224,9 @@ test.describe('Dashboard system stats websocket', () => {
 		await page.getByRole('button', { name: 'Close', exact: true }).click();
 		await expect(page.getByRole('dialog')).not.toBeVisible();
 
-		await page.getByRole('button', { name: 'Inspect' }).first().click();
+		await openEnvironmentActionsMenu(page).then((menu) =>
+			menu.getByRole('menuitem', { name: 'Inspect', exact: true }).click()
+		);
 		await page.waitForTimeout(300);
 
 		expect(
@@ -218,61 +235,58 @@ test.describe('Dashboard system stats websocket', () => {
 	});
 });
 
-test.describe('Dashboard environment action tooltips', () => {
-	test('uses hover tooltips on hover-capable devices that expose touch APIs', async ({ page }) => {
+test.describe('Dashboard environment actions', () => {
+	test('exposes secondary environment actions through the row menu', async ({ page }) => {
 		await mockInputCapabilities(page, false, 5);
 		await mockDashboardStatsWebSocket(page);
 
 		await page.goto(defaultDashboardPath);
-		await expect(page.getByRole('heading', { name: 'Environment Board' })).toBeVisible();
+		await expect(page.getByRole('button', { name: 'Card view', exact: true })).toBeVisible();
 
-		const detailsButton = page.getByRole('button', { name: 'View Details', exact: true });
-		await expect(detailsButton).toHaveCount(1);
-		await expect(detailsButton).toHaveAttribute('data-tooltip-trigger', '');
-
-		await detailsButton.hover();
-		await expect(page.locator('[data-slot="tooltip-content"]')).toContainText('View Details');
+		const menu = await openEnvironmentActionsMenu(page);
+		await expect(menu.getByRole('menuitem', { name: 'View Details', exact: true })).toBeVisible();
+		await expect(menu.getByRole('menuitem', { name: 'Inspect', exact: true })).toBeVisible();
 	});
 
-	test('keeps one keyboard focus target and the Arcane button focus ring', async ({ page }) => {
+	test('keeps the use action and the menu trigger keyboard reachable', async ({ page }) => {
 		await mockInputCapabilities(page, false, 0);
 		await mockDashboardStatsWebSocket(page);
 
 		await page.goto(defaultDashboardPath);
-		await expect(page.getByRole('heading', { name: 'Environment Board' })).toBeVisible();
+		await expect(page.getByRole('button', { name: 'Card view', exact: true })).toBeVisible();
 
-		const detailsButton = page.getByRole('button', { name: 'View Details', exact: true });
-		const inspectButton = page.getByRole('button', { name: 'Inspect', exact: true });
-		await expect(detailsButton).toHaveCount(1);
-		await expect(inspectButton).toHaveCount(1);
+		const useButton = page
+			.locator('main')
+			.getByRole('button', { name: 'Current', exact: true })
+			.first();
+		const menuTrigger = page
+			.locator('main')
+			.getByRole('button', { name: 'Open menu', exact: true })
+			.first();
+		await expect(useButton).toBeVisible();
+		await expect(menuTrigger).toBeVisible();
 
-		await detailsButton.focus();
-		await page.keyboard.press('Tab');
-		await expect(inspectButton).toBeFocused();
+		await menuTrigger.focus();
+		await expect(menuTrigger).toBeFocused();
 
-		const focusShadow = await inspectButton.evaluate(
+		const focusShadow = await menuTrigger.evaluate(
 			(element) => getComputedStyle(element).boxShadow
 		);
 		expect(focusShadow).not.toBe('none');
 	});
 
-	test('uses a popover for disabled actions when the primary input cannot hover', async ({
-		page
-	}) => {
+	test('disables the use action for the environment already in use', async ({ page }) => {
 		await mockInputCapabilities(page, true, 5);
 		await mockDashboardStatsWebSocket(page);
 
 		await page.goto(defaultDashboardPath);
-		await expect(page.getByRole('heading', { name: 'Environment Board' })).toBeVisible();
+		await expect(page.getByRole('button', { name: 'Card view', exact: true })).toBeVisible();
 
-		const useEnvironmentButton = page.getByRole('button', { name: 'Use Environment', exact: true });
-		const disabledTrigger = page
-			.locator('div[data-popover-trigger][data-disabled-child]')
-			.filter({ has: useEnvironmentButton })
+		const currentButton = page
+			.locator('main')
+			.getByRole('button', { name: 'Current', exact: true })
 			.first();
-
-		await expect(disabledTrigger).toBeVisible();
-		await disabledTrigger.click();
-		await expect(page.locator('[data-slot="popover-content"]')).toContainText('Current');
+		await expect(currentButton).toBeVisible();
+		await expect(currentButton).toBeDisabled();
 	});
 });

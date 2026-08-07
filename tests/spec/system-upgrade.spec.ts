@@ -30,7 +30,7 @@ function updateAllJob(status: JobStatus, managerStatus: ManagerStatus) {
 function versionInfo(currentVersion: string, newestVersion = '2.0.0') {
 	return {
 		currentVersion,
-		displayVersion: currentVersion,
+		displayVersion: `v${currentVersion}`,
 		revision: currentVersion === newestVersion ? 'new-revision' : 'old-revision',
 		shortRevision: currentVersion === newestVersion ? 'new-rev' : 'old-rev',
 		goVersion: 'go-test',

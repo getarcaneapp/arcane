@@ -205,7 +205,8 @@ function isAuthPagePathInternal(pathname: string): boolean {
 		pathname.startsWith('/login') ||
 		pathname.startsWith('/logout') ||
 		pathname.startsWith('/oidc') ||
-		pathname.startsWith('/auth/oidc')
+		pathname.startsWith('/auth/oidc') ||
+		pathname.startsWith('/mobile/passkey')
 	);
 }
 

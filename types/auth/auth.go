@@ -62,6 +62,13 @@ type AuthenticationResponse struct {
 	MFA          *MFAChallenge        `json:"mfa,omitempty" doc:"Pending MFA challenge"`
 }
 
+// MobilePasskeyCompletion identifies a validated passkey login waiting for
+// its initiating mobile client to perform the one-time verifier exchange.
+type MobilePasskeyCompletion struct {
+	TransactionID string    `json:"transactionId" doc:"Opaque mobile passkey transaction identifier"`
+	ExpiresAt     time.Time `json:"expiresAt" doc:"Mobile passkey transaction expiration time"`
+}
+
 // TokenRefreshResponse represents the successful token refresh response data.
 type TokenRefreshResponse struct {
 	Token        string    `json:"token" doc:"New JWT access token"`

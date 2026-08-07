@@ -1,5 +1,4 @@
 <script lang="ts">
-	import * as Card from '#lib/components/ui/card';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { goto } from '$app/navigation';
 	import { Badge } from '#lib/components/ui/badge';
@@ -20,6 +19,9 @@
 		isVulnerabilityScanInProgress
 	} from '#lib/utils/docker';
 	import { ResourceDetailLayout, type DetailAction } from '#lib/layouts';
+	import { TabBar, type TabItem } from '#lib/components/tab-bar';
+	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte';
+	import { DetailMetaStrip, DetailSection, KeyValueCard } from '#lib/components/resource-detail';
 	import ImageAttestationsPanel from './image-attestations-panel.svelte';
 	import ImageHistoryPanel from './image-history-panel.svelte';
 	import ImageTagDialog from '../components/image-tag-dialog.svelte';
@@ -28,13 +30,22 @@
 	import { environmentStore } from '#lib/stores/environment.store.svelte';
 	import { hasPermission } from '#lib/utils/auth';
 	import { toastVulnerabilityScanStatus } from '#lib/utils/vulnerability';
-	import { VolumesIcon, ClockIcon, TagIcon, CpuIcon, ShieldCheckIcon } from '#lib/icons';
-	import { cn } from '#lib/utils';
+	import { VolumesIcon, ClockIcon, TagIcon, CpuIcon, ImagesIcon, LayersIcon, ShieldCheckIcon, InspectIcon } from '#lib/icons';
 
 	let { data } = $props();
 	let { image } = $derived(data);
 
-	let securityTab = $state('attestations');
+	const tabItems: TabItem[] = $derived([
+		{ value: 'overview', label: m.common_overview(), icon: ImagesIcon },
+		{ value: 'history', label: m.images_history_title(), icon: LayersIcon },
+		{ value: 'attestations', label: m.images_attestations_title(), icon: InspectIcon },
+		{ value: 'vulnerabilities', label: m.vuln_title(), icon: ShieldCheckIcon }
+	]);
+	const urlTab = useUrlTab({
+		validTabs: () => tabItems.map((tab) => tab.value),
+		defaultTab: () => 'overview'
+	});
+	const activeTab = $derived(urlTab.value);
 
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
 	// fallow-ignore-next-line code-duplication -- permission $derived declarations; script-level, no shared render surface
@@ -288,99 +299,77 @@
 
 <ResourceDetailLayout backUrl="/images" backLabel={m.images()} title={image?.repoTags?.[0] || shortId} {actions}>
 	{#if image}
-		<div class="space-y-6">
-			{#snippet tile(label: string, value: string, opts?: { mono?: boolean; class?: string })}
-				<Card.Root variant="subtle" class={opts?.class}>
-					<Card.Content class="flex flex-col gap-1 p-4">
-						<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{label}</div>
-						<div class={cn('text-sm font-medium text-foreground', opts?.mono && 'font-mono break-all select-all')}>
-							{value}
-						</div>
-					</Card.Content>
-				</Card.Root>
-			{/snippet}
+		{#snippet kvTile(label: string, value: string, opts?: { class?: string })}
+			<KeyValueCard {label} cardClass={opts?.class} valueTitle={value}>
+				{value}
+			</KeyValueCard>
+		{/snippet}
 
-			<div class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg bg-muted/40 px-4 py-3">
-				<div class="flex items-center gap-1.5 text-sm text-muted-foreground">
-					<VolumesIcon class="size-4 shrink-0" />
-					<span>{imageSize}</span>
-				</div>
-				<div class="flex items-center gap-1.5 text-sm text-muted-foreground">
-					<ClockIcon class="size-4 shrink-0" />
-					<span>{createdDate}</span>
-				</div>
-				<div class="flex items-center gap-1.5 text-sm text-muted-foreground">
-					<CpuIcon class="size-4 shrink-0" />
-					<span>{architecture} · {osName}</span>
-				</div>
-			</div>
+		<Tabs.Root value={activeTab} class="space-y-6">
+			<TabBar items={tabItems} value={activeTab} onValueChange={(value) => urlTab.select(value)} />
 
-			{#if hasTags}
-				<div class="flex flex-wrap items-center gap-2">
-					<span class="inline-flex items-center gap-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-						<TagIcon class="size-4" />
-						{m.common_tags()}
-					</span>
-					{#each repoTags as tag (tag)}
-						<Badge variant="secondary" class="cursor-pointer text-xs select-all" title={m.common_click_to_select()}>
-							{tag}
-						</Badge>
-					{/each}
-				</div>
-			{/if}
+			<Tabs.Content value="overview" class="space-y-6">
+				<DetailMetaStrip
+					items={[
+						{ icon: VolumesIcon, value: imageSize },
+						{ icon: ClockIcon, value: createdDate },
+						{ icon: CpuIcon, value: `${architecture} · ${osName}` }
+					]}
+				/>
 
-			<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-				{@render tile(m.common_id(), image?.id || m.common_na(), { mono: true, class: 'sm:col-span-2 lg:col-span-3' })}
-				{#if image?.dockerVersion}
-					{@render tile(m.common_docker_version(), image.dockerVersion)}
-				{/if}
-				{#if image?.author}
-					{@render tile(m.common_author(), image.author)}
-				{/if}
-				{#if image.config?.workingDir}
-					{@render tile(m.common_working_dir(), image.config.workingDir, { mono: true })}
-				{/if}
-			</div>
-
-			{#if hasEnv}
-				<div class="space-y-4 border-t pt-6">
-					<h3 class="text-sm font-medium">{m.common_environment_variables()}</h3>
-					<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-						{#each envVars as env (env)}
-							{#if env.includes('=')}
-								{@const [key, ...valueParts] = env.split('=')}
-								{@render tile(key ?? '', valueParts.join('='), { mono: true })}
-							{:else}
-								{@render tile('ENV_VAR', env, { mono: true })}
-							{/if}
+				{#if hasTags}
+					<div class="flex flex-wrap items-center gap-2">
+						<span class="inline-flex items-center gap-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+							<TagIcon class="size-4" />
+							{m.common_tags()}
+						</span>
+						{#each repoTags as tag (tag)}
+							<Badge variant="secondary" class="cursor-pointer text-xs select-all" title={m.common_click_to_select()}>
+								{tag}
+							</Badge>
 						{/each}
 					</div>
-				</div>
-			{/if}
+				{/if}
 
-			<div class="space-y-4 border-t pt-6">
-				<h3 class="flex items-center gap-2 text-sm font-medium">
-					<ShieldCheckIcon class="size-4" />
-					{m.images_details_title()}
-				</h3>
-				<Tabs.Root bind:value={securityTab} class="space-y-4">
-					<Tabs.List>
-						<Tabs.Trigger value="history">{m.images_history_title()}</Tabs.Trigger>
-						<Tabs.Trigger value="attestations">{m.images_attestations_title()}</Tabs.Trigger>
-						<Tabs.Trigger value="vulnerabilities">{m.vuln_title()}</Tabs.Trigger>
-					</Tabs.List>
-					<Tabs.Content value="history">
-						<ImageHistoryPanel imageId={image.id} />
-					</Tabs.Content>
-					<Tabs.Content value="attestations">
-						<ImageAttestationsPanel {image} />
-					</Tabs.Content>
-					<Tabs.Content value="vulnerabilities">
-						<VulnerabilityScanPanel scan={vulnerabilityScan} isScanning={isLoading.scanning} onScan={handleScanImage} />
-					</Tabs.Content>
-				</Tabs.Root>
-			</div>
-		</div>
+				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+					{@render kvTile(m.common_id(), image?.id || m.common_na(), { class: 'sm:col-span-2 lg:col-span-3' })}
+					{#if image?.dockerVersion}
+						{@render kvTile(m.common_docker_version(), image.dockerVersion)}
+					{/if}
+					{#if image?.author}
+						{@render kvTile(m.common_author(), image.author)}
+					{/if}
+					{#if image.config?.workingDir}
+						{@render kvTile(m.common_working_dir(), image.config.workingDir)}
+					{/if}
+				</div>
+
+				{#if hasEnv}
+					<DetailSection title={m.common_environment_variables()}>
+						<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+							{#each envVars as env (env)}
+								{#if env.includes('=')}
+									{@const [key, ...valueParts] = env.split('=')}
+									{@render kvTile(key ?? '', valueParts.join('='))}
+								{:else}
+									{@render kvTile('ENV_VAR', env)}
+								{/if}
+							{/each}
+						</div>
+					</DetailSection>
+				{/if}
+			</Tabs.Content>
+
+			<Tabs.Content value="history">
+				<ImageHistoryPanel imageId={image.id} />
+			</Tabs.Content>
+			<Tabs.Content value="attestations">
+				<ImageAttestationsPanel {image} />
+			</Tabs.Content>
+			<Tabs.Content value="vulnerabilities">
+				<VulnerabilityScanPanel scan={vulnerabilityScan} isScanning={isLoading.scanning} onScan={handleScanImage} />
+			</Tabs.Content>
+		</Tabs.Root>
 	{:else}
 		<div class="py-12 text-center">
 			<p class="text-lg font-medium text-muted-foreground">{m.common_not_found_title({ resource: m.images() })}</p>
