@@ -142,10 +142,11 @@ type updaterServiceParams struct {
 	Notification  *services.NotificationService
 	SystemUpgrade *services.SystemUpgradeService
 	Activity      *services.ActivityService
+	Swarm         *services.SwarmService
 }
 
 func provideUpdaterServiceInternal(p updaterServiceParams) (*services.UpdaterService, error) {
-	return services.NewUpdaterService(p.DB, p.Settings, p.Docker, p.Project, p.ImageUpdate, p.Registry, p.Event, p.Image, p.Notification, p.SystemUpgrade, p.Activity)
+	return services.NewUpdaterService(p.DB, p.Settings, p.Docker, p.Project, p.ImageUpdate, p.Registry, p.Event, p.Image, p.Notification, p.SystemUpgrade, p.Activity, p.Swarm)
 }
 
 func provideUserServiceInternal(db *database.DB, role *services.RoleService) *services.UserService {

@@ -430,6 +430,78 @@ func (s *SwarmService) UpdateService(ctx context.Context, serviceID string, req 
 	}, nil
 }
 
+// UpdateServiceImage applies an image update to a swarm service while
+// preserving the rest of its spec. It implements the updater module's
+// SwarmServiceUpdater port: serviceID and serviceName come from a task
+// container's com.docker.swarm.service.* labels, so name lookup is the
+// fallback for externally deployed stacks whose service ID is stale.
+func (s *SwarmService) UpdateServiceImage(ctx context.Context, serviceID, serviceName, imageRef string) error {
+	if err := s.ensureSwarmManagerInternal(ctx); err != nil {
+		return err
+	}
+
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		return errors.WrapIf(err, "failed to connect to Docker")
+	}
+
+	serviceID = strings.TrimSpace(serviceID)
+	serviceName = strings.TrimSpace(serviceName)
+	ref := serviceID
+	if ref == "" {
+		ref = serviceName
+	}
+	serviceResult, err := dockerClient.ServiceInspect(ctx, ref, dockerclient.ServiceInspectOptions{})
+	if err != nil && serviceName != "" && ref != serviceName {
+		serviceResult, err = dockerClient.ServiceInspect(ctx, serviceName, dockerclient.ServiceInspectOptions{})
+	}
+	if err != nil {
+		return errors.WrapIf(err, "failed to inspect swarm service")
+	}
+	service := serviceResult.Service
+
+	if service.Spec.TaskTemplate.ContainerSpec == nil {
+		service.Spec.TaskTemplate.ContainerSpec = &swarm.ContainerSpec{}
+	}
+	service.Spec.TaskTemplate.ContainerSpec.Image = imageRef
+	// Unlike stack deploys (which pin ForceUpdate to avoid no-op rescheduling),
+	// an updater-triggered image change must reschedule tasks even when the ref
+	// string is unchanged (mutable tags), like docker service update --force.
+	service.Spec.TaskTemplate.ForceUpdate++
+	sanitizeServiceSpecInternal(&service.Spec)
+
+	encodedRegistryAuth, err := s.registryService.GetRegistryAuthForImage(ctx, imageRef)
+	if err != nil {
+		return errors.WrapIff(err, "failed to resolve registry auth for image %s", imageRef)
+	}
+
+	opts := dockerclient.ServiceUpdateOptions{
+		Version:       service.Version,
+		Spec:          service.Spec,
+		QueryRegistry: true,
+	}
+	if encodedRegistryAuth != "" {
+		opts.EncodedRegistryAuth = encodedRegistryAuth
+		opts.RegistryAuthFrom = swarm.RegistryAuthFromSpec
+	} else {
+		opts.RegistryAuthFrom = swarm.RegistryAuthFromPreviousSpec
+	}
+
+	if _, err := dockerClient.ServiceUpdate(ctx, service.ID, opts); err != nil {
+		// Services that were never updated have no previous spec to read auth
+		// from; retry without a registry auth source.
+		if strings.Contains(err.Error(), "service does not have a previous spec") {
+			opts.RegistryAuthFrom = ""
+			if _, retryErr := dockerClient.ServiceUpdate(ctx, service.ID, opts); retryErr != nil {
+				return errors.WrapIff(retryErr, "failed to update swarm service %s", service.Spec.Name)
+			}
+			return nil
+		}
+		return errors.WrapIff(err, "failed to update swarm service %s", service.Spec.Name)
+	}
+	return nil
+}
+
 func (s *SwarmService) RemoveService(ctx context.Context, serviceID string) error {
 	if err := s.ensureSwarmManagerInternal(ctx); err != nil {
 		return err

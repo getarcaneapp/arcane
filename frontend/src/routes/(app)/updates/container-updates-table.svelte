@@ -24,8 +24,9 @@
 	import { hasPermission } from '#lib/utils/auth';
 	import { confirmAndUpdateContainer } from '#lib/utils/container-actions';
 	import { isAutoUpdateIgnored, isAutoUpdateLabelDisabled } from '#lib/utils/container-auto-update';
-	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions';
-	import { throwOnUpdateFailure } from '#lib/utils/update-actions';
+	import { confirmAndRun } from '#lib/utils/bulk-actions';
+	import { summarizeUpdateResult } from '#lib/utils/update-actions';
+	import { imageService } from '#lib/services/image-service';
 	import { formatImageUpdateCheckedAt, formatImageUpdateValue } from '#lib/utils/image-updates';
 	import { toast } from 'svelte-sonner';
 
@@ -139,21 +140,22 @@
 		}
 	}
 
+	// One scoped updater run for the whole selection: the backend deduplicates
+	// swarm task replicas down to a single service update per owning service and
+	// reports the merged tally back.
 	function handleBulkUpdate(ids: string[]) {
-		bulkConfirmAndRun({
-			ids,
+		confirmAndRun({
 			title: m.updates_bulk_update_confirm_title({ count: ids.length }),
 			message: m.updates_bulk_update_confirm_message({ count: ids.length }),
 			confirmLabel: m.common_update(),
-			run: (id) => containerService.updateContainer(id).then(throwOnUpdateFailure),
-			messages: {
-				success: (count) => m.updates_bulk_update_success({ count }),
-				partial: (success, total, failed) => m.updates_bulk_update_partial({ success, total, failed }),
-				failure: () => m.updates_bulk_update_failed()
-			},
 			setLoading: (loading) => (bulkUpdating = loading),
-			onComplete: refreshRows,
-			clearSelection: () => (selectedIds = [])
+			run: () => imageService.runAutoUpdate({ type: 'container', resourceIds: ids }),
+			failureMessage: m.updates_bulk_update_failed(),
+			onSuccess: async (result) => {
+				summarizeUpdateResult(result);
+				selectedIds = [];
+				await refreshRows();
+			}
 		});
 	}
 
