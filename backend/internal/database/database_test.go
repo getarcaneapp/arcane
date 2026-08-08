@@ -202,6 +202,41 @@ func TestMigration070_PasskeysAndMFA_UpAndDown(t *testing.T) {
 	assert.Zero(t, columnCount)
 }
 
+// TestMigration071_BackupSupport_PreservesExistingBackups proves that
+// pre-existing volume backup rows survive the backup-support migration as
+// format=archive, and that downgrading is refused while Rustic rows exist.
+func TestMigration071_BackupSupport_PreservesExistingBackups(t *testing.T) {
+	ctx := context.Background()
+	rawDB, _ := newSQLiteSQLDBInternal(t, t.TempDir(), "arcane-backup-support.db")
+
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 70))
+	_, err := rawDB.ExecContext(ctx, `INSERT INTO volume_backups (id, volume_name, size, created_at) VALUES ('legacy-1', 'app-data', 42, CURRENT_TIMESTAMP)`)
+	require.NoError(t, err)
+
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 71))
+	var format, status, destination string
+	var size int64
+	require.NoError(t, rawDB.QueryRow(`SELECT format, status, destination, size FROM volume_backups WHERE id = 'legacy-1'`).Scan(&format, &status, &destination, &size))
+	assert.Equal(t, "archive", format)
+	assert.Equal(t, "succeeded", status)
+	assert.Equal(t, "local", destination)
+	assert.EqualValues(t, 42, size)
+
+	// Downgrade is refused while a Rustic-format row exists.
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO volume_backups (id, volume_name, size, created_at, format, local_snapshot_id) VALUES ('rustic-1', 'app-data', 7, CURRENT_TIMESTAMP, 'rustic', 'snap-1')`)
+	require.NoError(t, err)
+	err = migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 70)
+	require.Error(t, err)
+
+	// With only archive rows left, the downgrade succeeds and keeps the row.
+	_, err = rawDB.ExecContext(ctx, `DELETE FROM volume_backups WHERE id = 'rustic-1'`)
+	require.NoError(t, err)
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 70))
+	var count int
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM volume_backups WHERE id = 'legacy-1'`).Scan(&count))
+	assert.Equal(t, 1, count)
+}
+
 func TestMigrateDatabase_BlocksFutureGooseVersionWithoutFlag(t *testing.T) {
 	ctx := context.Background()
 	rawDB, dsn := newSQLiteSQLDBInternal(t, t.TempDir(), "arcane-future.db")

@@ -196,7 +196,7 @@ func (h *SystemBackupHandler) Create(ctx context.Context, input *CreateSystemBac
 		Metadata: models.JSON{"action": "create_system_backup", "destination": input.Body.Destination, "s3DestinationId": input.Body.S3DestinationID, "policyId": input.Body.PolicyID},
 	}, func(activityCtx context.Context) error {
 		var e error
-		run, e = h.service.CreateBackup(activityCtx, *user, models.VolumeBackupTriggerManual, input.Body)
+		run, e = h.service.CreateBackup(activityCtx, *user, models.SystemBackupTriggerManual, input.Body)
 		return e
 	})
 	if errors.Is(err, ErrSystemBackupAlreadyRunning) {

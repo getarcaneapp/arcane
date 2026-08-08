@@ -104,7 +104,7 @@ export interface FileContentResponse {
 	mimeType: string;
 }
 
-import type { BackupDestination, BackupRun } from './backup';
+import type { BackupDestination, BackupPolicyUpdate, BackupRun } from './backup';
 
 export type VolumeBackupDestination = BackupDestination;
 
@@ -134,10 +134,7 @@ export interface VolumeBackupPolicy {
 	lastRun?: BackupEntry;
 }
 
-export type UpdateVolumeBackupPolicy = Pick<
-	VolumeBackupPolicy,
-	'id' | 'enabled' | 'schedule' | 'retentionCount' | 'stopContainers' | 'localEnabled' | 's3Enabled' | 's3DestinationId'
->;
+export type UpdateVolumeBackupPolicy = BackupPolicyUpdate;
 
 export interface VolumeBackupPolicyCollection {
 	policies: VolumeBackupPolicy[];

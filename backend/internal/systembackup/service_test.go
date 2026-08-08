@@ -6,9 +6,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/entityjobs"
 	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/google/uuid"
@@ -17,8 +20,25 @@ import (
 	mounttypes "github.com/moby/moby/api/types/mount"
 	"github.com/stretchr/testify/require"
 	"go.getarcane.app/sys/crypto"
+	"go.uber.org/fx/fxtest"
 	"gorm.io/gorm"
 )
+
+func newSystemBackupAdmissionGateForTestInternal(t testing.TB) *actors.Gate[actors.AdmissionKey] {
+	t.Helper()
+	fxLifecycle := fxtest.NewLifecycle(t)
+	runtime, err := actors.NewRuntime(t.Context(), fxLifecycle)
+	require.NoError(t, err)
+	gate, err := actors.NewGate[actors.AdmissionKey](t.Context(), runtime, "system-backup-test-admission", t.Name())
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		require.NoError(t, gate.Stop(stopCtx))
+		require.NoError(t, fxLifecycle.Stop(stopCtx))
+	})
+	return gate
+}
 
 type systemBackupPolicySchedulerInternal struct {
 	jobs map[string]schedulertypes.Job
@@ -75,9 +95,13 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, gormDB.AutoMigrate(&models.SystemBackupPolicy{}, &models.SystemBackupRun{}, &models.SystemBackupRecoveryConfig{}))
 	crypto.InitEncryption(&crypto.Config{EncryptionKey: "system-backup-policy-test-key-32bytes", Environment: "test"})
-	service := &SystemBackupService{db: &database.DB{DB: gormDB}}
+	service := &SystemBackupService{
+		db:     &database.DB{DB: gormDB},
+		config: &config.Config{DatabaseURL: "file:system-backup-schedules-test.db"},
+		jobs:   entityjobs.New("system-backup:", backup.SystemAdmissionScope),
+	}
 	scheduler := &systemBackupPolicySchedulerInternal{jobs: make(map[string]schedulertypes.Job)}
-	service.SetScheduler(context.Background(), scheduler)
+	require.NoError(t, service.SetScheduler(context.Background(), scheduler, newSystemBackupAdmissionGateForTestInternal(t)))
 
 	status, err := service.SetRecoveryKey(context.Background(), "correct horse battery staple")
 	require.NoError(t, err)
@@ -110,7 +134,10 @@ func TestSystemBackupPolicyRequiresConfiguredRecoveryKeyWhenEnabled(t *testing.T
 	gormDB, err := gorm.Open(sqlite.Open("file:system-backup-key-required?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, gormDB.AutoMigrate(&models.SystemBackupPolicy{}, &models.SystemBackupRecoveryConfig{}))
-	service := &SystemBackupService{db: &database.DB{DB: gormDB}}
+	service := &SystemBackupService{
+		db:     &database.DB{DB: gormDB},
+		config: &config.Config{DatabaseURL: "file:system-backup-key-required-test.db"},
+	}
 
 	_, err = service.UpdatePolicies(context.Background(), []backuptypes.UpdateSystemBackupPolicy{{
 		Enabled: true, Schedule: "0 0 2 * * *", RetentionCount: 7, LocalEnabled: true,
@@ -125,11 +152,11 @@ func TestSystemBackupPolicyRetentionIgnoresFailedRuns(t *testing.T) {
 
 	policyID := "policy-1"
 	require.NoError(t, gormDB.Create(&models.SystemBackupRun{
-		PolicyID: policyID, Status: models.VolumeBackupStatusSucceeded,
+		PolicyID: policyID, Status: models.SystemBackupStatusSucceeded,
 		LocalSnapshotID: "snapshot-1", CreatedAt: time.Now().Add(-time.Hour),
 	}).Error)
 	require.NoError(t, gormDB.Create(&models.SystemBackupRun{
-		PolicyID: policyID, Status: models.VolumeBackupStatusFailed,
+		PolicyID: policyID, Status: models.SystemBackupStatusFailed,
 		CreatedAt: time.Now(),
 	}).Error)
 
@@ -140,7 +167,7 @@ func TestSystemBackupPolicyRetentionIgnoresFailedRuns(t *testing.T) {
 	require.NoError(t, gormDB.Order("created_at ASC").Find(&backups).Error)
 	require.Len(t, backups, 2)
 	require.Equal(t, "snapshot-1", backups[0].LocalSnapshotID)
-	require.Equal(t, models.VolumeBackupStatusFailed, backups[1].Status)
+	require.Equal(t, models.SystemBackupStatusFailed, backups[1].Status)
 }
 
 func TestRecoveryEnvironmentInternalIncludesRuntimeSecrets(t *testing.T) {
@@ -159,26 +186,15 @@ func TestRecoveryEnvironmentInternalIncludesRuntimeSecrets(t *testing.T) {
 	require.Equal(t, "0640", environment["FILE_PERM"])
 }
 
-func TestDecodeDiscoveredSnapshotsInternal(t *testing.T) {
-	plain, err := decodeDiscoveredSnapshotsInternal(`[{"id":"plain","time":"2026-07-20T10:00:00Z","summary":{"total_bytes_processed":12}}]`)
-	require.NoError(t, err)
-	require.Equal(t, "plain", plain[0].ID)
-	require.EqualValues(t, 12, plain[0].Summary.TotalBytesProcessed)
-
-	grouped, err := decodeDiscoveredSnapshotsInternal(`[{"group_key":{"hostname":"arcane"},"snapshots":[{"id":"grouped","time":"2026-07-20T10:00:00Z"}]}]`)
-	require.NoError(t, err)
-	require.Equal(t, "grouped", grouped[0].ID)
-}
-
-func TestSystemSnapshotPathInternal(t *testing.T) {
-	path, err := systemSnapshotPathInternal(`["/arcane.db","/.arcane-recovery.json"]`)
+func TestSystemSnapshotPathFromFilesInternal(t *testing.T) {
+	path, err := systemSnapshotPathFromFilesInternal([]string{"/arcane.db", "/.arcane-recovery.json"})
 	require.NoError(t, err)
 	require.Equal(t, "/", path)
 
-	path, err = systemSnapshotPathInternal(`["/app/data/arcane.db","/app/data/.arcane-recovery.json"]`)
+	path, err = systemSnapshotPathFromFilesInternal([]string{"/app/data/arcane.db", "/app/data/.arcane-recovery.json"})
 	require.NoError(t, err)
 	require.Equal(t, "/app/data", path)
 
-	_, err = systemSnapshotPathInternal(`["/arcane.db"]`)
+	_, err = systemSnapshotPathFromFilesInternal([]string{"/arcane.db"})
 	require.ErrorContains(t, err, "does not contain an Arcane recovery manifest")
 }

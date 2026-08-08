@@ -3,32 +3,8 @@ package s3
 import (
 	"testing"
 
-	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
 	"github.com/stretchr/testify/require"
 )
-
-func TestFromCreateDestinationNormalizesConfiguration(t *testing.T) {
-	configuration := FromCreateDestination(backuptypes.CreateS3Destination{
-		Name:            " Offsite ",
-		Endpoint:        " s3.example.com/ ",
-		Bucket:          " backups ",
-		Region:          " us-east-1 ",
-		AccessKeyID:     " access-key ",
-		SecretAccessKey: " secret-key ",
-		Prefix:          " /production/ ",
-		UseSSL:          true,
-		ForcePathStyle:  true,
-	})
-
-	require.Equal(t, "Offsite", configuration.Name)
-	require.Equal(t, "s3.example.com/", configuration.Endpoint)
-	require.Equal(t, "backups", configuration.Bucket)
-	require.Equal(t, "us-east-1", configuration.Region)
-	require.Equal(t, "access-key", configuration.AccessKeyID)
-	require.Equal(t, "secret-key", configuration.SecretAccessKey)
-	require.Equal(t, "production", configuration.Prefix)
-	require.Equal(t, "https://s3.example.com", configuration.EndpointURL())
-}
 
 func TestConfigurationValidateRequiresRegionOnlyForAWS(t *testing.T) {
 	configuration := Configuration{Name: "Offsite", Bucket: "backups", AccessKeyID: "access-key", SecretAccessKey: "secret-key"}
@@ -36,6 +12,19 @@ func TestConfigurationValidateRequiresRegionOnlyForAWS(t *testing.T) {
 
 	configuration.Endpoint = "s3.example.com"
 	require.NoError(t, configuration.Validate(true))
+}
+
+func TestValidateEndpoint(t *testing.T) {
+	require.NoError(t, ValidateEndpoint(""))
+	require.NoError(t, ValidateEndpoint("minio.internal:9000"))
+	require.NoError(t, ValidateEndpoint("http://10.0.0.5:9000"))
+	require.NoError(t, ValidateEndpoint("https://s3.example.com"))
+
+	require.ErrorContains(t, ValidateEndpoint("ftp://s3.example.com"), "only http and https")
+	require.ErrorContains(t, ValidateEndpoint("https://user:pass@s3.example.com"), "credentials in the URL")
+	require.ErrorContains(t, ValidateEndpoint("https://s3.example.com?x=1"), "query strings and fragments")
+	require.ErrorContains(t, ValidateEndpoint("https://s3.example.com#frag"), "query strings and fragments")
+	require.ErrorContains(t, ValidateEndpoint("https://"), "host is required")
 }
 
 func TestConfigurationRusticEnvironment(t *testing.T) {

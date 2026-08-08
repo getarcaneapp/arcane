@@ -65,6 +65,7 @@ const (
 	EventTypeVolumeBackupDelete       EventType = "volume.backup.delete"
 	EventTypeVolumeBackupRestore      EventType = "volume.backup.restore"
 	EventTypeVolumeBackupRestoreFiles EventType = "volume.backup.restore_files"
+	EventTypeVolumeBackupDownload     EventType = "volume.backup.download"
 
 	EventTypeNetworkCreate EventType = "network.create"
 	EventTypeNetworkDelete EventType = "network.delete"

@@ -22,6 +22,13 @@ const (
 	VolumeBackupTriggerSafety    VolumeBackupTrigger = "safety"
 )
 
+type VolumeBackupFormat string
+
+const (
+	VolumeBackupFormatArchive VolumeBackupFormat = "archive"
+	VolumeBackupFormatRustic  VolumeBackupFormat = "rustic"
+)
+
 type VolumeBackup struct {
 	BaseModel
 
@@ -31,6 +38,7 @@ type VolumeBackup struct {
 	Status            VolumeBackupStatus       `json:"status" gorm:"column:status;type:text;not null;default:succeeded"`
 	Trigger           VolumeBackupTrigger      `json:"trigger" gorm:"column:trigger;type:text;not null;default:manual"`
 	Destination       volume.BackupDestination `json:"destination" gorm:"column:destination;type:text;not null;default:local"`
+	Format            VolumeBackupFormat       `json:"format" gorm:"column:format;type:text;not null;default:archive"`
 	LocalSnapshotID   string                   `json:"localSnapshotId,omitempty" gorm:"column:local_snapshot_id;type:text"`
 	RemoteSnapshotID  string                   `json:"remoteSnapshotId,omitempty" gorm:"column:remote_snapshot_id;type:text"`
 	S3DestinationID   string                   `json:"s3DestinationId,omitempty" gorm:"column:s3_destination_id;type:text;index"`
@@ -53,6 +61,7 @@ func (b *VolumeBackup) ToDTO() volume.BackupEntry {
 		Status:            string(b.Status),
 		Trigger:           string(b.Trigger),
 		Destination:       b.Destination,
+		Format:            volume.BackupFormat(b.Format),
 		LocalSnapshotID:   b.LocalSnapshotID,
 		RemoteSnapshotID:  b.RemoteSnapshotID,
 		S3DestinationID:   b.S3DestinationID,

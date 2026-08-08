@@ -3,7 +3,11 @@
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
 	import { UniversalMobileCard, type ColumnSpec, type MobileFieldVisibility } from '#lib/components/arcane-table';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu';
-	import { Badge } from '#lib/components/ui/badge';
+	import BackupStatusCell from '#lib/components/arcane-table/cells/backup-status-cell.svelte';
+	import BackupTriggerCell from '#lib/components/arcane-table/cells/backup-trigger-cell.svelte';
+	import BackupDestinationCell from '#lib/components/arcane-table/cells/backup-destination-cell.svelte';
+	import BackupSizeCell from '#lib/components/arcane-table/cells/backup-size-cell.svelte';
+	import CreatedAtCell from '#lib/components/arcane-table/cells/created-at-cell.svelte';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
 	import type { SystemBackupRun } from '#lib/types/system-backup';
 	import { BackupIcon, RestartIcon, TrashIcon, UploadIcon, ClockIcon } from '#lib/icons';
@@ -46,13 +50,11 @@
 </script>
 
 {#snippet IdCell({ item }: { item: SystemBackupRun })}<code class="text-xs">{item.id.slice(0, 18)}…</code>{/snippet}
-{#snippet StatusCell({ item }: { item: SystemBackupRun })}<Badge variant={backupStatusVariant(item.status)}
-		>{backupStatusLabel(item.status)}</Badge
-	>{/snippet}
-{#snippet TriggerCell({ item }: { item: SystemBackupRun })}{backupTriggerLabel(item.trigger)}{/snippet}
-{#snippet DestinationCell({ item }: { item: SystemBackupRun })}{backupDestinationDisplay(item)}{/snippet}
-{#snippet SizeCell({ item }: { item: SystemBackupRun })}{bytes(item.size)}{/snippet}
-{#snippet CreatedCell({ item }: { item: SystemBackupRun })}{formatDateTimeShort(item.createdAt)}{/snippet}
+{#snippet StatusCell({ item }: { item: SystemBackupRun })}<BackupStatusCell status={item.status} />{/snippet}
+{#snippet TriggerCell({ item }: { item: SystemBackupRun })}<BackupTriggerCell trigger={item.trigger} />{/snippet}
+{#snippet DestinationCell({ item }: { item: SystemBackupRun })}<BackupDestinationCell {item} />{/snippet}
+{#snippet SizeCell({ item }: { item: SystemBackupRun })}<BackupSizeCell size={item.size} />{/snippet}
+{#snippet CreatedCell({ item }: { item: SystemBackupRun })}<CreatedAtCell value={item.createdAt} />{/snippet}
 {#snippet ErrorCell({ item }: { item: SystemBackupRun })}<span class="max-w-72 truncate text-red-500">{item.error || '-'}</span
 	>{/snippet}
 

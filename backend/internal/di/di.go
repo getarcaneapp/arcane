@@ -18,7 +18,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/passkey"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/port"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/rustic"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/search"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/swarm"
@@ -96,7 +95,7 @@ var ServiceOptions = fx.Options(
 		variable.New,
 		provideS3ModuleInternal,
 		provideS3ServiceInternal,
-		rustic.NewRusticService,
+		provideBackupEngineInternal,
 
 		// Adapters for scalar config fields, unexported parameters, builders, and lifecycle hooks.
 		provideVersionServiceInternal,

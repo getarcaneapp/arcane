@@ -1,4 +1,6 @@
-// Package s3 provides reusable S3 configuration and connectivity helpers.
+// Package s3 provides reusable S3 configuration and connectivity helpers. It
+// deals in infrastructure configuration only; mapping from API DTOs belongs to
+// the backup destination domain.
 package s3
 
 import (
@@ -7,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"path"
 	"strings"
 
@@ -14,7 +17,6 @@ import (
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	awss3 "github.com/aws/aws-sdk-go-v2/service/s3"
-	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
 	"github.com/google/uuid"
 )
 
@@ -34,57 +36,6 @@ type Configuration struct {
 	ForcePathStyle  bool
 }
 
-// FromCreateDestination converts an API create request into a normalized configuration.
-func FromCreateDestination(input backuptypes.CreateS3Destination) Configuration {
-	return Configuration{
-		Name:            input.Name,
-		Endpoint:        input.Endpoint,
-		Bucket:          input.Bucket,
-		Region:          input.Region,
-		AccessKeyID:     input.AccessKeyID,
-		SecretAccessKey: input.SecretAccessKey,
-		Prefix:          input.Prefix,
-		UseSSL:          input.UseSSL,
-		ForcePathStyle:  input.ForcePathStyle,
-	}.Normalized()
-}
-
-// FromUpdateDestination converts an API update request into a normalized configuration.
-// existingSecret is retained when the update omits a replacement secret.
-func FromUpdateDestination(input backuptypes.UpdateS3Destination, existingSecret string) Configuration {
-	secret := strings.TrimSpace(input.SecretAccessKey)
-	if secret == "" {
-		secret = existingSecret
-	}
-	return Configuration{
-		Name:            input.Name,
-		Endpoint:        input.Endpoint,
-		Bucket:          input.Bucket,
-		Region:          input.Region,
-		AccessKeyID:     input.AccessKeyID,
-		SecretAccessKey: secret,
-		Prefix:          input.Prefix,
-		UseSSL:          input.UseSSL,
-		ForcePathStyle:  input.ForcePathStyle,
-	}.Normalized()
-}
-
-// FromSyncDestination converts a destination sync item into a normalized configuration.
-func FromSyncDestination(input backuptypes.S3DestinationSync) Configuration {
-	return Configuration{
-		ID:              input.ID,
-		Name:            input.Name,
-		Endpoint:        input.Endpoint,
-		Bucket:          input.Bucket,
-		Region:          input.Region,
-		AccessKeyID:     input.AccessKeyID,
-		SecretAccessKey: input.SecretAccessKey,
-		Prefix:          input.Prefix,
-		UseSSL:          input.UseSSL,
-		ForcePathStyle:  input.ForcePathStyle,
-	}.Normalized()
-}
-
 // Normalized returns a copy with surrounding whitespace and prefix separators removed.
 func (c Configuration) Normalized() Configuration {
 	c.ID = strings.TrimSpace(c.ID)
@@ -96,6 +47,36 @@ func (c Configuration) Normalized() Configuration {
 	c.SecretAccessKey = strings.TrimSpace(c.SecretAccessKey)
 	c.Prefix = strings.Trim(strings.TrimSpace(c.Prefix), "/")
 	return c
+}
+
+// ValidateEndpoint checks a custom endpoint: only HTTP or HTTPS with a host,
+// no userinfo, query, or fragment. Private and self-hosted hosts are allowed.
+func ValidateEndpoint(endpoint string) error {
+	endpoint = strings.TrimSpace(endpoint)
+	if endpoint == "" {
+		return nil
+	}
+	candidate := endpoint
+	if !strings.Contains(candidate, "://") {
+		candidate = "https://" + candidate
+	}
+	parsed, err := url.Parse(candidate)
+	if err != nil {
+		return fmt.Errorf("invalid S3 endpoint: %w", err)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return errors.New("invalid S3 endpoint: only http and https are supported")
+	}
+	if parsed.Host == "" {
+		return errors.New("invalid S3 endpoint: host is required")
+	}
+	if parsed.User != nil {
+		return errors.New("invalid S3 endpoint: credentials in the URL are not allowed")
+	}
+	if parsed.RawQuery != "" || parsed.Fragment != "" || parsed.RawFragment != "" {
+		return errors.New("invalid S3 endpoint: query strings and fragments are not allowed")
+	}
+	return nil
 }
 
 // Validate verifies the fields required to connect to the configured destination.
@@ -110,6 +91,9 @@ func (c Configuration) Validate(requireSecret bool) error {
 	if c.Endpoint == "" && c.Region == "" {
 		return errors.New("region is required for AWS S3")
 	}
+	if err := ValidateEndpoint(c.Endpoint); err != nil {
+		return err
+	}
 	if c.AccessKeyID == "" {
 		return errors.New("access key ID is required")
 	}
@@ -117,6 +101,19 @@ func (c Configuration) Validate(requireSecret bool) error {
 		return errors.New("secret access key is required")
 	}
 	return nil
+}
+
+// ConnectionFieldsEqual reports whether two configurations address the same
+// service the same way. A change in any of these fields means a stored secret
+// may no longer be combined with the configuration.
+func ConnectionFieldsEqual(a, b Configuration) bool {
+	a, b = a.Normalized(), b.Normalized()
+	return a.Endpoint == b.Endpoint &&
+		a.Bucket == b.Bucket &&
+		a.Region == b.Region &&
+		a.AccessKeyID == b.AccessKeyID &&
+		a.UseSSL == b.UseSSL &&
+		a.ForcePathStyle == b.ForcePathStyle
 }
 
 // EndpointURL returns the normalized endpoint URL, applying UseSSL to custom endpoints.

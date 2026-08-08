@@ -200,11 +200,15 @@ func registerDynamicJobs(params dynamicJobsParams) error {
 	// registered on managers and agents; environment proxying persists each policy
 	// in the correct Arcane database.
 	if params.Volume != nil {
-		params.Volume.SetScheduler(params.AppCtx, params.Scheduler)
+		if err := params.Volume.SetScheduler(params.AppCtx, params.Scheduler, params.Admission); err != nil {
+			return err
+		}
 		params.Volume.RegisterBackupJobsOnStartup(params.AppCtx)
 	}
 	if !params.Config.AgentMode && params.SystemBackup != nil {
-		params.SystemBackup.SetScheduler(params.AppCtx, params.Scheduler)
+		if err := params.SystemBackup.SetScheduler(params.AppCtx, params.Scheduler, params.Admission); err != nil {
+			return err
+		}
 		params.SystemBackup.RegisterBackupJobOnStartup(params.AppCtx)
 	}
 	// GitOps: one job per auto-sync-enabled sync (runs on manager and agents).

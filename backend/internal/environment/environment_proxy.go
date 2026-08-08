@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"maps"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -83,6 +84,34 @@ func (s *EnvironmentService) SyncS3DestinationsToRemoteEnvironments(ctx context.
 
 	if failedCount > 0 {
 		return errors.Errorf("failed to sync S3 destinations to %d remote environment(s)", failedCount)
+	}
+	return nil
+}
+
+// CheckS3DestinationReferences returns an error while any managed environment
+// still references the destination, or when a synced environment cannot be
+// checked conclusively. Deleting credentials that a remote environment still
+// needs would strand its policies and retained backups.
+func (s *EnvironmentService) CheckS3DestinationReferences(ctx context.Context, destinationID string) error {
+	envs, err := s.ListRemoteEnvironments(ctx)
+	if err != nil {
+		return errors.WrapIf(err, "failed to list remote environments for S3 destination reference check")
+	}
+	for _, env := range envs {
+		if env.AccessToken == nil || strings.TrimSpace(*env.AccessToken) == "" {
+			// Environments without an access token never receive destination
+			// syncs, so they cannot hold a reference.
+			continue
+		}
+		var result struct {
+			InUse bool `json:"inUse"`
+		}
+		if err := s.ProxyJSONRequestForEnvironment(ctx, env, http.MethodGet, "/api/s3-destinations/"+url.PathEscape(destinationID)+"/in-use", nil, &result); err != nil {
+			return errors.WrapIff(err, "cannot verify S3 destination references on environment %s; restore connectivity before deleting", env.Name)
+		}
+		if result.InUse {
+			return errors.Errorf("still referenced by environment %s", env.Name)
+		}
 	}
 	return nil
 }

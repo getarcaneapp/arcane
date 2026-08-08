@@ -3,7 +3,7 @@
 	import { toast } from 'svelte-sonner';
 	import settingsStore from '#lib/stores/config-store';
 	import { SettingsPageLayout, type SettingsActionButton } from '#lib/layouts';
-	import { BackupIcon, EditIcon, LockIcon } from '#lib/icons';
+	import { BackupIcon, LockIcon } from '#lib/icons';
 	import { Badge } from '#lib/components/ui/badge';
 	import { CopyButton } from '#lib/components/ui/copy-button';
 	import { Input } from '#lib/components/ui/input';
@@ -13,20 +13,13 @@
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
 	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
 	import { systemBackupService } from '#lib/services/system-backup-service';
-	import { formatDateTimeShort } from '#lib/utils/formatting';
-	import {
-		backupDestinationFromFlags,
-		backupDestinationLabel,
-		backupDestinationOptions,
-		backupPolicyDestinationDisplay,
-		backupStatusLabel,
-		s3DestinationOptions
-	} from '#lib/utils/backups';
+	import { backupDestinationOptions, backupPolicyDestinationDisplay, s3DestinationOptions } from '#lib/utils/backups';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared';
-	import type { SystemBackupDestination, SystemBackupPolicy, SystemBackupRun } from '#lib/types/system-backup';
+	import type { SystemBackupDestination, SystemBackupRun } from '#lib/types/system-backup';
 	import * as m from '#lib/paraglide/messages.js';
 	import SystemBackupTable from './system-backup-table.svelte';
-	import SystemBackupPolicyDialog from './system-backup-policy-dialog.svelte';
+	import BackupPolicyDialog from '#lib/components/backup-policy-dialog.svelte';
+	import BackupPolicyCard from '#lib/components/backup-policy-card.svelte';
 
 	let { data } = $props();
 	let backups = $state(untrack(() => data.backups));
@@ -238,40 +231,6 @@
 	</div>
 {/snippet}
 
-{#snippet policyCard(policy: SystemBackupPolicy)}
-	<div class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-1.5 gap-y-0.5 rounded-md border px-2 py-1">
-		<Badge variant={policy.enabled ? 'green' : 'gray'}>{policy.enabled ? m.common_enabled() : m.common_disabled()}</Badge>
-		<code class="truncate">{policy.schedule}</code>
-		<div class="flex items-center gap-1.5 justify-self-end">
-			<Badge variant="blue">{backupDestinationLabel(backupDestinationFromFlags(policy.localEnabled, policy.s3Enabled))}</Badge>
-			<ArcaneButton
-				action="edit"
-				size="icon"
-				icon={EditIcon}
-				showLabel={false}
-				customLabel={m.jobs_edit_schedule()}
-				onclick={() => openPolicy(policy.id)}
-				class="size-7"
-				disabled={isReadOnly}
-			/>
-		</div>
-		<div class="col-span-2 flex min-w-0 items-center gap-1.5">
-			<span>
-				{policy.retentionCount === 0
-					? m.volume_backup_retention_all()
-					: m.volume_backup_retention_summary({ count: policy.retentionCount })}
-			</span>
-			{#if policy.lastRun}
-				<span>·</span>
-				<span class="truncate">{backupStatusLabel(policy.lastRun.status)} · {formatDateTimeShort(policy.lastRun.createdAt)}</span>
-			{/if}
-		</div>
-		{#if policy.s3DestinationName}
-			<span class="max-w-28 justify-self-end truncate" title={policy.s3DestinationName}>{policy.s3DestinationName}</span>
-		{/if}
-	</div>
-{/snippet}
-
 {#snippet recoveryKeyDialog()}
 	<ResponsiveDialog
 		bind:open={keyOpen}
@@ -390,7 +349,7 @@
 				{#if policyCollection.policies.length}
 					<div class="grid grid-cols-1 gap-1.5 text-xs text-muted-foreground sm:grid-cols-2 xl:grid-cols-3">
 						{#each policyCollection.policies as policy (policy.id)}
-							{@render policyCard(policy)}
+							<BackupPolicyCard {policy} onEdit={() => openPolicy(policy.id)} editDisabled={isReadOnly} />
 						{/each}
 					</div>
 				{:else}
@@ -409,12 +368,24 @@
 		</div>
 	{/snippet}
 	{#snippet additionalContent()}
-		<SystemBackupPolicyDialog
+		<BackupPolicyDialog
 			bind:open={policyOpen}
+			idPrefix="system-backup-policy"
 			policies={policyCollection.policies}
 			policyId={editingPolicyId}
-			recoveryKeyStored={policyCollection.recoveryKeyStored}
+			addTitle={m.system_backups_add_schedule()}
+			description={m.system_backups_schedule_description()}
+			enabledDescription={m.system_backups_enabled_description()}
+			enabledError={policyCollection.recoveryKeyStored ? null : m.system_backups_recovery_key_schedule_required()}
+			defaultSchedule="0 0 3 * * *"
+			defaultEnabled={policyCollection.recoveryKeyStored}
 			destinations={data.destinations}
+			updatePolicies={async (policies) => (await systemBackupService.updatePolicies(policies)).policies}
+			messages={{
+				saved: m.system_backups_policy_saved(),
+				saveFailed: m.system_backups_policy_failed(),
+				removed: m.system_backups_schedule_removed()
+			}}
 			onSaved={(policies) => (policyCollection = { ...policyCollection, policies })}
 		/>
 

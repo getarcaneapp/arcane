@@ -63,6 +63,21 @@ class VolumeBackupService extends BaseAPIService {
 		return res.data.data ?? [];
 	}
 
+	async downloadBackup(backupId: string): Promise<void> {
+		const envId = await environmentStore.getCurrentEnvironmentId();
+		const res = await this.api.get(`/environments/${envId}/volumes/backups/${backupId}/download`, {
+			responseType: 'blob'
+		});
+
+		const url = window.URL.createObjectURL(new Blob([res.data]));
+		const link = document.createElement('a');
+		link.href = url;
+		link.setAttribute('download', `${backupId}.tar.gz`);
+		document.body.appendChild(link);
+		link.click();
+		link.remove();
+	}
+
 	async deleteBackup(backupId: string): Promise<any> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		return this.handleResponse(this.api.delete(`/environments/${envId}/volumes/backups/${backupId}`));

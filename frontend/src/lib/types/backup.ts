@@ -9,6 +9,7 @@ export type BackupRun = {
 	status: BackupStatus;
 	trigger: BackupTrigger;
 	destination: BackupDestination;
+	format?: 'archive' | 'rustic';
 	localSnapshotId?: string;
 	remoteSnapshotId?: string;
 	s3DestinationId?: string;
@@ -22,6 +23,28 @@ export type BackupPolicyForm = {
 	schedule: string;
 	retentionCount: number;
 	destination: BackupDestination;
+	s3DestinationId: string;
+	stopContainers?: boolean;
+};
+
+export type BackupPolicy = {
+	id: string;
+	enabled: boolean;
+	schedule: string;
+	retentionCount: number;
+	stopContainers?: boolean;
+	localEnabled: boolean;
+	s3Enabled: boolean;
+	s3DestinationId?: string;
+};
+
+export type BackupPolicyUpdate = {
+	id: string;
+	enabled: boolean;
+	schedule: string;
+	retentionCount: number;
+	localEnabled: boolean;
+	s3Enabled: boolean;
 	s3DestinationId: string;
 	stopContainers?: boolean;
 };

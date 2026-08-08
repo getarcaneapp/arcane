@@ -106,8 +106,27 @@ func RegisterS3Destinations(api huma.API, service *S3DestinationService, syncRem
 		handlerutil.Operation("test-s3-destination", http.MethodPost, s3DestinationPathInternal+"/{id}/test", "Test S3 destination", "Verify upload, download, and delete access using the saved or supplied S3 destination configuration", s3DestinationTagInternal),
 		authz.PermSettingsWrite, handler.testInternal)
 	handlerutil.RegisterSecured(api,
+		handlerutil.Operation("get-s3-destination-usage", http.MethodGet, s3DestinationPathInternal+"/{id}/in-use", "Check S3 destination references", "Report whether backup records, policies, or settings on this environment still reference the destination", s3DestinationTagInternal),
+		authz.PermSettingsRead, handler.inUseInternal)
+	handlerutil.RegisterSecured(api,
 		handlerutil.Operation("delete-s3-destination", http.MethodDelete, s3DestinationPathInternal+"/{id}", "Delete S3 destination", "", s3DestinationTagInternal),
 		authz.PermSettingsWrite, handler.deleteInternal)
+}
+
+type s3DestinationUsageOutputInternal struct {
+	Body struct {
+		InUse bool `json:"inUse"`
+	}
+}
+
+func (h *s3DestinationHandlerInternal) inUseInternal(ctx context.Context, input *s3DestinationIDInputInternal) (*s3DestinationUsageOutputInternal, error) {
+	inUse, err := h.service.DestinationInUse(ctx, input.ID)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	output := &s3DestinationUsageOutputInternal{}
+	output.Body.InUse = inUse
+	return output, nil
 }
 
 func (h *s3DestinationHandlerInternal) listInternal(ctx context.Context, input *listS3DestinationsInputInternal) (*listS3DestinationsOutputInternal, error) {

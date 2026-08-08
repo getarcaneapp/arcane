@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"mime/multipart"
 	"net/http"
 	"net/url"
@@ -301,6 +302,11 @@ type DeleteBackupInput struct {
 	BackupID      string `path:"backupId" doc:"Backup ID"`
 }
 
+type DownloadBackupInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	BackupID      string `path:"backupId" doc:"Backup ID"`
+}
+
 type DeleteBackupOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
 }
@@ -554,6 +560,15 @@ func RegisterVolumes(api huma.API, dockerService *docker.DockerClientService, vo
 	}, authz.PermVolumesBackup, h.UploadBackup)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "download-volume-backup",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/volumes/backups/{backupId}/download",
+		Summary:     "Download volume backup",
+		Tags:        []string{"Volume Backup"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermVolumesBrowse, h.DownloadBackup)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "backup-has-path",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/volumes/backups/{backupId}/has-path",
@@ -570,6 +585,27 @@ func RegisterVolumes(api huma.API, dockerService *docker.DockerClientService, vo
 		Tags:        []string{"Volume Backup"},
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}, authz.PermVolumesBrowse, h.ListBackupFiles)
+}
+
+func (h *VolumeHandler) DownloadBackup(ctx context.Context, input *DownloadBackupInput) (*huma.StreamResponse, error) {
+	user, _ := models.CurrentUserFromContext(ctx)
+	reader, size, err := h.volumeService.DownloadBackup(ctx, input.BackupID, user)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+
+	return &huma.StreamResponse{
+		Body: func(humaCtx huma.Context) {
+			defer func() { _ = reader.Close() }()
+
+			humaCtx.SetHeader("Content-Type", "application/x-gzip")
+			humaCtx.SetHeader("Content-Disposition", "attachment; filename="+input.BackupID+".tar.gz")
+			humaCtx.SetHeader("Content-Length", strconv.FormatInt(size, 10))
+
+			writer := humaCtx.BodyWriter()
+			_, _ = io.Copy(writer, reader)
+		},
+	}, nil
 }
 
 func (h *VolumeHandler) GetBackupPolicy(ctx context.Context, input *GetVolumeBackupPolicyInput) (*GetVolumeBackupPolicyOutput, error) {
@@ -625,11 +661,15 @@ func (h *VolumeHandler) UpdateBackupPolicy(ctx context.Context, input *UpdateVol
 					break
 				}
 			}
-			if hasS3 {
-				if syncErr := h.environmentService.SyncS3DestinationsToEnvironment(activityCtx, input.EnvironmentID); syncErr != nil {
+			// Destinations are reconciled before every policy write so the agent
+			// can validate S3 references. Only batches that actually need S3
+			// fail on a sync error; local-only edits proceed.
+			if syncErr := h.environmentService.SyncS3DestinationsToEnvironment(activityCtx, input.EnvironmentID); syncErr != nil {
+				if hasS3 {
 					errorStatus = http.StatusBadGateway
 					return fmt.Errorf("failed to synchronize S3 destinations to environment: %w", syncErr)
 				}
+				slog.WarnContext(activityCtx, "S3 destination sync failed before local-only volume backup policy write", "environment_id", input.EnvironmentID, "error", syncErr)
 			}
 			remotePath := fmt.Sprintf("/api/environments/0/volumes/%s/backup-policy", url.PathEscape(input.VolumeName))
 			var proxyErr error

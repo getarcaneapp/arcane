@@ -6,13 +6,29 @@ import (
 	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
 )
 
+type SystemBackupStatus string
+
+const (
+	SystemBackupStatusRunning   SystemBackupStatus = "running"
+	SystemBackupStatusSucceeded SystemBackupStatus = "succeeded"
+	SystemBackupStatusFailed    SystemBackupStatus = "failed"
+)
+
+type SystemBackupTrigger string
+
+const (
+	SystemBackupTriggerManual    SystemBackupTrigger = "manual"
+	SystemBackupTriggerScheduled SystemBackupTrigger = "scheduled"
+	SystemBackupTriggerSafety    SystemBackupTrigger = "safety"
+)
+
 type SystemBackupRun struct {
 	BaseModel
 
 	Size              int64                               `json:"size" gorm:"column:size" sortable:"true"`
 	CreatedAt         time.Time                           `json:"createdAt" gorm:"column:created_at" sortable:"true"`
-	Status            VolumeBackupStatus                  `json:"status" gorm:"column:status;type:text;not null" sortable:"true"`
-	Trigger           VolumeBackupTrigger                 `json:"trigger" gorm:"column:trigger;type:text;not null" sortable:"true"`
+	Status            SystemBackupStatus                  `json:"status" gorm:"column:status;type:text;not null" sortable:"true"`
+	Trigger           SystemBackupTrigger                 `json:"trigger" gorm:"column:trigger;type:text;not null" sortable:"true"`
 	Destination       backuptypes.SystemBackupDestination `json:"destination" gorm:"column:destination;type:text;not null" sortable:"true"`
 	LocalSnapshotID   string                              `json:"localSnapshotId,omitempty" gorm:"column:local_snapshot_id;type:text"`
 	RemoteSnapshotID  string                              `json:"remoteSnapshotId,omitempty" gorm:"column:remote_snapshot_id;type:text"`

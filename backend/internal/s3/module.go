@@ -11,6 +11,7 @@ import (
 type Dependencies struct {
 	DB                     *database.DB
 	SyncRemoteDestinations func(context.Context) error
+	CheckRemoteReferences  func(ctx context.Context, destinationID string) error
 }
 
 type Module struct {
@@ -19,7 +20,9 @@ type Module struct {
 }
 
 func New(deps Dependencies) *Module {
-	return &Module{service: NewS3DestinationService(deps.DB), deps: deps}
+	service := NewS3DestinationService(deps.DB)
+	service.checkRemoteReferences = deps.CheckRemoteReferences
+	return &Module{service: service, deps: deps}
 }
 
 func (m *Module) Service() *S3DestinationService {

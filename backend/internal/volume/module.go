@@ -4,11 +4,11 @@ package volume
 
 import (
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/rustic"
 	s3domain "github.com/getarcaneapp/arcane/backend/v2/internal/s3"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
@@ -28,7 +28,7 @@ type Dependencies struct {
 	Activity         *activity.ActivityService
 	Environment      *environment.EnvironmentService
 	Container        *container.ContainerService
-	Rustic           *rustic.RusticService
+	Engine           *backup.Engine
 	S3               *s3domain.S3DestinationService
 	BackupVolumeName string
 	EncryptionKey    string
@@ -43,7 +43,7 @@ type Module struct {
 // New builds the volume domain from its dependencies.
 func New(deps Dependencies) *Module {
 	return &Module{
-		service: NewVolumeService(deps.DB, deps.Docker, deps.Event, deps.Activity, deps.Settings, deps.Container, deps.Image, deps.Rustic, deps.S3, deps.BackupVolumeName, deps.EncryptionKey),
+		service: NewVolumeService(deps.DB, deps.Docker, deps.Event, deps.Activity, deps.Settings, deps.Container, deps.Image, deps.Engine, deps.S3, deps.BackupVolumeName, deps.EncryptionKey),
 		deps:    deps,
 	}
 }

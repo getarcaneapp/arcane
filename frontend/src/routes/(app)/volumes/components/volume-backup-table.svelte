@@ -18,8 +18,7 @@
 		FileTextIcon,
 		AlertIcon,
 		UploadIcon,
-		ArrowDownIcon,
-		EditIcon
+		ArrowDownIcon
 	} from '#lib/icons';
 	import { ArcaneButton, arcaneButtonVariants } from '#lib/components/arcane-button';
 	import * as ButtonGroup from '#lib/components/ui/button-group';
@@ -45,18 +44,18 @@
 	import { hasPermission } from '#lib/utils/auth';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
-	import VolumeBackupPolicyDialog from './volume-backup-policy-dialog.svelte';
-	import { Badge } from '#lib/components/ui/badge';
+	import BackupPolicyDialog from '#lib/components/backup-policy-dialog.svelte';
+	import BackupPolicyCard from '#lib/components/backup-policy-card.svelte';
+	import BackupStatusCell from '#lib/components/arcane-table/cells/backup-status-cell.svelte';
+	import BackupTriggerCell from '#lib/components/arcane-table/cells/backup-trigger-cell.svelte';
+	import BackupDestinationCell from '#lib/components/arcane-table/cells/backup-destination-cell.svelte';
+	import BackupSizeCell from '#lib/components/arcane-table/cells/backup-size-cell.svelte';
+	import CreatedAtCell from '#lib/components/arcane-table/cells/created-at-cell.svelte';
 	import { cn } from '#lib/utils';
 	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions';
 	import { extractApiErrorMessage } from '#lib/utils/api';
 	import {
-		backupDestinationFromFlags,
 		backupDestinationDisplay,
-		backupDestinationLabel,
-		backupDestinationName,
-		backupStatusLabel,
-		backupStatusVariant,
 		backupTriggerLabel,
 		s3DestinationOptions as buildS3DestinationOptions
 	} from '#lib/utils/backups';
@@ -359,28 +358,23 @@
 {/snippet}
 
 {#snippet StatusCell({ item }: { item: BackupEntry })}
-	<Badge variant={backupStatusVariant(item.status)}>{backupStatusLabel(item.status)}</Badge>
+	<BackupStatusCell status={item.status} />
 {/snippet}
 
 {#snippet TriggerCell({ item }: { item: BackupEntry })}
-	{backupTriggerLabel(item.trigger)}
+	<BackupTriggerCell trigger={item.trigger} />
 {/snippet}
 
 {#snippet DestinationCell({ item }: { item: BackupEntry })}
-	<div class="flex items-center gap-2">
-		<Badge variant={item.destination === 'local' ? 'gray' : 'blue'}>{backupDestinationLabel(item.destination)}</Badge>
-		{#if item.destination !== 'local' && backupDestinationName(item)}
-			<span class="max-w-48 truncate text-xs text-muted-foreground">{backupDestinationName(item)}</span>
-		{/if}
-	</div>
+	<BackupDestinationCell {item} />
 {/snippet}
 
 {#snippet SizeCell({ item }: { item: BackupEntry })}
-	{formatBytes(item.size)}
+	<BackupSizeCell size={item.size} />
 {/snippet}
 
 {#snippet CreatedCell({ item }: { item: BackupEntry })}
-	{formatDateTimeShort(item.createdAt)}
+	<CreatedAtCell value={item.createdAt} />
 {/snippet}
 
 {#snippet RemoteSnapshotCell({ item }: { item: BackupEntry })}
@@ -401,6 +395,12 @@
 			<DropdownMenu.Item onclick={() => openRestoreFilesDialog(item)}>
 				<FileTextIcon class="size-4" />
 				{m.volume_restore_files()}
+			</DropdownMenu.Item>
+		{/if}
+		{#if item.format === 'archive' || item.localSnapshotId}
+			<DropdownMenu.Item onclick={() => volumeBackupService.downloadBackup(item.id)}>
+				<DownloadIcon class="size-4" />
+				{m.templates_download()}
 			</DropdownMenu.Item>
 		{/if}
 		{#if canBackupVolume && s3Destinations.length}
@@ -523,58 +523,22 @@
 	/>
 {/snippet}
 
-{#snippet PolicyCard(policy: VolumeBackupPolicy)}
-	<div class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-1.5 gap-y-0.5 rounded-md border px-2 py-1">
-		<Badge variant={policy.enabled ? 'green' : 'gray'}>{policy.enabled ? m.common_enabled() : m.common_disabled()}</Badge>
-		<code class="truncate">{policy.schedule}</code>
-		<div class="flex items-center gap-1.5 justify-self-end">
-			<Badge variant="blue">{backupDestinationLabel(backupDestinationFromFlags(policy.localEnabled, policy.s3Enabled))}</Badge>
-			{#if canBackupVolume}
-				<ArcaneButton
-					action="edit"
-					size="icon"
-					icon={EditIcon}
-					showLabel={false}
-					customLabel={m.jobs_edit_schedule()}
-					onclick={() => {
-						editingBackupPolicyId = policy.id;
-						showBackupPolicy = true;
-					}}
-					class="size-7"
-				/>
-			{/if}
-		</div>
-		<div class="col-span-2 flex min-w-0 items-center gap-1.5">
-			<span>
-				{policy.retentionCount === 0
-					? m.volume_backup_retention_all()
-					: m.volume_backup_retention_summary({ count: policy.retentionCount })}
-			</span>
-			<span>·</span>
-			<span>{policy.stopContainers ? m.volume_backup_containers_stopped() : m.volume_backup_containers_running()}</span>
-			{#if policy.lastRun}
-				<span>·</span>
-				<span class="truncate">{backupStatusLabel(policy.lastRun.status)} · {formatDateTimeShort(policy.lastRun.createdAt)}</span>
-			{/if}
-		</div>
-		{#if policy.s3Enabled && (policy.s3DestinationName || policy.s3Bucket || policy.s3DestinationId)}
-			<span
-				class="max-w-28 justify-self-end truncate"
-				title={policy.s3DestinationName || policy.s3Bucket || policy.s3DestinationId}
-			>
-				{policy.s3DestinationName || policy.s3Bucket || policy.s3DestinationId}
-			</span>
-		{/if}
-	</div>
-{/snippet}
-
 <div class="space-y-4">
 	<div class="flex items-center justify-between">
 		<h2 class="text-lg font-semibold">{m.volumes_backups_title()}</h2>
 	</div>
 	<div class="grid grid-cols-1 gap-1.5 text-xs text-muted-foreground sm:grid-cols-2 xl:grid-cols-3">
 		{#each backupPolicies as policy (policy.id)}
-			{@render PolicyCard(policy)}
+			<BackupPolicyCard
+				{policy}
+				showStopContainers
+				onEdit={canBackupVolume
+					? () => {
+							editingBackupPolicyId = policy.id;
+							showBackupPolicy = true;
+						}
+					: undefined}
+			/>
 		{/each}
 	</div>
 
@@ -718,10 +682,21 @@
 	{/snippet}
 </ResponsiveDialog>
 
-<VolumeBackupPolicyDialog
+<BackupPolicyDialog
 	bind:open={showBackupPolicy}
-	{volumeName}
+	idPrefix="volume-backup-policy"
 	policies={backupPolicies}
 	policyId={editingBackupPolicyId}
+	addTitle={m.volume_backup_add_schedule()}
+	description={m.volume_backup_policy_description()}
+	enabledDescription={m.volume_backup_policy_enabled_description()}
+	defaultSchedule="0 0 2 * * *"
+	showStopContainers
+	updatePolicies={async (policies) => (await volumeBackupService.updatePolicies(volumeName, policies)).policies}
+	messages={{
+		saved: m.volume_backup_policy_saved(),
+		saveFailed: m.volume_backup_policy_save_failed(),
+		removed: m.volume_backup_schedule_removed()
+	}}
 	onSaved={(policies) => (backupPolicies = policies)}
 />

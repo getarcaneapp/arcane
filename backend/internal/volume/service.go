@@ -7,14 +7,15 @@ import (
 	"sync"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/rustic"
 	s3domain "github.com/getarcaneapp/arcane/backend/v2/internal/s3"
 
 	"emperror.dev/errors"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
@@ -22,6 +23,7 @@ import (
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/entityjobs"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/moby/moby/client"
@@ -36,7 +38,7 @@ type VolumeService struct {
 	settingsService  *settings.SettingsService
 	containerService *container.ContainerService
 	imageService     *image.ImageService
-	rusticService    *rustic.RusticService
+	engine           *backup.Engine
 	s3Destinations   *s3domain.S3DestinationService
 	backupVolumeName string
 	encryptionKey    string
@@ -46,15 +48,19 @@ type VolumeService struct {
 	// Without it two simultaneous browse requests each create a helper and the
 	// second overwrites the first in helperByVolume, orphaning a `sleep infinity`
 	// container that pins the volume until restart.
-	helperGroup    singleflight.Group
-	scheduler      schedulertypes.DynamicScheduler
-	lifecycleCtx   context.Context
-	runningBackups sync.Map
+	helperGroup singleflight.Group
+	jobs        *entityjobs.Registry
+}
+
+// SetScheduler injects the dynamic scheduler and admission gate for per-policy
+// backup jobs. Agent mode passes them too: agents run their own volume backups.
+func (s *VolumeService) SetScheduler(ctx context.Context, scheduler schedulertypes.DynamicScheduler, admissionGate *actors.Gate[actors.AdmissionKey]) error {
+	return s.jobs.SetScheduler(ctx, scheduler, admissionGate)
 }
 
 const trivyCacheVolumePruneFilterValue = libarcane.InternalResourceLabel + "=true"
 
-func NewVolumeService(db *database.DB, dockerService *docker.DockerClientService, eventService *event.EventService, activityService *activity.ActivityService, settingsService *settings.SettingsService, containerService *container.ContainerService, imageService *image.ImageService, rusticService *rustic.RusticService, s3Destinations *s3domain.S3DestinationService, backupVolumeName, encryptionKey string) *VolumeService {
+func NewVolumeService(db *database.DB, dockerService *docker.DockerClientService, eventService *event.EventService, activityService *activity.ActivityService, settingsService *settings.SettingsService, containerService *container.ContainerService, imageService *image.ImageService, engine *backup.Engine, s3Destinations *s3domain.S3DestinationService, backupVolumeName, encryptionKey string) *VolumeService {
 	slog.Debug("volume service: new")
 	if strings.TrimSpace(backupVolumeName) == "" {
 		backupVolumeName = "arcane-backups"
@@ -67,11 +73,12 @@ func NewVolumeService(db *database.DB, dockerService *docker.DockerClientService
 		settingsService:  settingsService,
 		containerService: containerService,
 		imageService:     imageService,
-		rusticService:    rusticService,
+		engine:           engine,
 		s3Destinations:   s3Destinations,
 		backupVolumeName: backupVolumeName,
 		encryptionKey:    encryptionKey,
 		helperByVolume:   make(map[string]*volumeHelper),
+		jobs:             entityjobs.New("volume-backup:", backup.VolumeAdmissionScope),
 	}
 }
 

@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	containerdomain "github.com/getarcaneapp/arcane/backend/v2/internal/container"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -19,6 +21,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	s3domain "github.com/getarcaneapp/arcane/backend/v2/internal/s3"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/entityjobs"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/libtnb/sqlite"
@@ -28,8 +31,27 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 	"go.getarcane.app/sys/crypto"
+	"go.uber.org/fx/fxtest"
 	"gorm.io/gorm"
 )
+
+func newVolumeBackupEngineForTestInternal(t testing.TB) *backup.Engine {
+	t.Helper()
+	fxLifecycle := fxtest.NewLifecycle(t)
+	runtime, err := actors.NewRuntime(t.Context(), fxLifecycle)
+	require.NoError(t, err)
+	gate, err := actors.NewGate[actors.AdmissionKey](t.Context(), runtime, "volume-backup-test-admission", t.Name())
+	require.NoError(t, err)
+	engine := backup.NewEngine(t.Context(), runtime, gate, nil)
+	t.Cleanup(func() {
+		stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		require.NoError(t, engine.Stop(stopCtx))
+		require.NoError(t, gate.Stop(stopCtx))
+		require.NoError(t, fxLifecycle.Stop(stopCtx))
+	})
+	return engine
+}
 
 func TestEnrichVolumesWithUsageDataInternal(t *testing.T) {
 
@@ -399,8 +421,19 @@ func TestVolumeBackupPolicy_UpdateRegistersIndependentJobsAndSettings(t *testing
 	require.NoError(t, gormDB.AutoMigrate(&models.VolumeBackupPolicy{}, &models.VolumeBackup{}))
 	db := &database.DB{DB: gormDB}
 	scheduler := &volumeBackupPolicySchedulerInternal{jobs: make(map[string]schedulertypes.Job)}
-	service := &VolumeService{db: db}
-	service.SetScheduler(context.Background(), scheduler)
+	service := &VolumeService{db: db, jobs: entityjobs.New("volume-backup:", backup.VolumeAdmissionScope)}
+	fxLifecycle := fxtest.NewLifecycle(t)
+	runtime, err := actors.NewRuntime(t.Context(), fxLifecycle)
+	require.NoError(t, err)
+	gate, err := actors.NewGate[actors.AdmissionKey](t.Context(), runtime, "volume-policy-test-admission", t.Name())
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		require.NoError(t, gate.Stop(stopCtx))
+		require.NoError(t, fxLifecycle.Stop(stopCtx))
+	})
+	require.NoError(t, service.SetScheduler(context.Background(), scheduler, gate))
 
 	collection, err := service.UpdateBackupPolicies(context.Background(), "app-data", []volumetypes.UpdateBackupPolicy{
 		{Enabled: true, Schedule: "0 */15 * * * *", RetentionCount: 5, StopContainers: true, LocalEnabled: true},
@@ -487,11 +520,21 @@ func TestVolumeBackupPolicy_ScheduledRunCreatesActivity(t *testing.T) {
 		LocalEnabled:   true,
 	}
 	require.NoError(t, gormDB.Create(policy).Error)
-	service := &VolumeService{db: db, activityService: activity.NewActivityService(db, nil)}
-	service.runningBackups.Store(policy.VolumeName, struct{}{})
-	defer service.runningBackups.Delete(policy.VolumeName)
+	engine := newVolumeBackupEngineForTestInternal(t)
+	service := &VolumeService{
+		db:              db,
+		activityService: activity.NewActivityService(db, nil),
+		engine:          engine,
+		jobs:            entityjobs.New("volume-backup:", backup.VolumeAdmissionScope),
+	}
+	// Holding the volume's admission lease makes the scheduled run fail with
+	// "already running", which still must record a failed activity.
+	lease, admitted, err := engine.TryAcquireRun(context.Background(), backup.VolumeAdmissionScope, policy.VolumeName)
+	require.NoError(t, err)
+	require.True(t, admitted)
+	defer lease.Release()
 
-	service.buildVolumeBackupJobInternal(policy.ID, policy.Schedule).Run(context.Background())
+	service.runScheduledBackupInternal(context.Background(), policy.ID)
 
 	var activity models.Activity
 	require.NoError(t, gormDB.Where("resource_type = ?", "volume_backup").First(&activity).Error)
@@ -529,6 +572,7 @@ func TestVolumeBackupPolicy_UpdateUsesSelectedS3Destination(t *testing.T) {
 	service := &VolumeService{
 		db:             db,
 		s3Destinations: s3domain.NewS3DestinationService(db),
+		jobs:           entityjobs.New("volume-backup:", backup.VolumeAdmissionScope),
 	}
 	collection, err := service.UpdateBackupPolicies(context.Background(), "app-data", []volumetypes.UpdateBackupPolicy{{
 		Schedule:        "0 0 2 * * *",

@@ -28,6 +28,10 @@ func setupS3DestinationServiceTestInternal(t *testing.T) (*S3DestinationService,
 	require.NoError(t, gormDB.AutoMigrate(
 		&models.S3Destination{},
 		&models.SettingVariable{},
+		&models.SystemBackupRun{},
+		&models.SystemBackupPolicy{},
+		&models.VolumeBackup{},
+		&models.VolumeBackupPolicy{},
 	))
 	crypto.InitEncryption(&crypto.Config{
 		EncryptionKey: "test-encryption-key-for-s3-destination-32bytes",
@@ -250,8 +254,11 @@ func TestS3DestinationService_TestS3DestinationRoundTrip(t *testing.T) {
 
 	require.NoError(t, service.TestS3Destination(context.Background(), destination.ID, nil))
 
-	expectedPathPrefix = "/edited-bucket/edited/.arcane-connection-test-"
-	require.NoError(t, service.TestS3Destination(context.Background(), destination.ID, &backuptypes.UpdateS3Destination{
+	// Changing a connection field without re-supplying the secret is rejected
+	// before any outbound request: the stored secret must never sign requests
+	// against caller-modified connection settings.
+	requestsBeforeRejection := len(requestMethods)
+	err = service.TestS3Destination(context.Background(), destination.ID, &backuptypes.UpdateS3Destination{
 		Name:           destination.Name,
 		Endpoint:       server.URL,
 		Bucket:         "edited-bucket",
@@ -260,6 +267,21 @@ func TestS3DestinationService_TestS3DestinationRoundTrip(t *testing.T) {
 		Prefix:         "edited",
 		UseSSL:         false,
 		ForcePathStyle: true,
+	})
+	require.ErrorContains(t, err, "re-enter the secret access key")
+	require.Len(t, requestMethods, requestsBeforeRejection)
+
+	expectedPathPrefix = "/edited-bucket/edited/.arcane-connection-test-"
+	require.NoError(t, service.TestS3Destination(context.Background(), destination.ID, &backuptypes.UpdateS3Destination{
+		Name:            destination.Name,
+		Endpoint:        server.URL,
+		Bucket:          "edited-bucket",
+		Region:          "",
+		AccessKeyID:     destination.AccessKeyID,
+		SecretAccessKey: "secret-key",
+		Prefix:          "edited",
+		UseSSL:          false,
+		ForcePathStyle:  true,
 	}))
 
 	require.Equal(t, []string{
