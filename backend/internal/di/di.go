@@ -3,9 +3,31 @@ package di
 
 import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
-	arcanelogging "github.com/getarcaneapp/arcane/backend/v2/internal/logging"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/appimages"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/build"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/diagnostics"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/gitops"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/lifecycle"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/network"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/notification"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/oidc"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/passkey"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/port"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/rustic"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/search"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/swarm"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/system"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/systembackup"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/variable"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/vulnerability"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/logging"
 	"go.uber.org/fx"
 )
 
@@ -18,57 +40,80 @@ var ActorOptions = fx.Options(
 
 // ServiceOptions provides the backend service graph.
 var ServiceOptions = fx.Options(
+	fx.Supply(new(logging.SlogErrorHandler)),
 	fx.Provide(
 		// Infrastructure values consumed by services.
 		provideResourcesFSInternal,
-		arcanelogging.NewSlogErrorHandler,
 
 		// Services constructed directly through their public constructors.
-		services.NewEventService,
-		services.NewActivityService,
+		provideEventModuleInternal,
+		provideEventServiceInternal,
+		provideActivityModuleInternal,
+		provideActivityServiceInternal,
 		provideSettingsServiceInternal,
-		services.NewKVService,
-		services.NewJobService,
-		services.NewSettingsSearchService,
-		services.NewCustomizeSearchService,
-		services.NewApplicationImagesService,
+		kv.NewKVService,
+		provideJobModuleInternal,
+		provideJobServiceInternal,
+		search.New,
+		appimages.NewApplicationImagesService,
 		provideDockerClientServiceInternal,
-		services.NewRoleService,
-		services.NewSessionService,
-		services.NewEnvironmentService,
-		services.NewNotificationService,
-		services.NewVulnerabilityService,
-		services.NewImageUpdateService,
-		services.NewImageService,
-		services.NewBuildService,
-		services.NewBuildWorkspaceService,
-		services.NewLifecycleService,
+		provideRoleModuleInternal,
+		provideRoleServiceInternal,
+		session.NewSessionService,
+		passkey.NewPasskeyService,
+		environment.NewEnvironmentService,
+		provideEnvironmentModuleInternal,
+		provideSettingsModuleInternal,
+		notification.NewNotificationService,
+		notification.New,
+		vulnerability.NewVulnerabilityService,
+		vulnerability.New,
+		imageupdate.NewImageUpdateService,
+		image.NewImageService,
+		provideImageUpdateModuleInternal,
+		provideImageModuleInternal,
+		build.NewBuildService,
+		build.NewBuildWorkspaceService,
+		lifecycle.NewLifecycleService,
 		provideProjectServiceInternal,
-		services.NewContainerService,
-		services.NewDashboardService,
-		services.NewNetworkService,
-		services.NewPortService,
-		services.NewSwarmService,
-		services.NewTemplateService,
-		services.NewOidcService,
-		services.NewSystemService,
-		services.NewSystemUpgradeService,
-		services.NewDiagnosticsService,
-		services.NewGitOpsSyncService,
-		services.NewWebhookService,
-		services.NewS3DestinationService,
-		services.NewRusticService,
-		services.NewVariableService,
+		project.New,
+		provideContainerModuleInternal,
+		provideDashboardModuleInternal,
+		network.NewNetworkService,
+		port.NewPortService,
+		swarm.NewSwarmService,
+		provideSwarmModuleInternal,
+		provideTemplateModuleInternal,
+		provideTemplateServiceInternal,
+		oidc.NewOidcService,
+		provideSystemModuleInternal,
+		system.NewSystemUpgradeService,
+		diagnostics.NewDiagnosticsService,
+		gitops.NewGitOpsSyncService,
+		gitops.New,
+		provideWebhookModuleInternal,
+		variable.NewVariableService,
+		variable.New,
+		provideS3ModuleInternal,
+		provideS3ServiceInternal,
+		rustic.NewRusticService,
 
 		// Adapters for scalar config fields, unexported parameters, builders, and lifecycle hooks.
 		provideVersionServiceInternal,
+		provideGitRepositoryModuleInternal,
 		provideGitRepositoryServiceInternal,
+		provideVolumeModuleInternal,
 		provideVolumeServiceInternal,
-		services.NewSystemBackupService,
+		provideSystemBackupServiceInternal,
+		systembackup.New,
 		provideAuthServiceInternal,
+		provideAuthModuleInternal,
+		provideContainerRegistryModuleInternal,
 		provideContainerRegistryServiceInternal,
-		provideUpdaterServiceInternal,
+		provideUpdaterModuleInternal,
 		provideUserServiceInternal,
+		provideUserModuleInternal,
+		provideApiKeyModuleInternal,
 		provideApiKeyServiceInternal,
 		provideFederatedCredentialServiceInternal,
 		provideAuthMiddlewareInternal,

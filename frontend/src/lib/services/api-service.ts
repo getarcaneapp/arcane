@@ -191,6 +191,8 @@ const skipAuthPathsInternal = [
 	'/auth/oidc',
 	'/auth/oidc/login',
 	'/auth/oidc/callback',
+	'/auth/passkey',
+	'/auth/mfa',
 	'/auth/auto-login',
 	'/auth/auto-login-config',
 	'/settings/public'
@@ -203,7 +205,8 @@ function isAuthPagePathInternal(pathname: string): boolean {
 		pathname.startsWith('/login') ||
 		pathname.startsWith('/logout') ||
 		pathname.startsWith('/oidc') ||
-		pathname.startsWith('/auth/oidc')
+		pathname.startsWith('/auth/oidc') ||
+		pathname.startsWith('/mobile/passkey')
 	);
 }
 

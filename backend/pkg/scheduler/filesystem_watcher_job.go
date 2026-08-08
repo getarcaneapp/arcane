@@ -8,15 +8,17 @@ import (
 
 	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/template"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/fswatch"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 )
 
 type FilesystemWatcherJob struct {
-	projectService   *services.ProjectService
-	templateService  *services.TemplateService
-	settingsService  *services.SettingsService
+	projectService   *project.ProjectService
+	templateService  *template.TemplateService
+	settingsService  *settings.SettingsService
 	projectScanDepth int
 	lifecycleCtx     context.Context
 	projectsWatcher  *actors.Resource[*fswatch.Watcher]
@@ -26,9 +28,9 @@ type FilesystemWatcherJob struct {
 func NewFilesystemWatcherJob(
 	ctx context.Context,
 	actorRuntime *actors.Runtime,
-	projectService *services.ProjectService,
-	templateService *services.TemplateService,
-	settingsService *services.SettingsService,
+	projectService *project.ProjectService,
+	templateService *template.TemplateService,
+	settingsService *settings.SettingsService,
 	projectScanDepth int,
 ) (*FilesystemWatcherJob, error) {
 	projectsWatcher, err := actors.NewResource(ctx, actorRuntime, "filesystem-watcher", "projects", 3, (*fswatch.Watcher).Stop)

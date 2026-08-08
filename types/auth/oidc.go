@@ -1,11 +1,5 @@
 package auth
 
-import (
-	"time"
-
-	"github.com/getarcaneapp/arcane/types/v2/user"
-)
-
 // OidcUserInfo represents user information retrieved from an OIDC provider.
 type OidcUserInfo struct {
 	// Extra contains additional claims from the userinfo endpoint that are not
@@ -209,32 +203,7 @@ type OidcCallbackRequest struct {
 }
 
 // OidcCallbackResponse contains the response from OIDC callback processing.
-type OidcCallbackResponse struct {
-	// Success indicates if the authentication was successful.
-	//
-	// Required: true
-	Success bool `json:"success"`
-
-	// Token is the JWT access token.
-	//
-	// Required: true
-	Token string `json:"token"`
-
-	// RefreshToken is the refresh token for obtaining new access tokens.
-	//
-	// Required: true
-	RefreshToken string `json:"refreshToken"`
-
-	// ExpiresAt is the expiration time of the access token.
-	//
-	// Required: true
-	ExpiresAt time.Time `json:"expiresAt"`
-
-	// User contains the authenticated user information.
-	//
-	// Required: true
-	User user.User `json:"user"`
-}
+type OidcCallbackResponse = AuthenticationResponse
 
 // OidcDeviceAuthRequest is used to request a device authorization code.
 type OidcDeviceAuthRequest struct {
@@ -283,32 +252,4 @@ type OidcDeviceTokenRequest struct {
 	//
 	// Required: true
 	DeviceCode string `json:"deviceCode"`
-}
-
-// OidcDeviceTokenResponse contains the response from device token exchange.
-type OidcDeviceTokenResponse struct {
-	// Success indicates if the authentication was successful.
-	//
-	// Required: true
-	Success bool `json:"success"`
-
-	// Token is the JWT access token.
-	//
-	// Required: true
-	Token string `json:"token"`
-
-	// RefreshToken is the refresh token for obtaining new access tokens.
-	//
-	// Required: true
-	RefreshToken string `json:"refreshToken"`
-
-	// ExpiresAt is the expiration time of the access token.
-	//
-	// Required: true
-	ExpiresAt time.Time `json:"expiresAt"`
-
-	// User contains the authenticated user information.
-	//
-	// Required: true
-	User user.User `json:"user"`
 }

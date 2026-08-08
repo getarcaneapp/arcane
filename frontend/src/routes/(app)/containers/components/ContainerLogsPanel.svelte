@@ -39,6 +39,7 @@
 	let isStreaming = $state(false);
 	let viewer = $state<ReturnType<typeof LogViewer>>();
 	let autoStartLogs = $state(false);
+	let logSearchTerm = $state('');
 	let hasAutoStarted = $state(false);
 	let showParsedJson = $state(false);
 	let cpuHistory = $state<StatHistoryPoint[]>([]);
@@ -197,6 +198,7 @@
 				<div class="flex items-start justify-between gap-3 lg:block">
 					<LogPanelTitle title={m.containers_logs_title()} live={isStreaming} />
 					<LogControls
+						bind:searchTerm={logSearchTerm}
 						bind:autoScroll
 						bind:autoStartLogs
 						bind:showParsedJson
@@ -212,6 +214,7 @@
 				<Card.Description>{m.containers_logs_description()}</Card.Description>
 			</div>
 			<LogControls
+				bind:searchTerm={logSearchTerm}
 				bind:autoScroll
 				bind:autoStartLogs
 				bind:showParsedJson
@@ -253,6 +256,7 @@
 		</div>
 		<div class="min-h-0 flex-1 overflow-hidden rounded-lg border bg-card/90 p-0 backdrop-blur-sm">
 			<LogViewer
+				searchTerm={logSearchTerm}
 				bind:this={viewer}
 				bind:autoScroll
 				type="container"

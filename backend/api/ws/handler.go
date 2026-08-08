@@ -13,6 +13,13 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/diagnostics"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/swarm"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
+
 	"emperror.dev/errors"
 
 	"github.com/coder/websocket"
@@ -25,11 +32,12 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/system"
+	systemlib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/system"
 	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
 	httputil "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	systemtypes "github.com/getarcaneapp/arcane/types/v2/system"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/system"
 	"go.getarcane.app/sys/cgroup"
 )
 
@@ -44,11 +52,11 @@ var defaultWebSocketMetrics = wshub.NewWebSocketMetrics()
 // WebSocketHandler consolidates all WebSocket and streaming endpoints.
 // REST endpoints are handled by Huma handlers.
 type WebSocketHandler struct {
-	projectService     *services.ProjectService
-	containerService   *services.ContainerService
-	swarmService       *services.SwarmService
-	systemService      *services.SystemService
-	diagnosticsService *services.DiagnosticsService
+	projectService     *project.ProjectService
+	containerService   *container.ContainerService
+	swarmService       *swarm.SwarmService
+	systemService      *system.SystemService
+	diagnosticsService *diagnostics.DiagnosticsService
 	checkWSOrigin      func(*http.Request) bool
 	wsMetrics          *wshub.WebSocketMetrics
 	activeConnections  sync.Map
@@ -77,7 +85,7 @@ type WebSocketHandler struct {
 	}
 	containerStatsHubs sync.Map
 	cgroupCache        *cgroup.Cache
-	gpuMonitor         *system.GPUMonitor
+	gpuMonitor         *systemlib.GPUMonitor
 
 	diskUsagePathCache   *hot.HotCache[struct{}, string]
 	projectLogStreamer   func(ctx context.Context, projectID string, logsChan chan<- string, follow bool, tail, since string, timestamps bool) error
@@ -211,12 +219,12 @@ func (h *WebSocketHandler) markLogStreamDoneInternal(key string, stream *wsLogSt
 
 func NewWebSocketHandler(
 	group *echo.Group,
-	projectService *services.ProjectService,
-	containerService *services.ContainerService,
-	swarmService *services.SwarmService,
-	systemService *services.SystemService,
-	diagnosticsService *services.DiagnosticsService,
-	authMiddleware *middleware.AuthMiddleware,
+	projectService *project.ProjectService,
+	containerService *container.ContainerService,
+	swarmService *swarm.SwarmService,
+	systemService *system.SystemService,
+	diagnosticsService *diagnostics.DiagnosticsService,
+	authMiddleware *auth.AuthMiddleware,
 	cfg *config.Config,
 ) {
 	handler := &WebSocketHandler{
@@ -228,7 +236,7 @@ func NewWebSocketHandler(
 		wsMetrics:          defaultWebSocketMetrics,
 		logStreams:         make(map[string]*wsLogStream),
 		cgroupCache:        cgroup.NewCache(cgroupCacheTTL),
-		gpuMonitor:         system.NewGPUMonitor(cfg.GPUMonitoringEnabled, cfg.GPUType),
+		gpuMonitor:         systemlib.NewGPUMonitor(cfg.GPUMonitoringEnabled, cfg.GPUType),
 		diskUsagePathCache: hot.NewHotCache[struct{}, string](hot.LRU, 1).
 			WithTTL(5 * time.Minute).
 			Build(),
@@ -236,7 +244,7 @@ func NewWebSocketHandler(
 	}
 	wsGroup := group.Group("/environments/:id/ws", authMiddleware.WithAdminNotRequired().Add())
 	for _, r := range handler.proxiedRoutes() {
-		wsGroup.GET(r.path, r.handler, middleware.RequirePermission(r.perm))
+		wsGroup.GET(r.path, r.handler, middleware.RequireEchoPermission(r.perm))
 	}
 	handler.registerDiagnosticsRoutesInternal(group, authMiddleware)
 }
@@ -882,7 +890,7 @@ func (h *WebSocketHandler) writeExecErrorInternal(ctx context.Context, conn *web
 	_ = conn.Write(wctx, websocket.MessageText, []byte(err.Error()+"\r\n"))
 }
 
-func (h *WebSocketHandler) execCleanupFuncInternal(ctx context.Context, execSession *services.ExecSession, execID, containerID string) func() {
+func (h *WebSocketHandler) execCleanupFuncInternal(ctx context.Context, execSession *container.ExecSession, execID, containerID string) func() {
 	return func() {
 		slog.Debug("Cleaning up exec session", "execID", execID, "containerID", containerID, "contextErr", ctx.Err())
 		// Cleanup must proceed even if parent ctx is canceled.

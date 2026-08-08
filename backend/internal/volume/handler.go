@@ -1,0 +1,1301 @@
+package volume
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"mime/multipart"
+	"net/http"
+	"net/url"
+	"path"
+	"strconv"
+	"strings"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
+
+	"emperror.dev/errors"
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
+	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/types/v2/base"
+	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
+	"github.com/moby/moby/client"
+	"github.com/samber/mo"
+)
+
+// VolumeHandler provides Huma-based volume management endpoints.
+type VolumeHandler struct {
+	volumeService      *VolumeService
+	dockerService      *docker.DockerClientService
+	activityService    *activity.ActivityService
+	environmentService *environment.EnvironmentService
+	appCtx             context.Context
+}
+
+// --- Huma Input/Output Wrappers ---
+
+// VolumeUsageCountsData represents the counts of volumes by usage status.
+// This is a local type to avoid schema naming conflicts with image.UsageCounts.
+type VolumeUsageCountsData struct {
+	Inuse  int `json:"inuse"`
+	Unused int `json:"unused"`
+	Total  int `json:"total"`
+}
+
+type ListVolumesInput struct {
+	EnvironmentID   string `path:"id" doc:"Environment ID"`
+	Search          string `query:"search" doc:"Search query"`
+	Sort            string `query:"sort" doc:"Column to sort by"`
+	Order           string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
+	Start           int    `query:"start" default:"0" doc:"Start index for pagination"`
+	Limit           int    `query:"limit" default:"20" doc:"Number of items per page"`
+	InUse           string `query:"inUse" doc:"Filter by in-use status (true/false)"`
+	IncludeInternal bool   `query:"includeInternal" default:"false" doc:"Include internal volumes"`
+}
+
+type ListVolumesOutput struct {
+	Body base.PaginatedWithCounts[volumetypes.Volume, VolumeUsageCountsData]
+}
+
+type GetVolumeInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	VolumeName    string `path:"volumeName" doc:"Volume name"`
+}
+
+type GetVolumeOutput struct {
+	Body base.ApiResponse[*volumetypes.Volume]
+}
+
+type CreateVolumeInput struct {
+	EnvironmentID string             `path:"id" doc:"Environment ID"`
+	Body          volumetypes.Create `doc:"Volume creation data"`
+}
+
+type CreateVolumeOutput struct {
+	Body base.ApiResponse[*volumetypes.Volume]
+}
+
+type RemoveVolumeInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	VolumeName    string `path:"volumeName" doc:"Volume name"`
+	Force         bool   `query:"force" doc:"Force removal"`
+}
+
+type RemoveVolumeOutput struct {
+	Body base.ApiResponse[base.MessageResponse]
+}
+
+type PruneVolumesInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+}
+
+// VolumePruneReportData represents the result of a volume prune operation.
+// This is a local type to avoid schema naming conflicts with image.PruneReport.
+type VolumePruneReportData struct {
+	VolumesDeleted []string `json:"volumesDeleted,omitempty"`
+	SpaceReclaimed uint64   `json:"spaceReclaimed"`
+	ActivityID     *string  `json:"activityId,omitempty"`
+}
+
+type PruneVolumesOutput struct {
+	Body base.ApiResponse[VolumePruneReportData]
+}
+
+type GetVolumeUsageInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	VolumeName    string `path:"volumeName" doc:"Volume name"`
+}
+
+// VolumeUsageResponse represents volume usage information.
+type VolumeUsageResponse struct {
+	InUse      bool     `json:"inUse"`
+	Containers []string `json:"containers"`
+}
+
+type GetVolumeUsageOutput struct {
+	Body base.ApiResponse[VolumeUsageResponse]
+}
+
+type GetVolumeUsageCountsInput struct {
+	EnvironmentID   string `path:"id" doc:"Environment ID"`
+	IncludeInternal bool   `query:"includeInternal" default:"false" doc:"Include internal volumes"`
+}
+
+type GetVolumeUsageCountsOutput struct {
+	Body base.ApiResponse[VolumeUsageCountsData]
+}
+
+type GetVolumeSizesInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+}
+
+// VolumeSizeInfo represents size information for a single volume.
+type VolumeSizeInfo struct {
+	Name     string `json:"name"`
+	Size     int64  `json:"size"`
+	RefCount int64  `json:"refCount"`
+}
+
+type GetVolumeSizesOutput struct {
+	Body base.ApiResponse[[]VolumeSizeInfo]
+}
+
+// --- Volume Browser & Backup ---
+
+type BrowseDirectoryInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	VolumeName    string `path:"volumeName" doc:"Volume name"`
+	Path          string `query:"path" default:"/" doc:"Directory path to browse"`
+}
+
+type BrowseDirectoryOutput struct {
+	Body base.ApiResponse[[]volumetypes.FileEntry]
+}
+
+type GetFileContentInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	VolumeName    string `path:"volumeName" doc:"Volume name"`
+	Path          string `query:"path" doc:"File path"`
+	MaxBytes      int64  `query:"maxBytes" default:"1048576" doc:"Maximum bytes to read (default 1MB)"`
+}
+
+type FileContentResponse struct {
+	Content  []byte `json:"content"`
+	MimeType string `json:"mimeType"`
+}
+
+type GetFileContentOutput struct {
+	Body base.ApiResponse[FileContentResponse]
+}
+
+type DownloadFileInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	VolumeName    string `path:"volumeName" doc:"Volume name"`
+	Path          string `query:"path" doc:"File path"`
+}
+
+type UploadFileInput struct {
+	EnvironmentID string         `path:"id" doc:"Environment ID"`
+	VolumeName    string         `path:"volumeName" doc:"Volume name"`
+	Path          string         `query:"path" default:"/" doc:"Destination path"`
+	RawBody       multipart.Form `contentType:"multipart/form-data"`
+}
+
+type CreateDirectoryInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	VolumeName    string `path:"volumeName" doc:"Volume name"`
+	Path          string `query:"path" doc:"Directory path to create"`
+}
+
+type DeleteFileInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	VolumeName    string `path:"volumeName" doc:"Volume name"`
+	Path          string `query:"path" doc:"File or directory path to delete"`
+}
+
+type ListBackupsInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	VolumeName    string `path:"volumeName" doc:"Volume name"`
+	Search        string `query:"search" doc:"Search query"`
+	Sort          string `query:"sort" doc:"Column to sort by"`
+	Order         string `query:"order" default:"asc" doc:"Sort direction"`
+	Start         int    `query:"start" default:"0" doc:"Start index"`
+	Limit         int    `query:"limit" default:"20" doc:"Limit"`
+}
+
+type VolumeBackupPaginatedResponse struct {
+	Success    bool                    `json:"success"`
+	Data       []models.VolumeBackup   `json:"data"`
+	Pagination base.PaginationResponse `json:"pagination"`
+	Warnings   []string                `json:"warnings,omitempty"`
+}
+
+type ListBackupsOutput struct {
+	Body VolumeBackupPaginatedResponse
+}
+
+type CreateBackupInput struct {
+	EnvironmentID string                           `path:"id" doc:"Environment ID"`
+	VolumeName    string                           `path:"volumeName" doc:"Volume name"`
+	Body          *volumetypes.CreateBackupRequest `json:"body,omitempty"`
+}
+
+type CreateBackupOutput struct {
+	Body base.ApiResponse[*models.VolumeBackup]
+}
+
+type GetVolumeBackupPolicyInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	VolumeName    string `path:"volumeName" doc:"Volume name"`
+}
+
+type GetVolumeBackupPolicyOutput struct {
+	Body base.ApiResponse[volumetypes.BackupPolicyCollection]
+}
+
+type UpdateVolumeBackupPolicyInput struct {
+	EnvironmentID string                           `path:"id" doc:"Environment ID"`
+	VolumeName    string                           `path:"volumeName" doc:"Volume name"`
+	Body          volumetypes.UpdateBackupPolicies `doc:"Scheduled volume backup policies"`
+}
+
+type UpdateVolumeBackupPolicyOutput struct {
+	Body base.ApiResponse[volumetypes.BackupPolicyCollection]
+}
+
+type RestoreBackupInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	VolumeName    string `path:"volumeName" doc:"Volume name"`
+	BackupID      string `path:"backupId" doc:"Backup ID"`
+}
+
+type RestoreBackupOutput struct {
+	Body base.ApiResponse[base.MessageResponse]
+}
+
+type RestoreBackupFilesInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	VolumeName    string `path:"volumeName" doc:"Volume name"`
+	BackupID      string `path:"backupId" doc:"Backup ID"`
+	Body          struct {
+		Paths []string `json:"paths" doc:"Paths to restore from backup"`
+	}
+}
+
+type RestoreBackupFilesOutput struct {
+	Body base.ApiResponse[base.MessageResponse]
+}
+
+type BackupHasPathInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	BackupID      string `path:"backupId" doc:"Backup ID"`
+	Path          string `query:"path" doc:"Path to check"`
+}
+
+type BackupHasPathResponse struct {
+	Exists bool `json:"exists"`
+}
+
+type BackupHasPathOutput struct {
+	Body base.ApiResponse[BackupHasPathResponse]
+}
+
+type ListBackupFilesInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	BackupID      string `path:"backupId" doc:"Backup ID"`
+}
+
+type ListBackupFilesOutput struct {
+	Body base.ApiResponse[[]string]
+}
+
+type DeleteBackupInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	BackupID      string `path:"backupId" doc:"Backup ID"`
+}
+
+type DeleteBackupOutput struct {
+	Body base.ApiResponse[base.MessageResponse]
+}
+
+type UploadBackupInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	BackupID      string `path:"backupId" doc:"Backup ID"`
+	Body          volumetypes.UploadBackupRequest
+}
+
+type UploadBackupOutput struct {
+	Body base.ApiResponse[*models.VolumeBackup]
+}
+
+// RegisterVolumes registers volume management routes using Huma.
+func RegisterVolumes(api huma.API, dockerService *docker.DockerClientService, volumeService *VolumeService, activityService *activity.ActivityService, environmentService *environment.EnvironmentService, appCtx handlerutil.ActivityAppContext) {
+	h := &VolumeHandler{
+		volumeService:      volumeService,
+		dockerService:      dockerService,
+		activityService:    activityService,
+		environmentService: environmentService,
+		appCtx:             appCtx.Context(),
+	}
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "get-volume-usage-counts",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/volumes/counts",
+		Summary:     "Get volume usage counts",
+		Description: "Get counts of volumes in use, unused, and total",
+		Tags:        []string{"Volumes"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermVolumesList, h.GetVolumeUsageCounts)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "list-volumes",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/volumes",
+		Summary:     "List volumes",
+		Description: "Get a paginated list of Docker volumes",
+		Tags:        []string{"Volumes"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermVolumesList, h.ListVolumes)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "get-volume",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/volumes/{volumeName}",
+		Summary:     "Get volume by name",
+		Description: "Get a Docker volume by its name",
+		Tags:        []string{"Volumes"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermVolumesRead, h.GetVolume)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "create-volume",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/volumes",
+		Summary:     "Create a volume",
+		Description: "Create a new Docker volume",
+		Tags:        []string{"Volumes"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermVolumesCreate, h.CreateVolume)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "remove-volume",
+		Method:      http.MethodDelete,
+		Path:        "/environments/{id}/volumes/{volumeName}",
+		Summary:     "Remove a volume",
+		Description: "Remove a Docker volume by name",
+		Tags:        []string{"Volumes"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermVolumesDelete, h.RemoveVolume)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "prune-volumes",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/volumes/prune",
+		Summary:     "Prune unused volumes",
+		Description: "Remove all unused Docker volumes",
+		Tags:        []string{"Volumes"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermVolumesPrune, h.PruneVolumes)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "get-volume-usage",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/volumes/{volumeName}/usage",
+		Summary:     "Get volume usage",
+		Description: "Get containers using a specific volume",
+		Tags:        []string{"Volumes"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermVolumesRead, h.GetVolumeUsage)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "get-volume-sizes",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/volumes/sizes",
+		Summary:     "Get volume sizes",
+		Description: "Get disk usage sizes for all volumes (slow operation)",
+		Tags:        []string{"Volumes"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermVolumesList, h.GetVolumeSizes)
+
+	// --- Volume Browsing Endpoints ---
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "browse-volume-directory",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/volumes/{volumeName}/browse",
+		Summary:     "List volume directory",
+		Tags:        []string{"Volume Browser"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermVolumesBrowse, h.BrowseDirectory)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "get-volume-file-content",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/volumes/{volumeName}/browse/content",
+		Summary:     "Get file content preview",
+		Tags:        []string{"Volume Browser"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermVolumesBrowse, h.GetFileContent)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "download-volume-file",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/volumes/{volumeName}/browse/download",
+		Summary:     "Download file from volume",
+		Tags:        []string{"Volume Browser"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermVolumesBrowse, h.DownloadFile)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "upload-volume-file",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/volumes/{volumeName}/browse/upload",
+		Summary:     "Upload file to volume",
+		Tags:        []string{"Volume Browser"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+		RequestBody: &huma.RequestBody{
+			Content: map[string]*huma.MediaType{
+				"multipart/form-data": {
+					Schema: &huma.Schema{
+						Type: "object",
+						Properties: map[string]*huma.Schema{
+							"file": {
+								Type:        "string",
+								Format:      "binary",
+								Description: "File to upload",
+							},
+						},
+						Required: []string{"file"},
+					},
+				},
+			},
+		},
+	}, authz.PermVolumesUpload, h.UploadFile)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "create-volume-directory",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/volumes/{volumeName}/browse/mkdir",
+		Summary:     "Create directory in volume",
+		Tags:        []string{"Volume Browser"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermVolumesUpload, h.CreateDirectory)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "delete-volume-file",
+		Method:      http.MethodDelete,
+		Path:        "/environments/{id}/volumes/{volumeName}/browse",
+		Summary:     "Delete file or directory in volume",
+		Tags:        []string{"Volume Browser"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermVolumesDelete, h.DeleteFile)
+
+	// --- Volume Backup Endpoints ---
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "get-volume-backup-policy",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/volumes/{volumeName}/backup-policy",
+		Summary:     "Get volume backup policies",
+		Tags:        []string{"Volume Backup"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermVolumesBrowse, h.GetBackupPolicy)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "update-volume-backup-policy",
+		Method:      http.MethodPut,
+		Path:        "/environments/{id}/volumes/{volumeName}/backup-policy",
+		Summary:     "Update volume backup policies",
+		Tags:        []string{"Volume Backup"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermVolumesBackup, h.UpdateBackupPolicy)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "list-volume-backups",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/volumes/{volumeName}/backups",
+		Summary:     "List volume backups",
+		Tags:        []string{"Volume Backup"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermVolumesBrowse, h.ListBackups)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "create-volume-backup",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/volumes/{volumeName}/backups",
+		Summary:     "Create volume backup",
+		Tags:        []string{"Volume Backup"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermVolumesBackup, h.CreateBackup)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "restore-volume-backup",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/volumes/{volumeName}/backups/{backupId}/restore",
+		Summary:     "Restore volume backup",
+		Tags:        []string{"Volume Backup"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermVolumesBackup, h.RestoreBackup)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "restore-volume-backup-files",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/volumes/{volumeName}/backups/{backupId}/restore-files",
+		Summary:     "Restore specific files from a volume backup",
+		Tags:        []string{"Volume Backup"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermVolumesBackup, h.RestoreBackupFiles)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "delete-volume-backup",
+		Method:      http.MethodDelete,
+		Path:        "/environments/{id}/volumes/backups/{backupId}",
+		Summary:     "Delete volume backup",
+		Tags:        []string{"Volume Backup"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermVolumesBackup, h.DeleteBackup)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "upload-retained-volume-backup-to-s3",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/volumes/backups/{backupId}/upload",
+		Summary:     "Upload volume backup",
+		Description: "Upload an existing local volume backup to the selected S3 destination",
+		Tags:        []string{"Volume Backup"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermVolumesBackup, h.UploadBackup)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "backup-has-path",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/volumes/backups/{backupId}/has-path",
+		Summary:     "Check if backup contains path",
+		Tags:        []string{"Volume Backup"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermVolumesBrowse, h.BackupHasPath)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "list-backup-files",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/volumes/backups/{backupId}/files",
+		Summary:     "List files in a volume backup",
+		Tags:        []string{"Volume Backup"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermVolumesBrowse, h.ListBackupFiles)
+}
+
+func (h *VolumeHandler) GetBackupPolicy(ctx context.Context, input *GetVolumeBackupPolicyInput) (*GetVolumeBackupPolicyOutput, error) {
+	if input.EnvironmentID != "0" {
+		if h.environmentService == nil {
+			return nil, huma.Error500InternalServerError("environment service not available")
+		}
+		remotePath := fmt.Sprintf("/api/environments/0/volumes/%s/backup-policy", url.PathEscape(input.VolumeName))
+		response, err := handlerutil.ProxyRemoteJSON[base.ApiResponse[volumetypes.BackupPolicyCollection]](ctx, h.environmentService.ProxyJSONRequest, input.EnvironmentID, http.MethodGet, remotePath, nil)
+		if err != nil {
+			return nil, err
+		}
+		return &GetVolumeBackupPolicyOutput{Body: *response}, nil
+	}
+
+	policies, err := h.volumeService.GetBackupPolicies(ctx, input.VolumeName)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	return &GetVolumeBackupPolicyOutput{Body: base.ApiResponse[volumetypes.BackupPolicyCollection]{Success: true, Data: *policies}}, nil
+}
+
+func (h *VolumeHandler) UpdateBackupPolicy(ctx context.Context, input *UpdateVolumeBackupPolicyInput) (*UpdateVolumeBackupPolicyOutput, error) {
+	user, _ := models.CurrentUserFromContext(ctx)
+	var policies *volumetypes.BackupPolicyCollection
+	var remoteResponse *base.ApiResponse[volumetypes.BackupPolicyCollection]
+	errorStatus := http.StatusBadRequest
+	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	_, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
+		EnvironmentID:  input.EnvironmentID,
+		Type:           models.ActivityTypeResourceAction,
+		ResourceType:   "volume_backup_policy",
+		ResourceID:     input.VolumeName,
+		ResourceName:   input.VolumeName,
+		User:           user,
+		Step:           "Saving backup policies",
+		Message:        "Saving volume backup policies",
+		SuccessMessage: "Volume backup policies saved successfully",
+		Metadata: models.JSON{
+			"action":      "update_volume_backup_policy",
+			"policyCount": len(input.Body.Policies),
+		},
+	}, func(activityCtx context.Context) error {
+		if input.EnvironmentID != "0" {
+			if h.environmentService == nil {
+				errorStatus = http.StatusInternalServerError
+				return errors.New("environment service not available")
+			}
+			hasS3 := false
+			for _, policy := range input.Body.Policies {
+				if policy.S3Enabled {
+					hasS3 = true
+					break
+				}
+			}
+			if hasS3 {
+				if syncErr := h.environmentService.SyncS3DestinationsToEnvironment(activityCtx, input.EnvironmentID); syncErr != nil {
+					errorStatus = http.StatusBadGateway
+					return fmt.Errorf("failed to synchronize S3 destinations to environment: %w", syncErr)
+				}
+			}
+			remotePath := fmt.Sprintf("/api/environments/0/volumes/%s/backup-policy", url.PathEscape(input.VolumeName))
+			var proxyErr error
+			remoteResponse, proxyErr = handlerutil.ProxyRemoteJSON[base.ApiResponse[volumetypes.BackupPolicyCollection]](activityCtx, h.environmentService.ProxyJSONRequest, input.EnvironmentID, http.MethodPut, remotePath, input.Body)
+			if proxyErr != nil {
+				errorStatus = http.StatusBadGateway
+			}
+			return proxyErr
+		}
+		var updateErr error
+		policies, updateErr = h.volumeService.UpdateBackupPolicies(activityCtx, input.VolumeName, input.Body.Policies)
+		return updateErr
+	})
+	if err != nil {
+		if errorStatus == http.StatusInternalServerError {
+			return nil, huma.Error500InternalServerError(err.Error())
+		}
+		if errorStatus == http.StatusBadGateway {
+			return nil, huma.NewError(http.StatusBadGateway, err.Error())
+		}
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	if remoteResponse != nil {
+		return &UpdateVolumeBackupPolicyOutput{Body: *remoteResponse}, nil
+	}
+	return &UpdateVolumeBackupPolicyOutput{Body: base.ApiResponse[volumetypes.BackupPolicyCollection]{Success: true, Data: *policies}}, nil
+}
+
+// ListVolumes returns a paginated list of volumes.
+func (h *VolumeHandler) ListVolumes(ctx context.Context, input *ListVolumesInput) (*ListVolumesOutput, error) {
+	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
+	if input.InUse != "" {
+		params.Filters["inUse"] = input.InUse
+	}
+
+	if params.Limit == 0 {
+		params.Limit = 20
+	}
+
+	volumes, paginationResp, counts, err := h.volumeService.ListVolumesPaginated(ctx, params, input.IncludeInternal)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to list volumes").Error())
+	}
+
+	if volumes == nil {
+		volumes = []volumetypes.Volume{}
+	}
+
+	return &ListVolumesOutput{
+		Body: base.PaginatedWithCounts[volumetypes.Volume, VolumeUsageCountsData]{
+			Success: true,
+			Data:    volumes,
+			Counts: VolumeUsageCountsData{
+				Inuse:  counts.Inuse,
+				Unused: counts.Unused,
+				Total:  counts.Total,
+			},
+			Pagination: handlerutil.PaginationResponse(paginationResp),
+		},
+	}, nil
+}
+
+// GetVolume returns a volume by name.
+func (h *VolumeHandler) GetVolume(ctx context.Context, input *GetVolumeInput) (*GetVolumeOutput, error) {
+	vol, err := h.volumeService.GetVolumeByName(ctx, input.VolumeName)
+	if err != nil {
+		return nil, huma.Error404NotFound(errors.WithMessage(err, "Volume not found").Error())
+	}
+
+	return &GetVolumeOutput{
+		Body: base.ApiResponse[*volumetypes.Volume]{
+			Success: true,
+			Data:    vol,
+		},
+	}, nil
+}
+
+// CreateVolume creates a new Docker volume.
+func (h *VolumeHandler) CreateVolume(ctx context.Context, input *CreateVolumeInput) (*CreateVolumeOutput, error) {
+	user, err := handlerutil.RequireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	options := client.VolumeCreateOptions{
+		Name:       input.Body.Name,
+		Driver:     input.Body.Driver,
+		Labels:     input.Body.Labels,
+		DriverOpts: input.Body.DriverOpts,
+	}
+
+	var response *volumetypes.Volume
+	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
+		EnvironmentID:  input.EnvironmentID,
+		Type:           models.ActivityTypeResourceAction,
+		ResourceType:   "volume",
+		ResourceID:     input.Body.Name,
+		ResourceName:   input.Body.Name,
+		User:           user,
+		Step:           "Creating volume",
+		Message:        "Creating volume",
+		SuccessMessage: "Volume created successfully",
+		Metadata: models.JSON{
+			"action": "create_volume",
+			"driver": input.Body.Driver,
+		},
+	}, func(runtimeCtx context.Context) error {
+		var createErr error
+		response, createErr = h.volumeService.CreateVolume(runtimeCtx, options, *user)
+		return createErr
+	})
+	if err != nil {
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to create volume").Error())
+	}
+	response.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
+
+	return &CreateVolumeOutput{
+		Body: base.ApiResponse[*volumetypes.Volume]{
+			Success: true,
+			Data:    response,
+		},
+	}, nil
+}
+
+// RemoveVolume removes a Docker volume.
+func (h *VolumeHandler) RemoveVolume(ctx context.Context, input *RemoveVolumeInput) (*RemoveVolumeOutput, error) {
+	user, err := handlerutil.RequireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
+		EnvironmentID:  input.EnvironmentID,
+		Type:           models.ActivityTypeResourceAction,
+		ResourceType:   "volume",
+		ResourceID:     input.VolumeName,
+		ResourceName:   input.VolumeName,
+		User:           user,
+		Step:           "Removing volume",
+		Message:        "Removing volume",
+		SuccessMessage: "Volume removed successfully",
+		Metadata: models.JSON{
+			"action": "remove_volume",
+			"force":  input.Force,
+		},
+	}, func(runtimeCtx context.Context) error {
+		return h.volumeService.DeleteVolume(runtimeCtx, input.VolumeName, input.Force, *user)
+	})
+	if err != nil {
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to delete volume").Error())
+	}
+
+	return &RemoveVolumeOutput{
+		Body: base.ApiResponse[base.MessageResponse]{
+			Success: true,
+			Data: base.MessageResponse{
+				Message:    "Volume removed successfully",
+				ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer(),
+			},
+		},
+	}, nil
+}
+
+// PruneVolumes removes all unused Docker volumes.
+func (h *VolumeHandler) PruneVolumes(ctx context.Context, input *PruneVolumesInput) (*PruneVolumesOutput, error) {
+	var report *volumetypes.PruneReport
+	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
+		EnvironmentID:  input.EnvironmentID,
+		Type:           models.ActivityTypeResourceAction,
+		ResourceType:   "volume",
+		Step:           "Pruning unused volumes",
+		Message:        "Pruning unused volumes",
+		SuccessMessage: "Volumes pruned successfully",
+		Metadata:       models.JSON{"action": "prune_volumes"},
+	}, func(runtimeCtx context.Context) error {
+		var pruneErr error
+		report, pruneErr = h.volumeService.PruneVolumes(runtimeCtx)
+		return pruneErr
+	})
+	if err != nil {
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to prune volumes").Error())
+	}
+
+	return &PruneVolumesOutput{
+		Body: base.ApiResponse[VolumePruneReportData]{
+			Success: true,
+			Data: VolumePruneReportData{
+				VolumesDeleted: report.VolumesDeleted,
+				SpaceReclaimed: report.SpaceReclaimed,
+				ActivityID:     mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer(),
+			},
+		},
+	}, nil
+}
+
+// GetVolumeUsage returns containers using a specific volume.
+func (h *VolumeHandler) GetVolumeUsage(ctx context.Context, input *GetVolumeUsageInput) (*GetVolumeUsageOutput, error) {
+	inUse, containers, err := h.volumeService.GetVolumeUsage(ctx, input.VolumeName)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to get volume usage").Error())
+	}
+
+	return &GetVolumeUsageOutput{
+		Body: base.ApiResponse[VolumeUsageResponse]{
+			Success: true,
+			Data: VolumeUsageResponse{
+				InUse:      inUse,
+				Containers: containers,
+			},
+		},
+	}, nil
+}
+
+// GetVolumeUsageCounts returns counts of volumes by usage status.
+func (h *VolumeHandler) GetVolumeUsageCounts(ctx context.Context, input *GetVolumeUsageCountsInput) (*GetVolumeUsageCountsOutput, error) {
+	_, _, counts, err := h.volumeService.ListVolumesPaginated(ctx, pagination.QueryParams{}, input.IncludeInternal)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to get volume counts").Error())
+	}
+
+	return &GetVolumeUsageCountsOutput{
+		Body: base.ApiResponse[VolumeUsageCountsData]{
+			Success: true,
+			Data: VolumeUsageCountsData{
+				Inuse:  counts.Inuse,
+				Unused: counts.Unused,
+				Total:  counts.Total,
+			},
+		},
+	}, nil
+}
+
+// GetVolumeSizes returns disk usage sizes for all volumes.
+// This is a slow operation as it requires calculating disk usage.
+func (h *VolumeHandler) GetVolumeSizes(ctx context.Context, input *GetVolumeSizesInput) (*GetVolumeSizesOutput, error) {
+	sizes, err := h.volumeService.GetVolumeSizes(ctx)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+
+	result := make([]VolumeSizeInfo, 0, len(sizes))
+	for name, info := range sizes {
+		result = append(result, VolumeSizeInfo{
+			Name:     name,
+			Size:     info.Size,
+			RefCount: info.RefCount,
+		})
+	}
+
+	return &GetVolumeSizesOutput{
+		Body: base.ApiResponse[[]VolumeSizeInfo]{
+			Success: true,
+			Data:    result,
+		},
+	}, nil
+}
+
+// --- Volume Browser Handler Methods ---
+
+func (h *VolumeHandler) BrowseDirectory(ctx context.Context, input *BrowseDirectoryInput) (*BrowseDirectoryOutput, error) {
+	entries, err := h.volumeService.ListDirectory(ctx, input.VolumeName, input.Path)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	return &BrowseDirectoryOutput{
+		Body: base.ApiResponse[[]volumetypes.FileEntry]{
+			Success: true,
+			Data:    entries,
+		},
+	}, nil
+}
+
+func (h *VolumeHandler) GetFileContent(ctx context.Context, input *GetFileContentInput) (*GetFileContentOutput, error) {
+	content, mimeType, err := h.volumeService.GetFileContent(ctx, input.VolumeName, input.Path, input.MaxBytes)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	return &GetFileContentOutput{
+		Body: base.ApiResponse[FileContentResponse]{
+			Success: true,
+			Data: FileContentResponse{
+				Content:  content,
+				MimeType: mimeType,
+			},
+		},
+	}, nil
+}
+
+func (h *VolumeHandler) DownloadFile(ctx context.Context, input *DownloadFileInput) (*huma.StreamResponse, error) {
+	reader, size, err := h.volumeService.DownloadFile(ctx, input.VolumeName, input.Path)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+
+	return &huma.StreamResponse{
+		Body: func(humaCtx huma.Context) {
+			defer func() { _ = reader.Close() }()
+
+			humaCtx.SetHeader("Content-Type", "application/octet-stream")
+			humaCtx.SetHeader("Content-Disposition", "attachment; filename="+path.Base(input.Path))
+			humaCtx.SetHeader("Content-Length", strconv.FormatInt(size, 10))
+
+			writer := humaCtx.BodyWriter()
+			_, _ = io.Copy(writer, reader)
+		},
+	}, nil
+}
+
+func (h *VolumeHandler) UploadFile(ctx context.Context, input *UploadFileInput) (*base.ApiResponse[base.MessageResponse], error) {
+	file, fileHeader, err := handlerutil.OpenUploadedFile(input.RawBody)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = file.Close() }()
+
+	user, _ := models.CurrentUserFromContext(ctx)
+	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
+		EnvironmentID:  input.EnvironmentID,
+		Type:           models.ActivityTypeResourceAction,
+		ResourceType:   "volume",
+		ResourceID:     input.VolumeName,
+		ResourceName:   input.VolumeName,
+		User:           user,
+		Step:           "Uploading file",
+		Message:        "Uploading file to volume",
+		SuccessMessage: "File uploaded successfully",
+		Metadata: models.JSON{
+			"action":   "upload_volume_file",
+			"path":     input.Path,
+			"filename": fileHeader.Filename,
+		},
+	}, func(runtimeCtx context.Context) error {
+		return h.volumeService.UploadFile(runtimeCtx, input.VolumeName, input.Path, file, fileHeader.Filename, user)
+	})
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	return &base.ApiResponse[base.MessageResponse]{
+		Success: true,
+		Data:    base.MessageResponse{Message: "File uploaded successfully", ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()},
+	}, nil
+}
+
+func (h *VolumeHandler) CreateDirectory(ctx context.Context, input *CreateDirectoryInput) (*base.ApiResponse[base.MessageResponse], error) {
+	return h.runVolumePathActivityInternal(ctx, input.EnvironmentID, input.VolumeName, input.Path, volumePathActivityConfigInternal{
+		Step:           "Creating directory",
+		Message:        "Creating directory in volume",
+		SuccessMessage: "Directory created successfully",
+		MetadataAction: "create_volume_directory",
+		Action: func(runtimeCtx context.Context, volumeName, path string, user *models.User) error {
+			return h.volumeService.CreateDirectory(runtimeCtx, volumeName, path, user)
+		},
+	})
+}
+
+func (h *VolumeHandler) DeleteFile(ctx context.Context, input *DeleteFileInput) (*base.ApiResponse[base.MessageResponse], error) {
+	return h.runVolumePathActivityInternal(ctx, input.EnvironmentID, input.VolumeName, input.Path, volumePathActivityConfigInternal{
+		Step:           "Deleting file",
+		Message:        "Deleting file or directory from volume",
+		SuccessMessage: "Deleted successfully",
+		MetadataAction: "delete_volume_file",
+		Action: func(runtimeCtx context.Context, volumeName, path string, user *models.User) error {
+			return h.volumeService.DeleteFile(runtimeCtx, volumeName, path, user)
+		},
+	})
+}
+
+type volumePathActivityConfigInternal struct {
+	Step           string
+	Message        string
+	SuccessMessage string
+	MetadataAction string
+	Action         func(context.Context, string, string, *models.User) error
+}
+
+func (h *VolumeHandler) runVolumePathActivityInternal(ctx context.Context, environmentID, volumeName, volumePath string, cfg volumePathActivityConfigInternal) (*base.ApiResponse[base.MessageResponse], error) {
+	user, _ := models.CurrentUserFromContext(ctx)
+	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
+		EnvironmentID:  environmentID,
+		Type:           models.ActivityTypeResourceAction,
+		ResourceType:   "volume",
+		ResourceID:     volumeName,
+		ResourceName:   volumeName,
+		User:           user,
+		Step:           cfg.Step,
+		Message:        cfg.Message,
+		SuccessMessage: cfg.SuccessMessage,
+		Metadata: models.JSON{
+			"action": cfg.MetadataAction,
+			"path":   volumePath,
+		},
+	}, func(runtimeCtx context.Context) error {
+		return cfg.Action(runtimeCtx, volumeName, volumePath, user)
+	})
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	return &base.ApiResponse[base.MessageResponse]{
+		Success: true,
+		Data:    base.MessageResponse{Message: cfg.SuccessMessage, ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()},
+	}, nil
+}
+
+// --- Volume Backup Handler Methods ---
+
+func (h *VolumeHandler) ListBackups(ctx context.Context, input *ListBackupsInput) (*ListBackupsOutput, error) {
+	params := pagination.QueryParams{
+		SearchQuery: pagination.SearchQuery{
+			Search: input.Search,
+		},
+		SortParams: pagination.SortParams{
+			Sort:  input.Sort,
+			Order: pagination.SortOrder(input.Order),
+		},
+		Params: pagination.Params{
+			Start: input.Start,
+			Limit: input.Limit,
+		},
+	}
+
+	if params.Limit == 0 {
+		params.Limit = 20
+	}
+
+	backups, paginationResp, err := h.volumeService.ListBackupsPaginated(ctx, input.VolumeName, params)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+
+	warning := h.volumeService.BackupMountWarning(ctx)
+
+	return &ListBackupsOutput{
+		Body: VolumeBackupPaginatedResponse{
+			Success:    true,
+			Data:       backups,
+			Pagination: handlerutil.PaginationResponse(paginationResp),
+			Warnings: func() []string {
+				if warning == "" {
+					return nil
+				}
+				return []string{warning}
+			}(),
+		},
+	}, nil
+}
+
+func (h *VolumeHandler) CreateBackup(ctx context.Context, input *CreateBackupInput) (*CreateBackupOutput, error) {
+	user, err := handlerutil.RequireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var backup *models.VolumeBackup
+	destination := volumetypes.BackupDestination("")
+	policyID := ""
+	s3DestinationID := ""
+	if input.Body != nil {
+		destination = input.Body.Destination
+		policyID = input.Body.PolicyID
+		s3DestinationID = input.Body.S3DestinationID
+	}
+	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
+		EnvironmentID:  input.EnvironmentID,
+		Type:           models.ActivityTypeResourceAction,
+		ResourceType:   "volume",
+		ResourceID:     input.VolumeName,
+		ResourceName:   input.VolumeName,
+		User:           user,
+		Step:           "Creating backup",
+		Message:        "Creating volume backup",
+		SuccessMessage: "Volume backup created successfully",
+		Metadata:       models.JSON{"action": "create_volume_backup", "destination": destination, "policyId": policyID, "s3DestinationId": s3DestinationID},
+	}, func(runtimeCtx context.Context) error {
+		var backupErr error
+		backup, backupErr = h.volumeService.CreateBackup(runtimeCtx, input.VolumeName, *user, models.VolumeBackupTriggerManual, volumetypes.CreateBackupRequest{
+			Destination: destination, PolicyID: policyID, S3DestinationID: s3DestinationID,
+		})
+		return backupErr
+	})
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	backup.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
+	return &CreateBackupOutput{
+		Body: base.ApiResponse[*models.VolumeBackup]{
+			Success: true,
+			Data:    backup,
+		},
+	}, nil
+}
+
+func (h *VolumeHandler) RestoreBackup(ctx context.Context, input *RestoreBackupInput) (*RestoreBackupOutput, error) {
+	user, err := handlerutil.RequireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
+		EnvironmentID:  input.EnvironmentID,
+		Type:           models.ActivityTypeResourceAction,
+		ResourceType:   "volume",
+		ResourceID:     input.VolumeName,
+		ResourceName:   input.VolumeName,
+		User:           user,
+		Step:           "Restoring backup",
+		Message:        "Restoring volume backup",
+		SuccessMessage: "Restore initiated successfully",
+		Metadata: models.JSON{
+			"action":   "restore_volume_backup",
+			"backupId": input.BackupID,
+		},
+	}, func(runtimeCtx context.Context) error {
+		return h.volumeService.RestoreBackup(runtimeCtx, input.VolumeName, input.BackupID, *user)
+	})
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	return &RestoreBackupOutput{
+		Body: base.ApiResponse[base.MessageResponse]{
+			Success: true,
+			Data:    base.MessageResponse{Message: "Restore initiated successfully", ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()},
+		},
+	}, nil
+}
+
+func (h *VolumeHandler) RestoreBackupFiles(ctx context.Context, input *RestoreBackupFilesInput) (*RestoreBackupFilesOutput, error) {
+	user, err := handlerutil.RequireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(input.Body.Paths) == 0 {
+		return nil, huma.Error400BadRequest("paths are required")
+	}
+
+	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
+		EnvironmentID:  input.EnvironmentID,
+		Type:           models.ActivityTypeResourceAction,
+		ResourceType:   "volume",
+		ResourceID:     input.VolumeName,
+		ResourceName:   input.VolumeName,
+		User:           user,
+		Step:           "Restoring backup files",
+		Message:        "Restoring files from volume backup",
+		SuccessMessage: "Restore initiated successfully",
+		Metadata: models.JSON{
+			"action":   "restore_volume_backup_files",
+			"backupId": input.BackupID,
+			"paths":    input.Body.Paths,
+		},
+	}, func(runtimeCtx context.Context) error {
+		return h.volumeService.RestoreBackupFiles(runtimeCtx, input.VolumeName, input.BackupID, input.Body.Paths, *user)
+	})
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+
+	return &RestoreBackupFilesOutput{
+		Body: base.ApiResponse[base.MessageResponse]{
+			Success: true,
+			Data:    base.MessageResponse{Message: "Restore initiated successfully", ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()},
+		},
+	}, nil
+}
+
+func (h *VolumeHandler) BackupHasPath(ctx context.Context, input *BackupHasPathInput) (*BackupHasPathOutput, error) {
+	if input.Path == "" {
+		return nil, huma.Error400BadRequest("path is required")
+	}
+
+	exists, err := h.volumeService.BackupHasPath(ctx, input.BackupID, input.Path)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+
+	return &BackupHasPathOutput{
+		Body: base.ApiResponse[BackupHasPathResponse]{
+			Success: true,
+			Data:    BackupHasPathResponse{Exists: exists},
+		},
+	}, nil
+}
+
+func (h *VolumeHandler) ListBackupFiles(ctx context.Context, input *ListBackupFilesInput) (*ListBackupFilesOutput, error) {
+	files, err := h.volumeService.ListBackupFiles(ctx, input.BackupID)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+
+	return &ListBackupFilesOutput{
+		Body: base.ApiResponse[[]string]{
+			Success: true,
+			Data:    files,
+		},
+	}, nil
+}
+
+func (h *VolumeHandler) DeleteBackup(ctx context.Context, input *DeleteBackupInput) (*DeleteBackupOutput, error) {
+	user, _ := models.CurrentUserFromContext(ctx)
+	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
+		EnvironmentID:  input.EnvironmentID,
+		Type:           models.ActivityTypeResourceAction,
+		ResourceType:   "volume_backup",
+		ResourceID:     input.BackupID,
+		ResourceName:   input.BackupID,
+		User:           user,
+		Step:           "Deleting backup",
+		Message:        "Deleting volume backup",
+		SuccessMessage: "Backup deleted successfully",
+		Metadata: models.JSON{
+			"action":   "delete_volume_backup",
+			"backupId": input.BackupID,
+		},
+	}, func(runtimeCtx context.Context) error {
+		return h.volumeService.DeleteBackup(runtimeCtx, input.BackupID, user)
+	})
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	return &DeleteBackupOutput{
+		Body: base.ApiResponse[base.MessageResponse]{
+			Success: true,
+			Data:    base.MessageResponse{Message: "Backup deleted successfully", ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()},
+		},
+	}, nil
+}
+
+func (h *VolumeHandler) UploadBackup(ctx context.Context, input *UploadBackupInput) (*UploadBackupOutput, error) {
+	if h.volumeService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+	user, _ := models.CurrentUserFromContext(ctx)
+	var backup *models.VolumeBackup
+	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
+		EnvironmentID:  input.EnvironmentID,
+		Type:           models.ActivityTypeResourceAction,
+		ResourceType:   "volume_backup",
+		ResourceID:     input.BackupID,
+		ResourceName:   input.BackupID,
+		User:           user,
+		Step:           "Uploading backup",
+		Message:        "Uploading volume backup to S3",
+		SuccessMessage: "Volume backup uploaded successfully",
+		Metadata: models.JSON{
+			"action":          "upload_volume_backup",
+			"backupId":        input.BackupID,
+			"s3DestinationId": input.Body.S3DestinationID,
+		},
+	}, func(runtimeCtx context.Context) error {
+		var uploadErr error
+		backup, uploadErr = h.volumeService.UploadBackup(runtimeCtx, input.BackupID, input.Body.S3DestinationID)
+		return uploadErr
+	})
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	backup.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
+	return &UploadBackupOutput{Body: base.ApiResponse[*models.VolumeBackup]{Success: true, Data: backup}}, nil
+}

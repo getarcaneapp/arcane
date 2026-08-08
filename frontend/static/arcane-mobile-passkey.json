@@ -1,0 +1,6 @@
+{
+	"version": 2,
+	"path": "/mobile/passkey",
+	"requestFragmentParameter": "request",
+	"maximumRequestBytes": 65536
+}

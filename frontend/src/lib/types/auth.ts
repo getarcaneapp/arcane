@@ -192,29 +192,82 @@ export type CreateUser = Omit<
 
 // --- Auth: login, OIDC ---
 
-export interface OidcUserInfo {
-	sub: string;
-	email: string;
-	name?: string;
-	displayName?: string;
-	preferred_username?: string;
-	given_name?: string;
-	family_name?: string;
-	picture?: string;
-	groups?: string[];
-}
-
 export interface LoginCredentials {
 	username: string;
 	password: string;
 }
 
-export type LoginResponseData = {
-	token: string;
-	refreshToken: string;
+export type AuthenticationStatus = 'authenticated' | 'mfa_required';
+
+export type PasskeyChallenge = {
+	ceremonyId: string;
+	transactionId?: string;
+	options: Record<string, unknown>;
 	expiresAt: string;
-	user: User;
+};
+
+export type MobilePasskeyCompletion = {
+	transactionId: string;
+	expiresAt: string;
+};
+
+export type MFAChallenge = {
+	transactionId: string;
+	method: string;
+	options: Record<string, unknown>;
+	expiresAt: string;
+};
+
+export type AuthenticationResponse = {
+	success: boolean;
+	status: AuthenticationStatus;
+	token?: string;
+	refreshToken?: string;
+	expiresAt?: string;
+	user?: User;
+	mfa?: MFAChallenge;
+	error?: string;
 	requirePasswordChange?: boolean;
+};
+
+export type Passkey = {
+	id: string;
+	name: string;
+	rpId: string;
+	aaguid?: string;
+	transports?: string[];
+	backupEligible: boolean;
+	backupState: boolean;
+	cloneWarning: boolean;
+	authenticatorAttachment?: string;
+	createdAt: string;
+	updatedAt?: string;
+	lastUsedAt?: string;
+};
+
+export type PasskeyCapabilities = {
+	passkeyMfaEnabled: boolean;
+	passkeyCount: number;
+	hasLocalPassword: boolean;
+	hasOidcFallback: boolean;
+	canEnrollWithActiveSession: boolean;
+	canDeleteLastPasskey: boolean;
+	requiresStepUp: boolean;
+};
+
+export type MFAStatus = {
+	enabled: boolean;
+	passkeyCount: number;
+	recoveryCodesRemaining: number;
+};
+
+export type RecoveryCodesResponse = {
+	codes: string[];
+};
+
+export type StepUpGrant = {
+	token: string;
+	expiresAt: string;
 };
 
 export interface AutoLoginConfig {

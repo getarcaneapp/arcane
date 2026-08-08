@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"emperror.dev/errors"
+	"github.com/getarcaneapp/arcane/types/v2/project"
 
 	"go.getarcane.app/sys/atomic"
 )
@@ -481,4 +482,85 @@ func restoreTopLevelFilesInternal(backupRoot, projRoot *os.Root, backup *Project
 		}
 	}
 	return nil
+}
+
+// BuildUpdateBackupScope derives the backup scope for one project update from
+// the content and file changes it will apply.
+func BuildUpdateBackupScope(projectPath string, composeContent, envContent, overrideContent *string, fileChanges []project.ProjectFileChange) ProjectUpdateBackupScope {
+	scope := ProjectUpdateBackupScope{
+		TopLevelFiles: composeContent != nil || envContent != nil || overrideContent != nil,
+	}
+
+	for _, change := range fileChanges {
+		rel, err := NormalizeProjectRelativePath(change.RelativePath)
+		if err != nil {
+			continue
+		}
+
+		var dest string
+		switch change.Operation {
+		case project.FileOpRename:
+			newName, nameErr := ValidateProjectFileName(change.NewName)
+			if nameErr != nil {
+				continue
+			}
+			dest = path.Join(path.Dir(rel), newName)
+		case project.FileOpMove:
+			parent := strings.TrimSpace(change.NewParentPath)
+			if parent != "" {
+				normalizedParent, parentErr := NormalizeProjectRelativePath(parent)
+				if parentErr != nil {
+					continue
+				}
+				parent = normalizedParent
+			}
+			dest = path.Join(parent, path.Base(rel))
+		default:
+			scope.Paths = append(scope.Paths, rel)
+			continue
+		}
+
+		// Rename/move of an existing directory rolls back via an inverse
+		// rename — never a copy of a potentially huge tree.
+		if info, statErr := os.Lstat(filepath.Join(projectPath, filepath.FromSlash(rel))); statErr == nil && info.IsDir() {
+			scope.RenamedDirs = append(scope.RenamedDirs, [2]string{rel, dest})
+		} else {
+			scope.Paths = append(scope.Paths, rel, dest)
+		}
+	}
+
+	demoteInterferingRenamedDirsInternal(&scope)
+	return scope
+}
+
+// demoteInterferingRenamedDirsInternal downgrades a directory rename to a full
+// copy when another change in the same batch touches its source or destination
+// subtree (e.g. rename a -> b then delete b, or update_file b/x). The inverse
+// rename alone cannot roll those back: the destination may be mutated or gone
+// by the time the batch fails, so the original directory must be backed up.
+func demoteInterferingRenamedDirsInternal(scope *ProjectUpdateBackupScope) {
+	overlaps := func(a, b string) bool {
+		return a == b || strings.HasPrefix(a, b+"/") || strings.HasPrefix(b, a+"/")
+	}
+	touchesPair := func(p string, pair [2]string) bool {
+		return overlaps(p, pair[0]) || overlaps(p, pair[1])
+	}
+
+	for i := 0; i < len(scope.RenamedDirs); i++ {
+		pair := scope.RenamedDirs[i]
+		conflict := slices.ContainsFunc(scope.Paths, func(p string) bool { return touchesPair(p, pair) })
+		if !conflict {
+			for j, other := range scope.RenamedDirs {
+				if j != i && (touchesPair(other[0], pair) || touchesPair(other[1], pair)) {
+					conflict = true
+					break
+				}
+			}
+		}
+		if conflict {
+			scope.Paths = append(scope.Paths, pair[0], pair[1])
+			scope.RenamedDirs = slices.Delete(scope.RenamedDirs, i, i+1)
+			i--
+		}
+	}
 }

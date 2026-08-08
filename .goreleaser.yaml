@@ -13,7 +13,7 @@ git:
 
 before:
   hooks:
-    - just deps install all
+    # - just deps install all
     - just build single frontend
 
 builds:

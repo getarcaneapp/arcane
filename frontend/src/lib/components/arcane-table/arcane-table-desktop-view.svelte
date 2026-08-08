@@ -1,5 +1,5 @@
 <script lang="ts" generics="TData extends Record<string, any> & { id: string }">
-	import type { ArcaneCell, ArcaneHeader, ArcaneRow, ArcaneSvelteTable } from './table-features';
+	import type { ArcaneCell, ArcaneFeatures, ArcaneRow, ArcaneSvelteTable } from './table-features';
 	import { FlexRender as FlexRenderBase } from '@tanstack/svelte-table';
 	import { createVirtualizer } from './virtualizer.svelte';
 	import Skeleton from '#lib/components/ui/skeleton/skeleton.svelte';
@@ -40,7 +40,8 @@
 		expandedRows,
 		onToggleRowExpanded,
 		scrollElement,
-		loading = false
+		loading = false,
+		wrapText = false
 	}: {
 		table: ArcaneSvelteTable<TData>;
 		selectedIds: string[];
@@ -61,14 +62,16 @@
 		scrollElement?: HTMLElement;
 		/** First-load flag — when set and there's no data, render skeleton rows. */
 		loading?: boolean;
+		/** Wrap cell content instead of truncating (disables virtualization: rows lose their fixed height). */
+		wrapText?: boolean;
 	} = $props();
 
 	const hasExpand = $derived(!!expandedRowContent);
 
 	// FlexRender's generics can't be inferred from its union-shaped props, so unaided it
-	// resolves to the broad `Cell<TableFeatures, …>` (which includes feature APIs our cells
-	// don't carry). Pin it to the Arcane feature set instead.
-	const FlexRender = FlexRenderBase as unknown as Component<{ cell: ArcaneCell<TData> } | { header: ArcaneHeader<TData> }>;
+	// resolves to the broad `Cell<TableFeatures, RowData, …>` and fails invariance against our
+	// concrete cells. Pin them with an instantiation expression — no cast involved.
+	const FlexRender = FlexRenderBase<ArcaneFeatures, TData, unknown>;
 
 	// Get column width class from meta
 	function getWidthClass(width?: ColumnWidth): string {
@@ -110,7 +113,8 @@
 			cell.column.id === 'actions' && actionsCellClasses,
 			getWidthClass(meta?.width),
 			getAlignClass(meta?.align),
-			meta?.truncate && 'max-w-0 truncate',
+			meta?.truncate && !wrapText && 'max-w-0 truncate',
+			wrapText && cell.column.id !== 'select' && cell.column.id !== 'actions' && 'break-words whitespace-normal',
 			isGrouped && isFirstCell && cell.column.id !== 'select' && 'pl-10'
 		);
 	}
@@ -132,7 +136,9 @@
 	const ROW_ESTIMATE_PX = 44;
 	let measuredRowHeight = $state<number | null>(null);
 	const flatRows = $derived(table.getRowModel().rows);
-	const shouldVirtualize = $derived(!isGrouped && !hasExpand && !!scrollElement && flatRows.length > VIRTUALIZE_THRESHOLD);
+	const shouldVirtualize = $derived(
+		!isGrouped && !hasExpand && !wrapText && !!scrollElement && flatRows.length > VIRTUALIZE_THRESHOLD
+	);
 
 	function calibrateRowHeight(node: HTMLTableRowElement) {
 		if (measuredRowHeight !== null) return;

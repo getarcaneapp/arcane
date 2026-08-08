@@ -40,7 +40,11 @@
 </script>
 
 {#snippet idleIcon()}
-	<div in:scale={{ duration: animationDuration, start: 0.85 }}>
+	<div
+		class="col-start-1 row-start-1"
+		in:scale={{ duration: animationDuration, start: 0.85 }}
+		out:scale={{ duration: animationDuration, start: 0.85 }}
+	>
 		{#if icon}
 			{@render icon()}
 		{:else}
@@ -66,19 +70,29 @@
 			onCopy?.(status);
 		}}
 	>
-		{#if clipboard.status === 'success'}
-			<div in:scale={{ duration: animationDuration, start: 0.85 }}>
-				<CheckIcon tabindex={-1} />
-				<span class="sr-only">{m.common_copied()}</span>
-			</div>
-		{:else if clipboard.status === 'failure'}
-			<div in:scale={{ duration: animationDuration, start: 0.85 }}>
-				<CloseIcon tabindex={-1} />
-				<span class="sr-only">{m.common_copy_failed()}</span>
-			</div>
-		{:else}
-			{@render idleIcon()}
-		{/if}
+		<span class="grid place-items-center">
+			{#if clipboard.status === 'success'}
+				<div
+					class="col-start-1 row-start-1"
+					in:scale={{ duration: animationDuration, start: 0.85 }}
+					out:scale={{ duration: animationDuration, start: 0.85 }}
+				>
+					<CheckIcon tabindex={-1} />
+					<span class="sr-only">{m.common_copied()}</span>
+				</div>
+			{:else if clipboard.status === 'failure'}
+				<div
+					class="col-start-1 row-start-1"
+					in:scale={{ duration: animationDuration, start: 0.85 }}
+					out:scale={{ duration: animationDuration, start: 0.85 }}
+				>
+					<CloseIcon tabindex={-1} />
+					<span class="sr-only">{m.common_copy_failed()}</span>
+				</div>
+			{:else}
+				{@render idleIcon()}
+			{/if}
+		</span>
 		{@render children?.()}
 	</ArcaneButton>
 {:else}
@@ -95,7 +109,9 @@
 				name="copy"
 				disabled
 			>
-				{@render idleIcon()}
+				<span class="grid place-items-center">
+					{@render idleIcon()}
+				</span>
 				{@render children?.()}
 			</ArcaneButton>
 		</Tooltip.Trigger>

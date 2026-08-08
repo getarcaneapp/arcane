@@ -4,10 +4,12 @@ import (
 	"context"
 	"log/slog"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/updater"
+
 	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
-	"github.com/getarcaneapp/arcane/types/v2/updater"
+	updatertypes "github.com/getarcaneapp/arcane/types/v2/updater"
 )
 
 const autoUpdateAdmissionScopeInternal = "auto-update"
@@ -15,21 +17,21 @@ const autoUpdateAdmissionScopeInternal = "auto-update"
 // pendingUpdateApplierInternal is the slice of UpdaterService the job needs,
 // kept as an interface so the overlap guard is testable with a fake.
 type pendingUpdateApplierInternal interface {
-	ApplyPending(ctx context.Context, options updater.Options) (*updater.Result, error)
+	ApplyPending(ctx context.Context, options updatertypes.Options) (*updatertypes.Result, error)
 }
 
 type AutoUpdateJob struct {
 	updaterService  pendingUpdateApplierInternal
-	settingsService *services.SettingsService
+	settingsService *settings.SettingsService
 	admissionGate   *actors.Gate[actors.AdmissionKey]
 }
 
-func NewAutoUpdateJob(updaterService *services.UpdaterService, settingsService *services.SettingsService, admissionGate *actors.Gate[actors.AdmissionKey]) (*AutoUpdateJob, error) {
+func NewAutoUpdateJob(updaterModule *updater.Module, settingsService *settings.SettingsService, admissionGate *actors.Gate[actors.AdmissionKey]) (*AutoUpdateJob, error) {
 	if admissionGate == nil {
 		return nil, errors.New("auto-update admission gate unavailable")
 	}
 	return &AutoUpdateJob{
-		updaterService:  updaterService,
+		updaterService:  updaterModule.Service(),
 		settingsService: settingsService,
 		admissionGate:   admissionGate,
 	}, nil
@@ -75,7 +77,7 @@ func (j *AutoUpdateJob) Run(ctx context.Context) {
 
 	slog.InfoContext(ctx, "auto-update run started")
 
-	result, err := j.updaterService.ApplyPending(ctx, updater.Options{})
+	result, err := j.updaterService.ApplyPending(ctx, updatertypes.Options{})
 	if err != nil {
 		slog.ErrorContext(ctx, "auto-update run failed", "err", err)
 		return

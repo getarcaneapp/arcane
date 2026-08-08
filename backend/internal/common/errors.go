@@ -55,6 +55,10 @@ func (e *classified) Format(s fmt.State, verb rune) {
 }
 
 var (
+	ErrInvalidToken                            = errors.Sentinel("invalid token")
+	ErrExpiredToken                            = errors.Sentinel("token expired")
+	ErrTokenVersionMismatch                    = errors.Sentinel("token version mismatch")
+	ErrUserNotFound                            = errors.Sentinel("user not found")
 	ErrTokenValidation                         = Classify(ErrUnauthorized, errors.Sentinel("Invalid token claims"))
 	ErrSessionRevoked                          = Classify(ErrUnauthorized, errors.Sentinel("Session has been revoked"))
 	ErrUpgradeInProgress                       = Classify(ErrConflict, errors.Sentinel("an upgrade is already in progress"))
@@ -93,6 +97,7 @@ var (
 	ErrEnvironmentConnectionTestFailed         = Classify(ErrBadRequest, errors.Sentinel("Environment connection test failed"))
 	ErrUnsafeRemoteURL                         = Classify(ErrBadRequest, errors.Sentinel("Remote URL is not allowed"))
 	ErrImageScanInProgress                     = Classify(ErrConflict, errors.Sentinel("an image update check is already in progress"))
+	ErrInvalidNotificationPayloadTemplate      = Classify(ErrValidation, errors.Sentinel("invalid generic webhook payload template"))
 	ErrRedeployAfterSyncFailed                 = errors.Sentinel("redeploy failed")
 	ErrGitOpsSyncProjectBindingBroken          = errors.Sentinel("GitOps sync project binding broken")
 )

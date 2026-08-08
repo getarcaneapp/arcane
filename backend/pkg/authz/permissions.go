@@ -27,7 +27,7 @@ const (
 	// PermRolesList and the role permissions below cover role management
 	// (Create / Update / Delete) and role assignment to users. They are reserved
 	// for global admins and intentionally not exposed as delegated permissions —
-	// see backend/api/middleware/role.go::RequireGlobalAdmin. Likewise, managing
+	// see backend/internal/middleware/role.go::RequireGlobalAdmin. Likewise, managing
 	// OIDC group → role mappings is admin-only because it is effectively another
 	// path for granting role assignments.
 	PermRolesList = "roles:list"

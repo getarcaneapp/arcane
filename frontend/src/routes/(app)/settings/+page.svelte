@@ -20,7 +20,7 @@
 	import { settingsSearchService } from '#lib/services/settings-search';
 	import { environmentStore } from '#lib/stores/environment.store.svelte';
 	import type { SettingsCategory } from '#lib/types/shared';
-	import { canReachAccessSurface, canReachAccessSurfaceUrl } from '#lib/utils/access-policy';
+	import { canReachAccessSurfaceUrl } from '#lib/utils/access-policy';
 	import { getSettingsSubpageUrlsInNavOrder } from '#lib/config/navigation-config';
 	import { useCategorySearch } from '#lib/hooks/use-category-search.svelte';
 	import { getCategoryIcon, orderCategoriesByNav } from '#lib/utils/category-page';
@@ -72,17 +72,7 @@
 	function isAccessibleCategory(category: SettingsCategory) {
 		if (category.id === 'systembackups' && !user?.isGlobalAdmin) return false;
 		if (!permissionsManifest?.accessSurfaces?.length) return true;
-		if (category.id === 'jobschedule') {
-			return canReachAccessSurface(permissionsManifest, 'settings.category.jobschedule', user, environmentStore.selected?.id);
-		}
 		return canReachAccessSurfaceUrl(permissionsManifest, category.url, user, environmentStore.selected?.id);
-	}
-
-	function getCategoryUrl(category: SettingsCategory) {
-		if (category.id === 'jobschedule') {
-			return `/environments/${environmentStore.selected?.id ?? '0'}?tab=jobs`;
-		}
-		return category.url;
 	}
 
 	function getIconComponent(iconName: string) {
@@ -95,12 +85,22 @@
 			title: category.title,
 			description: category.description,
 			icon: getIconComponent(category.icon),
-			href: getCategoryUrl(category),
+			href: category.url,
 			matchingItems: category.matchingSettings
 		};
 	}
 
-	const normalizedCategories = $derived(settingsCategories.map(normalize));
+	// Personal preferences (theme, navigation, shortcuts, landing page) live on
+	// /account but users look for them here; surface a card for every user.
+	const accountPreferencesCategory: NormalizedCategory = {
+		id: 'account-preferences',
+		title: m.account_preferences(),
+		description: m.account_preferences_desc(),
+		icon: UserIcon,
+		href: '/account?tab=preferences'
+	};
+
+	const normalizedCategories = $derived([...settingsCategories.map(normalize), accountPreferencesCategory]);
 	const searchAdapter = {
 		get searchQuery() {
 			return categorySearch.searchQuery;

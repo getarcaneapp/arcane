@@ -16,6 +16,7 @@ import (
 	recoverytypes "github.com/getarcaneapp/arcane/backend/v2/internal/recovery"
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
+	rusticruntime "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/rustic"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
@@ -24,7 +25,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const rusticImage = volumehelper.DefaultToolsImage
+const rusticImage = rusticruntime.DefaultImage
 
 var requestPath string
 
@@ -210,11 +211,10 @@ func restoreSnapshot(ctx context.Context, dockerClient *client.Client, request r
 	}
 	created, err := dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Config: &container.Config{
-			Image:      rusticImage,
-			Entrypoint: []string{"rustic"},
-			Cmd:        []string{"restore", "--delete", request.SnapshotID + ":" + snapshotPath, "/restore"},
-			Env:        environment,
-			Labels:     volumehelper.Labels(),
+			Image:  rusticImage,
+			Cmd:    []string{"restore", "--delete", request.SnapshotID + ":" + snapshotPath, "/restore"},
+			Env:    environment,
+			Labels: volumehelper.Labels(),
 		},
 		HostConfig: hostConfig,
 	})

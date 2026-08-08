@@ -8,10 +8,10 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"emperror.dev/errors"
@@ -21,20 +21,17 @@ import (
 )
 
 const (
-	GlobalEnvFileName    = ".env.global"
-	EffectiveEnvFileName = ".env"
-	GitSourceEnvFileName = ".env.git"
-	OverrideEnvFileName  = "project.env"
+	GlobalEnvFileName                     = ".env.global"
+	EffectiveEnvFileName                  = ".env"
+	GitSourceEnvFileName                  = ".env.git"
+	OverrideEnvFileName                   = "project.env"
+	ProjectEnvModeDirect   ProjectEnvMode = "direct"
+	ProjectEnvModeOverride ProjectEnvMode = "override"
 )
 
 type EnvMap = map[string]string
 
 type ProjectEnvMode string
-
-const (
-	ProjectEnvModeDirect   ProjectEnvMode = "direct"
-	ProjectEnvModeOverride ProjectEnvMode = "override"
-)
 
 type ProjectEnvState struct {
 	Mode             ProjectEnvMode
@@ -72,8 +69,6 @@ type envFileCacheEntry struct {
 }
 
 var (
-	processEnvOnce      sync.Once
-	processEnvSnapshot  EnvMap
 	globalEnvFileCache  = hot.NewHotCache[string, envFileCacheEntry](hot.LRU, 4096).Build()
 	projectEnvFileCache = hot.NewHotCache[string, envFileCacheEntry](hot.LRU, 4096).Build()
 )
@@ -86,12 +81,33 @@ func NewEnvLoader(projectsDir, workdir string, autoInjectEnv bool) *EnvLoader {
 	}
 }
 
+// processEnvAllowlist is the only part of Arcane's own process environment
+// that flows into compose interpolation of managed projects: timezone and
+// locale, whose container values are safe to share. Everything else is
+// excluded so Arcane's variables never leak into ${VAR} references or
+// pass-through environment entries — its PORT collides with project port
+// mappings, secrets would be readable from any compose file, and vars like
+// HOME or PUID carry container-internal values that are wrong for projects.
+var processEnvAllowlist = []string{"TZ", "LANG", "LANGUAGE", "LC_ALL"}
+
+func allowedProcessEnvInternal() EnvMap {
+	envMap := make(EnvMap)
+	for _, key := range processEnvAllowlist {
+		if val, ok := os.LookupEnv(key); ok {
+			envMap[key] = val
+		}
+	}
+	return envMap
+}
+
 // LoadEnvironment loads and merges environment variables from all sources:
-// 1. Process environment
+// 1. Allowlisted process environment (TZ)
 // 2. Global .env.global file (from projects directory)
 // 3. Project-specific .env file (from workdir)
+// The rest of the Arcane process environment is intentionally excluded so its
+// own variables never leak into compose interpolation of managed projects.
 func (l *EnvLoader) LoadEnvironment(ctx context.Context) (envMap EnvMap, injectionVars EnvMap, err error) {
-	envMap = cloneEnvMapInternal(loadProcessEnvSnapshotInternal())
+	envMap = allowedProcessEnvInternal()
 	injectionVars = make(EnvMap)
 
 	if strings.TrimSpace(l.projectsDir) != "" {
@@ -113,18 +129,6 @@ func (l *EnvLoader) LoadEnvironment(ctx context.Context) (envMap EnvMap, injecti
 	return envMap, injectionVars, nil
 }
 
-func loadProcessEnvSnapshotInternal() EnvMap {
-	processEnvOnce.Do(func() {
-		processEnvSnapshot = make(EnvMap)
-		for _, kv := range os.Environ() {
-			if k, v, ok := strings.Cut(kv, "="); ok {
-				processEnvSnapshot[k] = v
-			}
-		}
-	})
-	return processEnvSnapshot
-}
-
 func (l *EnvLoader) loadAndMergeGlobalEnv(ctx context.Context, path string, envMap, injectionVars EnvMap) error {
 	entry, err := loadCachedEnvFileInternal(ctx, globalEnvFileCache, path, path, envMap)
 	if err != nil {
@@ -135,9 +139,7 @@ func (l *EnvLoader) loadAndMergeGlobalEnv(ctx context.Context, path string, envM
 	}
 
 	for k, v := range entry.values {
-		if _, exists := envMap[k]; !exists {
-			envMap[k] = v
-		}
+		envMap[k] = v
 		injectionVars[k] = v
 	}
 
@@ -236,12 +238,6 @@ func validEnvFileCacheEntryInternal(entry envFileCacheEntry) bool {
 	return entry.exists && info.ModTime().Equal(entry.mtime)
 }
 
-func cloneEnvMapInternal(src EnvMap) EnvMap {
-	dst := make(EnvMap, len(src))
-	maps.Copy(dst, src)
-	return dst
-}
-
 func parseProjectEnvFileExistingInternal(path string, contextEnv EnvMap) (EnvMap, error) {
 	content, err := os.ReadFile(path)
 	if err != nil {
@@ -261,14 +257,13 @@ func ParseProjectEnvFile(path string, contextEnv EnvMap) (EnvMap, error) {
 }
 
 // ParseProjectEnvContent parses project .env content from a string using
-// compose-go's dotenv parser with variable expansion. Lookups check contextEnv
-// first (previously loaded vars), then the process environment.
+// compose-go's dotenv parser with variable expansion. Lookups resolve from
+// contextEnv (previously loaded vars) only; the Arcane process environment is
+// intentionally never consulted so its variables don't leak into project env.
 func ParseProjectEnvContent(content string, contextEnv EnvMap) (EnvMap, error) {
 	lookupFn := func(key string) (string, bool) {
-		if val, ok := contextEnv[key]; ok {
-			return val, true
-		}
-		return os.LookupEnv(key)
+		val, ok := contextEnv[key]
+		return val, ok
 	}
 
 	envMap, err := dotenv.ParseWithLookup(strings.NewReader(content), lookupFn)
@@ -338,9 +333,11 @@ func WithTransientValidationEnvFile(projectPath string, effectiveEnvContent *str
 }
 
 // BuildEffectiveEnvContent merges git and override env sources into the effective
-// .env content written to disk. Each source is preserved verbatim, with the
-// override appended after the Git content so duplicate keys resolve to the
-// override value when Compose parses the effective file.
+// .env content written to disk. Keys present in both layers are rewritten in place
+// on the Git line, preserving ordering and inline comments; override-only keys are
+// appended after the Git content. When the in-place rewrite cannot be verified to
+// parse identically to plain concatenation (e.g. multiline values), the override
+// is appended verbatim instead so duplicate keys resolve to the override value.
 func BuildEffectiveEnvContent(gitContent, overrideContent string) (string, error) {
 	contextEnv := make(EnvMap)
 
@@ -350,7 +347,7 @@ func BuildEffectiveEnvContent(gitContent, overrideContent string) (string, error
 	}
 	maps.Copy(contextEnv, gitEnv)
 
-	_, err = ParseProjectEnvContent(overrideContent, contextEnv)
+	overrideEnv, err := ParseProjectEnvContent(overrideContent, contextEnv)
 	if err != nil {
 		return "", errors.WrapIf(err, "parse override env content")
 	}
@@ -360,11 +357,110 @@ func BuildEffectiveEnvContent(gitContent, overrideContent string) (string, error
 		return overrideContent, nil
 	case overrideContent == "":
 		return gitContent, nil
-	case strings.HasSuffix(gitContent, "\n"), strings.HasPrefix(overrideContent, "\n"):
-		return gitContent + overrideContent, nil
-	default:
-		return gitContent + "\n" + overrideContent, nil
 	}
+
+	concatenated := gitContent + "\n" + overrideContent
+	if strings.HasSuffix(gitContent, "\n") || strings.HasPrefix(overrideContent, "\n") {
+		concatenated = gitContent + overrideContent
+	}
+
+	candidate, ok := mergeEnvOverridesInPlaceInternal(gitContent, overrideContent, overrideEnv)
+	if !ok {
+		return concatenated, nil
+	}
+
+	candidateEnv, candidateErr := ParseProjectEnvContent(candidate, make(EnvMap))
+	expectedEnv, expectedErr := ParseProjectEnvContent(concatenated, make(EnvMap))
+	if candidateErr == nil && expectedErr == nil && maps.Equal(candidateEnv, expectedEnv) {
+		return candidate, nil
+	}
+
+	return concatenated, nil
+}
+
+var envKeyLineRegexInternal = regexp.MustCompile(`^(\s*(?:export\s+)?)([A-Za-z_][A-Za-z0-9_.-]*)(\s*=)(.*)$`)
+
+// mergeEnvOverridesInPlaceInternal rewrites the value of every gitContent line
+// whose key has an override — keeping line order and trailing inline comments —
+// then appends the override lines whose keys were not rewritten. ok is false when
+// no git line matched an override and the caller should fall back to plain
+// concatenation.
+func mergeEnvOverridesInPlaceInternal(gitContent, overrideContent string, overrideEnv EnvMap) (merged string, ok bool) {
+	rewritten := make(map[string]struct{})
+	gitLines := strings.Split(gitContent, "\n")
+
+	for i, line := range gitLines {
+		body, hadCR := strings.CutSuffix(line, "\r")
+		match := envKeyLineRegexInternal.FindStringSubmatch(body)
+		if match == nil {
+			continue
+		}
+		overrideValue, exists := overrideEnv[match[2]]
+		if !exists {
+			continue
+		}
+
+		value, comment := splitEnvValueCommentInternal(match[4])
+		separator := value[len(strings.TrimRight(value, " \t")):]
+		if comment != "" && separator == "" {
+			separator = " "
+		}
+
+		body = match[1] + match[2] + match[3] + formatEnvValueInternal(overrideValue) + separator + comment
+		if hadCR {
+			body += "\r"
+		}
+		gitLines[i] = body
+		rewritten[match[2]] = struct{}{}
+	}
+
+	if len(rewritten) == 0 {
+		return "", false
+	}
+
+	remainderLines := make([]string, 0)
+	for line := range strings.SplitSeq(overrideContent, "\n") {
+		if match := envKeyLineRegexInternal.FindStringSubmatch(strings.TrimSuffix(line, "\r")); match != nil {
+			if _, drop := rewritten[match[2]]; drop {
+				continue
+			}
+		}
+		remainderLines = append(remainderLines, line)
+	}
+
+	merged = strings.Join(gitLines, "\n")
+	remainder := strings.Join(remainderLines, "\n")
+	switch {
+	case strings.TrimSpace(remainder) == "":
+		return merged, true
+	case strings.HasSuffix(merged, "\n"), strings.HasPrefix(remainder, "\n"):
+		return merged + remainder, true
+	default:
+		return merged + "\n" + remainder, true
+	}
+}
+
+// splitEnvValueCommentInternal splits a raw single-line env value into the value
+// part and a trailing inline comment. A comment starts at an unquoted '#' that is
+// at the start of the value or preceded by whitespace.
+func splitEnvValueCommentInternal(raw string) (value, comment string) {
+	var quote byte
+	for i := 0; i < len(raw); i++ {
+		c := raw[i]
+		switch {
+		case quote != 0:
+			if c == quote {
+				quote = 0
+			} else if c == '\\' && quote == '"' {
+				i++
+			}
+		case c == '\'' || c == '"':
+			quote = c
+		case c == '#' && (i == 0 || raw[i-1] == ' ' || raw[i-1] == '\t'):
+			return raw[:i], raw[i:]
+		}
+	}
+	return raw, ""
 }
 
 // BuildAdditiveOverrideEnvContent derives override content from a pre-git local

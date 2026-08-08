@@ -37,7 +37,7 @@ jobs:
       - name: Setup PNPM
         uses: pnpm/action-setup@v6
         with:
-          run_install: false
+          run_install: true
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -79,7 +79,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y gettext-base
 
       - name: Install cosign
-        uses: sigstore/cosign-installer@v4
+        uses: sigstore/cosign-installer@v4.1.2
 
       - name: Capture frontend build versions
         id: frontend-versions

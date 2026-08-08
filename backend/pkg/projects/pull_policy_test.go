@@ -58,34 +58,65 @@ func TestResolveServiceImagePullMode(t *testing.T) {
 }
 
 func TestBuildProjectImagePullPlan(t *testing.T) {
-	services := composetypes.Services{
-		"web": {
-			Name:       "web",
-			Image:      "redis:latest",
-			PullPolicy: composetypes.PullPolicyIfNotPresent,
-		},
-		"worker": {
-			Name:       "worker",
-			Image:      "redis:latest",
-			PullPolicy: composetypes.PullPolicyAlways,
-		},
-		"api": {
-			Name:       "api",
-			Image:      "nginx:latest",
-			PullPolicy: composetypes.PullPolicyNever,
-		},
-		"empty-image": {
-			Name:       "empty-image",
-			Image:      "",
-			PullPolicy: composetypes.PullPolicyAlways,
+	project := &composetypes.Project{
+		Name: "demo",
+		Services: composetypes.Services{
+			"web": {
+				Name:       "web",
+				Image:      "redis:latest",
+				PullPolicy: composetypes.PullPolicyIfNotPresent,
+			},
+			"worker": {
+				Name:       "worker",
+				Image:      "redis:latest",
+				PullPolicy: composetypes.PullPolicyAlways,
+			},
+			"api": {
+				Name:       "api",
+				Image:      "nginx:latest",
+				PullPolicy: composetypes.PullPolicyNever,
+			},
+			"empty-image": {
+				Name:       "empty-image",
+				Image:      "",
+				PullPolicy: composetypes.PullPolicyAlways,
+			},
 		},
 	}
 
-	plan := BuildImagePullPlan(services)
+	plan := BuildImagePullPlan(project)
 
 	assert.Len(t, plan, 2)
 	assert.Equal(t, ImagePullModeAlways, plan["redis:latest"])
 	assert.Equal(t, ImagePullModeNever, plan["nginx:latest"])
+}
+
+func TestBuildImagePullPlanDependentImages(t *testing.T) {
+	project := &composetypes.Project{
+		Name: "demo",
+		Services: composetypes.Services{
+			"web": {
+				Name:     "web",
+				Image:    "nginx:latest",
+				PreStart: []composetypes.ServiceHook{{Image: "busybox:stable", Command: composetypes.ShellCommand{"true"}}},
+				Volumes: []composetypes.ServiceVolumeConfig{
+					{Type: composetypes.VolumeTypeImage, Source: "content:latest", Target: "/data"},
+				},
+			},
+			"local": {
+				Name:       "local",
+				Image:      "local:dev",
+				PullPolicy: composetypes.PullPolicyNever,
+				PreStart:   []composetypes.ServiceHook{{Image: "skipped:hook", Command: composetypes.ShellCommand{"true"}}},
+			},
+		},
+	}
+
+	plan := BuildImagePullPlan(project)
+
+	assert.Equal(t, ImagePullModeIfMissing, plan["busybox:stable"])
+	assert.Equal(t, ImagePullModeIfMissing, plan["content:latest"])
+	assert.NotContains(t, plan, "skipped:hook")
 }
 
 func TestNormalizePullPolicy(t *testing.T) {

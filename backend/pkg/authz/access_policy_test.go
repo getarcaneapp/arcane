@@ -8,7 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/search"
+
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/stretchr/testify/require"
 )
@@ -28,7 +29,7 @@ func TestAccessSurfaceRegistryDefinesSettingsCustomizeAndLandingSemantics(t *tes
 
 	jobSchedule := requireAccessSurfaceInternal(t, "settings.category.jobschedule")
 	require.Equal(t, authz.AccessScopeModeSelectedEnvPlusGlobal, jobSchedule.ScopeMode)
-	require.Empty(t, jobSchedule.URL)
+	require.Equal(t, "/settings/jobs", jobSchedule.URL)
 	require.ElementsMatch(t, []string{authz.PermJobsManage}, jobSchedule.Permissions)
 
 	notifications := requireAccessSurfaceInternal(t, "settings.category.notifications")
@@ -160,7 +161,7 @@ func TestAccessSurfaceCategoryRegistryCoversBackendCategories(t *testing.T) {
 		"security": {},
 	}
 
-	for _, category := range services.NewSettingsSearchService().GetSettingsCategories() {
+	for _, category := range search.NewSettingsSearchService().GetSettingsCategories() {
 		if _, hidden := hiddenSettingsCategories[category.ID]; hidden {
 			continue
 		}
@@ -168,7 +169,7 @@ func TestAccessSurfaceCategoryRegistryCoversBackendCategories(t *testing.T) {
 		require.True(t, ok, "settings category %s must have an access surface", category.ID)
 	}
 
-	for _, category := range services.NewCustomizeSearchService().GetCustomizeCategories() {
+	for _, category := range search.NewCustomizeSearchService().GetCustomizeCategories() {
 		_, ok := findAccessSurfaceInternal("customize.category." + category.ID)
 		require.True(t, ok, "customize category %s must have an access surface", category.ID)
 	}

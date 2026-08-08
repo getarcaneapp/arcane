@@ -20,6 +20,7 @@
 		type PushoverFormValues,
 		type GotifyFormValues,
 		type MatrixFormValues,
+		type GoogleChatFormValues,
 		type GenericFormValues,
 		type NotificationProviderKey,
 		NOTIFICATION_PROVIDER_KEYS,
@@ -32,6 +33,7 @@
 		pushoverSettingsToFormValues,
 		gotifySettingsToFormValues,
 		matrixSettingsToFormValues,
+		googleChatSettingsToFormValues,
 		genericSettingsToFormValues,
 		discordFormValuesToSettings,
 		emailFormValuesToSettings,
@@ -42,6 +44,7 @@
 		pushoverFormValuesToSettings,
 		gotifyFormValuesToSettings,
 		matrixFormValuesToSettings,
+		googleChatFormValuesToSettings,
 		genericFormValuesToSettings
 	} from '#lib/types/notifications';
 	import { NotificationsIcon } from '#lib/icons';
@@ -60,11 +63,15 @@
 		defaultTab: () => 'email'
 	});
 	const providerTab = $derived(urlTab.value);
+	// Providers whose display name is not just a capitalised key.
+	const providerTabLabels: Partial<Record<NotificationProviderKey, string>> = {
+		googlechat: 'Google Chat'
+	};
 	const providerTabItems = NOTIFICATION_PROVIDER_KEYS.map(
 		(provider) =>
 			({
 				value: provider,
-				label: provider.charAt(0).toUpperCase() + provider.slice(1)
+				label: providerTabLabels[provider] ?? provider.charAt(0).toUpperCase() + provider.slice(1)
 			}) satisfies TabItem
 	);
 
@@ -88,6 +95,7 @@
 	let pushoverFormRef: ReturnType<typeof BuiltInProviderForm>;
 	let gotifyFormRef: ReturnType<typeof BuiltInProviderForm>;
 	let matrixFormRef: ReturnType<typeof BuiltInProviderForm>;
+	let googlechatFormRef: ReturnType<typeof BuiltInProviderForm>;
 	let genericFormRef: ReturnType<typeof BuiltInProviderForm>;
 
 	// Saved settings from server (used to detect if settings exist)
@@ -101,6 +109,7 @@
 		pushover: null,
 		gotify: null,
 		matrix: null,
+		googlechat: null,
 		generic: null
 	});
 
@@ -114,6 +123,7 @@
 	let pushoverValues = $state<PushoverFormValues>(pushoverSettingsToFormValues());
 	let gotifyValues = $state<GotifyFormValues>(gotifySettingsToFormValues());
 	let matrixValues = $state<MatrixFormValues>(matrixSettingsToFormValues());
+	let googlechatValues = $state<GoogleChatFormValues>(googleChatSettingsToFormValues());
 	let genericValues = $state<GenericFormValues>(genericSettingsToFormValues());
 
 	// Baseline values - what was last saved (for change detection)
@@ -126,6 +136,7 @@
 	let pushoverBaseline = $state<PushoverFormValues>(pushoverSettingsToFormValues());
 	let gotifyBaseline = $state<GotifyFormValues>(gotifySettingsToFormValues());
 	let matrixBaseline = $state<MatrixFormValues>(matrixSettingsToFormValues());
+	let googlechatBaseline = $state<GoogleChatFormValues>(googleChatSettingsToFormValues());
 	let genericBaseline = $state<GenericFormValues>(genericSettingsToFormValues());
 
 	// Change detection
@@ -138,6 +149,7 @@
 	const pushoverHasChanges = $derived(JSON.stringify(pushoverValues) !== JSON.stringify(pushoverBaseline));
 	const gotifyHasChanges = $derived(JSON.stringify(gotifyValues) !== JSON.stringify(gotifyBaseline));
 	const matrixHasChanges = $derived(JSON.stringify(matrixValues) !== JSON.stringify(matrixBaseline));
+	const googlechatHasChanges = $derived(JSON.stringify(googlechatValues) !== JSON.stringify(googlechatBaseline));
 	const genericHasChanges = $derived(JSON.stringify(genericValues) !== JSON.stringify(genericBaseline));
 	const hasChanges = $derived(
 		emailHasChanges ||
@@ -149,6 +161,7 @@
 			pushoverHasChanges ||
 			gotifyHasChanges ||
 			matrixHasChanges ||
+			googlechatHasChanges ||
 			genericHasChanges
 	);
 
@@ -202,6 +215,9 @@
 		matrixValues = matrixSettingsToFormValues(savedSettings.matrix ?? undefined);
 		matrixBaseline = { ...matrixValues };
 
+		googlechatValues = googleChatSettingsToFormValues(savedSettings.googlechat ?? undefined);
+		googlechatBaseline = { ...googlechatValues };
+
 		genericValues = genericSettingsToFormValues(savedSettings.generic ?? undefined);
 		genericBaseline = { ...genericValues };
 	});
@@ -217,6 +233,7 @@
 		const pushoverValid = pushoverFormRef?.isValid() ?? true;
 		const gotifyValid = gotifyFormRef?.isValid() ?? true;
 		const matrixValid = matrixFormRef?.isValid() ?? true;
+		const googlechatValid = googlechatFormRef?.isValid() ?? true;
 		const genericValid = genericFormRef?.isValid() ?? true;
 
 		if (
@@ -230,6 +247,7 @@
 				pushoverValid &&
 				gotifyValid &&
 				matrixValid &&
+				googlechatValid &&
 				genericValid
 			)
 		) {
@@ -358,6 +376,19 @@
 				}
 			}
 
+			// Save Google Chat settings if changed
+			if (googlechatHasChanges) {
+				try {
+					const settings = googleChatFormValuesToSettings(googlechatValues);
+					await notificationService.updateSettings('googlechat', settings);
+					savedSettings.googlechat = settings;
+					googlechatBaseline = { ...googlechatValues };
+				} catch (error: any) {
+					const errorMsg = error?.response?.data?.error || error.message || 'Unknown error';
+					errors.push(m.notifications_saved_failed({ provider: 'Google Chat', error: errorMsg }));
+				}
+			}
+
 			// Save Generic settings if changed
 			if (genericHasChanges) {
 				try {
@@ -394,6 +425,7 @@
 		pushoverValues = { ...pushoverBaseline };
 		gotifyValues = { ...gotifyBaseline };
 		matrixValues = { ...matrixBaseline };
+		googlechatValues = { ...googlechatBaseline };
 		genericValues = { ...genericBaseline };
 	}
 
@@ -552,6 +584,18 @@
 						{isTesting}
 						hasExistingCredentials={savedSettings.matrix !== null}
 						onTest={(testType) => testNotification('matrix', testType)}
+					/>
+				</Tabs.Content>
+
+				<Tabs.Content value="googlechat" class="mt-4 space-y-4">
+					<BuiltInProviderForm
+						bind:this={googlechatFormRef}
+						provider="googlechat"
+						bind:values={googlechatValues}
+						disabled={isReadOnly}
+						{isTesting}
+						hasExistingCredentials={savedSettings.googlechat !== null}
+						onTest={(testType) => testNotification('googlechat', testType)}
 					/>
 				</Tabs.Content>
 

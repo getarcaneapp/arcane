@@ -4,6 +4,8 @@ import type { SVGAttributes } from 'svelte/elements';
 export type IconType = Component<SVGAttributes<SVGSVGElement>>;
 
 export { default as DashboardIcon } from 'virtual:icons/tabler/home-filled';
+export { default as LayoutGridIcon } from 'virtual:icons/tabler/layout-grid';
+export { default as LayoutListIcon } from 'virtual:icons/tabler/layout-list';
 export { default as ProjectsIcon } from 'virtual:icons/solar/folder-with-files-bold';
 export { default as EnvironmentsIcon } from 'virtual:icons/solar/server-minimalistic-linear';
 export { default as CustomizeIcon } from 'virtual:icons/material-symbols/inbox-customize-outline-rounded';

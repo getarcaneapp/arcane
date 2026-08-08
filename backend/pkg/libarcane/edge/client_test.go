@@ -27,6 +27,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func TestTunnelClient_HandleRequest(t *testing.T) {
@@ -1749,7 +1751,10 @@ func TestTunnelClient_connectAndServePoll_OpensGRPCWhenRequired(t *testing.T) {
 
 	err := <-errCh
 	require.Error(t, err)
-	assert.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.True(t,
+		errors.Is(err, context.DeadlineExceeded) || status.Code(err) == codes.DeadlineExceeded,
+		"expected deadline shutdown error, got %v", err,
+	)
 }
 
 func TestTunnelClient_connectAndServePoll_OpensWebSocketWhenRequired(t *testing.T) {
@@ -2183,10 +2188,12 @@ func TestTunnelClient_InternalRequestSkipsSlogEcho(t *testing.T) {
 }
 
 type fakeTunnelConn struct {
-	mu      sync.Mutex
-	msgs    []*TunnelMessage
-	closed  bool
-	sendErr error
+	mu         sync.Mutex
+	msgs       []*TunnelMessage
+	closed     bool
+	sendErr    error
+	receiveErr error
+	transport  string
 }
 
 func (f *fakeTunnelConn) Send(msg *TunnelMessage) error {
@@ -2207,7 +2214,10 @@ func (f *fakeTunnelConn) Send(msg *TunnelMessage) error {
 }
 
 func (f *fakeTunnelConn) Receive() (*TunnelMessage, error) {
-	return nil, errors.New("not implemented")
+	if f.receiveErr == nil {
+		return nil, errors.New("not implemented")
+	}
+	return nil, f.receiveErr
 }
 
 func (f *fakeTunnelConn) IsExpectedReceiveError(error) bool {
@@ -2227,7 +2237,26 @@ func (f *fakeTunnelConn) IsClosed() bool {
 	return f.closed
 }
 
-func (f *fakeTunnelConn) Transport() string { return EdgeTransportWebSocket }
+func (f *fakeTunnelConn) Transport() string {
+	if f.transport == "" {
+		return EdgeTransportWebSocket
+	}
+	return f.transport
+}
+
+func TestTunnelClient_serveTunnelSessionInternal_GRPCSendEOFSurfacesRegistrationError(t *testing.T) {
+	conn := &fakeTunnelConn{
+		sendErr:    io.EOF,
+		receiveErr: status.Error(codes.Unauthenticated, "invalid agent token"),
+		transport:  EdgeTransportGRPC,
+	}
+	client := NewTunnelClient(&Config{}, http.NotFoundHandler())
+
+	err := client.serveTunnelSessionInternal(t.Context(), conn, "manager.test")
+	require.Error(t, err)
+	assert.Equal(t, codes.Unauthenticated, status.Code(err))
+	assert.Contains(t, err.Error(), "invalid agent token")
+}
 
 func TestStreamingResponseRecorder_Sequence(t *testing.T) {
 	conn := &fakeTunnelConn{}

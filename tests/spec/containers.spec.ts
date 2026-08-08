@@ -169,9 +169,8 @@ test.describe('Containers Page', () => {
 		await menu.getByRole('menuitem', { name: 'Inspect', exact: true }).click();
 
 		await expect(page).toHaveURL(/\/containers\/.+/);
-		await expect(
-			page.getByRole('heading', { name: 'Container Details', level: 2 }).first()
-		).toBeVisible();
+		await expect(page.getByRole('tab', { name: 'Overview', exact: true })).toBeVisible();
+		await expect(page.getByRole('heading', { name: 'Runtime', exact: true })).toBeVisible();
 	});
 
 	test('should show live CPU and memory monitors on the logs tab for running containers', async ({

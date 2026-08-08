@@ -1,5 +1,5 @@
 <script lang="ts" generics="TData extends Record<string, any> & { id: string }">
-	import { createTable, renderComponent, renderSnippet } from '@tanstack/svelte-table';
+	import { createTable, createTableState, renderComponent, renderSnippet } from '@tanstack/svelte-table';
 	import type { ColumnFiltersState, RowSelectionState, SortingState, ColumnVisibilityState } from '@tanstack/table-core';
 	import { arcaneTableFeatures, type ArcaneColumnDef, type ArcaneRow, type ArcaneTable } from './table-features';
 	import DataTableToolbar from './arcane-table-toolbar.svelte';
@@ -115,10 +115,13 @@
 	// Default page size constant
 	const DEFAULT_LIMIT = 20;
 
-	let rowSelection = $state<RowSelectionState>({});
-	let columnFilters = $state<ColumnFiltersState>([]);
-	let sorting = $state<SortingState>([]);
-	let globalFilter = $state<string>(requestOptions?.search ?? '');
+	// Table state slices owned outside the table; createTableState applies both value and
+	// functional updater forms from the on[State]Change callbacks. columnVisibility is the
+	// exception — parents two-way bind it, so it stays a $bindable prop.
+	const [rowSelection, setRowSelection] = createTableState<RowSelectionState>({});
+	const [columnFilters, setColumnFilters] = createTableState<ColumnFiltersState>([]);
+	const [sorting, setSorting] = createTableState<SortingState>([]);
+	const [globalFilter, setGlobalFilter] = createTableState<string>(requestOptions?.search ?? '');
 
 	const enablePersist = $derived(!!persistKey);
 	const getEffectiveLimit = () => requestOptions?.pagination?.limit ?? items?.pagination?.itemsPerPage ?? DEFAULT_LIMIT;
@@ -126,6 +129,13 @@
 
 	// Expandable row state
 	let expandedRows = $state<Set<string>>(new Set());
+
+	// Wrap-text preference, shared by every table (view-options toggle).
+	const wrapTextPref = new PersistedState<boolean>('arcane-table-wrap-text', false);
+	const wrapText = $derived(wrapTextPref.current);
+	function toggleWrapText() {
+		wrapTextPref.current = !wrapTextPref.current;
+	}
 
 	// The desktop scroll container, bound below and handed to the desktop view so it can virtualize
 	// long flat lists. The unstyled/styled branches are mutually exclusive, so one ref suffices.
@@ -141,7 +151,33 @@
 		expandedRows = next;
 	}
 
-	const passAllGlobal: (row: unknown, columnId: string, filterValue: unknown) => boolean = () => true;
+	// Client-sorted columns (spec.clientSort): the server can't order these values,
+	// so header clicks reorder the current page locally via the column accessor.
+	const clientSortAccessors = $derived.by(() => {
+		const accessors = new Map<string, (row: TData) => unknown>();
+		columns.forEach((spec, i) => {
+			if (!spec.clientSort) return;
+			const id = spec.id ?? (spec.accessorKey as string) ?? `col_${i}`;
+			const accessorKey = spec.accessorKey;
+			const accessorFn = spec.accessorFn;
+			accessors.set(id, accessorFn ?? ((row: TData) => (accessorKey ? row[accessorKey] : undefined)));
+		});
+		return accessors;
+	});
+
+	const sortedData = $derived.by(() => {
+		const data = items.data ?? [];
+		const first = sorting()[0];
+		const accessor = first ? clientSortAccessors.get(String(first.id)) : undefined;
+		if (!first || !accessor) return data;
+		const direction = first.desc ? -1 : 1;
+		return [...data].sort((a, b) => {
+			const va = accessor(a);
+			const vb = accessor(b);
+			if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * direction;
+			return String(va ?? '').localeCompare(String(vb ?? '')) * direction;
+		});
+	});
 
 	const currentPage = $derived(items.pagination?.currentPage ?? requestOptions?.pagination?.page ?? 1);
 	const totalPages = $derived(items.pagination?.totalPages ?? 1);
@@ -174,7 +210,7 @@
 		let shouldRefresh = false;
 		const { restoredFilters, filtersMap } = snapshot;
 		if (restoredFilters.length) {
-			columnFilters = restoredFilters;
+			setColumnFilters(restoredFilters);
 		}
 		if (Object.keys(filtersMap).length > 0) {
 			if (!filterMapsEqual(filtersMap, requestOptions?.filters)) {
@@ -198,8 +234,8 @@
 		const currentSearch = (requestOptions?.search ?? '').trim();
 		// Incoming requestOptions.search (e.g. from URL param) takes priority over persisted state
 		const effectiveSearch = currentSearch || persistedSearch;
-		if (effectiveSearch !== globalFilter) {
-			globalFilter = effectiveSearch;
+		if (effectiveSearch !== globalFilter()) {
+			setGlobalFilter(effectiveSearch);
 		}
 		if (effectiveSearch !== currentSearch) {
 			requestOptions = {
@@ -341,7 +377,7 @@
 				header: ({ column }) => {
 					if (spec.header) return renderSnippet(spec.header, { column, title: spec.title, class: spec.class });
 					return renderComponent(ArcaneTableHeader, {
-						column: spec.sortable ? column : undefined,
+						column: spec.sortable || spec.clientSort ? column : undefined,
 						title: spec.title,
 						class: spec.class
 					});
@@ -352,7 +388,7 @@
 					if (spec.cell) return renderSnippet(spec.cell, { row, item, value });
 					return renderComponent(ArcaneTableCell, { value });
 				},
-				enableSorting: !!spec.sortable,
+				enableSorting: !!spec.sortable || !!spec.clientSort,
 				enableHiding: true
 			});
 		});
@@ -403,19 +439,11 @@
 		return `${colIds}:${hasRowActions}:${isSelectionDisabled}`;
 	}
 
-	let cachedColumnsDef = $state<ArcaneColumnDef<TData>[]>([]);
-	let lastColumnsKey = '';
-
-	// Use $effect to rebuild columns only when structure changes
-	$effect(() => {
-		const key = getColumnsKey(columns, !!rowActions, selectionDisabled);
-		if (key !== lastColumnsKey) {
-			cachedColumnsDef = buildColumns(columns, selectionDisabled);
-			lastColumnsKey = key;
-		}
+	const columnsKey = $derived(getColumnsKey(columns, !!rowActions, selectionDisabled));
+	const columnsDef = $derived.by(() => {
+		columnsKey; // structural dependency: identity-churned `columns` arrays with an unchanged key don't rebuild defs
+		return untrack(() => buildColumns(columns, selectionDisabled));
 	});
-
-	const columnsDef = $derived(cachedColumnsDef.length > 0 ? cachedColumnsDef : buildColumns(columns, selectionDisabled));
 
 	const table = createTable({
 		features: arcaneTableFeatures,
@@ -429,39 +457,40 @@
 		// by the backing id lets unchanged rows (and their DOM/selection) be reused.
 		getRowId: (row) => row.id,
 		get data() {
-			return items.data ?? [];
+			return sortedData;
 		},
 		state: {
 			get sorting() {
-				return sorting;
+				return sorting();
 			},
 			get columnVisibility() {
 				return columnVisibility;
 			},
 			get rowSelection() {
-				return rowSelection;
+				return rowSelection();
 			},
 			get columnFilters() {
-				return columnFilters;
+				return columnFilters();
 			},
 			get globalFilter() {
-				return globalFilter;
+				return globalFilter();
 			}
 		},
 		get columns() {
 			return columnsDef;
 		},
-		globalFilterFn: passAllGlobal,
 		get enableRowSelection() {
 			return !selectionDisabled;
 		},
-		onRowSelectionChange: (updater) => {
-			rowSelection = typeof updater === 'function' ? updater(rowSelection) : updater;
-		},
+		onRowSelectionChange: setRowSelection,
 		onSortingChange: (updater) => {
-			const next = typeof updater === 'function' ? updater(sorting) : updater;
-			sorting = next;
-			const first = next[0];
+			const prev = sorting();
+			const wasClientSort = prev[0] && clientSortAccessors.has(String(prev[0].id));
+			setSorting(updater);
+			const first = sorting()[0];
+			// Client-sorted columns reorder locally — no server round-trip, no persisted sort.
+			if (first && clientSortAccessors.has(String(first.id))) return;
+			if (!first && wasClientSort) return;
 			const sortState = first
 				? { column: String(first.id), direction: (first.desc ? 'desc' : 'asc') as 'asc' | 'desc' }
 				: undefined;
@@ -493,13 +522,13 @@
 			onRefresh(requestOptions);
 		},
 		onColumnFiltersChange: (updater) => {
-			columnFilters = typeof updater === 'function' ? updater(columnFilters) : updater;
+			setColumnFilters(updater);
 			if (enablePersist && prefs) {
-				prefs.current = { ...prefs.current, f: encodeFilters(columnFilters) };
+				prefs.current = { ...prefs.current, f: encodeFilters(columnFilters()) };
 			}
 			requestOptions = {
 				...requestOptions,
-				filters: toFilterMap(columnFilters),
+				filters: toFilterMap(columnFilters()),
 				pagination: {
 					page: 1,
 					limit: requestOptions?.pagination?.limit ?? items?.pagination?.itemsPerPage ?? 10
@@ -517,7 +546,7 @@
 
 			const activeSort = requestOptions?.sort;
 			if (activeSort && nextVisibility[activeSort.column] === false && hiddenSortFallback) {
-				sorting = [{ id: hiddenSortFallback.column, desc: hiddenSortFallback.direction === 'desc' }];
+				setSorting([{ id: hiddenSortFallback.column, desc: hiddenSortFallback.direction === 'desc' }]);
 				requestOptions = {
 					...requestOptions,
 					sort: hiddenSortFallback,
@@ -532,17 +561,18 @@
 				onRefresh(requestOptions);
 			}
 		},
-		onGlobalFilterChange: (value) => {
-			globalFilter = (value ?? '') as string;
+		onGlobalFilterChange: (updater) => {
+			setGlobalFilter(updater);
+			if (typeof globalFilter() !== 'string') setGlobalFilter('');
 			const limit = requestOptions?.pagination?.limit ?? items?.pagination?.itemsPerPage ?? 10;
 			requestOptions = {
 				...requestOptions,
-				search: globalFilter,
+				search: globalFilter(),
 				pagination: { page: 1, limit }
 			};
 			// Persist global filter
 			if (enablePersist && prefs) {
-				prefs.current = { ...prefs.current, g: globalFilter };
+				prefs.current = { ...prefs.current, g: globalFilter() };
 			}
 			onRefresh(requestOptions);
 		}
@@ -634,12 +664,12 @@
 
 	$effect(() => {
 		const s = requestOptions?.sort;
-		const currentSort = untrack(() => sorting[0]);
+		const currentSort = untrack(() => sorting()[0]);
 
 		if (!s) {
 			if (currentSort) {
 				untrack(() => {
-					sorting = [];
+					setSorting([]);
 				});
 			}
 			return;
@@ -648,7 +678,7 @@
 		const desc = s.direction === 'desc';
 		if (!currentSort || currentSort.id !== s.column || currentSort.desc !== desc) {
 			untrack(() => {
-				sorting = [{ id: s.column, desc }];
+				setSorting([{ id: s.column, desc }]);
 			});
 		}
 	});
@@ -659,10 +689,10 @@
 	// the forward onColumnFiltersChange path.
 	$effect(() => {
 		const incoming = requestOptions?.filters;
-		const currentMap = untrack(() => toFilterMap(columnFilters));
+		const currentMap = untrack(() => toFilterMap(columnFilters()));
 		if (filterMapsEqual(incoming, currentMap)) return;
 		untrack(() => {
-			columnFilters = fromFilterMap(incoming);
+			setColumnFilters(fromFilterMap(incoming));
 		});
 	});
 
@@ -742,6 +772,8 @@
 					{customViewOptions}
 					{customToolbarActions}
 					{imageNameFilterOptions}
+					{wrapText}
+					onToggleWrapText={toggleWrapText}
 				/>
 			</div>
 		{/if}
@@ -768,6 +800,7 @@
 				onToggleRowExpanded={toggleRowExpanded}
 				scrollElement={desktopScrollEl}
 				{loading}
+				{wrapText}
 			/>
 		</div>
 

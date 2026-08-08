@@ -6,14 +6,24 @@ export type DeployPullPolicy = 'missing' | 'always' | 'never';
 export type DeployOptionsState = {
 	pullPolicy: DeployPullPolicy;
 	forceRecreate: boolean;
+	recreateVolumes: boolean;
 };
+
+// recreateVolumes destroys volume data, so it is deliberately left out of the
+// persisted options: it must be opted into again after every reload rather than
+// silently carrying over to later deployments.
+type PersistedDeployOptions = Omit<DeployOptionsState, 'recreateVolumes'>;
 
 const defaultDeployOptions: DeployOptionsState = {
 	pullPolicy: 'missing',
-	forceRecreate: false
+	forceRecreate: false,
+	recreateVolumes: false
 };
 
-const persistedOptions = new PersistedState<DeployOptionsState>('arcane-deploy-options', defaultDeployOptions);
+const persistedOptions = new PersistedState<PersistedDeployOptions>('arcane-deploy-options', {
+	pullPolicy: defaultDeployOptions.pullPolicy,
+	forceRecreate: defaultDeployOptions.forceRecreate
+});
 const userOverrodePullPolicy = new PersistedState<boolean>('arcane-deploy-options-user-overrode-pull-policy', false);
 
 function isDeployPullPolicy(value: unknown): value is DeployPullPolicy {
@@ -24,7 +34,8 @@ const persistedCurrent = persistedOptions.current;
 
 let state = $state<DeployOptionsState>({
 	pullPolicy: isDeployPullPolicy(persistedCurrent?.pullPolicy) ? persistedCurrent.pullPolicy : defaultDeployOptions.pullPolicy,
-	forceRecreate: persistedCurrent?.forceRecreate === true
+	forceRecreate: persistedCurrent?.forceRecreate === true,
+	recreateVolumes: defaultDeployOptions.recreateVolumes
 });
 
 function persistState() {
@@ -55,6 +66,9 @@ export const deployOptionsStore = {
 	get forceRecreate(): boolean {
 		return state.forceRecreate;
 	},
+	get recreateVolumes(): boolean {
+		return state.recreateVolumes;
+	},
 	setPullPolicy(value: DeployPullPolicy) {
 		if (!isDeployPullPolicy(value)) {
 			return;
@@ -68,14 +82,23 @@ export const deployOptionsStore = {
 		state.forceRecreate = value;
 		persistState();
 	},
+	setRecreateVolumes(value: boolean) {
+		state.recreateVolumes = value;
+	},
 	toggleForceRecreate() {
 		state.forceRecreate = !state.forceRecreate;
 		persistState();
 	},
-	getRequestOptions(): DeployOptionsState {
-		return {
+	// Consuming read: each deployment spends the recreateVolumes opt-in, so a
+	// later deployment cannot silently reuse the destructive consent. Callers
+	// deploying a batch must take one snapshot for the whole batch.
+	takeRequestOptions(): DeployOptionsState {
+		const options = {
 			pullPolicy: state.pullPolicy,
-			forceRecreate: state.forceRecreate
+			forceRecreate: state.forceRecreate,
+			recreateVolumes: state.recreateVolumes
 		};
+		state.recreateVolumes = false;
+		return options;
 	}
 };

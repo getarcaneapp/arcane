@@ -4,11 +4,27 @@ package dbutil
 
 import (
 	"context"
+	"strings"
 
 	"emperror.dev/errors"
 
 	"gorm.io/gorm"
 )
+
+// IsRetryableWriteError reports whether a database write failed because the
+// database was temporarily busy or timed out.
+func IsRetryableWriteError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	errMsg := strings.ToLower(strings.TrimSpace(err.Error()))
+	return strings.Contains(errMsg, "database is locked") ||
+		strings.Contains(errMsg, "database table is locked") ||
+		strings.Contains(errMsg, "database is busy") ||
+		strings.Contains(errMsg, "resource busy") ||
+		strings.Contains(errMsg, "timeout")
+}
 
 // FirstWhere fetches a single row of T matching the provided WHERE clause.
 // It maps gorm.ErrRecordNotFound to notFound (when non-nil) and otherwise wraps

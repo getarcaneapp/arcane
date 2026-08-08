@@ -54,7 +54,7 @@ type ProjectActions = {
 const projectActionConfigs: Record<ProjectActionKind, ProjectActionConfig> = {
 	start: {
 		status: 'starting',
-		run: (id) => projectService.deployProject(id, deployOptionsStore.getRequestOptions()),
+		run: (id) => projectService.deployProject(id, deployOptionsStore.takeRequestOptions()),
 		success: () => m.compose_start_success(),
 		failure: () => m.compose_start_failed()
 	},
@@ -211,12 +211,16 @@ export function createProjectActions({
 	}
 
 	async function handleBulkUp(ids: string[]): Promise<void> {
+		// One snapshot for the whole batch — the consuming read would otherwise
+		// apply the recreate-volumes opt-in to only the first project. Taken
+		// lazily so cancelling the confirm dialog doesn't spend the opt-in.
+		let deployOptions: ReturnType<typeof deployOptionsStore.takeRequestOptions> | undefined;
 		await runBulkAction(ids, {
 			title: (count) => m.projects_bulk_up_confirm_title({ count }),
 			message: (count) => m.projects_bulk_up_confirm_message({ count }),
 			label: m.common_up(),
 			loadingKey: 'up',
-			run: (id) => projectService.deployProject(id, deployOptionsStore.getRequestOptions()),
+			run: (id) => projectService.deployProject(id, (deployOptions ??= deployOptionsStore.takeRequestOptions())),
 			success: (count) => m.projects_bulk_up_success({ count }),
 			partial: (success, total, failed) => m.projects_bulk_up_partial({ success, total, failed }),
 			failure: () => m.compose_start_failed()

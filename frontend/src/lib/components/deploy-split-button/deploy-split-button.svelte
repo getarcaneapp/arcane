@@ -30,6 +30,10 @@
 	function setForceRecreate(value: boolean) {
 		deployOptionsStore.setForceRecreate(value);
 	}
+
+	function setRecreateVolumes(value: boolean) {
+		deployOptionsStore.setRecreateVolumes(value);
+	}
 </script>
 
 <ButtonGroup.Root>
@@ -80,6 +84,13 @@
 				onCheckedChange={(checked) => setForceRecreate(checked === true)}
 			>
 				{m.deploy_force_recreate()}
+			</DropdownMenu.CheckboxItem>
+
+			<DropdownMenu.CheckboxItem
+				checked={deployOptionsStore.recreateVolumes}
+				onCheckedChange={(checked) => setRecreateVolumes(checked === true)}
+			>
+				{m.deploy_recreate_volumes()}
 			</DropdownMenu.CheckboxItem>
 
 			{#if onDeployWatch}

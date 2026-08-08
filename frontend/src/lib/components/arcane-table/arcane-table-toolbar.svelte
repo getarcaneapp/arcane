@@ -16,7 +16,7 @@
 	import type { Snippet } from 'svelte';
 	import { cn } from '#lib/utils';
 	import { ResetIcon, SearchIcon, FilterIcon } from '#lib/icons';
-	import type { BulkAction, FilterOption } from './arcane-table.types.svelte';
+	import type { BulkAction } from './arcane-table.types.svelte';
 	import * as Popover from '#lib/components/ui/popover/index.js';
 
 	let {
@@ -30,7 +30,9 @@
 		customViewOptions,
 		customToolbarActions,
 		class: className,
-		imageNameFilterOptions = []
+		imageNameFilterOptions = [],
+		wrapText = false,
+		onToggleWrapText
 	}: {
 		table: ArcaneSvelteTable<TData>;
 		selectedIds?: string[];
@@ -43,12 +45,16 @@
 		customToolbarActions?: Snippet;
 		class?: string;
 		imageNameFilterOptions?: string[];
+		wrapText?: boolean;
+		onToggleWrapText?: () => void;
 	} = $props();
 
 	// With `withoutFilters` the column filters aren't user-controlled — the page bakes
 	// in its own scoping filter (e.g. /updates pins `updates`), which would otherwise
 	// light up Reset on first paint and let a click wipe the page's own scope.
-	const isFiltered = $derived(!!table.state.globalFilter || (!withoutFilters && table.state.columnFilters.length > 0));
+	const isFiltered = $derived(
+		!!table.atoms.globalFilter.get() || (!withoutFilters && table.atoms.columnFilters.get().length > 0)
+	);
 	const usageColumn = $derived(table.getAllColumns().some((col) => col.id === 'inUse') ? table.getColumn('inUse') : undefined);
 	const updatesColumn = $derived(
 		table.getAllColumns().some((col) => col.id === 'updates') ? table.getColumn('updates') : undefined
@@ -67,9 +73,7 @@
 		table.getAllColumns().some((col) => col.id === 'serviceCount') ? table.getColumn('serviceCount') : undefined
 	);
 	const typeColumn = $derived(table.getAllColumns().some((col) => col.id === 'type') ? table.getColumn('type') : undefined);
-	const typeColumnFilterOptions = $derived(
-		(typeColumn?.columnDef.meta as { filterOptions?: FilterOption[] } | undefined)?.filterOptions ?? []
-	);
+	const typeColumnFilterOptions = $derived(typeColumn?.columnDef.meta?.filterOptions ?? []);
 
 	const debouncedSetGlobal = debounced((v: string) => table.setGlobalFilter(v), 300);
 	const imageNameFilterOptionsFormatted = $derived(imageNameFilterOptions.map((name) => ({ label: name, value: name })));
@@ -87,7 +91,7 @@
 				!!(imageNameColumn && imageNameFilterOptions.length > 0) ||
 				!!(statusColumn && serviceCountColumn))
 	);
-	const activeFilterCount = $derived(table.state.columnFilters.length);
+	const activeFilterCount = $derived(table.atoms.columnFilters.get().length);
 </script>
 
 {#snippet filterList()}
@@ -119,7 +123,7 @@
 			<SearchIcon class="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
 			<Input
 				placeholder={m.common_search()}
-				value={(table.state.globalFilter as string) ?? ''}
+				value={(table.atoms.globalFilter.get() as string) ?? ''}
 				oninput={(e) => debouncedSetGlobal(e.currentTarget.value)}
 				onchange={(e) => table.setGlobalFilter(e.currentTarget.value)}
 				onkeydown={(e) => {
@@ -202,7 +206,7 @@
 		{/if}
 
 		<div class="order-3 hidden shrink-0 md:order-none md:block">
-			<DataTableViewOptions {table} {customViewOptions} />
+			<DataTableViewOptions {table} {customViewOptions} {wrapText} {onToggleWrapText} />
 		</div>
 		<div class="order-3 shrink-0 md:hidden">
 			{#if mobileFields.length > 0 && onToggleMobileField}

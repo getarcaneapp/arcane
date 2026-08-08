@@ -8,7 +8,7 @@ node_modules
 .svelte-kit
 frontend/.svelte-kit
 frontend/build
-build
+/build
 data/
 dist/
 /arcane
@@ -18,6 +18,9 @@ dist/
 # Claude
 CLAUDE.md
 /.tmp/
+
+# Deepsec scan artifacts
+.deepsec/
 *.key
 *.pem
 *.crt
@@ -56,3 +59,4 @@ cli/arcane-cli
 completions
 *.txt
 inspections/**
+.deepsec/

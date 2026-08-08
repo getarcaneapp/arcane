@@ -43,7 +43,7 @@
 	import EditableName from '../components/EditableName.svelte';
 	import ProjectFileTreePanel from '../components/ProjectFileTreePanel.svelte';
 	import EditorTabStrip from '../components/EditorTabStrip.svelte';
-	import ProjectContainersTable from '../components/ProjectContainersTable.svelte';
+	import ProjectServicesPanel from '../components/ProjectServicesPanel.svelte';
 	import CodePanel from '../components/CodePanel.svelte';
 	import ProjectsLogsPanel from '../components/ProjectLogsPanel.svelte';
 	import ResizableSplit from '#lib/components/resizable-split.svelte';
@@ -288,7 +288,7 @@
 	let treeCommandPaletteOpen = $state(false);
 	let layoutMode = $state<'classic' | 'tree'>('classic');
 	let selectedIncludeTabPreference = $state<string | null>(null);
-	let treePaneWidth = $state(420);
+	let treePaneWidth = $state(280);
 	let composeSplitWidth = $state<number | null>(null);
 	const minComposePaneWidth = 360;
 	const minEnvPaneWidth = 280;
@@ -393,17 +393,7 @@
 			value: 'compose',
 			label: m.common_configuration(),
 			icon: SettingsIcon
-		},
-		...(canViewProjectLogs
-			? [
-					{
-						value: 'logs',
-						label: m.common_logs(),
-						icon: FileTextIcon,
-						disabled: project?.status !== 'running'
-					}
-				]
-			: [])
+		}
 	]);
 
 	let nameInputRef = $state<HTMLInputElement | null>(null);
@@ -671,6 +661,11 @@
 		const urlTabValue = tabItems.some((tab) => tab.value === requestedTab) ? (requestedTab as ProjectTab) : null;
 		if (!userSelectedTabForProject) {
 			selectedTab = urlTabValue ?? cur.tab ?? defaultComposeUIPrefs.tab;
+			// Logs merged into the services tab (#3367): honor legacy ?tab=logs deep
+			// links and stored prefs by landing on services (logs render alongside).
+			if (requestedTab === 'logs' || selectedTab === 'logs') {
+				selectedTab = 'services';
+			}
 		}
 		composeOpen = cur.composeOpen ?? defaultComposeUIPrefs.composeOpen;
 		// Expanding the override collapses the compose editor (accordion), so the
@@ -1302,19 +1297,6 @@
 </script>
 
 {#if project}
-	{#snippet archiveButton(compact: boolean)}
-		<ArcaneButton
-			action="archive"
-			size={compact ? 'icon' : undefined}
-			showLabel={!compact}
-			loading={isLoading.archiving}
-			onclick={handleArchiveToggle}
-			disabled={archiveRequiresStopped}
-			title={archiveRequiresStopped ? m.projects_archive_requires_stopped() : undefined}
-			customLabel={project?.isArchived ? m.projects_unarchive() : m.projects_archive()}
-			class={compact ? 'xl:hidden' : 'hidden xl:inline-flex'}
-		/>
-	{/snippet}
 	<TabbedPageLayout
 		{backUrl}
 		backLabel={m.common_back()}
@@ -1434,23 +1416,17 @@
 						disabled={!canSave}
 						customLabel={m.common_save()}
 						loadingLabel={m.common_saving()}
-						class="hidden xl:inline-flex"
-					/>
-					<ArcaneButton
-						action="save"
-						size="icon"
-						showLabel={false}
-						loading={isLoading.saving}
-						onclick={handleSaveChanges}
-						disabled={!canSave}
-						customLabel={m.common_save()}
-						loadingLabel={m.common_saving()}
-						class="xl:hidden"
 					/>
 				{/if}
 				<IfPermitted perm="projects:archive">
-					{@render archiveButton(false)}
-					{@render archiveButton(true)}
+					<ArcaneButton
+						action="archive"
+						loading={isLoading.archiving}
+						onclick={handleArchiveToggle}
+						disabled={archiveRequiresStopped}
+						title={archiveRequiresStopped ? m.projects_archive_requires_stopped() : undefined}
+						customLabel={project?.isArchived ? m.projects_unarchive() : m.projects_archive()}
+					/>
 				</IfPermitted>
 				<ActionButtons
 					id={project.id}
@@ -1474,8 +1450,42 @@
 		{/snippet}
 
 		{#snippet tabContent()}
-			<Tabs.Content value="services" class="h-full">
-				<ProjectContainersTable services={project.runtimeServices} {projectId} onRefresh={() => refreshProjectDetails()} />
+			<Tabs.Content value="services" class="h-full min-h-0">
+				{#if canViewProjectLogs}
+					<div class="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-card">
+						<ResizableSplit
+							class="h-full min-h-0 flex-1"
+							variant="flush"
+							firstClass="bg-muted/20 border-border flex min-h-0 flex-col border-b lg:border-r lg:border-b-0"
+							secondClass="flex min-h-0 flex-col"
+							minSize={200}
+							maxSize={480}
+							minSecondSize={360}
+							defaultRatio={0.22}
+							stackBelow={1024}
+							ariaLabel={m.common_logs()}
+							persistKey="arcane.project.services-split"
+							persistStorage="local"
+						>
+							{#snippet first()}
+								<ProjectServicesPanel services={project.runtimeServices} {projectId} onRefresh={() => refreshProjectDetails()} />
+							{/snippet}
+							{#snippet second()}
+								<div class="flex h-full min-h-0 flex-col overflow-hidden">
+									<ProjectsLogsPanel
+										projectId={project.id}
+										bind:autoScroll={autoScrollStackLogs}
+										isRunning={project.status?.toLowerCase().includes('running')}
+									/>
+								</div>
+							{/snippet}
+						</ResizableSplit>
+					</div>
+				{:else}
+					<div class="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-card">
+						<ProjectServicesPanel services={project.runtimeServices} {projectId} onRefresh={() => refreshProjectDetails()} />
+					</div>
+				{/if}
 			</Tabs.Content>
 
 			<Tabs.Content value="compose" class="h-full min-h-0">
@@ -1490,25 +1500,6 @@
 										{m.git_managed_readonly_alert()}
 										<br />
 										<div class="mt-2 flex flex-col gap-1">
-											{#if project.lastSyncCommit}
-												{@const commitUrl = project.gitRepositoryURL
-													? toGitCommitUrl(project.gitRepositoryURL, project.lastSyncCommit)
-													: null}
-												<div class="flex items-center gap-1.5 font-mono text-xs">
-													<span class="text-muted-foreground">{m.commit()}:</span>
-													{#if commitUrl}
-														<a
-															href={commitUrl}
-															target="_blank"
-															class="rounded bg-muted px-1.5 py-0.5 transition-colors hover:text-primary"
-														>
-															{project.lastSyncCommit}
-														</a>
-													{:else}
-														<span class="rounded bg-muted px-1.5 py-0.5">{project.lastSyncCommit}</span>
-													{/if}
-												</div>
-											{/if}
 											{#if hasLifecycleHook && lifecycleSync?.preDeployScriptPath}
 												<div class="flex items-center gap-1.5 font-mono text-xs">
 													<span class="text-muted-foreground">{m.git_sync_pre_deploy_title()}:</span>
@@ -1573,7 +1564,8 @@
 									{...composeTreeSplitProps}
 									bind:size={treePaneWidth}
 									ariaLabel={m.compose_editor_resize_files_panel()}
-									persistKey={`arcane.compose.split:${project.id}:tree`}
+									persistKey="arcane.compose.split:tree"
+									persistStorage="local"
 									onResizeEnd={persistPrefs}
 								>
 									{#snippet first()}
@@ -1941,14 +1933,6 @@
 						{/if}
 					</div>
 				</div>
-			</Tabs.Content>
-
-			<Tabs.Content value="logs" class="h-full">
-				{#if project.status == 'running'}
-					<ProjectsLogsPanel projectId={project.id} bind:autoScroll={autoScrollStackLogs} />
-				{:else}
-					<div class="py-12 text-center text-muted-foreground">{m.compose_logs_title()} {m.common_disabled()}</div>
-				{/if}
 			</Tabs.Content>
 		{/snippet}
 	</TabbedPageLayout>

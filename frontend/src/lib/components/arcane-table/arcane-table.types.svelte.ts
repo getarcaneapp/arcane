@@ -1,4 +1,4 @@
-import type { CellData, ColumnFiltersState, ColumnVisibilityState, RowData, TableFeatures } from '@tanstack/table-core';
+import type { ColumnFiltersState, ColumnVisibilityState, RowData } from '@tanstack/table-core';
 import type { ArcaneColumn, ArcaneFilterFn, ArcaneRow, ArcaneSvelteTable } from './table-features';
 import type { Snippet } from 'svelte';
 import type { Component } from 'svelte';
@@ -24,20 +24,6 @@ export type SortState = { column: string; direction: SortDirection };
 export type ColumnWidth = 'auto' | 'min' | 'max' | number;
 export type ColumnAlign = 'left' | 'center' | 'right';
 
-// Arcane stows presentation hints on each column's `meta`. Augmenting v9's `ColumnMeta`
-// (which now threads TFeatures/TData/TValue) types these instead of the inline
-// `meta as { … }` casts the desktop view / toolbar / view-options used to read them back.
-// The generic signature must mirror table-core's declaration for declaration merging.
-declare module '@tanstack/table-core' {
-	interface ColumnMeta<TFeatures extends TableFeatures, TData extends RowData, TValue extends CellData = CellData> {
-		title?: string;
-		filterOptions?: FilterOption[];
-		width?: ColumnWidth;
-		align?: ColumnAlign;
-		truncate?: boolean;
-	}
-}
-
 export type ColumnSpec<T extends RowData> = {
 	accessorKey?: keyof T & string;
 	accessorFn?: (row: T) => any;
@@ -45,6 +31,11 @@ export type ColumnSpec<T extends RowData> = {
 	title: string;
 	hidden?: boolean;
 	sortable?: boolean;
+	/**
+	 * Sort the current page locally via the column accessor instead of asking the
+	 * server. For values the server cannot sort (e.g. live WebSocket stats).
+	 */
+	clientSort?: boolean;
 	cell?: Snippet<[{ row: ArcaneRow<T>; item: T; value: unknown }]>;
 	header?: Snippet<[{ column: ArcaneColumn<T>; title: string; class?: string }]>;
 	class?: string;
@@ -88,7 +79,7 @@ export function applyHiddenPatch(target: ColumnVisibilityState, hidden?: string[
 }
 
 export function encodeFilters(filters: ColumnFiltersState): [string, unknown][] {
-	return (filters ?? []).map((f) => [f.id, (f as any).value] as [string, unknown]);
+	return (filters ?? []).map((f) => [f.id, f.value] as [string, unknown]);
 }
 
 export function decodeFilters(pairs?: [string, unknown][]): ColumnFiltersState {

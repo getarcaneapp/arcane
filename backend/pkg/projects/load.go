@@ -162,10 +162,7 @@ func LoadComposeProjectFromContent(ctx context.Context, opts projecttypes.Compos
 		}
 	}
 
-	envMap := maps.Clone(loadProcessEnvSnapshotInternal())
-	if envMap == nil {
-		envMap = make(EnvMap)
-	}
+	envMap := allowedProcessEnvInternal()
 	if strings.TrimSpace(opts.EnvContent) != "" {
 		parsedEnv, parseErr := ParseProjectEnvContent(opts.EnvContent, envMap)
 		if parseErr != nil {

@@ -7,15 +7,18 @@ import (
 	"log/slog"
 	"os"
 	"strings"
-	"unicode/utf8"
 
 	"emperror.dev/errors"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
 )
 
 const defaultAdminUsername = "arcane"
@@ -66,12 +69,14 @@ func runResetPasswordCommandInternal(cmd *cobra.Command, _ []string) error {
 		}
 	}()
 
-	password, err := readNewPasswordInternal(cmd.OutOrStdout())
+	policy := passwordPolicyFromDBInternal(cmd.Context(), db)
+
+	password, err := readNewPasswordInternal(cmd.OutOrStdout(), policy)
 	if err != nil {
 		return err
 	}
 
-	if err := resetPasswordInternal(cmd.Context(), db, username, password); err != nil {
+	if err := resetPasswordInternal(cmd.Context(), db, username, password, policy); err != nil {
 		return err
 	}
 
@@ -91,7 +96,7 @@ func ensurePasswordResetEnabledInternal(cfg *config.Config) error {
 	return nil
 }
 
-func readNewPasswordInternal(out io.Writer) (string, error) {
+func readNewPasswordInternal(out io.Writer, policy string) (string, error) {
 	password, err := readPasswordInternal(out, "New password: ")
 	if err != nil {
 		return "", errors.WrapIf(err, "failed to read new password")
@@ -102,7 +107,7 @@ func readNewPasswordInternal(out io.Writer) (string, error) {
 		return "", errors.WrapIf(err, "failed to read password confirmation")
 	}
 
-	if err := validatePasswordPairInternal(password, confirmation); err != nil {
+	if err := validatePasswordPairInternal(password, confirmation, policy); err != nil {
 		return "", err
 	}
 	return password, nil
@@ -122,9 +127,9 @@ func readPasswordInternal(out io.Writer, prompt string) (string, error) {
 	return string(password), nil
 }
 
-func validatePasswordPairInternal(password, confirmation string) error {
-	if utf8.RuneCountInString(password) < 8 {
-		return errors.New("password must be at least 8 characters")
+func validatePasswordPairInternal(password, confirmation, policy string) error {
+	if err := validation.ValidatePasswordPolicy(password, policy); err != nil {
+		return err
 	}
 	if password != confirmation {
 		return errors.New("passwords do not match")
@@ -132,7 +137,16 @@ func validatePasswordPairInternal(password, confirmation string) error {
 	return nil
 }
 
-func resetPasswordInternal(ctx context.Context, db *database.DB, username, password string) error {
+func passwordPolicyFromDBInternal(ctx context.Context, db *database.DB) string {
+	var setting models.SettingVariable
+	err := db.WithContext(ctx).First(&setting, "key = ?", "authPasswordPolicy").Error
+	if err != nil || strings.TrimSpace(setting.Value) == "" {
+		return validation.PasswordPolicyStrong
+	}
+	return setting.Value
+}
+
+func resetPasswordInternal(ctx context.Context, db *database.DB, username, password, policy string) error {
 	if db == nil {
 		return errors.New("database is nil")
 	}
@@ -141,15 +155,15 @@ func resetPasswordInternal(ctx context.Context, db *database.DB, username, passw
 	if username == "" {
 		return errors.New("username cannot be empty")
 	}
-	if utf8.RuneCountInString(password) < 8 {
-		return errors.New("password must be at least 8 characters")
+	if err := validation.ValidatePasswordPolicy(password, policy); err != nil {
+		return err
 	}
 
-	roleService := services.NewRoleService(db)
-	userService := services.NewUserService(db).WithRoleService(roleService)
+	roleService := role.NewRoleService(db)
+	userService := user.NewUserService(db).WithRoleService(roleService)
 	target, err := userService.GetUserByUsername(ctx, username)
 	if err != nil {
-		if errors.Is(err, services.ErrUserNotFound) {
+		if errors.Is(err, common.ErrUserNotFound) {
 			return errors.Errorf("global administrator %q not found", username)
 		}
 		return errors.WrapIf(err, "failed to find user")

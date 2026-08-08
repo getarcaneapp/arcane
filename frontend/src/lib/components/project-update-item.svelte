@@ -38,6 +38,11 @@
 		return `${checkedImageCount} / ${imageCount} ${String(m.images()).toLowerCase()}`;
 	});
 
+	const updatedSummaryText = $derived.by(() => {
+		if (imageCount <= 0) return null;
+		return m.images_updates_count({ updated: updatedImageRefs.length, total: imageCount });
+	});
+
 	const lastCheckedAtLabel = $derived.by(() => {
 		if (!updateInfo?.lastCheckedAt) return null;
 		const parsed = new Date(updateInfo.lastCheckedAt);
@@ -68,7 +73,7 @@
 						titleClass: 'text-blue-950 dark:text-blue-100',
 						descriptionClass: 'text-blue-900/80 dark:text-blue-300/80',
 						title: m.images_has_updates(),
-						description: summaryText ?? m.images_has_updates()
+						description: updatedSummaryText ?? m.images_has_updates()
 					};
 				case 'up_to_date':
 					return {

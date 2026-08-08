@@ -8,11 +8,10 @@ type Response struct {
 	GrandTotalItems int64 `json:"grandTotalItems,omitempty"`
 }
 
-// BuildResponseFromFilterResult creates a pagination Response from a FilterResult.
+// BuildResponse creates a pagination Response from raw counts.
 // Handles the special case where limit = -1 means "show all".
-func BuildResponseFromFilterResult[T any](result FilterResult[T], params QueryParams) Response {
+func BuildResponse(totalCount int64, totalAvailable int64, params QueryParams) Response {
 	limit := params.Limit
-	totalCount := result.TotalCount
 
 	var totalPages int64
 	var page int
@@ -44,6 +43,6 @@ func BuildResponseFromFilterResult[T any](result FilterResult[T], params QueryPa
 		TotalItems:      totalCount,
 		CurrentPage:     page,
 		ItemsPerPage:    itemsPerPage,
-		GrandTotalItems: result.TotalAvailable,
+		GrandTotalItems: totalAvailable,
 	}
 }

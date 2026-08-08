@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
+	composeapi "github.com/docker/compose/v5/pkg/api"
 )
 
 // ImagePullMode describes when Arcane should pull an image for a project.
@@ -66,20 +67,35 @@ func ResolveServiceImagePullMode(svc composetypes.ServiceConfig) ImagePullMode {
 	}
 }
 
-// BuildImagePullPlan builds a deduplicated image pull plan for non-build services.
-func BuildImagePullPlan(services composetypes.Services) map[string]ImagePullMode {
+// BuildImagePullPlan builds a deduplicated image pull plan covering non-build
+// service images, pre_start hook images, and type:image volume sources.
+func BuildImagePullPlan(project *composetypes.Project) map[string]ImagePullMode {
 	plan := map[string]ImagePullMode{}
-	for _, svc := range services {
-		if svc.Build != nil {
-			continue
-		}
-		img := strings.TrimSpace(svc.Image)
+	record := func(img string, mode ImagePullMode) {
+		img = strings.TrimSpace(img)
 		if img == "" {
-			continue
+			return
 		}
-		mode := ResolveServiceImagePullMode(svc)
 		if existing, exists := plan[img]; !exists || mode > existing {
 			plan[img] = mode
+		}
+	}
+	for _, svc := range project.Services {
+		mode := ResolveServiceImagePullMode(svc)
+		if svc.Build == nil {
+			record(svc.Image, mode)
+		}
+		// pre_start hook images inherit the parent service's policy, except that
+		// they can never be built: `build` still means pull-if-missing here.
+		if mode != ImagePullModeNever {
+			for _, img := range composeapi.GetDependentImages(svc, project.Name) {
+				record(img, mode)
+			}
+		}
+		for _, vol := range svc.Volumes {
+			if vol.Type == composetypes.VolumeTypeImage {
+				record(vol.Source, ImagePullModeIfMissing)
+			}
 		}
 	}
 	return plan

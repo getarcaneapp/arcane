@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestBuildResponseFromFilterResult(t *testing.T) {
+func TestBuildResponse(t *testing.T) {
 	tests := []struct {
 		name     string
 		result   FilterResult[int]
@@ -122,7 +122,7 @@ func TestBuildResponseFromFilterResult(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := BuildResponseFromFilterResult(tt.result, tt.params)
+			result := BuildResponse(tt.result.TotalCount, tt.result.TotalAvailable, tt.params)
 			assert.Equal(t, tt.expected, result)
 		})
 	}

@@ -13,28 +13,6 @@ import (
 	"go.getarcane.app/sys/cgroup"
 )
 
-// CurrentContainerInspectTarget resolves the identifier used to inspect Arcane's current container.
-func CurrentContainerInspectTarget(currentContainerID func() (string, error), hostname func() (string, error)) (string, error) {
-	if currentContainerID != nil {
-		if containerID, err := currentContainerID(); err == nil {
-			if containerID = strings.TrimSpace(containerID); containerID != "" {
-				return containerID, nil
-			}
-		}
-	}
-
-	if hostname == nil {
-		hostname = os.Hostname
-	}
-
-	value, err := hostname()
-	if err != nil {
-		return "", err
-	}
-
-	return strings.TrimSpace(value), nil
-}
-
 // MountForCurrentContainerSubpath inspects the current container, finds the
 // existing mount whose destination covers containerPath, and returns a Mount
 // suitable for use in another container creation that exposes the same data
@@ -45,7 +23,7 @@ func MountForCurrentContainerSubpath(ctx context.Context, dockerCli *client.Clie
 	if dockerCli == nil {
 		return nil, nil
 	}
-	inspectTarget, err := CurrentContainerInspectTarget(cgroup.CurrentContainerID, os.Hostname)
+	inspectTarget, err := libarcane.CurrentContainerInspectTarget(cgroup.CurrentContainerID, os.Hostname)
 	if err != nil {
 		return nil, err
 	}

@@ -6,8 +6,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
+	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/labstack/echo/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -21,10 +23,10 @@ func newTestEnvironmentMiddleware() *EnvironmentMiddleware {
 			_ = ctx
 			return "edge://oracle-1", nil, true, nil
 		},
-		authValidator: func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, bool) {
+		authValidator: func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *models.User, bool) {
 			_ = ctx
 			_ = c
-			return authz.SudoPermissionSet(), true
+			return authz.SudoPermissionSet(), nil, true
 		},
 		httpClient: &http.Client{Timeout: proxyTimeout},
 		registry:   edge.NewTunnelRegistry(),
@@ -244,10 +246,10 @@ func TestEnvironmentMiddleware_LocalEnvironmentSkipsProxyPermissionCheck(t *test
 		localID:   "0",
 		paramName: "id",
 		matcher:   matcher,
-		authValidator: func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, bool) {
+		authValidator: func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *models.User, bool) {
 			_ = ctx
 			_ = c
-			return authz.NewPermissionSet(), true
+			return authz.NewPermissionSet(), nil, true
 		},
 		httpClient: &http.Client{Timeout: proxyTimeout},
 		registry:   edge.NewTunnelRegistry(),
@@ -326,6 +328,62 @@ func TestEnvironmentMiddleware_KeepsNodeAgentDeploymentCreationLocal(t *testing.
 	assert.Equal(t, http.StatusOK, recorder.Code)
 	assert.Contains(t, recorder.Body.String(), "\"success\":true")
 	assert.True(t, localHandlerHit)
+}
+
+func TestEnvironmentMiddleware_ForwardsResolvedIconCatalogHeaderOnly(t *testing.T) {
+	tests := []struct {
+		name           string
+		catalog        *string
+		clientSupplied string
+		wantHeader     string
+	}{
+		{name: "forwards the caller's preference", catalog: new("dashboard-icons"), wantHeader: "dashboard-icons"},
+		{name: "strips a client-supplied header when the caller has no preference", clientSupplied: "dashboard-icons", wantHeader: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var forwarded string
+			backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				forwarded = r.Header.Get(pkgutils.HeaderIconCatalog)
+				w.WriteHeader(http.StatusOK)
+			}))
+			defer backend.Close()
+
+			mw := &EnvironmentMiddleware{
+				localID:   "0",
+				paramName: "id",
+				resolver: func(ctx context.Context, id string) (string, *string, bool, error) {
+					_, _ = ctx, id
+					return backend.URL, nil, true, nil
+				},
+				authValidator: func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *models.User, bool) {
+					_, _ = ctx, c
+					u := &models.User{}
+					u.Preferences.IconCatalog = tt.catalog
+					return authz.SudoPermissionSet(), u, true
+				},
+				httpClient: &http.Client{Timeout: proxyTimeout},
+				registry:   edge.NewTunnelRegistry(),
+			}
+
+			router := echo.New()
+			api := attachMiddleware(router, mw)
+			api.GET("/environments/:id/containers", func(c *echo.Context) error {
+				return c.JSON(http.StatusOK, map[string]any{"success": true})
+			})
+
+			req := httptest.NewRequest(http.MethodGet, "/api/environments/env-remote/containers", nil)
+			if tt.clientSupplied != "" {
+				req.Header.Set(pkgutils.HeaderIconCatalog, tt.clientSupplied)
+			}
+			recorder := httptest.NewRecorder()
+			router.ServeHTTP(recorder, req)
+
+			require.Equal(t, http.StatusOK, recorder.Code)
+			assert.Equal(t, tt.wantHeader, forwarded)
+		})
+	}
 }
 
 func TestIsCentralSwarmManagementPathInternal_IsMethodAware(t *testing.T) {

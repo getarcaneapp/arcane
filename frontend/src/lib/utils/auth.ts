@@ -33,13 +33,14 @@ export function isGlobalAdmin(): boolean {
 // --- Load-function helpers (run before stores hydrate) ---
 
 const PROTECTED_PREFIXES = [
+	'/account',
 	'/dashboard',
-	'/compose',
 	'/containers',
 	'/customize',
 	'/events',
 	'/environments',
 	'/images',
+	'/projects',
 	'/volumes',
 	'/networks',
 	'/ports',

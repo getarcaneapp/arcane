@@ -15,17 +15,19 @@ import (
 	slogecho "github.com/samber/slog-echo/v2"
 
 	"github.com/getarcaneapp/arcane/backend/v2/api"
-	"github.com/getarcaneapp/arcane/backend/v2/api/handlers"
 	"github.com/getarcaneapp/arcane/backend/v2/api/ws"
 	"github.com/getarcaneapp/arcane/backend/v2/frontend"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/federated"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cookie"
-	httputil "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/types/v2"
 	"go.uber.org/fx"
 )
@@ -102,7 +104,7 @@ func requestLoggerMiddlewareInternal() echo.MiddlewareFunc {
 
 func createAuthValidatorInternal(deps api.HandlerDeps) middleware.AuthValidator {
 	resolveUser := func(ctx context.Context, user *models.User) *authz.PermissionSet {
-		ps, err := deps.Role.ResolvePermissions(ctx, user)
+		ps, err := deps.Role.Service().ResolvePermissions(ctx, user)
 		if err != nil || ps == nil {
 			slog.WarnContext(ctx, "failed to resolve user permissions for env proxy", "error", err)
 			return authz.NewPermissionSet()
@@ -110,31 +112,31 @@ func createAuthValidatorInternal(deps api.HandlerDeps) middleware.AuthValidator 
 		return ps
 	}
 	resolveKey := func(ctx context.Context, keyID string) *authz.PermissionSet {
-		ps, err := deps.Role.ResolveApiKeyPermissions(ctx, keyID)
+		ps, err := deps.Role.Service().ResolveApiKeyPermissions(ctx, keyID)
 		if err != nil || ps == nil {
 			slog.WarnContext(ctx, "failed to resolve api key permissions for env proxy", "error", err)
 			return authz.NewPermissionSet()
 		}
 		return ps
 	}
-	return func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, bool) {
+	return func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *models.User, bool) {
 		req := c.Request()
 		// Check for API key authentication
 		if apiKey := req.Header.Get("X-Api-Key"); apiKey != "" {
 			// User-owned API key: personal keys inherit the owner's role
 			// permissions; scoped keys are limited to their own grants.
-			if user, key, err := deps.ApiKey.ValidateApiKeyWithID(ctx, apiKey); err == nil && user != nil {
+			if user, key, err := deps.ApiKey.Service().ValidateApiKeyWithID(ctx, apiKey); err == nil && user != nil {
 				if key != nil && key.Kind != models.ApiKeyKindPersonal {
-					return resolveKey(ctx, key.ID), true
+					return resolveKey(ctx, key.ID), user, true
 				}
-				return resolveUser(ctx, user), true
+				return resolveUser(ctx, user), user, true
 			}
 			// Environment bootstrap key (user_id = NULL): used by the proxy when forwarding
 			// requests to a remote env whose apiUrl resolves back to this manager.
-			if envID, err := deps.ApiKey.GetEnvironmentByApiKey(ctx, apiKey); err == nil && envID != nil {
-				return authz.EnvironmentPermissionSet(*envID), true
+			if envID, err := deps.ApiKey.Service().GetEnvironmentByApiKey(ctx, apiKey); err == nil && envID != nil {
+				return authz.EnvironmentPermissionSet(*envID), nil, true
 			}
-			return nil, false
+			return nil, nil, false
 		}
 
 		// Check for Bearer token authentication
@@ -146,14 +148,14 @@ func createAuthValidatorInternal(deps api.HandlerDeps) middleware.AuthValidator 
 		}
 
 		if token == "" {
-			return nil, false
+			return nil, nil, false
 		}
 
-		user, _, err := deps.Auth.VerifyToken(ctx, token)
+		user, _, err := deps.Auth.Service().VerifyToken(ctx, token)
 		if err != nil || user == nil {
-			return nil, false
+			return nil, nil, false
 		}
-		return resolveUser(ctx, user), true
+		return resolveUser(ctx, user), user, true
 	}
 }
 
@@ -165,7 +167,7 @@ type RouterParams struct {
 	ActorRuntime   *actors.Runtime
 	Config         *config.Config
 	HandlerDeps    api.HandlerDeps
-	AuthMiddleware *middleware.AuthMiddleware
+	AuthMiddleware *auth.AuthMiddleware
 	TunnelRegistry *edge.TunnelRegistry
 }
 
@@ -204,6 +206,13 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 		[]string{
 			"/api/auth/login",
 			"/api/auth/refresh",
+			"/api/auth/passkey/login/begin",
+			"/api/auth/passkey/login/finish",
+			"/api/auth/passkey/mobile/finish",
+			"/api/auth/passkey/mobile/exchange",
+			"/api/auth/mfa/passkey/begin",
+			"/api/auth/mfa/passkey/finish",
+			"/api/auth/mfa/recovery",
 			"/api/oidc/callback",
 		}, 5, 5,
 	))
@@ -219,10 +228,10 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 	apiGroup.Use(middleware.PerIPRateLimitForPaths(
 		[]string{"/api/events"}, 60, 30,
 	))
-	handlerAppCtx := handlers.NewActivityAppContext(ctx)
+	handlerAppCtx := handlerutil.NewActivityAppContext(ctx)
 
 	envResolver := func(ctx context.Context, id string) (string, *string, bool, error) {
-		env, err := deps.Environment.GetEnvironmentByID(ctx, id)
+		env, err := deps.Environment.Service().GetEnvironmentByID(ctx, id)
 		if err != nil || env == nil {
 			return "", nil, false, err
 		}
@@ -230,9 +239,9 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 	}
 
 	// Register public webhook trigger endpoint before auth middleware (token in URL is the sole auth)
-	api.RegisterWebhookTrigger(apiGroup, deps.Webhook, handlerAppCtx)
-	handlers.RegisterFederatedTokenExchange(apiGroup, deps.Federated)
-	handlers.RegisterAgentEventIngestion(apiGroup, deps.Event, cfg)
+	api.RegisterWebhookTrigger(apiGroup, deps.Webhook.Service(), handlerAppCtx)
+	federated.RegisterFederatedTokenExchange(apiGroup, deps.Federated)
+	deps.Event.RegisterAgentRoutes(apiGroup)
 
 	permissionMatcher := authz.NewPermissionMatcher()
 
@@ -246,7 +255,7 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 		// Proxied WebSocket upgrades enforce the same Origin policy as the local
 		// endpoints, so a cross-origin page cannot ride a session cookie into a
 		// remote environment.
-		httputil.ValidateWebSocketOrigin(cfg.GetAppURL()),
+		httpx.ValidateWebSocketOrigin(cfg.GetAppURL()),
 	)
 	apiGroup.Use(envProxyMiddleware)
 
@@ -264,13 +273,13 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 	}
 
 	// Remaining echo handlers (WebSocket/streaming)
-	ws.NewWebSocketHandler(apiGroup, deps.Project, deps.Container, deps.Swarm, deps.System, deps.Diagnostics, authMiddleware, cfg)
+	ws.NewWebSocketHandler(apiGroup, deps.Project.Service(), deps.Container.Service(), deps.Swarm.Service(), deps.System.Service(), deps.Diagnostics, authMiddleware, cfg)
 
 	// Register edge tunnel endpoint for manager to accept agent connections
 	// This is only registered when NOT in agent mode (i.e., running as manager)
 	var tunnelServer *edge.TunnelServer
 	if !cfg.AgentMode {
-		tunnelServer = registerEdgeTunnelRoutes(ctx, p.Lifecycle, p.ActorRuntime, cfg, apiGroup, deps.Environment, deps.Event, p.TunnelRegistry)
+		tunnelServer = registerEdgeTunnelRoutes(ctx, p.Lifecycle, p.ActorRuntime, cfg, apiGroup, deps.Environment.Service(), deps.Event.Service(), p.TunnelRegistry)
 	}
 
 	if cfg.Environment != "production" {

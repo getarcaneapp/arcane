@@ -40,6 +40,9 @@ test.describe('Notification settings', () => {
 
 		let saveEndpointCalled = false;
 		let testEndpointCalled = false;
+		// Saved settings are kept in memory and served back on GET so that a
+		// reload round-trips them through the form like the real backend would.
+		const persistedSettings: Array<Record<string, unknown>> = [];
 
 		await page.route('**/api/environments/*/notifications/settings', async (route) => {
 			const req = route.request();
@@ -47,17 +50,24 @@ test.describe('Notification settings', () => {
 				await route.fulfill({
 					status: 200,
 					contentType: 'application/json',
-					body: JSON.stringify([])
+					body: JSON.stringify(persistedSettings)
 				});
 				return;
 			}
 
 			if (req.method() === 'POST') {
 				saveEndpointCalled = true;
+				const saved = req.postDataJSON() as Record<string, unknown>;
+				const index = persistedSettings.findIndex((s) => s.provider === saved.provider);
+				if (index >= 0) {
+					persistedSettings[index] = saved;
+				} else {
+					persistedSettings.push(saved);
+				}
 				await route.fulfill({
 					status: 200,
 					contentType: 'application/json',
-					body: JSON.stringify({ success: true })
+					body: JSON.stringify(saved)
 				});
 				return;
 			}
@@ -221,6 +231,35 @@ test.describe('Notification settings', () => {
 
 		await expect.poll(wasTestEndpointCalled, { timeout: 10_000 }).toBe(true);
 		getErrorCheck();
+	});
+
+	test('should allow configuring a custom generic webhook payload template', async ({ page }) => {
+		const { getErrorCheck, wasTestEndpointCalled } = await setupNotificationTest(page, 'generic');
+
+		await openProviderTab(page, 'Generic');
+		await enableCurrentProvider(page);
+
+		await page.getByPlaceholder('https://example.com/webhook').fill('https://example.com/webhook');
+
+		const template = '{"receiveIdType":"chat_id","msgType":"text","text":"{{.message}}"}';
+		await page.locator('#generic-payload-template').fill(template);
+
+		await openTestMenu(page);
+		await page.getByRole('menuitem', { name: 'Simple Test Notification', exact: true }).click();
+
+		const saveAndTestButton = page.getByRole('button', { name: 'Save & Test', exact: true });
+		if (await saveAndTestButton.isVisible().catch(() => false)) {
+			await saveAndTestButton.click();
+		}
+
+		await expect.poll(wasTestEndpointCalled, { timeout: 10_000 }).toBe(true);
+		getErrorCheck();
+
+		// The template must survive a reload, proving it round-trips through the
+		// save path and back into the form.
+		await page.reload();
+		await openProviderTab(page, 'Generic');
+		await expect(page.locator('#generic-payload-template')).toHaveValue(template);
 	});
 
 	test('should allow testing signal notifications', async ({ page }) => {

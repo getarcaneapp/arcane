@@ -65,6 +65,13 @@ export const navigationItems: NavigationSections = {
 			accessSurfaceId: 'route.dashboard'
 		},
 		{
+			title: m.updates(),
+			url: '/updates',
+			icon: UpdateIcon,
+			shortcut: ['mod', 'u'],
+			accessSurfaceId: 'route.updates'
+		},
+		{
 			title: m.projects_title(),
 			url: '/projects',
 			icon: ProjectsIcon,
@@ -77,6 +84,72 @@ export const navigationItems: NavigationSections = {
 			icon: EnvironmentsIcon,
 			shortcut: ['mod', '3'],
 			accessSurfaceId: 'route.environments'
+		}
+	],
+	resourceItems: [
+		{
+			title: m.containers(),
+			url: '/containers',
+			icon: ContainersIcon,
+			shortcut: ['mod', '5'],
+			accessSurfaceId: 'route.containers'
+		},
+		{
+			title: m.images(),
+			url: '/images',
+			icon: ImagesIcon,
+			shortcut: ['mod', '6'],
+			accessSurfaceId: 'route.images',
+			items: [
+				{ title: m.builds(), url: '/images/builds', icon: HammerIcon, accessSurfaceId: 'route.images.builds' },
+				{
+					title: m.vuln_title(),
+					url: '/images/vulnerabilities',
+					icon: ShieldAlertIcon,
+					accessSurfaceId: 'route.images.vulnerabilities'
+				}
+			]
+		},
+		{
+			title: m.resource_networks_cap(),
+			url: '/networks',
+			icon: NetworksIcon,
+			shortcut: ['mod', '7'],
+			accessSurfaceId: 'route.networks',
+			items: [
+				{ title: m.common_ports(), url: '/networks/ports', icon: HashIcon, accessSurfaceId: 'route.ports' },
+				{
+					title: m.networks_topology_button(),
+					url: '/networks/topology',
+					icon: GitBranchIcon,
+					accessSurfaceId: 'route.networks.topology'
+				}
+			]
+		},
+		{
+			title: m.resource_volumes_cap(),
+			url: '/volumes',
+			icon: VolumesIcon,
+			shortcut: ['mod', '8'],
+			accessSurfaceId: 'route.volumes'
+		}
+	],
+	swarmItems: [
+		{ title: 'Services', url: '/swarm/services', icon: DockIcon, accessSurfaceId: 'route.swarm.services' },
+		{ title: 'Nodes', url: '/swarm/nodes', icon: UsersIcon, accessSurfaceId: 'route.swarm.nodes' },
+		{ title: 'Tasks', url: '/swarm/tasks', icon: JobsIcon, accessSurfaceId: 'route.swarm.tasks' },
+		{ title: 'Stacks', url: '/swarm/stacks', icon: LayersIcon, accessSurfaceId: 'route.swarm.stacks' },
+		{ title: 'Cluster', url: '/swarm/cluster', icon: SettingsIcon, accessSurfaceId: 'route.swarm.cluster' },
+		{ title: 'Configs', url: '/swarm/configs', icon: TemplateIcon, accessSurfaceId: 'route.swarm.configs' },
+		{ title: 'Secrets', url: '/swarm/secrets', icon: LockIcon, accessSurfaceId: 'route.swarm.secrets' }
+	],
+	settingsItems: [
+		{
+			title: m.events_title(),
+			url: '/events',
+			icon: EventsIcon,
+			shortcut: ['mod', '9'],
+			accessSurfaceId: 'route.events'
 		},
 		{
 			title: m.customize_title(),
@@ -110,79 +183,6 @@ export const navigationItems: NavigationSections = {
 					accessSurfaceId: 'customize.category.git-repositories'
 				}
 			]
-		}
-	],
-	resourceItems: [
-		{
-			title: m.containers(),
-			url: '/containers',
-			icon: ContainersIcon,
-			shortcut: ['mod', '5'],
-			accessSurfaceId: 'route.containers'
-		},
-		{
-			title: m.images(),
-			url: '/images',
-			icon: ImagesIcon,
-			shortcut: ['mod', '6'],
-			accessSurfaceId: 'route.images',
-			items: [
-				{ title: m.builds(), url: '/images/builds', icon: HammerIcon, accessSurfaceId: 'route.images.builds' },
-				{
-					title: m.vuln_title(),
-					url: '/images/vulnerabilities',
-					icon: ShieldAlertIcon,
-					accessSurfaceId: 'route.images.vulnerabilities'
-				}
-			]
-		},
-		{
-			title: m.updates(),
-			url: '/updates',
-			icon: UpdateIcon,
-			shortcut: ['mod', 'u'],
-			accessSurfaceId: 'route.updates'
-		},
-		{
-			title: m.resource_networks_cap(),
-			url: '/networks',
-			icon: NetworksIcon,
-			shortcut: ['mod', '7'],
-			accessSurfaceId: 'route.networks',
-			items: [
-				{ title: m.common_ports(), url: '/ports', icon: HashIcon, accessSurfaceId: 'route.ports' },
-				{
-					title: m.networks_topology_button(),
-					url: '/networks/topology',
-					icon: GitBranchIcon,
-					accessSurfaceId: 'route.networks.topology'
-				}
-			]
-		},
-		{
-			title: m.resource_volumes_cap(),
-			url: '/volumes',
-			icon: VolumesIcon,
-			shortcut: ['mod', '8'],
-			accessSurfaceId: 'route.volumes'
-		}
-	],
-	swarmItems: [
-		{ title: 'Services', url: '/swarm/services', icon: DockIcon, accessSurfaceId: 'route.swarm.services' },
-		{ title: 'Nodes', url: '/swarm/nodes', icon: UsersIcon, accessSurfaceId: 'route.swarm.nodes' },
-		{ title: 'Tasks', url: '/swarm/tasks', icon: JobsIcon, accessSurfaceId: 'route.swarm.tasks' },
-		{ title: 'Stacks', url: '/swarm/stacks', icon: LayersIcon, accessSurfaceId: 'route.swarm.stacks' },
-		{ title: 'Cluster', url: '/swarm/cluster', icon: SettingsIcon, accessSurfaceId: 'route.swarm.cluster' },
-		{ title: 'Configs', url: '/swarm/configs', icon: TemplateIcon, accessSurfaceId: 'route.swarm.configs' },
-		{ title: 'Secrets', url: '/swarm/secrets', icon: LockIcon, accessSurfaceId: 'route.swarm.secrets' }
-	],
-	settingsItems: [
-		{
-			title: m.events_title(),
-			url: '/events',
-			icon: EventsIcon,
-			shortcut: ['mod', '9'],
-			accessSurfaceId: 'route.events'
 		},
 		{
 			title: m.settings(),
@@ -341,16 +341,13 @@ export function getSettingsSubpageUrlsInNavOrder(): string[] {
 }
 
 export function getCustomizeSubpageUrlsInNavOrder(): string[] {
-	const entry = navigationItems.managementItems.find((item) => item.url === '/customize');
+	const entry = navigationItems.settingsItems.find((item) => item.url === '/customize');
 	return entry?.items?.map((item) => item.url) ?? [];
 }
 
-const defaultMobilePinnedItems: NavigationItem[] = [
-	navigationItems.managementItems[0]!,
-	navigationItems.managementItems[1]!,
-	navigationItems.resourceItems[0]!,
-	navigationItems.resourceItems[1]!
-];
+const defaultMobilePinnedItems: NavigationItem[] = [...navigationItems.managementItems, ...navigationItems.resourceItems].filter(
+	(item) => ['/dashboard', '/projects', '/containers', '/images'].includes(item.url)
+);
 
 export function getSwarmNavigationItems(swarmEnabled: boolean): NavigationItem[] {
 	if (swarmEnabled) {
@@ -364,11 +361,12 @@ export const DEFAULT_LANDING_PAGE = '/dashboard';
 
 /**
  * Top-level pages selectable as the post-login landing page. Derived from the
- * sidebar sections so the option list stays in sync with the nav; /customize is
- * excluded because it is a category landing rather than a resource page.
+ * sidebar sections so the option list stays in sync with the nav. /customize
+ * lives under settingsItems and is not selectable (category landing, not a
+ * resource page).
  */
 export function getLandingPageNavItems(): NavigationItem[] {
-	return [...navigationItems.managementItems, ...navigationItems.resourceItems].filter((item) => item.url !== '/customize');
+	return [...navigationItems.managementItems, ...navigationItems.resourceItems];
 }
 
 export type MobileNavigationSettings = {
@@ -402,10 +400,8 @@ export function getAvailableMobileNavItems(options?: {
 		const settingsTopLevel = navigationItems.settingsItems.filter((item) => !item.items);
 		flatItems.push(...settingsTopLevel);
 
-		const settingsMain = navigationItems.settingsItems.find((item) => item.items);
-		if (settingsMain) {
-			flatItems.push(settingsMain);
-		}
+		const settingsParents = navigationItems.settingsItems.filter((item) => item.items);
+		flatItems.push(...settingsParents);
 	}
 
 	if (options?.user === null) return [];

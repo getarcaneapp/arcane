@@ -7,6 +7,7 @@ import (
 
 	"github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
+	"github.com/docker/compose/v5/pkg/compose"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
@@ -37,7 +38,7 @@ func ComposeRestart(ctx context.Context, proj *types.Project, services []string)
 	restartCtx, cancel := detachFromHTTPContextInternal(ctx)
 	defer cancel()
 
-	c, err := NewClient(restartCtx, nil)
+	c, err := NewClient(restartCtx, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -53,7 +54,7 @@ func ComposeStop(ctx context.Context, proj *types.Project, services []string) er
 	stopCtx, cancel := detachFromHTTPContextInternal(ctx)
 	defer cancel()
 
-	c, err := NewClient(stopCtx, nil)
+	c, err := NewClient(stopCtx, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -62,13 +63,21 @@ func ComposeStop(ctx context.Context, proj *types.Project, services []string) er
 	return c.svc.Stop(stopCtx, proj.Name, api.StopOptions{Services: services})
 }
 
-func ComposeUp(ctx context.Context, proj *types.Project, services []string, removeOrphans bool, forceRecreate bool, authConfigs map[string]registry.AuthConfig) error {
+func ComposeUp(ctx context.Context, proj *types.Project, services []string, removeOrphans bool, forceRecreate bool, recreateVolumes bool, authConfigs map[string]registry.AuthConfig) error {
 	// Detach from the HTTP request context so that proxy timeouts and client
 	// disconnects do not cancel a long-running compose up. See #1209.
 	composeCtx, cancel := detachFromHTTPContextInternal(ctx)
 	defer cancel()
 
-	c, err := NewClient(composeCtx, authConfigs)
+	// Compose prompts before recreating a volume whose config diverged (data
+	// loss). Only answer yes when the caller explicitly opted in; otherwise the
+	// default prompt declines and logs the question.
+	var prompt compose.Prompt
+	if recreateVolumes {
+		prompt = compose.AlwaysOkPrompt()
+	}
+
+	c, err := NewClient(composeCtx, authConfigs, prompt)
 	if err != nil {
 		return err
 	}
@@ -108,7 +117,7 @@ func composeUpOptions(proj *types.Project, services []string, removeOrphans bool
 }
 
 func ComposePs(ctx context.Context, proj *types.Project, services []string, all bool) ([]api.ContainerSummary, error) {
-	c, err := NewClient(ctx, nil)
+	c, err := NewClient(ctx, nil, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -121,7 +130,7 @@ func ComposeDown(ctx context.Context, proj *types.Project, removeVolumes bool) e
 	downCtx, cancel := detachFromHTTPContextInternal(ctx)
 	defer cancel()
 
-	c, err := NewClient(downCtx, nil)
+	c, err := NewClient(downCtx, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -131,7 +140,7 @@ func ComposeDown(ctx context.Context, proj *types.Project, removeVolumes bool) e
 }
 
 func ComposeLogs(ctx context.Context, projectName string, out io.Writer, follow bool, tail, since string, timestamps bool) error {
-	c, err := NewClient(ctx, nil)
+	c, err := NewClient(ctx, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -141,7 +150,7 @@ func ComposeLogs(ctx context.Context, projectName string, out io.Writer, follow 
 }
 
 func ListGlobalComposeContainers(ctx context.Context) ([]container.Summary, error) {
-	c, err := NewClient(ctx, nil)
+	c, err := NewClient(ctx, nil, nil)
 	if err != nil {
 		return nil, err
 	}

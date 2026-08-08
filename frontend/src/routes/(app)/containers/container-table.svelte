@@ -264,21 +264,21 @@
 				return 'unknown';
 			},
 			title: m.updates(),
-			sortable: false,
+			clientSort: !groupByProject,
 			cell: UpdatesCell
 		},
 		{
 			accessorFn: (row) => statsManager.getCPUPercent(row.id) ?? -1,
 			id: 'cpuUsage',
 			title: m.cpu_usage(),
-			sortable: false,
+			clientSort: !groupByProject,
 			cell: CPUCell
 		},
 		{
 			accessorFn: (row) => statsManager.getMemoryPercent(row.id) ?? -1,
 			id: 'memoryUsage',
 			title: m.memory_usage(),
-			sortable: false,
+			clientSort: !groupByProject,
 			cell: MemoryCell
 		},
 		{ accessorKey: 'status', title: m.common_status() },
@@ -399,9 +399,15 @@
 {#snippet NameCell({ item }: { item: ContainerSummaryDto })}
 	{@const displayName = getContainerDisplayName(item)}
 	{@const iconUrl = getThemedIconUrl(item, mode.current)}
+	{@const projectLabel = item.labels?.['com.docker.compose.project']}
 	<div class="flex items-center gap-2">
 		<IconImage src={iconUrl} alt={displayName} fallback={BoxIcon} class="size-6" containerClass="size-8" />
 		<a class="font-medium hover:underline" href="/containers/{item.id}">{displayName}</a>
+		{#if projectLabel && !groupByProject}
+			<Badge variant="gray" size="sm" class="max-w-40 truncate font-normal text-muted-foreground" title={projectLabel}>
+				{projectLabel}
+			</Badge>
+		{/if}
 	</div>
 {/snippet}
 

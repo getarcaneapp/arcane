@@ -7,7 +7,7 @@
 	import { queryKeys } from '#lib/query/query-keys';
 	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
-	import { createMutation, createQuery } from '@tanstack/svelte-query';
+	import { createMutation, createQuery, keepPreviousData } from '@tanstack/svelte-query';
 	import { AlertIcon, CheckIcon, CloseIcon, EventsIcon, InfoIcon } from '#lib/icons';
 	import { hasPermission } from '#lib/utils/auth';
 
@@ -20,6 +20,7 @@
 	const eventsQuery = createQuery(() => ({
 		queryKey: queryKeys.events.listGlobal(requestOptions),
 		queryFn: () => eventService.getEvents(requestOptions),
+		placeholderData: keepPreviousData,
 		initialData: data.events
 	}));
 

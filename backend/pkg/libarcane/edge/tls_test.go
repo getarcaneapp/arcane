@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/stretchr/testify/require"
 	libcrypto "go.getarcane.app/sys/crypto"
 	"google.golang.org/grpc/credentials"
@@ -192,7 +192,7 @@ func TestEnsureAgentMTLSAssets_UsesDownloadedCAPathWhenPresent(t *testing.T) {
 	require.NotNil(t, generated)
 	for _, file := range generated.Files {
 		targetPath := filepath.Join(assetsDir, filepath.Base(file.Name))
-		perm := common.FilePerm
+		perm := utils.FilePerm
 		if file.Permissions == "0600" {
 			perm = 0o600
 		}
@@ -432,7 +432,7 @@ func TestAgentMTLSAssetsNeedEnrollmentInternal_RenewsExpiredCertificate(t *testi
 
 	for _, file := range assets.Files {
 		targetPath := filepath.Join(assetsDir, filepath.Base(file.Name))
-		perm := common.FilePerm
+		perm := utils.FilePerm
 		if file.Permissions == "0600" {
 			perm = 0o600
 		}

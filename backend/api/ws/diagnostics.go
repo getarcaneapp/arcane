@@ -8,9 +8,11 @@ import (
 	"net/http/pprof"
 	"time"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/diagnostics"
+
 	"github.com/coder/websocket"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
 	systemtypes "github.com/getarcaneapp/arcane/types/v2/system"
@@ -34,7 +36,7 @@ const (
 // BuildDiagnostics assembles a full diagnostics snapshot: runtime/memory/GC from
 // the DiagnosticsService plus this package's WebSocket metrics and worker-goroutine
 // count. Shared by the REST endpoint (via handlers) and the live WebSocket stream.
-func BuildDiagnostics(diag *services.DiagnosticsService) systemtypes.Diagnostics {
+func BuildDiagnostics(diag *diagnostics.DiagnosticsService) systemtypes.Diagnostics {
 	d := systemtypes.Diagnostics{Timestamp: time.Now().UTC()}
 	if diag != nil {
 		d.Runtime, d.Memory, d.GC = diag.Collect()
@@ -50,10 +52,10 @@ func BuildDiagnostics(diag *services.DiagnosticsService) systemtypes.Diagnostics
 // registerDiagnosticsRoutesInternal wires the global diagnostics WebSocket streams and the
 // net/http/pprof debug endpoints. Streams require the diagnostics permission;
 // pprof keeps the stricter admin-required gate. Called from NewWebSocketHandler.
-func (h *WebSocketHandler) registerDiagnosticsRoutesInternal(group *echo.Group, authMiddleware *middleware.AuthMiddleware) {
+func (h *WebSocketHandler) registerDiagnosticsRoutesInternal(group *echo.Group, authMiddleware *auth.AuthMiddleware) {
 	diag := group.Group("/diagnostics",
 		authMiddleware.WithAdminNotRequired().Add(),
-		middleware.RequirePermission(authz.PermDiagnosticsRead),
+		middleware.RequireEchoPermission(authz.PermDiagnosticsRead),
 	)
 	diag.GET("/stream", h.DiagnosticsStream)
 	diag.GET("/logs/stream", h.ServerLogsStream)

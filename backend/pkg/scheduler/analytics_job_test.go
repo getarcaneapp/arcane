@@ -17,12 +17,13 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/stretchr/testify/assert"
 )
 
-func setupAnalyticsStateServicesInternal(t *testing.T) (*database.DB, *services.SettingsService, *services.KVService) {
+func setupAnalyticsStateServicesInternal(t *testing.T) (*database.DB, *settings.SettingsService, *kv.KVService) {
 	t.Helper()
 	ctx := context.Background()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -35,7 +36,7 @@ func setupAnalyticsStateServicesInternal(t *testing.T) (*database.DB, *services.
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "instanceId", "test-instance"))
 
-	return wrappedDB, settingsService, services.NewKVService(wrappedDB)
+	return wrappedDB, settingsService, kv.NewKVService(wrappedDB)
 }
 
 func newHeartbeatServer(t *testing.T) (*httptest.Server, <-chan []byte, *atomic.Int32) {
@@ -161,7 +162,7 @@ func TestAnalyticsJob_Run_SkipsWithinHeartbeatWindowAfterRestart(t *testing.T) {
 
 	reloadedSettingsService, err := newSettingsServiceForTestInternal(t, ctx, wrappedDB)
 	require.NoError(t, err)
-	restartedJob := NewAnalyticsJob(reloadedSettingsService, services.NewKVService(wrappedDB), server.Client(), cfg)
+	restartedJob := NewAnalyticsJob(reloadedSettingsService, kv.NewKVService(wrappedDB), server.Client(), cfg)
 	restartedJob.heartbeatURL = server.URL
 	restartedJob.now = func() time.Time { return firstAttemptAt.Add(19 * time.Minute) }
 	restartedJob.Run(ctx)

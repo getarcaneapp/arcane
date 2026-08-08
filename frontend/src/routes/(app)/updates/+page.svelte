@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { createMutation, createQuery } from '@tanstack/svelte-query';
+	import { createMutation, createQuery, keepPreviousData } from '@tanstack/svelte-query';
 	import { untrack } from 'svelte';
 	import { m } from '#lib/paraglide/messages';
 	import { environmentStore } from '#lib/stores/environment.store.svelte';
@@ -67,6 +67,7 @@
 		queryKey: queryKeys.containers.list(envId, ensureStandaloneContainerUpdatesFilter(containerRequestOptions)),
 		queryFn: () =>
 			containerService.getContainersForEnvironment(envId, ensureStandaloneContainerUpdatesFilter(containerRequestOptions)),
+		placeholderData: keepPreviousData,
 		initialData: envId === data.envId ? data.containers : undefined,
 		refetchOnMount: false
 	}));
@@ -74,6 +75,7 @@
 	const projectsQuery = createQuery(() => ({
 		queryKey: queryKeys.projects.list(envId, ensureUpdatesFilter(projectRequestOptions)),
 		queryFn: () => projectService.getProjectsForEnvironment(envId, ensureUpdatesFilter(projectRequestOptions)),
+		placeholderData: keepPreviousData,
 		initialData: envId === data.envId ? data.projects : undefined,
 		refetchOnMount: false
 	}));
@@ -142,7 +144,7 @@
 	const tabItems: TabItem[] = $derived([
 		{
 			value: 'containers',
-			label: m.containers(),
+			label: m.standalone_containers(),
 			icon: ContainersIcon
 		},
 		{
@@ -223,7 +225,7 @@
 			iconColor: 'text-blue-500'
 		},
 		{
-			title: m.containers(),
+			title: m.standalone_containers(),
 			value: containerCount,
 			icon: ContainersIcon,
 			iconColor: 'text-emerald-500'

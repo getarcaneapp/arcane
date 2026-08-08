@@ -462,7 +462,10 @@ func (c *TunnelClient) serveTunnelSessionInternal(ctx context.Context, conn Tunn
 	}()
 
 	if err := conn.Send(c.registerMessageInternal()); err != nil {
-		return errors.WrapIff(err, "failed to send %s tunnel register message", conn.Transport())
+		// A rejected gRPC stream can report EOF from Send; Recv carries the RPC status.
+		if conn.Transport() != EdgeTransportGRPC || !errors.Is(err, io.EOF) {
+			return errors.WrapIff(err, "failed to send %s tunnel register message", conn.Transport())
+		}
 	}
 
 	registerMsg, err := c.awaitRegistrationInternal(ctx, conn)

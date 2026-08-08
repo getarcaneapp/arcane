@@ -22,6 +22,7 @@ type User struct {
 	Preferences            user.Preferences `json:"preferences" gorm:"column:preferences;serializer:json"`
 	RequiresPasswordChange bool             `json:"requiresPasswordChange" gorm:"column:requires_password_change"`
 	IsServiceAccount       bool             `json:"isServiceAccount" gorm:"column:is_service_account;not null;default:false"`
+	PasskeyMFAEnabled      bool             `json:"passkeyMfaEnabled" gorm:"column:passkey_mfa_enabled;not null;default:false"`
 
 	// Avatar metadata
 	HasAvatar bool `json:"hasAvatar" gorm:"column:has_avatar;not null;default:false"`
@@ -38,7 +39,7 @@ func (User) TableName() string {
 
 // CurrentUserContextKey is the context key holding the authenticated user
 // model, set via context.WithValue(ctx, models.CurrentUserContextKey{}, user).
-// It lives here (rather than in api/middleware) so that services, which cannot
+// It lives here (rather than in transport middleware) so that services, which cannot
 // import the middleware package, can read the requesting user for per-user
 // preferences.
 type CurrentUserContextKey struct{}
