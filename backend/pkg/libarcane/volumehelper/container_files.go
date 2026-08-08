@@ -79,10 +79,10 @@ func DownloadFileFromContainer(
 		cleanup()
 		return nil, 0, errors.WrapIf(err, "failed to read tar stream")
 	}
-	if hdr.FileInfo().IsDir() {
+	if err := validateDownloadHeaderInternal(hdr); err != nil {
 		_ = reader.Close()
 		cleanup()
-		return nil, 0, errors.New("path is a directory")
+		return nil, 0, err
 	}
 
 	return &cleanupReadCloserInternal{
@@ -90,4 +90,11 @@ func DownloadFileFromContainer(
 		Closer:  reader,
 		cleanup: cleanup,
 	}, hdr.Size, nil
+}
+
+func validateDownloadHeaderInternal(header *tar.Header) error {
+	if header.FileInfo().IsDir() {
+		return errors.New("path is a directory")
+	}
+	return nil
 }

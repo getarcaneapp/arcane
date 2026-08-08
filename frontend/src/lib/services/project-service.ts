@@ -1,8 +1,8 @@
 import { m } from '#lib/paraglide/messages';
 import { environmentStore } from '#lib/stores/environment.store.svelte';
 import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
-import type { IncludeFile, Project, ProjectStatusCounts } from '#lib/types/swarm';
-import type { ProjectFileChange, ProjectFileDraft } from '#lib/types/project-files';
+import type { Project, ProjectStatusCounts } from '#lib/types/swarm';
+import type { ProjectWorkspaceFileDraft } from '#lib/types/project-workspace';
 import { readNdjsonStream } from '#lib/utils/streaming';
 import { transformPaginationParams } from '#lib/utils/tables';
 import BaseAPIService from './api-service';
@@ -59,16 +59,21 @@ class ProjectService extends BaseAPIService {
 		projectName: string,
 		composeContent: string,
 		envContent?: string,
-		projectFiles?: ProjectFileDraft[]
+		workspaceFiles: ProjectWorkspaceFileDraft[] = []
 	): Promise<Project> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
-		const payload = {
-			name: projectName,
-			composeContent,
-			envContent,
-			projectFiles
-		};
-		return this.handleResponse(this.api.post(`/environments/${envId}/projects`, payload));
+		const form = new FormData();
+		const uploads: File[] = [];
+		const fileChanges = workspaceFiles.map((file) => {
+			if (file.isDirectory) return { operation: 'create_folder' as const, relativePath: file.relativePath };
+			const uploadIndex = uploads.length;
+			uploads.push(new File([file.content ?? ''], file.relativePath));
+			return { operation: 'create_file' as const, relativePath: file.relativePath, uploadIndex };
+		});
+		form.append('project', JSON.stringify({ name: projectName, composeContent, envContent }));
+		form.append('manifest', JSON.stringify({ fileChanges }));
+		for (const file of uploads) form.append('files', file, file.name);
+		return this.handleResponse(this.api.post(`/environments/${envId}/projects`, form));
 	}
 
 	async getProject(projectId: string): Promise<Project> {
@@ -78,8 +83,6 @@ class ProjectService extends BaseAPIService {
 
 	async getProjectForEnvironment(environmentId: string, projectId: string): Promise<Project> {
 		const basePath = `/environments/${environmentId}/projects/${projectId}`;
-		// The /files section walks the project directory recursively and can be
-		// slow on large projects, so it is fetched lazily via getProjectFiles.
 		const [summary, compose, runtime, updates] = await Promise.all([
 			this.getProjectSection(basePath),
 			this.getProjectSection(`${basePath}/compose`),
@@ -93,10 +96,6 @@ class ProjectService extends BaseAPIService {
 			...runtime,
 			updateInfo: updates.updateInfo ?? compose.updateInfo ?? summary.updateInfo
 		};
-	}
-
-	async getProjectFiles(environmentId: string, projectId: string): Promise<Project> {
-		return this.getProjectSection(`/environments/${environmentId}/projects/${projectId}/files`);
 	}
 
 	private async getProjectSection(path: string): Promise<Project> {
@@ -138,19 +137,6 @@ class ProjectService extends BaseAPIService {
 		});
 	}
 
-	async getProjectFile(projectId: string, relativePath: string): Promise<IncludeFile> {
-		const envId = await this.resolveEnvironmentId();
-		return this.getProjectFileForEnvironment(envId, projectId, relativePath);
-	}
-
-	async getProjectFileForEnvironment(environmentId: string, projectId: string, relativePath: string): Promise<IncludeFile> {
-		return this.handleResponse<IncludeFile>(
-			this.api.get(`/environments/${environmentId}/projects/${projectId}/file`, {
-				params: { relativePath }
-			})
-		);
-	}
-
 	async getProjectStatusCounts(): Promise<ProjectStatusCounts> {
 		const envId = await this.resolveEnvironmentId();
 		return this.getProjectStatusCountsForEnvironment(envId);
@@ -166,9 +152,7 @@ class ProjectService extends BaseAPIService {
 		name?: string,
 		composeContent?: string,
 		envContent?: string,
-		overrideContent?: string,
-		fileTreeRevision?: string,
-		fileChanges?: ProjectFileChange[]
+		overrideContent?: string
 	): Promise<Project> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		const payload: {
@@ -176,8 +160,6 @@ class ProjectService extends BaseAPIService {
 			composeContent?: string;
 			envContent?: string;
 			overrideContent?: string;
-			fileTreeRevision?: string;
-			fileChanges?: ProjectFileChange[];
 		} = {};
 		if (name !== undefined) {
 			payload.name = name;
@@ -191,20 +173,7 @@ class ProjectService extends BaseAPIService {
 		if (overrideContent !== undefined) {
 			payload.overrideContent = overrideContent;
 		}
-		if (fileChanges && fileChanges.length > 0) {
-			payload.fileTreeRevision = fileTreeRevision;
-			payload.fileChanges = fileChanges;
-		}
 		return this.handleResponse(this.api.put(`/environments/${envId}/projects/${projectId}`, payload));
-	}
-
-	async updateProjectIncludeFile(projectId: string, relativePath: string, content: string): Promise<Project> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		const payload = {
-			relativePath,
-			content
-		};
-		return this.handleResponse(this.api.put(`/environments/${envId}/projects/${projectId}/includes`, payload));
 	}
 
 	async restartProject(projectId: string, services?: string[]): Promise<unknown> {

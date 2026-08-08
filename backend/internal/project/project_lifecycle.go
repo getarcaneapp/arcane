@@ -20,6 +20,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	workspacepkg "github.com/getarcaneapp/arcane/backend/v2/pkg/workspace"
 	"github.com/getarcaneapp/arcane/types/v2"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	"github.com/getarcaneapp/arcane/types/v2/project"
@@ -371,7 +372,7 @@ func (s *ProjectService) DownProject(ctx context.Context, projectID string, user
 // "-N" (the interactive default). When false a collision returns
 // projects.ErrProjectDirExists (wrapped) so GitOps creates fail loudly instead of
 // minting runaway "-N" duplicate projects on a broken binding.
-func (s *ProjectService) CreateProject(ctx context.Context, name, composeContent string, envContent *string, projectFiles []project.ProjectFileDraft, user models.User, allowNameSuffixOptions ...bool) (*models.Project, error) {
+func (s *ProjectService) CreateProject(ctx context.Context, name, composeContent string, envContent *string, manifest project.CreateProjectWorkspaceManifest, uploads map[int][]byte, user models.User, allowNameSuffixOptions ...bool) (*models.Project, error) {
 	allowNameSuffix := true
 	if len(allowNameSuffixOptions) > 0 {
 		allowNameSuffix = allowNameSuffixOptions[0]
@@ -408,13 +409,15 @@ func (s *ProjectService) CreateProject(ctx context.Context, name, composeContent
 		RunningCount: 0,
 	}
 
-	if err := projects.ApplyProjectFileDrafts(projectPath, projectFiles, projects.ProjectFileApplyOptions{
-		MaxDepth:        s.config.ProjectFileTreeMaxDepth,
-		SkipDirectories: s.config.ProjectScanSkipDirs,
-		ComposeFileName: projects.DefaultComposeFileName,
+	if err := projects.ApplyProjectWorkspaceChanges(projectPath, manifest.FileChanges, uploads, projects.ProjectWorkspaceApplyOptions{
+		MaxDepth:         s.config.ProjectWorkspaceMaxDepth,
+		MaxEntries:       s.config.ProjectWorkspaceMaxEntries,
+		MaxFileSizeBytes: workspacepkg.MaxFileSizeBytes(s.config.ProjectWorkspaceMaxFileSizeMB),
+		SkipDirectories:  s.config.ProjectScanSkipDirs,
+		ComposeFileName:  projects.DefaultComposeFileName,
 	}); err != nil {
 		_ = os.RemoveAll(projectPath)
-		return nil, wrapProjectFileErrorInternal(err)
+		return nil, wrapProjectWorkspaceErrorInternal(err)
 	}
 
 	// GitOps-originated creates (allowNameSuffix=false) tolerate not-yet-supplied

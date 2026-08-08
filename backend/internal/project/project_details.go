@@ -5,7 +5,6 @@ import (
 	"context"
 	"io"
 	"log/slog"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -14,7 +13,6 @@ import (
 	"emperror.dev/errors"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
@@ -259,12 +257,6 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 			s.enrichWithComposeServiceConfigs(ctx, proj, composeFile, &resp)
 		}
 	}
-	if opts.IncludeDirectoryFiles {
-		s.enrichWithDirectoryFiles(ctx, proj.Path, &resp)
-	}
-	if opts.IncludeProjectFiles {
-		s.enrichWithProjectFiles(ctx, proj.Path, resp.ComposeFileName, &resp)
-	}
 	s.enrichWithGitOpsInfo(ctx, proj, &resp)
 
 	// Refresh runtime status/counts even when callers do not request the full
@@ -313,121 +305,6 @@ func buildProjectRuntimeServicesInternal(services []ProjectServiceInfo) []projec
 		}
 	}
 	return runtimeServices
-}
-
-func (s *ProjectService) GetProjectFileContent(ctx context.Context, projectID, relativePath string) (project.IncludeFile, error) {
-	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
-	if err != nil {
-		return project.IncludeFile{}, err
-	}
-	if strings.TrimSpace(relativePath) == "" {
-		return project.IncludeFile{}, common.Classify(common.ErrProjectFileBadRequest, errors.New("Invalid project file request: relative path is required"))
-	}
-	normalizedRelativePath, err := projects.NormalizeProjectRelativePath(relativePath)
-	if err != nil {
-		return project.IncludeFile{}, common.Classify(common.ErrProjectFileForbidden, errors.WrapIf(err, "Forbidden project file path"))
-	}
-
-	composeFile, detectErr := s.ResolveProjectComposeFile(ctx, proj)
-	if detectErr == nil {
-		cfg := s.settingsService.GetSettingsOrDefaults(ctx)
-		projectsDirectory, _ := projects.GetProjectsDirectory(ctx, strings.TrimSpace(cfg.ProjectsDirectory.Value))
-		envLoader := projects.NewEnvLoader(projectsDirectory, filepath.Dir(composeFile), utils.BoolOrDefault(cfg.AutoInjectEnv.Value, false))
-		envMap, _, _ := envLoader.LoadEnvironment(ctx)
-
-		includes, parseErr := projects.ParseIncludes(composeFile, envMap, false)
-		if parseErr == nil {
-			for _, inc := range includes {
-				if inc.RelativePath != normalizedRelativePath {
-					continue
-				}
-				if !projects.IsSafeSubdirectory(proj.Path, inc.Path) {
-					return project.IncludeFile{}, common.Classify(common.ErrProjectFileForbidden, errors.New("Forbidden project file path: include resolves outside project directory"))
-				}
-				return readProjectIncludeFileContentInternal(proj.Path, inc)
-			}
-		}
-	}
-
-	absFilePath, err := projects.ValidateIncludePathForWrite(proj.Path, normalizedRelativePath)
-	if err != nil {
-		return project.IncludeFile{}, common.Classify(common.ErrProjectFileForbidden, errors.WrapIf(err, "Forbidden project file path"))
-	}
-
-	info, err := os.Lstat(absFilePath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return project.IncludeFile{}, common.Classify(common.ErrProjectFileNotFound, errors.New("Project file not found"))
-		}
-		return project.IncludeFile{}, errors.WrapIf(err, "failed to stat file")
-	}
-	if info.IsDir() {
-		return project.IncludeFile{}, common.Classify(common.ErrProjectFileBadRequest, errors.New("Invalid project file request: path is a directory"))
-	}
-	if info.Mode()&os.ModeSymlink != 0 {
-		return project.IncludeFile{}, common.Classify(common.ErrProjectFileForbidden, errors.New("Forbidden project file path: symlinks are not allowed"))
-	}
-
-	content, err := os.ReadFile(absFilePath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return project.IncludeFile{}, common.Classify(common.ErrProjectFileNotFound, errors.New("Project file not found"))
-		}
-		return project.IncludeFile{}, errors.WrapIf(err, "failed to read file")
-	}
-	if projects.IsBinaryProjectFileContent(content) {
-		return project.IncludeFile{}, common.Classify(common.ErrProjectFileBadRequest, errors.New("Invalid project file request: binary files are not supported"))
-	}
-
-	return project.IncludeFile{
-		Path:         absFilePath,
-		RelativePath: normalizedRelativePath,
-		Content:      string(content),
-	}, nil
-}
-
-func readProjectIncludeFileContentInternal(projectPath string, inc projects.IncludeFile) (project.IncludeFile, error) {
-	validatedPath, err := projects.ValidateIncludePathForWrite(projectPath, inc.Path)
-	if err != nil {
-		return project.IncludeFile{}, common.Classify(common.ErrProjectFileForbidden, errors.WrapIf(err, "Forbidden project file path"))
-	}
-
-	resolvedPath, err := utils.ResolveWithinRoot(projectPath, validatedPath)
-	if err != nil {
-		return project.IncludeFile{}, common.Classify(common.ErrProjectFileForbidden, errors.WrapIf(err, "Forbidden project file path"))
-	}
-
-	info, err := os.Stat(resolvedPath)
-	if os.IsNotExist(err) {
-		return project.IncludeFile{
-			Path:         validatedPath,
-			RelativePath: inc.RelativePath,
-			Content:      "# This file will be created when you save changes\nservices:\n",
-		}, nil
-	}
-	if err != nil {
-		return project.IncludeFile{}, errors.WrapIf(err, "failed to stat include file")
-	}
-	if info.IsDir() {
-		return project.IncludeFile{}, common.Classify(common.ErrProjectFileBadRequest, errors.New("Invalid project file request: path is a directory"))
-	}
-
-	content, err := os.ReadFile(resolvedPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return project.IncludeFile{}, common.Classify(common.ErrProjectFileNotFound, errors.New("Project file not found"))
-		}
-		return project.IncludeFile{}, errors.WrapIf(err, "failed to read include file")
-	}
-	if projects.IsBinaryProjectFileContent(content) {
-		return project.IncludeFile{}, common.Classify(common.ErrProjectFileBadRequest, errors.New("Invalid project file request: binary files are not supported"))
-	}
-
-	return project.IncludeFile{
-		Path:         resolvedPath,
-		RelativePath: inc.RelativePath,
-		Content:      string(content),
-	}, nil
 }
 
 func (s *ProjectService) enrichWithIncludeFiles(ctx context.Context, composeFile string, resp *project.Details) {
@@ -617,49 +494,6 @@ func buildProjectUpdateInfoSummaryInternal(
 	}
 
 	return summary
-}
-
-func (s *ProjectService) enrichWithDirectoryFiles(ctx context.Context, projectPath string, resp *project.Details) {
-	if projectPath == "" {
-		return
-	}
-
-	// Build set of already-shown files to skip
-	shownFiles := map[string]bool{
-		".env":                true,
-		"compose.yaml":        true,
-		"compose.yml":         true,
-		"docker-compose.yaml": true,
-		"docker-compose.yml":  true,
-		"podman-compose.yaml": true,
-		"podman-compose.yml":  true,
-	}
-	for _, inc := range resp.IncludeFiles {
-		shownFiles[inc.RelativePath] = true
-	}
-
-	dirFiles, err := projects.ReadProjectDirectoryFiles(projectPath, shownFiles, s.config.ProjectScanMaxDepth, s.config.ProjectScanSkipDirs)
-	if err != nil {
-		slog.WarnContext(ctx, "Failed to scan project directory files", "error", err, "path", projectPath)
-	}
-
-	resp.DirectoryFiles = dirFiles
-}
-
-func (s *ProjectService) enrichWithProjectFiles(ctx context.Context, projectPath, composeFileName string, resp *project.Details) {
-	if projectPath == "" {
-		return
-	}
-
-	files, revision, truncated, err := projects.ReadProjectFileTree(projectPath, s.config.ProjectFileTreeMaxDepth, s.config.ProjectScanSkipDirs, composeFileName, projects.DefaultProjectFileTreeMaxEntries)
-	if err != nil {
-		slog.WarnContext(ctx, "Failed to scan project file tree", "error", err, "path", projectPath)
-		return
-	}
-
-	resp.ProjectFiles = files
-	resp.FileTreeRevision = revision
-	resp.FileTreeTruncated = truncated
 }
 
 func (s *ProjectService) enrichWithGitOpsInfo(ctx context.Context, proj *models.Project, resp *project.Details) {

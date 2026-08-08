@@ -60,7 +60,7 @@
 >
 	<Dialog.Content class="sm:max-w-[500px]">
 		<Dialog.Header>
-			<Dialog.Title>{m.volumes_browser_upload_files()}</Dialog.Title>
+			<Dialog.Title>{m.workspace_upload_files()}</Dialog.Title>
 			<Dialog.Description>
 				Upload files to {currentPath}
 			</Dialog.Description>

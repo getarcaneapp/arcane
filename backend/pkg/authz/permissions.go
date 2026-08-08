@@ -137,7 +137,6 @@ const (
 	PermVolumesCreate = "volumes:create"
 	PermVolumesDelete = "volumes:delete"
 	PermVolumesPrune  = "volumes:prune"
-	PermVolumesBrowse = "volumes:browse"
 	PermVolumesUpload = "volumes:upload"
 	PermVolumesBackup = "volumes:backup"
 
@@ -299,7 +298,7 @@ func BuiltInEditorPermissions() []string {
 		PermContainersList, PermContainersRead, PermContainersLogs, PermContainersCreate, PermContainersStart, PermContainersStop, PermContainersRestart, PermContainersRedeploy, PermContainersKill, PermContainersPause, PermContainersDelete, PermContainersExec, PermContainersAutoUpdate,
 		PermProjectsList, PermProjectsRead, PermProjectsLogs, PermProjectsCreate, PermProjectsUpdate, PermProjectsDeploy, PermProjectsDown, PermProjectsRestart, PermProjectsDelete, PermProjectsArchive,
 		PermImagesList, PermImagesRead, PermImagesPull, PermImagesPush, PermImagesBuild, PermImagesTag, PermImagesCommit, PermImagesPrune, PermImagesDelete, PermImagesUpload,
-		PermVolumesList, PermVolumesRead, PermVolumesCreate, PermVolumesDelete, PermVolumesPrune, PermVolumesBrowse, PermVolumesUpload, PermVolumesBackup,
+		PermVolumesList, PermVolumesRead, PermVolumesCreate, PermVolumesDelete, PermVolumesPrune, PermVolumesUpload, PermVolumesBackup,
 		PermNetworksList, PermNetworksRead, PermNetworksCreate, PermNetworksDelete, PermNetworksPrune,
 		PermSwarmRead, PermSwarmSpec, PermSwarmNodes, PermSwarmServices, PermSwarmServicesLogs, PermSwarmStacks, PermSwarmConfigs, PermSwarmSecrets,
 		PermGitOpsList, PermGitOpsRead, PermGitOpsCreate, PermGitOpsUpdate, PermGitOpsDelete, PermGitOpsSync,
@@ -326,7 +325,7 @@ func BuiltInDeployerPermissions() []string {
 		PermContainersList, PermContainersRead, PermContainersLogs, PermContainersStart, PermContainersStop, PermContainersRestart, PermContainersRedeploy, PermContainersKill, PermContainersPause,
 		PermProjectsList, PermProjectsRead, PermProjectsLogs, PermProjectsDeploy, PermProjectsDown, PermProjectsRestart,
 		PermImagesList, PermImagesRead, PermImagesPull, PermImagesTag, PermImagesCommit,
-		PermVolumesList, PermVolumesRead, PermVolumesBrowse,
+		PermVolumesList, PermVolumesRead,
 		PermNetworksList, PermNetworksRead,
 		PermSwarmRead, PermSwarmServicesLogs,
 		PermGitOpsList, PermGitOpsRead, PermGitOpsSync,
@@ -356,7 +355,7 @@ func BuiltInViewerPermissions() []string {
 		PermContainersList, PermContainersRead, PermContainersLogs,
 		PermProjectsList, PermProjectsRead, PermProjectsLogs,
 		PermImagesList, PermImagesRead,
-		PermVolumesList, PermVolumesRead, PermVolumesBrowse,
+		PermVolumesList, PermVolumesRead,
 		PermNetworksList, PermNetworksRead,
 		PermSwarmRead, PermSwarmServicesLogs,
 		PermGitOpsList, PermGitOpsRead,

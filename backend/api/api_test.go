@@ -28,6 +28,56 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestWorkspaceRoutesReplaceProjectAndVolumeLegacyRoutes(t *testing.T) {
+	api := SetupAPIForSpec()
+	paths := api.OpenAPI().Paths
+
+	canonical := []struct {
+		path   string
+		method string
+	}{
+		{path: "/environments/{id}/projects/{projectId}/workspace", method: http.MethodGet},
+		{path: "/environments/{id}/projects/{projectId}/workspace", method: http.MethodPut},
+		{path: "/environments/{id}/projects/{projectId}/workspace/file", method: http.MethodGet},
+		{path: "/environments/{id}/projects/{projectId}/workspace/file/download", method: http.MethodGet},
+		{path: "/environments/{id}/volumes/{volumeName}/workspace", method: http.MethodGet},
+		{path: "/environments/{id}/volumes/{volumeName}/workspace", method: http.MethodPut},
+		{path: "/environments/{id}/volumes/{volumeName}/workspace/file", method: http.MethodGet},
+		{path: "/environments/{id}/volumes/{volumeName}/workspace/file/download", method: http.MethodGet},
+		{path: "/environments/{id}/builds/browse", method: http.MethodGet},
+	}
+	for _, route := range canonical {
+		t.Run(route.method+" "+route.path, func(t *testing.T) {
+			item := paths[route.path]
+			require.NotNil(t, item)
+			switch route.method {
+			case http.MethodGet:
+				require.NotNil(t, item.Get)
+			case http.MethodPut:
+				require.NotNil(t, item.Put)
+			}
+		})
+	}
+
+	legacy := []string{
+		"/environments/{id}/projects/{projectId}/files",
+		"/environments/{id}/projects/{projectId}/file",
+		"/environments/{id}/projects/{projectId}/includes",
+		"/environments/{id}/volumes/{volumeName}/files",
+		"/environments/{id}/volumes/{volumeName}/file",
+		"/environments/{id}/volumes/{volumeName}/browse",
+		"/environments/{id}/volumes/{volumeName}/browse/content",
+		"/environments/{id}/volumes/{volumeName}/browse/download",
+		"/environments/{id}/volumes/{volumeName}/browse/upload",
+		"/environments/{id}/volumes/{volumeName}/browse/mkdir",
+	}
+	for _, path := range legacy {
+		t.Run("absent "+path, func(t *testing.T) {
+			require.Nil(t, paths[path])
+		})
+	}
+}
+
 func TestCustomSchemaNamer_PrefixesArcaneTypesByPackage(t *testing.T) {
 	imageName := customSchemaNamer(reflect.TypeFor[imagetypes.Summary](), "")
 	envName := customSchemaNamer(reflect.TypeFor[envtypes.Summary](), "")

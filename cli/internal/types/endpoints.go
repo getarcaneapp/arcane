@@ -87,16 +87,16 @@ type ArcaneApiEndpoints struct {
 	VolumeUsageEndpoint   string
 
 	// Projects (Stacks)
-	ProjectsEndpoint        string
-	ProjectEndpoint         string
-	ProjectsCountsEndpoint  string
-	ProjectDestroyEndpoint  string
-	ProjectUpEndpoint       string
-	ProjectDownEndpoint     string
-	ProjectRestartEndpoint  string
-	ProjectRedeployEndpoint string
-	ProjectPullEndpoint     string
-	ProjectIncludesEndpoint string
+	ProjectsEndpoint         string
+	ProjectEndpoint          string
+	ProjectsCountsEndpoint   string
+	ProjectDestroyEndpoint   string
+	ProjectUpEndpoint        string
+	ProjectDownEndpoint      string
+	ProjectRestartEndpoint   string
+	ProjectRedeployEndpoint  string
+	ProjectPullEndpoint      string
+	ProjectWorkspaceEndpoint string
 
 	// System
 	SystemPruneEndpoint              string
@@ -257,16 +257,16 @@ var Endpoints = ArcaneApiEndpoints{ //nolint:gosec // static endpoint paths; aut
 	VolumeUsageEndpoint:   "/api/environments/%s/volumes/%s/usage",
 
 	// Projects (Stacks)
-	ProjectsEndpoint:        "/api/environments/%s/projects",
-	ProjectEndpoint:         "/api/environments/%s/projects/%s",
-	ProjectsCountsEndpoint:  "/api/environments/%s/projects/counts",
-	ProjectDestroyEndpoint:  "/api/environments/%s/projects/%s/destroy",
-	ProjectUpEndpoint:       "/api/environments/%s/projects/%s/up",
-	ProjectDownEndpoint:     "/api/environments/%s/projects/%s/down",
-	ProjectRestartEndpoint:  "/api/environments/%s/projects/%s/restart",
-	ProjectRedeployEndpoint: "/api/environments/%s/projects/%s/redeploy",
-	ProjectPullEndpoint:     "/api/environments/%s/projects/%s/pull",
-	ProjectIncludesEndpoint: "/api/environments/%s/projects/%s/includes",
+	ProjectsEndpoint:         "/api/environments/%s/projects",
+	ProjectEndpoint:          "/api/environments/%s/projects/%s",
+	ProjectsCountsEndpoint:   "/api/environments/%s/projects/counts",
+	ProjectDestroyEndpoint:   "/api/environments/%s/projects/%s/destroy",
+	ProjectUpEndpoint:        "/api/environments/%s/projects/%s/up",
+	ProjectDownEndpoint:      "/api/environments/%s/projects/%s/down",
+	ProjectRestartEndpoint:   "/api/environments/%s/projects/%s/restart",
+	ProjectRedeployEndpoint:  "/api/environments/%s/projects/%s/redeploy",
+	ProjectPullEndpoint:      "/api/environments/%s/projects/%s/pull",
+	ProjectWorkspaceEndpoint: "/api/environments/%s/projects/%s/workspace",
 
 	// System
 	SystemPruneEndpoint:              "/api/environments/%s/system/prune",
@@ -564,8 +564,8 @@ func (e ArcaneApiEndpoints) ProjectPull(envID, projectID string) string {
 	return fmt.Sprintf(e.ProjectPullEndpoint, envID, projectID)
 }
 
-func (e ArcaneApiEndpoints) ProjectIncludes(envID, projectID string) string {
-	return fmt.Sprintf(e.ProjectIncludesEndpoint, envID, projectID)
+func (e ArcaneApiEndpoints) ProjectWorkspace(envID, projectID string) string {
+	return fmt.Sprintf(e.ProjectWorkspaceEndpoint, envID, projectID)
 }
 
 // System endpoints

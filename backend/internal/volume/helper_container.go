@@ -3,7 +3,6 @@ package volume
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"io"
 	"log/slog"
 	"strings"
@@ -24,7 +23,7 @@ import (
 	"github.com/samber/mo"
 )
 
-// volumeHelper tracks a reused read-only browse helper container and the last
+// volumeHelper tracks a reused helper container and the last
 // time it serviced a request, so idle helpers can be reaped. inUse counts the
 // requests currently holding the helper: the reaper must not remove a helper
 // mid-download just because it was acquired longer ago than the idle timeout.
@@ -35,6 +34,36 @@ type volumeHelper struct {
 }
 
 const volumeHelperImage = volumehelper.DefaultToolsImage
+
+func isUnlabeledVolumeHelperContainerInternal(c container.Summary) bool {
+	if !libarcane.IsInternalContainer(c.Labels) {
+		return false
+	}
+
+	command := strings.ToLower(c.Command)
+	if !strings.Contains(command, "sleep") || !strings.Contains(command, "infinity") {
+		return false
+	}
+
+	for _, mounted := range c.Mounts {
+		if mounted.Destination == "/volume" {
+			return true
+		}
+	}
+
+	return false
+}
+
+func isVolumeHelperContainerInternal(c container.Summary) bool {
+	if isUnlabeledVolumeHelperContainerInternal(c) {
+		return true
+	}
+	if !libarcane.IsInternalContainer(c.Labels) {
+		return false
+	}
+
+	return strings.EqualFold(c.Labels[volumehelper.ContainerLabel], "true")
+}
 
 func getVolumeHelperImageInternal(ctx context.Context, dockerService *docker.DockerClientService, imageService *image.ImageService, dockerClient *client.Client) (string, error) {
 	slog.DebugContext(ctx, "volume service: resolve helper image")
@@ -76,23 +105,19 @@ func getVolumeHelperImageInternal(ctx context.Context, dockerService *docker.Doc
 	return "", errors.WrapIf(pullErr, "failed to resolve helper image: tools image unavailable and arcane fallback not found")
 }
 
-func (s *VolumeService) createTempContainerInternal(ctx context.Context, volumeName string, readOnly bool) (string, func(), error) {
-	slog.DebugContext(ctx, "volume service: create temp container", "volume", volumeName, "read_only", readOnly)
+func (s *VolumeService) acquireVolumeHelperInternal(ctx context.Context, volumeName string) (string, func(), error) {
+	slog.DebugContext(ctx, "volume service: acquire helper container", "volume", volumeName)
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return "", nil, err
 	}
 
-	if !readOnly {
-		return s.startHelperContainerInternal(ctx, dockerClient, volumeName, false)
-	}
-
-	// Read-only helpers are shared and reaped when idle; the caller's cleanup
+	// Helpers are shared and reaped when idle; the caller's cleanup
 	// releases its in-use hold instead of removing the container. The resolve →
 	// acquire gap is racy against the reaper, so retry a resolve whose helper
 	// was reaped before this caller could take its hold.
 	for range 3 {
-		containerID, err := s.resolveReadOnlyHelperInternal(ctx, dockerClient, volumeName)
+		containerID, err := s.resolveHelperInternal(ctx, dockerClient, volumeName)
 		if err != nil {
 			return "", nil, err
 		}
@@ -103,14 +128,14 @@ func (s *VolumeService) createTempContainerInternal(ctx context.Context, volumeN
 	return "", nil, errors.New("failed to acquire volume helper container")
 }
 
-// resolveReadOnlyHelperInternal returns the shared read-only helper container ID
+// resolveHelperInternal returns the shared helper container ID
 // for volumeName, creating it if needed. singleflight collapses concurrent
 // misses: without it both requests create a helper and the loser is orphaned,
 // holding the volume mount with no cleanup path until Arcane restarts. The
 // creation itself can pull an image, so it must not run under helperMu.
-func (s *VolumeService) resolveReadOnlyHelperInternal(ctx context.Context, dockerClient *client.Client, volumeName string) (string, error) {
+func (s *VolumeService) resolveHelperInternal(ctx context.Context, dockerClient *client.Client, volumeName string) (string, error) {
 	resultCh := s.helperGroup.DoChan(volumeName, func() (any, error) {
-		if containerID, ok := s.getReusableReadOnlyContainerInternal(ctx, dockerClient, volumeName).Get(); ok {
+		if containerID, ok := s.getReusableHelperInternal(ctx, dockerClient, volumeName).Get(); ok {
 			return containerID, nil
 		}
 
@@ -118,11 +143,11 @@ func (s *VolumeService) resolveReadOnlyHelperInternal(ctx context.Context, docke
 		// mid-create doesn't abort the helper the other waiters are blocked on,
 		// but still bounded: WithoutCancel alone would let a hung daemon or
 		// image pull wedge this singleflight key forever, queueing every later
-		// browse of the volume behind it with no recovery until restart.
+		// workspace request for the volume behind it with no recovery until restart.
 		createCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeouts.DefaultDockerImagePull)
 		defer cancel()
 
-		containerID, _, createErr := s.startHelperContainerInternal(createCtx, dockerClient, volumeName, true)
+		containerID, _, createErr := s.startHelperContainerInternal(createCtx, dockerClient, volumeName)
 		if createErr != nil {
 			return nil, createErr
 		}
@@ -183,9 +208,9 @@ func (s *VolumeService) acquireHelperInternal(volumeName, containerID string) (f
 }
 
 // startHelperContainerInternal creates and starts a volume helper container and
-// returns a cleanup that removes it. Tracking of reusable read-only helpers is
+// returns a cleanup that removes it. Tracking of reusable helpers is
 // the caller's responsibility.
-func (s *VolumeService) startHelperContainerInternal(ctx context.Context, dockerClient *client.Client, volumeName string, readOnly bool) (string, func(), error) {
+func (s *VolumeService) startHelperContainerInternal(ctx context.Context, dockerClient *client.Client, volumeName string) (string, func(), error) {
 	helperImage, err := getVolumeHelperImageInternal(ctx, s.dockerService, s.imageService, dockerClient)
 	if err != nil {
 		return "", nil, err
@@ -198,14 +223,7 @@ func (s *VolumeService) startHelperContainerInternal(ctx context.Context, docker
 		Labels:          volumehelper.Labels(),
 	}
 
-	hostConfig := volumehelper.HostConfig(helperImage, []string{
-		fmt.Sprintf("%s:/volume%s", volumeName, func() string {
-			if readOnly {
-				return ":ro"
-			}
-			return ""
-		}()),
-	}, nil)
+	hostConfig := volumehelper.HostConfig(helperImage, []string{volumeName + ":/volume"}, nil)
 
 	resp, err := dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Config:     config,
@@ -227,7 +245,7 @@ func (s *VolumeService) startHelperContainerInternal(ctx context.Context, docker
 	return resp.ID, cleanup, nil
 }
 
-func (s *VolumeService) getReusableReadOnlyContainerInternal(ctx context.Context, dockerClient *client.Client, volumeName string) mo.Option[string] {
+func (s *VolumeService) getReusableHelperInternal(ctx context.Context, dockerClient *client.Client, volumeName string) mo.Option[string] {
 	s.helperMu.Lock()
 	helper := s.helperByVolume[volumeName]
 	s.helperMu.Unlock()
@@ -282,7 +300,7 @@ func (s *VolumeService) CleanupHelperContainers(ctx context.Context) {
 	}
 }
 
-// ReapIdleHelpers removes reused read-only browse helper containers that have
+// ReapIdleHelpers removes reused helper containers that have
 // not serviced a request within idleTimeout. It is map-driven (orphaned helpers
 // not tracked in helperByVolume are left to the startup orphan sweep). Entries
 // are removed from the map before the container is removed, so a concurrent
@@ -339,7 +357,7 @@ func (s *VolumeService) collectStaleHelperIDsInternal(now time.Time, idleTimeout
 	return staleIDs
 }
 
-// StopHelper removes the reused read-only browse helper for a single volume, if
+// StopHelper removes the reused helper for a single volume, if
 // one exists. It is idempotent: stopping a volume with no active helper returns
 // nil.
 func (s *VolumeService) StopHelper(ctx context.Context, volumeName string) error {
@@ -392,7 +410,7 @@ func (s *VolumeService) CleanupOrphanedVolumeHelpers(ctx context.Context) (int, 
 
 	removedCount := 0
 	for _, c := range containers.Items {
-		if !volumehelper.IsHelperContainer(c) {
+		if !isVolumeHelperContainerInternal(c) {
 			continue
 		}
 

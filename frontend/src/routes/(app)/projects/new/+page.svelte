@@ -9,10 +9,10 @@
 	import { projectService } from '#lib/services/project-service.js';
 	import ComposeCreateMenu from '#lib/components/compose-create-menu.svelte';
 	import ComposeFileEditorPanel from '#lib/components/compose-file-editor-panel.svelte';
-	import CodePanel from '../components/CodePanel.svelte';
+	import CodePanel from '#lib/components/code-panel.svelte';
 	import EditableName from '../components/EditableName.svelte';
-	import ProjectFileTreePanel from '../components/ProjectFileTreePanel.svelte';
-	import EditorTabStrip from '../components/EditorTabStrip.svelte';
+	import WorkspaceFileTreePanel from '#lib/components/workspace-file-tree-panel.svelte';
+	import EditorTabStrip from '#lib/components/editor-tab-strip.svelte';
 	import { environmentStore } from '#lib/stores/environment.store.svelte';
 	import { hasPermission } from '#lib/utils/auth';
 	import { ComposeEditorSplit } from '#lib/components/compose';
@@ -21,21 +21,26 @@
 	import DockerRunConverterDialog from '#lib/components/compose/docker-run-converter-dialog.svelte';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
 	import { globalVariablesToMap } from '#lib/utils/template-load';
-	import type { ProjectFileDraft } from '#lib/types/project-files';
+	import type { ProjectWorkspaceFileDraft } from '#lib/types/project-workspace';
+	import settingsStore from '#lib/stores/config-store';
 	import {
-		isProjectFileSelectionUnder,
-		planProjectFileCreate,
-		planProjectFileMove,
-		planProjectFileRename,
-		projectFileBasename,
-		projectFileLanguage,
-		projectFilePathMatches,
-		remapProjectFilePath,
-		remapProjectFileRecord,
-		remapSelectedProjectFileKey,
-		removeProjectFileRecord,
-		type ManagedProjectFileEntry
-	} from '../components/project-file-tree-utils';
+		planProjectWorkspaceFileCreate,
+		planProjectWorkspaceFileMove,
+		planProjectWorkspaceFileRename,
+		validateProjectWorkspaceFileName
+	} from '../components/project-workspace-utils';
+	import {
+		isWorkspaceFileSelectionUnder,
+		workspaceFileBasename,
+		workspaceFileLanguage,
+		workspaceFilePathMatches,
+		remapWorkspaceFilePath,
+		remapWorkspaceFileRecord,
+		remapSelectedWorkspaceFileKey,
+		removeWorkspaceFileRecord,
+		readWorkspaceTextUpload,
+		type WorkspaceFileEntry
+	} from '#lib/utils/workspace-files';
 	import {
 		composeTreeSplitProps,
 		createComposeEditorSchema,
@@ -54,6 +59,7 @@
 
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
 	const canCreateProject = $derived(hasPermission('projects:create', currentEnvId));
+	const projectWorkspaceMaxFileSizeMb = $derived($settingsStore?.projectWorkspaceMaxFileSizeMb ?? 10);
 
 	let ui = $state({
 		saving: false,
@@ -79,12 +85,12 @@
 	let composeOpen = $state(true);
 	let envOpen = $state(true);
 	let layoutMode = $state<'classic' | 'tree'>('classic');
-	let selectedProjectFile = $state<'compose' | 'env' | string>('compose');
+	let selectedEditorFile = $state<'compose' | 'env' | string>('compose');
 	let treePaneWidth = $state(280);
-	let newProjectFiles = $state<ProjectFileDraft[]>([]);
-	let newProjectFileContents = $state<Record<string, string>>({});
-	let newProjectFileHasErrors = $state<Record<string, boolean>>({});
-	let newProjectFileValidationReady = $state<Record<string, boolean>>({});
+	let newProjectWorkspaceFiles = $state<ProjectWorkspaceFileDraft[]>([]);
+	let newProjectWorkspaceContents = $state<Record<string, string>>({});
+	let newProjectWorkspaceHasErrors = $state<Record<string, boolean>>({});
+	let newProjectWorkspaceValidationReady = $state<Record<string, boolean>>({});
 	let validation = $state({
 		composeHasErrors: false,
 		envHasErrors: false,
@@ -93,18 +99,22 @@
 	});
 
 	const globalVariableMap = $derived(globalVariablesToMap(data.globalVariables));
-	const newProjectFileEntries = $derived.by<ManagedProjectFileEntry[]>(() =>
-		newProjectFiles.map((file) => ({
+	const newProjectWorkspaceEntries = $derived.by<WorkspaceFileEntry[]>(() =>
+		newProjectWorkspaceFiles.map((file) => ({
 			path: file.relativePath,
 			relativePath: file.relativePath,
-			name: projectFileBasename(file.relativePath),
+			name: workspaceFileBasename(file.relativePath),
 			isDirectory: !!file.isDirectory,
-			size: file.isDirectory ? 0 : (newProjectFileContents[file.relativePath]?.length ?? 0),
-			content: file.isDirectory ? undefined : (newProjectFileContents[file.relativePath] ?? ''),
+			size: file.isDirectory ? 0 : (newProjectWorkspaceContents[file.relativePath]?.length ?? 0),
+			content: file.isDirectory ? undefined : (newProjectWorkspaceContents[file.relativePath] ?? ''),
 			pending: true
 		}))
 	);
-	const newProjectFilePaths = $derived.by(() => new Set(newProjectFileEntries.map((file) => file.relativePath)));
+	const newProjectWorkspacePaths = $derived.by(() => new Set(newProjectWorkspaceEntries.map((file) => file.relativePath)));
+	const newProjectWorkspaceLeadingRows = [
+		{ key: 'compose', label: 'compose.yaml', iconClass: 'text-blue-500', locked: true },
+		{ key: 'env', label: '.env', iconClass: 'text-green-500', locked: true }
+	];
 	let openProjectTabs = $state<string[]>(['compose']);
 	let treeOutlineOpen = $state(false);
 	let treeDiffOpen = $state(false);
@@ -113,16 +123,16 @@
 		const valid = openProjectTabs.filter((key) => {
 			if (key === 'compose' || key === 'env') return true;
 			if (!key.startsWith('file:')) return false;
-			const entry = newProjectFileEntries.find((file) => file.relativePath === key.slice(5));
+			const entry = newProjectWorkspaceEntries.find((file) => file.relativePath === key.slice(5));
 			return !!entry && !entry.isDirectory;
 		});
 		return valid.length > 0 ? valid : ['compose'];
 	});
-	const activeProjectTab = $derived(openTabs.includes(selectedProjectFile) ? selectedProjectFile : (openTabs[0] ?? 'compose'));
+	const activeProjectTab = $derived(openTabs.includes(selectedEditorFile) ? selectedEditorFile : (openTabs[0] ?? 'compose'));
 	const projectTabs = $derived(
 		openTabs.map((key) => ({
 			key,
-			label: key === 'compose' ? 'compose.yaml' : key === 'env' ? '.env' : projectFileBasename(key.slice(5)),
+			label: key === 'compose' ? 'compose.yaml' : key === 'env' ? '.env' : workspaceFileBasename(key.slice(5)),
 			title: key === 'compose' ? 'compose.yaml' : key === 'env' ? '.env' : key.slice(5),
 			iconClass: key === 'compose' ? 'text-blue-500' : key === 'env' ? 'text-green-500' : 'text-muted-foreground',
 			pending: false
@@ -131,22 +141,22 @@
 
 	function isNewProjectDirectoryKey(key: string): boolean {
 		if (!key.startsWith('file:')) return false;
-		return newProjectFileEntries.find((file) => file.relativePath === key.slice(5))?.isDirectory === true;
+		return newProjectWorkspaceEntries.find((file) => file.relativePath === key.slice(5))?.isDirectory === true;
 	}
 
-	function openProjectFileTab(key: string) {
+	function openEditorFileTab(key: string) {
 		if (!isNewProjectDirectoryKey(key) && !openProjectTabs.includes(key)) {
 			openProjectTabs = [...openProjectTabs, key];
 		}
-		selectedProjectFile = key;
+		selectedEditorFile = key;
 	}
 
-	function closeProjectFileTab(key: string) {
+	function closeEditorFileTab(key: string) {
 		const index = openTabs.indexOf(key);
 		const remaining = openTabs.filter((tab) => tab !== key);
 		openProjectTabs = openProjectTabs.filter((tab) => tab !== key);
-		if (selectedProjectFile === key) {
-			selectedProjectFile = remaining[Math.min(Math.max(index - 1, 0), remaining.length - 1)] ?? 'compose';
+		if (selectedEditorFile === key) {
+			selectedEditorFile = remaining[Math.min(Math.max(index - 1, 0), remaining.length - 1)] ?? 'compose';
 		}
 	}
 	const validationState = $derived(
@@ -183,7 +193,7 @@
 			validate: () => validateTemplateEditorForm(validationState, form.validate),
 			setLoading: (value) => (ui.saving = value),
 			submit: ({ name, composeContent, envContent }) =>
-				projectService.createProject(name, composeContent, envContent, buildNewProjectFilePayload()),
+				projectService.createProject(name, composeContent, envContent, buildNewProjectWorkspacePayload()),
 			failureMessage: (name) => m.common_create_failed({ resource: `${m.resource_project()} "${name}"` }),
 			onSuccess: async (project, { name }) => {
 				toast.success(
@@ -205,81 +215,91 @@
 		hasEditorErrors: () => hasEditorErrors
 	});
 
-	function ensureNewProjectFileUiState(relativePath: string) {
-		if (newProjectFileHasErrors[relativePath] === undefined) {
-			newProjectFileHasErrors = {
-				...newProjectFileHasErrors,
+	function ensureNewProjectWorkspaceUiState(relativePath: string) {
+		if (newProjectWorkspaceHasErrors[relativePath] === undefined) {
+			newProjectWorkspaceHasErrors = {
+				...newProjectWorkspaceHasErrors,
 				[relativePath]: false
 			};
 		}
-		if (newProjectFileValidationReady[relativePath] === undefined) {
-			newProjectFileValidationReady = {
-				...newProjectFileValidationReady,
+		if (newProjectWorkspaceValidationReady[relativePath] === undefined) {
+			newProjectWorkspaceValidationReady = {
+				...newProjectWorkspaceValidationReady,
 				[relativePath]: true
 			};
 		}
 	}
 
-	function createNewProjectFile(parentPath: string, name: string, content = '') {
-		const relativePath = planProjectFileCreate(newProjectFilePaths, parentPath, name);
+	function createNewProjectWorkspaceFile(parentPath: string, name: string, content = '') {
+		const relativePath = planProjectWorkspaceFileCreate(newProjectWorkspacePaths, parentPath, name);
 		if (!relativePath) return;
-		newProjectFiles = [...newProjectFiles, { relativePath, isDirectory: false }];
-		newProjectFileContents = { ...newProjectFileContents, [relativePath]: content };
-		ensureNewProjectFileUiState(relativePath);
-		openProjectFileTab(`file:${relativePath}`);
+		newProjectWorkspaceFiles = [...newProjectWorkspaceFiles, { relativePath, isDirectory: false }];
+		newProjectWorkspaceContents = { ...newProjectWorkspaceContents, [relativePath]: content };
+		ensureNewProjectWorkspaceUiState(relativePath);
+		openEditorFileTab(`file:${relativePath}`);
+	}
+
+	async function uploadNewProjectWorkspaceFiles(parentPath: string, files: File[]): Promise<string | void> {
+		const file = files[0];
+		if (!file) return m.workspace_upload_file_required();
+		const result = await readWorkspaceTextUpload(file, projectWorkspaceMaxFileSizeMb);
+		if (result.error) return result.error;
+		createNewProjectWorkspaceFile(parentPath, file.name, result.content ?? '');
 	}
 
 	function createNewProjectFolder(parentPath: string, name: string) {
-		const relativePath = planProjectFileCreate(newProjectFilePaths, parentPath, name);
+		const relativePath = planProjectWorkspaceFileCreate(newProjectWorkspacePaths, parentPath, name);
 		if (!relativePath) return;
-		newProjectFiles = [...newProjectFiles, { relativePath, isDirectory: true }];
-		selectedProjectFile = `file:${relativePath}`;
+		newProjectWorkspaceFiles = [...newProjectWorkspaceFiles, { relativePath, isDirectory: true }];
+		selectedEditorFile = `file:${relativePath}`;
 	}
 
-	function applyNewProjectFilePathChange(oldPath: string, newPath: string) {
-		newProjectFiles = newProjectFiles.map((file) => ({
+	function applyNewProjectWorkspacePathChange(oldPath: string, newPath: string) {
+		newProjectWorkspaceFiles = newProjectWorkspaceFiles.map((file) => ({
 			...file,
-			relativePath: remapProjectFilePath(file.relativePath, oldPath, newPath)
+			relativePath: remapWorkspaceFilePath(file.relativePath, oldPath, newPath)
 		}));
-		newProjectFileContents = remapProjectFileRecord(newProjectFileContents, oldPath, newPath);
-		newProjectFileHasErrors = remapProjectFileRecord(newProjectFileHasErrors, oldPath, newPath);
-		newProjectFileValidationReady = remapProjectFileRecord(newProjectFileValidationReady, oldPath, newPath);
-		openProjectTabs = openProjectTabs.map((tab) => remapSelectedProjectFileKey(tab, oldPath, newPath) ?? tab);
-		const remappedSelection = remapSelectedProjectFileKey(selectedProjectFile, oldPath, newPath);
+		newProjectWorkspaceContents = remapWorkspaceFileRecord(newProjectWorkspaceContents, oldPath, newPath);
+		newProjectWorkspaceHasErrors = remapWorkspaceFileRecord(newProjectWorkspaceHasErrors, oldPath, newPath);
+		newProjectWorkspaceValidationReady = remapWorkspaceFileRecord(newProjectWorkspaceValidationReady, oldPath, newPath);
+		openProjectTabs = openProjectTabs.map((tab) => remapSelectedWorkspaceFileKey(tab, oldPath, newPath) ?? tab);
+		const remappedSelection = remapSelectedWorkspaceFileKey(selectedEditorFile, oldPath, newPath);
 		if (remappedSelection) {
-			selectedProjectFile = remappedSelection;
+			selectedEditorFile = remappedSelection;
 		}
 	}
 
-	function renameNewProjectFile(relativePath: string, newName: string) {
-		const plan = planProjectFileRename(newProjectFilePaths, relativePath, newName);
+	function renameNewProjectWorkspaceFile(relativePath: string, newName: string) {
+		const plan = planProjectWorkspaceFileRename(newProjectWorkspacePaths, relativePath, newName);
 		if (!plan) return;
-		applyNewProjectFilePathChange(relativePath, plan.newPath);
+		applyNewProjectWorkspacePathChange(relativePath, plan.newPath);
 	}
 
-	function moveNewProjectFile(relativePath: string, newParentPath: string) {
-		const entry = newProjectFileEntries.find((file) => file.relativePath === relativePath);
-		const newPath = planProjectFileMove(entry, newProjectFilePaths, relativePath, newParentPath);
+	function moveNewProjectWorkspaceFile(relativePath: string, newParentPath: string) {
+		const entry = newProjectWorkspaceEntries.find((file) => file.relativePath === relativePath);
+		const newPath = planProjectWorkspaceFileMove(entry, newProjectWorkspacePaths, relativePath, newParentPath);
 		if (!newPath) return;
-		applyNewProjectFilePathChange(relativePath, newPath);
+		applyNewProjectWorkspacePathChange(relativePath, newPath);
 	}
 
-	function deleteNewProjectFile(relativePath: string) {
-		newProjectFiles = newProjectFiles.filter((file) => !projectFilePathMatches(file.relativePath, relativePath));
-		newProjectFileContents = removeProjectFileRecord(newProjectFileContents, relativePath);
-		newProjectFileHasErrors = removeProjectFileRecord(newProjectFileHasErrors, relativePath);
-		newProjectFileValidationReady = removeProjectFileRecord(newProjectFileValidationReady, relativePath);
-		openProjectTabs = openProjectTabs.filter((tab) => !isProjectFileSelectionUnder(tab, relativePath));
-		if (isProjectFileSelectionUnder(selectedProjectFile, relativePath)) {
-			selectedProjectFile = openTabs[0] ?? 'compose';
+	function deleteNewProjectWorkspaceFile(relativePath: string) {
+		newProjectWorkspaceFiles = newProjectWorkspaceFiles.filter(
+			(file) => !workspaceFilePathMatches(file.relativePath, relativePath)
+		);
+		newProjectWorkspaceContents = removeWorkspaceFileRecord(newProjectWorkspaceContents, relativePath);
+		newProjectWorkspaceHasErrors = removeWorkspaceFileRecord(newProjectWorkspaceHasErrors, relativePath);
+		newProjectWorkspaceValidationReady = removeWorkspaceFileRecord(newProjectWorkspaceValidationReady, relativePath);
+		openProjectTabs = openProjectTabs.filter((tab) => !isWorkspaceFileSelectionUnder(tab, relativePath));
+		if (isWorkspaceFileSelectionUnder(selectedEditorFile, relativePath)) {
+			selectedEditorFile = openTabs[0] ?? 'compose';
 		}
 	}
 
-	function buildNewProjectFilePayload(): ProjectFileDraft[] {
-		return newProjectFiles.map((file) => ({
+	function buildNewProjectWorkspacePayload(): ProjectWorkspaceFileDraft[] {
+		return newProjectWorkspaceFiles.map((file) => ({
 			relativePath: file.relativePath,
 			isDirectory: !!file.isDirectory,
-			content: file.isDirectory ? undefined : (newProjectFileContents[file.relativePath] ?? '')
+			content: file.isDirectory ? undefined : (newProjectWorkspaceContents[file.relativePath] ?? '')
 		}));
 	}
 
@@ -411,7 +431,7 @@
 						aria-label={m.project_view_description()}
 						onCheckedChange={(checked) => {
 							layoutMode = checked ? 'tree' : 'classic';
-							openProjectFileTab('compose');
+							openEditorFileTab('compose');
 						}}
 					/>
 				</div>
@@ -427,17 +447,19 @@
 							persistStorage="local"
 						>
 							{#snippet first()}
-								<ProjectFileTreePanel
-									composeFileName="compose.yaml"
-									entries={newProjectFileEntries}
-									selectedFile={selectedProjectFile}
+								<WorkspaceFileTreePanel
+									leadingRows={newProjectWorkspaceLeadingRows}
+									entries={newProjectWorkspaceEntries}
+									selectedFile={selectedEditorFile}
 									disabled={ui.saving || ui.isLoadingTemplateContent}
-									onSelect={openProjectFileTab}
-									onCreateFile={createNewProjectFile}
+									onSelect={openEditorFileTab}
+									onCreateFile={createNewProjectWorkspaceFile}
 									onCreateFolder={createNewProjectFolder}
-									onRename={renameNewProjectFile}
-									onMove={moveNewProjectFile}
-									onDelete={deleteNewProjectFile}
+									onUpload={uploadNewProjectWorkspaceFiles}
+									validateName={(name, parentPath) => validateProjectWorkspaceFileName(name, parentPath)}
+									onRename={renameNewProjectWorkspaceFile}
+									onMove={moveNewProjectWorkspaceFile}
+									onDelete={deleteNewProjectWorkspaceFile}
 								/>
 							{/snippet}
 
@@ -446,8 +468,8 @@
 									<EditorTabStrip
 										tabs={projectTabs}
 										activeKey={activeProjectTab}
-										onSelect={openProjectFileTab}
-										onClose={closeProjectFileTab}
+										onSelect={openEditorFileTab}
+										onClose={closeEditorFileTab}
 									>
 										{#snippet actions()}
 											<ComposeFileEditorPanel
@@ -494,11 +516,11 @@
 													variant="plain"
 													open={true}
 													title={relativePath}
-													language={projectFileLanguage(relativePath)}
+													language={workspaceFileLanguage(relativePath)}
 													validationMode="none"
-													bind:value={newProjectFileContents[relativePath]}
-													bind:hasErrors={newProjectFileHasErrors[relativePath]}
-													bind:validationReady={newProjectFileValidationReady[relativePath]}
+													bind:value={newProjectWorkspaceContents[relativePath]}
+													bind:hasErrors={newProjectWorkspaceHasErrors[relativePath]}
+													bind:validationReady={newProjectWorkspaceValidationReady[relativePath]}
 													fileId={`projects:new:file:${relativePath}`}
 													originalValue=""
 													enableDiff={true}

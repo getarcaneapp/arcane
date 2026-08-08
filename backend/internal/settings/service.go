@@ -219,7 +219,7 @@ func DefaultSettingsConfig() *models.Settings {
 		AutoHealExcludedContainers:      models.SettingVariable{Value: ""},
 		AutoHealMaxRestarts:             models.SettingVariable{Value: "5"},
 		AutoHealRestartWindow:           models.SettingVariable{Value: "30"},
-		VolumeBrowserHelperIdleTimeout:  models.SettingVariable{Value: "10"},
+		VolumeHelperIdleTimeout:         models.SettingVariable{Value: "10"},
 		BaseServerURL:                   models.SettingVariable{Value: "http://localhost"},
 		EnableGravatar:                  models.SettingVariable{Value: "true"},
 		AvatarMaxUploadSizeMb:           models.SettingVariable{Value: "2"},

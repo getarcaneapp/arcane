@@ -224,7 +224,7 @@
 						</DropdownMenu.Item>
 						<DropdownMenu.Item onclick={() => (showUpload = true)}>
 							<UploadIcon class="size-4" />
-							{m.volumes_browser_upload_files()}
+							{m.workspace_upload_files()}
 						</DropdownMenu.Item>
 					{/if}
 				</DropdownMenu.Content>

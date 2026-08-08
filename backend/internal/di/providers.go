@@ -212,13 +212,13 @@ func provideGitRepositoryServiceInternal(module *gitrepo.Module) *gitrepo.GitRep
 
 func provideVolumeModuleInternal(lc fx.Lifecycle, db *database.DB, docker *docker.DockerClientService, event *event.EventService, settings *settings.SettingsService, image *image.ImageService, activity *activity.ActivityService, cfg *config.Config) *volume.Module {
 	module := volume.New(volume.Dependencies{
-		DB:               db,
-		Docker:           docker,
-		Event:            event,
-		Settings:         settings,
-		Image:            image,
-		Activity:         activity,
-		BackupVolumeName: cfg.BackupVolumeName,
+		DB:       db,
+		Docker:   docker,
+		Event:    event,
+		Settings: settings,
+		Image:    image,
+		Activity: activity,
+		Config:   cfg,
 	})
 	lc.Append(fx.Hook{
 		OnStop: func(ctx context.Context) error {

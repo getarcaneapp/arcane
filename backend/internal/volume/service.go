@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
 
@@ -18,20 +19,26 @@ import (
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	workspacepkg "github.com/getarcaneapp/arcane/backend/v2/pkg/workspace"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/moby/moby/client"
 	"golang.org/x/sync/singleflight"
 )
 
 type VolumeService struct {
-	db               *database.DB
-	dockerService    *docker.DockerClientService
-	eventService     *event.EventService
-	settingsService  *settings.SettingsService
-	imageService     *image.ImageService
-	backupVolumeName string
-	helperMu         sync.Mutex
-	helperByVolume   map[string]*volumeHelper
+	db                        *database.DB
+	dockerService             *docker.DockerClientService
+	eventService              *event.EventService
+	settingsService           *settings.SettingsService
+	imageService              *image.ImageService
+	backupVolumeName          string
+	workspaceMaxDepth         int
+	workspaceMaxEntries       int
+	workspaceMaxFileSizeBytes int64
+	workspaceLocks            utils.KeyedMutex
+	helperMu                  sync.Mutex
+	helperByVolume            map[string]*volumeHelper
 	// helperGroup deduplicates concurrent read-only helper creation per volume.
 	// Without it two simultaneous browse requests each create a helper and the
 	// second overwrites the first in helperByVolume, orphaning a `sleep infinity`
@@ -39,21 +46,41 @@ type VolumeService struct {
 	helperGroup singleflight.Group
 }
 
+type volumeWorkspaceLockContextKeyInternal struct{}
+
+type volumeWorkspaceLockContextInternal struct {
+	service    *VolumeService
+	volumeName string
+}
+
 const trivyCacheVolumePruneFilterValue = libarcane.InternalResourceLabel + "=true"
 
-func NewVolumeService(db *database.DB, dockerService *docker.DockerClientService, eventService *event.EventService, settingsService *settings.SettingsService, imageService *image.ImageService, backupVolumeName string) *VolumeService {
+func NewVolumeService(db *database.DB, dockerService *docker.DockerClientService, eventService *event.EventService, settingsService *settings.SettingsService, imageService *image.ImageService, cfg *config.Config) *VolumeService {
 	slog.Debug("volume service: new")
+	backupVolumeName := ""
+	workspaceMaxDepth := 50
+	workspaceMaxEntries := 10000
+	workspaceMaxFileSizeMB := workspacepkg.DefaultMaxFileSizeMB
+	if cfg != nil {
+		backupVolumeName = cfg.BackupVolumeName
+		workspaceMaxDepth = cfg.VolumeWorkspaceMaxDepth
+		workspaceMaxEntries = cfg.VolumeWorkspaceMaxEntries
+		workspaceMaxFileSizeMB = cfg.VolumeWorkspaceMaxFileSizeMB
+	}
 	if strings.TrimSpace(backupVolumeName) == "" {
 		backupVolumeName = "arcane-backups"
 	}
 	return &VolumeService{
-		db:               db,
-		dockerService:    dockerService,
-		eventService:     eventService,
-		settingsService:  settingsService,
-		imageService:     imageService,
-		backupVolumeName: backupVolumeName,
-		helperByVolume:   make(map[string]*volumeHelper),
+		db:                        db,
+		dockerService:             dockerService,
+		eventService:              eventService,
+		settingsService:           settingsService,
+		imageService:              imageService,
+		backupVolumeName:          backupVolumeName,
+		workspaceMaxDepth:         workspaceMaxDepth,
+		workspaceMaxEntries:       workspaceMaxEntries,
+		workspaceMaxFileSizeBytes: workspacepkg.MaxFileSizeBytes(workspaceMaxFileSizeMB),
+		helperByVolume:            make(map[string]*volumeHelper),
 	}
 }
 

@@ -2,6 +2,8 @@ module github.com/getarcaneapp/arcane/cli/v2
 
 go 1.26.5
 
+replace github.com/getarcaneapp/arcane/types/v2 => ../types
+
 require (
 	charm.land/bubbles/v2 v2.1.1
 	charm.land/bubbletea/v2 v2.0.8

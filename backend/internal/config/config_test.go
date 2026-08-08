@@ -60,6 +60,55 @@ func TestConfig_LoadPermissions(t *testing.T) {
 	})
 }
 
+func TestConfig_LoadWorkspaceLimits(t *testing.T) {
+	t.Run("defaults", func(t *testing.T) {
+		cfg := Load()
+		require.Equal(t, 20, cfg.ProjectWorkspaceMaxDepth)
+		require.Equal(t, 2000, cfg.ProjectWorkspaceMaxEntries)
+		require.Equal(t, 10, cfg.ProjectWorkspaceMaxFileSizeMB)
+		require.Equal(t, 50, cfg.VolumeWorkspaceMaxDepth)
+		require.Equal(t, 10000, cfg.VolumeWorkspaceMaxEntries)
+		require.Equal(t, 10, cfg.VolumeWorkspaceMaxFileSizeMB)
+	})
+
+	t.Run("positive overrides", func(t *testing.T) {
+		t.Setenv("PROJECT_WORKSPACE_MAX_DEPTH", "25")
+		t.Setenv("PROJECT_WORKSPACE_MAX_ENTRIES", "2500")
+		t.Setenv("PROJECT_WORKSPACE_MAX_FILE_SIZE_MB", "12")
+		t.Setenv("VOLUME_WORKSPACE_MAX_DEPTH", "75")
+		t.Setenv("VOLUME_WORKSPACE_MAX_ENTRIES", "20000")
+		t.Setenv("VOLUME_WORKSPACE_MAX_FILE_SIZE_MB", "18")
+
+		cfg := Load()
+		require.Equal(t, 25, cfg.ProjectWorkspaceMaxDepth)
+		require.Equal(t, 2500, cfg.ProjectWorkspaceMaxEntries)
+		require.Equal(t, 12, cfg.ProjectWorkspaceMaxFileSizeMB)
+		require.Equal(t, 75, cfg.VolumeWorkspaceMaxDepth)
+		require.Equal(t, 20000, cfg.VolumeWorkspaceMaxEntries)
+		require.Equal(t, 18, cfg.VolumeWorkspaceMaxFileSizeMB)
+	})
+
+	for _, value := range []string{"0", "-1", "not-a-number"} {
+		t.Run("invalid values fall back "+value, func(t *testing.T) {
+			t.Setenv("PROJECT_WORKSPACE_MAX_FILE_SIZE_MB", value)
+			t.Setenv("VOLUME_WORKSPACE_MAX_FILE_SIZE_MB", value)
+			cfg := Load()
+			require.Equal(t, 10, cfg.ProjectWorkspaceMaxFileSizeMB)
+			require.Equal(t, 10, cfg.VolumeWorkspaceMaxFileSizeMB)
+		})
+	}
+
+	t.Run("old names are not aliases", func(t *testing.T) {
+		t.Setenv("PROJECT_FILE_TREE_MAX_DEPTH", "99")
+		t.Setenv("VOLUME_FILE_TREE_MAX_DEPTH", "99")
+		t.Setenv("VOLUME_FILE_TREE_MAX_ENTRIES", "99")
+		cfg := Load()
+		require.Equal(t, 20, cfg.ProjectWorkspaceMaxDepth)
+		require.Equal(t, 50, cfg.VolumeWorkspaceMaxDepth)
+		require.Equal(t, 10000, cfg.VolumeWorkspaceMaxEntries)
+	})
+}
+
 func TestConfig_DockerSecretsFileSupport(t *testing.T) {
 	// Save original env vars
 	origEncryptionKey := os.Getenv("ENCRYPTION_KEY")

@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { ComposeEditorWrapper } from '#lib/components/compose';
-	import CodePanel from '../../projects/components/CodePanel.svelte';
+	import CodePanel from '#lib/components/code-panel.svelte';
 	import { projectService } from '#lib/services/project-service';
+	import { projectWorkspaceService } from '#lib/services/project-workspace-service';
 	import type { Project, IncludeFile } from '#lib/types/swarm';
 
 	let {
@@ -29,7 +30,15 @@
 
 	async function save() {
 		if (includeFile) {
-			await projectService.updateProjectIncludeFile(project.id, includeFile.relativePath, composeContent);
+			const workspace = await projectWorkspaceService.getWorkspace(project.id);
+			await projectWorkspaceService.updateWorkspace(
+				project.id,
+				{
+					fileTreeRevision: workspace.fileTreeRevision,
+					fileChanges: [{ operation: 'update_file', relativePath: includeFile.relativePath, uploadIndex: 0 }]
+				},
+				[new File([composeContent], includeFile.relativePath, { type: 'text/yaml' })]
+			);
 		} else {
 			await projectService.updateProject(project.id, undefined, composeContent);
 		}
