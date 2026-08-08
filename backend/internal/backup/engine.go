@@ -9,6 +9,7 @@ import (
 	"encoding/json/v2"
 	"fmt"
 	"io"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	rusticruntime "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/rustic"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
 	"github.com/google/uuid"
@@ -274,6 +276,14 @@ func (e *Engine) ensureImageInternal(ctx context.Context, dockerClient *client.C
 	}
 	return nil
 }
+func arcaneNetworkModeInternal(ctx context.Context, dockerClient *client.Client) container.NetworkMode {
+	arcane, err := libarcane.InspectCurrentArcaneContainer(ctx, dockerClient)
+	if err != nil || arcane == nil || arcane.ID == "" {
+		slog.DebugContext(ctx, "backup engine: running Rustic on the default network", "error", err)
+		return ""
+	}
+	return container.NetworkMode("container:" + arcane.ID)
+}
 
 func (e *Engine) runContainerInternal(ctx context.Context, dockerClient *client.Client, repository Repository, password string, command []string, extraMounts ...mount.Mount) (string, error) {
 	if err := e.ensureImageInternal(ctx, dockerClient); err != nil {
@@ -289,6 +299,7 @@ func (e *Engine) runContainerInternal(ctx context.Context, dockerClient *client.
 	mounts = append(mounts, extraMounts...)
 	hostConfig := volumehelper.HostConfig(rusticruntime.DefaultImage, nil, mounts)
 	hostConfig.AutoRemove = false
+	hostConfig.NetworkMode = arcaneNetworkModeInternal(ctx, dockerClient)
 	created, err := dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Config: &container.Config{
 			Image:  rusticruntime.DefaultImage,

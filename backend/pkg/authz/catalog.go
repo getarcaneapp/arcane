@@ -93,6 +93,15 @@ var permissionCatalog = []PermissionCatalogResource{
 		{"test", PermGitReposTest, "Test", ""},
 		{"sync", PermGitReposSync, "Sync", ""},
 	}},
+	{"s3-destinations", "S3 Destinations", PermissionScopeGlobal, []PermissionCatalogAction{
+		{"list", PermS3DestinationsList, "List", ""},
+		{"read", PermS3DestinationsRead, "Read", ""},
+		{"create", PermS3DestinationsCreate, "Create", ""},
+		{"update", PermS3DestinationsUpdate, "Update", ""},
+		{"delete", PermS3DestinationsDelete, "Delete", ""},
+		{"test", PermS3DestinationsTest, "Test", ""},
+		{"sync", PermS3DestinationsSync, "Sync", ""},
+	}},
 	{"events", "Events", PermissionScopeGlobal, []PermissionCatalogAction{
 		{"read", PermEventsRead, "Read", ""},
 		{"delete", PermEventsDelete, "Delete", ""},

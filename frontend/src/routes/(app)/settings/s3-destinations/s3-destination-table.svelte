@@ -77,7 +77,7 @@
 
 {#snippet RowActions({ item }: { item: S3Destination })}
 	<RowActionsMenu>
-		<IfPermitted perm="settings:write">
+		<IfPermitted perm="s3-destinations:test">
 			<DropdownMenu.Item onclick={() => testDestination(item)} disabled={testingId === item.id}>
 				{#if testingId === item.id}
 					<Spinner class="size-4" />
@@ -86,10 +86,14 @@
 				{/if}
 				{m.test_connection()}
 			</DropdownMenu.Item>
+		</IfPermitted>
+		<IfPermitted perm="s3-destinations:update">
 			<DropdownMenu.Item onclick={() => onEdit(item)}>
 				<EditIcon class="size-4" />
 				{m.common_edit()}
 			</DropdownMenu.Item>
+		</IfPermitted>
+		<IfPermitted perm="s3-destinations:delete">
 			<DropdownMenu.Separator />
 			<DropdownMenu.Item variant="destructive" onclick={() => onDelete(item)}>
 				<TrashIcon class="size-4" />

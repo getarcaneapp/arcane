@@ -187,6 +187,13 @@ func (s *VolumeService) stopRunningContainersForBackupInternal(ctx context.Conte
 		if strings.EqualFold(candidate.Labels["com.getarcaneapp.arcane"], "true") || strings.EqualFold(candidate.Labels["com.getarcaneapp.arcane.agent"], "true") {
 			continue
 		}
+		// Arcane's own helper containers mount the volume as well, but they are
+		// auto-removed when stopped and recreated on demand. Stopping one here
+		// would leave nothing for the restart pass to find, failing an
+		// otherwise successful backup or restore.
+		if strings.EqualFold(candidate.Labels[libarcane.InternalResourceLabel], "true") {
+			continue
+		}
 		eligible = append(eligible, candidate)
 	}
 	containerIDs := docker.FilterContainersUsingVolume(eligible, volumeName)

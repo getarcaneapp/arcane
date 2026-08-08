@@ -83,6 +83,17 @@ const (
 	PermGitReposTest   = "git-repositories:test"
 	PermGitReposSync   = "git-repositories:sync"
 
+	// PermS3DestinationsList and its siblings gate S3 backup destinations,
+	// which hold credentials and are manager-owned, so they are granted
+	// separately from general settings, like container registries.
+	PermS3DestinationsList   = "s3-destinations:list"
+	PermS3DestinationsRead   = "s3-destinations:read"
+	PermS3DestinationsCreate = "s3-destinations:create"
+	PermS3DestinationsUpdate = "s3-destinations:update"
+	PermS3DestinationsDelete = "s3-destinations:delete"
+	PermS3DestinationsTest   = "s3-destinations:test"
+	PermS3DestinationsSync   = "s3-destinations:sync"
+
 	PermEventsRead          = "events:read"
 	PermEventsDelete        = "events:delete"
 	PermCustomizeManage     = "customize:manage"
@@ -294,6 +305,8 @@ func BuiltInEditorPermissions() []string {
 		PermTemplatesList, PermTemplatesRead, PermTemplatesCreate, PermTemplatesUpdate, PermTemplatesDelete,
 		PermVariablesRead, PermVariablesCreate, PermVariablesUpdate, PermVariablesDelete, PermVariablesSync,
 		PermGitReposList, PermGitReposRead,
+		// Editor can run volume backups, so it needs to pick a destination.
+		PermS3DestinationsList, PermS3DestinationsRead,
 		PermEventsRead,
 		// Full env-scoped Docker management
 		PermContainersList, PermContainersRead, PermContainersLogs, PermContainersCreate, PermContainersStart, PermContainersStop, PermContainersRestart, PermContainersRedeploy, PermContainersKill, PermContainersPause, PermContainersDelete, PermContainersExec, PermContainersAutoUpdate,
@@ -352,6 +365,7 @@ func BuiltInViewerPermissions() []string {
 		PermTemplatesList, PermTemplatesRead,
 		PermVariablesRead,
 		PermGitReposList, PermGitReposRead,
+		PermS3DestinationsList, PermS3DestinationsRead,
 		PermEventsRead,
 		PermContainersList, PermContainersRead, PermContainersLogs,
 		PermProjectsList, PermProjectsRead, PermProjectsLogs,

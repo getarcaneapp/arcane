@@ -283,6 +283,67 @@ func TestVariablePermissionsAreSeparateGlobalGrantsWithBuiltInAccess(t *testing.
 	}
 }
 
+func TestS3DestinationPermissionsAreSeparateGlobalGrantsWithBuiltInAccess(t *testing.T) {
+	s3Permissions := []string{
+		PermS3DestinationsList,
+		PermS3DestinationsRead,
+		PermS3DestinationsCreate,
+		PermS3DestinationsUpdate,
+		PermS3DestinationsDelete,
+		PermS3DestinationsTest,
+		PermS3DestinationsSync,
+	}
+
+	for _, permission := range s3Permissions {
+
+		require.True(t, IsKnownPermission(permission),
+			"S3 destination permission %q must be known", permission)
+
+		require.True(t, IsOrgLevel(permission),
+			"S3 destination permission %q must be global", permission)
+
+		require.Contains(t, AllPermissions(), permission,
+			"Admin must receive %q", permission)
+
+		require.NotContains(t, BuiltInMonitorPermissions(), permission,
+			"Monitor must not receive %q", permission)
+
+		require.NotContains(t, BuiltInDeployerPermissions(), permission,
+			"Deployer must not receive %q", permission)
+
+	}
+
+	// Roles that can run backups pick a destination, so they read but never
+	// manage the stored credentials.
+	for name, permissions := range map[string][]string{
+		"Editor":          BuiltInEditorPermissions(),
+		"No-Shell Editor": BuiltInNoShellEditorPermissions(),
+		"Viewer":          BuiltInViewerPermissions(),
+	} {
+		require.Contains(t, permissions, PermS3DestinationsList,
+			"%s must receive %q", name, PermS3DestinationsList)
+
+		require.Contains(t, permissions, PermS3DestinationsRead,
+			"%s must receive %q", name, PermS3DestinationsRead)
+
+		for _, permission := range s3Permissions[2:] {
+
+			require.NotContains(t, permissions, permission,
+				"%s must not receive %q", name, permission)
+
+		}
+	}
+
+	settingsOnly := NewPermissionSet()
+	settingsOnly.AddGlobal(PermSettingsRead, PermSettingsWrite)
+	for _, permission := range s3Permissions {
+
+		require.False(t, settingsOnly.Allows(permission, ""),
+			"settings grants must not satisfy %q", permission)
+
+	}
+}
+
 func TestPermissionCatalogDerivesKnownPermissionsAndScopes(t *testing.T) {
 	catalog := PermissionCatalog()
 
