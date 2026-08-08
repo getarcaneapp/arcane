@@ -33,9 +33,11 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
+	s3domain "github.com/getarcaneapp/arcane/backend/v2/internal/s3"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/search"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/swarm"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/systembackup"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/template"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/variable"
@@ -226,6 +228,8 @@ type HandlerDeps struct {
 	Build             *build.BuildService
 	BuildWorkspace    *build.BuildWorkspaceService
 	Volume            *volume.Module
+	S3Destination     *s3domain.Module
+	SystemBackup      *systembackup.Module
 	Network           *network.NetworkService
 	Port              *port.PortService
 	Swarm             *swarm.Module
@@ -416,6 +420,8 @@ func registerHandlersInternal(api huma.API, deps HandlerDeps, handlerAppCtx hand
 	build.RegisterBuildWorkspaces(api, deps.BuildWorkspace)
 	deps.ImageUpdate.RegisterRoutes(api, handlerAppCtx)
 	deps.Settings.RegisterRoutes(api)
+	deps.S3Destination.RegisterRoutes(api)
+	deps.SystemBackup.RegisterRoutes(api, handlerAppCtx)
 	deps.JobSchedule.RegisterRoutes(api)
 	deps.Volume.RegisterRoutes(api, handlerAppCtx)
 	deps.Container.RegisterRoutes(api, handlerAppCtx)

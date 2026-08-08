@@ -29,6 +29,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/entityjobs"
+	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	"github.com/getarcaneapp/arcane/types/v2/environment"
 	"github.com/getarcaneapp/arcane/types/v2/gitops"
@@ -104,6 +105,7 @@ func setupEnvironmentServiceTestDB(t *testing.T) *database.DB {
 	require.NoError(t, db.AutoMigrate(
 		&models.Environment{},
 		&models.ContainerRegistry{},
+		&models.S3Destination{},
 		&models.SettingVariable{},
 		&models.User{},
 		&models.ApiKey{},
@@ -424,6 +426,49 @@ func TestEnvironmentService_SyncRegistriesToEnvironment_IncludesECRFields(t *tes
 
 	err := svc.SyncRegistriesToEnvironment(ctx, "env-1")
 	require.NoError(t, err)
+}
+
+func TestEnvironmentService_SyncS3DestinationsToEnvironment(t *testing.T) {
+	ctx := context.Background()
+	db := setupEnvironmentServiceTestDB(t)
+	svc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
+
+	encryptedSecret, err := crypto.Encrypt("s3-secret")
+	require.NoError(t, err)
+	require.NoError(t, db.WithContext(ctx).Create(&models.S3Destination{
+		BaseModel:       models.BaseModel{ID: "s3-1"},
+		Name:            "Offsite",
+		Endpoint:        "https://s3.example.com",
+		Bucket:          "volume-backups",
+		Region:          "eu-central-1",
+		AccessKeyID:     "s3-access-key",
+		SecretAccessKey: encryptedSecret,
+		Prefix:          "agents",
+		UseSSL:          true,
+		ForcePathStyle:  true,
+	}).Error)
+
+	accessToken := "agent-token"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, http.MethodPost, r.Method)
+		require.Equal(t, "/api/s3-destinations/sync", r.URL.Path)
+		require.Equal(t, accessToken, r.Header.Get("X-API-Key"))
+		require.Equal(t, accessToken, r.Header.Get("X-Arcane-Agent-Token"))
+
+		var syncReq backuptypes.S3DestinationSyncRequest
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&syncReq))
+		require.Len(t, syncReq.Destinations, 1)
+		require.Equal(t, "s3-1", syncReq.Destinations[0].ID)
+		require.Equal(t, "s3-secret", syncReq.Destinations[0].SecretAccessKey)
+		require.Equal(t, "volume-backups", syncReq.Destinations[0].Bucket)
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"data":{"message":"ok"}}`))
+	}))
+	defer server.Close()
+
+	createTestEnvironment(t, db, "env-s3", server.URL, &accessToken)
+	require.NoError(t, svc.SyncS3DestinationsToEnvironment(ctx, "env-s3"))
 }
 
 func TestEnvironmentService_SyncRepositoriesToEnvironment_UsesAgentHeaders(t *testing.T) {

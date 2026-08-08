@@ -174,6 +174,10 @@ type Settings struct {
 	// API Keys category (admin management page - no actual settings)
 	ApiKeysCategoryPlaceholder SettingVariable `key:"apiKeysCategory,internal" meta:"label=API Keys;type=internal;keywords=api,keys,tokens,authentication,access,programmatic,integration;category=apikeys;description=Manage API keys for programmatic access" catmeta:"id=apikeys;title=API Keys;icon=apikey;url=/settings/api-keys;description=Create and manage API keys for programmatic access to Arcane"`
 
+	S3DestinationsCategoryPlaceholder SettingVariable `key:"s3DestinationsCategory,internal" meta:"label=S3 Destinations;type=internal;keywords=s3,storage,backup,aws,minio,backblaze,hetzner;category=s3destinations;description=Manage reusable S3-compatible storage destinations" catmeta:"id=s3destinations;title=S3 Destinations;icon=remoteenvironment;url=/settings/s3-destinations;description=Create and manage reusable S3-compatible backup destinations"`
+
+	SystemBackupsCategoryPlaceholder SettingVariable `key:"systemBackupsCategory,internal" meta:"label=System Backups;type=internal;keywords=backup,recovery,restore,configuration,secrets;category=systembackups;description=Back up and restore this Arcane instance" catmeta:"id=systembackups;title=System Backups;icon=backup;url=/settings/system-backups;description=Create encrypted recovery backups of Arcane data and configuration"`
+
 	FederatedCredentialsCategoryPlaceholder SettingVariable `key:"federatedCredentialsCategory,internal" meta:"label=Federated Credentials;type=internal;keywords=federated,credentials,workload,identity,oidc,token exchange,ci,github,gitlab;category=authentication;description=Manage workload identity federation credentials"`
 
 	// Webhooks category (management page - no actual settings)

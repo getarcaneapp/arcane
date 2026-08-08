@@ -1,8 +1,10 @@
 <script lang="ts">
 	import { m } from '#lib/paraglide/messages';
 	import { volumeBackupService, type VolumeBackupListResponse } from '#lib/services/volume-backup-service';
+	import { s3DestinationService } from '#lib/services/s3-destination-service';
 	import { volumeService } from '#lib/services/volume-service';
-	import type { BackupEntry } from '#lib/types/shared';
+	import type { BackupEntry, CreateVolumeBackupRequest, VolumeBackupPolicy } from '#lib/types/shared';
+	import type { S3Destination } from '#lib/types/s3-destination';
 	import { onMount } from 'svelte';
 	import {
 		LoadingSpinnerIcon,
@@ -14,14 +16,23 @@
 		DownloadIcon,
 		RestartIcon,
 		FileTextIcon,
-		AlertIcon
+		AlertIcon,
+		UploadIcon,
+		ArrowDownIcon,
+		EditIcon
 	} from '#lib/icons';
-	import { ArcaneButton } from '#lib/components/arcane-button';
+	import { ArcaneButton, arcaneButtonVariants } from '#lib/components/arcane-button';
+	import * as ButtonGroup from '#lib/components/ui/button-group';
 	import { toast } from 'svelte-sonner';
 	import { bytes, formatDateTimeShort } from '#lib/utils/formatting';
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared';
-	import { UniversalMobileCard, type ColumnSpec, type MobileFieldVisibility } from '#lib/components/arcane-table';
+	import {
+		UniversalMobileCard,
+		type BulkAction,
+		type ColumnSpec,
+		type MobileFieldVisibility
+	} from '#lib/components/arcane-table';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu';
 	import RowActionsMenu from '#lib/components/file-browser/row-actions-menu.svelte';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog';
@@ -34,11 +45,28 @@
 	import { hasPermission } from '#lib/utils/auth';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
+	import VolumeBackupPolicyDialog from './volume-backup-policy-dialog.svelte';
+	import { Badge } from '#lib/components/ui/badge';
+	import { cn } from '#lib/utils';
+	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions';
+	import { extractApiErrorMessage } from '#lib/utils/api';
+	import {
+		backupDestinationFromFlags,
+		backupDestinationDisplay,
+		backupDestinationLabel,
+		backupDestinationName,
+		backupStatusLabel,
+		backupStatusVariant,
+		backupTriggerLabel,
+		s3DestinationOptions as buildS3DestinationOptions
+	} from '#lib/utils/backups';
+	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
 
 	let { volumeName }: { volumeName: string } = $props();
 
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
 	const canBackupVolume = $derived(hasPermission('volumes:backup', currentEnvId));
+	const canDeleteBackup = $derived(hasPermission('volumes:delete', currentEnvId));
 
 	let backupsPaginated = $state<VolumeBackupListResponse>({
 		data: [],
@@ -50,6 +78,14 @@
 		}
 	});
 	let backupWarnings = $state<string[]>([]);
+	let backupPolicies = $state<VolumeBackupPolicy[]>([]);
+	let s3Destinations = $state<S3Destination[]>([]);
+	let showBackupPolicy = $state(false);
+	let editingBackupPolicyId = $state<string | undefined>();
+	let showS3DestinationDialog = $state(false);
+	let onDemandDestination = $state<'s3' | 'local_s3'>('s3');
+	let onDemandS3DestinationId = $state('');
+	const s3DestinationOptions = $derived(buildS3DestinationOptions(s3Destinations));
 
 	let requestOptions = $state<SearchPaginationSortRequest>({
 		pagination: { page: 1, limit: 10 },
@@ -57,6 +93,9 @@
 	});
 
 	let creating = $state(false);
+	let deletingSelected = $state(false);
+	let selectedIds = $state<string[]>([]);
+	let uploadingBackupId = $state<string | null>(null);
 	let restoringFiles = $state(false);
 	let showRestoreFiles = $state(false);
 	let restoreTarget = $state<BackupEntry | null>(null);
@@ -76,28 +115,48 @@
 			backupsPaginated = result;
 			backupWarnings = result.warnings ?? [];
 			return result;
-		} catch (e: any) {
-			toast.error(e.message || 'Failed to load backups');
+		} catch (error) {
+			toast.error(error instanceof Error ? error.message : m.volumes_backup_load_failed());
 			return backupsPaginated;
 		}
 	}
 
-	async function handleCreate() {
+	async function handleCreate(request?: CreateVolumeBackupRequest) {
 		creating = true;
 		try {
-			const result = await volumeBackupService.createBackup(volumeName);
+			const result = await volumeBackupService.createBackup(volumeName, request);
 			toast.success(m.common_success(), activityToastOptions(extractActivityId(result)));
 			await loadData(requestOptions);
-		} catch (e: any) {
-			toast.error(e.message || m.common_failed());
+			return true;
+		} catch (error) {
+			toast.error(error instanceof Error ? error.message : m.common_failed());
+			return false;
 		} finally {
 			creating = false;
 		}
 	}
 
+	function openS3DestinationDialog(destination: 's3' | 'local_s3') {
+		onDemandDestination = destination;
+		onDemandS3DestinationId = s3Destinations.length === 1 ? (s3Destinations[0]?.id ?? '') : '';
+		showS3DestinationDialog = true;
+	}
+
+	async function createS3Backup() {
+		if (!onDemandS3DestinationId) return;
+		const created = await handleCreate({
+			destination: onDemandDestination,
+			s3DestinationId: onDemandS3DestinationId
+		});
+		if (created) {
+			showS3DestinationDialog = false;
+			onDemandS3DestinationId = '';
+		}
+	}
+
 	async function handleDelete(backup: BackupEntry) {
 		openConfirmDialog({
-			title: m.common_remove_title({ resource: 'Backup' }),
+			title: m.common_remove_title({ resource: m.file_browser_backup() }),
 			message: m.volumes_backup_delete_confirm(),
 			confirm: {
 				label: m.common_remove(),
@@ -105,14 +164,52 @@
 				action: async () => {
 					try {
 						const result = await volumeBackupService.deleteBackup(backup.id);
-						toast.success(m.common_delete_success({ resource: 'Backup' }), activityToastOptions(extractActivityId(result)));
+						toast.success(
+							m.common_delete_success({ resource: m.file_browser_backup() }),
+							activityToastOptions(extractActivityId(result))
+						);
 						await loadData(requestOptions);
-					} catch (e: any) {
-						toast.error(e.message || m.common_delete_failed({ resource: 'Backup' }));
+					} catch (error) {
+						toast.error(extractApiErrorMessage(error));
+						await loadData(requestOptions);
 					}
 				}
 			}
 		});
+	}
+
+	function handleDeleteSelected(ids: string[]) {
+		bulkConfirmAndRun({
+			ids,
+			title: m.volume_backups_remove_selected_title({ count: ids.length }),
+			message: m.volume_backups_remove_selected_message({ count: ids.length }),
+			confirmLabel: m.common_remove(),
+			destructive: true,
+			run: (id) => volumeBackupService.deleteBackup(id),
+			messages: {
+				success: (count) => m.common_bulk_remove_success({ count, resource: m.volumes_backups_title() }),
+				partial: (success, total, failed) =>
+					m.common_bulk_remove_partial({ success, total, failed, resource: m.volumes_backups_title() }),
+				failure: () => m.common_bulk_remove_failed({ count: ids.length, resource: m.volumes_backups_title() })
+			},
+			setLoading: (loading) => (deletingSelected = loading),
+			onItemFailure: (_id, error) => toast.error(extractApiErrorMessage(error)),
+			onComplete: () => loadData(requestOptions),
+			clearSelection: () => (selectedIds = [])
+		});
+	}
+
+	async function handleUpload(backup: BackupEntry, s3DestinationId: string) {
+		uploadingBackupId = backup.id;
+		try {
+			const result = await volumeBackupService.uploadBackup(backup.id, s3DestinationId);
+			toast.success(m.backups_upload_s3_success(), activityToastOptions(extractActivityId(result)));
+			await loadData(requestOptions);
+		} catch (error) {
+			toast.error(error instanceof Error ? error.message : m.backups_upload_s3_failed());
+		} finally {
+			uploadingBackupId = null;
+		}
 	}
 
 	async function openRestoreFilesDialog(backup: BackupEntry) {
@@ -124,8 +221,8 @@
 		backupFilesLoading = true;
 		try {
 			backupFiles = await volumeBackupService.listBackupFiles(backup.id);
-		} catch (e: any) {
-			toast.error(e.message || m.common_failed());
+		} catch (error) {
+			toast.error(error instanceof Error ? error.message : m.common_failed());
 		} finally {
 			backupFilesLoading = false;
 		}
@@ -176,8 +273,8 @@
 						const result = await volumeBackupService.restoreBackup(volumeName, backup.id);
 						toast.success(m.volumes_backup_restore_success(), activityToastOptions(extractActivityId(result)));
 						await loadData(requestOptions);
-					} catch (e: any) {
-						toast.error(e.message || m.common_failed());
+					} catch (error) {
+						toast.error(error instanceof Error ? error.message : m.common_failed());
 					}
 				}
 			}
@@ -196,8 +293,8 @@
 				activityToastOptions(extractActivityId(result))
 			);
 			showRestoreFiles = false;
-		} catch (e: any) {
-			toast.error(e.message || m.common_failed());
+		} catch (error) {
+			toast.error(error instanceof Error ? error.message : m.common_failed());
 		} finally {
 			restoringFiles = false;
 		}
@@ -208,30 +305,90 @@
 	}
 
 	onMount(async () => {
-		await loadData(requestOptions);
+		const [collection, destinations] = await Promise.all([
+			volumeBackupService.getPolicies(volumeName),
+			canBackupVolume ? s3DestinationService.listAll().catch(() => []) : Promise.resolve([]),
+			loadData(requestOptions)
+		]);
+		backupPolicies = collection.policies;
+		s3Destinations = destinations;
 	});
 
 	const columns = [
 		{ accessorKey: 'id', title: m.common_id(), sortable: true, cell: IdCell },
+		{ accessorKey: 'status', title: m.common_status(), sortable: true, cell: StatusCell },
+		{ accessorKey: 'trigger', title: m.volume_backup_trigger(), sortable: true, cell: TriggerCell },
+		{ accessorKey: 'destination', title: m.backups_destination_label(), sortable: true, cell: DestinationCell },
 		{ accessorKey: 'size', title: m.common_size(), sortable: true, cell: SizeCell },
-		{ accessorKey: 'createdAt', title: m.common_created(), sortable: true, cell: CreatedCell }
+		{ accessorKey: 'createdAt', title: m.common_created(), sortable: true, cell: CreatedCell },
+		{
+			accessorKey: 'remoteSnapshotId',
+			title: m.volume_backup_remote_snapshot(),
+			sortable: true,
+			cell: RemoteSnapshotCell,
+			hidden: true
+		},
+		{ accessorKey: 'error', title: m.common_error(), sortable: false, cell: ErrorCell, hidden: true }
 	] satisfies ColumnSpec<BackupEntry>[];
 
-	const mobileFields = [{ id: 'size', label: m.common_size(), defaultVisible: true }];
+	const mobileFields = [
+		{ id: 'status', label: m.common_status(), defaultVisible: true },
+		{ id: 'trigger', label: m.volume_backup_trigger(), defaultVisible: true },
+		{ id: 'destination', label: m.backups_destination_label(), defaultVisible: true },
+		{ id: 'size', label: m.common_size(), defaultVisible: true },
+		{ id: 'remoteSnapshotId', label: m.volume_backup_remote_snapshot(), defaultVisible: false }
+	];
+
+	const bulkActions = $derived.by<BulkAction[]>(() => [
+		{
+			id: 'remove',
+			label: m.common_remove_selected_count({ count: selectedIds.length }),
+			action: 'remove',
+			onClick: handleDeleteSelected,
+			loading: deletingSelected,
+			disabled: !canDeleteBackup || deletingSelected || selectedIds.length === 0,
+			icon: TrashIcon
+		}
+	]);
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 </script>
 
-{#snippet IdCell({ value }: { value: any })}
-	<code class="font-mono text-xs font-medium">{value}</code>
+{#snippet IdCell({ item }: { item: BackupEntry })}
+	<code class="font-mono text-xs font-medium">{item.id}</code>
 {/snippet}
 
-{#snippet SizeCell({ value }: { value: any })}
-	{formatBytes(Number(value))}
+{#snippet StatusCell({ item }: { item: BackupEntry })}
+	<Badge variant={backupStatusVariant(item.status)}>{backupStatusLabel(item.status)}</Badge>
 {/snippet}
 
-{#snippet CreatedCell({ value }: { value: any })}
-	{formatDateTimeShort(String(value))}
+{#snippet TriggerCell({ item }: { item: BackupEntry })}
+	{backupTriggerLabel(item.trigger)}
+{/snippet}
+
+{#snippet DestinationCell({ item }: { item: BackupEntry })}
+	<div class="flex items-center gap-2">
+		<Badge variant={item.destination === 'local' ? 'gray' : 'blue'}>{backupDestinationLabel(item.destination)}</Badge>
+		{#if item.destination !== 'local' && backupDestinationName(item)}
+			<span class="max-w-48 truncate text-xs text-muted-foreground">{backupDestinationName(item)}</span>
+		{/if}
+	</div>
+{/snippet}
+
+{#snippet SizeCell({ item }: { item: BackupEntry })}
+	{formatBytes(item.size)}
+{/snippet}
+
+{#snippet CreatedCell({ item }: { item: BackupEntry })}
+	{formatDateTimeShort(item.createdAt)}
+{/snippet}
+
+{#snippet RemoteSnapshotCell({ item }: { item: BackupEntry })}
+	<code class="text-xs">{item.remoteSnapshotId || m.volume_backup_not_uploaded()}</code>
+{/snippet}
+
+{#snippet ErrorCell({ item }: { item: BackupEntry })}
+	<span class="line-clamp-2 max-w-80 text-xs text-destructive">{item.error || '-'}</span>
 {/snippet}
 
 {#snippet RowActions({ item }: { item: BackupEntry })}
@@ -239,17 +396,24 @@
 		{#if canBackupVolume}
 			<DropdownMenu.Item onclick={() => handleRestore(item)}>
 				<RestartIcon class="size-4" />
-				Restore
+				{m.volumes_backups_restore()}
 			</DropdownMenu.Item>
 			<DropdownMenu.Item onclick={() => openRestoreFilesDialog(item)}>
 				<FileTextIcon class="size-4" />
-				Restore files
+				{m.volume_restore_files()}
 			</DropdownMenu.Item>
 		{/if}
-		<DropdownMenu.Item onclick={() => volumeBackupService.downloadBackup(item.id)}>
-			<DownloadIcon class="size-4" />
-			{m.templates_download()}
-		</DropdownMenu.Item>
+		{#if canBackupVolume && s3Destinations.length}
+			{#each s3Destinations as destination (destination.id)}
+				<DropdownMenu.Item
+					disabled={item.status !== 'succeeded' || Boolean(item.remoteSnapshotId) || uploadingBackupId === item.id}
+					onclick={() => handleUpload(item, destination.id)}
+				>
+					<UploadIcon class="size-4" />
+					{m.backups_upload_s3()} · {destination.name}
+				</DropdownMenu.Item>
+			{/each}
+		{/if}
 		<IfPermitted perm="volumes:delete">
 			<DropdownMenu.Separator />
 			<DropdownMenu.Item variant="destructive" onclick={() => handleDelete(item)}>
@@ -262,15 +426,50 @@
 
 {#snippet ToolbarActions()}
 	{#if canBackupVolume}
-		<ArcaneButton
-			action="create"
-			customLabel={m.volumes_backup_create()}
-			loading={creating}
-			disabled={creating}
-			onclick={handleCreate}
-			size="sm"
-			icon={AddIcon}
-		/>
+		<div class="flex items-center gap-2">
+			<ArcaneButton
+				action="create"
+				customLabel={m.volume_backup_add_schedule()}
+				onclick={() => {
+					editingBackupPolicyId = undefined;
+					showBackupPolicy = true;
+				}}
+				size="sm"
+				icon={AddIcon}
+			/>
+			<ButtonGroup.Root>
+				<ArcaneButton
+					action="create"
+					customLabel={m.volumes_backup_create()}
+					loading={creating}
+					disabled={creating}
+					onclick={() => handleCreate()}
+					size="sm"
+					icon={AddIcon}
+				/>
+				<DropdownMenu.Root>
+					<DropdownMenu.Trigger
+						class={cn(arcaneButtonVariants({ tone: 'outline-primary', size: 'icon' }), 'size-8 rounded-md')}
+						aria-label={m.common_open_menu()}
+						disabled={creating}
+					>
+						<ArrowDownIcon class="size-4" />
+					</DropdownMenu.Trigger>
+					<DropdownMenu.Content align="end" class="w-64">
+						<DropdownMenu.Label>{m.backups_destination_label()}</DropdownMenu.Label>
+						<DropdownMenu.Item onclick={() => handleCreate({ destination: 'local' })}>
+							{m.local()}
+						</DropdownMenu.Item>
+						<DropdownMenu.Item onclick={() => openS3DestinationDialog('s3')}>
+							{m.backups_destination_s3()}
+						</DropdownMenu.Item>
+						<DropdownMenu.Item onclick={() => openS3DestinationDialog('local_s3')}>
+							{m.backups_destination_local_s3()}
+						</DropdownMenu.Item>
+					</DropdownMenu.Content>
+				</DropdownMenu.Root>
+			</ButtonGroup.Root>
+		</div>
 	{/if}
 {/snippet}
 
@@ -287,11 +486,32 @@
 		title={(item) => item.id}
 		fields={[
 			{
+				label: m.volume_backup_trigger(),
+				getValue: (item) => backupTriggerLabel(item.trigger),
+				icon: ClockIcon,
+				iconVariant: 'gray',
+				show: mobileFieldVisibility['trigger'] ?? true
+			},
+			{
 				label: m.common_size(),
 				getValue: (item) => formatBytes(item.size),
 				icon: InfoIcon,
 				iconVariant: 'gray',
 				show: mobileFieldVisibility['size'] ?? true
+			},
+			{
+				label: m.backups_destination_label(),
+				getValue: (item) => backupDestinationDisplay(item),
+				icon: DownloadIcon,
+				iconVariant: 'gray',
+				show: mobileFieldVisibility['destination'] ?? true
+			},
+			{
+				label: m.volume_backup_remote_snapshot(),
+				getValue: (item) => item.remoteSnapshotId || m.volume_backup_not_uploaded(),
+				icon: DownloadIcon,
+				iconVariant: 'gray',
+				show: mobileFieldVisibility['remoteSnapshotId'] ?? false
 			}
 		]}
 		footer={{
@@ -303,10 +523,67 @@
 	/>
 {/snippet}
 
+{#snippet PolicyCard(policy: VolumeBackupPolicy)}
+	<div class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-1.5 gap-y-0.5 rounded-md border px-2 py-1">
+		<Badge variant={policy.enabled ? 'green' : 'gray'}>{policy.enabled ? m.common_enabled() : m.common_disabled()}</Badge>
+		<code class="truncate">{policy.schedule}</code>
+		<div class="flex items-center gap-1.5 justify-self-end">
+			<Badge variant="blue">{backupDestinationLabel(backupDestinationFromFlags(policy.localEnabled, policy.s3Enabled))}</Badge>
+			{#if canBackupVolume}
+				<ArcaneButton
+					action="edit"
+					size="icon"
+					icon={EditIcon}
+					showLabel={false}
+					customLabel={m.jobs_edit_schedule()}
+					onclick={() => {
+						editingBackupPolicyId = policy.id;
+						showBackupPolicy = true;
+					}}
+					class="size-7"
+				/>
+			{/if}
+		</div>
+		<div class="col-span-2 flex min-w-0 items-center gap-1.5">
+			<span>
+				{policy.retentionCount === 0
+					? m.volume_backup_retention_all()
+					: m.volume_backup_retention_summary({ count: policy.retentionCount })}
+			</span>
+			<span>·</span>
+			<span>{policy.stopContainers ? m.volume_backup_containers_stopped() : m.volume_backup_containers_running()}</span>
+			{#if policy.lastRun}
+				<span>·</span>
+				<span class="truncate">{backupStatusLabel(policy.lastRun.status)} · {formatDateTimeShort(policy.lastRun.createdAt)}</span>
+			{/if}
+		</div>
+		{#if policy.s3Enabled && (policy.s3DestinationName || policy.s3Bucket || policy.s3DestinationId)}
+			<span
+				class="max-w-28 justify-self-end truncate"
+				title={policy.s3DestinationName || policy.s3Bucket || policy.s3DestinationId}
+			>
+				{policy.s3DestinationName || policy.s3Bucket || policy.s3DestinationId}
+			</span>
+		{/if}
+	</div>
+{/snippet}
+
 <div class="space-y-4">
 	<div class="flex items-center justify-between">
 		<h2 class="text-lg font-semibold">{m.volumes_backups_title()}</h2>
 	</div>
+	<div class="grid grid-cols-1 gap-1.5 text-xs text-muted-foreground sm:grid-cols-2 xl:grid-cols-3">
+		{#each backupPolicies as policy (policy.id)}
+			{@render PolicyCard(policy)}
+		{/each}
+	</div>
+
+	<Alert.Root class="py-2 [&>svg]:top-2">
+		<InfoIcon class="size-4" />
+		<Alert.Description class="text-xs">
+			{m.volume_backup_encryption_note()}
+		</Alert.Description>
+	</Alert.Root>
 
 	{#if backupWarnings.length > 0}
 		<Alert.Root variant="warning" class="py-2 [&>svg]:top-2">
@@ -320,11 +597,13 @@
 	<ArcaneTable
 		persistKey="arcane-volume-backup-table"
 		items={backupsPaginated}
+		bind:selectedIds
 		bind:requestOptions
 		bind:mobileFieldVisibility
 		onRefresh={loadData}
 		{columns}
 		{mobileFields}
+		{bulkActions}
 		rowActions={RowActions}
 		mobileCard={BackupMobileCardSnippet}
 		customToolbarActions={ToolbarActions}
@@ -342,7 +621,7 @@
 			<Alert.Root class="py-2 [&>svg]:top-2">
 				<InfoIcon class="size-4" />
 				<Alert.Description class="text-xs">
-					{m.volumes_backup_safety_info()}
+					{m.volume_backup_restore_files_lifecycle_info()}
 				</Alert.Description>
 			</Alert.Root>
 
@@ -405,3 +684,44 @@
 		{/if}
 	{/snippet}
 </ResponsiveDialog>
+
+<ResponsiveDialog
+	bind:open={showS3DestinationDialog}
+	title={m.volume_backup_choose_s3_destination()}
+	description={m.volume_backup_choose_s3_destination_description()}
+	contentClass="sm:max-w-[520px]"
+>
+	{#snippet children()}
+		<div class="py-2">
+			<SelectWithLabel
+				id="on-demand-volume-backup-s3-destination"
+				value={onDemandS3DestinationId}
+				onValueChange={(value) => (onDemandS3DestinationId = value)}
+				label={m.volume_backup_s3_destination_label()}
+				description={m.volume_backup_s3_destination_description()}
+				options={s3DestinationOptions}
+			/>
+			{#if s3Destinations.length === 0}
+				<p class="mt-2 text-xs text-muted-foreground">{m.volume_backup_no_s3_destinations()}</p>
+			{/if}
+		</div>
+	{/snippet}
+	{#snippet footer()}
+		<ArcaneButton action="cancel" onclick={() => (showS3DestinationDialog = false)} disabled={creating} />
+		<ArcaneButton
+			action="create"
+			customLabel={m.volumes_backup_create()}
+			onclick={createS3Backup}
+			loading={creating}
+			disabled={creating || !onDemandS3DestinationId}
+		/>
+	{/snippet}
+</ResponsiveDialog>
+
+<VolumeBackupPolicyDialog
+	bind:open={showBackupPolicy}
+	{volumeName}
+	policies={backupPolicies}
+	policyId={editingBackupPolicyId}
+	onSaved={(policies) => (backupPolicies = policies)}
+/>

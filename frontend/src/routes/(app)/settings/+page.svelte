@@ -12,7 +12,9 @@
 		JobsIcon,
 		CodeIcon,
 		GlobeIcon,
-		ActivityIcon
+		ActivityIcon,
+		RemoteEnvironmentIcon,
+		BackupIcon
 	} from '#lib/icons';
 	import { m } from '#lib/paraglide/messages';
 	import { settingsSearchService } from '#lib/services/settings-search';
@@ -47,7 +49,9 @@
 		jobs: JobsIcon,
 		code: CodeIcon,
 		globe: GlobeIcon,
-		activity: ActivityIcon
+		activity: ActivityIcon,
+		remoteenvironment: RemoteEnvironmentIcon,
+		backup: BackupIcon
 	};
 
 	onMount(async () => {
@@ -66,6 +70,7 @@
 	}
 
 	function isAccessibleCategory(category: SettingsCategory) {
+		if (category.id === 'systembackups' && !user?.isGlobalAdmin) return false;
 		if (!permissionsManifest?.accessSurfaces?.length) return true;
 		return canReachAccessSurfaceUrl(permissionsManifest, category.url, user, environmentStore.selected?.id);
 	}

@@ -27,10 +27,13 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/rustic"
+	s3domain "github.com/getarcaneapp/arcane/backend/v2/internal/s3"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/search"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/swarm"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/systembackup"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/template"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/version"
@@ -210,15 +213,31 @@ func provideGitRepositoryServiceInternal(module *gitrepo.Module) *gitrepo.GitRep
 	return module.Service()
 }
 
-func provideVolumeModuleInternal(lc fx.Lifecycle, db *database.DB, docker *docker.DockerClientService, event *event.EventService, settings *settings.SettingsService, image *image.ImageService, activity *activity.ActivityService, cfg *config.Config) *volume.Module {
+func provideS3ModuleInternal(db *database.DB, environmentService *environment.EnvironmentService) *s3domain.Module {
+	return s3domain.New(s3domain.Dependencies{
+		DB:                     db,
+		SyncRemoteDestinations: environmentService.SyncS3DestinationsToRemoteEnvironments,
+	})
+}
+
+func provideS3ServiceInternal(module *s3domain.Module) *s3domain.S3DestinationService {
+	return module.Service()
+}
+
+func provideVolumeModuleInternal(lc fx.Lifecycle, db *database.DB, dockerService *docker.DockerClientService, eventService *event.EventService, settingsService *settings.SettingsService, imageService *image.ImageService, activityService *activity.ActivityService, containerModule *container.Module, rusticService *rustic.RusticService, s3Service *s3domain.S3DestinationService, environmentService *environment.EnvironmentService, cfg *config.Config) *volume.Module {
 	module := volume.New(volume.Dependencies{
 		DB:               db,
-		Docker:           docker,
-		Event:            event,
-		Settings:         settings,
-		Image:            image,
-		Activity:         activity,
+		Docker:           dockerService,
+		Event:            eventService,
+		Settings:         settingsService,
+		Image:            imageService,
+		Activity:         activityService,
+		Environment:      environmentService,
+		Container:        containerModule.Service(),
+		Rustic:           rusticService,
+		S3:               s3Service,
 		BackupVolumeName: cfg.BackupVolumeName,
+		EncryptionKey:    cfg.EncryptionKey,
 	})
 	lc.Append(fx.Hook{
 		OnStop: func(ctx context.Context) error {
@@ -227,6 +246,14 @@ func provideVolumeModuleInternal(lc fx.Lifecycle, db *database.DB, docker *docke
 		},
 	})
 	return module
+}
+
+func provideVolumeServiceInternal(module *volume.Module) *volume.VolumeService {
+	return module.Service()
+}
+
+func provideSystemBackupServiceInternal(db *database.DB, dockerService *docker.DockerClientService, volumeModule *volume.Module, rusticService *rustic.RusticService, s3Service *s3domain.S3DestinationService, activityService *activity.ActivityService, cfg *config.Config) *systembackup.SystemBackupService {
+	return systembackup.NewSystemBackupService(db, dockerService, volumeModule.Service(), rusticService, s3Service, activityService, cfg)
 }
 
 func provideContainerModuleInternal(ctx context.Context, event *event.EventService, docker *docker.DockerClientService, image *image.ImageService, settings *settings.SettingsService, project *project.ProjectService, activity *activity.ActivityService) *container.Module {

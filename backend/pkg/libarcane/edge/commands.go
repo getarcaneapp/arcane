@@ -117,10 +117,9 @@ var commandRoutes = []commandRoute{
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/volumes/{volumeName}/backups/{backupId}/restore", CommandName: "volume.backup.restore"},
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/volumes/{volumeName}/backups/{backupId}/restore-files", CommandName: "volume.backup.restore_files"},
 	{Method: http.MethodDelete, PathPattern: "/api/environments/{id}/volumes/backups/{backupId}", CommandName: "volume.backup.delete"},
-	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/volumes/backups/{backupId}/download", CommandName: "volume.backup.download"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/volumes/backups/{backupId}/has-path", CommandName: "volume.backup.has_path"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/volumes/backups/{backupId}/files", CommandName: "volume.backup.files"},
-	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/volumes/{volumeName}/backups/upload", CommandName: "volume.backup.upload"},
+	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/volumes/backups/{backupId}/upload", CommandName: "volume.backup.upload"},
 
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/builds/browse", CommandName: "build_workspace.browse.list"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/builds/browse/content", CommandName: "build_workspace.browse.read_file"},

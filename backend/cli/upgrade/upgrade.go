@@ -115,7 +115,7 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 
 	// Perform the upgrade
 	slog.Info("Starting container upgrade", "container", containerName)
-	if err := upgradeContainer(ctx, dockerClient, targetContainer, imageToPull); err != nil {
+	if err := UpgradeContainer(ctx, dockerClient, targetContainer, imageToPull, nil); err != nil {
 		return errors.WrapIf(err, "failed to upgrade container")
 	}
 
@@ -455,7 +455,10 @@ func pullImage(ctx context.Context, dockerClient *client.Client, imageName strin
 	return docker.RenderJSONMessageStream(reader, os.Stdout)
 }
 
-func upgradeContainer(ctx context.Context, dockerClient *client.Client, oldContainer container.InspectResponse, newImage string) error {
+// UpgradeContainer recreates an Arcane container with the supplied image and
+// optional environment replacements. It is invoked from detached maintenance
+// containers so stopping the target cannot interrupt the operation.
+func UpgradeContainer(ctx context.Context, dockerClient *client.Client, oldContainer container.InspectResponse, newImage string, environment map[string]string) error {
 	originalName := strings.TrimPrefix(oldContainer.Name, "/")
 	oldName := fmt.Sprintf("%s-old-%d", originalName, time.Now().UnixNano())
 
@@ -463,6 +466,9 @@ func upgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 	config := *oldContainer.Config
 	config.Image = newImage
 	config.Labels = normalizeRecreatedArcaneLabelsInternal(config.Labels)
+	if len(environment) > 0 {
+		config.Env = applyRecoveredEnvironmentInternal(config.Env, environment)
+	}
 
 	config.Labels = refreshRecreatedContainerLabelsInternal(ctx, dockerClient, config.Labels, oldContainer.Image, newImage)
 
@@ -584,6 +590,40 @@ func upgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 	fmt.Println("PROGRESS:95:Upgrade complete")
 
 	return nil
+}
+
+func applyRecoveredEnvironmentInternal(current []string, recovered map[string]string) []string {
+	seen := make(map[string]struct{}, len(recovered))
+	updated := make([]string, 0, len(current)+len(recovered))
+	for _, entry := range current {
+		name, _, found := strings.Cut(entry, "=")
+		if !found {
+			updated = append(updated, entry)
+			continue
+		}
+		if baseName, ok := strings.CutSuffix(name, "__FILE"); ok {
+			if _, ok := recovered[baseName]; ok {
+				continue
+			}
+		}
+		if baseName, ok := strings.CutSuffix(name, "_FILE"); ok {
+			if _, ok := recovered[baseName]; ok {
+				continue
+			}
+		}
+		if replacement, ok := recovered[name]; ok {
+			updated = append(updated, name+"="+replacement)
+			seen[name] = struct{}{}
+		} else {
+			updated = append(updated, entry)
+		}
+	}
+	for name, value := range recovered {
+		if _, ok := seen[name]; !ok {
+			updated = append(updated, name+"="+value)
+		}
+	}
+	return updated
 }
 
 // looksLikeContainerID checks if a string looks like a Docker container ID

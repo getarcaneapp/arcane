@@ -53,6 +53,7 @@ export { default as UserIcon } from 'virtual:icons/solar/user-circle-bold';
 export { default as ClockIcon } from 'virtual:icons/solar/clock-circle-linear';
 export { default as RegistryIcon } from 'virtual:icons/pajamas/infrastructure-registry';
 export { default as DownloadIcon } from 'virtual:icons/solar/download-linear';
+export { default as BackupIcon } from 'virtual:icons/solar/archive-down-minimlistic-linear';
 export { default as SuccessIcon } from 'virtual:icons/qlementine-icons/success-12';
 export { default as ExternalLinkIcon } from 'virtual:icons/majesticons/external-link-line';
 export { default as GithubIcon } from 'virtual:icons/garden/github-stroke-16';

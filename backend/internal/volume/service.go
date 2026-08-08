@@ -6,8 +6,12 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/rustic"
+	s3domain "github.com/getarcaneapp/arcane/backend/v2/internal/s3"
 
 	"emperror.dev/errors"
 
@@ -18,6 +22,7 @@ import (
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
+	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/moby/moby/client"
 	"golang.org/x/sync/singleflight"
@@ -27,21 +32,29 @@ type VolumeService struct {
 	db               *database.DB
 	dockerService    *docker.DockerClientService
 	eventService     *event.EventService
+	activityService  *activity.ActivityService
 	settingsService  *settings.SettingsService
+	containerService *container.ContainerService
 	imageService     *image.ImageService
+	rusticService    *rustic.RusticService
+	s3Destinations   *s3domain.S3DestinationService
 	backupVolumeName string
+	encryptionKey    string
 	helperMu         sync.Mutex
 	helperByVolume   map[string]*volumeHelper
 	// helperGroup deduplicates concurrent read-only helper creation per volume.
 	// Without it two simultaneous browse requests each create a helper and the
 	// second overwrites the first in helperByVolume, orphaning a `sleep infinity`
 	// container that pins the volume until restart.
-	helperGroup singleflight.Group
+	helperGroup    singleflight.Group
+	scheduler      schedulertypes.DynamicScheduler
+	lifecycleCtx   context.Context
+	runningBackups sync.Map
 }
 
 const trivyCacheVolumePruneFilterValue = libarcane.InternalResourceLabel + "=true"
 
-func NewVolumeService(db *database.DB, dockerService *docker.DockerClientService, eventService *event.EventService, settingsService *settings.SettingsService, imageService *image.ImageService, backupVolumeName string) *VolumeService {
+func NewVolumeService(db *database.DB, dockerService *docker.DockerClientService, eventService *event.EventService, activityService *activity.ActivityService, settingsService *settings.SettingsService, containerService *container.ContainerService, imageService *image.ImageService, rusticService *rustic.RusticService, s3Destinations *s3domain.S3DestinationService, backupVolumeName, encryptionKey string) *VolumeService {
 	slog.Debug("volume service: new")
 	if strings.TrimSpace(backupVolumeName) == "" {
 		backupVolumeName = "arcane-backups"
@@ -50,9 +63,14 @@ func NewVolumeService(db *database.DB, dockerService *docker.DockerClientService
 		db:               db,
 		dockerService:    dockerService,
 		eventService:     eventService,
+		activityService:  activityService,
 		settingsService:  settingsService,
+		containerService: containerService,
 		imageService:     imageService,
+		rusticService:    rusticService,
+		s3Destinations:   s3Destinations,
 		backupVolumeName: backupVolumeName,
+		encryptionKey:    encryptionKey,
 		helperByVolume:   make(map[string]*volumeHelper),
 	}
 }
@@ -162,6 +180,7 @@ func (s *VolumeService) DeleteVolume(ctx context.Context, name string, force boo
 	}
 
 	s.removeHelperEntry(name)
+	s.removeVolumeBackupPolicyInternal(ctx, name)
 	dockerutil.InvalidateVolumeUsageCache(dockerClient)
 	return nil
 }
@@ -202,6 +221,7 @@ func (s *VolumeService) PruneVolumesWithOptions(ctx context.Context, all bool) (
 
 	for _, volumeName := range volumePruneResult.Report.VolumesDeleted {
 		s.removeHelperEntry(volumeName)
+		s.removeVolumeBackupPolicyInternal(ctx, volumeName)
 	}
 
 	dockerutil.InvalidateVolumeUsageCache(dockerClient)

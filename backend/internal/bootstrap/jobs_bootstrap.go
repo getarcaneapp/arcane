@@ -16,6 +16,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/system"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/systembackup"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
@@ -71,12 +73,14 @@ type registerJobsParams struct {
 	Scheduler    schedulertypes.JobScheduler
 	ActorRuntime *actors.Runtime
 
-	Activity    *activity.ActivityService
-	GitOpsSync  *gitops.GitOpsSyncService
-	Environment *environment.EnvironmentService
-	JobSchedule *job.JobService
-	Settings    *settings.SettingsService
-	Admission   *actors.Gate[actors.AdmissionKey]
+	Activity     *activity.ActivityService
+	GitOpsSync   *gitops.GitOpsSyncService
+	Environment  *environment.EnvironmentService
+	JobSchedule  *job.JobService
+	Settings     *settings.SettingsService
+	Volume       *volume.VolumeService
+	SystemBackup *systembackup.SystemBackupService
+	Admission    *actors.Gate[actors.AdmissionKey]
 
 	AutoUpdate             *scheduler.AutoUpdateJob
 	ImageUpdateWatcher     *scheduler.ImageUpdateWatcher
@@ -143,13 +147,15 @@ func registerJobs(params registerJobsParams) error {
 	// GitOps sync and environment health are no longer single global jobs; each
 	// entity registers its own dynamic job.
 	if err := registerDynamicJobs(dynamicJobsParams{
-		AppCtx:      params.AppCtx,
-		Config:      params.Config,
-		Scheduler:   params.Scheduler,
-		GitOpsSync:  params.GitOpsSync,
-		Environment: params.Environment,
-		JobSchedule: params.JobSchedule,
-		Admission:   params.Admission,
+		AppCtx:       params.AppCtx,
+		Config:       params.Config,
+		Scheduler:    params.Scheduler,
+		GitOpsSync:   params.GitOpsSync,
+		Environment:  params.Environment,
+		JobSchedule:  params.JobSchedule,
+		Volume:       params.Volume,
+		SystemBackup: params.SystemBackup,
+		Admission:    params.Admission,
 	}); err != nil {
 		return err
 	}
@@ -175,19 +181,32 @@ func registerJobs(params registerJobsParams) error {
 }
 
 type dynamicJobsParams struct {
-	AppCtx      context.Context
-	Config      *config.Config
-	Scheduler   schedulertypes.JobScheduler
-	GitOpsSync  *gitops.GitOpsSyncService
-	Environment *environment.EnvironmentService
-	JobSchedule *job.JobService
-	Admission   *actors.Gate[actors.AdmissionKey]
+	AppCtx       context.Context
+	Config       *config.Config
+	Scheduler    schedulertypes.JobScheduler
+	GitOpsSync   *gitops.GitOpsSyncService
+	Environment  *environment.EnvironmentService
+	JobSchedule  *job.JobService
+	Volume       *volume.VolumeService
+	SystemBackup *systembackup.SystemBackupService
+	Admission    *actors.Gate[actors.AdmissionKey]
 }
 
 // registerDynamicJobs injects the scheduler into the services that own per-entity
 // jobs and registers the jobs for already-existing entities at startup. AddJob is
 // an idempotent upsert, so these run safely before the scheduler is started.
 func registerDynamicJobs(params dynamicJobsParams) error {
+	// Volume backups run on the environment that owns the Docker volume. This is
+	// registered on managers and agents; environment proxying persists each policy
+	// in the correct Arcane database.
+	if params.Volume != nil {
+		params.Volume.SetScheduler(params.AppCtx, params.Scheduler)
+		params.Volume.RegisterBackupJobsOnStartup(params.AppCtx)
+	}
+	if !params.Config.AgentMode && params.SystemBackup != nil {
+		params.SystemBackup.SetScheduler(params.AppCtx, params.Scheduler)
+		params.SystemBackup.RegisterBackupJobOnStartup(params.AppCtx)
+	}
 	// GitOps: one job per auto-sync-enabled sync (runs on manager and agents).
 	if params.GitOpsSync != nil {
 		if err := params.GitOpsSync.SetScheduler(params.AppCtx, params.Scheduler, params.Admission); err != nil {

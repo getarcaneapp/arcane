@@ -1,15 +1,30 @@
 import BaseAPIService from './api-service';
 import { environmentStore } from '#lib/stores/environment.store.svelte';
-import type { BackupEntry } from '#lib/types/shared';
+import type {
+	BackupEntry,
+	CreateVolumeBackupRequest,
+	UpdateVolumeBackupPolicy,
+	VolumeBackupPolicyCollection
+} from '#lib/types/shared';
 import type { SearchPaginationSortRequest, Paginated } from '#lib/types/shared';
 import { transformPaginationParams } from '#lib/utils/tables';
 
 export type VolumeBackupListResponse = Paginated<BackupEntry> & { warnings?: string[] };
 
 class VolumeBackupService extends BaseAPIService {
-	async createBackup(volumeName: string): Promise<BackupEntry> {
+	async getPolicies(volumeName: string): Promise<VolumeBackupPolicyCollection> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
-		const res = await this.api.post(`/environments/${envId}/volumes/${volumeName}/backups`);
+		return this.handleResponse(this.api.get(`/environments/${envId}/volumes/${volumeName}/backup-policy`));
+	}
+
+	async updatePolicies(volumeName: string, policies: UpdateVolumeBackupPolicy[]): Promise<VolumeBackupPolicyCollection> {
+		const envId = await environmentStore.getCurrentEnvironmentId();
+		return this.handleResponse(this.api.put(`/environments/${envId}/volumes/${volumeName}/backup-policy`, { policies }));
+	}
+
+	async createBackup(volumeName: string, request?: CreateVolumeBackupRequest): Promise<BackupEntry> {
+		const envId = await environmentStore.getCurrentEnvironmentId();
+		const res = await this.api.post(`/environments/${envId}/volumes/${volumeName}/backups`, request);
 		return res.data.data;
 	}
 
@@ -53,24 +68,9 @@ class VolumeBackupService extends BaseAPIService {
 		return this.handleResponse(this.api.delete(`/environments/${envId}/volumes/backups/${backupId}`));
 	}
 
-	async downloadBackup(backupId: string): Promise<void> {
+	async uploadBackup(backupId: string, s3DestinationId: string): Promise<BackupEntry> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
-		const res = await this.api.get(`/environments/${envId}/volumes/backups/${backupId}/download`, {
-			responseType: 'blob'
-		});
-
-		const url = window.URL.createObjectURL(new Blob([res.data]));
-		const link = document.createElement('a');
-		link.href = url;
-		link.setAttribute('download', `${backupId}.tar.gz`);
-		document.body.appendChild(link);
-		link.click();
-		link.remove();
-	}
-
-	async uploadAndRestore(volumeName: string, file: File): Promise<any> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.postFile(`/environments/${envId}/volumes/${volumeName}/backups/upload`, file);
+		return this.handleResponse(this.api.post(`/environments/${envId}/volumes/backups/${backupId}/upload`, { s3DestinationId }));
 	}
 }
 

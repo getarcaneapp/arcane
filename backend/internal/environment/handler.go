@@ -905,11 +905,15 @@ func (h *EnvironmentHandler) PairAgent(ctx context.Context, input *PairAgentInpu
 	}, nil
 }
 
-// SyncEnvironment syncs container registries and git repositories to an environment.
+// SyncEnvironment syncs manager-owned resources to an environment.
 func (h *EnvironmentHandler) SyncEnvironment(ctx context.Context, input *SyncEnvironmentInput) (*SyncEnvironmentOutput, error) {
 	// Sync registries
 	if err := h.environmentService.SyncRegistriesToEnvironment(ctx, input.ID); err != nil {
 		slog.WarnContext(ctx, "Failed to sync registries", "environmentID", input.ID, "error", err.Error())
+	}
+
+	if err := h.environmentService.SyncS3DestinationsToEnvironment(ctx, input.ID); err != nil {
+		slog.WarnContext(ctx, "Failed to sync S3 destinations", "environmentID", input.ID, "error", err.Error())
 	}
 
 	// Sync git repositories
@@ -987,6 +991,18 @@ func (h *EnvironmentHandler) triggerEnvironmentResourceSyncInternal(ctx context.
 		defer cancel()
 		if err := h.environmentService.SyncRegistriesToEnvironment(syncCtx, envID); err != nil {
 			slog.WarnContext(syncCtx, "Failed to sync registries to environment",
+				"environmentID", envID,
+				"environmentName", envName,
+				"reason", syncReason,
+				"error", err.Error())
+		}
+	}(detachedCtx, environmentID, environmentName, reason)
+
+	go func(syncCtx context.Context, envID string, envName string, syncReason string) {
+		syncCtx, cancel := context.WithTimeout(syncCtx, edge.DefaultProxyTimeout)
+		defer cancel()
+		if err := h.environmentService.SyncS3DestinationsToEnvironment(syncCtx, envID); err != nil {
+			slog.WarnContext(syncCtx, "Failed to sync S3 destinations to environment",
 				"environmentID", envID,
 				"environmentName", envName,
 				"reason", syncReason,

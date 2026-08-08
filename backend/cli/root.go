@@ -9,6 +9,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/cli/admin"
 	"github.com/getarcaneapp/arcane/backend/v2/cli/generate"
+	"github.com/getarcaneapp/arcane/backend/v2/cli/recovery"
 	"github.com/getarcaneapp/arcane/backend/v2/cli/upgrade"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/bootstrap"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
@@ -41,6 +42,7 @@ func Execute() {
 func init() {
 	rootCmd.AddCommand(admin.AdminCmd)
 	rootCmd.AddCommand(upgrade.UpgradeCmd)
+	rootCmd.AddCommand(recovery.RestoreCmd)
 	rootCmd.AddCommand(generate.GenerateCmd)
 }
 

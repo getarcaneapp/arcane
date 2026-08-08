@@ -141,6 +141,9 @@ func (s *EnvironmentService) runHealthCheckInternal(ctx context.Context, envID s
 	if err := s.SyncRegistriesToEnvironment(syncCtx, envID); err != nil {
 		slog.WarnContext(syncCtx, "failed to sync registries during health check", "environment_id", envID, "error", err)
 	}
+	if err := s.SyncS3DestinationsToEnvironment(syncCtx, envID); err != nil {
+		slog.WarnContext(syncCtx, "failed to sync S3 destinations during health check", "environment_id", envID, "error", err)
+	}
 	if err := s.SyncRepositoriesToEnvironment(syncCtx, envID); err != nil {
 		slog.WarnContext(syncCtx, "failed to sync git repositories during health check", "environment_id", envID, "error", err)
 	}

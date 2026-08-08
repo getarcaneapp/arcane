@@ -120,7 +120,7 @@ func connectDatabaseInternal(ctx context.Context, databaseURL string) (*DB, erro
 
 	switch {
 	case strings.HasPrefix(databaseURL, "file:"):
-		connString, err := parseSqliteConnectionStringInternal(databaseURL)
+		connString, err := ParseSQLiteConnectionString(databaseURL)
 		if err != nil {
 			return nil, errors.WrapIf(err, "failed to parse SQLite connection string")
 		}
@@ -608,7 +608,7 @@ func missingEmbeddedDowngradeMigrationsInternal(ctx context.Context, db *sql.DB,
 	return missing, nil
 }
 
-func parseSqliteConnectionStringInternal(connString string) (string, error) {
+func ParseSQLiteConnectionString(connString string) (string, error) {
 	if !strings.HasPrefix(connString, "file:") {
 		connString = "file:" + connString
 	}

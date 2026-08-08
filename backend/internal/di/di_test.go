@@ -23,6 +23,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/rustic"
+	s3domain "github.com/getarcaneapp/arcane/backend/v2/internal/s3"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/swarm"
@@ -43,6 +45,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/port"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/search"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/system"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/systembackup"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/updater"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/version"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
@@ -69,6 +72,9 @@ type graphParams struct {
 	BuildWorkspace    *build.BuildWorkspaceService
 	Lifecycle         *lifecycle.LifecycleService
 	Volume            *volume.Module
+	Rustic            *rustic.RusticService
+	S3Destination     *s3domain.Module
+	SystemBackup      *systembackup.Module
 	Network           *network.NetworkService
 	Port              *port.PortService
 	Swarm             *swarm.SwarmService

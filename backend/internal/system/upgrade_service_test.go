@@ -206,7 +206,7 @@ func TestResolveSystemUpgraderRuntimeOptionsInternal_TCPDockerHost(t *testing.T)
 		},
 	}
 
-	options, err := resolveSystemUpgraderRuntimeOptionsInternal(
+	containerEnv, mounts, networkMode, err := ResolveUpgraderRuntimeOptions(
 		context.Background(),
 		"tcp://docker-socket-proxy:2375",
 		currentContainer,
@@ -214,13 +214,13 @@ func TestResolveSystemUpgraderRuntimeOptionsInternal_TCPDockerHost(t *testing.T)
 		func() bool { return true },
 	)
 	require.NoError(t, err)
-	require.Equal(t, []string{"DOCKER_HOST=tcp://docker-socket-proxy:2375"}, options.ContainerEnv)
-	require.Empty(t, options.Mounts)
-	require.Equal(t, containertypes.NetworkMode("arcane-test"), options.NetworkMode)
+	require.Equal(t, []string{"DOCKER_HOST=tcp://docker-socket-proxy:2375"}, containerEnv)
+	require.Empty(t, mounts)
+	require.Equal(t, containertypes.NetworkMode("arcane-test"), networkMode)
 }
 
 func TestResolveSystemUpgraderRuntimeOptionsInternal_UnixDockerHost(t *testing.T) {
-	options, err := resolveSystemUpgraderRuntimeOptionsInternal(
+	containerEnv, mounts, networkMode, err := ResolveUpgraderRuntimeOptions(
 		context.Background(),
 		"unix:///var/run/docker.sock",
 		nil,
@@ -230,19 +230,19 @@ func TestResolveSystemUpgraderRuntimeOptionsInternal_UnixDockerHost(t *testing.T
 		func() bool { return true },
 	)
 	require.NoError(t, err)
-	require.Equal(t, []string{"DOCKER_HOST=unix:///var/run/docker.sock"}, options.ContainerEnv)
-	require.Equal(t, containertypes.NetworkMode(""), options.NetworkMode)
+	require.Equal(t, []string{"DOCKER_HOST=unix:///var/run/docker.sock"}, containerEnv)
+	require.Equal(t, containertypes.NetworkMode(""), networkMode)
 	require.Equal(t, []mounttypes.Mount{
 		{
 			Type:   mounttypes.TypeBind,
 			Source: "/host/run/docker.sock",
 			Target: "/var/run/docker.sock",
 		},
-	}, options.Mounts)
+	}, mounts)
 }
 
 func TestResolveSystemUpgraderRuntimeOptionsInternal_DefaultDockerHost(t *testing.T) {
-	options, err := resolveSystemUpgraderRuntimeOptionsInternal(
+	containerEnv, mounts, _, err := ResolveUpgraderRuntimeOptions(
 		context.Background(),
 		"",
 		nil,
@@ -252,18 +252,18 @@ func TestResolveSystemUpgraderRuntimeOptionsInternal_DefaultDockerHost(t *testin
 		func() bool { return true },
 	)
 	require.NoError(t, err)
-	require.Nil(t, options.ContainerEnv)
+	require.Nil(t, containerEnv)
 	require.Equal(t, []mounttypes.Mount{
 		{
 			Type:   mounttypes.TypeBind,
 			Source: "/var/run/docker.sock",
 			Target: "/var/run/docker.sock",
 		},
-	}, options.Mounts)
+	}, mounts)
 }
 
 func TestResolveSystemUpgraderRuntimeOptionsInternal_UnixDockerHostResolutionError(t *testing.T) {
-	_, err := resolveSystemUpgraderRuntimeOptionsInternal(
+	_, _, _, err := ResolveUpgraderRuntimeOptions(
 		context.Background(),
 		"unix:///var/run/docker.sock",
 		nil,

@@ -18,10 +18,12 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/passkey"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/port"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/rustic"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/search"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/swarm"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/system"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/systembackup"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/variable"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/vulnerability"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler"
@@ -92,12 +94,18 @@ var ServiceOptions = fx.Options(
 		provideWebhookModuleInternal,
 		variable.NewVariableService,
 		variable.New,
+		provideS3ModuleInternal,
+		provideS3ServiceInternal,
+		rustic.NewRusticService,
 
 		// Adapters for scalar config fields, unexported parameters, builders, and lifecycle hooks.
 		provideVersionServiceInternal,
 		provideGitRepositoryModuleInternal,
 		provideGitRepositoryServiceInternal,
 		provideVolumeModuleInternal,
+		provideVolumeServiceInternal,
+		provideSystemBackupServiceInternal,
+		systembackup.New,
 		provideAuthServiceInternal,
 		provideAuthModuleInternal,
 		provideContainerRegistryModuleInternal,

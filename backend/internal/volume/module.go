@@ -4,8 +4,12 @@ package volume
 
 import (
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/rustic"
+	s3domain "github.com/getarcaneapp/arcane/backend/v2/internal/s3"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -22,7 +26,12 @@ type Dependencies struct {
 	Settings         *settings.SettingsService
 	Image            *image.ImageService
 	Activity         *activity.ActivityService
+	Environment      *environment.EnvironmentService
+	Container        *container.ContainerService
+	Rustic           *rustic.RusticService
+	S3               *s3domain.S3DestinationService
 	BackupVolumeName string
+	EncryptionKey    string
 }
 
 // Module wires the volume domain and mounts its routes.
@@ -34,7 +43,7 @@ type Module struct {
 // New builds the volume domain from its dependencies.
 func New(deps Dependencies) *Module {
 	return &Module{
-		service: NewVolumeService(deps.DB, deps.Docker, deps.Event, deps.Settings, deps.Image, deps.BackupVolumeName),
+		service: NewVolumeService(deps.DB, deps.Docker, deps.Event, deps.Activity, deps.Settings, deps.Container, deps.Image, deps.Rustic, deps.S3, deps.BackupVolumeName, deps.EncryptionKey),
 		deps:    deps,
 	}
 }
@@ -52,8 +61,8 @@ func (m *Module) Service() *VolumeService {
 // OpenAPI spec generation can discover the routes without a service graph.
 func (m *Module) RegisterRoutes(api huma.API, appCtx handlerutil.ActivityAppContext) {
 	if m == nil {
-		RegisterVolumes(api, nil, nil, nil, appCtx)
+		RegisterVolumes(api, nil, nil, nil, nil, appCtx)
 		return
 	}
-	RegisterVolumes(api, m.deps.Docker, m.service, m.deps.Activity, appCtx)
+	RegisterVolumes(api, m.deps.Docker, m.service, m.deps.Activity, m.deps.Environment, appCtx)
 }
