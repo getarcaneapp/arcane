@@ -9,10 +9,13 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
-	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/dashboard"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	httputils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 	dashboardtypes "github.com/getarcaneapp/arcane/types/v2/dashboard"
 	environmenttypes "github.com/getarcaneapp/arcane/types/v2/environment"
@@ -33,9 +36,9 @@ const (
 
 // StreamHandler multiplexes every live feed onto one connection.
 type StreamHandler struct {
-	dashboard   *DashboardHandler
-	activity    *ActivityHandler
-	environment *EnvironmentHandler
+	dashboard   *dashboard.DashboardHandler
+	activity    *activity.ActivityHandler
+	environment *environment.EnvironmentHandler
 }
 
 type StreamClientInput struct {
@@ -49,22 +52,14 @@ type StreamClientInput struct {
 // each channel's producer stays the single implementation of that feed.
 func RegisterStream(
 	api huma.API,
-	dashboardService *services.DashboardService,
-	activityService *services.ActivityService,
-	environmentService *services.EnvironmentService,
+	dashboardHandler *dashboard.DashboardHandler,
+	activityHandler *activity.ActivityHandler,
+	environmentHandler *environment.EnvironmentHandler,
 ) {
 	h := &StreamHandler{
-		dashboard: &DashboardHandler{
-			dashboardService:   dashboardService,
-			environmentService: environmentService,
-		},
-		activity: &ActivityHandler{
-			activityService:    activityService,
-			environmentService: environmentService,
-		},
-		// Only the environment service is needed: the channel producer lists
-		// environments and derives liveness, nothing more.
-		environment: &EnvironmentHandler{environmentService: environmentService},
+		dashboard:   dashboardHandler,
+		activity:    activityHandler,
+		environment: environmentHandler,
 	}
 
 	huma.Register(api, huma.Operation{
@@ -74,7 +69,7 @@ func RegisterStream(
 		Summary:     "Multiplexed client stream",
 		Description: "Streams the requested channels (environments, dashboard, activities) over a single JSON-lines connection",
 		Tags:        []string{"Stream"},
-		Security:    defaultOperationSecurityInternal(),
+		Security:    handlerutil.DefaultOperationSecurity(),
 		// Ungated: each channel applies its own permission check below, and a
 		// caller with access to none simply gets a heartbeat-only stream.
 	}, h.StreamClient)
@@ -83,7 +78,7 @@ func RegisterStream(
 func (h *StreamHandler) StreamClient(ctx context.Context, input *StreamClientInput) (*huma.StreamResponse, error) {
 	return &huma.StreamResponse{
 		Body: func(humaCtx huma.Context) { //nolint:contextcheck // streaming work must use humaCtx.Context()
-			httputils.SetJSONStreamHeaders(humaCtx)
+			httpx.SetJSONStreamHeaders(humaCtx)
 
 			writer := humaCtx.BodyWriter()
 			flush := func() {
@@ -92,14 +87,14 @@ func (h *StreamHandler) StreamClient(ctx context.Context, input *StreamClientInp
 				}
 			}
 
-			ps, _ := humamw.PermissionsFromContext(humaCtx.Context())
+			ps, _ := middleware.PermissionsFromContext(humaCtx.Context())
 			h.streamClientInternal(humaCtx.Context(), ps, input, writer, flush)
 		},
 	}, nil
 }
 
 func (h *StreamHandler) streamClientInternal(ctx context.Context, ps *authz.PermissionSet, input *StreamClientInput, writer io.Writer, flush func()) {
-	releaseDeadPeerTimeout, timeoutErr := httputils.AcquireDeadPeerTimeout(ctx, clientStreamDeadPeerTimeout)
+	releaseDeadPeerTimeout, timeoutErr := httpx.AcquireDeadPeerTimeout(ctx, clientStreamDeadPeerTimeout)
 	if timeoutErr != nil {
 		slog.DebugContext(ctx, "could not bound client stream dead-peer timeout", "error", timeoutErr)
 	}
@@ -133,7 +128,7 @@ func (h *StreamHandler) producersForInternal(ps *authz.PermissionSet, input *Str
 				return streamtypes.Event{Channel: channel, Environment: &event, Timestamp: event.Timestamp}
 			},
 			func(producerCtx context.Context, events chan<- environmenttypes.StreamEvent) {
-				h.environment.runEnvironmentStreamProducerInternal(producerCtx, ps, events)
+				h.environment.RunStreamProducer(producerCtx, ps, events)
 			},
 		))
 	}
@@ -142,11 +137,11 @@ func (h *StreamHandler) producersForInternal(ps *authz.PermissionSet, input *Str
 		wrapDashboard := func(channel string, event dashboardtypes.StreamEvent) streamtypes.Event {
 			return streamtypes.Event{Channel: channel, Dashboard: &event, Timestamp: event.Timestamp}
 		}
-		if ps.Allows(authz.PermDashboardRead, localDockerEnvironmentID) {
+		if ps.Allows(authz.PermDashboardRead, environment.LocalEnvironmentID) {
 			producers = append(producers, forwardStreamChannelInternal(
 				streamtypes.ChannelDashboard, wrapDashboard,
 				func(producerCtx context.Context, events chan<- dashboardtypes.StreamEvent) {
-					h.dashboard.runLocalDashboardStreamProducerInternal(producerCtx, input.DebugAllGood, events)
+					h.dashboard.RunLocalStreamProducer(producerCtx, input.DebugAllGood, events)
 				},
 			))
 		}
@@ -154,7 +149,7 @@ func (h *StreamHandler) producersForInternal(ps *authz.PermissionSet, input *Str
 			producers = append(producers, forwardStreamChannelInternal(
 				streamtypes.ChannelDashboard, wrapDashboard,
 				func(producerCtx context.Context, events chan<- dashboardtypes.StreamEvent) {
-					h.dashboard.runRemoteDashboardStreamPollersInternal(producerCtx, ps, input.DebugAllGood, events)
+					h.dashboard.RunRemoteStreamPollers(producerCtx, ps, input.DebugAllGood, events)
 				},
 			))
 		}
@@ -164,11 +159,11 @@ func (h *StreamHandler) producersForInternal(ps *authz.PermissionSet, input *Str
 		wrapActivity := func(channel string, event activitytypes.StreamEvent) streamtypes.Event {
 			return streamtypes.Event{Channel: channel, Activity: &event, Timestamp: event.Timestamp}
 		}
-		if ps.Allows(authz.PermActivitiesRead, localDockerEnvironmentID) {
+		if ps.Allows(authz.PermActivitiesRead, environment.LocalEnvironmentID) {
 			producers = append(producers, forwardStreamChannelInternal(
 				streamtypes.ChannelActivities, wrapActivity,
 				func(producerCtx context.Context, events chan<- activitytypes.StreamEvent) {
-					h.activity.runLocalActivityStreamProducerInternal(producerCtx, input.Limit, events)
+					h.activity.RunLocalStreamProducer(producerCtx, input.Limit, events)
 				},
 			))
 		}
@@ -176,7 +171,7 @@ func (h *StreamHandler) producersForInternal(ps *authz.PermissionSet, input *Str
 			producers = append(producers, forwardStreamChannelInternal(
 				streamtypes.ChannelActivities, wrapActivity,
 				func(producerCtx context.Context, events chan<- activitytypes.StreamEvent) {
-					h.activity.runRemoteActivityStreamPollersInternal(producerCtx, ps, input.Limit, events)
+					h.activity.RunRemoteStreamPollers(producerCtx, ps, input.Limit, events)
 				},
 			))
 		}

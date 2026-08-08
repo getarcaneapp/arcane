@@ -10,9 +10,11 @@ import (
 	"emperror.dev/errors"
 	"github.com/spf13/cobra"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/passkey"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
 )
 
 var resetMFAUsername string
@@ -55,16 +57,16 @@ func runResetMFACommandInternal(cmd *cobra.Command, _ []string) error {
 		}
 	}()
 
-	userService := services.NewUserService(db)
+	userService := user.NewUserService(db)
 	user, err := userService.GetUserByUsername(cmd.Context(), username)
 	if err != nil {
-		if errors.Is(err, services.ErrUserNotFound) {
+		if errors.Is(err, common.ErrUserNotFound) {
 			return errors.Errorf("user %q not found", username)
 		}
 		return errors.WrapIf(err, "failed to find user")
 	}
 
-	passkeyService := services.NewPasskeyService(db, cfg)
+	passkeyService := passkey.NewPasskeyService(db, cfg)
 	if err := passkeyService.ResetMFAForUser(cmd.Context(), user.ID); err != nil {
 		return errors.WrapIf(err, "failed to reset passkey MFA")
 	}

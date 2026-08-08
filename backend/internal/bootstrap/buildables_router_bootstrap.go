@@ -9,6 +9,6 @@ import (
 
 func init() {
 	registerBuildableRoutes = append(registerBuildableRoutes, func(apiGroup *echo.Group, deps api.HandlerDeps) {
-		api.SetupBuildablesRoutes(apiGroup, deps.Auth)
+		api.SetupBuildablesRoutes(apiGroup, deps.Auth.Service())
 	})
 }

@@ -4,7 +4,9 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/robfig/cron/v3"
 )
 
@@ -14,12 +16,12 @@ const dockerClientRefreshDefaultSchedule = "*/30 * * * * *"
 // DockerClientRefreshJob keeps the cached Docker client aligned with the daemon
 // API version after daemon restarts or upgrades.
 type DockerClientRefreshJob struct {
-	dockerClientService *services.DockerClientService
-	settingsService     *services.SettingsService
+	dockerClientService *docker.DockerClientService
+	settingsService     *settings.SettingsService
 }
 
 // NewDockerClientRefreshJob creates the scheduled Docker client refresh job.
-func NewDockerClientRefreshJob(dockerClientService *services.DockerClientService, settingsService *services.SettingsService) *DockerClientRefreshJob {
+func NewDockerClientRefreshJob(dockerClientService *docker.DockerClientService, settingsService *settings.SettingsService) *DockerClientRefreshJob {
 	return &DockerClientRefreshJob{
 		dockerClientService: dockerClientService,
 		settingsService:     settingsService,

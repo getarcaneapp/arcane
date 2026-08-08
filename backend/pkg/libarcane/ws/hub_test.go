@@ -45,6 +45,12 @@ func newTestWSPair(t *testing.T) (clientConn *websocket.Conn, serverConn *websoc
 	}
 }
 
+func (h *Hub) ClientCount() int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return len(h.clients)
+}
+
 func TestNewHub(t *testing.T) {
 	h := NewHub(10)
 	require.NotNil(t, h)

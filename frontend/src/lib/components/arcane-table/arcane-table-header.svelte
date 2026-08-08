@@ -9,8 +9,9 @@
 	type DivAttributes = SvelteHTMLElements['div'];
 
 	// Structural shape of the column controls this header drives. v9's `Column<TFeatures, TData>`
-	// is invariant in TData and can't be threaded cleanly through `renderComponent`, so we depend
-	// only on the methods used here — the real column satisfies this with no generic and no `any`.
+	// is declared `in out TData` (invariant), so even `ArcaneColumn<any>` rejects the deferred
+	// `TData` at the renderComponent call site (re-verified at 9.1.0 stable, 2026-08). Depending
+	// only on the methods used here keeps the prop generic-free with no `any`.
 	type SortableHeaderColumn = {
 		getCanSort: () => boolean;
 		getIsSorted: () => false | 'asc' | 'desc';

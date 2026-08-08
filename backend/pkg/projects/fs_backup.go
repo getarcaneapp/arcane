@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"emperror.dev/errors"
-
 	"go.getarcane.app/sys/atomic"
 )
 

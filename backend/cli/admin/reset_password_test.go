@@ -12,7 +12,9 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
 	"github.com/getarcaneapp/arcane/types/v2/auth"
@@ -37,12 +39,12 @@ func newResetPasswordTestDBInternal(t *testing.T) *database.DB {
 	return db
 }
 
-func createGlobalAdminInternal(t *testing.T, db *database.DB) (*models.User, *services.RoleService, *services.UserService) {
+func createGlobalAdminInternal(t *testing.T, db *database.DB) (*models.User, *role.RoleService, *user.UserService) {
 	t.Helper()
 	ctx := context.Background()
-	roleService := services.NewRoleService(db)
+	roleService := role.NewRoleService(db)
 	require.NoError(t, roleService.EnsureBuiltInRoles(ctx))
-	userService := services.NewUserService(db).WithRoleService(roleService)
+	userService := user.NewUserService(db).WithRoleService(roleService)
 	passwordHash, err := userService.HashPassword("old-password")
 	require.NoError(t, err)
 	adminUser, err := userService.CreateUser(ctx, &models.User{
@@ -63,7 +65,7 @@ func TestResetPasswordInternalResetsPasswordAndRevokesSessions(t *testing.T) {
 	db := newResetPasswordTestDBInternal(t)
 	ctx := context.Background()
 	adminUser, _, userService := createGlobalAdminInternal(t, db)
-	sessionService := services.NewSessionService(db)
+	sessionService := session.NewSessionService(db)
 	firstSession, _, err := sessionService.CreateSession(ctx, adminUser.ID, time.Now().Add(time.Hour), auth.SessionMeta{})
 	require.NoError(t, err)
 	secondSession, _, err := sessionService.CreateSession(ctx, adminUser.ID, time.Now().Add(time.Hour), auth.SessionMeta{})
@@ -89,7 +91,7 @@ func TestResetPasswordInternalRollsBackWhenSessionRevocationFails(t *testing.T) 
 	db := newResetPasswordTestDBInternal(t)
 	ctx := context.Background()
 	adminUser, _, userService := createGlobalAdminInternal(t, db)
-	sessionService := services.NewSessionService(db)
+	sessionService := session.NewSessionService(db)
 	session, _, err := sessionService.CreateSession(ctx, adminUser.ID, time.Now().Add(time.Hour), auth.SessionMeta{})
 	require.NoError(t, err)
 	require.NoError(t, db.Exec(`

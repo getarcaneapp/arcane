@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 )
 
@@ -127,8 +126,6 @@ func Load() *Config {
 	applyWorkspaceDefaults(cfg)
 
 	// Set global file permissions
-	common.FilePerm = cfg.FilePerm
-	common.DirPerm = cfg.DirPerm
 	pkgutils.FilePerm = cfg.FilePerm
 	pkgutils.DirPerm = cfg.DirPerm
 

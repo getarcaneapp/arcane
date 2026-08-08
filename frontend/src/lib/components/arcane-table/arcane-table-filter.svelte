@@ -10,7 +10,8 @@
 	import { CheckIcon, FilterIcon } from '#lib/icons';
 
 	// Structural shape of the faceted-filter column controls — see the note in
-	// arcane-table-header.svelte for why we avoid v9's invariant `Column` generic here.
+	// arcane-table-header.svelte for why v9's invariant `Column` generic (even with `any`
+	// TData) can't be used here.
 	type FilterableColumn = {
 		getFilterValue: () => unknown;
 		setFilterValue: (value: unknown) => void;
@@ -33,7 +34,7 @@
 		showCheckboxes?: boolean;
 	} = $props();
 
-	const selectedValues = $derived(new SvelteSet(column?.getFilterValue() as any[]));
+	const selectedValues = $derived(new SvelteSet((column?.getFilterValue() ?? []) as (string | boolean)[]));
 </script>
 
 <Popover.Root>

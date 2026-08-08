@@ -6,10 +6,11 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/api/ws"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/diagnostics"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 	"github.com/getarcaneapp/arcane/types/v2/system"
 	"go.getarcane.app/streams/logs"
 )
@@ -18,7 +19,7 @@ import (
 // streams and pprof routes live in the api/ws package alongside the other
 // streaming endpoints; the snapshot is assembled there too (ws.BuildDiagnostics).
 type DiagnosticsHandler struct {
-	diag *services.DiagnosticsService
+	diag *diagnostics.DiagnosticsService
 }
 
 type DiagnosticsInput struct{}
@@ -32,7 +33,7 @@ type GetDiagnosticsLogsOutput struct {
 }
 
 // RegisterDiagnostics registers the Huma diagnostics REST endpoints.
-func RegisterDiagnostics(api huma.API, diag *services.DiagnosticsService) {
+func RegisterDiagnostics(api huma.API, diag *diagnostics.DiagnosticsService) {
 	h := &DiagnosticsHandler{diag: diag}
 
 	huma.Register(api, huma.Operation{
@@ -42,8 +43,8 @@ func RegisterDiagnostics(api huma.API, diag *services.DiagnosticsService) {
 		Summary:     "Get runtime diagnostics",
 		Description: "Returns Go runtime, memory, garbage-collector, and WebSocket connection statistics.",
 		Tags:        []string{"Diagnostics"},
-		Security:    defaultOperationSecurityInternal(),
-		Middlewares: humamw.RequirePermission(api, authz.PermDiagnosticsRead),
+		Security:    handlerutil.DefaultOperationSecurity(),
+		Middlewares: middleware.RequirePermission(api, authz.PermDiagnosticsRead),
 	}, h.GetDiagnostics)
 
 	huma.Register(api, huma.Operation{
@@ -53,8 +54,8 @@ func RegisterDiagnostics(api huma.API, diag *services.DiagnosticsService) {
 		Summary:     "Get recent backend logs",
 		Description: "Returns the most recent buffered backend log entries (oldest first).",
 		Tags:        []string{"Diagnostics"},
-		Security:    defaultOperationSecurityInternal(),
-		Middlewares: humamw.RequirePermission(api, authz.PermDiagnosticsRead),
+		Security:    handlerutil.DefaultOperationSecurity(),
+		Middlewares: middleware.RequirePermission(api, authz.PermDiagnosticsRead),
 	}, h.GetRecentLogs)
 }
 

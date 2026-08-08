@@ -10,9 +10,10 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/labstack/echo/v5"
 	"go.uber.org/fx"
@@ -27,8 +28,8 @@ func registerEdgeTunnelRoutes(
 	actorRuntime *actors.Runtime,
 	cfg *config.Config,
 	apiGroup *echo.Group,
-	environmentService *services.EnvironmentService,
-	eventService *services.EventService,
+	environmentService *environment.EnvironmentService,
+	eventService *event.EventService,
 	registry *edge.TunnelRegistry,
 ) *edge.TunnelServer {
 	// Resolver that validates API key and returns the environment ID
@@ -75,7 +76,7 @@ func registerEdgeTunnelRoutes(
 			}
 		}
 
-		req := services.CreateEventRequest{
+		req := event.CreateEventRequest{
 			Type:          models.EventType(evt.Type),
 			Severity:      models.EventSeverity(evt.Severity),
 			Title:         evt.Title,
@@ -127,7 +128,7 @@ func registerEdgeTunnelRoutes(
 		}
 		envIDCopy := envID
 		envNameCopy := envName
-		_, _ = eventService.CreateEvent(ctx, services.CreateEventRequest{
+		_, _ = eventService.CreateEvent(ctx, event.CreateEventRequest{
 			Type:          models.EventTypeEnvironmentMTLSEnroll,
 			Severity:      edgeMTLSEnrollmentSeverityInternal(reenrolled),
 			Title:         "Edge mTLS enrollment",
@@ -168,12 +169,12 @@ func registerEdgeTunnelRoutes(
 	return server
 }
 
-func createEdgeMTLSIssueEventsInternal(ctx context.Context, eventService *services.EventService, envID string, envName string, remoteAddr string, certIssued bool, caGenerated bool, reenrolled bool) {
+func createEdgeMTLSIssueEventsInternal(ctx context.Context, eventService *event.EventService, envID string, envName string, remoteAddr string, certIssued bool, caGenerated bool, reenrolled bool) {
 	if eventService == nil {
 		return
 	}
 	if caGenerated {
-		_, _ = eventService.CreateEvent(ctx, services.CreateEventRequest{
+		_, _ = eventService.CreateEvent(ctx, event.CreateEventRequest{
 			Type:        models.EventTypeEnvironmentMTLSCAGenerated,
 			Severity:    models.EventSeverityInfo,
 			Title:       "Edge mTLS CA generated",
@@ -182,7 +183,7 @@ func createEdgeMTLSIssueEventsInternal(ctx context.Context, eventService *servic
 		})
 	}
 	if certIssued {
-		_, _ = eventService.CreateEvent(ctx, services.CreateEventRequest{
+		_, _ = eventService.CreateEvent(ctx, event.CreateEventRequest{
 			Type:          models.EventTypeEnvironmentMTLSCertIssued,
 			Severity:      edgeMTLSCertIssuedSeverityInternal(reenrolled),
 			Title:         "Edge mTLS certificate issued",
@@ -217,7 +218,7 @@ func optionalStringPtr(value string) *string {
 	return &value
 }
 
-func createEdgeConnectionEvent(ctx context.Context, eventService *services.EventService, envID, envName string, connected bool) error {
+func createEdgeConnectionEvent(ctx context.Context, eventService *event.EventService, envID, envName string, connected bool) error {
 	if eventService == nil {
 		return nil
 	}
@@ -234,7 +235,7 @@ func createEdgeConnectionEvent(ctx context.Context, eventService *services.Event
 		severity = models.EventSeveritySuccess
 	}
 
-	_, err := eventService.CreateEvent(ctx, services.CreateEventRequest{
+	_, err := eventService.CreateEvent(ctx, event.CreateEventRequest{
 		Type:          eventType,
 		Severity:      severity,
 		Title:         title,

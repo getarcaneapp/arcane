@@ -1,0 +1,166 @@
+package appimages
+
+import (
+	"context"
+	"net/http"
+	"path/filepath"
+	"strings"
+
+	"emperror.dev/errors"
+	"github.com/danielgtaylor/huma/v2"
+)
+
+// AppImagesHandler provides Huma-based application image endpoints.
+type AppImagesHandler struct {
+	appImagesService *ApplicationImagesService
+}
+
+// --- Huma Input/Output Wrappers ---
+
+type GetLogoInput struct {
+	Full  bool   `query:"full" default:"false" doc:"Return full logo instead of icon"`
+	Color string `query:"color" doc:"Optional accent color override for preview (e.g., 'oklch(0.65 0.2 150)')"`
+}
+
+type GetPWAIconInput struct {
+	Filename string `path:"filename" example:"icon-192x192.png" doc:"PWA icon filename"`
+}
+
+type GetAppImageOutput struct {
+	ContentType         string `header:"Content-Type"`
+	CacheControl        string `header:"Cache-Control"`
+	XContentTypeOptions string `header:"X-Content-Type-Options"`
+	Body                []byte
+}
+
+var allowedPWAIconFilenames = map[string]struct{}{
+	"icon-72x72.png":   {},
+	"icon-96x96.png":   {},
+	"icon-128x128.png": {},
+	"icon-144x144.png": {},
+	"icon-152x152.png": {},
+	"icon-192x192.png": {},
+	"icon-384x384.png": {},
+	"icon-512x512.png": {},
+}
+
+// RegisterAppImages registers application image routes using Huma.
+func RegisterAppImages(api huma.API, appImagesService *ApplicationImagesService) {
+	h := &AppImagesHandler{
+		appImagesService: appImagesService,
+	}
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-logo",
+		Method:      http.MethodGet,
+		Path:        "/app-images/logo",
+		Summary:     "Get application logo",
+		Description: "Get the application logo image",
+		Tags:        []string{"Application Images"},
+		Security:    []map[string][]string{},
+	}, h.GetLogo)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-logo-email",
+		Method:      http.MethodGet,
+		Path:        "/app-images/logo-email",
+		Summary:     "Get application logo for email",
+		Description: "Get the application logo image in PNG format for emails",
+		Tags:        []string{"Application Images"},
+		Security:    []map[string][]string{},
+	}, h.GetLogoEmail)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-favicon",
+		Method:      http.MethodGet,
+		Path:        "/app-images/favicon",
+		Summary:     "Get application favicon",
+		Description: "Get the application favicon image",
+		Tags:        []string{"Application Images"},
+		Security:    []map[string][]string{},
+	}, h.GetFavicon)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-default-profile",
+		Method:      http.MethodGet,
+		Path:        "/app-images/profile",
+		Summary:     "Get default profile image",
+		Description: "Get the default user profile image",
+		Tags:        []string{"Application Images"},
+		Security:    []map[string][]string{},
+	}, h.GetDefaultProfile)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-pwa-icon",
+		Method:      http.MethodGet,
+		Path:        "/app-images/pwa/{filename}",
+		Summary:     "Get PWA icon",
+		Description: "Get a Progressive Web App icon image",
+		Tags:        []string{"Application Images"},
+		Security:    []map[string][]string{},
+	}, h.GetPWAIcon)
+}
+
+// GetLogo returns the application logo image.
+func (h *AppImagesHandler) GetLogo(ctx context.Context, input *GetLogoInput) (*GetAppImageOutput, error) {
+	name := "logo"
+	if input.Full {
+		name = "logo-full"
+	}
+
+	return h.getImageWithColor(name, input.Color)
+}
+
+// GetLogoEmail returns the application logo image for emails (PNG).
+func (h *AppImagesHandler) GetLogoEmail(ctx context.Context, input *struct{}) (*GetAppImageOutput, error) {
+	return h.getImage("logo-email")
+}
+
+// GetFavicon returns the application favicon image.
+func (h *AppImagesHandler) GetFavicon(ctx context.Context, input *struct{}) (*GetAppImageOutput, error) {
+	return h.getImage("favicon")
+}
+
+// GetDefaultProfile returns the default user profile image.
+func (h *AppImagesHandler) GetDefaultProfile(ctx context.Context, input *struct{}) (*GetAppImageOutput, error) {
+	return h.getImage("profile")
+}
+
+// GetPWAIcon returns a PWA icon image.
+func (h *AppImagesHandler) GetPWAIcon(ctx context.Context, input *GetPWAIconInput) (*GetAppImageOutput, error) {
+	return h.getImageByFilenameInternal(input.Filename)
+}
+
+func (h *AppImagesHandler) getImage(name string) (*GetAppImageOutput, error) {
+	return h.getImageWithColor(name, "")
+}
+
+func (h *AppImagesHandler) getImageByFilenameInternal(filename string) (*GetAppImageOutput, error) {
+	if _, ok := allowedPWAIconFilenames[filename]; !ok {
+		return nil, huma.Error400BadRequest("invalid PWA icon filename")
+	}
+
+	name := strings.TrimSuffix(filename, filepath.Ext(filename))
+	return h.getImage(name)
+}
+
+func (h *AppImagesHandler) getImageWithColor(name string, colorOverride string) (*GetAppImageOutput, error) {
+	imageData, mimeType, err := h.appImagesService.GetImageWithColor(name, colorOverride)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to retrieve image").Error())
+	}
+
+	// Always disable logo caching so theme/logo updates are reflected immediately.
+	// Keep cache for static app images that do not change at runtime.
+	cacheControl := "public, max-age=900, stale-while-revalidate=86400"
+	if name == "logo" || name == "logo-full" || colorOverride != "" {
+		cacheControl = "no-cache, no-store, must-revalidate"
+	}
+
+	return &GetAppImageOutput{
+		ContentType:         mimeType,
+		CacheControl:        cacheControl,
+		XContentTypeOptions: "nosniff",
+		Body:                imageData,
+	}, nil
+}

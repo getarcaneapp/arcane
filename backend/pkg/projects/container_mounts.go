@@ -8,7 +8,6 @@ import (
 	mounttypes "github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
 
-	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"go.getarcane.app/sys/cgroup"
 )
@@ -23,7 +22,7 @@ func GetCurrentContainerMounts(ctx context.Context, dockerCli *client.Client) ([
 	}
 
 	// Prefer robust current-container detection and fall back to hostname.
-	inspectTarget, err := dockerutils.CurrentContainerInspectTarget(cgroup.CurrentContainerID, os.Hostname)
+	inspectTarget, err := libarcane.CurrentContainerInspectTarget(cgroup.CurrentContainerID, os.Hostname)
 	if err != nil {
 		return nil, err
 	}

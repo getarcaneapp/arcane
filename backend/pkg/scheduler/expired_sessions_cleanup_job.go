@@ -5,17 +5,18 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 )
 
 const ExpiredSessionsCleanupJobName = "expired-sessions-cleanup"
 
 type ExpiredSessionsCleanupJob struct {
-	sessionService  *services.SessionService
-	settingsService *services.SettingsService
+	sessionService  *session.SessionService
+	settingsService *settings.SettingsService
 }
 
-func NewExpiredSessionsCleanupJob(sessionService *services.SessionService, settingsService *services.SettingsService) *ExpiredSessionsCleanupJob {
+func NewExpiredSessionsCleanupJob(sessionService *session.SessionService, settingsService *settings.SettingsService) *ExpiredSessionsCleanupJob {
 	return &ExpiredSessionsCleanupJob{
 		sessionService:  sessionService,
 		settingsService: settingsService,

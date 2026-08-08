@@ -1,0 +1,641 @@
+package system
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"strings"
+	"sync"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/network"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
+
+	"emperror.dev/errors"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
+	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
+	"github.com/getarcaneapp/arcane/types/v2/system"
+	mobycontainer "github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/client"
+	"github.com/samber/mo"
+	"go.getarcane.app/updater/labels"
+	"golang.org/x/sync/errgroup"
+)
+
+type SystemService struct {
+	db               *database.DB
+	dockerService    *docker.DockerClientService
+	containerService *container.ContainerService
+	imageService     *image.ImageService
+	volumeService    *volume.VolumeService
+	networkService   *network.NetworkService
+	settingsService  *settings.SettingsService
+	activityService  *activity.ActivityService
+	pruneMu          sync.Mutex
+	runningPrunes    map[string]string
+}
+
+func NewSystemService(
+	db *database.DB,
+	dockerService *docker.DockerClientService,
+	containerService *container.ContainerService,
+	imageService *image.ImageService,
+	volumeService *volume.VolumeService,
+	networkService *network.NetworkService,
+	settingsService *settings.SettingsService,
+	activityService *activity.ActivityService,
+) *SystemService {
+	return &SystemService{
+		db:               db,
+		dockerService:    dockerService,
+		containerService: containerService,
+		imageService:     imageService,
+		volumeService:    volumeService,
+		networkService:   networkService,
+		settingsService:  settingsService,
+		activityService:  activityService,
+		runningPrunes:    make(map[string]string),
+	}
+}
+
+func (s *SystemService) PruneAll(ctx context.Context, environmentID string, req system.PruneAllRequest) (*system.PruneAllResult, bool, error) {
+	slog.InfoContext(ctx, "Starting selective prune operation",
+		"containers", req.Containers,
+		"images", req.Images,
+		"volumes", req.Volumes,
+		"networks", req.Networks,
+		"build_cache", req.BuildCache,
+	)
+
+	prune := s.beginSystemPruneInternal(ctx, environmentID, req)
+	activityID := prune.activityID
+	result := &system.PruneAllResult{Success: true, ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()}
+	if prune.started.IsAbsent() {
+		slog.InfoContext(ctx, "System prune already running", "environmentId", environmentID, "activityId", activityID)
+		return result, false, nil
+	}
+
+	defer s.finishSystemPruneInternal(environmentID)
+
+	ctx = s.activityService.Track(ctx, activityID)
+	s.runSystemPruneInternal(ctx, req, activityID, result)
+
+	return result, true, nil
+}
+
+func (s *SystemService) StartPruneAll(ctx context.Context, environmentID string, req system.PruneAllRequest) *system.PruneAllResult {
+	prune := s.beginSystemPruneInternal(ctx, environmentID, req)
+	activityID := prune.activityID
+	if prune.started.IsAbsent() {
+		slog.InfoContext(ctx, "System prune already running", "environmentId", environmentID, "activityId", activityID)
+		return &system.PruneAllResult{Success: true, ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()}
+	}
+
+	backgroundCtx := utils.ActivityRuntimeContext(ctx, nil)
+	backgroundCtx = s.activityService.Track(backgroundCtx, activityID)
+
+	go func() {
+		defer s.finishSystemPruneInternal(environmentID)
+
+		result := &system.PruneAllResult{Success: true, ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()}
+		s.runSystemPruneInternal(backgroundCtx, req, activityID, result)
+	}()
+
+	return &system.PruneAllResult{Success: true, ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()}
+}
+
+type systemPruneBeginResult struct {
+	activityID string
+	started    mo.Option[struct{}]
+}
+
+func (s *SystemService) beginSystemPruneInternal(ctx context.Context, environmentID string, req system.PruneAllRequest) systemPruneBeginResult {
+	s.pruneMu.Lock()
+	defer s.pruneMu.Unlock()
+
+	if activityID, ok := s.runningPrunes[environmentID]; ok {
+		return systemPruneBeginResult{activityID: activityID, started: mo.None[struct{}]()}
+	}
+
+	activityID := s.startSystemPruneActivityInternal(ctx, environmentID, req)
+	s.runningPrunes[environmentID] = activityID
+	return systemPruneBeginResult{activityID: activityID, started: mo.Some(struct{}{})}
+}
+
+func (s *SystemService) finishSystemPruneInternal(environmentID string) {
+	s.pruneMu.Lock()
+	defer s.pruneMu.Unlock()
+
+	delete(s.runningPrunes, environmentID)
+}
+
+func (s *SystemService) runSystemPruneInternal(ctx context.Context, req system.PruneAllRequest, activityID string, result *system.PruneAllResult) {
+	var mu sync.Mutex
+
+	// 1. Prune Containers first (sequential) as it may free up other resources
+	if req.Containers != nil && req.Containers.Mode != system.PruneContainerModeNone {
+		s.appendSystemPruneActivityMessageInternal(ctx, activityID, "Pruning containers", 15)
+		slog.InfoContext(ctx, "Pruning containers...", "mode", req.Containers.Mode, "until", req.Containers.Until)
+		if err := s.pruneContainersInternal(ctx, *req.Containers, result); err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("Container pruning failed: %v", err))
+			result.Success = false
+		}
+	}
+
+	// 2. Prune other resources in parallel
+	g, groupCtx := errgroup.WithContext(ctx)
+
+	if req.Images != nil && req.Images.Mode != system.PruneImageModeNone {
+		g.Go(func() (workerErr error) {
+			defer utils.RecoverToError(&workerErr, "system info worker")
+
+			s.appendSystemPruneActivityMessageInternal(groupCtx, activityID, "Pruning images", 40)
+			slog.InfoContext(groupCtx, "Pruning images...", "mode", req.Images.Mode, "until", req.Images.Until)
+			localResult := &system.PruneAllResult{}
+			if err := s.pruneImagesInternal(groupCtx, *req.Images, localResult); err != nil {
+				mu.Lock()
+				result.Errors = append(result.Errors, fmt.Sprintf("Image pruning failed: %v", err))
+				result.Success = false
+				mu.Unlock()
+			} else {
+				mu.Lock()
+				result.ImagesDeleted = append(result.ImagesDeleted, localResult.ImagesDeleted...)
+				result.SpaceReclaimed += localResult.SpaceReclaimed
+				result.ImageSpaceReclaimed += localResult.ImageSpaceReclaimed
+				mu.Unlock()
+			}
+			return nil
+		})
+	}
+
+	if req.BuildCache != nil && req.BuildCache.Mode != system.PruneBuildCacheModeNone {
+		g.Go(func() (workerErr error) {
+			defer utils.RecoverToError(&workerErr, "system info worker")
+
+			s.appendSystemPruneActivityMessageInternal(groupCtx, activityID, "Pruning build cache", 45)
+			slog.InfoContext(groupCtx, "Pruning build cache...", "mode", req.BuildCache.Mode, "until", req.BuildCache.Until)
+			localResult := &system.PruneAllResult{}
+			if err := s.pruneBuildCacheInternal(groupCtx, *req.BuildCache, localResult); err != nil {
+				slog.WarnContext(groupCtx, "Build cache pruning encountered an error", "error", err.Error())
+				// Surface the failure like every other prune type so a build cache that
+				// could not be reclaimed is reported instead of silently left behind.
+				mu.Lock()
+				result.Errors = append(result.Errors, fmt.Sprintf("Build cache pruning failed: %v", err))
+				result.Success = false
+				mu.Unlock()
+			} else {
+				mu.Lock()
+				result.SpaceReclaimed += localResult.SpaceReclaimed
+				result.BuildCacheSpaceReclaimed += localResult.BuildCacheSpaceReclaimed
+				mu.Unlock()
+			}
+			return nil
+		})
+	}
+
+	if req.Volumes != nil && req.Volumes.Mode != system.PruneVolumeModeNone {
+		g.Go(func() (workerErr error) {
+			defer utils.RecoverToError(&workerErr, "system info worker")
+
+			s.appendSystemPruneActivityMessageInternal(groupCtx, activityID, "Pruning volumes", 55)
+			slog.InfoContext(groupCtx, "Pruning volumes...", "mode", req.Volumes.Mode)
+			localResult := &system.PruneAllResult{}
+			if err := s.pruneVolumesInternal(groupCtx, *req.Volumes, localResult); err != nil {
+				mu.Lock()
+				result.Errors = append(result.Errors, fmt.Sprintf("Volume pruning failed: %v", err))
+				result.Success = false
+				mu.Unlock()
+			} else {
+				mu.Lock()
+				result.VolumesDeleted = append(result.VolumesDeleted, localResult.VolumesDeleted...)
+				result.SpaceReclaimed += localResult.SpaceReclaimed
+				result.VolumeSpaceReclaimed += localResult.VolumeSpaceReclaimed
+				mu.Unlock()
+			}
+			return nil
+		})
+	}
+
+	if req.Networks != nil && req.Networks.Mode != system.PruneNetworkModeNone {
+		g.Go(func() (workerErr error) {
+			defer utils.RecoverToError(&workerErr, "system info worker")
+
+			s.appendSystemPruneActivityMessageInternal(groupCtx, activityID, "Pruning networks", 65)
+			slog.InfoContext(groupCtx, "Pruning networks...", "mode", req.Networks.Mode, "until", req.Networks.Until)
+			localResult := &system.PruneAllResult{}
+			if err := s.pruneNetworksInternal(groupCtx, *req.Networks, localResult); err != nil {
+				mu.Lock()
+				result.Errors = append(result.Errors, fmt.Sprintf("Network pruning failed: %v", err))
+				result.Success = false
+				mu.Unlock()
+			} else {
+				mu.Lock()
+				result.NetworksDeleted = append(result.NetworksDeleted, localResult.NetworksDeleted...)
+				mu.Unlock()
+			}
+			return nil
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		slog.ErrorContext(ctx, "Prune operations failed", "error", err)
+	}
+
+	slog.InfoContext(ctx, "Selective prune operation completed", "success", result.Success, "containers_pruned", len(result.ContainersPruned), "images_deleted", len(result.ImagesDeleted), "volumes_deleted", len(result.VolumesDeleted), "networks_deleted", len(result.NetworksDeleted), "space_reclaimed", result.SpaceReclaimed, "error_count", len(result.Errors))
+	s.completeSystemPruneActivityInternal(ctx, activityID, result)
+}
+
+func (s *SystemService) startSystemPruneActivityInternal(ctx context.Context, environmentID string, req system.PruneAllRequest) string {
+	if s.activityService == nil {
+		return ""
+	}
+	activity, err := s.activityService.StartActivity(ctx, activity.StartActivityRequest{
+		EnvironmentID: environmentID,
+		Type:          models.ActivityTypeSystemPrune,
+		ResourceType:  new("system"),
+		ResourceName:  new("Docker resources"),
+		Step:          "Preparing prune",
+		LatestMessage: "System prune started",
+		Metadata: models.JSON{
+			"containers": req.Containers,
+			"images":     req.Images,
+			"volumes":    req.Volumes,
+			"networks":   req.Networks,
+			"buildCache": req.BuildCache,
+		},
+	})
+	if err != nil {
+		slog.DebugContext(ctx, "failed to start system prune activity", "error", err)
+		return ""
+	}
+	return activity.ID
+}
+
+func (s *SystemService) appendSystemPruneActivityMessageInternal(ctx context.Context, activityID, message string, progress int) {
+	if s.activityService == nil || activityID == "" {
+		return
+	}
+	if _, err := s.activityService.AppendMessage(ctx, activityID, activity.AppendActivityMessageRequest{
+		Level:    models.ActivityMessageLevelInfo,
+		Message:  message,
+		Progress: &progress,
+		Step:     message,
+	}); err != nil {
+		slog.DebugContext(ctx, "failed to append system prune activity message", "activityId", activityID, "error", err)
+	}
+}
+
+func (s *SystemService) completeSystemPruneActivityInternal(ctx context.Context, activityID string, result *system.PruneAllResult) {
+	if s.activityService == nil || activityID == "" || result == nil {
+		return
+	}
+
+	status := models.ActivityStatusSuccess
+	message := "System prune completed"
+	var errMessage *string
+	if !result.Success || len(result.Errors) > 0 {
+		if activitylib.CancelledByContext(ctx) {
+			status = models.ActivityStatusCancelled
+			message = "System prune cancelled"
+		} else {
+			status = models.ActivityStatusFailed
+			message = "System prune completed with errors"
+			errMessage = new(strings.Join(result.Errors, "; "))
+		}
+	}
+	if _, err := s.activityService.CompleteActivity(utils.ActivityRuntimeContext(ctx, nil), activityID, status, message, errMessage); err != nil {
+		slog.DebugContext(ctx, "failed to complete system prune activity", "activityId", activityID, "error", err)
+	}
+}
+
+func (s *SystemService) performBatchContainerAction(ctx context.Context, containers []mobycontainer.Summary, actionName string, shouldProcess func(mobycontainer.Summary) bool, action func(context.Context, string) error) *containertypes.ActionResult {
+	result := &containertypes.ActionResult{Success: true}
+	var mu sync.Mutex
+
+	g, groupCtx := errgroup.WithContext(ctx)
+	// Limit concurrency to avoid overwhelming Docker daemon
+	g.SetLimit(5)
+
+	for _, containerSummary := range containers {
+		c := containerSummary // capture loop var
+		if !shouldProcess(c) {
+			continue
+		}
+
+		g.Go(func() (workerErr error) {
+			defer utils.RecoverToError(&workerErr, "system info worker")
+
+			err := action(groupCtx, c.ID)
+
+			mu.Lock()
+			defer mu.Unlock()
+
+			if err != nil {
+				result.Failed = append(result.Failed, c.ID)
+				result.Errors = append(result.Errors, fmt.Sprintf("Failed to %s container %s: %v", actionName, c.ID, err))
+				result.Success = false
+			} else {
+				if actionName == "start" {
+					result.Started = append(result.Started, c.ID)
+				} else {
+					result.Stopped = append(result.Stopped, c.ID)
+				}
+			}
+			return nil
+		})
+	}
+
+	_ = g.Wait()
+	return result
+}
+
+func (s *SystemService) StartAllContainers(ctx context.Context, environmentID string) (*containertypes.ActionResult, error) {
+	return s.startMatchingContainersInternal(ctx, environmentID, startMatchingContainersOptionsInternal{
+		ResourceName:   "All containers",
+		StartMessage:   "Starting all containers",
+		FailureMessage: "Starting all containers failed",
+		SuccessMessage: "Started all containers",
+		ShouldStart:    func(c mobycontainer.Summary) bool { return c.State != "running" },
+	})
+}
+
+func (s *SystemService) StartAllStoppedContainers(ctx context.Context, environmentID string) (*containertypes.ActionResult, error) {
+	return s.startMatchingContainersInternal(ctx, environmentID, startMatchingContainersOptionsInternal{
+		ResourceName:   "Stopped containers",
+		StartMessage:   "Starting stopped containers",
+		FailureMessage: "Starting stopped containers failed",
+		SuccessMessage: "Started stopped containers",
+		ShouldStart:    func(c mobycontainer.Summary) bool { return c.State == "exited" },
+	})
+}
+
+type startMatchingContainersOptionsInternal struct {
+	ResourceName   string
+	StartMessage   string
+	FailureMessage string
+	SuccessMessage string
+	ShouldStart    func(mobycontainer.Summary) bool
+}
+
+func (s *SystemService) startMatchingContainersInternal(ctx context.Context, environmentID string, opts startMatchingContainersOptionsInternal) (*containertypes.ActionResult, error) {
+	activityID := s.startSystemContainerActivityInternal(ctx, environmentID, models.ActivityTypeContainerStart, opts.ResourceName, opts.StartMessage)
+	ctx = s.activityService.Track(ctx, activityID)
+	containers, _, _, _, err := s.dockerService.GetAllContainers(ctx)
+	if err != nil {
+		result := &containertypes.ActionResult{
+			Success:    false,
+			Errors:     []string{fmt.Sprintf("Failed to list containers: %v", err)},
+			ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer(),
+		}
+		s.completeSystemContainerActivityInternal(ctx, activityID, opts.FailureMessage, result)
+		return result, err
+	}
+
+	result := s.performBatchContainerAction(ctx, containers, "start", opts.ShouldStart, func(ctx context.Context, id string) error {
+		return s.containerService.StartContainer(ctx, id, models.SystemUser)
+	})
+	result.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
+	s.completeSystemContainerActivityInternal(ctx, activityID, opts.SuccessMessage, result)
+	return result, nil
+}
+
+func (s *SystemService) StopAllContainers(ctx context.Context, environmentID string) (*containertypes.ActionResult, error) {
+	activityID := s.startSystemContainerActivityInternal(ctx, environmentID, models.ActivityTypeContainerStop, "All containers", "Stopping all containers")
+	ctx = s.activityService.Track(ctx, activityID)
+	containers, _, _, _, err := s.dockerService.GetAllContainers(ctx)
+	if err != nil {
+		result := &containertypes.ActionResult{
+			Success:    false,
+			Errors:     []string{fmt.Sprintf("Failed to list containers: %v", err)},
+			ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer(),
+		}
+		s.completeSystemContainerActivityInternal(ctx, activityID, "Stopping all containers failed", result)
+		return result, err
+	}
+
+	result := s.performBatchContainerAction(ctx, containers, "stop",
+		func(c mobycontainer.Summary) bool {
+			// Skip Arcane container
+			return !labels.IsArcaneContainer(c.Labels)
+		},
+		func(ctx context.Context, id string) error {
+			return s.containerService.StopContainer(ctx, id, models.SystemUser)
+		})
+	result.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
+	s.completeSystemContainerActivityInternal(ctx, activityID, "Stopped all containers", result)
+	return result, nil
+}
+
+func (s *SystemService) startSystemContainerActivityInternal(ctx context.Context, environmentID string, activityType models.ActivityType, resourceName, message string) string {
+	if s.activityService == nil {
+		return ""
+	}
+	activity, err := s.activityService.StartActivity(ctx, activity.StartActivityRequest{
+		EnvironmentID: environmentID,
+		Type:          activityType,
+		ResourceType:  new("system"),
+		ResourceName:  &resourceName,
+		Step:          message,
+		LatestMessage: message,
+		Metadata:      models.JSON{"scope": resourceName},
+	})
+	if err != nil {
+		slog.DebugContext(ctx, "failed to start system container activity", "type", activityType, "error", err)
+		return ""
+	}
+	return activity.ID
+}
+
+func (s *SystemService) completeSystemContainerActivityInternal(ctx context.Context, activityID, successMessage string, result *containertypes.ActionResult) {
+	if s.activityService == nil || activityID == "" || result == nil {
+		return
+	}
+
+	status := models.ActivityStatusSuccess
+	message := successMessage
+	var errMessage *string
+	if !result.Success || len(result.Errors) > 0 {
+		status = models.ActivityStatusFailed
+		message = strings.Join(result.Errors, "; ")
+		errMessage = &message
+	}
+
+	if _, err := s.activityService.CompleteActivity(utils.ActivityRuntimeContext(ctx, nil), activityID, status, message, errMessage); err != nil {
+		slog.DebugContext(ctx, "failed to complete system container activity", "activityId", activityID, "error", err)
+	}
+}
+
+func (s *SystemService) pruneContainersInternal(ctx context.Context, options system.PruneContainersOptions, result *system.PruneAllResult) error {
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		return errors.WrapIf(err, "failed to connect to Docker")
+	}
+
+	filterArgs := make(client.Filters)
+	if options.Mode == system.PruneContainerModeOlderThan {
+		if strings.TrimSpace(options.Until) == "" {
+			return errors.New("container prune mode olderThan requires until")
+		}
+		filterArgs = filterArgs.Add("until", options.Until)
+	}
+
+	report, err := dockerClient.ContainerPrune(ctx, client.ContainerPruneOptions{Filters: filterArgs})
+	if err != nil {
+		return errors.WrapIf(err, "failed to prune containers")
+	}
+
+	result.ContainersPruned = report.Report.ContainersDeleted
+	result.SpaceReclaimed += report.Report.SpaceReclaimed
+	result.ContainerSpaceReclaimed += report.Report.SpaceReclaimed
+	return nil
+}
+
+func (s *SystemService) pruneImagesInternal(ctx context.Context, options system.PruneImagesOptions, result *system.PruneAllResult) error {
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		return errors.WrapIf(err, "failed to connect to Docker")
+	}
+
+	filterArgs := make(client.Filters)
+	switch options.Mode {
+	case system.PruneImageModeNone:
+		return errors.New("image prune mode none is not allowed")
+	case system.PruneImageModeDangling:
+		filterArgs = filterArgs.Add("dangling", "true")
+	case system.PruneImageModeAll:
+		filterArgs = filterArgs.Add("dangling", "false")
+	case system.PruneImageModeOlderThan:
+		if strings.TrimSpace(options.Until) == "" {
+			return errors.New("image prune mode olderThan requires until")
+		}
+		filterArgs = filterArgs.Add("dangling", "false")
+		filterArgs = filterArgs.Add("until", options.Until)
+	default:
+		return errors.Errorf("unsupported image prune mode: %s", options.Mode)
+	}
+
+	report, err := dockerClient.ImagePrune(ctx, client.ImagePruneOptions{Filters: filterArgs})
+	if err != nil {
+		return errors.WrapIf(err, "failed to prune images")
+	}
+
+	slog.InfoContext(ctx, "Image pruning completed", "images_deleted", len(report.Report.ImagesDeleted), "bytes_reclaimed", report.Report.SpaceReclaimed)
+
+	// Collect IDs to delete from DB
+	var idsToDelete []string
+	for _, imgReport := range report.Report.ImagesDeleted {
+		if imgReport.Deleted != "" {
+			idsToDelete = append(idsToDelete, imgReport.Deleted)
+		} else if imgReport.Untagged != "" {
+			idsToDelete = append(idsToDelete, imgReport.Untagged)
+		}
+	}
+
+	// Batch delete update records
+	if len(idsToDelete) > 0 && s.db != nil {
+		if err := s.db.WithContext(ctx).Where("id IN ?", idsToDelete).Delete(&models.ImageUpdateRecord{}).Error; err != nil {
+			slog.WarnContext(ctx, "Failed to delete image update records", "count", len(idsToDelete), "error", err.Error())
+		}
+	}
+
+	result.ImagesDeleted = idsToDelete
+	result.SpaceReclaimed += report.Report.SpaceReclaimed
+	result.ImageSpaceReclaimed += report.Report.SpaceReclaimed
+	return nil
+}
+
+func (s *SystemService) pruneBuildCacheInternal(ctx context.Context, options system.PruneBuildCacheOptions, result *system.PruneAllResult) error {
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		result.Errors = append(result.Errors, errors.WrapIf(err, "build cache pruning failed (connection)").Error())
+		slog.ErrorContext(ctx, "Error connecting to Docker for build cache prune", "error", err.Error())
+		return errors.WrapIf(err, "failed to connect to Docker for build cache prune")
+	}
+
+	pruneOptions := client.BuildCachePruneOptions{
+		All: options.Mode == system.PruneBuildCacheModeAll,
+	}
+	if options.Mode == system.PruneBuildCacheModeOlderThan {
+		if strings.TrimSpace(options.Until) == "" {
+			return errors.New("build cache prune mode olderThan requires until")
+		}
+		pruneOptions.Filters = make(client.Filters)
+		pruneOptions.Filters = pruneOptions.Filters.Add("until", options.Until)
+	}
+
+	slog.DebugContext(ctx, "starting build cache pruning", "mode", options.Mode, "until", options.Until)
+	report, err := dockerClient.BuildCachePrune(ctx, pruneOptions)
+	if err != nil {
+		result.Errors = append(result.Errors, errors.WrapIf(err, "build cache pruning failed").Error())
+		slog.ErrorContext(ctx, "Error pruning build cache", "error", err.Error())
+		return errors.WrapIf(err, "failed to prune build cache")
+	}
+
+	slog.InfoContext(ctx, "build cache pruning completed", "cache_entries_deleted", len(report.Report.CachesDeleted), "bytes_reclaimed", report.Report.SpaceReclaimed)
+
+	result.SpaceReclaimed += report.Report.SpaceReclaimed
+	result.BuildCacheSpaceReclaimed += report.Report.SpaceReclaimed
+	return nil
+}
+
+func (s *SystemService) pruneVolumesInternal(ctx context.Context, options system.PruneVolumesOptions, result *system.PruneAllResult) error {
+	allVolumes := options.Mode == system.PruneVolumeModeAll
+	report, err := s.volumeService.PruneVolumesWithOptions(ctx, allVolumes)
+	if err != nil {
+		return err
+	}
+
+	slog.InfoContext(ctx, "Volume prune completed", "volumes_deleted", len(report.VolumesDeleted), "space_reclaimed", report.SpaceReclaimed)
+
+	result.VolumesDeleted = report.VolumesDeleted
+	result.SpaceReclaimed += report.SpaceReclaimed
+	result.VolumeSpaceReclaimed += report.SpaceReclaimed
+	return nil
+}
+
+func (s *SystemService) pruneNetworksInternal(ctx context.Context, options system.PruneNetworksOptions, result *system.PruneAllResult) error {
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		return errors.WrapIf(err, "failed to connect to Docker")
+	}
+
+	filterArgs := make(client.Filters)
+	if options.Mode == system.PruneNetworkModeOlderThan {
+		if strings.TrimSpace(options.Until) == "" {
+			return errors.New("network prune mode olderThan requires until")
+		}
+		filterArgs = filterArgs.Add("until", options.Until)
+	}
+
+	report, err := dockerClient.NetworkPrune(ctx, client.NetworkPruneOptions{Filters: filterArgs})
+	if err != nil {
+		return errors.WrapIf(err, "failed to prune networks")
+	}
+
+	slog.InfoContext(ctx, "Network prune completed", "networks_deleted", len(report.Report.NetworksDeleted))
+
+	result.NetworksDeleted = report.Report.NetworksDeleted
+	return nil
+}
+
+func (s *SystemService) GetDiskUsagePath(ctx context.Context) string {
+	cfg := s.settingsService.GetSettingsConfig()
+	if cfg == nil {
+		return "/"
+	}
+
+	path := cfg.DiskUsagePath.Value
+	if path == "" {
+		path = "/"
+	}
+	return path
+}

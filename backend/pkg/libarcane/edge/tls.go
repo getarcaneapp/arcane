@@ -25,7 +25,6 @@ import (
 
 	"emperror.dev/errors"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	certgen "github.com/getarcaneapp/arcane/cli/v2/pkg/generate"
 	"go.getarcane.app/sys/atomic"
@@ -126,8 +125,7 @@ func PrepareManagerMTLSAssetsWithContext(ctx context.Context, cfg *Config) error
 	return nil
 }
 
-// GeneratedManagerMTLSCAPath returns the configured or Arcane-managed manager CA path without creating assets.
-func GeneratedManagerMTLSCAPath(cfg *Config) (string, error) {
+func generatedManagerMTLSCAPathInternal(cfg *Config) (string, error) {
 	if cfg == nil {
 		return "", errors.New("edge config is required")
 	}
@@ -139,6 +137,25 @@ func GeneratedManagerMTLSCAPath(cfg *Config) (string, error) {
 		return "", err
 	}
 	return filepath.Join(assetsDir, generatedMTLSCACertFileName), nil
+}
+
+// AvailableManagerMTLSCAPath resolves an existing manager CA certificate.
+func AvailableManagerMTLSCAPath(cfg *Config) (string, error) {
+	if cfg == nil {
+		return "", errors.New("edge config is required")
+	}
+	if NormalizeEdgeMTLSMode(cfg.EdgeMTLSMode) == EdgeMTLSModeDisabled {
+		return "", errors.New("edge mTLS is disabled")
+	}
+
+	caPath, err := generatedManagerMTLSCAPathInternal(cfg)
+	if err != nil {
+		return "", errors.WrapIf(err, "resolve edge mTLS CA path")
+	}
+	if _, err := os.Stat(caPath); err != nil {
+		return "", errors.WrapIf(err, "stat edge mTLS CA")
+	}
+	return caPath, nil
 }
 
 // GenerateManagerClientMTLSAssetsWithContext creates or loads the generated CA and per-environment client certificate bundle.
@@ -345,13 +362,13 @@ func enrollAgentMTLSAssetsInternal(ctx context.Context, cfg *Config, assetsDir, 
 		return errors.New("edge mTLS enrollment response did not include any files")
 	}
 
-	if err := os.MkdirAll(assetsDir, common.DirPerm); err != nil {
+	if err := os.MkdirAll(assetsDir, utils.DirPerm); err != nil {
 		return errors.WrapIf(err, "failed to create edge mTLS asset dir")
 	}
 	for _, file := range enrollResp.Files {
 		fileName := filepath.Base(file.Name)
 		targetPath := filepath.Join(assetsDir, fileName)
-		perm := common.FilePerm
+		perm := utils.FilePerm
 		if strings.TrimSpace(file.Permissions) == "0600" {
 			perm = 0o600
 		}
@@ -683,7 +700,7 @@ func edgeAgentMTLSAssetsDirInternal(cfg *Config) (string, error) {
 }
 
 func ensureManagerCAInternal(ctx context.Context, assetsDir string) (string, string, bool, error) {
-	if err := os.MkdirAll(assetsDir, common.DirPerm); err != nil {
+	if err := os.MkdirAll(assetsDir, utils.DirPerm); err != nil {
 		return "", "", false, errors.WrapIf(err, "failed to create edge mTLS assets dir")
 	}
 
@@ -716,7 +733,7 @@ func ensureManagerCAInternal(ctx context.Context, assetsDir string) (string, str
 		return "", "", false, errors.WrapIf(err, "failed to create CA certificate")
 	}
 
-	if err := writePEMFileInternal(caCertPath, "CERTIFICATE", certDER, common.FilePerm); err != nil {
+	if err := writePEMFileInternal(caCertPath, "CERTIFICATE", certDER, utils.FilePerm); err != nil {
 		return "", "", false, err
 	}
 	caKeyDER, err := x509.MarshalECPrivateKey(privateKey)
@@ -776,7 +793,7 @@ func ensureClientCertificateInternal(ctx context.Context, assetsDir string, envI
 
 	safeEnvID := generatedAssetNameSanitizer.ReplaceAllString(strings.TrimSpace(envID), "_")
 	clientDir := filepath.Join(assetsDir, generatedClientMTLSSubdir, safeEnvID)
-	if err := os.MkdirAll(clientDir, common.DirPerm); err != nil {
+	if err := os.MkdirAll(clientDir, utils.DirPerm); err != nil {
 		return "", "", false, errors.WrapIf(err, "failed to create client cert dir")
 	}
 	unlock, err := lockEdgeMTLSPathInternal(ctx, clientDir, ".client.lock")
@@ -814,7 +831,7 @@ func ensureClientCertificateInternal(ctx context.Context, assetsDir string, envI
 		return "", "", false, errors.WrapIf(err, "failed to create client certificate")
 	}
 
-	if err := writePEMFileInternal(clientCertPath, "CERTIFICATE", certDER, common.FilePerm); err != nil {
+	if err := writePEMFileInternal(clientCertPath, "CERTIFICATE", certDER, utils.FilePerm); err != nil {
 		return "", "", false, err
 	}
 	clientKeyDER, err := x509.MarshalECPrivateKey(privateKey)

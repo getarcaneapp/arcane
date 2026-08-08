@@ -7,7 +7,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/fx/fxtest"
 )
@@ -45,7 +45,7 @@ func newJobSchedulerForTestInternal(t testing.TB, ctx context.Context, location 
 	return scheduler
 }
 
-func newSettingsServiceForTestInternal(t testing.TB, ctx context.Context, db *database.DB) (*services.SettingsService, error) {
+func newSettingsServiceForTestInternal(t testing.TB, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
 	t.Helper()
 	lifecycle := fxtest.NewLifecycle(t)
 	runtime, err := actors.NewRuntime(t.Context(), lifecycle)
@@ -61,5 +61,5 @@ func newSettingsServiceForTestInternal(t testing.TB, ctx context.Context, db *da
 		require.NoError(t, effects.Stop(stopCtx))
 		require.NoError(t, lifecycle.Stop(stopCtx))
 	})
-	return services.NewSettingsService(ctx, db, executor, effects)
+	return settings.NewSettingsService(ctx, db, executor, effects)
 }

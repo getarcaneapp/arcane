@@ -16,14 +16,24 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/api/ws"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/di"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/gitops"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/swarm"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/variable"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/startup"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	httputils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/labstack/echo/v5"
 	"go.getarcane.app/streams/logs"
 	libcrypto "go.getarcane.app/sys/crypto"
@@ -141,9 +151,9 @@ func isWeakProductionEncryptionKeyInternal(encryptionKey, environment string, ag
 
 func newConfiguredHTTPClient(cfg *config.Config) *http.Client {
 	if cfg.HTTPClientTimeout > 0 {
-		return httputils.NewHTTPClientWithTimeout(time.Duration(cfg.HTTPClientTimeout) * time.Second)
+		return httpx.NewHTTPClientWithTimeout(time.Duration(cfg.HTTPClientTimeout) * time.Second)
 	}
-	return httputils.NewHTTPClient()
+	return httpx.NewHTTPClient()
 }
 
 type initializeStartupStateParams struct {
@@ -153,17 +163,17 @@ type initializeStartupStateParams struct {
 	Config     *config.Config
 	HTTPClient *http.Client
 
-	Volume      *services.VolumeService
-	Settings    *services.SettingsService
-	Environment *services.EnvironmentService
-	GitOpsSync  *services.GitOpsSyncService
-	Project     *services.ProjectService
-	Variable    *services.VariableService
-	Docker      *services.DockerClientService
-	Swarm       *services.SwarmService
-	Role        *services.RoleService
-	User        *services.UserService
-	ApiKey      *services.ApiKeyService
+	Volume      *volume.Module
+	Settings    *settings.SettingsService
+	Environment *environment.EnvironmentService
+	GitOpsSync  *gitops.GitOpsSyncService
+	Project     *project.ProjectService
+	Variable    *variable.VariableService
+	Docker      *docker.DockerClientService
+	Swarm       *swarm.SwarmService
+	Role        *role.RoleService
+	User        *user.UserService
+	ApiKey      *apikey.ApiKeyService
 }
 
 func initializeStartupState(p initializeStartupStateParams) {
@@ -171,8 +181,8 @@ func initializeStartupState(p initializeStartupStateParams) {
 	cfg := p.Config
 	httpClient := p.HTTPClient
 
-	if p.Volume != nil {
-		startup.CleanupOrphanedVolumeHelpers(appCtx, p.Volume.CleanupOrphanedVolumeHelpers)
+	if p.Volume.Service() != nil {
+		startup.CleanupOrphanedVolumeHelpers(appCtx, p.Volume.Service().CleanupOrphanedVolumeHelpers)
 	}
 
 	runtimeCfg := &startup.RuntimeConfig{
@@ -294,7 +304,7 @@ func initializeStartupState(p initializeStartupStateParams) {
 	}
 }
 
-func initializeGitOpsStartupStateInternal(appCtx context.Context, gitOpsSync *services.GitOpsSyncService) {
+func initializeGitOpsStartupStateInternal(appCtx context.Context, gitOpsSync *gitops.GitOpsSyncService) {
 	if gitOpsSync == nil {
 		return
 	}
@@ -311,7 +321,7 @@ func initializeGitOpsStartupStateInternal(appCtx context.Context, gitOpsSync *se
 	}
 }
 
-func runRoleStartupTasks(ctx context.Context, roleService *services.RoleService, cfg *config.Config, agentMode bool) {
+func runRoleStartupTasks(ctx context.Context, roleService *role.RoleService, cfg *config.Config, agentMode bool) {
 	if roleService == nil {
 		return
 	}

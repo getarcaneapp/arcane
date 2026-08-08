@@ -3,7 +3,7 @@ package cli
 import (
 	"os"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/configschema"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/config/schema"
 	"github.com/spf13/cobra"
 )
 
@@ -24,13 +24,13 @@ var configSchemaCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		doc, err := configschema.GenerateWithSourceRoot(sourceRoot)
+		doc, err := schema.GenerateWithSourceRoot(sourceRoot)
 		if err != nil {
 			cmd.PrintErrf("Error generating config schema: %v\n", err)
 			os.Exit(1)
 		}
 
-		output, err := configschema.MarshalJSON(doc)
+		output, err := schema.MarshalJSON(doc)
 		if err != nil {
 			cmd.PrintErrf("Error encoding config schema: %v\n", err)
 			os.Exit(1)

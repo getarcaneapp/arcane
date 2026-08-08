@@ -188,7 +188,7 @@ func newHTTPServerInternal(baseCtx context.Context, listenAddr string, handler h
 		IdleTimeout:       120 * time.Second,
 		BaseContext:       func(net.Listener) context.Context { return baseCtx },
 		// Long-lived stream handlers tune dead-peer detection for their own
-		// connection; see httpx.SetDeadPeerTimeout.
+		// connection; see handlerutil.SetDeadPeerTimeout.
 		ConnContext: httpx.WithConn,
 	}
 	if !useTLS {

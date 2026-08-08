@@ -4,7 +4,7 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 )
 
 const ActivitySweepJobName = "activity-sweep"
@@ -15,10 +15,10 @@ const ActivitySweepJobName = "activity-sweep"
 // an internal job: it has no job_metadata entry and is invisible in the Jobs
 // UI.
 type ActivitySweepJob struct {
-	activityService *services.ActivityService
+	activityService *activity.ActivityService
 }
 
-func NewActivitySweepJob(activityService *services.ActivityService) *ActivitySweepJob {
+func NewActivitySweepJob(activityService *activity.ActivityService) *ActivitySweepJob {
 	return &ActivitySweepJob{activityService: activityService}
 }
 

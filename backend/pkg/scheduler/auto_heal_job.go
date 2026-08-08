@@ -8,6 +8,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/notification"
+
 	"emperror.dev/errors"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
@@ -15,8 +18,9 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
@@ -33,10 +37,10 @@ type restartRecord struct {
 }
 
 type AutoHealJob struct {
-	dockerClientService *services.DockerClientService
-	settingsService     *services.SettingsService
-	eventService        *services.EventService
-	notificationService *services.NotificationService
+	dockerClientService *docker.DockerClientService
+	settingsService     *settings.SettingsService
+	eventService        *event.EventService
+	notificationService *notification.NotificationService
 	admissionGate       *actors.Gate[actors.AdmissionKey]
 
 	mu       sync.Mutex
@@ -53,10 +57,10 @@ type AutoHealJob struct {
 }
 
 func NewAutoHealJob(
-	dockerClientService *services.DockerClientService,
-	settingsService *services.SettingsService,
-	eventService *services.EventService,
-	notificationService *services.NotificationService,
+	dockerClientService *docker.DockerClientService,
+	settingsService *settings.SettingsService,
+	eventService *event.EventService,
+	notificationService *notification.NotificationService,
 	admissionGate *actors.Gate[actors.AdmissionKey],
 ) (*AutoHealJob, error) {
 	if admissionGate == nil {
@@ -119,7 +123,7 @@ func (j *AutoHealJob) Run(ctx context.Context) {
 		return
 	}
 
-	containerList, err := j.listContainersInternal(ctx, dockerClient)
+	containerList, err := j.ListContainers(ctx, dockerClient)
 	if err != nil {
 		slog.ErrorContext(ctx, "auto-heal failed to list containers", "error", err)
 		return
@@ -418,7 +422,7 @@ func (j *AutoHealJob) getDockerClientInternal(ctx context.Context) (*client.Clie
 	return j.dockerClientService.GetClient(ctx)
 }
 
-func (j *AutoHealJob) listContainersInternal(ctx context.Context, dockerClient *client.Client) ([]container.Summary, error) {
+func (j *AutoHealJob) ListContainers(ctx context.Context, dockerClient *client.Client) ([]container.Summary, error) {
 	if j.listContainers != nil {
 		return j.listContainers(ctx, dockerClient)
 	}
