@@ -1,5 +1,5 @@
 import type { ColumnFiltersState } from '@tanstack/table-core';
-import type { FilterMap } from '#lib/types/shared';
+import type { FilterMap, FilterValue } from '#lib/types/shared';
 import type { CompactTablePrefs } from './arcane-table.types.svelte';
 import { decodeFilters, decodeSort } from './arcane-table.types.svelte';
 
@@ -18,17 +18,19 @@ export function toFilterMap(filters: ColumnFiltersState): FilterMap {
 	const out: FilterMap = {};
 	for (const f of filters ?? []) {
 		const id = f.id;
-		let value: unknown = (f as any).value;
+		let value: unknown = f.value;
 
 		if (value instanceof Set) {
 			value = Array.from(value);
 		}
 
+		// Filter values originate from facet options / inputs, so they always fit
+		// FilterValue; the cast bridges tanstack's `unknown` at this one boundary.
 		if (Array.isArray(value)) {
 			if (value.length === 0) continue;
-			out[id] = value as any[];
+			out[id] = value as FilterValue;
 		} else if (value !== undefined && value !== null && String(value).trim() !== '') {
-			out[id] = value as any;
+			out[id] = value as FilterValue;
 		}
 	}
 	return out;

@@ -48,7 +48,6 @@ const (
 	passkeyStepUpTTL       = 5 * time.Minute
 	maxPasskeyPayloadBytes = 256 * 1024
 	maxPasskeyNameRunes    = 128
-	maxLegacyPasskeyChecks = 32
 	recoveryCodeCount      = 10
 )
 
@@ -555,16 +554,6 @@ func (s *passkeyService) FinishPasskeyLogin(ctx context.Context, ceremonyID stri
 		resolved = adapter
 		return adapter, nil
 	}, session, parsed)
-	if err != nil && resolved != nil {
-		if _, exactCredentialID := resolved.credentialModelIDs[string(parsed.RawID)]; !exactCredentialID {
-			if fallbackCredential, fallbackErr := s.validateLegacyPasskeyLoginInternal(resolved, session, parsed); fallbackErr == nil {
-				user = resolved
-				credential = fallbackCredential
-				err = nil
-				slog.WarnContext(ctx, "passkey login used legacy credential ID fallback", "passkey_id", resolved.credentialModelIDs[string(credential.ID)])
-			}
-		}
-	}
 	if err != nil || user == nil || credential == nil || resolved == nil {
 		slog.WarnContext(ctx, "passkey login validation failed", "stage", "assertion", "error", err)
 		return nil, ErrPasskeyResponse
@@ -574,32 +563,6 @@ func (s *passkeyService) FinishPasskeyLogin(ctx context.Context, ceremonyID stri
 		return nil, err
 	}
 	return &resolved.model, nil
-}
-
-func (s *passkeyService) validateLegacyPasskeyLoginInternal(adapter *webAuthnUser, session webauthn.SessionData, parsed *protocol.ParsedCredentialAssertionData) (*webauthn.Credential, error) {
-	if adapter == nil || parsed == nil || len(parsed.Response.UserHandle) == 0 {
-		return nil, ErrPasskeyResponse
-	}
-	if len(session.UserID) != 0 || len(session.AllowedCredentialIDs) != 0 {
-		return nil, ErrPasskeyResponse
-	}
-	if len(adapter.credentials) == 0 || len(adapter.credentials) > maxLegacyPasskeyChecks {
-		return nil, ErrPasskeyResponse
-	}
-	if subtle.ConstantTimeCompare(parsed.Response.UserHandle, adapter.WebAuthnID()) != 1 {
-		return nil, ErrPasskeyResponse
-	}
-
-	session.UserID = adapter.WebAuthnID()
-	for i := range adapter.credentials {
-		candidateCopy := *parsed
-		candidateCopy.RawID = append([]byte(nil), adapter.credentials[i].ID...)
-		credential, err := s.webAuthn.ValidateLogin(adapter, session, &candidateCopy)
-		if err == nil && credential != nil {
-			return credential, nil
-		}
-	}
-	return nil, ErrPasskeyResponse
 }
 
 func (s *passkeyService) FinishMobilePasskeyLogin(ctx context.Context, ceremonyID string, payload []byte, codeChallenge string) (*auth.MobilePasskeyCompletion, error) {

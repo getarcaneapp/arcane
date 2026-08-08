@@ -7,7 +7,23 @@ import {
 	tableFeatures,
 	type SvelteTable
 } from '@tanstack/svelte-table';
+import { metaHelper } from '@tanstack/table-core';
 import type { Cell, Column, ColumnDef, FilterFn, Header, Row, RowData, Table } from '@tanstack/table-core';
+// Type-only cycle with arcane-table.types.svelte.ts (which imports only types from here) — erased at emit.
+import type { ColumnAlign, ColumnWidth, FilterOption } from './arcane-table.types.svelte';
+
+/**
+ * Presentation hints Arcane stows on each column's `meta`. Declared through the v9
+ * `columnMeta` type-only slot on `tableFeatures()` below (instead of globally augmenting
+ * table-core's `ColumnMeta`), so the typing stays scoped to the Arcane feature set.
+ */
+export interface ArcaneColumnMeta {
+	title?: string;
+	filterOptions?: FilterOption[];
+	width?: ColumnWidth;
+	align?: ColumnAlign;
+	truncate?: boolean;
+}
 
 /**
  * The single, app-wide TanStack Table v9 feature set shared by every Arcane table.
@@ -27,7 +43,8 @@ export const arcaneTableFeatures = tableFeatures({
 	columnVisibilityFeature,
 	rowSortingFeature,
 	columnFilteringFeature,
-	globalFilteringFeature
+	globalFilteringFeature,
+	columnMeta: metaHelper<ArcaneColumnMeta>()
 });
 
 /**

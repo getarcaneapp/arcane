@@ -16,7 +16,7 @@
 	import type { Snippet } from 'svelte';
 	import { cn } from '#lib/utils';
 	import { ResetIcon, SearchIcon, FilterIcon } from '#lib/icons';
-	import type { BulkAction, FilterOption } from './arcane-table.types.svelte';
+	import type { BulkAction } from './arcane-table.types.svelte';
 	import * as Popover from '#lib/components/ui/popover/index.js';
 
 	let {
@@ -73,9 +73,7 @@
 		table.getAllColumns().some((col) => col.id === 'serviceCount') ? table.getColumn('serviceCount') : undefined
 	);
 	const typeColumn = $derived(table.getAllColumns().some((col) => col.id === 'type') ? table.getColumn('type') : undefined);
-	const typeColumnFilterOptions = $derived(
-		(typeColumn?.columnDef.meta as { filterOptions?: FilterOption[] } | undefined)?.filterOptions ?? []
-	);
+	const typeColumnFilterOptions = $derived(typeColumn?.columnDef.meta?.filterOptions ?? []);
 
 	const debouncedSetGlobal = debounced((v: string) => table.setGlobalFilter(v), 300);
 	const imageNameFilterOptionsFormatted = $derived(imageNameFilterOptions.map((name) => ({ label: name, value: name })));
