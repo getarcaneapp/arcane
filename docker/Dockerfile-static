@@ -13,6 +13,8 @@ ENV PORT=3552
 
 # The container starts as "root", but arcane drops to the requetsed PUID and PGID after the runtime is initialized 
 USER 0:0
+
+ENV PATH="/app:$PATH"
 EXPOSE 3552
 VOLUME ["/app/data"]
 
