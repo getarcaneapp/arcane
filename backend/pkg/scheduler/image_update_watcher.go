@@ -7,15 +7,20 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
+
 	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
-	docker "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
-	"github.com/getarcaneapp/arcane/types/v2/imageupdate"
+	imageupdatetypes "github.com/getarcaneapp/arcane/types/v2/imageupdate"
 	"github.com/moby/moby/api/types/events"
 	"go.getarcane.app/streams/bus"
 )
@@ -29,7 +34,7 @@ const (
 )
 
 type imageUpdateScannerInternal interface {
-	CheckAllImages(ctx context.Context, limit int, externalCreds []containerregistry.Credential) (map[string]*imageupdate.Response, error)
+	CheckAllImages(ctx context.Context, limit int, externalCreds []containerregistry.Credential) (map[string]*imageupdatetypes.Response, error)
 }
 
 type registryCredentialLoaderInternal interface {
@@ -92,7 +97,7 @@ type ImageUpdateWatcher struct {
 }
 
 // NewImageUpdateWatcher constructs the image update watcher from the existing services.
-func NewImageUpdateWatcher(runtime *actors.Runtime, cfg *config.Config, imageUpdateService *services.ImageUpdateService, settingsService *services.SettingsService, environmentService *services.EnvironmentService, dockerService *services.DockerClientService, projectService *services.ProjectService) (*ImageUpdateWatcher, error) {
+func NewImageUpdateWatcher(runtime *actors.Runtime, cfg *config.Config, imageUpdateService *imageupdate.ImageUpdateService, settingsService *settings.SettingsService, environmentService *environment.EnvironmentService, dockerService *docker.DockerClientService, projectService *project.ProjectService) (*ImageUpdateWatcher, error) {
 	if runtime == nil || imageUpdateService == nil || settingsService == nil || environmentService == nil || dockerService == nil || projectService == nil {
 		return nil, errors.New("image update watcher dependencies unavailable")
 	}
@@ -194,7 +199,7 @@ func (w *ImageUpdateWatcher) Start(ctx context.Context) error {
 				eventCh = nil
 				continue
 			}
-			if message.Action == docker.ImageStateResyncAction || !w.settingsService.GetBoolSetting(ctx, "imageEventWatcherEnabled", false) {
+			if message.Action == dockerutil.ImageStateResyncAction || !w.settingsService.GetBoolSetting(ctx, "imageEventWatcherEnabled", false) {
 				continue
 			}
 			w.Trigger()

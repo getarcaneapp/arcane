@@ -246,6 +246,16 @@ type Credential struct {
 	Enabled bool `json:"enabled"`
 }
 
+// DigestResult describes a registry digest lookup and the authentication path
+// used to complete it.
+type DigestResult struct {
+	Digest         string
+	AuthMethod     string
+	AuthUsername   string
+	AuthRegistry   string
+	UsedCredential bool
+}
+
 type SyncRequest struct {
 	// Registries is a list of container registries to sync.
 	//

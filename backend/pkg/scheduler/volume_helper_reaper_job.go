@@ -5,7 +5,8 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
 )
 
 const (
@@ -22,13 +23,13 @@ const (
 // containers. The run frequency is fixed (every 5 minutes); how stale a helper must
 // be to be pruned is driven by the volumeBrowserHelperIdleTimeout setting.
 type PruningVolumeHelperJob struct {
-	volumeService   *services.VolumeService
-	settingsService *services.SettingsService
+	volumeService   *volume.VolumeService
+	settingsService *settings.SettingsService
 }
 
-func NewPruningVolumeHelperJob(volumeService *services.VolumeService, settingsService *services.SettingsService) *PruningVolumeHelperJob {
+func NewPruningVolumeHelperJob(volumeModule *volume.Module, settingsService *settings.SettingsService) *PruningVolumeHelperJob {
 	return &PruningVolumeHelperJob{
-		volumeService:   volumeService,
+		volumeService:   volumeModule.Service(),
 		settingsService: settingsService,
 	}
 }

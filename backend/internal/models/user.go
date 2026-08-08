@@ -39,7 +39,7 @@ func (User) TableName() string {
 
 // CurrentUserContextKey is the context key holding the authenticated user
 // model, set via context.WithValue(ctx, models.CurrentUserContextKey{}, user).
-// It lives here (rather than in api/middleware) so that services, which cannot
+// It lives here (rather than in transport middleware) so that services, which cannot
 // import the middleware package, can read the requesting user for per-user
 // preferences.
 type CurrentUserContextKey struct{}

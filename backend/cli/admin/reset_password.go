@@ -12,10 +12,12 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
 )
 
@@ -157,11 +159,11 @@ func resetPasswordInternal(ctx context.Context, db *database.DB, username, passw
 		return err
 	}
 
-	roleService := services.NewRoleService(db)
-	userService := services.NewUserService(db).WithRoleService(roleService)
+	roleService := role.NewRoleService(db)
+	userService := user.NewUserService(db).WithRoleService(roleService)
 	target, err := userService.GetUserByUsername(ctx, username)
 	if err != nil {
-		if errors.Is(err, services.ErrUserNotFound) {
+		if errors.Is(err, common.ErrUserNotFound) {
 			return errors.Errorf("global administrator %q not found", username)
 		}
 		return errors.WrapIf(err, "failed to find user")

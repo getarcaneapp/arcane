@@ -15,7 +15,8 @@ import (
 
 	"github.com/cenkalti/backoff/v5"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 )
 
 const (
@@ -28,8 +29,8 @@ const (
 )
 
 type AnalyticsJob struct {
-	settingsService *services.SettingsService
-	kvService       *services.KVService
+	settingsService *settings.SettingsService
+	kvService       *kv.KVService
 	httpClient      *http.Client
 	heartbeatURL    string
 	cfg             *config.Config
@@ -38,8 +39,8 @@ type AnalyticsJob struct {
 }
 
 func NewAnalyticsJob(
-	settingsService *services.SettingsService,
-	kvService *services.KVService,
+	settingsService *settings.SettingsService,
+	kvService *kv.KVService,
 	httpClient *http.Client,
 	cfg *config.Config,
 ) *AnalyticsJob {

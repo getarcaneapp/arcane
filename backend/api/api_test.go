@@ -3,15 +3,17 @@ package api
 import (
 	"bytes"
 	"context"
+	"net/http"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
 
 	humav2 "github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/backend/v2/api/handlers"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 	basetypes "github.com/getarcaneapp/arcane/types/v2/base"
 	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
 	envtypes "github.com/getarcaneapp/arcane/types/v2/env"
@@ -22,6 +24,7 @@ import (
 	"github.com/labstack/echo/v5"
 	dockercontainer "github.com/moby/moby/api/types/container"
 	dockernetwork "github.com/moby/moby/api/types/network"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -297,7 +300,7 @@ func TestVariableMaterializationRoutesAreAgentOnly(t *testing.T) {
 	agentAPI := SetupAPI(
 		router,
 		router.Group("/api"),
-		handlers.NewActivityAppContext(context.Background()),
+		handlerutil.NewActivityAppContext(context.Background()),
 		&config.Config{AgentMode: true},
 		HandlerDeps{},
 	)
@@ -339,5 +342,53 @@ func TestEasyJoinRoutesDeclareSwarmJoinPermission(t *testing.T) {
 			require.True(t, found)
 			require.Equal(t, authz.PermSwarmJoin, permission)
 		})
+	}
+}
+
+// TestEnvScopedOperationsDeclarePermission guards the remote-environment proxy
+// authorization model. Every authenticated environment-scoped operation must
+// declare the permission that the proxy enforces before forwarding it.
+func TestEnvScopedOperationsDeclarePermission(t *testing.T) {
+	api := SetupAPIForSpec()
+	oapi := api.OpenAPI()
+
+	require.False(t, oapi == nil || oapi.Paths == nil,
+		"expected an OpenAPI document with paths")
+
+	var missing []string
+	for path, item := range oapi.Paths {
+		if !strings.HasPrefix(path, "/environments/{id}/") {
+			continue
+		}
+		for method, op := range envScopedTestOperationsInternal(item) {
+			if op == nil {
+				continue
+			}
+			if op.Security != nil && len(op.Security) == 0 {
+				continue
+			}
+			permission, ok := op.Metadata[authz.MetaRequiredPermission].(string)
+			if !ok || permission == "" {
+				missing = append(missing, method+" "+path)
+			}
+		}
+	}
+
+	if len(missing) > 0 {
+		sort.Strings(missing)
+		assert.Failf(t, "unexpected failure", "%d env-scoped operation(s) missing required-permission metadata; register them with middleware.RegisterWithPermission:\n  %s",
+			len(missing), strings.Join(missing, "\n  "))
+	}
+}
+
+func envScopedTestOperationsInternal(item *humav2.PathItem) map[string]*humav2.Operation {
+	return map[string]*humav2.Operation{
+		http.MethodGet:     item.Get,
+		http.MethodPost:    item.Post,
+		http.MethodPut:     item.Put,
+		http.MethodDelete:  item.Delete,
+		http.MethodPatch:   item.Patch,
+		http.MethodHead:    item.Head,
+		http.MethodOptions: item.Options,
 	}
 }

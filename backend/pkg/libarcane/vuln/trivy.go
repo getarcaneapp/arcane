@@ -1,6 +1,8 @@
-// Package vuln provides stateless helpers for building and parsing the Trivy
-// scanner invocations used by the vulnerability service. Functions here have no
-// dependency on database or service state so they can be unit-tested in isolation.
+// Package vuln drives Trivy scans: building and parsing scanner invocations,
+// plus the container-level mechanics of running one — runtime/network
+// detection, container spec and resources, temp files, log copy and tar
+// extraction, and report decoding. Nothing here depends on Arcane's database or
+// service graph, so it is unit-testable in isolation.
 package vuln
 
 import (

@@ -9,12 +9,51 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/appimages"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/build"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/diagnostics"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/federated"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/gitops"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/gitrepo"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/health"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/job"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/network"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/notification"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/oidc"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/passkey"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/port"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/search"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/swarm"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/template"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/variable"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/version"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/vulnerability"
+
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humaecho"
 	"github.com/getarcaneapp/arcane/backend/v2/api/handlers"
-	"github.com/getarcaneapp/arcane/backend/v2/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/dashboard"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/system"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/updater"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/webhook"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 	"github.com/labstack/echo/v5"
 	"go.uber.org/fx"
 )
@@ -171,54 +210,53 @@ func qualifyGenericArcaneArgumentsInternal(pkgPath, typeName, schemaName string)
 // HandlerDeps contains the services required to register HTTP API handlers.
 //
 // It intentionally contains only dependencies consumed by SetupAPI,
-// registerHandlersInternal, and the authentication bridge.
+// registerHandlersInternal, and the authentication middleware.
 type HandlerDeps struct {
 	fx.In
 
-	AppImages         *services.ApplicationImagesService
-	User              *services.UserService
-	Project           *services.ProjectService
-	Environment       *services.EnvironmentService
-	Settings          *services.SettingsService
-	JobSchedule       *services.JobService
-	SettingsSearch    *services.SettingsSearchService
-	CustomizeSearch   *services.CustomizeSearchService
-	Container         *services.ContainerService
-	Image             *services.ImageService
-	Build             *services.BuildService
-	BuildWorkspace    *services.BuildWorkspaceService
-	Volume            *services.VolumeService
-	Network           *services.NetworkService
-	Port              *services.PortService
-	Swarm             *services.SwarmService
-	ImageUpdate       *services.ImageUpdateService
-	Auth              *services.AuthService
-	Passkey           *services.PasskeyService
-	Oidc              *services.OidcService
-	Docker            *services.DockerClientService
-	Template          *services.TemplateService
-	ContainerRegistry *services.ContainerRegistryService
-	System            *services.SystemService
-	SystemUpgrade     *services.SystemUpgradeService
-	Diagnostics       *services.DiagnosticsService
-	Updater           *services.UpdaterService
-	Event             *services.EventService
-	Activity          *services.ActivityService
-	Version           *services.VersionService
-	Notification      *services.NotificationService
-	ApiKey            *services.ApiKeyService
-	Federated         *services.FederatedCredentialService
-	GitRepository     *services.GitRepositoryService
-	GitOpsSync        *services.GitOpsSyncService
-	Webhook           *services.WebhookService
-	Vulnerability     *services.VulnerabilityService
-	Dashboard         *services.DashboardService
-	Role              *services.RoleService
-	Variable          *services.VariableService
+	AppImages         *appimages.ApplicationImagesService
+	User              *user.Module
+	Project           *project.Module
+	Environment       *environment.Module
+	Settings          *settings.Module
+	JobSchedule       *job.Module
+	Search            *search.Module
+	Container         *container.Module
+	Image             *image.Module
+	Build             *build.BuildService
+	BuildWorkspace    *build.BuildWorkspaceService
+	Volume            *volume.Module
+	Network           *network.NetworkService
+	Port              *port.PortService
+	Swarm             *swarm.Module
+	ImageUpdate       *imageupdate.Module
+	Auth              *auth.Module
+	Passkey           *passkey.PasskeyService
+	Oidc              *oidc.OidcService
+	Docker            *docker.DockerClientService
+	Template          *template.Module
+	ContainerRegistry *registry.Module
+	System            *system.Module
+	SystemUpgrade     *system.SystemUpgradeService
+	Diagnostics       *diagnostics.DiagnosticsService
+	Updater           *updater.Module
+	Event             *event.Module
+	Activity          *activity.Module
+	Version           *version.VersionService
+	Notification      *notification.Module
+	ApiKey            *apikey.Module
+	Federated         *federated.FederatedCredentialService
+	GitRepository     *gitrepo.Module
+	GitOpsSync        *gitops.Module
+	Webhook           *webhook.Module
+	Vulnerability     *vulnerability.Module
+	Dashboard         *dashboard.Module
+	Role              *role.Module
+	Variable          *variable.Module
 }
 
 // SetupAPI creates and configures the Huma API attached to the Echo router.
-func SetupAPI(e *echo.Echo, apiGroup *echo.Group, appCtx handlers.ActivityAppContext, cfg *config.Config, deps HandlerDeps) huma.API {
+func SetupAPI(e *echo.Echo, apiGroup *echo.Group, appCtx handlerutil.ActivityAppContext, cfg *config.Config, deps HandlerDeps) huma.API {
 	e.JSONSerializer = jsonV2Serializer{}
 
 	humaConfig := huma.DefaultConfig("Arcane API", config.Version)
@@ -269,7 +307,7 @@ func SetupAPI(e *echo.Echo, apiGroup *echo.Group, appCtx handlers.ActivityAppCon
 	api := humaecho.NewWithGroup(e, apiGroup, humaConfig)
 
 	// Add authentication middleware
-	api.UseMiddleware(middleware.NewAuthBridge(api, deps.Auth, deps.ApiKey, deps.Role, deps.Environment, cfg))
+	api.UseMiddleware(auth.NewHumaMiddleware(api, deps.Auth.Service(), deps.ApiKey.Service(), deps.Role.Service(), deps.Environment.Service(), cfg))
 	api.UseMiddleware(middleware.NewActivityBatchID())
 
 	// Register all Huma handlers
@@ -350,54 +388,49 @@ func SetupAPIForSpec() huma.API {
 	api := humaecho.NewWithGroup(e, apiGroup, humaConfig)
 
 	// Register handlers with zero-value dependencies for schema discovery only.
-	registerHandlersInternal(api, HandlerDeps{}, handlers.NewActivityAppContext(context.Background()), nil)
+	registerHandlersInternal(api, HandlerDeps{}, handlerutil.NewActivityAppContext(context.Background()), nil)
 
 	return api
 }
 
-// registerHandlers registers all Huma-based API handlers.
-// Add new handlers here as they are migrated from Gin.
-func registerHandlersInternal(api huma.API, deps HandlerDeps, handlerAppCtx handlers.ActivityAppContext, cfg *config.Config) {
-	handlers.RegisterHealth(api)
-	handlers.RegisterAuth(api, deps.User, deps.Auth, deps.Oidc, deps.Settings, deps.Passkey)
-	handlers.RegisterPasskeys(api, deps.Passkey, deps.Auth, deps.User)
-	handlers.RegisterApiKeys(api, deps.ApiKey)
-	handlers.RegisterFederatedCredentials(api, deps.Federated)
-	handlers.RegisterRoles(api, deps.Role)
-	handlers.RegisterAppImages(api, deps.AppImages)
-	handlers.RegisterUsers(api, deps.User, deps.Auth, deps.Settings)
-	handlers.RegisterProjects(api, deps.Project, deps.Activity, handlerAppCtx)
-	handlers.RegisterVersion(api, deps.Version)
-	handlers.RegisterEvents(api, deps.Event)
-	handlers.RegisterActivities(api, deps.Activity, deps.Environment)
-	handlers.RegisterOidc(api, deps.Auth, deps.Passkey, deps.Oidc, deps.Role, deps.User, cfg)
-	handlers.RegisterEnvironments(api, deps.Environment, deps.Settings, deps.ApiKey, deps.Event, cfg)
-	handlers.RegisterContainerRegistries(api, deps.ContainerRegistry, deps.Environment)
-	handlers.RegisterTemplates(api, deps.Template)
-	if cfg != nil && cfg.AgentMode {
-		handlers.RegisterMaterializedVariables(api, deps.Variable, deps.Environment)
-	} else {
-		handlers.RegisterVariables(api, deps.Variable, deps.Environment)
-	}
-	handlers.RegisterImages(api, deps.Docker, deps.Image, deps.ImageUpdate, deps.Settings, deps.Build, deps.Activity, handlerAppCtx)
-	handlers.RegisterBuildWorkspaces(api, deps.BuildWorkspace)
-	handlers.RegisterImageUpdates(api, deps.ImageUpdate, deps.Image, handlerAppCtx)
-	handlers.RegisterSettings(api, deps.Settings, deps.SettingsSearch, deps.Environment, cfg)
-	handlers.RegisterJobSchedules(api, deps.JobSchedule, deps.Environment)
-	handlers.RegisterVolumes(api, deps.Docker, deps.Volume, deps.Activity, handlerAppCtx)
-	handlers.RegisterContainers(api, deps.Container, deps.Docker, deps.Settings, deps.Activity, handlerAppCtx)
-	handlers.RegisterPorts(api, deps.Port)
-	handlers.RegisterNetworks(api, deps.Network, deps.Docker, deps.Activity, handlerAppCtx)
-	handlers.RegisterSwarm(api, deps.Swarm, deps.Environment, deps.Event, cfg)
-	handlers.RegisterNotifications(api, deps.Notification, cfg)
-	handlers.RegisterUpdater(api, deps.Updater, handlerAppCtx)
-	handlers.RegisterCustomize(api, deps.CustomizeSearch)
-	handlers.RegisterSystem(api, deps.Docker, deps.System, deps.SystemUpgrade, deps.Environment, cfg, deps.Activity, handlerAppCtx)
+// registerHandlersInternal registers all Huma-based API handlers.
+func registerHandlersInternal(api huma.API, deps HandlerDeps, handlerAppCtx handlerutil.ActivityAppContext, cfg *config.Config) {
+	health.RegisterRoutes(api)
+	deps.Auth.RegisterRoutes(api)
+	passkey.RegisterPasskeys(api, deps.Passkey, deps.Auth.Service(), deps.User.Service())
+	deps.ApiKey.RegisterRoutes(api)
+	federated.RegisterFederatedCredentials(api, deps.Federated)
+	deps.Role.RegisterRoutes(api)
+	appimages.RegisterAppImages(api, deps.AppImages)
+	deps.User.RegisterRoutes(api)
+	deps.Project.RegisterRoutes(api, handlerAppCtx)
+	version.RegisterVersion(api, deps.Version)
+	deps.Event.RegisterRoutes(api)
+	deps.Activity.RegisterRoutes(api)
+	oidc.RegisterOidc(api, deps.Auth.Service(), deps.Passkey, deps.Oidc, deps.Role.Service(), deps.User.Service(), cfg)
+	deps.Environment.RegisterRoutes(api)
+	deps.ContainerRegistry.RegisterRoutes(api)
+	deps.Template.RegisterRoutes(api)
+	deps.Variable.RegisterRoutes(api, cfg)
+	deps.Image.RegisterRoutes(api, handlerAppCtx)
+	build.RegisterBuildWorkspaces(api, deps.BuildWorkspace)
+	deps.ImageUpdate.RegisterRoutes(api, handlerAppCtx)
+	deps.Settings.RegisterRoutes(api)
+	deps.JobSchedule.RegisterRoutes(api)
+	deps.Volume.RegisterRoutes(api, handlerAppCtx)
+	deps.Container.RegisterRoutes(api, handlerAppCtx)
+	port.RegisterPorts(api, deps.Port)
+	network.RegisterNetworks(api, deps.Network, deps.Docker, deps.Activity.Service(), handlerAppCtx)
+	deps.Swarm.RegisterRoutes(api)
+	deps.Notification.RegisterRoutes(api)
+	deps.Updater.RegisterRoutes(api, handlerAppCtx)
+	deps.Search.RegisterRoutes(api)
+	deps.System.RegisterRoutes(api, handlerAppCtx)
 	handlers.RegisterDiagnostics(api, deps.Diagnostics)
-	handlers.RegisterGitRepositories(api, deps.GitRepository)
-	handlers.RegisterGitOpsSyncs(api, deps.GitOpsSync)
-	handlers.RegisterWebhooks(api, deps.Webhook)
-	handlers.RegisterVulnerability(api, deps.Vulnerability, handlerAppCtx)
-	handlers.RegisterDashboard(api, deps.Dashboard, deps.Environment)
-	handlers.RegisterStream(api, deps.Dashboard, deps.Activity, deps.Environment)
+	deps.GitRepository.RegisterRoutes(api)
+	deps.GitOpsSync.RegisterRoutes(api)
+	deps.Webhook.RegisterRoutes(api)
+	deps.Vulnerability.RegisterRoutes(api, handlerAppCtx)
+	deps.Dashboard.RegisterRoutes(api)
+	handlers.RegisterStream(api, deps.Dashboard.Handler(), deps.Activity.Handler(), deps.Environment.Handler())
 }

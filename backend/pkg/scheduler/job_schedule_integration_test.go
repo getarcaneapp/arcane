@@ -7,8 +7,9 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/job"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/types/v2/jobschedule"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
@@ -25,7 +26,7 @@ func TestDeprecatedImagePollingSchedulePersistsWithoutRuntimeJob(t *testing.T) {
 	lifecycleCtx, cancelLifecycle := context.WithCancel(context.Background())
 	jobScheduler := newJobSchedulerForTestInternal(t, lifecycleCtx, appConfig.GetLocation())
 
-	jobService := services.NewJobService(db, settingsService, appConfig)
+	jobService := job.NewJobService(db, settingsService, appConfig)
 	jobService.SetScheduler(lifecycleCtx, jobScheduler)
 	require.NoError(t, jobScheduler.StartScheduler())
 
@@ -64,7 +65,7 @@ func TestDeprecatedImagePollingSchedulePersistsWithoutRuntimeJob(t *testing.T) {
 	restartDB, restartSettingsService := openJobScheduleTestDatabaseInternal(t, ctx, databasePath)
 	restartLifecycleCtx, cancelRestartLifecycle := context.WithCancel(context.Background())
 	restartScheduler := newJobSchedulerForTestInternal(t, restartLifecycleCtx, appConfig.GetLocation())
-	restartJobService := services.NewJobService(restartDB, restartSettingsService, appConfig)
+	restartJobService := job.NewJobService(restartDB, restartSettingsService, appConfig)
 	restartJobService.SetScheduler(restartLifecycleCtx, restartScheduler)
 	require.NoError(t, restartScheduler.StartScheduler())
 	t.Cleanup(func() {
@@ -98,7 +99,7 @@ func TestDeprecatedImagePollingSchedulePersistsWithoutRuntimeJob(t *testing.T) {
 	require.Equal(t, disabledSchedule, disabledStatus.Schedule)
 }
 
-func openJobScheduleTestDatabaseInternal(t *testing.T, ctx context.Context, databasePath string) (*database.DB, *services.SettingsService) {
+func openJobScheduleTestDatabaseInternal(t *testing.T, ctx context.Context, databasePath string) (*database.DB, *settings.SettingsService) {
 	t.Helper()
 
 	gormDB, err := gorm.Open(sqlite.Open(databasePath), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})

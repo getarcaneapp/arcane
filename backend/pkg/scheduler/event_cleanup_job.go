@@ -5,18 +5,20 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 )
 
 const EventCleanupJobName = "event-cleanup"
 
 type EventCleanupJob struct {
-	eventService    *services.EventService
-	activityService *services.ActivityService
-	settingsService *services.SettingsService
+	eventService    *event.EventService
+	activityService *activity.ActivityService
+	settingsService *settings.SettingsService
 }
 
-func NewEventCleanupJob(eventService *services.EventService, activityService *services.ActivityService, settingsService *services.SettingsService) *EventCleanupJob {
+func NewEventCleanupJob(eventService *event.EventService, activityService *activity.ActivityService, settingsService *settings.SettingsService) *EventCleanupJob {
 	return &EventCleanupJob{
 		eventService:    eventService,
 		activityService: activityService,

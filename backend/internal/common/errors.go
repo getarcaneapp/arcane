@@ -55,6 +55,10 @@ func (e *classified) Format(s fmt.State, verb rune) {
 }
 
 var (
+	ErrInvalidToken                            = errors.Sentinel("invalid token")
+	ErrExpiredToken                            = errors.Sentinel("token expired")
+	ErrTokenVersionMismatch                    = errors.Sentinel("token version mismatch")
+	ErrUserNotFound                            = errors.Sentinel("user not found")
 	ErrTokenValidation                         = Classify(ErrUnauthorized, errors.Sentinel("Invalid token claims"))
 	ErrSessionRevoked                          = Classify(ErrUnauthorized, errors.Sentinel("Session has been revoked"))
 	ErrUpgradeInProgress                       = Classify(ErrConflict, errors.Sentinel("an upgrade is already in progress"))

@@ -7,17 +7,22 @@ import (
 	"net/http"
 	"slices"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/gitops"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/job"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/system"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"go.uber.org/fx"
 )
 
-func newJobScheduler(appCtx context.Context, lc fx.Lifecycle, cfg *config.Config, runtime *actors.Runtime, _ *actors.Gate[actors.AdmissionKey], imageUpdateWatcher *scheduler.ImageUpdateWatcher, analytics *scheduler.AnalyticsJob, systemUpgrade *services.SystemUpgradeService) (schedulertypes.JobScheduler, error) {
+func newJobScheduler(appCtx context.Context, lc fx.Lifecycle, cfg *config.Config, runtime *actors.Runtime, _ *actors.Gate[actors.AdmissionKey], imageUpdateWatcher *scheduler.ImageUpdateWatcher, analytics *scheduler.AnalyticsJob, systemUpgrade *system.SystemUpgradeService) (schedulertypes.JobScheduler, error) {
 	schedulerCtx, cancelScheduler := context.WithCancel(appCtx)
 	jobScheduler, err := scheduler.NewJobScheduler(schedulerCtx, runtime, cfg.GetLocation())
 	if err != nil {
@@ -66,11 +71,11 @@ type registerJobsParams struct {
 	Scheduler    schedulertypes.JobScheduler
 	ActorRuntime *actors.Runtime
 
-	Activity    *services.ActivityService
-	GitOpsSync  *services.GitOpsSyncService
-	Environment *services.EnvironmentService
-	JobSchedule *services.JobService
-	Settings    *services.SettingsService
+	Activity    *activity.ActivityService
+	GitOpsSync  *gitops.GitOpsSyncService
+	Environment *environment.EnvironmentService
+	JobSchedule *job.JobService
+	Settings    *settings.SettingsService
 	Admission   *actors.Gate[actors.AdmissionKey]
 
 	AutoUpdate             *scheduler.AutoUpdateJob
@@ -173,9 +178,9 @@ type dynamicJobsParams struct {
 	AppCtx      context.Context
 	Config      *config.Config
 	Scheduler   schedulertypes.JobScheduler
-	GitOpsSync  *services.GitOpsSyncService
-	Environment *services.EnvironmentService
-	JobSchedule *services.JobService
+	GitOpsSync  *gitops.GitOpsSyncService
+	Environment *environment.EnvironmentService
+	JobSchedule *job.JobService
 	Admission   *actors.Gate[actors.AdmissionKey]
 }
 

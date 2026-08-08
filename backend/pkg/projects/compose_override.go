@@ -138,3 +138,43 @@ func WriteComposeOverrideFile(projectsRoot, dir string, content *string, fileNam
 
 	return nil
 }
+
+// ExistingOrDefaultOverrideName returns the override file name already present
+// in dir, falling back to DefaultComposeOverrideFileName.
+func ExistingOrDefaultOverrideName(dir string) string {
+	if overridePath := DetectComposeOverrideFile(dir); overridePath != "" {
+		return filepath.Base(overridePath)
+	}
+	return DefaultComposeOverrideFileName
+}
+
+// ResolveEffectiveOverrideForValidation resolves the override content compose
+// validation should see: the on-disk override when the caller supplied none,
+// nothing when the caller explicitly blanked it, otherwise the caller's content.
+func ResolveEffectiveOverrideForValidation(dir string, overrideContent *string) (*string, string) {
+	switch {
+	case overrideContent == nil:
+		overridePath := DetectComposeOverrideFile(dir)
+		if overridePath == "" {
+			return nil, ""
+		}
+		onDisk := ReadComposeOverrideContent(dir)
+		return &onDisk, filepath.Base(overridePath)
+	case strings.TrimSpace(*overrideContent) == "":
+		return nil, ""
+	default:
+		return overrideContent, ExistingOrDefaultOverrideName(dir)
+	}
+}
+
+// ApplyOverrideFileChange writes, clears, or leaves the override file alone
+// depending on whether overrideContent is nil, blank, or set.
+func ApplyOverrideFileChange(projectsRoot, dir string, overrideContent *string) error {
+	if overrideContent == nil {
+		return nil
+	}
+	if strings.TrimSpace(*overrideContent) == "" {
+		return WriteComposeOverrideFile(projectsRoot, dir, nil, "")
+	}
+	return WriteComposeOverrideFile(projectsRoot, dir, overrideContent, ExistingOrDefaultOverrideName(dir))
+}

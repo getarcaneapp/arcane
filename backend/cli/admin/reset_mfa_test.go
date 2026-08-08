@@ -6,6 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/passkey"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
+
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -13,7 +16,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/types/v2/auth"
 )
 
@@ -60,7 +62,7 @@ func TestResetMFACommandServiceStatePreservesPasskey(t *testing.T) {
 		PasskeyMFAEnabled: true,
 	}
 	require.NoError(t, db.Create(user).Error)
-	passkey := &models.Passkey{
+	passkeyRecord := &models.Passkey{
 		BaseModel:    models.BaseModel{ID: "mfa-reset-passkey"},
 		UserID:       user.ID,
 		RPID:         "arcane.example.test",
@@ -68,8 +70,8 @@ func TestResetMFACommandServiceStatePreservesPasskey(t *testing.T) {
 		PublicKey:    []byte("public-key"),
 		Name:         "Alice's key",
 	}
-	require.NoError(t, db.Create(passkey).Error)
-	sessionService := services.NewSessionService(db)
+	require.NoError(t, db.Create(passkeyRecord).Error)
+	sessionService := session.NewSessionService(db)
 	firstSession, _, err := sessionService.CreateSession(ctx, user.ID, time.Now().Add(time.Hour), auth.SessionMeta{})
 	require.NoError(t, err)
 	secondSession, _, err := sessionService.CreateSession(ctx, user.ID, time.Now().Add(time.Hour), auth.SessionMeta{})
@@ -93,12 +95,12 @@ func TestResetMFACommandServiceStatePreservesPasskey(t *testing.T) {
 		Purpose:           "mfa",
 		UserID:            new(user.ID),
 		AuthTransactionID: new(transaction.ID),
-		RPID:              passkey.RPID,
+		RPID:              passkeyRecord.RPID,
 		SessionData:       "{}",
 		ExpiresAt:         time.Now().Add(time.Minute),
 	}).Error)
 
-	service := services.NewPasskeyService(db, &config.Config{AppUrl: "https://arcane.example.test"})
+	service := passkey.NewPasskeyService(db, &config.Config{AppUrl: "https://arcane.example.test"})
 	require.NoError(t, service.ResetMFAForUser(ctx, user.ID))
 
 	var updatedUser models.User
@@ -113,8 +115,8 @@ func TestResetMFACommandServiceStatePreservesPasskey(t *testing.T) {
 	require.Zero(t, count)
 
 	var preserved models.Passkey
-	require.NoError(t, db.Where("id = ?", passkey.ID).First(&preserved).Error)
-	require.Equal(t, passkey.ID, preserved.ID)
+	require.NoError(t, db.Where("id = ?", passkeyRecord.ID).First(&preserved).Error)
+	require.Equal(t, passkeyRecord.ID, preserved.ID)
 	first, err := sessionService.GetSessionByID(ctx, firstSession.ID)
 	require.NoError(t, err)
 	require.NotNil(t, first.RevokedAt)

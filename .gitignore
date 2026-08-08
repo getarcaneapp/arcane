@@ -8,7 +8,7 @@ node_modules
 .svelte-kit
 frontend/.svelte-kit
 frontend/build
-build
+/build
 data/
 dist/
 /arcane
