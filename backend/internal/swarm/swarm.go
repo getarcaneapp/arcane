@@ -1830,6 +1830,8 @@ func (s *SwarmService) GetStackSource(ctx context.Context, environmentID, stackN
 	}, nil
 }
 
+var deployStackAfterSourceUpdateInternal = (*SwarmService).DeployStack
+
 func (s *SwarmService) UpdateStackSource(ctx context.Context, environmentID, stackName string, req swarmtypes.StackSourceUpdateRequest) (*swarmtypes.StackSource, error) {
 	stackName = strings.TrimSpace(stackName)
 	if stackName == "" {
@@ -1839,8 +1841,39 @@ func (s *SwarmService) UpdateStackSource(ctx context.Context, environmentID, sta
 		return nil, errors.New("stack compose source is required")
 	}
 
+	previous, err := s.GetStackSource(ctx, environmentID, stackName)
+	if err != nil && !errors.Is(err, cerrdefs.ErrNotFound) {
+		return nil, err
+	}
+
 	if err := s.upsertStackSourceInternal(ctx, environmentID, stackName, req.ComposeContent, req.OverrideContent, req.EnvContent, req.Files); err != nil {
 		return nil, err
+	}
+
+	// Saving an edited stack must behave like `docker stack deploy` (#3463):
+	// push the updated spec to the running services so the edit takes effect.
+	// The saved source is the full stack spec, so services removed from it
+	// must also be removed from the swarm.
+	if _, err := deployStackAfterSourceUpdateInternal(s, ctx, environmentID, swarmtypes.StackDeployRequest{
+		Name:            stackName,
+		ComposeContent:  req.ComposeContent,
+		OverrideContent: req.OverrideContent,
+		EnvContent:      req.EnvContent,
+		Files:           req.Files,
+		Prune:           true,
+	}); err != nil {
+		// Roll back the persisted source so reads never return an edit that
+		// was never successfully deployed.
+		var restoreErr error
+		if previous != nil {
+			restoreErr = s.upsertStackSourceInternal(ctx, environmentID, stackName, previous.ComposeContent, previous.OverrideContent, previous.EnvContent, previous.Files)
+		} else {
+			restoreErr = s.deleteStackSourceInternal(ctx, environmentID, stackName)
+		}
+		if restoreErr != nil {
+			slog.WarnContext(ctx, "failed to restore swarm stack source after deploy failure", "environmentID", normalizeSwarmEnvironmentIDInternal(environmentID), "stackName", stackName, "error", restoreErr)
+		}
+		return nil, errors.WrapIf(err, "failed to redeploy swarm stack from updated source")
 	}
 
 	return &swarmtypes.StackSource{
