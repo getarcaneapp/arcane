@@ -223,6 +223,9 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 			_, err := cgroup.CurrentContainerID()
 			return err == nil
 		},
+		func(ctx context.Context, inspect *container.InspectResponse, dockerHost string) string {
+			return dockerutils.SelectDockerHostReachableNetworkMode(ctx, dockerClient, inspect, dockerHost)
+		},
 	)
 	if err != nil {
 		return "", errors.WrapIf(err, "resolve upgrader docker runtime")
@@ -332,6 +335,7 @@ func resolveSystemUpgraderRuntimeOptionsInternal(
 	currentContainer *container.InspectResponse,
 	discoverHostPath func(context.Context, string) (string, error),
 	isRunningInDocker func() bool,
+	selectReachableNetwork func(context.Context, *container.InspectResponse, string) string,
 ) (upgraderRuntimeOptionsInternal, error) {
 	options := upgraderRuntimeOptionsInternal{
 		ContainerEnv: vuln.BuildDockerHostEnv(dockerHost),
@@ -343,7 +347,13 @@ func resolveSystemUpgraderRuntimeOptionsInternal(
 	}
 
 	if scheme != "unix" {
-		options.NetworkMode = container.NetworkMode(vuln.SelectAutoNetworkMode(currentContainer))
+		// The upgrader must reach the tcp DOCKER_HOST, so prefer a network the
+		// daemon proxy is actually on over the plain auto heuristic (#3533).
+		if selectReachableNetwork != nil {
+			options.NetworkMode = container.NetworkMode(selectReachableNetwork(ctx, currentContainer, dockerHost))
+		} else {
+			options.NetworkMode = container.NetworkMode(dockerutils.SelectAutoNetworkMode(currentContainer))
+		}
 		return options, nil
 	}
 

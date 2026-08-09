@@ -12,7 +12,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -82,55 +81,6 @@ func ResolveUnixSocketSource(
 	}
 
 	return socketPath, nil
-}
-
-func SelectAutoNetworkMode(inspect *containertypes.InspectResponse) string {
-	if inspect == nil {
-		return DefaultNetworkMode
-	}
-
-	if inspect.HostConfig != nil {
-		networkMode := strings.TrimSpace(string(inspect.HostConfig.NetworkMode))
-		if networkMode != "" && networkMode != "default" && networkMode != DefaultNetworkMode &&
-			!containertypes.NetworkMode(networkMode).IsContainer() {
-			return networkMode
-		}
-	}
-
-	if inspect.NetworkSettings != nil && len(inspect.NetworkSettings.Networks) > 0 {
-		networkNames := make([]string, 0, len(inspect.NetworkSettings.Networks))
-		for networkName := range inspect.NetworkSettings.Networks {
-			networkName = strings.TrimSpace(networkName)
-			if networkName != "" {
-				networkNames = append(networkNames, networkName)
-			}
-		}
-		sort.Strings(networkNames)
-
-		for _, networkName := range networkNames {
-			if !dockerutils.IsDefaultNetwork(networkName) {
-				return networkName
-			}
-		}
-
-		for _, networkName := range networkNames {
-			if containertypes.NetworkMode(networkName).IsContainer() {
-				continue
-			}
-			if networkName == "host" || networkName == "none" || networkName == DefaultNetworkMode {
-				return networkName
-			}
-		}
-	}
-
-	if inspect.HostConfig != nil {
-		networkMode := strings.TrimSpace(string(inspect.HostConfig.NetworkMode))
-		if networkMode != "" && networkMode != "default" && !containertypes.NetworkMode(networkMode).IsContainer() {
-			return networkMode
-		}
-	}
-
-	return DefaultNetworkMode
 }
 
 func NewOutputPath() string {
