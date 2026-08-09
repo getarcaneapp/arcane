@@ -2,19 +2,21 @@ package volume
 
 import (
 	"archive/tar"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	stderrors "errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
-	"os"
 	"path"
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"emperror.dev/errors"
@@ -25,60 +27,16 @@ import (
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	acfsutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/acfs"
 	workspacepkg "github.com/getarcaneapp/arcane/backend/v2/pkg/workspace"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	workspacetypes "github.com/getarcaneapp/arcane/types/v2/workspace"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
+	"go.getarcane.app/acfs"
+	acfstypes "go.getarcane.app/acfs/types"
 )
-
-const volumeWorkspaceTreeScriptInternal = `export LC_ALL=C
-depth_budget="$1"
-entry_budget="$2"
-truncated=0
-stop=0
-
-walk() {
-  for full in "$1"/..?* "$1"/.[!.]* "$1"/*; do
-    case "$stop" in 1) return ;; esac
-    metadata=$(stat -c '%s|%y|%A' -- "$full" 2>/dev/null) || continue
-    case "$entry_budget" in '') truncated=1; stop=1; return ;; esac
-
-    name=${full##*/}
-    case "$2" in '') rel=$name ;; *) rel="$2/$name" ;; esac
-    size=${metadata%%|*}
-    metadata=${metadata#*|}
-    mtime=${metadata%|*}
-    mode=${metadata##*|}
-    link=
-    case "$mode" in
-      l*) kind=l; link=$(readlink "$full" 2>/dev/null) || link= ;;
-      d*) kind=d ;;
-      -*) kind=f ;;
-      *) kind=s ;;
-    esac
-    printf '%s\0%s\0%s\0%s\0%s\0%s\0' "$rel" "$kind" "$size" "$mtime" "$mode" "$link"
-    entry_budget=${entry_budget#?}
-
-    case "$kind" in
-      d)
-        next_depth=${3#?}
-        case "$next_depth" in
-          '')
-            for child in "$full"/..?* "$full"/.[!.]* "$full"/*; do
-              if stat -c '%A' -- "$child" >/dev/null 2>&1; then truncated=1; break; fi
-            done
-            ;;
-          *) walk "$full" "$rel" "$next_depth" ;;
-        esac
-        ;;
-    esac
-  done
-}
-
-walk /volume '' "$depth_budget"
-printf 'ARCANE_TREE_END\0%s\0' "$truncated"`
 
 func (s *VolumeService) GetVolumeWorkspace(ctx context.Context, volumeName string) (*workspacetypes.Workspace, error) {
 	defer s.workspaceLocks.RLock(volumeName)()
@@ -100,6 +58,9 @@ func (s *VolumeService) GetVolumeWorkspace(ctx context.Context, volumeName strin
 		return nil, err
 	}
 	defer cleanup()
+	if err := s.requireVolumeHelperACFSInternal(ctx, volumeName, containerID); err != nil {
+		return nil, err
+	}
 	slog.DebugContext(ctx, "volume workspace helper acquired", "volume", volumeName, "container_id", containerID, "duration", time.Since(helperStartedAt))
 
 	scanStartedAt := time.Now()
@@ -120,61 +81,99 @@ func (s *VolumeService) readVolumeWorkspaceFromContainerInternal(ctx context.Con
 	if maxEntries <= 0 {
 		maxEntries = 10000
 	}
-	depthBudget := strings.Repeat("d", maxDepth)
-	entryBudget := strings.Repeat("e", maxEntries)
-	stdout, stderr, err := s.execInContainerInternal(ctx, containerID, []string{"sh", "-c", volumeWorkspaceTreeScriptInternal, "sh", depthBudget, entryBudget})
+
+	pipeReader, pipeWriter := io.Pipe()
+	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, classifyVolumeWorkspaceExecErrorInternal(err, stderr, "read volume workspace")
+		return nil, err
 	}
-	return parseVolumeWorkspaceTreeInternal(stdout, maxEntries, s.volumeWorkspaceMaxFileSizeBytesInternal())
+	var stderr bytes.Buffer
+	done := make(chan error, 1)
+	go func() {
+		cmd := []string{
+			"acfs", "walk", "--root", "/volume", "--path", "/",
+			"--max-depth", strconv.Itoa(maxDepth), "--max-entries", strconv.Itoa(maxEntries),
+		}
+		exitCode, execErr := dockerutil.ExecInContainer(ctx, dockerClient, containerID, client.ExecCreateOptions{
+			AttachStdout: true,
+			AttachStderr: true,
+			Cmd:          cmd,
+		}, pipeWriter, &stderr)
+		if execErr == nil && exitCode != 0 {
+			execErr = errors.Errorf("acfs walk exited with code %d", exitCode)
+		}
+		_ = pipeWriter.CloseWithError(execErr)
+		done <- execErr
+	}()
+
+	workspace, parseErr := decodeVolumeWorkspaceWalkInternal(pipeReader, maxEntries, s.volumeWorkspaceMaxFileSizeBytesInternal())
+	if parseErr != nil {
+		_ = pipeReader.CloseWithError(parseErr)
+	}
+	execErr := <-done
+	_ = pipeReader.Close()
+	if execErr != nil {
+		return nil, classifyVolumeWorkspaceExecErrorInternal(execErr, stderr.String(), "read volume workspace")
+	}
+	if parseErr != nil {
+		return nil, errors.WrapIf(parseErr, "parse volume workspace")
+	}
+
+	return workspace, nil
 }
 
-func parseVolumeWorkspaceTreeInternal(stdout string, maxEntries int, configuredMaxFileSizeBytes ...int64) (*workspacetypes.Workspace, error) {
-	maxFileSizeBytes := workspacepkg.MaxFileSizeBytes(workspacepkg.DefaultMaxFileSizeMB)
-	if len(configuredMaxFileSizeBytes) == 1 && configuredMaxFileSizeBytes[0] > 0 {
-		maxFileSizeBytes = configuredMaxFileSizeBytes[0]
-	}
-	fields := strings.Split(stdout, "\x00")
-	if len(fields) > 0 && fields[len(fields)-1] == "" {
-		fields = fields[:len(fields)-1]
-	}
-	if len(fields) < 2 || fields[len(fields)-2] != "ARCANE_TREE_END" || (fields[len(fields)-1] != "0" && fields[len(fields)-1] != "1") {
-		return nil, errors.New("invalid volume workspace truncation marker")
-	}
-	truncated := fields[len(fields)-1] == "1"
-	fields = fields[:len(fields)-2]
-	if len(fields)%6 != 0 {
-		return nil, errors.New("invalid volume workspace file entry")
-	}
-	entries := make([]workspacetypes.FileEntry, 0, min(len(fields)/6, maxEntries+1))
-	classifications := make(map[string]string, min(len(fields)/6, maxEntries+1))
-	for i := 0; i+5 < len(fields); i += 6 {
-		if fields[i] == "" {
-			continue
+func decodeVolumeWorkspaceWalkInternal(source io.Reader, maxEntries int, maxFileSizeBytes int64) (*workspacetypes.Workspace, error) {
+	decoder := json.NewDecoder(source)
+	files := make([]workspacetypes.FileEntry, 0, min(maxEntries, 256))
+	classifications := make(map[string]string, min(maxEntries, 256))
+	trailerSeen := false
+	truncated := false
+	for {
+		var record acfstypes.WalkRecord
+		err := decoder.Decode(&record)
+		if stderrors.Is(err, io.EOF) {
+			break
 		}
-		entry, classification, err := parseVolumeWorkspaceEntryInternal(fields[i:i+6], maxFileSizeBytes)
 		if err != nil {
 			return nil, err
 		}
-		classifications[entry.RelativePath] = classification
-		entries = append(entries, entry)
+		if record.Version != acfstypes.ProtocolVersion {
+			return nil, errors.Errorf("unsupported acfs protocol %d", record.Version)
+		}
+		if trailerSeen {
+			return nil, errors.New("acfs walk emitted a record after its trailer")
+		}
+		if record.End {
+			trailerSeen = true
+			truncated = record.Truncated
+			if record.Count != len(files) {
+				return nil, errors.New("acfs walk trailer count does not match emitted entries")
+			}
+			continue
+		}
+		if record.Entry == nil {
+			return nil, errors.New("acfs walk emitted an empty record")
+		}
+		if len(files) >= maxEntries {
+			return nil, errors.New("acfs walk exceeded the requested entry limit")
+		}
+		fileEntry, classification := volumeWorkspaceEntryFromACFSInternal(*record.Entry, maxFileSizeBytes)
+		classifications[fileEntry.RelativePath] = classification
+		files = append(files, fileEntry)
+	}
+	if !trailerSeen {
+		return nil, errors.New("acfs walk ended without a trailer")
 	}
 
-	revisionEntries := slices.Clone(entries)
+	revisionEntries := slices.Clone(files)
 	slices.SortFunc(revisionEntries, func(a, b workspacetypes.FileEntry) int {
 		return strings.Compare(a.RelativePath, b.RelativePath)
 	})
-	truncated = truncated || len(entries) > maxEntries
-	if len(revisionEntries) > maxEntries {
-		revisionEntries = revisionEntries[:maxEntries]
-	}
-	entries = slices.Clone(revisionEntries)
-
 	h := sha256.New()
 	for _, entry := range revisionEntries {
 		utils.WriteFileTreeRevisionEntry(h, entry.RelativePath, classifications[entry.RelativePath], entry.Size, entry.ModTime.UnixNano(), entry.Mode, false)
 	}
-	slices.SortFunc(entries, func(a, b workspacetypes.FileEntry) int {
+	slices.SortFunc(files, func(a, b workspacetypes.FileEntry) int {
 		if a.IsDirectory != b.IsDirectory {
 			if a.IsDirectory {
 				return -1
@@ -183,75 +182,35 @@ func parseVolumeWorkspaceTreeInternal(stdout string, maxEntries int, configuredM
 		}
 		return strings.Compare(a.RelativePath, b.RelativePath)
 	})
-
 	return &workspacetypes.Workspace{
-		Files:             entries,
+		Files:             files,
 		FileTreeRevision:  hex.EncodeToString(h.Sum(nil)),
 		FileTreeTruncated: truncated,
 	}, nil
 }
 
-func parseVolumeWorkspaceEntryInternal(fields []string, maxFileSizeBytes int64) (workspacetypes.FileEntry, string, error) {
-	relativePath := fields[0]
-	size, err := strconv.ParseInt(fields[2], 10, 64)
-	if err != nil {
-		return workspacetypes.FileEntry{}, "", errors.WrapIf(err, "parse volume workspace file size")
-	}
-	modTime, err := parseVolumeWorkspaceModTimeInternal(fields[3])
-	if err != nil {
-		return workspacetypes.FileEntry{}, "", errors.WrapIf(err, "parse volume workspace modification time")
-	}
-
-	mode := fields[4]
-	classificationKey := "kind:" + fields[1]
-	if mode != "" {
-		classificationKey = "mode:" + mode[:1]
-	}
-	classification := "special"
-	switch classificationKey {
-	case "kind:d", "mode:d":
-		classification = "dir"
-	case "kind:l", "mode:l":
-		classification = "symlink"
-	case "kind:f", "mode:-":
-		classification = "file"
-	}
-
-	entry := workspacetypes.FileEntry{
-		ModTime:      modTime,
-		Name:         path.Base(relativePath),
-		Path:         "/" + relativePath,
-		RelativePath: relativePath,
-		Mode:         mode,
-		LinkTarget:   fields[5],
-		Size:         size,
-		IsDirectory:  classification == "dir",
-		IsSymlink:    classification == "symlink",
-	}
-	switch classification {
-	case "dir":
-		entry.Size = 0
-		entry.Editable = true
-	case "symlink":
-		entry.ReadOnlyReason = workspacetypes.FileReadOnlySymlink
-	case "special":
-		entry.ReadOnlyReason = workspacetypes.FileReadOnlySpecial
-	case "file":
-		if size > maxFileSizeBytes {
-			entry.ReadOnlyReason = workspacetypes.FileReadOnlyTooLarge
+func volumeWorkspaceEntryFromACFSInternal(entry acfstypes.Entry, maxFileSizeBytes int64) (workspacetypes.FileEntry, string) {
+	fileEntry := acfsutils.FileEntry(entry)
+	fileEntry.RelativePath = strings.TrimPrefix(entry.Path, "/")
+	switch {
+	case entry.IsDirectory:
+		fileEntry.Size = 0
+		fileEntry.Editable = true
+		return fileEntry, "dir"
+	case entry.IsSymlink:
+		fileEntry.ReadOnlyReason = workspacetypes.FileReadOnlySymlink
+		return fileEntry, "symlink"
+	case acfsutils.IsRegular(entry):
+		if entry.Size > maxFileSizeBytes {
+			fileEntry.ReadOnlyReason = workspacetypes.FileReadOnlyTooLarge
 		} else {
-			entry.Editable = true
+			fileEntry.Editable = true
 		}
+		return fileEntry, "file"
+	default:
+		fileEntry.ReadOnlyReason = workspacetypes.FileReadOnlySpecial
+		return fileEntry, "special"
 	}
-	return entry, classification, nil
-}
-
-func parseVolumeWorkspaceModTimeInternal(value string) (time.Time, error) {
-	trimmed := strings.TrimSpace(value)
-	if seconds, err := strconv.ParseFloat(trimmed, 64); err == nil {
-		return time.Unix(0, int64(seconds*float64(time.Second))), nil
-	}
-	return time.Parse("2006-01-02 15:04:05 -0700", trimmed)
 }
 
 func (s *VolumeService) volumeWorkspaceMaxFileSizeBytesInternal() int64 {
@@ -276,37 +235,46 @@ func (s *VolumeService) GetVolumeWorkspaceFile(ctx context.Context, volumeName, 
 		return nil, err
 	}
 	defer cleanup()
-	dockerClient, err := s.dockerService.GetClient(ctx)
-	if err != nil {
+	if err := s.requireVolumeHelperACFSInternal(ctx, volumeName, containerID); err != nil {
 		return nil, err
 	}
-	statResult, err := dockerClient.ContainerStatPath(ctx, containerID, client.ContainerStatPathOptions{Path: path.Join("/volume", rel)})
+	stdout, stderr, err := s.execInContainerInternal(ctx, containerID, []string{
+		"acfs", "stat", "--root", "/volume", "--path", "/" + rel,
+	})
 	if err != nil {
-		if cerrdefs.IsNotFound(err) {
-			return nil, common.Classify(common.ErrVolumeWorkspaceNotFound, errors.New("volume workspace file not found"))
-		}
-		return nil, errors.WrapIf(err, "inspect volume workspace file")
+		return nil, classifyVolumeWorkspaceExecErrorInternal(err, stderr, "inspect volume workspace file")
 	}
-	stat := statResult.Stat
-	if stat.Mode&os.ModeSymlink != 0 {
-		return &workspacetypes.FileContent{Path: "/" + rel, RelativePath: rel, Name: path.Base(rel), Size: stat.Size, ReadOnlyReason: workspacetypes.FileReadOnlySymlink}, nil
+	var statResponse acfstypes.StatResponse
+	if err := json.Unmarshal([]byte(stdout), &statResponse); err != nil {
+		return nil, errors.WrapIf(err, "parse volume workspace stat")
 	}
-	if stat.Mode.IsDir() {
+	if statResponse.Version != acfstypes.ProtocolVersion {
+		return nil, errors.Errorf("unsupported acfs protocol %d", statResponse.Version)
+	}
+	entry := statResponse.Entry
+	if entry.IsSymlink {
+		return &workspacetypes.FileContent{Path: "/" + rel, RelativePath: rel, Name: path.Base(rel), Size: entry.Size, ReadOnlyReason: workspacetypes.FileReadOnlySymlink}, nil
+	}
+	if entry.IsDirectory {
 		return nil, common.Classify(common.ErrVolumeWorkspaceBadRequest, errors.New("path is a directory"))
 	}
-	if !stat.Mode.IsRegular() {
-		return volumeWorkspaceFileContentResponseInternal(rel, "special", stat.Size, nil, s.volumeWorkspaceMaxFileSizeBytesInternal())
+	if !acfsutils.IsRegular(entry) {
+		return volumeWorkspaceFileContentResponseInternal(rel, "special", entry.Size, nil, s.volumeWorkspaceMaxFileSizeBytesInternal())
 	}
 	maxFileSizeBytes := s.volumeWorkspaceMaxFileSizeBytesInternal()
-	if stat.Size > maxFileSizeBytes {
-		return volumeWorkspaceFileContentResponseInternal(rel, "regular", stat.Size, nil, maxFileSizeBytes)
+	if entry.Size > maxFileSizeBytes {
+		return volumeWorkspaceFileContentResponseInternal(rel, "regular", entry.Size, nil, maxFileSizeBytes)
 	}
 
-	reader, size, err := volumehelper.DownloadFileFromContainer(ctx, dockerClient, containerID, path.Join("/volume", rel), func() {})
+	previewLimit := maxFileSizeBytes
+	if previewLimit < int64(^uint64(0)>>1) {
+		previewLimit++
+	}
+	reader, size, err := s.startVolumeWorkspaceReadInternal(ctx, containerID, rel, previewLimit, func() {})
 	if err != nil {
 		return nil, errors.WrapIf(err, "read volume workspace file")
 	}
-	content, readErr := io.ReadAll(io.LimitReader(reader, maxFileSizeBytes+1))
+	content, readErr := io.ReadAll(reader)
 	closeErr := reader.Close()
 	if readErr != nil {
 		return nil, errors.WrapIf(readErr, "read volume workspace file content")
@@ -314,7 +282,7 @@ func (s *VolumeService) GetVolumeWorkspaceFile(ctx context.Context, volumeName, 
 	if closeErr != nil {
 		return nil, errors.WrapIf(closeErr, "close volume workspace file content")
 	}
-	if int64(len(content)) > maxFileSizeBytes || size > maxFileSizeBytes {
+	if size > maxFileSizeBytes {
 		return volumeWorkspaceFileContentResponseInternal(rel, "regular", size, nil, maxFileSizeBytes)
 	}
 	return volumeWorkspaceFileContentResponseInternal(rel, "regular", size, content, maxFileSizeBytes)
@@ -340,19 +308,113 @@ func (s *VolumeService) DownloadVolumeWorkspaceFile(ctx context.Context, volumeN
 		cleanup()
 		unlock()
 	}
-	parent := path.Dir(rel)
-	if parent != "." {
-		if err := s.validateVolumeWorkspacePathInternal(ctx, containerID, parent, false); err != nil {
-			cleanupAndUnlock()
-			return nil, 0, err
-		}
-	}
-	dockerClient, err := s.dockerService.GetClient(ctx)
-	if err != nil {
+	if err := s.requireVolumeHelperACFSInternal(ctx, volumeName, containerID); err != nil {
 		cleanupAndUnlock()
 		return nil, 0, err
 	}
-	return volumehelper.DownloadFileFromContainer(ctx, dockerClient, containerID, path.Join("/volume", rel), cleanupAndUnlock)
+	return s.startVolumeWorkspaceReadInternal(ctx, containerID, rel, 0, cleanupAndUnlock)
+}
+
+type volumeWorkspaceReadStreamInternal struct {
+	pipe      *io.PipeReader
+	done      <-chan error
+	cleanup   func()
+	remaining int64
+	once      sync.Once
+	err       error
+}
+
+func (r *volumeWorkspaceReadStreamInternal) Read(buffer []byte) (int, error) {
+	if r.remaining == 0 {
+		var extra [1]byte
+		read, readErr := r.pipe.Read(extra[:])
+		closeErr := r.Close()
+		if read != 0 {
+			return 0, errors.New("acfs read emitted bytes beyond its framed payload")
+		}
+		if closeErr != nil {
+			return 0, closeErr
+		}
+		if readErr != nil && !stderrors.Is(readErr, io.EOF) {
+			return 0, readErr
+		}
+		return 0, io.EOF
+	}
+	if int64(len(buffer)) > r.remaining {
+		buffer = buffer[:r.remaining]
+	}
+	read, err := r.pipe.Read(buffer)
+	r.remaining -= int64(read)
+	if err != nil && r.remaining > 0 {
+		closeErr := r.Close()
+		if closeErr != nil {
+			return read, stderrors.Join(err, closeErr)
+		}
+	}
+	return read, err
+}
+
+func (r *volumeWorkspaceReadStreamInternal) Close() error {
+	r.once.Do(func() {
+		_ = r.pipe.Close()
+		r.err = <-r.done
+		r.cleanup()
+	})
+	return r.err
+}
+
+func (s *VolumeService) startVolumeWorkspaceReadInternal(ctx context.Context, containerID, relativePath string, limit int64, cleanup func()) (io.ReadCloser, int64, error) {
+	pipeReader, pipeWriter := io.Pipe()
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		cleanup()
+		return nil, 0, err
+	}
+	done := make(chan error, 1)
+	cmd := []string{"acfs", "read", "--root", "/volume", "--path", "/" + relativePath}
+	if limit > 0 {
+		cmd = append(cmd, "--limit", strconv.FormatInt(limit, 10))
+	}
+	go func() {
+		var stderr bytes.Buffer
+		exitCode, execErr := dockerutil.ExecInContainer(ctx, dockerClient, containerID, client.ExecCreateOptions{
+			AttachStdout: true,
+			AttachStderr: true,
+			Cmd:          cmd,
+		}, pipeWriter, &stderr)
+		if execErr == nil && exitCode != 0 {
+			execErr = errors.Errorf("acfs read exited with code %d", exitCode)
+		}
+		if execErr != nil {
+			execErr = classifyVolumeWorkspaceExecErrorInternal(execErr, stderr.String(), "read volume workspace file")
+		}
+		_ = pipeWriter.CloseWithError(execErr)
+		done <- execErr
+	}()
+
+	payloadSize, err := acfs.ReadStreamHeader(pipeReader)
+	if err != nil {
+		_ = pipeReader.CloseWithError(err)
+		execErr := <-done
+		cleanup()
+		if execErr != nil {
+			return nil, 0, execErr
+		}
+		return nil, 0, errors.WrapIf(err, "parse volume workspace read header")
+	}
+	if payloadSize > uint64(1<<63-1) {
+		_ = pipeReader.Close()
+		<-done
+		cleanup()
+		return nil, 0, errors.New("volume workspace file is too large")
+	}
+	size := int64(payloadSize)
+	return &volumeWorkspaceReadStreamInternal{
+		pipe:      pipeReader,
+		done:      done,
+		cleanup:   cleanup,
+		remaining: size,
+	}, size, nil
 }
 
 func (s *VolumeService) validateVolumeHelperSupportInternal(ctx context.Context, volumeName string) error {
@@ -396,6 +458,30 @@ func volumeWorkspaceFileContentResponseInternal(relativePath, kind string, size 
 }
 
 func classifyVolumeWorkspaceExecErrorInternal(err error, stderr, fallbackContext string) error {
+	var response acfstypes.ErrorResponse
+	if decodeErr := json.Unmarshal([]byte(strings.TrimSpace(stderr)), &response); decodeErr == nil && response.Version == acfstypes.ProtocolVersion {
+		switch response.Code {
+		case acfstypes.ErrorInvalidPath, acfstypes.ErrorOutsideRoot, acfstypes.ErrorSymlink, acfstypes.ErrorSymlinkLoop:
+			return common.Classify(common.ErrVolumeWorkspaceForbidden, errors.New(response.Message))
+		case acfstypes.ErrorNotFound:
+			return common.Classify(common.ErrVolumeWorkspaceNotFound, errors.New("volume workspace file not found"))
+		case acfstypes.ErrorAlreadyExist:
+			return common.Classify(common.ErrVolumeWorkspaceBadRequest, errors.New("volume workspace destination already exists"))
+		case acfstypes.ErrorNotDirectory:
+			return common.Classify(common.ErrVolumeWorkspaceBadRequest, errors.New("volume workspace parent is not a directory"))
+		case acfstypes.ErrorNotFile:
+			return common.Classify(common.ErrVolumeWorkspaceBadRequest, errors.New("volume workspace path is not a regular file"))
+		case acfstypes.ErrorNotEmpty:
+			return common.Classify(common.ErrVolumeWorkspaceBadRequest, errors.New("volume directory is not empty; recursive delete is required"))
+		case acfstypes.ErrorIsDirectory:
+			return common.Classify(common.ErrVolumeWorkspaceBadRequest, errors.New("path is a directory"))
+		case acfstypes.ErrorSizeMismatch, acfstypes.ErrorRootRemoval:
+			return common.Classify(common.ErrVolumeWorkspaceBadRequest, errors.New(response.Message))
+		case acfstypes.ErrorInternal:
+			return errors.WrapIf(err, fallbackContext)
+		}
+	}
+
 	message := stderr + " " + err.Error()
 	switch {
 	case strings.Contains(message, "ARCANE_SYMLINK"):
@@ -500,6 +586,9 @@ func (s *VolumeService) UpdateVolumeWorkspace(ctx context.Context, volumeName st
 		return nil, err
 	}
 	defer cleanup()
+	if err := s.requireVolumeHelperACFSInternal(ctx, volumeName, containerID); err != nil {
+		return nil, err
+	}
 	slog.DebugContext(ctx, "volume workspace mutation helper acquired", "volume", volumeName, "container_id", containerID, "dedicated", needsBackups, "duration", time.Since(helperStartedAt))
 
 	revisionScanStartedAt := time.Now()
@@ -540,11 +629,13 @@ func (s *VolumeService) UpdateVolumeWorkspace(ctx context.Context, volumeName st
 	slog.DebugContext(ctx, "volume workspace backup completed", "volume", volumeName, "scope_count", len(scope), "duration", time.Since(backupStartedAt))
 
 	applyStartedAt := time.Now()
-	if err := applyVolumeWorkspaceChangesTransactionInternal(
+	if err := s.applyVolumeWorkspaceChangesInternal(
+		ctx,
+		dockerClient,
+		containerID,
+		volumeName,
 		manifest.FileChanges,
-		func(index int, change volumetypes.WorkspaceFileChange) error {
-			return s.applyVolumeWorkspaceChangeInternal(ctx, containerID, change, stagedFiles[index], volumeName)
-		},
+		stagedFiles,
 		func() error { return s.restoreVolumeWorkspaceScopeInternal(ctx, containerID, backup) },
 	); err != nil {
 		return nil, err
@@ -591,7 +682,7 @@ func (s *VolumeService) stageVolumeWorkspaceChangesInternal(ctx context.Context,
 		}
 		stagedPath := fmt.Sprintf("/tmp/arcane-workspace/change-%d", index)
 		content := uploads[*change.UploadIndex]
-		reader := io.NopCloser(strings.NewReader(string(content)))
+		reader := io.NopCloser(bytes.NewReader(content))
 		size := int64(len(content))
 		stagedFiles[index] = volumeWorkspaceStagedFileInternal{path: stagedPath, size: size}
 		stagedContents = append(stagedContents, volumeWorkspaceStagedContentInternal{
@@ -616,20 +707,136 @@ func validateVolumeWorkspaceRevisionInternal(expected, current string) error {
 	return nil
 }
 
-func applyVolumeWorkspaceChangesTransactionInternal(
+func (s *VolumeService) applyVolumeWorkspaceChangesInternal(
+	ctx context.Context,
+	dockerClient *client.Client,
+	containerID string,
+	volumeName string,
 	changes []volumetypes.WorkspaceFileChange,
-	apply func(int, volumetypes.WorkspaceFileChange) error,
+	stagedFiles map[int]volumeWorkspaceStagedFileInternal,
 	rollback func() error,
 ) error {
-	for index, change := range changes {
-		if err := apply(index, change); err != nil {
-			if rollbackErr := rollback(); rollbackErr != nil {
-				return stderrors.Join(err, errors.WrapIf(rollbackErr, "failed to roll back volume workspace"))
-			}
-			return err
+	rollbackFailureInternal := func(applyErr error) error {
+		if rollbackErr := rollback(); rollbackErr != nil {
+			return stderrors.Join(applyErr, errors.WrapIf(rollbackErr, "failed to roll back volume workspace"))
 		}
+		return applyErr
+	}
+
+	for index := 0; index < len(changes); {
+		if changes[index].Operation == volumetypes.FileOpRestoreFile {
+			rel, _ := utils.NormalizeRelativePath(changes[index].RelativePath)
+			if err := s.restoreVolumeWorkspaceFileInternal(ctx, containerID, volumeName, changes[index].BackupID, rel); err != nil {
+				return rollbackFailureInternal(err)
+			}
+			index++
+			continue
+		}
+
+		end := index
+		for end < len(changes) && changes[end].Operation != volumetypes.FileOpRestoreFile {
+			end++
+		}
+		if err := s.executeVolumeWorkspaceACFSBatchInternal(ctx, dockerClient, containerID, changes[index:end], stagedFiles, index); err != nil {
+			return rollbackFailureInternal(err)
+		}
+		index = end
 	}
 	return nil
+}
+
+func (s *VolumeService) executeVolumeWorkspaceACFSBatchInternal(
+	ctx context.Context,
+	dockerClient *client.Client,
+	containerID string,
+	changes []volumetypes.WorkspaceFileChange,
+	stagedFiles map[int]volumeWorkspaceStagedFileInternal,
+	startIndex int,
+) error {
+	applyChanges := make([]acfstypes.ApplyChange, 0, len(changes))
+	for offset, change := range changes {
+		applyChange, err := mapVolumeWorkspaceChangeToACFSInternal(change, stagedFiles[startIndex+offset])
+		if err != nil {
+			return common.Classify(common.ErrVolumeWorkspaceBadRequest, err)
+		}
+		applyChanges = append(applyChanges, applyChange)
+	}
+
+	manifestContent, err := json.Marshal(acfstypes.ApplyManifest{
+		Version: acfstypes.ProtocolVersion,
+		Changes: applyChanges,
+	})
+	if err != nil {
+		return errors.WrapIf(err, "encode volume workspace apply manifest")
+	}
+	manifestName := fmt.Sprintf("manifest-%d.json", startIndex)
+	if err := s.copyVolumeWorkspaceFilesToContainerInternal(ctx, dockerClient, containerID, []volumeWorkspaceStagedContentInternal{{
+		name:    manifestName,
+		content: io.NopCloser(bytes.NewReader(manifestContent)),
+		size:    int64(len(manifestContent)),
+	}}); err != nil {
+		return err
+	}
+
+	stdout, stderr, err := s.execInContainerInternal(ctx, containerID, []string{
+		"acfs", "apply", "--root", "/volume", "--staging", "/tmp/arcane-workspace", "--manifest", manifestName,
+	})
+	if err != nil {
+		return classifyVolumeWorkspaceExecErrorInternal(err, stderr, "apply volume workspace changes")
+	}
+	var response acfstypes.ApplyResponse
+	if err := json.Unmarshal([]byte(stdout), &response); err != nil {
+		return errors.WrapIf(err, "parse volume workspace apply response")
+	}
+	if response.Version != acfstypes.ProtocolVersion || response.Applied != len(applyChanges) {
+		return errors.New("invalid volume workspace apply response")
+	}
+	return nil
+}
+
+func mapVolumeWorkspaceChangeToACFSInternal(change volumetypes.WorkspaceFileChange, staged volumeWorkspaceStagedFileInternal) (acfstypes.ApplyChange, error) {
+	relativePath, err := utils.NormalizeRelativePath(change.RelativePath)
+	if err != nil {
+		return acfstypes.ApplyChange{}, err
+	}
+	result := acfstypes.ApplyChange{Path: "/" + relativePath, Recursive: change.Recursive}
+	switch change.Operation {
+	case volumetypes.FileOpCreateFile:
+		result.Operation = acfstypes.ApplyCreateFile
+		result.StagedName = path.Base(staged.path)
+		result.Size = staged.size
+	case volumetypes.FileOpUpdateFile:
+		result.Operation = acfstypes.ApplyUpdateFile
+		result.StagedName = path.Base(staged.path)
+		result.Size = staged.size
+	case volumetypes.FileOpCreateFolder:
+		result.Operation = acfstypes.ApplyCreateFolder
+		result.Recursive = false
+	case volumetypes.FileOpRename:
+		newName, nameErr := utils.ValidateFileName(change.NewName)
+		if nameErr != nil {
+			return acfstypes.ApplyChange{}, nameErr
+		}
+		result.Operation = acfstypes.ApplyRename
+		result.TargetPath = "/" + path.Join(path.Dir(relativePath), newName)
+		result.Recursive = false
+	case volumetypes.FileOpMove:
+		parent := ""
+		if strings.TrimSpace(change.NewParentPath) != "" {
+			parent, err = utils.NormalizeRelativePath(change.NewParentPath)
+			if err != nil {
+				return acfstypes.ApplyChange{}, err
+			}
+		}
+		result.Operation = acfstypes.ApplyMove
+		result.TargetPath = "/" + path.Join(parent, path.Base(relativePath))
+		result.Recursive = false
+	case volumetypes.FileOpDelete:
+		result.Operation = acfstypes.ApplyDelete
+	default:
+		return acfstypes.ApplyChange{}, errors.Errorf("unsupported volume workspace operation %q", change.Operation)
+	}
+	return result, nil
 }
 
 func validateVolumeWorkspaceFileChangeInternal(change volumetypes.WorkspaceFileChange) error {
@@ -899,169 +1106,6 @@ for rel do rm -rf -- "/volume/$rel"; done`, "sh"}, removePaths...)
 		}
 	}
 	return nil
-}
-
-const (
-	volumeWorkspaceCreateFileScriptInternal = `set -e
-target="/volume/$1"
-parent=/volume
-case "$2" in '') ;; *) parent="/volume/$2" ;; esac
-if stat -c '%A' -- "$target" >/dev/null 2>&1; then echo ARCANE_COLLISION >&2; exit 45; fi
-if parent_mode=$(stat -c '%A' -- "$parent" 2>/dev/null); then
-  case "$parent_mode" in
-    l*) echo ARCANE_SYMLINK >&2; exit 42 ;;
-    d*) ;;
-    *) echo ARCANE_NOT_DIRECTORY >&2; exit 47 ;;
-  esac
-fi
-mkdir -p -- "$parent"
-parent_mode=$(stat -c '%A' -- "$parent" 2>/dev/null) || { echo ARCANE_NOT_DIRECTORY >&2; exit 47; }
-case "$parent_mode" in
-  l*) echo ARCANE_SYMLINK >&2; exit 42 ;;
-  d*) ;;
-  *) echo ARCANE_NOT_DIRECTORY >&2; exit 47 ;;
-esac
-umask 022
-set -C
-head -c "$4" "$3" > "$target"`
-	volumeWorkspaceCreateFolderScriptInternal = `set -e
-target="/volume/$1"
-parent=/volume
-case "$2" in '') ;; *) parent="/volume/$2" ;; esac
-if stat -c '%A' -- "$target" >/dev/null 2>&1; then echo ARCANE_COLLISION >&2; exit 45; fi
-if parent_mode=$(stat -c '%A' -- "$parent" 2>/dev/null); then
-  case "$parent_mode" in
-    l*) echo ARCANE_SYMLINK >&2; exit 42 ;;
-    d*) ;;
-    *) echo ARCANE_NOT_DIRECTORY >&2; exit 47 ;;
-  esac
-fi
-mkdir -p -- "$parent"
-parent_mode=$(stat -c '%A' -- "$parent" 2>/dev/null) || { echo ARCANE_NOT_DIRECTORY >&2; exit 47; }
-case "$parent_mode" in
-  l*) echo ARCANE_SYMLINK >&2; exit 42 ;;
-  d*) ;;
-  *) echo ARCANE_NOT_DIRECTORY >&2; exit 47 ;;
-esac
-umask 022
-mkdir -m 0755 -- "$target"`
-	volumeWorkspaceUpdateFileScriptInternal = `set -e
-target="/volume/$1"
-target_mode=$(stat -c '%A' -- "$target" 2>/dev/null) || { echo ARCANE_NOT_FOUND >&2; exit 44; }
-case "$target_mode" in
-  l*) echo ARCANE_SYMLINK >&2; exit 42 ;;
-  -*) ;;
-  *) echo ARCANE_NOT_FILE >&2; exit 46 ;;
-esac
-head -c "$3" "$2" > "$target"`
-	volumeWorkspaceRenameScriptInternal = `set -e
-source="/volume/$1"
-target="/volume/$2"
-if stat -c '%A' -- "$target" >/dev/null 2>&1; then echo ARCANE_COLLISION >&2; exit 45; fi
-mv -- "$source" "$target"`
-	volumeWorkspaceMoveScriptInternal = `set -e
-source="/volume/$1"
-parent="/volume/$2"
-target="/volume/$3"
-parent_mode=$(stat -c '%A' -- "$parent" 2>/dev/null) || { echo ARCANE_NOT_DIRECTORY >&2; exit 47; }
-case "$parent_mode" in d*) ;; *) echo ARCANE_NOT_DIRECTORY >&2; exit 47 ;; esac
-if stat -c '%A' -- "$target" >/dev/null 2>&1; then echo ARCANE_COLLISION >&2; exit 45; fi
-mv -- "$source" "$target"`
-	volumeWorkspaceDeleteScriptInternal = `set -e
-target="/volume/$1"
-case "$2" in
-  1) rm -rf -- "$target" ;;
-  *)
-    target_mode=$(stat -c '%A' -- "$target" 2>/dev/null) || { echo ARCANE_NOT_FOUND >&2; exit 44; }
-    case "$target_mode" in
-      d*) if ! rmdir -- "$target"; then echo ARCANE_NOT_EMPTY >&2; exit 48; fi ;;
-      *) rm -- "$target" ;;
-    esac
-    ;;
-esac`
-)
-
-func (s *VolumeService) applyVolumeWorkspaceChangeInternal(ctx context.Context, containerID string, change volumetypes.WorkspaceFileChange, stagedFile volumeWorkspaceStagedFileInternal, volumeName string) error {
-	rel, _ := utils.NormalizeRelativePath(change.RelativePath)
-	if change.Operation == volumetypes.FileOpRestoreFile {
-		return s.restoreVolumeWorkspaceFileInternal(ctx, containerID, volumeName, change.BackupID, rel)
-	}
-	cmd, err := s.volumeWorkspaceMutationCommandInternal(ctx, containerID, change, stagedFile, rel)
-	if err != nil {
-		return err
-	}
-	_, stderr, err := s.execInContainerInternal(ctx, containerID, cmd)
-	if err != nil {
-		return classifyVolumeWorkspaceExecErrorInternal(err, stderr, "apply volume workspace change")
-	}
-	if strings.TrimSpace(stderr) != "" {
-		slog.DebugContext(ctx, "volume workspace change stderr", "operation", change.Operation, "path", rel, "stderr", strings.TrimSpace(stderr))
-	}
-	return nil
-}
-
-func (s *VolumeService) volumeWorkspaceMutationCommandInternal(ctx context.Context, containerID string, change volumetypes.WorkspaceFileChange, stagedFile volumeWorkspaceStagedFileInternal, rel string) ([]string, error) {
-	var cmd []string
-	parent := path.Dir(rel)
-	if parent == "." {
-		parent = ""
-	}
-	switch change.Operation {
-	case volumetypes.FileOpCreateFile:
-		if err := s.validateVolumeWorkspacePathInternal(ctx, containerID, rel, true); err != nil {
-			return nil, err
-		}
-		cmd = []string{"sh", "-c", volumeWorkspaceCreateFileScriptInternal, "sh", rel, parent, stagedFile.path, strconv.FormatInt(stagedFile.size, 10)}
-	case volumetypes.FileOpCreateFolder:
-		if err := s.validateVolumeWorkspacePathInternal(ctx, containerID, rel, true); err != nil {
-			return nil, err
-		}
-		cmd = []string{"sh", "-c", volumeWorkspaceCreateFolderScriptInternal, "sh", rel, parent}
-	case volumetypes.FileOpUpdateFile:
-		if err := s.validateVolumeWorkspacePathInternal(ctx, containerID, rel, false); err != nil {
-			return nil, err
-		}
-		cmd = []string{"sh", "-c", volumeWorkspaceUpdateFileScriptInternal, "sh", rel, stagedFile.path, strconv.FormatInt(stagedFile.size, 10)}
-	case volumetypes.FileOpRename:
-		newName, _ := utils.ValidateFileName(change.NewName)
-		target := path.Join(path.Dir(rel), newName)
-		if target == rel {
-			return nil, common.Classify(common.ErrVolumeWorkspaceBadRequest, errors.New("new name must change the file path"))
-		}
-		if err := s.validateVolumeWorkspacePathInternal(ctx, containerID, rel, false); err != nil {
-			return nil, err
-		}
-		if err := s.validateVolumeWorkspacePathInternal(ctx, containerID, target, true); err != nil {
-			return nil, err
-		}
-		cmd = []string{"sh", "-c", volumeWorkspaceRenameScriptInternal, "sh", rel, target}
-	case volumetypes.FileOpMove:
-		parent = ""
-		if strings.TrimSpace(change.NewParentPath) != "" {
-			parent, _ = utils.NormalizeRelativePath(change.NewParentPath)
-		}
-		target := path.Join(parent, path.Base(rel))
-		if target == rel || (parent != "" && utils.FilePathMatches(parent, rel)) {
-			return nil, common.Classify(common.ErrVolumeWorkspaceBadRequest, errors.New("invalid move destination"))
-		}
-		if err := s.validateVolumeWorkspacePathInternal(ctx, containerID, rel, false); err != nil {
-			return nil, err
-		}
-		if err := s.validateVolumeWorkspacePathInternal(ctx, containerID, target, true); err != nil {
-			return nil, err
-		}
-		cmd = []string{"sh", "-c", volumeWorkspaceMoveScriptInternal, "sh", rel, parent, target}
-	case volumetypes.FileOpDelete:
-		if err := s.validateVolumeWorkspacePathInternal(ctx, containerID, rel, false); err != nil {
-			return nil, err
-		}
-		recursive := "0"
-		if change.Recursive {
-			recursive = "1"
-		}
-		cmd = []string{"sh", "-c", volumeWorkspaceDeleteScriptInternal, "sh", rel, recursive}
-	}
-	return cmd, nil
 }
 
 func (s *VolumeService) restoreVolumeWorkspaceFileInternal(ctx context.Context, containerID, volumeName, backupID, rel string) error {

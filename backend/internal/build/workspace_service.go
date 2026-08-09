@@ -15,7 +15,9 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	acfsutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/acfs"
 	workspacetypes "github.com/getarcaneapp/arcane/types/v2/workspace"
+	"go.getarcane.app/acfs"
 )
 
 const defaultBuildsDirectory = "/builds"
@@ -41,49 +43,14 @@ func (s *BuildWorkspaceService) ListDirectory(ctx context.Context, dirPath strin
 		return nil, errors.WrapIf(err, "invalid path")
 	}
 
-	targetPath, err := joinBuildRoot(root, cleaned)
-	if err != nil {
-		return nil, err
-	}
-
-	entries, err := os.ReadDir(targetPath)
+	entries, err := acfs.List(ctx, root, cleaned)
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to list directory")
 	}
 
 	results := make([]workspacetypes.FileEntry, 0, len(entries))
 	for _, entry := range entries {
-		info, err := entry.Info()
-		if err != nil {
-			continue
-		}
-
-		entryPath := path.Join(cleaned, entry.Name())
-		if entryPath == "" {
-			entryPath = "/"
-		}
-
-		isSymlink := entry.Type()&os.ModeSymlink != 0
-		mode := info.Mode().String()
-
-		fileEntry := workspacetypes.FileEntry{
-			Name:        entry.Name(),
-			Path:        entryPath,
-			IsDirectory: info.IsDir(),
-			Size:        info.Size(),
-			ModTime:     info.ModTime(),
-			Mode:        mode,
-			IsSymlink:   isSymlink,
-		}
-
-		if isSymlink {
-			target, err := os.Readlink(filepath.Join(targetPath, entry.Name()))
-			if err == nil && target != "" {
-				fileEntry.LinkTarget = resolveLinkTarget(root, target)
-			}
-		}
-
-		results = append(results, fileEntry)
+		results = append(results, acfsutils.FileEntry(entry))
 	}
 
 	return results, nil
@@ -101,30 +68,17 @@ func (s *BuildWorkspaceService) GetFileContent(ctx context.Context, filePath str
 		return nil, "", errors.WrapIf(err, "invalid path")
 	}
 
-	fullPath, err := joinBuildRoot(root, cleaned)
-	if err != nil {
-		return nil, "", err
-	}
-
-	info, err := os.Stat(fullPath)
-	if err != nil {
-		return nil, "", errors.WrapIf(err, "failed to stat file")
-	}
-	if info.IsDir() {
-		return nil, "", errors.New("path is a directory")
-	}
-
 	if maxBytes <= 0 {
 		maxBytes = 1048576
 	}
 
-	file, err := os.Open(fullPath)
+	file, _, err := acfs.OpenRead(ctx, root, cleaned, maxBytes)
 	if err != nil {
 		return nil, "", errors.WrapIf(err, "failed to open file")
 	}
 	defer func() { _ = file.Close() }()
 
-	content, err := io.ReadAll(io.LimitReader(file, maxBytes))
+	content, err := io.ReadAll(file)
 	if err != nil {
 		return nil, "", errors.WrapIf(err, "failed to read file")
 	}
@@ -145,35 +99,22 @@ func (s *BuildWorkspaceService) DownloadFile(ctx context.Context, filePath strin
 		return nil, 0, errors.WrapIf(err, "invalid path")
 	}
 
-	fullPath, err := joinBuildRoot(root, cleaned)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	info, err := os.Stat(fullPath)
-	if err != nil {
-		return nil, 0, errors.WrapIf(err, "failed to stat file")
-	}
-	if info.IsDir() {
-		return nil, 0, errors.New("path is a directory")
-	}
-
-	file, err := os.Open(fullPath)
+	file, size, err := acfs.OpenRead(ctx, root, cleaned, 0)
 	if err != nil {
 		return nil, 0, errors.WrapIf(err, "failed to open file")
 	}
 
-	return file, info.Size(), nil
+	return file, size, nil
 }
 
-func (s *BuildWorkspaceService) UploadFile(ctx context.Context, destPath string, content io.Reader, filename string) error {
+func (s *BuildWorkspaceService) UploadFile(ctx context.Context, destPath string, content io.Reader, filename string, size int64) error {
 	slog.DebugContext(ctx, "build workspace: upload file", "dest_path", destPath, "filename", filename)
 	root, err := s.resolveRoot()
 	if err != nil {
 		return err
 	}
 
-	safeFilename, err := sanitizeUploadFilename(filename)
+	safeFilename, err := sanitizeUploadFilenameInternal(filename)
 	if err != nil {
 		return err
 	}
@@ -183,23 +124,12 @@ func (s *BuildWorkspaceService) UploadFile(ctx context.Context, destPath string,
 		return errors.WrapIf(err, "invalid path")
 	}
 
-	dirPath, err := joinBuildRoot(root, cleaned)
-	if err != nil {
-		return err
-	}
-
-	if err := os.MkdirAll(dirPath, 0o755); err != nil {
+	if err := acfs.MkdirAll(ctx, root, cleaned, 0o755); err != nil {
 		return errors.WrapIf(err, "failed to create directory")
 	}
 
-	targetFile := filepath.Join(dirPath, safeFilename)
-	file, err := os.Create(targetFile)
-	if err != nil {
-		return errors.WrapIf(err, "failed to create file")
-	}
-	defer func() { _ = file.Close() }()
-
-	if _, err := io.Copy(file, content); err != nil {
+	targetFile := path.Join(cleaned, safeFilename)
+	if _, err := acfs.WriteFrom(ctx, root, targetFile, content, size, 0o644); err != nil {
 		return errors.WrapIf(err, "failed to write file")
 	}
 
@@ -218,16 +148,11 @@ func (s *BuildWorkspaceService) CreateDirectory(ctx context.Context, dirPath str
 		return errors.WrapIf(err, "invalid path")
 	}
 
-	fullPath, err := joinBuildRoot(root, cleaned)
-	if err != nil {
-		return err
-	}
-
 	if cleaned == "/" {
 		return nil
 	}
 
-	if err := os.MkdirAll(fullPath, 0o755); err != nil {
+	if err := acfs.MkdirAll(ctx, root, cleaned, 0o755); err != nil {
 		return errors.WrapIf(err, "failed to create directory")
 	}
 
@@ -250,12 +175,7 @@ func (s *BuildWorkspaceService) DeleteFile(ctx context.Context, filePath string)
 		return errors.New("cannot delete root directory")
 	}
 
-	fullPath, err := joinBuildRoot(root, cleaned)
-	if err != nil {
-		return err
-	}
-
-	if err := os.RemoveAll(fullPath); err != nil {
+	if err := acfs.RemoveAll(ctx, root, cleaned); err != nil {
 		return errors.WrapIf(err, "failed to delete path")
 	}
 
@@ -284,7 +204,7 @@ func (s *BuildWorkspaceService) resolveRoot() (string, error) {
 	return cleaned, nil
 }
 
-func sanitizeUploadFilename(filename string) (string, error) {
+func sanitizeUploadFilenameInternal(filename string) (string, error) {
 	name := strings.TrimSpace(filename)
 	if name == "" {
 		return "", errors.New("invalid filename")
@@ -309,39 +229,4 @@ func sanitizeUploadFilename(filename string) (string, error) {
 	}
 
 	return base, nil
-}
-
-func joinBuildRoot(root, cleaned string) (string, error) {
-	rel := strings.TrimPrefix(cleaned, "/")
-	fullPath := filepath.Join(root, filepath.FromSlash(rel))
-	if !utils.IsWithinRoot(root, fullPath) {
-		return "", errors.New("invalid path: outside builds directory")
-	}
-	if _, err := utils.ResolveWithinRoot(root, fullPath); err != nil {
-		return "", errors.WrapIf(err, "invalid path: outside builds directory")
-	}
-	return fullPath, nil
-}
-
-func resolveLinkTarget(root, target string) string {
-	if target == "" {
-		return ""
-	}
-	if filepath.IsAbs(target) {
-		targetClean := filepath.Clean(target)
-		if utils.IsWithinRoot(root, targetClean) {
-			rel, err := filepath.Rel(root, targetClean)
-			if err != nil {
-				return "(external)"
-			}
-			rel = filepath.ToSlash(rel)
-			if rel == "." || rel == "" {
-				return "/"
-			}
-			return "/" + rel
-		}
-		return "(external)"
-	}
-
-	return filepath.ToSlash(target)
 }

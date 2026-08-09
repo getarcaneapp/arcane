@@ -2,8 +2,8 @@ package volume
 
 import (
 	"archive/tar"
+	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -30,6 +31,8 @@ import (
 	"github.com/moby/moby/api/types/volume"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
+	"go.getarcane.app/acfs"
+	acfstypes "go.getarcane.app/acfs/types"
 )
 
 func newVolumeWorkspaceTestDockerClientInternal(t *testing.T, server *httptest.Server) *client.Client {
@@ -168,27 +171,34 @@ func TestDownloadVolumeWorkspaceFileHoldsReadLockUntilClosed(t *testing.T) {
 				"Id":    "helper",
 				"State": map[string]any{"Running": true},
 			})
-		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/helper/archive"):
-			w.Header().Set("Content-Type", "application/x-tar")
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/helper/exec"):
+			var request struct {
+				Cmd []string `json:"Cmd"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				t.Errorf("decode exec request: %v", err)
+				return
+			}
+			wantCommand := []string{"acfs", "read", "--root", "/volume", "--path", "/file.txt"}
+			if !slices.Equal(request.Cmd, wantCommand) {
+				t.Errorf("unexpected read command: %v", request.Cmd)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]string{"Id": "read-exec"})
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/exec/read-exec/start"):
+			_, _ = io.Copy(io.Discard, r.Body)
 			content := []byte("content")
-			stat, err := json.Marshal(container.PathStat{Name: "file.txt", Size: int64(len(content)), Mode: 0o600})
-			if err != nil {
-				t.Errorf("marshal download path stat: %v", err)
+			var output bytes.Buffer
+			if err := acfs.WriteStreamHeader(&output, uint64(len(content))); err != nil {
+				t.Errorf("write ACFS stream header: %v", err)
 				return
 			}
-			w.Header().Set("X-Docker-Container-Path-Stat", base64.StdEncoding.EncodeToString(stat))
-			tarWriter := tar.NewWriter(w)
-			if err := tarWriter.WriteHeader(&tar.Header{Name: "file.txt", Mode: 0o600, Size: int64(len(content))}); err != nil {
-				t.Errorf("write download header: %v", err)
-				return
-			}
-			if _, err := tarWriter.Write(content); err != nil {
-				t.Errorf("write download content: %v", err)
-				return
-			}
-			if err := tarWriter.Close(); err != nil {
-				t.Errorf("close download archive: %v", err)
-			}
+			_, _ = output.Write(content)
+			writeDockerExecAttachResponseInternal(t, w, output.String())
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/exec/read-exec/json"):
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"Running": false, "ExitCode": 0})
 		default:
 			http.Error(w, "unexpected Docker request: "+r.Method+" "+r.URL.Path, http.StatusInternalServerError)
 		}
@@ -198,7 +208,7 @@ func TestDownloadVolumeWorkspaceFileHoldsReadLockUntilClosed(t *testing.T) {
 	service := &VolumeService{
 		dockerService: docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newVolumeWorkspaceTestDockerClientInternal(t, server)),
 		helperByVolume: map[string]*volumeHelper{
-			"workspace-volume": {id: "helper", lastUsedAt: time.Now()},
+			"workspace-volume": {id: "helper", lastUsedAt: time.Now(), protocol: acfstypes.ProtocolVersion},
 		},
 	}
 	reader, size, err := service.DownloadVolumeWorkspaceFile(context.Background(), "workspace-volume", "file.txt")
@@ -215,115 +225,6 @@ func TestDownloadVolumeWorkspaceFileHoldsReadLockUntilClosed(t *testing.T) {
 	unlockMutation, acquired := service.workspaceLocks.TryLock("workspace-volume")
 	require.True(t, acquired, "mutation lock remained held after download stream closed")
 	unlockMutation()
-}
-
-func volumeWorkspaceTreeRecordInternal(relativePath, kind, size, modTime, mode, linkTarget string) string {
-	return strings.Join([]string{relativePath, kind, size, modTime, mode, linkTarget}, "\x00") + "\x00"
-}
-
-func volumeWorkspaceTreeOutputInternal(truncated bool, records string) string {
-	marker := "0"
-	if truncated {
-		marker = "1"
-	}
-	return records + "ARCANE_TREE_END\x00" + marker + "\x00"
-}
-
-func TestParseVolumeWorkspaceTreeInternalSortsAndClassifiesFromMode(t *testing.T) {
-	stdout := volumeWorkspaceTreeOutputInternal(false,
-		volumeWorkspaceTreeRecordInternal("z.txt", "d", "4", "1700000000.25", "-rw-r--r--", "")+
-			volumeWorkspaceTreeRecordInternal("folder/link", "f", "7", "1700000001.5", "lrwxrwxrwx", "../z.txt")+
-			volumeWorkspaceTreeRecordInternal("folder/child.txt", "d", "5", "1700000001.75", "-rw-r--r--", "")+
-			volumeWorkspaceTreeRecordInternal("folder", "f", "4096", "1700000002", "drwxr-xr-x", "")+
-			volumeWorkspaceTreeRecordInternal("empty", "f", "4096", "1700000003", "drwx------", "")+
-			volumeWorkspaceTreeRecordInternal("special", "f", "0", "1700000004", "prw-------", ""))
-
-	workspace, err := parseVolumeWorkspaceTreeInternal(stdout, 10)
-	require.NoError(t, err)
-	require.False(t, workspace.FileTreeTruncated)
-	require.Equal(t, []string{"empty", "folder", "folder/child.txt", "folder/link", "special", "z.txt"}, []string{
-		workspace.Files[0].RelativePath,
-		workspace.Files[1].RelativePath,
-		workspace.Files[2].RelativePath,
-		workspace.Files[3].RelativePath,
-		workspace.Files[4].RelativePath,
-		workspace.Files[5].RelativePath,
-	})
-	require.Zero(t, workspace.Files[0].Size)
-	require.Zero(t, workspace.Files[1].Size)
-	require.True(t, workspace.Files[0].IsDirectory)
-	require.True(t, workspace.Files[1].IsDirectory)
-	require.False(t, workspace.Files[2].IsDirectory)
-	require.False(t, workspace.Files[3].IsDirectory)
-	require.False(t, workspace.Files[4].IsDirectory)
-	require.False(t, workspace.Files[5].IsDirectory)
-	require.True(t, workspace.Files[3].IsSymlink)
-	require.Equal(t, "../z.txt", workspace.Files[3].LinkTarget)
-	require.NotEmpty(t, workspace.FileTreeRevision)
-
-	reordered, err := parseVolumeWorkspaceTreeInternal(volumeWorkspaceTreeOutputInternal(false,
-		volumeWorkspaceTreeRecordInternal("empty", "d", "4096", "1700000003", "drwx------", "")+
-			volumeWorkspaceTreeRecordInternal("folder", "d", "4096", "1700000002", "drwxr-xr-x", "")+
-			volumeWorkspaceTreeRecordInternal("folder/child.txt", "f", "5", "1700000001.75", "-rw-r--r--", "")+
-			volumeWorkspaceTreeRecordInternal("z.txt", "f", "4", "1700000000.25", "-rw-r--r--", "")+
-			volumeWorkspaceTreeRecordInternal("special", "s", "0", "1700000004", "prw-------", "")+
-			volumeWorkspaceTreeRecordInternal("folder/link", "l", "7", "1700000001.5", "lrwxrwxrwx", "../z.txt")), 10)
-	require.NoError(t, err)
-	require.Equal(t, workspace.FileTreeRevision, reordered.FileTreeRevision)
-}
-
-func TestParseVolumeWorkspaceTreeInternalFallsBackToKindWithoutMode(t *testing.T) {
-	workspace, err := parseVolumeWorkspaceTreeInternal(volumeWorkspaceTreeOutputInternal(false,
-		volumeWorkspaceTreeRecordInternal("folder", "d", "4096", "1", "", "")+
-			volumeWorkspaceTreeRecordInternal("link", "l", "3", "2", "", "folder")+
-			volumeWorkspaceTreeRecordInternal("regular", "f", "4", "3", "", "")), 10)
-	require.NoError(t, err)
-	require.True(t, workspace.Files[0].IsDirectory)
-	require.Zero(t, workspace.Files[0].Size)
-	require.True(t, workspace.Files[1].IsSymlink)
-
-	special, err := parseVolumeWorkspaceTreeInternal(volumeWorkspaceTreeOutputInternal(false,
-		volumeWorkspaceTreeRecordInternal("folder", "d", "4096", "1", "", "")+
-			volumeWorkspaceTreeRecordInternal("link", "l", "3", "2", "", "folder")+
-			volumeWorkspaceTreeRecordInternal("regular", "s", "4", "3", "", "")), 10)
-	require.NoError(t, err)
-	require.NotEqual(t, workspace.FileTreeRevision, special.FileTreeRevision)
-}
-
-func TestParseVolumeWorkspaceTreeInternalReportsBothLimits(t *testing.T) {
-	entries := volumeWorkspaceTreeRecordInternal("b", "f", "1", "1", "-rw-r--r--", "") +
-		volumeWorkspaceTreeRecordInternal("a", "f", "1", "1", "-rw-r--r--", "")
-
-	depthLimited, err := parseVolumeWorkspaceTreeInternal(volumeWorkspaceTreeOutputInternal(true, entries), 10)
-	require.NoError(t, err)
-	require.True(t, depthLimited.FileTreeTruncated)
-
-	entryLimited, err := parseVolumeWorkspaceTreeInternal(volumeWorkspaceTreeOutputInternal(false, entries), 1)
-	require.NoError(t, err)
-	require.True(t, entryLimited.FileTreeTruncated)
-	require.Len(t, entryLimited.Files, 1)
-	require.Equal(t, "a", entryLimited.Files[0].RelativePath)
-
-	_, err = parseVolumeWorkspaceTreeInternal(entries+"invalid\x000\x00", 10)
-	require.Error(t, err)
-}
-
-func TestParseVolumeWorkspaceModTimeInternalPreservesNanoseconds(t *testing.T) {
-	modTime, err := parseVolumeWorkspaceModTimeInternal("2026-08-02 16:09:00.123456789 +0000")
-	require.NoError(t, err)
-	require.Equal(t, 123456789, modTime.Nanosecond())
-}
-
-func TestParseVolumeWorkspaceTreeInternalPreservesUnusualNamesAndSpecialFiles(t *testing.T) {
-	workspace, err := parseVolumeWorkspaceTreeInternal(volumeWorkspaceTreeOutputInternal(false,
-		volumeWorkspaceTreeRecordInternal(".hidden", "f", "1", "1", "-rw-r--r--", "")+
-			volumeWorkspaceTreeRecordInternal("line\nbreak", "s", "0", "2", "prw-------", "")), 10)
-	require.NoError(t, err)
-	require.Equal(t, []string{".hidden", "line\nbreak"}, []string{
-		workspace.Files[0].RelativePath,
-		workspace.Files[1].RelativePath,
-	})
-	require.NotEmpty(t, workspace.FileTreeRevision)
 }
 
 func TestVolumeWorkspaceFileContentResponseInternal(t *testing.T) {
@@ -418,15 +319,8 @@ func TestVolumeWorkspaceRollbackPathsInternalRemovesDeepestFirst(t *testing.T) {
 
 func TestVolumeWorkspaceHelperScriptsUseSupportedTooling(t *testing.T) {
 	helperScripts := []string{
-		volumeWorkspaceTreeScriptInternal,
 		volumeWorkspaceValidatePathScriptInternal,
 		volumeWorkspaceBackupCreateScriptInternal,
-		volumeWorkspaceCreateFileScriptInternal,
-		volumeWorkspaceCreateFolderScriptInternal,
-		volumeWorkspaceUpdateFileScriptInternal,
-		volumeWorkspaceRenameScriptInternal,
-		volumeWorkspaceMoveScriptInternal,
-		volumeWorkspaceDeleteScriptInternal,
 		restoreBackupFilesScriptInternal,
 	}
 	scripts := strings.Join(helperScripts, "\n")
@@ -449,9 +343,6 @@ func TestVolumeWorkspaceHelperScriptsUseSupportedTooling(t *testing.T) {
 	} {
 		require.NotContains(t, scripts, unsupported)
 	}
-	require.Contains(t, volumeWorkspaceCreateFileScriptInternal, "head -c")
-	require.Contains(t, volumeWorkspaceCreateFolderScriptInternal, "mkdir -m 0755")
-	require.Contains(t, volumeWorkspaceUpdateFileScriptInternal, "head -c")
 	require.Contains(t, volumeWorkspaceBackupCreateScriptInternal, `printf 'absent\0%s\0'`)
 	require.Contains(t, volumeWorkspaceBackupCreateScriptInternal, `cd "$parent"`)
 	require.NotContains(t, volumeWorkspaceBackupCreateScriptInternal, " -C ")
@@ -594,11 +485,15 @@ func TestUpdateVolumeWorkspaceRejectsStaleRevisionBeforeStaging(t *testing.T) {
 			}
 			execCommands = append(execCommands, request.Cmd)
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]string{"Id": "tree-exec"})
-		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/exec/tree-exec/start"):
+			_ = json.NewEncoder(w).Encode(map[string]string{"Id": fmt.Sprintf("workspace-exec-%d", len(execCommands)-1)})
+		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/exec/workspace-exec-") && strings.HasSuffix(r.URL.Path, "/start"):
 			_, _ = io.Copy(io.Discard, r.Body)
-			writeDockerExecAttachResponseInternal(t, w, volumeWorkspaceTreeOutputInternal(false, ""))
-		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/exec/tree-exec/json"):
+			output := "{\"version\":\"0.2.0\",\"revision\":\"test\",\"buildTime\":\"test\",\"protocol\":2}\n"
+			if strings.Contains(r.URL.Path, "workspace-exec-1") {
+				output = "{\"end\":true,\"version\":2}\n"
+			}
+			writeDockerExecAttachResponseInternal(t, w, output)
+		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/exec/workspace-exec-") && strings.HasSuffix(r.URL.Path, "/json"):
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{"Running": false, "ExitCode": 0})
 		case r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/containers/helper/archive"):
@@ -627,8 +522,9 @@ func TestUpdateVolumeWorkspaceRejectsStaleRevisionBeforeStaging(t *testing.T) {
 
 	require.Nil(t, workspace)
 	require.ErrorIs(t, err, common.ErrVolumeWorkspaceConflict)
-	require.Len(t, execCommands, 1)
-	require.Contains(t, execCommands[0], volumeWorkspaceTreeScriptInternal)
+	require.Len(t, execCommands, 2)
+	require.Equal(t, []string{"acfs", "version"}, execCommands[0])
+	require.Equal(t, []string{"acfs", "walk", "--root", "/volume", "--path", "/", "--max-depth", "50", "--max-entries", "10000"}, execCommands[1])
 	require.Zero(t, archiveCopies)
 }
 
@@ -695,43 +591,6 @@ func TestCreateVolumeWorkspaceMutationContainerUsesDedicatedBackupHelper(t *test
 	require.Equal(t, 1, removeCalls)
 }
 
-func TestApplyVolumeWorkspaceChangesTransactionInternalRollsBackEveryMutationStage(t *testing.T) {
-	changes := []volumetypes.WorkspaceFileChange{
-		{Operation: volumetypes.FileOpCreateFolder, RelativePath: "one"},
-		{Operation: volumetypes.FileOpRename, RelativePath: "one", NewName: "two"},
-		{Operation: volumetypes.FileOpDelete, RelativePath: "two", Recursive: true},
-	}
-	applyFailure := errors.New("apply failed")
-	for failureIndex := range changes {
-		t.Run(changes[failureIndex].Operation, func(t *testing.T) {
-			applied := make([]int, 0, failureIndex+1)
-			rollbackCalls := 0
-			err := applyVolumeWorkspaceChangesTransactionInternal(changes, func(index int, _ volumetypes.WorkspaceFileChange) error {
-				applied = append(applied, index)
-				if index == failureIndex {
-					return applyFailure
-				}
-				return nil
-			}, func() error {
-				rollbackCalls++
-				return nil
-			})
-			require.ErrorIs(t, err, applyFailure)
-			require.Equal(t, failureIndex+1, len(applied))
-			require.Equal(t, 1, rollbackCalls)
-		})
-	}
-
-	rollbackFailure := errors.New("rollback failed")
-	err := applyVolumeWorkspaceChangesTransactionInternal(changes, func(_ int, _ volumetypes.WorkspaceFileChange) error {
-		return applyFailure
-	}, func() error {
-		return rollbackFailure
-	})
-	require.ErrorIs(t, err, applyFailure)
-	require.ErrorIs(t, err, rollbackFailure)
-}
-
 func TestVolumeWorkspaceScriptsAgainstToolsImage(t *testing.T) {
 	if os.Getenv("ARCANE_VOLUME_WORKSPACE_DOCKER_TEST") != "1" {
 		t.Skip("set ARCANE_VOLUME_WORKSPACE_DOCKER_TEST=1 to run the helper image integration test")
@@ -766,41 +625,29 @@ func TestVolumeWorkspaceScriptsAgainstToolsImage(t *testing.T) {
 printf child > /volume/folder/nested/child.txt
 printf hidden > /volume/.hidden
 printf alpha > /volume/z.txt`)
-	treeOutput := runInVolume(volumeName, `sh -c "$1" sh "$2" "$3"`, volumeWorkspaceTreeScriptInternal, strings.Repeat("d", 5), strings.Repeat("e", 100))
-	workspace, err := parseVolumeWorkspaceTreeInternal(treeOutput, 100)
-	require.NoError(t, err)
-	require.Equal(t, []string{"folder", "folder/nested", ".hidden", "folder/nested/child.txt", "z.txt"}, []string{
-		workspace.Files[0].RelativePath,
-		workspace.Files[1].RelativePath,
-		workspace.Files[2].RelativePath,
-		workspace.Files[3].RelativePath,
-		workspace.Files[4].RelativePath,
-	})
-	require.True(t, workspace.Files[0].IsDirectory)
-	require.True(t, workspace.Files[1].IsDirectory)
-	require.False(t, workspace.Files[2].IsDirectory)
-	require.False(t, workspace.Files[3].IsDirectory)
-	require.False(t, workspace.Files[4].IsDirectory)
+	treeOutput := runInVolume(volumeName, `acfs walk --root /volume --path / --max-depth 5 --max-entries 100`)
+	require.Contains(t, treeOutput, `"path":"/folder/nested/child.txt"`)
+	require.Contains(t, treeOutput, `"path":"/.hidden"`)
+	require.Contains(t, treeOutput, `"end":true`)
 
-	runInVolume(volumeName, `sh -c "$1" sh folder/nested/child.txt 0`, volumeWorkspaceValidatePathScriptInternal)
-	runInVolume(volumeName, `sh -c "$1" sh missing/path 1`, volumeWorkspaceValidatePathScriptInternal)
-	runInVolume(volumeName, `sh -c "$1" sh nested ''`, volumeWorkspaceCreateFolderScriptInternal)
-	runInVolume(volumeName, `printf one > /tmp/staged
-sh -c "$1" sh nested/a.txt nested /tmp/staged 3`, volumeWorkspaceCreateFileScriptInternal)
+	runInVolume(volumeName, `set -e
+mkdir -p /tmp/staging
+printf one > /tmp/staging/change-0
+printf '%s' '{"changes":[{"operation":"create_folder","path":"/nested"},{"operation":"create_file","path":"/nested/a.txt","stagedName":"change-0","size":3}],"version":2}' > /tmp/staging/manifest.json
+acfs apply --root /volume --staging /tmp/staging --manifest manifest.json >/dev/null`)
 	require.Equal(t, "644 3\n", runInVolume(volumeName, `stat -c '%a %s' /volume/nested/a.txt`))
-	runInVolume(volumeName, `printf updated > /tmp/staged
-sh -c "$1" sh nested/a.txt /tmp/staged 7`, volumeWorkspaceUpdateFileScriptInternal)
-	require.Equal(t, "updated", runInVolume(volumeName, `head -c 7 /volume/nested/a.txt`))
-
-	runInVolume(volumeName, `sh -c "$1" sh nested/a.txt nested/b.txt`, volumeWorkspaceRenameScriptInternal)
-	runInVolume(volumeName, `sh -c "$1" sh dest ''`, volumeWorkspaceCreateFolderScriptInternal)
-	runInVolume(volumeName, `sh -c "$1" sh nested/b.txt dest dest/b.txt`, volumeWorkspaceMoveScriptInternal)
+	runInVolume(volumeName, `set -e
+mkdir -p /tmp/staging
+printf updated > /tmp/staging/change-0
+printf '%s' '{"changes":[{"operation":"update_file","path":"/nested/a.txt","stagedName":"change-0","size":7},{"operation":"rename","path":"/nested/a.txt","targetPath":"/nested/b.txt"},{"operation":"create_folder","path":"/dest"},{"operation":"move","path":"/nested/b.txt","targetPath":"/dest/b.txt"}],"version":2}' > /tmp/staging/manifest.json
+acfs apply --root /volume --staging /tmp/staging --manifest manifest.json >/dev/null`)
+	require.Equal(t, "updated", runInVolume(volumeName, `head -c 7 /volume/dest/b.txt`))
 
 	restored := runInVolume(volumeName, `set -e
 sh -c "$1" sh dest/b.txt /tmp/backup.tar >/dev/null
-sh -c "$2" sh dest/b.txt 0
+acfs remove --root /volume --path /dest/b.txt
 tar -xf /tmp/backup.tar -C /volume/dest
-head -c 7 /volume/dest/b.txt`, volumeWorkspaceBackupCreateScriptInternal, volumeWorkspaceDeleteScriptInternal)
+head -c 7 /volume/dest/b.txt`, volumeWorkspaceBackupCreateScriptInternal)
 	require.Equal(t, "updated", restored)
 
 	runInVolume(volumeName, `mkdir -p "/volume/Test Folder"

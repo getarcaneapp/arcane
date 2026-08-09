@@ -6,8 +6,6 @@ import (
 	"runtime"
 	"testing"
 
-	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -68,78 +66,7 @@ func TestParseIncludes_ExpandsArrayPathForm(t *testing.T) {
 
 }
 
-func TestWriteIncludeFilePermissions(t *testing.T) {
-	// Save original perms
-	origFilePerm := pkgutils.FilePerm
-	origDirPerm := pkgutils.DirPerm
-	defer func() {
-		pkgutils.FilePerm = origFilePerm
-		pkgutils.DirPerm = origDirPerm
-	}()
-
-	projectDir := t.TempDir()
-	includePath := filepath.Join("includes", "config.yaml")
-	content := "services: {}\n"
-
-	t.Run("Uses custom permissions", func(t *testing.T) {
-		pkgutils.FilePerm = 0o600
-		pkgutils.DirPerm = 0o700
-		{
-
-			err := WriteIncludeFile(projectDir, includePath, content)
-			require.NoError(t, err,
-				"WriteIncludeFile() returned error: %v", err)
-		}
-
-		targetPath := filepath.Join(projectDir, includePath)
-		info, err := os.Stat(targetPath)
-
-		require.NoError(t, err,
-			"failed to stat include file: %v", err)
-
-		// On Linux/macOS, we can check permissions. On Windows, it's more limited.
-		if runtime.GOOS != "windows" {
-
-			assert.Equal(t, os.FileMode(0o600), info.Mode().Perm(),
-				"unexpected file permissions: got %o, want %o", info.Mode().Perm(), 0o600)
-
-			dirInfo, err := os.Stat(filepath.Dir(targetPath))
-
-			require.NoError(t, err,
-				"failed to stat include directory: %v", err)
-
-			assert.Equal(t, os.FileMode(0o700), dirInfo.Mode().Perm(),
-				"unexpected directory permissions: got %o, want %o", dirInfo.Mode().Perm(), 0o700)
-
-		}
-	})
-}
-
-func TestWriteIncludeFileCreatesSafeDirectory(t *testing.T) {
-	t.Parallel()
-
-	projectDir := t.TempDir()
-	includePath := filepath.Join("includes", "config.yaml")
-	content := "services: {}\n"
-	{
-
-		err := WriteIncludeFile(projectDir, includePath, content)
-		require.NoError(t, err,
-			"WriteIncludeFile() returned error: %v", err)
-	}
-
-	targetPath := filepath.Join(projectDir, includePath)
-	data, err := os.ReadFile(targetPath)
-
-	require.NoError(t, err,
-		"failed to read include file: %v", err)
-
-	require.Equal(t, content, string(data),
-		"unexpected file content: got %q, want %q", string(data), content)
-
-}
-
-func TestWriteIncludeFileRejectsSymlinkEscape(t *testing.T) {
+func TestValidateIncludePathForWriteRejectsSymlinkEscape(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlink creation requires elevated privileges on Windows")
 	}
@@ -149,16 +76,9 @@ func TestWriteIncludeFileRejectsSymlinkEscape(t *testing.T) {
 	outsideDir := t.TempDir()
 
 	linkPath := filepath.Join(projectDir, "link")
-	{
-		err := os.Symlink(outsideDir, linkPath)
-		require.NoError(t, err,
-			"failed to create symlink: %v", err)
-	}
+	require.NoError(t, os.Symlink(outsideDir, linkPath), "failed to create symlink")
 
 	includePath := filepath.Join("link", "escape.yaml")
-	err := WriteIncludeFile(projectDir, includePath, "malicious: true\n")
-
-	require.Error(t, err,
-		"WriteIncludeFile() succeeded but expected rejection for symlink escape")
-
+	_, err := ValidateIncludePathForWrite(projectDir, includePath)
+	require.Error(t, err, "ValidateIncludePathForWrite() succeeded but expected rejection for symlink escape")
 }

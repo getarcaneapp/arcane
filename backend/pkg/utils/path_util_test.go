@@ -3,7 +3,6 @@ package utils
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -33,8 +32,6 @@ func TestFileTreeRevisionEntryIsStable(t *testing.T) {
 	h := sha256.New()
 	WriteFileTreeRevisionEntry(h, "folder/file.txt", "file", 12, 1234, "-rw-r--r--", false)
 	require.Equal(t, "95f6a8dc033860a753fee2a04a21580d43087967d732a717d3e7a18f88ea4f65", hex.EncodeToString(h.Sum(nil)))
-	require.False(t, IsBinaryFileContent([]byte(strings.Repeat("a", 8))))
-	require.True(t, IsBinaryFileContent([]byte{'a', 0, 'b'}))
 }
 
 func TestSanitizeBrowsePath(t *testing.T) {

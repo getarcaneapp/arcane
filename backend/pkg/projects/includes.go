@@ -8,7 +8,6 @@ import (
 
 	"emperror.dev/errors"
 
-	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/samber/mo"
 	"go.yaml.in/yaml/v4"
 )
@@ -29,7 +28,7 @@ func expandEnvVarsInternal(s string, envMap EnvMap) string {
 //   the compose file points at. Callers must validate containment and symlinks before
 //   reading include content or returning inc.Content to users.
 // - WRITE/DELETE: Restricted to files within the project directory only for security.
-//   Always go through ValidateIncludePathForWrite or WriteIncludeFile.
+//   Always go through ValidateIncludePathForWrite.
 
 type IncludeFile struct {
 	Path         string `json:"path"`
@@ -337,31 +336,4 @@ func ValidateIncludePathForWrite(projectDir, includePath string) (string, error)
 	}
 
 	return absFullPath, nil
-}
-
-// WriteIncludeFile writes content to an include file path
-func WriteIncludeFile(projectDir, includePath, content string) error {
-	// Get validated absolute path - only allows writes within project
-	validatedPath, err := ValidateIncludePathForWrite(projectDir, includePath)
-	if err != nil {
-		return err
-	}
-
-	dir := filepath.Dir(validatedPath)
-	if dir == "" || dir == "." {
-		return errors.Errorf("invalid include path: cannot create directory '%s'", dir)
-	}
-
-	// Only create directory if it doesn't exist
-	if _, err := os.Stat(dir); errors.Is(err, os.ErrNotExist) {
-		if err := os.MkdirAll(dir, pkgutils.DirPerm); err != nil {
-			return errors.WrapIf(err, "failed to create directory")
-		}
-	}
-
-	if err := os.WriteFile(validatedPath, []byte(content), pkgutils.FilePerm); err != nil {
-		return errors.WrapIf(err, "failed to write include file")
-	}
-
-	return nil
 }

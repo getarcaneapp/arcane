@@ -192,7 +192,7 @@ func (h *BuildWorkspaceHandler) UploadFile(ctx context.Context, input *UploadBui
 	}
 	defer func() { _ = file.Close() }()
 
-	if err := h.service.UploadFile(ctx, input.Path, file, fileHeader.Filename); err != nil {
+	if err := h.service.UploadFile(ctx, input.Path, file, fileHeader.Filename, fileHeader.Size); err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 	return &base.ApiResponse[base.MessageResponse]{

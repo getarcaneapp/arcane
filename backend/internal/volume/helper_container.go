@@ -3,6 +3,7 @@ package volume
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"strings"
@@ -21,6 +22,7 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
+	acfstypes "go.getarcane.app/acfs/types"
 )
 
 // volumeHelper tracks a reused helper container and the last
@@ -31,6 +33,36 @@ type volumeHelper struct {
 	id         string
 	lastUsedAt time.Time
 	inUse      int
+	protocol   int
+}
+
+func (s *VolumeService) requireVolumeHelperACFSInternal(ctx context.Context, volumeName, containerID string) error {
+	s.helperMu.Lock()
+	helper := s.helperByVolume[volumeName]
+	if helper != nil && helper.id == containerID && helper.protocol >= acfstypes.ProtocolVersion {
+		s.helperMu.Unlock()
+		return nil
+	}
+	s.helperMu.Unlock()
+
+	stdout, stderr, err := s.execInContainerInternal(ctx, containerID, []string{"acfs", "version"})
+	if err != nil {
+		return errors.WrapIf(err, "volume workspace requires an ACFS-capable tools image: "+strings.TrimSpace(stderr))
+	}
+	var response acfstypes.VersionResponse
+	if err := json.Unmarshal([]byte(stdout), &response); err != nil {
+		return errors.WrapIf(err, "parse ACFS tools-image capability")
+	}
+	if response.Protocol < acfstypes.ProtocolVersion {
+		return errors.Errorf("volume workspace requires ACFS protocol %d, tools image provides protocol %d", acfstypes.ProtocolVersion, response.Protocol)
+	}
+
+	s.helperMu.Lock()
+	if helper = s.helperByVolume[volumeName]; helper != nil && helper.id == containerID {
+		helper.protocol = response.Protocol
+	}
+	s.helperMu.Unlock()
+	return nil
 }
 
 const volumeHelperImage = volumehelper.DefaultToolsImage

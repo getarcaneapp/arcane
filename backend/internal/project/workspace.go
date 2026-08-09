@@ -14,9 +14,12 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	acfsutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/acfs"
 	workspacepkg "github.com/getarcaneapp/arcane/backend/v2/pkg/workspace"
 	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
 	workspacetypes "github.com/getarcaneapp/arcane/types/v2/workspace"
+	"go.getarcane.app/acfs"
+	acfstypes "go.getarcane.app/acfs/types"
 )
 
 func (s *ProjectService) GetProjectWorkspace(ctx context.Context, projectID string) (*workspacetypes.Workspace, error) {
@@ -46,7 +49,7 @@ func (s *ProjectService) GetProjectWorkspace(ctx context.Context, projectID stri
 }
 
 func (s *ProjectService) GetProjectWorkspaceFile(ctx context.Context, projectID, relativePath string) (*workspacetypes.FileContent, error) {
-	proj, rel, fullPath, info, err := s.resolveProjectWorkspacePathInternal(ctx, projectID, relativePath)
+	proj, rel, fullPath, entry, err := s.resolveProjectWorkspacePathInternal(ctx, projectID, relativePath)
 	if err != nil {
 		return nil, err
 	}
@@ -54,26 +57,31 @@ func (s *ProjectService) GetProjectWorkspaceFile(ctx context.Context, projectID,
 	response := &workspacetypes.FileContent{
 		Path:         fullPath,
 		RelativePath: rel,
-		Name:         filepath.Base(fullPath),
-		Size:         info.Size(),
+		Name:         entry.Name,
+		Size:         entry.Size,
 	}
-	if info.IsDir() {
+	if entry.IsDirectory {
 		return nil, common.Classify(common.ErrProjectWorkspaceBadRequest, errors.New("workspace path is a directory"))
 	}
-	if info.Mode()&os.ModeSymlink != 0 {
+	if entry.IsSymlink {
 		response.ReadOnlyReason = workspacetypes.FileReadOnlySymlink
 		return response, nil
 	}
-	if !info.Mode().IsRegular() {
+	if !acfsutils.IsRegular(entry) {
 		response.ReadOnlyReason = workspacetypes.FileReadOnlySpecial
 		return response, nil
 	}
 	maxBytes := workspacepkg.MaxFileSizeBytes(s.config.ProjectWorkspaceMaxFileSizeMB)
-	if info.Size() > maxBytes {
+	if entry.Size > maxBytes {
 		response.ReadOnlyReason = workspacetypes.FileReadOnlyTooLarge
 		return response, nil
 	}
-	content, err := os.ReadFile(fullPath)
+	reader, _, err := acfs.OpenRead(ctx, proj.Path, "/"+rel, maxBytes)
+	if err != nil {
+		return nil, classifyProjectWorkspaceACFSErrorInternal(err, "read project workspace file")
+	}
+	defer func() { _ = reader.Close() }()
+	content, err := io.ReadAll(reader)
 	if err != nil {
 		return nil, errors.WrapIf(err, "read project workspace file")
 	}
@@ -88,35 +96,18 @@ func (s *ProjectService) GetProjectWorkspaceFile(ctx context.Context, projectID,
 }
 
 func (s *ProjectService) DownloadProjectWorkspaceFile(ctx context.Context, projectID, relativePath string) (io.ReadCloser, int64, string, error) {
-	proj, rel, _, info, err := s.resolveProjectWorkspacePathInternal(ctx, projectID, relativePath)
+	proj, rel, _, entry, err := s.resolveProjectWorkspacePathInternal(ctx, projectID, relativePath)
 	if err != nil {
 		return nil, 0, "", err
 	}
-	if info.IsDir() {
+	if entry.IsDirectory {
 		return nil, 0, "", common.Classify(common.ErrProjectWorkspaceBadRequest, errors.New("workspace path is a directory"))
 	}
-	root, err := os.OpenRoot(proj.Path)
+	file, size, err := acfs.OpenRead(ctx, proj.Path, "/"+rel, 0)
 	if err != nil {
-		return nil, 0, "", errors.WrapIf(err, "open project workspace")
+		return nil, 0, "", classifyProjectWorkspaceACFSErrorInternal(err, "open project workspace file")
 	}
-	file, err := root.Open(filepath.ToSlash(rel))
-	if err != nil {
-		_ = root.Close()
-		return nil, 0, "", errors.WrapIf(err, "open project workspace file")
-	}
-	return &projectWorkspaceDownloadInternal{ReadCloser: file, root: root}, info.Size(), filepath.Base(rel), nil
-}
-
-type projectWorkspaceDownloadInternal struct {
-	io.ReadCloser
-
-	root *os.Root
-}
-
-func (d *projectWorkspaceDownloadInternal) Close() error {
-	fileErr := d.ReadCloser.Close()
-	rootErr := d.root.Close()
-	return errors.Combine(fileErr, rootErr)
+	return file, size, filepath.Base(rel), nil
 }
 
 func (s *ProjectService) UpdateProjectWorkspace(ctx context.Context, projectID string, manifest projecttypes.WorkspaceUpdateManifest, uploads map[int][]byte, user models.User) (*workspacetypes.Workspace, error) {
@@ -163,14 +154,14 @@ func (s *ProjectService) UpdateProjectWorkspace(ctx context.Context, projectID s
 	return s.GetProjectWorkspace(ctx, projectID)
 }
 
-func (s *ProjectService) resolveProjectWorkspacePathInternal(ctx context.Context, projectID, relativePath string) (*models.Project, string, string, os.FileInfo, error) {
+func (s *ProjectService) resolveProjectWorkspacePathInternal(ctx context.Context, projectID, relativePath string) (*models.Project, string, string, acfstypes.Entry, error) {
 	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
-		return nil, "", "", nil, err
+		return nil, "", "", acfstypes.Entry{}, err
 	}
 	rel, err := utils.NormalizeRelativePath(relativePath)
 	if err != nil {
-		return nil, "", "", nil, common.Classify(common.ErrProjectWorkspaceForbidden, errors.WrapIf(err, "invalid project workspace path"))
+		return nil, "", "", acfstypes.Entry{}, common.Classify(common.ErrProjectWorkspaceForbidden, errors.WrapIf(err, "invalid project workspace path"))
 	}
 	composeFileName := projects.DefaultComposeFileName
 	if composeFile, resolveErr := s.ResolveProjectComposeFile(ctx, proj); resolveErr == nil {
@@ -179,17 +170,30 @@ func (s *ProjectService) resolveProjectWorkspacePathInternal(ctx context.Context
 	rootName, _, _ := strings.Cut(rel, "/")
 	protected := projects.ProtectedProjectFilePaths(composeFileName)
 	if protected[rel] || protected[rootName] {
-		return nil, "", "", nil, common.Classify(common.ErrProjectWorkspaceForbidden, errors.New("project configuration is not part of the workspace"))
+		return nil, "", "", acfstypes.Entry{}, common.Classify(common.ErrProjectWorkspaceForbidden, errors.New("project configuration is not part of the workspace"))
 	}
 	fullPath := filepath.Join(proj.Path, filepath.FromSlash(rel))
-	info, err := os.Lstat(fullPath)
+	entry, err := acfs.Stat(ctx, proj.Path, "/"+rel)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, "", "", nil, common.Classify(common.ErrProjectWorkspaceNotFound, errors.New("project workspace file not found"))
+			return nil, "", "", acfstypes.Entry{}, common.Classify(common.ErrProjectWorkspaceNotFound, errors.New("project workspace file not found"))
 		}
-		return nil, "", "", nil, errors.WrapIf(err, "inspect project workspace file")
+		return nil, "", "", acfstypes.Entry{}, classifyProjectWorkspaceACFSErrorInternal(err, "inspect project workspace file")
 	}
-	return proj, rel, fullPath, info, nil
+	return proj, rel, fullPath, entry, nil
+}
+
+func classifyProjectWorkspaceACFSErrorInternal(err error, operation string) error {
+	switch {
+	case errors.Is(err, acfs.ErrInvalidPath),
+		errors.Is(err, acfs.ErrOutsideRoot),
+		errors.Is(err, acfs.ErrSymlinkLoop):
+		return common.Classify(common.ErrProjectWorkspaceForbidden, errors.WrapIf(err, operation))
+	case os.IsNotExist(err):
+		return common.Classify(common.ErrProjectWorkspaceNotFound, errors.New("project workspace file not found"))
+	default:
+		return errors.WrapIf(err, operation)
+	}
 }
 
 func (s *ProjectService) projectWorkspaceApplyOptionsInternal(ctx context.Context, proj *models.Project, expectedRevision string) projects.ProjectWorkspaceApplyOptions {
