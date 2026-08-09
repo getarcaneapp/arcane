@@ -1380,6 +1380,7 @@
   "user_example_com_placeholder": "user@example.com",
   "users_email_description": "Email пользователя",
   "users_username_description": "Уникальное имя пользователя",
+  "users_username_no_at": "Имя пользователя не может содержать символ @",
   "events_title": "Журнал событий",
   "events_subtitle": "Следите за событиями, которые происходят в Arcane.",
   "events_total": "Всего событий",
