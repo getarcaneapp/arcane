@@ -176,7 +176,12 @@ func (w *projectWorkspaceTreeWalkerInternal) visit(rel string, entry fs.DirEntry
 	case !info.Mode().IsRegular():
 		kind = "special"
 	}
-	pkgutils.WriteFileTreeRevisionEntry(w.revisionHash, rel, kind, info.Size(), info.ModTime().UnixNano(), info.Mode().String(), false)
+	// The revision is structural (path + kind only): running containers write
+	// into their own project directory continuously (logs, certs, app state),
+	// so keying on mtime/size would invalidate every workspace draft for a
+	// live project and make saves 409 forever (#3199). Structural changes —
+	// files appearing, disappearing, or changing kind — still conflict.
+	pkgutils.WriteFileTreeRevisionEntry(w.revisionHash, rel, kind, 0, 0, "", false)
 	w.entryCount++
 
 	size := info.Size()
@@ -222,13 +227,18 @@ func classifyProjectWorkspaceFileInternal(filePath string, size, maxFileSizeByte
 	return true, ""
 }
 
+// ApplyProjectWorkspaceChanges applies changes in order without internal
+// rollback: on any error, earlier changes remain on disk. Callers own
+// atomicity — ProjectService.UpdateProjectWorkspace wraps every save in
+// BackupProjectUpdateScope / RestoreProjectUpdateBackup, and project creation
+// removes the whole directory on failure.
 func ApplyProjectWorkspaceChanges(projectPath string, changes []project.WorkspaceFileChange, uploads map[int][]byte, opts ProjectWorkspaceApplyOptions) error {
 	if opts.MaxFileSizeBytes <= 0 {
 		opts.MaxFileSizeBytes = workspacepkg.MaxFileSizeBytes(workspacepkg.DefaultMaxFileSizeMB)
 	}
 	uploadReferences := make([]workspacepkg.UploadReference, 0, len(changes))
 	for _, change := range changes {
-		uploadReferences = append(uploadReferences, workspacepkg.UploadReference{Operation: change.Operation, UploadIndex: change.UploadIndex})
+		uploadReferences = append(uploadReferences, workspacepkg.UploadReference{Operation: change.Operation, UploadIndex: change.UploadIndex, BaselineIndex: change.BaselineIndex})
 	}
 	if err := workspacepkg.ValidateUploadIndices(uploadReferences, len(uploads), project.FileOpCreateFile, project.FileOpUpdateFile); err != nil {
 		return err
@@ -293,7 +303,11 @@ func applyWorkspaceFileChangeInternal(root *os.Root, protected map[string]bool, 
 	case project.FileOpCreateFolder:
 		return createProjectWorkspaceFolderInternal(root, protected, rel)
 	case project.FileOpUpdateFile:
-		return updateProjectWorkspaceFileInternal(root, protected, rel, uploads[*change.UploadIndex], maxFileSizeBytes)
+		var baseline []byte
+		if change.BaselineIndex != nil {
+			baseline = uploads[*change.BaselineIndex]
+		}
+		return updateProjectWorkspaceFileInternal(root, protected, rel, uploads[*change.UploadIndex], baseline, change.BaselineIndex != nil, maxFileSizeBytes)
 	case project.FileOpRename:
 		newName, err := pkgutils.ValidateFileName(change.NewName)
 		if err != nil {
@@ -362,7 +376,7 @@ func createProjectWorkspaceFolderInternal(root *os.Root, protected map[string]bo
 	return nil
 }
 
-func updateProjectWorkspaceFileInternal(root *os.Root, protected map[string]bool, rel string, content []byte, maxFileSizeBytes int64) error {
+func updateProjectWorkspaceFileInternal(root *os.Root, protected map[string]bool, rel string, content, baseline []byte, baselineSet bool, maxFileSizeBytes int64) error {
 	if err := ensureWritableProjectRelPathInternal(protected, rel); err != nil {
 		return err
 	}
@@ -387,10 +401,36 @@ func updateProjectWorkspaceFileInternal(root *os.Root, protected map[string]bool
 		return errors.WrapIf(ErrProjectWorkspaceSymlinkPath, "symlink files are not supported")
 	}
 
+	// The workspace revision is structural only, so an external edit to this
+	// same file would otherwise be silently overwritten. The client uploads
+	// the content its draft was based on; a mismatch with the current on-disk
+	// content is a real per-file conflict. Checked here, in apply order, so an
+	// earlier rename/move in the same manifest has already landed and the
+	// comparison targets the right path. The read is capped just past the
+	// baseline length: a longer on-disk file differs by definition.
+	if baselineSet {
+		current, err := readProjectWorkspaceFileLimitedInternal(root, rel, int64(len(baseline))+1)
+		if err != nil {
+			return errors.WrapIf(err, "read project workspace file")
+		}
+		if !bytes.Equal(current, baseline) {
+			return errors.WrapIf(ErrProjectWorkspaceRevisionConflict, "file content changed since it was loaded")
+		}
+	}
+
 	if err := root.WriteFile(rel, content, pkgutils.FilePerm); err != nil {
 		return errors.WrapIf(err, "update project workspace file")
 	}
 	return nil
+}
+
+func readProjectWorkspaceFileLimitedInternal(root *os.Root, rel string, maxBytes int64) ([]byte, error) {
+	f, err := root.Open(rel)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	return io.ReadAll(io.LimitReader(f, maxBytes))
 }
 
 func renameProjectWorkspacePathInternal(root *os.Root, protected map[string]bool, rel, newName string) error {

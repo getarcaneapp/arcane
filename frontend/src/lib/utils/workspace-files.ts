@@ -28,7 +28,9 @@ export function buildWorkspaceMultipartUpdate<T extends WorkspaceDisplayFileChan
 	fileContents: Record<string, string>,
 	loadedFileContents: Record<string, string>
 ): { fileChanges: T[]; files: File[] } {
-	const fileChanges = draftChanges.map(({ uploadIndex: _uploadIndex, ...change }) => ({ ...change }) as T);
+	const fileChanges = draftChanges.map(
+		({ uploadIndex: _uploadIndex, baselineIndex: _baselineIndex, ...change }) => ({ ...change }) as T
+	);
 	const files: File[] = [];
 	const changedPaths = Object.keys(fileContents).filter(
 		(relativePath) => fileContents[relativePath] !== loadedFileContents[relativePath]
@@ -59,6 +61,17 @@ export function buildWorkspaceMultipartUpdate<T extends WorkspaceDisplayFileChan
 			fileChanges.push(change);
 		}
 		if (change.uploadIndex === undefined) stageText(change, fileContents[relativePath] ?? '');
+	}
+
+	// Every update also carries the content the draft was based on, so the
+	// backend can reject a save that would overwrite a concurrent external
+	// edit to the same file.
+	for (const change of fileChanges) {
+		if (change.operation !== 'update_file') continue;
+		const baseline = loadedFileContents[change.relativePath];
+		if (baseline === undefined) continue;
+		change.baselineIndex = files.length;
+		files.push(new File([baseline], workspaceFileBasename(change.relativePath), { type: 'text/plain' }));
 	}
 
 	return { fileChanges, files };

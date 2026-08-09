@@ -18,6 +18,11 @@ type WorkspaceFileChange struct {
 	NewName       string `json:"newName,omitempty"`
 	NewParentPath string `json:"newParentPath,omitempty"`
 	UploadIndex   *int   `json:"uploadIndex,omitempty" minimum:"0"`
+	// BaselineIndex references an uploaded copy of the content an update_file
+	// change was drafted against. The volume workspace revision is already
+	// content-aware, so the baseline is accepted for API symmetry with
+	// project workspaces but not separately compared.
+	BaselineIndex *int   `json:"baselineIndex,omitempty" minimum:"0"`
 	BackupID      string `json:"backupId,omitempty"`
 	Recursive     bool   `json:"recursive,omitempty"`
 }

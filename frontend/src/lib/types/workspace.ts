@@ -40,6 +40,7 @@ export interface WorkspaceFileChange {
 	newName?: string;
 	newParentPath?: string;
 	uploadIndex?: number;
+	baselineIndex?: number;
 	recursive?: boolean;
 }
 

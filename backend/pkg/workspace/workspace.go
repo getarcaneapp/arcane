@@ -11,8 +11,9 @@ import (
 const DefaultMaxFileSizeMB = 10
 
 type UploadReference struct {
-	Operation   string
-	UploadIndex *int
+	Operation     string
+	UploadIndex   *int
+	BaselineIndex *int
 }
 
 func EffectiveMaxFileSizeMB(configured int) int {
@@ -72,6 +73,22 @@ func ValidateUploadIndices(changes []UploadReference, uploadCount int, createFil
 		}
 		if _, exists := used[index]; exists {
 			return errors.Errorf("uploadIndex %d is duplicated", index)
+		}
+		used[index] = struct{}{}
+	}
+	for _, change := range changes {
+		if change.BaselineIndex == nil {
+			continue
+		}
+		if change.Operation != updateFileOperation {
+			return errors.Errorf("baselineIndex is not allowed for %s", change.Operation)
+		}
+		index := *change.BaselineIndex
+		if index < 0 || index >= uploadCount {
+			return errors.Errorf("baselineIndex %d is out of range", index)
+		}
+		if _, exists := used[index]; exists {
+			return errors.Errorf("baselineIndex %d is duplicated", index)
 		}
 		used[index] = struct{}{}
 	}

@@ -562,7 +562,7 @@ func (s *VolumeService) UpdateVolumeWorkspace(ctx context.Context, volumeName st
 	}
 	uploadReferences := make([]workspacepkg.UploadReference, 0, len(manifest.FileChanges))
 	for _, change := range manifest.FileChanges {
-		uploadReferences = append(uploadReferences, workspacepkg.UploadReference{Operation: change.Operation, UploadIndex: change.UploadIndex})
+		uploadReferences = append(uploadReferences, workspacepkg.UploadReference{Operation: change.Operation, UploadIndex: change.UploadIndex, BaselineIndex: change.BaselineIndex})
 		if err := validateVolumeWorkspaceFileChangeInternal(change); err != nil {
 			return nil, common.Classify(common.ErrVolumeWorkspaceBadRequest, err)
 		}

@@ -38,7 +38,14 @@ type FileChange struct {
 	NewName       string `json:"newName,omitempty"`
 	NewParentPath string `json:"newParentPath,omitempty"`
 	UploadIndex   *int   `json:"uploadIndex,omitempty" minimum:"0"`
-	Recursive     bool   `json:"recursive,omitempty"`
+	// BaselineIndex references an uploaded copy of the content this
+	// update_file change was drafted against. When set, the apply conflicts
+	// if the on-disk content no longer matches it, so a concurrent edit to
+	// the same file is not silently overwritten. Deliberately optional:
+	// imperative clients like the CLI overwrite without ever reading the
+	// file (last-write-wins), while the web editor always sends it.
+	BaselineIndex *int `json:"baselineIndex,omitempty" minimum:"0"`
+	Recursive     bool `json:"recursive,omitempty"`
 }
 
 type Workspace struct {

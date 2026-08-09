@@ -391,3 +391,58 @@ func TestProtectedProjectFilePaths_IncludesComposeOverrideCandidates(t *testing.
 		assert.Truef(t, protected[candidate], "expected %q to be protected", candidate)
 	}
 }
+
+func TestApplyProjectWorkspaceChanges_ContentChurnDoesNotConflict(t *testing.T) {
+	projectDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte("services: {}\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "app.log"), []byte("line1\n"), 0o644))
+
+	_, revision, _, err := ReadProjectWorkspace(projectDir, 3, "", "compose.yaml", 0, 0)
+	require.NoError(t, err)
+
+	// A running container appending to files in its own project directory
+	// (changed size + mtime) must not invalidate the workspace draft (#3199).
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "app.log"), []byte("line1\nline2\n"), 0o644))
+
+	err = ApplyProjectWorkspaceChanges(projectDir, []project.WorkspaceFileChange{
+		{Operation: project.FileOpCreateFile, RelativePath: "notes.txt", UploadIndex: new(0)},
+	}, map[int][]byte{0: []byte("hello")}, ProjectWorkspaceApplyOptions{ComposeFileName: "compose.yaml", ExpectedRevision: revision, MaxDepth: 3})
+	require.NoError(t, err)
+	require.FileExists(t, filepath.Join(projectDir, "notes.txt"))
+
+	// Structural drift (notes.txt now exists) does conflict against the old revision.
+	err = ApplyProjectWorkspaceChanges(projectDir, []project.WorkspaceFileChange{
+		{Operation: project.FileOpDelete, RelativePath: "app.log"},
+	}, nil, ProjectWorkspaceApplyOptions{ComposeFileName: "compose.yaml", ExpectedRevision: revision, MaxDepth: 3})
+	require.ErrorIs(t, err, ErrProjectWorkspaceRevisionConflict)
+}
+
+func TestApplyProjectWorkspaceChanges_BaselineGuardsConcurrentEdit(t *testing.T) {
+	projectDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte("services: {}\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "config.txt"), []byte("original\n"), 0o644))
+
+	_, revision, _, err := ReadProjectWorkspace(projectDir, 3, "", "compose.yaml", 0, 0)
+	require.NoError(t, err)
+
+	// The structural revision still matches after an external content edit,
+	// but the uploaded baseline no longer matches the on-disk content: the
+	// stale draft must conflict instead of silently overwriting the newer file.
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "config.txt"), []byte("external newer edit\n"), 0o644))
+	err = ApplyProjectWorkspaceChanges(projectDir, []project.WorkspaceFileChange{
+		{Operation: project.FileOpUpdateFile, RelativePath: "config.txt", UploadIndex: new(0), BaselineIndex: new(1)},
+	}, map[int][]byte{0: []byte("stale draft\n"), 1: []byte("original\n")}, ProjectWorkspaceApplyOptions{ComposeFileName: "compose.yaml", ExpectedRevision: revision, MaxDepth: 3})
+	require.ErrorIs(t, err, ErrProjectWorkspaceRevisionConflict)
+	content, err := os.ReadFile(filepath.Join(projectDir, "config.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "external newer edit\n", string(content))
+
+	// A baseline matching the current on-disk content saves normally.
+	err = ApplyProjectWorkspaceChanges(projectDir, []project.WorkspaceFileChange{
+		{Operation: project.FileOpUpdateFile, RelativePath: "config.txt", UploadIndex: new(0), BaselineIndex: new(1)},
+	}, map[int][]byte{0: []byte("fresh draft\n"), 1: []byte("external newer edit\n")}, ProjectWorkspaceApplyOptions{ComposeFileName: "compose.yaml", ExpectedRevision: revision, MaxDepth: 3})
+	require.NoError(t, err)
+	content, err = os.ReadFile(filepath.Join(projectDir, "config.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "fresh draft\n", string(content))
+}
