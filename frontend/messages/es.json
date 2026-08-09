@@ -1380,6 +1380,7 @@
   "user_example_com_placeholder": "usuario@ejemplo.com",
   "users_email_description": "Dirección de correo para el usuario",
   "users_username_description": "Nombre de usuario único para el usuario",
+  "users_username_no_at": "El nombre de usuario no puede contener el símbolo @",
   "events_title": "Log de Eventos",
   "events_subtitle": "Seguimiento de los acontecimientos que han tenido lugar en Arcano.",
   "events_total": "Total de eventos",
