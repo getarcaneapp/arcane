@@ -2087,7 +2087,7 @@ services:
 
 }
 
-func TestProjectService_CreateProject_RejectsExternalInclude(t *testing.T) {
+func TestProjectService_CreateProject_AllowsExternalInclude(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
 
@@ -2099,31 +2099,26 @@ func TestProjectService_CreateProject_RejectsExternalInclude(t *testing.T) {
 
 	eventService := event.NewEventService(db, nil, nil)
 	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
-	require.NoError(t, os.WriteFile(filepath.Join(projectsDir, "metadata.yaml"), []byte("services: {}\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectsDir, "shared.yaml"), []byte("services: {}\n"), 0o644))
 
 	compose := `include:
-  - ../metadata.yaml
+  - ../shared.yaml
 services:
   app:
     image: nginx:alpine
 `
 
-	project, err := svc.CreateProject(ctx, "evil", compose, nil, projecttypes.CreateProjectWorkspaceManifest{}, nil, models.User{
+	project, err := svc.CreateProject(ctx, "with-external-include", compose, nil, projecttypes.CreateProjectWorkspaceManifest{}, nil, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
-	require.Error(t, err)
-	assert.Nil(t, project)
-	assert.Contains(t, err.Error(), "invalid compose file")
-	assert.NoDirExists(t, filepath.Join(projectsDir, "evil"))
-	assert.FileExists(t, filepath.Join(projectsDir, "metadata.yaml"))
-
-	var count int64
-	require.NoError(t, db.Model(&models.Project{}).Where("name = ?", "evil").Count(&count).Error)
-	assert.Zero(t, count)
+	require.NoError(t, err)
+	require.NotNil(t, project)
+	assert.DirExists(t, filepath.Join(projectsDir, "with-external-include"))
+	assert.FileExists(t, filepath.Join(projectsDir, "shared.yaml"))
 }
 
-func TestProjectService_CreateProject_RejectsArrayPathInclude(t *testing.T) {
+func TestProjectService_UpdateProject_AllowsExternalInclude(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
 
@@ -2135,30 +2130,38 @@ func TestProjectService_CreateProject_RejectsArrayPathInclude(t *testing.T) {
 
 	eventService := event.NewEventService(db, nil, nil)
 	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
-	require.NoError(t, os.WriteFile(filepath.Join(projectsDir, "metadata.yaml"), []byte("services: {}\n"), 0o644))
+
+	dirName := "external-include"
+	projectPath := filepath.Join(projectsDir, dirName)
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectsDir, "shared.yaml"), []byte("services: {}\n"), 0o644))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-external-include"},
+		Name:      "external-include",
+		DirName:   &dirName,
+		Path:      projectPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	user := models.User{BaseModel: models.BaseModel{ID: "u1"}, Username: "tester"}
 
 	compose := `include:
-  - path:
-      - ./local.yaml
-      - ../metadata.yaml
+  - ../shared.yaml
 services:
   app:
     image: nginx:alpine
 `
+	updated, err := svc.UpdateProject(ctx, project.ID, nil, ptr(compose), nil, nil, user)
+	require.NoError(t, err)
+	require.NotNil(t, updated)
 
-	project, err := svc.CreateProject(ctx, "evil-array", compose, nil, projecttypes.CreateProjectWorkspaceManifest{}, nil, models.User{
-		BaseModel: models.BaseModel{ID: "u1"},
-		Username:  "tester",
-	})
-	require.Error(t, err)
-	assert.Nil(t, project)
-	assert.Contains(t, err.Error(), "invalid compose file")
-	assert.NoDirExists(t, filepath.Join(projectsDir, "evil-array"))
-	assert.FileExists(t, filepath.Join(projectsDir, "metadata.yaml"))
-
-	var count int64
-	require.NoError(t, db.Model(&models.Project{}).Where("name = ?", "evil-array").Count(&count).Error)
-	assert.Zero(t, count)
+	override := `include:
+  - ../shared.yaml
+`
+	_, err = svc.UpdateProject(ctx, project.ID, nil, nil, nil, ptr(override), user)
+	require.NoError(t, err)
 }
 
 func TestProjectService_CreateProject_CommitsWorkspaceAndConfigurationTogether(t *testing.T) {

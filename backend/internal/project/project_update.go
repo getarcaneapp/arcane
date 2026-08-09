@@ -522,22 +522,14 @@ func validateComposeContentForUpdate(ctx context.Context, projectsDirectory, pro
 		return envErr
 	}
 
-	if err := projects.ValidateIncludePathsForContent(projectPath, composeContent, fullEnvMap); err != nil {
-		return err
-	}
-
 	validationProjectName := projects.NormalizeProjectName(projectName)
 	configFiles := []composetypes.ConfigFile{
 		{Filename: filepath.Join(projectPath, "compose.yaml"), Content: []byte(composeContent)},
 	}
 	// When an override is supplied, validate the *merged* config as `docker
-	// compose` would deploy it. Overrides can add services and introduce their
-	// own include: paths, so they get the same traversal check as the base and
-	// are layered on top (listed after the base so the override wins).
+	// compose` would deploy it. Overrides can add services and are layered on
+	// top (listed after the base so the override wins).
 	if overrideContent != nil {
-		if err := projects.ValidateIncludePathsForContent(projectPath, *overrideContent, fullEnvMap); err != nil {
-			return err
-		}
 		overrideName := strings.TrimSpace(overrideFileName)
 		if overrideName == "" {
 			overrideName = projects.DefaultComposeOverrideFileName
