@@ -428,6 +428,11 @@ type Update struct {
 	// Required: false
 	ProxyRequestTimeout *string `json:"proxyRequestTimeout,omitempty"`
 
+	// DeployWaitTimeout is the timeout waiting for services to become healthy or complete during a deploy in seconds.
+	//
+	// Required: false
+	DeployWaitTimeout *string `json:"deployWaitTimeout,omitempty"`
+
 	// AutoUpdateExcludedContainers is a comma-separated list of container names to exclude from auto-update.
 	//
 	// Required: false

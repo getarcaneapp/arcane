@@ -291,6 +291,7 @@ var expectedSettingOverrideKeys = []string{
 	"buildsDirectory",
 	"defaultDeployPullPolicy",
 	"defaultShell",
+	"deployWaitTimeout",
 	"depotProjectId",
 	"depotToken",
 	"diskUsagePath",

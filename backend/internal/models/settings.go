@@ -187,6 +187,7 @@ type Settings struct {
 	HTTPClientTimeout      SettingVariable `key:"httpClientTimeout,envOverride" meta:"label=HTTP Client Timeout;type=number;keywords=http,client,timeout,seconds,api,request;category=timeouts;description=Default timeout for HTTP requests in seconds (default: 30)"`
 	RegistryTimeout        SettingVariable `key:"registryTimeout,envOverride" meta:"label=Registry Timeout;type=number;keywords=registry,timeout,seconds,docker,auth;category=timeouts;description=Timeout for container registry operations in seconds (default: 30)"`
 	ProxyRequestTimeout    SettingVariable `key:"proxyRequestTimeout,envOverride" meta:"label=Proxy Request Timeout;type=number;keywords=proxy,request,timeout,seconds,forward;category=timeouts;description=Timeout for proxied requests in seconds (default: 60)"`
+	DeployWaitTimeout      SettingVariable `key:"deployWaitTimeout,envOverride" meta:"label=Deploy Wait Timeout;type=number;keywords=deploy,compose,up,wait,healthy,depends_on,timeout,seconds;category=timeouts;description=Timeout waiting for services to become healthy or complete during a deploy in seconds (default: 600 = 10 minutes)"`
 }
 
 func (SettingVariable) TableName() string {

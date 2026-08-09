@@ -276,6 +276,7 @@ func DefaultSettingsConfig() *models.Settings {
 		HTTPClientTimeout:      models.SettingVariable{Value: "30"},
 		RegistryTimeout:        models.SettingVariable{Value: "30"},
 		ProxyRequestTimeout:    models.SettingVariable{Value: "60"},
+		DeployWaitTimeout:      models.SettingVariable{Value: "600"},
 		BuildProvider:          models.SettingVariable{Value: "local"},
 		BuildTimeout:           models.SettingVariable{Value: "1800"},
 		DepotProjectId:         models.SettingVariable{Value: ""},

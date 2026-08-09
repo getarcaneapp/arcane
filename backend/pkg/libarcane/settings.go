@@ -21,6 +21,7 @@ var timeoutSettingKeys = []string{
 	"httpClientTimeout",
 	"registryTimeout",
 	"proxyRequestTimeout",
+	"deployWaitTimeout",
 	"trivyResourceLimitsEnabled",
 	"trivyCpuLimit",
 	"trivyMemoryLimitMb",

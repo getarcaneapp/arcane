@@ -13,6 +13,9 @@ const (
 	DefaultRegistry        = 30 * time.Second
 	DefaultProxyRequest    = 60 * time.Second
 	DefaultBuildTimeout    = 30 * time.Minute
+	// DefaultDeployWait bounds how long compose up waits for services to become
+	// healthy or complete (depends_on conditions) before the deploy fails.
+	DefaultDeployWait = 10 * time.Minute
 	// DefaultImageUpdateScan bounds an entire batch image update check
 	// end-to-end; individual registry RPCs are separately bounded, but the
 	// aggregate scan needs its own ceiling so a wedged batch cannot hold its

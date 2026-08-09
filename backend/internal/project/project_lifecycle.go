@@ -148,7 +148,7 @@ func (s *ProjectService) UpdateProjectServices(ctx context.Context, projectID st
 	}
 
 	// 5. Up specific services
-	if err := composeUpProjectServicesInternal(ctx, compProj, servicesToUpdate, false, true, false, s.composeRegistryAuthConfigsInternal(ctx)); err != nil {
+	if err := composeUpProjectServicesInternal(ctx, compProj, servicesToUpdate, false, true, false, s.composeRegistryAuthConfigsInternal(ctx), s.deployWaitTimeoutInternal()); err != nil {
 		s.restoreProjectStatusAfterFailedDeployInternal(ctx, projectID)
 		return errors.WrapIf(err, "failed to up services")
 	}
@@ -244,6 +244,12 @@ func (s *ProjectService) UnarchiveProject(ctx context.Context, projectID string,
 // resolveRemoveOrphansInternal decides whether compose up should remove orphan containers.
 // GitOps-managed projects always remove orphans so the running stack matches the
 // tracked compose file. Non-GitOps callers may opt in per request via DeployOptions.
+// deployWaitTimeoutInternal resolves how long compose up waits for depends_on
+// health/completion conditions, from the deployWaitTimeout setting.
+func (s *ProjectService) deployWaitTimeoutInternal() time.Duration {
+	return timeouts.GetDuration(s.settingsService.GetSettingsConfig().DeployWaitTimeout.AsInt(), timeouts.DefaultDeployWait)
+}
+
 func resolveRemoveOrphansInternal(gitOpsManaged bool, options *project.DeployOptions) bool {
 	return gitOpsManaged || (options != nil && options.RemoveOrphans)
 }
@@ -310,7 +316,7 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 
 	slog.Info("starting compose up with health check support", "projectID", projectID, "projectName", projectModel.Name, "services", len(projectModel.Services), "removeOrphans", removeOrphans)
 	// Health/progress streaming (if any) is handled inside projects.ComposeUp via ctx.
-	if err := projects.ComposeUp(ctx, projectModel, nil, removeOrphans, forceRecreate, recreateVolumes, s.composeRegistryAuthConfigsInternal(ctx)); err != nil {
+	if err := projects.ComposeUp(ctx, projectModel, nil, removeOrphans, forceRecreate, recreateVolumes, s.composeRegistryAuthConfigsInternal(ctx), s.deployWaitTimeoutInternal()); err != nil {
 		slog.Error("compose up failed", "projectName", projectModel.Name, "projectID", projectID, "error", err)
 		if containers, psErr := s.GetProjectServices(ctx, projectID); psErr == nil {
 			slog.Info("containers after failed deploy", "projectID", projectID, "containers", containers)
@@ -320,7 +326,7 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 		// Provide more helpful error messages
 		errMsg := err.Error()
 		if strings.Contains(errMsg, "timeout") || strings.Contains(errMsg, "context deadline exceeded") {
-			return errors.WrapIf(err, "deployment timed out - check if services with 'condition: service_healthy' have healthchecks defined")
+			return errors.WrapIf(err, "deployment timed out waiting for services - long-running 'service_healthy'/'service_completed_successfully' dependencies may need a higher Deploy Wait Timeout setting, and 'service_healthy' requires a healthcheck")
 		}
 		return errors.WrapIf(err, "failed to deploy project")
 	}
