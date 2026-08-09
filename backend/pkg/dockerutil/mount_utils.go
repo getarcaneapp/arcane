@@ -23,7 +23,7 @@ func MountForCurrentContainerSubpath(ctx context.Context, dockerCli *client.Clie
 	if dockerCli == nil {
 		return nil, nil
 	}
-	inspectTarget, err := libarcane.CurrentContainerInspectTarget(cgroup.CurrentContainerID, os.Hostname)
+	inspectTarget, _, err := libarcane.CurrentContainerInspectTarget(cgroup.CurrentContainerID, os.Hostname)
 	if err != nil {
 		return nil, err
 	}

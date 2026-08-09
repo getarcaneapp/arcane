@@ -2,14 +2,12 @@ package projects
 
 import (
 	"context"
-	"os"
 	"strings"
 
 	mounttypes "github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
-	"go.getarcane.app/sys/cgroup"
 )
 
 // GetCurrentContainerMounts inspects Arcane's own container and returns its bind and
@@ -21,21 +19,18 @@ func GetCurrentContainerMounts(ctx context.Context, dockerCli *client.Client) ([
 		return nil, nil // No docker client, can't discover
 	}
 
-	// Prefer robust current-container detection and fall back to hostname.
-	inspectTarget, err := libarcane.CurrentContainerInspectTarget(cgroup.CurrentContainerID, os.Hostname)
-	if err != nil {
-		return nil, err
-	}
-
-	inspect, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerCli, inspectTarget, client.ContainerInspectOptions{})
+	// Label-fallback detection matters here: with network_mode: service:<sidecar>
+	// the hostname identifies the sidecar, whose mounts do not include
+	// docker.sock — breaking host-path resolution for the self-upgrader (#3544).
+	inspect, err := libarcane.InspectCurrentArcaneContainer(ctx, dockerCli)
 	if err != nil {
 		// Not running in a container or can't reach docker daemon
 		return nil, err
 	}
 
-	mounts := make([]HostMount, 0, len(inspect.Container.Mounts))
-	for i := range inspect.Container.Mounts {
-		m := &inspect.Container.Mounts[i]
+	mounts := make([]HostMount, 0, len(inspect.Mounts))
+	for i := range inspect.Mounts {
+		m := &inspect.Mounts[i]
 		if m.Type != mounttypes.TypeBind && m.Type != mounttypes.TypeVolume {
 			continue
 		}

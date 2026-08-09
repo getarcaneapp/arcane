@@ -76,7 +76,7 @@ func NewSystemUpgradeService(
 // CanUpgrade checks if self-upgrade is possible
 func (s *SystemUpgradeService) CanUpgrade(ctx context.Context) (bool, error) {
 	// Check if running in Docker
-	containerId, err := s.getCurrentContainerIDInternal()
+	containerId, err := s.getCurrentContainerIDInternal(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -123,7 +123,7 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 	if containerId == "" {
 		// Fall back to the container this process runs in
 		var err error
-		containerId, err = s.getCurrentContainerIDInternal()
+		containerId, err = s.getCurrentContainerIDInternal(ctx)
 		if err != nil {
 			return "", errors.WrapIf(err, "get current container")
 		}
@@ -367,12 +367,19 @@ func resolveSystemUpgraderRuntimeOptionsInternal(
 }
 
 // getCurrentContainerID detects if we're running in Docker and returns container ID
-func (s *SystemUpgradeService) getCurrentContainerIDInternal() (string, error) {
-	id, err := cgroup.CurrentContainerID()
+func (s *SystemUpgradeService) getCurrentContainerIDInternal(ctx context.Context) (string, error) {
+	// cgroup detection fails on cgroupv2 with a private namespace, and with
+	// network_mode: service:<sidecar> the hostname identifies the sidecar —
+	// InspectCurrentArcaneContainer adds the Arcane-label fallback (#3544).
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		return "", err
+	}
+	inspect, err := libarcane.InspectCurrentArcaneContainer(ctx, dockerClient)
 	if err != nil {
 		return "", errors.New("arcane is not running in a Docker container")
 	}
-	return id, nil
+	return inspect.ID, nil
 }
 
 // findArcaneContainer finds the container using the ID
