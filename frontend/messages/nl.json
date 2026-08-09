@@ -1380,6 +1380,7 @@
   "user_example_com_placeholder": "gebruiker@voorbeeld.nl",
   "users_email_description": "E-mailadres voor de gebruiker",
   "users_username_description": "Unieke gebruikersnaam voor de gebruiker",
+  "users_username_no_at": "De gebruikersnaam mag geen @ bevatten",
   "events_title": "Event log",
   "events_subtitle": "Volg gebeurtenissen die hebben plaatsgevonden in de Arcane.",
   "events_total": "Totaal aantal evenementen",
