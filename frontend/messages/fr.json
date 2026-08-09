@@ -1380,6 +1380,7 @@
   "user_example_com_placeholder": "user@example.com",
   "users_email_description": "Adresse e-mail de l'utilisateur",
   "users_username_description": "Nom d'utilisateur unique pour l'utilisateur",
+  "users_username_no_at": "Le nom d'utilisateur ne doit pas contenir le caractère @",
   "events_title": "Journal d'événements",
   "events_subtitle": "Surveiller les événements survenus dans Arcane.",
   "events_total": "Événements au total",
