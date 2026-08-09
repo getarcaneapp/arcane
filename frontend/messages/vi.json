@@ -1380,6 +1380,7 @@
   "user_example_com_placeholder": "user@example.com",
   "users_email_description": "Địa chỉ email của người dùng",
   "users_username_description": "Tên đăng nhập duy nhất",
+  "users_username_no_at": "Tên người dùng không được chứa ký tự @",
   "events_title": "Log sự kiện",
   "events_subtitle": "Giám sát các sự kiện đã diễn ra trong Arcane.",
   "events_total": "Tổng số sự kiện",
