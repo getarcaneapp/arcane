@@ -252,11 +252,30 @@ func (s *AuthService) AuthenticateLocalPrimary(ctx context.Context, username, pa
 	}
 
 	user, err := s.userService.GetUserByUsername(ctx, username)
-	if err != nil {
-		if strings.Contains(err.Error(), "user not found") {
-			return nil, ErrInvalidCredentials
-		}
+	if err != nil && !errors.Is(err, common.ErrUserNotFound) {
 		return nil, err
+	}
+	// When the identifier looks like an email, resolve the email identity too:
+	// a collision between one account's username and a different account's
+	// email is rejected instead of silently validating against whichever
+	// account the username lookup happened to return.
+	if strings.Contains(username, "@") {
+		emailUser, emailErr := s.userService.GetUserByEmail(ctx, username)
+		switch {
+		case errors.Is(emailErr, common.ErrAmbiguousUserEmail):
+			slog.WarnContext(ctx, "Rejecting email login: multiple accounts share this email", "email", username)
+			return nil, ErrInvalidCredentials
+		case emailErr != nil && !errors.Is(emailErr, common.ErrUserNotFound):
+			return nil, emailErr
+		case emailErr == nil && user != nil && emailUser.ID != user.ID:
+			slog.WarnContext(ctx, "Rejecting login: identifier matches one account's username and a different account's email", "identifier", username)
+			return nil, ErrInvalidCredentials
+		case emailErr == nil && user == nil:
+			user = emailUser
+		}
+	}
+	if user == nil {
+		return nil, ErrInvalidCredentials
 	}
 	if err := s.userService.ValidatePassword(user.PasswordHash, password); err != nil {
 		return nil, ErrInvalidCredentials

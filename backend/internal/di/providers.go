@@ -405,8 +405,8 @@ func provideSystemModuleInternal(db *database.DB, cfg *config.Config, docker *do
 	})
 }
 
-func provideWebhookModuleInternal(db *database.DB, containerModule *container.Module, updaterModule *updater.Module, project *project.ProjectService, gitOpsSync *gitops.GitOpsSyncService, event *event.EventService, environment *environment.EnvironmentService) *webhook.Module {
-	return webhook.New(webhook.Dependencies{
+func provideWebhookModuleInternal(lc fx.Lifecycle, db *database.DB, containerModule *container.Module, updaterModule *updater.Module, project *project.ProjectService, gitOpsSync *gitops.GitOpsSyncService, event *event.EventService, environment *environment.EnvironmentService) *webhook.Module {
+	module := webhook.New(webhook.Dependencies{
 		DB:          db,
 		Container:   containerModule.Service(),
 		Updater:     updaterModule.Service(),
@@ -415,4 +415,16 @@ func provideWebhookModuleInternal(db *database.DB, containerModule *container.Mo
 		Event:       event,
 		Environment: environment,
 	})
+	lc.Append(fx.Hook{
+		OnStop: func(ctx context.Context) error {
+			// Drain fails only when the stop context expires; fx then skips all
+			// remaining teardown regardless of what is returned here, so an
+			// error would only mark an expected long action as a failed stop.
+			if err := module.Service().DrainActions(ctx); err != nil {
+				slog.WarnContext(ctx, "shutdown proceeding with webhook actions still in flight", "error", err)
+			}
+			return nil
+		},
+	})
+	return module
 }

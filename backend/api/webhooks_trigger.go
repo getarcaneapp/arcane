@@ -21,7 +21,7 @@ func RegisterWebhookTrigger(g *echo.Group, webhookService *webhook.WebhookServic
 		}
 
 		token := c.Param("token")
-		result, err := webhookService.TriggerByToken(utils.ActivityRuntimeContext(c.Request().Context(), appCtx.Context()), token)
+		err := webhookService.TriggerByToken(utils.ActivityRuntimeContext(c.Request().Context(), appCtx.Context()), token)
 		if err != nil {
 			status := http.StatusInternalServerError
 			if errors.Is(err, webhook.ErrWebhookNotFound) || errors.Is(err, webhook.ErrWebhookInvalid) {
@@ -36,6 +36,7 @@ func RegisterWebhookTrigger(g *echo.Group, webhookService *webhook.WebhookServic
 			return c.JSON(status, map[string]any{"success": false, "error": msg})
 		}
 
-		return c.JSON(http.StatusOK, map[string]any{"success": true, "data": result})
+		// The action runs in the background; its outcome lands in the event log.
+		return c.JSON(http.StatusAccepted, map[string]any{"success": true, "data": map[string]string{"status": "accepted"}})
 	})
 }

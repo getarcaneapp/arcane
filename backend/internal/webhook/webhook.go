@@ -2,27 +2,30 @@ package webhook
 
 import (
 	"context"
-	crand "crypto/rand"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/gitops"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/updater"
-
+	"emperror.dev/emperror"
 	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/gitops"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/updater"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/types/v2"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	updatertypes "github.com/getarcaneapp/arcane/types/v2/updater"
@@ -47,6 +50,9 @@ const (
 )
 
 type WebhookService struct {
+	// actions tracks in-flight background webhook actions accepted with a 202
+	// so shutdown can drain them instead of dropping acknowledged work.
+	actions            sync.WaitGroup
 	db                 *database.DB
 	containerService   *container.ContainerService
 	updaterService     *updater.UpdaterService
@@ -78,7 +84,7 @@ func isRemoteWebhookEnvironmentInternal(environmentID string) bool {
 // (to be shown to the user once), its SHA-256 hash, and the lookup prefix.
 func generateWebhookTokenInternal() (raw, hash, prefix string, err error) {
 	b := make([]byte, webhookTokenLength)
-	if _, err = crand.Read(b); err != nil {
+	if _, err = rand.Read(b); err != nil {
 		return "", "", "", errors.WrapIf(err, "failed to generate webhook token")
 	}
 	secretHex := hex.EncodeToString(b)
@@ -415,12 +421,14 @@ func (s *WebhookService) UpdateWebhook(ctx context.Context, id, environmentID st
 	return &wh, nil
 }
 
-// TriggerByToken looks up a webhook by its raw token and executes the configured action.
-// Returns an updater result for "updater" webhooks; nil for "project" and "gitops".
-func (s *WebhookService) TriggerByToken(ctx context.Context, rawToken string) (*updatertypes.Result, error) {
+// TriggerByToken looks up a webhook by its raw token, validates it, and starts
+// the configured action in the background so the HTTP caller gets an immediate
+// acknowledgement instead of holding the connection for the full action
+// duration (#3469). The action outcome is recorded in the event log.
+func (s *WebhookService) TriggerByToken(ctx context.Context, rawToken string) error {
 	prefix, err := parseWebhookPrefixInternal(rawToken)
 	if err != nil {
-		return nil, ErrWebhookInvalid
+		return ErrWebhookInvalid
 	}
 
 	// Narrow by prefix first (indexed), then verify hash
@@ -428,7 +436,7 @@ func (s *WebhookService) TriggerByToken(ctx context.Context, rawToken string) (*
 	if err := s.db.WithContext(ctx).
 		Where("token_prefix = ?", prefix).
 		Find(&candidates).Error; err != nil {
-		return nil, errors.WrapIf(err, "failed to look up webhook")
+		return errors.WrapIf(err, "failed to look up webhook")
 	}
 
 	hash := hashWebhookTokenInternal(rawToken)
@@ -440,30 +448,43 @@ func (s *WebhookService) TriggerByToken(ctx context.Context, rawToken string) (*
 		}
 	}
 	if wh == nil {
-		return nil, ErrWebhookNotFound
+		return ErrWebhookNotFound
 	}
 	if !wh.Enabled {
-		return nil, ErrWebhookDisabled
+		return ErrWebhookDisabled
 	}
 
-	var result *updatertypes.Result
 	actionType, err := resolveWebhookActionTypeInternal(wh.TargetType, wh.ActionType)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	result, err = s.executeWebhookActionInternal(ctx, wh, actionType)
-	if err != nil {
-		return nil, err
-	}
-
-	// Record trigger time — best-effort, do not fail the request if this update fails.
+	// Record trigger time on accept — best-effort, do not fail the request if this update fails.
 	now := time.Now()
 	_ = s.db.WithContext(ctx).Model(wh).Update("last_triggered_at", now).Error
 
-	s.logWebhookEventInternal(ctx, wh, actionType, models.EventSeveritySuccess, "")
+	execCtx := context.WithoutCancel(ctx)
+	s.actions.Go(func() {
+		defer func() {
+			if panicErr := emperror.Recover(recover()); panicErr != nil {
+				slog.ErrorContext(execCtx, "webhook action panicked", "webhookID", wh.ID, "webhookName", wh.Name, "actionType", actionType, "error", panicErr)
+			}
+		}()
+		if _, err := s.executeWebhookActionInternal(execCtx, wh, actionType); err != nil {
+			// Action failures are recorded as error events by wrapWebhookActionErrorInternal.
+			slog.ErrorContext(execCtx, "webhook action failed", "webhookID", wh.ID, "webhookName", wh.Name, "actionType", actionType, "error", err)
+			return
+		}
+		s.logWebhookEventInternal(execCtx, wh, actionType, models.EventSeveritySuccess, "")
+	})
 
-	return result, nil
+	return nil
+}
+
+// DrainActions blocks until all accepted background webhook actions finish or
+// ctx expires, so shutdown does not silently drop acknowledged work.
+func (s *WebhookService) DrainActions(ctx context.Context) error {
+	return utils.WaitGroup(ctx, &s.actions)
 }
 
 func (s *WebhookService) executeWebhookActionInternal(ctx context.Context, wh *models.Webhook, actionType string) (*updatertypes.Result, error) {

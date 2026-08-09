@@ -1216,7 +1216,8 @@ func (h *SwarmHandler) GetStackSource(ctx context.Context, input *GetSwarmStackS
 	return &GetSwarmStackSourceOutput{Body: base.ApiResponse[swarmtypes.StackSource]{Success: true, Data: *source}}, nil
 }
 
-// UpdateStackSource persists the saved compose and env source for a swarm stack.
+// UpdateStackSource persists the saved compose and env source for a swarm
+// stack and redeploys the stack so the edit takes effect on running services.
 //
 // It requires admin privileges because stack source content can include
 // sensitive configuration. The stack name comes from the route, and the body
