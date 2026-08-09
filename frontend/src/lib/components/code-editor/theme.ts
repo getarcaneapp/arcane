@@ -8,24 +8,10 @@ function getAccentColor(): string {
 }
 
 function getAccentColorWithAlpha(alpha: number): string {
-	const accentColor = getAccentColor();
-
-	if (accentColor.startsWith('oklch')) {
-		const hasAlpha = accentColor.includes('/');
-		if (hasAlpha) {
-			return accentColor.replace(/\/\s*[\d.]+\s*\)/, ` / ${alpha})`);
-		}
-		return accentColor.replace(')', ` / ${alpha})`);
-	}
-
-	if (accentColor.startsWith('#')) {
-		const r = parseInt(accentColor.slice(1, 3), 16);
-		const g = parseInt(accentColor.slice(3, 5), 16);
-		const b = parseInt(accentColor.slice(5, 7), 16);
-		return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-	}
-
-	return accentColor;
+	// color-mix handles any color notation the CSS pipeline may emit for
+	// --primary (oklch, lab, rgb, hex, ...) — format-sniffing here previously
+	// returned unknown formats unchanged, i.e. fully opaque.
+	return `color-mix(in oklab, ${getAccentColor()} ${Math.round(alpha * 100)}%, transparent)`;
 }
 
 interface ArcaneThemePalette {
