@@ -491,7 +491,7 @@ func TestTriggerByToken_InvalidFormat(t *testing.T) {
 	db := setupWebhookServiceTestDB(t)
 	svc := newTestWebhookService(db)
 
-	_, err := svc.TriggerByToken(ctx, "not-a-webhook-token")
+	err := svc.TriggerByToken(ctx, "not-a-webhook-token")
 	assert.ErrorIs(t, err, ErrWebhookInvalid)
 }
 
@@ -502,7 +502,7 @@ func TestTriggerByToken_NotFound(t *testing.T) {
 
 	// Well-formatted token but not in the DB
 	raw := "arc_wh_0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
-	_, err := svc.TriggerByToken(ctx, raw)
+	err := svc.TriggerByToken(ctx, raw)
 	assert.ErrorIs(t, err, ErrWebhookNotFound)
 }
 
@@ -522,7 +522,7 @@ func TestTriggerByToken_WrongHash_NotFound(t *testing.T) {
 		tampered += "a"
 	}
 
-	_, err = svc.TriggerByToken(ctx, tampered)
+	err = svc.TriggerByToken(ctx, tampered)
 	assert.ErrorIs(t, err, ErrWebhookNotFound)
 }
 
@@ -536,7 +536,7 @@ func TestTriggerByToken_DisabledWebhook(t *testing.T) {
 
 	require.NoError(t, db.WithContext(ctx).Model(&models.Webhook{}).Where("id = ?", created.ID).Update("enabled", false).Error)
 
-	_, err = svc.TriggerByToken(ctx, rawToken)
+	err = svc.TriggerByToken(ctx, rawToken)
 	assert.ErrorIs(t, err, ErrWebhookDisabled)
 }
 
@@ -561,7 +561,7 @@ func TestTriggerByToken_UnknownTargetType_ReturnsInvalidType(t *testing.T) {
 	}
 	require.NoError(t, db.WithContext(ctx).Create(wh).Error)
 
-	_, err := svc.TriggerByToken(ctx, rawToken)
+	err := svc.TriggerByToken(ctx, rawToken)
 	assert.ErrorIs(t, err, ErrWebhookInvalidType)
 }
 
@@ -585,45 +585,20 @@ func insertWebhookDirect(t *testing.T, ctx context.Context, db *database.DB, raw
 	return wh
 }
 
-func TestTriggerByToken_ContainerType_NilServiceReturnsError(t *testing.T) {
+func TestTriggerByToken_AcceptsImmediatelyAndRecordsTriggerTime(t *testing.T) {
 	ctx := context.Background()
 	db := setupWebhookServiceTestDB(t)
-	svc := newTestWebhookService(db) // updaterService is nil
+	svc := newTestWebhookService(db) // action services are nil; the async action fails, acceptance must not
 
 	rawToken := "arc_wh_ccddeeff01020304aabbccdd0102030405060708090a0b0c0d0e0f1011121314"
-	insertWebhookDirect(t, ctx, db, rawToken, models.WebhookTargetTypeContainer, models.WebhookActionTypeUpdate, "container-id", types.LocalDockerEnvironmentID)
+	wh := insertWebhookDirect(t, ctx, db, rawToken, models.WebhookTargetTypeContainer, models.WebhookActionTypeUpdate, "container-id", types.LocalDockerEnvironmentID)
 
-	assert.Panics(t, func() {
-		_, _ = svc.TriggerByToken(ctx, rawToken) //nolint:errcheck
-	})
-}
+	// Valid token is accepted synchronously; the action itself runs (and here
+	// fails against nil services) in the background without surfacing.
+	require.NoError(t, svc.TriggerByToken(ctx, rawToken))
 
-func TestTriggerByToken_UpdaterType_NilServiceReturnsError(t *testing.T) {
-	ctx := context.Background()
-	db := setupWebhookServiceTestDB(t)
-	svc := newTestWebhookService(db) // updaterService is nil
-
-	rawToken := "arc_wh_1122334401020304aabbccdd0102030405060708090a0b0c0d0e0f1011121314"
-	insertWebhookDirect(t, ctx, db, rawToken, models.WebhookTargetTypeUpdater, models.WebhookActionTypeRun, "", types.LocalDockerEnvironmentID)
-
-	// nil updaterService causes a panic, which we verify the dispatch path is reached
-	// by recovering — in production the service is always non-nil
-	assert.Panics(t, func() {
-		_, _ = svc.TriggerByToken(ctx, rawToken) //nolint:errcheck
-	})
-}
-
-func TestTriggerByToken_GitOpsType_NilServiceReturnsError(t *testing.T) {
-	ctx := context.Background()
-	db := setupWebhookServiceTestDB(t)
-	svc := newTestWebhookService(db) // gitOpsSyncService is nil
-
-	rawToken := "arc_wh_aabbccdd11223344aabbccdd0102030405060708090a0b0c0d0e0f1011121314"
-	insertWebhookDirect(t, ctx, db, rawToken, models.WebhookTargetTypeGitOps, models.WebhookActionTypeSync, "sync-id", types.LocalDockerEnvironmentID)
-
-	assert.Panics(t, func() {
-		_, _ = svc.TriggerByToken(ctx, rawToken) //nolint:errcheck
-	})
+	stored := fetchWebhook(t, db, wh.ID)
+	assert.NotNil(t, stored.LastTriggeredAt, "last_triggered_at must be set once the trigger is accepted")
 }
 
 func TestTriggerByToken_DoesNotUpdateLastTriggeredAtOnError(t *testing.T) {
@@ -634,7 +609,7 @@ func TestTriggerByToken_DoesNotUpdateLastTriggeredAtOnError(t *testing.T) {
 	rawToken := "arc_wh_1122334401020304aabbccdd0102030405060708090a0b0c0d0e0f1011121315"
 	wh := insertWebhookDirect(t, ctx, db, rawToken, "unknown-type", models.WebhookActionTypeUpdate, "some-id", "env-1")
 
-	_, err := svc.TriggerByToken(ctx, rawToken)
+	err := svc.TriggerByToken(ctx, rawToken)
 	require.Error(t, err)
 
 	stored := fetchWebhook(t, db, wh.ID)
@@ -649,7 +624,7 @@ func TestTriggerByToken_UnknownActionType_ReturnsInvalidAction(t *testing.T) {
 	rawToken := "arc_wh_0011223344556677aabbccdd0102030405060708090a0b0c0d0e0f1011121314"
 	insertWebhookDirect(t, ctx, db, rawToken, models.WebhookTargetTypeProject, "bogus", "project-id", "env-1")
 
-	_, err := svc.TriggerByToken(ctx, rawToken)
+	err := svc.TriggerByToken(ctx, rawToken)
 	assert.ErrorIs(t, err, ErrWebhookInvalidAction)
 }
 
