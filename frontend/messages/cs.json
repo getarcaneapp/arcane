@@ -1380,6 +1380,7 @@
   "user_example_com_placeholder": "user@example.com",
   "users_email_description": "E-mailová adresa uživatele",
   "users_username_description": "Jedinečné uživatelské jméno pro uživatele",
+  "users_username_no_at": "Uživatelské jméno nesmí obsahovat znak @",
   "events_title": "Protokol událostí",
   "events_subtitle": "Sledujte události, ke kterým v Arcane došlo.",
   "events_total": "Celkem událostí",
