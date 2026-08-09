@@ -1380,6 +1380,7 @@
   "user_example_com_placeholder": "user@example.com",
   "users_email_description": "用户的邮箱地址",
   "users_username_description": "唯一用户名",
+  "users_username_no_at": "用户名中不能包含 @",
   "events_title": "日志",
   "events_subtitle": "监控Arcane发生的事件。",
   "events_total": "全部事件",
