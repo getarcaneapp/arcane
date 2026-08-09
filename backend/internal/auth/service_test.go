@@ -29,6 +29,11 @@ func setupAuthServiceTestDB(t *testing.T) *database.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
+	// Each pooled connection to a ":memory:" DSN gets its own empty database;
+	// keep a single connection so every query sees the migrated schema.
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(1)
 	require.NoError(t, db.AutoMigrate(
 		&models.SettingVariable{},
 		&models.User{},
@@ -846,4 +851,55 @@ func TestFindOrCreateOidcUser_MergeEnabled_EmailVerificationMissing_WithExisting
 	require.NoError(t, err)
 	require.NotNil(t, fetched.OidcSubjectId)
 	require.Equal(t, userInfo.Subject, *fetched.OidcSubjectId)
+}
+
+func TestAuthenticateLocalPrimary_EmailFallback(t *testing.T) {
+	db := setupAuthServiceTestDB(t)
+	userSvc := user.NewUserService(db)
+	settingsSvc, err := newSettingsServiceForAuthTestInternal(t, context.Background(), db)
+	require.NoError(t, err)
+	s := newTestAuthService("")
+	s.userService = userSvc
+	s.settingsService = settingsSvc
+
+	hash, err := userSvc.HashPassword("hunter22!")
+	require.NoError(t, err)
+	dupHash, err := userSvc.HashPassword("dup-two-pass!")
+	require.NoError(t, err)
+	for _, u := range []*models.User{
+		{BaseModel: models.BaseModel{ID: "u-email-login"}, Username: "bob", Email: new("bob@example.com"), PasswordHash: hash},
+		{BaseModel: models.BaseModel{ID: "u-dup-1"}, Username: "dup1", Email: new("dup@example.com"), PasswordHash: hash},
+		{BaseModel: models.BaseModel{ID: "u-dup-2"}, Username: "dup2", Email: new("dup@example.com"), PasswordHash: dupHash},
+		{BaseModel: models.BaseModel{ID: "u-carol"}, Username: "carol@example.com", Email: new("carol@example.com"), PasswordHash: hash},
+		{BaseModel: models.BaseModel{ID: "u-col-a"}, Username: "owner@example.com", PasswordHash: hash},
+		{BaseModel: models.BaseModel{ID: "u-col-b"}, Username: "colb", Email: new("owner@example.com"), PasswordHash: dupHash},
+	} {
+		_, err = userSvc.CreateUser(context.Background(), u)
+		require.NoError(t, err)
+	}
+
+	tests := []struct {
+		name     string
+		login    string
+		password string
+		wantID   string
+		wantErr  error
+	}{
+		{name: "email resolves user", login: "bob@example.com", password: "hunter22!", wantID: "u-email-login"},
+		{name: "unknown email", login: "nobody@example.com", password: "hunter22!", wantErr: ErrInvalidCredentials},
+		{name: "duplicate email rejected", login: "dup@example.com", password: "dup-two-pass!", wantErr: ErrInvalidCredentials},
+		{name: "username equal to own email", login: "carol@example.com", password: "hunter22!", wantID: "u-carol"},
+		{name: "username-email collision rejected", login: "owner@example.com", password: "dup-two-pass!", wantErr: ErrInvalidCredentials},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := s.AuthenticateLocalPrimary(context.Background(), tc.login, tc.password)
+			if tc.wantErr != nil {
+				require.ErrorIs(t, err, tc.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.wantID, got.ID)
+		})
+	}
 }
