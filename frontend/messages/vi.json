@@ -1625,6 +1625,8 @@
   "docker_api_timeout_description": "Thời gian chờ cho các thao tác liệt kê Docker (đơn vị: giây) (mặc định: 30)",
   "docker_image_pull_timeout": "Thời gian chờ tải hình ảnh Docker",
   "docker_image_pull_timeout_description": "Thời gian chờ cho việc kéo hình ảnh Docker (đơn vị: giây) (mặc định: 600 = 10 phút)",
+  "deploy_wait_timeout": "Thiết lập thời gian chờ tối đa",
+  "deploy_wait_timeout_description": "Thời gian (tính bằng giây) mà một đợt triển khai sẽ chờ cho đến khi các dịch vụ trở lại trạng thái hoạt động bình thường hoặc hoàn tất (tùy thuộc vào các điều kiện), (mặc định: 600 = 10 phút)",
   "trivy_scan_timeout": "Thời gian chờ quét Trivy",
   "trivy_scan_timeout_description": "",
   "git_operation_timeout": "Thời gian chờ của thao tác Git",
