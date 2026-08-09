@@ -1625,6 +1625,8 @@
   "docker_api_timeout_description": "Tempo limite para operações da lista Docker em segundos (padrão: 30)",
   "docker_image_pull_timeout": "Imagem do Docker Pull Timeout",
   "docker_image_pull_timeout_description": "Tempo limite para puxar a imagem Docker em segundos (padrão: 600 = 10 minutos)",
+  "deploy_wait_timeout": "Tempo limite de espera para implantação",
+  "deploy_wait_timeout_description": "Por quanto tempo uma implantação aguarda até que os serviços estejam em bom estado ou concluídos (condições “depends_on”) em segundos (padrão: 600 = 10 minutos)",
   "trivy_scan_timeout": "Tempo limite de escaneamento Trivy",
   "trivy_scan_timeout_description": "Tempo limite para verificações de vulnerabilidade Trivy em imagens Docker.",
   "git_operation_timeout": "Tempo limite da operação Git",
