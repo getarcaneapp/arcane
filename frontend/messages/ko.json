@@ -1380,6 +1380,7 @@
   "user_example_com_placeholder": "user@example.com",
   "users_email_description": "사용자의 이메일 주소",
   "users_username_description": "사용자의 고유 사용자명",
+  "users_username_no_at": "사용자 이름에는 @ 기호를 포함할 수 없습니다.",
   "events_title": "이벤트 로그",
   "events_subtitle": "Arcane에서 발생한 이벤트를 모니터링합니다.",
   "events_total": "총 이벤트",
