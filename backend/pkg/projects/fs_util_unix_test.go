@@ -113,3 +113,47 @@ func TestMirrorDirectoryContentsPreserving_KeepsSkippedFile(t *testing.T) {
 	// The straggler created during the failed update is pruned.
 	assert.NoFileExists(t, filepath.Join(live, "straggler.txt"))
 }
+
+func TestCopyDirectoryContentsTolerant_SkipsNonRegularFiles(t *testing.T) {
+	src := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(src, "compose.yaml"), []byte("services: {}\n"), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(src, "config"), 0o755))
+	// A FIFO stands in for the sockets running containers leave behind
+	// (e.g. config/.XDG/wayland-0 in #3003); reading either fails with a
+	// non-permission error.
+	require.NoError(t, syscall.Mkfifo(filepath.Join(src, "config", "app.sock"), 0o644))
+
+	dst := t.TempDir()
+	skipped, err := CopyDirectoryContentsTolerant(src, dst)
+	require.NoError(t, err)
+	assert.Equal(t, []string{filepath.Join("config", "app.sock")}, skipped)
+	assert.FileExists(t, filepath.Join(dst, "compose.yaml"))
+	assert.NoFileExists(t, filepath.Join(dst, "config", "app.sock"))
+}
+
+func TestMirrorDirectoryContentsPreserving_ToleratesUnreadableDestSubdir(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root; permission bits are not enforced")
+	}
+
+	dst := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dst, "compose.yaml"), []byte("old\n"), 0o644))
+	locked := filepath.Join(dst, "volumes")
+	require.NoError(t, os.MkdirAll(filepath.Join(locked, "config"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(locked, "config", "app.conf"), []byte("keep"), 0o644))
+	require.NoError(t, os.Chmod(locked, 0o000))
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
+
+	src := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(src, "compose.yaml"), []byte("new\n"), 0o644))
+
+	// The unreadable live-project subdir must be left intact instead of
+	// failing the whole mirror (#3509, #3085).
+	require.NoError(t, MirrorDirectoryContentsPreserving(src, dst, []string{"volumes"}))
+
+	content, err := os.ReadFile(filepath.Join(dst, "compose.yaml"))
+	require.NoError(t, err)
+	assert.Equal(t, "new\n", string(content))
+	require.NoError(t, os.Chmod(locked, 0o755))
+	assert.FileExists(t, filepath.Join(locked, "config", "app.conf"))
+}

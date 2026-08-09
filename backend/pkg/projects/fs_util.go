@@ -354,6 +354,16 @@ func CopyDirectoryContents(srcDir, destDir string, skipUnreadable func(relPath s
 		if d.Type()&os.ModeSymlink != 0 {
 			return nil
 		}
+		if !d.Type().IsRegular() {
+			// Sockets, FIFOs, and device nodes left behind by running containers
+			// have no copyable content — reading one fails with ENXIO, not a
+			// permission error (#3003). Record them like unreadable entries so a
+			// later restore preserves rather than prunes them.
+			if skipUnreadable != nil {
+				skipUnreadable(relPath)
+			}
+			return nil
+		}
 
 		return copyRegularFileInternal(srcRoot, destRoot, relPath, d, skipUnreadable)
 	})
@@ -361,8 +371,8 @@ func CopyDirectoryContents(srcDir, destDir string, skipUnreadable func(relPath s
 
 func handleCopyWalkErrorInternal(srcDir, path string, d os.DirEntry, walkErr error, skipUnreadable func(relPath string)) error {
 	// An unreadable subdirectory surfaces here as a permission error on the
-	// directory entry itself.
-	if skipUnreadable == nil || !errors.Is(walkErr, os.ErrPermission) {
+	// directory entry itself; an entry deleted mid-walk surfaces as not-exist.
+	if skipUnreadable == nil || (!errors.Is(walkErr, os.ErrPermission) && !errors.Is(walkErr, os.ErrNotExist)) {
 		return walkErr
 	}
 	if relPath, relErr := filepath.Rel(srcDir, path); relErr == nil {
@@ -382,7 +392,7 @@ func copyRegularFileInternal(srcRoot, destRoot *os.Root, relPath string, d os.Di
 
 	content, err := srcRoot.ReadFile(relPath)
 	if err != nil {
-		if skipUnreadable != nil && errors.Is(err, os.ErrPermission) {
+		if skipUnreadable != nil && (errors.Is(err, os.ErrPermission) || errors.Is(err, os.ErrNotExist)) {
 			skipUnreadable(relPath)
 			return nil
 		}
@@ -412,7 +422,11 @@ func MirrorDirectoryContentsPreserving(srcDir, destDir string, preserve []string
 	if err := pruneDirectoryContentsInternal(srcDir, destDir, preserveSet); err != nil {
 		return err
 	}
-	return CopyDirectoryContents(srcDir, destDir, nil)
+	// Tolerate unreadable source entries during the copy-over: a mirror runs
+	// while promoting or restoring a live project directory, and failing
+	// half-way leaves it in a mixed state — worse than leaving a stale copy of
+	// one unreadable file (#3509, #3085).
+	return CopyDirectoryContents(srcDir, destDir, func(string) {})
 }
 
 func pruneDirectoryContentsInternal(srcDir, destDir string, preserve map[string]struct{}) error {
@@ -430,6 +444,13 @@ func pruneDirectoryContentsInternal(srcDir, destDir string, preserve map[string]
 
 	return filepath.WalkDir(destDir, func(path string, d os.DirEntry, walkErr error) error {
 		if walkErr != nil {
+			// An unreadable destination subdirectory (e.g. foreign-owned
+			// bind-mount data) cannot be pruned; leave it in place instead of
+			// failing the whole mirror mid-restore (#3509, #3085). Entries that
+			// vanished mid-walk need no pruning either.
+			if errors.Is(walkErr, os.ErrPermission) || errors.Is(walkErr, os.ErrNotExist) {
+				return keepUnprunableEntryInternal(d)
+			}
 			return walkErr
 		}
 		if path == destDir {
@@ -443,10 +464,7 @@ func pruneDirectoryContentsInternal(srcDir, destDir string, preserve map[string]
 
 		// Never delete a preserved entry.
 		if _, ok := preserve[relPath]; ok {
-			if d.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
+			return keepUnprunableEntryInternal(d)
 		}
 
 		srcInfo, err := srcRoot.Lstat(relPath)
@@ -454,6 +472,11 @@ func pruneDirectoryContentsInternal(srcDir, destDir string, preserve map[string]
 			return nil
 		}
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			// Cannot inspect the source counterpart — keep the destination
+			// entry rather than deleting something the source may still have.
+			if errors.Is(err, os.ErrPermission) {
+				return keepUnprunableEntryInternal(d)
+			}
 			return err
 		}
 
@@ -472,6 +495,15 @@ func pruneDirectoryContentsInternal(srcDir, destDir string, preserve map[string]
 		}
 		return nil
 	})
+}
+
+// keepUnprunableEntryInternal continues a prune walk past an entry that must
+// stay: descend no further into directories, ignore files.
+func keepUnprunableEntryInternal(d os.DirEntry) error {
+	if d != nil && d.IsDir() {
+		return filepath.SkipDir
+	}
+	return nil
 }
 
 // hasPreservedDescendantInternal reports whether any preserved path lives under
