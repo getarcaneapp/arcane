@@ -220,6 +220,10 @@ func (s *EnvironmentService) TestConnection(ctx context.Context, id string, cust
 
 // testEdgeConnection tests connection to an edge agent via its tunnel
 func (s *EnvironmentService) testEdgeConnection(ctx context.Context, id string) (string, error) {
+	// The health check itself is standing demand for the tunnel; refreshing here
+	// keeps idle poll-mode tunnels open across check cycles instead of letting
+	// the demand TTL expire and the tunnel flap between checks.
+	edge.TouchTunnelDemand(id, edge.DefaultTunnelDemandTTL)
 	if !edge.HasActiveTunnel(id) {
 		if _, ok := edge.RequestTunnelAndWait(ctx, id, edge.DefaultTunnelDemandTTL, edge.DefaultTunnelAcquireTimeout()).Get(); !ok {
 			_ = s.updateEnvironmentStatusInternal(ctx, id, string(models.EnvironmentStatusOffline))

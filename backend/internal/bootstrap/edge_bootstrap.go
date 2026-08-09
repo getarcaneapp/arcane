@@ -39,28 +39,7 @@ func registerEdgeTunnelRoutes(
 
 	// Status callback to update environment status when agent connects/disconnects
 	statusCallback := func(ctx context.Context, envID string, connected bool) {
-		envName := envID
-		env, getErr := environmentService.GetEnvironmentByID(ctx, envID)
-		if getErr != nil {
-			slog.WarnContext(ctx, "Failed to load environment before edge status update", "environment_id", envID, "error", getErr)
-		} else if env != nil && env.Name != "" {
-			envName = env.Name
-		}
-
-		if err := environmentService.UpdateEnvironmentConnectionState(ctx, envID, connected); err != nil {
-			slog.WarnContext(ctx, "Failed to update environment status on edge connect/disconnect", "environment_id", envID, "connected", connected, "error", err)
-		} else {
-			slog.InfoContext(ctx, "Updated edge environment connection state", "environment_id", envID, "connected", connected)
-		}
-
-		if err := createEdgeConnectionEvent(ctx, eventService, envID, envName, connected); err != nil {
-			slog.WarnContext(ctx, "Failed to create edge connection event", "environment_id", envID, "connected", connected, "error", err)
-		}
-
-		// This is the only funnel for "an edge tunnel came up or went down"
-		// (register, unregister and stale reaping all route through it), so it
-		// is where open status streams learn about it without polling.
-		environmentService.NotifyRuntimeStateChanged()
+		handleEdgeStatusChange(ctx, environmentService, eventService, envID, connected)
 	}
 
 	eventCallback := func(ctx context.Context, envID string, evt *edge.TunnelEvent) error {
@@ -216,6 +195,42 @@ func optionalStringPtr(value string) *string {
 		return nil
 	}
 	return &value
+}
+
+// handleEdgeStatusChange records a tunnel up/down transition: it updates the
+// stored connection state, logs an event when the state actually changed, and
+// wakes any open status streams.
+func handleEdgeStatusChange(ctx context.Context, environmentService *environment.EnvironmentService, eventService *event.EventService, envID string, connected bool) {
+	envName := envID
+	env, getErr := environmentService.GetEnvironmentByID(ctx, envID)
+	if getErr != nil {
+		slog.WarnContext(ctx, "Failed to load environment before edge status update", "environment_id", envID, "error", getErr)
+	} else if env != nil && env.Name != "" {
+		envName = env.Name
+	}
+
+	if err := environmentService.UpdateEnvironmentConnectionState(ctx, envID, connected); err != nil {
+		slog.WarnContext(ctx, "Failed to update environment status on edge connect/disconnect", "environment_id", envID, "connected", connected, "error", err)
+	} else {
+		slog.InfoContext(ctx, "Updated edge environment connection state", "environment_id", envID, "connected", connected)
+	}
+
+	// Only log an event on an actual state transition; poll-mode tunnels can
+	// re-register without the environment ever having gone offline (session
+	// replacement, transport reconnects), and those are not worth an event.
+	alreadyInState := env != nil &&
+		((connected && env.Status == string(models.EnvironmentStatusOnline)) ||
+			(!connected && env.Status == string(models.EnvironmentStatusOffline)))
+	if !alreadyInState {
+		if err := createEdgeConnectionEvent(ctx, eventService, envID, envName, connected); err != nil {
+			slog.WarnContext(ctx, "Failed to create edge connection event", "environment_id", envID, "connected", connected, "error", err)
+		}
+	}
+
+	// This is the only funnel for "an edge tunnel came up or went down"
+	// (register, unregister and stale reaping all route through it), so it
+	// is where open status streams learn about it without polling.
+	environmentService.NotifyRuntimeStateChanged()
 }
 
 func createEdgeConnectionEvent(ctx context.Context, eventService *event.EventService, envID, envName string, connected bool) error {
