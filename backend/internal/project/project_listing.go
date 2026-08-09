@@ -122,12 +122,9 @@ func (s *ProjectService) GetProjectStatusCounts(ctx context.Context) (folderCoun
 	// 1. Fetch all compose containers
 	containers, err := projects.ListGlobalComposeContainers(ctx)
 	if err != nil {
+		// Degrade the counts rather than failing the load; live state is unknowable.
 		slog.ErrorContext(ctx, "Failed to list global compose containers for counts", "error", err)
-		// Fallback to DB status
-		for _, p := range activeProjects {
-			incrementStatusCounts(p.Status, &runningProjects, &stoppedProjects)
-		}
-		return folderCount, runningProjects, stoppedProjects, totalProjects, archivedProjects, nil
+		return folderCount, 0, 0, totalProjects, archivedProjects, nil
 	}
 
 	// 2. Group by project
@@ -169,19 +166,19 @@ func (s *ProjectService) ListProjects(ctx context.Context, params pagination.Que
 		archivedFilter = strings.TrimSpace(params.Filters["archived"])
 	}
 	query = applyProjectArchivedDBFilterInternal(query, archivedFilter)
-	if statusFilter != "" || updatesFilter != "" {
+	// Status filtering and sorting operate on live-computed status, so they go
+	// through the derived (in-memory) path.
+	if statusFilter != "" || updatesFilter != "" || strings.EqualFold(strings.TrimSpace(params.Sort), "status") {
 		return s.listProjectsWithDerivedFiltersInternal(ctx, params, query)
 	}
 
 	if term := strings.TrimSpace(params.Search); term != "" {
 		searchPattern := "%" + term + "%"
 		query = query.Where(
-			"name LIKE ? OR path LIKE ? OR status LIKE ? OR COALESCE(dir_name, '') LIKE ?",
-			searchPattern, searchPattern, searchPattern, searchPattern,
+			"name LIKE ? OR path LIKE ? OR COALESCE(dir_name, '') LIKE ?",
+			searchPattern, searchPattern, searchPattern,
 		)
 	}
-
-	query = pagination.ApplyFilter(query, "status", params.Filters["status"])
 
 	var projectsArray []models.Project
 	paginationResp, err := pagination.PaginateAndSortDB(params, query, &projectsArray)
@@ -247,8 +244,8 @@ func (s *ProjectService) filterProjectsWithDerivedFiltersInternal(
 	if term := strings.TrimSpace(params.Search); term != "" {
 		searchPattern := "%" + term + "%"
 		query = query.Where(
-			"name LIKE ? OR path LIKE ? OR status LIKE ? OR COALESCE(dir_name, '') LIKE ?",
-			searchPattern, searchPattern, searchPattern, searchPattern,
+			"name LIKE ? OR path LIKE ? OR COALESCE(dir_name, '') LIKE ?",
+			searchPattern, searchPattern, searchPattern,
 		)
 	}
 	if err := query.Find(&projectsArray).Error; err != nil {

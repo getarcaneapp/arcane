@@ -2075,10 +2075,8 @@ func (s *GitOpsSyncService) createRecoveredProjectFromDirectoryInternal(ctx cont
 		Name:            sync.ProjectName,
 		DirName:         new(filepath.Base(projectPath)),
 		Path:            projectPath,
-		Status:          models.ProjectStatusUnknown,
 		StatusReason:    new("Project recovered from existing GitOps-managed directory"),
 		ServiceCount:    0,
-		RunningCount:    0,
 		GitOpsManagedBy: &sync.ID,
 	}
 
@@ -2214,9 +2212,7 @@ func (s *GitOpsSyncService) createDirectorySyncProjectInternal(ctx context.Conte
 		Name:         sync.ProjectName,
 		DirName:      new(folderName),
 		Path:         projectPath,
-		Status:       models.ProjectStatusStopped,
 		ServiceCount: stage.serviceCount,
-		RunningCount: 0,
 	}
 
 	if err := s.projectService.CreateGitOpsManagedProject(ctx, sync, project, actor); err != nil {

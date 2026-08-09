@@ -51,36 +51,19 @@ func getServiceCounts(services []ProjectServiceInfo) (total int, running int) {
 	return total, running
 }
 
-func (s *ProjectService) updateProjectStatusandCountsInternal(ctx context.Context, projectID string, status models.ProjectStatus) error {
+func (s *ProjectService) refreshProjectServiceCountInternal(ctx context.Context, projectID string) error {
 	services, err := s.GetProjectServices(ctx, projectID)
 	if err != nil {
-		slog.Error("GetProjectServices failed during status update", "projectID", projectID, "error", err)
-		return s.updateProjectStatusInternal(ctx, projectID, status)
+		return errors.WrapIf(err, "failed to get project services for service count refresh")
 	}
 
-	serviceCount, runningCount := getServiceCounts(services)
+	serviceCount, _ := getServiceCounts(services)
 
 	if err := s.db.WithContext(ctx).Model(&models.Project{}).Where("id = ?", projectID).Updates(map[string]any{
-		"status":        status,
 		"service_count": serviceCount,
-		"running_count": runningCount,
 		"updated_at":    time.Now(),
 	}).Error; err != nil {
-		return errors.WrapIf(err, "failed to update project status and counts")
-	}
-
-	return nil
-}
-
-func (s *ProjectService) updateProjectStatusInternal(ctx context.Context, id string, status models.ProjectStatus) error {
-	now := time.Now()
-	res := s.db.WithContext(ctx).Model(&models.Project{}).Where("id = ?", id).Updates(map[string]any{
-		"status":     status,
-		"updated_at": now,
-	})
-
-	if res.Error != nil {
-		return errors.WrapIf(res.Error, "failed to update project status")
+		return errors.WrapIf(err, "failed to update project service count")
 	}
 
 	return nil
@@ -221,10 +204,9 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 	applyResolvedProjectIconInternal(&resp, iconcatalog.Resolve(IconCatalogForContext(ctx), meta.ProjectIcon))
 	resp.URLs = meta.ProjectURLS
 
-	// Default counts/status from DB (will be overridden if runtime check succeeds)
+	// Default counts/status (overridden if the runtime check succeeds)
 	resp.ServiceCount = proj.ServiceCount
-	resp.RunningCount = proj.RunningCount
-	resp.Status = string(proj.Status)
+	resp.Status = string(models.ProjectStatusUnknown)
 
 	if opts.IncludeComposeContent {
 		composeContent, _, overrideContent, _ := s.GetProjectContent(ctx, projectID)

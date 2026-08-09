@@ -113,7 +113,6 @@ func (s *ProjectService) UpdateProjectServices(ctx context.Context, projectID st
 	if err != nil {
 		return err
 	}
-	previousStatus := projectFromDb.Status
 
 	// 1. Load project
 	compProj, _, err := s.loadComposeProjectForProjectInternal(ctx, projectFromDb, nil)
@@ -121,41 +120,29 @@ func (s *ProjectService) UpdateProjectServices(ctx context.Context, projectID st
 		return errors.WrapIf(err, "failed to load compose project")
 	}
 
-	// 2. Set status to deploying/restarting
-	if err := s.updateProjectStatusInternal(ctx, projectID, models.ProjectStatusDeploying); err != nil {
-		return err
-	}
-
 	credentials, err := s.ResolveRegistryCredentials(ctx)
 	if err != nil {
-		if statusErr := s.updateProjectStatusInternal(ctx, projectID, previousStatus); statusErr != nil {
-			slog.ErrorContext(ctx, "UpdateProjectServices: failed to restore project status after credential lookup failure", "projectID", projectID, "error", statusErr)
-		}
 		return errors.WrapIf(err, "resolve registry credentials")
 	}
 
-	// 3. Pull images for specific services
+	// 2. Pull images for specific services
 	if err := s.composePullSelectedServicesInternal(ctx, compProj, servicesToUpdate, user, credentials); err != nil {
-		if statusErr := s.updateProjectStatusInternal(ctx, projectID, previousStatus); statusErr != nil {
-			slog.ErrorContext(ctx, "UpdateProjectServices: failed to restore project status after compose pull failure", "projectID", projectID, "error", statusErr)
-		}
 		return errors.WrapIf(err, "pull updated service images")
 	}
 
-	// 4. Stop specific services
+	// 3. Stop specific services
 	if err := composeStopProjectServicesInternal(ctx, compProj, servicesToUpdate); err != nil {
 		slog.WarnContext(ctx, "compose stop failed, continuing", "error", err)
 	}
 
-	// 5. Up specific services
+	// 4. Up specific services
 	if err := composeUpProjectServicesInternal(ctx, compProj, servicesToUpdate, false, true, false, s.composeRegistryAuthConfigsInternal(ctx), s.deployWaitTimeoutInternal()); err != nil {
-		s.restoreProjectStatusAfterFailedDeployInternal(ctx, projectID)
 		return errors.WrapIf(err, "failed to up services")
 	}
 
-	// 6. Finalize status
-	if err := s.updateProjectStatusandCountsInternal(ctx, projectID, models.ProjectStatusRunning); err != nil {
-		return err
+	// 5. Refresh service count
+	if err := s.refreshProjectServiceCountInternal(ctx, projectID); err != nil {
+		slog.WarnContext(ctx, "failed to refresh project service count after service update", "projectID", projectID, "error", err)
 	}
 
 	metadata := models.JSON{
@@ -176,23 +163,6 @@ func ensureProjectMutableInternal(proj *models.Project) error {
 	return nil
 }
 
-func isProjectArchiveBlockedInternal(proj *models.Project) bool {
-	if proj == nil {
-		return false
-	}
-	if proj.RunningCount > 0 {
-		return true
-	}
-	switch proj.Status {
-	case models.ProjectStatusRunning, models.ProjectStatusPartiallyRunning, models.ProjectStatusDeploying, models.ProjectStatusRestarting:
-		return true
-	case models.ProjectStatusStopped, models.ProjectStatusUnknown, models.ProjectStatusStopping:
-		return false
-	default:
-		return false
-	}
-}
-
 func (s *ProjectService) ArchiveProject(ctx context.Context, projectID string, user models.User) error {
 	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
@@ -201,7 +171,13 @@ func (s *ProjectService) ArchiveProject(ctx context.Context, projectID string, u
 	if proj.IsArchived {
 		return nil
 	}
-	if isProjectArchiveBlockedInternal(proj) {
+
+	// A project without a compose file cannot have running services, so it may be archived.
+	services, err := s.GetProjectServices(ctx, projectID)
+	if err != nil && !errors.Is(err, common.ErrProjectComposeFileNotFound) {
+		return errors.WrapIf(err, "cannot verify project is stopped before archiving")
+	}
+	if _, running := getServiceCounts(services); running > 0 {
 		return common.Classify(common.ErrProjectMustBeStopped, errors.New("project must be stopped before archiving"))
 	}
 
@@ -278,36 +254,28 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 		resolvedPullPolicy = "missing"
 	}
 
-	if err := s.updateProjectStatusInternal(ctx, projectID, models.ProjectStatusDeploying); err != nil {
-		return errors.WrapIf(err, "failed to update project status to deploying")
-	}
-
 	// Run any configured pre-deploy lifecycle hook before loading the compose
 	// project so hooks can produce files that compose then consumes (e.g.
 	// `sops -d secrets.enc.env > .env.runtime` for an `env_file: .env.runtime`
 	// service). A failed hook aborts the deploy.
 	if s.lifecycleService != nil {
 		if lerr := s.lifecycleService.RunPreDeploy(ctx, projectFromDb, user); lerr != nil {
-			s.restoreProjectStatusAfterFailedDeployInternal(ctx, projectID)
 			return errors.WrapIf(lerr, "pre-deploy lifecycle hook failed")
 		}
 	}
 
 	projectModel, _, derr := s.loadComposeProjectForProjectInternal(ctx, projectFromDb, nil)
 	if derr != nil {
-		s.restoreProjectStatusAfterFailedDeployInternal(ctx, projectID)
 		return errors.WrapIff(derr, "failed to load compose project in %s", projectFromDb.Path)
 	}
 
 	credentials, cerr := s.ResolveRegistryCredentials(ctx)
 	if cerr != nil {
-		s.restoreProjectStatusAfterFailedDeployInternal(ctx, projectID)
 		return errors.WrapIf(cerr, "resolve registry credentials")
 	}
 
 	progressWriter, _ := ctx.Value(dockerutil.ProgressWriterKey{}).(io.Writer)
 	if perr := s.prepareProjectImagesForDeploy(ctx, projectID, projectModel, progressWriter, credentials, &user, resolvedPullPolicy); perr != nil {
-		s.restoreProjectStatusAfterFailedDeployInternal(ctx, projectID)
 		return errors.WrapIf(perr, "failed to prepare project images for deploy")
 	}
 
@@ -321,7 +289,6 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 		if containers, psErr := s.GetProjectServices(ctx, projectID); psErr == nil {
 			slog.Info("containers after failed deploy", "projectID", projectID, "containers", containers)
 		}
-		s.restoreProjectStatusAfterFailedDeployInternal(ctx, projectID)
 
 		// Provide more helpful error messages
 		errMsg := err.Error()
@@ -335,11 +302,10 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 	metadata := models.JSON{"action": "deploy", "projectID": projectID, "projectName": projectModel.Name}
 	s.logProjectEventInternal(ctx, models.EventTypeProjectDeploy, projectID, projectModel.Name, user, metadata, "could not log project deployment action")
 
-	err = s.updateProjectStatusandCountsInternal(ctx, projectID, models.ProjectStatusRunning)
-	if err != nil {
-		slog.Error("failed to update project status and counts after deploy", "projectID", projectID, "error", err)
+	if err := s.refreshProjectServiceCountInternal(ctx, projectID); err != nil {
+		slog.Warn("failed to refresh project service count after deploy", "projectID", projectID, "error", err)
 	}
-	return err
+	return nil
 }
 
 func (s *ProjectService) DownProject(ctx context.Context, projectID string, user models.User) error {
@@ -350,16 +316,10 @@ func (s *ProjectService) DownProject(ctx context.Context, projectID string, user
 
 	proj, _, lerr := s.loadComposeProjectForProjectInternal(ctx, projectFromDb, nil)
 	if lerr != nil {
-		_ = s.updateProjectStatusInternal(ctx, projectID, models.ProjectStatusRunning)
 		return errors.WrapIf(lerr, "failed to load compose project")
 	}
 
-	if err := s.updateProjectStatusInternal(ctx, projectID, models.ProjectStatusStopped); err != nil {
-		return errors.WrapIf(err, "failed to update project status to stopping")
-	}
-
 	if err := projects.ComposeDown(ctx, proj, false); err != nil {
-		_ = s.updateProjectStatusInternal(ctx, projectID, models.ProjectStatusRunning)
 		return errors.WrapIf(err, "failed to bring down project")
 	}
 
@@ -370,7 +330,10 @@ func (s *ProjectService) DownProject(ctx context.Context, projectID string, user
 	}
 	s.logProjectEventInternal(ctx, models.EventTypeProjectStop, projectID, projectFromDb.Name, user, metadata, "could not log project down action")
 
-	return s.updateProjectStatusandCountsInternal(ctx, projectID, models.ProjectStatusStopped)
+	if err := s.refreshProjectServiceCountInternal(ctx, projectID); err != nil {
+		slog.WarnContext(ctx, "failed to refresh project service count after down", "projectID", projectID, "error", err)
+	}
+	return nil
 }
 
 // CreateProject creates a project's directory, files, and DB row. When
@@ -414,9 +377,7 @@ func (s *ProjectService) CreateProject(ctx context.Context, name, composeContent
 		Name:         name,
 		DirName:      &folderName,
 		Path:         projectPath,
-		Status:       models.ProjectStatusStopped,
 		ServiceCount: 0,
-		RunningCount: 0,
 	}
 
 	if err := projects.ApplyProjectWorkspaceChanges(projectPath, manifest.FileChanges, uploads, projects.ProjectWorkspaceApplyOptions{
@@ -899,30 +860,6 @@ func (s *ProjectService) prepareServiceBuildRequest(
 	return buildReq, updatedSvc, updated, nil
 }
 
-func (s *ProjectService) restoreProjectStatusAfterFailedDeployInternal(ctx context.Context, projectID string) {
-	services, err := s.GetProjectServices(ctx, projectID)
-	if err == nil {
-		serviceCount, runningCount := getServiceCounts(services)
-		status := calculateProjectStatus(services)
-		updateErr := s.db.WithContext(ctx).Model(&models.Project{}).Where("id = ?", projectID).Updates(map[string]any{
-			"status":        status,
-			"service_count": serviceCount,
-			"running_count": runningCount,
-			"updated_at":    time.Now(),
-		}).Error
-		if updateErr == nil {
-			return
-		}
-		slog.WarnContext(ctx, "failed to restore project status after deploy failure", "projectID", projectID, "error", updateErr)
-	} else {
-		slog.WarnContext(ctx, "failed to inspect project services after deploy failure", "projectID", projectID, "error", err)
-	}
-
-	if updateErr := s.updateProjectStatusInternal(ctx, projectID, models.ProjectStatusStopped); updateErr != nil {
-		slog.WarnContext(ctx, "failed to set stopped status after deploy failure", "projectID", projectID, "error", updateErr)
-	}
-}
-
 func (s *ProjectService) buildProjectServicesInternal(ctx context.Context, projectID string, project *composetypes.Project, options ProjectBuildOptions, progressWriter io.Writer, user *models.User) error {
 	if s.buildService == nil {
 		return nil
@@ -969,10 +906,6 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, s
 		return err
 	}
 
-	if err := s.updateProjectStatusInternal(ctx, projectID, models.ProjectStatusRestarting); err != nil {
-		return errors.WrapIf(err, "failed to update project status to restarting")
-	}
-
 	// Get configured projects directory from settings
 	cfg := s.settingsService.GetSettingsOrDefaults(ctx)
 	projectsDirectory := getProjectsDirectoryOrDefaultInternal(ctx, cfg)
@@ -990,12 +923,10 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, s
 
 	compProj, _, lerr := projects.LoadComposeProjectFromDir(ctx, proj.Path, projects.NormalizeProjectName(proj.Name), projectsDirectory, utils.BoolOrDefault(cfg.AutoInjectEnv.Value, false), pathMapper)
 	if lerr != nil {
-		_ = s.updateProjectStatusInternal(ctx, projectID, models.ProjectStatusRunning)
 		return errors.WrapIf(lerr, "failed to load compose project")
 	}
 
 	if err := projects.ComposeRestart(ctx, compProj, services); err != nil {
-		_ = s.updateProjectStatusInternal(ctx, projectID, models.ProjectStatusRunning)
 		return errors.WrapIf(err, "failed to restart project")
 	}
 
@@ -1009,5 +940,8 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, s
 	}
 	s.logProjectEventInternal(ctx, models.EventTypeProjectStart, projectID, proj.Name, user, metadata, "could not log project restart action")
 
-	return s.updateProjectStatusandCountsInternal(ctx, projectID, models.ProjectStatusRunning)
+	if err := s.refreshProjectServiceCountInternal(ctx, projectID); err != nil {
+		slog.WarnContext(ctx, "failed to refresh project service count after restart", "projectID", projectID, "error", err)
+	}
+	return nil
 }

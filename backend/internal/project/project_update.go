@@ -229,7 +229,7 @@ func (s *ProjectService) refreshProjectAfterContentUpdateInternal(ctx context.Co
 
 	s.refreshComposeProjectNameInternal(ctx, proj)
 	s.refreshProjectImageRefsInternal(ctx, proj)
-	if err := s.updateProjectStatusandCountsInternal(ctx, proj.ID, proj.Status); err != nil {
+	if err := s.refreshProjectServiceCountInternal(ctx, proj.ID); err != nil {
 		slog.WarnContext(ctx, "failed to update service counts after compose edit", "projectID", proj.ID, "error", err)
 	}
 }
@@ -267,8 +267,8 @@ func (s *ProjectService) ApplyGitSyncProjectFiles(ctx context.Context, projectID
 	s.refreshComposeProjectNameInternal(ctx, &proj)
 	s.refreshProjectImageRefsInternal(ctx, &proj)
 
-	// Recalculate service counts and status after compose file sync
-	if err := s.updateProjectStatusandCountsInternal(ctx, proj.ID, proj.Status); err != nil {
+	// Recalculate service counts after compose file sync
+	if err := s.refreshProjectServiceCountInternal(ctx, proj.ID); err != nil {
 		slog.WarnContext(ctx, "failed to update service counts after git sync", "projectID", proj.ID, "error", err)
 	}
 
@@ -374,7 +374,7 @@ func projectRenameVolumeMigrationComposeNamesInternal(s *ProjectService, proj *m
 	}
 
 	newProjectName := strings.TrimSpace(*name)
-	if newProjectName == "" || proj.Name == newProjectName || proj.Status != models.ProjectStatusStopped {
+	if newProjectName == "" || proj.Name == newProjectName {
 		return "", "", false
 	}
 
@@ -592,14 +592,11 @@ func (s *ProjectService) ensureProjectStoppedForRenameInternal(ctx context.Conte
 	if !isProjectRenameRequestedInternal(proj, name) {
 		return nil
 	}
-	if proj.Status != models.ProjectStatusStopped && proj.Status != models.ProjectStatusUnknown {
-		return errors.Errorf("project must be stopped before renaming (current status: %s)", proj.Status)
-	}
 
 	services, err := s.GetProjectServices(ctx, proj.ID)
 	if err != nil {
 		slog.WarnContext(ctx, "failed to resolve project status before rename", "projectID", proj.ID, "error", err)
-		return errors.WrapIff(err, "project must be stopped before renaming (current status: %s): failed to verify live status", proj.Status)
+		return errors.WrapIf(err, "failed to verify project is stopped before renaming")
 	}
 
 	status := calculateProjectStatus(services)
@@ -607,11 +604,8 @@ func (s *ProjectService) ensureProjectStoppedForRenameInternal(ctx context.Conte
 		return errors.Errorf("project must be stopped before renaming (current status: %s)", status)
 	}
 
-	serviceCount, runningCount := getServiceCounts(services)
-	proj.Status = models.ProjectStatusStopped
-	proj.StatusReason = nil
+	serviceCount, _ := getServiceCounts(services)
 	proj.ServiceCount = serviceCount
-	proj.RunningCount = runningCount
 	return nil
 }
 
@@ -623,10 +617,6 @@ func (s *ProjectService) applyProjectRenameIfNeeded(ctx context.Context, proj *m
 	newName := strings.TrimSpace(*name)
 	if newName == "" || proj.Name == newName {
 		return nil
-	}
-
-	if proj.Status != models.ProjectStatusStopped {
-		return errors.Errorf("project must be stopped before renaming (current status: %s)", proj.Status)
 	}
 
 	newDirName := projects.SanitizeProjectName(newName)

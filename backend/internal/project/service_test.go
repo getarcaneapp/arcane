@@ -298,7 +298,6 @@ func TestProjectService_DestroyProject_RemovesFilesWhenRequested(t *testing.T) {
 		Name:      "demo-remove",
 		DirName:   &dirName,
 		Path:      projectPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -323,7 +322,6 @@ func TestProjectService_DestroyProject_PreservesFilesWhenRequested(t *testing.T)
 		Name:      "demo-preserve",
 		DirName:   &dirName,
 		Path:      projectPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -453,32 +451,6 @@ func TestProjectService_CalculateProjectStatus(t *testing.T) {
 			got := calculateProjectStatus(tt.services)
 			assert.Equal(t, tt.want, got)
 		})
-	}
-}
-
-func TestProjectService_UpdateProjectStatusInternal(t *testing.T) {
-	db := setupProjectTestDB(t)
-	ctx := context.Background()
-	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load())
-
-	proj := &models.Project{
-		BaseModel: models.BaseModel{
-			ID: "p1",
-		},
-		Status: models.ProjectStatusUnknown,
-	}
-	require.NoError(t, db.Create(proj).Error)
-
-	err := svc.updateProjectStatusInternal(ctx, "p1", models.ProjectStatusRunning)
-	require.NoError(t, err)
-
-	var updated models.Project
-	require.NoError(t, db.First(&updated, "id = ?", "p1").Error)
-	assert.Equal(t, models.ProjectStatusRunning, updated.Status)
-	if updated.UpdatedAt != nil {
-		assert.WithinDuration(t, time.Now(), *updated.UpdatedAt, time.Second)
-	} else {
-		assert.Fail(t, "UpdatedAt should not be nil")
 	}
 }
 
@@ -661,7 +633,6 @@ func TestProjectService_PullProjectImages_UpdatesCurrentImageRecordAfterPull(t *
 		Name:      "compose-pull",
 		DirName:   &dirName,
 		Path:      projectPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(projectRecord).Error)
 
@@ -1031,7 +1002,6 @@ func TestProjectService_UpdateProjectServicesHardFailsWhenPullFailsInternal(t *t
 		Name:      "compose-update-pull-fail",
 		DirName:   ptr("compose-update-pull-fail"),
 		Path:      projectPath,
-		Status:    models.ProjectStatusRunning,
 	}
 	require.NoError(t, db.Create(projectRecord).Error)
 	require.NoError(t, db.Create(&models.ImageUpdateRecord{
@@ -1059,10 +1029,6 @@ func TestProjectService_UpdateProjectServicesHardFailsWhenPullFailsInternal(t *t
 	require.Error(t, err)
 	require.ErrorContains(t, err, "pull updated service images")
 	assert.False(t, upCalled, "compose up must not run after a pull failure")
-
-	var persistedProject models.Project
-	require.NoError(t, db.WithContext(ctx).Where("id = ?", projectRecord.ID).First(&persistedProject).Error)
-	assert.Equal(t, models.ProjectStatusRunning, persistedProject.Status)
 
 	var persistedRecord models.ImageUpdateRecord
 	require.NoError(t, db.WithContext(ctx).Where("id = ?", "sha256:selected-old").First(&persistedRecord).Error)
@@ -1104,7 +1070,6 @@ func TestProjectService_UpdateProjectServicesForcesRecreateInternal(t *testing.T
 		Name:      "compose-update-force",
 		DirName:   ptr("compose-update-force"),
 		Path:      projectPath,
-		Status:    models.ProjectStatusRunning,
 	}
 	require.NoError(t, db.Create(projectRecord).Error)
 
@@ -1214,7 +1179,6 @@ func TestProjectService_UpdateProject_RenameFailsWhenVolumeMigrationPreparationF
 		Name:      "Foo",
 		DirName:   &originalDirName,
 		Path:      originalPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -1257,7 +1221,6 @@ func TestProjectService_ApplyProjectUpdateWithRenameJournal_AppliesVolumeMigrati
 		Name:      "Foo",
 		DirName:   &originalDirName,
 		Path:      originalPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -1332,7 +1295,6 @@ func TestProjectService_PrepareProjectRenameVolumeMigrationForUpdate_UsesCompose
 		Name:      "nginx",
 		DirName:   ptr("nginx"),
 		Path:      projectPath,
-		Status:    models.ProjectStatusStopped,
 	}
 
 	t.Run("skips volume made explicit in pending compose", func(t *testing.T) {
@@ -1429,7 +1391,6 @@ func TestProjectService_ApplyProjectUpdateWithRenameJournal_RollsBackVolumeMigra
 		Name:      "Foo",
 		DirName:   &originalDirName,
 		Path:      originalPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -1474,7 +1435,6 @@ func TestProjectService_ApplyProjectUpdateWithRenameJournal_SucceedsCommittedRen
 		Name:      "Foo",
 		DirName:   &originalDirName,
 		Path:      originalPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -1521,7 +1481,6 @@ func TestProjectService_UpdateProject_ClearsJournalForNonRenameWhenRecoveryDocke
 		Name:      "nginx",
 		DirName:   &oldDir,
 		Path:      projectPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -1587,7 +1546,6 @@ func TestProjectService_UpdateProject_AllowsRenameAfterJournalRecoveryDockerUnav
 		Name:      "nginx",
 		DirName:   &oldDir,
 		Path:      projectPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -1650,7 +1608,6 @@ func TestProjectService_UpdateProject_RenamesDirectoryWhenNameChanges(t *testing
 		Name:      "Foo",
 		DirName:   &originalDirName,
 		Path:      originalPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -1702,7 +1659,6 @@ func TestProjectService_UpdateProject_RenameFailsWhenTargetDirectoryExists(t *te
 		Name:      "Foo",
 		DirName:   &originalDirName,
 		Path:      originalPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -1724,7 +1680,7 @@ func TestProjectService_UpdateProject_RenameFailsWhenTargetDirectoryExists(t *te
 	assert.Equal(t, "Foo", *fromDB.DirName)
 }
 
-func TestProjectService_UpdateProject_RenameFailsWhenProjectRunning(t *testing.T) {
+func TestProjectService_UpdateProject_RenameFailsWhenComposeUnloadable(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
 
@@ -1746,7 +1702,6 @@ func TestProjectService_UpdateProject_RenameFailsWhenProjectRunning(t *testing.T
 		Name:      "Foo",
 		DirName:   &originalDirName,
 		Path:      originalPath,
-		Status:    models.ProjectStatusRunning,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -1756,7 +1711,7 @@ func TestProjectService_UpdateProject_RenameFailsWhenProjectRunning(t *testing.T
 	})
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "project must be stopped before renaming (current status: running)")
+	assert.Contains(t, err.Error(), "failed to verify project is stopped before renaming")
 	assert.DirExists(t, originalPath)
 	assert.NoDirExists(t, filepath.Join(projectsDir, "bar"))
 
@@ -1805,7 +1760,6 @@ func TestProjectService_UpdateProject_RenameRejectsStaleStoppedWhenRuntimeIsRunn
 		Name:      "Foo",
 		DirName:   &originalDirName,
 		Path:      originalPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -1823,7 +1777,6 @@ func TestProjectService_UpdateProject_RenameRejectsStaleStoppedWhenRuntimeIsRunn
 	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
 	assert.Equal(t, "Foo", fromDB.Name)
 	assert.Equal(t, originalPath, fromDB.Path)
-	assert.Equal(t, models.ProjectStatusStopped, fromDB.Status)
 }
 
 func TestProjectService_UpdateProject_RenameResolvesUnknownStoppedStatusBeforeVolumeMigration(t *testing.T) {
@@ -1852,7 +1805,6 @@ func TestProjectService_UpdateProject_RenameResolvesUnknownStoppedStatusBeforeVo
 		Name:         "Foo",
 		DirName:      &originalDirName,
 		Path:         originalPath,
-		Status:       models.ProjectStatusUnknown,
 		StatusReason: &statusReason,
 	}
 	require.NoError(t, db.Create(project).Error)
@@ -1867,10 +1819,7 @@ func TestProjectService_UpdateProject_RenameResolvesUnknownStoppedStatusBeforeVo
 	expectedPath := filepath.Join(projectsDir, "bar")
 	assert.Equal(t, "bar", updated.Name)
 	assert.Equal(t, expectedPath, updated.Path)
-	assert.Equal(t, models.ProjectStatusStopped, updated.Status)
-	assert.Nil(t, updated.StatusReason)
 	assert.Equal(t, 1, updated.ServiceCount)
-	assert.Equal(t, 0, updated.RunningCount)
 	assert.NoDirExists(t, originalPath)
 	assert.DirExists(t, expectedPath)
 
@@ -1878,10 +1827,7 @@ func TestProjectService_UpdateProject_RenameResolvesUnknownStoppedStatusBeforeVo
 	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
 	assert.Equal(t, "bar", fromDB.Name)
 	assert.Equal(t, expectedPath, fromDB.Path)
-	assert.Equal(t, models.ProjectStatusStopped, fromDB.Status)
-	assert.Nil(t, fromDB.StatusReason)
 	assert.Equal(t, 1, fromDB.ServiceCount)
-	assert.Equal(t, 0, fromDB.RunningCount)
 }
 
 func TestProjectService_UpdateProject_RenameRejectsUnknownWhenRuntimeIsRunning(t *testing.T) {
@@ -1924,7 +1870,6 @@ func TestProjectService_UpdateProject_RenameRejectsUnknownWhenRuntimeIsRunning(t
 		Name:         "Foo",
 		DirName:      &originalDirName,
 		Path:         originalPath,
-		Status:       models.ProjectStatusUnknown,
 		StatusReason: &statusReason,
 	}
 	require.NoError(t, db.Create(project).Error)
@@ -1943,7 +1888,6 @@ func TestProjectService_UpdateProject_RenameRejectsUnknownWhenRuntimeIsRunning(t
 	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
 	assert.Equal(t, "Foo", fromDB.Name)
 	assert.Equal(t, originalPath, fromDB.Path)
-	assert.Equal(t, models.ProjectStatusUnknown, fromDB.Status)
 	require.NotNil(t, fromDB.StatusReason)
 	assert.Equal(t, statusReason, *fromDB.StatusReason)
 }
@@ -1970,7 +1914,6 @@ func TestProjectService_UpdateProject_ValidatesComposeUsingExistingProjectName(t
 		Name:      "demo",
 		DirName:   &dirName,
 		Path:      projectPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -2013,7 +1956,6 @@ func TestProjectService_UpdateProject_AllowsMissingEnvFileDuringComposeValidatio
 		Name:      "env-required",
 		DirName:   &dirName,
 		Path:      projectPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -2058,7 +2000,6 @@ func TestProjectService_UpdateProject_AllowsMissingLocalIncludeDuringComposeVali
 		Name:      "include-new",
 		DirName:   &dirName,
 		Path:      projectPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -2084,7 +2025,6 @@ services:
 	require.NoError(t, err)
 	require.Len(t, details.IncludeFiles, 1)
 	assert.Equal(t, "metadata.yaml", details.IncludeFiles[0].RelativePath)
-
 }
 
 func TestProjectService_CreateProject_AllowsExternalInclude(t *testing.T) {
@@ -2141,7 +2081,6 @@ func TestProjectService_UpdateProject_AllowsExternalInclude(t *testing.T) {
 		Name:      "external-include",
 		DirName:   &dirName,
 		Path:      projectPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -2251,7 +2190,6 @@ func TestProjectService_UpdateProject_UsesExistingEnvFileDuringComposeValidation
 		Name:      "env-existing",
 		DirName:   &dirName,
 		Path:      projectPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -2300,7 +2238,6 @@ func newProjectServiceForOverrideTestInternal(t *testing.T, dirName, baseCompose
 		Name:      dirName,
 		DirName:   &dirName,
 		Path:      projectPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -2411,7 +2348,6 @@ func TestProjectService_UpdateProject_UsesProvidedEnvContentDuringComposeValidat
 		Name:      "env-updated",
 		DirName:   &dirName,
 		Path:      projectPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -2458,7 +2394,6 @@ func TestProjectService_UpdateProject_ReturnsEnvParseErrorDuringComposeValidatio
 		Name:      "env-invalid",
 		DirName:   &dirName,
 		Path:      projectPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -2504,7 +2439,6 @@ func TestProjectService_UpdateProject_UsesGlobalEnvDuringComposeValidation(t *te
 		Name:      dirName,
 		DirName:   &dirName,
 		Path:      projectPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -2553,7 +2487,6 @@ func TestProjectService_UpdateProject_DoesNotResolveHostEnvThroughGlobalEnvDurin
 		Name:      dirName,
 		DirName:   &dirName,
 		Path:      projectPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -2599,7 +2532,6 @@ func TestProjectService_UpdateProject_DerivesProjectOverrideEnvWhenGitSourceExis
 		Name:      "override-edit",
 		DirName:   &dirName,
 		Path:      projectPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -2651,7 +2583,6 @@ func TestProjectService_UpdateProject_UnchangedGitEnvLeavesFilesUntouched(t *tes
 		Name:      dirName,
 		DirName:   &dirName,
 		Path:      projectPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -2744,7 +2675,6 @@ func TestProjectService_UpdateProject_DeletingGitBackedKeyFallsBackToGit(t *test
 		Name:      "override-delete",
 		DirName:   &dirName,
 		Path:      projectPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -2792,7 +2722,6 @@ func TestProjectService_ApplyGitSyncProjectFiles_MigratesDirectEnvIntoProjectOve
 		Name:      "git-sync-migrate",
 		DirName:   &dirName,
 		Path:      projectPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -2842,7 +2771,6 @@ func TestProjectService_ApplyGitSyncProjectFiles_PreservesGitEnvSyntax(t *testin
 		Name:      dirName,
 		DirName:   &dirName,
 		Path:      projectPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -2906,7 +2834,6 @@ func TestProjectService_ApplyGitSyncProjectFiles_NormalizesStaleCopiedGitOverrid
 		Name:      "git-sync-normalize",
 		DirName:   &dirName,
 		Path:      projectPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -2954,7 +2881,6 @@ func TestProjectService_ApplyGitSyncProjectFiles_RemovesLegacyDeletedGitMasks(t 
 		Name:      "git-sync-delete-mask",
 		DirName:   &dirName,
 		Path:      projectPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -3002,7 +2928,6 @@ func TestProjectService_ApplyGitSyncProjectFiles_RemovesGitEnvSource(t *testing.
 		Name:      "git-sync-remove",
 		DirName:   &dirName,
 		Path:      projectPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -3044,7 +2969,6 @@ func TestProjectService_ApplyGitSyncProjectFiles_WritesAndRemovesComposeOverride
 		Name:      dirName,
 		DirName:   &dirName,
 		Path:      projectPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -3095,7 +3019,6 @@ func TestProjectService_ApplyGitSyncProjectFiles_UsesGlobalEnvDuringComposeValid
 		Name:      dirName,
 		DirName:   &dirName,
 		Path:      projectPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -3155,7 +3078,6 @@ func TestProjectService_ApplyGitSyncProjectFiles_TolerantOfUndefinedComposeVar(t
 		Name:      dirName,
 		DirName:   &dirName,
 		Path:      projectPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -3235,7 +3157,6 @@ func TestProjectService_GetProjectDetails_ReturnsEffectiveEnvContent(t *testing.
 		Name:      "details-override",
 		DirName:   &dirName,
 		Path:      projectPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -3357,7 +3278,6 @@ func TestProjectService_GetProjectDetails_IncludesUpdateInfo(t *testing.T) {
 		Name:      "updates-demo",
 		DirName:   ptr("updates-demo"),
 		Path:      projectPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(projectRecord).Error)
 
@@ -3440,9 +3360,7 @@ func TestProjectService_GetProjectDetails_RefreshesRuntimeStatusWithoutRuntimeSe
 		Name:         "projectA",
 		DirName:      ptr("projectA"),
 		Path:         projectPath,
-		Status:       models.ProjectStatusStopped,
 		ServiceCount: 2,
-		RunningCount: 0,
 	}
 	require.NoError(t, db.Create(projectRecord).Error)
 
@@ -3492,9 +3410,7 @@ func TestProjectService_GetProjectDetails_PopulatesRuntimeServicesFromComposePs(
 		Name:         "projectA",
 		DirName:      ptr("projectA"),
 		Path:         projectPath,
-		Status:       models.ProjectStatusStopped,
 		ServiceCount: 1,
-		RunningCount: 0,
 	}
 	require.NoError(t, db.Create(projectRecord).Error)
 
@@ -3538,28 +3454,24 @@ func TestProjectService_ListProjects_FiltersByUpdateStatus(t *testing.T) {
 		Name:      "updated-demo",
 		DirName:   ptr("updated-demo"),
 		Path:      updatedPath,
-		Status:    models.ProjectStatusStopped,
 	}).Error)
 	require.NoError(t, db.Create(&models.Project{
 		BaseModel: models.BaseModel{ID: "project-current"},
 		Name:      "current-demo",
 		DirName:   ptr("current-demo"),
 		Path:      upToDatePath,
-		Status:    models.ProjectStatusStopped,
 	}).Error)
 	require.NoError(t, db.Create(&models.Project{
 		BaseModel: models.BaseModel{ID: "project-error"},
 		Name:      "error-demo",
 		DirName:   ptr("error-demo"),
 		Path:      errorPath,
-		Status:    models.ProjectStatusStopped,
 	}).Error)
 	require.NoError(t, db.Create(&models.Project{
 		BaseModel: models.BaseModel{ID: "project-unknown"},
 		Name:      "unknown-demo",
 		DirName:   ptr("unknown-demo"),
 		Path:      unknownPath,
-		Status:    models.ProjectStatusStopped,
 	}).Error)
 
 	now := time.Now().UTC()
@@ -3741,14 +3653,12 @@ func TestProjectService_ListProjects_FiltersArchivedProjects(t *testing.T) {
 		Name:      "active-demo",
 		DirName:   ptr("active-demo"),
 		Path:      activePath,
-		Status:    models.ProjectStatusStopped,
 	}).Error)
 	require.NoError(t, db.Create(&models.Project{
 		BaseModel:  models.BaseModel{ID: "project-archived"},
 		Name:       "archived-demo",
 		DirName:    ptr("archived-demo"),
 		Path:       archivedPath,
-		Status:     models.ProjectStatusStopped,
 		IsArchived: true,
 		ArchivedAt: new(time.Now().UTC()),
 	}).Error)
@@ -3791,18 +3701,35 @@ func TestProjectService_ArchiveProject_RequiresStoppedProject(t *testing.T) {
 	ctx := context.Background()
 
 	projectsRoot := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsRoot)
 	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
 
 	projectPath := createComposeProjectDir(t, projectsRoot, "running-demo")
+
+	server := newProjectRuntimeDockerServerInternal(t, []container.Summary{
+		{
+			ID:     "app-container",
+			Names:  []string{"/running-demo-app-1"},
+			Image:  "nginx:alpine",
+			State:  container.StateRunning,
+			Status: "Up 30 seconds",
+			Labels: map[string]string{
+				composeapi.ProjectLabel:    "running-demo",
+				composeapi.ServiceLabel:    "app",
+				composeapi.ConfigHashLabel: "app-hash",
+				composeapi.WorkingDirLabel: projectPath,
+			},
+		},
+	})
+	t.Setenv("DOCKER_HOST", dockerHostFromProjectRuntimeServerURLInternal(t, server.URL))
+
 	require.NoError(t, db.Create(&models.Project{
-		BaseModel:    models.BaseModel{ID: "project-running"},
-		Name:         "running-demo",
-		DirName:      ptr("running-demo"),
-		Path:         projectPath,
-		Status:       models.ProjectStatusRunning,
-		RunningCount: 1,
+		BaseModel: models.BaseModel{ID: "project-running"},
+		Name:      "running-demo",
+		DirName:   ptr("running-demo"),
+		Path:      projectPath,
 	}).Error)
 
 	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
@@ -3821,9 +3748,13 @@ func TestProjectService_ArchiveProject_TogglesArchiveFlag(t *testing.T) {
 	ctx := context.Background()
 
 	projectsRoot := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsRoot)
 	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+
+	server := newProjectRuntimeDockerServerInternal(t, nil)
+	t.Setenv("DOCKER_HOST", dockerHostFromProjectRuntimeServerURLInternal(t, server.URL))
 
 	projectPath := createComposeProjectDir(t, projectsRoot, "stopped-demo")
 	require.NoError(t, db.Create(&models.Project{
@@ -3831,7 +3762,6 @@ func TestProjectService_ArchiveProject_TogglesArchiveFlag(t *testing.T) {
 		Name:      "stopped-demo",
 		DirName:   ptr("stopped-demo"),
 		Path:      projectPath,
-		Status:    models.ProjectStatusStopped,
 	}).Error)
 
 	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
@@ -3848,6 +3778,62 @@ func TestProjectService_ArchiveProject_TogglesArchiveFlag(t *testing.T) {
 	require.NoError(t, db.First(&unarchived, "id = ?", "project-stopped").Error)
 	assert.False(t, unarchived.IsArchived)
 	assert.Nil(t, unarchived.ArchivedAt)
+}
+
+func TestProjectService_ArchiveProject_DockerUnreachableFails(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsRoot := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsRoot)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+	t.Setenv("DOCKER_HOST", "tcp://127.0.0.1:1")
+
+	projectPath := createComposeProjectDir(t, projectsRoot, "unverifiable-demo")
+	require.NoError(t, db.Create(&models.Project{
+		BaseModel: models.BaseModel{ID: "project-unverifiable"},
+		Name:      "unverifiable-demo",
+		DirName:   ptr("unverifiable-demo"),
+		Path:      projectPath,
+	}).Error)
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
+	err = svc.ArchiveProject(ctx, "project-unverifiable", models.User{BaseModel: models.BaseModel{ID: "user-1"}, Username: "tester"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot verify project is stopped before archiving")
+
+	var stored models.Project
+	require.NoError(t, db.First(&stored, "id = ?", "project-unverifiable").Error)
+	assert.False(t, stored.IsArchived)
+}
+
+func TestProjectService_ArchiveProject_MissingComposeFileAllowsArchive(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsRoot := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsRoot)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+
+	projectPath := filepath.Join(projectsRoot, "composeless-demo")
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+	require.NoError(t, db.Create(&models.Project{
+		BaseModel: models.BaseModel{ID: "project-composeless"},
+		Name:      "composeless-demo",
+		DirName:   ptr("composeless-demo"),
+		Path:      projectPath,
+	}).Error)
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
+	require.NoError(t, svc.ArchiveProject(ctx, "project-composeless", models.User{BaseModel: models.BaseModel{ID: "user-1"}, Username: "tester"}))
+
+	var stored models.Project
+	require.NoError(t, db.First(&stored, "id = ?", "project-composeless").Error)
+	assert.True(t, stored.IsArchived)
 }
 
 func TestProjectService_MapProjectToDto_SetsRedeployDisabledFromRuntimeServices(t *testing.T) {
@@ -3971,7 +3957,6 @@ func TestProjectService_ListProjects_WithDerivedStatusFilter_AllowsAllPageSizeSe
 			Name:      fmt.Sprintf("stopped-%02d", i),
 			DirName:   ptr(fmt.Sprintf("stopped-%02d", i)),
 			Path:      projectPath,
-			Status:    models.ProjectStatusStopped,
 		}).Error)
 	}
 
@@ -4208,7 +4193,6 @@ func TestProjectService_DeployProject_StopsOnBuildPreparationError(t *testing.T)
 		BaseModel: models.BaseModel{ID: "p1"},
 		Name:      "demo",
 		Path:      projectDir,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(proj).Error)
 
@@ -4219,10 +4203,6 @@ func TestProjectService_DeployProject_StopsOnBuildPreparationError(t *testing.T)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to prepare project images for deploy")
 	assert.Contains(t, err.Error(), "boom build")
-
-	var updated models.Project
-	require.NoError(t, db.First(&updated, "id = ?", "p1").Error)
-	assert.Equal(t, models.ProjectStatusStopped, updated.Status)
 }
 
 func TestProjectService_DeployProject_BuildsGeneratedImageWithoutPull(t *testing.T) {
@@ -4250,7 +4230,6 @@ func TestProjectService_DeployProject_BuildsGeneratedImageWithoutPull(t *testing
 		BaseModel: models.BaseModel{ID: "p-generated"},
 		Name:      "build-test",
 		Path:      projectDir,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(proj).Error)
 
@@ -4577,9 +4556,8 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesProjectsWhenDirector
 	const seeded = 3
 	for i := range seeded {
 		require.NoError(t, db.WithContext(ctx).Create(&models.Project{
-			Name:   fmt.Sprintf("project-%d", i),
-			Path:   filepath.Join(projectsRoot, fmt.Sprintf("project-%d", i)),
-			Status: models.ProjectStatusStopped,
+			Name: fmt.Sprintf("project-%d", i),
+			Path: filepath.Join(projectsRoot, fmt.Sprintf("project-%d", i)),
 		}).Error)
 	}
 
@@ -4745,7 +4723,6 @@ func TestProjectService_SyncProjectsFromFileSystem_DiscoversReadableProjectsDesp
 		Name:      "stranded-project",
 		DirName:   &strandedDirName,
 		Path:      filepath.Join(unreadableDir, "stranded-project"),
-		Status:    models.ProjectStatusStopped,
 	}).Error)
 
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
@@ -4939,7 +4916,6 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesValidCustomNameWitho
 		Name:      "custom-name",
 		DirName:   &dirName,
 		Path:      projectPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -4986,7 +4962,6 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesGitOpsProjectWithCus
 		Name:            "Radarr",
 		DirName:         ptr("Radarr-3"),
 		Path:            projectDir,
-		Status:          models.ProjectStatusStopped,
 		GitOpsManagedBy: &syncID,
 	}
 	require.NoError(t, db.Create(project).Error)
@@ -5037,7 +5012,6 @@ func TestProjectService_GetProjectDetails_UsesGitOpsCustomComposeFilename(t *tes
 		Name:            "Radarr",
 		DirName:         ptr("Radarr-3"),
 		Path:            projectDir,
-		Status:          models.ProjectStatusStopped,
 		GitOpsManagedBy: &syncID,
 	}).Error)
 
@@ -5082,7 +5056,6 @@ func TestProjectService_UpdateProject_WritesThroughSymlinkedProjectPath(t *testi
 		Name:      "demo",
 		DirName:   new("demo"),
 		Path:      linkPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -5137,7 +5110,6 @@ func TestProjectService_UpdateProject_WritesThroughExternalEnvSymlink(t *testing
 		Name:      dirName,
 		DirName:   &dirName,
 		Path:      projectPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -5196,7 +5168,6 @@ func TestProjectService_UpdateProject_RestoresExternalEnvSymlinkTargetWhenProjec
 		Name:      dirName,
 		DirName:   &dirName,
 		Path:      projectPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -5349,7 +5320,6 @@ func TestProjectService_RecoverProjectRenameJournals_RollsBackUncommittedDirecto
 		Name:      "nginx",
 		DirName:   &oldDir,
 		Path:      oldPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -5403,7 +5373,6 @@ func TestProjectService_RecoverProjectRenameJournals_StartedPhaseSkipsVolumeRoll
 		Name:      "nginx",
 		DirName:   &oldDir,
 		Path:      oldPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -5466,7 +5435,6 @@ func TestProjectService_RecoverProjectRenameJournals_RelocatesTargetWhenBothPath
 		Name:      "nginx",
 		DirName:   &oldDir,
 		Path:      oldPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -5529,7 +5497,6 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsStartedJournalWhenDir
 		Name:      "nginx",
 		DirName:   &oldDir,
 		Path:      oldPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -5575,7 +5542,6 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsPreservedTargetJourna
 		Name:      "nginx",
 		DirName:   &oldDir,
 		Path:      oldPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -5656,7 +5622,6 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsCommittedJournal(t *t
 		Name:      "web",
 		DirName:   &newDir,
 		Path:      newPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -5696,7 +5661,6 @@ func TestProjectService_FinalizeProjectRenameAfterCommit_ClearsJournalAfterSourc
 		Name:      "web",
 		DirName:   &newDir,
 		Path:      filepath.Join(t.TempDir(), newDir),
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -5737,7 +5701,6 @@ func TestProjectService_FinalizeProjectRenameAfterCommit_KeepsJournalWhenSourceC
 		Name:      "web",
 		DirName:   &newDir,
 		Path:      filepath.Join(t.TempDir(), newDir),
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -5821,7 +5784,6 @@ func TestProjectService_RecoverProjectRenameJournals_KeepsJournalWhenDirectoryRo
 		Name:      "nginx",
 		DirName:   &oldDir,
 		Path:      oldPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -5915,7 +5877,6 @@ func TestProjectService_RecoverProjectRenameJournals_CompletesCommittedVolumeJou
 		Name:      "web",
 		DirName:   &newDir,
 		Path:      newPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -5988,7 +5949,6 @@ func TestProjectService_RecoverProjectRenameJournals_RollsBackCommittedJournalWh
 		Name:      "web",
 		DirName:   &newDir,
 		Path:      newPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -6098,7 +6058,6 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalAfterDBRestore
 		Name:      "web",
 		DirName:   &newDir,
 		Path:      newPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -6176,7 +6135,6 @@ func TestProjectService_RecoverProjectRenameJournals_KeepsRollbackCleanupWhenDoc
 		Name:      "nginx",
 		DirName:   &oldDir,
 		Path:      oldPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -6238,7 +6196,6 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsCommittedJournalWhenS
 		Name:      "web",
 		DirName:   &newDir,
 		Path:      newPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -6324,7 +6281,6 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsCommittedJournalAndCl
 		Name:      "web",
 		DirName:   &newDir,
 		Path:      newPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -6407,7 +6363,6 @@ func TestProjectService_RecoverProjectRenameJournals_MarksSourceCleanupPendingWh
 		Name:      "web",
 		DirName:   &newDir,
 		Path:      newPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -6492,7 +6447,6 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsSourceCleanupPendingJ
 		Name:      "web",
 		DirName:   &newDir,
 		Path:      newPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -6591,7 +6545,6 @@ func TestProjectService_RecoverProjectRenameJournals_RollsBackSourceCleanupPendi
 		Name:      "web",
 		DirName:   &newDir,
 		Path:      newPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -6681,7 +6634,6 @@ func TestProjectService_RecoverProjectRenameJournals_KeepsSourceCleanupPendingJo
 		Name:      "web",
 		DirName:   &newDir,
 		Path:      newPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -6748,7 +6700,6 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsStartedJournalWhenDir
 		Name:      "nginx",
 		DirName:   &oldDir,
 		Path:      oldPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -6817,7 +6768,6 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsMissingPathJournalWhe
 		Name:      "nginx",
 		DirName:   &oldDir,
 		Path:      oldPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -6891,7 +6841,6 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenRollbackSo
 		Name:      "nginx",
 		DirName:   &oldDir,
 		Path:      oldPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -6970,7 +6919,6 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenRollbackTa
 		Name:      "nginx",
 		DirName:   &oldDir,
 		Path:      oldPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -7055,7 +7003,6 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenTargetPres
 		Name:      "nginx",
 		DirName:   &oldDir,
 		Path:      oldPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 

@@ -189,18 +189,16 @@ func (s *ProjectService) upsertProjectForDir(ctx context.Context, dirName, dirPa
 
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		// Create a minimal project entry
-		reason := "Project discovered from filesystem, status pending Docker service query"
+		reason := "Project discovered from filesystem"
 		proj := &models.Project{
 			Name:               composeMetadata.resolvedProjectName,
 			DirName:            new(dirName),
 			Path:               dirPath,
-			Status:             models.ProjectStatusUnknown,
 			StatusReason:       new(reason),
 			ServiceCount:       composeMetadata.serviceCount,
-			RunningCount:       0,
 			ComposeProjectName: composeMetadata.composeProjectName,
 		}
-		slog.InfoContext(ctx, "Discovered new project with unknown status",
+		slog.InfoContext(ctx, "Discovered new project",
 			"project", dirName,
 			"path", dirPath,
 			"reason", reason)

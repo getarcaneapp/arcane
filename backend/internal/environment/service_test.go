@@ -208,7 +208,6 @@ func TestEnvironmentService_DeleteEnvironment_CascadesGitOpsSyncs(t *testing.T) 
 		BaseModel:       models.BaseModel{ID: "project-managed-by-deleted-env"},
 		Name:            "demo",
 		Path:            "/tmp/demo",
-		Status:          models.ProjectStatusStopped,
 		GitOpsManagedBy: &syncID,
 	}).Error)
 

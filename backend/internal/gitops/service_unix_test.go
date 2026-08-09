@@ -48,7 +48,6 @@ func TestGitOpsSyncService_SyncProjectDirectory_PreservesUnreadableBindMountData
 		Name:      "demo-project",
 		DirName:   new("demo-project"),
 		Path:      projectPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 

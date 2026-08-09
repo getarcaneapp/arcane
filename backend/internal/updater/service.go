@@ -14,7 +14,6 @@ import (
 
 	"emperror.dev/errors"
 
-	"github.com/compose-spec/compose-go/v2/loader"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -1236,40 +1235,87 @@ func (s *UpdaterService) collectUsedImagesFromProjectsInternal(ctx context.Conte
 		return err
 	}
 
-	activeProjectNames := activeComposeProjectNameSetInternal(projects)
-	if len(activeProjectNames) == 0 {
-		return nil
-	}
-
 	composeContainers, err := projectspkg.ListGlobalComposeContainers(ctx)
 	if err != nil {
 		return err
+	}
+
+	runningComposeProjects := make(map[string]struct{})
+	for _, summary := range composeContainers {
+		if summary.State != container.StateRunning {
+			continue
+		}
+		if name := dockerutil.ComposeProjectLabel(summary.Labels); name != "" {
+			runningComposeProjects[name] = struct{}{}
+		}
+	}
+
+	activeProjectNames := activeComposeProjectNameSetInternal(projects, runningComposeProjects)
+	addActiveComposeProjectNamesByWorkingDirInternal(projects, composeContainers, activeProjectNames)
+	if len(activeProjectNames) == 0 {
+		return nil
 	}
 
 	s.collectUsedImagesFromComposeContainersInternal(ctx, composeContainers, activeProjectNames, out)
 	return nil
 }
 
-func activeComposeProjectNameSetInternal(projects []models.Project) map[string]struct{} {
+// activeComposeProjectNameSetInternal returns the compose names of non-archived
+// projects with at least one running container, per the live container list.
+func activeComposeProjectNameSetInternal(projects []models.Project, runningComposeProjects map[string]struct{}) map[string]struct{} {
 	active := make(map[string]struct{})
 	for _, project := range projects {
 		if project.IsArchived {
 			continue
 		}
-		if project.Status != models.ProjectStatusRunning && project.Status != models.ProjectStatusPartiallyRunning {
-			continue
+
+		candidateNames := []string{project.Name}
+		if project.ComposeProjectName != nil {
+			candidateNames = append(candidateNames, *project.ComposeProjectName)
 		}
 
-		name := strings.TrimSpace(project.Name)
-		if name == "" {
-			continue
-		}
-		active[name] = struct{}{}
-		if normalized := loader.NormalizeProjectName(name); normalized != "" {
-			active[normalized] = struct{}{}
+		for _, candidate := range candidateNames {
+			name := strings.TrimSpace(candidate)
+			if name == "" {
+				continue
+			}
+			if _, running := runningComposeProjects[name]; running {
+				active[name] = struct{}{}
+			}
+
+			normalized := projectspkg.NormalizeProjectName(name)
+			if normalized != name {
+				if _, running := runningComposeProjects[normalized]; running {
+					active[normalized] = struct{}{}
+				}
+			}
 		}
 	}
 	return active
+}
+
+func addActiveComposeProjectNamesByWorkingDirInternal(projects []models.Project, composeContainers []container.Summary, active map[string]struct{}) {
+	projectPaths := make(map[string]struct{}, len(projects))
+	for _, project := range projects {
+		if project.IsArchived {
+			continue
+		}
+		if projectPath := strings.TrimSpace(project.Path); projectPath != "" {
+			projectPaths[projectPath] = struct{}{}
+		}
+	}
+
+	for _, summary := range composeContainers {
+		if summary.State != container.StateRunning {
+			continue
+		}
+		if _, knownProject := projectPaths[dockerutil.ComposeWorkingDirLabel(summary.Labels)]; !knownProject {
+			continue
+		}
+		if projectName := dockerutil.ComposeProjectLabel(summary.Labels); projectName != "" {
+			active[projectName] = struct{}{}
+		}
+	}
 }
 
 func addNormalizedImageUpdateRefInternal(ctx context.Context, out map[string]struct{}, imageRef, logMessage string, attrs ...any) {

@@ -144,9 +144,6 @@ func (s *ProjectService) UpdateProjectWorkspace(ctx context.Context, projectID s
 	}
 
 	s.refreshProjectImageRefsInternal(ctx, proj)
-	if err := s.updateProjectStatusandCountsInternal(ctx, proj.ID, proj.Status); err != nil {
-		return nil, errors.WrapIf(err, "refresh project after workspace update")
-	}
 	s.logProjectEventInternal(ctx, models.EventTypeProjectUpdate, proj.ID, proj.Name, user, models.JSON{
 		"action":          "update_project_workspace",
 		"fileChangeCount": len(manifest.FileChanges),

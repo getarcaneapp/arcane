@@ -51,7 +51,6 @@ func TestProjectService_ApplyGitSyncProjectFiles_TolerantOfPermissionLockedEnv(t
 		Name:      "git-sync-locked-env",
 		DirName:   &dirName,
 		Path:      projectPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 

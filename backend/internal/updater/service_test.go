@@ -872,6 +872,36 @@ func TestUpdaterService_ApplyPending_RoutesLegacyArcaneServerThroughSelfUpgradeI
 	assert.Empty(t, projectUpdater.calls, "legacy Arcane server should not be updated through project services")
 }
 
+func TestActiveComposeProjectNameSetInternal_UsesEffectiveComposeName(t *testing.T) {
+	tests := []struct {
+		name                  string
+		composeProjectName    string
+		runningComposeProject string
+	}{
+		{
+			name:                  "raw effective name",
+			composeProjectName:    "runtime-project",
+			runningComposeProject: "runtime-project",
+		},
+		{
+			name:                  "normalized effective name",
+			composeProjectName:    "Runtime Project!",
+			runningComposeProject: "runtimeproject",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			active := activeComposeProjectNameSetInternal([]models.Project{{
+				Name:               "arcane-project",
+				ComposeProjectName: new(tt.composeProjectName),
+			}}, map[string]struct{}{tt.runningComposeProject: {}})
+
+			assert.Equal(t, map[string]struct{}{tt.runningComposeProject: {}}, active)
+		})
+	}
+}
+
 // The engine picks the reference Arcane's updates are applied to, so its choice
 // is worth pinning here as well as in the library.
 func TestPullableImageRefInternal(t *testing.T) {

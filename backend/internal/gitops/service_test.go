@@ -204,7 +204,6 @@ func TestGitOpsSyncService_CleanupOrphanedSyncsOnStartup_DeletesOnlyOrphans(t *t
 		BaseModel:       models.BaseModel{ID: "project-orphan"},
 		Name:            "orphan",
 		Path:            "/tmp/orphan",
-		Status:          models.ProjectStatusStopped,
 		GitOpsManagedBy: &orphanSyncID,
 	}).Error)
 
@@ -564,7 +563,6 @@ services:
 		Name:      "demo-project",
 		DirName:   new("demo-project"),
 		Path:      projectPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -654,7 +652,6 @@ func TestGitOpsSyncService_SyncProjectDirectory_PreservesEnvOverrideAndAddsNewGi
 		Name:      "demo-project",
 		DirName:   new("demo-project"),
 		Path:      projectPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -745,7 +742,6 @@ func TestGitOpsSyncService_SyncProjectDirectory_MigratesLegacyTrackedEnvOnFirstS
 		Name:      "demo-project",
 		DirName:   new("demo-project"),
 		Path:      projectPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -954,7 +950,6 @@ func TestGitOpsSyncService_DirectorySync_OverwritesExistingDirectoryAtFilePath(t
 		Name:      "traefik-project",
 		DirName:   &dirName,
 		Path:      projectPath,
-		Status:    models.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -1104,7 +1099,6 @@ func TestGitOpsSyncService_GetDirectorySyncProjectInternal_RelinksManagedProject
 		Name:            "Radarr",
 		DirName:         &dirName,
 		Path:            projectPath,
-		Status:          models.ProjectStatusStopped,
 		GitOpsManagedBy: &sync.ID,
 	}
 	require.NoError(t, db.Create(project).Error)

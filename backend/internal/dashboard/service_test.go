@@ -179,7 +179,6 @@ func TestDashboardService_GetSnapshot_ReturnsDashboardSnapshot(t *testing.T) {
 		Name:      "project-with-update",
 		DirName:   &dirName,
 		Path:      projectPath,
-		Status:    models.ProjectStatusStopped,
 	}).Error)
 	projectSvc := project.NewProjectService(db, settingsSvc, nil, image.NewImageService(db, nil, nil, nil, nil, nil), nil, nil, nil, nil, config.Load())
 	svc := NewDashboardService(db, dockerSvc, nil, projectSvc, nil, settingsSvc, nil, nil, nil, volume.NewVolumeService(db, nil, nil, nil, nil, nil))

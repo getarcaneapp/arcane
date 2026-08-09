@@ -652,7 +652,7 @@ func (h *ProjectHandler) CreateProject(ctx context.Context, input *CreateProject
 	if err := mapper.MapStruct(proj, &response); err != nil {
 		return nil, huma.Error500InternalServerError("failed to map response")
 	}
-	response.Status = string(proj.Status)
+	response.Status = string(models.ProjectStatusStopped)
 	response.StatusReason = proj.StatusReason
 	response.CreatedAt = proj.CreatedAt.Format(time.RFC3339)
 	response.UpdatedAt = proj.UpdatedAt.Format(time.RFC3339)
