@@ -791,3 +791,67 @@ func TestSupportedNotificationTestTypes_IncludesAutoHeal(t *testing.T) {
 	require.Len(t, supportedNotificationTestTypes, len(expected),
 		"supportedNotificationTestTypes has unexpected entries")
 }
+
+func TestNotificationService_DispatchNotificationForEnvironment_ResolvesTunnelSessionEnvironment(t *testing.T) {
+	ctx := context.Background()
+	db, _, svc := setupNotificationTestServiceInternal(t)
+
+	now := time.Now()
+	require.NoError(t, db.WithContext(ctx).Create(&models.Environment{
+		BaseModel: models.BaseModel{ID: "env-edge", CreatedAt: now, UpdatedAt: &now},
+		Name:      "edge-env",
+		ApiUrl:    "http://edge:3553",
+		Enabled:   true,
+	}).Error)
+
+	// No access token involved: the environment comes from the tunnel session (#3002).
+	resp, err := svc.DispatchNotificationForEnvironment(ctx, "env-edge", notificationdto.DispatchRequest{
+		Kind: notificationdto.DispatchKindImageUpdate,
+		ImageUpdate: &notificationdto.DispatchImageUpdate{
+			ImageRef:   "nginx:latest",
+			UpdateInfo: *newNotificationTestUpdateInfoInternal(),
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "Notification dispatched successfully", resp.Message)
+
+	_, err = svc.DispatchNotificationForEnvironment(ctx, "env-edge", notificationdto.DispatchRequest{Kind: "bogus"})
+	require.ErrorIs(t, err, ErrUnsupportedDispatchKind)
+}
+
+func TestNotificationService_AgentDispatchWithoutHTTPConfigFallsBackToTunnel(t *testing.T) {
+	ctx := context.Background()
+	db := setupNotificationTestDB(t)
+	svc := NewNotificationService(db, &config.Config{AgentMode: true}, nil, event.NewEventService(db, &config.Config{AgentMode: true}, nil))
+
+	// No MANAGER_API_URL/AGENT_TOKEN and no active tunnel: the error must point
+	// at both options instead of only the HTTP env vars (#3002).
+	_, err := svc.dispatchNotificationToManagerInternal(ctx, notificationdto.DispatchRequest{
+		Kind: notificationdto.DispatchKindImageUpdate,
+		ImageUpdate: &notificationdto.DispatchImageUpdate{
+			ImageRef:   "nginx:latest",
+			UpdateInfo: *newNotificationTestUpdateInfoInternal(),
+		},
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "connected edge tunnel")
+}
+
+func TestNotificationService_AgentDispatchHTTPFailureFallsBackToTunnel(t *testing.T) {
+	ctx := context.Background()
+	db := setupNotificationTestDB(t)
+	cfg := &config.Config{AgentMode: true, ManagerApiUrl: "http://127.0.0.1:0", AgentToken: "token"}
+	svc := NewNotificationService(db, cfg, nil, event.NewEventService(db, cfg, nil))
+
+	// HTTP dispatch fails and no tunnel is connected either: the fallback must
+	// not mask the HTTP transport error.
+	_, err := svc.dispatchNotificationToManagerInternal(ctx, notificationdto.DispatchRequest{
+		Kind: notificationdto.DispatchKindImageUpdate,
+		ImageUpdate: &notificationdto.DispatchImageUpdate{
+			ImageRef:   "nginx:latest",
+			UpdateInfo: *newNotificationTestUpdateInfoInternal(),
+		},
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to dispatch notification to manager")
+}

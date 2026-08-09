@@ -14,7 +14,9 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/notification"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
+	notificationdto "github.com/getarcaneapp/arcane/types/v2/notification"
 	"github.com/labstack/echo/v5"
 	"go.uber.org/fx"
 )
@@ -30,6 +32,7 @@ func registerEdgeTunnelRoutes(
 	apiGroup *echo.Group,
 	environmentService *environment.EnvironmentService,
 	eventService *event.EventService,
+	notificationService *notification.NotificationService,
 	registry *edge.TunnelRegistry,
 ) *edge.TunnelServer {
 	// Resolver that validates API key and returns the environment ID
@@ -45,6 +48,18 @@ func registerEdgeTunnelRoutes(
 	eventCallback := func(ctx context.Context, envID string, evt *edge.TunnelEvent) error {
 		if evt == nil {
 			return errors.New("event payload is required")
+		}
+
+		if evt.Type == edge.TunnelEventTypeNotificationDispatch {
+			if notificationService == nil {
+				return errors.New("notification service is not available for edge dispatch")
+			}
+			var payload notificationdto.DispatchRequest
+			if err := json.Unmarshal(evt.MetadataJSON, &payload); err != nil {
+				return errors.WrapIf(err, "failed to decode edge notification dispatch payload")
+			}
+			_, err := notificationService.DispatchNotificationForEnvironment(ctx, envID, payload)
+			return errors.WrapIf(err, "failed to dispatch edge notification")
 		}
 
 		var metadata models.JSON

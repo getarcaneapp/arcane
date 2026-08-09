@@ -279,7 +279,7 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 	// This is only registered when NOT in agent mode (i.e., running as manager)
 	var tunnelServer *edge.TunnelServer
 	if !cfg.AgentMode {
-		tunnelServer = registerEdgeTunnelRoutes(ctx, p.Lifecycle, p.ActorRuntime, cfg, apiGroup, deps.Environment.Service(), deps.Event.Service(), p.TunnelRegistry)
+		tunnelServer = registerEdgeTunnelRoutes(ctx, p.Lifecycle, p.ActorRuntime, cfg, apiGroup, deps.Environment.Service(), deps.Event.Service(), deps.Notification.Service(), p.TunnelRegistry)
 	}
 
 	if cfg.Environment != "production" {
