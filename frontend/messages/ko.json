@@ -1625,6 +1625,8 @@
   "docker_api_timeout_description": "Docker 목록 조회 작업의 타임아웃입니다 (단위: 초, 기본값: 30).",
   "docker_image_pull_timeout": "Docker 이미지 Pull 타임아웃",
   "docker_image_pull_timeout_description": "Docker 이미지 Pull 작업의 타임아웃입니다 (단위: 초, 기본값: 600 = 10분).",
+  "deploy_wait_timeout": "배포 대기 시간 제한",
+  "deploy_wait_timeout_description": "배포가 서비스가 정상 상태가 되거나 완료될 때까지 대기하는 시간(depend_on 조건)을 초 단위로 지정합니다(기본값: 600 = 10분).",
   "trivy_scan_timeout": "Trivy 스캔 타임아웃",
   "trivy_scan_timeout_description": "Docker 이미지의 Trivy 취약점 스캔 타임아웃입니다.",
   "git_operation_timeout": "Git 작업 타임아웃",
