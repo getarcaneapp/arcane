@@ -13,7 +13,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	eventtypes "github.com/getarcaneapp/arcane/types/v2/event"
@@ -133,7 +133,7 @@ func validAgentEventIngestionTokenInternal(r *http.Request, cfg *config.Config) 
 	if cfg == nil {
 		return false
 	}
-	token := r.Header.Get(pkgutils.HeaderAgentToken)
+	token := r.Header.Get(utils.HeaderAgentToken)
 	if token == "" || cfg.AgentToken == "" {
 		return false
 	}

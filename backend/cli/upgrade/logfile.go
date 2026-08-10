@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"go.getarcane.app/sys/atomic"
+	"go.getarcane.app/acfs/atomic"
 )
 
 const logFilePerm = 0o644

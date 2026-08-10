@@ -9,9 +9,13 @@ import (
 
 	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"go.getarcane.app/acfs"
 )
 
+// ReadFolderComposeTemplate stays on os.* for its reads: template folders are
+// user-managed on disk, so compose/env files may be symlinks resolving outside
+// any confinement root, which acfs cannot follow.
 func ReadFolderComposeTemplate(baseDir, folder string) (string, *string, string, bool, error) {
 	folderPath := filepath.Join(baseDir, folder)
 	composePath, err := DetectComposeFile(folderPath)
@@ -62,7 +66,11 @@ func EnsureTemplateDir(ctx context.Context, templatesDir, base string) (dir, com
 		return "", "", "", errors.WrapIf(derr, "ensure templates dir")
 	}
 	dir = filepath.Join(baseDir, base)
-	if err := os.MkdirAll(dir, pkgutils.DirPerm); err != nil {
+	dirLogical, err := acfs.LogicalPath(baseDir, dir)
+	if err != nil {
+		return "", "", "", errors.WrapIf(err, "template directory is outside the templates root")
+	}
+	if err := acfs.MkdirAll(ctx, baseDir, dirLogical, utils.DirPerm); err != nil {
 		return "", "", "", errors.WrapIf(err, "failed to create template directory")
 	}
 	composePath = filepath.Join(dir, "compose.yaml")
@@ -92,35 +100,38 @@ func EnsureDefaultTemplates(ctx context.Context, configuredTemplatesDir string) 
 		return errors.WrapIf(err, "get templates directory")
 	}
 
-	composePath := filepath.Join(templatesDir, ".compose.template")
-	swarmStackPath := filepath.Join(templatesDir, ".swarm-stack.template")
-	swarmStackEnvPath := filepath.Join(templatesDir, ".swarm-stack.env.template")
-	envPath := filepath.Join(templatesDir, ".env.template")
-
 	// Write default compose template if it doesn't exist
-	if _, err := os.Stat(composePath); os.IsNotExist(err) {
-		if err := WriteTemplateFile(composePath, getDefaultComposeTemplate()); err != nil {
+	if exists, err := acfs.Exists(ctx, templatesDir, "/.compose.template"); err != nil {
+		return errors.WrapIf(err, "write default compose template")
+	} else if !exists {
+		if err := acfs.WriteFile(ctx, templatesDir, "/.compose.template", []byte(getDefaultComposeTemplate()), utils.FilePerm); err != nil {
 			return errors.WrapIf(err, "write default compose template")
 		}
 	}
 
 	// Write default swarm stack template if it doesn't exist
-	if _, err := os.Stat(swarmStackPath); os.IsNotExist(err) {
-		if err := WriteTemplateFile(swarmStackPath, DefaultSwarmStackTemplate()); err != nil {
+	if exists, err := acfs.Exists(ctx, templatesDir, "/.swarm-stack.template"); err != nil {
+		return errors.WrapIf(err, "write default swarm stack template")
+	} else if !exists {
+		if err := acfs.WriteFile(ctx, templatesDir, "/.swarm-stack.template", []byte(DefaultSwarmStackTemplate()), utils.FilePerm); err != nil {
 			return errors.WrapIf(err, "write default swarm stack template")
 		}
 	}
 
 	// Write default swarm stack env template if it doesn't exist
-	if _, err := os.Stat(swarmStackEnvPath); os.IsNotExist(err) {
-		if err := WriteTemplateFile(swarmStackEnvPath, DefaultSwarmStackEnvTemplate()); err != nil {
+	if exists, err := acfs.Exists(ctx, templatesDir, "/.swarm-stack.env.template"); err != nil {
+		return errors.WrapIf(err, "write default swarm stack env template")
+	} else if !exists {
+		if err := acfs.WriteFile(ctx, templatesDir, "/.swarm-stack.env.template", []byte(DefaultSwarmStackEnvTemplate()), utils.FilePerm); err != nil {
 			return errors.WrapIf(err, "write default swarm stack env template")
 		}
 	}
 
 	// Write default env template if it doesn't exist
-	if _, err := os.Stat(envPath); os.IsNotExist(err) {
-		if err := WriteTemplateFile(envPath, getDefaultEnvTemplate()); err != nil {
+	if exists, err := acfs.Exists(ctx, templatesDir, "/.env.template"); err != nil {
+		return errors.WrapIf(err, "write default env template")
+	} else if !exists {
+		if err := acfs.WriteFile(ctx, templatesDir, "/.env.template", []byte(getDefaultEnvTemplate()), utils.FilePerm); err != nil {
 			return errors.WrapIf(err, "write default env template")
 		}
 	}

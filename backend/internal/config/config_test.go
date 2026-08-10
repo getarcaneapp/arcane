@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -16,14 +16,14 @@ func TestConfig_LoadPermissions(t *testing.T) {
 	// Save original env and global perms
 	origFilePerm := os.Getenv("FILE_PERM")
 	origDirPerm := os.Getenv("DIR_PERM")
-	origPkgFilePerm := pkgutils.FilePerm
-	origPkgDirPerm := pkgutils.DirPerm
+	origPkgFilePerm := utils.FilePerm
+	origPkgDirPerm := utils.DirPerm
 
 	defer func() {
 		restoreEnv("FILE_PERM", origFilePerm)
 		restoreEnv("DIR_PERM", origDirPerm)
-		pkgutils.FilePerm = origPkgFilePerm
-		pkgutils.DirPerm = origPkgDirPerm
+		utils.FilePerm = origPkgFilePerm
+		utils.DirPerm = origPkgDirPerm
 	}()
 
 	t.Run("Default permissions", func(t *testing.T) {
@@ -33,8 +33,8 @@ func TestConfig_LoadPermissions(t *testing.T) {
 		cfg := Load()
 		assert.Equal(t, os.FileMode(0o644), cfg.FilePerm)
 		assert.Equal(t, os.FileMode(0o755), cfg.DirPerm)
-		assert.Equal(t, os.FileMode(0o644), pkgutils.FilePerm)
-		assert.Equal(t, os.FileMode(0o755), pkgutils.DirPerm)
+		assert.Equal(t, os.FileMode(0o644), utils.FilePerm)
+		assert.Equal(t, os.FileMode(0o755), utils.DirPerm)
 	})
 
 	t.Run("Custom permissions", func(t *testing.T) {
@@ -44,8 +44,8 @@ func TestConfig_LoadPermissions(t *testing.T) {
 		cfg := Load()
 		assert.Equal(t, os.FileMode(0o664), cfg.FilePerm)
 		assert.Equal(t, os.FileMode(0o775), cfg.DirPerm)
-		assert.Equal(t, os.FileMode(0o664), pkgutils.FilePerm)
-		assert.Equal(t, os.FileMode(0o775), pkgutils.DirPerm)
+		assert.Equal(t, os.FileMode(0o664), utils.FilePerm)
+		assert.Equal(t, os.FileMode(0o775), utils.DirPerm)
 	})
 
 	t.Run("Restrictive permissions", func(t *testing.T) {
@@ -55,8 +55,8 @@ func TestConfig_LoadPermissions(t *testing.T) {
 		cfg := Load()
 		assert.Equal(t, os.FileMode(0o600), cfg.FilePerm)
 		assert.Equal(t, os.FileMode(0o700), cfg.DirPerm)
-		assert.Equal(t, os.FileMode(0o600), pkgutils.FilePerm)
-		assert.Equal(t, os.FileMode(0o700), pkgutils.DirPerm)
+		assert.Equal(t, os.FileMode(0o600), utils.FilePerm)
+		assert.Equal(t, os.FileMode(0o700), utils.DirPerm)
 	})
 }
 

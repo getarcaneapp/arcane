@@ -19,6 +19,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumes"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"go.getarcane.app/acfs"
+	acfstypes "go.getarcane.app/acfs/types"
 	"gorm.io/gorm"
 )
 
@@ -119,7 +121,14 @@ func (s *ProjectService) prepareProjectUpdateBackupInternal(ctx context.Context,
 		return nil, nil, err
 	}
 
-	return backup, func() { _ = os.RemoveAll(backup.BackupDir) }, nil
+	backupLogical, err := acfs.LogicalPath(projectsDirectory, backup.BackupDir)
+	if err != nil {
+		return nil, nil, errors.WrapIf(err, "failed to resolve project backup directory")
+	}
+	// The cleanup must run even when the update was cancelled, or the backup
+	// directory leaks: acfs refuses operations on an already-cancelled context.
+	cleanupCtx := context.WithoutCancel(ctx)
+	return backup, func() { _ = acfs.RemoveAll(cleanupCtx, projectsDirectory, backupLogical) }, nil
 }
 
 func (s *ProjectService) applyProjectUpdateWithRenameJournalInternal(ctx context.Context, proj *models.Project, name *string, projectsDirectory string, composeContent, envContent, overrideContent *string, volumeMigration volumes.Migration, renameJournal *projectRenameJournalInternal, journalActive *bool, projectStateCommitted *bool) (err error) {
@@ -133,7 +142,7 @@ func (s *ProjectService) applyProjectUpdateWithRenameJournalInternal(ctx context
 		}
 	}()
 
-	if err = s.applyProjectRenameIfNeeded(proj, name, projectsDirectory); err != nil {
+	if err = s.applyProjectRenameIfNeeded(ctx, proj, name, projectsDirectory); err != nil {
 		return err
 	}
 	if err = s.persistUpdatedProjectFiles(ctx, proj, projectsDirectory, composeContent, envContent, overrideContent); err != nil {
@@ -243,13 +252,13 @@ func (s *ProjectService) ApplyGitSyncProjectFiles(ctx context.Context, projectID
 		return nil, errors.WrapIf(err, "invalid compose file")
 	}
 
-	if err := projects.WriteComposeFile(projectsDirectory, proj.Path, composeContent); err != nil {
+	if err := projects.WriteComposeFile(ctx, projectsDirectory, proj.Path, composeContent); err != nil {
 		return nil, errors.WrapIf(err, "failed to save compose file")
 	}
-	if err := persistGitSyncEnvFilesInternal(proj.Path, projectsDirectory, envUpdate); err != nil {
+	if err := persistGitSyncEnvFilesInternal(ctx, proj.Path, projectsDirectory, envUpdate); err != nil {
 		return nil, errors.WrapIf(err, "failed to sync git env files")
 	}
-	if err := projects.WriteComposeOverrideFile(projectsDirectory, proj.Path, gitOverrideContent, gitOverrideFileName); err != nil {
+	if err := projects.WriteComposeOverrideFile(ctx, projectsDirectory, proj.Path, gitOverrideContent, gitOverrideFileName); err != nil {
 		return nil, errors.WrapIf(err, "failed to sync git override file")
 	}
 	if err := s.db.WithContext(ctx).Save(&proj).Error; err != nil {
@@ -309,17 +318,22 @@ func (s *ProjectService) prepareProjectRenameVolumeMigrationForUpdateInternal(ct
 		return s.prepareProjectRenameVolumeMigrationInternal(ctx, proj, name)
 	}
 
-	previewPath, err := os.MkdirTemp(projectsDirectory, ".project-update-preview-*")
+	previewLogical, err := acfs.MkdirTemp(ctx, projectsDirectory, "/", ".project-update-preview-*")
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to create project update preview")
 	}
+	previewPath := filepath.Join(projectsDirectory, filepath.FromSlash(strings.TrimPrefix(previewLogical, "/")))
 	defer func() {
-		if removeErr := os.RemoveAll(previewPath); removeErr != nil {
-			slog.WarnContext(ctx, "failed to remove project update preview", "path", previewPath, "error", removeErr)
+		// The cleanup must run even when the update was cancelled, or the
+		// preview directory leaks: acfs refuses operations on an
+		// already-cancelled context.
+		cleanupCtx := context.WithoutCancel(ctx)
+		if removeErr := acfs.RemoveAll(cleanupCtx, projectsDirectory, previewLogical); removeErr != nil {
+			slog.WarnContext(cleanupCtx, "failed to remove project update preview", "path", previewPath, "error", removeErr)
 		}
 	}()
 
-	if err := projects.CopyDirectoryContents(proj.Path, previewPath, nil); err != nil {
+	if _, err := acfs.CopyDir(ctx, proj.Path, previewPath, acfstypes.CopyOptions{}); err != nil {
 		return nil, errors.WrapIf(err, "failed to prepare project update preview")
 	}
 
@@ -397,16 +411,19 @@ func backupProjectDirectoryInternal(ctx context.Context, projectsDirectory, proj
 		return nil, errors.New("project path is outside projects directory")
 	}
 
-	backupPath, err := os.MkdirTemp(projectsDirectory, ".project-update-backup-*")
+	backupLogical, err := acfs.MkdirTemp(ctx, projectsDirectory, "/", ".project-update-backup-*")
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to create project backup directory")
 	}
+	backupPath := filepath.Join(projectsDirectory, filepath.FromSlash(strings.TrimPrefix(backupLogical, "/")))
 	// Tolerate files Arcane cannot read (e.g. foreign-owned secrets): skip them
 	// in the backup so an unrelated unreadable file can't block the whole save.
 	// The skipped paths are recorded so the rollback restore can preserve them.
-	backup, err := projects.BackupProjectUpdateScope(projectAbs, backupPath, scope)
+	backup, err := projects.BackupProjectUpdateScope(ctx, projectAbs, backupPath, scope)
 	if err != nil {
-		_ = os.RemoveAll(backupPath)
+		// The unwind must run even when the backup failed because ctx was
+		// cancelled, or the fresh backup directory leaks.
+		_ = acfs.RemoveAll(context.WithoutCancel(ctx), projectsDirectory, backupLogical)
 		return nil, errors.WrapIf(err, "failed to backup project files")
 	}
 	if len(backup.Skipped) > 0 {
@@ -431,14 +448,19 @@ func restoreProjectDirectoryBackupInternal(ctx context.Context, projectsDirector
 		return errors.New("project path is outside projects directory")
 	}
 
+	projectLogical, err := acfs.LogicalPath(rootAbs, projectAbs)
+	if err != nil {
+		return errors.WrapIf(err, "failed to resolve project directory")
+	}
+
 	slog.DebugContext(ctx, "restoring project directory backup", "path", projectAbs, "backup", backup.BackupDir)
-	if err := os.MkdirAll(projectAbs, utils.DirPerm); err != nil {
+	if err := acfs.MkdirAll(ctx, rootAbs, projectLogical, utils.DirPerm); err != nil {
 		return errors.WrapIf(err, "failed to recreate project directory")
 	}
 	// Restore only the paths the update could have mutated, in place: files
 	// that were skipped during backup (unreadable, e.g. foreign-owned secrets)
 	// are preserved, and out-of-scope files are never touched.
-	if err := projects.RestoreProjectUpdateBackup(projectAbs, backup); err != nil {
+	if err := projects.RestoreProjectUpdateBackup(ctx, projectAbs, backup); err != nil {
 		return errors.WrapIf(err, "failed to restore project backup")
 	}
 	return nil
@@ -455,17 +477,17 @@ func (s *ProjectService) persistUpdatedProjectFiles(ctx context.Context, proj *m
 		if err := validateComposeContentForUpdate(ctx, projectsDirectory, proj.Path, proj.Name, *composeContent, effectiveEnvContent, valOverride, valOverrideName, false); err != nil {
 			return errors.WrapIf(err, "invalid compose file")
 		}
-		if err := projects.WriteComposeFile(projectsDirectory, proj.Path, *composeContent); err != nil {
+		if err := projects.WriteComposeFile(ctx, projectsDirectory, proj.Path, *composeContent); err != nil {
 			return errors.WrapIf(err, "failed to save project files")
 		}
 		if envContent != nil {
-			if err := persistEffectiveEnvContentInternal(proj.Path, projectsDirectory, *envContent); err != nil {
+			if err := persistEffectiveEnvContentInternal(ctx, proj.Path, projectsDirectory, *envContent); err != nil {
 				return errors.WrapIf(err, "failed to save project files")
 			}
-		} else if err := s.ensureEffectiveEnvFileInternal(proj.Path, projectsDirectory); err != nil {
+		} else if err := s.ensureEffectiveEnvFileInternal(ctx, proj.Path, projectsDirectory); err != nil {
 			return errors.WrapIf(err, "failed to save project files")
 		}
-		if err := projects.ApplyOverrideFileChange(projectsDirectory, proj.Path, overrideContent); err != nil {
+		if err := projects.ApplyOverrideFileChange(ctx, projectsDirectory, proj.Path, overrideContent); err != nil {
 			return errors.WrapIf(err, "failed to save project files")
 		}
 	case overrideContent != nil:
@@ -473,7 +495,7 @@ func (s *ProjectService) persistUpdatedProjectFiles(ctx context.Context, proj *m
 			return err
 		}
 	case envContent != nil:
-		if err := persistEffectiveEnvContentInternal(proj.Path, projectsDirectory, *envContent); err != nil {
+		if err := persistEffectiveEnvContentInternal(ctx, proj.Path, projectsDirectory, *envContent); err != nil {
 			return err
 		}
 	}
@@ -500,11 +522,11 @@ func (s *ProjectService) persistOverrideOnlyUpdateInternal(ctx context.Context, 
 		return errors.WrapIf(err, "invalid compose file")
 	}
 	if envContent != nil {
-		if err := persistEffectiveEnvContentInternal(proj.Path, projectsDirectory, *envContent); err != nil {
+		if err := persistEffectiveEnvContentInternal(ctx, proj.Path, projectsDirectory, *envContent); err != nil {
 			return errors.WrapIf(err, "failed to save project files")
 		}
 	}
-	if err := projects.ApplyOverrideFileChange(projectsDirectory, proj.Path, overrideContent); err != nil {
+	if err := projects.ApplyOverrideFileChange(ctx, projectsDirectory, proj.Path, overrideContent); err != nil {
 		return errors.WrapIf(err, "failed to save project files")
 	}
 	return nil
@@ -550,7 +572,7 @@ func validateComposeContentForUpdate(ctx context.Context, projectsDirectory, pro
 	missingIncludeLoader := projects.NewMissingIncludeStubLoader(projectPath)
 	defer missingIncludeLoader.Cleanup()
 
-	err = projects.WithTransientValidationEnvFile(projectPath, effectiveEnvContent, func() error {
+	err = projects.WithTransientValidationEnvFile(ctx, projectPath, effectiveEnvContent, func() error {
 		_, loadErr := loader.LoadWithContext(ctx, cfg, func(opts *loader.Options) {
 			opts.ResourceLoaders = append([]loader.ResourceLoader{missingIncludeLoader}, opts.ResourceLoaders...)
 			if validationProjectName != "" {
@@ -593,7 +615,7 @@ func (s *ProjectService) ensureProjectStoppedForRenameInternal(ctx context.Conte
 	return nil
 }
 
-func (s *ProjectService) applyProjectRenameIfNeeded(proj *models.Project, name *string, projectsDirectory string) error {
+func (s *ProjectService) applyProjectRenameIfNeeded(ctx context.Context, proj *models.Project, name *string, projectsDirectory string) error {
 	if name == nil {
 		return nil
 	}
@@ -615,13 +637,32 @@ func (s *ProjectService) applyProjectRenameIfNeeded(proj *models.Project, name *
 	currentPath := filepath.Clean(proj.Path)
 	targetPath := filepath.Clean(filepath.Join(projectsDirectory, newDirName))
 	if currentPath != targetPath {
-		if _, statErr := os.Stat(targetPath); statErr == nil {
+		targetLogical, err := acfs.LogicalPath(projectsDirectory, targetPath)
+		if err != nil {
+			return errors.WrapIf(err, "failed to resolve project directory rename target")
+		}
+		exists, err := acfs.Exists(ctx, projectsDirectory, targetLogical)
+		if err != nil {
+			return errors.WrapIf(err, "failed to check project directory rename target")
+		}
+		if exists {
 			return errors.Errorf("project directory already exists: %s", targetPath)
-		} else if !os.IsNotExist(statErr) {
-			return errors.WrapIf(statErr, "failed to check project directory rename target")
 		}
 
-		if err := os.Rename(currentPath, targetPath); err != nil {
+		// An imported project can live outside the projects directory, in which
+		// case the move crosses roots and cannot be a confined rename.
+		currentLogical, currentErr := acfs.LogicalPath(projectsDirectory, currentPath)
+		if currentErr != nil {
+			// The cross-root move cannot go through acfs, so the cancellation
+			// check acfs.Rename performs happens here instead.
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			err = os.Rename(currentPath, targetPath)
+		} else {
+			err = acfs.Rename(ctx, projectsDirectory, currentLogical, targetLogical)
+		}
+		if err != nil {
 			return errors.WrapIf(err, "failed to rename project directory")
 		}
 

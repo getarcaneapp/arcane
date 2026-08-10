@@ -17,7 +17,7 @@ import (
 	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	workspacepkg "github.com/getarcaneapp/arcane/backend/v2/pkg/workspace"
 	"github.com/getarcaneapp/arcane/types/v2/project"
 	workspacetypes "github.com/getarcaneapp/arcane/types/v2/workspace"
@@ -58,6 +58,10 @@ func ReadProjectWorkspace(projectPath string, maxDepth int, skipDirectories, com
 	}
 	projectAbs = filepath.Clean(projectAbs)
 
+	// The workspace tree walk and apply engine stay on os.Root rather than
+	// acfs: the revision hash depends on fs.WalkDir's lexical visit order, and
+	// acfs walks in a different order — switching would change every revision
+	// and mass-invalidate open editor drafts with false 409s.
 	root, err := os.OpenRoot(projectAbs)
 	if err != nil {
 		return nil, "", false, errors.WrapIf(err, "open project directory")
@@ -181,7 +185,7 @@ func (w *projectWorkspaceTreeWalkerInternal) visit(rel string, entry fs.DirEntry
 	// so keying on mtime/size would invalidate every workspace draft for a
 	// live project and make saves 409 forever (#3199). Structural changes —
 	// files appearing, disappearing, or changing kind — still conflict.
-	pkgutils.WriteFileTreeRevisionEntry(w.revisionHash, rel, kind, 0, 0, "", false)
+	utils.WriteFileTreeRevisionEntry(w.revisionHash, rel, kind, 0, 0, "", false)
 	w.entryCount++
 
 	size := info.Size()
@@ -292,7 +296,7 @@ func ProtectedProjectFilePaths(composeFileName string) map[string]bool {
 }
 
 func applyWorkspaceFileChangeInternal(root *os.Root, protected map[string]bool, change project.WorkspaceFileChange, uploads map[int][]byte, maxFileSizeBytes int64) error {
-	rel, err := pkgutils.NormalizeRelativePath(change.RelativePath)
+	rel, err := utils.NormalizeRelativePath(change.RelativePath)
 	if err != nil {
 		return errors.WrapIf(err, "invalid project workspace path")
 	}
@@ -309,7 +313,7 @@ func applyWorkspaceFileChangeInternal(root *os.Root, protected map[string]bool, 
 		}
 		return updateProjectWorkspaceFileInternal(root, protected, rel, uploads[*change.UploadIndex], baseline, change.BaselineIndex != nil, maxFileSizeBytes)
 	case project.FileOpRename:
-		newName, err := pkgutils.ValidateFileName(change.NewName)
+		newName, err := utils.ValidateFileName(change.NewName)
 		if err != nil {
 			return errors.WrapIf(err, "invalid project workspace file name")
 		}
@@ -334,13 +338,13 @@ func createProjectWorkspaceFileInternal(root *os.Root, protected map[string]bool
 		return err
 	}
 
-	if err := root.MkdirAll(path.Dir(rel), pkgutils.DirPerm); err != nil {
+	if err := root.MkdirAll(path.Dir(rel), utils.DirPerm); err != nil {
 		return errors.WrapIf(err, "create parent directory")
 	}
 
 	// O_EXCL makes the exists-check-and-create atomic; os.Root confines the
 	// path to the project directory in the kernel.
-	f, err := root.OpenFile(rel, os.O_WRONLY|os.O_CREATE|os.O_EXCL, pkgutils.FilePerm)
+	f, err := root.OpenFile(rel, os.O_WRONLY|os.O_CREATE|os.O_EXCL, utils.FilePerm)
 	if err != nil {
 		if errors.Is(err, os.ErrExist) {
 			return errors.Errorf("project workspace file already exists: %s", rel)
@@ -370,7 +374,7 @@ func createProjectWorkspaceFolderInternal(root *os.Root, protected map[string]bo
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return errors.WrapIf(err, "inspect project workspace folder")
 	}
-	if err := root.MkdirAll(rel, pkgutils.DirPerm); err != nil {
+	if err := root.MkdirAll(rel, utils.DirPerm); err != nil {
 		return errors.WrapIf(err, "create project workspace folder")
 	}
 	return nil
@@ -418,7 +422,7 @@ func updateProjectWorkspaceFileInternal(root *os.Root, protected map[string]bool
 		}
 	}
 
-	if err := root.WriteFile(rel, content, pkgutils.FilePerm); err != nil {
+	if err := root.WriteFile(rel, content, utils.FilePerm); err != nil {
 		return errors.WrapIf(err, "update project workspace file")
 	}
 	return nil
@@ -475,7 +479,7 @@ func normalizeOptionalProjectParentPathInternal(input string) (string, error) {
 	if strings.TrimSpace(input) == "" {
 		return "", nil
 	}
-	return pkgutils.NormalizeRelativePath(input)
+	return utils.NormalizeRelativePath(input)
 }
 
 func moveProjectWorkspacePathInternal(root *os.Root, protected map[string]bool, rel, newParentPath string) error {
@@ -506,7 +510,7 @@ func moveProjectWorkspacePathInternal(root *os.Root, protected map[string]bool, 
 	if sourceInfo.Mode()&os.ModeSymlink != 0 {
 		return errors.WrapIf(ErrProjectWorkspaceSymlinkPath, "symlink paths are not supported")
 	}
-	if sourceInfo.IsDir() && parentRel != "" && pkgutils.FilePathMatches(parentRel, rel) {
+	if sourceInfo.IsDir() && parentRel != "" && utils.FilePathMatches(parentRel, rel) {
 		return errors.New("folder cannot be moved into itself or a descendant")
 	}
 

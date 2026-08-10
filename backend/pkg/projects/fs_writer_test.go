@@ -7,18 +7,18 @@ import (
 	"testing"
 	"time"
 
-	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestWriteFilesPermissions(t *testing.T) {
 	// Save original perms
-	origFilePerm := pkgutils.FilePerm
-	origDirPerm := pkgutils.DirPerm
+	origFilePerm := utils.FilePerm
+	origDirPerm := utils.DirPerm
 	defer func() {
-		pkgutils.FilePerm = origFilePerm
-		pkgutils.DirPerm = origDirPerm
+		utils.FilePerm = origFilePerm
+		utils.DirPerm = origDirPerm
 	}()
 
 	tmpDir := t.TempDir()
@@ -26,10 +26,10 @@ func TestWriteFilesPermissions(t *testing.T) {
 	projectDir := filepath.Join(tmpDir, "test-project")
 
 	t.Run("WriteComposeFile uses custom permissions", func(t *testing.T) {
-		pkgutils.FilePerm = 0o600
-		pkgutils.DirPerm = 0o700
+		utils.FilePerm = 0o600
+		utils.DirPerm = 0o700
 
-		err := WriteComposeFile(projectsRoot, projectDir, "services: {}")
+		err := WriteComposeFile(t.Context(), projectsRoot, projectDir, "services: {}")
 		require.NoError(t, err)
 
 		composePath := filepath.Join(projectDir, "compose.yaml")
@@ -46,10 +46,10 @@ func TestWriteFilesPermissions(t *testing.T) {
 	})
 
 	t.Run("WriteEnvFile uses custom permissions", func(t *testing.T) {
-		pkgutils.FilePerm = 0o600
-		pkgutils.DirPerm = 0o700
+		utils.FilePerm = 0o600
+		utils.DirPerm = 0o700
 
-		err := WriteProjectFile(projectsRoot, projectDir, ".env", "VAR=VAL")
+		err := WriteProjectFile(t.Context(), projectsRoot, projectDir, ".env", "VAR=VAL")
 		require.NoError(t, err)
 
 		envPath := filepath.Join(projectDir, ".env")
@@ -74,7 +74,7 @@ func TestWriteProjectFile_DoesNotReplaceIdenticalContent(t *testing.T) {
 	fixedTime := time.Unix(1_700_000_000, 0)
 	require.NoError(t, os.Chtimes(filePath, fixedTime, fixedTime))
 
-	require.NoError(t, WriteProjectFile(projectsRoot, projectDir, EffectiveEnvFileName, content))
+	require.NoError(t, WriteProjectFile(t.Context(), projectsRoot, projectDir, EffectiveEnvFileName, content))
 
 	info, err := os.Stat(filePath)
 	require.NoError(t, err)
@@ -99,7 +99,7 @@ func TestWriteEnvFile_WritesThroughExternalSymlink(t *testing.T) {
 	originalLinkTarget, err := os.Readlink(envPath)
 	require.NoError(t, err)
 
-	require.NoError(t, WriteProjectFile(projectsRoot, projectDir, ".env", "VALUE=new\n"))
+	require.NoError(t, WriteProjectFile(t.Context(), projectsRoot, projectDir, ".env", "VALUE=new\n"))
 
 	linkInfo, err := os.Lstat(envPath)
 	require.NoError(t, err)
@@ -130,7 +130,7 @@ func TestWriteEnvFile_DanglingSymlinkRemainsUntouched(t *testing.T) {
 	}
 
 	for range 2 {
-		err := WriteProjectFile(projectsRoot, projectDir, ".env", "VALUE=new\n")
+		err := WriteProjectFile(t.Context(), projectsRoot, projectDir, ".env", "VALUE=new\n")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "resolve env file symlink")
 
@@ -155,7 +155,7 @@ func TestWriteEnvFile_RejectsNonRegularSymlinkTarget(t *testing.T) {
 		t.Skipf("symlink creation is unavailable: %v", err)
 	}
 
-	err := WriteProjectFile(projectsRoot, projectDir, ".env", "VALUE=new\n")
+	err := WriteProjectFile(t.Context(), projectsRoot, projectDir, ".env", "VALUE=new\n")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not a regular file")
 	linkInfo, statErr := os.Lstat(envPath)
@@ -175,7 +175,7 @@ func TestWriteProjectFile_StillRejectsNonEnvSymlink(t *testing.T) {
 		t.Skipf("symlink creation is unavailable: %v", err)
 	}
 
-	err := WriteProjectFile(projectsRoot, projectDir, OverrideEnvFileName, "VALUE=new\n")
+	err := WriteProjectFile(t.Context(), projectsRoot, projectDir, OverrideEnvFileName, "VALUE=new\n")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "destination is a symlink")
 	targetContent, readErr := os.ReadFile(targetPath)
@@ -192,7 +192,7 @@ func TestWriteProjectFiles(t *testing.T) {
 	projectDir := filepath.Join(tmpDir, "test-project")
 
 	t.Run("creates new project with empty env when envContent is nil", func(t *testing.T) {
-		err := WriteProjectFiles(projectsRoot, projectDir, "services: {}", nil)
+		err := WriteProjectFiles(t.Context(), projectsRoot, projectDir, "services: {}", nil)
 		require.NoError(t, err)
 
 		envPath := filepath.Join(projectDir, ".env")
@@ -207,7 +207,7 @@ func TestWriteProjectFiles(t *testing.T) {
 		err := os.WriteFile(envPath, []byte(expected), 0o600)
 		require.NoError(t, err)
 
-		err = WriteProjectFiles(projectsRoot, projectDir, "services: { updated: true }", nil)
+		err = WriteProjectFiles(t.Context(), projectsRoot, projectDir, "services: { updated: true }", nil)
 		require.NoError(t, err)
 
 		content, err := os.ReadFile(envPath)
@@ -218,7 +218,7 @@ func TestWriteProjectFiles(t *testing.T) {
 	t.Run("overwrites env when envContent is provided", func(t *testing.T) {
 		envPath := filepath.Join(projectDir, ".env")
 		newContent := "NEW=true"
-		err := WriteProjectFiles(projectsRoot, projectDir, "services: {}", &newContent)
+		err := WriteProjectFiles(t.Context(), projectsRoot, projectDir, "services: {}", &newContent)
 		require.NoError(t, err)
 
 		content, err := os.ReadFile(envPath)
@@ -249,7 +249,7 @@ func TestWriteComposeFile_PreservesExistingPodmanComposeNames(t *testing.T) {
 			require.NoError(t, os.WriteFile(existingComposePath, []byte("services: {}"), 0o600))
 
 			expectedContent := "services:\n  app:\n    image: nginx:alpine\n"
-			err := WriteComposeFile(projectsRoot, projectDir, expectedContent)
+			err := WriteComposeFile(t.Context(), projectsRoot, projectDir, expectedContent)
 			require.NoError(t, err)
 
 			actualContent, err := os.ReadFile(existingComposePath)
@@ -275,7 +275,7 @@ func TestWriteSyncedDirectory_HonorsExecutableBit(t *testing.T) {
 		{RelativePath: "README.md", Content: []byte("readme"), Executable: false},
 	}
 
-	_, err := WriteSyncedDirectory(root, project, files)
+	_, err := WriteSyncedDirectory(t.Context(), root, project, files)
 	require.NoError(t, err)
 
 	composeInfo, err := os.Stat(filepath.Join(project, "compose.yml"))
@@ -295,7 +295,7 @@ func TestWriteSyncedDirectory_DowngradesExecutableBit(t *testing.T) {
 	root := t.TempDir()
 	project := filepath.Join(root, "myproject")
 	// First write: script committed as +x.
-	_, err := WriteSyncedDirectory(root, project, []SyncFile{
+	_, err := WriteSyncedDirectory(t.Context(), root, project, []SyncFile{
 		{RelativePath: "scripts/hook.sh", Content: []byte("#!/bin/sh\n"), Executable: true},
 	})
 	require.NoError(t, err)
@@ -306,7 +306,7 @@ func TestWriteSyncedDirectory_DowngradesExecutableBit(t *testing.T) {
 	// Second write: same file, now without +x (e.g. the repo dropped the bit).
 	// The write path must re-chmod so the on-disk mode tracks the repo, not
 	// the previous write.
-	_, err = WriteSyncedDirectory(root, project, []SyncFile{
+	_, err = WriteSyncedDirectory(t.Context(), root, project, []SyncFile{
 		{RelativePath: "scripts/hook.sh", Content: []byte("#!/bin/sh\necho updated\n"), Executable: false},
 	})
 	require.NoError(t, err)
@@ -324,7 +324,7 @@ func TestWriteSyncedDirectory_UpgradesExecutableBitOnUpdate(t *testing.T) {
 	project := filepath.Join(root, "myproject")
 
 	// First write: file committed without +x.
-	_, err := WriteSyncedDirectory(root, project, []SyncFile{
+	_, err := WriteSyncedDirectory(t.Context(), root, project, []SyncFile{
 		{RelativePath: "scripts/hook.sh", Content: []byte("#!/bin/sh\n"), Executable: false},
 	})
 	require.NoError(t, err)
@@ -334,7 +334,7 @@ func TestWriteSyncedDirectory_UpgradesExecutableBitOnUpdate(t *testing.T) {
 
 	// Second write: same file, now with +x (e.g. the repo added the bit).
 	// The write path must apply the new mode on an update, not just on create.
-	_, err = WriteSyncedDirectory(root, project, []SyncFile{
+	_, err = WriteSyncedDirectory(t.Context(), root, project, []SyncFile{
 		{RelativePath: "scripts/hook.sh", Content: []byte("#!/bin/sh\necho updated\n"), Executable: true},
 	})
 	require.NoError(t, err)
@@ -356,7 +356,7 @@ func TestWriteComposeFile_PreservesExistingCustomComposeNames(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "config.yaml"), []byte("x-config: true\n"), 0o600))
 
 	expectedContent := "services:\n  app:\n    image: nginx:alpine\n"
-	err := WriteComposeFile(projectsRoot, projectDir, expectedContent)
+	err := WriteComposeFile(t.Context(), projectsRoot, projectDir, expectedContent)
 	require.NoError(t, err)
 
 	actualContent, err := os.ReadFile(existingComposePath)

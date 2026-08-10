@@ -9,7 +9,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
-	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/labstack/echo/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -345,7 +345,7 @@ func TestEnvironmentMiddleware_ForwardsResolvedIconCatalogHeaderOnly(t *testing.
 		t.Run(tt.name, func(t *testing.T) {
 			var forwarded string
 			backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				forwarded = r.Header.Get(pkgutils.HeaderIconCatalog)
+				forwarded = r.Header.Get(utils.HeaderIconCatalog)
 				w.WriteHeader(http.StatusOK)
 			}))
 			defer backend.Close()
@@ -375,7 +375,7 @@ func TestEnvironmentMiddleware_ForwardsResolvedIconCatalogHeaderOnly(t *testing.
 
 			req := httptest.NewRequest(http.MethodGet, "/api/environments/env-remote/containers", nil)
 			if tt.clientSupplied != "" {
-				req.Header.Set(pkgutils.HeaderIconCatalog, tt.clientSupplied)
+				req.Header.Set(utils.HeaderIconCatalog, tt.clientSupplied)
 			}
 			recorder := httptest.NewRecorder()
 			router.ServeHTTP(recorder, req)

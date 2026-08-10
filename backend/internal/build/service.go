@@ -307,6 +307,8 @@ func (s *BuildService) resolveBuildRequestInternal(
 		contextDir = filepath.Join(repoPath, filepath.FromSlash(source.Subdir))
 	}
 
+	// os.* rather than acfs: the build context path comes from the user-provided
+	// source and may point anywhere on the host, so no confinement root exists.
 	info, err := os.Stat(contextDir)
 	if err != nil {
 		_ = s.cleanupGitContextInternal(repoPath)

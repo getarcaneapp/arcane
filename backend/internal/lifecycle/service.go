@@ -34,6 +34,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
+	"go.getarcane.app/acfs"
 	buildapi "go.getarcane.app/builds/api"
 )
 
@@ -133,7 +134,7 @@ func (s *LifecycleService) executePreDeployInternal(ctx context.Context, project
 	}
 
 	scriptPath := strings.TrimSpace(*sync.PreDeployScriptPath)
-	if err := validateScriptPathInternal(project.Path, scriptPath); err != nil {
+	if err := validateScriptPathInternal(ctx, project.Path, scriptPath); err != nil {
 		return errors.WrapIf(err, "invalid pre-deploy script path")
 	}
 
@@ -473,7 +474,7 @@ func (s *LifecycleService) loadGitOpsSyncForProjectInternal(ctx context.Context,
 // validateScriptPathInternal rejects paths that escape the project directory
 // or refer to symlinks/binaries. Reuses the same safety helper that gates
 // the existing project include-file editor.
-func validateScriptPathInternal(projectPath, scriptPath string) error {
+func validateScriptPathInternal(ctx context.Context, projectPath, scriptPath string) error {
 	if scriptPath == "" {
 		return errors.New("script path is empty")
 	}
@@ -495,21 +496,21 @@ func validateScriptPathInternal(projectPath, scriptPath string) error {
 		return errors.Errorf("script path %q escapes project directory", scriptPath)
 	}
 
-	info, err := os.Lstat(absScript)
+	entry, err := acfs.Stat(ctx, absProject, "/"+filepath.ToSlash(scriptPath), false)
 	if err != nil {
 		return describeScriptStatErrorInternal(err, projectPath, scriptPath, absScript)
 	}
-	if info.Mode()&os.ModeSymlink != 0 {
+	if entry.IsSymlink {
 		return errors.Errorf("script path %q is a symlink; symlinks are not allowed", scriptPath)
 	}
-	if info.IsDir() {
+	if entry.IsDirectory {
 		return errors.Errorf("script path %q refers to a directory", scriptPath)
 	}
 	return nil
 }
 
 func describeScriptStatErrorInternal(err error, projectPath, scriptPath, resolvedScriptPath string) error {
-	if os.IsPermission(err) {
+	if errors.Is(err, os.ErrPermission) {
 		return errors.WrapIff(
 			err,
 			"Arcane pre-deploy validation could not inspect script %q. %s",

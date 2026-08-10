@@ -29,7 +29,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/dbutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/jwtclaims"
@@ -562,7 +562,7 @@ func stringClaimByPathInternal(claims map[string]any, path string) string {
 	if !ok {
 		return ""
 	}
-	return pkgutils.ToString(value)
+	return utils.ToString(value)
 }
 
 func stringSliceClaimInternal(claims map[string]any, path string) []string {
@@ -577,15 +577,15 @@ func stringSliceClaimInternal(claims map[string]any, path string) []string {
 		}
 		return []string{strings.TrimSpace(typed)}
 	case []string:
-		return pkgutils.UniqueNonEmptyStrings(typed)
+		return utils.UniqueNonEmptyStrings(typed)
 	case []any:
 		out := make([]string, 0, len(typed))
 		for _, item := range typed {
-			if value := pkgutils.ToString(item); value != "" {
+			if value := utils.ToString(item); value != "" {
 				out = append(out, value)
 			}
 		}
-		return pkgutils.UniqueNonEmptyStrings(out)
+		return utils.UniqueNonEmptyStrings(out)
 	default:
 		return nil
 	}
@@ -597,7 +597,7 @@ func normalizeCreateFederatedCredentialInternal(req federatedtypes.CreateFederat
 	req.SubjectClaim = strings.TrimSpace(req.SubjectClaim)
 	req.SubjectMatch = strings.TrimSpace(req.SubjectMatch)
 	req.MatchType = normalizeMatchTypeInternal(req.MatchType)
-	req.Audiences = pkgutils.UniqueNonEmptyStrings(req.Audiences)
+	req.Audiences = utils.UniqueNonEmptyStrings(req.Audiences)
 	req.EnvironmentID = mo.EmptyableToOption(strings.TrimSpace(mo.PointerToOption(req.EnvironmentID).OrEmpty())).ToPointer()
 	req.TokenTTLSeconds = auth.ClampFederatedTokenTTLSeconds(req.TokenTTLSeconds)
 
@@ -638,7 +638,7 @@ func applyFederatedCredentialUpdateInternal(existing models.FederatedCredential,
 		existing.IssuerURL = issuerURL
 	}
 	if req.Audiences != nil {
-		audiences := pkgutils.UniqueNonEmptyStrings(req.Audiences)
+		audiences := utils.UniqueNonEmptyStrings(req.Audiences)
 		if len(audiences) == 0 {
 			return existing, false, common.Classify(common.ErrFederatedCredentialInvalid, errors.New("invalid federated credential"))
 		}

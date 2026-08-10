@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 )
 
 type AppEnvironment string
@@ -126,8 +126,8 @@ func Load() *Config {
 	applyWorkspaceDefaults(cfg)
 
 	// Set global file permissions
-	pkgutils.FilePerm = cfg.FilePerm
-	pkgutils.DirPerm = cfg.DirPerm
+	utils.FilePerm = cfg.FilePerm
+	utils.DirPerm = cfg.DirPerm
 
 	return cfg
 }
@@ -219,7 +219,7 @@ func loadFromEnv(cfg *Config) {
 		defaultValue := fieldType.Tag.Get("default")
 
 		// Get the environment value directly first
-		envValue := pkgutils.TrimQuotes(os.Getenv(envTag))
+		envValue := utils.TrimQuotes(os.Getenv(envTag))
 		if envValue == "" {
 			envValue = defaultValue
 		}
@@ -323,6 +323,8 @@ func resolveFileBasedEnvVariable(field reflect.Value, fieldType reflect.StructFi
 		return
 	}
 
+	// os.* rather than acfs: *_FILE Docker secret paths are arbitrary absolute
+	// paths on the host, so no confinement root exists for them.
 	fileContent, err := os.ReadFile(filePath) //nolint:gosec // file path intentionally comes from *_FILE env vars for Docker secrets
 	if err != nil {
 		slog.Warn("Failed to read secret from file, falling back to direct env var",

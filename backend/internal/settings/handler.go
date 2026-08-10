@@ -403,6 +403,8 @@ func (h *SettingsHandler) updateSettingsForLocalEnvironment(ctx context.Context,
 			if err != nil {
 				return nil, huma.Error400BadRequest(fmt.Sprintf("cannot use projects directory %q: %v", *input.ProjectsDirectory, err))
 			}
+			// os.* rather than acfs: this validates a user-typed directory before
+			// it becomes a confinement root, so no root exists for it yet.
 			f, err := os.Open(resolved)
 			if err != nil {
 				return nil, huma.Error400BadRequest(fmt.Sprintf("cannot read projects directory %q: %v", resolved, err))

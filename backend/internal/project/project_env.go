@@ -1,6 +1,7 @@
 package project
 
 import (
+	"context"
 	"log/slog"
 	"strings"
 
@@ -51,7 +52,7 @@ func resolveStoredEffectiveEnvContentInternal(state projects.ProjectEnvState) (s
 	return state.DirectContent, nil
 }
 
-func persistEffectiveEnvContentInternal(projectPath, projectsDirectory, envContent string) error {
+func persistEffectiveEnvContentInternal(ctx context.Context, projectPath, projectsDirectory, envContent string) error {
 	state, err := projects.ReadProjectEnvState(projectPath)
 	if err != nil {
 		return errors.WrapIf(err, "read project env state")
@@ -66,11 +67,11 @@ func persistEffectiveEnvContentInternal(projectPath, projectsDirectory, envConte
 
 	if !state.HasGitSource {
 		if state.HasOverride {
-			if err := projects.RemoveProjectFile(projectsDirectory, projectPath, projects.OverrideEnvFileName); err != nil {
+			if err := projects.RemoveProjectFile(ctx, projectsDirectory, projectPath, projects.OverrideEnvFileName); err != nil {
 				return err
 			}
 		}
-		return projects.WriteManagedEnvFile(projectsDirectory, projectPath, projects.EffectiveEnvFileName, state.EffectiveUnreadable, envContent)
+		return projects.WriteManagedEnvFile(ctx, projectsDirectory, projectPath, projects.EffectiveEnvFileName, state.EffectiveUnreadable, envContent)
 	}
 
 	overrideContent, err := projects.BuildOverrideEnvContent(state.GitContent, envContent)
@@ -83,14 +84,14 @@ func persistEffectiveEnvContentInternal(projectPath, projectsDirectory, envConte
 		return errors.WrapIf(err, "build effective env content")
 	}
 
-	if err := projects.WriteManagedEnvFile(projectsDirectory, projectPath, projects.EffectiveEnvFileName, state.EffectiveUnreadable, effectiveContent); err != nil {
+	if err := projects.WriteManagedEnvFile(ctx, projectsDirectory, projectPath, projects.EffectiveEnvFileName, state.EffectiveUnreadable, effectiveContent); err != nil {
 		return err
 	}
 
-	return projects.WriteManagedEnvFile(projectsDirectory, projectPath, projects.OverrideEnvFileName, state.OverrideUnreadable, overrideContent)
+	return projects.WriteManagedEnvFile(ctx, projectsDirectory, projectPath, projects.OverrideEnvFileName, state.OverrideUnreadable, overrideContent)
 }
 
-func (s *ProjectService) ensureEffectiveEnvFileInternal(projectPath, projectsDirectory string) error {
+func (s *ProjectService) ensureEffectiveEnvFileInternal(ctx context.Context, projectPath, projectsDirectory string) error {
 	state, err := projects.ReadProjectEnvState(projectPath)
 	if err != nil {
 		return errors.WrapIf(err, "read project env state")
@@ -98,16 +99,16 @@ func (s *ProjectService) ensureEffectiveEnvFileInternal(projectPath, projectsDir
 
 	if !state.HasGitSource {
 		if state.HasOverride {
-			if err := projects.RemoveProjectFile(projectsDirectory, projectPath, projects.OverrideEnvFileName); err != nil {
+			if err := projects.RemoveProjectFile(ctx, projectsDirectory, projectPath, projects.OverrideEnvFileName); err != nil {
 				return err
 			}
 			effectiveContent, err := resolveStoredEffectiveEnvContentInternal(state)
 			if err != nil {
 				return err
 			}
-			return projects.WriteManagedEnvFile(projectsDirectory, projectPath, projects.EffectiveEnvFileName, state.EffectiveUnreadable, effectiveContent)
+			return projects.WriteManagedEnvFile(ctx, projectsDirectory, projectPath, projects.EffectiveEnvFileName, state.EffectiveUnreadable, effectiveContent)
 		}
-		return projects.EnsureEnvFile(projectsDirectory, projectPath)
+		return projects.EnsureEnvFile(ctx, projectsDirectory, projectPath)
 	}
 
 	effectiveContent, err := projects.BuildEffectiveEnvContent(state.GitContent, state.OverrideContent)
@@ -115,7 +116,7 @@ func (s *ProjectService) ensureEffectiveEnvFileInternal(projectPath, projectsDir
 		return errors.WrapIf(err, "build effective env content")
 	}
 
-	return projects.WriteManagedEnvFile(projectsDirectory, projectPath, projects.EffectiveEnvFileName, state.EffectiveUnreadable, effectiveContent)
+	return projects.WriteManagedEnvFile(ctx, projectsDirectory, projectPath, projects.EffectiveEnvFileName, state.EffectiveUnreadable, effectiveContent)
 }
 
 func (s *ProjectService) prepareGitSyncEnvUpdateInternal(projectPath string, gitEnvContent *string) (gitSyncEnvUpdateInternal, error) {
@@ -185,15 +186,15 @@ func (s *ProjectService) resolveOverrideContentForGitSyncInternal(state projects
 	}
 }
 
-func persistGitSyncEnvFilesInternal(projectPath, projectsDirectory string, update gitSyncEnvUpdateInternal) error {
+func persistGitSyncEnvFilesInternal(ctx context.Context, projectPath, projectsDirectory string, update gitSyncEnvUpdateInternal) error {
 	if update.gitEnvContent == nil {
 		if update.state.HasGitSource {
-			if err := projects.RemoveProjectFile(projectsDirectory, projectPath, projects.GitSourceEnvFileName); err != nil {
+			if err := projects.RemoveProjectFile(ctx, projectsDirectory, projectPath, projects.GitSourceEnvFileName); err != nil {
 				return err
 			}
 		}
 		if update.state.HasOverride {
-			if err := projects.RemoveProjectFile(projectsDirectory, projectPath, projects.OverrideEnvFileName); err != nil {
+			if err := projects.RemoveProjectFile(ctx, projectsDirectory, projectPath, projects.OverrideEnvFileName); err != nil {
 				return err
 			}
 		}
@@ -202,32 +203,32 @@ func persistGitSyncEnvFilesInternal(projectPath, projectsDirectory string, updat
 			if update.effectiveContent != nil {
 				effectiveContent = *update.effectiveContent
 			}
-			return projects.WriteManagedEnvFile(projectsDirectory, projectPath, projects.EffectiveEnvFileName, update.state.EffectiveUnreadable, effectiveContent)
+			return projects.WriteManagedEnvFile(ctx, projectsDirectory, projectPath, projects.EffectiveEnvFileName, update.state.EffectiveUnreadable, effectiveContent)
 		}
 		if update.state.EffectiveUnreadable {
 			slog.Warn("skipping permission-locked .env file; leaving it untouched", "projectPath", projectPath)
 			return nil
 		}
-		return projects.EnsureEnvFile(projectsDirectory, projectPath)
+		return projects.EnsureEnvFile(ctx, projectsDirectory, projectPath)
 	}
 
 	if update.effectiveContent == nil {
 		return errors.New("missing effective env content for git sync update")
 	}
 
-	if err := projects.WriteManagedEnvFile(projectsDirectory, projectPath, projects.EffectiveEnvFileName, update.state.EffectiveUnreadable, *update.effectiveContent); err != nil {
+	if err := projects.WriteManagedEnvFile(ctx, projectsDirectory, projectPath, projects.EffectiveEnvFileName, update.state.EffectiveUnreadable, *update.effectiveContent); err != nil {
 		return err
 	}
-	if err := projects.WriteManagedEnvFile(projectsDirectory, projectPath, projects.GitSourceEnvFileName, update.state.GitSourceUnreadable, *update.gitEnvContent); err != nil {
+	if err := projects.WriteManagedEnvFile(ctx, projectsDirectory, projectPath, projects.GitSourceEnvFileName, update.state.GitSourceUnreadable, *update.gitEnvContent); err != nil {
 		return err
 	}
-	return projects.WriteManagedEnvFile(projectsDirectory, projectPath, projects.OverrideEnvFileName, update.state.OverrideUnreadable, update.overrideContent)
+	return projects.WriteManagedEnvFile(ctx, projectsDirectory, projectPath, projects.OverrideEnvFileName, update.state.OverrideUnreadable, update.overrideContent)
 }
 
 // ApplyGitSyncEnvToDirectory applies the same managed three-file environment
 // merge used by single-file project syncs and returns the effective content
 // before and after the update.
-func (s *ProjectService) ApplyGitSyncEnvToDirectory(projectPath, projectsDirectory string, gitEnvContent *string) (before, after string, err error) {
+func (s *ProjectService) ApplyGitSyncEnvToDirectory(ctx context.Context, projectPath, projectsDirectory string, gitEnvContent *string) (before, after string, err error) {
 	update, err := s.prepareGitSyncEnvUpdateInternal(projectPath, gitEnvContent)
 	if err != nil {
 		return "", "", errors.WrapIf(err, "failed to resolve git env state")
@@ -236,7 +237,7 @@ func (s *ProjectService) ApplyGitSyncEnvToDirectory(projectPath, projectsDirecto
 	if update.effectiveContent != nil {
 		after = *update.effectiveContent
 	}
-	if err := persistGitSyncEnvFilesInternal(projectPath, projectsDirectory, update); err != nil {
+	if err := persistGitSyncEnvFilesInternal(ctx, projectPath, projectsDirectory, update); err != nil {
 		return "", "", errors.WrapIf(err, "failed to sync git env files")
 	}
 	return before, after, nil

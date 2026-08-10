@@ -1,6 +1,7 @@
 package projects
 
 import (
+	"context"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -61,6 +62,8 @@ func warnOnMultipleComposeOverridesInternal(found []string) {
 // when none exists. When multiple override files are present it returns the
 // highest-preference match and logs a warning, mirroring compose-go behavior.
 func DetectComposeOverrideFile(dir string) string {
+	// Stays on os.*: override files may be symlinks resolving outside any
+	// confinement root (same class as #3556 includes), which acfs cannot follow.
 	found := findComposeOverrideCandidatesInternal(func(name string) bool {
 		info, err := os.Stat(filepath.Join(dir, name))
 		return err == nil && !info.IsDir()
@@ -113,14 +116,14 @@ func ResolveComposeOverride(exists func(name string) bool, read func(name string
 // renamed or deleted override never leaves a stale copy behind. When content is
 // nil, all supported override files are removed. projectsRoot bounds writes to
 // prevent path traversal.
-func WriteComposeOverrideFile(projectsRoot, dir string, content *string, fileName string) error {
+func WriteComposeOverrideFile(ctx context.Context, projectsRoot, dir string, content *string, fileName string) error {
 	keep := ""
 	if content != nil {
 		keep = strings.TrimSpace(fileName)
 		if keep == "" {
 			return errors.New("missing override file name")
 		}
-		if err := WriteProjectFile(projectsRoot, dir, keep, *content); err != nil {
+		if err := WriteProjectFile(ctx, projectsRoot, dir, keep, *content); err != nil {
 			return err
 		}
 	}
@@ -131,7 +134,7 @@ func WriteComposeOverrideFile(projectsRoot, dir string, content *string, fileNam
 		if candidate == keep {
 			continue
 		}
-		if err := RemoveProjectFile(projectsRoot, dir, candidate); err != nil {
+		if err := RemoveProjectFile(ctx, projectsRoot, dir, candidate); err != nil {
 			return err
 		}
 	}
@@ -169,12 +172,12 @@ func ResolveEffectiveOverrideForValidation(dir string, overrideContent *string) 
 
 // ApplyOverrideFileChange writes, clears, or leaves the override file alone
 // depending on whether overrideContent is nil, blank, or set.
-func ApplyOverrideFileChange(projectsRoot, dir string, overrideContent *string) error {
+func ApplyOverrideFileChange(ctx context.Context, projectsRoot, dir string, overrideContent *string) error {
 	if overrideContent == nil {
 		return nil
 	}
 	if strings.TrimSpace(*overrideContent) == "" {
-		return WriteComposeOverrideFile(projectsRoot, dir, nil, "")
+		return WriteComposeOverrideFile(ctx, projectsRoot, dir, nil, "")
 	}
-	return WriteComposeOverrideFile(projectsRoot, dir, overrideContent, ExistingOrDefaultOverrideName(dir))
+	return WriteComposeOverrideFile(ctx, projectsRoot, dir, overrideContent, ExistingOrDefaultOverrideName(dir))
 }

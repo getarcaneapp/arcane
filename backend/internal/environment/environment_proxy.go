@@ -17,7 +17,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
-	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	httputils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	"github.com/getarcaneapp/arcane/types/v2/gitops"
@@ -167,8 +167,8 @@ func (s *EnvironmentService) executeRemoteRequestForTargetInternal(
 	// Forward the activity batch ID so bulk actions proxied to a remote
 	// environment group the same way they do locally.
 	var headers map[string]string
-	if batchID := pkgutils.ActivityBatchIDFromContext(ctx); batchID != "" {
-		headers = map[string]string{pkgutils.HeaderActivityBatchID: batchID}
+	if batchID := utils.ActivityBatchIDFromContext(ctx); batchID != "" {
+		headers = map[string]string{utils.HeaderActivityBatchID: batchID}
 	}
 	request, err := s.buildRemoteRequestInternal(target, method, path, body, headers)
 	if err != nil {

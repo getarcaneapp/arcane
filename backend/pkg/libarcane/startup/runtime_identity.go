@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"emperror.dev/errors"
-	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/samber/mo"
 )
 
@@ -48,6 +48,10 @@ type RuntimeIdentityConfig struct {
 
 // ApplyRequestedRuntimeIdentity switches the current process to the configured
 // runtime UID/GID before the rest of the app initializes.
+//
+// This whole bootstrap flow stays on os.* rather than acfs: it creates and
+// chowns the data/config roots before any confinement root exists, and acfs
+// has no chown API.
 func ApplyRequestedRuntimeIdentity(ctx context.Context, cfg *RuntimeIdentityConfig) error {
 	if cfg == nil {
 		cfg = &RuntimeIdentityConfig{}
@@ -167,7 +171,7 @@ func defaultRuntimeIdentityRequestInternal(dockerHost string, inContainer bool) 
 }
 
 func runningInContainerInternal(getenv func(string) string, stat func(string) (os.FileInfo, error)) bool {
-	if pkgutils.BoolOrDefault(strings.TrimSpace(getenv("ARCANE_IN_CONTAINER")), false) {
+	if utils.BoolOrDefault(strings.TrimSpace(getenv("ARCANE_IN_CONTAINER")), false) {
 		return true
 	}
 
@@ -193,7 +197,7 @@ func ensureRuntimeDockerConfigInternal(cfg *RuntimeIdentityConfig, setenv func(s
 		return nil
 	}
 
-	if err := os.MkdirAll(configDir, pkgutils.DirPerm); err != nil {
+	if err := os.MkdirAll(configDir, utils.DirPerm); err != nil {
 		return errors.WrapIf(err, "create docker config directory")
 	}
 
@@ -280,7 +284,7 @@ func dockerSocketPathInternal(raw string) mo.Option[string] {
 }
 
 func prepareWritablePathsWithRootsInternal(uid int, gid int, mountpoints map[string]struct{}, projectsDir string, dataDirectory string, buildsDirectory string) error {
-	if err := os.MkdirAll(dataDirectory, pkgutils.DirPerm); err != nil {
+	if err := os.MkdirAll(dataDirectory, utils.DirPerm); err != nil {
 		return errors.WrapIf(err, "create data directory")
 	}
 
@@ -347,12 +351,12 @@ func ensureSQLiteFilesExistInternal(databaseURL string) error {
 	// prepareWritablePathsWithRootsInternal is not called.
 	dir := filepath.Dir(sqlitePath)
 	if dir != "" && dir != "." {
-		if err := os.MkdirAll(dir, pkgutils.DirPerm); err != nil {
+		if err := os.MkdirAll(dir, utils.DirPerm); err != nil {
 			return errors.WrapIff(err, "create sqlite directory %s", dir)
 		}
 	}
 
-	file, err := os.OpenFile(sqlitePath, os.O_CREATE|os.O_RDWR, pkgutils.FilePerm)
+	file, err := os.OpenFile(sqlitePath, os.O_CREATE|os.O_RDWR, utils.FilePerm)
 	if err != nil {
 		return errors.WrapIff(err, "create sqlite file %s", sqlitePath)
 	}

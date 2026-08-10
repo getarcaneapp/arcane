@@ -767,3 +767,29 @@ func TestNormalizeURL(t *testing.T) {
 		})
 	}
 }
+
+func TestBrowseTree_ListsSymlinksWithoutFollowingThemOutOfTheClone(t *testing.T) {
+	repoPath := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(repoPath, "compose.yaml"), []byte("services: {}\n"), 0o644))
+	require.NoError(t, os.Symlink("compose.yaml", filepath.Join(repoPath, "inside.yaml")))
+	require.NoError(t, os.Symlink(filepath.Join(t.TempDir(), "outside.yaml"), filepath.Join(repoPath, "outside.yaml")))
+
+	client := NewClient(t.TempDir())
+	nodes, err := client.BrowseTree(t.Context(), repoPath, "")
+	require.NoError(t, err)
+
+	names := make([]string, 0, len(nodes))
+	for _, node := range nodes {
+		names = append(names, node.Name)
+	}
+	assert.ElementsMatch(t, []string{"compose.yaml", "inside.yaml", "outside.yaml"}, names)
+
+	// The in-repo link resolves; the one pointing outside the clone is listed
+	// but never read through.
+	content, err := client.ReadFile(t.Context(), repoPath, "inside.yaml")
+	require.NoError(t, err)
+	assert.Equal(t, "services: {}\n", content)
+
+	_, err = client.ReadFile(t.Context(), repoPath, "outside.yaml")
+	require.Error(t, err)
+}

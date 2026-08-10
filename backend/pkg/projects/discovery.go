@@ -41,6 +41,10 @@ func IsProjectDirectoryEntry(entry os.DirEntry, path string, followSymlinks bool
 
 // IsProjectDirectoryPath reports whether an existing path should be treated as a project directory.
 // Regular directories are always accepted. Symlinked directories are accepted only when enabled.
+//
+// Discovery stays on os.*: with followSymlinks enabled it deliberately follows
+// symlinked project directories whose targets live outside the projects
+// directory, which the root-confined acfs API cannot do.
 func IsProjectDirectoryPath(path string, followSymlinks bool) (bool, error) {
 	info, err := os.Lstat(path)
 	if err != nil {

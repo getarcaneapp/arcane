@@ -21,7 +21,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	wsutil "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
-	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	httputils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/labstack/echo/v5"
@@ -199,11 +199,11 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 // SECURITY: the header is always cleared first, so a browser-supplied value
 // never rides through; only the server-resolved preference is forwarded.
 func (m *EnvironmentMiddleware) setIconCatalogHeaderInternal(c *echo.Context, user *models.User) {
-	c.Request().Header.Del(pkgutils.HeaderIconCatalog)
+	c.Request().Header.Del(utils.HeaderIconCatalog)
 	if user == nil || user.Preferences.IconCatalog == nil || *user.Preferences.IconCatalog == "" {
 		return
 	}
-	c.Request().Header.Set(pkgutils.HeaderIconCatalog, *user.Preferences.IconCatalog)
+	c.Request().Header.Set(utils.HeaderIconCatalog, *user.Preferences.IconCatalog)
 }
 
 // proxyPermissionDenied reports whether the caller lacks permission to perform
@@ -282,6 +282,7 @@ func proxiedVolumeWorkspacePermissionsInternal(request *http.Request) ([]string,
 	}
 
 	originalBody := request.Body
+	// System temp scratch for the multipart replay buffer: no acfs root exists for it.
 	captured, err := os.CreateTemp("", "arcane-volume-workspace-manifest-*")
 	if err != nil {
 		return nil, errors.WrapIf(err, "create workspace manifest buffer")
@@ -342,6 +343,7 @@ type proxiedReplayBodyInternal struct {
 func (b *proxiedReplayBodyInternal) Close() error {
 	capturedErr := b.captured.Close()
 	originalErr := b.original.Close()
+	// System temp scratch: no acfs root exists for it.
 	removeErr := os.Remove(b.path)
 	return errors.Combine(capturedErr, originalErr, removeErr)
 }

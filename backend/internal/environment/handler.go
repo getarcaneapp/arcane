@@ -1217,6 +1217,8 @@ func (h *EnvironmentHandler) DownloadEdgeMTLSCA(ctx context.Context, _ *Download
 		return nil, huma.Error404NotFound("Arcane-managed edge mTLS CA is not available")
 	}
 
+	// os.* rather than acfs: the CA path may resolve to a user-configured
+	// location anywhere on the host, so no confinement root exists for it.
 	caPEM, err := os.ReadFile(caPath)
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to read generated edge mTLS CA", "path", caPath, "error", err.Error())

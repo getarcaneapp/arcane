@@ -137,7 +137,7 @@ func (s *ProjectService) UpdateProjectWorkspace(ctx context.Context, projectID s
 
 	opts := s.projectWorkspaceApplyOptionsInternal(ctx, proj, manifest.FileTreeRevision)
 	if err := projects.ApplyProjectWorkspaceChanges(proj.Path, manifest.FileChanges, uploads, opts); err != nil {
-		if restoreErr := projects.RestoreProjectUpdateBackup(proj.Path, backup); restoreErr != nil {
+		if restoreErr := projects.RestoreProjectUpdateBackup(ctx, proj.Path, backup); restoreErr != nil {
 			return nil, errors.Combine(wrapProjectWorkspaceErrorInternal(err), errors.WrapIf(restoreErr, "rollback project workspace"))
 		}
 		return nil, wrapProjectWorkspaceErrorInternal(err)
@@ -173,7 +173,7 @@ func (s *ProjectService) resolveProjectWorkspacePathInternal(ctx context.Context
 		return nil, "", "", acfstypes.Entry{}, common.Classify(common.ErrProjectWorkspaceForbidden, errors.New("project configuration is not part of the workspace"))
 	}
 	fullPath := filepath.Join(proj.Path, filepath.FromSlash(rel))
-	entry, err := acfs.Stat(ctx, proj.Path, "/"+rel)
+	entry, err := acfs.Stat(ctx, proj.Path, "/"+rel, false)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, "", "", acfstypes.Entry{}, common.Classify(common.ErrProjectWorkspaceNotFound, errors.New("project workspace file not found"))
@@ -187,8 +187,12 @@ func classifyProjectWorkspaceACFSErrorInternal(err error, operation string) erro
 	switch {
 	case errors.Is(err, acfs.ErrInvalidPath),
 		errors.Is(err, acfs.ErrOutsideRoot),
-		errors.Is(err, acfs.ErrSymlinkLoop):
+		errors.Is(err, acfs.ErrSymlinkLoop),
+		errors.Is(err, acfs.ErrSymlink):
 		return common.Classify(common.ErrProjectWorkspaceForbidden, errors.WrapIf(err, operation))
+	case errors.Is(err, acfs.ErrAlreadyExists),
+		errors.Is(err, acfs.ErrNotEmpty):
+		return common.Classify(common.ErrProjectWorkspaceConflict, errors.WrapIf(err, operation))
 	case os.IsNotExist(err):
 		return common.Classify(common.ErrProjectWorkspaceNotFound, errors.New("project workspace file not found"))
 	default:
@@ -232,7 +236,11 @@ func (s *ProjectService) prepareProjectWorkspaceBackupInternal(ctx context.Conte
 	if err != nil {
 		return nil, nil, err
 	}
-	return backup, func() { _ = os.RemoveAll(backup.BackupDir) }, nil
+	backupLogical, err := acfs.LogicalPath(projectsDirectory, backup.BackupDir)
+	if err != nil {
+		return nil, nil, errors.WrapIf(err, "failed to resolve project backup directory")
+	}
+	return backup, func() { _ = acfs.RemoveAll(ctx, projectsDirectory, backupLogical) }, nil
 }
 
 func isGitOpsManagedProjectInternal(proj *models.Project) bool {
@@ -243,9 +251,15 @@ func wrapProjectWorkspaceErrorInternal(err error) error {
 	switch {
 	case errors.Is(err, projects.ErrProjectWorkspaceRevisionConflict):
 		return common.Classify(common.ErrProjectWorkspaceConflict, errors.WithStackIf(err))
+	case errors.Is(err, acfs.ErrAlreadyExists), errors.Is(err, acfs.ErrNotEmpty):
+		return common.Classify(common.ErrProjectWorkspaceConflict, errors.WrapIf(err, "conflicting project workspace path"))
 	case errors.Is(err, projects.ErrProjectWorkspaceOutsideProjectDirectory),
 		errors.Is(err, projects.ErrProjectWorkspaceProtectedPath),
-		errors.Is(err, projects.ErrProjectWorkspaceSymlinkPath):
+		errors.Is(err, projects.ErrProjectWorkspaceSymlinkPath),
+		errors.Is(err, acfs.ErrOutsideRoot),
+		errors.Is(err, acfs.ErrInvalidPath),
+		errors.Is(err, acfs.ErrSymlinkLoop),
+		errors.Is(err, acfs.ErrSymlink):
 		return common.Classify(common.ErrProjectWorkspaceForbidden, errors.WrapIf(err, "forbidden project workspace path"))
 	default:
 		return common.Classify(common.ErrProjectWorkspaceBadRequest, errors.WrapIf(err, "invalid project workspace request"))

@@ -1,6 +1,7 @@
 package projects
 
 import (
+	"context"
 	"os"
 	"path"
 	"path/filepath"
@@ -8,7 +9,9 @@ import (
 	"strings"
 
 	"emperror.dev/errors"
-	"go.getarcane.app/sys/atomic"
+	"go.getarcane.app/acfs"
+	"go.getarcane.app/acfs/atomic"
+	acfstypes "go.getarcane.app/acfs/types"
 )
 
 // ProjectUpdateBackupScope describes exactly what a project update can mutate,
@@ -55,7 +58,11 @@ type ProjectUpdateBackup struct {
 // backupDir. Unreadable files are skipped (recorded in Skipped) so an
 // unrelated foreign-owned file cannot block a save, matching the tolerant
 // semantics of the old whole-directory backup.
-func BackupProjectUpdateScope(projectDir, backupDir string, scope ProjectUpdateBackupScope) (*ProjectUpdateBackup, error) {
+//
+// The backup/restore engine stays on os.Root rather than acfs: restoring a
+// project .env means recreating its symlink (which may point outside the
+// project directory), and acfs deliberately refuses symlink mutation.
+func BackupProjectUpdateScope(ctx context.Context, projectDir, backupDir string, scope ProjectUpdateBackupScope) (*ProjectUpdateBackup, error) {
 	projRoot, err := os.OpenRoot(projectDir)
 	if err != nil {
 		return nil, errors.WrapIf(err, "open project directory")
@@ -81,7 +88,7 @@ func BackupProjectUpdateScope(projectDir, backupDir string, scope ProjectUpdateB
 	}
 
 	for _, rel := range normalizeScopePathsInternal(scope.Paths) {
-		if err := backupScopePathInternal(projRoot, backupRoot, projectDir, backupDir, rel, backup); err != nil {
+		if err := backupScopePathInternal(ctx, projRoot, backupRoot, projectDir, backupDir, rel, backup); err != nil {
 			return nil, err
 		}
 	}
@@ -125,7 +132,7 @@ func backupTopLevelFilesInternal(projRoot, backupRoot *os.Root, backup *ProjectU
 	return nil
 }
 
-func backupScopePathInternal(projRoot, backupRoot *os.Root, projectDir, backupDir, rel string, backup *ProjectUpdateBackup) error {
+func backupScopePathInternal(ctx context.Context, projRoot, backupRoot *os.Root, projectDir, backupDir, rel string, backup *ProjectUpdateBackup) error {
 	info, err := projRoot.Lstat(rel)
 	if errors.Is(err, os.ErrNotExist) {
 		// Record the shallowest nonexistent ancestor so MkdirAll debris from a
@@ -147,11 +154,11 @@ func backupScopePathInternal(projRoot, backupRoot *os.Root, projectDir, backupDi
 		if err := os.MkdirAll(destDir, 0o755); err != nil {
 			return errors.WrapIf(err, "create backup directory")
 		}
-		skipped, err := CopyDirectoryContentsTolerant(filepath.Join(projectDir, filepath.FromSlash(rel)), destDir)
+		copied, err := acfs.CopyDir(ctx, filepath.Join(projectDir, filepath.FromSlash(rel)), destDir, acfstypes.CopyOptions{TolerateUnreadable: true})
 		if err != nil {
 			return errors.WrapIff(err, "backup project directory %s", rel)
 		}
-		for _, sub := range skipped {
+		for _, sub := range copied.Skipped {
 			backup.Skipped = append(backup.Skipped, path.Join(rel, filepath.ToSlash(sub)))
 		}
 		backup.DirEntries = append(backup.DirEntries, rel)
@@ -270,7 +277,7 @@ func dedupeCoveredBackupEntriesInternal(backup *ProjectUpdateBackup) {
 // RestoreProjectUpdateBackup rolls the scoped parts of projectDir back to the
 // state captured in backup. Files are restored in place (preserving inodes so
 // container bind mounts stay valid) and out-of-scope files are never touched.
-func RestoreProjectUpdateBackup(projectDir string, backup *ProjectUpdateBackup) error {
+func RestoreProjectUpdateBackup(ctx context.Context, projectDir string, backup *ProjectUpdateBackup) error {
 	projRoot, err := os.OpenRoot(projectDir)
 	if err != nil {
 		return errors.WrapIf(err, "open project directory")
@@ -291,7 +298,7 @@ func RestoreProjectUpdateBackup(projectDir string, backup *ProjectUpdateBackup) 
 		preserve := skippedUnderInternal(backup.Skipped, rel)
 		src := filepath.Join(backup.BackupDir, filepath.FromSlash(rel))
 		dest := filepath.Join(projectDir, filepath.FromSlash(rel))
-		if err := MirrorDirectoryContentsPreserving(src, dest, preserve); err != nil {
+		if err := acfs.MirrorDir(ctx, src, dest, acfstypes.MirrorOptions{Preserve: preserve}); err != nil {
 			return errors.WrapIff(err, "restore project directory %s", rel)
 		}
 	}

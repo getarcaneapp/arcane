@@ -88,6 +88,7 @@ func NewOutputPath() string {
 }
 
 func CleanupTempFiles(ctx context.Context, tempFiles []string) {
+	// System temp scratch: no acfs root exists for it.
 	for _, f := range tempFiles {
 		if err := os.Remove(f); err != nil {
 			slog.WarnContext(ctx, "failed to remove trivy temp file", "path", f, "error", err)
@@ -207,6 +208,8 @@ func addTempFileMountsInternal(hostConfig *containertypes.HostConfig, tempFiles 
 }
 
 func CreateLogTempFile(prefix string) (*os.File, error) {
+	// System temp scratch (with a user cache dir fallback below): no acfs root
+	// exists for either location.
 	// Try the default system temp dir first.
 	file, primaryErr := os.CreateTemp("", prefix)
 	if primaryErr == nil {
@@ -244,6 +247,7 @@ func CleanupLogTempFiles(ctx context.Context, files ...*os.File) {
 			continue
 		}
 
+		// System temp scratch: no acfs root exists for it.
 		if err := os.Remove(path); err != nil {
 			slog.WarnContext(ctx, "failed to remove trivy temp file", "path", path, "error", err)
 		}

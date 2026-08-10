@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -27,7 +28,8 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	certgen "github.com/getarcaneapp/arcane/cli/v2/pkg/generate"
-	"go.getarcane.app/sys/atomic"
+	"go.getarcane.app/acfs"
+	"go.getarcane.app/acfs/atomic"
 	libcrypto "go.getarcane.app/sys/crypto"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/peer"
@@ -152,6 +154,8 @@ func AvailableManagerMTLSCAPath(cfg *Config) (string, error) {
 	if err != nil {
 		return "", errors.WrapIf(err, "resolve edge mTLS CA path")
 	}
+	// os.* rather than acfs: the assets dir may be user-configured to anywhere on
+	// the host, so no confinement root handle is in scope for this probe.
 	if _, err := os.Stat(caPath); err != nil {
 		return "", errors.WrapIf(err, "stat edge mTLS CA")
 	}
@@ -181,15 +185,15 @@ func GenerateManagerClientMTLSAssetsWithContext(ctx context.Context, cfg *Config
 		return nil, err
 	}
 
-	caPEM, err := os.ReadFile(caCertPath)
+	caPEM, err := readGeneratedAssetInternal(ctx, assetsDir, caCertPath)
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to read generated CA certificate")
 	}
-	clientCertPEM, err := os.ReadFile(clientCertPath)
+	clientCertPEM, err := readGeneratedAssetInternal(ctx, assetsDir, clientCertPath)
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to read generated client certificate")
 	}
-	clientKeyPEM, err := os.ReadFile(clientKeyPath)
+	clientKeyPEM, err := readGeneratedAssetInternal(ctx, assetsDir, clientKeyPath)
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to read generated client key")
 	}
@@ -204,6 +208,16 @@ func GenerateManagerClientMTLSAssetsWithContext(ctx context.Context, cfg *Config
 			{Name: generatedMTLSClientKeyName, Content: string(clientKeyPEM), ContainerPath: filepath.ToSlash(filepath.Join(generatedMTLSContainerDir, generatedMTLSClientKeyName)), Permissions: "0600"},
 		},
 	}, nil
+}
+
+// readGeneratedAssetInternal reads a file Arcane itself wrote under the
+// generated-assets directory, confined to that root.
+func readGeneratedAssetInternal(ctx context.Context, assetsDir, absPath string) ([]byte, error) {
+	logicalPath, err := acfs.LogicalPath(assetsDir, absPath)
+	if err != nil {
+		return nil, err
+	}
+	return acfs.ReadFile(ctx, assetsDir, logicalPath)
 }
 
 func managerMTLSEnrollmentStateInternal(cfg *Config, envID string, now time.Time) (bool, bool, error) {
@@ -251,6 +265,8 @@ func managerMTLSEnrollmentMarkerPathInternal(cfg *Config, envID string) (string,
 }
 
 func readMTLSEnrollmentMarkerInternal(path string) (time.Time, error) {
+	// Path-only helper; callers derive the path from the assets root, kept on
+	// os.* with the other path-only readers.
 	content, err := os.ReadFile(path)
 	if err != nil {
 		return time.Time{}, err
@@ -301,7 +317,7 @@ func EnsureAgentMTLSAssets(ctx context.Context, cfg *Config) error {
 		needsEnrollment, reason := agentMTLSAssetsNeedEnrollmentInternal(certPath, keyPath, time.Now())
 		if !needsEnrollment {
 			if !fileExistsInternal(filepath.Join(assetsDir, generatedMTLSEnrolledName)) {
-				if err := atomic.WriteFile(filepath.Join(assetsDir, generatedMTLSEnrolledName), []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o600); err != nil {
+				if err := acfs.WriteFile(ctx, assetsDir, "/"+generatedMTLSEnrolledName, []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o600); err != nil {
 					return errors.WrapIf(err, "failed to write edge mTLS enrollment marker")
 				}
 			}
@@ -362,17 +378,17 @@ func enrollAgentMTLSAssetsInternal(ctx context.Context, cfg *Config, assetsDir, 
 		return errors.New("edge mTLS enrollment response did not include any files")
 	}
 
+	// The assets dir is the confinement root for the writes below, so it is
+	// created through os before acfs opens it.
 	if err := os.MkdirAll(assetsDir, utils.DirPerm); err != nil {
 		return errors.WrapIf(err, "failed to create edge mTLS asset dir")
 	}
 	for _, file := range enrollResp.Files {
-		fileName := filepath.Base(file.Name)
-		targetPath := filepath.Join(assetsDir, fileName)
 		perm := utils.FilePerm
 		if strings.TrimSpace(file.Permissions) == "0600" {
 			perm = 0o600
 		}
-		if err := atomic.WriteFile(targetPath, []byte(file.Content), perm); err != nil {
+		if err := acfs.WriteFile(ctx, assetsDir, "/"+filepath.Base(file.Name), []byte(file.Content), perm); err != nil {
 			return errors.WrapIff(err, "failed to write edge mTLS asset %s", file.Name)
 		}
 	}
@@ -380,7 +396,7 @@ func enrollAgentMTLSAssetsInternal(ctx context.Context, cfg *Config, assetsDir, 
 	if needsEnrollment {
 		return errors.Errorf("edge mTLS enrollment wrote unusable assets: %s", reason)
 	}
-	if err := atomic.WriteFile(filepath.Join(assetsDir, generatedMTLSEnrolledName), []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o600); err != nil {
+	if err := acfs.WriteFile(ctx, assetsDir, "/"+generatedMTLSEnrolledName, []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o600); err != nil {
 		return errors.WrapIf(err, "failed to write edge mTLS enrollment marker")
 	}
 
@@ -485,6 +501,8 @@ func loadCertPoolInternal(caFile string) (*x509.CertPool, error) {
 		return nil, errors.New("CA file is required")
 	}
 
+	// os.* rather than acfs: the CA path may be user-configured to anywhere on
+	// the host, so no confinement root exists for it.
 	pemBytes, err := os.ReadFile(caFile)
 	if err != nil {
 		return nil, err
@@ -510,6 +528,8 @@ func loadSystemOrCustomCertPoolInternal(caFile string) (*x509.CertPool, error) {
 		return pool, nil
 	}
 
+	// os.* rather than acfs: the CA path may be user-configured to anywhere on
+	// the host, so no confinement root exists for it.
 	pemBytes, err := os.ReadFile(caFile)
 	if err != nil {
 		return nil, err
@@ -668,6 +688,7 @@ func edgeMTLSAssetsDirInternal(cfg *Config) (string, error) {
 	}
 
 	baseDir := defaultGeneratedMTLSDir
+	// Probes the fixed system path /app/data, which is not under any acfs root.
 	if _, err := os.Stat("/app/data"); err == nil {
 		baseDir = "/app/data/edge-mtls"
 	}
@@ -688,6 +709,7 @@ func edgeAgentMTLSAssetsDirInternal(cfg *Config) (string, error) {
 	}
 
 	baseDir := defaultAgentMTLSDir
+	// Probes the fixed system path /app/data, which is not under any acfs root.
 	if _, err := os.Stat("/app/data"); err == nil {
 		baseDir = "/app/data/edge-mtls-agent"
 	}
@@ -700,6 +722,8 @@ func edgeAgentMTLSAssetsDirInternal(cfg *Config) (string, error) {
 }
 
 func ensureManagerCAInternal(ctx context.Context, assetsDir string) (string, string, bool, error) {
+	// The assets dir is the confinement root for everything below, so it is
+	// created through os before acfs opens it.
 	if err := os.MkdirAll(assetsDir, utils.DirPerm); err != nil {
 		return "", "", false, errors.WrapIf(err, "failed to create edge mTLS assets dir")
 	}
@@ -715,8 +739,8 @@ func ensureManagerCAInternal(ctx context.Context, assetsDir string) (string, str
 	if generatedCAReadyInternal(caCertPath, caKeyPath) {
 		return caCertPath, caKeyPath, false, nil
 	}
-	_ = os.Remove(caCertPath)
-	_ = os.Remove(caKeyPath)
+	_ = acfs.Remove(ctx, assetsDir, "/"+generatedMTLSCACertFileName)
+	_ = acfs.Remove(ctx, assetsDir, "/"+generatedMTLSCAKeyFileName)
 
 	privateKey, err := certgen.GenerateP384PrivateKey()
 	if err != nil {
@@ -764,7 +788,7 @@ func ensureClientCertificateInternal(ctx context.Context, assetsDir string, envI
 		return "", "", false, err
 	}
 
-	caCertPEM, err := os.ReadFile(caCertPath)
+	caCertPEM, err := readGeneratedAssetInternal(ctx, assetsDir, caCertPath)
 	if err != nil {
 		return "", "", false, errors.WrapIf(err, "failed to read CA certificate")
 	}
@@ -793,7 +817,7 @@ func ensureClientCertificateInternal(ctx context.Context, assetsDir string, envI
 
 	safeEnvID := generatedAssetNameSanitizer.ReplaceAllString(strings.TrimSpace(envID), "_")
 	clientDir := filepath.Join(assetsDir, generatedClientMTLSSubdir, safeEnvID)
-	if err := os.MkdirAll(clientDir, utils.DirPerm); err != nil {
+	if err := acfs.MkdirAll(ctx, assetsDir, path.Join("/", generatedClientMTLSSubdir, safeEnvID), utils.DirPerm); err != nil {
 		return "", "", false, errors.WrapIf(err, "failed to create client cert dir")
 	}
 	unlock, err := lockEdgeMTLSPathInternal(ctx, clientDir, ".client.lock")
@@ -812,8 +836,8 @@ func ensureClientCertificateInternal(ctx context.Context, assetsDir string, envI
 		if err := validateGeneratedClientCertificateInternal(clientCertPath, clientKeyPath, "", expectedURISAN); err == nil {
 			return clientCertPath, clientKeyPath, false, nil
 		}
-		_ = os.Remove(clientCertPath)
-		_ = os.Remove(clientKeyPath)
+		_ = acfs.Remove(ctx, clientDir, "/"+generatedMTLSClientCertName)
+		_ = acfs.Remove(ctx, clientDir, "/"+generatedMTLSClientKeyName)
 	}
 
 	privateKey, err := certgen.GenerateP384PrivateKey()
@@ -1037,6 +1061,8 @@ func validateCertificateKeyPairInternal(cert *x509.Certificate, privateKey *ecds
 }
 
 func readCertificateInternal(path string) (*x509.Certificate, error) {
+	// os.* rather than acfs: callers pass both generated-asset paths and
+	// user-configured absolute cert paths, so no single confinement root exists.
 	pemBytes, err := os.ReadFile(path)
 	if err != nil {
 		return nil, errors.WrapIff(err, "failed to read certificate %s", path)
@@ -1053,6 +1079,8 @@ func readCertificateInternal(path string) (*x509.Certificate, error) {
 }
 
 func readECPrivateKeyInternal(path string) (*ecdsa.PrivateKey, error) {
+	// os.* rather than acfs: callers pass both generated-asset paths and
+	// user-configured absolute key paths, so no single confinement root exists.
 	pemBytes, err := os.ReadFile(path)
 	if err != nil {
 		return nil, errors.WrapIff(err, "failed to read private key %s", path)
@@ -1089,6 +1117,8 @@ func lockEdgeMTLSPathInternal(ctx context.Context, dir string, lockName string) 
 			}
 			continue
 		}
+		// os.* rather than acfs, here and in the stale-lock helpers below: acfs
+		// has no exclusive-create (O_EXCL) lockfile API.
 		file, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 		if err == nil {
 			_, _ = fmt.Fprintf(file, "%d %s\n", os.Getpid(), time.Now().UTC().Format(time.RFC3339Nano))
@@ -1225,6 +1255,8 @@ func writeCAKeyFileInternal(path string, derBytes []byte) error {
 
 // readCAKeyPEMInternal returns the plain PEM bytes of the edge CA private key,
 // reading a libcrypto-envelope-encrypted file written by writeCAKeyFileInternal.
+// os.* rather than acfs: callers pass paths derived from a possibly
+// user-configured assets dir, so no confinement root handle is in scope.
 func readCAKeyPEMInternal(path string) ([]byte, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -1246,6 +1278,8 @@ func fileExistsInternal(path string) bool {
 	if strings.TrimSpace(path) == "" {
 		return false
 	}
+	// os.* rather than acfs: callers probe both generated-asset paths and
+	// user-configured absolute paths, so no single confinement root exists.
 	info, err := os.Stat(path)
 	return err == nil && !info.IsDir()
 }

@@ -23,6 +23,8 @@ func describeLifecyclePathAccessInternal(projectPath, resolvedScriptPath string)
 	)
 
 	for _, candidate := range lifecycleDiagnosticPathsInternal(projectPath, resolvedScriptPath) {
+		// os.* rather than acfs: diagnostics walk arbitrary ancestor directories
+		// of a user-configured path, so no confinement root exists for them.
 		info, err := os.Lstat(candidate)
 		if err != nil {
 			lines = append(lines, fmt.Sprintf("  %q: %v", candidate, err))

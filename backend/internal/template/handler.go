@@ -576,10 +576,10 @@ func (h *TemplateHandler) DownloadTemplate(ctx context.Context, input *DownloadT
 
 // GetDefaultTemplates returns the default compose and env templates.
 func (h *TemplateHandler) GetDefaultTemplates(ctx context.Context, _ *GetDefaultTemplatesInput) (*GetDefaultTemplatesOutput, error) {
-	composeTemplate := h.templateService.GetComposeTemplate()
-	swarmStackTemplate := h.templateService.GetSwarmStackTemplate()
-	swarmStackEnvTemplate := h.templateService.GetSwarmStackEnvTemplate()
-	envTemplate := h.templateService.GetEnvTemplate()
+	composeTemplate := h.templateService.GetComposeTemplate(ctx)
+	swarmStackTemplate := h.templateService.GetSwarmStackTemplate(ctx)
+	swarmStackEnvTemplate := h.templateService.GetSwarmStackEnvTemplate(ctx)
+	envTemplate := h.templateService.GetEnvTemplate(ctx)
 
 	return &GetDefaultTemplatesOutput{
 		Body: base.ApiResponse[templatetypes.DefaultTemplatesResponse]{
@@ -596,11 +596,11 @@ func (h *TemplateHandler) GetDefaultTemplates(ctx context.Context, _ *GetDefault
 
 // SaveDefaultTemplates saves the default compose and env templates.
 func (h *TemplateHandler) SaveDefaultTemplates(ctx context.Context, input *SaveDefaultTemplatesInput) (*SaveDefaultTemplatesOutput, error) {
-	if err := h.templateService.SaveComposeTemplate(input.Body.ComposeContent); err != nil {
+	if err := h.templateService.SaveComposeTemplate(ctx, input.Body.ComposeContent); err != nil {
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to save default template").Error())
 	}
 
-	if err := h.templateService.SaveEnvTemplate(input.Body.EnvContent); err != nil {
+	if err := h.templateService.SaveEnvTemplate(ctx, input.Body.EnvContent); err != nil {
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to save default template").Error())
 	}
 

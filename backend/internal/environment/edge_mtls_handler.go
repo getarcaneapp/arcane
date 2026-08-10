@@ -33,6 +33,8 @@ func generatedEdgeMTLSClientCertPathInternal(cfg *config.Config, envID string) (
 	if err != nil {
 		return "", errors.WrapIf(err, "resolve generated edge mTLS client certificate path")
 	}
+	// os.* rather than acfs: the assets dir may be user-configured to anywhere
+	// on the host, so no confinement root exists for this path.
 	if _, err := os.Stat(certPath); err != nil {
 		return "", errors.WrapIf(err, "stat generated edge mTLS client certificate")
 	}
@@ -46,6 +48,8 @@ func readGeneratedEdgeMTLSCertificateInfoInternal(cfg *config.Config, envID stri
 		return nil, err
 	}
 
+	// os.* rather than acfs: the assets dir may be user-configured to anywhere
+	// on the host, so no confinement root exists for this path.
 	certPEM, err := os.ReadFile(certPath)
 	if err != nil {
 		return nil, errors.WrapIf(err, "read generated edge mTLS client certificate")

@@ -19,7 +19,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
 	eventtypes "github.com/getarcaneapp/arcane/types/v2/event"
 	"github.com/samber/mo"
@@ -207,7 +207,7 @@ func (s *EventService) forwardEventToManagerHTTP(ctx context.Context, eventModel
 		return errors.WrapIf(err, "failed to create manager event request")
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set(pkgutils.HeaderAgentToken, s.cfg.AgentToken)
+	req.Header.Set(utils.HeaderAgentToken, s.cfg.AgentToken)
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {

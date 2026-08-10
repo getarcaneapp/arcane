@@ -49,6 +49,9 @@ func BuildValidationEnvironment(projectsDirectory, projectPath string, effective
 
 // ParseValidationEnvFile parses one env file against contextEnv. A missing file
 // is not an error.
+//
+// Stays on os.*: env files may be symlinks resolving outside any confinement
+// root (a supported setup), which acfs cannot follow.
 func ParseValidationEnvFile(path string, contextEnv EnvMap) (EnvMap, error) {
 	if _, err := os.Stat(path); err != nil {
 		if os.IsNotExist(err) {

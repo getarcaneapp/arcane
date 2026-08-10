@@ -867,6 +867,7 @@ func (s *VolumeService) DownloadBackup(ctx context.Context, backupID string, use
 func (s *VolumeService) UploadAndRestore(ctx context.Context, volumeName string, archive io.Reader, filename string, user models.User) error {
 	slog.DebugContext(ctx, "volume service: upload and restore", "volume", volumeName, "filename", filename, "user", user.ID)
 
+	// System temp scratch for the upload buffer: no acfs root exists for it.
 	tmpFile, err := os.CreateTemp("", "arcane-restore-*.tar.gz")
 	if err != nil {
 		return errors.WrapIf(err, "failed to buffer upload")

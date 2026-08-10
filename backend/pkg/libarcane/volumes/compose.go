@@ -29,6 +29,8 @@ func composeVolumeKeysWithExplicitNameInternal(composeFiles []string) (map[strin
 }
 
 func composeVolumeKeysWithExplicitNameInFileInternal(path string) (map[string]struct{}, error) {
+	// os.* rather than acfs: compose config files may live outside the project
+	// directory (e.g. via include), so no single confinement root covers them.
 	content, err := os.ReadFile(path)
 	if err != nil {
 		return nil, errors.WrapIf(err, "read compose file")

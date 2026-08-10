@@ -701,5 +701,7 @@ func ensureSQLiteDirectoryInternal(connString string) error {
 	if dir == "" || dir == "." {
 		return nil
 	}
+	// os.* rather than acfs: this creates the sqlite data directory itself,
+	// which has to exist before any acfs root could be opened on it.
 	return os.MkdirAll(dir, 0o755)
 }

@@ -32,6 +32,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/samber/hot"
 	"github.com/samber/mo"
+	"go.getarcane.app/acfs"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 )
@@ -363,9 +364,9 @@ func (s *TemplateService) DeleteTemplate(ctx context.Context, id string) error {
 		}
 
 		templatePath := filepath.Join(baseDir, existing.Name)
-		if stat, err := os.Stat(templatePath); err == nil && stat.IsDir() {
+		if entry, err := acfs.Stat(ctx, baseDir, "/"+existing.Name, false); err == nil && entry.IsDirectory {
 			if _, err := projects.DetectComposeFile(templatePath); err == nil {
-				if err := os.RemoveAll(templatePath); err != nil {
+				if err := acfs.RemoveAll(ctx, baseDir, entry.Path); err != nil {
 					return errors.WrapIf(err, "failed to delete template directory")
 				}
 			}
@@ -378,56 +379,72 @@ func (s *TemplateService) DeleteTemplate(ctx context.Context, id string) error {
 	})
 }
 
-func (s *TemplateService) GetComposeTemplate() string {
-	composePath := filepath.Join("data", "templates", ".compose.template")
-	content, err := os.ReadFile(composePath)
+// readDefaultTemplateInternal reads one of the default template files from the
+// configured templates directory. These used to be read from a CWD-relative
+// "data/templates", which only resolved when the process happened to run from
+// the repository root.
+func (s *TemplateService) readDefaultTemplateInternal(ctx context.Context, fileName string) (string, error) {
+	baseDir, err := s.getTemplatesDirectoryInternal(ctx)
 	if err != nil {
-		slog.Warn("failed to read compose template", "error", err)
-		return ""
+		return "", errors.WrapIf(err, "failed to get templates directory")
 	}
-	return string(content)
+	content, err := acfs.ReadFile(ctx, baseDir, "/"+fileName)
+	if err != nil {
+		return "", err
+	}
+	return string(content), nil
 }
 
-func (s *TemplateService) GetSwarmStackTemplate() string {
-	swarmStackPath := filepath.Join("data", "templates", ".swarm-stack.template")
-	content, err := os.ReadFile(swarmStackPath)
+func (s *TemplateService) GetComposeTemplate(ctx context.Context) string {
+	content, err := s.readDefaultTemplateInternal(ctx, ".compose.template")
 	if err != nil {
-		slog.Warn("failed to read swarm stack template", "error", err)
+		slog.WarnContext(ctx, "failed to read compose template", "error", err)
+		return ""
+	}
+	return content
+}
+
+func (s *TemplateService) GetSwarmStackTemplate(ctx context.Context) string {
+	content, err := s.readDefaultTemplateInternal(ctx, ".swarm-stack.template")
+	if err != nil {
+		slog.WarnContext(ctx, "failed to read swarm stack template", "error", err)
 		return projects.DefaultSwarmStackTemplate()
 	}
-	return string(content)
+	return content
 }
 
-func (s *TemplateService) GetSwarmStackEnvTemplate() string {
-	swarmStackEnvPath := filepath.Join("data", "templates", ".swarm-stack.env.template")
-	content, err := os.ReadFile(swarmStackEnvPath)
+func (s *TemplateService) GetSwarmStackEnvTemplate(ctx context.Context) string {
+	content, err := s.readDefaultTemplateInternal(ctx, ".swarm-stack.env.template")
 	if err != nil {
-		slog.Warn("failed to read swarm stack env template", "error", err)
+		slog.WarnContext(ctx, "failed to read swarm stack env template", "error", err)
 		return projects.DefaultSwarmStackEnvTemplate()
 	}
-	return string(content)
+	return content
 }
 
-func (s *TemplateService) SaveComposeTemplate(content string) error {
-	templateDir := filepath.Join("data", "templates")
-	composePath := filepath.Join(templateDir, ".compose.template")
-	return projects.WriteTemplateFile(composePath, content)
-}
-
-func (s *TemplateService) GetEnvTemplate() string {
-	envPath := filepath.Join("data", "templates", ".env.template")
-	content, err := os.ReadFile(envPath)
+func (s *TemplateService) SaveComposeTemplate(ctx context.Context, content string) error {
+	baseDir, err := s.getTemplatesDirectoryInternal(ctx)
 	if err != nil {
-		slog.Warn("failed to read env template", "error", err)
+		return errors.WrapIf(err, "failed to get templates directory")
+	}
+	return acfs.WriteFile(ctx, baseDir, "/.compose.template", []byte(content), utils.FilePerm)
+}
+
+func (s *TemplateService) GetEnvTemplate(ctx context.Context) string {
+	content, err := s.readDefaultTemplateInternal(ctx, ".env.template")
+	if err != nil {
+		slog.WarnContext(ctx, "failed to read env template", "error", err)
 		return ""
 	}
-	return string(content)
+	return content
 }
 
-func (s *TemplateService) SaveEnvTemplate(content string) error {
-	templateDir := filepath.Join("data", "templates")
-	envPath := filepath.Join(templateDir, ".env.template")
-	return projects.WriteTemplateFile(envPath, content)
+func (s *TemplateService) SaveEnvTemplate(ctx context.Context, content string) error {
+	baseDir, err := s.getTemplatesDirectoryInternal(ctx)
+	if err != nil {
+		return errors.WrapIf(err, "failed to get templates directory")
+	}
+	return acfs.WriteFile(ctx, baseDir, "/.env.template", []byte(content), utils.FilePerm)
 }
 
 func (s *TemplateService) GetRegistries(ctx context.Context) ([]models.TemplateRegistry, error) {
@@ -1071,7 +1088,7 @@ func (s *TemplateService) syncFilesystemTemplatesInternal(ctx context.Context) e
 		return errors.WrapIf(err, "ensure templates dir")
 	}
 
-	entries, err := os.ReadDir(dir)
+	entries, err := acfs.List(ctx, dir, "/")
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -1081,11 +1098,11 @@ func (s *TemplateService) syncFilesystemTemplatesInternal(ctx context.Context) e
 
 	for _, ent := range entries {
 		// Only process directories; root-level compose files are ignored to prevent duplication.
-		if !ent.IsDir() {
+		if !ent.IsDirectory {
 			continue
 		}
-		if err := s.processFolderEntry(ctx, dir, ent.Name()); err != nil {
-			slog.WarnContext(ctx, "failed to read folder template", "folder", ent.Name(), "error", err)
+		if err := s.processFolderEntry(ctx, dir, ent.Name); err != nil {
+			slog.WarnContext(ctx, "failed to read folder template", "folder", ent.Name, "error", err)
 		}
 	}
 
@@ -1100,6 +1117,7 @@ func (s *TemplateService) ParseComposeServices(ctx context.Context, composeConte
 	}
 
 	// Create a temp directory with dummy .env file to satisfy env_file references
+	// System temp scratch: no acfs root exists for it.
 	tmpDir, err := os.MkdirTemp("", "arcane-compose-parse-*")
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to create temp dir for compose parsing", "error", err)
@@ -1143,6 +1161,7 @@ func (s *TemplateService) resolveTemplateIconURL(ctx context.Context, composeCon
 		return nil
 	}
 
+	// System temp scratch: no acfs root exists for it.
 	tmpDir, err := os.MkdirTemp("", "arcane-template-icon-*")
 	if err != nil {
 		slog.WarnContext(ctx, "failed to create temp dir for template icon parsing", "error", err)

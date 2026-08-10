@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -20,11 +19,12 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	workspacepkg "github.com/getarcaneapp/arcane/backend/v2/pkg/workspace"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/workspace"
 	"github.com/getarcaneapp/arcane/types/v2"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	"github.com/getarcaneapp/arcane/types/v2/project"
 	"github.com/moby/moby/client"
+	"go.getarcane.app/acfs"
 	buildtypes "go.getarcane.app/builds/types"
 	"go.getarcane.app/sys/cgroup"
 	"go.getarcane.app/updater/labels"
@@ -398,12 +398,16 @@ func (s *ProjectService) CreateProject(ctx context.Context, name, composeContent
 	basePath := filepath.Join(projectsDirectory, sanitized)
 	var projectPath, folderName string
 	if allowNameSuffix {
-		projectPath, folderName, err = projects.CreateUniqueDir(projectsDirectory, basePath, name, utils.DirPerm)
+		projectPath, folderName, err = projects.CreateUniqueDir(ctx, projectsDirectory, basePath, name, utils.DirPerm)
 	} else {
-		projectPath, folderName, err = projects.CreateExactDir(projectsDirectory, basePath, name, utils.DirPerm)
+		projectPath, folderName, err = projects.CreateExactDir(ctx, projectsDirectory, basePath, name, utils.DirPerm)
 	}
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to create project directory")
+	}
+	projectLogical, err := acfs.LogicalPath(projectsDirectory, projectPath)
+	if err != nil {
+		return nil, errors.WrapIf(err, "failed to resolve created project directory")
 	}
 
 	proj := &models.Project{
@@ -418,11 +422,11 @@ func (s *ProjectService) CreateProject(ctx context.Context, name, composeContent
 	if err := projects.ApplyProjectWorkspaceChanges(projectPath, manifest.FileChanges, uploads, projects.ProjectWorkspaceApplyOptions{
 		MaxDepth:         s.config.ProjectWorkspaceMaxDepth,
 		MaxEntries:       s.config.ProjectWorkspaceMaxEntries,
-		MaxFileSizeBytes: workspacepkg.MaxFileSizeBytes(s.config.ProjectWorkspaceMaxFileSizeMB),
+		MaxFileSizeBytes: workspace.MaxFileSizeBytes(s.config.ProjectWorkspaceMaxFileSizeMB),
 		SkipDirectories:  s.config.ProjectScanSkipDirs,
 		ComposeFileName:  projects.DefaultComposeFileName,
 	}); err != nil {
-		_ = os.RemoveAll(projectPath)
+		_ = acfs.RemoveAll(context.WithoutCancel(ctx), projectsDirectory, projectLogical)
 		return nil, wrapProjectWorkspaceErrorInternal(err)
 	}
 
@@ -430,18 +434,18 @@ func (s *ProjectService) CreateProject(ctx context.Context, name, composeContent
 	// ${VAR} references the same way single-file git sync updates do; interactive
 	// creates (allowNameSuffix=true) stay strict.
 	if err := validateComposeContentForUpdate(ctx, projectsDirectory, projectPath, name, composeContent, envContent, nil, "", !allowNameSuffix); err != nil {
-		_ = os.RemoveAll(projectPath)
+		_ = acfs.RemoveAll(context.WithoutCancel(ctx), projectsDirectory, projectLogical)
 		return nil, errors.WrapIf(err, "invalid compose file")
 	}
 
-	if err := projects.WriteProjectFiles(projectsDirectory, projectPath, composeContent, envContent); err != nil {
+	if err := projects.WriteProjectFiles(ctx, projectsDirectory, projectPath, composeContent, envContent); err != nil {
 		// Best-effort cleanup to restore pre-transaction behavior.
-		_ = os.RemoveAll(projectPath)
+		_ = acfs.RemoveAll(context.WithoutCancel(ctx), projectsDirectory, projectLogical)
 		return nil, errors.WrapIf(err, "failed to save project files")
 	}
 
 	if err := s.db.WithContext(ctx).Create(proj).Error; err != nil {
-		_ = os.RemoveAll(projectPath)
+		_ = acfs.RemoveAll(context.WithoutCancel(ctx), projectsDirectory, projectLogical)
 		return nil, errors.WrapIf(err, "failed to create project")
 	}
 	s.refreshComposeProjectNameInternal(ctx, proj)
@@ -486,7 +490,9 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, r
 
 	if removeFiles {
 		slog.DebugContext(ctx, "Removing project files", "path", proj.Path)
-		if err := os.RemoveAll(proj.Path); err != nil {
+		// An imported project can live anywhere, so the removal is rooted at the
+		// parent directory and names the project directory itself.
+		if err := acfs.RemoveAll(ctx, filepath.Dir(proj.Path), "/"+filepath.Base(proj.Path)); err != nil {
 			slog.ErrorContext(ctx, "Failed to remove project files", "path", proj.Path, "error", err)
 			return errors.WrapIf(err, "failed to remove project files")
 		}
@@ -501,8 +507,9 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, r
 		if projectsDir, dirErr := s.GetProjectsDirectory(ctx); dirErr != nil {
 			slog.WarnContext(ctx, "Failed to resolve projects directory for quarantine", "error", dirErr)
 		} else if projects.IsSafeSubdirectory(projectsDir, proj.Path) && filepath.Clean(projectsDir) != filepath.Clean(proj.Path) {
-			trashPath := filepath.Join(filepath.Dir(proj.Path), fmt.Sprintf("%s%s-%d", projects.ArcaneTrashPrefix, filepath.Base(proj.Path), time.Now().Unix()))
-			if err := os.Rename(proj.Path, trashPath); err != nil {
+			trashName := fmt.Sprintf("%s%s-%d", projects.ArcaneTrashPrefix, filepath.Base(proj.Path), time.Now().Unix())
+			trashPath := filepath.Join(filepath.Dir(proj.Path), trashName)
+			if err := acfs.Rename(ctx, filepath.Dir(proj.Path), "/"+filepath.Base(proj.Path), "/"+trashName); err != nil {
 				slog.WarnContext(ctx, "Failed to quarantine project files", "path", proj.Path, "trashPath", trashPath, "error", err)
 			} else {
 				slog.InfoContext(ctx, "Project files quarantined successfully", "path", proj.Path, "trashPath", trashPath)

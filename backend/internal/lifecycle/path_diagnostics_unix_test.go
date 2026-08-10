@@ -85,7 +85,7 @@ func TestValidateScriptPath_PermissionDeniedIncludesDiagnostics(t *testing.T) {
 		_ = os.Chmod(blockedDir, 0o700)
 	})
 
-	err := validateScriptPathInternal(dir, "blocked/pre-deploy.sh")
+	err := validateScriptPathInternal(t.Context(), dir, "blocked/pre-deploy.sh")
 
 	require.Error(t, err)
 	require.ErrorIs(t, err, os.ErrPermission)

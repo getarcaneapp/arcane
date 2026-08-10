@@ -16,7 +16,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cookie"
 	"github.com/labstack/echo/v5"
 )
@@ -106,20 +106,20 @@ func (m *AuthMiddleware) agentAuth(ctx context.Context, c *echo.Context, next ec
 	}
 
 	req := c.Request()
-	if strings.HasPrefix(req.URL.Path, pkgutils.AgentPairingPrefix) &&
-		AgentTokenMatches(req.Header.Get(pkgutils.HeaderAgentBootstrap), m.cfg.AgentToken) {
+	if strings.HasPrefix(req.URL.Path, utils.AgentPairingPrefix) &&
+		AgentTokenMatches(req.Header.Get(utils.HeaderAgentBootstrap), m.cfg.AgentToken) {
 		slog.InfoContext(ctx, "Agent auth: bootstrap pairing accepted", "path", req.URL.Path, "method", req.Method)
 		agentSudoInternal(c)
 		return next(c)
 	}
 
-	if AgentTokenMatches(req.Header.Get(pkgutils.HeaderAgentToken), m.cfg.AgentToken) {
+	if AgentTokenMatches(req.Header.Get(utils.HeaderAgentToken), m.cfg.AgentToken) {
 		agentSudoInternal(c)
 		return next(c)
 	}
 
 	// Check for API key as agent token
-	if AgentTokenMatches(req.Header.Get(pkgutils.HeaderApiKey), m.cfg.AgentToken) {
+	if AgentTokenMatches(req.Header.Get(utils.HeaderApiKey), m.cfg.AgentToken) {
 		agentSudoInternal(c)
 		return next(c)
 	}
@@ -127,7 +127,7 @@ func (m *AuthMiddleware) agentAuth(ctx context.Context, c *echo.Context, next ec
 	slog.WarnContext(ctx, "Agent auth forbidden",
 		"path", req.URL.Path,
 		"method", req.Method,
-		"has_agent_token_hdr", req.Header.Get(pkgutils.HeaderAgentToken) != "",
+		"has_agent_token_hdr", req.Header.Get(utils.HeaderAgentToken) != "",
 		"agent_token_config_set", m.cfg.AgentToken != "",
 	)
 	return c.JSON(http.StatusForbidden, models.APIError{
@@ -147,7 +147,7 @@ func AgentTokenMatches(presented, configured string) bool {
 
 func (m *AuthMiddleware) managerAuth(ctx context.Context, c *echo.Context, next echo.HandlerFunc) error {
 	req := c.Request()
-	if agentToken := req.Header.Get(pkgutils.HeaderAgentToken); agentToken != "" {
+	if agentToken := req.Header.Get(utils.HeaderAgentToken); agentToken != "" {
 		if env, ok := m.resolveEnvironmentAccessToken(ctx, agentToken).Get(); ok {
 			environmentScopedInternal(c, env)
 			return next(c)
@@ -155,7 +155,7 @@ func (m *AuthMiddleware) managerAuth(ctx context.Context, c *echo.Context, next 
 	}
 
 	// First, check for API key in X-API-Key header
-	if apiKey := req.Header.Get(pkgutils.HeaderApiKey); apiKey != "" {
+	if apiKey := req.Header.Get(utils.HeaderApiKey); apiKey != "" {
 		return m.apiKeyHeaderAuth(ctx, c, next, apiKey)
 	}
 
