@@ -126,7 +126,7 @@ func registerSnippetsSecuredInternal[I, O any](
 	permission string,
 	handler func(context.Context, *I) (*O, error),
 ) {
-	registerTaggedSecuredInternal(api, operationID, method, path, summary, description, "Snippets", permission, handler)
+	registerSecuredInternal(api, operationInternal(operationID, method, path, summary, description, "Snippets"), permission, handler)
 }
 
 // ============================================================================

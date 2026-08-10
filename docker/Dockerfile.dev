@@ -3,6 +3,10 @@
 # Stage 1: Frontend Development with optimized caching
 FROM --platform=$BUILDPLATFORM node:26-trixie-slim AS frontend-dev
 
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl && \
+    rm -rf /var/lib/apt/lists/*
+
 RUN npm install -g --force corepack && corepack enable pnpm
 
 ENV PNPM_HOME="/pnpm"

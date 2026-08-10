@@ -43,7 +43,7 @@ type SnippetService struct {
 	// SetScheduler, for the same reason as GitOpsSyncService's identical
 	// fields: pkg/scheduler imports this package, so the scheduler can't be
 	// a wire input here, and it's built after the service graph.
-	scheduler    DynamicScheduler
+	scheduler    schedulertypes.DynamicScheduler
 	lifecycleCtx context.Context
 }
 
@@ -63,7 +63,7 @@ func snippetJobNameInternal(snippetID string) string { return snippetJobPrefix +
 // SetScheduler injects the job scheduler and the app lifecycle context. Must
 // be called during bootstrap, after the service graph is built, before any
 // snippet schedule is registered.
-func (s *SnippetService) SetScheduler(ctx context.Context, scheduler DynamicScheduler) { //nolint:contextcheck // scheduled runs must capture the app lifecycle context, not request contexts
+func (s *SnippetService) SetScheduler(ctx context.Context, scheduler schedulertypes.DynamicScheduler) { //nolint:contextcheck // scheduled runs must capture the app lifecycle context, not request contexts
 	if ctx == nil {
 		ctx = context.Background()
 	}
