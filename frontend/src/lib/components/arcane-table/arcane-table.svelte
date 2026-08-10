@@ -65,7 +65,8 @@
 		onGroupToggle,
 		imageNameFilterOptions,
 		// Expandable row props
-		expandedRowContent
+		expandedRowContent,
+		onRowClick
 	}: {
 		items: Paginated<TData>;
 		requestOptions: SearchPaginationSortRequest;
@@ -110,6 +111,8 @@
 		imageNameFilterOptions?: string[];
 		// Expandable row props
 		expandedRowContent?: Snippet<[{ row: ArcaneRow<TData>; item: TData }]>;
+		/** When set, clicking/tapping anywhere on a row invokes this instead of the expand/selection behavior. */
+		onRowClick?: (item: TData) => void;
 	} = $props();
 
 	// Default page size constant
@@ -721,6 +724,7 @@
 		{expandedRowContent}
 		{expandedRows}
 		onToggleRowExpanded={toggleRowExpanded}
+		{onRowClick}
 		{loading}
 	/>
 {/snippet}
@@ -766,6 +770,7 @@
 				{expandedRowContent}
 				{expandedRows}
 				onToggleRowExpanded={toggleRowExpanded}
+				{onRowClick}
 				scrollElement={desktopScrollEl}
 				{loading}
 			/>

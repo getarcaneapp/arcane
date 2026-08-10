@@ -124,6 +124,10 @@
 					try {
 						await snippetService.deleteSnippet(pageState.envId, snippet.id);
 						toast.success(m.common_delete_success({ resource: m.snippets_singular() }));
+						if (snippetToEdit?.id === snippet.id) {
+							isFormSheetOpen = false;
+							snippetToEdit = null;
+						}
 						await loadSnippets();
 					} catch (error) {
 						toast.error(m.common_delete_failed({ resource: m.snippets_singular() }));
@@ -161,7 +165,6 @@
 				onRefreshData={loadSnippets}
 				onRun={openRunSheet}
 				onEdit={openEditSheet}
-				onDelete={handleDelete}
 			/>
 		{/if}
 	{/snippet}
@@ -173,6 +176,7 @@
 			environmentId={pageState.envId}
 			isLoading={isSubmitting}
 			onSubmit={handleFormSubmit}
+			onDelete={handleDelete}
 		/>
 		<SnippetRunSheet bind:open={isRunSheetOpen} snippet={snippetToRun} environmentId={pageState.envId} />
 	{/snippet}

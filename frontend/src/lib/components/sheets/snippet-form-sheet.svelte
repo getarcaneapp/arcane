@@ -33,13 +33,15 @@
 		snippetToEdit = $bindable(null),
 		environmentId,
 		isLoading = false,
-		onSubmit
+		onSubmit,
+		onDelete
 	}: {
 		open: boolean;
 		snippetToEdit: Snippet | null;
 		environmentId: string;
 		isLoading?: boolean;
 		onSubmit: (payload: SnippetFormPayload) => void;
+		onDelete?: (snippet: Snippet) => void;
 	} = $props();
 
 	interface ParamRow {
@@ -412,14 +414,28 @@
 	{/snippet}
 
 	{#snippet footer()}
-		<SheetFooterActions
-			bind:open
-			cancelDisabled={isLoading}
-			submitAction={isEditMode ? 'save' : 'create'}
-			submitDisabled={isLoading}
-			submitLoading={isLoading}
-			onSubmit={handleSubmit}
-			submitLabel={isEditMode ? m.common_save_changes() : m.common_add_button({ resource: m.snippets_singular() })}
-		/>
+		<div class="flex w-full flex-col gap-2">
+			<SheetFooterActions
+				bind:open
+				cancelDisabled={isLoading}
+				submitAction={isEditMode ? 'save' : 'create'}
+				submitDisabled={isLoading}
+				submitLoading={isLoading}
+				onSubmit={handleSubmit}
+				submitLabel={isEditMode ? m.common_save_changes() : m.common_add_button({ resource: m.snippets_singular() })}
+			/>
+			{#if isEditMode && snippetToEdit && onDelete}
+				<Button
+					type="button"
+					variant="destructive"
+					class="w-full"
+					disabled={isLoading}
+					onclick={() => onDelete?.(snippetToEdit!)}
+				>
+					<TrashIcon class="size-4" />
+					{m.common_delete()}
+				</Button>
+			{/if}
+		</div>
 	{/snippet}
 </ResponsiveDialog.Root>

@@ -39,6 +39,7 @@
 		expandedRowContent,
 		expandedRows,
 		onToggleRowExpanded,
+		onRowClick,
 		scrollElement,
 		loading = false
 	}: {
@@ -57,6 +58,8 @@
 		expandedRowContent?: Snippet<[{ row: ArcaneRow<TData>; item: TData }]>;
 		expandedRows?: Set<string>;
 		onToggleRowExpanded?: (rowId: string) => void;
+		/** When set, clicking anywhere on a row invokes this instead of the expand/selection behavior. */
+		onRowClick?: (item: TData) => void;
 		/** The scrollable ancestor, supplied by the wrapper, used to virtualize long flat lists. */
 		scrollElement?: HTMLElement;
 		/** First-load flag — when set and there's no data, render skeleton rows. */
@@ -91,8 +94,13 @@
 	// uniformly (it carried an opaque background before, which broke the highlight at the edge).
 	const selectCellClasses = 'w-0 pr-4!';
 
-	function handleRowClick(event: MouseEvent, rowId: string) {
+	function handleRowClick(event: MouseEvent, row: ArcaneRow<TData>) {
 		if (shouldIgnoreTableRowClick(event)) return;
+		if (onRowClick) {
+			onRowClick(row.original);
+			return;
+		}
+		const rowId = row.original.id;
 		if (hasExpand) {
 			onToggleRowExpanded?.(rowId);
 			return;
@@ -195,8 +203,8 @@
 		{@attach measureRow}
 		data-state={(selectedIds ?? []).includes(rowId) && 'selected'}
 		data-expanded={isExpanded ? true : undefined}
-		onclick={(event) => handleRowClick(event, rowId)}
-		class={cn(hasExpand && 'cursor-pointer', isExpanded && 'bg-primary/15')}
+		onclick={(event) => handleRowClick(event, row)}
+		class={cn((hasExpand || !!onRowClick) && 'cursor-pointer', isExpanded && 'bg-primary/15')}
 	>
 		{#if hasExpand}
 			<Table.Cell class="w-8 px-2" data-row-select-ignore>

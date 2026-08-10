@@ -21,6 +21,7 @@
 		expandedRowContent,
 		expandedRows,
 		onToggleRowExpanded,
+		onRowClick,
 		loading = false
 	}: {
 		table: ArcaneSvelteTable<TData>;
@@ -32,15 +33,21 @@
 		expandedRowContent?: Snippet<[{ row: ArcaneRow<TData>; item: TData }]>;
 		expandedRows?: Set<string>;
 		onToggleRowExpanded?: (rowId: string) => void;
+		/** When set, tapping anywhere on a card invokes this instead of the expand behavior. */
+		onRowClick?: (item: TData) => void;
 		/** First-load flag — when set and there's no data, render skeleton cards. */
 		loading?: boolean;
 	} = $props();
 
 	const hasExpand = $derived(!!expandedRowContent);
 
-	function handleRowClick(event: MouseEvent, rowId: string) {
+	function handleRowClick(event: MouseEvent, row: ArcaneRow<TData>) {
 		if (shouldIgnoreTableRowClick(event)) return;
-		if (hasExpand) onToggleRowExpanded?.(rowId);
+		if (onRowClick) {
+			onRowClick(row.original);
+			return;
+		}
+		if (hasExpand) onToggleRowExpanded?.(row.original.id);
 	}
 
 	// Check if we should render grouped view
@@ -66,7 +73,7 @@
 	{@const isExpanded = expandedRows?.has(rowId) ?? false}
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div class={cn(hasExpand && 'cursor-pointer')} onclick={(e) => handleRowClick(e, rowId)}>
+	<div class={cn((hasExpand || !!onRowClick) && 'cursor-pointer')} onclick={(e) => handleRowClick(e, row)}>
 		{@render mobileCard({ row, item: row.original, mobileFieldVisibility })}
 	</div>
 	{#if hasExpand && isExpanded && expandedRowContent}

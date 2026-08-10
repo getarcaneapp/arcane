@@ -2,14 +2,13 @@
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
 	import { UniversalMobileCard } from '#lib/components/arcane-table';
 	import type { ColumnSpec, MobileFieldVisibility } from '#lib/components/arcane-table';
-	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import CreatedAtCell from '#lib/components/arcane-table/cells/created-at-cell.svelte';
 	import { Badge } from '#lib/components/ui/badge';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import type { Snippet } from '#lib/types/snippet';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
-	import { CodeIcon, ClockIcon, PlayIcon, EditIcon, TrashIcon, MonitorIcon, BoxIcon } from '#lib/icons';
+	import { CodeIcon, ClockIcon, PlayIcon, MonitorIcon, BoxIcon } from '#lib/icons';
 	import { m } from '#lib/paraglide/messages';
 
 	let {
@@ -18,8 +17,7 @@
 		environmentId,
 		onRefreshData,
 		onRun,
-		onEdit,
-		onDelete
+		onEdit
 	}: {
 		snippets: Paginated<Snippet>;
 		requestOptions: SearchPaginationSortRequest;
@@ -27,7 +25,6 @@
 		onRefreshData: (options: SearchPaginationSortRequest) => Promise<void>;
 		onRun: (snippet: Snippet) => void;
 		onEdit: (snippet: Snippet) => void;
-		onDelete: (snippet: Snippet) => void;
 	} = $props();
 
 	let mobileFieldVisibility = $state<MobileFieldVisibility>({});
@@ -114,27 +111,12 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: Snippet })}
-	<RowActionsMenu>
-		<IfPermitted perm="snippets:run" envId={environmentId}>
-			<DropdownMenu.Item onclick={() => onRun(item)}>
-				<PlayIcon class="size-4" />
-				{m.snippets_run()}
-			</DropdownMenu.Item>
-		</IfPermitted>
-		<IfPermitted perm="snippets:update" envId={environmentId}>
-			<DropdownMenu.Item onclick={() => onEdit(item)}>
-				<EditIcon class="size-4" />
-				{m.common_edit()}
-			</DropdownMenu.Item>
-		</IfPermitted>
-		<IfPermitted perm="snippets:delete" envId={environmentId}>
-			<DropdownMenu.Separator />
-			<DropdownMenu.Item variant="destructive" onclick={() => onDelete(item)}>
-				<TrashIcon class="size-4" />
-				{m.common_delete()}
-			</DropdownMenu.Item>
-		</IfPermitted>
-	</RowActionsMenu>
+	<IfPermitted perm="snippets:run" envId={environmentId}>
+		<ArcaneButton action="base" tone="ghost" size="icon" class="size-8" onclick={() => onRun(item)}>
+			<span class="sr-only">{m.snippets_run()}</span>
+			<PlayIcon class="size-4" />
+		</ArcaneButton>
+	</IfPermitted>
 {/snippet}
 
 {#snippet SnippetMobileCardSnippet({
@@ -197,4 +179,5 @@
 	{mobileFields}
 	rowActions={RowActions}
 	mobileCard={SnippetMobileCardSnippet}
+	onRowClick={onEdit}
 />
