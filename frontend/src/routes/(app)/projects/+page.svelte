@@ -70,6 +70,17 @@
 			refetchOnMount: false
 		};
 	});
+	const projectTagsQuery = createQuery(() => {
+		const queryEnvId = envId;
+		return {
+			queryKey: queryKeys.projects.tags(queryEnvId),
+			queryFn: () => projectService.getProjectTagsForEnvironment(queryEnvId),
+			initialData: data.envId === queryEnvId ? data.projectTags : undefined,
+			select: (value) => ({ envId: queryEnvId, value }),
+			refetchOnMount: false
+		};
+	});
+	const projectTags = $derived(projectTagsQuery.data?.envId === envId ? projectTagsQuery.data.value : []);
 	const resourcesReady = $derived(projects !== null);
 
 	$effect(() => {
@@ -251,6 +262,7 @@
 				bind:selectedIds
 				requestOptions={projectRequestOptions}
 				{showArchived}
+				availableTags={projectTags}
 				onToggleArchived={toggleArchived}
 				onRefreshData={async (options) => {
 					const requestedEnvId = envId;

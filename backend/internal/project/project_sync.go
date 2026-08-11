@@ -87,6 +87,9 @@ func (s *ProjectService) HandleProjectFilesChanged(ctx context.Context, paths []
 	for i := range affected {
 		s.parsedCompose.invalidate(affected[i].ID)
 		s.refreshProjectImageRefsInternal(ctx, &affected[i])
+		if err := s.reconcileComposeTagsForProjectInternal(ctx, &affected[i]); err != nil {
+			slog.WarnContext(ctx, "failed to reconcile Compose project tags after file change", "projectID", affected[i].ID, "error", err)
+		}
 	}
 }
 
@@ -211,7 +214,7 @@ func (s *ProjectService) upsertProjectForDir(ctx context.Context, dirName, dirPa
 			return errors.WrapIff(cerr, "create project for %q failed", dirPath)
 		}
 		s.warnDuplicateComposeNameForPathInternal(ctx, composeMetadata.resolvedProjectName, dirPath, proj.ID)
-		return nil
+		return s.reconcileComposeTagsForProjectInternal(ctx, proj)
 	}
 	if err != nil {
 		return errors.WrapIff(err, "query existing project for %q failed", dirPath)
@@ -242,7 +245,7 @@ func (s *ProjectService) upsertProjectForDir(ctx context.Context, dirName, dirPa
 		}
 	}
 	if len(updates) == 0 {
-		return nil
+		return s.reconcileComposeTagsForProjectInternal(ctx, &existing)
 	}
 
 	updates["updated_at"] = time.Now()
@@ -255,7 +258,7 @@ func (s *ProjectService) upsertProjectForDir(ctx context.Context, dirName, dirPa
 	if serviceCountErr == nil {
 		s.warnDuplicateComposeNameForPathInternal(ctx, composeMetadata.resolvedProjectName, dirPath, existing.ID)
 	}
-	return nil
+	return s.reconcileComposeTagsForProjectInternal(ctx, &existing)
 }
 
 func (s *ProjectService) warnDuplicateComposeNameForPathInternal(ctx context.Context, composeProjectName, dirPath, projectID string) {
@@ -445,7 +448,9 @@ func (s *ProjectService) deleteProjectDuringCleanupInternal(ctx context.Context,
 	logAttrs = append(logAttrs, "projectID", p.ID, "name", p.Name, "path", p.Path)
 	logAttrs = append(logAttrs, attrs...)
 
-	if derr := s.db.WithContext(ctx).Delete(&models.Project{}, "id = ?", p.ID).Error; derr != nil {
+	if derr := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return deleteProjectWithTagsInternal(tx, p.ID)
+	}); derr != nil {
 		slog.ErrorContext(ctx, "failed to delete project during filesystem cleanup",
 			append(logAttrs, "reason", reason, "error", derr)...)
 		return

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { IncludeFile, Project } from '#lib/types/swarm';
+	import type { IncludeFile, Project, ProjectTagColor, ProjectTagOption } from '#lib/types/swarm';
 	import type { ProjectWorkspaceFileChange, ProjectWorkspaceFileContent } from '#lib/types/project-workspace';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
@@ -61,6 +61,7 @@
 	import IconImage from '#lib/components/icon-image.svelte';
 	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import ProjectUpdateItem from '#lib/components/project-update-item.svelte';
+	import ProjectTagEditor from '#lib/components/project-tag-editor.svelte';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
 	import { globalVariablesToMap } from '#lib/utils/template-load';
@@ -128,6 +129,26 @@
 		initialData: data.project,
 		refetchOnMount: false
 	}));
+	const projectTagsQuery = createQuery(() => ({
+		queryKey: queryKeys.projects.tags(envId),
+		queryFn: () => projectService.getProjectTagsForEnvironment(envId)
+	}));
+	const availableProjectTags = $derived(projectTagsQuery.data ?? []);
+
+	async function handleProjectTagToggle(name: string, attached: boolean, color: ProjectTagColor) {
+		const response = await projectService.updateProjectTag(projectId, name, attached, color);
+		queryClient.setQueryData<Project>(queryKeys.projects.detail(envId, projectId), (current) =>
+			current ? { ...current, tags: response.tags } : current
+		);
+		if (attached) {
+			queryClient.setQueryData<ProjectTagOption[]>(queryKeys.projects.tags(envId), (current = []) =>
+				current.some((tag) => tag.name === name)
+					? current
+					: [...current, { name, color }].sort((a, b) => a.name.localeCompare(b.name))
+			);
+		}
+		return response.tags;
+	}
 
 	// The workspace walk can be slow on large projects, so it loads lazily and
 	// never blocks navigation; +page.ts prefetches this key without awaiting.
@@ -1359,6 +1380,12 @@
 						{#if project.isArchived}
 							<Badge variant="gray" minWidth="20">{m.projects_archived_badge()}</Badge>
 						{/if}
+						<ProjectTagEditor
+							tags={project.tags ?? []}
+							availableTags={availableProjectTags}
+							canEdit={canUpdateProject}
+							onToggle={handleProjectTagToggle}
+						/>
 						<ProjectUpdateItem
 							updateInfo={project.updateInfo}
 							onCheck={handleCheckProjectUpdates}

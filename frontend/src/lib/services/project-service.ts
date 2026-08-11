@@ -1,7 +1,7 @@
 import { m } from '#lib/paraglide/messages';
 import { environmentStore } from '#lib/stores/environment.store.svelte';
 import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
-import type { Project, ProjectStatusCounts } from '#lib/types/swarm';
+import type { Project, ProjectStatusCounts, ProjectTag, ProjectTagColor, ProjectTagOption } from '#lib/types/swarm';
 import type { ProjectWorkspaceFileDraft } from '#lib/types/project-workspace';
 import { readNdjsonStream } from '#lib/utils/streaming';
 import { transformPaginationParams } from '#lib/utils/tables';
@@ -59,7 +59,8 @@ class ProjectService extends BaseAPIService {
 		projectName: string,
 		composeContent: string,
 		envContent?: string,
-		workspaceFiles: ProjectWorkspaceFileDraft[] = []
+		workspaceFiles: ProjectWorkspaceFileDraft[] = [],
+		tags: ProjectTag[] = []
 	): Promise<Project> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		const form = new FormData();
@@ -70,7 +71,16 @@ class ProjectService extends BaseAPIService {
 			uploads.push(new File([file.content ?? ''], file.relativePath));
 			return { operation: 'create_file' as const, relativePath: file.relativePath, uploadIndex };
 		});
-		form.append('project', JSON.stringify({ name: projectName, composeContent, envContent }));
+		form.append(
+			'project',
+			JSON.stringify({
+				name: projectName,
+				composeContent,
+				envContent,
+				tags: tags.map((tag) => tag.name),
+				tagColors: Object.fromEntries(tags.map((tag) => [tag.name, tag.color]))
+			})
+		);
 		form.append('manifest', JSON.stringify({ fileChanges }));
 		for (const file of uploads) form.append('files', file, file.name);
 		return this.handleResponse(this.api.post(`/environments/${envId}/projects`, form));
@@ -145,6 +155,20 @@ class ProjectService extends BaseAPIService {
 	async getProjectStatusCountsForEnvironment(environmentId: string): Promise<ProjectStatusCounts> {
 		const res = await this.api.get(`/environments/${environmentId}/projects/counts`);
 		return res.data.data;
+	}
+
+	async getProjectTagsForEnvironment(environmentId: string): Promise<ProjectTagOption[]> {
+		return this.handleResponse(this.api.get(`/environments/${environmentId}/projects/tags`));
+	}
+
+	async updateProjectTag(
+		projectId: string,
+		name: string,
+		attached: boolean,
+		color?: ProjectTagColor
+	): Promise<{ tags: ProjectTag[]; activityId?: string }> {
+		const envId = await environmentStore.getCurrentEnvironmentId();
+		return this.handleResponse(this.api.patch(`/environments/${envId}/projects/${projectId}/tags`, { name, attached, color }));
 	}
 
 	async updateProject(

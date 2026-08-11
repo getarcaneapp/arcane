@@ -163,22 +163,21 @@ func (s *ProjectService) ListProjects(ctx context.Context, params pagination.Que
 	statusFilter := ""
 	updatesFilter := ""
 	archivedFilter := ""
+	tagsFilter := ""
 	if params.Filters != nil {
 		statusFilter = strings.TrimSpace(params.Filters["status"])
 		updatesFilter = strings.TrimSpace(params.Filters["updates"])
 		archivedFilter = strings.TrimSpace(params.Filters["archived"])
+		tagsFilter = strings.TrimSpace(params.Filters["tags"])
 	}
 	query = applyProjectArchivedDBFilterInternal(query, archivedFilter)
+	query = applyProjectTagsDBFilterInternal(query, tagsFilter)
 	if statusFilter != "" || updatesFilter != "" {
 		return s.listProjectsWithDerivedFiltersInternal(ctx, params, query)
 	}
 
 	if term := strings.TrimSpace(params.Search); term != "" {
-		searchPattern := "%" + term + "%"
-		query = query.Where(
-			"name LIKE ? OR path LIKE ? OR status LIKE ? OR COALESCE(dir_name, '') LIKE ?",
-			searchPattern, searchPattern, searchPattern, searchPattern,
-		)
+		query = applyProjectSearchDBFilterInternal(query, term)
 	}
 
 	query = pagination.ApplyFilter(query, "status", params.Filters["status"])
@@ -194,6 +193,9 @@ func (s *ProjectService) ListProjects(ctx context.Context, params pagination.Que
 
 	// Fetch live status concurrently for all projects
 	result := s.fetchProjectStatusConcurrently(ctx, projectsArray)
+	if err := s.enrichProjectsWithTagsInternal(ctx, result); err != nil {
+		return nil, pagination.Response{}, err
+	}
 	s.enrichProjectsWithUpdateInfoInternal(ctx, projectsArray, result)
 
 	slog.DebugContext(ctx, "Completed ListProjects request",
@@ -211,6 +213,39 @@ func applyProjectArchivedDBFilterInternal(query *gorm.DB, filterValue string) *g
 	default:
 		return query.Where("is_archived = ?", false)
 	}
+}
+
+func applyProjectTagsDBFilterInternal(query *gorm.DB, filterValue string) *gorm.DB {
+	names := normalizeTagFilterValuesInternal(filterValue)
+	if len(names) == 0 {
+		return query
+	}
+	return query.Where("EXISTS (SELECT 1 FROM project_tags WHERE project_tags.project_id = projects.id AND project_tags.name IN ?)", names)
+}
+
+func normalizeTagFilterValuesInternal(filterValue string) []string {
+	seen := map[string]struct{}{}
+	result := make([]string, 0)
+	for value := range strings.SplitSeq(filterValue, ",") {
+		normalized, err := projects.NormalizeProjectTag(value)
+		if err != nil {
+			continue
+		}
+		if _, exists := seen[normalized]; exists {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		result = append(result, normalized)
+	}
+	return result
+}
+
+func applyProjectSearchDBFilterInternal(query *gorm.DB, term string) *gorm.DB {
+	searchPattern := "%" + strings.TrimSpace(term) + "%"
+	return query.Where(
+		"name LIKE ? OR path LIKE ? OR status LIKE ? OR COALESCE(dir_name, '') LIKE ? OR EXISTS (SELECT 1 FROM project_tags WHERE project_tags.project_id = projects.id AND LOWER(project_tags.name) LIKE ?)",
+		searchPattern, searchPattern, searchPattern, searchPattern, "%"+strings.ToLower(strings.TrimSpace(term))+"%",
+	)
 }
 
 func (s *ProjectService) listProjectsWithDerivedFiltersInternal(
@@ -245,21 +280,29 @@ func (s *ProjectService) filterProjectsWithDerivedFiltersInternal(
 ) (pagination.FilterResult[project.Details], error) {
 	var projectsArray []models.Project
 	if term := strings.TrimSpace(params.Search); term != "" {
-		searchPattern := "%" + term + "%"
-		query = query.Where(
-			"name LIKE ? OR path LIKE ? OR status LIKE ? OR COALESCE(dir_name, '') LIKE ?",
-			searchPattern, searchPattern, searchPattern, searchPattern,
-		)
+		query = applyProjectSearchDBFilterInternal(query, term)
 	}
 	if err := query.Find(&projectsArray).Error; err != nil {
 		return pagination.FilterResult[project.Details]{}, errors.WrapIf(err, "failed to list projects")
 	}
 
 	items := s.fetchProjectStatusConcurrently(ctx, projectsArray)
+	if err := s.enrichProjectsWithTagsInternal(ctx, items); err != nil {
+		return pagination.FilterResult[project.Details]{}, err
+	}
 	s.enrichProjectsWithUpdateInfoInternal(ctx, projectsArray, items)
 	items = s.appendDiscoveredComposeProjectUpdatesInternal(ctx, params, projectsArray, items)
 
-	return pagination.SearchOrderAndPaginate(items, params, s.buildProjectDerivedPaginationConfigInternal()), nil
+	return pagination.SearchOrderAndPaginate(items, withoutProjectDBFiltersInternal(params), s.buildProjectDerivedPaginationConfigInternal()), nil
+}
+
+func withoutProjectDBFiltersInternal(params pagination.QueryParams) pagination.QueryParams {
+	if _, exists := params.Filters["tags"]; !exists {
+		return params
+	}
+	params.Filters = maps.Clone(params.Filters)
+	delete(params.Filters, "tags")
+	return params
 }
 
 func (s *ProjectService) appendDiscoveredComposeProjectUpdatesInternal(
@@ -292,7 +335,7 @@ func shouldIncludeDiscoveredComposeProjectUpdatesInternal(params pagination.Quer
 		return false
 	}
 
-	return strings.EqualFold(strings.TrimSpace(params.Filters["updates"]), "has_update")
+	return strings.EqualFold(strings.TrimSpace(params.Filters["updates"]), "has_update") && strings.TrimSpace(params.Filters["tags"]) == ""
 }
 
 func (s *ProjectService) buildKnownComposeProjectNameSetInternal(ctx context.Context, projectsArray []models.Project) map[string]struct{} {
@@ -531,6 +574,13 @@ func (s *ProjectService) buildProjectDerivedPaginationConfigInternal() paginatio
 			func(p project.Details) (string, error) { return p.RelativePath, nil },
 			func(p project.Details) (string, error) { return p.Status, nil },
 			func(p project.Details) (string, error) { return p.DirName, nil },
+			func(p project.Details) (string, error) {
+				names := make([]string, 0, len(p.Tags))
+				for _, tag := range p.Tags {
+					names = append(names, tag.Name)
+				}
+				return strings.Join(names, " "), nil
+			},
 		},
 		SortBindings: []pagination.SortBinding[project.Details]{
 			{

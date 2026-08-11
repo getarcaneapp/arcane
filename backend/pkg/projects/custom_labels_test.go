@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
 	"github.com/stretchr/testify/require"
 )
 
@@ -85,6 +86,39 @@ services:
 	require.Equal(t, "https://example.com/icon-light.png", meta.ProjectIcon.Light)
 	require.Equal(t, "https://example.com/icon-dark.png", meta.ProjectIcon.Dark)
 	require.Equal(t, []string{"https://example.com/docs"}, meta.ProjectURLS)
+}
+
+func TestParseArcaneComposeMetadata_TagNamesColorsInterpolationAndIncludes(t *testing.T) {
+	tempDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(tempDir, ".env"), []byte("PROJECT_KIND=Database\nPROJECT_COLOR=Purple\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(tempDir, "compose.yaml"), []byte(`include:
+  - included.yaml
+x-arcane:
+  tags:
+    - name: ${PROJECT_KIND}
+      color: ${PROJECT_COLOR}
+services:
+  app:
+    image: nginx:alpine
+`), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(tempDir, "included.yaml"), []byte(`x-arcane:
+  tags:
+    - name: maintenance-window
+      color: orange
+    - name: DATABASE
+      color: red
+    - name: invalid-color
+      color: chartreuse
+    - name: missing-color
+services: {}
+`), 0o600))
+
+	meta, err := ParseArcaneComposeMetadata(context.Background(), filepath.Join(tempDir, "compose.yaml"), tempDir, false)
+	require.NoError(t, err)
+	require.Equal(t, []projecttypes.TagOption{
+		{Name: "database", Color: projecttypes.TagColorPurple},
+		{Name: "maintenance-window", Color: projecttypes.TagColorOrange},
+	}, meta.ProjectTags)
 }
 
 func TestParseArcaneComposeMetadata_LoadsGlobalEnvForIncludedMetadata(t *testing.T) {

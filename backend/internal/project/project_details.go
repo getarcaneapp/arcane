@@ -220,6 +220,10 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 	meta := s.ProjectMetadata(ctx, *proj, nil)
 	applyResolvedProjectIconInternal(&resp, iconcatalog.Resolve(IconCatalogForContext(ctx), meta.ProjectIcon))
 	resp.URLs = meta.ProjectURLS
+	resp.Tags, err = s.GetProjectTags(ctx, projectID)
+	if err != nil {
+		return project.Details{}, err
+	}
 
 	// Default counts/status from DB (will be overridden if runtime check succeeds)
 	resp.ServiceCount = proj.ServiceCount

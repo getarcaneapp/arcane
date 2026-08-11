@@ -30,7 +30,7 @@ const ARCANE_ROOT_EXTENSION_COMPLETIONS: ArcaneCompletionSpec[] = [
 	{
 		label: 'x-arcane',
 		detail: 'Arcane extension',
-		info: 'Arcane compose metadata block for project-level theme icons and URLs.'
+		info: 'Arcane compose metadata block for project-level theme icons, URLs, and tags.'
 	}
 ];
 
@@ -54,6 +54,11 @@ const ARCANE_BLOCK_COMPLETIONS: ArcaneCompletionSpec[] = [
 		label: 'urls',
 		detail: 'Arcane project URLs',
 		info: 'Additional project URLs (for example docs or homepage links).'
+	},
+	{
+		label: 'tags',
+		detail: 'Arcane project tags',
+		info: 'A tag or list of tags used to group and filter projects. Compose-defined tags are read-only in Arcane.'
 	}
 ];
 
@@ -82,6 +87,21 @@ const ARCANE_SERVICE_BLOCK_COMPLETIONS: ArcaneCompletionSpec[] = [
 		info: 'Dark service icon URL or catalog slug used in light theme.'
 	}
 ];
+
+const ARCANE_TAG_COMPLETIONS: ArcaneCompletionSpec[] = [
+	{
+		label: 'name',
+		detail: 'Arcane project tag name',
+		info: 'Normalized project tag name used for grouping and filtering.'
+	},
+	{
+		label: 'color',
+		detail: 'Arcane project tag color',
+		info: 'Tag color: gray, purple, blue, green, yellow, orange, red, or pink.'
+	}
+];
+
+const ARCANE_TAG_COLORS = ['gray', 'purple', 'blue', 'green', 'yellow', 'orange', 'red', 'pink'];
 
 function asSchemaObject(value: unknown): SchemaObject | null {
 	if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
@@ -306,6 +326,8 @@ function getArcaneCompletionOptionsForPath(path: Array<string | number>, prefix 
 		specs = ARCANE_SERVICE_EXTENSION_COMPLETIONS;
 	} else if (isServiceArcanePath(path)) {
 		specs = ARCANE_SERVICE_BLOCK_COMPLETIONS;
+	} else if (path.length === 3 && path[0] === 'x-arcane' && path[1] === 'tags' && typeof path[2] === 'number') {
+		specs = ARCANE_TAG_COMPLETIONS;
 	}
 
 	return specs
@@ -318,7 +340,7 @@ function getArcaneSchemaDocForPath(path: Array<string | number>): SchemaDoc | nu
 	if (path.length === 1 && path[0] === 'x-arcane') {
 		return {
 			title: 'x-arcane',
-			description: 'Arcane extension block for project-level metadata such as theme icons and custom URLs.'
+			description: 'Arcane extension block for project-level metadata such as theme icons, custom URLs, and tags.'
 		};
 	}
 
@@ -347,6 +369,29 @@ function getArcaneSchemaDocForPath(path: Array<string | number>): SchemaDoc | nu
 		return {
 			title: 'x-arcane.urls',
 			description: 'Additional project URLs (for example docs, homepage, or dashboards).'
+		};
+	}
+
+	if (path.length === 2 && path[0] === 'x-arcane' && path[1] === 'tags') {
+		return {
+			title: 'x-arcane.tags',
+			description:
+				'A list of project tag objects. Each tag requires a name and color and is read-only in Arcane while defined here.',
+			examples: ['[{ name: database, color: purple }]']
+		};
+	}
+
+	if (path.length === 4 && path[0] === 'x-arcane' && path[1] === 'tags' && typeof path[2] === 'number' && path[3] === 'name') {
+		return {
+			title: 'x-arcane.tags[].name',
+			description: 'Required tag name. Names are trimmed, normalized to lowercase, and limited to 64 characters.'
+		};
+	}
+
+	if (path.length === 4 && path[0] === 'x-arcane' && path[1] === 'tags' && typeof path[2] === 'number' && path[3] === 'color') {
+		return {
+			title: 'x-arcane.tags[].color',
+			description: 'Required tag color: gray, purple, blue, green, yellow, orange, red, or pink.'
 		};
 	}
 
@@ -463,17 +508,21 @@ export function getCompletionOptionsForPath(
 }
 
 export function getEnumValueCompletions(schema: SchemaObject | null, path: Array<string | number>): Completion[] {
-	if (!schema) return [];
-	const candidates = getPathCandidates(schema, path);
 	const values = new Set<string>();
+	if (path.length === 4 && path[0] === 'x-arcane' && path[1] === 'tags' && typeof path[2] === 'number' && path[3] === 'color') {
+		for (const color of ARCANE_TAG_COLORS) values.add(color);
+	}
 
-	for (const candidate of candidates) {
-		const expanded = expandCandidates(schema, candidate, new Set<string>());
-		for (const node of expanded) {
-			if (!Array.isArray(node['enum'])) continue;
-			for (const value of node['enum']) {
-				if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-					values.add(String(value));
+	if (schema) {
+		const candidates = getPathCandidates(schema, path);
+		for (const candidate of candidates) {
+			const expanded = expandCandidates(schema, candidate, new Set<string>());
+			for (const node of expanded) {
+				if (!Array.isArray(node['enum'])) continue;
+				for (const value of node['enum']) {
+					if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+						values.add(String(value));
+					}
 				}
 			}
 		}

@@ -32,14 +32,14 @@ function buildFilterMap(pairs?: [string, unknown][]): FilterMap {
 	for (const [id, rawValue] of pairs) {
 		let value: unknown = rawValue;
 		if (value instanceof Set) {
-			const iterator = value.values().next();
-			value = iterator.value;
+			value = Array.from(value);
 		}
 
 		if (Array.isArray(value)) {
-			const first = value.find((entry) => entry !== undefined && entry !== null && `${entry}`.trim() !== '');
-			if (first === undefined) continue;
-			value = first;
+			const entries = value.filter((entry) => entry !== undefined && entry !== null && `${entry}`.trim() !== '');
+			if (entries.length === 0) continue;
+			filters[id] = entries as FilterValue;
+			continue;
 		}
 
 		if (value === undefined || value === null) continue;

@@ -22,6 +22,10 @@
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
 	import { globalVariablesToMap } from '#lib/utils/template-load';
 	import type { ProjectWorkspaceFileDraft } from '#lib/types/project-workspace';
+	import type { ProjectTag } from '#lib/types/swarm';
+	import ProjectTagEditor from '#lib/components/project-tag-editor.svelte';
+	import { createQuery } from '@tanstack/svelte-query';
+	import { queryKeys } from '#lib/query/query-keys';
 	import settingsStore from '#lib/stores/config-store';
 	import {
 		planProjectWorkspaceFileCreate,
@@ -88,6 +92,12 @@
 	let selectedEditorFile = $state<'compose' | 'env' | string>('compose');
 	let treePaneWidth = $state(280);
 	let newProjectWorkspaceFiles = $state<ProjectWorkspaceFileDraft[]>([]);
+	let newProjectTags = $state<ProjectTag[]>([]);
+	const projectTagsQuery = createQuery(() => ({
+		queryKey: queryKeys.projects.tags(currentEnvId),
+		queryFn: () => projectService.getProjectTagsForEnvironment(currentEnvId)
+	}));
+	const availableProjectTags = $derived(projectTagsQuery.data ?? []);
 	let newProjectWorkspaceContents = $state<Record<string, string>>({});
 	let newProjectWorkspaceHasErrors = $state<Record<string, boolean>>({});
 	let newProjectWorkspaceValidationReady = $state<Record<string, boolean>>({});
@@ -193,7 +203,7 @@
 			validate: () => validateTemplateEditorForm(validationState, form.validate),
 			setLoading: (value) => (ui.saving = value),
 			submit: ({ name, composeContent, envContent }) =>
-				projectService.createProject(name, composeContent, envContent, buildNewProjectWorkspacePayload()),
+				projectService.createProject(name, composeContent, envContent, buildNewProjectWorkspacePayload(), newProjectTags),
 			failureMessage: (name) => m.common_create_failed({ resource: `${m.resource_project()} "${name}"` }),
 			onSuccess: async (project, { name }) => {
 				toast.success(
@@ -353,6 +363,7 @@
 						disabledMessage={composeYamlName ? m.compose_project_name_defined_in_yaml() : undefined}
 						class="hidden sm:block"
 					/>
+					<ProjectTagEditor bind:tags={newProjectTags} availableTags={availableProjectTags} canEdit={!ui.saving} />
 				</div>
 			</div>
 
@@ -415,6 +426,7 @@
 						canEdit={!ui.saving && !ui.isLoadingTemplateContent && !composeYamlName}
 						disabledMessage={composeYamlName ? m.compose_project_name_defined_in_yaml() : undefined}
 					/>
+					<ProjectTagEditor bind:tags={newProjectTags} availableTags={availableProjectTags} canEdit={!ui.saving} class="mt-2" />
 				</div>
 
 				<div class="flex shrink-0 items-center justify-end gap-2">
