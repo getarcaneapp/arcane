@@ -39,7 +39,7 @@ require (
 	github.com/labstack/echo/v5 v5.3.1
 	github.com/libtnb/sqlite v1.2.1
 	github.com/lmittmann/tint v1.2.0
-	github.com/moby/buildkit v0.32.1
+	github.com/moby/buildkit v0.32.2
 	github.com/moby/moby/api v1.55.0
 	github.com/moby/moby/client v0.5.1
 	github.com/nicholas-fedor/shoutrrr v0.16.3
