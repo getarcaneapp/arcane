@@ -68,7 +68,7 @@
     "@iconify/json": "^2.2.509",
     "@inlang/paraglide-js": "2.23.1",
     "@sveltejs/adapter-static": "^4.0.0-next.2",
-    "@sveltejs/vite-plugin-svelte": "^7.2.0",
+    "@sveltejs/vite-plugin-svelte": "^7.3.0",
     "@tailwindcss/vite": "^4.3.3",
     "@tanstack/svelte-query-devtools": "^6.1.38",
     "@types/node": "^26.1.2",
