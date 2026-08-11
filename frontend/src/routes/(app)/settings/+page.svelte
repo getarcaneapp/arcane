@@ -50,6 +50,49 @@
 		activity: ActivityIcon
 	};
 
+	const categoryMessages = {
+		timeouts: {
+			title: m.timeouts_settings,
+			description: m.timeouts_settings_description
+		},
+		build: {
+			title: m.builds,
+			description: m.build_settings_page_description
+		},
+		activity: {
+			title: m.activity,
+			description: m.activity_settings_description
+		},
+		authentication: {
+			title: m.authentication,
+			description: m.authentication_description
+		},
+		notifications: {
+			title: m.notifications_title,
+			description: m.settings_category_notifications_description
+		},
+		users: {
+			title: m.users_title,
+			description: m.users_subtitle
+		},
+		apikeys: {
+			title: m.api_key_page_title,
+			description: m.settings_category_api_keys_description
+		},
+		webhooks: {
+			title: m.webhook_page_title,
+			description: m.webhook_page_description
+		},
+		jobschedule: {
+			title: m.automations,
+			description: m.settings_category_automations_description
+		},
+		security: {
+			title: m.security,
+			description: m.settings_category_security_description
+		}
+	} as const;
+
 	onMount(async () => {
 		try {
 			settingsCategories = orderCategoriesByNav(
@@ -75,10 +118,12 @@
 	}
 
 	function normalize(category: SettingsCategory): NormalizedCategory {
+		// Category IDs are the stable API contract; backend text remains the fallback for future categories.
+		const messages = categoryMessages[category.id as keyof typeof categoryMessages];
 		return {
 			id: category.id,
-			title: category.title,
-			description: category.description,
+			title: messages?.title() ?? category.title,
+			description: messages?.description() ?? category.description,
 			icon: getIconComponent(category.icon),
 			href: category.url,
 			matchingItems: category.matchingSettings
