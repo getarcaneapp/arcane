@@ -44,6 +44,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/system"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/updater"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/upload"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/webhook"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
@@ -106,13 +107,14 @@ func provideImageUpdateModuleInternal(service *imageupdate.ImageUpdateService, i
 	})
 }
 
-func provideImageModuleInternal(service *image.ImageService, dockerService *docker.DockerClientService, imageUpdate *imageupdate.ImageUpdateService, settingsService *settings.SettingsService, buildService *build.BuildService, activityService *activity.ActivityService) *image.Module {
+func provideImageModuleInternal(service *image.ImageService, dockerService *docker.DockerClientService, imageUpdate *imageupdate.ImageUpdateService, settingsService *settings.SettingsService, buildService *build.BuildService, activityService *activity.ActivityService, uploadService *upload.UploadService) *image.Module {
 	return image.New(service, image.Dependencies{
 		Docker:      dockerService,
 		ImageUpdate: imageUpdate,
 		Settings:    settingsService,
 		Build:       buildService,
 		Activity:    activityService,
+		Upload:      uploadService,
 	})
 }
 
@@ -210,7 +212,7 @@ func provideGitRepositoryServiceInternal(module *gitrepo.Module) *gitrepo.GitRep
 	return module.Service()
 }
 
-func provideVolumeModuleInternal(lc fx.Lifecycle, db *database.DB, docker *docker.DockerClientService, event *event.EventService, settings *settings.SettingsService, image *image.ImageService, activity *activity.ActivityService, cfg *config.Config) *volume.Module {
+func provideVolumeModuleInternal(lc fx.Lifecycle, db *database.DB, docker *docker.DockerClientService, event *event.EventService, settings *settings.SettingsService, image *image.ImageService, activity *activity.ActivityService, cfg *config.Config, uploadService *upload.UploadService) *volume.Module {
 	module := volume.New(volume.Dependencies{
 		DB:       db,
 		Docker:   docker,
@@ -219,6 +221,7 @@ func provideVolumeModuleInternal(lc fx.Lifecycle, db *database.DB, docker *docke
 		Image:    image,
 		Activity: activity,
 		Config:   cfg,
+		Upload:   uploadService,
 	})
 	lc.Append(fx.Hook{
 		OnStop: func(ctx context.Context) error {

@@ -9,7 +9,9 @@
 	import { displaySize, FileDropZone, MEGABYTE, type FileDropZoneProps } from '#lib/components/ui/file-drop-zone';
 	import ImageTable from './image-table.svelte';
 	import { m } from '#lib/paraglide/messages';
+	import { Progress } from '#lib/components/ui/progress/index.js';
 	import { imageService } from '#lib/services/image-service';
+	import type { ChunkedUploadProgress } from '#lib/services/upload-service';
 	import { environmentStore } from '#lib/stores/environment.store.svelte';
 	import { hasPermission } from '#lib/utils/auth';
 	import { queryKeys } from '#lib/query/query-keys';
@@ -35,6 +37,7 @@
 	let isConfirmPruneDialogOpen = $state(false);
 	let isRefreshing = $state(false);
 	let uploadedFiles = $state<File[]>([]);
+	let uploadProgress = $state<ChunkedUploadProgress | null>(null);
 	let imagePruneMode = $state<'dangling' | 'all' | 'olderThan'>('dangling');
 	let imagePruneUntil = $state('');
 	const envId = $derived(environmentStore.selected?.id || '0');
@@ -114,10 +117,12 @@
 		mutationFn: async ({ files, requestedEnvId }: { files: File[]; requestedEnvId: string }) => {
 			for (const file of files) {
 				try {
-					await imageService.uploadImage(file, requestedEnvId);
+					await imageService.uploadImage(file, requestedEnvId, (progress) => (uploadProgress = progress));
 					toast.success(m.images_upload_success());
 				} catch {
 					toast.error(m.images_upload_failed());
+				} finally {
+					uploadProgress = null;
 				}
 			}
 		},
@@ -390,8 +395,18 @@
 						</div>
 					{/if}
 					{#if isUploading}
-						<div class="flex items-center gap-2 text-sm text-muted-foreground">
-							<Spinner class="size-4" />{m.images_uploading()}
+						<div class="flex flex-col gap-2">
+							<div class="flex items-center gap-2 text-sm text-muted-foreground">
+								<Spinner class="size-4" />{m.images_uploading()}
+								{#if uploadProgress}
+									<span class="ml-auto tabular-nums"
+										>{Math.round((uploadProgress.bytesDone / uploadProgress.totalBytes) * 100)}%</span
+									>
+								{/if}
+							</div>
+							{#if uploadProgress}
+								<Progress value={(uploadProgress.bytesDone / uploadProgress.totalBytes) * 100} class="h-1.5 rounded-full" />
+							{/if}
 						</div>
 					{/if}
 				</div>

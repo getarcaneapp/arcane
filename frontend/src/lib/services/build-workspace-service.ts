@@ -1,4 +1,5 @@
 import BaseAPIService from './api-service';
+import { uploadService, type UploadProgressCallback } from './upload-service';
 import { environmentStore } from '#lib/stores/environment.store.svelte';
 import type { FileEntry, FileContentResponse } from '#lib/types/shared';
 import { downloadBlob, filenameFromPath } from '#lib/utils/browser-download';
@@ -30,14 +31,17 @@ class BuildWorkspaceService extends BaseAPIService {
 		downloadBlob(res.data, filenameFromPath(path));
 	}
 
-	async uploadFile(path: string, file: File): Promise<void> {
+	async uploadFile(path: string, file: File, onProgress?: UploadProgressCallback): Promise<void> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
-		const formData = new FormData();
-		formData.append('file', file);
+		const uploadId = await uploadService.uploadFile(envId, 'build-workspace', file, onProgress);
 		return this.handleResponse(
-			this.api.post(`/environments/${envId}/builds/browse/upload`, formData, {
-				params: { path }
-			})
+			this.api.post(
+				`/environments/${envId}/builds/browse/upload`,
+				{ uploadId },
+				{
+					params: { path }
+				}
+			)
 		);
 	}
 

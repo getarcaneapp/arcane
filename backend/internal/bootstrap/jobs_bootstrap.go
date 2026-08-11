@@ -90,6 +90,7 @@ type registerJobsParams struct {
 	VulnerabilityScan      *scheduler.VulnerabilityScanJob
 	AutoHeal               *scheduler.AutoHealJob
 	ActivitySweep          *scheduler.ActivitySweepJob
+	UploadSessionsCleanup  *scheduler.UploadSessionsCleanupJob
 }
 
 func registerJobs(params registerJobsParams) error {
@@ -130,6 +131,7 @@ func registerJobs(params registerJobsParams) error {
 		params.VulnerabilityScan,
 		params.AutoHeal,
 		params.ActivitySweep,
+		params.UploadSessionsCleanup,
 	} {
 		if err := params.Scheduler.RegisterJob(job); err != nil {
 			return err

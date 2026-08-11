@@ -31,11 +31,11 @@
 package images
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
-	"mime/multipart"
 	"net/http"
 	"net/url"
 	"os"
@@ -55,6 +55,7 @@ import (
 	"github.com/getarcaneapp/arcane/cli/v2/pkg/images/updates"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/image"
+	uploadtypes "github.com/getarcaneapp/arcane/types/v2/upload"
 	"github.com/spf13/cobra"
 )
 
@@ -617,9 +618,6 @@ var imagesUploadCmd = &cobra.Command{
 		c.SetTimeout(30 * time.Minute)
 
 		filePath := args[0]
-		path := types.Endpoints.ImagesUpload(c.EnvID())
-
-		log.Debugf("Uploading image from file: %s to %s", filePath, path)
 
 		// Open the file
 		file, err := os.Open(filePath)
@@ -632,57 +630,77 @@ var imagesUploadCmd = &cobra.Command{
 			return errors.WrapIf(err, "failed to stat file")
 		}
 
-		pr, pw := io.Pipe()
-		writer := multipart.NewWriter(pw)
+		// Create the chunked upload session; the file is sent as independently
+		// retried chunks so reverse-proxy body limits never see the full size.
+		var created struct {
+			Success bool                `json:"success"`
+			Data    uploadtypes.Session `json:"data"`
+		}
+		createPath := types.Endpoints.UploadSessions(c.EnvID(), uploadtypes.KindImage)
+		if err := c.DoJSON(cmd.Context(), http.MethodPost, createPath, uploadtypes.CreateSessionRequest{
+			Filename: filepath.Base(filePath),
+			Size:     fileInfo.Size(),
+		}, &created); err != nil {
+			return errors.WrapIf(err, "failed to create upload session")
+		}
+		session := created.Data
 
+		log.Debugf("Uploading image %s as %d chunks of %d bytes (session %s)", filePath, session.TotalChunks, session.ChunkSize, session.ID)
 		output.Info("Uploading image: %s", filePath)
-
-		var requestBody io.Reader = pr
 
 		jsonOutput := cmdutil.JSONOutputEnabled(cmd)
 		var progressUI *output.Progress
 		if !jsonOutput {
 			progressUI = output.StartProgress("Uploading", fileInfo.Size())
-			requestBody = output.NewProgressReader(pr, progressUI)
 			defer progressUI.Stop()
 		}
 
-		go func() {
-			part, err := writer.CreateFormFile("file", filepath.Base(filePath))
-			if err != nil {
-				_ = pw.CloseWithError(errors.WrapIf(err, "failed to create form file"))
-				return
+		deleteSession := func() {
+			if resp, deleteErr := c.Delete(context.WithoutCancel(cmd.Context()), types.Endpoints.UploadSession(c.EnvID(), uploadtypes.KindImage, session.ID)); deleteErr == nil {
+				_ = resp.Body.Close()
 			}
-			if _, err := io.Copy(part, file); err != nil {
-				_ = pw.CloseWithError(errors.WrapIf(err, "failed to copy file"))
-				return
-			}
-			if err := writer.Close(); err != nil {
-				_ = pw.CloseWithError(errors.WrapIf(err, "failed to close multipart writer"))
-				return
-			}
-			_ = pw.Close()
-		}()
-
-		// Use client.RequestRaw to make the multipart request with correct headers
-		headers := map[string]string{
-			"Content-Type": writer.FormDataContentType(),
 		}
 
-		resp, err := c.RequestRaw(cmd.Context(), http.MethodPost, path, requestBody, headers)
+		buf := make([]byte, session.ChunkSize)
+		for index := range session.TotalChunks {
+			expected := session.ChunkSize
+			if index == session.TotalChunks-1 {
+				expected = session.Size - int64(index)*session.ChunkSize
+			}
+			if _, err := io.ReadFull(file, buf[:expected]); err != nil {
+				deleteSession()
+				return errors.WrapIf(err, "failed to read file")
+			}
+
+			chunkPath := types.Endpoints.UploadSessionChunk(c.EnvID(), uploadtypes.KindImage, session.ID, index)
+			for attempt := 1; ; attempt++ {
+				resp, chunkErr := c.RequestRaw(cmd.Context(), http.MethodPut, chunkPath, bytes.NewReader(buf[:expected]), map[string]string{"Content-Type": "application/octet-stream"})
+				if chunkErr == nil {
+					ok := resp.StatusCode >= 200 && resp.StatusCode < 300
+					if !ok {
+						errorBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+						chunkErr = errors.Errorf("chunk %d failed (status %d): %s", index, resp.StatusCode, strings.TrimSpace(string(errorBody)))
+					}
+					_ = resp.Body.Close()
+					if ok {
+						break
+					}
+				}
+				if attempt >= 3 {
+					deleteSession()
+					return errors.WrapIf(chunkErr, "failed to upload image")
+				}
+				log.Debugf("Retrying chunk %d after error: %v", index, chunkErr)
+			}
+			if progressUI != nil {
+				progressUI.Add(expected)
+			}
+		}
+
+		respBody, err := c.DoRaw(cmd.Context(), http.MethodPost, types.Endpoints.ImagesUpload(c.EnvID()), uploadtypes.ConsumeRequest{UploadID: session.ID})
 		if err != nil {
+			deleteSession()
 			return errors.WrapIf(err, "failed to upload image")
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			errorBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-			return errors.Errorf("failed to upload image (status %d): %s", resp.StatusCode, strings.TrimSpace(string(errorBody)))
-		}
-
-		respBody, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return errors.WrapIf(err, "failed to read response")
 		}
 
 		log.Debugf("Response body: %s", string(respBody))

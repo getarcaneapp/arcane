@@ -66,6 +66,11 @@ type ArcaneApiEndpoints struct {
 	ImagesCountsEndpoint string
 	ImagesUploadEndpoint string
 
+	// Upload sessions
+	UploadSessionsEndpoint     string
+	UploadSessionEndpoint      string
+	UploadSessionChunkEndpoint string
+
 	// Image Updates
 	ImageUpdatesCheckEndpoint     string
 	ImageUpdatesCheckAllEndpoint  string
@@ -235,6 +240,11 @@ var Endpoints = ArcaneApiEndpoints{ //nolint:gosec // static endpoint paths; aut
 	ImagesPruneEndpoint:  "/api/environments/%s/images/prune",
 	ImagesCountsEndpoint: "/api/environments/%s/images/counts",
 	ImagesUploadEndpoint: "/api/environments/%s/images/upload",
+
+	// Upload sessions
+	UploadSessionsEndpoint:     "/api/environments/%s/uploads/%s",
+	UploadSessionEndpoint:      "/api/environments/%s/uploads/%s/%s",
+	UploadSessionChunkEndpoint: "/api/environments/%s/uploads/%s/%s/chunks/%d",
 
 	// Image Updates
 	ImageUpdatesCheckEndpoint:     "/api/environments/%s/image-updates/check",
@@ -460,6 +470,20 @@ func (e ArcaneApiEndpoints) ImagesCounts(envID string) string {
 
 func (e ArcaneApiEndpoints) ImagesUpload(envID string) string {
 	return fmt.Sprintf(e.ImagesUploadEndpoint, envID)
+}
+
+// Upload session endpoints
+
+func (e ArcaneApiEndpoints) UploadSessions(envID, kind string) string {
+	return fmt.Sprintf(e.UploadSessionsEndpoint, envID, kind)
+}
+
+func (e ArcaneApiEndpoints) UploadSession(envID, kind, uploadID string) string {
+	return fmt.Sprintf(e.UploadSessionEndpoint, envID, kind, uploadID)
+}
+
+func (e ArcaneApiEndpoints) UploadSessionChunk(envID, kind, uploadID string, index int) string {
+	return fmt.Sprintf(e.UploadSessionChunkEndpoint, envID, kind, uploadID, index)
 }
 
 // Image Update endpoints

@@ -9,8 +9,10 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/upload"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	uploadtypes "github.com/getarcaneapp/arcane/types/v2/upload"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -22,22 +24,22 @@ func volumeWorkspacePermissionContextInternal(environmentID string, permissions 
 	return context.WithValue(context.Background(), middleware.ContextKeyUserPermissions, permissionSet)
 }
 
-func TestUploadAndRestoreReturnsBadRequestWhenNoFileProvided(t *testing.T) {
-	h := &VolumeHandler{volumeService: &VolumeService{}}
+func TestUploadAndRestoreReturnsNotFoundForUnknownSession(t *testing.T) {
+	h := &VolumeHandler{volumeService: &VolumeService{}, uploadService: upload.NewUploadService(nil)}
 
 	ctx := context.WithValue(context.Background(), models.CurrentUserContextKey{}, &models.User{BaseModel: models.BaseModel{ID: "u-1"}})
 
 	_, err := h.UploadAndRestore(ctx, &UploadAndRestoreInput{
 		EnvironmentID: "0",
 		VolumeName:    "vol-1",
-		RawBody:       multipart.Form{},
+		Body:          uploadtypes.ConsumeRequest{UploadID: "missing"},
 	})
 
 	require.Error(t, err)
 
 	var statusErr huma.StatusError
 	require.ErrorAs(t, err, &statusErr)
-	assert.Equal(t, http.StatusBadRequest, statusErr.GetStatus())
+	assert.Equal(t, http.StatusNotFound, statusErr.GetStatus())
 }
 
 func TestParseVolumeWorkspaceManifestInternal(t *testing.T) {

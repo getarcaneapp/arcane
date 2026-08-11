@@ -3,25 +3,27 @@ package build
 import (
 	"context"
 	"io"
-	"mime/multipart"
 	"path"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/upload"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 	"github.com/getarcaneapp/arcane/types/v2/base"
+	uploadtypes "github.com/getarcaneapp/arcane/types/v2/upload"
 	workspacetypes "github.com/getarcaneapp/arcane/types/v2/workspace"
 )
 
 // BuildWorkspaceHandler provides file browsing endpoints for manual build workspaces.
 type BuildWorkspaceHandler struct {
-	service *BuildWorkspaceService
+	service       *BuildWorkspaceService
+	uploadService *upload.UploadService
 }
 
 // RegisterBuildWorkspaces registers build workspace file browser routes.
-func RegisterBuildWorkspaces(api huma.API, workspaceService *BuildWorkspaceService) {
-	h := &BuildWorkspaceHandler{service: workspaceService}
+func RegisterBuildWorkspaces(api huma.API, workspaceService *BuildWorkspaceService, uploadService *upload.UploadService) {
+	h := &BuildWorkspaceHandler{service: workspaceService, uploadService: uploadService}
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "builds-browse",
@@ -58,26 +60,10 @@ func RegisterBuildWorkspaces(api huma.API, workspaceService *BuildWorkspaceServi
 		Method:      "POST",
 		Path:        "/environments/{id}/builds/browse/upload",
 		Summary:     "Upload build workspace file",
-		Description: "Upload a file into the builds workspace root",
+		Description: "Copy a complete chunked upload session into the builds workspace root. multipart/form-data bodies are still accepted for backward compatibility; that form is deprecated and will be removed in a future release.",
 		Tags:        []string{"Builds"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		RequestBody: &huma.RequestBody{
-			Content: map[string]*huma.MediaType{
-				"multipart/form-data": {
-					Schema: &huma.Schema{
-						Type: "object",
-						Properties: map[string]*huma.Schema{
-							"file": {
-								Type:        "string",
-								Format:      "binary",
-								Description: "File to upload",
-							},
-						},
-						Required: []string{"file"},
-					},
-				},
-			},
-		},
+		Middlewares: upload.LegacyMultipartMiddleware(api, uploadService, uploadtypes.KindBuildWorkspace),
 	}, authz.PermBuildWorkspacesManage, h.UploadFile)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
@@ -138,9 +124,9 @@ type DownloadBuildFileOutput struct {
 }
 
 type UploadBuildFileInput struct {
-	EnvironmentID string         `path:"id" doc:"Environment ID"`
-	Path          string         `query:"path" default:"/" doc:"Destination path"`
-	RawBody       multipart.Form `contentType:"multipart/form-data"`
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	Path          string `query:"path" default:"/" doc:"Destination path"`
+	Body          uploadtypes.ConsumeRequest
 }
 
 type CreateBuildDirectoryInput struct {
@@ -186,13 +172,16 @@ func (h *BuildWorkspaceHandler) DownloadFile(ctx context.Context, input *Downloa
 }
 
 func (h *BuildWorkspaceHandler) UploadFile(ctx context.Context, input *UploadBuildFileInput) (*base.ApiResponse[base.MessageResponse], error) {
-	file, fileHeader, err := handlerutil.OpenUploadedFile(input.RawBody)
+	file, session, cleanup, err := h.uploadService.Consume(ctx, uploadtypes.KindBuildWorkspace, input.Body.UploadID)
 	if err != nil {
-		return nil, err
+		if httpErr := upload.SessionHTTPError(err); httpErr != nil {
+			return nil, httpErr
+		}
+		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	defer func() { _ = file.Close() }()
+	defer cleanup()
 
-	if err := h.service.UploadFile(ctx, input.Path, file, fileHeader.Filename, fileHeader.Size); err != nil {
+	if err := h.service.UploadFile(ctx, input.Path, file, session.Filename, session.Size); err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 	return &base.ApiResponse[base.MessageResponse]{

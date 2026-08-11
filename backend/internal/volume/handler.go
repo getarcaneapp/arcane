@@ -3,7 +3,6 @@ package volume
 import (
 	"context"
 	"io"
-	"mime/multipart"
 	"net/http"
 	"strconv"
 	"strings"
@@ -15,12 +14,14 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/upload"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 	"github.com/getarcaneapp/arcane/types/v2/base"
+	uploadtypes "github.com/getarcaneapp/arcane/types/v2/upload"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
@@ -31,6 +32,7 @@ type VolumeHandler struct {
 	volumeService   *VolumeService
 	dockerService   *docker.DockerClientService
 	activityService *activity.ActivityService
+	uploadService   *upload.UploadService
 	appCtx          context.Context
 }
 
@@ -235,9 +237,9 @@ type DownloadBackupInput struct {
 }
 
 type UploadAndRestoreInput struct {
-	EnvironmentID string         `path:"id" doc:"Environment ID"`
-	VolumeName    string         `path:"volumeName" doc:"Volume name"`
-	RawBody       multipart.Form `contentType:"multipart/form-data"`
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	VolumeName    string `path:"volumeName" doc:"Volume name"`
+	Body          uploadtypes.ConsumeRequest
 }
 
 type UploadAndRestoreOutput struct {
@@ -245,11 +247,12 @@ type UploadAndRestoreOutput struct {
 }
 
 // RegisterVolumes registers volume management routes using Huma.
-func RegisterVolumes(api huma.API, dockerService *docker.DockerClientService, volumeService *VolumeService, activityService *activity.ActivityService, appCtx handlerutil.ActivityAppContext) {
+func RegisterVolumes(api huma.API, dockerService *docker.DockerClientService, volumeService *VolumeService, activityService *activity.ActivityService, uploadService *upload.UploadService, appCtx handlerutil.ActivityAppContext) {
 	h := &VolumeHandler{
 		volumeService:   volumeService,
 		dockerService:   dockerService,
 		activityService: activityService,
+		uploadService:   uploadService,
 		appCtx:          appCtx.Context(),
 	}
 
@@ -416,25 +419,10 @@ func RegisterVolumes(api huma.API, dockerService *docker.DockerClientService, vo
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/volumes/{volumeName}/backups/upload",
 		Summary:     "Upload and restore volume backup",
+		Description: "Restore a volume from a complete chunked upload session containing a tar.gz backup archive. multipart/form-data bodies are still accepted for backward compatibility; that form is deprecated and will be removed in a future release.",
 		Tags:        []string{"Volume Backup"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		RequestBody: &huma.RequestBody{
-			Content: map[string]*huma.MediaType{
-				"multipart/form-data": {
-					Schema: &huma.Schema{
-						Type: "object",
-						Properties: map[string]*huma.Schema{
-							"file": {
-								Type:        "string",
-								Format:      "binary",
-								Description: "Backup archive (tar.gz)",
-							},
-						},
-						Required: []string{"file"},
-					},
-				},
-			},
-		},
+		Middlewares: upload.LegacyMultipartMiddleware(api, h.uploadService, uploadtypes.KindVolumeBackup),
 	}, authz.PermVolumesUpload, h.UploadAndRestore)
 }
 
@@ -915,11 +903,14 @@ func (h *VolumeHandler) UploadAndRestore(ctx context.Context, input *UploadAndRe
 		return nil, err
 	}
 
-	file, fileHeader, err := handlerutil.OpenUploadedFile(input.RawBody)
+	file, session, cleanup, err := h.uploadService.Consume(ctx, uploadtypes.KindVolumeBackup, input.Body.UploadID)
 	if err != nil {
-		return nil, err
+		if httpErr := upload.SessionHTTPError(err); httpErr != nil {
+			return nil, httpErr
+		}
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to open upload").Error())
 	}
-	defer func() { _ = file.Close() }()
+	defer cleanup()
 
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
@@ -934,10 +925,10 @@ func (h *VolumeHandler) UploadAndRestore(ctx context.Context, input *UploadAndRe
 		SuccessMessage: "Backup uploaded and restored successfully",
 		Metadata: models.JSON{
 			"action":   "upload_restore_volume_backup",
-			"filename": fileHeader.Filename,
+			"filename": session.Filename,
 		},
 	}, func(runtimeCtx context.Context) error {
-		return h.volumeService.UploadAndRestore(runtimeCtx, input.VolumeName, file, fileHeader.Filename, *user)
+		return h.volumeService.UploadAndRestore(runtimeCtx, input.VolumeName, file, session.Filename, *user)
 	})
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())

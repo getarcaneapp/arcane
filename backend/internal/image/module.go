@@ -9,6 +9,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/upload"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 )
 
@@ -18,6 +19,7 @@ type Dependencies struct {
 	Settings    *settings.SettingsService
 	Build       *build.BuildService
 	Activity    *activity.ActivityService
+	Upload      *upload.UploadService
 }
 
 type Module struct {
@@ -38,8 +40,8 @@ func (m *Module) Service() *ImageService {
 
 func (m *Module) RegisterRoutes(api huma.API, appCtx handlerutil.ActivityAppContext) {
 	if m == nil {
-		RegisterImages(api, nil, nil, nil, nil, nil, nil, appCtx)
+		RegisterImages(api, nil, nil, nil, nil, nil, nil, nil, appCtx)
 		return
 	}
-	RegisterImages(api, m.deps.Docker, m.service, m.deps.ImageUpdate, m.deps.Settings, m.deps.Build, m.deps.Activity, appCtx)
+	RegisterImages(api, m.deps.Docker, m.service, m.deps.ImageUpdate, m.deps.Settings, m.deps.Build, m.deps.Activity, m.deps.Upload, appCtx)
 }

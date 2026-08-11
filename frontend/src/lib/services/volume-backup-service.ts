@@ -1,4 +1,5 @@
 import BaseAPIService from './api-service';
+import { uploadService, type UploadProgressCallback } from './upload-service';
 import { environmentStore } from '#lib/stores/environment.store.svelte';
 import type { BackupEntry } from '#lib/types/shared';
 import type { SearchPaginationSortRequest, Paginated } from '#lib/types/shared';
@@ -68,9 +69,10 @@ class VolumeBackupService extends BaseAPIService {
 		link.remove();
 	}
 
-	async uploadAndRestore(volumeName: string, file: File): Promise<any> {
+	async uploadAndRestore(volumeName: string, file: File, onProgress?: UploadProgressCallback): Promise<any> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.postFile(`/environments/${envId}/volumes/${volumeName}/backups/upload`, file);
+		const uploadId = await uploadService.uploadFile(envId, 'volume-backup', file, onProgress);
+		return this.handleResponse(this.api.post(`/environments/${envId}/volumes/${volumeName}/backups/upload`, { uploadId }));
 	}
 }
 

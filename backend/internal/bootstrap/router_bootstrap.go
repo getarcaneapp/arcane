@@ -56,6 +56,8 @@ var loggerSkipPatterns = []string{
 	// Static branding / PWA assets — browsers re-request these frequently
 	// and the logs add no signal.
 	"GET /api/app-images/*",
+	// Chunked uploads: a large file logs one line per chunk otherwise.
+	"PUT /api/environments/*/uploads/*/*/chunks/*",
 }
 
 func shouldLogRequestInternal(c *echo.Context, _ error) bool {

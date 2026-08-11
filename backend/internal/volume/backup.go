@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"os"
 	"path"
 	"strconv"
 	"strings"
@@ -864,25 +863,10 @@ func (s *VolumeService) DownloadBackup(ctx context.Context, backupID string, use
 	return reader, size, nil
 }
 
-func (s *VolumeService) UploadAndRestore(ctx context.Context, volumeName string, archive io.Reader, filename string, user models.User) error {
+func (s *VolumeService) UploadAndRestore(ctx context.Context, volumeName string, archive io.ReadSeeker, filename string, user models.User) error {
 	slog.DebugContext(ctx, "volume service: upload and restore", "volume", volumeName, "filename", filename, "user", user.ID)
 
-	// System temp scratch for the upload buffer: no acfs root exists for it.
-	tmpFile, err := os.CreateTemp("", "arcane-restore-*.tar.gz")
-	if err != nil {
-		return errors.WrapIf(err, "failed to buffer upload")
-	}
-	defer func() {
-		_ = tmpFile.Close()
-		_ = os.Remove(tmpFile.Name())
-	}()
-	if _, err := io.Copy(tmpFile, archive); err != nil {
-		return errors.WrapIf(err, "failed to buffer upload")
-	}
-	if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
-		return errors.WrapIf(err, "failed to read buffered upload")
-	}
-	gzr, err := gzip.NewReader(tmpFile)
+	gzr, err := gzip.NewReader(archive)
 	if err != nil {
 		return errors.WrapIf(err, "invalid archive")
 	}
@@ -923,12 +907,12 @@ func (s *VolumeService) UploadAndRestore(ctx context.Context, volumeName string,
 		slog.DebugContext(ctx, "volume service: restore temp dir stderr", "volume", volumeName, "stderr", strings.TrimSpace(stderr))
 	}
 
-	if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
-		return errors.WrapIf(err, "failed to read buffered upload")
+	if _, err := archive.Seek(0, io.SeekStart); err != nil {
+		return errors.WrapIf(err, "failed to read uploaded archive")
 	}
 	_, err = dockerClient.CopyToContainer(ctx, containerID, client.CopyToContainerOptions{
 		DestinationPath: tmpDir,
-		Content:         tmpFile,
+		Content:         archive,
 	})
 	if err != nil {
 		return errors.WrapIf(err, "failed to restore from uploaded archive")
