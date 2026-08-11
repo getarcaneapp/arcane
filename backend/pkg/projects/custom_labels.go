@@ -217,6 +217,8 @@ func loadComposeEnvironment(workdir string) map[string]string {
 	}
 
 	envPath := filepath.Join(workdir, ".env")
+	// os.Stat rather than acfs: .env may be a symlink resolving outside any
+	// confinement root (a supported setup).
 	info, err := os.Stat(envPath)
 	if err != nil || info.IsDir() {
 		return envMap
@@ -250,6 +252,8 @@ func mergeEnvFromDotEnv(envMap map[string]string, workdir string) map[string]str
 	}
 
 	envPath := filepath.Join(workdir, ".env")
+	// os.Stat rather than acfs: .env may be a symlink resolving outside any
+	// confinement root (a supported setup).
 	info, err := os.Stat(envPath)
 	if err != nil || info.IsDir() {
 		return merged
@@ -270,6 +274,8 @@ func mergeEnvFromDotEnv(envMap map[string]string, workdir string) map[string]str
 }
 
 func parseIncludePaths(composeFilePath string) ([]string, error) {
+	// os.ReadFile rather than acfs: compose files may be symlinks resolving
+	// outside any confinement root, including imported projects.
 	content, err := os.ReadFile(composeFilePath)
 	if err != nil {
 		return nil, errors.WrapIf(err, "read compose file")

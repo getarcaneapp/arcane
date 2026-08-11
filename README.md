@@ -1,6 +1,6 @@
 <div align="center">
 
-  <img src=".github/assets/img/PNG-3.png" alt="Arcane Logo" width="500" />
+  <img src=".github/assets/img/arcane-full-trace-fill.svg" alt="Arcane Logo" width="500" />
   <p>Modern Docker Management, Designed for Everyone.</p>
 
 <a title="Crowdin" target="_blank" href="https://crowdin.com/project/arcane-docker-management"><img src="https://badges.crowdin.net/arcane-docker-management/localized.svg"></a>

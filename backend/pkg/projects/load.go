@@ -67,6 +67,9 @@ func stripTrailingProjectCounterInternal(name string) string {
 }
 
 func DetectComposeFile(dir string) (string, error) {
+	// Stays on os.*: compose files may be symlinks resolving outside any
+	// confinement root, and dir itself can be an imported project living
+	// outside the projects directory; acfs cannot follow either.
 	for _, filename := range composeFileCandidates {
 		composePath := filepath.Join(dir, filename)
 		if info, err := os.Stat(composePath); err == nil && !info.IsDir() {

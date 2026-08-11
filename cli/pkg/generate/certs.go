@@ -19,7 +19,7 @@ import (
 	"emperror.dev/errors"
 
 	"github.com/spf13/cobra"
-	"go.getarcane.app/sys/atomic"
+	"go.getarcane.app/acfs/atomic"
 )
 
 const (

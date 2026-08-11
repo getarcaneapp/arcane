@@ -50,7 +50,11 @@
 	let assignmentsDisabled = $derived(isOidcUser && hasOidcAssignments);
 
 	const formSchema = z.object({
-		username: z.string().min(1, m.common_username_required()),
+		username: z
+			.string()
+			.min(1, m.common_username_required())
+			// Legacy usernames may contain @; only new or changed usernames are restricted
+			.refine((value) => value === userToEdit?.username || !value.includes('@'), m.users_username_no_at()),
 		password: z.string().optional(),
 		displayName: z.string().optional(),
 		email: z
@@ -100,8 +104,9 @@
 			userData.email = data.email;
 		}
 
-		// Only include username if we're creating a new user or if editing is allowed
-		if (!isEditMode || canEditUsername) {
+		// Only include username when creating, or when editing changed it — an
+		// unchanged legacy username with @ would fail the backend pattern check
+		if (!isEditMode || (canEditUsername && data.username !== userToEdit?.username)) {
 			userData.username = data.username;
 		}
 

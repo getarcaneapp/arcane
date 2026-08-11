@@ -76,6 +76,8 @@ func reexecWithRuntimeIdentityInternal(ctx context.Context, req runtimeIdentityR
 }
 
 func resolveSocketGroupInternal(socketPath string) mo.Option[uint32] {
+	// os.* rather than acfs: the docker socket is a host-configured system path
+	// probed during identity bootstrap, not under any acfs root.
 	info, err := os.Stat(socketPath)
 	if err != nil {
 		return mo.None[uint32]()

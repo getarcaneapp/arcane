@@ -12,6 +12,7 @@ import (
 	"github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
 
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 )
 
@@ -26,16 +27,16 @@ const defaultComposeTimeout = 30 * time.Minute
 // deadline-bounded by the parent. This allows compose operations to survive
 // HTTP request timeouts and proxy deadline cancellations. A standalone timeout
 // is applied so the operation cannot run forever. See #1209.
-func detachFromHTTPContextInternal(parent context.Context) (context.Context, context.CancelFunc) {
+func detachFromHTTPContextInternal(parent context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
 	if utils.IsAppLifecycleContext(parent) {
-		return context.WithTimeout(parent, defaultComposeTimeout)
+		return context.WithTimeout(parent, timeout)
 	}
 	ctx := context.WithoutCancel(parent)
-	return context.WithTimeout(ctx, defaultComposeTimeout)
+	return context.WithTimeout(ctx, timeout)
 }
 
 func ComposeRestart(ctx context.Context, proj *types.Project, services []string) error {
-	restartCtx, cancel := detachFromHTTPContextInternal(ctx)
+	restartCtx, cancel := detachFromHTTPContextInternal(ctx, defaultComposeTimeout)
 	defer cancel()
 
 	c, err := NewClient(restartCtx, nil, nil)
@@ -51,7 +52,7 @@ func ComposeStop(ctx context.Context, proj *types.Project, services []string) er
 	if len(services) == 0 {
 		return nil
 	}
-	stopCtx, cancel := detachFromHTTPContextInternal(ctx)
+	stopCtx, cancel := detachFromHTTPContextInternal(ctx, defaultComposeTimeout)
 	defer cancel()
 
 	c, err := NewClient(stopCtx, nil, nil)
@@ -63,10 +64,18 @@ func ComposeStop(ctx context.Context, proj *types.Project, services []string) er
 	return c.svc.Stop(stopCtx, proj.Name, api.StopOptions{Services: services})
 }
 
-func ComposeUp(ctx context.Context, proj *types.Project, services []string, removeOrphans bool, forceRecreate bool, recreateVolumes bool, authConfigs map[string]registry.AuthConfig) error {
+func ComposeUp(ctx context.Context, proj *types.Project, services []string, removeOrphans bool, forceRecreate bool, recreateVolumes bool, authConfigs map[string]registry.AuthConfig, waitTimeout time.Duration) error {
+	if waitTimeout <= 0 {
+		waitTimeout = timeouts.DefaultDeployWait
+	}
+
 	// Detach from the HTTP request context so that proxy timeouts and client
-	// disconnects do not cancel a long-running compose up. See #1209.
-	composeCtx, cancel := detachFromHTTPContextInternal(ctx)
+	// disconnects do not cancel a long-running compose up. See #1209. The
+	// operation deadline must exceed the configured wait, otherwise a Deploy
+	// Wait Timeout above defaultComposeTimeout would be cut short; the extra
+	// defaultComposeTimeout leaves room for image pulls and container creation
+	// that happen before the wait starts.
+	composeCtx, cancel := detachFromHTTPContextInternal(ctx, waitTimeout+defaultComposeTimeout)
 	defer cancel()
 
 	// Compose prompts before recreating a volume whose config diverged (data
@@ -83,12 +92,12 @@ func ComposeUp(ctx context.Context, proj *types.Project, services []string, remo
 	}
 	defer func() { _ = c.Close() }()
 
-	upOptions, startOptions := composeUpOptions(proj, services, removeOrphans, forceRecreate)
+	upOptions, startOptions := composeUpOptions(proj, services, removeOrphans, forceRecreate, waitTimeout)
 
 	return c.svc.Up(composeCtx, proj, api.UpOptions{Create: upOptions, Start: startOptions})
 }
 
-func composeUpOptions(proj *types.Project, services []string, removeOrphans bool, forceRecreate bool) (api.CreateOptions, api.StartOptions) {
+func composeUpOptions(proj *types.Project, services []string, removeOrphans bool, forceRecreate bool, waitTimeout time.Duration) (api.CreateOptions, api.StartOptions) {
 	recreatePolicy := api.RecreateDiverged
 	if forceRecreate {
 		recreatePolicy = api.RecreateForce
@@ -102,12 +111,10 @@ func composeUpOptions(proj *types.Project, services []string, removeOrphans bool
 	}
 
 	startOptions := api.StartOptions{
-		Project:  proj,
-		Services: services,
-		Wait:     true,
-		// Reduced from 10 minutes to 2 minutes - if a service can't become healthy
-		// in 2 minutes, there's likely a configuration issue (missing healthcheck, etc.)
-		WaitTimeout: 2 * time.Minute,
+		Project:     proj,
+		Services:    services,
+		Wait:        true,
+		WaitTimeout: waitTimeout,
 		// CascadeFail ensures that if a dependency fails its health check,
 		// the error propagates correctly instead of being ignored
 		OnExit: api.CascadeFail,
@@ -127,7 +134,7 @@ func ComposePs(ctx context.Context, proj *types.Project, services []string, all 
 }
 
 func ComposeDown(ctx context.Context, proj *types.Project, removeVolumes bool) error {
-	downCtx, cancel := detachFromHTTPContextInternal(ctx)
+	downCtx, cancel := detachFromHTTPContextInternal(ctx, defaultComposeTimeout)
 	defer cancel()
 
 	c, err := NewClient(downCtx, nil, nil)

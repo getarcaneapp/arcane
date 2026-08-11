@@ -15,6 +15,7 @@
 	const formSchema = z.object({
 		dockerApiTimeout: z.coerce.number().int().min(1).max(3600),
 		dockerImagePullTimeout: z.coerce.number().int().min(30).max(7200),
+		deployWaitTimeout: z.coerce.number().int().min(30).max(14400),
 		trivyScanTimeout: z.coerce.number().int().min(60).max(14400),
 		gitOperationTimeout: z.coerce.number().int().min(30).max(3600),
 		httpClientTimeout: z.coerce.number().int().min(5).max(300),
@@ -27,6 +28,7 @@
 		return {
 			dockerApiTimeout: settings.dockerApiTimeout,
 			dockerImagePullTimeout: settings.dockerImagePullTimeout,
+			deployWaitTimeout: settings.deployWaitTimeout,
 			trivyScanTimeout: settings.trivyScanTimeout,
 			gitOperationTimeout: settings.gitOperationTimeout,
 			httpClientTimeout: settings.httpClientTimeout,
@@ -74,6 +76,15 @@
 						description={m.docker_image_pull_timeout_description()}
 						placeholder="600"
 						helpText="Timeout in seconds (30-7200)"
+						type="number"
+					/>
+					<TextInputWithLabel
+						bind:value={$formInputs.deployWaitTimeout.value}
+						error={$formInputs.deployWaitTimeout.error}
+						label={m.deploy_wait_timeout()}
+						description={m.deploy_wait_timeout_description()}
+						placeholder="600"
+						helpText="Timeout in seconds (30-14400)"
 						type="number"
 					/>
 					<TextInputWithLabel

@@ -72,12 +72,12 @@ func TestPermissionMatcherMethodAndLengthMismatch(t *testing.T) {
 
 func TestPermissionMatcherNormalizesEchoParamsAndStripsQuery(t *testing.T) {
 	m := NewPermissionMatcher()
-	m.Add("GET", "/volumes/:volumeName/browse", "volumes:browse")
+	m.Add("GET", "/volumes/:volumeName/workspace", "volumes:read")
 	{
 
-		perm, ok := m.Lookup("GET", "/volumes/data/browse?path=/etc").Get()
-		require.False(t, !ok || perm != "volumes:browse",
-			"expected volumes:browse with echo param + query string, got %q ok=%v", perm, ok)
+		perm, ok := m.Lookup("GET", "/volumes/data/workspace?path=/etc").Get()
+		require.False(t, !ok || perm != "volumes:read",
+			"expected volumes:read with echo param + query string, got %q ok=%v", perm, ok)
 	}
 
 }

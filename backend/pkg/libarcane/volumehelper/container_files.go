@@ -4,13 +4,9 @@ import (
 	"archive/tar"
 	"context"
 	"io"
-	"strings"
 
 	"emperror.dev/errors"
-	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
-
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 )
 
 type cleanupReadCloserInternal struct {
@@ -18,36 +14,6 @@ type cleanupReadCloserInternal struct {
 	io.Closer
 
 	cleanup func()
-}
-
-func IsLegacyHelperContainer(c container.Summary) bool {
-	if !libarcane.IsInternalContainer(c.Labels) {
-		return false
-	}
-
-	command := strings.ToLower(c.Command)
-	if !strings.Contains(command, "sleep") || !strings.Contains(command, "infinity") {
-		return false
-	}
-
-	for _, m := range c.Mounts {
-		if m.Destination == "/volume" {
-			return true
-		}
-	}
-
-	return false
-}
-
-func IsHelperContainer(c container.Summary) bool {
-	if IsLegacyHelperContainer(c) {
-		return true
-	}
-	if !libarcane.IsInternalContainer(c.Labels) {
-		return false
-	}
-
-	return strings.EqualFold(c.Labels[ContainerLabel], "true")
 }
 
 func (c *cleanupReadCloserInternal) Close() error {
@@ -79,10 +45,10 @@ func DownloadFileFromContainer(
 		cleanup()
 		return nil, 0, errors.WrapIf(err, "failed to read tar stream")
 	}
-	if hdr.FileInfo().IsDir() {
+	if err := validateDownloadHeaderInternal(hdr); err != nil {
 		_ = reader.Close()
 		cleanup()
-		return nil, 0, errors.New("path is a directory")
+		return nil, 0, err
 	}
 
 	return &cleanupReadCloserInternal{
@@ -90,4 +56,11 @@ func DownloadFileFromContainer(
 		Closer:  reader,
 		cleanup: cleanup,
 	}, hdr.Size, nil
+}
+
+func validateDownloadHeaderInternal(header *tar.Header) error {
+	if header.FileInfo().IsDir() {
+		return errors.New("path is a directory")
+	}
+	return nil
 }

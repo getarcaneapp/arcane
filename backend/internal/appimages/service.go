@@ -60,7 +60,7 @@ func NewApplicationImagesService(embeddedFS embed.FS, settingsService *settings.
 	return service
 }
 
-func (s *ApplicationImagesService) GetImageWithColor(name string, colorOverride string) ([]byte, string, error) {
+func (s *ApplicationImagesService) GetImageWithColor(name string, colorOverride string, loop bool) ([]byte, string, error) {
 	s.mu.RLock()
 	data, ok := s.imageData[name]
 	mimeType := s.mimeTypes[name]
@@ -71,11 +71,28 @@ func (s *ApplicationImagesService) GetImageWithColor(name string, colorOverride 
 	}
 
 	// Apply dynamic color replacement for logo SVGs
-	if (name == "logo" || name == "logo-full") && mimeType == "image/svg+xml" {
+	if IsLogoVariant(name) && mimeType == "image/svg+xml" {
 		data = s.applyAccentColorToSVGInternal(data, colorOverride)
 	}
 
+	// The animated mark ships both a one-shot and a looping keyframe set; loop
+	// mode swaps the animation shorthand so the trace repeats indefinitely.
+	if loop && name == "logo-animated" {
+		data = []byte(strings.Replace(string(data),
+			"animation: traceDraw 1.7s ease both;",
+			"animation: traceDrawLoop 2.6s ease infinite;", 1))
+	}
+
 	return data, mimeType, nil
+}
+
+// IsLogoVariant reports whether the image name is one of the accent-colorable logo SVGs.
+func IsLogoVariant(name string) bool {
+	switch name {
+	case "logo", "logo-full", "logo-animated", "logo-full-animated":
+		return true
+	}
+	return false
 }
 
 func (s *ApplicationImagesService) applyAccentColorToSVGInternal(svgData []byte, colorOverride string) []byte {
@@ -87,5 +104,7 @@ func (s *ApplicationImagesService) applyAccentColorToSVGInternal(svgData []byte,
 	svgStr := string(svgData)
 	svgStr = strings.ReplaceAll(svgStr, "fill:#6D28D9", "fill:"+accentColor)
 	svgStr = strings.ReplaceAll(svgStr, "fill:#6d28d9", "fill:"+accentColor)
+	svgStr = strings.ReplaceAll(svgStr, "stroke:#6D28D9", "stroke:"+accentColor)
+	svgStr = strings.ReplaceAll(svgStr, "stroke:#6d28d9", "stroke:"+accentColor)
 	return []byte(svgStr)
 }

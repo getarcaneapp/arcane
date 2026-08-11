@@ -18,6 +18,7 @@ import (
 
 	"github.com/compose-spec/compose-go/v2/dotenv"
 	"github.com/samber/hot"
+	"go.getarcane.app/acfs"
 )
 
 const (
@@ -178,6 +179,8 @@ func loadCachedEnvFileInternal(_ context.Context, envCache *hot.HotCache[string,
 
 	entry, found, err := envCache.GetWithLoaders(key, func(_ []string) (map[string]envFileCacheEntry, error) {
 		entry := envFileCacheEntry{path: path}
+		// Stays on os.*: env files may be symlinks resolving outside any
+		// confinement root (a supported setup), which acfs cannot follow.
 		info, err := os.Stat(path)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
@@ -228,6 +231,8 @@ func envContextFingerprintInternal(envMap EnvMap) string {
 }
 
 func validEnvFileCacheEntryInternal(entry envFileCacheEntry) bool {
+	// os.Stat rather than acfs: env files may be symlinks resolving outside
+	// any confinement root (a supported setup).
 	info, err := os.Stat(entry.path)
 	if err != nil {
 		return !entry.exists && errors.Is(err, os.ErrNotExist)
@@ -249,6 +254,9 @@ func parseProjectEnvFileExistingInternal(path string, contextEnv EnvMap) (EnvMap
 // ParseProjectEnvFile parses a project .env file with variable expansion using the provided
 // context map (e.g. process env). Returns nil without error when the file does not exist.
 // Only the specified file is read — global env files are intentionally not loaded here.
+//
+// Stays on os.*: env files may be symlinks resolving outside any confinement
+// root (a supported setup), which acfs cannot follow.
 func ParseProjectEnvFile(path string, contextEnv EnvMap) (EnvMap, error) {
 	if _, err := os.Stat(path); err != nil {
 		return nil, nil //nolint:nilerr // missing .env is not an error
@@ -276,9 +284,11 @@ func ParseProjectEnvContent(content string, contextEnv EnvMap) (EnvMap, error) {
 
 // WithTransientValidationEnvFile temporarily writes a project .env file while
 // running compose validation, then restores the original file state.
-func WithTransientValidationEnvFile(projectPath string, effectiveEnvContent *string, run func() error) (err error) {
-	envPath := filepath.Join(projectPath, ".env")
-	originalContent, readErr := os.ReadFile(envPath)
+func WithTransientValidationEnvFile(ctx context.Context, projectPath string, effectiveEnvContent *string, run func() error) (err error) {
+	// Read through os rather than the root-confined API: a project .env is
+	// allowed to be a symlink whose target lives outside the project directory,
+	// and that write-through is deliberately preserved (#3556).
+	originalContent, readErr := os.ReadFile(filepath.Join(projectPath, ".env"))
 	originalExists := readErr == nil
 	if readErr != nil && !os.IsNotExist(readErr) {
 		if !errors.Is(readErr, os.ErrPermission) {
@@ -302,7 +312,7 @@ func WithTransientValidationEnvFile(projectPath string, effectiveEnvContent *str
 		if effectiveEnvContent != nil {
 			content = *effectiveEnvContent
 		}
-		if writeErr := WriteProjectFile(projectPath, projectPath, ".env", content); writeErr != nil {
+		if writeErr := WriteProjectFile(ctx, projectPath, projectPath, ".env", content); writeErr != nil {
 			return errors.WrapIf(writeErr, "prepare env file for compose validation")
 		}
 
@@ -310,11 +320,9 @@ func WithTransientValidationEnvFile(projectPath string, effectiveEnvContent *str
 			var restoreErr error
 			switch {
 			case originalExists:
-				restoreErr = WriteProjectFile(projectPath, projectPath, ".env", string(originalContent))
-			case effectiveEnvContent != nil:
-				restoreErr = os.Remove(envPath)
+				restoreErr = WriteProjectFile(ctx, projectPath, projectPath, ".env", string(originalContent))
 			default:
-				restoreErr = os.Remove(envPath)
+				restoreErr = acfs.Remove(ctx, projectPath, "/.env")
 			}
 
 			if restoreErr != nil && !os.IsNotExist(restoreErr) {
@@ -596,7 +604,7 @@ func ReadProjectEnvState(projectPath string) (ProjectEnvState, error) {
 // permission-locked, the write is skipped and a warning logged instead: its
 // contents can't be verified, and a locked file is typically unwritable too,
 // so attempting the write would abort the whole caller.
-func WriteManagedEnvFile(projectsDirectory, projectPath, fileName string, unreadable bool, content string) error {
+func WriteManagedEnvFile(ctx context.Context, projectsDirectory, projectPath, fileName string, unreadable bool, content string) error {
 	if unreadable {
 		slog.Warn("skipping permission-locked project env file; leaving it untouched", "projectPath", projectPath, "file", fileName)
 		return nil
@@ -604,14 +612,14 @@ func WriteManagedEnvFile(projectsDirectory, projectPath, fileName string, unread
 
 	switch fileName {
 	case EffectiveEnvFileName:
-		return WriteProjectFile(projectsDirectory, projectPath, ".env", content)
+		return WriteProjectFile(ctx, projectsDirectory, projectPath, ".env", content)
 	case GitSourceEnvFileName:
-		return WriteProjectFile(projectsDirectory, projectPath, GitSourceEnvFileName, content)
+		return WriteProjectFile(ctx, projectsDirectory, projectPath, GitSourceEnvFileName, content)
 	case OverrideEnvFileName:
 		if strings.TrimSpace(content) == "" {
-			return RemoveProjectFile(projectsDirectory, projectPath, OverrideEnvFileName)
+			return RemoveProjectFile(ctx, projectsDirectory, projectPath, OverrideEnvFileName)
 		}
-		return WriteProjectFile(projectsDirectory, projectPath, OverrideEnvFileName, content)
+		return WriteProjectFile(ctx, projectsDirectory, projectPath, OverrideEnvFileName, content)
 	default:
 		return errors.Errorf("write managed env file: unsupported file name %q", fileName)
 	}
@@ -623,6 +631,9 @@ func WriteManagedEnvFile(projectsDirectory, projectPath, fileName string, unread
 // contents cannot be verified, so callers must treat it as absent for merge
 // purposes and must not attempt to overwrite or remove it. Any other I/O
 // error (e.g. the path is a directory) is still returned as a hard failure.
+// A project env file may itself be a symlink whose target lives outside the
+// project directory, so the read goes through os rather than the root-confined
+// API — the same deliberate exception the .env write path makes (#3556).
 func readOptionalProjectFileInternal(projectPath, fileName string) (content string, exists, unreadable bool, err error) {
 	raw, readErr := os.ReadFile(filepath.Join(projectPath, fileName))
 	if readErr == nil {

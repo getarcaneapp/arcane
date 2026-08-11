@@ -163,8 +163,22 @@ func (s *UserService) GetUserByOidcSubjectId(ctx context.Context, subjectId stri
 	return dbutil.FirstWhere[models.User](ctx, s.db.DB, common.ErrUserNotFound, "oidc_subject_id = ?", subjectId)
 }
 
+// GetUserByEmail returns the user with the given email. The schema does not
+// enforce email uniqueness, so a lookup matching more than one account returns
+// common.ErrAmbiguousUserEmail instead of arbitrarily selecting one.
 func (s *UserService) GetUserByEmail(ctx context.Context, email string) (*models.User, error) {
-	return dbutil.FirstWhere[models.User](ctx, s.db.DB, common.ErrUserNotFound, "email = ?", email)
+	var users []models.User
+	if err := s.db.DB.WithContext(ctx).Where("email = ?", email).Limit(2).Find(&users).Error; err != nil {
+		return nil, errors.WrapIf(err, "failed to query users by email")
+	}
+	switch len(users) {
+	case 0:
+		return nil, common.ErrUserNotFound
+	case 1:
+		return &users[0], nil
+	default:
+		return nil, common.ErrAmbiguousUserEmail
+	}
 }
 
 // ResolveUserPermissions returns the effective PermissionSet for the given

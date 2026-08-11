@@ -2,6 +2,7 @@ package variable
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json/v2"
 	"fmt"
@@ -26,6 +27,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/types/v2/env"
+	"go.getarcane.app/acfs"
 	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
 )
@@ -462,19 +464,17 @@ func (s *VariableService) ReadLocalEnvFile(ctx context.Context) ([]env.Variable,
 		return nil, err
 	}
 
-	if _, err := os.Stat(envPath); os.IsNotExist(err) {
-		slog.DebugContext(ctx, "Global variables file does not exist yet", "path", envPath)
-		return []env.Variable{}, nil
-	}
-
-	file, err := os.Open(envPath)
+	content, err := acfs.ReadFile(ctx, filepath.Dir(envPath), "/"+projects.GlobalEnvFileName)
 	if err != nil {
+		if os.IsNotExist(err) {
+			slog.DebugContext(ctx, "Global variables file does not exist yet", "path", envPath)
+			return []env.Variable{}, nil
+		}
 		return nil, errors.WrapIf(err, "failed to open global variables file")
 	}
-	defer func() { _ = file.Close() }()
 
 	vars := []env.Variable{}
-	scanner := bufio.NewScanner(file)
+	scanner := bufio.NewScanner(bytes.NewReader(content))
 	lineNum := 0
 
 	for scanner.Scan() {
@@ -522,6 +522,8 @@ func (s *VariableService) WriteLocalEnvFile(ctx context.Context, vars []env.Vari
 		return err
 	}
 
+	// The data directory is the confinement root for the write, so it is created
+	// through os before acfs opens it.
 	projectsDirectory := filepath.Dir(envPath)
 	if err := os.MkdirAll(projectsDirectory, utils.DirPerm); err != nil {
 		return errors.WrapIf(err, "failed to create projects directory")
@@ -557,7 +559,7 @@ func (s *VariableService) WriteLocalEnvFile(ctx context.Context, vars []env.Vari
 		_, _ = fmt.Fprintf(&builder, "%s=%s\n", key, value)
 	}
 
-	if err := projects.WriteFileWithPerm(envPath, builder.String(), utils.FilePerm); err != nil {
+	if err := acfs.WriteFile(ctx, projectsDirectory, "/"+projects.GlobalEnvFileName, []byte(builder.String()), utils.FilePerm); err != nil {
 		return errors.WrapIf(err, "failed to write global variables file")
 	}
 

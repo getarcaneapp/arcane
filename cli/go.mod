@@ -2,6 +2,8 @@ module github.com/getarcaneapp/arcane/cli/v2
 
 go 1.26.5
 
+replace github.com/getarcaneapp/arcane/types/v2 => ../types
+
 require (
 	charm.land/bubbles/v2 v2.1.1
 	charm.land/bubbletea/v2 v2.0.8
@@ -18,7 +20,7 @@ require (
 	github.com/spf13/pflag v1.0.10
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.11.1
-	go.getarcane.app/sys/atomic v0.1.0
+	go.getarcane.app/acfs v0.3.0
 	go.getarcane.app/sys/bytes v0.1.0
 )
 

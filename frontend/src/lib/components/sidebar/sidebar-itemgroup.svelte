@@ -99,7 +99,7 @@
 {/snippet}
 
 <Sidebar.Group class="p-1.5">
-	<Sidebar.GroupLabel class="h-7 px-1.5">{label}</Sidebar.GroupLabel>
+	<Sidebar.GroupLabel class="h-7 px-1.5 group-data-[collapsible=icon]:-mt-7">{label}</Sidebar.GroupLabel>
 	<Sidebar.Menu class="gap-0.5">
 		{#each enhancedItems as item (item.url)}
 			{#if (item.items?.length ?? 0) > 0}

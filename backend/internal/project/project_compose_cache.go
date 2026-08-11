@@ -161,6 +161,9 @@ func (s *ProjectService) ResolveProjectComposeFile(ctx context.Context, proj *mo
 			composeFileName := strings.TrimSpace(filepath.Base(syncRecord.ComposePath))
 			if composeFileName != "" && composeFileName != "." {
 				candidate := filepath.Join(proj.Path, composeFileName)
+				// os.Stat rather than acfs: proj.Path may be an imported project
+				// outside the projects directory, and the compose file may be a
+				// symlink resolving outside it.
 				if info, statErr := os.Stat(candidate); statErr == nil {
 					if !info.IsDir() {
 						return candidate, nil
@@ -238,6 +241,9 @@ func (s *ProjectService) getCachedComposeProjectInternal(ctx context.Context, pr
 			includeMtimes: make(map[string]time.Time),
 			project:       composeProject,
 		}
+		// os.Stat rather than acfs here and below: see
+		// validComposeCacheEntryInternal — these paths may resolve outside the
+		// project directory (#3556).
 		if info, statErr := os.Stat(composePath); statErr == nil {
 			entry.composeMtime = info.ModTime()
 		} else {
@@ -268,6 +274,10 @@ func (s *ProjectService) getCachedComposeProjectInternal(ctx context.Context, pr
 	return entry.project, nil
 }
 
+// The compose file and its includes are absolute paths compose-go resolved, and
+// either may legitimately be a symlink to, or a file under, a directory outside
+// the project (#3556). These invalidation probes therefore stay on os.Stat
+// rather than a root-confined stat, which would reject those layouts.
 func validComposeCacheEntryInternal(entry composeCacheEntry) bool {
 	if entry.project == nil || entry.composePath == "" {
 		return false

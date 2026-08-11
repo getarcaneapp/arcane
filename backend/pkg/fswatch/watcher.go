@@ -1,3 +1,6 @@
+// Package fswatch stays on os.* rather than acfs: it watches arbitrary
+// user-configured paths and deliberately follows symlinks that may resolve
+// outside any confinement root, which acfs cannot do.
 package fswatch
 
 import (

@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -23,7 +23,7 @@ func TestReadProjectEnvState_TreatsPermissionLockedEnvAsUnreadable(t *testing.T)
 
 	projectDir := t.TempDir()
 	envPath := filepath.Join(projectDir, EffectiveEnvFileName)
-	require.NoError(t, os.WriteFile(envPath, []byte("FOO=locked\n"), pkgutils.FilePerm))
+	require.NoError(t, os.WriteFile(envPath, []byte("FOO=locked\n"), utils.FilePerm))
 	require.NoError(t, os.Chmod(envPath, 0o000))
 	t.Cleanup(func() { _ = os.Chmod(envPath, 0o644) })
 

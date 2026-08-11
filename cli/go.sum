@@ -67,8 +67,6 @@ github.com/frankban/quicktest v1.14.6 h1:7Xjx+VpznH+oBnejlPUj8oUpdxnVs4f8XU8WnHk
 github.com/frankban/quicktest v1.14.6/go.mod h1:4ptaffx2x8+WTWXmUCuVU6aPUX1/Mz7zb5vbUoiM6w0=
 github.com/fsnotify/fsnotify v1.10.1 h1:b0/UzAf9yR5rhf3RPm9gf3ehBPpf0oZKIjtpKrx59Ho=
 github.com/fsnotify/fsnotify v1.10.1/go.mod h1:TLheqan6HD6GBK6PrDWyDPBaEV8LspOxvPSjC+bVfgo=
-github.com/getarcaneapp/arcane/types/v2 v2.6.0 h1:aXa3ksWtsmUWKjnrRjmt9TCnBZ46koelmBNQoDbmqlI=
-github.com/getarcaneapp/arcane/types/v2 v2.6.0/go.mod h1:45FfXso7vCN2mAE4dXVABRGYrQKeQlcdPQk7S6aEpok=
 github.com/go-logfmt/logfmt v0.6.1 h1:4hvbpePJKnIzH1B+8OR/JPbTx37NktoI9LE2QZBBkvE=
 github.com/go-logfmt/logfmt v0.6.1/go.mod h1:EV2pOAQoZaT1ZXZbqDl5hrymndi4SY9ED9/z6CO0XAk=
 github.com/go-logr/logr v1.2.2/go.mod h1:jdQByPbusPIv2/zmleS9BjJVeZ6kBagPoEUsqbVz/1A=
@@ -172,8 +170,8 @@ github.com/xhit/go-str2duration/v2 v2.1.0 h1:lxklc02Drh6ynqX+DdPyp5pCKLUQpRT8bp8
 github.com/xhit/go-str2duration/v2 v2.1.0/go.mod h1:ohY8p+0f07DiV6Em5LKB0s2YpLtXVyJfNt1+BlmyAsU=
 github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e h1:JVG44RsyaB9T2KIHavMF/ppJZNG9ZpyihvCd0w101no=
 github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e/go.mod h1:RbqR21r5mrJuqunuUZ/Dhy/avygyECGrLceyNeo4LiM=
-go.getarcane.app/sys/atomic v0.1.0 h1:0HhUeGXYdKAmMW24O+OaqcjDZx6twAuYPBu9T91zKsk=
-go.getarcane.app/sys/atomic v0.1.0/go.mod h1:QPb5eUXYKYG5acp9jJBAZ/PTbHbByDAQG6eDNAsZZ2w=
+go.getarcane.app/acfs v0.3.0 h1:UsYo1tbjU6wjv1vpIwPpz4+wyXCmL+v3maUwJz2MlpU=
+go.getarcane.app/acfs v0.3.0/go.mod h1:sU3t21KctTsQM3OW10+RNB0Z6lR+YfaSr5Nxubq3cpI=
 go.getarcane.app/sys/bytes v0.1.0 h1:snAEkCKzzd7PQ4bAI4gYx92YjZL4ZZK43Z/8y/P5uro=
 go.getarcane.app/sys/bytes v0.1.0/go.mod h1:R2mujqg+MmC2tr+97IPqaxzvBC8+ykng+5r+XNxwY+8=
 go.opentelemetry.io/auto/sdk v1.2.1 h1:jXsnJ4Lmnqd11kwkBV2LgLoFMZKizbCi5fNZ/ipaZ64=

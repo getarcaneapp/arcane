@@ -9,6 +9,7 @@ import (
 	"net"
 	nethttp "net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -27,9 +28,14 @@ import (
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/gofrs/flock"
+	"go.getarcane.app/acfs"
+	acfstypes "go.getarcane.app/acfs/types"
 	gossh "golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
 )
+
+// binarySniffBytes is how much of a file is inspected to classify it as binary.
+const binarySniffBytes = 512
 
 // go-git's file transport execs the git binary, which doesn't exist in the
 // distroless image. Unregister it so a repository URL can never reach it.
@@ -169,6 +175,8 @@ func (c *Client) createAcceptNewHostKeyCallback() (gossh.HostKeyCallback, error)
 	knownHostsPath := getKnownHostsPath()
 
 	// Ensure the directory exists
+	// os.* rather than acfs: known_hosts lives under the user home (not an arcane
+	// confinement root), and acfs has no append/flock API for the writes below.
 	dir := filepath.Dir(knownHostsPath)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, errors.WrapIf(err, "failed to create known_hosts directory")
@@ -261,6 +269,8 @@ func addHostKey(knownHostsPath, hostname string, key gossh.PublicKey) (err error
 	}()
 
 	// Append to the file
+	// os.* rather than acfs: acfs has no append API, and known_hosts lives under
+	// the user home rather than an arcane confinement root.
 	file, err := os.OpenFile(knownHostsPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return errors.WrapIf(err, "failed to open known_hosts file")
@@ -296,6 +306,8 @@ func (c *Client) Clone(ctx context.Context, url, branch string, auth AuthConfig)
 		workDir = os.TempDir()
 	}
 	// Ensure the work directory exists
+	// os.* rather than acfs: this creates the clone staging root itself (under the
+	// system temp dir by default), which has to exist before acfs could open it.
 	if err := os.MkdirAll(workDir, 0o755); err != nil {
 		return "", errors.WrapIf(err, "failed to create work dir")
 	}
@@ -483,70 +495,57 @@ func ValidatePath(repoPath, requestedPath string) error {
 	return nil
 }
 
-// BrowseTree returns the file tree at the specified path
+// BrowseTree returns the file tree at the specified path. The clone directory
+// is the confinement root: paths that escape it, and symbolic links pointing
+// outside it, are rejected rather than followed.
 func (c *Client) BrowseTree(ctx context.Context, repoPath, targetPath string) ([]gitops.FileTreeNode, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	// Validate path to prevent traversal
-	if err := ValidatePath(repoPath, targetPath); err != nil {
-		return nil, err
-	}
 
-	fullPath := filepath.Join(repoPath, targetPath)
-
-	// Check if path exists
-	info, err := os.Stat(fullPath)
+	logicalPath := path.Join("/", filepath.ToSlash(targetPath))
+	entry, err := acfs.Stat(ctx, repoPath, logicalPath, true)
 	if err != nil {
 		return nil, errors.WrapIf(err, "path not found")
 	}
-
-	if !info.IsDir() {
+	if !entry.IsDirectory {
 		return nil, errors.New("path is not a directory")
 	}
 
-	entries, err := os.ReadDir(fullPath)
+	entries, err := acfs.List(ctx, repoPath, logicalPath)
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to read directory")
 	}
 
 	var nodes []gitops.FileTreeNode
-	for _, entry := range entries {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		default:
+	for _, child := range entries {
+		if err := ctx.Err(); err != nil {
+			return nil, err
 		}
 		// Skip .git directory
-		if entry.Name() == ".git" {
-			continue
-		}
-
-		info, err := entry.Info()
-		if err != nil {
+		if child.Name == ".git" {
 			continue
 		}
 
 		nodeType := gitops.FileTreeNodeTypeFile
-		if entry.IsDir() {
+		if child.IsDirectory {
 			nodeType = gitops.FileTreeNodeTypeDirectory
 		}
 
-		relativePath := filepath.Join(targetPath, entry.Name())
-		node := gitops.FileTreeNode{
-			Name: entry.Name(),
-			Path: relativePath,
+		nodes = append(nodes, gitops.FileTreeNode{
+			Name: child.Name,
+			Path: filepath.Join(targetPath, child.Name),
 			Type: nodeType,
-			Size: info.Size(),
-		}
-
-		nodes = append(nodes, node)
+			Size: child.Size,
+		})
 	}
 
 	return nodes, nil
 }
 
 // Cleanup removes a temporary repository directory
+// Stays on os.RemoveAll: acfs refuses to remove its own root, and here the whole
+// clone directory itself is what gets deleted.
 func (c *Client) Cleanup(repoPath string) error {
 	return os.RemoveAll(repoPath)
 }
@@ -580,13 +579,8 @@ func (c *Client) FileExists(ctx context.Context, repoPath, filePath string) bool
 	if err := ctx.Err(); err != nil {
 		return false
 	}
-	if err := ValidatePath(repoPath, filePath); err != nil {
-		return false
-	}
-
-	fullPath := filepath.Join(repoPath, filePath)
-	_, err := os.Stat(fullPath)
-	return err == nil
+	exists, err := acfs.Exists(ctx, repoPath, path.Join("/", filepath.ToSlash(filePath)))
+	return err == nil && exists
 }
 
 // ReadFile reads a file from the repository
@@ -594,12 +588,7 @@ func (c *Client) ReadFile(ctx context.Context, repoPath, filePath string) (strin
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	if err := ValidatePath(repoPath, filePath); err != nil {
-		return "", err
-	}
-
-	fullPath := filepath.Join(repoPath, filePath)
-	content, err := os.ReadFile(fullPath)
+	content, err := acfs.ReadFile(ctx, repoPath, path.Join("/", filepath.ToSlash(filePath)))
 	if err != nil {
 		return "", errors.WrapIf(err, "failed to read file")
 	}
@@ -651,12 +640,6 @@ func (c *Client) WalkDirectory(ctx context.Context, repoPath, composePath string
 	// Get the directory containing the compose file
 	syncDir := filepath.Dir(filepath.Join(repoPath, composePath))
 
-	root, err := os.OpenRoot(syncDir)
-	if err != nil {
-		return nil, errors.WrapIf(err, "sync directory not found")
-	}
-	defer func() { _ = root.Close() }()
-
 	result := &DirectoryWalkResult{
 		Files: make([]SyncFileInfo, 0),
 	}
@@ -666,8 +649,8 @@ func (c *Client) WalkDirectory(ctx context.Context, repoPath, composePath string
 		maxBinarySize: maxBinarySize,
 	}
 
-	err = fs.WalkDir(root.FS(), ".", func(path string, d fs.DirEntry, walkErr error) error {
-		return c.walkSyncEntry(ctx, root, path, d, walkErr, result, limits)
+	err := acfs.Walk(ctx, syncDir, "/", func(entry acfstypes.Entry) error {
+		return c.walkSyncEntry(ctx, syncDir, entry, result, limits)
 	})
 
 	if err != nil {
@@ -682,58 +665,43 @@ func (c *Client) WalkDirectory(ctx context.Context, repoPath, composePath string
 	return result, nil
 }
 
-func (c *Client) walkSyncEntry(
-	ctx context.Context,
-	root *os.Root,
-	path string,
-	d fs.DirEntry,
-	walkErr error,
-	result *DirectoryWalkResult,
-	limits syncWalkLimits,
-) error {
+func (c *Client) walkSyncEntry(ctx context.Context, syncDir string, entry acfstypes.Entry, result *DirectoryWalkResult, limits syncWalkLimits) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if walkErr != nil {
-		return walkErr
-	}
-	if path == "." {
+	if entry.IsSymlink {
 		return nil
 	}
-	if d.Type()&os.ModeSymlink != 0 {
-		return nil
-	}
-	if d.IsDir() {
-		if d.Name() == ".git" {
+	if entry.IsDirectory {
+		if entry.Name == ".git" {
 			return fs.SkipDir
 		}
 		return nil
 	}
 
-	return c.appendSyncFile(root, path, d, result, limits)
+	return c.appendSyncFile(ctx, syncDir, entry, result, limits)
 }
 
-func (c *Client) appendSyncFile(root *os.Root, path string, d fs.DirEntry, result *DirectoryWalkResult, limits syncWalkLimits) error {
+func (c *Client) appendSyncFile(ctx context.Context, syncDir string, entry acfstypes.Entry, result *DirectoryWalkResult, limits syncWalkLimits) error {
+	relativePath := strings.TrimPrefix(entry.Path, "/")
 	if limits.maxFiles > 0 && result.TotalFiles >= limits.maxFiles {
 		return errors.Errorf("file count limit exceeded (max %d files)", limits.maxFiles)
 	}
 
-	if limits.maxBinarySize > 0 {
-		if info, err := d.Info(); err == nil && info.Size() > limits.maxBinarySize {
-			isBinary, err := c.isBinarySyncFile(root, path)
-			if err != nil {
-				return errors.WrapIff(err, "failed to inspect file %s", path)
-			}
-			if isBinary {
-				result.SkippedBinaries++
-				return nil
-			}
+	if limits.maxBinarySize > 0 && entry.Size > limits.maxBinarySize {
+		isBinary, err := c.isBinarySyncFile(ctx, syncDir, entry.Path)
+		if err != nil {
+			return errors.WrapIff(err, "failed to inspect file %s", relativePath)
+		}
+		if isBinary {
+			result.SkippedBinaries++
+			return nil
 		}
 	}
 
-	content, err := root.ReadFile(path)
+	content, err := acfs.ReadFile(ctx, syncDir, entry.Path)
 	if err != nil {
-		return errors.WrapIff(err, "failed to read file %s", path)
+		return errors.WrapIff(err, "failed to read file %s", relativePath)
 	}
 
 	fileSize := int64(len(content))
@@ -748,12 +716,9 @@ func (c *Client) appendSyncFile(root *os.Root, path string, d fs.DirEntry, resul
 		return errors.Errorf("total size limit exceeded (max %d bytes)", limits.maxTotalSize)
 	}
 
-	executable := false
-	if info, err := d.Info(); err == nil {
-		executable = info.Mode()&0o111 != 0
-	}
+	executable := os.FileMode(entry.UnixMode)&0o111 != 0
 	result.Files = append(result.Files, SyncFileInfo{
-		RelativePath: path,
+		RelativePath: relativePath,
 		Content:      content,
 		Size:         fileSize,
 		IsBinary:     isBinary,
@@ -765,15 +730,15 @@ func (c *Client) appendSyncFile(root *os.Root, path string, d fs.DirEntry, resul
 	return nil
 }
 
-func (c *Client) isBinarySyncFile(root *os.Root, path string) (bool, error) {
-	file, err := root.Open(path)
+func (c *Client) isBinarySyncFile(ctx context.Context, syncDir, logicalPath string) (bool, error) {
+	reader, _, err := acfs.OpenRead(ctx, syncDir, logicalPath, binarySniffBytes)
 	if err != nil {
 		return false, err
 	}
-	defer func() { _ = file.Close() }()
+	defer func() { _ = reader.Close() }()
 
-	buf := make([]byte, 512)
-	n, err := file.Read(buf)
+	buf := make([]byte, binarySniffBytes)
+	n, err := reader.Read(buf)
 	if err != nil && !errors.Is(err, io.EOF) {
 		return false, err
 	}

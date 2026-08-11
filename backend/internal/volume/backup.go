@@ -567,8 +567,12 @@ func (s *VolumeService) resolveBackupPlanInternal(ctx context.Context, volumeNam
 	return backupPlanInternal{policy: policy, localEnabled: localEnabled, s3Enabled: s3Enabled, s3DestinationID: s3DestinationID, destination: destination}, nil
 }
 
-//nolint:gocognit // backup orchestration keeps cleanup and persistence transitions in one transaction-like flow
+//nolint:gocognit,gocyclo // backup orchestration keeps cleanup and persistence transitions in one transaction-like flow
 func (s *VolumeService) CreateBackup(ctx context.Context, volumeName string, user models.User, trigger models.VolumeBackupTrigger, request volumetypes.CreateBackupRequest) (_ *models.VolumeBackup, err error) {
+	workspaceLock, _ := ctx.Value(volumeWorkspaceLockContextKeyInternal{}).(volumeWorkspaceLockContextInternal)
+	if workspaceLock.service != s || workspaceLock.volumeName != volumeName {
+		defer s.workspaceLocks.Lock(volumeName)()
+	}
 	if trigger == "" {
 		trigger = models.VolumeBackupTriggerManual
 	}
@@ -800,6 +804,12 @@ func (s *VolumeService) RestoreBackup(ctx context.Context, volumeName, backupID 
 	if entry.VolumeName != volumeName {
 		return errors.New("backup does not belong to volume")
 	}
+	unlock := s.workspaceLocks.Lock(volumeName)
+	defer unlock()
+	ctx = context.WithValue(ctx, volumeWorkspaceLockContextKeyInternal{}, volumeWorkspaceLockContextInternal{
+		service:    s,
+		volumeName: volumeName,
+	})
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return err
@@ -895,6 +905,12 @@ func (s *VolumeService) RestoreBackupFiles(ctx context.Context, volumeName, back
 	if entry.VolumeName != volumeName {
 		return errors.New("backup does not belong to volume")
 	}
+	unlock := s.workspaceLocks.Lock(volumeName)
+	defer unlock()
+	ctx = context.WithValue(ctx, volumeWorkspaceLockContextKeyInternal{}, volumeWorkspaceLockContextInternal{
+		service:    s,
+		volumeName: volumeName,
+	})
 	cleanedPaths := make([]string, 0, len(paths))
 	for _, requestedPath := range paths {
 		cleaned, cleanErr := s.sanitizeBackupPathInternal(requestedPath)
@@ -1231,14 +1247,30 @@ func (s *VolumeService) listArchiveBackupFilesInternal(ctx context.Context, back
 	return files, nil
 }
 
+func (s *VolumeService) restoreBackupFilesInContainerInternal(ctx context.Context, containerID, filename string, cleanedPaths []string) (string, error) {
+	args := make([]string, 0, len(cleanedPaths)+5)
+	args = append(args, "sh", "-c", restoreBackupFilesScriptInternal, "sh", path.Join("/backups", filename))
+	for _, cleaned := range cleanedPaths {
+		args = append(args, "./"+cleaned)
+	}
+	_, stderr, err := s.execInContainerInternal(ctx, containerID, args)
+	return stderr, errors.WrapIf(err, "failed to restore files")
+}
+
+const restoreBackupFilesScriptInternal = `set -e
+archive="$1"
+shift
+archive_mode=$(stat -c '%A' -- "$archive" 2>/dev/null) || { echo ARCANE_NOT_FOUND >&2; exit 44; }
+case "$archive_mode" in -*) ;; *) echo ARCANE_NOT_FOUND >&2; exit 44 ;; esac
+for member do
+  if ! tar -tzf "$archive" -- "$member" >/dev/null 2>&1; then echo ARCANE_NOT_FOUND >&2; exit 44; fi
+done
+tar -xzf "$archive" -C /volume -- "$@"`
+
 func (s *VolumeService) restoreArchiveBackupFilesInternal(ctx context.Context, dockerClient *client.Client, volumeName, backupID string, cleanedPaths []string) error {
 	filename, err := s.backupArchiveFilenameInternal(backupID)
 	if err != nil {
 		return err
-	}
-	tarPaths := make([]string, 0, len(cleanedPaths))
-	for _, cleaned := range cleanedPaths {
-		tarPaths = append(tarPaths, "./"+cleaned)
 	}
 	helperImage, err := getVolumeHelperImageInternal(ctx, s.dockerService, s.imageService, dockerClient)
 	if err != nil {
@@ -1270,8 +1302,7 @@ func (s *VolumeService) restoreArchiveBackupFilesInternal(ctx context.Context, d
 	if _, err := dockerClient.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{}); err != nil {
 		return errors.WrapIf(err, "failed to start restore container")
 	}
-	cmd := append([]string{"tar", "-xzf", path.Join("/backups", filename), "-C", "/volume", "--"}, tarPaths...)
-	_, stderr, err := s.execInContainerInternal(ctx, resp.ID, cmd)
+	stderr, err := s.restoreBackupFilesInContainerInternal(ctx, resp.ID, filename, cleanedPaths)
 	if err != nil {
 		return errors.WrapIf(err, "failed to restore files")
 	}

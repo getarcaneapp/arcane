@@ -3,6 +3,7 @@ package swarm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -147,6 +148,18 @@ func TestSwarmService_FetchSwarmNodeIdentityViaEdgeInternal_UsesEnvironmentAcces
 	require.True(t, identity.SwarmActive)
 }
 
+func stubStackSourceUpdateDeployInternal(t *testing.T) *int {
+	t.Helper()
+	original := deployStackAfterSourceUpdateInternal
+	t.Cleanup(func() { deployStackAfterSourceUpdateInternal = original })
+	calls := 0
+	deployStackAfterSourceUpdateInternal = func(_ *SwarmService, _ context.Context, _ string, req swarmtypes.StackDeployRequest) (*swarmtypes.StackDeployResponse, error) {
+		calls++
+		return &swarmtypes.StackDeployResponse{Name: req.Name}, nil
+	}
+	return &calls
+}
+
 func TestSwarmService_UpdateAndGetStackSource_UsesStoredFilesWithoutSwarmManager(t *testing.T) {
 	ctx := context.Background()
 	db := setupSwarmServiceTestDBInternal(t)
@@ -157,6 +170,7 @@ func TestSwarmService_UpdateAndGetStackSource_UsesStoredFilesWithoutSwarmManager
 	require.NoError(t, err)
 
 	svc := NewSwarmService(nil, settingsSvc, nil, nil, nil)
+	deployCalls := stubStackSourceUpdateDeployInternal(t)
 
 	updated, err := svc.UpdateStackSource(ctx, "0", "demo-stack", swarmtypes.StackSourceUpdateRequest{
 		ComposeContent: "services:\n  web:\n    image: nginx:alpine\n",
@@ -164,6 +178,8 @@ func TestSwarmService_UpdateAndGetStackSource_UsesStoredFilesWithoutSwarmManager
 	})
 	require.NoError(t, err)
 	require.Equal(t, "demo-stack", updated.Name)
+	// Saving stack source must trigger an actual stack deploy (#3463).
+	require.Equal(t, 1, *deployCalls)
 
 	composePath := filepath.Join(rootDir, "0", "demo-stack", "compose.yaml")
 	envPath := filepath.Join(rootDir, "0", "demo-stack", ".env")
@@ -215,6 +231,7 @@ func TestSwarmService_UpdateAndGetStackSource_RoundTripsOverride(t *testing.T) {
 	require.NoError(t, err)
 
 	svc := NewSwarmService(nil, settingsSvc, nil, nil, nil)
+	stubStackSourceUpdateDeployInternal(t)
 
 	overridePath := filepath.Join(rootDir, "0", "demo-stack", "compose.override.yaml")
 
@@ -242,6 +259,50 @@ func TestSwarmService_UpdateAndGetStackSource_RoundTripsOverride(t *testing.T) {
 	source, err = svc.GetStackSource(ctx, "0", "demo-stack")
 	require.NoError(t, err)
 	require.Empty(t, source.OverrideContent)
+}
+
+func TestSwarmService_UpdateStackSource_PrunesAndRestoresOnDeployFailure(t *testing.T) {
+	ctx := context.Background()
+	db := setupSwarmServiceTestDBInternal(t)
+	rootDir := t.TempDir()
+	t.Setenv("SWARM_STACK_SOURCES_DIRECTORY", rootDir)
+
+	settingsSvc, err := newSettingsServiceForSwarmTestInternal(t, ctx, db)
+	require.NoError(t, err)
+
+	svc := NewSwarmService(nil, settingsSvc, nil, nil, nil)
+
+	original := deployStackAfterSourceUpdateInternal
+	t.Cleanup(func() { deployStackAfterSourceUpdateInternal = original })
+	var lastReq swarmtypes.StackDeployRequest
+	var deployErr error
+	deployStackAfterSourceUpdateInternal = func(_ *SwarmService, _ context.Context, _ string, req swarmtypes.StackDeployRequest) (*swarmtypes.StackDeployResponse, error) {
+		lastReq = req
+		if deployErr != nil {
+			return nil, deployErr
+		}
+		return &swarmtypes.StackDeployResponse{Name: req.Name}, nil
+	}
+
+	firstCompose := "services:\n  web:\n    image: nginx:alpine\n"
+	_, err = svc.UpdateStackSource(ctx, "0", "demo-stack", swarmtypes.StackSourceUpdateRequest{
+		ComposeContent: firstCompose,
+	})
+	require.NoError(t, err)
+	// The saved source is the full stack spec: services removed from it must
+	// be pruned from the swarm on redeploy.
+	require.True(t, lastReq.Prune)
+
+	deployErr = errors.New("deploy failed")
+	_, err = svc.UpdateStackSource(ctx, "0", "demo-stack", swarmtypes.StackSourceUpdateRequest{
+		ComposeContent: "services:\n  web:\n    image: nginx:broken\n",
+	})
+	require.ErrorContains(t, err, "deploy failed")
+
+	// A failed deploy must not commit the edited source.
+	source, err := svc.GetStackSource(ctx, "0", "demo-stack")
+	require.NoError(t, err)
+	require.Equal(t, firstCompose, source.ComposeContent)
 }
 
 func TestSwarmService_ScaleService_HandlesServiceModesInternal(t *testing.T) {

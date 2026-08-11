@@ -1036,11 +1036,11 @@ test.describe('GitOps Managed Project', () => {
 			name: 'Toggle workspace mode',
 			exact: true
 		});
-		const projectFilesLabel = page.getByText('Project Files', { exact: true });
+		const workspaceFilesLabel = page.getByText('Workspace Files', { exact: true });
 		// Projects with extra files default to tree view; start from classic.
-		if (await projectFilesLabel.isVisible().catch(() => false)) {
+		if (await workspaceFilesLabel.isVisible().catch(() => false)) {
 			await layoutSwitch.click();
-			await expect(projectFilesLabel).not.toBeVisible();
+			await expect(workspaceFilesLabel).not.toBeVisible();
 		}
 
 		await page.waitForTimeout(800);
@@ -1058,7 +1058,7 @@ test.describe('GitOps Managed Project', () => {
 		if (await layoutSwitch.count()) {
 			await layoutSwitch.click();
 			await page.waitForLoadState('load');
-			await expect(projectFilesLabel).toBeVisible();
+			await expect(workspaceFilesLabel).toBeVisible();
 
 			const envFileButton = page.getByRole('button', { name: '.env' }).first();
 			await expect(envFileButton).toBeVisible();
@@ -1300,8 +1300,8 @@ test.describe('Project Detail Page', () => {
 		// - classic: side-by-side compose.yaml + .env panels
 		// - tree view (default when the project has extra files): file list on the
 		//   left and a tabbed code panel on the right
-		const projectFilesLabel = page.getByText('Project Files', { exact: true });
-		const isTreeView = await projectFilesLabel.isVisible().catch(() => false);
+		const workspaceFilesLabel = page.getByText('Workspace Files', { exact: true });
+		const isTreeView = await workspaceFilesLabel.isVisible().catch(() => false);
 
 		if (isTreeView) {
 			const composeFileButton = page.getByRole('button', { name: 'compose.yaml' }).first();
@@ -1329,7 +1329,7 @@ test.describe('Project Detail Page', () => {
 			});
 			if (await layoutSwitch.count()) {
 				await layoutSwitch.click();
-				await expect(projectFilesLabel).toBeVisible();
+				await expect(workspaceFilesLabel).toBeVisible();
 
 				const composeFileButton = page.getByRole('button', { name: 'compose.yaml' }).first();
 				const envFileButton = page.getByRole('button', { name: '.env' }).first();
@@ -1365,11 +1365,11 @@ test.describe('Project Detail Page', () => {
 			'No layout switch available for project configuration'
 		);
 
-		const projectFilesLabel = page.getByText('Project Files', { exact: true });
+		const workspaceFilesLabel = page.getByText('Workspace Files', { exact: true });
 
-		if (!(await projectFilesLabel.isVisible().catch(() => false))) {
+		if (!(await workspaceFilesLabel.isVisible().catch(() => false))) {
 			await layoutSwitch.click();
-			await expect(projectFilesLabel).toBeVisible();
+			await expect(workspaceFilesLabel).toBeVisible();
 		}
 
 		await page.reload();
@@ -1384,7 +1384,7 @@ test.describe('Project Detail Page', () => {
 			await page.waitForLoadState('load');
 		}
 
-		await expect(projectFilesLabel).toBeVisible();
+		await expect(workspaceFilesLabel).toBeVisible();
 		await expect(page.locator('[data-tab-key="compose"][data-active="true"]')).toBeVisible();
 
 		const treeComposeEditor = page.locator('.cm-editor').filter({ visible: true }).first();

@@ -212,6 +212,7 @@ func TestResolveSystemUpgraderRuntimeOptionsInternal_TCPDockerHost(t *testing.T)
 		currentContainer,
 		nil,
 		func() bool { return true },
+		nil,
 	)
 	require.NoError(t, err)
 	require.Equal(t, []string{"DOCKER_HOST=tcp://docker-socket-proxy:2375"}, containerEnv)
@@ -228,6 +229,7 @@ func TestResolveSystemUpgraderRuntimeOptionsInternal_UnixDockerHost(t *testing.T
 			return "/host/run/docker.sock", nil
 		},
 		func() bool { return true },
+		nil,
 	)
 	require.NoError(t, err)
 	require.Equal(t, []string{"DOCKER_HOST=unix:///var/run/docker.sock"}, containerEnv)
@@ -250,6 +252,7 @@ func TestResolveSystemUpgraderRuntimeOptionsInternal_DefaultDockerHost(t *testin
 			return "/var/run/docker.sock", nil
 		},
 		func() bool { return true },
+		nil,
 	)
 	require.NoError(t, err)
 	require.Nil(t, containerEnv)
@@ -271,6 +274,7 @@ func TestResolveSystemUpgraderRuntimeOptionsInternal_UnixDockerHostResolutionErr
 			return "", errors.New("inspect failed")
 		},
 		func() bool { return true },
+		nil,
 	)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "resolve unix socket source")

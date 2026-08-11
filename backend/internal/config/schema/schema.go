@@ -475,6 +475,8 @@ func hasSchemaSourceFilesInternal(root string) bool {
 		filepath.Join(root, "internal/config/buildables_config.go"),
 	}
 
+	// os.* rather than acfs: this probes repo source files while walking up
+	// arbitrary ancestor directories at codegen time, so no confinement root exists.
 	for _, filename := range required {
 		if _, err := os.Stat(filename); err != nil {
 			return false

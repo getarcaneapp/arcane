@@ -233,18 +233,17 @@ func provideS3ServiceInternal(module *s3domain.Module) *s3domain.S3DestinationSe
 
 func provideVolumeModuleInternal(lc fx.Lifecycle, db *database.DB, dockerService *docker.DockerClientService, eventService *event.EventService, settingsService *settings.SettingsService, imageService *image.ImageService, activityService *activity.ActivityService, containerModule *container.Module, engine *backup.Engine, s3Service *s3domain.S3DestinationService, environmentService *environment.EnvironmentService, cfg *config.Config) *volume.Module {
 	module := volume.New(volume.Dependencies{
-		DB:               db,
-		Docker:           dockerService,
-		Event:            eventService,
-		Settings:         settingsService,
-		Image:            imageService,
-		Activity:         activityService,
-		Environment:      environmentService,
-		Container:        containerModule.Service(),
-		Engine:           engine,
-		S3:               s3Service,
-		BackupVolumeName: cfg.BackupVolumeName,
-		EncryptionKey:    cfg.EncryptionKey,
+		DB:          db,
+		Docker:      dockerService,
+		Event:       eventService,
+		Settings:    settingsService,
+		Image:       imageService,
+		Activity:    activityService,
+		Environment: environmentService,
+		Container:   containerModule.Service(),
+		Engine:      engine,
+		S3:          s3Service,
+		Config:      cfg,
 	})
 	lc.Append(fx.Hook{
 		OnStop: func(ctx context.Context) error {
@@ -439,8 +438,8 @@ func provideSystemModuleInternal(db *database.DB, cfg *config.Config, docker *do
 	})
 }
 
-func provideWebhookModuleInternal(db *database.DB, containerModule *container.Module, updaterModule *updater.Module, project *project.ProjectService, gitOpsSync *gitops.GitOpsSyncService, event *event.EventService, environment *environment.EnvironmentService) *webhook.Module {
-	return webhook.New(webhook.Dependencies{
+func provideWebhookModuleInternal(lc fx.Lifecycle, db *database.DB, containerModule *container.Module, updaterModule *updater.Module, project *project.ProjectService, gitOpsSync *gitops.GitOpsSyncService, event *event.EventService, environment *environment.EnvironmentService) *webhook.Module {
+	module := webhook.New(webhook.Dependencies{
 		DB:          db,
 		Container:   containerModule.Service(),
 		Updater:     updaterModule.Service(),
@@ -449,4 +448,16 @@ func provideWebhookModuleInternal(db *database.DB, containerModule *container.Mo
 		Event:       event,
 		Environment: environment,
 	})
+	lc.Append(fx.Hook{
+		OnStop: func(ctx context.Context) error {
+			// Drain fails only when the stop context expires; fx then skips all
+			// remaining teardown regardless of what is returned here, so an
+			// error would only mark an expected long action as a failed stop.
+			if err := module.Service().DrainActions(ctx); err != nil {
+				slog.WarnContext(ctx, "shutdown proceeding with webhook actions still in flight", "error", err)
+			}
+			return nil
+		},
+	})
+	return module
 }

@@ -619,7 +619,11 @@ func (s *SystemBackupService) RestoreBackup(ctx context.Context, id, recoveryKey
 		func(ctx context.Context, containerPath string) (string, error) {
 			return projects.GetHostPathForContainerPath(ctx, dockerClient, containerPath)
 		},
-		func() bool { _, err := cgroup.CurrentContainerID(); return err == nil })
+		func() bool { _, err := cgroup.CurrentContainerID(); return err == nil },
+		func(ctx context.Context, inspect *containertypes.InspectResponse, dockerHost string) string {
+			return dockerutil.SelectDockerHostReachableNetworkMode(ctx, dockerClient, inspect, dockerHost)
+		},
+	)
 	if err != nil {
 		return fmt.Errorf("resolve recovery helper runtime: %w", err)
 	}

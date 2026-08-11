@@ -16,7 +16,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	authtypes "github.com/getarcaneapp/arcane/types/v2/auth"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/labstack/echo/v5"
@@ -454,8 +454,8 @@ func TestNewHumaMiddleware_AgentAuthAppliesForwardedIconCatalog(t *testing.T) {
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/secure-agent-icon-catalog", nil)
-	req.Header.Set(pkgutils.HeaderAgentToken, agentToken)
-	req.Header.Set(pkgutils.HeaderIconCatalog, "dashboard-icons")
+	req.Header.Set(utils.HeaderAgentToken, agentToken)
+	req.Header.Set(utils.HeaderIconCatalog, "dashboard-icons")
 	rec := httptest.NewRecorder()
 
 	router.ServeHTTP(rec, req)

@@ -428,6 +428,11 @@ type Update struct {
 	// Required: false
 	ProxyRequestTimeout *string `json:"proxyRequestTimeout,omitempty"`
 
+	// DeployWaitTimeout is the timeout waiting for services to become healthy or complete during a deploy in seconds.
+	//
+	// Required: false
+	DeployWaitTimeout *string `json:"deployWaitTimeout,omitempty"`
+
 	// AutoUpdateExcludedContainers is a comma-separated list of container names to exclude from auto-update.
 	//
 	// Required: false
@@ -458,11 +463,11 @@ type Update struct {
 	// Required: false
 	AutoHealRestartWindow *string `json:"autoHealRestartWindow,omitempty"`
 
-	// VolumeBrowserHelperIdleTimeout is the number of minutes a volume-browser helper
+	// VolumeHelperIdleTimeout is the number of minutes a volume helper
 	// container may sit idle before it is automatically removed (0 disables).
 	//
 	// Required: false
-	VolumeBrowserHelperIdleTimeout *string `json:"volumeBrowserHelperIdleTimeout,omitempty"`
+	VolumeHelperIdleTimeout *string `json:"volumeHelperIdleTimeout,omitempty"`
 
 	// BuildProvider is the default build provider (local|depot).
 	//

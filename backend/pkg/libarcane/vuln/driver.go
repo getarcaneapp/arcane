@@ -12,7 +12,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -84,60 +83,12 @@ func ResolveUnixSocketSource(
 	return socketPath, nil
 }
 
-func SelectAutoNetworkMode(inspect *containertypes.InspectResponse) string {
-	if inspect == nil {
-		return DefaultNetworkMode
-	}
-
-	if inspect.HostConfig != nil {
-		networkMode := strings.TrimSpace(string(inspect.HostConfig.NetworkMode))
-		if networkMode != "" && networkMode != "default" && networkMode != DefaultNetworkMode &&
-			!containertypes.NetworkMode(networkMode).IsContainer() {
-			return networkMode
-		}
-	}
-
-	if inspect.NetworkSettings != nil && len(inspect.NetworkSettings.Networks) > 0 {
-		networkNames := make([]string, 0, len(inspect.NetworkSettings.Networks))
-		for networkName := range inspect.NetworkSettings.Networks {
-			networkName = strings.TrimSpace(networkName)
-			if networkName != "" {
-				networkNames = append(networkNames, networkName)
-			}
-		}
-		sort.Strings(networkNames)
-
-		for _, networkName := range networkNames {
-			if !dockerutils.IsDefaultNetwork(networkName) {
-				return networkName
-			}
-		}
-
-		for _, networkName := range networkNames {
-			if containertypes.NetworkMode(networkName).IsContainer() {
-				continue
-			}
-			if networkName == "host" || networkName == "none" || networkName == DefaultNetworkMode {
-				return networkName
-			}
-		}
-	}
-
-	if inspect.HostConfig != nil {
-		networkMode := strings.TrimSpace(string(inspect.HostConfig.NetworkMode))
-		if networkMode != "" && networkMode != "default" && !containertypes.NetworkMode(networkMode).IsContainer() {
-			return networkMode
-		}
-	}
-
-	return DefaultNetworkMode
-}
-
 func NewOutputPath() string {
 	return outputPathPrefixInternal + strconv.FormatInt(time.Now().UnixNano(), 10) + ".json"
 }
 
 func CleanupTempFiles(ctx context.Context, tempFiles []string) {
+	// System temp scratch: no acfs root exists for it.
 	for _, f := range tempFiles {
 		if err := os.Remove(f); err != nil {
 			slog.WarnContext(ctx, "failed to remove trivy temp file", "path", f, "error", err)
@@ -257,6 +208,8 @@ func addTempFileMountsInternal(hostConfig *containertypes.HostConfig, tempFiles 
 }
 
 func CreateLogTempFile(prefix string) (*os.File, error) {
+	// System temp scratch (with a user cache dir fallback below): no acfs root
+	// exists for either location.
 	// Try the default system temp dir first.
 	file, primaryErr := os.CreateTemp("", prefix)
 	if primaryErr == nil {
@@ -294,6 +247,7 @@ func CleanupLogTempFiles(ctx context.Context, files ...*os.File) {
 			continue
 		}
 
+		// System temp scratch: no acfs root exists for it.
 		if err := os.Remove(path); err != nil {
 			slog.WarnContext(ctx, "failed to remove trivy temp file", "path", path, "error", err)
 		}

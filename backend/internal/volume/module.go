@@ -12,6 +12,7 @@ import (
 	s3domain "github.com/getarcaneapp/arcane/backend/v2/internal/s3"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
@@ -20,18 +21,17 @@ import (
 
 // Dependencies are the collaborators the volume domain needs.
 type Dependencies struct {
-	DB               *database.DB
-	Docker           *docker.DockerClientService
-	Event            *event.EventService
-	Settings         *settings.SettingsService
-	Image            *image.ImageService
-	Activity         *activity.ActivityService
-	Environment      *environment.EnvironmentService
-	Container        *container.ContainerService
-	Engine           *backup.Engine
-	S3               *s3domain.S3DestinationService
-	BackupVolumeName string
-	EncryptionKey    string
+	DB          *database.DB
+	Docker      *docker.DockerClientService
+	Event       *event.EventService
+	Settings    *settings.SettingsService
+	Image       *image.ImageService
+	Activity    *activity.ActivityService
+	Environment *environment.EnvironmentService
+	Container   *container.ContainerService
+	Engine      *backup.Engine
+	S3          *s3domain.S3DestinationService
+	Config      *config.Config
 }
 
 // Module wires the volume domain and mounts its routes.
@@ -43,7 +43,7 @@ type Module struct {
 // New builds the volume domain from its dependencies.
 func New(deps Dependencies) *Module {
 	return &Module{
-		service: NewVolumeService(deps.DB, deps.Docker, deps.Event, deps.Activity, deps.Settings, deps.Container, deps.Image, deps.Engine, deps.S3, deps.BackupVolumeName, deps.EncryptionKey),
+		service: NewVolumeService(deps.DB, deps.Docker, deps.Event, deps.Activity, deps.Settings, deps.Container, deps.Image, deps.Engine, deps.S3, deps.Config),
 		deps:    deps,
 	}
 }

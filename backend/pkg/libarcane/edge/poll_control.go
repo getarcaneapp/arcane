@@ -23,8 +23,11 @@ const (
 	// runtime status reporting when no live tunnel is currently open.
 	DefaultPollRuntimeTTL = 6 * time.Second
 	// DefaultTunnelDemandTTL is how long the manager should keep an edge tunnel
-	// marked as required after a user/API request touches the environment.
-	DefaultTunnelDemandTTL = 2 * time.Minute
+	// marked as required after a user/API request touches the environment. It is
+	// deliberately longer than the default environment health interval (2m) so
+	// health checks refreshing the demand keep idle poll-mode tunnels open
+	// instead of letting them flap between checks.
+	DefaultTunnelDemandTTL = 5 * time.Minute
 
 	// TunnelStatusIdle indicates that no reverse tunnel is currently needed.
 	TunnelStatusIdle = "IDLE"

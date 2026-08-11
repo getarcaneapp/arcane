@@ -155,7 +155,7 @@
 
 	async function handleDelete(backup: BackupEntry) {
 		openConfirmDialog({
-			title: m.common_remove_title({ resource: m.file_browser_backup() }),
+			title: m.common_remove_title({ resource: m.volumes_workspace_backup() }),
 			message: m.volumes_backup_delete_confirm(),
 			confirm: {
 				label: m.common_remove(),
@@ -164,7 +164,7 @@
 					try {
 						const result = await volumeBackupService.deleteBackup(backup.id);
 						toast.success(
-							m.common_delete_success({ resource: m.file_browser_backup() }),
+							m.common_delete_success({ resource: m.volumes_workspace_backup() }),
 							activityToastOptions(extractActivityId(result))
 						);
 						await loadData(requestOptions);

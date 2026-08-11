@@ -19,7 +19,7 @@ type KeyedMutex struct {
 }
 
 type keyedMutexEntry struct {
-	mu   sync.Mutex
+	mu   sync.RWMutex
 	refs int
 }
 
@@ -61,6 +61,18 @@ func (k *KeyedMutex) Lock(key string) func() {
 
 	return func() {
 		entry.mu.Unlock()
+		k.release(key, entry)
+	}
+}
+
+// RLock blocks until the key's mutex is held for reading and returns its
+// unlock function. Multiple readers for the same key may proceed concurrently.
+func (k *KeyedMutex) RLock(key string) func() {
+	entry := k.reserve(key)
+	entry.mu.RLock()
+
+	return func() {
+		entry.mu.RUnlock()
 		k.release(key, entry)
 	}
 }

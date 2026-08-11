@@ -35,9 +35,13 @@
 {/snippet}
 
 <Collapsible.Root open={getIsOpen(item.url, item.isActive)} {onOpenChange} class="group/collapsible">
-	<Sidebar.MenuItem class="flex-col">
+	<Sidebar.MenuItem class="flex-col *:flex-auto">
 		{@const Icon = item.icon}
-		<Sidebar.MenuButton tooltipContent={showTooltip ? tooltipContent : undefined} isActive={item.isActive}>
+		<Sidebar.MenuButton
+			tooltipContent={showTooltip ? tooltipContent : undefined}
+			isActive={item.isActive}
+			class="group-data-[collapsible=icon]:mx-auto"
+		>
 			{#snippet child({ props })}
 				<a href={item.url} {...props}>
 					{#if item.icon}

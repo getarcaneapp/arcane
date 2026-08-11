@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -20,10 +19,12 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/workspace"
 	"github.com/getarcaneapp/arcane/types/v2"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	"github.com/getarcaneapp/arcane/types/v2/project"
 	"github.com/moby/moby/client"
+	"go.getarcane.app/acfs"
 	buildtypes "go.getarcane.app/builds/types"
 	"go.getarcane.app/sys/cgroup"
 	"go.getarcane.app/updater/labels"
@@ -147,7 +148,7 @@ func (s *ProjectService) UpdateProjectServices(ctx context.Context, projectID st
 	}
 
 	// 5. Up specific services
-	if err := composeUpProjectServicesInternal(ctx, compProj, servicesToUpdate, false, true, false, s.composeRegistryAuthConfigsInternal(ctx)); err != nil {
+	if err := composeUpProjectServicesInternal(ctx, compProj, servicesToUpdate, false, true, false, s.composeRegistryAuthConfigsInternal(ctx), s.deployWaitTimeoutInternal()); err != nil {
 		s.restoreProjectStatusAfterFailedDeployInternal(ctx, projectID)
 		return errors.WrapIf(err, "failed to up services")
 	}
@@ -243,6 +244,12 @@ func (s *ProjectService) UnarchiveProject(ctx context.Context, projectID string,
 // resolveRemoveOrphansInternal decides whether compose up should remove orphan containers.
 // GitOps-managed projects always remove orphans so the running stack matches the
 // tracked compose file. Non-GitOps callers may opt in per request via DeployOptions.
+// deployWaitTimeoutInternal resolves how long compose up waits for depends_on
+// health/completion conditions, from the deployWaitTimeout setting.
+func (s *ProjectService) deployWaitTimeoutInternal() time.Duration {
+	return timeouts.GetDuration(s.settingsService.GetSettingsConfig().DeployWaitTimeout.AsInt(), timeouts.DefaultDeployWait)
+}
+
 func resolveRemoveOrphansInternal(gitOpsManaged bool, options *project.DeployOptions) bool {
 	return gitOpsManaged || (options != nil && options.RemoveOrphans)
 }
@@ -309,7 +316,7 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 
 	slog.Info("starting compose up with health check support", "projectID", projectID, "projectName", projectModel.Name, "services", len(projectModel.Services), "removeOrphans", removeOrphans)
 	// Health/progress streaming (if any) is handled inside projects.ComposeUp via ctx.
-	if err := projects.ComposeUp(ctx, projectModel, nil, removeOrphans, forceRecreate, recreateVolumes, s.composeRegistryAuthConfigsInternal(ctx)); err != nil {
+	if err := projects.ComposeUp(ctx, projectModel, nil, removeOrphans, forceRecreate, recreateVolumes, s.composeRegistryAuthConfigsInternal(ctx), s.deployWaitTimeoutInternal()); err != nil {
 		slog.Error("compose up failed", "projectName", projectModel.Name, "projectID", projectID, "error", err)
 		if containers, psErr := s.GetProjectServices(ctx, projectID); psErr == nil {
 			slog.Info("containers after failed deploy", "projectID", projectID, "containers", containers)
@@ -319,7 +326,7 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 		// Provide more helpful error messages
 		errMsg := err.Error()
 		if strings.Contains(errMsg, "timeout") || strings.Contains(errMsg, "context deadline exceeded") {
-			return errors.WrapIf(err, "deployment timed out - check if services with 'condition: service_healthy' have healthchecks defined")
+			return errors.WrapIf(err, "deployment timed out waiting for services - long-running 'service_healthy'/'service_completed_successfully' dependencies may need a higher Deploy Wait Timeout setting, and 'service_healthy' requires a healthcheck")
 		}
 		return errors.WrapIf(err, "failed to deploy project")
 	}
@@ -371,7 +378,7 @@ func (s *ProjectService) DownProject(ctx context.Context, projectID string, user
 // "-N" (the interactive default). When false a collision returns
 // projects.ErrProjectDirExists (wrapped) so GitOps creates fail loudly instead of
 // minting runaway "-N" duplicate projects on a broken binding.
-func (s *ProjectService) CreateProject(ctx context.Context, name, composeContent string, envContent *string, projectFiles []project.ProjectFileDraft, user models.User, allowNameSuffixOptions ...bool) (*models.Project, error) {
+func (s *ProjectService) CreateProject(ctx context.Context, name, composeContent string, envContent *string, manifest project.CreateProjectWorkspaceManifest, uploads map[int][]byte, user models.User, allowNameSuffixOptions ...bool) (*models.Project, error) {
 	allowNameSuffix := true
 	if len(allowNameSuffixOptions) > 0 {
 		allowNameSuffix = allowNameSuffixOptions[0]
@@ -391,12 +398,16 @@ func (s *ProjectService) CreateProject(ctx context.Context, name, composeContent
 	basePath := filepath.Join(projectsDirectory, sanitized)
 	var projectPath, folderName string
 	if allowNameSuffix {
-		projectPath, folderName, err = projects.CreateUniqueDir(projectsDirectory, basePath, name, utils.DirPerm)
+		projectPath, folderName, err = projects.CreateUniqueDir(ctx, projectsDirectory, basePath, name, utils.DirPerm)
 	} else {
-		projectPath, folderName, err = projects.CreateExactDir(projectsDirectory, basePath, name, utils.DirPerm)
+		projectPath, folderName, err = projects.CreateExactDir(ctx, projectsDirectory, basePath, name, utils.DirPerm)
 	}
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to create project directory")
+	}
+	projectLogical, err := acfs.LogicalPath(projectsDirectory, projectPath)
+	if err != nil {
+		return nil, errors.WrapIf(err, "failed to resolve created project directory")
 	}
 
 	proj := &models.Project{
@@ -408,31 +419,33 @@ func (s *ProjectService) CreateProject(ctx context.Context, name, composeContent
 		RunningCount: 0,
 	}
 
-	if err := projects.ApplyProjectFileDrafts(projectPath, projectFiles, projects.ProjectFileApplyOptions{
-		MaxDepth:        s.config.ProjectFileTreeMaxDepth,
-		SkipDirectories: s.config.ProjectScanSkipDirs,
-		ComposeFileName: projects.DefaultComposeFileName,
+	if err := projects.ApplyProjectWorkspaceChanges(projectPath, manifest.FileChanges, uploads, projects.ProjectWorkspaceApplyOptions{
+		MaxDepth:         s.config.ProjectWorkspaceMaxDepth,
+		MaxEntries:       s.config.ProjectWorkspaceMaxEntries,
+		MaxFileSizeBytes: workspace.MaxFileSizeBytes(s.config.ProjectWorkspaceMaxFileSizeMB),
+		SkipDirectories:  s.config.ProjectScanSkipDirs,
+		ComposeFileName:  projects.DefaultComposeFileName,
 	}); err != nil {
-		_ = os.RemoveAll(projectPath)
-		return nil, wrapProjectFileErrorInternal(err)
+		_ = acfs.RemoveAll(context.WithoutCancel(ctx), projectsDirectory, projectLogical)
+		return nil, wrapProjectWorkspaceErrorInternal(err)
 	}
 
 	// GitOps-originated creates (allowNameSuffix=false) tolerate not-yet-supplied
 	// ${VAR} references the same way single-file git sync updates do; interactive
 	// creates (allowNameSuffix=true) stay strict.
 	if err := validateComposeContentForUpdate(ctx, projectsDirectory, projectPath, name, composeContent, envContent, nil, "", !allowNameSuffix); err != nil {
-		_ = os.RemoveAll(projectPath)
+		_ = acfs.RemoveAll(context.WithoutCancel(ctx), projectsDirectory, projectLogical)
 		return nil, errors.WrapIf(err, "invalid compose file")
 	}
 
-	if err := projects.WriteProjectFiles(projectsDirectory, projectPath, composeContent, envContent); err != nil {
+	if err := projects.WriteProjectFiles(ctx, projectsDirectory, projectPath, composeContent, envContent); err != nil {
 		// Best-effort cleanup to restore pre-transaction behavior.
-		_ = os.RemoveAll(projectPath)
+		_ = acfs.RemoveAll(context.WithoutCancel(ctx), projectsDirectory, projectLogical)
 		return nil, errors.WrapIf(err, "failed to save project files")
 	}
 
 	if err := s.db.WithContext(ctx).Create(proj).Error; err != nil {
-		_ = os.RemoveAll(projectPath)
+		_ = acfs.RemoveAll(context.WithoutCancel(ctx), projectsDirectory, projectLogical)
 		return nil, errors.WrapIf(err, "failed to create project")
 	}
 	s.refreshComposeProjectNameInternal(ctx, proj)
@@ -477,7 +490,9 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, r
 
 	if removeFiles {
 		slog.DebugContext(ctx, "Removing project files", "path", proj.Path)
-		if err := os.RemoveAll(proj.Path); err != nil {
+		// An imported project can live anywhere, so the removal is rooted at the
+		// parent directory and names the project directory itself.
+		if err := acfs.RemoveAll(ctx, filepath.Dir(proj.Path), "/"+filepath.Base(proj.Path)); err != nil {
 			slog.ErrorContext(ctx, "Failed to remove project files", "path", proj.Path, "error", err)
 			return errors.WrapIf(err, "failed to remove project files")
 		}
@@ -492,8 +507,9 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, r
 		if projectsDir, dirErr := s.GetProjectsDirectory(ctx); dirErr != nil {
 			slog.WarnContext(ctx, "Failed to resolve projects directory for quarantine", "error", dirErr)
 		} else if projects.IsSafeSubdirectory(projectsDir, proj.Path) && filepath.Clean(projectsDir) != filepath.Clean(proj.Path) {
-			trashPath := filepath.Join(filepath.Dir(proj.Path), fmt.Sprintf("%s%s-%d", projects.ArcaneTrashPrefix, filepath.Base(proj.Path), time.Now().Unix()))
-			if err := os.Rename(proj.Path, trashPath); err != nil {
+			trashName := fmt.Sprintf("%s%s-%d", projects.ArcaneTrashPrefix, filepath.Base(proj.Path), time.Now().Unix())
+			trashPath := filepath.Join(filepath.Dir(proj.Path), trashName)
+			if err := acfs.Rename(ctx, filepath.Dir(proj.Path), "/"+filepath.Base(proj.Path), "/"+trashName); err != nil {
 				slog.WarnContext(ctx, "Failed to quarantine project files", "path", proj.Path, "trashPath", trashPath, "error", err)
 			} else {
 				slog.InfoContext(ctx, "Project files quarantined successfully", "path", proj.Path, "trashPath", trashPath)

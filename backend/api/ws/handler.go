@@ -1178,6 +1178,7 @@ func (h *WebSocketHandler) applyCgroupLimits(cpuCount int, memUsed, memTotal uin
 	if cgroup.IsDockerContainer() {
 		return cpuCount, memUsed, memTotal
 	}
+	cpuCount = applyCPUAffinityLimitInternal(cpuCount)
 	cgroupLimits := h.getCachedCgroupLimitsInternal()
 	if cgroupLimits == nil {
 		return cpuCount, memUsed, memTotal
@@ -1196,6 +1197,20 @@ func (h *WebSocketHandler) applyCgroupLimits(cpuCount int, memUsed, memTotal uin
 		cpuCount = cgroupLimits.CPUCount
 	}
 	return cpuCount, memUsed, memTotal
+}
+
+// applyCPUAffinityLimitInternal caps the CPU count at the scheduler affinity
+// mask size. In an unprivileged LXC guest the cgroup cpu quota is usually
+// unset at the guest root (the limit lives host-side), so the affinity mask is
+// the only signal of the cores actually assigned — including gap bindings like
+// CPU1+CPU7 — while /proc/cpuinfo shows the whole host (#3161). runtime.NumCPU
+// reads that mask at process start. Not applied inside Docker, matching
+// applyCgroupLimits' host-totals convention there.
+func applyCPUAffinityLimitInternal(cpuCount int) int {
+	if n := runtime.NumCPU(); n > 0 && (cpuCount == 0 || n < cpuCount) {
+		return n
+	}
+	return cpuCount
 }
 
 // getDiskInfo returns disk usage and total.

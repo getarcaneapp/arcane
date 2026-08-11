@@ -125,6 +125,9 @@ class SettingsService extends BaseAPIService {
 		}
 		if (value === 'true') return true;
 		if (value === 'false') return false;
+		if (key === 'projectWorkspaceMaxFileSizeMb' || key === 'volumeWorkspaceMaxFileSizeMb') {
+			return Number(value);
+		}
 		return value;
 	}
 }

@@ -21,13 +21,13 @@ func TestRestoreProjectUpdateBackup_UndoesRenameWhenSourceWasRecreated(t *testin
 		Paths:       []string{"a"},
 		RenamedDirs: [][2]string{{"a", "b"}},
 	}
-	backup, err := BackupProjectUpdateScope(projectDir, t.TempDir(), scope)
+	backup, err := BackupProjectUpdateScope(t.Context(), projectDir, t.TempDir(), scope)
 	require.NoError(t, err)
 
 	require.NoError(t, os.Rename(filepath.Join(projectDir, "a"), filepath.Join(projectDir, "b")))
 	require.NoError(t, os.MkdirAll(filepath.Join(projectDir, "a"), 0o755))
 
-	require.NoError(t, RestoreProjectUpdateBackup(projectDir, backup))
+	require.NoError(t, RestoreProjectUpdateBackup(t.Context(), projectDir, backup))
 
 	require.NoDirExists(t, filepath.Join(projectDir, "b"))
 	require.FileExists(t, filepath.Join(projectDir, "a", "keep.txt"))
@@ -48,12 +48,12 @@ func TestRestoreProjectUpdateBackup_RestoresExternalEnvSymlinkTarget(t *testing.
 	originalLinkTarget, err := os.Readlink(envPath)
 	require.NoError(t, err)
 
-	backup, err := BackupProjectUpdateScope(projectDir, t.TempDir(), ProjectUpdateBackupScope{TopLevelFiles: true})
+	backup, err := BackupProjectUpdateScope(t.Context(), projectDir, t.TempDir(), ProjectUpdateBackupScope{TopLevelFiles: true})
 	require.NoError(t, err)
 	require.NotNil(t, backup.envSymlink)
 
-	require.NoError(t, WriteProjectFile(projectDir, projectDir, ".env", "VALUE=updated\n"))
-	require.NoError(t, RestoreProjectUpdateBackup(projectDir, backup))
+	require.NoError(t, WriteProjectFile(t.Context(), projectDir, projectDir, ".env", "VALUE=updated\n"))
+	require.NoError(t, RestoreProjectUpdateBackup(t.Context(), projectDir, backup))
 
 	restoredContent, err := os.ReadFile(targetPath)
 	require.NoError(t, err)
@@ -83,14 +83,14 @@ func TestRestoreProjectUpdateBackup_RejectsRetargetedEnvSymlink(t *testing.T) {
 	if err := os.Symlink(originalTarget, envPath); err != nil {
 		t.Skipf("symlink creation is unavailable: %v", err)
 	}
-	backup, err := BackupProjectUpdateScope(projectDir, t.TempDir(), ProjectUpdateBackupScope{TopLevelFiles: true})
+	backup, err := BackupProjectUpdateScope(t.Context(), projectDir, t.TempDir(), ProjectUpdateBackupScope{TopLevelFiles: true})
 	require.NoError(t, err)
 
-	require.NoError(t, WriteProjectFile(projectDir, projectDir, ".env", "VALUE=updated\n"))
+	require.NoError(t, WriteProjectFile(t.Context(), projectDir, projectDir, ".env", "VALUE=updated\n"))
 	require.NoError(t, os.Remove(envPath))
 	require.NoError(t, os.Symlink(newTarget, envPath))
 
-	err = RestoreProjectUpdateBackup(projectDir, backup)
+	err = RestoreProjectUpdateBackup(t.Context(), projectDir, backup)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "symlink target changed")
 

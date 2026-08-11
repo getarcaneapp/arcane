@@ -5,10 +5,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"mime/multipart"
 	"net/http"
 	"net/url"
-	"path"
 	"strconv"
 	"strings"
 
@@ -148,58 +146,7 @@ type GetVolumeSizesOutput struct {
 	Body base.ApiResponse[[]VolumeSizeInfo]
 }
 
-// --- Volume Browser & Backup ---
-
-type BrowseDirectoryInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	VolumeName    string `path:"volumeName" doc:"Volume name"`
-	Path          string `query:"path" default:"/" doc:"Directory path to browse"`
-}
-
-type BrowseDirectoryOutput struct {
-	Body base.ApiResponse[[]volumetypes.FileEntry]
-}
-
-type GetFileContentInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	VolumeName    string `path:"volumeName" doc:"Volume name"`
-	Path          string `query:"path" doc:"File path"`
-	MaxBytes      int64  `query:"maxBytes" default:"1048576" doc:"Maximum bytes to read (default 1MB)"`
-}
-
-type FileContentResponse struct {
-	Content  []byte `json:"content"`
-	MimeType string `json:"mimeType"`
-}
-
-type GetFileContentOutput struct {
-	Body base.ApiResponse[FileContentResponse]
-}
-
-type DownloadFileInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	VolumeName    string `path:"volumeName" doc:"Volume name"`
-	Path          string `query:"path" doc:"File path"`
-}
-
-type UploadFileInput struct {
-	EnvironmentID string         `path:"id" doc:"Environment ID"`
-	VolumeName    string         `path:"volumeName" doc:"Volume name"`
-	Path          string         `query:"path" default:"/" doc:"Destination path"`
-	RawBody       multipart.Form `contentType:"multipart/form-data"`
-}
-
-type CreateDirectoryInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	VolumeName    string `path:"volumeName" doc:"Volume name"`
-	Path          string `query:"path" doc:"Directory path to create"`
-}
-
-type DeleteFileInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	VolumeName    string `path:"volumeName" doc:"Volume name"`
-	Path          string `query:"path" doc:"File or directory path to delete"`
-}
+// --- Volume Backup ---
 
 type ListBackupsInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
@@ -413,76 +360,7 @@ func RegisterVolumes(api huma.API, dockerService *docker.DockerClientService, vo
 
 	// --- Volume Browsing Endpoints ---
 
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "browse-volume-directory",
-		Method:      http.MethodGet,
-		Path:        "/environments/{id}/volumes/{volumeName}/browse",
-		Summary:     "List volume directory",
-		Tags:        []string{"Volume Browser"},
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermVolumesBrowse, h.BrowseDirectory)
-
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "get-volume-file-content",
-		Method:      http.MethodGet,
-		Path:        "/environments/{id}/volumes/{volumeName}/browse/content",
-		Summary:     "Get file content preview",
-		Tags:        []string{"Volume Browser"},
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermVolumesBrowse, h.GetFileContent)
-
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "download-volume-file",
-		Method:      http.MethodGet,
-		Path:        "/environments/{id}/volumes/{volumeName}/browse/download",
-		Summary:     "Download file from volume",
-		Tags:        []string{"Volume Browser"},
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermVolumesBrowse, h.DownloadFile)
-
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "upload-volume-file",
-		Method:      http.MethodPost,
-		Path:        "/environments/{id}/volumes/{volumeName}/browse/upload",
-		Summary:     "Upload file to volume",
-		Tags:        []string{"Volume Browser"},
-		Security:    handlerutil.DefaultOperationSecurity(),
-		RequestBody: &huma.RequestBody{
-			Content: map[string]*huma.MediaType{
-				"multipart/form-data": {
-					Schema: &huma.Schema{
-						Type: "object",
-						Properties: map[string]*huma.Schema{
-							"file": {
-								Type:        "string",
-								Format:      "binary",
-								Description: "File to upload",
-							},
-						},
-						Required: []string{"file"},
-					},
-				},
-			},
-		},
-	}, authz.PermVolumesUpload, h.UploadFile)
-
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "create-volume-directory",
-		Method:      http.MethodPost,
-		Path:        "/environments/{id}/volumes/{volumeName}/browse/mkdir",
-		Summary:     "Create directory in volume",
-		Tags:        []string{"Volume Browser"},
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermVolumesUpload, h.CreateDirectory)
-
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "delete-volume-file",
-		Method:      http.MethodDelete,
-		Path:        "/environments/{id}/volumes/{volumeName}/browse",
-		Summary:     "Delete file or directory in volume",
-		Tags:        []string{"Volume Browser"},
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermVolumesDelete, h.DeleteFile)
+	registerVolumeWorkspaceRoutesInternal(api, h)
 
 	// --- Volume Backup Endpoints ---
 
@@ -493,7 +371,7 @@ func RegisterVolumes(api huma.API, dockerService *docker.DockerClientService, vo
 		Summary:     "Get volume backup policies",
 		Tags:        []string{"Volume Backup"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermVolumesBrowse, h.GetBackupPolicy)
+	}, authz.PermVolumesRead, h.GetBackupPolicy)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "update-volume-backup-policy",
@@ -511,7 +389,7 @@ func RegisterVolumes(api huma.API, dockerService *docker.DockerClientService, vo
 		Summary:     "List volume backups",
 		Tags:        []string{"Volume Backup"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermVolumesBrowse, h.ListBackups)
+	}, authz.PermVolumesRead, h.ListBackups)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "create-volume-backup",
@@ -566,7 +444,7 @@ func RegisterVolumes(api huma.API, dockerService *docker.DockerClientService, vo
 		Summary:     "Download volume backup",
 		Tags:        []string{"Volume Backup"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermVolumesBrowse, h.DownloadBackup)
+	}, authz.PermVolumesRead, h.DownloadBackup)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "backup-has-path",
@@ -575,7 +453,7 @@ func RegisterVolumes(api huma.API, dockerService *docker.DockerClientService, vo
 		Summary:     "Check if backup contains path",
 		Tags:        []string{"Volume Backup"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermVolumesBrowse, h.BackupHasPath)
+	}, authz.PermVolumesRead, h.BackupHasPath)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-backup-files",
@@ -584,7 +462,7 @@ func RegisterVolumes(api huma.API, dockerService *docker.DockerClientService, vo
 		Summary:     "List files in a volume backup",
 		Tags:        []string{"Volume Backup"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermVolumesBrowse, h.ListBackupFiles)
+	}, authz.PermVolumesRead, h.ListBackupFiles)
 }
 
 func (h *VolumeHandler) DownloadBackup(ctx context.Context, input *DownloadBackupInput) (*huma.StreamResponse, error) {
@@ -927,154 +805,6 @@ func (h *VolumeHandler) GetVolumeSizes(ctx context.Context, input *GetVolumeSize
 			Success: true,
 			Data:    result,
 		},
-	}, nil
-}
-
-// --- Volume Browser Handler Methods ---
-
-func (h *VolumeHandler) BrowseDirectory(ctx context.Context, input *BrowseDirectoryInput) (*BrowseDirectoryOutput, error) {
-	entries, err := h.volumeService.ListDirectory(ctx, input.VolumeName, input.Path)
-	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
-	}
-	return &BrowseDirectoryOutput{
-		Body: base.ApiResponse[[]volumetypes.FileEntry]{
-			Success: true,
-			Data:    entries,
-		},
-	}, nil
-}
-
-func (h *VolumeHandler) GetFileContent(ctx context.Context, input *GetFileContentInput) (*GetFileContentOutput, error) {
-	content, mimeType, err := h.volumeService.GetFileContent(ctx, input.VolumeName, input.Path, input.MaxBytes)
-	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
-	}
-	return &GetFileContentOutput{
-		Body: base.ApiResponse[FileContentResponse]{
-			Success: true,
-			Data: FileContentResponse{
-				Content:  content,
-				MimeType: mimeType,
-			},
-		},
-	}, nil
-}
-
-func (h *VolumeHandler) DownloadFile(ctx context.Context, input *DownloadFileInput) (*huma.StreamResponse, error) {
-	reader, size, err := h.volumeService.DownloadFile(ctx, input.VolumeName, input.Path)
-	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
-	}
-
-	return &huma.StreamResponse{
-		Body: func(humaCtx huma.Context) {
-			defer func() { _ = reader.Close() }()
-
-			humaCtx.SetHeader("Content-Type", "application/octet-stream")
-			humaCtx.SetHeader("Content-Disposition", "attachment; filename="+path.Base(input.Path))
-			humaCtx.SetHeader("Content-Length", strconv.FormatInt(size, 10))
-
-			writer := humaCtx.BodyWriter()
-			_, _ = io.Copy(writer, reader)
-		},
-	}, nil
-}
-
-func (h *VolumeHandler) UploadFile(ctx context.Context, input *UploadFileInput) (*base.ApiResponse[base.MessageResponse], error) {
-	file, fileHeader, err := handlerutil.OpenUploadedFile(input.RawBody)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = file.Close() }()
-
-	user, _ := models.CurrentUserFromContext(ctx)
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
-		EnvironmentID:  input.EnvironmentID,
-		Type:           models.ActivityTypeResourceAction,
-		ResourceType:   "volume",
-		ResourceID:     input.VolumeName,
-		ResourceName:   input.VolumeName,
-		User:           user,
-		Step:           "Uploading file",
-		Message:        "Uploading file to volume",
-		SuccessMessage: "File uploaded successfully",
-		Metadata: models.JSON{
-			"action":   "upload_volume_file",
-			"path":     input.Path,
-			"filename": fileHeader.Filename,
-		},
-	}, func(runtimeCtx context.Context) error {
-		return h.volumeService.UploadFile(runtimeCtx, input.VolumeName, input.Path, file, fileHeader.Filename, user)
-	})
-	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
-	}
-	return &base.ApiResponse[base.MessageResponse]{
-		Success: true,
-		Data:    base.MessageResponse{Message: "File uploaded successfully", ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()},
-	}, nil
-}
-
-func (h *VolumeHandler) CreateDirectory(ctx context.Context, input *CreateDirectoryInput) (*base.ApiResponse[base.MessageResponse], error) {
-	return h.runVolumePathActivityInternal(ctx, input.EnvironmentID, input.VolumeName, input.Path, volumePathActivityConfigInternal{
-		Step:           "Creating directory",
-		Message:        "Creating directory in volume",
-		SuccessMessage: "Directory created successfully",
-		MetadataAction: "create_volume_directory",
-		Action: func(runtimeCtx context.Context, volumeName, path string, user *models.User) error {
-			return h.volumeService.CreateDirectory(runtimeCtx, volumeName, path, user)
-		},
-	})
-}
-
-func (h *VolumeHandler) DeleteFile(ctx context.Context, input *DeleteFileInput) (*base.ApiResponse[base.MessageResponse], error) {
-	return h.runVolumePathActivityInternal(ctx, input.EnvironmentID, input.VolumeName, input.Path, volumePathActivityConfigInternal{
-		Step:           "Deleting file",
-		Message:        "Deleting file or directory from volume",
-		SuccessMessage: "Deleted successfully",
-		MetadataAction: "delete_volume_file",
-		Action: func(runtimeCtx context.Context, volumeName, path string, user *models.User) error {
-			return h.volumeService.DeleteFile(runtimeCtx, volumeName, path, user)
-		},
-	})
-}
-
-type volumePathActivityConfigInternal struct {
-	Step           string
-	Message        string
-	SuccessMessage string
-	MetadataAction string
-	Action         func(context.Context, string, string, *models.User) error
-}
-
-func (h *VolumeHandler) runVolumePathActivityInternal(ctx context.Context, environmentID, volumeName, volumePath string, cfg volumePathActivityConfigInternal) (*base.ApiResponse[base.MessageResponse], error) {
-	user, _ := models.CurrentUserFromContext(ctx)
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
-		EnvironmentID:  environmentID,
-		Type:           models.ActivityTypeResourceAction,
-		ResourceType:   "volume",
-		ResourceID:     volumeName,
-		ResourceName:   volumeName,
-		User:           user,
-		Step:           cfg.Step,
-		Message:        cfg.Message,
-		SuccessMessage: cfg.SuccessMessage,
-		Metadata: models.JSON{
-			"action": cfg.MetadataAction,
-			"path":   volumePath,
-		},
-	}, func(runtimeCtx context.Context) error {
-		return cfg.Action(runtimeCtx, volumeName, volumePath, user)
-	})
-	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
-	}
-	return &base.ApiResponse[base.MessageResponse]{
-		Success: true,
-		Data:    base.MessageResponse{Message: cfg.SuccessMessage, ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()},
 	}, nil
 }
 

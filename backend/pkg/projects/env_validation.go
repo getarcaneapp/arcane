@@ -49,6 +49,9 @@ func BuildValidationEnvironment(projectsDirectory, projectPath string, effective
 
 // ParseValidationEnvFile parses one env file against contextEnv. A missing file
 // is not an error.
+//
+// Stays on os.*: env files may be symlinks resolving outside any confinement
+// root (a supported setup), which acfs cannot follow.
 func ParseValidationEnvFile(path string, contextEnv EnvMap) (EnvMap, error) {
 	if _, err := os.Stat(path); err != nil {
 		if os.IsNotExist(err) {
@@ -79,19 +82,4 @@ func ParseValidationEnvContent(content string, contextEnv EnvMap) (EnvMap, error
 	}
 
 	return envMap, nil
-}
-
-// ValidateIncludePathsForContent rejects compose content whose includes resolve
-// outside the project directory.
-func ValidateIncludePathsForContent(projectPath, composeContent string, envMap EnvMap) error {
-	includes, err := ParseIncludesFromContent(filepath.Join(projectPath, "compose.yaml"), []byte(composeContent), envMap, false)
-	if err != nil {
-		return err
-	}
-	for _, inc := range includes {
-		if _, err := ValidateIncludePathForWrite(projectPath, inc.Path); err != nil {
-			return errors.WrapIff(err, "include path %q is outside project directory", inc.RelativePath)
-		}
-	}
-	return nil
 }

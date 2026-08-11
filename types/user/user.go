@@ -31,7 +31,7 @@ type Preferences struct {
 // CreateUser represents the request body for creating a new user.
 // Role assignments are managed separately via PUT /users/{userId}/role-assignments.
 type CreateUser struct {
-	Username    string      `json:"username" minLength:"1" maxLength:"255" doc:"Username of the user" example:"johndoe"`
+	Username    string      `json:"username" minLength:"1" maxLength:"255" pattern:"^[^@]+$" patternDescription:"username without an @ character" doc:"Username of the user; may not contain @" example:"johndoe"`
 	Password    string      `json:"password" minLength:"8" doc:"Password of the user"`
 	DisplayName *string     `json:"displayName,omitempty" maxLength:"255" doc:"Display name of the user" example:"John Doe"`
 	Email       *string     `json:"email,omitempty" doc:"Email address of the user" example:"john@example.com"`
@@ -42,7 +42,7 @@ type CreateUser struct {
 // UpdateUser represents the request body for updating a user.
 // Role assignments are managed separately via PUT /users/{userId}/role-assignments.
 type UpdateUser struct {
-	Username    *string     `json:"username,omitempty" minLength:"1" maxLength:"255" doc:"Username of the user"`
+	Username    *string     `json:"username,omitempty" minLength:"1" maxLength:"255" pattern:"^[^@]+$" patternDescription:"username without an @ character" doc:"Username of the user; may not contain @"`
 	DisplayName *string     `json:"displayName,omitempty" maxLength:"255" doc:"Display name of the user"`
 	Email       *string     `json:"email,omitempty" doc:"Email address of the user"`
 	Locale      *string     `json:"locale,omitempty" doc:"Locale preference of the user"`

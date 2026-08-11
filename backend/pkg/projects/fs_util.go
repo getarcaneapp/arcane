@@ -13,9 +13,9 @@ import (
 	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/types/v2/project"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/samber/mo"
+	"go.getarcane.app/acfs"
 	"go.yaml.in/yaml/v4"
 )
 
@@ -38,8 +38,10 @@ func ResolveConfiguredContainerDirectory(configuredPath, defaultPath string) str
 func GetProjectsDirectory(ctx context.Context, projectsDir string) (string, error) {
 	projectsDirectory := ResolveConfiguredContainerDirectory(projectsDir, "/app/data/projects")
 
+	// os.* rather than acfs: this creates the confinement root itself, which
+	// has to exist before acfs can open it.
 	if _, err := os.Stat(projectsDirectory); os.IsNotExist(err) {
-		if err := os.MkdirAll(projectsDirectory, pkgutils.DirPerm); err != nil {
+		if err := os.MkdirAll(projectsDirectory, utils.DirPerm); err != nil {
 			return "", err
 		}
 		slog.InfoContext(ctx, "Created projects directory", "path", projectsDirectory)
@@ -98,6 +100,9 @@ func isBackendModuleRoot(path string) bool {
 	return true
 }
 
+// ReadProjectFiles stays on os.*: compose and env files may be symlinks
+// resolving outside any confinement root, and projectPath can be an imported
+// project outside the projects directory; acfs cannot follow either.
 func ReadProjectFiles(projectPath, composePath string) (composeContent, envContent string, err error) {
 	if strings.TrimSpace(composePath) == "" {
 		composePath, _ = DetectComposeFile(projectPath)
@@ -118,6 +123,8 @@ func ReadProjectFiles(projectPath, composePath string) (composeContent, envConte
 }
 
 func HasComposeRootKeysInFile(path string) (bool, error) {
+	// Stays on os.*: callers pass paths in imported projects outside the
+	// projects directory, where no acfs root exists.
 	content, err := os.ReadFile(path)
 	if err != nil {
 		return false, err
@@ -135,8 +142,10 @@ func HasComposeRootKeysInFile(path string) (bool, error) {
 
 func GetTemplatesDirectory(ctx context.Context, templatesDir string) (string, error) {
 	resolved := ResolveConfiguredContainerDirectory(templatesDir, "/app/data/templates")
+	// os.* rather than acfs: this creates the confinement root itself, which
+	// has to exist before acfs can open it.
 	if _, err := os.Stat(resolved); os.IsNotExist(err) {
-		if err := os.MkdirAll(resolved, pkgutils.DirPerm); err != nil {
+		if err := os.MkdirAll(resolved, utils.DirPerm); err != nil {
 			return "", err
 		}
 		slog.InfoContext(ctx, "Created templates directory", "path", resolved)
@@ -144,27 +153,9 @@ func GetTemplatesDirectory(ctx context.Context, templatesDir string) (string, er
 	return resolved, nil
 }
 
-func ReadProjectDirectoryFiles(projectPath string, shownFiles map[string]bool, maxDepth int, skipDirectories string) ([]project.IncludeFile, error) {
-	if maxDepth <= 0 {
-		maxDepth = config.LoadProjectFilesConfig().ProjectScanMaxDepth
-	}
-
-	var dirFiles []project.IncludeFile
-
-	root, err := os.OpenRoot(projectPath)
-	if err != nil {
-		return dirFiles, err
-	}
-	defer func() { _ = root.Close() }()
-
-	err = collectProjectDirectoryFilesInternal(root, ".", projectPath, shownFiles, &dirFiles, 0, maxDepth, projectScanSkipDirectorySetInternal(skipDirectories), false)
-
-	return dirFiles, err
-}
-
 func projectScanSkipDirectorySetInternal(skipDirectories string) map[string]bool {
 	if strings.TrimSpace(skipDirectories) == "" {
-		skipDirectories = config.LoadProjectFilesConfig().ProjectScanSkipDirs
+		skipDirectories = config.LoadProjectWorkspaceConfig().ProjectScanSkipDirs
 	}
 
 	dirs := map[string]bool{}
@@ -175,104 +166,28 @@ func projectScanSkipDirectorySetInternal(skipDirectories string) map[string]bool
 		}
 	}
 
-	// Never allow .git contents to be exposed through the project file browser.
+	// Never allow .git contents to be exposed through the project workspace.
 	dirs[".git"] = true
 
 	return dirs
 }
 
-func collectProjectDirectoryFilesInternal(
-	root *os.Root,
-	relDir string,
-	projectPath string,
-	shownFiles map[string]bool,
-	dirFiles *[]project.IncludeFile,
-	currentDepth int,
-	maxDepth int,
-	skipDirs map[string]bool,
-	includeContent bool,
-) error {
-	if currentDepth >= maxDepth {
-		return nil
-	}
-
-	dir, err := root.Open(relDir)
+func syncedProjectFileMatchesInternal(ctx context.Context, projectPath string, file SyncFile) (bool, error) {
+	logicalPath := "/" + filepath.ToSlash(file.RelativePath)
+	entry, err := acfs.Stat(ctx, projectPath, logicalPath, false)
 	if err != nil {
-		return err
-	}
-	defer func() { _ = dir.Close() }()
-
-	entries, err := dir.ReadDir(-1)
-	if err != nil {
-		return err
-	}
-
-	for _, entry := range entries {
-		relPath := entry.Name()
-		if relDir != "." {
-			relPath = filepath.Join(relDir, entry.Name())
-		}
-		if entry.Type()&os.ModeSymlink != 0 {
-			continue
-		}
-		if entry.IsDir() {
-			if skipDirs[entry.Name()] {
-				continue
-			}
-			if err := collectProjectDirectoryFilesInternal(root, relPath, projectPath, shownFiles, dirFiles, currentDepth+1, maxDepth, skipDirs, includeContent); err != nil {
-				slog.Debug("Skipping unreadable project subdirectory", "relativePath", relPath, "error", err)
-			}
-			continue
-		}
-		if shownFiles[relPath] {
-			continue
-		}
-
-		info, err := entry.Info()
-		if err != nil || info.Size() > 1024*1024 {
-			continue
-		}
-
-		file := project.IncludeFile{
-			Path:         filepath.Join(projectPath, relPath),
-			RelativePath: relPath,
-		}
-
-		if includeContent {
-			content, err := root.ReadFile(relPath)
-			if err != nil || IsBinaryProjectFileContent(content) {
-				continue
-			}
-			file.Content = string(content)
-		}
-
-		*dirFiles = append(*dirFiles, file)
-	}
-
-	return nil
-}
-
-func IsBinaryProjectFileContent(content []byte) bool {
-	checkSize := min(len(content), 512)
-	return slices.Contains(content[:checkSize], 0)
-}
-
-func syncedProjectFileMatchesInternal(projectPath string, file SyncFile) (bool, error) {
-	existingPath := filepath.Join(projectPath, file.RelativePath)
-	info, err := os.Stat(existingPath)
-	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return false, nil
 		}
 		return false, err
 	}
-	if info.IsDir() {
+	if entry.IsDirectory {
 		return false, nil
 	}
 
-	existingContent, err := os.ReadFile(existingPath)
+	existingContent, err := acfs.ReadFile(ctx, projectPath, logicalPath)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return false, nil
 		}
 		return false, err
@@ -281,6 +196,8 @@ func syncedProjectFileMatchesInternal(projectPath string, file SyncFile) (bool, 
 	return bytes.Equal(existingContent, file.Content), nil
 }
 
+// pathExistsInternal stays on os.*: it probes arbitrary absolute paths,
+// including imported projects outside any acfs root.
 func pathExistsInternal(path string) (bool, error) {
 	_, err := os.Stat(path)
 	if err == nil {
@@ -292,7 +209,9 @@ func pathExistsInternal(path string) (bool, error) {
 	return false, err
 }
 
-func DirectorySyncContentsChanged(projectPath string, syncFiles []SyncFile, oldSyncedFiles []string, composeFileName string) (bool, error) {
+func DirectorySyncContentsChanged(ctx context.Context, projectPath string, syncFiles []SyncFile, oldSyncedFiles []string, composeFileName string) (bool, error) {
+	// os.Stat rather than acfs: projectPath is the would-be confinement root
+	// itself, which acfs cannot probe before it exists.
 	if info, err := os.Stat(projectPath); err != nil {
 		if os.IsNotExist(err) {
 			return true, nil
@@ -305,7 +224,7 @@ func DirectorySyncContentsChanged(projectPath string, syncFiles []SyncFile, oldS
 	newFileSet := make(map[string]struct{}, len(syncFiles))
 	for _, file := range syncFiles {
 		newFileSet[file.RelativePath] = struct{}{}
-		matches, err := syncedProjectFileMatchesInternal(projectPath, file)
+		matches, err := syncedProjectFileMatchesInternal(ctx, projectPath, file)
 		if err != nil {
 			return false, err
 		}
@@ -318,7 +237,7 @@ func DirectorySyncContentsChanged(projectPath string, syncFiles []SyncFile, oldS
 		if _, exists := newFileSet[oldFile]; exists {
 			continue
 		}
-		exists, err := pathExistsInternal(filepath.Join(projectPath, oldFile))
+		exists, err := acfs.Exists(ctx, projectPath, "/"+filepath.ToSlash(oldFile))
 		if err != nil {
 			return false, err
 		}
@@ -334,7 +253,7 @@ func DirectorySyncContentsChanged(projectPath string, syncFiles []SyncFile, oldS
 		if _, exists := newFileSet[candidate]; exists {
 			continue
 		}
-		exists, err := pathExistsInternal(filepath.Join(projectPath, candidate))
+		exists, err := acfs.Exists(ctx, projectPath, "/"+candidate)
 		if err != nil {
 			return false, err
 		}
@@ -346,7 +265,7 @@ func DirectorySyncContentsChanged(projectPath string, syncFiles []SyncFile, oldS
 	return false, nil
 }
 
-func RemoveStaleComposeFiles(projectPath, composeFileName string, syncedFiles []string) error {
+func RemoveStaleComposeFiles(ctx context.Context, projectPath, composeFileName string, syncedFiles []string) error {
 	syncedFileSet := make(map[string]struct{}, len(syncedFiles))
 	for _, file := range syncedFiles {
 		syncedFileSet[file] = struct{}{}
@@ -359,22 +278,22 @@ func RemoveStaleComposeFiles(projectPath, composeFileName string, syncedFiles []
 		if _, exists := syncedFileSet[candidate]; exists {
 			continue
 		}
-		if err := os.Remove(filepath.Join(projectPath, candidate)); err != nil && !os.IsNotExist(err) {
+		if err := acfs.Remove(ctx, projectPath, "/"+candidate); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
 	}
 
-	entries, err := os.ReadDir(projectPath)
+	entries, err := acfs.List(ctx, projectPath, "/")
 	if err != nil {
 		return err
 	}
 
 	for _, entry := range entries {
-		if entry.IsDir() {
+		if entry.IsDirectory {
 			continue
 		}
 
-		name := entry.Name()
+		name := entry.Name
 		if name == composeFileName {
 			continue
 		}
@@ -385,13 +304,12 @@ func RemoveStaleComposeFiles(projectPath, composeFileName string, syncedFiles []
 			continue
 		}
 
-		path := filepath.Join(projectPath, name)
-		hasComposeRootKeys, rootKeysErr := HasComposeRootKeysInFile(path)
+		hasComposeRootKeys, rootKeysErr := HasComposeRootKeysInFile(filepath.Join(projectPath, name))
 		if rootKeysErr != nil || !hasComposeRootKeys {
 			continue
 		}
 
-		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		if err := acfs.Remove(ctx, projectPath, entry.Path); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
 	}
@@ -399,191 +317,9 @@ func RemoveStaleComposeFiles(projectPath, composeFileName string, syncedFiles []
 	return nil
 }
 
-// CopyDirectoryContentsTolerant copies srcDir into destDir like
-// CopyDirectoryContents, except that files (or whole subdirectories) which
-// cannot be read because of a permission error are skipped instead of aborting
-// the copy. The skipped entries' project-relative paths are returned sorted so
-// callers can avoid deleting them on a later restore. Any non-permission error
-// still aborts the copy.
-func CopyDirectoryContentsTolerant(srcDir, destDir string) (skipped []string, err error) {
-	err = CopyDirectoryContents(srcDir, destDir, func(relPath string) {
-		skipped = append(skipped, relPath)
-	})
-	slices.Sort(skipped)
-	return skipped, err
-}
-
-// CopyDirectoryContents copies srcDir into destDir. When skipUnreadable
-// is non-nil and a file or subdirectory cannot be read because of a permission
-// error, the offending project-relative path is reported via skipUnreadable and
-// the copy continues; otherwise the error aborts the copy.
-func CopyDirectoryContents(srcDir, destDir string, skipUnreadable func(relPath string)) error {
-	srcRoot, err := os.OpenRoot(srcDir)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = srcRoot.Close() }()
-
-	destRoot, err := os.OpenRoot(destDir)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = destRoot.Close() }()
-
-	return filepath.WalkDir(srcDir, func(path string, d os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return handleCopyWalkErrorInternal(srcDir, path, d, walkErr, skipUnreadable)
-		}
-		if path == srcDir {
-			return nil
-		}
-
-		relPath, err := filepath.Rel(srcDir, path)
-		if err != nil {
-			return err
-		}
-
-		if d.IsDir() {
-			return destRoot.MkdirAll(relPath, 0o755)
-		}
-		if d.Type()&os.ModeSymlink != 0 {
-			return nil
-		}
-
-		return copyRegularFileInternal(srcRoot, destRoot, relPath, d, skipUnreadable)
-	})
-}
-
-func handleCopyWalkErrorInternal(srcDir, path string, d os.DirEntry, walkErr error, skipUnreadable func(relPath string)) error {
-	// An unreadable subdirectory surfaces here as a permission error on the
-	// directory entry itself.
-	if skipUnreadable == nil || !errors.Is(walkErr, os.ErrPermission) {
-		return walkErr
-	}
-	if relPath, relErr := filepath.Rel(srcDir, path); relErr == nil {
-		skipUnreadable(relPath)
-	}
-	if d != nil && d.IsDir() {
-		return filepath.SkipDir
-	}
-	return nil
-}
-
-func copyRegularFileInternal(srcRoot, destRoot *os.Root, relPath string, d os.DirEntry, skipUnreadable func(relPath string)) error {
-	info, err := d.Info()
-	if err != nil {
-		return err
-	}
-
-	content, err := srcRoot.ReadFile(relPath)
-	if err != nil {
-		if skipUnreadable != nil && errors.Is(err, os.ErrPermission) {
-			skipUnreadable(relPath)
-			return nil
-		}
-		return err
-	}
-
-	if err := destRoot.MkdirAll(filepath.Dir(relPath), 0o755); err != nil {
-		return err
-	}
-
-	return destRoot.WriteFile(relPath, content, info.Mode())
-}
-
-// MirrorDirectoryContentsPreserving makes destDir match srcDir while updating
-// files and directories in place, so existing inodes (and therefore container
-// bind mounts into destDir) stay valid. Entries missing from srcDir or whose
-// type differs are removed, then srcDir is copied over the result. It never
-// prunes a destDir entry whose project-relative path is listed in preserve, nor
-// any directory that still contains a preserved entry. It is used when
-// restoring a backup that intentionally omits files the caller could not read:
-// those files must survive the restore rather than be deleted.
-func MirrorDirectoryContentsPreserving(srcDir, destDir string, preserve []string) error {
-	preserveSet := make(map[string]struct{}, len(preserve))
-	for _, p := range preserve {
-		preserveSet[filepath.Clean(p)] = struct{}{}
-	}
-	if err := pruneDirectoryContentsInternal(srcDir, destDir, preserveSet); err != nil {
-		return err
-	}
-	return CopyDirectoryContents(srcDir, destDir, nil)
-}
-
-func pruneDirectoryContentsInternal(srcDir, destDir string, preserve map[string]struct{}) error {
-	srcRoot, err := os.OpenRoot(srcDir)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = srcRoot.Close() }()
-
-	destRoot, err := os.OpenRoot(destDir)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = destRoot.Close() }()
-
-	return filepath.WalkDir(destDir, func(path string, d os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if path == destDir {
-			return nil
-		}
-
-		relPath, err := filepath.Rel(destDir, path)
-		if err != nil {
-			return err
-		}
-
-		// Never delete a preserved entry.
-		if _, ok := preserve[relPath]; ok {
-			if d.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-
-		srcInfo, err := srcRoot.Lstat(relPath)
-		if err == nil && srcInfo.Mode()&os.ModeType == d.Type() {
-			return nil
-		}
-		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-
-		// This entry is absent from (or type-changed vs) the source, so it would
-		// normally be pruned. If it is a directory that still contains a preserved
-		// entry, descend and prune its other children instead of removing it whole.
-		if d.IsDir() && hasPreservedDescendantInternal(relPath, preserve) {
-			return nil
-		}
-
-		if err := destRoot.RemoveAll(relPath); err != nil {
-			return err
-		}
-		if d.IsDir() {
-			return filepath.SkipDir
-		}
-		return nil
-	})
-}
-
-// hasPreservedDescendantInternal reports whether any preserved path lives under
-// dir, so the prune knows to descend into dir rather than remove it wholesale.
-func hasPreservedDescendantInternal(dir string, preserve map[string]struct{}) bool {
-	prefix := dir + string(filepath.Separator)
-	for p := range preserve {
-		if strings.HasPrefix(p, prefix) {
-			return true
-		}
-	}
-	return false
-}
-
-// CreateUniqueDir creates a unique directory within the allowed projectsRoot.
-// It validates that the created directory is always within projectsRoot.
-func CreateUniqueDir(projectsRoot, basePath, name string, perm os.FileMode) (path, folderName string, err error) {
+// CreateUniqueDir creates a unique directory within the allowed projectsRoot,
+// suffixing "-N" until an unused name is found.
+func CreateUniqueDir(ctx context.Context, projectsRoot, basePath, name string, perm os.FileMode) (path, folderName string, err error) {
 	sanitized := SanitizeProjectName(name)
 
 	// Reject empty or invalid sanitized names
@@ -591,45 +327,23 @@ func CreateUniqueDir(projectsRoot, basePath, name string, perm os.FileMode) (pat
 		return "", "", errors.New("invalid project name: results in empty directory name")
 	}
 
-	// Get absolute path of the true projects root for validation
-	projectsRootAbs, err := filepath.Abs(projectsRoot)
-	if err != nil {
-		return "", "", errors.WrapIf(err, "failed to resolve projects root directory")
-	}
-	projectsRootAbs = filepath.Clean(projectsRootAbs)
-
 	candidate := basePath
 	folderName = sanitized
 
 	for counter := 1; ; counter++ {
-		// Validate candidate is within the allowed projects root
-		candidateAbs, absErr := filepath.Abs(candidate)
-		if absErr != nil {
-			return "", "", errors.WrapIf(absErr, "failed to resolve candidate path")
-		}
-		candidateAbs = filepath.Clean(candidateAbs)
-
-		// Security check: ensure candidate is a subdirectory of projectsRoot
-		if !IsSafeSubdirectory(projectsRootAbs, candidateAbs) {
-			return "", "", errors.New("project directory would be outside allowed projects root")
+		logicalPath, logicalErr := acfs.LogicalPath(projectsRoot, candidate)
+		if logicalErr != nil {
+			return "", "", errors.WrapIf(logicalErr, "project directory would be outside allowed projects root")
 		}
 
-		if mkErr := os.Mkdir(candidate, perm); mkErr == nil {
-			// Double-check after creation - paranoid validation
-			if !IsSafeSubdirectory(projectsRootAbs, candidateAbs) {
-				// Security violation detected - remove the unsafe directory
-				// We only reach here if somehow a directory was created outside the root
-				// despite pre-checks. Clean up by removing ONLY if it's actually within root.
-				if strings.HasPrefix(candidateAbs, projectsRootAbs+string(filepath.Separator)) {
-					_ = os.Remove(candidateAbs)
-				}
-				return "", "", errors.New("created directory is outside allowed projects root")
-			}
-
+		mkErr := acfs.Mkdir(ctx, projectsRoot, logicalPath, perm)
+		if mkErr == nil {
 			return candidate, folderName, nil
-		} else if !os.IsExist(mkErr) {
+		}
+		if !errors.Is(mkErr, os.ErrExist) {
 			return "", "", mkErr
 		}
+
 		candidate = fmt.Sprintf("%s-%d", basePath, counter)
 		folderName = fmt.Sprintf("%s-%d", sanitized, counter)
 	}
@@ -644,43 +358,22 @@ const ErrProjectDirExists = errors.Sentinel("project directory already exists")
 // CreateExactDir creates basePath (the sanitized project directory) under
 // projectsRoot WITHOUT any "-N" collision suffixing. It returns ErrProjectDirExists
 // when the directory already exists, leaving the caller to decide how to proceed.
-// Validation mirrors CreateUniqueDir so the created directory is always within
-// projectsRoot.
-func CreateExactDir(projectsRoot, basePath, name string, perm os.FileMode) (path, folderName string, err error) {
+func CreateExactDir(ctx context.Context, projectsRoot, basePath, name string, perm os.FileMode) (path, folderName string, err error) {
 	sanitized := SanitizeProjectName(name)
 	if sanitized == "" || strings.Trim(sanitized, "_") == "" {
 		return "", "", errors.New("invalid project name: results in empty directory name")
 	}
 
-	projectsRootAbs, err := filepath.Abs(projectsRoot)
+	logicalPath, err := acfs.LogicalPath(projectsRoot, basePath)
 	if err != nil {
-		return "", "", errors.WrapIf(err, "failed to resolve projects root directory")
-	}
-	projectsRootAbs = filepath.Clean(projectsRootAbs)
-
-	candidateAbs, err := filepath.Abs(basePath)
-	if err != nil {
-		return "", "", errors.WrapIf(err, "failed to resolve candidate path")
-	}
-	candidateAbs = filepath.Clean(candidateAbs)
-
-	if !IsSafeSubdirectory(projectsRootAbs, candidateAbs) {
-		return "", "", errors.New("project directory would be outside allowed projects root")
+		return "", "", errors.WrapIf(err, "project directory would be outside allowed projects root")
 	}
 
-	if mkErr := os.Mkdir(basePath, perm); mkErr != nil {
-		if os.IsExist(mkErr) {
+	if err := acfs.Mkdir(ctx, projectsRoot, logicalPath, perm); err != nil {
+		if errors.Is(err, os.ErrExist) {
 			return "", "", ErrProjectDirExists
 		}
-		return "", "", mkErr
-	}
-
-	// Paranoid post-create validation, matching CreateUniqueDir.
-	if !IsSafeSubdirectory(projectsRootAbs, candidateAbs) {
-		if strings.HasPrefix(candidateAbs, projectsRootAbs+string(filepath.Separator)) {
-			_ = os.Remove(candidateAbs)
-		}
-		return "", "", errors.New("created directory is outside allowed projects root")
+		return "", "", err
 	}
 
 	return basePath, sanitized, nil

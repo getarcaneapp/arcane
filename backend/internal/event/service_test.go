@@ -13,7 +13,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -192,7 +192,7 @@ func TestEventService_CreateEvent_ForwardsToManagerAPIInAgentMode(t *testing.T) 
 		if !assert.Equal(t, "/api/events", r.URL.Path) {
 			return
 		}
-		if !assert.Equal(t, "test-agent-token", r.Header.Get(pkgutils.HeaderAgentToken)) {
+		if !assert.Equal(t, "test-agent-token", r.Header.Get(utils.HeaderAgentToken)) {
 			return
 		}
 

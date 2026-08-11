@@ -1,6 +1,8 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import { Spinner } from '#lib/components/ui/spinner/index.js';
+	import { getApplicationLogo } from '#lib/utils/docker';
+	import { accentColorPreviewStore } from '#lib/utils/theme';
+	import userStore from '#lib/stores/user-store';
 	import { m } from '#lib/paraglide/messages';
 
 	interface Props {
@@ -12,13 +14,19 @@
 	}
 
 	let { busy, busyTitle, busyDescription, error, children }: Props = $props();
+
+	const accentColor = $derived($accentColorPreviewStore);
+	const animationsEnabled = $derived($userStore?.preferences?.animationsEnabled ?? true);
+	const loaderLogoUrl = $derived(
+		getApplicationLogo(false, accentColor, accentColor, { animated: animationsEnabled, loop: animationsEnabled })
+	);
 </script>
 
 <div class="flex min-h-screen items-center justify-center bg-background">
 	<div class="w-full max-w-md space-y-8">
 		<div class="flex flex-col items-center text-center">
 			{#if busy}
-				<Spinner class="size-12 text-primary" />
+				<img class="size-12" src={loaderLogoUrl} alt="" />
 				<h2 class="mt-6 text-2xl font-semibold">{busyTitle}</h2>
 				<p class="mt-2 text-sm text-muted-foreground">{busyDescription}</p>
 			{:else if error}

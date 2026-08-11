@@ -7,7 +7,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
-	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/labstack/echo/v5"
 )
 
@@ -86,6 +86,6 @@ func (m *CSRFMiddleware) Add() echo.MiddlewareFunc {
 // susceptible to CSRF and should bypass the cross-origin check.
 func hasHeaderCredentialInternal(req *http.Request) bool {
 	return strings.HasPrefix(req.Header.Get("Authorization"), "Bearer ") ||
-		req.Header.Get(pkgutils.HeaderApiKey) != "" ||
-		req.Header.Get(pkgutils.HeaderAgentToken) != ""
+		req.Header.Get(utils.HeaderApiKey) != "" ||
+		req.Header.Get(utils.HeaderAgentToken) != ""
 }

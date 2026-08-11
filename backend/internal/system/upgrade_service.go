@@ -70,7 +70,7 @@ func NewSystemUpgradeService(
 // CanUpgrade checks if self-upgrade is possible
 func (s *SystemUpgradeService) CanUpgrade(ctx context.Context) (bool, error) {
 	// Check if running in Docker
-	containerId, err := s.getCurrentContainerIDInternal()
+	containerId, err := s.getCurrentContainerIDInternal(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -117,7 +117,7 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 	if containerId == "" {
 		// Fall back to the container this process runs in
 		var err error
-		containerId, err = s.getCurrentContainerIDInternal()
+		containerId, err = s.getCurrentContainerIDInternal(ctx)
 		if err != nil {
 			return "", errors.WrapIf(err, "get current container")
 		}
@@ -216,6 +216,9 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 		func() bool {
 			_, err := cgroup.CurrentContainerID()
 			return err == nil
+		},
+		func(ctx context.Context, inspect *container.InspectResponse, dockerHost string) string {
+			return dockerutils.SelectDockerHostReachableNetworkMode(ctx, dockerClient, inspect, dockerHost)
 		},
 	)
 	if err != nil {
@@ -327,6 +330,7 @@ func ResolveUpgraderRuntimeOptions(
 	currentContainer *container.InspectResponse,
 	discoverHostPath func(context.Context, string) (string, error),
 	isRunningInDocker func() bool,
+	selectReachableNetwork func(context.Context, *container.InspectResponse, string) string,
 ) ([]string, []mount.Mount, container.NetworkMode, error) {
 	containerEnv := vuln.BuildDockerHostEnv(dockerHost)
 
@@ -336,7 +340,13 @@ func ResolveUpgraderRuntimeOptions(
 	}
 
 	if scheme != "unix" {
-		return containerEnv, nil, container.NetworkMode(vuln.SelectAutoNetworkMode(currentContainer)), nil
+		// The upgrader must reach the tcp DOCKER_HOST, so prefer a network the
+		// daemon proxy is actually on over the plain auto heuristic (#3533).
+		networkMode := dockerutils.SelectAutoNetworkMode(currentContainer)
+		if selectReachableNetwork != nil {
+			networkMode = selectReachableNetwork(ctx, currentContainer, dockerHost)
+		}
+		return containerEnv, nil, container.NetworkMode(networkMode), nil
 	}
 
 	socketSource, err := vuln.ResolveUnixSocketSource(
@@ -359,12 +369,19 @@ func ResolveUpgraderRuntimeOptions(
 }
 
 // getCurrentContainerID detects if we're running in Docker and returns container ID
-func (s *SystemUpgradeService) getCurrentContainerIDInternal() (string, error) {
-	id, err := cgroup.CurrentContainerID()
+func (s *SystemUpgradeService) getCurrentContainerIDInternal(ctx context.Context) (string, error) {
+	// cgroup detection fails on cgroupv2 with a private namespace, and with
+	// network_mode: service:<sidecar> the hostname identifies the sidecar —
+	// InspectCurrentArcaneContainer adds the Arcane-label fallback (#3544).
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		return "", err
+	}
+	inspect, err := libarcane.InspectCurrentArcaneContainer(ctx, dockerClient)
 	if err != nil {
 		return "", errors.New("arcane is not running in a Docker container")
 	}
-	return id, nil
+	return inspect.ID, nil
 }
 
 // findArcaneContainer finds the container using the ID

@@ -12,7 +12,6 @@ import (
 	"emperror.dev/errors"
 	containertypes "github.com/moby/moby/api/types/container"
 	mounttypes "github.com/moby/moby/api/types/mount"
-	networktypes "github.com/moby/moby/api/types/network"
 	"github.com/stretchr/testify/require"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
@@ -429,43 +428,6 @@ func TestResolveTrivyUnixSocketSourceInternal(t *testing.T) {
 
 		require.NoError(t, err)
 		require.Equal(t, "/var/run/docker.sock", source)
-	})
-}
-
-func TestSelectTrivyAutoNetworkModeInternal(t *testing.T) {
-	t.Run("prefers explicit host network mode", func(t *testing.T) {
-		mode := SelectAutoNetworkMode(&containertypes.InspectResponse{
-			HostConfig: &containertypes.HostConfig{NetworkMode: "host"},
-		})
-
-		require.Equal(t, "host", mode)
-	})
-
-	t.Run("prefers attached custom network over bridge", func(t *testing.T) {
-		mode := SelectAutoNetworkMode(&containertypes.InspectResponse{
-			HostConfig: &containertypes.HostConfig{NetworkMode: "bridge"},
-			NetworkSettings: &containertypes.NetworkSettings{
-				Networks: map[string]*networktypes.EndpointSettings{
-					"bridge":          {},
-					"arcane-internal": {},
-				},
-			},
-		})
-
-		require.Equal(t, "arcane-internal", mode)
-	})
-
-	t.Run("falls back to bridge when no custom network is attached", func(t *testing.T) {
-		mode := SelectAutoNetworkMode(&containertypes.InspectResponse{
-			HostConfig: &containertypes.HostConfig{NetworkMode: "bridge"},
-			NetworkSettings: &containertypes.NetworkSettings{
-				Networks: map[string]*networktypes.EndpointSettings{
-					"bridge": {},
-				},
-			},
-		})
-
-		require.Equal(t, "bridge", mode)
 	})
 }
 

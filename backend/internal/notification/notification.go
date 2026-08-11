@@ -23,6 +23,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/notifications"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
 	"github.com/getarcaneapp/arcane/backend/v2/resources"
@@ -151,16 +152,27 @@ func (s *NotificationService) resolveNotificationTargetForAccessTokenInternal(ct
 }
 
 func (s *NotificationService) dispatchNotificationToManagerInternal(ctx context.Context, payload notificationdto.DispatchRequest) (notificationdto.DispatchResponse, error) {
-	if s.config == nil || strings.TrimSpace(s.config.GetManagerBaseURL()) == "" {
-		return notificationdto.DispatchResponse{}, errors.New("manager API URL is required for notification dispatch")
-	}
-	if strings.TrimSpace(s.config.AgentToken) == "" {
-		return notificationdto.DispatchResponse{}, errors.New("agent token is required for notification dispatch")
-	}
-
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return notificationdto.DispatchResponse{}, errors.WrapIf(err, "failed to marshal notification dispatch payload")
+	}
+
+	publishViaTunnel := func() error {
+		return edge.PublishEventToManager(&edge.TunnelEvent{
+			Type:         edge.TunnelEventTypeNotificationDispatch,
+			Title:        string(payload.Kind),
+			MetadataJSON: body,
+		})
+	}
+
+	// Tunnel-connected edge agents typically have neither MANAGER_API_URL nor
+	// AGENT_TOKEN configured for HTTP; ride the agent-to-manager event channel
+	// instead so their notifications are not silently lost (#3002).
+	if s.config == nil || strings.TrimSpace(s.config.GetManagerBaseURL()) == "" || strings.TrimSpace(s.config.AgentToken) == "" {
+		if err := publishViaTunnel(); err != nil {
+			return notificationdto.DispatchResponse{}, errors.WrapIf(err, "notification dispatch needs either MANAGER_API_URL + AGENT_TOKEN or a connected edge tunnel")
+		}
+		return notificationdto.DispatchResponse{Message: "notification dispatched via edge tunnel"}, nil
 	}
 
 	dispatchURL := strings.TrimRight(s.config.GetManagerBaseURL(), "/") + "/api/notifications/dispatch"
@@ -173,6 +185,11 @@ func (s *NotificationService) dispatchNotificationToManagerInternal(ctx context.
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
+		// HTTP unreachable does not mean the manager is: an agent configured for
+		// HTTP may still hold a healthy edge tunnel, so ride that before giving up.
+		if tunnelErr := publishViaTunnel(); tunnelErr == nil {
+			return notificationdto.DispatchResponse{Message: "notification dispatched via edge tunnel"}, nil
+		}
 		return notificationdto.DispatchResponse{}, errors.WrapIf(err, "failed to dispatch notification to manager")
 	}
 	defer func() { _ = resp.Body.Close() }()
@@ -187,7 +204,14 @@ func (s *NotificationService) dispatchNotificationToManagerInternal(ctx context.
 		return apiResponse.Data, nil
 	}
 
+	// A non-2xx also means the notification was not dispatched, and the HTTP
+	// path can fail independently of the tunnel (stale AGENT_TOKEN, wrong
+	// MANAGER_API_URL, intermediate proxy), so the tunnel fallback applies here
+	// too before surfacing the status error.
 	responseBody, _ := io.ReadAll(resp.Body)
+	if tunnelErr := publishViaTunnel(); tunnelErr == nil {
+		return notificationdto.DispatchResponse{Message: "notification dispatched via edge tunnel"}, nil
+	}
 	return notificationdto.DispatchResponse{}, errors.Errorf("manager notification dispatch failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(responseBody)))
 }
 
@@ -201,6 +225,27 @@ func (s *NotificationService) DispatchNotification(ctx context.Context, accessTo
 		return notificationdto.DispatchResponse{}, err
 	}
 
+	return s.dispatchForTargetInternal(ctx, target, payload)
+}
+
+// DispatchNotificationForEnvironment dispatches on behalf of an agent whose
+// identity was already established by its edge tunnel session, so no access
+// token is exchanged (#3002).
+func (s *NotificationService) DispatchNotificationForEnvironment(ctx context.Context, environmentID string, payload notificationdto.DispatchRequest) (notificationdto.DispatchResponse, error) {
+	if s.config != nil && s.config.AgentMode {
+		return notificationdto.DispatchResponse{}, errors.New("notification dispatch is manager-only")
+	}
+
+	target, err := s.resolveNotificationTargetInternal(ctx, environmentID)
+	if err != nil {
+		return notificationdto.DispatchResponse{}, err
+	}
+
+	return s.dispatchForTargetInternal(ctx, target, payload)
+}
+
+func (s *NotificationService) dispatchForTargetInternal(ctx context.Context, target NotificationTarget, payload notificationdto.DispatchRequest) (notificationdto.DispatchResponse, error) {
+	var err error
 	dispatchResponse := notificationdto.DispatchResponse{Message: "Notification dispatched successfully"}
 	switch payload.Kind {
 	case notificationdto.DispatchKindImageUpdate:

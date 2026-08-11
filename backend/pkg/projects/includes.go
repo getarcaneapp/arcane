@@ -3,13 +3,14 @@ package projects
 import (
 	"context"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
 	"emperror.dev/errors"
 
-	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/samber/mo"
+	"go.getarcane.app/acfs"
 	"go.yaml.in/yaml/v4"
 )
 
@@ -29,7 +30,7 @@ func expandEnvVarsInternal(s string, envMap EnvMap) string {
 //   the compose file points at. Callers must validate containment and symlinks before
 //   reading include content or returning inc.Content to users.
 // - WRITE/DELETE: Restricted to files within the project directory only for security.
-//   Always go through ValidateIncludePathForWrite or WriteIncludeFile.
+//   Always go through ValidateIncludePathForWrite.
 
 type IncludeFile struct {
 	Path         string `json:"path"`
@@ -55,10 +56,10 @@ func (l *MissingIncludeStubLoader) Accept(path string) bool {
 	return ok
 }
 
-func (l *MissingIncludeStubLoader) Load(_ context.Context, path string) (string, error) {
-	validatedPath, ok := l.resolveMissingIncludeInternal(path).Get()
+func (l *MissingIncludeStubLoader) Load(ctx context.Context, filePath string) (string, error) {
+	validatedPath, ok := l.resolveMissingIncludeInternal(filePath).Get()
 	if !ok {
-		return "", errors.Errorf("include file is not eligible for validation stub: %s", path)
+		return "", errors.Errorf("include file is not eligible for validation stub: %s", filePath)
 	}
 
 	if l.stubs == nil {
@@ -69,6 +70,7 @@ func (l *MissingIncludeStubLoader) Load(_ context.Context, path string) (string,
 	}
 
 	if l.tempDir == "" {
+		// System temp scratch dir: no acfs root exists for it.
 		tempDir, err := os.MkdirTemp("", "arcane-compose-include-*")
 		if err != nil {
 			return "", errors.WrapIf(err, "create validation include temp dir")
@@ -81,10 +83,14 @@ func (l *MissingIncludeStubLoader) Load(_ context.Context, path string) (string,
 		relPath = filepath.Base(validatedPath)
 	}
 	stubPath := filepath.Join(l.tempDir, relPath)
-	if err := os.MkdirAll(filepath.Dir(stubPath), 0o755); err != nil {
+	stubLogical, err := acfs.LogicalPath(l.tempDir, stubPath)
+	if err != nil {
+		return "", errors.WrapIf(err, "resolve validation include stub path")
+	}
+	if err := acfs.MkdirAll(ctx, l.tempDir, path.Dir(stubLogical), 0o755); err != nil {
 		return "", errors.WrapIf(err, "create validation include directory")
 	}
-	if err := os.WriteFile(stubPath, []byte("services: {}\n"), 0o600); err != nil {
+	if err := acfs.WriteFile(ctx, l.tempDir, stubLogical, []byte("services: {}\n"), 0o600); err != nil {
 		return "", errors.WrapIf(err, "write validation include stub")
 	}
 
@@ -102,6 +108,8 @@ func (l *MissingIncludeStubLoader) resolveMissingIncludeInternal(path string) mo
 		return mo.None[string]()
 	}
 
+	// os.Stat rather than acfs: the validated include target may live outside
+	// the project directory (#3556).
 	if _, err := os.Stat(validatedPath); err == nil {
 		return mo.None[string]()
 	} else if !errors.Is(err, os.ErrNotExist) {
@@ -120,6 +128,9 @@ func (l *MissingIncludeStubLoader) Cleanup() {
 
 // ParseIncludes reads a compose file and extracts all include directives.
 // envMap is used to expand variables (e.g., ${VAR}) in include paths.
+//
+// Include handling stays on os.*: include files are allowed to live outside
+// the project directory (#3556), which the root-confined acfs API cannot reach.
 func ParseIncludes(composeFilePath string, envMap EnvMap, includeContent bool) ([]IncludeFile, error) {
 	content, err := os.ReadFile(composeFilePath)
 	if err != nil {
@@ -261,6 +272,8 @@ func readIncludeContentInternal(fullPath, includePath string, includeContent boo
 	if !includeContent {
 		return "", nil
 	}
+	// os.ReadFile rather than acfs: fullPath may resolve outside the project
+	// directory (#3556).
 	fileContent, err := os.ReadFile(fullPath)
 	if err == nil {
 		return string(fileContent), nil
@@ -337,31 +350,4 @@ func ValidateIncludePathForWrite(projectDir, includePath string) (string, error)
 	}
 
 	return absFullPath, nil
-}
-
-// WriteIncludeFile writes content to an include file path
-func WriteIncludeFile(projectDir, includePath, content string) error {
-	// Get validated absolute path - only allows writes within project
-	validatedPath, err := ValidateIncludePathForWrite(projectDir, includePath)
-	if err != nil {
-		return err
-	}
-
-	dir := filepath.Dir(validatedPath)
-	if dir == "" || dir == "." {
-		return errors.Errorf("invalid include path: cannot create directory '%s'", dir)
-	}
-
-	// Only create directory if it doesn't exist
-	if _, err := os.Stat(dir); errors.Is(err, os.ErrNotExist) {
-		if err := os.MkdirAll(dir, pkgutils.DirPerm); err != nil {
-			return errors.WrapIf(err, "failed to create directory")
-		}
-	}
-
-	if err := os.WriteFile(validatedPath, []byte(content), pkgutils.FilePerm); err != nil {
-		return errors.WrapIf(err, "failed to write include file")
-	}
-
-	return nil
 }

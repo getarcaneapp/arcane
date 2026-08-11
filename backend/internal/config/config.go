@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 )
 
 type AppEnvironment string
@@ -63,34 +63,39 @@ type Config struct {
 	// Docker secrets. Leave empty to manage mappings purely via the UI/API.
 	OidcRoleMappings string `env:"OIDC_ROLE_MAPPINGS" default:"" options:"file"`
 
-	PUID                    string `env:"PUID" default:""`
-	PGID                    string `env:"PGID" default:""`
-	DockerHost              string `env:"DOCKER_HOST" default:"unix:///var/run/docker.sock"`
-	DockerConfig            string `env:"DOCKER_CONFIG" default:""`
-	ProjectsDirectory       string `env:"PROJECTS_DIRECTORY" default:"/app/data/projects"`
-	TemplatesDirectory      string `env:"TEMPLATES_DIRECTORY" default:"/app/data/templates"`
-	ProjectScanMaxDepth     int    `env:"PROJECT_SCAN_MAX_DEPTH" default:"3"`
-	ProjectFileTreeMaxDepth int    `env:"PROJECT_FILE_TREE_MAX_DEPTH" default:"20"`
-	ProjectScanSkipDirs     string `env:"PROJECT_SCAN_SKIP_DIRS" default:".git,node_modules,vendor,.venv,venv,__pycache__,.cache,dist,build,target,.next,.nuxt,.svelte-kit"`
-	LogJson                 bool   `env:"LOG_JSON" default:"false"`
-	LogLevel                string `env:"LOG_LEVEL" default:"info" options:"toLower"`
-	AgentMode               bool   `env:"AGENT_MODE" default:"false"`
-	AgentToken              string `env:"AGENT_TOKEN" default:"" options:"file"`
-	ManagerApiUrl           string `env:"MANAGER_API_URL" default:""`
-	UpdateCheckDisabled     bool   `env:"UPDATE_CHECK_DISABLED" default:"false"`
-	UIConfigurationDisabled bool   `env:"UI_CONFIGURATION_DISABLED" default:"false"`
-	AnalyticsDisabled       bool   `env:"ANALYTICS_DISABLED" default:"false"`
-	GPUMonitoringEnabled    bool   `env:"GPU_MONITORING_ENABLED" default:"false"`
-	GPUType                 string `env:"GPU_TYPE" default:"auto"`
-	EdgeAgent               bool   `env:"EDGE_AGENT" default:"false"`
-	EdgeTransport           string `env:"EDGE_TRANSPORT" default:"auto" options:"toLower"`
-	EdgeReconnectInterval   int    `env:"EDGE_RECONNECT_INTERVAL" default:"5"` // seconds
-	EdgeMTLSMode            string `env:"EDGE_MTLS_MODE" default:"disabled" options:"toLower"`
-	EdgeMTLSCAFile          string `env:"EDGE_MTLS_CA_FILE" default:""`
-	EdgeMTLSCertFile        string `env:"EDGE_MTLS_CERT_FILE" default:""`
-	EdgeMTLSKeyFile         string `env:"EDGE_MTLS_KEY_FILE" default:""`
-	EdgeMTLSServerName      string `env:"EDGE_MTLS_SERVER_NAME" default:""`
-	EdgeMTLSAssetsDir       string `env:"EDGE_MTLS_ASSETS_DIR" default:""`
+	PUID                          string `env:"PUID" default:""`
+	PGID                          string `env:"PGID" default:""`
+	DockerHost                    string `env:"DOCKER_HOST" default:"unix:///var/run/docker.sock"`
+	DockerConfig                  string `env:"DOCKER_CONFIG" default:""`
+	ProjectsDirectory             string `env:"PROJECTS_DIRECTORY" default:"/app/data/projects"`
+	TemplatesDirectory            string `env:"TEMPLATES_DIRECTORY" default:"/app/data/templates"`
+	ProjectScanMaxDepth           int    `env:"PROJECT_SCAN_MAX_DEPTH" default:"3"`
+	ProjectWorkspaceMaxDepth      int    `env:"PROJECT_WORKSPACE_MAX_DEPTH" default:"20"`
+	ProjectWorkspaceMaxEntries    int    `env:"PROJECT_WORKSPACE_MAX_ENTRIES" default:"2000"`
+	ProjectWorkspaceMaxFileSizeMB int    `env:"PROJECT_WORKSPACE_MAX_FILE_SIZE_MB" default:"10"`
+	ProjectScanSkipDirs           string `env:"PROJECT_SCAN_SKIP_DIRS" default:".git,node_modules,vendor,.venv,venv,__pycache__,.cache,dist,build,target,.next,.nuxt,.svelte-kit"`
+	VolumeWorkspaceMaxDepth       int    `env:"VOLUME_WORKSPACE_MAX_DEPTH" default:"50"`
+	VolumeWorkspaceMaxEntries     int    `env:"VOLUME_WORKSPACE_MAX_ENTRIES" default:"10000"`
+	VolumeWorkspaceMaxFileSizeMB  int    `env:"VOLUME_WORKSPACE_MAX_FILE_SIZE_MB" default:"10"`
+	LogJson                       bool   `env:"LOG_JSON" default:"false"`
+	LogLevel                      string `env:"LOG_LEVEL" default:"info" options:"toLower"`
+	AgentMode                     bool   `env:"AGENT_MODE" default:"false"`
+	AgentToken                    string `env:"AGENT_TOKEN" default:"" options:"file"`
+	ManagerApiUrl                 string `env:"MANAGER_API_URL" default:""`
+	UpdateCheckDisabled           bool   `env:"UPDATE_CHECK_DISABLED" default:"false"`
+	UIConfigurationDisabled       bool   `env:"UI_CONFIGURATION_DISABLED" default:"false"`
+	AnalyticsDisabled             bool   `env:"ANALYTICS_DISABLED" default:"false"`
+	GPUMonitoringEnabled          bool   `env:"GPU_MONITORING_ENABLED" default:"false"`
+	GPUType                       string `env:"GPU_TYPE" default:"auto"`
+	EdgeAgent                     bool   `env:"EDGE_AGENT" default:"false"`
+	EdgeTransport                 string `env:"EDGE_TRANSPORT" default:"auto" options:"toLower"`
+	EdgeReconnectInterval         int    `env:"EDGE_RECONNECT_INTERVAL" default:"5"` // seconds
+	EdgeMTLSMode                  string `env:"EDGE_MTLS_MODE" default:"disabled" options:"toLower"`
+	EdgeMTLSCAFile                string `env:"EDGE_MTLS_CA_FILE" default:""`
+	EdgeMTLSCertFile              string `env:"EDGE_MTLS_CERT_FILE" default:""`
+	EdgeMTLSKeyFile               string `env:"EDGE_MTLS_KEY_FILE" default:""`
+	EdgeMTLSServerName            string `env:"EDGE_MTLS_SERVER_NAME" default:""`
+	EdgeMTLSAssetsDir             string `env:"EDGE_MTLS_ASSETS_DIR" default:""`
 
 	TrustedProxies string `env:"TRUSTED_PROXIES" default:""`
 
@@ -118,28 +123,55 @@ func Load() *Config {
 	applyOptions(cfg)
 	applyAgentModeDefaults(cfg)
 	applyProxyDefaults(cfg)
+	applyWorkspaceDefaults(cfg)
 
 	// Set global file permissions
-	pkgutils.FilePerm = cfg.FilePerm
-	pkgutils.DirPerm = cfg.DirPerm
+	utils.FilePerm = cfg.FilePerm
+	utils.DirPerm = cfg.DirPerm
 
 	return cfg
 }
 
-type ProjectFilesConfig struct {
-	ProjectScanMaxDepth     int
-	ProjectFileTreeMaxDepth int
-	ProjectScanSkipDirs     string
+type ProjectWorkspaceConfig struct {
+	ProjectScanMaxDepth           int
+	ProjectWorkspaceMaxDepth      int
+	ProjectWorkspaceMaxEntries    int
+	ProjectWorkspaceMaxFileSizeMB int
+	ProjectScanSkipDirs           string
 }
 
-func LoadProjectFilesConfig() ProjectFilesConfig {
+func LoadProjectWorkspaceConfig() ProjectWorkspaceConfig {
 	cfg := &Config{}
 	loadFromEnv(cfg)
+	applyWorkspaceDefaults(cfg)
 
-	return ProjectFilesConfig{
-		ProjectScanMaxDepth:     cfg.ProjectScanMaxDepth,
-		ProjectFileTreeMaxDepth: cfg.ProjectFileTreeMaxDepth,
-		ProjectScanSkipDirs:     cfg.ProjectScanSkipDirs,
+	return ProjectWorkspaceConfig{
+		ProjectScanMaxDepth:           cfg.ProjectScanMaxDepth,
+		ProjectWorkspaceMaxDepth:      cfg.ProjectWorkspaceMaxDepth,
+		ProjectWorkspaceMaxEntries:    cfg.ProjectWorkspaceMaxEntries,
+		ProjectWorkspaceMaxFileSizeMB: cfg.ProjectWorkspaceMaxFileSizeMB,
+		ProjectScanSkipDirs:           cfg.ProjectScanSkipDirs,
+	}
+}
+
+func applyWorkspaceDefaults(cfg *Config) {
+	if cfg.ProjectWorkspaceMaxDepth <= 0 {
+		cfg.ProjectWorkspaceMaxDepth = 20
+	}
+	if cfg.ProjectWorkspaceMaxEntries <= 0 {
+		cfg.ProjectWorkspaceMaxEntries = 2000
+	}
+	if cfg.ProjectWorkspaceMaxFileSizeMB <= 0 {
+		cfg.ProjectWorkspaceMaxFileSizeMB = 10
+	}
+	if cfg.VolumeWorkspaceMaxDepth <= 0 {
+		cfg.VolumeWorkspaceMaxDepth = 50
+	}
+	if cfg.VolumeWorkspaceMaxEntries <= 0 {
+		cfg.VolumeWorkspaceMaxEntries = 10000
+	}
+	if cfg.VolumeWorkspaceMaxFileSizeMB <= 0 {
+		cfg.VolumeWorkspaceMaxFileSizeMB = 10
 	}
 }
 
@@ -187,7 +219,7 @@ func loadFromEnv(cfg *Config) {
 		defaultValue := fieldType.Tag.Get("default")
 
 		// Get the environment value directly first
-		envValue := pkgutils.TrimQuotes(os.Getenv(envTag))
+		envValue := utils.TrimQuotes(os.Getenv(envTag))
 		if envValue == "" {
 			envValue = defaultValue
 		}
@@ -291,6 +323,8 @@ func resolveFileBasedEnvVariable(field reflect.Value, fieldType reflect.StructFi
 		return
 	}
 
+	// os.* rather than acfs: *_FILE Docker secret paths are arbitrary absolute
+	// paths on the host, so no confinement root exists for them.
 	fileContent, err := os.ReadFile(filePath) //nolint:gosec // file path intentionally comes from *_FILE env vars for Docker secrets
 	if err != nil {
 		slog.Warn("Failed to read secret from file, falling back to direct env var",

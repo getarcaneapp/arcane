@@ -6,8 +6,8 @@
 	import * as Tabs from '#lib/components/ui/tabs';
 	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte';
 	import { LayersIcon, DockIcon, JobsIcon, TrashIcon, EditIcon, FileTextIcon } from '#lib/icons';
-	import EditorTabStrip from '../../../projects/components/EditorTabStrip.svelte';
-	import ProjectFileTreePanel from '../../../projects/components/ProjectFileTreePanel.svelte';
+	import EditorTabStrip from '#lib/components/editor-tab-strip.svelte';
+	import WorkspaceFileTreePanel from '#lib/components/workspace-file-tree-panel.svelte';
 	import ResizableSplit from '#lib/components/resizable-split.svelte';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages';
@@ -47,6 +47,10 @@
 			pending: false
 		}))
 	);
+	const sourceWorkspaceLeadingRows = [
+		{ key: 'compose', label: 'compose.yaml', iconClass: 'text-blue-500', locked: true },
+		{ key: 'env', label: '.env', iconClass: 'text-green-500', locked: true }
+	];
 
 	function openSourceTab(key: string) {
 		if (!openSourceTabs.includes(key)) {
@@ -276,8 +280,8 @@
 								persistKey={`arcane.swarm.split:${stackName}:source`}
 							>
 								{#snippet first()}
-									<ProjectFileTreePanel
-										composeFileName="compose.yaml"
+									<WorkspaceFileTreePanel
+										leadingRows={sourceWorkspaceLeadingRows}
 										entries={[]}
 										selectedFile={selectedSourceFile}
 										onSelect={openSourceTab}

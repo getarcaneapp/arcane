@@ -1017,11 +1017,14 @@ func TestGitOpsSyncService_CreateDirectorySyncProjectInternal_RollsBackProjectOn
 	}
 	require.NoError(t, db.Create(sync).Error)
 
-	stagePath := t.TempDir()
+	stagePath := filepath.Join(projectsDir, ".gitops-sync-stage-test")
+	require.NoError(t, os.MkdirAll(stagePath, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(stagePath, "docker-compose.yaml"), []byte("services: {}\n"), 0o644))
 
 	stage := &stagedDirectorySync{
 		stagePath:       stagePath,
+		stageLogical:    "/.gitops-sync-stage-test",
+		projectsDir:     projectsDir,
 		composeFileName: "docker-compose.yaml",
 		serviceCount:    1,
 	}
@@ -1061,7 +1064,7 @@ func TestProjectsRemoveStaleComposeFiles_RemovesStaleCustomComposeFiles(t *testi
 	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "sonarr.yaml"), []byte("services:\n  app:\n    image: nginx:alpine\n"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "values.yaml"), []byte("replicaCount: 2\nimage:\n  tag: latest\n"), 0o644))
 
-	err := projects.RemoveStaleComposeFiles(projectPath, "sonarr.yaml", []string{"sonarr.yaml"})
+	err := projects.RemoveStaleComposeFiles(t.Context(), projectPath, "sonarr.yaml", []string{"sonarr.yaml"})
 	require.NoError(t, err)
 
 	_, statErr := os.Stat(filepath.Join(projectPath, "radarr.yaml"))

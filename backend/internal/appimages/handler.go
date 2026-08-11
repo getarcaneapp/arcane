@@ -18,8 +18,10 @@ type AppImagesHandler struct {
 // --- Huma Input/Output Wrappers ---
 
 type GetLogoInput struct {
-	Full  bool   `query:"full" default:"false" doc:"Return full logo instead of icon"`
-	Color string `query:"color" doc:"Optional accent color override for preview (e.g., 'oklch(0.65 0.2 150)')"`
+	Full     bool   `query:"full" default:"false" doc:"Return full logo instead of icon"`
+	Color    string `query:"color" doc:"Optional accent color override for preview (e.g., 'oklch(0.65 0.2 150)')"`
+	Animated bool   `query:"animated" default:"false" doc:"Return trace-and-fill animated logo variant"`
+	Loop     bool   `query:"loop" default:"false" doc:"Loop the animated icon indefinitely (loader mode; animated icon only)"`
 }
 
 type GetPWAIconInput struct {
@@ -107,8 +109,11 @@ func (h *AppImagesHandler) GetLogo(ctx context.Context, input *GetLogoInput) (*G
 	if input.Full {
 		name = "logo-full"
 	}
+	if input.Animated {
+		name += "-animated"
+	}
 
-	return h.getImageWithColor(name, input.Color)
+	return h.getImageWithColor(name, input.Color, input.Loop && name == "logo-animated")
 }
 
 // GetLogoEmail returns the application logo image for emails (PNG).
@@ -132,7 +137,7 @@ func (h *AppImagesHandler) GetPWAIcon(ctx context.Context, input *GetPWAIconInpu
 }
 
 func (h *AppImagesHandler) getImage(name string) (*GetAppImageOutput, error) {
-	return h.getImageWithColor(name, "")
+	return h.getImageWithColor(name, "", false)
 }
 
 func (h *AppImagesHandler) getImageByFilenameInternal(filename string) (*GetAppImageOutput, error) {
@@ -144,8 +149,8 @@ func (h *AppImagesHandler) getImageByFilenameInternal(filename string) (*GetAppI
 	return h.getImage(name)
 }
 
-func (h *AppImagesHandler) getImageWithColor(name string, colorOverride string) (*GetAppImageOutput, error) {
-	imageData, mimeType, err := h.appImagesService.GetImageWithColor(name, colorOverride)
+func (h *AppImagesHandler) getImageWithColor(name string, colorOverride string, loop bool) (*GetAppImageOutput, error) {
+	imageData, mimeType, err := h.appImagesService.GetImageWithColor(name, colorOverride, loop)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to retrieve image").Error())
 	}
@@ -153,7 +158,7 @@ func (h *AppImagesHandler) getImageWithColor(name string, colorOverride string) 
 	// Always disable logo caching so theme/logo updates are reflected immediately.
 	// Keep cache for static app images that do not change at runtime.
 	cacheControl := "public, max-age=900, stale-while-revalidate=86400"
-	if name == "logo" || name == "logo-full" || colorOverride != "" {
+	if IsLogoVariant(name) || colorOverride != "" {
 		cacheControl = "no-cache, no-store, must-revalidate"
 	}
 

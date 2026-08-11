@@ -168,6 +168,7 @@ func (m *GPUMonitor) detectInternal(ctx context.Context) error {
 
 // HasAMDGPU reports whether a card with mem_info_vram_total exists under AMDGPUSysfsPath.
 func HasAMDGPU() bool {
+	// Reads fixed system paths under /sys; not under any acfs root.
 	entries, err := os.ReadDir(AMDGPUSysfsPath)
 	if err != nil {
 		return false
@@ -186,6 +187,7 @@ func HasAMDGPU() bool {
 
 // readSysfsValueInternal parses a numeric value from a sysfs file.
 func readSysfsValueInternal(path string) (uint64, error) {
+	// Reads fixed system paths under /sys; not under any acfs root.
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return 0, err
@@ -252,6 +254,7 @@ func getNvidiaStatsInternal(ctx context.Context) ([]systemtypes.GPUStats, error)
 }
 
 func getAMDStatsInternal(ctx context.Context) ([]systemtypes.GPUStats, error) {
+	// Reads fixed system paths under /sys; not under any acfs root.
 	entries, err := os.ReadDir(AMDGPUSysfsPath)
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to read DRM sysfs directory", "error", err)

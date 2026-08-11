@@ -14,7 +14,7 @@ import (
 func TestDetachFromHTTPContextInternal(t *testing.T) {
 	t.Run("survives parent cancellation", func(t *testing.T) {
 		parent, parentCancel := context.WithCancel(context.Background())
-		detached, detachedCancel := detachFromHTTPContextInternal(parent)
+		detached, detachedCancel := detachFromHTTPContextInternal(parent, defaultComposeTimeout)
 		defer detachedCancel()
 
 		// Cancel the parent (simulates HTTP request ending).
@@ -31,14 +31,14 @@ func TestDetachFromHTTPContextInternal(t *testing.T) {
 	t.Run("preserves context values", func(t *testing.T) {
 		type testKey struct{}
 		parent := context.WithValue(context.Background(), testKey{}, "hello")
-		detached, cancel := detachFromHTTPContextInternal(parent)
+		detached, cancel := detachFromHTTPContextInternal(parent, defaultComposeTimeout)
 		defer cancel()
 
 		require.Equal(t, "hello", detached.Value(testKey{}))
 	})
 
 	t.Run("has its own deadline", func(t *testing.T) {
-		detached, cancel := detachFromHTTPContextInternal(context.Background())
+		detached, cancel := detachFromHTTPContextInternal(context.Background(), defaultComposeTimeout)
 		defer cancel()
 
 		deadline, ok := detached.Deadline()
@@ -52,7 +52,7 @@ func TestDetachFromHTTPContextInternal(t *testing.T) {
 
 		time.Sleep(5 * time.Millisecond) // ensure parent deadline has passed
 
-		detached, detachedCancel := detachFromHTTPContextInternal(parent)
+		detached, detachedCancel := detachFromHTTPContextInternal(parent, defaultComposeTimeout)
 		defer detachedCancel()
 
 		require.NoError(t, detached.Err())
@@ -62,9 +62,18 @@ func TestDetachFromHTTPContextInternal(t *testing.T) {
 		require.InDelta(t, float64(defaultComposeTimeout), float64(time.Until(deadline)), float64(5*time.Second))
 	})
 
+	t.Run("deadline scales with requested timeout", func(t *testing.T) {
+		detached, cancel := detachFromHTTPContextInternal(context.Background(), 2*time.Hour)
+		defer cancel()
+
+		deadline, ok := detached.Deadline()
+		require.True(t, ok)
+		require.InDelta(t, float64(2*time.Hour), float64(time.Until(deadline)), float64(5*time.Second))
+	})
+
 	t.Run("app lifecycle context cancels detached work on shutdown", func(t *testing.T) {
 		appCtx, cancelApp := context.WithCancel(utils.WithAppLifecycleContext(context.Background()))
-		detached, detachedCancel := detachFromHTTPContextInternal(appCtx)
+		detached, detachedCancel := detachFromHTTPContextInternal(appCtx, defaultComposeTimeout)
 		defer detachedCancel()
 
 		cancelApp()
@@ -87,22 +96,22 @@ func TestComposeUpOptions_RemoveOrphans(t *testing.T) {
 	proj := &composetypes.Project{Name: "test"}
 
 	t.Run("removeOrphans true propagates to CreateOptions", func(t *testing.T) {
-		upOptions, _ := composeUpOptions(proj, nil, true, false)
+		upOptions, _ := composeUpOptions(proj, nil, true, false, 0)
 		require.True(t, upOptions.RemoveOrphans)
 	})
 
 	t.Run("removeOrphans false leaves CreateOptions disabled", func(t *testing.T) {
-		upOptions, _ := composeUpOptions(proj, nil, false, false)
+		upOptions, _ := composeUpOptions(proj, nil, false, false, 0)
 		require.False(t, upOptions.RemoveOrphans)
 	})
 
 	t.Run("removeOrphans is independent of forceRecreate", func(t *testing.T) {
 		// forceRecreate drives the Recreate policy, not RemoveOrphans.
-		upOptions, _ := composeUpOptions(proj, nil, true, true)
+		upOptions, _ := composeUpOptions(proj, nil, true, true, 0)
 		require.True(t, upOptions.RemoveOrphans)
 		require.Equal(t, api.RecreateForce, upOptions.Recreate)
 
-		upOptions, _ = composeUpOptions(proj, nil, false, true)
+		upOptions, _ = composeUpOptions(proj, nil, false, true, 0)
 		require.False(t, upOptions.RemoveOrphans)
 		require.Equal(t, api.RecreateForce, upOptions.Recreate)
 	})

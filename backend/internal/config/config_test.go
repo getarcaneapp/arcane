@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -16,14 +16,14 @@ func TestConfig_LoadPermissions(t *testing.T) {
 	// Save original env and global perms
 	origFilePerm := os.Getenv("FILE_PERM")
 	origDirPerm := os.Getenv("DIR_PERM")
-	origPkgFilePerm := pkgutils.FilePerm
-	origPkgDirPerm := pkgutils.DirPerm
+	origPkgFilePerm := utils.FilePerm
+	origPkgDirPerm := utils.DirPerm
 
 	defer func() {
 		restoreEnv("FILE_PERM", origFilePerm)
 		restoreEnv("DIR_PERM", origDirPerm)
-		pkgutils.FilePerm = origPkgFilePerm
-		pkgutils.DirPerm = origPkgDirPerm
+		utils.FilePerm = origPkgFilePerm
+		utils.DirPerm = origPkgDirPerm
 	}()
 
 	t.Run("Default permissions", func(t *testing.T) {
@@ -33,8 +33,8 @@ func TestConfig_LoadPermissions(t *testing.T) {
 		cfg := Load()
 		assert.Equal(t, os.FileMode(0o644), cfg.FilePerm)
 		assert.Equal(t, os.FileMode(0o755), cfg.DirPerm)
-		assert.Equal(t, os.FileMode(0o644), pkgutils.FilePerm)
-		assert.Equal(t, os.FileMode(0o755), pkgutils.DirPerm)
+		assert.Equal(t, os.FileMode(0o644), utils.FilePerm)
+		assert.Equal(t, os.FileMode(0o755), utils.DirPerm)
 	})
 
 	t.Run("Custom permissions", func(t *testing.T) {
@@ -44,8 +44,8 @@ func TestConfig_LoadPermissions(t *testing.T) {
 		cfg := Load()
 		assert.Equal(t, os.FileMode(0o664), cfg.FilePerm)
 		assert.Equal(t, os.FileMode(0o775), cfg.DirPerm)
-		assert.Equal(t, os.FileMode(0o664), pkgutils.FilePerm)
-		assert.Equal(t, os.FileMode(0o775), pkgutils.DirPerm)
+		assert.Equal(t, os.FileMode(0o664), utils.FilePerm)
+		assert.Equal(t, os.FileMode(0o775), utils.DirPerm)
 	})
 
 	t.Run("Restrictive permissions", func(t *testing.T) {
@@ -55,8 +55,57 @@ func TestConfig_LoadPermissions(t *testing.T) {
 		cfg := Load()
 		assert.Equal(t, os.FileMode(0o600), cfg.FilePerm)
 		assert.Equal(t, os.FileMode(0o700), cfg.DirPerm)
-		assert.Equal(t, os.FileMode(0o600), pkgutils.FilePerm)
-		assert.Equal(t, os.FileMode(0o700), pkgutils.DirPerm)
+		assert.Equal(t, os.FileMode(0o600), utils.FilePerm)
+		assert.Equal(t, os.FileMode(0o700), utils.DirPerm)
+	})
+}
+
+func TestConfig_LoadWorkspaceLimits(t *testing.T) {
+	t.Run("defaults", func(t *testing.T) {
+		cfg := Load()
+		require.Equal(t, 20, cfg.ProjectWorkspaceMaxDepth)
+		require.Equal(t, 2000, cfg.ProjectWorkspaceMaxEntries)
+		require.Equal(t, 10, cfg.ProjectWorkspaceMaxFileSizeMB)
+		require.Equal(t, 50, cfg.VolumeWorkspaceMaxDepth)
+		require.Equal(t, 10000, cfg.VolumeWorkspaceMaxEntries)
+		require.Equal(t, 10, cfg.VolumeWorkspaceMaxFileSizeMB)
+	})
+
+	t.Run("positive overrides", func(t *testing.T) {
+		t.Setenv("PROJECT_WORKSPACE_MAX_DEPTH", "25")
+		t.Setenv("PROJECT_WORKSPACE_MAX_ENTRIES", "2500")
+		t.Setenv("PROJECT_WORKSPACE_MAX_FILE_SIZE_MB", "12")
+		t.Setenv("VOLUME_WORKSPACE_MAX_DEPTH", "75")
+		t.Setenv("VOLUME_WORKSPACE_MAX_ENTRIES", "20000")
+		t.Setenv("VOLUME_WORKSPACE_MAX_FILE_SIZE_MB", "18")
+
+		cfg := Load()
+		require.Equal(t, 25, cfg.ProjectWorkspaceMaxDepth)
+		require.Equal(t, 2500, cfg.ProjectWorkspaceMaxEntries)
+		require.Equal(t, 12, cfg.ProjectWorkspaceMaxFileSizeMB)
+		require.Equal(t, 75, cfg.VolumeWorkspaceMaxDepth)
+		require.Equal(t, 20000, cfg.VolumeWorkspaceMaxEntries)
+		require.Equal(t, 18, cfg.VolumeWorkspaceMaxFileSizeMB)
+	})
+
+	for _, value := range []string{"0", "-1", "not-a-number"} {
+		t.Run("invalid values fall back "+value, func(t *testing.T) {
+			t.Setenv("PROJECT_WORKSPACE_MAX_FILE_SIZE_MB", value)
+			t.Setenv("VOLUME_WORKSPACE_MAX_FILE_SIZE_MB", value)
+			cfg := Load()
+			require.Equal(t, 10, cfg.ProjectWorkspaceMaxFileSizeMB)
+			require.Equal(t, 10, cfg.VolumeWorkspaceMaxFileSizeMB)
+		})
+	}
+
+	t.Run("old names are not aliases", func(t *testing.T) {
+		t.Setenv("PROJECT_FILE_TREE_MAX_DEPTH", "99")
+		t.Setenv("VOLUME_FILE_TREE_MAX_DEPTH", "99")
+		t.Setenv("VOLUME_FILE_TREE_MAX_ENTRIES", "99")
+		cfg := Load()
+		require.Equal(t, 20, cfg.ProjectWorkspaceMaxDepth)
+		require.Equal(t, 50, cfg.VolumeWorkspaceMaxDepth)
+		require.Equal(t, 10000, cfg.VolumeWorkspaceMaxEntries)
 	})
 }
 

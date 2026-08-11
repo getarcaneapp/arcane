@@ -14,8 +14,8 @@ import (
 // Reproduces issue #3309: a project directory containing a bind-mount data
 // folder Arcane cannot read must still list everything else. Before the fix a
 // single EACCES from fs.WalkDir aborted the walk, so the whole tree (and the
-// revision that gates file edits) came back empty.
-func TestReadProjectFileTree_SkipsUnreadableDirectory(t *testing.T) {
+// revision that gates workspace edits) came back empty.
+func TestReadProjectWorkspace_SkipsUnreadableDirectory(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("permission bits are ignored when running as root")
 	}
@@ -32,9 +32,9 @@ func TestReadProjectFileTree_SkipsUnreadableDirectory(t *testing.T) {
 	// Restore before t.TempDir's own cleanup runs, or it cannot remove the tree.
 	t.Cleanup(func() { _ = os.Chmod(workdir, 0o755) })
 
-	files, revision, _, err := ReadProjectFileTree(projectDir, 5, "", "compose.yaml", 0)
+	files, revision, _, err := ReadProjectWorkspace(projectDir, 5, "", "compose.yaml", 0, 0)
 	require.NoError(t, err)
-	require.NotEmpty(t, revision, "an empty revision blocks every project file edit")
+	require.NotEmpty(t, revision, "an empty revision blocks every project workspace edit")
 
 	relativePaths := make([]string, 0, len(files))
 	for _, file := range files {
@@ -51,9 +51,9 @@ func TestReadProjectFileTree_SkipsUnreadableDirectory(t *testing.T) {
 		"volumes/adguard-home/workdir",
 	}, relativePaths)
 
-	// The compare walk in ApplyProjectFileChanges skips identically, so the
+	// The compare walk in ApplyWorkspaceFileChanges skips identically, so the
 	// optimistic-concurrency check does not spuriously conflict.
-	_, again, _, err := ReadProjectFileTree(projectDir, 5, "", "compose.yaml", 0)
+	_, again, _, err := ReadProjectWorkspace(projectDir, 5, "", "compose.yaml", 0, 0)
 	require.NoError(t, err)
 	assert.Equal(t, revision, again)
 }

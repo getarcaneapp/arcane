@@ -98,6 +98,8 @@ WORKDIR /app
 
 # The container starts as "root", but arcane drops to the requetsed PUID and PGID after the runtime is initialized 
 USER 0:0
+
+ENV PATH="/app:$PATH"
 COPY --from=backend-builder --chown=65532:65532 /build/rootfs/app/ /app/
 COPY --from=backend-builder --chown=65532:65532 /build/rootfs/builds/ /builds/
 COPY --from=backend-builder --chown=65532:65532 /build/arcane .

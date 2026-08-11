@@ -36,7 +36,7 @@
 		data-collapsible={sidebar.state === 'collapsed' ? collapsible : ''}
 		data-variant={variant}
 		data-side={side}
-		data-hovered={sidebar.isHovered ? 'true' : 'false'}
+		data-hovered={sidebar.hoverExpansionEnabled && sidebar.isHovered ? 'true' : 'false'}
 		data-slot="sidebar"
 	>
 		<!-- This is what handles the sidebar gap on desktop -->

@@ -1,4 +1,5 @@
 import { projectService } from '#lib/services/project-service';
+import { projectWorkspaceService } from '#lib/services/project-workspace-service';
 import { variableService } from '#lib/services/variable-service';
 import { environmentStore } from '#lib/stores/environment.store.svelte';
 import { queryKeys } from '#lib/query/query-keys';
@@ -37,8 +38,8 @@ export const load: PageLoad = async ({ params, parent }) => {
 	// Kick off the file-tree walk without awaiting it: on large projects it can
 	// take a while and must not block navigation.
 	void queryClient.prefetchQuery({
-		queryKey: queryKeys.projects.files(envId, params.projectId),
-		queryFn: () => projectService.getProjectFiles(envId, params.projectId)
+		queryKey: queryKeys.projects.workspace(envId, params.projectId),
+		queryFn: () => projectWorkspaceService.getWorkspace(params.projectId, envId)
 	});
 
 	const globalVariables = await loadGlobalVariables(queryClient);

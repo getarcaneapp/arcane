@@ -1,6 +1,10 @@
 package middleware
 
 import (
+	"bytes"
+	"encoding/json/v2"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -8,6 +12,7 @@ import (
 	"github.com/labstack/echo/v5"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
+	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/stretchr/testify/require"
 )
 
@@ -110,6 +115,67 @@ func TestProxyPermissionDeniedAllowsPublicRoute(t *testing.T) {
 	require.False(t, m.proxyPermissionDenied(c, ps, proxyTestEnvID),
 		"expected an explicitly public route to be allowed for any authenticated caller")
 
+}
+
+func volumeWorkspaceMatcher() *authz.PermissionMatcher {
+	m := authz.NewPermissionMatcher()
+	m.Add(http.MethodPut, "/volumes/{volumeName}/workspace", authz.PermVolumesRead)
+	return m
+}
+
+func newProxyVolumeWorkspaceContext(t *testing.T, changes []volumetypes.WorkspaceFileChange, fileFirst ...bool) (*echo.Context, []byte) {
+	t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	if len(fileFirst) == 1 && fileFirst[0] {
+		filePart, err := writer.CreateFormFile("files", "example.txt")
+		require.NoError(t, err)
+		_, err = filePart.Write([]byte("content"))
+		require.NoError(t, err)
+	}
+	manifestPart, err := writer.CreateFormField("manifest")
+	require.NoError(t, err)
+	manifestJSON, err := json.Marshal(volumetypes.WorkspaceUpdateManifest{FileTreeRevision: "revision", FileChanges: changes})
+	require.NoError(t, err)
+	_, err = manifestPart.Write(manifestJSON)
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
+	rawBody := append([]byte(nil), body.Bytes()...)
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPut, "/api/environments/"+proxyTestEnvID+"/volumes/data/workspace", bytes.NewReader(rawBody))
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	t.Cleanup(func() { _ = req.Body.Close() })
+	return e.NewContext(req, httptest.NewRecorder()), rawBody
+}
+
+func TestProxyPermissionDeniedChecksVolumeWorkspaceManifestPermissions(t *testing.T) {
+	m := newProxyAuthzMiddleware(volumeWorkspaceMatcher())
+	changes := []volumetypes.WorkspaceFileChange{{Operation: volumetypes.FileOpRename}}
+
+	readOnly := authz.NewPermissionSet()
+	readOnly.AddEnv(proxyTestEnvID, authz.PermVolumesRead)
+	c, _ := newProxyVolumeWorkspaceContext(t, changes)
+	require.True(t, m.proxyPermissionDenied(c, readOnly, proxyTestEnvID))
+
+	uploadOnly := authz.NewPermissionSet()
+	uploadOnly.AddEnv(proxyTestEnvID, authz.PermVolumesRead, authz.PermVolumesUpload)
+	c, _ = newProxyVolumeWorkspaceContext(t, changes)
+	require.True(t, m.proxyPermissionDenied(c, uploadOnly, proxyTestEnvID))
+
+	permitted := authz.NewPermissionSet()
+	permitted.AddEnv(proxyTestEnvID, authz.PermVolumesRead, authz.PermVolumesUpload, authz.PermVolumesDelete)
+	c, rawBody := newProxyVolumeWorkspaceContext(t, changes)
+	require.False(t, m.proxyPermissionDenied(c, permitted, proxyTestEnvID))
+	replayed, err := io.ReadAll(c.Request().Body)
+	require.NoError(t, err)
+	require.Equal(t, rawBody, replayed)
+
+	c, rawBody = newProxyVolumeWorkspaceContext(t, changes, true)
+	require.False(t, m.proxyPermissionDenied(c, permitted, proxyTestEnvID))
+	replayed, err = io.ReadAll(c.Request().Body)
+	require.NoError(t, err)
+	require.Equal(t, rawBody, replayed)
 }
 
 // wsTerminalMatcher mirrors ws.AddProxiedPermissions for the container terminal

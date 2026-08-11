@@ -68,7 +68,13 @@ func (h *WebSocketHandler) registerDiagnosticsRoutesInternal(group *echo.Group, 
 	pprofGroup.POST("/symbol", echo.WrapHandler(http.HandlerFunc(pprof.Symbol)))
 	pprofGroup.GET("/symbol", echo.WrapHandler(http.HandlerFunc(pprof.Symbol)))
 	pprofGroup.GET("/trace", echo.WrapHandler(http.HandlerFunc(pprof.Trace)))
-	pprofGroup.GET("/:name", echo.WrapHandler(http.HandlerFunc(pprof.Index)))
+	// pprof.Index only serves a named profile when the request path starts with the
+	// literal "/debug/pprof/". This group is mounted under /api, so that never
+	// matches and every named profile would render the index page instead.
+	pprofGroup.GET("/:name", func(c *echo.Context) error {
+		pprof.Handler(c.Param("name")).ServeHTTP(c.Response(), c.Request())
+		return nil
+	})
 }
 
 // DiagnosticsStream pushes a fresh diagnostics snapshot on connect and then every

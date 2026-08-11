@@ -1,6 +1,7 @@
 package projects
 
 import (
+	"context"
 	"os"
 	"path"
 	"path/filepath"
@@ -8,9 +9,9 @@ import (
 	"strings"
 
 	"emperror.dev/errors"
-	"github.com/getarcaneapp/arcane/types/v2/project"
-
-	"go.getarcane.app/sys/atomic"
+	"go.getarcane.app/acfs"
+	"go.getarcane.app/acfs/atomic"
+	acfstypes "go.getarcane.app/acfs/types"
 )
 
 // ProjectUpdateBackupScope describes exactly what a project update can mutate,
@@ -57,7 +58,11 @@ type ProjectUpdateBackup struct {
 // backupDir. Unreadable files are skipped (recorded in Skipped) so an
 // unrelated foreign-owned file cannot block a save, matching the tolerant
 // semantics of the old whole-directory backup.
-func BackupProjectUpdateScope(projectDir, backupDir string, scope ProjectUpdateBackupScope) (*ProjectUpdateBackup, error) {
+//
+// The backup/restore engine stays on os.Root rather than acfs: restoring a
+// project .env means recreating its symlink (which may point outside the
+// project directory), and acfs deliberately refuses symlink mutation.
+func BackupProjectUpdateScope(ctx context.Context, projectDir, backupDir string, scope ProjectUpdateBackupScope) (*ProjectUpdateBackup, error) {
 	projRoot, err := os.OpenRoot(projectDir)
 	if err != nil {
 		return nil, errors.WrapIf(err, "open project directory")
@@ -83,7 +88,7 @@ func BackupProjectUpdateScope(projectDir, backupDir string, scope ProjectUpdateB
 	}
 
 	for _, rel := range normalizeScopePathsInternal(scope.Paths) {
-		if err := backupScopePathInternal(projRoot, backupRoot, projectDir, backupDir, rel, backup); err != nil {
+		if err := backupScopePathInternal(ctx, projRoot, backupRoot, projectDir, backupDir, rel, backup); err != nil {
 			return nil, err
 		}
 	}
@@ -127,7 +132,7 @@ func backupTopLevelFilesInternal(projRoot, backupRoot *os.Root, backup *ProjectU
 	return nil
 }
 
-func backupScopePathInternal(projRoot, backupRoot *os.Root, projectDir, backupDir, rel string, backup *ProjectUpdateBackup) error {
+func backupScopePathInternal(ctx context.Context, projRoot, backupRoot *os.Root, projectDir, backupDir, rel string, backup *ProjectUpdateBackup) error {
 	info, err := projRoot.Lstat(rel)
 	if errors.Is(err, os.ErrNotExist) {
 		// Record the shallowest nonexistent ancestor so MkdirAll debris from a
@@ -149,11 +154,11 @@ func backupScopePathInternal(projRoot, backupRoot *os.Root, projectDir, backupDi
 		if err := os.MkdirAll(destDir, 0o755); err != nil {
 			return errors.WrapIf(err, "create backup directory")
 		}
-		skipped, err := CopyDirectoryContentsTolerant(filepath.Join(projectDir, filepath.FromSlash(rel)), destDir)
+		copied, err := acfs.CopyDir(ctx, filepath.Join(projectDir, filepath.FromSlash(rel)), destDir, acfstypes.CopyOptions{TolerateUnreadable: true})
 		if err != nil {
 			return errors.WrapIff(err, "backup project directory %s", rel)
 		}
-		for _, sub := range skipped {
+		for _, sub := range copied.Skipped {
 			backup.Skipped = append(backup.Skipped, path.Join(rel, filepath.ToSlash(sub)))
 		}
 		backup.DirEntries = append(backup.DirEntries, rel)
@@ -272,7 +277,7 @@ func dedupeCoveredBackupEntriesInternal(backup *ProjectUpdateBackup) {
 // RestoreProjectUpdateBackup rolls the scoped parts of projectDir back to the
 // state captured in backup. Files are restored in place (preserving inodes so
 // container bind mounts stay valid) and out-of-scope files are never touched.
-func RestoreProjectUpdateBackup(projectDir string, backup *ProjectUpdateBackup) error {
+func RestoreProjectUpdateBackup(ctx context.Context, projectDir string, backup *ProjectUpdateBackup) error {
 	projRoot, err := os.OpenRoot(projectDir)
 	if err != nil {
 		return errors.WrapIf(err, "open project directory")
@@ -293,7 +298,7 @@ func RestoreProjectUpdateBackup(projectDir string, backup *ProjectUpdateBackup) 
 		preserve := skippedUnderInternal(backup.Skipped, rel)
 		src := filepath.Join(backup.BackupDir, filepath.FromSlash(rel))
 		dest := filepath.Join(projectDir, filepath.FromSlash(rel))
-		if err := MirrorDirectoryContentsPreserving(src, dest, preserve); err != nil {
+		if err := acfs.MirrorDir(ctx, src, dest, acfstypes.MirrorOptions{Preserve: preserve}); err != nil {
 			return errors.WrapIff(err, "restore project directory %s", rel)
 		}
 	}
@@ -482,85 +487,4 @@ func restoreTopLevelFilesInternal(backupRoot, projRoot *os.Root, backup *Project
 		}
 	}
 	return nil
-}
-
-// BuildUpdateBackupScope derives the backup scope for one project update from
-// the content and file changes it will apply.
-func BuildUpdateBackupScope(projectPath string, composeContent, envContent, overrideContent *string, fileChanges []project.ProjectFileChange) ProjectUpdateBackupScope {
-	scope := ProjectUpdateBackupScope{
-		TopLevelFiles: composeContent != nil || envContent != nil || overrideContent != nil,
-	}
-
-	for _, change := range fileChanges {
-		rel, err := NormalizeProjectRelativePath(change.RelativePath)
-		if err != nil {
-			continue
-		}
-
-		var dest string
-		switch change.Operation {
-		case project.FileOpRename:
-			newName, nameErr := ValidateProjectFileName(change.NewName)
-			if nameErr != nil {
-				continue
-			}
-			dest = path.Join(path.Dir(rel), newName)
-		case project.FileOpMove:
-			parent := strings.TrimSpace(change.NewParentPath)
-			if parent != "" {
-				normalizedParent, parentErr := NormalizeProjectRelativePath(parent)
-				if parentErr != nil {
-					continue
-				}
-				parent = normalizedParent
-			}
-			dest = path.Join(parent, path.Base(rel))
-		default:
-			scope.Paths = append(scope.Paths, rel)
-			continue
-		}
-
-		// Rename/move of an existing directory rolls back via an inverse
-		// rename — never a copy of a potentially huge tree.
-		if info, statErr := os.Lstat(filepath.Join(projectPath, filepath.FromSlash(rel))); statErr == nil && info.IsDir() {
-			scope.RenamedDirs = append(scope.RenamedDirs, [2]string{rel, dest})
-		} else {
-			scope.Paths = append(scope.Paths, rel, dest)
-		}
-	}
-
-	demoteInterferingRenamedDirsInternal(&scope)
-	return scope
-}
-
-// demoteInterferingRenamedDirsInternal downgrades a directory rename to a full
-// copy when another change in the same batch touches its source or destination
-// subtree (e.g. rename a -> b then delete b, or update_file b/x). The inverse
-// rename alone cannot roll those back: the destination may be mutated or gone
-// by the time the batch fails, so the original directory must be backed up.
-func demoteInterferingRenamedDirsInternal(scope *ProjectUpdateBackupScope) {
-	overlaps := func(a, b string) bool {
-		return a == b || strings.HasPrefix(a, b+"/") || strings.HasPrefix(b, a+"/")
-	}
-	touchesPair := func(p string, pair [2]string) bool {
-		return overlaps(p, pair[0]) || overlaps(p, pair[1])
-	}
-
-	for i := 0; i < len(scope.RenamedDirs); i++ {
-		pair := scope.RenamedDirs[i]
-		conflict := slices.ContainsFunc(scope.Paths, func(p string) bool { return touchesPair(p, pair) })
-		if !conflict {
-			for j, other := range scope.RenamedDirs {
-				if j != i && (touchesPair(other[0], pair) || touchesPair(other[1], pair)) {
-					conflict = true
-					break
-				}
-			}
-		}
-		if conflict {
-			scope.Paths = append(scope.Paths, pair[0], pair[1])
-			scope.RenamedDirs = slices.Delete(scope.RenamedDirs, i, i+1)
-			i--
-		}
-	}
 }

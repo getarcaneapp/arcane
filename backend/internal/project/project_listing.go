@@ -66,6 +66,8 @@ func (s *ProjectService) countProjectFolders(ctx context.Context) (int, error) {
 		return 0, errors.WrapIf(err, "could not determine projects directory")
 	}
 
+	// os.* rather than acfs: this probes the projects directory itself, which is
+	// the confinement root and may not exist yet.
 	info, statErr := os.Stat(projectsDir)
 	if os.IsNotExist(statErr) {
 		// Directory missing, treat as zero

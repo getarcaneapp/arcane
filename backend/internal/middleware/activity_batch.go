@@ -5,7 +5,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 )
 
 // NewActivityBatchID lifts the client-supplied activity batch ID header into the
@@ -14,8 +14,8 @@ import (
 // ignored by utils.WithActivityBatchID.
 func NewActivityBatchID() func(ctx huma.Context, next func(huma.Context)) {
 	return func(ctx huma.Context, next func(huma.Context)) {
-		if batchID := strings.TrimSpace(ctx.Header(pkgutils.HeaderActivityBatchID)); batchID != "" {
-			ctx = huma.WithContext(ctx, pkgutils.WithActivityBatchID(ctx.Context(), batchID))
+		if batchID := strings.TrimSpace(ctx.Header(utils.HeaderActivityBatchID)); batchID != "" {
+			ctx = huma.WithContext(ctx, utils.WithActivityBatchID(ctx.Context(), batchID))
 		}
 		next(ctx)
 	}

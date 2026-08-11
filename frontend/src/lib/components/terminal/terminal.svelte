@@ -146,9 +146,13 @@
 			}
 		};
 
-		ws.onclose = () => {
+		ws.onclose = (event) => {
 			if (!isReconnecting && terminal) {
-				terminal.writeln(`\r\n\x1b[33m${m.terminal_connection_closed()}\x1b[0m`);
+				// Surface the close code so reports of unexpected disconnects
+				// carry the reason (server 1000/1006, proxy 1001, ...) — see #3536.
+				console.warn('Terminal websocket closed', { code: event.code, reason: event.reason, wasClean: event.wasClean });
+				const detail = event.reason ? `${event.code}: ${event.reason}` : `${event.code}`;
+				terminal.writeln(`\r\n\x1b[33m${m.terminal_connection_closed()} (${detail})\x1b[0m`);
 				onDisconnected?.();
 			}
 		};

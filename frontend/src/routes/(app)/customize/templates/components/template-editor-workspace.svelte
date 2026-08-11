@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import FormInput from '#lib/components/form/form-input.svelte';
-	import CodePanel from '../../../projects/components/CodePanel.svelte';
+	import CodePanel from '#lib/components/code-panel.svelte';
 	import EditableName from '../../../projects/components/EditableName.svelte';
 	import { ComposeEditorSplit } from '#lib/components/compose';
 	import { goto } from '$app/navigation';

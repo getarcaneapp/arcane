@@ -169,25 +169,25 @@ func TestParseKeyValueEnv_AllowsEqualsInValue(t *testing.T) {
 
 func TestValidateScriptPath_HappyPath(t *testing.T) {
 	dir := writeLifecycleProjectDirWithScript(t, "scripts/pre-deploy.sh", "#!/bin/sh\necho hi\n")
-	err := validateScriptPathInternal(dir, "scripts/pre-deploy.sh")
+	err := validateScriptPathInternal(t.Context(), dir, "scripts/pre-deploy.sh")
 	require.NoError(t, err)
 }
 
 func TestValidateScriptPath_RejectsAbsolute(t *testing.T) {
 	dir := t.TempDir()
-	err := validateScriptPathInternal(dir, "/etc/passwd")
+	err := validateScriptPathInternal(t.Context(), dir, "/etc/passwd")
 	require.Error(t, err)
 }
 
 func TestValidateScriptPath_RejectsTraversal(t *testing.T) {
 	dir := t.TempDir()
-	err := validateScriptPathInternal(dir, "../escape.sh")
+	err := validateScriptPathInternal(t.Context(), dir, "../escape.sh")
 	require.Error(t, err)
 }
 
 func TestValidateScriptPath_RejectsMissingFile(t *testing.T) {
 	dir := t.TempDir()
-	err := validateScriptPathInternal(dir, "missing.sh")
+	err := validateScriptPathInternal(t.Context(), dir, "missing.sh")
 	require.Error(t, err)
 }
 
@@ -223,7 +223,7 @@ func TestDescribeScriptStatError_PreservesGenericStatFailure(t *testing.T) {
 func TestValidateScriptPath_RejectsDirectory(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "scripts"), 0o755))
-	err := validateScriptPathInternal(dir, "scripts")
+	err := validateScriptPathInternal(t.Context(), dir, "scripts")
 	require.Error(t, err)
 }
 
@@ -238,7 +238,7 @@ func TestValidateScriptPath_RejectsSymlink(t *testing.T) {
 	if err := os.Symlink(target, link); err != nil {
 		t.Skipf("cannot create symlink in test env: %v", err)
 	}
-	err := validateScriptPathInternal(dir, "link.sh")
+	err := validateScriptPathInternal(t.Context(), dir, "link.sh")
 	require.Error(t, err)
 }
 

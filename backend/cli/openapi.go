@@ -5,6 +5,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/api"
 	"github.com/spf13/cobra"
+	"go.getarcane.app/acfs/atomic"
 )
 
 var openapiCmd = &cobra.Command{
@@ -40,7 +41,7 @@ var openapiCmd = &cobra.Command{
 
 		// Write to file or stdout
 		if outputFile != "" {
-			if err := os.WriteFile(outputFile, output, 0o600); err != nil {
+			if err := atomic.WriteFile(outputFile, output, 0o600); err != nil {
 				cmd.PrintErrf("Error writing file: %v\n", err)
 				os.Exit(1)
 			}

@@ -19,7 +19,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
 	eventtypes "github.com/getarcaneapp/arcane/types/v2/event"
 	"github.com/samber/mo"
@@ -207,7 +207,7 @@ func (s *EventService) forwardEventToManagerHTTP(ctx context.Context, eventModel
 		return errors.WrapIf(err, "failed to create manager event request")
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set(pkgutils.HeaderAgentToken, s.cfg.AgentToken)
+	req.Header.Set(utils.HeaderAgentToken, s.cfg.AgentToken)
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
@@ -671,6 +671,8 @@ var eventDefinitions = map[models.EventType]eventDefinition{
 	models.EventTypeVolumeFileCreate:         {"Volume file created: %s", "A file or directory was created in volume '%s'", models.EventSeveritySuccess},
 	models.EventTypeVolumeFileDelete:         {"Volume file deleted: %s", "A file or directory was deleted in volume '%s'", models.EventSeverityWarning},
 	models.EventTypeVolumeFileUpload:         {"Volume file uploaded: %s", "A file was uploaded to volume '%s'", models.EventSeveritySuccess},
+	models.EventTypeVolumeFileUpdate:         {"Volume workspace updated: %s", "Files in volume '%s' were updated", models.EventSeverityInfo},
+	models.EventTypeVolumeWorkspaceUpdate:    {"Volume workspace updated: %s", "Workspace files in volume '%s' were updated", models.EventSeverityInfo},
 	models.EventTypeVolumeBackupCreate:       {"Volume backup created: %s", "A backup was created for volume '%s'", models.EventSeveritySuccess},
 	models.EventTypeVolumeBackupDelete:       {"Volume backup deleted: %s", "A backup was deleted for volume '%s'", models.EventSeverityWarning},
 	models.EventTypeVolumeBackupRestore:      {"Volume backup restored: %s", "A backup was restored for volume '%s'", models.EventSeverityWarning},

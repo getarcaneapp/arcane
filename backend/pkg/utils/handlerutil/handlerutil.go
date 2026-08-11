@@ -2,6 +2,9 @@ package handlerutil
 
 import (
 	"context"
+	"encoding/json/v2"
+	"fmt"
+	"io"
 	"mime/multipart"
 	"strings"
 
@@ -12,6 +15,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
+	workspacepkg "github.com/getarcaneapp/arcane/backend/v2/pkg/workspace"
 	"github.com/getarcaneapp/arcane/types/v2/auth"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 )
@@ -88,6 +92,59 @@ func OpenUploadedFile(form multipart.Form) (multipart.File, *multipart.FileHeade
 	}
 
 	return file, fileHeader, nil
+}
+
+// ParseMultipartJSONPart decodes one required JSON-valued multipart field.
+func ParseMultipartJSONPart[T any](form multipart.Form, partName string) (T, error) {
+	var result T
+	values := form.Value[partName]
+	if len(values) != 1 {
+		return result, huma.Error400BadRequest("exactly one " + partName + " part is required")
+	}
+	if err := json.Unmarshal([]byte(values[0]), &result); err != nil {
+		return result, huma.Error400BadRequest("invalid " + partName + " JSON")
+	}
+	return result, nil
+}
+
+// ReadWorkspaceUploads reads and validates text files from a workspace multipart request.
+func ReadWorkspaceUploads(form multipart.Form, maxFileSizeBytes int64) (map[int][]byte, error) {
+	headers := form.File["files"]
+	uploads := make(map[int][]byte, len(headers))
+	limitMessage := fmt.Sprintf("uploaded file exceeds configured %d MiB workspace limit", maxFileSizeBytes/(1024*1024))
+	for index, header := range headers {
+		if header.Size > maxFileSizeBytes {
+			return nil, huma.Error413RequestEntityTooLarge(limitMessage)
+		}
+		file, err := header.Open()
+		if err != nil {
+			return nil, huma.Error400BadRequest("failed to open uploaded file")
+		}
+		content, readErr := io.ReadAll(io.LimitReader(file, maxFileSizeBytes+1))
+		closeErr := file.Close()
+		if readErr != nil {
+			return nil, huma.Error400BadRequest("failed to read uploaded file")
+		}
+		if closeErr != nil {
+			return nil, huma.Error400BadRequest("failed to close uploaded file")
+		}
+		if int64(len(content)) > maxFileSizeBytes {
+			return nil, huma.Error413RequestEntityTooLarge(limitMessage)
+		}
+		if err := workspacepkg.ValidateTextContent(content, maxFileSizeBytes); err != nil {
+			return nil, huma.Error400BadRequest(err.Error())
+		}
+		uploads[index] = content
+	}
+	return uploads, nil
+}
+
+// WorkspaceMultipartRequestBody describes the shared workspace multipart schema.
+func WorkspaceMultipartRequestBody(manifestDescription string) *huma.RequestBody {
+	return &huma.RequestBody{Content: map[string]*huma.MediaType{"multipart/form-data": {Schema: &huma.Schema{Type: "object", Properties: map[string]*huma.Schema{
+		"manifest": {Type: "string", Description: manifestDescription},
+		"files":    {Type: "array", Items: &huma.Schema{Type: "string", Format: "binary"}},
+	}, Required: []string{"manifest"}}}}}
 }
 
 func RegisterSecured[I, O any](

@@ -116,7 +116,9 @@ export const queryKeys = {
 			['project', 'check-updates', environmentId, projectId] as const,
 		statusCounts: (environmentId: string) => ['projects', 'status-counts', environmentId] as const,
 		detail: (environmentId: string, projectId: string) => ['project', environmentId, projectId] as const,
-		files: (environmentId: string, projectId: string) => ['project', environmentId, projectId, 'files'] as const
+		workspace: (environmentId: string, projectId: string) => ['project', environmentId, projectId, 'workspace'] as const,
+		workspaceFile: (environmentId: string, projectId: string, relativePath: string) =>
+			['project', environmentId, projectId, 'workspace-file', relativePath] as const
 	},
 	networks: {
 		all: ['networks'] as const,
@@ -140,9 +142,9 @@ export const queryKeys = {
 		table: (environmentId: string, options: SearchPaginationSortRequest) =>
 			['volumes', environmentId, stableSerialize(options)] as const,
 		detail: (environmentId: string, volumeName: string) => ['volume', environmentId, volumeName] as const,
-		list: (volumeName: string, path: string) => ['volume-browser', volumeName, 'list', path] as const,
-		listPrefix: (volumeName: string) => ['volume-browser', volumeName, 'list'] as const,
-		content: (volumeName: string, path: string) => ['volume-browser', volumeName, 'content', path] as const,
+		workspace: (environmentId: string, volumeName: string) => ['volume', environmentId, volumeName, 'workspace'] as const,
+		workspaceFile: (environmentId: string, volumeName: string, relativePath: string) =>
+			['volume', environmentId, volumeName, 'workspace-file', relativePath] as const,
 		backups: (volumeName: string) => ['volume-backups', volumeName] as const,
 		backupHasPath: (backupId: string, path: string) => ['volume-backups', backupId, 'has-path', path] as const
 	},

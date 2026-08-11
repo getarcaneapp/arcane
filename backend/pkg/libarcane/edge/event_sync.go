@@ -9,8 +9,16 @@ import (
 	"github.com/google/uuid"
 )
 
-// ErrNoActiveAgentTunnel is returned when no active agent tunnel exists for outbound event sync.
-const ErrNoActiveAgentTunnel = errors.Sentinel("no active edge agent tunnel")
+const (
+	// ErrNoActiveAgentTunnel is returned when no active agent tunnel exists for outbound event sync.
+	ErrNoActiveAgentTunnel = errors.Sentinel("no active edge agent tunnel")
+
+	// TunnelEventTypeNotificationDispatch marks a tunnel event that carries a
+	// notification dispatch request in MetadataJSON instead of an event-log entry.
+	// Tunnel-connected agents have no manager HTTP config, so notification
+	// dispatch rides the existing agent-to-manager event channel (#3002).
+	TunnelEventTypeNotificationDispatch = "notification.dispatch"
+)
 
 var agentTunnelState struct {
 	mu   sync.RWMutex

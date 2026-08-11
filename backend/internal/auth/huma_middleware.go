@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"strings"
 
-	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
@@ -84,7 +84,7 @@ func tryBearerAuthInternal(ctx huma.Context, authService *AuthService) (*models.
 // through. Returns the resolved user plus the API key record so the caller
 // can resolve permissions according to the key's kind.
 func tryApiKeyAuthInternal(ctx huma.Context, apiKeyService *apikey.ApiKeyService) (*models.User, *models.ApiKey, bool) {
-	apiKey := ctx.Header(pkgutils.HeaderApiKey)
+	apiKey := ctx.Header(utils.HeaderApiKey)
 	if apiKey == "" {
 		return nil, nil, false
 	}
@@ -120,18 +120,18 @@ func tryAgentAuthInternal(ctx huma.Context, cfg *config.Config) (*models.User, b
 	path := ctx.URL().Path
 
 	// Check for agent bootstrap pairing
-	if strings.HasPrefix(path, pkgutils.AgentPairingPrefix) &&
-		AgentTokenMatches(ctx.Header(pkgutils.HeaderAgentBootstrap), cfg.AgentToken) {
+	if strings.HasPrefix(path, utils.AgentPairingPrefix) &&
+		AgentTokenMatches(ctx.Header(utils.HeaderAgentBootstrap), cfg.AgentToken) {
 		return createAgentSudoUserInternal(), true
 	}
 
 	// Check for agent token
-	if AgentTokenMatches(ctx.Header(pkgutils.HeaderAgentToken), cfg.AgentToken) {
+	if AgentTokenMatches(ctx.Header(utils.HeaderAgentToken), cfg.AgentToken) {
 		return createAgentSudoUserInternal(), true
 	}
 
 	// Check for API key as agent token
-	if AgentTokenMatches(ctx.Header(pkgutils.HeaderApiKey), cfg.AgentToken) {
+	if AgentTokenMatches(ctx.Header(utils.HeaderApiKey), cfg.AgentToken) {
 		return createAgentSudoUserInternal(), true
 	}
 
@@ -161,7 +161,7 @@ func applyProxiedIconCatalogInternal(ctx huma.Context, user *models.User) {
 	if user == nil {
 		return
 	}
-	catalog := strings.TrimSpace(ctx.Header(pkgutils.HeaderIconCatalog))
+	catalog := strings.TrimSpace(ctx.Header(utils.HeaderIconCatalog))
 	if catalog == "" {
 		return
 	}
@@ -198,12 +198,12 @@ func NewHumaMiddleware(api huma.API, authService *AuthService, apiKeyService *ap
 			return
 		}
 
-		if reqs.apiKeyAuth && ctx.Header(pkgutils.HeaderApiKey) != "" {
+		if reqs.apiKeyAuth && ctx.Header(utils.HeaderApiKey) != "" {
 			handleApiKeyAuthInternal(api, ctx, authService, apiKeyService, permResolver, envTokenResolver, reqs.bearerAuth, next)
 			return
 		}
 
-		if user, env, ok := tryEnvironmentAccessTokenAuthInternal(ctx, envTokenResolver, ctx.Header(pkgutils.HeaderAgentToken)); ok {
+		if user, env, ok := tryEnvironmentAccessTokenAuthInternal(ctx, envTokenResolver, ctx.Header(utils.HeaderAgentToken)); ok {
 			applyProxiedIconCatalogInternal(ctx, user)
 			newCtx := setUserInContextInternal(ctx.Context(), user, authz.EnvironmentPermissionSet(env.ID))
 			next(huma.WithContext(ctx, newCtx))
@@ -271,7 +271,7 @@ func handleApiKeyAuthInternal(api huma.API, ctx huma.Context, authService *AuthS
 		next(huma.WithContext(ctx, newCtx))
 		return
 	}
-	if user, env, ok := tryEnvironmentAccessTokenAuthInternal(ctx, envTokenResolver, ctx.Header(pkgutils.HeaderApiKey)); ok {
+	if user, env, ok := tryEnvironmentAccessTokenAuthInternal(ctx, envTokenResolver, ctx.Header(utils.HeaderApiKey)); ok {
 		if allowBearerFallback && extractBearerTokenInternal(ctx) != "" {
 			nextCtx, handled := handleBearerAuthInternal(api, ctx, authService, permResolver)
 			if handled {

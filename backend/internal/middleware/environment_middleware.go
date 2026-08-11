@@ -4,9 +4,13 @@ import (
 	"github.com/samber/mo"
 
 	"context"
+	"encoding/json/v2"
 	"io"
 	"log/slog"
+	"mime"
+	"mime/multipart"
 	"net/http"
+	"os"
 	"path"
 	"strings"
 	"time"
@@ -17,8 +21,9 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	wsutil "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
-	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	httputils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/labstack/echo/v5"
 )
 
@@ -29,6 +34,8 @@ const (
 	// proxyTimeout is intentionally generous because some proxied operations
 	// (e.g., image pulls with progress streaming) can take multiple minutes.
 	proxyTimeout = 30 * time.Minute
+
+	maxProxiedWorkspaceManifestBytes = 1024 * 1024
 )
 
 // managementEndpointSet contains paths handled locally and never proxied to remote environments.
@@ -192,11 +199,11 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 // SECURITY: the header is always cleared first, so a browser-supplied value
 // never rides through; only the server-resolved preference is forwarded.
 func (m *EnvironmentMiddleware) setIconCatalogHeaderInternal(c *echo.Context, user *models.User) {
-	c.Request().Header.Del(pkgutils.HeaderIconCatalog)
+	c.Request().Header.Del(utils.HeaderIconCatalog)
 	if user == nil || user.Preferences.IconCatalog == nil || *user.Preferences.IconCatalog == "" {
 		return
 	}
-	c.Request().Header.Set(pkgutils.HeaderIconCatalog, *user.Preferences.IconCatalog)
+	c.Request().Header.Set(utils.HeaderIconCatalog, *user.Preferences.IconCatalog)
 }
 
 // proxyPermissionDenied reports whether the caller lacks permission to perform
@@ -239,7 +246,106 @@ func (m *EnvironmentMiddleware) proxyPermissionDenied(c *echo.Context, ps *authz
 			"method", method, "path", suffix, "permission", perm, "environment_id", envID)
 		return true
 	}
+	if isVolumeWorkspaceUpdateRequestInternal(method, suffix) {
+		required, err := proxiedVolumeWorkspacePermissionsInternal(c.Request())
+		if err != nil {
+			slog.DebugContext(c.Request().Context(), "Denying proxied volume workspace request with invalid manifest",
+				"path", suffix, "environment_id", envID, "error", err)
+			return true
+		}
+		for _, operationPermission := range required {
+			if !ps.Allows(operationPermission, envID) {
+				slog.DebugContext(c.Request().Context(), "Denying proxied volume workspace operation",
+					"path", suffix, "permission", operationPermission, "environment_id", envID)
+				return true
+			}
+		}
+	}
 	return false
+}
+
+func isVolumeWorkspaceUpdateRequestInternal(method, suffix string) bool {
+	if method != http.MethodPut {
+		return false
+	}
+	segments := strings.Split(strings.Trim(suffix, "/"), "/")
+	return len(segments) == 3 && segments[0] == "volumes" && segments[1] != "" && segments[2] == "workspace"
+}
+
+func proxiedVolumeWorkspacePermissionsInternal(request *http.Request) ([]string, error) {
+	if request == nil || request.Body == nil {
+		return nil, errors.New("missing multipart request body")
+	}
+	mediaType, params, err := mime.ParseMediaType(request.Header.Get("Content-Type"))
+	if err != nil || mediaType != "multipart/form-data" || params["boundary"] == "" {
+		return nil, errors.New("invalid multipart content type")
+	}
+
+	originalBody := request.Body
+	// System temp scratch for the multipart replay buffer: no acfs root exists for it.
+	captured, err := os.CreateTemp("", "arcane-volume-workspace-manifest-*")
+	if err != nil {
+		return nil, errors.WrapIf(err, "create workspace manifest buffer")
+	}
+	defer func() {
+		_, _ = captured.Seek(0, io.SeekStart)
+		request.Body = &proxiedReplayBodyInternal{
+			Reader:   io.MultiReader(captured, originalBody),
+			captured: captured,
+			original: originalBody,
+			path:     captured.Name(),
+		}
+	}()
+
+	reader := multipart.NewReader(io.TeeReader(originalBody, captured), params["boundary"])
+	for {
+		part, nextErr := reader.NextPart()
+		if nextErr != nil {
+			return nil, errors.WrapIf(nextErr, "find workspace manifest part")
+		}
+		if part.FormName() != "manifest" || part.FileName() != "" {
+			if closeErr := part.Close(); closeErr != nil {
+				return nil, errors.WrapIf(closeErr, "skip multipart field before workspace manifest")
+			}
+			continue
+		}
+		manifestJSON, readErr := io.ReadAll(io.LimitReader(part, maxProxiedWorkspaceManifestBytes+1))
+		closeErr := part.Close()
+		if readErr != nil {
+			return nil, errors.WrapIf(readErr, "read workspace manifest")
+		}
+		if closeErr != nil {
+			return nil, errors.WrapIf(closeErr, "close workspace manifest part")
+		}
+		if len(manifestJSON) > maxProxiedWorkspaceManifestBytes {
+			return nil, errors.New("workspace manifest is too large")
+		}
+		var manifest volumetypes.WorkspaceUpdateManifest
+		if err := json.Unmarshal(manifestJSON, &manifest); err != nil {
+			return nil, errors.WrapIf(err, "decode workspace manifest")
+		}
+		required, valid := authz.VolumeWorkspaceRequiredPermissions(manifest.FileChanges)
+		if !valid {
+			return nil, errors.New("workspace manifest contains an unknown operation")
+		}
+		return required, nil
+	}
+}
+
+type proxiedReplayBodyInternal struct {
+	io.Reader
+
+	captured *os.File
+	original io.ReadCloser
+	path     string
+}
+
+func (b *proxiedReplayBodyInternal) Close() error {
+	capturedErr := b.captured.Close()
+	originalErr := b.original.Close()
+	// System temp scratch: no acfs root exists for it.
+	removeErr := os.Remove(b.path)
+	return errors.Combine(capturedErr, originalErr, removeErr)
 }
 
 func (m *EnvironmentMiddleware) proxyActiveEdgeTunnelInternal(c *echo.Context, envID string, accessToken *string) (bool, error) {

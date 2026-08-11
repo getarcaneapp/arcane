@@ -75,7 +75,7 @@ func TestWriteComposeOverrideFile(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "docker-compose.override.yml"), []byte("stale\n"), 0o600))
 
 	content := "services:\n  app:\n    image: busybox:latest\n"
-	require.NoError(t, WriteComposeOverrideFile(root, dir, &content, "compose.override.yaml"))
+	require.NoError(t, WriteComposeOverrideFile(t.Context(), root, dir, &content, "compose.override.yaml"))
 
 	written, err := os.ReadFile(filepath.Join(dir, "compose.override.yaml"))
 	require.NoError(t, err)
@@ -85,7 +85,7 @@ func TestWriteComposeOverrideFile(t *testing.T) {
 	assert.True(t, os.IsNotExist(statErr))
 
 	// Nil content removes all override files.
-	require.NoError(t, WriteComposeOverrideFile(root, dir, nil, ""))
+	require.NoError(t, WriteComposeOverrideFile(t.Context(), root, dir, nil, ""))
 	_, statErr = os.Stat(filepath.Join(dir, "compose.override.yaml"))
 	assert.True(t, os.IsNotExist(statErr))
 }

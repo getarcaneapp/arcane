@@ -340,7 +340,12 @@ export function getThemedIconUrl(source?: ThemedIconSource | null, themeMode?: s
 
 // --- App image URLs ---
 
-export function getApplicationLogo(full = false, colorOverride?: string, version?: string): string {
+export function getApplicationLogo(
+	full = false,
+	colorOverride?: string,
+	version?: string,
+	opts?: { animated?: boolean; loop?: boolean }
+): string {
 	const params = new URLSearchParams();
 
 	if (full) {
@@ -349,6 +354,14 @@ export function getApplicationLogo(full = false, colorOverride?: string, version
 
 	if (colorOverride) {
 		params.set('color', colorOverride);
+	}
+
+	if (opts?.animated) {
+		params.set('animated', 'true');
+	}
+
+	if (opts?.loop) {
+		params.set('loop', 'true');
 	}
 
 	if (version) {
