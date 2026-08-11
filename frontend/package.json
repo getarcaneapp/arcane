@@ -51,7 +51,7 @@
     "embla-carousel-svelte": "^8.6.0",
     "formsnap": "^2.0.1",
     "ky": "^2.0.2",
-    "marked": "^18.0.7",
+    "marked": "^18.0.9",
     "mode-watcher": "^1.1.0",
     "runed": "^0.37.1",
     "svelte": "^5.56.8",
