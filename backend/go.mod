@@ -35,7 +35,7 @@ require (
 	github.com/google/go-containerregistry v0.21.8
 	github.com/google/uuid v1.6.0
 	github.com/jinzhu/copier v0.4.0
-	github.com/klauspost/compress v1.19.1
+	github.com/klauspost/compress v1.19.2
 	github.com/labstack/echo/v5 v5.3.1
 	github.com/libtnb/sqlite v1.2.2
 	github.com/lmittmann/tint v1.2.0
