@@ -59,7 +59,7 @@ require (
 	go.getarcane.app/acfs v0.4.0
 	go.getarcane.app/builds v0.3.0
 	go.getarcane.app/docker/convert v0.1.0
-	go.getarcane.app/streams v0.3.1
+	go.getarcane.app/streams v0.4.0
 	go.getarcane.app/sys/cgroup v0.1.1
 	go.getarcane.app/sys/crypto v0.1.0
 	go.getarcane.app/updater v0.7.1

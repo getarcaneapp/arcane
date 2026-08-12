@@ -321,7 +321,7 @@ func (s *ProjectService) appendDiscoveredComposeProjectUpdatesInternal(
 		return items
 	}
 
-	knownProjectNames := s.buildKnownComposeProjectNameSetInternal(ctx, projectsArray)
+	knownProjectNames := s.buildKnownComposeProjectNameSetInternal(ctx, projectsArray, false)
 	discovered := buildDiscoveredComposeProjectUpdateRowsInternal(ctx, composeContainers, knownProjectNames, s.imageService, IconCatalogForContext(ctx))
 	if len(discovered) == 0 {
 		return items
@@ -338,7 +338,10 @@ func shouldIncludeDiscoveredComposeProjectUpdatesInternal(params pagination.Quer
 	return strings.EqualFold(strings.TrimSpace(params.Filters["updates"]), "has_update") && strings.TrimSpace(params.Filters["tags"]) == ""
 }
 
-func (s *ProjectService) buildKnownComposeProjectNameSetInternal(ctx context.Context, projectsArray []models.Project) map[string]struct{} {
+// buildKnownComposeProjectNameSetInternal collects every project name Arcane
+// tracks. projectsArrayIsComplete tells it the caller already loaded the full
+// table (not a filtered page), so the catch-all re-query can be skipped.
+func (s *ProjectService) buildKnownComposeProjectNameSetInternal(ctx context.Context, projectsArray []models.Project, projectsArrayIsComplete bool) map[string]struct{} {
 	known := make(map[string]struct{}, len(projectsArray)*2)
 	for _, proj := range projectsArray {
 		addKnownComposeProjectNameInternal(known, proj.Name)
@@ -347,7 +350,7 @@ func (s *ProjectService) buildKnownComposeProjectNameSetInternal(ctx context.Con
 		}
 	}
 
-	if s.db == nil {
+	if s.db == nil || projectsArrayIsComplete {
 		return known
 	}
 
@@ -695,18 +698,28 @@ func (s *ProjectService) CountProjectsWithPendingUpdates(ctx context.Context, al
 		return 0, nil
 	}
 
-	var projectsArray []models.Project
-	if err := s.db.WithContext(ctx).Where("is_archived = ?", false).Find(&projectsArray).Error; err != nil {
+	// One full scan: archived projects are excluded from the update count but
+	// still mark their compose stacks as known during discovery, so loading
+	// everything here saves the known-name pass its own table scan.
+	var allProjects []models.Project
+	if err := s.db.WithContext(ctx).Find(&allProjects).Error; err != nil {
 		return 0, errors.WrapIf(err, "failed to list projects for update count")
+	}
+
+	activeProjects := make([]models.Project, 0, len(allProjects))
+	for _, proj := range allProjects {
+		if !proj.IsArchived {
+			activeProjects = append(activeProjects, proj)
+		}
 	}
 
 	// enrichProjectsWithUpdateInfoInternal keys off Details.ID, so the summaries
 	// only need identity — no status, icons or URLs are read here.
-	details := make([]project.Details, len(projectsArray))
-	for i, proj := range projectsArray {
+	details := make([]project.Details, len(activeProjects))
+	for i, proj := range activeProjects {
 		details[i].ID = proj.ID
 	}
-	s.enrichProjectsWithUpdateInfoInternal(ctx, projectsArray, details)
+	s.enrichProjectsWithUpdateInfoInternal(ctx, activeProjects, details)
 
 	count := 0
 	for i := range details {
@@ -715,14 +728,14 @@ func (s *ProjectService) CountProjectsWithPendingUpdates(ctx context.Context, al
 		}
 	}
 
-	return count + s.countDiscoveredComposeProjectUpdatesInternal(ctx, projectsArray, allContainers), nil
+	return count + s.countDiscoveredComposeProjectUpdatesInternal(ctx, allProjects, true, allContainers), nil
 }
 
 // countDiscoveredComposeProjectUpdatesInternal counts compose projects running on
 // the daemon that Arcane does not track but that have a pending image update, so
 // the dashboard badge matches the projects table. Errors are logged and counted
 // as zero: a missing container list should degrade the badge, not fail the load.
-func (s *ProjectService) countDiscoveredComposeProjectUpdatesInternal(ctx context.Context, projectsArray []models.Project, allContainers []container.Summary) int {
+func (s *ProjectService) countDiscoveredComposeProjectUpdatesInternal(ctx context.Context, projectsArray []models.Project, projectsArrayIsComplete bool, allContainers []container.Summary) int {
 	if allContainers == nil {
 		var err error
 		allContainers, err = projects.ListGlobalComposeContainers(ctx)
@@ -742,7 +755,7 @@ func (s *ProjectService) countDiscoveredComposeProjectUpdatesInternal(ctx contex
 		return 0
 	}
 
-	knownProjectNames := s.buildKnownComposeProjectNameSetInternal(ctx, projectsArray)
+	knownProjectNames := s.buildKnownComposeProjectNameSetInternal(ctx, projectsArray, projectsArrayIsComplete)
 	// Only rows with a pending update are returned, so the length is the count.
 	return len(buildDiscoveredComposeProjectUpdateRowsInternal(ctx, composeContainers, knownProjectNames, s.imageService, IconCatalogForContext(ctx)))
 }
