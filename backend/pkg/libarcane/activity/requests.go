@@ -14,6 +14,10 @@ type Service interface {
 
 type MessageAppender interface {
 	AppendMessage(ctx context.Context, activityID string, req AppendMessageRequest) (*activitytypes.Message, error)
+	// AppendMessages persists a batch of messages in one transaction with a
+	// single coalesced activity update; the Writer drains its queue through
+	// this so bulk docker output does not fsync per line.
+	AppendMessages(ctx context.Context, activityID string, reqs []AppendMessageRequest) ([]activitytypes.Message, error)
 }
 
 // Tracker is an optional interface a Service may implement to make activities

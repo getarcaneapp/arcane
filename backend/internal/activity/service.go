@@ -3,6 +3,7 @@ package activity
 import (
 	"context"
 	stderrors "errors"
+	"hash/fnv"
 	"log/slog"
 	"maps"
 	"slices"
@@ -55,7 +56,29 @@ type ActivityService struct {
 	limiter      *activitySlotLimiter
 	slotMu       sync.Mutex
 	slotReleases map[string]func()
+
+	// terminalPublished records when each activity's terminal snapshot was
+	// published, so later non-terminal snapshots from slower goroutines can
+	// be dropped (see admitActivityPublishInternal). Entries are pruned on
+	// terminal publishes once older than terminalPublishRetention.
+	terminalPublishedMu sync.Mutex
+	terminalPublished   map[string]time.Time
+
+	// publishLocks serializes the commit→publish window of the non-terminal
+	// snapshot writers (AppendMessages, UpdateActivity) per activity, so their
+	// events reach subscribers in commit order — without it, a batch that
+	// commits first but publishes second would revert progress/step/status
+	// fields a concurrent update already streamed. Terminal snapshots are
+	// ordered separately by admitActivityPublishInternal. Striped by activity
+	// ID hash so no per-activity lifecycle management is needed.
+	publishLocks [64]sync.Mutex
 }
+
+// terminalPublishRetention bounds how long a terminal publish suppresses
+// stale non-terminal snapshots for the same activity. Stale publishers are
+// goroutines already past their commit, so they publish within moments; the
+// retention only has to outlive that gap while keeping the latch map small.
+const terminalPublishRetention = 10 * time.Minute
 
 // ErrActivityNotCancelable indicates the activity has already reached a terminal
 // state and can no longer be cancelled.
@@ -187,11 +210,12 @@ type AppendActivityMessageRequest = activitylib.AppendMessageRequest
 
 func NewActivityService(db *database.DB, settingsService *settings.SettingsService) *ActivityService {
 	return &ActivityService{
-		db:           db,
-		subscribers:  map[int]*activitySubscriber{},
-		running:      map[string]context.CancelCauseFunc{},
-		limiter:      newActivitySlotLimiterInternal(settingsService),
-		slotReleases: map[string]func(){},
+		db:                db,
+		subscribers:       map[int]*activitySubscriber{},
+		running:           map[string]context.CancelCauseFunc{},
+		limiter:           newActivitySlotLimiterInternal(settingsService),
+		slotReleases:      map[string]func(){},
+		terminalPublished: map[string]time.Time{},
 	}
 }
 
@@ -452,6 +476,13 @@ func (s *ActivityService) UpdateActivity(ctx context.Context, activityID string,
 		updates["metadata"] = cloneJSONInternal(req.Metadata)
 	}
 
+	// Hold the per-activity publish lock across commit and publish so this
+	// snapshot cannot be overtaken on the stream by a concurrent append batch
+	// that committed earlier but would publish later.
+	lock := s.publishLockInternal(activityID)
+	lock.Lock()
+	defer lock.Unlock()
+
 	var model models.Activity
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		result := tx.Model(&models.Activity{}).Where("id = ?", activityID).Updates(updates)
@@ -475,6 +506,23 @@ func (s *ActivityService) UpdateActivity(ctx context.Context, activityID string,
 }
 
 func (s *ActivityService) AppendMessage(ctx context.Context, activityID string, req AppendActivityMessageRequest) (*activitytypes.Message, error) {
+	messages, err := s.AppendMessages(ctx, activityID, []AppendActivityMessageRequest{req})
+	if err != nil || len(messages) == 0 {
+		return nil, err
+	}
+	return &messages[0], nil
+}
+
+// AppendMessages persists a batch of output lines in one transaction — a
+// single multi-row message INSERT plus one coalesced Activity update —
+// instead of an INSERT+UPDATE+re-SELECT transaction per line, which turned
+// an image pull into hundreds of fsync'd SQLite transactions. The activity
+// publish DTO is re-SELECTed inside the transaction after the update (once
+// per batch, not per line) so it reflects lifecycle fields a concurrent
+// CompleteActivity/UpdateActivity committed first; a terminal write that
+// commits after this transaction but publishes before this snapshot is
+// handled by admitActivityPublishInternal dropping the stale event.
+func (s *ActivityService) AppendMessages(ctx context.Context, activityID string, reqs []AppendActivityMessageRequest) ([]activitytypes.Message, error) {
 	if err := s.checkInitInternal(); err != nil {
 		return nil, err
 	}
@@ -483,66 +531,121 @@ func (s *ActivityService) AppendMessage(ctx context.Context, activityID string, 
 		return nil, errors.New("activity id is required")
 	}
 
-	messageText := strings.TrimSpace(req.Message)
-	if messageText == "" {
+	now := time.Now()
+	messages := make([]*models.ActivityMessage, 0, len(reqs))
+	latestMessage := ""
+	var latestProgress *int
+	latestStep := ""
+	for _, req := range reqs {
+		messageText := strings.TrimSpace(req.Message)
+		if messageText == "" {
+			continue
+		}
+		if len(messageText) > 8192 {
+			messageText = messageText[:8192]
+		}
+
+		level := req.Level
+		if level == "" {
+			level = models.ActivityMessageLevelInfo
+		}
+
+		messages = append(messages, &models.ActivityMessage{
+			ActivityID: activityID,
+			Level:      level,
+			Message:    messageText,
+			Payload:    cloneJSONInternal(req.Payload),
+			BaseModel: models.BaseModel{
+				// Spread inside the shared timestamp so the created_at sort
+				// used for retrieval keeps the original line order.
+				CreatedAt: now.Add(time.Duration(len(messages)) * time.Microsecond),
+			},
+		})
+
+		latestMessage = messageText
+		if req.Progress != nil {
+			latestProgress = req.Progress
+		}
+		if step := strings.TrimSpace(req.Step); step != "" {
+			latestStep = step
+		}
+	}
+	if len(messages) == 0 {
 		return nil, nil
 	}
-	if len(messageText) > 8192 {
-		messageText = messageText[:8192]
+
+	updates := map[string]any{
+		"latest_message": latestMessage,
+		"updated_at":     now,
+	}
+	if latestProgress != nil {
+		updates["progress"] = *clampProgressPtrInternal(latestProgress)
+	}
+	if latestStep != "" {
+		updates["step"] = latestStep
 	}
 
-	level := req.Level
-	if level == "" {
-		level = models.ActivityMessageLevelInfo
+	// Hold the per-activity publish lock across commit and publish so this
+	// batch's snapshot cannot be overtaken on the stream by a concurrent
+	// UpdateActivity that committed later — subscribers must see the two
+	// snapshots in commit order.
+	lock := s.publishLockInternal(activityID)
+	lock.Lock()
+	defer lock.Unlock()
+
+	// Bulk appends contend with terminal-status writes for the SQLite write
+	// lock, and a batch lost to transient SQLITE_BUSY silently drops up to 32
+	// output lines — the Writer drain has no error path to replay them — so
+	// retry like CompleteActivity does.
+	var current models.Activity
+	const appendWriteAttempts = 3
+	var writeErr error
+	for attempt := 1; attempt <= appendWriteAttempts; attempt++ {
+		writeErr = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			if err := tx.First(&current, "id = ?", activityID).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return errors.New("activity not found")
+				}
+				return errors.WrapIf(err, "failed to load activity")
+			}
+
+			if err := tx.Create(&messages).Error; err != nil {
+				return errors.WrapIf(err, "failed to append activity message")
+			}
+
+			result := tx.Model(&models.Activity{}).Where("id = ?", activityID).Updates(updates)
+			if result.Error != nil {
+				return errors.WrapIf(result.Error, "failed to update activity latest message")
+			}
+			if result.RowsAffected == 0 {
+				return errors.New("activity not found")
+			}
+			if err := tx.First(&current, "id = ?", activityID).Error; err != nil {
+				return errors.WrapIf(err, "failed to load updated activity")
+			}
+			return nil
+		})
+		if writeErr == nil {
+			break
+		}
+		if attempt == appendWriteAttempts || !dbutil.IsRetryableWriteError(writeErr) {
+			return nil, writeErr
+		}
+		slog.WarnContext(ctx, "retrying activity message batch write", "activityId", activityID, "attempt", attempt, "error", writeErr)
+		time.Sleep(250 * time.Millisecond * time.Duration(attempt))
+	}
+	if writeErr != nil {
+		return nil, writeErr
 	}
 
-	now := time.Now()
-	message := &models.ActivityMessage{
-		ActivityID: activityID,
-		Level:      level,
-		Message:    messageText,
-		Payload:    cloneJSONInternal(req.Payload),
-		BaseModel: models.BaseModel{
-			CreatedAt: now,
-		},
+	out := make([]activitytypes.Message, 0, len(messages))
+	for _, message := range messages {
+		dto := activityMessageToDTOInternal(message)
+		s.publishMessageInternal(current.EnvironmentID, dto)
+		out = append(out, dto)
 	}
-
-	var updated models.Activity
-	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(message).Error; err != nil {
-			return errors.WrapIf(err, "failed to append activity message")
-		}
-
-		updates := map[string]any{
-			"latest_message": messageText,
-			"updated_at":     now,
-		}
-		if req.Progress != nil {
-			updates["progress"] = *clampProgressPtrInternal(req.Progress)
-		}
-		if strings.TrimSpace(req.Step) != "" {
-			updates["step"] = strings.TrimSpace(req.Step)
-		}
-
-		result := tx.Model(&models.Activity{}).Where("id = ?", activityID).Updates(updates)
-		if result.Error != nil {
-			return errors.WrapIf(result.Error, "failed to update activity latest message")
-		}
-		if result.RowsAffected == 0 {
-			return errors.New("activity not found")
-		}
-		if err := tx.First(&updated, "id = ?", activityID).Error; err != nil {
-			return errors.WrapIf(err, "failed to load updated activity")
-		}
-		return nil
-	}); err != nil {
-		return nil, err
-	}
-
-	dto := activityMessageToDTOInternal(message)
-	s.publishMessageInternal(updated.EnvironmentID, dto)
-	s.publishActivityInternal(activityToDTOInternal(&updated))
-	return &dto, nil
+	s.publishActivityInternal(activityToDTOInternal(&current))
+	return out, nil
 }
 
 func (s *ActivityService) CompleteActivity(ctx context.Context, activityID string, status models.ActivityStatus, finalMessage string, errMessage *string, finalStep ...string) (*activitytypes.Activity, error) {
@@ -621,14 +724,35 @@ func (s *ActivityService) CompleteActivity(ctx context.Context, activityID strin
 		}); err != nil {
 			slog.DebugContext(ctx, "failed to append final activity message", "activityId", activityID, "error", err)
 		}
-		if err := s.db.WithContext(activityCtx).First(&model, "id = ?", activityID).Error; err != nil {
-			slog.DebugContext(ctx, "failed to reload activity after appending message", "activityId", activityID, "error", err)
-		}
 	}
 
-	dto := activityToDTOInternal(&model)
-	s.publishActivityInternal(dto)
+	dto := s.publishTerminalSnapshotInternal(ctx, &model)
 	return &dto, nil
+}
+
+// publishTerminalSnapshotInternal publishes an activity's terminal event from
+// a snapshot re-read under the per-activity publish lock. Terminal writers
+// cannot hold that lock across their own transactions (CompleteActivity
+// appends its final message through the locked AppendMessages path), so a
+// snapshot captured in-transaction can be overtaken by an append or update
+// that commits later but publishes first; re-reading under the lock
+// guarantees the terminal event carries every field already streamed. The
+// passed model is published as-is if the re-read fails, and is updated in
+// place otherwise so callers return the published state.
+func (s *ActivityService) publishTerminalSnapshotInternal(ctx context.Context, model *models.Activity) activitytypes.Activity {
+	lock := s.publishLockInternal(model.ID)
+	lock.Lock()
+	defer lock.Unlock()
+
+	var fresh models.Activity
+	if err := s.db.WithContext(ctx).First(&fresh, "id = ?", model.ID).Error; err != nil {
+		slog.DebugContext(ctx, "failed to reload activity for terminal publish", "activityId", model.ID, "error", err)
+	} else {
+		*model = fresh
+	}
+	dto := activityToDTOInternal(model)
+	s.publishActivityInternal(dto)
+	return dto
 }
 
 // CancelActivity requests cancellation of a running or queued activity. When the
@@ -707,8 +831,7 @@ func (s *ActivityService) CancelActivity(ctx context.Context, environmentID, act
 		return nil, err
 	}
 
-	dto := activityToDTOInternal(&finalized)
-	s.publishActivityInternal(dto)
+	dto := s.publishTerminalSnapshotInternal(writeCtx, &finalized)
 	return &dto, nil
 }
 
@@ -818,7 +941,7 @@ func (s *ActivityService) FailAbandonedActivities(ctx context.Context) (int64, e
 		}
 
 		s.releaseSlotInternal(activityID)
-		s.publishActivityInternal(activityToDTOInternal(&finalized))
+		s.publishTerminalSnapshotInternal(ctx, &finalized)
 		swept++
 	}
 
@@ -1161,12 +1284,59 @@ func (s *ActivityService) Subscribe(environmentID string) (<-chan activitytypes.
 }
 
 func (s *ActivityService) publishActivityInternal(activity activitytypes.Activity) {
+	if !s.admitActivityPublishInternal(activity) {
+		return
+	}
 	s.publishInternal(activity.EnvironmentID, activitytypes.StreamEvent{
 		Type:       "activity",
 		ActivityID: activity.ID,
 		Activity:   &activity,
 		Timestamp:  time.Now(),
 	})
+}
+
+func (s *ActivityService) publishLockInternal(activityID string) *sync.Mutex {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(activityID))
+	return &s.publishLocks[h.Sum32()%uint32(len(s.publishLocks))]
+}
+
+func isTerminalActivityStatusInternal(status activitytypes.Status) bool {
+	return status == activitytypes.StatusSuccess ||
+		status == activitytypes.StatusFailed ||
+		status == activitytypes.StatusCancelled
+}
+
+// admitActivityPublishInternal orders activity events across the commit →
+// publish gap. Writes publish their snapshot after committing, so a goroutine
+// that committed before a terminal write can publish after it; since a
+// terminal activity emits no further events to correct the stream (and
+// subscriber coalescing would even replace an undelivered terminal event in
+// place), such a stale non-terminal snapshot must be dropped, not delivered.
+// Activities never leave a terminal status, so once a terminal snapshot is
+// published, any later non-terminal snapshot for that ID is stale by
+// construction.
+func (s *ActivityService) admitActivityPublishInternal(activity activitytypes.Activity) bool {
+	if s == nil {
+		return true
+	}
+	s.terminalPublishedMu.Lock()
+	defer s.terminalPublishedMu.Unlock()
+	if !isTerminalActivityStatusInternal(activity.Status) {
+		_, sealed := s.terminalPublished[activity.ID]
+		return !sealed
+	}
+	now := time.Now()
+	for id, publishedAt := range s.terminalPublished {
+		if now.Sub(publishedAt) > terminalPublishRetention {
+			delete(s.terminalPublished, id)
+		}
+	}
+	if s.terminalPublished == nil {
+		s.terminalPublished = map[string]time.Time{}
+	}
+	s.terminalPublished[activity.ID] = now
+	return true
 }
 
 func (s *ActivityService) publishMessageInternal(environmentID string, message activitytypes.Message) {
