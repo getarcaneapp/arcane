@@ -24,11 +24,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup PNPM
-        uses: pnpm/action-setup@v6
-        with:
-          run_install: true
-
       - name: Setup Just
         uses: taiki-e/install-action@v2
         with:
@@ -39,11 +34,12 @@ jobs:
         with:
           tool: git-cliff
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@9446e853b27985e00fb1b21193be026fc09198db
         with:
           node-version: 26
-          cache: pnpm
+          cache: true
+          run-install: true
 
       - name: Set up Go
         uses: actions/setup-go@v7
@@ -85,7 +81,7 @@ jobs:
         id: frontend-versions
         run: |
           echo "node_version=$(node --version)" >> "$GITHUB_OUTPUT"
-          echo "sveltekit_version=$(pnpm -C frontend exec node -p 'require("@sveltejs/kit/package.json").version')" >> "$GITHUB_OUTPUT"
+          echo "sveltekit_version=$(vp -C frontend node -p 'require("@sveltejs/kit/package.json").version')" >> "$GITHUB_OUTPUT"
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v7

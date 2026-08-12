@@ -18,7 +18,7 @@ _default:
 # Run frontend dev server on port 3000
 [group('dev')]
 _dev-frontend:
-    pnpm -C frontend dev
+    vp -C frontend run dev
 
 # Run backend with hot reload on port 3552
 [group('dev')]
@@ -69,7 +69,7 @@ _dev-all:
     #!/usr/bin/env bash
     trap 'kill 0' EXIT
     (cd backend && air) &
-    pnpm -C frontend dev
+    vp -C frontend run dev
 
 # Rebuild Docker dev environment
 [group('dev')]
@@ -135,7 +135,7 @@ dev-tls force="false":
 # Build the frontend
 [group('build')]
 _build-frontend:
-    pnpm -C frontend build
+    vp -C frontend run build
 
 # Build the backend
 [group('build')]
@@ -175,7 +175,7 @@ build buildtype type="" tag="" flag="":
 # Run Playwright E2E tests
 [group('test')]
 _test-e2e:
-    pnpm -C tests test
+    vp -C tests run test
 
 # Run backend Go tests
 [group('test')]
@@ -235,15 +235,15 @@ test target="all":
 # Quality: format, lint, and fixes
 # -----------------------------------------------------------------------------
 
-# Format frontend/test/email TypeScript with oxfmt and Go modules with gofmt
+# Format frontend/test/email TypeScript with vp fmt (Vite+) and Go modules with gofmt
 [group('quality')]
 _format-frontend:
-    pnpm -C frontend format
+    vp fmt frontend
 
 [group('quality')]
 _format-js:
-    pnpm -C tests format
-    pnpm -C email-templates format
+    vp fmt tests
+    vp fmt email-templates
 
 [group('quality')]
 _format-go:
@@ -257,12 +257,12 @@ _format-just:
 
 [group('quality')]
 _format-check-frontend:
-    pnpm -C frontend format:check
+    vp fmt --check frontend
 
 [group('quality')]
 _format-check-js:
-    pnpm -C tests format:check
-    pnpm -C email-templates format:check
+    vp fmt --check tests
+    vp fmt --check email-templates
 
 [group('quality')]
 _format-check-go:
@@ -297,17 +297,17 @@ format target="all" check="":
 # Type check/Lint frontend
 [group('quality')]
 _lint-frontend:
-    pnpm -C frontend check
+    vp -C frontend run check
 
 # Type check Playwright tests
 [group('quality')]
 _lint-tests:
-    pnpm -C tests check
+    vp -C tests run check
 
 # Type check email templates
 [group('quality')]
 _lint-email-templates:
-    pnpm -C email-templates check
+    vp -C email-templates run check
 
 # Type check all JavaScript/TypeScript workspaces
 [group('quality')]
@@ -404,18 +404,22 @@ snyk target="scan":
 
 # Install frontend dependencies
 [group('deps')]
+_deps-install-viteplus:
+    vp migrate
+
+
 _deps-install-frontend:
-    pnpm install
+    vp install
 
 # Install tests dependencies
 [group('deps')]
 _deps-install-tests:
-    pnpm -C tests install
+    vp -C tests install
     # --with-deps shells out to apt-get, so skip it on non-Debian systems
     if command -v apt-get >/dev/null 2>&1; then \
-        pnpm -C tests exec playwright install --with-deps chromium; \
+        vp -C tests exec playwright install --with-deps chromium; \
     else \
-        pnpm -C tests exec playwright install chromium; \
+        vp -C tests exec playwright install chromium; \
     fi
 
 # Install backend Go dependencies
@@ -442,7 +446,7 @@ _deps-install-go: _deps-install-backend _deps-install-cli _deps-install-types
 
 # Install all Node.js dependencies
 [group('deps')]
-_deps-install-node: _deps-install-frontend _deps-install-tests
+_deps-install-node: _deps-install-frontend _deps-install-tests _deps-install-viteplus
 
 # Install all dependencies
 [group('deps')]
@@ -451,7 +455,7 @@ _deps-install-all: _deps-install-node _deps-install-go
 # Update frontend dependencies
 [group('deps')]
 _deps-update-frontend:
-    pnpm update
+    vp update
 
 # Update backend Go dependencies
 [group('deps')]
@@ -469,7 +473,7 @@ _deps-update-all: _deps-update-frontend _deps-update-backend _deps-update-pnpm
 # Dedupe all pnpm workspace dependencies
 [group('deps')]
 _deps-dedupe-node:
-    pnpm dedupe
+    vp dedupe
 
 [group('deps')]
 _deps-dedupe-all: _deps-dedupe-node

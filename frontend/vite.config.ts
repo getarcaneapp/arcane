@@ -3,7 +3,7 @@ import adapter from '@sveltejs/adapter-static';
 import tailwindcss from '@tailwindcss/vite';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
-import { defineConfig, searchForWorkspaceRoot } from 'vite';
+import { defineConfig, searchForWorkspaceRoot, lazyPlugins } from 'vite-plus';
 import Icons from 'unplugin-icons/vite';
 import packageJson from './package.json' with { type: 'json' };
 
@@ -33,10 +33,13 @@ function parseBooleanEnv(value: string | undefined): boolean | undefined {
 
 const explicitInsecureTLS = parseBooleanEnv(process.env['DEV_BACKEND_INSECURE_TLS']);
 // Allow local self-signed HTTPS while developing edge mTLS against the manager.
-const useInsecureLocalTLS = explicitInsecureTLS ?? (parsedDevBackendURL.protocol === 'https:' && (parsedDevBackendURL.hostname === 'localhost' || parsedDevBackendURL.hostname === '127.0.0.1'));
+const useInsecureLocalTLS =
+	explicitInsecureTLS ??
+	(parsedDevBackendURL.protocol === 'https:' &&
+		(parsedDevBackendURL.hostname === 'localhost' || parsedDevBackendURL.hostname === '127.0.0.1'));
 
 export default defineConfig(({ command }) => ({
-	plugins: [
+	plugins: lazyPlugins(() => [
 		tailwindcss(),
 		sveltekit({
 			preprocess: vitePreprocess(),
@@ -60,7 +63,7 @@ export default defineConfig(({ command }) => ({
 			compiler: 'svelte',
 			autoInstall: true
 		})
-	],
+	]),
 	build: {
 		target: 'es2022',
 		rolldownOptions: {
