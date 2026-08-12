@@ -405,7 +405,9 @@ func (s *BuildService) ListImageBuildsByEnvironmentPaginated(ctx context.Context
 	}
 
 	var builds []models.ImageBuild
-	q := s.db.WithContext(ctx).Model(&models.ImageBuild{}).Where("environment_id = ?", environmentID)
+	// The list DTO never includes the build output (buildToRecord with
+	// includeOutput=false), so skip reading the up-to-2-MiB output column.
+	q := s.db.WithContext(ctx).Model(&models.ImageBuild{}).Omit("output").Where("environment_id = ?", environmentID)
 
 	if term := strings.TrimSpace(params.Search); term != "" {
 		searchPattern := "%" + term + "%"
