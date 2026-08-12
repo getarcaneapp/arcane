@@ -531,6 +531,38 @@ func (s *ActivityService) AppendMessages(ctx context.Context, activityID string,
 		return nil, errors.New("activity id is required")
 	}
 
+	messages, updates := buildAppendBatchInternal(activityID, reqs)
+	if len(messages) == 0 {
+		return nil, nil
+	}
+
+	// Hold the per-activity publish lock across commit and publish so this
+	// batch's snapshot cannot be overtaken on the stream by a concurrent
+	// UpdateActivity that committed later — subscribers must see the two
+	// snapshots in commit order.
+	lock := s.publishLockInternal(activityID)
+	lock.Lock()
+	defer lock.Unlock()
+
+	current, err := s.appendBatchWithRetryInternal(ctx, activityID, messages, updates)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]activitytypes.Message, 0, len(messages))
+	for _, message := range messages {
+		dto := activityMessageToDTOInternal(message)
+		s.publishMessageInternal(current.EnvironmentID, dto)
+		out = append(out, dto)
+	}
+	s.publishActivityInternal(activityToDTOInternal(current))
+	return out, nil
+}
+
+// buildAppendBatchInternal turns the request batch into insertable message rows
+// plus the coalesced Activity column updates (latest message/progress/step from
+// the last request carrying each).
+func buildAppendBatchInternal(activityID string, reqs []AppendActivityMessageRequest) ([]*models.ActivityMessage, map[string]any) {
 	now := time.Now()
 	messages := make([]*models.ActivityMessage, 0, len(reqs))
 	latestMessage := ""
@@ -584,19 +616,15 @@ func (s *ActivityService) AppendMessages(ctx context.Context, activityID string,
 	if latestStep != "" {
 		updates["step"] = latestStep
 	}
+	return messages, updates
+}
 
-	// Hold the per-activity publish lock across commit and publish so this
-	// batch's snapshot cannot be overtaken on the stream by a concurrent
-	// UpdateActivity that committed later — subscribers must see the two
-	// snapshots in commit order.
-	lock := s.publishLockInternal(activityID)
-	lock.Lock()
-	defer lock.Unlock()
-
-	// Bulk appends contend with terminal-status writes for the SQLite write
-	// lock, and a batch lost to transient SQLITE_BUSY silently drops up to 32
-	// output lines — the Writer drain has no error path to replay them — so
-	// retry like CompleteActivity does.
+// appendBatchWithRetryInternal commits the batch INSERT plus Activity update in
+// one transaction. Bulk appends contend with terminal-status writes for the
+// SQLite write lock, and a batch lost to transient SQLITE_BUSY silently drops
+// up to 32 output lines — the Writer drain has no error path to replay them —
+// so retry like CompleteActivity does.
+func (s *ActivityService) appendBatchWithRetryInternal(ctx context.Context, activityID string, messages []*models.ActivityMessage, updates map[string]any) (*models.Activity, error) {
 	var current models.Activity
 	const appendWriteAttempts = 3
 	var writeErr error
@@ -626,7 +654,7 @@ func (s *ActivityService) AppendMessages(ctx context.Context, activityID string,
 			return nil
 		})
 		if writeErr == nil {
-			break
+			return &current, nil
 		}
 		if attempt == appendWriteAttempts || !dbutil.IsRetryableWriteError(writeErr) {
 			return nil, writeErr
@@ -634,18 +662,7 @@ func (s *ActivityService) AppendMessages(ctx context.Context, activityID string,
 		slog.WarnContext(ctx, "retrying activity message batch write", "activityId", activityID, "attempt", attempt, "error", writeErr)
 		time.Sleep(250 * time.Millisecond * time.Duration(attempt))
 	}
-	if writeErr != nil {
-		return nil, writeErr
-	}
-
-	out := make([]activitytypes.Message, 0, len(messages))
-	for _, message := range messages {
-		dto := activityMessageToDTOInternal(message)
-		s.publishMessageInternal(current.EnvironmentID, dto)
-		out = append(out, dto)
-	}
-	s.publishActivityInternal(activityToDTOInternal(&current))
-	return out, nil
+	return nil, writeErr
 }
 
 func (s *ActivityService) CompleteActivity(ctx context.Context, activityID string, status models.ActivityStatus, finalMessage string, errMessage *string, finalStep ...string) (*activitytypes.Activity, error) {

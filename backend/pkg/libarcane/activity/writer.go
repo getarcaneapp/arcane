@@ -62,9 +62,9 @@ func NewWriter(ctx context.Context, activityService MessageAppender, activityID 
 	if existing, ok := writer.(*Writer); ok {
 		return existing
 	}
-	var persistCtx context.Context
-	if ctx != nil {
-		persistCtx = context.WithoutCancel(ctx)
+	persistCtx := ctx
+	if persistCtx != nil {
+		persistCtx = context.WithoutCancel(persistCtx)
 	}
 	out := &Writer{
 		ctx:             ctx,
