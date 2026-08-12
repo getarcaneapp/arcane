@@ -569,7 +569,7 @@ func (s *ProjectService) RedeployProject(ctx context.Context, projectID string, 
 		return err
 	}
 
-	disabled := projectRedeployDisabledInternal(ctx, *proj)
+	disabled := s.projectRedeployDisabledInternal(ctx, *proj)
 	if disabled {
 		return errors.New("arcane cannot redeploy itself; use the system upgrade flow (Settings -> Updates) instead")
 	}
@@ -593,8 +593,8 @@ func (s *ProjectService) RedeployProject(ctx context.Context, projectID string, 
 	return s.DeployProject(ctx, projectID, user, options)
 }
 
-func projectRedeployDisabledInternal(ctx context.Context, proj models.Project) bool {
-	containers, err := projects.ListGlobalComposeContainers(ctx)
+func (s *ProjectService) projectRedeployDisabledInternal(ctx context.Context, proj models.Project) bool {
+	containers, err := s.listGlobalComposeContainersInternal(ctx)
 	if err != nil {
 		slog.WarnContext(ctx, "could not list compose containers to check self-redeploy guard; skipping guard", "error", err)
 		return false

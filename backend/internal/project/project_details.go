@@ -108,7 +108,7 @@ func (s *ProjectService) GetProjectServices(ctx context.Context, projectID strin
 		slog.WarnContext(ctx, "failed to parse Arcane compose metadata", "path", composeFileFullPath, "error", metaErr)
 	}
 
-	containers, err := projects.ComposePs(ctx, composeProject, nil, true)
+	containers, err := projects.ComposePs(ctx, s.dockerService.DockerHost(), composeProject, nil, true)
 	if err != nil {
 		slog.Error("compose ps error", "projectName", composeProject.Name, "error", err)
 		return nil, errors.WrapIf(err, "failed to get compose services status")

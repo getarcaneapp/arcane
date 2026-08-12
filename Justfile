@@ -411,7 +411,12 @@ _deps-install-frontend:
 [group('deps')]
 _deps-install-tests:
     pnpm -C tests install
-    pnpm -C tests exec playwright install --with-deps chromium
+    # --with-deps shells out to apt-get, so skip it on non-Debian systems
+    if command -v apt-get >/dev/null 2>&1; then \
+        pnpm -C tests exec playwright install --with-deps chromium; \
+    else \
+        pnpm -C tests exec playwright install chromium; \
+    fi
 
 # Install backend Go dependencies
 [group('deps')]

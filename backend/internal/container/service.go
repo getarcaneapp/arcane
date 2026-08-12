@@ -532,7 +532,7 @@ func (s *ContainerService) tryRedeployViaComposeProjectInternal(ctx context.Cont
 // linger during recreation), the first running one is preferred; otherwise the
 // first match is returned. Returns "" when none found.
 func (s *ContainerService) findComposeServiceContainerIDInternal(ctx context.Context, projectName, serviceName string) string {
-	containers, err := projects.ComposePs(ctx, &composetypes.Project{Name: projectName}, []string{serviceName}, true)
+	containers, err := projects.ComposePs(ctx, s.dockerService.DockerHost(), &composetypes.Project{Name: projectName}, []string{serviceName}, true)
 	if err != nil {
 		slog.WarnContext(ctx, "failed to resolve container via compose ps after redeploy",
 			"project", projectName,

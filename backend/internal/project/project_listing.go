@@ -20,11 +20,27 @@ import (
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 	"github.com/getarcaneapp/arcane/types/v2/project"
 	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/client"
 	"github.com/samber/mo"
 	"go.getarcane.app/sys/cgroup"
 	"go.getarcane.app/updater/labels"
 	"gorm.io/gorm"
 )
+
+// listGlobalComposeContainersInternal routes the global compose-container
+// list through the shared Docker client singleton when one is wired, avoiding
+// a fresh docker CLI per call.
+func (s *ProjectService) listGlobalComposeContainersInternal(ctx context.Context) ([]container.Summary, error) {
+	var dockerClient client.APIClient
+	if s.dockerService != nil {
+		cli, err := s.dockerService.GetClient(ctx)
+		if err != nil {
+			return nil, err
+		}
+		dockerClient = cli
+	}
+	return projects.ListGlobalComposeContainers(ctx, dockerClient, s.dockerService.DockerHost())
+}
 
 func groupComposeContainersByProjectInternal(containers []container.Summary) map[string][]container.Summary {
 	containersByProject := make(map[string][]container.Summary)
@@ -120,7 +136,7 @@ func (s *ProjectService) GetProjectStatusCounts(ctx context.Context) (folderCoun
 	}
 
 	// 1. Fetch all compose containers
-	containers, err := projects.ListGlobalComposeContainers(ctx)
+	containers, err := s.listGlobalComposeContainersInternal(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to list global compose containers for counts", "error", err)
 		// Fallback to DB status
@@ -315,7 +331,7 @@ func (s *ProjectService) appendDiscoveredComposeProjectUpdatesInternal(
 		return items
 	}
 
-	composeContainers, err := projects.ListGlobalComposeContainers(ctx)
+	composeContainers, err := s.listGlobalComposeContainersInternal(ctx)
 	if err != nil {
 		slog.WarnContext(ctx, "failed to list compose containers for project update rows", "error", err)
 		return items
@@ -725,7 +741,7 @@ func (s *ProjectService) CountProjectsWithPendingUpdates(ctx context.Context, al
 func (s *ProjectService) countDiscoveredComposeProjectUpdatesInternal(ctx context.Context, projectsArray []models.Project, allContainers []container.Summary) int {
 	if allContainers == nil {
 		var err error
-		allContainers, err = projects.ListGlobalComposeContainers(ctx)
+		allContainers, err = s.listGlobalComposeContainersInternal(ctx)
 		if err != nil {
 			slog.WarnContext(ctx, "failed to list compose containers for project update count", "error", err)
 			return 0
@@ -763,7 +779,7 @@ func (s *ProjectService) fetchProjectStatusConcurrently(ctx context.Context, pro
 	}
 
 	// 1. Fetch all compose containers in one go
-	containers, err := projects.ListGlobalComposeContainers(ctx)
+	containers, err := s.listGlobalComposeContainersInternal(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to list global compose containers", "error", err)
 		// Fallback: return basic info with unknown status

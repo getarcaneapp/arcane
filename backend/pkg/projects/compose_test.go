@@ -1,6 +1,7 @@
 package projects
 
 import (
+	"context"
 	"reflect"
 	"testing"
 
@@ -29,6 +30,30 @@ func TestWrapDockerCLIWithInspectCompatibility(t *testing.T) {
 	require.NotNil(t, wrapped)
 	require.NotSame(t, baseCLI, wrapped)
 	require.NotEqual(t, reflect.TypeFor[*mobyclient.Client](), reflect.TypeOf(wrapped.Client()))
+}
+
+func TestPlainComposeClientCachedPerDockerHost(t *testing.T) {
+	ctx := context.Background()
+
+	first, shared, err := plainComposeClientInternal(ctx, "tcp://first.example.com:2375")
+	require.NoError(t, err)
+	require.True(t, shared)
+
+	again, shared, err := plainComposeClientInternal(ctx, "tcp://first.example.com:2375")
+	require.NoError(t, err)
+	require.True(t, shared)
+	require.Same(t, first, again)
+
+	other, shared, err := plainComposeClientInternal(ctx, "tcp://second.example.com:2375")
+	require.NoError(t, err)
+	require.True(t, shared)
+	require.NotSame(t, first, other)
+
+	// No configured host: a one-shot client the caller owns and closes.
+	oneShot, shared, err := plainComposeClientInternal(ctx, "")
+	require.NoError(t, err)
+	require.False(t, shared)
+	require.NoError(t, oneShot.Close())
 }
 
 func TestBuildComposeAuthConfigs(t *testing.T) {
