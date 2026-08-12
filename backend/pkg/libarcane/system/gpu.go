@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"emperror.dev/errors"
@@ -25,6 +26,11 @@ const (
 
 	// gpuDetectionTTL bounds how long a successful detection result is reused before re-detecting.
 	gpuDetectionTTL = 30 * time.Second
+
+	// gpuStatsTTL bounds how often the vendor tool is invoked: reading VRAM
+	// stats forks a process (nvidia-smi, intel_gpu_top), which is far too
+	// expensive to repeat on every sampler tick.
+	gpuStatsTTL = 3 * time.Second
 )
 
 // GPUMonitor probes for an attached GPU (NVIDIA / AMD / Intel) and reports VRAM usage.
@@ -37,7 +43,18 @@ type GPUMonitor struct {
 	detectionCache *hot.HotCache[struct{}, gpuDetection]
 	detectionDone  bool
 
+	// statsCache holds the last vendor-tool result (success or failure) for
+	// gpuStatsTTL so concurrent consumers and fast sampler ticks share one
+	// process fork instead of each launching their own.
+	statsCache atomic.Pointer[gpuStatsSnapshotInternal]
+
 	enabled bool
+}
+
+type gpuStatsSnapshotInternal struct {
+	stats     []systemtypes.GPUStats
+	err       error
+	sampledAt time.Time
 }
 
 type gpuDetection struct {
@@ -64,11 +81,23 @@ func (m *GPUMonitor) Enabled() bool { return m.enabled }
 
 // Stats returns per-GPU VRAM stats. Returns (nil, 0, nil) when monitoring is disabled
 // or no GPU is detected; vendor-specific errors are propagated otherwise.
+// Results (including failures) are cached for gpuStatsTTL, so callers may
+// receive stats up to that many seconds old.
 func (m *GPUMonitor) Stats(ctx context.Context) ([]systemtypes.GPUStats, error) {
 	if !m.enabled {
 		return nil, nil
 	}
 
+	if snapshot := m.statsCache.Load(); snapshot != nil && time.Since(snapshot.sampledAt) < gpuStatsTTL {
+		return snapshot.stats, snapshot.err
+	}
+
+	stats, err := m.statsUncachedInternal(ctx)
+	m.statsCache.Store(&gpuStatsSnapshotInternal{stats: stats, err: err, sampledAt: time.Now()})
+	return stats, err
+}
+
+func (m *GPUMonitor) statsUncachedInternal(ctx context.Context) ([]systemtypes.GPUStats, error) {
 	m.detectionMu.Lock()
 	done := m.detectionDone
 	m.detectionMu.Unlock()
