@@ -210,6 +210,9 @@ func (j *AutoHealJob) processCandidateInternal(
 	containerID := candidate.ID
 	containerName := dockerutil.ContainerNameFromNames(candidate.Names)
 
+	// The daemon-side health filter already selected unhealthy containers; the
+	// inspect re-confirms right before restarting so a container that recovered
+	// (or was restarted by someone else) since the list isn't bounced again.
 	inspect, err := j.inspectContainerInternal(ctx, dockerClient, containerID)
 	if err != nil {
 		slog.WarnContext(ctx, "auto-heal failed to inspect container", "container", containerName, "error", err)
@@ -422,12 +425,21 @@ func (j *AutoHealJob) getDockerClientInternal(ctx context.Context) (*client.Clie
 	return j.dockerClientService.GetClient(ctx)
 }
 
+// autoHealListOptionsInternal filters unhealthy containers at the daemon, so
+// the common all-healthy case returns an empty list and nothing is inspected.
+func autoHealListOptionsInternal() client.ContainerListOptions {
+	return client.ContainerListOptions{
+		All:     false,
+		Filters: make(client.Filters).Add("health", string(container.Unhealthy)),
+	}
+}
+
 func (j *AutoHealJob) ListContainers(ctx context.Context, dockerClient *client.Client) ([]container.Summary, error) {
 	if j.listContainers != nil {
 		return j.listContainers(ctx, dockerClient)
 	}
 
-	containerList, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: false})
+	containerList, err := dockerClient.ContainerList(ctx, autoHealListOptionsInternal())
 	if err != nil {
 		return nil, err
 	}
