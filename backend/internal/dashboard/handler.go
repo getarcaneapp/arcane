@@ -28,6 +28,10 @@ import (
 type DashboardHandler struct {
 	dashboardService   *DashboardService
 	environmentService *environment.EnvironmentService
+
+	// remoteStreamHub shares one poller per remote environment across every
+	// connected stream client instead of polling per client × environment.
+	remoteStreamHub *agg.Hub[dashboardtypes.StreamEvent]
 }
 
 type GetDashboardInput struct {
@@ -54,6 +58,7 @@ func NewHandler(dashboardService *DashboardService, environmentService *environm
 	return &DashboardHandler{
 		dashboardService:   dashboardService,
 		environmentService: environmentService,
+		remoteStreamHub:    agg.NewHub[dashboardtypes.StreamEvent](),
 	}
 }
 
@@ -77,7 +82,7 @@ func (h *DashboardHandler) GetDashboard(ctx context.Context, input *GetDashboard
 
 	snapshot, err := h.dashboardService.GetSnapshot(ctx, DashboardActionItemsOptions{
 		DebugAllGood: input.DebugAllGood,
-	})
+	}, true)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
@@ -97,7 +102,8 @@ func (h *DashboardHandler) GetDashboard(ctx context.Context, input *GetDashboard
 // trimDashboardStreamSnapshotInternal drops the first-page container/image
 // tables: the all-environments dashboard only reads the aggregate counters,
 // and re-sending table rows for every environment on every poll would bloat
-// the stream.
+// the stream. Only remote snapshots (decoded fresh per poll) pass through
+// here; the local producer gets a snapshot built without tables instead.
 func trimDashboardStreamSnapshotInternal(snapshot *dashboardtypes.Snapshot) *dashboardtypes.Snapshot {
 	if snapshot == nil {
 		return nil
@@ -113,7 +119,7 @@ func (h *DashboardHandler) RunLocalStreamProducer(ctx context.Context, debugAllG
 	poll := func() {
 		snapshot, err := h.dashboardService.GetSnapshot(ctx, DashboardActionItemsOptions{
 			DebugAllGood: debugAllGood,
-		})
+		}, false)
 		if err == nil && snapshot == nil {
 			err = common.Classify(common.ErrUnavailable, errors.New("dashboard snapshot not available"))
 		}
@@ -135,10 +141,12 @@ func (h *DashboardHandler) RunLocalStreamProducer(ctx context.Context, debugAllG
 			return
 		}
 		lastError = ""
+		// Already built without tables; shared with other subscribers, so it
+		// must not be trimmed (mutated) here.
 		agg.Send(ctx, events, dashboardtypes.StreamEvent{
 			Type:          "snapshot",
 			EnvironmentID: "0",
-			Snapshot:      trimDashboardStreamSnapshotInternal(snapshot),
+			Snapshot:      snapshot,
 			Timestamp:     time.Now(),
 		})
 	}
@@ -183,7 +191,20 @@ func (h *DashboardHandler) RunRemoteStreamPollers(ctx context.Context, ps *authz
 		dashboardStreamEnvReconcileInterval,
 		"dashboard stream",
 		func(pollCtx context.Context, environment models.Environment) {
-			h.runRemoteDashboardStreamPollerInternal(pollCtx, environment, debugAllGood, events)
+			// One shared poller per environment (and debug variant) serves
+			// every connected client; this subscriber only forwards its
+			// events onto this client's stream.
+			key := dashboardStreamEnvironmentVersionInternal(environment)
+			if debugAllGood {
+				key += ":debugAllGood"
+			}
+			h.remoteStreamHub.Subscribe(pollCtx, key,
+				func(runCtx context.Context, publish func(dashboardtypes.StreamEvent)) {
+					h.runRemoteDashboardStreamPollerInternal(runCtx, environment, debugAllGood, publish)
+				},
+				func(event dashboardtypes.StreamEvent) bool {
+					return agg.Send(pollCtx, events, event)
+				})
 		})
 }
 
@@ -194,17 +215,15 @@ func dashboardStreamEnvironmentVersionInternal(environment models.Environment) s
 	return environment.ID + ":" + environment.UpdatedAt.UTC().Format(time.RFC3339Nano)
 }
 
-func (h *DashboardHandler) runRemoteDashboardStreamPollerInternal(ctx context.Context, environment models.Environment, debugAllGood bool, events chan<- dashboardtypes.StreamEvent) {
+func (h *DashboardHandler) runRemoteDashboardStreamPollerInternal(ctx context.Context, environment models.Environment, debugAllGood bool, publish func(dashboardtypes.StreamEvent)) {
 	environmentID := environment.ID
 	// Tell the client this environment is covered before the first poll
 	// completes so it can hold skeletons instead of assuming no data exists.
-	if !agg.Send(ctx, events, dashboardtypes.StreamEvent{
+	publish(dashboardtypes.StreamEvent{
 		Type:          "pending",
 		EnvironmentID: environmentID,
 		Timestamp:     time.Now(),
-	}) {
-		return
-	}
+	})
 
 	lastError := ""
 
@@ -237,7 +256,7 @@ func (h *DashboardHandler) runRemoteDashboardStreamPollerInternal(ctx context.Co
 			message, code := classifyDashboardStreamErrorInternal(err)
 			if message != lastError {
 				lastError = message
-				agg.Send(ctx, events, dashboardtypes.StreamEvent{
+				publish(dashboardtypes.StreamEvent{
 					Type:          "error",
 					EnvironmentID: environmentID,
 					Error:         message,
@@ -248,7 +267,7 @@ func (h *DashboardHandler) runRemoteDashboardStreamPollerInternal(ctx context.Co
 			return
 		}
 		lastError = ""
-		agg.Send(ctx, events, dashboardtypes.StreamEvent{
+		publish(dashboardtypes.StreamEvent{
 			Type:          "snapshot",
 			EnvironmentID: environmentID,
 			Snapshot:      trimDashboardStreamSnapshotInternal(snapshot),

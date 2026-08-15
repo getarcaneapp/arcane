@@ -19,6 +19,7 @@ Thanks for helping make Arcane better! We've built a modern, streamlined develop
 
 - **Docker & Docker Compose** (that's it! 🎉)
 - **VS Code** based IDE (recommended for the best developer experience)
+- **[Vite+](https://viteplus.dev)** (`curl -fsSL https://vite.plus | bash`) — manages the Node toolchain, formatting, linting, and pre-commit hooks when working outside Docker
 
 > **💡 Working Directory**: Unless otherwise specified, all commands in this guide should be run from the project root directory (`arcane/`).
 
@@ -195,15 +196,31 @@ just gomod tidy all
 
 Both services include development-time linting and formatting:
 
-- **Frontend**: Svelte/TypeScript checks + Oxfmt (configured in VS Code)
+- **Frontend / TypeScript**: [Vite+](https://viteplus.dev) (`vp fmt`, `vp check`) + Svelte/TypeScript checks — formatting and lint rules live in the root `vite.config.ts`
 - **Backend**: Go fmt + Go vet (built into Air hot reload)
+
+### Pre-commit Hooks
+
+Format checks run automatically on staged files via the Vite+ git hook dispatcher. Enable it once after cloning:
+
+```bash
+vp hooks enable
+```
 
 ### Manual Commands
 
 If you need to run checks manually:
 
 ```bash
-# Frontend checks
+# JS/TS formatting and lint (Vite+, run from project root)
+vp fmt --check
+vp check
+
+# Or via the Justfile
+just format all --check
+just lint js
+
+# Inside the Docker dev environment
 docker compose -f docker/compose.dev.yaml exec frontend pnpm check
 docker compose -f docker/compose.dev.yaml exec frontend pnpm format
 

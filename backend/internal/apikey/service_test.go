@@ -414,6 +414,41 @@ func TestReconcileDefaultAdminAPIKeyReplacesManagedKeyOnRotation(t *testing.T) {
 	require.Equal(t, adminUser.ID, validatedUser.ID)
 }
 
+func TestReconcileDefaultAdminAPIKeyRotationEvictsRacingCacheFill(t *testing.T) {
+	ctx := context.Background()
+	service, db, userService := setupAPIKeyService(t)
+	adminUser := createDefaultAdminUser(t, ctx, userService)
+
+	oldKey := "arc_bootstraprotateold1234567890"
+	newKey := "arc_bootstraprotatenew1234567890"
+	require.NoError(t, service.ReconcileDefaultAdminAPIKey(ctx, oldKey))
+	oldRow := listAPIKeysForUser(t, db, adminUser.ID)[0]
+
+	// Mid-transaction — after the old key's delete, before commit — simulate a
+	// concurrent validation that read the old committed row and publishes it
+	// with a fresh generation snapshot; the hook fires on the new managed
+	// key's insert. With pre-commit invalidation this entry survived the
+	// commit and kept authenticating the deleted key.
+	published := false
+	require.NoError(t, db.Callback().Create().After("gorm:create").Register("simulate_racing_validation", func(*gorm.DB) {
+		if published {
+			return
+		}
+		published = true
+		service.storeValidatedKeyInternal(service.cacheGen.Load(), service.hashRawAPIKeyInternal(oldKey), oldRow)
+	}))
+
+	require.NoError(t, service.ReconcileDefaultAdminAPIKey(ctx, newKey))
+	require.True(t, published)
+
+	_, err := service.ValidateApiKey(ctx, oldKey)
+	require.ErrorIs(t, err, ErrApiKeyInvalid)
+
+	validatedUser, err := service.ValidateApiKey(ctx, newKey)
+	require.NoError(t, err)
+	require.Equal(t, adminUser.ID, validatedUser.ID)
+}
+
 func TestReconcileDefaultAdminAPIKeyDeletesManagedKeyWhenUnset(t *testing.T) {
 	ctx := context.Background()
 	service, db, userService := setupAPIKeyService(t)
@@ -512,6 +547,91 @@ func TestValidateAPIKeyUpdatesLastUsedAt(t *testing.T) {
 
 	apiKey := fetchAPIKey(t, db, created.ID)
 	require.NotNil(t, apiKey.LastUsedAt)
+}
+
+func TestValidateAPIKeyCacheSkipsHashValidationAndInvalidatesOnRevoke(t *testing.T) {
+	ctx := context.Background()
+	service, db, userService := setupAPIKeyService(t)
+	user := createTestAPIKeyUser(t, ctx, userService, "user-cached")
+
+	created, err := service.CreateApiKey(ctx, user.ID, authz.SudoPermissionSet(), apikey.CreateApiKey{Name: "cached-key"})
+	require.NoError(t, err)
+
+	_, err = service.ValidateApiKey(ctx, created.Key)
+	require.NoError(t, err)
+
+	// Corrupt the stored hash: a second validation can only succeed by hitting
+	// the validated-key cache and skipping the Argon2id check.
+	require.NoError(t, db.Model(&models.ApiKey{}).Where("id = ?", created.ID).Update("key_hash", "corrupted").Error)
+
+	validatedUser, err := service.ValidateApiKey(ctx, created.Key)
+	require.NoError(t, err)
+	require.Equal(t, user.ID, validatedUser.ID)
+
+	// Revocation must reject immediately despite the cache.
+	require.NoError(t, service.DeleteApiKey(ctx, created.ID))
+	_, err = service.ValidateApiKey(ctx, created.Key)
+	require.ErrorIs(t, err, ErrApiKeyInvalid)
+}
+
+func TestValidateAPIKeyCacheFillDroppedWhenRevocationRacesValidation(t *testing.T) {
+	ctx := context.Background()
+	service, db, userService := setupAPIKeyService(t)
+	user := createTestAPIKeyUser(t, ctx, userService, "user-fill-race")
+
+	created, err := service.CreateApiKey(ctx, user.ID, authz.SudoPermissionSet(), apikey.CreateApiKey{Name: "fill-race-key"})
+	require.NoError(t, err)
+
+	// Simulate a validation whose DB read happened before the revocation:
+	// snapshot the generation and the row, revoke, then attempt the publish
+	// with the stale snapshot. The publish must be dropped, not accepted.
+	gen := service.cacheGen.Load()
+	stored := fetchAPIKey(t, db, created.ID)
+	require.NoError(t, service.DeleteApiKey(ctx, created.ID))
+	service.storeValidatedKeyInternal(gen, service.hashRawAPIKeyInternal(created.Key), stored)
+
+	_, err = service.ValidateApiKey(ctx, created.Key)
+	require.ErrorIs(t, err, ErrApiKeyInvalid)
+}
+
+func TestValidateAPIKeyDebouncesLastUsedWrites(t *testing.T) {
+	ctx := context.Background()
+	service, db, userService := setupAPIKeyService(t)
+	user := createTestAPIKeyUser(t, ctx, userService, "user-debounce")
+
+	created, err := service.CreateApiKey(ctx, user.ID, authz.SudoPermissionSet(), apikey.CreateApiKey{Name: "debounce-key"})
+	require.NoError(t, err)
+
+	_, err = service.ValidateApiKey(ctx, created.Key)
+	require.NoError(t, err)
+	require.NotNil(t, fetchAPIKey(t, db, created.ID).LastUsedAt)
+
+	// Clear the column directly; a validation inside the debounce window must
+	// not issue another write.
+	require.NoError(t, db.Model(&models.ApiKey{}).Where("id = ?", created.ID).Update("last_used_at", nil).Error)
+
+	_, err = service.ValidateApiKey(ctx, created.Key)
+	require.NoError(t, err)
+	require.Nil(t, fetchAPIKey(t, db, created.ID).LastUsedAt)
+}
+
+func TestValidateAPIKeyDebounceReleasedOnWriteFailure(t *testing.T) {
+	ctx := context.Background()
+	service, db, userService := setupAPIKeyService(t)
+	user := createTestAPIKeyUser(t, ctx, userService, "user-debounce-retry")
+
+	created, err := service.CreateApiKey(ctx, user.ID, authz.SudoPermissionSet(), apikey.CreateApiKey{Name: "debounce-retry-key"})
+	require.NoError(t, err)
+
+	canceledCtx, cancel := context.WithCancel(ctx)
+	cancel()
+	service.markApiKeyUsedDebouncedInternal(canceledCtx, created.ID)
+	require.Nil(t, fetchAPIKey(t, db, created.ID).LastUsedAt)
+
+	// The failed write must not leave the key debounced: the next use inside
+	// the window must retry and persist.
+	service.markApiKeyUsedDebouncedInternal(ctx, created.ID)
+	require.NotNil(t, fetchAPIKey(t, db, created.ID).LastUsedAt)
 }
 
 func TestValidateAPIKeyLastUsedUpdateIsRequestScoped(t *testing.T) {

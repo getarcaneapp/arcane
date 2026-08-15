@@ -102,13 +102,16 @@
 	}}
 >
 	{#if type !== undefined && loading}
-		<div class="absolute inset-0 flex items-center justify-center rounded-[inherit] bg-background/30 backdrop-blur-[1px]">
+		<div
+			class="absolute inset-0 flex items-center justify-center rounded-[inherit] bg-background/55 backdrop-blur-sm"
+			aria-hidden="true"
+		>
 			<Spinner class="size-4" />
 		</div>
 		<span class="sr-only">{m.common_loading_label({ label: displayLoadingLabel })}</span>
 	{/if}
 
-	<span class={cn('flex items-center gap-2', loading && 'opacity-0')}>
+	<span class={cn('flex items-center gap-2 transition-opacity duration-150', loading && 'opacity-0')}>
 		{#if IconComponent}
 			<IconComponent class="size-4" />
 		{/if}

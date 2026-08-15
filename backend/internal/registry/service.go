@@ -73,6 +73,7 @@ type ContainerRegistryService struct {
 	db                     *database.DB
 	dockerClient           registryDaemonGetter
 	cache                  *hot.HotCache[string, string]
+	labelCache             *hot.HotCache[string, string]
 	ecrRefreshGroup        singleflight.Group
 	distributionHTTPClient *http.Client
 	kvService              *kv.KVService
@@ -130,6 +131,11 @@ func NewContainerRegistryService(db *database.DB, dockerClient registryDaemonGet
 		WithRevalidation(registryCacheTTL, backgroundLoader).
 		WithRevalidationErrorPolicy(hot.KeepOnError).
 		WithJanitor().
+		Build()
+	// No static loader: ImageVersionLabel uses GetWithLoaders so failed
+	// resolutions are not cached and retry on the next request.
+	service.labelCache = hot.NewHotCache[string, string](hot.LRU, 64).
+		WithTTL(versionLabelCacheTTL).
 		Build()
 	return service
 }

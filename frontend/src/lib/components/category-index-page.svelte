@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { Component, ComponentProps, Snippet } from 'svelte';
+	import type { Component, Snippet } from 'svelte';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { Card } from '#lib/components/ui/card';
 	import { UiConfigDisabledTag } from '#lib/components/badges/index.js';
@@ -35,12 +35,6 @@
 		matchingItemsLabel: string;
 		// Go-to-page button on each result card
 		goToPageLabel: string;
-		goToPageButtonTone?: ComponentProps<typeof ArcaneButton>['tone'];
-		// Class deltas between the two pages
-		rootClass: string;
-		cardClass: string;
-		resultCardClass: string;
-		searchIconClass?: string;
 		// Data
 		categories: NormalizedCategory[];
 		categorySearch: CategorySearch;
@@ -61,11 +55,6 @@
 		noResultsDescription,
 		matchingItemsLabel,
 		goToPageLabel,
-		goToPageButtonTone,
-		rootClass,
-		cardClass,
-		resultCardClass,
-		searchIconClass = 'size-4',
 		categories,
 		categorySearch,
 		navigate,
@@ -76,7 +65,7 @@
 	const HeaderIcon = $derived(headerIcon);
 </script>
 
-<div class={rootClass}>
+<div class="space-y-6 pb-5 md:space-y-8 md:pb-5">
 	<HeaderCard>
 		<div class="flex items-center justify-between gap-4">
 			<div class="flex min-w-64 flex-1 items-center gap-3 sm:gap-4">
@@ -123,7 +112,7 @@
 							customLabel={clearSearchLabel}
 						/>
 					{:else}
-						<SearchIcon class={searchIconClass} />
+						<SearchIcon class="size-4" />
 					{/if}
 				</InputGroup.Addon>
 			</InputGroup.Root>
@@ -131,25 +120,31 @@
 	</HeaderCard>
 
 	{#if !categorySearch.showSearchResults}
-		<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 xl:grid-cols-3">
+		<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-3">
 			{#each categories as category (category.id)}
 				{@const Icon = category.icon}
-				<Card class={cardClass}>
-					<button onclick={() => navigate(category.href)} class="w-full p-4 text-left sm:p-6">
-						<div class="flex items-start justify-between gap-3">
-							<div class="flex min-w-0 flex-1 items-start gap-3 sm:gap-4">
-								<div
-									class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/5 text-primary ring-1 ring-primary/10 transition-colors group-hover:bg-primary/10 sm:size-12"
-								>
-									<Icon class="size-5 sm:size-6" />
-								</div>
-								<div class="min-w-0 flex-1">
-									<h2 class="text-sm leading-tight font-semibold sm:text-base">{category.title}</h2>
-									<p class="mt-1 text-xs leading-relaxed text-muted-foreground sm:text-sm">{category.description}</p>
-								</div>
-							</div>
-							<ArrowRightIcon class="mt-1 size-4 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" />
-						</div>
+				<Card class="hover-lift h-full hover:border-primary/30">
+					<button
+						onclick={() => navigate(category.href)}
+						class="relative flex h-full w-full cursor-pointer items-center gap-3 p-4 text-left focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:outline-none focus-visible:ring-inset sm:gap-4 sm:p-5"
+					>
+						<span
+							class="pointer-events-none absolute inset-0 bg-linear-to-br from-primary/8 to-transparent opacity-0 transition-opacity duration-200 group-hover:opacity-100"
+						></span>
+						<span
+							class="relative flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/20 transition-colors ring-inset group-hover:bg-primary/15 group-hover:ring-primary/30"
+						>
+							<Icon class="size-5" />
+						</span>
+						<span class="relative min-w-0 flex-1">
+							<span class="block truncate text-sm leading-tight font-semibold sm:text-base">{category.title}</span>
+							<span class="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground sm:text-sm">
+								{category.description}
+							</span>
+						</span>
+						<ArrowRightIcon
+							class="relative size-4 shrink-0 text-muted-foreground/60 transition-all duration-200 group-hover:translate-x-0.5 group-hover:text-primary"
+						/>
 					</button>
 				</Card>
 			{/each}
@@ -174,36 +169,42 @@
 					<p class="text-sm text-muted-foreground sm:text-base">{noResultsDescription}</p>
 				</div>
 			{:else}
-				<div class="space-y-4 sm:space-y-6">
+				<div class="space-y-4">
 					{#each categorySearch.searchResults as result (result.id)}
 						{@const Icon = result.icon}
-						<div class={resultCardClass}>
-							<div class="border-b p-4 sm:p-6">
-								<div class="flex items-center justify-between">
-									<div class="flex items-center gap-3">
-										<Icon class="size-4 shrink-0 text-primary sm:size-5" />
-										<div>
-											<h3 class="text-base font-semibold sm:text-lg">{result.title}</h3>
-											<p class="text-xs text-muted-foreground sm:text-sm">{result.description}</p>
-										</div>
+						<Card>
+							<div class="flex items-center justify-between gap-3 border-b border-border/70 p-4 sm:p-5">
+								<div class="flex min-w-0 items-center gap-3 sm:gap-4">
+									<span
+										class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/20 ring-inset"
+									>
+										<Icon class="size-5" />
+									</span>
+									<div class="min-w-0">
+										<h3 class="truncate text-sm leading-tight font-semibold sm:text-base">{result.title}</h3>
+										<p class="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground sm:text-sm">
+											{result.description}
+										</p>
 									</div>
-									<ArcaneButton
-										action="base"
-										tone={goToPageButtonTone}
-										size="sm"
-										onclick={() => navigate(result.href)}
-										class="shrink-0"
-										customLabel={goToPageLabel}
-									/>
 								</div>
+								<ArcaneButton
+									action="base"
+									tone="outline"
+									size="sm"
+									onclick={() => navigate(result.href)}
+									class="shrink-0"
+									customLabel={goToPageLabel}
+								/>
 							</div>
 
 							<!-- Show matching items with descriptions -->
 							{#if result.matchingItems && result.matchingItems.length > 0}
-								<div class="space-y-3 p-4 sm:p-6">
-									<h4 class="mb-3 text-sm font-medium text-muted-foreground">{matchingItemsLabel}</h4>
+								<div class="space-y-2 p-4 sm:p-5">
+									<h4 class="text-[11px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
+										{matchingItemsLabel}
+									</h4>
 									{#each result.matchingItems as item (item.key)}
-										<div class="rounded-md border-l-2 border-primary/20 bg-background/60 p-3">
+										<div class="rounded-lg border border-border/70 bg-muted/30 p-3 dark:bg-surface/30">
 											<div class="flex items-start justify-between gap-3">
 												<div class="min-w-0 flex-1">
 													<h5 class="text-sm font-medium">{item.label}</h5>
@@ -213,7 +214,7 @@
 													{#if item.keywords && item.keywords.length > 0}
 														<div class="mt-2 flex flex-wrap gap-1">
 															{#each item.keywords.slice(0, 6) as keyword (keyword)}
-																<span class="rounded bg-muted/50 px-2 py-0.5 text-xs text-muted-foreground">
+																<span class="rounded-md bg-foreground/5 px-2 py-0.5 text-xs text-muted-foreground">
 																	{keyword}
 																</span>
 															{/each}
@@ -225,15 +226,17 @@
 														</div>
 													{/if}
 												</div>
-												<div class="shrink-0 rounded bg-muted/30 px-2 py-1 font-mono text-xs text-muted-foreground">
+												<span
+													class="shrink-0 rounded-md bg-foreground/5 px-2 py-1 font-mono text-[11px] text-muted-foreground ring-1 ring-border/70 ring-inset"
+												>
 													{item.type}
-												</div>
+												</span>
 											</div>
 										</div>
 									{/each}
 								</div>
 							{/if}
-						</div>
+						</Card>
 					{/each}
 				</div>
 			{/if}

@@ -43,7 +43,7 @@ func FirstNonEmpty(sets ...IconSet) IconSet {
 }
 
 func Resolve(catalog string, set IconSet) ResolvedIconSet {
-	selectedCatalog := normalizeCatalogInternal(catalog)
+	selectedCatalog := Normalize(catalog)
 	if strings.TrimSpace(set.Light) == "" && strings.TrimSpace(set.Dark) == "" {
 		generic := resolveValueInternal(selectedCatalog, set.Icon, "")
 		return ResolvedIconSet{
@@ -70,7 +70,9 @@ func firstNonEmptyValueInternal(values ...string) string {
 	return ""
 }
 
-func normalizeCatalogInternal(catalog string) string {
+// Normalize maps a raw catalog preference onto one of the known catalog
+// constants, falling back to the default for unknown values.
+func Normalize(catalog string) string {
 	switch strings.ToLower(strings.TrimSpace(catalog)) {
 	case CatalogDashboardIcons:
 		return CatalogDashboardIcons

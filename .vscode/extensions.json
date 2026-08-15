@@ -1,3 +1,10 @@
 {
-  "recommendations": ["actboy168.tasks", "svelte.svelte-vscode", "oxc.oxc-vscode", "golang.go", "inlang.vs-code-extension"]
+  "recommendations": [
+    "actboy168.tasks", 
+    "oxc.oxc-vscode", 
+    "svelte.svelte-vscode", 
+    "VoidZero.vite-plus-extension-pack", 
+    "golang.go", 
+    "inlang.vs-code-extension"
+  ]
 }

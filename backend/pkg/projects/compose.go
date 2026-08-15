@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"maps"
 	"strings"
+	"sync/atomic"
 
 	"github.com/docker/cli/cli/command"
 	clitypes "github.com/docker/cli/cli/config/types"
@@ -26,12 +27,18 @@ type Client struct {
 	logWriter io.WriteCloser
 }
 
-func NewClient(ctx context.Context, authConfigs map[string]registry.AuthConfig, prompt compose.Prompt) (*Client, error) {
+// NewClient builds a compose client. dockerHost, when non-empty, pins the
+// docker CLI to that daemon endpoint instead of letting it resolve one from
+// the environment.
+func NewClient(ctx context.Context, dockerHost string, authConfigs map[string]registry.AuthConfig, prompt compose.Prompt) (*Client, error) {
 	cli, err := command.NewDockerCli()
 	if err != nil {
 		return nil, err
 	}
 	opts := flags.NewClientOptions()
+	if dockerHost != "" {
+		opts.Hosts = []string{dockerHost}
+	}
 	if err := cli.Initialize(opts); err != nil {
 		return nil, err
 	}
@@ -86,6 +93,35 @@ func NewClient(ctx context.Context, authConfigs map[string]registry.AuthConfig, 
 	}
 
 	return &Client{svc: svc, dockerCli: composeCLI, logWriter: logWriter}, nil
+}
+
+type plainComposeClientEntryInternal struct {
+	dockerHost string
+	client     *Client
+}
+
+var plainComposeClient atomic.Pointer[plainComposeClientEntryInternal]
+
+func plainComposeClientInternal(ctx context.Context, dockerHost string) (*Client, bool, error) {
+	if dockerHost == "" {
+		c, err := NewClient(ctx, "", nil, nil)
+		return c, false, err
+	}
+
+	if entry := plainComposeClient.Load(); entry != nil && entry.dockerHost == dockerHost {
+		return entry.client, true, nil
+	}
+
+	// Built on context.Background so request-scoped values (progress
+	// writers, deadlines) do not leak into the long-lived client.
+	c, err := NewClient(context.Background(), dockerHost, nil, nil) //nolint:contextcheck // deliberate: see comment above
+	if err != nil {
+		return nil, false, err
+	}
+	// Concurrent first calls may race and briefly duplicate a client; the
+	// last store wins and later calls converge on it.
+	plainComposeClient.Store(&plainComposeClientEntryInternal{dockerHost: dockerHost, client: c})
+	return c, true, nil
 }
 
 func buildComposeAuthConfigsInternal(authConfigs map[string]registry.AuthConfig) map[string]clitypes.AuthConfig {

@@ -92,19 +92,6 @@ func isLocalhost(host string) bool {
 		hostOnly == "[::1]"
 }
 
-// GetQueryParam reads a string query parameter from the request URL.
-// If `required` is true and the parameter is missing or empty, an error is returned.
-func GetQueryParam(r *http.Request, name string, required bool) (string, error) {
-	q := r.URL.Query()
-	if !q.Has(name) || q.Get(name) == "" {
-		if required {
-			return "", errors.Errorf("missing query parameter %s", name)
-		}
-		return "", nil
-	}
-	return q.Get(name), nil
-}
-
 // GetIntQueryParam reads and parses an integer query parameter from the request URL.
 // If `required` is true and the parameter is missing, or if parsing fails, an error is returned.
 func GetIntQueryParam(r *http.Request, name string, required bool) (int, error) {

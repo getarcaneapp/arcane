@@ -43,6 +43,7 @@
 		'pt-BR': 'Português brasileiro',
 		ru: 'Русский',
 		sv: 'Svenska',
+		tr: 'Türkçe',
 		uk: 'Українська',
 		vi: 'Tiếng Việt',
 		'zh-CN': '中文',

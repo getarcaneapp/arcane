@@ -35,75 +35,92 @@ import {
 
 export const arcaneButtonVariants = tv({
 	base:
-		'inline-flex items-center justify-center gap-2 rounded-lg text-sm font-medium whitespace-nowrap select-none ' +
-		'transition-all duration-200 ' +
-		'active:scale-[0.98] ' +
-		'border disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 ' +
-		'focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:ring-offset-0 ' +
+		'inline-flex items-center justify-center gap-2 rounded-xl text-sm font-medium whitespace-nowrap select-none ' +
+		'border transition-[background-color,border-color,color,box-shadow,transform,filter] duration-200 ease-out ' +
+		'active:scale-[0.985] ' +
+		'disabled:pointer-events-none disabled:opacity-55 disabled:saturate-[0.82] disabled:shadow-none ' +
+		'aria-disabled:pointer-events-none aria-disabled:opacity-55 aria-disabled:saturate-[0.82] aria-disabled:shadow-none ' +
+		'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 focus-visible:ring-offset-2 focus-visible:ring-offset-background ' +
 		"[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
 	variants: {
 		tone: {
 			'outline-primary':
-				'bg-primary/5 text-foreground! border-primary/20 hover:bg-primary/10 hover:border-primary/40 ' +
-				'dark:bg-primary/10 dark:text-primary-foreground dark:border-primary/30 dark:hover:bg-primary/20 ' +
-				'shadow-sm hover:shadow-md',
+				'border-primary/20 bg-primary/[0.06] text-foreground! shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_1px_2px_rgba(15,23,42,0.06)] ' +
+				'hover:border-primary/40 hover:bg-primary/[0.1] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.24),0_8px_20px_-12px_rgba(15,23,42,0.28)] ' +
+				'dark:border-primary/30 dark:bg-primary/[0.12] dark:text-primary-foreground dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_1px_2px_rgba(0,0,0,0.18)] ' +
+				'dark:hover:border-primary/50 dark:hover:bg-primary/[0.18] dark:hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_10px_24px_-14px_rgba(0,0,0,0.5)]',
 			'outline-primary-login':
-				'bg-primary/5 text-foreground! border-primary/20 hover:bg-primary/10 hover:border-primary/40 ' +
-				'dark:bg-primary/10 dark:text-primary-foreground dark:border-primary/30 dark:hover:bg-primary/20 ' +
-				'shadow-sm hover:shadow-md w-full',
+				'w-full border-primary/20 bg-primary/[0.06] text-foreground! shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_1px_2px_rgba(15,23,42,0.06)] ' +
+				'hover:border-primary/40 hover:bg-primary/[0.1] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.24),0_8px_20px_-12px_rgba(15,23,42,0.28)] ' +
+				'dark:border-primary/30 dark:bg-primary/[0.12] dark:text-primary-foreground dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_1px_2px_rgba(0,0,0,0.18)] ' +
+				'dark:hover:border-primary/50 dark:hover:bg-primary/[0.18] dark:hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_10px_24px_-14px_rgba(0,0,0,0.5)]',
 			'outline-destructive':
-				'bg-destructive/5 text-foreground! border-destructive/20 hover:bg-destructive/10 hover:border-destructive/40 ' +
-				'dark:bg-destructive/10 dark:text-destructive-foreground dark:border-destructive/30 dark:hover:bg-destructive/20 ' +
-				'shadow-sm hover:shadow-md',
+				'border-destructive/20 bg-destructive/[0.06] text-foreground! shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_1px_2px_rgba(15,23,42,0.06)] ' +
+				'hover:border-destructive/40 hover:bg-destructive/[0.1] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.24),0_8px_20px_-12px_rgba(15,23,42,0.28)] ' +
+				'dark:border-destructive/30 dark:bg-destructive/[0.12] dark:text-destructive-foreground dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_1px_2px_rgba(0,0,0,0.18)] ' +
+				'dark:hover:border-destructive/50 dark:hover:bg-destructive/[0.18] dark:hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_10px_24px_-14px_rgba(0,0,0,0.5)]',
 			'outline-success':
-				'bg-emerald-500/5 text-foreground! border-emerald-500/20 hover:bg-emerald-500/10 hover:border-emerald-500/40 ' +
-				'dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/30 dark:hover:bg-emerald-500/20 ' +
-				'shadow-sm hover:shadow-md',
+				'border-emerald-500/20 bg-emerald-500/[0.06] text-foreground! shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_1px_2px_rgba(15,23,42,0.06)] ' +
+				'hover:border-emerald-500/40 hover:bg-emerald-500/[0.1] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.24),0_8px_20px_-12px_rgba(15,23,42,0.28)] ' +
+				'dark:border-emerald-500/30 dark:bg-emerald-500/[0.12] dark:text-emerald-300 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_1px_2px_rgba(0,0,0,0.18)] ' +
+				'dark:hover:border-emerald-500/50 dark:hover:bg-emerald-500/[0.18] dark:hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_10px_24px_-14px_rgba(0,0,0,0.5)]',
 			'outline-info':
-				'bg-sky-500/5 text-foreground! border-sky-500/20 hover:bg-sky-500/10 hover:border-sky-500/40 ' +
-				'dark:bg-sky-500/10 dark:text-sky-400 dark:border-sky-500/30 dark:hover:bg-sky-500/20 ' +
-				'shadow-sm hover:shadow-md',
+				'border-sky-500/20 bg-sky-500/[0.06] text-foreground! shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_1px_2px_rgba(15,23,42,0.06)] ' +
+				'hover:border-sky-500/40 hover:bg-sky-500/[0.1] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.24),0_8px_20px_-12px_rgba(15,23,42,0.28)] ' +
+				'dark:border-sky-500/30 dark:bg-sky-500/[0.12] dark:text-sky-300 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_1px_2px_rgba(0,0,0,0.18)] ' +
+				'dark:hover:border-sky-500/50 dark:hover:bg-sky-500/[0.18] dark:hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_10px_24px_-14px_rgba(0,0,0,0.5)]',
 			'outline-warning':
-				'bg-amber-500/5 text-foreground! border-amber-500/20 hover:bg-amber-500/10 hover:border-amber-500/40 ' +
-				'dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/30 dark:hover:bg-amber-500/20 ' +
-				'shadow-sm hover:shadow-md',
+				'border-amber-500/20 bg-amber-500/[0.06] text-foreground! shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_1px_2px_rgba(15,23,42,0.06)] ' +
+				'hover:border-amber-500/40 hover:bg-amber-500/[0.1] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.24),0_8px_20px_-12px_rgba(15,23,42,0.28)] ' +
+				'dark:border-amber-500/30 dark:bg-amber-500/[0.12] dark:text-amber-200 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_1px_2px_rgba(0,0,0,0.18)] ' +
+				'dark:hover:border-amber-500/50 dark:hover:bg-amber-500/[0.18] dark:hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_10px_24px_-14px_rgba(0,0,0,0.5)]',
 			'outline-tag':
-				'bg-teal-500/5 text-foreground! border-teal-500/20 hover:bg-teal-500/10 hover:border-teal-500/40 ' +
-				'dark:bg-teal-500/10 dark:text-teal-300 dark:border-teal-500/30 dark:hover:bg-teal-500/20 ' +
-				'shadow-sm hover:shadow-md',
+				'border-teal-500/20 bg-teal-500/[0.06] text-foreground! shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_1px_2px_rgba(15,23,42,0.06)] ' +
+				'hover:border-teal-500/40 hover:bg-teal-500/[0.1] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.24),0_8px_20px_-12px_rgba(15,23,42,0.28)] ' +
+				'dark:border-teal-500/30 dark:bg-teal-500/[0.12] dark:text-teal-200 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_1px_2px_rgba(0,0,0,0.18)] ' +
+				'dark:hover:border-teal-500/50 dark:hover:bg-teal-500/[0.18] dark:hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_10px_24px_-14px_rgba(0,0,0,0.5)]',
 			'outline-scan':
-				'bg-indigo-500/5 text-foreground! border-indigo-500/20 hover:bg-indigo-500/10 hover:border-indigo-500/40 ' +
-				'dark:bg-indigo-500/10 dark:text-indigo-300 dark:border-indigo-500/30 dark:hover:bg-indigo-500/20 ' +
-				'shadow-sm hover:shadow-md',
+				'border-indigo-500/20 bg-indigo-500/[0.06] text-foreground! shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_1px_2px_rgba(15,23,42,0.06)] ' +
+				'hover:border-indigo-500/40 hover:bg-indigo-500/[0.1] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.24),0_8px_20px_-12px_rgba(15,23,42,0.28)] ' +
+				'dark:border-indigo-500/30 dark:bg-indigo-500/[0.12] dark:text-indigo-200 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_1px_2px_rgba(0,0,0,0.18)] ' +
+				'dark:hover:border-indigo-500/50 dark:hover:bg-indigo-500/[0.18] dark:hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_10px_24px_-14px_rgba(0,0,0,0.5)]',
 			'outline-commit':
-				'bg-cyan-500/5 text-foreground! border-cyan-500/20 hover:bg-cyan-500/10 hover:border-cyan-500/40 ' +
-				'dark:bg-cyan-500/10 dark:text-cyan-300 dark:border-cyan-500/30 dark:hover:bg-cyan-500/20 ' +
-				'shadow-sm hover:shadow-md',
+				'border-cyan-500/20 bg-cyan-500/[0.06] text-foreground! shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_1px_2px_rgba(15,23,42,0.06)] ' +
+				'hover:border-cyan-500/40 hover:bg-cyan-500/[0.1] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.24),0_8px_20px_-12px_rgba(15,23,42,0.28)] ' +
+				'dark:border-cyan-500/30 dark:bg-cyan-500/[0.12] dark:text-cyan-200 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_1px_2px_rgba(0,0,0,0.18)] ' +
+				'dark:hover:border-cyan-500/50 dark:hover:bg-cyan-500/[0.18] dark:hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_10px_24px_-14px_rgba(0,0,0,0.5)]',
 			'outline-build':
-				'bg-violet-500/5 text-foreground! border-violet-500/20 hover:bg-violet-500/10 hover:border-violet-500/40 ' +
-				'dark:bg-violet-500/10 dark:text-violet-300 dark:border-violet-500/30 dark:hover:bg-violet-500/20 ' +
-				'shadow-sm hover:shadow-md',
+				'border-violet-500/20 bg-violet-500/[0.06] text-foreground! shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_1px_2px_rgba(15,23,42,0.06)] ' +
+				'hover:border-violet-500/40 hover:bg-violet-500/[0.1] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.24),0_8px_20px_-12px_rgba(15,23,42,0.28)] ' +
+				'dark:border-violet-500/30 dark:bg-violet-500/[0.12] dark:text-violet-200 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_1px_2px_rgba(0,0,0,0.18)] ' +
+				'dark:hover:border-violet-500/50 dark:hover:bg-violet-500/[0.18] dark:hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_10px_24px_-14px_rgba(0,0,0,0.5)]',
 			'outline-sync':
-				'bg-purple-500/5 text-foreground! border-purple-500/20 hover:bg-purple-500/10 hover:border-purple-500/40 ' +
-				'dark:bg-purple-500/10 dark:text-purple-300 dark:border-purple-500/30 dark:hover:bg-purple-500/20 ' +
-				'shadow-sm hover:shadow-md',
+				'border-purple-500/20 bg-purple-500/[0.06] text-foreground! shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_1px_2px_rgba(15,23,42,0.06)] ' +
+				'hover:border-purple-500/40 hover:bg-purple-500/[0.1] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.24),0_8px_20px_-12px_rgba(15,23,42,0.28)] ' +
+				'dark:border-purple-500/30 dark:bg-purple-500/[0.12] dark:text-purple-200 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_1px_2px_rgba(0,0,0,0.18)] ' +
+				'dark:hover:border-purple-500/50 dark:hover:bg-purple-500/[0.18] dark:hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_10px_24px_-14px_rgba(0,0,0,0.5)]',
 			'outline-archive':
-				'bg-slate-500/5 text-foreground! border-slate-500/20 hover:bg-slate-500/10 hover:border-slate-500/40 ' +
-				'dark:bg-slate-500/10 dark:text-slate-300 dark:border-slate-500/30 dark:hover:bg-slate-500/20 ' +
-				'shadow-sm hover:shadow-md',
+				'border-slate-500/20 bg-slate-500/[0.06] text-foreground! shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_1px_2px_rgba(15,23,42,0.06)] ' +
+				'hover:border-slate-500/40 hover:bg-slate-500/[0.1] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.24),0_8px_20px_-12px_rgba(15,23,42,0.28)] ' +
+				'dark:border-slate-500/30 dark:bg-slate-500/[0.12] dark:text-slate-200 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_1px_2px_rgba(0,0,0,0.18)] ' +
+				'dark:hover:border-slate-500/50 dark:hover:bg-slate-500/[0.18] dark:hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_10px_24px_-14px_rgba(0,0,0,0.5)]',
 
-			outline: 'bg-background border-input hover:bg-accent hover:text-accent-foreground shadow-sm',
+			outline:
+				'border-border/80 bg-background/90 text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.34),0_1px_2px_rgba(15,23,42,0.05)] backdrop-blur-sm ' +
+				'hover:border-border hover:bg-accent/60 hover:text-accent-foreground hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.24),0_8px_20px_-12px_rgba(15,23,42,0.22)] ' +
+				'dark:bg-card/70 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_1px_2px_rgba(0,0,0,0.16)] dark:hover:bg-accent/40',
 
 			ghost:
-				'border-transparent bg-transparent text-foreground! hover:bg-accent/40 hover:text-accent-foreground shadow-none hover:shadow-none',
-			link: 'border-transparent bg-transparent text-primary underline-offset-4 hover:underline shadow-none hover:shadow-none'
+				'border-transparent bg-transparent text-foreground! shadow-none ' +
+				'hover:bg-accent/50 hover:text-accent-foreground dark:hover:bg-accent/30',
+			link: 'border-transparent bg-transparent text-primary shadow-none underline-offset-4 hover:bg-primary/5 hover:underline'
 		},
 		size: {
 			default: 'h-9 px-4 py-2 has-[svg]:px-3',
-			sm: 'h-8 gap-1.5 rounded-md px-3 has-[svg]:px-2.5',
-			lg: 'h-10 rounded-md px-5 has-[svg]:px-4',
-			icon: 'size-9',
-			card: 'min-h-14 w-full p-3 rounded-2xl justify-start gap-3'
+			sm: 'h-8 gap-1.5 rounded-lg px-3 has-[svg]:px-2.5',
+			lg: 'h-10 rounded-xl px-5 has-[svg]:px-4',
+			icon: 'size-9 p-0',
+			card: 'min-h-14 w-full justify-start gap-3 rounded-2xl p-3 text-left'
 		},
 		hoverEffect: {
 			none: '',

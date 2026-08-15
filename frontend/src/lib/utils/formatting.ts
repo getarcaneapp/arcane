@@ -251,6 +251,7 @@ const dateFnsLocaleLoaders: Record<Locale, () => Promise<DateFnsLocale>> = {
 	'pt-BR': () => resolveDateFnsLocale(() => import('date-fns/locale/pt-BR')),
 	ru: () => resolveDateFnsLocale(() => import('date-fns/locale/ru')),
 	sv: () => resolveDateFnsLocale(() => import('date-fns/locale/sv')),
+	tr: () => resolveDateFnsLocale(() => import('date-fns/locale/tr')),
 	uk: () => resolveDateFnsLocale(() => import('date-fns/locale/uk')),
 	vi: () => resolveDateFnsLocale(() => import('date-fns/locale/vi')),
 	'zh-CN': () => resolveDateFnsLocale(() => import('date-fns/locale/zh-CN')),

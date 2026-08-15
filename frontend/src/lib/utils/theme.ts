@@ -213,6 +213,52 @@ export const DEFAULT_ACCENT_COLOR = 'oklch(0.606 0.25 292.717)';
 
 let htmlClassObserver: MutationObserver | null = null;
 
+// Mirrors the appearance state onto localStorage so the blocking inline script
+// in app.html can restore it before first paint (see app.html) — without this
+// the SPA shell paints the default light theme until hydration + API calls finish.
+const APPEARANCE_CACHE_KEY = 'arcane-appearance';
+
+type AppearanceCache = {
+	appTheme?: ApplicationTheme | null;
+	oled?: boolean;
+	accent?: { primary: string; primaryForeground: string; ring: string } | null;
+	fontSize?: number | null;
+	noBlur?: boolean;
+	reduceEffects?: boolean;
+};
+
+function updateAppearanceCache(partial: AppearanceCache): void {
+	if (typeof localStorage === 'undefined') {
+		return;
+	}
+
+	try {
+		const stored = JSON.parse(localStorage.getItem(APPEARANCE_CACHE_KEY) ?? '{}') as { v?: AppearanceCache };
+		const v: AppearanceCache = { ...stored.v, ...partial };
+
+		// Pre-compute the exact attribute, class list, and inline style the inline
+		// script applies, so it stays a dumb three-line replay of this cache.
+		const attr = v.appTheme ?? '';
+		const cls = [v.oled && OLED_CLASS, v.noBlur && 'no-blur', v.reduceEffects && 'reduce-effects'].filter(Boolean).join(' ');
+		const css = [
+			...(v.accent
+				? [
+						`--primary: ${v.accent.primary}`,
+						`--primary-foreground: ${v.accent.primaryForeground}`,
+						`--ring: ${v.accent.ring}`,
+						`--sidebar-ring: ${v.accent.ring}`
+					]
+				: []),
+			...(v.fontSize ? [`font-size: ${v.fontSize}px`] : [])
+		].join('; ');
+
+		localStorage.setItem(APPEARANCE_CACHE_KEY, JSON.stringify({ v, attr, cls, css }));
+	} catch {
+		// localStorage unavailable (private browsing) or corrupted cache — the
+		// inline script degrades to the default theme, nothing else breaks.
+	}
+}
+
 // fallow-ignore-next-line unused-export
 export const accentColorPreviewStore = writable<string>(DEFAULT_ACCENT_COLOR);
 const oledModeStore = writable<boolean>(false);
@@ -239,6 +285,8 @@ export function applyApplicationTheme(themeValue?: string | null): void {
 	} else {
 		document.documentElement.setAttribute(APP_THEME_ATTRIBUTE, theme);
 	}
+
+	updateAppearanceCache({ appTheme: theme === 'default' ? null : theme });
 
 	syncBrowserThemeColor();
 }
@@ -303,6 +351,7 @@ export function applyAccentColor(accentValue: string) {
 		document.documentElement.style.removeProperty('--primary-foreground');
 		document.documentElement.style.removeProperty('--ring');
 		document.documentElement.style.removeProperty('--sidebar-ring');
+		updateAppearanceCache({ accent: null });
 		return;
 	}
 
@@ -314,6 +363,8 @@ export function applyAccentColor(accentValue: string) {
 	const ringColor = `color-mix(in srgb, ${resolvedAccent} 50%, transparent)`;
 	document.documentElement.style.setProperty('--ring', ringColor);
 	document.documentElement.style.setProperty('--sidebar-ring', ringColor);
+
+	updateAppearanceCache({ accent: { primary: resolvedAccent, primaryForeground: foregroundColor, ring: ringColor } });
 }
 
 function getContrastingForeground(color: string): string {
@@ -362,6 +413,8 @@ export function applyOledMode(enabled: boolean): void {
 		document.documentElement.classList.remove(OLED_CLASS);
 	}
 
+	updateAppearanceCache({ oled: enabled });
+
 	syncBrowserThemeColor();
 }
 
@@ -379,6 +432,7 @@ export function applyGlassEffects(enabled: boolean): void {
 	}
 
 	document.documentElement.classList.toggle(NO_BLUR_CLASS, !enabled);
+	updateAppearanceCache({ noBlur: !enabled });
 }
 
 /**
@@ -392,6 +446,7 @@ export function applyInterfaceAnimations(enabled: boolean): void {
 	}
 
 	document.documentElement.classList.toggle(REDUCE_EFFECTS_CLASS, !enabled);
+	updateAppearanceCache({ reduceEffects: !enabled });
 }
 
 export const FONT_SIZE_MIN = 12;
@@ -412,9 +467,11 @@ export function applyFontSize(px?: number | null): void {
 
 	if (px == null || px === FONT_SIZE_DEFAULT) {
 		root.style.removeProperty('font-size');
+		updateAppearanceCache({ fontSize: null });
 		return;
 	}
 
 	const clamped = Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN, Math.round(px)));
 	root.style.fontSize = `${clamped}px`;
+	updateAppearanceCache({ fontSize: clamped });
 }

@@ -18,7 +18,7 @@ _default:
 # Run frontend dev server on port 3000
 [group('dev')]
 _dev-frontend:
-    pnpm -C frontend dev
+    vp -C frontend run dev
 
 # Run backend with hot reload on port 3552
 [group('dev')]
@@ -69,7 +69,7 @@ _dev-all:
     #!/usr/bin/env bash
     trap 'kill 0' EXIT
     (cd backend && air) &
-    pnpm -C frontend dev
+    vp -C frontend run dev
 
 # Rebuild Docker dev environment
 [group('dev')]
@@ -135,7 +135,7 @@ dev-tls force="false":
 # Build the frontend
 [group('build')]
 _build-frontend:
-    pnpm -C frontend build
+    vp -C frontend run build
 
 # Build the backend
 [group('build')]
@@ -175,7 +175,7 @@ build buildtype type="" tag="" flag="":
 # Run Playwright E2E tests
 [group('test')]
 _test-e2e:
-    pnpm -C tests test
+    vp -C tests run test
 
 # Run backend Go tests
 [group('test')]
@@ -235,15 +235,15 @@ test target="all":
 # Quality: format, lint, and fixes
 # -----------------------------------------------------------------------------
 
-# Format frontend/test/email TypeScript with oxfmt and Go modules with gofmt
+# Format frontend/test/email TypeScript with vp fmt (Vite+) and Go modules with gofmt
 [group('quality')]
 _format-frontend:
-    pnpm -C frontend format
+    vp fmt frontend
 
 [group('quality')]
 _format-js:
-    pnpm -C tests format
-    pnpm -C email-templates format
+    vp fmt tests
+    vp fmt email-templates
 
 [group('quality')]
 _format-go:
@@ -257,12 +257,12 @@ _format-just:
 
 [group('quality')]
 _format-check-frontend:
-    pnpm -C frontend format:check
+    vp fmt --check frontend
 
 [group('quality')]
 _format-check-js:
-    pnpm -C tests format:check
-    pnpm -C email-templates format:check
+    vp fmt --check tests
+    vp fmt --check email-templates
 
 [group('quality')]
 _format-check-go:
@@ -297,17 +297,17 @@ format target="all" check="":
 # Type check/Lint frontend
 [group('quality')]
 _lint-frontend:
-    pnpm -C frontend check
+    vp -C frontend run check
 
 # Type check Playwright tests
 [group('quality')]
 _lint-tests:
-    pnpm -C tests check
+    vp -C tests run check
 
 # Type check email templates
 [group('quality')]
 _lint-email-templates:
-    pnpm -C email-templates check
+    vp -C email-templates run check
 
 # Type check all JavaScript/TypeScript workspaces
 [group('quality')]
@@ -404,14 +404,23 @@ snyk target="scan":
 
 # Install frontend dependencies
 [group('deps')]
+_deps-install-viteplus:
+    vp migrate
+
+
 _deps-install-frontend:
-    pnpm install
+    vp install
 
 # Install tests dependencies
 [group('deps')]
 _deps-install-tests:
-    pnpm -C tests install
-    pnpm -C tests exec playwright install --with-deps chromium
+    vp -C tests install
+    # --with-deps shells out to apt-get, so skip it on non-Debian systems
+    if command -v apt-get >/dev/null 2>&1; then \
+        vp -C tests exec playwright install --with-deps chromium; \
+    else \
+        vp -C tests exec playwright install chromium; \
+    fi
 
 # Install backend Go dependencies
 [group('deps')]
@@ -437,7 +446,7 @@ _deps-install-go: _deps-install-backend _deps-install-cli _deps-install-types
 
 # Install all Node.js dependencies
 [group('deps')]
-_deps-install-node: _deps-install-frontend _deps-install-tests
+_deps-install-node: _deps-install-frontend _deps-install-tests _deps-install-viteplus
 
 # Install all dependencies
 [group('deps')]
@@ -446,7 +455,7 @@ _deps-install-all: _deps-install-node _deps-install-go
 # Update frontend dependencies
 [group('deps')]
 _deps-update-frontend:
-    pnpm update
+    vp update
 
 # Update backend Go dependencies
 [group('deps')]
@@ -464,7 +473,7 @@ _deps-update-all: _deps-update-frontend _deps-update-backend _deps-update-pnpm
 # Dedupe all pnpm workspace dependencies
 [group('deps')]
 _deps-dedupe-node:
-    pnpm dedupe
+    vp dedupe
 
 [group('deps')]
 _deps-dedupe-all: _deps-dedupe-node
@@ -663,6 +672,67 @@ i18n-add locale native_name settings="frontend/project.inlang/settings.json" pic
     tail -n "+$((end_line+1))" "$picker_path" >> "$picker_tmp"
     mv "$picker_tmp" "$picker_path"
     rm -f "$block_tmp"
+
+    formatting_path="frontend/src/lib/utils/formatting.ts"
+    if [ ! -f "$formatting_path" ]; then
+        echo "Warning: $formatting_path not found; add the date-fns loader for '{{ locale }}' manually."
+    elif rg -q "date-fns/locale/{{ locale }}'" "$formatting_path"; then
+        echo "date-fns loader for '{{ locale }}' already present in $formatting_path"
+    else
+        f_start="$(rg -n -F "const dateFnsLocaleLoaders" "$formatting_path" | head -n1 | cut -d: -f1)"
+        if [ -z "$f_start" ]; then
+            echo "Warning: unable to find dateFnsLocaleLoaders in $formatting_path; add '{{ locale }}' manually."
+        else
+            f_end="$(awk -v s="$f_start" 'NR>s && $0 ~ /^[[:space:]]*};/ { print NR; exit }' "$formatting_path")"
+            if [ -z "$f_end" ]; then
+                echo "Warning: unable to find end of dateFnsLocaleLoaders in $formatting_path; add '{{ locale }}' manually."
+            else
+                f_const_indent="$(sed -n "${f_start}p" "$formatting_path" | sed -E 's/^([[:space:]]*).*/\1/')"
+                f_entry_indent="$(sed -n "$((f_start+1)),$((f_end-1))p" "$formatting_path" | awk 'NF { match($0, /^[[:space:]]*/); print substr($0, RSTART, RLENGTH); exit }')"
+                if [ -z "$f_entry_indent" ]; then
+                    f_entry_indent="${f_const_indent}	"
+                fi
+
+                f_entries="$(mktemp)"
+                while IFS= read -r line; do
+                    if [[ $line =~ ^[[:space:]]*\'?([^\'\":]+)\'?:.*date-fns/locale/([A-Za-z-]+) ]]; then
+                        key="${BASH_REMATCH[1]}"
+                        mod="${BASH_REMATCH[2]}"
+                        if [ "$key" != "{{ locale }}" ]; then
+                            printf '%s\t%s\n' "$key" "$mod" >> "$f_entries"
+                        fi
+                    fi
+                done < <(sed -n "$((f_start+1)),$((f_end-1))p" "$formatting_path")
+                printf '%s\t%s\n' "{{ locale }}" "{{ locale }}" >> "$f_entries"
+
+                f_block="$(sed -n "${f_start}p" "$formatting_path")"
+                f_block+=$'\n'
+                while IFS=$'\t' read -r key mod; do
+                    [ -z "$key" ] && continue
+                    if [[ $key =~ ^[A-Za-z_$][A-Za-z0-9_$]*$ ]]; then
+                        out_key="$key"
+                    else
+                        out_key="'${key}'"
+                    fi
+                    f_block+="${f_entry_indent}${out_key}: () => resolveDateFnsLocale(() => import('date-fns/locale/${mod}')),"
+                    f_block+=$'\n'
+                done < <(LC_ALL=C sort -f -t $'\t' -k1,1 "$f_entries")
+                f_block+="${f_const_indent}};"
+                rm -f "$f_entries"
+
+                f_tmp="$(mktemp)"
+                sed -n "1,$((f_start-1))p" "$formatting_path" > "$f_tmp"
+                printf '%s\n' "$f_block" >> "$f_tmp"
+                tail -n "+$((f_end+1))" "$formatting_path" >> "$f_tmp"
+                mv "$f_tmp" "$formatting_path"
+                echo "Added date-fns loader for '{{ locale }}' to $formatting_path"
+
+                if [ ! -e "frontend/node_modules/date-fns/locale/{{ locale }}.js" ] && [ ! -d "frontend/node_modules/date-fns/locale/{{ locale }}" ]; then
+                    echo "Warning: date-fns may not ship a '{{ locale }}' locale (check the module name, e.g. en uses en-US)."
+                fi
+            fi
+        fi
+    fi
 
     if [ -f "$target_file" ]; then
         echo "Messages file already exists, not overwriting: $target_file"

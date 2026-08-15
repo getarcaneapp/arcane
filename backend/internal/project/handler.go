@@ -29,6 +29,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/project"
 	"github.com/samber/mo"
+	"gorm.io/gorm"
 )
 
 // ProjectHandler provides Huma-based project management endpoints.
@@ -50,6 +51,7 @@ type ListProjectsInput struct {
 	Status        string `query:"status" doc:"Filter by status (comma-separated: running,stopped,partially running)"`
 	Updates       string `query:"updates" doc:"Filter by update status (has_update, up_to_date, error, unknown)"`
 	Archived      string `query:"archived" doc:"Archived filter: 'true' (only archived), 'all' (include archived). Default excludes archived."`
+	Tags          string `query:"tags" doc:"Filter by tag names (comma-separated, OR semantics)"`
 }
 
 type ListProjectsOutput struct {
@@ -62,6 +64,28 @@ type GetProjectStatusCountsInput struct {
 
 type GetProjectStatusCountsOutput struct {
 	Body base.ApiResponse[project.StatusCounts]
+}
+
+// ListProjectTagsInput identifies the environment whose tag catalog is requested.
+type ListProjectTagsInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+}
+
+// ListProjectTagsOutput contains the environment's distinct project tag options.
+type ListProjectTagsOutput struct {
+	Body base.ApiResponse[[]project.TagOption]
+}
+
+// UpdateProjectTagInput identifies a project and the UI tag mutation to apply.
+type UpdateProjectTagInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	ProjectID     string `path:"projectId" doc:"Project ID"`
+	Body          project.UpdateTag
+}
+
+// UpdateProjectTagOutput contains the project's effective tags after mutation.
+type UpdateProjectTagOutput struct {
+	Body base.ApiResponse[project.UpdateTagResponse]
 }
 
 type DeployProjectInput struct {
@@ -212,6 +236,26 @@ func RegisterProjects(api huma.API, projectService *ProjectService, activityServ
 		Tags:        []string{"Projects"},
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}, authz.PermProjectsList, h.GetProjectStatusCounts)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "list-project-tags",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/projects/tags",
+		Summary:     "List project tags",
+		Description: "Get sorted, distinct project tag names",
+		Tags:        []string{"Projects"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermProjectsList, h.ListProjectTags)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "update-project-tag",
+		Method:      http.MethodPatch,
+		Path:        "/environments/{id}/projects/{projectId}/tags",
+		Summary:     "Update a project tag",
+		Description: "Attach or detach a UI-managed project tag",
+		Tags:        []string{"Projects"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermProjectsUpdate, h.UpdateProjectTag)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "deploy-project",
@@ -401,6 +445,9 @@ func (h *ProjectHandler) ListProjects(ctx context.Context, input *ListProjectsIn
 	if input.Archived != "" {
 		params.Filters["archived"] = input.Archived
 	}
+	if input.Tags != "" {
+		params.Filters["tags"] = input.Tags
+	}
 
 	projects, paginationResp, err := h.projectService.ListProjects(ctx, params)
 	if err != nil {
@@ -441,6 +488,63 @@ func (h *ProjectHandler) GetProjectStatusCounts(ctx context.Context, input *GetP
 			},
 		},
 	}, nil
+}
+
+// ListProjectTags returns the reusable project tag catalog for an environment.
+func (h *ProjectHandler) ListProjectTags(ctx context.Context, _ *ListProjectTagsInput) (*ListProjectTagsOutput, error) {
+	options, err := h.projectService.ListProjectTagOptions(ctx)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to list project tags").Error())
+	}
+	if options == nil {
+		options = []project.TagOption{}
+	}
+	return &ListProjectTagsOutput{Body: base.ApiResponse[[]project.TagOption]{Success: true, Data: options}}, nil
+}
+
+// UpdateProjectTag applies one UI-managed project tag association change.
+func (h *ProjectHandler) UpdateProjectTag(ctx context.Context, input *UpdateProjectTagInput) (*UpdateProjectTagOutput, error) {
+	user, err := handlerutil.RequireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var tags []project.Tag
+	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
+		EnvironmentID:  input.EnvironmentID,
+		Type:           models.ActivityTypeResourceAction,
+		ResourceType:   "project",
+		ResourceID:     input.ProjectID,
+		ResourceName:   input.ProjectID,
+		User:           user,
+		Step:           "Updating project tags",
+		Message:        "Updating project tags",
+		SuccessMessage: "Project tags updated",
+		Metadata:       models.JSON{"action": "update_tags", "tag": input.Body.Name, "attached": input.Body.Attached},
+	}, func(runtimeCtx context.Context) error {
+		var updateErr error
+		tags, updateErr = h.projectService.UpdateProjectTag(runtimeCtx, input.ProjectID, input.Body.Name, input.Body.Color, input.Body.Attached, *user)
+		return updateErr
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, errComposeTagReadOnly):
+			return nil, huma.Error409Conflict(err.Error())
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			return nil, huma.Error404NotFound("Project not found")
+		default:
+			return nil, huma.Error400BadRequest(err.Error())
+		}
+	}
+
+	return &UpdateProjectTagOutput{Body: base.ApiResponse[project.UpdateTagResponse]{
+		Success: true,
+		Data: project.UpdateTagResponse{
+			Tags:       tags,
+			ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer(),
+		},
+	}}, nil
 }
 
 // DeployProject deploys a Docker Compose project.
@@ -638,7 +742,7 @@ func (h *ProjectHandler) CreateProject(ctx context.Context, input *CreateProject
 		Metadata:       models.JSON{"action": "create_project"},
 	}, func(runtimeCtx context.Context) error {
 		var createErr error
-		proj, createErr = h.projectService.CreateProject(runtimeCtx, projectInput.Name, projectInput.ComposeContent, projectInput.EnvContent, manifest, uploads, *user)
+		proj, createErr = h.projectService.CreateProject(runtimeCtx, projectInput.Name, projectInput.ComposeContent, projectInput.EnvContent, manifest, uploads, projectInput.Tags, projectInput.TagColors, *user)
 		return createErr
 	})
 	if err != nil {
@@ -662,6 +766,10 @@ func (h *ProjectHandler) CreateProject(ctx context.Context, input *CreateProject
 	response.IsArchived = proj.IsArchived
 	response.ArchivedAt = proj.ArchivedAt
 	response.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
+	response.Tags, err = h.projectService.GetProjectTags(ctx, proj.ID)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to load project tags").Error())
+	}
 
 	return &CreateProjectOutput{
 		Body: base.ApiResponse[project.CreateReponse]{

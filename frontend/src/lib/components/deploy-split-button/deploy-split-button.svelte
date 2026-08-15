@@ -43,8 +43,8 @@
 		<DropdownMenu.Trigger
 			class={cn(
 				arcaneButtonVariants({ tone: 'outline-primary', size: 'icon' }),
-				size === 'sm' && 'size-8 rounded-md',
-				size === 'lg' && 'size-10 rounded-md'
+				size === 'sm' && 'size-8 rounded-lg',
+				size === 'lg' && 'size-10 rounded-xl'
 			)}
 			aria-label={m.common_open_menu()}
 			disabled={loading}

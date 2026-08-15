@@ -31,8 +31,9 @@ export const load: PageLoad = async ({ parent, url }) => {
 
 	let projects;
 	let projectStatusCounts;
+	let projectTags;
 	try {
-		[projects, projectStatusCounts] = await Promise.all([
+		[projects, projectStatusCounts, projectTags] = await Promise.all([
 			queryClient.fetchQuery({
 				queryKey: queryKeys.projects.list(envId, projectRequestOptions),
 				queryFn: () => projectService.getProjectsForEnvironment(envId, projectRequestOptions)
@@ -40,11 +41,15 @@ export const load: PageLoad = async ({ parent, url }) => {
 			queryClient.fetchQuery({
 				queryKey: queryKeys.projects.statusCounts(envId),
 				queryFn: () => projectService.getProjectStatusCountsForEnvironment(envId)
+			}),
+			queryClient.fetchQuery({
+				queryKey: queryKeys.projects.tags(envId),
+				queryFn: () => projectService.getProjectTagsForEnvironment(envId)
 			})
 		]);
 	} catch (err) {
 		throwPageLoadError(err, 'Failed to load projects');
 	}
 
-	return { envId, projects, projectRequestOptions, projectStatusCounts, showArchived };
+	return { envId, projects, projectRequestOptions, projectStatusCounts, projectTags, showArchived };
 };

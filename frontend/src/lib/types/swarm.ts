@@ -582,6 +582,20 @@ export interface ProjectUpdateInfo {
 	lastCheckedAt?: string;
 }
 
+export type ProjectTagSource = 'ui' | 'compose';
+export type ProjectTagColor = 'gray' | 'purple' | 'blue' | 'green' | 'yellow' | 'orange' | 'red' | 'pink';
+
+export interface ProjectTag {
+	name: string;
+	color: ProjectTagColor;
+	sources: ProjectTagSource[];
+}
+
+export interface ProjectTagOption {
+	name: string;
+	color: ProjectTagColor;
+}
+
 export interface Project {
 	id: string;
 	name: string;
@@ -591,6 +605,7 @@ export interface Project {
 	iconLightUrl?: string;
 	iconDarkUrl?: string;
 	urls?: string[];
+	tags?: ProjectTag[];
 	runningCount: string;
 	serviceCount: string;
 	status: string;

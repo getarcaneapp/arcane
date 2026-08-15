@@ -29,6 +29,10 @@ import (
 type ActivityHandler struct {
 	activityService *ActivityService
 	environment     EnvironmentDependencies
+
+	// remoteStreamHub shares one poller per remote environment across every
+	// connected stream client instead of polling per client × environment.
+	remoteStreamHub *agg.Hub[activitytypes.StreamEvent]
 }
 
 type EnvironmentDependencies struct {
@@ -98,6 +102,7 @@ func NewHandler(activityService *ActivityService, environment EnvironmentDepende
 	return &ActivityHandler{
 		activityService: activityService,
 		environment:     environment,
+		remoteStreamHub: agg.NewHub[activitytypes.StreamEvent](),
 	}
 }
 
@@ -354,7 +359,17 @@ func (h *ActivityHandler) RunRemoteStreamPollers(ctx context.Context, ps *authz.
 		activityStreamEnvReconcileInterval,
 		"activity stream",
 		func(pollCtx context.Context, environment models.Environment) {
-			h.runRemoteActivityStreamPollerInternal(pollCtx, environment, limit, events)
+			// One shared poller per environment (and snapshot limit) serves
+			// every connected client; this subscriber only forwards its
+			// events onto this client's stream.
+			key := activityStreamEnvironmentVersionInternal(environment) + ":" + strconv.Itoa(resolveActivityStreamLimitInternal(limit))
+			h.remoteStreamHub.Subscribe(pollCtx, key,
+				func(runCtx context.Context, publish func(activitytypes.StreamEvent)) {
+					h.runRemoteActivityStreamPollerInternal(runCtx, environment, limit, publish)
+				},
+				func(event activitytypes.StreamEvent) bool {
+					return agg.Send(pollCtx, events, event)
+				})
 		})
 }
 
@@ -393,7 +408,7 @@ func activitySnapshotFingerprintInternal(items []activitytypes.Activity) string 
 	return strconv.FormatUint(hash.Sum64(), 16)
 }
 
-func (h *ActivityHandler) runRemoteActivityStreamPollerInternal(ctx context.Context, environment models.Environment, limit int, events chan<- activitytypes.StreamEvent) {
+func (h *ActivityHandler) runRemoteActivityStreamPollerInternal(ctx context.Context, environment models.Environment, limit int, publish func(activitytypes.StreamEvent)) {
 	environmentID := environment.ID
 	lastError := ""
 	lastFingerprint := ""
@@ -424,7 +439,7 @@ func (h *ActivityHandler) runRemoteActivityStreamPollerInternal(ctx context.Cont
 			// once per distinct message and keep polling.
 			if msg := err.Error(); msg != lastError {
 				lastError = msg
-				agg.Send(ctx, events, activitytypes.StreamEvent{
+				publish(activitytypes.StreamEvent{
 					Type:          "error",
 					EnvironmentID: environmentID,
 					Error:         msg,
@@ -440,14 +455,13 @@ func (h *ActivityHandler) runRemoteActivityStreamPollerInternal(ctx context.Cont
 		if fingerprint == lastFingerprint {
 			return
 		}
-		if agg.Send(ctx, events, activitytypes.StreamEvent{
+		publish(activitytypes.StreamEvent{
 			Type:          "snapshot",
 			EnvironmentID: environmentID,
 			Activities:    output.Body.Data,
 			Timestamp:     time.Now(),
-		}) {
-			lastFingerprint = fingerprint
-		}
+		})
+		lastFingerprint = fingerprint
 	}
 
 	poll()

@@ -2,13 +2,19 @@ package apikey
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"log/slog"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"emperror.dev/errors"
+
+	"github.com/samber/hot"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -49,13 +55,46 @@ type ApiKeyService struct {
 	userService  *user.UserService
 	roleService  *role.RoleService
 	argon2Params *user.Argon2Params
+	// validatedKeyCache is a per-process cache of Argon2id-validated API keys,
+	// keyed by HMAC-SHA256 of the raw key under cacheKeyPepper. Entries are only
+	// written after a full hash validation, so a hit safely skips the Argon2id
+	// derivation. Expiry is re-checked on every hit and entries are invalidated
+	// on key update/delete.
+	validatedKeyCache *hot.HotCache[string, models.ApiKey]
+	// cacheKeyPepper is a random per-process HMAC key for deriving cache keys.
+	// Generated keys carry 256 bits of entropy, but the static admin key is
+	// operator-provided and may be weak; the pepper keeps its in-memory digest
+	// useless for offline brute-force (e.g. from a memory dump). Argon2id
+	// remains the sole persistent hash.
+	cacheKeyPepper []byte
+	// cacheGen is bumped by every invalidation; cache fills are guarded by
+	// cacheFillMu and dropped when the generation moved after the fill's DB
+	// read. Without this, a validation that read the key row just before a
+	// revocation would republish the deleted key after eviction already ran,
+	// letting it authenticate for a full cache TTL.
+	cacheGen    atomic.Uint64
+	cacheFillMu sync.Mutex
+	// lastUsedMu guards lastUsedWrites, which debounces last_used_at writes so
+	// each key opens at most one write transaction per apiKeyLastUsedWriteWindow.
+	lastUsedMu     sync.Mutex
+	lastUsedWrites map[string]time.Time
 }
 
 func NewApiKeyService(db *database.DB, userService *user.UserService) *ApiKeyService {
+	pepper := make([]byte, 32)
+	if _, err := rand.Read(pepper); err != nil {
+		panic(errors.WrapIf(err, "failed to generate API key cache pepper"))
+	}
 	return &ApiKeyService{
-		db:           db,
-		userService:  userService,
-		argon2Params: user.DefaultArgon2Params(),
+		cacheKeyPepper: pepper,
+		db:             db,
+		userService:    userService,
+		argon2Params:   user.DefaultArgon2Params(),
+		validatedKeyCache: hot.NewHotCache[string, models.ApiKey](hot.LRU, 4096).
+			WithTTL(15 * time.Second).
+			WithJanitor().
+			Build(),
+		lastUsedWrites: make(map[string]time.Time),
 	}
 }
 
@@ -109,6 +148,87 @@ func (s *ApiKeyService) markApiKeyUsedInternal(ctx context.Context, keyID string
 		return errors.WrapIf(err, "failed to update API key last-used timestamp")
 	}
 	return nil
+}
+
+// markApiKeyUsedDebouncedInternal skips the DB write entirely when this process
+// already persisted last_used_at for the key within the write window, so the
+// auth hot path stays read-only between windows.
+func (s *ApiKeyService) markApiKeyUsedDebouncedInternal(ctx context.Context, keyID string) {
+	now := time.Now()
+	s.lastUsedMu.Lock()
+	if last, ok := s.lastUsedWrites[keyID]; ok && now.Sub(last) < apiKeyLastUsedWriteWindow {
+		s.lastUsedMu.Unlock()
+		return
+	}
+	s.lastUsedWrites[keyID] = now
+	s.lastUsedMu.Unlock()
+
+	if err := s.markApiKeyUsedInternal(ctx, keyID); err != nil {
+		slog.WarnContext(ctx, "failed to persist API key usage", "api_key_id", keyID, "error", err)
+		// Release the reservation so the next use retries instead of silently
+		// skipping writes for the rest of the window — but only if it is still
+		// ours, to avoid clobbering a newer reservation made after an
+		// invalidation reset the entry.
+		s.lastUsedMu.Lock()
+		if last, ok := s.lastUsedWrites[keyID]; ok && last.Equal(now) {
+			delete(s.lastUsedWrites, keyID)
+		}
+		s.lastUsedMu.Unlock()
+	}
+}
+
+// hashRawAPIKeyInternal derives the cache key for a raw API key. This is not
+// credential storage — Argon2id in the DB is — so a fast keyed hash is
+// appropriate for this hot path; the per-process pepper prevents offline
+// brute-force of the digest should process memory leak.
+func (s *ApiKeyService) hashRawAPIKeyInternal(rawKey string) string {
+	mac := hmac.New(sha256.New, s.cacheKeyPepper)
+	mac.Write([]byte(rawKey))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+// invalidateValidatedKeysInternal evicts cached validations for the given key
+// IDs (the cache is keyed by raw-key hash, so eviction scans for matching IDs)
+// and resets their last_used_at debounce state.
+//
+// Callers must invoke this only AFTER the corresponding DB change has
+// committed. Combined with the generation guard on fills, that makes the
+// invariant: once this returns, no cached validation for these ids exists or
+// can reappear. Requests whose cache read races the brief span between commit
+// and eviction — like requests already past hash validation when the change
+// commits — are the unavoidable in-flight window every auth system has; they
+// are deliberately not defended against, as doing so would require locking
+// every validation against every revocation.
+func (s *ApiKeyService) invalidateValidatedKeysInternal(ids ...string) {
+	if s.validatedKeyCache == nil || len(ids) == 0 {
+		return
+	}
+	idSet := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		idSet[id] = struct{}{}
+	}
+
+	// Bump the generation before evicting, under the fill mutex: any in-flight
+	// validation that read the DB before this invalidation either publishes
+	// before us (and is evicted below) or sees the moved generation and skips
+	// its publish. Either way the stale entry cannot survive.
+	s.cacheFillMu.Lock()
+	s.cacheGen.Add(1)
+	var cacheKeys []string
+	s.validatedKeyCache.Range(func(key string, entry models.ApiKey) bool {
+		if _, ok := idSet[entry.ID]; ok {
+			cacheKeys = append(cacheKeys, key)
+		}
+		return true
+	})
+	s.validatedKeyCache.DeleteMany(cacheKeys)
+	s.cacheFillMu.Unlock()
+
+	s.lastUsedMu.Lock()
+	for id := range idSet {
+		delete(s.lastUsedWrites, id)
+	}
+	s.lastUsedMu.Unlock()
 }
 
 func (s *ApiKeyService) CreateApiKey(ctx context.Context, userID string, callerPerms *authz.PermissionSet, req apikey.CreateApiKey) (*apikey.ApiKeyCreatedDto, error) {
@@ -446,29 +566,41 @@ func (s *ApiKeyService) createManagedDefaultAdminAPIKey(tx *gorm.DB, userID, raw
 	return nil
 }
 
-func (s *ApiKeyService) reconcileManagedAPIKeys(tx *gorm.DB, userID string, rawKey string) error {
+// reconcileManagedAPIKeys applies the desired managed-key state inside tx and
+// returns the ids whose cached validations the caller must invalidate AFTER
+// the transaction commits. Invalidating pre-commit is ineffective: a concurrent
+// validation can still read the old committed row, snapshot the already-bumped
+// generation, and republish the entry so it survives the commit.
+func (s *ApiKeyService) reconcileManagedAPIKeys(tx *gorm.DB, userID string, rawKey string) ([]string, error) {
 	managedKeys, err := s.listManagedAPIKeys(tx, userID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if rawKey == "" {
-		return s.deleteManagedAPIKeysByIDs(tx, managedAPIKeyDeleteIDsInternal(managedKeys, -1))
+		deleteIDs := managedAPIKeyDeleteIDsInternal(managedKeys, -1)
+		return deleteIDs, s.deleteManagedAPIKeysByIDs(tx, deleteIDs)
 	}
 
 	matchingIndex := s.findMatchingManagedAPIKey(rawKey, managedKeys)
 	if matchingIndex >= 0 {
 		if err := s.updateMatchingManagedAPIKey(tx, managedKeys[matchingIndex].ID); err != nil {
-			return err
+			return nil, err
 		}
-		return s.deleteManagedAPIKeysByIDs(tx, managedAPIKeyDeleteIDsInternal(managedKeys, matchingIndex))
+		deleteIDs := managedAPIKeyDeleteIDsInternal(managedKeys, matchingIndex)
+		if err := s.deleteManagedAPIKeysByIDs(tx, deleteIDs); err != nil {
+			return nil, err
+		}
+		// The kept key's metadata changed too; its cached copy is stale.
+		return append(deleteIDs, managedKeys[matchingIndex].ID), nil
 	}
 
-	if err := s.deleteManagedAPIKeysByIDs(tx, managedAPIKeyDeleteIDsInternal(managedKeys, -1)); err != nil {
-		return err
+	deleteIDs := managedAPIKeyDeleteIDsInternal(managedKeys, -1)
+	if err := s.deleteManagedAPIKeysByIDs(tx, deleteIDs); err != nil {
+		return nil, err
 	}
 
-	return s.createManagedDefaultAdminAPIKey(tx, userID, rawKey)
+	return deleteIDs, s.createManagedDefaultAdminAPIKey(tx, userID, rawKey)
 }
 
 func (s *ApiKeyService) ReconcileDefaultAdminAPIKey(ctx context.Context, rawKey string) error {
@@ -479,9 +611,16 @@ func (s *ApiKeyService) ReconcileDefaultAdminAPIKey(ctx context.Context, rawKey 
 		return err
 	}
 
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return s.reconcileManagedAPIKeys(tx, adminUser.ID, rawKey)
-	})
+	var affectedIDs []string
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		affectedIDs, err = s.reconcileManagedAPIKeys(tx, adminUser.ID, rawKey)
+		return err
+	}); err != nil {
+		// Rolled back: the DB is unchanged, so cached entries are still valid.
+		return err
+	}
+	s.invalidateValidatedKeysInternal(affectedIDs...)
+	return nil
 }
 
 func (s *ApiKeyService) CreateEnvironmentApiKey(ctx context.Context, environmentID string) (*apikey.ApiKeyCreatedDto, error) {
@@ -685,6 +824,7 @@ func (s *ApiKeyService) UpdateApiKey(ctx context.Context, callerPerms *authz.Per
 	if permissionsUpdated {
 		s.roleService.InvalidateApiKey(ak.ID)
 	}
+	s.invalidateValidatedKeysInternal(ak.ID)
 
 	return &apikey.ApiKey{
 		ID:          ak.ID,
@@ -749,6 +889,7 @@ func (s *ApiKeyService) DeleteApiKey(ctx context.Context, id string) error {
 	if result.RowsAffected == 0 {
 		return ErrApiKeyNotFound
 	}
+	s.invalidateValidatedKeysInternal(id)
 	return nil
 }
 
@@ -760,68 +901,84 @@ func (s *ApiKeyService) ValidateApiKey(ctx context.Context, rawKey string) (*mod
 // ValidateApiKeyWithID is like ValidateApiKey but additionally returns the
 // API key record so callers can resolve permissions according to its kind.
 func (s *ApiKeyService) ValidateApiKeyWithID(ctx context.Context, rawKey string) (*models.User, *models.ApiKey, error) {
-	keyPrefix, err := parseAPIKeyPrefixInternal(rawKey)
+	apiKey, err := s.validateRawAPIKeyInternal(ctx, rawKey)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	var apiKeys []models.ApiKey
-	if err := s.db.WithContext(ctx).Where("key_prefix = ?", keyPrefix).Find(&apiKeys).Error; err != nil {
-		return nil, nil, errors.WrapIf(err, "failed to find API keys")
+	if apiKey.UserID == nil {
+		return nil, nil, ErrApiKeyInvalid
 	}
 
-	rawKey = strings.TrimSpace(rawKey)
-	for _, apiKey := range apiKeys {
-		if err := s.validateApiKeyHash(apiKey.KeyHash, rawKey); err == nil {
-			if apiKey.ExpiresAt != nil && apiKey.ExpiresAt.Before(time.Now()) {
-				return nil, nil, ErrApiKeyExpired
-			}
-
-			if apiKey.UserID == nil {
-				return nil, nil, ErrApiKeyInvalid
-			}
-
-			if err := s.markApiKeyUsedInternal(ctx, apiKey.ID); err != nil {
-				slog.WarnContext(ctx, "failed to persist API key usage", "api_key_id", apiKey.ID, "error", err)
-			}
-
-			user, err := s.userService.GetUserByID(ctx, *apiKey.UserID)
-			if err != nil {
-				return nil, nil, errors.WrapIf(err, "failed to get user for API key")
-			}
-
-			return user, &apiKey, nil
-		}
+	user, err := s.userService.GetUserByID(ctx, *apiKey.UserID)
+	if err != nil {
+		return nil, nil, errors.WrapIf(err, "failed to get user for API key")
 	}
 
-	return nil, nil, ErrApiKeyInvalid
+	return user, apiKey, nil
 }
 
 func (s *ApiKeyService) GetEnvironmentByApiKey(ctx context.Context, rawKey string) (*string, error) {
+	apiKey, err := s.validateRawAPIKeyInternal(ctx, rawKey)
+	if err != nil {
+		return nil, err
+	}
+	return apiKey.EnvironmentID, nil
+}
+
+// validateRawAPIKeyInternal resolves a raw key to its validated record. A cache
+// hit skips the per-candidate Argon2id derivation; expiry is always re-checked
+// so a key expiring mid-TTL is rejected immediately.
+func (s *ApiKeyService) validateRawAPIKeyInternal(ctx context.Context, rawKey string) (*models.ApiKey, error) {
+	rawKey = strings.TrimSpace(rawKey)
 	keyPrefix, err := parseAPIKeyPrefixInternal(rawKey)
 	if err != nil {
 		return nil, err
 	}
 
+	cacheKey := s.hashRawAPIKeyInternal(rawKey)
+	if cached, ok, _ := s.validatedKeyCache.Get(cacheKey); ok {
+		if cached.ExpiresAt != nil && cached.ExpiresAt.Before(time.Now()) {
+			s.validatedKeyCache.Delete(cacheKey)
+			return nil, ErrApiKeyExpired
+		}
+		s.markApiKeyUsedDebouncedInternal(ctx, cached.ID)
+		return &cached, nil
+	}
+
+	// Snapshot before the read: if a revocation lands between this read and the
+	// publish below, the generation will have moved and the publish is dropped.
+	gen := s.cacheGen.Load()
 	var apiKeys []models.ApiKey
 	if err := s.db.WithContext(ctx).Where("key_prefix = ?", keyPrefix).Find(&apiKeys).Error; err != nil {
 		return nil, errors.WrapIf(err, "failed to find API keys")
 	}
 
-	rawKey = strings.TrimSpace(rawKey)
 	for _, apiKey := range apiKeys {
 		if err := s.validateApiKeyHash(apiKey.KeyHash, rawKey); err == nil {
 			if apiKey.ExpiresAt != nil && apiKey.ExpiresAt.Before(time.Now()) {
 				return nil, ErrApiKeyExpired
 			}
 
-			if err := s.markApiKeyUsedInternal(ctx, apiKey.ID); err != nil {
-				slog.WarnContext(ctx, "failed to persist API key usage", "api_key_id", apiKey.ID, "error", err)
-			}
+			s.storeValidatedKeyInternal(gen, cacheKey, apiKey)
+			s.markApiKeyUsedDebouncedInternal(ctx, apiKey.ID)
 
-			return apiKey.EnvironmentID, nil
+			return &apiKey, nil
 		}
 	}
 
 	return nil, ErrApiKeyInvalid
+}
+
+// storeValidatedKeyInternal publishes a validated key into the cache unless an
+// invalidation ran since the generation snapshot taken before the caller's DB
+// read. The current request still proceeds — it validated against a row that
+// existed at read time, indistinguishable from a request racing the revocation
+// itself — but the result must not outlive the revocation in the cache.
+func (s *ApiKeyService) storeValidatedKeyInternal(gen uint64, cacheKey string, apiKey models.ApiKey) {
+	s.cacheFillMu.Lock()
+	defer s.cacheFillMu.Unlock()
+	if s.cacheGen.Load() == gen {
+		s.validatedKeyCache.Set(cacheKey, apiKey)
+	}
 }
