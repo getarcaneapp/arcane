@@ -468,10 +468,18 @@ func buildProjectUpdateInfoSummaryInternal(
 		}
 
 		summary.CheckedImageCount++
+		if summary.UpdateInfoByRef == nil {
+			summary.UpdateInfoByRef = make(map[string]imagetypes.UpdateInfo)
+		}
+		summary.UpdateInfoByRef[imageRef] = *info
 		if info.HasUpdate {
 			summary.HasUpdate = true
 			summary.ImagesWithUpdates++
 			summary.UpdatedImageRefs = append(summary.UpdatedImageRefs, imageRef)
+		}
+		if info.UpdateType == models.UpdateTypeNotPulled {
+			summary.ImagesNotPulled++
+			summary.NotPulledImageRefs = append(summary.NotPulledImageRefs, imageRef)
 		}
 		if strings.TrimSpace(info.Error) != "" {
 			summary.ErrorCount++
@@ -491,6 +499,8 @@ func buildProjectUpdateInfoSummaryInternal(
 		summary.Status = "has_update"
 	case summary.ErrorCount > 0:
 		summary.Status = "error"
+	case summary.ImagesNotPulled > 0:
+		summary.Status = "not_pulled"
 	case summary.CheckedImageCount == imageCount:
 		summary.Status = "up_to_date"
 	default:

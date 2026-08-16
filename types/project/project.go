@@ -5,6 +5,7 @@ import (
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
+	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 )
 
 // IncludeFile represents an included file within a project.
@@ -222,7 +223,7 @@ type RuntimeService struct {
 type UpdateInfo struct {
 	// Status is the aggregate update status for the project.
 	//
-	// Values: has_update | up_to_date | unknown | error
+	// Values: has_update | up_to_date | not_pulled | unknown | error
 	// Required: true
 	Status string `json:"status"`
 
@@ -246,6 +247,11 @@ type UpdateInfo struct {
 	// Required: true
 	ImagesWithUpdates int `json:"imagesWithUpdates"`
 
+	// ImagesNotPulled is the number of project image references not present locally.
+	//
+	// Required: true
+	ImagesNotPulled int `json:"imagesNotPulled"`
+
 	// ErrorCount is the number of project image references whose latest check failed.
 	//
 	// Required: true
@@ -265,6 +271,16 @@ type UpdateInfo struct {
 	//
 	// Required: false
 	UpdatedImageRefs []string `json:"updatedImageRefs,omitempty"`
+
+	// NotPulledImageRefs is the subset of project image references not present locally.
+	//
+	// Required: false
+	NotPulledImageRefs []string `json:"notPulledImageRefs,omitempty"`
+
+	// UpdateInfoByRef contains the latest persisted per-image update result keyed by image reference.
+	//
+	// Required: false
+	UpdateInfoByRef map[string]imagetypes.UpdateInfo `json:"updateInfoByRef,omitempty"`
 
 	// LastCheckedAt is the latest successful or failed image update check time for this project.
 	//

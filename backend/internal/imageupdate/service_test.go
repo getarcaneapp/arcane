@@ -493,6 +493,44 @@ func TestImageUpdateService_CheckMultipleImages_ComposeBuildSkipsRegistryWithRep
 	assert.Zero(t, registryCalls.Load())
 }
 
+func TestImageUpdateService_CheckMultipleImages_ComposeBuildMissingLocallySkipsRegistry(t *testing.T) {
+	db := setupImageUpdateTestDB(t)
+	buildRefsJSON := `["test2:latest"]`
+	require.NoError(t, db.Create(&models.Project{
+		BaseModel:          models.BaseModel{ID: "compose-build-missing-project"},
+		Name:               "compose-build-missing-project",
+		BuildImageRefsJSON: &buildRefsJSON,
+	}).Error)
+
+	dockerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "No such image", http.StatusNotFound)
+	}))
+	t.Cleanup(dockerServer.Close)
+
+	var registryCalls atomic.Int32
+	registryService := registry.NewContainerRegistryService(db, func(context.Context) (registry.RegistryDaemonClient, error) {
+		return &fakeRegistryDaemonClient{
+			distributionInspectFn: func(context.Context, string, client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+				registryCalls.Add(1)
+				return client.DistributionInspectResult{}, nil
+			},
+		}, nil
+	}, nil)
+
+	dockerService := &docker.DockerClientService{Client: newImageUpdateTestDockerClientInternal(t, dockerServer)}
+	eventService := event.NewEventService(db, nil, nil)
+	svc := NewImageUpdateService(db, nil, registryService, dockerService, eventService, nil, nil)
+
+	results, err := svc.CheckMultipleImages(context.Background(), []string{"test2:latest"}, nil)
+	require.NoError(t, err)
+	result := results["test2:latest"]
+	require.NotNil(t, result)
+	assert.Empty(t, result.Error)
+	assert.False(t, result.HasUpdate)
+	assert.Equal(t, models.UpdateTypeLocal, result.UpdateType)
+	assert.Zero(t, registryCalls.Load())
+}
+
 func TestImageUpdateService_InspectLocalImageSnapshot_NoRepoDigestsRemainsLocal(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json") {
@@ -1056,7 +1094,7 @@ func TestImageUpdateService_CheckMultipleImages_UsesDockerHubCredentialsOnFirstA
 	assert.True(t, result.UsedCredential)
 }
 
-func TestImageUpdateService_CheckMultipleImages_PersistsRefScopedErrorsWhenLocalImageMissing(t *testing.T) {
+func TestImageUpdateService_CheckMultipleImages_ReportsNotPulledWhenLocalImageMissing(t *testing.T) {
 	db := setupImageUpdateTestDB(t)
 	remoteDigest := digest.FromString("registry-only-remote").String()
 
@@ -1083,15 +1121,19 @@ func TestImageUpdateService_CheckMultipleImages_PersistsRefScopedErrorsWhenLocal
 	require.NoError(t, err)
 	require.Contains(t, results, imageRef)
 	require.NotNil(t, results[imageRef])
-	assert.Contains(t, results[imageRef].Error, "failed to inspect image")
+	assert.Empty(t, results[imageRef].Error)
+	assert.False(t, results[imageRef].HasUpdate)
+	assert.Equal(t, models.UpdateTypeNotPulled, results[imageRef].UpdateType)
+	assert.Equal(t, remoteDigest, results[imageRef].LatestDigest)
 
 	var saved models.ImageUpdateRecord
 	repository := fmt.Sprintf("%s/library/nginx", serverURL.Host)
 	require.NoError(t, db.WithContext(context.Background()).Where("id = ?", fmt.Sprintf("ref::%s@alpine", strings.ToLower(strings.TrimSpace(repository)))).First(&saved).Error)
 	assert.Equal(t, repository, saved.Repository)
 	assert.Equal(t, "alpine", saved.Tag)
-	require.NotNil(t, saved.LastError)
-	assert.Contains(t, *saved.LastError, "failed to inspect image")
+	assert.False(t, saved.HasUpdate)
+	assert.Equal(t, models.UpdateTypeNotPulled, saved.UpdateType)
+	assert.Nil(t, saved.LastError)
 }
 
 func TestImageUpdateService_SaveUpdateResultWithSnapshotInternal_PersistsRegistryOnlySuccessWithSyntheticID(t *testing.T) {

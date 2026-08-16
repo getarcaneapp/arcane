@@ -1500,7 +1500,12 @@
 							persistStorage="local"
 						>
 							{#snippet first()}
-								<ProjectServicesPanel services={project.runtimeServices} {projectId} onRefresh={() => refreshProjectDetails()} />
+								<ProjectServicesPanel
+									services={project.runtimeServices}
+									{projectId}
+									updateInfoByRef={project.updateInfo?.updateInfoByRef}
+									onRefresh={() => refreshProjectDetails()}
+								/>
 							{/snippet}
 							{#snippet second()}
 								<div class="flex h-full min-h-0 flex-col overflow-hidden">
@@ -1515,7 +1520,12 @@
 					</div>
 				{:else}
 					<div class="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-card">
-						<ProjectServicesPanel services={project.runtimeServices} {projectId} onRefresh={() => refreshProjectDetails()} />
+						<ProjectServicesPanel
+							services={project.runtimeServices}
+							{projectId}
+							updateInfoByRef={project.updateInfo?.updateInfoByRef}
+							onRefresh={() => refreshProjectDetails()}
+						/>
 					</div>
 				{/if}
 			</Tabs.Content>

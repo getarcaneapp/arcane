@@ -407,7 +407,6 @@ snyk target="scan":
 _deps-install-viteplus:
     vp migrate
 
-
 _deps-install-frontend:
     vp install
 

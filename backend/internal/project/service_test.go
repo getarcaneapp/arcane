@@ -3311,6 +3311,19 @@ func TestBuildProjectUpdateInfoSummaryInternal(t *testing.T) {
 			wantErrors:  0,
 			wantUpdates: 0,
 		},
+		{
+			name:      "not pulled when an image is missing locally and nothing else needs attention",
+			imageRefs: []string{"nginx:latest", "redis:7"},
+			updates: map[string]*imagetypes.UpdateInfo{
+				"nginx:latest": {HasUpdate: false, UpdateType: models.UpdateTypeNotPulled, CheckTime: now},
+				"redis:7":      {HasUpdate: false, CheckTime: now.Add(-time.Minute)},
+			},
+			wantStatus:  "not_pulled",
+			wantCount:   2,
+			wantChecked: 2,
+			wantErrors:  0,
+			wantUpdates: 0,
+		},
 	}
 
 	for _, tt := range tests {
