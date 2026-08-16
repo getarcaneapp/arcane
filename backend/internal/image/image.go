@@ -802,20 +802,6 @@ func convertLabels(labels map[string]string) map[string]any {
 	return result
 }
 
-func (s *ImageService) GetTotalImageSize(ctx context.Context) (int64, error) {
-	images, err := s.dockerService.ListImages(ctx)
-	if err != nil {
-		return 0, errors.WrapIf(err, "failed to list images")
-	}
-
-	var total int64
-	for _, img := range images {
-		total += img.Size
-	}
-
-	return total, nil
-}
-
 // projectIDCacheTTL bounds how long a snapshot of all (name → id) project rows is reused.
 // Dashboard polls frequently; the projects table changes rarely, so a short TTL is safe.
 const projectIDCacheTTL = 5 * time.Second
