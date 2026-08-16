@@ -31,6 +31,25 @@
 		'git-branch': GitBranchIcon
 	};
 
+	const categoryMessages = {
+		templates: {
+			title: m.templates_title,
+			description: m.templates_subtitle
+		},
+		registries: {
+			title: m.registries_title,
+			description: m.registries_subtitle
+		},
+		variables: {
+			title: m.variables_title,
+			description: m.variables_subtitle
+		},
+		'git-repositories': {
+			title: m.git_repositories_title,
+			description: m.git_repositories_subtitle
+		}
+	} as const;
+
 	function isAccessibleCategory(category: CustomizeCategory) {
 		if (!permissionsManifest?.accessSurfaces?.length) return true;
 		return canReachAccessSurfaceUrl(permissionsManifest, category.url, user, environmentStore.selected?.id);
@@ -56,10 +75,12 @@
 	}
 
 	function normalize(category: CustomizeCategory): NormalizedCategory {
+		// Category IDs are the stable API contract; backend text remains the fallback for future categories.
+		const messages = categoryMessages[category.id as keyof typeof categoryMessages];
 		return {
 			id: category.id,
-			title: category.title,
-			description: category.description,
+			title: messages?.title() ?? category.title,
+			description: messages?.description() ?? category.description,
 			icon: getIconComponent(category.icon),
 			href: category.url,
 			matchingItems: category.matchingCustomizations

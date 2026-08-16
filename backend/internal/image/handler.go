@@ -2,7 +2,6 @@ package image
 
 import (
 	"context"
-	stderrors "errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -826,39 +825,15 @@ func resolveLegacyPruneImageModeInternal(dangling bool) string {
 
 // GetImageUsageCounts returns counts of images by usage status.
 func (h *ImageHandler) GetImageUsageCounts(ctx context.Context, input *GetImageUsageCountsInput) (*GetImageUsageCountsOutput, error) {
-	var (
-		inuse, unused, total int
-		totalSize            int64
-		errs                 []error
-	)
-
-	_, iu, un, tot, err := h.dockerService.GetAllImages(ctx)
+	_, counts, err := h.dockerService.GetAllImages(ctx)
 	if err != nil {
-		errs = append(errs, errors.WrapIf(err, "get images"))
-	} else {
-		inuse, unused, total = iu, un, tot
-	}
-
-	sz, err := h.imageService.GetTotalImageSize(ctx)
-	if err != nil {
-		errs = append(errs, errors.WrapIf(err, "get total image size"))
-	} else {
-		totalSize = sz
-	}
-
-	if len(errs) > 0 {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(stderrors.Join(errs...), "Failed to get image usage counts").Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to get image usage counts").Error())
 	}
 
 	return &GetImageUsageCountsOutput{
 		Body: base.ApiResponse[image.UsageCounts]{
 			Success: true,
-			Data: image.UsageCounts{
-				Inuse:     inuse,
-				Unused:    unused,
-				Total:     total,
-				TotalSize: totalSize,
-			},
+			Data:    counts,
 		},
 	}, nil
 }

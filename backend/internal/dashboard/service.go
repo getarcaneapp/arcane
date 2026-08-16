@@ -223,11 +223,7 @@ func (s *DashboardService) buildSnapshotInternal(ctx context.Context, options Da
 		imagePage = limitDashboardItemsInternal(imageItems, dashboardSnapshotPreloadLimit)
 	}
 
-	imageUsageCounts := imagetypes.UsageCounts{}
-	imageUsageCounts.Inuse, imageUsageCounts.Unused, imageUsageCounts.Total = docker.CountImageUsage(dockerImages, filteredContainers)
-	for _, img := range dockerImages {
-		imageUsageCounts.TotalSize += img.Size
-	}
+	imageUsageCounts := docker.CountImageUsage(dockerImages, filteredContainers)
 
 	// Uses the unfiltered container list so a volume mounted only by an internal
 	// container still counts as in use, matching the volumes page.

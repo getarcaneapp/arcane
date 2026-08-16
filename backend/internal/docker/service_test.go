@@ -13,6 +13,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	docker "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
+	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/events"
 	"github.com/moby/moby/api/types/image"
@@ -256,9 +257,9 @@ func TestDockerClientService_EventActorStopCancelsAndJoinsStreamInternal(t *test
 
 func TestCountImageUsage_UsesContainerImageIDs(t *testing.T) {
 	images := []image.Summary{
-		{ID: "sha256:image-a", Containers: -1},
-		{ID: "sha256:image-b", Containers: 0},
-		{ID: "sha256:image-c", Containers: 99},
+		{ID: "sha256:image-a", Containers: -1, Size: 100},
+		{ID: "sha256:image-b", Containers: 0, Size: 25},
+		{ID: "sha256:image-c", Containers: 99, Size: 3},
 	}
 
 	containers := []container.Summary{
@@ -268,19 +269,18 @@ func TestCountImageUsage_UsesContainerImageIDs(t *testing.T) {
 		{ImageID: ""},
 	}
 
-	inuse, unused, total := CountImageUsage(images, containers)
+	counts := CountImageUsage(images, containers)
 
-	assert.Equal(t, 2, inuse)
-	assert.Equal(t, 1, unused)
-	assert.Equal(t, 3, total)
+	assert.Equal(t, 2, counts.Inuse)
+	assert.Equal(t, 1, counts.Unused)
+	assert.Equal(t, 3, counts.Total)
+	assert.Equal(t, int64(128), counts.TotalSize)
 }
 
 func TestCountImageUsage_NoImages(t *testing.T) {
-	inuse, unused, total := CountImageUsage(nil, []container.Summary{{ImageID: "sha256:image-a"}})
+	counts := CountImageUsage(nil, []container.Summary{{ImageID: "sha256:image-a"}})
 
-	assert.Equal(t, 0, inuse)
-	assert.Equal(t, 0, unused)
-	assert.Equal(t, 0, total)
+	assert.Equal(t, imagetypes.UsageCounts{}, counts)
 }
 
 func newDockerClientServiceForTestInternal(host string) *DockerClientService {
