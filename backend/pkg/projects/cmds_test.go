@@ -2,12 +2,17 @@ package projects
 
 import (
 	"context"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 )
 
@@ -115,4 +120,31 @@ func TestComposeUpOptions_RemoveOrphans(t *testing.T) {
 		require.False(t, upOptions.RemoveOrphans)
 		require.Equal(t, api.RecreateForce, upOptions.Recreate)
 	})
+}
+
+func TestListGlobalComposeContainersUsesProvidedClient(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/containers/json") {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `[{"Id":"abc123","Labels":{"com.docker.compose.project":"demo"}}]`)
+	}))
+	t.Cleanup(server.Close)
+
+	apiClient, err := client.New(
+		client.WithHost(server.URL),
+		client.WithAPIVersion("1.41"),
+		client.WithHTTPClient(server.Client()),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = apiClient.Close() })
+
+	// The bogus dockerHost proves the provided client wins over the
+	// fallback host.
+	containers, err := ListGlobalComposeContainers(context.Background(), apiClient, "tcp://unused.example.com:2375")
+	require.NoError(t, err)
+	require.Len(t, containers, 1)
+	require.Equal(t, "abc123", containers[0].ID)
 }

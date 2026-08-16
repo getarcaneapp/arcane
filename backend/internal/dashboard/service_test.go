@@ -13,6 +13,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
@@ -21,6 +22,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
 	dashboardtypes "github.com/getarcaneapp/arcane/types/v2/dashboard"
+	usertypes "github.com/getarcaneapp/arcane/types/v2/user"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/libtnb/sqlite"
 	dockercontainer "github.com/moby/moby/api/types/container"
@@ -184,7 +186,7 @@ func TestDashboardService_GetSnapshot_ReturnsDashboardSnapshot(t *testing.T) {
 	projectSvc := project.NewProjectService(db, settingsSvc, nil, image.NewImageService(db, nil, nil, nil, nil, nil), nil, nil, nil, nil, config.Load())
 	svc := NewDashboardService(db, dockerSvc, nil, projectSvc, nil, settingsSvc, nil, nil, nil, volume.NewVolumeService(db, nil, nil, nil, nil, nil))
 
-	snapshot, err := svc.GetSnapshot(context.Background(), DashboardActionItemsOptions{})
+	snapshot, err := svc.GetSnapshot(context.Background(), DashboardActionItemsOptions{}, true)
 	require.NoError(t, err)
 	require.NotNil(t, snapshot)
 
@@ -237,7 +239,7 @@ func TestDashboardService_GetSnapshot_DebugAllGoodOnlyClearsActionItems(t *testi
 	dockerSvc := newDashboardTestDockerService(t, settingsSvc, containers, images, nil)
 	svc := NewDashboardService(db, dockerSvc, nil, nil, nil, settingsSvc, nil, nil, nil, nil)
 
-	snapshot, err := svc.GetSnapshot(context.Background(), DashboardActionItemsOptions{DebugAllGood: true})
+	snapshot, err := svc.GetSnapshot(context.Background(), DashboardActionItemsOptions{DebugAllGood: true}, true)
 	require.NoError(t, err)
 	require.NotNil(t, snapshot)
 
@@ -300,4 +302,84 @@ func newSettingsServiceForTestInternal(ctx context.Context, t testing.TB, db *da
 		require.NoError(t, lifecycle.Stop(stopCtx))
 	})
 	return settings.NewSettingsService(ctx, db, executor, effects)
+}
+
+func TestDashboardService_GetSnapshot_TrimmedOmitsTablesAndSharesBuilds(t *testing.T) {
+	db, settingsSvc := setupDashboardServiceTestDB(t)
+
+	containers := []dockercontainer.Summary{
+		{ID: "container-running", Names: []string{"/running-app"}, Image: "repo/app:stable", ImageID: "sha256:image-a", Created: 1700000000, State: "running", Status: "Up 2 hours", Labels: map[string]string{}},
+		{ID: "container-stopped", Names: []string{"/stopped-app"}, Image: "repo/worker:latest", ImageID: "sha256:image-b", Created: 1800000000, State: "exited", Status: "Exited (0) 1 hour ago", Labels: map[string]string{}},
+	}
+	images := []dockerimage.Summary{
+		{ID: "sha256:image-a", RepoTags: []string{"repo/app:stable"}, Created: 1710000000, Size: 100},
+		{ID: "sha256:image-b", RepoTags: []string{"repo/worker:latest"}, Created: 1720000000, Size: 250},
+	}
+
+	dockerSvc := newDashboardTestDockerService(t, settingsSvc, containers, images, nil)
+	svc := NewDashboardService(db, dockerSvc, nil, nil, nil, settingsSvc, nil, nil, nil, nil)
+
+	trimmed, err := svc.GetSnapshot(context.Background(), DashboardActionItemsOptions{}, false)
+	require.NoError(t, err)
+	require.NotNil(t, trimmed)
+
+	// No table rows, but counters and pagination totals intact.
+	require.Nil(t, trimmed.Containers.Data)
+	require.Nil(t, trimmed.Images.Data)
+	require.Equal(t, 1, trimmed.Containers.Counts.RunningContainers)
+	require.Equal(t, 1, trimmed.Containers.Counts.StoppedContainers)
+	require.Equal(t, 2, trimmed.Containers.Counts.TotalContainers)
+	require.EqualValues(t, 2, trimmed.Containers.Pagination.TotalItems)
+	require.EqualValues(t, 2, trimmed.Images.Pagination.TotalItems)
+	require.Equal(t, 2, trimmed.ImageUsageCounts.Total)
+
+	// Within the TTL every subscriber shares the same build.
+	again, err := svc.GetSnapshot(context.Background(), DashboardActionItemsOptions{}, false)
+	require.NoError(t, err)
+	require.Same(t, trimmed, again)
+
+	// The full variant is cached separately and still carries the tables.
+	full, err := svc.GetSnapshot(context.Background(), DashboardActionItemsOptions{}, true)
+	require.NoError(t, err)
+	require.NotNil(t, full)
+	require.Len(t, full.Containers.Data, 2)
+	require.Len(t, full.Images.Data, 2)
+}
+
+func TestDashboardService_GetSnapshot_CachesFullSnapshotsPerIconCatalog(t *testing.T) {
+	db, settingsSvc := setupDashboardServiceTestDB(t)
+
+	containers := []dockercontainer.Summary{
+		{ID: "container-running", Names: []string{"/running-app"}, Image: "repo/app:stable", ImageID: "sha256:image-a", Created: 1700000000, State: "running", Status: "Up 2 hours", Labels: map[string]string{"arcane.icon": "myapp"}},
+	}
+	images := []dockerimage.Summary{
+		{ID: "sha256:image-a", RepoTags: []string{"repo/app:stable"}, Created: 1710000000, Size: 100},
+	}
+
+	dockerSvc := newDashboardTestDockerService(t, settingsSvc, containers, images, nil)
+	containerSvc := container.NewContainerService(t.Context(), nil, dockerSvc, nil, settingsSvc, nil)
+	svc := NewDashboardService(db, dockerSvc, containerSvc, nil, nil, settingsSvc, nil, nil, nil, nil)
+
+	defaultSnapshot, err := svc.GetSnapshot(context.Background(), DashboardActionItemsOptions{}, true)
+	require.NoError(t, err)
+	require.Len(t, defaultSnapshot.Containers.Data, 1)
+	require.Contains(t, defaultSnapshot.Containers.Data[0].IconLightURL, "selfhst")
+
+	// A user preferring another catalog must not be served the default-catalog
+	// snapshot from the cache.
+	dashboardIconsUser := &models.User{Preferences: usertypes.Preferences{IconCatalog: new("dashboard-icons")}}
+	userCtx := context.WithValue(context.Background(), models.CurrentUserContextKey{}, dashboardIconsUser)
+	userSnapshot, err := svc.GetSnapshot(userCtx, DashboardActionItemsOptions{}, true)
+	require.NoError(t, err)
+	require.NotSame(t, defaultSnapshot, userSnapshot)
+	require.Len(t, userSnapshot.Containers.Data, 1)
+	require.Contains(t, userSnapshot.Containers.Data[0].IconLightURL, "dashboard-icons")
+
+	// Both catalog variants stay cached side by side within the TTL.
+	defaultAgain, err := svc.GetSnapshot(context.Background(), DashboardActionItemsOptions{}, true)
+	require.NoError(t, err)
+	require.Same(t, defaultSnapshot, defaultAgain)
+	userAgain, err := svc.GetSnapshot(userCtx, DashboardActionItemsOptions{}, true)
+	require.NoError(t, err)
+	require.Same(t, userSnapshot, userAgain)
 }

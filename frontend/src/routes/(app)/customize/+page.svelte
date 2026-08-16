@@ -121,10 +121,6 @@
 	noResultsDescription={m.customize_try_adjusting()}
 	matchingItemsLabel={m.customize_available_options()}
 	goToPageLabel={m.customize_button()}
-	rootClass="space-y-8 pb-5 md:space-y-10 md:pb-5"
-	cardClass="hover:border-primary/20 group cursor-pointer transition-all duration-200 hover:shadow-md"
-	resultCardClass="bg-background/40 rounded-lg border shadow-sm"
-	searchIconClass="size-4"
 	categories={normalizedCategories}
 	categorySearch={searchAdapter}
 	navigate={navigateToCategory}

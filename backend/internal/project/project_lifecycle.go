@@ -2,6 +2,7 @@ package project
 
 import (
 	"context"
+	stderrors "errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -378,7 +379,15 @@ func (s *ProjectService) DownProject(ctx context.Context, projectID string, user
 // "-N" (the interactive default). When false a collision returns
 // projects.ErrProjectDirExists (wrapped) so GitOps creates fail loudly instead of
 // minting runaway "-N" duplicate projects on a broken binding.
-func (s *ProjectService) CreateProject(ctx context.Context, name, composeContent string, envContent *string, manifest project.CreateProjectWorkspaceManifest, uploads map[int][]byte, user models.User, allowNameSuffixOptions ...bool) (*models.Project, error) {
+func (s *ProjectService) CreateProject(ctx context.Context, name, composeContent string, envContent *string, manifest project.CreateProjectWorkspaceManifest, uploads map[int][]byte, uiTags []string, uiTagColors map[string]project.TagColor, user models.User, allowNameSuffixOptions ...bool) (*models.Project, error) {
+	normalizedUITags, err := projects.NormalizeProjectTags(uiTags)
+	if err != nil {
+		return nil, errors.WrapIf(err, "invalid project tags")
+	}
+	normalizedTagColors, err := normalizeProjectTagColorsInternal(uiTagColors)
+	if err != nil {
+		return nil, errors.WrapIf(err, "invalid project tag colors")
+	}
 	allowNameSuffix := true
 	if len(allowNameSuffixOptions) > 0 {
 		allowNameSuffix = allowNameSuffixOptions[0]
@@ -443,13 +452,41 @@ func (s *ProjectService) CreateProject(ctx context.Context, name, composeContent
 		_ = acfs.RemoveAll(context.WithoutCancel(ctx), projectsDirectory, projectLogical)
 		return nil, errors.WrapIf(err, "failed to save project files")
 	}
+	composeMeta, err := projects.ParseArcaneComposeMetadata(
+		ctx,
+		filepath.Join(projectPath, projects.DefaultComposeFileName),
+		projectsDirectory,
+		s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false),
+	)
+	if err != nil {
+		slog.WarnContext(ctx, "failed to read Compose project tags during creation", "projectName", name, "error", err)
+		composeMeta = projects.ArcaneComposeMetadata{}
+	}
+	normalizedUITags = excludeComposeOwnedUITagsInternal(normalizedUITags, composeMeta.ProjectTags)
 
-	if err := s.db.WithContext(ctx).Create(proj).Error; err != nil {
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(proj).Error; err != nil {
+			return err
+		}
+		return createUIProjectTagsInternal(tx, proj.ID, normalizedUITags, normalizedTagColors)
+	}); err != nil {
 		_ = acfs.RemoveAll(context.WithoutCancel(ctx), projectsDirectory, projectLogical)
 		return nil, errors.WrapIf(err, "failed to create project")
 	}
 	s.refreshComposeProjectNameInternal(ctx, proj)
 	s.refreshProjectImageRefsInternal(ctx, proj)
+	if err := s.reconcileComposeProjectTagsInternal(ctx, proj.ID, composeMeta.ProjectTags); err != nil {
+		cleanupCtx := context.WithoutCancel(ctx)
+		databaseCleanupErr := s.db.WithContext(cleanupCtx).Transaction(func(tx *gorm.DB) error {
+			return deleteProjectWithTagsInternal(tx, proj.ID)
+		})
+		fileCleanupErr := acfs.RemoveAll(cleanupCtx, projectsDirectory, projectLogical)
+		return nil, stderrors.Join(
+			errors.WrapIf(err, "reconcile Compose project tags"),
+			errors.WrapIf(databaseCleanupErr, "rollback project database state after tag reconciliation failure"),
+			errors.WrapIf(fileCleanupErr, "rollback project files after tag reconciliation failure"),
+		)
+	}
 
 	metadata := models.JSON{"action": "create", "projectID": proj.ID, "projectName": proj.Name, "path": projectPath}
 	s.logProjectEventInternal(ctx, models.EventTypeProjectCreate, proj.ID, proj.Name, user, metadata, "could not log project creation")
@@ -499,7 +536,9 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, r
 		slog.InfoContext(ctx, "Project files removed successfully", "path", proj.Path)
 	}
 
-	if err := s.db.WithContext(ctx).Delete(proj).Error; err != nil {
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return deleteProjectWithTagsInternal(tx, projectID)
+	}); err != nil {
 		return errors.WrapIf(err, "failed to delete project from database")
 	}
 
@@ -530,7 +569,7 @@ func (s *ProjectService) RedeployProject(ctx context.Context, projectID string, 
 		return err
 	}
 
-	disabled := projectRedeployDisabledInternal(ctx, *proj)
+	disabled := s.projectRedeployDisabledInternal(ctx, *proj)
 	if disabled {
 		return errors.New("arcane cannot redeploy itself; use the system upgrade flow (Settings -> Updates) instead")
 	}
@@ -554,8 +593,8 @@ func (s *ProjectService) RedeployProject(ctx context.Context, projectID string, 
 	return s.DeployProject(ctx, projectID, user, options)
 }
 
-func projectRedeployDisabledInternal(ctx context.Context, proj models.Project) bool {
-	containers, err := projects.ListGlobalComposeContainers(ctx)
+func (s *ProjectService) projectRedeployDisabledInternal(ctx context.Context, proj models.Project) bool {
+	containers, err := s.listGlobalComposeContainersInternal(ctx)
 	if err != nil {
 		slog.WarnContext(ctx, "could not list compose containers to check self-redeploy guard; skipping guard", "error", err)
 		return false

@@ -26,7 +26,6 @@
 	"exclude": [
 		"node_modules/**",
 		"src/lib/paraglide/**",
-		"src/paraglide/**",
 		"src/service-worker.js",
 		"src/service-worker/**/*.js",
 		"src/service-worker/**/*.ts",

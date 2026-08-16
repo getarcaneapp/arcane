@@ -1489,7 +1489,7 @@ func (s *GitOpsSyncService) createProjectForSyncInternal(ctx context.Context, sy
 	// Use the non-suffixing create: a GitOps sync must never mint a "-N" duplicate.
 	// A name collision means a project directory already exists for this name, so the
 	// binding is broken — fail loudly and disable auto-sync instead of duplicating.
-	project, err := s.projectService.CreateProject(ctx, sync.ProjectName, composeContent, envContent, projecttypes.CreateProjectWorkspaceManifest{}, nil, actor, false)
+	project, err := s.projectService.CreateProject(ctx, sync.ProjectName, composeContent, envContent, projecttypes.CreateProjectWorkspaceManifest{}, nil, nil, nil, actor, false)
 	if err != nil {
 		if errors.Is(err, projects.ErrProjectDirExists) {
 			bindingErr := common.Classify(common.ErrGitOpsSyncProjectBindingBroken, errors.WrapIf(errors.Errorf("sync %s cannot create project %q: a directory with that name already exists; refusing to create a duplicate", sync.ID, projects.SanitizeProjectName(sync.ProjectName)), "GitOps sync project binding broken"))

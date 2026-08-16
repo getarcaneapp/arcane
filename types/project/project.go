@@ -5,6 +5,7 @@ import (
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
+	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 )
 
 // IncludeFile represents an included file within a project.
@@ -41,6 +42,72 @@ type CreateProject struct {
 	//
 	// Required: false
 	EnvContent *string `json:"envContent,omitempty"`
+
+	// Tags are UI-managed tags to attach to the new project.
+	//
+	// Required: false
+	Tags []string `json:"tags,omitempty"`
+
+	// TagColors maps normalized UI-managed tag names to their display colors.
+	//
+	// Required: false
+	TagColors map[string]TagColor `json:"tagColors,omitempty"`
+}
+
+// TagSource identifies where a project tag is managed.
+type TagSource string
+
+// TagColor identifies a supported project tag display color.
+type TagColor string
+
+const (
+	// TagSourceUI identifies a tag association managed through Arcane.
+	TagSourceUI TagSource = "ui"
+	// TagSourceCompose identifies a tag association managed through Compose metadata.
+	TagSourceCompose TagSource = "compose"
+
+	// TagColorGray is the neutral gray tag color.
+	TagColorGray TagColor = "gray"
+	// TagColorPurple is the purple tag color.
+	TagColorPurple TagColor = "purple"
+	// TagColorBlue is the blue tag color.
+	TagColorBlue TagColor = "blue"
+	// TagColorGreen is the green tag color.
+	TagColorGreen TagColor = "green"
+	// TagColorYellow is the yellow tag color.
+	TagColorYellow TagColor = "yellow"
+	// TagColorOrange is the orange tag color.
+	TagColorOrange TagColor = "orange"
+	// TagColorRed is the red tag color.
+	TagColorRed TagColor = "red"
+	// TagColorPink is the pink tag color.
+	TagColorPink TagColor = "pink"
+)
+
+// Tag is a normalized project tag and all of its effective sources.
+type Tag struct {
+	Name    string      `json:"name"`
+	Color   TagColor    `json:"color"`
+	Sources []TagSource `json:"sources"`
+}
+
+// TagOption is a reusable tag name and color returned by the tag catalog.
+type TagOption struct {
+	Name  string   `json:"name"`
+	Color TagColor `json:"color"`
+}
+
+// UpdateTag mutates a UI-managed tag association.
+type UpdateTag struct {
+	Name     string   `json:"name"`
+	Attached bool     `json:"attached"`
+	Color    TagColor `json:"color,omitempty"`
+}
+
+// UpdateTagResponse is returned after a project tag mutation.
+type UpdateTagResponse struct {
+	Tags       []Tag   `json:"tags"`
+	ActivityID *string `json:"activityId,omitempty"`
 }
 
 // UpdateProject is used to update a project.
@@ -156,7 +223,7 @@ type RuntimeService struct {
 type UpdateInfo struct {
 	// Status is the aggregate update status for the project.
 	//
-	// Values: has_update | up_to_date | unknown | error
+	// Values: has_update | up_to_date | not_pulled | unknown | error
 	// Required: true
 	Status string `json:"status"`
 
@@ -180,6 +247,11 @@ type UpdateInfo struct {
 	// Required: true
 	ImagesWithUpdates int `json:"imagesWithUpdates"`
 
+	// ImagesNotPulled is the number of project image references not present locally.
+	//
+	// Required: true
+	ImagesNotPulled int `json:"imagesNotPulled"`
+
 	// ErrorCount is the number of project image references whose latest check failed.
 	//
 	// Required: true
@@ -199,6 +271,16 @@ type UpdateInfo struct {
 	//
 	// Required: false
 	UpdatedImageRefs []string `json:"updatedImageRefs,omitempty"`
+
+	// NotPulledImageRefs is the subset of project image references not present locally.
+	//
+	// Required: false
+	NotPulledImageRefs []string `json:"notPulledImageRefs,omitempty"`
+
+	// UpdateInfoByRef contains the latest persisted per-image update result keyed by image reference.
+	//
+	// Required: false
+	UpdateInfoByRef map[string]imagetypes.UpdateInfo `json:"updateInfoByRef,omitempty"`
 
 	// LastCheckedAt is the latest successful or failed image update check time for this project.
 	//
@@ -302,10 +384,15 @@ type CreateReponse struct {
 	//
 	// Required: false
 	ActivityID *string `json:"activityId,omitempty"`
+
+	// Tags are the effective UI and Compose tags for the project.
+	Tags []Tag `json:"tags"`
 }
 
 // Details contains detailed information about a project.
 type Details struct {
+	// Tags are the effective UI and Compose tags for the project.
+	Tags []Tag `json:"tags"`
 
 	// StatusReason provides additional information about the status.
 	//

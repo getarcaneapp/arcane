@@ -21,6 +21,12 @@ func newTestAutoHealJob() *AutoHealJob {
 	}
 }
 
+func TestAutoHeal_ListOptionsFilterUnhealthyAtDaemon(t *testing.T) {
+	opts := autoHealListOptionsInternal()
+	require.False(t, opts.All)
+	require.Equal(t, make(client.Filters).Add("health", string(container.Unhealthy)), opts.Filters)
+}
+
 func TestAutoHeal_FilterCandidates_SkipsSelfContainer(t *testing.T) {
 	job := newTestAutoHealJob()
 

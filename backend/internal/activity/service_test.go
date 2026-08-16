@@ -732,3 +732,90 @@ func receiveActivityEventInternal(t *testing.T, events <-chan activitytypes.Stre
 		return activitytypes.StreamEvent{}
 	}
 }
+
+// TestActivityServiceAppendMessagesBatchInternal verifies a batch lands all
+// messages in order and coalesces the activity update to the batch's last
+// message, last progress, and last step.
+func TestActivityServiceAppendMessagesBatchInternal(t *testing.T) {
+	ctx := context.Background()
+	db := setupActivityServiceTestDBInternal(t)
+	service := NewActivityService(db, nil)
+
+	created, err := service.StartActivity(ctx, StartActivityRequest{
+		EnvironmentID: "0",
+		Type:          models.ActivityTypeImagePull,
+		Step:          "queued",
+		LatestMessage: "Pull queued",
+	})
+	require.NoError(t, err)
+
+	progress := 60
+	messages, err := service.AppendMessages(ctx, created.ID, []AppendActivityMessageRequest{
+		{Message: "layer 1/3", Step: "download"},
+		{Message: "   "}, // blank lines are dropped, not persisted
+		{Message: "layer 2/3", Progress: &progress},
+		{Message: "layer 3/3"},
+	})
+	require.NoError(t, err)
+	require.Len(t, messages, 3)
+	require.Equal(t, "layer 1/3", messages[0].Message)
+	require.Equal(t, "layer 3/3", messages[2].Message)
+
+	detail, err := service.GetActivityDetail(ctx, "0", created.ID, 10)
+	require.NoError(t, err)
+	require.Len(t, detail.Messages, 3)
+	require.Equal(t, "layer 1/3", detail.Messages[0].Message)
+	require.Equal(t, "layer 2/3", detail.Messages[1].Message)
+	require.Equal(t, "layer 3/3", detail.Messages[2].Message)
+
+	// Coalesced activity update: last message wins, last non-nil progress
+	// and last non-empty step stick.
+	require.Equal(t, "layer 3/3", detail.Activity.LatestMessage)
+	require.NotNil(t, detail.Activity.Progress)
+	require.Equal(t, 60, *detail.Activity.Progress)
+	require.Equal(t, "download", detail.Activity.Step)
+
+	// Unknown activity IDs are still rejected.
+	_, err = service.AppendMessages(ctx, "missing", []AppendActivityMessageRequest{{Message: "x"}})
+	require.ErrorContains(t, err, "activity not found")
+}
+
+// TestActivityServiceDropsStaleSnapshotAfterTerminalPublishInternal verifies
+// that a non-terminal activity snapshot published after the activity's
+// terminal event — a goroutine that committed before CompleteActivity but
+// publishes after it — is dropped instead of reverting subscribers to a
+// running state no later event would correct.
+func TestActivityServiceDropsStaleSnapshotAfterTerminalPublishInternal(t *testing.T) {
+	ctx := context.Background()
+	db := setupActivityServiceTestDBInternal(t)
+	service := NewActivityService(db, nil)
+
+	created, err := service.StartActivity(ctx, StartActivityRequest{
+		EnvironmentID: "0",
+		Type:          models.ActivityTypeImagePull,
+		LatestMessage: "Pull queued",
+	})
+	require.NoError(t, err)
+	stale := *created // snapshot taken while the activity is still active
+
+	events, _, unsubscribe := service.Subscribe("0")
+	defer unsubscribe()
+
+	completed, err := service.CompleteActivity(ctx, created.ID, models.ActivityStatusSuccess, "", nil)
+	require.NoError(t, err)
+	require.Equal(t, activitytypes.StatusSuccess, completed.Status)
+
+	event := receiveActivityEventInternal(t, events)
+	require.Equal(t, "activity", event.Type)
+	require.Equal(t, activitytypes.StatusSuccess, event.Activity.Status)
+
+	require.False(t, service.admitActivityPublishInternal(stale))
+	require.True(t, service.admitActivityPublishInternal(*completed))
+
+	service.publishActivityInternal(stale)
+	select {
+	case event := <-events:
+		t.Fatalf("stale non-terminal snapshot reached subscriber: %+v", event)
+	case <-time.After(100 * time.Millisecond):
+	}
+}

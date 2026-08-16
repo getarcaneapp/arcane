@@ -24,16 +24,47 @@ func SearchOrderAndPaginate[T any](items []T, params QueryParams, searchConfig C
 
 	items = searchFn(items, params.SearchQuery, searchConfig.SearchAccessors)
 	items = filterFn(items, params.Filters, searchConfig.FilterAccessors)
-	items = sortFunction(items, params.SortParams, searchConfig.SortBindings)
-
-	totalCount := len(items)
-	items = paginateItemsFunction(items, params.Params)
 
 	return FilterResult[T]{
-		Items:          items,
-		TotalCount:     int64(totalCount),
+		Items:          OrderAndPaginate(items, params, searchConfig),
+		TotalCount:     int64(len(items)),
 		TotalAvailable: int64(totalAvailable),
 	}
+}
+
+// OrderAndPaginate sorts items and slices the requested page without applying
+// the search term or filters — for callers that already filtered while
+// building the item list (e.g. dropping non-matches during an incremental
+// decode) and only need ordering plus the page cut.
+func OrderAndPaginate[T any](items []T, params QueryParams, config Config[T]) []T {
+	items = sortFunction(items, params.SortParams, config.SortBindings)
+	return paginateItemsFunction(items, params.Params)
+}
+
+// MatchesSearchAndFilters reports whether a single item passes params' search
+// term and filters under config — the same predicate SearchOrderAndPaginate
+// applies. It lets callers that decode large payloads incrementally drop
+// non-matching items as they go instead of materializing everything first.
+func MatchesSearchAndFilters[T any](item T, params QueryParams, config Config[T]) bool {
+	search := strings.ToLower(strings.TrimSpace(params.Search))
+	if search != "" {
+		matched := false
+		for _, accessor := range config.SearchAccessors {
+			value, err := accessor(item)
+			if err == nil && strings.Contains(strings.ToLower(value), search) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false
+		}
+	}
+
+	if len(params.Filters) == 0 {
+		return true
+	}
+	return itemMatches(item, params.Filters, config.FilterAccessors)
 }
 
 func filterFn[T any](items []T, filters map[string]string, accessors []FilterAccessor[T]) []T {

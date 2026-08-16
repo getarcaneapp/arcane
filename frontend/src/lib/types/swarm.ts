@@ -1,3 +1,5 @@
+import type { ImageUpdateData } from './docker';
+
 // --- Swarm services, ports, mounts ---
 
 export interface SwarmServicePort {
@@ -570,16 +572,33 @@ export interface RuntimeService {
 }
 
 export interface ProjectUpdateInfo {
-	status: 'has_update' | 'up_to_date' | 'unknown' | 'error';
+	status: 'has_update' | 'up_to_date' | 'not_pulled' | 'unknown' | 'error';
 	hasUpdate: boolean;
 	imageCount: number;
 	checkedImageCount: number;
 	imagesWithUpdates: number;
+	imagesNotPulled: number;
 	errorCount: number;
 	errorMessage?: string;
 	imageRefs?: string[];
 	updatedImageRefs?: string[];
+	notPulledImageRefs?: string[];
+	updateInfoByRef?: Record<string, ImageUpdateData>;
 	lastCheckedAt?: string;
+}
+
+export type ProjectTagSource = 'ui' | 'compose';
+export type ProjectTagColor = 'gray' | 'purple' | 'blue' | 'green' | 'yellow' | 'orange' | 'red' | 'pink';
+
+export interface ProjectTag {
+	name: string;
+	color: ProjectTagColor;
+	sources: ProjectTagSource[];
+}
+
+export interface ProjectTagOption {
+	name: string;
+	color: ProjectTagColor;
 }
 
 export interface Project {
@@ -591,6 +610,7 @@ export interface Project {
 	iconLightUrl?: string;
 	iconDarkUrl?: string;
 	urls?: string[];
+	tags?: ProjectTag[];
 	runningCount: string;
 	serviceCount: string;
 	status: string;

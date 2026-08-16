@@ -18,6 +18,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/gitrepo"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	buildgit "github.com/getarcaneapp/arcane/backend/v2/pkg/gitutil"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -436,6 +437,34 @@ func (b testBuildRecorder) BuildImage(_ context.Context, req buildtypes.BuildReq
 		return nil, b.err
 	}
 	return &buildtypes.BuildResult{Provider: "local"}, nil
+}
+
+func TestBuildService_ListImageBuilds_OmitsOutputColumn(t *testing.T) {
+	db, err := setupBuildHistoryTestDB()
+	require.NoError(t, err)
+	svc := &BuildService{db: db}
+
+	output := "large build output"
+	require.NoError(t, db.WithContext(context.Background()).Create(&models.ImageBuild{
+		BaseModel:     models.BaseModel{ID: "build-omit-output"},
+		EnvironmentID: "0",
+		Status:        models.ImageBuildStatusSuccess,
+		ContextDir:    "/ctx",
+		Output:        &output,
+	}).Error)
+
+	records, _, err := svc.ListImageBuildsByEnvironmentPaginated(context.Background(), "0", pagination.QueryParams{
+		Params: pagination.Params{Limit: 10},
+	})
+	require.NoError(t, err)
+	require.Len(t, records, 1)
+	assert.Nil(t, records[0].Output)
+
+	// The detail endpoint must still return the stored output.
+	detail, err := svc.GetImageBuildByID(context.Background(), "0", "build-omit-output")
+	require.NoError(t, err)
+	require.NotNil(t, detail.Output)
+	assert.Equal(t, output, *detail.Output)
 }
 
 func setupBuildHistoryTestDB() (*database.DB, error) {

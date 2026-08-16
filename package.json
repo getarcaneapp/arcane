@@ -1,32 +1,20 @@
 {
-  "name": "arcane-repo",
-  "private": true,
-  "packageManager": "pnpm@11.21.0+sha512.521705bce689924eac72f5a3587122f362689ef6571e55ba80076fd637c11132ecffada26fad4ea79c485bfddbfd3d5a2a5b05805a77e893de71ec8a6cca3bb1",
-  "engines": {
-    "node": ">=26"
-  },
-  "workspaces": [
-    "frontend",
-    "tests",
-    "email-templates"
-  ],
-  "scripts": {
-    "preinstall": "npx only-allow pnpm",
-    "prepare": "husky"
-  },
-  "lint-staged": {
-    "frontend/**/*": [
-      "sh -c 'just format frontend --check'"
-    ],
-    "{tests,email-templates}/**/*.{ts,tsx,js,jsx,mts,cts}": [
-      "sh -c 'just format js --check'"
-    ],
-    "{backend,cli,types}/**/*": [
-      "sh -c 'just format go --check'"
-    ]
-  },
-  "devDependencies": {
-    "husky": "^9.1.7",
-    "lint-staged": "^17.3.0"
-  }
+	"name": "arcane-repo",
+	"private": true,
+	"workspaces": [
+		"frontend",
+		"tests",
+		"email-templates"
+	],
+	"scripts": {
+		"preinstall": "npx only-allow pnpm"
+	},
+	"devDependencies": {
+		"vite": "catalog:",
+		"vite-plus": "catalog:"
+	},
+	"engines": {
+		"node": ">=26"
+	},
+	"packageManager": "pnpm@11.21.0+sha512.521705bce689924eac72f5a3587122f362689ef6571e55ba80076fd637c11132ecffada26fad4ea79c485bfddbfd3d5a2a5b05805a77e893de71ec8a6cca3bb1"
 }

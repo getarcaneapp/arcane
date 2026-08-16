@@ -41,13 +41,20 @@ const (
 )
 
 type SettingsService struct {
-	db           *database.DB
-	config       atomic.Pointer[models.Settings]
-	envOverrides []settingsEnvOverride
-	writes       *actors.Executor
-	effects      *actors.Executor
-	lifecycleCtx context.Context
-	changes      *actors.Signal[[]libarcane.SettingUpdate]
+	db     *database.DB
+	config atomic.Pointer[models.Settings]
+	// effectiveConfig is the env-override-applied snapshot, rebuilt whenever
+	// config is stored. Overrides are resolved once at startup and never
+	// change, so materializing them here turns every read (GetSettings and
+	// the typed getters — ~100 call sites, some in per-project loops) into a
+	// pointer load instead of a full struct Clone plus a reflection pass.
+	// The snapshot is shared: readers must never mutate it.
+	effectiveConfig atomic.Pointer[models.Settings]
+	envOverrides    []settingsEnvOverride
+	writes          *actors.Executor
+	effects         *actors.Executor
+	lifecycleCtx    context.Context
+	changes         *actors.Signal[[]libarcane.SettingUpdate]
 }
 
 type settingsUpdateResultInternal struct {
@@ -165,6 +172,10 @@ func (s *SettingsService) LoadDatabaseSettings(ctx context.Context) (err error) 
 	}
 
 	s.config.Store(dst)
+
+	effective := dst.Clone()
+	s.applyEnvOverrides(ctx, effective)
+	s.effectiveConfig.Store(effective)
 
 	return nil
 }
@@ -436,6 +447,9 @@ func (s *SettingsService) IsEnvOverrideActive(key string) bool {
 	return false
 }
 
+// GetSettings returns the effective (env-override-applied) settings snapshot.
+// The snapshot is shared across callers and must be treated as read-only;
+// mutation flows go through UpdateSettings, which works on an explicit clone.
 func (s *SettingsService) GetSettings(ctx context.Context) (*models.Settings, error) {
 	settingsCfg := s.getEffectiveSettingsConfigInternal(ctx)
 	return settingsCfg, nil
@@ -457,6 +471,12 @@ func (s *SettingsService) GetSettingsOrDefaults(ctx context.Context) *models.Set
 }
 
 func (s *SettingsService) getEffectiveSettingsConfigInternal(ctx context.Context) *models.Settings {
+	if effective := s.effectiveConfig.Load(); effective != nil {
+		return effective
+	}
+
+	// Only reachable before LoadDatabaseSettings has completed in the
+	// constructor; fall back to building the snapshot per call.
 	settingsCfg := s.GetSettingsConfig().Clone()
 	s.applyEnvOverrides(ctx, settingsCfg)
 	return settingsCfg

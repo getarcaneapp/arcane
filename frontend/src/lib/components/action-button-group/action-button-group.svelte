@@ -207,8 +207,8 @@
 			<DropdownMenu.Root>
 				<DropdownMenu.Trigger
 					class={cn(
-						'inline-flex items-center justify-center rounded-md border border-input bg-background transition-colors outline-none hover:bg-accent hover:text-accent-foreground',
-						size === 'sm' ? 'size-8' : 'size-9'
+						'inline-flex items-center justify-center rounded-xl border border-border/80 bg-background/90 text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.34),0_1px_2px_rgba(15,23,42,0.05)] backdrop-blur-sm transition-[background-color,border-color,color,box-shadow,transform,filter] duration-200 ease-out outline-none hover:border-border hover:bg-accent/60 hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring/70 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.985] dark:bg-card/70 dark:hover:bg-accent/40',
+						size === 'sm' ? 'size-8 rounded-lg' : 'size-9'
 					)}
 					aria-label={m.common_open_menu()}
 				>

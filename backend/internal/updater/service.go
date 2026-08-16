@@ -1241,7 +1241,15 @@ func (s *UpdaterService) collectUsedImagesFromProjectsInternal(ctx context.Conte
 		return nil
 	}
 
-	composeContainers, err := projectspkg.ListGlobalComposeContainers(ctx)
+	var dockerClient client.APIClient
+	if s.deps.Docker != nil {
+		cli, cliErr := s.deps.Docker.GetClient(ctx)
+		if cliErr != nil {
+			return cliErr
+		}
+		dockerClient = cli
+	}
+	composeContainers, err := projectspkg.ListGlobalComposeContainers(ctx, dockerClient, s.deps.Docker.DockerHost())
 	if err != nil {
 		return err
 	}

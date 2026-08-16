@@ -6,6 +6,7 @@ import (
 	"encoding/json/v2"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -15,7 +16,13 @@ import (
 )
 
 type Writer struct {
-	ctx             context.Context
+	ctx context.Context
+	// persistCtx is ctx detached from cancellation. Cancellation usually
+	// races the last — most diagnostic — output lines (the error frames
+	// explaining it), so batches persist on persistCtx while ctx only bounds
+	// the drain goroutine's intake, mirroring CompleteActivity's detached
+	// terminal write.
+	persistCtx      context.Context
 	activityService MessageAppender
 	activityID      string
 	writer          io.Writer
@@ -26,7 +33,12 @@ type Writer struct {
 	buffer []byte
 }
 
-const writerAppendQueueSize = 128
+const (
+	writerAppendQueueSize = 128
+	// writerAppendBatchSize caps how many queued lines are drained into one
+	// AppendMessages transaction.
+	writerAppendBatchSize = 32
+)
 
 type writerAppendMessage struct {
 	level   models.ActivityMessageLevel
@@ -50,8 +62,13 @@ func NewWriter(ctx context.Context, activityService MessageAppender, activityID 
 	if existing, ok := writer.(*Writer); ok {
 		return existing
 	}
+	persistCtx := ctx
+	if persistCtx != nil {
+		persistCtx = context.WithoutCancel(persistCtx)
+	}
 	out := &Writer{
 		ctx:             ctx,
+		persistCtx:      persistCtx,
 		activityService: activityService,
 		activityID:      strings.TrimSpace(activityID),
 		writer:          writer,
@@ -170,16 +187,74 @@ func (w *Writer) drainMessagesInternal(ctx context.Context) {
 	for {
 		select {
 		case item := <-w.queueCh:
-			if item.flush != nil {
-				close(item.flush)
-				continue
-			}
-			if item.message != nil {
-				w.appendMessageInternal(ctx, *item.message)
-			}
+			w.drainQueueBatchInternal(item)
 		case <-doneInternal(ctx):
+			// Cancellation stops intake, but the lines already accepted into
+			// the queue — typically the ones explaining the cancellation —
+			// still get persisted before the goroutine exits.
+			w.drainRemainingInternal()
 			return
 		}
+	}
+}
+
+func (w *Writer) drainRemainingInternal() {
+	for {
+		select {
+		case item := <-w.queueCh:
+			w.drainQueueBatchInternal(item)
+		default:
+			return
+		}
+	}
+}
+
+// drainQueueBatchInternal drains whatever is already queued behind item (up
+// to writerAppendBatchSize lines) into a single AppendMessages call, so bulk
+// docker output costs one transaction per batch instead of one per line.
+// Flush signals encountered while draining close only after the write, since
+// the messages queued before them are only then persisted.
+func (w *Writer) drainQueueBatchInternal(item writerQueueItem) {
+	var batch []AppendMessageRequest
+	var flushes []chan struct{}
+
+	collect := func(queued writerQueueItem) {
+		if queued.flush != nil {
+			flushes = append(flushes, queued.flush)
+			return
+		}
+		if queued.message == nil {
+			return
+		}
+		batch = append(batch, AppendMessageRequest{
+			Level:   queued.message.level,
+			Message: queued.message.message,
+			Payload: queued.message.payload,
+			Step:    queued.message.step,
+		})
+	}
+
+	collect(item)
+drain:
+	for len(batch) < writerAppendBatchSize {
+		select {
+		case queued := <-w.queueCh:
+			collect(queued)
+		default:
+			break drain
+		}
+	}
+
+	if len(batch) > 0 && w.persistCtx != nil {
+		if _, err := w.activityService.AppendMessages(w.persistCtx, w.activityID, batch); err != nil {
+			slog.WarnContext(w.persistCtx, "failed to persist activity output batch", "activityId", w.activityID, "lines", len(batch), "error", err)
+		}
+	}
+	// Flushes release even when the append failed: Flush carries no error
+	// path, and holding them would stall activity completion on the very
+	// cancellation that typically caused the failure.
+	for _, flushDone := range flushes {
+		close(flushDone)
 	}
 }
 
@@ -188,20 +263,6 @@ func doneInternal(ctx context.Context) <-chan struct{} {
 		return nil
 	}
 	return ctx.Done()
-}
-
-func (w *Writer) appendMessageInternal(ctx context.Context, message writerAppendMessage) {
-	if ctx == nil {
-		return
-	}
-	if _, err := w.activityService.AppendMessage(ctx, w.activityID, AppendMessageRequest{
-		Level:   message.level,
-		Message: message.message,
-		Payload: message.payload,
-		Step:    message.step,
-	}); err != nil {
-		return
-	}
 }
 
 func valueToStringInternal(value any) string {

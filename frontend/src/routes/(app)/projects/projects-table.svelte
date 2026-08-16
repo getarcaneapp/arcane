@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { Project } from '#lib/types/swarm';
+	import type { Project, ProjectTagColor, ProjectTagOption } from '#lib/types/swarm';
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
@@ -27,6 +27,7 @@
 	import type { ActionStatus } from './projects-table.helpers';
 	import { createProjectActions } from './projects-table.actions';
 	import ProjectUpdateItem from '#lib/components/project-update-item.svelte';
+	import ProjectTagEditor from '#lib/components/project-tag-editor.svelte';
 	import { Label } from '#lib/components/ui/label';
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import {
@@ -43,7 +44,8 @@
 		withoutFilters = false,
 		showArchived = false,
 		onToggleArchived,
-		onRefreshData
+		onRefreshData,
+		availableTags = []
 	}: {
 		projects: Paginated<Project>;
 		selectedIds: string[];
@@ -52,10 +54,15 @@
 		showArchived?: boolean;
 		onToggleArchived?: (checked: boolean) => void | Promise<void>;
 		onRefreshData?: (options: SearchPaginationSortRequest) => Promise<void>;
+		availableTags?: ProjectTagOption[];
 	} = $props();
 
 	let actionStatus = $state<Record<string, ActionStatus>>({});
 	let checkingProjectIds = $state<Record<string, boolean>>({});
+	let tagCatalog = $state<ProjectTagOption[]>([]);
+	$effect(() => {
+		tagCatalog = availableTags;
+	});
 
 	let isBulkLoading = $state({
 		up: false,
@@ -105,6 +112,18 @@
 		}
 	}
 
+	async function handleTagToggle(project: Project, name: string, attached: boolean, color: ProjectTagColor) {
+		const response = await projectService.updateProjectTag(project.id, name, attached, color);
+		if (attached && !tagCatalog.some((tag) => tag.name === name)) {
+			tagCatalog = [...tagCatalog, { name, color }].sort((a, b) => a.name.localeCompare(b.name));
+		}
+		projects = {
+			...projects,
+			data: projects.data.map((item) => (item.id === project.id ? { ...item, tags: response.tags } : item))
+		};
+		return response.tags;
+	}
+
 	function getStatusTooltip(project: Project): string | undefined {
 		return project.status.toLowerCase() === 'unknown' && project.statusReason ? project.statusReason : undefined;
 	}
@@ -148,28 +167,39 @@
 		project.status === 'restarting';
 	const hasRunningSelection = $derived.by(() => selectedProjects.some((project) => isProjectArchiveBlocked(project)));
 
-	const columns = [
-		{ accessorKey: 'id', title: m.common_id(), hidden: true },
-		{ accessorKey: 'name', title: m.common_name(), sortable: true, cell: NameCell },
-		{ accessorKey: 'path', title: m.common_working_directory(), sortable: true, cell: DirectoryCell },
-		{ accessorKey: 'gitOpsManagedBy', title: m.projects_col_provider(), cell: ProviderCell },
-		{ accessorKey: 'status', title: m.common_status(), sortable: true, cell: StatusCell },
-		{
-			id: 'updates',
-			accessorFn: (row) => getProjectUpdateStatus(row.updateInfo),
-			title: m.updates(),
-			sortable: false,
-			cell: UpdatesCell
-		},
-		{ accessorKey: 'createdAt', title: m.common_created(), sortable: true, cell: CreatedCell },
-		{ accessorKey: 'serviceCount', title: m.services(), sortable: true }
-	] satisfies ColumnSpec<Project>[];
+	const columns = $derived.by(
+		() =>
+			[
+				{ accessorKey: 'id', title: m.common_id(), hidden: true },
+				{ accessorKey: 'name', title: m.common_name(), sortable: true, cell: NameCell },
+				{
+					id: 'tags',
+					accessorFn: (row) => row.tags?.map((tag) => tag.name) ?? [],
+					title: m.common_tags(),
+					cell: TagsCell,
+					filterOptions: tagCatalog.map((tag) => ({ label: tag.name, value: tag.name }))
+				},
+				{ accessorKey: 'path', title: m.common_working_directory(), sortable: true, cell: DirectoryCell },
+				{ accessorKey: 'gitOpsManagedBy', title: m.projects_col_provider(), cell: ProviderCell },
+				{ accessorKey: 'status', title: m.common_status(), sortable: true, cell: StatusCell },
+				{
+					id: 'updates',
+					accessorFn: (row) => getProjectUpdateStatus(row.updateInfo),
+					title: m.updates(),
+					sortable: false,
+					cell: UpdatesCell
+				},
+				{ accessorKey: 'createdAt', title: m.common_created(), sortable: true, cell: CreatedCell },
+				{ accessorKey: 'serviceCount', title: m.services(), sortable: true }
+			] satisfies ColumnSpec<Project>[]
+	);
 
 	const mobileFields = [
 		{ id: 'id', label: m.common_id(), defaultVisible: false },
 		{ id: 'directory', label: m.common_working_directory(), defaultVisible: true },
 		{ id: 'provider', label: m.projects_col_provider(), defaultVisible: true },
 		{ id: 'status', label: m.common_status(), defaultVisible: true },
+		{ id: 'tags', label: m.common_tags(), defaultVisible: true },
 		{ id: 'updates', label: m.updates(), defaultVisible: true },
 		{ id: 'serviceCount', label: m.services(), defaultVisible: true },
 		{ id: 'createdAt', label: m.common_created(), defaultVisible: true }
@@ -242,6 +272,15 @@
 	</div>
 {/snippet}
 
+{#snippet TagsCell({ item }: { item: Project })}
+	<ProjectTagEditor
+		tags={item.tags ?? []}
+		availableTags={tagCatalog}
+		canEdit={canUpdateProject && !item.isDiscovered}
+		onToggle={(name, attached, color) => handleTagToggle(item, name, attached, color)}
+	/>
+{/snippet}
+
 {#snippet DirectoryCell({ item }: { item: Project })}
 	<span class="block max-w-[22rem] truncate text-muted-foreground">{item.relativePath ?? item.dirName ?? item.path}</span>
 {/snippet}
@@ -266,6 +305,15 @@
 		<Icon class="size-3" />
 		<span>{value.text}</span>
 	</span>
+{/snippet}
+
+{#snippet TagsField(item: Project)}
+	<ProjectTagEditor
+		tags={item.tags ?? []}
+		availableTags={tagCatalog}
+		canEdit={canUpdateProject && !item.isDiscovered}
+		onToggle={(name, attached, color) => handleTagToggle(item, name, attached, color)}
+	/>
 {/snippet}
 
 {#snippet StatusCell({ item }: { item: Project })}
@@ -341,6 +389,13 @@
 					: null
 		]}
 		fields={[
+			{
+				label: m.common_tags(),
+				type: 'component',
+				getValue: (item: Project) => item,
+				component: TagsField,
+				show: mobileFieldVisibility['tags'] ?? true
+			},
 			{
 				label: m.common_working_directory(),
 				getValue: (item: Project) => item.relativePath ?? item.dirName ?? item.path,

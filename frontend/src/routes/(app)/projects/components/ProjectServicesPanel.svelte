@@ -5,10 +5,12 @@
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
 	import ContainerActionMenuItem from '#lib/components/arcane-table/cells/container-action-menu-item.svelte';
 	import IconImage from '#lib/components/icon-image.svelte';
+	import ImageUpdateItem from '#lib/components/image-update-item.svelte';
 	import { PortBadge } from '#lib/components/badges/index.js';
 	import { mode } from 'mode-watcher';
-	import { getThemedIconUrl } from '#lib/utils/docker';
+	import { getThemedIconUrl, parseImageRef } from '#lib/utils/docker';
 	import type { RuntimeService } from '#lib/types/swarm';
+	import type { ImageUpdateData } from '#lib/types/docker';
 	import { m } from '#lib/paraglide/messages';
 	import { projectService } from '#lib/services/project-service';
 	import { environmentStore } from '#lib/stores/environment.store.svelte';
@@ -23,10 +25,15 @@
 	interface Props {
 		services?: RuntimeService[];
 		projectId?: string;
+		updateInfoByRef?: Record<string, ImageUpdateData>;
 		onRefresh?: () => Promise<void>;
 	}
 
-	let { services = [], projectId, onRefresh }: Props = $props();
+	let { services = [], projectId, updateInfoByRef = {}, onRefresh }: Props = $props();
+
+	function serviceImageRef(service: RuntimeService): string {
+		return service.serviceConfig?.image || service.image || '';
+	}
 
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
 	const canStartContainer = $derived(hasPermission('containers:start', currentEnvId));
@@ -167,6 +174,11 @@
 					{/if}
 					{#if item.health}
 						<HealthIcon class={cn('size-3.5 shrink-0', healthClass(item.health))} />
+					{/if}
+					{#if serviceImageRef(item)}
+						{@const imageRef = serviceImageRef(item)}
+						{@const parsed = parseImageRef(imageRef)}
+						<ImageUpdateItem updateInfo={updateInfoByRef[imageRef]} {imageRef} repo={parsed.repo} tag={parsed.tag} />
 					{/if}
 					{#if item.containerId}
 						<RowActionsMenu triggerClass="size-6 shrink-0 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100">
