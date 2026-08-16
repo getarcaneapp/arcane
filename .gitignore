@@ -60,3 +60,6 @@ completions
 *.txt
 inspections/**
 .deepsec/
+
+# Vite+ generated git hook dispatcher
+.vite-hooks/_

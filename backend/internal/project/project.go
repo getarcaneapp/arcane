@@ -175,6 +175,9 @@ func (s *ProjectService) CreateGitOpsManagedProject(ctx context.Context, sync *m
 	sync.ProjectID = &project.ID
 	project.GitOpsManagedBy = &sync.ID
 	s.composeNames.put(projects.NormalizeProjectName(project.Name), project.ID)
+	if err := s.reconcileComposeTagsForProjectInternal(ctx, project); err != nil {
+		slog.WarnContext(ctx, "failed to reconcile Compose project tags during GitOps project creation", "projectID", project.ID, "error", err)
+	}
 	logEvent := true
 	if len(logEventOptions) > 0 {
 		logEvent = logEventOptions[0]

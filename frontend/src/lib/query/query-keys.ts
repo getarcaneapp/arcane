@@ -115,6 +115,7 @@ export const queryKeys = {
 		detailCheckUpdates: (environmentId: string, projectId: string) =>
 			['project', 'check-updates', environmentId, projectId] as const,
 		statusCounts: (environmentId: string) => ['projects', 'status-counts', environmentId] as const,
+		tags: (environmentId: string) => ['projects', 'tags', environmentId] as const,
 		detail: (environmentId: string, projectId: string) => ['project', environmentId, projectId] as const,
 		workspace: (environmentId: string, projectId: string) => ['project', environmentId, projectId, 'workspace'] as const,
 		workspaceFile: (environmentId: string, projectId: string, relativePath: string) =>

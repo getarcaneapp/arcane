@@ -548,6 +548,35 @@
 							placeholder={m.environments_name_placeholder()}
 							class="max-w-[14rem] min-w-0 sm:max-w-[20rem] md:max-w-[26rem]"
 						/>
+
+						<!-- Enable/Disable indicator -->
+						<div class="flex shrink-0 items-center gap-2.5 rounded-lg border border-border/60 bg-card/40 px-3 py-1.5">
+							<div class="flex items-center gap-2">
+								<div
+									class={cn(
+										'size-2 rounded-full transition-colors',
+										$formInputs.enabled.value
+											? 'bg-emerald-500 shadow-[0_0_8px_var(--color-emerald-500)]'
+											: 'bg-muted-foreground/40'
+									)}
+								></div>
+								<span class="text-sm font-medium">
+									{$formInputs.enabled.value ? m.common_enabled() : m.common_disabled()}
+								</span>
+							</div>
+							{#if environment.id === '0'}
+								<ArcaneTooltip.Root>
+									<ArcaneTooltip.Trigger>
+										<Switch id="env-enabled-header" disabled={true} bind:checked={$formInputs.enabled.value} />
+									</ArcaneTooltip.Trigger>
+									<ArcaneTooltip.Content>
+										<p>{m.environments_local_setting_disabled()}</p>
+									</ArcaneTooltip.Content>
+								</ArcaneTooltip.Root>
+							{:else}
+								<Switch id="env-enabled-header" bind:checked={$formInputs.enabled.value} />
+							{/if}
+						</div>
 					</div>
 					<div class="mt-1 flex min-w-0 items-center gap-1">
 						{#if isEditingApiUrl}
@@ -593,33 +622,6 @@
 					</div>
 					{#if $formInputs.apiUrl.error}
 						<p class="mt-1 text-xs text-destructive">{$formInputs.apiUrl.error}</p>
-					{/if}
-				</div>
-
-				<!-- Enable/Disable indicator -->
-				<div class="flex shrink-0 items-center gap-2.5 rounded-lg border border-border/60 bg-card/40 px-3 py-1.5">
-					<div class="flex items-center gap-2">
-						<div
-							class={cn(
-								'size-2 rounded-full transition-colors',
-								$formInputs.enabled.value ? 'bg-emerald-500 shadow-[0_0_8px_var(--color-emerald-500)]' : 'bg-muted-foreground/40'
-							)}
-						></div>
-						<span class="text-sm font-medium">
-							{$formInputs.enabled.value ? m.common_enabled() : m.common_disabled()}
-						</span>
-					</div>
-					{#if environment.id === '0'}
-						<ArcaneTooltip.Root>
-							<ArcaneTooltip.Trigger>
-								<Switch id="env-enabled-header" disabled={true} bind:checked={$formInputs.enabled.value} />
-							</ArcaneTooltip.Trigger>
-							<ArcaneTooltip.Content>
-								<p>{m.environments_local_setting_disabled()}</p>
-							</ArcaneTooltip.Content>
-						</ArcaneTooltip.Root>
-					{:else}
-						<Switch id="env-enabled-header" bind:checked={$formInputs.enabled.value} />
 					{/if}
 				</div>
 			</div>

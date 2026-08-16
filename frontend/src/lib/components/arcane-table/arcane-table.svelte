@@ -432,11 +432,19 @@
 		}
 	});
 
-	// Memoize column definitions - only rebuild when structure changes
-	// Generate a key based on column structure, not data
+	// Memoize column definitions until their structure or facet options change.
+	// Facet catalogs can arrive after the table's first render, so their metadata
+	// must participate in the key even though row data does not.
 	function getColumnsKey(specs: ColumnSpec<TData>[], hasRowActions: boolean, isSelectionDisabled: boolean): string {
-		const colIds = specs.map((s, i) => s.id ?? s.accessorKey ?? `col_${i}`).join(',');
-		return `${colIds}:${hasRowActions}:${isSelectionDisabled}`;
+		const columnsMetadata = specs.map((spec, index) => ({
+			id: spec.id ?? spec.accessorKey ?? `col_${index}`,
+			filterOptions: spec.filterOptions?.map((option) => ({
+				value: option.value,
+				label: option.label,
+				dotClass: option.dotClass
+			}))
+		}));
+		return `${JSON.stringify(columnsMetadata)}:${hasRowActions}:${isSelectionDisabled}`;
 	}
 
 	const columnsKey = $derived(getColumnsKey(columns, !!rowActions, selectionDisabled));

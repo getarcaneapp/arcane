@@ -3,12 +3,15 @@ package dashboard
 import (
 	"context"
 	"sort"
+	"strconv"
+	"sync/atomic"
 	"time"
 
 	"emperror.dev/errors"
 
 	dockercontainer "github.com/moby/moby/api/types/container"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/singleflight"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -23,6 +26,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/vulnerability"
 	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/iconcatalog"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
 	dashboardtypes "github.com/getarcaneapp/arcane/types/v2/dashboard"
@@ -36,6 +40,8 @@ import (
 const (
 	defaultDashboardAPIKeyExpiryWindow = 14 * 24 * time.Hour
 	dashboardSnapshotPreloadLimit      = 50
+	dashboardSnapshotCacheTTL          = 5 * time.Second
+	dashboardSnapshotBuildTimeout      = 30 * time.Second
 )
 
 type DashboardService struct {
@@ -49,6 +55,28 @@ type DashboardService struct {
 	environmentService   *environment.EnvironmentService
 	versionService       *version.VersionService
 	volumeService        *volume.VolumeService
+
+	// snapshotFlight + snapshotCache share one snapshot build across all
+	// concurrent dashboard consumers (HTTP first paint + every stream
+	// subscriber). Cached snapshots are shared pointers and must be treated
+	// as immutable by callers. Indexed by
+	// [includeTables][debugAllGood][iconCatalog]: full snapshots resolve
+	// container icons against the requesting user's icon catalog, so each
+	// catalog gets its own entry.
+	snapshotFlight singleflight.Group
+	snapshotCache  [2][2][2]atomic.Pointer[dashboardSnapshotCacheEntryInternal]
+}
+
+type dashboardSnapshotCacheEntryInternal struct {
+	snapshot *dashboardtypes.Snapshot
+	builtAt  time.Time
+}
+
+func dashboardCacheIndexInternal(flag bool) int {
+	if flag {
+		return 1
+	}
+	return 0
 }
 
 type DashboardActionItemsOptions struct {
@@ -81,7 +109,55 @@ func NewDashboardService(
 	}
 }
 
-func (s *DashboardService) GetSnapshot(ctx context.Context, options DashboardActionItemsOptions) (*dashboardtypes.Snapshot, error) {
+// GetSnapshot returns the dashboard snapshot, shared across all concurrent
+// consumers (HTTP first paint + every stream subscriber) through a short-TTL
+// cache; the result is a shared pointer and must not be mutated.
+// includeTables controls whether the first-page container/image tables are
+// built: stream subscribers pass false since the all-environments dashboard
+// only reads the aggregate counters, skipping the per-container DTO builds,
+// sorting, and icon resolution entirely.
+func (s *DashboardService) GetSnapshot(ctx context.Context, options DashboardActionItemsOptions, includeTables bool) (*dashboardtypes.Snapshot, error) {
+	// Trimmed snapshots skip icon resolution entirely, so every consumer
+	// shares one entry regardless of the requesting user's catalog.
+	catalog := iconcatalog.DefaultCatalog
+	if includeTables {
+		catalog = iconcatalog.Normalize(project.IconCatalogForContext(ctx))
+	}
+
+	slot := &s.snapshotCache[dashboardCacheIndexInternal(includeTables)][dashboardCacheIndexInternal(options.DebugAllGood)][dashboardCacheIndexInternal(catalog == iconcatalog.CatalogDashboardIcons)]
+	if entry := slot.Load(); entry != nil && time.Since(entry.builtAt) < dashboardSnapshotCacheTTL {
+		return entry.snapshot, nil
+	}
+
+	key := strconv.FormatBool(includeTables) + ":" + strconv.FormatBool(options.DebugAllGood) + ":" + catalog
+	result, err, _ := s.snapshotFlight.Do(key, func() (any, error) {
+		// Re-check under the flight: a caller that queued behind the winner
+		// finds the fresh entry here instead of rebuilding.
+		if entry := slot.Load(); entry != nil && time.Since(entry.builtAt) < dashboardSnapshotCacheTTL {
+			return entry.snapshot, nil
+		}
+
+		buildCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), dashboardSnapshotBuildTimeout)
+		defer cancel()
+
+		snapshot, err := s.buildSnapshotInternal(buildCtx, options, includeTables)
+		if err != nil {
+			return nil, err
+		}
+		slot.Store(&dashboardSnapshotCacheEntryInternal{snapshot: snapshot, builtAt: time.Now()})
+		return snapshot, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	snapshot, ok := result.(*dashboardtypes.Snapshot)
+	if !ok {
+		return nil, errors.New("dashboard snapshot cache returned unexpected type")
+	}
+	return snapshot, nil
+}
+
+func (s *DashboardService) buildSnapshotInternal(ctx context.Context, options DashboardActionItemsOptions, includeTables bool) (*dashboardtypes.Snapshot, error) {
 	if s.dockerService == nil {
 		return nil, errors.New("docker service not available")
 	}
@@ -94,57 +170,58 @@ func (s *DashboardService) GetSnapshot(ctx context.Context, options DashboardAct
 	dockerImages := dockerSnapshot.Images
 
 	filteredContainers := container.FilterInternalContainers(dockerContainers, false)
-	containerItems := make([]containertypes.Summary, 0, len(filteredContainers))
-	currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
-	if s.containerService != nil {
-		containerItems = s.containerService.BuildSummaries(filteredContainers, nil, currentContainerID, currentContainerErr)
-	} else {
-		for _, container := range filteredContainers {
-			summary := containertypes.NewSummary(container)
-			summary.RedeployDisabled = labels.ShouldDisableArcaneServerRedeploy(summary.Labels, summary.ID, currentContainerID, currentContainerErr)
-			containerItems = append(containerItems, summary)
+
+	containerCounts := containertypes.StatusCounts{TotalContainers: len(filteredContainers)}
+	for _, c := range filteredContainers {
+		if c.State == "running" {
+			containerCounts.RunningContainers++
+		} else {
+			containerCounts.StoppedContainers++
 		}
 	}
 
-	containerCounts := containertypes.StatusCounts{TotalContainers: len(containerItems)}
-	if s.containerService != nil {
-		containerCounts = s.containerService.CalculateStatusCounts(containerItems)
-	} else {
-		for _, item := range containerItems {
-			if item.State == "running" {
-				containerCounts.RunningContainers++
-			} else {
-				containerCounts.StoppedContainers++
+	var containerPage []containertypes.Summary
+	var imagePage []imagetypes.Summary
+	if includeTables {
+		containerItems := make([]containertypes.Summary, 0, len(filteredContainers))
+		currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
+		if s.containerService != nil {
+			containerItems = s.containerService.BuildSummaries(filteredContainers, nil, currentContainerID, currentContainerErr)
+		} else {
+			for _, container := range filteredContainers {
+				summary := containertypes.NewSummary(container)
+				summary.RedeployDisabled = labels.ShouldDisableArcaneServerRedeploy(summary.Labels, summary.ID, currentContainerID, currentContainerErr)
+				containerItems = append(containerItems, summary)
 			}
 		}
-	}
 
-	sort.Slice(containerItems, func(i, j int) bool {
-		if containerItems[i].Created == containerItems[j].Created {
-			return containerItems[i].ID < containerItems[j].ID
+		sort.Slice(containerItems, func(i, j int) bool {
+			if containerItems[i].Created == containerItems[j].Created {
+				return containerItems[i].ID < containerItems[j].ID
+			}
+			return containerItems[i].Created > containerItems[j].Created
+		})
+		containerPage = limitDashboardItemsInternal(containerItems, dashboardSnapshotPreloadLimit)
+		if s.containerService != nil {
+			s.containerService.ApplySummaryIcons(ctx, containerPage, nil)
 		}
-		return containerItems[i].Created > containerItems[j].Created
-	})
-	containerPage := limitDashboardItemsInternal(containerItems, dashboardSnapshotPreloadLimit)
-	if s.containerService != nil {
-		s.containerService.ApplySummaryIcons(ctx, containerPage, nil)
-	}
 
-	var projectIDByName map[string]string
-	if s.imageService != nil {
-		projectIDByName = s.imageService.BuildProjectIDMap(ctx, filteredContainers)
-	} else {
-		projectIDByName = map[string]string{}
-	}
-	imageUsageMap := image.BuildVolumeUsageMap(filteredContainers, projectIDByName)
-	imageItems := image.MapDockerImagesToDTOs(dockerImages, imageUsageMap, nil, nil)
-	sort.Slice(imageItems, func(i, j int) bool {
-		if imageItems[i].Size == imageItems[j].Size {
-			return imageItems[i].ID < imageItems[j].ID
+		var projectIDByName map[string]string
+		if s.imageService != nil {
+			projectIDByName = s.imageService.BuildProjectIDMap(ctx, filteredContainers)
+		} else {
+			projectIDByName = map[string]string{}
 		}
-		return imageItems[i].Size > imageItems[j].Size
-	})
-	imagePage := limitDashboardItemsInternal(imageItems, dashboardSnapshotPreloadLimit)
+		imageUsageMap := image.BuildVolumeUsageMap(filteredContainers, projectIDByName)
+		imageItems := image.MapDockerImagesToDTOs(dockerImages, imageUsageMap, nil, nil)
+		sort.Slice(imageItems, func(i, j int) bool {
+			if imageItems[i].Size == imageItems[j].Size {
+				return imageItems[i].ID < imageItems[j].ID
+			}
+			return imageItems[i].Size > imageItems[j].Size
+		})
+		imagePage = limitDashboardItemsInternal(imageItems, dashboardSnapshotPreloadLimit)
+	}
 
 	imageUsageCounts := imagetypes.UsageCounts{}
 	imageUsageCounts.Inuse, imageUsageCounts.Unused, imageUsageCounts.Total = docker.CountImageUsage(dockerImages, filteredContainers)
@@ -174,11 +251,11 @@ func (s *DashboardService) GetSnapshot(ctx context.Context, options DashboardAct
 		Containers: dashboardtypes.SnapshotContainers{
 			Data:       containerPage,
 			Counts:     containerCounts,
-			Pagination: buildDashboardPaginationResponseInternal(len(containerItems), dashboardSnapshotPreloadLimit),
+			Pagination: buildDashboardPaginationResponseInternal(len(filteredContainers), dashboardSnapshotPreloadLimit),
 		},
 		Images: dashboardtypes.SnapshotImages{
 			Data:       imagePage,
-			Pagination: buildDashboardPaginationResponseInternal(len(imageItems), dashboardSnapshotPreloadLimit),
+			Pagination: buildDashboardPaginationResponseInternal(len(dockerImages), dashboardSnapshotPreloadLimit),
 		},
 		ImageUsageCounts:  imageUsageCounts,
 		VolumeUsageCounts: volumeUsageCounts,

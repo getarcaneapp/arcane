@@ -201,20 +201,15 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@9446e853b27985e00fb1b21193be026fc09198db
         with:
           node-version: 26
-          cache: pnpm
+          cache: true
+          run-install: true
 
       - name: Setup Just
         uses: extractions/setup-just@v4
-
-      - name: Install Node dependencies
-        run: pnpm install --frozen-lockfile
 
       - name: Add svelte-check problem matcher
         run: echo "::add-matcher::.github/matchers/svelte-check-matcher.json"
@@ -250,19 +245,15 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@9446e853b27985e00fb1b21193be026fc09198db
         with:
-          run_install: false
+          node-version: 26
+          cache: true
+          run-install: false
 
       - name: Setup Just
         uses: extractions/setup-just@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: 26
-          cache: pnpm
 
       - name: Set up Depot CLI
         uses: depot/setup-action@v1
@@ -275,7 +266,7 @@ jobs:
         id: playwright-cache
         with:
           path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ hashFiles('tests/pnpm-lock.yaml', 'tests/package.json') }}
+          key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml', 'tests/package.json') }}
           restore-keys: |
             ${{ runner.os }}-playwright-
 
@@ -291,7 +282,7 @@ jobs:
         run: just deps install tests
 
       - name: Run Playwright E2E tests
-        run: pnpm -C tests exec playwright test --project=chromium
+        run: vp -C tests exec playwright test --project=chromium
         env:
           COMPOSE_FILE: ${{ matrix.database.compose_file }}
           BASE_URL: http://localhost:${{ matrix.database.port }}
@@ -317,16 +308,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          run_install: false
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@9446e853b27985e00fb1b21193be026fc09198db
         with:
           node-version: 26
-          cache: pnpm
+          cache: true
+          run-install: false
 
       - name: Setup Go
         uses: actions/setup-go@v7
@@ -341,10 +328,10 @@ jobs:
         run: depot configure-docker
 
       - name: Install Playwright test dependencies
-        run: pnpm -C tests install
+        run: vp -C tests install
 
       - name: Run CLI E2E tests against socket proxy
-        run: pnpm -C tests exec playwright test --project=cli
+        run: vp -C tests exec playwright test --project=cli
         env:
           COMPOSE_FILE: setup/compose-proxy.yaml
           BASE_URL: http://localhost:3002

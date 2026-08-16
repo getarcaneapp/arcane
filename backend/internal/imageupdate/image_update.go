@@ -14,6 +14,7 @@ import (
 	"emperror.dev/emperror"
 	"emperror.dev/errors"
 
+	cerrdefs "github.com/containerd/errdefs"
 	ref "github.com/distribution/reference"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -396,6 +397,11 @@ func (s *ImageUpdateService) checkDigestUpdateWithSnapshotInternal(ctx context.C
 	if err == nil && snapshot.IsLocalBuild {
 		return localBuildImageUpdateResultInternal(snapshot, int(time.Since(start).Milliseconds())), snapshot, nil
 	}
+	if err != nil && cerrdefs.IsNotFound(err) {
+		if _, isComposeBuild := composeBuildRefs[refs.NormalizeImageUpdateRef(imageRef)]; isComposeBuild {
+			return missingLocalBuildImageUpdateResultInternal(parts.Tag, int(time.Since(start).Milliseconds())), nil, nil
+		}
+	}
 
 	registryCtx, registryCancel := s.registryContextInternal(ctx)
 	digestResult, err := s.registryService.InspectImageDigest(registryCtx, imageRef, nil)
@@ -420,6 +426,21 @@ func (s *ImageUpdateService) checkDigestUpdateWithSnapshotInternal(ctx context.C
 	if snapshot == nil {
 		snapshot, err = s.inspectLocalImageSnapshotInternal(ctx, imageRef, composeBuildRefs)
 		if err != nil {
+			if cerrdefs.IsNotFound(err) {
+				// The ref resolved remotely but was never pulled locally: there is
+				// nothing local to compare, so report a distinct not-pulled state
+				// rather than a failed check or an available update.
+				return &imageupdate.Response{
+					UpdateType:     models.UpdateTypeNotPulled,
+					LatestDigest:   digestResult.Digest,
+					CheckTime:      time.Now(),
+					ResponseTimeMs: int(elapsed.Milliseconds()),
+					AuthMethod:     digestResult.AuthMethod,
+					AuthUsername:   digestResult.AuthUsername,
+					AuthRegistry:   digestResult.AuthRegistry,
+					UsedCredential: digestResult.UsedCredential,
+				}, nil, nil
+			}
 			return nil, nil, errors.WrapIf(err, "failed to get local digest")
 		}
 	}
@@ -461,6 +482,19 @@ func localBuildImageUpdateResultInternal(snapshot *localImageSnapshot, responseT
 		UpdateType:     models.UpdateTypeLocal,
 		CurrentVersion: snapshot.Tag,
 		CurrentDigest:  snapshot.PrimaryDigest,
+		CheckTime:      time.Now(),
+		ResponseTimeMs: responseTimeMs,
+	}
+}
+
+// missingLocalBuildImageUpdateResultInternal reports a compose build ref whose
+// image is not present locally: there is no registry to check against, so the
+// registry lookup is skipped entirely.
+func missingLocalBuildImageUpdateResultInternal(tag string, responseTimeMs int) *imageupdate.Response {
+	return &imageupdate.Response{
+		HasUpdate:      false,
+		UpdateType:     models.UpdateTypeLocal,
+		CurrentVersion: tag,
 		CheckTime:      time.Now(),
 		ResponseTimeMs: responseTimeMs,
 	}
@@ -907,6 +941,9 @@ func imageCheckResultMessageInternal(imageRef string, res *imageupdate.Response)
 	if res.UpdateType == models.UpdateTypeLocal {
 		return models.ActivityMessageLevelInfo, imageRef + " — local build, registry check skipped"
 	}
+	if res.UpdateType == models.UpdateTypeNotPulled {
+		return models.ActivityMessageLevelInfo, imageRef + " — not pulled locally, no local digest to compare"
+	}
 	if res.HasUpdate {
 		return models.ActivityMessageLevelSuccess, imageRef + " — update available"
 	}
@@ -1256,6 +1293,11 @@ func (s *ImageUpdateService) checkSingleImageInBatchInternal(ctx context.Context
 	if ldErr == nil && snapshot.IsLocalBuild {
 		return localBuildImageUpdateResultInternal(snapshot, int(time.Since(start).Milliseconds())), snapshot
 	}
+	if ldErr != nil && cerrdefs.IsNotFound(ldErr) {
+		if _, isComposeBuild := composeBuildRefs[refs.NormalizeImageUpdateRef(imageRef)]; isComposeBuild {
+			return missingLocalBuildImageUpdateResultInternal(parts.Tag, int(time.Since(start).Milliseconds())), nil
+		}
+	}
 
 	registryCtx, registryCancel := s.registryContextInternal(ctx)
 	digestResult, digestErr := s.registryService.InspectImageDigest(registryCtx, imageRef, externalCreds)
@@ -1278,6 +1320,22 @@ func (s *ImageUpdateService) checkSingleImageInBatchInternal(ctx context.Context
 	if ldErr != nil {
 		snapshot, ldErr = s.inspectLocalImageSnapshotInternal(ctx, imageRef, composeBuildRefs)
 		if ldErr != nil {
+			if cerrdefs.IsNotFound(ldErr) {
+				// The ref resolved remotely but was never pulled locally (e.g. a
+				// stopped project whose compose pin changed): there is nothing
+				// local to compare, so report a distinct not-pulled state rather
+				// than a failed check or an available update.
+				return &imageupdate.Response{
+					UpdateType:     models.UpdateTypeNotPulled,
+					LatestDigest:   digestResult.Digest,
+					CheckTime:      time.Now(),
+					ResponseTimeMs: int(time.Since(start).Milliseconds()),
+					AuthMethod:     digestResult.AuthMethod,
+					AuthUsername:   digestResult.AuthUsername,
+					AuthRegistry:   digestResult.AuthRegistry,
+					UsedCredential: digestResult.UsedCredential,
+				}, nil
+			}
 			return &imageupdate.Response{
 				Error:          ldErr.Error(),
 				CheckTime:      time.Now(),

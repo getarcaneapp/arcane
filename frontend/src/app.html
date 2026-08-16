@@ -12,6 +12,19 @@
 		<link rel="manifest" href="%sveltekit.assets%/app.webmanifest" />
 		<meta name="theme-color" content="oklch(1 0 0)" media="(prefers-color-scheme: light)" />
 		<meta name="theme-color" content="oklch(0.141 0.005 285.823)" media="(prefers-color-scheme: dark)" />
+		<script>
+			try {
+				const root = document.documentElement;
+				const mode = localStorage.getItem('mode-watcher-mode') || 'system';
+				const dark = mode === 'dark' || (mode !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
+				root.classList.toggle('dark', dark);
+				root.style.colorScheme = dark ? 'dark' : 'light';
+				const a = JSON.parse(localStorage.getItem('arcane-appearance') || '{}');
+				if (a.attr) root.setAttribute('data-app-theme', a.attr);
+				if (a.cls) root.classList.add(...a.cls.split(' '));
+				if (a.css) root.style.cssText += ';' + a.css;
+			} catch (e) {}
+		</script>
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">

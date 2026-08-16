@@ -14,21 +14,6 @@ export type ActionStatus =
 	| '';
 export type StateBadgeVariant = 'green' | 'red' | 'amber';
 
-export function parseImageRef(imageRef: string): { repo: string; tag: string } {
-	// Handle images like "nginx:latest", "library/nginx:1.0", "ghcr.io/org/image:tag"
-	const lastColon = imageRef.lastIndexOf(':');
-	// Check if colon is part of a tag (not a port in registry URL)
-	const hasTag = lastColon > 0 && !imageRef.substring(lastColon).includes('/');
-
-	if (hasTag) {
-		return {
-			repo: imageRef.substring(0, lastColon),
-			tag: imageRef.substring(lastColon + 1)
-		};
-	}
-	return { repo: imageRef, tag: 'latest' };
-}
-
 export function getContainerDisplayName(container: ContainerSummaryDto): string {
 	const first = container.names?.[0];
 	if (first) {

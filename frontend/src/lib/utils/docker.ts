@@ -105,6 +105,21 @@ export function isSwarmServiceModeScalable(mode: string): boolean {
 	return mode === 'replicated' || mode === 'replicated-job';
 }
 
+export function parseImageRef(imageRef: string): { repo: string; tag: string } {
+	// Handle images like "nginx:latest", "library/nginx:1.0", "ghcr.io/org/image:tag"
+	const lastColon = imageRef.lastIndexOf(':');
+	// Check if colon is part of a tag (not a port in registry URL)
+	const hasTag = lastColon > 0 && !imageRef.substring(lastColon).includes('/');
+
+	if (hasTag) {
+		return {
+			repo: imageRef.substring(0, lastColon),
+			tag: imageRef.substring(lastColon + 1)
+		};
+	}
+	return { repo: imageRef, tag: 'latest' };
+}
+
 // --- Project update status display ---
 
 type ProjectUpdateStatus = ProjectUpdateInfo['status'];
@@ -120,6 +135,8 @@ export function getProjectUpdateText(updateInfo?: ProjectUpdateInfo): string {
 			return m.images_has_updates();
 		case 'up_to_date':
 			return m.image_update_up_to_date_title();
+		case 'not_pulled':
+			return m.image_update_not_pulled_title();
 		case 'error':
 			return m.common_error();
 		default:
@@ -133,6 +150,8 @@ export function getProjectUpdateVariant(updateInfo?: ProjectUpdateInfo): Project
 			return 'blue';
 		case 'up_to_date':
 			return 'green';
+		case 'not_pulled':
+			return 'blue';
 		case 'error':
 			return 'red';
 		default:
@@ -142,6 +161,8 @@ export function getProjectUpdateVariant(updateInfo?: ProjectUpdateInfo): Project
 
 export function getProjectUpdateTooltip(updateInfo?: ProjectUpdateInfo): string | undefined {
 	switch (getProjectUpdateStatus(updateInfo)) {
+		case 'not_pulled':
+			return m.image_update_not_pulled_desc();
 		case 'error':
 			return m.image_update_check_failed_title();
 		case 'unknown':

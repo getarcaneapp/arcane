@@ -39,9 +39,10 @@ type ImageUpdate struct {
 }
 
 const (
-	UpdateTypeDigest = "digest"
-	UpdateTypeTag    = "tag"
-	UpdateTypeLocal  = "local"
+	UpdateTypeDigest    = "digest"
+	UpdateTypeTag       = "tag"
+	UpdateTypeLocal     = "local"
+	UpdateTypeNotPulled = "not_pulled"
 )
 
 func (i *ImageUpdateRecord) NeedsUpdate() bool {

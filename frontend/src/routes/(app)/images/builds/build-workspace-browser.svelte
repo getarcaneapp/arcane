@@ -18,6 +18,7 @@
 	import { queryKeys } from '#lib/query/query-keys';
 	import type { FileEntry } from '#lib/types/shared';
 	import { sortFileEntries, type FileProvider } from '#lib/components/file-browser';
+	import type { UploadProgressCallback } from '#lib/services/upload-service';
 	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
 
 	let {
@@ -103,7 +104,8 @@
 
 	const uploadMutation = createMutation(() => ({
 		mutationKey: ['build-workspace', 'upload', envId],
-		mutationFn: ({ path, file }: { path: string; file: File }) => provider.upload(path, file),
+		mutationFn: ({ path, file, onProgress }: { path: string; file: File; onProgress?: UploadProgressCallback }) =>
+			provider.upload(path, file, onProgress),
 		onSuccess: async () => {
 			await queryClient.invalidateQueries({ queryKey: queryKeys.buildWorkspace.listPrefix(envId) });
 		}
@@ -277,8 +279,8 @@
 <FileUploadDialog
 	bind:open={showUpload}
 	{currentPath}
-	onUpload={async (file) => {
-		await uploadMutation.mutateAsync({ path: currentPath, file });
+	onUpload={async (file, onProgress) => {
+		await uploadMutation.mutateAsync({ path: currentPath, file, onProgress });
 		await filesQuery.refetch();
 	}}
 />

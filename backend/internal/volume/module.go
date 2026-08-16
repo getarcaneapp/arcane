@@ -16,6 +16,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/upload"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 )
 
@@ -32,6 +33,7 @@ type Dependencies struct {
 	Engine      *backup.Engine
 	S3          *s3domain.S3DestinationService
 	Config      *config.Config
+	Upload      *upload.UploadService
 }
 
 // Module wires the volume domain and mounts its routes.
@@ -61,8 +63,8 @@ func (m *Module) Service() *VolumeService {
 // OpenAPI spec generation can discover the routes without a service graph.
 func (m *Module) RegisterRoutes(api huma.API, appCtx handlerutil.ActivityAppContext) {
 	if m == nil {
-		RegisterVolumes(api, nil, nil, nil, nil, appCtx)
+		RegisterVolumes(api, nil, nil, nil, nil, nil, appCtx)
 		return
 	}
-	RegisterVolumes(api, m.deps.Docker, m.service, m.deps.Activity, m.deps.Environment, appCtx)
+	RegisterVolumes(api, m.deps.Docker, m.service, m.deps.Activity, m.deps.Environment, m.deps.Upload, appCtx)
 }

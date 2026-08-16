@@ -1,6 +1,8 @@
 package volume
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -1309,6 +1311,98 @@ func (s *VolumeService) restoreArchiveBackupFilesInternal(ctx context.Context, d
 	if strings.TrimSpace(stderr) != "" {
 		slog.DebugContext(ctx, "volume service: restore files stderr", "backup_id", backupID, "stderr", strings.TrimSpace(stderr))
 	}
+	return nil
+}
+
+func (s *VolumeService) UploadAndRestore(ctx context.Context, volumeName string, archive io.ReadSeeker, filename string, user models.User) error {
+	slog.DebugContext(ctx, "volume service: upload and restore", "volume", volumeName, "filename", filename, "user", user.ID)
+
+	gzr, err := gzip.NewReader(archive)
+	if err != nil {
+		return errors.WrapIf(err, "invalid archive")
+	}
+	if _, err := tar.NewReader(gzr).Next(); err != nil {
+		_ = gzr.Close()
+		return errors.WrapIf(err, "invalid archive")
+	}
+	_ = gzr.Close()
+
+	unlock := s.workspaceLocks.Lock(volumeName)
+	defer unlock()
+	ctx = context.WithValue(ctx, volumeWorkspaceLockContextKeyInternal{}, volumeWorkspaceLockContextInternal{
+		service:    s,
+		volumeName: volumeName,
+	})
+	preBackup, err := s.CreateBackup(ctx, volumeName, user, models.VolumeBackupTriggerSafety, volumetypes.CreateBackupRequest{Destination: volumetypes.BackupDestinationLocal})
+	if err != nil {
+		return errors.WrapIf(err, "failed to create pre-restore backup")
+	}
+
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		return err
+	}
+
+	containerID, cleanup, err := s.acquireVolumeHelperInternal(ctx, volumeName)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	tmpDir := fmt.Sprintf("/volume/.restore_tmp_%d", time.Now().UnixNano())
+	_, stderr, err := s.execInContainerInternal(ctx, containerID, []string{"mkdir", "-p", tmpDir})
+	if err != nil {
+		return errors.WrapIf(err, "failed to create temp restore dir")
+	}
+	if strings.TrimSpace(stderr) != "" {
+		slog.DebugContext(ctx, "volume service: restore temp dir stderr", "volume", volumeName, "stderr", strings.TrimSpace(stderr))
+	}
+
+	if _, err := archive.Seek(0, io.SeekStart); err != nil {
+		return errors.WrapIf(err, "failed to read uploaded archive")
+	}
+	_, err = dockerClient.CopyToContainer(ctx, containerID, client.CopyToContainerOptions{
+		DestinationPath: tmpDir,
+		Content:         archive,
+	})
+	if err != nil {
+		return errors.WrapIf(err, "failed to restore from uploaded archive")
+	}
+
+	_, stderr, err = s.execInContainerInternal(ctx, containerID, []string{"sh", "-c", fmt.Sprintf("test -n \"$(find %s -mindepth 1 -maxdepth 1 -print -quit)\"", tmpDir)})
+	if err != nil {
+		return errors.WrapIf(err, "uploaded archive appears empty or invalid")
+	}
+	if strings.TrimSpace(stderr) != "" {
+		slog.DebugContext(ctx, "volume service: restore validate stderr", "volume", volumeName, "stderr", strings.TrimSpace(stderr))
+	}
+
+	_, stderr, err = s.execInContainerInternal(ctx, containerID, []string{"sh", "-c", "rm -rf /volume/* /volume/.[!.]* /volume/..?* 2>/dev/null || true"})
+	if err != nil {
+		return errors.WrapIf(err, "failed to clear volume before restore")
+	}
+	if strings.TrimSpace(stderr) != "" {
+		slog.DebugContext(ctx, "volume service: restore clear stderr", "volume", volumeName, "stderr", strings.TrimSpace(stderr))
+	}
+
+	moveCmd := fmt.Sprintf("find %s -mindepth 1 -maxdepth 1 -exec mv -- {} /volume/ \\; && rmdir %s", tmpDir, tmpDir)
+	_, stderr, err = s.execInContainerInternal(ctx, containerID, []string{"sh", "-c", moveCmd})
+	if err != nil {
+		return errors.WrapIf(err, "failed to move restored files into place")
+	}
+	if strings.TrimSpace(stderr) != "" {
+		slog.DebugContext(ctx, "volume service: restore move stderr", "volume", volumeName, "stderr", strings.TrimSpace(stderr))
+	}
+
+	metadata := models.JSON{
+		"action":               "backup_upload_restore",
+		"filename":             filename,
+		"pre_restore_backupId": preBackup.ID,
+	}
+	if logErr := s.eventService.LogVolumeEvent(ctx, models.EventTypeVolumeBackupRestore, volumeName, volumeName, user.ID, user.Username, "0", metadata); logErr != nil {
+		slog.WarnContext(ctx, "could not log volume backup upload restore event", "volume", volumeName, "error", logErr.Error())
+	}
+
 	return nil
 }
 

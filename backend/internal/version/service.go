@@ -207,13 +207,55 @@ func (s *VersionService) GetVersionInformation(ctx context.Context, currentVersi
 		return check, err
 	}
 
-	if latest != "" {
+	// Skip when latest is semver-older than current (e.g. a prerelease build
+	// asking the stable release feed) — a downgrade is not a newest version.
+	if latest != "" && !s.IsNewer(cur, latest) {
 		check.NewestVersion = latest
 		check.UpdateAvailable = s.IsNewer(latest, cur)
 		check.ReleaseURL = s.ReleaseURL(latest)
 	}
 
 	return check, nil
+}
+
+// isNextBuildInternal reports whether this build tracks the next channel: a
+// -next. prerelease version, or a container running the rolling next image tag.
+func (s *VersionService) isNextBuildInternal(currentTag string) bool {
+	return strings.Contains(strings.ToLower(strings.TrimSpace(s.version)), "-next.") ||
+		strings.TrimSpace(currentTag) == "next"
+}
+
+// resolveNextVersionInternal returns the normalized version label of the image
+// an upgrade would pull, or "" when it cannot be resolved. It prefers the
+// digest reference so the reported version and NewestDigest describe the same
+// artifact.
+func (s *VersionService) resolveNextVersionInternal(ctx context.Context, imageRef, tag, newestDigest string) string {
+	if s.containerRegistryService == nil || strings.TrimSpace(imageRef) == "" {
+		return ""
+	}
+
+	var lookupRef string
+	switch {
+	case strings.TrimSpace(newestDigest) != "":
+		lookupRef = imageRef + "@" + strings.TrimSpace(newestDigest)
+	case strings.TrimSpace(tag) != "":
+		lookupRef = imageRef + ":" + strings.TrimSpace(tag)
+	default:
+		return ""
+	}
+
+	label, err := s.containerRegistryService.ImageVersionLabel(ctx, lookupRef)
+	if err != nil {
+		slog.WarnContext(ctx, "Failed to resolve next-channel version label", "imageRef", lookupRef, "error", err)
+		return ""
+	}
+
+	normalized := s.normalizeVersion(label)
+	if !semver.IsValid(normalized) {
+		slog.WarnContext(ctx, "Next-channel image version label is not valid semver", "imageRef", lookupRef, "label", label)
+		return ""
+	}
+	return normalized
 }
 
 // isSemverVersion checks if a version string is semver-based (e.g., v1.0.0)
@@ -265,30 +307,31 @@ func (s *VersionService) GetAppVersionInfo(ctx context.Context) *version.Info {
 		return info
 	}
 
-	semverUpdateAvailable := false
-
-	// For semver versions, check GitHub releases
-	if isSemver {
-		rel, err := s.getLatestReleaseInternal(ctx)
-		if err == nil {
-			if rel.TagName != "" {
-				info.NewestVersion = rel.TagName
-				semverUpdateAvailable = s.IsNewer(rel.TagName, ver)
-				info.ReleaseURL = s.ReleaseURL(rel.TagName)
-				info.ReleaseNotes = rel.Body
-				info.ReleasedAt = rel.PublishedAt
-			}
-		}
-	}
-
 	digestUpdateAvailable, latestDigest := s.storedOrDigestBasedUpdateInternal(ctx, currentImageID, currentTag, currentDigest, currentImageRef)
 	if latestDigest != "" {
 		info.NewestDigest = latestDigest
 	}
 
-	// Best-effort: pull release notes for non-semver track too, so the modal can preview
-	// the latest tagged release even when the running build is digest-tracking.
-	if !isSemver {
+	switch {
+	case isSemver && s.isNextBuildInternal(currentTag):
+		nextVersion := s.resolveNextVersionInternal(ctx, currentImageRef, currentTag, latestDigest)
+		if nextVersion != "" && semver.Compare(nextVersion, ver) >= 0 {
+			info.NewestVersion = nextVersion
+		}
+		info.UpdateAvailable = digestUpdateAvailable || (nextVersion != "" && s.IsNewer(nextVersion, ver))
+	case isSemver:
+		// Never surface a release older than the running version as the target.
+		rel, err := s.getLatestReleaseInternal(ctx)
+		if err == nil && rel.TagName != "" && !s.IsNewer(ver, rel.TagName) {
+			info.NewestVersion = rel.TagName
+			info.UpdateAvailable = s.IsNewer(rel.TagName, ver)
+			info.ReleaseURL = s.ReleaseURL(rel.TagName)
+			info.ReleaseNotes = rel.Body
+			info.ReleasedAt = rel.PublishedAt
+		}
+	default:
+		// Best-effort: pull release notes for non-semver track too, so the modal can preview
+		// the latest tagged release even when the running build is digest-tracking.
 		if rel, err := s.getLatestReleaseInternal(ctx); err == nil && rel.TagName != "" {
 			info.ReleaseNotes = rel.Body
 			info.ReleasedAt = rel.PublishedAt
@@ -296,9 +339,9 @@ func (s *VersionService) GetAppVersionInfo(ctx context.Context) *version.Info {
 				info.ReleaseURL = s.ReleaseURL(rel.TagName)
 			}
 		}
+		info.UpdateAvailable = digestUpdateAvailable
 	}
 
-	info.UpdateAvailable = semverUpdateAvailable || (!isSemver && digestUpdateAvailable)
 	return info
 }
 

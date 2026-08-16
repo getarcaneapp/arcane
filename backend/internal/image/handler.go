@@ -5,7 +5,6 @@ import (
 	stderrors "errors"
 	"fmt"
 	"io"
-	"mime/multipart"
 	"net/http"
 	"net/url"
 	"strings"
@@ -20,6 +19,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/upload"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
@@ -28,6 +28,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/image"
 	"github.com/getarcaneapp/arcane/types/v2/system"
+	uploadtypes "github.com/getarcaneapp/arcane/types/v2/upload"
 	buildtypes "go.getarcane.app/builds/types"
 	"gorm.io/gorm"
 )
@@ -40,6 +41,7 @@ type ImageHandler struct {
 	settingsService    *settings.SettingsService
 	buildService       *build.BuildService
 	activityService    *activity.ActivityService
+	uploadService      *upload.UploadService
 	appCtx             context.Context
 }
 
@@ -182,8 +184,8 @@ type GetImageUsageCountsOutput struct {
 }
 
 type UploadImageInput struct {
-	EnvironmentID string         `path:"id" doc:"Environment ID"`
-	RawBody       multipart.Form `contentType:"multipart/form-data"`
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	Body          uploadtypes.ConsumeRequest
 }
 
 type UploadImageOutput struct {
@@ -191,7 +193,7 @@ type UploadImageOutput struct {
 }
 
 // RegisterImages registers image management routes using Huma.
-func RegisterImages(api huma.API, dockerService *docker.DockerClientService, imageService *ImageService, imageUpdateService *imageupdate.ImageUpdateService, settingsService *settings.SettingsService, buildService *build.BuildService, activityService *activity.ActivityService, appCtx handlerutil.ActivityAppContext) {
+func RegisterImages(api huma.API, dockerService *docker.DockerClientService, imageService *ImageService, imageUpdateService *imageupdate.ImageUpdateService, settingsService *settings.SettingsService, buildService *build.BuildService, activityService *activity.ActivityService, uploadService *upload.UploadService, appCtx handlerutil.ActivityAppContext) {
 	h := &ImageHandler{
 		dockerService:      dockerService,
 		imageService:       imageService,
@@ -199,6 +201,7 @@ func RegisterImages(api huma.API, dockerService *docker.DockerClientService, ima
 		settingsService:    settingsService,
 		buildService:       buildService,
 		activityService:    activityService,
+		uploadService:      uploadService,
 		appCtx:             appCtx.Context(),
 	}
 
@@ -347,26 +350,10 @@ func RegisterImages(api huma.API, dockerService *docker.DockerClientService, ima
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/images/upload",
 		Summary:     "Upload an image",
-		Description: "Upload a Docker image from a tar archive",
+		Description: "Load a Docker image tar archive from a complete chunked upload session. multipart/form-data bodies are still accepted for backward compatibility; that form is deprecated and will be removed in a future release.",
 		Tags:        []string{"Images"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		RequestBody: &huma.RequestBody{
-			Content: map[string]*huma.MediaType{
-				"multipart/form-data": {
-					Schema: &huma.Schema{
-						Type: "object",
-						Properties: map[string]*huma.Schema{
-							"file": {
-								Type:        "string",
-								Format:      "binary",
-								Description: "Docker image tar archive",
-							},
-						},
-						Required: []string{"file"},
-					},
-				},
-			},
-		},
+		Middlewares: upload.LegacyMultipartMiddleware(api, h.uploadService, uploadtypes.KindImage),
 	}, authz.PermImagesUpload, h.UploadImage)
 }
 
@@ -883,39 +870,19 @@ func (h *ImageHandler) UploadImage(ctx context.Context, input *UploadImageInput)
 		return nil, err
 	}
 
-	// Get file from multipart form
-	files := input.RawBody.File["file"]
-	if len(files) == 0 {
-		return nil, huma.Error400BadRequest("No file uploaded")
+	file, session, cleanup, err := h.uploadService.Consume(ctx, uploadtypes.KindImage, input.Body.UploadID)
+	if err != nil {
+		if httpErr := upload.SessionHTTPError(err); httpErr != nil {
+			return nil, httpErr
+		}
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to open upload").Error())
 	}
+	defer cleanup()
 
-	fileHeader := files[0]
-	fileName := fileHeader.Filename
-
-	// Validate file extension
-	lowerName := strings.ToLower(fileName)
-	if !strings.HasSuffix(lowerName, ".tar") && !strings.HasSuffix(lowerName, ".tar.gz") && !strings.HasSuffix(lowerName, ".tgz") && !strings.HasSuffix(lowerName, ".tar.xz") {
-		return nil, huma.Error400BadRequest("Invalid file format. Only Docker image tar archives are allowed (.tar, .tar.gz, .tgz, .tar.xz)")
-	}
-
-	// Get max upload size from settings
 	maxSizeMB := h.settingsService.GetIntSetting(ctx, "maxImageUploadSize", 500)
 	maxSizeBytes := int64(maxSizeMB) * 1024 * 1024
 
-	// Check file size
-	if fileHeader.Size > maxSizeBytes {
-		return nil, huma.NewError(http.StatusRequestEntityTooLarge, fmt.Sprintf("file size exceeds maximum allowed size of %d MB", maxSizeMB))
-	}
-
-	// Open the file
-	file, err := fileHeader.Open()
-	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to read upload").Error())
-	}
-	defer func() { _ = file.Close() }()
-
-	// Load the image
-	result, err := h.imageService.LoadImageFromReader(ctx, file, fileName, *user, maxSizeBytes)
+	result, err := h.imageService.LoadImageFromReader(ctx, file, session.Filename, *user, maxSizeBytes)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to load image").Error())
 	}

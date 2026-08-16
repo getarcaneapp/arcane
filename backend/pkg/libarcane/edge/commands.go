@@ -40,6 +40,11 @@ var commandRoutes = []commandRoute{
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/images/prune", CommandName: "image.prune"},
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/images/upload", CommandName: "image.upload"},
 
+	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/uploads/{kind}", CommandName: "upload.session.create"},
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/uploads/{kind}/{uploadId}", CommandName: "upload.session.get"},
+	{Method: http.MethodDelete, PathPattern: "/api/environments/{id}/uploads/{kind}/{uploadId}", CommandName: "upload.session.delete"},
+	{Method: http.MethodPut, PathPattern: "/api/environments/{id}/uploads/{kind}/{uploadId}/chunks/{index}", CommandName: "upload.session.chunk"},
+
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/image-updates/check", CommandName: "image_update.check"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/image-updates/check/{imageId}", CommandName: "image_update.check_one"},
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/image-updates/check/{imageId}", CommandName: "image_update.check_one"},

@@ -225,6 +225,18 @@ func (m *EnvironmentMiddleware) proxyPermissionDenied(c *echo.Context, ps *authz
 
 	method := c.Request().Method
 	suffix := m.buildResourceSuffix(c.Request().URL.Path, envID)
+	if kind, ok := uploadSessionKindInternal(method, suffix); ok {
+		// Upload-session routes derive their permission from the {kind} path
+		// segment, so they carry no static mapping in the matcher; resolve the
+		// kind here and fail closed on unknown kinds.
+		perm, known := authz.UploadKindPermission(kind)
+		if !known || !ps.Allows(perm, envID) {
+			slog.DebugContext(c.Request().Context(), "Denying proxied upload session request: permission denied",
+				"method", method, "path", suffix, "kind", kind, "environment_id", envID)
+			return true
+		}
+		return false
+	}
 	perm, ok := m.matcher.Lookup(method, suffix).Get()
 	if !ok {
 		slog.WarnContext(c.Request().Context(), "Denying proxied request with no known permission mapping",
@@ -262,6 +274,25 @@ func (m *EnvironmentMiddleware) proxyPermissionDenied(c *echo.Context, ps *authz
 		}
 	}
 	return false
+}
+
+// uploadSessionKindInternal extracts the upload kind from the exact
+// upload-session route shapes: POST /uploads/{kind}, GET or DELETE
+// /uploads/{kind}/{uploadId}, and PUT /uploads/{kind}/{uploadId}/chunks/{n}.
+func uploadSessionKindInternal(method, suffix string) (string, bool) {
+	segments := strings.Split(strings.Trim(suffix, "/"), "/")
+	if len(segments) < 2 || segments[0] != "uploads" || segments[1] == "" {
+		return "", false
+	}
+	switch {
+	case len(segments) == 2 && method == http.MethodPost:
+		return segments[1], true
+	case len(segments) == 3 && (method == http.MethodGet || method == http.MethodDelete):
+		return segments[1], true
+	case len(segments) == 5 && method == http.MethodPut && segments[3] == "chunks":
+		return segments[1], true
+	}
+	return "", false
 }
 
 func isVolumeWorkspaceUpdateRequestInternal(method, suffix string) bool {

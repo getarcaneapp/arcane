@@ -108,7 +108,7 @@ func (s *ProjectService) GetProjectServices(ctx context.Context, projectID strin
 		slog.WarnContext(ctx, "failed to parse Arcane compose metadata", "path", composeFileFullPath, "error", metaErr)
 	}
 
-	containers, err := projects.ComposePs(ctx, composeProject, nil, true)
+	containers, err := projects.ComposePs(ctx, s.dockerService.DockerHost(), composeProject, nil, true)
 	if err != nil {
 		slog.Error("compose ps error", "projectName", composeProject.Name, "error", err)
 		return nil, errors.WrapIf(err, "failed to get compose services status")
@@ -220,6 +220,10 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 	meta := s.ProjectMetadata(ctx, *proj, nil)
 	applyResolvedProjectIconInternal(&resp, iconcatalog.Resolve(IconCatalogForContext(ctx), meta.ProjectIcon))
 	resp.URLs = meta.ProjectURLS
+	resp.Tags, err = s.GetProjectTags(ctx, projectID)
+	if err != nil {
+		return project.Details{}, err
+	}
 
 	// Default counts/status from DB (will be overridden if runtime check succeeds)
 	resp.ServiceCount = proj.ServiceCount
@@ -464,10 +468,18 @@ func buildProjectUpdateInfoSummaryInternal(
 		}
 
 		summary.CheckedImageCount++
+		if summary.UpdateInfoByRef == nil {
+			summary.UpdateInfoByRef = make(map[string]imagetypes.UpdateInfo)
+		}
+		summary.UpdateInfoByRef[imageRef] = *info
 		if info.HasUpdate {
 			summary.HasUpdate = true
 			summary.ImagesWithUpdates++
 			summary.UpdatedImageRefs = append(summary.UpdatedImageRefs, imageRef)
+		}
+		if info.UpdateType == models.UpdateTypeNotPulled {
+			summary.ImagesNotPulled++
+			summary.NotPulledImageRefs = append(summary.NotPulledImageRefs, imageRef)
 		}
 		if strings.TrimSpace(info.Error) != "" {
 			summary.ErrorCount++
@@ -487,6 +499,8 @@ func buildProjectUpdateInfoSummaryInternal(
 		summary.Status = "has_update"
 	case summary.ErrorCount > 0:
 		summary.Status = "error"
+	case summary.ImagesNotPulled > 0:
+		summary.Status = "not_pulled"
 	case summary.CheckedImageCount == imageCount:
 		summary.Status = "up_to_date"
 	default:

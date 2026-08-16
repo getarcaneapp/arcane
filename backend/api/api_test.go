@@ -410,6 +410,13 @@ func TestEnvScopedOperationsDeclarePermission(t *testing.T) {
 		if !strings.HasPrefix(path, "/environments/{id}/") {
 			continue
 		}
+		// Upload-session routes derive their permission from the {kind} path
+		// segment at request time (authz.UploadKindPermission); both the local
+		// handlers and the proxy's uploadSessionKindInternal special case
+		// enforce it, so no static mapping exists to declare here.
+		if strings.HasPrefix(path, "/environments/{id}/uploads/{kind}") {
+			continue
+		}
 		for method, op := range envScopedTestOperationsInternal(item) {
 			if op == nil {
 				continue

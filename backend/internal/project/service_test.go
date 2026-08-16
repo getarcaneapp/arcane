@@ -77,7 +77,7 @@ func setupProjectTestDB(t *testing.T) *database.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&models.Project{}, &models.SettingVariable{}, &models.ImageUpdateRecord{}, &models.Event{}))
+	require.NoError(t, db.AutoMigrate(&models.Project{}, &models.ProjectTag{}, &models.SettingVariable{}, &models.ImageUpdateRecord{}, &models.Event{}))
 	return &database.DB{DB: db}
 }
 
@@ -2108,7 +2108,7 @@ services:
     image: nginx:alpine
 `
 
-	project, err := svc.CreateProject(ctx, "with-external-include", compose, nil, projecttypes.CreateProjectWorkspaceManifest{}, nil, models.User{
+	project, err := svc.CreateProject(ctx, "with-external-include", compose, nil, projecttypes.CreateProjectWorkspaceManifest{}, nil, nil, nil, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
@@ -2185,6 +2185,8 @@ func TestProjectService_CreateProject_CommitsWorkspaceAndConfigurationTogether(t
 		new("VALUE=one\n"),
 		manifest,
 		map[int][]byte{0: []byte("workspace content\n")},
+		nil,
+		nil,
 		models.User{BaseModel: models.BaseModel{ID: "u1"}, Username: "tester"},
 	)
 	require.NoError(t, err)
@@ -2216,6 +2218,8 @@ func TestProjectService_CreateProject_RollsBackInvalidWorkspaceManifest(t *testi
 		"services:\n  app:\n    image: nginx:alpine\n",
 		nil,
 		manifest,
+		nil,
+		nil,
 		nil,
 		models.User{BaseModel: models.BaseModel{ID: "u1"}, Username: "tester"},
 	)
@@ -3302,6 +3306,19 @@ func TestBuildProjectUpdateInfoSummaryInternal(t *testing.T) {
 				"redis:7":      {HasUpdate: false, CheckTime: now.Add(-time.Minute)},
 			},
 			wantStatus:  "up_to_date",
+			wantCount:   2,
+			wantChecked: 2,
+			wantErrors:  0,
+			wantUpdates: 0,
+		},
+		{
+			name:      "not pulled when an image is missing locally and nothing else needs attention",
+			imageRefs: []string{"nginx:latest", "redis:7"},
+			updates: map[string]*imagetypes.UpdateInfo{
+				"nginx:latest": {HasUpdate: false, UpdateType: models.UpdateTypeNotPulled, CheckTime: now},
+				"redis:7":      {HasUpdate: false, CheckTime: now.Add(-time.Minute)},
+			},
+			wantStatus:  "not_pulled",
 			wantCount:   2,
 			wantChecked: 2,
 			wantErrors:  0,

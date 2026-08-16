@@ -1,11 +1,12 @@
 <script lang="ts">
 	import type { ProjectUpdateInfo } from '#lib/types/swarm';
-	import { getProjectUpdateStatus, getProjectUpdateText } from '#lib/utils/docker';
+	import { getProjectUpdateStatus, getProjectUpdateText, parseImageRef } from '#lib/utils/docker';
 	import { m } from '#lib/paraglide/messages';
 	import UpdateStatusPopover from '#lib/components/update-status-popover.svelte';
 	import UpdateStatusBanner from '#lib/components/update-status-banner.svelte';
+	import ImageUpdateItem from '#lib/components/image-update-item.svelte';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
-	import { AlertIcon, CircleArrowUpIcon, ClockIcon, ImagesIcon, RefreshIcon, VerifiedCheckIcon } from '#lib/icons';
+	import { AlertIcon, CircleArrowUpIcon, ClockIcon, DownloadIcon, ImagesIcon, RefreshIcon, VerifiedCheckIcon } from '#lib/icons';
 	import type { Component } from 'svelte';
 	import { formatDateTimeShort } from '#lib/utils/formatting';
 	import UncheckedRingIcon from '#lib/components/unchecked-ring-icon.svelte';
@@ -30,6 +31,8 @@
 	const errorMessage = $derived(updateInfo?.errorMessage?.trim() || '');
 	const imageRefs = $derived(updateInfo?.imageRefs ?? []);
 	const updatedImageRefs = $derived(updateInfo?.updatedImageRefs ?? []);
+	const notPulledImageRefs = $derived(updateInfo?.notPulledImageRefs ?? []);
+	const updateInfoByRef = $derived(updateInfo?.updateInfoByRef ?? {});
 	const canCheck = $derived(!!onCheck && !disabled && imageRefs.length > 0);
 	const directCheckFromTrigger = $derived(canCheck && (status === 'unknown' || status === 'error'));
 
@@ -41,6 +44,11 @@
 	const updatedSummaryText = $derived.by(() => {
 		if (imageCount <= 0) return null;
 		return m.images_updates_count({ updated: updatedImageRefs.length, total: imageCount });
+	});
+
+	const notPulledSummaryText = $derived.by(() => {
+		if (imageCount <= 0) return null;
+		return m.images_not_pulled_count({ notPulled: notPulledImageRefs.length, total: imageCount });
 	});
 
 	const lastCheckedAtLabel = $derived.by(() => {
@@ -74,6 +82,18 @@
 						descriptionClass: 'text-blue-900/80 dark:text-blue-300/80',
 						title: m.images_has_updates(),
 						description: updatedSummaryText ?? m.images_has_updates()
+					};
+				case 'not_pulled':
+					return {
+						icon: DownloadIcon,
+						gradientFrom: 'from-blue-500',
+						gradientTo: 'to-cyan-500',
+						shadowColor: 'shadow-blue-500/25',
+						headerClass: 'bg-linear-to-br from-blue-50 to-cyan-50/30 dark:from-blue-950/20 dark:to-cyan-950/10',
+						titleClass: 'text-blue-950 dark:text-blue-100',
+						descriptionClass: 'text-blue-900/80 dark:text-blue-300/80',
+						title: m.image_update_not_pulled_title(),
+						description: notPulledSummaryText ?? m.image_update_not_pulled_desc()
 					};
 				case 'up_to_date':
 					return {
@@ -132,6 +152,14 @@
 		class="flex h-10 w-10 items-center justify-center rounded-full bg-linear-to-br {gradientFrom} {gradientTo} shadow-lg {shadowColor}"
 	>
 		<Icon class="size-5 text-white" />
+	</div>
+{/snippet}
+
+{#snippet refRow(imageRef: string)}
+	{@const parsed = parseImageRef(imageRef)}
+	<div class="flex items-center rounded-md bg-muted px-2 py-1">
+		<ImageUpdateItem updateInfo={updateInfoByRef[imageRef]} {imageRef} repo={parsed.repo} tag={parsed.tag} />
+		<span class="min-w-0 flex-1 font-mono text-xs break-all text-foreground">{imageRef}</span>
 	</div>
 {/snippet}
 
@@ -204,6 +232,8 @@
 					<VerifiedCheckIcon class="size-4 text-green-500" />
 				{:else if status === 'has_update'}
 					<CircleArrowUpIcon class="size-4 text-blue-500" />
+				{:else if status === 'not_pulled'}
+					<DownloadIcon class="size-4 text-blue-500" />
 				{:else}
 					<div class="flex size-4 items-center justify-center text-gray-400 opacity-60">
 						<UncheckedRingIcon />
@@ -251,14 +281,14 @@
 								<div class="text-[11px] font-medium tracking-wide text-foreground uppercase">{m.images_has_updates()}</div>
 								<div class="max-h-40 space-y-1 overflow-auto">
 									{#each updatedImageRefs as imageRef (imageRef)}
-										<div class="rounded-md bg-muted px-2 py-1 font-mono text-xs break-all text-foreground">
-											{imageRef}
-										</div>
+										{@render refRow(imageRef)}
 									{/each}
 								</div>
 							</div>
 						{:else if status === 'up_to_date'}
 							<div class="text-xs leading-relaxed text-muted-foreground">{m.image_update_up_to_date_desc()}</div>
+						{:else if status === 'not_pulled'}
+							<div class="text-xs leading-relaxed text-muted-foreground">{m.image_update_not_pulled_desc()}</div>
 						{:else if status === 'error'}
 							<div class="text-xs leading-relaxed text-muted-foreground">
 								{errorMessage || m.image_update_could_not_query_registry()}
@@ -270,6 +300,19 @@
 								{:else}
 									{m.image_update_unable_check_tags()}
 								{/if}
+							</div>
+						{/if}
+
+						{#if notPulledImageRefs.length > 0 && (status === 'not_pulled' || status === 'has_update')}
+							<div class="space-y-2">
+								<div class="text-[11px] font-medium tracking-wide text-foreground uppercase">
+									{m.image_update_not_pulled_title()}
+								</div>
+								<div class="max-h-40 space-y-1 overflow-auto">
+									{#each notPulledImageRefs as imageRef (imageRef)}
+										{@render refRow(imageRef)}
+									{/each}
+								</div>
 							</div>
 						{/if}
 

@@ -18,12 +18,14 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/upload"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 	"github.com/getarcaneapp/arcane/types/v2/base"
+	uploadtypes "github.com/getarcaneapp/arcane/types/v2/upload"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
@@ -35,6 +37,7 @@ type VolumeHandler struct {
 	dockerService      *docker.DockerClientService
 	activityService    *activity.ActivityService
 	environmentService *environment.EnvironmentService
+	uploadService      *upload.UploadService
 	appCtx             context.Context
 }
 
@@ -258,6 +261,16 @@ type DeleteBackupOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
 }
 
+type UploadAndRestoreInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	VolumeName    string `path:"volumeName" doc:"Volume name"`
+	Body          uploadtypes.ConsumeRequest
+}
+
+type UploadAndRestoreOutput struct {
+	Body base.ApiResponse[base.MessageResponse]
+}
+
 type UploadBackupInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	BackupID      string `path:"backupId" doc:"Backup ID"`
@@ -269,12 +282,13 @@ type UploadBackupOutput struct {
 }
 
 // RegisterVolumes registers volume management routes using Huma.
-func RegisterVolumes(api huma.API, dockerService *docker.DockerClientService, volumeService *VolumeService, activityService *activity.ActivityService, environmentService *environment.EnvironmentService, appCtx handlerutil.ActivityAppContext) {
+func RegisterVolumes(api huma.API, dockerService *docker.DockerClientService, volumeService *VolumeService, activityService *activity.ActivityService, environmentService *environment.EnvironmentService, uploadService *upload.UploadService, appCtx handlerutil.ActivityAppContext) {
 	h := &VolumeHandler{
 		volumeService:      volumeService,
 		dockerService:      dockerService,
 		activityService:    activityService,
 		environmentService: environmentService,
+		uploadService:      uploadService,
 		appCtx:             appCtx.Context(),
 	}
 
@@ -463,6 +477,17 @@ func RegisterVolumes(api huma.API, dockerService *docker.DockerClientService, vo
 		Tags:        []string{"Volume Backup"},
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}, authz.PermVolumesRead, h.ListBackupFiles)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "upload-volume-backup",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/volumes/{volumeName}/backups/upload",
+		Summary:     "Upload and restore volume backup",
+		Description: "Restore a volume from a complete chunked upload session containing a tar.gz backup archive. multipart/form-data bodies are still accepted for backward compatibility; that form is deprecated and will be removed in a future release.",
+		Tags:        []string{"Volume Backup"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+		Middlewares: upload.LegacyMultipartMiddleware(api, h.uploadService, uploadtypes.KindVolumeBackup),
+	}, authz.PermVolumesUpload, h.UploadAndRestore)
 }
 
 func (h *VolumeHandler) DownloadBackup(ctx context.Context, input *DownloadBackupInput) (*huma.StreamResponse, error) {
@@ -1068,4 +1093,48 @@ func (h *VolumeHandler) UploadBackup(ctx context.Context, input *UploadBackupInp
 	}
 	backup.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
 	return &UploadBackupOutput{Body: base.ApiResponse[*models.VolumeBackup]{Success: true, Data: backup}}, nil
+}
+
+func (h *VolumeHandler) UploadAndRestore(ctx context.Context, input *UploadAndRestoreInput) (*UploadAndRestoreOutput, error) {
+	user, err := handlerutil.RequireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	file, session, cleanup, err := h.uploadService.Consume(ctx, uploadtypes.KindVolumeBackup, input.Body.UploadID)
+	if err != nil {
+		if httpErr := upload.SessionHTTPError(err); httpErr != nil {
+			return nil, httpErr
+		}
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to open upload").Error())
+	}
+	defer cleanup()
+
+	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
+		EnvironmentID:  input.EnvironmentID,
+		Type:           models.ActivityTypeResourceAction,
+		ResourceType:   "volume",
+		ResourceID:     input.VolumeName,
+		ResourceName:   input.VolumeName,
+		User:           user,
+		Step:           "Uploading backup",
+		Message:        "Uploading and restoring volume backup",
+		SuccessMessage: "Backup uploaded and restored successfully",
+		Metadata: models.JSON{
+			"action":   "upload_restore_volume_backup",
+			"filename": session.Filename,
+		},
+	}, func(runtimeCtx context.Context) error {
+		return h.volumeService.UploadAndRestore(runtimeCtx, input.VolumeName, file, session.Filename, *user)
+	})
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	return &UploadAndRestoreOutput{
+		Body: base.ApiResponse[base.MessageResponse]{
+			Success: true,
+			Data:    base.MessageResponse{Message: "Backup uploaded and restored successfully", ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()},
+		},
+	}, nil
 }

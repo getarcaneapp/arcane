@@ -1,4 +1,5 @@
 import BaseAPIService from './api-service';
+import { uploadService, type UploadProgressCallback } from './upload-service';
 import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte';
 import type {
 	ImageSummaryDto,
@@ -191,11 +192,10 @@ class ImageService extends BaseAPIService {
 		return this.handleResponse(this.api.post(`/environments/${envId}/updater/run`, options));
 	}
 
-	async uploadImage(file: File, environmentId?: string): Promise<any> {
+	async uploadImage(file: File, environmentId?: string, onProgress?: UploadProgressCallback): Promise<any> {
 		const envId = await this.resolveEnvironmentId(environmentId);
-		const formData = new FormData();
-		formData.append('file', file);
-		return this.handleResponse(this.api.post(`/environments/${envId}/images/upload`, formData));
+		const uploadId = await uploadService.uploadFile(envId, 'image', file, onProgress);
+		return this.handleResponse(this.api.post(`/environments/${envId}/images/upload`, { uploadId }));
 	}
 
 	async getImageBuilds(options?: SearchPaginationSortRequest): Promise<Paginated<ImageBuildRecord>> {

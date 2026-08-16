@@ -39,7 +39,7 @@ func ComposeRestart(ctx context.Context, proj *types.Project, services []string)
 	restartCtx, cancel := detachFromHTTPContextInternal(ctx, defaultComposeTimeout)
 	defer cancel()
 
-	c, err := NewClient(restartCtx, nil, nil)
+	c, err := NewClient(restartCtx, "", nil, nil)
 	if err != nil {
 		return err
 	}
@@ -55,7 +55,7 @@ func ComposeStop(ctx context.Context, proj *types.Project, services []string) er
 	stopCtx, cancel := detachFromHTTPContextInternal(ctx, defaultComposeTimeout)
 	defer cancel()
 
-	c, err := NewClient(stopCtx, nil, nil)
+	c, err := NewClient(stopCtx, "", nil, nil)
 	if err != nil {
 		return err
 	}
@@ -86,7 +86,7 @@ func ComposeUp(ctx context.Context, proj *types.Project, services []string, remo
 		prompt = compose.AlwaysOkPrompt()
 	}
 
-	c, err := NewClient(composeCtx, authConfigs, prompt)
+	c, err := NewClient(composeCtx, "", authConfigs, prompt)
 	if err != nil {
 		return err
 	}
@@ -123,12 +123,17 @@ func composeUpOptions(proj *types.Project, services []string, removeOrphans bool
 	return upOptions, startOptions
 }
 
-func ComposePs(ctx context.Context, proj *types.Project, services []string, all bool) ([]api.ContainerSummary, error) {
-	c, err := NewClient(ctx, nil, nil)
+// ComposePs lists a project's compose containers. dockerHost is the
+// config-resolved docker host used to reuse the shared read-only compose
+// client; empty falls back to a one-shot environment-resolved client.
+func ComposePs(ctx context.Context, dockerHost string, proj *types.Project, services []string, all bool) ([]api.ContainerSummary, error) {
+	c, shared, err := plainComposeClientInternal(ctx, dockerHost)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = c.Close() }()
+	if !shared {
+		defer func() { _ = c.Close() }()
+	}
 
 	return c.svc.Ps(ctx, proj.Name, api.PsOptions{All: all, Services: services})
 }
@@ -137,7 +142,7 @@ func ComposeDown(ctx context.Context, proj *types.Project, removeVolumes bool) e
 	downCtx, cancel := detachFromHTTPContextInternal(ctx, defaultComposeTimeout)
 	defer cancel()
 
-	c, err := NewClient(downCtx, nil, nil)
+	c, err := NewClient(downCtx, "", nil, nil)
 	if err != nil {
 		return err
 	}
@@ -147,7 +152,7 @@ func ComposeDown(ctx context.Context, proj *types.Project, removeVolumes bool) e
 }
 
 func ComposeLogs(ctx context.Context, projectName string, out io.Writer, follow bool, tail, since string, timestamps bool) error {
-	c, err := NewClient(ctx, nil, nil)
+	c, err := NewClient(ctx, "", nil, nil)
 	if err != nil {
 		return err
 	}
@@ -156,14 +161,24 @@ func ComposeLogs(ctx context.Context, projectName string, out io.Writer, follow 
 	return c.svc.Logs(ctx, projectName, writerConsumer{out: out}, api.LogOptions{Follow: follow, Tail: tail, Since: since, Timestamps: timestamps})
 }
 
-func ListGlobalComposeContainers(ctx context.Context) ([]container.Summary, error) {
-	c, err := NewClient(ctx, nil, nil)
-	if err != nil {
-		return nil, err
+// ListGlobalComposeContainers lists every container carrying a compose
+// project label. This is a plain ContainerList — no compose service is
+// needed — so dockerClient should be the process-wide Docker client
+// singleton. When nil (callers wired without one, e.g. tests), a compose
+// client for the config-resolved dockerHost is used instead.
+func ListGlobalComposeContainers(ctx context.Context, dockerClient client.APIClient, dockerHost string) ([]container.Summary, error) {
+	cli := dockerClient
+	if cli == nil {
+		c, shared, err := plainComposeClientInternal(ctx, dockerHost)
+		if err != nil {
+			return nil, err
+		}
+		if !shared {
+			defer func() { _ = c.Close() }()
+		}
+		cli = c.dockerCli.Client()
 	}
-	defer func() { _ = c.Close() }()
 
-	cli := c.dockerCli.Client()
 	filter := make(client.Filters)
 	filter = filter.Add("label", "com.docker.compose.project")
 

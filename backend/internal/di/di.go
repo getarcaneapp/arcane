@@ -23,6 +23,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/swarm"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/system"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/systembackup"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/upload"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/variable"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/vulnerability"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler"
@@ -96,6 +97,8 @@ var ServiceOptions = fx.Options(
 		provideS3ModuleInternal,
 		provideS3ServiceInternal,
 		provideBackupEngineInternal,
+		upload.NewUploadService,
+		upload.New,
 
 		// Adapters for scalar config fields, unexported parameters, builders, and lifecycle hooks.
 		provideVersionServiceInternal,
@@ -135,5 +138,6 @@ var JobOptions = fx.Options(
 		scheduler.NewVulnerabilityScanJob,
 		scheduler.NewAutoHealJob,
 		scheduler.NewActivitySweepJob,
+		scheduler.NewUploadSessionsCleanupJob,
 	),
 )

@@ -74,6 +74,8 @@
 	);
 	const typeColumn = $derived(table.getAllColumns().some((col) => col.id === 'type') ? table.getColumn('type') : undefined);
 	const typeColumnFilterOptions = $derived(typeColumn?.columnDef.meta?.filterOptions ?? []);
+	const tagsColumn = $derived(table.getAllColumns().some((col) => col.id === 'tags') ? table.getColumn('tags') : undefined);
+	const tagsColumnFilterOptions = $derived(tagsColumn?.columnDef.meta?.filterOptions ?? []);
 
 	const debouncedSetGlobal = debounced((v: string) => table.setGlobalFilter(v), 300);
 	const imageNameFilterOptionsFormatted = $derived(imageNameFilterOptions.map((name) => ({ label: name, value: name })));
@@ -84,6 +86,7 @@
 	const hasFilterColumns = $derived(
 		!withoutFilters &&
 			(!!(typeColumn && typeColumnFilterOptions.length > 0) ||
+				!!(tagsColumn && tagsColumnFilterOptions.length > 0) ||
 				!!usageColumn ||
 				!!updatesColumn ||
 				!!severityColumn ||
@@ -97,6 +100,9 @@
 {#snippet filterList()}
 	{#if typeColumn && typeColumnFilterOptions.length > 0}
 		<DataTableFacetedFilter column={typeColumn} title={m.common_type()} options={typeColumnFilterOptions} />
+	{/if}
+	{#if tagsColumn && tagsColumnFilterOptions.length > 0}
+		<DataTableFacetedFilter column={tagsColumn} title={m.common_tags()} options={tagsColumnFilterOptions} />
 	{/if}
 	{#if usageColumn}
 		<DataTableFacetedFilter column={usageColumn} title={m.common_usage()} options={usageFilters} />

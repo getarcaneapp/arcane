@@ -30,7 +30,7 @@
 	import { environmentStore } from '#lib/stores/environment.store.svelte';
 	import { hasPermission } from '#lib/utils/auth';
 	import IconImage from '#lib/components/icon-image.svelte';
-	import { getContainerIpAddresses, getThemedIconUrl } from '#lib/utils/docker';
+	import { getContainerIpAddresses, getThemedIconUrl, parseImageRef } from '#lib/utils/docker';
 	import { hasAnyLoadingState } from '#lib/utils/bulk-actions';
 	import { createContainerActions } from './container-table.actions';
 	import {
@@ -38,7 +38,6 @@
 		getContainerDisplayName,
 		getProjectName,
 		getStateBadgeVariant,
-		parseImageRef,
 		getContainerStatusLabel,
 		type ActionStatus
 	} from './container-table.helpers';

@@ -229,6 +229,9 @@ func (s *ProjectService) refreshProjectAfterContentUpdateInternal(ctx context.Co
 
 	s.refreshComposeProjectNameInternal(ctx, proj)
 	s.refreshProjectImageRefsInternal(ctx, proj)
+	if err := s.reconcileComposeTagsForProjectInternal(ctx, proj); err != nil {
+		slog.WarnContext(ctx, "failed to reconcile Compose project tags after project update", "projectID", proj.ID, "error", err)
+	}
 	if err := s.updateProjectStatusandCountsInternal(ctx, proj.ID, proj.Status); err != nil {
 		slog.WarnContext(ctx, "failed to update service counts after compose edit", "projectID", proj.ID, "error", err)
 	}
@@ -266,6 +269,9 @@ func (s *ProjectService) ApplyGitSyncProjectFiles(ctx context.Context, projectID
 	}
 	s.refreshComposeProjectNameInternal(ctx, &proj)
 	s.refreshProjectImageRefsInternal(ctx, &proj)
+	if err := s.reconcileComposeTagsForProjectInternal(ctx, &proj); err != nil {
+		slog.WarnContext(ctx, "failed to reconcile Compose project tags after git sync", "projectID", proj.ID, "error", err)
+	}
 
 	// Recalculate service counts and status after compose file sync
 	if err := s.updateProjectStatusandCountsInternal(ctx, proj.ID, proj.Status); err != nil {

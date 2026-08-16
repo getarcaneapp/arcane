@@ -30,7 +30,7 @@
 	const provider: FileProvider = {
 		list: (path: string) => buildWorkspaceService.listDirectory(path),
 		mkdir: (path: string) => buildWorkspaceService.createDirectory(path),
-		upload: (path: string, file: File) => buildWorkspaceService.uploadFile(path, file),
+		upload: (path: string, file: File, onProgress) => buildWorkspaceService.uploadFile(path, file, onProgress),
 		delete: (path: string) => buildWorkspaceService.deleteFile(path),
 		download: (path: string) => buildWorkspaceService.downloadFile(path),
 		getContent: (path: string) => buildWorkspaceService.getFileContent(path)

@@ -237,11 +237,49 @@ func TestMigration071_BackupSupport_PreservesExistingBackups(t *testing.T) {
 	assert.Equal(t, 1, count)
 }
 
-func TestMigration072_RenamesVolumeWorkspaceLegacyKeys(t *testing.T) {
+func TestMigration072_ProjectTags_UpDownAndCascade(t *testing.T) {
+	ctx := context.Background()
+	rawDB, _ := newSQLiteSQLDBInternal(t, t.TempDir(), "arcane-project-tags.db")
+	rawDB.SetMaxOpenConns(1)
+
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 71))
+	var tableCount int
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'project_tags'`).Scan(&tableCount))
+	assert.Zero(t, tableCount)
+
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 72))
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'project_tags'`).Scan(&tableCount))
+	assert.Equal(t, 1, tableCount)
+	var indexCount int
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_project_tags_name'`).Scan(&indexCount))
+	assert.Equal(t, 1, indexCount)
+
+	_, err := rawDB.Exec(`PRAGMA foreign_keys=ON`)
+	require.NoError(t, err)
+	_, err = rawDB.Exec(`INSERT INTO projects (id, name, path, status, service_count, running_count, created_at) VALUES ('project-1', 'demo', '/tmp/demo', 'stopped', 0, 0, CURRENT_TIMESTAMP)`)
+	require.NoError(t, err)
+	_, err = rawDB.Exec(`INSERT INTO project_tags (project_id, name, source) VALUES ('project-1', 'database', 'ui'), ('project-1', 'database', 'compose')`)
+	require.NoError(t, err)
+	_, err = rawDB.Exec(`INSERT INTO project_tags (project_id, name, source) VALUES ('project-1', 'database', 'ui')`)
+	require.Error(t, err)
+	_, err = rawDB.Exec(`INSERT INTO project_tags (project_id, name, source) VALUES ('project-1', 'invalid', 'other')`)
+	require.Error(t, err)
+	_, err = rawDB.Exec(`DELETE FROM projects WHERE id = 'project-1'`)
+	require.NoError(t, err)
+	var tagCount int
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM project_tags WHERE project_id = 'project-1'`).Scan(&tagCount))
+	assert.Zero(t, tagCount)
+
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 71))
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'project_tags'`).Scan(&tableCount))
+	assert.Zero(t, tableCount)
+}
+
+func TestMigration073_RenamesVolumeWorkspaceLegacyKeys(t *testing.T) {
 	ctx := context.Background()
 	rawDB, _ := newSQLiteSQLDBInternal(t, t.TempDir(), "arcane-volume-workspace-keys.db")
 
-	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 71))
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 72))
 	_, err := rawDB.Exec(`DELETE FROM settings WHERE key = 'volumeHelperIdleTimeout'`)
 	require.NoError(t, err)
 	_, err = rawDB.Exec(`INSERT INTO settings (key, value) VALUES ('volumeBrowserHelperIdleTimeout', '27')`)
@@ -253,7 +291,7 @@ func TestMigration072_RenamesVolumeWorkspaceLegacyKeys(t *testing.T) {
 	_, err = rawDB.Exec(`INSERT INTO api_key_permissions (id, api_key_id, permission) VALUES ('grant-browse', 'key-workspace', 'volumes:browse'), ('grant-read', 'key-workspace', 'volumes:read')`)
 	require.NoError(t, err)
 
-	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 72))
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 73))
 	var timeout string
 	require.NoError(t, rawDB.QueryRow(`SELECT value FROM settings WHERE key = 'volumeHelperIdleTimeout'`).Scan(&timeout))
 	assert.Equal(t, "27", timeout)
@@ -269,7 +307,7 @@ func TestMigration072_RenamesVolumeWorkspaceLegacyKeys(t *testing.T) {
 	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM api_key_permissions WHERE permission = 'volumes:browse'`).Scan(&count))
 	assert.Zero(t, count)
 
-	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 71))
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 72))
 	require.NoError(t, rawDB.QueryRow(`SELECT value FROM settings WHERE key = 'volumeBrowserHelperIdleTimeout'`).Scan(&timeout))
 	assert.Equal(t, "27", timeout)
 }

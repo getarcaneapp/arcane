@@ -47,6 +47,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/system"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/updater"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/upload"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/webhook"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
@@ -109,13 +110,14 @@ func provideImageUpdateModuleInternal(service *imageupdate.ImageUpdateService, i
 	})
 }
 
-func provideImageModuleInternal(service *image.ImageService, dockerService *docker.DockerClientService, imageUpdate *imageupdate.ImageUpdateService, settingsService *settings.SettingsService, buildService *build.BuildService, activityService *activity.ActivityService) *image.Module {
+func provideImageModuleInternal(service *image.ImageService, dockerService *docker.DockerClientService, imageUpdate *imageupdate.ImageUpdateService, settingsService *settings.SettingsService, buildService *build.BuildService, activityService *activity.ActivityService, uploadService *upload.UploadService) *image.Module {
 	return image.New(service, image.Dependencies{
 		Docker:      dockerService,
 		ImageUpdate: imageUpdate,
 		Settings:    settingsService,
 		Build:       buildService,
 		Activity:    activityService,
+		Upload:      uploadService,
 	})
 }
 
@@ -231,7 +233,7 @@ func provideS3ServiceInternal(module *s3domain.Module) *s3domain.S3DestinationSe
 	return module.Service()
 }
 
-func provideVolumeModuleInternal(lc fx.Lifecycle, db *database.DB, dockerService *docker.DockerClientService, eventService *event.EventService, settingsService *settings.SettingsService, imageService *image.ImageService, activityService *activity.ActivityService, containerModule *container.Module, engine *backup.Engine, s3Service *s3domain.S3DestinationService, environmentService *environment.EnvironmentService, cfg *config.Config) *volume.Module {
+func provideVolumeModuleInternal(lc fx.Lifecycle, db *database.DB, dockerService *docker.DockerClientService, eventService *event.EventService, settingsService *settings.SettingsService, imageService *image.ImageService, activityService *activity.ActivityService, containerModule *container.Module, engine *backup.Engine, s3Service *s3domain.S3DestinationService, environmentService *environment.EnvironmentService, cfg *config.Config, uploadService *upload.UploadService) *volume.Module {
 	module := volume.New(volume.Dependencies{
 		DB:          db,
 		Docker:      dockerService,
@@ -244,6 +246,7 @@ func provideVolumeModuleInternal(lc fx.Lifecycle, db *database.DB, dockerService
 		Engine:      engine,
 		S3:          s3Service,
 		Config:      cfg,
+		Upload:      uploadService,
 	})
 	lc.Append(fx.Hook{
 		OnStop: func(ctx context.Context) error {

@@ -8,8 +8,6 @@ import (
 	"mime/multipart"
 	"strings"
 
-	"emperror.dev/errors"
-
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
@@ -77,21 +75,6 @@ func RequireUser(ctx context.Context) (*models.User, error) {
 		return nil, huma.Error401Unauthorized("Not authenticated")
 	}
 	return user, nil
-}
-
-func OpenUploadedFile(form multipart.Form) (multipart.File, *multipart.FileHeader, error) {
-	files := form.File["file"]
-	if len(files) == 0 {
-		return nil, nil, huma.Error400BadRequest("No file uploaded")
-	}
-
-	fileHeader := files[0]
-	file, err := fileHeader.Open()
-	if err != nil {
-		return nil, nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to read upload").Error())
-	}
-
-	return file, fileHeader, nil
 }
 
 // ParseMultipartJSONPart decodes one required JSON-valued multipart field.

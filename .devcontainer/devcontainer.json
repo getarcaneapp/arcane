@@ -5,11 +5,14 @@
   "workspaceFolder": "/workspace",
   "features": {
     "ghcr.io/devcontainers/features/go:1": {
-      "version": "1.26"
+      "version": "1.26.5"
     },
     "ghcr.io/devcontainers/features/node:2": {
-      "version": "25",
-      "pnpm": "10.22.0"
+      "version": "26.5.0",
+      "pnpm": "11.21.0"
+    },
+    "ghcr.io/jsburckhardt/devcontainer-features/just:1": {
+      "version": "1.58.0"
     },
     "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
       "version": "latest",
@@ -27,7 +30,6 @@
     "vscode": {
       "extensions": [
         "golang.go",
-        "dbaeumer.vscode-eslint",
         "oxc.oxc-vscode",
         "svelte.svelte-vscode",
         "bradlc.vscode-tailwindcss",
@@ -43,7 +45,7 @@
    "source=node_modules,target=/workspace/node_modules,type=volume",
    "source=pnpm_store,target=/workspace/.pnpm-store,type=volume"
   ],
-  "postCreateCommand": "npx -y corepack enable && pnpm install && cd backend && go mod download",
+  "postCreateCommand": "just deps install all",
   "remoteUser": "root",
   "containerEnv": {
     "TZ": "Pacific/Auckland",

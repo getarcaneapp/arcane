@@ -4,14 +4,15 @@
 	"scripts": {
 		"preinstall": "npx only-allow pnpm",
 		"check": "tsc --noEmit",
-		"format": "oxfmt",
-		"format:check": "oxfmt --check",
+		"format": "vp fmt",
+		"format:check": "vp fmt --check",
 		"test": "playwright test"
 	},
 	"devDependencies": {
 		"@playwright/test": "^1.62.1",
-		"@types/node": "^26.1.2",
-		"oxfmt": "^0.62.0",
-		"typescript": "^6.0.3"
+		"@types/node": "^26.2.0",
+		"typescript": "^6.0.3",
+		"vite": "catalog:",
+		"vite-plus": "catalog:"
 	}
 }

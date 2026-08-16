@@ -8,7 +8,16 @@
 	import { queryKeys } from '#lib/query/query-keys';
 	import { environmentStore } from '#lib/stores/environment.store.svelte';
 	import type { Component } from 'svelte';
-	import { ArrowRightIcon, RefreshIcon, AlertIcon, VerifiedCheckIcon, ApiKeyIcon, CircleArrowUpIcon, BoxIcon } from '#lib/icons';
+	import {
+		ArrowRightIcon,
+		RefreshIcon,
+		AlertIcon,
+		VerifiedCheckIcon,
+		ApiKeyIcon,
+		CircleArrowUpIcon,
+		BoxIcon,
+		DownloadIcon
+	} from '#lib/icons';
 	import { createQuery } from '@tanstack/svelte-query';
 	import UpdateStatusPopover from '#lib/components/update-status-popover.svelte';
 	import UpdateStatusBanner from '#lib/components/update-status-banner.svelte';
@@ -19,7 +28,9 @@
 	interface Props {
 		updateInfo?: ImageUpdateData;
 		isLoadingInBackground?: boolean;
-		imageId: string;
+		imageId?: string;
+		/** Image reference for ref-scoped checks when no local image ID exists (e.g. not-pulled refs) */
+		imageRef?: string;
 		repo?: string;
 		tag?: string;
 		isLocal?: boolean;
@@ -34,6 +45,7 @@
 		updateInfo,
 		isLoadingInBackground = false,
 		imageId,
+		imageRef,
 		repo,
 		tag,
 		isLocal = false,
@@ -49,8 +61,14 @@
 	}
 
 	const imageUpdateQuery = createQuery<ImageUpdateData>(() => ({
-		queryKey: queryKeys.images.updateCheck(environmentStore.selected?.id || '0', imageId),
-		queryFn: () => imageService.checkImageUpdateByID(imageId),
+		queryKey: queryKeys.images.updateCheck(environmentStore.selected?.id || '0', imageId || imageRef || ''),
+		queryFn: async () => {
+			if (imageId) return imageService.checkImageUpdateByID(imageId);
+			const results = await imageService.checkMultipleImages([imageRef ?? '']);
+			const result = results[imageRef ?? ''];
+			if (!result) throw new Error(m.images_update_check_failed());
+			return result;
+		},
 		enabled: false,
 		retry: false
 	}));
@@ -93,7 +111,9 @@
 	let isOpen = $state(false);
 
 	const isLocalImage = $derived(!!isLocal || effectiveUpdateInfo?.updateType === 'local');
-	const canCheckUpdate = $derived(!!(repo && tag && repo !== '<none>' && tag !== '<none>') && !isLocalImage);
+	const canCheckUpdate = $derived(
+		!!(repo && tag && repo !== '<none>' && tag !== '<none>') && !!(imageId || imageRef) && !isLocalImage
+	);
 	const hasError = $derived(!!effectiveUpdateInfo?.error && effectiveUpdateInfo.error.trim() !== '');
 
 	type AuthBadge = { label: string; variant: BadgeVariant };
@@ -135,7 +155,10 @@
 		if (effectiveUpdateInfo?.latestVersion && effectiveUpdateInfo.latestVersion.trim() !== '') {
 			return effectiveUpdateInfo.latestVersion;
 		}
-		if (effectiveUpdateInfo?.updateType === 'digest' && effectiveUpdateInfo?.latestDigest) {
+		if (
+			(effectiveUpdateInfo?.updateType === 'digest' || effectiveUpdateInfo?.updateType === 'not_pulled') &&
+			effectiveUpdateInfo?.latestDigest
+		) {
 			return effectiveUpdateInfo.latestDigest.slice(7, 19) + '...';
 		}
 		return null;
@@ -205,6 +228,12 @@
 			return { level: 'Error', color: 'text-red-500', description: m.image_update_could_not_query_registry() };
 		if (effectiveUpdateInfo.updateType === 'local')
 			return { level: m.image_update_local_title(), color: 'text-slate-500', description: m.image_update_local_desc() };
+		if (effectiveUpdateInfo.updateType === 'not_pulled')
+			return {
+				level: m.image_update_not_pulled_title(),
+				color: 'text-blue-500',
+				description: m.image_update_not_pulled_desc()
+			};
 		if (!effectiveUpdateInfo.hasUpdate)
 			return { level: 'None', color: 'text-green-500', description: m.image_update_up_to_date_desc() };
 		if (effectiveUpdateInfo.updateType === 'digest')
@@ -383,6 +412,27 @@
 	{@render recheckButton()}
 {/snippet}
 
+{#snippet notPulledState()}
+	<div class="bg-linear-to-br from-blue-50 to-cyan-50/30 p-4 dark:from-blue-950/20 dark:to-cyan-950/10">
+		<div class="flex items-start gap-3">
+			{@render iconCircle(DownloadIcon, 'from-blue-500', 'to-cyan-500', 'shadow-blue-500/25')}
+			<div class="flex-1">
+				<div class="text-sm font-semibold text-blue-950 dark:text-blue-100">{m.image_update_not_pulled_title()}</div>
+				<div class="text-xs text-blue-900/80 dark:text-blue-300/80">{m.image_update_not_pulled_desc()}</div>
+				{@render authBadgeDisplay()}
+			</div>
+		</div>
+	</div>
+	{@render updateDetails(
+		m.image_update_latest_digest_label(),
+		'bg-blue-100 dark:bg-blue-900/30',
+		'text-blue-800 dark:text-blue-300',
+		'bg-blue-50 dark:bg-blue-950/30',
+		'text-blue-800 dark:text-blue-300'
+	)}
+	{@render recheckButton()}
+{/snippet}
+
 {#snippet versionUpdateState()}
 	<div class="bg-linear-to-br from-amber-50 to-yellow-50/30 p-4 dark:from-amber-950/20 dark:to-yellow-950/10">
 		<div class="flex items-start gap-3">
@@ -476,6 +526,8 @@
 			>
 				{#if hasError}
 					<AlertIcon class="size-4 text-red-500" />
+				{:else if effectiveUpdateInfo?.updateType === 'not_pulled'}
+					<DownloadIcon class="size-4 text-blue-500" />
 				{:else if !effectiveUpdateInfo?.hasUpdate}
 					<VerifiedCheckIcon class="size-4 text-green-500" />
 				{:else if effectiveUpdateInfo?.updateType === 'digest'}
@@ -490,6 +542,8 @@
 			<div class="overflow-hidden rounded-xl">
 				{#if hasError}
 					{@render errorState()}
+				{:else if effectiveUpdateInfo?.updateType === 'not_pulled'}
+					{@render notPulledState()}
 				{:else if !effectiveUpdateInfo?.hasUpdate}
 					{@render successState()}
 				{:else if effectiveUpdateInfo?.updateType === 'digest'}

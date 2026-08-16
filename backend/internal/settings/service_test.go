@@ -1204,3 +1204,39 @@ func TestSettingsService_NormalizeProjectsDirectoryPublishesChangeInternal(t *te
 	require.Equal(t, "projectsDirectory", updates[0].Key)
 	require.True(t, filepath.IsAbs(updates[0].Value))
 }
+
+// TestSettingsServiceEffectiveSnapshotMaterializedInternal verifies the
+// env-override-applied snapshot is built once per refresh: reads share one
+// pointer (no per-call clone), env overrides win over database values, and
+// an update rebuilds the snapshot while keeping the override applied.
+func TestSettingsServiceEffectiveSnapshotMaterializedInternal(t *testing.T) {
+	ctx := context.Background()
+	t.Setenv("PROJECTS_DIRECTORY", "/env/projects")
+
+	db := setupSettingsTestDB(t)
+	require.NoError(t, db.Create(&models.SettingVariable{Key: "projectsDirectory", Value: "/db/projects"}).Error)
+	require.NoError(t, db.Create(&models.SettingVariable{Key: "baseServerUrl", Value: "http://before.example"}).Error)
+
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
+	require.NoError(t, err)
+
+	// Env override beats the database value on the effective snapshot.
+	require.Equal(t, "/env/projects", svc.GetStringSetting(ctx, "projectsDirectory", ""))
+
+	// Reads share the materialized snapshot instead of cloning per call.
+	first, err := svc.GetSettings(ctx)
+	require.NoError(t, err)
+	again, err := svc.GetSettings(ctx)
+	require.NoError(t, err)
+	require.Same(t, first, again)
+
+	// A settings update rebuilds the snapshot: the new value is visible and
+	// the env override is still applied.
+	require.NoError(t, svc.UpdateSetting(ctx, "baseServerUrl", "http://after.example"))
+	require.Equal(t, "http://after.example", svc.GetStringSetting(ctx, "baseServerUrl", ""))
+	require.Equal(t, "/env/projects", svc.GetStringSetting(ctx, "projectsDirectory", ""))
+
+	refreshed, err := svc.GetSettings(ctx)
+	require.NoError(t, err)
+	require.NotSame(t, first, refreshed)
+}

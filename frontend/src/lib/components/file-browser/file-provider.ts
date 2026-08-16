@@ -1,9 +1,10 @@
 import type { FileEntry } from '#lib/types/shared';
+import type { UploadProgressCallback } from '#lib/services/upload-service';
 
 export interface FileProvider {
 	list: (path: string) => Promise<FileEntry[]>;
 	mkdir: (path: string) => Promise<unknown>;
-	upload: (path: string, file: File) => Promise<unknown>;
+	upload: (path: string, file: File, onProgress?: UploadProgressCallback) => Promise<unknown>;
 	delete: (path: string) => Promise<unknown>;
 	download: (path: string) => Promise<void>;
 	getContent: (path: string) => Promise<{ content: string }>;

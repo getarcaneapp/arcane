@@ -20,11 +20,27 @@ import (
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 	"github.com/getarcaneapp/arcane/types/v2/project"
 	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/client"
 	"github.com/samber/mo"
 	"go.getarcane.app/sys/cgroup"
 	"go.getarcane.app/updater/labels"
 	"gorm.io/gorm"
 )
+
+// listGlobalComposeContainersInternal routes the global compose-container
+// list through the shared Docker client singleton when one is wired, avoiding
+// a fresh docker CLI per call.
+func (s *ProjectService) listGlobalComposeContainersInternal(ctx context.Context) ([]container.Summary, error) {
+	var dockerClient client.APIClient
+	if s.dockerService != nil {
+		cli, err := s.dockerService.GetClient(ctx)
+		if err != nil {
+			return nil, err
+		}
+		dockerClient = cli
+	}
+	return projects.ListGlobalComposeContainers(ctx, dockerClient, s.dockerService.DockerHost())
+}
 
 func groupComposeContainersByProjectInternal(containers []container.Summary) map[string][]container.Summary {
 	containersByProject := make(map[string][]container.Summary)
@@ -120,7 +136,7 @@ func (s *ProjectService) GetProjectStatusCounts(ctx context.Context) (folderCoun
 	}
 
 	// 1. Fetch all compose containers
-	containers, err := projects.ListGlobalComposeContainers(ctx)
+	containers, err := s.listGlobalComposeContainersInternal(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to list global compose containers for counts", "error", err)
 		// Fallback to DB status
@@ -163,22 +179,21 @@ func (s *ProjectService) ListProjects(ctx context.Context, params pagination.Que
 	statusFilter := ""
 	updatesFilter := ""
 	archivedFilter := ""
+	tagsFilter := ""
 	if params.Filters != nil {
 		statusFilter = strings.TrimSpace(params.Filters["status"])
 		updatesFilter = strings.TrimSpace(params.Filters["updates"])
 		archivedFilter = strings.TrimSpace(params.Filters["archived"])
+		tagsFilter = strings.TrimSpace(params.Filters["tags"])
 	}
 	query = applyProjectArchivedDBFilterInternal(query, archivedFilter)
+	query = applyProjectTagsDBFilterInternal(query, tagsFilter)
 	if statusFilter != "" || updatesFilter != "" {
 		return s.listProjectsWithDerivedFiltersInternal(ctx, params, query)
 	}
 
 	if term := strings.TrimSpace(params.Search); term != "" {
-		searchPattern := "%" + term + "%"
-		query = query.Where(
-			"name LIKE ? OR path LIKE ? OR status LIKE ? OR COALESCE(dir_name, '') LIKE ?",
-			searchPattern, searchPattern, searchPattern, searchPattern,
-		)
+		query = applyProjectSearchDBFilterInternal(query, term)
 	}
 
 	query = pagination.ApplyFilter(query, "status", params.Filters["status"])
@@ -194,6 +209,9 @@ func (s *ProjectService) ListProjects(ctx context.Context, params pagination.Que
 
 	// Fetch live status concurrently for all projects
 	result := s.fetchProjectStatusConcurrently(ctx, projectsArray)
+	if err := s.enrichProjectsWithTagsInternal(ctx, result); err != nil {
+		return nil, pagination.Response{}, err
+	}
 	s.enrichProjectsWithUpdateInfoInternal(ctx, projectsArray, result)
 
 	slog.DebugContext(ctx, "Completed ListProjects request",
@@ -211,6 +229,39 @@ func applyProjectArchivedDBFilterInternal(query *gorm.DB, filterValue string) *g
 	default:
 		return query.Where("is_archived = ?", false)
 	}
+}
+
+func applyProjectTagsDBFilterInternal(query *gorm.DB, filterValue string) *gorm.DB {
+	names := normalizeTagFilterValuesInternal(filterValue)
+	if len(names) == 0 {
+		return query
+	}
+	return query.Where("EXISTS (SELECT 1 FROM project_tags WHERE project_tags.project_id = projects.id AND project_tags.name IN ?)", names)
+}
+
+func normalizeTagFilterValuesInternal(filterValue string) []string {
+	seen := map[string]struct{}{}
+	result := make([]string, 0)
+	for value := range strings.SplitSeq(filterValue, ",") {
+		normalized, err := projects.NormalizeProjectTag(value)
+		if err != nil {
+			continue
+		}
+		if _, exists := seen[normalized]; exists {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		result = append(result, normalized)
+	}
+	return result
+}
+
+func applyProjectSearchDBFilterInternal(query *gorm.DB, term string) *gorm.DB {
+	searchPattern := "%" + strings.TrimSpace(term) + "%"
+	return query.Where(
+		"name LIKE ? OR path LIKE ? OR status LIKE ? OR COALESCE(dir_name, '') LIKE ? OR EXISTS (SELECT 1 FROM project_tags WHERE project_tags.project_id = projects.id AND LOWER(project_tags.name) LIKE ?)",
+		searchPattern, searchPattern, searchPattern, searchPattern, "%"+strings.ToLower(strings.TrimSpace(term))+"%",
+	)
 }
 
 func (s *ProjectService) listProjectsWithDerivedFiltersInternal(
@@ -245,21 +296,29 @@ func (s *ProjectService) filterProjectsWithDerivedFiltersInternal(
 ) (pagination.FilterResult[project.Details], error) {
 	var projectsArray []models.Project
 	if term := strings.TrimSpace(params.Search); term != "" {
-		searchPattern := "%" + term + "%"
-		query = query.Where(
-			"name LIKE ? OR path LIKE ? OR status LIKE ? OR COALESCE(dir_name, '') LIKE ?",
-			searchPattern, searchPattern, searchPattern, searchPattern,
-		)
+		query = applyProjectSearchDBFilterInternal(query, term)
 	}
 	if err := query.Find(&projectsArray).Error; err != nil {
 		return pagination.FilterResult[project.Details]{}, errors.WrapIf(err, "failed to list projects")
 	}
 
 	items := s.fetchProjectStatusConcurrently(ctx, projectsArray)
+	if err := s.enrichProjectsWithTagsInternal(ctx, items); err != nil {
+		return pagination.FilterResult[project.Details]{}, err
+	}
 	s.enrichProjectsWithUpdateInfoInternal(ctx, projectsArray, items)
 	items = s.appendDiscoveredComposeProjectUpdatesInternal(ctx, params, projectsArray, items)
 
-	return pagination.SearchOrderAndPaginate(items, params, s.buildProjectDerivedPaginationConfigInternal()), nil
+	return pagination.SearchOrderAndPaginate(items, withoutProjectDBFiltersInternal(params), s.buildProjectDerivedPaginationConfigInternal()), nil
+}
+
+func withoutProjectDBFiltersInternal(params pagination.QueryParams) pagination.QueryParams {
+	if _, exists := params.Filters["tags"]; !exists {
+		return params
+	}
+	params.Filters = maps.Clone(params.Filters)
+	delete(params.Filters, "tags")
+	return params
 }
 
 func (s *ProjectService) appendDiscoveredComposeProjectUpdatesInternal(
@@ -272,13 +331,13 @@ func (s *ProjectService) appendDiscoveredComposeProjectUpdatesInternal(
 		return items
 	}
 
-	composeContainers, err := projects.ListGlobalComposeContainers(ctx)
+	composeContainers, err := s.listGlobalComposeContainersInternal(ctx)
 	if err != nil {
 		slog.WarnContext(ctx, "failed to list compose containers for project update rows", "error", err)
 		return items
 	}
 
-	knownProjectNames := s.buildKnownComposeProjectNameSetInternal(ctx, projectsArray)
+	knownProjectNames := s.buildKnownComposeProjectNameSetInternal(ctx, projectsArray, false)
 	discovered := buildDiscoveredComposeProjectUpdateRowsInternal(ctx, composeContainers, knownProjectNames, s.imageService, IconCatalogForContext(ctx))
 	if len(discovered) == 0 {
 		return items
@@ -292,10 +351,13 @@ func shouldIncludeDiscoveredComposeProjectUpdatesInternal(params pagination.Quer
 		return false
 	}
 
-	return strings.EqualFold(strings.TrimSpace(params.Filters["updates"]), "has_update")
+	return strings.EqualFold(strings.TrimSpace(params.Filters["updates"]), "has_update") && strings.TrimSpace(params.Filters["tags"]) == ""
 }
 
-func (s *ProjectService) buildKnownComposeProjectNameSetInternal(ctx context.Context, projectsArray []models.Project) map[string]struct{} {
+// buildKnownComposeProjectNameSetInternal collects every project name Arcane
+// tracks. projectsArrayIsComplete tells it the caller already loaded the full
+// table (not a filtered page), so the catch-all re-query can be skipped.
+func (s *ProjectService) buildKnownComposeProjectNameSetInternal(ctx context.Context, projectsArray []models.Project, projectsArrayIsComplete bool) map[string]struct{} {
 	known := make(map[string]struct{}, len(projectsArray)*2)
 	for _, proj := range projectsArray {
 		addKnownComposeProjectNameInternal(known, proj.Name)
@@ -304,7 +366,7 @@ func (s *ProjectService) buildKnownComposeProjectNameSetInternal(ctx context.Con
 		}
 	}
 
-	if s.db == nil {
+	if s.db == nil || projectsArrayIsComplete {
 		return known
 	}
 
@@ -531,6 +593,13 @@ func (s *ProjectService) buildProjectDerivedPaginationConfigInternal() paginatio
 			func(p project.Details) (string, error) { return p.RelativePath, nil },
 			func(p project.Details) (string, error) { return p.Status, nil },
 			func(p project.Details) (string, error) { return p.DirName, nil },
+			func(p project.Details) (string, error) {
+				names := make([]string, 0, len(p.Tags))
+				for _, tag := range p.Tags {
+					names = append(names, tag.Name)
+				}
+				return strings.Join(names, " "), nil
+			},
 		},
 		SortBindings: []pagination.SortBinding[project.Details]{
 			{
@@ -645,18 +714,28 @@ func (s *ProjectService) CountProjectsWithPendingUpdates(ctx context.Context, al
 		return 0, nil
 	}
 
-	var projectsArray []models.Project
-	if err := s.db.WithContext(ctx).Where("is_archived = ?", false).Find(&projectsArray).Error; err != nil {
+	// One full scan: archived projects are excluded from the update count but
+	// still mark their compose stacks as known during discovery, so loading
+	// everything here saves the known-name pass its own table scan.
+	var allProjects []models.Project
+	if err := s.db.WithContext(ctx).Find(&allProjects).Error; err != nil {
 		return 0, errors.WrapIf(err, "failed to list projects for update count")
+	}
+
+	activeProjects := make([]models.Project, 0, len(allProjects))
+	for _, proj := range allProjects {
+		if !proj.IsArchived {
+			activeProjects = append(activeProjects, proj)
+		}
 	}
 
 	// enrichProjectsWithUpdateInfoInternal keys off Details.ID, so the summaries
 	// only need identity — no status, icons or URLs are read here.
-	details := make([]project.Details, len(projectsArray))
-	for i, proj := range projectsArray {
+	details := make([]project.Details, len(activeProjects))
+	for i, proj := range activeProjects {
 		details[i].ID = proj.ID
 	}
-	s.enrichProjectsWithUpdateInfoInternal(ctx, projectsArray, details)
+	s.enrichProjectsWithUpdateInfoInternal(ctx, activeProjects, details)
 
 	count := 0
 	for i := range details {
@@ -665,17 +744,17 @@ func (s *ProjectService) CountProjectsWithPendingUpdates(ctx context.Context, al
 		}
 	}
 
-	return count + s.countDiscoveredComposeProjectUpdatesInternal(ctx, projectsArray, allContainers), nil
+	return count + s.countDiscoveredComposeProjectUpdatesInternal(ctx, allProjects, true, allContainers), nil
 }
 
 // countDiscoveredComposeProjectUpdatesInternal counts compose projects running on
 // the daemon that Arcane does not track but that have a pending image update, so
 // the dashboard badge matches the projects table. Errors are logged and counted
 // as zero: a missing container list should degrade the badge, not fail the load.
-func (s *ProjectService) countDiscoveredComposeProjectUpdatesInternal(ctx context.Context, projectsArray []models.Project, allContainers []container.Summary) int {
+func (s *ProjectService) countDiscoveredComposeProjectUpdatesInternal(ctx context.Context, projectsArray []models.Project, projectsArrayIsComplete bool, allContainers []container.Summary) int {
 	if allContainers == nil {
 		var err error
-		allContainers, err = projects.ListGlobalComposeContainers(ctx)
+		allContainers, err = s.listGlobalComposeContainersInternal(ctx)
 		if err != nil {
 			slog.WarnContext(ctx, "failed to list compose containers for project update count", "error", err)
 			return 0
@@ -692,7 +771,7 @@ func (s *ProjectService) countDiscoveredComposeProjectUpdatesInternal(ctx contex
 		return 0
 	}
 
-	knownProjectNames := s.buildKnownComposeProjectNameSetInternal(ctx, projectsArray)
+	knownProjectNames := s.buildKnownComposeProjectNameSetInternal(ctx, projectsArray, projectsArrayIsComplete)
 	// Only rows with a pending update are returned, so the length is the count.
 	return len(buildDiscoveredComposeProjectUpdateRowsInternal(ctx, composeContainers, knownProjectNames, s.imageService, IconCatalogForContext(ctx)))
 }
@@ -713,7 +792,7 @@ func (s *ProjectService) fetchProjectStatusConcurrently(ctx context.Context, pro
 	}
 
 	// 1. Fetch all compose containers in one go
-	containers, err := projects.ListGlobalComposeContainers(ctx)
+	containers, err := s.listGlobalComposeContainersInternal(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to list global compose containers", "error", err)
 		// Fallback: return basic info with unknown status
