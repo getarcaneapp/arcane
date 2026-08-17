@@ -2834,6 +2834,7 @@
   "deploy_pull_policy_always": "常に最新情報を取得する",
   "deploy_pull_policy_never": "絶対に引っ張らない",
   "deploy_force_recreate": "コンテナを強制的に再作成する",
+  "deploy_remove_orphans": "孤立したコンテナを削除する",
   "deploy_recreate_volumes": "変更されたボリュームの再作成（データ損失）",
   "settings_default_deploy_pull_policy": "デフォルトのプルポリシー",
   "settings_default_deploy_pull_policy_description": "プロジェクトのデプロイ時のデフォルトの画像プルポリシー。compose ファイル内でサービスごとに設定された pull_policy が優先され、これには更新間隔（daily、weekly、every_N）も含まれます。",
