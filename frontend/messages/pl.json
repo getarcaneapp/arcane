@@ -2834,6 +2834,7 @@
   "deploy_pull_policy_always": "Always pull latest",
   "deploy_pull_policy_never": "Never pull",
   "deploy_force_recreate": "Force recreate containers",
+  "deploy_remove_orphans": "Usuń osierocone kontenery",
   "deploy_recreate_volumes": "Odtworzenie zmienionych woluminów (utrata danych)",
   "settings_default_deploy_pull_policy": "Default Deploy Pull Policy",
   "settings_default_deploy_pull_policy_description": "Domyślna polityka pobierania obrazów podczas wdrażania projektów. Pierwszeństwo ma polityka pobierania (pull_policy) ustawiona dla każdej usługi w pliku compose, w tym okna odświeżania (codziennie, co tydzień, co_N).",
