@@ -2834,6 +2834,7 @@
   "deploy_pull_policy_always": "Altijd nieuwste trekken",
   "deploy_pull_policy_never": "Nooit trekken",
   "deploy_force_recreate": "Forceer opnieuw containers",
+  "deploy_remove_orphans": "Verwijder verweesde containers",
   "deploy_recreate_volumes": "Gewijzigde volumes opnieuw aanmaken (gegevensverlies)",
   "settings_default_deploy_pull_policy": "Standaard Deploy Pull Policy",
   "settings_default_deploy_pull_policy_description": "Standaardbeleid voor het ophalen van afbeeldingen bij het implementeren van projecten. Een per service in het compose-bestand ingesteld pull_policy heeft voorrang, inclusief verversingsintervallen (dagelijks, wekelijks, elke_N).",
