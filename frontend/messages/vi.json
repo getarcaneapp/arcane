@@ -2834,6 +2834,7 @@
   "deploy_pull_policy_always": "Luôn cập nhật phiên bản mới nhất",
   "deploy_pull_policy_never": "Không bao giờ kéo",
   "deploy_force_recreate": "Buộc tạo lại các container",
+  "deploy_remove_orphans": "Xóa các container mồ côi",
   "deploy_recreate_volumes": "Tạo lại các phân vùng đã bị thay đổi (mất dữ liệu)",
   "settings_default_deploy_pull_policy": "Chính sách triển khai mặc định",
   "settings_default_deploy_pull_policy_description": "Chính sách tải hình ảnh mặc định khi triển khai dự án. Chính sách pull_policy được thiết lập cho từng dịch vụ trong tệp compose sẽ được ưu tiên áp dụng, bao gồm cả khoảng thời gian làm mới (hàng ngày, hàng tuần, every_N).",
