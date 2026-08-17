@@ -2834,6 +2834,7 @@
   "deploy_pull_policy_always": "Immer neueste holen",
   "deploy_pull_policy_never": "Nie holen",
   "deploy_force_recreate": "Neuerstellung von Containern erzwingen",
+  "deploy_remove_orphans": "Verwaiste Container entfernen",
   "deploy_recreate_volumes": "Geänderte Volumes neu erstellen (Datenverlust)",
   "settings_default_deploy_pull_policy": "Standard Deploy-Pull-Richtlinie",
   "settings_default_deploy_pull_policy_description": "Standardrichtlinie für das Abrufen von Bildern bei der Bereitstellung von Projekten. Eine pro Dienst in der Compose-Datei festgelegte „pull_policy“ hat Vorrang, einschließlich der Aktualisierungsintervalle (täglich, wöchentlich, alle N).",
