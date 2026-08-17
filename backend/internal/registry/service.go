@@ -919,11 +919,20 @@ func (s *ContainerRegistryService) inspectImageDigestViaDaemonInternal(ctx conte
 		return nil, err
 	}
 
-	if isDockerHubRegistryInternal(registryHost) {
-		credentials, credErr := s.getMatchingRegistryCredentialsInternal(ctx, registryHost, externalCreds)
-		if credErr == nil && len(credentials) > 0 {
-			return s.inspectImageDigestWithCredentialsInternal(ctx, dockerClient, normalizedRef, registryHost, credentials, nil)
+	// Use stored credentials up front for any registry that has them. Anonymous
+	// requests share a per-registry quota with every other unauthenticated client,
+	// so an anonymous first attempt is rate limited for reasons unrelated to us.
+	if credentials, credErr := s.getMatchingRegistryCredentialsInternal(ctx, registryHost, externalCreds); credErr == nil && len(credentials) > 0 {
+		result, credentialErr := s.inspectImageDigestWithCredentialsInternal(ctx, dockerClient, normalizedRef, registryHost, credentials, nil)
+		// Docker Hub anonymous quotas are too small to be worth a retry; elsewhere a
+		// stale credential must not break public images that resolve anonymously.
+		if credentialErr == nil || isDockerHubRegistryInternal(registryHost) {
+			return result, credentialErr
 		}
+		slog.DebugContext(ctx, "credentialed distribution inspect failed, retrying anonymously",
+			"registry", registryHost,
+			"imageRef", normalizedRef,
+			"error", credentialErr.Error())
 	}
 
 	inspectResult, err := dockerClient.DistributionInspect(ctx, normalizedRef, client.DistributionInspectOptions{})
@@ -1084,6 +1093,10 @@ func (s *ContainerRegistryService) getMatchingRegistryCredentialsInternal(ctx co
 			})
 		}
 		return credentials, nil
+	}
+
+	if s == nil || s.db == nil {
+		return nil, nil
 	}
 
 	registries, err := s.GetEnabledRegistries(ctx)

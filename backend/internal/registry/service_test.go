@@ -844,6 +844,111 @@ func TestContainerRegistryService_InspectImageDigest_UsesStoredDockerHubCredenti
 	assert.True(t, result.UsedCredential)
 }
 
+func TestContainerRegistryService_InspectImageDigest_UsesStoredCredentialsForNonDockerHubRegistry(t *testing.T) {
+	db := setupContainerRegistryTestDBInternal(t)
+	createTestPullRegistryInternal(t, db, "ghcr.io", "ghcr-user", "ghcr-token")
+	wantDigest := digest.FromString("ghcr-stored-credentials").String()
+
+	var calls int
+	svc := NewContainerRegistryService(db, func(context.Context) (RegistryDaemonClient, error) {
+		return &fakeRegistryDaemonClient{
+			distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+				calls++
+				assert.Equal(t, "ghcr.io/getarcaneapp/agent:latest", imageRef)
+
+				authCfg := decodeRegistryAuthInternal(t, options.EncodedRegistryAuth)
+				assert.Equal(t, "ghcr-user", authCfg.Username)
+				assert.Equal(t, "ghcr-token", authCfg.Password)
+
+				return client.DistributionInspectResult{
+					DistributionInspect: dockerregistry.DistributionInspect{
+						Descriptor: ocispec.Descriptor{
+							Digest: digest.Digest(wantDigest),
+						},
+					},
+				}, nil
+			},
+		}, nil
+	}, nil)
+
+	result, err := svc.InspectImageDigest(context.Background(), "ghcr.io/getarcaneapp/agent:latest", nil)
+	require.NoError(t, err)
+	assert.Equal(t, 1, calls)
+	assert.Equal(t, wantDigest, result.Digest)
+	assert.Equal(t, "credential", result.AuthMethod)
+	assert.Equal(t, "ghcr-user", result.AuthUsername)
+	assert.True(t, result.UsedCredential)
+}
+
+// A rate limited anonymous request is not an unauthorized one, so before this was
+// fixed a stored ghcr.io credential was never reached. See issue #2635.
+func TestContainerRegistryService_InspectImageDigest_UsesStoredCredentialsInsteadOfRateLimitedAnonymous(t *testing.T) {
+	db := setupContainerRegistryTestDBInternal(t)
+	createTestPullRegistryInternal(t, db, "ghcr.io", "ghcr-user", "ghcr-token")
+	wantDigest := digest.FromString("ghcr-rate-limit").String()
+
+	var anonymousCalls int
+	svc := NewContainerRegistryService(db, func(context.Context) (RegistryDaemonClient, error) {
+		return &fakeRegistryDaemonClient{
+			distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+				if options.EncodedRegistryAuth == "" {
+					anonymousCalls++
+					return client.DistributionInspectResult{}, errors.New(
+						"Error response from daemon: toomanyrequests: retry-after: 1.246809ms, allowed: 44000/minute")
+				}
+
+				return client.DistributionInspectResult{
+					DistributionInspect: dockerregistry.DistributionInspect{
+						Descriptor: ocispec.Descriptor{
+							Digest: digest.Digest(wantDigest),
+						},
+					},
+				}, nil
+			},
+		}, nil
+	}, nil)
+
+	result, err := svc.InspectImageDigest(context.Background(), "ghcr.io/getarcaneapp/agent:latest", nil)
+	require.NoError(t, err)
+	assert.Zero(t, anonymousCalls)
+	assert.Equal(t, wantDigest, result.Digest)
+	assert.Equal(t, "credential", result.AuthMethod)
+	assert.True(t, result.UsedCredential)
+}
+
+func TestContainerRegistryService_InspectImageDigest_FallsBackToAnonymousWhenStoredCredentialRejected(t *testing.T) {
+	db := setupContainerRegistryTestDBInternal(t)
+	createTestPullRegistryInternal(t, db, "ghcr.io", "ghcr-user", "expired-token")
+	wantDigest := digest.FromString("ghcr-anonymous-fallback").String()
+
+	var anonymousCalls int
+	svc := NewContainerRegistryService(db, func(context.Context) (RegistryDaemonClient, error) {
+		return &fakeRegistryDaemonClient{
+			distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+				if options.EncodedRegistryAuth != "" {
+					return client.DistributionInspectResult{}, errors.New("Error response from daemon: unauthorized: authentication required")
+				}
+
+				anonymousCalls++
+				return client.DistributionInspectResult{
+					DistributionInspect: dockerregistry.DistributionInspect{
+						Descriptor: ocispec.Descriptor{
+							Digest: digest.Digest(wantDigest),
+						},
+					},
+				}, nil
+			},
+		}, nil
+	}, nil)
+
+	result, err := svc.InspectImageDigest(context.Background(), "ghcr.io/immich-app/immich-server:release", nil)
+	require.NoError(t, err)
+	assert.Equal(t, 1, anonymousCalls)
+	assert.Equal(t, wantDigest, result.Digest)
+	assert.Equal(t, "anonymous", result.AuthMethod)
+	assert.False(t, result.UsedCredential)
+}
+
 func TestContainerRegistryService_InspectImageDigest_FallsBackWhenDistributionNotFound(t *testing.T) {
 	wantDigest := digest.FromString("fallback-not-found").String()
 
