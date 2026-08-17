@@ -2834,6 +2834,7 @@
   "deploy_pull_policy_always": "Ĉiam eltiru la plej novan.",
   "deploy_pull_policy_never": "Neniam tiri",
   "deploy_force_recreate": "Devige rekrei ujojn",
+  "deploy_remove_orphans": "Forigu orfajn ujojn",
   "deploy_recreate_volumes": "Rekrei ŝanĝitajn volumojn (datumperdo)",
   "settings_default_deploy_pull_policy": "Normala elŝuta politiko por deplojado",
   "settings_default_deploy_pull_policy_description": "Defaŭlta politiko pri elŝuto de bildoj dum deplojado de projektoj. Prioritato havas la pull_policy difinita por ĉiu servo en la compose-dosiero, inkluzive de refreŝigaj fenestroj (ĉiutage, ĉiusemajne, ĉiun N).",
