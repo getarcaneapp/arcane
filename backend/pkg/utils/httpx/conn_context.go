@@ -17,6 +17,8 @@ type connStateInternal struct {
 
 	mu      sync.Mutex
 	holders int
+
+	clearReadDeadlineOnce sync.Once
 }
 
 // WithConn stores an accepted connection on its base context. Wire it up as
@@ -24,6 +26,29 @@ type connStateInternal struct {
 // their own connection without affecting every other client.
 func WithConn(ctx context.Context, conn net.Conn) context.Context {
 	return context.WithValue(ctx, connContextKeyInternal{}, &connStateInternal{conn: conn})
+}
+
+// ClearReadDeadline clears any read deadline left armed on the request's
+// underlying connection. Safe to call from any request handler, including when
+// the request never passed through WithConn; only the first call per
+// connection issues the syscall.
+//
+// It exists because go1.26.6 (the CVE-2026-56853 backport) arms
+// ReadHeaderTimeout on the raw connection before sniffing the h2c preface and
+// hands the connection to the HTTP/2 server without clearing it. The HTTP/2
+// server tracks liveness with timers, never read deadlines, so the stale
+// absolute deadline survives and tears the connection down — with every stream
+// on it — exactly ReadHeaderTimeout after accept. By the time a handler runs
+// the headers are already parsed, so clearing the deadline does not weaken the
+// slowloris protection the timeout is for.
+func ClearReadDeadline(ctx context.Context) {
+	state, _ := ctx.Value(connContextKeyInternal{}).(*connStateInternal)
+	if state == nil {
+		return
+	}
+	state.clearReadDeadlineOnce.Do(func() {
+		_ = state.conn.SetReadDeadline(time.Time{})
+	})
 }
 
 // AcquireDeadPeerTimeout bounds how long data written to the request's

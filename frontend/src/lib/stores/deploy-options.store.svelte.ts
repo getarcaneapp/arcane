@@ -6,6 +6,7 @@ export type DeployPullPolicy = 'missing' | 'always' | 'never';
 export type DeployOptionsState = {
 	pullPolicy: DeployPullPolicy;
 	forceRecreate: boolean;
+	removeOrphans: boolean;
 	recreateVolumes: boolean;
 };
 
@@ -17,12 +18,14 @@ type PersistedDeployOptions = Omit<DeployOptionsState, 'recreateVolumes'>;
 const defaultDeployOptions: DeployOptionsState = {
 	pullPolicy: 'missing',
 	forceRecreate: false,
+	removeOrphans: false,
 	recreateVolumes: false
 };
 
 const persistedOptions = new PersistedState<PersistedDeployOptions>('arcane-deploy-options', {
 	pullPolicy: defaultDeployOptions.pullPolicy,
-	forceRecreate: defaultDeployOptions.forceRecreate
+	forceRecreate: defaultDeployOptions.forceRecreate,
+	removeOrphans: defaultDeployOptions.removeOrphans
 });
 const userOverrodePullPolicy = new PersistedState<boolean>('arcane-deploy-options-user-overrode-pull-policy', false);
 
@@ -35,13 +38,15 @@ const persistedCurrent = persistedOptions.current;
 let state = $state<DeployOptionsState>({
 	pullPolicy: isDeployPullPolicy(persistedCurrent?.pullPolicy) ? persistedCurrent.pullPolicy : defaultDeployOptions.pullPolicy,
 	forceRecreate: persistedCurrent?.forceRecreate === true,
+	removeOrphans: persistedCurrent?.removeOrphans === true,
 	recreateVolumes: defaultDeployOptions.recreateVolumes
 });
 
 function persistState() {
 	persistedOptions.current = {
 		pullPolicy: state.pullPolicy,
-		forceRecreate: state.forceRecreate
+		forceRecreate: state.forceRecreate,
+		removeOrphans: state.removeOrphans
 	};
 }
 
@@ -66,6 +71,9 @@ export const deployOptionsStore = {
 	get forceRecreate(): boolean {
 		return state.forceRecreate;
 	},
+	get removeOrphans(): boolean {
+		return state.removeOrphans;
+	},
 	get recreateVolumes(): boolean {
 		return state.recreateVolumes;
 	},
@@ -82,6 +90,10 @@ export const deployOptionsStore = {
 		state.forceRecreate = value;
 		persistState();
 	},
+	setRemoveOrphans(value: boolean) {
+		state.removeOrphans = value;
+		persistState();
+	},
 	setRecreateVolumes(value: boolean) {
 		state.recreateVolumes = value;
 	},
@@ -96,6 +108,7 @@ export const deployOptionsStore = {
 		const options = {
 			pullPolicy: state.pullPolicy,
 			forceRecreate: state.forceRecreate,
+			removeOrphans: state.removeOrphans,
 			recreateVolumes: state.recreateVolumes
 		};
 		state.recreateVolumes = false;

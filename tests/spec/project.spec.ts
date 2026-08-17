@@ -809,7 +809,104 @@ test.describe('New Compose Project Page', () => {
 			expect(deployRequestBody).toEqual({
 				pullPolicy: 'always',
 				forceRecreate: true,
+				removeOrphans: false,
 				// Destructive, so it stays off unless explicitly toggled for this deploy.
+				recreateVolumes: false
+			});
+		} finally {
+			if (!page.isClosed() && /\/projects\/.+/.test(getPathname(page.url()))) {
+				await destroyCurrentProjectViaUI(page);
+			} else {
+				await destroyProjectByNameViaUI(page, projectName);
+			}
+		}
+	});
+
+	test('should send selected redeploy split-button options in the redeploy request', async ({
+		page
+	}) => {
+		// Same wide viewport as the deploy options test so the header doesn't
+		// overlap the split-button trigger at the 1280px boundary.
+		await page.setViewportSize({ width: 1440, height: 900 });
+
+		const projectName = `test-redeploy-options-${Date.now()}`;
+
+		try {
+			await createProjectViaUI(page, projectName);
+
+			// Reset scroll so the floating header doesn't appear from stale scroll state
+			await page.mouse.wheel(0, -100000);
+
+			await page.route('**/api/environments/*/projects/*/redeploy', async (route) => {
+				await route.fulfill({
+					status: 200,
+					contentType: 'application/x-json-stream',
+					body: DEPLOY_STREAM_SUCCESS
+				});
+			});
+
+			const redeployButtonGroup = page
+				.getByRole('group')
+				.filter({ has: page.getByRole('button', { name: 'Redeploy', exact: true }) })
+				.first();
+			const redeployMenuTrigger = redeployButtonGroup.getByRole('button', {
+				name: 'Open menu',
+				exact: true
+			});
+
+			await expect(redeployMenuTrigger).toBeVisible();
+
+			// Open dropdown and select "Always" pull policy
+			await redeployMenuTrigger.click();
+			const alwaysItem = page.getByRole('menuitemradio', {
+				name: 'Always Always pull latest',
+				exact: true
+			});
+			await expect(alwaysItem).toBeVisible();
+			await alwaysItem.click();
+			// Wait for the dropdown to fully close before reopening
+			await expect(alwaysItem).not.toBeVisible();
+
+			// Reopen dropdown and toggle "Force recreate containers"
+			await redeployMenuTrigger.click();
+			const forceRecreateItem = page.getByRole('menuitemcheckbox', {
+				name: 'Force recreate containers',
+				exact: true
+			});
+			await expect(forceRecreateItem).toBeVisible();
+			await forceRecreateItem.click();
+			// Wait for the dropdown to fully close
+			await expect(forceRecreateItem).not.toBeVisible();
+
+			// Set up request listener right before confirming to minimize timeout window
+			const redeployRequestPromise = page.waitForRequest((request) => {
+				if (request.method() !== 'POST') return false;
+				return /\/api\/environments\/[^/]+\/projects\/[^/]+\/redeploy$/.test(
+					getPathname(request.url())
+				);
+			});
+
+			await page.getByRole('button', { name: 'Redeploy', exact: true }).click();
+
+			// Redeploy goes through a confirmation dialog before the request fires
+			const dialog = page.getByRole('dialog');
+			await expect(dialog).toBeVisible();
+			await dialog.getByRole('button', { name: 'Redeploy', exact: true }).click();
+
+			const redeployRequest = await redeployRequestPromise;
+			const redeployRequestBody = redeployRequest.postDataJSON() as Record<string, unknown> | null;
+
+			await expect
+				.poll(() => redeployRequestBody, {
+					message: 'Expected the redeploy request body to be captured'
+				})
+				.not.toBeNull();
+
+			expect(redeployRequestBody).toEqual({
+				pullPolicy: 'always',
+				forceRecreate: true,
+				removeOrphans: false,
+				// Destructive, so it stays off unless explicitly toggled for this redeploy.
 				recreateVolumes: false
 			});
 		} finally {

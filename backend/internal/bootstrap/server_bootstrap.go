@@ -176,6 +176,17 @@ func configureHTTPProtocolsInternal(useTLS bool, handler http.Handler) (http.Han
 	}
 
 	protocols.SetUnencryptedHTTP2(true)
+	inner := handler
+	handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// go1.26.6 arms ReadHeaderTimeout on the raw conn before the h2c
+		// preface sniff and never clears it on the unencrypted-HTTP/2 handoff
+		// (the TLS path does), so without this every h2c connection — and the
+		// gRPC tunnel streams on it — dies ReadHeaderTimeout after accept.
+		if r.ProtoMajor == 2 && r.TLS == nil {
+			httpx.ClearReadDeadline(r.Context())
+		}
+		inner.ServeHTTP(w, r)
+	})
 	return handler, &protocols
 }
 

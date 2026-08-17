@@ -72,7 +72,7 @@ const projectActionConfigs: Record<ProjectActionKind, ProjectActionConfig> = {
 	},
 	redeploy: {
 		status: 'redeploying',
-		run: (id) => projectService.redeployProject(id),
+		run: (id) => projectService.redeployProject(id, deployOptionsStore.takeRequestOptions()),
 		success: () => m.compose_pull_success(),
 		failure: () => m.compose_pull_failed()
 	},
@@ -241,12 +241,14 @@ export function createProjectActions({
 	}
 
 	async function handleBulkRedeploy(ids: string[]): Promise<void> {
+		// One lazy snapshot per batch, matching handleBulkUp.
+		let deployOptions: ReturnType<typeof deployOptionsStore.takeRequestOptions> | undefined;
 		await runBulkAction(ids, {
 			title: (count) => m.projects_bulk_redeploy_confirm_title({ count }),
 			message: (count) => m.projects_bulk_redeploy_confirm_message({ count }),
 			label: m.compose_pull_redeploy(),
 			loadingKey: 'redeploy',
-			run: (id) => projectService.redeployProject(id),
+			run: (id) => projectService.redeployProject(id, (deployOptions ??= deployOptionsStore.takeRequestOptions())),
 			success: (count) => m.projects_bulk_redeploy_success({ count }),
 			partial: (success, total, failed) => m.projects_bulk_redeploy_partial({ success, total, failed }),
 			failure: () => m.compose_pull_failed()
