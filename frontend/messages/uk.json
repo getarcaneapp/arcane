@@ -2834,6 +2834,7 @@
   "deploy_pull_policy_always": "Завжди отримувати останню версію",
   "deploy_pull_policy_never": "Ніколи не тягувати",
   "deploy_force_recreate": "Примусове перестворення контейнерів",
+  "deploy_remove_orphans": "Видалити «сироти» контейнери",
   "deploy_recreate_volumes": "Відновити змінені томи (втрата даних)",
   "settings_default_deploy_pull_policy": "Політика розгортання за замовчуванням",
   "settings_default_deploy_pull_policy_description": "Політика завантаження зображень за замовчуванням під час розгортання проєктів. Пріоритет має політика завантаження (pull_policy), встановлена для кожного сервісу у файлі compose, включаючи періоди оновлення (щодня, щотижня, кожні N).",
