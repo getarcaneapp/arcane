@@ -2834,6 +2834,7 @@
   "deploy_pull_policy_always": "Always pull latest",
   "deploy_pull_policy_never": "Never pull",
   "deploy_force_recreate": "Konténerek úraépitésének kikényszerítése",
+  "deploy_remove_orphans": "Az árva konténerek eltávolítása",
   "deploy_recreate_volumes": "A módosított kötetek újbóli létrehozása (adatvesztés)",
   "settings_default_deploy_pull_policy": "Default Deploy Pull Policy",
   "settings_default_deploy_pull_policy_description": "A projektek telepítésekor alkalmazott alapértelmezett képletöltési szabály. A compose fájlban szolgáltatásonként megadott pull_policy beállítás élvez elsőbbséget, beleértve a frissítési időközöket is (napi, heti, every_N).",
