@@ -2834,6 +2834,7 @@
   "deploy_pull_policy_always": "Vždy stáhnout nejnovější verzi",
   "deploy_pull_policy_never": "Nikdy nestahovat",
   "deploy_force_recreate": "Vynutit znovu vytvoření kontejnerů",
+  "deploy_remove_orphans": "Odstranit osamocené kontejnery",
   "deploy_recreate_volumes": "Obnovit změněné svazky (ztráta dat)",
   "settings_default_deploy_pull_policy": "Výchozí zásady stahování při nasazení",
   "settings_default_deploy_pull_policy_description": "Výchozí zásady stahování obrázků při nasazování projektů. Přednost mají zásady stahování (pull_policy) nastavené pro jednotlivé služby v souboru compose, včetně časových intervalů aktualizace (denně, týdně, každých N).",
