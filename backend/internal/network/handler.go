@@ -15,6 +15,7 @@ import (
 	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
@@ -98,6 +99,26 @@ type PruneNetworksInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
 
+type ConnectContainerInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	NetworkID     string `path:"networkId" doc:"Network ID"`
+	Body          networktypes.ConnectContainerRequest
+}
+
+type ConnectContainerOutput struct {
+	Body base.ApiResponse[base.MessageResponse]
+}
+
+type DisconnectContainerInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	NetworkID     string `path:"networkId" doc:"Network ID"`
+	Body          networktypes.DisconnectContainerRequest
+}
+
+type DisconnectContainerOutput struct {
+	Body base.ApiResponse[base.MessageResponse]
+}
+
 type PruneNetworksOutput struct {
 	Body base.ApiResponse[networktypes.PruneReport]
 }
@@ -173,6 +194,24 @@ func RegisterNetworks(api huma.API, networkSvc *NetworkService, dockerSvc *docke
 		Tags:        []string{"Networks"},
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}, authz.PermNetworksPrune, h.PruneNetworks)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "connect-network-container",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/networks/{networkId}/connect",
+		Summary:     "Connect container to network",
+		Tags:        []string{"Networks"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermNetworksConnect, h.ConnectContainer)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "disconnect-network-container",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/networks/{networkId}/disconnect",
+		Summary:     "Disconnect container from network",
+		Tags:        []string{"Networks"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermNetworksDisconnect, h.DisconnectContainer)
 }
 
 func (h *NetworkHandler) ListNetworks(ctx context.Context, input *ListNetworksInput) (*ListNetworksOutput, error) {
@@ -395,6 +434,82 @@ func (h *NetworkHandler) DeleteNetwork(ctx context.Context, input *DeleteNetwork
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data:    base.MessageResponse{Message: "Network removed successfully", ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()},
+		},
+	}, nil
+}
+
+func (h *NetworkHandler) ConnectContainer(ctx context.Context, input *ConnectContainerInput) (*ConnectContainerOutput, error) {
+	user, err := handlerutil.RequireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
+		EnvironmentID:  input.EnvironmentID,
+		Type:           activitytypes.TypeResourceAction,
+		ResourceType:   "network",
+		ResourceID:     input.NetworkID,
+		ResourceName:   input.NetworkID,
+		User:           user,
+		Step:           "Connecting container to network",
+		Message:        "Connecting container to network",
+		SuccessMessage: "Container connected successfully",
+		Metadata: database.JSON{
+			"action":      "connect_network",
+			"containerId": input.Body.ContainerID,
+		},
+	}, func(runtimeCtx context.Context) error {
+		return h.networkService.ConnectContainer(runtimeCtx, input.NetworkID, input.Body, *user)
+	})
+	if err != nil {
+		if errors.Is(err, common.ErrValidation) {
+			return nil, huma.Error400BadRequest(err.Error())
+		}
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to connect container to network").Error())
+	}
+
+	return &ConnectContainerOutput{
+		Body: base.ApiResponse[base.MessageResponse]{
+			Success: true,
+			Data:    base.MessageResponse{Message: "Container connected successfully", ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()},
+		},
+	}, nil
+}
+
+func (h *NetworkHandler) DisconnectContainer(ctx context.Context, input *DisconnectContainerInput) (*DisconnectContainerOutput, error) {
+	user, err := handlerutil.RequireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
+		EnvironmentID:  input.EnvironmentID,
+		Type:           activitytypes.TypeResourceAction,
+		ResourceType:   "network",
+		ResourceID:     input.NetworkID,
+		ResourceName:   input.NetworkID,
+		User:           user,
+		Step:           "Disconnecting container from network",
+		Message:        "Disconnecting container from network",
+		SuccessMessage: "Container disconnected successfully",
+		Metadata: database.JSON{
+			"action":      "disconnect_network",
+			"containerId": input.Body.ContainerID,
+			"force":       input.Body.Force,
+		},
+	}, func(runtimeCtx context.Context) error {
+		return h.networkService.DisconnectContainer(runtimeCtx, input.NetworkID, input.Body, *user)
+	})
+	if err != nil {
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to disconnect container from network").Error())
+	}
+
+	return &DisconnectContainerOutput{
+		Body: base.ApiResponse[base.MessageResponse]{
+			Success: true,
+			Data:    base.MessageResponse{Message: "Container disconnected successfully", ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()},
 		},
 	}, nil
 }

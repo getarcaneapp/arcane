@@ -676,9 +676,11 @@ var eventDefinitions = map[EventType]eventDefinition{
 	EventTypeVolumeBackupRestoreFiles: {"Volume backup files restored: %s", "Selected files were restored for volume '%s'", EventSeverityWarning},
 	EventTypeVolumeBackupDownload:     {"Volume backup downloaded: %s", "A backup was downloaded for volume '%s'", EventSeverityInfo},
 
-	EventTypeNetworkCreate: {"Network created: %s", "Network '%s' has been created", EventSeveritySuccess},
-	EventTypeNetworkDelete: {"Network deleted: %s", "Network '%s' has been deleted", EventSeverityWarning},
-	EventTypeNetworkError:  {"Network error: %s", "An error occurred with network '%s'", EventSeverityError},
+	EventTypeNetworkCreate:     {"Network created: %s", "Network '%s' has been created", EventSeveritySuccess},
+	EventTypeNetworkDelete:     {"Network deleted: %s", "Network '%s' has been deleted", EventSeverityWarning},
+	EventTypeNetworkConnect:    {"Network connected: %s", "A container has been connected to network '%s'", EventSeveritySuccess},
+	EventTypeNetworkDisconnect: {"Network disconnected: %s", "A container has been disconnected from network '%s'", EventSeverityInfo},
+	EventTypeNetworkError:      {"Network error: %s", "An error occurred with network '%s'", EventSeverityError},
 
 	EventTypeSystemPrune:      {"System prune completed", "System resources have been pruned", EventSeverityInfo},
 	EventTypeSystemAutoUpdate: {"System auto-update completed", "System auto-update process has completed", EventSeverityInfo},

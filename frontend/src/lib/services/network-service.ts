@@ -70,6 +70,19 @@ class NetworkService extends BaseAPIService {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		return this.handleResponse(this.api.delete(`/environments/${envId}/networks/${networkId}`));
 	}
+
+	async connectContainer(
+		networkId: string,
+		request: { containerId: string; aliases?: string[]; ipv4Address?: string; ipv6Address?: string }
+	): Promise<any> {
+		const envId = await environmentStore.getCurrentEnvironmentId();
+		return this.handleResponse(this.api.post(`/environments/${envId}/networks/${networkId}/connect`, request));
+	}
+
+	async disconnectContainer(networkId: string, request: { containerId: string; force?: boolean }): Promise<any> {
+		const envId = await environmentStore.getCurrentEnvironmentId();
+		return this.handleResponse(this.api.post(`/environments/${envId}/networks/${networkId}/disconnect`, request));
+	}
 }
 
 export const networkService = new NetworkService();

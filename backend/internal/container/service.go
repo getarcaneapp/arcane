@@ -12,6 +12,7 @@ import (
 	"io"
 	"log/slog"
 	"maps"
+	"net/netip"
 	"strings"
 	"sync"
 	"time"
@@ -21,6 +22,7 @@ import (
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/events"
+	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 
@@ -160,14 +162,14 @@ func shouldStartRedeployedContainerInternal(containerInfo container.InspectRespo
 	return shouldStart
 }
 
-func (s *ContainerService) pullRedeployImageInternal(ctx context.Context, dockerClient *client.Client, imageName, containerID, containerName string, user common.User) error {
+func (s *ContainerService) pullRedeployImageInternal(ctx context.Context, dockerClient *client.Client, imageName, containerID, containerName, action string, credentials []containerregistry.Credential, user common.User) error {
 	settings := s.settingsService.GetSettingsConfig()
 	pullCtx, pullCancel := context.WithTimeout(ctx, timeouts.GetDuration(settings.DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull))
 	defer pullCancel()
 
-	pullOptions, authErr := s.imageService.PullOptionsWithAuth(ctx, imageName, nil)
+	pullOptions, authErr := s.imageService.PullOptionsWithAuth(ctx, imageName, credentials)
 	if authErr != nil {
-		slog.WarnContext(ctx, "failed to get registry authentication for container redeploy pull; proceeding without auth",
+		slog.WarnContext(ctx, "failed to get registry authentication for container recreate pull; proceeding without auth",
 			"image", imageName,
 			"error", authErr.Error(),
 		)
@@ -176,7 +178,7 @@ func (s *ContainerService) pullRedeployImageInternal(ctx context.Context, docker
 
 	reader, pullErr := dockerClient.ImagePull(pullCtx, imageName, pullOptions)
 	if pullErr != nil && image.ShouldRetryAnonymousPull(pullOptions, pullErr) {
-		slog.WarnContext(ctx, "container redeploy image pull failed with registry auth; retrying anonymously",
+		slog.WarnContext(ctx, "container recreate image pull failed with registry auth; retrying anonymously",
 			"image", imageName,
 			"error", pullErr.Error(),
 		)
@@ -186,7 +188,7 @@ func (s *ContainerService) pullRedeployImageInternal(ctx context.Context, docker
 	if pullErr != nil {
 		if errors.Is(pullCtx.Err(), context.DeadlineExceeded) {
 			s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", pullErr, database.JSON{
-				"action": "redeploy",
+				"action": action,
 				"step":   "pull_image_timeout",
 				"image":  imageName,
 			})
@@ -194,7 +196,7 @@ func (s *ContainerService) pullRedeployImageInternal(ctx context.Context, docker
 		}
 
 		s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", pullErr, database.JSON{
-			"action": "redeploy",
+			"action": action,
 			"step":   "pull_image",
 			"image":  imageName,
 		})
@@ -209,7 +211,7 @@ func (s *ContainerService) pullRedeployImageInternal(ctx context.Context, docker
 	streamErr := dockerutils.RenderJSONMessageStream(reader, logWriter)
 	if streamErr != nil {
 		s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", streamErr, database.JSON{
-			"action": "redeploy",
+			"action": action,
 			"step":   "complete_pull",
 			"image":  imageName,
 		})
@@ -278,6 +280,80 @@ func (s *ContainerService) restoreContainerAfterRedeployFailureInternal(ctx cont
 			"failedStep": failedStep,
 		})
 	}
+}
+
+// restoreAutoRemoveContainerAfterStartFailureInternal recreates and starts the
+// original container when a deferred-stop auto-remove recreate fails to start
+// the replacement. Stopping the original already made the daemon delete it, so
+// the only rollback left is rebuilding from the inspected configuration. The
+// failed replacement must be removed first so the original name is free again.
+// A returned error means the original container is gone and could not be
+// restored; the caller must surface it alongside the replacement failure.
+func (s *ContainerService) restoreAutoRemoveContainerAfterStartFailureInternal(ctx context.Context, dockerClient *client.Client, containerInfo container.InspectResponse, apiVersion string, user common.User) error {
+	containerID := containerInfo.ID
+	containerName := strings.TrimPrefix(containerInfo.Name, "/")
+
+	originalConfig := *containerInfo.Config
+	if len(containerID) >= 12 && originalConfig.Hostname == containerID[:12] {
+		originalConfig.Hostname = ""
+	}
+
+	createResp, err := libarcane.ContainerCreateWithCompatibilityForAPIVersion(ctx, dockerClient, client.ContainerCreateOptions{
+		Config:           &originalConfig,
+		HostConfig:       containerInfo.HostConfig,
+		NetworkingConfig: buildCleanNetworkingConfigInternal(containerInfo, apiVersion),
+		Name:             containerName,
+	}, apiVersion)
+	if err != nil {
+		s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", err, database.JSON{
+			"action": "redeploy",
+			"step":   "restore_create_original",
+		})
+		return errors.WrapIf(err, "failed to recreate original auto-remove container")
+	}
+
+	if _, err := dockerClient.ContainerStart(ctx, createResp.ID, client.ContainerStartOptions{}); err != nil {
+		s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", createResp.ID, containerName, user.ID, user.Username, "0", err, database.JSON{
+			"action": "redeploy",
+			"step":   "restore_start_original",
+		})
+		return errors.WrapIf(err, "failed to restart original auto-remove container")
+	}
+
+	slog.InfoContext(ctx, "restored auto-remove container after failed recreate",
+		"oldContainerId", containerID,
+		"restoredContainerId", createResp.ID,
+		"containerName", containerName,
+	)
+	return nil
+}
+
+// rollbackFailedReplacementStartInternal removes the replacement that failed
+// to start and rolls back to the original container. For a deferred-stop
+// auto-remove original the rollback rebuilds it from the inspected
+// configuration; a failed restore is combined into the start error so the
+// caller learns the workload is down, not just that the replacement failed.
+func (s *ContainerService) rollbackFailedReplacementStartInternal(ctx context.Context, dockerClient *client.Client, containerInfo container.InspectResponse, replacementID, action, backupName string, stopAfterCreate, wasRunning bool, apiVersion string, startErr error, user common.User) error {
+	containerName := strings.TrimPrefix(containerInfo.Name, "/")
+
+	var cleanupErr error
+	if _, removeErr := dockerClient.ContainerRemove(ctx, replacementID, client.ContainerRemoveOptions{Force: true}); removeErr != nil {
+		cleanupErr = errors.WrapIf(removeErr, "failed to remove replacement container")
+		s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", replacementID, containerName, user.ID, user.Username, "0", removeErr, database.JSON{
+			"action": action,
+			"step":   "cleanup_failed_start",
+		})
+	}
+
+	if stopAfterCreate {
+		if restoreErr := s.restoreAutoRemoveContainerAfterStartFailureInternal(ctx, dockerClient, containerInfo, apiVersion, user); restoreErr != nil {
+			return errors.Combine(startErr, cleanupErr, restoreErr)
+		}
+		return startErr
+	}
+
+	s.restoreContainerAfterRedeployFailureInternal(ctx, dockerClient, containerInfo.ID, containerName, backupName, "start", wasRunning, user)
+	return startErr
 }
 
 type containerLifecycleActionInternal struct {
@@ -591,7 +667,6 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 
 	containerName := strings.TrimPrefix(containerInfo.Name, "/")
 	imageName := containerInfo.Config.Image
-	wasRunning := containerInfo.State != nil && containerInfo.State.Running
 	apiVersion := libarcane.DetectDockerAPIVersion(ctx, dockerClient)
 
 	currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
@@ -616,59 +691,82 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 		return newID, nil
 	}
 
-	metadata := database.JSON{
-		"action":        "redeploy",
-		"containerId":   containerID,
-		"containerName": containerName,
-		"image":         imageName,
-	}
-
 	if imageName != "" {
-		if err := s.pullRedeployImageInternal(ctx, dockerClient, imageName, containerID, containerName, user); err != nil {
+		if err := s.pullRedeployImageInternal(ctx, dockerClient, imageName, containerID, containerName, "redeploy", nil, user); err != nil {
 			return "", err
 		}
 	}
 
+	networkingConfig := buildCleanNetworkingConfigInternal(containerInfo, apiVersion)
+	newConfig := *containerInfo.Config
+
+	return s.recreateContainerInternal(ctx, dockerClient, containerInfo, "redeploy", containerName, &newConfig, containerInfo.HostConfig, networkingConfig, apiVersion, event.EventTypeContainerDeploy, user)
+}
+
+// recreateContainerInternal replaces an existing container with one created
+// from the supplied config, using rename-as-backup so the original can be
+// restored when create or start fails. Shared by redeploy and edit.
+func (s *ContainerService) recreateContainerInternal(ctx context.Context, dockerClient *client.Client, containerInfo container.InspectResponse, action, newName string, newConfig *container.Config, newHostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, apiVersion string, eventType event.EventType, user common.User) (string, error) {
+	containerID := containerInfo.ID
+	containerName := strings.TrimPrefix(containerInfo.Name, "/")
+	wasRunning := containerInfo.State != nil && containerInfo.State.Running
+	imageName := newConfig.Image
+
+	// A running auto-remove container is deleted by the daemon the moment it
+	// stops, which would make rollback impossible. For that case the stop is
+	// deferred until the replacement has been created: the rename alone frees
+	// the name, and a create failure rolls back to the untouched, still-running
+	// original. Only a start failure can still lose the original.
+	stopAfterCreate := wasRunning && containerInfo.HostConfig != nil && containerInfo.HostConfig.AutoRemove
+
 	backupName := buildRedeployBackupNameInternal(containerName, containerID)
-	if err := s.prepareContainerForRedeployInternal(ctx, dockerClient, containerID, containerName, backupName, wasRunning, user); err != nil {
+	if err := s.prepareContainerForRedeployInternal(ctx, dockerClient, containerID, containerName, backupName, wasRunning && !stopAfterCreate, user); err != nil {
 		return "", err
 	}
 
-	networkingConfig := buildCleanNetworkingConfigInternal(containerInfo, apiVersion)
-
-	newConfig := *containerInfo.Config
 	if len(containerID) >= 12 && newConfig.Hostname == containerID[:12] {
 		newConfig.Hostname = ""
 	}
 
 	createResp, err := libarcane.ContainerCreateWithCompatibilityForAPIVersion(ctx, dockerClient, client.ContainerCreateOptions{
-		Config:           &newConfig,
-		HostConfig:       containerInfo.HostConfig,
+		Config:           newConfig,
+		HostConfig:       newHostConfig,
 		NetworkingConfig: networkingConfig,
-		Name:             containerName,
+		Name:             newName,
 	}, apiVersion)
 	if err != nil {
-		s.restoreContainerAfterRedeployFailureInternal(ctx, dockerClient, containerID, containerName, backupName, "create", wasRunning, user)
+		s.restoreContainerAfterRedeployFailureInternal(ctx, dockerClient, containerID, containerName, backupName, "create", wasRunning && !stopAfterCreate, user)
 		s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", err, database.JSON{
-			"action": "redeploy",
+			"action": action,
 			"step":   "create",
 			"image":  imageName,
 		})
 		return "", errors.WrapIf(err, "failed to recreate container")
 	}
 
+	if stopAfterCreate {
+		if _, err := dockerClient.ContainerStop(ctx, containerID, client.ContainerStopOptions{Timeout: new(30)}); err != nil {
+			if _, removeErr := dockerClient.ContainerRemove(ctx, createResp.ID, client.ContainerRemoveOptions{Force: true}); removeErr != nil {
+				s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", createResp.ID, containerName, user.ID, user.Username, "0", removeErr, database.JSON{
+					"action": action,
+					"step":   "cleanup_failed_stop",
+				})
+			}
+			s.restoreContainerAfterRedeployFailureInternal(ctx, dockerClient, containerID, containerName, backupName, "stop", false, user)
+			s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", err, database.JSON{
+				"action": action,
+				"step":   "stop",
+			})
+			return "", errors.WrapIf(err, "failed to stop container")
+		}
+	}
+
 	if shouldStartRedeployedContainerInternal(containerInfo, wasRunning) {
 		_, err = dockerClient.ContainerStart(ctx, createResp.ID, client.ContainerStartOptions{})
 		if err != nil {
-			if _, removeErr := dockerClient.ContainerRemove(ctx, createResp.ID, client.ContainerRemoveOptions{Force: true}); removeErr != nil {
-				s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", createResp.ID, containerName, user.ID, user.Username, "0", removeErr, database.JSON{
-					"action": "redeploy",
-					"step":   "cleanup_failed_start",
-				})
-			}
-			s.restoreContainerAfterRedeployFailureInternal(ctx, dockerClient, containerID, containerName, backupName, "start", wasRunning, user)
+			err = s.rollbackFailedReplacementStartInternal(ctx, dockerClient, containerInfo, createResp.ID, action, backupName, stopAfterCreate, wasRunning, apiVersion, err, user)
 			s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", createResp.ID, containerName, user.ID, user.Username, "0", err, database.JSON{
-				"action": "redeploy",
+				"action": action,
 				"step":   "start",
 				"image":  imageName,
 			})
@@ -676,30 +774,419 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 		}
 	}
 
-	slog.InfoContext(ctx, "container redeployed successfully",
+	slog.InfoContext(ctx, "container recreated successfully",
+		"action", action,
 		"oldContainerId", containerID,
 		"newContainerId", createResp.ID,
-		"containerName", containerName,
+		"containerName", newName,
 		"image", imageName,
 	)
 
-	if _, err := dockerClient.ContainerRemove(ctx, containerID, client.ContainerRemoveOptions{
-		Force:         true,
-		RemoveVolumes: false,
-		RemoveLinks:   false,
-	}); err != nil {
-		slog.WarnContext(ctx, "failed to remove old container after successful redeploy",
-			"containerId", containerID,
-			"backupName", backupName,
-			"error", err,
-		)
+	// After a deferred stop the daemon has already auto-removed the original.
+	if !stopAfterCreate {
+		if _, err := dockerClient.ContainerRemove(ctx, containerID, client.ContainerRemoveOptions{
+			Force:         true,
+			RemoveVolumes: false,
+			RemoveLinks:   false,
+		}); err != nil {
+			slog.WarnContext(ctx, "failed to remove old container after successful recreate",
+				"containerId", containerID,
+				"backupName", backupName,
+				"error", err,
+			)
+		}
 	}
 
-	if logErr := s.eventService.LogContainerEvent(ctx, event.EventTypeContainerDeploy, createResp.ID, containerName, user.ID, user.Username, "0", metadata); logErr != nil {
-		slog.WarnContext(ctx, "failed to log deploy event", "err", logErr)
+	metadata := database.JSON{
+		"action":        action,
+		"containerId":   containerID,
+		"containerName": newName,
+		"image":         imageName,
+	}
+	if logErr := s.eventService.LogContainerEvent(ctx, eventType, createResp.ID, newName, user.ID, user.Username, "0", metadata); logErr != nil {
+		slog.WarnContext(ctx, "failed to log recreate event", "err", logErr)
 	}
 
 	return createResp.ID, nil
+}
+
+func healthConfigFromCreateInternal(hc *containertypes.HealthcheckCreate) *container.HealthConfig {
+	if hc == nil {
+		return nil
+	}
+
+	return &container.HealthConfig{
+		Test:          append([]string{}, hc.Test...),
+		Interval:      time.Duration(hc.Interval) * time.Second,
+		Timeout:       time.Duration(hc.Timeout) * time.Second,
+		StartPeriod:   time.Duration(hc.StartPeriod) * time.Second,
+		StartInterval: time.Duration(hc.StartInterval) * time.Second,
+		Retries:       hc.Retries,
+	}
+}
+
+// mergeEditMountsInternal builds the desired mount set for an edit. The edit
+// form only carries the reduced {type, source, target, readOnly} view, so a
+// requested mount that matches an existing one by type and target keeps the
+// full original spec (bind/volume/tmpfs options, consistency, ...) with the
+// source and read-only flag applied from the request; unmatched entries are
+// new mounts built from the request.
+func mergeEditMountsInternal(existing []mount.Mount, requested []containertypes.MountCreate) []mount.Mount {
+	out := make([]mount.Mount, 0, len(requested))
+	for _, req := range requested {
+		merged := mount.Mount{
+			Type:     mount.Type(req.Type),
+			Source:   req.Source,
+			Target:   req.Target,
+			ReadOnly: req.ReadOnly,
+		}
+		for _, prior := range existing {
+			if string(prior.Type) == req.Type && prior.Target == req.Target {
+				merged = prior
+				merged.Source = req.Source
+				merged.ReadOnly = req.ReadOnly
+				break
+			}
+		}
+		out = append(out, merged)
+	}
+	return out
+}
+
+func mountsFromCreateInternal(mounts []containertypes.MountCreate) []mount.Mount {
+	out := make([]mount.Mount, 0, len(mounts))
+	for _, m := range mounts {
+		out = append(out, mount.Mount{
+			Type:     mount.Type(m.Type),
+			Source:   m.Source,
+			Target:   m.Target,
+			ReadOnly: m.ReadOnly,
+		})
+	}
+	return out
+}
+
+func portMapFromCreateInternal(bindings map[string][]containertypes.PortBindingCreate) (network.PortMap, error) {
+	out := network.PortMap{}
+	for portSpec, bindingList := range bindings {
+		port, err := parsePortSpec(portSpec)
+		if err != nil {
+			return nil, errors.WrapIff(err, "invalid port %s", portSpec)
+		}
+		mapped := make([]network.PortBinding, 0, len(bindingList))
+		for _, binding := range bindingList {
+			pb := network.PortBinding{HostPort: binding.HostPort}
+			if hostIP := strings.TrimSpace(binding.HostIP); hostIP != "" {
+				parsedIP, err := netip.ParseAddr(hostIP)
+				if err != nil {
+					return nil, errors.WrapIff(err, "invalid host IP %s", hostIP)
+				}
+				pb.HostIP = parsedIP
+			}
+			mapped = append(mapped, pb)
+		}
+		out[port] = mapped
+	}
+	return out, nil
+}
+
+func endpointIPAMFromCreateInternal(ep containertypes.EndpointSettingsCreate) (*network.EndpointIPAMConfig, error) {
+	ipv4 := strings.TrimSpace(ep.IPv4Address)
+	ipv6 := strings.TrimSpace(ep.IPv6Address)
+	if ipv4 == "" && ipv6 == "" {
+		return nil, nil
+	}
+
+	cfg := &network.EndpointIPAMConfig{}
+	if ipv4 != "" {
+		addr, err := netip.ParseAddr(ipv4)
+		if err != nil {
+			return nil, errors.WrapIff(err, "invalid IPv4 address %s", ipv4)
+		}
+		cfg.IPv4Address = addr
+	}
+	if ipv6 != "" {
+		addr, err := netip.ParseAddr(ipv6)
+		if err != nil {
+			return nil, errors.WrapIff(err, "invalid IPv6 address %s", ipv6)
+		}
+		cfg.IPv6Address = addr
+	}
+	return cfg, nil
+}
+
+// applyEditToContainerConfigInternal overwrites the non-nil form-owned Config
+// sections of an edit request onto cfg. Settings the form does not own are
+// left untouched. When port bindings are replaced, ExposedPorts is recomputed
+// as the new binding keys plus any previously-exposed-but-unbound ports (image
+// EXPOSE entries survive).
+func applyEditToContainerConfigInternal(cfg *container.Config, previousBindings network.PortMap, req containertypes.Edit) error {
+	if req.Image != nil && strings.TrimSpace(*req.Image) != "" {
+		cfg.Image = strings.TrimSpace(*req.Image)
+	}
+	if req.WorkingDir != nil {
+		cfg.WorkingDir = *req.WorkingDir
+	}
+	if req.User != nil {
+		cfg.User = *req.User
+	}
+	if req.Command != nil {
+		cfg.Cmd = append([]string{}, (*req.Command)...)
+	}
+	if req.Entrypoint != nil {
+		cfg.Entrypoint = append([]string{}, (*req.Entrypoint)...)
+	}
+	if req.Environment != nil {
+		cfg.Env = append([]string{}, (*req.Environment)...)
+	}
+	if req.Labels != nil {
+		cfg.Labels = maps.Clone(*req.Labels)
+	}
+
+	switch {
+	case req.ClearHealthcheck:
+		cfg.Healthcheck = nil
+	case req.Healthcheck != nil:
+		cfg.Healthcheck = healthConfigFromCreateInternal(req.Healthcheck)
+	}
+
+	if req.HostConfig != nil && req.HostConfig.PortBindings != nil {
+		newBindings, err := portMapFromCreateInternal(*req.HostConfig.PortBindings)
+		if err != nil {
+			return err
+		}
+		exposed := network.PortSet{}
+		for port := range newBindings {
+			exposed[port] = struct{}{}
+		}
+		for port := range cfg.ExposedPorts {
+			if _, wasBound := previousBindings[port]; !wasBound {
+				exposed[port] = struct{}{}
+			}
+		}
+		cfg.ExposedPorts = exposed
+	}
+
+	return nil
+}
+
+// applyEditToHostConfigInternal overwrites the non-nil form-owned HostConfig
+// sections of an edit request onto hc. Everything else (sysctls, ulimits, log
+// drivers, devices, tmpfs, DNS, ...) carries over unchanged.
+func applyEditToHostConfigInternal(hc *container.HostConfig, req containertypes.Edit) error {
+	edit := req.HostConfig
+	if edit == nil {
+		return nil
+	}
+
+	if edit.Binds != nil {
+		hc.Binds = append([]string{}, (*edit.Binds)...)
+	}
+	if edit.Mounts != nil {
+		hc.Mounts = mergeEditMountsInternal(hc.Mounts, *edit.Mounts)
+	}
+	if edit.PortBindings != nil {
+		newBindings, err := portMapFromCreateInternal(*edit.PortBindings)
+		if err != nil {
+			return err
+		}
+		hc.PortBindings = newBindings
+	}
+	if edit.RestartPolicy != nil {
+		hc.RestartPolicy = container.RestartPolicy{
+			Name:              container.RestartPolicyMode(edit.RestartPolicy.Name),
+			MaximumRetryCount: edit.RestartPolicy.MaximumRetryCount,
+		}
+	}
+	if edit.Privileged != nil {
+		hc.Privileged = *edit.Privileged
+	}
+	if edit.CapAdd != nil {
+		hc.CapAdd = append([]string{}, (*edit.CapAdd)...)
+	}
+	if edit.CapDrop != nil {
+		hc.CapDrop = append([]string{}, (*edit.CapDrop)...)
+	}
+	if edit.AutoRemove != nil {
+		hc.AutoRemove = *edit.AutoRemove
+	}
+	if edit.ReadonlyRootfs != nil {
+		hc.ReadonlyRootfs = *edit.ReadonlyRootfs
+	}
+	if edit.Memory != nil {
+		hc.Memory = *edit.Memory
+	}
+	if edit.MemorySwap != nil {
+		hc.MemorySwap = *edit.MemorySwap
+	}
+	if edit.NanoCPUs != nil {
+		hc.NanoCPUs = *edit.NanoCPUs
+	}
+	if edit.CPUShares != nil {
+		hc.CPUShares = *edit.CPUShares
+	}
+
+	return nil
+}
+
+// buildEditNetworkingConfigInternal builds the networking config for an edit
+// recreate. A nil request preserves the existing attachments (same behavior as
+// redeploy); otherwise the request is the full desired endpoint set, keeping
+// the sanitized settings of endpoints that stay attached. Containers using
+// host/none/container: network modes never get endpoint edits.
+func buildEditNetworkingConfigInternal(containerInspect container.InspectResponse, req *containertypes.NetworkingConfigCreate, apiVersion string) (*network.NetworkingConfig, error) {
+	if containerInspect.HostConfig != nil {
+		mode := containerInspect.HostConfig.NetworkMode
+		if mode.IsHost() || mode.IsNone() || mode.IsContainer() {
+			return nil, nil
+		}
+	}
+
+	if req == nil {
+		return buildCleanNetworkingConfigInternal(containerInspect, apiVersion), nil
+	}
+
+	var existing map[string]*network.EndpointSettings
+	if containerInspect.NetworkSettings != nil {
+		existing = libarcane.SanitizeContainerCreateEndpointSettingsForDockerAPI(containerInspect.NetworkSettings.Networks, apiVersion)
+	}
+
+	endpoints := make(map[string]*network.EndpointSettings, len(req.EndpointsConfig))
+	for name, epReq := range req.EndpointsConfig {
+		endpoint := &network.EndpointSettings{}
+		if prior := existing[name]; prior != nil {
+			priorCopy := *prior
+			priorCopy.IPAMConfig = nil
+			endpoint = &priorCopy
+		}
+		endpoint.Aliases = append([]string{}, epReq.Aliases...)
+		ipam, err := endpointIPAMFromCreateInternal(epReq)
+		if err != nil {
+			return nil, err
+		}
+		endpoint.IPAMConfig = ipam
+		endpoints[name] = endpoint
+	}
+
+	if len(endpoints) == 0 {
+		return nil, nil
+	}
+
+	return &network.NetworkingConfig{EndpointsConfig: endpoints}, nil
+}
+
+// GetContainerEditConfig returns the purpose-built DTO backing the container
+// edit form.
+func (s *ContainerService) GetContainerEditConfig(ctx context.Context, containerID string) (containertypes.EditConfig, error) {
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		return containertypes.EditConfig{}, errors.WrapIf(err, "failed to connect to Docker")
+	}
+
+	containerJSON, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
+	if err != nil {
+		return containertypes.EditConfig{}, errors.WrapIf(err, "failed to inspect container")
+	}
+
+	containerInfo := containerJSON.Container
+	var containerLabels map[string]string
+	if containerInfo.Config != nil {
+		containerLabels = containerInfo.Config.Labels
+	}
+
+	isCompose := dockerutils.ComposeProjectLabel(containerLabels) != ""
+	currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
+	editDisabled := labels.ShouldDisableArcaneServerRedeploy(containerLabels, containerInfo.ID, currentContainerID, currentContainerErr)
+
+	return containertypes.NewEditConfigFromInspect(&containerInfo, isCompose, editDisabled), nil
+}
+
+// EditContainer applies a user-supplied config diff onto the container's
+// inspected config and recreates it. Sections not owned by the edit form are
+// preserved from the existing container.
+func (s *ContainerService) EditContainer(ctx context.Context, containerID string, req containertypes.Edit, user common.User) (string, error) {
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, database.JSON{
+			"action": "edit",
+			"step":   "get_client",
+		})
+		return "", errors.WrapIf(err, "failed to connect to Docker")
+	}
+
+	containerJSON, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
+	if err != nil {
+		s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, database.JSON{
+			"action": "edit",
+			"step":   "inspect",
+		})
+		return "", errors.WrapIf(err, "failed to inspect container")
+	}
+
+	containerInfo := containerJSON.Container
+	if containerInfo.Config == nil {
+		return "", errors.New("container config is nil")
+	}
+
+	containerName := strings.TrimPrefix(containerInfo.Name, "/")
+
+	if project := dockerutils.ComposeProjectLabel(containerInfo.Config.Labels); project != "" {
+		return "", errors.WrapIff(common.ErrContainerComposeManaged, "compose project %s", project)
+	}
+
+	currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
+	if labels.ShouldDisableArcaneServerRedeploy(containerInfo.Config.Labels, containerInfo.ID, currentContainerID, currentContainerErr) {
+		err = errors.New("arcane cannot edit itself; use the system upgrade flow (Settings -> Updates) instead")
+		s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", err, database.JSON{
+			"action": "edit",
+			"step":   "self_edit_blocked",
+		})
+		return "", err
+	}
+
+	newName := containerName
+	if req.Name != nil {
+		if trimmed := strings.TrimPrefix(strings.TrimSpace(*req.Name), "/"); trimmed != "" {
+			newName = trimmed
+		}
+	}
+	if newName != containerName {
+		if _, inspectErr := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, newName, client.ContainerInspectOptions{}); inspectErr == nil {
+			return "", errors.WrapIff(common.ErrContainerNameTaken, "container name %s", newName)
+		}
+	}
+
+	apiVersion := libarcane.DetectDockerAPIVersion(ctx, dockerClient)
+
+	newConfig := *containerInfo.Config
+	var newHostConfig container.HostConfig
+	if containerInfo.HostConfig != nil {
+		newHostConfig = *containerInfo.HostConfig
+	}
+
+	if err := applyEditToContainerConfigInternal(&newConfig, newHostConfig.PortBindings, req); err != nil {
+		return "", common.Classify(common.ErrValidation, err)
+	}
+	if err := applyEditToHostConfigInternal(&newHostConfig, req); err != nil {
+		return "", common.Classify(common.ErrValidation, err)
+	}
+	networkingConfig, err := buildEditNetworkingConfigInternal(containerInfo, req.NetworkingConfig, apiVersion)
+	if err != nil {
+		return "", common.Classify(common.ErrValidation, err)
+	}
+
+	// Unlike redeploy, edit only pulls when the effective image is missing
+	// locally so an unrelated config change never surprise-upgrades the image.
+	imageName := newConfig.Image
+	if imageName != "" {
+		if _, inspectErr := dockerClient.ImageInspect(ctx, imageName); inspectErr != nil {
+			if err := s.pullRedeployImageInternal(ctx, dockerClient, imageName, containerID, containerName, "edit", req.Credentials, user); err != nil {
+				return "", err
+			}
+		}
+	}
+
+	return s.recreateContainerInternal(ctx, dockerClient, containerInfo, "edit", newName, &newConfig, &newHostConfig, networkingConfig, apiVersion, event.EventTypeContainerUpdate, user)
 }
 
 func (s *ContainerService) GetContainerByReference(ctx context.Context, ref string) (*container.InspectResponse, error) {

@@ -99,6 +99,21 @@ type HostConfigCreate struct {
 	//
 	// Required: false
 	PublishAllPorts *bool `json:"publishAllPorts,omitempty"`
+
+	// CapAdd is a list of kernel capabilities to add.
+	//
+	// Required: false
+	CapAdd []string `json:"capAdd,omitempty"`
+
+	// CapDrop is a list of kernel capabilities to drop.
+	//
+	// Required: false
+	CapDrop []string `json:"capDrop,omitempty"`
+
+	// Mounts is a list of typed mounts (bind or volume).
+	//
+	// Required: false
+	Mounts []MountCreate `json:"mounts,omitempty"`
 }
 
 // EndpointSettingsCreate represents network endpoint settings for container creation.
@@ -107,6 +122,73 @@ type EndpointSettingsCreate struct {
 	//
 	// Required: false
 	Aliases []string `json:"aliases,omitempty"`
+
+	// IPv4Address is a static IPv4 address for the container on this network.
+	//
+	// Required: false
+	IPv4Address string `json:"ipv4Address,omitempty"`
+
+	// IPv6Address is a static IPv6 address for the container on this network.
+	//
+	// Required: false
+	IPv6Address string `json:"ipv6Address,omitempty"`
+}
+
+// MountCreate represents a typed mount (bind or volume) for container creation.
+type MountCreate struct {
+	// Type of the mount (bind or volume).
+	//
+	// Required: true
+	Type string `json:"type"`
+
+	// Source is the host path (bind) or volume name (volume).
+	//
+	// Required: true
+	Source string `json:"source"`
+
+	// Target path inside the container.
+	//
+	// Required: true
+	Target string `json:"target"`
+
+	// ReadOnly mounts the target read-only.
+	//
+	// Required: false
+	ReadOnly bool `json:"readOnly,omitempty"`
+}
+
+// HealthcheckCreate represents a container healthcheck configuration for
+// create/edit requests. Duration values are expressed in seconds on the wire.
+type HealthcheckCreate struct {
+	// Test is the probe command. ["NONE"] disables an image-defined healthcheck.
+	//
+	// Required: false
+	Test []string `json:"test,omitempty"`
+
+	// Interval between probes, in seconds.
+	//
+	// Required: false
+	Interval int64 `json:"interval,omitempty"`
+
+	// Timeout for a single probe, in seconds.
+	//
+	// Required: false
+	Timeout int64 `json:"timeout,omitempty"`
+
+	// StartPeriod is the initialization grace period, in seconds.
+	//
+	// Required: false
+	StartPeriod int64 `json:"startPeriod,omitempty"`
+
+	// StartInterval is the probe interval during the start period, in seconds.
+	//
+	// Required: false
+	StartInterval int64 `json:"startInterval,omitempty"`
+
+	// Retries is the number of consecutive failures before unhealthy.
+	//
+	// Required: false
+	Retries int `json:"retries,omitempty"`
 }
 
 // NetworkingConfigCreate represents network configuration for container creation.
@@ -173,6 +255,11 @@ type Create struct {
 	//
 	// Required: false
 	ExposedPorts map[string]struct{} `json:"exposedPorts,omitempty"`
+
+	// Healthcheck overrides the image healthcheck. Test ["NONE"] disables it.
+	//
+	// Required: false
+	Healthcheck *HealthcheckCreate `json:"healthcheck,omitempty"`
 
 	// HostConfig holds advanced host-level settings.
 	//
@@ -1247,4 +1334,457 @@ func mapEndpointSettings(n *network.EndpointSettings) NetworkEndpoint {
 		GlobalIPv6PrefixLen: n.GlobalIPv6PrefixLen,
 		DNSNames:            n.DNSNames,
 	}
+}
+
+// HostConfigEdit carries host-level configuration changes for a container
+// edit. Each field is a pointer: nil preserves the existing value, non-nil
+// (even empty) replaces it.
+type HostConfigEdit struct {
+	// Binds is the full desired list of volume bindings.
+	//
+	// Required: false
+	Binds *[]string `json:"binds,omitempty"`
+
+	// Mounts is the full desired list of typed mounts.
+	//
+	// Required: false
+	Mounts *[]MountCreate `json:"mounts,omitempty"`
+
+	// PortBindings is the full desired port binding map.
+	//
+	// Required: false
+	PortBindings *map[string][]PortBindingCreate `json:"portBindings,omitempty"`
+
+	// RestartPolicy for the container.
+	//
+	// Required: false
+	RestartPolicy *RestartPolicyCreate `json:"restartPolicy,omitempty"`
+
+	// Privileged indicates if the container runs in privileged mode.
+	//
+	// Required: false
+	Privileged *bool `json:"privileged,omitempty"`
+
+	// CapAdd is the full desired list of added kernel capabilities.
+	//
+	// Required: false
+	CapAdd *[]string `json:"capAdd,omitempty"`
+
+	// CapDrop is the full desired list of dropped kernel capabilities.
+	//
+	// Required: false
+	CapDrop *[]string `json:"capDrop,omitempty"`
+
+	// AutoRemove indicates if the container is removed when stopped.
+	//
+	// Required: false
+	AutoRemove *bool `json:"autoRemove,omitempty"`
+
+	// ReadonlyRootfs makes the root filesystem read-only.
+	//
+	// Required: false
+	ReadonlyRootfs *bool `json:"readonlyRootfs,omitempty"`
+
+	// Memory limit in bytes.
+	//
+	// Required: false
+	Memory *int64 `json:"memory,omitempty"`
+
+	// MemorySwap limits total memory usage (memory + swap) in bytes.
+	//
+	// Required: false
+	MemorySwap *int64 `json:"memorySwap,omitempty"`
+
+	// NanoCPUs is CPU allocation in nano CPUs.
+	//
+	// Required: false
+	NanoCPUs *int64 `json:"nanoCpus,omitempty"`
+
+	// CPUShares is the relative CPU share weight.
+	//
+	// Required: false
+	CPUShares *int64 `json:"cpuShares,omitempty"`
+}
+
+// Edit describes configuration changes to apply when recreating a container.
+// Each form-owned section is a pointer: nil preserves the inspected value,
+// non-nil (even empty) replaces that section. Settings not represented here
+// (sysctls, ulimits, log drivers, devices, tmpfs, DNS, ...) always carry over
+// from the existing container untouched.
+type Edit struct {
+	// Name is the new container name.
+	//
+	// Required: false
+	Name *string `json:"name,omitempty"`
+
+	// Image reference to run.
+	//
+	// Required: false
+	Image *string `json:"image,omitempty"`
+
+	// WorkingDir is the working directory inside the container.
+	//
+	// Required: false
+	WorkingDir *string `json:"workingDir,omitempty"`
+
+	// User to run the container as.
+	//
+	// Required: false
+	User *string `json:"user,omitempty"`
+
+	// Command to run in the container.
+	//
+	// Required: false
+	Command *[]string `json:"command,omitempty"`
+
+	// Entrypoint for the container.
+	//
+	// Required: false
+	Entrypoint *[]string `json:"entrypoint,omitempty"`
+
+	// Environment variables for the container.
+	//
+	// Required: false
+	Environment *[]string `json:"environment,omitempty"`
+
+	// Labels to set on the container.
+	//
+	// Required: false
+	Labels *map[string]string `json:"labels,omitempty"`
+
+	// Healthcheck replaces the container healthcheck when set.
+	//
+	// Required: false
+	Healthcheck *HealthcheckCreate `json:"healthcheck,omitempty"`
+
+	// ClearHealthcheck reverts to the image-defined healthcheck.
+	//
+	// Required: false
+	ClearHealthcheck bool `json:"clearHealthcheck,omitempty"`
+
+	// HostConfig holds host-level configuration changes.
+	//
+	// Required: false
+	HostConfig *HostConfigEdit `json:"hostConfig,omitempty"`
+
+	// NetworkingConfig is the full desired network endpoint set. Nil preserves
+	// the existing attachments.
+	//
+	// Required: false
+	NetworkingConfig *NetworkingConfigCreate `json:"networkingConfig,omitempty"`
+
+	// Credentials for pulling images from private registries.
+	//
+	// Required: false
+	Credentials []containerregistry.Credential `json:"credentials,omitempty"`
+}
+
+// EditConfigNetwork describes one desired network attachment as shown in the
+// edit form.
+type EditConfigNetwork struct {
+	// Aliases for the container on this network.
+	//
+	// Required: false
+	Aliases []string `json:"aliases,omitempty"`
+
+	// IPv4Address is the configured static IPv4 address, if any.
+	//
+	// Required: false
+	IPv4Address string `json:"ipv4Address,omitempty"`
+
+	// IPv6Address is the configured static IPv6 address, if any.
+	//
+	// Required: false
+	IPv6Address string `json:"ipv6Address,omitempty"`
+}
+
+// EditConfigHostConfig is the host-config subset surfaced by the edit form.
+type EditConfigHostConfig struct {
+	// Binds is the list of volume bindings.
+	//
+	// Required: false
+	Binds []string `json:"binds,omitempty"`
+
+	// Mounts is the list of typed mounts.
+	//
+	// Required: false
+	Mounts []MountCreate `json:"mounts,omitempty"`
+
+	// PortBindings maps container ports to host bindings.
+	//
+	// Required: false
+	PortBindings map[string][]PortBindingCreate `json:"portBindings,omitempty"`
+
+	// RestartPolicy for the container.
+	//
+	// Required: false
+	RestartPolicy RestartPolicyCreate `json:"restartPolicy"`
+
+	// NetworkMode for the container.
+	//
+	// Required: false
+	NetworkMode string `json:"networkMode,omitempty"`
+
+	// Privileged indicates if the container runs in privileged mode.
+	//
+	// Required: false
+	Privileged bool `json:"privileged,omitempty"`
+
+	// CapAdd is the list of added kernel capabilities.
+	//
+	// Required: false
+	CapAdd []string `json:"capAdd,omitempty"`
+
+	// CapDrop is the list of dropped kernel capabilities.
+	//
+	// Required: false
+	CapDrop []string `json:"capDrop,omitempty"`
+
+	// AutoRemove indicates if the container is removed when stopped.
+	//
+	// Required: false
+	AutoRemove bool `json:"autoRemove,omitempty"`
+
+	// ReadonlyRootfs indicates a read-only root filesystem.
+	//
+	// Required: false
+	ReadonlyRootfs bool `json:"readonlyRootfs,omitempty"`
+
+	// Memory limit in bytes.
+	//
+	// Required: false
+	Memory int64 `json:"memory,omitempty"`
+
+	// MemorySwap limits total memory usage (memory + swap) in bytes.
+	//
+	// Required: false
+	MemorySwap int64 `json:"memorySwap,omitempty"`
+
+	// NanoCPUs is CPU allocation in nano CPUs.
+	//
+	// Required: false
+	NanoCPUs int64 `json:"nanoCpus,omitempty"`
+
+	// CPUShares is the relative CPU share weight.
+	//
+	// Required: false
+	CPUShares int64 `json:"cpuShares,omitempty"`
+}
+
+// EditConfig is the read DTO backing the container edit form.
+type EditConfig struct {
+	// ID is the unique identifier of the container.
+	//
+	// Required: true
+	ID string `json:"id"`
+
+	// Name of the container.
+	//
+	// Required: true
+	Name string `json:"name"`
+
+	// Image reference the container was created from.
+	//
+	// Required: true
+	Image string `json:"image"`
+
+	// Command the container runs.
+	//
+	// Required: false
+	Command []string `json:"command,omitempty"`
+
+	// Entrypoint for the container.
+	//
+	// Required: false
+	Entrypoint []string `json:"entrypoint,omitempty"`
+
+	// WorkingDir is the working directory inside the container.
+	//
+	// Required: false
+	WorkingDir string `json:"workingDir,omitempty"`
+
+	// User the container runs as.
+	//
+	// Required: false
+	User string `json:"user,omitempty"`
+
+	// Environment variables of the container.
+	//
+	// Required: false
+	Environment []string `json:"environment,omitempty"`
+
+	// Labels set on the container.
+	//
+	// Required: false
+	Labels map[string]string `json:"labels,omitempty"`
+
+	// Healthcheck configuration (durations in seconds), if the container
+	// defines one.
+	//
+	// Required: false
+	Healthcheck *HealthcheckCreate `json:"healthcheck,omitempty"`
+
+	// HostConfig is the host-config subset surfaced by the edit form.
+	//
+	// Required: true
+	HostConfig EditConfigHostConfig `json:"hostConfig"`
+
+	// Networks maps network names to their desired endpoint settings.
+	//
+	// Required: false
+	Networks map[string]EditConfigNetwork `json:"networks,omitempty"`
+
+	// IsCompose indicates the container is managed by a compose project.
+	//
+	// Required: false
+	IsCompose bool `json:"isCompose,omitempty"`
+
+	// ComposeProject is the owning compose project name, if any.
+	//
+	// Required: false
+	ComposeProject string `json:"composeProject,omitempty"`
+
+	// EditDisabled indicates edit actions are disabled for this container.
+	//
+	// Required: false
+	EditDisabled bool `json:"editDisabled,omitempty"`
+
+	// Running indicates whether the container is currently running.
+	//
+	// Required: true
+	Running bool `json:"running"`
+}
+
+// NewEditConfigFromInspect builds an EditConfig from a docker inspect response.
+func NewEditConfigFromInspect(c *container.InspectResponse, isCompose bool, editDisabled bool) EditConfig {
+	cfg := EditConfig{
+		ID:           c.ID,
+		Name:         strings.TrimPrefix(c.Name, "/"),
+		IsCompose:    isCompose,
+		EditDisabled: editDisabled,
+		Running:      c.State != nil && c.State.Running,
+	}
+
+	if c.Config != nil {
+		cfg.Image = c.Config.Image
+		cfg.Command = append([]string{}, c.Config.Cmd...)
+		cfg.Entrypoint = append([]string{}, c.Config.Entrypoint...)
+		cfg.WorkingDir = c.Config.WorkingDir
+		cfg.User = c.Config.User
+		cfg.Environment = append([]string{}, c.Config.Env...)
+		cfg.Labels = c.Config.Labels
+		cfg.ComposeProject = c.Config.Labels["com.docker.compose.project"]
+		cfg.Healthcheck = mapEditHealthcheck(c.Config.Healthcheck)
+	}
+
+	cfg.HostConfig = mapEditHostConfig(c.HostConfig)
+	cfg.Networks = mapEditNetworks(c)
+
+	return cfg
+}
+
+func mapEditHealthcheck(hc *container.HealthConfig) *HealthcheckCreate {
+	if hc == nil {
+		return nil
+	}
+
+	return &HealthcheckCreate{
+		Test:          append([]string{}, hc.Test...),
+		Interval:      int64(hc.Interval / time.Second),
+		Timeout:       int64(hc.Timeout / time.Second),
+		StartPeriod:   int64(hc.StartPeriod / time.Second),
+		StartInterval: int64(hc.StartInterval / time.Second),
+		Retries:       hc.Retries,
+	}
+}
+
+func mapEditHostConfig(hc *container.HostConfig) EditConfigHostConfig {
+	if hc == nil {
+		return EditConfigHostConfig{}
+	}
+
+	out := EditConfigHostConfig{
+		Binds: append([]string{}, hc.Binds...),
+		RestartPolicy: RestartPolicyCreate{
+			Name:              string(hc.RestartPolicy.Name),
+			MaximumRetryCount: hc.RestartPolicy.MaximumRetryCount,
+		},
+		NetworkMode:    string(hc.NetworkMode),
+		Privileged:     hc.Privileged,
+		CapAdd:         append([]string{}, hc.CapAdd...),
+		CapDrop:        append([]string{}, hc.CapDrop...),
+		AutoRemove:     hc.AutoRemove,
+		ReadonlyRootfs: hc.ReadonlyRootfs,
+		Memory:         hc.Memory,
+		MemorySwap:     hc.MemorySwap,
+		NanoCPUs:       hc.NanoCPUs,
+		CPUShares:      hc.CPUShares,
+	}
+
+	for _, m := range hc.Mounts {
+		out.Mounts = append(out.Mounts, MountCreate{
+			Type:     string(m.Type),
+			Source:   m.Source,
+			Target:   m.Target,
+			ReadOnly: m.ReadOnly,
+		})
+	}
+
+	if len(hc.PortBindings) > 0 {
+		out.PortBindings = make(map[string][]PortBindingCreate, len(hc.PortBindings))
+		for port, bindings := range hc.PortBindings {
+			mapped := make([]PortBindingCreate, 0, len(bindings))
+			for _, b := range bindings {
+				hostIP := ""
+				if b.HostIP.IsValid() {
+					hostIP = b.HostIP.String()
+				}
+				mapped = append(mapped, PortBindingCreate{
+					HostIP:   hostIP,
+					HostPort: b.HostPort,
+				})
+			}
+			out.PortBindings[port.String()] = mapped
+		}
+	}
+
+	return out
+}
+
+func mapEditNetworks(c *container.InspectResponse) map[string]EditConfigNetwork {
+	if c.NetworkSettings == nil || len(c.NetworkSettings.Networks) == 0 {
+		return nil
+	}
+
+	shortID := ""
+	if len(c.ID) >= 12 {
+		shortID = c.ID[:12]
+	}
+
+	out := make(map[string]EditConfigNetwork, len(c.NetworkSettings.Networks))
+	for name, endpoint := range c.NetworkSettings.Networks {
+		mapped := EditConfigNetwork{}
+		if endpoint != nil {
+			// The daemon injects the container short ID as an implicit alias;
+			// it is regenerated on recreate and must not round-trip as a
+			// user-defined alias.
+			for _, alias := range endpoint.Aliases {
+				if alias == "" || alias == shortID {
+					continue
+				}
+				mapped.Aliases = append(mapped.Aliases, alias)
+			}
+			if endpoint.IPAMConfig != nil {
+				if endpoint.IPAMConfig.IPv4Address.IsValid() {
+					mapped.IPv4Address = endpoint.IPAMConfig.IPv4Address.String()
+				}
+				if endpoint.IPAMConfig.IPv6Address.IsValid() {
+					mapped.IPv6Address = endpoint.IPAMConfig.IPv6Address.String()
+				}
+			}
+		}
+		out[name] = mapped
+	}
+
+	return out
 }

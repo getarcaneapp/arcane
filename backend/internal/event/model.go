@@ -71,9 +71,11 @@ const (
 	EventTypeVolumeBackupRestoreFiles EventType = "volume.backup.restore_files"
 	EventTypeVolumeBackupDownload     EventType = "volume.backup.download"
 
-	EventTypeNetworkCreate EventType = "network.create"
-	EventTypeNetworkDelete EventType = "network.delete"
-	EventTypeNetworkError  EventType = "network.error"
+	EventTypeNetworkCreate     EventType = "network.create"
+	EventTypeNetworkDelete     EventType = "network.delete"
+	EventTypeNetworkConnect    EventType = "network.connect"
+	EventTypeNetworkDisconnect EventType = "network.disconnect"
+	EventTypeNetworkError      EventType = "network.error"
 
 	EventTypeSystemPrune       EventType = "system.prune"
 	EventTypeUserLogin         EventType = "user.login"

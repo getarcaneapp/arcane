@@ -92,7 +92,8 @@ export const queryKeys = {
 		checkUpdates: (environmentId: string) => ['containers', 'check-updates', environmentId] as const,
 		create: (environmentId: string) => ['containers', 'create', environmentId] as const,
 		statusCounts: (environmentId: string) => ['containers', 'status-counts', environmentId] as const,
-		detail: (environmentId: string, containerId: string) => ['container', environmentId, containerId] as const
+		detail: (environmentId: string, containerId: string) => ['container', environmentId, containerId] as const,
+		editConfig: (environmentId: string, containerId: string) => ['container', environmentId, containerId, 'edit-config'] as const
 	},
 	images: {
 		all: ['images'] as const,

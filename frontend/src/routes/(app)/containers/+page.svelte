@@ -1,6 +1,6 @@
 <script lang="ts">
-	import CreateContainerDialog from '#lib/components/dialogs/create-container-dialog.svelte';
 	import { toast } from 'svelte-sonner';
+	import { goto } from '$app/navigation';
 	import { containerService } from '#lib/services/container-service';
 	import ContainerTable from './container-table.svelte';
 	import { m } from '#lib/paraglide/messages';
@@ -9,7 +9,7 @@
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index';
 	import { environmentStore } from '#lib/stores/environment.store.svelte';
 	import { hasPermission } from '#lib/utils/auth';
-	import type { ContainerCreateRequest, ContainerStatusCounts } from '#lib/types/docker';
+	import type { ContainerStatusCounts } from '#lib/types/docker';
 	import { createMutation } from '@tanstack/svelte-query';
 	import { BoxIcon } from '#lib/icons';
 	import { queryKeys } from '#lib/query/query-keys';
@@ -22,7 +22,6 @@
 
 	let requestOptions = $state(untrack(() => data.containerRequestOptions));
 	let selectedIds = $state<string[]>([]);
-	let isCreateDialogOpen = $state(false);
 	let containers = $state(untrack(() => data.containers));
 	const envId = $derived(environmentStore.selected?.id || '0');
 	let displayedEnvId = $state<string | null>(untrack(() => (data.envId === envId ? data.envId : null)));
@@ -83,25 +82,6 @@
 		}
 	}));
 
-	const createContainerMutation = createMutation(() => ({
-		mutationKey: queryKeys.containers.create(envId),
-		mutationFn: async (options: ContainerCreateRequest) => {
-			const requestedEnvId = envId;
-			const result = await containerService.createContainer(options, requestedEnvId);
-			return { requestedEnvId, result };
-		},
-		onSuccess: async ({ requestedEnvId }) => {
-			toast.success(m.common_create_success({ resource: m.resource_container() }));
-			if (requestedEnvId === envId) {
-				await refreshContainers(buildRequestOptions(), requestedEnvId);
-				isCreateDialogOpen = false;
-			}
-		},
-		onError: () => {
-			toast.error(m.containers_create_failed());
-		}
-	}));
-
 	function handleEnvironmentChange() {
 		if (!hasSeenEnvironmentSync) {
 			hasSeenEnvironmentSync = true;
@@ -114,7 +94,6 @@
 		isRefreshing = false;
 		displayedEnvId = null;
 		selectedIds = [];
-		isCreateDialogOpen = false;
 
 		const nextOptions: SearchPaginationSortRequest = {
 			...requestOptions,
@@ -145,9 +124,8 @@
 				id: 'create',
 				action: 'create',
 				label: m.common_create_button({ resource: m.container() }),
-				onclick: () => (isCreateDialogOpen = true),
-				loading: createContainerMutation.isPending,
-				disabled: !resourcesReady || createContainerMutation.isPending
+				onclick: () => goto('/containers/new'),
+				disabled: !resourcesReady
 			},
 			canAutoUpdate
 				? {
@@ -218,13 +196,5 @@
 				}}
 			/>
 		{/if}
-	{/snippet}
-
-	{#snippet additionalContent()}
-		<CreateContainerDialog
-			bind:open={isCreateDialogOpen}
-			isLoading={createContainerMutation.isPending}
-			onSubmit={(options) => createContainerMutation.mutate(options)}
-		/>
 	{/snippet}
 </ResourcePageLayout>

@@ -1,15 +1,100 @@
 <script lang="ts">
 	import * as Card from '#lib/components/ui/card';
 	import { PortBadge } from '#lib/components/badges';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import SearchableSelect from '#lib/components/form/searchable-select.svelte';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog';
 	import { m } from '#lib/paraglide/messages';
 	import type { ContainerDetailsDto } from '#lib/types/docker';
 	import { NetworksIcon } from '#lib/icons';
+	import { networkService } from '#lib/services/network-service';
+	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import { hasPermission } from '#lib/utils/auth';
+	import { queryKeys } from '#lib/query/query-keys';
+	import { createQuery } from '@tanstack/svelte-query';
+	import { refreshAll } from '$app/navigation';
+	import { toast } from 'svelte-sonner';
+	import { extractApiErrorMessage } from '#lib/utils/api';
 
 	interface Props {
 		container: ContainerDetailsDto;
 	}
 
 	let { container }: Props = $props();
+
+	const envId = $derived(environmentStore.selected?.id || '0');
+	const canConnect = $derived(hasPermission('networks:connect', envId));
+	const canDisconnect = $derived(hasPermission('networks:disconnect', envId));
+
+	let connectNetwork = $state('');
+	let connectAliases = $state('');
+	let connectIp = $state('');
+	let connectPending = $state(false);
+	let disconnectPending = $state<Record<string, boolean>>({});
+
+	const networkListOptions = { pagination: { page: 1, limit: 500 } };
+	const networksQuery = createQuery(() => ({
+		queryKey: queryKeys.networks.list(envId, networkListOptions),
+		queryFn: () => networkService.getNetworks(networkListOptions),
+		enabled: canConnect
+	}));
+
+	const attachedNetworks = $derived(new Set(Object.keys(container.networkSettings?.networks ?? {})));
+	const connectableNetworks = $derived(
+		(networksQuery.data?.data ?? [])
+			.map((network) => network.name)
+			.filter((name) => name !== 'host' && name !== 'none' && !attachedNetworks.has(name))
+			.map((name) => ({ value: name, label: name }))
+	);
+
+	async function handleConnect() {
+		if (!connectNetwork) return;
+		connectPending = true;
+		try {
+			const aliases = connectAliases
+				.split(',')
+				.map((alias) => alias.trim())
+				.filter(Boolean);
+			await networkService.connectContainer(connectNetwork, {
+				containerId: container.id,
+				aliases: aliases.length > 0 ? aliases : undefined,
+				ipv4Address: connectIp.trim() || undefined
+			});
+			toast.success(m.network_connect_success());
+			connectNetwork = '';
+			connectAliases = '';
+			connectIp = '';
+			await refreshAll();
+		} catch (error) {
+			toast.error(m.network_connect_failed(), { description: extractApiErrorMessage(error) });
+		} finally {
+			connectPending = false;
+		}
+	}
+
+	function handleDisconnect(networkName: string, networkId: string) {
+		openConfirmDialog({
+			title: m.network_disconnect_confirm_title(),
+			message: m.network_disconnect_confirm_message({ network: networkName }),
+			confirm: {
+				label: m.common_disconnect(),
+				destructive: true,
+				action: async () => {
+					disconnectPending[networkName] = true;
+					try {
+						await networkService.disconnectContainer(networkId || networkName, { containerId: container.id, force: false });
+						toast.success(m.network_disconnect_success());
+						await refreshAll();
+					} catch (error) {
+						toast.error(m.network_disconnect_failed(), { description: extractApiErrorMessage(error) });
+					} finally {
+						disconnectPending[networkName] = false;
+					}
+				}
+			}
+		});
+	}
 </script>
 
 <div class="space-y-6">
@@ -64,6 +149,18 @@
 										</div>
 										<div class="text-xs text-muted-foreground">{m.network_interface()}</div>
 									</div>
+									{#if canDisconnect}
+										<ArcaneButton
+											action="base"
+											tone="outline"
+											size="sm"
+											customLabel={m.common_disconnect()}
+											loading={disconnectPending[networkName]}
+											disabled={disconnectPending[networkName]}
+											onclick={() => handleDisconnect(networkName, rawNetworkConfig.networkId)}
+											class="shrink-0 text-destructive hover:text-destructive"
+										/>
+									{/if}
 								</div>
 
 								<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -174,6 +271,49 @@
 			{:else}
 				<div class="rounded-lg border border-dashed py-12 text-center text-muted-foreground">
 					<div class="text-sm">{m.containers_no_networks_connected()}</div>
+				</div>
+			{/if}
+
+			{#if canConnect}
+				<div class="mt-4 space-y-3 rounded-lg border border-border/50 p-4">
+					<div>
+						<h3 class="text-sm font-semibold">{m.network_connect()}</h3>
+						<p class="mt-1 text-xs text-muted-foreground">{m.network_live_change_note()}</p>
+					</div>
+					<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+						<SearchableSelect
+							items={connectableNetworks}
+							bind:value={connectNetwork}
+							showCheckboxes={false}
+							disabled={connectPending}
+							class="min-w-44 flex-1"
+						/>
+						<Input
+							type="text"
+							placeholder={m.containers_aliases()}
+							bind:value={connectAliases}
+							disabled={connectPending}
+							class="flex-1 font-mono"
+							title={m.aliases_note()}
+						/>
+						<Input
+							type="text"
+							placeholder={m.static_ip()}
+							bind:value={connectIp}
+							disabled={connectPending}
+							class="flex-1 font-mono"
+						/>
+						<ArcaneButton
+							action="base"
+							tone="outline"
+							size="sm"
+							customLabel={m.common_connect()}
+							loading={connectPending}
+							disabled={connectPending || !connectNetwork}
+							onclick={handleConnect}
+							class="shrink-0"
+						/>
+					</div>
 				</div>
 			{/if}
 		</Card.Content>

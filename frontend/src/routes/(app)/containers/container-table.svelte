@@ -48,6 +48,7 @@
 		TrashIcon,
 		BoxIcon,
 		ClockIcon,
+		EditIcon,
 		ImagesIcon,
 		NetworksIcon,
 		ProjectsIcon,
@@ -190,6 +191,7 @@
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
 	const resourcesCurrent = $derived(environmentId === currentEnvId);
 	const canUpdateContainers = $derived(hasPermission('containers:autoupdate', currentEnvId));
+	const canEditContainers = $derived(hasPermission('containers:edit', currentEnvId));
 	const canKillContainers = $derived(hasPermission('containers:kill', currentEnvId));
 	const canPauseContainers = $derived(hasPermission('containers:pause', currentEnvId));
 
@@ -633,6 +635,13 @@
 				<InspectIcon class="size-4" />
 				{m.common_inspect()}
 			</DropdownMenu.Item>
+
+			{#if canEditContainers && !item.redeployDisabled && !item.labels?.['com.docker.compose.project']}
+				<DropdownMenu.Item onclick={() => goto(`/containers/${item.id}/edit`)} disabled={isAnyLoading}>
+					<EditIcon class="size-4" />
+					{m.common_edit()}
+				</DropdownMenu.Item>
+			{/if}
 
 			<DropdownMenu.Separator />
 

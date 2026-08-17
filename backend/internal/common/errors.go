@@ -70,6 +70,8 @@ var (
 	ErrGlobalVariableConflict                  = Classify(ErrConflict, errors.Sentinel("Global variable already exists"))
 	ErrGlobalVariableScopeRequired             = Classify(ErrValidation, errors.Sentinel("At least one environment is required when a variable is not scoped to all environments"))
 	ErrGlobalVariableSecretValueRequired       = Classify(ErrValidation, errors.Sentinel("A new value is required when making a secret variable readable"))
+	ErrContainerComposeManaged                 = Classify(ErrConflict, errors.Sentinel("container is managed by a compose project; edit it via the project editor"))
+	ErrContainerNameTaken                      = Classify(ErrConflict, errors.Sentinel("a container with this name already exists"))
 	ErrSwarmNotEnabled                         = Classify(ErrBadRequest, errors.Sentinel("Swarm mode is not enabled"))
 	ErrSwarmManagerRequired                    = Classify(ErrForbidden, errors.Sentinel("Swarm manager access required"))
 	ErrRoleNotFound                            = Classify(ErrNotFound, errors.Sentinel("Role not found"))

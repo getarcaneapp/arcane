@@ -364,6 +364,44 @@ func parseAuxAddress(auxAddress map[string]string) map[string]netip.Addr {
 	return aux
 }
 
+// ConnectContainerRequest contains the parameters for connecting a container
+// to a network.
+type ConnectContainerRequest struct {
+	// ContainerID is the container to connect.
+	//
+	// Required: true
+	ContainerID string `json:"containerId" minLength:"1" doc:"Container ID or name"`
+
+	// Aliases for the container on this network.
+	//
+	// Required: false
+	Aliases []string `json:"aliases,omitempty" doc:"Network-scoped aliases"`
+
+	// IPv4Address is a static IPv4 address for the container on this network.
+	//
+	// Required: false
+	IPv4Address string `json:"ipv4Address,omitempty" doc:"Static IPv4 address"`
+
+	// IPv6Address is a static IPv6 address for the container on this network.
+	//
+	// Required: false
+	IPv6Address string `json:"ipv6Address,omitempty" doc:"Static IPv6 address"`
+}
+
+// DisconnectContainerRequest contains the parameters for disconnecting a
+// container from a network.
+type DisconnectContainerRequest struct {
+	// ContainerID is the container to disconnect.
+	//
+	// Required: true
+	ContainerID string `json:"containerId" minLength:"1" doc:"Container ID or name"`
+
+	// Force disconnects even if the container is running.
+	//
+	// Required: false
+	Force bool `json:"force,omitempty" doc:"Force the disconnect"`
+}
+
 type PruneReport struct {
 	// NetworksDeleted is a list of network IDs that were deleted.
 	//

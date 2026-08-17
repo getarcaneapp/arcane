@@ -26,6 +26,22 @@ export interface RestartPolicy {
 	maximumRetryCount?: number;
 }
 
+export interface MountDto {
+	type: string;
+	source: string;
+	target: string;
+	readOnly?: boolean;
+}
+
+export interface ContainerHealthcheckCreate {
+	test?: string[];
+	interval?: number;
+	timeout?: number;
+	startPeriod?: number;
+	startInterval?: number;
+	retries?: number;
+}
+
 export interface HostConfigCreate {
 	binds?: string[];
 	portBindings?: Record<string, PortBinding[]>;
@@ -39,10 +55,19 @@ export interface HostConfigCreate {
 	memorySwap?: number;
 	nanoCpus?: number;
 	cpuShares?: number;
+	capAdd?: string[];
+	capDrop?: string[];
+	mounts?: MountDto[];
+}
+
+export interface EndpointSettingsCreate {
+	aliases?: string[];
+	ipv4Address?: string;
+	ipv6Address?: string;
 }
 
 export interface NetworkingConfig {
-	endpointsConfig?: Record<string, { aliases?: string[] }>;
+	endpointsConfig?: Record<string, EndpointSettingsCreate>;
 }
 
 export interface ContainerCreateRequest {
@@ -52,6 +77,7 @@ export interface ContainerCreateRequest {
 	entrypoint?: string[];
 	env?: string[];
 	exposedPorts?: Record<string, {}>;
+	healthcheck?: ContainerHealthcheckCreate;
 	hostConfig?: HostConfigCreate;
 	networkingConfig?: NetworkingConfig;
 	labels?: Record<string, string>;
@@ -66,6 +92,79 @@ export interface ContainerCreateRequest {
 	tty?: boolean;
 	openStdin?: boolean;
 	stdinOnce?: boolean;
+}
+
+export interface ContainerHostConfigEdit {
+	binds?: string[];
+	mounts?: MountDto[];
+	portBindings?: Record<string, PortBinding[]>;
+	restartPolicy?: RestartPolicy;
+	privileged?: boolean;
+	capAdd?: string[];
+	capDrop?: string[];
+	autoRemove?: boolean;
+	readonlyRootfs?: boolean;
+	memory?: number;
+	memorySwap?: number;
+	nanoCpus?: number;
+	cpuShares?: number;
+}
+
+export interface ContainerEditRequest {
+	name?: string;
+	image?: string;
+	workingDir?: string;
+	user?: string;
+	command?: string[];
+	entrypoint?: string[];
+	environment?: string[];
+	labels?: Record<string, string>;
+	healthcheck?: ContainerHealthcheckCreate;
+	clearHealthcheck?: boolean;
+	hostConfig?: ContainerHostConfigEdit;
+	networkingConfig?: NetworkingConfig;
+}
+
+export interface ContainerEditConfigHostConfig {
+	binds?: string[];
+	mounts?: MountDto[];
+	portBindings?: Record<string, PortBinding[]>;
+	restartPolicy: { name?: string; maximumRetryCount?: number };
+	networkMode?: string;
+	privileged?: boolean;
+	capAdd?: string[];
+	capDrop?: string[];
+	autoRemove?: boolean;
+	readonlyRootfs?: boolean;
+	memory?: number;
+	memorySwap?: number;
+	nanoCpus?: number;
+	cpuShares?: number;
+}
+
+export interface ContainerEditConfigNetwork {
+	aliases?: string[];
+	ipv4Address?: string;
+	ipv6Address?: string;
+}
+
+export interface ContainerEditConfigDto {
+	id: string;
+	name: string;
+	image: string;
+	command?: string[];
+	entrypoint?: string[];
+	workingDir?: string;
+	user?: string;
+	environment?: string[];
+	labels?: Record<string, string>;
+	healthcheck?: ContainerHealthcheckCreate;
+	hostConfig: ContainerEditConfigHostConfig;
+	networks?: Record<string, ContainerEditConfigNetwork>;
+	isCompose?: boolean;
+	composeProject?: string;
+	editDisabled?: boolean;
+	running: boolean;
 }
 
 export interface ContainerSummaryDto extends BaseContainer {

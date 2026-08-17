@@ -127,6 +127,7 @@ var permissionCatalog = []PermissionCatalogResource{
 		{"stop", PermContainersStop, "Stop", ""},
 		{"restart", PermContainersRestart, "Restart", ""},
 		{"redeploy", PermContainersRedeploy, "Redeploy", ""},
+		{"edit", PermContainersEdit, "Edit (recreate with changes)", ""},
 		{"kill", PermContainersKill, "Kill (send signal)", ""},
 		{"pause", PermContainersPause, "Pause / unpause", ""},
 		{"delete", PermContainersDelete, "Delete", ""},
@@ -172,6 +173,8 @@ var permissionCatalog = []PermissionCatalogResource{
 		{"create", PermNetworksCreate, "Create", ""},
 		{"delete", PermNetworksDelete, "Delete", ""},
 		{"prune", PermNetworksPrune, "Prune", ""},
+		{"connect", PermNetworksConnect, "Connect container", ""},
+		{"disconnect", PermNetworksDisconnect, "Disconnect container", ""},
 	}},
 	{"swarm", "Swarm", PermissionScopeEnv, []PermissionCatalogAction{
 		{"read", PermSwarmRead, "Read", ""},

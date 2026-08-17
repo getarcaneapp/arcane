@@ -29,6 +29,7 @@ const (
 	TypeContainerStop     Type = "container_stop"
 	TypeContainerRestart  Type = "container_restart"
 	TypeContainerRedeploy Type = "container_redeploy"
+	TypeContainerEdit     Type = "container_edit"
 	TypeContainerDelete   Type = "container_delete"
 	TypeContainerKill     Type = "container_kill"
 	TypeContainerPause    Type = "container_pause"

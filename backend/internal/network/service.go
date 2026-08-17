@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/netip"
 	"sort"
 	"strings"
 
@@ -238,6 +239,85 @@ func (s *NetworkService) RemoveNetwork(ctx context.Context, id string, user comm
 	}
 	if logErr := s.eventService.LogNetworkEvent(ctx, event.EventTypeNetworkDelete, id, networkName, user.ID, user.Username, "0", metadata); logErr != nil {
 		slog.WarnContext(ctx, "could not log network delete action", "error", logErr)
+	}
+
+	return nil
+}
+
+// ConnectContainer connects a container to a network without recreating it.
+func (s *NetworkService) ConnectContainer(ctx context.Context, networkID string, req networktypes.ConnectContainerRequest, user common.User) error {
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		s.eventService.LogErrorEvent(ctx, event.EventTypeNetworkError, "network", networkID, "", user.ID, user.Username, "0", err, database.JSON{"action": "connect", "containerId": req.ContainerID})
+		return errors.WrapIf(err, "failed to connect to Docker")
+	}
+
+	endpoint := &network.EndpointSettings{Aliases: req.Aliases}
+	ipv4 := strings.TrimSpace(req.IPv4Address)
+	ipv6 := strings.TrimSpace(req.IPv6Address)
+	if ipv4 != "" || ipv6 != "" {
+		ipam := &network.EndpointIPAMConfig{}
+		if ipv4 != "" {
+			addr, parseErr := netip.ParseAddr(ipv4)
+			if parseErr != nil {
+				return common.Classify(common.ErrValidation, errors.WrapIff(parseErr, "invalid IPv4 address %s", ipv4))
+			}
+			ipam.IPv4Address = addr
+		}
+		if ipv6 != "" {
+			addr, parseErr := netip.ParseAddr(ipv6)
+			if parseErr != nil {
+				return common.Classify(common.ErrValidation, errors.WrapIff(parseErr, "invalid IPv6 address %s", ipv6))
+			}
+			ipam.IPv6Address = addr
+		}
+		endpoint.IPAMConfig = ipam
+	}
+
+	if _, err := dockerClient.NetworkConnect(ctx, networkID, client.NetworkConnectOptions{
+		Container:      req.ContainerID,
+		EndpointConfig: endpoint,
+	}); err != nil {
+		s.eventService.LogErrorEvent(ctx, event.EventTypeNetworkError, "network", networkID, "", user.ID, user.Username, "0", err, database.JSON{"action": "connect", "containerId": req.ContainerID})
+		return errors.WrapIf(err, "failed to connect container to network")
+	}
+
+	metadata := database.JSON{
+		"action":      "connect",
+		"networkId":   networkID,
+		"containerId": req.ContainerID,
+	}
+	if logErr := s.eventService.LogNetworkEvent(ctx, event.EventTypeNetworkConnect, networkID, networkID, user.ID, user.Username, "0", metadata); logErr != nil {
+		slog.WarnContext(ctx, "could not log network connect action", "error", logErr)
+	}
+
+	return nil
+}
+
+// DisconnectContainer disconnects a container from a network.
+func (s *NetworkService) DisconnectContainer(ctx context.Context, networkID string, req networktypes.DisconnectContainerRequest, user common.User) error {
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		s.eventService.LogErrorEvent(ctx, event.EventTypeNetworkError, "network", networkID, "", user.ID, user.Username, "0", err, database.JSON{"action": "disconnect", "containerId": req.ContainerID})
+		return errors.WrapIf(err, "failed to connect to Docker")
+	}
+
+	if _, err := dockerClient.NetworkDisconnect(ctx, networkID, client.NetworkDisconnectOptions{
+		Container: req.ContainerID,
+		Force:     req.Force,
+	}); err != nil {
+		s.eventService.LogErrorEvent(ctx, event.EventTypeNetworkError, "network", networkID, "", user.ID, user.Username, "0", err, database.JSON{"action": "disconnect", "containerId": req.ContainerID})
+		return errors.WrapIf(err, "failed to disconnect container from network")
+	}
+
+	metadata := database.JSON{
+		"action":      "disconnect",
+		"networkId":   networkID,
+		"containerId": req.ContainerID,
+		"force":       req.Force,
+	}
+	if logErr := s.eventService.LogNetworkEvent(ctx, event.EventTypeNetworkDisconnect, networkID, networkID, user.ID, user.Username, "0", metadata); logErr != nil {
+		slog.WarnContext(ctx, "could not log network disconnect action", "error", logErr)
 	}
 
 	return nil

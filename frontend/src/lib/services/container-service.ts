@@ -7,7 +7,9 @@ import type {
 	ContainerCreateRequest,
 	ContainerDetailsDto,
 	ContainerCommitRequest,
-	ContainerCommitResult
+	ContainerCommitResult,
+	ContainerEditConfigDto,
+	ContainerEditRequest
 } from '#lib/types/docker';
 import type { SearchPaginationSortRequest, Paginated } from '#lib/types/shared';
 import { transformPaginationParams } from '#lib/utils/tables';
@@ -119,6 +121,16 @@ class ContainerService extends BaseAPIService {
 	async redeployContainer(containerId: string): Promise<ContainerDetailsDto> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		return this.handleResponse(this.api.post(`/environments/${envId}/containers/${containerId}/redeploy`));
+	}
+
+	async getContainerEditConfig(containerId: string, environmentId?: string): Promise<ContainerEditConfigDto> {
+		const envId = await this.resolveEnvironmentId(environmentId);
+		return this.handleResponse(this.api.get(`/environments/${envId}/containers/${containerId}/edit-config`));
+	}
+
+	async editContainer(containerId: string, request: ContainerEditRequest): Promise<ContainerDetailsDto> {
+		const envId = await environmentStore.getCurrentEnvironmentId();
+		return this.handleResponse(this.api.post(`/environments/${envId}/containers/${containerId}/edit`, request));
 	}
 
 	async setAutoUpdate(containerId: string, enabled: boolean): Promise<{ success: boolean; data: { message: string } }> {

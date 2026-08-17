@@ -141,6 +141,21 @@ type CommitContainerInput struct {
 	Body          containertypes.CommitRequest
 }
 
+type GetContainerEditConfigInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	ContainerID   string `path:"containerId" doc:"Container ID"`
+}
+
+type GetContainerEditConfigOutput struct {
+	Body base.ApiResponse[containertypes.EditConfig]
+}
+
+type EditContainerInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	ContainerID   string `path:"containerId" doc:"Container ID"`
+	Body          containertypes.Edit
+}
+
 type CommitContainerOutput struct {
 	Body base.ApiResponse[containertypes.CommitResult]
 }
@@ -265,6 +280,26 @@ func RegisterContainers(api huma.API, containerSvc *ContainerService, dockerSvc 
 		Tags:        []string{"Containers"},
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}, authz.PermContainersRedeploy, h.RedeployContainer)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "get-container-edit-config",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/containers/{containerId}/edit-config",
+		Summary:     "Get container edit config",
+		Description: "Editable configuration snapshot backing the container edit form",
+		Tags:        []string{"Containers"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermContainersRead, h.GetContainerEditConfig)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "edit-container",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/containers/{containerId}/edit",
+		Summary:     "Edit container",
+		Description: "Apply configuration changes and recreate the container",
+		Tags:        []string{"Containers"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermContainersEdit, h.EditContainer)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "delete-container",
@@ -393,6 +428,7 @@ func buildContainerConfig(body containertypes.Create) *dockercontainer.Config {
 		Env:             resolveCreateEnv(body),
 		ExposedPorts:    network.PortSet{},
 		Labels:          buildCreateLabels(body),
+		Healthcheck:     healthConfigFromCreateInternal(body.Healthcheck),
 		Hostname:        body.Hostname,
 		Domainname:      body.Domainname,
 		AttachStdout:    body.AttachStdout,
@@ -501,6 +537,15 @@ func applyHostConfigSettings(hostConfig *dockercontainer.HostConfig, input *cont
 	if input.CPUShares > 0 {
 		hostConfig.CPUShares = input.CPUShares
 	}
+	if len(input.CapAdd) > 0 {
+		hostConfig.CapAdd = input.CapAdd
+	}
+	if len(input.CapDrop) > 0 {
+		hostConfig.CapDrop = input.CapDrop
+	}
+	if len(input.Mounts) > 0 {
+		hostConfig.Mounts = mountsFromCreateInternal(input.Mounts)
+	}
 }
 
 func applyHostConfigOverrides(body containertypes.Create, config *dockercontainer.Config, hostConfig *dockercontainer.HostConfig, portBindings network.PortMap) error {
@@ -531,13 +576,17 @@ func applyLegacyResourceLimits(body containertypes.Create, hostConfig *dockercon
 	}
 }
 
-func buildNetworkingConfig(body containertypes.Create) *network.NetworkingConfig {
+func buildNetworkingConfig(body containertypes.Create) (*network.NetworkingConfig, error) {
 	if body.NetworkingConfig != nil && len(body.NetworkingConfig.EndpointsConfig) > 0 {
 		networkingConfig := &network.NetworkingConfig{EndpointsConfig: make(map[string]*network.EndpointSettings)}
 		for name, endpoint := range body.NetworkingConfig.EndpointsConfig {
-			networkingConfig.EndpointsConfig[name] = &network.EndpointSettings{Aliases: endpoint.Aliases}
+			ipam, err := endpointIPAMFromCreateInternal(endpoint)
+			if err != nil {
+				return nil, err
+			}
+			networkingConfig.EndpointsConfig[name] = &network.EndpointSettings{Aliases: endpoint.Aliases, IPAMConfig: ipam}
 		}
-		return networkingConfig
+		return networkingConfig, nil
 	}
 
 	if len(body.Networks) > 0 {
@@ -545,10 +594,10 @@ func buildNetworkingConfig(body containertypes.Create) *network.NetworkingConfig
 		for _, net := range body.Networks {
 			networkingConfig.EndpointsConfig[net] = &network.EndpointSettings{}
 		}
-		return networkingConfig
+		return networkingConfig, nil
 	}
 
-	return nil
+	return nil, nil
 }
 
 func (h *ContainerHandler) CreateContainer(ctx context.Context, input *CreateContainerInput) (*CreateContainerOutput, error) {
@@ -572,7 +621,10 @@ func (h *ContainerHandler) CreateContainer(ctx context.Context, input *CreateCon
 	}
 	applyLegacyResourceLimits(input.Body, hostConfig)
 
-	networkingConfig := buildNetworkingConfig(input.Body)
+	networkingConfig, err := buildNetworkingConfig(input.Body)
+	if err != nil {
+		return nil, huma.Error400BadRequest(errors.WithMessage(err, "Invalid network configuration").Error())
+	}
 
 	containerJSON, err := h.containerService.CreateContainer(ctx, config, hostConfig, networkingConfig, input.Body.Name, *user, input.Body.Credentials)
 	if err != nil {
@@ -795,6 +847,77 @@ func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *Contain
 	}
 
 	// Container was redeployed successfully, but we couldn't fetch full details.
+	// Return minimal response with just the ID so frontend can still navigate.
+	return &GetContainerOutput{
+		Body: base.ApiResponse[containertypes.Details]{
+			Success: true,
+			Data: containertypes.Details{
+				ID:         newContainerID,
+				ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer(),
+			},
+		},
+	}, nil
+}
+
+func (h *ContainerHandler) GetContainerEditConfig(ctx context.Context, input *GetContainerEditConfigInput) (*GetContainerEditConfigOutput, error) {
+	editConfig, err := h.containerService.GetContainerEditConfig(ctx, input.ContainerID)
+	if err != nil {
+		return nil, huma.Error404NotFound(errors.WithMessage(err, "Failed to retrieve container").Error())
+	}
+
+	return &GetContainerEditConfigOutput{
+		Body: base.ApiResponse[containertypes.EditConfig]{
+			Success: true,
+			Data:    editConfig,
+		},
+	}, nil
+}
+
+func editContainerHTTPErrorInternal(err error) error {
+	switch {
+	case errors.Is(err, common.ErrConflict):
+		return huma.Error409Conflict(err.Error())
+	case errors.Is(err, common.ErrValidation):
+		return huma.Error400BadRequest(err.Error())
+	default:
+		return huma.Error500InternalServerError(errors.WithMessage(err, "Failed to edit container").Error())
+	}
+}
+
+func (h *ContainerHandler) EditContainer(ctx context.Context, input *EditContainerInput) (*GetContainerOutput, error) {
+	user, err := handlerutil.RequireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	activityID, runtimeCtx := activitylib.StartHandlerActivity(runtimeCtx, h.activityService, input.EnvironmentID, activitytypes.TypeContainerEdit, "container", input.ContainerID, input.ContainerID, user, "Starting edit", "Container edit requested", database.JSON{"containerID": input.ContainerID}, true)
+	activitylib.AwaitHandlerActivitySlot(runtimeCtx, h.activityService, activityID, input.EnvironmentID)
+	activityWriter := activitylib.NewWriter(runtimeCtx, h.activityService, activityID, io.Discard, "Editing container")
+	editCtx := context.WithValue(runtimeCtx, dockerutils.ProgressWriterKey{}, activityWriter)
+	newContainerID, err := h.containerService.EditContainer(editCtx, input.ContainerID, input.Body, *user)
+	if err != nil {
+		activitylib.FlushWriter(activityWriter)
+		activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Container edit failed", err)
+		return nil, editContainerHTTPErrorInternal(err)
+	}
+	activitylib.FlushWriter(activityWriter)
+	activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Container edited", nil)
+
+	// Fetch full container details to return (consistent with redeploy)
+	details, inspectErr := h.containerService.GetContainerDetails(runtimeCtx, newContainerID)
+	if inspectErr == nil {
+		details.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
+
+		return &GetContainerOutput{
+			Body: base.ApiResponse[containertypes.Details]{
+				Success: true,
+				Data:    details,
+			},
+		}, nil
+	}
+
+	// Container was recreated successfully, but we couldn't fetch full details.
 	// Return minimal response with just the ID so frontend can still navigate.
 	return &GetContainerOutput{
 		Body: base.ApiResponse[containertypes.Details]{

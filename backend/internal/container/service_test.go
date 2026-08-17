@@ -26,6 +26,7 @@ import (
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
@@ -367,3 +368,149 @@ func setupProjectTestDBInternal(t *testing.T) *database.DB {
 }
 
 var dockerAPIVersionPrefixInternal = regexp.MustCompile(`^/v[0-9]+\.[0-9]+`)
+
+func TestApplyEditPreservesUnmanagedSettingsInternal(t *testing.T) {
+	cfg := container.Config{
+		Image:        "nginx:1.25",
+		Env:          []string{"OLD=1"},
+		StopSignal:   "SIGQUIT",
+		ExposedPorts: network.PortSet{network.MustParsePort("80/tcp"): {}, network.MustParsePort("9000/tcp"): {}},
+	}
+	hc := container.HostConfig{
+		Binds:        []string{"/data:/data"},
+		PortBindings: network.PortMap{network.MustParsePort("80/tcp"): {{HostPort: "8080"}}},
+		Sysctls:      map[string]string{"net.core.somaxconn": "1024"},
+		LogConfig:    container.LogConfig{Type: "json-file", Config: map[string]string{"max-size": "5m"}},
+	}
+	hc.Ulimits = []*container.Ulimit{{Name: "nofile", Soft: 1024, Hard: 2048}}
+
+	env := []string{"NEW=1"}
+	req := containertypes.Edit{Environment: &env}
+
+	require.NoError(t, applyEditToContainerConfigInternal(&cfg, hc.PortBindings, req))
+	require.NoError(t, applyEditToHostConfigInternal(&hc, req))
+
+	require.Equal(t, []string{"NEW=1"}, cfg.Env)
+	require.Equal(t, "SIGQUIT", cfg.StopSignal)
+	require.Equal(t, map[string]string{"net.core.somaxconn": "1024"}, hc.Sysctls)
+	require.Equal(t, "json-file", hc.LogConfig.Type)
+	require.Len(t, hc.Ulimits, 1)
+	require.Equal(t, []string{"/data:/data"}, hc.Binds)
+	require.Contains(t, cfg.ExposedPorts, network.MustParsePort("80/tcp"))
+}
+
+func TestMergeEditMountsPreservesMountOptionsInternal(t *testing.T) {
+	existing := []mount.Mount{
+		{
+			Type:          mount.TypeVolume,
+			Source:        "data",
+			Target:        "/data",
+			VolumeOptions: &mount.VolumeOptions{NoCopy: true, Labels: map[string]string{"keep": "me"}},
+		},
+		{Type: mount.TypeTmpfs, Target: "/tmp/scratch", TmpfsOptions: &mount.TmpfsOptions{SizeBytes: 1024}},
+	}
+
+	// Round-trip the volume mount (toggling read-only) and drop the tmpfs one.
+	requested := []containertypes.MountCreate{{Type: "volume", Source: "data", Target: "/data", ReadOnly: true}}
+
+	out := mergeEditMountsInternal(existing, requested)
+	require.Len(t, out, 1)
+	require.True(t, out[0].ReadOnly)
+	require.NotNil(t, out[0].VolumeOptions)
+	require.Equal(t, map[string]string{"keep": "me"}, out[0].VolumeOptions.Labels)
+}
+
+func TestMergeEditMountsAppliesSourceChangeInternal(t *testing.T) {
+	existing := []mount.Mount{
+		{
+			Type:          mount.TypeVolume,
+			Source:        "old-volume",
+			Target:        "/data",
+			VolumeOptions: &mount.VolumeOptions{NoCopy: true, Labels: map[string]string{"keep": "me"}},
+		},
+		{
+			Type:        mount.TypeBind,
+			Source:      "/old/path",
+			Target:      "/config",
+			BindOptions: &mount.BindOptions{Propagation: mount.PropagationRPrivate},
+		},
+	}
+
+	// Same type and target but a different source must honor the new source
+	// while retaining the original driver options.
+	requested := []containertypes.MountCreate{
+		{Type: "volume", Source: "new-volume", Target: "/data"},
+		{Type: "bind", Source: "/new/path", Target: "/config", ReadOnly: true},
+	}
+
+	out := mergeEditMountsInternal(existing, requested)
+	require.Len(t, out, 2)
+	require.Equal(t, "new-volume", out[0].Source)
+	require.NotNil(t, out[0].VolumeOptions)
+	require.Equal(t, map[string]string{"keep": "me"}, out[0].VolumeOptions.Labels)
+	require.Equal(t, "/new/path", out[1].Source)
+	require.True(t, out[1].ReadOnly)
+	require.NotNil(t, out[1].BindOptions)
+	require.Equal(t, mount.PropagationRPrivate, out[1].BindOptions.Propagation)
+}
+
+func TestApplyEditRecomputesExposedPortsInternal(t *testing.T) {
+	cfg := container.Config{
+		ExposedPorts: network.PortSet{
+			network.MustParsePort("80/tcp"):   {},
+			network.MustParsePort("9000/tcp"): {},
+		},
+	}
+	hc := container.HostConfig{
+		PortBindings: network.PortMap{network.MustParsePort("80/tcp"): {{HostPort: "8080"}}},
+	}
+
+	newBindings := map[string][]containertypes.PortBindingCreate{"443/tcp": {{HostPort: "8443"}}}
+	req := containertypes.Edit{HostConfig: &containertypes.HostConfigEdit{PortBindings: &newBindings}}
+
+	require.NoError(t, applyEditToContainerConfigInternal(&cfg, hc.PortBindings, req))
+	require.NoError(t, applyEditToHostConfigInternal(&hc, req))
+
+	// new binding key + previously-exposed-but-unbound port survive; the old bound port is gone
+	require.Contains(t, cfg.ExposedPorts, network.MustParsePort("443/tcp"))
+	require.Contains(t, cfg.ExposedPorts, network.MustParsePort("9000/tcp"))
+	require.NotContains(t, cfg.ExposedPorts, network.MustParsePort("80/tcp"))
+	require.Contains(t, hc.PortBindings, network.MustParsePort("443/tcp"))
+}
+
+func TestBuildEditNetworkingConfigInternal(t *testing.T) {
+	containerInspect := container.InspectResponse{
+		HostConfig: &container.HostConfig{NetworkMode: "my-net"},
+		NetworkSettings: &container.NetworkSettings{
+			Networks: map[string]*network.EndpointSettings{
+				"my-net": {Aliases: []string{"svc"}, DNSNames: []string{"svc"}},
+			},
+		},
+	}
+
+	// nil request preserves existing attachments
+	out, err := buildEditNetworkingConfigInternal(containerInspect, nil, "1.44")
+	require.NoError(t, err)
+	require.NotNil(t, out)
+	require.Contains(t, out.EndpointsConfig, "my-net")
+
+	// explicit desired set: keep my-net with new alias + static IP, add other-net
+	req := &containertypes.NetworkingConfigCreate{
+		EndpointsConfig: map[string]containertypes.EndpointSettingsCreate{
+			"my-net":    {Aliases: []string{"renamed"}, IPv4Address: "10.5.0.9"},
+			"other-net": {},
+		},
+	}
+	out, err = buildEditNetworkingConfigInternal(containerInspect, req, "1.44")
+	require.NoError(t, err)
+	require.Len(t, out.EndpointsConfig, 2)
+	require.Equal(t, []string{"renamed"}, out.EndpointsConfig["my-net"].Aliases)
+	require.Equal(t, netip.MustParseAddr("10.5.0.9"), out.EndpointsConfig["my-net"].IPAMConfig.IPv4Address)
+	require.Equal(t, []string{"svc"}, out.EndpointsConfig["my-net"].DNSNames)
+
+	// host network mode: endpoint edits are skipped entirely
+	hostModeInspect := container.InspectResponse{HostConfig: &container.HostConfig{NetworkMode: "host"}}
+	out, err = buildEditNetworkingConfigInternal(hostModeInspect, req, "1.44")
+	require.NoError(t, err)
+	require.Nil(t, out)
+}

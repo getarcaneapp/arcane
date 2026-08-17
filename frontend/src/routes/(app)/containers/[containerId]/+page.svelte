@@ -46,7 +46,7 @@
 	import { environmentStore } from '#lib/stores/environment.store.svelte';
 	import { hasPermission } from '#lib/utils/auth';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import { ImagesIcon, PauseIcon, PlayIcon, UpdateIcon, ZapIcon } from '#lib/icons';
+	import { EditIcon, ImagesIcon, PauseIcon, PlayIcon, UpdateIcon, ZapIcon } from '#lib/icons';
 	import { runContainerLifecycleAction, confirmAndUpdateContainer } from '#lib/utils/container-actions';
 	import { imageService } from '#lib/services/image-service';
 	import type { ImageUpdateInfoDto } from '#lib/types/docker';
@@ -136,6 +136,9 @@
 	const canExecShell = $derived(hasPermission('containers:exec', currentEnvId));
 	const canPauseContainer = $derived(hasPermission('containers:pause', currentEnvId));
 	const canUpdateContainer = $derived(hasPermission('containers:autoupdate', currentEnvId));
+	const canEditContainer = $derived(
+		hasPermission('containers:edit', currentEnvId) && !container?.composeInfo && !container?.redeployDisabled
+	);
 	const canKillContainer = $derived(hasPermission('containers:kill', currentEnvId));
 	const canCommitImage = $derived(hasPermission('images:commit', currentEnvId));
 	const containerStatus = $derived(container?.state?.status ?? '');
@@ -373,6 +376,17 @@
 					disableRedeploy={!!container.redeployDisabled}
 				>
 					{#snippet beforeRemoveActions(size, showLabel, actionButtonsLifecyclePending)}
+						{#if canEditContainer}
+							<ArcaneButton
+								action="base"
+								{size}
+								{showLabel}
+								customLabel={m.common_edit()}
+								icon={EditIcon}
+								disabled={actionButtonsLifecyclePending}
+								href={`/containers/${container.id}/edit`}
+							/>
+						{/if}
 						{#if canUpdateContainer && updateInfo?.hasUpdate}
 							<ArcaneButton
 								action="base"

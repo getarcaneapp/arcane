@@ -127,6 +127,7 @@ const (
 	PermContainersStop       = "containers:stop"
 	PermContainersRestart    = "containers:restart"
 	PermContainersRedeploy   = "containers:redeploy"
+	PermContainersEdit       = "containers:edit"
 	PermContainersKill       = "containers:kill"
 	PermContainersPause      = "containers:pause"
 	PermContainersDelete     = "containers:delete"
@@ -163,11 +164,13 @@ const (
 	PermVolumesUpload = "volumes:upload"
 	PermVolumesBackup = "volumes:backup"
 
-	PermNetworksList   = "networks:list"
-	PermNetworksRead   = "networks:read"
-	PermNetworksCreate = "networks:create"
-	PermNetworksDelete = "networks:delete"
-	PermNetworksPrune  = "networks:prune"
+	PermNetworksList       = "networks:list"
+	PermNetworksRead       = "networks:read"
+	PermNetworksCreate     = "networks:create"
+	PermNetworksDelete     = "networks:delete"
+	PermNetworksPrune      = "networks:prune"
+	PermNetworksConnect    = "networks:connect"
+	PermNetworksDisconnect = "networks:disconnect"
 
 	PermSwarmRead         = "swarm:read"
 	PermSwarmInit         = "swarm:init"
@@ -320,11 +323,11 @@ func BuiltInEditorPermissions() []string {
 		PermS3DestinationsList, PermS3DestinationsRead,
 		PermEventsRead,
 		// Full env-scoped Docker management
-		PermContainersList, PermContainersRead, PermContainersLogs, PermContainersCreate, PermContainersStart, PermContainersStop, PermContainersRestart, PermContainersRedeploy, PermContainersKill, PermContainersPause, PermContainersDelete, PermContainersExec, PermContainersAutoUpdate,
+		PermContainersList, PermContainersRead, PermContainersLogs, PermContainersCreate, PermContainersStart, PermContainersStop, PermContainersRestart, PermContainersRedeploy, PermContainersEdit, PermContainersKill, PermContainersPause, PermContainersDelete, PermContainersExec, PermContainersAutoUpdate,
 		PermProjectsList, PermProjectsRead, PermProjectsLogs, PermProjectsCreate, PermProjectsUpdate, PermProjectsDeploy, PermProjectsDown, PermProjectsRestart, PermProjectsDelete, PermProjectsArchive,
 		PermImagesList, PermImagesRead, PermImagesPull, PermImagesPush, PermImagesBuild, PermImagesTag, PermImagesCommit, PermImagesPrune, PermImagesDelete, PermImagesUpload,
 		PermVolumesList, PermVolumesRead, PermVolumesCreate, PermVolumesDelete, PermVolumesPrune, PermVolumesUpload, PermVolumesBackup,
-		PermNetworksList, PermNetworksRead, PermNetworksCreate, PermNetworksDelete, PermNetworksPrune,
+		PermNetworksList, PermNetworksRead, PermNetworksCreate, PermNetworksDelete, PermNetworksPrune, PermNetworksConnect, PermNetworksDisconnect,
 		PermSwarmRead, PermSwarmSpec, PermSwarmNodes, PermSwarmServices, PermSwarmServicesLogs, PermSwarmStacks, PermSwarmConfigs, PermSwarmSecrets,
 		PermGitOpsList, PermGitOpsRead, PermGitOpsCreate, PermGitOpsUpdate, PermGitOpsDelete, PermGitOpsSync,
 		PermWebhooksList, PermWebhooksCreate, PermWebhooksUpdate, PermWebhooksDelete,
@@ -347,7 +350,7 @@ func BuiltInDeployerPermissions() []string {
 		PermTemplatesList, PermTemplatesRead,
 		PermVariablesRead,
 		PermEventsRead,
-		PermContainersList, PermContainersRead, PermContainersLogs, PermContainersStart, PermContainersStop, PermContainersRestart, PermContainersRedeploy, PermContainersKill, PermContainersPause,
+		PermContainersList, PermContainersRead, PermContainersLogs, PermContainersStart, PermContainersStop, PermContainersRestart, PermContainersRedeploy, PermContainersEdit, PermContainersKill, PermContainersPause,
 		PermProjectsList, PermProjectsRead, PermProjectsLogs, PermProjectsDeploy, PermProjectsDown, PermProjectsRestart,
 		PermImagesList, PermImagesRead, PermImagesPull, PermImagesTag, PermImagesCommit,
 		PermVolumesList, PermVolumesRead,
