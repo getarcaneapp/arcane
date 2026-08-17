@@ -12,10 +12,11 @@ const (
 )
 
 const (
-	FileReadOnlyBinary   = "binary"
-	FileReadOnlyTooLarge = "too_large"
-	FileReadOnlySymlink  = "symlink"
-	FileReadOnlySpecial  = "special"
+	FileReadOnlyBinary        = "binary"
+	FileReadOnlyTooLarge      = "too_large"
+	FileReadOnlySymlink       = "symlink"
+	FileReadOnlySpecial       = "special"
+	FileReadOnlyGitOpsManaged = "gitops_managed"
 )
 
 type FileEntry struct {
@@ -29,7 +30,7 @@ type FileEntry struct {
 	IsDirectory    bool      `json:"isDirectory" doc:"Whether this entry is a directory"`
 	IsSymlink      bool      `json:"isSymlink" doc:"Whether this entry is a symbolic link"`
 	Editable       bool      `json:"editable" doc:"Whether this entry can be edited"`
-	ReadOnlyReason string    `json:"readOnlyReason,omitempty" enum:"binary,too_large,symlink,special"`
+	ReadOnlyReason string    `json:"readOnlyReason,omitempty" enum:"binary,too_large,symlink,special,gitops_managed"`
 }
 
 type FileChange struct {
@@ -63,5 +64,5 @@ type FileContent struct {
 	MimeType       string `json:"mimeType"`
 	Size           int64  `json:"size"`
 	Editable       bool   `json:"editable"`
-	ReadOnlyReason string `json:"readOnlyReason,omitempty" enum:"binary,too_large,symlink,special"`
+	ReadOnlyReason string `json:"readOnlyReason,omitempty" enum:"binary,too_large,symlink,special,gitops_managed"`
 }

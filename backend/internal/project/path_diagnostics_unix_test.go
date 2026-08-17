@@ -68,31 +68,3 @@ func TestLifecycleDiagnosticPaths_RemainsInsideProject(t *testing.T) {
 	assert.Equal(t, filepath.Join(dir, "scripts"), got[1])
 	assert.Equal(t, scriptPath, got[2])
 }
-
-func TestValidateScriptPath_PermissionDeniedIncludesDiagnostics(t *testing.T) {
-	if os.Geteuid() == 0 {
-		t.Skip("root bypasses ordinary filesystem permission checks")
-	}
-
-	dir := t.TempDir()
-	blockedDir := filepath.Join(dir, "blocked")
-	scriptPath := filepath.Join(blockedDir, "pre-deploy.sh")
-
-	require.NoError(t, os.MkdirAll(blockedDir, 0o700))
-	require.NoError(t, os.WriteFile(scriptPath, []byte("#!/bin/sh\n"), 0o755))
-	require.NoError(t, os.Chmod(blockedDir, 0o000))
-	t.Cleanup(func() {
-		_ = os.Chmod(blockedDir, 0o700)
-	})
-
-	err := validateScriptPathInternal(t.Context(), dir, "blocked/pre-deploy.sh")
-
-	require.Error(t, err)
-	require.ErrorIs(t, err, os.ErrPermission)
-	assert.Contains(t, err.Error(), "Arcane pre-deploy validation")
-	assert.Contains(t, err.Error(), "Arcane process identity: uid=")
-	assert.Contains(t, err.Error(), blockedDir)
-	assert.Contains(t, err.Error(), scriptPath)
-	assert.Contains(t, err.Error(), "permission denied")
-	assert.Contains(t, err.Error(), "A script mode of 0755 is not sufficient")
-}

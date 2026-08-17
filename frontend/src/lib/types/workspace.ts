@@ -1,4 +1,4 @@
-export type WorkspaceReadOnlyReason = 'binary' | 'too_large' | 'symlink' | 'special';
+export type WorkspaceReadOnlyReason = 'binary' | 'too_large' | 'symlink' | 'special' | 'gitops_managed';
 
 export interface WorkspaceFileEntry {
 	path: string;

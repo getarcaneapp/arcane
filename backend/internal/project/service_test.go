@@ -88,6 +88,30 @@ func TestUpdateProjectWorkspaceRejectsInvalidManifestBeforeProjectLookup(t *test
 	require.ErrorContains(t, err, "revision")
 }
 
+func TestValidateWorkspaceChangesAgainstGitOps(t *testing.T) {
+	owned := map[string]struct{}{"compose.yaml": {}, "conf/app.conf": {}}
+
+	err := validateWorkspaceChangesAgainstGitOpsInternal([]projecttypes.WorkspaceFileChange{
+		{Operation: projecttypes.FileOpUpdateFile, RelativePath: "conf/app.conf"},
+	}, owned)
+	require.ErrorIs(t, err, common.ErrProjectWorkspaceForbidden)
+	require.ErrorContains(t, err, "conf/app.conf")
+
+	// Recursively deleting a folder that still holds a sync-owned file must
+	// also be rejected.
+	err = validateWorkspaceChangesAgainstGitOpsInternal([]projecttypes.WorkspaceFileChange{
+		{Operation: projecttypes.FileOpDelete, RelativePath: "conf", Recursive: true},
+	}, owned)
+	require.ErrorIs(t, err, common.ErrProjectWorkspaceForbidden)
+
+	// The operator overlay (e.g. a secret env file the repo cannot carry)
+	// stays editable.
+	err = validateWorkspaceChangesAgainstGitOpsInternal([]projecttypes.WorkspaceFileChange{
+		{Operation: projecttypes.FileOpCreateFile, RelativePath: "app.env"},
+	}, owned)
+	require.NoError(t, err)
+}
+
 func newSettingsServiceForTestInternal(t *testing.T, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
 	t.Helper()
 	lifecycle := fxtest.NewLifecycle(t)

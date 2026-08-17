@@ -192,33 +192,19 @@ func TestValidateScriptPath_RejectsMissingFile(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestDescribeScriptStatError_PermissionDeniedIsActionable(t *testing.T) {
-	err := describeScriptStatErrorInternal(
-		os.ErrPermission,
-		"/app/data/projects/example",
-		"scripts/pre-deploy.sh",
-		"/app/data/projects/example/scripts/pre-deploy.sh",
-	)
+func TestValidateScriptPath_PermissionDeniedProceeds(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root; directory permissions are not enforced")
+	}
+	dir := writeLifecycleProjectDirWithScript(t, "scripts/pre-deploy.sh", "#!/bin/sh\necho hi\n")
+	scripts := filepath.Join(dir, "scripts")
+	require.NoError(t, os.Chmod(scripts, 0o000))
+	t.Cleanup(func() { require.NoError(t, os.Chmod(scripts, 0o755)) })
 
-	require.Error(t, err)
-	require.ErrorIs(t, err, os.ErrPermission)
-	assert.Contains(t, err.Error(), "Arcane pre-deploy validation")
-	assert.Contains(t, err.Error(), "permission denied")
-	assert.Contains(t, err.Error(), "scripts/pre-deploy.sh")
-}
-
-func TestDescribeScriptStatError_PreservesGenericStatFailure(t *testing.T) {
-	err := describeScriptStatErrorInternal(
-		os.ErrNotExist,
-		"/app/data/projects/example",
-		"missing.sh",
-		"/app/data/projects/example/missing.sh",
-	)
-
-	require.Error(t, err)
-	require.ErrorIs(t, err, os.ErrNotExist)
-	assert.Contains(t, err.Error(), `stat script "missing.sh"`)
-	assert.NotContains(t, err.Error(), "Arcane pre-deploy validation could not inspect")
+	// The runner container may still be able to read the script even though
+	// Arcane's uid cannot (#3373), so the stat failure must not block the run.
+	err := validateScriptPathInternal(t.Context(), dir, "scripts/pre-deploy.sh")
+	require.NoError(t, err)
 }
 
 func TestValidateScriptPath_RejectsDirectory(t *testing.T) {
@@ -434,8 +420,7 @@ func TestRunPreDeploy_PathTraversalRejected(t *testing.T) {
 
 func TestLoadGitOpsSyncForProject_ReturnsNilWhenAbsent(t *testing.T) {
 	db := setupLifecycleTestDB(t)
-	svc, _ := newLifecycleTestService(t, db)
-	sync, err := svc.loadGitOpsSyncForProjectInternal(context.Background(), "nonexistent")
+	sync, err := loadGitOpsSyncForProjectInternal(context.Background(), db, "nonexistent")
 	require.NoError(t, err)
 	assert.Nil(t, sync)
 }
