@@ -2834,6 +2834,7 @@
   "deploy_pull_policy_always": "总是拉取最新",
   "deploy_pull_policy_never": "从不拉取",
   "deploy_force_recreate": "强制重建容器",
+  "deploy_remove_orphans": "删除孤立容器",
   "deploy_recreate_volumes": "重建已更改的卷（数据丢失）",
   "settings_default_deploy_pull_policy": "默认部署拉取策略",
   "settings_default_deploy_pull_policy_description": "部署项目时的默认镜像拉取策略。compose 文件中为每个服务设置的 pull_policy 具有优先级，包括刷新周期（每日、每周、每 N 天）。",
