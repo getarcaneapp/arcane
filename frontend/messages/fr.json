@@ -2834,6 +2834,7 @@
   "deploy_pull_policy_always": "Toujours tirer la dernière version",
   "deploy_pull_policy_never": "Ne jamais tirer",
   "deploy_force_recreate": "Forcer la recréation des conteneurs",
+  "deploy_remove_orphans": "Supprimer les conteneurs orphelins",
   "deploy_recreate_volumes": "Recréer les volumes modifiés (perte de données)",
   "settings_default_deploy_pull_policy": "Règle de tirage de déploiement par défaut",
   "settings_default_deploy_pull_policy_description": "Politique de récupération d'images par défaut lors du déploiement des projets. Une politique de récupération (pull_policy) définie pour chaque service dans le fichier Compose prévaut, y compris les intervalles de rafraîchissement (quotidien, hebdomadaire, tous les N).",
