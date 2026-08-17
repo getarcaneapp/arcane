@@ -2834,6 +2834,7 @@
   "deploy_pull_policy_always": "總是拉取最新的",
   "deploy_pull_policy_never": "永不拉取",
   "deploy_force_recreate": "強制重新建立容器",
+  "deploy_remove_orphans": "移除孤立容器",
   "deploy_recreate_volumes": "重建已變更的卷（會導致資料遺失）",
   "settings_default_deploy_pull_policy": "預設部署拉取原則",
   "settings_default_deploy_pull_policy_description": "部署專案時的預設影像拉取政策。compose 檔案中針對各服務設定的 pull_policy 將具有優先權，其中包含刷新時段（每日、每週、every_N）。",
