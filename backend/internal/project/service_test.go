@@ -756,8 +756,8 @@ func TestProjectService_EnsureImagesPresent_UpdatesCurrentImageRecordAfterPull(t
 		CheckTime:      time.Now().UTC().Add(-time.Hour),
 	}).Error)
 
-	require.NoError(t, svc.ensureImagesPresent(ctx, map[string]projects.ImagePullMode{
-		imageRef: projects.ImagePullModeAlways,
+	require.NoError(t, svc.ensureImagesPresent(ctx, map[string]projects.ImagePullStep{
+		imageRef: {Mode: projects.ImagePullModeAlways},
 	}, io.Discard, nil, common.SystemUser))
 
 	// sha256:old-api may still be in use by another container — pulling for one container

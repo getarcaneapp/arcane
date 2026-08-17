@@ -682,15 +682,27 @@ func (s *ProjectService) EnsureProjectImagesPresent(ctx context.Context, project
 	return s.ensureImagesPresent(ctx, pullPlan, progressWriter, credentials, user)
 }
 
-func (s *ProjectService) ensureImagesPresent(ctx context.Context, pullPlan map[string]projects.ImagePullMode, progressWriter io.Writer, credentials []containerregistry.Credential, user common.User) error {
-	for img, mode := range pullPlan {
+// imageRefreshDueInternal reports whether a pull_policy refresh window has
+// elapsed for a locally present image, using the engine's last-tag time as
+// compose v5.5.0 does; an unknown time counts as due.
+func (s *ProjectService) imageRefreshDueInternal(ctx context.Context, imageRef string, window time.Duration) bool {
+	lastTagged, err := s.imageService.ImageLastTagTime(ctx, imageRef)
+	if err != nil {
+		slog.WarnContext(ctx, "failed to resolve image last-tag time; treating refresh as due", "image", imageRef, "error", err)
+		return true
+	}
+	return lastTagged.IsZero() || time.Now().After(lastTagged.Add(window))
+}
+
+func (s *ProjectService) ensureImagesPresent(ctx context.Context, pullPlan map[string]projects.ImagePullStep, progressWriter io.Writer, credentials []containerregistry.Credential, user common.User) error {
+	for img, step := range pullPlan {
 		exists, ierr := s.imageService.ImageExistsLocally(ctx, img)
-		if ierr != nil && mode != projects.ImagePullModeAlways {
+		if ierr != nil && step.Mode != projects.ImagePullModeAlways {
 			slog.WarnContext(ctx, "failed to check local image existence", "image", img, "error", ierr)
 			// Non-fatal: attempt to pull to be safe
 		}
 
-		if mode == projects.ImagePullModeNever {
+		if step.Mode == projects.ImagePullModeNever {
 			if ierr != nil {
 				slog.WarnContext(ctx, "pull_policy is 'never' but image presence check failed; continuing without pull", "image", img, "error", ierr)
 				continue
@@ -702,8 +714,13 @@ func (s *ProjectService) ensureImagesPresent(ctx context.Context, pullPlan map[s
 			continue
 		}
 
-		if mode == projects.ImagePullModeIfMissing && exists {
+		if step.Mode == projects.ImagePullModeIfMissing && exists {
 			slog.DebugContext(ctx, "image already present locally; skipping pull", "image", img)
+			continue
+		}
+
+		if step.Mode == projects.ImagePullModeRefresh && exists && !s.imageRefreshDueInternal(ctx, img, step.RefreshAfter) {
+			slog.DebugContext(ctx, "pull_policy refresh window has not elapsed; skipping pull", "image", img, "window", step.RefreshAfter)
 			continue
 		}
 
@@ -753,6 +770,8 @@ func (s *ProjectService) prepareProjectImagesForDeploy(
 			dependentDecision = projects.DeployImageDecision{RequireLocalOnly: true}
 		case decision.PullAlways:
 			dependentDecision = projects.DeployImageDecision{PullAlways: true}
+		case decision.PullIfStale:
+			dependentDecision = projects.DeployImageDecision{PullIfStale: true, StaleAfter: decision.StaleAfter}
 		}
 		dependentImages := api.GetDependentImages(svc, project.Name)
 		for _, vol := range svc.Volumes {
@@ -798,7 +817,17 @@ func (s *ProjectService) ensureDeployServiceImageReady(
 		return nil
 	}
 
-	if !projects.ShouldPullDeployImage(decision, exists) {
+	var lastTagged time.Time
+	if decision.PullIfStale && exists {
+		var tagErr error
+		lastTagged, tagErr = s.imageService.ImageLastTagTime(ctx, imageName)
+		if tagErr != nil {
+			// Unknown last-tag time counts as stale, matching the missing-record
+			// behavior of compose's refresh handling.
+			slog.WarnContext(ctx, "failed to resolve image last-tag time; treating refresh as due", "image", imageName, "error", tagErr)
+		}
+	}
+	if !projects.ShouldPullDeployImage(decision, exists, lastTagged) {
 		return nil
 	}
 

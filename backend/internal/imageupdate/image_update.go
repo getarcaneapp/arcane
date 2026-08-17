@@ -454,6 +454,16 @@ func (s *ImageUpdateService) checkDigestUpdateWithSnapshotInternal(ctx context.C
 		}
 	}
 
+	// This comparison is deliberately index-level: local RepoDigests record the
+	// multi-platform index digest a tag resolved to at pull time, and the
+	// registry digest above is the same index-level value — "update available"
+	// answers "would a pull fetch something new for this tag". Compose (v5.5.0+)
+	// instead recreates containers based on the platform-specific manifest
+	// digest in its com.docker.compose.image label, so a multi-arch tag whose
+	// *other* platform changed can show an update here while a redeploy
+	// correctly recreates nothing; the pull still clears the badge. Do not
+	// "align" this to platform-level digests — that would require per-platform
+	// registry manifest fetches for no user-visible gain.
 	localDigest := snapshot.PrimaryDigest
 	hasUpdate := true
 	for _, localDig := range snapshot.AllDigests {
