@@ -240,6 +240,22 @@ func (s *ImageService) PullImage(ctx context.Context, imageName string, progress
 	return nil
 }
 
+// ImageLastTagTime returns when the local image was last tagged, zero when the
+// engine doesn't report it. Pull-policy refresh windows compare against this
+// timestamp, the same clock compose v5.5.0 uses.
+func (s *ImageService) ImageLastTagTime(ctx context.Context, imageName string) (time.Time, error) {
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		return time.Time{}, errors.WrapIf(err, "failed to connect to Docker")
+	}
+
+	inspect, err := dockerClient.ImageInspect(ctx, imageName)
+	if err != nil {
+		return time.Time{}, errors.WrapIff(err, "failed to inspect image %s", imageName)
+	}
+	return inspect.Metadata.LastTagTime, nil
+}
+
 func (s *ImageService) ReconcilePulledImageUpdate(ctx context.Context, imageName string) error {
 	if s.imageUpdateService == nil {
 		return nil

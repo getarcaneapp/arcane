@@ -3,6 +3,7 @@ package projects
 import (
 	"log/slog"
 	"strings"
+	"time"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	composeapi "github.com/docker/compose/v5/pkg/api"
@@ -16,85 +17,107 @@ const (
 	ImagePullModeNever ImagePullMode = iota
 	// ImagePullModeIfMissing pulls only when the image is missing locally.
 	ImagePullModeIfMissing
+	// ImagePullModeRefresh pulls when the image is missing locally or was last
+	// tagged longer ago than the policy's refresh window.
+	ImagePullModeRefresh
 	// ImagePullModeAlways pulls even when the image is present locally.
 	ImagePullModeAlways
 )
 
+// ImagePullStep is one entry of an image pull plan: the mode plus, for
+// ImagePullModeRefresh, the window after which a new pull is due.
+type ImagePullStep struct {
+	Mode         ImagePullMode
+	RefreshAfter time.Duration
+}
+
 // DeployImageDecision describes how deploy should handle a service image.
 type DeployImageDecision struct {
-	Build                   bool
-	PullAlways              bool
-	PullIfMissing           bool
+	Build         bool
+	PullAlways    bool
+	PullIfMissing bool
+	// PullIfStale pulls when the image is missing or its last-tag time is
+	// older than StaleAfter (pull_policy daily/weekly/every_N).
+	PullIfStale             bool
+	StaleAfter              time.Duration
 	FallbackBuildOnPullFail bool
 	RequireLocalOnly        bool
 }
 
-// ResolveServiceImagePullMode resolves compose pull_policy into Arcane's pull mode.
-func ResolveServiceImagePullMode(svc composetypes.ServiceConfig) ImagePullMode {
+// ResolveServiceImagePullMode resolves compose pull_policy into Arcane's pull step.
+func ResolveServiceImagePullMode(svc composetypes.ServiceConfig) ImagePullStep {
 	rawPolicy := strings.ToLower(strings.TrimSpace(svc.PullPolicy))
-	switch {
-	case rawPolicy == composetypes.PullPolicyNever:
-		return ImagePullModeNever
-	case rawPolicy == composetypes.PullPolicyAlways:
-		return ImagePullModeAlways
-	case rawPolicy == composetypes.PullPolicyRefresh,
-		rawPolicy == "daily",
-		rawPolicy == "weekly",
-		strings.HasPrefix(rawPolicy, "every_"):
-		return ImagePullModeAlways
-	case rawPolicy == composetypes.PullPolicyMissing,
-		rawPolicy == composetypes.PullPolicyIfNotPresent,
-		rawPolicy == composetypes.PullPolicyBuild,
-		rawPolicy == "":
-		return ImagePullModeIfMissing
+	switch rawPolicy {
+	case composetypes.PullPolicyNever:
+		return ImagePullStep{Mode: ImagePullModeNever}
+	case composetypes.PullPolicyAlways:
+		return ImagePullStep{Mode: ImagePullModeAlways}
+	case composetypes.PullPolicyMissing,
+		composetypes.PullPolicyIfNotPresent,
+		composetypes.PullPolicyBuild,
+		"":
+		return ImagePullStep{Mode: ImagePullModeIfMissing}
 	}
 
-	policy, _, err := svc.GetPullPolicy()
+	// Refresh windows (daily, weekly, every_<duration>) and anything else:
+	// compose-go owns the parsing, matching compose's own `up` semantics —
+	// unknown or unparseable policies fall back to pull-if-missing.
+	normalized := svc
+	normalized.PullPolicy = rawPolicy
+	policy, refreshAfter, err := normalized.GetPullPolicy()
 	if err != nil {
 		slog.Warn("failed to parse service pull_policy, defaulting to missing", "service", svc.Name, "pull_policy", svc.PullPolicy, "error", err)
-		return ImagePullModeIfMissing
+		return ImagePullStep{Mode: ImagePullModeIfMissing}
 	}
-
 	switch policy {
 	case composetypes.PullPolicyNever:
-		return ImagePullModeNever
-	case composetypes.PullPolicyAlways, composetypes.PullPolicyRefresh:
-		return ImagePullModeAlways
-	case composetypes.PullPolicyMissing, composetypes.PullPolicyIfNotPresent, composetypes.PullPolicyBuild:
-		return ImagePullModeIfMissing
+		return ImagePullStep{Mode: ImagePullModeNever}
+	case composetypes.PullPolicyAlways:
+		return ImagePullStep{Mode: ImagePullModeAlways}
+	case composetypes.PullPolicyRefresh:
+		return ImagePullStep{Mode: ImagePullModeRefresh, RefreshAfter: refreshAfter}
 	default:
-		return ImagePullModeIfMissing
+		return ImagePullStep{Mode: ImagePullModeIfMissing}
 	}
+}
+
+// morePullEagerInternal reports whether a beats b in a pull plan: a higher
+// mode wins, and between two refresh policies the shorter window does.
+func morePullEagerInternal(a, b ImagePullStep) bool {
+	if a.Mode != b.Mode {
+		return a.Mode > b.Mode
+	}
+	return a.Mode == ImagePullModeRefresh && a.RefreshAfter < b.RefreshAfter
 }
 
 // BuildImagePullPlan builds a deduplicated image pull plan covering non-build
 // service images, pre_start hook images, and type:image volume sources.
-func BuildImagePullPlan(project *composetypes.Project) map[string]ImagePullMode {
-	plan := map[string]ImagePullMode{}
-	record := func(img string, mode ImagePullMode) {
+func BuildImagePullPlan(project *composetypes.Project) map[string]ImagePullStep {
+	plan := map[string]ImagePullStep{}
+	record := func(img string, step ImagePullStep) {
 		img = strings.TrimSpace(img)
 		if img == "" {
 			return
 		}
-		if existing, exists := plan[img]; !exists || mode > existing {
-			plan[img] = mode
+		if existing, exists := plan[img]; !exists || morePullEagerInternal(step, existing) {
+			plan[img] = step
 		}
 	}
 	for _, svc := range project.Services {
-		mode := ResolveServiceImagePullMode(svc)
+		step := ResolveServiceImagePullMode(svc)
 		if svc.Build == nil {
-			record(svc.Image, mode)
+			record(svc.Image, step)
 		}
 		// pre_start hook images inherit the parent service's policy, except that
 		// they can never be built: `build` still means pull-if-missing here.
-		if mode != ImagePullModeNever {
+		if step.Mode != ImagePullModeNever {
 			for _, img := range composeapi.GetDependentImages(svc, project.Name) {
-				record(img, mode)
+				record(img, step)
 			}
 		}
 		for _, vol := range svc.Volumes {
 			if vol.Type == composetypes.VolumeTypeImage {
-				record(vol.Source, ImagePullModeIfMissing)
+				record(vol.Source, ImagePullStep{Mode: ImagePullModeIfMissing})
 			}
 		}
 	}
@@ -121,12 +144,23 @@ func NormalizeDeployPullPolicy(policy string) string {
 	}
 }
 
-// IsAlwaysPullPolicy reports whether policy means always pull.
+// IsAlwaysPullPolicy reports whether policy means an unconditional pull.
+// Refresh windows (daily/weekly/every_N) are not "always": they pull only
+// once their window has elapsed, matching compose v5.5.0.
 func IsAlwaysPullPolicy(policy string) bool {
-	if policy == "always" || policy == "daily" || policy == "weekly" {
-		return true
+	return policy == "always"
+}
+
+// refreshWindowForPolicyInternal resolves policy as a refresh window
+// (daily/weekly/every_N), reporting false for every other policy.
+func refreshWindowForPolicyInternal(svc composetypes.ServiceConfig, policy string) (time.Duration, bool) {
+	normalized := svc
+	normalized.PullPolicy = policy
+	parsed, window, err := normalized.GetPullPolicy()
+	if err != nil || parsed != composetypes.PullPolicyRefresh {
+		return 0, false
 	}
-	return strings.HasPrefix(policy, "every_")
+	return window, true
 }
 
 // DecideDeployImageAction decides whether deploy should build, pull, or require local images.
@@ -152,6 +186,9 @@ func DecideDeployImageAction(svc composetypes.ServiceConfig, pullPolicyOverride 
 		case policy == "":
 			return DeployImageDecision{PullIfMissing: true, FallbackBuildOnPullFail: true}
 		default:
+			if window, ok := refreshWindowForPolicyInternal(svc, policy); ok {
+				return DeployImageDecision{PullIfStale: true, StaleAfter: window}
+			}
 			return DeployImageDecision{PullIfMissing: true}
 		}
 	}
@@ -162,6 +199,9 @@ func DecideDeployImageAction(svc composetypes.ServiceConfig, pullPolicyOverride 
 	case IsAlwaysPullPolicy(policy):
 		return DeployImageDecision{PullAlways: true}
 	default:
+		if window, ok := refreshWindowForPolicyInternal(svc, policy); ok {
+			return DeployImageDecision{PullIfStale: true, StaleAfter: window}
+		}
 		return DeployImageDecision{PullIfMissing: true}
 	}
 }
