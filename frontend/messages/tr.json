@@ -2834,6 +2834,7 @@
   "deploy_pull_policy_always": "Always pull latest",
   "deploy_pull_policy_never": "Never pull",
   "deploy_force_recreate": "Force recreate containers",
+  "deploy_remove_orphans": "Yetim konteynerleri kaldır",
   "deploy_recreate_volumes": "Recreate changed volumes (data loss)",
   "settings_default_deploy_pull_policy": "Default Deploy Pull Policy",
   "settings_default_deploy_pull_policy_description": "Projelerin dağıtımı sırasında varsayılan görüntü çekme politikası. Compose dosyasında her hizmet için belirlenen bir pull_policy önceliklidir; buna yenileme aralıkları (günlük, haftalık, her_N) da dahildir.",
