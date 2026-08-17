@@ -2834,6 +2834,7 @@
   "deploy_pull_policy_always": "Sempre puxar a mais recente",
   "deploy_pull_policy_never": "Nunca puxar",
   "deploy_force_recreate": "Forçar containers recriados",
+  "deploy_remove_orphans": "Remover contêineres órfãos",
   "deploy_recreate_volumes": "Recriar volumes alterados (perda de dados)",
   "settings_default_deploy_pull_policy": "Política de pull de implantação padrão",
   "settings_default_deploy_pull_policy_description": "Política padrão de obtenção de imagens ao implantar projetos. Uma política de obtenção (pull_policy) definida para cada serviço no arquivo compose tem precedência, incluindo os intervalos de atualização (diária, semanal, a cada N).",
