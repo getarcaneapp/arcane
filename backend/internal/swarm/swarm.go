@@ -25,7 +25,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
@@ -98,8 +97,8 @@ type swarmNodeAgentRuntime struct {
 
 type swarmNodeAgentCoverage struct {
 	runtimeByEnvID     map[string]swarmNodeAgentRuntime
-	boundEnvsByNodeID  map[string][]models.Environment
-	candidatesByNodeID map[string][]models.Environment
+	boundEnvsByNodeID  map[string][]environment.Environment
+	candidatesByNodeID map[string][]environment.Environment
 	localIdentity      *SwarmNodeIdentity
 	// Resolved once per request rather than per node: the name is user-editable, and
 	// applyNodeAgentCoverageInternal runs in a loop with no context to look it up.
@@ -612,7 +611,7 @@ func (s *SwarmService) ReconcileNodeAgents(ctx context.Context, environmentID st
 
 // BindNodeAgent verifies that a visible environment currently reports the
 // requested node identity before persisting the binding.
-func (s *SwarmService) BindNodeAgent(ctx context.Context, parentEnvironmentID, nodeID string, request swarmtypes.NodeAgentBindingRequest) (*models.Environment, error) {
+func (s *SwarmService) BindNodeAgent(ctx context.Context, parentEnvironmentID, nodeID string, request swarmtypes.NodeAgentBindingRequest) (*environment.Environment, error) {
 	environment, err := s.environmentService.GetEnvironmentByID(ctx, request.EnvironmentID)
 	if err != nil {
 		return nil, err
@@ -695,7 +694,7 @@ func (s *SwarmService) resolveNodeAgentCoverageInternal(ctx context.Context, env
 		candidateEnvs = nil
 	}
 
-	probeEnvsByID := make(map[string]models.Environment, len(agentEnvs)+len(candidateEnvs))
+	probeEnvsByID := make(map[string]environment.Environment, len(agentEnvs)+len(candidateEnvs))
 	for _, env := range candidateEnvs {
 		probeEnvsByID[env.ID] = env
 	}
@@ -723,7 +722,7 @@ func (s *SwarmService) resolveNodeAgentCoverageInternal(ctx context.Context, env
 		return nil, err
 	}
 
-	boundEnvsByNodeID := make(map[string][]models.Environment, len(agentEnvs))
+	boundEnvsByNodeID := make(map[string][]environment.Environment, len(agentEnvs))
 	for _, env := range agentEnvs {
 		if env.SwarmNodeID != nil && strings.TrimSpace(*env.SwarmNodeID) != "" {
 			nodeID := strings.TrimSpace(*env.SwarmNodeID)
@@ -731,7 +730,7 @@ func (s *SwarmService) resolveNodeAgentCoverageInternal(ctx context.Context, env
 		}
 	}
 
-	candidatesByNodeID := make(map[string][]models.Environment)
+	candidatesByNodeID := make(map[string][]environment.Environment)
 	for _, env := range candidateEnvs {
 		runtime := runtimeByEnvID[env.ID]
 		if runtime.identity == nil || !runtime.identity.SwarmActive {
@@ -796,8 +795,8 @@ func (s *SwarmService) applyNodeAgentCoverageInternal(environmentID string, item
 	}
 }
 
-func preferredNodeAgentEnvironmentInternal(environments []models.Environment) models.Environment {
-	var preferred models.Environment
+func preferredNodeAgentEnvironmentInternal(environments []environment.Environment) environment.Environment {
+	var preferred environment.Environment
 	for index, environment := range environments {
 		if index == 0 {
 			preferred = environment
@@ -809,7 +808,7 @@ func preferredNodeAgentEnvironmentInternal(environments []models.Environment) mo
 	return preferred
 }
 
-func buildNodeAgentCandidatesInternal(environments []models.Environment) []swarmtypes.NodeAgentCandidate {
+func buildNodeAgentCandidatesInternal(environments []environment.Environment) []swarmtypes.NodeAgentCandidate {
 	candidates := make([]swarmtypes.NodeAgentCandidate, 0, len(environments))
 	for _, environment := range environments {
 		environmentType := "direct"
@@ -825,7 +824,7 @@ func buildNodeAgentCandidatesInternal(environments []models.Environment) []swarm
 	return candidates
 }
 
-func (s *SwarmService) resolveSwarmNodeAgentRuntimeInternal(ctx context.Context, env *models.Environment) swarmNodeAgentRuntime {
+func (s *SwarmService) resolveSwarmNodeAgentRuntimeInternal(ctx context.Context, env *environment.Environment) swarmNodeAgentRuntime {
 	if env == nil {
 		return swarmNodeAgentRuntime{}
 	}
@@ -1070,7 +1069,7 @@ func (s *SwarmService) fetchSwarmNodeIdentityViaEdgeInternal(ctx context.Context
 	return &parsed.Data, nil
 }
 
-func (s *SwarmService) buildNodeAgentStatusInternal(nodeID string, env *models.Environment, runtime swarmNodeAgentRuntime) swarmtypes.NodeAgentStatus {
+func (s *SwarmService) buildNodeAgentStatusInternal(nodeID string, env *environment.Environment, runtime swarmNodeAgentRuntime) swarmtypes.NodeAgentStatus {
 	if env == nil {
 		return swarmtypes.NodeAgentStatus{State: swarmtypes.NodeAgentStateNone}
 	}
@@ -1131,7 +1130,7 @@ func (s *SwarmService) buildNodeAgentStatusInternal(nodeID string, env *models.E
 	}
 
 	// No live evidence: an unpaired agent stays pending; one seen before is offline.
-	if env.Status == string(models.EnvironmentStatusPending) || env.LastSeen == nil {
+	if env.Status == string(environment.EnvironmentStatusPending) || env.LastSeen == nil {
 		status.State = swarmtypes.NodeAgentStatePending
 		return status
 	}

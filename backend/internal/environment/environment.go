@@ -1,6 +1,8 @@
 package environment
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
+
 	"context"
 	"fmt"
 	"log/slog"
@@ -14,7 +16,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/entityjobs"
@@ -100,7 +101,7 @@ func (s *EnvironmentService) ResolveEdgeEnvironmentByToken(ctx context.Context, 
 		return envID, nil
 	}
 
-	var env models.Environment
+	var env Environment
 	if err := s.db.WithContext(ctx).
 		Select("id", "access_token").
 		Where("is_edge = ?", true).
@@ -133,8 +134,8 @@ func (s *EnvironmentService) logEdgeTokenResolveMissInternal(ctx context.Context
 
 	var totalEdgeEnvs int64
 	var edgeEnvsWithToken int64
-	totalEdgeEnvsErr := s.db.WithContext(ctx).Model(&models.Environment{}).Where("is_edge = ?", true).Count(&totalEdgeEnvs).Error
-	edgeEnvsWithTokenErr := s.db.WithContext(ctx).Model(&models.Environment{}).
+	totalEdgeEnvsErr := s.db.WithContext(ctx).Model(&Environment{}).Where("is_edge = ?", true).Count(&totalEdgeEnvs).Error
+	edgeEnvsWithTokenErr := s.db.WithContext(ctx).Model(&Environment{}).
 		Where("is_edge = ?", true).
 		Where("access_token IS NOT NULL AND access_token != ?", "").
 		Count(&edgeEnvsWithToken).Error
@@ -169,7 +170,7 @@ func (s *EnvironmentService) ResolveEnvironmentName(ctx context.Context, environ
 }
 
 func (s *EnvironmentService) EnsureLocalEnvironment(ctx context.Context, appUrl string) error {
-	var existingEnv models.Environment
+	var existingEnv Environment
 	err := s.db.WithContext(ctx).Where("id = ?", LocalEnvironmentID).First(&existingEnv).Error
 
 	if err == nil {
@@ -189,15 +190,15 @@ func (s *EnvironmentService) EnsureLocalEnvironment(ctx context.Context, appUrl 
 
 	// Create the local environment
 	now := time.Now()
-	localEnv := &models.Environment{
-		BaseModel: models.BaseModel{
+	localEnv := &Environment{
+		BaseModel: database.BaseModel{
 			ID:        LocalEnvironmentID,
 			CreatedAt: now,
 			UpdatedAt: new(now),
 		},
 		Name:    "Local Docker",
 		ApiUrl:  appUrl,
-		Status:  string(models.EnvironmentStatusOnline),
+		Status:  string(EnvironmentStatusOnline),
 		Enabled: true,
 	}
 
@@ -209,12 +210,12 @@ func (s *EnvironmentService) EnsureLocalEnvironment(ctx context.Context, appUrl 
 	return nil
 }
 
-func (s *EnvironmentService) CreateEnvironment(ctx context.Context, environment *models.Environment, userID, username *string) (*models.Environment, error) {
+func (s *EnvironmentService) CreateEnvironment(ctx context.Context, environment *Environment, userID, username *string) (*Environment, error) {
 	environment.ID = uuid.New().String()
 
 	// Only set status to offline if not already set (e.g., API key flow sets it to pending)
 	if environment.Status == "" {
-		environment.Status = string(models.EnvironmentStatusOffline)
+		environment.Status = string(EnvironmentStatusOffline)
 	}
 
 	now := time.Now()
@@ -226,7 +227,7 @@ func (s *EnvironmentService) CreateEnvironment(ctx context.Context, environment 
 	}
 
 	// Create event in background
-	go s.createEnvironmentEvent(context.WithoutCancel(ctx), environment.ID, environment.Name, models.EventTypeEnvironmentCreate, "Environment Created", fmt.Sprintf("Environment '%s' was created", environment.Name), models.EventSeveritySuccess, userID, username)
+	go s.createEnvironmentEvent(context.WithoutCancel(ctx), environment.ID, environment.Name, event.EventTypeEnvironmentCreate, "Environment Created", fmt.Sprintf("Environment '%s' was created", environment.Name), event.EventSeveritySuccess, userID, username)
 
 	if environment.Enabled {
 		s.registerHealthJobInternal(ctx, environment.ID)
@@ -236,8 +237,8 @@ func (s *EnvironmentService) CreateEnvironment(ctx context.Context, environment 
 	return environment, nil
 }
 
-func (s *EnvironmentService) GetEnvironmentByID(ctx context.Context, id string) (*models.Environment, error) {
-	var envRecord models.Environment
+func (s *EnvironmentService) GetEnvironmentByID(ctx context.Context, id string) (*Environment, error) {
+	var envRecord Environment
 	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&envRecord).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New("environment not found")
@@ -247,7 +248,7 @@ func (s *EnvironmentService) GetEnvironmentByID(ctx context.Context, id string) 
 	return &envRecord, nil
 }
 
-func (s *EnvironmentService) UpdateEnvironment(ctx context.Context, id string, updates map[string]any, userID, username *string) (*models.Environment, error) {
+func (s *EnvironmentService) UpdateEnvironment(ctx context.Context, id string, updates map[string]any, userID, username *string) (*Environment, error) {
 	current, err := s.GetEnvironmentByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -279,7 +280,7 @@ func (s *EnvironmentService) UpdateEnvironment(ctx context.Context, id string, u
 
 	updates["updated_at"] = new(time.Now())
 
-	if err := s.db.WithContext(ctx).Model(&models.Environment{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+	if err := s.db.WithContext(ctx).Model(&Environment{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 		return nil, errors.WrapIf(err, "failed to update environment")
 	}
 
@@ -307,7 +308,7 @@ func (s *EnvironmentService) UpdateEnvironment(ctx context.Context, id string, u
 
 	// Create event in background (skip for local environment)
 	if id != "0" {
-		go s.createEnvironmentEvent(context.WithoutCancel(ctx), id, updated.Name, models.EventTypeEnvironmentUpdate, "Environment Updated", fmt.Sprintf("Environment '%s' was updated", updated.Name), models.EventSeverityInfo, userID, username)
+		go s.createEnvironmentEvent(context.WithoutCancel(ctx), id, updated.Name, event.EventTypeEnvironmentUpdate, "Environment Updated", fmt.Sprintf("Environment '%s' was updated", updated.Name), event.EventSeverityInfo, userID, username)
 	}
 
 	return updated, nil
@@ -325,24 +326,24 @@ func (s *EnvironmentService) DeleteEnvironment(ctx context.Context, id string, u
 
 	var syncIDs []string
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&models.GitOpsSync{}).
+		if err := tx.Table("gitops_syncs").
 			Where("environment_id = ?", id).
 			Pluck("id", &syncIDs).Error; err != nil {
 			return errors.WrapIf(err, "failed to list environment gitops syncs")
 		}
 
 		if len(syncIDs) > 0 {
-			if err := tx.Model(&models.Project{}).
+			if err := tx.Table("projects").
 				Where("gitops_managed_by IN ?", syncIDs).
 				Update("gitops_managed_by", nil).Error; err != nil {
 				return errors.WrapIf(err, "failed to clear environment gitops project references")
 			}
-			if err := tx.Where("environment_id = ?", id).Delete(&models.GitOpsSync{}).Error; err != nil {
+			if err := tx.Exec("DELETE FROM gitops_syncs WHERE environment_id = ?", id).Error; err != nil {
 				return errors.WrapIf(err, "failed to delete environment gitops syncs")
 			}
 		}
 
-		if err := tx.Delete(&models.Environment{}, "id = ?", id).Error; err != nil {
+		if err := tx.Delete(&Environment{}, "id = ?", id).Error; err != nil {
 			return errors.WrapIf(err, "failed to delete environment")
 		}
 
@@ -367,12 +368,12 @@ func (s *EnvironmentService) DeleteEnvironment(ctx context.Context, id string, u
 	s.remoteEnvs.remove(id)
 
 	// Create event in background
-	go s.createEnvironmentEvent(context.WithoutCancel(ctx), id, env.Name, models.EventTypeEnvironmentDelete, "Environment Deleted", fmt.Sprintf("Environment '%s' was deleted", env.Name), models.EventSeverityWarning, userID, username)
+	go s.createEnvironmentEvent(context.WithoutCancel(ctx), id, env.Name, event.EventTypeEnvironmentDelete, "Environment Deleted", fmt.Sprintf("Environment '%s' was deleted", env.Name), event.EventSeverityWarning, userID, username)
 
 	return nil
 }
 
-func (s *EnvironmentService) createEnvironmentEvent(ctx context.Context, envID, envName string, eventType models.EventType, title, description string, severity models.EventSeverity, userID, username *string) {
+func (s *EnvironmentService) createEnvironmentEvent(ctx context.Context, envID, envName string, eventType event.EventType, title, description string, severity event.EventSeverity, userID, username *string) {
 	if s == nil || s.eventService == nil {
 		return
 	}
@@ -401,11 +402,11 @@ func (s *EnvironmentService) RegenerateEnvironmentApiKey(ctx context.Context, en
 	updates := map[string]any{
 		"api_key_id":   newApiKeyID,
 		"access_token": apiKey,
-		"status":       string(models.EnvironmentStatusPending),
+		"status":       string(EnvironmentStatusPending),
 		"last_seen":    nil, // Clear last seen time
 	}
 
-	result := s.db.WithContext(ctx).Model(&models.Environment{}).Where("id = ?", envID).Updates(updates)
+	result := s.db.WithContext(ctx).Model(&Environment{}).Where("id = ?", envID).Updates(updates)
 	if result.Error != nil {
 		return errors.WrapIf(result.Error, "failed to update environment with new API key")
 	}
@@ -417,16 +418,16 @@ func (s *EnvironmentService) RegenerateEnvironmentApiKey(ctx context.Context, en
 
 	s.edgeTokens.sync(envID, apiKey)
 	now := time.Now()
-	s.remoteEnvs.update(envID, func(environment *models.Environment) {
+	s.remoteEnvs.update(envID, func(environment *Environment) {
 		environment.ApiKeyID = &newApiKeyID
 		environment.AccessToken = &apiKey
-		environment.Status = string(models.EnvironmentStatusPending)
+		environment.Status = string(EnvironmentStatusPending)
 		environment.LastSeen = nil
 		environment.UpdatedAt = &now
 	})
 
 	// Create event log in background
-	go s.createEnvironmentEvent(context.WithoutCancel(ctx), envID, envName, models.EventTypeEnvironmentApiKeyRegenerated, "API Key Regenerated", "Environment API key was regenerated and status set to pending", models.EventSeverityInfo, new(userID), new(username))
+	go s.createEnvironmentEvent(context.WithoutCancel(ctx), envID, envName, event.EventTypeEnvironmentApiKeyRegenerated, "API Key Regenerated", "Environment API key was regenerated and status set to pending", event.EventSeverityInfo, new(userID), new(username))
 
 	return nil
 }
@@ -435,13 +436,13 @@ func (s *EnvironmentService) GetDB() *database.DB {
 	return s.db
 }
 
-func (s *EnvironmentService) ResolveEnvironmentByAccessToken(ctx context.Context, token string) (*models.Environment, error) {
+func (s *EnvironmentService) ResolveEnvironmentByAccessToken(ctx context.Context, token string) (*Environment, error) {
 	token = strings.TrimSpace(token)
 	if token == "" {
 		return nil, ErrEnvironmentAccessTokenRequired
 	}
 
-	var env models.Environment
+	var env Environment
 	if err := s.db.WithContext(ctx).
 		Where("access_token = ?", token).
 		First(&env).Error; err != nil {
@@ -455,7 +456,7 @@ func (s *EnvironmentService) ResolveEnvironmentByAccessToken(ctx context.Context
 }
 
 func (s *EnvironmentService) GetEnabledRegistryCredentials(ctx context.Context) ([]containerregistry.Credential, error) {
-	var registries []models.ContainerRegistry
+	var registries []registry.ContainerRegistry
 	if err := s.db.WithContext(ctx).Where("enabled = ?", true).Find(&registries).Error; err != nil {
 		return nil, errors.WrapIf(err, "failed to get enabled container registries")
 	}

@@ -1,6 +1,8 @@
 package build
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+
 	"bytes"
 	"context"
 	"encoding/json/v2"
@@ -16,7 +18,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/gitrepo"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	buildgit "github.com/getarcaneapp/arcane/backend/v2/pkg/gitutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/libtnb/sqlite"
@@ -175,7 +176,7 @@ func TestBuildService_ResolveBuildRequest_RejectsNonGitHTTPContextViaProbeFailur
 func TestBuildService_ResolveBuildRequest_UsesSavedGitCredentials(t *testing.T) {
 	gormDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, gormDB.AutoMigrate(&models.GitRepository{}))
+	require.NoError(t, gormDB.AutoMigrate(&gitrepo.GitRepository{}))
 	crypto.InitEncryption(&crypto.Config{
 		Environment:   string(config.AppEnvironmentTest),
 		EncryptionKey: "test-encryption-key-for-testing-32bytes-min",
@@ -183,7 +184,7 @@ func TestBuildService_ResolveBuildRequest_UsesSavedGitCredentials(t *testing.T) 
 	db := &database.DB{DB: gormDB}
 
 	repoService := gitrepo.NewGitRepositoryService(db, t.TempDir(), nil, nil)
-	createTestGitRepository(t, db, models.GitRepository{
+	createTestGitRepository(t, db, gitrepo.GitRepository{
 		Name:                   "private-http",
 		URL:                    "https://github.com/getarcaneapp/private-build.git",
 		AuthType:               "http",
@@ -192,7 +193,7 @@ func TestBuildService_ResolveBuildRequest_UsesSavedGitCredentials(t *testing.T) 
 		SSHHostKeyVerification: "accept_new",
 		Enabled:                true,
 	})
-	createTestGitRepository(t, db, models.GitRepository{
+	createTestGitRepository(t, db, gitrepo.GitRepository{
 		Name:                   "private-ssh",
 		URL:                    "git@github.com:getarcaneapp/private-ssh.git",
 		AuthType:               "ssh",
@@ -290,7 +291,7 @@ func TestBuildService_BuildImage_PreservesRemoteSourceInHistory(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, repoPath, captured.ContextDir)
 
-	var record models.ImageBuild
+	var record ImageBuild
 	require.NoError(t, db.WithContext(context.Background()).First(&record).Error)
 	assert.Equal(t, req.ContextDir, record.ContextDir)
 }
@@ -307,8 +308,8 @@ func TestBuildService_BuildImage_FailureRecordsHistoryAndEvent(t *testing.T) {
 			err: buildErr,
 		},
 	}
-	user := &models.User{
-		BaseModel: models.BaseModel{ID: "user-1"},
+	user := &common.User{
+		BaseModel: database.BaseModel{ID: "user-1"},
 		Username:  "tester",
 	}
 
@@ -323,23 +324,23 @@ func TestBuildService_BuildImage_FailureRecordsHistoryAndEvent(t *testing.T) {
 	_, err = svc.BuildImage(context.Background(), "0", req, nil, "web", user)
 	require.ErrorIs(t, err, buildErr)
 
-	var record models.ImageBuild
+	var record ImageBuild
 	require.NoError(t, db.WithContext(context.Background()).First(&record).Error)
-	assert.Equal(t, models.ImageBuildStatusFailed, record.Status)
+	assert.Equal(t, ImageBuildStatusFailed, record.Status)
 	require.NotNil(t, record.ErrorMessage)
 	assert.Contains(t, *record.ErrorMessage, "docker exporter")
 
-	var event models.Event
-	require.NoError(t, db.WithContext(context.Background()).First(&event, "type = ?", models.EventTypeImageError).Error)
-	assert.Equal(t, models.EventSeverityError, event.Severity)
-	require.NotNil(t, event.ResourceName)
-	assert.Equal(t, "arcane.local/demo:test", *event.ResourceName)
-	assert.Equal(t, "build", event.Metadata["action"])
-	assert.Equal(t, "local", event.Metadata["provider"])
-	assert.Equal(t, "/builds/demo", event.Metadata["contextDir"])
-	assert.Contains(t, event.Metadata["error"], "docker exporter")
-	require.NotEmpty(t, event.Metadata["buildRecordId"])
-	assert.Equal(t, record.ID, event.Metadata["buildRecordId"])
+	var evt event.Event
+	require.NoError(t, db.WithContext(context.Background()).First(&evt, "type = ?", event.EventTypeImageError).Error)
+	assert.Equal(t, event.EventSeverityError, evt.Severity)
+	require.NotNil(t, evt.ResourceName)
+	assert.Equal(t, "arcane.local/demo:test", *evt.ResourceName)
+	assert.Equal(t, "build", evt.Metadata["action"])
+	assert.Equal(t, "local", evt.Metadata["provider"])
+	assert.Equal(t, "/builds/demo", evt.Metadata["contextDir"])
+	assert.Contains(t, evt.Metadata["error"], "docker exporter")
+	require.NotEmpty(t, evt.Metadata["buildRecordId"])
+	assert.Equal(t, record.ID, evt.Metadata["buildRecordId"])
 }
 
 func TestBuildService_BuildImage_FailureExporterErrorsAppearInOutputHistoryAndEvent(t *testing.T) {
@@ -363,8 +364,8 @@ func TestBuildService_BuildImage_FailureExporterErrorsAppearInOutputHistoryAndEv
 		},
 	}
 
-	user := &models.User{
-		BaseModel: models.BaseModel{ID: "user-2"},
+	user := &common.User{
+		BaseModel: database.BaseModel{ID: "user-2"},
 		Username:  "registry-test",
 	}
 
@@ -379,31 +380,31 @@ func TestBuildService_BuildImage_FailureExporterErrorsAppearInOutputHistoryAndEv
 	_, err = svc.BuildImage(context.Background(), "0", req, progress, "web", user)
 	require.ErrorIs(t, err, buildErr)
 
-	var record models.ImageBuild
+	var record ImageBuild
 	require.NoError(t, db.WithContext(context.Background()).First(&record).Error)
-	assert.Equal(t, models.ImageBuildStatusFailed, record.Status)
+	assert.Equal(t, ImageBuildStatusFailed, record.Status)
 	require.NotNil(t, record.Output)
 	assert.Contains(t, *record.Output, buildErr.Error())
 	require.NotNil(t, record.ErrorMessage)
 	assert.Contains(t, *record.ErrorMessage, "exporter \"image\"")
 
-	var event models.Event
-	require.NoError(t, db.WithContext(context.Background()).First(&event, "type = ?", models.EventTypeImageError).Error)
-	assert.Equal(t, models.EventSeverityError, event.Severity)
-	require.NotNil(t, event.ResourceName)
-	assert.Equal(t, "ghcr.io/getarcaneapp/arcane:test", *event.ResourceName)
-	assert.Equal(t, "build", event.Metadata["action"])
-	assert.Equal(t, "depot", event.Metadata["provider"])
-	assert.Equal(t, "/builds/demo", event.Metadata["contextDir"])
-	assert.Equal(t, buildErr.Error(), event.Metadata["error"])
+	var evt event.Event
+	require.NoError(t, db.WithContext(context.Background()).First(&evt, "type = ?", event.EventTypeImageError).Error)
+	assert.Equal(t, event.EventSeverityError, evt.Severity)
+	require.NotNil(t, evt.ResourceName)
+	assert.Equal(t, "ghcr.io/getarcaneapp/arcane:test", *evt.ResourceName)
+	assert.Equal(t, "build", evt.Metadata["action"])
+	assert.Equal(t, "depot", evt.Metadata["provider"])
+	assert.Equal(t, "/builds/demo", evt.Metadata["contextDir"])
+	assert.Equal(t, buildErr.Error(), evt.Metadata["error"])
 	// The progress writer is the wire transport: raw builder text arrives framed
 	// as {"log":...} NDJSON lines.
 	var frame map[string]string
 	require.NoError(t, json.Unmarshal([]byte(strings.TrimSpace(progress.String())), &frame))
 	assert.Equal(t, buildErr.Error(), frame["log"])
 	assert.Equal(t, buildErr.Error(), *record.ErrorMessage)
-	assert.NotEmpty(t, event.Metadata["buildRecordId"])
-	assert.Equal(t, record.ID, event.Metadata["buildRecordId"])
+	assert.NotEmpty(t, evt.Metadata["buildRecordId"])
+	assert.Equal(t, record.ID, evt.Metadata["buildRecordId"])
 }
 
 func TestSanitizeBuildContextForEventInternal_RedactsURLCredentials(t *testing.T) {
@@ -445,10 +446,10 @@ func TestBuildService_ListImageBuilds_OmitsOutputColumn(t *testing.T) {
 	svc := &BuildService{db: db}
 
 	output := "large build output"
-	require.NoError(t, db.WithContext(context.Background()).Create(&models.ImageBuild{
-		BaseModel:     models.BaseModel{ID: "build-omit-output"},
+	require.NoError(t, db.WithContext(context.Background()).Create(&ImageBuild{
+		BaseModel:     database.BaseModel{ID: "build-omit-output"},
 		EnvironmentID: "0",
-		Status:        models.ImageBuildStatusSuccess,
+		Status:        ImageBuildStatusSuccess,
 		ContextDir:    "/ctx",
 		Output:        &output,
 	}).Error)
@@ -472,13 +473,13 @@ func setupBuildHistoryTestDB() (*database.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := db.AutoMigrate(&models.ImageBuild{}, &models.Event{}); err != nil {
+	if err := db.AutoMigrate(&ImageBuild{}, &event.Event{}); err != nil {
 		return nil, err
 	}
 	return &database.DB{DB: db}, nil
 }
 
-func createTestGitRepository(t *testing.T, db *database.DB, repository models.GitRepository) {
+func createTestGitRepository(t *testing.T, db *database.DB, repository gitrepo.GitRepository) {
 	t.Helper()
 	require.NoError(t, db.WithContext(context.Background()).Create(&repository).Error)
 }

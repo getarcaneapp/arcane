@@ -1,12 +1,15 @@
 package gitops
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+
 	"context"
 
 	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 	"github.com/getarcaneapp/arcane/types/v2/base"
@@ -183,11 +186,11 @@ func (h *GitOpsSyncHandler) CreateSync(ctx context.Context, input *CreateGitOpsS
 
 	sync, err := h.syncService.CreateSync(ctx, input.EnvironmentID, input.Body, actor)
 	if err != nil {
-		apiErr := models.ToAPIError(err)
+		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), errors.WithMessage(err, "Failed to create GitOps sync").Error())
 	}
 
-	body, mapErr := handlerutil.MapOneAPIResponse[*models.GitOpsSync, gitops.GitOpsSync](sync, func(err error) string {
+	body, mapErr := handlerutil.MapOneAPIResponse[*project.GitOpsSync, gitops.GitOpsSync](sync, func(err error) string {
 		return "Failed to map GitOps sync"
 	})
 	if mapErr != nil {
@@ -220,11 +223,11 @@ func (h *GitOpsSyncHandler) ImportSyncs(ctx context.Context, input *ImportGitOps
 func (h *GitOpsSyncHandler) GetSync(ctx context.Context, input *GetGitOpsSyncInput) (*GetGitOpsSyncOutput, error) {
 	sync, err := h.syncService.GetSyncByID(ctx, input.EnvironmentID, input.SyncID)
 	if err != nil {
-		apiErr := models.ToAPIError(err)
+		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to retrieve GitOps sync")
 	}
 
-	body, mapErr := handlerutil.MapOneAPIResponse[*models.GitOpsSync, gitops.GitOpsSync](sync, func(err error) string {
+	body, mapErr := handlerutil.MapOneAPIResponse[*project.GitOpsSync, gitops.GitOpsSync](sync, func(err error) string {
 		return "Failed to map GitOps sync"
 	})
 	if mapErr != nil {
@@ -246,11 +249,11 @@ func (h *GitOpsSyncHandler) UpdateSync(ctx context.Context, input *UpdateGitOpsS
 
 	sync, err := h.syncService.UpdateSync(ctx, input.EnvironmentID, input.SyncID, input.Body, actor)
 	if err != nil {
-		apiErr := models.ToAPIError(err)
+		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), errors.WithMessage(err, "Failed to update GitOps sync").Error())
 	}
 
-	body, mapErr := handlerutil.MapOneAPIResponse[*models.GitOpsSync, gitops.GitOpsSync](sync, func(err error) string {
+	body, mapErr := handlerutil.MapOneAPIResponse[*project.GitOpsSync, gitops.GitOpsSync](sync, func(err error) string {
 		return "Failed to map GitOps sync"
 	})
 	if mapErr != nil {
@@ -267,7 +270,7 @@ func (h *GitOpsSyncHandler) DeleteSync(ctx context.Context, input *DeleteGitOpsS
 	actor := handlerutil.CurrentActor(ctx)
 
 	if err := h.syncService.DeleteSync(ctx, input.EnvironmentID, input.SyncID, actor); err != nil {
-		apiErr := models.ToAPIError(err)
+		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to delete GitOps sync")
 	}
 
@@ -287,7 +290,7 @@ func (h *GitOpsSyncHandler) PerformSync(ctx context.Context, input *PerformSyncI
 
 	result, err := h.syncService.PerformSync(ctx, input.EnvironmentID, input.SyncID, actor)
 	if err != nil {
-		apiErr := models.ToAPIError(err)
+		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to perform GitOps sync")
 	}
 
@@ -303,7 +306,7 @@ func (h *GitOpsSyncHandler) PerformSync(ctx context.Context, input *PerformSyncI
 func (h *GitOpsSyncHandler) GetStatus(ctx context.Context, input *GetSyncStatusInput) (*GetSyncStatusOutput, error) {
 	status, err := h.syncService.GetSyncStatus(ctx, input.EnvironmentID, input.SyncID)
 	if err != nil {
-		apiErr := models.ToAPIError(err)
+		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to get GitOps sync status")
 	}
 
@@ -319,7 +322,7 @@ func (h *GitOpsSyncHandler) GetStatus(ctx context.Context, input *GetSyncStatusI
 func (h *GitOpsSyncHandler) BrowseFiles(ctx context.Context, input *BrowseSyncFilesInput) (*BrowseSyncFilesOutput, error) {
 	response, err := h.syncService.BrowseFiles(ctx, input.EnvironmentID, input.SyncID, input.Path)
 	if err != nil {
-		apiErr := models.ToAPIError(err)
+		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to browse GitOps sync files")
 	}
 

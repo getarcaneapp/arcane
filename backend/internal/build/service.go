@@ -1,6 +1,8 @@
 package build
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+
 	"context"
 	"fmt"
 	"io"
@@ -19,7 +21,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/gitrepo"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	buildgit "github.com/getarcaneapp/arcane/backend/v2/pkg/gitutil"
@@ -91,7 +92,7 @@ func (s *BuildService) BuildSettings() buildtypes.BuildSettings {
 	}
 }
 
-func (s *BuildService) BuildImage(ctx context.Context, environmentID string, req buildtypes.BuildRequest, progressWriter io.Writer, serviceName string, user *models.User) (*buildtypes.BuildResult, error) {
+func (s *BuildService) BuildImage(ctx context.Context, environmentID string, req buildtypes.BuildRequest, progressWriter io.Writer, serviceName string, user *common.User) (*buildtypes.BuildResult, error) {
 	if s.builder == nil {
 		return nil, errors.New("build service not available")
 	}
@@ -155,10 +156,10 @@ func (s *BuildService) BuildImage(ctx context.Context, environmentID string, req
 			}
 		}
 
-		status := models.ImageBuildStatusSuccess
+		status := ImageBuildStatusSuccess
 		var errMsg *string
 		if err != nil {
-			status = models.ImageBuildStatusFailed
+			status = ImageBuildStatusFailed
 			errMsg = new(err.Error())
 		}
 
@@ -174,7 +175,7 @@ func (s *BuildService) BuildImage(ctx context.Context, environmentID string, req
 	return result, err
 }
 
-func (s *BuildService) logBuildFailureEventInternal(ctx context.Context, environmentID string, req buildtypes.BuildRequest, serviceName, buildRecordID string, err error, user *models.User) {
+func (s *BuildService) logBuildFailureEventInternal(ctx context.Context, environmentID string, req buildtypes.BuildRequest, serviceName, buildRecordID string, err error, user *common.User) {
 	if s.eventService == nil || err == nil {
 		return
 	}
@@ -194,7 +195,7 @@ func (s *BuildService) logBuildFailureEventInternal(ctx context.Context, environ
 		username = user.Username
 	}
 
-	metadata := models.JSON{
+	metadata := database.JSON{
 		"action":     "build",
 		"provider":   s.effectiveBuildProviderInternal(req.Provider),
 		"contextDir": sanitizeBuildContextForEventInternal(req.ContextDir),
@@ -208,7 +209,7 @@ func (s *BuildService) logBuildFailureEventInternal(ctx context.Context, environ
 		metadata["buildRecordId"] = buildRecordID
 	}
 
-	s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", resourceName, userID, username, environmentID, err, metadata)
+	s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", "", resourceName, userID, username, environmentID, err, metadata)
 }
 
 func sanitizeBuildContextForEventInternal(raw string) string {
@@ -404,10 +405,10 @@ func (s *BuildService) ListImageBuildsByEnvironmentPaginated(ctx context.Context
 		return nil, pagination.Response{}, errors.New("build history not available")
 	}
 
-	var builds []models.ImageBuild
+	var builds []ImageBuild
 	// The list DTO never includes the build output (buildToRecord with
 	// includeOutput=false), so skip reading the up-to-2-MiB output column.
-	q := s.db.WithContext(ctx).Model(&models.ImageBuild{}).Omit("output").Where("environment_id = ?", environmentID)
+	q := s.db.WithContext(ctx).Model(&ImageBuild{}).Omit("output").Where("environment_id = ?", environmentID)
 
 	if term := strings.TrimSpace(params.Search); term != "" {
 		searchPattern := "%" + term + "%"
@@ -442,7 +443,7 @@ func (s *BuildService) GetImageBuildByID(ctx context.Context, environmentID, bui
 		return nil, errors.New("build history not available")
 	}
 
-	var build models.ImageBuild
+	var build ImageBuild
 	if err := s.db.WithContext(ctx).First(&build, "id = ? AND environment_id = ?", buildID, environmentID).Error; err != nil {
 		return nil, err
 	}
@@ -450,7 +451,7 @@ func (s *BuildService) GetImageBuildByID(ctx context.Context, environmentID, bui
 	return new(buildToRecord(build, true)), nil
 }
 
-func (s *BuildService) createBuildRecord(ctx context.Context, environmentID string, req buildtypes.BuildRequest, user *models.User) (*models.ImageBuild, error) {
+func (s *BuildService) createBuildRecord(ctx context.Context, environmentID string, req buildtypes.BuildRequest, user *common.User) (*ImageBuild, error) {
 	buildArgs := mapToJSON(req.BuildArgs)
 	labels := mapToJSON(req.Labels)
 	ulimits := mapToJSON(req.Ulimits)
@@ -462,33 +463,33 @@ func (s *BuildService) createBuildRecord(ctx context.Context, environmentID stri
 		username = &user.Username
 	}
 
-	record := &models.ImageBuild{
+	record := &ImageBuild{
 		EnvironmentID: environmentID,
 		UserID:        userID,
 		Username:      username,
-		Status:        models.ImageBuildStatusRunning,
+		Status:        ImageBuildStatusRunning,
 		Provider:      req.Provider,
 		ContextDir:    req.ContextDir,
 		Dockerfile:    req.Dockerfile,
 		Target:        req.Target,
-		Tags:          models.StringSlice(req.Tags),
-		Platforms:     models.StringSlice(req.Platforms),
+		Tags:          database.StringSlice(req.Tags),
+		Platforms:     database.StringSlice(req.Platforms),
 		BuildArgs:     buildArgs,
 		Labels:        labels,
-		CacheFrom:     models.StringSlice(req.CacheFrom),
-		CacheTo:       models.StringSlice(req.CacheTo),
+		CacheFrom:     database.StringSlice(req.CacheFrom),
+		CacheTo:       database.StringSlice(req.CacheTo),
 		NoCache:       req.NoCache,
 		Pull:          req.Pull,
 		BuildNetwork:  req.Network,
 		Isolation:     req.Isolation,
 		ShmSize:       req.ShmSize,
 		Ulimits:       ulimits,
-		Entitlements:  models.StringSlice(req.Entitlements),
+		Entitlements:  database.StringSlice(req.Entitlements),
 		Privileged:    req.Privileged,
-		ExtraHosts:    models.StringSlice(req.ExtraHosts),
+		ExtraHosts:    database.StringSlice(req.ExtraHosts),
 		Push:          req.Push,
 		Load:          req.Load,
-		BaseModel: models.BaseModel{
+		BaseModel: database.BaseModel{
 			CreatedAt: time.Now(),
 		},
 	}
@@ -503,7 +504,7 @@ func (s *BuildService) createBuildRecord(ctx context.Context, environmentID stri
 func (s *BuildService) completeBuildRecord(
 	ctx context.Context,
 	buildID string,
-	status models.ImageBuildStatus,
+	status ImageBuildStatus,
 	output *string,
 	outputTruncated bool,
 	errMsg *string,
@@ -528,7 +529,7 @@ func (s *BuildService) completeBuildRecord(
 	}
 
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		result := tx.Model(&models.ImageBuild{}).Where("id = ?", buildID).Updates(updates)
+		result := tx.Model(&ImageBuild{}).Where("id = ?", buildID).Updates(updates)
 		if result.Error != nil {
 			return errors.WrapIf(result.Error, "failed to update build record")
 		}
@@ -539,7 +540,7 @@ func (s *BuildService) completeBuildRecord(
 	})
 }
 
-func buildToRecord(build models.ImageBuild, includeOutput bool) imagetypes.BuildRecord {
+func buildToRecord(build ImageBuild, includeOutput bool) imagetypes.BuildRecord {
 	buildArgs := jsonToStringMap(build.BuildArgs)
 	labels := jsonToStringMap(build.Labels)
 	ulimits := jsonToStringMap(build.Ulimits)
@@ -586,12 +587,12 @@ func buildToRecord(build models.ImageBuild, includeOutput bool) imagetypes.Build
 	}
 }
 
-func mapToJSON(input map[string]string) models.JSON {
+func mapToJSON(input map[string]string) database.JSON {
 	if len(input) == 0 {
 		return nil
 	}
 
-	out := models.JSON{}
+	out := database.JSON{}
 	for key, value := range input {
 		out[key] = value
 	}
@@ -603,7 +604,7 @@ func mapToJSON(input map[string]string) models.JSON {
 	return out
 }
 
-func jsonToStringMap(input models.JSON) map[string]string {
+func jsonToStringMap(input database.JSON) map[string]string {
 	out := map[string]string{}
 	for key, value := range input {
 		out[key] = fmt.Sprint(value)

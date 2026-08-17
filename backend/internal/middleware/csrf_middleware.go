@@ -1,12 +1,13 @@
 package middleware
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+
 	"log/slog"
 	"net/http"
 	"strings"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/labstack/echo/v5"
 )
@@ -71,8 +72,8 @@ func (m *CSRFMiddleware) Add() echo.MiddlewareFunc {
 					"origin", req.Header.Get("Origin"),
 					"sec_fetch_site", req.Header.Get("Sec-Fetch-Site"),
 				)
-				return c.JSON(http.StatusForbidden, models.APIError{
-					Code:    models.APIErrorCodeForbidden,
+				return c.JSON(http.StatusForbidden, common.APIError{
+					Code:    common.APIErrorCodeForbidden,
 					Message: "Cross-origin request blocked",
 				})
 			}

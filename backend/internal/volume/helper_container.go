@@ -1,6 +1,8 @@
 package volume
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+
 	"bytes"
 	"context"
 	"encoding/json"
@@ -14,7 +16,6 @@ import (
 
 	"emperror.dev/errors"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
@@ -117,7 +118,7 @@ func getVolumeHelperImageInternal(ctx context.Context, dockerService *docker.Doc
 
 	var pullErr error
 	if imageService != nil {
-		pullImageErr := imageService.PullImage(ctx, volumeHelperImage, io.Discard, models.SystemUser, nil)
+		pullImageErr := imageService.PullImage(ctx, volumeHelperImage, io.Discard, common.SystemUser, nil)
 		if pullImageErr == nil {
 			slog.InfoContext(ctx, "volume service: helper image strategy selected", "strategy", "tools-pulled", "image", volumeHelperImage)
 			return volumeHelperImage, nil

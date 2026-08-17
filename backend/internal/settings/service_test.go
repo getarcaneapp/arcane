@@ -17,7 +17,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	settingstypes "github.com/getarcaneapp/arcane/types/v2/settings"
 )
@@ -26,7 +25,7 @@ func setupSettingsTestDB(t *testing.T) *database.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&models.SettingVariable{}))
+	require.NoError(t, db.AutoMigrate(&SettingVariable{}))
 	return &database.DB{DB: db}
 }
 
@@ -86,18 +85,18 @@ func TestSettingsService_EnsureDefaultSettings_Idempotent(t *testing.T) {
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
 
 	var count1 int64
-	require.NoError(t, svc.db.WithContext(ctx).Model(&models.SettingVariable{}).Count(&count1).Error)
+	require.NoError(t, svc.db.WithContext(ctx).Model(&SettingVariable{}).Count(&count1).Error)
 	require.Positive(t, count1)
 
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
 
 	var count2 int64
-	require.NoError(t, svc.db.WithContext(ctx).Model(&models.SettingVariable{}).Count(&count2).Error)
+	require.NoError(t, svc.db.WithContext(ctx).Model(&SettingVariable{}).Count(&count2).Error)
 	require.Equal(t, count1, count2)
 
 	// Spot-check core and automation defaults exist with correct values
 	for _, key := range []string{"authLocalEnabled", "projectsDirectory", "followProjectSymlinks", "autoUpdateExcludedContainers", "imageEventWatcherEnabled", "vulnerabilityScanEnabled", "vulnerabilityScanInterval", "trivyImage", "trivyNetwork", "trivySecurityOpts", "trivyPrivileged", "trivyPreserveCacheOnVolumePrune", "trivyResourceLimitsEnabled", "trivyCpuLimit", "trivyMemoryLimitMb", "trivyConcurrentScanContainers", "gitSyncMaxFiles", "gitSyncMaxTotalSizeMb", "gitSyncMaxBinarySizeMb", "lifecycleDefaultRunnerImage"} {
-		var sv models.SettingVariable
+		var sv SettingVariable
 		err := svc.db.WithContext(ctx).Where("key = ?", key).First(&sv).Error
 		require.NoErrorf(t, err, "missing default key %s", key)
 
@@ -154,7 +153,7 @@ func TestSettingsService_ImageEventWatcherSettingPersists(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, svc.GetBoolSetting(ctx, "imageEventWatcherEnabled", false))
 
-	var stored models.SettingVariable
+	var stored SettingVariable
 	require.NoError(t, db.WithContext(ctx).Where("key = ?", "imageEventWatcherEnabled").First(&stored).Error)
 	require.Equal(t, "true", stored.Value)
 }
@@ -168,7 +167,7 @@ func TestSettingsService_EnsureDefaultSettings_OverridesExistingTrivyImage(t *te
 	require.NoError(t, svc.UpdateSetting(ctx, "trivyImage", "ghcr.io/aquasecurity/trivy:latest"))
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
 
-	var sv models.SettingVariable
+	var sv SettingVariable
 	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "trivyImage").First(&sv).Error)
 	require.Equal(t, DefaultTrivyImage, sv.Value)
 }
@@ -180,7 +179,7 @@ func TestSettingsService_GetSettings_UnknownKeysIgnored(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NoError(t, svc.db.WithContext(ctx).
-		Create(&models.SettingVariable{Key: "someUnknownKey", Value: "x"}).Error)
+		Create(&SettingVariable{Key: "someUnknownKey", Value: "x"}).Error)
 
 	_, err = svc.GetSettings(ctx)
 	require.NoError(t, err)
@@ -350,15 +349,15 @@ func TestSettingsService_PruneUnknownSettings_RemovesStaleKeys(t *testing.T) {
 
 	require.NoError(t, svc.PruneUnknownSettings(ctx))
 
-	var sv models.SettingVariable
+	var sv SettingVariable
 	err = svc.db.WithContext(ctx).Where("key = ?", "unknownKey").First(&sv).Error
 	require.ErrorIs(t, err, gorm.ErrRecordNotFound)
 
-	var sv2 models.SettingVariable
+	var sv2 SettingVariable
 	err = svc.db.WithContext(ctx).Where("key = ?", "projectsDirectory").First(&sv2).Error
 	require.NoError(t, err)
 
-	var sv3 models.SettingVariable
+	var sv3 SettingVariable
 	err = svc.db.WithContext(ctx).Where("key = ?", "encryptionKey").First(&sv3).Error
 	require.NoError(t, err)
 }
@@ -515,7 +514,7 @@ func TestSettingsService_UpdateSetting(t *testing.T) {
 
 	require.NoError(t, svc.UpdateSetting(ctx, "pruneImageMode", "all"))
 
-	var sv models.SettingVariable
+	var sv SettingVariable
 	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "pruneImageMode").First(&sv).Error)
 	require.Equal(t, "all", sv.Value)
 }
@@ -529,7 +528,7 @@ func TestSettingsService_UpdateSettingRejectsInvalidCronBeforePersistence(t *tes
 	require.NoError(t, svc.UpdateSetting(ctx, "pollingInterval", "*/5 * * * * *"))
 	require.Error(t, svc.UpdateSetting(ctx, "pollingInterval", "not a cron schedule"))
 
-	var setting models.SettingVariable
+	var setting SettingVariable
 	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "pollingInterval").First(&setting).Error)
 	require.Equal(t, "*/5 * * * * *", setting.Value)
 }
@@ -727,7 +726,7 @@ func BenchmarkSettingsService_GetSettings(b *testing.B) {
 	if err != nil {
 		require.FailNowf(b, "benchmark database setup failed", "%v", err)
 	}
-	if err := db.AutoMigrate(&models.SettingVariable{}); err != nil {
+	if err := db.AutoMigrate(&SettingVariable{}); err != nil {
 		require.FailNowf(b, "benchmark database migration failed", "%v", err)
 	}
 	settingsDB := &database.DB{DB: db}
@@ -764,7 +763,7 @@ func TestSettingsService_EnsureEncryptionKey(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, k1, k2, "encryption key should be stable between calls")
 
-	var sv models.SettingVariable
+	var sv SettingVariable
 	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "encryptionKey").First(&sv).Error)
 	require.Equal(t, k1, sv.Value)
 }
@@ -821,7 +820,7 @@ func TestSettingsService_PersistEnvSettingsIfMissing_DoesNotOverrideForcedTrivyI
 
 	require.NoError(t, svc.PersistEnvSettingsIfMissing(ctx))
 
-	var sv models.SettingVariable
+	var sv SettingVariable
 	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "trivyImage").First(&sv).Error)
 	require.Equal(t, DefaultTrivyImage, sv.Value)
 	require.Equal(t, DefaultTrivyImage, svc.GetSettingsConfig().TrivyImage.Value)
@@ -843,7 +842,7 @@ func TestSettingsService_UpdateSettings_RefreshesCache(t *testing.T) {
 	require.NoError(t, err)
 
 	// ListSettings uses the cached snapshot; should reflect updated value
-	list := svc.ListSettings(models.SettingVisibilityAll)
+	list := svc.ListSettings(SettingVisibilityAll)
 	found := false
 	for _, sv := range list {
 		if sv.Key == "projectsDirectory" {
@@ -1036,7 +1035,7 @@ func TestSettingsService_UpdateSettings_TrivyPreserveCacheOnVolumePrunePersists(
 	require.NoError(t, err)
 	require.False(t, current.TrivyPreserveCacheOnVolumePrune.IsTrue())
 
-	var stored models.SettingVariable
+	var stored SettingVariable
 	err = svc.db.WithContext(ctx).Where("key = ?", "trivyPreserveCacheOnVolumePrune").First(&stored).Error
 	require.NoError(t, err)
 	require.Equal(t, "false", stored.Value)
@@ -1070,7 +1069,7 @@ func TestSettingsService_LoadDatabaseSettings_InternalKeys_EnvMode(t *testing.T)
 	// Pre-populate an internal setting in the DB
 	internalKey := "instanceId"
 	internalVal := "test-instance-id"
-	require.NoError(t, db.DB.Create(&models.SettingVariable{Key: internalKey, Value: internalVal}).Error)
+	require.NoError(t, db.DB.Create(&SettingVariable{Key: internalKey, Value: internalVal}).Error)
 
 	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
@@ -1097,7 +1096,7 @@ func TestSettingsService_NormalizeProjectsDirectory_ConvertsRelativeToAbsolute(t
 	require.NoError(t, err)
 
 	// Verify it was updated to absolute path
-	var setting models.SettingVariable
+	var setting SettingVariable
 	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "projectsDirectory").First(&setting).Error)
 
 	// Should be converted to absolute path
@@ -1120,7 +1119,7 @@ func TestSettingsService_NormalizeProjectsDirectory_SkipsWhenEnvSet(t *testing.T
 	require.NoError(t, err)
 
 	// Verify it was NOT changed
-	var setting models.SettingVariable
+	var setting SettingVariable
 	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "projectsDirectory").First(&setting).Error)
 	require.Equal(t, "data/projects", setting.Value, "should not change when env var is set")
 }
@@ -1139,7 +1138,7 @@ func TestSettingsService_NormalizeProjectsDirectory_LeavesOtherPathsUnchanged(t 
 	require.NoError(t, err)
 
 	// Verify it was NOT changed
-	var setting models.SettingVariable
+	var setting SettingVariable
 	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "projectsDirectory").First(&setting).Error)
 	require.Equal(t, customPath, setting.Value, "should not change custom paths")
 }
@@ -1214,8 +1213,8 @@ func TestSettingsServiceEffectiveSnapshotMaterializedInternal(t *testing.T) {
 	t.Setenv("PROJECTS_DIRECTORY", "/env/projects")
 
 	db := setupSettingsTestDB(t)
-	require.NoError(t, db.Create(&models.SettingVariable{Key: "projectsDirectory", Value: "/db/projects"}).Error)
-	require.NoError(t, db.Create(&models.SettingVariable{Key: "baseServerUrl", Value: "http://before.example"}).Error)
+	require.NoError(t, db.Create(&SettingVariable{Key: "projectsDirectory", Value: "/db/projects"}).Error)
+	require.NoError(t, db.Create(&SettingVariable{Key: "baseServerUrl", Value: "http://before.example"}).Error)
 
 	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)

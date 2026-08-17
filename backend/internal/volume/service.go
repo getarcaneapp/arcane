@@ -1,6 +1,8 @@
 package volume
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+
 	"context"
 	"log/slog"
 	"strings"
@@ -14,7 +16,6 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
@@ -125,32 +126,32 @@ func (s *VolumeService) GetVolumeByName(ctx context.Context, name string) (*volu
 	return &v, nil
 }
 
-func (s *VolumeService) CreateVolume(ctx context.Context, options client.VolumeCreateOptions, user models.User) (*volumetypes.Volume, error) {
+func (s *VolumeService) CreateVolume(ctx context.Context, options client.VolumeCreateOptions, user common.User) (*volumetypes.Volume, error) {
 	slog.DebugContext(ctx, "volume service: create volume", "volume", options.Name, "driver", options.Driver, "user", user.ID)
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, models.EventTypeVolumeError, "volume", "", options.Name, user.ID, user.Username, "0", err, models.JSON{"action": "create", "driver": options.Driver})
+		s.eventService.LogErrorEvent(ctx, event.EventTypeVolumeError, "volume", "", options.Name, user.ID, user.Username, "0", err, database.JSON{"action": "create", "driver": options.Driver})
 		return nil, errors.WrapIf(err, "failed to connect to Docker")
 	}
 
 	created, err := dockerClient.VolumeCreate(ctx, options)
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, models.EventTypeVolumeError, "volume", "", options.Name, user.ID, user.Username, "0", err, models.JSON{"action": "create", "driver": options.Driver})
+		s.eventService.LogErrorEvent(ctx, event.EventTypeVolumeError, "volume", "", options.Name, user.ID, user.Username, "0", err, database.JSON{"action": "create", "driver": options.Driver})
 		return nil, errors.WrapIf(err, "failed to create volume")
 	}
 
 	vol, err := dockerClient.VolumeInspect(ctx, created.Volume.Name, client.VolumeInspectOptions{})
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, models.EventTypeVolumeError, "volume", created.Volume.Name, created.Volume.Name, user.ID, user.Username, "0", err, models.JSON{"action": "create", "driver": options.Driver, "step": "inspect"})
+		s.eventService.LogErrorEvent(ctx, event.EventTypeVolumeError, "volume", created.Volume.Name, created.Volume.Name, user.ID, user.Username, "0", err, database.JSON{"action": "create", "driver": options.Driver, "step": "inspect"})
 		return nil, errors.WrapIf(err, "failed to inspect created volume")
 	}
 
-	metadata := models.JSON{
+	metadata := database.JSON{
 		"action": "create",
 		"driver": vol.Volume.Driver,
 		"name":   vol.Volume.Name,
 	}
-	if logErr := s.eventService.LogVolumeEvent(ctx, models.EventTypeVolumeCreate, vol.Volume.Name, vol.Volume.Name, user.ID, user.Username, "0", metadata); logErr != nil {
+	if logErr := s.eventService.LogVolumeEvent(ctx, event.EventTypeVolumeCreate, vol.Volume.Name, vol.Volume.Name, user.ID, user.Username, "0", metadata); logErr != nil {
 		slog.WarnContext(ctx, "could not log volume creation action", "volume", vol.Volume.Name, "error", logErr.Error())
 	}
 
@@ -159,11 +160,11 @@ func (s *VolumeService) CreateVolume(ctx context.Context, options client.VolumeC
 	return new(volumetypes.NewSummary(vol.Volume)), nil
 }
 
-func (s *VolumeService) DeleteVolume(ctx context.Context, name string, force bool, user models.User) error {
+func (s *VolumeService) DeleteVolume(ctx context.Context, name string, force bool, user common.User) error {
 	slog.DebugContext(ctx, "volume service: delete volume", "volume", name, "force", force, "user", user.ID)
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, models.EventTypeVolumeError, "volume", name, name, user.ID, user.Username, "0", err, models.JSON{"action": "delete", "force": force})
+		s.eventService.LogErrorEvent(ctx, event.EventTypeVolumeError, "volume", name, name, user.ID, user.Username, "0", err, database.JSON{"action": "delete", "force": force})
 		return errors.WrapIf(err, "failed to connect to Docker")
 	}
 
@@ -176,15 +177,15 @@ func (s *VolumeService) DeleteVolume(ctx context.Context, name string, force boo
 	if _, err := dockerClient.VolumeRemove(ctx, name, client.VolumeRemoveOptions{
 		Force: force,
 	}); err != nil {
-		s.eventService.LogErrorEvent(ctx, models.EventTypeVolumeError, "volume", name, name, user.ID, user.Username, "0", err, models.JSON{"action": "delete", "force": force})
+		s.eventService.LogErrorEvent(ctx, event.EventTypeVolumeError, "volume", name, name, user.ID, user.Username, "0", err, database.JSON{"action": "delete", "force": force})
 		return errors.WrapIf(err, "failed to remove volume")
 	}
 
-	metadata := models.JSON{
+	metadata := database.JSON{
 		"action": "delete",
 		"name":   name,
 	}
-	if logErr := s.eventService.LogVolumeEvent(ctx, models.EventTypeVolumeDelete, name, name, user.ID, user.Username, "0", metadata); logErr != nil {
+	if logErr := s.eventService.LogVolumeEvent(ctx, event.EventTypeVolumeDelete, name, name, user.ID, user.Username, "0", metadata); logErr != nil {
 		slog.WarnContext(ctx, "could not log volume deletion action", "volume", name, "error", logErr.Error())
 	}
 
@@ -223,7 +224,7 @@ func (s *VolumeService) PruneVolumesWithOptions(ctx context.Context, all bool) (
 	}
 
 	metadata := buildVolumePruneMetadataInternal(all, len(volumePruneResult.Report.VolumesDeleted), volumePruneResult.Report.SpaceReclaimed, preserveTrivyCache)
-	if logErr := s.eventService.LogVolumeEvent(ctx, models.EventTypeVolumeDelete, "", "bulk_prune", models.SystemUser.ID, models.SystemUser.Username, "0", metadata); logErr != nil {
+	if logErr := s.eventService.LogVolumeEvent(ctx, event.EventTypeVolumeDelete, "", "bulk_prune", common.SystemUser.ID, common.SystemUser.Username, "0", metadata); logErr != nil {
 		slog.WarnContext(ctx, "could not log volume prune action", "error", logErr.Error())
 	}
 
@@ -262,8 +263,8 @@ func buildVolumePruneOptionsInternal(all, preserveTrivyCache bool) client.Volume
 	return options
 }
 
-func buildVolumePruneMetadataInternal(all bool, volumesDeleted int, spaceReclaimed uint64, preserveTrivyCache bool) models.JSON {
-	return models.JSON{
+func buildVolumePruneMetadataInternal(all bool, volumesDeleted int, spaceReclaimed uint64, preserveTrivyCache bool) database.JSON {
+	return database.JSON{
 		"action":                "prune",
 		"all":                   all,
 		"volumesDeleted":        volumesDeleted,

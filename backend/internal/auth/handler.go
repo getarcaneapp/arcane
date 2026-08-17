@@ -1,6 +1,8 @@
 package auth
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
+
 	"bytes"
 	"context"
 	"fmt"
@@ -20,7 +22,6 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cookie"
@@ -248,7 +249,7 @@ func (h *AuthHandler) Login(ctx context.Context, input *LoginInput) (*LoginOutpu
 	}
 
 	if userModel.PasskeyMFAEnabled {
-		challenge, err := h.beginMFAAuthentication(ctx, userModel.ID, meta, models.UserSessionSourceLocal)
+		challenge, err := h.beginMFAAuthentication(ctx, userModel.ID, meta, session.UserSessionSourceLocal)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("Authentication failed")
 		}
@@ -264,7 +265,7 @@ func (h *AuthHandler) Login(ctx context.Context, input *LoginInput) (*LoginOutpu
 		}, nil
 	}
 
-	tokenPair, err := h.authService.CompleteLogin(ctx, userModel, meta, models.UserSessionSourceLocal, "")
+	tokenPair, err := h.authService.CompleteLogin(ctx, userModel, meta, session.UserSessionSourceLocal, "")
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Authentication failed")
 	}
@@ -302,7 +303,7 @@ func (h *AuthHandler) Logout(ctx context.Context, input *struct{}) (*LogoutOutpu
 				slog.ErrorContext(ctx, "Failed to revoke session on logout; clearing cookie anyway", "sessionID", sessionID, "error", err)
 			}
 		}
-		if userModel, exists := models.CurrentUserFromContext(ctx); exists {
+		if userModel, exists := common.CurrentUserFromContext(ctx); exists {
 			h.authService.LogLogout(ctx, userModel)
 		}
 	}

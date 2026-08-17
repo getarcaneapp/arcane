@@ -8,7 +8,6 @@ import (
 
 	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 )
 
 // ValidateCredentialTargetChange prevents stored credentials from being reused
@@ -50,9 +49,9 @@ func ValidateCredentialTargetChange(
 		return common.Classify(common.ErrValidation, errors.WithDetails(errors.Errorf("Changing %s requires re-supplying or clearing the %s", targetName, missingFields[0]), "field", missingFields[0]))
 	}
 
-	return models.NewAPIErrorWithDetails(
+	return common.NewAPIErrorWithDetails(
 		fmt.Sprintf("Changing %s requires updating all stored credentials", targetName),
-		models.APIErrorCodeValidationError,
+		common.APIErrorCodeValidationError,
 		http.StatusBadRequest,
 		map[string]any{"fields": missingFields},
 	)

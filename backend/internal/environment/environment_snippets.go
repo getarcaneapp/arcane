@@ -1,13 +1,14 @@
 package environment
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+
 	"context"
 	"fmt"
 	"log/slog"
 	"strings"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 )
 
@@ -157,11 +158,11 @@ func (s *EnvironmentService) logGeneratedMTLSEventsInternal(ctx context.Context,
 	}
 	if assets.CAGenerated {
 		if _, err := s.eventService.CreateEvent(ctx, event.CreateEventRequest{
-			Type:        models.EventTypeEnvironmentMTLSCAGenerated,
-			Severity:    models.EventSeverityInfo,
+			Type:        event.EventTypeEnvironmentMTLSCAGenerated,
+			Severity:    event.EventSeverityInfo,
 			Title:       "Edge mTLS CA generated",
 			Description: "Arcane generated a new edge mTLS certificate authority",
-			Metadata:    models.JSON{"kind": "ca"},
+			Metadata:    database.JSON{"kind": "ca"},
 		}); err != nil {
 			slog.WarnContext(ctx, "Failed to create edge mTLS CA generation event", "error", err)
 		}
@@ -169,15 +170,15 @@ func (s *EnvironmentService) logGeneratedMTLSEventsInternal(ctx context.Context,
 	if assets.CertIssued {
 		envIDCopy := envID
 		if _, err := s.eventService.CreateEvent(ctx, event.CreateEventRequest{
-			Type:          models.EventTypeEnvironmentMTLSCertIssued,
-			Severity:      models.EventSeverityInfo,
+			Type:          event.EventTypeEnvironmentMTLSCertIssued,
+			Severity:      event.EventSeverityInfo,
 			Title:         "Edge mTLS certificate issued",
 			Description:   fmt.Sprintf("Arcane issued an edge mTLS client certificate for environment '%s'", envName),
 			ResourceType:  new("environment"),
 			ResourceID:    &envIDCopy,
 			ResourceName:  new(envName),
 			EnvironmentID: &envIDCopy,
-			Metadata:      models.JSON{"kind": "client"},
+			Metadata:      database.JSON{"kind": "client"},
 		}); err != nil {
 			slog.WarnContext(ctx, "Failed to create edge mTLS certificate issuance event", "environment_id", envID, "error", err)
 		}

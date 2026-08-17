@@ -1,6 +1,10 @@
 package project
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+
 	"context"
 	stderrors "errors"
 	"log/slog"
@@ -15,7 +19,6 @@ import (
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumes"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
@@ -24,7 +27,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, name *string, composeContent, envContent, overrideContent *string, user models.User) (*models.Project, error) {
+func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, name *string, composeContent, envContent, overrideContent *string, user common.User) (*Project, error) {
 	proj, projectsDirectory, err := s.getProjectForUpdate(ctx, projectID)
 	if err != nil {
 		return nil, err
@@ -89,7 +92,7 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 // the compose file is authoritative over the submitted project name. For
 // name-only renames, it checks the compose file on disk so the lock can't be
 // bypassed via the API.
-func resolveAuthoritativeProjectNameInternal(proj *models.Project, name *string, composeContent *string) *string {
+func resolveAuthoritativeProjectNameInternal(proj *Project, name *string, composeContent *string) *string {
 	if composeContent != nil {
 		if yamlName := projects.ComposeContentProjectName(*composeContent); yamlName != "" {
 			return &yamlName
@@ -131,7 +134,7 @@ func (s *ProjectService) prepareProjectUpdateBackupInternal(ctx context.Context,
 	return backup, func() { _ = acfs.RemoveAll(cleanupCtx, projectsDirectory, backupLogical) }, nil
 }
 
-func (s *ProjectService) applyProjectUpdateWithRenameJournalInternal(ctx context.Context, proj *models.Project, name *string, projectsDirectory string, composeContent, envContent, overrideContent *string, volumeMigration volumes.Migration, renameJournal *projectRenameJournalInternal, journalActive *bool, projectStateCommitted *bool) (err error) {
+func (s *ProjectService) applyProjectUpdateWithRenameJournalInternal(ctx context.Context, proj *Project, name *string, projectsDirectory string, composeContent, envContent, overrideContent *string, volumeMigration volumes.Migration, renameJournal *projectRenameJournalInternal, journalActive *bool, projectStateCommitted *bool) (err error) {
 	volumeMigrationApplied := false
 	defer func() {
 		stateCommitted := projectStateCommitted != nil && *projectStateCommitted
@@ -161,7 +164,7 @@ func (s *ProjectService) applyProjectUpdateWithRenameJournalInternal(ctx context
 	return nil
 }
 
-func (s *ProjectService) saveProjectUpdateInternal(ctx context.Context, proj *models.Project) error {
+func (s *ProjectService) saveProjectUpdateInternal(ctx context.Context, proj *Project) error {
 	tx := s.db.WithContext(ctx).Begin()
 	if tx.Error != nil {
 		return errors.WrapIf(tx.Error, "failed to start project update transaction")
@@ -184,7 +187,7 @@ func (s *ProjectService) saveProjectUpdateInternal(ctx context.Context, proj *mo
 	return nil
 }
 
-func (s *ProjectService) handleProjectUpdateFailureInternal(ctx context.Context, projectID, projectsDirectory string, proj *models.Project, backup *projects.ProjectUpdateBackup, journalActive *bool, projectStateCommitted bool, err error) error {
+func (s *ProjectService) handleProjectUpdateFailureInternal(ctx context.Context, projectID, projectsDirectory string, proj *Project, backup *projects.ProjectUpdateBackup, journalActive *bool, projectStateCommitted bool, err error) error {
 	if projectStateCommitted {
 		return err
 	}
@@ -204,8 +207,8 @@ func (s *ProjectService) handleProjectUpdateFailureInternal(ctx context.Context,
 	return err
 }
 
-func (s *ProjectService) logProjectUpdateEventInternal(ctx context.Context, proj *models.Project, composeContent, envContent, overrideContent *string, user models.User) {
-	metadata := models.JSON{
+func (s *ProjectService) logProjectUpdateEventInternal(ctx context.Context, proj *Project, composeContent, envContent, overrideContent *string, user common.User) {
+	metadata := database.JSON{
 		"action":      "update",
 		"projectID":   proj.ID,
 		"projectName": proj.Name,
@@ -219,10 +222,10 @@ func (s *ProjectService) logProjectUpdateEventInternal(ctx context.Context, proj
 	if overrideContent != nil {
 		metadata["overrideUpdated"] = true
 	}
-	s.logProjectEventInternal(ctx, models.EventTypeProjectUpdate, proj.ID, proj.Name, user, metadata, "could not log project update action")
+	s.logProjectEventInternal(ctx, event.EventTypeProjectUpdate, proj.ID, proj.Name, user, metadata, "could not log project update action")
 }
 
-func (s *ProjectService) refreshProjectAfterContentUpdateInternal(ctx context.Context, proj *models.Project, composeContent, overrideContent *string) {
+func (s *ProjectService) refreshProjectAfterContentUpdateInternal(ctx context.Context, proj *Project, composeContent, overrideContent *string) {
 	if composeContent == nil && overrideContent == nil {
 		return
 	}
@@ -237,7 +240,7 @@ func (s *ProjectService) refreshProjectAfterContentUpdateInternal(ctx context.Co
 	}
 }
 
-func (s *ProjectService) ApplyGitSyncProjectFiles(ctx context.Context, projectID string, composeContent string, gitEnvContent *string, gitOverrideContent *string, gitOverrideFileName string, user models.User) (*models.Project, error) {
+func (s *ProjectService) ApplyGitSyncProjectFiles(ctx context.Context, projectID string, composeContent string, gitEnvContent *string, gitOverrideContent *string, gitOverrideFileName string, user common.User) (*Project, error) {
 	proj, projectsDirectory, err := s.getProjectForUpdate(ctx, projectID)
 	if err != nil {
 		return nil, err
@@ -278,7 +281,7 @@ func (s *ProjectService) ApplyGitSyncProjectFiles(ctx context.Context, projectID
 		slog.WarnContext(ctx, "failed to update service counts after git sync", "projectID", proj.ID, "error", err)
 	}
 
-	metadata := models.JSON{
+	metadata := database.JSON{
 		"action":          "git_sync_update",
 		"projectID":       proj.ID,
 		"projectName":     proj.Name,
@@ -289,33 +292,33 @@ func (s *ProjectService) ApplyGitSyncProjectFiles(ctx context.Context, projectID
 	if gitEnvContent == nil {
 		metadata["envSourceRemoved"] = true
 	}
-	s.logProjectEventInternal(ctx, models.EventTypeProjectUpdate, proj.ID, proj.Name, user, metadata, "could not log git sync project update action")
+	s.logProjectEventInternal(ctx, event.EventTypeProjectUpdate, proj.ID, proj.Name, user, metadata, "could not log git sync project update action")
 
 	return &proj, nil
 }
 
-func (s *ProjectService) getProjectForUpdate(ctx context.Context, projectID string) (models.Project, string, error) {
-	var proj models.Project
+func (s *ProjectService) getProjectForUpdate(ctx context.Context, projectID string) (Project, string, error) {
+	var proj Project
 	if err := s.db.WithContext(ctx).First(&proj, "id = ?", projectID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return models.Project{}, "", errors.New("project not found")
+			return Project{}, "", errors.New("project not found")
 		}
-		return models.Project{}, "", errors.WrapIf(err, "failed to get project")
+		return Project{}, "", errors.WrapIf(err, "failed to get project")
 	}
 
 	projectsDirectory, err := projects.GetProjectsDirectory(ctx, s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects"))
 	if err != nil {
-		return models.Project{}, "", errors.WrapIf(err, "failed to get projects directory")
+		return Project{}, "", errors.WrapIf(err, "failed to get projects directory")
 	}
 
 	if err := s.EnsureProjectPathUnderRoot(ctx, &proj, false); err != nil {
-		return models.Project{}, "", err
+		return Project{}, "", err
 	}
 
 	return proj, projectsDirectory, nil
 }
 
-func (s *ProjectService) prepareProjectRenameVolumeMigrationForUpdateInternal(ctx context.Context, proj *models.Project, name *string, projectsDirectory string, composeContent, envContent, overrideContent *string) (volumes.Migration, error) {
+func (s *ProjectService) prepareProjectRenameVolumeMigrationForUpdateInternal(ctx context.Context, proj *Project, name *string, projectsDirectory string, composeContent, envContent, overrideContent *string) (volumes.Migration, error) {
 	if !isProjectRenameRequestedInternal(proj, name) {
 		return nil, nil
 	}
@@ -352,7 +355,7 @@ func (s *ProjectService) prepareProjectRenameVolumeMigrationForUpdateInternal(ct
 	return s.prepareProjectRenameVolumeMigrationInternal(ctx, &previewProject, name)
 }
 
-func (s *ProjectService) prepareProjectRenameVolumeMigrationInternal(ctx context.Context, proj *models.Project, name *string) (volumes.Migration, error) {
+func (s *ProjectService) prepareProjectRenameVolumeMigrationInternal(ctx context.Context, proj *Project, name *string) (volumes.Migration, error) {
 	oldComposeName, newComposeName, ok := projectRenameVolumeMigrationComposeNamesInternal(s, proj, name)
 	if !ok {
 		return nil, nil
@@ -374,13 +377,13 @@ func (s *ProjectService) prepareProjectRenameVolumeMigrationInternal(ctx context
 	return volumes.PlanMigration(ctx, dockerClient, composeProject, oldComposeName, newComposeName)
 }
 
-func projectRenameVolumeMigrationComposeNamesInternal(s *ProjectService, proj *models.Project, name *string) (string, string, bool) {
+func projectRenameVolumeMigrationComposeNamesInternal(s *ProjectService, proj *Project, name *string) (string, string, bool) {
 	if s == nil || s.dockerService == nil || proj == nil || name == nil {
 		return "", "", false
 	}
 
 	newProjectName := strings.TrimSpace(*name)
-	if newProjectName == "" || proj.Name == newProjectName || proj.Status != models.ProjectStatusStopped {
+	if newProjectName == "" || proj.Name == newProjectName || proj.Status != ProjectStatusStopped {
 		return "", "", false
 	}
 
@@ -393,7 +396,7 @@ func projectRenameVolumeMigrationComposeNamesInternal(s *ProjectService, proj *m
 	return oldComposeName, newComposeName, true
 }
 
-func isProjectRenameRequestedInternal(proj *models.Project, name *string) bool {
+func isProjectRenameRequestedInternal(proj *Project, name *string) bool {
 	if proj == nil || name == nil {
 		return false
 	}
@@ -472,7 +475,7 @@ func restoreProjectDirectoryBackupInternal(ctx context.Context, projectsDirector
 	return nil
 }
 
-func (s *ProjectService) persistUpdatedProjectFiles(ctx context.Context, proj *models.Project, projectsDirectory string, composeContent, envContent, overrideContent *string) error {
+func (s *ProjectService) persistUpdatedProjectFiles(ctx context.Context, proj *Project, projectsDirectory string, composeContent, envContent, overrideContent *string) error {
 	switch {
 	case composeContent != nil:
 		effectiveEnvContent, err := s.resolveEffectiveEnvContentForUpdateInternal(proj.Path, envContent)
@@ -514,7 +517,7 @@ func (s *ProjectService) persistUpdatedProjectFiles(ctx context.Context, proj *m
 // on-disk base merged with the requested override so a base that is only valid
 // *with* its override still validates, and a delete that would break the base
 // fails before touching disk.
-func (s *ProjectService) persistOverrideOnlyUpdateInternal(ctx context.Context, proj *models.Project, projectsDirectory string, envContent, overrideContent *string) error {
+func (s *ProjectService) persistOverrideOnlyUpdateInternal(ctx context.Context, proj *Project, projectsDirectory string, envContent, overrideContent *string) error {
 	baseContent, _, err := projects.ReadProjectFiles(proj.Path, "")
 	if err != nil {
 		return errors.WrapIf(err, "failed to read project files")
@@ -594,11 +597,11 @@ func validateComposeContentForUpdate(ctx context.Context, projectsDirectory, pro
 	return err
 }
 
-func (s *ProjectService) ensureProjectStoppedForRenameInternal(ctx context.Context, proj *models.Project, name *string) error {
+func (s *ProjectService) ensureProjectStoppedForRenameInternal(ctx context.Context, proj *Project, name *string) error {
 	if !isProjectRenameRequestedInternal(proj, name) {
 		return nil
 	}
-	if proj.Status != models.ProjectStatusStopped && proj.Status != models.ProjectStatusUnknown {
+	if proj.Status != ProjectStatusStopped && proj.Status != ProjectStatusUnknown {
 		return errors.Errorf("project must be stopped before renaming (current status: %s)", proj.Status)
 	}
 
@@ -609,19 +612,19 @@ func (s *ProjectService) ensureProjectStoppedForRenameInternal(ctx context.Conte
 	}
 
 	status := calculateProjectStatus(services)
-	if status != models.ProjectStatusStopped {
+	if status != ProjectStatusStopped {
 		return errors.Errorf("project must be stopped before renaming (current status: %s)", status)
 	}
 
 	serviceCount, runningCount := getServiceCounts(services)
-	proj.Status = models.ProjectStatusStopped
+	proj.Status = ProjectStatusStopped
 	proj.StatusReason = nil
 	proj.ServiceCount = serviceCount
 	proj.RunningCount = runningCount
 	return nil
 }
 
-func (s *ProjectService) applyProjectRenameIfNeeded(ctx context.Context, proj *models.Project, name *string, projectsDirectory string) error {
+func (s *ProjectService) applyProjectRenameIfNeeded(ctx context.Context, proj *Project, name *string, projectsDirectory string) error {
 	if name == nil {
 		return nil
 	}
@@ -631,7 +634,7 @@ func (s *ProjectService) applyProjectRenameIfNeeded(ctx context.Context, proj *m
 		return nil
 	}
 
-	if proj.Status != models.ProjectStatusStopped {
+	if proj.Status != ProjectStatusStopped {
 		return errors.Errorf("project must be stopped before renaming (current status: %s)", proj.Status)
 	}
 

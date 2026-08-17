@@ -18,7 +18,6 @@ import (
 
 	"emperror.dev/errors"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 )
@@ -27,7 +26,7 @@ const (
 	schemaVersion                = 1
 	sourceFileConfig             = "backend/internal/config/config.go"
 	sourceFileBuildablesConfig   = "backend/internal/config/buildables_config.go"
-	sourceFileSettings           = "backend/internal/models/settings.go"
+	sourceFileSettings           = "backend/internal/settings/model.go"
 	sourceSymbolConfig           = "config.Config"
 	sourceSymbolBuildablesConfig = "config.BuildablesConfig"
 )
@@ -279,7 +278,7 @@ func parseStructEnvFieldsInternal(filename, structName string, opts envFieldOpti
 
 func collectSettingEnvOverridesInternal() ([]SettingOverrideEntry, error) {
 	defaults := settings.DefaultSettingsConfig()
-	settingsType := reflect.TypeFor[models.Settings]()
+	settingsType := reflect.TypeFor[settings.Settings]()
 	entries := make([]SettingOverrideEntry, 0, settingsType.NumField())
 
 	for field := range settingsType.Fields() {
@@ -331,9 +330,9 @@ func collectSettingEnvOverridesInternal() ([]SettingOverrideEntry, error) {
 			Public:       isPublic,
 			Requires:     requires,
 			Note:         rule.note,
-			Source:       "models.Settings + settings.DefaultSettingsConfig",
+			Source:       "settings.Settings + settings.DefaultSettingsConfig",
 			SourceFile:   sourceFileSettings,
-			SourceSymbol: "models.Settings." + field.Name,
+			SourceSymbol: "settings.Settings." + field.Name,
 		})
 	}
 

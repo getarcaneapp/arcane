@@ -1,6 +1,8 @@
 package middleware
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+
 	"context"
 	"log/slog"
 	"net/http"
@@ -8,7 +10,6 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/labstack/echo/v5"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 )
 
@@ -44,7 +45,7 @@ func RequireEchoPermission(perm string) echo.MiddlewareFunc {
 				envID = authz.EnvIDFromPath(c.Request().URL.Path)
 			}
 			if !ps.Allows(perm, envID) {
-				return c.JSON(http.StatusForbidden, models.APIError{
+				return c.JSON(http.StatusForbidden, common.APIError{
 					Code:    "FORBIDDEN",
 					Message: "permission denied: " + perm,
 				})

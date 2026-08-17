@@ -1,6 +1,8 @@
 package federated
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
+
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -24,7 +26,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
@@ -86,8 +87,8 @@ func (s *FederatedCredentialService) ExchangeToken(ctx context.Context, req fede
 	issuer, subject, audiences := unverifiedTokenExchangeMetadataInternal(req.SubjectToken)
 	logResult := "failure"
 	logReason := ""
-	var matchedCredential *models.FederatedCredential
-	var matchedUser *models.User
+	var matchedCredential *FederatedCredential
+	var matchedUser *common.User
 	defer func() {
 		s.logExchangeInternal(ctx, logResult, logReason, issuer, subject, audiences, matchedCredential, matchedUser)
 	}()
@@ -168,9 +169,9 @@ func (s *FederatedCredentialService) Create(ctx context.Context, callerUserID st
 		return nil, err
 	}
 
-	var created models.FederatedCredential
+	var created FederatedCredential
 	err = dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
-		serviceUser := models.User{
+		serviceUser := common.User{
 			Username:         "svc_federated_" + strings.ReplaceAll(uuid.NewString(), "-", ""),
 			DisplayName:      mo.EmptyableToOption(strings.TrimSpace("Federated: " + normalized.Name)).ToPointer(),
 			IsServiceAccount: true,
@@ -179,7 +180,7 @@ func (s *FederatedCredentialService) Create(ctx context.Context, callerUserID st
 			return errors.WrapIf(err, "failed to create federated service user")
 		}
 
-		created = models.FederatedCredential{
+		created = FederatedCredential{
 			Name:            normalized.Name,
 			Description:     normalized.Description,
 			Enabled:         normalized.Enabled,
@@ -198,11 +199,11 @@ func (s *FederatedCredentialService) Create(ctx context.Context, callerUserID st
 			return errors.WrapIf(err, "failed to create federated credential")
 		}
 
-		assignment := models.UserRoleAssignment{
+		assignment := role.UserRoleAssignment{
 			UserID:        serviceUser.ID,
 			RoleID:        normalized.RoleID,
 			EnvironmentID: normalized.EnvironmentID,
-			Source:        models.RoleAssignmentSourceManual,
+			Source:        role.RoleAssignmentSourceManual,
 		}
 		if err := tx.Create(&assignment).Error; err != nil {
 			return errors.WrapIf(err, "failed to create federated role assignment")
@@ -225,9 +226,9 @@ func (s *FederatedCredentialService) Create(ctx context.Context, callerUserID st
 }
 
 func (s *FederatedCredentialService) List(ctx context.Context, params pagination.QueryParams) ([]federatedtypes.FederatedCredential, pagination.Response, error) {
-	var credentials []models.FederatedCredential
+	var credentials []FederatedCredential
 	query := s.db.WithContext(ctx).
-		Model(&models.FederatedCredential{}).
+		Model(&FederatedCredential{}).
 		Preload("IdentityUser").
 		Preload("Role").
 		Preload("Environment")
@@ -250,7 +251,7 @@ func (s *FederatedCredentialService) List(ctx context.Context, params pagination
 }
 
 func (s *FederatedCredentialService) Get(ctx context.Context, id string) (*federatedtypes.FederatedCredential, error) {
-	var credential models.FederatedCredential
+	var credential FederatedCredential
 	if err := s.db.WithContext(ctx).
 		Preload("IdentityUser").
 		Preload("Role").
@@ -266,7 +267,7 @@ func (s *FederatedCredentialService) Get(ctx context.Context, id string) (*feder
 }
 
 func (s *FederatedCredentialService) Update(ctx context.Context, callerUserID string, id string, req federatedtypes.UpdateFederatedCredential) (*federatedtypes.FederatedCredential, error) {
-	var credential models.FederatedCredential
+	var credential FederatedCredential
 	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&credential).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, common.Classify(common.ErrFederatedCredentialNotFound, errors.New("federated credential not found"))
@@ -295,15 +296,15 @@ func (s *FederatedCredentialService) Update(ctx context.Context, callerUserID st
 			}
 		}
 		if roleChanged {
-			if err := tx.Where("user_id = ? AND source = ?", updated.IdentityUserID, models.RoleAssignmentSourceManual).
-				Delete(&models.UserRoleAssignment{}).Error; err != nil {
+			if err := tx.Where("user_id = ? AND source = ?", updated.IdentityUserID, role.RoleAssignmentSourceManual).
+				Delete(&role.UserRoleAssignment{}).Error; err != nil {
 				return errors.WrapIf(err, "failed to clear federated role assignment")
 			}
-			assignment := models.UserRoleAssignment{
+			assignment := role.UserRoleAssignment{
 				UserID:        updated.IdentityUserID,
 				RoleID:        updated.RoleID,
 				EnvironmentID: updated.EnvironmentID,
-				Source:        models.RoleAssignmentSourceManual,
+				Source:        role.RoleAssignmentSourceManual,
 			}
 			if err := tx.Create(&assignment).Error; err != nil {
 				return errors.WrapIf(err, "failed to update federated role assignment")
@@ -322,7 +323,7 @@ func (s *FederatedCredentialService) Update(ctx context.Context, callerUserID st
 }
 
 func (s *FederatedCredentialService) Delete(ctx context.Context, id string) error {
-	var credential models.FederatedCredential
+	var credential FederatedCredential
 	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&credential).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return common.Classify(common.ErrFederatedCredentialNotFound, errors.New("federated credential not found"))
@@ -331,10 +332,10 @@ func (s *FederatedCredentialService) Delete(ctx context.Context, id string) erro
 	}
 
 	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
-		if err := tx.Delete(&models.FederatedCredential{}, "id = ?", credential.ID).Error; err != nil {
+		if err := tx.Delete(&FederatedCredential{}, "id = ?", credential.ID).Error; err != nil {
 			return errors.WrapIf(err, "failed to delete federated credential")
 		}
-		if err := tx.Delete(&models.User{}, "id = ?", credential.IdentityUserID).Error; err != nil {
+		if err := tx.Delete(&common.User{}, "id = ?", credential.IdentityUserID).Error; err != nil {
 			return errors.WrapIf(err, "failed to delete federated service user")
 		}
 		return nil
@@ -366,8 +367,8 @@ func validateTokenExchangeRequestInternal(req federatedtypes.TokenExchangeReques
 	return nil
 }
 
-func (s *FederatedCredentialService) listEnabledCredentialsForIssuerInternal(ctx context.Context, issuer string) ([]models.FederatedCredential, error) {
-	var credentials []models.FederatedCredential
+func (s *FederatedCredentialService) listEnabledCredentialsForIssuerInternal(ctx context.Context, issuer string) ([]FederatedCredential, error) {
+	var credentials []FederatedCredential
 	if err := s.db.WithContext(ctx).
 		Where("issuer_url = ? AND enabled = ?", issuer, true).
 		Order("created_at ASC").
@@ -415,11 +416,11 @@ func (s *FederatedCredentialService) recordTokenReplayGuardInternal(ctx context.
 	now := time.Now()
 	if err := s.db.WithContext(ctx).
 		Where("expires_at < ?", now).
-		Delete(&models.FederatedTokenReplay{}).Error; err != nil {
+		Delete(&FederatedTokenReplay{}).Error; err != nil {
 		return errors.WrapIf(err, "failed to prune federated token replay records")
 	}
 
-	replay := models.FederatedTokenReplay{
+	replay := FederatedTokenReplay{
 		TokenHash: federatedTokenReplayHashInternal(issuer, rawToken, claims),
 		IssuerURL: issuer,
 		ExpiresAt: expiresAt,
@@ -484,7 +485,7 @@ func (s *FederatedCredentialService) providerForIssuerInternal(ctx context.Conte
 	return provider, nil
 }
 
-func selectMatchingCredentialInternal(credentials []models.FederatedCredential, tokenAudiences []string, claims map[string]any) *models.FederatedCredential {
+func selectMatchingCredentialInternal(credentials []FederatedCredential, tokenAudiences []string, claims map[string]any) *FederatedCredential {
 	for i := range credentials {
 		credential := &credentials[i]
 		if !audienceMatchesInternal(tokenAudiences, credential.Audiences) {
@@ -616,7 +617,7 @@ func normalizeCreateFederatedCredentialInternal(req federatedtypes.CreateFederat
 	return req, nil
 }
 
-func applyFederatedCredentialUpdateInternal(existing models.FederatedCredential, req federatedtypes.UpdateFederatedCredential) (models.FederatedCredential, bool, error) {
+func applyFederatedCredentialUpdateInternal(existing FederatedCredential, req federatedtypes.UpdateFederatedCredential) (FederatedCredential, bool, error) {
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
 		if name == "" {
@@ -677,7 +678,7 @@ func applyFederatedCredentialUpdateInternal(existing models.FederatedCredential,
 	return existing, roleChanged, nil
 }
 
-func applyFederatedRoleScopeUpdateInternal(existing *models.FederatedCredential, roleID *string, environmentID *string) (bool, error) {
+func applyFederatedRoleScopeUpdateInternal(existing *FederatedCredential, roleID *string, environmentID *string) (bool, error) {
 	if existing == nil {
 		return false, common.Classify(common.ErrFederatedCredentialInvalid, errors.New("invalid federated credential"))
 	}
@@ -756,7 +757,7 @@ func revokeFederatedCredentialSessionsInternal(tx *gorm.DB, credentialID string)
 	}
 
 	now := time.Now()
-	if err := tx.Model(&models.UserSession{}).
+	if err := tx.Model(&session.UserSession{}).
 		Where("federated_credential_id = ? AND revoked_at IS NULL", credentialID).
 		Updates(map[string]any{"revoked_at": now, "updated_at": now}).Error; err != nil {
 		return errors.WrapIf(err, "failed to revoke federated credential sessions")
@@ -764,7 +765,7 @@ func revokeFederatedCredentialSessionsInternal(tx *gorm.DB, credentialID string)
 	return nil
 }
 
-func toFederatedCredentialDTOInternal(credential *models.FederatedCredential) federatedtypes.FederatedCredential {
+func toFederatedCredentialDTOInternal(credential *FederatedCredential) federatedtypes.FederatedCredential {
 	if credential == nil {
 		return federatedtypes.FederatedCredential{}
 	}
@@ -805,7 +806,7 @@ func (s *FederatedCredentialService) markCredentialUsedAsyncInternal(ctx context
 		now := time.Now()
 		cutoff := now.Add(-federatedCredentialLastUsedWriteWindow)
 		if err := s.db.WithContext(bgCtx).
-			Model(&models.FederatedCredential{}).
+			Model(&FederatedCredential{}).
 			Where("id = ? AND (last_used_at IS NULL OR last_used_at < ?)", credentialID, cutoff).
 			Update("last_used_at", now).Error; err != nil {
 			slog.WarnContext(bgCtx, "failed to update federated credential last_used_at", "credential_id", credentialID, "error", err)
@@ -813,7 +814,7 @@ func (s *FederatedCredentialService) markCredentialUsedAsyncInternal(ctx context
 	}()
 }
 
-func (s *FederatedCredentialService) logExchangeInternal(ctx context.Context, result, reason, issuer, subject string, audiences []string, credential *models.FederatedCredential, user *models.User) {
+func (s *FederatedCredentialService) logExchangeInternal(ctx context.Context, result, reason, issuer, subject string, audiences []string, credential *FederatedCredential, user *common.User) {
 	credentialID := ""
 	credentialName := ""
 	if credential != nil {
@@ -833,7 +834,7 @@ func (s *FederatedCredentialService) logExchangeInternal(ctx context.Context, re
 		return
 	}
 
-	metadata := models.JSON{
+	metadata := database.JSON{
 		"action":       "federated_token_exchange",
 		"result":       result,
 		"reason":       reason,
@@ -849,17 +850,17 @@ func (s *FederatedCredentialService) logExchangeInternal(ctx context.Context, re
 		userID = user.ID
 		username = user.Username
 	}
-	severity := models.EventSeverityInfo
+	severity := event.EventSeverityInfo
 	title := "Federated credential token exchange"
 	if result != "success" {
-		severity = models.EventSeverityWarning
+		severity = event.EventSeverityWarning
 		title = "Federated credential token exchange rejected"
 	}
 
 	go func() {
 		bgCtx := context.WithoutCancel(ctx)
 		_, err := s.eventService.CreateEvent(bgCtx, event.CreateEventRequest{
-			Type:         models.EventTypeFederatedExchange,
+			Type:         event.EventTypeFederatedExchange,
 			Severity:     severity,
 			Title:        title,
 			Description:  "Workload identity federation token exchange",

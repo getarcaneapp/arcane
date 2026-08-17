@@ -6,7 +6,6 @@ import (
 
 	"emperror.dev/errors"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
@@ -18,8 +17,8 @@ func (s *EnvironmentService) ListEnvironmentsPaginated(ctx context.Context, para
 		return s.listEnvironmentsPaginatedWithRuntimeFiltersInternal(ctx, params, accessibleEnvIDs)
 	}
 
-	var envs []models.Environment
-	q := s.db.WithContext(ctx).Model(&models.Environment{}).Where("hidden = ?", false)
+	var envs []Environment
+	q := s.db.WithContext(ctx).Model(&Environment{}).Where("hidden = ?", false)
 	// accessibleEnvIDs == nil means "no restriction". A non-nil slice limits the
 	// result to those environment IDs; an empty slice therefore matches nothing.
 	switch {
@@ -47,7 +46,7 @@ func (s *EnvironmentService) ListEnvironmentsPaginated(ctx context.Context, para
 		return nil, pagination.Response{}, errors.WrapIf(err, "failed to paginate environments")
 	}
 
-	out, mapErr := mapper.MapSlice[models.Environment, environment.Environment](envs)
+	out, mapErr := mapper.MapSlice[Environment, environment.Environment](envs)
 	if mapErr != nil {
 		return nil, pagination.Response{}, errors.WrapIf(mapErr, "failed to map environments")
 	}
@@ -73,15 +72,15 @@ func filterEnvironmentsByIDInternal(items []environment.Environment, allowedIDs 
 }
 
 func (s *EnvironmentService) listEnvironmentsPaginatedWithRuntimeFiltersInternal(ctx context.Context, params pagination.QueryParams, accessibleEnvIDs []string) ([]environment.Environment, pagination.Response, error) {
-	var envs []models.Environment
+	var envs []Environment
 	if err := s.db.WithContext(ctx).
-		Model(&models.Environment{}).
+		Model(&Environment{}).
 		Where("hidden = ?", false).
 		Find(&envs).Error; err != nil {
 		return nil, pagination.Response{}, errors.WrapIf(err, "failed to list environments")
 	}
 
-	items, mapErr := mapper.MapSlice[models.Environment, environment.Environment](envs)
+	items, mapErr := mapper.MapSlice[Environment, environment.Environment](envs)
 	if mapErr != nil {
 		return nil, pagination.Response{}, errors.WrapIf(mapErr, "failed to map environments")
 	}
@@ -198,16 +197,16 @@ func environmentTypeKeyInternal(env environment.Environment) string {
 }
 
 func (s *EnvironmentService) ListVisibleEnvironments(ctx context.Context) ([]environment.Environment, error) {
-	var envs []models.Environment
+	var envs []Environment
 	if err := s.db.WithContext(ctx).
-		Model(&models.Environment{}).
+		Model(&Environment{}).
 		Where("hidden = ?", false).
 		Order("created_at asc, id asc").
 		Find(&envs).Error; err != nil {
 		return nil, errors.WrapIf(err, "failed to list visible environments")
 	}
 
-	out, mapErr := mapper.MapSlice[models.Environment, environment.Environment](envs)
+	out, mapErr := mapper.MapSlice[Environment, environment.Environment](envs)
 	if mapErr != nil {
 		return nil, errors.WrapIf(mapErr, "failed to map environments")
 	}
@@ -234,10 +233,10 @@ func (s *EnvironmentService) ListRemoteEnvironmentIDs(ctx context.Context) ([]st
 }
 
 // ListRemoteEnvironments returns all non-local, enabled environments for syncing purposes.
-func (s *EnvironmentService) ListRemoteEnvironments(ctx context.Context) ([]models.Environment, error) {
-	var envs []models.Environment
+func (s *EnvironmentService) ListRemoteEnvironments(ctx context.Context) ([]Environment, error) {
+	var envs []Environment
 	err := s.db.WithContext(ctx).
-		Model(&models.Environment{}).
+		Model(&Environment{}).
 		Where("id != ?", "0").
 		Where("enabled = ?", true).
 		Where("hidden = ?", false).

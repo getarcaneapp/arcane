@@ -17,7 +17,6 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
@@ -138,7 +137,7 @@ func (s *UserService) ValidatePassword(encodedHash, password string) error {
 	return nil
 }
 
-func (s *UserService) CreateUser(ctx context.Context, user *models.User) (*models.User, error) {
+func (s *UserService) CreateUser(ctx context.Context, user *common.User) (*common.User, error) {
 	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
 		if err := tx.Create(user).Error; err != nil {
 			return errors.WrapIf(err, "failed to create user")
@@ -151,23 +150,23 @@ func (s *UserService) CreateUser(ctx context.Context, user *models.User) (*model
 	return user, nil
 }
 
-func (s *UserService) GetUserByUsername(ctx context.Context, username string) (*models.User, error) {
-	return dbutil.FirstWhere[models.User](ctx, s.db.DB, common.ErrUserNotFound, "username = ?", username)
+func (s *UserService) GetUserByUsername(ctx context.Context, username string) (*common.User, error) {
+	return dbutil.FirstWhere[common.User](ctx, s.db.DB, common.ErrUserNotFound, "username = ?", username)
 }
 
-func (s *UserService) GetUserByID(ctx context.Context, id string) (*models.User, error) {
-	return dbutil.FirstWhere[models.User](ctx, s.db.DB, common.ErrUserNotFound, "id = ?", id)
+func (s *UserService) GetUserByID(ctx context.Context, id string) (*common.User, error) {
+	return dbutil.FirstWhere[common.User](ctx, s.db.DB, common.ErrUserNotFound, "id = ?", id)
 }
 
-func (s *UserService) GetUserByOidcSubjectId(ctx context.Context, subjectId string) (*models.User, error) {
-	return dbutil.FirstWhere[models.User](ctx, s.db.DB, common.ErrUserNotFound, "oidc_subject_id = ?", subjectId)
+func (s *UserService) GetUserByOidcSubjectId(ctx context.Context, subjectId string) (*common.User, error) {
+	return dbutil.FirstWhere[common.User](ctx, s.db.DB, common.ErrUserNotFound, "oidc_subject_id = ?", subjectId)
 }
 
 // GetUserByEmail returns the user with the given email. The schema does not
 // enforce email uniqueness, so a lookup matching more than one account returns
 // common.ErrAmbiguousUserEmail instead of arbitrarily selecting one.
-func (s *UserService) GetUserByEmail(ctx context.Context, email string) (*models.User, error) {
-	var users []models.User
+func (s *UserService) GetUserByEmail(ctx context.Context, email string) (*common.User, error) {
+	var users []common.User
 	if err := s.db.DB.WithContext(ctx).Where("email = ?", email).Limit(2).Find(&users).Error; err != nil {
 		return nil, errors.WrapIf(err, "failed to query users by email")
 	}
@@ -187,7 +186,7 @@ func (s *UserService) ResolveUserPermissions(ctx context.Context, userID string)
 	if s.roleService == nil {
 		return nil, nil
 	}
-	return s.roleService.ResolvePermissions(ctx, &models.User{BaseModel: models.BaseModel{ID: userID}})
+	return s.roleService.ResolvePermissions(ctx, &common.User{BaseModel: database.BaseModel{ID: userID}})
 }
 
 // checkTargetPrivilegeInternal enforces actor-vs-target privilege ordering: a
@@ -206,7 +205,7 @@ func (s *UserService) checkTargetPrivilegeInternal(ctx context.Context, tx *gorm
 	revalidateActor := actorPerms != nil && !actorPerms.Sudo && actorPerms.IsGlobalAdmin() && s.roleService != nil
 	actorID := ""
 	if revalidateActor {
-		actor, ok := models.CurrentUserFromContext(ctx)
+		actor, ok := common.CurrentUserFromContext(ctx)
 		if !ok || actor == nil || actor.ID == "" {
 			return ErrInsufficientPrivilege
 		}
@@ -217,7 +216,7 @@ func (s *UserService) checkTargetPrivilegeInternal(ctx context.Context, tx *gorm
 	if actorID != "" && actorID != targetID {
 		userIDs = append(userIDs, actorID)
 	}
-	var lockedUsers []models.User
+	var lockedUsers []common.User
 	if err := tx.
 		Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("id IN ?", userIDs).
@@ -263,7 +262,7 @@ func (s *UserService) checkTargetPrivilegeInternal(ctx context.Context, tx *gorm
 // UpdateUser persists the given user. actorPerms identifies the caller
 // performing the change; authenticated global-admin callers must also be
 // present in ctx. Pass nil for internal service-to-service calls.
-func (s *UserService) UpdateUser(ctx context.Context, user *models.User, actorPerms *authz.PermissionSet) (*models.User, error) {
+func (s *UserService) UpdateUser(ctx context.Context, user *common.User, actorPerms *authz.PermissionSet) (*common.User, error) {
 	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
 		if err := s.checkTargetPrivilegeInternal(ctx, tx, actorPerms, user.ID); err != nil {
 			return err
@@ -281,7 +280,7 @@ func (s *UserService) UpdateUser(ctx context.Context, user *models.User, actorPe
 
 // SetPassword hashes and persists a new password for the given user and clears
 // the first-login password-change requirement for trusted internal callers.
-func (s *UserService) SetPassword(ctx context.Context, user *models.User, password string) (*models.User, error) {
+func (s *UserService) SetPassword(ctx context.Context, user *common.User, password string) (*common.User, error) {
 	if user == nil {
 		return nil, errors.New("user is nil")
 	}
@@ -300,7 +299,7 @@ func (s *UserService) SetPassword(ctx context.Context, user *models.User, passwo
 // the first-login password-change requirement, and revokes every session for
 // the user except exceptSessionID. Pass an empty exceptSessionID to revoke all
 // sessions. This is for trusted internal callers.
-func (s *UserService) SetPasswordAndRevokeSessionsExcept(ctx context.Context, user *models.User, password, exceptSessionID string) (*models.User, error) {
+func (s *UserService) SetPasswordAndRevokeSessionsExcept(ctx context.Context, user *common.User, password, exceptSessionID string) (*common.User, error) {
 	if user == nil {
 		return nil, errors.New("user is nil")
 	}
@@ -313,7 +312,7 @@ func (s *UserService) SetPasswordAndRevokeSessionsExcept(ctx context.Context, us
 		return nil, errors.WrapIf(err, "failed to hash password")
 	}
 
-	var updatedUser models.User
+	var updatedUser common.User
 	err = dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
 		if err := tx.
 			Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -347,10 +346,10 @@ func (s *UserService) SetPasswordAndRevokeSessionsExcept(ctx context.Context, us
 //
 // Note: The clause.Locking{Strength: "UPDATE"} statement is used to acquire a row-level lock.
 // This MUST be done inside a transaction to ensure the lock is held until the update is committed.
-func (s *UserService) AttachOidcSubjectTransactional(ctx context.Context, userID string, subject string, updateFn func(u *models.User)) (*models.User, error) {
-	var out *models.User
+func (s *UserService) AttachOidcSubjectTransactional(ctx context.Context, userID string, subject string, updateFn func(u *common.User)) (*common.User, error) {
+	var out *common.User
 	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
-		var u models.User
+		var u common.User
 		if err := tx.
 			Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("id = ?", userID).
@@ -397,7 +396,7 @@ func (s *UserService) CreateDefaultAdmin(ctx context.Context) error {
 	// an account to `arcane` and get promoted on the next restart.
 	if s.roleService != nil {
 		var count int64
-		if err := s.db.WithContext(ctx).Model(&models.User{}).Count(&count).Error; err != nil {
+		if err := s.db.WithContext(ctx).Model(&common.User{}).Count(&count).Error; err != nil {
 			return errors.WrapIf(err, "failed to count users")
 		}
 		if count > 0 {
@@ -417,7 +416,7 @@ func (s *UserService) CreateDefaultAdmin(ctx context.Context) error {
 	var adminUserID string
 	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
 		var count int64
-		if err := tx.Model(&models.User{}).Count(&count).Error; err != nil {
+		if err := tx.Model(&common.User{}).Count(&count).Error; err != nil {
 			return errors.WrapIf(err, "failed to count users")
 		}
 
@@ -428,7 +427,7 @@ func (s *UserService) CreateDefaultAdmin(ctx context.Context) error {
 			}
 			email := "admin@localhost"
 			displayName := "Arcane Admin"
-			userModel := &models.User{
+			userModel := &common.User{
 				Username:               "arcane",
 				Email:                  new(email),
 				DisplayName:            new(displayName),
@@ -449,7 +448,7 @@ func (s *UserService) CreateDefaultAdmin(ctx context.Context) error {
 		// Users exist but no global admin does (recovery only — the early
 		// return above skips this path on healthy installs). See if `arcane`
 		// is present; if not, leave the install alone.
-		var existing models.User
+		var existing common.User
 		err := tx.Where("username = ?", "arcane").First(&existing).Error
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -485,13 +484,13 @@ func (s *UserService) grantDefaultAdminRoleInternal(ctx context.Context, adminUs
 			return nil // already has it
 		}
 	}
-	manual := make([]models.UserRoleAssignment, 0, len(assignments)+1)
+	manual := make([]role.UserRoleAssignment, 0, len(assignments)+1)
 	for _, a := range assignments {
-		if a.Source == models.RoleAssignmentSourceManual {
-			manual = append(manual, models.UserRoleAssignment{RoleID: a.RoleID, EnvironmentID: a.EnvironmentID})
+		if a.Source == role.RoleAssignmentSourceManual {
+			manual = append(manual, role.UserRoleAssignment{RoleID: a.RoleID, EnvironmentID: a.EnvironmentID})
 		}
 	}
-	manual = append(manual, models.UserRoleAssignment{
+	manual = append(manual, role.UserRoleAssignment{
 		RoleID:        authz.BuiltInRoleAdmin,
 		EnvironmentID: nil,
 	})
@@ -511,7 +510,7 @@ func (s *UserService) DeleteUser(ctx context.Context, id string, actorPerms *aut
 	// global admin, refuse the delete. Checked outside the transaction because
 	// role.RoleService uses its own session and the guard spans rows.
 	if s.roleService != nil {
-		ps, err := s.roleService.ResolvePermissions(ctx, &models.User{BaseModel: models.BaseModel{ID: id}})
+		ps, err := s.roleService.ResolvePermissions(ctx, &common.User{BaseModel: database.BaseModel{ID: id}})
 		if err != nil {
 			return err
 		}
@@ -530,7 +529,7 @@ func (s *UserService) DeleteUser(ctx context.Context, id string, actorPerms *aut
 			return err
 		}
 
-		if err := tx.Delete(&models.User{}, "id = ?", id).Error; err != nil {
+		if err := tx.Delete(&common.User{}, "id = ?", id).Error; err != nil {
 			return errors.WrapIf(err, "failed to delete user")
 		}
 		return nil
@@ -538,9 +537,9 @@ func (s *UserService) DeleteUser(ctx context.Context, id string, actorPerms *aut
 }
 
 func (s *UserService) ListUsersPaginated(ctx context.Context, params pagination.QueryParams) ([]user.User, pagination.Response, error) {
-	var users []models.User
+	var users []common.User
 	query := s.db.WithContext(ctx).
-		Model(&models.User{}).
+		Model(&common.User{}).
 		Where("is_service_account = ?", false)
 
 	if term := strings.TrimSpace(params.Search); term != "" {
@@ -561,11 +560,11 @@ func (s *UserService) ListUsersPaginated(ctx context.Context, params pagination.
 	return result, paginationResp, nil
 }
 
-func (s *UserService) ToUserResponseDto(ctx context.Context, u models.User) (user.User, error) {
+func (s *UserService) ToUserResponseDto(ctx context.Context, u common.User) (user.User, error) {
 	return s.toUserResponseDtoInternal(ctx, u), nil
 }
 
-func (s *UserService) toUserResponseDtosInternal(ctx context.Context, users []models.User) []user.User {
+func (s *UserService) toUserResponseDtosInternal(ctx context.Context, users []common.User) []user.User {
 	result := make([]user.User, len(users))
 	for i, u := range users {
 		result[i] = s.toUserResponseDtoInternal(ctx, u)
@@ -576,7 +575,7 @@ func (s *UserService) toUserResponseDtosInternal(ctx context.Context, users []mo
 // toUserResponseDtoInternal builds the public User DTO. RoleAssignments and
 // PermissionsByEnv come from the RBAC service. CanDelete is false when this
 // user is the only effective global admin.
-func (s *UserService) toUserResponseDtoInternal(ctx context.Context, u models.User) user.User {
+func (s *UserService) toUserResponseDtoInternal(ctx context.Context, u common.User) user.User {
 	dto := user.User{
 		ID:                     u.ID,
 		Username:               u.Username,
@@ -658,13 +657,13 @@ func permissionSetToMap(ps *authz.PermissionSet) map[string][]string {
 	return out
 }
 
-func (s *UserService) GetUser(ctx context.Context, userID string) (*models.User, error) {
+func (s *UserService) GetUser(ctx context.Context, userID string) (*common.User, error) {
 	slog.Debug("GetUser called", "user_id", userID)
 	return s.getUserInternal(ctx, userID, s.db.DB)
 }
 
-func (s *UserService) getUserInternal(ctx context.Context, userID string, tx *gorm.DB) (*models.User, error) {
-	var userRecord models.User
+func (s *UserService) getUserInternal(ctx context.Context, userID string, tx *gorm.DB) (*common.User, error) {
+	var userRecord common.User
 	err := tx.
 		WithContext(ctx).
 		Where("id = ?", userID).
@@ -676,7 +675,7 @@ func (s *UserService) getUserInternal(ctx context.Context, userID string, tx *go
 // UploadAvatar stores avatar bytes for a user, replacing any existing avatar.
 func (s *UserService) UploadAvatar(ctx context.Context, userID string, data []byte, mimeType string) error {
 	return dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
-		avatar := models.UserAvatar{
+		avatar := UserAvatar{
 			UserID:   userID,
 			Data:     data,
 			MimeType: mimeType,
@@ -685,7 +684,7 @@ func (s *UserService) UploadAvatar(ctx context.Context, userID string, data []by
 			return errors.WrapIf(err, "failed to save avatar data")
 		}
 
-		err := tx.Model(&models.User{}).
+		err := tx.Model(&common.User{}).
 			Where("id = ?", userID).
 			Updates(map[string]any{
 				"has_avatar": true,
@@ -700,11 +699,11 @@ func (s *UserService) UploadAvatar(ctx context.Context, userID string, data []by
 // DeleteAvatar removes the avatar for a user.
 func (s *UserService) DeleteAvatar(ctx context.Context, userID string) error {
 	return dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
-		if err := tx.Where("user_id = ?", userID).Delete(&models.UserAvatar{}).Error; err != nil {
+		if err := tx.Where("user_id = ?", userID).Delete(&UserAvatar{}).Error; err != nil {
 			return errors.WrapIf(err, "failed to delete avatar data")
 		}
 
-		err := tx.Model(&models.User{}).
+		err := tx.Model(&common.User{}).
 			Where("id = ?", userID).
 			Updates(map[string]any{
 				"has_avatar": false,
@@ -726,7 +725,7 @@ func (s *UserService) GetAvatar(ctx context.Context, userID string) ([]byte, str
 	if !u.HasAvatar {
 		return nil, "", nil
 	}
-	var avatar models.UserAvatar
+	var avatar UserAvatar
 	if err := s.db.DB.WithContext(ctx).Where("user_id = ?", userID).First(&avatar).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, "", nil

@@ -9,7 +9,6 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
@@ -39,7 +38,7 @@ func setupSettingsTestDB(t *testing.T) *database.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&models.SettingVariable{}))
+	require.NoError(t, db.AutoMigrate(&settings.SettingVariable{}))
 	return &database.DB{DB: db}
 }
 

@@ -1,6 +1,8 @@
 package webhook
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+
 	"context"
 	"net/http"
 
@@ -8,7 +10,6 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 	"github.com/getarcaneapp/arcane/types/v2/base"
@@ -123,8 +124,8 @@ func (h *WebhookHandler) CreateWebhook(ctx context.Context, input *CreateWebhook
 		return nil, huma.Error400BadRequest("request body is required")
 	}
 
-	actor := models.User{}
-	if currentUser, exists := models.CurrentUserFromContext(ctx); exists && currentUser != nil {
+	actor := common.User{}
+	if currentUser, exists := common.CurrentUserFromContext(ctx); exists && currentUser != nil {
 		actor = *currentUser
 	}
 
@@ -172,8 +173,8 @@ func (h *WebhookHandler) UpdateWebhook(ctx context.Context, input *UpdateWebhook
 		return nil, huma.Error400BadRequest("request body is required")
 	}
 
-	actor := models.User{}
-	if currentUser, exists := models.CurrentUserFromContext(ctx); exists && currentUser != nil {
+	actor := common.User{}
+	if currentUser, exists := common.CurrentUserFromContext(ctx); exists && currentUser != nil {
 		actor = *currentUser
 	}
 
@@ -193,8 +194,8 @@ func (h *WebhookHandler) UpdateWebhook(ctx context.Context, input *UpdateWebhook
 
 // DeleteWebhook removes a webhook.
 func (h *WebhookHandler) DeleteWebhook(ctx context.Context, input *DeleteWebhookInput) (*DeleteWebhookOutput, error) {
-	actor := models.User{}
-	if currentUser, exists := models.CurrentUserFromContext(ctx); exists && currentUser != nil {
+	actor := common.User{}
+	if currentUser, exists := common.CurrentUserFromContext(ctx); exists && currentUser != nil {
 		actor = *currentUser
 	}
 

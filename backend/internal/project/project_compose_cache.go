@@ -1,6 +1,8 @@
 package project
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+
 	"context"
 	"log/slog"
 	"os"
@@ -13,7 +15,6 @@ import (
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/moby/moby/client"
@@ -100,13 +101,13 @@ func (c *parsedComposeCacheInternal) invalidate(projectID string) {
 	c.entries.Delete(projectID)
 }
 
-func (s *ProjectService) lookupProjectByCachedComposeNameInternal(ctx context.Context, normalizedName string) (*models.Project, bool, error) {
+func (s *ProjectService) lookupProjectByCachedComposeNameInternal(ctx context.Context, normalizedName string) (*Project, bool, error) {
 	projectID, ok := s.composeNames.projectID(normalizedName).Get()
 	if !ok {
 		return nil, false, nil
 	}
 
-	var projectModel models.Project
+	var projectModel Project
 	if err := s.db.WithContext(ctx).Where("id = ?", projectID).First(&projectModel).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			s.composeNames.invalidate(normalizedName)
@@ -126,7 +127,7 @@ func (s *ProjectService) lookupProjectByCachedComposeNameInternal(ctx context.Co
 }
 
 func (s *ProjectService) rebuildComposeNameCacheInternal(ctx context.Context) error {
-	var projectModels []models.Project
+	var projectModels []Project
 	if err := s.db.WithContext(ctx).Select("id", "name").Find(&projectModels).Error; err != nil {
 		return err
 	}
@@ -147,13 +148,13 @@ func (s *ProjectService) rebuildComposeNameCacheInternal(ctx context.Context) er
 	return nil
 }
 
-func (s *ProjectService) ResolveProjectComposeFile(ctx context.Context, proj *models.Project) (string, error) {
+func (s *ProjectService) ResolveProjectComposeFile(ctx context.Context, proj *Project) (string, error) {
 	if proj == nil {
 		return "", errors.New("project is nil")
 	}
 
 	if proj.GitOpsManagedBy != nil && strings.TrimSpace(*proj.GitOpsManagedBy) != "" {
-		var syncRecord models.GitOpsSync
+		var syncRecord GitOpsSync
 		if err := s.db.WithContext(ctx).
 			Select("compose_path").
 			Where("id = ?", *proj.GitOpsManagedBy).
@@ -185,7 +186,7 @@ func (s *ProjectService) ResolveProjectComposeFile(ctx context.Context, proj *mo
 	return composeFile, nil
 }
 
-func (s *ProjectService) loadComposeProjectForProjectInternal(ctx context.Context, proj *models.Project, cfg *models.Settings) (*composetypes.Project, string, error) {
+func (s *ProjectService) loadComposeProjectForProjectInternal(ctx context.Context, proj *Project, cfg *settings.Settings) (*composetypes.Project, string, error) {
 	composeFileFullPath, err := s.ResolveProjectComposeFile(ctx, proj)
 	if err != nil {
 		return nil, "", err
@@ -215,7 +216,7 @@ func (s *ProjectService) loadComposeProjectForProjectInternal(ctx context.Contex
 	return composeProject, composeFileFullPath, nil
 }
 
-func (s *ProjectService) getCachedComposeProjectInternal(ctx context.Context, proj *models.Project, cfg *models.Settings) (*composetypes.Project, error) {
+func (s *ProjectService) getCachedComposeProjectInternal(ctx context.Context, proj *Project, cfg *settings.Settings) (*composetypes.Project, error) {
 	if proj == nil {
 		return nil, errors.New("project is nil")
 	}
@@ -296,7 +297,7 @@ func validComposeCacheEntryInternal(entry composeCacheEntry) bool {
 	return true
 }
 
-func (s *ProjectService) refreshComposeProjectNameInternal(ctx context.Context, proj *models.Project) {
+func (s *ProjectService) refreshComposeProjectNameInternal(ctx context.Context, proj *Project) {
 	if proj == nil {
 		return
 	}
@@ -326,7 +327,7 @@ func (s *ProjectService) refreshComposeProjectNameInternal(ctx context.Context, 
 
 	updates["updated_at"] = time.Now()
 	if err := s.db.WithContext(ctx).
-		Model(&models.Project{}).
+		Model(&Project{}).
 		Where("id = ?", proj.ID).
 		Updates(updates).Error; err != nil {
 		slog.WarnContext(ctx, "failed to persist refreshed compose project name", "projectID", proj.ID, "error", err)

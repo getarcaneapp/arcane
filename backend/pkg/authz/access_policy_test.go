@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/search"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/stretchr/testify/require"
@@ -161,7 +162,7 @@ func TestAccessSurfaceCategoryRegistryCoversBackendCategories(t *testing.T) {
 		"security": {},
 	}
 
-	for _, category := range search.NewSettingsSearchService().GetSettingsCategories() {
+	for _, category := range settings.NewSettingsSearchService().GetSettingsCategories() {
 		if _, hidden := hiddenSettingsCategories[category.ID]; hidden {
 			continue
 		}

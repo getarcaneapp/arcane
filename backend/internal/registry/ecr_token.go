@@ -11,7 +11,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/ecr"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"go.getarcane.app/sys/crypto"
 )
 
@@ -27,7 +26,7 @@ type ecrTokenResult struct {
 // validity window it is returned directly; otherwise a new token is obtained from the AWS
 // ECR API, persisted back to the DB, and returned.
 // Concurrent refreshes for the same registry are deduplicated via singleflight.
-func (s *ContainerRegistryService) GetOrRefreshECRToken(ctx context.Context, reg *models.ContainerRegistry) (username, password string, err error) {
+func (s *ContainerRegistryService) GetOrRefreshECRToken(ctx context.Context, reg *ContainerRegistry) (username, password string, err error) {
 	// Fast path: return cached token if still valid.
 	if reg.ECRTokenGeneratedAt != nil && time.Since(reg.ECRTokenGeneratedAt.UTC()) < ecrTokenTTL {
 		if reg.ECRToken != "" {
@@ -55,7 +54,7 @@ func (s *ContainerRegistryService) GetOrRefreshECRToken(ctx context.Context, reg
 	return r.username, r.password, nil
 }
 
-func (s *ContainerRegistryService) refreshECRTokenInternal(ctx context.Context, reg *models.ContainerRegistry) (*ecrTokenResult, error) {
+func (s *ContainerRegistryService) refreshECRTokenInternal(ctx context.Context, reg *ContainerRegistry) (*ecrTokenResult, error) {
 	// Decrypt the stored AWS secret access key.
 	secretKey, decErr := crypto.Decrypt(reg.AWSSecretAccessKey)
 	if decErr != nil {

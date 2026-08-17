@@ -10,7 +10,6 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/types/v2/environment"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
@@ -182,7 +181,7 @@ func (s *EnvironmentService) TestConnection(ctx context.Context, id string, cust
 	healthURL, err := buildEnvironmentEndpointURLInternal(apiUrl, "/api/health")
 	if err != nil {
 		if customApiUrl == nil {
-			_ = s.updateEnvironmentStatusInternal(ctx, id, string(models.EnvironmentStatusOffline))
+			_ = s.updateEnvironmentStatusInternal(ctx, id, string(EnvironmentStatusOffline))
 		}
 		return connectionFailure("offline", errors.WrapIf(err, "invalid environment API URL"))
 	}
@@ -192,14 +191,14 @@ func (s *EnvironmentService) TestConnection(ctx context.Context, id string, cust
 	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, healthURL, nil)
 	if err != nil {
 		if customApiUrl == nil {
-			_ = s.updateEnvironmentStatusInternal(ctx, id, string(models.EnvironmentStatusOffline))
+			_ = s.updateEnvironmentStatusInternal(ctx, id, string(EnvironmentStatusOffline))
 		}
 		return connectionFailure("offline", errors.WrapIf(err, "failed to create request"))
 	}
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		if customApiUrl == nil {
-			_ = s.updateEnvironmentStatusInternal(ctx, id, string(models.EnvironmentStatusOffline))
+			_ = s.updateEnvironmentStatusInternal(ctx, id, string(EnvironmentStatusOffline))
 		}
 		return connectionFailure("offline", errors.WrapIf(err, "connection failed"))
 	}
@@ -207,13 +206,13 @@ func (s *EnvironmentService) TestConnection(ctx context.Context, id string, cust
 
 	if resp.StatusCode == http.StatusOK {
 		if customApiUrl == nil {
-			_ = s.updateEnvironmentStatusInternal(ctx, id, string(models.EnvironmentStatusOnline))
+			_ = s.updateEnvironmentStatusInternal(ctx, id, string(EnvironmentStatusOnline))
 		}
 		return "online", nil
 	}
 
 	if customApiUrl == nil {
-		_ = s.updateEnvironmentStatusInternal(ctx, id, string(models.EnvironmentStatusError))
+		_ = s.updateEnvironmentStatusInternal(ctx, id, string(EnvironmentStatusError))
 	}
 	return connectionFailure("error", errors.Errorf("unexpected status code: %d", resp.StatusCode))
 }
@@ -226,7 +225,7 @@ func (s *EnvironmentService) testEdgeConnection(ctx context.Context, id string) 
 	edge.TouchTunnelDemand(id, edge.DefaultTunnelDemandTTL)
 	if !edge.HasActiveTunnel(id) {
 		if _, ok := edge.RequestTunnelAndWait(ctx, id, edge.DefaultTunnelDemandTTL, edge.DefaultTunnelAcquireTimeout()).Get(); !ok {
-			_ = s.updateEnvironmentStatusInternal(ctx, id, string(models.EnvironmentStatusOffline))
+			_ = s.updateEnvironmentStatusInternal(ctx, id, string(EnvironmentStatusOffline))
 			return "offline", errors.New("edge agent is not connected")
 		}
 	}
@@ -236,16 +235,16 @@ func (s *EnvironmentService) testEdgeConnection(ctx context.Context, id string) 
 
 	statusCode, _, err := edge.DoRequest(reqCtx, id, http.MethodGet, "/api/health", nil)
 	if err != nil {
-		_ = s.updateEnvironmentStatusInternal(ctx, id, string(models.EnvironmentStatusOffline))
+		_ = s.updateEnvironmentStatusInternal(ctx, id, string(EnvironmentStatusOffline))
 		return "offline", errors.WrapIf(err, "health check via tunnel failed")
 	}
 
 	if statusCode == http.StatusOK {
-		_ = s.updateEnvironmentStatusInternal(ctx, id, string(models.EnvironmentStatusOnline))
+		_ = s.updateEnvironmentStatusInternal(ctx, id, string(EnvironmentStatusOnline))
 		return "online", nil
 	}
 
-	_ = s.updateEnvironmentStatusInternal(ctx, id, string(models.EnvironmentStatusError))
+	_ = s.updateEnvironmentStatusInternal(ctx, id, string(EnvironmentStatusError))
 	return "error", errors.Errorf("unexpected status code: %d", statusCode)
 }
 
@@ -256,33 +255,33 @@ func (s *EnvironmentService) testLocalDockerConnection(ctx context.Context, id s
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		_ = s.updateEnvironmentStatusInternal(ctx, id, string(models.EnvironmentStatusOffline))
+		_ = s.updateEnvironmentStatusInternal(ctx, id, string(EnvironmentStatusOffline))
 		return "offline", errors.WrapIf(err, "failed to connect to Docker")
 	}
 
 	_, err = dockerClient.Ping(reqCtx, client.PingOptions{})
 	if err != nil {
-		_ = s.updateEnvironmentStatusInternal(ctx, id, string(models.EnvironmentStatusOffline))
+		_ = s.updateEnvironmentStatusInternal(ctx, id, string(EnvironmentStatusOffline))
 		return "offline", errors.WrapIf(err, "docker ping failed")
 	}
 
-	_ = s.updateEnvironmentStatusInternal(ctx, id, string(models.EnvironmentStatusOnline))
+	_ = s.updateEnvironmentStatusInternal(ctx, id, string(EnvironmentStatusOnline))
 	return "online", nil
 }
 
 func (s *EnvironmentService) updateEnvironmentStatusInternal(ctx context.Context, id, status string) error {
-	var currentEnv models.Environment
+	var currentEnv Environment
 	if err := s.db.WithContext(ctx).Select("status", "is_edge").Where("id = ?", id).First(&currentEnv).Error; err != nil {
 		return errors.WrapIf(err, "failed to check environment status")
 	}
 
-	if currentEnv.Status == string(models.EnvironmentStatusPending) {
+	if currentEnv.Status == string(EnvironmentStatusPending) {
 		// Edge envs must complete pairing via the agent's outbound tunnel — manager
 		// can't dial them directly, so a manager-side reachability check means nothing.
 		// Direct envs are reachable from the manager, so a successful health check IS
 		// the pairing signal. Don't promote on offline/error ticks though, or a transient
 		// blip during initial setup would flip the env out of pending.
-		if currentEnv.IsEdge || status != string(models.EnvironmentStatusOnline) {
+		if currentEnv.IsEdge || status != string(EnvironmentStatusOnline) {
 			slog.DebugContext(ctx, "skipping status update for pending environment", "environment_id", id)
 			return nil
 		}
@@ -295,7 +294,7 @@ func (s *EnvironmentService) updateEnvironmentStatusInternal(ctx context.Context
 		"last_seen":  &now,
 		"updated_at": &now,
 	}
-	if err := s.db.WithContext(ctx).Model(&models.Environment{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+	if err := s.db.WithContext(ctx).Model(&Environment{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 		return errors.WrapIf(err, "failed to update environment status")
 	}
 	// Direct environments have no tunnel callback, so this health-check write is
@@ -314,7 +313,7 @@ func (s *EnvironmentService) UpdateEnvironmentHeartbeat(ctx context.Context, id 
 		SET last_seen = ?, status = ?, updated_at = ?
 		WHERE id = ?
 		AND (last_seen IS NULL OR last_seen < ?)
-	`, new(now), string(models.EnvironmentStatusOnline), new(now), id, now.Add(-30*time.Second))
+	`, new(now), string(EnvironmentStatusOnline), new(now), id, now.Add(-30*time.Second))
 
 	if result.Error != nil {
 		return errors.WrapIf(result.Error, "failed to update environment heartbeat")
@@ -338,7 +337,7 @@ func (s *EnvironmentService) UpdateEnvironmentConnectionState(ctx context.Contex
 		"updated_at": &now,
 	}
 	if connected {
-		updates["status"] = string(models.EnvironmentStatusOnline)
+		updates["status"] = string(EnvironmentStatusOnline)
 		updates["last_seen"] = &now
 		// Remember the tunnel transport so the UI can keep showing it after
 		// the tunnel drops or while the agent is poll-only.
@@ -346,10 +345,10 @@ func (s *EnvironmentService) UpdateEnvironmentConnectionState(ctx context.Contex
 			updates["last_edge_transport"] = state.Transport
 		}
 	} else {
-		updates["status"] = string(models.EnvironmentStatusOffline)
+		updates["status"] = string(EnvironmentStatusOffline)
 	}
 
-	if err := s.db.WithContext(ctx).Model(&models.Environment{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+	if err := s.db.WithContext(ctx).Model(&Environment{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 		return errors.WrapIf(err, "failed to update environment connection state")
 	}
 
@@ -383,7 +382,7 @@ func ApplyEnvironmentRuntimeState(env *environment.Environment) {
 	if runtimeState, ok := edge.GetTunnelRuntimeState(env.ID).Get(); ok {
 		connected = true
 		env.Connected = &connected
-		env.Status = string(models.EnvironmentStatusOnline)
+		env.Status = string(EnvironmentStatusOnline)
 		env.ConnectedAt = runtimeState.ConnectedAt
 		env.LastHeartbeat = runtimeState.LastHeartbeat
 		if runtimeState.SecurityMode != "" {
@@ -407,12 +406,12 @@ func ApplyEnvironmentRuntimeState(env *environment.Environment) {
 	}
 
 	if env.LastPollAt != nil {
-		env.Status = string(models.EnvironmentStatusStandby)
+		env.Status = string(EnvironmentStatusStandby)
 		return
 	}
 
-	if env.Status != string(models.EnvironmentStatusPending) {
-		env.Status = string(models.EnvironmentStatusOffline)
+	if env.Status != string(EnvironmentStatusPending) {
+		env.Status = string(EnvironmentStatusOffline)
 	}
 }
 
@@ -420,12 +419,12 @@ func ApplyEnvironmentRuntimeState(env *environment.Environment) {
 // Live edge tunnels are process-local runtime state, so persisted "online" flags can be stale
 // after a restart until agents reconnect. Pending environments are left untouched.
 func (s *EnvironmentService) ReconcileEdgeStatusesOnStartup(ctx context.Context) error {
-	result := s.db.WithContext(ctx).Model(&models.Environment{}).
+	result := s.db.WithContext(ctx).Model(&Environment{}).
 		Where("is_edge = ?", true).
-		Where("status <> ?", string(models.EnvironmentStatusPending)).
-		Where("status <> ?", string(models.EnvironmentStatusOffline)).
+		Where("status <> ?", string(EnvironmentStatusPending)).
+		Where("status <> ?", string(EnvironmentStatusOffline)).
 		Updates(map[string]any{
-			"status":     string(models.EnvironmentStatusOffline),
+			"status":     string(EnvironmentStatusOffline),
 			"updated_at": new(time.Now()),
 		})
 	if result.Error != nil {

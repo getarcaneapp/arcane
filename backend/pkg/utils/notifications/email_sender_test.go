@@ -21,7 +21,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -50,14 +49,14 @@ func TestSendEmailStartTLSRequiresTLSBeforeAuth(t *testing.T) {
 	server := newSMTPTestServerInternal(t, true, []string{"PLAIN"})
 	defer server.Close()
 
-	config := models.EmailConfig{
+	config := EmailConfig{
 		SMTPHost:     smtpTestHost,
 		SMTPPort:     server.Port(),
 		SMTPUsername: "user",
 		SMTPPassword: "password",
 		FromAddress:  "from@example.com",
 		ToAddresses:  []string{"to@example.com"},
-		TLSMode:      models.EmailTLSModeStartTLS,
+		TLSMode:      EmailTLSModeStartTLS,
 	}
 
 	err := sendEmailInternal(
@@ -80,14 +79,14 @@ func TestSendEmailStartTLSFailsWhenServerDoesNotSupportIt(t *testing.T) {
 	server := newSMTPTestServerInternal(t, false, []string{"PLAIN"})
 	defer server.Close()
 
-	config := models.EmailConfig{
+	config := EmailConfig{
 		SMTPHost:     smtpTestHost,
 		SMTPPort:     server.Port(),
 		SMTPUsername: "user",
 		SMTPPassword: "password",
 		FromAddress:  "from@example.com",
 		ToAddresses:  []string{"to@example.com"},
-		TLSMode:      models.EmailTLSModeStartTLS,
+		TLSMode:      EmailTLSModeStartTLS,
 	}
 
 	err := SendEmail(context.Background(), config, "Arcane STARTTLS Test", "<p>Test</p>")
@@ -105,15 +104,15 @@ func TestSendEmailAuthLoginAgainstExchangeStyleServer(t *testing.T) {
 	server := newSMTPTestServerInternal(t, true, []string{"LOGIN"})
 	defer server.Close()
 
-	config := models.EmailConfig{
+	config := EmailConfig{
 		SMTPHost:     smtpTestHost,
 		SMTPPort:     server.Port(),
 		SMTPUsername: "user",
 		SMTPPassword: "password",
 		FromAddress:  "from@example.com",
 		ToAddresses:  []string{"to@example.com"},
-		TLSMode:      models.EmailTLSModeStartTLS,
-		AuthMode:     models.EmailAuthModeLogin,
+		TLSMode:      EmailTLSModeStartTLS,
+		AuthMode:     EmailAuthModeLogin,
 	}
 
 	err := sendEmailInternal(
@@ -135,14 +134,14 @@ func TestSendEmailStalePasswordWithoutUsernameSkipsAuth(t *testing.T) {
 	server := newSMTPTestServerInternal(t, false, nil)
 	defer server.Close()
 
-	config := models.EmailConfig{
+	config := EmailConfig{
 		SMTPHost:     smtpTestHost,
 		SMTPPort:     server.Port(),
 		SMTPPassword: "stale-password",
 		FromAddress:  "from@example.com",
 		ToAddresses:  []string{"to@example.com"},
-		TLSMode:      models.EmailTLSModeNone,
-		AuthMode:     models.EmailAuthModeAuto,
+		TLSMode:      EmailTLSModeNone,
+		AuthMode:     EmailAuthModeAuto,
 	}
 
 	err := sendEmailInternal(context.Background(), config, "Arcane No-Auth Test", "<p>Test</p>", smtpBuildOptions{})

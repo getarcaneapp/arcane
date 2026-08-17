@@ -1,6 +1,8 @@
 package environment
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/gitrepo"
+
 	"context"
 	"encoding/json/v2"
 	"log/slog"
@@ -13,7 +15,6 @@ import (
 
 	"emperror.dev/errors"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
@@ -78,7 +79,7 @@ func (s *EnvironmentService) resolveRemoteEnvironmentTargetInternal(ctx context.
 	return s.remoteEnvironmentTargetFromModelInternal(*envRecord)
 }
 
-func (s *EnvironmentService) remoteEnvironmentTargetFromModelInternal(environment models.Environment) (*remoteEnvironmentTargetInternal, error) {
+func (s *EnvironmentService) remoteEnvironmentTargetFromModelInternal(environment Environment) (*remoteEnvironmentTargetInternal, error) {
 	if environment.ID == "0" {
 		return nil, errors.New("cannot proxy request to local environment")
 	}
@@ -197,7 +198,7 @@ func (s *EnvironmentService) ProxyJSONRequest(ctx context.Context, envID string,
 
 // ProxyJSONRequestForEnvironment sends a JSON request using an already-loaded
 // environment row, avoiding an extra environment lookup on hot stream paths.
-func (s *EnvironmentService) ProxyJSONRequestForEnvironment(ctx context.Context, environment models.Environment, method string, path string, body []byte, out any) error {
+func (s *EnvironmentService) ProxyJSONRequestForEnvironment(ctx context.Context, environment Environment, method string, path string, body []byte, out any) error {
 	proxyCtx, cancel := s.getProxyRequestContextInternal(ctx)
 	defer cancel()
 
@@ -274,7 +275,7 @@ func doRemoteEnvironmentTunnelRequestInternal(
 // SyncRegistriesToEnvironment syncs all registries from this manager to a remote environment
 func (s *EnvironmentService) SyncRegistriesToEnvironment(ctx context.Context, environmentID string) error {
 	return fanOutSyncToEnvironmentInternal(ctx, s, environmentID, "registries", "/api/container-registries/sync",
-		func(ctx context.Context, reg models.ContainerRegistry) (containerregistry.Sync, bool, error) {
+		func(ctx context.Context, reg registry.ContainerRegistry) (containerregistry.Sync, bool, error) {
 			registryType, typeErr := registry.NormalizeRegistryType(reg.RegistryType)
 			if typeErr != nil {
 				return containerregistry.Sync{}, false, errors.WrapIff(typeErr, "normalize registry type for sync %s", reg.ID)
@@ -324,7 +325,7 @@ func (s *EnvironmentService) SyncRegistriesToEnvironment(ctx context.Context, en
 // SyncRepositoriesToEnvironment syncs all git repositories from this manager to a remote environment
 func (s *EnvironmentService) SyncRepositoriesToEnvironment(ctx context.Context, environmentID string) error {
 	return fanOutSyncToEnvironmentInternal(ctx, s, environmentID, "git repositories", "/api/git-repositories/sync",
-		func(ctx context.Context, repo models.GitRepository) (gitops.RepositorySync, bool, error) {
+		func(ctx context.Context, repo gitrepo.GitRepository) (gitops.RepositorySync, bool, error) {
 			item := gitops.RepositorySync{
 				ID:          repo.ID,
 				Name:        repo.Name,

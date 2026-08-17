@@ -5,14 +5,13 @@ import (
 
 	"emperror.dev/errors"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/nicholas-fedor/shoutrrr"
 	"github.com/nicholas-fedor/shoutrrr/pkg/services/chat/signal"
 	shoutrrrTypes "github.com/nicholas-fedor/shoutrrr/pkg/types"
 )
 
 // BuildSignalURL converts SignalConfig to Shoutrrr URL format using shoutrrr's Config
-func BuildSignalURL(config models.SignalConfig) (string, error) {
+func BuildSignalURL(config SignalConfig) (string, error) {
 	signalConfig := &signal.Config{
 		Host:       config.Host,
 		Port:       config.Port,
@@ -29,7 +28,7 @@ func BuildSignalURL(config models.SignalConfig) (string, error) {
 }
 
 // SendSignal sends a message via Shoutrrr Signal using proper service configuration
-func SendSignal(ctx context.Context, config models.SignalConfig, message string) error {
+func SendSignal(ctx context.Context, config SignalConfig, message string) error {
 	if config.Host == "" {
 		return errors.New("signal host is empty")
 	}

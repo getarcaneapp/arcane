@@ -19,9 +19,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/gitrepo"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/lifecycle"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
+	projectpkg "github.com/getarcaneapp/arcane/backend/v2/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/swarm"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
@@ -41,7 +39,7 @@ import (
 type GitOpsSyncService struct {
 	db              *database.DB
 	repoService     *gitrepo.GitRepositoryService
-	projectService  *project.ProjectService
+	projectService  *projectpkg.ProjectService
 	swarmService    *swarm.SwarmService
 	eventService    *event.EventService
 	settingsService *settings.SettingsService
@@ -81,7 +79,7 @@ type stagedDirectorySync struct {
 	stageLogical    string
 	projectsDir     string
 	composeFileName string
-	project         *models.Project
+	project         *projectpkg.Project
 	syncedFiles     []string
 	serviceCount    int
 	contentsChanged bool
@@ -120,11 +118,11 @@ type lifecycleConfigInputInternal struct {
 	syncDirectory *bool
 }
 
-func (s *GitOpsSyncService) validateLifecycleConfigInternal(ctx context.Context, current *models.GitOpsSync, in lifecycleConfigInputInternal) error {
+func (s *GitOpsSyncService) validateLifecycleConfigInternal(ctx context.Context, current *projectpkg.GitOpsSync, in lifecycleConfigInputInternal) error {
 	lifecycleFieldSet := in.scriptPath != nil || in.runnerImage != nil || in.env != nil || in.extraMounts != nil || in.timeoutSec != nil || in.networkMode != nil
 	syncDirectoryChanging := in.syncDirectory != nil
 	targetTypeChanging := in.targetType != nil && strings.TrimSpace(*in.targetType) != resolveLifecycleEffectiveTargetTypeInternal(current, nil)
-	effectiveScriptPath := resolveLifecycleEffectiveStringInternal(currentStringInternal(current, func(c *models.GitOpsSync) *string { return c.PreDeployScriptPath }), in.scriptPath)
+	effectiveScriptPath := resolveLifecycleEffectiveStringInternal(currentStringInternal(current, func(c *projectpkg.GitOpsSync) *string { return c.PreDeployScriptPath }), in.scriptPath)
 
 	// If nothing lifecycle-related is being touched and the resulting state
 	// has no script configured, there's nothing to validate.
@@ -154,24 +152,24 @@ func (s *GitOpsSyncService) validateLifecycleConfigInternal(ctx context.Context,
 			//nolint:revive // Preserve the existing API validation message.
 			return common.Classify(common.ErrValidation, errors.WithDetails(errors.New("Timeout must be at least 1 second."), "field", "preDeployTimeoutSec"))
 		}
-		maxTimeoutSec := s.settingsService.GetIntSetting(ctx, "lifecycleMaxTimeoutSec", lifecycle.DefaultMaxTimeoutSec)
+		maxTimeoutSec := s.settingsService.GetIntSetting(ctx, "lifecycleMaxTimeoutSec", projectpkg.DefaultMaxTimeoutSec)
 		if maxTimeoutSec > 0 && *in.timeoutSec > maxTimeoutSec {
 			//nolint:revive // Preserve the existing API validation message.
 			return common.Classify(common.ErrValidation, errors.WithDetails(errors.Errorf("Timeout %ds exceeds the lifecycleMaxTimeoutSec setting (%ds).", *in.timeoutSec, maxTimeoutSec), "field", "preDeployTimeoutSec"))
 		}
 	}
 
-	if _, err := lifecycle.ParseEnvText(in.env); err != nil {
+	if _, err := projectpkg.ParseEnvText(in.env); err != nil {
 		return common.Classify(common.ErrValidation, errors.WithDetails(errors.New(err.Error()), "field", "preDeployEnv"))
 	}
-	if _, err := lifecycle.ParseExtraMountsText(in.extraMounts); err != nil {
+	if _, err := projectpkg.ParseExtraMountsText(in.extraMounts); err != nil {
 		return common.Classify(common.ErrValidation, errors.WithDetails(errors.New(err.Error()), "field", "preDeployExtraMounts"))
 	}
 
 	return nil
 }
 
-func (s *GitOpsSyncService) validateLifecycleScriptConfigInternal(ctx context.Context, current *models.GitOpsSync, in lifecycleConfigInputInternal, scriptPath string) error {
+func (s *GitOpsSyncService) validateLifecycleScriptConfigInternal(ctx context.Context, current *projectpkg.GitOpsSync, in lifecycleConfigInputInternal, scriptPath string) error {
 	if resolveLifecycleEffectiveTargetTypeInternal(current, in.targetType) == "swarm_stack" {
 		//nolint:revive // Preserve the existing API validation message.
 		return common.Classify(common.ErrValidation, errors.WithDetails(errors.New("Pre-deploy lifecycle hooks are only supported for project syncs."), "field", "preDeployScriptPath"))
@@ -193,7 +191,7 @@ func (s *GitOpsSyncService) validateLifecycleScriptConfigInternal(ctx context.Co
 		return common.Classify(common.ErrValidation, errors.WithDetails(errors.New("Script path must not escape the project directory."), "field", "preDeployScriptPath"))
 	}
 
-	effectiveRunnerImage := resolveLifecycleEffectiveStringInternal(currentStringInternal(current, func(c *models.GitOpsSync) *string { return c.PreDeployRunnerImage }), in.runnerImage)
+	effectiveRunnerImage := resolveLifecycleEffectiveStringInternal(currentStringInternal(current, func(c *projectpkg.GitOpsSync) *string { return c.PreDeployRunnerImage }), in.runnerImage)
 	defaultRunnerImage := strings.TrimSpace(s.settingsService.GetStringSetting(ctx, "lifecycleDefaultRunnerImage", ""))
 	if effectiveRunnerImage == "" && defaultRunnerImage == "" {
 		//nolint:revive // Preserve the existing API validation message.
@@ -219,7 +217,7 @@ func resolveLifecycleEffectiveStringInternal(existing string, update *string) st
 	return strings.TrimSpace(existing)
 }
 
-func currentStringInternal(sync *models.GitOpsSync, accessor func(*models.GitOpsSync) *string) string {
+func currentStringInternal(sync *projectpkg.GitOpsSync, accessor func(*projectpkg.GitOpsSync) *string) string {
 	if sync == nil {
 		return ""
 	}
@@ -229,7 +227,7 @@ func currentStringInternal(sync *models.GitOpsSync, accessor func(*models.GitOps
 	return ""
 }
 
-func resolveLifecycleEffectiveTargetTypeInternal(current *models.GitOpsSync, update *string) string {
+func resolveLifecycleEffectiveTargetTypeInternal(current *projectpkg.GitOpsSync, update *string) string {
 	if update != nil && strings.TrimSpace(*update) != "" {
 		return strings.TrimSpace(*update)
 	}
@@ -243,7 +241,7 @@ func resolveLifecycleEffectiveTargetTypeInternal(current *models.GitOpsSync, upd
 // the SyncDirectory bool: a nil update keeps the existing value, a non-nil
 // update overrides it. On create (current=nil) and no update, defaults to
 // false to match the model's create-time default.
-func resolveEffectiveSyncDirectoryInternal(current *models.GitOpsSync, update *bool) bool {
+func resolveEffectiveSyncDirectoryInternal(current *projectpkg.GitOpsSync, update *bool) bool {
 	if update != nil {
 		return *update
 	}
@@ -257,7 +255,7 @@ func resolveEffectiveSyncDirectoryInternal(current *models.GitOpsSync, update *b
 // request into a new GitOpsSync row before insert. Strings are trimmed;
 // empty strings remain unset (nil pointer) except for fields that have a
 // non-null default at the DB level.
-func applyLifecycleFieldsToSyncInternal(sync *models.GitOpsSync, in lifecycleConfigInputInternal) {
+func applyLifecycleFieldsToSyncInternal(sync *projectpkg.GitOpsSync, in lifecycleConfigInputInternal) {
 	sync.PreDeployScriptPath = nullableTrimmedStringInternal(in.scriptPath)
 	sync.PreDeployRunnerImage = nullableTrimmedStringInternal(in.runnerImage)
 	sync.PreDeployEnv = nullableTrimmedStringInternal(in.env)
@@ -265,7 +263,7 @@ func applyLifecycleFieldsToSyncInternal(sync *models.GitOpsSync, in lifecycleCon
 	if in.timeoutSec != nil {
 		sync.PreDeployTimeoutSec = *in.timeoutSec
 	} else {
-		sync.PreDeployTimeoutSec = lifecycle.DefaultTimeoutSec
+		sync.PreDeployTimeoutSec = projectpkg.DefaultTimeoutSec
 	}
 	if mode := normalizeLifecycleNetworkModeInternal(in.networkMode); mode != "" {
 		sync.PreDeployNetworkMode = mode
@@ -345,11 +343,11 @@ func megabytesToBytes(value int) int64 {
 	return int64(value) * 1024 * 1024
 }
 
-func hasEstablishedProjectBindingInternal(sync *models.GitOpsSync) bool {
+func hasEstablishedProjectBindingInternal(sync *projectpkg.GitOpsSync) bool {
 	return sync != nil && sync.ProjectID != nil && strings.TrimSpace(*sync.ProjectID) != ""
 }
 
-func NewGitOpsSyncService(db *database.DB, repoService *gitrepo.GitRepositoryService, projectService *project.ProjectService, swarmService *swarm.SwarmService, eventService *event.EventService, settingsService *settings.SettingsService) *GitOpsSyncService {
+func NewGitOpsSyncService(db *database.DB, repoService *gitrepo.GitRepositoryService, projectService *projectpkg.ProjectService, swarmService *swarm.SwarmService, eventService *event.EventService, settingsService *settings.SettingsService) *GitOpsSyncService {
 	return &GitOpsSyncService{
 		db:              db,
 		repoService:     repoService,
@@ -389,7 +387,7 @@ func (s *GitOpsSyncService) runScheduledSyncInternal(ctx context.Context, enviro
 	if !syncRecord.AutoSync {
 		return
 	}
-	if _, err := s.PerformSync(ctx, environmentID, syncID, models.SystemUser); err != nil {
+	if _, err := s.PerformSync(ctx, environmentID, syncID, common.SystemUser); err != nil {
 		slog.ErrorContext(ctx, "gitops auto-sync run failed", "syncId", syncID, "error", err)
 	}
 }
@@ -416,7 +414,7 @@ func (s *GitOpsSyncService) unregisterSyncJobInternal(ctx context.Context, syncI
 func (s *GitOpsSyncService) kickSyncInternal(ctx context.Context, syncID, environmentID string) {
 	ctx = s.jobs.Context(ctx)
 	go func() {
-		if _, err := s.PerformSync(ctx, environmentID, syncID, models.SystemUser); err != nil {
+		if _, err := s.PerformSync(ctx, environmentID, syncID, common.SystemUser); err != nil {
 			slog.ErrorContext(ctx, "gitops immediate sync kick failed", "syncId", syncID, "error", err)
 		}
 	}()
@@ -429,7 +427,7 @@ func (s *GitOpsSyncService) RegisterAutoSyncJobsOnStartup(ctx context.Context) {
 	if !s.jobs.Enabled() {
 		return
 	}
-	var syncs []models.GitOpsSync
+	var syncs []projectpkg.GitOpsSync
 	if err := s.db.WithContext(ctx).
 		Where("auto_sync = ? AND environment_id IN (SELECT id FROM environments)", true).
 		Find(&syncs).Error; err != nil {
@@ -446,7 +444,7 @@ func (s *GitOpsSyncService) RegisterAutoSyncJobsOnStartup(ctx context.Context) {
 	slog.InfoContext(ctx, "Registered gitops auto-sync jobs on startup", "count", len(syncs))
 }
 
-func isGitOpsSyncOverdueInternal(sync *models.GitOpsSync) bool {
+func isGitOpsSyncOverdueInternal(sync *projectpkg.GitOpsSync) bool {
 	if sync.LastSyncAt == nil {
 		return true
 	}
@@ -467,7 +465,7 @@ func (s *GitOpsSyncService) getEnvironmentSyncLimits(ctx context.Context) (int, 
 	return maxFiles, megabytesToBytes(maxTotalSizeMB), megabytesToBytes(maxBinarySizeMB)
 }
 
-func (s *GitOpsSyncService) getEffectiveSyncLimits(ctx context.Context, sync *models.GitOpsSync) (int, int64, int64) {
+func (s *GitOpsSyncService) getEffectiveSyncLimits(ctx context.Context, sync *projectpkg.GitOpsSync) (int, int64, int64) {
 	environmentMaxFiles, environmentMaxTotalSize, environmentMaxBinarySize := s.getEnvironmentSyncLimits(ctx)
 	if sync == nil {
 		return environmentMaxFiles, environmentMaxTotalSize, environmentMaxBinarySize
@@ -495,8 +493,8 @@ func (s *GitOpsSyncService) gitSyncLimitEnvOverrideActiveInternal(key string) bo
 }
 
 func (s *GitOpsSyncService) GetSyncsPaginated(ctx context.Context, environmentID string, params pagination.QueryParams) ([]gitops.GitOpsSync, pagination.Response, gitops.SyncCounts, error) {
-	var syncs []models.GitOpsSync
-	q := s.db.WithContext(ctx).Model(&models.GitOpsSync{}).
+	var syncs []projectpkg.GitOpsSync
+	q := s.db.WithContext(ctx).Model(&projectpkg.GitOpsSync{}).
 		Where("environment_id = ?", environmentID)
 
 	if term := strings.TrimSpace(params.Search); term != "" {
@@ -522,7 +520,7 @@ func (s *GitOpsSyncService) GetSyncsPaginated(ctx context.Context, environmentID
 		return nil, pagination.Response{}, gitops.SyncCounts{}, errors.WrapIf(err, "failed to paginate gitops syncs")
 	}
 
-	out, mapErr := mapper.MapSlice[models.GitOpsSync, gitops.GitOpsSync](syncs)
+	out, mapErr := mapper.MapSlice[projectpkg.GitOpsSync, gitops.GitOpsSync](syncs)
 	if mapErr != nil {
 		return nil, pagination.Response{}, gitops.SyncCounts{}, errors.WrapIf(mapErr, "failed to map syncs")
 	}
@@ -553,7 +551,7 @@ func (s *GitOpsSyncService) getFilteredSyncCounts(query *gorm.DB) (gitops.SyncCo
 	}, nil
 }
 
-func (s *GitOpsSyncService) GetSyncByID(ctx context.Context, environmentID, id string) (*models.GitOpsSync, error) {
+func (s *GitOpsSyncService) GetSyncByID(ctx context.Context, environmentID, id string) (*projectpkg.GitOpsSync, error) {
 	syncRecord, err := s.getSyncByIDInternal(ctx, environmentID, id, true)
 	if err != nil {
 		if errors.Is(err, common.ErrNotFound) {
@@ -566,8 +564,8 @@ func (s *GitOpsSyncService) GetSyncByID(ctx context.Context, environmentID, id s
 	return syncRecord, nil
 }
 
-func (s *GitOpsSyncService) getSyncByIDInternal(ctx context.Context, environmentID, id string, preloadAssociations bool) (*models.GitOpsSync, error) {
-	var syncRecord models.GitOpsSync
+func (s *GitOpsSyncService) getSyncByIDInternal(ctx context.Context, environmentID, id string, preloadAssociations bool) (*projectpkg.GitOpsSync, error) {
+	var syncRecord projectpkg.GitOpsSync
 	q := s.db.WithContext(ctx).Where("id = ?", id)
 	if preloadAssociations {
 		q = q.Preload("Repository").Preload("Project")
@@ -584,11 +582,11 @@ func (s *GitOpsSyncService) getSyncByIDInternal(ctx context.Context, environment
 	return &syncRecord, nil
 }
 
-func (s *GitOpsSyncService) getSyncRecordByIDInternal(ctx context.Context, environmentID, id string) (*models.GitOpsSync, error) {
+func (s *GitOpsSyncService) getSyncRecordByIDInternal(ctx context.Context, environmentID, id string) (*projectpkg.GitOpsSync, error) {
 	return s.getSyncByIDInternal(ctx, environmentID, id, false)
 }
 
-func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string, req gitops.CreateSyncRequest, actor models.User) (*models.GitOpsSync, error) {
+func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string, req gitops.CreateSyncRequest, actor common.User) (*projectpkg.GitOpsSync, error) {
 	slog.InfoContext(ctx, "Creating GitOps sync", "environmentID", environmentID, "name", req.Name, "repositoryID", req.RepositoryID)
 
 	// Validate repository exists
@@ -607,7 +605,7 @@ func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string
 
 	defaultMaxFiles, defaultMaxTotalSize, defaultMaxBinarySize := s.getEnvironmentSyncLimits(ctx)
 
-	syncRecord := models.GitOpsSync{
+	syncRecord := projectpkg.GitOpsSync{
 		Name:              req.Name,
 		EnvironmentID:     environmentID,
 		RepositoryID:      req.RepositoryID,
@@ -671,8 +669,8 @@ func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string
 
 	// Log event
 	_, _ = s.eventService.CreateEvent(ctx, event.CreateEventRequest{
-		Type:          models.EventTypeGitSyncCreate,
-		Severity:      models.EventSeveritySuccess,
+		Type:          event.EventTypeGitSyncCreate,
+		Severity:      event.EventSeveritySuccess,
 		Title:         "Git sync created",
 		Description:   fmt.Sprintf("Created git sync configuration '%s'", syncRecord.Name),
 		ResourceType:  new("git_sync"),
@@ -697,7 +695,7 @@ func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string
 	return s.GetSyncByID(ctx, "", syncRecord.ID)
 }
 
-func (s *GitOpsSyncService) UpdateSync(ctx context.Context, environmentID, id string, req gitops.UpdateSyncRequest, actor models.User) (*models.GitOpsSync, error) {
+func (s *GitOpsSyncService) UpdateSync(ctx context.Context, environmentID, id string, req gitops.UpdateSyncRequest, actor common.User) (*projectpkg.GitOpsSync, error) {
 	syncRecord, err := s.GetSyncByID(ctx, environmentID, id)
 	if err != nil {
 		return nil, err
@@ -783,8 +781,8 @@ func (s *GitOpsSyncService) UpdateSync(ctx context.Context, environmentID, id st
 
 		// Log event
 		_, _ = s.eventService.CreateEvent(ctx, event.CreateEventRequest{
-			Type:          models.EventTypeGitSyncUpdate,
-			Severity:      models.EventSeveritySuccess,
+			Type:          event.EventTypeGitSyncUpdate,
+			Severity:      event.EventSeveritySuccess,
 			Title:         "Git sync updated",
 			Description:   fmt.Sprintf("Updated git sync configuration '%s'", syncRecord.Name),
 			ResourceType:  new("git_sync"),
@@ -811,7 +809,7 @@ func (s *GitOpsSyncService) UpdateSync(ctx context.Context, environmentID, id st
 	return s.GetSyncByID(ctx, environmentID, id)
 }
 
-func (s *GitOpsSyncService) DeleteSync(ctx context.Context, environmentID, id string, actor models.User) error {
+func (s *GitOpsSyncService) DeleteSync(ctx context.Context, environmentID, id string, actor common.User) error {
 	// Stop the recurring job first, unconditionally. Even a sync whose row can no
 	// longer be loaded (corrupt or environment-mismatched) must stop firing; any
 	// in-flight run re-reads the row and self-cancels once it is gone.
@@ -826,7 +824,7 @@ func (s *GitOpsSyncService) DeleteSync(ctx context.Context, environmentID, id st
 		// Clear gitops_managed_by for any project still pointing at this sync, keyed
 		// on the sync id so orphaned managed flags are cleared even when the sync row
 		// (and its ProjectID) could not be loaded.
-		if err := tx.Model(&models.Project{}).
+		if err := tx.Model(&projectpkg.Project{}).
 			Where("gitops_managed_by = ?", id).
 			Update("gitops_managed_by", nil).Error; err != nil {
 			return errors.WrapIf(err, "failed to clear gitops_managed_by")
@@ -835,7 +833,7 @@ func (s *GitOpsSyncService) DeleteSync(ctx context.Context, environmentID, id st
 		// Delete by id only (no environment scoping). The handler already enforced the
 		// delete permission; env scoping is precisely what made env-mismatched corrupt
 		// rows undeletable. A zero-row delete is treated as success (idempotent).
-		if err := tx.Where("id = ?", id).Delete(&models.GitOpsSync{}).Error; err != nil {
+		if err := tx.Where("id = ?", id).Delete(&projectpkg.GitOpsSync{}).Error; err != nil {
 			return errors.WrapIf(err, "failed to delete sync")
 		}
 		return nil
@@ -854,8 +852,8 @@ func (s *GitOpsSyncService) DeleteSync(ctx context.Context, environmentID, id st
 
 	// Log event
 	_, _ = s.eventService.CreateEvent(ctx, event.CreateEventRequest{
-		Type:          models.EventTypeGitSyncDelete,
-		Severity:      models.EventSeverityInfo,
+		Type:          event.EventTypeGitSyncDelete,
+		Severity:      event.EventSeverityInfo,
 		Title:         "Git sync deleted",
 		Description:   fmt.Sprintf("Deleted git sync configuration '%s'", syncRecord.Name),
 		ResourceType:  new("git_sync"),
@@ -869,7 +867,7 @@ func (s *GitOpsSyncService) DeleteSync(ctx context.Context, environmentID, id st
 	return nil
 }
 
-func (s *GitOpsSyncService) PerformSync(ctx context.Context, environmentID, id string, actor models.User) (*gitops.SyncResult, error) {
+func (s *GitOpsSyncService) PerformSync(ctx context.Context, environmentID, id string, actor common.User) (*gitops.SyncResult, error) {
 	// Coalesce overlapping runs for the same sync (scheduled fire, startup/enable
 	// kick, manual trigger, webhook) so they don't race the clone/redeploy.
 	lease, admitted, err := s.jobs.TryAcquire(ctx, id)
@@ -923,7 +921,7 @@ func (s *GitOpsSyncService) PerformSync(ctx context.Context, environmentID, id s
 
 // prepareSyncSource clones the source repository, validates that the configured
 // compose file exists, and reads the compose/env inputs for the sync flow.
-func (s *GitOpsSyncService) prepareSyncSource(ctx context.Context, sync *models.GitOpsSync, result *gitops.SyncResult, actor models.User) (*preparedSyncSource, error) {
+func (s *GitOpsSyncService) prepareSyncSource(ctx context.Context, sync *projectpkg.GitOpsSync, result *gitops.SyncResult, actor common.User) (*preparedSyncSource, error) {
 	repository := sync.Repository
 	if repository == nil {
 		return nil, s.failSync(ctx, sync.ID, result, sync, actor, "Repository not found", "repository not found")
@@ -1003,7 +1001,7 @@ func (s *GitOpsSyncService) prepareSyncSource(ctx context.Context, sync *models.
 
 // performDirectorySync runs the directory-sync path and only triggers a
 // redeploy when an already running project's synced contents changed.
-func (s *GitOpsSyncService) performDirectorySync(ctx context.Context, sync *models.GitOpsSync, id string, actor models.User, result *gitops.SyncResult, source *preparedSyncSource) (*gitops.SyncResult, error) {
+func (s *GitOpsSyncService) performDirectorySync(ctx context.Context, sync *projectpkg.GitOpsSync, id string, actor common.User, result *gitops.SyncResult, source *preparedSyncSource) (*gitops.SyncResult, error) {
 	slog.InfoContext(ctx, "Using directory sync mode", "syncId", id, "composePath", sync.ComposePath)
 
 	syncFiles, err := s.walkAndParseSyncDirectory(ctx, sync, source.repoPath)
@@ -1044,7 +1042,7 @@ func (s *GitOpsSyncService) performDirectorySync(ctx context.Context, sync *mode
 // sync: the compose file's base name plus the override file name when one was
 // resolved. Shared by the compose-only and swarm-stack single-file paths so the
 // two never disagree on what a single-file sync tracked.
-func singleFileSyncedFilesInternal(sync *models.GitOpsSync, source *preparedSyncSource) []string {
+func singleFileSyncedFilesInternal(sync *projectpkg.GitOpsSync, source *preparedSyncSource) []string {
 	syncedFiles := []string{filepath.Base(sync.ComposePath)}
 	if source.overrideFileName != "" {
 		syncedFiles = append(syncedFiles, source.overrideFileName)
@@ -1053,7 +1051,7 @@ func singleFileSyncedFilesInternal(sync *models.GitOpsSync, source *preparedSync
 }
 
 // performSingleFileSyncInternal preserves the legacy compose-only Git sync behavior.
-func (s *GitOpsSyncService) performSingleFileSyncInternal(ctx context.Context, sync *models.GitOpsSync, id string, actor models.User, result *gitops.SyncResult, source *preparedSyncSource) (*gitops.SyncResult, error) {
+func (s *GitOpsSyncService) performSingleFileSyncInternal(ctx context.Context, sync *projectpkg.GitOpsSync, id string, actor common.User, result *gitops.SyncResult, source *preparedSyncSource) (*gitops.SyncResult, error) {
 	slog.InfoContext(ctx, "Using single file sync mode", "syncId", id, "composePath", sync.ComposePath)
 
 	syncedFiles := singleFileSyncedFilesInternal(sync, source)
@@ -1076,7 +1074,7 @@ func (s *GitOpsSyncService) performSingleFileSyncInternal(ctx context.Context, s
 }
 
 // performSwarmStackSyncInternal executes a single file sync targeted at a Swarm Stack
-func (s *GitOpsSyncService) performSwarmStackSyncInternal(ctx context.Context, sync *models.GitOpsSync, id string, actor models.User, result *gitops.SyncResult, source *preparedSyncSource) (*gitops.SyncResult, error) {
+func (s *GitOpsSyncService) performSwarmStackSyncInternal(ctx context.Context, sync *projectpkg.GitOpsSync, id string, actor common.User, result *gitops.SyncResult, source *preparedSyncSource) (*gitops.SyncResult, error) {
 	slog.InfoContext(ctx, "Deploying Swarm Stack from GitOps sync", "syncId", id, "stackName", sync.ProjectName)
 
 	if s.swarmService == nil {
@@ -1135,8 +1133,8 @@ func (s *GitOpsSyncService) performSwarmStackSyncInternal(ctx context.Context, s
 
 	// Log event
 	_, _ = s.eventService.CreateEvent(ctx, event.CreateEventRequest{
-		Type:          models.EventTypeGitSyncRun,
-		Severity:      models.EventSeveritySuccess,
+		Type:          event.EventTypeGitSyncRun,
+		Severity:      event.EventSeveritySuccess,
 		Title:         "Git sync completed for stack",
 		Description:   fmt.Sprintf("Successfully synced '%s' to swarm stack '%s'", sync.Name, sync.ProjectName),
 		ResourceType:  new("git_sync"),
@@ -1155,12 +1153,12 @@ func (s *GitOpsSyncService) performSwarmStackSyncInternal(ctx context.Context, s
 // running and the latest sync actually changed managed content. Returns a
 // common.ErrRedeployAfterSyncFailed when the redeploy itself fails; callers
 // surface that on the sync row's LastSyncError.
-func (s *GitOpsSyncService) redeployIfRunningAfterSync(ctx context.Context, project *models.Project, actor models.User, syncMode string) error {
+func (s *GitOpsSyncService) redeployIfRunningAfterSync(ctx context.Context, project *projectpkg.Project, actor common.User, syncMode string) error {
 	details, err := s.projectService.GetProjectDetails(ctx, project.ID, projecttypes.DetailsOptions{})
 	if err != nil {
 		return nil //nolint:nilerr // best-effort: skip post-sync redeploy when project state can't be determined
 	}
-	if details.Status != string(models.ProjectStatusRunning) && details.Status != string(models.ProjectStatusPartiallyRunning) {
+	if details.Status != string(projectpkg.ProjectStatusRunning) && details.Status != string(projectpkg.ProjectStatusPartiallyRunning) {
 		return nil
 	}
 
@@ -1174,10 +1172,10 @@ func (s *GitOpsSyncService) redeployIfRunningAfterSync(ctx context.Context, proj
 
 // logSyncSuccess records the Git sync completion event once the filesystem and
 // sync-status updates have already succeeded.
-func (s *GitOpsSyncService) logSyncSuccess(ctx context.Context, sync *models.GitOpsSync, project *models.Project, actor models.User) {
+func (s *GitOpsSyncService) logSyncSuccess(ctx context.Context, sync *projectpkg.GitOpsSync, project *projectpkg.Project, actor common.User) {
 	_, _ = s.eventService.CreateEvent(ctx, event.CreateEventRequest{
-		Type:          models.EventTypeGitSyncRun,
-		Severity:      models.EventSeveritySuccess,
+		Type:          event.EventTypeGitSyncRun,
+		Severity:      event.EventSeveritySuccess,
 		Title:         "Git sync completed",
 		Description:   fmt.Sprintf("Successfully synced '%s' to project '%s'", sync.Name, project.Name),
 		ResourceType:  new("git_sync"),
@@ -1206,7 +1204,7 @@ func (s *GitOpsSyncService) updateSyncStatus(ctx context.Context, id, status, er
 		updates["last_sync_commit"] = commitHash
 	}
 
-	if err := s.db.WithContext(ctx).Model(&models.GitOpsSync{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+	if err := s.db.WithContext(ctx).Model(&projectpkg.GitOpsSync{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 		slog.ErrorContext(ctx, "Failed to update sync status", "error", err, "syncId", id)
 	}
 }
@@ -1275,7 +1273,7 @@ func (s *GitOpsSyncService) CleanupLeakedScratchDirsOnStartup(ctx context.Contex
 
 func (s *GitOpsSyncService) CleanupOrphanedSyncsOnStartup(ctx context.Context) error {
 	var syncIDs []string
-	if err := s.db.WithContext(ctx).Model(&models.GitOpsSync{}).
+	if err := s.db.WithContext(ctx).Model(&projectpkg.GitOpsSync{}).
 		Where("environment_id NOT IN (SELECT id FROM environments)").
 		Pluck("id", &syncIDs).Error; err != nil {
 		return errors.WrapIf(err, "failed to list orphaned gitops syncs")
@@ -1285,12 +1283,12 @@ func (s *GitOpsSyncService) CleanupOrphanedSyncsOnStartup(ctx context.Context) e
 	}
 
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&models.Project{}).
+		if err := tx.Model(&projectpkg.Project{}).
 			Where("gitops_managed_by IN ?", syncIDs).
 			Update("gitops_managed_by", nil).Error; err != nil {
 			return errors.WrapIf(err, "failed to clear orphaned gitops project references")
 		}
-		if err := tx.Where("id IN ?", syncIDs).Delete(&models.GitOpsSync{}).Error; err != nil {
+		if err := tx.Where("id IN ?", syncIDs).Delete(&projectpkg.GitOpsSync{}).Error; err != nil {
 			return errors.WrapIf(err, "failed to delete orphaned gitops syncs")
 		}
 		return nil
@@ -1303,7 +1301,7 @@ func (s *GitOpsSyncService) CleanupOrphanedSyncsOnStartup(ctx context.Context) e
 }
 
 func (s *GitOpsSyncService) ReconcileDirectorySyncProjectsOnStartup(ctx context.Context) error {
-	var syncs []models.GitOpsSync
+	var syncs []projectpkg.GitOpsSync
 	if err := s.db.WithContext(ctx).
 		Where("sync_directory = ?", true).
 		Find(&syncs).Error; err != nil {
@@ -1375,7 +1373,7 @@ func (s *GitOpsSyncService) BrowseFiles(ctx context.Context, environmentID, id s
 	}, nil
 }
 
-func (s *GitOpsSyncService) ImportSyncs(ctx context.Context, environmentID string, req []gitops.ImportGitOpsSyncRequest, actor models.User) (*gitops.ImportGitOpsSyncResponse, error) {
+func (s *GitOpsSyncService) ImportSyncs(ctx context.Context, environmentID string, req []gitops.ImportGitOpsSyncRequest, actor common.User) (*gitops.ImportGitOpsSyncResponse, error) {
 	response := &gitops.ImportGitOpsSyncResponse{
 		SuccessCount: 0,
 		FailedCount:  0,
@@ -1417,10 +1415,10 @@ func (s *GitOpsSyncService) ImportSyncs(ctx context.Context, environmentID strin
 	return response, nil
 }
 
-func (s *GitOpsSyncService) logSyncError(ctx context.Context, sync *models.GitOpsSync, actor models.User, errorMsg string) {
+func (s *GitOpsSyncService) logSyncError(ctx context.Context, sync *projectpkg.GitOpsSync, actor common.User, errorMsg string) {
 	_, _ = s.eventService.CreateEvent(ctx, event.CreateEventRequest{
-		Type:          models.EventTypeGitSyncError,
-		Severity:      models.EventSeverityError,
+		Type:          event.EventTypeGitSyncError,
+		Severity:      event.EventSeverityError,
 		Title:         "Git sync failed",
 		Description:   fmt.Sprintf("Failed to sync '%s': %s", sync.Name, errorMsg),
 		ResourceType:  new("git_sync"),
@@ -1432,7 +1430,7 @@ func (s *GitOpsSyncService) logSyncError(ctx context.Context, sync *models.GitOp
 	})
 }
 
-func (s *GitOpsSyncService) failSync(ctx context.Context, id string, result *gitops.SyncResult, sync *models.GitOpsSync, actor models.User, message, errMsg string) error {
+func (s *GitOpsSyncService) failSync(ctx context.Context, id string, result *gitops.SyncResult, sync *projectpkg.GitOpsSync, actor common.User, message, errMsg string) error {
 	result.Message = message
 	result.Error = new(errMsg)
 	s.updateSyncStatus(ctx, id, "failed", errMsg, "")
@@ -1445,7 +1443,7 @@ func (s *GitOpsSyncService) failSync(ctx context.Context, id string, result *git
 // lifecycle hook returning non-zero). The synced-files list and commit hash
 // are preserved on the row so operators can see what reached disk; the
 // error message surfaces the redeploy failure on LastSyncError.
-func (s *GitOpsSyncService) markSyncRedeployFailedInternal(ctx context.Context, sync *models.GitOpsSync, id, commitHash string, syncedFiles []string, redeployErr error, actor models.User, result *gitops.SyncResult) {
+func (s *GitOpsSyncService) markSyncRedeployFailedInternal(ctx context.Context, sync *projectpkg.GitOpsSync, id, commitHash string, syncedFiles []string, redeployErr error, actor common.User, result *gitops.SyncResult) {
 	errMsg := redeployErr.Error()
 	result.Success = false
 	result.Message = "Sync wrote files but redeploy failed"
@@ -1454,12 +1452,12 @@ func (s *GitOpsSyncService) markSyncRedeployFailedInternal(ctx context.Context, 
 	s.logSyncError(ctx, sync, actor, errMsg)
 }
 
-func (s *GitOpsSyncService) disableAutoSyncForBrokenBindingInternal(ctx context.Context, sync *models.GitOpsSync) {
+func (s *GitOpsSyncService) disableAutoSyncForBrokenBindingInternal(ctx context.Context, sync *projectpkg.GitOpsSync) {
 	if sync == nil || sync.ID == "" {
 		return
 	}
 	if err := s.db.WithContext(ctx).
-		Model(&models.GitOpsSync{}).
+		Model(&projectpkg.GitOpsSync{}).
 		Where("id = ?", sync.ID).
 		Update("auto_sync", false).Error; err != nil {
 		slog.ErrorContext(ctx, "Failed to disable GitOps auto-sync after broken project binding", "syncId", sync.ID, "error", err)
@@ -1468,14 +1466,14 @@ func (s *GitOpsSyncService) disableAutoSyncForBrokenBindingInternal(ctx context.
 	s.unregisterSyncJobInternal(ctx, sync.ID)
 }
 
-func (s *GitOpsSyncService) failSyncAndDisableAutoSyncInternal(ctx context.Context, id string, result *gitops.SyncResult, sync *models.GitOpsSync, actor models.User, message string, failure error) error {
+func (s *GitOpsSyncService) failSyncAndDisableAutoSyncInternal(ctx context.Context, id string, result *gitops.SyncResult, sync *projectpkg.GitOpsSync, actor common.User, message string, failure error) error {
 	errMsg := failure.Error()
 	_ = s.failSync(ctx, id, result, sync, actor, message, errMsg)
 	s.disableAutoSyncForBrokenBindingInternal(ctx, sync)
 	return failure
 }
 
-func (s *GitOpsSyncService) recordBrokenProjectBindingInternal(ctx context.Context, sync *models.GitOpsSync, actor models.User, err error) {
+func (s *GitOpsSyncService) recordBrokenProjectBindingInternal(ctx context.Context, sync *projectpkg.GitOpsSync, actor common.User, err error) {
 	if !errors.Is(err, common.ErrGitOpsSyncProjectBindingBroken) || sync == nil {
 		return
 	}
@@ -1485,7 +1483,7 @@ func (s *GitOpsSyncService) recordBrokenProjectBindingInternal(ctx context.Conte
 	s.disableAutoSyncForBrokenBindingInternal(ctx, sync)
 }
 
-func (s *GitOpsSyncService) createProjectForSyncInternal(ctx context.Context, sync *models.GitOpsSync, id string, composeContent string, envContent *string, overrideContent *string, overrideFileName string, result *gitops.SyncResult, actor models.User) (*models.Project, error) {
+func (s *GitOpsSyncService) createProjectForSyncInternal(ctx context.Context, sync *projectpkg.GitOpsSync, id string, composeContent string, envContent *string, overrideContent *string, overrideFileName string, result *gitops.SyncResult, actor common.User) (*projectpkg.Project, error) {
 	// Use the non-suffixing create: a GitOps sync must never mint a "-N" duplicate.
 	// A name collision means a project directory already exists for this name, so the
 	// binding is broken — fail loudly and disable auto-sync instead of duplicating.
@@ -1500,14 +1498,14 @@ func (s *GitOpsSyncService) createProjectForSyncInternal(ctx context.Context, sy
 	}
 
 	// Update sync with project ID
-	if err := s.db.WithContext(ctx).Model(&models.GitOpsSync{}).Where("id = ?", id).Updates(map[string]any{
+	if err := s.db.WithContext(ctx).Model(&projectpkg.GitOpsSync{}).Where("id = ?", id).Updates(map[string]any{
 		"project_id": project.ID,
 	}).Error; err != nil {
 		return nil, s.failSync(ctx, id, result, sync, actor, "Failed to update sync with project ID", err.Error())
 	}
 
 	// Mark project as GitOps-managed
-	if err := s.db.WithContext(ctx).Model(&models.Project{}).Where("id = ?", project.ID).Update("gitops_managed_by", id).Error; err != nil {
+	if err := s.db.WithContext(ctx).Model(&projectpkg.Project{}).Where("id = ?", project.ID).Update("gitops_managed_by", id).Error; err != nil {
 		return nil, s.failSync(ctx, id, result, sync, actor, "Failed to mark project as GitOps-managed", err.Error())
 	}
 
@@ -1520,8 +1518,8 @@ func (s *GitOpsSyncService) createProjectForSyncInternal(ctx context.Context, sy
 	return project, nil
 }
 
-func (s *GitOpsSyncService) getOrCreateProjectInternal(ctx context.Context, sync *models.GitOpsSync, id string, composeContent string, envContent *string, overrideContent *string, overrideFileName string, result *gitops.SyncResult, actor models.User) (*models.Project, error) {
-	var project *models.Project
+func (s *GitOpsSyncService) getOrCreateProjectInternal(ctx context.Context, sync *projectpkg.GitOpsSync, id string, composeContent string, envContent *string, overrideContent *string, overrideFileName string, result *gitops.SyncResult, actor common.User) (*projectpkg.Project, error) {
+	var project *projectpkg.Project
 
 	if sync.ProjectID != nil && *sync.ProjectID != "" {
 		var found bool
@@ -1548,7 +1546,7 @@ func (s *GitOpsSyncService) getOrCreateProjectInternal(ctx context.Context, sync
 	return project, nil
 }
 
-func (s *GitOpsSyncService) updateProjectForSyncInternal(ctx context.Context, sync *models.GitOpsSync, id string, project *models.Project, composeContent string, envContent *string, overrideContent *string, overrideFileName string, result *gitops.SyncResult, actor models.User) error {
+func (s *GitOpsSyncService) updateProjectForSyncInternal(ctx context.Context, sync *projectpkg.GitOpsSync, id string, project *projectpkg.Project, composeContent string, envContent *string, overrideContent *string, overrideFileName string, result *gitops.SyncResult, actor common.User) error {
 	// Get current content to see if it changed
 	oldCompose, oldEnv, oldOverride, _ := s.projectService.GetProjectContent(ctx, project.ID)
 
@@ -1567,7 +1565,7 @@ func (s *GitOpsSyncService) updateProjectForSyncInternal(ctx context.Context, sy
 	// can reflect it on the sync row's LastSyncError.
 	if contentChanged {
 		details, err := s.projectService.GetProjectDetails(ctx, project.ID, projecttypes.DetailsOptions{})
-		if err == nil && (details.Status == string(models.ProjectStatusRunning) || details.Status == string(models.ProjectStatusPartiallyRunning)) {
+		if err == nil && (details.Status == string(projectpkg.ProjectStatusRunning) || details.Status == string(projectpkg.ProjectStatusPartiallyRunning)) {
 			slog.InfoContext(ctx, "Redeploying project due to content change from Git sync", "projectName", project.Name, "projectId", project.ID)
 			if err := s.projectService.RedeployProject(ctx, project.ID, actor, nil); err != nil {
 				slog.ErrorContext(ctx, "Failed to redeploy project after Git sync", "error", err, "projectId", project.ID)
@@ -1615,7 +1613,7 @@ func marshalSyncedFiles(files []string) *string {
 
 // walkAndParseSyncDirectory walks the repository directory and returns all files with their contents.
 // Returns the list of SyncFile entries and an error if any; it fails if the compose file is missing.
-func (s *GitOpsSyncService) walkAndParseSyncDirectory(ctx context.Context, sync *models.GitOpsSync, repoPath string) ([]projects.SyncFile, error) {
+func (s *GitOpsSyncService) walkAndParseSyncDirectory(ctx context.Context, sync *projectpkg.GitOpsSync, repoPath string) ([]projects.SyncFile, error) {
 	slog.InfoContext(ctx, "Starting directory walk", "syncId", sync.ID, "composePath", sync.ComposePath)
 
 	// Walk the directory to get all files
@@ -1659,7 +1657,7 @@ func (s *GitOpsSyncService) walkAndParseSyncDirectory(ctx context.Context, sync 
 
 // syncProjectDirectoryInternal runs the new directory-sync path end to end:
 // stage files, validate the staged tree, then create or update the project.
-func (s *GitOpsSyncService) syncProjectDirectoryInternal(ctx context.Context, sync *models.GitOpsSync, syncFiles []projects.SyncFile, actor models.User) (*models.Project, []string, bool, bool, error) {
+func (s *GitOpsSyncService) syncProjectDirectoryInternal(ctx context.Context, sync *projectpkg.GitOpsSync, syncFiles []projects.SyncFile, actor common.User) (*projectpkg.Project, []string, bool, bool, error) {
 	stage, err := s.stageDirectorySyncInternal(ctx, sync, syncFiles)
 	if err != nil {
 		s.recordBrokenProjectBindingInternal(ctx, sync, actor, err)
@@ -1691,7 +1689,7 @@ func (s *GitOpsSyncService) syncProjectDirectoryInternal(ctx context.Context, sy
 
 // stageDirectorySyncInternal builds a temporary project tree that reflects the exact
 // repo layout after sync, including cleanup of files removed from the repo.
-func (s *GitOpsSyncService) stageDirectorySyncInternal(ctx context.Context, sync *models.GitOpsSync, syncFiles []projects.SyncFile) (*stagedDirectorySync, error) {
+func (s *GitOpsSyncService) stageDirectorySyncInternal(ctx context.Context, sync *projectpkg.GitOpsSync, syncFiles []projects.SyncFile) (*stagedDirectorySync, error) {
 	projectsDir, err := s.projectService.GetProjectsDirectory(ctx)
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to get projects directory")
@@ -1876,7 +1874,7 @@ func partitionReservedRootEnvFilesInternal(ctx context.Context, syncFiles []proj
 // expects values that the git repo intentionally does not provide. Only env
 // files are touched — other files would conflict with what WriteSyncedDirectory
 // is about to lay down from git.
-func (s *GitOpsSyncService) seedStageEnvFromCandidateDirInternal(ctx context.Context, sync *models.GitOpsSync, projectsDir, stagePath string) error {
+func (s *GitOpsSyncService) seedStageEnvFromCandidateDirInternal(ctx context.Context, sync *projectpkg.GitOpsSync, projectsDir, stagePath string) error {
 	// The candidate may itself be a symlinked project directory, so it is probed
 	// with os.Stat and then used as the confinement root for the reads below.
 	candidatePath := filepath.Join(projectsDir, projects.SanitizeProjectName(sync.ProjectName))
@@ -1960,8 +1958,8 @@ func (s *GitOpsSyncService) seedStageEnvFromCandidateDirInternal(ctx context.Con
 	return nil
 }
 
-func (s *GitOpsSyncService) lookupProjectByIDInternal(ctx context.Context, projectID string) (*models.Project, bool, error) {
-	var project models.Project
+func (s *GitOpsSyncService) lookupProjectByIDInternal(ctx context.Context, projectID string) (*projectpkg.Project, bool, error) {
+	var project projectpkg.Project
 	if err := s.db.WithContext(ctx).Where("id = ?", projectID).First(&project).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, false, nil
@@ -1972,8 +1970,8 @@ func (s *GitOpsSyncService) lookupProjectByIDInternal(ctx context.Context, proje
 	return &project, true, nil
 }
 
-func (s *GitOpsSyncService) lookupProjectByPathInternal(ctx context.Context, projectPath string) (*models.Project, bool, error) {
-	var project models.Project
+func (s *GitOpsSyncService) lookupProjectByPathInternal(ctx context.Context, projectPath string) (*projectpkg.Project, bool, error) {
+	var project projectpkg.Project
 	if err := s.db.WithContext(ctx).Where("path = ?", projectPath).First(&project).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, false, nil
@@ -1984,15 +1982,15 @@ func (s *GitOpsSyncService) lookupProjectByPathInternal(ctx context.Context, pro
 	return &project, true, nil
 }
 
-func (s *GitOpsSyncService) findRecoverableManagedProjectInternal(ctx context.Context, sync *models.GitOpsSync) (*models.Project, error) {
-	var managedProjects []models.Project
+func (s *GitOpsSyncService) findRecoverableManagedProjectInternal(ctx context.Context, sync *projectpkg.GitOpsSync) (*projectpkg.Project, error) {
+	var managedProjects []projectpkg.Project
 	if err := s.db.WithContext(ctx).
 		Where("gitops_managed_by = ?", sync.ID).
 		Find(&managedProjects).Error; err != nil {
 		return nil, errors.WrapIff(err, "failed to list GitOps-managed projects for sync %s", sync.ID)
 	}
 
-	matches := make([]models.Project, 0, len(managedProjects))
+	matches := make([]projectpkg.Project, 0, len(managedProjects))
 	for i := range managedProjects {
 		project := managedProjects[i]
 		if err := s.projectService.EnsureProjectPathUnderRoot(ctx, &project, true); err != nil {
@@ -2017,7 +2015,7 @@ func (s *GitOpsSyncService) findRecoverableManagedProjectInternal(ctx context.Co
 	}
 }
 
-func (s *GitOpsSyncService) findUniqueProjectDirectoryCandidateInternal(ctx context.Context, sync *models.GitOpsSync) (string, error) {
+func (s *GitOpsSyncService) findUniqueProjectDirectoryCandidateInternal(ctx context.Context, sync *projectpkg.GitOpsSync) (string, error) {
 	projectsDir, err := s.projectService.GetProjectsDirectory(ctx)
 	if err != nil {
 		return "", err
@@ -2070,12 +2068,12 @@ func (s *GitOpsSyncService) findUniqueProjectDirectoryCandidateInternal(ctx cont
 	}
 }
 
-func (s *GitOpsSyncService) createRecoveredProjectFromDirectoryInternal(ctx context.Context, sync *models.GitOpsSync, projectPath string) (*models.Project, error) {
-	project := &models.Project{
+func (s *GitOpsSyncService) createRecoveredProjectFromDirectoryInternal(ctx context.Context, sync *projectpkg.GitOpsSync, projectPath string) (*projectpkg.Project, error) {
+	project := &projectpkg.Project{
 		Name:            sync.ProjectName,
 		DirName:         new(filepath.Base(projectPath)),
 		Path:            projectPath,
-		Status:          models.ProjectStatusUnknown,
+		Status:          projectpkg.ProjectStatusUnknown,
 		StatusReason:    new("Project recovered from existing GitOps-managed directory"),
 		ServiceCount:    0,
 		RunningCount:    0,
@@ -2088,14 +2086,14 @@ func (s *GitOpsSyncService) createRecoveredProjectFromDirectoryInternal(ctx cont
 		slog.WarnContext(ctx, "Failed to count services while recovering GitOps project", "syncId", sync.ID, "path", projectPath, "error", err)
 	}
 
-	if err := s.projectService.CreateGitOpsManagedProject(ctx, sync, project, models.User{}, false); err != nil {
+	if err := s.projectService.CreateGitOpsManagedProject(ctx, sync, project, common.User{}, false); err != nil {
 		return nil, err
 	}
 
 	return project, nil
 }
 
-func (s *GitOpsSyncService) recoverProjectFromDirectoryCandidateInternal(ctx context.Context, sync *models.GitOpsSync) (*models.Project, error) {
+func (s *GitOpsSyncService) recoverProjectFromDirectoryCandidateInternal(ctx context.Context, sync *projectpkg.GitOpsSync) (*projectpkg.Project, error) {
 	projectPath, err := s.findUniqueProjectDirectoryCandidateInternal(ctx, sync)
 	if err != nil || projectPath == "" {
 		return nil, err
@@ -2120,7 +2118,7 @@ func (s *GitOpsSyncService) recoverProjectFromDirectoryCandidateInternal(ctx con
 
 // getDirectorySyncProjectInternal resolves the linked project for a sync when one
 // exists, while tolerating deleted/stale project references.
-func (s *GitOpsSyncService) getDirectorySyncProjectInternal(ctx context.Context, sync *models.GitOpsSync) (*models.Project, error) {
+func (s *GitOpsSyncService) getDirectorySyncProjectInternal(ctx context.Context, sync *projectpkg.GitOpsSync) (*projectpkg.Project, error) {
 	if sync == nil {
 		return nil, nil
 	}
@@ -2178,7 +2176,7 @@ func (s *GitOpsSyncService) getDirectorySyncProjectInternal(ctx context.Context,
 
 // createDirectorySyncProjectInternal promotes a validated staged tree into a new
 // managed project directory and links it back to the Git sync record.
-func (s *GitOpsSyncService) createDirectorySyncProjectInternal(ctx context.Context, sync *models.GitOpsSync, stage *stagedDirectorySync, actor models.User) (*models.Project, error) {
+func (s *GitOpsSyncService) createDirectorySyncProjectInternal(ctx context.Context, sync *projectpkg.GitOpsSync, stage *stagedDirectorySync, actor common.User) (*projectpkg.Project, error) {
 	projectsDir, err := s.projectService.GetProjectsDirectory(ctx)
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to get projects directory")
@@ -2210,11 +2208,11 @@ func (s *GitOpsSyncService) createDirectorySyncProjectInternal(ctx context.Conte
 	}
 	stage.stagePath = ""
 
-	project := &models.Project{
+	project := &projectpkg.Project{
 		Name:         sync.ProjectName,
 		DirName:      new(folderName),
 		Path:         projectPath,
-		Status:       models.ProjectStatusStopped,
+		Status:       projectpkg.ProjectStatusStopped,
 		ServiceCount: stage.serviceCount,
 		RunningCount: 0,
 	}
@@ -2230,7 +2228,7 @@ func (s *GitOpsSyncService) createDirectorySyncProjectInternal(ctx context.Conte
 // updateDirectorySyncProjectInternal mirrors a validated staged tree into the
 // existing project path in place so running containers keep their bind-mount
 // inodes; a temporary backup copy allows rollback if promotion fails.
-func (s *GitOpsSyncService) updateDirectorySyncProjectInternal(ctx context.Context, sync *models.GitOpsSync, stage *stagedDirectorySync) (*models.Project, error) {
+func (s *GitOpsSyncService) updateDirectorySyncProjectInternal(ctx context.Context, sync *projectpkg.GitOpsSync, stage *stagedDirectorySync) (*projectpkg.Project, error) {
 	project := stage.project
 	projectPath := filepath.Clean(project.Path)
 	backupPath := ""
@@ -2295,7 +2293,7 @@ func (s *GitOpsSyncService) updateDirectorySyncProjectInternal(ctx context.Conte
 		return nil, errors.WrapIf(err, "failed to promote staged project directory")
 	}
 
-	if err := s.db.WithContext(ctx).Model(&models.Project{}).Where("id = ?", project.ID).Updates(map[string]any{
+	if err := s.db.WithContext(ctx).Model(&projectpkg.Project{}).Where("id = ?", project.ID).Updates(map[string]any{
 		"service_count":     stage.serviceCount,
 		"gitops_managed_by": sync.ID,
 		"updated_at":        time.Now(),
@@ -2326,7 +2324,7 @@ func (s *GitOpsSyncService) updateSyncStatusWithFiles(ctx context.Context, id, s
 		updates["last_sync_commit"] = commitHash
 	}
 
-	if err := s.db.WithContext(ctx).Model(&models.GitOpsSync{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+	if err := s.db.WithContext(ctx).Model(&projectpkg.GitOpsSync{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 		slog.ErrorContext(ctx, "Failed to update sync status with files", "error", err, "syncId", id)
 	}
 }

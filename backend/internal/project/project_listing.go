@@ -1,6 +1,8 @@
 package project
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+
 	"context"
 	"log/slog"
 	"maps"
@@ -11,7 +13,6 @@ import (
 	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
@@ -56,7 +57,7 @@ func groupComposeContainersByProjectInternal(containers []container.Summary) map
 // lookupProjectContainers returns containers matched to a project, trying the
 // normalized directory name first and falling back to the effective compose
 // project name (from COMPOSE_PROJECT_NAME) when it differs.
-func lookupProjectContainers(p models.Project, containersByProject map[string][]container.Summary) []container.Summary {
+func lookupProjectContainers(p Project, containersByProject map[string][]container.Summary) []container.Summary {
 	normName := projects.NormalizeProjectName(p.Name)
 	if c := containersByProject[normName]; len(c) > 0 {
 		return c
@@ -67,8 +68,8 @@ func lookupProjectContainers(p models.Project, containersByProject map[string][]
 	return nil
 }
 
-func (s *ProjectService) ListAllProjects(ctx context.Context) ([]models.Project, error) {
-	var items []models.Project
+func (s *ProjectService) ListAllProjects(ctx context.Context) ([]Project, error) {
+	var items []Project
 	if err := s.db.WithContext(ctx).Find(&items).Error; err != nil {
 		return nil, errors.WrapIf(err, "list projects")
 	}
@@ -104,13 +105,13 @@ func (s *ProjectService) countProjectFolders(ctx context.Context) (int, error) {
 	return len(discoveredProjects), nil
 }
 
-func incrementStatusCounts(status models.ProjectStatus, running, stopped *int) {
+func incrementStatusCounts(status ProjectStatus, running, stopped *int) {
 	switch status {
-	case models.ProjectStatusRunning, models.ProjectStatusPartiallyRunning, models.ProjectStatusDeploying, models.ProjectStatusRestarting:
+	case ProjectStatusRunning, ProjectStatusPartiallyRunning, ProjectStatusDeploying, ProjectStatusRestarting:
 		*running++
-	case models.ProjectStatusStopped, models.ProjectStatusStopping:
+	case ProjectStatusStopped, ProjectStatusStopping:
 		*stopped++
-	case models.ProjectStatusUnknown:
+	case ProjectStatusUnknown:
 		// Don't count unknown
 	}
 }
@@ -118,7 +119,7 @@ func incrementStatusCounts(status models.ProjectStatus, running, stopped *int) {
 func (s *ProjectService) GetProjectStatusCounts(ctx context.Context) (folderCount, runningProjects, stoppedProjects, totalProjects, archivedProjects int, err error) {
 	folderCount, _ = s.countProjectFolders(ctx)
 
-	var projectsList []models.Project
+	var projectsList []Project
 	if err := s.db.WithContext(ctx).Find(&projectsList).Error; err != nil {
 		return folderCount, 0, 0, 0, 0, errors.WrapIf(err, "failed to list projects")
 	}
@@ -126,7 +127,7 @@ func (s *ProjectService) GetProjectStatusCounts(ctx context.Context) (folderCoun
 	totalProjects = len(projectsList)
 	runningProjects = 0
 	stoppedProjects = 0
-	activeProjects := make([]models.Project, 0, len(projectsList))
+	activeProjects := make([]Project, 0, len(projectsList))
 	for _, p := range projectsList {
 		if p.IsArchived {
 			archivedProjects++
@@ -161,9 +162,9 @@ func (s *ProjectService) GetProjectStatusCounts(ctx context.Context) (folderCoun
 			})
 		}
 
-		var status models.ProjectStatus
+		var status ProjectStatus
 		if len(services) == 0 {
-			status = models.ProjectStatusStopped
+			status = ProjectStatusStopped
 		} else {
 			status = calculateProjectStatus(services)
 		}
@@ -175,7 +176,7 @@ func (s *ProjectService) GetProjectStatusCounts(ctx context.Context) (folderCoun
 }
 
 func (s *ProjectService) ListProjects(ctx context.Context, params pagination.QueryParams) ([]project.Details, pagination.Response, error) {
-	query := s.db.WithContext(ctx).Model(&models.Project{})
+	query := s.db.WithContext(ctx).Model(&Project{})
 	statusFilter := ""
 	updatesFilter := ""
 	archivedFilter := ""
@@ -198,7 +199,7 @@ func (s *ProjectService) ListProjects(ctx context.Context, params pagination.Que
 
 	query = pagination.ApplyFilter(query, "status", params.Filters["status"])
 
-	var projectsArray []models.Project
+	var projectsArray []Project
 	paginationResp, err := pagination.PaginateAndSortDB(params, query, &projectsArray)
 	if err != nil {
 		return nil, pagination.Response{}, errors.WrapIf(err, "failed to paginate projects")
@@ -294,7 +295,7 @@ func (s *ProjectService) filterProjectsWithDerivedFiltersInternal(
 	params pagination.QueryParams,
 	query *gorm.DB,
 ) (pagination.FilterResult[project.Details], error) {
-	var projectsArray []models.Project
+	var projectsArray []Project
 	if term := strings.TrimSpace(params.Search); term != "" {
 		query = applyProjectSearchDBFilterInternal(query, term)
 	}
@@ -324,7 +325,7 @@ func withoutProjectDBFiltersInternal(params pagination.QueryParams) pagination.Q
 func (s *ProjectService) appendDiscoveredComposeProjectUpdatesInternal(
 	ctx context.Context,
 	params pagination.QueryParams,
-	projectsArray []models.Project,
+	projectsArray []Project,
 	items []project.Details,
 ) []project.Details {
 	if !shouldIncludeDiscoveredComposeProjectUpdatesInternal(params) {
@@ -357,7 +358,7 @@ func shouldIncludeDiscoveredComposeProjectUpdatesInternal(params pagination.Quer
 // buildKnownComposeProjectNameSetInternal collects every project name Arcane
 // tracks. projectsArrayIsComplete tells it the caller already loaded the full
 // table (not a filtered page), so the catch-all re-query can be skipped.
-func (s *ProjectService) buildKnownComposeProjectNameSetInternal(ctx context.Context, projectsArray []models.Project, projectsArrayIsComplete bool) map[string]struct{} {
+func (s *ProjectService) buildKnownComposeProjectNameSetInternal(ctx context.Context, projectsArray []Project, projectsArrayIsComplete bool) map[string]struct{} {
 	known := make(map[string]struct{}, len(projectsArray)*2)
 	for _, proj := range projectsArray {
 		addKnownComposeProjectNameInternal(known, proj.Name)
@@ -370,7 +371,7 @@ func (s *ProjectService) buildKnownComposeProjectNameSetInternal(ctx context.Con
 		return known
 	}
 
-	var allProjects []models.Project
+	var allProjects []Project
 	if err := s.db.WithContext(ctx).Select("name", "compose_project_name").Find(&allProjects).Error; err != nil {
 		slog.WarnContext(ctx, "failed to load known project names for compose update discovery", "error", err)
 		return known
@@ -575,13 +576,13 @@ func buildDiscoveredRuntimeServicesInternal(containers []container.Summary, icon
 func resolveDiscoveredProjectStatusInternal(serviceCount int, runningCount int) string {
 	switch {
 	case serviceCount == 0:
-		return string(models.ProjectStatusUnknown)
+		return string(ProjectStatusUnknown)
 	case runningCount >= serviceCount:
-		return string(models.ProjectStatusRunning)
+		return string(ProjectStatusRunning)
 	case runningCount > 0:
-		return string(models.ProjectStatusPartiallyRunning)
+		return string(ProjectStatusPartiallyRunning)
 	default:
-		return string(models.ProjectStatusStopped)
+		return string(ProjectStatusStopped)
 	}
 }
 
@@ -717,12 +718,12 @@ func (s *ProjectService) CountProjectsWithPendingUpdates(ctx context.Context, al
 	// One full scan: archived projects are excluded from the update count but
 	// still mark their compose stacks as known during discovery, so loading
 	// everything here saves the known-name pass its own table scan.
-	var allProjects []models.Project
+	var allProjects []Project
 	if err := s.db.WithContext(ctx).Find(&allProjects).Error; err != nil {
 		return 0, errors.WrapIf(err, "failed to list projects for update count")
 	}
 
-	activeProjects := make([]models.Project, 0, len(allProjects))
+	activeProjects := make([]Project, 0, len(allProjects))
 	for _, proj := range allProjects {
 		if !proj.IsArchived {
 			activeProjects = append(activeProjects, proj)
@@ -751,7 +752,7 @@ func (s *ProjectService) CountProjectsWithPendingUpdates(ctx context.Context, al
 // the daemon that Arcane does not track but that have a pending image update, so
 // the dashboard badge matches the projects table. Errors are logged and counted
 // as zero: a missing container list should degrade the badge, not fail the load.
-func (s *ProjectService) countDiscoveredComposeProjectUpdatesInternal(ctx context.Context, projectsArray []models.Project, projectsArrayIsComplete bool, allContainers []container.Summary) int {
+func (s *ProjectService) countDiscoveredComposeProjectUpdatesInternal(ctx context.Context, projectsArray []Project, projectsArrayIsComplete bool, allContainers []container.Summary) int {
 	if allContainers == nil {
 		var err error
 		allContainers, err = s.listGlobalComposeContainersInternal(ctx)
@@ -778,7 +779,7 @@ func (s *ProjectService) countDiscoveredComposeProjectUpdatesInternal(ctx contex
 
 // fetchProjectStatusConcurrently fetches live Docker status for multiple projects in parallel
 // Optimized to use a single Docker API call instead of N calls + N file reads
-func (s *ProjectService) fetchProjectStatusConcurrently(ctx context.Context, projectsList []models.Project) []project.Details {
+func (s *ProjectService) fetchProjectStatusConcurrently(ctx context.Context, projectsList []Project) []project.Details {
 	projectsDir, err := s.GetProjectsDirectory(ctx)
 	if err != nil {
 		slog.WarnContext(ctx, "failed to resolve projects directory for relative project paths", "error", err)
@@ -807,7 +808,7 @@ func (s *ProjectService) fetchProjectStatusConcurrently(ctx context.Context, pro
 			meta := s.ProjectMetadata(ctx, p, metaEnv)
 			applyResolvedProjectIconInternal(&results[i], iconcatalog.Resolve(IconCatalogForContext(ctx), meta.ProjectIcon))
 			results[i].URLs = meta.ProjectURLS
-			results[i].Status = string(models.ProjectStatusUnknown)
+			results[i].Status = string(ProjectStatusUnknown)
 		}
 		return results
 	}
@@ -825,7 +826,7 @@ func (s *ProjectService) fetchProjectStatusConcurrently(ctx context.Context, pro
 	return results
 }
 
-func (s *ProjectService) mapProjectToDto(ctx context.Context, projectsDir string, p models.Project, containersByProject map[string][]container.Summary, currentContainerID string, currentContainerErr error, metaEnv *projectMetadataEnvInternal) project.Details {
+func (s *ProjectService) mapProjectToDto(ctx context.Context, projectsDir string, p Project, containersByProject map[string][]container.Summary, currentContainerID string, currentContainerErr error, metaEnv *projectMetadataEnvInternal) project.Details {
 	var resp project.Details
 	_ = mapper.MapStruct(p, &resp)
 
@@ -915,7 +916,7 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, projectsDir string
 		resp.ServiceCount = len(services)
 		// Persist the inferred count so later list loads do not need compose parsing.
 		go func(ctx context.Context, pid string, count int) {
-			s.db.WithContext(ctx).Model(&models.Project{}).Where("id = ?", pid).Update("service_count", count)
+			s.db.WithContext(ctx).Model(&Project{}).Where("id = ?", pid).Update("service_count", count)
 		}(context.WithoutCancel(ctx), p.ID, resp.ServiceCount)
 	}
 
@@ -932,15 +933,15 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, projectsDir string
 	// live container/service list as the source of truth.
 	actualServiceCount := len(services)
 	if actualServiceCount == 0 {
-		resp.Status = string(models.ProjectStatusStopped)
+		resp.Status = string(ProjectStatusStopped)
 	} else {
 		switch {
 		case runningCount >= actualServiceCount:
-			resp.Status = string(models.ProjectStatusRunning)
+			resp.Status = string(ProjectStatusRunning)
 		case runningCount > 0:
-			resp.Status = string(models.ProjectStatusPartiallyRunning)
+			resp.Status = string(ProjectStatusPartiallyRunning)
 		default:
-			resp.Status = string(models.ProjectStatusStopped)
+			resp.Status = string(ProjectStatusStopped)
 		}
 	}
 
@@ -955,7 +956,7 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, projectsDir string
 // env may be nil, in which case the projects directory and autoInjectEnv setting
 // are resolved here; callers iterating over many projects should resolve them
 // once and pass them in.
-func (s *ProjectService) ProjectMetadata(ctx context.Context, p models.Project, env *projectMetadataEnvInternal) projects.ArcaneComposeMetadata {
+func (s *ProjectService) ProjectMetadata(ctx context.Context, p Project, env *projectMetadataEnvInternal) projects.ArcaneComposeMetadata {
 	if s.metaCache != nil && p.ID != "" {
 		if meta, ok, _ := s.metaCache.Get(p.ID); ok {
 			return meta
@@ -998,7 +999,7 @@ func (s *ProjectService) ProjectMetadata(ctx context.Context, p models.Project, 
 // is populated from the X-Arcane-Icon-Catalog header the manager forwards.
 // Background jobs have no user attached and fall back to the default catalog.
 func IconCatalogForContext(ctx context.Context) string {
-	if u, ok := models.CurrentUserFromContext(ctx); ok && u != nil && u.Preferences.IconCatalog != nil && *u.Preferences.IconCatalog != "" {
+	if u, ok := common.CurrentUserFromContext(ctx); ok && u != nil && u.Preferences.IconCatalog != nil && *u.Preferences.IconCatalog != "" {
 		return *u.Preferences.IconCatalog
 	}
 	return iconcatalog.DefaultCatalog

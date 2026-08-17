@@ -1,12 +1,17 @@
 package project
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+
 	"context"
 	"sort"
 	"strings"
 
 	"emperror.dev/errors"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	projectpkg "github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
 	"gorm.io/gorm"
@@ -26,7 +31,7 @@ func (s *ProjectService) GetProjectTags(ctx context.Context, projectID string) (
 
 // ListProjectTagOptions returns the distinct tag names and colors available in the current environment.
 func (s *ProjectService) ListProjectTagOptions(ctx context.Context) ([]projecttypes.TagOption, error) {
-	var rows []models.ProjectTag
+	var rows []ProjectTag
 	if err := s.db.WithContext(ctx).Order("name, source DESC, color").Find(&rows).Error; err != nil {
 		return nil, errors.WrapIf(err, "list project tag options")
 	}
@@ -41,7 +46,7 @@ func (s *ProjectService) ListProjectTagOptions(ctx context.Context) ([]projectty
 }
 
 // UpdateProjectTag attaches or detaches a UI-managed tag and rejects Compose-owned names.
-func (s *ProjectService) UpdateProjectTag(ctx context.Context, projectID, name string, color projecttypes.TagColor, attached bool, user models.User) ([]projecttypes.Tag, error) {
+func (s *ProjectService) UpdateProjectTag(ctx context.Context, projectID, name string, color projecttypes.TagColor, attached bool, user common.User) ([]projecttypes.Tag, error) {
 	normalized, err := projectpkg.NormalizeProjectTag(name)
 	if err != nil {
 		return nil, err
@@ -54,14 +59,14 @@ func (s *ProjectService) UpdateProjectTag(ctx context.Context, projectID, name s
 		}
 	}
 
-	var projectModel models.Project
+	var projectModel Project
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&projectModel, "id = ?", projectID).Error; err != nil {
 			return errors.WrapIf(err, "find project for tag update")
 		}
 
 		var composeCount int64
-		if err := tx.Model(&models.ProjectTag{}).
+		if err := tx.Model(&ProjectTag{}).
 			Where("project_id = ? AND name = ? AND source = ?", projectID, normalized, projecttypes.TagSourceCompose).
 			Count(&composeCount).Error; err != nil {
 			return errors.WrapIf(err, "check Compose tag source")
@@ -72,7 +77,7 @@ func (s *ProjectService) UpdateProjectTag(ctx context.Context, projectID, name s
 
 		if attached {
 			var existing int64
-			if err := tx.Model(&models.ProjectTag{}).
+			if err := tx.Model(&ProjectTag{}).
 				Where("project_id = ? AND name = ? AND source = ?", projectID, normalized, projecttypes.TagSourceUI).
 				Count(&existing).Error; err != nil {
 				return errors.WrapIf(err, "check UI tag source")
@@ -81,7 +86,7 @@ func (s *ProjectService) UpdateProjectTag(ctx context.Context, projectID, name s
 				return nil
 			}
 			var count int64
-			if err := tx.Model(&models.ProjectTag{}).
+			if err := tx.Model(&ProjectTag{}).
 				Where("project_id = ? AND source = ?", projectID, projecttypes.TagSourceUI).
 				Count(&count).Error; err != nil {
 				return errors.WrapIf(err, "count UI project tags")
@@ -93,19 +98,19 @@ func (s *ProjectService) UpdateProjectTag(ctx context.Context, projectID, name s
 			if err != nil {
 				return err
 			}
-			row := models.ProjectTag{ProjectID: projectID, Name: normalized, Source: string(projecttypes.TagSourceUI), Color: string(resolvedColor)}
+			row := ProjectTag{ProjectID: projectID, Name: normalized, Source: string(projecttypes.TagSourceUI), Color: string(resolvedColor)}
 			return errors.WrapIf(tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&row).Error, "attach UI project tag")
 		}
 
 		return errors.WrapIf(tx.Where("project_id = ? AND name = ? AND source = ?", projectID, normalized, projecttypes.TagSourceUI).
-			Delete(&models.ProjectTag{}).Error, "detach UI project tag")
+			Delete(&ProjectTag{}).Error, "detach UI project tag")
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	metadata := models.JSON{"action": "update_tags", "projectID": projectID, "projectName": projectModel.Name, "tag": normalized, "attached": attached}
-	s.logProjectEventInternal(ctx, models.EventTypeProjectUpdate, projectID, projectModel.Name, user, metadata, "could not log project tag update")
+	metadata := database.JSON{"action": "update_tags", "projectID": projectID, "projectName": projectModel.Name, "tag": normalized, "attached": attached}
+	s.logProjectEventInternal(ctx, event.EventTypeProjectUpdate, projectID, projectModel.Name, user, metadata, "could not log project tag update")
 	return s.GetProjectTags(ctx, projectID)
 }
 
@@ -115,19 +120,19 @@ func (s *ProjectService) reconcileComposeProjectTagsInternal(ctx context.Context
 		return err
 	}
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var projectModel models.Project
+		var projectModel Project
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").First(&projectModel, "id = ?", projectID).Error; err != nil {
 			return errors.WrapIf(err, "find project for Compose tag reconciliation")
 		}
-		if err := tx.Where("project_id = ? AND source = ?", projectID, projecttypes.TagSourceCompose).Delete(&models.ProjectTag{}).Error; err != nil {
+		if err := tx.Where("project_id = ? AND source = ?", projectID, projecttypes.TagSourceCompose).Delete(&ProjectTag{}).Error; err != nil {
 			return errors.WrapIf(err, "clear Compose project tags")
 		}
 		if len(normalized) == 0 {
 			return nil
 		}
-		rows := make([]models.ProjectTag, 0, len(normalized))
+		rows := make([]ProjectTag, 0, len(normalized))
 		for _, tag := range normalized {
-			rows = append(rows, models.ProjectTag{ProjectID: projectID, Name: tag.Name, Source: string(projecttypes.TagSourceCompose), Color: string(tag.Color)})
+			rows = append(rows, ProjectTag{ProjectID: projectID, Name: tag.Name, Source: string(projecttypes.TagSourceCompose), Color: string(tag.Color)})
 		}
 		return errors.WrapIf(tx.Create(&rows).Error, "replace Compose project tags")
 	})
@@ -164,19 +169,19 @@ func createUIProjectTagsInternal(tx *gorm.DB, projectID string, tags []string, c
 	if len(tags) == 0 {
 		return nil
 	}
-	rows := make([]models.ProjectTag, 0, len(tags))
+	rows := make([]ProjectTag, 0, len(tags))
 	for _, tag := range tags {
 		color, err := resolveProjectTagColorInternal(tx, tag, colors[tag])
 		if err != nil {
 			return err
 		}
-		rows = append(rows, models.ProjectTag{ProjectID: projectID, Name: tag, Source: string(projecttypes.TagSourceUI), Color: string(color)})
+		rows = append(rows, ProjectTag{ProjectID: projectID, Name: tag, Source: string(projecttypes.TagSourceUI), Color: string(color)})
 	}
 	return errors.WrapIf(tx.Create(&rows).Error, "attach initial project tags")
 }
 
 func resolveProjectTagColorInternal(tx *gorm.DB, name string, fallback projecttypes.TagColor) (projecttypes.TagColor, error) {
-	var row models.ProjectTag
+	var row ProjectTag
 	err := tx.Where("name = ?", name).Order("source DESC, color").First(&row).Error
 	switch {
 	case err == nil:
@@ -219,13 +224,13 @@ func excludeComposeOwnedUITagsInternal(uiTags []string, composeTags []projecttyp
 }
 
 func deleteProjectWithTagsInternal(tx *gorm.DB, projectID string) error {
-	if err := tx.Where("project_id = ?", projectID).Delete(&models.ProjectTag{}).Error; err != nil {
+	if err := tx.Where("project_id = ?", projectID).Delete(&ProjectTag{}).Error; err != nil {
 		return errors.WrapIf(err, "delete project tags")
 	}
-	return errors.WrapIf(tx.Delete(&models.Project{}, "id = ?", projectID).Error, "delete project")
+	return errors.WrapIf(tx.Delete(&Project{}, "id = ?", projectID).Error, "delete project")
 }
 
-func (s *ProjectService) reconcileComposeTagsForProjectInternal(ctx context.Context, projectModel *models.Project) error {
+func (s *ProjectService) reconcileComposeTagsForProjectInternal(ctx context.Context, projectModel *Project) error {
 	if projectModel == nil {
 		return nil
 	}
@@ -252,7 +257,7 @@ func (s *ProjectService) loadProjectTagsInternal(ctx context.Context, projectIDs
 	if len(projectIDs) == 0 {
 		return result, nil
 	}
-	var rows []models.ProjectTag
+	var rows []ProjectTag
 	if err := s.db.WithContext(ctx).Where("project_id IN ?", projectIDs).Order("project_id, name, source, color").Find(&rows).Error; err != nil {
 		return nil, errors.WrapIf(err, "load project tags")
 	}

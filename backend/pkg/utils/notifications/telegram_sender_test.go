@@ -3,7 +3,6 @@ package notifications
 import (
 	"testing"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -11,12 +10,12 @@ import (
 func TestBuildTelegramURL(t *testing.T) {
 	tests := []struct {
 		name    string
-		config  models.TelegramConfig
+		config  TelegramConfig
 		wantURL string
 	}{
 		{
 			name: "basic config with single chat",
-			config: models.TelegramConfig{
+			config: TelegramConfig{
 				BotToken:     "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11",
 				ChatIDs:      []string{"@channel"},
 				Preview:      true,
@@ -26,7 +25,7 @@ func TestBuildTelegramURL(t *testing.T) {
 		},
 		{
 			name: "config with multiple chats",
-			config: models.TelegramConfig{
+			config: TelegramConfig{
 				BotToken:     "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11",
 				ChatIDs:      []string{"@channel1", "123456789"},
 				Preview:      false,
@@ -37,7 +36,7 @@ func TestBuildTelegramURL(t *testing.T) {
 		},
 		{
 			name: "config with title",
-			config: models.TelegramConfig{
+			config: TelegramConfig{
 				BotToken:     "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11",
 				ChatIDs:      []string{"@mybot"},
 				Preview:      true,

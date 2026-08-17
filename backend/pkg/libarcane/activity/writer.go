@@ -1,6 +1,8 @@
 package activity
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+
 	"bytes"
 	"context"
 	"encoding/json/v2"
@@ -11,7 +13,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
+
 	"github.com/samber/mo"
 )
 
@@ -41,9 +44,9 @@ const (
 )
 
 type writerAppendMessage struct {
-	level   models.ActivityMessageLevel
+	level   activitytypes.MessageLevel
 	message string
-	payload models.JSON
+	payload database.JSON
 	step    string
 }
 
@@ -138,7 +141,7 @@ func (w *Writer) processLineInternal(line string) mo.Option[writerAppendMessage]
 	var payload map[string]any
 	if err := json.Unmarshal([]byte(line), &payload); err != nil {
 		return mo.Some(writerAppendMessage{
-			level:   models.ActivityMessageLevelInfo,
+			level:   activitytypes.MessageLevelInfo,
 			message: line,
 			step:    w.defaultStep,
 		})
@@ -146,7 +149,7 @@ func (w *Writer) processLineInternal(line string) mo.Option[writerAppendMessage]
 
 	if errorValue, ok := payload["error"]; ok && errorValue != nil {
 		return mo.Some(writerAppendMessage{
-			level:   models.ActivityMessageLevelError,
+			level:   activitytypes.MessageLevelError,
 			message: valueToStringInternal(errorValue),
 			payload: payload,
 			step:    w.defaultStep,
@@ -159,14 +162,14 @@ func (w *Writer) processLineInternal(line string) mo.Option[writerAppendMessage]
 			return mo.None[writerAppendMessage]()
 		}
 		return mo.Some(writerAppendMessage{
-			level:   models.ActivityMessageLevelInfo,
+			level:   activitytypes.MessageLevelInfo,
 			message: message,
 			step:    w.defaultStep,
 		})
 	}
 
 	return mo.Some(writerAppendMessage{
-		level:   models.ActivityMessageLevelInfo,
+		level:   activitytypes.MessageLevelInfo,
 		message: line,
 		payload: payload,
 		step:    w.defaultStep,

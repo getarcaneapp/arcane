@@ -9,14 +9,13 @@ import (
 	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"gorm.io/gorm"
 )
 
-func (s *EnvironmentService) ListSwarmNodeAgentEnvironments(ctx context.Context, parentEnvironmentID string) ([]models.Environment, error) {
-	var envs []models.Environment
+func (s *EnvironmentService) ListSwarmNodeAgentEnvironments(ctx context.Context, parentEnvironmentID string) ([]Environment, error) {
+	var envs []Environment
 	if err := s.db.WithContext(ctx).
-		Model(&models.Environment{}).
+		Model(&Environment{}).
 		Where("parent_environment_id = ?", parentEnvironmentID).
 		Find(&envs).Error; err != nil {
 		return nil, errors.WrapIf(err, "failed to list swarm node agent environments")
@@ -27,10 +26,10 @@ func (s *EnvironmentService) ListSwarmNodeAgentEnvironments(ctx context.Context,
 
 // ListSwarmNodeCandidateEnvironments returns enabled visible environments that
 // can provide swarm-node coverage for a manager environment.
-func (s *EnvironmentService) ListSwarmNodeCandidateEnvironments(ctx context.Context) ([]models.Environment, error) {
-	var envs []models.Environment
+func (s *EnvironmentService) ListSwarmNodeCandidateEnvironments(ctx context.Context) ([]Environment, error) {
+	var envs []Environment
 	if err := s.db.WithContext(ctx).
-		Model(&models.Environment{}).
+		Model(&Environment{}).
 		Where("hidden = ?", false).
 		Where("enabled = ?", true).
 		Where("id <> ?", "0").
@@ -48,8 +47,8 @@ func (s *EnvironmentService) BindSwarmNodeEnvironment(
 	ctx context.Context,
 	parentEnvironmentID, nodeID, environmentID string,
 	rebind bool,
-) (*models.Environment, error) {
-	var envRecord models.Environment
+) (*Environment, error) {
+	var envRecord Environment
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("id = ?", environmentID).First(&envRecord).Error; err != nil {
 			return errors.WrapIf(err, "failed to load environment for swarm node binding")
@@ -68,7 +67,7 @@ func (s *EnvironmentService) BindSwarmNodeEnvironment(
 		}
 
 		var existingVisibleBindings int64
-		if err := tx.Model(&models.Environment{}).
+		if err := tx.Model(&Environment{}).
 			Where("hidden = ? AND parent_environment_id = ? AND swarm_node_id = ? AND id <> ?", false, parentEnvironmentID, nodeID, environmentID).
 			Count(&existingVisibleBindings).Error; err != nil {
 			return errors.WrapIf(err, "failed to inspect existing swarm node binding")
@@ -77,14 +76,14 @@ func (s *EnvironmentService) BindSwarmNodeEnvironment(
 			return errors.New("swarm node already has a visible environment binding; explicit rebinding is required")
 		}
 		if rebind {
-			if err := tx.Model(&models.Environment{}).
+			if err := tx.Model(&Environment{}).
 				Where("hidden = ? AND parent_environment_id = ? AND swarm_node_id = ? AND id <> ?", false, parentEnvironmentID, nodeID, environmentID).
 				Updates(map[string]any{"parent_environment_id": nil, "swarm_node_id": nil, "updated_at": new(time.Now())}).Error; err != nil {
 				return errors.WrapIf(err, "failed to clear previous swarm node binding")
 			}
 		}
 
-		if err := tx.Model(&models.Environment{}).Where("id = ?", environmentID).Updates(map[string]any{
+		if err := tx.Model(&Environment{}).Where("id = ?", environmentID).Updates(map[string]any{
 			"parent_environment_id": parentEnvironmentID,
 			"swarm_node_id":         nodeID,
 			"updated_at":            new(time.Now()),
@@ -105,7 +104,7 @@ func (s *EnvironmentService) BindSwarmNodeEnvironment(
 // DetachSwarmNodeEnvironment clears a visible environment binding from a node.
 func (s *EnvironmentService) DetachSwarmNodeEnvironment(ctx context.Context, parentEnvironmentID, nodeID string) error {
 	now := time.Now()
-	if err := s.db.WithContext(ctx).Model(&models.Environment{}).
+	if err := s.db.WithContext(ctx).Model(&Environment{}).
 		Where("hidden = ? AND parent_environment_id = ? AND swarm_node_id = ?", false, parentEnvironmentID, nodeID).
 		Updates(map[string]any{"parent_environment_id": nil, "swarm_node_id": nil, "updated_at": &now}).Error; err != nil {
 		return errors.WrapIf(err, "failed to detach swarm node environment")
@@ -117,7 +116,7 @@ func (s *EnvironmentService) DetachSwarmNodeEnvironment(ctx context.Context, par
 // DeleteSwarmNodeAgentDeployment removes a dedicated hidden agent registration
 // while leaving visible remote environments untouched.
 func (s *EnvironmentService) DeleteSwarmNodeAgentDeployment(ctx context.Context, parentEnvironmentID, nodeID string, userID, username *string) error {
-	var envRecord models.Environment
+	var envRecord Environment
 	if err := s.db.WithContext(ctx).
 		Where("hidden = ? AND parent_environment_id = ? AND swarm_node_id = ?", true, parentEnvironmentID, nodeID).
 		First(&envRecord).Error; err != nil {
@@ -151,7 +150,7 @@ func buildSwarmNodeAgentURLInternal(nodeID string) string {
 
 func (s *EnvironmentService) applySwarmNodeAgentApiKeyInternal(
 	ctx context.Context,
-	env *models.Environment,
+	env *Environment,
 	userID, username string,
 	rotate bool,
 ) (string, error) {
@@ -201,7 +200,7 @@ func (s *EnvironmentService) EnsureSwarmNodeAgentEnvironment(
 	ctx context.Context,
 	parentEnvironmentID, nodeID, hostname, userID, username string,
 	rotate bool,
-) (*models.Environment, string, error) {
+) (*Environment, string, error) {
 	if strings.TrimSpace(parentEnvironmentID) == "" {
 		return nil, "", errors.New("parent environment ID is required")
 	}
@@ -209,7 +208,7 @@ func (s *EnvironmentService) EnsureSwarmNodeAgentEnvironment(
 		return nil, "", errors.New("swarm node ID is required")
 	}
 
-	var env models.Environment
+	var env Environment
 	// Prefer an existing visible binding. Legacy hidden registrations remain
 	// reusable, but all newly provisioned node agents are normal Remote
 	// Environments so one token and one agent can serve both use cases.
@@ -223,10 +222,10 @@ func (s *EnvironmentService) EnsureSwarmNodeAgentEnvironment(
 	}
 
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		createdEnv := &models.Environment{
+		createdEnv := &Environment{
 			Name:                buildSwarmNodeAgentNameInternal(hostname, nodeID),
 			ApiUrl:              buildSwarmNodeAgentURLInternal(nodeID),
-			Status:              string(models.EnvironmentStatusPending),
+			Status:              string(EnvironmentStatusPending),
 			Enabled:             true,
 			IsEdge:              true,
 			Hidden:              false,
@@ -259,7 +258,7 @@ func (s *EnvironmentService) UpdateSwarmNodeIdentity(ctx context.Context, envID,
 		"updated_at":    new(time.Now()),
 	}
 
-	if err := s.db.WithContext(ctx).Model(&models.Environment{}).Where("id = ?", envID).Updates(updates).Error; err != nil {
+	if err := s.db.WithContext(ctx).Model(&Environment{}).Where("id = ?", envID).Updates(updates).Error; err != nil {
 		return errors.WrapIf(err, "failed to update swarm node identity")
 	}
 

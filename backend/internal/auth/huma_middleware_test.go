@@ -1,6 +1,12 @@
 package auth
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+
 	"context"
 	"net/http"
 	"net/http/httptest"
@@ -12,7 +18,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
@@ -34,7 +39,7 @@ type secureOutput struct {
 }
 
 type testEnvironmentAccessResolver struct {
-	env *models.Environment
+	env *environment.Environment
 }
 
 func TestNewHumaMiddleware_AcceptsEnvironmentAccessTokenViaAPIKey(t *testing.T) {
@@ -53,8 +58,8 @@ func TestNewHumaMiddleware_AcceptsEnvironmentAccessTokenViaAPIKey(t *testing.T) 
 
 	api := humaecho.NewWithGroup(router, apiGroup, humaConfig)
 	api.UseMiddleware(NewHumaMiddleware(api, &AuthService{}, nil, nil, testEnvironmentAccessResolver{
-		env: &models.Environment{
-			BaseModel:   models.BaseModel{ID: "env-self"},
+		env: &environment.Environment{
+			BaseModel:   database.BaseModel{ID: "env-self"},
 			Name:        "Self Target",
 			AccessToken: &token,
 		},
@@ -66,7 +71,7 @@ func TestNewHumaMiddleware_AcceptsEnvironmentAccessTokenViaAPIKey(t *testing.T) 
 		Path:        "/secure",
 		Security:    []map[string][]string{{"ApiKeyAuth": {}}},
 	}, func(ctx context.Context, _ *secureInput) (*secureOutput, error) {
-		user, ok := models.CurrentUserFromContext(ctx)
+		user, ok := common.CurrentUserFromContext(ctx)
 		require.True(t, ok)
 		require.Equal(t, "environment:env-self", user.ID)
 		require.Equal(t, "Self Target", user.Username)
@@ -117,8 +122,8 @@ func TestNewHumaMiddleware_UsesBearerWhenLoopbackProxySendsEnvironmentAccessToke
 
 	api := humaecho.NewWithGroup(router, apiGroup, humaConfig)
 	api.UseMiddleware(NewHumaMiddleware(api, authSvc, nil, staticPermissionResolverInternal{ps: ps}, testEnvironmentAccessResolver{
-		env: &models.Environment{
-			BaseModel:   models.BaseModel{ID: "remote-env"},
+		env: &environment.Environment{
+			BaseModel:   database.BaseModel{ID: "remote-env"},
 			Name:        "Remote Env",
 			AccessToken: &envToken,
 		},
@@ -137,7 +142,7 @@ func TestNewHumaMiddleware_UsesBearerWhenLoopbackProxySendsEnvironmentAccessToke
 		ID  string `path:"id"`
 		CID string `path:"cid"`
 	}) (*secureOutput, error) {
-		user, ok := models.CurrentUserFromContext(ctx)
+		user, ok := common.CurrentUserFromContext(ctx)
 		require.True(t, ok)
 		require.Equal(t, "u-loopback", user.ID)
 
@@ -264,8 +269,8 @@ func TestNewHumaMiddleware_OpportunisticAuthOnPublicRoute(t *testing.T) {
 	cfg := &config.Config{JWTRefreshExpiry: 24 * time.Hour}
 	authSvc := NewAuthService(userSvc, nil, nil, sessionSvc, nil, jwtSecret, cfg, nil)
 
-	_, err := userSvc.CreateUser(context.Background(), &models.User{
-		BaseModel: models.BaseModel{ID: "u-logout"},
+	_, err := userSvc.CreateUser(context.Background(), &common.User{
+		BaseModel: database.BaseModel{ID: "u-logout"},
 		Username:  "logouttest",
 	})
 	require.NoError(t, err)
@@ -352,8 +357,8 @@ func TestNewHumaMiddleware_VersionMismatchIsRecoverable(t *testing.T) {
 	cfg := &config.Config{JWTRefreshExpiry: 24 * time.Hour}
 	authSvc := NewAuthService(userSvc, nil, nil, sessionSvc, nil, jwtSecret, cfg, nil)
 
-	_, err := userSvc.CreateUser(context.Background(), &models.User{
-		BaseModel: models.BaseModel{ID: "u-ver"},
+	_, err := userSvc.CreateUser(context.Background(), &common.User{
+		BaseModel: database.BaseModel{ID: "u-ver"},
 		Username:  "vertest",
 	})
 	require.NoError(t, err)
@@ -443,7 +448,7 @@ func TestNewHumaMiddleware_AgentAuthAppliesForwardedIconCatalog(t *testing.T) {
 		Path:        "/secure-agent-icon-catalog",
 		Security:    []map[string][]string{{"ApiKeyAuth": {}}},
 	}, func(ctx context.Context, _ *secureInput) (*secureOutput, error) {
-		user, ok := models.CurrentUserFromContext(ctx)
+		user, ok := common.CurrentUserFromContext(ctx)
 		require.True(t, ok)
 		require.NotNil(t, user.Preferences.IconCatalog)
 		require.Equal(t, "dashboard-icons", *user.Preferences.IconCatalog)
@@ -463,7 +468,7 @@ func TestNewHumaMiddleware_AgentAuthAppliesForwardedIconCatalog(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 }
 
-func (r testEnvironmentAccessResolver) ResolveEnvironmentByAccessToken(_ context.Context, token string) (*models.Environment, error) {
+func (r testEnvironmentAccessResolver) ResolveEnvironmentByAccessToken(_ context.Context, token string) (*environment.Environment, error) {
 	if r.env != nil && r.env.AccessToken != nil && *r.env.AccessToken == token {
 		return r.env, nil
 	}
@@ -474,15 +479,15 @@ func setupAuthMiddlewareTestDBInternal(t *testing.T) *database.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&models.SettingVariable{}, &models.User{}, &models.UserSession{}))
+	require.NoError(t, db.AutoMigrate(&settings.SettingVariable{}, &common.User{}, &session.UserSession{}))
 	return &database.DB{DB: db}
 }
 
 func mintHumaMiddlewareTestTokenInternal(t *testing.T, userSvc *user.UserService, sessionSvc *session.SessionService, jwtSecret string, userID string) string {
 	t.Helper()
 
-	_, err := userSvc.CreateUser(context.Background(), &models.User{
-		BaseModel: models.BaseModel{ID: userID},
+	_, err := userSvc.CreateUser(context.Background(), &common.User{
+		BaseModel: database.BaseModel{ID: userID},
 		Username:  userID,
 	})
 	require.NoError(t, err)
@@ -505,7 +510,7 @@ func mintHumaMiddlewareTestTokenInternal(t *testing.T, userSvc *user.UserService
 	return token
 }
 
-func (r staticPermissionResolverInternal) ResolvePermissions(_ context.Context, _ *models.User) (*authz.PermissionSet, error) {
+func (r staticPermissionResolverInternal) ResolvePermissions(_ context.Context, _ *common.User) (*authz.PermissionSet, error) {
 	return r.ps, nil
 }
 

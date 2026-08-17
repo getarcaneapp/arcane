@@ -7,7 +7,6 @@ import (
 
 	"emperror.dev/errors"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/wneessen/go-mail"
 )
 
@@ -45,24 +44,24 @@ func smtpBuildOptionsFromContextInternal(ctx context.Context) smtpBuildOptions {
 	return options
 }
 
-func smtpAuthTypeFromModeInternal(mode models.EmailAuthMode) mail.SMTPAuthType {
+func smtpAuthTypeFromModeInternal(mode EmailAuthMode) mail.SMTPAuthType {
 	switch mode {
-	case models.EmailAuthModeNone:
+	case EmailAuthModeNone:
 		return mail.SMTPAuthNoAuth
-	case models.EmailAuthModeAuto:
+	case EmailAuthModeAuto:
 		return mail.SMTPAuthAutoDiscover
-	case models.EmailAuthModePlain:
+	case EmailAuthModePlain:
 		return mail.SMTPAuthPlain
-	case models.EmailAuthModeLogin:
+	case EmailAuthModeLogin:
 		return mail.SMTPAuthLogin
-	case models.EmailAuthModeCRAMMD5:
+	case EmailAuthModeCRAMMD5:
 		return mail.SMTPAuthCramMD5
 	default:
 		return mail.SMTPAuthAutoDiscover
 	}
 }
 
-func buildMailClientInternal(config models.EmailConfig, options smtpBuildOptions) (*mail.Client, error) {
+func buildMailClientInternal(config EmailConfig, options smtpBuildOptions) (*mail.Client, error) {
 	if config.SMTPHost == "" {
 		return nil, errors.New("SMTP host is empty")
 	}
@@ -77,11 +76,11 @@ func buildMailClientInternal(config models.EmailConfig, options smtpBuildOptions
 	}
 
 	switch config.TLSMode {
-	case models.EmailTLSModeNone:
+	case EmailTLSModeNone:
 		opts = append(opts, mail.WithTLSPolicy(mail.NoTLS))
-	case models.EmailTLSModeStartTLS:
+	case EmailTLSModeStartTLS:
 		opts = append(opts, mail.WithTLSPolicy(mail.TLSMandatory))
-	case models.EmailTLSModeSSL:
+	case EmailTLSModeSSL:
 		opts = append(opts, mail.WithSSL())
 	default:
 		opts = append(opts, mail.WithTLSPolicy(mail.NoTLS))
@@ -91,7 +90,7 @@ func buildMailClientInternal(config models.EmailConfig, options smtpBuildOptions
 		opts = append(opts, mail.WithTLSConfig(options.tlsConfig))
 	}
 
-	if config.AuthMode != models.EmailAuthModeNone && config.SMTPUsername != "" && config.SMTPPassword != "" {
+	if config.AuthMode != EmailAuthModeNone && config.SMTPUsername != "" && config.SMTPPassword != "" {
 		opts = append(opts,
 			mail.WithSMTPAuth(smtpAuthTypeFromModeInternal(config.AuthMode)),
 			mail.WithUsername(config.SMTPUsername),
@@ -110,11 +109,11 @@ func buildMailClientInternal(config models.EmailConfig, options smtpBuildOptions
 }
 
 // SendEmail sends pre-rendered HTML via go-mail.
-func SendEmail(ctx context.Context, config models.EmailConfig, subject, htmlBody string) error {
+func SendEmail(ctx context.Context, config EmailConfig, subject, htmlBody string) error {
 	return sendEmailInternal(ctx, config, subject, htmlBody, smtpBuildOptionsFromContextInternal(ctx))
 }
 
-func sendEmailInternal(ctx context.Context, config models.EmailConfig, subject, htmlBody string, options smtpBuildOptions) error {
+func sendEmailInternal(ctx context.Context, config EmailConfig, subject, htmlBody string, options smtpBuildOptions) error {
 	if ctx == nil {
 		return errors.New("email send context is required")
 	}

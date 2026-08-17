@@ -7,8 +7,6 @@ import (
 
 	"github.com/samber/hot"
 	"github.com/samber/mo"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 )
 
 const edgeTokenCacheTTL = time.Minute
@@ -26,7 +24,7 @@ type edgeTokenCacheInternal struct {
 // enabled, visible, non-local environment, so hot paths avoid a DB round trip.
 type remoteEnvSnapshotCacheInternal struct {
 	mu   sync.RWMutex
-	envs map[string]models.Environment
+	envs map[string]Environment
 }
 
 // runtimeWatchersInternal fans a coalesced wake-up out to everyone watching for
@@ -48,7 +46,7 @@ func newEdgeTokenCacheInternal() *edgeTokenCacheInternal {
 }
 
 func newRemoteEnvSnapshotCacheInternal() *remoteEnvSnapshotCacheInternal {
-	return &remoteEnvSnapshotCacheInternal{envs: make(map[string]models.Environment)}
+	return &remoteEnvSnapshotCacheInternal{envs: make(map[string]Environment)}
 }
 
 func (c *edgeTokenCacheInternal) environmentID(token string) mo.Option[string] {
@@ -117,30 +115,30 @@ func (c *edgeTokenCacheInternal) sync(envID string, token string) {
 	}
 }
 
-func isActiveRemoteEnvironmentInternal(environment models.Environment) bool {
+func isActiveRemoteEnvironmentInternal(environment Environment) bool {
 	return environment.ID != "" && environment.ID != "0" && environment.Enabled && !environment.Hidden
 }
 
-func (c *remoteEnvSnapshotCacheInternal) get(environmentID string) mo.Option[models.Environment] {
+func (c *remoteEnvSnapshotCacheInternal) get(environmentID string) mo.Option[Environment] {
 	if c == nil || environmentID == "" {
-		return mo.None[models.Environment]()
+		return mo.None[Environment]()
 	}
 
 	c.mu.RLock()
 	envRecord, ok := c.envs[environmentID]
 	c.mu.RUnlock()
 	if !ok || !isActiveRemoteEnvironmentInternal(envRecord) {
-		return mo.None[models.Environment]()
+		return mo.None[Environment]()
 	}
 	return mo.Some(envRecord)
 }
 
-func (c *remoteEnvSnapshotCacheInternal) replace(environments []models.Environment) {
+func (c *remoteEnvSnapshotCacheInternal) replace(environments []Environment) {
 	if c == nil {
 		return
 	}
 
-	next := make(map[string]models.Environment, len(environments))
+	next := make(map[string]Environment, len(environments))
 	for _, envRecord := range environments {
 		if isActiveRemoteEnvironmentInternal(envRecord) {
 			next[envRecord.ID] = envRecord
@@ -152,7 +150,7 @@ func (c *remoteEnvSnapshotCacheInternal) replace(environments []models.Environme
 	c.mu.Unlock()
 }
 
-func (c *remoteEnvSnapshotCacheInternal) put(environment models.Environment) {
+func (c *remoteEnvSnapshotCacheInternal) put(environment Environment) {
 	if c == nil {
 		return
 	}
@@ -177,7 +175,7 @@ func (c *remoteEnvSnapshotCacheInternal) remove(environmentID string) {
 	c.mu.Unlock()
 }
 
-func (c *remoteEnvSnapshotCacheInternal) update(environmentID string, update func(*models.Environment)) {
+func (c *remoteEnvSnapshotCacheInternal) update(environmentID string, update func(*Environment)) {
 	if c == nil || environmentID == "" || update == nil {
 		return
 	}
@@ -199,9 +197,9 @@ func (c *remoteEnvSnapshotCacheInternal) update(environmentID string, update fun
 
 // GetActiveRemoteEnvironmentSnapshot returns the latest in-process snapshot for
 // an enabled, visible, non-local remote environment.
-func (s *EnvironmentService) GetActiveRemoteEnvironmentSnapshot(environmentID string) mo.Option[models.Environment] {
+func (s *EnvironmentService) GetActiveRemoteEnvironmentSnapshot(environmentID string) mo.Option[Environment] {
 	if s == nil {
-		return mo.None[models.Environment]()
+		return mo.None[Environment]()
 	}
 	return s.remoteEnvs.get(environmentID)
 }

@@ -24,7 +24,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
@@ -42,14 +41,14 @@ const (
 
 type SettingsService struct {
 	db     *database.DB
-	config atomic.Pointer[models.Settings]
+	config atomic.Pointer[Settings]
 	// effectiveConfig is the env-override-applied snapshot, rebuilt whenever
 	// config is stored. Overrides are resolved once at startup and never
 	// change, so materializing them here turns every read (GetSettings and
 	// the typed getters — ~100 call sites, some in per-project loops) into a
 	// pointer load instead of a full struct Clone plus a reflection pass.
 	// The snapshot is shared: readers must never mutate it.
-	effectiveConfig atomic.Pointer[models.Settings]
+	effectiveConfig atomic.Pointer[Settings]
 	envOverrides    []settingsEnvOverride
 	writes          *actors.Executor
 	effects         *actors.Executor
@@ -58,7 +57,7 @@ type SettingsService struct {
 }
 
 type settingsUpdateResultInternal struct {
-	settings []models.SettingVariable
+	settings []SettingVariable
 	changes  []libarcane.SettingUpdate
 }
 
@@ -156,7 +155,7 @@ func (s *SettingsService) NotifySettingsChanges(ctx context.Context, keys ...str
 	return err
 }
 
-func (s *SettingsService) GetSettingsConfig() *models.Settings {
+func (s *SettingsService) GetSettingsConfig() *Settings {
 	v := s.config.Load()
 	if v == nil {
 		panic("GetSettingsConfig called before Settings has been loaded")
@@ -188,116 +187,116 @@ func (s *SettingsService) refreshSettingsCacheInternal(ctx context.Context) erro
 	return nil
 }
 
-func (s *SettingsService) getDefaultSettings() *models.Settings {
+func (s *SettingsService) getDefaultSettings() *Settings {
 	return DefaultSettingsConfig()
 }
 
 // DefaultSettingsConfig returns the canonical default settings model used by Arcane.
-func DefaultSettingsConfig() *models.Settings {
-	return &models.Settings{
-		ProjectsDirectory:               models.SettingVariable{Value: "/app/data/projects"},
-		TemplatesDirectory:              models.SettingVariable{Value: "/app/data/templates"},
-		FollowProjectSymlinks:           models.SettingVariable{Value: "false"},
-		SwarmStackSourcesDirectory:      models.SettingVariable{Value: "/app/data/swarm/sources"},
-		DiskUsagePath:                   models.SettingVariable{Value: "/app/data/projects"},
-		AutoUpdate:                      models.SettingVariable{Value: "false"},
-		AutoUpdateInterval:              models.SettingVariable{Value: "0 0 0 * * *"},
-		AutoUpdateExcludedContainers:    models.SettingVariable{Value: ""},
-		PollingEnabled:                  models.SettingVariable{Value: "true"},
-		PollingInterval:                 models.SettingVariable{Value: "0 0 * * * *"},
-		ImageEventWatcherEnabled:        models.SettingVariable{Value: "false"},
-		DockerClientRefreshInterval:     models.SettingVariable{Value: "*/30 * * * * *"},
-		EventCleanupInterval:            models.SettingVariable{Value: "0 0 */6 * * *"},
-		ExpiredSessionsCleanupInterval:  models.SettingVariable{Value: "0 0 0 * * *"},
-		ActivityHistoryRetentionDays:    models.SettingVariable{Value: "30"},
-		ActivityHistoryMaxEntries:       models.SettingVariable{Value: "1000"},
-		MaxConcurrentActivities:         models.SettingVariable{Value: "5"},
-		AutoInjectEnv:                   models.SettingVariable{Value: "false"},
-		DefaultDeployPullPolicy:         models.SettingVariable{Value: "missing"},
-		ScheduledPruneEnabled:           models.SettingVariable{Value: "false"},
-		ScheduledPruneInterval:          models.SettingVariable{Value: "0 0 0 * * *"},
-		PruneContainerMode:              models.SettingVariable{Value: "stopped"},
-		PruneContainerUntil:             models.SettingVariable{Value: ""},
-		PruneImageMode:                  models.SettingVariable{Value: "dangling"},
-		PruneImageUntil:                 models.SettingVariable{Value: ""},
-		PruneVolumeMode:                 models.SettingVariable{Value: "none"},
-		PruneNetworkMode:                models.SettingVariable{Value: "unused"},
-		PruneNetworkUntil:               models.SettingVariable{Value: ""},
-		PruneBuildCacheMode:             models.SettingVariable{Value: "none"},
-		PruneBuildCacheUntil:            models.SettingVariable{Value: ""},
-		AutoHealEnabled:                 models.SettingVariable{Value: "false"},
-		AutoHealInterval:                models.SettingVariable{Value: "*/30 * * * * *"},
-		AutoHealExcludedContainers:      models.SettingVariable{Value: ""},
-		AutoHealMaxRestarts:             models.SettingVariable{Value: "5"},
-		AutoHealRestartWindow:           models.SettingVariable{Value: "30"},
-		VolumeHelperIdleTimeout:         models.SettingVariable{Value: "10"},
-		BaseServerURL:                   models.SettingVariable{Value: "http://localhost"},
-		EnableGravatar:                  models.SettingVariable{Value: "true"},
-		AvatarMaxUploadSizeMb:           models.SettingVariable{Value: "2"},
-		DefaultShell:                    models.SettingVariable{Value: "/bin/sh"},
-		DockerHost:                      models.SettingVariable{Value: "unix:///var/run/docker.sock"},
-		BuildsDirectory:                 models.SettingVariable{Value: "/builds"},
-		AuthLocalEnabled:                models.SettingVariable{Value: "true"},
-		AuthSessionTimeout:              models.SettingVariable{Value: "1440"},
-		AuthPasswordPolicy:              models.SettingVariable{Value: "strong"},
-		VulnerabilityScanEnabled:        models.SettingVariable{Value: "false"},
-		VulnerabilityScanInterval:       models.SettingVariable{Value: "0 0 0 * * *"},
-		TrivyImage:                      models.SettingVariable{Value: DefaultTrivyImage},
-		TrivyNetwork:                    models.SettingVariable{Value: ""},
-		TrivySecurityOpts:               models.SettingVariable{Value: ""},
-		TrivyPrivileged:                 models.SettingVariable{Value: "false"},
-		TrivyPreserveCacheOnVolumePrune: models.SettingVariable{Value: "true"},
-		TrivyResourceLimitsEnabled:      models.SettingVariable{Value: "true"},
-		TrivyCpuLimit:                   models.SettingVariable{Value: "1"},
-		TrivyMemoryLimitMb:              models.SettingVariable{Value: "0"},
-		TrivyConcurrentScanContainers:   models.SettingVariable{Value: "1"},
-		TrivyServerEnabled:              models.SettingVariable{Value: "false"},
-		TrivyServerUrl:                  models.SettingVariable{Value: ""},
-		TrivyServerToken:                models.SettingVariable{Value: ""},
-		TrivyIgnoreUnfixed:              models.SettingVariable{Value: "true"},
-		OidcEnabled:                     models.SettingVariable{Value: "false"},
-		OidcClientId:                    models.SettingVariable{Value: ""},
-		OidcClientSecret:                models.SettingVariable{Value: ""},
-		OidcIssuerUrl:                   models.SettingVariable{Value: ""},
-		OidcAuthorizationEndpoint:       models.SettingVariable{Value: ""},
-		OidcTokenEndpoint:               models.SettingVariable{Value: ""},
-		OidcUserinfoEndpoint:            models.SettingVariable{Value: ""},
-		OidcJwksEndpoint:                models.SettingVariable{Value: ""},
-		OidcScopes:                      models.SettingVariable{Value: "openid email profile"},
-		OidcGroupsClaim:                 models.SettingVariable{Value: "groups"},
-		OidcSkipTlsVerify:               models.SettingVariable{Value: "false"},
-		OidcAutoRedirectToProvider:      models.SettingVariable{Value: "false"},
-		OidcMergeAccounts:               models.SettingVariable{Value: "false"},
-		OidcProviderName:                models.SettingVariable{Value: ""},
-		OidcProviderLogoUrl:             models.SettingVariable{Value: ""},
-		OidcMobileRedirectUris:          models.SettingVariable{Value: "arcane-mobile://oidc-callback"},
-		MaxImageUploadSize:              models.SettingVariable{Value: "500"},
-		GitSyncMaxFiles:                 models.SettingVariable{Value: "500"},
-		GitSyncMaxTotalSizeMb:           models.SettingVariable{Value: "50"},
-		GitSyncMaxBinarySizeMb:          models.SettingVariable{Value: "10"},
-		EnvironmentHealthInterval:       models.SettingVariable{Value: "0 */2 * * * *"},
-		LifecycleEnabled:                models.SettingVariable{Value: "false"},
-		LifecycleDefaultRunnerImage:     models.SettingVariable{Value: "alpine:latest"},
-		LifecycleMaxTimeoutSec:          models.SettingVariable{Value: "300"},
+func DefaultSettingsConfig() *Settings {
+	return &Settings{
+		ProjectsDirectory:               SettingVariable{Value: "/app/data/projects"},
+		TemplatesDirectory:              SettingVariable{Value: "/app/data/templates"},
+		FollowProjectSymlinks:           SettingVariable{Value: "false"},
+		SwarmStackSourcesDirectory:      SettingVariable{Value: "/app/data/swarm/sources"},
+		DiskUsagePath:                   SettingVariable{Value: "/app/data/projects"},
+		AutoUpdate:                      SettingVariable{Value: "false"},
+		AutoUpdateInterval:              SettingVariable{Value: "0 0 0 * * *"},
+		AutoUpdateExcludedContainers:    SettingVariable{Value: ""},
+		PollingEnabled:                  SettingVariable{Value: "true"},
+		PollingInterval:                 SettingVariable{Value: "0 0 * * * *"},
+		ImageEventWatcherEnabled:        SettingVariable{Value: "false"},
+		DockerClientRefreshInterval:     SettingVariable{Value: "*/30 * * * * *"},
+		EventCleanupInterval:            SettingVariable{Value: "0 0 */6 * * *"},
+		ExpiredSessionsCleanupInterval:  SettingVariable{Value: "0 0 0 * * *"},
+		ActivityHistoryRetentionDays:    SettingVariable{Value: "30"},
+		ActivityHistoryMaxEntries:       SettingVariable{Value: "1000"},
+		MaxConcurrentActivities:         SettingVariable{Value: "5"},
+		AutoInjectEnv:                   SettingVariable{Value: "false"},
+		DefaultDeployPullPolicy:         SettingVariable{Value: "missing"},
+		ScheduledPruneEnabled:           SettingVariable{Value: "false"},
+		ScheduledPruneInterval:          SettingVariable{Value: "0 0 0 * * *"},
+		PruneContainerMode:              SettingVariable{Value: "stopped"},
+		PruneContainerUntil:             SettingVariable{Value: ""},
+		PruneImageMode:                  SettingVariable{Value: "dangling"},
+		PruneImageUntil:                 SettingVariable{Value: ""},
+		PruneVolumeMode:                 SettingVariable{Value: "none"},
+		PruneNetworkMode:                SettingVariable{Value: "unused"},
+		PruneNetworkUntil:               SettingVariable{Value: ""},
+		PruneBuildCacheMode:             SettingVariable{Value: "none"},
+		PruneBuildCacheUntil:            SettingVariable{Value: ""},
+		AutoHealEnabled:                 SettingVariable{Value: "false"},
+		AutoHealInterval:                SettingVariable{Value: "*/30 * * * * *"},
+		AutoHealExcludedContainers:      SettingVariable{Value: ""},
+		AutoHealMaxRestarts:             SettingVariable{Value: "5"},
+		AutoHealRestartWindow:           SettingVariable{Value: "30"},
+		VolumeHelperIdleTimeout:         SettingVariable{Value: "10"},
+		BaseServerURL:                   SettingVariable{Value: "http://localhost"},
+		EnableGravatar:                  SettingVariable{Value: "true"},
+		AvatarMaxUploadSizeMb:           SettingVariable{Value: "2"},
+		DefaultShell:                    SettingVariable{Value: "/bin/sh"},
+		DockerHost:                      SettingVariable{Value: "unix:///var/run/docker.sock"},
+		BuildsDirectory:                 SettingVariable{Value: "/builds"},
+		AuthLocalEnabled:                SettingVariable{Value: "true"},
+		AuthSessionTimeout:              SettingVariable{Value: "1440"},
+		AuthPasswordPolicy:              SettingVariable{Value: "strong"},
+		VulnerabilityScanEnabled:        SettingVariable{Value: "false"},
+		VulnerabilityScanInterval:       SettingVariable{Value: "0 0 0 * * *"},
+		TrivyImage:                      SettingVariable{Value: DefaultTrivyImage},
+		TrivyNetwork:                    SettingVariable{Value: ""},
+		TrivySecurityOpts:               SettingVariable{Value: ""},
+		TrivyPrivileged:                 SettingVariable{Value: "false"},
+		TrivyPreserveCacheOnVolumePrune: SettingVariable{Value: "true"},
+		TrivyResourceLimitsEnabled:      SettingVariable{Value: "true"},
+		TrivyCpuLimit:                   SettingVariable{Value: "1"},
+		TrivyMemoryLimitMb:              SettingVariable{Value: "0"},
+		TrivyConcurrentScanContainers:   SettingVariable{Value: "1"},
+		TrivyServerEnabled:              SettingVariable{Value: "false"},
+		TrivyServerUrl:                  SettingVariable{Value: ""},
+		TrivyServerToken:                SettingVariable{Value: ""},
+		TrivyIgnoreUnfixed:              SettingVariable{Value: "true"},
+		OidcEnabled:                     SettingVariable{Value: "false"},
+		OidcClientId:                    SettingVariable{Value: ""},
+		OidcClientSecret:                SettingVariable{Value: ""},
+		OidcIssuerUrl:                   SettingVariable{Value: ""},
+		OidcAuthorizationEndpoint:       SettingVariable{Value: ""},
+		OidcTokenEndpoint:               SettingVariable{Value: ""},
+		OidcUserinfoEndpoint:            SettingVariable{Value: ""},
+		OidcJwksEndpoint:                SettingVariable{Value: ""},
+		OidcScopes:                      SettingVariable{Value: "openid email profile"},
+		OidcGroupsClaim:                 SettingVariable{Value: "groups"},
+		OidcSkipTlsVerify:               SettingVariable{Value: "false"},
+		OidcAutoRedirectToProvider:      SettingVariable{Value: "false"},
+		OidcMergeAccounts:               SettingVariable{Value: "false"},
+		OidcProviderName:                SettingVariable{Value: ""},
+		OidcProviderLogoUrl:             SettingVariable{Value: ""},
+		OidcMobileRedirectUris:          SettingVariable{Value: "arcane-mobile://oidc-callback"},
+		MaxImageUploadSize:              SettingVariable{Value: "500"},
+		GitSyncMaxFiles:                 SettingVariable{Value: "500"},
+		GitSyncMaxTotalSizeMb:           SettingVariable{Value: "50"},
+		GitSyncMaxBinarySizeMb:          SettingVariable{Value: "10"},
+		EnvironmentHealthInterval:       SettingVariable{Value: "0 */2 * * * *"},
+		LifecycleEnabled:                SettingVariable{Value: "false"},
+		LifecycleDefaultRunnerImage:     SettingVariable{Value: "alpine:latest"},
+		LifecycleMaxTimeoutSec:          SettingVariable{Value: "300"},
 
-		DockerAPITimeout:       models.SettingVariable{Value: "30"},
-		DockerImagePullTimeout: models.SettingVariable{Value: "600"},
-		TrivyScanTimeout:       models.SettingVariable{Value: "900"},
-		GitOperationTimeout:    models.SettingVariable{Value: "300"},
-		HTTPClientTimeout:      models.SettingVariable{Value: "30"},
-		RegistryTimeout:        models.SettingVariable{Value: "30"},
-		ProxyRequestTimeout:    models.SettingVariable{Value: "60"},
-		DeployWaitTimeout:      models.SettingVariable{Value: "600"},
-		BuildProvider:          models.SettingVariable{Value: "local"},
-		BuildTimeout:           models.SettingVariable{Value: "1800"},
-		DepotProjectId:         models.SettingVariable{Value: ""},
-		DepotToken:             models.SettingVariable{Value: ""},
+		DockerAPITimeout:       SettingVariable{Value: "30"},
+		DockerImagePullTimeout: SettingVariable{Value: "600"},
+		TrivyScanTimeout:       SettingVariable{Value: "900"},
+		GitOperationTimeout:    SettingVariable{Value: "300"},
+		HTTPClientTimeout:      SettingVariable{Value: "30"},
+		RegistryTimeout:        SettingVariable{Value: "30"},
+		ProxyRequestTimeout:    SettingVariable{Value: "60"},
+		DeployWaitTimeout:      SettingVariable{Value: "600"},
+		BuildProvider:          SettingVariable{Value: "local"},
+		BuildTimeout:           SettingVariable{Value: "1800"},
+		DepotProjectId:         SettingVariable{Value: ""},
+		DepotToken:             SettingVariable{Value: ""},
 
-		InstanceID: models.SettingVariable{Value: ""},
+		InstanceID: SettingVariable{Value: ""},
 	}
 }
 
-func (s *SettingsService) loadDatabaseSettingsInternal(ctx context.Context, db *database.DB) (*models.Settings, error) {
+func (s *SettingsService) loadDatabaseSettingsInternal(ctx context.Context, db *database.DB) (*Settings, error) {
 	if config.Load().UIConfigurationDisabled || config.Load().AgentMode {
 		slog.DebugContext(ctx, "loadDatabaseSettingsInternal: using env path", "UIConfigurationDisabled", config.Load().UIConfigurationDisabled, "AgentMode", config.Load().AgentMode, "Environment", config.Load().Environment)
 		return s.loadDatabaseConfigFromEnv(ctx, db)
@@ -305,7 +304,7 @@ func (s *SettingsService) loadDatabaseSettingsInternal(ctx context.Context, db *
 
 	dest := s.getDefaultSettings()
 
-	var loaded []models.SettingVariable
+	var loaded []SettingVariable
 	queryCtx, queryCancel := context.WithTimeout(ctx, 10*time.Second)
 	defer queryCancel()
 	err := db.
@@ -318,7 +317,7 @@ func (s *SettingsService) loadDatabaseSettingsInternal(ctx context.Context, db *
 	for _, v := range loaded {
 		err = dest.UpdateField(v.Key, v.Value, false)
 
-		if err != nil && !errors.Is(err, models.SettingKeyNotFoundError{}) {
+		if err != nil && !errors.Is(err, SettingKeyNotFoundError{}) {
 			return nil, errors.WrapIff(err, "failed to process settings for key '%s'", v.Key)
 		}
 	}
@@ -329,11 +328,11 @@ func (s *SettingsService) loadDatabaseSettingsInternal(ctx context.Context, db *
 	return dest, nil
 }
 
-func (s *SettingsService) loadDatabaseConfigFromEnv(ctx context.Context, db *database.DB) (*models.Settings, error) {
+func (s *SettingsService) loadDatabaseConfigFromEnv(ctx context.Context, db *database.DB) (*Settings, error) {
 	dest := s.getDefaultSettings()
 
 	// Fetch all settings once to avoid N+1 queries for internal keys
-	var allSettings []models.SettingVariable
+	var allSettings []SettingVariable
 	if err := db.WithContext(ctx).Find(&allSettings).Error; err != nil {
 		return nil, errors.WrapIf(err, "failed to load settings for env config")
 	}
@@ -392,7 +391,7 @@ func (s *SettingsService) loadDatabaseConfigFromEnv(ctx context.Context, db *dat
 	return dest, nil
 }
 
-func (s *SettingsService) applyEnvOverrides(ctx context.Context, dest *models.Settings) {
+func (s *SettingsService) applyEnvOverrides(ctx context.Context, dest *Settings) {
 	_ = ctx
 	rv := reflect.ValueOf(dest).Elem()
 
@@ -402,7 +401,7 @@ func (s *SettingsService) applyEnvOverrides(ctx context.Context, dest *models.Se
 }
 
 func resolveSettingsEnvOverridesInternal() []settingsEnvOverride {
-	rt := reflect.TypeFor[models.Settings]()
+	rt := reflect.TypeFor[Settings]()
 	overrides := make([]settingsEnvOverride, 0)
 
 	for i := range rt.NumField() {
@@ -450,7 +449,7 @@ func (s *SettingsService) IsEnvOverrideActive(key string) bool {
 // GetSettings returns the effective (env-override-applied) settings snapshot.
 // The snapshot is shared across callers and must be treated as read-only;
 // mutation flows go through UpdateSettings, which works on an explicit clone.
-func (s *SettingsService) GetSettings(ctx context.Context) (*models.Settings, error) {
+func (s *SettingsService) GetSettings(ctx context.Context) (*Settings, error) {
 	settingsCfg := s.getEffectiveSettingsConfigInternal(ctx)
 	return settingsCfg, nil
 }
@@ -459,18 +458,18 @@ func (s *SettingsService) GetSettings(ctx context.Context) (*models.Settings, er
 // meaningfully recover from a settings load failure. It logs any error and guarantees a
 // non-nil *Settings (defaults: a zero-valued struct, which the SettingVariable helpers
 // like utils.BoolOrDefault treat as "use the caller's default").
-func (s *SettingsService) GetSettingsOrDefaults(ctx context.Context) *models.Settings {
+func (s *SettingsService) GetSettingsOrDefaults(ctx context.Context) *Settings {
 	cfg, err := s.GetSettings(ctx)
 	if err != nil {
 		slog.WarnContext(ctx, "failed to load settings, falling back to defaults", "error", err)
 	}
 	if cfg == nil {
-		return &models.Settings{}
+		return &Settings{}
 	}
 	return cfg
 }
 
-func (s *SettingsService) getEffectiveSettingsConfigInternal(ctx context.Context) *models.Settings {
+func (s *SettingsService) getEffectiveSettingsConfigInternal(ctx context.Context) *Settings {
 	if effective := s.effectiveConfig.Load(); effective != nil {
 		return effective
 	}
@@ -498,9 +497,9 @@ func (s *SettingsService) UpdateSetting(ctx context.Context, key, value string) 
 // UpdateSettingValues persists a group of internal setting values atomically
 // and publishes the refreshed snapshot before returning.
 func (s *SettingsService) UpdateSettingValues(ctx context.Context, updates []libarcane.SettingUpdate) error {
-	values := make([]models.SettingVariable, 0, len(updates))
+	values := make([]SettingVariable, 0, len(updates))
 	for _, update := range updates {
-		values = append(values, models.SettingVariable{Key: update.Key, Value: update.Value})
+		values = append(values, SettingVariable{Key: update.Key, Value: update.Value})
 	}
 	_, err := actors.Execute(ctx, s.writes, "update setting values", func(writeCtx context.Context) (actors.NoPayload, error) {
 		if err := s.persistSettings(writeCtx, values); err != nil {
@@ -513,7 +512,7 @@ func (s *SettingsService) UpdateSettingValues(ctx context.Context, updates []lib
 
 func (s *SettingsService) updateSettingValueNoRefreshInternal(ctx context.Context, key, value string) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		settingVar := &models.SettingVariable{
+		settingVar := &SettingVariable{
 			Key:   key,
 			Value: value,
 		}
@@ -523,7 +522,7 @@ func (s *SettingsService) updateSettingValueNoRefreshInternal(ctx context.Contex
 
 // UpdateSettings publishes the refreshed snapshot before returning. Each
 // subscriber's effects remain ordered and may finish after this method returns.
-func (s *SettingsService) UpdateSettings(ctx context.Context, updates settingstypes.Update) ([]models.SettingVariable, error) {
+func (s *SettingsService) UpdateSettings(ctx context.Context, updates settingstypes.Update) ([]SettingVariable, error) {
 	result, err := actors.Execute(ctx, s.writes, "update settings", func(writeCtx context.Context) (settingsUpdateResultInternal, error) {
 		return s.updateSettingsInternal(writeCtx, updates)
 	}, func(result settingsUpdateResultInternal, err error) {
@@ -591,10 +590,10 @@ func (s *SettingsService) updateSettingsInternal(ctx context.Context, updates se
 		return settingsUpdateResultInternal{}, err
 	}
 	if updates.OidcClientSecret != nil && *updates.OidcClientSecret != "" {
-		valuesToUpdate = append(valuesToUpdate, models.SettingVariable{Key: "oidcClientSecret", Value: *updates.OidcClientSecret})
+		valuesToUpdate = append(valuesToUpdate, SettingVariable{Key: "oidcClientSecret", Value: *updates.OidcClientSecret})
 	}
 	if trivyServerTokenUpdated {
-		valuesToUpdate = append(valuesToUpdate, models.SettingVariable{Key: "trivyServerToken", Value: *updates.TrivyServerToken})
+		valuesToUpdate = append(valuesToUpdate, SettingVariable{Key: "trivyServerToken", Value: *updates.TrivyServerToken})
 	}
 
 	if err := s.persistSettings(ctx, valuesToUpdate); err != nil {
@@ -610,15 +609,15 @@ func (s *SettingsService) updateSettingsInternal(ctx context.Context, updates se
 		changes = append(changes, libarcane.SettingUpdate{Key: value.Key, Value: value.Value})
 	}
 	return settingsUpdateResultInternal{
-		settings: settingsCfg.ToSettingVariableSlice(models.SettingVisibilityNonAdmin, false),
+		settings: settingsCfg.ToSettingVariableSlice(SettingVisibilityNonAdmin, false),
 		changes:  changes,
 	}, nil
 }
 
-func (s *SettingsService) prepareUpdateValues(updates settingstypes.Update, cfg, defaultCfg *models.Settings) ([]models.SettingVariable, error) {
+func (s *SettingsService) prepareUpdateValues(updates settingstypes.Update, cfg, defaultCfg *Settings) ([]SettingVariable, error) {
 	rt := reflect.TypeFor[settingstypes.Update]()
 	rv := reflect.ValueOf(updates)
-	valuesToUpdate := make([]models.SettingVariable, 0)
+	valuesToUpdate := make([]SettingVariable, 0)
 
 	for i := range rt.NumField() {
 		field := rt.Field(i)
@@ -640,7 +639,7 @@ func (s *SettingsService) prepareUpdateValues(updates settingstypes.Update, cfg,
 				return nil, errors.WrapIff(err, "failed to update in-memory config for key '%s'", key)
 			}
 
-			valuesToUpdate = append(valuesToUpdate, models.SettingVariable{Key: key, Value: value})
+			valuesToUpdate = append(valuesToUpdate, SettingVariable{Key: key, Value: value})
 
 			continue
 		}
@@ -661,14 +660,14 @@ func (s *SettingsService) prepareUpdateValues(updates settingstypes.Update, cfg,
 			err = cfg.UpdateField(key, value, true)
 		}
 
-		if errors.Is(err, models.SettingSensitiveForbiddenError{}) {
+		if errors.Is(err, SettingSensitiveForbiddenError{}) {
 			continue
 		}
 		if err != nil {
 			return nil, errors.WrapIff(err, "failed to update in-memory config for key '%s'", key)
 		}
 
-		valuesToUpdate = append(valuesToUpdate, models.SettingVariable{Key: key, Value: valueToSave})
+		valuesToUpdate = append(valuesToUpdate, SettingVariable{Key: key, Value: valueToSave})
 	}
 
 	return valuesToUpdate, nil
@@ -692,7 +691,7 @@ func extractUpdateValue(field reflect.StructField, fieldValue reflect.Value) (st
 	return key, value, true
 }
 
-func (s *SettingsService) persistSettings(ctx context.Context, values []models.SettingVariable) error {
+func (s *SettingsService) persistSettings(ctx context.Context, values []SettingVariable) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for _, setting := range values {
 			if err := tx.Save(&setting).Error; err != nil {
@@ -706,11 +705,11 @@ func (s *SettingsService) persistSettings(ctx context.Context, values []models.S
 func (s *SettingsService) EnsureDefaultSettings(ctx context.Context) error {
 	_, err := actors.Execute(ctx, s.writes, "ensure default settings", func(writeCtx context.Context) (actors.NoPayload, error) {
 		defaultSettings := s.getDefaultSettings()
-		defaultSettingVars := defaultSettings.ToSettingVariableSlice(models.SettingVisibilityAll, false)
+		defaultSettingVars := defaultSettings.ToSettingVariableSlice(SettingVisibilityAll, false)
 
 		if err := s.db.WithContext(writeCtx).Transaction(func(tx *gorm.DB) error {
 			for _, defaultSetting := range defaultSettingVars {
-				var existing models.SettingVariable
+				var existing SettingVariable
 				err := tx.Where("key = ?", defaultSetting.Key).First(&existing).Error
 
 				switch {
@@ -747,7 +746,7 @@ func (s *SettingsService) PruneUnknownSettings(ctx context.Context) error {
 			keys = append(keys, key)
 		}
 
-		result := s.db.WithContext(writeCtx).Where("key NOT IN ?", keys).Delete(&models.SettingVariable{})
+		result := s.db.WithContext(writeCtx).Where("key NOT IN ?", keys).Delete(&SettingVariable{})
 		if result.Error != nil {
 			return actors.NoPayload{}, errors.WrapIf(result.Error, "failed to prune unknown settings")
 		}
@@ -761,7 +760,7 @@ func (s *SettingsService) PruneUnknownSettings(ctx context.Context) error {
 
 func (s *SettingsService) PersistEnvSettingsIfMissing(ctx context.Context) error {
 	_, err := actors.Execute(ctx, s.writes, "persist environment settings", func(writeCtx context.Context) (actors.NoPayload, error) {
-		rt := reflect.TypeFor[models.Settings]()
+		rt := reflect.TypeFor[Settings]()
 		appCfg := config.Load()
 		isEnvOnlyMode := appCfg.AgentMode || appCfg.UIConfigurationDisabled
 
@@ -783,7 +782,7 @@ func (s *SettingsService) PersistEnvSettingsIfMissing(ctx context.Context) error
 func allowedSettingKeys() map[string]struct{} {
 	allowed := make(map[string]struct{})
 
-	settingsType := reflect.TypeFor[models.Settings]()
+	settingsType := reflect.TypeFor[Settings]()
 	for field := range settingsType.Fields() {
 		key, _, _ := strings.Cut(field.Tag.Get("key"), ",")
 		if key == "" {
@@ -833,12 +832,12 @@ func (s *SettingsService) shouldProcessField(key, attrs string, isEnvOnlyMode bo
 }
 
 func (s *SettingsService) upsertEnvSetting(ctx context.Context, tx *gorm.DB, key, envVal string) error {
-	var existing models.SettingVariable
+	var existing SettingVariable
 	err := tx.Where("key = ?", key).First(&existing).Error
 
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound):
-		newVar := models.SettingVariable{Key: key, Value: envVal}
+		newVar := SettingVariable{Key: key, Value: envVal}
 		if err := tx.Create(&newVar).Error; err != nil {
 			return errors.WrapIff(err, "persist env setting %s", key)
 		}
@@ -857,13 +856,13 @@ func (s *SettingsService) upsertEnvSetting(ctx context.Context, tx *gorm.DB, key
 	return nil
 }
 
-func (s *SettingsService) ListSettings(visibility models.SettingVisibility) []models.SettingVariable {
+func (s *SettingsService) ListSettings(visibility SettingVisibility) []SettingVariable {
 	return s.GetSettingsConfig().ToSettingVariableSlice(visibility, true)
 }
 
 // GetSettingType returns the type from the setting metadata
 func (s *SettingsService) GetSettingType(key string) string {
-	rt := reflect.TypeFor[models.Settings]()
+	rt := reflect.TypeFor[Settings]()
 	for field := range rt.Fields() {
 		keyTag := field.Tag.Get("key")
 		fieldKey, _, _ := strings.Cut(keyTag, ",")
@@ -985,7 +984,7 @@ func (s *SettingsService) EnsureEncryptionKey(ctx context.Context) (string, erro
 		var key string
 
 		err := s.db.WithContext(writeCtx).Transaction(func(tx *gorm.DB) error {
-			var sv models.SettingVariable
+			var sv SettingVariable
 			err := tx.Where("key = ?", keyName).First(&sv).Error
 
 			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -1007,13 +1006,13 @@ func (s *SettingsService) EnsureEncryptionKey(ctx context.Context) (string, erro
 			key = generatedKey
 
 			if notFound {
-				if createErr := tx.Create(&models.SettingVariable{Key: keyName, Value: generatedKey}).Error; createErr != nil {
+				if createErr := tx.Create(&SettingVariable{Key: keyName, Value: generatedKey}).Error; createErr != nil {
 					return errors.WrapIf(createErr, "failed to persist encryption key")
 				}
 				return nil
 			}
 
-			if updErr := tx.Model(&models.SettingVariable{}).
+			if updErr := tx.Model(&SettingVariable{}).
 				Where("key = ?", keyName).
 				Update("value", generatedKey).Error; updErr != nil {
 				return errors.WrapIf(updErr, "failed to update encryption key")
@@ -1035,7 +1034,7 @@ func (s *SettingsService) NormalizeProjectsDirectory(ctx context.Context, projec
 	}
 
 	_, err := actors.Execute(ctx, s.writes, "normalize projects directory", func(writeCtx context.Context) (string, error) {
-		var projectsDirSetting models.SettingVariable
+		var projectsDirSetting SettingVariable
 		err := s.db.WithContext(writeCtx).Where("key = ?", "projectsDirectory").First(&projectsDirSetting).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			slog.DebugContext(writeCtx, "No projectsDirectory setting found, skipping normalization")
@@ -1083,7 +1082,7 @@ func (s *SettingsService) NormalizeBuildsDirectory(ctx context.Context) error {
 	}
 
 	_, err := actors.Execute(ctx, s.writes, "normalize builds directory", func(writeCtx context.Context) (string, error) {
-		var buildsDirSetting models.SettingVariable
+		var buildsDirSetting SettingVariable
 		err := s.db.WithContext(writeCtx).Where("key = ?", buildsKey).First(&buildsDirSetting).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			slog.DebugContext(writeCtx, "No buildsDirectory setting found, skipping normalization")

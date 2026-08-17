@@ -1,6 +1,8 @@
 package project
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+
 	"context"
 	stderrors "errors"
 	"fmt"
@@ -11,12 +13,13 @@ import (
 	"strings"
 	"time"
 
+	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
+
 	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
@@ -513,7 +516,7 @@ func (h *ProjectHandler) UpdateProjectTag(ctx context.Context, input *UpdateProj
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
-		Type:           models.ActivityTypeResourceAction,
+		Type:           activitytypes.TypeResourceAction,
 		ResourceType:   "project",
 		ResourceID:     input.ProjectID,
 		ResourceName:   input.ProjectID,
@@ -521,7 +524,7 @@ func (h *ProjectHandler) UpdateProjectTag(ctx context.Context, input *UpdateProj
 		Step:           "Updating project tags",
 		Message:        "Updating project tags",
 		SuccessMessage: "Project tags updated",
-		Metadata:       models.JSON{"action": "update_tags", "tag": input.Body.Name, "attached": input.Body.Attached},
+		Metadata:       database.JSON{"action": "update_tags", "tag": input.Body.Name, "attached": input.Body.Attached},
 	}, func(runtimeCtx context.Context) error {
 		var updateErr error
 		tags, updateErr = h.projectService.UpdateProjectTag(runtimeCtx, input.ProjectID, input.Body.Name, input.Body.Color, input.Body.Attached, *user)
@@ -552,13 +555,13 @@ func (h *ProjectHandler) UpdateProjectTag(ctx context.Context, input *UpdateProj
 // operation (deploy, redeploy, pull, build): the activity it records and the
 // action whose raw docker CLI output is streamed to the client.
 type projectStreamOperationConfigInternal struct {
-	ActivityType   models.ActivityType
+	ActivityType   activitytypes.Type
 	Step           string
 	StartMessage   string
 	WriterStep     string
 	FailureMessage string
 	SuccessMessage string
-	Metadata       models.JSON
+	Metadata       database.JSON
 	// Action runs the operation. ctx carries the stream writer under
 	// dockerutils.ProgressWriterKey; it is also passed directly for actions
 	// that take a writer parameter.
@@ -569,7 +572,7 @@ type projectStreamOperationConfigInternal struct {
 // project endpoints: NDJSON headers, activity lifecycle (started frame, queue
 // slot, completion), the activity-teeing writer, and the terminal done/error
 // frames.
-func (h *ProjectHandler) streamProjectOperationInternal(environmentID, projectID string, user *models.User, cfg projectStreamOperationConfigInternal) *huma.StreamResponse {
+func (h *ProjectHandler) streamProjectOperationInternal(environmentID, projectID string, user *common.User, cfg projectStreamOperationConfigInternal) *huma.StreamResponse {
 	return &huma.StreamResponse{
 		Body: func(humaCtx huma.Context) {
 			httpx.SetJSONStreamHeaders(humaCtx)
@@ -578,7 +581,7 @@ func (h *ProjectHandler) streamProjectOperationInternal(environmentID, projectID
 			rawWriter := humaCtx.BodyWriter()
 			metadata := cfg.Metadata
 			if metadata == nil {
-				metadata = models.JSON{"projectID": projectID}
+				metadata = database.JSON{"projectID": projectID}
 			}
 			activityID, runtimeCtx := activitylib.StartHandlerActivity(
 				runtimeCtx,
@@ -631,7 +634,7 @@ func (h *ProjectHandler) DeployProject(ctx context.Context, input *DeployProject
 	}
 
 	return h.streamProjectOperationInternal(input.EnvironmentID, input.ProjectID, user, projectStreamOperationConfigInternal{ //nolint:contextcheck // the stream body runs on humaCtx.Context(), not the handler ctx
-		ActivityType:   models.ActivityTypeProjectDeploy,
+		ActivityType:   activitytypes.TypeProjectDeploy,
 		Step:           "Starting deployment",
 		StartMessage:   "Project deployment started",
 		WriterStep:     "Deploying project",
@@ -651,7 +654,7 @@ func (h *ProjectHandler) DownProject(ctx context.Context, input *DownProjectInpu
 	}
 
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	activityID, runtimeCtx := activitylib.StartHandlerActivity(runtimeCtx, h.activityService, input.EnvironmentID, models.ActivityTypeProjectDown, "project", input.ProjectID, input.ProjectID, user, "Stopping project", "Project stop requested", models.JSON{"projectID": input.ProjectID}, false)
+	activityID, runtimeCtx := activitylib.StartHandlerActivity(runtimeCtx, h.activityService, input.EnvironmentID, activitytypes.TypeProjectDown, "project", input.ProjectID, input.ProjectID, user, "Stopping project", "Project stop requested", database.JSON{"projectID": input.ProjectID}, false)
 	activityWriter := activitylib.NewWriter(runtimeCtx, h.activityService, activityID, io.Discard, "Stopping project")
 	downCtx := context.WithValue(runtimeCtx, dockerutils.ProgressWriterKey{}, activityWriter)
 	if err := h.projectService.DownProject(downCtx, input.ProjectID, *user); err != nil {
@@ -727,11 +730,11 @@ func (h *ProjectHandler) CreateProject(ctx context.Context, input *CreateProject
 		return nil, err
 	}
 
-	var proj *models.Project
+	var proj *Project
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
-		Type:           models.ActivityTypeResourceAction,
+		Type:           activitytypes.TypeResourceAction,
 		ResourceType:   "project",
 		ResourceID:     projectInput.Name,
 		ResourceName:   projectInput.Name,
@@ -739,7 +742,7 @@ func (h *ProjectHandler) CreateProject(ctx context.Context, input *CreateProject
 		Step:           "Creating project",
 		Message:        "Creating project",
 		SuccessMessage: "Project created successfully",
-		Metadata:       models.JSON{"action": "create_project"},
+		Metadata:       database.JSON{"action": "create_project"},
 	}, func(runtimeCtx context.Context) error {
 		var createErr error
 		proj, createErr = h.projectService.CreateProject(runtimeCtx, projectInput.Name, projectInput.ComposeContent, projectInput.EnvContent, manifest, uploads, projectInput.Tags, projectInput.TagColors, *user)
@@ -852,7 +855,7 @@ func (h *ProjectHandler) RedeployProject(ctx context.Context, input *RedeployPro
 	}
 
 	return h.streamProjectOperationInternal(input.EnvironmentID, input.ProjectID, user, projectStreamOperationConfigInternal{ //nolint:contextcheck // the stream body runs on humaCtx.Context(), not the handler ctx
-		ActivityType:   models.ActivityTypeProjectRedeploy,
+		ActivityType:   activitytypes.TypeProjectRedeploy,
 		Step:           "Starting redeploy",
 		StartMessage:   "Project redeploy started",
 		WriterStep:     "Redeploying project",
@@ -888,7 +891,7 @@ func (h *ProjectHandler) DestroyProject(ctx context.Context, input *DestroyProje
 	}
 
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	activityID, runtimeCtx := activitylib.StartHandlerActivity(runtimeCtx, h.activityService, input.EnvironmentID, models.ActivityTypeProjectDestroy, "project", input.ProjectID, input.ProjectID, user, "Destroying project", "Project destroy requested", models.JSON{"projectID": input.ProjectID, "removeFiles": removeFiles, "removeVolumes": removeVolumes}, false)
+	activityID, runtimeCtx := activitylib.StartHandlerActivity(runtimeCtx, h.activityService, input.EnvironmentID, activitytypes.TypeProjectDestroy, "project", input.ProjectID, input.ProjectID, user, "Destroying project", "Project destroy requested", database.JSON{"projectID": input.ProjectID, "removeFiles": removeFiles, "removeVolumes": removeVolumes}, false)
 	activityWriter := activitylib.NewWriter(runtimeCtx, h.activityService, activityID, io.Discard, "Destroying project")
 	destroyCtx := context.WithValue(runtimeCtx, dockerutils.ProgressWriterKey{}, activityWriter)
 	if err := h.projectService.DestroyProject(destroyCtx, input.ProjectID, removeFiles, removeVolumes, *user); err != nil {
@@ -924,7 +927,7 @@ func (h *ProjectHandler) UpdateProject(ctx context.Context, input *UpdateProject
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
-		Type:           models.ActivityTypeResourceAction,
+		Type:           activitytypes.TypeResourceAction,
 		ResourceType:   "project",
 		ResourceID:     input.ProjectID,
 		ResourceName:   mo.PointerToOption(input.Body.Name).OrEmpty(),
@@ -932,7 +935,7 @@ func (h *ProjectHandler) UpdateProject(ctx context.Context, input *UpdateProject
 		Step:           "Updating project",
 		Message:        "Updating project",
 		SuccessMessage: "Project updated successfully",
-		Metadata:       models.JSON{"action": "update_project", "projectID": input.ProjectID},
+		Metadata:       database.JSON{"action": "update_project", "projectID": input.ProjectID},
 	}, func(runtimeCtx context.Context) error {
 		_, updateErr := h.projectService.UpdateProject(runtimeCtx, input.ProjectID, input.Body.Name, input.Body.ComposeContent, input.Body.EnvContent, input.Body.OverrideContent, *user)
 		return updateErr
@@ -996,7 +999,7 @@ func (h *ProjectHandler) UpdateProjectServices(ctx context.Context, input *Updat
 }
 
 type projectActivityActionConfigInternal struct {
-	ActivityType    models.ActivityType
+	ActivityType    activitytypes.Type
 	Step            string
 	StartMessage    string
 	WriterStep      string
@@ -1006,13 +1009,13 @@ type projectActivityActionConfigInternal struct {
 	// Queue routes the activity through the per-environment concurrency
 	// limiter; set for long-running deploy-like actions, not quick restarts.
 	Queue  bool
-	Action func(context.Context, string, models.User) error
+	Action func(context.Context, string, common.User) error
 	Error  func(error) error
 }
 
 func (h *ProjectHandler) updateProjectServicesActivityConfigInternal(services []string) projectActivityActionConfigInternal {
 	return projectActivityActionConfigInternal{
-		ActivityType:    models.ActivityTypeAutoUpdate,
+		ActivityType:    activitytypes.TypeAutoUpdate,
 		Step:            "Updating project services",
 		StartMessage:    "Project services update requested",
 		WriterStep:      "Updating project services",
@@ -1020,7 +1023,7 @@ func (h *ProjectHandler) updateProjectServicesActivityConfigInternal(services []
 		SuccessComplete: "Project services updated",
 		SuccessMessage:  "Project services updated successfully",
 		Queue:           true,
-		Action: func(runtimeCtx context.Context, projectID string, user models.User) error {
+		Action: func(runtimeCtx context.Context, projectID string, user common.User) error {
 			return h.projectService.UpdateProjectServices(runtimeCtx, projectID, services, user)
 		},
 		Error: projectArchivedActionErrorInternal(func(err error) error {
@@ -1031,14 +1034,14 @@ func (h *ProjectHandler) updateProjectServicesActivityConfigInternal(services []
 
 func (h *ProjectHandler) restartProjectActivityConfigInternal(services []string) projectActivityActionConfigInternal {
 	return projectActivityActionConfigInternal{
-		ActivityType:    models.ActivityTypeProjectRestart,
+		ActivityType:    activitytypes.TypeProjectRestart,
 		Step:            "Restarting project",
 		StartMessage:    "Project restart requested",
 		WriterStep:      "Restarting project",
 		FailureMessage:  "Project restarted",
 		SuccessComplete: "Project restarted",
 		SuccessMessage:  "Project restarted successfully",
-		Action: func(runtimeCtx context.Context, projectID string, user models.User) error {
+		Action: func(runtimeCtx context.Context, projectID string, user common.User) error {
 			return h.projectService.RestartProject(runtimeCtx, projectID, services, user)
 		},
 		Error: projectArchivedActionErrorInternal(func(err error) error {
@@ -1086,10 +1089,10 @@ func (h *ProjectHandler) runProjectActivityActionInternal(ctx context.Context, e
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	var activityID string
 	if cfg.Queue {
-		activityID, runtimeCtx = activitylib.StartHandlerActivity(runtimeCtx, h.activityService, environmentID, cfg.ActivityType, "project", projectID, projectID, user, cfg.Step, cfg.StartMessage, models.JSON{"projectID": projectID}, true)
+		activityID, runtimeCtx = activitylib.StartHandlerActivity(runtimeCtx, h.activityService, environmentID, cfg.ActivityType, "project", projectID, projectID, user, cfg.Step, cfg.StartMessage, database.JSON{"projectID": projectID}, true)
 		activitylib.AwaitHandlerActivitySlot(runtimeCtx, h.activityService, activityID, environmentID)
 	} else {
-		activityID, runtimeCtx = activitylib.StartHandlerActivity(runtimeCtx, h.activityService, environmentID, cfg.ActivityType, "project", projectID, projectID, user, cfg.Step, cfg.StartMessage, models.JSON{"projectID": projectID}, false)
+		activityID, runtimeCtx = activitylib.StartHandlerActivity(runtimeCtx, h.activityService, environmentID, cfg.ActivityType, "project", projectID, projectID, user, cfg.Step, cfg.StartMessage, database.JSON{"projectID": projectID}, false)
 	}
 	activityWriter := activitylib.NewWriter(runtimeCtx, h.activityService, activityID, io.Discard, cfg.WriterStep)
 	actionCtx := context.WithValue(runtimeCtx, dockerutils.ProgressWriterKey{}, activityWriter)
@@ -1166,7 +1169,7 @@ func (h *ProjectHandler) PullProjectImages(ctx context.Context, input *PullProje
 	}
 
 	return h.streamProjectOperationInternal(input.EnvironmentID, input.ProjectID, user, projectStreamOperationConfigInternal{ //nolint:contextcheck // the stream body runs on humaCtx.Context(), not the handler ctx
-		ActivityType:   models.ActivityTypeProjectPull,
+		ActivityType:   activitytypes.TypeProjectPull,
 		Step:           "Pulling project images",
 		StartMessage:   "Project image pull started",
 		WriterStep:     "Pulling project images",
@@ -1198,13 +1201,13 @@ func (h *ProjectHandler) BuildProjectImages(ctx context.Context, input *BuildPro
 	}
 
 	return h.streamProjectOperationInternal(input.EnvironmentID, input.ProjectID, user, projectStreamOperationConfigInternal{ //nolint:contextcheck // the stream body runs on humaCtx.Context(), not the handler ctx
-		ActivityType:   models.ActivityTypeProjectBuild,
+		ActivityType:   activitytypes.TypeProjectBuild,
 		Step:           "Building project images",
 		StartMessage:   "Project image build started",
 		WriterStep:     "Building project images",
 		FailureMessage: "Project image build failed",
 		SuccessMessage: "Project image build completed",
-		Metadata:       models.JSON{"projectID": input.ProjectID, "services": options.Services},
+		Metadata:       database.JSON{"projectID": input.ProjectID, "services": options.Services},
 		Action: func(opCtx context.Context, writer io.Writer) error {
 			return h.projectService.BuildProjectServices(opCtx, input.ProjectID, options, writer, user)
 		},

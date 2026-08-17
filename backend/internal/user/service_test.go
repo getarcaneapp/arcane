@@ -1,13 +1,16 @@
 package user
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+
 	"context"
 	"testing"
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
@@ -22,16 +25,18 @@ func setupAuthServiceTestDBInternal(t *testing.T) *database.DB {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(
-		&models.SettingVariable{},
-		&models.User{},
-		&models.UserSession{},
-		&models.Environment{},
-		&models.Role{},
-		&models.UserRoleAssignment{},
-		&models.ApiKey{},
-		&models.ApiKeyPermission{},
-		&models.OidcRoleMapping{},
+		&settings.SettingVariable{},
+		&common.User{},
+		&session.UserSession{},
+		&role.Role{},
+		&role.UserRoleAssignment{},
+		&role.ApiKeyPermission{},
+		&role.OidcRoleMapping{},
 	))
+	// environments and api_keys live in packages that import this one; the
+	// in-package tests only need the tables to exist.
+	require.NoError(t, db.Exec("CREATE TABLE IF NOT EXISTS environments (id text PRIMARY KEY, created_at datetime, updated_at datetime, name text, api_url text, status text, enabled numeric, is_edge numeric, hidden numeric, last_seen datetime, last_edge_transport text, access_token text, api_key_id text, parent_environment_id text, swarm_node_id text)").Error)
+	require.NoError(t, db.Exec("CREATE TABLE IF NOT EXISTS api_keys (id text PRIMARY KEY, created_at datetime, updated_at datetime, name text, description text, key_hash text, key_prefix text, kind text, user_id text, environment_id text, managed_by text, expires_at datetime, last_used_at datetime)").Error)
 	return &database.DB{DB: db}
 }
 
@@ -46,10 +51,10 @@ func setupUserAndRoleServices(t *testing.T) (*UserService, *role.RoleService) {
 	return userRecord, role
 }
 
-func createTestUser(t *testing.T, svc *UserService, id, username string) *models.User {
+func createTestUser(t *testing.T, svc *UserService, id, username string) *common.User {
 	t.Helper()
-	created, err := svc.CreateUser(context.Background(), &models.User{
-		BaseModel: models.BaseModel{ID: id},
+	created, err := svc.CreateUser(context.Background(), &common.User{
+		BaseModel: database.BaseModel{ID: id},
 		Username:  username,
 	})
 	require.NoError(t, err)
@@ -57,9 +62,9 @@ func createTestUser(t *testing.T, svc *UserService, id, username string) *models
 }
 
 // grantGlobalAdmin assigns the built-in Admin role globally to the user.
-func grantGlobalAdmin(t *testing.T, role *role.RoleService, userID string) {
+func grantGlobalAdmin(t *testing.T, roleSvc *role.RoleService, userID string) {
 	t.Helper()
-	require.NoError(t, role.SetUserAssignments(context.Background(), userID, []models.UserRoleAssignment{
+	require.NoError(t, roleSvc.SetUserAssignments(context.Background(), userID, []role.UserRoleAssignment{
 		{RoleID: authz.BuiltInRoleAdmin, EnvironmentID: nil},
 	}))
 }
@@ -85,8 +90,8 @@ func TestSetPasswordUpdatesHashAndClearsPasswordChangeRequirement(t *testing.T) 
 
 	oldHash, err := userSvc.HashPassword("old-password")
 	require.NoError(t, err)
-	user, err := userSvc.CreateUser(ctx, &models.User{
-		BaseModel:              models.BaseModel{ID: "password-user"},
+	user, err := userSvc.CreateUser(ctx, &common.User{
+		BaseModel:              database.BaseModel{ID: "password-user"},
 		Username:               "password-user",
 		PasswordHash:           oldHash,
 		RequiresPasswordChange: true,
@@ -166,7 +171,7 @@ func TestDeleteUserRejectsDeletingOnlyCustomAllPermissionsAdmin(t *testing.T) {
 	customAdmin := createTestUser(t, userSvc, "custom-admin", "custom-admin")
 	customRole, err := roleSvc.CreateRole(ctx, "Custom Admin", nil, authz.AllPermissions())
 	require.NoError(t, err)
-	require.NoError(t, roleSvc.SetUserAssignments(ctx, customAdmin.ID, []models.UserRoleAssignment{
+	require.NoError(t, roleSvc.SetUserAssignments(ctx, customAdmin.ID, []role.UserRoleAssignment{
 		{RoleID: customRole.ID, EnvironmentID: nil},
 	}))
 
@@ -266,7 +271,7 @@ func TestUpdateUserRejectsNonAdminActorEditingAdmin(t *testing.T) {
 	manager := createTestUser(t, userSvc, "mgr-1", "manager")
 	managerRole, err := roleSvc.CreateRole(ctx, "User Manager", nil, []string{authz.PermUsersUpdate})
 	require.NoError(t, err)
-	require.NoError(t, roleSvc.SetUserAssignments(ctx, manager.ID, []models.UserRoleAssignment{
+	require.NoError(t, roleSvc.SetUserAssignments(ctx, manager.ID, []role.UserRoleAssignment{
 		{RoleID: managerRole.ID, EnvironmentID: nil},
 	}))
 	managerPerms, err := roleSvc.ResolvePermissions(ctx, manager)
@@ -293,7 +298,7 @@ func TestUpdateUserAllowsGlobalAdminActorEditingAdmin(t *testing.T) {
 	require.NoError(t, err)
 
 	admin.DisplayName = new("Renamed Admin")
-	actorCtx := context.WithValue(ctx, models.CurrentUserContextKey{}, other)
+	actorCtx := context.WithValue(ctx, common.CurrentUserContextKey{}, other)
 	_, err = userSvc.UpdateUser(actorCtx, admin, otherPerms)
 	require.NoError(t, err)
 }
@@ -307,7 +312,7 @@ func TestUpdateUserAllowsNonAdminActorEditingNonAdmin(t *testing.T) {
 	manager := createTestUser(t, userSvc, "mgr-1", "manager")
 	managerRole, err := roleSvc.CreateRole(ctx, "User Manager", nil, []string{authz.PermUsersUpdate})
 	require.NoError(t, err)
-	require.NoError(t, roleSvc.SetUserAssignments(ctx, manager.ID, []models.UserRoleAssignment{
+	require.NoError(t, roleSvc.SetUserAssignments(ctx, manager.ID, []role.UserRoleAssignment{
 		{RoleID: managerRole.ID, EnvironmentID: nil},
 	}))
 	managerPerms, err := roleSvc.ResolvePermissions(ctx, manager)
@@ -329,7 +334,7 @@ func TestUpdateUserAllowsSelfEditByNonAdmin(t *testing.T) {
 	require.NoError(t, err)
 
 	admin.DisplayName = new("Self Rename")
-	actorCtx := context.WithValue(ctx, models.CurrentUserContextKey{}, admin)
+	actorCtx := context.WithValue(ctx, common.CurrentUserContextKey{}, admin)
 	_, err = userSvc.UpdateUser(actorCtx, admin, adminPerms)
 	require.NoError(t, err)
 }
@@ -345,7 +350,7 @@ func TestDeleteUserRejectsNonAdminActorDeletingAdmin(t *testing.T) {
 	manager := createTestUser(t, userSvc, "mgr-1", "manager")
 	managerRole, err := roleSvc.CreateRole(ctx, "User Manager", nil, []string{authz.PermUsersDelete})
 	require.NoError(t, err)
-	require.NoError(t, roleSvc.SetUserAssignments(ctx, manager.ID, []models.UserRoleAssignment{
+	require.NoError(t, roleSvc.SetUserAssignments(ctx, manager.ID, []role.UserRoleAssignment{
 		{RoleID: managerRole.ID, EnvironmentID: nil},
 	}))
 	managerPerms, err := roleSvc.ResolvePermissions(ctx, manager)
@@ -372,7 +377,7 @@ func TestDeleteUserAllowsGlobalAdminActorDeletingAdmin(t *testing.T) {
 	otherPerms, err := roleSvc.ResolvePermissions(ctx, other)
 	require.NoError(t, err)
 
-	actorCtx := context.WithValue(ctx, models.CurrentUserContextKey{}, other)
+	actorCtx := context.WithValue(ctx, common.CurrentUserContextKey{}, other)
 	require.NoError(t, userSvc.DeleteUser(actorCtx, admin.ID, otherPerms))
 }
 

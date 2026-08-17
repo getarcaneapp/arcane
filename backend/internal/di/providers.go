@@ -20,14 +20,12 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/job"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/lifecycle"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/network"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/notification"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/passkey"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/search"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/swarm"
@@ -147,9 +145,9 @@ func provideSettingsServiceInternal(ctx context.Context, lc fx.Lifecycle, db *da
 	return service, nil
 }
 
-func provideSettingsModuleInternal(service *settings.SettingsService, searchModule *search.Module, environment *environment.EnvironmentService, cfg *config.Config) *settings.Module {
+func provideSettingsModuleInternal(service *settings.SettingsService, environment *environment.EnvironmentService, cfg *config.Config) *settings.Module {
 	return settings.New(service, settings.Dependencies{
-		Search:          searchModule.SettingsService(),
+		Search:          settings.NewSettingsSearchService(),
 		ProxyRemoteJSON: environment.ProxyJSONRequest,
 		Config:          cfg,
 	})
@@ -264,8 +262,8 @@ func provideContainerRegistryServiceInternal(module *registry.Module) *registry.
 	return module.Service()
 }
 
-func provideProjectServiceInternal(db *database.DB, settings *settings.SettingsService, event *event.EventService, image *image.ImageService, docker *docker.DockerClientService, build *build.BuildService, lifecycle *lifecycle.LifecycleService, kv *kv.KVService, registry *registry.ContainerRegistryService, environment *environment.EnvironmentService, cfg *config.Config) *project.ProjectService {
-	return project.NewProjectService(db, settings, event, image, docker, build, lifecycle, registry, cfg).
+func provideProjectServiceInternal(db *database.DB, settings *settings.SettingsService, event *event.EventService, image *image.ImageService, docker *docker.DockerClientService, build *build.BuildService, lifecycleService *project.LifecycleService, kv *kv.KVService, registry *registry.ContainerRegistryService, environment *environment.EnvironmentService, cfg *config.Config) *project.ProjectService {
+	return project.NewProjectService(db, settings, event, image, docker, build, lifecycleService, registry, cfg).
 		WithKVService(kv).
 		WithRegistryCredentialsProvider(environment.GetEnabledRegistryCredentials)
 }

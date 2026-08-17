@@ -1,6 +1,10 @@
 package container
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+
 	"context"
 	"fmt"
 	"io"
@@ -9,12 +13,13 @@ import (
 	"net/netip"
 	"strings"
 
+	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
+
 	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
@@ -606,12 +611,12 @@ func (h *ContainerHandler) GetContainer(ctx context.Context, input *GetContainer
 
 func (h *ContainerHandler) StartContainer(ctx context.Context, input *ContainerActionInput) (*ContainerActionOutput, error) {
 	return h.runContainerActionInternal(ctx, input, containerActionConfigInternal{
-		ActivityType:    models.ActivityTypeContainerStart,
+		ActivityType:    activitytypes.TypeContainerStart,
 		Step:            "Starting container",
 		StartMessage:    "Container start requested",
 		CompleteMessage: "Container started",
 		SuccessMessage:  "Container started successfully",
-		Action: func(runtimeCtx context.Context, containerID string, user models.User) error {
+		Action: func(runtimeCtx context.Context, containerID string, user common.User) error {
 			return h.containerService.StartContainer(runtimeCtx, containerID, user)
 		},
 		Error: func(err error) error {
@@ -622,12 +627,12 @@ func (h *ContainerHandler) StartContainer(ctx context.Context, input *ContainerA
 
 func (h *ContainerHandler) StopContainer(ctx context.Context, input *ContainerActionInput) (*ContainerActionOutput, error) {
 	return h.runContainerActionInternal(ctx, input, containerActionConfigInternal{
-		ActivityType:    models.ActivityTypeContainerStop,
+		ActivityType:    activitytypes.TypeContainerStop,
 		Step:            "Stopping container",
 		StartMessage:    "Container stop requested",
 		CompleteMessage: "Container stopped",
 		SuccessMessage:  "Container stopped successfully",
-		Action: func(runtimeCtx context.Context, containerID string, user models.User) error {
+		Action: func(runtimeCtx context.Context, containerID string, user common.User) error {
 			return h.containerService.StopContainer(runtimeCtx, containerID, user)
 		},
 		Error: func(err error) error {
@@ -638,12 +643,12 @@ func (h *ContainerHandler) StopContainer(ctx context.Context, input *ContainerAc
 
 func (h *ContainerHandler) RestartContainer(ctx context.Context, input *ContainerActionInput) (*ContainerActionOutput, error) {
 	return h.runContainerActionInternal(ctx, input, containerActionConfigInternal{
-		ActivityType:    models.ActivityTypeContainerRestart,
+		ActivityType:    activitytypes.TypeContainerRestart,
 		Step:            "Restarting container",
 		StartMessage:    "Container restart requested",
 		CompleteMessage: "Container restarted",
 		SuccessMessage:  "Container restarted successfully",
-		Action: func(runtimeCtx context.Context, containerID string, user models.User) error {
+		Action: func(runtimeCtx context.Context, containerID string, user common.User) error {
 			return h.containerService.RestartContainer(runtimeCtx, containerID, user)
 		},
 		Error: func(err error) error {
@@ -655,12 +660,12 @@ func (h *ContainerHandler) RestartContainer(ctx context.Context, input *Containe
 func (h *ContainerHandler) KillContainer(ctx context.Context, input *KillContainerInput) (*ContainerActionOutput, error) {
 	signal := strings.TrimSpace(input.Signal)
 	return h.runContainerActionInternal(ctx, &ContainerActionInput{EnvironmentID: input.EnvironmentID, ContainerID: input.ContainerID}, containerActionConfigInternal{
-		ActivityType:    models.ActivityTypeContainerKill,
+		ActivityType:    activitytypes.TypeContainerKill,
 		Step:            "Killing container",
 		StartMessage:    "Container kill requested",
 		CompleteMessage: "Container killed",
 		SuccessMessage:  "Container killed successfully",
-		Action: func(runtimeCtx context.Context, containerID string, user models.User) error {
+		Action: func(runtimeCtx context.Context, containerID string, user common.User) error {
 			return h.containerService.KillContainer(runtimeCtx, containerID, signal, user)
 		},
 		Error: func(err error) error {
@@ -671,12 +676,12 @@ func (h *ContainerHandler) KillContainer(ctx context.Context, input *KillContain
 
 func (h *ContainerHandler) PauseContainer(ctx context.Context, input *ContainerActionInput) (*ContainerActionOutput, error) {
 	return h.runContainerActionInternal(ctx, input, containerActionConfigInternal{
-		ActivityType:    models.ActivityTypeContainerPause,
+		ActivityType:    activitytypes.TypeContainerPause,
 		Step:            "Pausing container",
 		StartMessage:    "Container pause requested",
 		CompleteMessage: "Container paused",
 		SuccessMessage:  "Container paused successfully",
-		Action: func(runtimeCtx context.Context, containerID string, user models.User) error {
+		Action: func(runtimeCtx context.Context, containerID string, user common.User) error {
 			return h.containerService.PauseContainer(runtimeCtx, containerID, user)
 		},
 		Error: func(err error) error {
@@ -687,12 +692,12 @@ func (h *ContainerHandler) PauseContainer(ctx context.Context, input *ContainerA
 
 func (h *ContainerHandler) UnpauseContainer(ctx context.Context, input *ContainerActionInput) (*ContainerActionOutput, error) {
 	return h.runContainerActionInternal(ctx, input, containerActionConfigInternal{
-		ActivityType:    models.ActivityTypeContainerUnpause,
+		ActivityType:    activitytypes.TypeContainerUnpause,
 		Step:            "Unpausing container",
 		StartMessage:    "Container unpause requested",
 		CompleteMessage: "Container unpaused",
 		SuccessMessage:  "Container unpaused successfully",
-		Action: func(runtimeCtx context.Context, containerID string, user models.User) error {
+		Action: func(runtimeCtx context.Context, containerID string, user common.User) error {
 			return h.containerService.UnpauseContainer(runtimeCtx, containerID, user)
 		},
 		Error: func(err error) error {
@@ -702,12 +707,12 @@ func (h *ContainerHandler) UnpauseContainer(ctx context.Context, input *Containe
 }
 
 type containerActionConfigInternal struct {
-	ActivityType    models.ActivityType
+	ActivityType    activitytypes.Type
 	Step            string
 	StartMessage    string
 	CompleteMessage string
 	SuccessMessage  string
-	Action          func(context.Context, string, models.User) error
+	Action          func(context.Context, string, common.User) error
 	Error           func(error) error
 }
 
@@ -718,7 +723,7 @@ func (h *ContainerHandler) runContainerActionInternal(ctx context.Context, input
 	}
 
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	activityID, runtimeCtx := activitylib.StartHandlerActivity(runtimeCtx, h.activityService, input.EnvironmentID, cfg.ActivityType, "container", input.ContainerID, input.ContainerID, user, cfg.Step, cfg.StartMessage, models.JSON{"containerID": input.ContainerID}, false)
+	activityID, runtimeCtx := activitylib.StartHandlerActivity(runtimeCtx, h.activityService, input.EnvironmentID, cfg.ActivityType, "container", input.ContainerID, input.ContainerID, user, cfg.Step, cfg.StartMessage, database.JSON{"containerID": input.ContainerID}, false)
 	if err := cfg.Action(runtimeCtx, input.ContainerID, *user); err != nil {
 		activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, cfg.CompleteMessage, err)
 		return nil, cfg.Error(err)
@@ -763,7 +768,7 @@ func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *Contain
 	}
 
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	activityID, runtimeCtx := activitylib.StartHandlerActivity(runtimeCtx, h.activityService, input.EnvironmentID, models.ActivityTypeContainerRedeploy, "container", input.ContainerID, input.ContainerID, user, "Starting redeploy", "Container redeploy requested", models.JSON{"containerID": input.ContainerID}, true)
+	activityID, runtimeCtx := activitylib.StartHandlerActivity(runtimeCtx, h.activityService, input.EnvironmentID, activitytypes.TypeContainerRedeploy, "container", input.ContainerID, input.ContainerID, user, "Starting redeploy", "Container redeploy requested", database.JSON{"containerID": input.ContainerID}, true)
 	activitylib.AwaitHandlerActivitySlot(runtimeCtx, h.activityService, activityID, input.EnvironmentID)
 	activityWriter := activitylib.NewWriter(runtimeCtx, h.activityService, activityID, io.Discard, "Redeploying container")
 	redeployCtx := context.WithValue(runtimeCtx, dockerutils.ProgressWriterKey{}, activityWriter)
@@ -809,7 +814,7 @@ func (h *ContainerHandler) DeleteContainer(ctx context.Context, input *DeleteCon
 	}
 
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	activityID, runtimeCtx := activitylib.StartHandlerActivity(runtimeCtx, h.activityService, input.EnvironmentID, models.ActivityTypeContainerDelete, "container", input.ContainerID, input.ContainerID, user, "Deleting container", "Container delete requested", models.JSON{"containerID": input.ContainerID, "force": input.Force, "removeVolumes": input.RemoveVolumes}, false)
+	activityID, runtimeCtx := activitylib.StartHandlerActivity(runtimeCtx, h.activityService, input.EnvironmentID, activitytypes.TypeContainerDelete, "container", input.ContainerID, input.ContainerID, user, "Deleting container", "Container delete requested", database.JSON{"containerID": input.ContainerID, "force": input.Force, "removeVolumes": input.RemoveVolumes}, false)
 	if err := h.containerService.DeleteContainer(runtimeCtx, input.ContainerID, input.Force, input.RemoveVolumes, *user); err != nil {
 		activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Container deleted", err)
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to delete container").Error())

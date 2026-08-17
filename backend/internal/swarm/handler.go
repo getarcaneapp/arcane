@@ -1,6 +1,8 @@
 package swarm
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+
 	"context"
 	"log/slog"
 	"maps"
@@ -15,7 +17,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
@@ -1831,7 +1832,7 @@ func (h *SwarmHandler) auditSwarmMutation(ctx context.Context, environmentID, ac
 
 	var userID *string
 	var username *string
-	if user, ok := models.CurrentUserFromContext(ctx); ok {
+	if user, ok := common.CurrentUserFromContext(ctx); ok {
 		userID = new(user.ID)
 		username = new(user.Username)
 	}
@@ -1855,12 +1856,12 @@ func (h *SwarmHandler) auditSwarmMutation(ctx context.Context, environmentID, ac
 	}
 	envPtr := &env
 
-	meta := models.JSON{"action": action}
+	meta := database.JSON{"action": action}
 	maps.Copy(meta, metadata)
 
 	_, err := h.eventService.CreateEvent(ctx, event.CreateEventRequest{
-		Type:          models.EventType("swarm." + action),
-		Severity:      models.EventSeverityInfo,
+		Type:          event.EventType("swarm." + action),
+		Severity:      event.EventSeverityInfo,
 		Title:         "Swarm operation: " + action,
 		Description:   "Swarm operation '" + action + "' completed",
 		ResourceType:  resourceTypePtr,

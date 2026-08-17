@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -12,12 +11,12 @@ import (
 func TestBuildDiscordURL(t *testing.T) {
 	tests := []struct {
 		name   string
-		config models.DiscordConfig
+		config DiscordConfig
 		check  func(string) bool
 	}{
 		{
 			name: "basic webhook configuration",
-			config: models.DiscordConfig{
+			config: DiscordConfig{
 				WebhookID: "123456789012345678",
 				Token:     "abcdefghijklmnopqrstuvwxyz0123456789",
 			},
@@ -29,7 +28,7 @@ func TestBuildDiscordURL(t *testing.T) {
 		},
 		{
 			name: "webhook with custom username",
-			config: models.DiscordConfig{
+			config: DiscordConfig{
 				WebhookID: "987654321098765432",
 				Token:     "token123456789abcdefghij",
 				Username:  "Arcane Bot",
@@ -40,7 +39,7 @@ func TestBuildDiscordURL(t *testing.T) {
 		},
 		{
 			name: "webhook with avatar URL",
-			config: models.DiscordConfig{
+			config: DiscordConfig{
 				WebhookID: "111222333444555666",
 				Token:     "tokenXYZ",
 				AvatarURL: "https://example.com/avatar.png",
@@ -51,7 +50,7 @@ func TestBuildDiscordURL(t *testing.T) {
 		},
 		{
 			name: "webhook with username and avatar",
-			config: models.DiscordConfig{
+			config: DiscordConfig{
 				WebhookID: "123456789012345678",
 				Token:     "abcdeftoken",
 				Username:  "Custom Bot",
@@ -106,7 +105,7 @@ func TestBuildDiscordURL_WebhookIdTokenSplit(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			config := models.DiscordConfig{
+			config := DiscordConfig{
 				WebhookID: tt.webhookID,
 				Token:     tt.token,
 			}
@@ -131,13 +130,13 @@ func TestBuildDiscordURL_WebhookIdTokenSplit(t *testing.T) {
 func TestBuildDiscordURL_OptionalFields(t *testing.T) {
 	tests := []struct {
 		name         string
-		config       models.DiscordConfig
+		config       DiscordConfig
 		wantUsername bool
 		wantAvatar   bool
 	}{
 		{
 			name: "no optional fields",
-			config: models.DiscordConfig{
+			config: DiscordConfig{
 				WebhookID: "123456789012345678",
 				Token:     "token123",
 			},
@@ -146,7 +145,7 @@ func TestBuildDiscordURL_OptionalFields(t *testing.T) {
 		},
 		{
 			name: "only username",
-			config: models.DiscordConfig{
+			config: DiscordConfig{
 				WebhookID: "123456789012345678",
 				Token:     "token123",
 				Username:  "Bot Name",
@@ -156,7 +155,7 @@ func TestBuildDiscordURL_OptionalFields(t *testing.T) {
 		},
 		{
 			name: "only avatar",
-			config: models.DiscordConfig{
+			config: DiscordConfig{
 				WebhookID: "123456789012345678",
 				Token:     "token123",
 				AvatarURL: "https://example.com/avatar.png",
@@ -166,7 +165,7 @@ func TestBuildDiscordURL_OptionalFields(t *testing.T) {
 		},
 		{
 			name: "both username and avatar",
-			config: models.DiscordConfig{
+			config: DiscordConfig{
 				WebhookID: "123456789012345678",
 				Token:     "token123",
 				Username:  "My Bot",
@@ -198,7 +197,7 @@ func TestBuildDiscordURL_OptionalFields(t *testing.T) {
 }
 
 func TestBuildDiscordURL_URLEncoding(t *testing.T) {
-	config := models.DiscordConfig{
+	config := DiscordConfig{
 		WebhookID: "123456789012345678",
 		Token:     "token123",
 		Username:  "Bot with spaces & special chars!",
@@ -216,26 +215,26 @@ func TestBuildDiscordURL_URLEncoding(t *testing.T) {
 func TestSendDiscord_Validation(t *testing.T) {
 	tests := []struct {
 		name    string
-		config  models.DiscordConfig
+		config  DiscordConfig
 		wantErr string
 	}{
 		{
 			name: "missing webhook ID",
-			config: models.DiscordConfig{
+			config: DiscordConfig{
 				Token: "token123",
 			},
 			wantErr: "discord webhook ID is empty",
 		},
 		{
 			name: "missing token",
-			config: models.DiscordConfig{
+			config: DiscordConfig{
 				WebhookID: "123456789012345678",
 			},
 			wantErr: "discord token is empty",
 		},
 		{
 			name: "empty webhook ID",
-			config: models.DiscordConfig{
+			config: DiscordConfig{
 				WebhookID: "",
 				Token:     "token123",
 			},
@@ -243,7 +242,7 @@ func TestSendDiscord_Validation(t *testing.T) {
 		},
 		{
 			name: "empty token",
-			config: models.DiscordConfig{
+			config: DiscordConfig{
 				WebhookID: "123456789012345678",
 				Token:     "",
 			},
@@ -261,7 +260,7 @@ func TestSendDiscord_Validation(t *testing.T) {
 }
 
 func TestSendDiscord_ValidConfiguration(t *testing.T) {
-	config := models.DiscordConfig{
+	config := DiscordConfig{
 		WebhookID: "123456789012345678",
 		Token:     "valid-token-123",
 		Username:  "Test Bot",
@@ -272,7 +271,7 @@ func TestSendDiscord_ValidConfiguration(t *testing.T) {
 }
 
 // Helper function to extract validation logic for testing
-func validateDiscordConfig(config models.DiscordConfig) error {
+func validateDiscordConfig(config DiscordConfig) error {
 	if config.WebhookID == "" {
 		return fmt.Errorf("discord webhook ID is empty")
 	}

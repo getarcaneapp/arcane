@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -12,12 +11,12 @@ import (
 func TestBuildSignalURL(t *testing.T) {
 	tests := []struct {
 		name   string
-		config models.SignalConfig
+		config SignalConfig
 		check  func(string) bool
 	}{
 		{
 			name: "basic auth configuration",
-			config: models.SignalConfig{
+			config: SignalConfig{
 				Host:       "signal.example.com",
 				Port:       8080,
 				User:       "admin",
@@ -33,7 +32,7 @@ func TestBuildSignalURL(t *testing.T) {
 		},
 		{
 			name: "token auth configuration",
-			config: models.SignalConfig{
+			config: SignalConfig{
 				Host:       "signal.example.com",
 				Port:       8080,
 				Token:      "auth-token-123",
@@ -48,7 +47,7 @@ func TestBuildSignalURL(t *testing.T) {
 		},
 		{
 			name: "multiple recipients",
-			config: models.SignalConfig{
+			config: SignalConfig{
 				Host:       "signal.example.com",
 				Port:       8080,
 				Token:      "token123",
@@ -61,7 +60,7 @@ func TestBuildSignalURL(t *testing.T) {
 		},
 		{
 			name: "with DisableTLS",
-			config: models.SignalConfig{
+			config: SignalConfig{
 				Host:       "signal.example.com",
 				Port:       8080,
 				Token:      "token123",
@@ -75,7 +74,7 @@ func TestBuildSignalURL(t *testing.T) {
 		},
 		{
 			name: "custom port",
-			config: models.SignalConfig{
+			config: SignalConfig{
 				Host:       "signal-api.local",
 				Port:       9443,
 				User:       "user",
@@ -102,12 +101,12 @@ func TestBuildSignalURL(t *testing.T) {
 func TestBuildSignalURL_AuthenticationMethods(t *testing.T) {
 	tests := []struct {
 		name     string
-		config   models.SignalConfig
+		config   SignalConfig
 		wantAuth string
 	}{
 		{
 			name: "basic auth only",
-			config: models.SignalConfig{
+			config: SignalConfig{
 				Host:       "signal.example.com",
 				Port:       8080,
 				User:       "testuser",
@@ -119,7 +118,7 @@ func TestBuildSignalURL_AuthenticationMethods(t *testing.T) {
 		},
 		{
 			name: "token auth only",
-			config: models.SignalConfig{
+			config: SignalConfig{
 				Host:       "signal.example.com",
 				Port:       8080,
 				Token:      "my-secure-token",
@@ -130,7 +129,7 @@ func TestBuildSignalURL_AuthenticationMethods(t *testing.T) {
 		},
 		{
 			name: "both basic and token auth provided",
-			config: models.SignalConfig{
+			config: SignalConfig{
 				Host:       "signal.example.com",
 				Port:       8080,
 				User:       "user",
@@ -153,7 +152,7 @@ func TestBuildSignalURL_AuthenticationMethods(t *testing.T) {
 }
 
 func TestBuildSignalURL_PhoneNumberEncoding(t *testing.T) {
-	config := models.SignalConfig{
+	config := SignalConfig{
 		Host:       "signal.example.com",
 		Port:       8080,
 		Token:      "token",
@@ -172,12 +171,12 @@ func TestBuildSignalURL_PhoneNumberEncoding(t *testing.T) {
 func TestSendSignal_Validation(t *testing.T) {
 	tests := []struct {
 		name    string
-		config  models.SignalConfig
+		config  SignalConfig
 		wantErr string
 	}{
 		{
 			name: "missing host",
-			config: models.SignalConfig{
+			config: SignalConfig{
 				Port:       8080,
 				Token:      "token",
 				Source:     "+1234567890",
@@ -187,7 +186,7 @@ func TestSendSignal_Validation(t *testing.T) {
 		},
 		{
 			name: "missing port",
-			config: models.SignalConfig{
+			config: SignalConfig{
 				Host:       "signal.example.com",
 				Token:      "token",
 				Source:     "+1234567890",
@@ -197,7 +196,7 @@ func TestSendSignal_Validation(t *testing.T) {
 		},
 		{
 			name: "missing source",
-			config: models.SignalConfig{
+			config: SignalConfig{
 				Host:       "signal.example.com",
 				Port:       8080,
 				Token:      "token",
@@ -207,7 +206,7 @@ func TestSendSignal_Validation(t *testing.T) {
 		},
 		{
 			name: "missing recipients",
-			config: models.SignalConfig{
+			config: SignalConfig{
 				Host:   "signal.example.com",
 				Port:   8080,
 				Token:  "token",
@@ -217,7 +216,7 @@ func TestSendSignal_Validation(t *testing.T) {
 		},
 		{
 			name: "missing authentication - no user/password/token",
-			config: models.SignalConfig{
+			config: SignalConfig{
 				Host:       "signal.example.com",
 				Port:       8080,
 				Source:     "+1234567890",
@@ -227,7 +226,7 @@ func TestSendSignal_Validation(t *testing.T) {
 		},
 		{
 			name: "incomplete basic auth - user only",
-			config: models.SignalConfig{
+			config: SignalConfig{
 				Host:       "signal.example.com",
 				Port:       8080,
 				User:       "admin",
@@ -238,7 +237,7 @@ func TestSendSignal_Validation(t *testing.T) {
 		},
 		{
 			name: "incomplete basic auth - password only",
-			config: models.SignalConfig{
+			config: SignalConfig{
 				Host:       "signal.example.com",
 				Port:       8080,
 				Password:   "secret",
@@ -249,7 +248,7 @@ func TestSendSignal_Validation(t *testing.T) {
 		},
 		{
 			name: "both auth methods provided",
-			config: models.SignalConfig{
+			config: SignalConfig{
 				Host:       "signal.example.com",
 				Port:       8080,
 				User:       "user",
@@ -276,11 +275,11 @@ func TestSendSignal_Validation(t *testing.T) {
 func TestSendSignal_ValidConfigurations(t *testing.T) {
 	tests := []struct {
 		name   string
-		config models.SignalConfig
+		config SignalConfig
 	}{
 		{
 			name: "valid basic auth",
-			config: models.SignalConfig{
+			config: SignalConfig{
 				Host:       "signal.example.com",
 				Port:       8080,
 				User:       "admin",
@@ -291,7 +290,7 @@ func TestSendSignal_ValidConfigurations(t *testing.T) {
 		},
 		{
 			name: "valid token auth",
-			config: models.SignalConfig{
+			config: SignalConfig{
 				Host:       "signal.example.com",
 				Port:       8080,
 				Token:      "token123",
@@ -310,7 +309,7 @@ func TestSendSignal_ValidConfigurations(t *testing.T) {
 }
 
 // Helper function to extract validation logic for testing
-func validateSignalConfig(config models.SignalConfig) error {
+func validateSignalConfig(config SignalConfig) error {
 	if config.Host == "" {
 		return fmt.Errorf("signal host is empty")
 	}

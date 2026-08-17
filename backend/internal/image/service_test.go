@@ -1,6 +1,12 @@
 package image
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+
 	"context"
 	"encoding/json"
 	"errors"
@@ -25,7 +31,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 	"github.com/getarcaneapp/arcane/types/v2/vulnerability"
@@ -47,10 +52,10 @@ func setupImageProjectTestDBInternal(t *testing.T) *database.DB {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(
-		&models.Project{},
-		&models.SettingVariable{},
-		&models.ImageUpdateRecord{},
-		&models.Event{},
+		&testProjectRow{},
+		&settings.SettingVariable{},
+		&imageupdate.ImageUpdateRecord{},
+		&event.Event{},
 	))
 	return &database.DB{DB: db}
 }
@@ -90,12 +95,12 @@ func TestApplyVulnerabilitySummariesToItemsInternal(t *testing.T) {
 func TestImageService_GetUpdateInfoByImageRefs_MatchesCanonicalAndFamiliarRepos(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&models.ImageUpdateRecord{}))
+	require.NoError(t, db.AutoMigrate(&imageupdate.ImageUpdateRecord{}))
 
 	svc := &ImageService{db: &database.DB{DB: db}}
 	now := time.Now().UTC()
 
-	records := []models.ImageUpdateRecord{
+	records := []imageupdate.ImageUpdateRecord{
 		{
 			ID:             "sha256:nginx-latest",
 			Repository:     "docker.io/library/nginx",
@@ -140,7 +145,7 @@ func setupImageServiceAuthTest(t *testing.T) (*ImageService, *database.DB) {
 
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&models.ContainerRegistry{}, &models.KVEntry{}, &models.Project{}))
+	require.NoError(t, db.AutoMigrate(&registry.ContainerRegistry{}, &kv.KVEntry{}, &testProjectRow{}))
 
 	crypto.InitEncryption(&crypto.Config{
 		Environment:   string(config.AppEnvironmentTest),
@@ -161,7 +166,7 @@ func createTestPullRegistry(t *testing.T, db *database.DB, url, username, token 
 	encryptedToken, err := crypto.Encrypt(token)
 	require.NoError(t, err)
 
-	reg := &models.ContainerRegistry{
+	reg := &registry.ContainerRegistry{
 		URL:          url,
 		Username:     username,
 		Token:        encryptedToken,
@@ -239,7 +244,7 @@ func TestImageServicePullImageRetriesAnonymouslyAfterAuthRejectedInternal(t *tes
 	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
 	imageSvc := NewImageService(db, dockerService, nil, nil, nil, event.NewEventService(db, nil, nil))
 
-	err := imageSvc.PullImage(context.Background(), "registry.example.com/team/app:latest", io.Discard, models.SystemUser, []containerregistry.Credential{
+	err := imageSvc.PullImage(context.Background(), "registry.example.com/team/app:latest", io.Discard, common.SystemUser, []containerregistry.Credential{
 		{URL: "https://registry.example.com", Username: "external-user", Token: "external-token", Enabled: true},
 	})
 	require.NoError(t, err)
@@ -264,7 +269,7 @@ func TestImageServiceTagImageCallsDockerAPIInternal(t *testing.T) {
 
 	imageSvc := NewImageService(db, &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}, nil, nil, nil, event.NewEventService(db, nil, nil))
 
-	err := imageSvc.TagImage(context.Background(), "source:latest", imagetypes.TagRequest{Repository: "registry.example.com/team/app", Tag: "v2"}, models.SystemUser)
+	err := imageSvc.TagImage(context.Background(), "source:latest", imagetypes.TagRequest{Repository: "registry.example.com/team/app", Tag: "v2"}, common.SystemUser)
 	require.NoError(t, err)
 	assert.Equal(t, "registry.example.com/team/app", gotRepo)
 	assert.Equal(t, "v2", gotTag)
@@ -449,3 +454,14 @@ func newImagePullServerWithObserverInternal(t *testing.T, inspectByRef map[strin
 
 	return server
 }
+
+// testProjectRow is a minimal stand-in for project.Project: the project
+// package imports this one, so the in-package test cannot import it back.
+type testProjectRow struct {
+	database.BaseModel
+	Name               string
+	Path               string
+	BuildImageRefsJSON *string `gorm:"column:build_image_refs_json"`
+}
+
+func (testProjectRow) TableName() string { return "projects" }

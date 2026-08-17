@@ -11,7 +11,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/lifecycle"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/network"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/notification"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/oidc"
@@ -73,7 +72,7 @@ var ServiceOptions = fx.Options(
 		provideImageModuleInternal,
 		build.NewBuildService,
 		build.NewBuildWorkspaceService,
-		lifecycle.NewLifecycleService,
+		project.NewLifecycleService,
 		provideProjectServiceInternal,
 		project.New,
 		provideContainerModuleInternal,

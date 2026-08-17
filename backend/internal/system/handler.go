@@ -18,7 +18,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
@@ -139,7 +138,7 @@ type TriggerUpdateAllInput struct {
 }
 
 type TriggerUpdateAllOutput struct {
-	Body base.ApiResponse[models.EnvironmentUpdateJob]
+	Body base.ApiResponse[EnvironmentUpdateJob]
 }
 
 type UpdateAllStatusInput struct {
@@ -147,7 +146,7 @@ type UpdateAllStatusInput struct {
 }
 
 type UpdateAllStatusOutput struct {
-	Body base.ApiResponse[models.EnvironmentUpdateJob]
+	Body base.ApiResponse[EnvironmentUpdateJob]
 }
 
 // RegisterSystem registers system management endpoints using Huma.
@@ -573,7 +572,7 @@ func (h *SystemHandler) TriggerUpdateAll(ctx context.Context, input *TriggerUpda
 	}
 
 	return &TriggerUpdateAllOutput{
-		Body: base.ApiResponse[models.EnvironmentUpdateJob]{
+		Body: base.ApiResponse[EnvironmentUpdateJob]{
 			Success: true,
 			Data:    *job,
 		},
@@ -595,7 +594,7 @@ func (h *SystemHandler) GetUpdateAllStatus(ctx context.Context, input *UpdateAll
 	}
 
 	return &UpdateAllStatusOutput{
-		Body: base.ApiResponse[models.EnvironmentUpdateJob]{
+		Body: base.ApiResponse[EnvironmentUpdateJob]{
 			Success: true,
 			Data:    *job,
 		},

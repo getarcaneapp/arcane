@@ -1,6 +1,14 @@
 package dashboard
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+
 	"context"
 	"encoding/json"
 	"net/http"
@@ -17,7 +25,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
@@ -41,7 +48,7 @@ func setupDashboardServiceTestDB(t *testing.T) (*database.DB, *settings.Settings
 
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&models.ApiKey{}, &models.Environment{}, &models.ImageUpdateRecord{}, &models.Project{}, &models.SettingVariable{}))
+	require.NoError(t, db.AutoMigrate(&apikey.ApiKey{}, &environment.Environment{}, &imageupdate.ImageUpdateRecord{}, &project.Project{}, &settings.SettingVariable{}))
 
 	databaseDB := &database.DB{DB: db}
 	settingsSvc, err := newSettingsServiceForTestInternal(context.Background(), t, databaseDB)
@@ -50,12 +57,12 @@ func setupDashboardServiceTestDB(t *testing.T) (*database.DB, *settings.Settings
 	return databaseDB, settingsSvc
 }
 
-func createDashboardTestAPIKey(t *testing.T, db *database.DB, key models.ApiKey) {
+func createDashboardTestAPIKey(t *testing.T, db *database.DB, key apikey.ApiKey) {
 	t.Helper()
 	require.NoError(t, db.WithContext(context.Background()).Create(&key).Error)
 }
 
-func createDashboardTestImageUpdateRecord(t *testing.T, db *database.DB, record models.ImageUpdateRecord) {
+func createDashboardTestImageUpdateRecord(t *testing.T, db *database.DB, record imageupdate.ImageUpdateRecord) {
 	t.Helper()
 	require.NoError(t, db.WithContext(context.Background()).Create(&record).Error)
 }
@@ -149,14 +156,14 @@ func TestDashboardService_GetSnapshot_ReturnsDashboardSnapshot(t *testing.T) {
 		{ID: "sha256:image-c", RepoTags: []string{"ghcr.io/getarcaneapp/arcane:latest"}, Created: 1730000000, Size: 175},
 	}
 
-	createDashboardTestImageUpdateRecord(t, db, models.ImageUpdateRecord{
+	createDashboardTestImageUpdateRecord(t, db, imageupdate.ImageUpdateRecord{
 		ID:         "sha256:image-b",
 		Repository: "docker.io/repo/worker",
 		Tag:        "latest",
 		HasUpdate:  true,
 	})
 
-	createDashboardTestAPIKey(t, db, models.ApiKey{
+	createDashboardTestAPIKey(t, db, apikey.ApiKey{
 		Name:      "expiring-soon",
 		KeyHash:   "hash-soon",
 		KeyPrefix: "arc_test_snapshot",
@@ -176,12 +183,12 @@ func TestDashboardService_GetSnapshot_ReturnsDashboardSnapshot(t *testing.T) {
 	projectPath := createComposeProjectDirInternal(t, projectsDir, "project-with-update")
 	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services:\n  app:\n    image: repo/worker:latest\n"), 0o644))
 	dirName := "project-with-update"
-	require.NoError(t, db.WithContext(context.Background()).Create(&models.Project{
-		BaseModel: models.BaseModel{ID: "project-with-update"},
+	require.NoError(t, db.WithContext(context.Background()).Create(&project.Project{
+		BaseModel: database.BaseModel{ID: "project-with-update"},
 		Name:      "project-with-update",
 		DirName:   &dirName,
 		Path:      projectPath,
-		Status:    models.ProjectStatusStopped,
+		Status:    project.ProjectStatusStopped,
 	}).Error)
 	projectSvc := project.NewProjectService(db, settingsSvc, nil, image.NewImageService(db, nil, nil, nil, nil, nil), nil, nil, nil, nil, config.Load())
 	svc := NewDashboardService(db, dockerSvc, nil, projectSvc, nil, settingsSvc, nil, nil, nil, volume.NewVolumeService(db, nil, nil, nil, nil, nil))
@@ -234,7 +241,7 @@ func TestDashboardService_GetSnapshot_DebugAllGoodOnlyClearsActionItems(t *testi
 		{ID: "sha256:image-b", RepoTags: []string{"repo/worker:latest"}, Created: 1720000000, Size: 250},
 	}
 
-	createDashboardTestImageUpdateRecord(t, db, models.ImageUpdateRecord{ID: "sha256:image-b", HasUpdate: true})
+	createDashboardTestImageUpdateRecord(t, db, imageupdate.ImageUpdateRecord{ID: "sha256:image-b", HasUpdate: true})
 
 	dockerSvc := newDashboardTestDockerService(t, settingsSvc, containers, images, nil)
 	svc := NewDashboardService(db, dockerSvc, nil, nil, nil, settingsSvc, nil, nil, nil, nil)
@@ -269,15 +276,15 @@ func createComposeProjectDirInternal(t *testing.T, root, name string) string {
 func createTestRemoteEnvironmentInternal(t *testing.T, db *database.DB, environmentID, name, apiURL, token string) {
 	t.Helper()
 	now := time.Now()
-	require.NoError(t, db.Create(&models.Environment{
-		BaseModel: models.BaseModel{
+	require.NoError(t, db.Create(&environment.Environment{
+		BaseModel: database.BaseModel{
 			ID:        environmentID,
 			CreatedAt: now,
 			UpdatedAt: &now,
 		},
 		Name:        name,
 		ApiUrl:      apiURL,
-		Status:      string(models.EnvironmentStatusOnline),
+		Status:      string(environment.EnvironmentStatusOnline),
 		Enabled:     true,
 		AccessToken: &token,
 	}).Error)
@@ -367,8 +374,8 @@ func TestDashboardService_GetSnapshot_CachesFullSnapshotsPerIconCatalog(t *testi
 
 	// A user preferring another catalog must not be served the default-catalog
 	// snapshot from the cache.
-	dashboardIconsUser := &models.User{Preferences: usertypes.Preferences{IconCatalog: new("dashboard-icons")}}
-	userCtx := context.WithValue(context.Background(), models.CurrentUserContextKey{}, dashboardIconsUser)
+	dashboardIconsUser := &common.User{Preferences: usertypes.Preferences{IconCatalog: new("dashboard-icons")}}
+	userCtx := context.WithValue(context.Background(), common.CurrentUserContextKey{}, dashboardIconsUser)
 	userSnapshot, err := svc.GetSnapshot(userCtx, DashboardActionItemsOptions{}, true)
 	require.NoError(t, err)
 	require.NotSame(t, defaultSnapshot, userSnapshot)

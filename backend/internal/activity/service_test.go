@@ -1,6 +1,8 @@
 package activity
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+
 	"context"
 	"testing"
 	"time"
@@ -12,7 +14,6 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
@@ -25,7 +26,7 @@ func setupActivityServiceTestDBInternal(t *testing.T) *database.DB {
 
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&models.Activity{}, &models.ActivityMessage{}))
+	require.NoError(t, db.AutoMigrate(&Activity{}, &ActivityMessage{}))
 	return &database.DB{DB: db}
 }
 
@@ -35,14 +36,14 @@ func TestActivityServiceLifecycleInternal(t *testing.T) {
 	service := NewActivityService(db, nil)
 
 	progress := 5
-	startedBy := &models.User{
-		BaseModel:   models.BaseModel{ID: "user-1"},
+	startedBy := &common.User{
+		BaseModel:   database.BaseModel{ID: "user-1"},
 		Username:    "arcane",
 		DisplayName: new("Arcane Admin"),
 	}
 	created, err := service.StartActivity(ctx, StartActivityRequest{
 		EnvironmentID: "0",
-		Type:          models.ActivityTypeImagePull,
+		Type:          activitytypes.TypeImagePull,
 		ResourceType:  new("image"),
 		ResourceID:    new("img-123"),
 		ResourceName:  new("nginx:latest"),
@@ -63,7 +64,7 @@ func TestActivityServiceLifecycleInternal(t *testing.T) {
 
 	progress = 42
 	message, err := service.AppendMessage(ctx, created.ID, AppendActivityMessageRequest{
-		Level:    models.ActivityMessageLevelInfo,
+		Level:    activitytypes.MessageLevelInfo,
 		Message:  "Downloading layers",
 		Progress: &progress,
 		Step:     "download",
@@ -72,7 +73,7 @@ func TestActivityServiceLifecycleInternal(t *testing.T) {
 	require.NotNil(t, message)
 	require.Equal(t, created.ID, message.ActivityID)
 
-	completed, err := service.CompleteActivity(ctx, created.ID, models.ActivityStatusSuccess, "Pull complete", nil)
+	completed, err := service.CompleteActivity(ctx, created.ID, activitytypes.StatusSuccess, "Pull complete", nil)
 	require.NoError(t, err)
 	require.Equal(t, "success", string(completed.Status))
 	require.NotNil(t, completed.EndedAt)
@@ -105,7 +106,7 @@ func TestActivityServiceStreamFanoutInternal(t *testing.T) {
 
 	created, err := service.StartActivity(ctx, StartActivityRequest{
 		EnvironmentID: "0",
-		Type:          models.ActivityTypeProjectDeploy,
+		Type:          activitytypes.TypeProjectDeploy,
 		LatestMessage: "Deploy queued",
 	})
 	require.NoError(t, err)
@@ -116,7 +117,7 @@ func TestActivityServiceStreamFanoutInternal(t *testing.T) {
 	require.NotNil(t, first.Activity)
 
 	_, err = service.AppendMessage(ctx, created.ID, AppendActivityMessageRequest{
-		Level:   models.ActivityMessageLevelInfo,
+		Level:   activitytypes.MessageLevelInfo,
 		Message: "Deploying services",
 		Step:    "deploy",
 	})
@@ -136,7 +137,7 @@ func TestActivityServiceRetentionCleanupInternal(t *testing.T) {
 
 	created, err := service.StartActivity(ctx, StartActivityRequest{
 		EnvironmentID: "0",
-		Type:          models.ActivityTypeSystemPrune,
+		Type:          activitytypes.TypeSystemPrune,
 		LatestMessage: "Prune started",
 	})
 	require.NoError(t, err)
@@ -144,22 +145,22 @@ func TestActivityServiceRetentionCleanupInternal(t *testing.T) {
 		Message: "Removing unused resources",
 	})
 	require.NoError(t, err)
-	_, err = service.CompleteActivity(ctx, created.ID, models.ActivityStatusSuccess, "Prune complete", nil)
+	_, err = service.CompleteActivity(ctx, created.ID, activitytypes.StatusSuccess, "Prune complete", nil)
 	require.NoError(t, err)
 
 	oldEndedAt := time.Now().Add(-((time.Duration(defaultActivityRetentionDays) * 24 * time.Hour) + time.Hour))
-	require.NoError(t, db.Model(&models.Activity{}).Where("id = ?", created.ID).Update("ended_at", oldEndedAt).Error)
+	require.NoError(t, db.Model(&Activity{}).Where("id = ?", created.ID).Update("ended_at", oldEndedAt).Error)
 
 	deleted, err := service.PruneHistory(ctx, defaultActivityRetentionDays, 0)
 	require.NoError(t, err)
 	require.EqualValues(t, 1, deleted)
 
 	var activityCount int64
-	require.NoError(t, db.Model(&models.Activity{}).Count(&activityCount).Error)
+	require.NoError(t, db.Model(&Activity{}).Count(&activityCount).Error)
 	require.Zero(t, activityCount)
 
 	var messageCount int64
-	require.NoError(t, db.Model(&models.ActivityMessage{}).Count(&messageCount).Error)
+	require.NoError(t, db.Model(&ActivityMessage{}).Count(&messageCount).Error)
 	require.Zero(t, messageCount)
 }
 
@@ -170,22 +171,22 @@ func TestActivityServicePruneHistoryZeroRetentionDisablesAgeCleanupInternal(t *t
 
 	created, err := service.StartActivity(ctx, StartActivityRequest{
 		EnvironmentID: "0",
-		Type:          models.ActivityTypeSystemPrune,
+		Type:          activitytypes.TypeSystemPrune,
 		LatestMessage: "Prune started",
 	})
 	require.NoError(t, err)
-	_, err = service.CompleteActivity(ctx, created.ID, models.ActivityStatusSuccess, "Prune complete", nil)
+	_, err = service.CompleteActivity(ctx, created.ID, activitytypes.StatusSuccess, "Prune complete", nil)
 	require.NoError(t, err)
 
 	oldEndedAt := time.Now().Add(-((time.Duration(defaultActivityRetentionDays) * 24 * time.Hour) + time.Hour))
-	require.NoError(t, db.Model(&models.Activity{}).Where("id = ?", created.ID).Update("ended_at", oldEndedAt).Error)
+	require.NoError(t, db.Model(&Activity{}).Where("id = ?", created.ID).Update("ended_at", oldEndedAt).Error)
 
 	deleted, err := service.PruneHistory(ctx, 0, 0)
 	require.NoError(t, err)
 	require.Zero(t, deleted)
 
 	var activityCount int64
-	require.NoError(t, db.Model(&models.Activity{}).Where("id = ?", created.ID).Count(&activityCount).Error)
+	require.NoError(t, db.Model(&Activity{}).Where("id = ?", created.ID).Count(&activityCount).Error)
 	require.EqualValues(t, 1, activityCount)
 }
 
@@ -211,26 +212,26 @@ func TestActivityServiceDeleteHistoryPreservesActiveActivitiesInternal(t *testin
 	db := setupActivityServiceTestDBInternal(t)
 	service := NewActivityService(db, nil)
 
-	completed, err := service.StartActivity(ctx, StartActivityRequest{EnvironmentID: "0", Type: models.ActivityTypeResourceAction})
+	completed, err := service.StartActivity(ctx, StartActivityRequest{EnvironmentID: "0", Type: activitytypes.TypeResourceAction})
 	require.NoError(t, err)
 	_, err = service.AppendMessage(ctx, completed.ID, AppendActivityMessageRequest{Message: "done"})
 	require.NoError(t, err)
-	_, err = service.CompleteActivity(ctx, completed.ID, models.ActivityStatusSuccess, "complete", nil)
+	_, err = service.CompleteActivity(ctx, completed.ID, activitytypes.StatusSuccess, "complete", nil)
 	require.NoError(t, err)
 
-	running, err := service.StartActivity(ctx, StartActivityRequest{EnvironmentID: "0", Type: models.ActivityTypeResourceAction})
+	running, err := service.StartActivity(ctx, StartActivityRequest{EnvironmentID: "0", Type: activitytypes.TypeResourceAction})
 	require.NoError(t, err)
 
-	remoteCompleted, err := service.StartActivity(ctx, StartActivityRequest{EnvironmentID: "remote-1", Type: models.ActivityTypeResourceAction})
+	remoteCompleted, err := service.StartActivity(ctx, StartActivityRequest{EnvironmentID: "remote-1", Type: activitytypes.TypeResourceAction})
 	require.NoError(t, err)
-	_, err = service.CompleteActivity(ctx, remoteCompleted.ID, models.ActivityStatusFailed, "failed", nil)
+	_, err = service.CompleteActivity(ctx, remoteCompleted.ID, activitytypes.StatusFailed, "failed", nil)
 	require.NoError(t, err)
 
 	deleted, err := service.DeleteHistory(ctx, "0")
 	require.NoError(t, err)
 	require.EqualValues(t, 1, deleted)
 
-	var remaining []models.Activity
+	var remaining []Activity
 	require.NoError(t, db.Order("id").Find(&remaining).Error)
 	require.Len(t, remaining, 2)
 	require.ElementsMatch(t, []string{running.ID, remoteCompleted.ID}, []string{remaining[0].ID, remaining[1].ID})
@@ -241,29 +242,29 @@ func TestActivityServicePruneHistoryByAgeAndCountInternal(t *testing.T) {
 	db := setupActivityServiceTestDBInternal(t)
 	service := NewActivityService(db, nil)
 
-	oldActivity, err := service.StartActivity(ctx, StartActivityRequest{EnvironmentID: "0", Type: models.ActivityTypeResourceAction})
+	oldActivity, err := service.StartActivity(ctx, StartActivityRequest{EnvironmentID: "0", Type: activitytypes.TypeResourceAction})
 	require.NoError(t, err)
-	_, err = service.CompleteActivity(ctx, oldActivity.ID, models.ActivityStatusSuccess, "old", nil)
+	_, err = service.CompleteActivity(ctx, oldActivity.ID, activitytypes.StatusSuccess, "old", nil)
 	require.NoError(t, err)
 	oldTime := time.Now().Add(-48 * time.Hour)
-	require.NoError(t, db.Model(&models.Activity{}).Where("id = ?", oldActivity.ID).Updates(map[string]any{
+	require.NoError(t, db.Model(&Activity{}).Where("id = ?", oldActivity.ID).Updates(map[string]any{
 		"ended_at":   oldTime,
 		"updated_at": oldTime,
 	}).Error)
 
 	for i := range 3 {
-		item, startErr := service.StartActivity(ctx, StartActivityRequest{EnvironmentID: "remote-1", Type: models.ActivityTypeResourceAction})
+		item, startErr := service.StartActivity(ctx, StartActivityRequest{EnvironmentID: "remote-1", Type: activitytypes.TypeResourceAction})
 		require.NoError(t, startErr)
-		_, completeErr := service.CompleteActivity(ctx, item.ID, models.ActivityStatusSuccess, "done", nil)
+		_, completeErr := service.CompleteActivity(ctx, item.ID, activitytypes.StatusSuccess, "done", nil)
 		require.NoError(t, completeErr)
 		stamp := time.Now().Add(time.Duration(i) * time.Minute)
-		require.NoError(t, db.Model(&models.Activity{}).Where("id = ?", item.ID).Updates(map[string]any{
+		require.NoError(t, db.Model(&Activity{}).Where("id = ?", item.ID).Updates(map[string]any{
 			"ended_at":   stamp,
 			"updated_at": stamp,
 		}).Error)
 	}
 
-	running, err := service.StartActivity(ctx, StartActivityRequest{EnvironmentID: "remote-1", Type: models.ActivityTypeResourceAction})
+	running, err := service.StartActivity(ctx, StartActivityRequest{EnvironmentID: "remote-1", Type: activitytypes.TypeResourceAction})
 	require.NoError(t, err)
 
 	deleted, err := service.PruneHistory(ctx, 1, 2)
@@ -271,17 +272,17 @@ func TestActivityServicePruneHistoryByAgeAndCountInternal(t *testing.T) {
 	require.EqualValues(t, 2, deleted)
 
 	var terminalRemoteCount int64
-	require.NoError(t, db.Model(&models.Activity{}).
+	require.NoError(t, db.Model(&Activity{}).
 		Where("environment_id = ? AND status IN ?", "remote-1", terminalActivityStatusesInternal()).
 		Count(&terminalRemoteCount).Error)
 	require.EqualValues(t, 2, terminalRemoteCount)
 
 	var runningCount int64
-	require.NoError(t, db.Model(&models.Activity{}).Where("id = ?", running.ID).Count(&runningCount).Error)
+	require.NoError(t, db.Model(&Activity{}).Where("id = ?", running.ID).Count(&runningCount).Error)
 	require.EqualValues(t, 1, runningCount)
 
 	var oldCount int64
-	require.NoError(t, db.Model(&models.Activity{}).Where("id = ?", oldActivity.ID).Count(&oldCount).Error)
+	require.NoError(t, db.Model(&Activity{}).Where("id = ?", oldActivity.ID).Count(&oldCount).Error)
 	require.Zero(t, oldCount)
 }
 
@@ -328,16 +329,16 @@ func TestActivityServiceListOrderStableUnderProgressUpdatesInternal(t *testing.T
 	db := setupActivityServiceTestDBInternal(t)
 	service := NewActivityService(db, nil)
 
-	older, err := service.StartActivity(ctx, StartActivityRequest{EnvironmentID: "0", Type: models.ActivityTypeImagePull})
+	older, err := service.StartActivity(ctx, StartActivityRequest{EnvironmentID: "0", Type: activitytypes.TypeImagePull})
 	require.NoError(t, err)
-	newer, err := service.StartActivity(ctx, StartActivityRequest{EnvironmentID: "0", Type: models.ActivityTypeImagePull})
+	newer, err := service.StartActivity(ctx, StartActivityRequest{EnvironmentID: "0", Type: activitytypes.TypeImagePull})
 	require.NoError(t, err)
-	require.NoError(t, db.Model(&models.Activity{}).Where("id = ?", older.ID).
+	require.NoError(t, db.Model(&Activity{}).Where("id = ?", older.ID).
 		Update("created_at", time.Now().Add(-time.Minute)).Error)
 
-	terminal, err := service.StartActivity(ctx, StartActivityRequest{EnvironmentID: "0", Type: models.ActivityTypeImagePull})
+	terminal, err := service.StartActivity(ctx, StartActivityRequest{EnvironmentID: "0", Type: activitytypes.TypeImagePull})
 	require.NoError(t, err)
-	_, err = service.CompleteActivity(ctx, terminal.ID, models.ActivityStatusSuccess, "done", nil)
+	_, err = service.CompleteActivity(ctx, terminal.ID, activitytypes.StatusSuccess, "done", nil)
 	require.NoError(t, err)
 
 	listIDs := func() []string {
@@ -367,7 +368,7 @@ func setupQueuedActivityServiceInternal(t *testing.T) (*ActivityService, context
 
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&models.Activity{}, &models.ActivityMessage{}, &models.SettingVariable{}))
+	require.NoError(t, db.AutoMigrate(&Activity{}, &ActivityMessage{}, &settings.SettingVariable{}))
 	wrapped := &database.DB{DB: db}
 
 	// Every extra pooled connection to a :memory: SQLite database is a fresh
@@ -404,11 +405,11 @@ func newSettingsServiceForTestInternal(t testing.TB, ctx context.Context, db *da
 func TestActivityServiceQueuedActivityFlipsToRunningWhenSlotFreesInternal(t *testing.T) {
 	service, ctx := setupQueuedActivityServiceInternal(t)
 
-	first, err := service.StartActivity(ctx, StartActivityRequest{EnvironmentID: "0", Type: models.ActivityTypeImagePull, Queue: true})
+	first, err := service.StartActivity(ctx, StartActivityRequest{EnvironmentID: "0", Type: activitytypes.TypeImagePull, Queue: true})
 	require.NoError(t, err)
 	require.Equal(t, "running", string(first.Status))
 
-	second, err := service.StartActivity(ctx, StartActivityRequest{EnvironmentID: "0", Type: models.ActivityTypeImagePull, Queue: true})
+	second, err := service.StartActivity(ctx, StartActivityRequest{EnvironmentID: "0", Type: activitytypes.TypeImagePull, Queue: true})
 	require.NoError(t, err)
 	require.Equal(t, "queued", string(second.Status))
 
@@ -421,7 +422,7 @@ func TestActivityServiceQueuedActivityFlipsToRunningWhenSlotFreesInternal(t *tes
 	case <-time.After(100 * time.Millisecond):
 	}
 
-	_, err = service.CompleteActivity(ctx, first.ID, models.ActivityStatusSuccess, "done", nil)
+	_, err = service.CompleteActivity(ctx, first.ID, activitytypes.StatusSuccess, "done", nil)
 	require.NoError(t, err)
 
 	select {
@@ -431,18 +432,18 @@ func TestActivityServiceQueuedActivityFlipsToRunningWhenSlotFreesInternal(t *tes
 		require.FailNow(t, "await did not acquire the freed slot")
 	}
 
-	var model models.Activity
+	var model Activity
 	require.NoError(t, service.db.First(&model, "id = ?", second.ID).Error)
-	require.Equal(t, models.ActivityStatusRunning, model.Status)
+	require.Equal(t, activitytypes.StatusRunning, model.Status)
 }
 
 func TestActivityServiceLimitIncreaseKeepsCountingActiveSlotsInternal(t *testing.T) {
 	service, ctx := setupQueuedActivityServiceInternal(t)
 
-	running, err := service.StartActivity(ctx, StartActivityRequest{EnvironmentID: "0", Type: models.ActivityTypeImagePull, Queue: true})
+	running, err := service.StartActivity(ctx, StartActivityRequest{EnvironmentID: "0", Type: activitytypes.TypeImagePull, Queue: true})
 	require.NoError(t, err)
 	require.Equal(t, "running", string(running.Status))
-	waiting, err := service.StartActivity(ctx, StartActivityRequest{EnvironmentID: "0", Type: models.ActivityTypeImagePull, Queue: true})
+	waiting, err := service.StartActivity(ctx, StartActivityRequest{EnvironmentID: "0", Type: activitytypes.TypeImagePull, Queue: true})
 	require.NoError(t, err)
 	require.Equal(t, "queued", string(waiting.Status))
 
@@ -460,7 +461,7 @@ func TestActivityServiceLimitIncreaseKeepsCountingActiveSlotsInternal(t *testing
 		require.FailNow(t, "waiter was not admitted after the limit increase")
 	}
 
-	third, err := service.StartActivity(ctx, StartActivityRequest{EnvironmentID: "0", Type: models.ActivityTypeImagePull, Queue: true})
+	third, err := service.StartActivity(ctx, StartActivityRequest{EnvironmentID: "0", Type: activitytypes.TypeImagePull, Queue: true})
 	require.NoError(t, err)
 	require.Equal(t, "queued", string(third.Status))
 }
@@ -468,9 +469,9 @@ func TestActivityServiceLimitIncreaseKeepsCountingActiveSlotsInternal(t *testing
 func TestActivityServiceCancelWhileQueuedUnblocksAwaitInternal(t *testing.T) {
 	service, ctx := setupQueuedActivityServiceInternal(t)
 
-	_, err := service.StartActivity(ctx, StartActivityRequest{EnvironmentID: "0", Type: models.ActivityTypeImagePull, Queue: true})
+	_, err := service.StartActivity(ctx, StartActivityRequest{EnvironmentID: "0", Type: activitytypes.TypeImagePull, Queue: true})
 	require.NoError(t, err)
-	queued, err := service.StartActivity(ctx, StartActivityRequest{EnvironmentID: "0", Type: models.ActivityTypeImagePull, Queue: true})
+	queued, err := service.StartActivity(ctx, StartActivityRequest{EnvironmentID: "0", Type: activitytypes.TypeImagePull, Queue: true})
 	require.NoError(t, err)
 	require.Equal(t, "queued", string(queued.Status))
 
@@ -490,7 +491,7 @@ func TestActivityServiceCancelWhileQueuedUnblocksAwaitInternal(t *testing.T) {
 
 func TestActivityServiceCompleteActivityRejectsUninitializedServiceInternal(t *testing.T) {
 	service := NewActivityService(nil, nil)
-	_, err := service.CompleteActivity(context.Background(), "any-id", models.ActivityStatusSuccess, "done", nil)
+	_, err := service.CompleteActivity(context.Background(), "any-id", activitytypes.StatusSuccess, "done", nil)
 	require.Error(t, err)
 }
 
@@ -504,7 +505,7 @@ func TestActivityServiceTrackAndRequestCancelInternal(t *testing.T) {
 
 	created, err := service.StartActivity(runtimeCtx, StartActivityRequest{
 		EnvironmentID: "0",
-		Type:          models.ActivityTypeImagePull,
+		Type:          activitytypes.TypeImagePull,
 		LatestMessage: "running",
 	})
 	require.NoError(t, err)
@@ -520,7 +521,7 @@ func TestActivityServiceTrackAndRequestCancelInternal(t *testing.T) {
 
 	// Completion must land even though the work context is cancelled (this is the
 	// path CompleteHandlerActivity takes after re-wrapping the work context).
-	completed, err := service.CompleteActivity(utils.ActivityRuntimeContext(workCtx, nil), created.ID, models.ActivityStatusCancelled, "Cancelled by user", nil)
+	completed, err := service.CompleteActivity(utils.ActivityRuntimeContext(workCtx, nil), created.ID, activitytypes.StatusCancelled, "Cancelled by user", nil)
 	require.NoError(t, err)
 	require.Equal(t, "cancelled", string(completed.Status))
 	require.NotNil(t, completed.EndedAt)
@@ -537,7 +538,7 @@ func TestActivityServiceCancelActivityInternal(t *testing.T) {
 	// An untracked running activity (e.g. after a restart) is finalized directly.
 	created, err := service.StartActivity(ctx, StartActivityRequest{
 		EnvironmentID: "0",
-		Type:          models.ActivityTypeSystemPrune,
+		Type:          activitytypes.TypeSystemPrune,
 		LatestMessage: "running",
 	})
 	require.NoError(t, err)
@@ -563,34 +564,34 @@ func TestActivityServiceFailStaleImageUpdateChecksInternal(t *testing.T) {
 
 	staleCheck, err := service.StartActivity(ctx, StartActivityRequest{
 		EnvironmentID: "0",
-		Type:          models.ActivityTypeImageUpdateCheck,
+		Type:          activitytypes.TypeImageUpdateCheck,
 		LatestMessage: "checking",
 	})
 	require.NoError(t, err)
 	freshCheck, err := service.StartActivity(ctx, StartActivityRequest{
 		EnvironmentID: "0",
-		Type:          models.ActivityTypeImageUpdateCheck,
+		Type:          activitytypes.TypeImageUpdateCheck,
 		LatestMessage: "checking",
 	})
 	require.NoError(t, err)
 	staleOtherType, err := service.StartActivity(ctx, StartActivityRequest{
 		EnvironmentID: "0",
-		Type:          models.ActivityTypeImagePull,
+		Type:          activitytypes.TypeImagePull,
 		LatestMessage: "pulling",
 	})
 	require.NoError(t, err)
 	completedCheck, err := service.StartActivity(ctx, StartActivityRequest{
 		EnvironmentID: "0",
-		Type:          models.ActivityTypeImageUpdateCheck,
+		Type:          activitytypes.TypeImageUpdateCheck,
 		LatestMessage: "checking",
 	})
 	require.NoError(t, err)
-	_, err = service.CompleteActivity(ctx, completedCheck.ID, models.ActivityStatusSuccess, "complete", nil)
+	_, err = service.CompleteActivity(ctx, completedCheck.ID, activitytypes.StatusSuccess, "complete", nil)
 	require.NoError(t, err)
 
 	oldStartedAt := time.Now().Add(-7 * time.Hour)
 	for _, id := range []string{staleCheck.ID, staleOtherType.ID, completedCheck.ID} {
-		require.NoError(t, db.Model(&models.Activity{}).Where("id = ?", id).Updates(map[string]any{
+		require.NoError(t, db.Model(&Activity{}).Where("id = ?", id).Updates(map[string]any{
 			"started_at": oldStartedAt,
 			"updated_at": oldStartedAt,
 		}).Error)
@@ -600,28 +601,28 @@ func TestActivityServiceFailStaleImageUpdateChecksInternal(t *testing.T) {
 	require.NoError(t, err)
 	require.EqualValues(t, 1, failed)
 
-	var stale models.Activity
+	var stale Activity
 	require.NoError(t, db.First(&stale, "id = ?", staleCheck.ID).Error)
-	require.Equal(t, models.ActivityStatusFailed, stale.Status)
+	require.Equal(t, activitytypes.StatusFailed, stale.Status)
 	require.NotNil(t, stale.EndedAt)
 	require.NotNil(t, stale.DurationMs)
 	require.Contains(t, stale.LatestMessage, "stale")
 	require.NotNil(t, stale.Error)
 	require.Contains(t, *stale.Error, "stale")
 
-	var fresh models.Activity
+	var fresh Activity
 	require.NoError(t, db.First(&fresh, "id = ?", freshCheck.ID).Error)
-	require.Equal(t, models.ActivityStatusRunning, fresh.Status)
+	require.Equal(t, activitytypes.StatusRunning, fresh.Status)
 	require.Nil(t, fresh.EndedAt)
 
-	var other models.Activity
+	var other Activity
 	require.NoError(t, db.First(&other, "id = ?", staleOtherType.ID).Error)
-	require.Equal(t, models.ActivityStatusRunning, other.Status)
+	require.Equal(t, activitytypes.StatusRunning, other.Status)
 	require.Nil(t, other.EndedAt)
 
-	var completed models.Activity
+	var completed Activity
 	require.NoError(t, db.First(&completed, "id = ?", completedCheck.ID).Error)
-	require.Equal(t, models.ActivityStatusSuccess, completed.Status)
+	require.Equal(t, activitytypes.StatusSuccess, completed.Status)
 }
 
 func TestActivityServiceFailAbandonedActivitiesInternal(t *testing.T) {
@@ -631,25 +632,25 @@ func TestActivityServiceFailAbandonedActivitiesInternal(t *testing.T) {
 
 	abandoned, err := service.StartActivity(ctx, StartActivityRequest{
 		EnvironmentID: "0",
-		Type:          models.ActivityTypeImageUpdateCheck,
+		Type:          activitytypes.TypeImageUpdateCheck,
 		LatestMessage: "checking",
 	})
 	require.NoError(t, err)
 	tracked, err := service.StartActivity(ctx, StartActivityRequest{
 		EnvironmentID: "0",
-		Type:          models.ActivityTypeAutoUpdate,
+		Type:          activitytypes.TypeAutoUpdate,
 		LatestMessage: "updating",
 	})
 	require.NoError(t, err)
 	fresh, err := service.StartActivity(ctx, StartActivityRequest{
 		EnvironmentID: "0",
-		Type:          models.ActivityTypeImageUpdateCheck,
+		Type:          activitytypes.TypeImageUpdateCheck,
 		LatestMessage: "checking",
 	})
 	require.NoError(t, err)
 
 	backdated := time.Now().Add(-10 * time.Minute)
-	require.NoError(t, db.Model(&models.Activity{}).
+	require.NoError(t, db.Model(&Activity{}).
 		Where("id IN ?", []string{abandoned.ID, tracked.ID}).
 		Update("started_at", backdated).Error)
 	_ = service.Track(ctx, tracked.ID)
@@ -658,19 +659,19 @@ func TestActivityServiceFailAbandonedActivitiesInternal(t *testing.T) {
 	require.NoError(t, err)
 	require.EqualValues(t, 1, swept)
 
-	var abandonedRow models.Activity
+	var abandonedRow Activity
 	require.NoError(t, db.First(&abandonedRow, "id = ?", abandoned.ID).Error)
-	require.Equal(t, models.ActivityStatusFailed, abandonedRow.Status)
+	require.Equal(t, activitytypes.StatusFailed, abandonedRow.Status)
 	require.NotNil(t, abandonedRow.EndedAt)
 	require.Contains(t, abandonedRow.LatestMessage, "worker is no longer running")
 
-	var trackedRow models.Activity
+	var trackedRow Activity
 	require.NoError(t, db.First(&trackedRow, "id = ?", tracked.ID).Error)
-	require.Equal(t, models.ActivityStatusRunning, trackedRow.Status)
+	require.Equal(t, activitytypes.StatusRunning, trackedRow.Status)
 
-	var freshRow models.Activity
+	var freshRow Activity
 	require.NoError(t, db.First(&freshRow, "id = ?", fresh.ID).Error)
-	require.Equal(t, models.ActivityStatusRunning, freshRow.Status)
+	require.Equal(t, activitytypes.StatusRunning, freshRow.Status)
 }
 
 func TestActivityServiceResolveStaleAutoUpdateActivitiesInternal(t *testing.T) {
@@ -680,22 +681,22 @@ func TestActivityServiceResolveStaleAutoUpdateActivitiesInternal(t *testing.T) {
 
 	selfUpdateRun, err := service.StartActivity(ctx, StartActivityRequest{
 		EnvironmentID: "0",
-		Type:          models.ActivityTypeAutoUpdate,
+		Type:          activitytypes.TypeAutoUpdate,
 		LatestMessage: "updating",
-		Metadata:      models.JSON{"dryRun": false},
+		Metadata:      database.JSON{"dryRun": false},
 	})
 	require.NoError(t, err)
-	require.NoError(t, service.PatchActivityMetadata(ctx, selfUpdateRun.ID, models.JSON{"selfUpdateTriggered": true}))
+	require.NoError(t, service.PatchActivityMetadata(ctx, selfUpdateRun.ID, database.JSON{"selfUpdateTriggered": true}))
 
 	interruptedRun, err := service.StartActivity(ctx, StartActivityRequest{
 		EnvironmentID: "0",
-		Type:          models.ActivityTypeAutoUpdate,
+		Type:          activitytypes.TypeAutoUpdate,
 		LatestMessage: "updating",
 	})
 	require.NoError(t, err)
 	otherType, err := service.StartActivity(ctx, StartActivityRequest{
 		EnvironmentID: "0",
-		Type:          models.ActivityTypeImagePull,
+		Type:          activitytypes.TypeImagePull,
 		LatestMessage: "pulling",
 	})
 	require.NoError(t, err)
@@ -704,21 +705,21 @@ func TestActivityServiceResolveStaleAutoUpdateActivitiesInternal(t *testing.T) {
 	require.NoError(t, err)
 	require.EqualValues(t, 2, resolved)
 
-	var selfUpdated models.Activity
+	var selfUpdated Activity
 	require.NoError(t, db.First(&selfUpdated, "id = ?", selfUpdateRun.ID).Error)
-	require.Equal(t, models.ActivityStatusSuccess, selfUpdated.Status)
+	require.Equal(t, activitytypes.StatusSuccess, selfUpdated.Status)
 	require.NotNil(t, selfUpdated.EndedAt)
 	require.Contains(t, selfUpdated.LatestMessage, "restarted with the updated image")
 	require.Equal(t, false, selfUpdated.Metadata["dryRun"])
 
-	var interrupted models.Activity
+	var interrupted Activity
 	require.NoError(t, db.First(&interrupted, "id = ?", interruptedRun.ID).Error)
-	require.Equal(t, models.ActivityStatusFailed, interrupted.Status)
+	require.Equal(t, activitytypes.StatusFailed, interrupted.Status)
 	require.Contains(t, interrupted.LatestMessage, "interrupted")
 
-	var other models.Activity
+	var other Activity
 	require.NoError(t, db.First(&other, "id = ?", otherType.ID).Error)
-	require.Equal(t, models.ActivityStatusRunning, other.Status)
+	require.Equal(t, activitytypes.StatusRunning, other.Status)
 }
 
 func receiveActivityEventInternal(t *testing.T, events <-chan activitytypes.StreamEvent) activitytypes.StreamEvent {
@@ -743,7 +744,7 @@ func TestActivityServiceAppendMessagesBatchInternal(t *testing.T) {
 
 	created, err := service.StartActivity(ctx, StartActivityRequest{
 		EnvironmentID: "0",
-		Type:          models.ActivityTypeImagePull,
+		Type:          activitytypes.TypeImagePull,
 		Step:          "queued",
 		LatestMessage: "Pull queued",
 	})
@@ -792,7 +793,7 @@ func TestActivityServiceDropsStaleSnapshotAfterTerminalPublishInternal(t *testin
 
 	created, err := service.StartActivity(ctx, StartActivityRequest{
 		EnvironmentID: "0",
-		Type:          models.ActivityTypeImagePull,
+		Type:          activitytypes.TypeImagePull,
 		LatestMessage: "Pull queued",
 	})
 	require.NoError(t, err)
@@ -801,7 +802,7 @@ func TestActivityServiceDropsStaleSnapshotAfterTerminalPublishInternal(t *testin
 	events, _, unsubscribe := service.Subscribe("0")
 	defer unsubscribe()
 
-	completed, err := service.CompleteActivity(ctx, created.ID, models.ActivityStatusSuccess, "", nil)
+	completed, err := service.CompleteActivity(ctx, created.ID, activitytypes.StatusSuccess, "", nil)
 	require.NoError(t, err)
 	require.Equal(t, activitytypes.StatusSuccess, completed.Status)
 

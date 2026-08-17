@@ -11,7 +11,6 @@ import (
 	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/moby/moby/client"
@@ -22,7 +21,7 @@ import (
 // projectCleanupDecision records a project the reconcile pass intends to delete,
 // alongside the reason logged when the deletion is carried out.
 type projectCleanupDecision struct {
-	project models.Project
+	project Project
 	reason  string
 }
 
@@ -33,7 +32,7 @@ type composeSyncMetadataInternal struct {
 	explicitProjectName bool
 }
 
-func (s *ProjectService) refreshProjectImageRefsInternal(ctx context.Context, proj *models.Project) {
+func (s *ProjectService) refreshProjectImageRefsInternal(ctx context.Context, proj *Project) {
 	if proj == nil || proj.ID == "" {
 		return
 	}
@@ -42,7 +41,7 @@ func (s *ProjectService) refreshProjectImageRefsInternal(ctx context.Context, pr
 	refs, buildRefs, err := s.getProjectImageRefsFromComposeInternal(ctx, *proj, nil)
 	if err != nil {
 		if dbErr := s.db.WithContext(ctx).
-			Model(&models.Project{}).
+			Model(&Project{}).
 			Where("id = ?", proj.ID).
 			Updates(map[string]any{
 				"image_refs_json":       "",
@@ -61,7 +60,7 @@ func (s *ProjectService) refreshProjectImageRefsInternal(ctx context.Context, pr
 		buildImageRefsJSON = "[]"
 	}
 	if err := s.db.WithContext(ctx).
-		Model(&models.Project{}).
+		Model(&Project{}).
 		Where("id = ?", proj.ID).
 		Updates(map[string]any{
 			"image_refs_json":       imageRefsJSON,
@@ -98,7 +97,7 @@ func (s *ProjectService) BackfillProjectImageRefs(ctx context.Context) (int, err
 		return 0, nil
 	}
 
-	var projectsList []models.Project
+	var projectsList []Project
 	if err := s.db.WithContext(ctx).
 		Where("build_image_refs_json IS NULL").
 		Find(&projectsList).Error; err != nil {
@@ -113,14 +112,14 @@ func (s *ProjectService) BackfillProjectImageRefs(ctx context.Context) (int, err
 	return len(projectsList), nil
 }
 
-func (s *ProjectService) resolveProjectsByChangedPathsInternal(ctx context.Context, paths []string) ([]models.Project, error) {
-	var projectsList []models.Project
+func (s *ProjectService) resolveProjectsByChangedPathsInternal(ctx context.Context, paths []string) ([]Project, error) {
+	var projectsList []Project
 	if err := s.db.WithContext(ctx).Find(&projectsList).Error; err != nil {
 		return nil, errors.WrapIf(err, "list projects for changed paths")
 	}
 
 	seen := make(map[string]struct{})
-	affected := make([]models.Project, 0)
+	affected := make([]Project, 0)
 	for _, changedPath := range paths {
 		cleanChangedPath := filepath.Clean(changedPath)
 		for _, proj := range projectsList {
@@ -183,7 +182,7 @@ func (s *ProjectService) SyncProjectsFromFileSystem(ctx context.Context) error {
 }
 
 func (s *ProjectService) upsertProjectForDir(ctx context.Context, dirName, dirPath string) error {
-	var existing models.Project
+	var existing Project
 	err := s.db.WithContext(ctx).
 		Where("path = ?", dirPath).
 		First(&existing).Error
@@ -193,11 +192,11 @@ func (s *ProjectService) upsertProjectForDir(ctx context.Context, dirName, dirPa
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		// Create a minimal project entry
 		reason := "Project discovered from filesystem, status pending Docker service query"
-		proj := &models.Project{
+		proj := &Project{
 			Name:               composeMetadata.resolvedProjectName,
 			DirName:            new(dirName),
 			Path:               dirPath,
-			Status:             models.ProjectStatusUnknown,
+			Status:             ProjectStatusUnknown,
 			StatusReason:       new(reason),
 			ServiceCount:       composeMetadata.serviceCount,
 			RunningCount:       0,
@@ -250,7 +249,7 @@ func (s *ProjectService) upsertProjectForDir(ctx context.Context, dirName, dirPa
 
 	updates["updated_at"] = time.Now()
 	if uerr := s.db.WithContext(ctx).
-		Model(&models.Project{}).
+		Model(&Project{}).
 		Where("id = ?", existing.ID).
 		Updates(updates).Error; uerr != nil {
 		return errors.WrapIff(uerr, "update project %s failed", existing.ID)
@@ -268,7 +267,7 @@ func (s *ProjectService) warnDuplicateComposeNameForPathInternal(ctx context.Con
 
 	var count int64
 	if err := s.db.WithContext(ctx).
-		Model(&models.Project{}).
+		Model(&Project{}).
 		Where("name = ? AND path <> ? AND id <> ?", composeProjectName, dirPath, projectID).
 		Count(&count).Error; err != nil {
 		slog.WarnContext(ctx, "failed to check duplicate compose project names during project sync", "composeProjectName", composeProjectName, "path", dirPath, "error", err)
@@ -280,7 +279,7 @@ func (s *ProjectService) warnDuplicateComposeNameForPathInternal(ctx context.Con
 }
 
 func (s *ProjectService) cleanupDBProjectsInternal(ctx context.Context, seen map[string]struct{}, followProjectSymlinks bool, projectsDir string, maxDepth int) error {
-	var all []models.Project
+	var all []Project
 	if err := s.db.WithContext(ctx).Find(&all).Error; err != nil {
 		return errors.WrapIf(err, "list projects for cleanup failed")
 	}
@@ -350,7 +349,7 @@ func cleanupWouldMassWipeInternal(ctx context.Context, candidates, deleteCount i
 	return true
 }
 
-func skipProjectCleanupInternal(p models.Project, seen map[string]struct{}) bool {
+func skipProjectCleanupInternal(p Project, seen map[string]struct{}) bool {
 	// Skip paths seen in this pass.
 	if _, ok := seen[p.Path]; ok {
 		return true
@@ -367,7 +366,7 @@ func skipProjectCleanupInternal(p models.Project, seen map[string]struct{}) bool
 // sync-stage/backup). Such rows are never real user projects — a crash or restart
 // mid-operation can leak the scratch dir, which the filesystem discovery then imports.
 // They are force-removed during cleanup regardless of whether the dir still exists.
-func isInternalScratchProjectInternal(p models.Project) bool {
+func isInternalScratchProjectInternal(p Project) bool {
 	if projects.IsInternalScratchDirName(p.Name) || projects.IsInternalScratchDirName(filepath.Base(p.Path)) {
 		return true
 	}
@@ -378,7 +377,7 @@ func isInternalScratchProjectInternal(p models.Project) bool {
 // the current filesystem pass should be pruned. It performs only read-only checks
 // (warning in place for the "keep" cases); the actual deletion is deferred to the
 // caller so the mass-wipe guard can veto an entire suspicious pass.
-func (s *ProjectService) evaluateProjectCleanupInternal(ctx context.Context, p models.Project, followProjectSymlinks bool, projectsDir string, maxDepth int) mo.Option[projectCleanupDecision] {
+func (s *ProjectService) evaluateProjectCleanupInternal(ctx context.Context, p Project, followProjectSymlinks bool, projectsDir string, maxDepth int) mo.Option[projectCleanupDecision] {
 	if s.projectExceedsScanDepthInternal(p, projectsDir, maxDepth) {
 		return mo.Some(projectCleanupDecision{project: p, reason: "removed project: directory is beyond the configured scan depth"})
 	}
@@ -394,7 +393,7 @@ func (s *ProjectService) evaluateProjectCleanupInternal(ctx context.Context, p m
 	return s.evaluateProjectComposeFileInternal(ctx, p)
 }
 
-func (s *ProjectService) projectExceedsScanDepthInternal(p models.Project, projectsDir string, maxDepth int) bool {
+func (s *ProjectService) projectExceedsScanDepthInternal(p Project, projectsDir string, maxDepth int) bool {
 	// Remove projects that still exist on disk but now fall outside the configured
 	// scan depth (e.g. after PROJECT_SCAN_MAX_DEPTH was lowered). They are no
 	// longer discovered, so they must not linger in the list. Projects at the
@@ -408,7 +407,7 @@ func (s *ProjectService) projectExceedsScanDepthInternal(p models.Project, proje
 	return rel != "" && strings.Count(rel, "/")+1 > maxDepth
 }
 
-func evaluateProjectPathErrorInternal(ctx context.Context, p models.Project, err error) mo.Option[projectCleanupDecision] {
+func evaluateProjectPathErrorInternal(ctx context.Context, p Project, err error) mo.Option[projectCleanupDecision] {
 	if os.IsNotExist(err) {
 		return mo.Some(projectCleanupDecision{project: p, reason: "removed project: directory no longer exists"})
 	}
@@ -417,7 +416,7 @@ func evaluateProjectPathErrorInternal(ctx context.Context, p models.Project, err
 	return mo.None[projectCleanupDecision]()
 }
 
-func (s *ProjectService) evaluateProjectComposeFileInternal(ctx context.Context, p models.Project) mo.Option[projectCleanupDecision] {
+func (s *ProjectService) evaluateProjectComposeFileInternal(ctx context.Context, p Project) mo.Option[projectCleanupDecision] {
 	_, err := s.ResolveProjectComposeFile(ctx, &p)
 	if err == nil {
 		return mo.None[projectCleanupDecision]()
@@ -443,7 +442,7 @@ func (s *ProjectService) evaluateProjectComposeFileInternal(ctx context.Context,
 // stale during the filesystem reconcile. Every removal is logged (WARN on
 // success, ERROR on failure) so this destructive operation always leaves an
 // audit trail — previously successful deletions were silent.
-func (s *ProjectService) deleteProjectDuringCleanupInternal(ctx context.Context, p models.Project, reason string, attrs ...any) {
+func (s *ProjectService) deleteProjectDuringCleanupInternal(ctx context.Context, p Project, reason string, attrs ...any) {
 	logAttrs := make([]any, 0, 6+len(attrs))
 	logAttrs = append(logAttrs, "projectID", p.ID, "name", p.Name, "path", p.Path)
 	logAttrs = append(logAttrs, attrs...)

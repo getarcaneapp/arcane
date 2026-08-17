@@ -1,0 +1,31 @@
+package volume
+
+import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+
+	"time"
+
+	"github.com/getarcaneapp/arcane/types/v2/volume"
+)
+
+type VolumeBackup struct {
+	database.BaseModel
+
+	VolumeName string    `json:"volumeName" gorm:"column:volume_name;index"`
+	Size       int64     `json:"size" gorm:"column:size"`
+	CreatedAt  time.Time `json:"createdAt" gorm:"column:created_at"`
+	ActivityID *string   `json:"activityId,omitempty" gorm:"-"`
+}
+
+func (*VolumeBackup) TableName() string {
+	return "volume_backups"
+}
+
+func (b *VolumeBackup) ToDTO() volume.BackupEntry {
+	return volume.BackupEntry{
+		ID:         b.ID,
+		VolumeName: b.VolumeName,
+		Size:       b.Size,
+		CreatedAt:  b.CreatedAt.Format(time.RFC3339),
+	}
+}

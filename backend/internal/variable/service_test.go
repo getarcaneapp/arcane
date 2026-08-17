@@ -20,7 +20,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
 	envtypes "github.com/getarcaneapp/arcane/types/v2/env"
@@ -58,10 +57,10 @@ func setupVariableServiceTest(t *testing.T) (*VariableService, *database.DB, str
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(
-		&models.GlobalVariable{},
-		&models.Environment{},
-		&models.KVEntry{},
-		&models.SettingVariable{},
+		&GlobalVariable{},
+		&environment.Environment{},
+		&kv.KVEntry{},
+		&settings.SettingVariable{},
 	))
 
 	sqlDB, err := db.DB()
@@ -86,8 +85,8 @@ func setupVariableServiceTest(t *testing.T) (*VariableService, *database.DB, str
 
 func createVariableTestEnvironment(t *testing.T, db *database.DB, id string) {
 	t.Helper()
-	require.NoError(t, db.Create(&models.Environment{
-		BaseModel: models.BaseModel{ID: id},
+	require.NoError(t, db.Create(&environment.Environment{
+		BaseModel: database.BaseModel{ID: id},
 		Name:      "env-" + id,
 		ApiUrl:    "http://env-" + id,
 		Status:    "online",
@@ -108,7 +107,7 @@ func TestCreateVariable_SecretEncryptedAtRestAndRedactedOnList(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, created.Value, "mutation response must not echo the secret value")
 
-	var stored models.GlobalVariable
+	var stored GlobalVariable
 	require.NoError(t, db.First(&stored, "id = ?", created.ID).Error)
 	require.NotEqual(t, "super-secret", stored.Value, "secret must not be stored as plaintext")
 	decrypted, err := crypto.Decrypt(stored.Value)
@@ -127,7 +126,7 @@ func TestUpdateVariable_OmittedSecretValuePreservesCiphertextAndRedactsResponse(
 	ctx := context.Background()
 	created := createMaterializedSecretVariableInternal(t, service, "API_TOKEN", "super-secret")
 
-	var before models.GlobalVariable
+	var before GlobalVariable
 	require.NoError(t, db.WithContext(ctx).First(&before, "id = ?", created.ID).Error)
 	renamedKey := "RENAMED_API_TOKEN"
 	updated, err := service.UpdateVariable(ctx, created.ID, envtypes.UpdateGlobalVariableRequest{Key: &renamedKey})
@@ -135,7 +134,7 @@ func TestUpdateVariable_OmittedSecretValuePreservesCiphertextAndRedactsResponse(
 	require.True(t, updated.IsSecret)
 	require.Empty(t, updated.Value)
 
-	var after models.GlobalVariable
+	var after GlobalVariable
 	require.NoError(t, db.WithContext(ctx).First(&after, "id = ?", created.ID).Error)
 	require.Equal(t, before.Value, after.Value, "omitting value must preserve the stored ciphertext")
 	decrypted, err := crypto.Decrypt(after.Value)
@@ -167,7 +166,7 @@ func TestUpdateVariable_SecretToPlainRequiresReplacementValue(t *testing.T) {
 	require.False(t, updated.IsSecret)
 	require.Equal(t, replacement, updated.Value)
 
-	var stored models.GlobalVariable
+	var stored GlobalVariable
 	require.NoError(t, db.WithContext(ctx).First(&stored, "id = ?", created.ID).Error)
 	require.False(t, stored.IsSecret)
 	require.Equal(t, replacement, stored.Value)
@@ -280,11 +279,11 @@ func TestSyncEnvironment_DirectMaterializesSecretsThroughAgentRoute(t *testing.T
 	}))
 	defer server.Close()
 
-	require.NoError(t, db.Create(&models.Environment{
-		BaseModel:   models.BaseModel{ID: "env-direct"},
+	require.NoError(t, db.Create(&environment.Environment{
+		BaseModel:   database.BaseModel{ID: "env-direct"},
 		Name:        "Direct",
 		ApiUrl:      server.URL,
-		Status:      string(models.EnvironmentStatusOnline),
+		Status:      string(environment.EnvironmentStatusOnline),
 		Enabled:     true,
 		AccessToken: &token,
 	}).Error)
@@ -303,11 +302,11 @@ func TestSyncEnvironment_DirectMaterializesSecretsThroughAgentRoute(t *testing.T
 func TestSyncEnvironment_EdgeMaterializesSecretsThroughAgentRoute(t *testing.T) {
 	service, db, _ := setupVariableServiceTest(t)
 	token := "edge-agent-token"
-	require.NoError(t, db.Create(&models.Environment{
-		BaseModel:   models.BaseModel{ID: "env-edge"},
+	require.NoError(t, db.Create(&environment.Environment{
+		BaseModel:   database.BaseModel{ID: "env-edge"},
 		Name:        "Edge",
 		ApiUrl:      "http://edge.invalid",
-		Status:      string(models.EnvironmentStatusOnline),
+		Status:      string(environment.EnvironmentStatusOnline),
 		Enabled:     true,
 		IsEdge:      true,
 		AccessToken: &token,

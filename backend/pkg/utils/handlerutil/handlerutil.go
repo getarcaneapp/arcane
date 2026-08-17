@@ -1,6 +1,8 @@
 package handlerutil
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+
 	"context"
 	"encoding/json/v2"
 	"fmt"
@@ -10,7 +12,6 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
 	workspacepkg "github.com/getarcaneapp/arcane/backend/v2/pkg/workspace"
@@ -69,8 +70,8 @@ func PaginationResponse(p pagination.Response) base.PaginationResponse {
 }
 
 // RequireUser returns the authenticated user from the request context or a 401 error.
-func RequireUser(ctx context.Context) (*models.User, error) {
-	user, exists := models.CurrentUserFromContext(ctx)
+func RequireUser(ctx context.Context) (*common.User, error) {
+	user, exists := common.CurrentUserFromContext(ctx)
 	if !exists || user == nil {
 		return nil, huma.Error401Unauthorized("Not authenticated")
 	}
@@ -151,9 +152,9 @@ func Operation(operationID, method, path, summary, description string, tags ...s
 	}
 }
 
-func CurrentActor(ctx context.Context) models.User {
-	actor := models.User{}
-	if currentUser, exists := models.CurrentUserFromContext(ctx); exists && currentUser != nil {
+func CurrentActor(ctx context.Context) common.User {
+	actor := common.User{}
+	if currentUser, exists := common.CurrentUserFromContext(ctx); exists && currentUser != nil {
 		actor = *currentUser
 	}
 	return actor

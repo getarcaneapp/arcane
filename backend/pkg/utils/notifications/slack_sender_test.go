@@ -3,7 +3,6 @@ package notifications
 import (
 	"testing"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -11,13 +10,13 @@ import (
 func TestBuildSlackURL(t *testing.T) {
 	tests := []struct {
 		name    string
-		config  models.SlackConfig
+		config  SlackConfig
 		wantURL string
 		wantErr string
 	}{
 		{
 			name: "basic config with bot token and channel",
-			config: models.SlackConfig{
+			config: SlackConfig{
 				Token:   "xoxb-123456789012-123456789012-abcdefghijklmnopqrstuvwx",
 				Channel: "general",
 			},
@@ -25,7 +24,7 @@ func TestBuildSlackURL(t *testing.T) {
 		},
 		{
 			name: "config with user token",
-			config: models.SlackConfig{
+			config: SlackConfig{
 				Token:   "xoxp-123456789012-123456789012-abcdefghijklmnopqrstuvwx",
 				Channel: "alerts",
 			},
@@ -33,7 +32,7 @@ func TestBuildSlackURL(t *testing.T) {
 		},
 		{
 			name: "config with all optional fields",
-			config: models.SlackConfig{
+			config: SlackConfig{
 				Token:    "xoxb-123456789012-123456789012-abcdefghijklmnopqrstuvwx",
 				Channel:  "notifications",
 				BotName:  "Arcane Bot",
@@ -46,14 +45,14 @@ func TestBuildSlackURL(t *testing.T) {
 		},
 		{
 			name: "empty token",
-			config: models.SlackConfig{
+			config: SlackConfig{
 				Channel: "general",
 			},
 			wantErr: "slack token is required",
 		},
 		{
 			name: "invalid token format",
-			config: models.SlackConfig{
+			config: SlackConfig{
 				Token:   "invalid-token",
 				Channel: "general",
 			},
@@ -61,7 +60,7 @@ func TestBuildSlackURL(t *testing.T) {
 		},
 		{
 			name: "token without prefix",
-			config: models.SlackConfig{
+			config: SlackConfig{
 				Token:   "1234-5678-abcd",
 				Channel: "general",
 			},
@@ -69,7 +68,7 @@ func TestBuildSlackURL(t *testing.T) {
 		},
 		{
 			name: "short invalid token",
-			config: models.SlackConfig{
+			config: SlackConfig{
 				Token:   "xoxb-1234-5678-abcd",
 				Channel: "general",
 			},
@@ -133,7 +132,7 @@ func TestBuildSlackURL_TokenParsing(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			config := models.SlackConfig{
+			config := SlackConfig{
 				Token:   tt.token,
 				Channel: "test",
 			}

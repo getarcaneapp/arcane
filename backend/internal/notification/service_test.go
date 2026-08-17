@@ -1,6 +1,8 @@
 package notification
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -23,7 +25,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/notifications"
 	"github.com/getarcaneapp/arcane/types/v2/imageupdate"
 	notificationdto "github.com/getarcaneapp/arcane/types/v2/notification"
@@ -36,7 +37,7 @@ func setupNotificationTestDB(t *testing.T) *database.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&models.NotificationSettings{}, &models.SettingVariable{}, &models.Environment{}, &models.Event{}))
+	require.NoError(t, db.AutoMigrate(&NotificationSettings{}, &settings.SettingVariable{}, &environment.Environment{}, &event.Event{}))
 
 	// Initialize crypto for tests (requires 32+ byte key)
 	testCfg := &config.Config{
@@ -99,12 +100,12 @@ func TestNotificationService_ResolveNotificationTargetInternal_UsesEnvironmentRe
 	require.Equal(t, "Local Docker", target.EnvironmentName)
 
 	now := time.Now()
-	require.NoError(t, db.WithContext(ctx).Create(&models.Environment{
-		BaseModel: models.BaseModel{ID: "env-remote", CreatedAt: now, UpdatedAt: &now},
+	require.NoError(t, db.WithContext(ctx).Create(&environment.Environment{
+		BaseModel: database.BaseModel{ID: "env-remote", CreatedAt: now, UpdatedAt: &now},
 		Name:      "Remote Alpha",
 		ApiUrl:    "http://remote.example",
 		Enabled:   true,
-		Status:    string(models.EnvironmentStatusOnline),
+		Status:    string(environment.EnvironmentStatusOnline),
 	}).Error)
 
 	target, err = svc.resolveNotificationTargetInternal(ctx, "env-remote")
@@ -119,12 +120,12 @@ func TestNotificationService_ResolveNotificationTargetForAccessTokenInternal_Use
 
 	token := "remote-token"
 	now := time.Now()
-	require.NoError(t, db.WithContext(ctx).Create(&models.Environment{
-		BaseModel:   models.BaseModel{ID: "env-remote", CreatedAt: now, UpdatedAt: &now},
+	require.NoError(t, db.WithContext(ctx).Create(&environment.Environment{
+		BaseModel:   database.BaseModel{ID: "env-remote", CreatedAt: now, UpdatedAt: &now},
 		Name:        "Remote Edge",
 		ApiUrl:      "http://remote.example",
 		Enabled:     true,
-		Status:      string(models.EnvironmentStatusOnline),
+		Status:      string(environment.EnvironmentStatusOnline),
 		AccessToken: &token,
 	}).Error)
 
@@ -156,12 +157,12 @@ func TestNotificationService_DispatchNotification_UnsupportedKindReturnsSentinel
 
 	token := "remote-token"
 	now := time.Now()
-	require.NoError(t, db.WithContext(ctx).Create(&models.Environment{
-		BaseModel:   models.BaseModel{ID: "env-remote", CreatedAt: now, UpdatedAt: &now},
+	require.NoError(t, db.WithContext(ctx).Create(&environment.Environment{
+		BaseModel:   database.BaseModel{ID: "env-remote", CreatedAt: now, UpdatedAt: &now},
 		Name:        "Remote Edge",
 		ApiUrl:      "http://remote.example",
 		Enabled:     true,
-		Status:      string(models.EnvironmentStatusOnline),
+		Status:      string(environment.EnvironmentStatusOnline),
 		AccessToken: &token,
 	}).Error)
 
@@ -183,12 +184,12 @@ func TestNotificationService_DispatchNotification_LogsManagerDispatchForAgent(t 
 
 	token := "remote-token"
 	now := time.Now()
-	require.NoError(t, db.WithContext(ctx).Create(&models.Environment{
-		BaseModel:   models.BaseModel{ID: "env-remote", CreatedAt: now, UpdatedAt: &now},
+	require.NoError(t, db.WithContext(ctx).Create(&environment.Environment{
+		BaseModel:   database.BaseModel{ID: "env-remote", CreatedAt: now, UpdatedAt: &now},
 		Name:        "Remote Edge",
 		ApiUrl:      "http://remote.example",
 		Enabled:     true,
-		Status:      string(models.EnvironmentStatusOnline),
+		Status:      string(environment.EnvironmentStatusOnline),
 		AccessToken: &token,
 	}).Error)
 
@@ -250,7 +251,7 @@ func TestNotificationService_SendImageUpdateNotification_AgentModeDispatchesToMa
 		ManagerApiUrl: server.URL,
 	}, envSvc, nil)
 
-	delivered, err := svc.SendImageUpdateNotification(ctx, "nginx:latest", newNotificationTestUpdateInfoInternal(), models.NotificationEventImageUpdate)
+	delivered, err := svc.SendImageUpdateNotification(ctx, "nginx:latest", newNotificationTestUpdateInfoInternal(), notifications.NotificationEventImageUpdate)
 	require.NoError(t, err)
 	require.Equal(t, 2, delivered)
 	require.EqualValues(t, 1, calls.Load())
@@ -317,7 +318,7 @@ func TestNotificationService_SendImageUpdateNotification_AgentModeRequiresUpdate
 		AgentMode: true,
 	}, envSvc, nil)
 
-	_, err := svc.SendImageUpdateNotification(ctx, "nginx:latest", nil, models.NotificationEventImageUpdate)
+	_, err := svc.SendImageUpdateNotification(ctx, "nginx:latest", nil, notifications.NotificationEventImageUpdate)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "updateInfo is required")
 }
@@ -555,15 +556,15 @@ func TestNotificationService_CreateOrUpdateSettingsEncryptsCredentialFieldsInter
 	db := setupNotificationTestDB(t)
 	svc := NewNotificationService(db, &config.Config{}, nil, nil)
 
-	_, err := svc.CreateOrUpdateSettings(ctx, models.NotificationProviderDiscord, true, models.JSON{
+	_, err := svc.CreateOrUpdateSettings(ctx, notifications.NotificationProviderDiscord, true, database.JSON{
 		"webhookId": "123456789",
 		"token":     "discord-secret-token",
 		"username":  "Arcane",
 	})
 	require.NoError(t, err)
 
-	var stored models.NotificationSettings
-	require.NoError(t, db.WithContext(ctx).Where("provider = ?", models.NotificationProviderDiscord).First(&stored).Error)
+	var stored NotificationSettings
+	require.NoError(t, db.WithContext(ctx).Where("provider = ?", notifications.NotificationProviderDiscord).First(&stored).Error)
 	require.Equal(t, "123456789", stored.Config["webhookId"])
 	require.Equal(t, "Arcane", stored.Config["username"])
 	require.NotEqual(t, "discord-secret-token", stored.Config["token"])
@@ -578,22 +579,22 @@ func TestNotificationService_CreateOrUpdateSettingsPreservesStoredCredentialWhen
 	db := setupNotificationTestDB(t)
 	svc := NewNotificationService(db, &config.Config{}, nil, nil)
 
-	_, err := svc.CreateOrUpdateSettings(ctx, models.NotificationProviderGotify, true, models.JSON{
+	_, err := svc.CreateOrUpdateSettings(ctx, notifications.NotificationProviderGotify, true, database.JSON{
 		"host":  "gotify.example",
 		"token": "initial-gotify-token",
 		"title": "Initial",
 	})
 	require.NoError(t, err)
 
-	_, err = svc.CreateOrUpdateSettings(ctx, models.NotificationProviderGotify, true, models.JSON{
+	_, err = svc.CreateOrUpdateSettings(ctx, notifications.NotificationProviderGotify, true, database.JSON{
 		"host":  "gotify.example",
 		"token": "",
 		"title": "Updated",
 	})
 	require.NoError(t, err)
 
-	var stored models.NotificationSettings
-	require.NoError(t, db.WithContext(ctx).Where("provider = ?", models.NotificationProviderGotify).First(&stored).Error)
+	var stored NotificationSettings
+	require.NoError(t, db.WithContext(ctx).Where("provider = ?", notifications.NotificationProviderGotify).First(&stored).Error)
 	require.Equal(t, "Updated", stored.Config["title"])
 
 	decrypted, err := crypto.Decrypt(stored.Config["token"].(string))
@@ -606,7 +607,7 @@ func TestNotificationService_CreateOrUpdateSettingsRejectsTargetChangeWithStored
 	db := setupNotificationTestDB(t)
 	svc := NewNotificationService(db, &config.Config{}, nil, nil)
 
-	created, err := svc.CreateOrUpdateSettings(ctx, models.NotificationProviderGotify, true, models.JSON{
+	created, err := svc.CreateOrUpdateSettings(ctx, notifications.NotificationProviderGotify, true, database.JSON{
 		"host":  "gotify.example",
 		"port":  443,
 		"token": "initial-gotify-token",
@@ -614,19 +615,19 @@ func TestNotificationService_CreateOrUpdateSettingsRejectsTargetChangeWithStored
 	require.NoError(t, err)
 	originalToken := created.Config["token"]
 
-	_, err = svc.CreateOrUpdateSettings(ctx, models.NotificationProviderGotify, true, models.JSON{
+	_, err = svc.CreateOrUpdateSettings(ctx, notifications.NotificationProviderGotify, true, database.JSON{
 		"host":  "attacker.example",
 		"port":  443,
 		"token": "",
 	})
 	require.ErrorIs(t, err, common.ErrValidation)
 
-	var stored models.NotificationSettings
-	require.NoError(t, db.WithContext(ctx).Where("provider = ?", models.NotificationProviderGotify).First(&stored).Error)
+	var stored NotificationSettings
+	require.NoError(t, db.WithContext(ctx).Where("provider = ?", notifications.NotificationProviderGotify).First(&stored).Error)
 	require.Equal(t, "gotify.example", stored.Config["host"])
 	require.Equal(t, originalToken, stored.Config["token"])
 
-	updated, err := svc.CreateOrUpdateSettings(ctx, models.NotificationProviderGotify, true, models.JSON{
+	updated, err := svc.CreateOrUpdateSettings(ctx, notifications.NotificationProviderGotify, true, database.JSON{
 		"host":  "gotify.example",
 		"port":  8443,
 		"token": "",
@@ -641,22 +642,22 @@ func TestNotificationService_CreateOrUpdateSettingsClearsEmailPasswordWhenAuthMo
 	db := setupNotificationTestDB(t)
 	svc := NewNotificationService(db, &config.Config{}, nil, nil)
 
-	_, err := svc.CreateOrUpdateSettings(ctx, models.NotificationProviderEmail, true, models.JSON{
+	_, err := svc.CreateOrUpdateSettings(ctx, notifications.NotificationProviderEmail, true, database.JSON{
 		"smtpHost":     "smtp.example",
 		"smtpPassword": "stale-password",
 		"authMode":     "auto",
 	})
 	require.NoError(t, err)
 
-	_, err = svc.CreateOrUpdateSettings(ctx, models.NotificationProviderEmail, true, models.JSON{
+	_, err = svc.CreateOrUpdateSettings(ctx, notifications.NotificationProviderEmail, true, database.JSON{
 		"smtpHost":     "smtp.example",
 		"smtpPassword": "",
-		"authMode":     string(models.EmailAuthModeNone),
+		"authMode":     string(notifications.EmailAuthModeNone),
 	})
 	require.NoError(t, err)
 
-	var stored models.NotificationSettings
-	require.NoError(t, db.WithContext(ctx).Where("provider = ?", models.NotificationProviderEmail).First(&stored).Error)
+	var stored NotificationSettings
+	require.NoError(t, db.WithContext(ctx).Where("provider = ?", notifications.NotificationProviderEmail).First(&stored).Error)
 	require.Empty(t, stored.Config["smtpPassword"])
 }
 
@@ -665,25 +666,25 @@ func TestNotificationService_CreateOrUpdateSettingsPreservesCredentialAcrossDisa
 	db := setupNotificationTestDB(t)
 	svc := NewNotificationService(db, &config.Config{}, nil, nil)
 
-	_, err := svc.CreateOrUpdateSettings(ctx, models.NotificationProviderGotify, true, models.JSON{
+	_, err := svc.CreateOrUpdateSettings(ctx, notifications.NotificationProviderGotify, true, database.JSON{
 		"host":  "gotify.example",
 		"token": "initial-gotify-token",
 		"title": "Initial",
 	})
 	require.NoError(t, err)
 
-	_, err = svc.CreateOrUpdateSettings(ctx, models.NotificationProviderGotify, false, models.JSON{})
+	_, err = svc.CreateOrUpdateSettings(ctx, notifications.NotificationProviderGotify, false, database.JSON{})
 	require.NoError(t, err)
 
-	_, err = svc.CreateOrUpdateSettings(ctx, models.NotificationProviderGotify, true, models.JSON{
+	_, err = svc.CreateOrUpdateSettings(ctx, notifications.NotificationProviderGotify, true, database.JSON{
 		"host":  "gotify.example",
 		"token": "",
 		"title": "Re-enabled",
 	})
 	require.NoError(t, err)
 
-	var stored models.NotificationSettings
-	require.NoError(t, db.WithContext(ctx).Where("provider = ?", models.NotificationProviderGotify).First(&stored).Error)
+	var stored NotificationSettings
+	require.NoError(t, db.WithContext(ctx).Where("provider = ?", notifications.NotificationProviderGotify).First(&stored).Error)
 	require.Equal(t, "Re-enabled", stored.Config["title"])
 
 	decrypted, err := crypto.Decrypt(stored.Config["token"].(string))
@@ -696,7 +697,7 @@ func TestNotificationService_CreateOrUpdateSettingsKeepsConfigWhenDisabledIntern
 	db := setupNotificationTestDB(t)
 	svc := NewNotificationService(db, &config.Config{}, nil, nil)
 
-	_, err := svc.CreateOrUpdateSettings(ctx, models.NotificationProviderNtfy, true, models.JSON{
+	_, err := svc.CreateOrUpdateSettings(ctx, notifications.NotificationProviderNtfy, true, database.JSON{
 		"host":  "ntfy.example",
 		"topic": "arcane",
 		"events": map[string]any{
@@ -707,7 +708,7 @@ func TestNotificationService_CreateOrUpdateSettingsKeepsConfigWhenDisabledIntern
 	require.NoError(t, err)
 
 	// Disabling submits the same config back; it must survive the toggle.
-	_, err = svc.CreateOrUpdateSettings(ctx, models.NotificationProviderNtfy, false, models.JSON{
+	_, err = svc.CreateOrUpdateSettings(ctx, notifications.NotificationProviderNtfy, false, database.JSON{
 		"host":  "ntfy.example",
 		"topic": "arcane",
 		"events": map[string]any{
@@ -717,8 +718,8 @@ func TestNotificationService_CreateOrUpdateSettingsKeepsConfigWhenDisabledIntern
 	})
 	require.NoError(t, err)
 
-	var stored models.NotificationSettings
-	require.NoError(t, db.WithContext(ctx).Where("provider = ?", models.NotificationProviderNtfy).First(&stored).Error)
+	var stored NotificationSettings
+	require.NoError(t, db.WithContext(ctx).Where("provider = ?", notifications.NotificationProviderNtfy).First(&stored).Error)
 	require.False(t, stored.Enabled)
 	require.Equal(t, "ntfy.example", stored.Config["host"])
 	require.Equal(t, "arcane", stored.Config["topic"])
@@ -732,43 +733,43 @@ func TestNotificationService_NotifyEnabledProvidersInternal_SkipsFiltersAndAggre
 	db := setupNotificationTestDB(t)
 	svc := NewNotificationService(db, &config.Config{}, nil, event.NewEventService(db, nil, nil))
 
-	rows := []models.NotificationSettings{
-		{Provider: models.NotificationProviderDiscord, Enabled: false, Config: models.JSON{}},
-		{Provider: models.NotificationProviderSlack, Enabled: true, Config: models.JSON{
-			"events": map[string]any{string(models.NotificationEventPruneReport): false},
+	rows := []NotificationSettings{
+		{Provider: notifications.NotificationProviderDiscord, Enabled: false, Config: database.JSON{}},
+		{Provider: notifications.NotificationProviderSlack, Enabled: true, Config: database.JSON{
+			"events": map[string]any{string(notifications.NotificationEventPruneReport): false},
 		}},
-		{Provider: models.NotificationProviderGotify, Enabled: true, Config: models.JSON{}},
-		{Provider: models.NotificationProviderNtfy, Enabled: true, Config: models.JSON{}},
+		{Provider: notifications.NotificationProviderGotify, Enabled: true, Config: database.JSON{}},
+		{Provider: notifications.NotificationProviderNtfy, Enabled: true, Config: database.JSON{}},
 	}
 	for i := range rows {
 		require.NoError(t, db.WithContext(ctx).Create(&rows[i]).Error)
 	}
 
-	var dispatched []models.NotificationProvider
+	var dispatched []notifications.NotificationProvider
 	target := NotificationTarget{EnvironmentID: "0", EnvironmentName: "Local Docker"}
-	delivered, err := svc.notifyEnabledProvidersInternal(ctx, target, models.NotificationEventPruneReport, "loop-test", models.JSON{"eventType": "prune_report"},
-		func(_ context.Context, provider models.NotificationProvider, _ models.JSON) (bool, error) {
+	delivered, err := svc.notifyEnabledProvidersInternal(ctx, target, notifications.NotificationEventPruneReport, "loop-test", database.JSON{"eventType": "prune_report"},
+		func(_ context.Context, provider notifications.NotificationProvider, _ database.JSON) (bool, error) {
 			dispatched = append(dispatched, provider)
-			if provider == models.NotificationProviderNtfy {
+			if provider == notifications.NotificationProviderNtfy {
 				return true, errors.New("boom")
 			}
 			return true, nil
 		})
 
 	// Disabled and event-disabled rows are never dispatched.
-	require.Equal(t, []models.NotificationProvider{models.NotificationProviderGotify, models.NotificationProviderNtfy}, dispatched)
+	require.Equal(t, []notifications.NotificationProvider{notifications.NotificationProviderGotify, notifications.NotificationProviderNtfy}, dispatched)
 	require.Equal(t, 1, delivered)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "notification errors: ntfy: boom")
 
 	// Each dispatched attempt lands in the event log.
-	var events []models.Event
-	require.NoError(t, db.WithContext(ctx).Where("type = ?", models.EventTypeNotificationSend).Order("created_at").Find(&events).Error)
+	var events []event.Event
+	require.NoError(t, db.WithContext(ctx).Where("type = ?", event.EventTypeNotificationSend).Order("created_at").Find(&events).Error)
 	require.Len(t, events, 2)
-	require.Equal(t, models.EventSeveritySuccess, events[0].Severity)
+	require.Equal(t, event.EventSeveritySuccess, events[0].Severity)
 	require.Equal(t, "Notification sent via gotify", events[0].Title)
 	require.Equal(t, "loop-test", events[0].Description)
-	require.Equal(t, models.EventSeverityError, events[1].Severity)
+	require.Equal(t, event.EventSeverityError, events[1].Severity)
 	require.Equal(t, "Notification failed via ntfy", events[1].Title)
 	require.Contains(t, events[1].Description, "boom")
 }
@@ -797,8 +798,8 @@ func TestNotificationService_DispatchNotificationForEnvironment_ResolvesTunnelSe
 	db, _, svc := setupNotificationTestServiceInternal(t)
 
 	now := time.Now()
-	require.NoError(t, db.WithContext(ctx).Create(&models.Environment{
-		BaseModel: models.BaseModel{ID: "env-edge", CreatedAt: now, UpdatedAt: &now},
+	require.NoError(t, db.WithContext(ctx).Create(&environment.Environment{
+		BaseModel: database.BaseModel{ID: "env-edge", CreatedAt: now, UpdatedAt: &now},
 		Name:      "edge-env",
 		ApiUrl:    "http://edge:3553",
 		Enabled:   true,

@@ -9,7 +9,6 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/types/v2/system"
 )
@@ -19,7 +18,7 @@ func setupScheduledPruneSettingsServiceInternal(t *testing.T) *settings.Settings
 
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&models.SettingVariable{}))
+	require.NoError(t, db.AutoMigrate(&settings.SettingVariable{}))
 
 	svc, err := newSettingsServiceForTestInternal(t, context.Background(), &database.DB{DB: db})
 	require.NoError(t, err)

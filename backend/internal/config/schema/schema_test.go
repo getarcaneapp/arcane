@@ -1,13 +1,14 @@
 package schema
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+
 	"reflect"
 	"slices"
 	"sort"
 	"strings"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -64,7 +65,7 @@ func TestGenerate_SettingEnvOverridesMatchModelMetadata(t *testing.T) {
 	assert.Equal(t, "30", dockerTimeout.DefaultValue)
 	assert.Equal(t, "number", dockerTimeout.Type)
 	assert.Equal(t, "timeouts", dockerTimeout.Category)
-	assert.Equal(t, "models.Settings + settings.DefaultSettingsConfig", dockerTimeout.Source)
+	assert.Equal(t, "settings.Settings + settings.DefaultSettingsConfig", dockerTimeout.Source)
 
 	oidcSecret, ok := entries["oidcClientSecret"]
 	require.True(t, ok)
@@ -168,7 +169,7 @@ func sortedCategoryEnvPairs(entries []SettingOverrideEntry) []string {
 }
 
 func countDocumentedSettingOverrides() int {
-	settingsType := reflect.TypeFor[models.Settings]()
+	settingsType := reflect.TypeFor[settings.Settings]()
 	count := 0
 
 	for field := range settingsType.Fields() {

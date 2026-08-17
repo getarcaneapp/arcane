@@ -22,7 +22,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/notifications"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
@@ -33,27 +32,27 @@ import (
 	"go.getarcane.app/sys/crypto"
 )
 
-var notificationCredentialFieldsByProviderInternal = map[models.NotificationProvider][]string{
-	models.NotificationProviderDiscord:  {"token"},
-	models.NotificationProviderEmail:    {"smtpPassword"},
-	models.NotificationProviderTelegram: {"botToken"},
-	models.NotificationProviderSignal:   {"password", "token"},
-	models.NotificationProviderSlack:    {"token"},
-	models.NotificationProviderNtfy:     {"password"},
-	models.NotificationProviderPushover: {"token"},
-	models.NotificationProviderGotify:   {"token"},
-	models.NotificationProviderMatrix:   {"password"},
+var notificationCredentialFieldsByProviderInternal = map[notifications.NotificationProvider][]string{
+	notifications.NotificationProviderDiscord:  {"token"},
+	notifications.NotificationProviderEmail:    {"smtpPassword"},
+	notifications.NotificationProviderTelegram: {"botToken"},
+	notifications.NotificationProviderSignal:   {"password", "token"},
+	notifications.NotificationProviderSlack:    {"token"},
+	notifications.NotificationProviderNtfy:     {"password"},
+	notifications.NotificationProviderPushover: {"token"},
+	notifications.NotificationProviderGotify:   {"token"},
+	notifications.NotificationProviderMatrix:   {"password"},
 	// The Google Chat incoming webhook URL embeds the key and token query
 	// parameters, so the whole URL is treated as a credential.
-	models.NotificationProviderGoogleChat: {"webhookUrl"},
+	notifications.NotificationProviderGoogleChat: {"webhookUrl"},
 }
 
-var notificationTargetFieldByProviderInternal = map[models.NotificationProvider]string{
-	models.NotificationProviderEmail:  "smtpHost",
-	models.NotificationProviderSignal: "host",
-	models.NotificationProviderNtfy:   "host",
-	models.NotificationProviderGotify: "host",
-	models.NotificationProviderMatrix: "host",
+var notificationTargetFieldByProviderInternal = map[notifications.NotificationProvider]string{
+	notifications.NotificationProviderEmail:  "smtpHost",
+	notifications.NotificationProviderSignal: "host",
+	notifications.NotificationProviderNtfy:   "host",
+	notifications.NotificationProviderGotify: "host",
+	notifications.NotificationProviderMatrix: "host",
 }
 
 const ErrUnauthorizedNotificationDispatch = errors.Sentinel("unauthorized notification dispatch")
@@ -253,7 +252,7 @@ func (s *NotificationService) dispatchForTargetInternal(ctx context.Context, tar
 			return notificationdto.DispatchResponse{}, errors.New("image update payload is required")
 		}
 		logManagerDispatchNotificationInternal(ctx, target, payload.Kind)
-		dispatchResponse.Delivered, err = s.sendImageUpdateNotificationForTargetInternal(ctx, target, payload.ImageUpdate.ImageRef, &payload.ImageUpdate.UpdateInfo, models.NotificationEventImageUpdate)
+		dispatchResponse.Delivered, err = s.sendImageUpdateNotificationForTargetInternal(ctx, target, payload.ImageUpdate.ImageRef, &payload.ImageUpdate.UpdateInfo, notifications.NotificationEventImageUpdate)
 		return dispatchResponse, err
 	case notificationdto.DispatchKindBatchImageUpdate:
 		if payload.BatchImageUpdate == nil {
@@ -299,25 +298,25 @@ func (s *NotificationService) dispatchForTargetInternal(ctx context.Context, tar
 	}
 }
 
-func (s *NotificationService) GetAllSettings(ctx context.Context) ([]models.NotificationSettings, error) {
-	var settings []models.NotificationSettings
+func (s *NotificationService) GetAllSettings(ctx context.Context) ([]NotificationSettings, error) {
+	var settings []NotificationSettings
 	if err := s.db.WithContext(ctx).Find(&settings).Error; err != nil {
 		return nil, errors.WrapIf(err, "failed to get notification settings")
 	}
 	return settings, nil
 }
 
-func (s *NotificationService) GetSettingsByProvider(ctx context.Context, provider models.NotificationProvider) (*models.NotificationSettings, error) {
-	var setting models.NotificationSettings
+func (s *NotificationService) GetSettingsByProvider(ctx context.Context, provider notifications.NotificationProvider) (*NotificationSettings, error) {
+	var setting NotificationSettings
 	if err := s.db.WithContext(ctx).Where("provider = ?", provider).First(&setting).Error; err != nil {
 		return nil, err
 	}
 	return &setting, nil
 }
 
-func (s *NotificationService) CreateOrUpdateSettings(ctx context.Context, provider models.NotificationProvider, enabled bool, config models.JSON) (*models.NotificationSettings, error) {
-	if provider == models.NotificationProviderGeneric {
-		genericConfig, decodeErr := notifications.DecodeConfig[models.GenericConfig](config, "Generic")
+func (s *NotificationService) CreateOrUpdateSettings(ctx context.Context, provider notifications.NotificationProvider, enabled bool, config database.JSON) (*NotificationSettings, error) {
+	if provider == notifications.NotificationProviderGeneric {
+		genericConfig, decodeErr := notifications.DecodeConfig[notifications.GenericConfig](config, "Generic")
 		if decodeErr != nil {
 			return nil, decodeErr
 		}
@@ -329,10 +328,10 @@ func (s *NotificationService) CreateOrUpdateSettings(ctx context.Context, provid
 		}
 	}
 
-	var setting models.NotificationSettings
+	var setting NotificationSettings
 
 	err := s.db.WithContext(ctx).Where("provider = ?", provider).First(&setting).Error
-	existingConfig := models.JSON(nil)
+	existingConfig := database.JSON(nil)
 	if err == nil {
 		existingConfig = setting.Config
 	}
@@ -344,7 +343,7 @@ func (s *NotificationService) CreateOrUpdateSettings(ctx context.Context, provid
 	config = encryptedConfig
 
 	if err != nil {
-		setting = models.NotificationSettings{
+		setting = NotificationSettings{
 			Provider: provider,
 			Enabled:  enabled,
 			Config:   config,
@@ -364,7 +363,7 @@ func (s *NotificationService) CreateOrUpdateSettings(ctx context.Context, provid
 }
 
 // RedactNotificationConfigCredentials returns a copy of config with provider credential fields blanked for API responses.
-func RedactNotificationConfigCredentials(provider models.NotificationProvider, config models.JSON) models.JSON {
+func RedactNotificationConfigCredentials(provider notifications.NotificationProvider, config database.JSON) database.JSON {
 	redacted := cloneNotificationConfigInternal(config)
 	for _, field := range notificationCredentialFieldsByProviderInternal[provider] {
 		value, ok := redacted[field]
@@ -380,13 +379,13 @@ func RedactNotificationConfigCredentials(provider models.NotificationProvider, c
 	return redacted
 }
 
-func encryptNotificationConfigCredentialsInternal(provider models.NotificationProvider, config models.JSON, existingConfig models.JSON) (models.JSON, error) {
+func encryptNotificationConfigCredentialsInternal(provider notifications.NotificationProvider, config database.JSON, existingConfig database.JSON) (database.JSON, error) {
 	encryptedConfig := cloneNotificationConfigInternal(config)
 	preserveConfig := existingConfig
-	if provider == models.NotificationProviderSignal {
+	if provider == notifications.NotificationProviderSignal {
 		preserveConfig = signalCredentialPreservationConfigInternal(config, existingConfig)
 	}
-	if provider == models.NotificationProviderEmail {
+	if provider == notifications.NotificationProviderEmail {
 		preserveConfig = emailCredentialPreservationConfigInternal(config, existingConfig)
 	}
 	if targetField := notificationTargetFieldByProviderInternal[provider]; targetField != "" {
@@ -437,7 +436,7 @@ func encryptNotificationConfigCredentialsInternal(provider models.NotificationPr
 	return encryptedConfig, nil
 }
 
-func signalCredentialPreservationConfigInternal(config models.JSON, existingConfig models.JSON) models.JSON {
+func signalCredentialPreservationConfigInternal(config database.JSON, existingConfig database.JSON) database.JSON {
 	preserveConfig := cloneNotificationConfigInternal(existingConfig)
 	user, _ := config["user"].(string)
 	password, _ := config["password"].(string)
@@ -453,9 +452,9 @@ func signalCredentialPreservationConfigInternal(config models.JSON, existingConf
 	return preserveConfig
 }
 
-func emailCredentialPreservationConfigInternal(config models.JSON, existingConfig models.JSON) models.JSON {
+func emailCredentialPreservationConfigInternal(config database.JSON, existingConfig database.JSON) database.JSON {
 	preserveConfig := cloneNotificationConfigInternal(existingConfig)
-	if authMode, _ := config["authMode"].(string); authMode == string(models.EmailAuthModeNone) {
+	if authMode, _ := config["authMode"].(string); authMode == string(notifications.EmailAuthModeNone) {
 		delete(preserveConfig, "smtpPassword")
 	}
 	return preserveConfig
@@ -471,17 +470,17 @@ func encryptNotificationCredentialInternal(value string) (string, error) {
 	return crypto.Encrypt(value)
 }
 
-func cloneNotificationConfigInternal(config models.JSON) models.JSON {
+func cloneNotificationConfigInternal(config database.JSON) database.JSON {
 	if config == nil {
-		return models.JSON{}
+		return database.JSON{}
 	}
-	cloned := make(models.JSON, len(config))
+	cloned := make(database.JSON, len(config))
 	maps.Copy(cloned, config)
 	return cloned
 }
 
-func (s *NotificationService) DeleteSettings(ctx context.Context, provider models.NotificationProvider) error {
-	if err := s.db.WithContext(ctx).Where("provider = ?", provider).Delete(&models.NotificationSettings{}).Error; err != nil {
+func (s *NotificationService) DeleteSettings(ctx context.Context, provider notifications.NotificationProvider) error {
+	if err := s.db.WithContext(ctx).Where("provider = ?", provider).Delete(&NotificationSettings{}).Error; err != nil {
 		return errors.WrapIf(err, "failed to delete notification settings")
 	}
 	return nil
@@ -489,7 +488,7 @@ func (s *NotificationService) DeleteSettings(ctx context.Context, provider model
 
 // SendImageUpdateNotification dispatches a single-image update notification and
 
-func (s *NotificationService) isEventEnabled(config models.JSON, eventType models.NotificationEventType) bool {
+func (s *NotificationService) isEventEnabled(config database.JSON, eventType notifications.NotificationEventType) bool {
 	events, ok := config["events"].(map[string]any)
 	if !ok {
 		return true // If no events config, default to enabled
@@ -505,16 +504,16 @@ func (s *NotificationService) isEventEnabled(config models.JSON, eventType model
 
 // logNotification records a delivery attempt in the event log so sends and
 // failures are visible alongside every other Arcane event.
-func (s *NotificationService) logNotification(ctx context.Context, environmentID string, provider models.NotificationProvider, subject, status string, errMsg *string, metadata models.JSON) {
+func (s *NotificationService) logNotification(ctx context.Context, environmentID string, provider notifications.NotificationProvider, subject, status string, errMsg *string, metadata database.JSON) {
 	if s.eventSvc == nil {
 		return
 	}
 
-	severity := models.EventSeveritySuccess
+	severity := event.EventSeveritySuccess
 	title := fmt.Sprintf("Notification sent via %s", provider)
 	description := subject
 	if errMsg != nil {
-		severity = models.EventSeverityError
+		severity = event.EventSeverityError
 		title = fmt.Sprintf("Notification failed via %s", provider)
 		description = fmt.Sprintf("%s: %s", subject, *errMsg)
 	}
@@ -526,7 +525,7 @@ func (s *NotificationService) logNotification(ctx context.Context, environmentID
 	resourceType := "notification"
 	providerName := string(provider)
 	if _, err := s.eventSvc.CreateEvent(ctx, event.CreateEventRequest{
-		Type:          models.EventTypeNotificationSend,
+		Type:          event.EventTypeNotificationSend,
 		Severity:      severity,
 		Title:         title,
 		Description:   description,
@@ -550,10 +549,10 @@ func (s *NotificationService) logNotification(ctx context.Context, environmentID
 func (s *NotificationService) notifyEnabledProvidersInternal(
 	ctx context.Context,
 	target NotificationTarget,
-	eventType models.NotificationEventType,
+	eventType notifications.NotificationEventType,
 	logRef string,
-	metadata models.JSON,
-	dispatch func(ctx context.Context, provider models.NotificationProvider, config models.JSON) (handled bool, err error),
+	metadata database.JSON,
+	dispatch func(ctx context.Context, provider notifications.NotificationProvider, config database.JSON) (handled bool, err error),
 ) (int, error) {
 	settings, err := s.GetAllSettings(ctx)
 	if err != nil {
@@ -590,7 +589,7 @@ func (s *NotificationService) notifyEnabledProvidersInternal(
 	return delivered, nil
 }
 
-func collectNotificationSendResultInternal(errors *[]string, provider models.NotificationProvider, sendErr error) (string, *string) {
+func collectNotificationSendResultInternal(errors *[]string, provider notifications.NotificationProvider, sendErr error) (string, *string) {
 	if sendErr == nil {
 		return "success", nil
 	}
@@ -765,7 +764,7 @@ func (s *NotificationService) autoHealNotificationContentInternal(environmentNam
 // SendImageUpdateNotification dispatches a single-image update notification and
 // returns the number of eligible providers it was delivered to (0 means no
 // provider has this event enabled, so callers must not mark the update notified).
-func (s *NotificationService) SendImageUpdateNotification(ctx context.Context, imageRef string, updateInfo *imageupdate.Response, eventType models.NotificationEventType) (int, error) {
+func (s *NotificationService) SendImageUpdateNotification(ctx context.Context, imageRef string, updateInfo *imageupdate.Response, eventType notifications.NotificationEventType) (int, error) {
 	if updateInfo == nil {
 		return 0, errors.New("updateInfo is required")
 	}
@@ -792,8 +791,8 @@ func (s *NotificationService) SendImageUpdateNotification(ctx context.Context, i
 	return s.sendImageUpdateNotificationForTargetInternal(ctx, target, imageRef, updateInfo, eventType)
 }
 
-func (s *NotificationService) sendImageUpdateNotificationForTargetInternal(ctx context.Context, target NotificationTarget, imageRef string, updateInfo *imageupdate.Response, eventType models.NotificationEventType) (int, error) {
-	metadata := models.JSON{
+func (s *NotificationService) sendImageUpdateNotificationForTargetInternal(ctx context.Context, target NotificationTarget, imageRef string, updateInfo *imageupdate.Response, eventType notifications.NotificationEventType) (int, error) {
+	metadata := database.JSON{
 		"hasUpdate":     updateInfo.HasUpdate,
 		"currentDigest": updateInfo.CurrentDigest,
 		"latestDigest":  updateInfo.LatestDigest,
@@ -802,7 +801,7 @@ func (s *NotificationService) sendImageUpdateNotificationForTargetInternal(ctx c
 	}
 	content := s.imageUpdateNotificationContentInternal(target.EnvironmentName, imageRef, updateInfo)
 	content.Vars = notifications.EventVars(target.EnvironmentName, target.EnvironmentID, eventType)
-	return s.notifyEnabledProvidersInternal(ctx, target, eventType, imageRef, metadata, func(ctx context.Context, provider models.NotificationProvider, config models.JSON) (bool, error) {
+	return s.notifyEnabledProvidersInternal(ctx, target, eventType, imageRef, metadata, func(ctx context.Context, provider notifications.NotificationProvider, config database.JSON) (bool, error) {
 		return notifications.Deliver(ctx, provider, config, content)
 	})
 }
@@ -830,15 +829,15 @@ func (s *NotificationService) SendContainerUpdateNotification(ctx context.Contex
 }
 
 func (s *NotificationService) sendContainerUpdateNotificationForTargetInternal(ctx context.Context, target NotificationTarget, containerName, imageRef, oldDigest, newDigest string) error {
-	metadata := models.JSON{
+	metadata := database.JSON{
 		"containerName": containerName,
 		"oldDigest":     oldDigest,
 		"newDigest":     newDigest,
-		"eventType":     string(models.NotificationEventContainerUpdate),
+		"eventType":     string(notifications.NotificationEventContainerUpdate),
 	}
 	content := s.containerUpdateNotificationContentInternal(target.EnvironmentName, containerName, imageRef, oldDigest, newDigest)
-	content.Vars = notifications.EventVars(target.EnvironmentName, target.EnvironmentID, models.NotificationEventContainerUpdate)
-	_, err := s.notifyEnabledProvidersInternal(ctx, target, models.NotificationEventContainerUpdate, imageRef, metadata, func(ctx context.Context, provider models.NotificationProvider, config models.JSON) (bool, error) {
+	content.Vars = notifications.EventVars(target.EnvironmentName, target.EnvironmentID, notifications.NotificationEventContainerUpdate)
+	_, err := s.notifyEnabledProvidersInternal(ctx, target, notifications.NotificationEventContainerUpdate, imageRef, metadata, func(ctx context.Context, provider notifications.NotificationProvider, config database.JSON) (bool, error) {
 		return notifications.Deliver(ctx, provider, config, content)
 	})
 	return err
@@ -881,15 +880,15 @@ func (s *NotificationService) SendVulnerabilityNotification(ctx context.Context,
 }
 
 func (s *NotificationService) sendVulnerabilityNotificationForTargetInternal(ctx context.Context, target NotificationTarget, payload VulnerabilityNotificationPayload) error {
-	metadata := models.JSON{
+	metadata := database.JSON{
 		"cveId":        payload.CVEID,
 		"severity":     payload.Severity,
 		"fixedVersion": payload.FixedVersion,
-		"eventType":    string(models.NotificationEventVulnerabilityFound),
+		"eventType":    string(notifications.NotificationEventVulnerabilityFound),
 	}
 	content := s.vulnerabilityNotificationContentInternal(target.EnvironmentName, payload)
-	content.Vars = notifications.EventVars(target.EnvironmentName, target.EnvironmentID, models.NotificationEventVulnerabilityFound)
-	_, err := s.notifyEnabledProvidersInternal(ctx, target, models.NotificationEventVulnerabilityFound, payload.ImageName, metadata, func(ctx context.Context, provider models.NotificationProvider, config models.JSON) (bool, error) {
+	content.Vars = notifications.EventVars(target.EnvironmentName, target.EnvironmentID, notifications.NotificationEventVulnerabilityFound)
+	_, err := s.notifyEnabledProvidersInternal(ctx, target, notifications.NotificationEventVulnerabilityFound, payload.ImageName, metadata, func(ctx context.Context, provider notifications.NotificationProvider, config database.JSON) (bool, error) {
 		return notifications.Deliver(ctx, provider, config, content)
 	})
 	return err
@@ -947,14 +946,14 @@ func (s *NotificationService) sendBatchImageUpdateNotificationForTargetInternal(
 		imageRefs = append(imageRefs, ref)
 	}
 
-	metadata := models.JSON{
+	metadata := database.JSON{
 		"updateCount": len(updatesWithChanges),
-		"eventType":   string(models.NotificationEventImageUpdate),
+		"eventType":   string(notifications.NotificationEventImageUpdate),
 		"batch":       true,
 	}
 	content := s.batchImageUpdateNotificationContentInternal(target.EnvironmentName, updatesWithChanges)
-	content.Vars = notifications.EventVars(target.EnvironmentName, target.EnvironmentID, models.NotificationEventImageUpdate)
-	return s.notifyEnabledProvidersInternal(ctx, target, models.NotificationEventImageUpdate, strings.Join(imageRefs, ", "), metadata, func(ctx context.Context, provider models.NotificationProvider, config models.JSON) (bool, error) {
+	content.Vars = notifications.EventVars(target.EnvironmentName, target.EnvironmentID, notifications.NotificationEventImageUpdate)
+	return s.notifyEnabledProvidersInternal(ctx, target, notifications.NotificationEventImageUpdate, strings.Join(imageRefs, ", "), metadata, func(ctx context.Context, provider notifications.NotificationProvider, config database.JSON) (bool, error) {
 		return notifications.Deliver(ctx, provider, config, content)
 	})
 }
@@ -994,13 +993,13 @@ func (s *NotificationService) sendPruneReportNotificationForTargetInternal(ctx c
 	hasChanges := pruneResultHasChangesInternal(result)
 	hasErrors := len(result.Errors) > 0
 
-	metadata := models.JSON{
+	metadata := database.JSON{
 		"spaceReclaimed": result.SpaceReclaimed,
-		"eventType":      string(models.NotificationEventPruneReport),
+		"eventType":      string(notifications.NotificationEventPruneReport),
 	}
 	content := s.pruneReportNotificationContentInternal(target.EnvironmentName, result)
-	content.Vars = notifications.EventVars(target.EnvironmentName, target.EnvironmentID, models.NotificationEventPruneReport)
-	_, err := s.notifyEnabledProvidersInternal(ctx, target, models.NotificationEventPruneReport, "System Prune Report", metadata, func(ctx context.Context, provider models.NotificationProvider, config models.JSON) (bool, error) {
+	content.Vars = notifications.EventVars(target.EnvironmentName, target.EnvironmentID, notifications.NotificationEventPruneReport)
+	_, err := s.notifyEnabledProvidersInternal(ctx, target, notifications.NotificationEventPruneReport, "System Prune Report", metadata, func(ctx context.Context, provider notifications.NotificationProvider, config database.JSON) (bool, error) {
 		return notifications.Deliver(ctx, provider, config, content)
 	})
 	if err != nil {
@@ -1050,13 +1049,13 @@ func (s *NotificationService) SendAutoHealNotification(ctx context.Context, cont
 }
 
 func (s *NotificationService) sendAutoHealNotificationForTargetInternal(ctx context.Context, target NotificationTarget, containerName, containerID string) error {
-	metadata := models.JSON{
+	metadata := database.JSON{
 		"containerID": containerID,
-		"eventType":   string(models.NotificationEventAutoHeal),
+		"eventType":   string(notifications.NotificationEventAutoHeal),
 	}
 	content := s.autoHealNotificationContentInternal(target.EnvironmentName, containerName)
-	content.Vars = notifications.EventVars(target.EnvironmentName, target.EnvironmentID, models.NotificationEventAutoHeal)
-	_, err := s.notifyEnabledProvidersInternal(ctx, target, models.NotificationEventAutoHeal, containerName, metadata, func(ctx context.Context, provider models.NotificationProvider, config models.JSON) (bool, error) {
+	content.Vars = notifications.EventVars(target.EnvironmentName, target.EnvironmentID, notifications.NotificationEventAutoHeal)
+	_, err := s.notifyEnabledProvidersInternal(ctx, target, notifications.NotificationEventAutoHeal, containerName, metadata, func(ctx context.Context, provider notifications.NotificationProvider, config database.JSON) (bool, error) {
 		return notifications.Deliver(ctx, provider, config, content)
 	})
 	return err
@@ -1066,16 +1065,16 @@ func (s *NotificationService) sendAutoHealNotificationForTargetInternal(ctx cont
 
 // notificationEventTypeForTestTypeInternal maps a test type to the event type a
 // real notification of that kind would be gated on ("" = no event gate).
-func notificationEventTypeForTestTypeInternal(testType string) models.NotificationEventType {
+func notificationEventTypeForTestTypeInternal(testType string) notifications.NotificationEventType {
 	switch testType {
 	case notificationTestTypeImageUpdate, notificationTestTypeBatchImageUpdate:
-		return models.NotificationEventImageUpdate
+		return notifications.NotificationEventImageUpdate
 	case notificationTestTypeVulnerability:
-		return models.NotificationEventVulnerabilityFound
+		return notifications.NotificationEventVulnerabilityFound
 	case notificationTestTypePruneReport:
-		return models.NotificationEventPruneReport
+		return notifications.NotificationEventPruneReport
 	case notificationTestTypeAutoHeal:
-		return models.NotificationEventAutoHeal
+		return notifications.NotificationEventAutoHeal
 	default:
 		return ""
 	}
@@ -1084,7 +1083,7 @@ func notificationEventTypeForTestTypeInternal(testType string) models.Notificati
 // testNotificationWarningInternal reports why a real notification would not send
 // even though the test did: the provider is disabled, or the tested event type is
 // unsubscribed. Empty means real notifications would send.
-func (s *NotificationService) testNotificationWarningInternal(setting *models.NotificationSettings, testType string) string {
+func (s *NotificationService) testNotificationWarningInternal(setting *NotificationSettings, testType string) string {
 	if !setting.Enabled {
 		return fmt.Sprintf("%s is disabled, so real notifications will not send", setting.Provider)
 	}
@@ -1166,7 +1165,7 @@ func (s *NotificationService) testNotificationContentInternal(environmentName, t
 // TestNotification sends a test message to the provider regardless of its enabled
 // state (testing before enabling is legitimate) and returns a warning when a real
 // notification of the tested kind would not send.
-func (s *NotificationService) TestNotification(ctx context.Context, environmentID string, provider models.NotificationProvider, testType string) (string, error) {
+func (s *NotificationService) TestNotification(ctx context.Context, environmentID string, provider notifications.NotificationProvider, testType string) (string, error) {
 	setting, err := s.GetSettingsByProvider(ctx, provider)
 	if err != nil {
 		return "", errors.Errorf("please save your %s settings before testing", provider)
@@ -1185,7 +1184,7 @@ func (s *NotificationService) TestNotification(ctx context.Context, environmentI
 		return "", err
 	}
 
-	if provider == models.NotificationProviderEmail && testType == notificationTestTypeSimple {
+	if provider == notifications.NotificationProviderEmail && testType == notificationTestTypeSimple {
 		return warning, s.sendTestEmail(ctx, target.EnvironmentName, setting.Config)
 	}
 
@@ -1195,7 +1194,7 @@ func (s *NotificationService) TestNotification(ctx context.Context, environmentI
 	// reports that event type.
 	testEventType := notificationEventTypeForTestTypeInternal(testType)
 	if testEventType == "" {
-		testEventType = models.NotificationEventImageUpdate
+		testEventType = notifications.NotificationEventImageUpdate
 	}
 	content.Vars = notifications.EventVars(target.EnvironmentName, target.EnvironmentID, testEventType)
 	handled, sendErr := notifications.Deliver(ctx, provider, setting.Config, content)
@@ -1302,8 +1301,8 @@ func (s *NotificationService) renderContainerUpdateEmailTemplate(environmentName
 	return htmlBuf.String(), textBuf.String(), nil
 }
 
-func (s *NotificationService) sendTestEmail(ctx context.Context, environmentName string, config models.JSON) error {
-	var emailConfig models.EmailConfig
+func (s *NotificationService) sendTestEmail(ctx context.Context, environmentName string, config database.JSON) error {
+	var emailConfig notifications.EmailConfig
 	configBytes, err := json.Marshal(config)
 	if err != nil {
 		return errors.WrapIf(err, "failed to marshal email config")

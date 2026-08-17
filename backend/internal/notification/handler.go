@@ -1,6 +1,12 @@
 package notification
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/notifications"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+
 	"context"
 	"net/http"
 	"strings"
@@ -10,7 +16,6 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 	"github.com/getarcaneapp/arcane/types/v2/base"
@@ -186,7 +191,7 @@ func (h *NotificationHandler) GetNotificationSettings(ctx context.Context, input
 	if err := h.rejectIfAgentModeInternal(); err != nil {
 		return nil, err
 	}
-	provider := models.NotificationProvider(input.Provider)
+	provider := notifications.NotificationProvider(input.Provider)
 
 	settings, err := h.notificationService.GetSettingsByProvider(ctx, provider)
 	if err != nil {
@@ -207,8 +212,8 @@ func (h *NotificationHandler) CreateOrUpdateNotificationSettings(ctx context.Con
 	if err := h.rejectIfAgentModeInternal(); err != nil {
 		return nil, err
 	}
-	provider := models.NotificationProvider(input.Body.Provider)
-	if !models.IsValidNotificationProvider(provider) {
+	provider := notifications.NotificationProvider(input.Body.Provider)
+	if !notifications.IsValidNotificationProvider(provider) {
 		return nil, huma.Error400BadRequest("invalid provider")
 	}
 
@@ -216,10 +221,10 @@ func (h *NotificationHandler) CreateOrUpdateNotificationSettings(ctx context.Con
 		ctx,
 		provider,
 		input.Body.Enabled,
-		models.JSON(input.Body.Config),
+		database.JSON(input.Body.Config),
 	)
 	if err != nil {
-		apiErr := models.ToAPIError(err)
+		apiErr := common.ToAPIError(err)
 		if apiErr.HTTPStatus() == http.StatusInternalServerError {
 			return nil, huma.Error500InternalServerError("Failed to update notification settings")
 		}
@@ -240,7 +245,7 @@ func (h *NotificationHandler) DeleteNotificationSettings(ctx context.Context, in
 	if err := h.rejectIfAgentModeInternal(); err != nil {
 		return nil, err
 	}
-	provider := models.NotificationProvider(input.Provider)
+	provider := notifications.NotificationProvider(input.Provider)
 
 	if err := h.notificationService.DeleteSettings(ctx, provider); err != nil {
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to delete notification settings").Error())
@@ -258,7 +263,7 @@ func (h *NotificationHandler) TestNotification(ctx context.Context, input *TestN
 	if err := h.rejectIfAgentModeInternal(); err != nil {
 		return nil, err
 	}
-	provider := models.NotificationProvider(input.Provider)
+	provider := notifications.NotificationProvider(input.Provider)
 	testType := normalizeNotificationTestType(input.Type)
 	if !isSupportedNotificationTestType(testType) {
 		return nil, huma.Error400BadRequest("invalid notification test type")

@@ -12,7 +12,6 @@ import (
 
 	"emperror.dev/errors"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumes"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
@@ -164,7 +163,7 @@ func (s *ProjectService) completeProjectRenameJournalForUpdateInternal(ctx conte
 	*journalActive = false
 }
 
-func withProjectRenameRollback(ctx context.Context, proj *models.Project, projectStateCommitted *bool, run func() error) error {
+func withProjectRenameRollback(ctx context.Context, proj *Project, projectStateCommitted *bool, run func() error) error {
 	originalPath := proj.Path
 	originalDirName := proj.DirName
 
@@ -200,7 +199,7 @@ func withProjectRenameRollback(ctx context.Context, proj *models.Project, projec
 	return nil
 }
 
-func (s *ProjectService) prepareProjectRenameJournalInternal(proj *models.Project, name *string, projectsDirectory string, migration volumes.Migration) *projectRenameJournalInternal {
+func (s *ProjectService) prepareProjectRenameJournalInternal(proj *Project, name *string, projectsDirectory string, migration volumes.Migration) *projectRenameJournalInternal {
 	if s == nil || s.kvService == nil || proj == nil || name == nil {
 		return nil
 	}
@@ -358,7 +357,7 @@ func (s *ProjectService) recoverProjectRenameJournalInternal(ctx context.Context
 		return nil
 	}
 
-	var proj models.Project
+	var proj Project
 	dbErr := s.db.WithContext(ctx).First(&proj, "id = ?", journal.ProjectID).Error
 	if dbErr != nil && !errors.Is(dbErr, gorm.ErrRecordNotFound) {
 		return errors.WrapIf(dbErr, "load project for rename recovery")
@@ -421,7 +420,7 @@ func (s *ProjectService) rollbackProjectRenameJournalInternal(ctx context.Contex
 
 	volumeErr := s.rollbackProjectRenameJournalVolumesInternal(ctx, journal)
 
-	if err := s.db.WithContext(ctx).Model(&models.Project{}).
+	if err := s.db.WithContext(ctx).Model(&Project{}).
 		Where("id = ?", journal.ProjectID).
 		Updates(map[string]any{
 			"name":     journal.OldName,
@@ -482,7 +481,7 @@ func (s *ProjectService) recoverProjectRenameRollbackCleanupInternal(ctx context
 		return s.clearProjectRenameRollbackCleanupInternal(ctx, cleanup.ProjectID)
 	}
 
-	var proj models.Project
+	var proj Project
 	dbErr := s.db.WithContext(ctx).First(&proj, "id = ?", cleanup.ProjectID).Error
 	if dbErr != nil {
 		if errors.Is(dbErr, gorm.ErrRecordNotFound) {

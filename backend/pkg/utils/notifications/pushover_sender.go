@@ -8,14 +8,13 @@ import (
 
 	"emperror.dev/errors"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/nicholas-fedor/shoutrrr"
 	shoutrrrTypes "github.com/nicholas-fedor/shoutrrr/pkg/types"
 )
 
 // BuildPushoverURL converts PushoverConfig to Shoutrrr URL format.
 // URL example: pushover://:token@user?devices=device1,device2&priority=1&title=Container+Update
-func BuildPushoverURL(config models.PushoverConfig) (string, error) {
+func BuildPushoverURL(config PushoverConfig) (string, error) {
 	user := strings.TrimSpace(config.User)
 	token := strings.TrimSpace(config.Token)
 
@@ -58,7 +57,7 @@ func BuildPushoverURL(config models.PushoverConfig) (string, error) {
 }
 
 // SendPushover sends a message via Shoutrrr Pushover using proper service configuration.
-func SendPushover(ctx context.Context, config models.PushoverConfig, message string) error {
+func SendPushover(ctx context.Context, config PushoverConfig, message string) error {
 	if strings.TrimSpace(config.Token) == "" {
 		return errors.New("pushover token is empty")
 	}

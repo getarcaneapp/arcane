@@ -4,7 +4,6 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -12,14 +11,14 @@ import (
 func TestBuildPushoverURL(t *testing.T) {
 	tests := []struct {
 		name    string
-		config  models.PushoverConfig
+		config  PushoverConfig
 		wantURL string
 		wantErr string
 		check   func(*url.URL)
 	}{
 		{
 			name: "basic config",
-			config: models.PushoverConfig{
+			config: PushoverConfig{
 				Token: "token123",
 				User:  "userKey",
 			},
@@ -27,7 +26,7 @@ func TestBuildPushoverURL(t *testing.T) {
 		},
 		{
 			name: "config with devices priority and title",
-			config: models.PushoverConfig{
+			config: PushoverConfig{
 				Token:    "token123",
 				User:     "userKey",
 				Devices:  []string{"device1", "device2"},
@@ -48,21 +47,21 @@ func TestBuildPushoverURL(t *testing.T) {
 		},
 		{
 			name: "missing token",
-			config: models.PushoverConfig{
+			config: PushoverConfig{
 				User: "userKey",
 			},
 			wantErr: "pushover token is required",
 		},
 		{
 			name: "missing user",
-			config: models.PushoverConfig{
+			config: PushoverConfig{
 				Token: "token123",
 			},
 			wantErr: "pushover user key is required",
 		},
 		{
 			name: "invalid priority",
-			config: models.PushoverConfig{
+			config: PushoverConfig{
 				Token:    "token123",
 				User:     "userKey",
 				Priority: 3,

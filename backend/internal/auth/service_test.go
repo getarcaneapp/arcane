@@ -1,6 +1,12 @@
 package auth
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
+
 	"context"
 	"crypto/rand"
 	"testing"
@@ -15,7 +21,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
@@ -35,15 +40,15 @@ func setupAuthServiceTestDB(t *testing.T) *database.DB {
 	require.NoError(t, err)
 	sqlDB.SetMaxOpenConns(1)
 	require.NoError(t, db.AutoMigrate(
-		&models.SettingVariable{},
-		&models.User{},
-		&models.UserSession{},
-		&models.Environment{},
-		&models.Role{},
-		&models.UserRoleAssignment{},
-		&models.ApiKey{},
-		&models.ApiKeyPermission{},
-		&models.OidcRoleMapping{},
+		&settings.SettingVariable{},
+		&common.User{},
+		&session.UserSession{},
+		&environment.Environment{},
+		&role.Role{},
+		&role.UserRoleAssignment{},
+		&apikey.ApiKey{},
+		&role.ApiKeyPermission{},
+		&role.OidcRoleMapping{},
 	))
 	return &database.DB{DB: db}
 }
@@ -153,7 +158,7 @@ func makeRefreshToken(t *testing.T, secret []byte, subject string, id string, ex
 	return signed
 }
 
-func createTestSession(t *testing.T, db *database.DB, userID string, expiresAt time.Time) (*models.UserSession, string) {
+func createTestSession(t *testing.T, db *database.DB, userID string, expiresAt time.Time) (*session.UserSession, string) {
 	t.Helper()
 	sessionSvc := session.NewSessionService(db)
 	session, refreshJTI, err := sessionSvc.CreateSession(context.Background(), userID, expiresAt, auth.SessionMeta{
@@ -183,8 +188,8 @@ func TestVerifyToken_ValidClaims(t *testing.T) {
 	s.sessionService = session.NewSessionService(db)
 
 	// Create user in DB
-	user := &models.User{
-		BaseModel:   models.BaseModel{ID: "u123"},
+	user := &common.User{
+		BaseModel:   database.BaseModel{ID: "u123"},
 		Username:    "alice",
 		Email:       new("a@example.com"),
 		DisplayName: new("Alice"),
@@ -245,8 +250,8 @@ func TestVerifyToken_Expired(t *testing.T) {
 	s.sessionService = session.NewSessionService(db)
 
 	// Create user in DB
-	user := &models.User{
-		BaseModel: models.BaseModel{ID: "u1"},
+	user := &common.User{
+		BaseModel: database.BaseModel{ID: "u1"},
 		Username:  "bob",
 	}
 	_, err := userSvc.CreateUser(context.Background(), user)
@@ -319,7 +324,7 @@ func TestGenerateUsernameFromEmail(t *testing.T) {
 
 func TestPersistOidcTokens_SetsFields(t *testing.T) {
 	s := newTestAuthService("")
-	user := &models.User{}
+	user := &common.User{}
 	start := time.Now()
 	resp := &auth.OidcTokenResponse{
 		AccessToken:  "at-123",
@@ -374,8 +379,8 @@ func TestRefreshToken_Valid(t *testing.T) {
 	s.settingsService = settingsSvc
 	s.sessionService = session.NewSessionService(db)
 
-	user := &models.User{
-		BaseModel: models.BaseModel{ID: "u-refresh"},
+	user := &common.User{
+		BaseModel: database.BaseModel{ID: "u-refresh"},
 		Username:  "refresh-user",
 	}
 	_, err = userSvc.CreateUser(context.Background(), user)
@@ -405,8 +410,8 @@ func TestRefreshToken_VersionMismatchRotates(t *testing.T) {
 	s.settingsService = settingsSvc
 	s.sessionService = session.NewSessionService(db)
 
-	user := &models.User{
-		BaseModel: models.BaseModel{ID: "u-versionmismatch"},
+	user := &common.User{
+		BaseModel: database.BaseModel{ID: "u-versionmismatch"},
 		Username:  "versionmismatch-user",
 	}
 	_, err = userSvc.CreateUser(context.Background(), user)
@@ -451,8 +456,8 @@ func TestVerifyToken_RejectsRevokedSession(t *testing.T) {
 	s.userService = userSvc
 	s.sessionService = session.NewSessionService(db)
 
-	user := &models.User{
-		BaseModel: models.BaseModel{ID: "u-revoked"},
+	user := &common.User{
+		BaseModel: database.BaseModel{ID: "u-revoked"},
 		Username:  "revoked-user",
 	}
 	_, err := userSvc.CreateUser(context.Background(), user)
@@ -474,8 +479,8 @@ func TestVerifyToken_RejectsMissingSessionID(t *testing.T) {
 	s.userService = userSvc
 	s.sessionService = session.NewSessionService(db)
 
-	user := &models.User{
-		BaseModel: models.BaseModel{ID: "u-no-sid"},
+	user := &common.User{
+		BaseModel: database.BaseModel{ID: "u-no-sid"},
 		Username:  "no-sid-user",
 	}
 	_, err := userSvc.CreateUser(context.Background(), user)
@@ -494,8 +499,8 @@ func TestRevokeSessionThenVerifyTokenFails(t *testing.T) {
 	s.userService = userSvc
 	s.sessionService = session.NewSessionService(db)
 
-	user := &models.User{
-		BaseModel: models.BaseModel{ID: "u-logout"},
+	user := &common.User{
+		BaseModel: database.BaseModel{ID: "u-logout"},
 		Username:  "logout-user",
 	}
 	_, err := userSvc.CreateUser(context.Background(), user)
@@ -517,8 +522,8 @@ func TestVerifyToken_RejectsRevokedCachedSession(t *testing.T) {
 	s.userService = userSvc
 	s.sessionService = session.NewSessionService(db)
 
-	user := &models.User{
-		BaseModel: models.BaseModel{ID: "u-cached-revoked"},
+	user := &common.User{
+		BaseModel: database.BaseModel{ID: "u-cached-revoked"},
 		Username:  "cached-revoked-user",
 	}
 	_, err := userSvc.CreateUser(context.Background(), user)
@@ -546,8 +551,8 @@ func TestRefreshToken_RotatesJTI(t *testing.T) {
 	s.settingsService = settingsSvc
 	s.sessionService = session.NewSessionService(db)
 
-	user := &models.User{
-		BaseModel: models.BaseModel{ID: "u-rotate"},
+	user := &common.User{
+		BaseModel: database.BaseModel{ID: "u-rotate"},
 		Username:  "rotate-user",
 	}
 	_, err = userSvc.CreateUser(context.Background(), user)
@@ -575,8 +580,8 @@ func TestRefreshToken_RejectsRevokedSession(t *testing.T) {
 	s.settingsService = settingsSvc
 	s.sessionService = session.NewSessionService(db)
 
-	user := &models.User{
-		BaseModel: models.BaseModel{ID: "u-refresh-revoked"},
+	user := &common.User{
+		BaseModel: database.BaseModel{ID: "u-refresh-revoked"},
 		Username:  "refresh-revoked-user",
 	}
 	_, err = userSvc.CreateUser(context.Background(), user)
@@ -600,8 +605,8 @@ func TestChangePassword_RevokesAllSessions(t *testing.T) {
 
 	passwordHash, err := userSvc.HashPassword("old-password")
 	require.NoError(t, err)
-	user := &models.User{
-		BaseModel:    models.BaseModel{ID: "u-password"},
+	user := &common.User{
+		BaseModel:    database.BaseModel{ID: "u-password"},
 		Username:     "password-user",
 		PasswordHash: passwordHash,
 	}
@@ -630,8 +635,8 @@ func TestChangePassword_KeepsCurrentSessionAlive(t *testing.T) {
 
 	passwordHash, err := userSvc.HashPassword("old-password")
 	require.NoError(t, err)
-	user := &models.User{
-		BaseModel:    models.BaseModel{ID: "u-keep"},
+	user := &common.User{
+		BaseModel:    database.BaseModel{ID: "u-keep"},
 		Username:     "keep-user",
 		PasswordHash: passwordHash,
 	}
@@ -779,8 +784,8 @@ func TestFindOrCreateOidcUser_MergeEnabled_EmailNotVerified_WithExistingUser_Ret
 	userSvc := user.NewUserService(db)
 	// Seed an existing local user with matching email
 	email := "existing@example.com"
-	existing := &models.User{
-		BaseModel: models.BaseModel{ID: "u1"},
+	existing := &common.User{
+		BaseModel: database.BaseModel{ID: "u1"},
 		Username:  "existing",
 		Email:     &email,
 	}
@@ -821,8 +826,8 @@ func TestFindOrCreateOidcUser_MergeEnabled_EmailVerificationMissing_WithExisting
 	userSvc := user.NewUserService(db)
 	// Seed an existing local user with matching email
 	email := "existing@example.com"
-	existing := &models.User{
-		BaseModel: models.BaseModel{ID: "u1"},
+	existing := &common.User{
+		BaseModel: database.BaseModel{ID: "u1"},
 		Username:  "existing",
 		Email:     &email,
 	}
@@ -866,13 +871,13 @@ func TestAuthenticateLocalPrimary_EmailFallback(t *testing.T) {
 	require.NoError(t, err)
 	dupHash, err := userSvc.HashPassword("dup-two-pass!")
 	require.NoError(t, err)
-	for _, u := range []*models.User{
-		{BaseModel: models.BaseModel{ID: "u-email-login"}, Username: "bob", Email: new("bob@example.com"), PasswordHash: hash},
-		{BaseModel: models.BaseModel{ID: "u-dup-1"}, Username: "dup1", Email: new("dup@example.com"), PasswordHash: hash},
-		{BaseModel: models.BaseModel{ID: "u-dup-2"}, Username: "dup2", Email: new("dup@example.com"), PasswordHash: dupHash},
-		{BaseModel: models.BaseModel{ID: "u-carol"}, Username: "carol@example.com", Email: new("carol@example.com"), PasswordHash: hash},
-		{BaseModel: models.BaseModel{ID: "u-col-a"}, Username: "owner@example.com", PasswordHash: hash},
-		{BaseModel: models.BaseModel{ID: "u-col-b"}, Username: "colb", Email: new("owner@example.com"), PasswordHash: dupHash},
+	for _, u := range []*common.User{
+		{BaseModel: database.BaseModel{ID: "u-email-login"}, Username: "bob", Email: new("bob@example.com"), PasswordHash: hash},
+		{BaseModel: database.BaseModel{ID: "u-dup-1"}, Username: "dup1", Email: new("dup@example.com"), PasswordHash: hash},
+		{BaseModel: database.BaseModel{ID: "u-dup-2"}, Username: "dup2", Email: new("dup@example.com"), PasswordHash: dupHash},
+		{BaseModel: database.BaseModel{ID: "u-carol"}, Username: "carol@example.com", Email: new("carol@example.com"), PasswordHash: hash},
+		{BaseModel: database.BaseModel{ID: "u-col-a"}, Username: "owner@example.com", PasswordHash: hash},
+		{BaseModel: database.BaseModel{ID: "u-col-b"}, Username: "colb", Email: new("owner@example.com"), PasswordHash: dupHash},
 	} {
 		_, err = userSvc.CreateUser(context.Background(), u)
 		require.NoError(t, err)

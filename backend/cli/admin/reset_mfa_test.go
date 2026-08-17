@@ -1,6 +1,8 @@
 package admin
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+
 	"bytes"
 	"context"
 	"testing"
@@ -15,7 +17,6 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/types/v2/auth"
 )
 
@@ -24,12 +25,12 @@ func newResetMFATestDBInternal(t *testing.T) *database.DB {
 	gormDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, gormDB.AutoMigrate(
-		&models.User{},
-		&models.UserSession{},
-		&models.Passkey{},
-		&models.PasskeyCeremony{},
-		&models.AuthTransaction{},
-		&models.PasskeyRecoveryCode{},
+		&common.User{},
+		&session.UserSession{},
+		&passkey.Passkey{},
+		&passkey.PasskeyCeremony{},
+		&passkey.AuthTransaction{},
+		&passkey.PasskeyRecoveryCode{},
 	))
 
 	db := &database.DB{DB: gormDB}
@@ -56,14 +57,14 @@ func TestConfirmMFAResetInternal(t *testing.T) {
 func TestResetMFACommandServiceStatePreservesPasskey(t *testing.T) {
 	db := newResetMFATestDBInternal(t)
 	ctx := context.Background()
-	user := &models.User{
-		BaseModel:         models.BaseModel{ID: "mfa-reset-user"},
+	user := &common.User{
+		BaseModel:         database.BaseModel{ID: "mfa-reset-user"},
 		Username:          "alice",
 		PasskeyMFAEnabled: true,
 	}
 	require.NoError(t, db.Create(user).Error)
-	passkeyRecord := &models.Passkey{
-		BaseModel:    models.BaseModel{ID: "mfa-reset-passkey"},
+	passkeyRecord := &passkey.Passkey{
+		BaseModel:    database.BaseModel{ID: "mfa-reset-passkey"},
 		UserID:       user.ID,
 		RPID:         "arcane.example.test",
 		CredentialID: []byte("credential"),
@@ -76,22 +77,22 @@ func TestResetMFACommandServiceStatePreservesPasskey(t *testing.T) {
 	require.NoError(t, err)
 	secondSession, _, err := sessionService.CreateSession(ctx, user.ID, time.Now().Add(time.Hour), auth.SessionMeta{})
 	require.NoError(t, err)
-	require.NoError(t, db.Create(&models.PasskeyRecoveryCode{
-		BaseModel: models.BaseModel{ID: "mfa-reset-code"},
+	require.NoError(t, db.Create(&passkey.PasskeyRecoveryCode{
+		BaseModel: database.BaseModel{ID: "mfa-reset-code"},
 		UserID:    user.ID,
 		CodeHash:  "stored-hash",
 	}).Error)
-	transaction := &models.AuthTransaction{
-		BaseModel: models.BaseModel{ID: "mfa-reset-transaction"},
+	transaction := &passkey.AuthTransaction{
+		BaseModel: database.BaseModel{ID: "mfa-reset-transaction"},
 		Kind:      "mfa",
 		UserID:    user.ID,
-		Source:    models.UserSessionSourceLocal,
+		Source:    session.UserSessionSourceLocal,
 		Status:    "pending",
 		ExpiresAt: time.Now().Add(time.Minute),
 	}
 	require.NoError(t, db.Create(transaction).Error)
-	require.NoError(t, db.Create(&models.PasskeyCeremony{
-		BaseModel:         models.BaseModel{ID: "mfa-reset-ceremony"},
+	require.NoError(t, db.Create(&passkey.PasskeyCeremony{
+		BaseModel:         database.BaseModel{ID: "mfa-reset-ceremony"},
 		Purpose:           "mfa",
 		UserID:            new(user.ID),
 		AuthTransactionID: new(transaction.ID),
@@ -103,18 +104,18 @@ func TestResetMFACommandServiceStatePreservesPasskey(t *testing.T) {
 	service := passkey.NewPasskeyService(db, &config.Config{AppUrl: "https://arcane.example.test"})
 	require.NoError(t, service.ResetMFAForUser(ctx, user.ID))
 
-	var updatedUser models.User
+	var updatedUser common.User
 	require.NoError(t, db.Where("id = ?", user.ID).First(&updatedUser).Error)
 	require.False(t, updatedUser.PasskeyMFAEnabled)
 	var count int64
-	require.NoError(t, db.Model(&models.PasskeyRecoveryCode{}).Where("user_id = ?", user.ID).Count(&count).Error)
+	require.NoError(t, db.Model(&passkey.PasskeyRecoveryCode{}).Where("user_id = ?", user.ID).Count(&count).Error)
 	require.Zero(t, count)
-	require.NoError(t, db.Model(&models.PasskeyCeremony{}).Where("user_id = ?", user.ID).Count(&count).Error)
+	require.NoError(t, db.Model(&passkey.PasskeyCeremony{}).Where("user_id = ?", user.ID).Count(&count).Error)
 	require.Zero(t, count)
-	require.NoError(t, db.Model(&models.AuthTransaction{}).Where("user_id = ?", user.ID).Count(&count).Error)
+	require.NoError(t, db.Model(&passkey.AuthTransaction{}).Where("user_id = ?", user.ID).Count(&count).Error)
 	require.Zero(t, count)
 
-	var preserved models.Passkey
+	var preserved passkey.Passkey
 	require.NoError(t, db.Where("id = ?", passkeyRecord.ID).First(&preserved).Error)
 	require.Equal(t, passkeyRecord.ID, preserved.ID)
 	first, err := sessionService.GetSessionByID(ctx, firstSession.ID)

@@ -8,7 +8,6 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 	"github.com/getarcaneapp/arcane/types/v2/base"
@@ -307,9 +306,9 @@ func (h *RoleHandler) ListUserRoleAssignments(ctx context.Context, input *ListUs
 }
 
 func (h *RoleHandler) SetUserRoleAssignments(ctx context.Context, input *SetUserRoleAssignmentsInput) (*SetUserRoleAssignmentsOutput, error) {
-	desired := make([]models.UserRoleAssignment, len(input.Body.Assignments))
+	desired := make([]UserRoleAssignment, len(input.Body.Assignments))
 	for i, a := range input.Body.Assignments {
-		desired[i] = models.UserRoleAssignment{RoleID: a.RoleID, EnvironmentID: a.EnvironmentID}
+		desired[i] = UserRoleAssignment{RoleID: a.RoleID, EnvironmentID: a.EnvironmentID}
 	}
 	if err := h.roleService.SetUserAssignments(ctx, input.UserID, desired); err != nil {
 		switch {
@@ -337,7 +336,7 @@ func (h *RoleHandler) SetUserRoleAssignments(ctx context.Context, input *SetUser
 
 // ---------- DTO mappers ----------
 
-func (h *RoleHandler) toRoleDTO(ctx context.Context, r *models.Role) roletypes.Role {
+func (h *RoleHandler) toRoleDTO(ctx context.Context, r *Role) roletypes.Role {
 	out := roletypes.Role{
 		ID:          r.ID,
 		Name:        r.Name,
@@ -353,7 +352,7 @@ func (h *RoleHandler) toRoleDTO(ctx context.Context, r *models.Role) roletypes.R
 	return out
 }
 
-func toAssignmentDTOInternal(r *models.UserRoleAssignment) roletypes.RoleAssignment {
+func toAssignmentDTOInternal(r *UserRoleAssignment) roletypes.RoleAssignment {
 	return roletypes.RoleAssignment{
 		ID:            r.ID,
 		UserID:        r.UserID,

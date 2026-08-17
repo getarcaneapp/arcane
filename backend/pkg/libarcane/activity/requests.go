@@ -1,15 +1,18 @@
 package activity
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+
 	"context"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 )
 
 type Service interface {
 	StartActivity(ctx context.Context, req StartRequest) (*activitytypes.Activity, error)
-	CompleteActivity(ctx context.Context, activityID string, status models.ActivityStatus, finalMessage string, errMessage *string, finalStep ...string) (*activitytypes.Activity, error)
+	CompleteActivity(ctx context.Context, activityID string, status activitytypes.Status, finalMessage string, errMessage *string, finalStep ...string) (*activitytypes.Activity, error)
 }
 
 type MessageAppender interface {
@@ -47,30 +50,30 @@ type StartRequest struct {
 	// created with status queued and the caller must block on
 	// SlotWaiter.AwaitActivitySlot before doing the work.
 	Queue         bool
-	Type          models.ActivityType
+	Type          activitytypes.Type
 	ResourceType  *string
 	ResourceID    *string
 	ResourceName  *string
-	StartedBy     *models.User
+	StartedBy     *common.User
 	Step          string
 	LatestMessage string
 	Progress      *int
-	Metadata      models.JSON
+	Metadata      database.JSON
 }
 
 type UpdateRequest struct {
-	Status        models.ActivityStatus
+	Status        activitytypes.Status
 	Progress      *int
 	Step          *string
 	LatestMessage *string
 	Error         *string
-	Metadata      models.JSON
+	Metadata      database.JSON
 }
 
 type AppendMessageRequest struct {
-	Level    models.ActivityMessageLevel
+	Level    activitytypes.MessageLevel
 	Message  string
-	Payload  models.JSON
+	Payload  database.JSON
 	Progress *int
 	Step     string
 }

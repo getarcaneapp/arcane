@@ -11,7 +11,6 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/libtnb/sqlite"
@@ -24,14 +23,14 @@ func setupEventServiceTestDB(t *testing.T) *database.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&models.Event{}))
+	require.NoError(t, db.AutoMigrate(&Event{}))
 	return &database.DB{DB: db}
 }
 
 func TestCreateEventRequestJSONOmitempty(t *testing.T) {
 	t.Run("includes optional fields when set", func(t *testing.T) {
 		payload, err := json.Marshal(CreateEventRequest{
-			Type:         models.EventTypeContainerStart,
+			Type:         EventTypeContainerStart,
 			Title:        "Container started",
 			Description:  "Container 'web' has been started",
 			ResourceType: new("container"),
@@ -54,7 +53,7 @@ func TestCreateEventRequestJSONOmitempty(t *testing.T) {
 
 	t.Run("omits optional fields when nil", func(t *testing.T) {
 		payload, err := json.Marshal(CreateEventRequest{
-			Type:  models.EventTypeUserLogin,
+			Type:  EventTypeUserLogin,
 			Title: "User logged in",
 		})
 		require.NoError(t, err)
@@ -81,12 +80,12 @@ func TestEventService_LogEventsPersistOptionalPointers(t *testing.T) {
 	db := setupEventServiceTestDB(t)
 	svc := NewEventService(db, nil, nil)
 
-	metadata := models.JSON{"source": "test"}
-	err := svc.LogContainerEvent(ctx, models.EventTypeContainerStart, "container-1", "web", "user-1", "arcane", "0", metadata)
+	metadata := database.JSON{"source": "test"}
+	err := svc.LogContainerEvent(ctx, EventTypeContainerStart, "container-1", "web", "user-1", "arcane", "0", metadata)
 	require.NoError(t, err)
 
-	var containerEvent models.Event
-	err = db.WithContext(ctx).Where("type = ?", models.EventTypeContainerStart).First(&containerEvent).Error
+	var containerEvent Event
+	err = db.WithContext(ctx).Where("type = ?", EventTypeContainerStart).First(&containerEvent).Error
 	require.NoError(t, err)
 
 	require.NotNil(t, containerEvent.ResourceType)
@@ -103,11 +102,11 @@ func TestEventService_LogEventsPersistOptionalPointers(t *testing.T) {
 	require.Equal(t, "0", *containerEvent.EnvironmentID)
 	require.Equal(t, "test", containerEvent.Metadata["source"])
 
-	err = svc.LogUserEvent(ctx, models.EventTypeUserLogin, "user-2", "arcane-user", nil)
+	err = svc.LogUserEvent(ctx, EventTypeUserLogin, "user-2", "arcane-user", nil)
 	require.NoError(t, err)
 
-	var userEvent models.Event
-	err = db.WithContext(ctx).Where("type = ?", models.EventTypeUserLogin).First(&userEvent).Error
+	var userEvent Event
+	err = db.WithContext(ctx).Where("type = ?", EventTypeUserLogin).First(&userEvent).Error
 	require.NoError(t, err)
 
 	require.Nil(t, userEvent.ResourceType)
@@ -120,7 +119,7 @@ func TestEventService_LogEventsPersistOptionalPointers(t *testing.T) {
 }
 
 func TestCloneEventMetadataInternal(t *testing.T) {
-	src := models.JSON{"a": "b"}
+	src := database.JSON{"a": "b"}
 	cloned := cloneEventMetadataInternal(src)
 
 	require.Equal(t, "b", cloned["a"])
@@ -131,7 +130,7 @@ func TestCloneEventMetadataInternal(t *testing.T) {
 	require.NotNil(t, nilClone)
 	require.Empty(t, nilClone)
 
-	nested := models.JSON{
+	nested := database.JSON{
 		"outer": map[string]any{
 			"slice": []any{
 				map[string]any{"k": "v"},
@@ -142,11 +141,11 @@ func TestCloneEventMetadataInternal(t *testing.T) {
 	require.NotNil(t, nestedClone["outer"])
 
 	outer := nested["outer"].(map[string]any)
-	outerClone := nestedClone["outer"].(models.JSON)
+	outerClone := nestedClone["outer"].(database.JSON)
 	sliceOriginal := outer["slice"].([]any)
 	sliceClone := outerClone["slice"].([]any)
 
-	sliceClone[0].(models.JSON)["k"] = "changed"
+	sliceClone[0].(database.JSON)["k"] = "changed"
 	require.Equal(t, "v", sliceOriginal[0].(map[string]any)["k"], "nested map inside slice should be deep-cloned")
 }
 
@@ -155,10 +154,10 @@ func TestEventService_LogErrorEvent_DoesNotMutateInputMetadata(t *testing.T) {
 	db := setupEventServiceTestDB(t)
 	svc := NewEventService(db, nil, nil)
 
-	metadata := models.JSON{"phase": "pull"}
+	metadata := database.JSON{"phase": "pull"}
 	svc.LogErrorEvent(
 		ctx,
-		models.EventTypeImageScan,
+		EventTypeImageScan,
 		"image",
 		"img-1",
 		"nginx:latest",
@@ -172,10 +171,10 @@ func TestEventService_LogErrorEvent_DoesNotMutateInputMetadata(t *testing.T) {
 	_, mutated := metadata["error"]
 	require.False(t, mutated, "input metadata should not be mutated by LogErrorEvent")
 
-	var saved models.Event
-	err := db.WithContext(ctx).Where("type = ?", models.EventTypeImageScan).First(&saved).Error
+	var saved Event
+	err := db.WithContext(ctx).Where("type = ?", EventTypeImageScan).First(&saved).Error
 	require.NoError(t, err)
-	require.Equal(t, models.EventSeverityError, saved.Severity)
+	require.Equal(t, EventSeverityError, saved.Severity)
 	require.Equal(t, "pull", saved.Metadata["phase"])
 	require.Equal(t, "pull failed", saved.Metadata["error"])
 }
@@ -219,19 +218,19 @@ func TestEventService_CreateEvent_ForwardsToManagerAPIInAgentMode(t *testing.T) 
 	svc := NewEventService(db, cfg, server.Client())
 
 	_, err := svc.CreateEvent(ctx, CreateEventRequest{
-		Type:          models.EventTypeContainerStart,
-		Severity:      models.EventSeverityInfo,
+		Type:          EventTypeContainerStart,
+		Severity:      EventSeverityInfo,
 		Title:         "Container started: web",
 		Description:   "Container 'web' has been started",
 		EnvironmentID: new("0"),
-		Metadata:      models.JSON{"source": "test"},
+		Metadata:      database.JSON{"source": "test"},
 	})
 	require.NoError(t, err)
 
 	select {
 	case payload := <-requests:
-		require.Equal(t, models.EventTypeContainerStart, payload.Type)
-		require.Equal(t, models.EventSeverityInfo, payload.Severity)
+		require.Equal(t, EventTypeContainerStart, payload.Type)
+		require.Equal(t, EventSeverityInfo, payload.Severity)
 		require.Equal(t, "Container started: web", payload.Title)
 		require.NotNil(t, payload.EnvironmentID)
 		require.Equal(t, "0", *payload.EnvironmentID)
@@ -248,8 +247,8 @@ func TestEventService_CreateEvent_NormalizesActor(t *testing.T) {
 
 	t.Run("falls back to system when actor is missing", func(t *testing.T) {
 		evt, err := svc.CreateEvent(ctx, CreateEventRequest{
-			Type:     models.EventTypeSystemAutoUpdate,
-			Severity: models.EventSeverityInfo,
+			Type:     EventTypeSystemAutoUpdate,
+			Severity: EventSeverityInfo,
 			Title:    "System task",
 		})
 		require.NoError(t, err)
@@ -261,8 +260,8 @@ func TestEventService_CreateEvent_NormalizesActor(t *testing.T) {
 
 	t.Run("copies user id to username when username is missing", func(t *testing.T) {
 		evt, err := svc.CreateEvent(ctx, CreateEventRequest{
-			Type:     models.EventTypeProjectDeploy,
-			Severity: models.EventSeverityInfo,
+			Type:     EventTypeProjectDeploy,
+			Severity: EventSeverityInfo,
 			Title:    "Deploy",
 			UserID:   new("u-123"),
 		})
@@ -275,8 +274,8 @@ func TestEventService_CreateEvent_NormalizesActor(t *testing.T) {
 
 	t.Run("copies username to user id when user id is missing", func(t *testing.T) {
 		evt, err := svc.CreateEvent(ctx, CreateEventRequest{
-			Type:     models.EventTypeProjectDeploy,
-			Severity: models.EventSeverityInfo,
+			Type:     EventTypeProjectDeploy,
+			Severity: EventSeverityInfo,
 			Title:    "Deploy",
 			Username: new("kmendell"),
 		})
@@ -293,15 +292,15 @@ func TestEventService_GetEventSeverityCounts(t *testing.T) {
 	db := setupEventServiceTestDB(t)
 	svc := NewEventService(db, nil, nil)
 
-	seed := []models.EventSeverity{
-		models.EventSeverityInfo,
-		models.EventSeverityInfo,
-		models.EventSeveritySuccess,
-		models.EventSeverityError,
+	seed := []EventSeverity{
+		EventSeverityInfo,
+		EventSeverityInfo,
+		EventSeveritySuccess,
+		EventSeverityError,
 	}
 	for i, severity := range seed {
 		_, err := svc.CreateEvent(ctx, CreateEventRequest{
-			Type:     models.EventTypeContainerStart,
+			Type:     EventTypeContainerStart,
 			Severity: severity,
 			Title:    "event",
 		})
@@ -318,10 +317,10 @@ func TestEventService_ListEventsPaginated_TypeCategoryFilter(t *testing.T) {
 	db := setupEventServiceTestDB(t)
 	svc := NewEventService(db, nil, nil)
 
-	for _, eventType := range []models.EventType{
-		models.EventTypeContainerStart,
-		models.EventTypeContainerStop,
-		models.EventTypeImagePull,
+	for _, eventType := range []EventType{
+		EventTypeContainerStart,
+		EventTypeContainerStop,
+		EventTypeImagePull,
 	} {
 		_, err := svc.CreateEvent(ctx, CreateEventRequest{Type: eventType, Title: "event"})
 		require.NoError(t, err)

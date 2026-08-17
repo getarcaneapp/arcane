@@ -1,6 +1,10 @@
 package bootstrap
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+
 	"context"
 	"slices"
 	"testing"
@@ -8,7 +12,6 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/stretchr/testify/require"
@@ -47,9 +50,9 @@ type timeoutSyncEnvironmentStubInternal struct {
 	started chan struct{}
 }
 
-func (s *timeoutSyncEnvironmentStubInternal) ListRemoteEnvironments(context.Context) ([]models.Environment, error) {
-	return []models.Environment{{
-		BaseModel: models.BaseModel{ID: "remote"},
+func (s *timeoutSyncEnvironmentStubInternal) ListRemoteEnvironments(context.Context) ([]environment.Environment, error) {
+	return []environment.Environment{{
+		BaseModel: database.BaseModel{ID: "remote"},
 		Name:      "remote",
 	}}, nil
 }

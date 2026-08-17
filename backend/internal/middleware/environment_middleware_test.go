@@ -1,12 +1,13 @@
 package middleware
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+
 	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
@@ -23,7 +24,7 @@ func newTestEnvironmentMiddleware() *EnvironmentMiddleware {
 			_ = ctx
 			return "edge://oracle-1", nil, true, nil
 		},
-		authValidator: func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *models.User, bool) {
+		authValidator: func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *common.User, bool) {
 			_ = ctx
 			_ = c
 			return authz.SudoPermissionSet(), nil, true
@@ -246,7 +247,7 @@ func TestEnvironmentMiddleware_LocalEnvironmentSkipsProxyPermissionCheck(t *test
 		localID:   "0",
 		paramName: "id",
 		matcher:   matcher,
-		authValidator: func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *models.User, bool) {
+		authValidator: func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *common.User, bool) {
 			_ = ctx
 			_ = c
 			return authz.NewPermissionSet(), nil, true
@@ -357,9 +358,9 @@ func TestEnvironmentMiddleware_ForwardsResolvedIconCatalogHeaderOnly(t *testing.
 					_, _ = ctx, id
 					return backend.URL, nil, true, nil
 				},
-				authValidator: func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *models.User, bool) {
+				authValidator: func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *common.User, bool) {
 					_, _ = ctx, c
-					u := &models.User{}
+					u := &common.User{}
 					u.Preferences.IconCatalog = tt.catalog
 					return authz.SudoPermissionSet(), u, true
 				},

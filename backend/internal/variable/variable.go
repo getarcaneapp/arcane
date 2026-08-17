@@ -22,7 +22,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
@@ -108,7 +107,7 @@ func (s *VariableService) CreateVariable(ctx context.Context, req env.CreateGlob
 		}
 	}
 
-	variable := models.GlobalVariable{
+	variable := GlobalVariable{
 		Key:             key,
 		Value:           value,
 		IsSecret:        req.IsSecret,
@@ -134,7 +133,7 @@ func (s *VariableService) CreateVariable(ctx context.Context, req env.CreateGlob
 }
 
 func (s *VariableService) UpdateVariable(ctx context.Context, id string, req env.UpdateGlobalVariableRequest) (*env.GlobalVariable, error) {
-	var variable models.GlobalVariable
+	var variable GlobalVariable
 	if err := s.db.WithContext(ctx).Preload("Environments").First(&variable, "id = ?", id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, common.Classify(common.ErrGlobalVariableNotFound, errors.New("Global variable not found"))
@@ -191,7 +190,7 @@ func (s *VariableService) UpdateVariable(ctx context.Context, id string, req env
 // resolveUpdatedValueInternal computes the stored value for an update:
 // encrypts when the result is secret and enforces that a secret cannot be
 // made readable without a replacement value (revealing the stored one).
-func resolveUpdatedValueInternal(variable *models.GlobalVariable, reqValue *string, isSecret bool) (string, error) {
+func resolveUpdatedValueInternal(variable *GlobalVariable, reqValue *string, isSecret bool) (string, error) {
 	if variable.IsSecret && !isSecret && reqValue == nil {
 		return "", common.Classify(common.ErrGlobalVariableSecretValueRequired, errors.New("A new value is required when making a secret variable readable"))
 	}
@@ -220,7 +219,7 @@ func resolveUpdatedValueInternal(variable *models.GlobalVariable, reqValue *stri
 
 // resolveUpdatedScopeInternal merges the requested scope change (if any) with
 // the variable's current scope and normalizes it.
-func (s *VariableService) resolveUpdatedScopeInternal(ctx context.Context, variable *models.GlobalVariable, req env.UpdateGlobalVariableRequest) ([]string, bool, error) {
+func (s *VariableService) resolveUpdatedScopeInternal(ctx context.Context, variable *GlobalVariable, req env.UpdateGlobalVariableRequest) ([]string, bool, error) {
 	envIDs := scopedEnvironmentIDsInternal(variable.Environments)
 	if req.AllEnvironments == nil && req.EnvironmentIDs == nil {
 		return envIDs, variable.AllEnvironments, nil
@@ -244,7 +243,7 @@ func (s *VariableService) resolveUpdatedScopeInternal(ctx context.Context, varia
 
 func (s *VariableService) DeleteVariable(ctx context.Context, id string) error {
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		result := tx.Delete(&models.GlobalVariable{}, "id = ?", id)
+		result := tx.Delete(&GlobalVariable{}, "id = ?", id)
 		if result.Error != nil {
 			return errors.WrapIf(result.Error, "failed to delete global variable")
 		}
@@ -653,7 +652,7 @@ func (s *VariableService) importVariablesInternal(ctx context.Context, vars []en
 			continue
 		}
 
-		variable := models.GlobalVariable{
+		variable := GlobalVariable{
 			Key:             key,
 			Value:           entry.Value,
 			AllEnvironments: scopeEnvID == "",
@@ -681,8 +680,8 @@ func (s *VariableService) importVariablesInternal(ctx context.Context, vars []en
 // Helpers
 //
 
-func (s *VariableService) loadVariablesInternal(ctx context.Context) ([]models.GlobalVariable, error) {
-	var variables []models.GlobalVariable
+func (s *VariableService) loadVariablesInternal(ctx context.Context) ([]GlobalVariable, error) {
+	var variables []GlobalVariable
 	if err := s.db.WithContext(ctx).Preload("Environments").Order("key").Find(&variables).Error; err != nil {
 		return nil, errors.WrapIf(err, "failed to load global variables")
 	}
@@ -710,7 +709,7 @@ func (s *VariableService) normalizeScopeInternal(ctx context.Context, allEnviron
 	}
 
 	var count int64
-	if err := s.db.WithContext(ctx).Model(&models.Environment{}).Where("id IN ?", unique).Count(&count).Error; err != nil {
+	if err := s.db.WithContext(ctx).Model(&environment.Environment{}).Where("id IN ?", unique).Count(&count).Error; err != nil {
 		return nil, errors.WrapIf(err, "Failed to update global variables")
 	}
 	if count != int64(len(unique)) {
@@ -723,7 +722,7 @@ func (s *VariableService) normalizeScopeInternal(ctx context.Context, allEnviron
 // exist once per overlapping scope. The same key as both an all-environments
 // variable and an env-scoped variable is allowed (that is the override).
 func (s *VariableService) validateScopeConflictInternal(tx *gorm.DB, key string, excludeID string, allEnvironments bool, envIDs []string) error {
-	var others []models.GlobalVariable
+	var others []GlobalVariable
 	query := tx.Preload("Environments").Where("key = ?", key)
 	if excludeID != "" {
 		query = query.Where("id <> ?", excludeID)
@@ -773,7 +772,7 @@ func wrapVariableMutationErrorInternal(err error) error {
 	return errors.WrapIf(err, "Failed to update global variables")
 }
 
-func scopedEnvironmentIDsInternal(environments []models.Environment) []string {
+func scopedEnvironmentIDsInternal(environments []environment.Environment) []string {
 	ids := make([]string, 0, len(environments))
 	for _, environment := range environments {
 		ids = append(ids, environment.ID)
@@ -781,15 +780,15 @@ func scopedEnvironmentIDsInternal(environments []models.Environment) []string {
 	return ids
 }
 
-func environmentsFromIDsInternal(envIDs []string) []models.Environment {
-	environments := make([]models.Environment, 0, len(envIDs))
+func environmentsFromIDsInternal(envIDs []string) []environment.Environment {
+	environments := make([]environment.Environment, 0, len(envIDs))
 	for _, id := range envIDs {
-		environments = append(environments, models.Environment{BaseModel: models.BaseModel{ID: id}})
+		environments = append(environments, environment.Environment{BaseModel: database.BaseModel{ID: id}})
 	}
 	return environments
 }
 
-func globalVariableToDTOInternal(variable models.GlobalVariable) env.GlobalVariable {
+func globalVariableToDTOInternal(variable GlobalVariable) env.GlobalVariable {
 	value := variable.Value
 	if variable.IsSecret {
 		value = ""

@@ -1,12 +1,12 @@
 package notifications
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+
 	"context"
 	"net/mail"
 
 	"emperror.dev/errors"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 )
 
 // Content is the provider-independent description of one notification: the
@@ -41,24 +41,24 @@ type Content struct {
 	ValidatePushoverUser bool
 }
 
-type delivererFunc func(ctx context.Context, config models.JSON, c Content) error
+type delivererFunc func(ctx context.Context, config database.JSON, c Content) error
 
-var providerDeliverers = map[models.NotificationProvider]delivererFunc{
-	models.NotificationProviderDiscord:    deliverDiscord,
-	models.NotificationProviderEmail:      deliverEmail,
-	models.NotificationProviderTelegram:   deliverTelegram,
-	models.NotificationProviderSignal:     deliverSignal,
-	models.NotificationProviderSlack:      deliverSlack,
-	models.NotificationProviderNtfy:       deliverNtfy,
-	models.NotificationProviderPushover:   deliverPushover,
-	models.NotificationProviderGotify:     deliverGotify,
-	models.NotificationProviderMatrix:     deliverMatrix,
-	models.NotificationProviderGoogleChat: deliverGoogleChat,
-	models.NotificationProviderGeneric:    deliverGeneric,
+var providerDeliverers = map[NotificationProvider]delivererFunc{
+	NotificationProviderDiscord:    deliverDiscord,
+	NotificationProviderEmail:      deliverEmail,
+	NotificationProviderTelegram:   deliverTelegram,
+	NotificationProviderSignal:     deliverSignal,
+	NotificationProviderSlack:      deliverSlack,
+	NotificationProviderNtfy:       deliverNtfy,
+	NotificationProviderPushover:   deliverPushover,
+	NotificationProviderGotify:     deliverGotify,
+	NotificationProviderMatrix:     deliverMatrix,
+	NotificationProviderGoogleChat: deliverGoogleChat,
+	NotificationProviderGeneric:    deliverGeneric,
 }
 
 // Deliver sends c to a single provider. handled is false for unknown providers.
-func Deliver(ctx context.Context, provider models.NotificationProvider, config models.JSON, c Content) (handled bool, err error) {
+func Deliver(ctx context.Context, provider NotificationProvider, config database.JSON, c Content) (handled bool, err error) {
 	deliver, ok := providerDeliverers[provider]
 	if !ok {
 		return false, nil
@@ -66,8 +66,8 @@ func Deliver(ctx context.Context, provider models.NotificationProvider, config m
 	return true, deliver(ctx, config, c)
 }
 
-func deliverDiscord(ctx context.Context, config models.JSON, c Content) error {
-	discordConfig, err := DecodeConfig[models.DiscordConfig](config, "Discord")
+func deliverDiscord(ctx context.Context, config database.JSON, c Content) error {
+	discordConfig, err := DecodeConfig[DiscordConfig](config, "Discord")
 	if err != nil {
 		return err
 	}
@@ -83,8 +83,8 @@ func deliverDiscord(ctx context.Context, config models.JSON, c Content) error {
 	return nil
 }
 
-func deliverEmail(ctx context.Context, config models.JSON, c Content) error {
-	emailConfig, err := DecodeConfig[models.EmailConfig](config, "email")
+func deliverEmail(ctx context.Context, config database.JSON, c Content) error {
+	emailConfig, err := DecodeConfig[EmailConfig](config, "email")
 	if err != nil {
 		return err
 	}
@@ -118,8 +118,8 @@ func deliverEmail(ctx context.Context, config models.JSON, c Content) error {
 	return nil
 }
 
-func deliverTelegram(ctx context.Context, config models.JSON, c Content) error {
-	telegramConfig, err := DecodeConfig[models.TelegramConfig](config, "Telegram")
+func deliverTelegram(ctx context.Context, config database.JSON, c Content) error {
+	telegramConfig, err := DecodeConfig[TelegramConfig](config, "Telegram")
 	if err != nil {
 		return err
 	}
@@ -141,8 +141,8 @@ func deliverTelegram(ctx context.Context, config models.JSON, c Content) error {
 	return nil
 }
 
-func deliverSignal(ctx context.Context, config models.JSON, c Content) error {
-	signalConfig, err := DecodeConfig[models.SignalConfig](config, "Signal")
+func deliverSignal(ctx context.Context, config database.JSON, c Content) error {
+	signalConfig, err := DecodeConfig[SignalConfig](config, "Signal")
 	if err != nil {
 		return err
 	}
@@ -169,7 +169,7 @@ func deliverSignal(ctx context.Context, config models.JSON, c Content) error {
 	return nil
 }
 
-func deliverSlack(ctx context.Context, config models.JSON, c Content) error {
+func deliverSlack(ctx context.Context, config database.JSON, c Content) error {
 	slackConfig, err := PrepareSlackConfig(config, "Slack", true)
 	if err != nil {
 		return err
@@ -180,7 +180,7 @@ func deliverSlack(ctx context.Context, config models.JSON, c Content) error {
 	return nil
 }
 
-func deliverNtfy(ctx context.Context, config models.JSON, c Content) error {
+func deliverNtfy(ctx context.Context, config database.JSON, c Content) error {
 	ntfyConfig, err := PrepareNtfyConfig(config, "Ntfy", c.RequireNtfyTopic)
 	if err != nil {
 		return err
@@ -191,7 +191,7 @@ func deliverNtfy(ctx context.Context, config models.JSON, c Content) error {
 	return nil
 }
 
-func deliverPushover(ctx context.Context, config models.JSON, c Content) error {
+func deliverPushover(ctx context.Context, config database.JSON, c Content) error {
 	pushoverConfig, err := PreparePushoverConfig(config, "Pushover")
 	if err != nil {
 		return err
@@ -213,7 +213,7 @@ func deliverPushover(ctx context.Context, config models.JSON, c Content) error {
 	return nil
 }
 
-func deliverGotify(ctx context.Context, config models.JSON, c Content) error {
+func deliverGotify(ctx context.Context, config database.JSON, c Content) error {
 	gotifyConfig, err := PrepareGotifyConfig(config, "Gotify")
 	if err != nil {
 		return err
@@ -227,7 +227,7 @@ func deliverGotify(ctx context.Context, config models.JSON, c Content) error {
 	return nil
 }
 
-func deliverMatrix(ctx context.Context, config models.JSON, c Content) error {
+func deliverMatrix(ctx context.Context, config database.JSON, c Content) error {
 	matrixConfig, err := PrepareMatrixConfig(config)
 	if err != nil {
 		return err
@@ -238,8 +238,8 @@ func deliverMatrix(ctx context.Context, config models.JSON, c Content) error {
 	return nil
 }
 
-func deliverGoogleChat(ctx context.Context, config models.JSON, c Content) error {
-	googleChatConfig, err := DecodeConfig[models.GoogleChatConfig](config, "Google Chat")
+func deliverGoogleChat(ctx context.Context, config database.JSON, c Content) error {
+	googleChatConfig, err := DecodeConfig[GoogleChatConfig](config, "Google Chat")
 	if err != nil {
 		return err
 	}
@@ -255,8 +255,8 @@ func deliverGoogleChat(ctx context.Context, config models.JSON, c Content) error
 	return nil
 }
 
-func deliverGeneric(ctx context.Context, config models.JSON, c Content) error {
-	genericConfig, err := DecodeConfig[models.GenericConfig](config, "Generic")
+func deliverGeneric(ctx context.Context, config database.JSON, c Content) error {
+	genericConfig, err := DecodeConfig[GenericConfig](config, "Generic")
 	if err != nil {
 		return err
 	}

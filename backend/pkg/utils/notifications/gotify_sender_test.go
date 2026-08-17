@@ -3,7 +3,6 @@ package notifications
 import (
 	"testing"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -11,13 +10,13 @@ import (
 func TestBuildGotifyURL(t *testing.T) {
 	tests := []struct {
 		name     string
-		config   models.GotifyConfig
+		config   GotifyConfig
 		wantErr  bool
 		expected string
 	}{
 		{
 			name: "basic config (host + token)",
-			config: models.GotifyConfig{
+			config: GotifyConfig{
 				Host:  "gotify.example.com",
 				Token: "A12345678901234",
 			},
@@ -26,7 +25,7 @@ func TestBuildGotifyURL(t *testing.T) {
 		},
 		{
 			name: "config with port",
-			config: models.GotifyConfig{
+			config: GotifyConfig{
 				Host:  "gotify.example.com",
 				Port:  8443,
 				Token: "A12345678901234",
@@ -36,7 +35,7 @@ func TestBuildGotifyURL(t *testing.T) {
 		},
 		{
 			name: "config with path",
-			config: models.GotifyConfig{
+			config: GotifyConfig{
 				Host:  "gotify.example.com",
 				Path:  "/gotify",
 				Token: "A12345678901234",
@@ -46,7 +45,7 @@ func TestBuildGotifyURL(t *testing.T) {
 		},
 		{
 			name: "config with all options",
-			config: models.GotifyConfig{
+			config: GotifyConfig{
 				Host:               "gotify.example.com",
 				Port:               80,
 				Path:               "mysubpath",
@@ -62,21 +61,21 @@ func TestBuildGotifyURL(t *testing.T) {
 		},
 		{
 			name: "missing host",
-			config: models.GotifyConfig{
+			config: GotifyConfig{
 				Token: "A12345678901234",
 			},
 			wantErr: true,
 		},
 		{
 			name: "missing token",
-			config: models.GotifyConfig{
+			config: GotifyConfig{
 				Host: "gotify.example.com",
 			},
 			wantErr: true,
 		},
 		{
 			name: "custom token format",
-			config: models.GotifyConfig{
+			config: GotifyConfig{
 				Host:  "gotify.example.com",
 				Token: "custom_token_123",
 			},
@@ -85,7 +84,7 @@ func TestBuildGotifyURL(t *testing.T) {
 		},
 		{
 			name: "negative priority valid",
-			config: models.GotifyConfig{
+			config: GotifyConfig{
 				Host:     "gotify.example.com",
 				Token:    "A12345678901234",
 				Priority: -1,

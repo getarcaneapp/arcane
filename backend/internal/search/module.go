@@ -4,26 +4,16 @@ package search
 
 import "github.com/danielgtaylor/huma/v2"
 
-// Module owns both search indexes and mounts the customization search routes.
+// Module owns the customization search index and mounts the customization search routes.
 type Module struct {
-	settings  *SettingsSearchService
 	customize *CustomizeSearchService
 }
 
-// New builds the settings and customization search indexes.
+// New builds the customization search index.
 func New() *Module {
 	return &Module{
-		settings:  NewSettingsSearchService(),
 		customize: NewCustomizeSearchService(),
 	}
-}
-
-// SettingsService exposes the settings search index to the settings domain.
-func (m *Module) SettingsService() *SettingsSearchService {
-	if m == nil {
-		return nil
-	}
-	return m.settings
 }
 
 // CustomizeService exposes the customization search index to direct collaborators.

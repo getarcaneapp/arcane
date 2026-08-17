@@ -16,7 +16,6 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
@@ -49,27 +48,27 @@ func NewEventService(db *database.DB, cfg *config.Config, httpClient *http.Clien
 }
 
 type CreateEventRequest struct {
-	Type          models.EventType     `json:"type"`
-	Severity      models.EventSeverity `json:"severity,omitempty"`
-	Title         string               `json:"title"`
-	Description   string               `json:"description,omitempty"`
-	ResourceType  *string              `json:"resourceType,omitempty"`
-	ResourceID    *string              `json:"resourceId,omitempty"`
-	ResourceName  *string              `json:"resourceName,omitempty"`
-	UserID        *string              `json:"userId,omitempty"`
-	Username      *string              `json:"username,omitempty"`
-	EnvironmentID *string              `json:"environmentId,omitempty"`
-	Metadata      models.JSON          `json:"metadata,omitempty"`
+	Type          EventType     `json:"type"`
+	Severity      EventSeverity `json:"severity,omitempty"`
+	Title         string        `json:"title"`
+	Description   string        `json:"description,omitempty"`
+	ResourceType  *string       `json:"resourceType,omitempty"`
+	ResourceID    *string       `json:"resourceId,omitempty"`
+	ResourceName  *string       `json:"resourceName,omitempty"`
+	UserID        *string       `json:"userId,omitempty"`
+	Username      *string       `json:"username,omitempty"`
+	EnvironmentID *string       `json:"environmentId,omitempty"`
+	Metadata      database.JSON `json:"metadata,omitempty"`
 }
 
-func (s *EventService) CreateEvent(ctx context.Context, req CreateEventRequest) (*models.Event, error) {
+func (s *EventService) CreateEvent(ctx context.Context, req CreateEventRequest) (*Event, error) {
 	severity := req.Severity
 	if severity == "" {
-		severity = models.EventSeverityInfo
+		severity = EventSeverityInfo
 	}
 	userID, username := normalizeEventActor(req.UserID, req.Username)
 
-	eventRecord := &models.Event{
+	eventRecord := &Event{
 		Type:          req.Type,
 		Severity:      severity,
 		Title:         req.Title,
@@ -82,7 +81,7 @@ func (s *EventService) CreateEvent(ctx context.Context, req CreateEventRequest) 
 		EnvironmentID: req.EnvironmentID,
 		Metadata:      req.Metadata,
 		Timestamp:     time.Now(),
-		BaseModel: models.BaseModel{
+		BaseModel: database.BaseModel{
 			CreatedAt: time.Now(),
 		},
 	}
@@ -102,7 +101,7 @@ func (s *EventService) CreateEvent(ctx context.Context, req CreateEventRequest) 
 	return eventRecord, nil
 }
 
-func (s *EventService) forwardEventToManager(ctx context.Context, eventModel *models.Event) {
+func (s *EventService) forwardEventToManager(ctx context.Context, eventModel *Event) {
 	if eventModel == nil || s.cfg == nil || !s.cfg.AgentMode {
 		return
 	}
@@ -167,7 +166,7 @@ func (s *EventService) canForwardEventToManagerHTTP() bool {
 	return strings.TrimSpace(s.cfg.GetManagerBaseURL()) != ""
 }
 
-func (s *EventService) forwardEventToManagerHTTP(ctx context.Context, eventModel *models.Event) error {
+func (s *EventService) forwardEventToManagerHTTP(ctx context.Context, eventModel *Event) error {
 	if eventModel == nil {
 		return errors.New("event is required")
 	}
@@ -286,8 +285,8 @@ func copyOptionalStringPtr(value *string) *string {
 }
 
 func (s *EventService) ListEventsPaginated(ctx context.Context, params pagination.QueryParams) ([]eventtypes.Event, pagination.Response, error) {
-	var events []models.Event
-	q := s.db.WithContext(ctx).Model(&models.Event{})
+	var events []Event
+	q := s.db.WithContext(ctx).Model(&Event{})
 
 	if term := strings.TrimSpace(params.Search); term != "" {
 		searchPattern := "%" + term + "%"
@@ -308,7 +307,7 @@ func (s *EventService) ListEventsPaginated(ctx context.Context, params paginatio
 		return nil, pagination.Response{}, errors.WrapIf(err, "failed to paginate events")
 	}
 
-	eventDtos, mapErr := mapper.MapSlice[models.Event, eventtypes.Event](events)
+	eventDtos, mapErr := mapper.MapSlice[Event, eventtypes.Event](events)
 	if mapErr != nil {
 		return nil, pagination.Response{}, errors.WrapIf(mapErr, "failed to map events")
 	}
@@ -317,8 +316,8 @@ func (s *EventService) ListEventsPaginated(ctx context.Context, params paginatio
 }
 
 func (s *EventService) GetEventsByEnvironmentPaginated(ctx context.Context, environmentID string, params pagination.QueryParams) ([]eventtypes.Event, pagination.Response, error) {
-	var events []models.Event
-	q := s.db.WithContext(ctx).Model(&models.Event{}).Where("environment_id = ?", environmentID)
+	var events []Event
+	q := s.db.WithContext(ctx).Model(&Event{}).Where("environment_id = ?", environmentID)
 
 	if term := strings.TrimSpace(params.Search); term != "" {
 		searchPattern := "%" + term + "%"
@@ -338,7 +337,7 @@ func (s *EventService) GetEventsByEnvironmentPaginated(ctx context.Context, envi
 		return nil, pagination.Response{}, errors.WrapIf(err, "failed to paginate events")
 	}
 
-	eventDtos, mapErr := mapper.MapSlice[models.Event, eventtypes.Event](events)
+	eventDtos, mapErr := mapper.MapSlice[Event, eventtypes.Event](events)
 	if mapErr != nil {
 		return nil, pagination.Response{}, errors.WrapIf(mapErr, "failed to map events")
 	}
@@ -395,7 +394,7 @@ func (s *EventService) GetEventSeverityCounts(ctx context.Context) (EventSeverit
 		Severity string
 		Count    int64
 	}
-	if err := s.db.WithContext(ctx).Model(&models.Event{}).
+	if err := s.db.WithContext(ctx).Model(&Event{}).
 		Select("severity, COUNT(*) AS count").
 		Group("severity").
 		Scan(&rows).Error; err != nil {
@@ -404,14 +403,14 @@ func (s *EventService) GetEventSeverityCounts(ctx context.Context) (EventSeverit
 
 	var counts EventSeverityCounts
 	for _, r := range rows {
-		switch models.EventSeverity(r.Severity) {
-		case models.EventSeveritySuccess:
+		switch EventSeverity(r.Severity) {
+		case EventSeveritySuccess:
 			counts.Success = r.Count
-		case models.EventSeverityWarning:
+		case EventSeverityWarning:
 			counts.Warning = r.Count
-		case models.EventSeverityError:
+		case EventSeverityError:
 			counts.Error = r.Count
-		case models.EventSeverityInfo:
+		case EventSeverityInfo:
 			counts.Info += r.Count
 		default:
 			// Unclassified severities fold into Info.
@@ -424,7 +423,7 @@ func (s *EventService) GetEventSeverityCounts(ctx context.Context) (EventSeverit
 
 func (s *EventService) DeleteEvent(ctx context.Context, eventID string) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		result := tx.Delete(&models.Event{}, "id = ?", eventID)
+		result := tx.Delete(&Event{}, "id = ?", eventID)
 		if result.Error != nil {
 			return errors.WrapIf(result.Error, "failed to delete event")
 		}
@@ -438,7 +437,7 @@ func (s *EventService) DeleteEvent(ctx context.Context, eventID string) error {
 func (s *EventService) DeleteOldEvents(ctx context.Context, olderThan time.Duration) error {
 	cutoff := time.Now().Add(-olderThan)
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		result := tx.Where("timestamp < ?", cutoff).Delete(&models.Event{})
+		result := tx.Where("timestamp < ?", cutoff).Delete(&Event{})
 		if result.Error != nil {
 			return errors.WrapIf(result.Error, "failed to delete old events")
 		}
@@ -446,7 +445,7 @@ func (s *EventService) DeleteOldEvents(ctx context.Context, olderThan time.Durat
 	})
 }
 
-func (s *EventService) LogContainerEvent(ctx context.Context, eventType models.EventType, containerID, containerName, userID, username, environmentID string, metadata models.JSON) error {
+func (s *EventService) LogContainerEvent(ctx context.Context, eventType EventType, containerID, containerName, userID, username, environmentID string, metadata database.JSON) error {
 	title := s.generateEventTitle(eventType, containerName)
 	description := s.generateEventDescription(eventType, "container", containerName)
 	severity := s.getEventSeverity(eventType)
@@ -467,7 +466,7 @@ func (s *EventService) LogContainerEvent(ctx context.Context, eventType models.E
 	return err
 }
 
-func (s *EventService) LogImageEvent(ctx context.Context, eventType models.EventType, imageID, imageName, userID, username, environmentID string, metadata models.JSON) error {
+func (s *EventService) LogImageEvent(ctx context.Context, eventType EventType, imageID, imageName, userID, username, environmentID string, metadata database.JSON) error {
 	title := s.generateEventTitle(eventType, imageName)
 	description := s.generateEventDescription(eventType, "image", imageName)
 	severity := s.getEventSeverity(eventType)
@@ -488,7 +487,7 @@ func (s *EventService) LogImageEvent(ctx context.Context, eventType models.Event
 	return err
 }
 
-func (s *EventService) LogProjectEvent(ctx context.Context, eventType models.EventType, projectID, projectName, userID, username, environmentID string, metadata models.JSON) error {
+func (s *EventService) LogProjectEvent(ctx context.Context, eventType EventType, projectID, projectName, userID, username, environmentID string, metadata database.JSON) error {
 	title := s.generateEventTitle(eventType, projectName)
 	description := s.generateEventDescription(eventType, "project", projectName)
 	severity := s.getEventSeverity(eventType)
@@ -509,7 +508,7 @@ func (s *EventService) LogProjectEvent(ctx context.Context, eventType models.Eve
 	return err
 }
 
-func (s *EventService) LogUserEvent(ctx context.Context, eventType models.EventType, userID, username string, metadata models.JSON) error {
+func (s *EventService) LogUserEvent(ctx context.Context, eventType EventType, userID, username string, metadata database.JSON) error {
 	title := s.generateEventTitle(eventType, username)
 	description := s.generateEventDescription(eventType, "user", username)
 	severity := s.getEventSeverity(eventType)
@@ -526,7 +525,7 @@ func (s *EventService) LogUserEvent(ctx context.Context, eventType models.EventT
 	return err
 }
 
-func (s *EventService) LogVolumeEvent(ctx context.Context, eventType models.EventType, volumeID, volumeName, userID, username, environmentID string, metadata models.JSON) error {
+func (s *EventService) LogVolumeEvent(ctx context.Context, eventType EventType, volumeID, volumeName, userID, username, environmentID string, metadata database.JSON) error {
 	title := s.generateEventTitle(eventType, volumeName)
 	description := s.generateEventDescription(eventType, "volume", volumeName)
 	severity := s.getEventSeverity(eventType)
@@ -547,7 +546,7 @@ func (s *EventService) LogVolumeEvent(ctx context.Context, eventType models.Even
 	return err
 }
 
-func (s *EventService) LogNetworkEvent(ctx context.Context, eventType models.EventType, networkID, networkName, userID, username, environmentID string, metadata models.JSON) error {
+func (s *EventService) LogNetworkEvent(ctx context.Context, eventType EventType, networkID, networkName, userID, username, environmentID string, metadata database.JSON) error {
 	title := s.generateEventTitle(eventType, networkName)
 	description := s.generateEventDescription(eventType, "network", networkName)
 	severity := s.getEventSeverity(eventType)
@@ -568,7 +567,7 @@ func (s *EventService) LogNetworkEvent(ctx context.Context, eventType models.Eve
 	return err
 }
 
-func (s *EventService) LogErrorEvent(ctx context.Context, eventType models.EventType, resourceType, resourceID, resourceName, userID, username, environmentID string, err error, metadata models.JSON) {
+func (s *EventService) LogErrorEvent(ctx context.Context, eventType EventType, resourceType, resourceID, resourceName, userID, username, environmentID string, err error, metadata database.JSON) {
 	if err == nil {
 		return
 	}
@@ -590,7 +589,7 @@ func (s *EventService) LogErrorEvent(ctx context.Context, eventType models.Event
 
 	_, logErr := s.CreateEvent(logCtx, CreateEventRequest{
 		Type:          eventType,
-		Severity:      models.EventSeverityError,
+		Severity:      EventSeverityError,
 		Title:         title,
 		Description:   description,
 		ResourceType:  new(resourceType),
@@ -606,12 +605,12 @@ func (s *EventService) LogErrorEvent(ctx context.Context, eventType models.Event
 	}
 }
 
-func cloneEventMetadataInternal(metadata models.JSON) models.JSON {
+func cloneEventMetadataInternal(metadata database.JSON) database.JSON {
 	if metadata == nil {
-		return models.JSON{}
+		return database.JSON{}
 	}
 
-	cloned := make(models.JSON, len(metadata))
+	cloned := make(database.JSON, len(metadata))
 	for k, v := range metadata {
 		cloned[k] = cloneEventMetadataValueInternal(v)
 	}
@@ -620,7 +619,7 @@ func cloneEventMetadataInternal(metadata models.JSON) models.JSON {
 
 func cloneEventMetadataValueInternal(value any) any {
 	switch typed := value.(type) {
-	case models.JSON:
+	case database.JSON:
 		return cloneEventMetadataInternal(typed)
 	case map[string]any:
 		return cloneEventMetadataInternal(typed)
@@ -638,68 +637,68 @@ func cloneEventMetadataValueInternal(value any) any {
 type eventDefinition struct {
 	TitleFormat       string
 	DescriptionFormat string
-	Severity          models.EventSeverity
+	Severity          EventSeverity
 }
 
-var eventDefinitions = map[models.EventType]eventDefinition{
-	models.EventTypeContainerStart:   {"Container started: %s", "Container '%s' has been started", models.EventSeveritySuccess},
-	models.EventTypeContainerStop:    {"Container stopped: %s", "Container '%s' has been stopped", models.EventSeverityInfo},
-	models.EventTypeContainerRestart: {"Container restarted: %s", "Container '%s' has been restarted", models.EventSeverityInfo},
-	models.EventTypeContainerDelete:  {"Container deleted: %s", "Container '%s' has been deleted", models.EventSeverityWarning},
-	models.EventTypeContainerCreate:  {"Container created: %s", "Container '%s' has been created", models.EventSeveritySuccess},
-	models.EventTypeContainerScan:    {"Container scanned: %s", "Security scan completed for container '%s'", models.EventSeverityInfo},
-	models.EventTypeContainerUpdate:  {"Container updated: %s", "Container '%s' has been updated", models.EventSeverityInfo},
-	models.EventTypeContainerError:   {"Container error: %s", "An error occurred with container '%s'", models.EventSeverityError},
+var eventDefinitions = map[EventType]eventDefinition{
+	EventTypeContainerStart:   {"Container started: %s", "Container '%s' has been started", EventSeveritySuccess},
+	EventTypeContainerStop:    {"Container stopped: %s", "Container '%s' has been stopped", EventSeverityInfo},
+	EventTypeContainerRestart: {"Container restarted: %s", "Container '%s' has been restarted", EventSeverityInfo},
+	EventTypeContainerDelete:  {"Container deleted: %s", "Container '%s' has been deleted", EventSeverityWarning},
+	EventTypeContainerCreate:  {"Container created: %s", "Container '%s' has been created", EventSeveritySuccess},
+	EventTypeContainerScan:    {"Container scanned: %s", "Security scan completed for container '%s'", EventSeverityInfo},
+	EventTypeContainerUpdate:  {"Container updated: %s", "Container '%s' has been updated", EventSeverityInfo},
+	EventTypeContainerError:   {"Container error: %s", "An error occurred with container '%s'", EventSeverityError},
 
-	models.EventTypeImagePull:   {"Image pulled: %s", "Image '%s' has been pulled", models.EventSeveritySuccess},
-	models.EventTypeImageLoad:   {"Image loaded: %s", "Image '%s' has been loaded from archive", models.EventSeveritySuccess},
-	models.EventTypeImageDelete: {"Image deleted: %s", "Image '%s' has been deleted", models.EventSeverityWarning},
-	models.EventTypeImageScan:   {"Image scanned: %s", "Security scan completed for image '%s'", models.EventSeverityInfo},
-	models.EventTypeImageError:  {"Image error: %s", "An error occurred with image '%s'", models.EventSeverityError},
+	EventTypeImagePull:   {"Image pulled: %s", "Image '%s' has been pulled", EventSeveritySuccess},
+	EventTypeImageLoad:   {"Image loaded: %s", "Image '%s' has been loaded from archive", EventSeveritySuccess},
+	EventTypeImageDelete: {"Image deleted: %s", "Image '%s' has been deleted", EventSeverityWarning},
+	EventTypeImageScan:   {"Image scanned: %s", "Security scan completed for image '%s'", EventSeverityInfo},
+	EventTypeImageError:  {"Image error: %s", "An error occurred with image '%s'", EventSeverityError},
 
-	models.EventTypeProjectDeploy: {"Project deployed: %s", "Project '%s' has been deployed", models.EventSeveritySuccess},
-	models.EventTypeProjectDelete: {"Project deleted: %s", "Project '%s' has been deleted", models.EventSeverityWarning},
-	models.EventTypeProjectStart:  {"Project started: %s", "Project '%s' has been started", models.EventSeveritySuccess},
-	models.EventTypeProjectStop:   {"Project stopped: %s", "Project '%s' has been stopped", models.EventSeverityInfo},
-	models.EventTypeProjectCreate: {"Project created: %s", "Project '%s' has been created", models.EventSeveritySuccess},
-	models.EventTypeProjectUpdate: {"Project updated: %s", "Project '%s' has been updated", models.EventSeverityInfo},
-	models.EventTypeProjectError:  {"Project error: %s", "An error occurred with project '%s'", models.EventSeverityError},
+	EventTypeProjectDeploy: {"Project deployed: %s", "Project '%s' has been deployed", EventSeveritySuccess},
+	EventTypeProjectDelete: {"Project deleted: %s", "Project '%s' has been deleted", EventSeverityWarning},
+	EventTypeProjectStart:  {"Project started: %s", "Project '%s' has been started", EventSeveritySuccess},
+	EventTypeProjectStop:   {"Project stopped: %s", "Project '%s' has been stopped", EventSeverityInfo},
+	EventTypeProjectCreate: {"Project created: %s", "Project '%s' has been created", EventSeveritySuccess},
+	EventTypeProjectUpdate: {"Project updated: %s", "Project '%s' has been updated", EventSeverityInfo},
+	EventTypeProjectError:  {"Project error: %s", "An error occurred with project '%s'", EventSeverityError},
 
-	models.EventTypeVolumeCreate:             {"Volume created: %s", "Volume '%s' has been created", models.EventSeveritySuccess},
-	models.EventTypeVolumeDelete:             {"Volume deleted: %s", "Volume '%s' has been deleted", models.EventSeverityWarning},
-	models.EventTypeVolumeError:              {"Volume error: %s", "An error occurred with volume '%s'", models.EventSeverityError},
-	models.EventTypeVolumeFileCreate:         {"Volume file created: %s", "A file or directory was created in volume '%s'", models.EventSeveritySuccess},
-	models.EventTypeVolumeFileDelete:         {"Volume file deleted: %s", "A file or directory was deleted in volume '%s'", models.EventSeverityWarning},
-	models.EventTypeVolumeFileUpload:         {"Volume file uploaded: %s", "A file was uploaded to volume '%s'", models.EventSeveritySuccess},
-	models.EventTypeVolumeFileUpdate:         {"Volume workspace updated: %s", "Files in volume '%s' were updated", models.EventSeverityInfo},
-	models.EventTypeVolumeWorkspaceUpdate:    {"Volume workspace updated: %s", "Workspace files in volume '%s' were updated", models.EventSeverityInfo},
-	models.EventTypeVolumeBackupCreate:       {"Volume backup created: %s", "A backup was created for volume '%s'", models.EventSeveritySuccess},
-	models.EventTypeVolumeBackupDelete:       {"Volume backup deleted: %s", "A backup was deleted for volume '%s'", models.EventSeverityWarning},
-	models.EventTypeVolumeBackupRestore:      {"Volume backup restored: %s", "A backup was restored for volume '%s'", models.EventSeverityWarning},
-	models.EventTypeVolumeBackupRestoreFiles: {"Volume backup files restored: %s", "Selected files were restored for volume '%s'", models.EventSeverityWarning},
-	models.EventTypeVolumeBackupDownload:     {"Volume backup downloaded: %s", "A backup was downloaded for volume '%s'", models.EventSeverityInfo},
+	EventTypeVolumeCreate:             {"Volume created: %s", "Volume '%s' has been created", EventSeveritySuccess},
+	EventTypeVolumeDelete:             {"Volume deleted: %s", "Volume '%s' has been deleted", EventSeverityWarning},
+	EventTypeVolumeError:              {"Volume error: %s", "An error occurred with volume '%s'", EventSeverityError},
+	EventTypeVolumeFileCreate:         {"Volume file created: %s", "A file or directory was created in volume '%s'", EventSeveritySuccess},
+	EventTypeVolumeFileDelete:         {"Volume file deleted: %s", "A file or directory was deleted in volume '%s'", EventSeverityWarning},
+	EventTypeVolumeFileUpload:         {"Volume file uploaded: %s", "A file was uploaded to volume '%s'", EventSeveritySuccess},
+	EventTypeVolumeFileUpdate:         {"Volume workspace updated: %s", "Files in volume '%s' were updated", EventSeverityInfo},
+	EventTypeVolumeWorkspaceUpdate:    {"Volume workspace updated: %s", "Workspace files in volume '%s' were updated", EventSeverityInfo},
+	EventTypeVolumeBackupCreate:       {"Volume backup created: %s", "A backup was created for volume '%s'", EventSeveritySuccess},
+	EventTypeVolumeBackupDelete:       {"Volume backup deleted: %s", "A backup was deleted for volume '%s'", EventSeverityWarning},
+	EventTypeVolumeBackupRestore:      {"Volume backup restored: %s", "A backup was restored for volume '%s'", EventSeverityWarning},
+	EventTypeVolumeBackupRestoreFiles: {"Volume backup files restored: %s", "Selected files were restored for volume '%s'", EventSeverityWarning},
+	EventTypeVolumeBackupDownload:     {"Volume backup downloaded: %s", "A backup was downloaded for volume '%s'", EventSeverityInfo},
 
-	models.EventTypeNetworkCreate: {"Network created: %s", "Network '%s' has been created", models.EventSeveritySuccess},
-	models.EventTypeNetworkDelete: {"Network deleted: %s", "Network '%s' has been deleted", models.EventSeverityWarning},
-	models.EventTypeNetworkError:  {"Network error: %s", "An error occurred with network '%s'", models.EventSeverityError},
+	EventTypeNetworkCreate: {"Network created: %s", "Network '%s' has been created", EventSeveritySuccess},
+	EventTypeNetworkDelete: {"Network deleted: %s", "Network '%s' has been deleted", EventSeverityWarning},
+	EventTypeNetworkError:  {"Network error: %s", "An error occurred with network '%s'", EventSeverityError},
 
-	models.EventTypeSystemPrune:      {"System prune completed", "System resources have been pruned", models.EventSeverityInfo},
-	models.EventTypeSystemAutoUpdate: {"System auto-update completed", "System auto-update process has completed", models.EventSeverityInfo},
-	models.EventTypeSystemUpgrade:    {"System upgrade completed", "System upgrade process has completed", models.EventSeverityInfo},
+	EventTypeSystemPrune:      {"System prune completed", "System resources have been pruned", EventSeverityInfo},
+	EventTypeSystemAutoUpdate: {"System auto-update completed", "System auto-update process has completed", EventSeverityInfo},
+	EventTypeSystemUpgrade:    {"System upgrade completed", "System upgrade process has completed", EventSeverityInfo},
 
-	models.EventTypeUserLogin:         {"User logged in: %s", "User '%s' has logged in", models.EventSeverityInfo},
-	models.EventTypeUserLogout:        {"User logged out: %s", "User '%s' has logged out", models.EventSeverityInfo},
-	models.EventTypeFederatedExchange: {"Federated credential exchange: %s", "Federated credential exchange for '%s'", models.EventSeverityInfo},
+	EventTypeUserLogin:         {"User logged in: %s", "User '%s' has logged in", EventSeverityInfo},
+	EventTypeUserLogout:        {"User logged out: %s", "User '%s' has logged out", EventSeverityInfo},
+	EventTypeFederatedExchange: {"Federated credential exchange: %s", "Federated credential exchange for '%s'", EventSeverityInfo},
 }
 
-func (s *EventService) generateEventTitle(eventType models.EventType, resourceName string) string {
+func (s *EventService) generateEventTitle(eventType EventType, resourceName string) string {
 	definition, ok := eventDefinitions[eventType]
 	return option.Map(func(def eventDefinition) string {
 		return fmt.Sprintf(def.TitleFormat, resourceName)
 	})(mo.TupleToOption(definition, ok)).OrElse("Event: " + string(eventType))
 }
 
-func (s *EventService) generateEventDescription(eventType models.EventType, resourceType, resourceName string) string {
+func (s *EventService) generateEventDescription(eventType EventType, resourceType, resourceName string) string {
 	definition, ok := eventDefinitions[eventType]
 	return option.Map(func(def eventDefinition) string {
 		return fmt.Sprintf(def.DescriptionFormat, resourceName)
@@ -708,9 +707,9 @@ func (s *EventService) generateEventDescription(eventType models.EventType, reso
 	)
 }
 
-func (s *EventService) getEventSeverity(eventType models.EventType) models.EventSeverity {
+func (s *EventService) getEventSeverity(eventType EventType) EventSeverity {
 	definition, ok := eventDefinitions[eventType]
-	return option.Map(func(def eventDefinition) models.EventSeverity {
+	return option.Map(func(def eventDefinition) EventSeverity {
 		return def.Severity
-	})(mo.TupleToOption(definition, ok)).OrElse(models.EventSeverityInfo)
+	})(mo.TupleToOption(definition, ok)).OrElse(EventSeverityInfo)
 }

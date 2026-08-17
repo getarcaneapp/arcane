@@ -1,18 +1,19 @@
 package notifications
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+
 	"encoding/base64"
 	"encoding/json/v2"
 	"log/slog"
 
 	"emperror.dev/errors"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"go.getarcane.app/sys/crypto"
 )
 
-// DecodeConfig round-trips a provider config (models.JSON) into a typed struct T.
-func DecodeConfig[T any](config models.JSON, providerName string) (T, error) {
+// DecodeConfig round-trips a provider config (database.JSON) into a typed struct T.
+func DecodeConfig[T any](config database.JSON, providerName string) (T, error) {
 	var out T
 	configBytes, err := json.Marshal(config)
 	if err != nil {
@@ -53,67 +54,67 @@ func isPlausibleEncryptedCredentialInternal(value string) bool {
 }
 
 // PrepareSlackConfig decodes and decrypts a Slack provider config.
-func PrepareSlackConfig(config models.JSON, providerName string, requireToken bool) (models.SlackConfig, error) {
-	slackConfig, err := DecodeConfig[models.SlackConfig](config, providerName)
+func PrepareSlackConfig(config database.JSON, providerName string, requireToken bool) (SlackConfig, error) {
+	slackConfig, err := DecodeConfig[SlackConfig](config, providerName)
 	if err != nil {
-		return models.SlackConfig{}, err
+		return SlackConfig{}, err
 	}
 	if requireToken && slackConfig.Token == "" {
-		return models.SlackConfig{}, errors.New("slack token not configured")
+		return SlackConfig{}, errors.New("slack token not configured")
 	}
 	if err := DecryptStringCredential(&slackConfig.Token); err != nil {
-		return models.SlackConfig{}, err
+		return SlackConfig{}, err
 	}
 	return slackConfig, nil
 }
 
 // PrepareNtfyConfig decodes and decrypts an ntfy provider config.
-func PrepareNtfyConfig(config models.JSON, providerName string, requireTopic bool) (models.NtfyConfig, error) {
-	ntfyConfig, err := DecodeConfig[models.NtfyConfig](config, providerName)
+func PrepareNtfyConfig(config database.JSON, providerName string, requireTopic bool) (NtfyConfig, error) {
+	ntfyConfig, err := DecodeConfig[NtfyConfig](config, providerName)
 	if err != nil {
-		return models.NtfyConfig{}, err
+		return NtfyConfig{}, err
 	}
 	if requireTopic && ntfyConfig.Topic == "" {
-		return models.NtfyConfig{}, errors.New("ntfy topic is required")
+		return NtfyConfig{}, errors.New("ntfy topic is required")
 	}
 	if err := DecryptStringCredential(&ntfyConfig.Password); err != nil {
-		return models.NtfyConfig{}, err
+		return NtfyConfig{}, err
 	}
 	return ntfyConfig, nil
 }
 
 // PreparePushoverConfig decodes and decrypts a Pushover provider config.
-func PreparePushoverConfig(config models.JSON, providerName string) (models.PushoverConfig, error) {
-	pushoverConfig, err := DecodeConfig[models.PushoverConfig](config, providerName)
+func PreparePushoverConfig(config database.JSON, providerName string) (PushoverConfig, error) {
+	pushoverConfig, err := DecodeConfig[PushoverConfig](config, providerName)
 	if err != nil {
-		return models.PushoverConfig{}, err
+		return PushoverConfig{}, err
 	}
 	if err := DecryptStringCredential(&pushoverConfig.Token); err != nil {
-		return models.PushoverConfig{}, err
+		return PushoverConfig{}, err
 	}
 	return pushoverConfig, nil
 }
 
 // PrepareGotifyConfig decodes and decrypts a Gotify provider config.
-func PrepareGotifyConfig(config models.JSON, providerName string) (models.GotifyConfig, error) {
-	gotifyConfig, err := DecodeConfig[models.GotifyConfig](config, providerName)
+func PrepareGotifyConfig(config database.JSON, providerName string) (GotifyConfig, error) {
+	gotifyConfig, err := DecodeConfig[GotifyConfig](config, providerName)
 	if err != nil {
-		return models.GotifyConfig{}, err
+		return GotifyConfig{}, err
 	}
 	if err := DecryptStringCredential(&gotifyConfig.Token); err != nil {
-		return models.GotifyConfig{}, err
+		return GotifyConfig{}, err
 	}
 	return gotifyConfig, nil
 }
 
 // PrepareMatrixConfig decodes and decrypts a Matrix provider config.
-func PrepareMatrixConfig(config models.JSON) (models.MatrixConfig, error) {
-	matrixConfig, err := DecodeConfig[models.MatrixConfig](config, "Matrix")
+func PrepareMatrixConfig(config database.JSON) (MatrixConfig, error) {
+	matrixConfig, err := DecodeConfig[MatrixConfig](config, "Matrix")
 	if err != nil {
-		return models.MatrixConfig{}, err
+		return MatrixConfig{}, err
 	}
 	if err := DecryptStringCredential(&matrixConfig.Password); err != nil {
-		return models.MatrixConfig{}, err
+		return MatrixConfig{}, err
 	}
 	return matrixConfig, nil
 }
