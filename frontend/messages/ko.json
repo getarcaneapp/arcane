@@ -2834,6 +2834,7 @@
   "deploy_pull_policy_always": "항상 최신 이미지 Pull (Always)",
   "deploy_pull_policy_never": "Pull 하지 않음 (Never)",
   "deploy_force_recreate": "컨테이너 강제 재생성 (Force Recreate)",
+  "deploy_remove_orphans": "고아 컨테이너 제거",
   "deploy_recreate_volumes": "변경된 볼륨 재구성 (데이터 손실)",
   "settings_default_deploy_pull_policy": "기본 배포 Pull 정책",
   "settings_default_deploy_pull_policy_description": "프로젝트 배포 시 적용되는 기본 이미지 풀 정책. Compose 파일에서 서비스별로 설정된 pull_policy가 우선 적용되며, 여기에는 갱신 주기(매일, 매주, every_N)도 포함됩니다.",
