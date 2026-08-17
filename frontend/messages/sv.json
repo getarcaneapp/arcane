@@ -2834,6 +2834,7 @@
   "deploy_pull_policy_always": "Dra alltid senaste",
   "deploy_pull_policy_never": "Dra aldrig",
   "deploy_force_recreate": "Tvinga återskapa behållare",
+  "deploy_remove_orphans": "Ta bort övergivna containrar",
   "deploy_recreate_volumes": "Återställ ändrade volymer (dataförlust)",
   "settings_default_deploy_pull_policy": "Standard distribuera Dra politik",
   "settings_default_deploy_pull_policy_description": "Standardpolicy för hämtning av bilder vid distribution av projekt. En pull_policy som anges per tjänst i compose-filen har företräde, inklusive uppdateringsintervall (dagligen, veckovis, var N:te).",
