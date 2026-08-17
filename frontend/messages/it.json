@@ -2834,6 +2834,7 @@
   "deploy_pull_policy_always": "Tira sempre più recente",
   "deploy_pull_policy_never": "Non tirare mai",
   "deploy_force_recreate": "Forza ricreazione contenitori",
+  "deploy_remove_orphans": "Rimuovi i container orfani",
   "deploy_recreate_volumes": "Ricreare i volumi modificati (perdita di dati)",
   "settings_default_deploy_pull_policy": "Politica Predefinita Pull Deploy",
   "settings_default_deploy_pull_policy_description": "Politica predefinita per il recupero delle immagini durante la distribuzione dei progetti. Ha la precedenza una politica pull_policy impostata per ciascun servizio nel file compose, comprese le finestre di aggiornamento (giornaliera, settimanale, ogni_N).",
