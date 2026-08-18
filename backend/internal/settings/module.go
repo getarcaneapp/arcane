@@ -4,13 +4,12 @@ package settings
 import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/search"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 )
 
 // Dependencies are the handler-side collaborators for the settings domain.
 type Dependencies struct {
-	Search          *search.SettingsSearchService
+	Search          *SettingsSearchService
 	ProxyRemoteJSON handlerutil.RemoteJSONProxy
 	Config          *config.Config
 }

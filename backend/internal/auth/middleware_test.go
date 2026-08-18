@@ -1,23 +1,30 @@
 package auth
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+
 	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/labstack/echo/v5"
 	"github.com/stretchr/testify/require"
 )
 
 type testEnvironmentTokenResolver struct {
-	env *models.Environment
+	env *environment.Environment
 }
 
-func (r testEnvironmentTokenResolver) ResolveEnvironmentByAccessToken(_ context.Context, token string) (*models.Environment, error) {
+func (r testEnvironmentTokenResolver) ResolveEnvironmentByAccessToken(_ context.Context, token string) (*environment.Environment, error) {
 	if r.env != nil && r.env.AccessToken != nil && *r.env.AccessToken == token {
 		return r.env, nil
 	}
@@ -27,11 +34,11 @@ func (r testEnvironmentTokenResolver) ResolveEnvironmentByAccessToken(_ context.
 var ErrInvalidEnvironmentAccessTokenForTest = context.Canceled
 
 type testApiKeyValidator struct {
-	user *models.User
-	key  *models.ApiKey
+	user *common.User
+	key  *apikey.ApiKey
 }
 
-func (v testApiKeyValidator) ValidateApiKeyWithID(_ context.Context, rawKey string) (*models.User, *models.ApiKey, error) {
+func (v testApiKeyValidator) ValidateApiKeyWithID(_ context.Context, rawKey string) (*common.User, *apikey.ApiKey, error) {
 	if rawKey == "valid-key" {
 		return v.user, v.key, nil
 	}
@@ -42,7 +49,7 @@ func (v testApiKeyValidator) ValidateApiKeyWithID(_ context.Context, rawKey stri
 // resolution path the middleware took: user roles vs per-key grants.
 type testPermissionResolver struct{}
 
-func (testPermissionResolver) ResolvePermissions(_ context.Context, _ *models.User) (*authz.PermissionSet, error) {
+func (testPermissionResolver) ResolvePermissions(_ context.Context, _ *common.User) (*authz.PermissionSet, error) {
 	ps := authz.NewPermissionSet()
 	ps.AddGlobal("containers:list")
 	return ps, nil
@@ -56,7 +63,7 @@ func (testPermissionResolver) ResolveApiKeyPermissions(_ context.Context, _ stri
 
 func TestAuthMiddleware_ManagerAuthResolvesPermissionsByKeyKind(t *testing.T) {
 	userID := "key-owner"
-	user := &models.User{BaseModel: models.BaseModel{ID: userID}, Username: "owner"}
+	user := &common.User{BaseModel: database.BaseModel{ID: userID}, Username: "owner"}
 
 	cases := []struct {
 		name        string
@@ -64,8 +71,8 @@ func TestAuthMiddleware_ManagerAuthResolvesPermissionsByKeyKind(t *testing.T) {
 		wantAllowed string
 		wantDenied  string
 	}{
-		{name: "personal key inherits owner role permissions", kind: models.ApiKeyKindPersonal, wantAllowed: "containers:list", wantDenied: "images:list"},
-		{name: "scoped key limited to its own grants", kind: models.ApiKeyKindScoped, wantAllowed: "images:list", wantDenied: "containers:list"},
+		{name: "personal key inherits owner role permissions", kind: apikey.ApiKeyKindPersonal, wantAllowed: "containers:list", wantDenied: "images:list"},
+		{name: "scoped key limited to its own grants", kind: apikey.ApiKeyKindScoped, wantAllowed: "images:list", wantDenied: "containers:list"},
 	}
 
 	for _, tc := range cases {
@@ -75,7 +82,7 @@ func TestAuthMiddleware_ManagerAuthResolvesPermissionsByKeyKind(t *testing.T) {
 				NewAuthMiddleware(nil, &config.Config{}).
 					WithApiKeyValidator(testApiKeyValidator{
 						user: user,
-						key:  &models.ApiKey{BaseModel: models.BaseModel{ID: "key-1"}, Kind: tc.kind, UserID: &userID},
+						key:  &apikey.ApiKey{BaseModel: database.BaseModel{ID: "key-1"}, Kind: tc.kind, UserID: &userID},
 					}).
 					WithPermissionResolver(testPermissionResolver{}).
 					Add(),
@@ -104,8 +111,8 @@ func TestAuthMiddleware_ManagerAuthAcceptsEnvironmentAccessTokenViaAPIKey(t *tes
 	router.Use(
 		NewAuthMiddleware(nil, &config.Config{}).
 			WithEnvironmentAccessTokenResolver(testEnvironmentTokenResolver{
-				env: &models.Environment{
-					BaseModel:   models.BaseModel{ID: "env-self"},
+				env: &environment.Environment{
+					BaseModel:   database.BaseModel{ID: "env-self"},
 					Name:        "Self Target",
 					AccessToken: &token,
 				},
@@ -116,7 +123,7 @@ func TestAuthMiddleware_ManagerAuthAcceptsEnvironmentAccessTokenViaAPIKey(t *tes
 		currentUser := c.Get("currentUser")
 		require.NotNil(t, currentUser)
 
-		user, ok := currentUser.(*models.User)
+		user, ok := currentUser.(*common.User)
 		require.True(t, ok)
 		require.Equal(t, "environment:env-self", user.ID)
 		require.Equal(t, "Self Target", user.Username)

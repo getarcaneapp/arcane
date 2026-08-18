@@ -1,13 +1,14 @@
 package scheduler
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+
 	"context"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
@@ -168,7 +169,7 @@ func TestAutoHeal_Run_UsesBoundedConcurrency(t *testing.T) {
 
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&models.SettingVariable{}))
+	require.NoError(t, db.AutoMigrate(&settings.SettingVariable{}))
 
 	settingsSvc, err := newSettingsServiceForTestInternal(t, ctx, &database.DB{DB: db})
 	require.NoError(t, err)

@@ -1,6 +1,12 @@
 package apikey
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+
 	"context"
 	"fmt"
 	"runtime"
@@ -14,7 +20,6 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
@@ -29,15 +34,15 @@ func setupAPIKeyServiceTestDB(t *testing.T) *database.DB {
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(
-		&models.SettingVariable{},
-		&models.User{},
-		&models.UserSession{},
-		&models.Environment{},
-		&models.Role{},
-		&models.UserRoleAssignment{},
-		&models.ApiKey{},
-		&models.ApiKeyPermission{},
-		&models.OidcRoleMapping{},
+		&settings.SettingVariable{},
+		&common.User{},
+		&session.UserSession{},
+		&testEnvironmentRow{},
+		&role.Role{},
+		&role.UserRoleAssignment{},
+		&ApiKey{},
+		&role.ApiKeyPermission{},
+		&role.OidcRoleMapping{},
 	))
 
 	sqlDB, err := db.DB()
@@ -56,15 +61,15 @@ func setupAPIKeyService(t *testing.T) (*ApiKeyService, *database.DB, *user.UserS
 	return NewApiKeyService(db, userService), db, userService
 }
 
-func createTestAPIKeyUser(t *testing.T, ctx context.Context, userService *user.UserService, id string, usernames ...string) *models.User {
+func createTestAPIKeyUser(t *testing.T, ctx context.Context, userService *user.UserService, id string, usernames ...string) *common.User {
 	t.Helper()
 	username := fmt.Sprintf("user-%s", id)
 	if len(usernames) > 0 {
 		username = usernames[0]
 	}
 
-	user := &models.User{
-		BaseModel: models.BaseModel{ID: id},
+	user := &common.User{
+		BaseModel: database.BaseModel{ID: id},
 		Username:  username,
 	}
 
@@ -73,19 +78,19 @@ func createTestAPIKeyUser(t *testing.T, ctx context.Context, userService *user.U
 	return created
 }
 
-func fetchAPIKey(t *testing.T, db *database.DB, keyID string) models.ApiKey {
+func fetchAPIKey(t *testing.T, db *database.DB, keyID string) ApiKey {
 	t.Helper()
 
-	var apiKey models.ApiKey
+	var apiKey ApiKey
 	err := db.WithContext(context.Background()).Where("id = ?", keyID).First(&apiKey).Error
 	require.NoError(t, err)
 	return apiKey
 }
 
-func listAPIKeysForUser(t *testing.T, db *database.DB, userID string) []models.ApiKey {
+func listAPIKeysForUser(t *testing.T, db *database.DB, userID string) []ApiKey {
 	t.Helper()
 
-	var apiKeys []models.ApiKey
+	var apiKeys []ApiKey
 	err := db.WithContext(context.Background()).Where("user_id = ?", userID).Order("created_at asc").Find(&apiKeys).Error
 	require.NoError(t, err)
 	return apiKeys
@@ -103,11 +108,11 @@ func invalidateAPIKey(rawKey string) string {
 	return rawKey[:len(rawKey)-1] + "0"
 }
 
-func createDefaultAdminUser(t *testing.T, ctx context.Context, userService *user.UserService) *models.User {
+func createDefaultAdminUser(t *testing.T, ctx context.Context, userService *user.UserService) *common.User {
 	t.Helper()
 
-	user := &models.User{
-		BaseModel: models.BaseModel{ID: "default-admin-user"},
+	user := &common.User{
+		BaseModel: database.BaseModel{ID: "default-admin-user"},
 		Username:  defaultAdminUsername,
 	}
 
@@ -126,20 +131,20 @@ func TestListApiKeysPermissionQueryCountIsConstant(t *testing.T) {
 			service := NewApiKeyService(db, user.NewUserService(db)).WithRoleService(role.NewRoleService(db))
 			userID := "query-count-user"
 
-			apiKeys := make([]models.ApiKey, keyCount)
-			permissions := make([]models.ApiKeyPermission, keyCount)
+			apiKeys := make([]ApiKey, keyCount)
+			permissions := make([]role.ApiKeyPermission, keyCount)
 			for i := range keyCount {
 				keyID := fmt.Sprintf("key-%d", i)
-				apiKeys[i] = models.ApiKey{
-					BaseModel: models.BaseModel{ID: keyID},
+				apiKeys[i] = ApiKey{
+					BaseModel: database.BaseModel{ID: keyID},
 					Name:      keyID,
 					KeyHash:   "hash",
 					KeyPrefix: fmt.Sprintf("arc_%04d", i),
-					Kind:      models.ApiKeyKindScoped,
+					Kind:      ApiKeyKindScoped,
 					UserID:    &userID,
 				}
-				permissions[i] = models.ApiKeyPermission{
-					BaseModel:  models.BaseModel{ID: fmt.Sprintf("permission-%d", i)},
+				permissions[i] = role.ApiKeyPermission{
+					BaseModel:  database.BaseModel{ID: fmt.Sprintf("permission-%d", i)},
 					ApiKeyID:   keyID,
 					Permission: authz.PermContainersList,
 				}
@@ -270,7 +275,7 @@ func TestUpdateApiKeyRollsBackMetadataWhenPermissionUpdateFails(t *testing.T) {
 	userSvc := user.NewUserService(db).WithRoleService(roleSvc)
 	service := NewApiKeyService(db, userSvc).WithRoleService(roleSvc)
 	admin := createTestAPIKeyUser(t, ctx, userSvc, "admin-update-rollback", "admin-update-rollback")
-	require.NoError(t, roleSvc.SetUserAssignments(ctx, admin.ID, []models.UserRoleAssignment{
+	require.NoError(t, roleSvc.SetUserAssignments(ctx, admin.ID, []role.UserRoleAssignment{
 		{RoleID: authz.BuiltInRoleAdmin, EnvironmentID: nil},
 	}))
 
@@ -312,7 +317,7 @@ func TestCreateApiKeyRejectsGrantsBeyondCallerPermissions(t *testing.T) {
 		Permissions: []apikey.PermissionGrant{{Permission: authz.PermContainersList}},
 	})
 	require.NoError(t, err)
-	require.Equal(t, models.ApiKeyKindScoped, created.Kind)
+	require.Equal(t, ApiKeyKindScoped, created.Kind)
 }
 
 func TestApiKeyGrantsAreCappedByOwnerRoles(t *testing.T) {
@@ -343,12 +348,12 @@ func TestApiKeyGrantsAreCappedByOwnerRoles(t *testing.T) {
 
 	// Ownerless rows (not env-bootstrap; no production path creates these)
 	// have no owner ceiling to validate against — grant edits are refused.
-	require.NoError(t, db.WithContext(ctx).Create(&models.ApiKey{
+	require.NoError(t, db.WithContext(ctx).Create(&ApiKey{
 		Name:      "orphaned",
 		KeyHash:   "hash",
 		KeyPrefix: "arc_orph",
 	}).Error)
-	var orphan models.ApiKey
+	var orphan ApiKey
 	require.NoError(t, db.WithContext(ctx).Where("key_prefix = ?", "arc_orph").First(&orphan).Error)
 	_, err = service.UpdateApiKey(ctx, authz.SudoPermissionSet(), orphan.ID, apikey.UpdateApiKey{
 		Permissions: []apikey.PermissionGrant{{Permission: authz.PermContainersList}},
@@ -363,9 +368,9 @@ func TestCreatePersonalApiKeyHasNoGrantsAndCannotGainAny(t *testing.T) {
 
 	created, err := service.CreatePersonalApiKey(ctx, user.ID, apikey.CreateUserApiKey{Name: "personal"})
 	require.NoError(t, err)
-	require.Equal(t, models.ApiKeyKindPersonal, created.Kind)
+	require.Equal(t, ApiKeyKindPersonal, created.Kind)
 	require.Empty(t, created.Permissions)
-	require.Equal(t, models.ApiKeyKindPersonal, fetchAPIKey(t, db, created.ID).Kind)
+	require.Equal(t, ApiKeyKindPersonal, fetchAPIKey(t, db, created.ID).Kind)
 
 	// Attaching grants to a personal key is rejected even for sudo callers.
 	_, err = service.UpdateApiKey(ctx, authz.SudoPermissionSet(), created.ID, apikey.UpdateApiKey{
@@ -517,7 +522,7 @@ func TestReconcileDefaultAdminAPIKeySkipsWhenDefaultAdminMissing(t *testing.T) {
 	require.NoError(t, err)
 
 	var count int64
-	err = db.WithContext(ctx).Model(&models.ApiKey{}).Count(&count).Error
+	err = db.WithContext(ctx).Model(&ApiKey{}).Count(&count).Error
 	require.NoError(t, err)
 	require.Zero(t, count)
 }
@@ -562,7 +567,7 @@ func TestValidateAPIKeyCacheSkipsHashValidationAndInvalidatesOnRevoke(t *testing
 
 	// Corrupt the stored hash: a second validation can only succeed by hitting
 	// the validated-key cache and skipping the Argon2id check.
-	require.NoError(t, db.Model(&models.ApiKey{}).Where("id = ?", created.ID).Update("key_hash", "corrupted").Error)
+	require.NoError(t, db.Model(&ApiKey{}).Where("id = ?", created.ID).Update("key_hash", "corrupted").Error)
 
 	validatedUser, err := service.ValidateApiKey(ctx, created.Key)
 	require.NoError(t, err)
@@ -608,7 +613,7 @@ func TestValidateAPIKeyDebouncesLastUsedWrites(t *testing.T) {
 
 	// Clear the column directly; a validation inside the debounce window must
 	// not issue another write.
-	require.NoError(t, db.Model(&models.ApiKey{}).Where("id = ?", created.ID).Update("last_used_at", nil).Error)
+	require.NoError(t, db.Model(&ApiKey{}).Where("id = ?", created.ID).Update("last_used_at", nil).Error)
 
 	_, err = service.ValidateApiKey(ctx, created.Key)
 	require.NoError(t, err)
@@ -750,8 +755,8 @@ func TestApiKeyProtectedWhileEnvironmentReferenced(t *testing.T) {
 	created, err := service.CreateEnvironmentApiKey(ctx, "env-referenced")
 	require.NoError(t, err)
 
-	env := &models.Environment{
-		BaseModel: models.BaseModel{ID: "env-referenced"},
+	env := &testEnvironmentRow{
+		BaseModel: database.BaseModel{ID: "env-referenced"},
 		Name:      "referenced",
 		ApiUrl:    "http://localhost:2375",
 		ApiKeyID:  &created.ID,
@@ -766,17 +771,17 @@ func TestApiKeyProtectedWhileEnvironmentReferenced(t *testing.T) {
 	// Legacy pre-046 bootstrap rows carry an owner; the reference alone must
 	// still protect them.
 	legacyUserID := "legacy-owner"
-	legacy := &models.ApiKey{
-		BaseModel:     models.BaseModel{ID: "legacy-key"},
+	legacy := &ApiKey{
+		BaseModel:     database.BaseModel{ID: "legacy-key"},
 		Name:          "Environment Bootstrap Key - legacy",
 		KeyHash:       "hash",
 		KeyPrefix:     "arc_lgcy",
-		Kind:          models.ApiKeyKindScoped,
+		Kind:          ApiKeyKindScoped,
 		UserID:        &legacyUserID,
 		EnvironmentID: new("env-referenced"),
 	}
 	require.NoError(t, db.WithContext(ctx).Create(legacy).Error)
-	require.NoError(t, db.WithContext(ctx).Model(&models.Environment{}).
+	require.NoError(t, db.WithContext(ctx).Model(&testEnvironmentRow{}).
 		Where("id = ?", env.ID).Update("api_key_id", legacy.ID).Error)
 	require.ErrorIs(t, service.DeleteApiKey(ctx, legacy.ID), ErrApiKeyProtected)
 
@@ -816,7 +821,7 @@ func TestGetEnvironmentByAPIKeyExpiredDoesNotUpdateLastUsedAt(t *testing.T) {
 	require.NoError(t, err)
 
 	expiredAt := time.Now().Add(-time.Minute)
-	err = db.WithContext(ctx).Model(&models.ApiKey{}).Where("id = ?", created.ID).Update("expires_at", expiredAt).Error
+	err = db.WithContext(ctx).Model(&ApiKey{}).Where("id = ?", created.ID).Update("expires_at", expiredAt).Error
 	require.NoError(t, err)
 
 	_, err = service.GetEnvironmentByApiKey(ctx, created.Key)
@@ -836,7 +841,7 @@ func TestCreateEnvironmentApiKeySeedsAllPermissionsScopedToEnv(t *testing.T) {
 	userSvc := user.NewUserService(db).WithRoleService(roleSvc)
 	service := NewApiKeyService(db, userSvc).WithRoleService(roleSvc)
 	admin := createTestAPIKeyUser(t, ctx, userSvc, "admin-env-bootstrap", "admin-env-bootstrap")
-	require.NoError(t, roleSvc.SetUserAssignments(ctx, admin.ID, []models.UserRoleAssignment{
+	require.NoError(t, roleSvc.SetUserAssignments(ctx, admin.ID, []role.UserRoleAssignment{
 		{RoleID: authz.BuiltInRoleAdmin, EnvironmentID: nil},
 	}))
 
@@ -864,21 +869,39 @@ func TestBackfillApiKeyPermissionsRepairsExistingBootstrapKey(t *testing.T) {
 
 	roleSvc := role.NewRoleService(db)
 	require.NoError(t, roleSvc.EnsureBuiltInRoles(ctx))
+	userSvc := user.NewUserService(db).WithRoleService(roleSvc)
+	service := NewApiKeyService(db, userSvc).WithRoleService(roleSvc)
 
 	// Simulate a pre-existing env-bootstrap key with NO permission grants
 	// (e.g., created on a deployment where the per-key seed step failed).
 	envID := "env-broken-bootstrap"
-	require.NoError(t, db.WithContext(ctx).Create(&models.ApiKey{
+	require.NoError(t, db.WithContext(ctx).Create(&ApiKey{
 		Name:          "Environment Bootstrap Key - broken",
 		KeyHash:       "hash",
 		KeyPrefix:     "arc_brkn",
 		EnvironmentID: &envID,
 	}).Error)
 
-	require.NoError(t, roleSvc.BackfillApiKeyPermissions(ctx))
+	// A user-owned key with a single deliberate grant must NOT be rehydrated
+	// from the owner's effective permissions by the backfill.
+	owner := createTestAPIKeyUser(t, ctx, userSvc, "backfill-scoped-owner")
+	scopedKey := ApiKey{
+		Name:      "Custom scoped key",
+		KeyHash:   "scoped-hash",
+		KeyPrefix: "arc_scpd",
+		Kind:      ApiKeyKindScoped,
+		UserID:    &owner.ID,
+	}
+	require.NoError(t, db.WithContext(ctx).Create(&scopedKey).Error)
+	require.NoError(t, db.WithContext(ctx).Create(&role.ApiKeyPermission{
+		ApiKeyID:   scopedKey.ID,
+		Permission: authz.PermTemplatesRead,
+	}).Error)
+
+	require.NoError(t, service.BackfillApiKeyPermissions(ctx))
 
 	// The backfill should have populated the env-scoped perms retroactively.
-	var keys []models.ApiKey
+	var keys []ApiKey
 	require.NoError(t, db.WithContext(ctx).Where("environment_id = ?", envID).Find(&keys).Error)
 	require.Len(t, keys, 1)
 	ps, err := roleSvc.ResolveApiKeyPermissions(ctx, keys[0].ID)
@@ -886,6 +909,55 @@ func TestBackfillApiKeyPermissionsRepairsExistingBootstrapKey(t *testing.T) {
 	envPerms, ok := ps.PerEnv[envID]
 	require.True(t, ok)
 	require.Len(t, envPerms, len(authz.AllPermissions()))
+
+	var scopedPerms []role.ApiKeyPermission
+	require.NoError(t, db.WithContext(ctx).Where("api_key_id = ?", scopedKey.ID).Find(&scopedPerms).Error)
+	require.Len(t, scopedPerms, 1)
+	require.Equal(t, authz.PermTemplatesRead, scopedPerms[0].Permission)
+}
+
+func TestBackfillPermsForKeyDeduplicatesGlobalAndEnvironmentPermissions(t *testing.T) {
+	ctx := context.Background()
+	db := setupAPIKeyServiceTestDB(t)
+
+	roleSvc := role.NewRoleService(db)
+	require.NoError(t, roleSvc.EnsureBuiltInRoles(ctx))
+	userSvc := user.NewUserService(db).WithRoleService(roleSvc)
+	service := NewApiKeyService(db, userSvc).WithRoleService(roleSvc)
+
+	admin := createTestAPIKeyUser(t, ctx, userSvc, "admin", "admin")
+	require.NoError(t, roleSvc.SetUserAssignments(ctx, admin.ID, []role.UserRoleAssignment{
+		{RoleID: authz.BuiltInRoleAdmin},
+	}))
+	owner := createTestAPIKeyUser(t, ctx, userSvc, "api-key-owner")
+	envID := "env-1"
+	now := time.Now()
+	require.NoError(t, db.WithContext(ctx).Create(&testEnvironmentRow{
+		BaseModel: database.BaseModel{ID: envID, CreatedAt: now, UpdatedAt: &now},
+		Name:      "env-" + envID,
+		ApiUrl:    "http://localhost:3552",
+		Status:    "online",
+		Enabled:   true,
+	}).Error)
+
+	require.NoError(t, roleSvc.SetUserAssignments(ctx, owner.ID, []role.UserRoleAssignment{
+		{RoleID: authz.BuiltInRoleViewer, EnvironmentID: nil},
+		{RoleID: authz.BuiltInRoleEditor, EnvironmentID: &envID},
+	}))
+
+	perms, err := service.backfillPermsForKeyInternal(ctx, db.WithContext(ctx), ApiKey{
+		UserID:        &owner.ID,
+		EnvironmentID: &envID,
+	})
+	require.NoError(t, err)
+	require.Contains(t, perms, authz.PermContainersList)
+	count := 0
+	for _, p := range perms {
+		if p == authz.PermContainersList {
+			count++
+		}
+	}
+	require.Equal(t, 1, count)
 }
 
 func TestGetEnvironmentByAPIKeyRecentLastUsedAtDoesNotRewriteImmediately(t *testing.T) {
@@ -896,7 +968,7 @@ func TestGetEnvironmentByAPIKeyRecentLastUsedAtDoesNotRewriteImmediately(t *test
 	require.NoError(t, err)
 
 	recent := time.Now().Add(-time.Minute)
-	err = db.WithContext(ctx).Model(&models.ApiKey{}).Where("id = ?", created.ID).Update("last_used_at", recent).Error
+	err = db.WithContext(ctx).Model(&ApiKey{}).Where("id = ?", created.ID).Update("last_used_at", recent).Error
 	require.NoError(t, err)
 
 	before := fetchAPIKey(t, db, created.ID)
@@ -911,3 +983,17 @@ func TestGetEnvironmentByAPIKeyRecentLastUsedAtDoesNotRewriteImmediately(t *test
 	require.NotNil(t, after.LastUsedAt)
 	require.Equal(t, before.LastUsedAt.UTC().Unix(), after.LastUsedAt.UTC().Unix())
 }
+
+// testEnvironmentRow is a minimal stand-in for environment.Environment: the
+// environment package imports apikey, so this in-package test cannot import it.
+type testEnvironmentRow struct {
+	database.BaseModel
+	Name        string
+	ApiUrl      string `gorm:"column:api_url"`
+	Status      string
+	Enabled     bool
+	AccessToken *string `gorm:"column:access_token"`
+	ApiKeyID    *string `gorm:"column:api_key_id"`
+}
+
+func (testEnvironmentRow) TableName() string { return "environments" }

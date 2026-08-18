@@ -32,7 +32,7 @@ func IsRetryableWriteError(err error) bool {
 //
 // Example:
 //
-//	user, err := dbutil.FirstWhere[models.User](ctx, s.db.DB, ErrUserNotFound, "username = ?", username)
+//	user, err := dbutil.FirstWhere[common.User](ctx, s.db.DB, ErrUserNotFound, "username = ?", username)
 func FirstWhere[T any](ctx context.Context, db *gorm.DB, notFound error, where string, args ...any) (*T, error) {
 	var out T
 	if err := db.WithContext(ctx).Where(where, args...).First(&out).Error; err != nil {

@@ -1,32 +1,32 @@
 package notifications
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+
 	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 )
 
 func TestDeliver_UnknownProviderIsNotHandled(t *testing.T) {
-	handled, err := Deliver(context.Background(), "bogus", models.JSON{}, Content{})
+	handled, err := Deliver(context.Background(), "bogus", database.JSON{}, Content{})
 	require.False(t, handled)
 	require.NoError(t, err)
 }
 
 func TestProviderDeliverers_CoverAllValidProviders(t *testing.T) {
-	for _, provider := range []models.NotificationProvider{
-		models.NotificationProviderDiscord,
-		models.NotificationProviderEmail,
-		models.NotificationProviderTelegram,
-		models.NotificationProviderSignal,
-		models.NotificationProviderSlack,
-		models.NotificationProviderNtfy,
-		models.NotificationProviderPushover,
-		models.NotificationProviderGotify,
-		models.NotificationProviderMatrix,
-		models.NotificationProviderGeneric,
+	for _, provider := range []NotificationProvider{
+		NotificationProviderDiscord,
+		NotificationProviderEmail,
+		NotificationProviderTelegram,
+		NotificationProviderSignal,
+		NotificationProviderSlack,
+		NotificationProviderNtfy,
+		NotificationProviderPushover,
+		NotificationProviderGotify,
+		NotificationProviderMatrix,
+		NotificationProviderGeneric,
 	} {
 		require.Contains(t, providerDeliverers, provider)
 	}

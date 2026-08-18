@@ -1,6 +1,8 @@
 package settings
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+
 	"context"
 	"fmt"
 	"net/http"
@@ -8,14 +10,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/search"
-
 	"emperror.dev/errors"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
@@ -36,7 +35,7 @@ const (
 // SettingsHandler provides Huma-based settings management endpoints.
 type SettingsHandler struct {
 	settingsService       *SettingsService
-	settingsSearchService *search.SettingsSearchService
+	settingsSearchService *SettingsSearchService
 	proxyRemoteJSON       handlerutil.RemoteJSONProxy
 	cfg                   *config.Config
 }
@@ -121,7 +120,7 @@ func validateAbsoluteDirectoryPathInternal(path string) error {
 }
 
 // RegisterSettings registers settings management routes using Huma.
-func RegisterSettings(api huma.API, settingsService *SettingsService, settingsSearchService *search.SettingsSearchService, proxyRemoteJSON handlerutil.RemoteJSONProxy, cfg *config.Config) {
+func RegisterSettings(api huma.API, settingsService *SettingsService, settingsSearchService *SettingsSearchService, proxyRemoteJSON handlerutil.RemoteJSONProxy, cfg *config.Config) {
 	h := &SettingsHandler{
 		settingsService:       settingsService,
 		settingsSearchService: settingsSearchService,
@@ -284,7 +283,7 @@ func (h *SettingsHandler) GetPublicSettings(ctx context.Context, input *GetPubli
 		return &GetPublicSettingsOutput{Body: *settingsDto}, nil
 	}
 
-	settingsList := h.settingsService.ListSettings(models.SettingVisibilityPublic)
+	settingsList := h.settingsService.ListSettings(SettingVisibilityPublic)
 
 	var settingsDto []settingstypes.PublicSetting
 	if err := mapper.MapStructList(settingsList, &settingsDto); err != nil {
@@ -298,9 +297,9 @@ func (h *SettingsHandler) GetPublicSettings(ctx context.Context, input *GetPubli
 func (h *SettingsHandler) GetSettings(ctx context.Context, input *GetSettingsInput) (*GetSettingsOutput, error) {
 	ps, _ := middleware.PermissionsFromContext(ctx)
 	isAdmin := ps.IsGlobalAdmin()
-	visibility := models.SettingVisibilityNonAdmin
+	visibility := SettingVisibilityNonAdmin
 	if isAdmin {
-		visibility = models.SettingVisibilityAll
+		visibility = SettingVisibilityAll
 	}
 
 	if input.EnvironmentID != "0" {
@@ -417,7 +416,7 @@ func (h *SettingsHandler) updateSettingsForLocalEnvironment(ctx context.Context,
 
 	updatedSettings, err := h.settingsService.UpdateSettings(ctx, input)
 	if err != nil {
-		apiErr := models.ToAPIError(err)
+		apiErr := common.ToAPIError(err)
 		if apiErr.HTTPStatus() == http.StatusInternalServerError {
 			return nil, huma.Error500InternalServerError("Failed to update settings")
 		}

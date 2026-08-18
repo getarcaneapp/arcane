@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
 	sqlite "github.com/libtnb/sqlite"
@@ -26,13 +26,13 @@ func setupS3DestinationServiceTestInternal(t *testing.T) (*S3DestinationService,
 	gormDB, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, gormDB.AutoMigrate(
-		&models.S3Destination{},
-		&models.SettingVariable{},
-		&models.SystemBackupRun{},
-		&models.SystemBackupPolicy{},
-		&models.VolumeBackup{},
-		&models.VolumeBackupPolicy{},
+		&S3Destination{},
+		&settings.SettingVariable{},
 	))
+	require.NoError(t, gormDB.Exec("CREATE TABLE system_backup_runs (s3_destination_id text, remote_snapshot_id text)").Error)
+	require.NoError(t, gormDB.Exec("CREATE TABLE system_backup_policies (s3_destination_id text, s3_enabled numeric)").Error)
+	require.NoError(t, gormDB.Exec("CREATE TABLE volume_backups (s3_destination_id text, remote_snapshot_id text)").Error)
+	require.NoError(t, gormDB.Exec("CREATE TABLE volume_backup_policies (s3_destination_id text, s3_enabled numeric)").Error)
 	crypto.InitEncryption(&crypto.Config{
 		EncryptionKey: "test-encryption-key-for-s3-destination-32bytes",
 		Environment:   "test",
@@ -60,7 +60,7 @@ func TestS3DestinationService_CRUD(t *testing.T) {
 	require.True(t, created.SecretConfigured)
 	require.Equal(t, "production", created.Prefix)
 
-	var stored models.S3Destination
+	var stored S3Destination
 	require.NoError(t, gormDB.First(&stored, "id = ?", created.ID).Error)
 	require.NotEqual(t, "secret-key", stored.SecretAccessKey)
 
@@ -85,7 +85,7 @@ func TestS3DestinationService_CRUD(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "Primary offsite", updated.Name)
 
-	var updatedStored models.S3Destination
+	var updatedStored S3Destination
 	require.NoError(t, gormDB.First(&updatedStored, "id = ?", created.ID).Error)
 	require.Equal(t, stored.SecretAccessKey, updatedStored.SecretAccessKey)
 
@@ -127,7 +127,7 @@ func TestS3DestinationService_DeleteRejectsConfiguredDestination(t *testing.T) {
 		UseSSL:          true,
 	})
 	require.NoError(t, err)
-	require.NoError(t, gormDB.Create(&models.SettingVariable{
+	require.NoError(t, gormDB.Create(&settings.SettingVariable{
 		Key:   "backupS3DestinationId",
 		Value: destination.ID,
 	}).Error)
@@ -167,7 +167,7 @@ func TestS3DestinationService_SyncS3Destinations(t *testing.T) {
 		},
 	}))
 
-	var synced models.S3Destination
+	var synced S3Destination
 	require.NoError(t, gormDB.First(&synced, "id = ?", "destination-1").Error)
 	require.Equal(t, "Remote primary", synced.Name)
 	require.Equal(t, "agents", synced.Prefix)

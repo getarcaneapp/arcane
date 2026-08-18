@@ -1,6 +1,8 @@
 package gitrepo
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+
 	"context"
 	"fmt"
 	"strings"
@@ -9,7 +11,6 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	git "github.com/getarcaneapp/arcane/backend/v2/pkg/gitutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
@@ -41,15 +42,15 @@ func NewGitRepositoryService(db *database.DB, workDir string, eventService *even
 }
 
 func (s *GitRepositoryService) GetRepositoriesPaginated(ctx context.Context, params pagination.QueryParams) ([]gitops.GitRepository, pagination.Response, error) {
-	var repositories []models.GitRepository
-	q := s.db.WithContext(ctx).Model(&models.GitRepository{})
+	var repositories []GitRepository
+	q := s.db.WithContext(ctx).Model(&GitRepository{})
 
 	q = pagination.ApplyLikeSearch(q, params.Search, "name LIKE ? OR url LIKE ? OR COALESCE(description, '') LIKE ?")
 
 	q = pagination.ApplyBooleanFilter(q, "enabled", params.Filters["enabled"])
 	q = pagination.ApplyFilter(q, "auth_type", params.Filters["authType"])
 
-	out, paginationResp, err := pagination.PaginateSortAndMapDB[models.GitRepository, gitops.GitRepository](params, q, &repositories)
+	out, paginationResp, err := pagination.PaginateSortAndMapDB[GitRepository, gitops.GitRepository](params, q, &repositories)
 	if err != nil {
 		return nil, pagination.Response{}, errors.WrapIf(err, "failed to list git repositories")
 	}
@@ -57,8 +58,8 @@ func (s *GitRepositoryService) GetRepositoriesPaginated(ctx context.Context, par
 	return out, paginationResp, nil
 }
 
-func (s *GitRepositoryService) GetRepositoryByID(ctx context.Context, id string) (*models.GitRepository, error) {
-	var repository models.GitRepository
+func (s *GitRepositoryService) GetRepositoryByID(ctx context.Context, id string) (*GitRepository, error) {
+	var repository GitRepository
 	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&repository).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New("repository not found")
@@ -68,8 +69,8 @@ func (s *GitRepositoryService) GetRepositoryByID(ctx context.Context, id string)
 	return &repository, nil
 }
 
-func (s *GitRepositoryService) GetRepositoryByName(ctx context.Context, name string) (*models.GitRepository, error) {
-	var repository models.GitRepository
+func (s *GitRepositoryService) GetRepositoryByName(ctx context.Context, name string) (*GitRepository, error) {
+	var repository GitRepository
 	if err := s.db.WithContext(ctx).Where("name = ?", name).First(&repository).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New("repository not found")
@@ -79,7 +80,7 @@ func (s *GitRepositoryService) GetRepositoryByName(ctx context.Context, name str
 	return &repository, nil
 }
 
-func (s *GitRepositoryService) FindEnabledRepositoryByURL(ctx context.Context, rawURL string) (*models.GitRepository, error) {
+func (s *GitRepositoryService) FindEnabledRepositoryByURL(ctx context.Context, rawURL string) (*GitRepository, error) {
 	if s == nil || s.db == nil {
 		return nil, nil
 	}
@@ -95,7 +96,7 @@ func (s *GitRepositoryService) FindEnabledRepositoryByURL(ctx context.Context, r
 	}
 	likePrefix = strings.TrimSuffix(likePrefix, "/")
 
-	var repositories []models.GitRepository
+	var repositories []GitRepository
 	query := s.db.WithContext(ctx).Where("enabled = ?", true)
 	if likePrefix != "" {
 		query = query.Where("url = ? OR url = ? OR url LIKE ? OR url LIKE ?", rawURL, normalizedURL, likePrefix+"%", likePrefix+"/%")
@@ -113,8 +114,8 @@ func (s *GitRepositoryService) FindEnabledRepositoryByURL(ctx context.Context, r
 	return nil, nil
 }
 
-func (s *GitRepositoryService) CreateRepository(ctx context.Context, req models.CreateGitRepositoryRequest, actor models.User) (*models.GitRepository, error) {
-	repository := models.GitRepository{
+func (s *GitRepositoryService) CreateRepository(ctx context.Context, req CreateGitRepositoryRequest, actor common.User) (*GitRepository, error) {
+	repository := GitRepository{
 		Name:                   req.Name,
 		URL:                    req.URL,
 		AuthType:               req.AuthType,
@@ -156,8 +157,8 @@ func (s *GitRepositoryService) CreateRepository(ctx context.Context, req models.
 
 	// Log event
 	_, _ = s.eventService.CreateEvent(ctx, event.CreateEventRequest{
-		Type:         models.EventTypeGitRepositoryCreate,
-		Severity:     models.EventSeveritySuccess,
+		Type:         event.EventTypeGitRepositoryCreate,
+		Severity:     event.EventSeveritySuccess,
 		Title:        "Git repository created",
 		Description:  fmt.Sprintf("Created git repository '%s' (%s)", repository.Name, repository.URL),
 		ResourceType: new("git_repository"),
@@ -170,7 +171,7 @@ func (s *GitRepositoryService) CreateRepository(ctx context.Context, req models.
 	return &repository, nil
 }
 
-func (s *GitRepositoryService) UpdateRepository(ctx context.Context, id string, req models.UpdateGitRepositoryRequest, actor models.User) (*models.GitRepository, error) {
+func (s *GitRepositoryService) UpdateRepository(ctx context.Context, id string, req UpdateGitRepositoryRequest, actor common.User) (*GitRepository, error) {
 	repository, err := s.GetRepositoryByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -248,8 +249,8 @@ func (s *GitRepositoryService) UpdateRepository(ctx context.Context, id string, 
 
 		// Log event
 		_, _ = s.eventService.CreateEvent(ctx, event.CreateEventRequest{
-			Type:         models.EventTypeGitRepositoryUpdate,
-			Severity:     models.EventSeveritySuccess,
+			Type:         event.EventTypeGitRepositoryUpdate,
+			Severity:     event.EventSeveritySuccess,
 			Title:        "Git repository updated",
 			Description:  fmt.Sprintf("Updated git repository '%s'", repository.Name),
 			ResourceType: new("git_repository"),
@@ -263,10 +264,10 @@ func (s *GitRepositoryService) UpdateRepository(ctx context.Context, id string, 
 	return s.GetRepositoryByID(ctx, id)
 }
 
-func (s *GitRepositoryService) DeleteRepository(ctx context.Context, id string, actor models.User) error {
+func (s *GitRepositoryService) DeleteRepository(ctx context.Context, id string, actor common.User) error {
 	// Check if repository is used by any syncs
 	var count int64
-	if err := s.db.WithContext(ctx).Model(&models.GitOpsSync{}).Where("repository_id = ?", id).Count(&count).Error; err != nil {
+	if err := s.db.WithContext(ctx).Table("gitops_syncs").Where("repository_id = ?", id).Count(&count).Error; err != nil {
 		return errors.WrapIf(err, "failed to check repository usage")
 	}
 
@@ -280,14 +281,14 @@ func (s *GitRepositoryService) DeleteRepository(ctx context.Context, id string, 
 		return err
 	}
 
-	if err := s.db.WithContext(ctx).Where("id = ?", id).Delete(&models.GitRepository{}).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("id = ?", id).Delete(&GitRepository{}).Error; err != nil {
 		return errors.WrapIf(err, "failed to delete repository")
 	}
 
 	// Log event
 	_, _ = s.eventService.CreateEvent(ctx, event.CreateEventRequest{
-		Type:         models.EventTypeGitRepositoryDelete,
-		Severity:     models.EventSeverityInfo,
+		Type:         event.EventTypeGitRepositoryDelete,
+		Severity:     event.EventSeverityInfo,
 		Title:        "Git repository deleted",
 		Description:  fmt.Sprintf("Deleted git repository '%s'", repository.Name),
 		ResourceType: new("git_repository"),
@@ -300,7 +301,7 @@ func (s *GitRepositoryService) DeleteRepository(ctx context.Context, id string, 
 	return nil
 }
 
-func (s *GitRepositoryService) TestConnection(ctx context.Context, id string, branch string, actor models.User) error {
+func (s *GitRepositoryService) TestConnection(ctx context.Context, id string, branch string, actor common.User) error {
 	settings := s.settingsService.GetSettingsConfig()
 	ctx, cancel := context.WithTimeout(ctx, timeouts.GetDuration(settings.GitOperationTimeout.AsInt(), timeouts.DefaultGitOperation))
 	defer cancel()
@@ -319,8 +320,8 @@ func (s *GitRepositoryService) TestConnection(ctx context.Context, id string, br
 	if err != nil {
 		// Log error event
 		_, _ = s.eventService.CreateEvent(ctx, event.CreateEventRequest{
-			Type:         models.EventTypeGitRepositoryError,
-			Severity:     models.EventSeverityError,
+			Type:         event.EventTypeGitRepositoryError,
+			Severity:     event.EventSeverityError,
 			Title:        "Git repository connection test failed",
 			Description:  fmt.Sprintf("Failed to connect to repository '%s': %s", repository.Name, err.Error()),
 			ResourceType: new("git_repository"),
@@ -334,8 +335,8 @@ func (s *GitRepositoryService) TestConnection(ctx context.Context, id string, br
 
 	// Log success event
 	_, _ = s.eventService.CreateEvent(ctx, event.CreateEventRequest{
-		Type:         models.EventTypeGitRepositoryTest,
-		Severity:     models.EventSeveritySuccess,
+		Type:         event.EventTypeGitRepositoryTest,
+		Severity:     event.EventSeveritySuccess,
 		Title:        "Git repository connection successful",
 		Description:  fmt.Sprintf("Successfully connected to repository '%s'", repository.Name),
 		ResourceType: new("git_repository"),
@@ -348,7 +349,7 @@ func (s *GitRepositoryService) TestConnection(ctx context.Context, id string, br
 	return nil
 }
 
-func (s *GitRepositoryService) GetAuthConfig(ctx context.Context, repository *models.GitRepository) (git.AuthConfig, error) {
+func (s *GitRepositoryService) GetAuthConfig(ctx context.Context, repository *GitRepository) (git.AuthConfig, error) {
 	authConfig := git.AuthConfig{
 		AuthType:               repository.AuthType,
 		Username:               repository.Username,
@@ -467,20 +468,20 @@ func (s *GitRepositoryService) SyncRepositories(ctx context.Context, syncItems [
 	return s.deleteUnsynced(ctx, existingMap, syncedIDs)
 }
 
-func (s *GitRepositoryService) getExistingRepositoriesMap(ctx context.Context) (map[string]*models.GitRepository, error) {
-	var existing []models.GitRepository
+func (s *GitRepositoryService) getExistingRepositoriesMap(ctx context.Context) (map[string]*GitRepository, error) {
+	var existing []GitRepository
 	if err := s.db.WithContext(ctx).Find(&existing).Error; err != nil {
 		return nil, errors.WrapIf(err, "failed to get existing repositories")
 	}
 
-	existingMap := make(map[string]*models.GitRepository)
+	existingMap := make(map[string]*GitRepository)
 	for i := range existing {
 		existingMap[existing[i].ID] = &existing[i]
 	}
 	return existingMap, nil
 }
 
-func (s *GitRepositoryService) processSyncItem(ctx context.Context, item gitops.RepositorySync, existingMap map[string]*models.GitRepository) error {
+func (s *GitRepositoryService) processSyncItem(ctx context.Context, item gitops.RepositorySync, existingMap map[string]*GitRepository) error {
 	existing, exists := existingMap[item.ID]
 	if exists {
 		return s.updateExistingRepository(ctx, item, existing)
@@ -488,7 +489,7 @@ func (s *GitRepositoryService) processSyncItem(ctx context.Context, item gitops.
 	return s.createNewRepository(ctx, item)
 }
 
-func (s *GitRepositoryService) updateExistingRepository(ctx context.Context, item gitops.RepositorySync, existing *models.GitRepository) error {
+func (s *GitRepositoryService) updateExistingRepository(ctx context.Context, item gitops.RepositorySync, existing *GitRepository) error {
 	needsUpdate := s.checkRepositoryNeedsUpdate(item, existing)
 
 	if needsUpdate {
@@ -501,7 +502,7 @@ func (s *GitRepositoryService) updateExistingRepository(ctx context.Context, ite
 	return nil
 }
 
-func (s *GitRepositoryService) checkRepositoryNeedsUpdate(item gitops.RepositorySync, existing *models.GitRepository) bool {
+func (s *GitRepositoryService) checkRepositoryNeedsUpdate(item gitops.RepositorySync, existing *GitRepository) bool {
 	needsUpdate := utils.ApplyChanged(&existing.Name, mo.Some(item.Name))
 	needsUpdate = utils.ApplyChanged(&existing.URL, mo.Some(item.URL)) || needsUpdate
 	needsUpdate = utils.ApplyChanged(&existing.AuthType, mo.Some(item.AuthType)) || needsUpdate
@@ -558,7 +559,7 @@ func (s *GitRepositoryService) createNewRepository(ctx context.Context, item git
 		sshHostKeyVerification = "accept_new"
 	}
 
-	repo := models.GitRepository{
+	repo := GitRepository{
 		Name:                   item.Name,
 		URL:                    item.URL,
 		AuthType:               item.AuthType,
@@ -578,10 +579,10 @@ func (s *GitRepositoryService) createNewRepository(ctx context.Context, item git
 	return nil
 }
 
-func (s *GitRepositoryService) deleteUnsynced(ctx context.Context, existingMap map[string]*models.GitRepository, syncedIDs map[string]bool) error {
+func (s *GitRepositoryService) deleteUnsynced(ctx context.Context, existingMap map[string]*GitRepository, syncedIDs map[string]bool) error {
 	for id := range existingMap {
 		if !syncedIDs[id] {
-			if err := s.db.WithContext(ctx).Delete(&models.GitRepository{}, "id = ?", id).Error; err != nil {
+			if err := s.db.WithContext(ctx).Delete(&GitRepository{}, "id = ?", id).Error; err != nil {
 				return errors.WrapIff(err, "failed to delete repository %s", id)
 			}
 		}

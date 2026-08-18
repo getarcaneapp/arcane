@@ -1,6 +1,8 @@
 package scheduler
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+
 	"context"
 	"log/slog"
 	"slices"
@@ -19,7 +21,6 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
@@ -251,13 +252,13 @@ func (j *AutoHealJob) postRestartActionsInternal(ctx context.Context, containerI
 	if j.eventService != nil {
 		if err := j.eventService.LogContainerEvent(
 			ctx,
-			models.EventTypeContainerRestart,
+			event.EventTypeContainerRestart,
 			containerID,
 			containerName,
 			"", // no user - system action
 			"system",
 			"",
-			models.JSON{"action": "auto-heal", "reason": "unhealthy"},
+			database.JSON{"action": "auto-heal", "reason": "unhealthy"},
 		); err != nil {
 			slog.WarnContext(ctx, "auto-heal failed to log event", "container", containerName, "error", err)
 		}

@@ -1,6 +1,12 @@
 package updater
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/notifications"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+
 	"bytes"
 	"context"
 	"encoding/json"
@@ -22,7 +28,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/notification"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
@@ -195,11 +200,11 @@ func newUpdaterApplyPendingDockerServerInternal(
 type mockSystemUpgradeServiceInternal struct {
 	triggerCalled  bool
 	triggerError   error
-	capturedUser   *models.User
+	capturedUser   *common.User
 	capturedTarget *updater.SelfUpdateTarget
 }
 
-func (m *mockSystemUpgradeServiceInternal) TriggerUpgradeViaCLI(_ context.Context, user models.User, target updater.SelfUpdateTarget) (string, error) {
+func (m *mockSystemUpgradeServiceInternal) TriggerUpgradeViaCLI(_ context.Context, user common.User, target updater.SelfUpdateTarget) (string, error) {
 	m.triggerCalled = true
 	m.capturedUser = &user
 	m.capturedTarget = &target
@@ -275,8 +280,8 @@ func TestUpdaterService_TriggerSelfUpdateViaCLIInternal(t *testing.T) {
 		require.NoError(t, err)
 		assert.True(t, mockUpgrade.triggerCalled)
 		require.NotNil(t, mockUpgrade.capturedUser)
-		assert.Equal(t, models.SystemUser.ID, mockUpgrade.capturedUser.ID)
-		assert.Equal(t, models.SystemUser.Username, mockUpgrade.capturedUser.Username)
+		assert.Equal(t, common.SystemUser.ID, mockUpgrade.capturedUser.ID)
+		assert.Equal(t, common.SystemUser.Username, mockUpgrade.capturedUser.Username)
 		require.NotNil(t, mockUpgrade.capturedTarget)
 		assert.Equal(t, "container-1", mockUpgrade.capturedTarget.ContainerID)
 		assert.Equal(t, "arcane", mockUpgrade.capturedTarget.ContainerName)
@@ -416,7 +421,7 @@ func TestUpdaterService_PullImageAdapterInternal(t *testing.T) {
 
 	t.Run("passes database registry credentials to Arcane image puller", func(t *testing.T) {
 		db := setupProjectTestDBInternal(t)
-		require.NoError(t, db.AutoMigrate(&models.ContainerRegistry{}, &models.KVEntry{}))
+		require.NoError(t, db.AutoMigrate(&registry.ContainerRegistry{}, &kv.KVEntry{}))
 		crypto.InitEncryption(&crypto.Config{
 			Environment:   string(config.AppEnvironmentTest),
 			EncryptionKey: "test-encryption-key-for-testing-32bytes-min",
@@ -459,12 +464,12 @@ func TestUpdaterService_PendingImageUpdatesAdapterInternal(t *testing.T) {
 	latestDigest := "sha256:2222222222222222222222222222222222222222222222222222222222222222"
 	lastError := "previous check failed"
 	checkTime := time.Now().Add(-time.Hour).UTC()
-	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+	require.NoError(t, db.Create(&imageupdate.ImageUpdateRecord{
 		ID:             "pending",
 		Repository:     "registry.example.com/team/app",
 		Tag:            "1.2.3",
 		HasUpdate:      true,
-		UpdateType:     models.UpdateTypeTag,
+		UpdateType:     imageupdate.UpdateTypeTag,
 		CurrentVersion: "1.2.3",
 		LatestVersion:  &latest,
 		CurrentDigest:  &currentDigest,
@@ -472,12 +477,12 @@ func TestUpdaterService_PendingImageUpdatesAdapterInternal(t *testing.T) {
 		CheckTime:      checkTime,
 		LastError:      &lastError,
 	}).Error)
-	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+	require.NoError(t, db.Create(&imageupdate.ImageUpdateRecord{
 		ID:         "not-pending",
 		Repository: "registry.example.com/team/old",
 		Tag:        "1.0.0",
 		HasUpdate:  false,
-		UpdateType: models.UpdateTypeDigest,
+		UpdateType: imageupdate.UpdateTypeDigest,
 		CheckTime:  checkTime,
 	}).Error)
 	svc, svcErr := NewUpdaterService(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
@@ -506,7 +511,7 @@ func TestUpdaterService_PendingImageUpdatesAdapterInternal(t *testing.T) {
 func TestUpdaterService_PendingImageUpdatesFlushesPendingNotificationsInternal(t *testing.T) {
 	ctx := context.Background()
 	db := setupProjectTestDBInternal(t)
-	require.NoError(t, db.AutoMigrate(&models.ImageUpdateRecord{}, &models.NotificationSettings{}))
+	require.NoError(t, db.AutoMigrate(&imageupdate.ImageUpdateRecord{}, &notification.NotificationSettings{}))
 
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -514,10 +519,10 @@ func TestUpdaterService_PendingImageUpdatesFlushesPendingNotificationsInternal(t
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
-	require.NoError(t, db.Create(&models.NotificationSettings{
-		Provider: models.NotificationProviderGeneric,
+	require.NoError(t, db.Create(&notification.NotificationSettings{
+		Provider: notifications.NotificationProviderGeneric,
 		Enabled:  true,
-		Config: models.JSON{
+		Config: database.JSON{
 			"webhookUrl":  server.URL,
 			"method":      "POST",
 			"contentType": "application/json",
@@ -529,7 +534,7 @@ func TestUpdaterService_PendingImageUpdatesFlushesPendingNotificationsInternal(t
 	svc, svcErr := NewUpdaterService(db, nil, nil, nil, imageUpdates, nil, nil, nil, notif, nil, nil)
 	require.NoError(t, svcErr)
 
-	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+	require.NoError(t, db.Create(&imageupdate.ImageUpdateRecord{
 		ID:               "sha256:pending-unnotified",
 		Repository:       "test/repo",
 		Tag:              "latest",
@@ -542,7 +547,7 @@ func TestUpdaterService_PendingImageUpdatesFlushesPendingNotificationsInternal(t
 	require.NoError(t, err)
 	require.Len(t, records, 1)
 	require.EqualValues(t, 1, calls.Load())
-	var reloaded models.ImageUpdateRecord
+	var reloaded imageupdate.ImageUpdateRecord
 	require.NoError(t, db.First(&reloaded, "id = ?", "sha256:pending-unnotified").Error)
 	assert.True(t, reloaded.NotificationSent)
 }
@@ -553,14 +558,14 @@ func TestUpdaterService_PendingImageUpdatesFlushesPendingNotificationsInternal(t
 func TestUpdaterService_PendingImageUpdatesNoProvidersLeavesUnnotifiedInternal(t *testing.T) {
 	ctx := context.Background()
 	db := setupProjectTestDBInternal(t)
-	require.NoError(t, db.AutoMigrate(&models.ImageUpdateRecord{}, &models.NotificationSettings{}))
+	require.NoError(t, db.AutoMigrate(&imageupdate.ImageUpdateRecord{}, &notification.NotificationSettings{}))
 
 	notif := notification.NewNotificationService(db, nil, nil, nil)
 	imageUpdates := imageupdate.NewImageUpdateService(db, nil, nil, nil, nil, notif, nil)
 	svc, svcErr := NewUpdaterService(db, nil, nil, nil, imageUpdates, nil, nil, nil, notif, nil, nil)
 	require.NoError(t, svcErr)
 
-	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+	require.NoError(t, db.Create(&imageupdate.ImageUpdateRecord{
 		ID:               "sha256:pending-no-provider",
 		Repository:       "test/repo",
 		Tag:              "latest",
@@ -572,7 +577,7 @@ func TestUpdaterService_PendingImageUpdatesNoProvidersLeavesUnnotifiedInternal(t
 
 	require.NoError(t, err)
 	require.Len(t, records, 1)
-	var reloaded models.ImageUpdateRecord
+	var reloaded imageupdate.ImageUpdateRecord
 	require.NoError(t, db.First(&reloaded, "id = ?", "sha256:pending-no-provider").Error)
 	assert.False(t, reloaded.NotificationSent)
 }
@@ -580,7 +585,7 @@ func TestUpdaterService_PendingImageUpdatesNoProvidersLeavesUnnotifiedInternal(t
 func TestUpdaterService_RecordUpdateRunAdapterInternal(t *testing.T) {
 	ctx := context.Background()
 	db := setupProjectTestDBInternal(t)
-	require.NoError(t, db.AutoMigrate(&models.AutoUpdateRecord{}))
+	require.NoError(t, db.AutoMigrate(&AutoUpdateRecord{}))
 	svc, svcErr := NewUpdaterService(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	require.NoError(t, svcErr)
 
@@ -597,11 +602,11 @@ func TestUpdaterService_RecordUpdateRunAdapterInternal(t *testing.T) {
 	})
 
 	require.NoError(t, err)
-	var record models.AutoUpdateRecord
+	var record AutoUpdateRecord
 	require.NoError(t, db.First(&record, "resource_id = ?", "container-1").Error)
 	assert.Equal(t, "web", record.ResourceName)
 	assert.Equal(t, "container", record.ResourceType)
-	assert.Equal(t, models.AutoUpdateStatus(updater.StatusUpdated), record.Status)
+	assert.Equal(t, AutoUpdateStatus(updater.StatusUpdated), record.Status)
 	assert.True(t, record.UpdateAvailable)
 	assert.True(t, record.UpdateApplied)
 	assert.Equal(t, "nginx:1.2.3", record.OldImageVersions["main"])
@@ -925,7 +930,7 @@ func createTestPullRegistryInternal(t *testing.T, db *database.DB, url, username
 	encryptedToken, err := crypto.Encrypt(token)
 	require.NoError(t, err)
 
-	reg := &models.ContainerRegistry{
+	reg := &registry.ContainerRegistry{
 		URL:          url,
 		Username:     username,
 		Token:        encryptedToken,
@@ -1024,6 +1029,6 @@ func setupProjectTestDBInternal(t *testing.T) *database.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&models.Project{}, &models.SettingVariable{}, &models.ImageUpdateRecord{}, &models.Event{}))
+	require.NoError(t, db.AutoMigrate(&project.Project{}, &settings.SettingVariable{}, &imageupdate.ImageUpdateRecord{}, &event.Event{}))
 	return &database.DB{DB: db}
 }

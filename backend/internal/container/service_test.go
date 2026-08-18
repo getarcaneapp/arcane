@@ -1,6 +1,14 @@
 package container
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+
 	"context"
 	"encoding/json"
 	"net/http"
@@ -12,7 +20,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
@@ -253,7 +260,7 @@ func TestContainerServiceCommitContainerCallsDockerAPIInternal(t *testing.T) {
 		Tag:        "snapshot",
 		Comment:    "manual snapshot",
 		Author:     "arcane",
-	}, models.SystemUser)
+	}, common.SystemUser)
 	require.NoError(t, err)
 	require.NotNil(t, out)
 	require.Equal(t, "sha256:new-image", out.ID)
@@ -265,9 +272,9 @@ func TestContainerServiceCommitContainerCallsDockerAPIInternal(t *testing.T) {
 		"author":    "arcane",
 	}, gotRequest)
 
-	var event models.Event
-	require.NoError(t, db.WithContext(context.Background()).Where("type = ?", models.EventTypeImageCommit).First(&event).Error)
-	require.Equal(t, "container-1", *event.ResourceID)
+	var evt event.Event
+	require.NoError(t, db.WithContext(context.Background()).Where("type = ?", event.EventTypeImageCommit).First(&evt).Error)
+	require.Equal(t, "container-1", *evt.ResourceID)
 }
 
 func TestContainerServiceCommitContainerOmitsReferenceWhenRepositoryEmptyInternal(t *testing.T) {
@@ -298,7 +305,7 @@ func TestContainerServiceCommitContainerOmitsReferenceWhenRepositoryEmptyInterna
 
 	out, err := svc.CommitContainer(context.Background(), "container-1", containertypes.CommitRequest{
 		Tag: "latest",
-	}, models.SystemUser)
+	}, common.SystemUser)
 	require.NoError(t, err)
 	require.NotNil(t, out)
 	require.Equal(t, "sha256:new-image", out.ID)
@@ -355,7 +362,7 @@ func setupProjectTestDBInternal(t *testing.T) *database.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&models.Project{}, &models.SettingVariable{}, &models.ImageUpdateRecord{}, &models.Event{}))
+	require.NoError(t, db.AutoMigrate(&project.Project{}, &settings.SettingVariable{}, &imageupdate.ImageUpdateRecord{}, &event.Event{}))
 	return &database.DB{DB: db}
 }
 

@@ -1,6 +1,8 @@
 package image
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+
 	"context"
 	"io"
 	"log/slog"
@@ -16,7 +18,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/vulnerability"
 	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	utilsregistry "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/registryauth"
@@ -117,10 +118,10 @@ func (s *ImageService) GetImageDetail(ctx context.Context, id string) (*imagetyp
 	return &out, nil
 }
 
-func (s *ImageService) RemoveImage(ctx context.Context, id string, force bool, user models.User) error {
+func (s *ImageService) RemoveImage(ctx context.Context, id string, force bool, user common.User) error {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", id, "", user.ID, user.Username, "0", err, models.JSON{"action": "delete", "force": force})
+		s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", id, "", user.ID, user.Username, "0", err, database.JSON{"action": "delete", "force": force})
 		return errors.WrapIf(err, "failed to connect to Docker")
 	}
 
@@ -139,13 +140,13 @@ func (s *ImageService) RemoveImage(ctx context.Context, id string, force bool, u
 
 	_, err = dockerClient.ImageRemove(ctx, id, options)
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", id, imageName, user.ID, user.Username, "0", err, models.JSON{"action": "delete", "force": force})
+		s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", id, imageName, user.ID, user.Username, "0", err, database.JSON{"action": "delete", "force": force})
 		return errors.WrapIf(err, "failed to remove image")
 	}
 
 	if s.db != nil {
 		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			return tx.Delete(&models.ImageUpdateRecord{}, "id = ?", id).Error
+			return tx.Delete(&imageupdate.ImageUpdateRecord{}, "id = ?", id).Error
 		}); err != nil {
 			slog.WarnContext(ctx, "failed to delete image update record", "id", id, "error", err)
 		}
@@ -164,22 +165,22 @@ func (s *ImageService) RemoveImage(ctx context.Context, id string, force bool, u
 		}
 	}
 
-	metadata := models.JSON{
+	metadata := database.JSON{
 		"action":  "delete",
 		"imageId": id,
 		"force":   force,
 	}
-	if logErr := s.eventService.LogImageEvent(ctx, models.EventTypeImageDelete, id, imageName, user.ID, user.Username, "0", metadata); logErr != nil {
+	if logErr := s.eventService.LogImageEvent(ctx, event.EventTypeImageDelete, id, imageName, user.ID, user.Username, "0", metadata); logErr != nil {
 		slog.Warn("could not log image deletion action", "err", logErr, "image", imageName, "image_id", id)
 	}
 
 	return nil
 }
 
-func (s *ImageService) PullImage(ctx context.Context, imageName string, progressWriter io.Writer, user models.User, externalCreds []containerregistry.Credential) error {
+func (s *ImageService) PullImage(ctx context.Context, imageName string, progressWriter io.Writer, user common.User, externalCreds []containerregistry.Credential) error {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", err, models.JSON{"action": "pull"})
+		s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", err, database.JSON{"action": "pull"})
 		return errors.WrapIf(err, "failed to connect to Docker")
 	}
 
@@ -203,7 +204,7 @@ func (s *ImageService) PullImage(ctx context.Context, imageName string, progress
 	}
 	if err != nil {
 		slog.ErrorContext(ctx, "Docker ImagePull failed", "image", imageName, "hasAuth", pullOptions.RegistryAuth != "", "initialHasAuth", initialHasAuth, "retriedWithoutAuth", retriedWithoutAuth, "error", err.Error())
-		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", err, models.JSON{"action": "pull"})
+		s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", err, database.JSON{"action": "pull"})
 		return errors.WrapIff(err, "failed to initiate image pull for %s", imageName)
 	}
 	defer func() { _ = reader.Close() }()
@@ -214,20 +215,20 @@ func (s *ImageService) PullImage(ctx context.Context, imageName string, progress
 	if streamErr != nil {
 		if errors.Is(streamErr, context.Canceled) || strings.Contains(streamErr.Error(), "context canceled") {
 			slog.Debug("image pull stream canceled", "image", imageName, "err", streamErr)
-			s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", streamErr, models.JSON{"action": "pull", "step": "canceled"})
+			s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", streamErr, database.JSON{"action": "pull", "step": "canceled"})
 			return errors.WrapIff(streamErr, "image pull stream canceled for %s", imageName)
 		}
-		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", streamErr, models.JSON{"action": "pull", "step": "read_stream"})
+		s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", streamErr, database.JSON{"action": "pull", "step": "read_stream"})
 		return errors.WrapIff(streamErr, "error reading image pull stream for %s", imageName)
 	}
 
 	slog.Debug("image pull stream completed", "image", imageName)
 
-	metadata := models.JSON{
+	metadata := database.JSON{
 		"action":    "pull",
 		"imageName": imageName,
 	}
-	if logErr := s.eventService.LogImageEvent(ctx, models.EventTypeImagePull, "", imageName, user.ID, user.Username, "0", metadata); logErr != nil {
+	if logErr := s.eventService.LogImageEvent(ctx, event.EventTypeImagePull, "", imageName, user.ID, user.Username, "0", metadata); logErr != nil {
 		slog.Warn("could not log image pull action", "err", logErr, "image", imageName)
 	}
 	if s.registryService != nil {
@@ -239,6 +240,22 @@ func (s *ImageService) PullImage(ctx context.Context, imageName string, progress
 	return nil
 }
 
+// ImageLastTagTime returns when the local image was last tagged, zero when the
+// engine doesn't report it. Pull-policy refresh windows compare against this
+// timestamp, the same clock compose v5.5.0 uses.
+func (s *ImageService) ImageLastTagTime(ctx context.Context, imageName string) (time.Time, error) {
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		return time.Time{}, errors.WrapIf(err, "failed to connect to Docker")
+	}
+
+	inspect, err := dockerClient.ImageInspect(ctx, imageName)
+	if err != nil {
+		return time.Time{}, errors.WrapIff(err, "failed to inspect image %s", imageName)
+	}
+	return inspect.Metadata.LastTagTime, nil
+}
+
 func (s *ImageService) ReconcilePulledImageUpdate(ctx context.Context, imageName string) error {
 	if s.imageUpdateService == nil {
 		return nil
@@ -248,7 +265,7 @@ func (s *ImageService) ReconcilePulledImageUpdate(ctx context.Context, imageName
 }
 
 // TagImage adds a repository tag to an existing image.
-func (s *ImageService) TagImage(ctx context.Context, source string, req imagetypes.TagRequest, user models.User) error {
+func (s *ImageService) TagImage(ctx context.Context, source string, req imagetypes.TagRequest, user common.User) error {
 	source = strings.TrimSpace(source)
 	repository := strings.TrimSpace(req.Repository)
 	tag := strings.TrimSpace(req.Tag)
@@ -266,24 +283,24 @@ func (s *ImageService) TagImage(ctx context.Context, source string, req imagetyp
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", source, user.ID, user.Username, "0", err, models.JSON{"action": "tag", "target": target})
+		s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", "", source, user.ID, user.Username, "0", err, database.JSON{"action": "tag", "target": target})
 		return errors.WrapIf(err, "failed to connect to Docker")
 	}
 
 	_, err = dockerClient.ImageTag(ctx, client.ImageTagOptions{Source: source, Target: target})
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", source, user.ID, user.Username, "0", err, models.JSON{"action": "tag", "target": target})
+		s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", "", source, user.ID, user.Username, "0", err, database.JSON{"action": "tag", "target": target})
 		return errors.WrapIf(err, "failed to tag image")
 	}
 
-	metadata := models.JSON{
+	metadata := database.JSON{
 		"action":     "tag",
 		"imageName":  source,
 		"repository": repository,
 		"tag":        tag,
 		"target":     target,
 	}
-	if logErr := s.eventService.LogImageEvent(ctx, models.EventTypeImageTag, "", source, user.ID, user.Username, "0", metadata); logErr != nil {
+	if logErr := s.eventService.LogImageEvent(ctx, event.EventTypeImageTag, "", source, user.ID, user.Username, "0", metadata); logErr != nil {
 		slog.Warn("could not log image tag action", "err", logErr, "image", source, "target", target)
 	}
 
@@ -369,13 +386,13 @@ func (s *ImageService) ExportImage(ctx context.Context, imageName string) (io.Re
 	return reader, nil
 }
 
-func (s *ImageService) LoadImageFromReader(ctx context.Context, reader io.Reader, fileName string, user models.User, maxSizeBytes int64) (*imagetypes.LoadResult, error) {
+func (s *ImageService) LoadImageFromReader(ctx context.Context, reader io.Reader, fileName string, user common.User, maxSizeBytes int64) (*imagetypes.LoadResult, error) {
 	// Wrap reader with size limit enforcement
 	limitedReader := io.LimitReader(reader, maxSizeBytes+1)
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", fileName, user.ID, user.Username, "0", err, models.JSON{"action": "load"})
+		s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", "", fileName, user.ID, user.Username, "0", err, database.JSON{"action": "load"})
 		return nil, errors.WrapIf(err, "failed to connect to Docker")
 	}
 
@@ -386,7 +403,7 @@ func (s *ImageService) LoadImageFromReader(ctx context.Context, reader io.Reader
 		if err.Error() == "unexpected EOF" || strings.Contains(err.Error(), "unexpected EOF") {
 			return nil, errors.Errorf("file size exceeds maximum allowed size of %d MB", maxSizeBytes/(1024*1024))
 		}
-		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", fileName, user.ID, user.Username, "0", err, models.JSON{"action": "load", "file": fileName})
+		s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", "", fileName, user.ID, user.Username, "0", err, database.JSON{"action": "load", "file": fileName})
 		return nil, errors.WrapIf(err, "failed to load image from tar")
 	}
 	defer func() { _ = loadResp.Close() }()
@@ -395,17 +412,17 @@ func (s *ImageService) LoadImageFromReader(ctx context.Context, reader io.Reader
 	var responseBuilder strings.Builder
 	streamErr := dockerutils.RenderJSONMessageStream(loadResp, &responseBuilder)
 	if streamErr != nil {
-		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", fileName, user.ID, user.Username, "0", streamErr, models.JSON{"action": "load", "file": fileName, "step": "read_response"})
+		s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", "", fileName, user.ID, user.Username, "0", streamErr, database.JSON{"action": "load", "file": fileName, "step": "read_response"})
 		return nil, errors.WrapIf(streamErr, "failed to read load response")
 	}
 
 	result.Stream = responseBuilder.String()
 
-	metadata := models.JSON{
+	metadata := database.JSON{
 		"action":   "load",
 		"fileName": fileName,
 	}
-	if logErr := s.eventService.LogImageEvent(ctx, models.EventTypeImageLoad, "", fileName, user.ID, user.Username, "0", metadata); logErr != nil {
+	if logErr := s.eventService.LogImageEvent(ctx, event.EventTypeImageLoad, "", fileName, user.ID, user.Username, "0", metadata); logErr != nil {
 		slog.Warn("could not log image load action", "err", logErr, "file", fileName)
 	}
 
@@ -532,14 +549,14 @@ func (s *ImageService) PruneImages(ctx context.Context, options systemtypes.Prun
 	s.cleanupVulnerabilityRecordsAfterPruneInternal(ctx, idsToDelete)
 	s.cleanupOrphanedImageUpdatesAfterPruneInternal(ctx)
 
-	metadata := models.JSON{
+	metadata := database.JSON{
 		"action":         "prune",
 		"mode":           options.Mode,
 		"until":          options.Until,
 		"imagesDeleted":  len(pruneReport.ImagesDeleted),
 		"spaceReclaimed": pruneReport.SpaceReclaimed,
 	}
-	if logErr := s.eventService.LogImageEvent(ctx, models.EventTypeImageDelete, "", "bulk_prune", models.SystemUser.ID, models.SystemUser.Username, "0", metadata); logErr != nil {
+	if logErr := s.eventService.LogImageEvent(ctx, event.EventTypeImageDelete, "", "bulk_prune", common.SystemUser.ID, common.SystemUser.Username, "0", metadata); logErr != nil {
 		slog.Warn("could not log image prune action", "err", logErr)
 	}
 
@@ -570,7 +587,7 @@ func (s *ImageService) cleanupImageUpdateRecordsAfterPruneInternal(ctx context.C
 	}
 
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return tx.Where("id IN ?", idsToDelete).Delete(&models.ImageUpdateRecord{}).Error
+		return tx.Where("id IN ?", idsToDelete).Delete(&imageupdate.ImageUpdateRecord{}).Error
 	}); err != nil {
 		slog.WarnContext(ctx, "failed to clean up image update records after prune", "error", err)
 	}
@@ -603,7 +620,7 @@ func (s *ImageService) GetUpdateInfoByImageIDs(ctx context.Context, imageIDs []s
 		return make(map[string]*imagetypes.UpdateInfo), nil
 	}
 
-	var updateRecords []models.ImageUpdateRecord
+	var updateRecords []imageupdate.ImageUpdateRecord
 	if err := s.db.WithContext(ctx).Where("id IN ?", imageIDs).Find(&updateRecords).Error; err != nil {
 		return nil, errors.WrapIf(err, "failed to fetch update records")
 	}
@@ -658,7 +675,7 @@ func (s *ImageService) GetUpdateInfoByImageRefs(ctx context.Context, imageRefs [
 		return result, nil
 	}
 
-	var updateRecords []models.ImageUpdateRecord
+	var updateRecords []imageupdate.ImageUpdateRecord
 	if err := s.db.WithContext(ctx).
 		Where("tag IN ? AND repository IN ?", tags, repositoryCandidates).
 		Order("check_time DESC").
@@ -679,7 +696,7 @@ func (s *ImageService) ListImagesPaginated(ctx context.Context, params paginatio
 	var (
 		dockerImages  []image.Summary
 		containers    []container.Summary
-		updateRecords []models.ImageUpdateRecord
+		updateRecords []imageupdate.ImageUpdateRecord
 	)
 
 	g, groupCtx := errgroup.WithContext(ctx)
@@ -771,9 +788,9 @@ func buildImageRefUpdateLookupsInternal(imageRefs []string) []imageRefUpdateLook
 
 func selectLatestMatchingImageUpdateRecordInternal(
 	lookup imageRefUpdateLookup,
-	updateRecords []models.ImageUpdateRecord,
-) *models.ImageUpdateRecord {
-	var latest *models.ImageUpdateRecord
+	updateRecords []imageupdate.ImageUpdateRecord,
+) *imageupdate.ImageUpdateRecord {
+	var latest *imageupdate.ImageUpdateRecord
 
 	for i := range updateRecords {
 		record := &updateRecords[i]
@@ -814,8 +831,11 @@ func (s *ImageService) loadProjectIDByNameCachedInternal(ctx context.Context) ma
 	}
 	stale, staleFound := s.projectIDCache.Peek(struct{}{})
 	byName, found, err := s.projectIDCache.GetWithLoaders(struct{}{}, func(_ []struct{}) (map[struct{}]map[string]string, error) {
-		var projects []models.Project
-		if err := s.db.WithContext(ctx).Select("id", "name").Find(&projects).Error; err != nil {
+		var projects []struct {
+			ID   string
+			Name string
+		}
+		if err := s.db.WithContext(ctx).Table("projects").Select("id", "name").Find(&projects).Error; err != nil {
 			return nil, err
 		}
 
@@ -924,8 +944,8 @@ func BuildVolumeUsageMap(containers []container.Summary, projectIDByName map[str
 	return usageMap
 }
 
-func buildUpdateMap(records []models.ImageUpdateRecord) map[string]*models.ImageUpdateRecord {
-	updateMap := make(map[string]*models.ImageUpdateRecord, len(records))
+func buildUpdateMap(records []imageupdate.ImageUpdateRecord) map[string]*imageupdate.ImageUpdateRecord {
+	updateMap := make(map[string]*imageupdate.ImageUpdateRecord, len(records))
 	for i := range records {
 		updateMap[records[i].ID] = &records[i]
 	}
@@ -1008,7 +1028,7 @@ func determineRepoAndTag(di image.Summary) (repo, tag string) {
 	return "<none>", "<none>"
 }
 
-func buildUpdateInfo(updateRecord *models.ImageUpdateRecord) *imagetypes.UpdateInfo {
+func buildUpdateInfo(updateRecord *imageupdate.ImageUpdateRecord) *imagetypes.UpdateInfo {
 	return &imagetypes.UpdateInfo{
 		HasUpdate:      updateRecord.HasUpdate,
 		UpdateType:     updateRecord.UpdateType,
@@ -1026,7 +1046,7 @@ func buildUpdateInfo(updateRecord *models.ImageUpdateRecord) *imagetypes.UpdateI
 	}
 }
 
-func MapDockerImagesToDTOs(dockerImages []image.Summary, usageMap map[string][]imagetypes.UsedBy, updateMap map[string]*models.ImageUpdateRecord, vulnerabilityMap map[string]*vulnerabilitytypes.ScanSummary) []imagetypes.Summary {
+func MapDockerImagesToDTOs(dockerImages []image.Summary, usageMap map[string][]imagetypes.UsedBy, updateMap map[string]*imageupdate.ImageUpdateRecord, vulnerabilityMap map[string]*vulnerabilitytypes.ScanSummary) []imagetypes.Summary {
 	items := make([]imagetypes.Summary, 0, len(dockerImages))
 	for _, di := range dockerImages {
 		repo, tag := determineRepoAndTag(di)

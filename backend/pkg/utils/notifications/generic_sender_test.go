@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -15,41 +14,41 @@ import (
 func TestBuildGenericURL(t *testing.T) {
 	tests := []struct {
 		name    string
-		config  models.GenericConfig
+		config  GenericConfig
 		wantURL string
 		wantErr string
 	}{
 		{
 			name: "basic HTTPS webhook",
-			config: models.GenericConfig{
+			config: GenericConfig{
 				WebhookURL: "https://webhook.example.com/notify",
 			},
 			wantURL: "generic://webhook.example.com/notify?disabletls=no&template=json",
 		},
 		{
 			name: "basic HTTP webhook",
-			config: models.GenericConfig{
+			config: GenericConfig{
 				WebhookURL: "http://webhook.example.com/notify",
 			},
 			wantURL: "generic://webhook.example.com/notify?disabletls=yes&template=json",
 		},
 		{
 			name: "webhook without scheme defaults to HTTPS",
-			config: models.GenericConfig{
+			config: GenericConfig{
 				WebhookURL: "webhook.example.com/notify",
 			},
 			wantURL: "generic://webhook.example.com/notify?disabletls=no&template=json",
 		},
 		{
 			name: "webhook without scheme with port",
-			config: models.GenericConfig{
+			config: GenericConfig{
 				WebhookURL: "webhook.example.com:8080/notify",
 			},
 			wantURL: "generic://webhook.example.com:8080/notify?disabletls=no&template=json",
 		},
 		{
 			name: "webhook without scheme with DisableTLS",
-			config: models.GenericConfig{
+			config: GenericConfig{
 				WebhookURL: "webhook.example.com/notify",
 				DisableTLS: true,
 			},
@@ -57,14 +56,14 @@ func TestBuildGenericURL(t *testing.T) {
 		},
 		{
 			name: "webhook with port",
-			config: models.GenericConfig{
+			config: GenericConfig{
 				WebhookURL: "https://webhook.example.com:8443/api/notify",
 			},
 			wantURL: "generic://webhook.example.com:8443/api/notify?disabletls=no&template=json",
 		},
 		{
 			name: "webhook with custom content type",
-			config: models.GenericConfig{
+			config: GenericConfig{
 				WebhookURL:  "https://webhook.example.com/notify",
 				ContentType: "application/x-www-form-urlencoded",
 			},
@@ -72,7 +71,7 @@ func TestBuildGenericURL(t *testing.T) {
 		},
 		{
 			name: "webhook with POST method",
-			config: models.GenericConfig{
+			config: GenericConfig{
 				WebhookURL: "https://webhook.example.com/notify",
 				Method:     "POST",
 			},
@@ -80,7 +79,7 @@ func TestBuildGenericURL(t *testing.T) {
 		},
 		{
 			name: "webhook with custom title and message keys",
-			config: models.GenericConfig{
+			config: GenericConfig{
 				WebhookURL: "https://webhook.example.com/notify",
 				TitleKey:   "subject",
 				MessageKey: "body",
@@ -89,7 +88,7 @@ func TestBuildGenericURL(t *testing.T) {
 		},
 		{
 			name: "webhook with DisableTLS ignored for HTTPS",
-			config: models.GenericConfig{
+			config: GenericConfig{
 				WebhookURL: "https://webhook.example.com/notify",
 				DisableTLS: true,
 			},
@@ -97,7 +96,7 @@ func TestBuildGenericURL(t *testing.T) {
 		},
 		{
 			name: "webhook with single custom header",
-			config: models.GenericConfig{
+			config: GenericConfig{
 				WebhookURL: "https://webhook.example.com/notify",
 				CustomHeaders: map[string]string{
 					"Authorization": "Bearer token123",
@@ -107,7 +106,7 @@ func TestBuildGenericURL(t *testing.T) {
 		},
 		{
 			name: "webhook with multiple custom headers",
-			config: models.GenericConfig{
+			config: GenericConfig{
 				WebhookURL: "https://webhook.example.com/notify",
 				CustomHeaders: map[string]string{
 					"Authorization": "Bearer token123",
@@ -120,7 +119,7 @@ func TestBuildGenericURL(t *testing.T) {
 		},
 		{
 			name: "webhook with all options",
-			config: models.GenericConfig{
+			config: GenericConfig{
 				WebhookURL:  "https://webhook.example.com:8443/api/v1/notify",
 				ContentType: "application/json",
 				Method:      "PUT",
@@ -135,21 +134,21 @@ func TestBuildGenericURL(t *testing.T) {
 		},
 		{
 			name: "webhook URL with query params preserved",
-			config: models.GenericConfig{
+			config: GenericConfig{
 				WebhookURL: "http://www.pushplus.plus/send?token=abc123",
 			},
 			wantURL: "generic://www.pushplus.plus/send?disabletls=yes&template=json&token=abc123",
 		},
 		{
 			name: "webhook URL with multiple query params preserved",
-			config: models.GenericConfig{
+			config: GenericConfig{
 				WebhookURL: "https://api.example.com/webhook?token=abc&channel=general",
 			},
 			wantURL: "generic://api.example.com/webhook?channel=general&disabletls=no&template=json&token=abc",
 		},
 		{
 			name: "PushPlus webhook with content message key",
-			config: models.GenericConfig{
+			config: GenericConfig{
 				WebhookURL: "http://www.pushplus.plus/send?token=abc123",
 				Method:     "POST",
 				MessageKey: "content",
@@ -163,14 +162,14 @@ func TestBuildGenericURL(t *testing.T) {
 		},
 		{
 			name: "empty webhook URL",
-			config: models.GenericConfig{
+			config: GenericConfig{
 				WebhookURL: "",
 			},
 			wantErr: "webhook URL is empty",
 		},
 		{
 			name: "invalid webhook URL",
-			config: models.GenericConfig{
+			config: GenericConfig{
 				WebhookURL: "://invalid-url",
 			},
 			wantErr: "invalid webhook URL",
@@ -224,7 +223,7 @@ func TestBuildGenericURL_HTTPSchemeHandling(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			config := models.GenericConfig{
+			config := GenericConfig{
 				WebhookURL: tt.webhookURL,
 			}
 
@@ -241,7 +240,7 @@ func TestBuildGenericURL_HTTPSchemeHandling(t *testing.T) {
 }
 
 func TestBuildGenericURL_CustomHeadersEncoding(t *testing.T) {
-	config := models.GenericConfig{
+	config := GenericConfig{
 		WebhookURL: "https://webhook.example.com/notify",
 		CustomHeaders: map[string]string{
 			"Authorization":  "Bearer token-with-special-chars!@#",
@@ -280,7 +279,7 @@ func TestBuildGenericURL_DisableTLSFlag(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			config := models.GenericConfig{
+			config := GenericConfig{
 				WebhookURL: "webhook.example.com/notify",
 				DisableTLS: tt.disableTLS,
 			}
@@ -333,7 +332,7 @@ func TestBuildGenericURL_CustomKeys(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			config := models.GenericConfig{
+			config := GenericConfig{
 				WebhookURL: "https://webhook.example.com/notify",
 				TitleKey:   tt.titleKey,
 				MessageKey: tt.messageKey,
@@ -364,13 +363,13 @@ func TestBuildGenericURL_CustomKeys(t *testing.T) {
 func TestBuildGenericURL_PreservesUserShoutrrrConfigKeys(t *testing.T) {
 	tests := []struct {
 		name      string
-		config    models.GenericConfig
+		config    GenericConfig
 		wantInURL []string
 		notInURL  []string
 	}{
 		{
 			name: "user template wins over default json",
-			config: models.GenericConfig{
+			config: GenericConfig{
 				WebhookURL: "https://example.com/api?template=custom",
 			},
 			wantInURL: []string{"template=custom"},
@@ -378,7 +377,7 @@ func TestBuildGenericURL_PreservesUserShoutrrrConfigKeys(t *testing.T) {
 		},
 		{
 			name: "user disabletls wins over scheme-derived value",
-			config: models.GenericConfig{
+			config: GenericConfig{
 				WebhookURL: "https://example.com/api?disabletls=yes",
 			},
 			wantInURL: []string{"disabletls=yes"},
@@ -386,7 +385,7 @@ func TestBuildGenericURL_PreservesUserShoutrrrConfigKeys(t *testing.T) {
 		},
 		{
 			name: "user messagekey wins over configured value",
-			config: models.GenericConfig{
+			config: GenericConfig{
 				WebhookURL: "https://example.com/api?messagekey=user_msg",
 				MessageKey: "configured_msg",
 			},
@@ -395,7 +394,7 @@ func TestBuildGenericURL_PreservesUserShoutrrrConfigKeys(t *testing.T) {
 		},
 		{
 			name: "user method wins over configured value",
-			config: models.GenericConfig{
+			config: GenericConfig{
 				WebhookURL: "https://example.com/api?method=PUT",
 				Method:     "POST",
 			},
@@ -424,7 +423,7 @@ func TestBuildGenericURL_PreservesUserShoutrrrConfigKeys(t *testing.T) {
 // defaults the content type to JSON, while a user-supplied inline template
 // query key still wins.
 func TestBuildGenericURL_PayloadTemplate(t *testing.T) {
-	gotURL, err := BuildGenericURL(models.GenericConfig{
+	gotURL, err := BuildGenericURL(GenericConfig{
 		WebhookURL:      "https://webhook.example.com/notify",
 		PayloadTemplate: `{"text": "{{.message}}"}`,
 	})
@@ -433,7 +432,7 @@ func TestBuildGenericURL_PayloadTemplate(t *testing.T) {
 	assert.Contains(t, gotURL, "contenttype=application%2Fjson")
 	assert.NotContains(t, gotURL, "template=json")
 
-	gotURL, err = BuildGenericURL(models.GenericConfig{
+	gotURL, err = BuildGenericURL(GenericConfig{
 		WebhookURL:      "https://webhook.example.com/notify?template=custom",
 		PayloadTemplate: `{"text": "{{.message}}"}`,
 	})
@@ -446,7 +445,7 @@ func TestBuildGenericURL_PayloadTemplate(t *testing.T) {
 // template embedding values inside JSON string literals must render valid JSON
 // for hostile message content, and the event vars must be available.
 func TestRenderGenericPayloadTemplate_EscapesJSON(t *testing.T) {
-	config := models.GenericConfig{
+	config := GenericConfig{
 		PayloadTemplate: `{"text": "{{.title}}: {{.message}}", "env": "{{.environment}}", "event": "{{.event}}"}`,
 	}
 	vars := map[string]string{"environment": "Local Docker", "environmentId": "0", "event": "image_update", "timestamp": "2026-07-28T00:00:00Z"}
@@ -478,7 +477,7 @@ func TestSendGenericWithTitle_PayloadTemplate(t *testing.T) {
 	}))
 	defer server.Close()
 
-	config := models.GenericConfig{
+	config := GenericConfig{
 		WebhookURL:      server.URL + "/v1/spaces/FOO/messages",
 		PayloadTemplate: `{"text": "{{.title}}\n{{.message}} ({{.environment}})"}`,
 		CustomHeaders:   map[string]string{"Authorization": "Bearer t0ken"},
@@ -504,7 +503,7 @@ func TestSendGenericWithTitle_TemplateWithSuccessBodyContains(t *testing.T) {
 	}))
 	defer server.Close()
 
-	config := models.GenericConfig{
+	config := GenericConfig{
 		WebhookURL:          server.URL,
 		PayloadTemplate:     `{"text": "{{.message}}"}`,
 		SuccessBodyContains: `"code":200`,
@@ -519,36 +518,36 @@ func TestSendGenericWithTitle_TemplateWithSuccessBodyContains(t *testing.T) {
 func TestValidateGenericPayloadTemplate(t *testing.T) {
 	tests := []struct {
 		name    string
-		config  models.GenericConfig
+		config  GenericConfig
 		wantErr string
 	}{
 		{
 			name:   "no template is always valid",
-			config: models.GenericConfig{},
+			config: GenericConfig{},
 		},
 		{
 			name: "valid JSON template",
-			config: models.GenericConfig{
+			config: GenericConfig{
 				PayloadTemplate: `{"text": "{{.message}}", "when": "{{.timestamp}}"}`,
 			},
 		},
 		{
 			name: "invalid template syntax is reported",
-			config: models.GenericConfig{
+			config: GenericConfig{
 				PayloadTemplate: `{"text": "{{.message}`,
 			},
 			wantErr: "invalid webhook payload template",
 		},
 		{
 			name: "template rendering malformed JSON is rejected",
-			config: models.GenericConfig{
+			config: GenericConfig{
 				PayloadTemplate: `{"text": "{{.message}}"`,
 			},
 			wantErr: "did not render valid JSON",
 		},
 		{
 			name: "malformed JSON is allowed for non-JSON content types",
-			config: models.GenericConfig{
+			config: GenericConfig{
 				ContentType:     "text/plain",
 				PayloadTemplate: `event={{.event}} message={{.message}}`,
 			},
@@ -581,7 +580,7 @@ func TestSendGenericWithTitle_PayloadTemplateWithInlineTemplateID(t *testing.T) 
 	}))
 	defer server.Close()
 
-	config := models.GenericConfig{
+	config := GenericConfig{
 		WebhookURL:      server.URL + "/notify?template=custom",
 		PayloadTemplate: `{"text": "{{.message}}"}`,
 	}

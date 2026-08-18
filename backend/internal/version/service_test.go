@@ -1,6 +1,10 @@
 package version
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
+
 	"context"
 	"encoding/json"
 	"fmt"
@@ -16,7 +20,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
 	"github.com/google/go-containerregistry/pkg/name"
 	ggcrregistry "github.com/google/go-containerregistry/pkg/registry"
@@ -96,12 +99,12 @@ func TestVersionService_GetAppVersionInfoDoesNotUseStoredDigestUpdateForSemverBu
 	}))
 	defer server.Close()
 
-	require.NoError(t, db.WithContext(ctx).Create(&models.ImageUpdateRecord{
+	require.NoError(t, db.WithContext(ctx).Create(&imageupdate.ImageUpdateRecord{
 		ID:             imageID,
 		Repository:     "ghcr.io/getarcaneapp/arcane",
 		Tag:            "latest",
 		HasUpdate:      true,
-		UpdateType:     models.UpdateTypeDigest,
+		UpdateType:     imageupdate.UpdateTypeDigest,
 		CurrentVersion: "latest",
 		CurrentDigest:  &currentDigest,
 		LatestDigest:   &latestDigest,
@@ -158,7 +161,7 @@ func setupImageUpdateTestDB(t *testing.T) *database.DB {
 	dsn := fmt.Sprintf("file:image-update-test-%d?mode=memory&cache=shared", time.Now().UnixNano())
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&models.ImageUpdateRecord{}, &models.Event{}, &models.Project{}))
+	require.NoError(t, db.AutoMigrate(&imageupdate.ImageUpdateRecord{}, &event.Event{}, &project.Project{}))
 	return &database.DB{DB: db}
 }
 
@@ -283,12 +286,12 @@ func TestVersionService_GetAppVersionInfoNextChannelUsesImageLabelInternal(t *te
 	currentDigest := digest.FromString("current-arcane").String()
 	server := newNextChannelDockerServerInternal(t, containerID, imageID, repo, "next", currentDigest)
 
-	require.NoError(t, db.WithContext(ctx).Create(&models.ImageUpdateRecord{
+	require.NoError(t, db.WithContext(ctx).Create(&imageupdate.ImageUpdateRecord{
 		ID:             imageID,
 		Repository:     repo,
 		Tag:            "next",
 		HasUpdate:      true,
-		UpdateType:     models.UpdateTypeDigest,
+		UpdateType:     imageupdate.UpdateTypeDigest,
 		CurrentVersion: "next",
 		CurrentDigest:  &currentDigest,
 		LatestDigest:   func() *string { s := imgDigest.String(); return &s }(),
@@ -337,12 +340,12 @@ func TestVersionService_GetAppVersionInfoNextChannelLabelFailureFallsBackToDiges
 	latestDigest := digest.FromString("latest-arcane").String()
 	server := newNextChannelDockerServerInternal(t, containerID, imageID, repo, "next", currentDigest)
 
-	require.NoError(t, db.WithContext(ctx).Create(&models.ImageUpdateRecord{
+	require.NoError(t, db.WithContext(ctx).Create(&imageupdate.ImageUpdateRecord{
 		ID:             imageID,
 		Repository:     repo,
 		Tag:            "next",
 		HasUpdate:      true,
-		UpdateType:     models.UpdateTypeDigest,
+		UpdateType:     imageupdate.UpdateTypeDigest,
 		CurrentVersion: "next",
 		CurrentDigest:  &currentDigest,
 		LatestDigest:   &latestDigest,

@@ -7,7 +7,6 @@ import (
 	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
@@ -55,7 +54,7 @@ type GetUpdaterHistoryInput struct {
 }
 
 type GetUpdaterHistoryOutput struct {
-	Body base.ApiResponse[[]models.AutoUpdateRecord]
+	Body base.ApiResponse[[]AutoUpdateRecord]
 }
 
 // RegisterUpdater registers updater management routes using Huma.
@@ -152,7 +151,7 @@ func (h *UpdaterHandler) GetUpdaterHistory(ctx context.Context, input *GetUpdate
 	}
 
 	return &GetUpdaterHistoryOutput{
-		Body: base.ApiResponse[[]models.AutoUpdateRecord]{
+		Body: base.ApiResponse[[]AutoUpdateRecord]{
 			Success: true,
 			Data:    history,
 		},

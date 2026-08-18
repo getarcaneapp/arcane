@@ -18,13 +18,17 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
+	s3domain "github.com/getarcaneapp/arcane/backend/v2/internal/s3"
 	docker "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/schedule"
+	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/google/uuid"
 	"github.com/moby/moby/api/types/container"
@@ -175,7 +179,7 @@ func (s *VolumeService) ensureBackupVolumeInternal(ctx context.Context) error {
 	return nil
 }
 
-func (s *VolumeService) stopRunningContainersForBackupInternal(ctx context.Context, dockerClient *client.Client, volumeName string, user models.User) ([]container.Summary, error) {
+func (s *VolumeService) stopRunningContainersForBackupInternal(ctx context.Context, dockerClient *client.Client, volumeName string, user common.User) ([]container.Summary, error) {
 	if s.containerService == nil {
 		return nil, errors.New("container service is unavailable")
 	}
@@ -216,7 +220,7 @@ func (s *VolumeService) stopRunningContainersForBackupInternal(ctx context.Conte
 }
 
 //nolint:gocognit // recovery retries must reconcile IDs, names, and Compose identities in one bounded loop
-func (s *VolumeService) startContainersAfterBackupInternal(ctx context.Context, dockerClient *client.Client, stoppedContainers []container.Summary, user models.User) ([]container.Summary, error) {
+func (s *VolumeService) startContainersAfterBackupInternal(ctx context.Context, dockerClient *client.Client, stoppedContainers []container.Summary, user common.User) ([]container.Summary, error) {
 	recoveryCtx, cancel := context.WithTimeout(ctx, volumeBackupContainerRecoveryTimeout)
 	defer cancel()
 
@@ -307,10 +311,10 @@ func (s *VolumeService) startContainersAfterBackupInternal(ctx context.Context, 
 	return nil, nil
 }
 
-func (s *VolumeService) ListBackupsPaginated(ctx context.Context, volumeName string, params pagination.QueryParams) ([]models.VolumeBackup, pagination.Response, error) {
+func (s *VolumeService) ListBackupsPaginated(ctx context.Context, volumeName string, params pagination.QueryParams) ([]VolumeBackup, pagination.Response, error) {
 	slog.DebugContext(ctx, "volume service: list backups paginated", "volume", volumeName, "search", params.Search, "sort", params.Sort, "order", params.Order, "start", params.Start, "limit", params.Limit)
-	var backups []models.VolumeBackup
-	query := s.db.WithContext(ctx).Model(&models.VolumeBackup{}).Where("volume_name = ?", volumeName)
+	var backups []VolumeBackup
+	query := s.db.WithContext(ctx).Model(&VolumeBackup{}).Where("volume_name = ?", volumeName)
 
 	if params.Search != "" {
 		pattern := "%" + params.Search + "%"
@@ -405,9 +409,9 @@ func (s *VolumeService) buildPaginationResponseFromCountsInternal(totalCount int
 	}
 }
 
-func (s *VolumeService) ListBackups(ctx context.Context, volumeName string) ([]models.VolumeBackup, error) {
+func (s *VolumeService) ListBackups(ctx context.Context, volumeName string) ([]VolumeBackup, error) {
 	slog.DebugContext(ctx, "volume service: list backups", "volume", volumeName)
-	var backups []models.VolumeBackup
+	var backups []VolumeBackup
 	err := s.db.WithContext(ctx).Where("volume_name = ?", volumeName).Order("created_at DESC").Find(&backups).Error
 	return backups, err
 }
@@ -489,7 +493,7 @@ func (s *VolumeService) remoteRusticRepositoryInternal(ctx context.Context, dest
 	}, nil
 }
 
-func (s *VolumeService) rusticRepositoryForBackupInternal(ctx context.Context, dockerClient *client.Client, entry *models.VolumeBackup) (backup.Repository, string, error) {
+func (s *VolumeService) rusticRepositoryForBackupInternal(ctx context.Context, dockerClient *client.Client, entry *VolumeBackup) (backup.Repository, string, error) {
 	if entry.LocalSnapshotID != "" {
 		repository, err := s.localRusticRepositoryInternal(ctx, dockerClient, true)
 		return repository, entry.LocalSnapshotID, err
@@ -509,20 +513,20 @@ var ErrVolumeBackupAlreadyRunning = errors.New("a backup is already running for 
 
 // backupPlanInternal is the resolved destination selection for one backup run.
 type backupPlanInternal struct {
-	policy          *models.VolumeBackupPolicy
+	policy          *VolumeBackupPolicy
 	localEnabled    bool
 	s3Enabled       bool
 	s3DestinationID string
 	destination     volumetypes.BackupDestination
 }
 
-func (s *VolumeService) resolveBackupPlanInternal(ctx context.Context, volumeName string, trigger models.VolumeBackupTrigger, request volumetypes.CreateBackupRequest) (backupPlanInternal, error) {
+func (s *VolumeService) resolveBackupPlanInternal(ctx context.Context, volumeName string, trigger VolumeBackupTrigger, request volumetypes.CreateBackupRequest) (backupPlanInternal, error) {
 	destination := request.Destination
 	if destination != "" && destination != volumetypes.BackupDestinationLocal && destination != volumetypes.BackupDestinationS3 && destination != volumetypes.BackupDestinationLocalS3 {
 		return backupPlanInternal{}, errors.New("invalid volume backup destination")
 	}
-	var policy *models.VolumeBackupPolicy
-	if trigger != models.VolumeBackupTriggerSafety {
+	var policy *VolumeBackupPolicy
+	if trigger != VolumeBackupTriggerSafety {
 		var err error
 		policy, err = s.loadVolumeBackupPolicyInternal(ctx, volumeName, request.PolicyID)
 		if err != nil {
@@ -536,7 +540,7 @@ func (s *VolumeService) resolveBackupPlanInternal(ctx context.Context, volumeNam
 	if policy != nil {
 		localEnabled, s3Enabled, s3DestinationID = policy.LocalEnabled, policy.S3Enabled, policy.S3DestinationID
 	}
-	if trigger == models.VolumeBackupTriggerSafety {
+	if trigger == VolumeBackupTriggerSafety {
 		localEnabled, s3Enabled = true, false
 	} else if destination != "" {
 		localEnabled = destination != volumetypes.BackupDestinationS3
@@ -570,13 +574,13 @@ func (s *VolumeService) resolveBackupPlanInternal(ctx context.Context, volumeNam
 }
 
 //nolint:gocognit,gocyclo // backup orchestration keeps cleanup and persistence transitions in one transaction-like flow
-func (s *VolumeService) CreateBackup(ctx context.Context, volumeName string, user models.User, trigger models.VolumeBackupTrigger, request volumetypes.CreateBackupRequest) (_ *models.VolumeBackup, err error) {
+func (s *VolumeService) CreateBackup(ctx context.Context, volumeName string, user common.User, trigger VolumeBackupTrigger, request volumetypes.CreateBackupRequest) (_ *VolumeBackup, err error) {
 	workspaceLock, _ := ctx.Value(volumeWorkspaceLockContextKeyInternal{}).(volumeWorkspaceLockContextInternal)
 	if workspaceLock.service != s || workspaceLock.volumeName != volumeName {
 		defer s.workspaceLocks.Lock(volumeName)()
 	}
 	if trigger == "" {
-		trigger = models.VolumeBackupTriggerManual
+		trigger = VolumeBackupTriggerManual
 	}
 	plan, err := s.resolveBackupPlanInternal(ctx, volumeName, trigger, request)
 	if err != nil {
@@ -590,9 +594,9 @@ func (s *VolumeService) CreateBackup(ctx context.Context, volumeName string, use
 		return nil, ErrVolumeBackupAlreadyRunning
 	}
 	defer lease.Release()
-	entry := &models.VolumeBackup{
-		VolumeName: volumeName, CreatedAt: time.Now(), Status: models.VolumeBackupStatusRunning,
-		Trigger: trigger, Destination: plan.destination, Format: models.VolumeBackupFormatRustic,
+	entry := &VolumeBackup{
+		VolumeName: volumeName, CreatedAt: time.Now(), Status: VolumeBackupStatusRunning,
+		Trigger: trigger, Destination: plan.destination, Format: VolumeBackupFormatRustic,
 		S3DestinationID: plan.s3DestinationID, PolicyID: request.PolicyID,
 	}
 	entry.ID = fmt.Sprintf("%s-%d-%s", volumeName, time.Now().UnixNano(), uuid.NewString()[:8])
@@ -601,9 +605,9 @@ func (s *VolumeService) CreateBackup(ctx context.Context, volumeName string, use
 	}
 	defer func() {
 		if err != nil {
-			entry.Status, entry.Error = models.VolumeBackupStatusFailed, err.Error()
+			entry.Status, entry.Error = VolumeBackupStatusFailed, err.Error()
 		} else {
-			entry.Status, entry.Error = models.VolumeBackupStatusSucceeded, ""
+			entry.Status, entry.Error = VolumeBackupStatusSucceeded, ""
 		}
 		if saveErr := s.db.WithContext(context.WithoutCancel(ctx)).Save(entry).Error; saveErr != nil {
 			err = stderrors.Join(err, fmt.Errorf("failed to save volume backup result: %w", saveErr))
@@ -673,24 +677,24 @@ func (s *VolumeService) CreateBackup(ctx context.Context, volumeName string, use
 			return entry, err
 		}
 	}
-	if trigger != models.VolumeBackupTriggerSafety && plan.policy != nil && plan.policy.RetentionCount > 0 {
+	if trigger != VolumeBackupTriggerSafety && plan.policy != nil && plan.policy.RetentionCount > 0 {
 		if err := s.applyVolumeBackupRetentionInternal(ctx, plan.policy.ID, plan.policy.RetentionCount); err != nil {
 			return entry, fmt.Errorf("failed to apply volume backup retention: %w", err)
 		}
 	}
-	metadata := models.JSON{"action": "backup_create", "backup_id": entry.ID, "size": entry.Size, "destination": entry.Destination}
-	if logErr := s.eventService.LogVolumeEvent(ctx, models.EventTypeVolumeBackupCreate, volumeName, volumeName, user.ID, user.Username, "0", metadata); logErr != nil {
+	metadata := database.JSON{"action": "backup_create", "backup_id": entry.ID, "size": entry.Size, "destination": entry.Destination}
+	if logErr := s.eventService.LogVolumeEvent(ctx, event.EventTypeVolumeBackupCreate, volumeName, volumeName, user.ID, user.Username, "0", metadata); logErr != nil {
 		slog.WarnContext(ctx, "could not log volume backup create event", "volume", volumeName, "error", logErr)
 	}
 	return entry, nil
 }
 
-func (s *VolumeService) UploadBackup(ctx context.Context, backupID, s3DestinationID string) (*models.VolumeBackup, error) {
-	var entry models.VolumeBackup
+func (s *VolumeService) UploadBackup(ctx context.Context, backupID, s3DestinationID string) (*VolumeBackup, error) {
+	var entry VolumeBackup
 	if err := s.db.WithContext(ctx).Where("id = ?", backupID).First(&entry).Error; err != nil {
 		return nil, err
 	}
-	if entry.Status != models.VolumeBackupStatusSucceeded || entry.LocalSnapshotID == "" {
+	if entry.Status != VolumeBackupStatusSucceeded || entry.LocalSnapshotID == "" {
 		return nil, errors.New("only successful local volume backups can be uploaded")
 	}
 	if entry.RemoteSnapshotID != "" {
@@ -730,12 +734,12 @@ func (s *VolumeService) UploadBackup(ctx context.Context, backupID, s3Destinatio
 	return &entry, nil
 }
 
-func (s *VolumeService) DeleteBackup(ctx context.Context, backupID string, user *models.User) error {
-	var entry models.VolumeBackup
+func (s *VolumeService) DeleteBackup(ctx context.Context, backupID string, user *common.User) error {
+	var entry VolumeBackup
 	if err := s.db.WithContext(ctx).Where("id = ?", backupID).First(&entry).Error; err != nil {
 		return err
 	}
-	if entry.Format == models.VolumeBackupFormatArchive {
+	if entry.Format == VolumeBackupFormatArchive {
 		return s.deleteArchiveBackupInternal(ctx, &entry, user)
 	}
 	dockerClient, err := s.dockerService.GetClient(ctx)
@@ -788,18 +792,18 @@ func (s *VolumeService) DeleteBackup(ctx context.Context, backupID string, user 
 	return nil
 }
 
-func (s *VolumeService) logBackupDeleteEventInternal(ctx context.Context, volumeName, backupID string, user *models.User) {
+func (s *VolumeService) logBackupDeleteEventInternal(ctx context.Context, volumeName, backupID string, user *common.User) {
 	actingUser := user
 	if actingUser == nil {
-		actingUser = &models.SystemUser
+		actingUser = &common.SystemUser
 	}
-	if logErr := s.eventService.LogVolumeEvent(ctx, models.EventTypeVolumeBackupDelete, volumeName, volumeName, actingUser.ID, actingUser.Username, "0", models.JSON{"action": "backup_delete", "backup_id": backupID}); logErr != nil {
+	if logErr := s.eventService.LogVolumeEvent(ctx, event.EventTypeVolumeBackupDelete, volumeName, volumeName, actingUser.ID, actingUser.Username, "0", database.JSON{"action": "backup_delete", "backup_id": backupID}); logErr != nil {
 		slog.WarnContext(ctx, "could not log volume backup delete event", "volume", volumeName, "error", logErr)
 	}
 }
 
-func (s *VolumeService) RestoreBackup(ctx context.Context, volumeName, backupID string, user models.User) (err error) {
-	var entry models.VolumeBackup
+func (s *VolumeService) RestoreBackup(ctx context.Context, volumeName, backupID string, user common.User) (err error) {
+	var entry VolumeBackup
 	if err := s.db.WithContext(ctx).Where("id = ?", backupID).First(&entry).Error; err != nil {
 		return err
 	}
@@ -818,7 +822,7 @@ func (s *VolumeService) RestoreBackup(ctx context.Context, volumeName, backupID 
 	}
 	var repository backup.Repository
 	var snapshotID string
-	if entry.Format != models.VolumeBackupFormatArchive {
+	if entry.Format != VolumeBackupFormatArchive {
 		repository, snapshotID, err = s.rusticRepositoryForBackupInternal(ctx, dockerClient, &entry)
 		if err != nil {
 			return err
@@ -835,11 +839,11 @@ func (s *VolumeService) RestoreBackup(ctx context.Context, volumeName, backupID 
 	if err != nil {
 		return err
 	}
-	preBackup, err := s.CreateBackup(ctx, volumeName, user, models.VolumeBackupTriggerSafety, volumetypes.CreateBackupRequest{Destination: volumetypes.BackupDestinationLocal})
+	preBackup, err := s.CreateBackup(ctx, volumeName, user, VolumeBackupTriggerSafety, volumetypes.CreateBackupRequest{Destination: volumetypes.BackupDestinationLocal})
 	if err != nil {
 		return fmt.Errorf("failed to create pre-restore backup: %w", err)
 	}
-	if entry.Format == models.VolumeBackupFormatArchive {
+	if entry.Format == VolumeBackupFormatArchive {
 		if err := s.restoreArchiveBackupInternal(ctx, dockerClient, volumeName, backupID); err != nil {
 			return err
 		}
@@ -853,19 +857,19 @@ func (s *VolumeService) RestoreBackup(ctx context.Context, volumeName, backupID 
 			return err
 		}
 	}
-	metadata := models.JSON{"action": "backup_restore", "backup_id": backupID, "pre_restore_backupId": preBackup.ID}
-	if logErr := s.eventService.LogVolumeEvent(ctx, models.EventTypeVolumeBackupRestore, volumeName, volumeName, user.ID, user.Username, "0", metadata); logErr != nil {
+	metadata := database.JSON{"action": "backup_restore", "backup_id": backupID, "pre_restore_backupId": preBackup.ID}
+	if logErr := s.eventService.LogVolumeEvent(ctx, event.EventTypeVolumeBackupRestore, volumeName, volumeName, user.ID, user.Username, "0", metadata); logErr != nil {
 		slog.WarnContext(ctx, "could not log volume backup restore event", "volume", volumeName, "error", logErr)
 	}
 	return nil
 }
 
 func (s *VolumeService) ListBackupFiles(ctx context.Context, backupID string) ([]string, error) {
-	var entry models.VolumeBackup
+	var entry VolumeBackup
 	if err := s.db.WithContext(ctx).Where("id = ?", backupID).First(&entry).Error; err != nil {
 		return nil, err
 	}
-	if entry.Format == models.VolumeBackupFormatArchive {
+	if entry.Format == VolumeBackupFormatArchive {
 		return s.listArchiveBackupFilesInternal(ctx, backupID)
 	}
 	dockerClient, err := s.dockerService.GetClient(ctx)
@@ -896,11 +900,11 @@ func (s *VolumeService) BackupHasPath(ctx context.Context, backupID, filePath st
 	return false, nil
 }
 
-func (s *VolumeService) RestoreBackupFiles(ctx context.Context, volumeName, backupID string, paths []string, user models.User) (err error) {
+func (s *VolumeService) RestoreBackupFiles(ctx context.Context, volumeName, backupID string, paths []string, user common.User) (err error) {
 	if len(paths) == 0 {
 		return errors.New("no paths provided")
 	}
-	var entry models.VolumeBackup
+	var entry VolumeBackup
 	if err := s.db.WithContext(ctx).Where("id = ?", backupID).First(&entry).Error; err != nil {
 		return err
 	}
@@ -927,7 +931,7 @@ func (s *VolumeService) RestoreBackupFiles(ctx context.Context, volumeName, back
 	}
 	var repository backup.Repository
 	var snapshotID string
-	if entry.Format != models.VolumeBackupFormatArchive {
+	if entry.Format != VolumeBackupFormatArchive {
 		repository, snapshotID, err = s.rusticRepositoryForBackupInternal(ctx, dockerClient, &entry)
 		if err != nil {
 			return err
@@ -944,11 +948,11 @@ func (s *VolumeService) RestoreBackupFiles(ctx context.Context, volumeName, back
 	if err != nil {
 		return err
 	}
-	preBackup, err := s.CreateBackup(ctx, volumeName, user, models.VolumeBackupTriggerSafety, volumetypes.CreateBackupRequest{Destination: volumetypes.BackupDestinationLocal})
+	preBackup, err := s.CreateBackup(ctx, volumeName, user, VolumeBackupTriggerSafety, volumetypes.CreateBackupRequest{Destination: volumetypes.BackupDestinationLocal})
 	if err != nil {
 		return fmt.Errorf("failed to create pre-restore backup: %w", err)
 	}
-	if entry.Format == models.VolumeBackupFormatArchive {
+	if entry.Format == VolumeBackupFormatArchive {
 		if err := s.restoreArchiveBackupFilesInternal(ctx, dockerClient, volumeName, backupID, cleanedPaths); err != nil {
 			return err
 		}
@@ -966,8 +970,8 @@ func (s *VolumeService) RestoreBackupFiles(ctx context.Context, volumeName, back
 			return err
 		}
 	}
-	metadata := models.JSON{"action": "backup_restore_files", "backup_id": backupID, "pre_restore_backupId": preBackup.ID, "paths_count": len(cleanedPaths)}
-	if logErr := s.eventService.LogVolumeEvent(ctx, models.EventTypeVolumeBackupRestoreFiles, volumeName, volumeName, user.ID, user.Username, "0", metadata); logErr != nil {
+	metadata := database.JSON{"action": "backup_restore_files", "backup_id": backupID, "pre_restore_backupId": preBackup.ID, "paths_count": len(cleanedPaths)}
+	if logErr := s.eventService.LogVolumeEvent(ctx, event.EventTypeVolumeBackupRestoreFiles, volumeName, volumeName, user.ID, user.Username, "0", metadata); logErr != nil {
 		slog.WarnContext(ctx, "could not log volume backup restore files event", "volume", volumeName, "error", logErr)
 	}
 	return nil
@@ -976,15 +980,15 @@ func (s *VolumeService) RestoreBackupFiles(ctx context.Context, volumeName, back
 // DownloadBackup streams a backup as a tar.gz archive. Legacy archive rows
 // stream their stored file; local Rustic rows are restored into a scratch
 // volume and packaged on the fly.
-func (s *VolumeService) DownloadBackup(ctx context.Context, backupID string, user *models.User) (io.ReadCloser, int64, error) {
-	var entry models.VolumeBackup
+func (s *VolumeService) DownloadBackup(ctx context.Context, backupID string, user *common.User) (io.ReadCloser, int64, error) {
+	var entry VolumeBackup
 	if err := s.db.WithContext(ctx).Where("id = ?", backupID).First(&entry).Error; err != nil {
 		return nil, 0, err
 	}
 	var reader io.ReadCloser
 	var size int64
 	var err error
-	if entry.Format == models.VolumeBackupFormatArchive {
+	if entry.Format == VolumeBackupFormatArchive {
 		reader, size, err = s.downloadArchiveBackupInternal(ctx, backupID)
 	} else {
 		reader, size, err = s.downloadRusticBackupInternal(ctx, &entry)
@@ -994,16 +998,16 @@ func (s *VolumeService) DownloadBackup(ctx context.Context, backupID string, use
 	}
 	actingUser := user
 	if actingUser == nil {
-		actingUser = &models.SystemUser
+		actingUser = &common.SystemUser
 	}
-	metadata := models.JSON{"action": "backup_download", "backup_id": backupID, "size": size}
-	if logErr := s.eventService.LogVolumeEvent(ctx, models.EventTypeVolumeBackupDownload, entry.VolumeName, entry.VolumeName, actingUser.ID, actingUser.Username, "0", metadata); logErr != nil {
+	metadata := database.JSON{"action": "backup_download", "backup_id": backupID, "size": size}
+	if logErr := s.eventService.LogVolumeEvent(ctx, event.EventTypeVolumeBackupDownload, entry.VolumeName, entry.VolumeName, actingUser.ID, actingUser.Username, "0", metadata); logErr != nil {
 		slog.WarnContext(ctx, "could not log volume backup download event", "volume", entry.VolumeName, "error", logErr)
 	}
 	return reader, size, nil
 }
 
-func (s *VolumeService) downloadRusticBackupInternal(ctx context.Context, entry *models.VolumeBackup) (io.ReadCloser, int64, error) {
+func (s *VolumeService) downloadRusticBackupInternal(ctx context.Context, entry *VolumeBackup) (io.ReadCloser, int64, error) {
 	if entry.LocalSnapshotID == "" {
 		return nil, 0, errors.New("only local volume backups can be downloaded")
 	}
@@ -1128,7 +1132,7 @@ func (s *VolumeService) downloadArchiveBackupInternal(ctx context.Context, backu
 	return volumehelper.DownloadFileFromContainer(ctx, dockerClient, containerID, path.Join("/volume", filename), cleanup)
 }
 
-func (s *VolumeService) deleteArchiveBackupInternal(ctx context.Context, entry *models.VolumeBackup, user *models.User) error {
+func (s *VolumeService) deleteArchiveBackupInternal(ctx context.Context, entry *VolumeBackup, user *common.User) error {
 	// Delete from DB first - if this fails, no changes are made. If file
 	// deletion fails afterward we just have an orphan file, easier to clean up
 	// than an orphan DB record pointing at a missing file.
@@ -1314,7 +1318,7 @@ func (s *VolumeService) restoreArchiveBackupFilesInternal(ctx context.Context, d
 	return nil
 }
 
-func (s *VolumeService) UploadAndRestore(ctx context.Context, volumeName string, archive io.ReadSeeker, filename string, user models.User) error {
+func (s *VolumeService) UploadAndRestore(ctx context.Context, volumeName string, archive io.ReadSeeker, filename string, user common.User) error {
 	slog.DebugContext(ctx, "volume service: upload and restore", "volume", volumeName, "filename", filename, "user", user.ID)
 
 	gzr, err := gzip.NewReader(archive)
@@ -1333,7 +1337,7 @@ func (s *VolumeService) UploadAndRestore(ctx context.Context, volumeName string,
 		service:    s,
 		volumeName: volumeName,
 	})
-	preBackup, err := s.CreateBackup(ctx, volumeName, user, models.VolumeBackupTriggerSafety, volumetypes.CreateBackupRequest{Destination: volumetypes.BackupDestinationLocal})
+	preBackup, err := s.CreateBackup(ctx, volumeName, user, VolumeBackupTriggerSafety, volumetypes.CreateBackupRequest{Destination: volumetypes.BackupDestinationLocal})
 	if err != nil {
 		return errors.WrapIf(err, "failed to create pre-restore backup")
 	}
@@ -1394,12 +1398,12 @@ func (s *VolumeService) UploadAndRestore(ctx context.Context, volumeName string,
 		slog.DebugContext(ctx, "volume service: restore move stderr", "volume", volumeName, "stderr", strings.TrimSpace(stderr))
 	}
 
-	metadata := models.JSON{
+	metadata := database.JSON{
 		"action":               "backup_upload_restore",
 		"filename":             filename,
 		"pre_restore_backupId": preBackup.ID,
 	}
-	if logErr := s.eventService.LogVolumeEvent(ctx, models.EventTypeVolumeBackupRestore, volumeName, volumeName, user.ID, user.Username, "0", metadata); logErr != nil {
+	if logErr := s.eventService.LogVolumeEvent(ctx, event.EventTypeVolumeBackupRestore, volumeName, volumeName, user.ID, user.Username, "0", metadata); logErr != nil {
 		slog.WarnContext(ctx, "could not log volume backup upload restore event", "volume", volumeName, "error", logErr.Error())
 	}
 
@@ -1408,19 +1412,19 @@ func (s *VolumeService) UploadAndRestore(ctx context.Context, volumeName string,
 
 const defaultVolumeBackupSchedule = "0 0 2 * * *"
 
-func (s *VolumeService) loadVolumeBackupPoliciesInternal(ctx context.Context, volumeName string) ([]models.VolumeBackupPolicy, error) {
-	var policies []models.VolumeBackupPolicy
+func (s *VolumeService) loadVolumeBackupPoliciesInternal(ctx context.Context, volumeName string) ([]VolumeBackupPolicy, error) {
+	var policies []VolumeBackupPolicy
 	if err := s.db.WithContext(ctx).Where("volume_name = ?", volumeName).Order("created_at ASC").Find(&policies).Error; err != nil {
 		return nil, fmt.Errorf("failed to load volume backup policies: %w", err)
 	}
 	return policies, nil
 }
 
-func (s *VolumeService) loadVolumeBackupPolicyInternal(ctx context.Context, volumeName, policyID string) (*models.VolumeBackupPolicy, error) {
+func (s *VolumeService) loadVolumeBackupPolicyInternal(ctx context.Context, volumeName, policyID string) (*VolumeBackupPolicy, error) {
 	if strings.TrimSpace(policyID) == "" {
 		return nil, nil
 	}
-	var policy models.VolumeBackupPolicy
+	var policy VolumeBackupPolicy
 	err := s.db.WithContext(ctx).Where("id = ? AND volume_name = ?", policyID, volumeName).First(&policy).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
@@ -1437,19 +1441,19 @@ func (s *VolumeService) GetBackupPolicies(ctx context.Context, volumeName string
 		return nil, err
 	}
 	result := &volumetypes.BackupPolicyCollection{Policies: make([]volumetypes.BackupPolicy, 0, len(policies))}
-	destinations := make(map[string]models.S3Destination)
+	destinations := make(map[string]s3domain.S3Destination)
 	if s.s3Destinations != nil {
 		available, listErr := s.s3Destinations.ListAllS3Destinations(ctx)
 		if listErr == nil {
 			result.S3Available = len(available) > 0
 			for _, destination := range available {
-				destinations[destination.ID] = models.S3Destination{BaseModel: models.BaseModel{ID: destination.ID}, Name: destination.Name, Bucket: destination.Bucket}
+				destinations[destination.ID] = s3domain.S3Destination{BaseModel: database.BaseModel{ID: destination.ID}, Name: destination.Name, Bucket: destination.Bucket}
 			}
 		}
 	}
 	for i := range policies {
-		var lastRun *models.VolumeBackup
-		var entry models.VolumeBackup
+		var lastRun *VolumeBackup
+		var entry VolumeBackup
 		if runErr := s.db.WithContext(ctx).Where("policy_id = ?", policies[i].ID).Order("created_at DESC").First(&entry).Error; runErr == nil {
 			if destination, ok := destinations[entry.S3DestinationID]; ok {
 				entry.S3DestinationName = destination.Name
@@ -1501,14 +1505,14 @@ func (s *VolumeService) UpdateBackupPolicies(ctx context.Context, volumeName str
 	if err != nil {
 		return nil, err
 	}
-	byID := make(map[string]models.VolumeBackupPolicy, len(existing))
+	byID := make(map[string]VolumeBackupPolicy, len(existing))
 	for i := range existing {
 		byID[existing[i].ID] = existing[i]
 	}
-	policies := make([]models.VolumeBackupPolicy, 0, len(updates))
+	policies := make([]VolumeBackupPolicy, 0, len(updates))
 	kept := make(map[string]struct{}, len(updates))
 	for _, update := range updates {
-		policy := models.VolumeBackupPolicy{VolumeName: volumeName}
+		policy := VolumeBackupPolicy{VolumeName: volumeName}
 		if update.ID != "" {
 			var ok bool
 			policy, ok = byID[update.ID]
@@ -1568,22 +1572,22 @@ func (s *VolumeService) applyVolumeBackupRetentionInternal(ctx context.Context, 
 }
 
 func (s *VolumeService) runScheduledBackupInternal(ctx context.Context, policyID string) {
-	var policy models.VolumeBackupPolicy
+	var policy VolumeBackupPolicy
 	if err := s.db.WithContext(ctx).Where("id = ? AND enabled = ?", policyID, true).First(&policy).Error; err != nil {
 		return
 	}
-	var entry *models.VolumeBackup
+	var entry *VolumeBackup
 	_, err := activitylib.RunHandlerActivity(ctx, s.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  "0",
-		Type:           models.ActivityTypeResourceAction,
+		Type:           activitytypes.TypeResourceAction,
 		ResourceType:   "volume_backup",
 		ResourceID:     policy.VolumeName,
 		ResourceName:   policy.VolumeName,
-		User:           &models.SystemUser,
+		User:           &common.SystemUser,
 		Step:           "Creating scheduled backup",
 		Message:        "Creating scheduled volume backup",
 		SuccessMessage: "Scheduled volume backup created successfully",
-		Metadata: models.JSON{
+		Metadata: database.JSON{
 			"action":          "scheduled_volume_backup",
 			"policyId":        policy.ID,
 			"schedule":        policy.Schedule,
@@ -1596,7 +1600,7 @@ func (s *VolumeService) runScheduledBackupInternal(ctx context.Context, policyID
 		},
 	}, func(activityCtx context.Context) error {
 		var backupErr error
-		entry, backupErr = s.CreateBackup(activityCtx, policy.VolumeName, models.SystemUser, models.VolumeBackupTriggerScheduled, volumetypes.CreateBackupRequest{PolicyID: policy.ID})
+		entry, backupErr = s.CreateBackup(activityCtx, policy.VolumeName, common.SystemUser, VolumeBackupTriggerScheduled, volumetypes.CreateBackupRequest{PolicyID: policy.ID})
 		return backupErr
 	})
 	if errors.Is(err, ErrVolumeBackupAlreadyRunning) {
@@ -1610,7 +1614,7 @@ func (s *VolumeService) runScheduledBackupInternal(ctx context.Context, policyID
 	slog.InfoContext(ctx, "Scheduled volume backup completed", "volume", policy.VolumeName, "backup_id", entry.ID, "remote_snapshot_id", entry.RemoteSnapshotID)
 }
 
-func (s *VolumeService) rescheduleVolumeBackupPolicyInternal(ctx context.Context, policy *models.VolumeBackupPolicy) {
+func (s *VolumeService) rescheduleVolumeBackupPolicyInternal(ctx context.Context, policy *VolumeBackupPolicy) {
 	if policy == nil {
 		return
 	}
@@ -1621,7 +1625,7 @@ func (s *VolumeService) rescheduleVolumeBackupPolicyInternal(ctx context.Context
 	policyID := policy.ID
 	s.jobs.Register(ctx, policyID,
 		func(ctx context.Context) string {
-			var current models.VolumeBackupPolicy
+			var current VolumeBackupPolicy
 			if err := s.db.WithContext(ctx).Where("id = ?", policyID).First(&current).Error; err != nil {
 				return defaultVolumeBackupSchedule
 			}
@@ -1637,7 +1641,7 @@ func (s *VolumeService) RegisterBackupJobsOnStartup(ctx context.Context) {
 	if !s.jobs.Enabled() {
 		return
 	}
-	var policies []models.VolumeBackupPolicy
+	var policies []VolumeBackupPolicy
 	if err := s.db.WithContext(ctx).Where("enabled = ?", true).Find(&policies).Error; err != nil {
 		slog.ErrorContext(ctx, "Failed to load scheduled volume backups", "error", err)
 		return
@@ -1656,7 +1660,7 @@ func (s *VolumeService) removeVolumeBackupPolicyInternal(ctx context.Context, vo
 	for i := range policies {
 		s.jobs.Unregister(ctx, policies[i].ID)
 	}
-	if err := s.db.WithContext(ctx).Where("volume_name = ?", volumeName).Delete(&models.VolumeBackupPolicy{}).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("volume_name = ?", volumeName).Delete(&VolumeBackupPolicy{}).Error; err != nil {
 		slog.WarnContext(ctx, "Failed to delete volume backup policy", "volume", volumeName, "error", err)
 	}
 }

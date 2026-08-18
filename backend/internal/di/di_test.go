@@ -19,7 +19,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/job"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/lifecycle"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/notification"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
@@ -70,7 +69,7 @@ type graphParams struct {
 	Image             *image.ImageService
 	Build             *build.BuildService
 	BuildWorkspace    *build.BuildWorkspaceService
-	Lifecycle         *lifecycle.LifecycleService
+	Lifecycle         *project.LifecycleService
 	Volume            *volume.Module
 	BackupEngine      *backup.Engine
 	S3Destination     *s3domain.Module

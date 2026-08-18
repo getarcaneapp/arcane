@@ -1,6 +1,10 @@
 package dashboard
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
+
 	"context"
 	"sort"
 	"strconv"
@@ -18,7 +22,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/version"
@@ -414,7 +417,7 @@ func (s *DashboardService) getPendingContainerUpdatesCountForImageIDsInternal(ct
 
 	var count int64
 	err := s.db.WithContext(ctx).
-		Model(&models.ImageUpdateRecord{}).
+		Model(&imageupdate.ImageUpdateRecord{}).
 		Where("id IN ? AND has_update = ?", imageIDs, true).
 		Count(&count).Error
 	if err != nil {
@@ -451,7 +454,7 @@ func (s *DashboardService) getExpiringAPIKeysCountInternal(ctx context.Context) 
 
 	var count int64
 	err := s.db.WithContext(ctx).
-		Model(&models.ApiKey{}).
+		Model(&apikey.ApiKey{}).
 		Where("expires_at IS NOT NULL").
 		Where("expires_at <= ?", time.Now().Add(defaultDashboardAPIKeyExpiryWindow)).
 		Count(&count).Error

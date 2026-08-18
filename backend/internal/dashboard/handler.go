@@ -12,7 +12,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
@@ -171,7 +170,7 @@ func (h *DashboardHandler) RunLocalStreamProducer(ctx context.Context, debugAllG
 // or removed while the stream is open are picked up without a reconnect.
 func (h *DashboardHandler) RunRemoteStreamPollers(ctx context.Context, ps *authz.PermissionSet, debugAllGood bool, events chan<- dashboardtypes.StreamEvent) {
 	agg.ReconcilePollersByKey(ctx,
-		func(ctx context.Context) ([]models.Environment, error) {
+		func(ctx context.Context) ([]environment.Environment, error) {
 			environments, err := h.environmentService.ListRemoteEnvironments(ctx)
 			if err != nil {
 				return nil, err
@@ -184,13 +183,13 @@ func (h *DashboardHandler) RunRemoteStreamPollers(ctx context.Context, ps *authz
 			}
 			return allowed, nil
 		},
-		func(environment models.Environment) string {
+		func(environment environment.Environment) string {
 			return environment.ID
 		},
 		dashboardStreamEnvironmentVersionInternal,
 		dashboardStreamEnvReconcileInterval,
 		"dashboard stream",
-		func(pollCtx context.Context, environment models.Environment) {
+		func(pollCtx context.Context, environment environment.Environment) {
 			// One shared poller per environment (and debug variant) serves
 			// every connected client; this subscriber only forwards its
 			// events onto this client's stream.
@@ -208,14 +207,14 @@ func (h *DashboardHandler) RunRemoteStreamPollers(ctx context.Context, ps *authz
 		})
 }
 
-func dashboardStreamEnvironmentVersionInternal(environment models.Environment) string {
+func dashboardStreamEnvironmentVersionInternal(environment environment.Environment) string {
 	if environment.UpdatedAt == nil {
 		return environment.ID
 	}
 	return environment.ID + ":" + environment.UpdatedAt.UTC().Format(time.RFC3339Nano)
 }
 
-func (h *DashboardHandler) runRemoteDashboardStreamPollerInternal(ctx context.Context, environment models.Environment, debugAllGood bool, publish func(dashboardtypes.StreamEvent)) {
+func (h *DashboardHandler) runRemoteDashboardStreamPollerInternal(ctx context.Context, environment environment.Environment, debugAllGood bool, publish func(dashboardtypes.StreamEvent)) {
 	environmentID := environment.ID
 	// Tell the client this environment is covered before the first poll
 	// completes so it can hold skeletons instead of assuming no data exists.
@@ -294,7 +293,7 @@ func (h *DashboardHandler) runRemoteDashboardStreamPollerInternal(ctx context.Co
 // endpoint directly through the environment service so the raw remenv error
 // survives for classification (proxyRemoteJSONInternal would translate it
 // into a huma error first).
-func (h *DashboardHandler) fetchRemoteDashboardSnapshotInternal(ctx context.Context, environment models.Environment, debugAllGood bool) (*dashboardtypes.Snapshot, error) {
+func (h *DashboardHandler) fetchRemoteDashboardSnapshotInternal(ctx context.Context, environment environment.Environment, debugAllGood bool) (*dashboardtypes.Snapshot, error) {
 	path := "/api/environments/0/dashboard"
 	if debugAllGood {
 		path += "?debugAllGood=true"
@@ -315,7 +314,7 @@ func (h *DashboardHandler) fetchRemoteDashboardSnapshotInternal(ctx context.Cont
 // agents have exposed for far longer than the aggregate dashboard endpoint.
 // Each piece is fetched independently so a partially compatible agent still
 // yields partial data; only when every piece fails is an error returned.
-func (h *DashboardHandler) fetchLegacyDashboardSnapshotInternal(ctx context.Context, environment models.Environment) (*dashboardtypes.Snapshot, error) {
+func (h *DashboardHandler) fetchLegacyDashboardSnapshotInternal(ctx context.Context, environment environment.Environment) (*dashboardtypes.Snapshot, error) {
 	snapshot := &dashboardtypes.Snapshot{
 		ActionItems: dashboardtypes.ActionItems{Items: []dashboardtypes.ActionItem{}},
 	}

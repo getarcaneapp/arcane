@@ -9,7 +9,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/version"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	versiontypes "github.com/getarcaneapp/arcane/types/v2/version"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
@@ -19,8 +18,8 @@ import (
 func TestUpdateAllResolveResumeAction(t *testing.T) {
 	now := time.Now()
 
-	newJob := func(createdAt time.Time, versionAtStart, digestAtStart string) *models.EnvironmentUpdateJob {
-		job := &models.EnvironmentUpdateJob{
+	newJob := func(createdAt time.Time, versionAtStart, digestAtStart string) *EnvironmentUpdateJob {
+		job := &EnvironmentUpdateJob{
 			ManagerVersionAtStart: versionAtStart,
 			ManagerDigestAtStart:  digestAtStart,
 		}
@@ -30,7 +29,7 @@ func TestUpdateAllResolveResumeAction(t *testing.T) {
 
 	tests := []struct {
 		name           string
-		job            *models.EnvironmentUpdateJob
+		job            *EnvironmentUpdateJob
 		currentVersion string
 		currentDigest  string
 		wantStale      bool
@@ -66,7 +65,7 @@ func TestUpdateAllResolveResumeAction(t *testing.T) {
 		},
 		{
 			name: "unchanged but already on target means force-update succeeded",
-			job: func() *models.EnvironmentUpdateJob {
+			job: func() *EnvironmentUpdateJob {
 				job := newJob(now.Add(-5*time.Minute), "1.0.0", "sha256:a")
 				job.ManagerTargetVersion = "v1.0.0"
 				return job
@@ -101,10 +100,10 @@ func TestUpdateAllTargetVersionFallsBackToCurrent(t *testing.T) {
 }
 
 func TestUpsertPendingResult(t *testing.T) {
-	job := &models.EnvironmentUpdateJob{
-		Results: models.EnvironmentUpdateResults{
-			{EnvironmentID: "0", EnvironmentName: "Local", Status: models.EnvironmentUpdateResultStatusUpdated},
-			{EnvironmentID: "abc", EnvironmentName: "palladium", Status: models.EnvironmentUpdateResultStatusPending},
+	job := &EnvironmentUpdateJob{
+		Results: EnvironmentUpdateResults{
+			{EnvironmentID: "0", EnvironmentName: "Local", Status: EnvironmentUpdateResultStatusUpdated},
+			{EnvironmentID: "abc", EnvironmentName: "palladium", Status: EnvironmentUpdateResultStatusPending},
 		},
 	}
 	{
@@ -133,7 +132,7 @@ func TestUpsertPendingResult(t *testing.T) {
 	require.False(t, got.EnvironmentID != "xyz" || got.EnvironmentName != "oracle-cloud",
 		"appended row = %+v, want id=xyz name=oracle-cloud", got)
 
-	require.Equal(t, models.EnvironmentUpdateResultStatusPending, got.Status,
+	require.Equal(t, EnvironmentUpdateResultStatusPending, got.Status,
 		"appended row status = %q, want pending", got.Status)
 
 }
@@ -144,18 +143,18 @@ func TestUpdateAllFailedJobMarksUpdatingResultsFailed(t *testing.T) {
 	require.NoError(t, err)
 
 	db := &database.DB{DB: gormDB}
-	require.NoError(t, db.AutoMigrate(&models.EnvironmentUpdateJob{}, &models.Event{}))
+	require.NoError(t, db.AutoMigrate(&EnvironmentUpdateJob{}, &event.Event{}))
 
 	svc := NewSystemUpgradeService(db, nil, nil, event.NewEventService(db, nil, nil), nil)
-	job := &models.EnvironmentUpdateJob{
-		Status:   models.EnvironmentUpdateJobStatusRunning,
+	job := &EnvironmentUpdateJob{
+		Status:   EnvironmentUpdateJobStatusRunning,
 		UserID:   "user-1",
 		Username: "arcane",
-		Results: models.EnvironmentUpdateResults{
-			{EnvironmentID: "0", EnvironmentName: "Local", Status: models.EnvironmentUpdateResultStatusUpdated},
-			{EnvironmentID: "remote-1", EnvironmentName: "palladium", Status: models.EnvironmentUpdateResultStatusUpdating},
-			{EnvironmentID: "remote-2", EnvironmentName: "oracle-cloud", Status: models.EnvironmentUpdateResultStatusPending},
-			{EnvironmentID: "remote-3", EnvironmentName: "parquetide", Status: models.EnvironmentUpdateResultStatusFailed, Error: "already failed"},
+		Results: EnvironmentUpdateResults{
+			{EnvironmentID: "0", EnvironmentName: "Local", Status: EnvironmentUpdateResultStatusUpdated},
+			{EnvironmentID: "remote-1", EnvironmentName: "palladium", Status: EnvironmentUpdateResultStatusUpdating},
+			{EnvironmentID: "remote-2", EnvironmentName: "oracle-cloud", Status: EnvironmentUpdateResultStatusPending},
+			{EnvironmentID: "remote-3", EnvironmentName: "parquetide", Status: EnvironmentUpdateResultStatusFailed, Error: "already failed"},
 		},
 	}
 	require.NoError(t, db.WithContext(ctx).Create(job).Error)
@@ -163,24 +162,24 @@ func TestUpdateAllFailedJobMarksUpdatingResultsFailed(t *testing.T) {
 	reason := "interrupted by manager restart"
 	svc.markUpdateAllFailedInternal(ctx, job, reason)
 
-	var got models.EnvironmentUpdateJob
+	var got EnvironmentUpdateJob
 	require.NoError(t, db.WithContext(ctx).First(&got, "id = ?", job.ID).Error)
-	require.Equal(t, models.EnvironmentUpdateJobStatusFailed, got.Status)
+	require.Equal(t, EnvironmentUpdateJobStatusFailed, got.Status)
 	require.NotNil(t, got.Error)
 	require.Equal(t, reason, *got.Error)
 	require.NotNil(t, got.CompletedAt)
 	require.Len(t, got.Results, 4)
 
-	require.Equal(t, models.EnvironmentUpdateResultStatusUpdated, got.Results[0].Status)
+	require.Equal(t, EnvironmentUpdateResultStatusUpdated, got.Results[0].Status)
 	require.Empty(t, got.Results[0].Error)
 
-	require.Equal(t, models.EnvironmentUpdateResultStatusFailed, got.Results[1].Status)
+	require.Equal(t, EnvironmentUpdateResultStatusFailed, got.Results[1].Status)
 	require.Equal(t, reason, got.Results[1].Error)
 
-	require.Equal(t, models.EnvironmentUpdateResultStatusPending, got.Results[2].Status)
+	require.Equal(t, EnvironmentUpdateResultStatusPending, got.Results[2].Status)
 	require.Empty(t, got.Results[2].Error)
 
-	require.Equal(t, models.EnvironmentUpdateResultStatusFailed, got.Results[3].Status)
+	require.Equal(t, EnvironmentUpdateResultStatusFailed, got.Results[3].Status)
 	require.Equal(t, "already failed", got.Results[3].Error)
 }
 
@@ -193,37 +192,37 @@ func TestUpdateAllFinalizesUpToDateManagerWithoutRestart(t *testing.T) {
 	require.NoError(t, err)
 
 	db := &database.DB{DB: gormDB}
-	require.NoError(t, db.AutoMigrate(&models.EnvironmentUpdateJob{}, &models.Event{}))
+	require.NoError(t, db.AutoMigrate(&EnvironmentUpdateJob{}, &event.Event{}))
 
 	svc := NewSystemUpgradeService(db, nil, nil, event.NewEventService(db, nil, nil), nil)
-	job := &models.EnvironmentUpdateJob{
-		Status:                models.EnvironmentUpdateJobStatusPendingRestart,
+	job := &EnvironmentUpdateJob{
+		Status:                EnvironmentUpdateJobStatusPendingRestart,
 		UserID:                "user-1",
 		Username:              "arcane",
 		ManagerVersionAtStart: "v1.0.0",
-		Results: models.EnvironmentUpdateResults{
-			{EnvironmentID: "0", EnvironmentName: "Local", Status: models.EnvironmentUpdateResultStatusUpdating, FromVersion: "v1.0.0"},
-			{EnvironmentID: "remote-1", EnvironmentName: "palladium", Status: models.EnvironmentUpdateResultStatusUpToDate},
+		Results: EnvironmentUpdateResults{
+			{EnvironmentID: "0", EnvironmentName: "Local", Status: EnvironmentUpdateResultStatusUpdating, FromVersion: "v1.0.0"},
+			{EnvironmentID: "remote-1", EnvironmentName: "palladium", Status: EnvironmentUpdateResultStatusUpToDate},
 		},
 	}
 	require.NoError(t, db.WithContext(ctx).Create(job).Error)
 
-	svc.recordManagerResultInternal(job, models.EnvironmentUpdateResultStatusUpToDate, "v1.0.0")
+	svc.recordManagerResultInternal(job, EnvironmentUpdateResultStatusUpToDate, "v1.0.0")
 	svc.finalizeUpdateAllJobInternal(ctx, job)
 
-	var got models.EnvironmentUpdateJob
+	var got EnvironmentUpdateJob
 	require.NoError(t, db.WithContext(ctx).First(&got, "id = ?", job.ID).Error)
 
 	// Nothing is left waiting on a restart that will never happen.
-	require.Equal(t, models.EnvironmentUpdateJobStatusCompleted, got.Status)
+	require.Equal(t, EnvironmentUpdateJobStatusCompleted, got.Status)
 	require.NotNil(t, got.CompletedAt)
 	require.Nil(t, got.Error)
 
 	require.Equal(t, "0", got.Results[0].EnvironmentID)
-	require.Equal(t, models.EnvironmentUpdateResultStatusUpToDate, got.Results[0].Status)
+	require.Equal(t, EnvironmentUpdateResultStatusUpToDate, got.Results[0].Status)
 	require.Equal(t, "v1.0.0", got.Results[0].ToVersion)
 	require.Empty(t, got.Results[0].Error)
-	require.Equal(t, models.EnvironmentUpdateResultStatusUpToDate, got.Results[1].Status)
+	require.Equal(t, EnvironmentUpdateResultStatusUpToDate, got.Results[1].Status)
 }
 
 // The up-to-date short-circuit must only fire when the version check is conclusive:
@@ -297,7 +296,7 @@ func TestResumeUpdateAllFinalizesManagerWithoutRerunningAgents(t *testing.T) {
 	require.NoError(t, err)
 
 	db := &database.DB{DB: gormDB}
-	require.NoError(t, db.AutoMigrate(&models.EnvironmentUpdateJob{}, &models.Event{}))
+	require.NoError(t, db.AutoMigrate(&EnvironmentUpdateJob{}, &event.Event{}))
 
 	// disabled=true keeps GetAppVersionInfo offline; nil docker => empty current digest.
 	// The reported version differs from ManagerVersionAtStart, so the manager upgrade
@@ -305,35 +304,35 @@ func TestResumeUpdateAllFinalizesManagerWithoutRerunningAgents(t *testing.T) {
 	versionSvc := version.NewVersionService(nil, true, "v9.9.9-new", "", nil, nil, nil)
 	svc := NewSystemUpgradeService(db, nil, versionSvc, event.NewEventService(db, nil, nil), nil)
 
-	job := &models.EnvironmentUpdateJob{
-		Status:                models.EnvironmentUpdateJobStatusPendingRestart,
+	job := &EnvironmentUpdateJob{
+		Status:                EnvironmentUpdateJobStatusPendingRestart,
 		UserID:                "user-1",
 		Username:              "arcane",
 		ManagerVersionAtStart: "v1.0.0-old",
-		Results: models.EnvironmentUpdateResults{
-			{EnvironmentID: "0", EnvironmentName: "Local", Status: models.EnvironmentUpdateResultStatusUpdating},
-			{EnvironmentID: "remote-1", EnvironmentName: "palladium", Status: models.EnvironmentUpdateResultStatusUpdated},
-			{EnvironmentID: "remote-2", EnvironmentName: "oracle-cloud", Status: models.EnvironmentUpdateResultStatusSkippedOffline},
+		Results: EnvironmentUpdateResults{
+			{EnvironmentID: "0", EnvironmentName: "Local", Status: EnvironmentUpdateResultStatusUpdating},
+			{EnvironmentID: "remote-1", EnvironmentName: "palladium", Status: EnvironmentUpdateResultStatusUpdated},
+			{EnvironmentID: "remote-2", EnvironmentName: "oracle-cloud", Status: EnvironmentUpdateResultStatusSkippedOffline},
 		},
 	}
 	require.NoError(t, db.WithContext(ctx).Create(job).Error)
 
 	svc.ResumeUpdateAllOnStartup(ctx)
 
-	var got models.EnvironmentUpdateJob
+	var got EnvironmentUpdateJob
 	require.NoError(t, db.WithContext(ctx).First(&got, "id = ?", job.ID).Error)
 
 	// Job is finalized in-process (no re-run, not left running/pending).
-	require.Equal(t, models.EnvironmentUpdateJobStatusCompleted, got.Status)
+	require.Equal(t, EnvironmentUpdateJobStatusCompleted, got.Status)
 	require.NotNil(t, got.CompletedAt)
 	require.Len(t, got.Results, 3)
 
 	// Manager row transitioned updating -> updated (version changed across the restart).
 	require.Equal(t, "0", got.Results[0].EnvironmentID)
-	require.Equal(t, models.EnvironmentUpdateResultStatusUpdated, got.Results[0].Status)
+	require.Equal(t, EnvironmentUpdateResultStatusUpdated, got.Results[0].Status)
 	require.NotEmpty(t, got.Results[0].ToVersion)
 
 	// Remote rows are untouched — proving the agents phase was NOT re-run on resume.
-	require.Equal(t, models.EnvironmentUpdateResultStatusUpdated, got.Results[1].Status)
-	require.Equal(t, models.EnvironmentUpdateResultStatusSkippedOffline, got.Results[2].Status)
+	require.Equal(t, EnvironmentUpdateResultStatusUpdated, got.Results[1].Status)
+	require.Equal(t, EnvironmentUpdateResultStatusSkippedOffline, got.Results[2].Status)
 }

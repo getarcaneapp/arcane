@@ -1,6 +1,8 @@
 package network
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+
 	"bytes"
 	"context"
 	"net"
@@ -8,12 +10,13 @@ import (
 	"sort"
 	"strings"
 
+	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
+
 	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
@@ -224,7 +227,7 @@ func (h *NetworkHandler) CreateNetwork(ctx context.Context, input *CreateNetwork
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
-		Type:           models.ActivityTypeResourceAction,
+		Type:           activitytypes.TypeResourceAction,
 		ResourceType:   "network",
 		ResourceID:     input.Body.Name,
 		ResourceName:   input.Body.Name,
@@ -232,7 +235,7 @@ func (h *NetworkHandler) CreateNetwork(ctx context.Context, input *CreateNetwork
 		Step:           "Creating network",
 		Message:        "Creating network",
 		SuccessMessage: "Network created successfully",
-		Metadata: models.JSON{
+		Metadata: database.JSON{
 			"action": "create_network",
 			"driver": input.Body.Options.Driver,
 		},
@@ -370,7 +373,7 @@ func (h *NetworkHandler) DeleteNetwork(ctx context.Context, input *DeleteNetwork
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
-		Type:           models.ActivityTypeResourceAction,
+		Type:           activitytypes.TypeResourceAction,
 		ResourceType:   "network",
 		ResourceID:     input.NetworkID,
 		ResourceName:   input.NetworkID,
@@ -378,7 +381,7 @@ func (h *NetworkHandler) DeleteNetwork(ctx context.Context, input *DeleteNetwork
 		Step:           "Removing network",
 		Message:        "Removing network",
 		SuccessMessage: "Network removed successfully",
-		Metadata: models.JSON{
+		Metadata: database.JSON{
 			"action": "remove_network",
 		},
 	}, func(runtimeCtx context.Context) error {
@@ -401,12 +404,12 @@ func (h *NetworkHandler) PruneNetworks(ctx context.Context, input *PruneNetworks
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
-		Type:           models.ActivityTypeResourceAction,
+		Type:           activitytypes.TypeResourceAction,
 		ResourceType:   "network",
 		Step:           "Pruning unused networks",
 		Message:        "Pruning unused networks",
 		SuccessMessage: "Networks pruned successfully",
-		Metadata:       models.JSON{"action": "prune_networks"},
+		Metadata:       database.JSON{"action": "prune_networks"},
 	}, func(runtimeCtx context.Context) error {
 		var pruneErr error
 		report, pruneErr = h.networkService.PruneNetworks(runtimeCtx)

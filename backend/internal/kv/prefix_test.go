@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/stretchr/testify/require"
 )
 
@@ -41,7 +40,7 @@ func TestKVService_ListByPrefix_EscapesLikeWildcards(t *testing.T) {
 	require.ElementsMatch(t, []string{`path\prefix:real`}, kvEntryKeysForPrefixTestInternal(pathEntries))
 }
 
-func kvEntryKeysForPrefixTestInternal(entries []models.KVEntry) []string {
+func kvEntryKeysForPrefixTestInternal(entries []KVEntry) []string {
 	keys := make([]string, 0, len(entries))
 	for _, entry := range entries {
 		keys = append(keys, entry.Key)

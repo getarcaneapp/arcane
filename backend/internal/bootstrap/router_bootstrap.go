@@ -1,6 +1,10 @@
 package bootstrap
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+
 	"context"
 	"log/slog"
 	"net"
@@ -22,7 +26,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/federated"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cookie"
@@ -105,7 +108,7 @@ func requestLoggerMiddlewareInternal() echo.MiddlewareFunc {
 }
 
 func createAuthValidatorInternal(deps api.HandlerDeps) middleware.AuthValidator {
-	resolveUser := func(ctx context.Context, user *models.User) *authz.PermissionSet {
+	resolveUser := func(ctx context.Context, user *common.User) *authz.PermissionSet {
 		ps, err := deps.Role.Service().ResolvePermissions(ctx, user)
 		if err != nil || ps == nil {
 			slog.WarnContext(ctx, "failed to resolve user permissions for env proxy", "error", err)
@@ -121,14 +124,14 @@ func createAuthValidatorInternal(deps api.HandlerDeps) middleware.AuthValidator 
 		}
 		return ps
 	}
-	return func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *models.User, bool) {
+	return func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *common.User, bool) {
 		req := c.Request()
 		// Check for API key authentication
 		if apiKey := req.Header.Get("X-Api-Key"); apiKey != "" {
 			// User-owned API key: personal keys inherit the owner's role
 			// permissions; scoped keys are limited to their own grants.
 			if user, key, err := deps.ApiKey.Service().ValidateApiKeyWithID(ctx, apiKey); err == nil && user != nil {
-				if key != nil && key.Kind != models.ApiKeyKindPersonal {
+				if key != nil && key.Kind != apikey.ApiKeyKindPersonal {
 					return resolveKey(ctx, key.ID), user, true
 				}
 				return resolveUser(ctx, user), user, true

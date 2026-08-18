@@ -1,6 +1,8 @@
 package user
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+
 	"context"
 	"strings"
 	"time"
@@ -10,7 +12,6 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
@@ -201,14 +202,14 @@ func (h *UserHandler) CreateUser(ctx context.Context, input *CreateUserInput) (*
 		return nil, huma.Error500InternalServerError("Failed to hash password")
 	}
 
-	userModel := &models.User{
+	userModel := &common.User{
 		Username:     input.Body.Username,
 		PasswordHash: hashedPassword,
 		DisplayName:  input.Body.DisplayName,
 		Email:        input.Body.Email,
 		Locale:       input.Body.Locale,
 		TimeFormat:   usertypes.TimeFormatAuto,
-		BaseModel: models.BaseModel{
+		BaseModel: database.BaseModel{
 			CreatedAt: time.Now(),
 		},
 	}
@@ -338,7 +339,7 @@ func (h *UserHandler) DeleteUser(ctx context.Context, input *DeleteUserInput) (*
 	// target. The service enforces the same check; this pre-check produces a
 	// clean 403 without entering the delete path.
 	callerPerms, _ := middleware.PermissionsFromContext(ctx)
-	caller, _ := models.CurrentUserFromContext(ctx)
+	caller, _ := common.CurrentUserFromContext(ctx)
 	if callerPerms != nil && !callerPerms.IsGlobalAdmin() && caller != nil && caller.ID != input.UserID {
 		targetPerms, err := h.userService.ResolveUserPermissions(ctx, input.UserID)
 		if err != nil {
@@ -420,7 +421,7 @@ func NormalizeOptionalEmail(email *string) (*string, error) {
 // re-enforces the target-admin check.
 func (h *UserHandler) checkUpdateUserPrivilegesInternal(ctx context.Context, input *UpdateUserInput, targetID string) (*authz.PermissionSet, error) {
 	callerPerms, _ := middleware.PermissionsFromContext(ctx)
-	caller, _ := models.CurrentUserFromContext(ctx)
+	caller, _ := common.CurrentUserFromContext(ctx)
 	if callerPerms != nil && !callerPerms.IsGlobalAdmin() {
 		if input.Body.Password != nil && *input.Body.Password != "" && caller != nil && caller.ID != targetID {
 			return nil, huma.Error403Forbidden(ErrInsufficientPrivilege.Error())

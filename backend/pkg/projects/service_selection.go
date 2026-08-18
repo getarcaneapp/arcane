@@ -2,6 +2,7 @@ package projects
 
 import (
 	"strings"
+	"time"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 )
@@ -56,9 +57,21 @@ func PrepareDeployServiceConfig(projectID, projectName, serviceName string, svc 
 }
 
 // ShouldPullDeployImage reports whether a deploy must pull, given the resolved
-// pull decision and whether the image is already present locally.
-func ShouldPullDeployImage(decision DeployImageDecision, exists bool) bool {
-	return decision.PullAlways || (decision.PullIfMissing && !exists)
+// pull decision, whether the image is already present locally, and when the
+// local image was last tagged (zero when unknown). Refresh policies mirror
+// compose v5.5.0's `up`: a present image is re-pulled only once its window
+// has elapsed since the engine's last-tag time.
+func ShouldPullDeployImage(decision DeployImageDecision, exists bool, lastTagged time.Time) bool {
+	if decision.PullAlways {
+		return true
+	}
+	if !exists {
+		return decision.PullIfMissing || decision.PullIfStale
+	}
+	if decision.PullIfStale {
+		return lastTagged.IsZero() || time.Now().After(lastTagged.Add(decision.StaleAfter))
+	}
+	return false
 }
 
 // SelectedImageRefs returns the distinct pullable image refs of the selected

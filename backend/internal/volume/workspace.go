@@ -1,6 +1,10 @@
 package volume
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+
 	"archive/tar"
 	"bytes"
 	"context"
@@ -23,7 +27,6 @@ import (
 	cerrdefs "github.com/containerd/errdefs"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
@@ -551,7 +554,7 @@ while :; do
   esac
 done`
 
-func (s *VolumeService) UpdateVolumeWorkspace(ctx context.Context, volumeName string, manifest volumetypes.WorkspaceUpdateManifest, uploads map[int][]byte, user models.User) (*workspacetypes.Workspace, error) {
+func (s *VolumeService) UpdateVolumeWorkspace(ctx context.Context, volumeName string, manifest volumetypes.WorkspaceUpdateManifest, uploads map[int][]byte, user common.User) (*workspacetypes.Workspace, error) {
 	totalStartedAt := time.Now()
 	defer func() {
 		slog.DebugContext(ctx, "volume workspace update completed", "volume", volumeName, "file_change_count", len(manifest.FileChanges), "total_duration", time.Since(totalStartedAt))
@@ -650,8 +653,8 @@ func (s *VolumeService) UpdateVolumeWorkspace(ctx context.Context, volumeName st
 	slog.DebugContext(ctx, "volume workspace final tree scan completed", "volume", volumeName, "file_count", len(workspace.Files), "truncated", workspace.FileTreeTruncated, "duration", time.Since(finalScanStartedAt))
 
 	if s.eventService != nil {
-		metadata := models.JSON{"action": "workspace_update", "fileChangeCount": len(manifest.FileChanges)}
-		if logErr := s.eventService.LogVolumeEvent(ctx, models.EventTypeVolumeWorkspaceUpdate, volumeName, volumeName, user.ID, user.Username, "0", metadata); logErr != nil {
+		metadata := database.JSON{"action": "workspace_update", "fileChangeCount": len(manifest.FileChanges)}
+		if logErr := s.eventService.LogVolumeEvent(ctx, event.EventTypeVolumeWorkspaceUpdate, volumeName, volumeName, user.ID, user.Username, "0", metadata); logErr != nil {
 			slog.WarnContext(ctx, "could not log volume workspace update event", "volume", volumeName, "error", logErr.Error())
 		}
 	}
@@ -1116,7 +1119,7 @@ func (s *VolumeService) restoreVolumeWorkspaceFileInternal(ctx context.Context, 
 	if err != nil {
 		return common.Classify(common.ErrVolumeWorkspaceNotFound, err)
 	}
-	var backup models.VolumeBackup
+	var backup VolumeBackup
 	if err := s.db.WithContext(ctx).Where("id = ?", backupID).First(&backup).Error; err != nil {
 		return common.Classify(common.ErrVolumeWorkspaceNotFound, err)
 	}

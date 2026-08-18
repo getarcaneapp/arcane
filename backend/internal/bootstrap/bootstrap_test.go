@@ -17,6 +17,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
 	"github.com/labstack/echo/v5"
 	"github.com/stretchr/testify/assert"
@@ -164,7 +165,9 @@ func TestConfigureHTTPProtocolsInternal(t *testing.T) {
 	t.Run("plain enables http1 and unencrypted http2", func(t *testing.T) {
 		configuredHandler, protocols := configureHTTPProtocolsInternal(false, handler)
 
-		assert.Same(t, handler, configuredHandler)
+		// The plain path wraps the handler to clear the stale h2c read
+		// deadline, so it is deliberately not the same handler.
+		assert.NotNil(t, configuredHandler)
 		require.NotNil(t, protocols)
 		assert.True(t, protocols.HTTP1())
 		assert.False(t, protocols.HTTP2())
@@ -237,6 +240,65 @@ func TestHTTP2APIResponsesDoNotUseAPIGzipInternal(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestH2CStreamSurvivesPastReadHeaderTimeoutInternal(t *testing.T) {
+	// Regression guard for the go1.26.6 CVE-2026-56853 backport, which arms
+	// ReadHeaderTimeout on the raw conn before the h2c preface sniff and never
+	// clears it on the HTTP/2 handoff. Without ClearReadDeadline in the h2c
+	// handler wrapper, the connection — and every gRPC tunnel stream on it —
+	// dies with an i/o timeout exactly ReadHeaderTimeout after accept.
+	const readHeaderTimeout = 250 * time.Millisecond
+
+	release := make(chan struct{})
+	streamHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.(http.Flusher).Flush()
+		<-release
+		_, _ = w.Write([]byte("done"))
+	})
+	handler, protocols := configureHTTPProtocolsInternal(false, streamHandler)
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	server := &http.Server{
+		Handler:           handler,
+		Protocols:         protocols,
+		ReadHeaderTimeout: readHeaderTimeout,
+		ConnContext:       httpx.WithConn,
+	}
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- server.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		require.NoError(t, server.Shutdown(context.Background()))
+		require.ErrorIs(t, <-errCh, http.ErrServerClosed)
+	})
+
+	transport := &http2.Transport{
+		AllowHTTP: true,
+		DialTLSContext: func(ctx context.Context, network, addr string, _ *tls.Config) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, network, addr)
+		},
+	}
+	client := &http.Client{Transport: transport}
+
+	resp, err := client.Get("http://" + listener.Addr().String() + "/stream")
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+	require.Equal(t, "HTTP/2.0", resp.Proto)
+
+	// Keep the stream idle well past ReadHeaderTimeout before the handler
+	// writes again; on a connection with the stale deadline still armed the
+	// read below fails instead of returning the body.
+	time.Sleep(4 * readHeaderTimeout)
+	close(release)
+
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.Equal(t, "done", string(body))
 }
 
 func TestHTTPServerStopCancelsStreamingRequestContextsInternal(t *testing.T) {

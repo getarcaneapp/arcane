@@ -17,7 +17,6 @@ import (
 
 	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	wsutil "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
@@ -64,7 +63,7 @@ type EnvResolver func(ctx context.Context, id string) (string, *string, bool, er
 // per-user context (e.g. the icon catalog preference) can travel with the
 // proxied request; it is nil for callers that are not a user (environment
 // bootstrap keys).
-type AuthValidator func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *models.User, bool)
+type AuthValidator func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *common.User, bool)
 
 // EnvironmentMiddleware proxies requests for remote environments to their respective agents.
 type EnvironmentMiddleware struct {
@@ -127,7 +126,7 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 
 	// SECURITY: Validate authentication BEFORE proxying to remote environments.
 	var perms *authz.PermissionSet
-	var user *models.User
+	var user *common.User
 	if m.authValidator != nil {
 		ps, u, ok := m.authValidator(c.Request().Context(), c)
 		if !ok {
@@ -198,7 +197,7 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 //
 // SECURITY: the header is always cleared first, so a browser-supplied value
 // never rides through; only the server-resolved preference is forwarded.
-func (m *EnvironmentMiddleware) setIconCatalogHeaderInternal(c *echo.Context, user *models.User) {
+func (m *EnvironmentMiddleware) setIconCatalogHeaderInternal(c *echo.Context, user *common.User) {
 	c.Request().Header.Del(utils.HeaderIconCatalog)
 	if user == nil || user.Preferences.IconCatalog == nil || *user.Preferences.IconCatalog == "" {
 		return

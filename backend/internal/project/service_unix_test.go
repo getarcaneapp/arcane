@@ -3,6 +3,10 @@
 package project
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+
 	"context"
 	"os"
 	"path/filepath"
@@ -10,7 +14,6 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -46,17 +49,17 @@ func TestProjectService_ApplyGitSyncProjectFiles_TolerantOfPermissionLockedEnv(t
 	require.NoError(t, os.Chmod(envPath, 0o000))
 	t.Cleanup(func() { _ = os.Chmod(envPath, 0o644) })
 
-	project := &models.Project{
-		BaseModel: models.BaseModel{ID: "proj-git-sync-locked-env"},
+	project := &Project{
+		BaseModel: database.BaseModel{ID: "proj-git-sync-locked-env"},
 		Name:      "git-sync-locked-env",
 		DirName:   &dirName,
 		Path:      projectPath,
-		Status:    models.ProjectStatusStopped,
+		Status:    ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:1.27-alpine\n", new("FOO=fromgit\n"), nil, "", models.User{
-		BaseModel: models.BaseModel{ID: "u1"},
+	updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:1.27-alpine\n", new("FOO=fromgit\n"), nil, "", common.User{
+		BaseModel: database.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
 	require.NoError(t, err)

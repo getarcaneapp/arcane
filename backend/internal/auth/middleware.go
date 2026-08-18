@@ -1,6 +1,12 @@
 package auth
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+
 	"github.com/samber/mo"
 
 	"context"
@@ -14,7 +20,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cookie"
@@ -27,17 +32,17 @@ type AuthOptions struct {
 }
 
 type ApiKeyValidator interface {
-	ValidateApiKeyWithID(ctx context.Context, rawKey string) (*models.User, *models.ApiKey, error)
+	ValidateApiKeyWithID(ctx context.Context, rawKey string) (*common.User, *apikey.ApiKey, error)
 }
 
 type EnvironmentAccessTokenResolver interface {
-	ResolveEnvironmentByAccessToken(ctx context.Context, token string) (*models.Environment, error)
+	ResolveEnvironmentByAccessToken(ctx context.Context, token string) (*environment.Environment, error)
 }
 
 // PermissionResolver resolves a caller's effective permission set. Implemented
 // by role.RoleService; kept as an interface so tests can stub it.
 type PermissionResolver interface {
-	ResolvePermissions(ctx context.Context, user *models.User) (*authz.PermissionSet, error)
+	ResolvePermissions(ctx context.Context, user *common.User) (*authz.PermissionSet, error)
 	ResolveApiKeyPermissions(ctx context.Context, apiKeyID string) (*authz.PermissionSet, error)
 }
 
@@ -130,7 +135,7 @@ func (m *AuthMiddleware) agentAuth(ctx context.Context, c *echo.Context, next ec
 		"has_agent_token_hdr", req.Header.Get(utils.HeaderAgentToken) != "",
 		"agent_token_config_set", m.cfg.AgentToken != "",
 	)
-	return c.JSON(http.StatusForbidden, models.APIError{
+	return c.JSON(http.StatusForbidden, common.APIError{
 		Code:    "FORBIDDEN",
 		Message: "Invalid or missing agent token",
 	})
@@ -164,8 +169,8 @@ func (m *AuthMiddleware) managerAuth(ctx context.Context, c *echo.Context, next 
 		if m.options.SuccessOptional {
 			return next(c)
 		}
-		return c.JSON(http.StatusUnauthorized, models.APIError{
-			Code:    models.APIErrorCodeUnauthorized,
+		return c.JSON(http.StatusUnauthorized, common.APIError{
+			Code:    common.APIErrorCodeUnauthorized,
 			Message: "Authentication required",
 		})
 	}
@@ -176,16 +181,16 @@ func (m *AuthMiddleware) managerAuth(ctx context.Context, c *echo.Context, next 
 		// (the refresh path tolerates the version change and rotates the token), so do
 		// NOT clear the cookies. Return a recoverable 401 the frontend refreshes from.
 		if errors.Is(err, common.ErrTokenVersionMismatch) {
-			return c.JSON(http.StatusUnauthorized, models.APIError{
-				Code:    models.APIErrorCodeUnauthorized,
+			return c.JSON(http.StatusUnauthorized, common.APIError{
+				Code:    common.APIErrorCodeUnauthorized,
 				Message: "Application has been updated. Refreshing session.",
 			})
 		}
 
 		if errors.Is(err, common.ErrSessionRevoked) || errors.Is(err, common.ErrTokenValidation) {
 			cookie.ClearTokenCookie(c.Response(), req)
-			return c.JSON(http.StatusUnauthorized, models.APIError{
-				Code:    models.APIErrorCodeUnauthorized,
+			return c.JSON(http.StatusUnauthorized, common.APIError{
+				Code:    common.APIErrorCodeUnauthorized,
 				Message: "Session expired. Please log in again.",
 			})
 		}
@@ -193,15 +198,15 @@ func (m *AuthMiddleware) managerAuth(ctx context.Context, c *echo.Context, next 
 		if m.options.SuccessOptional {
 			return next(c)
 		}
-		return c.JSON(http.StatusUnauthorized, models.APIError{
-			Code:    models.APIErrorCodeUnauthorized,
+		return c.JSON(http.StatusUnauthorized, common.APIError{
+			Code:    common.APIErrorCodeUnauthorized,
 			Message: "Invalid or expired token",
 		})
 	}
 
 	ps := m.resolvePermissionsOrDeny(ctx, user)
 	if m.options.AdminRequired && !ps.IsGlobalAdmin() {
-		return c.JSON(http.StatusForbidden, models.APIError{
+		return c.JSON(http.StatusForbidden, common.APIError{
 			Code:    "FORBIDDEN",
 			Message: "You don't have permission to access this resource",
 		})
@@ -223,13 +228,13 @@ func (m *AuthMiddleware) apiKeyHeaderAuth(ctx context.Context, c *echo.Context, 
 			// Personal keys inherit the owner's role permissions (same
 			// resolution as session auth); scoped keys use their own grants.
 			var ps *authz.PermissionSet
-			if key.Kind == models.ApiKeyKindPersonal {
+			if key.Kind == apikey.ApiKeyKindPersonal {
 				ps = m.resolvePermissionsOrDeny(ctx, user)
 			} else {
 				ps = m.resolveApiKeyPermissionsOrDeny(ctx, key.ID)
 			}
 			if m.options.AdminRequired && !ps.IsGlobalAdmin() {
-				return c.JSON(http.StatusForbidden, models.APIError{
+				return c.JSON(http.StatusForbidden, common.APIError{
 					Code:    "FORBIDDEN",
 					Message: "You don't have permission to access this resource",
 				})
@@ -245,8 +250,8 @@ func (m *AuthMiddleware) apiKeyHeaderAuth(ctx context.Context, c *echo.Context, 
 		environmentScopedInternal(c, env)
 		return next(c)
 	}
-	return c.JSON(http.StatusUnauthorized, models.APIError{
-		Code:    models.APIErrorCodeUnauthorized,
+	return c.JSON(http.StatusUnauthorized, common.APIError{
+		Code:    common.APIErrorCodeUnauthorized,
 		Message: "Invalid or expired API key",
 	})
 }
@@ -254,7 +259,7 @@ func (m *AuthMiddleware) apiKeyHeaderAuth(ctx context.Context, c *echo.Context, 
 // resolvePermissionsOrDeny returns the user's permission set, or an empty
 // (deny-all) set if the resolver is unavailable or fails. Resolver failures
 // are logged.
-func (m *AuthMiddleware) resolvePermissionsOrDeny(ctx context.Context, user *models.User) *authz.PermissionSet {
+func (m *AuthMiddleware) resolvePermissionsOrDeny(ctx context.Context, user *common.User) *authz.PermissionSet {
 	if m.roleResolver == nil || user == nil {
 		return authz.NewPermissionSet()
 	}
@@ -281,14 +286,14 @@ func (m *AuthMiddleware) resolveApiKeyPermissionsOrDeny(ctx context.Context, api
 	return ps
 }
 
-func (m *AuthMiddleware) resolveEnvironmentAccessToken(ctx context.Context, token string) mo.Option[*models.Environment] {
+func (m *AuthMiddleware) resolveEnvironmentAccessToken(ctx context.Context, token string) mo.Option[*environment.Environment] {
 	if m.envTokenResolver == nil {
-		return mo.None[*models.Environment]()
+		return mo.None[*environment.Environment]()
 	}
 
 	env, err := m.envTokenResolver.ResolveEnvironmentByAccessToken(ctx, token)
 	if err != nil || env == nil {
-		return mo.None[*models.Environment]()
+		return mo.None[*environment.Environment]()
 	}
 
 	return mo.Some(env)
@@ -299,8 +304,8 @@ func isPreflightInternal(c *echo.Context) bool {
 }
 
 func agentSudoInternal(c *echo.Context) {
-	agentUser := &models.User{
-		BaseModel: models.BaseModel{ID: "agent"},
+	agentUser := &common.User{
+		BaseModel: database.BaseModel{ID: "agent"},
 		Email:     new("agent@getarcane.app"),
 		Username:  "agent",
 	}
@@ -310,9 +315,9 @@ func agentSudoInternal(c *echo.Context) {
 	c.Set(string(middleware.ContextKeyAuthMethod), "agent_token")
 }
 
-func environmentScopedInternal(c *echo.Context, env *models.Environment) {
-	envUser := &models.User{
-		BaseModel: models.BaseModel{ID: "environment:" + env.ID},
+func environmentScopedInternal(c *echo.Context, env *environment.Environment) {
+	envUser := &common.User{
+		BaseModel: database.BaseModel{ID: "environment:" + env.ID},
 		Username:  env.Name,
 	}
 	c.Set(string(middleware.ContextKeyUserID), envUser.ID)

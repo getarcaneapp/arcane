@@ -1,11 +1,17 @@
 package system
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+
 	"context"
 	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
+
+	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
@@ -18,7 +24,6 @@ import (
 	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
@@ -260,12 +265,12 @@ func (s *SystemService) startSystemPruneActivityInternal(ctx context.Context, en
 	}
 	activity, err := s.activityService.StartActivity(ctx, activity.StartActivityRequest{
 		EnvironmentID: environmentID,
-		Type:          models.ActivityTypeSystemPrune,
+		Type:          activitytypes.TypeSystemPrune,
 		ResourceType:  new("system"),
 		ResourceName:  new("Docker resources"),
 		Step:          "Preparing prune",
 		LatestMessage: "System prune started",
-		Metadata: models.JSON{
+		Metadata: database.JSON{
 			"containers": req.Containers,
 			"images":     req.Images,
 			"volumes":    req.Volumes,
@@ -285,7 +290,7 @@ func (s *SystemService) appendSystemPruneActivityMessageInternal(ctx context.Con
 		return
 	}
 	if _, err := s.activityService.AppendMessage(ctx, activityID, activity.AppendActivityMessageRequest{
-		Level:    models.ActivityMessageLevelInfo,
+		Level:    activitytypes.MessageLevelInfo,
 		Message:  message,
 		Progress: &progress,
 		Step:     message,
@@ -299,15 +304,15 @@ func (s *SystemService) completeSystemPruneActivityInternal(ctx context.Context,
 		return
 	}
 
-	status := models.ActivityStatusSuccess
+	status := activitytypes.StatusSuccess
 	message := "System prune completed"
 	var errMessage *string
 	if !result.Success || len(result.Errors) > 0 {
 		if activitylib.CancelledByContext(ctx) {
-			status = models.ActivityStatusCancelled
+			status = activitytypes.StatusCancelled
 			message = "System prune cancelled"
 		} else {
-			status = models.ActivityStatusFailed
+			status = activitytypes.StatusFailed
 			message = "System prune completed with errors"
 			errMessage = new(strings.Join(result.Errors, "; "))
 		}
@@ -387,7 +392,7 @@ type startMatchingContainersOptionsInternal struct {
 }
 
 func (s *SystemService) startMatchingContainersInternal(ctx context.Context, environmentID string, opts startMatchingContainersOptionsInternal) (*containertypes.ActionResult, error) {
-	activityID := s.startSystemContainerActivityInternal(ctx, environmentID, models.ActivityTypeContainerStart, opts.ResourceName, opts.StartMessage)
+	activityID := s.startSystemContainerActivityInternal(ctx, environmentID, activitytypes.TypeContainerStart, opts.ResourceName, opts.StartMessage)
 	ctx = s.activityService.Track(ctx, activityID)
 	containers, _, _, _, err := s.dockerService.GetAllContainers(ctx)
 	if err != nil {
@@ -401,7 +406,7 @@ func (s *SystemService) startMatchingContainersInternal(ctx context.Context, env
 	}
 
 	result := s.performBatchContainerAction(ctx, containers, "start", opts.ShouldStart, func(ctx context.Context, id string) error {
-		return s.containerService.StartContainer(ctx, id, models.SystemUser)
+		return s.containerService.StartContainer(ctx, id, common.SystemUser)
 	})
 	result.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
 	s.completeSystemContainerActivityInternal(ctx, activityID, opts.SuccessMessage, result)
@@ -409,7 +414,7 @@ func (s *SystemService) startMatchingContainersInternal(ctx context.Context, env
 }
 
 func (s *SystemService) StopAllContainers(ctx context.Context, environmentID string) (*containertypes.ActionResult, error) {
-	activityID := s.startSystemContainerActivityInternal(ctx, environmentID, models.ActivityTypeContainerStop, "All containers", "Stopping all containers")
+	activityID := s.startSystemContainerActivityInternal(ctx, environmentID, activitytypes.TypeContainerStop, "All containers", "Stopping all containers")
 	ctx = s.activityService.Track(ctx, activityID)
 	containers, _, _, _, err := s.dockerService.GetAllContainers(ctx)
 	if err != nil {
@@ -428,14 +433,14 @@ func (s *SystemService) StopAllContainers(ctx context.Context, environmentID str
 			return !labels.IsArcaneContainer(c.Labels)
 		},
 		func(ctx context.Context, id string) error {
-			return s.containerService.StopContainer(ctx, id, models.SystemUser)
+			return s.containerService.StopContainer(ctx, id, common.SystemUser)
 		})
 	result.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
 	s.completeSystemContainerActivityInternal(ctx, activityID, "Stopped all containers", result)
 	return result, nil
 }
 
-func (s *SystemService) startSystemContainerActivityInternal(ctx context.Context, environmentID string, activityType models.ActivityType, resourceName, message string) string {
+func (s *SystemService) startSystemContainerActivityInternal(ctx context.Context, environmentID string, activityType activitytypes.Type, resourceName, message string) string {
 	if s.activityService == nil {
 		return ""
 	}
@@ -446,7 +451,7 @@ func (s *SystemService) startSystemContainerActivityInternal(ctx context.Context
 		ResourceName:  &resourceName,
 		Step:          message,
 		LatestMessage: message,
-		Metadata:      models.JSON{"scope": resourceName},
+		Metadata:      database.JSON{"scope": resourceName},
 	})
 	if err != nil {
 		slog.DebugContext(ctx, "failed to start system container activity", "type", activityType, "error", err)
@@ -460,11 +465,11 @@ func (s *SystemService) completeSystemContainerActivityInternal(ctx context.Cont
 		return
 	}
 
-	status := models.ActivityStatusSuccess
+	status := activitytypes.StatusSuccess
 	message := successMessage
 	var errMessage *string
 	if !result.Success || len(result.Errors) > 0 {
-		status = models.ActivityStatusFailed
+		status = activitytypes.StatusFailed
 		message = strings.Join(result.Errors, "; ")
 		errMessage = &message
 	}
@@ -542,7 +547,7 @@ func (s *SystemService) pruneImagesInternal(ctx context.Context, options system.
 
 	// Batch delete update records
 	if len(idsToDelete) > 0 && s.db != nil {
-		if err := s.db.WithContext(ctx).Where("id IN ?", idsToDelete).Delete(&models.ImageUpdateRecord{}).Error; err != nil {
+		if err := s.db.WithContext(ctx).Where("id IN ?", idsToDelete).Delete(&imageupdate.ImageUpdateRecord{}).Error; err != nil {
 			slog.WarnContext(ctx, "Failed to delete image update records", "count", len(idsToDelete), "error", err.Error())
 		}
 	}

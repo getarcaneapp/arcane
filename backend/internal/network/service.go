@@ -1,6 +1,8 @@
 package network
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+
 	"context"
 	"fmt"
 	"log/slog"
@@ -11,7 +13,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
@@ -176,25 +177,25 @@ func (s *NetworkService) GetNetworkTopology(ctx context.Context) (*networktypes.
 	return topology, nil
 }
 
-func (s *NetworkService) CreateNetwork(ctx context.Context, name string, options client.NetworkCreateOptions, user models.User) (*network.CreateResponse, error) {
+func (s *NetworkService) CreateNetwork(ctx context.Context, name string, options client.NetworkCreateOptions, user common.User) (*network.CreateResponse, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, models.EventTypeNetworkError, "network", "", name, user.ID, user.Username, "0", err, models.JSON{"action": "create", "driver": options.Driver})
+		s.eventService.LogErrorEvent(ctx, event.EventTypeNetworkError, "network", "", name, user.ID, user.Username, "0", err, database.JSON{"action": "create", "driver": options.Driver})
 		return nil, errors.WrapIf(err, "failed to connect to Docker")
 	}
 
 	response, err := dockerClient.NetworkCreate(ctx, name, options)
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, models.EventTypeNetworkError, "network", "", name, user.ID, user.Username, "0", err, models.JSON{"action": "create", "driver": options.Driver})
+		s.eventService.LogErrorEvent(ctx, event.EventTypeNetworkError, "network", "", name, user.ID, user.Username, "0", err, database.JSON{"action": "create", "driver": options.Driver})
 		return nil, errors.WrapIf(err, "failed to create network")
 	}
 
-	metadata := models.JSON{
+	metadata := database.JSON{
 		"action": "create",
 		"driver": options.Driver,
 		"name":   name,
 	}
-	if logErr := s.eventService.LogNetworkEvent(ctx, models.EventTypeNetworkCreate, response.ID, name, user.ID, user.Username, "0", metadata); logErr != nil {
+	if logErr := s.eventService.LogNetworkEvent(ctx, event.EventTypeNetworkCreate, response.ID, name, user.ID, user.Username, "0", metadata); logErr != nil {
 		slog.WarnContext(ctx, "could not log network creation action", "error", logErr)
 	}
 
@@ -211,10 +212,10 @@ func (s *NetworkService) CreateNetwork(ctx context.Context, name string, options
 	return &out, nil
 }
 
-func (s *NetworkService) RemoveNetwork(ctx context.Context, id string, user models.User) error {
+func (s *NetworkService) RemoveNetwork(ctx context.Context, id string, user common.User) error {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, models.EventTypeNetworkError, "network", id, "", user.ID, user.Username, "0", err, models.JSON{"action": "delete"})
+		s.eventService.LogErrorEvent(ctx, event.EventTypeNetworkError, "network", id, "", user.ID, user.Username, "0", err, database.JSON{"action": "delete"})
 		return errors.WrapIf(err, "failed to connect to Docker")
 	}
 
@@ -227,15 +228,15 @@ func (s *NetworkService) RemoveNetwork(ctx context.Context, id string, user mode
 	}
 
 	if _, err := dockerClient.NetworkRemove(ctx, id, client.NetworkRemoveOptions{}); err != nil {
-		s.eventService.LogErrorEvent(ctx, models.EventTypeNetworkError, "network", id, networkName, user.ID, user.Username, "0", err, models.JSON{"action": "delete"})
+		s.eventService.LogErrorEvent(ctx, event.EventTypeNetworkError, "network", id, networkName, user.ID, user.Username, "0", err, database.JSON{"action": "delete"})
 		return errors.WrapIf(err, "failed to remove network")
 	}
 
-	metadata := models.JSON{
+	metadata := database.JSON{
 		"action":    "delete",
 		"networkId": id,
 	}
-	if logErr := s.eventService.LogNetworkEvent(ctx, models.EventTypeNetworkDelete, id, networkName, user.ID, user.Username, "0", metadata); logErr != nil {
+	if logErr := s.eventService.LogNetworkEvent(ctx, event.EventTypeNetworkDelete, id, networkName, user.ID, user.Username, "0", metadata); logErr != nil {
 		slog.WarnContext(ctx, "could not log network delete action", "error", logErr)
 	}
 
@@ -256,11 +257,11 @@ func (s *NetworkService) PruneNetworks(ctx context.Context) (*network.PruneRepor
 	}
 	pruneReport := report.Report
 
-	metadata := models.JSON{
+	metadata := database.JSON{
 		"action":          "prune",
 		"networksDeleted": len(pruneReport.NetworksDeleted),
 	}
-	if logErr := s.eventService.LogNetworkEvent(ctx, models.EventTypeNetworkDelete, "", "bulk_prune", models.SystemUser.ID, models.SystemUser.Username, "0", metadata); logErr != nil {
+	if logErr := s.eventService.LogNetworkEvent(ctx, event.EventTypeNetworkDelete, "", "bulk_prune", common.SystemUser.ID, common.SystemUser.Username, "0", metadata); logErr != nil {
 		slog.WarnContext(ctx, "could not log network prune action", "error", logErr)
 	}
 

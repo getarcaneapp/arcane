@@ -9,7 +9,6 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
@@ -354,7 +353,7 @@ func (h *TemplateHandler) GetAllTemplates(ctx context.Context, _ *GetAllTemplate
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to get templates").Error())
 	}
 
-	out, mapErr := mapper.MapSlice[models.ComposeTemplate, templatetypes.Template](templates)
+	out, mapErr := mapper.MapSlice[ComposeTemplate, templatetypes.Template](templates)
 	if mapErr != nil {
 		return nil, huma.Error500InternalServerError(errors.WithMessage(mapErr, "Failed to map templates").Error())
 	}
@@ -431,7 +430,7 @@ func (h *TemplateHandler) GetTemplateContent(ctx context.Context, input *GetTemp
 
 // CreateTemplate creates a new templatetypes.
 func (h *TemplateHandler) CreateTemplate(ctx context.Context, input *CreateTemplateInput) (*CreateTemplateOutput, error) {
-	tmpl := &models.ComposeTemplate{
+	tmpl := &ComposeTemplate{
 		Name:        input.Body.Name,
 		Description: input.Body.Description,
 		Content:     input.Body.Content,
@@ -470,7 +469,7 @@ func (h *TemplateHandler) UpdateTemplate(ctx context.Context, input *UpdateTempl
 		return nil, huma.Error400BadRequest("Template ID is required")
 	}
 
-	updates := &models.ComposeTemplate{
+	updates := &ComposeTemplate{
 		Name:        input.Body.Name,
 		Description: input.Body.Description,
 		Content:     input.Body.Content,
@@ -621,7 +620,7 @@ func (h *TemplateHandler) GetRegistries(ctx context.Context, _ *GetTemplateRegis
 		return nil, huma.Error500InternalServerError("Failed to fetch registry")
 	}
 
-	out, mapErr := mapper.MapSlice[models.TemplateRegistry, templatetypes.TemplateRegistry](registries)
+	out, mapErr := mapper.MapSlice[TemplateRegistry, templatetypes.TemplateRegistry](registries)
 	if mapErr != nil {
 		return nil, huma.Error500InternalServerError("Failed to fetch registry")
 	}
@@ -646,7 +645,7 @@ func (h *TemplateHandler) GetRegistries(ctx context.Context, _ *GetTemplateRegis
 
 // CreateRegistry creates a new template registry.
 func (h *TemplateHandler) CreateRegistry(ctx context.Context, input *CreateTemplateRegistryInput) (*CreateTemplateRegistryOutput, error) {
-	registry := &models.TemplateRegistry{
+	registry := &TemplateRegistry{
 		Name:        input.Body.Name,
 		URL:         input.Body.URL,
 		Description: input.Body.Description,
@@ -675,7 +674,7 @@ func (h *TemplateHandler) UpdateRegistry(ctx context.Context, input *UpdateTempl
 		return nil, huma.Error400BadRequest("Registry ID is required")
 	}
 
-	updates := &models.TemplateRegistry{
+	updates := &TemplateRegistry{
 		Name:        input.Body.Name,
 		URL:         input.Body.URL,
 		Description: input.Body.Description,

@@ -10,7 +10,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/entityjobs"
 	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
@@ -93,7 +92,7 @@ func TestRecoveryHelperExecutableInternal(t *testing.T) {
 func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 	gormDB, err := gorm.Open(sqlite.Open("file:system-backup-schedules?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, gormDB.AutoMigrate(&models.SystemBackupPolicy{}, &models.SystemBackupRun{}, &models.SystemBackupRecoveryConfig{}))
+	require.NoError(t, gormDB.AutoMigrate(&SystemBackupPolicy{}, &SystemBackupRun{}, &SystemBackupRecoveryConfig{}))
 	crypto.InitEncryption(&crypto.Config{EncryptionKey: "system-backup-policy-test-key-32bytes", Environment: "test"})
 	service := &SystemBackupService{
 		db:     &database.DB{DB: gormDB},
@@ -133,7 +132,7 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 func TestSystemBackupPolicyRequiresConfiguredRecoveryKeyWhenEnabled(t *testing.T) {
 	gormDB, err := gorm.Open(sqlite.Open("file:system-backup-key-required?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, gormDB.AutoMigrate(&models.SystemBackupPolicy{}, &models.SystemBackupRecoveryConfig{}))
+	require.NoError(t, gormDB.AutoMigrate(&SystemBackupPolicy{}, &SystemBackupRecoveryConfig{}))
 	service := &SystemBackupService{
 		db:     &database.DB{DB: gormDB},
 		config: &config.Config{DatabaseURL: "file:system-backup-key-required-test.db"},
@@ -148,26 +147,26 @@ func TestSystemBackupPolicyRequiresConfiguredRecoveryKeyWhenEnabled(t *testing.T
 func TestSystemBackupPolicyRetentionIgnoresFailedRuns(t *testing.T) {
 	gormDB, err := gorm.Open(sqlite.Open("file:system-backup-retention-failed?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, gormDB.AutoMigrate(&models.SystemBackupRun{}))
+	require.NoError(t, gormDB.AutoMigrate(&SystemBackupRun{}))
 
 	policyID := "policy-1"
-	require.NoError(t, gormDB.Create(&models.SystemBackupRun{
-		PolicyID: policyID, Status: models.SystemBackupStatusSucceeded,
+	require.NoError(t, gormDB.Create(&SystemBackupRun{
+		PolicyID: policyID, Status: SystemBackupStatusSucceeded,
 		LocalSnapshotID: "snapshot-1", CreatedAt: time.Now().Add(-time.Hour),
 	}).Error)
-	require.NoError(t, gormDB.Create(&models.SystemBackupRun{
-		PolicyID: policyID, Status: models.SystemBackupStatusFailed,
+	require.NoError(t, gormDB.Create(&SystemBackupRun{
+		PolicyID: policyID, Status: SystemBackupStatusFailed,
 		CreatedAt: time.Now(),
 	}).Error)
 
 	service := &SystemBackupService{db: &database.DB{DB: gormDB}}
 	require.NoError(t, service.applyRetentionInternal(context.Background(), policyID, 1))
 
-	var backups []models.SystemBackupRun
+	var backups []SystemBackupRun
 	require.NoError(t, gormDB.Order("created_at ASC").Find(&backups).Error)
 	require.Len(t, backups, 2)
 	require.Equal(t, "snapshot-1", backups[0].LocalSnapshotID)
-	require.Equal(t, models.SystemBackupStatusFailed, backups[1].Status)
+	require.Equal(t, SystemBackupStatusFailed, backups[1].Status)
 }
 
 func TestRecoveryEnvironmentInternalIncludesRuntimeSecrets(t *testing.T) {

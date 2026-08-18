@@ -1,11 +1,12 @@
 package gitrepo
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+
 	"context"
 
 	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 	"github.com/getarcaneapp/arcane/types/v2/base"
@@ -34,7 +35,7 @@ type ListGitRepositoriesOutput struct {
 }
 
 type CreateGitRepositoryInput struct {
-	Body models.CreateGitRepositoryRequest
+	Body CreateGitRepositoryRequest
 }
 
 type CreateGitRepositoryOutput struct {
@@ -51,7 +52,7 @@ type GetGitRepositoryOutput struct {
 
 type UpdateGitRepositoryInput struct {
 	ID   string `path:"id" doc:"Repository ID"`
-	Body models.UpdateGitRepositoryRequest
+	Body UpdateGitRepositoryRequest
 }
 
 type UpdateGitRepositoryOutput struct {
@@ -148,11 +149,11 @@ func (h *GitRepositoryHandler) CreateRepository(ctx context.Context, input *Crea
 
 	repo, err := h.repoService.CreateRepository(ctx, input.Body, actor)
 	if err != nil {
-		apiErr := models.ToAPIError(err)
+		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to create git repository")
 	}
 
-	body, mapErr := handlerutil.MapOneAPIResponse[*models.GitRepository, gitops.GitRepository](repo, func(err error) string {
+	body, mapErr := handlerutil.MapOneAPIResponse[*GitRepository, gitops.GitRepository](repo, func(err error) string {
 		return "Failed to map git repository"
 	})
 	if mapErr != nil {
@@ -168,11 +169,11 @@ func (h *GitRepositoryHandler) CreateRepository(ctx context.Context, input *Crea
 func (h *GitRepositoryHandler) GetRepository(ctx context.Context, input *GetGitRepositoryInput) (*GetGitRepositoryOutput, error) {
 	repo, err := h.repoService.GetRepositoryByID(ctx, input.ID)
 	if err != nil {
-		apiErr := models.ToAPIError(err)
+		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to retrieve git repository")
 	}
 
-	body, mapErr := handlerutil.MapOneAPIResponse[*models.GitRepository, gitops.GitRepository](repo, func(err error) string {
+	body, mapErr := handlerutil.MapOneAPIResponse[*GitRepository, gitops.GitRepository](repo, func(err error) string {
 		return "Failed to map git repository"
 	})
 	if mapErr != nil {
@@ -190,11 +191,11 @@ func (h *GitRepositoryHandler) UpdateRepository(ctx context.Context, input *Upda
 
 	repo, err := h.repoService.UpdateRepository(ctx, input.ID, input.Body, actor)
 	if err != nil {
-		apiErr := models.ToAPIError(err)
+		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to update git repository")
 	}
 
-	body, mapErr := handlerutil.MapOneAPIResponse[*models.GitRepository, gitops.GitRepository](repo, func(err error) string {
+	body, mapErr := handlerutil.MapOneAPIResponse[*GitRepository, gitops.GitRepository](repo, func(err error) string {
 		return "Failed to map git repository"
 	})
 	if mapErr != nil {
@@ -211,7 +212,7 @@ func (h *GitRepositoryHandler) DeleteRepository(ctx context.Context, input *Dele
 	actor := handlerutil.CurrentActor(ctx)
 
 	if err := h.repoService.DeleteRepository(ctx, input.ID, actor); err != nil {
-		apiErr := models.ToAPIError(err)
+		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to delete git repository")
 	}
 
@@ -282,7 +283,7 @@ func (h *GitRepositoryHandler) BrowseFiles(ctx context.Context, input *BrowseFil
 // SyncRepositories syncs git repositories from a manager to this agent instance.
 func (h *GitRepositoryHandler) SyncRepositories(ctx context.Context, input *SyncGitRepositoriesInput) (*SyncGitRepositoriesOutput, error) {
 	if err := h.repoService.SyncRepositories(ctx, input.Body.Repositories); err != nil {
-		apiErr := models.ToAPIError(err)
+		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), errors.WithMessage(err, "Failed to sync git repositories").Error())
 	}
 

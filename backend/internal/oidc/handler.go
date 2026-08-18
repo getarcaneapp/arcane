@@ -1,6 +1,10 @@
 package oidc
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+
 	"context"
 	"log/slog"
 	"net/http"
@@ -14,7 +18,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/passkey"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
@@ -378,7 +381,7 @@ func (h *OidcHandler) HandleOidcCallback(ctx context.Context, input *HandleOidcC
 	clearStateCookie := cookie.BuildClearOidcStateCookieString(cookie.SecureCookieFromContext(ctx))
 	setCookies := []string{clearStateCookie}
 	if userModel.PasskeyMFAEnabled {
-		challenge, err := h.passkeyService.BeginMFAAuthentication(ctx, userModel.ID, meta, models.UserSessionSourceOidc)
+		challenge, err := h.passkeyService.BeginMFAAuthentication(ctx, userModel.ID, meta, session.UserSessionSourceOidc)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("Authentication failed")
 		}
@@ -391,7 +394,7 @@ func (h *OidcHandler) HandleOidcCallback(ctx context.Context, input *HandleOidcC
 			},
 		}, nil
 	}
-	tokenPair, err := h.authService.CompleteLogin(ctx, userModel, meta, models.UserSessionSourceOidc, "", models.JSON{
+	tokenPair, err := h.authService.CompleteLogin(ctx, userModel, meta, session.UserSessionSourceOidc, "", database.JSON{
 		"newUser": isNewUser,
 		"subject": userInfo.Subject,
 	})
@@ -480,7 +483,7 @@ func (h *OidcHandler) ExchangeDeviceToken(ctx context.Context, input *ExchangeDe
 	if userModel.PasskeyMFAEnabled {
 		return nil, huma.Error403Forbidden("mfa_required")
 	}
-	tokenPair, err := h.authService.CompleteLogin(ctx, userModel, meta, models.UserSessionSourceOidc, "", models.JSON{
+	tokenPair, err := h.authService.CompleteLogin(ctx, userModel, meta, session.UserSessionSourceOidc, "", database.JSON{
 		"newUser": isNewUser,
 		"subject": userInfo.Subject,
 	})
@@ -596,7 +599,7 @@ func (h *OidcHandler) DeleteOidcRoleMapping(ctx context.Context, input *DeleteOi
 	return out, nil
 }
 
-func toOidcMappingDTO(m *models.OidcRoleMapping) roletypes.OidcRoleMapping {
+func toOidcMappingDTO(m *role.OidcRoleMapping) roletypes.OidcRoleMapping {
 	return roletypes.OidcRoleMapping{
 		ID:            m.ID,
 		ClaimValue:    m.ClaimValue,

@@ -23,7 +23,6 @@ import (
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	workspacetypes "github.com/getarcaneapp/arcane/types/v2/workspace"
@@ -92,7 +91,7 @@ func TestUpdateVolumeWorkspaceValidationFailureReturnsNoWorkspace(t *testing.T) 
 		"volume",
 		volumetypes.WorkspaceUpdateManifest{},
 		nil,
-		models.User{},
+		common.User{},
 	)
 
 	require.Nil(t, workspace)
@@ -518,7 +517,7 @@ func TestUpdateVolumeWorkspaceRejectsStaleRevisionBeforeStaging(t *testing.T) {
 			RelativePath: "new.txt",
 			UploadIndex:  &uploadIndex,
 		}},
-	}, map[int][]byte{0: []byte("new content")}, models.User{})
+	}, map[int][]byte{0: []byte("new content")}, common.User{})
 
 	require.Nil(t, workspace)
 	require.ErrorIs(t, err, common.ErrVolumeWorkspaceConflict)

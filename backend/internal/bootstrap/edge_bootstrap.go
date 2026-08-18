@@ -1,6 +1,8 @@
 package bootstrap
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+
 	"context"
 	"encoding/json/v2"
 	"fmt"
@@ -13,7 +15,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/notification"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	notificationdto "github.com/getarcaneapp/arcane/types/v2/notification"
@@ -62,17 +63,17 @@ func registerEdgeTunnelRoutes(
 			return errors.WrapIf(err, "failed to dispatch edge notification")
 		}
 
-		var metadata models.JSON
+		var metadata database.JSON
 		if len(evt.MetadataJSON) > 0 {
-			metadata = models.JSON{}
+			metadata = database.JSON{}
 			if err := json.Unmarshal(evt.MetadataJSON, &metadata); err != nil {
 				return errors.WrapIf(err, "failed to decode event metadata")
 			}
 		}
 
 		req := event.CreateEventRequest{
-			Type:          models.EventType(evt.Type),
-			Severity:      models.EventSeverity(evt.Severity),
+			Type:          event.EventType(evt.Type),
+			Severity:      event.EventSeverity(evt.Severity),
 			Title:         evt.Title,
 			Description:   evt.Description,
 			ResourceType:  optionalStringPtr(evt.ResourceType),
@@ -123,7 +124,7 @@ func registerEdgeTunnelRoutes(
 		envIDCopy := envID
 		envNameCopy := envName
 		_, _ = eventService.CreateEvent(ctx, event.CreateEventRequest{
-			Type:          models.EventTypeEnvironmentMTLSEnroll,
+			Type:          event.EventTypeEnvironmentMTLSEnroll,
 			Severity:      edgeMTLSEnrollmentSeverityInternal(reenrolled),
 			Title:         "Edge mTLS enrollment",
 			Description:   "Edge agent completed mTLS enrollment from " + remoteAddr,
@@ -131,7 +132,7 @@ func registerEdgeTunnelRoutes(
 			ResourceID:    &envIDCopy,
 			ResourceName:  &envNameCopy,
 			EnvironmentID: &envIDCopy,
-			Metadata:      models.JSON{"remoteAddr": remoteAddr, "reenrollment": reenrolled},
+			Metadata:      database.JSON{"remoteAddr": remoteAddr, "reenrollment": reenrolled},
 		})
 		createEdgeMTLSIssueEventsInternal(ctx, eventService, envIDCopy, envNameCopy, remoteAddr, certIssued, caGenerated, reenrolled)
 	})
@@ -169,16 +170,16 @@ func createEdgeMTLSIssueEventsInternal(ctx context.Context, eventService *event.
 	}
 	if caGenerated {
 		_, _ = eventService.CreateEvent(ctx, event.CreateEventRequest{
-			Type:        models.EventTypeEnvironmentMTLSCAGenerated,
-			Severity:    models.EventSeverityInfo,
+			Type:        event.EventTypeEnvironmentMTLSCAGenerated,
+			Severity:    event.EventSeverityInfo,
 			Title:       "Edge mTLS CA generated",
 			Description: "Arcane generated a new edge mTLS certificate authority",
-			Metadata:    models.JSON{"remoteAddr": remoteAddr, "kind": "ca"},
+			Metadata:    database.JSON{"remoteAddr": remoteAddr, "kind": "ca"},
 		})
 	}
 	if certIssued {
 		_, _ = eventService.CreateEvent(ctx, event.CreateEventRequest{
-			Type:          models.EventTypeEnvironmentMTLSCertIssued,
+			Type:          event.EventTypeEnvironmentMTLSCertIssued,
 			Severity:      edgeMTLSCertIssuedSeverityInternal(reenrolled),
 			Title:         "Edge mTLS certificate issued",
 			Description:   fmt.Sprintf("Arcane issued an edge mTLS client certificate for environment '%s'", envName),
@@ -186,23 +187,23 @@ func createEdgeMTLSIssueEventsInternal(ctx context.Context, eventService *event.
 			ResourceID:    &envID,
 			ResourceName:  &envName,
 			EnvironmentID: &envID,
-			Metadata:      models.JSON{"remoteAddr": remoteAddr, "kind": "client", "reenrollment": reenrolled},
+			Metadata:      database.JSON{"remoteAddr": remoteAddr, "kind": "client", "reenrollment": reenrolled},
 		})
 	}
 }
 
-func edgeMTLSEnrollmentSeverityInternal(reenrolled bool) models.EventSeverity {
+func edgeMTLSEnrollmentSeverityInternal(reenrolled bool) event.EventSeverity {
 	if reenrolled {
-		return models.EventSeverityWarning
+		return event.EventSeverityWarning
 	}
-	return models.EventSeverityInfo
+	return event.EventSeverityInfo
 }
 
-func edgeMTLSCertIssuedSeverityInternal(reenrolled bool) models.EventSeverity {
+func edgeMTLSCertIssuedSeverityInternal(reenrolled bool) event.EventSeverity {
 	if reenrolled {
-		return models.EventSeverityWarning
+		return event.EventSeverityWarning
 	}
-	return models.EventSeverityInfo
+	return event.EventSeverityInfo
 }
 
 func optionalStringPtr(value string) *string {
@@ -234,8 +235,8 @@ func handleEdgeStatusChange(ctx context.Context, environmentService *environment
 	// re-register without the environment ever having gone offline (session
 	// replacement, transport reconnects), and those are not worth an event.
 	alreadyInState := env != nil &&
-		((connected && env.Status == string(models.EnvironmentStatusOnline)) ||
-			(!connected && env.Status == string(models.EnvironmentStatusOffline)))
+		((connected && env.Status == string(environment.EnvironmentStatusOnline)) ||
+			(!connected && env.Status == string(environment.EnvironmentStatusOffline)))
 	if !alreadyInState {
 		if err := createEdgeConnectionEvent(ctx, eventService, envID, envName, connected); err != nil {
 			slog.WarnContext(ctx, "Failed to create edge connection event", "environment_id", envID, "connected", connected, "error", err)
@@ -253,16 +254,16 @@ func createEdgeConnectionEvent(ctx context.Context, eventService *event.EventSer
 		return nil
 	}
 
-	eventType := models.EventTypeEnvironmentDisconnect
+	eventType := event.EventTypeEnvironmentDisconnect
 	title := "Edge Agent Disconnected"
 	description := fmt.Sprintf("Edge agent for environment '%s' disconnected", envName)
-	severity := models.EventSeverityWarning
+	severity := event.EventSeverityWarning
 
 	if connected {
-		eventType = models.EventTypeEnvironmentConnect
+		eventType = event.EventTypeEnvironmentConnect
 		title = "Edge Agent Connected"
 		description = fmt.Sprintf("Edge agent for environment '%s' connected", envName)
-		severity = models.EventSeveritySuccess
+		severity = event.EventSeveritySuccess
 	}
 
 	_, err := eventService.CreateEvent(ctx, event.CreateEventRequest{

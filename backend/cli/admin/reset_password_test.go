@@ -1,6 +1,8 @@
 package admin
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+
 	"context"
 	"testing"
 	"time"
@@ -11,7 +13,6 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
@@ -26,10 +27,10 @@ func newResetPasswordTestDBInternal(t *testing.T) *database.DB {
 	gormDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, gormDB.AutoMigrate(
-		&models.User{},
-		&models.UserSession{},
-		&models.Role{},
-		&models.UserRoleAssignment{},
+		&common.User{},
+		&session.UserSession{},
+		&role.Role{},
+		&role.UserRoleAssignment{},
 	))
 
 	db := &database.DB{DB: gormDB}
@@ -39,7 +40,7 @@ func newResetPasswordTestDBInternal(t *testing.T) *database.DB {
 	return db
 }
 
-func createGlobalAdminInternal(t *testing.T, db *database.DB) (*models.User, *role.RoleService, *user.UserService) {
+func createGlobalAdminInternal(t *testing.T, db *database.DB) (*common.User, *role.RoleService, *user.UserService) {
 	t.Helper()
 	ctx := context.Background()
 	roleService := role.NewRoleService(db)
@@ -47,14 +48,14 @@ func createGlobalAdminInternal(t *testing.T, db *database.DB) (*models.User, *ro
 	userService := user.NewUserService(db).WithRoleService(roleService)
 	passwordHash, err := userService.HashPassword("old-password")
 	require.NoError(t, err)
-	adminUser, err := userService.CreateUser(ctx, &models.User{
-		BaseModel:              models.BaseModel{ID: "admin-1"},
+	adminUser, err := userService.CreateUser(ctx, &common.User{
+		BaseModel:              database.BaseModel{ID: "admin-1"},
 		Username:               "arcane",
 		PasswordHash:           passwordHash,
 		RequiresPasswordChange: true,
 	})
 	require.NoError(t, err)
-	require.NoError(t, roleService.SetUserAssignments(ctx, adminUser.ID, []models.UserRoleAssignment{
+	require.NoError(t, roleService.SetUserAssignments(ctx, adminUser.ID, []role.UserRoleAssignment{
 		{RoleID: authz.BuiltInRoleAdmin},
 	}))
 
@@ -122,8 +123,8 @@ func TestResetPasswordInternalRejectsNonAdmin(t *testing.T) {
 	_, _, userService := createGlobalAdminInternal(t, db)
 	passwordHash, err := userService.HashPassword("old-password")
 	require.NoError(t, err)
-	nonAdmin, err := userService.CreateUser(ctx, &models.User{
-		BaseModel:              models.BaseModel{ID: "user-1"},
+	nonAdmin, err := userService.CreateUser(ctx, &common.User{
+		BaseModel:              database.BaseModel{ID: "user-1"},
 		Username:               "operator",
 		PasswordHash:           passwordHash,
 		RequiresPasswordChange: true,

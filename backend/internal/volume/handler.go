@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 
@@ -17,13 +19,13 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/upload"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	uploadtypes "github.com/getarcaneapp/arcane/types/v2/upload"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
@@ -163,7 +165,7 @@ type ListBackupsInput struct {
 
 type VolumeBackupPaginatedResponse struct {
 	Success    bool                    `json:"success"`
-	Data       []models.VolumeBackup   `json:"data"`
+	Data       []VolumeBackup          `json:"data"`
 	Pagination base.PaginationResponse `json:"pagination"`
 	Warnings   []string                `json:"warnings,omitempty"`
 }
@@ -179,7 +181,7 @@ type CreateBackupInput struct {
 }
 
 type CreateBackupOutput struct {
-	Body base.ApiResponse[*models.VolumeBackup]
+	Body base.ApiResponse[*VolumeBackup]
 }
 
 type GetVolumeBackupPolicyInput struct {
@@ -278,7 +280,7 @@ type UploadBackupInput struct {
 }
 
 type UploadBackupOutput struct {
-	Body base.ApiResponse[*models.VolumeBackup]
+	Body base.ApiResponse[*VolumeBackup]
 }
 
 // RegisterVolumes registers volume management routes using Huma.
@@ -491,7 +493,7 @@ func RegisterVolumes(api huma.API, dockerService *docker.DockerClientService, vo
 }
 
 func (h *VolumeHandler) DownloadBackup(ctx context.Context, input *DownloadBackupInput) (*huma.StreamResponse, error) {
-	user, _ := models.CurrentUserFromContext(ctx)
+	user, _ := common.CurrentUserFromContext(ctx)
 	reader, size, err := h.volumeService.DownloadBackup(ctx, input.BackupID, user)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
@@ -532,14 +534,14 @@ func (h *VolumeHandler) GetBackupPolicy(ctx context.Context, input *GetVolumeBac
 }
 
 func (h *VolumeHandler) UpdateBackupPolicy(ctx context.Context, input *UpdateVolumeBackupPolicyInput) (*UpdateVolumeBackupPolicyOutput, error) {
-	user, _ := models.CurrentUserFromContext(ctx)
+	user, _ := common.CurrentUserFromContext(ctx)
 	var policies *volumetypes.BackupPolicyCollection
 	var remoteResponse *base.ApiResponse[volumetypes.BackupPolicyCollection]
 	errorStatus := http.StatusBadRequest
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	_, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
-		Type:           models.ActivityTypeResourceAction,
+		Type:           activitytypes.TypeResourceAction,
 		ResourceType:   "volume_backup_policy",
 		ResourceID:     input.VolumeName,
 		ResourceName:   input.VolumeName,
@@ -547,7 +549,7 @@ func (h *VolumeHandler) UpdateBackupPolicy(ctx context.Context, input *UpdateVol
 		Step:           "Saving backup policies",
 		Message:        "Saving volume backup policies",
 		SuccessMessage: "Volume backup policies saved successfully",
-		Metadata: models.JSON{
+		Metadata: database.JSON{
 			"action":      "update_volume_backup_policy",
 			"policyCount": len(input.Body.Policies),
 		},
@@ -668,7 +670,7 @@ func (h *VolumeHandler) CreateVolume(ctx context.Context, input *CreateVolumeInp
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
-		Type:           models.ActivityTypeResourceAction,
+		Type:           activitytypes.TypeResourceAction,
 		ResourceType:   "volume",
 		ResourceID:     input.Body.Name,
 		ResourceName:   input.Body.Name,
@@ -676,7 +678,7 @@ func (h *VolumeHandler) CreateVolume(ctx context.Context, input *CreateVolumeInp
 		Step:           "Creating volume",
 		Message:        "Creating volume",
 		SuccessMessage: "Volume created successfully",
-		Metadata: models.JSON{
+		Metadata: database.JSON{
 			"action": "create_volume",
 			"driver": input.Body.Driver,
 		},
@@ -708,7 +710,7 @@ func (h *VolumeHandler) RemoveVolume(ctx context.Context, input *RemoveVolumeInp
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
-		Type:           models.ActivityTypeResourceAction,
+		Type:           activitytypes.TypeResourceAction,
 		ResourceType:   "volume",
 		ResourceID:     input.VolumeName,
 		ResourceName:   input.VolumeName,
@@ -716,7 +718,7 @@ func (h *VolumeHandler) RemoveVolume(ctx context.Context, input *RemoveVolumeInp
 		Step:           "Removing volume",
 		Message:        "Removing volume",
 		SuccessMessage: "Volume removed successfully",
-		Metadata: models.JSON{
+		Metadata: database.JSON{
 			"action": "remove_volume",
 			"force":  input.Force,
 		},
@@ -744,12 +746,12 @@ func (h *VolumeHandler) PruneVolumes(ctx context.Context, input *PruneVolumesInp
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
-		Type:           models.ActivityTypeResourceAction,
+		Type:           activitytypes.TypeResourceAction,
 		ResourceType:   "volume",
 		Step:           "Pruning unused volumes",
 		Message:        "Pruning unused volumes",
 		SuccessMessage: "Volumes pruned successfully",
-		Metadata:       models.JSON{"action": "prune_volumes"},
+		Metadata:       database.JSON{"action": "prune_volumes"},
 	}, func(runtimeCtx context.Context) error {
 		var pruneErr error
 		report, pruneErr = h.volumeService.PruneVolumes(runtimeCtx)
@@ -882,7 +884,7 @@ func (h *VolumeHandler) CreateBackup(ctx context.Context, input *CreateBackupInp
 		return nil, err
 	}
 
-	var backup *models.VolumeBackup
+	var backup *VolumeBackup
 	destination := volumetypes.BackupDestination("")
 	policyID := ""
 	s3DestinationID := ""
@@ -894,7 +896,7 @@ func (h *VolumeHandler) CreateBackup(ctx context.Context, input *CreateBackupInp
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
-		Type:           models.ActivityTypeResourceAction,
+		Type:           activitytypes.TypeResourceAction,
 		ResourceType:   "volume",
 		ResourceID:     input.VolumeName,
 		ResourceName:   input.VolumeName,
@@ -902,10 +904,10 @@ func (h *VolumeHandler) CreateBackup(ctx context.Context, input *CreateBackupInp
 		Step:           "Creating backup",
 		Message:        "Creating volume backup",
 		SuccessMessage: "Volume backup created successfully",
-		Metadata:       models.JSON{"action": "create_volume_backup", "destination": destination, "policyId": policyID, "s3DestinationId": s3DestinationID},
+		Metadata:       database.JSON{"action": "create_volume_backup", "destination": destination, "policyId": policyID, "s3DestinationId": s3DestinationID},
 	}, func(runtimeCtx context.Context) error {
 		var backupErr error
-		backup, backupErr = h.volumeService.CreateBackup(runtimeCtx, input.VolumeName, *user, models.VolumeBackupTriggerManual, volumetypes.CreateBackupRequest{
+		backup, backupErr = h.volumeService.CreateBackup(runtimeCtx, input.VolumeName, *user, VolumeBackupTriggerManual, volumetypes.CreateBackupRequest{
 			Destination: destination, PolicyID: policyID, S3DestinationID: s3DestinationID,
 		})
 		return backupErr
@@ -915,7 +917,7 @@ func (h *VolumeHandler) CreateBackup(ctx context.Context, input *CreateBackupInp
 	}
 	backup.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
 	return &CreateBackupOutput{
-		Body: base.ApiResponse[*models.VolumeBackup]{
+		Body: base.ApiResponse[*VolumeBackup]{
 			Success: true,
 			Data:    backup,
 		},
@@ -931,7 +933,7 @@ func (h *VolumeHandler) RestoreBackup(ctx context.Context, input *RestoreBackupI
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
-		Type:           models.ActivityTypeResourceAction,
+		Type:           activitytypes.TypeResourceAction,
 		ResourceType:   "volume",
 		ResourceID:     input.VolumeName,
 		ResourceName:   input.VolumeName,
@@ -939,7 +941,7 @@ func (h *VolumeHandler) RestoreBackup(ctx context.Context, input *RestoreBackupI
 		Step:           "Restoring backup",
 		Message:        "Restoring volume backup",
 		SuccessMessage: "Restore initiated successfully",
-		Metadata: models.JSON{
+		Metadata: database.JSON{
 			"action":   "restore_volume_backup",
 			"backupId": input.BackupID,
 		},
@@ -970,7 +972,7 @@ func (h *VolumeHandler) RestoreBackupFiles(ctx context.Context, input *RestoreBa
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
-		Type:           models.ActivityTypeResourceAction,
+		Type:           activitytypes.TypeResourceAction,
 		ResourceType:   "volume",
 		ResourceID:     input.VolumeName,
 		ResourceName:   input.VolumeName,
@@ -978,7 +980,7 @@ func (h *VolumeHandler) RestoreBackupFiles(ctx context.Context, input *RestoreBa
 		Step:           "Restoring backup files",
 		Message:        "Restoring files from volume backup",
 		SuccessMessage: "Restore initiated successfully",
-		Metadata: models.JSON{
+		Metadata: database.JSON{
 			"action":   "restore_volume_backup_files",
 			"backupId": input.BackupID,
 			"paths":    input.Body.Paths,
@@ -1031,11 +1033,11 @@ func (h *VolumeHandler) ListBackupFiles(ctx context.Context, input *ListBackupFi
 }
 
 func (h *VolumeHandler) DeleteBackup(ctx context.Context, input *DeleteBackupInput) (*DeleteBackupOutput, error) {
-	user, _ := models.CurrentUserFromContext(ctx)
+	user, _ := common.CurrentUserFromContext(ctx)
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
-		Type:           models.ActivityTypeResourceAction,
+		Type:           activitytypes.TypeResourceAction,
 		ResourceType:   "volume_backup",
 		ResourceID:     input.BackupID,
 		ResourceName:   input.BackupID,
@@ -1043,7 +1045,7 @@ func (h *VolumeHandler) DeleteBackup(ctx context.Context, input *DeleteBackupInp
 		Step:           "Deleting backup",
 		Message:        "Deleting volume backup",
 		SuccessMessage: "Backup deleted successfully",
-		Metadata: models.JSON{
+		Metadata: database.JSON{
 			"action":   "delete_volume_backup",
 			"backupId": input.BackupID,
 		},
@@ -1065,12 +1067,12 @@ func (h *VolumeHandler) UploadBackup(ctx context.Context, input *UploadBackupInp
 	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
-	user, _ := models.CurrentUserFromContext(ctx)
-	var backup *models.VolumeBackup
+	user, _ := common.CurrentUserFromContext(ctx)
+	var backup *VolumeBackup
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
-		Type:           models.ActivityTypeResourceAction,
+		Type:           activitytypes.TypeResourceAction,
 		ResourceType:   "volume_backup",
 		ResourceID:     input.BackupID,
 		ResourceName:   input.BackupID,
@@ -1078,7 +1080,7 @@ func (h *VolumeHandler) UploadBackup(ctx context.Context, input *UploadBackupInp
 		Step:           "Uploading backup",
 		Message:        "Uploading volume backup to S3",
 		SuccessMessage: "Volume backup uploaded successfully",
-		Metadata: models.JSON{
+		Metadata: database.JSON{
 			"action":          "upload_volume_backup",
 			"backupId":        input.BackupID,
 			"s3DestinationId": input.Body.S3DestinationID,
@@ -1092,7 +1094,7 @@ func (h *VolumeHandler) UploadBackup(ctx context.Context, input *UploadBackupInp
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 	backup.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
-	return &UploadBackupOutput{Body: base.ApiResponse[*models.VolumeBackup]{Success: true, Data: backup}}, nil
+	return &UploadBackupOutput{Body: base.ApiResponse[*VolumeBackup]{Success: true, Data: backup}}, nil
 }
 
 func (h *VolumeHandler) UploadAndRestore(ctx context.Context, input *UploadAndRestoreInput) (*UploadAndRestoreOutput, error) {
@@ -1113,7 +1115,7 @@ func (h *VolumeHandler) UploadAndRestore(ctx context.Context, input *UploadAndRe
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
-		Type:           models.ActivityTypeResourceAction,
+		Type:           activitytypes.TypeResourceAction,
 		ResourceType:   "volume",
 		ResourceID:     input.VolumeName,
 		ResourceName:   input.VolumeName,
@@ -1121,7 +1123,7 @@ func (h *VolumeHandler) UploadAndRestore(ctx context.Context, input *UploadAndRe
 		Step:           "Uploading backup",
 		Message:        "Uploading and restoring volume backup",
 		SuccessMessage: "Backup uploaded and restored successfully",
-		Metadata: models.JSON{
+		Metadata: database.JSON{
 			"action":   "upload_restore_volume_backup",
 			"filename": session.Filename,
 		},

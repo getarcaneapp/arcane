@@ -1,6 +1,8 @@
 package volume
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+
 	"context"
 	"io"
 	"mime/multipart"
@@ -9,11 +11,12 @@ import (
 	"strconv"
 	"strings"
 
+	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
+
 	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
@@ -147,9 +150,9 @@ func (h *VolumeHandler) UpdateVolumeWorkspace(ctx context.Context, input *Update
 	var result *workspacetypes.Workspace
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
-		EnvironmentID: input.EnvironmentID, Type: models.ActivityTypeResourceAction, ResourceType: "volume", ResourceID: input.VolumeName, ResourceName: input.VolumeName, User: user,
+		EnvironmentID: input.EnvironmentID, Type: activitytypes.TypeResourceAction, ResourceType: "volume", ResourceID: input.VolumeName, ResourceName: input.VolumeName, User: user,
 		Step: "Updating volume workspace", Message: "Updating volume workspace", SuccessMessage: "Volume workspace updated successfully",
-		Metadata: models.JSON{"action": "update_volume_workspace", "fileChangeCount": len(manifest.FileChanges)},
+		Metadata: database.JSON{"action": "update_volume_workspace", "fileChangeCount": len(manifest.FileChanges)},
 	}, func(runtimeCtx context.Context) error {
 		var updateErr error
 		result, updateErr = h.volumeService.UpdateVolumeWorkspace(runtimeCtx, input.VolumeName, manifest, uploads, *user)

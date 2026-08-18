@@ -10,6 +10,7 @@ import BaseAPIService from './api-service';
 export type DeployProjectOptions = {
 	pullPolicy?: 'missing' | 'always' | 'never';
 	forceRecreate?: boolean;
+	removeOrphans?: boolean;
 	recreateVolumes?: boolean;
 };
 
@@ -222,11 +223,20 @@ class ProjectService extends BaseAPIService {
 		await this.handleResponse(this.api.post(`/environments/${envId}/projects/${projectId}/unarchive`));
 	}
 
-	async redeployProject(projectId: string, onLine?: (data: any) => void): Promise<Project> {
+	redeployProject(projectId: string, options?: DeployProjectOptions): Promise<Project>;
+	redeployProject(projectId: string, onLine: (data: any) => void, options?: DeployProjectOptions): Promise<Project>;
+	async redeployProject(
+		projectId: string,
+		onLineOrOptions?: ((data: any) => void) | DeployProjectOptions,
+		maybeOptions?: DeployProjectOptions
+	): Promise<Project> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		const url = `/api/environments/${envId}/projects/${projectId}/redeploy`;
+		const onLine = typeof onLineOrOptions === 'function' ? onLineOrOptions : undefined;
+		const options = typeof onLineOrOptions === 'function' ? maybeOptions : onLineOrOptions;
 
-		await this.postProjectStream(url, {}, onLine, {
+		// Redeploy always pre-pulls server-side; pullPolicy only governs the up phase.
+		await this.postProjectStream(url, options ?? {}, onLine, {
 			startFailed: (status) => m.progress_deploy_failed_to_start({ status }),
 			streamFailed: () => m.progress_deploy_failed()
 		});

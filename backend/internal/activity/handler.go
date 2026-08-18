@@ -1,6 +1,8 @@
 package activity
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+
 	"context"
 	"fmt"
 	"hash/fnv"
@@ -15,7 +17,6 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
@@ -37,9 +38,9 @@ type ActivityHandler struct {
 
 type EnvironmentDependencies struct {
 	ProxyJSONRequest               handlerutil.RemoteJSONProxy
-	ListRemoteEnvironments         func(context.Context) ([]models.Environment, error)
-	GetActiveRemoteEnvironment     func(string) mo.Option[models.Environment]
-	ProxyJSONRequestForEnvironment func(context.Context, models.Environment, string, string, []byte, any) error
+	ListRemoteEnvironments         func(context.Context) ([]environment.Environment, error)
+	GetActiveRemoteEnvironment     func(string) mo.Option[environment.Environment]
+	ProxyJSONRequestForEnvironment func(context.Context, environment.Environment, string, string, []byte, any) error
 	ResolveEnvironmentName         func(context.Context, string) string
 }
 
@@ -269,7 +270,7 @@ func (h *ActivityHandler) proxyCancelActivityInternal(ctx context.Context, input
 // audit message, preferring the authenticated user and falling back to a name
 // forwarded from a proxying controller.
 func (h *ActivityHandler) cancelRequestedByInternal(ctx context.Context, forwarded string) string {
-	if user, ok := models.CurrentUserFromContext(ctx); ok && user != nil {
+	if user, ok := common.CurrentUserFromContext(ctx); ok && user != nil {
 		if user.DisplayName != nil && strings.TrimSpace(*user.DisplayName) != "" {
 			return strings.TrimSpace(*user.DisplayName)
 		}
@@ -339,7 +340,7 @@ func (h *ActivityHandler) RunLocalStreamProducer(ctx context.Context, limit int,
 // or removed while the stream is open are picked up without a reconnect.
 func (h *ActivityHandler) RunRemoteStreamPollers(ctx context.Context, ps *authz.PermissionSet, limit int, events chan<- activitytypes.StreamEvent) {
 	agg.ReconcilePollersByKey(ctx,
-		func(ctx context.Context) ([]models.Environment, error) {
+		func(ctx context.Context) ([]environment.Environment, error) {
 			environments, err := h.environment.ListRemoteEnvironments(ctx)
 			if err != nil {
 				return nil, err
@@ -352,13 +353,13 @@ func (h *ActivityHandler) RunRemoteStreamPollers(ctx context.Context, ps *authz.
 			}
 			return allowed, nil
 		},
-		func(environment models.Environment) string {
+		func(environment environment.Environment) string {
 			return environment.ID
 		},
 		activityStreamEnvironmentVersionInternal,
 		activityStreamEnvReconcileInterval,
 		"activity stream",
-		func(pollCtx context.Context, environment models.Environment) {
+		func(pollCtx context.Context, environment environment.Environment) {
 			// One shared poller per environment (and snapshot limit) serves
 			// every connected client; this subscriber only forwards its
 			// events onto this client's stream.
@@ -373,7 +374,7 @@ func (h *ActivityHandler) RunRemoteStreamPollers(ctx context.Context, ps *authz.
 		})
 }
 
-func activityStreamEnvironmentVersionInternal(environment models.Environment) string {
+func activityStreamEnvironmentVersionInternal(environment environment.Environment) string {
 	if environment.UpdatedAt == nil {
 		return environment.ID
 	}
@@ -408,7 +409,7 @@ func activitySnapshotFingerprintInternal(items []activitytypes.Activity) string 
 	return strconv.FormatUint(hash.Sum64(), 16)
 }
 
-func (h *ActivityHandler) runRemoteActivityStreamPollerInternal(ctx context.Context, environment models.Environment, limit int, publish func(activitytypes.StreamEvent)) {
+func (h *ActivityHandler) runRemoteActivityStreamPollerInternal(ctx context.Context, environment environment.Environment, limit int, publish func(activitytypes.StreamEvent)) {
 	environmentID := environment.ID
 	lastError := ""
 	lastFingerprint := ""
@@ -489,7 +490,7 @@ func (h *ActivityHandler) proxyListActivitiesInternal(ctx context.Context, input
 	return &ListActivitiesOutput{Body: *out}, nil
 }
 
-func (h *ActivityHandler) proxyListActivitiesForEnvironmentInternal(ctx context.Context, environment models.Environment, input *ListActivitiesInput) (*ListActivitiesOutput, error) {
+func (h *ActivityHandler) proxyListActivitiesForEnvironmentInternal(ctx context.Context, environment environment.Environment, input *ListActivitiesInput) (*ListActivitiesOutput, error) {
 	path := "/api/environments/0/activities?" + activityListQueryInternal(input).Encode()
 	var out base.Paginated[activitytypes.Activity]
 	if err := h.environment.ProxyJSONRequestForEnvironment(ctx, environment, http.MethodGet, path, nil, &out); err != nil {
@@ -542,14 +543,14 @@ func (h *ActivityHandler) applyActivityStreamEventSourceLabelInternal(ctx contex
 	}
 }
 
-func applyActivitySourceLabelsForEnvironmentInternal(environmentModel models.Environment, activities []activitytypes.Activity) {
+func applyActivitySourceLabelsForEnvironmentInternal(environmentModel environment.Environment, activities []activitytypes.Activity) {
 	sourceID, sourceName := activitySourceFromEnvironmentInternal(environmentModel)
 	for i := range activities {
 		applyActivitySourceInternal(&activities[i], sourceID, sourceName)
 	}
 }
 
-func activitySourceFromEnvironmentInternal(environmentModel models.Environment) (string, string) {
+func activitySourceFromEnvironmentInternal(environmentModel environment.Environment) (string, string) {
 	environmentID := environmentModel.ID
 	if environmentID == "" {
 		environmentID = environment.LocalEnvironmentID

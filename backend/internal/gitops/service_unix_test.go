@@ -3,13 +3,17 @@
 package gitops
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	projectpkg "github.com/getarcaneapp/arcane/backend/v2/internal/project"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+
 	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -43,20 +47,20 @@ func TestGitOpsSyncService_SyncProjectDirectory_PreservesUnreadableBindMountData
 	require.NoError(t, os.Chmod(secretPath, 0o000))
 	t.Cleanup(func() { _ = os.Chmod(secretPath, 0o644) })
 
-	project := &models.Project{
-		BaseModel: models.BaseModel{ID: "proj-unreadable-bindmount"},
+	project := &projectpkg.Project{
+		BaseModel: database.BaseModel{ID: "proj-unreadable-bindmount"},
 		Name:      "demo-project",
 		DirName:   new("demo-project"),
 		Path:      projectPath,
-		Status:    models.ProjectStatusStopped,
+		Status:    projectpkg.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
 	oldSyncedFilesJSON, err := json.Marshal([]string{"docker-compose.yaml"})
 	require.NoError(t, err)
 
-	sync := &models.GitOpsSync{
-		BaseModel:     models.BaseModel{ID: "sync-unreadable-bindmount"},
+	sync := &projectpkg.GitOpsSync{
+		BaseModel:     database.BaseModel{ID: "sync-unreadable-bindmount"},
 		Name:          "demo-sync",
 		EnvironmentID: "0",
 		RepositoryID:  "repo-1",
@@ -78,7 +82,7 @@ func TestGitOpsSyncService_SyncProjectDirectory_PreservesUnreadableBindMountData
 		},
 	}
 
-	updatedProject, _, created, _, err := svc.syncProjectDirectoryInternal(ctx, sync, syncFiles, models.User{})
+	updatedProject, _, created, _, err := svc.syncProjectDirectoryInternal(ctx, sync, syncFiles, common.User{})
 	require.NoError(t, err)
 	require.NotNil(t, updatedProject)
 	require.False(t, created)

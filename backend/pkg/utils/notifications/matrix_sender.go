@@ -8,14 +8,13 @@ import (
 
 	"emperror.dev/errors"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/nicholas-fedor/shoutrrr"
 	shoutrrrTypes "github.com/nicholas-fedor/shoutrrr/pkg/types"
 )
 
 // BuildMatrixURL converts MatrixConfig to Shoutrrr URL format
 // URL example: matrix://user:password@host[:port]/[?rooms=!roomID1[,roomAlias2]][&disableTLS=yes]
-func BuildMatrixURL(config models.MatrixConfig) (string, error) {
+func BuildMatrixURL(config MatrixConfig) (string, error) {
 	if config.Host == "" {
 		return "", errors.New("matrix host is required")
 	}
@@ -58,7 +57,7 @@ func BuildMatrixURL(config models.MatrixConfig) (string, error) {
 }
 
 // SendMatrix sends a message via Shoutrrr Matrix using proper service configuration
-func SendMatrix(ctx context.Context, config models.MatrixConfig, message string) error {
+func SendMatrix(ctx context.Context, config MatrixConfig, message string) error {
 	shoutrrrURL, err := BuildMatrixURL(config)
 	if err != nil {
 		return errors.WrapIf(err, "failed to build shoutrrr Matrix URL")

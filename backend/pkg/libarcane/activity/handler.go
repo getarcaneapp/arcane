@@ -1,6 +1,10 @@
 package activity
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+
 	"context"
 	"encoding/json/v2"
 	"fmt"
@@ -9,9 +13,10 @@ import (
 	"net/http"
 	"strings"
 
+	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
+
 	"emperror.dev/errors"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/samber/mo"
 )
@@ -44,15 +49,15 @@ func CancelledByContext(ctx context.Context) bool {
 
 type HandlerOptions struct {
 	EnvironmentID  string
-	Type           models.ActivityType
+	Type           activitytypes.Type
 	ResourceType   string
 	ResourceID     string
 	ResourceName   string
-	User           *models.User
+	User           *common.User
 	Step           string
 	Message        string
 	SuccessMessage string
-	Metadata       models.JSON
+	Metadata       database.JSON
 	// Queue routes the activity through the per-environment concurrency
 	// limiter so bulk long-running operations wait visibly instead of all
 	// running at once. Quick actions (start/stop/delete) must not set this.
@@ -95,14 +100,14 @@ func StartHandlerActivity(
 	ctx context.Context,
 	activityService Service,
 	environmentID string,
-	activityType models.ActivityType,
+	activityType activitytypes.Type,
 	resourceType string,
 	resourceID string,
 	resourceName string,
-	user *models.User,
+	user *common.User,
 	step string,
 	message string,
-	metadata models.JSON,
+	metadata database.JSON,
 	queue bool,
 ) (string, context.Context) {
 	if activityService == nil {
@@ -139,17 +144,17 @@ func CompleteHandlerActivity(ctx context.Context, activityService Service, activ
 		return
 	}
 
-	status := models.ActivityStatusSuccess
+	status := activitytypes.StatusSuccess
 	var errMessage *string
 	finalMessage := successMessage
 	if err != nil {
 		// Read the cancellation cause from the (possibly-tracked) work context
 		// before it is re-wrapped for the DB write below.
 		if CancelledByContext(ctx) {
-			status = models.ActivityStatusCancelled
+			status = activitytypes.StatusCancelled
 			finalMessage = cancelledMessage
 		} else {
-			status = models.ActivityStatusFailed
+			status = activitytypes.StatusFailed
 			errText := err.Error()
 			errMessage = &errText
 			finalMessage = errText

@@ -24,7 +24,6 @@ import (
 	"golang.org/x/oauth2"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/jwtclaims"
@@ -74,7 +73,7 @@ func NewOidcService(authService *auth.AuthService, settingsService *settings.Set
 	return service
 }
 
-func (s *OidcService) getEffectiveConfigInternal(ctx context.Context) (*models.OidcConfig, error) {
+func (s *OidcService) getEffectiveConfigInternal(ctx context.Context) (*settings.OidcConfig, error) {
 	oidcConfig, err := s.authService.GetOidcConfig(ctx)
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to get OIDC config")
@@ -149,11 +148,11 @@ func (s *OidcService) ensureOpenIDScopeInternal(scopes []string) []string {
 	return scopes
 }
 
-func (s *OidcService) hasManualEndpointsInternal(cfg *models.OidcConfig) bool {
+func (s *OidcService) hasManualEndpointsInternal(cfg *settings.OidcConfig) bool {
 	return cfg.AuthorizationEndpoint != "" || cfg.TokenEndpoint != "" || cfg.UserinfoEndpoint != ""
 }
 
-func (s *OidcService) getOauth2ConfigInternal(cfg *models.OidcConfig, provider *oidc.Provider, origin, mobileRedirectURI string) (oauth2.Config, error) {
+func (s *OidcService) getOauth2ConfigInternal(cfg *settings.OidcConfig, provider *oidc.Provider, origin, mobileRedirectURI string) (oauth2.Config, error) {
 	scopes := strings.Fields(cfg.Scopes)
 	if len(scopes) == 0 {
 		scopes = []string{"email", "profile"}
@@ -279,7 +278,7 @@ func (s *OidcService) GetOidcRedirectURL(origin string) string {
 	return baseUrl + "/auth/oidc/callback"
 }
 
-func (s *OidcService) getOrDiscoverProviderInternal(ctx context.Context, cfg *models.OidcConfig) (*oidc.Provider, error) {
+func (s *OidcService) getOrDiscoverProviderInternal(ctx context.Context, cfg *settings.OidcConfig) (*oidc.Provider, error) {
 	if s.providerCache == nil {
 		s.providerCache = hot.NewHotCache[oidcProviderKey, *oidc.Provider](hot.LRU, 4).Build()
 	}
@@ -330,7 +329,7 @@ func (s *OidcService) discoverProviderInternal(ctx context.Context, issuer strin
 	return nil, issuer, err
 }
 
-func (s *OidcService) exchangeTokenInternal(ctx context.Context, cfg *models.OidcConfig, provider *oidc.Provider, code string, verifier string, origin string, mobileRedirectURI string) (*oauth2.Token, error) {
+func (s *OidcService) exchangeTokenInternal(ctx context.Context, cfg *settings.OidcConfig, provider *oidc.Provider, code string, verifier string, origin string, mobileRedirectURI string) (*oauth2.Token, error) {
 	oauth2Config, err := s.getOauth2ConfigInternal(cfg, provider, origin, mobileRedirectURI)
 	if err != nil {
 		return nil, err
@@ -347,7 +346,7 @@ func (s *OidcService) exchangeTokenInternal(ctx context.Context, cfg *models.Oid
 	return token, nil
 }
 
-func (s *OidcService) fetchClaimsInternal(ctx context.Context, cfg *models.OidcConfig, provider *oidc.Provider, token *oauth2.Token, idToken *oidc.IDToken) (map[string]any, error) {
+func (s *OidcService) fetchClaimsInternal(ctx context.Context, cfg *settings.OidcConfig, provider *oidc.Provider, token *oauth2.Token, idToken *oidc.IDToken) (map[string]any, error) {
 	providerCtx := oidc.ClientContext(ctx, s.getHttpClientInternal(cfg.SkipTlsVerify))
 	var claims map[string]any
 
@@ -407,7 +406,7 @@ func (s *OidcService) fetchClaimsInternal(ctx context.Context, cfg *models.OidcC
 	return claims, nil
 }
 
-func (s *OidcService) fetchUserInfoClaimsInternal(ctx context.Context, cfg *models.OidcConfig, token *oauth2.Token) (map[string]any, error) {
+func (s *OidcService) fetchUserInfoClaimsInternal(ctx context.Context, cfg *settings.OidcConfig, token *oauth2.Token) (map[string]any, error) {
 	if cfg.UserinfoEndpoint == "" {
 		return nil, errors.New("userinfo endpoint not configured")
 	}
@@ -500,7 +499,7 @@ func (s *OidcService) validateStateInternal(state, storedState string) (*OidcSta
 	return stateData, nil
 }
 
-func (s *OidcService) verifyIDTokenInternal(ctx context.Context, provider *oidc.Provider, cfg *models.OidcConfig, token *oauth2.Token, nonce string) (*oidc.IDToken, string, error) {
+func (s *OidcService) verifyIDTokenInternal(ctx context.Context, provider *oidc.Provider, cfg *settings.OidcConfig, token *oauth2.Token, nonce string) (*oidc.IDToken, string, error) {
 	var rawIDToken string
 	if idTokenValue := token.Extra("id_token"); idTokenValue != nil {
 		if idTokenStr, ok := idTokenValue.(string); ok {
@@ -557,7 +556,7 @@ func (s *OidcService) verifyIDTokenInternal(ctx context.Context, provider *oidc.
 	return idToken, rawIDToken, nil
 }
 
-func (s *OidcService) buildUserInfoInternal(ctx context.Context, provider *oidc.Provider, cfg *models.OidcConfig, token *oauth2.Token, idToken *oidc.IDToken, rawIDToken string) (*authtypes.OidcUserInfo, *authtypes.OidcTokenResponse, error) {
+func (s *OidcService) buildUserInfoInternal(ctx context.Context, provider *oidc.Provider, cfg *settings.OidcConfig, token *oauth2.Token, idToken *oidc.IDToken, rawIDToken string) (*authtypes.OidcUserInfo, *authtypes.OidcTokenResponse, error) {
 	claims, err := s.fetchClaimsInternal(ctx, cfg, provider, token, idToken)
 	if err != nil {
 		slog.Error("HandleCallback: failed to fetch claims", "error", err)
@@ -690,7 +689,7 @@ func (s *OidcService) InitiateDeviceAuth(ctx context.Context) (*authtypes.OidcDe
 }
 
 // getDeviceAuthorizationEndpointInternal discovers or returns the configured device authorization endpoint.
-func (s *OidcService) getDeviceAuthorizationEndpointInternal(ctx context.Context, cfg *models.OidcConfig) (string, error) {
+func (s *OidcService) getDeviceAuthorizationEndpointInternal(ctx context.Context, cfg *settings.OidcConfig) (string, error) {
 	if cfg.DeviceAuthorizationEndpoint != "" {
 		return cfg.DeviceAuthorizationEndpoint, nil
 	}

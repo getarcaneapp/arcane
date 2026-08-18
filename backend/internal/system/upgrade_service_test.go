@@ -8,7 +8,6 @@ import (
 	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
 	containertypes "github.com/moby/moby/api/types/container"
 	mounttypes "github.com/moby/moby/api/types/mount"
@@ -292,12 +291,12 @@ func TestUpdateAllAgentFailureStatus(t *testing.T) {
 	tests := []struct {
 		name string
 		err  error
-		want models.EnvironmentUpdateResultStatus
+		want EnvironmentUpdateResultStatus
 	}{
-		{"tunnel request timed out", tunnelTimeout, models.EnvironmentUpdateResultStatusFailed},
-		{"request canceled mid-flight", fmt.Errorf("tunnel request failed: %w", context.Canceled), models.EnvironmentUpdateResultStatusFailed},
-		{"non-success status from agent", &remenv.StatusError{StatusCode: 502}, models.EnvironmentUpdateResultStatusFailed},
-		{"agent never connected", &remenv.TransportError{Err: errors.New("edge agent is not connected")}, models.EnvironmentUpdateResultStatusSkippedOffline},
+		{"tunnel request timed out", tunnelTimeout, EnvironmentUpdateResultStatusFailed},
+		{"request canceled mid-flight", fmt.Errorf("tunnel request failed: %w", context.Canceled), EnvironmentUpdateResultStatusFailed},
+		{"non-success status from agent", &remenv.StatusError{StatusCode: 502}, EnvironmentUpdateResultStatusFailed},
+		{"agent never connected", &remenv.TransportError{Err: errors.New("edge agent is not connected")}, EnvironmentUpdateResultStatusSkippedOffline},
 	}
 
 	for _, tt := range tests {

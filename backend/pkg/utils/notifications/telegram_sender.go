@@ -5,14 +5,13 @@ import (
 
 	"emperror.dev/errors"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/nicholas-fedor/shoutrrr"
 	"github.com/nicholas-fedor/shoutrrr/pkg/services/chat/telegram"
 	shoutrrrTypes "github.com/nicholas-fedor/shoutrrr/pkg/types"
 )
 
 // BuildTelegramURL converts TelegramConfig to Shoutrrr URL format using shoutrrr's Config
-func BuildTelegramURL(config models.TelegramConfig) (string, error) {
+func BuildTelegramURL(config TelegramConfig) (string, error) {
 	telegramConfig := &telegram.Config{
 		Token:        config.BotToken,
 		Chats:        config.ChatIDs,
@@ -40,7 +39,7 @@ func BuildTelegramURL(config models.TelegramConfig) (string, error) {
 }
 
 // SendTelegram sends a message via Shoutrrr Telegram using proper service configuration
-func SendTelegram(ctx context.Context, config models.TelegramConfig, message string) error {
+func SendTelegram(ctx context.Context, config TelegramConfig, message string) error {
 	if config.BotToken == "" {
 		return errors.New("telegram bot token is empty")
 	}

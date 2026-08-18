@@ -8,6 +8,7 @@
 	import { handleApiResultWithCallbacks } from '#lib/utils/api';
 	import { ArcaneButton, arcaneButtonVariants, type ArcaneButtonSize } from '#lib/components/arcane-button/index.js';
 	import DeploySplitButton from '#lib/components/deploy-split-button/deploy-split-button.svelte';
+	import DeployOptionsMenuItems from '#lib/components/deploy-split-button/deploy-options-menu-items.svelte';
 	import * as ButtonGroup from '#lib/components/ui/button-group/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { cn } from '#lib/utils';
@@ -105,12 +106,6 @@
 		if (key === 'refresh') refreshLoading = value;
 	}
 
-	function handleDeployPullPolicyChange(value: string) {
-		if (value === 'missing' || value === 'always' || value === 'never') {
-			deployOptionsStore.setPullPolicy(value);
-		}
-	}
-
 	const uiLoading = $derived({
 		start: !!(isLoading.start || loading?.start || startLoading),
 		stop: !!(isLoading.stop || loading?.stop || stopLoading),
@@ -162,12 +157,18 @@
 			tryCatch(
 				(type === 'container'
 					? containerService.redeployContainer(id)
-					: projectService.redeployProject(id, (frame) => {
-							redeployActivityId = activityIdFromStreamFrame(frame) ?? redeployActivityId;
-							if (watch) {
-								operationWatchStore.onLine(frame);
-							}
-						})) as Promise<ContainerDetailsDto | Project>
+					: projectService.redeployProject(
+							id,
+							(frame) => {
+								redeployActivityId = activityIdFromStreamFrame(frame) ?? redeployActivityId;
+								if (watch) {
+									operationWatchStore.onLine(frame);
+								}
+							},
+							// Taken inside mutationFn so cancelling the confirm dialog doesn't
+							// spend the single-shot recreateVolumes opt-in.
+							deployOptionsStore.takeRequestOptions()
+						)) as Promise<ContainerDetailsDto | Project>
 			),
 		onMutate: () => {
 			redeployActivityId = undefined;
@@ -505,7 +506,7 @@
 	}
 </script>
 
-{#snippet WatchDropdown(onWatch: () => void, disabled: boolean, size: 'default' | 'icon' = 'default')}
+{#snippet WatchDropdown(onWatch: () => void, disabled: boolean, size: 'default' | 'icon' = 'default', withDeployOptions = false)}
 	<DropdownMenu.Root>
 		<DropdownMenu.Trigger
 			class={cn(arcaneButtonVariants({ tone: 'outline-primary', size: 'icon' }), size === 'icon' && 'size-9 rounded-md')}
@@ -516,7 +517,11 @@
 		>
 			<ArrowDownIcon class="size-4" />
 		</DropdownMenu.Trigger>
-		<DropdownMenu.Content align="end">
+		<DropdownMenu.Content align="end" class={cn(withDeployOptions && 'w-72')}>
+			{#if withDeployOptions}
+				<DeployOptionsMenuItems />
+				<DropdownMenu.Separator />
+			{/if}
 			<DropdownMenu.Item onclick={() => onWatch()}>
 				<TerminalIcon class="size-4" />
 				{m.watch_output()}
@@ -540,7 +545,7 @@
 					onclick={() => confirmAction('redeploy')}
 					loading={uiLoading.redeploy}
 				/>
-				{@render WatchDropdown(() => confirmRedeploy(true), !!uiLoading.redeploy, size)}
+				{@render WatchDropdown(() => confirmRedeploy(true), !!uiLoading.redeploy, size, true)}
 			</ButtonGroup.Root>
 		{:else}
 			<ArcaneButton action="redeploy" {size} {showLabel} onclick={() => confirmAction('redeploy')} loading={uiLoading.redeploy} />
@@ -654,32 +659,6 @@
 						<DropdownMenu.Item onclick={() => handleDeploy()} disabled={uiLoading.start}>
 							{deployButtonLabel}
 						</DropdownMenu.Item>
-						{#if type === 'project'}
-							<DropdownMenu.Separator />
-							<DropdownMenu.Label>{m.settings_default_deploy_pull_policy()}</DropdownMenu.Label>
-							<DropdownMenu.RadioGroup value={deployOptionsStore.pullPolicy} onValueChange={handleDeployPullPolicyChange}>
-								<DropdownMenu.RadioItem value="missing">Missing</DropdownMenu.RadioItem>
-								<DropdownMenu.RadioItem value="always">
-									{m.common_always()}
-								</DropdownMenu.RadioItem>
-								<DropdownMenu.RadioItem value="never">
-									{m.common_never()}
-								</DropdownMenu.RadioItem>
-							</DropdownMenu.RadioGroup>
-							<DropdownMenu.Separator />
-							<DropdownMenu.CheckboxItem
-								checked={deployOptionsStore.forceRecreate}
-								onCheckedChange={(checked) => deployOptionsStore.setForceRecreate(checked === true)}
-							>
-								{m.deploy_force_recreate()}
-							</DropdownMenu.CheckboxItem>
-							<DropdownMenu.CheckboxItem
-								checked={deployOptionsStore.recreateVolumes}
-								onCheckedChange={(checked) => deployOptionsStore.setRecreateVolumes(checked === true)}
-							>
-								{m.deploy_recreate_volumes()}
-							</DropdownMenu.CheckboxItem>
-						{/if}
 					{/if}
 				{:else if isRunning}
 					{#if canStop}
@@ -692,6 +671,12 @@
 							{m.common_restart()}
 						</DropdownMenu.Item>
 					{/if}
+				{/if}
+
+				{#if type === 'project' && (canStart || canRedeploy)}
+					<DropdownMenu.Separator />
+					<DeployOptionsMenuItems />
+					<DropdownMenu.Separator />
 				{/if}
 
 				{#if type === 'container'}

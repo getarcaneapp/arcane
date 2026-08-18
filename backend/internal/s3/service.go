@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	s3config "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/s3"
 	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
@@ -78,7 +77,7 @@ func fromSyncDestinationInternal(input backuptypes.S3DestinationSync) s3config.C
 	}.Normalized()
 }
 
-func s3DestinationsToDTOsInternal(destinations []models.S3Destination) []backuptypes.S3Destination {
+func s3DestinationsToDTOsInternal(destinations []S3Destination) []backuptypes.S3Destination {
 	result := make([]backuptypes.S3Destination, len(destinations))
 	for i := range destinations {
 		result[i] = destinations[i].ToDTO()
@@ -87,8 +86,8 @@ func s3DestinationsToDTOsInternal(destinations []models.S3Destination) []backupt
 }
 
 func (s *S3DestinationService) ListS3Destinations(ctx context.Context, params pagination.QueryParams) ([]backuptypes.S3Destination, pagination.Response, error) {
-	var destinations []models.S3Destination
-	query := s.db.WithContext(ctx).Model(&models.S3Destination{})
+	var destinations []S3Destination
+	query := s.db.WithContext(ctx).Model(&S3Destination{})
 	if term := strings.TrimSpace(params.Search); term != "" {
 		pattern := "%" + term + "%"
 		query = query.Where("name LIKE ? OR endpoint LIKE ? OR bucket LIKE ? OR region LIKE ? OR prefix LIKE ?", pattern, pattern, pattern, pattern, pattern)
@@ -101,15 +100,15 @@ func (s *S3DestinationService) ListS3Destinations(ctx context.Context, params pa
 }
 
 func (s *S3DestinationService) ListAllS3Destinations(ctx context.Context) ([]backuptypes.S3Destination, error) {
-	var destinations []models.S3Destination
+	var destinations []S3Destination
 	if err := s.db.WithContext(ctx).Order("name ASC").Find(&destinations).Error; err != nil {
 		return nil, fmt.Errorf("failed to list S3 destinations: %w", err)
 	}
 	return s3DestinationsToDTOsInternal(destinations), nil
 }
 
-func (s *S3DestinationService) getS3DestinationModelInternal(ctx context.Context, id string) (*models.S3Destination, error) {
-	var destination models.S3Destination
+func (s *S3DestinationService) getS3DestinationModelInternal(ctx context.Context, id string) (*S3Destination, error) {
+	var destination S3Destination
 	if err := s.db.WithContext(ctx).Where("id = ?", strings.TrimSpace(id)).First(&destination).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrS3DestinationNotFound
@@ -128,7 +127,7 @@ func (s *S3DestinationService) GetS3Destination(ctx context.Context, id string) 
 	return &dto, nil
 }
 
-func applyS3ConfigurationInternal(destination *models.S3Destination, configuration s3config.Configuration, encryptedSecret string) {
+func applyS3ConfigurationInternal(destination *S3Destination, configuration s3config.Configuration, encryptedSecret string) {
 	destination.Name = configuration.Name
 	destination.Endpoint = configuration.Endpoint
 	destination.Bucket = configuration.Bucket
@@ -149,7 +148,7 @@ func (s *S3DestinationService) CreateS3Destination(ctx context.Context, input ba
 	if err != nil {
 		return nil, fmt.Errorf("failed to encrypt S3 secret access key: %w", err)
 	}
-	destination := &models.S3Destination{}
+	destination := &S3Destination{}
 	applyS3ConfigurationInternal(destination, configuration, encryptedSecret)
 	if err := s.db.WithContext(ctx).Create(destination).Error; err != nil {
 		return nil, fmt.Errorf("failed to create S3 destination: %w", err)
@@ -160,7 +159,7 @@ func (s *S3DestinationService) CreateS3Destination(ctx context.Context, input ba
 
 // storedConfigurationInternal returns the persisted configuration without the
 // decrypted secret, for comparing connection fields against an update.
-func storedConfigurationInternal(destination *models.S3Destination) s3config.Configuration {
+func storedConfigurationInternal(destination *S3Destination) s3config.Configuration {
 	return s3config.Configuration{
 		ID:             destination.ID,
 		Name:           destination.Name,
@@ -229,11 +228,11 @@ func (s *S3DestinationService) DeleteS3Destination(ctx context.Context, id strin
 func (s *S3DestinationService) DestinationInUse(ctx context.Context, id string) (bool, error) {
 	db := s.db.WithContext(ctx)
 	counts := []*gorm.DB{
-		db.Model(&models.SystemBackupRun{}).Where("s3_destination_id = ? AND remote_snapshot_id <> ''", id),
-		db.Model(&models.SystemBackupPolicy{}).Where("s3_destination_id = ? AND s3_enabled = ?", id, true),
-		db.Model(&models.VolumeBackup{}).Where("s3_destination_id = ? AND remote_snapshot_id <> ''", id),
-		db.Model(&models.VolumeBackupPolicy{}).Where("s3_destination_id = ? AND s3_enabled = ?", id, true),
-		db.Model(&models.SettingVariable{}).Where("key = ? AND value = ?", "backupS3DestinationId", id),
+		db.Table("system_backup_runs").Where("s3_destination_id = ? AND remote_snapshot_id <> ''", id),
+		db.Table("system_backup_policies").Where("s3_destination_id = ? AND s3_enabled = ?", id, true),
+		db.Table("volume_backups").Where("s3_destination_id = ? AND remote_snapshot_id <> ''", id),
+		db.Table("volume_backup_policies").Where("s3_destination_id = ? AND s3_enabled = ?", id, true),
+		db.Table("settings").Where("key = ? AND value = ?", "backupS3DestinationId", id),
 	}
 	for _, query := range counts {
 		var count int64
@@ -252,16 +251,16 @@ func (s *S3DestinationService) S3DestinationExists(ctx context.Context, id strin
 		return false
 	}
 	var count int64
-	return s.db.WithContext(ctx).Model(&models.S3Destination{}).Where("id = ?", id).Count(&count).Error == nil && count == 1
+	return s.db.WithContext(ctx).Model(&S3Destination{}).Where("id = ?", id).Count(&count).Error == nil && count == 1
 }
 
 // SyncS3Destinations replaces an agent's destination cache with the manager-owned destinations.
 func (s *S3DestinationService) SyncS3Destinations(ctx context.Context, destinations []backuptypes.S3DestinationSync) error {
-	var existing []models.S3Destination
+	var existing []S3Destination
 	if err := s.db.WithContext(ctx).Find(&existing).Error; err != nil {
 		return fmt.Errorf("failed to load existing S3 destinations: %w", err)
 	}
-	existingByID := make(map[string]*models.S3Destination, len(existing))
+	existingByID := make(map[string]*S3Destination, len(existing))
 	for i := range existing {
 		existingByID[existing[i].ID] = &existing[i]
 	}
@@ -281,7 +280,7 @@ func (s *S3DestinationService) SyncS3Destinations(ctx context.Context, destinati
 		}
 		destination, exists := existingByID[configuration.ID]
 		if !exists {
-			destination = &models.S3Destination{BaseModel: models.BaseModel{ID: configuration.ID}}
+			destination = &S3Destination{BaseModel: database.BaseModel{ID: configuration.ID}}
 		}
 		applyS3ConfigurationInternal(destination, configuration, encryptedSecret)
 		if !item.CreatedAt.IsZero() {

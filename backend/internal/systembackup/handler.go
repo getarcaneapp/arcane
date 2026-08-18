@@ -8,12 +8,13 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/samber/mo"
@@ -120,9 +121,9 @@ func (h *SystemBackupHandler) UpdatePolicies(ctx context.Context, input *UpdateS
 	}
 	var policies *backuptypes.SystemBackupPolicyCollection
 	_, err = activitylib.RunHandlerActivity(utils.ActivityRuntimeContext(ctx, h.appCtx), h.activity, activitylib.HandlerOptions{
-		EnvironmentID: "0", Type: models.ActivityTypeResourceAction, ResourceType: "system_backup", ResourceID: "policies", ResourceName: "Arcane", User: user,
+		EnvironmentID: "0", Type: activitytypes.TypeResourceAction, ResourceType: "system_backup", ResourceID: "policies", ResourceName: "Arcane", User: user,
 		Step: "Saving system backup schedules", Message: "Saving Arcane system backup schedules", SuccessMessage: "Arcane system backup schedules saved",
-		Metadata: models.JSON{"action": "update_system_backup_policies", "policyCount": len(input.Body.Policies)},
+		Metadata: database.JSON{"action": "update_system_backup_policies", "policyCount": len(input.Body.Policies)},
 	}, func(activityCtx context.Context) error {
 		var updateErr error
 		policies, updateErr = h.service.UpdatePolicies(activityCtx, input.Body.Policies)
@@ -149,9 +150,9 @@ func (h *SystemBackupHandler) SetRecoveryKey(ctx context.Context, input *SetSyst
 	}
 	var status *backuptypes.SystemBackupRecoveryKeyStatus
 	_, err = activitylib.RunHandlerActivity(utils.ActivityRuntimeContext(ctx, h.appCtx), h.activity, activitylib.HandlerOptions{
-		EnvironmentID: "0", Type: models.ActivityTypeResourceAction, ResourceType: "system_backup", ResourceID: "recovery-key", ResourceName: "Arcane", User: user,
+		EnvironmentID: "0", Type: activitytypes.TypeResourceAction, ResourceType: "system_backup", ResourceID: "recovery-key", ResourceName: "Arcane", User: user,
 		Step: "Configuring recovery key", Message: "Configuring Arcane system backup recovery key", SuccessMessage: "Arcane system backup recovery key configured",
-		Metadata: models.JSON{"action": "set_system_backup_recovery_key"},
+		Metadata: database.JSON{"action": "set_system_backup_recovery_key"},
 	}, func(activityCtx context.Context) error {
 		var setErr error
 		status, setErr = h.service.SetRecoveryKey(activityCtx, input.Body.RecoveryKey)
@@ -170,9 +171,9 @@ func (h *SystemBackupHandler) Discover(ctx context.Context, input *DiscoverSyste
 	}
 	count := 0
 	_, err = activitylib.RunHandlerActivity(utils.ActivityRuntimeContext(ctx, h.appCtx), h.activity, activitylib.HandlerOptions{
-		EnvironmentID: "0", Type: models.ActivityTypeResourceAction, ResourceType: "system_backup", ResourceID: "s3", ResourceName: "Arcane", User: user,
+		EnvironmentID: "0", Type: activitytypes.TypeResourceAction, ResourceType: "system_backup", ResourceID: "s3", ResourceName: "Arcane", User: user,
 		Step: "Discovering system backups", Message: "Discovering Arcane system backups in S3", SuccessMessage: "Arcane system backup discovery completed",
-		Metadata: models.JSON{"action": "discover_system_backups", "s3DestinationId": input.Body.S3DestinationID},
+		Metadata: database.JSON{"action": "discover_system_backups", "s3DestinationId": input.Body.S3DestinationID},
 	}, func(activityCtx context.Context) error {
 		var discoverErr error
 		count, discoverErr = h.service.DiscoverRemoteBackups(activityCtx, input.Body)
@@ -189,14 +190,14 @@ func (h *SystemBackupHandler) Create(ctx context.Context, input *CreateSystemBac
 	if err != nil {
 		return nil, err
 	}
-	var run *models.SystemBackupRun
+	var run *SystemBackupRun
 	_, err = activitylib.RunHandlerActivity(utils.ActivityRuntimeContext(ctx, h.appCtx), h.activity, activitylib.HandlerOptions{
-		EnvironmentID: "0", Type: models.ActivityTypeResourceAction, ResourceType: "system_backup", ResourceID: "arcane", ResourceName: "Arcane", User: user,
+		EnvironmentID: "0", Type: activitytypes.TypeResourceAction, ResourceType: "system_backup", ResourceID: "arcane", ResourceName: "Arcane", User: user,
 		Step: "Creating system backup", Message: "Creating Arcane system backup", SuccessMessage: "Arcane system backup created successfully",
-		Metadata: models.JSON{"action": "create_system_backup", "destination": input.Body.Destination, "s3DestinationId": input.Body.S3DestinationID, "policyId": input.Body.PolicyID},
+		Metadata: database.JSON{"action": "create_system_backup", "destination": input.Body.Destination, "s3DestinationId": input.Body.S3DestinationID, "policyId": input.Body.PolicyID},
 	}, func(activityCtx context.Context) error {
 		var e error
-		run, e = h.service.CreateBackup(activityCtx, *user, models.SystemBackupTriggerManual, input.Body)
+		run, e = h.service.CreateBackup(activityCtx, *user, SystemBackupTriggerManual, input.Body)
 		return e
 	})
 	if errors.Is(err, ErrSystemBackupAlreadyRunning) {
@@ -215,9 +216,9 @@ func (h *SystemBackupHandler) Restore(ctx context.Context, input *RestoreSystemB
 		return nil, err
 	}
 	activityID, err := activitylib.RunHandlerActivity(utils.ActivityRuntimeContext(ctx, h.appCtx), h.activity, activitylib.HandlerOptions{
-		EnvironmentID: "0", Type: models.ActivityTypeResourceAction, ResourceType: "system_backup", ResourceID: input.ID, ResourceName: "Arcane", User: user,
+		EnvironmentID: "0", Type: activitytypes.TypeResourceAction, ResourceType: "system_backup", ResourceID: input.ID, ResourceName: "Arcane", User: user,
 		Step: "Preparing system restore", Message: "Preparing Arcane system restore", SuccessMessage: "Arcane system restore started",
-		Metadata: models.JSON{"action": "restore_system_backup", "backupId": input.ID},
+		Metadata: database.JSON{"action": "restore_system_backup", "backupId": input.ID},
 	}, func(activityCtx context.Context) error {
 		return h.service.RestoreBackup(activityCtx, input.ID, input.Body.RecoveryKey, *user)
 	})
@@ -232,11 +233,11 @@ func (h *SystemBackupHandler) Upload(ctx context.Context, input *UploadSystemBac
 	if err != nil {
 		return nil, err
 	}
-	var run *models.SystemBackupRun
+	var run *SystemBackupRun
 	_, err = activitylib.RunHandlerActivity(utils.ActivityRuntimeContext(ctx, h.appCtx), h.activity, activitylib.HandlerOptions{
-		EnvironmentID: "0", Type: models.ActivityTypeResourceAction, ResourceType: "system_backup", ResourceID: input.ID, ResourceName: "Arcane", User: user,
+		EnvironmentID: "0", Type: activitytypes.TypeResourceAction, ResourceType: "system_backup", ResourceID: input.ID, ResourceName: "Arcane", User: user,
 		Step: "Uploading system backup", Message: "Uploading Arcane system backup", SuccessMessage: "Arcane system backup uploaded successfully",
-		Metadata: models.JSON{"action": "upload_system_backup", "backupId": input.ID, "s3DestinationId": input.Body.S3DestinationID},
+		Metadata: database.JSON{"action": "upload_system_backup", "backupId": input.ID, "s3DestinationId": input.Body.S3DestinationID},
 	}, func(activityCtx context.Context) error {
 		var e error
 		run, e = h.service.UploadBackup(activityCtx, input.ID, input.Body)
@@ -255,9 +256,9 @@ func (h *SystemBackupHandler) Delete(ctx context.Context, input *DeleteSystemBac
 		return nil, err
 	}
 	activityID, err := activitylib.RunHandlerActivity(utils.ActivityRuntimeContext(ctx, h.appCtx), h.activity, activitylib.HandlerOptions{
-		EnvironmentID: "0", Type: models.ActivityTypeResourceAction, ResourceType: "system_backup", ResourceID: input.ID, ResourceName: "Arcane", User: user,
+		EnvironmentID: "0", Type: activitytypes.TypeResourceAction, ResourceType: "system_backup", ResourceID: input.ID, ResourceName: "Arcane", User: user,
 		Step: "Deleting system backup", Message: "Deleting Arcane system backup", SuccessMessage: "Arcane system backup deleted successfully",
-		Metadata: models.JSON{"action": "delete_system_backup", "backupId": input.ID},
+		Metadata: database.JSON{"action": "delete_system_backup", "backupId": input.ID},
 	}, func(activityCtx context.Context) error {
 		return h.service.DeleteBackup(activityCtx, input.ID, input.Body.RecoveryKey)
 	})

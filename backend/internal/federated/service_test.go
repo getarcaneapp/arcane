@@ -27,7 +27,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
@@ -120,14 +119,14 @@ func setupFederatedCredentialServiceTestDBInternal(t *testing.T) *database.DB {
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(
-		&models.SettingVariable{},
-		&models.User{},
-		&models.UserSession{},
-		&models.Role{},
-		&models.UserRoleAssignment{},
-		&models.FederatedCredential{},
-		&models.FederatedTokenReplay{},
-		&models.Event{},
+		&settings.SettingVariable{},
+		&common.User{},
+		&session.UserSession{},
+		&role.Role{},
+		&role.UserRoleAssignment{},
+		&FederatedCredential{},
+		&FederatedTokenReplay{},
+		&event.Event{},
 	))
 
 	sqlDB, err := db.DB()
@@ -155,34 +154,34 @@ func setupFederatedCredentialServiceInternal(t *testing.T, issuer *federatedTest
 
 	service := NewFederatedCredentialService(db, authSvc, userSvc, settingsSvc, eventSvc, issuer.server.Client()).WithRoleService(roleSvc)
 
-	role := models.Role{
-		BaseModel:   models.BaseModel{ID: "role-federated-viewer"},
+	viewerRole := role.Role{
+		BaseModel:   database.BaseModel{ID: "role-federated-viewer"},
 		Name:        "Federated Viewer",
-		Permissions: models.StringSlice{authz.PermProjectsList},
+		Permissions: database.StringSlice{authz.PermProjectsList},
 	}
-	require.NoError(t, db.WithContext(ctx).Create(&role).Error)
+	require.NoError(t, db.WithContext(ctx).Create(&viewerRole).Error)
 
-	serviceUser := models.User{
-		BaseModel:        models.BaseModel{ID: "user-federated-service"},
+	serviceUser := common.User{
+		BaseModel:        database.BaseModel{ID: "user-federated-service"},
 		Username:         "svc-federated-demo",
 		IsServiceAccount: true,
 	}
 	require.NoError(t, db.WithContext(ctx).Create(&serviceUser).Error)
-	require.NoError(t, db.WithContext(ctx).Create(&models.UserRoleAssignment{
+	require.NoError(t, db.WithContext(ctx).Create(&role.UserRoleAssignment{
 		UserID: serviceUser.ID,
-		RoleID: role.ID,
+		RoleID: viewerRole.ID,
 	}).Error)
 
-	credential := models.FederatedCredential{
-		BaseModel:       models.BaseModel{ID: "cred-github-actions"},
+	credential := FederatedCredential{
+		BaseModel:       database.BaseModel{ID: "cred-github-actions"},
 		Name:            "GitHub Actions",
 		Enabled:         true,
 		IssuerURL:       issuer.IssuerURL,
-		Audiences:       models.StringSlice{"arcane-ci"},
+		Audiences:       database.StringSlice{"arcane-ci"},
 		SubjectClaim:    "sub",
 		SubjectMatch:    "repo:getarcaneapp/arcane:*",
 		MatchType:       federatedtypes.MatchTypeGlob,
-		RoleID:          role.ID,
+		RoleID:          viewerRole.ID,
 		IdentityUserID:  serviceUser.ID,
 		TokenTTLSeconds: 900,
 	}
@@ -247,11 +246,11 @@ func TestFederatedCredentialServiceExchangeToken(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, "user-federated-service", user.ID)
 
-			var session models.UserSession
-			require.NoError(t, db.WithContext(ctx).Where("id = ?", sessionID).First(&session).Error)
-			require.Equal(t, models.UserSessionSourceFederated, session.Source)
-			require.NotNil(t, session.FederatedCredentialID)
-			require.Equal(t, "cred-github-actions", *session.FederatedCredentialID)
+			var userSession session.UserSession
+			require.NoError(t, db.WithContext(ctx).Where("id = ?", sessionID).First(&userSession).Error)
+			require.Equal(t, session.UserSessionSourceFederated, userSession.Source)
+			require.NotNil(t, userSession.FederatedCredentialID)
+			require.Equal(t, "cred-github-actions", *userSession.FederatedCredentialID)
 		})
 	}
 }
@@ -295,7 +294,7 @@ func TestFederatedCredentialServiceExchangeTokenRejectsExpiredCredentialInternal
 	service, _, db := setupFederatedCredentialServiceInternal(t, issuer)
 	expiredAt := time.Now().Add(-time.Minute)
 	require.NoError(t, db.WithContext(context.Background()).
-		Model(&models.FederatedCredential{}).
+		Model(&FederatedCredential{}).
 		Where("id = ?", "cred-github-actions").
 		Update("expires_at", expiredAt).Error)
 

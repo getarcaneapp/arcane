@@ -18,7 +18,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/stretchr/testify/assert"
 )
@@ -28,8 +27,8 @@ func setupAnalyticsStateServicesInternal(t *testing.T) (*database.DB, *settings.
 	ctx := context.Background()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&models.SettingVariable{}))
-	require.NoError(t, db.AutoMigrate(&models.KVEntry{}))
+	require.NoError(t, db.AutoMigrate(&settings.SettingVariable{}))
+	require.NoError(t, db.AutoMigrate(&kv.KVEntry{}))
 
 	wrappedDB := &database.DB{DB: db}
 	settingsService, err := newSettingsServiceForTestInternal(t, ctx, wrappedDB)

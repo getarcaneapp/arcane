@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 	"github.com/stretchr/testify/require"
 )
@@ -62,7 +61,7 @@ func TestWriterContinuesActivityCaptureWhenResponseWriterFailsInternal(t *testin
 	}, time.Second, 10*time.Millisecond)
 	messages, _ := appender.recorded()
 	require.Equal(t, "Downloading layer", messages[0].Message)
-	require.Equal(t, models.ActivityMessageLevelInfo, messages[0].Level)
+	require.Equal(t, activitytypes.MessageLevelInfo, messages[0].Level)
 }
 
 func TestWriterRecordsLogAndErrorFramesVerbatimInternal(t *testing.T) {
@@ -79,9 +78,9 @@ func TestWriterRecordsLogAndErrorFramesVerbatimInternal(t *testing.T) {
 	}, time.Second, 10*time.Millisecond)
 	messages, _ := appender.recorded()
 	require.Equal(t, "Container web-1  Created", messages[0].Message)
-	require.Equal(t, models.ActivityMessageLevelInfo, messages[0].Level)
+	require.Equal(t, activitytypes.MessageLevelInfo, messages[0].Level)
 	require.Equal(t, "Error response from daemon: conflict", messages[1].Message)
-	require.Equal(t, models.ActivityMessageLevelError, messages[1].Level)
+	require.Equal(t, activitytypes.MessageLevelError, messages[1].Level)
 }
 
 // gatedAppender blocks its first AppendMessages call until release is

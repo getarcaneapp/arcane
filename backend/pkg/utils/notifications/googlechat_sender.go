@@ -7,7 +7,6 @@ import (
 
 	"emperror.dev/errors"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/nicholas-fedor/shoutrrr"
 	shoutrrrTypes "github.com/nicholas-fedor/shoutrrr/pkg/types"
 )
@@ -15,7 +14,7 @@ import (
 // BuildGoogleChatURL converts GoogleChatConfig to Shoutrrr URL format by
 // swapping the incoming webhook URL's scheme to googlechat while preserving
 // the host, path and the key/token query parameters.
-func BuildGoogleChatURL(config models.GoogleChatConfig) (string, error) {
+func BuildGoogleChatURL(config GoogleChatConfig) (string, error) {
 	if config.WebhookURL == "" {
 		return "", errors.New("google chat webhook URL is empty")
 	}
@@ -58,7 +57,7 @@ func BuildGoogleChatURL(config models.GoogleChatConfig) (string, error) {
 // SendGoogleChat sends a message via Shoutrrr's Google Chat service. The
 // service posts plain text only ({"text": ...}) and ignores params, so the
 // title is expected to already be part of the message body.
-func SendGoogleChat(ctx context.Context, config models.GoogleChatConfig, message string) error {
+func SendGoogleChat(ctx context.Context, config GoogleChatConfig, message string) error {
 	shoutrrrURL, err := BuildGoogleChatURL(config)
 	if err != nil {
 		return errors.WrapIf(err, "failed to build shoutrrr Google Chat URL")

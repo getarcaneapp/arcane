@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
+
 	"emperror.dev/errors"
 
 	"github.com/compose-spec/compose-go/v2/loader"
@@ -22,9 +24,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/notification"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
+	projectpkg "github.com/getarcaneapp/arcane/backend/v2/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
@@ -58,7 +59,7 @@ type updaterDependenciesInternal struct {
 	DB                     *database.DB
 	Docker                 *docker.DockerClientService
 	Settings               *settings.SettingsService
-	Projects               *project.ProjectService
+	Projects               *projectpkg.ProjectService
 	ImagePuller            *image.ImageService
 	ImageUpdates           *imageupdate.ImageUpdateService
 	RegistryDigestResolver *registry.ContainerRegistryService
@@ -66,14 +67,14 @@ type updaterDependenciesInternal struct {
 	Notifications          *notification.NotificationService
 	SelfUpgrade            selfUpgradeServiceInternal
 	Activity               *activity.ActivityService
-	SystemUser             models.User
+	SystemUser             common.User
 	Logger                 *slog.Logger
 }
 
 type selfUpgradeServiceInternal interface {
 	// TriggerUpgradeViaCLI returns the spawned upgrader container's ID, which this
 	// service does not need — only update-all's manager step uses it.
-	TriggerUpgradeViaCLI(ctx context.Context, user models.User, target updater.SelfUpdateTarget) (string, error)
+	TriggerUpgradeViaCLI(ctx context.Context, user common.User, target updater.SelfUpdateTarget) (string, error)
 }
 
 // NewUpdaterService constructs the Arcane updater facade.
@@ -81,7 +82,7 @@ func NewUpdaterService(
 	db *database.DB,
 	settings *settings.SettingsService,
 	docker *docker.DockerClientService,
-	projects *project.ProjectService,
+	projects *projectpkg.ProjectService,
 	imageUpdates *imageupdate.ImageUpdateService,
 	registries *registry.ContainerRegistryService,
 	events *event.EventService,
@@ -103,7 +104,7 @@ func NewUpdaterService(
 			Notifications:          notifications,
 			SelfUpgrade:            upgrade,
 			Activity:               activityService,
-			SystemUser:             models.SystemUser,
+			SystemUser:             common.SystemUser,
 		},
 	}
 	engine, err := updater.New(service.configInternal())
@@ -200,7 +201,7 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, options arcaneupdater
 	runCtx, cancelRun := context.WithTimeout(ctx, timeouts.DefaultAutoUpdateApply)
 	defer cancelRun()
 
-	s.recordAutoUpdateEventInternal(ctx, models.EventSeverityInfo, models.JSON{
+	s.recordAutoUpdateEventInternal(ctx, event.EventSeverityInfo, database.JSON{
 		"phase":       "start",
 		"dryRun":      options.DryRun,
 		"forceUpdate": options.ForceUpdate,
@@ -234,7 +235,7 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, options arcaneupdater
 		}
 	}
 
-	s.recordAutoUpdateEventInternal(ctx, models.EventSeverityInfo, models.JSON{
+	s.recordAutoUpdateEventInternal(ctx, event.EventSeverityInfo, database.JSON{
 		"phase":     "complete",
 		"checked":   out.Checked,
 		"updated":   out.Updated,
@@ -437,8 +438,8 @@ func (s *UpdaterService) GetStatus() arcaneupdater.Status {
 }
 
 // GetHistory returns the most recent auto-update history records, newest first.
-func (s *UpdaterService) GetHistory(ctx context.Context, limit int) ([]models.AutoUpdateRecord, error) {
-	var records []models.AutoUpdateRecord
+func (s *UpdaterService) GetHistory(ctx context.Context, limit int) ([]AutoUpdateRecord, error) {
+	var records []AutoUpdateRecord
 	query := s.deps.DB.WithContext(ctx).Order("start_time DESC")
 	if limit > 0 {
 		query = query.Limit(limit)
@@ -478,13 +479,13 @@ func (s *UpdaterService) BeginProjectUpdate(projectID string) func() {
 	return s.engineInternal().BeginProjectUpdate(projectID)
 }
 
-func (s *UpdaterService) recordAutoUpdateEventInternal(ctx context.Context, severity models.EventSeverity, metadata models.JSON) {
+func (s *UpdaterService) recordAutoUpdateEventInternal(ctx context.Context, severity event.EventSeverity, metadata database.JSON) {
 	if s.deps.Events == nil {
 		return
 	}
 	phase, _ := metadata["phase"].(string)
 	_, err := s.deps.Events.CreateEvent(ctx, event.CreateEventRequest{
-		Type:          models.EventTypeSystemAutoUpdate,
+		Type:          event.EventTypeSystemAutoUpdate,
 		Severity:      severity,
 		Title:         autoUpdateEventTitleInternal(phase, metadata),
 		ResourceType:  mo.EmptyableToOption(strings.TrimSpace("system")).ToPointer(),
@@ -504,7 +505,7 @@ func instanceTypeFromLabelsInternal(labelMap map[string]string) string {
 	return "server"
 }
 
-func autoUpdateEventTitleInternal(phase string, metadata models.JSON) string {
+func autoUpdateEventTitleInternal(phase string, metadata database.JSON) string {
 	switch phase {
 	case "start":
 		return "Auto-update run started"
@@ -598,7 +599,7 @@ func (s *UpdaterService) PendingImageUpdates(ctx context.Context) ([]updater.Ima
 		return nil, common.Classify(common.ErrUnavailable, errors.New("database unavailable"))
 	}
 
-	var records []models.ImageUpdateRecord
+	var records []imageupdate.ImageUpdateRecord
 	if err := s.deps.DB.WithContext(ctx).Where("has_update = ?", true).Find(&records).Error; err != nil {
 		return nil, errors.WrapIf(err, "query pending image updates")
 	}
@@ -712,7 +713,7 @@ func (s *UpdaterService) markSelfUpdateTriggeredInternal(ctx context.Context, ta
 		message = "Self-update initiated — Arcane will restart with " + ref
 	}
 	s.appendAutoUpdateActivityMessageInternal(ctx, activityID, message, "Self-update", 90)
-	if err := s.deps.Activity.PatchActivityMetadata(ctx, activityID, models.JSON{"selfUpdateTriggered": true}); err != nil {
+	if err := s.deps.Activity.PatchActivityMetadata(ctx, activityID, database.JSON{"selfUpdateTriggered": true}); err != nil {
 		slog.DebugContext(ctx, "failed to mark self-update on activity", "activityId", activityID, "error", err)
 	}
 }
@@ -732,12 +733,12 @@ func (s *UpdaterService) Notify(ctx context.Context, notification updater.Notifi
 }
 
 // RecordEvent records updater lifecycle events in Arcane's event stream.
-func (s *UpdaterService) RecordEvent(ctx context.Context, event updater.Event) error {
+func (s *UpdaterService) RecordEvent(ctx context.Context, evt updater.Event) error {
 	if s == nil {
 		return nil
 	}
 
-	eventType, ok := containerEventTypeInternal(event.Phase).Get()
+	eventType, ok := containerEventTypeInternal(evt.Phase).Get()
 	if ok {
 		if s.deps.Events == nil {
 			return nil
@@ -745,43 +746,43 @@ func (s *UpdaterService) RecordEvent(ctx context.Context, event updater.Event) e
 		return s.deps.Events.LogContainerEvent(
 			ctx,
 			eventType,
-			event.ResourceID,
-			event.ResourceName,
+			evt.ResourceID,
+			evt.ResourceName,
 			s.deps.SystemUser.ID,
 			s.deps.SystemUser.Username,
 			"0",
-			event.Metadata,
+			evt.Metadata,
 		)
 	}
 
-	severity := models.EventSeverityInfo
-	if strings.EqualFold(event.Severity, "error") {
-		severity = models.EventSeverityError
+	severity := event.EventSeverityInfo
+	if strings.EqualFold(evt.Severity, "error") {
+		severity = event.EventSeverityError
 	}
-	s.recordAutoUpdateEventInternal(ctx, severity, models.JSON{
-		"phase":        event.Phase,
-		"resourceId":   event.ResourceID,
-		"resourceName": event.ResourceName,
-		"resourceType": event.ResourceType,
+	s.recordAutoUpdateEventInternal(ctx, severity, database.JSON{
+		"phase":        evt.Phase,
+		"resourceId":   evt.ResourceID,
+		"resourceName": evt.ResourceName,
+		"resourceType": evt.ResourceType,
 		"time":         time.Now().UTC().Format(time.RFC3339),
 	})
 	return nil
 }
 
-func containerEventTypeInternal(phase string) mo.Option[models.EventType] {
+func containerEventTypeInternal(phase string) mo.Option[event.EventType] {
 	switch phase {
 	case "container_stop":
-		return mo.Some(models.EventTypeContainerStop)
+		return mo.Some(event.EventTypeContainerStop)
 	case "container_delete":
-		return mo.Some(models.EventTypeContainerDelete)
+		return mo.Some(event.EventTypeContainerDelete)
 	case "container_create":
-		return mo.Some(models.EventTypeContainerCreate)
+		return mo.Some(event.EventTypeContainerCreate)
 	case "container_start":
-		return mo.Some(models.EventTypeContainerStart)
+		return mo.Some(event.EventTypeContainerStart)
 	case "container_update":
-		return mo.Some(models.EventTypeContainerUpdate)
+		return mo.Some(event.EventTypeContainerUpdate)
 	default:
-		return mo.None[models.EventType]()
+		return mo.None[event.EventType]()
 	}
 }
 
@@ -809,13 +810,13 @@ func (s *UpdaterService) startAutoUpdateActivityInternal(ctx context.Context, dr
 	}
 	activity, err := s.deps.Activity.StartActivity(ctx, activitylib.StartRequest{
 		EnvironmentID: "0",
-		Type:          models.ActivityTypeAutoUpdate,
+		Type:          activitytypes.TypeAutoUpdate,
 		Queue:         true,
 		ResourceType:  mo.EmptyableToOption(strings.TrimSpace("system")).ToPointer(),
 		ResourceName:  mo.EmptyableToOption(strings.TrimSpace("Auto update")).ToPointer(),
 		Step:          "Planning updates",
 		LatestMessage: "Auto-update run started",
-		Metadata:      models.JSON{"dryRun": dryRun},
+		Metadata:      database.JSON{"dryRun": dryRun},
 	})
 	if err != nil {
 		slog.DebugContext(ctx, "failed to start auto-update activity", "error", err)
@@ -830,14 +831,14 @@ func (s *UpdaterService) startSingleContainerUpdateActivityInternal(ctx context.
 	}
 	activity, err := s.deps.Activity.StartActivity(ctx, activitylib.StartRequest{
 		EnvironmentID: "0",
-		Type:          models.ActivityTypeAutoUpdate,
+		Type:          activitytypes.TypeAutoUpdate,
 		Queue:         true,
 		ResourceType:  mo.EmptyableToOption(strings.TrimSpace("container")).ToPointer(),
 		ResourceID:    &containerID,
 		ResourceName:  mo.EmptyableToOption(strings.TrimSpace(containerID)).ToPointer(),
 		Step:          "Updating container",
 		LatestMessage: "Container update started",
-		Metadata:      models.JSON{"containerID": containerID},
+		Metadata:      database.JSON{"containerID": containerID},
 	})
 	if err != nil {
 		slog.DebugContext(ctx, "failed to start container update activity", "containerID", containerID, "error", err)
@@ -854,7 +855,7 @@ func (s *UpdaterService) appendAutoUpdateActivityMessageInternal(ctx context.Con
 		step = message
 	}
 	if _, err := s.deps.Activity.AppendMessage(ctx, activityID, activitylib.AppendMessageRequest{
-		Level:    models.ActivityMessageLevelInfo,
+		Level:    activitytypes.MessageLevelInfo,
 		Message:  message,
 		Progress: &progress,
 		Step:     step,
@@ -868,22 +869,22 @@ func (s *UpdaterService) completeAutoUpdateActivityInternal(ctx context.Context,
 		return
 	}
 
-	status := models.ActivityStatusSuccess
+	status := activitytypes.StatusSuccess
 	message := "Auto-update run completed"
 	var errMessage *string
 	if applyErr != nil {
-		status = models.ActivityStatusFailed
+		status = activitytypes.StatusFailed
 		errText := applyErr.Error()
 		errMessage = &errText
 		message = errText
 	} else if result != nil && result.Failed > 0 {
-		status = models.ActivityStatusFailed
+		status = activitytypes.StatusFailed
 		errText := fmt.Sprintf("%d update action(s) failed", result.Failed)
 		errMessage = &errText
 		message = errText
 	}
-	if status == models.ActivityStatusFailed && activitylib.CancelledByContext(ctx) {
-		status = models.ActivityStatusCancelled
+	if status == activitytypes.StatusFailed && activitylib.CancelledByContext(ctx) {
+		status = activitytypes.StatusCancelled
 		message = "Auto-update cancelled"
 		errMessage = nil
 	}
@@ -902,7 +903,7 @@ func (s *UpdaterService) trackActivityInternal(ctx context.Context, activityID s
 	return s.deps.Activity.Track(ctx, activityID)
 }
 
-func imageUpdateRecordToModuleInternal(record models.ImageUpdateRecord) updater.ImageUpdateRecord {
+func imageUpdateRecordToModuleInternal(record imageupdate.ImageUpdateRecord) updater.ImageUpdateRecord {
 	return updater.ImageUpdateRecord{
 		ID:             record.ID,
 		Repository:     record.Repository,
@@ -1002,11 +1003,11 @@ func statusFromModuleInternal(status updater.Status) arcaneupdater.Status {
 
 func (s *UpdaterService) recordRunInternal(ctx context.Context, item arcaneupdater.ResourceResult) error {
 	now := time.Now()
-	record := &models.AutoUpdateRecord{
+	record := &AutoUpdateRecord{
 		ResourceID:       item.ResourceID,
 		ResourceType:     item.ResourceType,
 		ResourceName:     item.ResourceName,
-		Status:           models.AutoUpdateStatus(item.Status),
+		Status:           AutoUpdateStatus(item.Status),
 		StartTime:        now,
 		EndTime:          &now,
 		UpdateAvailable:  item.UpdateAvailable || item.Status == string(updater.StatusUpdated) || item.Status == string(updater.StatusUpdateAvailable),
@@ -1026,29 +1027,29 @@ func (s *UpdaterService) clearImageUpdateRecordForModuleInternal(ctx context.Con
 		return nil
 	}
 
-	query := s.deps.DB.WithContext(ctx).Model(&models.ImageUpdateRecord{})
+	query := s.deps.DB.WithContext(ctx).Model(&imageupdate.ImageUpdateRecord{})
 	if strings.TrimSpace(record.ID) != "" {
 		return query.Where("id = ?", record.ID).Update("has_update", false).Error
 	}
 	return query.Where("repository = ? AND tag = ?", record.Repository, record.Tag).Update("has_update", false).Error
 }
 
-func mapToJSONInternal(values map[string]string) models.JSON {
+func mapToJSONInternal(values map[string]string) database.JSON {
 	if len(values) == 0 {
 		return nil
 	}
-	out := make(models.JSON, len(values))
+	out := make(database.JSON, len(values))
 	for key, value := range values {
 		out[key] = value
 	}
 	return out
 }
 
-func detailsToJSONInternal(values map[string]any) models.JSON {
+func detailsToJSONInternal(values map[string]any) database.JSON {
 	if len(values) == 0 {
 		return nil
 	}
-	out := make(models.JSON, len(values))
+	out := make(database.JSON, len(values))
 	maps.Copy(out, values)
 	return out
 }
@@ -1058,14 +1059,14 @@ func (s *UpdaterService) logResultItemsInternal(ctx context.Context, result *arc
 		return
 	}
 	for _, item := range result.Items {
-		severity := models.EventSeverityInfo
+		severity := event.EventSeverityInfo
 		switch item.Status {
 		case string(updater.StatusFailed):
-			severity = models.EventSeverityError
+			severity = event.EventSeverityError
 		case string(updater.StatusUpdated):
-			severity = models.EventSeveritySuccess
+			severity = event.EventSeveritySuccess
 		}
-		s.recordAutoUpdateEventInternal(ctx, severity, models.JSON{
+		s.recordAutoUpdateEventInternal(ctx, severity, database.JSON{
 			"phase":        item.ResourceType,
 			"resourceId":   item.ResourceID,
 			"resourceName": item.ResourceName,
@@ -1258,13 +1259,13 @@ func (s *UpdaterService) collectUsedImagesFromProjectsInternal(ctx context.Conte
 	return nil
 }
 
-func activeComposeProjectNameSetInternal(projects []models.Project) map[string]struct{} {
+func activeComposeProjectNameSetInternal(projects []projectpkg.Project) map[string]struct{} {
 	active := make(map[string]struct{})
 	for _, project := range projects {
 		if project.IsArchived {
 			continue
 		}
-		if project.Status != models.ProjectStatusRunning && project.Status != models.ProjectStatusPartiallyRunning {
+		if project.Status != projectpkg.ProjectStatusRunning && project.Status != projectpkg.ProjectStatusPartiallyRunning {
 			continue
 		}
 

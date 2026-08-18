@@ -289,7 +289,7 @@ func initializeStartupState(p initializeStartupStateParams) {
 	)
 	startup.CleanupUnknownSettings(appCtx, p.Settings)
 
-	runRoleStartupTasks(appCtx, p.Role, cfg, cfg.AgentMode)
+	runRoleStartupTasks(appCtx, p.Role, p.ApiKey, cfg, cfg.AgentMode)
 
 	// Auto-pair only applies in Edge mode (where the agent's outbound tunnel is the
 	// only path to the manager). Direct mode is passive — the manager dials the agent's
@@ -321,7 +321,7 @@ func initializeGitOpsStartupStateInternal(appCtx context.Context, gitOpsSync *gi
 	}
 }
 
-func runRoleStartupTasks(ctx context.Context, roleService *role.RoleService, cfg *config.Config, agentMode bool) {
+func runRoleStartupTasks(ctx context.Context, roleService *role.RoleService, apiKeyService *apikey.ApiKeyService, cfg *config.Config, agentMode bool) {
 	if roleService == nil {
 		return
 	}
@@ -334,8 +334,10 @@ func runRoleStartupTasks(ctx context.Context, roleService *role.RoleService, cfg
 	if err := roleService.BackfillLegacyRoleAssignments(ctx); err != nil {
 		slog.ErrorContext(ctx, "Failed to backfill legacy users.roles into user_role_assignments", "error", err)
 	}
-	if err := roleService.BackfillApiKeyPermissions(ctx); err != nil {
-		slog.WarnContext(ctx, "Failed to backfill API key permissions", "error", err)
+	if apiKeyService != nil {
+		if err := apiKeyService.BackfillApiKeyPermissions(ctx); err != nil {
+			slog.WarnContext(ctx, "Failed to backfill API key permissions", "error", err)
+		}
 	}
 	if cfg != nil {
 		if err := roleService.ReconcileEnvOidcMappings(ctx, cfg.OidcRoleMappings); err != nil {

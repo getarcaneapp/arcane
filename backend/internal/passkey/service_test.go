@@ -1,6 +1,8 @@
 package passkey
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+
 	"context"
 	"testing"
 	"time"
@@ -12,7 +14,6 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
 	"github.com/getarcaneapp/arcane/types/v2/auth"
 )
@@ -22,12 +23,12 @@ func newPasskeyServiceTestDB(t *testing.T) *database.DB {
 	gormDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, gormDB.AutoMigrate(
-		&models.User{},
-		&models.UserSession{},
-		&models.Passkey{},
-		&models.PasskeyCeremony{},
-		&models.AuthTransaction{},
-		&models.PasskeyRecoveryCode{},
+		&common.User{},
+		&session.UserSession{},
+		&Passkey{},
+		&PasskeyCeremony{},
+		&AuthTransaction{},
+		&PasskeyRecoveryCode{},
 	))
 
 	db := &database.DB{DB: gormDB}
@@ -42,10 +43,10 @@ func newPasskeyServiceForTest(t *testing.T, db *database.DB) *PasskeyService {
 	return NewPasskeyService(db, &config.Config{AppUrl: "https://arcane.example.test"})
 }
 
-func createPasskeyTestUser(t *testing.T, db *database.DB, id string) *models.User {
+func createPasskeyTestUser(t *testing.T, db *database.DB, id string) *common.User {
 	t.Helper()
-	user := &models.User{
-		BaseModel:    models.BaseModel{ID: id},
+	user := &common.User{
+		BaseModel:    database.BaseModel{ID: id},
 		Username:     id,
 		PasswordHash: "stored-password-hash",
 	}
@@ -53,15 +54,15 @@ func createPasskeyTestUser(t *testing.T, db *database.DB, id string) *models.Use
 	return user
 }
 
-func createPasskeyTestCredential(t *testing.T, db *database.DB, service *PasskeyService, userID, id string) *models.Passkey {
+func createPasskeyTestCredential(t *testing.T, db *database.DB, service *PasskeyService, userID, id string) *Passkey {
 	t.Helper()
-	credential := &models.Passkey{
-		BaseModel:    models.BaseModel{ID: id},
+	credential := &Passkey{
+		BaseModel:    database.BaseModel{ID: id},
 		UserID:       userID,
 		RPID:         service.rpID,
 		CredentialID: []byte("credential-" + id),
 		PublicKey:    []byte("public-key-" + id),
-		Transports:   models.StringSlice{"internal"},
+		Transports:   database.StringSlice{"internal"},
 		Name:         "Test passkey",
 	}
 	require.NoError(t, db.Create(credential).Error)
@@ -78,7 +79,7 @@ func TestPasskeyService_BeginPasskeyLoginStoresAndConsumesCeremony(t *testing.T)
 	require.NotEmpty(t, challenge.CeremonyID)
 	require.NotNil(t, challenge.Options)
 
-	var ceremony models.PasskeyCeremony
+	var ceremony PasskeyCeremony
 	require.NoError(t, db.Where("id = ?", challenge.CeremonyID).First(&ceremony).Error)
 	require.Equal(t, passkeyCeremonyPurposeLogin, ceremony.Purpose)
 	require.Equal(t, service.rpID, ceremony.RPID)
@@ -89,7 +90,7 @@ func TestPasskeyService_BeginPasskeyLoginStoresAndConsumesCeremony(t *testing.T)
 	_, err = service.FinishPasskeyLogin(ctx, challenge.CeremonyID, []byte(`{}`))
 	require.ErrorIs(t, err, ErrPasskeyResponse)
 
-	var consumed models.PasskeyCeremony
+	var consumed PasskeyCeremony
 	require.NoError(t, db.Where("id = ?", challenge.CeremonyID).First(&consumed).Error)
 	require.NotNil(t, consumed.ConsumedAt)
 
@@ -134,7 +135,7 @@ func TestPasskeyService_DefaultPasskeyNameUsesAAGUIDCatalog(t *testing.T) {
 	require.Equal(t, aaguid.String(), formatAAGUIDInternal(aaguid[:]))
 	require.Equal(t, "New Passkey", defaultPasskeyNameInternal([]byte{0xff, 0xff, 0xff, 0xff}))
 
-	summary := passkeySummaryInternal(models.Passkey{AAGUID: aaguid[:]})
+	summary := passkeySummaryInternal(Passkey{AAGUID: aaguid[:]})
 	require.Equal(t, aaguid.String(), summary.AAGUID)
 }
 
@@ -175,7 +176,7 @@ func TestPasskeyService_RecoveryCodeConsumptionIsAtomicAndSingleUse(t *testing.T
 	require.Len(t, codes, recoveryCodeCount)
 	require.NoError(t, db.Create(&rows).Error)
 
-	transaction := newAuthTransactionInternal(user.ID, authTransactionKindMFA, models.UserSessionSourceLocal, auth.SessionMeta{
+	transaction := newAuthTransactionInternal(user.ID, authTransactionKindMFA, session.UserSessionSourceLocal, auth.SessionMeta{
 		UserAgent: "test-agent",
 		IPAddress: "127.0.0.1",
 	}, nil, passkeyStepUpTTL)
@@ -184,25 +185,25 @@ func TestPasskeyService_RecoveryCodeConsumptionIsAtomicAndSingleUse(t *testing.T
 	_, err = service.FinishRecoveryCode(ctx, transaction.ID, "not-a-recovery-code")
 	require.ErrorIs(t, err, ErrPasskeyRecoveryCode)
 
-	var pending models.AuthTransaction
+	var pending AuthTransaction
 	require.NoError(t, db.Where("id = ?", transaction.ID).First(&pending).Error)
 	require.Equal(t, authTransactionPending, pending.Status)
 
 	completion, err := service.FinishRecoveryCode(ctx, transaction.ID, codes[0])
 	require.NoError(t, err)
 	require.Equal(t, user.ID, completion.User.ID)
-	require.Equal(t, models.UserSessionSourceLocal, completion.Source)
-	require.Equal(t, models.RecoveryCodeMFAMethod, completion.Meta.MFAMethod)
+	require.Equal(t, session.UserSessionSourceLocal, completion.Source)
+	require.Equal(t, session.RecoveryCodeMFAMethod, completion.Meta.MFAMethod)
 	require.Equal(t, "test-agent", completion.Meta.UserAgent)
 	require.Equal(t, "127.0.0.1", completion.Meta.IPAddress)
 	require.NotNil(t, completion.Meta.MFAVerifiedAt)
 
-	var completed models.AuthTransaction
+	var completed AuthTransaction
 	require.NoError(t, db.Where("id = ?", transaction.ID).First(&completed).Error)
 	require.Equal(t, authTransactionCompleted, completed.Status)
 	require.NotNil(t, completed.CompletedAt)
 
-	var consumed models.PasskeyRecoveryCode
+	var consumed PasskeyRecoveryCode
 	require.NoError(t, db.Where("user_id = ? AND code_hash = ?", user.ID, rows[0].CodeHash).First(&consumed).Error)
 	require.NotNil(t, consumed.UsedAt)
 
@@ -228,21 +229,21 @@ func TestPasskeyService_EnableAndDisableMFAManagesCodesAndSessions(t *testing.T)
 	require.NoError(t, err)
 	require.Len(t, codes, recoveryCodeCount)
 
-	var enabledUser models.User
+	var enabledUser common.User
 	require.NoError(t, db.Where("id = ?", user.ID).First(&enabledUser).Error)
 	require.True(t, enabledUser.PasskeyMFAEnabled)
 	var recoveryCodeCountInDB int64
-	require.NoError(t, db.Model(&models.PasskeyRecoveryCode{}).Where("user_id = ? AND used_at IS NULL", user.ID).Count(&recoveryCodeCountInDB).Error)
+	require.NoError(t, db.Model(&PasskeyRecoveryCode{}).Where("user_id = ? AND used_at IS NULL", user.ID).Count(&recoveryCodeCountInDB).Error)
 	require.Equal(t, int64(recoveryCodeCount), recoveryCodeCountInDB)
 
 	disableGrant, err := service.CreatePasswordStepUpGrant(ctx, user.ID, currentSession.ID)
 	require.NoError(t, err)
 	require.NoError(t, service.DisableMFA(ctx, user.ID, currentSession.ID, disableGrant.Token))
 
-	var disabledUser models.User
+	var disabledUser common.User
 	require.NoError(t, db.Where("id = ?", user.ID).First(&disabledUser).Error)
 	require.False(t, disabledUser.PasskeyMFAEnabled)
-	require.NoError(t, db.Model(&models.PasskeyRecoveryCode{}).Where("user_id = ?", user.ID).Count(&recoveryCodeCountInDB).Error)
+	require.NoError(t, db.Model(&PasskeyRecoveryCode{}).Where("user_id = ?", user.ID).Count(&recoveryCodeCountInDB).Error)
 	require.Zero(t, recoveryCodeCountInDB)
 
 	current, err := sessionService.GetSessionByID(ctx, currentSession.ID)
@@ -270,10 +271,10 @@ func TestPasskeyService_ResetMFARevokesSessionsAndPreservesPasskeys(t *testing.T
 	_, rows, err := generateRecoveryCodeRowsInternal(user.ID)
 	require.NoError(t, err)
 	require.NoError(t, db.Create(&rows).Error)
-	transaction := newAuthTransactionInternal(user.ID, authTransactionKindMFA, models.UserSessionSourceLocal, auth.SessionMeta{}, nil, passkeyStepUpTTL)
+	transaction := newAuthTransactionInternal(user.ID, authTransactionKindMFA, session.UserSessionSourceLocal, auth.SessionMeta{}, nil, passkeyStepUpTTL)
 	require.NoError(t, db.Create(transaction).Error)
-	ceremony := &models.PasskeyCeremony{
-		BaseModel:         models.BaseModel{ID: "reset-ceremony"},
+	ceremony := &PasskeyCeremony{
+		BaseModel:         database.BaseModel{ID: "reset-ceremony"},
 		Purpose:           passkeyCeremonyPurposeMFA,
 		UserID:            new(user.ID),
 		AuthTransactionID: new(transaction.ID),
@@ -285,18 +286,18 @@ func TestPasskeyService_ResetMFARevokesSessionsAndPreservesPasskeys(t *testing.T
 
 	require.NoError(t, service.ResetMFAForUser(ctx, user.ID))
 
-	var resetUser models.User
+	var resetUser common.User
 	require.NoError(t, db.Where("id = ?", user.ID).First(&resetUser).Error)
 	require.False(t, resetUser.PasskeyMFAEnabled)
 	var remaining int64
-	require.NoError(t, db.Model(&models.PasskeyRecoveryCode{}).Where("user_id = ?", user.ID).Count(&remaining).Error)
+	require.NoError(t, db.Model(&PasskeyRecoveryCode{}).Where("user_id = ?", user.ID).Count(&remaining).Error)
 	require.Zero(t, remaining)
-	require.NoError(t, db.Model(&models.PasskeyCeremony{}).Where("user_id = ?", user.ID).Count(&remaining).Error)
+	require.NoError(t, db.Model(&PasskeyCeremony{}).Where("user_id = ?", user.ID).Count(&remaining).Error)
 	require.Zero(t, remaining)
-	require.NoError(t, db.Model(&models.AuthTransaction{}).Where("user_id = ?", user.ID).Count(&remaining).Error)
+	require.NoError(t, db.Model(&AuthTransaction{}).Where("user_id = ?", user.ID).Count(&remaining).Error)
 	require.Zero(t, remaining)
 
-	var preserved models.Passkey
+	var preserved Passkey
 	require.NoError(t, db.Where("id = ?", passkey.ID).First(&preserved).Error)
 	require.Equal(t, passkey.ID, preserved.ID)
 

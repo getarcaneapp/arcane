@@ -1,6 +1,10 @@
 package passkey
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+
 	"context"
 	stdjson "encoding/json"
 	"net/http"
@@ -12,7 +16,6 @@ import (
 	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cookie"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
@@ -412,7 +415,7 @@ func (h *PasskeyHandler) FinishPasskeyLogin(ctx context.Context, input *PasskeyL
 		return nil, passkeyHTTPErrorInternal(err)
 	}
 	meta := authtypes.SessionMeta{UserAgent: input.UserAgent, IPAddress: middleware.GetRemoteAddrFromContext(ctx)}
-	tokenPair, err := h.authService.CompleteLogin(ctx, userModel, meta, models.UserSessionSourcePasskey, "")
+	tokenPair, err := h.authService.CompleteLogin(ctx, userModel, meta, session.UserSessionSourcePasskey, "")
 	if err != nil {
 		return nil, huma.Error500InternalServerError("authentication failed")
 	}
@@ -444,7 +447,7 @@ func (h *PasskeyHandler) ExchangeMobilePasskeyLogin(ctx context.Context, input *
 		return nil, passkeyHTTPErrorInternal(err)
 	}
 	meta := authtypes.SessionMeta{UserAgent: input.UserAgent, IPAddress: middleware.GetRemoteAddrFromContext(ctx)}
-	tokenPair, err := h.authService.CompleteLogin(ctx, userModel, meta, models.UserSessionSourcePasskey, "")
+	tokenPair, err := h.authService.CompleteLogin(ctx, userModel, meta, session.UserSessionSourcePasskey, "")
 	if err != nil {
 		return nil, huma.Error500InternalServerError("authentication failed")
 	}
@@ -685,7 +688,7 @@ func (h *PasskeyHandler) RegenerateRecoveryCodes(ctx context.Context, input *MFA
 	return &MFARecoveryCodesOutput{Body: base.ApiResponse[RecoveryCodesResponse]{Success: true, Data: RecoveryCodesResponse{Codes: codes}}}, nil
 }
 
-func (h *PasskeyHandler) authenticationResponseInternal(ctx context.Context, userModel *models.User, tokenPair *auth.TokenPair) (*authtypes.AuthenticationResponse, error) {
+func (h *PasskeyHandler) authenticationResponseInternal(ctx context.Context, userModel *common.User, tokenPair *auth.TokenPair) (*authtypes.AuthenticationResponse, error) {
 	if userModel == nil || tokenPair == nil {
 		return nil, huma.Error500InternalServerError("authentication failed")
 	}
@@ -704,7 +707,7 @@ func (h *PasskeyHandler) authenticationResponseInternal(ctx context.Context, use
 	}, nil
 }
 
-func requireInteractiveSessionInternal(ctx context.Context) (*models.User, string, error) {
+func requireInteractiveSessionInternal(ctx context.Context) (*common.User, string, error) {
 	userModel, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, "", err

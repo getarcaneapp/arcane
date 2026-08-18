@@ -1,6 +1,10 @@
 package project
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+
 	"bufio"
 	"context"
 	"io"
@@ -13,7 +17,6 @@ import (
 	"emperror.dev/errors"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/iconcatalog"
@@ -51,7 +54,7 @@ func getServiceCounts(services []ProjectServiceInfo) (total int, running int) {
 	return total, running
 }
 
-func (s *ProjectService) updateProjectStatusandCountsInternal(ctx context.Context, projectID string, status models.ProjectStatus) error {
+func (s *ProjectService) updateProjectStatusandCountsInternal(ctx context.Context, projectID string, status ProjectStatus) error {
 	services, err := s.GetProjectServices(ctx, projectID)
 	if err != nil {
 		slog.Error("GetProjectServices failed during status update", "projectID", projectID, "error", err)
@@ -60,7 +63,7 @@ func (s *ProjectService) updateProjectStatusandCountsInternal(ctx context.Contex
 
 	serviceCount, runningCount := getServiceCounts(services)
 
-	if err := s.db.WithContext(ctx).Model(&models.Project{}).Where("id = ?", projectID).Updates(map[string]any{
+	if err := s.db.WithContext(ctx).Model(&Project{}).Where("id = ?", projectID).Updates(map[string]any{
 		"status":        status,
 		"service_count": serviceCount,
 		"running_count": runningCount,
@@ -72,9 +75,9 @@ func (s *ProjectService) updateProjectStatusandCountsInternal(ctx context.Contex
 	return nil
 }
 
-func (s *ProjectService) updateProjectStatusInternal(ctx context.Context, id string, status models.ProjectStatus) error {
+func (s *ProjectService) updateProjectStatusInternal(ctx context.Context, id string, status ProjectStatus) error {
 	now := time.Now()
-	res := s.db.WithContext(ctx).Model(&models.Project{}).Where("id = ?", id).Updates(map[string]any{
+	res := s.db.WithContext(ctx).Model(&Project{}).Where("id = ?", id).Updates(map[string]any{
 		"status":     status,
 		"updated_at": now,
 	})
@@ -362,7 +365,7 @@ func (s *ProjectService) enrichProjectUpdateInfoInternal(ctx context.Context, re
 
 func (s *ProjectService) enrichProjectsWithUpdateInfoInternal(
 	ctx context.Context,
-	projectsList []models.Project,
+	projectsList []Project,
 	details []project.Details,
 ) {
 	if len(projectsList) == 0 || len(details) == 0 {
@@ -391,7 +394,7 @@ func (s *ProjectService) enrichProjectsWithUpdateInfoInternal(
 		}
 
 		wg.Add(1)
-		go func(proj models.Project) {
+		go func(proj Project) {
 			defer wg.Done()
 
 			select {
@@ -434,7 +437,7 @@ func (s *ProjectService) enrichProjectsWithUpdateInfoInternal(
 	}
 }
 
-func (s *ProjectService) getProjectImageRefsFromComposeInternal(ctx context.Context, proj models.Project, cfg *models.Settings) ([]string, []string, error) {
+func (s *ProjectService) getProjectImageRefsFromComposeInternal(ctx context.Context, proj Project, cfg *settings.Settings) ([]string, []string, error) {
 	composeProject, err := s.getCachedComposeProjectInternal(ctx, &proj, cfg)
 	if err != nil {
 		return nil, nil, errors.WrapIf(err, "load compose project")
@@ -477,7 +480,7 @@ func buildProjectUpdateInfoSummaryInternal(
 			summary.ImagesWithUpdates++
 			summary.UpdatedImageRefs = append(summary.UpdatedImageRefs, imageRef)
 		}
-		if info.UpdateType == models.UpdateTypeNotPulled {
+		if info.UpdateType == imageupdate.UpdateTypeNotPulled {
 			summary.ImagesNotPulled++
 			summary.NotPulledImageRefs = append(summary.NotPulledImageRefs, imageRef)
 		}
@@ -510,9 +513,9 @@ func buildProjectUpdateInfoSummaryInternal(
 	return summary
 }
 
-func (s *ProjectService) enrichWithGitOpsInfo(ctx context.Context, proj *models.Project, resp *project.Details) {
+func (s *ProjectService) enrichWithGitOpsInfo(ctx context.Context, proj *Project, resp *project.Details) {
 	if proj.GitOpsManagedBy != nil {
-		var syncRecord models.GitOpsSync
+		var syncRecord GitOpsSync
 		if err := s.db.WithContext(ctx).Preload("Repository").Where("id = ?", *proj.GitOpsManagedBy).First(&syncRecord).Error; err == nil {
 			resp.LastSyncCommit = syncRecord.LastSyncCommit
 			if syncRecord.Repository != nil {
@@ -522,7 +525,7 @@ func (s *ProjectService) enrichWithGitOpsInfo(ctx context.Context, proj *models.
 	}
 }
 
-func (s *ProjectService) enrichWithComposeServiceConfigs(ctx context.Context, proj *models.Project, composeFile string, resp *project.Details) {
+func (s *ProjectService) enrichWithComposeServiceConfigs(ctx context.Context, proj *Project, composeFile string, resp *project.Details) {
 	composeProj, loadErr := s.getCachedComposeProjectInternal(ctx, proj, nil)
 	if loadErr != nil {
 		slog.WarnContext(ctx, "failed to load compose service configs", "path", composeFile, "error", loadErr)
@@ -597,7 +600,7 @@ func (s *ProjectService) StreamProjectLogs(ctx context.Context, projectID string
 	return nil
 }
 
-func (s *ProjectService) CountServicesFromCompose(ctx context.Context, p models.Project) (int, error) {
+func (s *ProjectService) CountServicesFromCompose(ctx context.Context, p Project) (int, error) {
 	proj, _, err := s.loadComposeProjectForProjectInternal(ctx, &p, nil)
 	if err != nil {
 		return 0, err
@@ -606,9 +609,9 @@ func (s *ProjectService) CountServicesFromCompose(ctx context.Context, p models.
 	return len(proj.Services), nil
 }
 
-func calculateProjectStatus(services []ProjectServiceInfo) models.ProjectStatus {
+func calculateProjectStatus(services []ProjectServiceInfo) ProjectStatus {
 	if len(services) == 0 {
-		return models.ProjectStatusUnknown
+		return ProjectStatusUnknown
 	}
 
 	runningCount := 0
@@ -625,13 +628,13 @@ func calculateProjectStatus(services []ProjectServiceInfo) models.ProjectStatus 
 	}
 
 	if runningCount == len(services) {
-		return models.ProjectStatusRunning
+		return ProjectStatusRunning
 	}
 	if runningCount > 0 {
-		return models.ProjectStatusPartiallyRunning
+		return ProjectStatusPartiallyRunning
 	}
 	if stoppedCount > 0 {
-		return models.ProjectStatusStopped
+		return ProjectStatusStopped
 	}
-	return models.ProjectStatusUnknown
+	return ProjectStatusUnknown
 }

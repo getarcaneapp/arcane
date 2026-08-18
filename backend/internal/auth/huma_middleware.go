@@ -1,6 +1,10 @@
 package auth
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+
 	"context"
 	"errors"
 	"log/slog"
@@ -14,7 +18,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cookie"
 )
@@ -68,7 +71,7 @@ func parseSecurityRequirementsInternal(api huma.API, ctx operationProvider) secu
 // authenticated user on success, or the underlying error from VerifyToken so
 // the caller can distinguish a missing/invalid token from a token-version
 // mismatch (which requires clearing the stale cookie).
-func tryBearerAuthInternal(ctx huma.Context, authService *AuthService) (*models.User, string, error) {
+func tryBearerAuthInternal(ctx huma.Context, authService *AuthService) (*common.User, string, error) {
 	token := extractBearerTokenInternal(ctx)
 	if token == "" {
 		return nil, "", nil
@@ -83,7 +86,7 @@ func tryBearerAuthInternal(ctx huma.Context, authService *AuthService) (*models.
 // tryApiKeyAuthInternal checks if API key authentication should be allowed
 // through. Returns the resolved user plus the API key record so the caller
 // can resolve permissions according to the key's kind.
-func tryApiKeyAuthInternal(ctx huma.Context, apiKeyService *apikey.ApiKeyService) (*models.User, *models.ApiKey, bool) {
+func tryApiKeyAuthInternal(ctx huma.Context, apiKeyService *apikey.ApiKeyService) (*common.User, *apikey.ApiKey, bool) {
 	apiKey := ctx.Header(utils.HeaderApiKey)
 	if apiKey == "" {
 		return nil, nil, false
@@ -97,7 +100,7 @@ func tryApiKeyAuthInternal(ctx huma.Context, apiKeyService *apikey.ApiKeyService
 	return user, key, true
 }
 
-func tryEnvironmentAccessTokenAuthInternal(ctx huma.Context, resolver EnvironmentAccessTokenResolver, token string) (*models.User, *models.Environment, bool) {
+func tryEnvironmentAccessTokenAuthInternal(ctx huma.Context, resolver EnvironmentAccessTokenResolver, token string) (*common.User, *environment.Environment, bool) {
 	if resolver == nil || strings.TrimSpace(token) == "" {
 		return nil, nil, false
 	}
@@ -112,7 +115,7 @@ func tryEnvironmentAccessTokenAuthInternal(ctx huma.Context, resolver Environmen
 
 // tryAgentAuthInternal checks if the request is from an authenticated agent.
 // Returns a sudo agent user if the agent token is valid.
-func tryAgentAuthInternal(ctx huma.Context, cfg *config.Config) (*models.User, bool) {
+func tryAgentAuthInternal(ctx huma.Context, cfg *config.Config) (*common.User, bool) {
 	if cfg == nil || !cfg.AgentMode {
 		return nil, false
 	}
@@ -141,9 +144,9 @@ func tryAgentAuthInternal(ctx huma.Context, cfg *config.Config) (*models.User, b
 // createAgentSudoUserInternal creates a sudo user for agent authentication.
 // The sudo PermissionSet attached to the context by the agent token path
 // bypasses every check; the user's Roles field is intentionally empty.
-func createAgentSudoUserInternal() *models.User {
-	return &models.User{
-		BaseModel: models.BaseModel{ID: "agent"},
+func createAgentSudoUserInternal() *common.User {
+	return &common.User{
+		BaseModel: database.BaseModel{ID: "agent"},
 		Email:     new("agent@getarcane.app"),
 		Username:  "agent",
 	}
@@ -157,7 +160,7 @@ func createAgentSudoUserInternal() *models.User {
 // Only called on synthetic-user auth paths (agent token, environment access
 // token), where the header is set by the manager after it strips any
 // client-supplied value. Real-user auth paths never read it.
-func applyProxiedIconCatalogInternal(ctx huma.Context, user *models.User) {
+func applyProxiedIconCatalogInternal(ctx huma.Context, user *common.User) {
 	if user == nil {
 		return
 	}
@@ -168,9 +171,9 @@ func applyProxiedIconCatalogInternal(ctx huma.Context, user *models.User) {
 	user.Preferences.IconCatalog = &catalog
 }
 
-func createEnvironmentUserInternal(env *models.Environment) *models.User {
-	return &models.User{
-		BaseModel: models.BaseModel{ID: "environment:" + env.ID},
+func createEnvironmentUserInternal(env *environment.Environment) *common.User {
+	return &common.User{
+		BaseModel: database.BaseModel{ID: "environment:" + env.ID},
 		Username:  env.Name,
 	}
 }
@@ -262,7 +265,7 @@ func handleApiKeyAuthInternal(api huma.API, ctx huma.Context, authService *AuthS
 		// Personal keys inherit the owner's role permissions (same resolution
 		// as session auth); scoped keys are limited to their own grants.
 		var ps *authz.PermissionSet
-		if key.Kind == models.ApiKeyKindPersonal {
+		if key.Kind == apikey.ApiKeyKindPersonal {
 			ps = resolveUserPermissionsInternal(ctx.Context(), permResolver, user)
 		} else {
 			ps = resolveApiKeyPermissionsInternal(ctx.Context(), permResolver, key.ID)
@@ -318,7 +321,7 @@ func handleBearerAuthInternal(api huma.API, ctx huma.Context, authService *AuthS
 // PermissionSet. If RoleService is unavailable or the lookup fails (boot-time
 // edge cases, broken DB) it returns nil and logs a warning — handlers then
 // see deny-all, which is the safe default.
-func resolveUserPermissionsInternal(ctx context.Context, permResolver PermissionResolver, user *models.User) *authz.PermissionSet {
+func resolveUserPermissionsInternal(ctx context.Context, permResolver PermissionResolver, user *common.User) *authz.PermissionSet {
 	if permResolver == nil || user == nil {
 		return nil
 	}
@@ -377,12 +380,12 @@ func extractTokenFromCookieHeaderInternal(cookieHeader string) string {
 // setUserInContextInternal adds the authenticated user and the resolved
 // PermissionSet to the context. Callers must supply a non-nil PermissionSet;
 // pass authz.NewPermissionSet() to express deny-all.
-func setUserInContextInternal(ctx context.Context, user *models.User, ps *authz.PermissionSet) context.Context {
+func setUserInContextInternal(ctx context.Context, user *common.User, ps *authz.PermissionSet) context.Context {
 	if ps == nil {
 		ps = authz.NewPermissionSet()
 	}
 	ctx = context.WithValue(ctx, middleware.ContextKeyUserID, user.ID)
-	ctx = context.WithValue(ctx, models.CurrentUserContextKey{}, user)
+	ctx = context.WithValue(ctx, common.CurrentUserContextKey{}, user)
 	ctx = context.WithValue(ctx, middleware.ContextKeyUserPermissions, ps)
 	return ctx
 }

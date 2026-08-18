@@ -8,7 +8,6 @@ import (
 	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -23,7 +22,7 @@ func NewKVService(db *database.DB) *KVService {
 }
 
 func (s *KVService) Get(ctx context.Context, key string) (string, bool, error) {
-	var entry models.KVEntry
+	var entry KVEntry
 	err := s.db.WithContext(ctx).Where("key = ?", key).First(&entry).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return "", false, nil
@@ -36,7 +35,7 @@ func (s *KVService) Get(ctx context.Context, key string) (string, bool, error) {
 }
 
 func (s *KVService) Set(ctx context.Context, key, value string) error {
-	entry := models.KVEntry{Key: key, Value: value}
+	entry := KVEntry{Key: key, Value: value}
 	err := s.db.WithContext(ctx).
 		Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "key"}},
@@ -51,14 +50,14 @@ func (s *KVService) Set(ctx context.Context, key, value string) error {
 }
 
 func (s *KVService) Delete(ctx context.Context, key string) error {
-	if err := s.db.WithContext(ctx).Delete(&models.KVEntry{}, "key = ?", key).Error; err != nil {
+	if err := s.db.WithContext(ctx).Delete(&KVEntry{}, "key = ?", key).Error; err != nil {
 		return errors.WrapIff(err, "failed to delete kv entry %q", key)
 	}
 	return nil
 }
 
-func (s *KVService) ListByPrefix(ctx context.Context, prefix string) ([]models.KVEntry, error) {
-	var entries []models.KVEntry
+func (s *KVService) ListByPrefix(ctx context.Context, prefix string) ([]KVEntry, error) {
+	var entries []KVEntry
 	escapedPrefix := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(prefix)
 	if err := s.db.WithContext(ctx).Where("key LIKE ? ESCAPE '\\'", escapedPrefix+"%").Find(&entries).Error; err != nil {
 		return nil, errors.WrapIff(err, "failed to list kv entries with prefix %q", prefix)
@@ -107,11 +106,11 @@ func (s *KVService) GetInt64(ctx context.Context, key string, defaultValue int64
 func (s *KVService) IncrementInt64(ctx context.Context, key string, delta int64) (int64, error) {
 	var nextValue int64
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var entry models.KVEntry
+		var entry KVEntry
 		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("key = ?", key).First(&entry).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			nextValue = delta
-			return tx.Create(&models.KVEntry{
+			return tx.Create(&KVEntry{
 				Key:   key,
 				Value: strconv.FormatInt(nextValue, 10),
 			}).Error

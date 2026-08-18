@@ -1,6 +1,8 @@
 package project
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+
 	"context"
 	"io"
 	"log/slog"
@@ -10,7 +12,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/lifecycle"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
 
 	"emperror.dev/errors"
@@ -21,7 +22,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
@@ -34,7 +34,7 @@ import (
 )
 
 type buildServiceInternal interface {
-	BuildImage(ctx context.Context, environmentID string, req buildtypes.BuildRequest, progressWriter io.Writer, serviceName string, user *models.User) (*buildtypes.BuildResult, error)
+	BuildImage(ctx context.Context, environmentID string, req buildtypes.BuildRequest, progressWriter io.Writer, serviceName string, user *common.User) (*buildtypes.BuildResult, error)
 	BuildSettings() buildtypes.BuildSettings
 }
 
@@ -45,7 +45,7 @@ type ProjectService struct {
 	imageService                *image.ImageService
 	dockerService               *docker.DockerClientService
 	buildService                buildServiceInternal
-	lifecycleService            *lifecycle.LifecycleService
+	lifecycleService            *LifecycleService
 	kvService                   *kv.KVService
 	containerRegistryService    *registry.ContainerRegistryService
 	config                      *config.Config
@@ -66,7 +66,7 @@ type ProjectService struct {
 
 // EnsureGitOpsProjectLinked persists the bidirectional GitOps/project binding
 // and refreshes the compose-name cache as one domain operation.
-func (s *ProjectService) EnsureGitOpsProjectLinked(ctx context.Context, sync *models.GitOpsSync, project *models.Project) error {
+func (s *ProjectService) EnsureGitOpsProjectLinked(ctx context.Context, sync *GitOpsSync, project *Project) error {
 	if sync == nil || project == nil {
 		return nil
 	}
@@ -97,12 +97,12 @@ func (s *ProjectService) EnsureGitOpsProjectLinked(ctx context.Context, sync *mo
 
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if len(updatesSync) > 0 {
-			if err := tx.Model(&models.GitOpsSync{}).Where("id = ?", sync.ID).Updates(updatesSync).Error; err != nil {
+			if err := tx.Model(&GitOpsSync{}).Where("id = ?", sync.ID).Updates(updatesSync).Error; err != nil {
 				return errors.WrapIff(err, "failed to relink GitOps sync %s", sync.ID)
 			}
 		}
 		if len(updatesProject) > 0 {
-			if err := tx.Model(&models.Project{}).Where("id = ?", project.ID).Updates(updatesProject).Error; err != nil {
+			if err := tx.Model(&Project{}).Where("id = ?", project.ID).Updates(updatesProject).Error; err != nil {
 				return errors.WrapIff(err, "failed to relink project %s to GitOps sync %s", project.ID, sync.ID)
 			}
 		}
@@ -153,7 +153,7 @@ func (s *ProjectService) ValidateComposeDirectory(ctx context.Context, projectNa
 
 // CreateGitOpsManagedProject persists a promoted GitOps project, links both
 // records, updates the compose-name cache, and records the creation event.
-func (s *ProjectService) CreateGitOpsManagedProject(ctx context.Context, sync *models.GitOpsSync, project *models.Project, actor models.User, logEventOptions ...bool) error {
+func (s *ProjectService) CreateGitOpsManagedProject(ctx context.Context, sync *GitOpsSync, project *Project, actor common.User, logEventOptions ...bool) error {
 	if sync == nil || project == nil {
 		return errors.New("GitOps sync and project are required")
 	}
@@ -161,10 +161,10 @@ func (s *ProjectService) CreateGitOpsManagedProject(ctx context.Context, sync *m
 		if err := tx.Create(project).Error; err != nil {
 			return errors.WrapIf(err, "failed to create project")
 		}
-		if err := tx.Model(&models.GitOpsSync{}).Where("id = ?", sync.ID).Update("project_id", project.ID).Error; err != nil {
+		if err := tx.Model(&GitOpsSync{}).Where("id = ?", sync.ID).Update("project_id", project.ID).Error; err != nil {
 			return errors.WrapIf(err, "failed to update sync with project ID")
 		}
-		if err := tx.Model(&models.Project{}).Where("id = ?", project.ID).Update("gitops_managed_by", sync.ID).Error; err != nil {
+		if err := tx.Model(&Project{}).Where("id = ?", project.ID).Update("gitops_managed_by", sync.ID).Error; err != nil {
 			return errors.WrapIf(err, "failed to mark project as GitOps-managed")
 		}
 		return nil
@@ -183,8 +183,8 @@ func (s *ProjectService) CreateGitOpsManagedProject(ctx context.Context, sync *m
 		logEvent = logEventOptions[0]
 	}
 	if logEvent && s.eventService != nil {
-		metadata := models.JSON{"action": "create", "projectID": project.ID, "projectName": project.Name, "path": project.Path}
-		if err := s.eventService.LogProjectEvent(ctx, models.EventTypeProjectCreate, project.ID, project.Name, actor.ID, actor.Username, "0", metadata); err != nil {
+		metadata := database.JSON{"action": "create", "projectID": project.ID, "projectName": project.Name, "path": project.Path}
+		if err := s.eventService.LogProjectEvent(ctx, event.EventTypeProjectCreate, project.ID, project.Name, actor.ID, actor.Username, "0", metadata); err != nil {
 			slog.ErrorContext(ctx, "could not log project creation", "error", err)
 		}
 	}
@@ -205,7 +205,7 @@ const projectMetadataTTL = 5 * time.Second
 
 type registryCredentialsProviderInternal func(context.Context) ([]containerregistry.Credential, error)
 
-func NewProjectService(db *database.DB, settingsService *settings.SettingsService, eventService *event.EventService, imageService *image.ImageService, dockerService *docker.DockerClientService, buildService buildServiceInternal, lifecycleService *lifecycle.LifecycleService, containerRegistryService *registry.ContainerRegistryService, cfg *config.Config) *ProjectService {
+func NewProjectService(db *database.DB, settingsService *settings.SettingsService, eventService *event.EventService, imageService *image.ImageService, dockerService *docker.DockerClientService, buildService buildServiceInternal, lifecycleService *LifecycleService, containerRegistryService *registry.ContainerRegistryService, cfg *config.Config) *ProjectService {
 	return &ProjectService{
 		db:                       db,
 		settingsService:          settingsService,
@@ -277,7 +277,7 @@ func (s *ProjectService) GetProjectsDirectory(ctx context.Context) (string, erro
 	return filepath.Clean(projectsDir), nil
 }
 
-func getProjectsDirectoryOrDefaultInternal(ctx context.Context, cfg *models.Settings) string {
+func getProjectsDirectoryOrDefaultInternal(ctx context.Context, cfg *settings.Settings) string {
 	projectsDirectory, err := projects.GetProjectsDirectory(ctx, strings.TrimSpace(cfg.ProjectsDirectory.Value))
 	if err != nil {
 		slog.WarnContext(ctx, "unable to determine projects directory; using default", "error", err)
@@ -286,7 +286,7 @@ func getProjectsDirectoryOrDefaultInternal(ctx context.Context, cfg *models.Sett
 	return projectsDirectory
 }
 
-func (s *ProjectService) getMutableProjectInternal(ctx context.Context, projectID string) (*models.Project, error) {
+func (s *ProjectService) getMutableProjectInternal(ctx context.Context, projectID string) (*Project, error) {
 	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
 		return nil, err
@@ -297,7 +297,7 @@ func (s *ProjectService) getMutableProjectInternal(ctx context.Context, projectI
 	return proj, nil
 }
 
-func (s *ProjectService) logProjectEventInternal(ctx context.Context, eventType models.EventType, projectID, projectName string, user models.User, metadata models.JSON, action string) {
+func (s *ProjectService) logProjectEventInternal(ctx context.Context, eventType event.EventType, projectID, projectName string, user common.User, metadata database.JSON, action string) {
 	if s.eventService == nil {
 		return
 	}
@@ -334,8 +334,8 @@ func getProjectRelativePathInternal(projectsDir, projectPath string) string {
 	return filepath.ToSlash(relativePath)
 }
 
-func (s *ProjectService) GetProjectFromDatabaseByID(ctx context.Context, id string) (*models.Project, error) {
-	var projectModel models.Project
+func (s *ProjectService) GetProjectFromDatabaseByID(ctx context.Context, id string) (*Project, error) {
+	var projectModel Project
 	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&projectModel).Error; err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return nil, errors.New("request canceled or timed out")
@@ -348,13 +348,13 @@ func (s *ProjectService) GetProjectFromDatabaseByID(ctx context.Context, id stri
 	return &projectModel, nil
 }
 
-func (s *ProjectService) GetProjectByComposeName(ctx context.Context, name string) (*models.Project, error) {
+func (s *ProjectService) GetProjectByComposeName(ctx context.Context, name string) (*Project, error) {
 	if name == "" {
 		return nil, errors.New("project name is empty")
 	}
 	normalized := projects.NormalizeProjectName(name)
 
-	var proj models.Project
+	var proj Project
 	err := s.db.WithContext(ctx).Where("name = ? OR name = ?", name, normalized).First(&proj).Error
 	if err == nil {
 		s.composeNames.put(normalized, proj.ID)
@@ -386,7 +386,7 @@ func (s *ProjectService) GetProjectByComposeName(ctx context.Context, name strin
 // EnsureProjectPathUnderRoot validates that the project's path is a safe subdirectory of the configured projects root.
 // If not, it normalizes the path to `<projectsRoot>/<dirName or sanitized project name>`. When persist=true, it saves
 // the updated project path to the database.
-func (s *ProjectService) EnsureProjectPathUnderRoot(ctx context.Context, proj *models.Project, persist bool) error {
+func (s *ProjectService) EnsureProjectPathUnderRoot(ctx context.Context, proj *Project, persist bool) error {
 	projectsDirectory, err := projects.GetProjectsDirectory(ctx, s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects"))
 	if err != nil {
 		return errors.WrapIf(err, "failed to get projects directory")

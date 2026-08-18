@@ -12,7 +12,6 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/dbutil"
 	"github.com/getarcaneapp/arcane/types/v2/auth"
 	"github.com/google/uuid"
@@ -28,16 +27,16 @@ func NewSessionService(db *database.DB) *SessionService {
 	return &SessionService{db: db}
 }
 
-func (s *SessionService) CreateSession(ctx context.Context, userID string, expiresAt time.Time, meta auth.SessionMeta) (*models.UserSession, string, error) {
+func (s *SessionService) CreateSession(ctx context.Context, userID string, expiresAt time.Time, meta auth.SessionMeta) (*UserSession, string, error) {
 	refreshJTI := uuid.NewString()
 	refreshHash := hashRefreshJTIInternal(refreshJTI)
 
 	now := time.Now()
 	source := strings.TrimSpace(meta.Source)
 	if source == "" {
-		source = models.UserSessionSourceLocal
+		source = UserSessionSourceLocal
 	}
-	session := &models.UserSession{
+	session := &UserSession{
 		UserID:           userID,
 		RefreshTokenHash: refreshHash,
 		UserAgent:        mo.EmptyableToOption(strings.TrimSpace(meta.UserAgent)).ToPointer(),
@@ -56,14 +55,14 @@ func (s *SessionService) CreateSession(ctx context.Context, userID string, expir
 	return session, refreshJTI, nil
 }
 
-func (s *SessionService) CreateFederatedSession(ctx context.Context, userID string, expiresAt time.Time, credentialID string) (*models.UserSession, error) {
+func (s *SessionService) CreateFederatedSession(ctx context.Context, userID string, expiresAt time.Time, credentialID string) (*UserSession, error) {
 	refreshHash := hashRefreshJTIInternal(uuid.NewString())
 	now := time.Now()
 
-	session := &models.UserSession{
+	session := &UserSession{
 		UserID:                userID,
 		RefreshTokenHash:      refreshHash,
-		Source:                models.UserSessionSourceFederated,
+		Source:                UserSessionSourceFederated,
 		FederatedCredentialID: mo.EmptyableToOption(strings.TrimSpace(credentialID)).ToPointer(),
 		LastUsedAt:            now,
 		ExpiresAt:             expiresAt,
@@ -76,12 +75,12 @@ func (s *SessionService) CreateFederatedSession(ctx context.Context, userID stri
 	return session, nil
 }
 
-func (s *SessionService) GetSessionByID(ctx context.Context, sessionID string) (*models.UserSession, error) {
+func (s *SessionService) GetSessionByID(ctx context.Context, sessionID string) (*UserSession, error) {
 	if strings.TrimSpace(sessionID) == "" {
 		return nil, common.ErrInvalidToken
 	}
 
-	var session models.UserSession
+	var session UserSession
 	if err := s.db.WithContext(ctx).Where("id = ?", sessionID).First(&session).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, common.ErrInvalidToken
@@ -91,7 +90,7 @@ func (s *SessionService) GetSessionByID(ctx context.Context, sessionID string) (
 	return &session, nil
 }
 
-func (s *SessionService) RotateRefreshToken(ctx context.Context, sessionID string, refreshJTI string, meta auth.SessionMeta) (*models.UserSession, string, error) {
+func (s *SessionService) RotateRefreshToken(ctx context.Context, sessionID string, refreshJTI string, meta auth.SessionMeta) (*UserSession, string, error) {
 	if strings.TrimSpace(sessionID) == "" || strings.TrimSpace(refreshJTI) == "" {
 		return nil, "", common.ErrInvalidToken
 	}
@@ -100,10 +99,10 @@ func (s *SessionService) RotateRefreshToken(ctx context.Context, sessionID strin
 	newHash := hashRefreshJTIInternal(newRefreshJTI)
 
 	now := time.Now()
-	var rotated models.UserSession
+	var rotated UserSession
 
 	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
-		var session models.UserSession
+		var session UserSession
 		if err := tx.Where("id = ?", sessionID).First(&session).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return common.ErrInvalidToken
@@ -124,7 +123,7 @@ func (s *SessionService) RotateRefreshToken(ctx context.Context, sessionID strin
 			"user_agent":         mo.EmptyableToOption(strings.TrimSpace(meta.UserAgent)).ToPointer(),
 			"ip_address":         mo.EmptyableToOption(strings.TrimSpace(meta.IPAddress)).ToPointer(),
 		}
-		result := tx.Model(&models.UserSession{}).
+		result := tx.Model(&UserSession{}).
 			Where("id = ? AND refresh_token_hash = ? AND revoked_at IS NULL", session.ID, session.RefreshTokenHash).
 			Updates(updates)
 		if result.Error != nil {
@@ -155,7 +154,7 @@ func (s *SessionService) RevokeSession(ctx context.Context, sessionID string) er
 	}
 
 	now := time.Now()
-	if err := s.db.WithContext(ctx).Model(&models.UserSession{}).
+	if err := s.db.WithContext(ctx).Model(&UserSession{}).
 		Where("id = ? AND revoked_at IS NULL", sessionID).
 		Updates(map[string]any{"revoked_at": now, "updated_at": now}).Error; err != nil {
 		return errors.WrapIf(err, "failed to revoke user session")
@@ -168,7 +167,7 @@ func (s *SessionService) DeleteExpiredSessions(ctx context.Context, revokedReten
 	revokedCutoff := now.Add(-revokedRetention)
 	result := s.db.WithContext(ctx).
 		Where("expires_at < ? OR (revoked_at IS NOT NULL AND revoked_at < ?)", now, revokedCutoff).
-		Delete(&models.UserSession{})
+		Delete(&UserSession{})
 	if result.Error != nil {
 		return 0, errors.WrapIf(result.Error, "failed to delete expired user sessions")
 	}
@@ -193,7 +192,7 @@ func RevokeAllUserSessionsExceptInDB(ctx context.Context, db *gorm.DB, userID, e
 	}
 
 	now := time.Now()
-	query := db.WithContext(ctx).Model(&models.UserSession{}).
+	query := db.WithContext(ctx).Model(&UserSession{}).
 		Where("user_id = ? AND revoked_at IS NULL", userID)
 	if strings.TrimSpace(exceptSessionID) != "" {
 		query = query.Where("id <> ?", exceptSessionID)
@@ -205,7 +204,7 @@ func RevokeAllUserSessionsExceptInDB(ctx context.Context, db *gorm.DB, userID, e
 }
 
 // ValidateActive verifies that a persisted user session can still authorize requests.
-func ValidateActive(userSession *models.UserSession) error {
+func ValidateActive(userSession *UserSession) error {
 	if userSession == nil {
 		return common.ErrInvalidToken
 	}

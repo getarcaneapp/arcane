@@ -21,7 +21,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/version"
 	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
@@ -107,7 +106,7 @@ func (s *SystemUpgradeService) AlreadyOnNewestImage(ctx context.Context) bool {
 // own image tag; the updater engine passes an explicit target with the resolved new
 // image. Update-all uses the returned ID to tell an upgrade that recreated this
 // container from one that found nothing to do — see watchManagerUpgraderInternal.
-func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user models.User, target updater.SelfUpdateTarget) (string, error) {
+func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user common.User, target updater.SelfUpdateTarget) (string, error) {
 	if !s.upgrading.CompareAndSwap(false, true) {
 		return "", common.Classify(common.ErrUpgradeInProgress, errors.New("an upgrade is already in progress"))
 	}
@@ -139,14 +138,14 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 	targetImage := strings.TrimSpace(target.NewImageRef)
 
 	// Log upgrade event
-	metadata := models.JSON{
+	metadata := database.JSON{
 		"action":        "system_upgrade_cli",
 		"containerId":   containerId,
 		"containerName": containerName,
 		"method":        "cli",
 		"targetImage":   targetImage,
 	}
-	if err := s.eventService.LogUserEvent(ctx, models.EventTypeSystemUpgrade, user.ID, user.Username, metadata); err != nil {
+	if err := s.eventService.LogUserEvent(ctx, event.EventTypeSystemUpgrade, user.ID, user.Username, metadata); err != nil {
 		slog.Warn("Failed to log upgrade event", "error", err)
 	}
 
@@ -470,7 +469,7 @@ const (
 // self-upgrade as its final step (job left pending_restart, finalized at next
 // boot). Every environment pulls the latest image, whether or not it reports an
 // update available.
-func (s *SystemUpgradeService) StartUpdateAll(ctx context.Context, user models.User, env *environment.EnvironmentService) (*models.EnvironmentUpdateJob, error) {
+func (s *SystemUpgradeService) StartUpdateAll(ctx context.Context, user common.User, env *environment.EnvironmentService) (*EnvironmentUpdateJob, error) {
 	// Guard the check-then-create against concurrent callers (e.g. a double-click).
 	// A dedicated flag rather than s.upgrading, because the manager branch below
 	// calls TriggerUpgradeViaCLI which acquires s.upgrading itself. The persisted
@@ -491,7 +490,7 @@ func (s *SystemUpgradeService) StartUpdateAll(ctx context.Context, user models.U
 
 	info := s.versionService.GetAppVersionInfo(ctx)
 
-	managerResult := models.EnvironmentUpdateResult{
+	managerResult := EnvironmentUpdateResult{
 		EnvironmentID:   environment.LocalEnvironmentID,
 		EnvironmentName: env.ResolveEnvironmentName(ctx, environment.LocalEnvironmentID),
 		FromVersion:     info.CurrentVersion,
@@ -502,7 +501,7 @@ func (s *SystemUpgradeService) StartUpdateAll(ctx context.Context, user models.U
 	// Best effort: the agents phase re-lists authoritatively and fills any gaps.
 	remoteResults := s.seedRemoteResultsInternal(ctx, env)
 
-	job := &models.EnvironmentUpdateJob{
+	job := &EnvironmentUpdateJob{
 		UserID:                user.ID,
 		Username:              user.Username,
 		ManagerVersionAtStart: info.CurrentVersion,
@@ -512,14 +511,14 @@ func (s *SystemUpgradeService) StartUpdateAll(ctx context.Context, user models.U
 
 	// Manager upgrades LAST. Seed its row pending; the agents-phase goroutine
 	// flips it to updating right before triggering the self-upgrade.
-	managerResult.Status = models.EnvironmentUpdateResultStatusPending
+	managerResult.Status = EnvironmentUpdateResultStatusPending
 	managerResult.ToVersion = job.ManagerTargetVersion
 
 	// Running from the start: the agents phase happens first, while the backend is
 	// up and can report progress. The manager self-upgrade fires at the very end of
 	// the agents goroutine.
-	job.Status = models.EnvironmentUpdateJobStatusRunning
-	job.Results = append(models.EnvironmentUpdateResults{managerResult}, remoteResults...)
+	job.Status = EnvironmentUpdateJobStatusRunning
+	job.Results = append(EnvironmentUpdateResults{managerResult}, remoteResults...)
 
 	if err := s.db.WithContext(ctx).Create(job).Error; err != nil {
 		return nil, errors.WrapIf(err, "create update-all job")
@@ -547,7 +546,7 @@ func (s *SystemUpgradeService) ResumeUpdateAllOnStartup(ctx context.Context) {
 
 	// A job left running means the manager died mid-agents-phase, before it reached
 	// the manager step; we can't safely resume partial progress, so fail it.
-	if job.Status == models.EnvironmentUpdateJobStatusRunning {
+	if job.Status == EnvironmentUpdateJobStatusRunning {
 		s.markUpdateAllFailedInternal(ctx, job, "interrupted by manager restart")
 		return
 	}
@@ -562,9 +561,9 @@ func (s *SystemUpgradeService) ResumeUpdateAllOnStartup(ctx context.Context) {
 
 	// The agents phase already ran before the restart. Finalize the manager's own
 	// result and close the job — do not re-run the agents phase.
-	managerStatus := models.EnvironmentUpdateResultStatusFailed
+	managerStatus := EnvironmentUpdateResultStatusFailed
 	if action.managerSucceeded {
-		managerStatus = models.EnvironmentUpdateResultStatusUpdated
+		managerStatus = EnvironmentUpdateResultStatusUpdated
 	}
 	s.recordManagerResultInternal(job, managerStatus, info.CurrentVersion)
 	s.finalizeUpdateAllJobInternal(ctx, job)
@@ -583,7 +582,7 @@ type resumeActionInternal struct {
 // (digest covers non-semver, digest-pinned installs), or when the manager is already
 // on the recorded target — a force-update of an up-to-date manager recreates the
 // container without changing either.
-func resolveResumeActionInternal(job *models.EnvironmentUpdateJob, currentVersion, currentDigest string, now time.Time) resumeActionInternal {
+func resolveResumeActionInternal(job *EnvironmentUpdateJob, currentVersion, currentDigest string, now time.Time) resumeActionInternal {
 	if now.Sub(job.CreatedAt) > updateAllStaleThresholdInternal {
 		return resumeActionInternal{markStale: true}
 	}
@@ -603,7 +602,7 @@ func resolveResumeActionInternal(job *models.EnvironmentUpdateJob, currentVersio
 // persisting progress after each one so the status endpoint can report live
 // progress, then triggers the manager's own self-upgrade as the final step
 // (leaving the job pending_restart for the next boot to finalize).
-func (s *SystemUpgradeService) runAgentsPhaseInternal(ctx context.Context, jobID string, env *environment.EnvironmentService, user models.User) {
+func (s *SystemUpgradeService) runAgentsPhaseInternal(ctx context.Context, jobID string, env *environment.EnvironmentService, user common.User) {
 	job, err := s.getUpdateAllJobByIDInternal(ctx, jobID)
 	if err != nil || job == nil {
 		slog.WarnContext(ctx, "update-all: failed to reload job for agents phase", "jobId", jobID, "error", err)
@@ -621,7 +620,7 @@ func (s *SystemUpgradeService) runAgentsPhaseInternal(ctx context.Context, jobID
 		// environment) and mark it updating so the dialog shows a live indicator on
 		// the row currently being processed.
 		idx := upsertPendingResultInternal(job, remote.ID, remote.Name)
-		job.Results[idx].Status = models.EnvironmentUpdateResultStatusUpdating
+		job.Results[idx].Status = EnvironmentUpdateResultStatusUpdating
 		if err := s.persistUpdateAllJobInternal(ctx, job); err != nil {
 			slog.WarnContext(ctx, "update-all: failed to persist updating status", "jobId", job.ID, "environmentId", remote.ID, "error", err)
 		}
@@ -641,11 +640,11 @@ func (s *SystemUpgradeService) runAgentsPhaseInternal(ctx context.Context, jobID
 	// pending_restart and finalizes it.
 	for i := range job.Results {
 		if job.Results[i].EnvironmentID == environment.LocalEnvironmentID {
-			job.Results[i].Status = models.EnvironmentUpdateResultStatusUpdating
+			job.Results[i].Status = EnvironmentUpdateResultStatusUpdating
 			break
 		}
 	}
-	job.Status = models.EnvironmentUpdateJobStatusPendingRestart
+	job.Status = EnvironmentUpdateJobStatusPendingRestart
 	if err := s.persistUpdateAllJobInternal(ctx, job); err != nil {
 		slog.WarnContext(ctx, "update-all: failed to persist pending_restart before manager upgrade", "jobId", job.ID, "error", err)
 	}
@@ -696,7 +695,7 @@ func (s *SystemUpgradeService) watchManagerUpgraderInternal(ctx context.Context,
 		slog.WarnContext(ctx, "update-all: failed to reload job after upgrader exit", "jobId", jobID, "error", err)
 		return
 	}
-	if job.Status != models.EnvironmentUpdateJobStatusPendingRestart {
+	if job.Status != EnvironmentUpdateJobStatusPendingRestart {
 		return
 	}
 
@@ -722,7 +721,7 @@ func (s *SystemUpgradeService) watchManagerUpgraderInternal(ctx context.Context,
 		return
 	}
 
-	s.recordManagerResultInternal(job, models.EnvironmentUpdateResultStatusUpToDate, info.CurrentVersion)
+	s.recordManagerResultInternal(job, EnvironmentUpdateResultStatusUpToDate, info.CurrentVersion)
 	slog.InfoContext(ctx, "Update-all: manager was already up to date; no restart needed", "jobId", job.ID, "version", info.CurrentVersion)
 	s.finalizeUpdateAllJobInternal(ctx, job)
 }
@@ -739,7 +738,7 @@ func (s *SystemUpgradeService) closeOutUnobservedUpgradeInternal(ctx context.Con
 		slog.WarnContext(ctx, "update-all: failed to reload job after unobserved upgrader exit", "jobId", jobID, "error", err)
 		return
 	}
-	if job.Status != models.EnvironmentUpdateJobStatusPendingRestart {
+	if job.Status != EnvironmentUpdateJobStatusPendingRestart {
 		return
 	}
 
@@ -758,7 +757,7 @@ func (s *SystemUpgradeService) closeOutUnobservedUpgradeInternal(ctx context.Con
 		slog.WarnContext(ctx, "update-all: failed to reload stale job", "jobId", jobID, "error", err)
 		return
 	}
-	if job.Status != models.EnvironmentUpdateJobStatusPendingRestart {
+	if job.Status != EnvironmentUpdateJobStatusPendingRestart {
 		return
 	}
 
@@ -836,18 +835,18 @@ func (s *SystemUpgradeService) waitForUpgraderExitInternal(ctx context.Context, 
 // seedRemoteResultsInternal builds a pending result row for every remote environment
 // so the dialog can render the whole fleet immediately. Best effort: on error it
 // returns nil and the agents phase appends rows as it processes them.
-func (s *SystemUpgradeService) seedRemoteResultsInternal(ctx context.Context, env *environment.EnvironmentService) models.EnvironmentUpdateResults {
+func (s *SystemUpgradeService) seedRemoteResultsInternal(ctx context.Context, env *environment.EnvironmentService) EnvironmentUpdateResults {
 	envs, err := env.ListRemoteEnvironments(ctx)
 	if err != nil {
 		slog.WarnContext(ctx, "update-all: failed to pre-list remote environments for seeding", "error", err)
 		return nil
 	}
-	results := make(models.EnvironmentUpdateResults, 0, len(envs))
+	results := make(EnvironmentUpdateResults, 0, len(envs))
 	for _, remote := range envs {
-		results = append(results, models.EnvironmentUpdateResult{
+		results = append(results, EnvironmentUpdateResult{
 			EnvironmentID:   remote.ID,
 			EnvironmentName: remote.Name,
-			Status:          models.EnvironmentUpdateResultStatusPending,
+			Status:          EnvironmentUpdateResultStatusPending,
 		})
 	}
 	return results
@@ -856,16 +855,16 @@ func (s *SystemUpgradeService) seedRemoteResultsInternal(ctx context.Context, en
 // upsertPendingResultInternal returns the index of the existing result row for envID,
 // appending a new pending row when seeding missed it (e.g. the seed list failed, or a
 // new environment was registered after the job started).
-func upsertPendingResultInternal(job *models.EnvironmentUpdateJob, envID, envName string) int {
+func upsertPendingResultInternal(job *EnvironmentUpdateJob, envID, envName string) int {
 	for i := range job.Results {
 		if job.Results[i].EnvironmentID == envID {
 			return i
 		}
 	}
-	job.Results = append(job.Results, models.EnvironmentUpdateResult{
+	job.Results = append(job.Results, EnvironmentUpdateResult{
 		EnvironmentID:   envID,
 		EnvironmentName: envName,
-		Status:          models.EnvironmentUpdateResultStatusPending,
+		Status:          EnvironmentUpdateResultStatusPending,
 	})
 	return len(job.Results) - 1
 }
@@ -873,7 +872,7 @@ func upsertPendingResultInternal(job *models.EnvironmentUpdateJob, envID, envNam
 // upgradeAgentInternal triggers and confirms a single remote environment's
 // self-upgrade, recording the outcome on result. The upgrade always runs — the
 // agent pulls the latest image even when it reports no update available.
-func (s *SystemUpgradeService) upgradeAgentInternal(ctx context.Context, env *environment.EnvironmentService, envID string, result *models.EnvironmentUpdateResult) {
+func (s *SystemUpgradeService) upgradeAgentInternal(ctx context.Context, env *environment.EnvironmentService, envID string, result *EnvironmentUpdateResult) {
 	versionCtx, cancel := context.WithTimeout(ctx, updateAllAgentRequestTimeoutInternal)
 	var info versiontypes.Info
 	err := env.ProxyJSONRequest(versionCtx, envID, http.MethodGet, "/api/app-version", nil, &info)
@@ -890,12 +889,12 @@ func (s *SystemUpgradeService) upgradeAgentInternal(ctx context.Context, env *en
 	resp, err := env.ExecuteRemoteRequest(triggerCtx, envID, http.MethodPost, "/api/environments/0/system/upgrade", nil)
 	cancel()
 	if err != nil {
-		result.Status = models.EnvironmentUpdateResultStatusFailed
+		result.Status = EnvironmentUpdateResultStatusFailed
 		result.Error = truncateUpdateAllErrorInternal(err)
 		return
 	}
 	if err := resp.RequireSuccess(); err != nil {
-		result.Status = models.EnvironmentUpdateResultStatusFailed
+		result.Status = EnvironmentUpdateResultStatusFailed
 		result.Error = truncateUpdateAllErrorInternal(err)
 		return
 	}
@@ -905,16 +904,16 @@ func (s *SystemUpgradeService) upgradeAgentInternal(ctx context.Context, env *en
 	// recreate. Confirming that would only burn the poll window waiting for a version
 	// change that cannot come, so record it directly.
 	if agentAlreadyOnTargetInternal(&info) {
-		result.Status = models.EnvironmentUpdateResultStatusUpToDate
+		result.Status = EnvironmentUpdateResultStatusUpToDate
 		result.ToVersion = info.CurrentVersion
 		return
 	}
 
 	if s.confirmAgentUpgradedInternal(ctx, env, envID, info) {
-		result.Status = models.EnvironmentUpdateResultStatusUpdated
+		result.Status = EnvironmentUpdateResultStatusUpdated
 	} else {
 		// Upgrade fired but the new version was not confirmed within the wait window.
-		result.Status = models.EnvironmentUpdateResultStatusTriggered
+		result.Status = EnvironmentUpdateResultStatusTriggered
 	}
 }
 
@@ -952,17 +951,17 @@ func agentAlreadyOnTargetInternal(info *versiontypes.Info) bool {
 // tunnel round-trip surfaces here as a deadline even though the agent is online.
 // Only errors that look like the environment was never reachable (no tunnel,
 // connection refused, DNS failure, …) stay an offline skip.
-func updateAllAgentFailureStatusInternal(err error) models.EnvironmentUpdateResultStatus {
+func updateAllAgentFailureStatusInternal(err error) EnvironmentUpdateResultStatus {
 	// The tunnel/connection was established but the request did not finish: it
 	// either timed out or was canceled (e.g. the parent context was aborted).
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-		return models.EnvironmentUpdateResultStatusFailed
+		return EnvironmentUpdateResultStatusFailed
 	}
 	// The environment answered with a non-success status — reached, not offline.
 	if _, ok := stderrors.AsType[*remenv.StatusError](err); ok {
-		return models.EnvironmentUpdateResultStatusFailed
+		return EnvironmentUpdateResultStatusFailed
 	}
-	return models.EnvironmentUpdateResultStatusSkippedOffline
+	return EnvironmentUpdateResultStatusSkippedOffline
 }
 
 // confirmAgentUpgradedInternal polls the agent's version until it moves off the
@@ -1004,8 +1003,8 @@ func (s *SystemUpgradeService) confirmAgentUpgradedInternal(ctx context.Context,
 }
 
 // GetLatestUpdateAllJob returns the most recently created update-all job, or nil.
-func (s *SystemUpgradeService) GetLatestUpdateAllJob(ctx context.Context) (*models.EnvironmentUpdateJob, error) {
-	var jobs []models.EnvironmentUpdateJob
+func (s *SystemUpgradeService) GetLatestUpdateAllJob(ctx context.Context) (*EnvironmentUpdateJob, error) {
+	var jobs []EnvironmentUpdateJob
 	if err := s.db.WithContext(ctx).
 		Order("created_at DESC").
 		Limit(1).
@@ -1018,12 +1017,12 @@ func (s *SystemUpgradeService) GetLatestUpdateAllJob(ctx context.Context) (*mode
 	return &jobs[0], nil
 }
 
-func (s *SystemUpgradeService) activeUpdateAllJobInternal(ctx context.Context) (*models.EnvironmentUpdateJob, error) {
-	var jobs []models.EnvironmentUpdateJob
+func (s *SystemUpgradeService) activeUpdateAllJobInternal(ctx context.Context) (*EnvironmentUpdateJob, error) {
+	var jobs []EnvironmentUpdateJob
 	if err := s.db.WithContext(ctx).
 		Where("status IN ?", []string{
-			string(models.EnvironmentUpdateJobStatusPendingRestart),
-			string(models.EnvironmentUpdateJobStatusRunning),
+			string(EnvironmentUpdateJobStatusPendingRestart),
+			string(EnvironmentUpdateJobStatusRunning),
 		}).
 		Order("created_at DESC").
 		Limit(1).
@@ -1036,8 +1035,8 @@ func (s *SystemUpgradeService) activeUpdateAllJobInternal(ctx context.Context) (
 	return &jobs[0], nil
 }
 
-func (s *SystemUpgradeService) getUpdateAllJobByIDInternal(ctx context.Context, id string) (*models.EnvironmentUpdateJob, error) {
-	var jobs []models.EnvironmentUpdateJob
+func (s *SystemUpgradeService) getUpdateAllJobByIDInternal(ctx context.Context, id string) (*EnvironmentUpdateJob, error) {
+	var jobs []EnvironmentUpdateJob
 	if err := s.db.WithContext(ctx).
 		Where("id = ?", id).
 		Limit(1).
@@ -1050,17 +1049,17 @@ func (s *SystemUpgradeService) getUpdateAllJobByIDInternal(ctx context.Context, 
 	return &jobs[0], nil
 }
 
-func (s *SystemUpgradeService) persistUpdateAllJobInternal(ctx context.Context, job *models.EnvironmentUpdateJob) error {
+func (s *SystemUpgradeService) persistUpdateAllJobInternal(ctx context.Context, job *EnvironmentUpdateJob) error {
 	return s.db.WithContext(ctx).Save(job).Error
 }
 
-func (s *SystemUpgradeService) markUpdateAllFailedInternal(ctx context.Context, job *models.EnvironmentUpdateJob, reason string) {
-	job.Status = models.EnvironmentUpdateJobStatusFailed
+func (s *SystemUpgradeService) markUpdateAllFailedInternal(ctx context.Context, job *EnvironmentUpdateJob, reason string) {
+	job.Status = EnvironmentUpdateJobStatusFailed
 	job.Error = &reason
 	job.CompletedAt = new(time.Now())
 	for i := range job.Results {
-		if job.Results[i].Status == models.EnvironmentUpdateResultStatusUpdating {
-			job.Results[i].Status = models.EnvironmentUpdateResultStatusFailed
+		if job.Results[i].Status == EnvironmentUpdateResultStatusUpdating {
+			job.Results[i].Status = EnvironmentUpdateResultStatusFailed
 			job.Results[i].Error = reason
 		}
 	}
@@ -1072,13 +1071,13 @@ func (s *SystemUpgradeService) markUpdateAllFailedInternal(ctx context.Context, 
 	// logUpdateAllEventInternal. LogUserEvent hardcodes an info-severity "completed"
 	// title, so create the event directly with error severity and the reason.
 	if _, err := s.eventService.CreateEvent(ctx, event.CreateEventRequest{
-		Type:        models.EventTypeSystemUpgrade,
-		Severity:    models.EventSeverityError,
+		Type:        event.EventTypeSystemUpgrade,
+		Severity:    event.EventSeverityError,
 		Title:       "Update all environments failed",
 		Description: reason,
 		UserID:      new(job.UserID),
 		Username:    new(job.Username),
-		Metadata: models.JSON{
+		Metadata: database.JSON{
 			"action":       "update_all_environments",
 			"jobId":        job.ID,
 			"environments": len(job.Results),
@@ -1094,21 +1093,21 @@ func (s *SystemUpgradeService) markUpdateAllFailedInternal(ctx context.Context, 
 // recordManagerResultInternal sets the manager (env "0") entry to its final status:
 // updated after a confirmed restart, up_to_date when the pull found nothing to swap
 // in, or failed otherwise.
-func (s *SystemUpgradeService) recordManagerResultInternal(job *models.EnvironmentUpdateJob, status models.EnvironmentUpdateResultStatus, currentVersion string) {
+func (s *SystemUpgradeService) recordManagerResultInternal(job *EnvironmentUpdateJob, status EnvironmentUpdateResultStatus, currentVersion string) {
 	for i := range job.Results {
 		if job.Results[i].EnvironmentID != environment.LocalEnvironmentID {
 			continue
 		}
 		job.Results[i].Status = status
 		switch status {
-		case models.EnvironmentUpdateResultStatusUpdated, models.EnvironmentUpdateResultStatusUpToDate:
+		case EnvironmentUpdateResultStatusUpdated, EnvironmentUpdateResultStatusUpToDate:
 			job.Results[i].ToVersion = currentVersion
-		case models.EnvironmentUpdateResultStatusFailed:
+		case EnvironmentUpdateResultStatusFailed:
 			job.Results[i].Error = "manager version did not change after upgrade"
-		case models.EnvironmentUpdateResultStatusPending,
-			models.EnvironmentUpdateResultStatusUpdating,
-			models.EnvironmentUpdateResultStatusTriggered,
-			models.EnvironmentUpdateResultStatusSkippedOffline:
+		case EnvironmentUpdateResultStatusPending,
+			EnvironmentUpdateResultStatusUpdating,
+			EnvironmentUpdateResultStatusTriggered,
+			EnvironmentUpdateResultStatusSkippedOffline:
 			// Nothing more to record: the row keeps the target version it was seeded
 			// with, since none of these outcomes establishes what it ended up running.
 		}
@@ -1118,8 +1117,8 @@ func (s *SystemUpgradeService) recordManagerResultInternal(job *models.Environme
 
 // finalizeUpdateAllJobInternal closes a job out as completed and records the audit
 // event. The per-environment rows must already carry their final statuses.
-func (s *SystemUpgradeService) finalizeUpdateAllJobInternal(ctx context.Context, job *models.EnvironmentUpdateJob) {
-	job.Status = models.EnvironmentUpdateJobStatusCompleted
+func (s *SystemUpgradeService) finalizeUpdateAllJobInternal(ctx context.Context, job *EnvironmentUpdateJob) {
+	job.Status = EnvironmentUpdateJobStatusCompleted
 	job.CompletedAt = new(time.Now())
 	if err := s.persistUpdateAllJobInternal(ctx, job); err != nil {
 		slog.WarnContext(ctx, "update-all: failed to finalize job", "jobId", job.ID, "error", err)
@@ -1128,15 +1127,15 @@ func (s *SystemUpgradeService) finalizeUpdateAllJobInternal(ctx context.Context,
 	s.logUpdateAllEventInternal(ctx, job)
 }
 
-func (s *SystemUpgradeService) logUpdateAllEventInternal(ctx context.Context, job *models.EnvironmentUpdateJob) {
+func (s *SystemUpgradeService) logUpdateAllEventInternal(ctx context.Context, job *EnvironmentUpdateJob) {
 	failed := 0
 	for _, r := range job.Results {
-		if r.Status == models.EnvironmentUpdateResultStatusFailed {
+		if r.Status == EnvironmentUpdateResultStatusFailed {
 			failed++
 		}
 	}
 
-	metadata := models.JSON{
+	metadata := database.JSON{
 		"action":       "update_all_environments",
 		"jobId":        job.ID,
 		"environments": len(job.Results),
@@ -1145,7 +1144,7 @@ func (s *SystemUpgradeService) logUpdateAllEventInternal(ctx context.Context, jo
 
 	// All environments succeeded: log the standard completed (info) event.
 	if failed == 0 {
-		if err := s.eventService.LogUserEvent(ctx, models.EventTypeSystemUpgrade, job.UserID, job.Username, metadata); err != nil {
+		if err := s.eventService.LogUserEvent(ctx, event.EventTypeSystemUpgrade, job.UserID, job.Username, metadata); err != nil {
 			slog.WarnContext(ctx, "Failed to log update-all event", "jobId", job.ID, "error", err)
 		}
 		return
@@ -1154,8 +1153,8 @@ func (s *SystemUpgradeService) logUpdateAllEventInternal(ctx context.Context, jo
 	// The job ran to completion but some environments failed to update — record a
 	// warning-severity event so those failures still show in the audit log.
 	if _, err := s.eventService.CreateEvent(ctx, event.CreateEventRequest{
-		Type:        models.EventTypeSystemUpgrade,
-		Severity:    models.EventSeverityWarning,
+		Type:        event.EventTypeSystemUpgrade,
+		Severity:    event.EventSeverityWarning,
 		Title:       "Update all environments completed with errors",
 		Description: fmt.Sprintf("%d of %d environments failed to update", failed, len(job.Results)),
 		UserID:      new(job.UserID),

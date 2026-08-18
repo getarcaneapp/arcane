@@ -15,8 +15,8 @@ import (
 
 	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	rusticruntime "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/rustic"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
@@ -271,7 +271,7 @@ func (e *Engine) ensureImageInternal(ctx context.Context, dockerClient *client.C
 	if e.imageService == nil {
 		return errors.New("image service is unavailable")
 	}
-	if err := e.imageService.PullImage(ctx, rusticruntime.DefaultImage, io.Discard, models.SystemUser, nil); err != nil {
+	if err := e.imageService.PullImage(ctx, rusticruntime.DefaultImage, io.Discard, common.SystemUser, nil); err != nil {
 		return fmt.Errorf("failed to pull official Rustic image: %w", err)
 	}
 	return nil

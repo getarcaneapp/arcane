@@ -13,7 +13,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/gitops"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/job"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/system"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/systembackup"
@@ -265,7 +264,7 @@ type settingsEffectsSchedulerInternal interface {
 }
 
 type timeoutSettingsEnvironmentInternal interface {
-	ListRemoteEnvironments(ctx context.Context) ([]models.Environment, error)
+	ListRemoteEnvironments(ctx context.Context) ([]environment.Environment, error)
 	ProxyRequest(ctx context.Context, envID string, method string, path string, body []byte) ([]byte, int, error)
 }
 

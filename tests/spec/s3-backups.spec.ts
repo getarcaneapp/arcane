@@ -67,12 +67,30 @@ async function removeVolumeViaApi(page: Page, volumeName: string) {
 		.catch(() => undefined);
 }
 
+async function getVolumeWorkspaceRevision(page: Page, volumeName: string) {
+	const response = await page.request.get(
+		`/api/environments/0/volumes/${encodeURIComponent(volumeName)}/workspace`
+	);
+	if (!response.ok()) {
+		throw new Error(
+			`Failed to read ${volumeName} workspace: ${response.status()} ${await response.text()}`
+		);
+	}
+	const body = await response.json();
+	return body.data.fileTreeRevision as string;
+}
+
 async function writeVolumeFile(page: Page, volumeName: string, fileName: string, content: string) {
-	const response = await page.request.post(
-		`/api/environments/0/volumes/${encodeURIComponent(volumeName)}/browse/upload?path=/`,
+	const fileTreeRevision = await getVolumeWorkspaceRevision(page, volumeName);
+	const response = await page.request.put(
+		`/api/environments/0/volumes/${encodeURIComponent(volumeName)}/workspace`,
 		{
 			multipart: {
-				file: { name: fileName, mimeType: 'text/plain', buffer: Buffer.from(content) }
+				manifest: JSON.stringify({
+					fileTreeRevision,
+					fileChanges: [{ operation: 'create_file', relativePath: fileName, uploadIndex: 0 }]
+				}),
+				files: { name: fileName, mimeType: 'text/plain', buffer: Buffer.from(content) }
 			}
 		}
 	);
@@ -82,20 +100,31 @@ async function writeVolumeFile(page: Page, volumeName: string, fileName: string,
 }
 
 async function readVolumeFile(page: Page, volumeName: string, filePath: string) {
+	const relativePath = filePath.replace(/^\/+/, '');
 	const response = await page.request.get(
-		`/api/environments/0/volumes/${encodeURIComponent(volumeName)}/browse/content?path=${encodeURIComponent(filePath)}`
+		`/api/environments/0/volumes/${encodeURIComponent(volumeName)}/workspace/file?relativePath=${encodeURIComponent(relativePath)}`
 	);
 	if (!response.ok()) {
 		return null;
 	}
 	const body = await response.json();
 	const content = body?.data?.content;
-	return typeof content === 'string' ? Buffer.from(content, 'base64').toString('utf8') : null;
+	return typeof content === 'string' ? content : null;
 }
 
 async function deleteVolumeFile(page: Page, volumeName: string, filePath: string) {
-	const response = await page.request.delete(
-		`/api/environments/0/volumes/${encodeURIComponent(volumeName)}/browse?path=${encodeURIComponent(filePath)}`
+	const relativePath = filePath.replace(/^\/+/, '');
+	const fileTreeRevision = await getVolumeWorkspaceRevision(page, volumeName);
+	const response = await page.request.put(
+		`/api/environments/0/volumes/${encodeURIComponent(volumeName)}/workspace`,
+		{
+			multipart: {
+				manifest: JSON.stringify({
+					fileTreeRevision,
+					fileChanges: [{ operation: 'delete', relativePath }]
+				})
+			}
+		}
 	);
 	if (!response.ok()) {
 		throw new Error(`Failed to delete ${filePath}: ${response.status()} ${await response.text()}`);

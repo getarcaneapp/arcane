@@ -1,12 +1,16 @@
 package image
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+
 	"context"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
+
+	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 
 	"emperror.dev/errors"
 	"github.com/containerd/platforms"
@@ -16,7 +20,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/upload"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
@@ -599,14 +602,14 @@ func (h *ImageHandler) PullImage(ctx context.Context, input *PullImageInput) (*h
 				runtimeCtx,
 				h.activityService,
 				input.EnvironmentID,
-				models.ActivityTypeImagePull,
+				activitytypes.TypeImagePull,
 				"image",
 				"",
 				fullImageName,
 				user,
 				"Pulling image",
 				"Image pull started",
-				models.JSON{"imageName": fullImageName},
+				database.JSON{"imageName": fullImageName},
 				true,
 			)
 			activitylib.WriteStartedLine(rawWriter, activityID)
@@ -657,14 +660,14 @@ func (h *ImageHandler) BuildImage(ctx context.Context, input *BuildImageInput) (
 				runtimeCtx,
 				h.activityService,
 				input.EnvironmentID,
-				models.ActivityTypeImageBuild,
+				activitytypes.TypeImageBuild,
 				"image",
 				"",
 				resourceName,
 				user,
 				"Building image",
 				"Image build started",
-				models.JSON{"contextDir": input.Body.ContextDir, "tags": input.Body.Tags},
+				database.JSON{"contextDir": input.Body.ContextDir, "tags": input.Body.Tags},
 				true,
 			)
 			activitylib.WriteStartedLine(rawWriter, activityID)

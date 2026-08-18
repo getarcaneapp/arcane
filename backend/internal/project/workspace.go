@@ -1,6 +1,10 @@
 package project
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+
 	"context"
 	"io"
 	"net/http"
@@ -11,7 +15,6 @@ import (
 	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	acfsutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/acfs"
@@ -110,7 +113,7 @@ func (s *ProjectService) DownloadProjectWorkspaceFile(ctx context.Context, proje
 	return file, size, filepath.Base(rel), nil
 }
 
-func (s *ProjectService) UpdateProjectWorkspace(ctx context.Context, projectID string, manifest projecttypes.WorkspaceUpdateManifest, uploads map[int][]byte, user models.User) (*workspacetypes.Workspace, error) {
+func (s *ProjectService) UpdateProjectWorkspace(ctx context.Context, projectID string, manifest projecttypes.WorkspaceUpdateManifest, uploads map[int][]byte, user common.User) (*workspacetypes.Workspace, error) {
 	if err := workspacepkg.ValidateUpdateManifest(manifest.FileTreeRevision, len(manifest.FileChanges), 500); err != nil {
 		return nil, common.Classify(common.ErrProjectWorkspaceBadRequest, err)
 	}
@@ -147,14 +150,14 @@ func (s *ProjectService) UpdateProjectWorkspace(ctx context.Context, projectID s
 	if err := s.updateProjectStatusandCountsInternal(ctx, proj.ID, proj.Status); err != nil {
 		return nil, errors.WrapIf(err, "refresh project after workspace update")
 	}
-	s.logProjectEventInternal(ctx, models.EventTypeProjectUpdate, proj.ID, proj.Name, user, models.JSON{
+	s.logProjectEventInternal(ctx, event.EventTypeProjectUpdate, proj.ID, proj.Name, user, database.JSON{
 		"action":          "update_project_workspace",
 		"fileChangeCount": len(manifest.FileChanges),
 	}, "could not log project workspace update")
 	return s.GetProjectWorkspace(ctx, projectID)
 }
 
-func (s *ProjectService) resolveProjectWorkspacePathInternal(ctx context.Context, projectID, relativePath string) (*models.Project, string, string, acfstypes.Entry, error) {
+func (s *ProjectService) resolveProjectWorkspacePathInternal(ctx context.Context, projectID, relativePath string) (*Project, string, string, acfstypes.Entry, error) {
 	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
 		return nil, "", "", acfstypes.Entry{}, err
@@ -200,7 +203,7 @@ func classifyProjectWorkspaceACFSErrorInternal(err error, operation string) erro
 	}
 }
 
-func (s *ProjectService) projectWorkspaceApplyOptionsInternal(ctx context.Context, proj *models.Project, expectedRevision string) projects.ProjectWorkspaceApplyOptions {
+func (s *ProjectService) projectWorkspaceApplyOptionsInternal(ctx context.Context, proj *Project, expectedRevision string) projects.ProjectWorkspaceApplyOptions {
 	composeFileName := projects.DefaultComposeFileName
 	if composeFile, err := s.ResolveProjectComposeFile(ctx, proj); err == nil {
 		composeFileName = filepath.Base(composeFile)
@@ -243,7 +246,7 @@ func (s *ProjectService) prepareProjectWorkspaceBackupInternal(ctx context.Conte
 	return backup, func() { _ = acfs.RemoveAll(ctx, projectsDirectory, backupLogical) }, nil
 }
 
-func isGitOpsManagedProjectInternal(proj *models.Project) bool {
+func isGitOpsManagedProjectInternal(proj *Project) bool {
 	return proj != nil && proj.GitOpsManagedBy != nil && strings.TrimSpace(*proj.GitOpsManagedBy) != ""
 }
 

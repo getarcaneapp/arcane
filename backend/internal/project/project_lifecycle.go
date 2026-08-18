@@ -1,6 +1,10 @@
 package project
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+
 	"context"
 	stderrors "errors"
 	"fmt"
@@ -15,7 +19,6 @@ import (
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
@@ -60,7 +63,7 @@ func (s *ProjectService) composePullSelectedServicesInternal(
 	ctx context.Context,
 	compProj *composetypes.Project,
 	servicesToUpdate []string,
-	user models.User,
+	user common.User,
 	credentials []containerregistry.Credential,
 ) error {
 	if compProj == nil {
@@ -86,7 +89,7 @@ func (s *ProjectService) pullAndReconcileImageInternal(
 	ctx context.Context,
 	imageRef string,
 	progressWriter io.Writer,
-	user models.User,
+	user common.User,
 	credentials []containerregistry.Credential,
 ) error {
 	if s == nil || s.imageService == nil {
@@ -109,7 +112,7 @@ func (s *ProjectService) pullAndReconcileImageInternal(
 	return nil
 }
 
-func (s *ProjectService) UpdateProjectServices(ctx context.Context, projectID string, servicesToUpdate []string, user models.User) error {
+func (s *ProjectService) UpdateProjectServices(ctx context.Context, projectID string, servicesToUpdate []string, user common.User) error {
 	projectFromDb, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
 		return err
@@ -123,7 +126,7 @@ func (s *ProjectService) UpdateProjectServices(ctx context.Context, projectID st
 	}
 
 	// 2. Set status to deploying/restarting
-	if err := s.updateProjectStatusInternal(ctx, projectID, models.ProjectStatusDeploying); err != nil {
+	if err := s.updateProjectStatusInternal(ctx, projectID, ProjectStatusDeploying); err != nil {
 		return err
 	}
 
@@ -155,46 +158,29 @@ func (s *ProjectService) UpdateProjectServices(ctx context.Context, projectID st
 	}
 
 	// 6. Finalize status
-	if err := s.updateProjectStatusandCountsInternal(ctx, projectID, models.ProjectStatusRunning); err != nil {
+	if err := s.updateProjectStatusandCountsInternal(ctx, projectID, ProjectStatusRunning); err != nil {
 		return err
 	}
 
-	metadata := models.JSON{
+	metadata := database.JSON{
 		"action":      "update_services",
 		"projectID":   projectID,
 		"projectName": projectFromDb.Name,
 		"services":    append([]string(nil), servicesToUpdate...),
 	}
-	s.logProjectEventInternal(ctx, models.EventTypeProjectUpdate, projectID, projectFromDb.Name, user, metadata, "could not log project service update action")
+	s.logProjectEventInternal(ctx, event.EventTypeProjectUpdate, projectID, projectFromDb.Name, user, metadata, "could not log project service update action")
 
 	return nil
 }
 
-func ensureProjectMutableInternal(proj *models.Project) error {
+func ensureProjectMutableInternal(proj *Project) error {
 	if proj != nil && proj.IsArchived {
 		return common.Classify(common.ErrProjectArchived, errors.New("project is archived and must be unarchived before this action"))
 	}
 	return nil
 }
 
-func isProjectArchiveBlockedInternal(proj *models.Project) bool {
-	if proj == nil {
-		return false
-	}
-	if proj.RunningCount > 0 {
-		return true
-	}
-	switch proj.Status {
-	case models.ProjectStatusRunning, models.ProjectStatusPartiallyRunning, models.ProjectStatusDeploying, models.ProjectStatusRestarting:
-		return true
-	case models.ProjectStatusStopped, models.ProjectStatusUnknown, models.ProjectStatusStopping:
-		return false
-	default:
-		return false
-	}
-}
-
-func (s *ProjectService) ArchiveProject(ctx context.Context, projectID string, user models.User) error {
+func (s *ProjectService) ArchiveProject(ctx context.Context, projectID string, user common.User) error {
 	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
 		return err
@@ -202,25 +188,36 @@ func (s *ProjectService) ArchiveProject(ctx context.Context, projectID string, u
 	if proj.IsArchived {
 		return nil
 	}
-	if isProjectArchiveBlockedInternal(proj) {
-		return common.Classify(common.ErrProjectMustBeStopped, errors.New("project must be stopped before archiving"))
+
+	// Gate on live Docker state, not the persisted status row, which can go
+	// stale when containers are stopped outside an Arcane project action.
+	// A project without a compose file cannot have managed containers running
+	// and is a prime archive candidate, so it is allowed through.
+	services, servicesErr := s.GetProjectServices(ctx, projectID)
+	switch {
+	case servicesErr != nil && !errors.Is(servicesErr, common.ErrProjectComposeFileNotFound):
+		return errors.WrapIf(servicesErr, "cannot verify project is stopped before archiving")
+	case servicesErr == nil:
+		if _, running := getServiceCounts(services); running > 0 {
+			return common.Classify(common.ErrProjectMustBeStopped, errors.New("project must be stopped before archiving"))
+		}
 	}
 
 	now := time.Now()
-	if err := s.db.WithContext(ctx).Model(&models.Project{}).Where("id = ?", projectID).Updates(map[string]any{
+	if err := s.db.WithContext(ctx).Model(&Project{}).Where("id = ?", projectID).Updates(map[string]any{
 		"is_archived": true,
 		"archived_at": now,
 	}).Error; err != nil {
 		return errors.WrapIf(err, "failed to archive project")
 	}
 
-	metadata := models.JSON{"action": "archived", "projectID": projectID, "projectName": proj.Name}
-	s.logProjectEventInternal(ctx, models.EventTypeProjectUpdate, projectID, proj.Name, user, metadata, "could not log project archive action")
+	metadata := database.JSON{"action": "archived", "projectID": projectID, "projectName": proj.Name}
+	s.logProjectEventInternal(ctx, event.EventTypeProjectUpdate, projectID, proj.Name, user, metadata, "could not log project archive action")
 
 	return nil
 }
 
-func (s *ProjectService) UnarchiveProject(ctx context.Context, projectID string, user models.User) error {
+func (s *ProjectService) UnarchiveProject(ctx context.Context, projectID string, user common.User) error {
 	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
 		return err
@@ -229,15 +226,15 @@ func (s *ProjectService) UnarchiveProject(ctx context.Context, projectID string,
 		return nil
 	}
 
-	if err := s.db.WithContext(ctx).Model(&models.Project{}).Where("id = ?", projectID).Updates(map[string]any{
+	if err := s.db.WithContext(ctx).Model(&Project{}).Where("id = ?", projectID).Updates(map[string]any{
 		"is_archived": false,
 		"archived_at": gorm.Expr("NULL"),
 	}).Error; err != nil {
 		return errors.WrapIf(err, "failed to unarchive project")
 	}
 
-	metadata := models.JSON{"action": "unarchived", "projectID": projectID, "projectName": proj.Name}
-	s.logProjectEventInternal(ctx, models.EventTypeProjectUpdate, projectID, proj.Name, user, metadata, "could not log project unarchive action")
+	metadata := database.JSON{"action": "unarchived", "projectID": projectID, "projectName": proj.Name}
+	s.logProjectEventInternal(ctx, event.EventTypeProjectUpdate, projectID, proj.Name, user, metadata, "could not log project unarchive action")
 
 	return nil
 }
@@ -255,7 +252,7 @@ func resolveRemoveOrphansInternal(gitOpsManaged bool, options *project.DeployOpt
 	return gitOpsManaged || (options != nil && options.RemoveOrphans)
 }
 
-func (s *ProjectService) DeployProject(ctx context.Context, projectID string, user models.User, options *project.DeployOptions) error {
+func (s *ProjectService) DeployProject(ctx context.Context, projectID string, user common.User, options *project.DeployOptions) error {
 	projectFromDb, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
 		return errors.WrapIf(err, "failed to get project")
@@ -279,7 +276,7 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 		resolvedPullPolicy = "missing"
 	}
 
-	if err := s.updateProjectStatusInternal(ctx, projectID, models.ProjectStatusDeploying); err != nil {
+	if err := s.updateProjectStatusInternal(ctx, projectID, ProjectStatusDeploying); err != nil {
 		return errors.WrapIf(err, "failed to update project status to deploying")
 	}
 
@@ -333,17 +330,17 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 	}
 	slog.Info("compose up completed successfully", "projectID", projectID, "projectName", projectModel.Name)
 
-	metadata := models.JSON{"action": "deploy", "projectID": projectID, "projectName": projectModel.Name}
-	s.logProjectEventInternal(ctx, models.EventTypeProjectDeploy, projectID, projectModel.Name, user, metadata, "could not log project deployment action")
+	metadata := database.JSON{"action": "deploy", "projectID": projectID, "projectName": projectModel.Name}
+	s.logProjectEventInternal(ctx, event.EventTypeProjectDeploy, projectID, projectModel.Name, user, metadata, "could not log project deployment action")
 
-	err = s.updateProjectStatusandCountsInternal(ctx, projectID, models.ProjectStatusRunning)
+	err = s.updateProjectStatusandCountsInternal(ctx, projectID, ProjectStatusRunning)
 	if err != nil {
 		slog.Error("failed to update project status and counts after deploy", "projectID", projectID, "error", err)
 	}
 	return err
 }
 
-func (s *ProjectService) DownProject(ctx context.Context, projectID string, user models.User) error {
+func (s *ProjectService) DownProject(ctx context.Context, projectID string, user common.User) error {
 	projectFromDb, err := s.getMutableProjectInternal(ctx, projectID)
 	if err != nil {
 		return err
@@ -351,27 +348,27 @@ func (s *ProjectService) DownProject(ctx context.Context, projectID string, user
 
 	proj, _, lerr := s.loadComposeProjectForProjectInternal(ctx, projectFromDb, nil)
 	if lerr != nil {
-		_ = s.updateProjectStatusInternal(ctx, projectID, models.ProjectStatusRunning)
+		_ = s.updateProjectStatusInternal(ctx, projectID, ProjectStatusRunning)
 		return errors.WrapIf(lerr, "failed to load compose project")
 	}
 
-	if err := s.updateProjectStatusInternal(ctx, projectID, models.ProjectStatusStopped); err != nil {
+	if err := s.updateProjectStatusInternal(ctx, projectID, ProjectStatusStopped); err != nil {
 		return errors.WrapIf(err, "failed to update project status to stopping")
 	}
 
 	if err := projects.ComposeDown(ctx, proj, false); err != nil {
-		_ = s.updateProjectStatusInternal(ctx, projectID, models.ProjectStatusRunning)
+		_ = s.updateProjectStatusInternal(ctx, projectID, ProjectStatusRunning)
 		return errors.WrapIf(err, "failed to bring down project")
 	}
 
-	metadata := models.JSON{
+	metadata := database.JSON{
 		"action":      "down",
 		"projectID":   projectID,
 		"projectName": projectFromDb.Name,
 	}
-	s.logProjectEventInternal(ctx, models.EventTypeProjectStop, projectID, projectFromDb.Name, user, metadata, "could not log project down action")
+	s.logProjectEventInternal(ctx, event.EventTypeProjectStop, projectID, projectFromDb.Name, user, metadata, "could not log project down action")
 
-	return s.updateProjectStatusandCountsInternal(ctx, projectID, models.ProjectStatusStopped)
+	return s.updateProjectStatusandCountsInternal(ctx, projectID, ProjectStatusStopped)
 }
 
 // CreateProject creates a project's directory, files, and DB row. When
@@ -379,7 +376,7 @@ func (s *ProjectService) DownProject(ctx context.Context, projectID string, user
 // "-N" (the interactive default). When false a collision returns
 // projects.ErrProjectDirExists (wrapped) so GitOps creates fail loudly instead of
 // minting runaway "-N" duplicate projects on a broken binding.
-func (s *ProjectService) CreateProject(ctx context.Context, name, composeContent string, envContent *string, manifest project.CreateProjectWorkspaceManifest, uploads map[int][]byte, uiTags []string, uiTagColors map[string]project.TagColor, user models.User, allowNameSuffixOptions ...bool) (*models.Project, error) {
+func (s *ProjectService) CreateProject(ctx context.Context, name, composeContent string, envContent *string, manifest project.CreateProjectWorkspaceManifest, uploads map[int][]byte, uiTags []string, uiTagColors map[string]project.TagColor, user common.User, allowNameSuffixOptions ...bool) (*Project, error) {
 	normalizedUITags, err := projects.NormalizeProjectTags(uiTags)
 	if err != nil {
 		return nil, errors.WrapIf(err, "invalid project tags")
@@ -419,11 +416,11 @@ func (s *ProjectService) CreateProject(ctx context.Context, name, composeContent
 		return nil, errors.WrapIf(err, "failed to resolve created project directory")
 	}
 
-	proj := &models.Project{
+	proj := &Project{
 		Name:         name,
 		DirName:      &folderName,
 		Path:         projectPath,
-		Status:       models.ProjectStatusStopped,
+		Status:       ProjectStatusStopped,
 		ServiceCount: 0,
 		RunningCount: 0,
 	}
@@ -488,13 +485,13 @@ func (s *ProjectService) CreateProject(ctx context.Context, name, composeContent
 		)
 	}
 
-	metadata := models.JSON{"action": "create", "projectID": proj.ID, "projectName": proj.Name, "path": projectPath}
-	s.logProjectEventInternal(ctx, models.EventTypeProjectCreate, proj.ID, proj.Name, user, metadata, "could not log project creation")
+	metadata := database.JSON{"action": "create", "projectID": proj.ID, "projectName": proj.Name, "path": projectPath}
+	s.logProjectEventInternal(ctx, event.EventTypeProjectCreate, proj.ID, proj.Name, user, metadata, "could not log project creation")
 
 	return proj, nil
 }
 
-func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, removeFiles bool, removeVolumes bool, user models.User) error {
+func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, removeFiles bool, removeVolumes bool, user common.User) error {
 	slog.DebugContext(ctx, "DestroyProject service called",
 		"projectID", projectID,
 		"removeFiles", removeFiles,
@@ -511,7 +508,7 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, r
 		"projectName", proj.Name,
 		"projectPath", proj.Path)
 
-	if err := s.DownProject(ctx, projectID, models.SystemUser); err != nil {
+	if err := s.DownProject(ctx, projectID, common.SystemUser); err != nil {
 		slog.WarnContext(ctx, "failed to bring down project", "error", err)
 	}
 
@@ -557,13 +554,13 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, r
 	}
 	s.parsedCompose.invalidate(projectID)
 
-	metadata := models.JSON{"action": "destroy", "projectID": projectID, "projectName": proj.Name, "removeFiles": removeFiles, "removeVolumes": removeVolumes}
-	s.logProjectEventInternal(ctx, models.EventTypeProjectDelete, projectID, proj.Name, user, metadata, "could not log project destroy action")
+	metadata := database.JSON{"action": "destroy", "projectID": projectID, "projectName": proj.Name, "removeFiles": removeFiles, "removeVolumes": removeVolumes}
+	s.logProjectEventInternal(ctx, event.EventTypeProjectDelete, projectID, proj.Name, user, metadata, "could not log project destroy action")
 
 	return nil
 }
 
-func (s *ProjectService) RedeployProject(ctx context.Context, projectID string, user models.User, options *project.DeployOptions) error {
+func (s *ProjectService) RedeployProject(ctx context.Context, projectID string, user common.User, options *project.DeployOptions) error {
 	proj, err := s.getMutableProjectInternal(ctx, projectID)
 	if err != nil {
 		return err
@@ -587,13 +584,13 @@ func (s *ProjectService) RedeployProject(ctx context.Context, projectID string, 
 		slog.WarnContext(ctx, "failed to pull project images", "error", err)
 	}
 
-	metadata := models.JSON{"action": "redeploy", "projectID": projectID, "projectName": proj.Name}
-	s.logProjectEventInternal(ctx, models.EventTypeProjectDeploy, projectID, proj.Name, user, metadata, "could not log project redeploy action")
+	metadata := database.JSON{"action": "redeploy", "projectID": projectID, "projectName": proj.Name}
+	s.logProjectEventInternal(ctx, event.EventTypeProjectDeploy, projectID, proj.Name, user, metadata, "could not log project redeploy action")
 
 	return s.DeployProject(ctx, projectID, user, options)
 }
 
-func (s *ProjectService) projectRedeployDisabledInternal(ctx context.Context, proj models.Project) bool {
+func (s *ProjectService) projectRedeployDisabledInternal(ctx context.Context, proj Project) bool {
 	containers, err := s.listGlobalComposeContainersInternal(ctx)
 	if err != nil {
 		slog.WarnContext(ctx, "could not list compose containers to check self-redeploy guard; skipping guard", "error", err)
@@ -612,7 +609,7 @@ func (s *ProjectService) projectRedeployDisabledInternal(ctx context.Context, pr
 	return false
 }
 
-func (s *ProjectService) PullProjectImages(ctx context.Context, projectID string, progressWriter io.Writer, user models.User, credentials []containerregistry.Credential) error {
+func (s *ProjectService) PullProjectImages(ctx context.Context, projectID string, progressWriter io.Writer, user common.User, credentials []containerregistry.Credential) error {
 	proj, err := s.getMutableProjectInternal(ctx, projectID)
 	if err != nil {
 		return err
@@ -650,7 +647,7 @@ func (s *ProjectService) PullProjectImages(ctx context.Context, projectID string
 	return nil
 }
 
-func (s *ProjectService) BuildProjectServices(ctx context.Context, projectID string, options ProjectBuildOptions, progressWriter io.Writer, user *models.User) error {
+func (s *ProjectService) BuildProjectServices(ctx context.Context, projectID string, options ProjectBuildOptions, progressWriter io.Writer, user *common.User) error {
 	projectFromDb, err := s.getMutableProjectInternal(ctx, projectID)
 	if err != nil {
 		return err
@@ -669,7 +666,7 @@ func (s *ProjectService) BuildProjectServices(ctx context.Context, projectID str
 // - always/refresh: always pull
 // - missing/if_not_present/default: pull only if local image is missing
 // - never: never pull (fails early if image is missing locally)
-func (s *ProjectService) EnsureProjectImagesPresent(ctx context.Context, projectID string, progressWriter io.Writer, user models.User, credentials []containerregistry.Credential) error {
+func (s *ProjectService) EnsureProjectImagesPresent(ctx context.Context, projectID string, progressWriter io.Writer, user common.User, credentials []containerregistry.Credential) error {
 	proj, err := s.getMutableProjectInternal(ctx, projectID)
 	if err != nil {
 		return err
@@ -685,15 +682,27 @@ func (s *ProjectService) EnsureProjectImagesPresent(ctx context.Context, project
 	return s.ensureImagesPresent(ctx, pullPlan, progressWriter, credentials, user)
 }
 
-func (s *ProjectService) ensureImagesPresent(ctx context.Context, pullPlan map[string]projects.ImagePullMode, progressWriter io.Writer, credentials []containerregistry.Credential, user models.User) error {
-	for img, mode := range pullPlan {
+// imageRefreshDueInternal reports whether a pull_policy refresh window has
+// elapsed for a locally present image, using the engine's last-tag time as
+// compose v5.5.0 does; an unknown time counts as due.
+func (s *ProjectService) imageRefreshDueInternal(ctx context.Context, imageRef string, window time.Duration) bool {
+	lastTagged, err := s.imageService.ImageLastTagTime(ctx, imageRef)
+	if err != nil {
+		slog.WarnContext(ctx, "failed to resolve image last-tag time; treating refresh as due", "image", imageRef, "error", err)
+		return true
+	}
+	return lastTagged.IsZero() || time.Now().After(lastTagged.Add(window))
+}
+
+func (s *ProjectService) ensureImagesPresent(ctx context.Context, pullPlan map[string]projects.ImagePullStep, progressWriter io.Writer, credentials []containerregistry.Credential, user common.User) error {
+	for img, step := range pullPlan {
 		exists, ierr := s.imageService.ImageExistsLocally(ctx, img)
-		if ierr != nil && mode != projects.ImagePullModeAlways {
+		if ierr != nil && step.Mode != projects.ImagePullModeAlways {
 			slog.WarnContext(ctx, "failed to check local image existence", "image", img, "error", ierr)
 			// Non-fatal: attempt to pull to be safe
 		}
 
-		if mode == projects.ImagePullModeNever {
+		if step.Mode == projects.ImagePullModeNever {
 			if ierr != nil {
 				slog.WarnContext(ctx, "pull_policy is 'never' but image presence check failed; continuing without pull", "image", img, "error", ierr)
 				continue
@@ -705,8 +714,13 @@ func (s *ProjectService) ensureImagesPresent(ctx context.Context, pullPlan map[s
 			continue
 		}
 
-		if mode == projects.ImagePullModeIfMissing && exists {
+		if step.Mode == projects.ImagePullModeIfMissing && exists {
 			slog.DebugContext(ctx, "image already present locally; skipping pull", "image", img)
+			continue
+		}
+
+		if step.Mode == projects.ImagePullModeRefresh && exists && !s.imageRefreshDueInternal(ctx, img, step.RefreshAfter) {
+			slog.DebugContext(ctx, "pull_policy refresh window has not elapsed; skipping pull", "image", img, "window", step.RefreshAfter)
 			continue
 		}
 
@@ -723,7 +737,7 @@ func (s *ProjectService) prepareProjectImagesForDeploy(
 	project *composetypes.Project,
 	progressWriter io.Writer,
 	credentials []containerregistry.Credential,
-	user *models.User,
+	user *common.User,
 	pullPolicyOverride string,
 ) error {
 	if project == nil {
@@ -756,6 +770,8 @@ func (s *ProjectService) prepareProjectImagesForDeploy(
 			dependentDecision = projects.DeployImageDecision{RequireLocalOnly: true}
 		case decision.PullAlways:
 			dependentDecision = projects.DeployImageDecision{PullAlways: true}
+		case decision.PullIfStale:
+			dependentDecision = projects.DeployImageDecision{PullIfStale: true, StaleAfter: decision.StaleAfter}
 		}
 		dependentImages := api.GetDependentImages(svc, project.Name)
 		for _, vol := range svc.Volumes {
@@ -783,7 +799,7 @@ func (s *ProjectService) ensureDeployServiceImageReady(
 	decision projects.DeployImageDecision,
 	progressWriter io.Writer,
 	credentials []containerregistry.Credential,
-	user *models.User,
+	user *common.User,
 ) error {
 	if decision.Build {
 		return s.buildServiceImageForDeploy(ctx, projectID, project, serviceName, svc, progressWriter, user)
@@ -801,11 +817,21 @@ func (s *ProjectService) ensureDeployServiceImageReady(
 		return nil
 	}
 
-	if !projects.ShouldPullDeployImage(decision, exists) {
+	var lastTagged time.Time
+	if decision.PullIfStale && exists {
+		var tagErr error
+		lastTagged, tagErr = s.imageService.ImageLastTagTime(ctx, imageName)
+		if tagErr != nil {
+			// Unknown last-tag time counts as stale, matching the missing-record
+			// behavior of compose's refresh handling.
+			slog.WarnContext(ctx, "failed to resolve image last-tag time; treating refresh as due", "image", imageName, "error", tagErr)
+		}
+	}
+	if !projects.ShouldPullDeployImage(decision, exists, lastTagged) {
 		return nil
 	}
 
-	err = s.pullAndReconcileImageInternal(ctx, imageName, progressWriter, models.SystemUser, credentials)
+	err = s.pullAndReconcileImageInternal(ctx, imageName, progressWriter, common.SystemUser, credentials)
 	if err == nil {
 		return nil
 	}
@@ -823,7 +849,7 @@ func (s *ProjectService) buildServiceImageForDeploy(
 	serviceName string,
 	svc composetypes.ServiceConfig,
 	progressWriter io.Writer,
-	user *models.User,
+	user *common.User,
 ) error {
 	if s.buildService == nil {
 		return errors.Errorf("build service not available for service %s", serviceName)
@@ -943,7 +969,7 @@ func (s *ProjectService) restoreProjectStatusAfterFailedDeployInternal(ctx conte
 	if err == nil {
 		serviceCount, runningCount := getServiceCounts(services)
 		status := calculateProjectStatus(services)
-		updateErr := s.db.WithContext(ctx).Model(&models.Project{}).Where("id = ?", projectID).Updates(map[string]any{
+		updateErr := s.db.WithContext(ctx).Model(&Project{}).Where("id = ?", projectID).Updates(map[string]any{
 			"status":        status,
 			"service_count": serviceCount,
 			"running_count": runningCount,
@@ -957,12 +983,12 @@ func (s *ProjectService) restoreProjectStatusAfterFailedDeployInternal(ctx conte
 		slog.WarnContext(ctx, "failed to inspect project services after deploy failure", "projectID", projectID, "error", err)
 	}
 
-	if updateErr := s.updateProjectStatusInternal(ctx, projectID, models.ProjectStatusStopped); updateErr != nil {
+	if updateErr := s.updateProjectStatusInternal(ctx, projectID, ProjectStatusStopped); updateErr != nil {
 		slog.WarnContext(ctx, "failed to set stopped status after deploy failure", "projectID", projectID, "error", updateErr)
 	}
 }
 
-func (s *ProjectService) buildProjectServicesInternal(ctx context.Context, projectID string, project *composetypes.Project, options ProjectBuildOptions, progressWriter io.Writer, user *models.User) error {
+func (s *ProjectService) buildProjectServicesInternal(ctx context.Context, projectID string, project *composetypes.Project, options ProjectBuildOptions, progressWriter io.Writer, user *common.User) error {
 	if s.buildService == nil {
 		return nil
 	}
@@ -1002,13 +1028,13 @@ func (s *ProjectService) buildProjectServicesInternal(ctx context.Context, proje
 	return nil
 }
 
-func (s *ProjectService) RestartProject(ctx context.Context, projectID string, services []string, user models.User) error {
+func (s *ProjectService) RestartProject(ctx context.Context, projectID string, services []string, user common.User) error {
 	proj, err := s.getMutableProjectInternal(ctx, projectID)
 	if err != nil {
 		return err
 	}
 
-	if err := s.updateProjectStatusInternal(ctx, projectID, models.ProjectStatusRestarting); err != nil {
+	if err := s.updateProjectStatusInternal(ctx, projectID, ProjectStatusRestarting); err != nil {
 		return errors.WrapIf(err, "failed to update project status to restarting")
 	}
 
@@ -1029,16 +1055,16 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, s
 
 	compProj, _, lerr := projects.LoadComposeProjectFromDir(ctx, proj.Path, projects.NormalizeProjectName(proj.Name), projectsDirectory, utils.BoolOrDefault(cfg.AutoInjectEnv.Value, false), pathMapper)
 	if lerr != nil {
-		_ = s.updateProjectStatusInternal(ctx, projectID, models.ProjectStatusRunning)
+		_ = s.updateProjectStatusInternal(ctx, projectID, ProjectStatusRunning)
 		return errors.WrapIf(lerr, "failed to load compose project")
 	}
 
 	if err := projects.ComposeRestart(ctx, compProj, services); err != nil {
-		_ = s.updateProjectStatusInternal(ctx, projectID, models.ProjectStatusRunning)
+		_ = s.updateProjectStatusInternal(ctx, projectID, ProjectStatusRunning)
 		return errors.WrapIf(err, "failed to restart project")
 	}
 
-	metadata := models.JSON{
+	metadata := database.JSON{
 		"action":      "restart",
 		"projectID":   projectID,
 		"projectName": proj.Name,
@@ -1046,7 +1072,7 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, s
 	if len(services) > 0 {
 		metadata["services"] = append([]string(nil), services...)
 	}
-	s.logProjectEventInternal(ctx, models.EventTypeProjectStart, projectID, proj.Name, user, metadata, "could not log project restart action")
+	s.logProjectEventInternal(ctx, event.EventTypeProjectStart, projectID, proj.Name, user, metadata, "could not log project restart action")
 
-	return s.updateProjectStatusandCountsInternal(ctx, projectID, models.ProjectStatusRunning)
+	return s.updateProjectStatusandCountsInternal(ctx, projectID, ProjectStatusRunning)
 }

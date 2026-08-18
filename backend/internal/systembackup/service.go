@@ -14,10 +14,10 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	recoverytypes "github.com/getarcaneapp/arcane/backend/v2/internal/recovery"
 	s3domain "github.com/getarcaneapp/arcane/backend/v2/internal/s3"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/system"
@@ -29,6 +29,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/entityjobs"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/schedule"
+	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/google/uuid"
@@ -220,7 +221,7 @@ func (s *SystemBackupService) recoveryKeyInternal(ctx context.Context, supplied 
 		}
 		return supplied, nil
 	}
-	var recoveryConfig models.SystemBackupRecoveryConfig
+	var recoveryConfig SystemBackupRecoveryConfig
 	err := s.db.WithContext(ctx).Where("id = ?", systemRecoveryConfigID).First(&recoveryConfig).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return "", errors.New("enter the recovery key or configure one in system backups")
@@ -236,7 +237,7 @@ func (s *SystemBackupService) recoveryKeyInternal(ctx context.Context, supplied 
 }
 
 //nolint:gocognit // backup orchestration keeps cleanup and persistence transitions in one transaction-like flow
-func (s *SystemBackupService) CreateBackup(ctx context.Context, user models.User, trigger models.SystemBackupTrigger, request backuptypes.CreateSystemBackupRequest) (_ *models.SystemBackupRun, err error) {
+func (s *SystemBackupService) CreateBackup(ctx context.Context, user common.User, trigger SystemBackupTrigger, request backuptypes.CreateSystemBackupRequest) (_ *SystemBackupRun, err error) {
 	if !s.SupportedDatabaseProvider() {
 		return nil, errors.New("arcane system recovery currently requires the SQLite database provider")
 	}
@@ -279,16 +280,16 @@ func (s *SystemBackupService) CreateBackup(ctx context.Context, user models.User
 		return nil, ErrSystemBackupAlreadyRunning
 	}
 	defer lease.Release()
-	run := &models.SystemBackupRun{CreatedAt: time.Now().UTC(), Status: models.SystemBackupStatusRunning, Trigger: trigger, Destination: destination, S3DestinationID: destinationID, PolicyID: request.PolicyID}
+	run := &SystemBackupRun{CreatedAt: time.Now().UTC(), Status: SystemBackupStatusRunning, Trigger: trigger, Destination: destination, S3DestinationID: destinationID, PolicyID: request.PolicyID}
 	run.ID = "system-" + uuid.NewString()
 	if err := s.db.WithContext(ctx).Create(run).Error; err != nil {
 		return nil, err
 	}
 	defer func() {
 		if err != nil {
-			run.Status, run.Error = models.SystemBackupStatusFailed, err.Error()
+			run.Status, run.Error = SystemBackupStatusFailed, err.Error()
 		} else {
-			run.Status, run.Error = models.SystemBackupStatusSucceeded, ""
+			run.Status, run.Error = SystemBackupStatusSucceeded, ""
 		}
 		if saveErr := s.db.WithContext(context.WithoutCancel(ctx)).Save(run).Error; saveErr != nil {
 			err = errors.Join(err, fmt.Errorf("failed to save system backup result: %w", saveErr))
@@ -366,8 +367,8 @@ func (s *SystemBackupService) snapshotWithDatabaseLockInternal(ctx context.Conte
 }
 
 func (s *SystemBackupService) ListBackups(ctx context.Context, params pagination.QueryParams) ([]backuptypes.SystemBackupRun, pagination.Response, error) {
-	var runs []models.SystemBackupRun
-	query := s.db.WithContext(ctx).Model(&models.SystemBackupRun{})
+	var runs []SystemBackupRun
+	query := s.db.WithContext(ctx).Model(&SystemBackupRun{})
 	if term := strings.TrimSpace(params.Search); term != "" {
 		pattern := "%" + term + "%"
 		query = query.Where("status LIKE ? OR trigger LIKE ? OR destination LIKE ? OR error LIKE ?", pattern, pattern, pattern, pattern)
@@ -392,8 +393,8 @@ func (s *SystemBackupService) ListBackups(ctx context.Context, params pagination
 	return result, response, nil
 }
 
-func (s *SystemBackupService) backupInternal(ctx context.Context, id string) (*models.SystemBackupRun, error) {
-	var run models.SystemBackupRun
+func (s *SystemBackupService) backupInternal(ctx context.Context, id string) (*SystemBackupRun, error) {
+	var run SystemBackupRun
 	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&run).Error; err != nil {
 		return nil, err
 	}
@@ -467,7 +468,7 @@ func (s *SystemBackupService) DiscoverRemoteBackups(ctx context.Context, request
 			continue
 		}
 		var count int64
-		if err := s.db.WithContext(ctx).Model(&models.SystemBackupRun{}).
+		if err := s.db.WithContext(ctx).Model(&SystemBackupRun{}).
 			Where("remote_snapshot_id = ? AND s3_destination_id = ?", snapshot.ID, request.S3DestinationID).Count(&count).Error; err != nil {
 			return created, err
 		}
@@ -478,9 +479,9 @@ func (s *SystemBackupService) DiscoverRemoteBackups(ctx context.Context, request
 		if createdAt.IsZero() {
 			createdAt = time.Now().UTC()
 		}
-		run := &models.SystemBackupRun{
-			Size: snapshot.Summary.TotalBytesProcessed, CreatedAt: createdAt, Status: models.SystemBackupStatusSucceeded,
-			Trigger: models.SystemBackupTriggerManual, Destination: backuptypes.SystemBackupDestinationS3,
+		run := &SystemBackupRun{
+			Size: snapshot.Summary.TotalBytesProcessed, CreatedAt: createdAt, Status: SystemBackupStatusSucceeded,
+			Trigger: SystemBackupTriggerManual, Destination: backuptypes.SystemBackupDestinationS3,
 			RemoteSnapshotID: snapshot.ID, S3DestinationID: request.S3DestinationID,
 		}
 		run.ID = fmt.Sprintf("remote-%s-%s", request.S3DestinationID, snapshot.ID)
@@ -492,12 +493,12 @@ func (s *SystemBackupService) DiscoverRemoteBackups(ctx context.Context, request
 	return created, nil
 }
 
-func (s *SystemBackupService) UploadBackup(ctx context.Context, id string, request backuptypes.UploadSystemBackupRequest) (*models.SystemBackupRun, error) {
+func (s *SystemBackupService) UploadBackup(ctx context.Context, id string, request backuptypes.UploadSystemBackupRequest) (*SystemBackupRun, error) {
 	run, err := s.backupInternal(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	if run.Status != models.SystemBackupStatusSucceeded || run.LocalSnapshotID == "" {
+	if run.Status != SystemBackupStatusSucceeded || run.LocalSnapshotID == "" {
 		return nil, errors.New("only successful local system backups can be uploaded")
 	}
 	if run.RemoteSnapshotID != "" {
@@ -534,12 +535,12 @@ func (s *SystemBackupService) UploadBackup(ctx context.Context, id string, reque
 	return run, nil
 }
 
-func (s *SystemBackupService) RestoreBackup(ctx context.Context, id, recoveryKey string, user models.User) error {
+func (s *SystemBackupService) RestoreBackup(ctx context.Context, id, recoveryKey string, user common.User) error {
 	run, err := s.backupInternal(ctx, id)
 	if err != nil {
 		return err
 	}
-	if run.Status != models.SystemBackupStatusSucceeded {
+	if run.Status != SystemBackupStatusSucceeded {
 		return errors.New("only successful system backups can be restored")
 	}
 	key, err := s.recoveryKeyInternal(ctx, recoveryKey)
@@ -548,7 +549,7 @@ func (s *SystemBackupService) RestoreBackup(ctx context.Context, id, recoveryKey
 	}
 	// A local safety snapshot is created before the detached helper is allowed to
 	// stop Arcane and replace its data.
-	safetyBackup, err := s.CreateBackup(ctx, user, models.SystemBackupTriggerSafety, backuptypes.CreateSystemBackupRequest{
+	safetyBackup, err := s.CreateBackup(ctx, user, SystemBackupTriggerSafety, backuptypes.CreateSystemBackupRequest{
 		Destination: backuptypes.SystemBackupDestinationLocal,
 		RecoveryKey: key,
 	})
@@ -667,19 +668,19 @@ func (s *SystemBackupService) RestoreBackup(ctx context.Context, id, recoveryKey
 
 const systemRecoveryConfigID = "system-recovery"
 
-func (s *SystemBackupService) loadPoliciesInternal(ctx context.Context) ([]models.SystemBackupPolicy, error) {
-	var policies []models.SystemBackupPolicy
+func (s *SystemBackupService) loadPoliciesInternal(ctx context.Context) ([]SystemBackupPolicy, error) {
+	var policies []SystemBackupPolicy
 	if err := s.db.WithContext(ctx).Order("created_at ASC").Find(&policies).Error; err != nil {
 		return nil, fmt.Errorf("failed to load system backup policies: %w", err)
 	}
 	return policies, nil
 }
 
-func (s *SystemBackupService) loadPolicyInternal(ctx context.Context, policyID string) (*models.SystemBackupPolicy, error) {
+func (s *SystemBackupService) loadPolicyInternal(ctx context.Context, policyID string) (*SystemBackupPolicy, error) {
 	if strings.TrimSpace(policyID) == "" {
 		return nil, nil
 	}
-	var policy models.SystemBackupPolicy
+	var policy SystemBackupPolicy
 	err := s.db.WithContext(ctx).Where("id = ?", policyID).First(&policy).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
@@ -692,7 +693,7 @@ func (s *SystemBackupService) loadPolicyInternal(ctx context.Context, policyID s
 
 func (s *SystemBackupService) recoveryKeyConfiguredInternal(ctx context.Context) (bool, error) {
 	var count int64
-	if err := s.db.WithContext(ctx).Model(&models.SystemBackupRecoveryConfig{}).
+	if err := s.db.WithContext(ctx).Model(&SystemBackupRecoveryConfig{}).
 		Where("id = ? AND encrypted_recovery_key <> ''", systemRecoveryConfigID).Count(&count).Error; err != nil {
 		return false, fmt.Errorf("failed to load recovery key status: %w", err)
 	}
@@ -715,7 +716,7 @@ func (s *SystemBackupService) SetRecoveryKey(ctx context.Context, recoveryKey st
 	if err != nil {
 		return nil, fmt.Errorf("failed to encrypt recovery key: %w", err)
 	}
-	config := models.SystemBackupRecoveryConfig{EncryptedRecoveryKey: encrypted}
+	config := SystemBackupRecoveryConfig{EncryptedRecoveryKey: encrypted}
 	config.ID = systemRecoveryConfigID
 	if err := s.db.WithContext(ctx).Save(&config).Error; err != nil {
 		return nil, fmt.Errorf("failed to save recovery key: %w", err)
@@ -744,8 +745,8 @@ func (s *SystemBackupService) GetPolicies(ctx context.Context) (*backuptypes.Sys
 		}
 	}
 	for i := range policies {
-		var lastRun *models.SystemBackupRun
-		var run models.SystemBackupRun
+		var lastRun *SystemBackupRun
+		var run SystemBackupRun
 		if runErr := s.db.WithContext(ctx).Where("policy_id = ?", policies[i].ID).Order("created_at DESC").First(&run).Error; runErr == nil {
 			run.S3DestinationName = destinations[run.S3DestinationID]
 			lastRun = &run
@@ -798,14 +799,14 @@ func (s *SystemBackupService) UpdatePolicies(ctx context.Context, updates []back
 	if err != nil {
 		return nil, err
 	}
-	byID := make(map[string]models.SystemBackupPolicy, len(existing))
+	byID := make(map[string]SystemBackupPolicy, len(existing))
 	for i := range existing {
 		byID[existing[i].ID] = existing[i]
 	}
-	policies := make([]models.SystemBackupPolicy, 0, len(updates))
+	policies := make([]SystemBackupPolicy, 0, len(updates))
 	kept := make(map[string]struct{}, len(updates))
 	for _, update := range updates {
-		policy := models.SystemBackupPolicy{}
+		policy := SystemBackupPolicy{}
 		if update.ID != "" {
 			var ok bool
 			policy, ok = byID[update.ID]
@@ -860,18 +861,18 @@ func (s *SystemBackupService) runScheduledBackupInternal(ctx context.Context, po
 	if loadErr != nil || policy == nil || !policy.Enabled {
 		return
 	}
-	var run *models.SystemBackupRun
+	var run *SystemBackupRun
 	_, runErr := activitylib.RunHandlerActivity(ctx, s.activityService, activitylib.HandlerOptions{
-		EnvironmentID: "0", Type: models.ActivityTypeResourceAction, ResourceType: "system_backup",
-		ResourceID: policy.ID, ResourceName: "Arcane", User: &models.SystemUser,
+		EnvironmentID: "0", Type: activitytypes.TypeResourceAction, ResourceType: "system_backup",
+		ResourceID: policy.ID, ResourceName: "Arcane", User: &common.SystemUser,
 		Step: "Creating scheduled system backup", Message: "Creating scheduled Arcane system backup",
 		SuccessMessage: "Scheduled Arcane system backup created successfully",
-		Metadata: models.JSON{"action": "scheduled_system_backup", "policyId": policy.ID, "schedule": policy.Schedule,
+		Metadata: database.JSON{"action": "scheduled_system_backup", "policyId": policy.ID, "schedule": policy.Schedule,
 			"retentionCount": policy.RetentionCount, "localEnabled": policy.LocalEnabled,
 			"s3Enabled": policy.S3Enabled, "s3DestinationId": policy.S3DestinationID},
 	}, func(activityCtx context.Context) error {
 		var backupErr error
-		run, backupErr = s.CreateBackup(activityCtx, models.SystemUser, models.SystemBackupTriggerScheduled,
+		run, backupErr = s.CreateBackup(activityCtx, common.SystemUser, SystemBackupTriggerScheduled,
 			backuptypes.CreateSystemBackupRequest{PolicyID: policy.ID})
 		return backupErr
 	})
@@ -891,7 +892,7 @@ func (s *SystemBackupService) runScheduledBackupInternal(ctx context.Context, po
 	slog.InfoContext(ctx, "Scheduled Arcane system backup completed", "backupId", run.ID, "policyId", policy.ID)
 }
 
-func (s *SystemBackupService) rescheduleSystemBackupPolicyInternal(ctx context.Context, policy *models.SystemBackupPolicy) {
+func (s *SystemBackupService) rescheduleSystemBackupPolicyInternal(ctx context.Context, policy *SystemBackupPolicy) {
 	if policy == nil {
 		return
 	}

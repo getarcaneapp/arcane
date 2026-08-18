@@ -1,6 +1,10 @@
 package role
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+
 	"context"
 	"slices"
 	"testing"
@@ -9,41 +13,11 @@ import (
 	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
-
-func TestBackfillPermsForKeyDeduplicatesGlobalAndEnvironmentPermissions(t *testing.T) {
-	ctx := context.Background()
-	userSvc, roleSvc := setupUserAndRoleServices(t)
-	admin := createTestUser(t, userSvc, "admin", "admin")
-	grantGlobalAdmin(t, roleSvc, admin.ID)
-	user := createTestUser(t, userSvc, "api-key-owner", "api-key-owner")
-	envID := "env-1"
-	createTestEnvironment(t, roleSvc.db, envID, "http://localhost:3552", nil)
-
-	require.NoError(t, roleSvc.SetUserAssignments(ctx, user.ID, []models.UserRoleAssignment{
-		{RoleID: authz.BuiltInRoleViewer, EnvironmentID: nil},
-		{RoleID: authz.BuiltInRoleEditor, EnvironmentID: &envID},
-	}))
-
-	perms, err := roleSvc.backfillPermsForKeyInternal(ctx, roleSvc.db.WithContext(ctx), models.ApiKey{
-		UserID:        &user.ID,
-		EnvironmentID: &envID,
-	})
-	require.NoError(t, err)
-	require.Contains(t, perms, authz.PermContainersList)
-	require.Equal(t, 1, countPermissionInternal(perms, authz.PermContainersList))
-}
-
-func countPermissionInternal(perms []string, permission string) int {
-	return len(slices.DeleteFunc(slices.Clone(perms), func(p string) bool {
-		return p != permission
-	}))
-}
 
 func TestValidatePermissionsAgainstCallerRejectsEscalation(t *testing.T) {
 	_, roleSvc := setupUserAndRoleServices(t)
@@ -103,15 +77,15 @@ func TestEnsureBuiltInRolesMigratesVariablePermissionsWithoutBackfillingCustomGr
 	customRole, err := roleSvc.CreateRole(ctx, "Template Reader", nil, []string{authz.PermTemplatesRead})
 	require.NoError(t, err)
 	owner := createTestUser(t, userSvc, "variable-migration-owner", "variable-migration-owner")
-	scopedKey := models.ApiKey{
+	scopedKey := testApiKeyRow{
 		Name:      "Custom scoped key",
 		KeyHash:   "variable-migration-hash",
 		KeyPrefix: "arc_vars",
-		Kind:      models.ApiKeyKindScoped,
+		Kind:      "scoped",
 		UserID:    &owner.ID,
 	}
 	require.NoError(t, roleSvc.db.WithContext(ctx).Create(&scopedKey).Error)
-	require.NoError(t, roleSvc.db.WithContext(ctx).Create(&models.ApiKeyPermission{
+	require.NoError(t, roleSvc.db.WithContext(ctx).Create(&ApiKeyPermission{
 		ApiKeyID:   scopedKey.ID,
 		Permission: authz.PermTemplatesRead,
 	}).Error)
@@ -125,12 +99,11 @@ func TestEnsureBuiltInRolesMigratesVariablePermissionsWithoutBackfillingCustomGr
 			authz.PermVariablesSync,
 		}, permission)
 	})
-	require.NoError(t, roleSvc.db.WithContext(ctx).Model(&models.Role{}).
+	require.NoError(t, roleSvc.db.WithContext(ctx).Model(&Role{}).
 		Where("id = ?", authz.BuiltInRoleEditor).
-		Update("permissions", models.StringSlice(oldEditorPermissions)).Error)
+		Update("permissions", database.StringSlice(oldEditorPermissions)).Error)
 
 	require.NoError(t, roleSvc.EnsureBuiltInRoles(ctx))
-	require.NoError(t, roleSvc.BackfillApiKeyPermissions(ctx))
 
 	allVariablePermissions := []string{
 		authz.PermVariablesRead,
@@ -164,7 +137,7 @@ func TestEnsureBuiltInRolesMigratesVariablePermissionsWithoutBackfillingCustomGr
 	require.NoError(t, err)
 	require.Equal(t, []string{authz.PermTemplatesRead}, []string(preservedCustomRole.Permissions))
 
-	var keyPermissions []models.ApiKeyPermission
+	var keyPermissions []ApiKeyPermission
 	require.NoError(t, roleSvc.db.WithContext(ctx).Where("api_key_id = ?", scopedKey.ID).Find(&keyPermissions).Error)
 	require.Len(t, keyPermissions, 1)
 	require.Equal(t, authz.PermTemplatesRead, keyPermissions[0].Permission)
@@ -175,7 +148,7 @@ func TestSetUserAssignmentsRejectsUnknownRole(t *testing.T) {
 	userSvc, roleSvc := setupUserAndRoleServices(t)
 	user := createTestUser(t, userSvc, "victim", "victim")
 
-	err := roleSvc.SetUserAssignments(ctx, user.ID, []models.UserRoleAssignment{
+	err := roleSvc.SetUserAssignments(ctx, user.ID, []UserRoleAssignment{
 		{RoleID: "role_does_not_exist"},
 	})
 	require.Error(t, err)
@@ -187,7 +160,7 @@ func TestReplaceOidcAssignmentsRejectsUnknownRole(t *testing.T) {
 	userSvc, roleSvc := setupUserAndRoleServices(t)
 	user := createTestUser(t, userSvc, "oidc-user", "oidc-user")
 
-	err := roleSvc.ReplaceOidcAssignments(ctx, user.ID, []models.UserRoleAssignment{
+	err := roleSvc.ReplaceOidcAssignments(ctx, user.ID, []UserRoleAssignment{
 		{RoleID: "role_does_not_exist"},
 	})
 	require.Error(t, err)
@@ -202,7 +175,7 @@ func TestReplaceOidcAssignmentsRejectsUnknownEnvironment(t *testing.T) {
 
 	// A valid role scoped to a non-existent environment must fail existence
 	// validation (mirrors SetUserAssignments) rather than attempting an insert.
-	err := roleSvc.ReplaceOidcAssignments(ctx, user.ID, []models.UserRoleAssignment{
+	err := roleSvc.ReplaceOidcAssignments(ctx, user.ID, []UserRoleAssignment{
 		{RoleID: authz.BuiltInRoleViewer, EnvironmentID: &missingEnv},
 	})
 	require.Error(t, err)
@@ -216,7 +189,7 @@ func TestEffectiveGlobalAdminCountIncludesCustomAllPermissionsRole(t *testing.T)
 	customRole, err := roleSvc.CreateRole(ctx, "Custom Admin", nil, authz.AllPermissions())
 	require.NoError(t, err)
 
-	require.NoError(t, roleSvc.SetUserAssignments(ctx, user.ID, []models.UserRoleAssignment{
+	require.NoError(t, roleSvc.SetUserAssignments(ctx, user.ID, []UserRoleAssignment{
 		{RoleID: customRole.ID, EnvironmentID: nil},
 	}))
 
@@ -240,20 +213,20 @@ func TestEffectiveGlobalAdminCountIgnoresEnvScopedAndServiceAccounts(t *testing.
 
 	globalAdmin := createTestUser(t, userSvc, "global-admin", "global-admin")
 	envScopedAdmin := createTestUser(t, userSvc, "env-scoped-admin", "env-scoped-admin")
-	serviceAdmin := &models.User{
-		BaseModel:        models.BaseModel{ID: "service-admin"},
+	serviceAdmin := &common.User{
+		BaseModel:        database.BaseModel{ID: "service-admin"},
 		Username:         "service-admin",
 		IsServiceAccount: true,
 	}
 	require.NoError(t, roleSvc.db.WithContext(ctx).Create(serviceAdmin).Error)
 
-	require.NoError(t, roleSvc.SetUserAssignments(ctx, globalAdmin.ID, []models.UserRoleAssignment{
+	require.NoError(t, roleSvc.SetUserAssignments(ctx, globalAdmin.ID, []UserRoleAssignment{
 		{RoleID: customRole.ID, EnvironmentID: nil},
 	}))
-	require.NoError(t, roleSvc.SetUserAssignments(ctx, envScopedAdmin.ID, []models.UserRoleAssignment{
+	require.NoError(t, roleSvc.SetUserAssignments(ctx, envScopedAdmin.ID, []UserRoleAssignment{
 		{RoleID: customRole.ID, EnvironmentID: &envID},
 	}))
-	require.NoError(t, roleSvc.SetUserAssignments(ctx, serviceAdmin.ID, []models.UserRoleAssignment{
+	require.NoError(t, roleSvc.SetUserAssignments(ctx, serviceAdmin.ID, []UserRoleAssignment{
 		{RoleID: customRole.ID, EnvironmentID: nil},
 	}))
 
@@ -267,15 +240,15 @@ func setupAuthServiceTestDB(t *testing.T) *database.DB {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(
-		&models.SettingVariable{},
-		&models.User{},
-		&models.UserSession{},
-		&models.Environment{},
-		&models.Role{},
-		&models.UserRoleAssignment{},
-		&models.ApiKey{},
-		&models.ApiKeyPermission{},
-		&models.OidcRoleMapping{},
+		&settings.SettingVariable{},
+		&common.User{},
+		&session.UserSession{},
+		&testEnvironmentRow{},
+		&Role{},
+		&UserRoleAssignment{},
+		&testApiKeyRow{},
+		&ApiKeyPermission{},
+		&OidcRoleMapping{},
 	))
 	return &database.DB{DB: db}
 }
@@ -288,16 +261,16 @@ func setupUserAndRoleServices(t *testing.T) (*database.DB, *RoleService) {
 	return db, roleService
 }
 
-func createTestUser(t *testing.T, db *database.DB, id, username string) *models.User {
+func createTestUser(t *testing.T, db *database.DB, id, username string) *common.User {
 	t.Helper()
-	created := &models.User{BaseModel: models.BaseModel{ID: id}, Username: username}
+	created := &common.User{BaseModel: database.BaseModel{ID: id}, Username: username}
 	require.NoError(t, db.WithContext(context.Background()).Create(created).Error)
 	return created
 }
 
 func grantGlobalAdmin(t *testing.T, roleService *RoleService, userID string) {
 	t.Helper()
-	require.NoError(t, roleService.SetUserAssignments(context.Background(), userID, []models.UserRoleAssignment{
+	require.NoError(t, roleService.SetUserAssignments(context.Background(), userID, []UserRoleAssignment{
 		{RoleID: authz.BuiltInRoleAdmin},
 	}))
 }
@@ -305,12 +278,38 @@ func grantGlobalAdmin(t *testing.T, roleService *RoleService, userID string) {
 func createTestEnvironment(t *testing.T, db *database.DB, id, apiURL string, accessToken *string) {
 	t.Helper()
 	now := time.Now()
-	require.NoError(t, db.WithContext(context.Background()).Create(&models.Environment{
-		BaseModel:   models.BaseModel{ID: id, CreatedAt: now, UpdatedAt: &now},
+	require.NoError(t, db.WithContext(context.Background()).Create(&testEnvironmentRow{
+		BaseModel:   database.BaseModel{ID: id, CreatedAt: now, UpdatedAt: &now},
 		Name:        "env-" + id,
 		ApiUrl:      apiURL,
-		Status:      string(models.EnvironmentStatusOnline),
+		Status:      "online",
 		Enabled:     true,
 		AccessToken: accessToken,
 	}).Error)
 }
+
+// Minimal stand-ins for environment.Environment and apikey.ApiKey: both of
+// those packages import role, so this in-package test cannot import them.
+type testEnvironmentRow struct {
+	database.BaseModel
+	Name        string
+	ApiUrl      string `gorm:"column:api_url"`
+	Status      string
+	Enabled     bool
+	AccessToken *string `gorm:"column:access_token"`
+}
+
+func (testEnvironmentRow) TableName() string { return "environments" }
+
+type testApiKeyRow struct {
+	database.BaseModel
+	Name          string
+	KeyHash       string `gorm:"column:key_hash"`
+	KeyPrefix     string `gorm:"column:key_prefix"`
+	Kind          string
+	UserID        *string `gorm:"column:user_id"`
+	EnvironmentID *string `gorm:"column:environment_id"`
+	ManagedBy     *string `gorm:"column:managed_by"`
+}
+
+func (testApiKeyRow) TableName() string { return "api_keys" }

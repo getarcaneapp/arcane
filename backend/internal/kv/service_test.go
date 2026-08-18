@@ -1,11 +1,12 @@
 package kv
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+
 	"context"
 	"testing"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -15,7 +16,7 @@ func setupKVServiceInternal(t *testing.T) *KVService {
 	t.Helper()
 
 	db := setupSettingsTestDB(t)
-	require.NoError(t, db.AutoMigrate(&models.KVEntry{}))
+	require.NoError(t, db.AutoMigrate(&KVEntry{}))
 
 	return NewKVService(db)
 }
@@ -53,6 +54,6 @@ func setupSettingsTestDB(t *testing.T) *database.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&models.SettingVariable{}))
+	require.NoError(t, db.AutoMigrate(&settings.SettingVariable{}))
 	return &database.DB{DB: db}
 }

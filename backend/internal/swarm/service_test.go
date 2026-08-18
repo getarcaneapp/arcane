@@ -15,7 +15,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	swarmtypes "github.com/getarcaneapp/arcane/types/v2/swarm"
 	"github.com/libtnb/sqlite"
@@ -32,7 +31,7 @@ func setupSwarmServiceTestDBInternal(t *testing.T) *database.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&models.SettingVariable{}, &models.Environment{}))
+	require.NoError(t, db.AutoMigrate(&settings.SettingVariable{}, &environment.Environment{}))
 	return &database.DB{DB: db}
 }
 
@@ -58,8 +57,8 @@ func newSettingsServiceForSwarmTestInternal(t testing.TB, ctx context.Context, d
 func createSwarmTestEnvironmentInternal(t *testing.T, db *database.DB, id, apiURL, status string, isEdge bool, accessToken *string) {
 	t.Helper()
 	now := time.Now()
-	require.NoError(t, db.Create(&models.Environment{
-		BaseModel:   models.BaseModel{ID: id, CreatedAt: now, UpdatedAt: &now},
+	require.NoError(t, db.Create(&environment.Environment{
+		BaseModel:   database.BaseModel{ID: id, CreatedAt: now, UpdatedAt: &now},
 		Name:        "env-" + id,
 		ApiUrl:      apiURL,
 		Status:      status,
@@ -131,7 +130,7 @@ func TestSwarmService_FetchSwarmNodeIdentityViaEdgeInternal_UsesEnvironmentAcces
 		db,
 		"env-1",
 		server.URL,
-		string(models.EnvironmentStatusOnline),
+		string(environment.EnvironmentStatusOnline),
 		false,
 		&accessToken,
 	)
@@ -430,37 +429,37 @@ func TestSwarmService_BuildNodeAgentStatusInternal(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		env     *models.Environment
+		env     *environment.Environment
 		runtime swarmNodeAgentRuntime
 		want    swarmtypes.NodeAgentState
 	}{
 		{
 			name:    "poll-mode check-in reports connected despite stale pending status",
-			env:     &models.Environment{Status: string(models.EnvironmentStatusPending)},
+			env:     &environment.Environment{Status: string(environment.EnvironmentStatusPending)},
 			runtime: swarmNodeAgentRuntime{lastPollAt: &now},
 			want:    swarmtypes.NodeAgentStateConnected,
 		},
 		{
 			name:    "no runtime activity and never paired stays pending",
-			env:     &models.Environment{Status: string(models.EnvironmentStatusPending)},
+			env:     &environment.Environment{Status: string(environment.EnvironmentStatusPending)},
 			runtime: swarmNodeAgentRuntime{},
 			want:    swarmtypes.NodeAgentStatePending,
 		},
 		{
 			name:    "tunnel with mismatched identity reports mismatched",
-			env:     &models.Environment{Status: string(models.EnvironmentStatusOnline)},
+			env:     &environment.Environment{Status: string(environment.EnvironmentStatusOnline)},
 			runtime: swarmNodeAgentRuntime{connected: true, identity: &SwarmNodeIdentity{SwarmNodeID: "other-node", SwarmActive: true}},
 			want:    swarmtypes.NodeAgentStateMismatched,
 		},
 		{
 			name:    "tunnel connected without identity probe reports connected",
-			env:     &models.Environment{Status: string(models.EnvironmentStatusPending)},
+			env:     &environment.Environment{Status: string(environment.EnvironmentStatusPending)},
 			runtime: swarmNodeAgentRuntime{connected: true},
 			want:    swarmtypes.NodeAgentStateConnected,
 		},
 		{
 			name:    "previously seen agent with no activity reports offline",
-			env:     &models.Environment{Status: string(models.EnvironmentStatusOnline), LastSeen: &now},
+			env:     &environment.Environment{Status: string(environment.EnvironmentStatusOnline), LastSeen: &now},
 			runtime: swarmNodeAgentRuntime{},
 			want:    swarmtypes.NodeAgentStateOffline,
 		},

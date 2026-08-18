@@ -23,7 +23,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	httputils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
@@ -35,7 +34,7 @@ func setupTemplateServiceTestDB(t *testing.T) *database.DB {
 
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&models.TemplateRegistry{}, &models.ComposeTemplate{}))
+	require.NoError(t, db.AutoMigrate(&TemplateRegistry{}, &ComposeTemplate{}))
 
 	return &database.DB{DB: db}
 }
@@ -213,8 +212,8 @@ services:
 		lookupIP:          lookupIP,
 		registryFetchMeta: make(map[string]*registryFetchMeta),
 	}
-	registry := &models.TemplateRegistry{
-		BaseModel: models.BaseModel{ID: "reg-1"},
+	registry := &TemplateRegistry{
+		BaseModel: database.BaseModel{ID: "reg-1"},
 		Name:      "Demo Registry",
 		URL:       registryURL,
 		Enabled:   true,
@@ -272,14 +271,14 @@ services:
 		registryFetchMeta: make(map[string]*registryFetchMeta),
 	}
 
-	remoteTemplate := &models.ComposeTemplate{
-		BaseModel:   models.BaseModel{ID: "remote:reg-1:demo"},
+	remoteTemplate := &ComposeTemplate{
+		BaseModel:   database.BaseModel{ID: "remote:reg-1:demo"},
 		Name:        "Demo Template",
 		Description: "Remote template",
 		IsRemote:    true,
 		IsCustom:    false,
 		RegistryID:  mo.EmptyableToOption(strings.TrimSpace("reg-1")).ToPointer(),
-		Metadata: &models.ComposeTemplateMetadata{
+		Metadata: &ComposeTemplateMetadata{
 			RemoteURL: mo.EmptyableToOption(strings.TrimSpace(baseURL + "/compose.yaml")).ToPointer(),
 			EnvURL:    mo.EmptyableToOption(strings.TrimSpace(baseURL + "/template.env")).ToPointer(),
 			IconURL:   mo.EmptyableToOption(strings.TrimSpace("https://cdn.example/download.png")).ToPointer(),
@@ -294,7 +293,7 @@ services:
 	require.NotNil(t, downloaded.Metadata.IconURL)
 	require.Equal(t, "https://cdn.example/download.png", *downloaded.Metadata.IconURL)
 
-	var stored models.ComposeTemplate
+	var stored ComposeTemplate
 	require.NoError(t, service.db.WithContext(context.Background()).First(&stored, "id = ?", downloaded.ID).Error)
 	require.NotNil(t, stored.Metadata)
 	require.NotNil(t, stored.Metadata.IconURL)
@@ -307,9 +306,9 @@ func TestGetAllTemplatesPaginated_FiltersByType(t *testing.T) {
 
 	now := time.Now()
 	db := setupTemplateServiceTestDB(t)
-	localTemplates := []models.ComposeTemplate{
+	localTemplates := []ComposeTemplate{
 		{
-			BaseModel:   models.BaseModel{ID: "local-one", CreatedAt: now, UpdatedAt: &now},
+			BaseModel:   database.BaseModel{ID: "local-one", CreatedAt: now, UpdatedAt: &now},
 			Name:        "Local One",
 			Description: "Local template",
 			Content:     "services: {}",
@@ -317,7 +316,7 @@ func TestGetAllTemplatesPaginated_FiltersByType(t *testing.T) {
 			IsRemote:    false,
 		},
 		{
-			BaseModel:   models.BaseModel{ID: "local-two", CreatedAt: now, UpdatedAt: &now},
+			BaseModel:   database.BaseModel{ID: "local-two", CreatedAt: now, UpdatedAt: &now},
 			Name:        "Local Two",
 			Description: "Local template",
 			Content:     "services: {}",
@@ -328,9 +327,9 @@ func TestGetAllTemplatesPaginated_FiltersByType(t *testing.T) {
 	require.NoError(t, db.WithContext(context.Background()).Create(&localTemplates).Error)
 
 	service := NewTemplateService(context.Background(), db, http.DefaultClient, nil)
-	service.remoteCache.Set(struct{}{}, []models.ComposeTemplate{
+	service.remoteCache.Set(struct{}{}, []ComposeTemplate{
 		{
-			BaseModel:   models.BaseModel{ID: "remote-one", CreatedAt: now, UpdatedAt: &now},
+			BaseModel:   database.BaseModel{ID: "remote-one", CreatedAt: now, UpdatedAt: &now},
 			Name:        "Remote One",
 			Description: "Remote template",
 			Content:     "services: {}",
@@ -406,7 +405,7 @@ services:
 
 	require.NoError(t, service.syncFilesystemTemplatesInternal(context.Background()))
 
-	var stored models.ComposeTemplate
+	var stored ComposeTemplate
 	require.NoError(t, service.db.WithContext(context.Background()).First(&stored, "name = ?", "example").Error)
 	require.NotNil(t, stored.Metadata)
 	require.NotNil(t, stored.Metadata.IconURL)
@@ -449,8 +448,8 @@ func TestGetTemplate_ForceRefreshesRemoteCacheOnMiss(t *testing.T) {
 	client, lookupIP, baseURL := makePublicTestClient(t, server)
 	db := setupTemplateServiceTestDB(t)
 
-	registry := &models.TemplateRegistry{
-		BaseModel: models.BaseModel{ID: "reg-1"},
+	registry := &TemplateRegistry{
+		BaseModel: database.BaseModel{ID: "reg-1"},
 		Name:      "Demo",
 		URL:       baseURL + "/registry.json",
 		Enabled:   true,
@@ -485,7 +484,7 @@ func minimalSettingsServiceForTest(t *testing.T) *settings.SettingsService {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&models.SettingVariable{}))
+	require.NoError(t, db.AutoMigrate(&settings.SettingVariable{}))
 	svc, err := newSettingsServiceForTestInternal(t, context.Background(), &database.DB{DB: db})
 	require.NoError(t, err)
 	return svc

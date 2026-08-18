@@ -3,11 +3,14 @@
 package federated
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
+
 	"context"
 	"strings"
 
 	"emperror.dev/errors"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -27,7 +30,7 @@ func (s *FederatedCredentialService) CreatePlaywrightCredential(ctx context.Cont
 
 	var credentialID string
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		serviceUser := models.User{
+		serviceUser := common.User{
 			Username:         "svc_federated_e2e_" + strings.ReplaceAll(uuid.NewString(), "-", ""),
 			IsServiceAccount: true,
 		}
@@ -35,14 +38,14 @@ func (s *FederatedCredentialService) CreatePlaywrightCredential(ctx context.Cont
 			return errors.WrapIf(err, "failed to create federated e2e user")
 		}
 
-		credential := models.FederatedCredential{
+		credential := FederatedCredential{
 			Name:            "Playwright Federated Credential",
 			Enabled:         true,
 			IssuerURL:       strings.TrimRight(strings.TrimSpace(issuerURL), "/"),
-			Audiences:       models.StringSlice(audiences),
+			Audiences:       database.StringSlice(audiences),
 			SubjectClaim:    "sub",
 			SubjectMatch:    strings.TrimSpace(subject),
-			MatchType:       models.FederatedCredentialMatchExact,
+			MatchType:       FederatedCredentialMatchExact,
 			RoleID:          strings.TrimSpace(roleID),
 			IdentityUserID:  serviceUser.ID,
 			TokenTTLSeconds: tokenTTLSeconds,
@@ -51,10 +54,10 @@ func (s *FederatedCredentialService) CreatePlaywrightCredential(ctx context.Cont
 			return errors.WrapIf(err, "failed to create federated e2e credential")
 		}
 
-		assignment := models.UserRoleAssignment{
+		assignment := role.UserRoleAssignment{
 			UserID: serviceUser.ID,
 			RoleID: credential.RoleID,
-			Source: models.RoleAssignmentSourceManual,
+			Source: role.RoleAssignmentSourceManual,
 		}
 		if err := tx.Create(&assignment).Error; err != nil {
 			return errors.WrapIf(err, "failed to create federated e2e role assignment")

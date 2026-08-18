@@ -1,6 +1,8 @@
 package admin
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+
 	"context"
 	"fmt"
 	"io"
@@ -15,7 +17,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
@@ -138,7 +139,7 @@ func validatePasswordPairInternal(password, confirmation, policy string) error {
 }
 
 func passwordPolicyFromDBInternal(ctx context.Context, db *database.DB) string {
-	var setting models.SettingVariable
+	var setting settings.SettingVariable
 	err := db.WithContext(ctx).First(&setting, "key = ?", "authPasswordPolicy").Error
 	if err != nil || strings.TrimSpace(setting.Value) == "" {
 		return validation.PasswordPolicyStrong

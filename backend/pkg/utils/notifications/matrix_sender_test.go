@@ -3,7 +3,6 @@ package notifications
 import (
 	"testing"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -11,13 +10,13 @@ import (
 func TestBuildMatrixURL(t *testing.T) {
 	tests := []struct {
 		name     string
-		config   models.MatrixConfig
+		config   MatrixConfig
 		wantErr  bool
 		expected string
 	}{
 		{
 			name: "basic config (host + token)",
-			config: models.MatrixConfig{
+			config: MatrixConfig{
 				Host:     "matrix.example.com",
 				Password: "t0ken",
 			},
@@ -26,7 +25,7 @@ func TestBuildMatrixURL(t *testing.T) {
 		},
 		{
 			name: "config with host + token + room",
-			config: models.MatrixConfig{
+			config: MatrixConfig{
 				Host:     "matrix.example.com",
 				Password: "t0ken",
 				Rooms:    "!roomId",
@@ -36,7 +35,7 @@ func TestBuildMatrixURL(t *testing.T) {
 		},
 		{
 			name: "config with host + username + password + room",
-			config: models.MatrixConfig{
+			config: MatrixConfig{
 				Host:     "matrix.example.com",
 				Username: "A12345678901234",
 				Password: "passw0rd",
@@ -47,7 +46,7 @@ func TestBuildMatrixURL(t *testing.T) {
 		},
 		{
 			name: "config with host + port + username + password + room",
-			config: models.MatrixConfig{
+			config: MatrixConfig{
 				Host:     "matrix.example.com",
 				Port:     8443,
 				Username: "A12345678901234",
@@ -59,7 +58,7 @@ func TestBuildMatrixURL(t *testing.T) {
 		},
 		{
 			name: "config with all options",
-			config: models.MatrixConfig{
+			config: MatrixConfig{
 				Host:                   "matrix.example.com",
 				Port:                   8443,
 				Username:               "A12345678901234",
@@ -72,7 +71,7 @@ func TestBuildMatrixURL(t *testing.T) {
 		},
 		{
 			name: "missing host",
-			config: models.MatrixConfig{
+			config: MatrixConfig{
 				Username: "A12345678901234",
 			},
 			wantErr: true,

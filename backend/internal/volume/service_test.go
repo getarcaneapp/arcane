@@ -13,17 +13,18 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	containerdomain "github.com/getarcaneapp/arcane/backend/v2/internal/container"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	s3domain "github.com/getarcaneapp/arcane/backend/v2/internal/s3"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/entityjobs"
+	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/libtnb/sqlite"
@@ -617,7 +618,7 @@ func (s *volumeBackupPolicySchedulerInternal) HasJob(name string) bool {
 func TestVolumeBackupPolicy_UpdateRegistersIndependentJobsAndSettings(t *testing.T) {
 	gormDB, err := gorm.Open(sqlite.Open("file:volume-backup-schedule?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, gormDB.AutoMigrate(&models.VolumeBackupPolicy{}, &models.VolumeBackup{}))
+	require.NoError(t, gormDB.AutoMigrate(&VolumeBackupPolicy{}, &VolumeBackup{}))
 	db := &database.DB{DB: gormDB}
 	scheduler := &volumeBackupPolicySchedulerInternal{jobs: make(map[string]schedulertypes.Job)}
 	service := &VolumeService{db: db, jobs: entityjobs.New("volume-backup:", backup.VolumeAdmissionScope)}
@@ -659,13 +660,13 @@ func TestVolumeBackupPolicy_UpdateRegistersIndependentJobsAndSettings(t *testing
 func TestVolumeBackupPolicy_GetReturnsLastRunForEachPolicy(t *testing.T) {
 	gormDB, err := gorm.Open(sqlite.Open("file:volume-backup-last-runs?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, gormDB.AutoMigrate(&models.VolumeBackupPolicy{}, &models.VolumeBackup{}))
-	first := &models.VolumeBackupPolicy{VolumeName: "app-data", Schedule: "0 0 2 * * *", LocalEnabled: true}
-	second := &models.VolumeBackupPolicy{VolumeName: "app-data", Schedule: "0 0 14 * * *", LocalEnabled: true}
+	require.NoError(t, gormDB.AutoMigrate(&VolumeBackupPolicy{}, &VolumeBackup{}))
+	first := &VolumeBackupPolicy{VolumeName: "app-data", Schedule: "0 0 2 * * *", LocalEnabled: true}
+	second := &VolumeBackupPolicy{VolumeName: "app-data", Schedule: "0 0 14 * * *", LocalEnabled: true}
 	require.NoError(t, gormDB.Create(first).Error)
 	require.NoError(t, gormDB.Create(second).Error)
-	require.NoError(t, gormDB.Create(&models.VolumeBackup{VolumeName: "app-data", PolicyID: first.ID, Status: models.VolumeBackupStatusSucceeded}).Error)
-	require.NoError(t, gormDB.Create(&models.VolumeBackup{VolumeName: "app-data", PolicyID: second.ID, Status: models.VolumeBackupStatusFailed}).Error)
+	require.NoError(t, gormDB.Create(&VolumeBackup{VolumeName: "app-data", PolicyID: first.ID, Status: VolumeBackupStatusSucceeded}).Error)
+	require.NoError(t, gormDB.Create(&VolumeBackup{VolumeName: "app-data", PolicyID: second.ID, Status: VolumeBackupStatusFailed}).Error)
 
 	service := &VolumeService{db: &database.DB{DB: gormDB}}
 	collection, err := service.GetBackupPolicies(context.Background(), "app-data")
@@ -678,26 +679,26 @@ func TestVolumeBackupPolicy_GetReturnsLastRunForEachPolicy(t *testing.T) {
 func TestVolumeBackupPolicy_RetentionIgnoresFailedRuns(t *testing.T) {
 	gormDB, err := gorm.Open(sqlite.Open("file:volume-backup-retention-failed?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, gormDB.AutoMigrate(&models.VolumeBackup{}))
+	require.NoError(t, gormDB.AutoMigrate(&VolumeBackup{}))
 
 	policyID := "policy-1"
-	require.NoError(t, gormDB.Create(&models.VolumeBackup{
-		VolumeName: "app-data", PolicyID: policyID, Status: models.VolumeBackupStatusSucceeded,
+	require.NoError(t, gormDB.Create(&VolumeBackup{
+		VolumeName: "app-data", PolicyID: policyID, Status: VolumeBackupStatusSucceeded,
 		LocalSnapshotID: "snapshot-1", CreatedAt: time.Now().Add(-time.Hour),
 	}).Error)
-	require.NoError(t, gormDB.Create(&models.VolumeBackup{
-		VolumeName: "app-data", PolicyID: policyID, Status: models.VolumeBackupStatusFailed,
+	require.NoError(t, gormDB.Create(&VolumeBackup{
+		VolumeName: "app-data", PolicyID: policyID, Status: VolumeBackupStatusFailed,
 		CreatedAt: time.Now(),
 	}).Error)
 
 	service := &VolumeService{db: &database.DB{DB: gormDB}}
 	require.NoError(t, service.applyVolumeBackupRetentionInternal(context.Background(), policyID, 1))
 
-	var backups []models.VolumeBackup
+	var backups []VolumeBackup
 	require.NoError(t, gormDB.Order("created_at ASC").Find(&backups).Error)
 	require.Len(t, backups, 2)
 	require.Equal(t, "snapshot-1", backups[0].LocalSnapshotID)
-	require.Equal(t, models.VolumeBackupStatusFailed, backups[1].Status)
+	require.Equal(t, VolumeBackupStatusFailed, backups[1].Status)
 }
 
 func TestVolumeBackupPolicy_UpdateRejectsInvalidCron(t *testing.T) {
@@ -709,9 +710,9 @@ func TestVolumeBackupPolicy_UpdateRejectsInvalidCron(t *testing.T) {
 func TestVolumeBackupPolicy_ScheduledRunCreatesActivity(t *testing.T) {
 	gormDB, err := gorm.Open(sqlite.Open("file:volume-backup-scheduled-activity?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, gormDB.AutoMigrate(&models.VolumeBackupPolicy{}, &models.VolumeBackup{}, &models.Activity{}))
+	require.NoError(t, gormDB.AutoMigrate(&VolumeBackupPolicy{}, &VolumeBackup{}, &activity.Activity{}))
 	db := &database.DB{DB: gormDB}
-	policy := &models.VolumeBackupPolicy{
+	policy := &VolumeBackupPolicy{
 		VolumeName:     "app-data",
 		Enabled:        true,
 		Schedule:       "0 0 2 * * *",
@@ -735,9 +736,9 @@ func TestVolumeBackupPolicy_ScheduledRunCreatesActivity(t *testing.T) {
 
 	service.runScheduledBackupInternal(context.Background(), policy.ID)
 
-	var activity models.Activity
+	var activity activity.Activity
 	require.NoError(t, gormDB.Where("resource_type = ?", "volume_backup").First(&activity).Error)
-	require.Equal(t, models.ActivityStatusFailed, activity.Status)
+	require.Equal(t, activitytypes.StatusFailed, activity.Status)
 	require.Equal(t, "scheduled_volume_backup", activity.Metadata["action"])
 	require.Equal(t, policy.Schedule, activity.Metadata["schedule"])
 }
@@ -751,7 +752,7 @@ func TestVolumeBackupPolicy_UpdateRejectsMissingDestination(t *testing.T) {
 func TestVolumeBackupPolicy_UpdateUsesSelectedS3Destination(t *testing.T) {
 	gormDB, err := gorm.Open(sqlite.Open("file:volume-backup-s3-secret?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, gormDB.AutoMigrate(&models.VolumeBackupPolicy{}, &models.VolumeBackup{}, &models.S3Destination{}))
+	require.NoError(t, gormDB.AutoMigrate(&VolumeBackupPolicy{}, &VolumeBackup{}, &s3domain.S3Destination{}))
 	db := &database.DB{DB: gormDB}
 	crypto.InitEncryption(&crypto.Config{
 		EncryptionKey: "test-encryption-key-for-volume-backups-32bytes",
@@ -759,7 +760,7 @@ func TestVolumeBackupPolicy_UpdateUsesSelectedS3Destination(t *testing.T) {
 	})
 	encryptedSecret, err := crypto.Encrypt("destination-s3-secret")
 	require.NoError(t, err)
-	destination := &models.S3Destination{
+	destination := &s3domain.S3Destination{
 		Name:            "Offsite",
 		Bucket:          "volume-backups",
 		Region:          "us-east-1",
@@ -789,7 +790,7 @@ func TestVolumeBackupPolicy_UpdateUsesSelectedS3Destination(t *testing.T) {
 	require.Equal(t, "Offsite", policy.S3DestinationName)
 	require.Equal(t, "volume-backups", policy.S3Bucket)
 
-	var stored models.VolumeBackupPolicy
+	var stored VolumeBackupPolicy
 	require.NoError(t, gormDB.Where("volume_name = ?", "app-data").First(&stored).Error)
 	require.False(t, stored.LocalEnabled)
 	require.True(t, stored.S3Enabled)
@@ -801,8 +802,8 @@ func TestVolumeBackup_CreateRejectsInvalidDestination(t *testing.T) {
 	_, err := service.CreateBackup(
 		context.Background(),
 		"app-data",
-		models.User{},
-		models.VolumeBackupTriggerManual,
+		common.User{},
+		VolumeBackupTriggerManual,
 		volumetypes.CreateBackupRequest{Destination: volumetypes.BackupDestination("invalid")},
 	)
 	require.EqualError(t, err, "invalid volume backup destination")
@@ -813,8 +814,8 @@ func TestVolumeBackup_CreateRemoteRequiresDestination(t *testing.T) {
 	_, err := service.CreateBackup(
 		context.Background(),
 		"app-data",
-		models.User{},
-		models.VolumeBackupTriggerManual,
+		common.User{},
+		VolumeBackupTriggerManual,
 		volumetypes.CreateBackupRequest{Destination: volumetypes.BackupDestinationS3},
 	)
 	require.EqualError(t, err, "select an S3 destination for the volume backup")
@@ -823,9 +824,9 @@ func TestVolumeBackup_CreateRemoteRequiresDestination(t *testing.T) {
 func TestVolumeBackup_ListResolvesDestinationName(t *testing.T) {
 	gormDB, err := gorm.Open(sqlite.Open("file:volume-backup-destination-name?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, gormDB.AutoMigrate(&models.VolumeBackup{}, &models.S3Destination{}))
+	require.NoError(t, gormDB.AutoMigrate(&VolumeBackup{}, &s3domain.S3Destination{}))
 	db := &database.DB{DB: gormDB}
-	destination := &models.S3Destination{
+	destination := &s3domain.S3Destination{
 		Name:            "Offsite",
 		Bucket:          "volume-backups",
 		Region:          "us-east-1",
@@ -833,10 +834,10 @@ func TestVolumeBackup_ListResolvesDestinationName(t *testing.T) {
 		SecretAccessKey: "encrypted-secret",
 	}
 	require.NoError(t, gormDB.Create(destination).Error)
-	require.NoError(t, gormDB.Create(&models.VolumeBackup{
+	require.NoError(t, gormDB.Create(&VolumeBackup{
 		VolumeName:      "app-data",
-		Status:          models.VolumeBackupStatusSucceeded,
-		Trigger:         models.VolumeBackupTriggerManual,
+		Status:          VolumeBackupStatusSucceeded,
+		Trigger:         VolumeBackupTriggerManual,
 		Destination:     volumetypes.BackupDestinationLocalS3,
 		S3DestinationID: destination.ID,
 	}).Error)
@@ -860,7 +861,7 @@ func setupVolumeBackupLifecycleTestInternal(t *testing.T, handler http.Handler) 
 
 	gormDB, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, gormDB.AutoMigrate(&models.Event{}))
+	require.NoError(t, gormDB.AutoMigrate(&event.Event{}))
 	db := &database.DB{DB: gormDB}
 	dockerService := docker.NewDockerClientService(t.Context(), db, &config.Config{}, nil).WithClient(dockerClient)
 	eventService := event.NewEventService(db, &config.Config{}, nil)
@@ -896,7 +897,7 @@ func TestVolumeBackupContainerLifecycleStopsAndRestartsOnlyRunningContainersUsin
 	})
 
 	service, dockerClient := setupVolumeBackupLifecycleTestInternal(t, serverHandler)
-	actor := models.User{BaseModel: models.BaseModel{ID: "user-1"}, Username: "tester"}
+	actor := common.User{BaseModel: database.BaseModel{ID: "user-1"}, Username: "tester"}
 	stopped, err := service.stopRunningContainersForBackupInternal(context.Background(), dockerClient, "app-data", actor)
 	require.NoError(t, err)
 	require.Len(t, stopped, 1)
@@ -940,7 +941,7 @@ func TestVolumeBackupContainerLifecycleRollsBackStoppedContainersOnStopFailure(t
 	})
 
 	service, dockerClient := setupVolumeBackupLifecycleTestInternal(t, serverHandler)
-	actor := models.User{BaseModel: models.BaseModel{ID: "user-1"}, Username: "tester"}
+	actor := common.User{BaseModel: database.BaseModel{ID: "user-1"}, Username: "tester"}
 	stillStopped, err := service.stopRunningContainersForBackupInternal(context.Background(), dockerClient, "app-data", actor)
 	require.ErrorContains(t, err, "failed to stop container second")
 	require.Empty(t, stillStopped)
@@ -1000,7 +1001,7 @@ func TestVolumeBackupContainerLifecycleWaitsForRunningComposeReplacement(t *test
 	})
 
 	service, dockerClient := setupVolumeBackupLifecycleTestInternal(t, serverHandler)
-	actor := models.User{BaseModel: models.BaseModel{ID: "user-1"}, Username: "tester"}
+	actor := common.User{BaseModel: database.BaseModel{ID: "user-1"}, Username: "tester"}
 	stopped, err := service.stopRunningContainersForBackupInternal(context.Background(), dockerClient, "app-data", actor)
 	require.NoError(t, err)
 	require.Len(t, stopped, 1)

@@ -1,6 +1,10 @@
 package environment
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/gitrepo"
+
 	"context"
 	"encoding/json"
 	"fmt"
@@ -23,8 +27,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
+	s3domain "github.com/getarcaneapp/arcane/backend/v2/internal/s3"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
@@ -96,6 +100,31 @@ func newAdmissionGateForEnvironmentTestInternal(t testing.TB) *actors.Gate[actor
 	return gate
 }
 
+// testProjectRow / testGitOpsSyncRow are minimal stand-ins for the project
+// domain's models: the project package imports environment, so this in-package
+// test cannot import it. Only the columns the cascade path touches are declared.
+type testProjectRow struct {
+	database.BaseModel
+	Name            string
+	Path            string
+	Status          string
+	GitOpsManagedBy *string `gorm:"column:gitops_managed_by"`
+}
+
+func (testProjectRow) TableName() string { return "projects" }
+
+type testGitOpsSyncRow struct {
+	database.BaseModel
+	Name          string
+	EnvironmentID string
+	RepositoryID  string
+	ComposePath   string
+	ProjectName   string
+	SyncInterval  int
+}
+
+func (testGitOpsSyncRow) TableName() string { return "gitops_syncs" }
+
 func setupEnvironmentServiceTestDB(t *testing.T) *database.DB {
 	t.Helper()
 
@@ -103,14 +132,14 @@ func setupEnvironmentServiceTestDB(t *testing.T) *database.DB {
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(
-		&models.Environment{},
-		&models.ContainerRegistry{},
-		&models.S3Destination{},
-		&models.SettingVariable{},
-		&models.User{},
-		&models.ApiKey{},
-		&models.Project{},
-		&models.GitOpsSync{},
+		&Environment{},
+		&registry.ContainerRegistry{},
+		&s3domain.S3Destination{},
+		&settings.SettingVariable{},
+		&common.User{},
+		&apikey.ApiKey{},
+		&testProjectRow{},
+		&testGitOpsSyncRow{},
 	))
 
 	sqlDB, err := db.DB()
@@ -131,11 +160,11 @@ func setupEnvironmentServiceTestDB(t *testing.T) *database.DB {
 	return &database.DB{DB: db}
 }
 
-func createTestEnvironmentServiceUser(t *testing.T, ctx context.Context, userService *user.UserService, id string) *models.User {
+func createTestEnvironmentServiceUser(t *testing.T, ctx context.Context, userService *user.UserService, id string) *common.User {
 	t.Helper()
 
-	user := &models.User{
-		BaseModel: models.BaseModel{ID: id},
+	user := &common.User{
+		BaseModel: database.BaseModel{ID: id},
 		Username:  fmt.Sprintf("user-%s", id),
 	}
 
@@ -153,15 +182,15 @@ func createNamedTestEnvironmentInternal(t *testing.T, db *database.DB, id, name,
 	t.Helper()
 
 	now := time.Now()
-	env := &models.Environment{
-		BaseModel: models.BaseModel{
+	env := &Environment{
+		BaseModel: database.BaseModel{
 			ID:        id,
 			CreatedAt: now,
 			UpdatedAt: &now,
 		},
 		Name:        name,
 		ApiUrl:      apiURL,
-		Status:      string(models.EnvironmentStatusOnline),
+		Status:      string(EnvironmentStatusOnline),
 		Enabled:     true,
 		AccessToken: accessToken,
 	}
@@ -173,8 +202,8 @@ func createTestEnvironmentWithState(t *testing.T, db *database.DB, id, apiURL, s
 	t.Helper()
 
 	now := time.Now()
-	env := &models.Environment{
-		BaseModel: models.BaseModel{
+	env := &Environment{
+		BaseModel: database.BaseModel{
 			ID:        id,
 			CreatedAt: now,
 			UpdatedAt: &now,
@@ -193,12 +222,12 @@ func createTestEnvironmentWithState(t *testing.T, db *database.DB, id, apiURL, s
 func TestEnvironmentService_DeleteEnvironment_CascadesGitOpsSyncs(t *testing.T) {
 	ctx := context.Background()
 	db := setupEnvironmentServiceTestDB(t)
-	require.NoError(t, db.AutoMigrate(&models.Project{}, &models.GitOpsSync{}))
+	require.NoError(t, db.AutoMigrate(&testProjectRow{}, &testGitOpsSyncRow{}))
 
 	createTestEnvironment(t, db, "env-delete-gitops", "http://env.example", nil)
 	syncID := "sync-delete-env"
-	require.NoError(t, db.Create(&models.GitOpsSync{
-		BaseModel:     models.BaseModel{ID: syncID},
+	require.NoError(t, db.Create(&testGitOpsSyncRow{
+		BaseModel:     database.BaseModel{ID: syncID},
 		Name:          "delete-env-sync",
 		EnvironmentID: "env-delete-gitops",
 		RepositoryID:  "repo-1",
@@ -206,11 +235,11 @@ func TestEnvironmentService_DeleteEnvironment_CascadesGitOpsSyncs(t *testing.T) 
 		ProjectName:   "demo",
 		SyncInterval:  15,
 	}).Error)
-	require.NoError(t, db.Create(&models.Project{
-		BaseModel:       models.BaseModel{ID: "project-managed-by-deleted-env"},
+	require.NoError(t, db.Create(&testProjectRow{
+		BaseModel:       database.BaseModel{ID: "project-managed-by-deleted-env"},
 		Name:            "demo",
 		Path:            "/tmp/demo",
-		Status:          models.ProjectStatusStopped,
+		Status:          "stopped",
 		GitOpsManagedBy: &syncID,
 	}).Error)
 
@@ -221,10 +250,10 @@ func TestEnvironmentService_DeleteEnvironment_CascadesGitOpsSyncs(t *testing.T) 
 	require.NoError(t, svc.DeleteEnvironment(ctx, "env-delete-gitops", nil, nil))
 
 	var syncCount int64
-	require.NoError(t, db.Model(&models.GitOpsSync{}).Where("id = ?", syncID).Count(&syncCount).Error)
+	require.NoError(t, db.Model(&testGitOpsSyncRow{}).Where("id = ?", syncID).Count(&syncCount).Error)
 	require.Zero(t, syncCount)
 
-	var project models.Project
+	var project testProjectRow
 	require.NoError(t, db.First(&project, "id = ?", "project-managed-by-deleted-env").Error)
 	require.Nil(t, project.GitOpsManagedBy)
 	require.Contains(t, scheduler.removed, entityjobs.GitOpsSyncJobPrefix+syncID)
@@ -237,8 +266,8 @@ func createTestRegistry(t *testing.T, db *database.DB, id string) {
 	require.NoError(t, err)
 
 	now := time.Now()
-	registry := &models.ContainerRegistry{
-		BaseModel: models.BaseModel{
+	registry := &registry.ContainerRegistry{
+		BaseModel: database.BaseModel{
 			ID:        id,
 			CreatedAt: now,
 			UpdatedAt: &now,
@@ -263,8 +292,8 @@ func createTestECRRegistry(t *testing.T, db *database.DB, id string) {
 	require.NoError(t, err)
 
 	now := time.Now()
-	registry := &models.ContainerRegistry{
-		BaseModel: models.BaseModel{
+	registry := &registry.ContainerRegistry{
+		BaseModel: database.BaseModel{
 			ID:        id,
 			CreatedAt: now,
 			UpdatedAt: &now,
@@ -282,7 +311,7 @@ func createTestECRRegistry(t *testing.T, db *database.DB, id string) {
 	require.NoError(t, db.WithContext(context.Background()).Create(registry).Error)
 }
 
-func createTestGitRepository(t *testing.T, db *database.DB, repository models.GitRepository) {
+func createTestGitRepository(t *testing.T, db *database.DB, repository gitrepo.GitRepository) {
 	t.Helper()
 	require.NoError(t, db.Create(&repository).Error)
 }
@@ -435,8 +464,8 @@ func TestEnvironmentService_SyncS3DestinationsToEnvironment(t *testing.T) {
 
 	encryptedSecret, err := crypto.Encrypt("s3-secret")
 	require.NoError(t, err)
-	require.NoError(t, db.WithContext(ctx).Create(&models.S3Destination{
-		BaseModel:       models.BaseModel{ID: "s3-1"},
+	require.NoError(t, db.WithContext(ctx).Create(&s3domain.S3Destination{
+		BaseModel:       database.BaseModel{ID: "s3-1"},
 		Name:            "Offsite",
 		Endpoint:        "https://s3.example.com",
 		Bucket:          "volume-backups",
@@ -474,11 +503,11 @@ func TestEnvironmentService_SyncS3DestinationsToEnvironment(t *testing.T) {
 func TestEnvironmentService_SyncRepositoriesToEnvironment_UsesAgentHeaders(t *testing.T) {
 	ctx := context.Background()
 	db := setupEnvironmentServiceTestDB(t)
-	require.NoError(t, db.AutoMigrate(&models.GitRepository{}))
+	require.NoError(t, db.AutoMigrate(&gitrepo.GitRepository{}))
 	svc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
 
-	createTestGitRepository(t, db, models.GitRepository{
-		BaseModel:   models.BaseModel{ID: "repo-1", CreatedAt: time.Now()},
+	createTestGitRepository(t, db, gitrepo.GitRepository{
+		BaseModel:   database.BaseModel{ID: "repo-1", CreatedAt: time.Now()},
 		Name:        "repo-1",
 		URL:         "https://github.com/getarcaneapp/arcane.git",
 		AuthType:    "http",
@@ -580,29 +609,29 @@ func TestEnvironmentService_ReconcileEdgeStatusesOnStartup(t *testing.T) {
 	db := setupEnvironmentServiceTestDB(t)
 	svc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
 
-	createTestEnvironmentWithState(t, db, "edge-online", "edge://online", string(models.EnvironmentStatusOnline), true, nil)
-	createTestEnvironmentWithState(t, db, "edge-error", "edge://error", string(models.EnvironmentStatusError), true, nil)
-	createTestEnvironmentWithState(t, db, "edge-pending", "edge://pending", string(models.EnvironmentStatusPending), true, nil)
-	createTestEnvironmentWithState(t, db, "remote-http", "http://remote.example", string(models.EnvironmentStatusOnline), false, nil)
+	createTestEnvironmentWithState(t, db, "edge-online", "edge://online", string(EnvironmentStatusOnline), true, nil)
+	createTestEnvironmentWithState(t, db, "edge-error", "edge://error", string(EnvironmentStatusError), true, nil)
+	createTestEnvironmentWithState(t, db, "edge-pending", "edge://pending", string(EnvironmentStatusPending), true, nil)
+	createTestEnvironmentWithState(t, db, "remote-http", "http://remote.example", string(EnvironmentStatusOnline), false, nil)
 
 	err := svc.ReconcileEdgeStatusesOnStartup(ctx)
 	require.NoError(t, err)
 
-	var edgeOnline models.Environment
+	var edgeOnline Environment
 	require.NoError(t, db.WithContext(ctx).Where("id = ?", "edge-online").First(&edgeOnline).Error)
-	require.Equal(t, string(models.EnvironmentStatusOffline), edgeOnline.Status)
+	require.Equal(t, string(EnvironmentStatusOffline), edgeOnline.Status)
 
-	var edgeError models.Environment
+	var edgeError Environment
 	require.NoError(t, db.WithContext(ctx).Where("id = ?", "edge-error").First(&edgeError).Error)
-	require.Equal(t, string(models.EnvironmentStatusOffline), edgeError.Status)
+	require.Equal(t, string(EnvironmentStatusOffline), edgeError.Status)
 
-	var edgePending models.Environment
+	var edgePending Environment
 	require.NoError(t, db.WithContext(ctx).Where("id = ?", "edge-pending").First(&edgePending).Error)
-	require.Equal(t, string(models.EnvironmentStatusPending), edgePending.Status)
+	require.Equal(t, string(EnvironmentStatusPending), edgePending.Status)
 
-	var remoteHTTP models.Environment
+	var remoteHTTP Environment
 	require.NoError(t, db.WithContext(ctx).Where("id = ?", "remote-http").First(&remoteHTTP).Error)
-	require.Equal(t, string(models.EnvironmentStatusOnline), remoteHTTP.Status)
+	require.Equal(t, string(EnvironmentStatusOnline), remoteHTTP.Status)
 }
 
 func TestEnvironmentService_UpdateEnvironmentConnectionState(t *testing.T) {
@@ -610,14 +639,14 @@ func TestEnvironmentService_UpdateEnvironmentConnectionState(t *testing.T) {
 	db := setupEnvironmentServiceTestDB(t)
 	svc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
 
-	createTestEnvironmentWithState(t, db, "edge-runtime", "edge://runtime", string(models.EnvironmentStatusOffline), true, nil)
+	createTestEnvironmentWithState(t, db, "edge-runtime", "edge://runtime", string(EnvironmentStatusOffline), true, nil)
 
 	err := svc.UpdateEnvironmentConnectionState(ctx, "edge-runtime", true)
 	require.NoError(t, err)
 
-	var env models.Environment
+	var env Environment
 	require.NoError(t, db.WithContext(ctx).Where("id = ?", "edge-runtime").First(&env).Error)
-	require.Equal(t, string(models.EnvironmentStatusOnline), env.Status)
+	require.Equal(t, string(EnvironmentStatusOnline), env.Status)
 	require.NotNil(t, env.LastSeen)
 
 	lastSeen := env.LastSeen
@@ -626,7 +655,7 @@ func TestEnvironmentService_UpdateEnvironmentConnectionState(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NoError(t, db.WithContext(ctx).Where("id = ?", "edge-runtime").First(&env).Error)
-	require.Equal(t, string(models.EnvironmentStatusOffline), env.Status)
+	require.Equal(t, string(EnvironmentStatusOffline), env.Status)
 	require.NotNil(t, env.LastSeen)
 	require.Equal(t, *lastSeen, *env.LastSeen)
 }
@@ -636,13 +665,13 @@ func TestEnvironmentService_UpdateEnvironmentStatusInternal_PromotesPendingDirec
 	db := setupEnvironmentServiceTestDB(t)
 	svc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
 
-	createTestEnvironmentWithState(t, db, "direct-pending", "http://agent:3553", string(models.EnvironmentStatusPending), false, nil)
+	createTestEnvironmentWithState(t, db, "direct-pending", "http://agent:3553", string(EnvironmentStatusPending), false, nil)
 
-	require.NoError(t, svc.updateEnvironmentStatusInternal(ctx, "direct-pending", string(models.EnvironmentStatusOnline)))
+	require.NoError(t, svc.updateEnvironmentStatusInternal(ctx, "direct-pending", string(EnvironmentStatusOnline)))
 
-	var env models.Environment
+	var env Environment
 	require.NoError(t, db.WithContext(ctx).Where("id = ?", "direct-pending").First(&env).Error)
-	require.Equal(t, string(models.EnvironmentStatusOnline), env.Status)
+	require.Equal(t, string(EnvironmentStatusOnline), env.Status)
 	require.NotNil(t, env.LastSeen)
 }
 
@@ -651,17 +680,17 @@ func TestEnvironmentService_UpdateEnvironmentStatusInternal_DoesNotDemotePending
 	db := setupEnvironmentServiceTestDB(t)
 	svc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
 
-	createTestEnvironmentWithState(t, db, "direct-pending", "http://agent:3553", string(models.EnvironmentStatusPending), false, nil)
+	createTestEnvironmentWithState(t, db, "direct-pending", "http://agent:3553", string(EnvironmentStatusPending), false, nil)
 
 	// A transient health-check failure before pairing completes must NOT flip a
 	// pending Direct env to offline/error — the env should stay pending so a later
 	// successful tick can still promote it to online.
-	require.NoError(t, svc.updateEnvironmentStatusInternal(ctx, "direct-pending", string(models.EnvironmentStatusOffline)))
-	require.NoError(t, svc.updateEnvironmentStatusInternal(ctx, "direct-pending", string(models.EnvironmentStatusError)))
+	require.NoError(t, svc.updateEnvironmentStatusInternal(ctx, "direct-pending", string(EnvironmentStatusOffline)))
+	require.NoError(t, svc.updateEnvironmentStatusInternal(ctx, "direct-pending", string(EnvironmentStatusError)))
 
-	var env models.Environment
+	var env Environment
 	require.NoError(t, db.WithContext(ctx).Where("id = ?", "direct-pending").First(&env).Error)
-	require.Equal(t, string(models.EnvironmentStatusPending), env.Status)
+	require.Equal(t, string(EnvironmentStatusPending), env.Status)
 	require.Nil(t, env.LastSeen)
 }
 
@@ -670,15 +699,15 @@ func TestEnvironmentService_UpdateEnvironmentStatusInternal_LeavesPendingEdgeEnv
 	db := setupEnvironmentServiceTestDB(t)
 	svc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
 
-	createTestEnvironmentWithState(t, db, "edge-pending", "edge://agent", string(models.EnvironmentStatusPending), true, nil)
+	createTestEnvironmentWithState(t, db, "edge-pending", "edge://agent", string(EnvironmentStatusPending), true, nil)
 
 	// Edge envs in pending must complete pairing via the agent's outbound tunnel;
 	// a manager-side reachability tick must NOT promote them.
-	require.NoError(t, svc.updateEnvironmentStatusInternal(ctx, "edge-pending", string(models.EnvironmentStatusOnline)))
+	require.NoError(t, svc.updateEnvironmentStatusInternal(ctx, "edge-pending", string(EnvironmentStatusOnline)))
 
-	var env models.Environment
+	var env Environment
 	require.NoError(t, db.WithContext(ctx).Where("id = ?", "edge-pending").First(&env).Error)
-	require.Equal(t, string(models.EnvironmentStatusPending), env.Status)
+	require.Equal(t, string(EnvironmentStatusPending), env.Status)
 	require.Nil(t, env.LastSeen)
 }
 
@@ -689,7 +718,7 @@ func TestEnvironmentService_ResolveEdgeEnvironmentByToken_CachesAndInvalidatesOn
 
 	oldToken := "edge-token-old"
 	newToken := "edge-token-new"
-	createTestEnvironmentWithState(t, db, "edge-auth", "edge://auth", string(models.EnvironmentStatusPending), true, &oldToken)
+	createTestEnvironmentWithState(t, db, "edge-auth", "edge://auth", string(EnvironmentStatusPending), true, &oldToken)
 
 	envID, err := svc.ResolveEdgeEnvironmentByToken(ctx, oldToken)
 	require.NoError(t, err)
@@ -718,7 +747,7 @@ func TestEnvironmentService_UpdateEnvironment_ClearingAccessTokenInvalidatesCach
 	svc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
 
 	oldToken := "edge-token-clear"
-	createTestEnvironmentWithState(t, db, "edge-auth-clear", "edge://auth-clear", string(models.EnvironmentStatusPending), true, &oldToken)
+	createTestEnvironmentWithState(t, db, "edge-auth-clear", "edge://auth-clear", string(EnvironmentStatusPending), true, &oldToken)
 
 	envID, err := svc.ResolveEdgeEnvironmentByToken(ctx, oldToken)
 	require.NoError(t, err)
@@ -757,7 +786,7 @@ func TestEnvironmentServiceUpdateEnvironmentRejectsTargetChangeWithStoredTokenIn
 	require.ErrorIs(t, err, common.ErrValidation)
 	require.NotContains(t, updates, "updated_at")
 
-	var stored models.Environment
+	var stored Environment
 	require.NoError(t, db.WithContext(ctx).First(&stored, "id = ?", "env-target").Error)
 	require.Equal(t, "http://agent.example:3553", stored.ApiUrl)
 	require.Equal(t, oldToken, *stored.AccessToken)
@@ -873,7 +902,7 @@ func TestEnvironmentService_EnsureSwarmNodeAgentEnvironment_CreatesVisibleEnviro
 	require.False(t, createdEnv.Hidden)
 	require.True(t, createdEnv.IsEdge)
 	require.True(t, createdEnv.Enabled)
-	require.Equal(t, string(models.EnvironmentStatusPending), createdEnv.Status)
+	require.Equal(t, string(EnvironmentStatusPending), createdEnv.Status)
 	require.NotNil(t, createdEnv.ParentEnvironmentID)
 	require.Equal(t, "manager-env", *createdEnv.ParentEnvironmentID)
 	require.NotNil(t, createdEnv.SwarmNodeID)
@@ -882,14 +911,14 @@ func TestEnvironmentService_EnsureSwarmNodeAgentEnvironment_CreatesVisibleEnviro
 	require.Equal(t, createdToken, *createdEnv.AccessToken)
 	require.NotNil(t, createdEnv.ApiKeyID)
 
-	var childEnvironments []models.Environment
+	var childEnvironments []Environment
 	require.NoError(t, db.WithContext(ctx).
 		Where("parent_environment_id = ?", "manager-env").
 		Where("swarm_node_id = ?", "node-1234567890abcdef").
 		Find(&childEnvironments).Error)
 	require.Len(t, childEnvironments, 1)
 
-	var apiKeys []models.ApiKey
+	var apiKeys []apikey.ApiKey
 	require.NoError(t, db.WithContext(ctx).
 		Where("environment_id = ?", createdEnv.ID).
 		Order("created_at asc").
@@ -912,7 +941,7 @@ func TestEnvironmentService_EnsureSwarmNodeAgentEnvironment_CreatesVisibleEnviro
 	require.Equal(t, createdToken, reusedToken)
 	require.Equal(t, createdEnv.ApiKeyID, reusedEnv.ApiKeyID)
 
-	var apiKeysAfterReuse []models.ApiKey
+	var apiKeysAfterReuse []apikey.ApiKey
 	require.NoError(t, db.WithContext(ctx).
 		Where("environment_id = ?", createdEnv.ID).
 		Order("created_at asc").
@@ -927,11 +956,11 @@ func TestEnvironmentService_EnsureSwarmNodeAgentEnvironment_ReusesLegacyHiddenRe
 	parentEnvironmentID := "manager-env"
 	nodeID := "legacy-node"
 	token := "legacy-agent-token"
-	legacy := &models.Environment{
-		BaseModel:           models.BaseModel{ID: "legacy-agent"},
+	legacy := &Environment{
+		BaseModel:           database.BaseModel{ID: "legacy-agent"},
 		Name:                "Legacy node agent",
 		ApiUrl:              "edge://legacy-node",
-		Status:              string(models.EnvironmentStatusOffline),
+		Status:              string(EnvironmentStatusOffline),
 		Enabled:             true,
 		IsEdge:              true,
 		Hidden:              true,
@@ -967,7 +996,7 @@ func TestEnvironmentService_EnsureSwarmNodeAgentEnvironment_ReusesLegacyHiddenRe
 	require.Equal(t, token, reusedToken,
 		"token = %q, want existing token", reusedToken)
 
-	var environments []models.Environment
+	var environments []Environment
 	{
 		err := db.WithContext(ctx).
 			Where("parent_environment_id = ? AND swarm_node_id = ?", parentEnvironmentID, nodeID).
@@ -1091,7 +1120,7 @@ func TestEnvironmentService_ListMethods_ExcludeHiddenEnvironments(t *testing.T) 
 	createNamedTestEnvironmentInternal(t, db, "env-hidden", "Hidden Node Agent", "edge://swarm-node-hidden", new("hidden-token"))
 
 	require.NoError(t, db.WithContext(ctx).
-		Model(&models.Environment{}).
+		Model(&Environment{}).
 		Where("id = ?", "env-hidden").
 		Updates(map[string]any{
 			"hidden":                true,
@@ -1167,51 +1196,51 @@ func TestEnvironmentService_ListEnvironmentsPaginated_FiltersByRuntimeType(t *te
 	svc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
 
 	now := time.Now()
-	envs := []models.Environment{
+	envs := []Environment{
 		{
-			BaseModel: models.BaseModel{ID: "0", CreatedAt: now, UpdatedAt: &now},
+			BaseModel: database.BaseModel{ID: "0", CreatedAt: now, UpdatedAt: &now},
 			Name:      "Local",
 			ApiUrl:    "http://localhost:3552",
-			Status:    string(models.EnvironmentStatusOnline),
+			Status:    string(EnvironmentStatusOnline),
 			Enabled:   true,
 		},
 		{
-			BaseModel: models.BaseModel{ID: "env-edge", CreatedAt: now, UpdatedAt: &now},
+			BaseModel: database.BaseModel{ID: "env-edge", CreatedAt: now, UpdatedAt: &now},
 			Name:      "Edge",
 			ApiUrl:    "edge://agent",
-			Status:    string(models.EnvironmentStatusOffline),
+			Status:    string(EnvironmentStatusOffline),
 			Enabled:   true,
 			IsEdge:    true,
 		},
 		{
-			BaseModel: models.BaseModel{ID: "env-grpc", CreatedAt: now, UpdatedAt: &now},
+			BaseModel: database.BaseModel{ID: "env-grpc", CreatedAt: now, UpdatedAt: &now},
 			Name:      "gRPC",
 			ApiUrl:    "edge://grpc",
-			Status:    string(models.EnvironmentStatusOffline),
+			Status:    string(EnvironmentStatusOffline),
 			Enabled:   true,
 			IsEdge:    true,
 		},
 		{
-			BaseModel: models.BaseModel{ID: "env-websocket", CreatedAt: now, UpdatedAt: &now},
+			BaseModel: database.BaseModel{ID: "env-websocket", CreatedAt: now, UpdatedAt: &now},
 			Name:      "WebSocket",
 			ApiUrl:    "edge://websocket",
-			Status:    string(models.EnvironmentStatusOffline),
+			Status:    string(EnvironmentStatusOffline),
 			Enabled:   true,
 			IsEdge:    true,
 		},
 		{
-			BaseModel: models.BaseModel{ID: "env-polling", CreatedAt: now, UpdatedAt: &now},
+			BaseModel: database.BaseModel{ID: "env-polling", CreatedAt: now, UpdatedAt: &now},
 			Name:      "Polling",
 			ApiUrl:    "edge://polling",
-			Status:    string(models.EnvironmentStatusOffline),
+			Status:    string(EnvironmentStatusOffline),
 			Enabled:   true,
 			IsEdge:    true,
 		},
 		{
-			BaseModel:         models.BaseModel{ID: "env-last-ws", CreatedAt: now, UpdatedAt: &now},
+			BaseModel:         database.BaseModel{ID: "env-last-ws", CreatedAt: now, UpdatedAt: &now},
 			Name:              "LastWebsocket",
 			ApiUrl:            "edge://last-ws",
-			Status:            string(models.EnvironmentStatusOffline),
+			Status:            string(EnvironmentStatusOffline),
 			Enabled:           true,
 			IsEdge:            true,
 			LastEdgeTransport: new("websocket"),
