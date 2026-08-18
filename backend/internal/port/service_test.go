@@ -70,14 +70,16 @@ func TestPortService_ListPortsPaginated_FlattensPublishedAndExposedPorts(t *test
 	assert.True(t, items[0].IsPublished)
 	assert.Equal(t, "container-published:0.0.0.0:8080:80:tcp", items[0].ID)
 
-	assert.Equal(t, "web", items[1].ContainerName)
-	assert.Equal(t, 0, items[1].HostPort)
-	assert.Equal(t, 443, items[1].ContainerPort)
+	// No sort requested: the default sort (hostPort, the first binding) places
+	// published ports first and orders unpublished ones by container name.
+	assert.Equal(t, "api", items[1].ContainerName)
+	assert.Equal(t, 9000, items[1].ContainerPort)
+	assert.Equal(t, "udp", items[1].Protocol)
 	assert.False(t, items[1].IsPublished)
 
-	assert.Equal(t, "api", items[2].ContainerName)
-	assert.Equal(t, 9000, items[2].ContainerPort)
-	assert.Equal(t, "udp", items[2].Protocol)
+	assert.Equal(t, "web", items[2].ContainerName)
+	assert.Equal(t, 0, items[2].HostPort)
+	assert.Equal(t, 443, items[2].ContainerPort)
 	assert.False(t, items[2].IsPublished)
 }
 

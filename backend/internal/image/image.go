@@ -1098,7 +1098,13 @@ func (s *ImageService) getImagePaginationConfig() pagination.Config[imagetypes.S
 			{
 				Key: "repo",
 				Fn: func(a, b imagetypes.Summary) int {
-					return strings.Compare(a.Repo, b.Repo)
+					if cmp := strings.Compare(a.Repo, b.Repo); cmp != 0 {
+						return cmp
+					}
+					if cmp := strings.Compare(a.Tag, b.Tag); cmp != 0 {
+						return cmp
+					}
+					return strings.Compare(a.ID, b.ID)
 				},
 			},
 			{
