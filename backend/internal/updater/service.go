@@ -34,6 +34,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	projectspkg "github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/notifications"
 	arcaneupdater "github.com/getarcaneapp/arcane/types/v2/updater"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
@@ -174,8 +175,11 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, options arcaneupdater
 	out = &arcaneupdater.Result{Items: []arcaneupdater.ResourceResult{}, ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()}
 	ctx = s.trackActivityInternal(ctx, activityID)
 	ctx = contextWithActivityIDInternal(ctx, activityID)
+	notifyBatch := &containerUpdateBatchInternal{}
+	ctx = withBatchedContainerUpdatesInternal(ctx, notifyBatch)
 
 	defer func() {
+		s.flushBatchedContainerUpdatesInternal(ctx, notifyBatch)
 		if out == nil {
 			out = &arcaneupdater.Result{Items: []arcaneupdater.ResourceResult{}}
 		}
@@ -718,9 +722,23 @@ func (s *UpdaterService) markSelfUpdateTriggeredInternal(ctx context.Context, ta
 	}
 }
 
-// Notify sends Arcane's container update notification.
+// Notify buffers Arcane's container update notification when called within an
+// auto-update run (see withBatchedNotificationsInternal); buffered entries are
+// flushed as one batched notification when the run completes. Outside a run it
+// sends the legacy per-container notification immediately.
 func (s *UpdaterService) Notify(ctx context.Context, notification updater.Notification) error {
 	if s == nil || s.deps.Notifications == nil {
+		return nil
+	}
+	if buffer := batchedContainerUpdatesFromContextInternal(ctx); buffer != nil {
+		buffer.Lock()
+		buffer.entries = append(buffer.entries, notifications.ContainerUpdateBatchEntry{
+			ContainerName: notification.ContainerName,
+			ImageRef:      notification.ImageRef,
+			OldDigest:     notification.OldImage,
+			NewDigest:     notification.NewImage,
+		})
+		buffer.Unlock()
 		return nil
 	}
 	return s.deps.Notifications.SendContainerUpdateNotification(
@@ -730,6 +748,42 @@ func (s *UpdaterService) Notify(ctx context.Context, notification updater.Notifi
 		notification.OldImage,
 		notification.NewImage,
 	)
+}
+
+// containerUpdateBatchInternal accumulates per-container update notifications
+// so a single auto-update run produces one batched notification.
+type containerUpdateBatchInternal struct {
+	sync.Mutex
+	entries []notifications.ContainerUpdateBatchEntry
+}
+
+type containerUpdateBatchContextKeyInternal struct{}
+
+func withBatchedContainerUpdatesInternal(ctx context.Context, batch *containerUpdateBatchInternal) context.Context {
+	return context.WithValue(ctx, containerUpdateBatchContextKeyInternal{}, batch)
+}
+
+func batchedContainerUpdatesFromContextInternal(ctx context.Context) *containerUpdateBatchInternal {
+	batch, _ := ctx.Value(containerUpdateBatchContextKeyInternal{}).(*containerUpdateBatchInternal)
+	return batch
+}
+
+// flushBatchedContainerUpdatesInternal delivers the accumulated container
+// update notifications as one batched notification.
+func (s *UpdaterService) flushBatchedContainerUpdatesInternal(ctx context.Context, batch *containerUpdateBatchInternal) {
+	if s == nil || s.deps.Notifications == nil || batch == nil {
+		return
+	}
+	batch.Lock()
+	entries := batch.entries
+	batch.entries = nil
+	batch.Unlock()
+	if len(entries) == 0 {
+		return
+	}
+	if err := s.deps.Notifications.SendBatchContainerUpdateNotification(ctx, entries); err != nil {
+		s.loggerInternal().ErrorContext(ctx, "failed to send batched container update notification", "error", err, "count", len(entries))
+	}
 }
 
 // RecordEvent records updater lifecycle events in Arcane's event stream.

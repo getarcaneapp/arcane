@@ -12,6 +12,7 @@ import (
 	"maps"
 	"net/http"
 	"net/mail"
+	"sort"
 	"strings"
 	"time"
 
@@ -718,6 +719,127 @@ func (s *NotificationService) batchImageUpdateNotificationContentInternal(enviro
 			return subject, htmlBody, nil
 		},
 	}
+}
+
+// SendBatchContainerUpdateNotification dispatches a single batched
+// notification covering all containers updated in one auto-update run.
+func (s *NotificationService) SendBatchContainerUpdateNotification(ctx context.Context, entries []notifications.ContainerUpdateBatchEntry) error {
+	if len(entries) == 0 {
+		return nil
+	}
+
+	target, err := s.resolveNotificationTargetInternal(ctx, "")
+	if err != nil {
+		return err
+	}
+
+	return s.sendBatchContainerUpdateNotificationForTargetInternal(ctx, target, entries)
+}
+
+func (s *NotificationService) sendBatchContainerUpdateNotificationForTargetInternal(ctx context.Context, target NotificationTarget, entries []notifications.ContainerUpdateBatchEntry) error {
+	containerNames := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		containerNames = append(containerNames, entry.ContainerName)
+	}
+
+	metadata := database.JSON{
+		"containerNames": containerNames,
+		"updateCount":    len(entries),
+		"eventType":      string(notifications.NotificationEventContainerUpdate),
+		"batch":          true,
+	}
+	content := s.batchContainerUpdateNotificationContentInternal(target.EnvironmentName, entries)
+	content.Vars = notifications.EventVars(target.EnvironmentName, target.EnvironmentID, notifications.NotificationEventContainerUpdate)
+	_, err := s.notifyEnabledProvidersInternal(ctx, target, notifications.NotificationEventContainerUpdate, strings.Join(containerNames, ", "), metadata, func(ctx context.Context, provider notifications.NotificationProvider, config database.JSON) (bool, error) {
+		return notifications.Deliver(ctx, provider, config, content)
+	})
+	return err
+}
+
+func (s *NotificationService) batchContainerUpdateNotificationContentInternal(environmentName string, entries []notifications.ContainerUpdateBatchEntry) notifications.Content {
+	return notifications.Content{
+		Text: notifications.TextByFormat(func(format notifications.MessageFormat) string {
+			return notifications.BuildBatchContainerUpdateNotificationMessage(format, environmentName, entries)
+		}),
+		Title: "Containers Updated",
+		RenderEmail: func() (string, string, error) {
+			htmlBody, _, err := s.renderBatchContainerUpdateEmailTemplate(environmentName, entries)
+			if err != nil {
+				return "", "", errors.WrapIf(err, "failed to render email template")
+			}
+			updateCount := len(entries)
+			plural := ""
+			if updateCount > 1 {
+				plural = "s"
+			}
+			subject := notifications.BuildEmailSubject(environmentName, fmt.Sprintf("%d Container%s Updated", updateCount, plural))
+			return subject, htmlBody, nil
+		},
+		RequireNtfyTopic:     true,
+		ValidatePushoverUser: true,
+	}
+}
+
+func (s *NotificationService) renderBatchContainerUpdateEmailTemplate(environmentName string, entries []notifications.ContainerUpdateBatchEntry) (string, string, error) {
+	type batchEntry struct {
+		ContainerName string
+		ImageRef      string
+		OldDigest     string
+		NewDigest     string
+	}
+
+	sorted := make([]batchEntry, 0, len(entries))
+	for _, entry := range entries {
+		sorted = append(sorted, batchEntry{
+			ContainerName: entry.ContainerName,
+			ImageRef:      entry.ImageRef,
+			OldDigest:     entry.OldDigest,
+			NewDigest:     entry.NewDigest,
+		})
+	}
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].ContainerName < sorted[j].ContainerName })
+
+	appURL := s.config.GetAppURL()
+	data := map[string]any{
+		"LogoURL":      appURL + logoURLPath,
+		"AppURL":       appURL,
+		"Environment":  environmentName,
+		"UpdateCount":  len(sorted),
+		"CompletedAt":  time.Now().Format(time.RFC1123),
+		"Entries":      sorted,
+	}
+
+	htmlContent, err := resources.FS.ReadFile("email-templates/batch-container-updates_html.tmpl")
+	if err != nil {
+		return "", "", errors.WrapIf(err, "failed to read HTML template")
+	}
+
+	htmlTmpl, err := template.New("html").Parse(string(htmlContent))
+	if err != nil {
+		return "", "", errors.WrapIf(err, "failed to parse HTML template")
+	}
+
+	var htmlBuf bytes.Buffer
+	if err := htmlTmpl.ExecuteTemplate(&htmlBuf, "root", data); err != nil {
+		return "", "", errors.WrapIf(err, "failed to execute HTML template")
+	}
+
+	textContent, err := resources.FS.ReadFile("email-templates/batch-container-updates_text.tmpl")
+	if err != nil {
+		return "", "", errors.WrapIf(err, "failed to read text template")
+	}
+
+	textTmpl, err := template.New("text").Parse(string(textContent))
+	if err != nil {
+		return "", "", errors.WrapIf(err, "failed to parse text template")
+	}
+
+	var textBuf bytes.Buffer
+	if err := textTmpl.ExecuteTemplate(&textBuf, "root", data); err != nil {
+		return "", "", errors.WrapIf(err, "failed to execute text template")
+	}
+
+	return htmlBuf.String(), textBuf.String(), nil
 }
 
 func (s *NotificationService) pruneReportNotificationContentInternal(environmentName string, result *system.PruneAllResult) notifications.Content {

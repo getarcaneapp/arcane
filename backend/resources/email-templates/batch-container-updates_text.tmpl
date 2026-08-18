@@ -1,0 +1,14 @@
+{{define "root"}}Arcane - Containers Updated
+
+{{.UpdateCount}} container(s) were updated with the latest image version.
+
+Environment: {{.Environment}}
+Completed At: {{.CompletedAt}}
+
+Updated Containers:
+{{range .Entries}}- {{.ContainerName}} ({{.ImageRef}})
+{{end}}
+
+Log in to Arcane to view details about your containers:
+{{.AppURL}}
+{{end}}
