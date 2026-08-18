@@ -801,12 +801,12 @@ func (s *NotificationService) renderBatchContainerUpdateEmailTemplate(environmen
 
 	appURL := s.config.GetAppURL()
 	data := map[string]any{
-		"LogoURL":      appURL + logoURLPath,
-		"AppURL":       appURL,
-		"Environment":  environmentName,
-		"UpdateCount":  len(sorted),
-		"CompletedAt":  time.Now().Format(time.RFC1123),
-		"Entries":      sorted,
+		"LogoURL":     appURL + logoURLPath,
+		"AppURL":      appURL,
+		"Environment": environmentName,
+		"UpdateCount": len(sorted),
+		"CompletedAt": time.Now().Format(time.RFC1123),
+		"Entries":     sorted,
 	}
 
 	htmlContent, err := resources.FS.ReadFile("email-templates/batch-container-updates_html.tmpl")
