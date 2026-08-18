@@ -12,6 +12,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -227,7 +228,7 @@ func managerMTLSEnrollmentStateInternal(cfg *Config, envID string, now time.Time
 	}
 	enrolledAt, err := readMTLSEnrollmentMarkerInternal(markerPath)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return false, false, nil
 		}
 		return false, false, err

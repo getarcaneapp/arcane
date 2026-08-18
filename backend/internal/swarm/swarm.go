@@ -6,10 +6,10 @@ import (
 	stdjson "encoding/json"
 	"encoding/json/v2"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/netip"
-	"os"
 	"path"
 	"path/filepath"
 	"sort"
@@ -1768,7 +1768,7 @@ func (s *SwarmService) GetStackSource(ctx context.Context, environmentID, stackN
 
 	composeContent, err := acfs.ReadFile(ctx, stackSourceDir, "/"+swarmStackComposeFilename)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return nil, cerrdefs.ErrNotFound
 		}
 		return nil, errors.WrapIf(err, "failed to read swarm stack compose source")
@@ -1778,7 +1778,7 @@ func (s *SwarmService) GetStackSource(ctx context.Context, environmentID, stackN
 	overrideBytes, err := acfs.ReadFile(ctx, stackSourceDir, "/"+swarmStackOverrideFilename)
 	if err == nil {
 		overrideContent = string(overrideBytes)
-	} else if !errors.Is(err, os.ErrNotExist) {
+	} else if !errors.Is(err, fs.ErrNotExist) {
 		return nil, errors.WrapIf(err, "failed to read swarm stack override source")
 	}
 
@@ -1786,7 +1786,7 @@ func (s *SwarmService) GetStackSource(ctx context.Context, environmentID, stackN
 	envBytes, err := acfs.ReadFile(ctx, stackSourceDir, "/"+swarmStackEnvFilename)
 	if err == nil {
 		envContent = string(envBytes)
-	} else if !errors.Is(err, os.ErrNotExist) {
+	} else if !errors.Is(err, fs.ErrNotExist) {
 		return nil, errors.WrapIf(err, "failed to read swarm stack env source")
 	}
 
@@ -1809,7 +1809,7 @@ func (s *SwarmService) GetStackSource(ctx context.Context, environmentID, stackN
 		})
 		return nil
 	})
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, errors.WrapIf(err, "failed to read additional swarm stack source files")
 	}
 
@@ -1885,7 +1885,7 @@ func (s *SwarmService) listPersistedStackSourcesInternal(ctx context.Context, en
 
 	entries, err := acfs.List(ctx, environmentDir, "/")
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return map[string]swarmtypes.StackSummary{}, nil
 		}
 		return nil, errors.WrapIf(err, "failed to list swarm stack source directories")
@@ -1923,7 +1923,7 @@ func (s *SwarmService) getPersistedStackSourceSummaryInternal(ctx context.Contex
 func (s *SwarmService) buildPersistedStackSourceSummaryInternal(ctx context.Context, stackSourceDir, stackName string) (*swarmtypes.StackSummary, error) {
 	composeEntry, err := acfs.Stat(ctx, stackSourceDir, "/"+swarmStackComposeFilename, true)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return nil, cerrdefs.ErrNotFound
 		}
 		return nil, errors.WrapIf(err, "failed to stat swarm stack compose source")
@@ -1940,7 +1940,7 @@ func (s *SwarmService) buildPersistedStackSourceSummaryInternal(ctx context.Cont
 		if envEntry.ModTime.After(updatedAt) {
 			updatedAt = envEntry.ModTime
 		}
-	} else if !errors.Is(err, os.ErrNotExist) {
+	} else if !errors.Is(err, fs.ErrNotExist) {
 		return nil, errors.WrapIf(err, "failed to stat swarm stack env source")
 	}
 
@@ -2621,7 +2621,7 @@ func (s *SwarmService) deleteStackSourceInternal(ctx context.Context, environmen
 	// Best-effort cleanup of now-empty environment directory.
 	environmentDir := filepath.Dir(stackSourceDir)
 	if environmentDir != rootDir {
-		if err := acfs.Remove(ctx, rootDir, path.Dir(stackLogical)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		if err := acfs.Remove(ctx, rootDir, path.Dir(stackLogical)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			slog.DebugContext(ctx, "swarm stack source environment directory cleanup skipped", "dir", environmentDir, "error", err)
 		}
 	}

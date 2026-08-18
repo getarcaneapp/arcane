@@ -3,6 +3,7 @@ package projects
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path"
@@ -108,7 +109,7 @@ func WriteProjectFile(ctx context.Context, projectsRoot, dirPath, fileName, cont
 		// Only .env is written through a symlink (handled above); every other
 		// project file refuses one rather than clobbering an unknown target.
 		return errors.Errorf("refusing to write project file %s: destination is a symlink", fileName)
-	case statErr != nil && !errors.Is(statErr, os.ErrNotExist):
+	case statErr != nil && !errors.Is(statErr, fs.ErrNotExist):
 		return errors.WrapIff(statErr, "failed to inspect project file %s", fileName)
 	}
 
@@ -117,7 +118,7 @@ func WriteProjectFile(ctx context.Context, projectsRoot, dirPath, fileName, cont
 		if readErr == nil && string(existingContent) == content {
 			return nil
 		}
-		if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
+		if readErr != nil && !errors.Is(readErr, fs.ErrNotExist) {
 			return errors.WrapIff(readErr, "failed to read project file %s", fileName)
 		}
 	}
@@ -191,7 +192,7 @@ func RemoveProjectFile(ctx context.Context, projectsRoot, dirPath, fileName stri
 		return errors.Errorf("invalid project file name %q", fileName)
 	}
 
-	if err := acfs.Remove(ctx, dirPath, "/"+fileName); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := acfs.Remove(ctx, dirPath, "/"+fileName); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return errors.WrapIff(err, "failed to remove project file %s", fileName)
 	}
 
@@ -365,7 +366,7 @@ func WriteSyncedDirectory(ctx context.Context, projectsRoot, projectPath string,
 			if err := acfs.RemoveAll(ctx, projectPath, logicalPath); err != nil {
 				return nil, errors.WrapIff(err, "failed to replace directory at %s", file.RelativePath)
 			}
-		case statErr != nil && !errors.Is(statErr, os.ErrNotExist):
+		case statErr != nil && !errors.Is(statErr, fs.ErrNotExist):
 			return nil, errors.WrapIff(statErr, "failed to inspect target path for %s", file.RelativePath)
 		}
 
@@ -415,7 +416,7 @@ func CleanupRemovedFiles(ctx context.Context, projectsRoot, projectPath string, 
 		}
 
 		// Delete the file (best effort)
-		if err := acfs.Remove(ctx, projectPath, logicalPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		if err := acfs.Remove(ctx, projectPath, logicalPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			// Log but continue - this is best effort
 			slog.WarnContext(ctx, "Failed to remove old synced file", "file", oldFile, "error", err)
 		}

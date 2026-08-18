@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json/v2"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"maps"
 	"os"
@@ -1246,7 +1247,7 @@ func (s *GitOpsSyncService) CleanupLeakedScratchDirsOnStartup(ctx context.Contex
 
 	entries, err := acfs.List(ctx, projectsDir, "/")
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return nil
 		}
 		return errors.WrapIff(err, "failed to list projects directory %s for gitops scratch cleanup", projectsDir)
@@ -1897,7 +1898,7 @@ func (s *GitOpsSyncService) seedStageEnvFromCandidateDirInternal(ctx context.Con
 		if readErr == nil {
 			return string(content), true, nil
 		}
-		if errors.Is(readErr, os.ErrNotExist) {
+		if errors.Is(readErr, fs.ErrNotExist) {
 			return "", false, nil
 		}
 		if errors.Is(readErr, os.ErrPermission) {
@@ -2053,7 +2054,7 @@ func (s *GitOpsSyncService) findUniqueProjectDirectoryCandidateInternal(ctx cont
 			if !composeEntry.IsDirectory {
 				matches = append(matches, candidatePath)
 			}
-		} else if !errors.Is(statErr, os.ErrNotExist) {
+		} else if !errors.Is(statErr, fs.ErrNotExist) {
 			return "", errors.WrapIff(statErr, "failed to inspect recovery candidate %s", composePath)
 		}
 	}

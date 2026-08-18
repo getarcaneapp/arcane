@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -176,7 +177,7 @@ func syncedProjectFileMatchesInternal(ctx context.Context, projectPath string, f
 	logicalPath := "/" + filepath.ToSlash(file.RelativePath)
 	entry, err := acfs.Stat(ctx, projectPath, logicalPath, false)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return false, nil
 		}
 		return false, err
@@ -187,7 +188,7 @@ func syncedProjectFileMatchesInternal(ctx context.Context, projectPath string, f
 
 	existingContent, err := acfs.ReadFile(ctx, projectPath, logicalPath)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return false, nil
 		}
 		return false, err
@@ -278,7 +279,7 @@ func RemoveStaleComposeFiles(ctx context.Context, projectPath, composeFileName s
 		if _, exists := syncedFileSet[candidate]; exists {
 			continue
 		}
-		if err := acfs.Remove(ctx, projectPath, "/"+candidate); err != nil && !errors.Is(err, os.ErrNotExist) {
+		if err := acfs.Remove(ctx, projectPath, "/"+candidate); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return err
 		}
 	}
@@ -309,7 +310,7 @@ func RemoveStaleComposeFiles(ctx context.Context, projectPath, composeFileName s
 			continue
 		}
 
-		if err := acfs.Remove(ctx, projectPath, entry.Path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		if err := acfs.Remove(ctx, projectPath, entry.Path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return err
 		}
 	}

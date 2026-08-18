@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json/v2"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
@@ -465,7 +466,7 @@ func (s *VariableService) ReadLocalEnvFile(ctx context.Context) ([]env.Variable,
 
 	content, err := acfs.ReadFile(ctx, filepath.Dir(envPath), "/"+projects.GlobalEnvFileName)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			slog.DebugContext(ctx, "Global variables file does not exist yet", "path", envPath)
 			return []env.Variable{}, nil
 		}
