@@ -37,6 +37,8 @@
 				return m.webhook_page_title();
 			case 'build':
 				return 'Build';
+			case 'diagnostics':
+				return m.diagnostics();
 			default:
 				return m.settings();
 		}

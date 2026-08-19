@@ -54,8 +54,8 @@ func setupUserAndRoleServices(t *testing.T) (*UserService, *role.RoleService) {
 func createTestUser(t *testing.T, svc *UserService, id, username string) *common.User {
 	t.Helper()
 	created, err := svc.CreateUser(context.Background(), &common.User{
-		BaseModel: database.BaseModel{ID: id},
-		Username:  username,
+		ID:       id,
+		Username: username,
 	})
 	require.NoError(t, err)
 	return created
@@ -91,7 +91,7 @@ func TestSetPasswordUpdatesHashAndClearsPasswordChangeRequirement(t *testing.T) 
 	oldHash, err := userSvc.HashPassword("old-password")
 	require.NoError(t, err)
 	user, err := userSvc.CreateUser(ctx, &common.User{
-		BaseModel:              database.BaseModel{ID: "password-user"},
+		ID:                     "password-user",
 		Username:               "password-user",
 		PasswordHash:           oldHash,
 		RequiresPasswordChange: true,
@@ -148,9 +148,9 @@ func TestListUsersPaginatedSetsCanDeleteFromGlobalAdminCount(t *testing.T) {
 	nonAdmin := createTestUser(t, userSvc, "user-1", "user")
 
 	users, _, err := userSvc.ListUsersPaginated(ctx, pagination.QueryParams{
-		Params:     pagination.Params{Start: 0, Limit: 20},
-		SortParams: pagination.SortParams{Sort: "Username", Order: "asc"},
-		Filters:    map[string]string{},
+		Start: 0, Limit: 20,
+		Sort: "Username", Order: "asc",
+		Filters: map[string]string{},
 	})
 	require.NoError(t, err)
 	require.Len(t, users, 2)
@@ -179,9 +179,9 @@ func TestDeleteUserRejectsDeletingOnlyCustomAllPermissionsAdmin(t *testing.T) {
 	require.ErrorIs(t, err, ErrCannotRemoveLastAdmin)
 
 	users, _, err := userSvc.ListUsersPaginated(ctx, pagination.QueryParams{
-		Params:     pagination.Params{Start: 0, Limit: 20},
-		SortParams: pagination.SortParams{Sort: "Username", Order: "asc"},
-		Filters:    map[string]string{},
+		Start: 0, Limit: 20,
+		Sort: "Username", Order: "asc",
+		Filters: map[string]string{},
 	})
 	require.NoError(t, err)
 	require.Len(t, users, 1)

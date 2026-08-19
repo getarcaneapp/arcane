@@ -1668,14 +1668,12 @@ func startTestTunnelServiceOnAPIPathInternal(t *testing.T, ctx context.Context, 
 		}
 
 		clone := r.Clone(r.Context())
-		cloneURL := *clone.URL
 		if r.URL.Path == "/api/tunnel/connect" {
-			cloneURL.Path = tunnelpb.TunnelService_Connect_FullMethodName
+			clone.URL.Path = tunnelpb.TunnelService_Connect_FullMethodName
 		} else {
-			cloneURL.Path = strings.TrimPrefix(r.URL.Path, "/api")
+			clone.URL.Path = strings.TrimPrefix(r.URL.Path, "/api")
 		}
-		clone.URL = &cloneURL
-		clone.RequestURI = cloneURL.Path
+		clone.RequestURI = clone.URL.Path
 		grpcServer.ServeHTTP(w, clone)
 	})
 
@@ -2068,14 +2066,12 @@ func startTestPollAndGRPCManagerInternal(t *testing.T, ctx context.Context, serv
 		}
 
 		clone := r.Clone(r.Context())
-		cloneURL := *clone.URL
 		if r.URL.Path == "/api/tunnel/connect" {
-			cloneURL.Path = tunnelpb.TunnelService_Connect_FullMethodName
+			clone.URL.Path = tunnelpb.TunnelService_Connect_FullMethodName
 		} else {
-			cloneURL.Path = strings.TrimPrefix(r.URL.Path, "/api")
+			clone.URL.Path = strings.TrimPrefix(r.URL.Path, "/api")
 		}
-		clone.URL = &cloneURL
-		clone.RequestURI = cloneURL.Path
+		clone.RequestURI = clone.URL.Path
 		grpcServer.ServeHTTP(w, clone)
 	})
 

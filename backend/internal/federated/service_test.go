@@ -155,14 +155,14 @@ func setupFederatedCredentialServiceInternal(t *testing.T, issuer *federatedTest
 	service := NewFederatedCredentialService(db, authSvc, userSvc, settingsSvc, eventSvc, issuer.server.Client()).WithRoleService(roleSvc)
 
 	viewerRole := role.Role{
-		BaseModel:   database.BaseModel{ID: "role-federated-viewer"},
+		ID:          "role-federated-viewer",
 		Name:        "Federated Viewer",
 		Permissions: database.StringSlice{authz.PermProjectsList},
 	}
 	require.NoError(t, db.WithContext(ctx).Create(&viewerRole).Error)
 
 	serviceUser := common.User{
-		BaseModel:        database.BaseModel{ID: "user-federated-service"},
+		ID:               "user-federated-service",
 		Username:         "svc-federated-demo",
 		IsServiceAccount: true,
 	}
@@ -173,7 +173,7 @@ func setupFederatedCredentialServiceInternal(t *testing.T, issuer *federatedTest
 	}).Error)
 
 	credential := FederatedCredential{
-		BaseModel:       database.BaseModel{ID: "cred-github-actions"},
+		ID:              "cred-github-actions",
 		Name:            "GitHub Actions",
 		Enabled:         true,
 		IssuerURL:       issuer.IssuerURL,

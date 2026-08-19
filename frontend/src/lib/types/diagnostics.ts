@@ -3,6 +3,8 @@
 export interface RuntimeInfo {
 	goroutines: number;
 	wsWorkerGoroutines: number;
+	leakedGoroutines: number;
+	leakScannedAt?: string;
 	gomaxprocs: number;
 	numCpu: number;
 	goVersion: string;
@@ -79,4 +81,19 @@ export interface LogEntry {
 	attrs?: Record<string, unknown>;
 }
 
-export type PprofProfile = 'heap' | 'goroutine' | 'allocs' | 'block' | 'mutex' | 'threadcreate' | 'profile' | 'trace';
+export interface GoroutineLeakReport {
+	count: number;
+	profile: string;
+	scannedAt: string;
+}
+
+export type PprofProfile =
+	| 'heap'
+	| 'goroutine'
+	| 'goroutineleak'
+	| 'allocs'
+	| 'block'
+	| 'mutex'
+	| 'threadcreate'
+	| 'profile'
+	| 'trace';

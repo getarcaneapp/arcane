@@ -186,7 +186,7 @@ func (s *UserService) ResolveUserPermissions(ctx context.Context, userID string)
 	if s.roleService == nil {
 		return nil, nil
 	}
-	return s.roleService.ResolvePermissions(ctx, &common.User{BaseModel: database.BaseModel{ID: userID}})
+	return s.roleService.ResolvePermissions(ctx, &common.User{ID: userID})
 }
 
 // checkTargetPrivilegeInternal enforces actor-vs-target privilege ordering: a
@@ -510,7 +510,7 @@ func (s *UserService) DeleteUser(ctx context.Context, id string, actorPerms *aut
 	// global admin, refuse the delete. Checked outside the transaction because
 	// role.RoleService uses its own session and the guard spans rows.
 	if s.roleService != nil {
-		ps, err := s.roleService.ResolvePermissions(ctx, &common.User{BaseModel: database.BaseModel{ID: id}})
+		ps, err := s.roleService.ResolvePermissions(ctx, &common.User{ID: id})
 		if err != nil {
 			return err
 		}

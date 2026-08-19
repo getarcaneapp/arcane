@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"uuid"
 
 	"emperror.dev/errors"
 
@@ -24,7 +25,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/google/uuid"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
@@ -234,7 +234,7 @@ func (s *VolumeService) CreateBackup(ctx context.Context, volumeName string, use
 		return nil, err
 	}
 
-	backupID := fmt.Sprintf("%s-%d-%s", volumeName, time.Now().UnixNano(), uuid.NewString()[:8])
+	backupID := fmt.Sprintf("%s-%d-%s", volumeName, time.Now().UnixNano(), uuid.New().String()[:8])
 	filename, err := s.backupArchiveFilenameInternal(backupID)
 	if err != nil {
 		return nil, err

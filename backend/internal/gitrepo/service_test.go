@@ -80,8 +80,8 @@ func createGitRepositoryServiceTestRepoInternal(t *testing.T, svc *GitRepository
 	t.Helper()
 
 	repo, err := svc.CreateRepository(context.Background(), req, common.User{
-		BaseModel: database.BaseModel{ID: "admin-1"},
-		Username:  "admin",
+		ID:       "admin-1",
+		Username: "admin",
 	})
 	require.NoError(t, err)
 	return repo

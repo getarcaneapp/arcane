@@ -208,8 +208,7 @@ func LegacyMultipartMiddleware(api huma.API, service *UploadService, kind string
 		session, err := service.IngestSession(ctx.Context(), kind, header.Filename, header.Size, file)
 		if err != nil {
 			if httpErr := SessionHTTPError(err); httpErr != nil {
-				var statusErr huma.StatusError
-				if errors.As(httpErr, &statusErr) {
+				if statusErr, ok := errors.AsType[huma.StatusError](httpErr); ok {
 					writeErr(statusErr.GetStatus(), statusErr.Error())
 					return
 				}

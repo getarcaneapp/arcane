@@ -11,17 +11,15 @@ import (
 
 func TestMapOneConvertsNetworkIPAMConfigInternal(t *testing.T) {
 	source := dockernetwork.Inspect{
-		Network: dockernetwork.Network{
-			IPAM: dockernetwork.IPAM{
-				Driver: "default",
-				Config: []dockernetwork.IPAMConfig{
-					{
-						Subnet:  netip.MustParsePrefix("172.16.5.0/24"),
-						Gateway: netip.MustParseAddr("172.16.5.1"),
-						AuxAddress: map[string]netip.Addr{
-							"dns":   netip.MustParseAddr("172.16.5.53"),
-							"unset": {},
-						},
+		IPAM: dockernetwork.IPAM{
+			Driver: "default",
+			Config: []dockernetwork.IPAMConfig{
+				{
+					Subnet:  netip.MustParsePrefix("172.16.5.0/24"),
+					Gateway: netip.MustParseAddr("172.16.5.1"),
+					AuxAddress: map[string]netip.Addr{
+						"dns":   netip.MustParseAddr("172.16.5.53"),
+						"unset": {},
 					},
 				},
 			},

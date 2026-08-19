@@ -1,8 +1,5 @@
 name: Release New Arcane Version
 
-env:
-  GOEXPERIMENT: jsonv2
-
 on:
   push:
     tags:

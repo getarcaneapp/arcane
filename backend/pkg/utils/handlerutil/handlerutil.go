@@ -43,17 +43,11 @@ func PaginationParams(start, limit int, sortCol, sortDir, search string) paginat
 	}
 
 	return pagination.QueryParams{
-		SearchQuery: pagination.SearchQuery{
-			Search: strings.TrimSpace(search),
-		},
-		SortParams: pagination.SortParams{
-			Sort:  strings.TrimSpace(sortCol),
-			Order: pagination.SortOrder(sortDir),
-		},
-		Params: pagination.Params{
-			Start: start,
-			Limit: limit,
-		},
+		Search:  strings.TrimSpace(search),
+		Sort:    strings.TrimSpace(sortCol),
+		Order:   pagination.SortOrder(sortDir),
+		Start:   start,
+		Limit:   limit,
 		Filters: make(map[string]string),
 	}
 }

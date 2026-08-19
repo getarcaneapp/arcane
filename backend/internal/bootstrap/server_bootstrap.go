@@ -248,9 +248,7 @@ func normalizeTunnelGRPCRequestPathInternal(r *http.Request) *http.Request {
 	const tunnelConnectPath = "/api/tunnel/connect"
 	if strings.HasSuffix(r.URL.Path, tunnelConnectPath) {
 		clone := r.Clone(r.Context())
-		cloneURL := *clone.URL
-		cloneURL.Path = connectMethodPath
-		clone.URL = &cloneURL
+		clone.URL.Path = connectMethodPath
 		clone.RequestURI = connectMethodPath
 		return clone
 	}
@@ -266,9 +264,7 @@ func normalizeTunnelGRPCRequestPathInternal(r *http.Request) *http.Request {
 	}
 
 	clone := r.Clone(r.Context())
-	cloneURL := *clone.URL
-	cloneURL.Path = normalizedPath
-	clone.URL = &cloneURL
+	clone.URL.Path = normalizedPath
 	clone.RequestURI = normalizedPath
 	return clone
 }

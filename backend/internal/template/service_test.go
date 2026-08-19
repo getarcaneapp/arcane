@@ -213,10 +213,10 @@ services:
 		registryFetchMeta: make(map[string]*registryFetchMeta),
 	}
 	registry := &TemplateRegistry{
-		BaseModel: database.BaseModel{ID: "reg-1"},
-		Name:      "Demo Registry",
-		URL:       registryURL,
-		Enabled:   true,
+		ID:      "reg-1",
+		Name:    "Demo Registry",
+		URL:     registryURL,
+		Enabled: true,
 	}
 
 	templates, err := service.fetchRegistryTemplates(context.Background(), registry)
@@ -272,7 +272,7 @@ services:
 	}
 
 	remoteTemplate := &ComposeTemplate{
-		BaseModel:   database.BaseModel{ID: "remote:reg-1:demo"},
+		ID:          "remote:reg-1:demo",
 		Name:        "Demo Template",
 		Description: "Remote template",
 		IsRemote:    true,
@@ -308,7 +308,7 @@ func TestGetAllTemplatesPaginated_FiltersByType(t *testing.T) {
 	db := setupTemplateServiceTestDB(t)
 	localTemplates := []ComposeTemplate{
 		{
-			BaseModel:   database.BaseModel{ID: "local-one", CreatedAt: now, UpdatedAt: &now},
+			ID: "local-one", CreatedAt: now, UpdatedAt: &now,
 			Name:        "Local One",
 			Description: "Local template",
 			Content:     "services: {}",
@@ -316,7 +316,7 @@ func TestGetAllTemplatesPaginated_FiltersByType(t *testing.T) {
 			IsRemote:    false,
 		},
 		{
-			BaseModel:   database.BaseModel{ID: "local-two", CreatedAt: now, UpdatedAt: &now},
+			ID: "local-two", CreatedAt: now, UpdatedAt: &now,
 			Name:        "Local Two",
 			Description: "Local template",
 			Content:     "services: {}",
@@ -329,7 +329,7 @@ func TestGetAllTemplatesPaginated_FiltersByType(t *testing.T) {
 	service := NewTemplateService(context.Background(), db, http.DefaultClient, nil)
 	service.remoteCache.Set(struct{}{}, []ComposeTemplate{
 		{
-			BaseModel:   database.BaseModel{ID: "remote-one", CreatedAt: now, UpdatedAt: &now},
+			ID: "remote-one", CreatedAt: now, UpdatedAt: &now,
 			Name:        "Remote One",
 			Description: "Remote template",
 			Content:     "services: {}",
@@ -351,7 +351,7 @@ func TestGetAllTemplatesPaginated_FiltersByType(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			templates, _, err := service.GetAllTemplatesPaginated(context.Background(), pagination.QueryParams{
-				Params:  pagination.Params{Start: 0, Limit: 20},
+				Start: 0, Limit: 20,
 				Filters: map[string]string{"type": tt.typeFilter},
 			})
 			require.NoError(t, err)
@@ -449,10 +449,10 @@ func TestGetTemplate_ForceRefreshesRemoteCacheOnMiss(t *testing.T) {
 	db := setupTemplateServiceTestDB(t)
 
 	registry := &TemplateRegistry{
-		BaseModel: database.BaseModel{ID: "reg-1"},
-		Name:      "Demo",
-		URL:       baseURL + "/registry.json",
-		Enabled:   true,
+		ID:      "reg-1",
+		Name:    "Demo",
+		URL:     baseURL + "/registry.json",
+		Enabled: true,
 	}
 	require.NoError(t, db.WithContext(context.Background()).Create(registry).Error)
 

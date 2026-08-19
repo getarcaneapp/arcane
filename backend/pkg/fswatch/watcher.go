@@ -142,9 +142,7 @@ func (fw *Watcher) watchLoop(ctx context.Context) {
 	defer close(fw.stoppedCh)
 
 	debounceTimer := time.NewTimer(fw.debounce)
-	if !debounceTimer.Stop() {
-		<-debounceTimer.C
-	}
+	debounceTimer.Stop()
 	debouncePending := false
 	lastGoroutineLog := time.Time{}
 
@@ -187,12 +185,6 @@ func (fw *Watcher) processEventInternal(ctx context.Context, event fsnotify.Even
 		return false
 	}
 	fw.recordPendingPathInternal(event.Name)
-	if !debounceTimer.Stop() {
-		select {
-		case <-debounceTimer.C:
-		default:
-		}
-	}
 	debounceTimer.Reset(fw.debounce)
 	*debouncePending = true
 	return false

@@ -144,8 +144,8 @@ func TestSearchOrderAndPaginateStablePageWalkAcrossReorderedInput(t *testing.T) 
 				r.Shuffle(len(shuffled), func(i, j int) { shuffled[i], shuffled[j] = shuffled[j], shuffled[i] })
 
 				result := SearchOrderAndPaginate(shuffled, QueryParams{
-					SortParams: SortParams{Sort: sort},
-					Params:     Params{Start: start, Limit: limit},
+					Sort:  sort,
+					Start: start, Limit: limit,
 				}, config)
 				for _, item := range result.Items {
 					seen[item.ID]++

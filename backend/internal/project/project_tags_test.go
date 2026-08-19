@@ -3,8 +3,6 @@ package project
 import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-
 	"context"
 	"testing"
 
@@ -17,7 +15,7 @@ func TestProjectTags_ReconcilePreservesUIAndComposeOwnershipIsReadOnly(t *testin
 	service := &ProjectService{db: db}
 	ctx := context.Background()
 	projectModel := Project{
-		BaseModel:       database.BaseModel{ID: "project-tags"},
+		ID:              "project-tags",
 		Name:            "tagged",
 		Path:            "/tmp/tagged",
 		Status:          ProjectStatusStopped,
@@ -56,9 +54,9 @@ func TestProjectTags_FilterUsesExactORNames(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
 	projects := []Project{
-		{BaseModel: database.BaseModel{ID: "one"}, Name: "one", Path: "/tmp/one", Status: ProjectStatusStopped},
-		{BaseModel: database.BaseModel{ID: "two"}, Name: "two", Path: "/tmp/two", Status: ProjectStatusStopped},
-		{BaseModel: database.BaseModel{ID: "three"}, Name: "three", Path: "/tmp/three", Status: ProjectStatusStopped},
+		{ID: "one", Name: "one", Path: "/tmp/one", Status: ProjectStatusStopped},
+		{ID: "two", Name: "two", Path: "/tmp/two", Status: ProjectStatusStopped},
+		{ID: "three", Name: "three", Path: "/tmp/three", Status: ProjectStatusStopped},
 	}
 	require.NoError(t, db.Create(&projects).Error)
 	require.NoError(t, db.Create(&[]ProjectTag{

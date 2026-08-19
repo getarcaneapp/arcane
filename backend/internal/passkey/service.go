@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 	"unicode/utf8"
+	"uuid"
 
 	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
@@ -27,7 +28,6 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/auth"
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
-	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -323,7 +323,7 @@ func (s *passkeyService) BeginMFAAuthentication(ctx context.Context, userID stri
 		return nil, ErrPasskeyNoCredential
 	}
 
-	transaction := newAuthTransactionInternal(userID, authTransactionKindMFA, source, meta, nil, passkeyStepUpTTL)
+	transaction := newAuthTransactionInternal(userID, authTransactionKindMFA, source, meta, nil)
 	if err := s.db.WithContext(ctx).Create(transaction).Error; err != nil {
 		return nil, errors.WrapIf(err, "failed to create MFA transaction")
 	}
@@ -410,7 +410,7 @@ func (s *passkeyService) BeginStepUp(ctx context.Context, userID, sessionID stri
 		return nil, ErrPasskeyNoCredential
 	}
 
-	transaction := newAuthTransactionInternal(userID, authTransactionKindStepUp, session.UserSessionSourceLocal, meta, &sessionID, passkeyStepUpTTL)
+	transaction := newAuthTransactionInternal(userID, authTransactionKindStepUp, session.UserSessionSourceLocal, meta, &sessionID)
 	if err := s.db.WithContext(ctx).Create(transaction).Error; err != nil {
 		return nil, errors.WrapIf(err, "failed to create step-up transaction")
 	}
@@ -575,7 +575,7 @@ func (s *passkeyService) FinishMobilePasskeyLogin(ctx context.Context, ceremonyI
 		return nil, err
 	}
 
-	transaction := newAuthTransactionInternal(user.ID, authTransactionKindMobilePasskey, session.UserSessionSourcePasskey, auth.SessionMeta{}, nil, passkeyStepUpTTL)
+	transaction := newAuthTransactionInternal(user.ID, authTransactionKindMobilePasskey, session.UserSessionSourcePasskey, auth.SessionMeta{}, nil)
 	transaction.SecretHash = &codeChallenge
 	if err := s.db.WithContext(ctx).Create(transaction).Error; err != nil {
 		return nil, errors.WrapIf(err, "failed to create mobile passkey transaction")
@@ -734,7 +734,7 @@ func (s *passkeyService) CreatePasswordStepUpGrant(ctx context.Context, userID, 
 	if err := s.ensureActiveSessionInternal(ctx, userID, sessionID); err != nil {
 		return nil, err
 	}
-	transaction := newAuthTransactionInternal(userID, authTransactionKindStepUp, session.UserSessionSourceLocal, auth.SessionMeta{}, &sessionID, passkeyStepUpTTL)
+	transaction := newAuthTransactionInternal(userID, authTransactionKindStepUp, session.UserSessionSourceLocal, auth.SessionMeta{}, &sessionID)
 	if err := s.db.WithContext(ctx).Create(transaction).Error; err != nil {
 		return nil, errors.WrapIf(err, "failed to create password step-up transaction")
 	}
@@ -1047,7 +1047,7 @@ func (s *passkeyService) createCeremonyInternal(ctx context.Context, purpose str
 		expiresAt = time.Now().Add(passkeyCeremonyTTL)
 	}
 	ceremony := &PasskeyCeremony{
-		BaseModel:         database.BaseModel{ID: uuid.NewString()},
+		ID:                uuid.New().String(),
 		Purpose:           purpose,
 		UserID:            userID,
 		SessionID:         sessionID,
@@ -1259,7 +1259,7 @@ func (s *passkeyService) persistCredentialInternal(ctx context.Context, userID s
 		transports[i] = string(transport)
 	}
 	row := &Passkey{
-		BaseModel:                     database.BaseModel{ID: uuid.NewString()},
+		ID:                            uuid.New().String(),
 		UserID:                        userID,
 		RPID:                          s.rpID,
 		CredentialID:                  append([]byte(nil), credential.ID...),
@@ -1317,12 +1317,12 @@ func (s *passkeyService) updateCredentialAfterAssertionInternal(ctx context.Cont
 	return nil
 }
 
-func newAuthTransactionInternal(userID, kind, source string, meta auth.SessionMeta, sessionID *string, ttl time.Duration) *AuthTransaction {
+func newAuthTransactionInternal(userID, kind, source string, meta auth.SessionMeta, sessionID *string) *AuthTransaction {
 	if strings.TrimSpace(source) == "" {
 		source = session.UserSessionSourceLocal
 	}
 	return &AuthTransaction{
-		BaseModel: database.BaseModel{ID: uuid.NewString()},
+		ID:        uuid.New().String(),
 		Kind:      kind,
 		UserID:    userID,
 		SessionID: sessionID,
@@ -1330,7 +1330,7 @@ func newAuthTransactionInternal(userID, kind, source string, meta auth.SessionMe
 		UserAgent: optionalStringInternal(meta.UserAgent),
 		IPAddress: optionalStringInternal(meta.IPAddress),
 		Status:    authTransactionPending,
-		ExpiresAt: time.Now().Add(ttl),
+		ExpiresAt: time.Now().Add(passkeyStepUpTTL),
 	}
 }
 
@@ -1390,10 +1390,7 @@ func formatAAGUIDInternal(aaguid []byte) string {
 		return ""
 	}
 	if len(aaguid) == 16 {
-		value, err := uuid.FromBytes(aaguid)
-		if err == nil {
-			return value.String()
-		}
+		return uuid.UUID(aaguid).String()
 	}
 	return hex.EncodeToString(aaguid)
 }
@@ -1422,7 +1419,7 @@ func generateRecoveryCodeRowsInternal(userID string) ([]string, []PasskeyRecover
 		encoded := strings.TrimRight(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(raw), "=")
 		codes[i] = groupRecoveryCodeInternal(encoded)
 		hash := hashSecretInternal(strings.ToUpper(strings.ReplaceAll(codes[i], "-", "")))
-		rows[i] = PasskeyRecoveryCode{BaseModel: database.BaseModel{ID: uuid.NewString()}, UserID: userID, CodeHash: hash}
+		rows[i] = PasskeyRecoveryCode{ID: uuid.New().String(), UserID: userID, CodeHash: hash}
 	}
 	return codes, rows, nil
 }

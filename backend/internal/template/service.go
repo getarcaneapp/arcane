@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"uuid"
 
 	"emperror.dev/errors"
 
@@ -28,7 +29,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
 	"github.com/getarcaneapp/arcane/types/v2/env"
 	tmpl "github.com/getarcaneapp/arcane/types/v2/template"
-	"github.com/google/uuid"
 	"github.com/samber/hot"
 	"github.com/samber/mo"
 	"go.getarcane.app/acfs"
@@ -302,7 +302,7 @@ func (s *TemplateService) remoteCacheSizeInternal() int {
 
 func (s *TemplateService) CreateTemplate(ctx context.Context, template *ComposeTemplate) error {
 	if template.ID == "" {
-		template.ID = uuid.NewString()
+		template.ID = uuid.New().String()
 	}
 	template.IsCustom = true
 	template.IsRemote = false
@@ -484,7 +484,7 @@ func (s *TemplateService) CreateRegistry(ctx context.Context, registry *Template
 	}
 
 	if registry.ID == "" {
-		registry.ID = uuid.NewString()
+		registry.ID = uuid.New().String()
 	}
 
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -729,7 +729,7 @@ func (s *TemplateService) convertRemoteToLocal(remote tmpl.RemoteTemplate, regis
 	publicID := fmt.Sprintf("%s:%s:%s", remoteIDPrefix, registry.ID, remote.ID)
 
 	return ComposeTemplate{
-		BaseModel:   database.BaseModel{ID: publicID},
+		ID:          publicID,
 		Name:        remote.Name,
 		Description: remote.Description,
 		Content:     "",
@@ -925,7 +925,7 @@ func (s *TemplateService) downloadTemplateTransaction(ctx context.Context, remot
 		}
 
 		localTemplate := &ComposeTemplate{
-			BaseModel:   database.BaseModel{ID: uuid.NewString()},
+			ID:          uuid.New().String(),
 			Name:        base,
 			Description: srcDesc,
 			Content:     composeContent,
@@ -959,7 +959,7 @@ func (s *TemplateService) templateBaseFromRemote(remoteTemplate *ComposeTemplate
 		base = projects.Slugify(parts[len(parts)-1])
 	}
 	if base == "" {
-		base = "template-" + uuid.NewString()
+		base = "template-" + uuid.New().String()
 	}
 	return base
 }
@@ -1047,7 +1047,7 @@ func (s *TemplateService) upsertFilesystemTemplate(ctx context.Context, name, de
 		}
 
 		tpl := &ComposeTemplate{
-			BaseModel:   database.BaseModel{ID: uuid.NewString()},
+			ID:          uuid.New().String(),
 			Name:        name,
 			Description: desc,
 			Content:     compose,

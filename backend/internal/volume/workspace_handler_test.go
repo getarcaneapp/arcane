@@ -3,8 +3,6 @@ package volume
 import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-
 	"context"
 	"mime/multipart"
 	"net/http"
@@ -30,7 +28,7 @@ func volumeWorkspacePermissionContextInternal(environmentID string, permissions 
 func TestUploadAndRestoreReturnsNotFoundForUnknownSession(t *testing.T) {
 	h := &VolumeHandler{volumeService: &VolumeService{}, uploadService: upload.NewUploadService(nil)}
 
-	ctx := context.WithValue(context.Background(), common.CurrentUserContextKey{}, &common.User{BaseModel: database.BaseModel{ID: "u-1"}})
+	ctx := context.WithValue(context.Background(), common.CurrentUserContextKey{}, &common.User{ID: "u-1"})
 
 	_, err := h.UploadAndRestore(ctx, &UploadAndRestoreInput{
 		EnvironmentID: "0",

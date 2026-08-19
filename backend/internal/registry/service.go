@@ -1294,9 +1294,7 @@ func (s *ContainerRegistryService) createNewRegistryInternal(ctx context.Context
 	}
 
 	newRegistry := &ContainerRegistry{
-		BaseModel: database.BaseModel{
-			ID: item.ID,
-		},
+		ID:              item.ID,
 		URL:             item.URL,
 		Description:     item.Description,
 		Insecure:        item.Insecure,

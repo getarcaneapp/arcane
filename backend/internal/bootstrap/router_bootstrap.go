@@ -307,6 +307,7 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 	apiGroup.RouteNotFound("", apiNotFound)
 	apiGroup.RouteNotFound("/*", apiNotFound)
 
+	//nolint:staticcheck,nolintlint // SA4023 only under exclude_frontend: the stub always returns ErrFrontendNotIncluded
 	if err := frontend.RegisterFrontend(e); err != nil {
 		if errors.Is(err, frontend.ErrFrontendNotIncluded) {
 			slog.Debug("Frontend not included in this build; skipping frontend registration")

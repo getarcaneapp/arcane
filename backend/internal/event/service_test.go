@@ -328,7 +328,7 @@ func TestEventService_ListEventsPaginated_TypeCategoryFilter(t *testing.T) {
 
 	listWithTypeFilter := func(value string) []string {
 		events, _, err := svc.ListEventsPaginated(ctx, pagination.QueryParams{
-			Params:  pagination.Params{Limit: 10},
+			Limit:   10,
 			Filters: map[string]string{"type": value},
 		})
 		require.NoError(t, err)

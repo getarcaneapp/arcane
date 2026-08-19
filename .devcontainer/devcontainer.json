@@ -5,10 +5,10 @@
   "workspaceFolder": "/workspace",
   "features": {
     "ghcr.io/devcontainers/features/go:1": {
-      "version": "1.26.6"
+      "version": "1.27"
     },
     "ghcr.io/devcontainers/features/node:2": {
-      "version": "26.5.0",
+      "version": "26",
       "pnpm": "11.21.0"
     },
     "ghcr.io/jsburckhardt/devcontainer-features/just:1": {
@@ -42,14 +42,13 @@
     }
   },
   "mounts": [
-   "source=node_modules,target=/workspace/node_modules,type=volume",
-   "source=pnpm_store,target=/workspace/.pnpm-store,type=volume"
+    "source=node_modules,target=/workspace/node_modules,type=volume",
+    "source=pnpm_store,target=/workspace/.pnpm-store,type=volume"
   ],
   "postCreateCommand": "just deps install all",
   "remoteUser": "root",
   "containerEnv": {
-    "TZ": "Pacific/Auckland",
-    "GOEXPERIMENT": "jsonv2"
+    "TZ": "Pacific/Auckland"
   },
   "remoteEnv": {
     "HOST_PROJECT_ROOT": "${localWorkspaceFolder}"

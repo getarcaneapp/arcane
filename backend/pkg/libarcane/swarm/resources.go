@@ -231,8 +231,8 @@ func configFileResourceAdapterInternal(dockerClient *dockerclient.Client) fileRe
 		},
 		Create: func(ctx context.Context, resource managedFileResourceSpecInternal) (resourceMeta, error) {
 			spec := swarm.ConfigSpec{
-				Annotations: swarm.Annotations{Name: resource.Name, Labels: resource.Labels},
-				Data:        resource.Data,
+				Name: resource.Name, Labels: resource.Labels,
+				Data: resource.Data,
 			}
 			if resource.TemplateDriver != "" {
 				spec.Templating = &swarm.Driver{Name: resource.TemplateDriver}
@@ -272,8 +272,8 @@ func secretFileResourceAdapterInternal(dockerClient *dockerclient.Client) fileRe
 		},
 		Create: func(ctx context.Context, resource managedFileResourceSpecInternal) (resourceMeta, error) {
 			spec := swarm.SecretSpec{
-				Annotations: swarm.Annotations{Name: resource.Name, Labels: resource.Labels},
-				Data:        resource.Data,
+				Name: resource.Name, Labels: resource.Labels,
+				Data: resource.Data,
 			}
 			if resource.Driver != "" {
 				spec.Driver = &swarm.Driver{Name: resource.Driver, Options: resource.DriverOpts}

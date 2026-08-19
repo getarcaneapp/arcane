@@ -667,17 +667,11 @@ func (h *VolumeHandler) GetVolumeSizes(ctx context.Context, input *GetVolumeSize
 
 func (h *VolumeHandler) ListBackups(ctx context.Context, input *ListBackupsInput) (*ListBackupsOutput, error) {
 	params := pagination.QueryParams{
-		SearchQuery: pagination.SearchQuery{
-			Search: input.Search,
-		},
-		SortParams: pagination.SortParams{
-			Sort:  input.Sort,
-			Order: pagination.SortOrder(input.Order),
-		},
-		Params: pagination.Params{
-			Start: input.Start,
-			Limit: input.Limit,
-		},
+		Search: input.Search,
+		Sort:   input.Sort,
+		Order:  pagination.SortOrder(input.Order),
+		Start:  input.Start,
+		Limit:  input.Limit,
 	}
 
 	if params.Limit == 0 {

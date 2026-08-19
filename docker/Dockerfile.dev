@@ -31,8 +31,7 @@ EXPOSE 3000
 CMD ["pnpm", "-C", "frontend", "dev", "--host", "0.0.0.0"]
 
 # Stage 2: Backend Development with optimized caching
-FROM --platform=$BUILDPLATFORM golang:1.26.6-trixie AS backend-dev
-ENV GOEXPERIMENT=jsonv2
+FROM --platform=$BUILDPLATFORM golang:1.27-trixie AS backend-dev
 
 # Install development tools in a single layer
 RUN apt-get update && apt-get install -y --no-install-recommends \

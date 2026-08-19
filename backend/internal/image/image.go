@@ -993,8 +993,8 @@ func parseRepoAndTagFromRepoTag(repoTag string) (repo, tag string) {
 		return repo, tag
 	}
 
-	if lastColonIdx := strings.LastIndex(repoTag, ":"); lastColonIdx != -1 {
-		return repoTag[:lastColonIdx], repoTag[lastColonIdx+1:]
+	if before, after, found := strings.CutLast(repoTag, ":"); found {
+		return before, after
 	}
 	return repoTag, "latest"
 }
@@ -1004,11 +1004,8 @@ func parseRepoFromDigests(repoDigests []string) mo.Option[string] {
 		if rd == "<none>@<none>" {
 			continue
 		}
-		if at := strings.LastIndex(rd, "@"); at != -1 {
-			candidateRepo := rd[:at]
-			if candidateRepo != "" {
-				return mo.Some(candidateRepo)
-			}
+		if candidateRepo, _, found := strings.CutLast(rd, "@"); found && candidateRepo != "" {
+			return mo.Some(candidateRepo)
 		}
 	}
 	return mo.None[string]()

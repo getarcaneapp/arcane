@@ -34,8 +34,8 @@ func walkWidgetPages(t *testing.T, db *gorm.DB, sort string) []string {
 	for start := 0; start < 5; start += 2 {
 		var got []widget
 		_, err := PaginateAndSortDB(QueryParams{
-			Params:     Params{Start: start, Limit: 2},
-			SortParams: SortParams{Sort: sort, Order: "asc"},
+			Start: start, Limit: 2,
+			Sort: sort, Order: "asc",
 		}, db.Model(&widget{}), &got)
 		require.NoError(t, err)
 		for _, w := range got {

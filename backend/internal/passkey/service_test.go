@@ -6,8 +6,8 @@ import (
 	"context"
 	"testing"
 	"time"
+	"uuid"
 
-	"github.com/google/uuid"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -46,7 +46,7 @@ func newPasskeyServiceForTest(t *testing.T, db *database.DB) *PasskeyService {
 func createPasskeyTestUser(t *testing.T, db *database.DB, id string) *common.User {
 	t.Helper()
 	user := &common.User{
-		BaseModel:    database.BaseModel{ID: id},
+		ID:           id,
 		Username:     id,
 		PasswordHash: "stored-password-hash",
 	}
@@ -57,7 +57,7 @@ func createPasskeyTestUser(t *testing.T, db *database.DB, id string) *common.Use
 func createPasskeyTestCredential(t *testing.T, db *database.DB, service *PasskeyService, userID, id string) *Passkey {
 	t.Helper()
 	credential := &Passkey{
-		BaseModel:    database.BaseModel{ID: id},
+		ID:           id,
 		UserID:       userID,
 		RPID:         service.rpID,
 		CredentialID: []byte("credential-" + id),
@@ -179,7 +179,7 @@ func TestPasskeyService_RecoveryCodeConsumptionIsAtomicAndSingleUse(t *testing.T
 	transaction := newAuthTransactionInternal(user.ID, authTransactionKindMFA, session.UserSessionSourceLocal, auth.SessionMeta{
 		UserAgent: "test-agent",
 		IPAddress: "127.0.0.1",
-	}, nil, passkeyStepUpTTL)
+	}, nil)
 	require.NoError(t, db.Create(transaction).Error)
 
 	_, err = service.FinishRecoveryCode(ctx, transaction.ID, "not-a-recovery-code")
@@ -271,10 +271,10 @@ func TestPasskeyService_ResetMFARevokesSessionsAndPreservesPasskeys(t *testing.T
 	_, rows, err := generateRecoveryCodeRowsInternal(user.ID)
 	require.NoError(t, err)
 	require.NoError(t, db.Create(&rows).Error)
-	transaction := newAuthTransactionInternal(user.ID, authTransactionKindMFA, session.UserSessionSourceLocal, auth.SessionMeta{}, nil, passkeyStepUpTTL)
+	transaction := newAuthTransactionInternal(user.ID, authTransactionKindMFA, session.UserSessionSourceLocal, auth.SessionMeta{}, nil)
 	require.NoError(t, db.Create(transaction).Error)
 	ceremony := &PasskeyCeremony{
-		BaseModel:         database.BaseModel{ID: "reset-ceremony"},
+		ID:                "reset-ceremony",
 		Purpose:           passkeyCeremonyPurposeMFA,
 		UserID:            new(user.ID),
 		AuthTransactionID: new(transaction.ID),

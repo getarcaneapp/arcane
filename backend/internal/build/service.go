@@ -489,9 +489,7 @@ func (s *BuildService) createBuildRecord(ctx context.Context, environmentID stri
 		ExtraHosts:    database.StringSlice(req.ExtraHosts),
 		Push:          req.Push,
 		Load:          req.Load,
-		BaseModel: database.BaseModel{
-			CreatedAt: time.Now(),
-		},
+		CreatedAt:     time.Now(),
 	}
 
 	if err := s.db.WithContext(ctx).Create(record).Error; err != nil {

@@ -5,10 +5,10 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
+	"uuid"
 
 	"github.com/coder/websocket"
 	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
-	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
 )
 

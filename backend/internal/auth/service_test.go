@@ -106,12 +106,10 @@ func makeAccessToken(t *testing.T, secret []byte, subject string, id string, use
 		sessionID = sessionIDs[0]
 	}
 	claims := userClaims{
-		RegisteredClaims: jwt.RegisteredClaims{
-			ID:        id,
-			Subject:   subject,
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
-			ExpiresAt: jwt.NewNumericDate(exp),
-		},
+		ID:          id,
+		Subject:     subject,
+		IssuedAt:    jwt.NewNumericDate(time.Now()),
+		ExpiresAt:   jwt.NewNumericDate(exp),
 		SessionID:   sessionID,
 		UserID:      id,
 		Username:    username,
@@ -139,12 +137,10 @@ func makeRefreshToken(t *testing.T, secret []byte, subject string, id string, ex
 		sessionID = userIDAndSessionID[1]
 	}
 	claims := refreshClaims{
-		RegisteredClaims: jwt.RegisteredClaims{
-			ID:        id,
-			Subject:   subject,
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
-			ExpiresAt: jwt.NewNumericDate(exp),
-		},
+		ID:         id,
+		Subject:    subject,
+		IssuedAt:   jwt.NewNumericDate(time.Now()),
+		ExpiresAt:  jwt.NewNumericDate(exp),
 		UserID:     userID,
 		SessionID:  sessionID,
 		AppVersion: config.Version,
@@ -189,7 +185,7 @@ func TestVerifyToken_ValidClaims(t *testing.T) {
 
 	// Create user in DB
 	user := &common.User{
-		BaseModel:   database.BaseModel{ID: "u123"},
+		ID:          "u123",
 		Username:    "alice",
 		Email:       new("a@example.com"),
 		DisplayName: new("Alice"),
@@ -224,12 +220,10 @@ func TestVerifyToken_RejectsNonHMACAlg(t *testing.T) {
 	s := newTestAuthService("")
 	exp := time.Now().Add(5 * time.Minute)
 	token := makeUnsignedToken(t, userClaims{
-		RegisteredClaims: jwt.RegisteredClaims{
-			ID:        "u1",
-			Subject:   "access",
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
-			ExpiresAt: jwt.NewNumericDate(exp),
-		},
+		ID:         "u1",
+		Subject:    "access",
+		IssuedAt:   jwt.NewNumericDate(time.Now()),
+		ExpiresAt:  jwt.NewNumericDate(exp),
 		UserID:     "u1",
 		Username:   "bob",
 		AppVersion: config.Version,
@@ -251,8 +245,8 @@ func TestVerifyToken_Expired(t *testing.T) {
 
 	// Create user in DB
 	user := &common.User{
-		BaseModel: database.BaseModel{ID: "u1"},
-		Username:  "bob",
+		ID:       "u1",
+		Username: "bob",
 	}
 	_, err := userSvc.CreateUser(context.Background(), user)
 	require.NoError(t, err)
@@ -380,8 +374,8 @@ func TestRefreshToken_Valid(t *testing.T) {
 	s.sessionService = session.NewSessionService(db)
 
 	user := &common.User{
-		BaseModel: database.BaseModel{ID: "u-refresh"},
-		Username:  "refresh-user",
+		ID:       "u-refresh",
+		Username: "refresh-user",
 	}
 	_, err = userSvc.CreateUser(context.Background(), user)
 	require.NoError(t, err)
@@ -411,8 +405,8 @@ func TestRefreshToken_VersionMismatchRotates(t *testing.T) {
 	s.sessionService = session.NewSessionService(db)
 
 	user := &common.User{
-		BaseModel: database.BaseModel{ID: "u-versionmismatch"},
-		Username:  "versionmismatch-user",
+		ID:       "u-versionmismatch",
+		Username: "versionmismatch-user",
 	}
 	_, err = userSvc.CreateUser(context.Background(), user)
 	require.NoError(t, err)
@@ -457,8 +451,8 @@ func TestVerifyToken_RejectsRevokedSession(t *testing.T) {
 	s.sessionService = session.NewSessionService(db)
 
 	user := &common.User{
-		BaseModel: database.BaseModel{ID: "u-revoked"},
-		Username:  "revoked-user",
+		ID:       "u-revoked",
+		Username: "revoked-user",
 	}
 	_, err := userSvc.CreateUser(context.Background(), user)
 	require.NoError(t, err)
@@ -480,8 +474,8 @@ func TestVerifyToken_RejectsMissingSessionID(t *testing.T) {
 	s.sessionService = session.NewSessionService(db)
 
 	user := &common.User{
-		BaseModel: database.BaseModel{ID: "u-no-sid"},
-		Username:  "no-sid-user",
+		ID:       "u-no-sid",
+		Username: "no-sid-user",
 	}
 	_, err := userSvc.CreateUser(context.Background(), user)
 	require.NoError(t, err)
@@ -500,8 +494,8 @@ func TestRevokeSessionThenVerifyTokenFails(t *testing.T) {
 	s.sessionService = session.NewSessionService(db)
 
 	user := &common.User{
-		BaseModel: database.BaseModel{ID: "u-logout"},
-		Username:  "logout-user",
+		ID:       "u-logout",
+		Username: "logout-user",
 	}
 	_, err := userSvc.CreateUser(context.Background(), user)
 	require.NoError(t, err)
@@ -523,8 +517,8 @@ func TestVerifyToken_RejectsRevokedCachedSession(t *testing.T) {
 	s.sessionService = session.NewSessionService(db)
 
 	user := &common.User{
-		BaseModel: database.BaseModel{ID: "u-cached-revoked"},
-		Username:  "cached-revoked-user",
+		ID:       "u-cached-revoked",
+		Username: "cached-revoked-user",
 	}
 	_, err := userSvc.CreateUser(context.Background(), user)
 	require.NoError(t, err)
@@ -552,8 +546,8 @@ func TestRefreshToken_RotatesJTI(t *testing.T) {
 	s.sessionService = session.NewSessionService(db)
 
 	user := &common.User{
-		BaseModel: database.BaseModel{ID: "u-rotate"},
-		Username:  "rotate-user",
+		ID:       "u-rotate",
+		Username: "rotate-user",
 	}
 	_, err = userSvc.CreateUser(context.Background(), user)
 	require.NoError(t, err)
@@ -581,8 +575,8 @@ func TestRefreshToken_RejectsRevokedSession(t *testing.T) {
 	s.sessionService = session.NewSessionService(db)
 
 	user := &common.User{
-		BaseModel: database.BaseModel{ID: "u-refresh-revoked"},
-		Username:  "refresh-revoked-user",
+		ID:       "u-refresh-revoked",
+		Username: "refresh-revoked-user",
 	}
 	_, err = userSvc.CreateUser(context.Background(), user)
 	require.NoError(t, err)
@@ -606,7 +600,7 @@ func TestChangePassword_RevokesAllSessions(t *testing.T) {
 	passwordHash, err := userSvc.HashPassword("old-password")
 	require.NoError(t, err)
 	user := &common.User{
-		BaseModel:    database.BaseModel{ID: "u-password"},
+		ID:           "u-password",
 		Username:     "password-user",
 		PasswordHash: passwordHash,
 	}
@@ -636,7 +630,7 @@ func TestChangePassword_KeepsCurrentSessionAlive(t *testing.T) {
 	passwordHash, err := userSvc.HashPassword("old-password")
 	require.NoError(t, err)
 	user := &common.User{
-		BaseModel:    database.BaseModel{ID: "u-keep"},
+		ID:           "u-keep",
 		Username:     "keep-user",
 		PasswordHash: passwordHash,
 	}
@@ -785,9 +779,9 @@ func TestFindOrCreateOidcUser_MergeEnabled_EmailNotVerified_WithExistingUser_Ret
 	// Seed an existing local user with matching email
 	email := "existing@example.com"
 	existing := &common.User{
-		BaseModel: database.BaseModel{ID: "u1"},
-		Username:  "existing",
-		Email:     &email,
+		ID:       "u1",
+		Username: "existing",
+		Email:    &email,
 	}
 	_, err = userSvc.CreateUser(ctx, existing)
 	require.NoError(t, err)
@@ -827,9 +821,9 @@ func TestFindOrCreateOidcUser_MergeEnabled_EmailVerificationMissing_WithExisting
 	// Seed an existing local user with matching email
 	email := "existing@example.com"
 	existing := &common.User{
-		BaseModel: database.BaseModel{ID: "u1"},
-		Username:  "existing",
-		Email:     &email,
+		ID:       "u1",
+		Username: "existing",
+		Email:    &email,
 	}
 	_, err = userSvc.CreateUser(ctx, existing)
 	require.NoError(t, err)
@@ -872,12 +866,12 @@ func TestAuthenticateLocalPrimary_EmailFallback(t *testing.T) {
 	dupHash, err := userSvc.HashPassword("dup-two-pass!")
 	require.NoError(t, err)
 	for _, u := range []*common.User{
-		{BaseModel: database.BaseModel{ID: "u-email-login"}, Username: "bob", Email: new("bob@example.com"), PasswordHash: hash},
-		{BaseModel: database.BaseModel{ID: "u-dup-1"}, Username: "dup1", Email: new("dup@example.com"), PasswordHash: hash},
-		{BaseModel: database.BaseModel{ID: "u-dup-2"}, Username: "dup2", Email: new("dup@example.com"), PasswordHash: dupHash},
-		{BaseModel: database.BaseModel{ID: "u-carol"}, Username: "carol@example.com", Email: new("carol@example.com"), PasswordHash: hash},
-		{BaseModel: database.BaseModel{ID: "u-col-a"}, Username: "owner@example.com", PasswordHash: hash},
-		{BaseModel: database.BaseModel{ID: "u-col-b"}, Username: "colb", Email: new("owner@example.com"), PasswordHash: dupHash},
+		{ID: "u-email-login", Username: "bob", Email: new("bob@example.com"), PasswordHash: hash},
+		{ID: "u-dup-1", Username: "dup1", Email: new("dup@example.com"), PasswordHash: hash},
+		{ID: "u-dup-2", Username: "dup2", Email: new("dup@example.com"), PasswordHash: dupHash},
+		{ID: "u-carol", Username: "carol@example.com", Email: new("carol@example.com"), PasswordHash: hash},
+		{ID: "u-col-a", Username: "owner@example.com", PasswordHash: hash},
+		{ID: "u-col-b", Username: "colb", Email: new("owner@example.com"), PasswordHash: dupHash},
 	} {
 		_, err = userSvc.CreateUser(context.Background(), u)
 		require.NoError(t, err)

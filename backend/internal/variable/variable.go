@@ -784,7 +784,7 @@ func scopedEnvironmentIDsInternal(environments []environment.Environment) []stri
 func environmentsFromIDsInternal(envIDs []string) []environment.Environment {
 	environments := make([]environment.Environment, 0, len(envIDs))
 	for _, id := range envIDs {
-		environments = append(environments, environment.Environment{BaseModel: database.BaseModel{ID: id}})
+		environments = append(environments, environment.Environment{ID: id})
 	}
 	return environments
 }

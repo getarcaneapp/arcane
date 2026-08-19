@@ -4,8 +4,6 @@
 
 set working-directory := './'
 
-export GOEXPERIMENT := "jsonv2"
-
 edge_proto_dir := 'backend/proto'
 
 _default:

@@ -101,11 +101,11 @@ func TestNotificationService_ResolveNotificationTargetInternal_UsesEnvironmentRe
 
 	now := time.Now()
 	require.NoError(t, db.WithContext(ctx).Create(&environment.Environment{
-		BaseModel: database.BaseModel{ID: "env-remote", CreatedAt: now, UpdatedAt: &now},
-		Name:      "Remote Alpha",
-		ApiUrl:    "http://remote.example",
-		Enabled:   true,
-		Status:    string(environment.EnvironmentStatusOnline),
+		ID: "env-remote", CreatedAt: now, UpdatedAt: &now,
+		Name:    "Remote Alpha",
+		ApiUrl:  "http://remote.example",
+		Enabled: true,
+		Status:  string(environment.EnvironmentStatusOnline),
 	}).Error)
 
 	target, err = svc.resolveNotificationTargetInternal(ctx, "env-remote")
@@ -121,7 +121,7 @@ func TestNotificationService_ResolveNotificationTargetForAccessTokenInternal_Use
 	token := "remote-token"
 	now := time.Now()
 	require.NoError(t, db.WithContext(ctx).Create(&environment.Environment{
-		BaseModel:   database.BaseModel{ID: "env-remote", CreatedAt: now, UpdatedAt: &now},
+		ID: "env-remote", CreatedAt: now, UpdatedAt: &now,
 		Name:        "Remote Edge",
 		ApiUrl:      "http://remote.example",
 		Enabled:     true,
@@ -158,7 +158,7 @@ func TestNotificationService_DispatchNotification_UnsupportedKindReturnsSentinel
 	token := "remote-token"
 	now := time.Now()
 	require.NoError(t, db.WithContext(ctx).Create(&environment.Environment{
-		BaseModel:   database.BaseModel{ID: "env-remote", CreatedAt: now, UpdatedAt: &now},
+		ID: "env-remote", CreatedAt: now, UpdatedAt: &now,
 		Name:        "Remote Edge",
 		ApiUrl:      "http://remote.example",
 		Enabled:     true,
@@ -185,7 +185,7 @@ func TestNotificationService_DispatchNotification_LogsManagerDispatchForAgent(t 
 	token := "remote-token"
 	now := time.Now()
 	require.NoError(t, db.WithContext(ctx).Create(&environment.Environment{
-		BaseModel:   database.BaseModel{ID: "env-remote", CreatedAt: now, UpdatedAt: &now},
+		ID: "env-remote", CreatedAt: now, UpdatedAt: &now,
 		Name:        "Remote Edge",
 		ApiUrl:      "http://remote.example",
 		Enabled:     true,
@@ -799,10 +799,10 @@ func TestNotificationService_DispatchNotificationForEnvironment_ResolvesTunnelSe
 
 	now := time.Now()
 	require.NoError(t, db.WithContext(ctx).Create(&environment.Environment{
-		BaseModel: database.BaseModel{ID: "env-edge", CreatedAt: now, UpdatedAt: &now},
-		Name:      "edge-env",
-		ApiUrl:    "http://edge:3553",
-		Enabled:   true,
+		ID: "env-edge", CreatedAt: now, UpdatedAt: &now,
+		Name:    "edge-env",
+		ApiUrl:  "http://edge:3553",
+		Enabled: true,
 	}).Error)
 
 	// No access token involved: the environment comes from the tunnel session (#3002).

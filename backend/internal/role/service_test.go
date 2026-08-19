@@ -214,7 +214,7 @@ func TestEffectiveGlobalAdminCountIgnoresEnvScopedAndServiceAccounts(t *testing.
 	globalAdmin := createTestUser(t, userSvc, "global-admin", "global-admin")
 	envScopedAdmin := createTestUser(t, userSvc, "env-scoped-admin", "env-scoped-admin")
 	serviceAdmin := &common.User{
-		BaseModel:        database.BaseModel{ID: "service-admin"},
+		ID:               "service-admin",
 		Username:         "service-admin",
 		IsServiceAccount: true,
 	}
@@ -263,7 +263,7 @@ func setupUserAndRoleServices(t *testing.T) (*database.DB, *RoleService) {
 
 func createTestUser(t *testing.T, db *database.DB, id, username string) *common.User {
 	t.Helper()
-	created := &common.User{BaseModel: database.BaseModel{ID: id}, Username: username}
+	created := &common.User{ID: id, Username: username}
 	require.NoError(t, db.WithContext(context.Background()).Create(created).Error)
 	return created
 }
@@ -279,7 +279,7 @@ func createTestEnvironment(t *testing.T, db *database.DB, id, apiURL string, acc
 	t.Helper()
 	now := time.Now()
 	require.NoError(t, db.WithContext(context.Background()).Create(&testEnvironmentRow{
-		BaseModel:   database.BaseModel{ID: id, CreatedAt: now, UpdatedAt: &now},
+		ID: id, CreatedAt: now, UpdatedAt: &now,
 		Name:        "env-" + id,
 		ApiUrl:      apiURL,
 		Status:      "online",

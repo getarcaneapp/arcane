@@ -5,8 +5,6 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-
 	"github.com/samber/mo"
 
 	"context"
@@ -305,9 +303,9 @@ func isPreflightInternal(c *echo.Context) bool {
 
 func agentSudoInternal(c *echo.Context) {
 	agentUser := &common.User{
-		BaseModel: database.BaseModel{ID: "agent"},
-		Email:     new("agent@getarcane.app"),
-		Username:  "agent",
+		ID:       "agent",
+		Email:    new("agent@getarcane.app"),
+		Username: "agent",
 	}
 	c.Set(string(middleware.ContextKeyUserID), agentUser.ID)
 	c.Set(string(middleware.ContextKeyCurrentUser), agentUser)
@@ -317,8 +315,8 @@ func agentSudoInternal(c *echo.Context) {
 
 func environmentScopedInternal(c *echo.Context, env *environment.Environment) {
 	envUser := &common.User{
-		BaseModel: database.BaseModel{ID: "environment:" + env.ID},
-		Username:  env.Name,
+		ID:       "environment:" + env.ID,
+		Username: env.Name,
 	}
 	c.Set(string(middleware.ContextKeyUserID), envUser.ID)
 	c.Set(string(middleware.ContextKeyCurrentUser), envUser)

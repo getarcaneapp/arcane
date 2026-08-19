@@ -9,9 +9,9 @@ import (
 
 	"context"
 	"strings"
+	"uuid"
 
 	"emperror.dev/errors"
-	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -31,7 +31,7 @@ func (s *FederatedCredentialService) CreatePlaywrightCredential(ctx context.Cont
 	var credentialID string
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		serviceUser := common.User{
-			Username:         "svc_federated_e2e_" + strings.ReplaceAll(uuid.NewString(), "-", ""),
+			Username:         "svc_federated_e2e_" + strings.ReplaceAll(uuid.New().String(), "-", ""),
 			IsServiceAccount: true,
 		}
 		if err := tx.Create(&serviceUser).Error; err != nil {
