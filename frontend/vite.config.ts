@@ -67,6 +67,11 @@ export default defineConfig(({ command }) => ({
 			autoInstall: true
 		})
 	]),
+	optimizeDeps: {
+		// Dynamically imported at editor/tree mount; pre-bundle them so the dev
+		// optimizer does not discover them mid-session and force a full reload.
+		include: ['@pierre/diffs', '@pierre/diffs/edit', '@pierre/trees', '@pierre/theme/pierre-dark', '@pierre/theme/pierre-light']
+	},
 	build: {
 		target: 'es2022',
 		rolldownOptions: {

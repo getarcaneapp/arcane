@@ -1,8 +1,6 @@
 import type { ErrorObject } from 'ajv';
-import type { Diagnostic } from '@codemirror/lint';
-import type { EditorView } from '@codemirror/view';
 import { LineCounter, isMap, isPair, isScalar, isSeq, parseDocument, type ParsedNode, type Scalar } from 'yaml';
-import type { AnalysisResult, EditorContext, OutlineItem } from './types';
+import type { AnalysisResult, Diagnostic, EditorContext, OutlineItem } from './types';
 import type { ComposeSchemaContext } from './compose-schema';
 import { resolveVariableSource } from './vars-analysis';
 
@@ -247,16 +245,13 @@ function buildTabDiagnostics(source: string): Diagnostic[] {
 			actions: [
 				{
 					name: 'Convert tabs to spaces',
-					apply(view: EditorView, from: number, to: number) {
-						const text = view.state.doc.sliceString(from, to);
-						view.dispatch({
-							changes: {
-								from,
-								to,
-								insert: text.replace(/\t/g, '  ')
-							}
-						});
-					}
+					edits: [
+						{
+							from: start,
+							to: start + tabs.length,
+							insert: tabs.replace(/\t/g, '  ')
+						}
+					]
 				}
 			]
 		});
@@ -265,39 +260,45 @@ function buildTabDiagnostics(source: string): Diagnostic[] {
 	return diagnostics;
 }
 
-function addMissingHyphenQuickFix(fieldName: string, serviceName: string, range: { from: number; to: number }): Diagnostic {
-	return {
+function addMissingHyphenQuickFix(
+	fieldName: string,
+	serviceName: string,
+	range: { from: number; to: number },
+	source: string
+): Diagnostic {
+	const diagnostic: Diagnostic = {
 		from: range.from,
 		to: range.to,
 		severity: 'error',
-		message: `Service "${serviceName}" ${fieldName} must be a list. Prefix each item with '-'.`,
-		actions: [
-			{
-				name: 'Insert list marker',
-				apply(view: EditorView) {
-					const doc = view.state.doc;
-					const fieldLineNumber = doc.lineAt(range.from).number;
-					for (let current = fieldLineNumber + 1; current <= doc.lines; current += 1) {
-						const line = doc.line(current);
-						const trimmed = line.text.trim();
-						if (!trimmed) continue;
-						if (trimmed.startsWith('-')) return;
-						const indent = line.text.match(/^\s*/)?.[0] ?? '';
-						view.dispatch({
-							changes: {
-								from: line.from + indent.length,
-								insert: '- '
-							}
-						});
-						return;
-					}
-				}
-			}
-		]
+		message: `Service "${serviceName}" ${fieldName} must be a list. Prefix each item with '-'.`
 	};
+
+	// Find the first non-empty line after the field line and offer to prefix it with '- '.
+	let lineStart = source.indexOf('\n', range.from);
+	while (lineStart >= 0) {
+		lineStart += 1;
+		const lineEnd = source.indexOf('\n', lineStart);
+		const lineText = source.slice(lineStart, lineEnd < 0 ? source.length : lineEnd);
+		const trimmed = lineText.trim();
+		if (trimmed) {
+			if (!trimmed.startsWith('-')) {
+				const indent = lineText.match(/^\s*/)?.[0] ?? '';
+				diagnostic.actions = [
+					{
+						name: 'Insert list marker',
+						edits: [{ from: lineStart + indent.length, to: lineStart + indent.length, insert: '- ' }]
+					}
+				];
+			}
+			break;
+		}
+		lineStart = lineEnd;
+	}
+
+	return diagnostic;
 }
 
-function buildComposeSemanticDiagnostics(parsedValue: unknown, doc: YamlDocLike): Diagnostic[] {
+function buildComposeSemanticDiagnostics(parsedValue: unknown, doc: YamlDocLike, source: string): Diagnostic[] {
 	if (!parsedValue || typeof parsedValue !== 'object' || Array.isArray(parsedValue)) return [];
 	const services = getObjectValue(parsedValue, 'services');
 	if (!services || typeof services !== 'object' || Array.isArray(services)) return [];
@@ -311,7 +312,7 @@ function buildComposeSemanticDiagnostics(parsedValue: unknown, doc: YamlDocLike)
 			const value = getObjectValue(serviceValue, field);
 			if (!value || Array.isArray(value) || typeof value !== 'object') continue;
 			const range = getNodeRangeByPath(doc, ['services', serviceName, field]) || { from: 0, to: 1 };
-			diagnostics.push(addMissingHyphenQuickFix(field, serviceName, range));
+			diagnostics.push(addMissingHyphenQuickFix(field, serviceName, range, source));
 		}
 	}
 
@@ -376,12 +377,11 @@ function findVariableReferenceAtPosition(
 }
 
 export async function analyzeComposeContent(
-	view: EditorView,
+	source: string,
 	schemaContext: ComposeSchemaContext,
 	_editorContext: EditorContext,
 	maxSchemaDiagnostics = MAX_SCHEMA_DIAGNOSTICS_DEFAULT
 ): Promise<AnalysisResult> {
-	const source = view.state.doc.toString();
 	const lineCounter = new LineCounter();
 	const doc = parseDocument(source, {
 		lineCounter,
@@ -423,7 +423,7 @@ export async function analyzeComposeContent(
 				}
 			}
 
-			diagnostics.push(...buildComposeSemanticDiagnostics(parsedValue, doc));
+			diagnostics.push(...buildComposeSemanticDiagnostics(parsedValue, doc, source));
 		} catch {
 			diagnostics.push({
 				from: 0,

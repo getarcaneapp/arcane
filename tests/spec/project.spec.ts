@@ -24,19 +24,19 @@ async function navigateToProjects(page: Page) {
 	await page.waitForLoadState('load');
 }
 
-async function setCodeMirrorValue(page: Page, editor: Locator, text: string) {
-	const content = editor.locator('.cm-content').first();
+async function setEditorValue(page: Page, editor: Locator, text: string) {
+	const content = editor.locator('[contenteditable="true"]').first();
 	await expect(content).toBeVisible();
 	await content.click({ position: { x: 10, y: 10 } });
 	await content.press('ControlOrMeta+A');
 	await page.keyboard.insertText(text);
 }
 
-async function getCodeMirrorValue(editor: Locator) {
-	const content = editor.locator('.cm-content').first();
+async function getEditorValue(editor: Locator) {
+	const content = editor.locator('[data-code]').first();
 	await expect(content).toBeVisible();
 	return content.evaluate((node) => {
-		const lineNodes = Array.from(node.querySelectorAll('.cm-line'));
+		const lineNodes = Array.from(node.querySelectorAll('[data-line]'));
 		if (lineNodes.length > 0) {
 			return lineNodes.map((line) => line.textContent ?? '').join('\n');
 		}
@@ -183,16 +183,18 @@ async function createProjectViaUI(
 	await page.getByRole('textbox', { name: 'My New Project' }).fill(projectName);
 	await page.getByRole('textbox', { name: 'My New Project' }).press('Enter');
 
-	const visibleEditors = page.locator('.cm-editor').filter({ visible: true });
+	const visibleEditors = page
+		.locator('.arcane-code-editor diffs-container')
+		.filter({ visible: true });
 	const composeEditor = visibleEditors.first();
 	const envEditor = visibleEditors.nth(1);
 	await expect(composeEditor).toBeVisible();
 	await expect(envEditor).toBeVisible();
 
-	await setCodeMirrorValue(page, composeEditor, composeContent);
-	await setCodeMirrorValue(page, envEditor, envFile);
+	await setEditorValue(page, composeEditor, composeContent);
+	await setEditorValue(page, envEditor, envFile);
 	await expect
-		.poll(async () => (await getCodeMirrorValue(composeEditor)).trimEnd(), {
+		.poll(async () => (await getEditorValue(composeEditor)).trimEnd(), {
 			message: 'Expected compose editor to contain the exact test compose fixture before creation'
 		})
 		.toBe(composeContent.trimEnd());
@@ -489,8 +491,11 @@ test.describe('New Compose Project Page', () => {
 	test('should preserve YAML indentation when pressing Enter in compose editor', async ({
 		page
 	}) => {
-		const composeEditor = page.locator('.cm-editor').filter({ visible: true }).first();
-		const composeContent = composeEditor.locator('.cm-content').first();
+		const composeEditor = page
+			.locator('.arcane-code-editor diffs-container')
+			.filter({ visible: true })
+			.first();
+		const composeContent = composeEditor.locator('[contenteditable="true"]').first();
 
 		await expect(composeContent).toBeVisible();
 		await composeContent.click({ position: { x: 10, y: 10 } });
@@ -500,7 +505,7 @@ test.describe('New Compose Project Page', () => {
 		await page.keyboard.type('web:', { delay: 0 });
 
 		await expect
-			.poll(async () => (await getCodeMirrorValue(composeEditor)).replace(/\r/g, ''))
+			.poll(async () => (await getEditorValue(composeEditor)).replace(/\r/g, ''))
 			.toContain('services:\n  web:');
 	});
 
@@ -550,13 +555,16 @@ test.describe('New Compose Project Page', () => {
 		await page.getByRole('textbox', { name: 'My New Project' }).fill('syntax-check-project');
 		await page.getByRole('textbox', { name: 'My New Project' }).press('Enter');
 
-		const composeEditor = page.locator('.cm-editor').filter({ visible: true }).first();
+		const composeEditor = page
+			.locator('.arcane-code-editor diffs-container')
+			.filter({ visible: true })
+			.first();
 		await expect(composeEditor).toBeVisible();
 
-		await setCodeMirrorValue(page, composeEditor, 'services:\n\tredis:\n\t\timage: redis:latest\n');
+		await setEditorValue(page, composeEditor, 'services:\n\tredis:\n\t\timage: redis:latest\n');
 		await expect(page.locator('button[data-action="create"]')).toHaveCount(0);
 
-		await setCodeMirrorValue(page, composeEditor, TEST_COMPOSE_YAML);
+		await setEditorValue(page, composeEditor, TEST_COMPOSE_YAML);
 		const createButton = page.locator('button[data-action="create"]');
 		await expect(createButton).toBeVisible();
 		await expect(createButton).toBeEnabled();
@@ -569,17 +577,19 @@ test.describe('New Compose Project Page', () => {
 		await page.getByRole('textbox', { name: 'My New Project' }).fill('env-check-project');
 		await page.getByRole('textbox', { name: 'My New Project' }).press('Enter');
 
-		const visibleEditors = page.locator('.cm-editor').filter({ visible: true });
+		const visibleEditors = page
+			.locator('.arcane-code-editor diffs-container')
+			.filter({ visible: true });
 		const composeEditor = visibleEditors.first();
 		const envEditor = visibleEditors.nth(1);
 		await expect(composeEditor).toBeVisible();
 		await expect(envEditor).toBeVisible();
 
-		await setCodeMirrorValue(page, composeEditor, TEST_COMPOSE_YAML);
-		await setCodeMirrorValue(page, envEditor, 'NOT VALID LINE');
+		await setEditorValue(page, composeEditor, TEST_COMPOSE_YAML);
+		await setEditorValue(page, envEditor, 'NOT VALID LINE');
 		await expect(page.locator('button[data-action="create"]')).toHaveCount(0);
 
-		await setCodeMirrorValue(page, envEditor, TEST_ENV_FILE);
+		await setEditorValue(page, envEditor, TEST_ENV_FILE);
 		const createButton = page.locator('button[data-action="create"]');
 		await expect(createButton).toBeVisible();
 		await expect(createButton).toBeEnabled();
@@ -599,20 +609,26 @@ test.describe('New Compose Project Page', () => {
 			await page.getByRole('textbox', { name: 'My New Project' }).fill(projectName);
 			await page.getByRole('textbox', { name: 'My New Project' }).press('Enter');
 
-			const composeEditor = page.locator('.cm-editor').filter({ visible: true }).first();
+			const composeEditor = page
+				.locator('.arcane-code-editor diffs-container')
+				.filter({ visible: true })
+				.first();
 			await expect(composeEditor).toBeVisible();
-			await setCodeMirrorValue(page, composeEditor, TEST_COMPOSE_YAML);
+			await setEditorValue(page, composeEditor, TEST_COMPOSE_YAML);
 			await expect(composeEditor).toContainText('nginx');
 			await expect
-				.poll(async () => (await getCodeMirrorValue(composeEditor)).trimEnd(), {
+				.poll(async () => (await getEditorValue(composeEditor)).trimEnd(), {
 					message:
 						'Expected compose editor to contain the exact test compose fixture before creation'
 				})
 				.toBe(TEST_COMPOSE_YAML.trimEnd());
 
-			const envEditor = page.locator('.cm-editor').filter({ visible: true }).nth(1);
+			const envEditor = page
+				.locator('.arcane-code-editor diffs-container')
+				.filter({ visible: true })
+				.nth(1);
 			await expect(envEditor).toBeVisible();
-			await setCodeMirrorValue(page, envEditor, envFile);
+			await setEditorValue(page, envEditor, envFile);
 			await expect(envEditor).toContainText('nginx');
 
 			await page.route('/api/environments/*/projects', async (route) => {
@@ -1108,12 +1124,12 @@ test.describe('GitOps Managed Project', () => {
 		await page.waitForLoadState('load');
 
 		await page.waitForTimeout(800);
-		const composeContent = page
-			.locator('.cm-editor')
+		const composeEditor = page
+			.locator('.arcane-code-editor diffs-container')
 			.filter({ visible: true })
-			.first()
-			.locator('.cm-content');
-		await expect(composeContent).toHaveAttribute('aria-readonly', 'true');
+			.first();
+		await expect(composeEditor).toBeVisible();
+		await expect(composeEditor.locator('[contenteditable="true"]')).toHaveCount(0);
 	});
 
 	test('should allow editing env editor when GitOps managed in classic and tree view', async ({
@@ -1141,14 +1157,17 @@ test.describe('GitOps Managed Project', () => {
 		}
 
 		await page.waitForTimeout(800);
-		const envEditor = page.locator('.cm-editor').filter({ visible: true }).nth(1);
+		const envEditor = page
+			.locator('.arcane-code-editor diffs-container')
+			.filter({ visible: true })
+			.nth(1);
 		const marker = `ARCANE_E2E_${Date.now()}`;
-		const envContent = envEditor.locator('.cm-content');
-		const originalEnv = await getCodeMirrorValue(envEditor);
+		const envContent = envEditor.locator('[contenteditable="true"]');
+		const originalEnv = await getEditorValue(envEditor);
 		const updatedEnv = `${originalEnv.trimEnd()}\n${marker}=1\n`;
 
-		await expect(envContent).not.toHaveAttribute('aria-readonly', 'true');
-		await setCodeMirrorValue(page, envEditor, updatedEnv);
+		await expect(envContent).toBeVisible();
+		await setEditorValue(page, envEditor, updatedEnv);
 		await expect(envEditor).toContainText(marker);
 		await expect(page.getByRole('button', { name: 'Save', exact: true }).first()).toBeVisible();
 
@@ -1161,9 +1180,12 @@ test.describe('GitOps Managed Project', () => {
 			await expect(envFileButton).toBeVisible();
 			await envFileButton.click();
 
-			const treeEnvEditor = page.locator('.cm-editor').filter({ visible: true }).first();
-			const treeEnvContent = treeEnvEditor.locator('.cm-content');
-			await expect(treeEnvContent).not.toHaveAttribute('aria-readonly', 'true');
+			const treeEnvEditor = page
+				.locator('.arcane-code-editor diffs-container')
+				.filter({ visible: true })
+				.first();
+			const treeEnvContent = treeEnvEditor.locator('[contenteditable="true"]');
+			await expect(treeEnvContent).toBeVisible();
 			await expect(treeEnvEditor).toContainText(marker);
 		}
 	});
@@ -1484,13 +1506,16 @@ test.describe('Project Detail Page', () => {
 		await expect(workspaceFilesLabel).toBeVisible();
 		await expect(page.locator('[data-tab-key="compose"][data-active="true"]')).toBeVisible();
 
-		const treeComposeEditor = page.locator('.cm-editor').filter({ visible: true }).first();
+		const treeComposeEditor = page
+			.locator('.arcane-code-editor diffs-container')
+			.filter({ visible: true })
+			.first();
 		await expect(treeComposeEditor).toBeVisible();
 
 		const marker = `ARCANE_TREE_SAVE_${Date.now()}`;
-		const originalCompose = await getCodeMirrorValue(treeComposeEditor);
+		const originalCompose = await getEditorValue(treeComposeEditor);
 		const updatedCompose = `${originalCompose.trimEnd()}\n# ${marker}\n`;
-		await setCodeMirrorValue(page, treeComposeEditor, updatedCompose);
+		await setEditorValue(page, treeComposeEditor, updatedCompose);
 
 		const saveButton = page.getByRole('button', { name: 'Save', exact: true }).first();
 		await expect(saveButton).toBeVisible();
@@ -1518,11 +1543,14 @@ test.describe('Project Detail Page', () => {
 			await configTab.click();
 			await page.waitForLoadState('load');
 
-			let composeEditor = page.locator('.cm-editor').filter({ visible: true }).first();
+			let composeEditor = page
+				.locator('.arcane-code-editor diffs-container')
+				.filter({ visible: true })
+				.first();
 			await expect(composeEditor).toBeVisible();
 
 			const marker = `ARCANE_SAVE_PERSIST_${Date.now()}`;
-			const composeContent = composeEditor.locator('.cm-content').first();
+			const composeContent = composeEditor.locator('[contenteditable="true"]').first();
 			await expect(composeContent).toBeVisible();
 			await composeContent.click({ position: { x: 10, y: 10 } });
 			await page.keyboard.type(`# ${marker}\n`, { delay: 0 });
@@ -1534,9 +1562,12 @@ test.describe('Project Detail Page', () => {
 
 			await expect(saveButtons).toHaveCount(0);
 
-			composeEditor = page.locator('.cm-editor').filter({ visible: true }).first();
+			composeEditor = page
+				.locator('.arcane-code-editor diffs-container')
+				.filter({ visible: true })
+				.first();
 			await expect
-				.poll(async () => getCodeMirrorValue(composeEditor), {
+				.poll(async () => getEditorValue(composeEditor), {
 					message: 'expected saved compose editor content to remain visible'
 				})
 				.toContain(marker);
@@ -1547,11 +1578,16 @@ test.describe('Project Detail Page', () => {
 			});
 			if (await layoutSwitch.count()) {
 				await layoutSwitch.click();
-				await expect(page.locator('.cm-editor').filter({ visible: true }).first()).toBeVisible();
+				await expect(
+					page.locator('.arcane-code-editor diffs-container').filter({ visible: true }).first()
+				).toBeVisible();
 
-				composeEditor = page.locator('.cm-editor').filter({ visible: true }).first();
+				composeEditor = page
+					.locator('.arcane-code-editor diffs-container')
+					.filter({ visible: true })
+					.first();
 				await expect
-					.poll(async () => getCodeMirrorValue(composeEditor), {
+					.poll(async () => getEditorValue(composeEditor), {
 						message: 'expected saved compose editor content to persist across layout changes'
 					})
 					.toContain(marker);
@@ -1569,10 +1605,13 @@ test.describe('Project Detail Page', () => {
 				await page.waitForLoadState('load');
 			}
 
-			composeEditor = page.locator('.cm-editor').filter({ visible: true }).first();
+			composeEditor = page
+				.locator('.arcane-code-editor diffs-container')
+				.filter({ visible: true })
+				.first();
 			await expect(composeEditor).toBeVisible();
 			await expect
-				.poll(async () => getCodeMirrorValue(composeEditor), {
+				.poll(async () => getEditorValue(composeEditor), {
 					message: 'expected saved compose editor content to persist after reload'
 				})
 				.toContain(marker);

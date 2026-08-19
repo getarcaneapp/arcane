@@ -259,7 +259,7 @@ html.reduce-effects *::after {
 		.overflow-scroll,
 		.overflow-y-scroll,
 		.overflow-x-scroll,
-		.arcane-code-editor .cm-scroller
+		.arcane-code-editor .editor-scroll
 	):hover {
 		scrollbar-color: var(--muted-foreground) transparent;
 	}
@@ -291,7 +291,7 @@ html.reduce-effects *::after {
 			.overflow-scroll,
 			.overflow-y-scroll,
 			.overflow-x-scroll,
-			.arcane-code-editor .cm-scroller
+			.arcane-code-editor .editor-scroll
 		):hover::-webkit-scrollbar-thumb {
 		background: var(--muted-foreground);
 		border: 2px solid transparent;

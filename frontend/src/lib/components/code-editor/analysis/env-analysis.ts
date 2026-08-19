@@ -1,5 +1,4 @@
-import type { Diagnostic } from '@codemirror/lint';
-import type { AnalysisResult, EditorContext, OutlineItem } from './types';
+import type { AnalysisResult, Diagnostic, EditorContext, OutlineItem } from './types';
 import { isOpenQuote } from './parse-env-utils';
 
 const ENV_KEY_REGEX = /^[A-Za-z_][A-Za-z0-9_]*$/;

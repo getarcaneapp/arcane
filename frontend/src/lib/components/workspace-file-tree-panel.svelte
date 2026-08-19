@@ -1,30 +1,15 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog';
 	import * as Dialog from '#lib/components/ui/dialog';
 	import { Input } from '#lib/components/ui/input';
 	import { Label } from '#lib/components/ui/label';
 	import * as Tooltip from '#lib/components/ui/tooltip/index.js';
-	import * as TreeView from '#lib/components/ui/tree-view/index.js';
-	import {
-		ArrowDownIcon,
-		ArrowRightIcon,
-		CreateFileIcon,
-		CreateFolderIcon,
-		DownloadIcon,
-		EditIcon,
-		FileTextIcon,
-		FolderMoveIcon,
-		FolderOpenIcon,
-		LockIcon,
-		RefreshIcon,
-		TrashIcon,
-		UploadIcon
-	} from '#lib/icons';
+	import { ArrowDownIcon, ArrowRightIcon, CreateFileIcon, CreateFolderIcon, FolderOpenIcon, UploadIcon } from '#lib/icons';
 	import { m } from '#lib/paraglide/messages';
 	import { cn } from '#lib/utils';
 	import {
-		compareWorkspaceFileEntries,
 		joinWorkspaceFilePath,
 		workspaceFileBasename,
 		workspaceFileParentPath,
@@ -32,12 +17,17 @@
 		validateWorkspaceFileName,
 		type WorkspaceFileEntry
 	} from '#lib/utils/workspace-files';
+	import type {
+		ContextMenuItem,
+		ContextMenuOpenContext,
+		FileTree as PierreFileTree,
+		FileTreeDirectoryHandle,
+		FileTreeDropResult,
+		FileTreeRenameEvent,
+		GitStatusEntry
+	} from '@pierre/trees';
 
-	type DialogMode = 'create_file' | 'create_folder' | 'rename' | 'move' | 'upload';
-	type TreeRow = WorkspaceFileEntry & {
-		depth: number;
-		hasChildren: boolean;
-	};
+	type DialogMode = 'create_file' | 'create_folder' | 'move' | 'upload';
 	type WorkspaceTreeLeadingRow = {
 		key: string;
 		label: string;
@@ -109,12 +99,10 @@
 		lockedLabel = m.workspace_file_read_only()
 	}: Props = $props();
 
-	let openFolders = $state<Record<string, boolean>>({});
 	let activeFolderPath = $state('');
 	let dialogOpen = $state(false);
 	let dialogMode = $state<DialogMode>('create_file');
 	let dialogName = $state('');
-	let dialogParentPath = $state('');
 	let dialogTargetPath = $state('');
 	let dialogDestinationPath = $state('');
 	let destinationOpenFolders = $state<Record<string, boolean>>({});
@@ -122,6 +110,18 @@
 	let uploadInputKey = $state(0);
 	let dialogSubmitting = $state(false);
 	let dialogError = $state<string | null>(null);
+
+	// Non-reactive @pierre/trees plumbing.
+	let fileTree: PierreFileTree | undefined;
+	let syncingSelection = false;
+	let portaledMenu: HTMLElement | undefined;
+
+	const TREE_ICON_SET = 'complete';
+
+	function removePortaledMenu() {
+		portaledMenu?.remove();
+		portaledMenu = undefined;
+	}
 
 	const entryByPath = $derived.by(() => new Map(entries.map((entry) => [entry.relativePath, entry])));
 	const selectedWorkspacePath = $derived(selectedFile.startsWith('file:') ? selectedFile.slice(5) : '');
@@ -132,8 +132,22 @@
 			? selectedWorkspaceEntry.relativePath
 			: workspaceFileParentPath(selectedWorkspacePath);
 	});
-	const rows = $derived.by(() => flattenRows(entries, openFolders));
-	const hasDirectories = $derived(entries.some((entry) => entry.isDirectory));
+	const leadingFileRows = $derived(leadingRows.filter((row) => !row.action));
+	const actionRows = $derived(leadingRows.filter((row) => row.action));
+	const leadingByLabel = $derived(new Map(leadingFileRows.map((row) => [row.label, row])));
+	const treePaths = $derived([
+		...leadingFileRows.map((row) => row.label),
+		...entries.map((entry) => (entry.isDirectory ? `${entry.relativePath}/` : entry.relativePath))
+	]);
+	const selectedTreePath = $derived.by(() => {
+		if (selectedWorkspacePath) return selectedWorkspacePath;
+		return leadingFileRows.find((row) => row.key === selectedFile)?.label ?? '';
+	});
+	const pendingStatus = $derived(
+		entries
+			.filter((entry) => entry.pending && !entry.isDirectory)
+			.map((entry) => ({ path: entry.relativePath, status: 'modified' }) satisfies GitStatusEntry)
+	);
 	const canCreateFile = $derived(!!onCreateFile);
 	const canCreateFolder = $derived(!!onCreateFolder);
 	const canUpload = $derived(!!onUpload);
@@ -141,85 +155,296 @@
 	const dialogTitle = $derived.by(() => {
 		if (dialogMode === 'upload') return m.upload_file();
 		if (dialogMode === 'move') return m.move();
-		if (dialogMode === 'rename') return m.rename();
 		return dialogMode === 'create_folder' ? m.workspace_create_folder_title() : m.workspace_create_file_title();
 	});
 	const dialogActionLabel = $derived.by(() => {
 		if (dialogMode === 'upload') return m.upload();
-		if (dialogMode === 'move') return m.move();
-		return dialogMode === 'rename' ? m.rename() : m.common_create();
+		return dialogMode === 'move' ? m.move() : m.common_create();
 	});
-	const hasDestinationPicker = $derived(
-		dialogMode === 'create_file' || dialogMode === 'create_folder' || dialogMode === 'upload' || dialogMode === 'move'
-	);
 	const allDestinationOptions = $derived.by(() =>
-		hasDestinationPicker
-			? dialogMode === 'move' && dialogTargetPath
-				? buildMoveDestinationOptions(dialogTargetPath)
-				: buildFolderDestinationOptions()
-			: []
+		dialogMode === 'move' && dialogTargetPath ? buildMoveDestinationOptions(dialogTargetPath) : buildFolderDestinationOptions()
 	);
 	const visibleDestinationOptions = $derived.by(() =>
 		allDestinationOptions.filter((option) => option.relativePath === '' || isDestinationVisible(option.relativePath))
 	);
 	const hasValidDestination = $derived(allDestinationOptions.some((option) => !option.disabled));
 
-	function toggleFolder(relativePath: string) {
-		activeFolderPath = relativePath;
-		openFolders = {
-			...openFolders,
-			[relativePath]: openFolders[relativePath] !== true
-		};
+	function isLockedPath(path: string): boolean {
+		const leading = leadingByLabel.get(path);
+		if (leading) return leading.locked === true;
+		const entry = entryByPath.get(path);
+		return !!entry && (entry.locked === true || entry.isSymlink === true);
 	}
 
-	function flattenRows(files: WorkspaceFileEntry[], folderStates: Record<string, boolean>): TreeRow[] {
-		const byParent = new Map<string, WorkspaceFileEntry[]>();
-		for (const entry of files) {
-			const parentPath = workspaceFileParentPath(entry.relativePath);
-			const siblings = byParent.get(parentPath) ?? [];
-			siblings.push(entry);
-			byParent.set(parentPath, siblings);
-		}
-		for (const siblings of byParent.values()) {
-			siblings.sort(compareWorkspaceFileEntries);
-		}
+	function normalizeTreePath(path: string): string {
+		return path.endsWith('/') ? path.slice(0, -1) : path;
+	}
 
-		const result: TreeRow[] = [];
-		const appendRows = (parentPath: string, depth: number) => {
-			for (const entry of byParent.get(parentPath) ?? []) {
-				const hasChildren = (byParent.get(entry.relativePath) ?? []).length > 0;
-				result.push({ ...entry, depth, hasChildren });
-				if (entry.isDirectory && folderStates[entry.relativePath] === true) {
-					appendRows(entry.relativePath, depth + 1);
-				}
+	function collectExpandedPaths(): string[] {
+		if (!fileTree) return [];
+		const count = fileTree.getVisibleCount();
+		if (count === 0) return [];
+		return fileTree
+			.getVisibleRows(0, count - 1)
+			.filter((row) => row.kind === 'directory' && row.isExpanded)
+			.map((row) => row.path);
+	}
+
+	// Re-derive the tree from the entries source of truth (also used to revert
+	// optimistic library-side renames/moves the parent rejected).
+	function syncTree() {
+		if (!fileTree) return;
+		fileTree.resetPaths(treePaths, { initialExpandedPaths: collectExpandedPaths() });
+		fileTree.setGitStatus(pendingStatus.length > 0 ? pendingStatus : undefined);
+	}
+
+	function scheduleTreeSync() {
+		requestAnimationFrame(() => syncTree());
+	}
+
+	function expandTreePath(relativePath: string) {
+		if (!relativePath) return;
+		const item = fileTree?.getItem(relativePath);
+		if (item?.isDirectory()) (item as FileTreeDirectoryHandle).expand();
+	}
+
+	function handleTreeSelectionChange(selectedPaths: readonly string[]) {
+		if (syncingSelection) return;
+		const path = selectedPaths[selectedPaths.length - 1];
+		if (!path) return;
+		const normalized = normalizeTreePath(path);
+
+		const leading = leadingByLabel.get(normalized);
+		if (leading) {
+			activeFolderPath = '';
+			if (selectedFile !== leading.key) {
+				if (leading.onSelect) leading.onSelect();
+				else onSelect(leading.key);
 			}
-		};
+			return;
+		}
 
-		appendRows('', 0);
-		return result;
+		const entry = entryByPath.get(normalized);
+		if (!entry) return;
+		if (entry.isDirectory) {
+			activeFolderPath = entry.relativePath;
+			return;
+		}
+		activeFolderPath = '';
+		if (selectedFile !== `file:${entry.relativePath}`) {
+			onSelect(`file:${entry.relativePath}`);
+		}
 	}
+
+	function handleTreeRename(event: FileTreeRenameEvent) {
+		const sourcePath = normalizeTreePath(event.sourcePath);
+		const destinationPath = normalizeTreePath(event.destinationPath);
+		const parentPath = workspaceFileParentPath(sourcePath);
+		const name = normalizeDialogName(workspaceFileBasename(destinationPath), parentPath);
+		if (!onRename || !name || (destinationPath !== sourcePath && entryByPath.has(destinationPath))) {
+			scheduleTreeSync();
+			return;
+		}
+		onRename(sourcePath, name);
+	}
+
+	function handleTreeDrop(event: FileTreeDropResult) {
+		if (onMove) {
+			const newParentPath = event.target.directoryPath ? normalizeTreePath(event.target.directoryPath) : '';
+			for (const dragged of event.draggedPaths) {
+				onMove(normalizeTreePath(dragged), newParentPath);
+			}
+		}
+		scheduleTreeSync();
+	}
+
+	function renderTreeContextMenu(item: ContextMenuItem, context: ContextMenuOpenContext): HTMLElement | null {
+		const entry = entryByPath.get(normalizeTreePath(item.path));
+		if (!entry) return null;
+
+		const locked = isLockedPath(entry.relativePath);
+		const actions: Array<{ label: string; destructive?: boolean; run: () => void; closeOptions?: { restoreFocus?: boolean } }> =
+			[];
+		if (onDownload && !entry.isDirectory && !entry.pending) {
+			actions.push({ label: m.templates_download(), run: () => onDownload?.(entry.relativePath) });
+		}
+		if (!locked && !disabled) {
+			if (onRestore && !entry.isDirectory && !entry.pending) {
+				actions.push({ label: m.workspace_restore(), run: () => onRestore?.(entry.relativePath) });
+			}
+			if (onRename) {
+				actions.push({
+					label: m.rename(),
+					closeOptions: { restoreFocus: false },
+					run: () => fileTree?.startRenaming(entry.relativePath)
+				});
+			}
+			if (onMove) {
+				actions.push({ label: m.move(), run: () => openMoveDialog(entry.relativePath) });
+			}
+			if (onDelete) {
+				actions.push({ label: m.common_delete(), destructive: true, run: () => handleDelete(entry) });
+			}
+		}
+		if (actions.length === 0) return null;
+
+		// Portal the menu to the body: rendered inside the tree's shadow root it
+		// is clipped by the panel's stacking context (paints behind the editor
+		// pane). The dataset marker keeps clicks inside it from closing the menu.
+		removePortaledMenu();
+		const menu = document.createElement('div');
+		menu.className = 'workspace-tree-menu';
+		menu.dataset['fileTreeContextMenuRoot'] = 'true';
+		menu.style.position = 'fixed';
+		menu.style.zIndex = 'var(--arcane-z-popover, 60)';
+		menu.style.left = `${context.anchorRect.left}px`;
+		menu.style.top = `${context.anchorRect.bottom + 4}px`;
+		const style = document.createElement('style');
+		style.textContent = `
+			.workspace-tree-menu {
+				min-width: 10rem;
+				padding: 0.25rem;
+				border: 1px solid var(--border);
+				border-radius: 0.5rem;
+				background: var(--popover, var(--background));
+				color: var(--popover-foreground, var(--foreground));
+				box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+			}
+			.workspace-tree-menu button {
+				display: block;
+				width: 100%;
+				padding: 0.3rem 0.6rem;
+				text-align: left;
+				font-size: 0.8rem;
+				border: none;
+				border-radius: 0.375rem;
+				background: transparent;
+				color: inherit;
+				cursor: pointer;
+			}
+			.workspace-tree-menu button:hover {
+				background: var(--accent);
+			}
+			.workspace-tree-menu button.destructive {
+				color: var(--destructive);
+			}
+		`;
+		menu.appendChild(style);
+		for (const action of actions) {
+			const button = document.createElement('button');
+			button.type = 'button';
+			button.textContent = action.label;
+			if (action.destructive) button.classList.add('destructive');
+			button.addEventListener('click', () => {
+				context.close(action.closeOptions);
+				action.run();
+			});
+			menu.appendChild(button);
+		}
+		document.body.appendChild(menu);
+		portaledMenu = menu;
+		requestAnimationFrame(() => {
+			const rect = menu.getBoundingClientRect();
+			if (rect.bottom > window.innerHeight) {
+				menu.style.top = `${Math.max(4, context.anchorRect.top - rect.height - 4)}px`;
+			}
+			if (rect.right > window.innerWidth) {
+				menu.style.left = `${Math.max(4, window.innerWidth - rect.width - 8)}px`;
+			}
+		});
+		// The library keeps the menu session open against this in-shadow anchor.
+		return document.createElement('div');
+	}
+
+	function treeAttachment(host: HTMLElement) {
+		const context = { cancelled: false };
+
+		void (async () => {
+			const { FileTree } = await import('@pierre/trees');
+			if (context.cancelled) return;
+
+			const tree = new FileTree({
+				paths: untrack(() => treePaths),
+				icons: TREE_ICON_SET,
+				// The host's inner flex wrapper shrink-wraps to the widest row, which
+				// leaves row highlights short of the panel edge; stretch it instead.
+				unsafeCSS: `
+					:host { width: 100%; }
+					[data-file-tree-virtualized-wrapper="true"],
+					[data-file-tree-virtualized-root="true"] {
+						flex: 1 1 auto;
+						width: 100%;
+						min-width: 0;
+					}
+				`,
+				density: 'compact',
+				initialSelectedPaths: untrack(() => (selectedTreePath ? [selectedTreePath] : [])),
+				gitStatus: untrack(() => (pendingStatus.length > 0 ? pendingStatus : undefined)),
+				onSelectionChange: handleTreeSelectionChange,
+				renaming: {
+					canRename: (item) => !disabled && !!onRename && !isLockedPath(normalizeTreePath(item.path)),
+					onRename: handleTreeRename
+				},
+				dragAndDrop: {
+					canDrag: (paths) => !disabled && !!onMove && paths.every((path) => !isLockedPath(normalizeTreePath(path))),
+					onDropComplete: handleTreeDrop,
+					onDropError: () => scheduleTreeSync()
+				},
+				composition: {
+					contextMenu: {
+						enabled: true,
+						triggerMode: 'both',
+						buttonVisibility: 'when-needed',
+						render: renderTreeContextMenu,
+						onClose: () => removePortaledMenu()
+					}
+				},
+				renderRowDecoration: ({ item }) =>
+					isLockedPath(normalizeTreePath(item.path)) ? { icon: 'file-tree-icon-lock', title: lockedLabel } : null
+			});
+			fileTree = tree;
+			tree.render({ fileTreeContainer: host });
+		})();
+
+		return () => {
+			context.cancelled = true;
+			removePortaledMenu();
+			fileTree?.cleanUp();
+			fileTree = undefined;
+		};
+	}
+
+	// Keep the tree in sync with the entries source of truth.
+	$effect(() => {
+		void treePaths;
+		void pendingStatus;
+		untrack(() => syncTree());
+	});
+
+	// Reflect external selection (tabs, leading rows) into the tree.
+	$effect(() => {
+		const path = selectedTreePath;
+		untrack(() => {
+			if (!fileTree) return;
+			syncingSelection = true;
+			try {
+				for (const selected of fileTree.getSelectedPaths()) {
+					if (normalizeTreePath(selected) !== path) fileTree.getItem(selected)?.deselect();
+				}
+				if (path) fileTree.getItem(path)?.select();
+			} finally {
+				syncingSelection = false;
+			}
+		});
+	});
 
 	function openCreateDialog(mode: Extract<DialogMode, 'create_file' | 'create_folder'>, parentPath = selectedParentPath) {
 		if (disabled) return;
 		dialogMode = mode;
 		dialogName = '';
-		dialogParentPath = '';
 		dialogTargetPath = '';
 		dialogDestinationPath = parentPath;
 		destinationOpenFolders = parentPath ? openAncestorDestinationFolders(parentPath) : {};
-		uploadFiles = [];
-		dialogSubmitting = false;
-		dialogError = null;
-		dialogOpen = true;
-	}
-
-	function openRenameDialog(relativePath: string) {
-		if (disabled) return;
-		dialogMode = 'rename';
-		dialogName = workspaceFileBasename(relativePath);
-		dialogParentPath = workspaceFileParentPath(relativePath);
-		dialogTargetPath = relativePath;
-		dialogDestinationPath = '';
 		uploadFiles = [];
 		dialogSubmitting = false;
 		dialogError = null;
@@ -338,7 +563,6 @@
 		const selectedDestinationPath = destinations.find((destination) => !destination.disabled)?.relativePath ?? '';
 		dialogMode = 'move';
 		dialogName = '';
-		dialogParentPath = '';
 		dialogTargetPath = relativePath;
 		dialogDestinationPath = selectedDestinationPath;
 		destinationOpenFolders = selectedDestinationPath ? openAncestorDestinationFolders(selectedDestinationPath) : {};
@@ -352,7 +576,6 @@
 		if (disabled) return;
 		dialogMode = 'upload';
 		dialogName = '';
-		dialogParentPath = '';
 		dialogTargetPath = '';
 		dialogDestinationPath = parentPath;
 		destinationOpenFolders = parentPath ? openAncestorDestinationFolders(parentPath) : {};
@@ -385,30 +608,7 @@
 			}
 
 			onMove?.(dialogTargetPath, dialogDestinationPath);
-			if (dialogDestinationPath) {
-				openFolders = {
-					...openFolders,
-					[dialogDestinationPath]: true
-				};
-			}
-			dialogOpen = false;
-			return;
-		}
-
-		if (dialogMode === 'rename') {
-			const name = normalizeDialogName(dialogName, dialogParentPath);
-			if (!name) {
-				dialogError = m.workspace_file_invalid_name();
-				return;
-			}
-
-			const targetPath = joinWorkspaceFilePath(dialogParentPath, name);
-			if (targetPath !== dialogTargetPath && entryByPath.has(targetPath)) {
-				dialogError = m.workspace_file_duplicate_name();
-				return;
-			}
-
-			onRename?.(dialogTargetPath, name);
+			expandTreePath(dialogDestinationPath);
 			dialogOpen = false;
 			return;
 		}
@@ -448,9 +648,7 @@
 					dialogError = error;
 					return;
 				}
-				if (dialogDestinationPath) {
-					openFolders = { ...openFolders, [dialogDestinationPath]: true };
-				}
+				expandTreePath(dialogDestinationPath);
 				dialogOpen = false;
 			} finally {
 				dialogSubmitting = false;
@@ -472,17 +670,10 @@
 
 		if (dialogMode === 'create_folder') {
 			onCreateFolder?.(dialogDestinationPath, name);
-			openFolders = {
-				...openFolders,
-				[dialogDestinationPath]: true
-			};
 		} else {
 			onCreateFile?.(dialogDestinationPath, name);
-			openFolders = {
-				...openFolders,
-				[dialogDestinationPath]: true
-			};
 		}
+		expandTreePath(dialogDestinationPath);
 
 		dialogOpen = false;
 	}
@@ -568,177 +759,33 @@
 		<div class="border-b border-border px-3 py-2 text-xs text-muted-foreground">{readOnlyMessage}</div>
 	{/if}
 
-	<div class="min-h-0 flex-1 overflow-auto">
-		<TreeView.Root class="min-w-max p-2 whitespace-nowrap">
-			{#each leadingRows as leadingRow (leadingRow.key)}
+	{#if actionRows.length > 0}
+		<div class="shrink-0 px-2 pt-1.5">
+			{#each actionRows as leadingRow (leadingRow.key)}
 				<button
 					type="button"
 					class={cn(
-						'flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-[13px] hover:bg-accent',
-						selectedFile === leadingRow.key && 'bg-accent',
-						leadingRow.action && 'text-muted-foreground hover:text-foreground'
+						'flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-[13px] text-muted-foreground hover:bg-accent hover:text-foreground',
+						selectedFile === leadingRow.key && 'bg-accent'
 					)}
 					onclick={() => (leadingRow.onSelect ? leadingRow.onSelect() : onSelect(leadingRow.key))}
 				>
-					{#if hasDirectories}
-						<span class="inline-flex size-4 shrink-0 items-center justify-center"></span>
-					{/if}
-					{#if leadingRow.action}
-						<CreateFileIcon class="size-4 shrink-0" />
-					{:else}
-						<FileTextIcon class={cn('size-4 shrink-0', leadingRow.iconClass ?? 'text-muted-foreground')} />
-					{/if}
+					<CreateFileIcon class="size-4 shrink-0" />
 					<span class="min-w-0 flex-1 truncate">{leadingRow.label}</span>
-					{#if leadingRow.locked}
-						<span class="inline-flex size-6 shrink-0 items-center justify-center">
-							<LockIcon class="size-3.5 shrink-0 text-muted-foreground" aria-label={lockedLabel} />
-						</span>
-					{/if}
 				</button>
 			{/each}
+		</div>
+	{/if}
 
-			{#if rows.length === 0}
-				<div class="px-7 py-3 text-xs text-muted-foreground">{emptyMessage}</div>
-			{:else}
-				{#each rows as row (row.relativePath)}
-					<div
-						class={cn(
-							'group flex w-full items-center gap-1.5 rounded-md px-2 py-0.5 text-[13px] hover:bg-accent',
-							selectedFile === `file:${row.relativePath}` && 'bg-accent'
-						)}
-						style={`padding-left: ${0.5 + row.depth * 1}rem`}
-					>
-						{#if row.isDirectory}
-							<button
-								type="button"
-								class="inline-flex size-4 shrink-0 items-center justify-center rounded hover:bg-muted"
-								aria-label={openFolders[row.relativePath]
-									? m.workspace_file_collapse_folder({ name: row.name })
-									: m.workspace_file_expand_folder({ name: row.name })}
-								onclick={() => toggleFolder(row.relativePath)}
-							>
-								{#if openFolders[row.relativePath] === true}
-									<ArrowDownIcon class="size-3.5" />
-								{:else}
-									<ArrowRightIcon class="size-3.5" />
-								{/if}
-							</button>
-						{:else if hasDirectories}
-							<span class="inline-flex size-4 shrink-0 items-center justify-center"></span>
-						{/if}
-
-						<button
-							type="button"
-							class="flex min-w-0 flex-1 items-center gap-1.5 py-1 text-left"
-							onclick={() => (row.isDirectory ? toggleFolder(row.relativePath) : onSelect(`file:${row.relativePath}`))}
-						>
-							{#if row.isDirectory}
-								<FolderOpenIcon class="size-4 shrink-0 text-amber-500" />
-							{:else}
-								<FileTextIcon class="size-4 shrink-0 text-muted-foreground" />
-							{/if}
-							<span class="min-w-0 truncate">{row.name}</span>
-							{#if row.pending}
-								<span
-									class="size-1.5 shrink-0 rounded-full bg-primary"
-									role="img"
-									aria-label={m.common_unsaved_changes()}
-									title={m.common_unsaved_changes()}
-								></span>
-							{/if}
-						</button>
-
-						{#if row.locked || row.isSymlink || onRename || onMove || onDelete || onDownload || onRestore}
-							<div class="flex shrink-0 items-center gap-0.5">
-								{#if onDownload && !row.isDirectory && !row.pending}
-									<Tooltip.Root>
-										<Tooltip.Trigger>
-											<button
-												type="button"
-												class="inline-flex size-6 items-center justify-center rounded text-foreground hover:bg-foreground/10"
-												aria-label={m.templates_download()}
-												onclick={() => onDownload?.(row.relativePath)}
-											>
-												<DownloadIcon class="size-3.5" />
-											</button>
-										</Tooltip.Trigger>
-										<Tooltip.Content>{m.templates_download()}</Tooltip.Content>
-									</Tooltip.Root>
-								{/if}
-								{#if row.locked || row.isSymlink}
-									<LockIcon class="mx-1 size-3.5 shrink-0 text-muted-foreground" aria-label={lockedLabel} />
-								{:else}
-									{#if onRestore && !row.isDirectory && !row.pending}
-										<Tooltip.Root>
-											<Tooltip.Trigger>
-												<button
-													type="button"
-													class="inline-flex size-6 items-center justify-center rounded text-foreground hover:bg-foreground/10"
-													aria-label={m.workspace_restore()}
-													onclick={() => onRestore?.(row.relativePath)}
-												>
-													<RefreshIcon class="size-3.5" />
-												</button>
-											</Tooltip.Trigger>
-											<Tooltip.Content>{m.workspace_restore()}</Tooltip.Content>
-										</Tooltip.Root>
-									{/if}
-									{#if onRename}
-										<Tooltip.Root>
-											<Tooltip.Trigger>
-												<button
-													type="button"
-													class="inline-flex size-6 items-center justify-center rounded text-foreground hover:bg-foreground/10"
-													aria-label={m.workspace_file_rename_label({ name: row.relativePath })}
-													{disabled}
-													onclick={() => openRenameDialog(row.relativePath)}
-												>
-													<EditIcon class="size-3.5" />
-												</button>
-											</Tooltip.Trigger>
-											<Tooltip.Content>{m.rename()}</Tooltip.Content>
-										</Tooltip.Root>
-									{/if}
-									{#if onMove}
-										<Tooltip.Root>
-											<Tooltip.Trigger>
-												<button
-													type="button"
-													class="inline-flex size-6 items-center justify-center rounded text-foreground hover:bg-foreground/10"
-													aria-label={m.workspace_file_move_label({ name: row.relativePath })}
-													{disabled}
-													onclick={() => openMoveDialog(row.relativePath)}
-												>
-													<FolderMoveIcon class="size-3.5" />
-												</button>
-											</Tooltip.Trigger>
-											<Tooltip.Content>{m.move()}</Tooltip.Content>
-										</Tooltip.Root>
-									{/if}
-									{#if onDelete}
-										<Tooltip.Root>
-											<Tooltip.Trigger>
-												<button
-													type="button"
-													class="inline-flex size-6 items-center justify-center rounded text-destructive hover:bg-destructive/10"
-													aria-label={m.delete_name({ name: row.relativePath })}
-													{disabled}
-													onclick={() => handleDelete(row)}
-												>
-													<TrashIcon class="size-3.5" />
-												</button>
-											</Tooltip.Trigger>
-											<Tooltip.Content>{m.common_delete()}</Tooltip.Content>
-										</Tooltip.Root>
-									{/if}
-								{/if}
-							</div>
-						{/if}
-					</div>
-				{/each}
-			{/if}
-		</TreeView.Root>
-	</div>
+	{#if treePaths.length === 0}
+		<div class="px-7 py-3 text-xs text-muted-foreground">{emptyMessage}</div>
+	{:else}
+		<div
+			class="min-h-0 flex-1 px-1 pt-1 pb-1"
+			style="--trees-padding-inline-override: 4px; --trees-bg-override: var(--background); --trees-theme-list-active-selection-bg: var(--accent); --trees-theme-list-hover-bg: color-mix(in oklab, var(--accent) 55%, transparent); --trees-theme-focus-ring: var(--primary)"
+			{@attach treeAttachment}
+		></div>
+	{/if}
 </div>
 
 <Dialog.Root bind:open={dialogOpen}>
@@ -757,10 +804,8 @@
 						{m.workspace_file_move_description({ name: dialogTargetPath })}
 					{:else if dialogMode === 'upload'}
 						{uploadDescription}
-					{:else if dialogMode === 'create_file' || dialogMode === 'create_folder'}
-						{dialogDestinationPath ? m.workspace_file_parent_path({ path: dialogDestinationPath }) : rootPathMessage}
 					{:else}
-						{dialogParentPath ? m.workspace_file_parent_path({ path: dialogParentPath }) : rootPathMessage}
+						{dialogDestinationPath ? m.workspace_file_parent_path({ path: dialogDestinationPath }) : rootPathMessage}
 					{/if}
 				</Dialog.Description>
 			</Dialog.Header>
@@ -794,58 +839,56 @@
 				</div>
 			{/if}
 
-			{#if hasDestinationPicker}
-				<div class="min-h-0 space-y-2">
-					<Label>{m.workspace_file_move_destination_label()}</Label>
-					<div class="max-h-[56vh] min-h-80 space-y-1 overflow-auto rounded-md border p-1">
-						{#each visibleDestinationOptions as option (option.relativePath)}
-							<div
-								class={cn(
-									'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm',
-									dialogDestinationPath === option.relativePath && !option.disabled && 'bg-accent',
-									option.disabled ? 'opacity-45' : 'hover:bg-accent'
-								)}
-								style={`padding-left: ${0.5 + option.depth * 1.25}rem`}
-							>
-								{#if option.relativePath && option.hasChildren}
-									<button
-										type="button"
-										class="inline-flex size-4 shrink-0 items-center justify-center rounded hover:bg-muted"
-										aria-label={destinationOpenFolders[option.relativePath]
-											? m.workspace_file_collapse_folder({ name: option.label })
-											: m.workspace_file_expand_folder({ name: option.label })}
-										onclick={() => toggleDestinationFolder(option.relativePath)}
-									>
-										{#if destinationOpenFolders[option.relativePath] === true}
-											<ArrowDownIcon class="size-4" />
-										{:else}
-											<ArrowRightIcon class="size-4" />
-										{/if}
-									</button>
-								{:else}
-									<span class="inline-flex size-4 shrink-0 items-center justify-center"></span>
-								{/if}
+			<div class="min-h-0 space-y-2">
+				<Label>{m.workspace_file_move_destination_label()}</Label>
+				<div class="max-h-[56vh] min-h-80 space-y-1 overflow-auto rounded-md border p-1">
+					{#each visibleDestinationOptions as option (option.relativePath)}
+						<div
+							class={cn(
+								'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm',
+								dialogDestinationPath === option.relativePath && !option.disabled && 'bg-accent',
+								option.disabled ? 'opacity-45' : 'hover:bg-accent'
+							)}
+							style={`padding-left: ${0.5 + option.depth * 1.25}rem`}
+						>
+							{#if option.relativePath && option.hasChildren}
 								<button
 									type="button"
-									class={cn('flex min-w-0 flex-1 items-center gap-2 text-left', option.disabled && 'cursor-not-allowed')}
-									disabled={option.disabled}
-									title={option.relativePath || option.label}
-									onclick={() => {
-										dialogDestinationPath = option.relativePath;
-										dialogError = null;
-									}}
+									class="inline-flex size-4 shrink-0 items-center justify-center rounded hover:bg-muted"
+									aria-label={destinationOpenFolders[option.relativePath]
+										? m.workspace_file_collapse_folder({ name: option.label })
+										: m.workspace_file_expand_folder({ name: option.label })}
+									onclick={() => toggleDestinationFolder(option.relativePath)}
 								>
-									<FolderOpenIcon class="size-4 shrink-0 text-amber-500" />
-									<span class="min-w-0 flex-1 truncate">{option.label}</span>
+									{#if destinationOpenFolders[option.relativePath] === true}
+										<ArrowDownIcon class="size-4" />
+									{:else}
+										<ArrowRightIcon class="size-4" />
+									{/if}
 								</button>
-								{#if option.reason}
-									<span class="shrink-0 text-xs text-muted-foreground">{option.reason}</span>
-								{/if}
-							</div>
-						{/each}
-					</div>
+							{:else}
+								<span class="inline-flex size-4 shrink-0 items-center justify-center"></span>
+							{/if}
+							<button
+								type="button"
+								class={cn('flex min-w-0 flex-1 items-center gap-2 text-left', option.disabled && 'cursor-not-allowed')}
+								disabled={option.disabled}
+								title={option.relativePath || option.label}
+								onclick={() => {
+									dialogDestinationPath = option.relativePath;
+									dialogError = null;
+								}}
+							>
+								<FolderOpenIcon class="size-4 shrink-0 text-amber-500" />
+								<span class="min-w-0 flex-1 truncate">{option.label}</span>
+							</button>
+							{#if option.reason}
+								<span class="shrink-0 text-xs text-muted-foreground">{option.reason}</span>
+							{/if}
+						</div>
+					{/each}
 				</div>
-			{/if}
+			</div>
 
 			{#if dialogError}
 				<p class="text-sm text-destructive">{dialogError}</p>

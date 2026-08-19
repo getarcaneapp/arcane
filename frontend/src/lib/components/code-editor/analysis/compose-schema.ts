@@ -1,7 +1,6 @@
 import Ajv, { type ValidateFunction } from 'ajv';
-import type { Completion } from '@codemirror/autocomplete';
 import { browser } from '$app/env';
-import type { SchemaDoc, SchemaStatus } from './types';
+import type { CompletionItem, SchemaDoc, SchemaStatus } from './types';
 
 const DOCKER_COMPOSE_SCHEMA_URL =
 	'https://raw.githubusercontent.com/compose-spec/compose-go/refs/heads/main/schema/compose-spec.json';
@@ -304,7 +303,7 @@ function isServiceArcanePath(path: Array<string | number>): boolean {
 	return path.length === 3 && path[0] === 'services' && typeof path[1] === 'string' && path[2] === 'x-arcane';
 }
 
-function toArcaneCompletion(spec: ArcaneCompletionSpec): Completion {
+function toArcaneCompletion(spec: ArcaneCompletionSpec): CompletionItem {
 	return {
 		label: spec.label,
 		type: 'property',
@@ -314,7 +313,7 @@ function toArcaneCompletion(spec: ArcaneCompletionSpec): Completion {
 	};
 }
 
-function getArcaneCompletionOptionsForPath(path: Array<string | number>, prefix = ''): Completion[] {
+function getArcaneCompletionOptionsForPath(path: Array<string | number>, prefix = ''): CompletionItem[] {
 	const normalizedPrefix = prefix.toLowerCase();
 	let specs: ArcaneCompletionSpec[] = [];
 
@@ -474,7 +473,7 @@ export function getCompletionOptionsForPath(
 	schema: SchemaObject | null,
 	path: Array<string | number>,
 	prefix = ''
-): Completion[] {
+): CompletionItem[] {
 	const normalizedPrefix = prefix.toLowerCase();
 	const propertyMap = schema ? collectPropertySchemas(schema, path) : new Map<string, SchemaObject>();
 	const schemaCompletions = Array.from(propertyMap.entries())
@@ -488,11 +487,11 @@ export function getCompletionOptionsForPath(
 				detail: doc.title,
 				info: doc.description,
 				apply: `${key}: `
-			} as Completion;
+			} as CompletionItem;
 		});
 
 	const arcaneCompletions = getArcaneCompletionOptionsForPath(path, prefix);
-	const merged = new Map<string, Completion>();
+	const merged = new Map<string, CompletionItem>();
 
 	for (const completion of schemaCompletions) {
 		merged.set(completion.label, completion);
@@ -507,7 +506,7 @@ export function getCompletionOptionsForPath(
 	return Array.from(merged.values()).sort((a, b) => a.label.localeCompare(b.label));
 }
 
-export function getEnumValueCompletions(schema: SchemaObject | null, path: Array<string | number>): Completion[] {
+export function getEnumValueCompletions(schema: SchemaObject | null, path: Array<string | number>): CompletionItem[] {
 	const values = new Set<string>();
 	if (path.length === 4 && path[0] === 'x-arcane' && path[1] === 'tags' && typeof path[2] === 'number' && path[3] === 'color') {
 		for (const color of ARCANE_TAG_COLORS) values.add(color);

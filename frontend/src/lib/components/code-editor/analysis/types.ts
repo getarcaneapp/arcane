@@ -1,4 +1,38 @@
-import type { Diagnostic } from '@codemirror/lint';
+export type DiagnosticSeverity = 'error' | 'warning' | 'info' | 'hint';
+
+export type DiagnosticEdit = {
+	from: number;
+	to: number;
+	insert: string;
+};
+
+export type DiagnosticAction = {
+	name: string;
+	edits: DiagnosticEdit[];
+};
+
+export type Diagnostic = {
+	from: number;
+	to: number;
+	severity: DiagnosticSeverity;
+	message: string;
+	actions?: DiagnosticAction[];
+};
+
+export type CompletionItem = {
+	label: string;
+	type?: string;
+	detail?: string;
+	info?: string;
+	apply: string;
+};
+
+export type SnippetItem = {
+	label: string;
+	type?: string;
+	detail?: string;
+	insert: string;
+};
 
 export type CodeLanguage =
 	| 'yaml'
