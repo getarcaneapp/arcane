@@ -58,27 +58,15 @@ type DeleteNotificationSettingsInput struct {
 	Provider      string `path:"provider" doc:"Provider"`
 }
 
-type DeleteNotificationSettingsOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
-}
-
 type TestNotificationInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Provider      string `path:"provider" doc:"Provider"`
 	Type          string `query:"type" default:"simple"`
 }
 
-type TestNotificationOutput struct {
-	Body base.ApiResponse[notification.TestResponse]
-}
-
 type DispatchNotificationInput struct {
 	APIKey string `header:"X-API-Key" doc:"Remote environment access token"`
 	Body   notification.DispatchRequest
-}
-
-type DispatchNotificationOutput struct {
-	Body base.ApiResponse[notification.DispatchResponse]
 }
 
 func normalizeNotificationTestType(testType string) string {
@@ -241,7 +229,7 @@ func (h *NotificationHandler) CreateOrUpdateNotificationSettings(ctx context.Con
 	return &CreateOrUpdateNotificationSettingsOutput{Body: response}, nil
 }
 
-func (h *NotificationHandler) DeleteNotificationSettings(ctx context.Context, input *DeleteNotificationSettingsInput) (*DeleteNotificationSettingsOutput, error) {
+func (h *NotificationHandler) DeleteNotificationSettings(ctx context.Context, input *DeleteNotificationSettingsInput) (*handlerutil.Out[base.MessageResponse], error) {
 	if err := h.rejectIfAgentModeInternal(); err != nil {
 		return nil, err
 	}
@@ -251,7 +239,7 @@ func (h *NotificationHandler) DeleteNotificationSettings(ctx context.Context, in
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to delete notification settings").Error())
 	}
 
-	return &DeleteNotificationSettingsOutput{
+	return &handlerutil.Out[base.MessageResponse]{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data:    base.MessageResponse{Message: "Settings deleted successfully"},
@@ -259,7 +247,7 @@ func (h *NotificationHandler) DeleteNotificationSettings(ctx context.Context, in
 	}, nil
 }
 
-func (h *NotificationHandler) TestNotification(ctx context.Context, input *TestNotificationInput) (*TestNotificationOutput, error) {
+func (h *NotificationHandler) TestNotification(ctx context.Context, input *TestNotificationInput) (*handlerutil.Out[notification.TestResponse], error) {
 	if err := h.rejectIfAgentModeInternal(); err != nil {
 		return nil, err
 	}
@@ -274,7 +262,7 @@ func (h *NotificationHandler) TestNotification(ctx context.Context, input *TestN
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to send test notification").Error())
 	}
 
-	return &TestNotificationOutput{
+	return &handlerutil.Out[notification.TestResponse]{
 		Body: base.ApiResponse[notification.TestResponse]{
 			Success: true,
 			Data: notification.TestResponse{
@@ -285,7 +273,7 @@ func (h *NotificationHandler) TestNotification(ctx context.Context, input *TestN
 	}, nil
 }
 
-func (h *NotificationHandler) DispatchNotification(ctx context.Context, input *DispatchNotificationInput) (*DispatchNotificationOutput, error) {
+func (h *NotificationHandler) DispatchNotification(ctx context.Context, input *DispatchNotificationInput) (*handlerutil.Out[notification.DispatchResponse], error) {
 	if err := h.rejectIfAgentModeInternal(); err != nil {
 		return nil, err
 	}
@@ -303,7 +291,7 @@ func (h *NotificationHandler) DispatchNotification(ctx context.Context, input *D
 		return nil, huma.Error500InternalServerError("dispatch failed")
 	}
 
-	return &DispatchNotificationOutput{
+	return &handlerutil.Out[notification.DispatchResponse]{
 		Body: base.ApiResponse[notification.DispatchResponse]{
 			Success: true,
 			Data:    dispatchResponse,

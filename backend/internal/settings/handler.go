@@ -63,10 +63,6 @@ type UpdateSettingsInput struct {
 	Body          settingstypes.Update `doc:"Settings update data"`
 }
 
-type UpdateSettingsOutput struct {
-	Body base.ApiResponse[[]settingstypes.SettingDto]
-}
-
 type SearchSettingsInput struct {
 	Body searchtypes.Request `doc:"Search query"`
 }
@@ -276,7 +272,7 @@ func (h *SettingsHandler) appendRuntimeSettingsInternal(settingsDto []settingsty
 // GetPublicSettings returns public settings for an environment.
 func (h *SettingsHandler) GetPublicSettings(ctx context.Context, input *GetPublicSettingsInput) (*GetPublicSettingsOutput, error) {
 	if input.EnvironmentID != "0" {
-		settingsDto, err := handlerutil.ProxyRemoteJSON[[]settingstypes.PublicSetting](ctx, h.proxyRemoteJSON, input.EnvironmentID, http.MethodGet, "/api/environments/0/settings/public", nil)
+		settingsDto, err := h.proxyRemoteJSON.JSON[[]settingstypes.PublicSetting](ctx, input.EnvironmentID, http.MethodGet, "/api/environments/0/settings/public", nil)
 		if err != nil {
 			return nil, err
 		}
@@ -303,7 +299,7 @@ func (h *SettingsHandler) GetSettings(ctx context.Context, input *GetSettingsInp
 	}
 
 	if input.EnvironmentID != "0" {
-		settingsDto, err := handlerutil.ProxyRemoteJSON[[]settingstypes.PublicSetting](ctx, h.proxyRemoteJSON, input.EnvironmentID, http.MethodGet, "/api/environments/0/settings", nil)
+		settingsDto, err := h.proxyRemoteJSON.JSON[[]settingstypes.PublicSetting](ctx, input.EnvironmentID, http.MethodGet, "/api/environments/0/settings", nil)
 		if err != nil {
 			return nil, err
 		}
@@ -336,7 +332,7 @@ func (h *SettingsHandler) GetSettings(ctx context.Context, input *GetSettingsInp
 }
 
 // UpdateSettings updates settings for an environment.
-func (h *SettingsHandler) UpdateSettings(ctx context.Context, input *UpdateSettingsInput) (*UpdateSettingsOutput, error) {
+func (h *SettingsHandler) UpdateSettings(ctx context.Context, input *UpdateSettingsInput) (*handlerutil.Out[[]settingstypes.SettingDto], error) {
 	if err := h.validateSettingsUpdateInput(input.Body); err != nil {
 		return nil, err
 	}
@@ -380,21 +376,21 @@ func (h *SettingsHandler) validateSettingsUpdateInput(input settingstypes.Update
 	return nil
 }
 
-func (h *SettingsHandler) updateSettingsForRemoteEnvironment(ctx context.Context, input *UpdateSettingsInput) (*UpdateSettingsOutput, error) {
+func (h *SettingsHandler) updateSettingsForRemoteEnvironment(ctx context.Context, input *UpdateSettingsInput) (*handlerutil.Out[[]settingstypes.SettingDto], error) {
 	// Check if trying to update auth settings on non-local environment.
 	if hasAuthSettingsUpdateInternal(input.Body) {
 		return nil, huma.Error403Forbidden("Authentication settings can only be updated from the main environment")
 	}
 
-	apiResp, err := handlerutil.ProxyRemoteJSON[base.ApiResponse[[]settingstypes.SettingDto]](ctx, h.proxyRemoteJSON, input.EnvironmentID, http.MethodPut, "/api/environments/0/settings", input.Body)
+	apiResp, err := h.proxyRemoteJSON.JSON[base.ApiResponse[[]settingstypes.SettingDto]](ctx, input.EnvironmentID, http.MethodPut, "/api/environments/0/settings", input.Body)
 	if err != nil {
 		return nil, err
 	}
 
-	return &UpdateSettingsOutput{Body: *apiResp}, nil
+	return &handlerutil.Out[[]settingstypes.SettingDto]{Body: *apiResp}, nil
 }
 
-func (h *SettingsHandler) updateSettingsForLocalEnvironment(ctx context.Context, input settingstypes.Update) (*UpdateSettingsOutput, error) {
+func (h *SettingsHandler) updateSettingsForLocalEnvironment(ctx context.Context, input settingstypes.Update) (*handlerutil.Out[[]settingstypes.SettingDto], error) {
 	if input.ProjectsDirectory != nil && *input.ProjectsDirectory != "" {
 		currentDir := h.settingsService.GetSettingsConfig().ProjectsDirectory.Value
 		if *input.ProjectsDirectory != currentDir {
@@ -432,7 +428,7 @@ func (h *SettingsHandler) updateSettingsForLocalEnvironment(ctx context.Context,
 		})
 	}
 
-	return &UpdateSettingsOutput{
+	return &handlerutil.Out[[]settingstypes.SettingDto]{
 		Body: base.ApiResponse[[]settingstypes.SettingDto]{
 			Success: true,
 			Data:    settingDtos,

@@ -1007,7 +1007,7 @@ func (s *ContainerService) ListContainersPaginated(
 		ungroupedParams.Start = 0
 		ungroupedParams.Limit = -1
 
-		result := pagination.SearchOrderAndPaginate(items, ungroupedParams, config)
+		result := config.SearchOrderAndPaginate(items, ungroupedParams)
 		groups, paginationResp := paginateContainerProjectGroupsInternal(result, params)
 
 		// Icons must be resolved before flattening: groups hold value copies,
@@ -1025,7 +1025,7 @@ func (s *ContainerService) ListContainersPaginated(
 		}, nil
 	}
 
-	result := pagination.SearchOrderAndPaginate(items, params, config)
+	result := config.SearchOrderAndPaginate(items, params)
 	s.ApplySummaryIcons(ctx, result.Items, nil)
 	paginationResp := pagination.BuildResponse(result.TotalCount, result.TotalAvailable, params)
 

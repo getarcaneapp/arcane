@@ -1,18 +1,12 @@
 package templates
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
-	"unicode"
 
 	"emperror.dev/errors"
 
@@ -26,8 +20,6 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/template"
 	"github.com/spf13/cobra"
 )
-
-const maxTemplatePromptOptions = 20
 
 var (
 	limitFlag       int
@@ -78,67 +70,8 @@ var listCmd = &cobra.Command{
 			return err
 		}
 
-		var (
-			templates   []template.Template
-			totalItems  int64
-			jsonPayload any
-			path        string
-		)
-
-		if templateListAll {
-			if cmd.Flags().Changed("limit") || cmd.Flags().Changed("start") {
-				return errors.New("--all cannot be combined with explicit pagination flags")
-			}
-			path = types.Endpoints.TemplatesAll()
-			resp, err := c.Get(cmd.Context(), path)
-			if err != nil {
-				return errors.WrapIf(err, "failed to list templates")
-			}
-			defer func() { _ = resp.Body.Close() }()
-
-			var result base.ApiResponse[[]template.Template]
-			if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-				return err
-			}
-
-			templates = result.Data
-			totalItems = int64(len(result.Data))
-			jsonPayload = result.Data
-		} else {
-			path = types.Endpoints.Templates()
-			path, err = cmdutil.ApplyPaginationParams(cmd, path, cmdutil.ListParams{Resource: "templates", Limit: limitFlag, FallbackDefault: 20, Start: startFlag})
-			if err != nil {
-				return errors.WrapIf(err, "failed to build pagination query")
-			}
-
-			resp, err := c.Get(cmd.Context(), path)
-			if err != nil {
-				return errors.WrapIf(err, "failed to list templates")
-			}
-			defer func() { _ = resp.Body.Close() }()
-
-			var result base.Paginated[template.Template]
-			if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-				return err
-			}
-
-			templates = result.Data
-			totalItems = result.Pagination.TotalItems
-			jsonPayload = result
-		}
-
-		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(jsonPayload, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
-		}
-
 		headers := []string{"NAME", "CUSTOM", "REMOTE", "DESCRIPTION"}
-		rows := make([][]string, len(templates))
-		for i, tpl := range templates {
+		row := func(tpl template.Template) []string {
 			custom := "no"
 			if tpl.IsCustom {
 				custom = "yes"
@@ -147,7 +80,7 @@ var listCmd = &cobra.Command{
 			if tpl.IsRemote {
 				remote = "yes"
 			}
-			rows[i] = []string{
+			return []string{
 				tpl.Name,
 				custom,
 				remote,
@@ -155,9 +88,37 @@ var listCmd = &cobra.Command{
 			}
 		}
 
-		output.Table(headers, rows)
-		output.Showing(len(templates), totalItems, "templates")
-		return nil
+		if templateListAll {
+			if cmd.Flags().Changed("limit") || cmd.Flags().Changed("start") {
+				return errors.New("--all cannot be combined with explicit pagination flags")
+			}
+
+			result, err := c.GetJSON[[]template.Template](cmd.Context(), types.Endpoints.TemplatesAll())
+			if err != nil {
+				return errors.WrapIf(err, "failed to list templates")
+			}
+
+			if jsonOutput {
+				return cmdutil.PrintJSON(result.Data)
+			}
+
+			rows := make([][]string, len(result.Data))
+			for i, tpl := range result.Data {
+				rows[i] = row(tpl)
+			}
+			output.Table(headers, rows)
+			output.Showing(len(result.Data), int64(len(result.Data)), "templates")
+			return nil
+		}
+
+		return cmdutil.RunList(cmd, c, cmdutil.ListSpec[template.Template]{
+			Resource: "templates",
+			Endpoint: types.Endpoints.Templates(),
+			Params:   cmdutil.ListParams{Resource: "templates", Limit: limitFlag, FallbackDefault: 20, Start: startFlag},
+			JSON:     jsonOutput,
+			Headers:  headers,
+			Row:      row,
+		})
 	},
 }
 
@@ -171,24 +132,13 @@ var defaultCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.Endpoints.TemplatesDefault())
+		result, err := c.GetJSON[template.DefaultTemplatesResponse](cmd.Context(), types.Endpoints.TemplatesDefault())
 		if err != nil {
 			return errors.WrapIf(err, "failed to get default templates")
 		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result base.ApiResponse[template.DefaultTemplatesResponse]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
-		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Header("Default Templates")
@@ -209,24 +159,13 @@ var contentCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.Endpoints.TemplateContent(args[0]))
+		result, err := c.GetJSON[template.TemplateContent](cmd.Context(), types.Endpoints.TemplateContent(args[0]))
 		if err != nil {
 			return errors.WrapIf(err, "failed to get template content")
 		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result base.ApiResponse[template.TemplateContent]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
-		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Header("Template Content")
@@ -255,24 +194,13 @@ var registriesCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.Endpoints.TemplatesRegistries())
+		result, err := c.GetJSON[[]template.TemplateRegistry](cmd.Context(), types.Endpoints.TemplatesRegistries())
 		if err != nil {
 			return errors.WrapIf(err, "failed to list registries")
 		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result base.ApiResponse[[]template.TemplateRegistry]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
-		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		headers := []string{"ID", "NAME", "URL", "ENABLED"}
@@ -307,14 +235,8 @@ var variablesCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.Endpoints.TemplatesVariables())
+		result, err := c.GetJSON[[]env.GlobalVariable](cmd.Context(), types.Endpoints.TemplatesVariables())
 		if err != nil {
-			return errors.WrapIf(err, "failed to list variables")
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result base.ApiResponse[[]env.GlobalVariable]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
 			return errors.WrapIf(err, "failed to list variables")
 		}
 
@@ -428,18 +350,14 @@ var getCmd = &cobra.Command{
 			return err
 		}
 
-		resolved, err := resolveTemplate(cmd.Context(), c, args[0])
+		allowPrompt := !jsonOutput && prompt.IsInteractive()
+		resolved, _, err := templateRef.Resolve(cmd.Context(), c, args[0], allowPrompt)
 		if err != nil {
 			return err
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(resolved, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(resolved)
 		}
 
 		tpl := *resolved
@@ -461,368 +379,39 @@ var getCmd = &cobra.Command{
 	},
 }
 
-// resolveTemplate attempts to resolve a template by ID or name.
-// It first tries direct GET by ID and falls back to searching all templates by name/ID.
-func resolveTemplate(ctx context.Context, c *client.Client, identifier string) (*template.Template, error) {
-	trimmed := strings.TrimSpace(identifier)
-	if trimmed == "" {
-		return nil, errors.New("template identifier is required")
-	}
-
-	resp, err := c.Get(ctx, types.Endpoints.Template(trimmed))
-	if err != nil {
-		return nil, errors.WrapIf(err, "failed to get template")
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode == http.StatusOK {
-		var result base.ApiResponse[template.Template]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return nil, errors.WrapIf(err, "failed to parse response")
-		}
-		return &result.Data, nil
-	}
-
-	if resp.StatusCode != http.StatusNotFound {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return nil, errors.Errorf("failed to get template: request failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-
-	listResp, err := c.Get(ctx, types.Endpoints.TemplatesAll())
-	if err != nil {
-		return nil, errors.WrapIf(err, "failed to search templates")
-	}
-	defer func() { _ = listResp.Body.Close() }()
-
-	if listResp.StatusCode < http.StatusOK || listResp.StatusCode >= http.StatusMultipleChoices {
-		body, _ := io.ReadAll(io.LimitReader(listResp.Body, 4096))
-		return nil, errors.Errorf("failed to search templates: request failed with status %d: %s", listResp.StatusCode, strings.TrimSpace(string(body)))
-	}
-
-	var listResult base.ApiResponse[[]template.Template]
-	if err := json.NewDecoder(listResp.Body).Decode(&listResult); err != nil {
-		return nil, errors.WrapIf(err, "failed to parse template list")
-	}
-
-	lowerIdentifier := strings.ToLower(trimmed)
-	exactNameMatches := make([]template.Template, 0)
-	partialMatches := make([]template.Template, 0)
-
-	for _, tpl := range listResult.Data {
-		if strings.EqualFold(tpl.ID, trimmed) {
-			return &tpl, nil
-		}
-		if strings.EqualFold(tpl.Name, trimmed) {
-			exactNameMatches = append(exactNameMatches, tpl)
-			continue
-		}
-
-		if strings.Contains(strings.ToLower(tpl.Name), lowerIdentifier) || strings.HasPrefix(strings.ToLower(tpl.ID), lowerIdentifier) {
-			partialMatches = append(partialMatches, tpl)
-		}
-	}
-
-	if len(exactNameMatches) == 1 {
-		return &exactNameMatches[0], nil
-	}
-	if len(exactNameMatches) > 1 {
-		return selectTemplateMatch(trimmed, exactNameMatches)
-	}
-
-	if len(partialMatches) == 1 {
-		return &partialMatches[0], nil
-	}
-	if len(partialMatches) > 1 {
-		ranked := rankFuzzyTemplateMatches(trimmed, partialMatches)
-		if isConfidentBestFuzzyMatch(ranked) {
-			return &ranked[0].template, nil
-		}
-		return selectTemplateMatch(trimmed, topTemplatesFromRankedMatches(ranked, maxTemplatePromptOptions))
-	}
-
-	ranked := rankFuzzyTemplateMatches(trimmed, listResult.Data)
-	if isConfidentBestFuzzyMatch(ranked) {
-		return &ranked[0].template, nil
-	}
-	if len(ranked) > 0 {
-		return selectTemplateMatch(trimmed, topTemplatesFromRankedMatches(ranked, maxTemplatePromptOptions))
-	}
-
-	return nil, errors.Errorf("template %q not found", trimmed)
-}
-
-func selectTemplateMatch(identifier string, matches []template.Template) (*template.Template, error) {
-	if len(matches) == 0 {
-		return nil, errors.Errorf("template %q not found", identifier)
-	}
-	if len(matches) == 1 {
-		return &matches[0], nil
-	}
-
-	if !prompt.IsInteractive() || len(matches) > maxTemplatePromptOptions {
-		return nil, errors.Errorf("ambiguous template %q: %s", identifier, formatTemplateCandidates(matches))
-	}
-
-	ordered := make([]template.Template, len(matches))
-	copy(ordered, matches)
-	sort.SliceStable(ordered, func(i, j int) bool {
-		left := strings.ToLower(strings.TrimSpace(ordered[i].Name))
-		right := strings.ToLower(strings.TrimSpace(ordered[j].Name))
-		if left == right {
-			return ordered[i].ID < ordered[j].ID
-		}
-		return left < right
-	})
-
-	options := make([]string, len(ordered))
-	for i, tpl := range ordered {
+var templateRef = cmdutil.ResourceRef[template.Template, template.Template]{
+	Singular: "template",
+	Plural:   "templates",
+	IDHint:   "the template ID",
+	ListCmd:  "arcane templates list",
+	GetPath:  func(_, identifier string) string { return types.Endpoints.Template(identifier) },
+	ListPath: func(string) string { return types.Endpoints.Templates() },
+	Matches:  templateMatches,
+	Label: func(match template.Template) string {
 		source := "local"
-		if tpl.IsRemote {
+		if match.IsRemote {
 			source = "remote"
 		}
 		custom := "builtin"
-		if tpl.IsCustom {
+		if match.IsCustom {
 			custom = "custom"
 		}
-		options[i] = fmt.Sprintf("%s (id: %s, %s, %s)", tpl.Name, tpl.ID, source, custom)
-	}
-
-	choice, err := prompt.Select("template", options)
-	if err != nil {
-		return nil, err
-	}
-
-	return new(ordered[choice]), nil
+		return fmt.Sprintf("%s (id: %s, %s, %s)", match.Name, match.ID, source, custom)
+	},
+	Promote: func(match template.Template) *template.Template { return &match },
 }
 
-type rankedTemplateMatch struct {
-	template template.Template
-	score    int
-}
-
-func rankFuzzyTemplateMatches(query string, candidates []template.Template) []rankedTemplateMatch {
-	normalizedQuery := normalizeSearchToken(query)
-	if normalizedQuery == "" {
-		return nil
+func templateMatches(item template.Template, identifierLower, original string) bool {
+	if strings.EqualFold(item.ID, original) {
+		return true
 	}
-
-	ranked := make([]rankedTemplateMatch, 0, len(candidates))
-	for _, candidate := range candidates {
-		nameScore, nameOk := fuzzyScore(normalizedQuery, normalizeSearchToken(candidate.Name))
-		idScore, idOk := fuzzyScore(normalizedQuery, normalizeSearchToken(candidate.ID))
-
-		score := 0
-		matched := false
-		switch {
-		case nameOk && idOk:
-			if nameScore <= idScore {
-				score = nameScore
-			} else {
-				score = idScore + 10
-			}
-			matched = true
-		case nameOk:
-			score = nameScore
-			matched = true
-		case idOk:
-			score = idScore + 10
-			matched = true
-		}
-
-		if matched {
-			ranked = append(ranked, rankedTemplateMatch{template: candidate, score: score})
-		}
+	if strings.EqualFold(item.Name, original) {
+		return true
 	}
-
-	sort.Slice(ranked, func(i, j int) bool {
-		if ranked[i].score != ranked[j].score {
-			return ranked[i].score < ranked[j].score
-		}
-		if ranked[i].template.Name != ranked[j].template.Name {
-			return ranked[i].template.Name < ranked[j].template.Name
-		}
-		return ranked[i].template.ID < ranked[j].template.ID
-	})
-
-	return ranked
-}
-
-func normalizeSearchToken(value string) string {
-	var builder strings.Builder
-	builder.Grow(len(value))
-
-	for _, r := range strings.ToLower(strings.TrimSpace(value)) {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) {
-			builder.WriteRune(r)
-		}
+	if strings.Contains(strings.ToLower(item.Name), identifierLower) {
+		return true
 	}
-
-	return builder.String()
-}
-
-func fuzzyScore(query, target string) (int, bool) {
-	if query == "" || target == "" {
-		return 0, false
-	}
-	if query == target {
-		return 0, true
-	}
-
-	if strings.Contains(target, query) {
-		return 10 + absInt(len(target)-len(query)), true
-	}
-
-	if gap, ok := subsequenceGapPenalty(query, target); ok {
-		return 40 + gap, true
-	}
-
-	distance := levenshteinDistance(query, target)
-	maxDistance := maxInt(2, len(query)/3)
-	if distance <= maxDistance {
-		return 80 + (distance * 8) + absInt(len(target)-len(query)), true
-	}
-
-	return 0, false
-}
-
-func subsequenceGapPenalty(query, target string) (int, bool) {
-	q := []rune(query)
-	t := []rune(target)
-	if len(q) == 0 {
-		return 0, false
-	}
-
-	qIdx := 0
-	start := -1
-	for idx, r := range t {
-		if r != q[qIdx] {
-			continue
-		}
-		if start == -1 {
-			start = idx
-		}
-		qIdx++
-		if qIdx == len(q) {
-			span := (idx - start) + 1
-			gaps := span - len(q)
-			return gaps + absInt(len(t)-len(q)), true
-		}
-	}
-
-	return 0, false
-}
-
-func levenshteinDistance(a, b string) int {
-	ra := []rune(a)
-	rb := []rune(b)
-
-	if len(ra) == 0 {
-		return len(rb)
-	}
-	if len(rb) == 0 {
-		return len(ra)
-	}
-
-	prev := make([]int, len(rb)+1)
-	for j := 0; j <= len(rb); j++ {
-		prev[j] = j
-	}
-
-	for i := 1; i <= len(ra); i++ {
-		curr := make([]int, len(rb)+1)
-		curr[0] = i
-		for j := 1; j <= len(rb); j++ {
-			cost := 0
-			if ra[i-1] != rb[j-1] {
-				cost = 1
-			}
-			curr[j] = minInt(
-				curr[j-1]+1,
-				prev[j]+1,
-				prev[j-1]+cost,
-			)
-		}
-		prev = curr
-	}
-
-	return prev[len(rb)]
-}
-
-func isConfidentBestFuzzyMatch(matches []rankedTemplateMatch) bool {
-	if len(matches) == 0 {
-		return false
-	}
-
-	best := matches[0].score
-	if len(matches) == 1 {
-		return best <= 110
-	}
-
-	second := matches[1].score
-	return best <= 110 && (second-best) >= 8
-}
-
-func topTemplatesFromRankedMatches(matches []rankedTemplateMatch, limit int) []template.Template {
-	if limit <= 0 || len(matches) == 0 {
-		return nil
-	}
-	if len(matches) < limit {
-		limit = len(matches)
-	}
-
-	result := make([]template.Template, 0, limit)
-	for i := range limit {
-		result = append(result, matches[i].template)
-	}
-	return result
-}
-
-func minInt(values ...int) int {
-	if len(values) == 0 {
-		return 0
-	}
-	result := values[0]
-	for _, value := range values[1:] {
-		if value < result {
-			result = value
-		}
-	}
-	return result
-}
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-func absInt(value int) int {
-	if value < 0 {
-		return -value
-	}
-	return value
-}
-
-func formatTemplateCandidates(matches []template.Template) string {
-	const previewLimit = 5
-
-	if len(matches) == 0 {
-		return "no matches"
-	}
-
-	limit := min(len(matches), previewLimit)
-
-	parts := make([]string, 0, limit+1)
-	for i := range limit {
-		parts = append(parts, fmt.Sprintf("%s (%s)", matches[i].Name, matches[i].ID))
-	}
-
-	if len(matches) > limit {
-		parts = append(parts, fmt.Sprintf("and %d more", len(matches)-limit))
-	}
-
-	return strings.Join(parts, ", ")
+	return strings.HasPrefix(strings.ToLower(item.ID), identifierLower)
 }
 
 var createCmd = &cobra.Command{
@@ -854,24 +443,13 @@ var createCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Post(cmd.Context(), types.Endpoints.Templates(), req)
+		result, err := c.PostJSON[template.Template](cmd.Context(), types.Endpoints.Templates(), req)
 		if err != nil {
 			return errors.WrapIf(err, "failed to create template")
 		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result base.ApiResponse[template.Template]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
-		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Template created successfully")
@@ -931,14 +509,8 @@ var updateCmd = &cobra.Command{
 			req.EnvContent = string(envContent)
 		}
 
-		resp, err := c.Put(cmd.Context(), types.Endpoints.Template(args[0]), req)
+		result, err := c.PutJSON[template.Template](cmd.Context(), types.Endpoints.Template(args[0]), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to update template")
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result base.ApiResponse[template.Template]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
 			return errors.WrapIf(err, "failed to update template")
 		}
 
@@ -964,18 +536,9 @@ var downloadCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Post(cmd.Context(), types.Endpoints.TemplateDownload(args[0]), nil)
+		result, err := c.PostJSON[template.Template](cmd.Context(), types.Endpoints.TemplateDownload(args[0]), nil)
 		if err != nil {
 			return errors.WrapIf(err, "failed to download template")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to download template")
-		}
-
-		var result base.ApiResponse[template.Template]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
 		}
 
 		if templateDownloadOutput != "" {
@@ -1022,25 +585,13 @@ var defaultsSaveCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Post(cmd.Context(), types.Endpoints.TemplatesDefault(), req)
-		if err != nil {
-			return errors.WrapIf(err, "failed to save default templates")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to save default templates")
-		}
-
-		if jsonOutput {
-			var result base.ApiResponse[base.MessageResponse]
-			if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-				return err
-			}
-			return cmdutil.PrintJSON(result.Data)
-		}
-
-		output.Success("Default templates saved successfully")
-		return nil
+		return cmdutil.RunPostAction[base.MessageResponse](cmd, c, cmdutil.PostActionSpec{
+			Path:           types.Endpoints.TemplatesDefault(),
+			Body:           req,
+			FailureMessage: "failed to save default templates",
+			SuccessMessage: "Default templates saved successfully",
+			JSON:           jsonOutput,
+		})
 	},
 }
 
@@ -1078,14 +629,8 @@ var variablesUpdateCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Put(cmd.Context(), types.Endpoints.Variable(args[0]), req)
+		result, err := c.PutJSON[env.GlobalVariableMutationResponse](cmd.Context(), types.Endpoints.Variable(args[0]), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to update variable")
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result base.ApiResponse[env.GlobalVariableMutationResponse]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
 			return errors.WrapIf(err, "failed to update variable")
 		}
 
@@ -1143,15 +688,9 @@ var registriesUpdateCmd = &cobra.Command{
 			req.Enabled = false
 		}
 
-		resp, err := c.Put(cmd.Context(), types.Endpoints.TemplateRegistry(args[0]), req)
-		if err != nil {
-			return errors.WrapIf(err, "failed to update registry")
-		}
-		defer func() { _ = resp.Body.Close() }()
-
 		// The handler answers with a plain message, not the updated registry.
-		var result base.ApiResponse[base.MessageResponse]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+		result, err := c.PutJSON[base.MessageResponse](cmd.Context(), types.Endpoints.TemplateRegistry(args[0]), req)
+		if err != nil {
 			return errors.WrapIf(err, "failed to update registry")
 		}
 
@@ -1168,14 +707,8 @@ var registriesUpdateCmd = &cobra.Command{
 
 // fetchTemplateInternal loads a single template, including its content.
 func fetchTemplateInternal(cmd *cobra.Command, c *client.Client, id string) (template.Template, error) {
-	resp, err := c.Get(cmd.Context(), types.Endpoints.Template(id))
+	result, err := c.GetJSON[template.Template](cmd.Context(), types.Endpoints.Template(id))
 	if err != nil {
-		return template.Template{}, errors.WrapIf(err, "failed to load template")
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	var result base.ApiResponse[template.Template]
-	if err := cmdutil.DecodeJSON(resp, &result); err != nil {
 		return template.Template{}, errors.WrapIf(err, "failed to load template")
 	}
 	return result.Data, nil
@@ -1184,14 +717,8 @@ func fetchTemplateInternal(cmd *cobra.Command, c *client.Client, id string) (tem
 // fetchTemplateRegistryInternal looks a registry up by ID. The API exposes no
 // get-by-id route for template registries, so this filters the list.
 func fetchTemplateRegistryInternal(cmd *cobra.Command, c *client.Client, id string) (template.TemplateRegistry, error) {
-	resp, err := c.Get(cmd.Context(), types.Endpoints.TemplatesRegistries())
+	listed, err := c.GetJSON[[]template.TemplateRegistry](cmd.Context(), types.Endpoints.TemplatesRegistries())
 	if err != nil {
-		return template.TemplateRegistry{}, errors.WrapIf(err, "failed to load registry")
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	var listed base.ApiResponse[[]template.TemplateRegistry]
-	if err := cmdutil.DecodeJSON(resp, &listed); err != nil {
 		return template.TemplateRegistry{}, errors.WrapIf(err, "failed to load registry")
 	}
 
@@ -1214,26 +741,13 @@ var fetchCmd = &cobra.Command{
 		}
 
 		path := cmdutil.AppendQuery(types.Endpoints.TemplateFetch(), url.Values{"url": []string{templateFetchURL}})
-		resp, err := c.Get(cmd.Context(), path)
+		result, err := c.GetJSON[template.RemoteRegistry](cmd.Context(), path)
 		if err != nil {
-			return errors.WrapIf(err, "failed to fetch templates")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
 			return errors.WrapIf(err, "failed to fetch templates")
 		}
 
 		if jsonOutput {
-			var result base.ApiResponse[any]
-			if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-				return err
-			}
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Remote templates fetched successfully")

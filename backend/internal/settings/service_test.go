@@ -66,11 +66,11 @@ func newAdmissionGateForTestInternal(t testing.TB) *actors.Gate[actors.Admission
 
 func waitForSettingsNotificationsInternal(t *testing.T, svc *SettingsService) {
 	t.Helper()
-	_, err := actors.Execute(t.Context(), svc.writes, "wait for settings notification submission", func(context.Context) (actors.NoPayload, error) {
+	_, err := svc.writes.Execute(t.Context(), "wait for settings notification submission", func(context.Context) (actors.NoPayload, error) {
 		return actors.NoPayload{}, nil
 	}, nil)
 	require.NoError(t, err)
-	_, err = actors.Execute(t.Context(), svc.effects, "wait for settings notifications", func(context.Context) (actors.NoPayload, error) {
+	_, err = svc.effects.Execute(t.Context(), "wait for settings notifications", func(context.Context) (actors.NoPayload, error) {
 		return actors.NoPayload{}, nil
 	}, nil)
 	require.NoError(t, err)

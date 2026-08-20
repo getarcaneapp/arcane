@@ -310,7 +310,7 @@ func (s *ProjectService) filterProjectsWithDerivedFiltersInternal(
 	s.enrichProjectsWithUpdateInfoInternal(ctx, projectsArray, items)
 	items = s.appendDiscoveredComposeProjectUpdatesInternal(ctx, params, projectsArray, items)
 
-	return pagination.SearchOrderAndPaginate(items, withoutProjectDBFiltersInternal(params), s.buildProjectDerivedPaginationConfigInternal()), nil
+	return s.buildProjectDerivedPaginationConfigInternal().SearchOrderAndPaginate(items, withoutProjectDBFiltersInternal(params)), nil
 }
 
 func withoutProjectDBFiltersInternal(params pagination.QueryParams) pagination.QueryParams {

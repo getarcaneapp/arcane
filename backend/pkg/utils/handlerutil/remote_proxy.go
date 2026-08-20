@@ -12,10 +12,9 @@ import (
 // RemoteJSONProxy is the remote environment transport operation used by domain handlers.
 type RemoteJSONProxy func(context.Context, string, string, string, []byte, any) error
 
-// ProxyRemoteJSON marshals a request, invokes an environment proxy, and translates transport errors for Huma.
-func ProxyRemoteJSON[T any](
+// JSON marshals a request, invokes the environment proxy, and translates transport errors for Huma.
+func (p RemoteJSONProxy) JSON[T any](
 	ctx context.Context,
-	proxy RemoteJSONProxy,
 	environmentID string,
 	method string,
 	path string,
@@ -27,7 +26,7 @@ func ProxyRemoteJSON[T any](
 	}
 
 	var output T
-	if err := proxy(ctx, environmentID, method, path, body, &output); err != nil {
+	if err := p(ctx, environmentID, method, path, body, &output); err != nil {
 		return nil, TranslateRemoteProxyError(err)
 	}
 

@@ -20,7 +20,7 @@ func TestExecutorSerializesHeterogeneousTasksInternal(t *testing.T) {
 	releaseFirst := make(chan struct{})
 	firstResult := make(chan error, 1)
 	go func() {
-		_, executeErr := Execute(t.Context(), executor, "first", func(context.Context) (int, error) {
+		_, executeErr := executor.Execute(t.Context(), "first", func(context.Context) (int, error) {
 			close(firstStarted)
 			<-releaseFirst
 			return 1, nil
@@ -32,7 +32,7 @@ func TestExecutorSerializesHeterogeneousTasksInternal(t *testing.T) {
 	secondStarted := make(chan struct{})
 	secondResult := make(chan string, 1)
 	go func() {
-		value, executeErr := Execute(t.Context(), executor, "second", func(context.Context) (string, error) {
+		value, executeErr := executor.Execute(t.Context(), "second", func(context.Context) (string, error) {
 			close(secondStarted)
 			return "two", nil
 		}, nil)
@@ -65,7 +65,7 @@ func TestExecutorPublishesResultBeforeCompletionCallbackInternal(t *testing.T) {
 	releaseAfter := make(chan struct{})
 	result := make(chan int, 1)
 	go func() {
-		value, _ := Execute(t.Context(), executor, "ordered", func(context.Context) (int, error) {
+		value, _ := executor.Execute(t.Context(), "ordered", func(context.Context) (int, error) {
 			return 42, nil
 		}, func(int, error) {
 			close(afterStarted)
@@ -91,12 +91,12 @@ func TestExecutorContainsTaskPanicAndContinuesInternal(t *testing.T) {
 	executor, err := NewExecutor(t.Context(), runtime, "executor-test", "panic", 1)
 	require.NoError(t, err)
 
-	_, err = Execute(t.Context(), executor, "panic task", func(context.Context) (NoPayload, error) {
+	_, err = executor.Execute(t.Context(), "panic task", func(context.Context) (NoPayload, error) {
 		panic("deliberate executor panic")
 	}, nil)
 	require.ErrorContains(t, err, "panic task panicked")
 
-	value, err := Execute(t.Context(), executor, "following task", func(context.Context) (int, error) {
+	value, err := executor.Execute(t.Context(), "following task", func(context.Context) (int, error) {
 		return 7, nil
 	}, nil)
 	require.NoError(t, err)

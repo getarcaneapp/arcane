@@ -31,28 +31,16 @@ type GetProjectWorkspaceInput struct {
 	ProjectID     string `path:"projectId" doc:"Project ID"`
 }
 
-type GetProjectWorkspaceOutput struct {
-	Body base.ApiResponse[workspacetypes.Workspace]
-}
-
 type GetProjectWorkspaceFileInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ProjectID     string `path:"projectId" doc:"Project ID"`
 	RelativePath  string `query:"relativePath" doc:"Path relative to the project workspace root"`
 }
 
-type GetProjectWorkspaceFileOutput struct {
-	Body base.ApiResponse[workspacetypes.FileContent]
-}
-
 type UpdateProjectWorkspaceInput struct {
 	EnvironmentID string         `path:"id" doc:"Environment ID"`
 	ProjectID     string         `path:"projectId" doc:"Project ID"`
 	RawBody       multipart.Form `contentType:"multipart/form-data"`
-}
-
-type UpdateProjectWorkspaceOutput struct {
-	Body base.ApiResponse[workspacetypes.Workspace]
 }
 
 func registerProjectWorkspaceRoutesInternal(api huma.API, h *ProjectHandler) {
@@ -83,20 +71,20 @@ func projectWorkspaceHTTPErrorInternal(err error) error {
 	}
 }
 
-func (h *ProjectHandler) GetProjectWorkspace(ctx context.Context, input *GetProjectWorkspaceInput) (*GetProjectWorkspaceOutput, error) {
+func (h *ProjectHandler) GetProjectWorkspace(ctx context.Context, input *GetProjectWorkspaceInput) (*handlerutil.Out[workspacetypes.Workspace], error) {
 	result, err := h.projectService.GetProjectWorkspace(ctx, input.ProjectID)
 	if err != nil {
 		return nil, projectWorkspaceHTTPErrorInternal(err)
 	}
-	return &GetProjectWorkspaceOutput{Body: base.ApiResponse[workspacetypes.Workspace]{Success: true, Data: *result}}, nil
+	return &handlerutil.Out[workspacetypes.Workspace]{Body: base.ApiResponse[workspacetypes.Workspace]{Success: true, Data: *result}}, nil
 }
 
-func (h *ProjectHandler) GetProjectWorkspaceFile(ctx context.Context, input *GetProjectWorkspaceFileInput) (*GetProjectWorkspaceFileOutput, error) {
+func (h *ProjectHandler) GetProjectWorkspaceFile(ctx context.Context, input *GetProjectWorkspaceFileInput) (*handlerutil.Out[workspacetypes.FileContent], error) {
 	result, err := h.projectService.GetProjectWorkspaceFile(ctx, input.ProjectID, input.RelativePath)
 	if err != nil {
 		return nil, projectWorkspaceHTTPErrorInternal(err)
 	}
-	return &GetProjectWorkspaceFileOutput{Body: base.ApiResponse[workspacetypes.FileContent]{Success: true, Data: *result}}, nil
+	return &handlerutil.Out[workspacetypes.FileContent]{Body: base.ApiResponse[workspacetypes.FileContent]{Success: true, Data: *result}}, nil
 }
 
 func (h *ProjectHandler) DownloadProjectWorkspaceFile(ctx context.Context, input *GetProjectWorkspaceFileInput) (*huma.StreamResponse, error) {
@@ -113,7 +101,7 @@ func (h *ProjectHandler) DownloadProjectWorkspaceFile(ctx context.Context, input
 	}}, nil
 }
 
-func (h *ProjectHandler) UpdateProjectWorkspace(ctx context.Context, input *UpdateProjectWorkspaceInput) (*UpdateProjectWorkspaceOutput, error) {
+func (h *ProjectHandler) UpdateProjectWorkspace(ctx context.Context, input *UpdateProjectWorkspaceInput) (*handlerutil.Out[workspacetypes.Workspace], error) {
 	manifest, err := handlerutil.ParseMultipartJSONPart[projecttypes.WorkspaceUpdateManifest](input.RawBody, "manifest")
 	if err != nil {
 		return nil, err
@@ -145,5 +133,5 @@ func (h *ProjectHandler) UpdateProjectWorkspace(ctx context.Context, input *Upda
 		return nil, projectWorkspaceHTTPErrorInternal(err)
 	}
 	result.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
-	return &UpdateProjectWorkspaceOutput{Body: base.ApiResponse[workspacetypes.Workspace]{Success: true, Data: *result}}, nil
+	return &handlerutil.Out[workspacetypes.Workspace]{Body: base.ApiResponse[workspacetypes.Workspace]{Success: true, Data: *result}}, nil
 }

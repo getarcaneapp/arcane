@@ -54,14 +54,6 @@ type DeleteUploadSessionInput struct {
 	UploadID      string `path:"uploadId"`
 }
 
-type UploadSessionOutput struct {
-	Body base.ApiResponse[uploadtypes.Session]
-}
-
-type DeleteUploadSessionOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
-}
-
 // SessionHTTPError maps upload-session errors to HTTP errors for this package
 // and the domain endpoints that consume sessions. It returns nil for errors
 // that are not upload-session errors.
@@ -95,8 +87,8 @@ func requireUploadPermissionInternal(ctx context.Context, kind, environmentID st
 	return nil
 }
 
-func sessionResponseInternal(session *uploadtypes.Session) *UploadSessionOutput {
-	return &UploadSessionOutput{
+func sessionResponseInternal(session *uploadtypes.Session) *handlerutil.Out[uploadtypes.Session] {
+	return &handlerutil.Out[uploadtypes.Session]{
 		Body: base.ApiResponse[uploadtypes.Session]{
 			Success: true,
 			Data:    *session,
@@ -104,7 +96,7 @@ func sessionResponseInternal(session *uploadtypes.Session) *UploadSessionOutput 
 	}
 }
 
-func (h *UploadHandler) CreateSession(ctx context.Context, input *CreateUploadSessionInput) (*UploadSessionOutput, error) {
+func (h *UploadHandler) CreateSession(ctx context.Context, input *CreateUploadSessionInput) (*handlerutil.Out[uploadtypes.Session], error) {
 	if err := requireUploadPermissionInternal(ctx, input.Kind, input.EnvironmentID); err != nil {
 		return nil, err
 	}
@@ -118,7 +110,7 @@ func (h *UploadHandler) CreateSession(ctx context.Context, input *CreateUploadSe
 	return sessionResponseInternal(session), nil
 }
 
-func (h *UploadHandler) UploadChunk(ctx context.Context, input *UploadChunkInput) (*UploadSessionOutput, error) {
+func (h *UploadHandler) UploadChunk(ctx context.Context, input *UploadChunkInput) (*handlerutil.Out[uploadtypes.Session], error) {
 	if err := requireUploadPermissionInternal(ctx, input.Kind, input.EnvironmentID); err != nil {
 		return nil, err
 	}
@@ -132,7 +124,7 @@ func (h *UploadHandler) UploadChunk(ctx context.Context, input *UploadChunkInput
 	return sessionResponseInternal(session), nil
 }
 
-func (h *UploadHandler) GetSession(ctx context.Context, input *GetUploadSessionInput) (*UploadSessionOutput, error) {
+func (h *UploadHandler) GetSession(ctx context.Context, input *GetUploadSessionInput) (*handlerutil.Out[uploadtypes.Session], error) {
 	if err := requireUploadPermissionInternal(ctx, input.Kind, input.EnvironmentID); err != nil {
 		return nil, err
 	}
@@ -146,7 +138,7 @@ func (h *UploadHandler) GetSession(ctx context.Context, input *GetUploadSessionI
 	return sessionResponseInternal(session), nil
 }
 
-func (h *UploadHandler) DeleteSession(ctx context.Context, input *DeleteUploadSessionInput) (*DeleteUploadSessionOutput, error) {
+func (h *UploadHandler) DeleteSession(ctx context.Context, input *DeleteUploadSessionInput) (*handlerutil.Out[base.MessageResponse], error) {
 	if err := requireUploadPermissionInternal(ctx, input.Kind, input.EnvironmentID); err != nil {
 		return nil, err
 	}
@@ -156,7 +148,7 @@ func (h *UploadHandler) DeleteSession(ctx context.Context, input *DeleteUploadSe
 		}
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	return &DeleteUploadSessionOutput{
+	return &handlerutil.Out[base.MessageResponse]{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data:    base.MessageResponse{Message: "Upload session deleted"},

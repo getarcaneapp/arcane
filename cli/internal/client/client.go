@@ -566,26 +566,48 @@ func (c *Client) DeleteWithBody(ctx context.Context, path string, body any) (*ht
 	return c.Request(ctx, http.MethodDelete, path, body)
 }
 
-// DoJSON performs a request and decodes a standard API envelope into out.
-func (c *Client) DoJSON(ctx context.Context, method, path string, body any, out any) error {
+// DoJSON performs a request and decodes the response JSON, enforcing a
+// successful HTTP status. Unlike GetJSON/PostJSON it does not require the
+// standard API envelope or its Success flag.
+func (c *Client) DoJSON[T any](ctx context.Context, method, path string, body any) (T, error) {
+	var out T
 	resp, err := c.Request(ctx, method, path, body)
 	if err != nil {
-		return err
+		return out, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
-		return errors.Errorf("request failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+		return out, errors.Errorf("request failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
 	}
 
-	if out == nil {
-		return nil
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return out, errors.WrapIf(err, "failed to decode response")
 	}
-	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
-		return errors.WrapIf(err, "failed to decode response")
+	return out, nil
+}
+
+// GetJSON performs a GET and decodes the standard API envelope, enforcing
+// HTTP and API success.
+func (c *Client) GetJSON[T any](ctx context.Context, path string) (*APIResponse[T], error) {
+	resp, err := c.Get(ctx, path)
+	if err != nil {
+		return nil, err
 	}
-	return nil
+	defer func() { _ = resp.Body.Close() }()
+	return decodeResponseStrictInternal[T](resp)
+}
+
+// PostJSON performs a POST with a JSON body and decodes the standard API
+// envelope, enforcing HTTP and API success.
+func (c *Client) PostJSON[T any](ctx context.Context, path string, body any) (*APIResponse[T], error) {
+	resp, err := c.Post(ctx, path, body)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	return decodeResponseStrictInternal[T](resp)
 }
 
 // DoRaw performs a request and returns the response payload when status is 2xx.
@@ -608,14 +630,33 @@ func (c *Client) DoRaw(ctx context.Context, method, path string, body any) ([]by
 	return b, nil
 }
 
-// DecodeResponseStrict decodes an API response into the given type and enforces
-// HTTP and API success. It reads the response body, unmarshals it as JSON, and
-// returns the typed result. If the response indicates failure (Success=false) or
-// carries a non-2xx status code, an error is returned with the message from the
-// API. Note: This function closes the response body.
-func DecodeResponseStrict[T any](resp *http.Response) (*APIResponse[T], error) {
+// PutJSON performs a PUT with a JSON body and decodes the standard API
+// envelope, enforcing HTTP and API success.
+func (c *Client) PutJSON[T any](ctx context.Context, path string, body any) (*APIResponse[T], error) {
+	resp, err := c.Put(ctx, path, body)
+	if err != nil {
+		return nil, err
+	}
 	defer func() { _ = resp.Body.Close() }()
+	return decodeResponseStrictInternal[T](resp)
+}
 
+// DeleteJSON performs a DELETE and decodes the standard API envelope,
+// enforcing HTTP and API success.
+func (c *Client) DeleteJSON[T any](ctx context.Context, path string) (*APIResponse[T], error) {
+	resp, err := c.Delete(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	return decodeResponseStrictInternal[T](resp)
+}
+
+// decodeResponseStrictInternal decodes an API response into the given type and
+// enforces HTTP and API success. If the response indicates failure
+// (Success=false) or carries a non-2xx status code, an error is returned with
+// the message from the API. The caller owns the response body.
+func decodeResponseStrictInternal[T any](resp *http.Response) (*APIResponse[T], error) {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
 		return nil, errors.Errorf("request failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))

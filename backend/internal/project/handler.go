@@ -57,26 +57,13 @@ type ListProjectsInput struct {
 	Tags          string `query:"tags" doc:"Filter by tag names (comma-separated, OR semantics)"`
 }
 
-type ListProjectsOutput struct {
-	Body base.Paginated[project.Details]
-}
-
 type GetProjectStatusCountsInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
-
-type GetProjectStatusCountsOutput struct {
-	Body base.ApiResponse[project.StatusCounts]
 }
 
 // ListProjectTagsInput identifies the environment whose tag catalog is requested.
 type ListProjectTagsInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
-
-// ListProjectTagsOutput contains the environment's distinct project tag options.
-type ListProjectTagsOutput struct {
-	Body base.ApiResponse[[]project.TagOption]
 }
 
 // UpdateProjectTagInput identifies a project and the UI tag mutation to apply.
@@ -86,19 +73,10 @@ type UpdateProjectTagInput struct {
 	Body          project.UpdateTag
 }
 
-// UpdateProjectTagOutput contains the project's effective tags after mutation.
-type UpdateProjectTagOutput struct {
-	Body base.ApiResponse[project.UpdateTagResponse]
-}
-
 type DeployProjectInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ProjectID     string `path:"projectId" doc:"Project ID"`
 	Body          *project.DeployOptions
-}
-
-type DeployProjectOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
 }
 
 type DownProjectInput struct {
@@ -106,26 +84,14 @@ type DownProjectInput struct {
 	ProjectID     string `path:"projectId" doc:"Project ID"`
 }
 
-type DownProjectOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
-}
-
 type CreateProjectInput struct {
 	EnvironmentID string         `path:"id" doc:"Environment ID"`
 	RawBody       multipart.Form `contentType:"multipart/form-data"`
 }
 
-type CreateProjectOutput struct {
-	Body base.ApiResponse[project.CreateReponse]
-}
-
 type GetProjectInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ProjectID     string `path:"projectId" doc:"Project ID"`
-}
-
-type GetProjectOutput struct {
-	Body base.ApiResponse[project.Details]
 }
 
 type RedeployProjectInput struct {
@@ -140,28 +106,16 @@ type DestroyProjectInput struct {
 	Body          *project.Destroy
 }
 
-type DestroyProjectOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
-}
-
 type UpdateProjectInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ProjectID     string `path:"projectId" doc:"Project ID"`
 	Body          project.UpdateProject
 }
 
-type UpdateProjectOutput struct {
-	Body base.ApiResponse[project.Details]
-}
-
 type RestartProjectInput struct {
 	EnvironmentID string   `path:"id" doc:"Environment ID"`
 	ProjectID     string   `path:"projectId" doc:"Project ID"`
 	Services      []string `query:"services" doc:"Service names to restart; empty restarts all services"`
-}
-
-type RestartProjectOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
 }
 
 type UpdateProjectServicesInput struct {
@@ -172,26 +126,14 @@ type UpdateProjectServicesInput struct {
 	}
 }
 
-type UpdateProjectServicesOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
-}
-
 type ArchiveProjectInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ProjectID     string `path:"projectId" doc:"Project ID"`
 }
 
-type ArchiveProjectOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
-}
-
 type UnarchiveProjectInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ProjectID     string `path:"projectId" doc:"Project ID"`
-}
-
-type UnarchiveProjectOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
 }
 
 type PullProjectImagesInput struct {
@@ -437,7 +379,7 @@ func RegisterProjects(api huma.API, projectService *ProjectService, activityServ
 }
 
 // ListProjects returns a paginated list of projects.
-func (h *ProjectHandler) ListProjects(ctx context.Context, input *ListProjectsInput) (*ListProjectsOutput, error) {
+func (h *ProjectHandler) ListProjects(ctx context.Context, input *ListProjectsInput) (*handlerutil.Page[project.Details], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	if input.Status != "" {
 		params.Filters["status"] = input.Status
@@ -464,7 +406,7 @@ func (h *ProjectHandler) ListProjects(ctx context.Context, input *ListProjectsIn
 		projects = []project.Details{}
 	}
 
-	return &ListProjectsOutput{
+	return &handlerutil.Page[project.Details]{
 		Body: base.Paginated[project.Details]{
 			Success:    true,
 			Data:       projects,
@@ -474,13 +416,13 @@ func (h *ProjectHandler) ListProjects(ctx context.Context, input *ListProjectsIn
 }
 
 // GetProjectStatusCounts returns counts of projects by status.
-func (h *ProjectHandler) GetProjectStatusCounts(ctx context.Context, input *GetProjectStatusCountsInput) (*GetProjectStatusCountsOutput, error) {
+func (h *ProjectHandler) GetProjectStatusCounts(ctx context.Context, input *GetProjectStatusCountsInput) (*handlerutil.Out[project.StatusCounts], error) {
 	_, running, stopped, total, archived, err := h.projectService.GetProjectStatusCounts(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to get project status counts").Error())
 	}
 
-	return &GetProjectStatusCountsOutput{
+	return &handlerutil.Out[project.StatusCounts]{
 		Body: base.ApiResponse[project.StatusCounts]{
 			Success: true,
 			Data: project.StatusCounts{
@@ -494,7 +436,7 @@ func (h *ProjectHandler) GetProjectStatusCounts(ctx context.Context, input *GetP
 }
 
 // ListProjectTags returns the reusable project tag catalog for an environment.
-func (h *ProjectHandler) ListProjectTags(ctx context.Context, _ *ListProjectTagsInput) (*ListProjectTagsOutput, error) {
+func (h *ProjectHandler) ListProjectTags(ctx context.Context, _ *ListProjectTagsInput) (*handlerutil.Out[[]project.TagOption], error) {
 	options, err := h.projectService.ListProjectTagOptions(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to list project tags").Error())
@@ -502,11 +444,11 @@ func (h *ProjectHandler) ListProjectTags(ctx context.Context, _ *ListProjectTags
 	if options == nil {
 		options = []project.TagOption{}
 	}
-	return &ListProjectTagsOutput{Body: base.ApiResponse[[]project.TagOption]{Success: true, Data: options}}, nil
+	return &handlerutil.Out[[]project.TagOption]{Body: base.ApiResponse[[]project.TagOption]{Success: true, Data: options}}, nil
 }
 
 // UpdateProjectTag applies one UI-managed project tag association change.
-func (h *ProjectHandler) UpdateProjectTag(ctx context.Context, input *UpdateProjectTagInput) (*UpdateProjectTagOutput, error) {
+func (h *ProjectHandler) UpdateProjectTag(ctx context.Context, input *UpdateProjectTagInput) (*handlerutil.Out[project.UpdateTagResponse], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -541,7 +483,7 @@ func (h *ProjectHandler) UpdateProjectTag(ctx context.Context, input *UpdateProj
 		}
 	}
 
-	return &UpdateProjectTagOutput{Body: base.ApiResponse[project.UpdateTagResponse]{
+	return &handlerutil.Out[project.UpdateTagResponse]{Body: base.ApiResponse[project.UpdateTagResponse]{
 		Success: true,
 		Data: project.UpdateTagResponse{
 			Tags:       tags,
@@ -647,7 +589,7 @@ func (h *ProjectHandler) DeployProject(ctx context.Context, input *DeployProject
 }
 
 // DownProject brings down a Docker Compose project.
-func (h *ProjectHandler) DownProject(ctx context.Context, input *DownProjectInput) (*DownProjectOutput, error) {
+func (h *ProjectHandler) DownProject(ctx context.Context, input *DownProjectInput) (*handlerutil.Out[base.MessageResponse], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -668,7 +610,7 @@ func (h *ProjectHandler) DownProject(ctx context.Context, input *DownProjectInpu
 	activitylib.FlushWriter(activityWriter)
 	activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Project stopped", nil)
 
-	return &DownProjectOutput{
+	return &handlerutil.Out[base.MessageResponse]{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data: base.MessageResponse{
@@ -708,7 +650,7 @@ func projectWorkspaceRequestHTTPErrorInternal(err error) error {
 }
 
 // CreateProject creates a new Docker Compose project.
-func (h *ProjectHandler) CreateProject(ctx context.Context, input *CreateProjectInput) (*CreateProjectOutput, error) {
+func (h *ProjectHandler) CreateProject(ctx context.Context, input *CreateProjectInput) (*handlerutil.Out[project.CreateReponse], error) {
 	projectInput, err := handlerutil.ParseMultipartJSONPart[project.CreateProject](input.RawBody, "project")
 	if err != nil {
 		return nil, err
@@ -774,7 +716,7 @@ func (h *ProjectHandler) CreateProject(ctx context.Context, input *CreateProject
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to load project tags").Error())
 	}
 
-	return &CreateProjectOutput{
+	return &handlerutil.Out[project.CreateReponse]{
 		Body: base.ApiResponse[project.CreateReponse]{
 			Success: true,
 			Data:    response,
@@ -783,7 +725,7 @@ func (h *ProjectHandler) CreateProject(ctx context.Context, input *CreateProject
 }
 
 // GetProject returns a project by ID.
-func (h *ProjectHandler) GetProject(ctx context.Context, input *GetProjectInput) (*GetProjectOutput, error) {
+func (h *ProjectHandler) GetProject(ctx context.Context, input *GetProjectInput) (*handlerutil.Out[project.Details], error) {
 	if input.ProjectID == "" {
 		return nil, huma.Error400BadRequest("Project ID is required")
 	}
@@ -793,7 +735,7 @@ func (h *ProjectHandler) GetProject(ctx context.Context, input *GetProjectInput)
 		return nil, huma.Error404NotFound(errors.WithMessage(err, "Failed to get project details").Error())
 	}
 
-	return &GetProjectOutput{
+	return &handlerutil.Out[project.Details]{
 		Body: base.ApiResponse[project.Details]{
 			Success: true,
 			Data:    details,
@@ -801,7 +743,7 @@ func (h *ProjectHandler) GetProject(ctx context.Context, input *GetProjectInput)
 	}, nil
 }
 
-func (h *ProjectHandler) getProjectDetailsWithOptionsInternal(ctx context.Context, input *GetProjectInput, opts project.DetailsOptions) (*GetProjectOutput, error) {
+func (h *ProjectHandler) getProjectDetailsWithOptionsInternal(ctx context.Context, input *GetProjectInput, opts project.DetailsOptions) (*handlerutil.Out[project.Details], error) {
 	if input.ProjectID == "" {
 		return nil, huma.Error400BadRequest("Project ID is required")
 	}
@@ -811,7 +753,7 @@ func (h *ProjectHandler) getProjectDetailsWithOptionsInternal(ctx context.Contex
 		return nil, huma.Error404NotFound(errors.WithMessage(err, "Failed to get project details").Error())
 	}
 
-	return &GetProjectOutput{
+	return &handlerutil.Out[project.Details]{
 		Body: base.ApiResponse[project.Details]{
 			Success: true,
 			Data:    details,
@@ -819,7 +761,7 @@ func (h *ProjectHandler) getProjectDetailsWithOptionsInternal(ctx context.Contex
 	}, nil
 }
 
-func (h *ProjectHandler) GetProjectCompose(ctx context.Context, input *GetProjectInput) (*GetProjectOutput, error) {
+func (h *ProjectHandler) GetProjectCompose(ctx context.Context, input *GetProjectInput) (*handlerutil.Out[project.Details], error) {
 	return h.getProjectDetailsWithOptionsInternal(ctx, input, project.DetailsOptions{
 		IncludeComposeContent: true,
 		IncludeEnvState:       true,
@@ -828,13 +770,13 @@ func (h *ProjectHandler) GetProjectCompose(ctx context.Context, input *GetProjec
 	})
 }
 
-func (h *ProjectHandler) GetProjectRuntime(ctx context.Context, input *GetProjectInput) (*GetProjectOutput, error) {
+func (h *ProjectHandler) GetProjectRuntime(ctx context.Context, input *GetProjectInput) (*handlerutil.Out[project.Details], error) {
 	return h.getProjectDetailsWithOptionsInternal(ctx, input, project.DetailsOptions{
 		IncludeRuntimeServices: true,
 	})
 }
 
-func (h *ProjectHandler) GetProjectUpdates(ctx context.Context, input *GetProjectInput) (*GetProjectOutput, error) {
+func (h *ProjectHandler) GetProjectUpdates(ctx context.Context, input *GetProjectInput) (*handlerutil.Out[project.Details], error) {
 	return h.getProjectDetailsWithOptionsInternal(ctx, input, project.DetailsOptions{
 		IncludeServiceConfigs: true,
 		IncludeUpdateInfo:     true,
@@ -868,7 +810,7 @@ func (h *ProjectHandler) RedeployProject(ctx context.Context, input *RedeployPro
 }
 
 // DestroyProject destroys a Docker Compose project.
-func (h *ProjectHandler) DestroyProject(ctx context.Context, input *DestroyProjectInput) (*DestroyProjectOutput, error) {
+func (h *ProjectHandler) DestroyProject(ctx context.Context, input *DestroyProjectInput) (*handlerutil.Out[base.MessageResponse], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -902,7 +844,7 @@ func (h *ProjectHandler) DestroyProject(ctx context.Context, input *DestroyProje
 	activitylib.FlushWriter(activityWriter)
 	activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Project destroyed", nil)
 
-	return &DestroyProjectOutput{
+	return &handlerutil.Out[base.MessageResponse]{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data: base.MessageResponse{
@@ -914,7 +856,7 @@ func (h *ProjectHandler) DestroyProject(ctx context.Context, input *DestroyProje
 }
 
 // UpdateProject updates a Docker Compose project.
-func (h *ProjectHandler) UpdateProject(ctx context.Context, input *UpdateProjectInput) (*UpdateProjectOutput, error) {
+func (h *ProjectHandler) UpdateProject(ctx context.Context, input *UpdateProjectInput) (*handlerutil.Out[project.Details], error) {
 	if input.ProjectID == "" {
 		return nil, huma.Error400BadRequest("Project ID is required")
 	}
@@ -960,7 +902,7 @@ func (h *ProjectHandler) UpdateProject(ctx context.Context, input *UpdateProject
 	}
 	details.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
 
-	return &UpdateProjectOutput{
+	return &handlerutil.Out[project.Details]{
 		Body: base.ApiResponse[project.Details]{
 			Success: true,
 			Data:    details,
@@ -970,19 +912,19 @@ func (h *ProjectHandler) UpdateProject(ctx context.Context, input *UpdateProject
 
 // RestartProject restarts the given services in a project (all services when none
 // are specified).
-func (h *ProjectHandler) RestartProject(ctx context.Context, input *RestartProjectInput) (*RestartProjectOutput, error) {
+func (h *ProjectHandler) RestartProject(ctx context.Context, input *RestartProjectInput) (*handlerutil.Out[base.MessageResponse], error) {
 	response, err := h.runProjectActivityActionResponseInternal(ctx, input.EnvironmentID, input.ProjectID, h.restartProjectActivityConfigInternal(input.Services))
 	if err != nil {
 		return nil, err
 	}
 
-	return &RestartProjectOutput{
+	return &handlerutil.Out[base.MessageResponse]{
 		Body: response,
 	}, nil
 }
 
 // UpdateProjectServices pulls the latest images for the given services and recreates them.
-func (h *ProjectHandler) UpdateProjectServices(ctx context.Context, input *UpdateProjectServicesInput) (*UpdateProjectServicesOutput, error) {
+func (h *ProjectHandler) UpdateProjectServices(ctx context.Context, input *UpdateProjectServicesInput) (*handlerutil.Out[base.MessageResponse], error) {
 	var serviceNames []string
 	if input.Body != nil {
 		serviceNames = input.Body.Services
@@ -993,7 +935,7 @@ func (h *ProjectHandler) UpdateProjectServices(ctx context.Context, input *Updat
 		return nil, err
 	}
 
-	return &UpdateProjectServicesOutput{
+	return &handlerutil.Out[base.MessageResponse]{
 		Body: response,
 	}, nil
 }
@@ -1110,7 +1052,7 @@ func (h *ProjectHandler) runProjectActivityActionInternal(ctx context.Context, e
 	}, nil
 }
 
-func (h *ProjectHandler) ArchiveProject(ctx context.Context, input *ArchiveProjectInput) (*ArchiveProjectOutput, error) {
+func (h *ProjectHandler) ArchiveProject(ctx context.Context, input *ArchiveProjectInput) (*handlerutil.Out[base.MessageResponse], error) {
 	if input.ProjectID == "" {
 		return nil, huma.Error400BadRequest("Project ID is required")
 	}
@@ -1127,7 +1069,7 @@ func (h *ProjectHandler) ArchiveProject(ctx context.Context, input *ArchiveProje
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to archive project").Error())
 	}
 
-	return &ArchiveProjectOutput{
+	return &handlerutil.Out[base.MessageResponse]{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data:    base.MessageResponse{Message: "Project archived successfully"},
@@ -1135,7 +1077,7 @@ func (h *ProjectHandler) ArchiveProject(ctx context.Context, input *ArchiveProje
 	}, nil
 }
 
-func (h *ProjectHandler) UnarchiveProject(ctx context.Context, input *UnarchiveProjectInput) (*UnarchiveProjectOutput, error) {
+func (h *ProjectHandler) UnarchiveProject(ctx context.Context, input *UnarchiveProjectInput) (*handlerutil.Out[base.MessageResponse], error) {
 	if input.ProjectID == "" {
 		return nil, huma.Error400BadRequest("Project ID is required")
 	}
@@ -1149,7 +1091,7 @@ func (h *ProjectHandler) UnarchiveProject(ctx context.Context, input *UnarchiveP
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to unarchive project").Error())
 	}
 
-	return &UnarchiveProjectOutput{
+	return &handlerutil.Out[base.MessageResponse]{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data:    base.MessageResponse{Message: "Project unarchived successfully"},

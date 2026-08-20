@@ -3,6 +3,7 @@ package settings
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 
 	"emperror.dev/errors"
@@ -59,23 +60,13 @@ var updateCmd = &cobra.Command{
 			return errors.WrapIf(err, "failed to parse settings file")
 		}
 
-		resp, err := c.Put(cmd.Context(), types.Endpoints.Settings(c.EnvID()), req)
+		result, err := c.PutJSON[[]settings.SettingDto](cmd.Context(), types.Endpoints.Settings(c.EnvID()), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to update settings")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
 			return errors.WrapIf(err, "failed to update settings")
 		}
 
 		if jsonOutput {
-			var result any
-			if err := json.NewDecoder(resp.Body).Decode(&result); err == nil {
-				if resultBytes, err := json.MarshalIndent(result, "", "  "); err == nil {
-					fmt.Println(string(resultBytes))
-				}
-			}
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Settings updated successfully")
@@ -108,24 +99,13 @@ func runSettingsList(cmd *cobra.Command, cfg settingsListConfig) error {
 		return err
 	}
 
-	resp, err := c.Get(cmd.Context(), cfg.endpoint(c.EnvID()))
+	result, err := c.DoJSON[[]settings.PublicSetting](cmd.Context(), http.MethodGet, cfg.endpoint(c.EnvID()), nil)
 	if err != nil {
 		return errors.WrapIff(err, "%s", cfg.failureMessage)
 	}
-	defer func() { _ = resp.Body.Close() }()
-
-	var result []settings.PublicSetting
-	if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-		return err
-	}
 
 	if jsonOutput {
-		resultBytes, err := json.MarshalIndent(result, "", "  ")
-		if err != nil {
-			return errors.WrapIf(err, "failed to marshal JSON")
-		}
-		fmt.Println(string(resultBytes))
-		return nil
+		return cmdutil.PrintJSON(result)
 	}
 
 	headers := []string{"KEY", "TYPE", "VALUE"}

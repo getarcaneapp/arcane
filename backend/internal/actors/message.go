@@ -61,11 +61,11 @@ func (p *Promise[T]) Done() <-chan T {
 	return p.done
 }
 
-// awaitInternal waits for a promise while preserving a result that races with caller
+// await waits for a promise while preserving a result that races with caller
 // cancellation or actor termination.
-func awaitInternal[T any](ctx context.Context, handle *handleInternal, promise *Promise[T], stoppedErr error) (T, error) {
+func (h *handleInternal) await[T any](ctx context.Context, promise *Promise[T], stoppedErr error) (T, error) {
 	var zero T
-	if ctx == nil || handle == nil || promise == nil {
+	if ctx == nil || h == nil || promise == nil {
 		return zero, errors.New("actor wait unavailable")
 	}
 	select {
@@ -78,7 +78,7 @@ func awaitInternal[T any](ctx context.Context, handle *handleInternal, promise *
 		default:
 			return zero, ctx.Err()
 		}
-	case <-handle.Done():
+	case <-h.Done():
 		select {
 		case result := <-promise.Done():
 			return result, nil
@@ -279,7 +279,7 @@ func (t *Timer[K]) Stop() {
 	}
 }
 
-// requestHandleInternal sends a typed request through Arcane's promise envelope.
+// requestInternal sends a typed request through Arcane's promise envelope.
 type requestInternal struct {
 	message any
 	reply   *Promise[requestResultInternal]
@@ -290,16 +290,16 @@ type requestResultInternal struct {
 	err     error
 }
 
-func requestHandleInternal[K comparable, Q, R any](ctx context.Context, handle *handleInternal, request Message[K, Q]) (Message[K, R], error) {
+func (h *handleInternal) request[K comparable, Q, R any](ctx context.Context, request Message[K, Q]) (Message[K, R], error) {
 	var zero Message[K, R]
-	if ctx == nil || handle == nil {
+	if ctx == nil || h == nil {
 		return zero, errors.New("actor request target unavailable")
 	}
 	reply := NewPromise[requestResultInternal]()
-	if err := handle.Send(requestInternal{message: request, reply: reply}); err != nil {
+	if err := h.Send(requestInternal{message: request, reply: reply}); err != nil {
 		return zero, err
 	}
-	result, err := awaitInternal(ctx, handle, reply, errors.New("actor stopped"))
+	result, err := h.await(ctx, reply, errors.New("actor stopped"))
 	if err != nil {
 		return zero, err
 	}

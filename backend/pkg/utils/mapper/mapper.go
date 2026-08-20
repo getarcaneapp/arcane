@@ -59,7 +59,7 @@ func MapOne[S any, D any](source S) (D, error) {
 	return dest, nil
 }
 
-func MapStruct(source any, destination any) error {
+func MapStruct[S any, D any](source S, destination *D) error {
 	return copier.CopyWithOption(destination, source, copier.Option{
 		DeepCopy:   true,
 		Converters: typeConverters,

@@ -92,10 +92,6 @@ type BrowseBuildsInput struct {
 	Path          string `query:"path" default:"/" doc:"Directory path to browse"`
 }
 
-type BrowseBuildsOutput struct {
-	Body base.ApiResponse[[]workspacetypes.FileEntry]
-}
-
 type GetBuildFileContentInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Path          string `query:"path" doc:"File path"`
@@ -105,10 +101,6 @@ type GetBuildFileContentInput struct {
 type BuildFileContentResponse struct {
 	Content  []byte `json:"content"`
 	MimeType string `json:"mimeType"`
-}
-
-type GetBuildFileContentOutput struct {
-	Body base.ApiResponse[BuildFileContentResponse]
 }
 
 type DownloadBuildFileInput struct {
@@ -139,20 +131,20 @@ type DeleteBuildFileInput struct {
 	Path          string `query:"path" doc:"File or directory path to delete"`
 }
 
-func (h *BuildWorkspaceHandler) BrowseDirectory(ctx context.Context, input *BrowseBuildsInput) (*BrowseBuildsOutput, error) {
+func (h *BuildWorkspaceHandler) BrowseDirectory(ctx context.Context, input *BrowseBuildsInput) (*handlerutil.Out[[]workspacetypes.FileEntry], error) {
 	entries, err := h.service.ListDirectory(ctx, input.Path)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	return &BrowseBuildsOutput{Body: base.ApiResponse[[]workspacetypes.FileEntry]{Success: true, Data: entries}}, nil
+	return &handlerutil.Out[[]workspacetypes.FileEntry]{Body: base.ApiResponse[[]workspacetypes.FileEntry]{Success: true, Data: entries}}, nil
 }
 
-func (h *BuildWorkspaceHandler) GetFileContent(ctx context.Context, input *GetBuildFileContentInput) (*GetBuildFileContentOutput, error) {
+func (h *BuildWorkspaceHandler) GetFileContent(ctx context.Context, input *GetBuildFileContentInput) (*handlerutil.Out[BuildFileContentResponse], error) {
 	content, mimeType, err := h.service.GetFileContent(ctx, input.Path, input.MaxBytes)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	return &GetBuildFileContentOutput{Body: base.ApiResponse[BuildFileContentResponse]{
+	return &handlerutil.Out[BuildFileContentResponse]{Body: base.ApiResponse[BuildFileContentResponse]{
 		Success: true,
 		Data:    BuildFileContentResponse{Content: content, MimeType: mimeType},
 	}}, nil

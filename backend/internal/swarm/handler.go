@@ -41,26 +41,14 @@ type ListSwarmServicesInput struct {
 	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
 }
 
-type ListSwarmServicesOutput struct {
-	Body base.Paginated[swarmtypes.ServiceSummary]
-}
-
 type GetSwarmServiceInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ServiceID     string `path:"serviceId" doc:"Service ID"`
 }
 
-type GetSwarmServiceOutput struct {
-	Body base.ApiResponse[swarmtypes.ServiceInspect]
-}
-
 type CreateSwarmServiceInput struct {
 	EnvironmentID string                          `path:"id" doc:"Environment ID"`
 	Body          swarmtypes.ServiceCreateRequest `doc:"Service creation request"`
-}
-
-type CreateSwarmServiceOutput struct {
-	Body base.ApiResponse[swarmtypes.ServiceCreateResponse]
 }
 
 type UpdateSwarmServiceInput struct {
@@ -69,17 +57,9 @@ type UpdateSwarmServiceInput struct {
 	Body          swarmtypes.ServiceUpdateRequest
 }
 
-type UpdateSwarmServiceOutput struct {
-	Body base.ApiResponse[swarmtypes.ServiceUpdateResponse]
-}
-
 type DeleteSwarmServiceInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ServiceID     string `path:"serviceId" doc:"Service ID"`
-}
-
-type DeleteSwarmServiceOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
 }
 
 type ListSwarmServiceTasksInput struct {
@@ -92,27 +72,15 @@ type ListSwarmServiceTasksInput struct {
 	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
 }
 
-type ListSwarmServiceTasksOutput struct {
-	Body base.Paginated[swarmtypes.TaskSummary]
-}
-
 type RollbackSwarmServiceInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ServiceID     string `path:"serviceId" doc:"Service ID"`
-}
-
-type RollbackSwarmServiceOutput struct {
-	Body base.ApiResponse[swarmtypes.ServiceUpdateResponse]
 }
 
 type ScaleSwarmServiceInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ServiceID     string `path:"serviceId" doc:"Service ID"`
 	Body          swarmtypes.ServiceScaleRequest
-}
-
-type ScaleSwarmServiceOutput struct {
-	Body base.ApiResponse[swarmtypes.ServiceUpdateResponse]
 }
 
 type ListSwarmNodesInput struct {
@@ -124,17 +92,9 @@ type ListSwarmNodesInput struct {
 	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
 }
 
-type ListSwarmNodesOutput struct {
-	Body base.Paginated[swarmtypes.NodeSummary]
-}
-
 type GetSwarmNodeInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	NodeID        string `path:"nodeId" doc:"Node ID"`
-}
-
-type GetSwarmNodeOutput struct {
-	Body base.ApiResponse[swarmtypes.NodeSummary]
 }
 
 type GetSwarmNodeAgentDeploymentInput struct {
@@ -152,17 +112,9 @@ type SwarmNodeAgentDeployment struct {
 	Agent         swarmtypes.NodeAgentStatus `json:"agent"`
 }
 
-type GetSwarmNodeAgentDeploymentOutput struct {
-	Body base.ApiResponse[SwarmNodeAgentDeployment]
-}
-
 type ReconcileSwarmNodeAgentsInput struct {
 	Body          swarmtypes.NodeAgentReconcileRequest
 	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
-
-type ReconcileSwarmNodeAgentsOutput struct {
-	Body base.ApiResponse[swarmtypes.NodeAgentReconcileResponse]
 }
 
 type PutSwarmNodeAgentBindingInput struct {
@@ -171,17 +123,9 @@ type PutSwarmNodeAgentBindingInput struct {
 	Body          swarmtypes.NodeAgentBindingRequest
 }
 
-type PutSwarmNodeAgentBindingOutput struct {
-	Body base.ApiResponse[swarmtypes.NodeSummary]
-}
-
 type DeleteSwarmNodeAgentBindingInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	NodeID        string `path:"nodeId" doc:"Node ID"`
-}
-
-type DeleteSwarmNodeAgentBindingOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
 }
 
 type DeleteSwarmNodeAgentDeploymentInput struct {
@@ -189,24 +133,12 @@ type DeleteSwarmNodeAgentDeploymentInput struct {
 	NodeID        string `path:"nodeId" doc:"Node ID"`
 }
 
-type DeleteSwarmNodeAgentDeploymentOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
-}
-
 type GetSwarmNodeIdentityInput struct{}
-
-type GetSwarmNodeIdentityOutput struct {
-	Body base.ApiResponse[SwarmNodeIdentity]
-}
 
 type UpdateSwarmNodeInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	NodeID        string `path:"nodeId" doc:"Node ID"`
 	Body          swarmtypes.NodeUpdateRequest
-}
-
-type UpdateSwarmNodeOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
 }
 
 type DeleteSwarmNodeInput struct {
@@ -215,26 +147,14 @@ type DeleteSwarmNodeInput struct {
 	Force         bool   `query:"force" default:"false" doc:"Force node removal"`
 }
 
-type DeleteSwarmNodeOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
-}
-
 type PromoteSwarmNodeInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	NodeID        string `path:"nodeId" doc:"Node ID"`
 }
 
-type PromoteSwarmNodeOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
-}
-
 type DemoteSwarmNodeInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	NodeID        string `path:"nodeId" doc:"Node ID"`
-}
-
-type DemoteSwarmNodeOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
 }
 
 type ListSwarmNodeTasksInput struct {
@@ -247,10 +167,6 @@ type ListSwarmNodeTasksInput struct {
 	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
 }
 
-type ListSwarmNodeTasksOutput struct {
-	Body base.Paginated[swarmtypes.TaskSummary]
-}
-
 type ListSwarmTasksInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Search        string `query:"search" doc:"Search query"`
@@ -258,10 +174,6 @@ type ListSwarmTasksInput struct {
 	Order         string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
 	Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
 	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
-}
-
-type ListSwarmTasksOutput struct {
-	Body base.Paginated[swarmtypes.TaskSummary]
 }
 
 type ListSwarmStacksInput struct {
@@ -273,17 +185,9 @@ type ListSwarmStacksInput struct {
 	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
 }
 
-type ListSwarmStacksOutput struct {
-	Body base.Paginated[swarmtypes.StackSummary]
-}
-
 type DeploySwarmStackInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Body          swarmtypes.StackDeployRequest
-}
-
-type DeploySwarmStackOutput struct {
-	Body base.ApiResponse[swarmtypes.StackDeployResponse]
 }
 
 type GetSwarmStackInput struct {
@@ -291,17 +195,9 @@ type GetSwarmStackInput struct {
 	Name          string `path:"name" doc:"Stack name"`
 }
 
-type GetSwarmStackOutput struct {
-	Body base.ApiResponse[swarmtypes.StackInspect]
-}
-
 type GetSwarmStackSourceInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Name          string `path:"name" doc:"Stack name"`
-}
-
-type GetSwarmStackSourceOutput struct {
-	Body base.ApiResponse[swarmtypes.StackSource]
 }
 
 type UpdateSwarmStackSourceInput struct {
@@ -310,17 +206,9 @@ type UpdateSwarmStackSourceInput struct {
 	Body          swarmtypes.StackSourceUpdateRequest
 }
 
-type UpdateSwarmStackSourceOutput struct {
-	Body base.ApiResponse[swarmtypes.StackSource]
-}
-
 type DeleteSwarmStackInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Name          string `path:"name" doc:"Stack name"`
-}
-
-type DeleteSwarmStackOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
 }
 
 type ListSwarmStackServicesInput struct {
@@ -333,10 +221,6 @@ type ListSwarmStackServicesInput struct {
 	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
 }
 
-type ListSwarmStackServicesOutput struct {
-	Body base.Paginated[swarmtypes.ServiceSummary]
-}
-
 type ListSwarmStackTasksInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Name          string `path:"name" doc:"Stack name"`
@@ -347,33 +231,17 @@ type ListSwarmStackTasksInput struct {
 	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
 }
 
-type ListSwarmStackTasksOutput struct {
-	Body base.Paginated[swarmtypes.TaskSummary]
-}
-
 type RenderSwarmStackConfigInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Body          swarmtypes.StackRenderConfigRequest
-}
-
-type RenderSwarmStackConfigOutput struct {
-	Body base.ApiResponse[swarmtypes.StackRenderConfigResponse]
 }
 
 type GetSwarmInfoInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
 
-type GetSwarmInfoOutput struct {
-	Body base.ApiResponse[swarmtypes.SwarmInfo]
-}
-
 type GetSwarmStatusInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
-
-type GetSwarmStatusOutput struct {
-	Body base.ApiResponse[swarmtypes.RuntimeStatus]
 }
 
 type InitSwarmInput struct {
@@ -381,25 +249,13 @@ type InitSwarmInput struct {
 	Body          swarmtypes.SwarmInitRequest
 }
 
-type InitSwarmOutput struct {
-	Body base.ApiResponse[swarmtypes.SwarmInitResponse]
-}
-
 type JoinSwarmInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Body          swarmtypes.SwarmJoinRequest
 }
 
-type JoinSwarmOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
-}
-
 type GetSwarmJoinCandidatesInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
-
-type GetSwarmJoinCandidatesOutput struct {
-	Body base.ApiResponse[[]swarmtypes.SwarmJoinCandidate]
 }
 
 type JoinSwarmEnvironmentsInput struct {
@@ -407,17 +263,9 @@ type JoinSwarmEnvironmentsInput struct {
 	Body          swarmtypes.SwarmJoinEnvironmentsRequest
 }
 
-type JoinSwarmEnvironmentsOutput struct {
-	Body base.ApiResponse[swarmtypes.SwarmJoinEnvironmentsResponse]
-}
-
 type LeaveSwarmInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Body          swarmtypes.SwarmLeaveRequest
-}
-
-type LeaveSwarmOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
 }
 
 type UnlockSwarmInput struct {
@@ -425,24 +273,12 @@ type UnlockSwarmInput struct {
 	Body          swarmtypes.SwarmUnlockRequest
 }
 
-type UnlockSwarmOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
-}
-
 type GetSwarmUnlockKeyInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
 
-type GetSwarmUnlockKeyOutput struct {
-	Body base.ApiResponse[swarmtypes.SwarmUnlockKeyResponse]
-}
-
 type GetSwarmJoinTokensInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
-
-type GetSwarmJoinTokensOutput struct {
-	Body base.ApiResponse[swarmtypes.SwarmJoinTokensResponse]
 }
 
 type RotateSwarmJoinTokensInput struct {
@@ -450,25 +286,13 @@ type RotateSwarmJoinTokensInput struct {
 	Body          swarmtypes.SwarmRotateJoinTokensRequest
 }
 
-type RotateSwarmJoinTokensOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
-}
-
 type UpdateSwarmSpecInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Body          swarmtypes.SwarmUpdateRequest
 }
 
-type UpdateSwarmSpecOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
-}
-
 type ListSwarmConfigsInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
-
-type ListSwarmConfigsOutput struct {
-	Body base.ApiResponse[[]swarmtypes.ConfigSummary]
 }
 
 type GetSwarmConfigInput struct {
@@ -476,17 +300,9 @@ type GetSwarmConfigInput struct {
 	ConfigID      string `path:"configId" doc:"Config ID"`
 }
 
-type GetSwarmConfigOutput struct {
-	Body base.ApiResponse[swarmtypes.ConfigSummary]
-}
-
 type CreateSwarmConfigInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Body          swarmtypes.ConfigCreateRequest
-}
-
-type CreateSwarmConfigOutput struct {
-	Body base.ApiResponse[swarmtypes.ConfigSummary]
 }
 
 type DeleteSwarmConfigInput struct {
@@ -494,16 +310,8 @@ type DeleteSwarmConfigInput struct {
 	ConfigID      string `path:"configId" doc:"Config ID"`
 }
 
-type DeleteSwarmConfigOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
-}
-
 type ListSwarmSecretsInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
-
-type ListSwarmSecretsOutput struct {
-	Body base.ApiResponse[[]swarmtypes.SecretSummary]
 }
 
 type GetSwarmSecretInput struct {
@@ -511,26 +319,14 @@ type GetSwarmSecretInput struct {
 	SecretID      string `path:"secretId" doc:"Secret ID"`
 }
 
-type GetSwarmSecretOutput struct {
-	Body base.ApiResponse[swarmtypes.SecretSummary]
-}
-
 type CreateSwarmSecretInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Body          swarmtypes.SecretCreateRequest
 }
 
-type CreateSwarmSecretOutput struct {
-	Body base.ApiResponse[swarmtypes.SecretSummary]
-}
-
 type DeleteSwarmSecretInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	SecretID      string `path:"secretId" doc:"Secret ID"`
-}
-
-type DeleteSwarmSecretOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
 }
 
 // RegisterSwarm registers the Docker Swarm HTTP operations on the provided Huma API.
@@ -623,7 +419,7 @@ func RegisterSwarm(api huma.API, swarmSvc *SwarmService, environmentSvc *environ
 // Returns a successful response containing service summaries and pagination metadata.
 // Returns an HTTP-shaped error if the swarm service is unavailable or if the
 // underlying swarm lookup fails.
-func (h *SwarmHandler) ListServices(ctx context.Context, input *ListSwarmServicesInput) (*ListSwarmServicesOutput, error) {
+func (h *SwarmHandler) ListServices(ctx context.Context, input *ListSwarmServicesInput) (*handlerutil.Page[swarmtypes.ServiceSummary], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	items, paginationResp, err := h.swarmService.ListServicesPaginated(ctx, params)
 	if err != nil {
@@ -633,7 +429,7 @@ func (h *SwarmHandler) ListServices(ctx context.Context, input *ListSwarmService
 		items = []swarmtypes.ServiceSummary{}
 	}
 
-	return &ListSwarmServicesOutput{Body: base.Paginated[swarmtypes.ServiceSummary]{Success: true, Data: items, Pagination: handlerutil.PaginationResponse(paginationResp)}}, nil
+	return &handlerutil.Page[swarmtypes.ServiceSummary]{Body: base.Paginated[swarmtypes.ServiceSummary]{Success: true, Data: items, Pagination: handlerutil.PaginationResponse(paginationResp)}}, nil
 }
 
 // GetService returns detailed information for a single swarm service.
@@ -647,7 +443,7 @@ func (h *SwarmHandler) ListServices(ctx context.Context, input *ListSwarmService
 // Returns a successful response containing the service inspection payload.
 // Returns `404 Not Found` when the service does not exist and other mapped HTTP
 // errors when the inspection fails.
-func (h *SwarmHandler) GetService(ctx context.Context, input *GetSwarmServiceInput) (*GetSwarmServiceOutput, error) {
+func (h *SwarmHandler) GetService(ctx context.Context, input *GetSwarmServiceInput) (*handlerutil.Out[swarmtypes.ServiceInspect], error) {
 	service, err := h.swarmService.GetService(ctx, input.ServiceID)
 	if err != nil {
 		if errdefs.IsNotFound(err) {
@@ -656,7 +452,7 @@ func (h *SwarmHandler) GetService(ctx context.Context, input *GetSwarmServiceInp
 		return nil, mapSwarmServiceError(err, errors.WithMessage(err, "Swarm service not found").Error())
 	}
 
-	return &GetSwarmServiceOutput{Body: base.ApiResponse[swarmtypes.ServiceInspect]{Success: true, Data: *service}}, nil
+	return &handlerutil.Out[swarmtypes.ServiceInspect]{Body: base.ApiResponse[swarmtypes.ServiceInspect]{Success: true, Data: *service}}, nil
 }
 
 // CreateService creates a new swarm service in the target environment.
@@ -670,7 +466,7 @@ func (h *SwarmHandler) GetService(ctx context.Context, input *GetSwarmServiceInp
 // Returns a successful response containing the created service ID and any Docker warnings.
 // Returns an authorization error for non-admin callers or mapped HTTP errors
 // when validation or creation fails.
-func (h *SwarmHandler) CreateService(ctx context.Context, input *CreateSwarmServiceInput) (*CreateSwarmServiceOutput, error) {
+func (h *SwarmHandler) CreateService(ctx context.Context, input *CreateSwarmServiceInput) (*handlerutil.Out[swarmtypes.ServiceCreateResponse], error) {
 	resp, err := h.swarmService.CreateService(ctx, input.Body)
 	if err != nil {
 		return nil, mapSwarmServiceError(err, errors.WithMessage(err, "Failed to create swarm service").Error())
@@ -678,7 +474,7 @@ func (h *SwarmHandler) CreateService(ctx context.Context, input *CreateSwarmServ
 
 	h.auditSwarmMutation(ctx, input.EnvironmentID, "service.create", "swarm_service", resp.ID, "", map[string]any{"serviceId": resp.ID})
 
-	return &CreateSwarmServiceOutput{Body: base.ApiResponse[swarmtypes.ServiceCreateResponse]{Success: true, Data: *resp}}, nil
+	return &handlerutil.Out[swarmtypes.ServiceCreateResponse]{Body: base.ApiResponse[swarmtypes.ServiceCreateResponse]{Success: true, Data: *resp}}, nil
 }
 
 // UpdateService updates an existing swarm service.
@@ -692,7 +488,7 @@ func (h *SwarmHandler) CreateService(ctx context.Context, input *CreateSwarmServ
 // Returns a successful response containing any Docker warnings.
 // Returns an authorization error for non-admin callers or mapped HTTP errors
 // when the update request is invalid or the underlying update fails.
-func (h *SwarmHandler) UpdateService(ctx context.Context, input *UpdateSwarmServiceInput) (*UpdateSwarmServiceOutput, error) {
+func (h *SwarmHandler) UpdateService(ctx context.Context, input *UpdateSwarmServiceInput) (*handlerutil.Out[swarmtypes.ServiceUpdateResponse], error) {
 	resp, err := h.swarmService.UpdateService(ctx, input.ServiceID, input.Body)
 	if err != nil {
 		return nil, mapSwarmServiceError(err, errors.WithMessage(err, "Failed to update swarm service").Error())
@@ -700,7 +496,7 @@ func (h *SwarmHandler) UpdateService(ctx context.Context, input *UpdateSwarmServ
 
 	h.auditSwarmMutation(ctx, input.EnvironmentID, "service.update", "swarm_service", input.ServiceID, "", map[string]any{"serviceId": input.ServiceID})
 
-	return &UpdateSwarmServiceOutput{Body: base.ApiResponse[swarmtypes.ServiceUpdateResponse]{Success: true, Data: *resp}}, nil
+	return &handlerutil.Out[swarmtypes.ServiceUpdateResponse]{Body: base.ApiResponse[swarmtypes.ServiceUpdateResponse]{Success: true, Data: *resp}}, nil
 }
 
 // DeleteService removes a swarm service.
@@ -715,7 +511,7 @@ func (h *SwarmHandler) UpdateService(ctx context.Context, input *UpdateSwarmServ
 // Returns a successful response with a confirmation message.
 // Returns an authorization error for non-admin callers, `404 Not Found` when
 // the service does not exist, or another mapped HTTP error when removal fails.
-func (h *SwarmHandler) DeleteService(ctx context.Context, input *DeleteSwarmServiceInput) (*DeleteSwarmServiceOutput, error) {
+func (h *SwarmHandler) DeleteService(ctx context.Context, input *DeleteSwarmServiceInput) (*handlerutil.Out[base.MessageResponse], error) {
 	if err := h.swarmService.RemoveService(ctx, input.ServiceID); err != nil {
 		if errdefs.IsNotFound(err) {
 			return nil, huma.Error404NotFound(errors.WithMessage(err, "Swarm service not found").Error())
@@ -725,7 +521,7 @@ func (h *SwarmHandler) DeleteService(ctx context.Context, input *DeleteSwarmServ
 
 	h.auditSwarmMutation(ctx, input.EnvironmentID, "service.delete", "swarm_service", input.ServiceID, "", map[string]any{"serviceId": input.ServiceID})
 
-	return &DeleteSwarmServiceOutput{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Swarm service removed successfully"}}}, nil
+	return &handlerutil.Out[base.MessageResponse]{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Swarm service removed successfully"}}}, nil
 }
 
 // ListServiceTasks lists tasks belonging to a specific swarm service.
@@ -738,7 +534,7 @@ func (h *SwarmHandler) DeleteService(ctx context.Context, input *DeleteSwarmServ
 //
 // Returns a paginated list of task summaries for the service.
 // Returns a mapped HTTP error when the swarm task lookup fails.
-func (h *SwarmHandler) ListServiceTasks(ctx context.Context, input *ListSwarmServiceTasksInput) (*ListSwarmServiceTasksOutput, error) {
+func (h *SwarmHandler) ListServiceTasks(ctx context.Context, input *ListSwarmServiceTasksInput) (*handlerutil.Page[swarmtypes.TaskSummary], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	items, paginationResp, err := h.swarmService.ListServiceTasksPaginated(ctx, input.ServiceID, params)
 	if err != nil {
@@ -748,7 +544,7 @@ func (h *SwarmHandler) ListServiceTasks(ctx context.Context, input *ListSwarmSer
 		items = []swarmtypes.TaskSummary{}
 	}
 
-	return &ListSwarmServiceTasksOutput{Body: base.Paginated[swarmtypes.TaskSummary]{Success: true, Data: items, Pagination: handlerutil.PaginationResponse(paginationResp)}}, nil
+	return &handlerutil.Page[swarmtypes.TaskSummary]{Body: base.Paginated[swarmtypes.TaskSummary]{Success: true, Data: items, Pagination: handlerutil.PaginationResponse(paginationResp)}}, nil
 }
 
 // RollbackService requests a server-side rollback for a swarm service.
@@ -762,7 +558,7 @@ func (h *SwarmHandler) ListServiceTasks(ctx context.Context, input *ListSwarmSer
 // Returns a successful response containing any warnings reported by Docker.
 // Returns an authorization error for non-admin callers or mapped HTTP errors
 // when the rollback cannot be performed.
-func (h *SwarmHandler) RollbackService(ctx context.Context, input *RollbackSwarmServiceInput) (*RollbackSwarmServiceOutput, error) {
+func (h *SwarmHandler) RollbackService(ctx context.Context, input *RollbackSwarmServiceInput) (*handlerutil.Out[swarmtypes.ServiceUpdateResponse], error) {
 	resp, err := h.swarmService.RollbackService(ctx, input.ServiceID)
 	if err != nil {
 		return nil, mapSwarmServiceError(err, errors.WithMessage(err, "Failed to update swarm service").Error())
@@ -770,7 +566,7 @@ func (h *SwarmHandler) RollbackService(ctx context.Context, input *RollbackSwarm
 
 	h.auditSwarmMutation(ctx, input.EnvironmentID, "service.rollback", "swarm_service", input.ServiceID, "", map[string]any{"serviceId": input.ServiceID})
 
-	return &RollbackSwarmServiceOutput{Body: base.ApiResponse[swarmtypes.ServiceUpdateResponse]{Success: true, Data: *resp}}, nil
+	return &handlerutil.Out[swarmtypes.ServiceUpdateResponse]{Body: base.ApiResponse[swarmtypes.ServiceUpdateResponse]{Success: true, Data: *resp}}, nil
 }
 
 // ScaleService changes the replica count of a swarm service.
@@ -784,7 +580,7 @@ func (h *SwarmHandler) RollbackService(ctx context.Context, input *RollbackSwarm
 // Returns a successful response containing any warnings reported by Docker.
 // Returns an authorization error for non-admin callers or mapped HTTP errors
 // when scaling is invalid or the update fails.
-func (h *SwarmHandler) ScaleService(ctx context.Context, input *ScaleSwarmServiceInput) (*ScaleSwarmServiceOutput, error) {
+func (h *SwarmHandler) ScaleService(ctx context.Context, input *ScaleSwarmServiceInput) (*handlerutil.Out[swarmtypes.ServiceUpdateResponse], error) {
 	resp, err := h.swarmService.ScaleService(ctx, input.ServiceID, input.Body.Replicas)
 	if err != nil {
 		return nil, mapSwarmServiceError(err, errors.WithMessage(err, "Failed to update swarm service").Error())
@@ -792,7 +588,7 @@ func (h *SwarmHandler) ScaleService(ctx context.Context, input *ScaleSwarmServic
 
 	h.auditSwarmMutation(ctx, input.EnvironmentID, "service.scale", "swarm_service", input.ServiceID, "", map[string]any{"serviceId": input.ServiceID, "replicas": input.Body.Replicas})
 
-	return &ScaleSwarmServiceOutput{Body: base.ApiResponse[swarmtypes.ServiceUpdateResponse]{Success: true, Data: *resp}}, nil
+	return &handlerutil.Out[swarmtypes.ServiceUpdateResponse]{Body: base.ApiResponse[swarmtypes.ServiceUpdateResponse]{Success: true, Data: *resp}}, nil
 }
 
 // ListNodes lists swarm nodes for an environment and returns a paginated response.
@@ -805,7 +601,7 @@ func (h *SwarmHandler) ScaleService(ctx context.Context, input *ScaleSwarmServic
 //
 // Returns a paginated list of node summaries.
 // Returns a mapped HTTP error when node enumeration fails.
-func (h *SwarmHandler) ListNodes(ctx context.Context, input *ListSwarmNodesInput) (*ListSwarmNodesOutput, error) {
+func (h *SwarmHandler) ListNodes(ctx context.Context, input *ListSwarmNodesInput) (*handlerutil.Page[swarmtypes.NodeSummary], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	items, paginationResp, err := h.swarmService.ListNodesPaginated(ctx, input.EnvironmentID, params)
 	if err != nil {
@@ -815,7 +611,7 @@ func (h *SwarmHandler) ListNodes(ctx context.Context, input *ListSwarmNodesInput
 		items = []swarmtypes.NodeSummary{}
 	}
 
-	return &ListSwarmNodesOutput{Body: base.Paginated[swarmtypes.NodeSummary]{Success: true, Data: items, Pagination: handlerutil.PaginationResponse(paginationResp)}}, nil
+	return &handlerutil.Page[swarmtypes.NodeSummary]{Body: base.Paginated[swarmtypes.NodeSummary]{Success: true, Data: items, Pagination: handlerutil.PaginationResponse(paginationResp)}}, nil
 }
 
 // GetNode returns detailed information for a single swarm node.
@@ -829,7 +625,7 @@ func (h *SwarmHandler) ListNodes(ctx context.Context, input *ListSwarmNodesInput
 // Returns a successful response containing the node summary.
 // Returns `404 Not Found` when the node does not exist or another mapped HTTP
 // error when the inspection fails.
-func (h *SwarmHandler) GetNode(ctx context.Context, input *GetSwarmNodeInput) (*GetSwarmNodeOutput, error) {
+func (h *SwarmHandler) GetNode(ctx context.Context, input *GetSwarmNodeInput) (*handlerutil.Out[swarmtypes.NodeSummary], error) {
 	node, err := h.swarmService.GetNode(ctx, input.EnvironmentID, input.NodeID)
 	if err != nil {
 		if errdefs.IsNotFound(err) {
@@ -838,7 +634,7 @@ func (h *SwarmHandler) GetNode(ctx context.Context, input *GetSwarmNodeInput) (*
 		return nil, mapSwarmServiceError(err, errors.WithMessage(err, "Swarm node not found").Error())
 	}
 
-	return &GetSwarmNodeOutput{Body: base.ApiResponse[swarmtypes.NodeSummary]{Success: true, Data: *node}}, nil
+	return &handlerutil.Out[swarmtypes.NodeSummary]{Body: base.ApiResponse[swarmtypes.NodeSummary]{Success: true, Data: *node}}, nil
 }
 
 // GetNodeAgentDeployment returns deployment snippets for attaching an Arcane Remote Environment to a swarm node.
@@ -857,7 +653,7 @@ func (h *SwarmHandler) GetNode(ctx context.Context, input *GetSwarmNodeInput) (*
 // when the current user cannot be resolved, `404 Not Found` when the node does
 // not exist, or `500 Internal Server Error` when environment provisioning or
 // snippet generation fails.
-func (h *SwarmHandler) GetNodeAgentDeployment(ctx context.Context, input *GetSwarmNodeAgentDeploymentInput) (*GetSwarmNodeAgentDeploymentOutput, error) {
+func (h *SwarmHandler) GetNodeAgentDeployment(ctx context.Context, input *GetSwarmNodeAgentDeploymentInput) (*handlerutil.Out[SwarmNodeAgentDeployment], error) {
 	node, err := h.swarmService.GetNode(ctx, input.EnvironmentID, input.NodeID)
 	if err != nil {
 		if errdefs.IsNotFound(err) {
@@ -904,7 +700,7 @@ func (h *SwarmHandler) GetNodeAgentDeployment(ctx context.Context, input *GetSwa
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 
-	return &GetSwarmNodeAgentDeploymentOutput{
+	return &handlerutil.Out[SwarmNodeAgentDeployment]{
 		Body: base.ApiResponse[SwarmNodeAgentDeployment]{
 			Success: true,
 			Data: SwarmNodeAgentDeployment{
@@ -920,16 +716,16 @@ func (h *SwarmHandler) GetNodeAgentDeployment(ctx context.Context, input *GetSwa
 }
 
 // ReconcileNodeAgents verifies and persists unique visible-environment node bindings.
-func (h *SwarmHandler) ReconcileNodeAgents(ctx context.Context, input *ReconcileSwarmNodeAgentsInput) (*ReconcileSwarmNodeAgentsOutput, error) {
+func (h *SwarmHandler) ReconcileNodeAgents(ctx context.Context, input *ReconcileSwarmNodeAgentsInput) (*handlerutil.Out[swarmtypes.NodeAgentReconcileResponse], error) {
 	result, err := h.swarmService.ReconcileNodeAgents(ctx, input.EnvironmentID)
 	if err != nil {
 		return nil, mapSwarmServiceError(err, "Failed to reconcile swarm node agents")
 	}
-	return &ReconcileSwarmNodeAgentsOutput{Body: base.ApiResponse[swarmtypes.NodeAgentReconcileResponse]{Success: true, Data: *result}}, nil
+	return &handlerutil.Out[swarmtypes.NodeAgentReconcileResponse]{Body: base.ApiResponse[swarmtypes.NodeAgentReconcileResponse]{Success: true, Data: *result}}, nil
 }
 
 // PutNodeAgentBinding verifies and attaches an existing visible environment.
-func (h *SwarmHandler) PutNodeAgentBinding(ctx context.Context, input *PutSwarmNodeAgentBindingInput) (*PutSwarmNodeAgentBindingOutput, error) {
+func (h *SwarmHandler) PutNodeAgentBinding(ctx context.Context, input *PutSwarmNodeAgentBindingInput) (*handlerutil.Out[swarmtypes.NodeSummary], error) {
 	if _, err := h.swarmService.BindNodeAgent(ctx, input.EnvironmentID, input.NodeID, input.Body); err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
@@ -947,19 +743,19 @@ func (h *SwarmHandler) PutNodeAgentBinding(ctx context.Context, input *PutSwarmN
 	if err != nil {
 		return nil, mapSwarmServiceError(err, "Failed to refresh swarm node binding")
 	}
-	return &PutSwarmNodeAgentBindingOutput{Body: base.ApiResponse[swarmtypes.NodeSummary]{Success: true, Data: *node}}, nil
+	return &handlerutil.Out[swarmtypes.NodeSummary]{Body: base.ApiResponse[swarmtypes.NodeSummary]{Success: true, Data: *node}}, nil
 }
 
 // DeleteNodeAgentBinding detaches the visible environment currently bound to a node.
-func (h *SwarmHandler) DeleteNodeAgentBinding(ctx context.Context, input *DeleteSwarmNodeAgentBindingInput) (*DeleteSwarmNodeAgentBindingOutput, error) {
+func (h *SwarmHandler) DeleteNodeAgentBinding(ctx context.Context, input *DeleteSwarmNodeAgentBindingInput) (*handlerutil.Out[base.MessageResponse], error) {
 	if err := h.environmentService.DetachSwarmNodeEnvironment(ctx, input.EnvironmentID, input.NodeID); err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	return &DeleteSwarmNodeAgentBindingOutput{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Swarm node environment detached"}}}, nil
+	return &handlerutil.Out[base.MessageResponse]{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Swarm node environment detached"}}}, nil
 }
 
 // DeleteNodeAgentDeployment removes a dedicated hidden node-agent registration.
-func (h *SwarmHandler) DeleteNodeAgentDeployment(ctx context.Context, input *DeleteSwarmNodeAgentDeploymentInput) (*DeleteSwarmNodeAgentDeploymentOutput, error) {
+func (h *SwarmHandler) DeleteNodeAgentDeployment(ctx context.Context, input *DeleteSwarmNodeAgentDeploymentInput) (*handlerutil.Out[base.MessageResponse], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -967,7 +763,7 @@ func (h *SwarmHandler) DeleteNodeAgentDeployment(ctx context.Context, input *Del
 	if err := h.environmentService.DeleteSwarmNodeAgentDeployment(ctx, input.EnvironmentID, input.NodeID, &user.ID, &user.Username); err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	return &DeleteSwarmNodeAgentDeploymentOutput{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Dedicated swarm node agent registration removed"}}}, nil
+	return &handlerutil.Out[base.MessageResponse]{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Dedicated swarm node agent registration removed"}}}, nil
 }
 
 // GetNodeIdentity returns the swarm identity of the node serving the current request.
@@ -981,13 +777,13 @@ func (h *SwarmHandler) DeleteNodeAgentDeployment(ctx context.Context, input *Del
 // Returns the local swarm node identity when it can be determined.
 // Returns `500 Internal Server Error` when the swarm service is unavailable or
 // identity discovery fails.
-func (h *SwarmHandler) GetNodeIdentity(ctx context.Context, _ *GetSwarmNodeIdentityInput) (*GetSwarmNodeIdentityOutput, error) {
+func (h *SwarmHandler) GetNodeIdentity(ctx context.Context, _ *GetSwarmNodeIdentityInput) (*handlerutil.Out[SwarmNodeIdentity], error) {
 	identity, err := h.swarmService.GetLocalNodeIdentity(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 
-	return &GetSwarmNodeIdentityOutput{
+	return &handlerutil.Out[SwarmNodeIdentity]{
 		Body: base.ApiResponse[SwarmNodeIdentity]{
 			Success: true,
 			Data:    *identity,
@@ -1006,14 +802,14 @@ func (h *SwarmHandler) GetNodeIdentity(ctx context.Context, _ *GetSwarmNodeIdent
 // Returns a confirmation response when the update succeeds.
 // Returns an authorization error for non-admin callers or a mapped HTTP error
 // when the node update fails.
-func (h *SwarmHandler) UpdateNode(ctx context.Context, input *UpdateSwarmNodeInput) (*UpdateSwarmNodeOutput, error) {
+func (h *SwarmHandler) UpdateNode(ctx context.Context, input *UpdateSwarmNodeInput) (*handlerutil.Out[base.MessageResponse], error) {
 	if err := h.swarmService.UpdateNode(ctx, input.NodeID, input.Body); err != nil {
 		return nil, mapSwarmServiceError(err, errors.WithMessage(err, "Swarm node not found").Error())
 	}
 
 	h.auditSwarmMutation(ctx, input.EnvironmentID, "node.update", "swarm_node", input.NodeID, "", map[string]any{"nodeId": input.NodeID})
 
-	return &UpdateSwarmNodeOutput{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Swarm node updated successfully"}}}, nil
+	return &handlerutil.Out[base.MessageResponse]{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Swarm node updated successfully"}}}, nil
 }
 
 // DeleteNode removes a swarm node from the cluster.
@@ -1027,14 +823,14 @@ func (h *SwarmHandler) UpdateNode(ctx context.Context, input *UpdateSwarmNodeInp
 // Returns a confirmation response when the node is removed.
 // Returns an authorization error for non-admin callers or a mapped HTTP error
 // when the node cannot be removed.
-func (h *SwarmHandler) DeleteNode(ctx context.Context, input *DeleteSwarmNodeInput) (*DeleteSwarmNodeOutput, error) {
+func (h *SwarmHandler) DeleteNode(ctx context.Context, input *DeleteSwarmNodeInput) (*handlerutil.Out[base.MessageResponse], error) {
 	if err := h.swarmService.RemoveNode(ctx, input.NodeID, input.Force); err != nil {
 		return nil, mapSwarmServiceError(err, errors.WithMessage(err, "Swarm node not found").Error())
 	}
 
 	h.auditSwarmMutation(ctx, input.EnvironmentID, "node.delete", "swarm_node", input.NodeID, "", map[string]any{"nodeId": input.NodeID, "force": input.Force})
 
-	return &DeleteSwarmNodeOutput{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Swarm node removed successfully"}}}, nil
+	return &handlerutil.Out[base.MessageResponse]{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Swarm node removed successfully"}}}, nil
 }
 
 // PromoteNode promotes a swarm worker to manager.
@@ -1048,14 +844,14 @@ func (h *SwarmHandler) DeleteNode(ctx context.Context, input *DeleteSwarmNodeInp
 // Returns a confirmation response when the promotion succeeds.
 // Returns an authorization error for non-admin callers or a mapped HTTP error
 // when the promotion fails.
-func (h *SwarmHandler) PromoteNode(ctx context.Context, input *PromoteSwarmNodeInput) (*PromoteSwarmNodeOutput, error) {
+func (h *SwarmHandler) PromoteNode(ctx context.Context, input *PromoteSwarmNodeInput) (*handlerutil.Out[base.MessageResponse], error) {
 	if err := h.swarmService.PromoteNode(ctx, input.NodeID); err != nil {
 		return nil, mapSwarmServiceError(err, errors.WithMessage(err, "Swarm node not found").Error())
 	}
 
 	h.auditSwarmMutation(ctx, input.EnvironmentID, "node.promote", "swarm_node", input.NodeID, "", map[string]any{"nodeId": input.NodeID})
 
-	return &PromoteSwarmNodeOutput{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Swarm node promoted successfully"}}}, nil
+	return &handlerutil.Out[base.MessageResponse]{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Swarm node promoted successfully"}}}, nil
 }
 
 // DemoteNode demotes a swarm manager to worker.
@@ -1069,14 +865,14 @@ func (h *SwarmHandler) PromoteNode(ctx context.Context, input *PromoteSwarmNodeI
 // Returns a confirmation response when the demotion succeeds.
 // Returns an authorization error for non-admin callers or a mapped HTTP error
 // when the demotion fails.
-func (h *SwarmHandler) DemoteNode(ctx context.Context, input *DemoteSwarmNodeInput) (*DemoteSwarmNodeOutput, error) {
+func (h *SwarmHandler) DemoteNode(ctx context.Context, input *DemoteSwarmNodeInput) (*handlerutil.Out[base.MessageResponse], error) {
 	if err := h.swarmService.DemoteNode(ctx, input.NodeID); err != nil {
 		return nil, mapSwarmServiceError(err, errors.WithMessage(err, "Swarm node not found").Error())
 	}
 
 	h.auditSwarmMutation(ctx, input.EnvironmentID, "node.demote", "swarm_node", input.NodeID, "", map[string]any{"nodeId": input.NodeID})
 
-	return &DemoteSwarmNodeOutput{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Swarm node demoted successfully"}}}, nil
+	return &handlerutil.Out[base.MessageResponse]{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Swarm node demoted successfully"}}}, nil
 }
 
 // ListNodeTasks lists tasks currently associated with a swarm node.
@@ -1089,7 +885,7 @@ func (h *SwarmHandler) DemoteNode(ctx context.Context, input *DemoteSwarmNodeInp
 //
 // Returns a paginated list of node task summaries.
 // Returns a mapped HTTP error when the underlying lookup fails.
-func (h *SwarmHandler) ListNodeTasks(ctx context.Context, input *ListSwarmNodeTasksInput) (*ListSwarmNodeTasksOutput, error) {
+func (h *SwarmHandler) ListNodeTasks(ctx context.Context, input *ListSwarmNodeTasksInput) (*handlerutil.Page[swarmtypes.TaskSummary], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	items, paginationResp, err := h.swarmService.ListNodeTasksPaginated(ctx, input.NodeID, params)
 	if err != nil {
@@ -1099,7 +895,7 @@ func (h *SwarmHandler) ListNodeTasks(ctx context.Context, input *ListSwarmNodeTa
 		items = []swarmtypes.TaskSummary{}
 	}
 
-	return &ListSwarmNodeTasksOutput{Body: base.Paginated[swarmtypes.TaskSummary]{Success: true, Data: items, Pagination: handlerutil.PaginationResponse(paginationResp)}}, nil
+	return &handlerutil.Page[swarmtypes.TaskSummary]{Body: base.Paginated[swarmtypes.TaskSummary]{Success: true, Data: items, Pagination: handlerutil.PaginationResponse(paginationResp)}}, nil
 }
 
 // ListTasks lists swarm tasks across the current environment.
@@ -1112,7 +908,7 @@ func (h *SwarmHandler) ListNodeTasks(ctx context.Context, input *ListSwarmNodeTa
 //
 // Returns a paginated task listing for the environment.
 // Returns a mapped HTTP error when task enumeration fails.
-func (h *SwarmHandler) ListTasks(ctx context.Context, input *ListSwarmTasksInput) (*ListSwarmTasksOutput, error) {
+func (h *SwarmHandler) ListTasks(ctx context.Context, input *ListSwarmTasksInput) (*handlerutil.Page[swarmtypes.TaskSummary], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	items, paginationResp, err := h.swarmService.ListTasksPaginated(ctx, params)
 	if err != nil {
@@ -1122,7 +918,7 @@ func (h *SwarmHandler) ListTasks(ctx context.Context, input *ListSwarmTasksInput
 		items = []swarmtypes.TaskSummary{}
 	}
 
-	return &ListSwarmTasksOutput{Body: base.Paginated[swarmtypes.TaskSummary]{Success: true, Data: items, Pagination: handlerutil.PaginationResponse(paginationResp)}}, nil
+	return &handlerutil.Page[swarmtypes.TaskSummary]{Body: base.Paginated[swarmtypes.TaskSummary]{Success: true, Data: items, Pagination: handlerutil.PaginationResponse(paginationResp)}}, nil
 }
 
 // ListStacks lists swarm stacks for the current environment.
@@ -1135,7 +931,7 @@ func (h *SwarmHandler) ListTasks(ctx context.Context, input *ListSwarmTasksInput
 //
 // Returns a paginated list of stack summaries.
 // Returns a mapped HTTP error when stack enumeration fails.
-func (h *SwarmHandler) ListStacks(ctx context.Context, input *ListSwarmStacksInput) (*ListSwarmStacksOutput, error) {
+func (h *SwarmHandler) ListStacks(ctx context.Context, input *ListSwarmStacksInput) (*handlerutil.Page[swarmtypes.StackSummary], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	items, paginationResp, err := h.swarmService.ListStacksPaginated(ctx, input.EnvironmentID, params)
 	if err != nil {
@@ -1145,7 +941,7 @@ func (h *SwarmHandler) ListStacks(ctx context.Context, input *ListSwarmStacksInp
 		items = []swarmtypes.StackSummary{}
 	}
 
-	return &ListSwarmStacksOutput{Body: base.Paginated[swarmtypes.StackSummary]{Success: true, Data: items, Pagination: handlerutil.PaginationResponse(paginationResp)}}, nil
+	return &handlerutil.Page[swarmtypes.StackSummary]{Body: base.Paginated[swarmtypes.StackSummary]{Success: true, Data: items, Pagination: handlerutil.PaginationResponse(paginationResp)}}, nil
 }
 
 // DeployStack deploys or updates a swarm stack.
@@ -1160,7 +956,7 @@ func (h *SwarmHandler) ListStacks(ctx context.Context, input *ListSwarmStacksInp
 // Returns the deployment response reported by the swarm service.
 // Returns an authorization error for non-admin callers or mapped HTTP errors
 // when rendering, validation, or deployment fails.
-func (h *SwarmHandler) DeployStack(ctx context.Context, input *DeploySwarmStackInput) (*DeploySwarmStackOutput, error) {
+func (h *SwarmHandler) DeployStack(ctx context.Context, input *DeploySwarmStackInput) (*handlerutil.Out[swarmtypes.StackDeployResponse], error) {
 	resp, err := h.swarmService.DeployStack(ctx, input.EnvironmentID, input.Body)
 	if err != nil {
 		return nil, mapSwarmServiceError(err, errors.WithMessage(err, "Failed to deploy swarm stack").Error())
@@ -1168,7 +964,7 @@ func (h *SwarmHandler) DeployStack(ctx context.Context, input *DeploySwarmStackI
 
 	h.auditSwarmMutation(ctx, input.EnvironmentID, "stack.deploy", "swarm_stack", input.Body.Name, input.Body.Name, map[string]any{"stack": input.Body.Name})
 
-	return &DeploySwarmStackOutput{Body: base.ApiResponse[swarmtypes.StackDeployResponse]{Success: true, Data: *resp}}, nil
+	return &handlerutil.Out[swarmtypes.StackDeployResponse]{Body: base.ApiResponse[swarmtypes.StackDeployResponse]{Success: true, Data: *resp}}, nil
 }
 
 // GetStack returns detailed information for a specific swarm stack.
@@ -1182,7 +978,7 @@ func (h *SwarmHandler) DeployStack(ctx context.Context, input *DeploySwarmStackI
 // Returns the stack inspection payload when the stack exists.
 // Returns `404 Not Found` when the stack does not exist or another mapped HTTP
 // error when inspection fails.
-func (h *SwarmHandler) GetStack(ctx context.Context, input *GetSwarmStackInput) (*GetSwarmStackOutput, error) {
+func (h *SwarmHandler) GetStack(ctx context.Context, input *GetSwarmStackInput) (*handlerutil.Out[swarmtypes.StackInspect], error) {
 	stack, err := h.swarmService.GetStack(ctx, input.EnvironmentID, input.Name)
 	if err != nil {
 		if errdefs.IsNotFound(err) {
@@ -1191,7 +987,7 @@ func (h *SwarmHandler) GetStack(ctx context.Context, input *GetSwarmStackInput) 
 		return nil, mapSwarmServiceError(err, "Failed to inspect swarm stack")
 	}
 
-	return &GetSwarmStackOutput{Body: base.ApiResponse[swarmtypes.StackInspect]{Success: true, Data: *stack}}, nil
+	return &handlerutil.Out[swarmtypes.StackInspect]{Body: base.ApiResponse[swarmtypes.StackInspect]{Success: true, Data: *stack}}, nil
 }
 
 // GetStackSource returns the stored source content for a swarm stack.
@@ -1205,7 +1001,7 @@ func (h *SwarmHandler) GetStack(ctx context.Context, input *GetSwarmStackInput) 
 // Returns the stored compose and environment source for the stack.
 // Returns an authorization error for non-admin callers, `404 Not Found` when
 // no saved source exists, or another mapped HTTP error when loading fails.
-func (h *SwarmHandler) GetStackSource(ctx context.Context, input *GetSwarmStackSourceInput) (*GetSwarmStackSourceOutput, error) {
+func (h *SwarmHandler) GetStackSource(ctx context.Context, input *GetSwarmStackSourceInput) (*handlerutil.Out[swarmtypes.StackSource], error) {
 	source, err := h.swarmService.GetStackSource(ctx, input.EnvironmentID, input.Name)
 	if err != nil {
 		if errdefs.IsNotFound(err) {
@@ -1214,7 +1010,7 @@ func (h *SwarmHandler) GetStackSource(ctx context.Context, input *GetSwarmStackS
 		return nil, mapSwarmServiceError(err, "Failed to load swarm stack source")
 	}
 
-	return &GetSwarmStackSourceOutput{Body: base.ApiResponse[swarmtypes.StackSource]{Success: true, Data: *source}}, nil
+	return &handlerutil.Out[swarmtypes.StackSource]{Body: base.ApiResponse[swarmtypes.StackSource]{Success: true, Data: *source}}, nil
 }
 
 // UpdateStackSource persists the saved compose and env source for a swarm
@@ -1223,7 +1019,7 @@ func (h *SwarmHandler) GetStackSource(ctx context.Context, input *GetSwarmStackS
 // It requires admin privileges because stack source content can include
 // sensitive configuration. The stack name comes from the route, and the body
 // contains the replacement source files to save.
-func (h *SwarmHandler) UpdateStackSource(ctx context.Context, input *UpdateSwarmStackSourceInput) (*UpdateSwarmStackSourceOutput, error) {
+func (h *SwarmHandler) UpdateStackSource(ctx context.Context, input *UpdateSwarmStackSourceInput) (*handlerutil.Out[swarmtypes.StackSource], error) {
 	source, err := h.swarmService.UpdateStackSource(ctx, input.EnvironmentID, input.Name, input.Body)
 	if err != nil {
 		return nil, mapSwarmServiceError(err, "Failed to update swarm stack source")
@@ -1231,7 +1027,7 @@ func (h *SwarmHandler) UpdateStackSource(ctx context.Context, input *UpdateSwarm
 
 	h.auditSwarmMutation(ctx, input.EnvironmentID, "stack.source.update", "swarm_stack", input.Name, input.Name, map[string]any{"stack": input.Name})
 
-	return &UpdateSwarmStackSourceOutput{Body: base.ApiResponse[swarmtypes.StackSource]{Success: true, Data: *source}}, nil
+	return &handlerutil.Out[swarmtypes.StackSource]{Body: base.ApiResponse[swarmtypes.StackSource]{Success: true, Data: *source}}, nil
 }
 
 // DeleteStack removes a swarm stack and its managed resources.
@@ -1246,7 +1042,7 @@ func (h *SwarmHandler) UpdateStackSource(ctx context.Context, input *UpdateSwarm
 // Returns a confirmation response when the stack is removed.
 // Returns an authorization error for non-admin callers, `404 Not Found` when
 // the stack does not exist, or another mapped HTTP error when removal fails.
-func (h *SwarmHandler) DeleteStack(ctx context.Context, input *DeleteSwarmStackInput) (*DeleteSwarmStackOutput, error) {
+func (h *SwarmHandler) DeleteStack(ctx context.Context, input *DeleteSwarmStackInput) (*handlerutil.Out[base.MessageResponse], error) {
 	if err := h.swarmService.RemoveStack(ctx, input.EnvironmentID, input.Name); err != nil {
 		if errdefs.IsNotFound(err) {
 			return nil, huma.Error404NotFound("Swarm stack not found")
@@ -1256,7 +1052,7 @@ func (h *SwarmHandler) DeleteStack(ctx context.Context, input *DeleteSwarmStackI
 
 	h.auditSwarmMutation(ctx, input.EnvironmentID, "stack.delete", "swarm_stack", input.Name, input.Name, map[string]any{"stack": input.Name})
 
-	return &DeleteSwarmStackOutput{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Swarm stack removed successfully"}}}, nil
+	return &handlerutil.Out[base.MessageResponse]{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Swarm stack removed successfully"}}}, nil
 }
 
 // ListStackServices lists services belonging to a swarm stack.
@@ -1270,7 +1066,7 @@ func (h *SwarmHandler) DeleteStack(ctx context.Context, input *DeleteSwarmStackI
 // Returns a paginated list of service summaries for the stack.
 // Returns `404 Not Found` when the stack does not exist or another mapped HTTP
 // error when the lookup fails.
-func (h *SwarmHandler) ListStackServices(ctx context.Context, input *ListSwarmStackServicesInput) (*ListSwarmStackServicesOutput, error) {
+func (h *SwarmHandler) ListStackServices(ctx context.Context, input *ListSwarmStackServicesInput) (*handlerutil.Page[swarmtypes.ServiceSummary], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	items, paginationResp, err := h.swarmService.ListStackServicesPaginated(ctx, input.Name, params)
 	if err != nil {
@@ -1283,7 +1079,7 @@ func (h *SwarmHandler) ListStackServices(ctx context.Context, input *ListSwarmSt
 		items = []swarmtypes.ServiceSummary{}
 	}
 
-	return &ListSwarmStackServicesOutput{Body: base.Paginated[swarmtypes.ServiceSummary]{Success: true, Data: items, Pagination: handlerutil.PaginationResponse(paginationResp)}}, nil
+	return &handlerutil.Page[swarmtypes.ServiceSummary]{Body: base.Paginated[swarmtypes.ServiceSummary]{Success: true, Data: items, Pagination: handlerutil.PaginationResponse(paginationResp)}}, nil
 }
 
 // ListStackTasks lists tasks belonging to a swarm stack.
@@ -1297,7 +1093,7 @@ func (h *SwarmHandler) ListStackServices(ctx context.Context, input *ListSwarmSt
 // Returns a paginated list of task summaries for the stack.
 // Returns `404 Not Found` when the stack does not exist or another mapped HTTP
 // error when the lookup fails.
-func (h *SwarmHandler) ListStackTasks(ctx context.Context, input *ListSwarmStackTasksInput) (*ListSwarmStackTasksOutput, error) {
+func (h *SwarmHandler) ListStackTasks(ctx context.Context, input *ListSwarmStackTasksInput) (*handlerutil.Page[swarmtypes.TaskSummary], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	items, paginationResp, err := h.swarmService.ListStackTasksPaginated(ctx, input.Name, params)
 	if err != nil {
@@ -1310,7 +1106,7 @@ func (h *SwarmHandler) ListStackTasks(ctx context.Context, input *ListSwarmStack
 		items = []swarmtypes.TaskSummary{}
 	}
 
-	return &ListSwarmStackTasksOutput{Body: base.Paginated[swarmtypes.TaskSummary]{Success: true, Data: items, Pagination: handlerutil.PaginationResponse(paginationResp)}}, nil
+	return &handlerutil.Page[swarmtypes.TaskSummary]{Body: base.Paginated[swarmtypes.TaskSummary]{Success: true, Data: items, Pagination: handlerutil.PaginationResponse(paginationResp)}}, nil
 }
 
 // RenderStackConfig renders and validates a swarm stack configuration without deploying it.
@@ -1323,13 +1119,13 @@ func (h *SwarmHandler) ListStackTasks(ctx context.Context, input *ListSwarmStack
 //
 // Returns the rendered compose content together with discovered resource names.
 // Returns a mapped HTTP error when parsing, interpolation, or rendering fails.
-func (h *SwarmHandler) RenderStackConfig(ctx context.Context, input *RenderSwarmStackConfigInput) (*RenderSwarmStackConfigOutput, error) {
+func (h *SwarmHandler) RenderStackConfig(ctx context.Context, input *RenderSwarmStackConfigInput) (*handlerutil.Out[swarmtypes.StackRenderConfigResponse], error) {
 	resp, err := h.swarmService.RenderStackConfig(ctx, input.EnvironmentID, input.Body)
 	if err != nil {
 		return nil, mapSwarmServiceError(err, "Failed to render swarm stack config")
 	}
 
-	return &RenderSwarmStackConfigOutput{Body: base.ApiResponse[swarmtypes.StackRenderConfigResponse]{Success: true, Data: *resp}}, nil
+	return &handlerutil.Out[swarmtypes.StackRenderConfigResponse]{Body: base.ApiResponse[swarmtypes.StackRenderConfigResponse]{Success: true, Data: *resp}}, nil
 }
 
 // GetSwarmStatus returns the current swarm cluster metadata for an environment.
@@ -1342,13 +1138,13 @@ func (h *SwarmHandler) RenderStackConfig(ctx context.Context, input *RenderSwarm
 //
 // Returns the current swarm information when swarm mode is available.
 // Returns a mapped HTTP error when swarm inspection fails.
-func (h *SwarmHandler) GetSwarmStatus(ctx context.Context, input *GetSwarmStatusInput) (*GetSwarmStatusOutput, error) {
+func (h *SwarmHandler) GetSwarmStatus(ctx context.Context, input *GetSwarmStatusInput) (*handlerutil.Out[swarmtypes.RuntimeStatus], error) {
 	enabled, err := h.swarmService.IsEnabled(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to read swarm status")
 	}
 
-	return &GetSwarmStatusOutput{
+	return &handlerutil.Out[swarmtypes.RuntimeStatus]{
 		Body: base.ApiResponse[swarmtypes.RuntimeStatus]{
 			Success: true,
 			Data:    swarmtypes.RuntimeStatus{Enabled: enabled},
@@ -1366,13 +1162,13 @@ func (h *SwarmHandler) GetSwarmStatus(ctx context.Context, input *GetSwarmStatus
 //
 // Returns the current swarm information when swarm mode is available.
 // Returns a mapped HTTP error when swarm inspection fails.
-func (h *SwarmHandler) GetSwarmInfo(ctx context.Context, input *GetSwarmInfoInput) (*GetSwarmInfoOutput, error) {
+func (h *SwarmHandler) GetSwarmInfo(ctx context.Context, input *GetSwarmInfoInput) (*handlerutil.Out[swarmtypes.SwarmInfo], error) {
 	info, err := h.swarmService.GetSwarmInfo(ctx)
 	if err != nil {
 		return nil, mapSwarmServiceError(err, errors.WithMessage(err, "Failed to inspect swarm").Error())
 	}
 
-	return &GetSwarmInfoOutput{Body: base.ApiResponse[swarmtypes.SwarmInfo]{Success: true, Data: *info}}, nil
+	return &handlerutil.Out[swarmtypes.SwarmInfo]{Body: base.ApiResponse[swarmtypes.SwarmInfo]{Success: true, Data: *info}}, nil
 }
 
 // InitSwarm initializes swarm mode on the target engine.
@@ -1386,7 +1182,7 @@ func (h *SwarmHandler) GetSwarmInfo(ctx context.Context, input *GetSwarmInfoInpu
 // Returns the initialized swarm node ID and any other initialization details.
 // Returns an authorization error for non-admin callers or mapped HTTP errors
 // when initialization fails.
-func (h *SwarmHandler) InitSwarm(ctx context.Context, input *InitSwarmInput) (*InitSwarmOutput, error) {
+func (h *SwarmHandler) InitSwarm(ctx context.Context, input *InitSwarmInput) (*handlerutil.Out[swarmtypes.SwarmInitResponse], error) {
 	resp, err := h.swarmService.InitSwarm(ctx, input.Body)
 	if err != nil {
 		return nil, mapSwarmServiceError(err, "Failed to initialize swarm")
@@ -1394,7 +1190,7 @@ func (h *SwarmHandler) InitSwarm(ctx context.Context, input *InitSwarmInput) (*I
 
 	h.auditSwarmMutation(ctx, input.EnvironmentID, "lifecycle.init", "swarm", "cluster", "cluster", map[string]any{"nodeId": resp.NodeID})
 
-	return &InitSwarmOutput{Body: base.ApiResponse[swarmtypes.SwarmInitResponse]{Success: true, Data: *resp}}, nil
+	return &handlerutil.Out[swarmtypes.SwarmInitResponse]{Body: base.ApiResponse[swarmtypes.SwarmInitResponse]{Success: true, Data: *resp}}, nil
 }
 
 // JoinSwarm joins the target engine to an existing swarm cluster.
@@ -1408,18 +1204,18 @@ func (h *SwarmHandler) InitSwarm(ctx context.Context, input *InitSwarmInput) (*I
 // Returns a confirmation response when the engine joins successfully.
 // Returns an authorization error for non-admin callers or mapped HTTP errors
 // when the join operation fails.
-func (h *SwarmHandler) JoinSwarm(ctx context.Context, input *JoinSwarmInput) (*JoinSwarmOutput, error) {
+func (h *SwarmHandler) JoinSwarm(ctx context.Context, input *JoinSwarmInput) (*handlerutil.Out[base.MessageResponse], error) {
 	if err := h.swarmService.JoinSwarm(ctx, input.Body); err != nil {
 		return nil, mapSwarmServiceError(err, "Failed to join swarm")
 	}
 
 	h.auditSwarmMutation(ctx, input.EnvironmentID, "lifecycle.join", "swarm", "cluster", "cluster", map[string]any{"remoteAddrs": input.Body.RemoteAddrs})
 
-	return &JoinSwarmOutput{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Joined swarm successfully"}}}, nil
+	return &handlerutil.Out[base.MessageResponse]{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Joined swarm successfully"}}}, nil
 }
 
 // GetJoinCandidates lists enabled visible environments the caller can join.
-func (h *SwarmHandler) GetJoinCandidates(ctx context.Context, input *GetSwarmJoinCandidatesInput) (*GetSwarmJoinCandidatesOutput, error) {
+func (h *SwarmHandler) GetJoinCandidates(ctx context.Context, input *GetSwarmJoinCandidatesInput) (*handlerutil.Out[[]swarmtypes.SwarmJoinCandidate], error) {
 	if err := requireEasyJoinManagerPermissionsInternal(ctx, input.EnvironmentID); err != nil {
 		return nil, err
 	}
@@ -1459,11 +1255,11 @@ func (h *SwarmHandler) GetJoinCandidates(ctx context.Context, input *GetSwarmJoi
 		})
 	}
 
-	return &GetSwarmJoinCandidatesOutput{Body: base.ApiResponse[[]swarmtypes.SwarmJoinCandidate]{Success: true, Data: candidates}}, nil
+	return &handlerutil.Out[[]swarmtypes.SwarmJoinCandidate]{Body: base.ApiResponse[[]swarmtypes.SwarmJoinCandidate]{Success: true, Data: candidates}}, nil
 }
 
 // JoinEnvironments performs Easy Join without returning manager join tokens.
-func (h *SwarmHandler) JoinEnvironments(ctx context.Context, input *JoinSwarmEnvironmentsInput) (*JoinSwarmEnvironmentsOutput, error) {
+func (h *SwarmHandler) JoinEnvironments(ctx context.Context, input *JoinSwarmEnvironmentsInput) (*handlerutil.Out[swarmtypes.SwarmJoinEnvironmentsResponse], error) {
 	if err := requireEasyJoinManagerPermissionsInternal(ctx, input.EnvironmentID); err != nil {
 		return nil, err
 	}
@@ -1497,7 +1293,7 @@ func (h *SwarmHandler) JoinEnvironments(ctx context.Context, input *JoinSwarmEnv
 	if err != nil {
 		return nil, mapSwarmServiceError(err, "Failed to join swarm environments")
 	}
-	return &JoinSwarmEnvironmentsOutput{Body: base.ApiResponse[swarmtypes.SwarmJoinEnvironmentsResponse]{Success: true, Data: *result}}, nil
+	return &handlerutil.Out[swarmtypes.SwarmJoinEnvironmentsResponse]{Body: base.ApiResponse[swarmtypes.SwarmJoinEnvironmentsResponse]{Success: true, Data: *result}}, nil
 }
 
 func requireEasyJoinManagerPermissionsInternal(ctx context.Context, environmentID string) error {
@@ -1519,14 +1315,14 @@ func requireEasyJoinManagerPermissionsInternal(ctx context.Context, environmentI
 // Returns a confirmation response when the engine leaves successfully.
 // Returns an authorization error for non-admin callers or mapped HTTP errors
 // when the leave operation fails.
-func (h *SwarmHandler) LeaveSwarm(ctx context.Context, input *LeaveSwarmInput) (*LeaveSwarmOutput, error) {
+func (h *SwarmHandler) LeaveSwarm(ctx context.Context, input *LeaveSwarmInput) (*handlerutil.Out[base.MessageResponse], error) {
 	if err := h.swarmService.LeaveSwarm(ctx, input.Body); err != nil {
 		return nil, mapSwarmServiceError(err, "Failed to leave swarm")
 	}
 
 	h.auditSwarmMutation(ctx, input.EnvironmentID, "lifecycle.leave", "swarm", "cluster", "cluster", map[string]any{"force": input.Body.Force})
 
-	return &LeaveSwarmOutput{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Left swarm successfully"}}}, nil
+	return &handlerutil.Out[base.MessageResponse]{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Left swarm successfully"}}}, nil
 }
 
 // UnlockSwarm unlocks a swarm manager using the supplied unlock key.
@@ -1540,14 +1336,14 @@ func (h *SwarmHandler) LeaveSwarm(ctx context.Context, input *LeaveSwarmInput) (
 // Returns a confirmation response when the manager is unlocked.
 // Returns an authorization error for non-admin callers or mapped HTTP errors
 // when the unlock operation fails.
-func (h *SwarmHandler) UnlockSwarm(ctx context.Context, input *UnlockSwarmInput) (*UnlockSwarmOutput, error) {
+func (h *SwarmHandler) UnlockSwarm(ctx context.Context, input *UnlockSwarmInput) (*handlerutil.Out[base.MessageResponse], error) {
 	if err := h.swarmService.UnlockSwarm(ctx, input.Body); err != nil {
 		return nil, mapSwarmServiceError(err, "Failed to unlock swarm")
 	}
 
 	h.auditSwarmMutation(ctx, input.EnvironmentID, "lifecycle.unlock", "swarm", "cluster", "cluster", map[string]any{})
 
-	return &UnlockSwarmOutput{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Swarm unlocked successfully"}}}, nil
+	return &handlerutil.Out[base.MessageResponse]{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Swarm unlocked successfully"}}}, nil
 }
 
 // GetUnlockKey returns the current swarm manager unlock key.
@@ -1560,13 +1356,13 @@ func (h *SwarmHandler) UnlockSwarm(ctx context.Context, input *UnlockSwarmInput)
 //
 // Returns the current manager unlock key.
 // Returns a mapped HTTP error when the unlock key cannot be retrieved.
-func (h *SwarmHandler) GetUnlockKey(ctx context.Context, input *GetSwarmUnlockKeyInput) (*GetSwarmUnlockKeyOutput, error) {
+func (h *SwarmHandler) GetUnlockKey(ctx context.Context, input *GetSwarmUnlockKeyInput) (*handlerutil.Out[swarmtypes.SwarmUnlockKeyResponse], error) {
 	resp, err := h.swarmService.GetSwarmUnlockKey(ctx)
 	if err != nil {
 		return nil, mapSwarmServiceError(err, "Failed to get swarm unlock key")
 	}
 
-	return &GetSwarmUnlockKeyOutput{Body: base.ApiResponse[swarmtypes.SwarmUnlockKeyResponse]{Success: true, Data: *resp}}, nil
+	return &handlerutil.Out[swarmtypes.SwarmUnlockKeyResponse]{Body: base.ApiResponse[swarmtypes.SwarmUnlockKeyResponse]{Success: true, Data: *resp}}, nil
 }
 
 // GetJoinTokens returns the current swarm worker and manager join tokens.
@@ -1579,13 +1375,13 @@ func (h *SwarmHandler) GetUnlockKey(ctx context.Context, input *GetSwarmUnlockKe
 //
 // Returns the current worker and manager join tokens.
 // Returns a mapped HTTP error when token lookup fails.
-func (h *SwarmHandler) GetJoinTokens(ctx context.Context, input *GetSwarmJoinTokensInput) (*GetSwarmJoinTokensOutput, error) {
+func (h *SwarmHandler) GetJoinTokens(ctx context.Context, input *GetSwarmJoinTokensInput) (*handlerutil.Out[swarmtypes.SwarmJoinTokensResponse], error) {
 	resp, err := h.swarmService.GetSwarmJoinTokens(ctx)
 	if err != nil {
 		return nil, mapSwarmServiceError(err, "Failed to get swarm join tokens")
 	}
 
-	return &GetSwarmJoinTokensOutput{Body: base.ApiResponse[swarmtypes.SwarmJoinTokensResponse]{Success: true, Data: *resp}}, nil
+	return &handlerutil.Out[swarmtypes.SwarmJoinTokensResponse]{Body: base.ApiResponse[swarmtypes.SwarmJoinTokensResponse]{Success: true, Data: *resp}}, nil
 }
 
 // RotateJoinTokens rotates the swarm worker and or manager join tokens.
@@ -1599,14 +1395,14 @@ func (h *SwarmHandler) GetJoinTokens(ctx context.Context, input *GetSwarmJoinTok
 // Returns a confirmation response when rotation succeeds.
 // Returns an authorization error for non-admin callers or mapped HTTP errors
 // when token rotation fails.
-func (h *SwarmHandler) RotateJoinTokens(ctx context.Context, input *RotateSwarmJoinTokensInput) (*RotateSwarmJoinTokensOutput, error) {
+func (h *SwarmHandler) RotateJoinTokens(ctx context.Context, input *RotateSwarmJoinTokensInput) (*handlerutil.Out[base.MessageResponse], error) {
 	if err := h.swarmService.RotateSwarmJoinTokens(ctx, input.Body); err != nil {
 		return nil, mapSwarmServiceError(err, "Failed to rotate swarm join tokens")
 	}
 
 	h.auditSwarmMutation(ctx, input.EnvironmentID, "lifecycle.rotate_tokens", "swarm", "cluster", "cluster", map[string]any{"rotateWorker": input.Body.RotateWorkerToken, "rotateManager": input.Body.RotateManagerToken})
 
-	return &RotateSwarmJoinTokensOutput{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Swarm join tokens rotated successfully"}}}, nil
+	return &handlerutil.Out[base.MessageResponse]{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Swarm join tokens rotated successfully"}}}, nil
 }
 
 // UpdateSwarmSpec updates the swarm cluster specification.
@@ -1620,14 +1416,14 @@ func (h *SwarmHandler) RotateJoinTokens(ctx context.Context, input *RotateSwarmJ
 // Returns a confirmation response when the spec update succeeds.
 // Returns an authorization error for non-admin callers or mapped HTTP errors
 // when the spec update fails.
-func (h *SwarmHandler) UpdateSwarmSpec(ctx context.Context, input *UpdateSwarmSpecInput) (*UpdateSwarmSpecOutput, error) {
+func (h *SwarmHandler) UpdateSwarmSpec(ctx context.Context, input *UpdateSwarmSpecInput) (*handlerutil.Out[base.MessageResponse], error) {
 	if err := h.swarmService.UpdateSwarmSpec(ctx, input.Body); err != nil {
 		return nil, mapSwarmServiceError(err, "Failed to update swarm spec")
 	}
 
 	h.auditSwarmMutation(ctx, input.EnvironmentID, "lifecycle.update_spec", "swarm", "cluster", "cluster", map[string]any{})
 
-	return &UpdateSwarmSpecOutput{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Swarm spec updated successfully"}}}, nil
+	return &handlerutil.Out[base.MessageResponse]{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Swarm spec updated successfully"}}}, nil
 }
 
 // ListConfigs lists swarm configs in the current environment.
@@ -1640,7 +1436,7 @@ func (h *SwarmHandler) UpdateSwarmSpec(ctx context.Context, input *UpdateSwarmSp
 //
 // Returns the current swarm configs.
 // Returns a mapped HTTP error when config enumeration fails.
-func (h *SwarmHandler) ListConfigs(ctx context.Context, input *ListSwarmConfigsInput) (*ListSwarmConfigsOutput, error) {
+func (h *SwarmHandler) ListConfigs(ctx context.Context, input *ListSwarmConfigsInput) (*handlerutil.Out[[]swarmtypes.ConfigSummary], error) {
 	items, err := h.swarmService.ListConfigs(ctx)
 	if err != nil {
 		return nil, mapSwarmServiceError(err, "Failed to list swarm configs")
@@ -1649,7 +1445,7 @@ func (h *SwarmHandler) ListConfigs(ctx context.Context, input *ListSwarmConfigsI
 		items = []swarmtypes.ConfigSummary{}
 	}
 
-	return &ListSwarmConfigsOutput{Body: base.ApiResponse[[]swarmtypes.ConfigSummary]{Success: true, Data: items}}, nil
+	return &handlerutil.Out[[]swarmtypes.ConfigSummary]{Body: base.ApiResponse[[]swarmtypes.ConfigSummary]{Success: true, Data: items}}, nil
 }
 
 // GetConfig returns details for a single swarm config.
@@ -1663,7 +1459,7 @@ func (h *SwarmHandler) ListConfigs(ctx context.Context, input *ListSwarmConfigsI
 // Returns the config summary when the config exists.
 // Returns `404 Not Found` when the config does not exist or another mapped HTTP
 // error when inspection fails.
-func (h *SwarmHandler) GetConfig(ctx context.Context, input *GetSwarmConfigInput) (*GetSwarmConfigOutput, error) {
+func (h *SwarmHandler) GetConfig(ctx context.Context, input *GetSwarmConfigInput) (*handlerutil.Out[swarmtypes.ConfigSummary], error) {
 	cfg, err := h.swarmService.GetConfig(ctx, input.ConfigID)
 	if err != nil {
 		if errdefs.IsNotFound(err) {
@@ -1672,7 +1468,7 @@ func (h *SwarmHandler) GetConfig(ctx context.Context, input *GetSwarmConfigInput
 		return nil, mapSwarmServiceError(err, "Failed to inspect swarm config")
 	}
 
-	return &GetSwarmConfigOutput{Body: base.ApiResponse[swarmtypes.ConfigSummary]{Success: true, Data: *cfg}}, nil
+	return &handlerutil.Out[swarmtypes.ConfigSummary]{Body: base.ApiResponse[swarmtypes.ConfigSummary]{Success: true, Data: *cfg}}, nil
 }
 
 // CreateConfig creates a new swarm config.
@@ -1686,7 +1482,7 @@ func (h *SwarmHandler) GetConfig(ctx context.Context, input *GetSwarmConfigInput
 // Returns the created config summary.
 // Returns an authorization error for non-admin callers or mapped HTTP errors
 // when validation or creation fails.
-func (h *SwarmHandler) CreateConfig(ctx context.Context, input *CreateSwarmConfigInput) (*CreateSwarmConfigOutput, error) {
+func (h *SwarmHandler) CreateConfig(ctx context.Context, input *CreateSwarmConfigInput) (*handlerutil.Out[swarmtypes.ConfigSummary], error) {
 	cfg, err := h.swarmService.CreateConfig(ctx, input.Body)
 	if err != nil {
 		return nil, mapSwarmServiceError(err, "Failed to create swarm config")
@@ -1694,7 +1490,7 @@ func (h *SwarmHandler) CreateConfig(ctx context.Context, input *CreateSwarmConfi
 
 	h.auditSwarmMutation(ctx, input.EnvironmentID, "config.create", "swarm_config", cfg.ID, cfg.Spec.Name, map[string]any{"configId": cfg.ID, "name": cfg.Spec.Name})
 
-	return &CreateSwarmConfigOutput{Body: base.ApiResponse[swarmtypes.ConfigSummary]{Success: true, Data: *cfg}}, nil
+	return &handlerutil.Out[swarmtypes.ConfigSummary]{Body: base.ApiResponse[swarmtypes.ConfigSummary]{Success: true, Data: *cfg}}, nil
 }
 
 // DeleteConfig removes a swarm config.
@@ -1708,7 +1504,7 @@ func (h *SwarmHandler) CreateConfig(ctx context.Context, input *CreateSwarmConfi
 // Returns a confirmation response when the config is removed.
 // Returns an authorization error for non-admin callers, `404 Not Found` when
 // the config does not exist, or another mapped HTTP error when removal fails.
-func (h *SwarmHandler) DeleteConfig(ctx context.Context, input *DeleteSwarmConfigInput) (*DeleteSwarmConfigOutput, error) {
+func (h *SwarmHandler) DeleteConfig(ctx context.Context, input *DeleteSwarmConfigInput) (*handlerutil.Out[base.MessageResponse], error) {
 	if err := h.swarmService.RemoveConfig(ctx, input.ConfigID); err != nil {
 		if errdefs.IsNotFound(err) {
 			return nil, huma.Error404NotFound("Swarm config not found")
@@ -1718,7 +1514,7 @@ func (h *SwarmHandler) DeleteConfig(ctx context.Context, input *DeleteSwarmConfi
 
 	h.auditSwarmMutation(ctx, input.EnvironmentID, "config.delete", "swarm_config", input.ConfigID, "", map[string]any{"configId": input.ConfigID})
 
-	return &DeleteSwarmConfigOutput{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Swarm config removed successfully"}}}, nil
+	return &handlerutil.Out[base.MessageResponse]{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Swarm config removed successfully"}}}, nil
 }
 
 // ListSecrets lists swarm secrets in the current environment.
@@ -1731,7 +1527,7 @@ func (h *SwarmHandler) DeleteConfig(ctx context.Context, input *DeleteSwarmConfi
 //
 // Returns the current swarm secrets.
 // Returns a mapped HTTP error when secret enumeration fails.
-func (h *SwarmHandler) ListSecrets(ctx context.Context, input *ListSwarmSecretsInput) (*ListSwarmSecretsOutput, error) {
+func (h *SwarmHandler) ListSecrets(ctx context.Context, input *ListSwarmSecretsInput) (*handlerutil.Out[[]swarmtypes.SecretSummary], error) {
 	items, err := h.swarmService.ListSecrets(ctx)
 	if err != nil {
 		return nil, mapSwarmServiceError(err, "Failed to list swarm secrets")
@@ -1740,7 +1536,7 @@ func (h *SwarmHandler) ListSecrets(ctx context.Context, input *ListSwarmSecretsI
 		items = []swarmtypes.SecretSummary{}
 	}
 
-	return &ListSwarmSecretsOutput{Body: base.ApiResponse[[]swarmtypes.SecretSummary]{Success: true, Data: items}}, nil
+	return &handlerutil.Out[[]swarmtypes.SecretSummary]{Body: base.ApiResponse[[]swarmtypes.SecretSummary]{Success: true, Data: items}}, nil
 }
 
 // GetSecret returns details for a single swarm secret.
@@ -1754,7 +1550,7 @@ func (h *SwarmHandler) ListSecrets(ctx context.Context, input *ListSwarmSecretsI
 // Returns the secret summary when the secret exists.
 // Returns `404 Not Found` when the secret does not exist or another mapped HTTP
 // error when inspection fails.
-func (h *SwarmHandler) GetSecret(ctx context.Context, input *GetSwarmSecretInput) (*GetSwarmSecretOutput, error) {
+func (h *SwarmHandler) GetSecret(ctx context.Context, input *GetSwarmSecretInput) (*handlerutil.Out[swarmtypes.SecretSummary], error) {
 	secret, err := h.swarmService.GetSecret(ctx, input.SecretID)
 	if err != nil {
 		if errdefs.IsNotFound(err) {
@@ -1763,7 +1559,7 @@ func (h *SwarmHandler) GetSecret(ctx context.Context, input *GetSwarmSecretInput
 		return nil, mapSwarmServiceError(err, "Failed to inspect swarm secret")
 	}
 
-	return &GetSwarmSecretOutput{Body: base.ApiResponse[swarmtypes.SecretSummary]{Success: true, Data: *secret}}, nil
+	return &handlerutil.Out[swarmtypes.SecretSummary]{Body: base.ApiResponse[swarmtypes.SecretSummary]{Success: true, Data: *secret}}, nil
 }
 
 // CreateSecret creates a new swarm secret.
@@ -1777,7 +1573,7 @@ func (h *SwarmHandler) GetSecret(ctx context.Context, input *GetSwarmSecretInput
 // Returns the created secret summary.
 // Returns an authorization error for non-admin callers or mapped HTTP errors
 // when validation or creation fails.
-func (h *SwarmHandler) CreateSecret(ctx context.Context, input *CreateSwarmSecretInput) (*CreateSwarmSecretOutput, error) {
+func (h *SwarmHandler) CreateSecret(ctx context.Context, input *CreateSwarmSecretInput) (*handlerutil.Out[swarmtypes.SecretSummary], error) {
 	secret, err := h.swarmService.CreateSecret(ctx, input.Body)
 	if err != nil {
 		return nil, mapSwarmServiceError(err, "Failed to create swarm secret")
@@ -1785,7 +1581,7 @@ func (h *SwarmHandler) CreateSecret(ctx context.Context, input *CreateSwarmSecre
 
 	h.auditSwarmMutation(ctx, input.EnvironmentID, "secret.create", "swarm_secret", secret.ID, secret.Spec.Name, map[string]any{"secretId": secret.ID, "name": secret.Spec.Name})
 
-	return &CreateSwarmSecretOutput{Body: base.ApiResponse[swarmtypes.SecretSummary]{Success: true, Data: *secret}}, nil
+	return &handlerutil.Out[swarmtypes.SecretSummary]{Body: base.ApiResponse[swarmtypes.SecretSummary]{Success: true, Data: *secret}}, nil
 }
 
 // DeleteSecret removes a swarm secret.
@@ -1799,7 +1595,7 @@ func (h *SwarmHandler) CreateSecret(ctx context.Context, input *CreateSwarmSecre
 // Returns a confirmation response when the secret is removed.
 // Returns an authorization error for non-admin callers, `404 Not Found` when
 // the secret does not exist, or another mapped HTTP error when removal fails.
-func (h *SwarmHandler) DeleteSecret(ctx context.Context, input *DeleteSwarmSecretInput) (*DeleteSwarmSecretOutput, error) {
+func (h *SwarmHandler) DeleteSecret(ctx context.Context, input *DeleteSwarmSecretInput) (*handlerutil.Out[base.MessageResponse], error) {
 	if err := h.swarmService.RemoveSecret(ctx, input.SecretID); err != nil {
 		if errdefs.IsNotFound(err) {
 			return nil, huma.Error404NotFound("Swarm secret not found")
@@ -1809,7 +1605,7 @@ func (h *SwarmHandler) DeleteSecret(ctx context.Context, input *DeleteSwarmSecre
 
 	h.auditSwarmMutation(ctx, input.EnvironmentID, "secret.delete", "swarm_secret", input.SecretID, "", map[string]any{"secretId": input.SecretID})
 
-	return &DeleteSwarmSecretOutput{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Swarm secret removed successfully"}}}, nil
+	return &handlerutil.Out[base.MessageResponse]{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Swarm secret removed successfully"}}}, nil
 }
 
 // auditSwarmMutation writes an informational event for a completed swarm mutation.

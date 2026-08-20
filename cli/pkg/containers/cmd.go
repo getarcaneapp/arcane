@@ -1,11 +1,8 @@
 package containers
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
 	"os"
 	"strconv"
@@ -54,8 +51,6 @@ var (
 	containerCreateEntrypoint string
 	containerCreateCmd        string
 )
-
-const maxPromptOptions = 20
 
 // ContainersCmd is the parent command for container operations
 var ContainersCmd = &cobra.Command{
@@ -227,33 +222,21 @@ var containersGetCmd = &cobra.Command{
 		}
 
 		allowPrompt := !jsonOutput && prompt.IsInteractive()
-		resolved, complete, err := resolveContainer(cmd.Context(), c, args[0], allowPrompt)
+		resolved, complete, err := containerRef.Resolve(cmd.Context(), c, args[0], allowPrompt)
 		if err != nil {
 			return err
 		}
 
 		if !complete {
-			path := types.Endpoints.Container(c.EnvID(), resolved.ID)
-			resp, err := c.Get(cmd.Context(), path)
+			result, err := c.GetJSON[container.Details](cmd.Context(), types.Endpoints.Container(c.EnvID(), resolved.ID))
 			if err != nil {
 				return errors.WrapIf(err, "failed to get container")
-			}
-			defer func() { _ = resp.Body.Close() }()
-
-			var result base.ApiResponse[container.Details]
-			if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-				return err
 			}
 			resolved = &result.Data
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(resolved, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(resolved)
 		}
 
 		output.Header("Container Details")
@@ -272,10 +255,21 @@ var containersStartCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runContainerPostAction[base.MessageResponse](cmd, args[0], containerPostActionConfig[base.MessageResponse]{
-			endpoint:       types.Endpoints.ContainerStart,
-			failureMessage: "failed to start container",
-			successVerb:    "started",
+		c, err := client.NewFromConfig()
+		if err != nil {
+			return err
+		}
+
+		resolved, _, err := containerRef.Resolve(cmd.Context(), c, args[0], false)
+		if err != nil {
+			return err
+		}
+
+		return cmdutil.RunPostAction[base.MessageResponse](cmd, c, cmdutil.PostActionSpec{
+			Path:           types.Endpoints.ContainerStart(c.EnvID(), resolved.ID),
+			FailureMessage: "failed to start container",
+			SuccessMessage: fmt.Sprintf("Container %s started successfully", containerDisplayName(resolved)),
+			JSON:           jsonOutput,
 		})
 	},
 }
@@ -286,10 +280,21 @@ var containersStopCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runContainerPostAction[base.MessageResponse](cmd, args[0], containerPostActionConfig[base.MessageResponse]{
-			endpoint:       types.Endpoints.ContainerStop,
-			failureMessage: "failed to stop container",
-			successVerb:    "stopped",
+		c, err := client.NewFromConfig()
+		if err != nil {
+			return err
+		}
+
+		resolved, _, err := containerRef.Resolve(cmd.Context(), c, args[0], false)
+		if err != nil {
+			return err
+		}
+
+		return cmdutil.RunPostAction[base.MessageResponse](cmd, c, cmdutil.PostActionSpec{
+			Path:           types.Endpoints.ContainerStop(c.EnvID(), resolved.ID),
+			FailureMessage: "failed to stop container",
+			SuccessMessage: fmt.Sprintf("Container %s stopped successfully", containerDisplayName(resolved)),
+			JSON:           jsonOutput,
 		})
 	},
 }
@@ -300,10 +305,21 @@ var containersRestartCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runContainerPostAction[base.MessageResponse](cmd, args[0], containerPostActionConfig[base.MessageResponse]{
-			endpoint:       types.Endpoints.ContainerRestart,
-			failureMessage: "failed to restart container",
-			successVerb:    "restarted",
+		c, err := client.NewFromConfig()
+		if err != nil {
+			return err
+		}
+
+		resolved, _, err := containerRef.Resolve(cmd.Context(), c, args[0], false)
+		if err != nil {
+			return err
+		}
+
+		return cmdutil.RunPostAction[base.MessageResponse](cmd, c, cmdutil.PostActionSpec{
+			Path:           types.Endpoints.ContainerRestart(c.EnvID(), resolved.ID),
+			FailureMessage: "failed to restart container",
+			SuccessMessage: fmt.Sprintf("Container %s restarted successfully", containerDisplayName(resolved)),
+			JSON:           jsonOutput,
 		})
 	},
 }
@@ -314,13 +330,24 @@ var containersUpdateCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := client.NewFromConfig()
+		if err != nil {
+			return err
+		}
+
+		resolved, _, err := containerRef.Resolve(cmd.Context(), c, args[0], false)
+		if err != nil {
+			return err
+		}
+
 		// This route is served by the updater handler, so it answers with an
 		// updater.Result rather than a container.ActionResult.
-		return runContainerPostAction[updater.Result](cmd, args[0], containerPostActionConfig[updater.Result]{
-			endpoint:       types.Endpoints.ContainerUpdate,
-			failureMessage: "failed to update container",
-			successVerb:    "updated",
-			timeout:        30 * time.Minute,
+		return cmdutil.RunPostAction[updater.Result](cmd, c, cmdutil.PostActionSpec{
+			Path:           types.Endpoints.ContainerUpdate(c.EnvID(), resolved.ID),
+			FailureMessage: "failed to update container",
+			SuccessMessage: fmt.Sprintf("Container %s updated successfully", containerDisplayName(resolved)),
+			Timeout:        30 * time.Minute,
+			JSON:           jsonOutput,
 		})
 	},
 }
@@ -331,64 +358,24 @@ var containersRedeployCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runContainerPostAction[container.Details](cmd, args[0], containerPostActionConfig[container.Details]{
-			endpoint:       types.Endpoints.ContainerRedeploy,
-			failureMessage: "failed to redeploy container",
-			successVerb:    "redeployed",
-			timeout:        30 * time.Minute,
+		c, err := client.NewFromConfig()
+		if err != nil {
+			return err
+		}
+
+		resolved, _, err := containerRef.Resolve(cmd.Context(), c, args[0], false)
+		if err != nil {
+			return err
+		}
+
+		return cmdutil.RunPostAction[container.Details](cmd, c, cmdutil.PostActionSpec{
+			Path:           types.Endpoints.ContainerRedeploy(c.EnvID(), resolved.ID),
+			FailureMessage: "failed to redeploy container",
+			SuccessMessage: fmt.Sprintf("Container %s redeployed successfully", containerDisplayName(resolved)),
+			Timeout:        30 * time.Minute,
+			JSON:           jsonOutput,
 		})
 	},
-}
-
-type containerPostActionConfig[T any] struct {
-	endpoint       func(string, string) string
-	failureMessage string
-	successVerb    string
-	timeout        time.Duration
-}
-
-func runContainerPostAction[T any](cmd *cobra.Command, containerRef string, cfg containerPostActionConfig[T]) error {
-	c, err := client.NewFromConfig()
-	if err != nil {
-		return err
-	}
-
-	resolved, _, err := resolveContainer(cmd.Context(), c, containerRef, false)
-	if err != nil {
-		return err
-	}
-
-	if cfg.timeout > 0 {
-		c.SetTimeout(cfg.timeout)
-	}
-
-	path := cfg.endpoint(c.EnvID(), resolved.ID)
-	resp, err := c.Post(cmd.Context(), path, nil)
-	if err != nil {
-		return errors.WrapIff(err, "%s", cfg.failureMessage)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-		return errors.WrapIff(err, "%s", cfg.failureMessage)
-	}
-
-	var result base.ApiResponse[T]
-	if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-		return err
-	}
-
-	if jsonOutput {
-		resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-		if err != nil {
-			return errors.WrapIf(err, "failed to marshal JSON")
-		}
-		fmt.Println(string(resultBytes))
-		return nil
-	}
-
-	output.Success("Container %s %s successfully", containerDisplayName(resolved), cfg.successVerb)
-	return nil
 }
 
 var containersDeleteCmd = &cobra.Command{
@@ -403,7 +390,7 @@ var containersDeleteCmd = &cobra.Command{
 			return err
 		}
 
-		resolved, _, err := resolveContainer(cmd.Context(), c, args[0], false)
+		resolved, _, err := containerRef.Resolve(cmd.Context(), c, args[0], false)
 		if err != nil {
 			return err
 		}
@@ -445,12 +432,7 @@ var containersDeleteCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Container %s deleted successfully", displayName)
@@ -468,25 +450,13 @@ var containersCountsCmd = &cobra.Command{
 			return err
 		}
 
-		path := types.Endpoints.ContainersCounts(c.EnvID())
-		resp, err := c.Get(cmd.Context(), path)
+		result, err := c.GetJSON[container.StatusCounts](cmd.Context(), types.Endpoints.ContainersCounts(c.EnvID()))
 		if err != nil {
 			return errors.WrapIf(err, "failed to get container counts")
 		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result base.ApiResponse[container.StatusCounts]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
-		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Header("Container Status Counts")
@@ -593,28 +563,13 @@ var containersCreateCmd = &cobra.Command{
 			return errors.New("--image is required")
 		}
 
-		path := types.Endpoints.Containers(c.EnvID())
-		resp, err := c.Post(cmd.Context(), path, req)
+		result, err := c.PostJSON[container.Created](cmd.Context(), types.Endpoints.Containers(c.EnvID()), req)
 		if err != nil {
 			return errors.WrapIf(err, "failed to create container")
 		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to create container")
-		}
-
-		var result base.ApiResponse[container.Created]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
-		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Container %s created successfully", result.Data.Name)
@@ -707,131 +662,17 @@ func containerDisplayName(details *container.Details) string {
 	return ""
 }
 
-func resolveContainer(ctx context.Context, c *client.Client, identifier string, allowPrompt bool) (*container.Details, bool, error) {
-	trimmed := strings.TrimSpace(identifier)
-	if trimmed == "" {
-		return nil, false, errors.New("container identifier is required")
-	}
-
-	details, complete, found, err := fetchContainerByIdentifier(ctx, c, trimmed)
-	if err != nil {
-		return nil, false, err
-	}
-	if found {
-		return details, complete, nil
-	}
-
-	matches, err := searchContainerMatches(ctx, c, trimmed)
-	if err != nil {
-		return nil, false, err
-	}
-
-	selected, err := selectContainerMatch(matches, trimmed, allowPrompt)
-	if err != nil {
-		return nil, false, err
-	}
-	if selected != nil {
-		return containerDetailsFromSummary(*selected), false, nil
-	}
-
-	identifierLower := strings.ToLower(trimmed)
-	if looksLikeIDPrefix(identifierLower) {
-		fallback, ok, err := fallbackContainerByIDPrefix(ctx, c, identifierLower)
-		if err != nil {
-			return nil, false, err
-		}
-		if ok {
-			return fallback, false, nil
-		}
-	}
-
-	return nil, false, errors.Errorf("container %q not found; use the container ID or run `arcane containers list`", trimmed)
-}
-
-func fetchContainerByIdentifier(ctx context.Context, c *client.Client, identifier string) (*container.Details, bool, bool, error) {
-	resp, err := c.Get(ctx, types.Endpoints.Container(c.EnvID(), identifier))
-	if err != nil {
-		return nil, false, false, errors.WrapIff(err, "failed to resolve container %q", identifier)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	_ = resp.Body.Close()
-	if err != nil {
-		return nil, false, false, errors.WrapIf(err, "failed to read container response")
-	}
-
-	if resp.StatusCode == http.StatusOK {
-		var result base.ApiResponse[container.Details]
-		if err := json.Unmarshal(body, &result); err != nil {
-			return nil, false, false, errors.WrapIf(err, "failed to parse container response")
-		}
-		return &result.Data, true, true, nil
-	}
-
-	if resp.StatusCode != http.StatusNotFound {
-		return nil, false, false, errors.Errorf("failed to resolve container %q (status %d): %s", identifier, resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-
-	return nil, false, false, nil
-}
-
-func searchContainerMatches(ctx context.Context, c *client.Client, identifier string) ([]container.Summary, error) {
-	searchPath := fmt.Sprintf("%s?search=%s&limit=%d", types.Endpoints.Containers(c.EnvID()), url.QueryEscape(identifier), cmdutil.ShowAllLimit)
-	searchResp, err := c.Get(ctx, searchPath)
-	if err != nil {
-		return nil, errors.WrapIf(err, "failed to search containers")
-	}
-
-	searchBody, err := io.ReadAll(searchResp.Body)
-	_ = searchResp.Body.Close()
-	if err != nil {
-		return nil, errors.WrapIf(err, "failed to read containers response")
-	}
-
-	if searchResp.StatusCode < 200 || searchResp.StatusCode >= 300 {
-		return nil, errors.Errorf("failed to search containers (status %d): %s", searchResp.StatusCode, strings.TrimSpace(string(searchBody)))
-	}
-
-	var result base.Paginated[container.Summary]
-	if err := json.Unmarshal(searchBody, &result); err != nil {
-		return nil, errors.WrapIf(err, "failed to parse containers response")
-	}
-
-	identifierLower := strings.ToLower(identifier)
-	matches := make([]container.Summary, 0)
-	for _, item := range result.Data {
-		if containerMatches(item, identifierLower, identifier) {
-			matches = append(matches, item)
-		}
-	}
-
-	return matches, nil
-}
-
-func selectContainerMatch(matches []container.Summary, identifier string, allowPrompt bool) (*container.Summary, error) {
-	if len(matches) == 1 {
-		return &matches[0], nil
-	}
-	if len(matches) == 0 {
-		return nil, nil
-	}
-
-	if !allowPrompt {
-		return nil, errors.Errorf("multiple containers match %q; use the container ID or run `arcane containers list`", identifier)
-	}
-	if len(matches) > maxPromptOptions {
-		return nil, errors.Errorf("multiple containers match %q (%d results); refine your query or use the container ID", identifier, len(matches))
-	}
-
-	options := make([]string, 0, len(matches))
-	for _, match := range matches {
-		options = append(options, formatContainerOption(match))
-	}
-	choice, err := prompt.Select("container", options)
-	if err != nil {
-		return nil, err
-	}
-	return &matches[choice], nil
+var containerRef = cmdutil.ResourceRef[container.Details, container.Summary]{
+	Singular: "container",
+	Plural:   "containers",
+	IDHint:   "the container ID",
+	ListCmd:  "arcane containers list",
+	GetPath:  types.Endpoints.Container,
+	ListPath: types.Endpoints.Containers,
+	Matches:  containerMatches,
+	Label:    formatContainerOption,
+	Promote:  containerDetailsFromSummary,
+	IDOf:     func(item container.Summary) string { return item.ID },
 }
 
 func containerSummaryName(summary container.Summary) string {
@@ -843,34 +684,6 @@ func containerSummaryName(summary container.Summary) string {
 
 func containerDetailsFromSummary(summary container.Summary) *container.Details {
 	return &container.Details{ID: summary.ID, Name: containerSummaryName(summary)}
-}
-
-func fallbackContainerByIDPrefix(ctx context.Context, c *client.Client, identifierLower string) (*container.Details, bool, error) {
-	fallbackPath := fmt.Sprintf("%s?limit=%d", types.Endpoints.Containers(c.EnvID()), cmdutil.ShowAllLimit)
-	fallbackResp, err := c.Get(ctx, fallbackPath)
-	if err != nil {
-		return nil, false, errors.WrapIf(err, "failed to search containers")
-	}
-	fallbackBody, err := io.ReadAll(fallbackResp.Body)
-	_ = fallbackResp.Body.Close()
-	if err != nil {
-		return nil, false, errors.WrapIf(err, "failed to read containers response")
-	}
-	if fallbackResp.StatusCode < 200 || fallbackResp.StatusCode >= 300 {
-		return nil, false, nil
-	}
-
-	var fallbackResult base.Paginated[container.Summary]
-	if err := json.Unmarshal(fallbackBody, &fallbackResult); err != nil {
-		return nil, false, errors.WrapIf(err, "failed to parse containers response")
-	}
-	for _, item := range fallbackResult.Data {
-		if strings.HasPrefix(strings.ToLower(item.ID), identifierLower) {
-			return containerDetailsFromSummary(item), true, nil
-		}
-	}
-
-	return nil, false, nil
 }
 
 func containerMatches(item container.Summary, identifierLower, original string) bool {
@@ -913,16 +726,4 @@ func formatContainerOption(item container.Summary) string {
 		state = "unknown"
 	}
 	return fmt.Sprintf("%s (%s, %s)", name, shortID(item.ID), image+" / "+state)
-}
-
-func looksLikeIDPrefix(value string) bool {
-	if len(value) < 4 {
-		return false
-	}
-	for _, r := range value {
-		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
-			return false
-		}
-	}
-	return true
 }

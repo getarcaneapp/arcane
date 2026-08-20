@@ -73,10 +73,6 @@ type passwordReauthBody struct {
 	Password string `json:"password" minLength:"1"`
 }
 
-type PasskeyLoginBeginOutput struct {
-	Body base.ApiResponse[passkeyBeginResponse]
-}
-
 type PasskeyLoginFinishInput struct {
 	UserAgent string `header:"User-Agent"`
 	Body      passkeyCredentialBody
@@ -91,10 +87,6 @@ type MobilePasskeyFinishInput struct {
 	Body mobilePasskeyFinishBody
 }
 
-type MobilePasskeyFinishOutput struct {
-	Body base.ApiResponse[authtypes.MobilePasskeyCompletion]
-}
-
 type MobilePasskeyExchangeInput struct {
 	UserAgent string `header:"User-Agent"`
 	Body      mobilePasskeyExchangeBody
@@ -107,10 +99,6 @@ type MobilePasskeyExchangeOutput struct {
 
 type PasskeyMFAStartInput struct {
 	Body mfaBeginBody
-}
-
-type PasskeyMFAStartOutput struct {
-	Body base.ApiResponse[authtypes.MFAChallenge]
 }
 
 type PasskeyMFAFinishInput struct {
@@ -138,29 +126,13 @@ type passkeyBeginResponse struct {
 	ExpiresAt     time.Time `json:"expiresAt"`
 }
 
-type ListMyPasskeysOutput struct {
-	Body base.ApiResponse[[]PasskeySummary]
-}
-
-type GetPasskeyCapabilitiesOutput struct {
-	Body base.ApiResponse[PasskeyCapabilities]
-}
-
 type BeginPasskeyRegistrationInput struct {
 	StepUpToken string `header:"X-Step-Up-Token"`
-}
-
-type BeginPasskeyRegistrationOutput struct {
-	Body base.ApiResponse[passkeyBeginResponse]
 }
 
 type FinishPasskeyRegistrationInput struct {
 	UserAgent string `header:"User-Agent"`
 	Body      passkeyCredentialBody
-}
-
-type FinishPasskeyRegistrationOutput struct {
-	Body base.ApiResponse[PasskeySummary]
 }
 
 type RenamePasskeyInput struct {
@@ -169,43 +141,19 @@ type RenamePasskeyInput struct {
 	Body        renamePasskeyBody
 }
 
-type RenamePasskeyOutput struct {
-	Body base.ApiResponse[PasskeySummary]
-}
-
 type DeletePasskeyInput struct {
 	ID          string `path:"id"`
 	StepUpToken string `header:"X-Step-Up-Token"`
 }
 
-type DeletePasskeyOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
-}
-
 type BeginStepUpInput struct{}
-
-type BeginStepUpOutput struct {
-	Body base.ApiResponse[passkeyBeginResponse]
-}
 
 type FinishStepUpInput struct {
 	Body stepUpFinishBody
 }
 
-type FinishStepUpOutput struct {
-	Body base.ApiResponse[StepUpGrant]
-}
-
 type PasswordStepUpInput struct {
 	Body passwordReauthBody
-}
-
-type PasswordStepUpOutput struct {
-	Body base.ApiResponse[StepUpGrant]
-}
-
-type GetMFAStatusOutput struct {
-	Body base.ApiResponse[MFAStatus]
 }
 
 type MFASettingsInput struct {
@@ -214,10 +162,6 @@ type MFASettingsInput struct {
 
 type RecoveryCodesResponse struct {
 	Codes []string `json:"codes" doc:"Recovery codes; shown only once"`
-}
-
-type MFARecoveryCodesOutput struct {
-	Body base.ApiResponse[RecoveryCodesResponse]
 }
 
 func RegisterPasskeys(api huma.API, passkeyService *PasskeyService, authService *auth.AuthService, userService *user.UserService) {
@@ -397,12 +341,12 @@ func RegisterPasskeys(api huma.API, passkeyService *PasskeyService, authService 
 	}, h.RegenerateRecoveryCodes)
 }
 
-func (h *PasskeyHandler) BeginPasskeyLogin(ctx context.Context, _ *struct{}) (*PasskeyLoginBeginOutput, error) {
+func (h *PasskeyHandler) BeginPasskeyLogin(ctx context.Context, _ *struct{}) (*handlerutil.Out[passkeyBeginResponse], error) {
 	challenge, err := h.passkeyService.BeginPasskeyLogin(ctx)
 	if err != nil {
 		return nil, passkeyHTTPErrorInternal(err)
 	}
-	return &PasskeyLoginBeginOutput{Body: base.ApiResponse[passkeyBeginResponse]{Success: true, Data: passkeyBeginResponseFromChallengeInternal(challenge)}}, nil
+	return &handlerutil.Out[passkeyBeginResponse]{Body: base.ApiResponse[passkeyBeginResponse]{Success: true, Data: passkeyBeginResponseFromChallengeInternal(challenge)}}, nil
 }
 
 func (h *PasskeyHandler) FinishPasskeyLogin(ctx context.Context, input *PasskeyLoginFinishInput) (*PasskeyLoginFinishOutput, error) {
@@ -429,7 +373,7 @@ func (h *PasskeyHandler) FinishPasskeyLogin(ctx context.Context, input *PasskeyL
 	}, nil
 }
 
-func (h *PasskeyHandler) FinishMobilePasskeyLogin(ctx context.Context, input *MobilePasskeyFinishInput) (*MobilePasskeyFinishOutput, error) {
+func (h *PasskeyHandler) FinishMobilePasskeyLogin(ctx context.Context, input *MobilePasskeyFinishInput) (*handlerutil.Out[authtypes.MobilePasskeyCompletion], error) {
 	payload, err := marshalCredentialInternal(input.Body.Credential)
 	if err != nil {
 		return nil, huma.Error400BadRequest("invalid passkey response")
@@ -438,7 +382,7 @@ func (h *PasskeyHandler) FinishMobilePasskeyLogin(ctx context.Context, input *Mo
 	if err != nil {
 		return nil, passkeyHTTPErrorInternal(err)
 	}
-	return &MobilePasskeyFinishOutput{Body: base.ApiResponse[authtypes.MobilePasskeyCompletion]{Success: true, Data: *completion}}, nil
+	return &handlerutil.Out[authtypes.MobilePasskeyCompletion]{Body: base.ApiResponse[authtypes.MobilePasskeyCompletion]{Success: true, Data: *completion}}, nil
 }
 
 func (h *PasskeyHandler) ExchangeMobilePasskeyLogin(ctx context.Context, input *MobilePasskeyExchangeInput) (*MobilePasskeyExchangeOutput, error) {
@@ -461,12 +405,12 @@ func (h *PasskeyHandler) ExchangeMobilePasskeyLogin(ctx context.Context, input *
 	}, nil
 }
 
-func (h *PasskeyHandler) BeginMFA(ctx context.Context, input *PasskeyMFAStartInput) (*PasskeyMFAStartOutput, error) {
+func (h *PasskeyHandler) BeginMFA(ctx context.Context, input *PasskeyMFAStartInput) (*handlerutil.Out[authtypes.MFAChallenge], error) {
 	challenge, err := h.passkeyService.BeginMFAForTransaction(ctx, input.Body.TransactionID)
 	if err != nil {
 		return nil, passkeyHTTPErrorInternal(err)
 	}
-	return &PasskeyMFAStartOutput{Body: base.ApiResponse[authtypes.MFAChallenge]{Success: true, Data: *challenge}}, nil
+	return &handlerutil.Out[authtypes.MFAChallenge]{Body: base.ApiResponse[authtypes.MFAChallenge]{Success: true, Data: *challenge}}, nil
 }
 
 func (h *PasskeyHandler) FinishMFA(ctx context.Context, input *PasskeyMFAFinishInput) (*PasskeyMFAFinishOutput, error) {
@@ -511,7 +455,7 @@ func (h *PasskeyHandler) UseRecoveryCode(ctx context.Context, input *PasskeyReco
 	}, nil
 }
 
-func (h *PasskeyHandler) ListMyPasskeys(ctx context.Context, _ *struct{}) (*ListMyPasskeysOutput, error) {
+func (h *PasskeyHandler) ListMyPasskeys(ctx context.Context, _ *struct{}) (*handlerutil.Out[[]PasskeySummary], error) {
 	userModel, sessionID, err := requireInteractiveSessionInternal(ctx)
 	if err != nil {
 		return nil, err
@@ -521,10 +465,10 @@ func (h *PasskeyHandler) ListMyPasskeys(ctx context.Context, _ *struct{}) (*List
 	if err != nil {
 		return nil, passkeyHTTPErrorInternal(err)
 	}
-	return &ListMyPasskeysOutput{Body: base.ApiResponse[[]PasskeySummary]{Success: true, Data: rows}}, nil
+	return &handlerutil.Out[[]PasskeySummary]{Body: base.ApiResponse[[]PasskeySummary]{Success: true, Data: rows}}, nil
 }
 
-func (h *PasskeyHandler) GetCapabilities(ctx context.Context, _ *struct{}) (*GetPasskeyCapabilitiesOutput, error) {
+func (h *PasskeyHandler) GetCapabilities(ctx context.Context, _ *struct{}) (*handlerutil.Out[PasskeyCapabilities], error) {
 	userModel, _, err := requireInteractiveSessionInternal(ctx)
 	if err != nil {
 		return nil, err
@@ -537,10 +481,10 @@ func (h *PasskeyHandler) GetCapabilities(ctx context.Context, _ *struct{}) (*Get
 	if err != nil {
 		return nil, passkeyHTTPErrorInternal(err)
 	}
-	return &GetPasskeyCapabilitiesOutput{Body: base.ApiResponse[PasskeyCapabilities]{Success: true, Data: *capabilities}}, nil
+	return &handlerutil.Out[PasskeyCapabilities]{Body: base.ApiResponse[PasskeyCapabilities]{Success: true, Data: *capabilities}}, nil
 }
 
-func (h *PasskeyHandler) BeginRegistration(ctx context.Context, input *BeginPasskeyRegistrationInput) (*BeginPasskeyRegistrationOutput, error) {
+func (h *PasskeyHandler) BeginRegistration(ctx context.Context, input *BeginPasskeyRegistrationInput) (*handlerutil.Out[passkeyBeginResponse], error) {
 	userModel, sessionID, err := requireInteractiveSessionInternal(ctx)
 	if err != nil {
 		return nil, err
@@ -549,10 +493,10 @@ func (h *PasskeyHandler) BeginRegistration(ctx context.Context, input *BeginPass
 	if err != nil {
 		return nil, passkeyHTTPErrorInternal(err)
 	}
-	return &BeginPasskeyRegistrationOutput{Body: base.ApiResponse[passkeyBeginResponse]{Success: true, Data: passkeyBeginResponseFromChallengeInternal(challenge)}}, nil
+	return &handlerutil.Out[passkeyBeginResponse]{Body: base.ApiResponse[passkeyBeginResponse]{Success: true, Data: passkeyBeginResponseFromChallengeInternal(challenge)}}, nil
 }
 
-func (h *PasskeyHandler) FinishRegistration(ctx context.Context, input *FinishPasskeyRegistrationInput) (*FinishPasskeyRegistrationOutput, error) {
+func (h *PasskeyHandler) FinishRegistration(ctx context.Context, input *FinishPasskeyRegistrationInput) (*handlerutil.Out[PasskeySummary], error) {
 	userModel, sessionID, err := requireInteractiveSessionInternal(ctx)
 	if err != nil {
 		return nil, err
@@ -565,10 +509,10 @@ func (h *PasskeyHandler) FinishRegistration(ctx context.Context, input *FinishPa
 	if err != nil {
 		return nil, passkeyHTTPErrorInternal(err)
 	}
-	return &FinishPasskeyRegistrationOutput{Body: base.ApiResponse[PasskeySummary]{Success: true, Data: *row}}, nil
+	return &handlerutil.Out[PasskeySummary]{Body: base.ApiResponse[PasskeySummary]{Success: true, Data: *row}}, nil
 }
 
-func (h *PasskeyHandler) RenamePasskey(ctx context.Context, input *RenamePasskeyInput) (*RenamePasskeyOutput, error) {
+func (h *PasskeyHandler) RenamePasskey(ctx context.Context, input *RenamePasskeyInput) (*handlerutil.Out[PasskeySummary], error) {
 	userModel, sessionID, err := requireInteractiveSessionInternal(ctx)
 	if err != nil {
 		return nil, err
@@ -577,10 +521,10 @@ func (h *PasskeyHandler) RenamePasskey(ctx context.Context, input *RenamePasskey
 	if err != nil {
 		return nil, passkeyHTTPErrorInternal(err)
 	}
-	return &RenamePasskeyOutput{Body: base.ApiResponse[PasskeySummary]{Success: true, Data: *row}}, nil
+	return &handlerutil.Out[PasskeySummary]{Body: base.ApiResponse[PasskeySummary]{Success: true, Data: *row}}, nil
 }
 
-func (h *PasskeyHandler) DeletePasskey(ctx context.Context, input *DeletePasskeyInput) (*DeletePasskeyOutput, error) {
+func (h *PasskeyHandler) DeletePasskey(ctx context.Context, input *DeletePasskeyInput) (*handlerutil.Out[base.MessageResponse], error) {
 	userModel, sessionID, err := requireInteractiveSessionInternal(ctx)
 	if err != nil {
 		return nil, err
@@ -592,10 +536,10 @@ func (h *PasskeyHandler) DeletePasskey(ctx context.Context, input *DeletePasskey
 	if err := h.passkeyService.DeletePasskey(ctx, userModel.ID, input.ID, sessionID, input.StepUpToken, oidcEnabled); err != nil {
 		return nil, passkeyHTTPErrorInternal(err)
 	}
-	return &DeletePasskeyOutput{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Passkey deleted"}}}, nil
+	return &handlerutil.Out[base.MessageResponse]{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Passkey deleted"}}}, nil
 }
 
-func (h *PasskeyHandler) BeginStepUp(ctx context.Context, _ *BeginStepUpInput) (*BeginStepUpOutput, error) {
+func (h *PasskeyHandler) BeginStepUp(ctx context.Context, _ *BeginStepUpInput) (*handlerutil.Out[passkeyBeginResponse], error) {
 	userModel, sessionID, err := requireInteractiveSessionInternal(ctx)
 	if err != nil {
 		return nil, err
@@ -604,10 +548,10 @@ func (h *PasskeyHandler) BeginStepUp(ctx context.Context, _ *BeginStepUpInput) (
 	if err != nil {
 		return nil, passkeyHTTPErrorInternal(err)
 	}
-	return &BeginStepUpOutput{Body: base.ApiResponse[passkeyBeginResponse]{Success: true, Data: passkeyBeginResponseFromChallengeInternal(challenge)}}, nil
+	return &handlerutil.Out[passkeyBeginResponse]{Body: base.ApiResponse[passkeyBeginResponse]{Success: true, Data: passkeyBeginResponseFromChallengeInternal(challenge)}}, nil
 }
 
-func (h *PasskeyHandler) FinishStepUp(ctx context.Context, input *FinishStepUpInput) (*FinishStepUpOutput, error) {
+func (h *PasskeyHandler) FinishStepUp(ctx context.Context, input *FinishStepUpInput) (*handlerutil.Out[StepUpGrant], error) {
 	_, sessionID, err := requireInteractiveSessionInternal(ctx)
 	if err != nil {
 		return nil, err
@@ -620,10 +564,10 @@ func (h *PasskeyHandler) FinishStepUp(ctx context.Context, input *FinishStepUpIn
 	if err != nil {
 		return nil, passkeyHTTPErrorInternal(err)
 	}
-	return &FinishStepUpOutput{Body: base.ApiResponse[StepUpGrant]{Success: true, Data: *grant}}, nil
+	return &handlerutil.Out[StepUpGrant]{Body: base.ApiResponse[StepUpGrant]{Success: true, Data: *grant}}, nil
 }
 
-func (h *PasskeyHandler) PasswordStepUp(ctx context.Context, input *PasswordStepUpInput) (*PasswordStepUpOutput, error) {
+func (h *PasskeyHandler) PasswordStepUp(ctx context.Context, input *PasswordStepUpInput) (*handlerutil.Out[StepUpGrant], error) {
 	userModel, sessionID, err := requireInteractiveSessionInternal(ctx)
 	if err != nil {
 		return nil, err
@@ -638,10 +582,10 @@ func (h *PasskeyHandler) PasswordStepUp(ctx context.Context, input *PasswordStep
 	if err != nil {
 		return nil, passkeyHTTPErrorInternal(err)
 	}
-	return &PasswordStepUpOutput{Body: base.ApiResponse[StepUpGrant]{Success: true, Data: *grant}}, nil
+	return &handlerutil.Out[StepUpGrant]{Body: base.ApiResponse[StepUpGrant]{Success: true, Data: *grant}}, nil
 }
 
-func (h *PasskeyHandler) GetMFAStatus(ctx context.Context, _ *struct{}) (*GetMFAStatusOutput, error) {
+func (h *PasskeyHandler) GetMFAStatus(ctx context.Context, _ *struct{}) (*handlerutil.Out[MFAStatus], error) {
 	userModel, _, err := requireInteractiveSessionInternal(ctx)
 	if err != nil {
 		return nil, err
@@ -650,10 +594,10 @@ func (h *PasskeyHandler) GetMFAStatus(ctx context.Context, _ *struct{}) (*GetMFA
 	if err != nil {
 		return nil, passkeyHTTPErrorInternal(err)
 	}
-	return &GetMFAStatusOutput{Body: base.ApiResponse[MFAStatus]{Success: true, Data: *status}}, nil
+	return &handlerutil.Out[MFAStatus]{Body: base.ApiResponse[MFAStatus]{Success: true, Data: *status}}, nil
 }
 
-func (h *PasskeyHandler) EnableMFA(ctx context.Context, input *MFASettingsInput) (*MFARecoveryCodesOutput, error) {
+func (h *PasskeyHandler) EnableMFA(ctx context.Context, input *MFASettingsInput) (*handlerutil.Out[RecoveryCodesResponse], error) {
 	userModel, sessionID, err := requireInteractiveSessionInternal(ctx)
 	if err != nil {
 		return nil, err
@@ -662,10 +606,10 @@ func (h *PasskeyHandler) EnableMFA(ctx context.Context, input *MFASettingsInput)
 	if err != nil {
 		return nil, passkeyHTTPErrorInternal(err)
 	}
-	return &MFARecoveryCodesOutput{Body: base.ApiResponse[RecoveryCodesResponse]{Success: true, Data: RecoveryCodesResponse{Codes: codes}}}, nil
+	return &handlerutil.Out[RecoveryCodesResponse]{Body: base.ApiResponse[RecoveryCodesResponse]{Success: true, Data: RecoveryCodesResponse{Codes: codes}}}, nil
 }
 
-func (h *PasskeyHandler) DisableMFA(ctx context.Context, input *MFASettingsInput) (*DeletePasskeyOutput, error) {
+func (h *PasskeyHandler) DisableMFA(ctx context.Context, input *MFASettingsInput) (*handlerutil.Out[base.MessageResponse], error) {
 	userModel, sessionID, err := requireInteractiveSessionInternal(ctx)
 	if err != nil {
 		return nil, err
@@ -673,10 +617,10 @@ func (h *PasskeyHandler) DisableMFA(ctx context.Context, input *MFASettingsInput
 	if err := h.passkeyService.DisableMFA(ctx, userModel.ID, sessionID, input.StepUpToken); err != nil {
 		return nil, passkeyHTTPErrorInternal(err)
 	}
-	return &DeletePasskeyOutput{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Passkey MFA disabled"}}}, nil
+	return &handlerutil.Out[base.MessageResponse]{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Passkey MFA disabled"}}}, nil
 }
 
-func (h *PasskeyHandler) RegenerateRecoveryCodes(ctx context.Context, input *MFASettingsInput) (*MFARecoveryCodesOutput, error) {
+func (h *PasskeyHandler) RegenerateRecoveryCodes(ctx context.Context, input *MFASettingsInput) (*handlerutil.Out[RecoveryCodesResponse], error) {
 	userModel, sessionID, err := requireInteractiveSessionInternal(ctx)
 	if err != nil {
 		return nil, err
@@ -685,7 +629,7 @@ func (h *PasskeyHandler) RegenerateRecoveryCodes(ctx context.Context, input *MFA
 	if err != nil {
 		return nil, passkeyHTTPErrorInternal(err)
 	}
-	return &MFARecoveryCodesOutput{Body: base.ApiResponse[RecoveryCodesResponse]{Success: true, Data: RecoveryCodesResponse{Codes: codes}}}, nil
+	return &handlerutil.Out[RecoveryCodesResponse]{Body: base.ApiResponse[RecoveryCodesResponse]{Success: true, Data: RecoveryCodesResponse{Codes: codes}}}, nil
 }
 
 func (h *PasskeyHandler) authenticationResponseInternal(ctx context.Context, userModel *common.User, tokenPair *auth.TokenPair) (*authtypes.AuthenticationResponse, error) {

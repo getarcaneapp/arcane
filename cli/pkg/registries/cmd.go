@@ -1,7 +1,6 @@
 package registries
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"emperror.dev/errors"
@@ -57,55 +56,36 @@ var listCmd = &cobra.Command{
 			return err
 		}
 
-		path := types.Endpoints.ContainerRegistries()
-		path, err = cmdutil.ApplyPaginationParams(cmd, path, cmdutil.ListParams{Resource: "registries", Limit: limitFlag, FallbackDefault: 20, Start: startFlag, All: allFlag})
-		if err != nil {
-			return errors.WrapIf(err, "failed to build pagination query")
-		}
-
-		resp, err := c.Get(cmd.Context(), path)
-		if err != nil {
-			return errors.WrapIf(err, "failed to list registries")
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result base.Paginated[containerregistry.ContainerRegistry]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
-		}
-
-		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
-		}
-
-		headers := []string{"ID", "URL", "USERNAME", "ENABLED", "INSECURE"}
-		rows := make([][]string, len(result.Data))
-		for i, reg := range result.Data {
-			enabled := "false"
-			if reg.Enabled {
-				enabled = "true"
-			}
-			insecure := "false"
-			if reg.Insecure {
-				insecure = "true"
-			}
-			rows[i] = []string{
-				reg.ID,
-				reg.URL,
-				reg.Username,
-				enabled,
-				insecure,
-			}
-		}
-
-		output.Table(headers, rows)
-		output.Showing(len(result.Data), result.Pagination.TotalItems, "registries")
-		return nil
+		return cmdutil.RunList(cmd, c, cmdutil.ListSpec[containerregistry.ContainerRegistry]{
+			Resource: "registries",
+			Endpoint: types.Endpoints.ContainerRegistries(),
+			Params: cmdutil.ListParams{
+				Resource:        "registries",
+				Limit:           limitFlag,
+				FallbackDefault: 20,
+				Start:           startFlag,
+				All:             allFlag,
+			},
+			JSON:    jsonOutput,
+			Headers: []string{"ID", "URL", "USERNAME", "ENABLED", "INSECURE"},
+			Row: func(reg containerregistry.ContainerRegistry) []string {
+				enabled := "false"
+				if reg.Enabled {
+					enabled = "true"
+				}
+				insecure := "false"
+				if reg.Insecure {
+					insecure = "true"
+				}
+				return []string{
+					reg.ID,
+					reg.URL,
+					reg.Username,
+					enabled,
+					insecure,
+				}
+			},
+		})
 	},
 }
 
@@ -120,27 +100,12 @@ var testCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Post(cmd.Context(), types.Endpoints.ContainerRegistryTest(args[0]), nil)
-		if err != nil {
-			return errors.WrapIf(err, "failed to test registry")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to test registry")
-		}
-
-		if jsonOutput {
-			var result base.ApiResponse[any]
-			if err := json.NewDecoder(resp.Body).Decode(&result); err == nil {
-				if resultBytes, err := json.MarshalIndent(result.Data, "", "  "); err == nil {
-					fmt.Println(string(resultBytes))
-				}
-			}
-			return nil
-		}
-
-		output.Success("Registry connection test successful")
-		return nil
+		return cmdutil.RunPostAction[base.MessageResponse](cmd, c, cmdutil.PostActionSpec{
+			Path:           types.Endpoints.ContainerRegistryTest(args[0]),
+			FailureMessage: "failed to test registry",
+			SuccessMessage: "Registry connection test successful",
+			JSON:           jsonOutput,
+		})
 	},
 }
 
@@ -155,24 +120,13 @@ var getCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.Endpoints.ContainerRegistry(args[0]))
+		result, err := c.GetJSON[containerregistry.ContainerRegistry](cmd.Context(), types.Endpoints.ContainerRegistry(args[0]))
 		if err != nil {
 			return errors.WrapIf(err, "failed to get registry")
 		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result base.ApiResponse[containerregistry.ContainerRegistry]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
-		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Header("Registry Details")
@@ -214,27 +168,13 @@ var createCmd = &cobra.Command{
 			"awsRegion":          registryCreateAWSRegion,
 		}
 
-		resp, err := c.Post(cmd.Context(), types.Endpoints.ContainerRegistries(), req)
+		result, err := c.PostJSON[containerregistry.ContainerRegistry](cmd.Context(), types.Endpoints.ContainerRegistries(), req)
 		if err != nil {
 			return errors.WrapIf(err, "failed to create registry")
 		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to create registry")
-		}
-
-		var result base.ApiResponse[containerregistry.ContainerRegistry]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
-		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Registry created successfully")
@@ -305,23 +245,13 @@ var updateCmd = &cobra.Command{
 			return errors.New("no updates provided; use --url, --username, --password, --enabled, or --disabled")
 		}
 
-		resp, err := c.Put(cmd.Context(), types.Endpoints.ContainerRegistry(args[0]), req)
+		result, err := c.PutJSON[containerregistry.ContainerRegistry](cmd.Context(), types.Endpoints.ContainerRegistry(args[0]), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to update registry")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
 			return errors.WrapIf(err, "failed to update registry")
 		}
 
 		if jsonOutput {
-			var result base.ApiResponse[any]
-			if err := json.NewDecoder(resp.Body).Decode(&result); err == nil {
-				if resultBytes, err := json.MarshalIndent(result.Data, "", "  "); err == nil {
-					fmt.Println(string(resultBytes))
-				}
-			}
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Registry updated successfully")

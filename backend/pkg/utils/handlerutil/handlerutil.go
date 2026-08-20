@@ -19,6 +19,18 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/base"
 )
 
+// Out is the huma response envelope for endpoints returning base.ApiResponse[T].
+// It replaces the per-endpoint `type XxxOutput struct { Body base.ApiResponse[T] }`
+// wrappers; outputs carrying extra fields (headers, status) keep their own type.
+type Out[T any] struct {
+	Body base.ApiResponse[T]
+}
+
+// Page is the huma response envelope for endpoints returning base.Paginated[T].
+type Page[T any] struct {
+	Body base.Paginated[T]
+}
+
 // ActivityAppContext carries the app lifecycle context through handler registration.
 type ActivityAppContext struct {
 	ctx context.Context

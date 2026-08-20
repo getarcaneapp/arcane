@@ -99,7 +99,7 @@ func (g *Gate[K]) TryAcquire(ctx context.Context, key K) (*Lease[K], bool, error
 
 	// Admission must resolve after it is queued; abandoning an admitted reply on
 	// caller cancellation would leak the key without a lease to release it.
-	admitted, err := awaitInternal(context.WithoutCancel(ctx), g.actor.handle, reply, errors.New("actor gate stopped"))
+	admitted, err := g.actor.handle.await(context.WithoutCancel(ctx), reply, errors.New("actor gate stopped"))
 	if err != nil {
 		return nil, false, err
 	}
@@ -125,7 +125,7 @@ func (l *Lease[K]) Release() {
 		}); err != nil {
 			return
 		}
-		_, _ = awaitInternal(context.Background(), l.gate.actor.handle, reply, errors.New("actor gate stopped"))
+		_, _ = l.gate.actor.handle.await(context.Background(), reply, errors.New("actor gate stopped"))
 	})
 }
 

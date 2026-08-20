@@ -40,7 +40,7 @@ func (s *State[T]) Apply(ctx context.Context, label string, mutate func(context.
 	if mutate == nil {
 		return errors.New("actor state mutation unavailable")
 	}
-	_, err := Execute(ctx, s.executor, label, func(actorCtx context.Context) (NoPayload, error) {
+	_, err := s.executor.Execute(ctx, label, func(actorCtx context.Context) (NoPayload, error) {
 		defer func() {
 			s.snapshot.Store(s.clone(s.value))
 		}()

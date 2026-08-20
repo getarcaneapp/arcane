@@ -53,17 +53,9 @@ type GetNetworkCountsInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
 
-type GetNetworkCountsOutput struct {
-	Body base.ApiResponse[networktypes.UsageCounts]
-}
-
 type CreateNetworkInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Body          networktypes.CreateRequest
-}
-
-type CreateNetworkOutput struct {
-	Body base.ApiResponse[networktypes.CreateResponse]
 }
 
 type GetNetworkInput struct {
@@ -73,16 +65,8 @@ type GetNetworkInput struct {
 	Order         string `query:"order" default:"asc"`
 }
 
-type GetNetworkOutput struct {
-	Body base.ApiResponse[networktypes.Inspect]
-}
-
 type GetNetworkTopologyInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
-
-type GetNetworkTopologyOutput struct {
-	Body base.ApiResponse[networktypes.Topology]
 }
 
 type DeleteNetworkInput struct {
@@ -90,16 +74,8 @@ type DeleteNetworkInput struct {
 	NetworkID     string `path:"networkId" doc:"Network ID"`
 }
 
-type DeleteNetworkOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
-}
-
 type PruneNetworksInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
-
-type PruneNetworksOutput struct {
-	Body base.ApiResponse[networktypes.PruneReport]
 }
 
 // RegisterNetworks registers network endpoints.
@@ -196,13 +172,13 @@ func (h *NetworkHandler) ListNetworks(ctx context.Context, input *ListNetworksIn
 	}, nil
 }
 
-func (h *NetworkHandler) GetNetworkCounts(ctx context.Context, input *GetNetworkCountsInput) (*GetNetworkCountsOutput, error) {
+func (h *NetworkHandler) GetNetworkCounts(ctx context.Context, input *GetNetworkCountsInput) (*handlerutil.Out[networktypes.UsageCounts], error) {
 	_, inuse, unused, total, err := h.dockerService.GetAllNetworks(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to get network counts").Error())
 	}
 
-	return &GetNetworkCountsOutput{
+	return &handlerutil.Out[networktypes.UsageCounts]{
 		Body: base.ApiResponse[networktypes.UsageCounts]{
 			Success: true,
 			Data: networktypes.UsageCounts{
@@ -214,7 +190,7 @@ func (h *NetworkHandler) GetNetworkCounts(ctx context.Context, input *GetNetwork
 	}, nil
 }
 
-func (h *NetworkHandler) CreateNetwork(ctx context.Context, input *CreateNetworkInput) (*CreateNetworkOutput, error) {
+func (h *NetworkHandler) CreateNetwork(ctx context.Context, input *CreateNetworkInput) (*handlerutil.Out[networktypes.CreateResponse], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -254,7 +230,7 @@ func (h *NetworkHandler) CreateNetwork(ctx context.Context, input *CreateNetwork
 	}
 	out.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
 
-	return &CreateNetworkOutput{
+	return &handlerutil.Out[networktypes.CreateResponse]{
 		Body: base.ApiResponse[networktypes.CreateResponse]{
 			Success: true,
 			Data:    out,
@@ -262,7 +238,7 @@ func (h *NetworkHandler) CreateNetwork(ctx context.Context, input *CreateNetwork
 	}, nil
 }
 
-func (h *NetworkHandler) GetNetwork(ctx context.Context, input *GetNetworkInput) (*GetNetworkOutput, error) {
+func (h *NetworkHandler) GetNetwork(ctx context.Context, input *GetNetworkInput) (*handlerutil.Out[networktypes.Inspect], error) {
 	networkInspect, err := h.networkService.GetNetworkByID(ctx, input.NetworkID)
 	if err != nil {
 		return nil, huma.Error404NotFound(errors.WithMessage(err, "Network not found").Error())
@@ -342,7 +318,7 @@ func (h *NetworkHandler) GetNetwork(ctx context.Context, input *GetNetworkInput)
 		return strings.ToLower(a.Name) < strings.ToLower(b.Name)
 	})
 
-	return &GetNetworkOutput{
+	return &handlerutil.Out[networktypes.Inspect]{
 		Body: base.ApiResponse[networktypes.Inspect]{
 			Success: true,
 			Data:    out,
@@ -350,13 +326,13 @@ func (h *NetworkHandler) GetNetwork(ctx context.Context, input *GetNetworkInput)
 	}, nil
 }
 
-func (h *NetworkHandler) GetNetworkTopology(ctx context.Context, input *GetNetworkTopologyInput) (*GetNetworkTopologyOutput, error) {
+func (h *NetworkHandler) GetNetworkTopology(ctx context.Context, input *GetNetworkTopologyInput) (*handlerutil.Out[networktypes.Topology], error) {
 	topology, err := h.networkService.GetNetworkTopology(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to build network topology")
 	}
 
-	return &GetNetworkTopologyOutput{
+	return &handlerutil.Out[networktypes.Topology]{
 		Body: base.ApiResponse[networktypes.Topology]{
 			Success: true,
 			Data:    *topology,
@@ -364,7 +340,7 @@ func (h *NetworkHandler) GetNetworkTopology(ctx context.Context, input *GetNetwo
 	}, nil
 }
 
-func (h *NetworkHandler) DeleteNetwork(ctx context.Context, input *DeleteNetworkInput) (*DeleteNetworkOutput, error) {
+func (h *NetworkHandler) DeleteNetwork(ctx context.Context, input *DeleteNetworkInput) (*handlerutil.Out[base.MessageResponse], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -391,7 +367,7 @@ func (h *NetworkHandler) DeleteNetwork(ctx context.Context, input *DeleteNetwork
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to remove network").Error())
 	}
 
-	return &DeleteNetworkOutput{
+	return &handlerutil.Out[base.MessageResponse]{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data:    base.MessageResponse{Message: "Network removed successfully", ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()},
@@ -399,7 +375,7 @@ func (h *NetworkHandler) DeleteNetwork(ctx context.Context, input *DeleteNetwork
 	}, nil
 }
 
-func (h *NetworkHandler) PruneNetworks(ctx context.Context, input *PruneNetworksInput) (*PruneNetworksOutput, error) {
+func (h *NetworkHandler) PruneNetworks(ctx context.Context, input *PruneNetworksInput) (*handlerutil.Out[networktypes.PruneReport], error) {
 	var report *dockernetwork.PruneReport
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
@@ -425,7 +401,7 @@ func (h *NetworkHandler) PruneNetworks(ctx context.Context, input *PruneNetworks
 	}
 	out.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
 
-	return &PruneNetworksOutput{
+	return &handlerutil.Out[networktypes.PruneReport]{
 		Body: base.ApiResponse[networktypes.PruneReport]{
 			Success: true,
 			Data:    out,

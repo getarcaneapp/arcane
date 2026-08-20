@@ -189,7 +189,7 @@ func (s *SwarmService) ListServicesPaginated(ctx context.Context, params paginat
 	}
 
 	config := s.buildServicePaginationConfigInternal()
-	result := pagination.SearchOrderAndPaginate(items, params, config)
+	result := config.SearchOrderAndPaginate(items, params)
 	paginationResp := pagination.BuildResponse(result.TotalCount, result.TotalAvailable, params)
 
 	return result.Items, paginationResp, nil
@@ -501,7 +501,7 @@ func (s *SwarmService) ListNodesPaginated(ctx context.Context, environmentID str
 		}
 
 		s.enrichNodeAgentStatusesInternal(ctx, environmentID, remote.Data)
-		result := pagination.SearchOrderAndPaginate(remote.Data, params, s.buildNodePaginationConfigInternal())
+		result := s.buildNodePaginationConfigInternal().SearchOrderAndPaginate(remote.Data, params)
 		return result.Items, pagination.BuildResponse(result.TotalCount, result.TotalAvailable, params), nil
 	}
 
@@ -528,7 +528,7 @@ func (s *SwarmService) ListNodesPaginated(ctx context.Context, environmentID str
 	s.enrichNodeAgentStatusesInternal(ctx, environmentID, items)
 
 	config := s.buildNodePaginationConfigInternal()
-	result := pagination.SearchOrderAndPaginate(items, params, config)
+	result := config.SearchOrderAndPaginate(items, params)
 	paginationResp := pagination.BuildResponse(result.TotalCount, result.TotalAvailable, params)
 
 	return result.Items, paginationResp, nil
@@ -1183,7 +1183,7 @@ func (s *SwarmService) ListTasksPaginated(ctx context.Context, params pagination
 	}
 
 	config := s.buildTaskPaginationConfigInternal()
-	result := pagination.SearchOrderAndPaginate(items, params, config)
+	result := config.SearchOrderAndPaginate(items, params)
 	paginationResp := pagination.BuildResponse(result.TotalCount, result.TotalAvailable, params)
 
 	return result.Items, paginationResp, nil
@@ -1251,7 +1251,7 @@ func (s *SwarmService) ListStacksPaginated(ctx context.Context, environmentID st
 	}
 
 	config := s.buildStackPaginationConfigInternal()
-	result := pagination.SearchOrderAndPaginate(items, params, config)
+	result := config.SearchOrderAndPaginate(items, params)
 	paginationResp := pagination.BuildResponse(result.TotalCount, result.TotalAvailable, params)
 
 	return result.Items, paginationResp, nil
@@ -2037,7 +2037,7 @@ func (s *SwarmService) ListStackServicesPaginated(ctx context.Context, stackName
 	}
 
 	config := s.buildServicePaginationConfigInternal()
-	result := pagination.SearchOrderAndPaginate(summaries, params, config)
+	result := config.SearchOrderAndPaginate(summaries, params)
 	paginationResp := pagination.BuildResponse(result.TotalCount, result.TotalAvailable, params)
 	return result.Items, paginationResp, nil
 }
@@ -2318,7 +2318,7 @@ func (s *SwarmService) listTasksPaginatedWithFiltersInternal(ctx context.Context
 	}
 
 	config := s.buildTaskPaginationConfigInternal()
-	result := pagination.SearchOrderAndPaginate(items, params, config)
+	result := config.SearchOrderAndPaginate(items, params)
 	paginationResp := pagination.BuildResponse(result.TotalCount, result.TotalAvailable, params)
 	return result.Items, paginationResp, nil
 }

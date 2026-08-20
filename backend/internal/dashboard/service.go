@@ -204,7 +204,7 @@ func (s *DashboardService) buildSnapshotInternal(ctx context.Context, options Da
 			}
 			return containerItems[i].Created > containerItems[j].Created
 		})
-		containerPage = limitDashboardItemsInternal(containerItems, dashboardSnapshotPreloadLimit)
+		containerPage = containerItems[:min(dashboardSnapshotPreloadLimit, len(containerItems))]
 		if s.containerService != nil {
 			s.containerService.ApplySummaryIcons(ctx, containerPage, nil)
 		}
@@ -223,7 +223,7 @@ func (s *DashboardService) buildSnapshotInternal(ctx context.Context, options Da
 			}
 			return imageItems[i].Size > imageItems[j].Size
 		})
-		imagePage = limitDashboardItemsInternal(imageItems, dashboardSnapshotPreloadLimit)
+		imagePage = imageItems[:min(dashboardSnapshotPreloadLimit, len(imageItems))]
 	}
 
 	imageUsageCounts := docker.CountImageUsage(dockerImages, filteredContainers)
@@ -482,12 +482,4 @@ func buildDashboardPaginationResponseInternal(totalItems int, limit int) base.Pa
 		ItemsPerPage:    limit,
 		GrandTotalItems: int64(totalItems),
 	}
-}
-
-func limitDashboardItemsInternal[T any](items []T, limit int) []T {
-	if limit <= 0 || len(items) <= limit {
-		return items
-	}
-
-	return items[:limit]
 }

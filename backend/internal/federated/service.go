@@ -555,7 +555,7 @@ func unverifiedTokenExchangeMetadataInternal(rawToken string) (string, string, [
 	if claims == nil {
 		return "", "", nil
 	}
-	return stringClaimByPathInternal(claims, "iss"), stringClaimByPathInternal(claims, "sub"), stringSliceClaimInternal(claims, "aud")
+	return stringClaimByPathInternal(claims, "iss"), stringClaimByPathInternal(claims, "sub"), utils.UniqueNonEmptyStrings(jwtclaims.StringSliceFromValue(jwtclaims.GetByPath(claims, "aud").OrEmpty()))
 }
 
 func stringClaimByPathInternal(claims map[string]any, path string) string {
@@ -564,32 +564,6 @@ func stringClaimByPathInternal(claims map[string]any, path string) string {
 		return ""
 	}
 	return utils.ToString(value)
-}
-
-func stringSliceClaimInternal(claims map[string]any, path string) []string {
-	value, ok := jwtclaims.GetByPath(claims, path).Get()
-	if !ok || value == nil {
-		return nil
-	}
-	switch typed := value.(type) {
-	case string:
-		if strings.TrimSpace(typed) == "" {
-			return nil
-		}
-		return []string{strings.TrimSpace(typed)}
-	case []string:
-		return utils.UniqueNonEmptyStrings(typed)
-	case []any:
-		out := make([]string, 0, len(typed))
-		for _, item := range typed {
-			if value := utils.ToString(item); value != "" {
-				out = append(out, value)
-			}
-		}
-		return utils.UniqueNonEmptyStrings(out)
-	default:
-		return nil
-	}
 }
 
 func normalizeCreateFederatedCredentialInternal(req federatedtypes.CreateFederatedCredential) (federatedtypes.CreateFederatedCredential, error) {

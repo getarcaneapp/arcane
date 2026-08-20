@@ -38,13 +38,13 @@ func ParseKeywords(keywordsStr string) []string {
 	return keywords
 }
 
-// ExtractCategoryMetadata extracts category metadata from struct fields with catmeta tags
+// ExtractCategoryMetadata extracts category metadata from T's fields with catmeta tags
 // Returns a map of category ID to category metadata in field order
-func ExtractCategoryMetadata(model any, categoryIDsInOrder []string) map[string]map[string]string {
+func ExtractCategoryMetadata[T any]() map[string]map[string]string {
 	result := make(map[string]map[string]string)
 	seenCategories := make(map[string]bool)
 
-	rt := reflect.TypeOf(model)
+	rt := reflect.TypeFor[T]()
 	for field := range rt.Fields() {
 		catmetaTag := field.Tag.Get("catmeta")
 		if catmetaTag == "" {

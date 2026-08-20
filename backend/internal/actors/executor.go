@@ -65,9 +65,9 @@ func NewExecutor(ctx context.Context, runtime *Runtime, kind, id string, maxRest
 
 // Execute queues work, waits for its typed result, and runs after only once the
 // result is available to the caller. Work and after are both panic-contained.
-func Execute[T any](ctx context.Context, executor *Executor, label string, work func(context.Context) (T, error), after func(T, error)) (T, error) {
+func (e *Executor) Execute[T any](ctx context.Context, label string, work func(context.Context) (T, error), after func(T, error)) (T, error) {
 	var zero T
-	task, err := Submit(ctx, executor, label, work, after)
+	task, err := e.Submit(ctx, label, work, after)
 	if err != nil {
 		return zero, err
 	}
@@ -77,8 +77,8 @@ func Execute[T any](ctx context.Context, executor *Executor, label string, work 
 // Submit queues work synchronously and returns a handle that can be awaited
 // separately. This is useful for terminal cleanup that must stay queued even
 // when the shutdown wait context expires.
-func Submit[T any](ctx context.Context, executor *Executor, label string, work func(context.Context) (T, error), after func(T, error)) (*Task[T], error) {
-	if executor == nil || executor.actor == nil {
+func (e *Executor) Submit[T any](ctx context.Context, label string, work func(context.Context) (T, error), after func(T, error)) (*Task[T], error) {
+	if e == nil || e.actor == nil {
 		return nil, errors.New("actor executor unavailable")
 	}
 	if ctx == nil {
@@ -92,7 +92,7 @@ func Submit[T any](ctx context.Context, executor *Executor, label string, work f
 	}
 
 	result := NewPromise[executorResultInternal[T]]()
-	if err := executor.actor.Send(executorTaskValueInternal[T]{
+	if err := e.actor.Send(executorTaskValueInternal[T]{
 		ctx:     ctx,
 		label:   label,
 		work:    work,
@@ -102,7 +102,7 @@ func Submit[T any](ctx context.Context, executor *Executor, label string, work f
 	}); err != nil {
 		return nil, err
 	}
-	return &Task[T]{result: result, actor: executor.actor}, nil
+	return &Task[T]{result: result, actor: e.actor}, nil
 }
 
 // Wait waits for the submitted task result without changing the task lifetime.
@@ -114,7 +114,7 @@ func (t *Task[T]) Wait(ctx context.Context) (T, error) {
 	if ctx == nil {
 		return zero, errors.New("task wait context unavailable")
 	}
-	completed, err := awaitInternal(ctx, t.actor.handle, t.result, errors.New("actor executor stopped"))
+	completed, err := t.actor.handle.await(ctx, t.result, errors.New("actor executor stopped"))
 	if err != nil {
 		return zero, err
 	}

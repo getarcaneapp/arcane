@@ -25,10 +25,6 @@ type ListPortsInput struct {
 	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
 }
 
-type ListPortsOutput struct {
-	Body base.Paginated[porttypes.PortMapping]
-}
-
 func RegisterPorts(api huma.API, portSvc *PortService) {
 	h := &PortHandler{portService: portSvc}
 
@@ -42,7 +38,7 @@ func RegisterPorts(api huma.API, portSvc *PortService) {
 	}, authz.PermContainersList, h.ListPorts)
 }
 
-func (h *PortHandler) ListPorts(ctx context.Context, input *ListPortsInput) (*ListPortsOutput, error) {
+func (h *PortHandler) ListPorts(ctx context.Context, input *ListPortsInput) (*handlerutil.Page[porttypes.PortMapping], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 
 	items, paginationResp, err := h.portService.ListPortsPaginated(ctx, params)
@@ -50,7 +46,7 @@ func (h *PortHandler) ListPorts(ctx context.Context, input *ListPortsInput) (*Li
 		return nil, huma.Error500InternalServerError("failed to list ports")
 	}
 
-	return &ListPortsOutput{
+	return &handlerutil.Page[porttypes.PortMapping]{
 		Body: base.Paginated[porttypes.PortMapping]{
 			Success:    true,
 			Data:       items,

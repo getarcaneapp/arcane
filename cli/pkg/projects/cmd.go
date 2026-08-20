@@ -3,7 +3,6 @@ package projects
 import (
 	"bufio"
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -49,8 +48,6 @@ var (
 	updateEnvFile string
 	includesFile  string
 )
-
-const maxPromptOptions = 20
 
 // ProjectsCmd is the parent command for project operations
 var ProjectsCmd = &cobra.Command{
@@ -215,7 +212,7 @@ var destroyCmd = &cobra.Command{
 			return err
 		}
 
-		resolved, _, err := resolveProject(cmd.Context(), c, args[0], false)
+		resolved, _, err := projectRef.Resolve(cmd.Context(), c, args[0], false)
 		if err != nil {
 			return err
 		}
@@ -264,32 +261,21 @@ var getCmd = &cobra.Command{
 		}
 
 		allowPrompt := !jsonOutput && prompt.IsInteractive()
-		resolved, complete, err := resolveProject(cmd.Context(), c, args[0], allowPrompt)
+		resolved, complete, err := projectRef.Resolve(cmd.Context(), c, args[0], allowPrompt)
 		if err != nil {
 			return err
 		}
 
 		if !complete {
-			resp, err := c.Get(cmd.Context(), types.Endpoints.Project(c.EnvID(), resolved.ID))
+			result, err := c.GetJSON[project.Details](cmd.Context(), types.Endpoints.Project(c.EnvID(), resolved.ID))
 			if err != nil {
 				return errors.WrapIf(err, "failed to get project")
-			}
-			defer func() { _ = resp.Body.Close() }()
-
-			var result base.ApiResponse[project.Details]
-			if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-				return err
 			}
 			resolved = &result.Data
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(resolved, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(resolved)
 		}
 
 		output.Header("Project Details")
@@ -308,12 +294,10 @@ var upCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runProjectPostAction(cmd, args[0], projectPostActionConfig{
+		return runProjectStreamAction(cmd, args[0], projectStreamActionConfig{
 			endpoint:       types.Endpoints.ProjectUp,
 			failureMessage: "failed to start project",
 			successMessage: "Project %s started successfully",
-			timeout:        30 * time.Minute,
-			stream:         true,
 		})
 	},
 }
@@ -324,10 +308,20 @@ var downCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runProjectPostAction(cmd, args[0], projectPostActionConfig{
-			endpoint:       types.Endpoints.ProjectDown,
-			failureMessage: "failed to stop project",
-			successMessage: "Project %s stopped successfully",
+		c, err := client.NewFromConfig()
+		if err != nil {
+			return err
+		}
+
+		resolved, _, err := projectRef.Resolve(cmd.Context(), c, args[0], false)
+		if err != nil {
+			return err
+		}
+
+		return cmdutil.RunPostAction[base.MessageResponse](cmd, c, cmdutil.PostActionSpec{
+			Path:           types.Endpoints.ProjectDown(c.EnvID(), resolved.ID),
+			FailureMessage: "failed to stop project",
+			SuccessMessage: fmt.Sprintf("Project %s stopped successfully", resolved.Name),
 		})
 	},
 }
@@ -338,10 +332,20 @@ var restartCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runProjectPostAction(cmd, args[0], projectPostActionConfig{
-			endpoint:       types.Endpoints.ProjectRestart,
-			failureMessage: "failed to restart project",
-			successMessage: "Project %s restarted successfully",
+		c, err := client.NewFromConfig()
+		if err != nil {
+			return err
+		}
+
+		resolved, _, err := projectRef.Resolve(cmd.Context(), c, args[0], false)
+		if err != nil {
+			return err
+		}
+
+		return cmdutil.RunPostAction[base.MessageResponse](cmd, c, cmdutil.PostActionSpec{
+			Path:           types.Endpoints.ProjectRestart(c.EnvID(), resolved.ID),
+			FailureMessage: "failed to restart project",
+			SuccessMessage: fmt.Sprintf("Project %s restarted successfully", resolved.Name),
 		})
 	},
 }
@@ -352,12 +356,10 @@ var redeployCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runProjectPostAction(cmd, args[0], projectPostActionConfig{
+		return runProjectStreamAction(cmd, args[0], projectStreamActionConfig{
 			endpoint:       types.Endpoints.ProjectRedeploy,
 			failureMessage: "failed to redeploy project",
 			successMessage: "Project %s redeployed successfully",
-			timeout:        30 * time.Minute,
-			stream:         true,
 		})
 	},
 }
@@ -368,41 +370,36 @@ var pullCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runProjectPostAction(cmd, args[0], projectPostActionConfig{
+		return runProjectStreamAction(cmd, args[0], projectStreamActionConfig{
 			endpoint:       types.Endpoints.ProjectPull,
 			failureMessage: "failed to pull images",
 			successMessage: "Images pulled successfully for project %s",
-			timeout:        30 * time.Minute,
-			stream:         true,
 		})
 	},
 }
 
-type projectPostActionConfig struct {
+// projectStreamActionConfig describes a project action whose endpoint responds
+// with an NDJSON operation stream: {"log":"<raw docker CLI line>"} frames are
+// printed as-is and a terminal {"error":"..."} frame fails the command.
+type projectStreamActionConfig struct {
 	endpoint       func(string, string) string
 	failureMessage string
 	successMessage string
-	timeout        time.Duration
-	// stream marks endpoints that respond with an NDJSON operation stream:
-	// {"log":"<raw docker CLI line>"} frames are printed as-is and a terminal
-	// {"error":"..."} frame fails the command.
-	stream bool
 }
 
-func runProjectPostAction(cmd *cobra.Command, projectRef string, cfg projectPostActionConfig) error {
+func runProjectStreamAction(cmd *cobra.Command, identifier string, cfg projectStreamActionConfig) error {
 	c, err := client.NewFromConfig()
 	if err != nil {
 		return err
 	}
 
-	resolved, _, err := resolveProject(cmd.Context(), c, projectRef, false)
+	resolved, _, err := projectRef.Resolve(cmd.Context(), c, identifier, false)
 	if err != nil {
 		return err
 	}
 
-	if cfg.timeout > 0 {
-		c.SetTimeout(cfg.timeout)
-	}
+	// Streamed actions can take a long time as they may pull images.
+	c.SetTimeout(30 * time.Minute)
 
 	resp, err := c.Post(cmd.Context(), cfg.endpoint(c.EnvID(), resolved.ID), nil)
 	if err != nil {
@@ -413,10 +410,8 @@ func runProjectPostAction(cmd *cobra.Command, projectRef string, cfg projectPost
 		return errors.WrapIff(err, "%s", cfg.failureMessage)
 	}
 
-	if cfg.stream {
-		if err := printOperationStreamInternal(resp.Body); err != nil {
-			return errors.WrapIff(err, "%s", cfg.failureMessage)
-		}
+	if err := printOperationStreamInternal(resp.Body); err != nil {
+		return errors.WrapIff(err, "%s", cfg.failureMessage)
 	}
 
 	output.Success(cfg.successMessage, resolved.Name)
@@ -524,12 +519,7 @@ var createCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Project %s created successfully", result.Data.Name)
@@ -553,7 +543,7 @@ var updateCmd = &cobra.Command{
 			return err
 		}
 
-		resolved, _, err := resolveProject(cmd.Context(), c, args[0], false)
+		resolved, _, err := projectRef.Resolve(cmd.Context(), c, args[0], false)
 		if err != nil {
 			return err
 		}
@@ -580,26 +570,13 @@ var updateCmd = &cobra.Command{
 			body.EnvContent = new(string(envBytes))
 		}
 
-		resp, err := c.Put(cmd.Context(), types.Endpoints.Project(c.EnvID(), resolved.ID), body)
+		result, err := c.PutJSON[project.Details](cmd.Context(), types.Endpoints.Project(c.EnvID(), resolved.ID), body)
 		if err != nil {
-			return errors.WrapIf(err, "failed to update project")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
 			return errors.WrapIf(err, "failed to update project")
 		}
 
 		if jsonOutput {
-			var result base.ApiResponse[project.Details]
-			if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-				return err
-			}
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Project %s updated successfully", resolved.Name)
@@ -618,7 +595,7 @@ var updateIncludesCmd = &cobra.Command{
 			return err
 		}
 
-		resolved, _, err := resolveProject(cmd.Context(), c, args[0], false)
+		resolved, _, err := projectRef.Resolve(cmd.Context(), c, args[0], false)
 		if err != nil {
 			return err
 		}
@@ -628,17 +605,9 @@ var updateIncludesCmd = &cobra.Command{
 			return errors.WrapIf(err, "failed to read include file")
 		}
 
-		workspaceResponse, err := c.Get(cmd.Context(), types.Endpoints.ProjectWorkspace(c.EnvID(), resolved.ID))
+		current, err := c.GetJSON[workspacetypes.Workspace](cmd.Context(), types.Endpoints.ProjectWorkspace(c.EnvID(), resolved.ID))
 		if err != nil {
 			return errors.WrapIf(err, "failed to get project workspace")
-		}
-		defer func() { _ = workspaceResponse.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(workspaceResponse); err != nil {
-			return errors.WrapIf(err, "failed to get project workspace")
-		}
-		var current base.ApiResponse[workspacetypes.Workspace]
-		if err := cmdutil.DecodeJSON(workspaceResponse, &current); err != nil {
-			return err
 		}
 
 		relativePath := filepath.ToSlash(filepath.Base(includesFile))
@@ -688,12 +657,7 @@ var updateIncludesCmd = &cobra.Command{
 			if err := cmdutil.DecodeJSON(resp, &result); err != nil {
 				return err
 			}
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Include file %s updated successfully for project %s", filepath.Base(includesFile), resolved.Name)
@@ -711,24 +675,13 @@ var countsCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.Endpoints.ProjectsCounts(c.EnvID()))
+		result, err := c.GetJSON[map[string]any](cmd.Context(), types.Endpoints.ProjectsCounts(c.EnvID()))
 		if err != nil {
 			return errors.WrapIf(err, "failed to get project counts")
 		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result base.ApiResponse[map[string]any]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
-		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Header("Project Counts")
@@ -799,89 +752,18 @@ func init() {
 	_ = updateIncludesCmd.MarkFlagRequired("file")
 }
 
-func resolveProject(ctx context.Context, c *client.Client, identifier string, allowPrompt bool) (*project.Details, bool, error) {
-	trimmed := strings.TrimSpace(identifier)
-	if trimmed == "" {
-		return nil, false, errors.New("project identifier is required")
-	}
-
-	resp, err := c.Get(ctx, types.Endpoints.Project(c.EnvID(), trimmed))
-	if err != nil {
-		return nil, false, errors.WrapIff(err, "failed to resolve project %q", trimmed)
-	}
-
-	bodyBytes, err := io.ReadAll(resp.Body)
-	_ = resp.Body.Close()
-	if err != nil {
-		return nil, false, errors.WrapIf(err, "failed to read project response")
-	}
-
-	if resp.StatusCode == http.StatusOK {
-		var result base.ApiResponse[project.Details]
-		if err := json.Unmarshal(bodyBytes, &result); err != nil {
-			return nil, false, errors.WrapIf(err, "failed to parse project response")
-		}
-		return &result.Data, true, nil
-	}
-
-	if resp.StatusCode != http.StatusNotFound {
-		return nil, false, errors.Errorf("failed to resolve project %q (status %d): %s", trimmed, resp.StatusCode, strings.TrimSpace(string(bodyBytes)))
-	}
-
-	identifierLower := strings.ToLower(trimmed)
-
-	searchPath := fmt.Sprintf("%s?search=%s&limit=%d", types.Endpoints.Projects(c.EnvID()), url.QueryEscape(trimmed), cmdutil.ShowAllLimit)
-	searchResp, err := c.Get(ctx, searchPath)
-	if err != nil {
-		return nil, false, errors.WrapIf(err, "failed to search projects")
-	}
-
-	searchBody, err := io.ReadAll(searchResp.Body)
-	_ = searchResp.Body.Close()
-	if err != nil {
-		return nil, false, errors.WrapIf(err, "failed to read projects response")
-	}
-
-	if searchResp.StatusCode < 200 || searchResp.StatusCode >= 300 {
-		return nil, false, errors.Errorf("failed to search projects (status %d): %s", searchResp.StatusCode, strings.TrimSpace(string(searchBody)))
-	}
-
-	var result base.Paginated[project.Details]
-	if err := json.Unmarshal(searchBody, &result); err != nil {
-		return nil, false, errors.WrapIf(err, "failed to parse projects response")
-	}
-
-	matches := make([]project.Details, 0)
-	for _, proj := range result.Data {
-		if projectMatches(proj, identifierLower, trimmed) {
-			matches = append(matches, proj)
-		}
-	}
-
-	if len(matches) == 1 {
-		return &matches[0], false, nil
-	}
-
-	if len(matches) > 1 {
-		if !allowPrompt {
-			return nil, false, errors.Errorf("multiple projects match %q; use the project ID or run `arcane projects list`", trimmed)
-		}
-		if len(matches) > maxPromptOptions {
-			return nil, false, errors.Errorf("multiple projects match %q (%d results); refine your query or use the project ID", trimmed, len(matches))
-		}
-
-		options := make([]string, 0, len(matches))
-		for _, match := range matches {
-			options = append(options, fmt.Sprintf("%s (%s, %s)", match.Name, match.ID, match.Status))
-		}
-		choice, err := prompt.Select("project", options)
-		if err != nil {
-			return nil, false, err
-		}
-		return &matches[choice], false, nil
-	}
-
-	return nil, false, errors.Errorf("project %q not found; use the project ID or run `arcane projects list`", trimmed)
+var projectRef = cmdutil.ResourceRef[project.Details, project.Details]{
+	Singular: "project",
+	Plural:   "projects",
+	IDHint:   "the project ID",
+	ListCmd:  "arcane projects list",
+	GetPath:  types.Endpoints.Project,
+	ListPath: types.Endpoints.Projects,
+	Matches:  projectMatches,
+	Label: func(match project.Details) string {
+		return fmt.Sprintf("%s (%s, %s)", match.Name, match.ID, match.Status)
+	},
+	Promote: func(match project.Details) *project.Details { return &match },
 }
 
 func projectMatches(item project.Details, identifierLower, original string) bool {

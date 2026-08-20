@@ -232,7 +232,7 @@ func (s *TemplateService) GetAllTemplatesPaginated(ctx context.Context, params p
 		},
 	}
 
-	result := pagination.SearchOrderAndPaginate(items, params, config)
+	result := config.SearchOrderAndPaginate(items, params)
 	paginationResp := pagination.BuildResponse(result.TotalCount, result.TotalAvailable, params)
 
 	return result.Items, paginationResp, nil

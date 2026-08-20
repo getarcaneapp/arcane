@@ -1,8 +1,8 @@
 package notifications
 
 import (
-	"encoding/json"
 	"fmt"
+	"net/http"
 	"strconv"
 
 	"emperror.dev/errors"
@@ -10,7 +10,6 @@ import (
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
-	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/notification"
 	"github.com/spf13/cobra"
 )
@@ -42,24 +41,13 @@ var settingsGetCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.Endpoints.NotificationsSettings(c.EnvID()))
+		result, err := c.DoJSON[[]notification.Response](cmd.Context(), http.MethodGet, types.Endpoints.NotificationsSettings(c.EnvID()), nil)
 		if err != nil {
 			return errors.WrapIf(err, "failed to get settings")
 		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result []notification.Response
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
-		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result)
 		}
 
 		headers := []string{"ID", "PROVIDER", "ENABLED"}
@@ -125,27 +113,12 @@ var testProviderCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Post(cmd.Context(), types.Endpoints.NotificationsTestProvider(c.EnvID(), args[0]), nil)
-		if err != nil {
-			return errors.WrapIf(err, "failed to test notification provider")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "notification test failed")
-		}
-
-		if jsonOutput {
-			var result base.ApiResponse[any]
-			if err := json.NewDecoder(resp.Body).Decode(&result); err == nil {
-				if resultBytes, err := json.MarshalIndent(result.Data, "", "  "); err == nil {
-					fmt.Println(string(resultBytes))
-				}
-			}
-			return nil
-		}
-
-		output.Success("Notification test for %s successful", args[0])
-		return nil
+		return cmdutil.RunPostAction[notification.TestResponse](cmd, c, cmdutil.PostActionSpec{
+			Path:           types.Endpoints.NotificationsTestProvider(c.EnvID(), args[0]),
+			FailureMessage: "failed to test notification provider",
+			SuccessMessage: fmt.Sprintf("Notification test for %s successful", args[0]),
+			JSON:           jsonOutput,
+		})
 	},
 }
 

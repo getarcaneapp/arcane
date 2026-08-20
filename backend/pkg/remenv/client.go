@@ -110,17 +110,18 @@ func (c *Client) Do(ctx context.Context, req Request) (*Response, error) {
 	return c.doDirectHTTPInternal(ctx, req)
 }
 
-func (c *Client) DoJSON(ctx context.Context, req Request, out any) error {
+func (c *Client) DoJSON[T any](ctx context.Context, req Request) (T, error) {
+	var zero T
 	resp, err := c.Do(ctx, req)
 	if err != nil {
-		return err
+		return zero, err
 	}
 
 	if err := resp.RequireSuccess(); err != nil {
-		return err
+		return zero, err
 	}
 
-	return resp.DecodeJSON(out)
+	return resp.DecodeJSON[T]()
 }
 
 func (c *Client) doViaTunnelInternal(ctx context.Context, req Request) (*Response, error) {
@@ -188,17 +189,15 @@ func (r *Response) RequireSuccess() error {
 	}
 }
 
-func (r *Response) DecodeJSON(out any) error {
-	if out == nil {
-		return nil
-	}
+func (r *Response) DecodeJSON[T any]() (T, error) {
+	var out T
 	if r == nil {
-		return &DecodeError{Err: errors.New("response is nil")}
+		return out, &DecodeError{Err: errors.New("response is nil")}
 	}
-	if err := json.Unmarshal(r.Body, out); err != nil {
-		return &DecodeError{Err: err}
+	if err := json.Unmarshal(r.Body, &out); err != nil {
+		return out, &DecodeError{Err: err}
 	}
-	return nil
+	return out, nil
 }
 
 type TransportError struct {
