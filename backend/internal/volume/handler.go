@@ -71,27 +71,15 @@ type GetVolumeInput struct {
 	VolumeName    string `path:"volumeName" doc:"Volume name"`
 }
 
-type GetVolumeOutput struct {
-	Body base.ApiResponse[*volumetypes.Volume]
-}
-
 type CreateVolumeInput struct {
 	EnvironmentID string             `path:"id" doc:"Environment ID"`
 	Body          volumetypes.Create `doc:"Volume creation data"`
-}
-
-type CreateVolumeOutput struct {
-	Body base.ApiResponse[*volumetypes.Volume]
 }
 
 type RemoveVolumeInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	VolumeName    string `path:"volumeName" doc:"Volume name"`
 	Force         bool   `query:"force" doc:"Force removal"`
-}
-
-type RemoveVolumeOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
 }
 
 type PruneVolumesInput struct {
@@ -106,10 +94,6 @@ type VolumePruneReportData struct {
 	ActivityID     *string  `json:"activityId,omitempty"`
 }
 
-type PruneVolumesOutput struct {
-	Body base.ApiResponse[VolumePruneReportData]
-}
-
 type GetVolumeUsageInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	VolumeName    string `path:"volumeName" doc:"Volume name"`
@@ -121,17 +105,9 @@ type VolumeUsageResponse struct {
 	Containers []string `json:"containers"`
 }
 
-type GetVolumeUsageOutput struct {
-	Body base.ApiResponse[VolumeUsageResponse]
-}
-
 type GetVolumeUsageCountsInput struct {
 	EnvironmentID   string `path:"id" doc:"Environment ID"`
 	IncludeInternal bool   `query:"includeInternal" default:"false" doc:"Include internal volumes"`
-}
-
-type GetVolumeUsageCountsOutput struct {
-	Body base.ApiResponse[VolumeUsageCountsData]
 }
 
 type GetVolumeSizesInput struct {
@@ -143,10 +119,6 @@ type VolumeSizeInfo struct {
 	Name     string `json:"name"`
 	Size     int64  `json:"size"`
 	RefCount int64  `json:"refCount"`
-}
-
-type GetVolumeSizesOutput struct {
-	Body base.ApiResponse[[]VolumeSizeInfo]
 }
 
 // --- Volume Backup ---
@@ -177,18 +149,10 @@ type CreateBackupInput struct {
 	VolumeName    string `path:"volumeName" doc:"Volume name"`
 }
 
-type CreateBackupOutput struct {
-	Body base.ApiResponse[*VolumeBackup]
-}
-
 type RestoreBackupInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	VolumeName    string `path:"volumeName" doc:"Volume name"`
 	BackupID      string `path:"backupId" doc:"Backup ID"`
-}
-
-type RestoreBackupOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
 }
 
 type RestoreBackupFilesInput struct {
@@ -198,10 +162,6 @@ type RestoreBackupFilesInput struct {
 	Body          struct {
 		Paths []string `json:"paths" doc:"Paths to restore from backup"`
 	}
-}
-
-type RestoreBackupFilesOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
 }
 
 type BackupHasPathInput struct {
@@ -214,26 +174,14 @@ type BackupHasPathResponse struct {
 	Exists bool `json:"exists"`
 }
 
-type BackupHasPathOutput struct {
-	Body base.ApiResponse[BackupHasPathResponse]
-}
-
 type ListBackupFilesInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	BackupID      string `path:"backupId" doc:"Backup ID"`
 }
 
-type ListBackupFilesOutput struct {
-	Body base.ApiResponse[[]string]
-}
-
 type DeleteBackupInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	BackupID      string `path:"backupId" doc:"Backup ID"`
-}
-
-type DeleteBackupOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
 }
 
 type DownloadBackupInput struct {
@@ -245,10 +193,6 @@ type UploadAndRestoreInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	VolumeName    string `path:"volumeName" doc:"Volume name"`
 	Body          uploadtypes.ConsumeRequest
-}
-
-type UploadAndRestoreOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
 }
 
 // RegisterVolumes registers volume management routes using Huma.
@@ -466,13 +410,13 @@ func (h *VolumeHandler) ListVolumes(ctx context.Context, input *ListVolumesInput
 }
 
 // GetVolume returns a volume by name.
-func (h *VolumeHandler) GetVolume(ctx context.Context, input *GetVolumeInput) (*GetVolumeOutput, error) {
+func (h *VolumeHandler) GetVolume(ctx context.Context, input *GetVolumeInput) (*handlerutil.Out[*volumetypes.Volume], error) {
 	vol, err := h.volumeService.GetVolumeByName(ctx, input.VolumeName)
 	if err != nil {
 		return nil, huma.Error404NotFound(errors.WithMessage(err, "Volume not found").Error())
 	}
 
-	return &GetVolumeOutput{
+	return &handlerutil.Out[*volumetypes.Volume]{
 		Body: base.ApiResponse[*volumetypes.Volume]{
 			Success: true,
 			Data:    vol,
@@ -481,7 +425,7 @@ func (h *VolumeHandler) GetVolume(ctx context.Context, input *GetVolumeInput) (*
 }
 
 // CreateVolume creates a new Docker volume.
-func (h *VolumeHandler) CreateVolume(ctx context.Context, input *CreateVolumeInput) (*CreateVolumeOutput, error) {
+func (h *VolumeHandler) CreateVolume(ctx context.Context, input *CreateVolumeInput) (*handlerutil.Out[*volumetypes.Volume], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -520,7 +464,7 @@ func (h *VolumeHandler) CreateVolume(ctx context.Context, input *CreateVolumeInp
 	}
 	response.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
 
-	return &CreateVolumeOutput{
+	return &handlerutil.Out[*volumetypes.Volume]{
 		Body: base.ApiResponse[*volumetypes.Volume]{
 			Success: true,
 			Data:    response,
@@ -529,7 +473,7 @@ func (h *VolumeHandler) CreateVolume(ctx context.Context, input *CreateVolumeInp
 }
 
 // RemoveVolume removes a Docker volume.
-func (h *VolumeHandler) RemoveVolume(ctx context.Context, input *RemoveVolumeInput) (*RemoveVolumeOutput, error) {
+func (h *VolumeHandler) RemoveVolume(ctx context.Context, input *RemoveVolumeInput) (*handlerutil.Out[base.MessageResponse], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -557,7 +501,7 @@ func (h *VolumeHandler) RemoveVolume(ctx context.Context, input *RemoveVolumeInp
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to delete volume").Error())
 	}
 
-	return &RemoveVolumeOutput{
+	return &handlerutil.Out[base.MessageResponse]{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data: base.MessageResponse{
@@ -569,7 +513,7 @@ func (h *VolumeHandler) RemoveVolume(ctx context.Context, input *RemoveVolumeInp
 }
 
 // PruneVolumes removes all unused Docker volumes.
-func (h *VolumeHandler) PruneVolumes(ctx context.Context, input *PruneVolumesInput) (*PruneVolumesOutput, error) {
+func (h *VolumeHandler) PruneVolumes(ctx context.Context, input *PruneVolumesInput) (*handlerutil.Out[VolumePruneReportData], error) {
 	var report *volumetypes.PruneReport
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
@@ -589,7 +533,7 @@ func (h *VolumeHandler) PruneVolumes(ctx context.Context, input *PruneVolumesInp
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to prune volumes").Error())
 	}
 
-	return &PruneVolumesOutput{
+	return &handlerutil.Out[VolumePruneReportData]{
 		Body: base.ApiResponse[VolumePruneReportData]{
 			Success: true,
 			Data: VolumePruneReportData{
@@ -602,13 +546,13 @@ func (h *VolumeHandler) PruneVolumes(ctx context.Context, input *PruneVolumesInp
 }
 
 // GetVolumeUsage returns containers using a specific volume.
-func (h *VolumeHandler) GetVolumeUsage(ctx context.Context, input *GetVolumeUsageInput) (*GetVolumeUsageOutput, error) {
+func (h *VolumeHandler) GetVolumeUsage(ctx context.Context, input *GetVolumeUsageInput) (*handlerutil.Out[VolumeUsageResponse], error) {
 	inUse, containers, err := h.volumeService.GetVolumeUsage(ctx, input.VolumeName)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to get volume usage").Error())
 	}
 
-	return &GetVolumeUsageOutput{
+	return &handlerutil.Out[VolumeUsageResponse]{
 		Body: base.ApiResponse[VolumeUsageResponse]{
 			Success: true,
 			Data: VolumeUsageResponse{
@@ -620,13 +564,13 @@ func (h *VolumeHandler) GetVolumeUsage(ctx context.Context, input *GetVolumeUsag
 }
 
 // GetVolumeUsageCounts returns counts of volumes by usage status.
-func (h *VolumeHandler) GetVolumeUsageCounts(ctx context.Context, input *GetVolumeUsageCountsInput) (*GetVolumeUsageCountsOutput, error) {
+func (h *VolumeHandler) GetVolumeUsageCounts(ctx context.Context, input *GetVolumeUsageCountsInput) (*handlerutil.Out[VolumeUsageCountsData], error) {
 	_, _, counts, err := h.volumeService.ListVolumesPaginated(ctx, pagination.QueryParams{}, input.IncludeInternal)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to get volume counts").Error())
 	}
 
-	return &GetVolumeUsageCountsOutput{
+	return &handlerutil.Out[VolumeUsageCountsData]{
 		Body: base.ApiResponse[VolumeUsageCountsData]{
 			Success: true,
 			Data: VolumeUsageCountsData{
@@ -640,7 +584,7 @@ func (h *VolumeHandler) GetVolumeUsageCounts(ctx context.Context, input *GetVolu
 
 // GetVolumeSizes returns disk usage sizes for all volumes.
 // This is a slow operation as it requires calculating disk usage.
-func (h *VolumeHandler) GetVolumeSizes(ctx context.Context, input *GetVolumeSizesInput) (*GetVolumeSizesOutput, error) {
+func (h *VolumeHandler) GetVolumeSizes(ctx context.Context, input *GetVolumeSizesInput) (*handlerutil.Out[[]VolumeSizeInfo], error) {
 	sizes, err := h.volumeService.GetVolumeSizes(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
@@ -655,7 +599,7 @@ func (h *VolumeHandler) GetVolumeSizes(ctx context.Context, input *GetVolumeSize
 		})
 	}
 
-	return &GetVolumeSizesOutput{
+	return &handlerutil.Out[[]VolumeSizeInfo]{
 		Body: base.ApiResponse[[]VolumeSizeInfo]{
 			Success: true,
 			Data:    result,
@@ -700,7 +644,7 @@ func (h *VolumeHandler) ListBackups(ctx context.Context, input *ListBackupsInput
 	}, nil
 }
 
-func (h *VolumeHandler) CreateBackup(ctx context.Context, input *CreateBackupInput) (*CreateBackupOutput, error) {
+func (h *VolumeHandler) CreateBackup(ctx context.Context, input *CreateBackupInput) (*handlerutil.Out[*VolumeBackup], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -728,7 +672,7 @@ func (h *VolumeHandler) CreateBackup(ctx context.Context, input *CreateBackupInp
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 	backup.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
-	return &CreateBackupOutput{
+	return &handlerutil.Out[*VolumeBackup]{
 		Body: base.ApiResponse[*VolumeBackup]{
 			Success: true,
 			Data:    backup,
@@ -736,7 +680,7 @@ func (h *VolumeHandler) CreateBackup(ctx context.Context, input *CreateBackupInp
 	}, nil
 }
 
-func (h *VolumeHandler) RestoreBackup(ctx context.Context, input *RestoreBackupInput) (*RestoreBackupOutput, error) {
+func (h *VolumeHandler) RestoreBackup(ctx context.Context, input *RestoreBackupInput) (*handlerutil.Out[base.MessageResponse], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -763,7 +707,7 @@ func (h *VolumeHandler) RestoreBackup(ctx context.Context, input *RestoreBackupI
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	return &RestoreBackupOutput{
+	return &handlerutil.Out[base.MessageResponse]{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data:    base.MessageResponse{Message: "Restore initiated successfully", ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()},
@@ -771,7 +715,7 @@ func (h *VolumeHandler) RestoreBackup(ctx context.Context, input *RestoreBackupI
 	}, nil
 }
 
-func (h *VolumeHandler) RestoreBackupFiles(ctx context.Context, input *RestoreBackupFilesInput) (*RestoreBackupFilesOutput, error) {
+func (h *VolumeHandler) RestoreBackupFiles(ctx context.Context, input *RestoreBackupFilesInput) (*handlerutil.Out[base.MessageResponse], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -804,7 +748,7 @@ func (h *VolumeHandler) RestoreBackupFiles(ctx context.Context, input *RestoreBa
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 
-	return &RestoreBackupFilesOutput{
+	return &handlerutil.Out[base.MessageResponse]{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data:    base.MessageResponse{Message: "Restore initiated successfully", ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()},
@@ -812,7 +756,7 @@ func (h *VolumeHandler) RestoreBackupFiles(ctx context.Context, input *RestoreBa
 	}, nil
 }
 
-func (h *VolumeHandler) BackupHasPath(ctx context.Context, input *BackupHasPathInput) (*BackupHasPathOutput, error) {
+func (h *VolumeHandler) BackupHasPath(ctx context.Context, input *BackupHasPathInput) (*handlerutil.Out[BackupHasPathResponse], error) {
 	if input.Path == "" {
 		return nil, huma.Error400BadRequest("path is required")
 	}
@@ -822,7 +766,7 @@ func (h *VolumeHandler) BackupHasPath(ctx context.Context, input *BackupHasPathI
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 
-	return &BackupHasPathOutput{
+	return &handlerutil.Out[BackupHasPathResponse]{
 		Body: base.ApiResponse[BackupHasPathResponse]{
 			Success: true,
 			Data:    BackupHasPathResponse{Exists: exists},
@@ -830,13 +774,13 @@ func (h *VolumeHandler) BackupHasPath(ctx context.Context, input *BackupHasPathI
 	}, nil
 }
 
-func (h *VolumeHandler) ListBackupFiles(ctx context.Context, input *ListBackupFilesInput) (*ListBackupFilesOutput, error) {
+func (h *VolumeHandler) ListBackupFiles(ctx context.Context, input *ListBackupFilesInput) (*handlerutil.Out[[]string], error) {
 	files, err := h.volumeService.ListBackupFiles(ctx, input.BackupID)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 
-	return &ListBackupFilesOutput{
+	return &handlerutil.Out[[]string]{
 		Body: base.ApiResponse[[]string]{
 			Success: true,
 			Data:    files,
@@ -844,7 +788,7 @@ func (h *VolumeHandler) ListBackupFiles(ctx context.Context, input *ListBackupFi
 	}, nil
 }
 
-func (h *VolumeHandler) DeleteBackup(ctx context.Context, input *DeleteBackupInput) (*DeleteBackupOutput, error) {
+func (h *VolumeHandler) DeleteBackup(ctx context.Context, input *DeleteBackupInput) (*handlerutil.Out[base.MessageResponse], error) {
 	user, _ := common.CurrentUserFromContext(ctx)
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
@@ -867,7 +811,7 @@ func (h *VolumeHandler) DeleteBackup(ctx context.Context, input *DeleteBackupInp
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	return &DeleteBackupOutput{
+	return &handlerutil.Out[base.MessageResponse]{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data:    base.MessageResponse{Message: "Backup deleted successfully", ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()},
@@ -896,7 +840,7 @@ func (h *VolumeHandler) DownloadBackup(ctx context.Context, input *DownloadBacku
 	}, nil
 }
 
-func (h *VolumeHandler) UploadAndRestore(ctx context.Context, input *UploadAndRestoreInput) (*UploadAndRestoreOutput, error) {
+func (h *VolumeHandler) UploadAndRestore(ctx context.Context, input *UploadAndRestoreInput) (*handlerutil.Out[base.MessageResponse], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -932,7 +876,7 @@ func (h *VolumeHandler) UploadAndRestore(ctx context.Context, input *UploadAndRe
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	return &UploadAndRestoreOutput{
+	return &handlerutil.Out[base.MessageResponse]{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data:    base.MessageResponse{Message: "Backup uploaded and restored successfully", ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()},

@@ -91,7 +91,7 @@ GitHub Actions example:
 
 		switch {
 		case cmdutil.JSONOutputEnabled(cmd):
-			resultBytes, err := json.MarshalIndent(map[string]any{
+			return cmdutil.PrintJSON(map[string]any{
 				"token":           tokenResp.AccessToken,
 				"tokenType":       tokenResp.TokenType,
 				"expiresIn":       tokenResp.ExpiresIn,
@@ -99,11 +99,7 @@ GitHub Actions example:
 				"issuedTokenType": tokenResp.IssuedTokenType,
 				"source":          tokenSource,
 				"persisted":       persist,
-			}, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
+			})
 		case exportOutput:
 			fmt.Printf("export ARCANE_TOKEN=%s\n", shellQuoteInternal(tokenResp.AccessToken))
 			fmt.Printf("export ARCANE_TOKEN_EXPIRES_AT=%s\n", shellQuoteInternal(expiresAt.Format(time.RFC3339)))

@@ -65,21 +65,24 @@ func (s *KVService) ListByPrefix(ctx context.Context, prefix string) ([]KVEntry,
 	return entries, nil
 }
 
-func (s *KVService) GetBool(ctx context.Context, key string, defaultValue bool) (bool, error) {
+// GetTyped loads one kv entry and parses it, returning defaultValue when the
+// key is absent or unreadable.
+func (s *KVService) GetTyped[T any](ctx context.Context, key string, defaultValue T, parse func(string) (T, error)) (T, error) {
 	rawValue, ok, err := s.Get(ctx, key)
-	if err != nil {
+	if err != nil || !ok {
 		return defaultValue, err
 	}
-	if !ok {
-		return defaultValue, nil
-	}
 
-	parsedValue, err := strconv.ParseBool(rawValue)
+	parsedValue, err := parse(rawValue)
 	if err != nil {
-		return defaultValue, errors.WrapIff(err, "failed to parse kv entry %q as bool", key)
+		return defaultValue, errors.WrapIff(err, "failed to parse kv entry %q as %T", key, defaultValue)
 	}
 
 	return parsedValue, nil
+}
+
+func (s *KVService) GetBool(ctx context.Context, key string, defaultValue bool) (bool, error) {
+	return s.GetTyped(ctx, key, defaultValue, strconv.ParseBool)
 }
 
 func (s *KVService) SetBool(ctx context.Context, key string, value bool) error {
@@ -87,20 +90,9 @@ func (s *KVService) SetBool(ctx context.Context, key string, value bool) error {
 }
 
 func (s *KVService) GetInt64(ctx context.Context, key string, defaultValue int64) (int64, error) {
-	rawValue, ok, err := s.Get(ctx, key)
-	if err != nil {
-		return defaultValue, err
-	}
-	if !ok {
-		return defaultValue, nil
-	}
-
-	parsedValue, err := strconv.ParseInt(rawValue, 10, 64)
-	if err != nil {
-		return defaultValue, errors.WrapIff(err, "failed to parse kv entry %q as int64", key)
-	}
-
-	return parsedValue, nil
+	return s.GetTyped(ctx, key, defaultValue, func(value string) (int64, error) {
+		return strconv.ParseInt(value, 10, 64)
+	})
 }
 
 func (s *KVService) IncrementInt64(ctx context.Context, key string, delta int64) (int64, error) {

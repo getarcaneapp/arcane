@@ -379,7 +379,7 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 	}
 
 	config := s.buildVolumePaginationConfigInternal()
-	result := pagination.SearchOrderAndPaginate(items, effectiveParams, config)
+	result := config.SearchOrderAndPaginate(items, effectiveParams)
 	counts := calculateVolumeUsageCountsInternal(items)
 	paginationResp := pagination.BuildResponse(result.TotalCount, result.TotalAvailable, effectiveParams)
 	slog.DebugContext(ctx, "volume service: listed volumes",

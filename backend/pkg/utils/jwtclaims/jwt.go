@@ -46,12 +46,12 @@ func GetBoolClaim(m map[string]any, key string) bool {
 	return false
 }
 
-// GetStringSliceClaim extracts a string slice claim from a map
-func GetStringSliceClaim(m map[string]any, key string) []string {
-	v, ok := m[key]
-	if !ok || v == nil {
-		return nil
-	}
+// StringSliceFromValue flattens a claim value into a slice of strings.
+// Accepts string (trimmed, single element), []string, []any (string elements
+// only), or nil. Unlike GetStringSliceClaim it never splits a single string
+// into multiple values, so it is safe for claims whose values may legally
+// contain separators (e.g. aud URIs).
+func StringSliceFromValue(v any) []string {
 	switch t := v.(type) {
 	case []string:
 		return t
@@ -66,6 +66,22 @@ func GetStringSliceClaim(m map[string]any, key string) []string {
 			return out
 		}
 	case string:
+		if s := strings.TrimSpace(t); s != "" {
+			return []string{s}
+		}
+	}
+	return nil
+}
+
+// GetStringSliceClaim extracts a string slice claim from a map. A single
+// string value is split on commas or spaces (group/role claims are commonly
+// delivered that way).
+func GetStringSliceClaim(m map[string]any, key string) []string {
+	v, ok := m[key]
+	if !ok || v == nil {
+		return nil
+	}
+	if t, ok := v.(string); ok {
 		s := strings.TrimSpace(t)
 		if s == "" {
 			return nil
@@ -85,7 +101,7 @@ func GetStringSliceClaim(m map[string]any, key string) []string {
 		}
 		return strings.Fields(s)
 	}
-	return nil
+	return StringSliceFromValue(v)
 }
 
 const (

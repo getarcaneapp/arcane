@@ -42,7 +42,7 @@ func (r *Resource[T]) Restart(ctx context.Context, label string, build func(cont
 	if r.terminal.Load() {
 		return ErrResourceStopped
 	}
-	_, err := Execute(ctx, r.executor, label, func(workCtx context.Context) (NoPayload, error) {
+	_, err := r.executor.Execute(ctx, label, func(workCtx context.Context) (NoPayload, error) {
 		if r.terminal.Load() {
 			return NoPayload{}, ErrResourceStopped
 		}
@@ -72,7 +72,7 @@ func (r *Resource[T]) Do(ctx context.Context, label string, work func(context.Co
 	if r.terminal.Load() {
 		return ErrResourceStopped
 	}
-	_, err := Execute(ctx, r.executor, label, func(workCtx context.Context) (NoPayload, error) {
+	_, err := r.executor.Execute(ctx, label, func(workCtx context.Context) (NoPayload, error) {
 		if r.terminal.Load() {
 			return NoPayload{}, ErrResourceStopped
 		}
@@ -86,7 +86,7 @@ func (r *Resource[T]) Clear(ctx context.Context, label string) error {
 	if r.terminal.Load() {
 		return ErrResourceStopped
 	}
-	_, err := Execute(ctx, r.executor, label, func(context.Context) (NoPayload, error) {
+	_, err := r.executor.Execute(ctx, label, func(context.Context) (NoPayload, error) {
 		if r.terminal.Load() {
 			return NoPayload{}, ErrResourceStopped
 		}
@@ -101,7 +101,7 @@ func (r *Resource[T]) Stop(ctx context.Context) error {
 		return errors.New("resource stop context unavailable")
 	}
 	r.terminal.Store(true)
-	task, submitErr := Submit(context.WithoutCancel(ctx), r.executor, "stop actor resource", func(context.Context) (NoPayload, error) {
+	task, submitErr := r.executor.Submit(context.WithoutCancel(ctx), "stop actor resource", func(context.Context) (NoPayload, error) {
 		return NoPayload{}, r.clearInternal()
 	}, nil)
 	var clearErr error

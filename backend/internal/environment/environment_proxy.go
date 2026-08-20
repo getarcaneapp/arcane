@@ -225,8 +225,13 @@ func (s *EnvironmentService) proxyJSONRequestForTargetInternal(
 	if err := resp.RequireSuccess(); err != nil {
 		return err
 	}
-	if err := resp.DecodeJSON(out); err != nil {
-		return err
+	// This is the erased decode behind the RemoteJSONProxy func-value seam;
+	// typed callers go through RemoteJSONProxy.JSON or remenv's generic decode.
+	if out == nil {
+		return nil
+	}
+	if err := json.Unmarshal(resp.Body, out); err != nil {
+		return &remenv.DecodeError{Err: err}
 	}
 
 	return nil
@@ -274,7 +279,7 @@ func doRemoteEnvironmentTunnelRequestInternal(
 
 // SyncRegistriesToEnvironment syncs all registries from this manager to a remote environment
 func (s *EnvironmentService) SyncRegistriesToEnvironment(ctx context.Context, environmentID string) error {
-	return fanOutSyncToEnvironmentInternal(ctx, s, environmentID, "registries", "/api/container-registries/sync",
+	return s.fanOutSyncToEnvironment(ctx, environmentID, "registries", "/api/container-registries/sync",
 		func(ctx context.Context, reg registry.ContainerRegistry) (containerregistry.Sync, bool, error) {
 			registryType, typeErr := registry.NormalizeRegistryType(reg.RegistryType)
 			if typeErr != nil {
@@ -324,7 +329,7 @@ func (s *EnvironmentService) SyncRegistriesToEnvironment(ctx context.Context, en
 
 // SyncRepositoriesToEnvironment syncs all git repositories from this manager to a remote environment
 func (s *EnvironmentService) SyncRepositoriesToEnvironment(ctx context.Context, environmentID string) error {
-	return fanOutSyncToEnvironmentInternal(ctx, s, environmentID, "git repositories", "/api/git-repositories/sync",
+	return s.fanOutSyncToEnvironment(ctx, environmentID, "git repositories", "/api/git-repositories/sync",
 		func(ctx context.Context, repo gitrepo.GitRepository) (gitops.RepositorySync, bool, error) {
 			item := gitops.RepositorySync{
 				ID:          repo.ID,
@@ -366,14 +371,13 @@ func (s *EnvironmentService) SyncRepositoriesToEnvironment(ctx context.Context, 
 	)
 }
 
-// fanOutSyncToEnvironmentInternal pushes every row of Model held by this
+// fanOutSyncToEnvironment pushes every row of Model held by this
 // manager to one remote environment. toSyncItem maps a row to its wire form and
 // reports whether to keep it — rows whose credentials fail to decrypt are
 // skipped rather than failing the whole batch — and wrap builds the request
 // envelope the target endpoint expects.
-func fanOutSyncToEnvironmentInternal[Model any, Item any, Request any](
+func (s *EnvironmentService) fanOutSyncToEnvironment[Model any, Item any, Request any](
 	ctx context.Context,
-	s *EnvironmentService,
 	environmentID string,
 	kind string,
 	path string,

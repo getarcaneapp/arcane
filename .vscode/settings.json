@@ -22,5 +22,16 @@
   },
   "tasks.statusbar.default.hide": true,
   "tasks.statusbar.limit": 8,
-  "js/ts.tsdk.path": "node_modules/@typescript/native-preview"
+  "js/ts.tsdk.path": "node_modules/@typescript/native-preview",
+  "yaml.disableSchemaDetection": [
+    "**/.github/workflows/*.yml",
+    "**/.github/workflows/*.yaml",
+    "**/.gitea/workflows/*.yml",
+    "**/.gitea/workflows/*.yaml",
+    "**/.forgejo/workflows/*.yml",
+    "**/.forgejo/workflows/*.yaml"
+  ],
+  "yaml.schemas": {
+    "https://json.schemastore.org/github-workflow.json": ".github/workflows/*"
+  }
 }

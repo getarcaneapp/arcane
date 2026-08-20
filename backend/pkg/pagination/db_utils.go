@@ -43,7 +43,7 @@ func ApplyLikeSearch(q *gorm.DB, search string, condition string) *gorm.DB {
 }
 
 // PaginateSortAndMapDB paginates DB records and maps them to API DTOs.
-func PaginateSortAndMapDB[M any, D any](params QueryParams, query *gorm.DB, records *[]M) ([]D, Response, error) {
+func (params QueryParams) PaginateSortAndMapDB[M any, D any](query *gorm.DB, records *[]M) ([]D, Response, error) {
 	paginationResp, err := PaginateAndSortDB(params, query, records)
 	if err != nil {
 		return nil, Response{}, errors.WrapIf(err, "paginate db records")

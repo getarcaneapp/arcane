@@ -32,12 +32,7 @@ var checkCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.Endpoints.ImageUpdatesCheck(c.EnvID(), args[0]))
-		if err != nil {
-			return errors.WrapIf(err, "failed to check updates")
-		}
-
-		result, err := client.DecodeResponseStrict[imageupdate.Response](resp)
+		result, err := c.GetJSON[imageupdate.Response](cmd.Context(), types.Endpoints.ImageUpdatesCheck(c.EnvID(), args[0]))
 		if err != nil {
 			return errors.WrapIf(err, "failed to check updates")
 		}
@@ -76,12 +71,7 @@ var checkAllCmd = &cobra.Command{
 		}
 
 		// The handler declares a non-pointer Body, so an empty body is a 400.
-		resp, err := c.Post(cmd.Context(), types.Endpoints.ImageUpdatesCheckAll(c.EnvID()), imageupdate.CheckAllImagesRequest{})
-		if err != nil {
-			return errors.WrapIf(err, "failed to check all updates")
-		}
-
-		result, err := client.DecodeResponseStrict[imageupdate.BatchResponse](resp)
+		result, err := c.PostJSON[imageupdate.BatchResponse](cmd.Context(), types.Endpoints.ImageUpdatesCheckAll(c.EnvID()), imageupdate.CheckAllImagesRequest{})
 		if err != nil {
 			return errors.WrapIf(err, "failed to check all updates")
 		}
@@ -120,12 +110,7 @@ var checkImageCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.Endpoints.ImageUpdatesCheckById(c.EnvID(), args[0]))
-		if err != nil {
-			return errors.WrapIf(err, "failed to check image update")
-		}
-
-		result, err := client.DecodeResponseStrict[imageupdate.Response](resp)
+		result, err := c.GetJSON[imageupdate.Response](cmd.Context(), types.Endpoints.ImageUpdatesCheckById(c.EnvID(), args[0]))
 		if err != nil {
 			return errors.WrapIf(err, "failed to check image update")
 		}
@@ -162,12 +147,7 @@ var summaryCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.Endpoints.ImageUpdatesSummary(c.EnvID()))
-		if err != nil {
-			return errors.WrapIf(err, "failed to get summary")
-		}
-
-		result, err := client.DecodeResponseStrict[imageupdate.Summary](resp)
+		result, err := c.GetJSON[imageupdate.Summary](cmd.Context(), types.Endpoints.ImageUpdatesSummary(c.EnvID()))
 		if err != nil {
 			return errors.WrapIf(err, "failed to get summary")
 		}

@@ -605,14 +605,14 @@ func (s *AuthService) extractOidcGroups(ctx context.Context, userInfo auth.OidcU
 
 	if claim != "" {
 		if v, ok := jwtclaims.GetByPath(userInfo.Extra, claim).Get(); ok {
-			if groups := stringValuesFromClaim(v); len(groups) > 0 {
+			if groups := jwtclaims.StringSliceFromValue(v); len(groups) > 0 {
 				return groups
 			}
 		}
 		if tokenResp != nil && tokenResp.IDToken != "" {
 			if parsed := jwtclaims.ParseJWTClaims(tokenResp.IDToken); parsed != nil {
 				if v, ok := jwtclaims.GetByPath(parsed, claim).Get(); ok {
-					if groups := stringValuesFromClaim(v); len(groups) > 0 {
+					if groups := jwtclaims.StringSliceFromValue(v); len(groups) > 0 {
 						return groups
 					}
 				}
@@ -633,32 +633,6 @@ func (s *AuthService) oidcGroupsClaim(ctx context.Context) string {
 		return "groups"
 	}
 	return v
-}
-
-// stringValuesFromClaim flattens a claim value into a slice of strings.
-// Accepts string, []string, []any (coerces each element to string), or nil.
-func stringValuesFromClaim(v any) []string {
-	switch typed := v.(type) {
-	case nil:
-		return nil
-	case string:
-		if typed == "" {
-			return nil
-		}
-		return []string{typed}
-	case []string:
-		return typed
-	case []any:
-		out := make([]string, 0, len(typed))
-		for _, item := range typed {
-			if s, ok := item.(string); ok && s != "" {
-				out = append(out, s)
-			}
-		}
-		return out
-	default:
-		return nil
-	}
 }
 
 func (s *AuthService) persistOidcTokens(user *common.User, tokenResp *auth.OidcTokenResponse) {

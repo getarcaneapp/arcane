@@ -33,28 +33,16 @@ type GetVolumeWorkspaceInput struct {
 	VolumeName    string `path:"volumeName" doc:"Volume name"`
 }
 
-type GetVolumeWorkspaceOutput struct {
-	Body base.ApiResponse[workspacetypes.Workspace]
-}
-
 type GetVolumeWorkspaceFileInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	VolumeName    string `path:"volumeName" doc:"Volume name"`
 	RelativePath  string `query:"relativePath" doc:"Path relative to the volume workspace root"`
 }
 
-type GetVolumeWorkspaceFileOutput struct {
-	Body base.ApiResponse[workspacetypes.FileContent]
-}
-
 type UpdateVolumeWorkspaceInput struct {
 	EnvironmentID string         `path:"id" doc:"Environment ID"`
 	VolumeName    string         `path:"volumeName" doc:"Volume name"`
 	RawBody       multipart.Form `contentType:"multipart/form-data"`
-}
-
-type UpdateVolumeWorkspaceOutput struct {
-	Body base.ApiResponse[workspacetypes.Workspace]
 }
 
 func registerVolumeWorkspaceRoutesInternal(api huma.API, h *VolumeHandler) {
@@ -83,20 +71,20 @@ func volumeWorkspaceHTTPErrorInternal(err error) error {
 	}
 }
 
-func (h *VolumeHandler) GetVolumeWorkspace(ctx context.Context, input *GetVolumeWorkspaceInput) (*GetVolumeWorkspaceOutput, error) {
+func (h *VolumeHandler) GetVolumeWorkspace(ctx context.Context, input *GetVolumeWorkspaceInput) (*handlerutil.Out[workspacetypes.Workspace], error) {
 	result, err := h.volumeService.GetVolumeWorkspace(ctx, input.VolumeName)
 	if err != nil {
 		return nil, volumeWorkspaceHTTPErrorInternal(err)
 	}
-	return &GetVolumeWorkspaceOutput{Body: base.ApiResponse[workspacetypes.Workspace]{Success: true, Data: *result}}, nil
+	return &handlerutil.Out[workspacetypes.Workspace]{Body: base.ApiResponse[workspacetypes.Workspace]{Success: true, Data: *result}}, nil
 }
 
-func (h *VolumeHandler) GetVolumeWorkspaceFile(ctx context.Context, input *GetVolumeWorkspaceFileInput) (*GetVolumeWorkspaceFileOutput, error) {
+func (h *VolumeHandler) GetVolumeWorkspaceFile(ctx context.Context, input *GetVolumeWorkspaceFileInput) (*handlerutil.Out[workspacetypes.FileContent], error) {
 	result, err := h.volumeService.GetVolumeWorkspaceFile(ctx, input.VolumeName, input.RelativePath)
 	if err != nil {
 		return nil, volumeWorkspaceHTTPErrorInternal(err)
 	}
-	return &GetVolumeWorkspaceFileOutput{Body: base.ApiResponse[workspacetypes.FileContent]{Success: true, Data: *result}}, nil
+	return &handlerutil.Out[workspacetypes.FileContent]{Body: base.ApiResponse[workspacetypes.FileContent]{Success: true, Data: *result}}, nil
 }
 
 func (h *VolumeHandler) DownloadVolumeWorkspaceFile(ctx context.Context, input *GetVolumeWorkspaceFileInput) (*huma.StreamResponse, error) {
@@ -127,7 +115,7 @@ func requireVolumeWorkspacePermissionsInternal(ctx context.Context, environmentI
 	return nil
 }
 
-func (h *VolumeHandler) UpdateVolumeWorkspace(ctx context.Context, input *UpdateVolumeWorkspaceInput) (*UpdateVolumeWorkspaceOutput, error) {
+func (h *VolumeHandler) UpdateVolumeWorkspace(ctx context.Context, input *UpdateVolumeWorkspaceInput) (*handlerutil.Out[workspacetypes.Workspace], error) {
 	manifest, err := handlerutil.ParseMultipartJSONPart[volumetypes.WorkspaceUpdateManifest](input.RawBody, "manifest")
 	if err != nil {
 		return nil, err
@@ -162,5 +150,5 @@ func (h *VolumeHandler) UpdateVolumeWorkspace(ctx context.Context, input *Update
 		return nil, volumeWorkspaceHTTPErrorInternal(err)
 	}
 	result.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
-	return &UpdateVolumeWorkspaceOutput{Body: base.ApiResponse[workspacetypes.Workspace]{Success: true, Data: *result}}, nil
+	return &handlerutil.Out[workspacetypes.Workspace]{Body: base.ApiResponse[workspacetypes.Workspace]{Success: true, Data: *result}}, nil
 }

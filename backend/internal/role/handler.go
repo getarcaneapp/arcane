@@ -28,24 +28,12 @@ type ListRolesInput struct {
 	Limit  int    `query:"limit" default:"20" doc:"Items per page"`
 }
 
-type ListRolesOutput struct {
-	Body base.Paginated[roletypes.Role]
-}
-
 type GetRoleInput struct {
 	ID string `path:"id" doc:"Role ID"`
 }
 
-type GetRoleOutput struct {
-	Body base.ApiResponse[roletypes.Role]
-}
-
 type CreateRoleInput struct {
 	Body roletypes.CreateRole
-}
-
-type CreateRoleOutput struct {
-	Body base.ApiResponse[roletypes.Role]
 }
 
 type UpdateRoleInput struct {
@@ -53,37 +41,17 @@ type UpdateRoleInput struct {
 	Body roletypes.UpdateRole
 }
 
-type UpdateRoleOutput struct {
-	Body base.ApiResponse[roletypes.Role]
-}
-
 type DeleteRoleInput struct {
 	ID string `path:"id" doc:"Role ID"`
-}
-
-type DeleteRoleOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
-}
-
-type PermissionsManifestOutput struct {
-	Body base.ApiResponse[roletypes.PermissionsManifest]
 }
 
 type ListUserRoleAssignmentsInput struct {
 	UserID string `path:"userId" doc:"User ID"`
 }
 
-type ListUserRoleAssignmentsOutput struct {
-	Body base.ApiResponse[[]roletypes.RoleAssignment]
-}
-
 type SetUserRoleAssignmentsInput struct {
 	UserID string `path:"userId" doc:"User ID"`
 	Body   roletypes.SetUserAssignments
-}
-
-type SetUserRoleAssignmentsOutput struct {
-	Body base.ApiResponse[[]roletypes.RoleAssignment]
 }
 
 // ---------- Registration ----------
@@ -180,7 +148,7 @@ func RegisterRoles(api huma.API, roleService *RoleService) {
 
 // ---------- Handler implementations ----------
 
-func (h *RoleHandler) ListRoles(ctx context.Context, input *ListRolesInput) (*ListRolesOutput, error) {
+func (h *RoleHandler) ListRoles(ctx context.Context, input *ListRolesInput) (*handlerutil.Page[roletypes.Role], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	roles, paginationResp, err := h.roleService.ListRoles(ctx, params)
 	if err != nil {
@@ -190,7 +158,7 @@ func (h *RoleHandler) ListRoles(ctx context.Context, input *ListRolesInput) (*Li
 	for i := range roles {
 		dtos[i] = h.toRoleDTO(ctx, &roles[i])
 	}
-	return &ListRolesOutput{
+	return &handlerutil.Page[roletypes.Role]{
 		Body: base.Paginated[roletypes.Role]{
 			Success:    true,
 			Data:       dtos,
@@ -199,7 +167,7 @@ func (h *RoleHandler) ListRoles(ctx context.Context, input *ListRolesInput) (*Li
 	}, nil
 }
 
-func (h *RoleHandler) GetRole(ctx context.Context, input *GetRoleInput) (*GetRoleOutput, error) {
+func (h *RoleHandler) GetRole(ctx context.Context, input *GetRoleInput) (*handlerutil.Out[roletypes.Role], error) {
 	role, err := h.roleService.GetRole(ctx, input.ID)
 	if err != nil {
 		if errors.Is(err, common.ErrRoleNotFound) {
@@ -207,12 +175,12 @@ func (h *RoleHandler) GetRole(ctx context.Context, input *GetRoleInput) (*GetRol
 		}
 		return nil, huma.Error500InternalServerError("failed to get role: " + err.Error())
 	}
-	return &GetRoleOutput{
+	return &handlerutil.Out[roletypes.Role]{
 		Body: base.ApiResponse[roletypes.Role]{Success: true, Data: h.toRoleDTO(ctx, role)},
 	}, nil
 }
 
-func (h *RoleHandler) CreateRole(ctx context.Context, input *CreateRoleInput) (*CreateRoleOutput, error) {
+func (h *RoleHandler) CreateRole(ctx context.Context, input *CreateRoleInput) (*handlerutil.Out[roletypes.Role], error) {
 	callerPS, _ := middleware.PermissionsFromContext(ctx)
 	if err := h.roleService.ValidatePermissionsAgainstCaller(callerPS, input.Body.Permissions); err != nil {
 		switch {
@@ -233,12 +201,12 @@ func (h *RoleHandler) CreateRole(ctx context.Context, input *CreateRoleInput) (*
 		}
 		return nil, huma.Error500InternalServerError("failed to create role: " + err.Error())
 	}
-	return &CreateRoleOutput{
+	return &handlerutil.Out[roletypes.Role]{
 		Body: base.ApiResponse[roletypes.Role]{Success: true, Data: h.toRoleDTO(ctx, role)},
 	}, nil
 }
 
-func (h *RoleHandler) UpdateRole(ctx context.Context, input *UpdateRoleInput) (*UpdateRoleOutput, error) {
+func (h *RoleHandler) UpdateRole(ctx context.Context, input *UpdateRoleInput) (*handlerutil.Out[roletypes.Role], error) {
 	callerPS, _ := middleware.PermissionsFromContext(ctx)
 	if err := h.roleService.ValidatePermissionsAgainstCaller(callerPS, input.Body.Permissions); err != nil {
 		switch {
@@ -263,12 +231,12 @@ func (h *RoleHandler) UpdateRole(ctx context.Context, input *UpdateRoleInput) (*
 		}
 		return nil, huma.Error500InternalServerError("failed to update role: " + err.Error())
 	}
-	return &UpdateRoleOutput{
+	return &handlerutil.Out[roletypes.Role]{
 		Body: base.ApiResponse[roletypes.Role]{Success: true, Data: h.toRoleDTO(ctx, role)},
 	}, nil
 }
 
-func (h *RoleHandler) DeleteRole(ctx context.Context, input *DeleteRoleInput) (*DeleteRoleOutput, error) {
+func (h *RoleHandler) DeleteRole(ctx context.Context, input *DeleteRoleInput) (*handlerutil.Out[base.MessageResponse], error) {
 	if err := h.roleService.DeleteRole(ctx, input.ID); err != nil {
 		switch {
 		case errors.Is(err, common.ErrRoleNotFound):
@@ -280,18 +248,18 @@ func (h *RoleHandler) DeleteRole(ctx context.Context, input *DeleteRoleInput) (*
 		}
 		return nil, huma.Error500InternalServerError("failed to delete role: " + err.Error())
 	}
-	return &DeleteRoleOutput{
+	return &handlerutil.Out[base.MessageResponse]{
 		Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "role deleted"}},
 	}, nil
 }
 
-func (h *RoleHandler) GetPermissionsManifest(_ context.Context, _ *struct{}) (*PermissionsManifestOutput, error) {
-	return &PermissionsManifestOutput{
+func (h *RoleHandler) GetPermissionsManifest(_ context.Context, _ *struct{}) (*handlerutil.Out[roletypes.PermissionsManifest], error) {
+	return &handlerutil.Out[roletypes.PermissionsManifest]{
 		Body: base.ApiResponse[roletypes.PermissionsManifest]{Success: true, Data: buildPermissionsManifestInternal()},
 	}, nil
 }
 
-func (h *RoleHandler) ListUserRoleAssignments(ctx context.Context, input *ListUserRoleAssignmentsInput) (*ListUserRoleAssignmentsOutput, error) {
+func (h *RoleHandler) ListUserRoleAssignments(ctx context.Context, input *ListUserRoleAssignmentsInput) (*handlerutil.Out[[]roletypes.RoleAssignment], error) {
 	rows, err := h.roleService.ListUserAssignments(ctx, input.UserID)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to list assignments: " + err.Error())
@@ -300,12 +268,12 @@ func (h *RoleHandler) ListUserRoleAssignments(ctx context.Context, input *ListUs
 	for i := range rows {
 		dtos[i] = toAssignmentDTOInternal(&rows[i])
 	}
-	return &ListUserRoleAssignmentsOutput{
+	return &handlerutil.Out[[]roletypes.RoleAssignment]{
 		Body: base.ApiResponse[[]roletypes.RoleAssignment]{Success: true, Data: dtos},
 	}, nil
 }
 
-func (h *RoleHandler) SetUserRoleAssignments(ctx context.Context, input *SetUserRoleAssignmentsInput) (*SetUserRoleAssignmentsOutput, error) {
+func (h *RoleHandler) SetUserRoleAssignments(ctx context.Context, input *SetUserRoleAssignmentsInput) (*handlerutil.Out[[]roletypes.RoleAssignment], error) {
 	desired := make([]UserRoleAssignment, len(input.Body.Assignments))
 	for i, a := range input.Body.Assignments {
 		desired[i] = UserRoleAssignment{RoleID: a.RoleID, EnvironmentID: a.EnvironmentID}
@@ -329,7 +297,7 @@ func (h *RoleHandler) SetUserRoleAssignments(ctx context.Context, input *SetUser
 	for i := range rows {
 		dtos[i] = toAssignmentDTOInternal(&rows[i])
 	}
-	return &SetUserRoleAssignmentsOutput{
+	return &handlerutil.Out[[]roletypes.RoleAssignment]{
 		Body: base.ApiResponse[[]roletypes.RoleAssignment]{Success: true, Data: dtos},
 	}, nil
 }

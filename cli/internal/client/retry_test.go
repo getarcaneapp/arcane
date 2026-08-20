@@ -99,9 +99,8 @@ func TestClient_DoJSON_StrictStatus(t *testing.T) {
 	require.NoError(t, err,
 		"New() error: %v", err)
 
-	var out map[string]any
 	{
-		err := c.DoJSON(context.Background(), http.MethodGet, "/api/version", nil, &out)
+		_, err := c.DoJSON[map[string]any](context.Background(), http.MethodGet, "/api/version", nil)
 		require.Error(t, err,
 			"expected strict status error")
 	}
@@ -117,7 +116,7 @@ func TestDecodeResponseStrict_RequiresSuccessEnvelope(t *testing.T) {
 
 	resp := rec.Result()
 	{
-		_, err := DecodeResponseStrict[map[string]any](resp)
+		_, err := decodeResponseStrictInternal[map[string]any](resp)
 		require.Error(t, err,
 			"expected envelope failure")
 	}

@@ -39,15 +39,7 @@ type ListEventsInput struct {
 	Type     string `query:"type" doc:"Filter by event type (exact type or category prefix, comma-separated)"`
 }
 
-type ListEventsOutput struct {
-	Body base.Paginated[eventtypes.Event]
-}
-
 type GetEventStatsInput struct{}
-
-type GetEventStatsOutput struct {
-	Body base.ApiResponse[EventSeverityCounts]
-}
 
 type GetEventsByEnvironmentInput struct {
 	EnvironmentID string `path:"environmentId" doc:"Environment ID"`
@@ -60,16 +52,8 @@ type GetEventsByEnvironmentInput struct {
 	Type          string `query:"type" doc:"Filter by event type (exact type or category prefix, comma-separated)"`
 }
 
-type GetEventsByEnvironmentOutput struct {
-	Body base.Paginated[eventtypes.Event]
-}
-
 type DeleteEventInput struct {
 	EventID string `path:"eventId" doc:"Event ID"`
-}
-
-type DeleteEventOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
 }
 
 // ============================================================================
@@ -199,7 +183,7 @@ func RegisterEvents(api huma.API, eventService *EventService) {
 // ============================================================================
 
 // ListEvents returns a paginated list of events.
-func (h *EventHandler) ListEvents(ctx context.Context, input *ListEventsInput) (*ListEventsOutput, error) {
+func (h *EventHandler) ListEvents(ctx context.Context, input *ListEventsInput) (*handlerutil.Page[eventtypes.Event], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 
 	if input.Severity != "" {
@@ -214,7 +198,7 @@ func (h *EventHandler) ListEvents(ctx context.Context, input *ListEventsInput) (
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to list events").Error())
 	}
 
-	return &ListEventsOutput{
+	return &handlerutil.Page[eventtypes.Event]{
 		Body: base.Paginated[eventtypes.Event]{
 			Success:    true,
 			Data:       events,
@@ -224,13 +208,13 @@ func (h *EventHandler) ListEvents(ctx context.Context, input *ListEventsInput) (
 }
 
 // GetEventStats returns global event counts grouped by severity.
-func (h *EventHandler) GetEventStats(ctx context.Context, _ *GetEventStatsInput) (*GetEventStatsOutput, error) {
+func (h *EventHandler) GetEventStats(ctx context.Context, _ *GetEventStatsInput) (*handlerutil.Out[EventSeverityCounts], error) {
 	counts, err := h.eventService.GetEventSeverityCounts(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to load event statistics").Error())
 	}
 
-	return &GetEventStatsOutput{
+	return &handlerutil.Out[EventSeverityCounts]{
 		Body: base.ApiResponse[EventSeverityCounts]{
 			Success: true,
 			Data:    counts,
@@ -239,7 +223,7 @@ func (h *EventHandler) GetEventStats(ctx context.Context, _ *GetEventStatsInput)
 }
 
 // GetEventsByEnvironment returns events for a specific environment.
-func (h *EventHandler) GetEventsByEnvironment(ctx context.Context, input *GetEventsByEnvironmentInput) (*GetEventsByEnvironmentOutput, error) {
+func (h *EventHandler) GetEventsByEnvironment(ctx context.Context, input *GetEventsByEnvironmentInput) (*handlerutil.Page[eventtypes.Event], error) {
 	if input.EnvironmentID == "" {
 		return nil, huma.Error400BadRequest("Environment ID is required")
 	}
@@ -258,7 +242,7 @@ func (h *EventHandler) GetEventsByEnvironment(ctx context.Context, input *GetEve
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to list events").Error())
 	}
 
-	return &GetEventsByEnvironmentOutput{
+	return &handlerutil.Page[eventtypes.Event]{
 		Body: base.Paginated[eventtypes.Event]{
 			Success:    true,
 			Data:       events,
@@ -268,7 +252,7 @@ func (h *EventHandler) GetEventsByEnvironment(ctx context.Context, input *GetEve
 }
 
 // DeleteEvent deletes an event.
-func (h *EventHandler) DeleteEvent(ctx context.Context, input *DeleteEventInput) (*DeleteEventOutput, error) {
+func (h *EventHandler) DeleteEvent(ctx context.Context, input *DeleteEventInput) (*handlerutil.Out[base.MessageResponse], error) {
 	if input.EventID == "" {
 		return nil, huma.Error400BadRequest("Event ID is required")
 	}
@@ -277,7 +261,7 @@ func (h *EventHandler) DeleteEvent(ctx context.Context, input *DeleteEventInput)
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to delete event").Error())
 	}
 
-	return &DeleteEventOutput{
+	return &handlerutil.Out[base.MessageResponse]{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data: base.MessageResponse{
