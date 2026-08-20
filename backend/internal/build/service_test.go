@@ -309,8 +309,8 @@ func TestBuildService_BuildImage_FailureRecordsHistoryAndEvent(t *testing.T) {
 		},
 	}
 	user := &common.User{
-		BaseModel: database.BaseModel{ID: "user-1"},
-		Username:  "tester",
+		ID:       "user-1",
+		Username: "tester",
 	}
 
 	req := buildtypes.BuildRequest{
@@ -365,8 +365,8 @@ func TestBuildService_BuildImage_FailureExporterErrorsAppearInOutputHistoryAndEv
 	}
 
 	user := &common.User{
-		BaseModel: database.BaseModel{ID: "user-2"},
-		Username:  "registry-test",
+		ID:       "user-2",
+		Username: "registry-test",
 	}
 
 	req := buildtypes.BuildRequest{
@@ -447,7 +447,7 @@ func TestBuildService_ListImageBuilds_OmitsOutputColumn(t *testing.T) {
 
 	output := "large build output"
 	require.NoError(t, db.WithContext(context.Background()).Create(&ImageBuild{
-		BaseModel:     database.BaseModel{ID: "build-omit-output"},
+		ID:            "build-omit-output",
 		EnvironmentID: "0",
 		Status:        ImageBuildStatusSuccess,
 		ContextDir:    "/ctx",
@@ -455,7 +455,7 @@ func TestBuildService_ListImageBuilds_OmitsOutputColumn(t *testing.T) {
 	}).Error)
 
 	records, _, err := svc.ListImageBuildsByEnvironmentPaginated(context.Background(), "0", pagination.QueryParams{
-		Params: pagination.Params{Limit: 10},
+		Limit: 10,
 	})
 	require.NoError(t, err)
 	require.Len(t, records, 1)

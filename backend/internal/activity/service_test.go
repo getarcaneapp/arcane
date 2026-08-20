@@ -37,7 +37,7 @@ func TestActivityServiceLifecycleInternal(t *testing.T) {
 
 	progress := 5
 	startedBy := &common.User{
-		BaseModel:   database.BaseModel{ID: "user-1"},
+		ID:          "user-1",
 		Username:    "arcane",
 		DisplayName: new("Arcane Admin"),
 	}
@@ -81,7 +81,7 @@ func TestActivityServiceLifecycleInternal(t *testing.T) {
 	require.Equal(t, 100, *completed.Progress)
 
 	list, paginationResp, err := service.ListActivitiesPaginated(ctx, "0", pagination.QueryParams{
-		Params: pagination.Params{Limit: 10},
+		Limit: 10,
 	})
 	require.NoError(t, err)
 	require.Len(t, list, 1)
@@ -343,7 +343,7 @@ func TestActivityServiceListOrderStableUnderProgressUpdatesInternal(t *testing.T
 
 	listIDs := func() []string {
 		list, _, listErr := service.ListActivitiesPaginated(ctx, "0", pagination.QueryParams{
-			Params: pagination.Params{Limit: 10},
+			Limit: 10,
 		})
 		require.NoError(t, listErr)
 		ids := make([]string, 0, len(list))

@@ -73,10 +73,16 @@ func (s *PortService) buildPortSortBindings() []pagination.SortBinding[porttypes
 		{
 			Key: "hostPort",
 			Fn: func(a, b porttypes.PortMapping) int {
-				return compareOptionalIntInternal(a.HostPort, b.HostPort, a.ContainerName, b.ContainerName)
+				if cmp := compareOptionalIntInternal(a.HostPort, b.HostPort, a.ContainerName, b.ContainerName); cmp != 0 {
+					return cmp
+				}
+				return strings.Compare(a.ID, b.ID)
 			},
 			DescFn: func(a, b porttypes.PortMapping) int {
-				return compareOptionalIntDescInternal(a.HostPort, b.HostPort, a.ContainerName, b.ContainerName)
+				if cmp := compareOptionalIntDescInternal(a.HostPort, b.HostPort, a.ContainerName, b.ContainerName); cmp != 0 {
+					return cmp
+				}
+				return strings.Compare(a.ID, b.ID)
 			},
 		},
 		{

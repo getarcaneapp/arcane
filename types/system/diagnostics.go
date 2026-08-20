@@ -30,15 +30,26 @@ type Diagnostics struct {
 
 // RuntimeInfo describes the Go runtime, build, and scheduler state.
 type RuntimeInfo struct {
-	Goroutines         int    `json:"goroutines"`
-	WSWorkerGoroutines int    `json:"wsWorkerGoroutines"`
-	GOMAXPROCS         int    `json:"gomaxprocs"`
-	NumCPU             int    `json:"numCpu"`
-	GoVersion          string `json:"goVersion"`
-	OS                 string `json:"os"`
-	Arch               string `json:"arch"`
-	NumCgoCall         int64  `json:"numCgoCall"`
-	UptimeSeconds      int64  `json:"uptimeSeconds"`
+	Goroutines         int       `json:"goroutines"`
+	WSWorkerGoroutines int       `json:"wsWorkerGoroutines"`
+	LeakedGoroutines   int       `json:"leakedGoroutines"`
+	GOMAXPROCS         int       `json:"gomaxprocs"`
+	NumCPU             int       `json:"numCpu"`
+	GoVersion          string    `json:"goVersion"`
+	OS                 string    `json:"os"`
+	Arch               string    `json:"arch"`
+	NumCgoCall         int64     `json:"numCgoCall"`
+	UptimeSeconds      int64     `json:"uptimeSeconds"`
+	LeakScannedAt      time.Time `json:"leakScannedAt,omitzero"`
+}
+
+// GoroutineLeakReport is the result of an on-demand goroutine leak scan. The
+// scan triggers a leak-detection GC cycle, then writes the goroutineleak
+// pprof profile as debug=1 text (leaked stacks only).
+type GoroutineLeakReport struct {
+	Count     int       `json:"count"`
+	Profile   string    `json:"profile"`
+	ScannedAt time.Time `json:"scannedAt"`
 }
 
 // MemoryInfo is the subset of runtime.MemStats surfaced in diagnostics. All

@@ -278,7 +278,10 @@
 	// Override edits are blocked for GitOps-managed projects, mirroring canEditCompose.
 	let canEditOverride = $derived(canUpdateProject && !project?.isArchived && !isGitOpsManaged);
 	let canEditEnv = $derived(canUpdateProject && !project?.isArchived);
-	let canEditProjectWorkspace = $derived(canUpdateProject && !project?.isArchived && !isGitOpsManaged);
+	// GitOps-managed projects keep workspace editing for operator-owned files
+	// (secret env files, bind-mounted configs); the backend rejects and marks
+	// read-only the paths the sync itself owns.
+	let canEditProjectWorkspace = $derived(canUpdateProject && !project?.isArchived);
 	let composeFileName = $derived(project?.composeFileName || 'compose.yaml');
 	// Set when the user opts to add an override to a project that has none yet.
 	let overrideEditorRequested = $state(false);

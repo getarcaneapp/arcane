@@ -179,13 +179,13 @@ func TestGitOpsSyncService_CleanupOrphanedSyncsOnStartup_DeletesOnlyOrphans(t *t
 	require.NoError(t, db.AutoMigrate(&environment.Environment{}))
 
 	require.NoError(t, db.Create(&environment.Environment{
-		BaseModel: database.BaseModel{ID: "env-live"},
-		Name:      "Live",
+		ID:   "env-live",
+		Name: "Live",
 	}).Error)
 	orphanSyncID := "sync-orphan"
 	liveSyncID := "sync-live"
 	require.NoError(t, db.Create(&projectpkg.GitOpsSync{
-		BaseModel:     database.BaseModel{ID: orphanSyncID},
+		ID:            orphanSyncID,
 		Name:          "orphan",
 		EnvironmentID: "env-missing",
 		RepositoryID:  "repo-1",
@@ -194,7 +194,7 @@ func TestGitOpsSyncService_CleanupOrphanedSyncsOnStartup_DeletesOnlyOrphans(t *t
 		SyncInterval:  15,
 	}).Error)
 	require.NoError(t, db.Create(&projectpkg.GitOpsSync{
-		BaseModel:     database.BaseModel{ID: liveSyncID},
+		ID:            liveSyncID,
 		Name:          "live",
 		EnvironmentID: "env-live",
 		RepositoryID:  "repo-1",
@@ -203,7 +203,7 @@ func TestGitOpsSyncService_CleanupOrphanedSyncsOnStartup_DeletesOnlyOrphans(t *t
 		SyncInterval:  15,
 	}).Error)
 	require.NoError(t, db.Create(&projectpkg.Project{
-		BaseModel:       database.BaseModel{ID: "project-orphan"},
+		ID:              "project-orphan",
 		Name:            "orphan",
 		Path:            "/tmp/orphan",
 		Status:          projectpkg.ProjectStatusStopped,
@@ -231,11 +231,11 @@ func TestGitOpsSyncService_RegisterAutoSyncJobsOnStartup_SkipsOrphans(t *testing
 	require.NoError(t, db.AutoMigrate(&environment.Environment{}))
 
 	require.NoError(t, db.Create(&environment.Environment{
-		BaseModel: database.BaseModel{ID: "env-live"},
-		Name:      "Live",
+		ID:   "env-live",
+		Name: "Live",
 	}).Error)
 	require.NoError(t, db.Create(&projectpkg.GitOpsSync{
-		BaseModel:     database.BaseModel{ID: "sync-orphan"},
+		ID:            "sync-orphan",
 		Name:          "orphan",
 		EnvironmentID: "env-missing",
 		RepositoryID:  "repo-1",
@@ -246,7 +246,7 @@ func TestGitOpsSyncService_RegisterAutoSyncJobsOnStartup_SkipsOrphans(t *testing
 	}).Error)
 	now := time.Now()
 	require.NoError(t, db.Create(&projectpkg.GitOpsSync{
-		BaseModel:     database.BaseModel{ID: "sync-live"},
+		ID:            "sync-live",
 		Name:          "live",
 		EnvironmentID: "env-live",
 		RepositoryID:  "repo-1",
@@ -271,7 +271,7 @@ func TestGitOpsSyncService_DeleteSync_DeletesStaleProjectReference(t *testing.T)
 	missingProjectID := "missing-project"
 
 	sync := &projectpkg.GitOpsSync{
-		BaseModel:     database.BaseModel{ID: "sync-delete-stale-project"},
+		ID:            "sync-delete-stale-project",
 		Name:          "demo-sync",
 		EnvironmentID: "0",
 		RepositoryID:  "repo-1",
@@ -299,7 +299,7 @@ func TestGitOpsSyncService_DeleteSync_SucceedsWhenEnvironmentMismatched(t *testi
 	require.NoError(t, svc.SetScheduler(ctx, scheduler, newGitOpsAdmissionGateForTestInternal(t)))
 
 	sync := &projectpkg.GitOpsSync{
-		BaseModel:     database.BaseModel{ID: "sync-env-mismatch"},
+		ID:            "sync-env-mismatch",
 		Name:          "corrupt-sync",
 		EnvironmentID: "5",
 		ProjectName:   "demo-project",
@@ -323,7 +323,7 @@ func TestGitOpsSyncService_DeleteSync_ClearsOrphanedManagedFlag(t *testing.T) {
 
 	syncID := "sync-orphan-flag"
 	sync := &projectpkg.GitOpsSync{
-		BaseModel:     database.BaseModel{ID: syncID},
+		ID:            syncID,
 		Name:          "demo-sync",
 		EnvironmentID: "0",
 		ProjectName:   "demo-project",
@@ -332,7 +332,7 @@ func TestGitOpsSyncService_DeleteSync_ClearsOrphanedManagedFlag(t *testing.T) {
 	require.NoError(t, db.Create(sync).Error)
 
 	managed := &projectpkg.Project{
-		BaseModel:       database.BaseModel{ID: "proj-managed"},
+		ID:              "proj-managed",
 		Name:            "managed",
 		Path:            filepath.Join(t.TempDir(), "managed"),
 		GitOpsManagedBy: &syncID,
@@ -403,7 +403,7 @@ func TestGitOpsSyncService_SyncProjectDirectory_RefusesDuplicateOnNameCollision(
 	require.NoError(t, os.WriteFile(filepath.Join(projectsDir, "Dozzle", "unrelated.txt"), []byte("x"), 0o644))
 
 	sync := &projectpkg.GitOpsSync{
-		BaseModel:     database.BaseModel{ID: "sync-dup-refuse"},
+		ID:            "sync-dup-refuse",
 		Name:          "Dozzle",
 		EnvironmentID: "0",
 		ComposePath:   "Dozzle/docker-compose.yaml",
@@ -440,7 +440,7 @@ func TestGitOpsSyncService_GetOrCreateProject_RefusesDuplicateOnNameCollision(t 
 	require.NoError(t, os.MkdirAll(filepath.Join(projectsDir, "Dozzle"), 0o755))
 
 	sync := &projectpkg.GitOpsSync{
-		BaseModel:     database.BaseModel{ID: "sync-single-dup"},
+		ID:            "sync-single-dup",
 		Name:          "Dozzle",
 		EnvironmentID: "0",
 		ComposePath:   "docker-compose.yaml",
@@ -467,7 +467,7 @@ func TestGitOpsSyncService_SyncProjectDirectory_CreatesProjectPreservingRepoLayo
 	svc, db, _ := setupGitOpsSyncDirectoryTestService(t)
 
 	sync := &projectpkg.GitOpsSync{
-		BaseModel:     database.BaseModel{ID: "sync-directory-create"},
+		ID:            "sync-directory-create",
 		Name:          "demo-sync",
 		EnvironmentID: "0",
 		RepositoryID:  "repo-1",
@@ -562,11 +562,11 @@ services:
 	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services: {}\n"), 0o644))
 
 	project := &projectpkg.Project{
-		BaseModel: database.BaseModel{ID: "proj-directory-update"},
-		Name:      "demo-project",
-		DirName:   new("demo-project"),
-		Path:      projectPath,
-		Status:    projectpkg.ProjectStatusStopped,
+		ID:      "proj-directory-update",
+		Name:    "demo-project",
+		DirName: new("demo-project"),
+		Path:    projectPath,
+		Status:  projectpkg.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -574,7 +574,7 @@ services:
 	require.NoError(t, err)
 
 	sync := &projectpkg.GitOpsSync{
-		BaseModel:     database.BaseModel{ID: "sync-directory-update"},
+		ID:            "sync-directory-update",
 		Name:          "demo-sync",
 		EnvironmentID: "0",
 		RepositoryID:  "repo-1",
@@ -652,11 +652,11 @@ func TestGitOpsSyncService_SyncProjectDirectory_PreservesEnvOverrideAndAddsNewGi
 	require.NoError(t, os.WriteFile(filepath.Join(projectPath, ".env"), []byte("FOO=useredit\n"), 0o644))
 
 	project := &projectpkg.Project{
-		BaseModel: database.BaseModel{ID: "proj-directory-env-preserve"},
-		Name:      "demo-project",
-		DirName:   new("demo-project"),
-		Path:      projectPath,
-		Status:    projectpkg.ProjectStatusStopped,
+		ID:      "proj-directory-env-preserve",
+		Name:    "demo-project",
+		DirName: new("demo-project"),
+		Path:    projectPath,
+		Status:  projectpkg.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -664,7 +664,7 @@ func TestGitOpsSyncService_SyncProjectDirectory_PreservesEnvOverrideAndAddsNewGi
 	require.NoError(t, err)
 
 	sync := &projectpkg.GitOpsSync{
-		BaseModel:     database.BaseModel{ID: "sync-directory-env-preserve"},
+		ID:            "sync-directory-env-preserve",
 		Name:          "demo-sync",
 		EnvironmentID: "0",
 		RepositoryID:  "repo-1",
@@ -743,11 +743,11 @@ func TestGitOpsSyncService_SyncProjectDirectory_MigratesLegacyTrackedEnvOnFirstS
 	require.NoError(t, os.WriteFile(filepath.Join(projectPath, ".env"), []byte("LOCAL_ONLY=1\n"), 0o644))
 
 	project := &projectpkg.Project{
-		BaseModel: database.BaseModel{ID: "proj-directory-legacy-env-migrate"},
-		Name:      "demo-project",
-		DirName:   new("demo-project"),
-		Path:      projectPath,
-		Status:    projectpkg.ProjectStatusStopped,
+		ID:      "proj-directory-legacy-env-migrate",
+		Name:    "demo-project",
+		DirName: new("demo-project"),
+		Path:    projectPath,
+		Status:  projectpkg.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -756,7 +756,7 @@ func TestGitOpsSyncService_SyncProjectDirectory_MigratesLegacyTrackedEnvOnFirstS
 	require.NoError(t, err)
 
 	sync := &projectpkg.GitOpsSync{
-		BaseModel:     database.BaseModel{ID: "sync-directory-legacy-env-migrate"},
+		ID:            "sync-directory-legacy-env-migrate",
 		Name:          "demo-sync",
 		EnvironmentID: "0",
 		RepositoryID:  "repo-1",
@@ -806,7 +806,7 @@ func TestGitOpsSyncService_SyncProjectDirectory_IgnoresCommittedReservedEnvFiles
 	svc, db, _ := setupGitOpsSyncDirectoryTestService(t)
 
 	sync := &projectpkg.GitOpsSync{
-		BaseModel:     database.BaseModel{ID: "sync-directory-reserved-env"},
+		ID:            "sync-directory-reserved-env",
 		Name:          "demo-sync",
 		EnvironmentID: "0",
 		RepositoryID:  "repo-1",
@@ -880,7 +880,7 @@ func TestGitOpsSyncService_DirectorySync_RealWalkWithNestedConfig(t *testing.T) 
 `))
 
 	sync := &projectpkg.GitOpsSync{
-		BaseModel:     database.BaseModel{ID: "sync-directory-real-walk"},
+		ID:            "sync-directory-real-walk",
 		Name:          "traefik-sync",
 		EnvironmentID: "0",
 		RepositoryID:  "repo-1",
@@ -952,16 +952,16 @@ func TestGitOpsSyncService_DirectorySync_OverwritesExistingDirectoryAtFilePath(t
 
 	dirName := "traefik-project"
 	project := &projectpkg.Project{
-		BaseModel: database.BaseModel{ID: "proj-directory-docker-dir-conflict"},
-		Name:      "traefik-project",
-		DirName:   &dirName,
-		Path:      projectPath,
-		Status:    projectpkg.ProjectStatusStopped,
+		ID:      "proj-directory-docker-dir-conflict",
+		Name:    "traefik-project",
+		DirName: &dirName,
+		Path:    projectPath,
+		Status:  projectpkg.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
 	sync := &projectpkg.GitOpsSync{
-		BaseModel:     database.BaseModel{ID: "sync-directory-docker-dir-conflict"},
+		ID:            "sync-directory-docker-dir-conflict",
 		Name:          "traefik-sync",
 		EnvironmentID: "0",
 		RepositoryID:  "repo-1",
@@ -1009,7 +1009,7 @@ func TestGitOpsSyncService_CreateDirectorySyncProjectInternal_RollsBackProjectOn
 	svc, db, projectsDir := setupGitOpsSyncDirectoryTestService(t)
 
 	sync := &projectpkg.GitOpsSync{
-		BaseModel:     database.BaseModel{ID: "sync-directory-tx-rollback"},
+		ID:            "sync-directory-tx-rollback",
 		Name:          "demo-sync",
 		EnvironmentID: "0",
 		RepositoryID:  "repo-1",
@@ -1089,7 +1089,7 @@ func TestGitOpsSyncService_GetDirectorySyncProjectInternal_RelinksManagedProject
 
 	missingProjectID := "missing-project"
 	sync := &projectpkg.GitOpsSync{
-		BaseModel:     database.BaseModel{ID: "sync-directory-relink"},
+		ID:            "sync-directory-relink",
 		Name:          "radarr-sync",
 		EnvironmentID: "0",
 		RepositoryID:  "repo-1",
@@ -1102,7 +1102,7 @@ func TestGitOpsSyncService_GetDirectorySyncProjectInternal_RelinksManagedProject
 
 	dirName := "Radarr-3"
 	project := &projectpkg.Project{
-		BaseModel:       database.BaseModel{ID: "proj-directory-relink"},
+		ID:              "proj-directory-relink",
 		Name:            "Radarr",
 		DirName:         &dirName,
 		Path:            projectPath,
@@ -1132,7 +1132,7 @@ func TestGitOpsSyncService_GetDirectorySyncProjectInternal_RecoversUniqueDirecto
 
 	missingProjectID := "missing-project"
 	sync := &projectpkg.GitOpsSync{
-		BaseModel:     database.BaseModel{ID: "sync-directory-disk-recovery"},
+		ID:            "sync-directory-disk-recovery",
 		Name:          "radarr-sync",
 		EnvironmentID: "0",
 		RepositoryID:  "repo-1",
@@ -1173,7 +1173,7 @@ func TestGitOpsSyncService_ReconcileDirectorySyncProjectsOnStartup_SkipsAmbiguou
 
 	missingProjectID := "missing-project"
 	sync := &projectpkg.GitOpsSync{
-		BaseModel:     database.BaseModel{ID: "sync-directory-ambiguous"},
+		ID:            "sync-directory-ambiguous",
 		Name:          "radarr-sync",
 		EnvironmentID: "0",
 		RepositoryID:  "repo-1",
@@ -1204,7 +1204,7 @@ func TestGitOpsSyncService_SyncProjectDirectory_FailsWhenBoundProjectMissing(t *
 
 	missingProjectID := "missing-project"
 	sync := &projectpkg.GitOpsSync{
-		BaseModel:     database.BaseModel{ID: "sync-directory-missing-bound-project"},
+		ID:            "sync-directory-missing-bound-project",
 		Name:          "demo-sync",
 		EnvironmentID: "0",
 		RepositoryID:  "repo-1",
@@ -1265,7 +1265,7 @@ func TestGitOpsSyncService_SyncProjectDirectory_DisablesAutoSyncWhenBoundProject
 
 	missingProjectID := "missing-project"
 	sync := &projectpkg.GitOpsSync{
-		BaseModel:     database.BaseModel{ID: "sync-directory-ambiguous-bound-project"},
+		ID:            "sync-directory-ambiguous-bound-project",
 		Name:          "radarr-sync",
 		EnvironmentID: "0",
 		RepositoryID:  "repo-1",
@@ -1314,7 +1314,7 @@ func TestGitOpsSyncService_GetOrCreateProjectInternal_FailsWhenBoundProjectMissi
 
 	missingProjectID := "missing-project"
 	sync := &projectpkg.GitOpsSync{
-		BaseModel:     database.BaseModel{ID: "sync-file-missing-bound-project"},
+		ID:            "sync-file-missing-bound-project",
 		Name:          "demo-sync",
 		EnvironmentID: "0",
 		RepositoryID:  "repo-1",
@@ -1734,7 +1734,7 @@ func TestMarkSyncRedeployFailedInternal_PersistsErrorOnSyncRow(t *testing.T) {
 	svc.eventService = event.NewEventService(db, config.Load(), nil)
 
 	sync := &projectpkg.GitOpsSync{
-		BaseModel:     database.BaseModel{ID: "sync-1"},
+		ID:            "sync-1",
 		Name:          "redeploy-fail",
 		EnvironmentID: "0",
 		RepositoryID:  "repo-1",
@@ -1748,7 +1748,7 @@ func TestMarkSyncRedeployFailedInternal_PersistsErrorOnSyncRow(t *testing.T) {
 	syncedFiles := []string{"compose.yml", "scripts/pre-deploy.sh"}
 	hookErr := common.Classify(common.ErrRedeployAfterSyncFailed, errors.WrapIf(errors.New("pre-deploy hook failed: exit 1"), "redeploy failed"))
 
-	svc.markSyncRedeployFailedInternal(ctx, sync, sync.ID, "abc123", syncedFiles, hookErr, common.User{BaseModel: database.BaseModel{ID: "user"}, Username: "tester"}, result)
+	svc.markSyncRedeployFailedInternal(ctx, sync, sync.ID, "abc123", syncedFiles, hookErr, common.User{ID: "user", Username: "tester"}, result)
 
 	require.False(t, result.Success)
 	require.NotNil(t, result.Error)

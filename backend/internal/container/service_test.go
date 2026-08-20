@@ -60,7 +60,7 @@ func TestPaginateContainerProjectGroupsKeepsProjectWhole(t *testing.T) {
 
 	groupedItems, resp := paginateContainerProjectGroupsInternal(
 		pagination.FilterResult[containertypes.Summary]{Items: items, TotalCount: int64(len(items)), TotalAvailable: int64(len(items))},
-		pagination.QueryParams{Params: pagination.Params{Start: 0, Limit: 20}},
+		pagination.QueryParams{Start: 0, Limit: 20},
 	)
 
 	require.Len(t, groupedItems, 19)
@@ -97,14 +97,14 @@ func TestPaginateContainerProjectGroupsSelectsRequestedPage(t *testing.T) {
 	}
 	result := pagination.FilterResult[containertypes.Summary]{Items: items, TotalCount: int64(len(items)), TotalAvailable: int64(len(items))}
 
-	pageGroups, resp := paginateContainerProjectGroupsInternal(result, pagination.QueryParams{Params: pagination.Params{Start: 4, Limit: 4}})
+	pageGroups, resp := paginateContainerProjectGroupsInternal(result, pagination.QueryParams{Start: 4, Limit: 4})
 
 	require.Equal(t, []string{"proj-b", "solo-1"}, groupNamesOf(pageGroups))
 	require.Equal(t, 2, resp.CurrentPage)
 	require.Equal(t, int64(3), resp.TotalPages)
 	require.Equal(t, int64(11), resp.TotalItems)
 
-	pageGroups, resp = paginateContainerProjectGroupsInternal(result, pagination.QueryParams{Params: pagination.Params{Start: 400, Limit: 4}})
+	pageGroups, resp = paginateContainerProjectGroupsInternal(result, pagination.QueryParams{Start: 400, Limit: 4})
 
 	require.Equal(t, []string{"proj-c", "solo-2"}, groupNamesOf(pageGroups))
 	require.Equal(t, 3, resp.CurrentPage)
@@ -130,7 +130,7 @@ func TestContainerSummaryIconsAppliedAfterGrouping(t *testing.T) {
 
 	groups, _ := paginateContainerProjectGroupsInternal(
 		pagination.FilterResult[containertypes.Summary]{Items: items, TotalCount: int64(len(items)), TotalAvailable: int64(len(items))},
-		pagination.QueryParams{Params: pagination.Params{Start: 0, Limit: 20}},
+		pagination.QueryParams{Start: 0, Limit: 20},
 	)
 	for gi := range groups {
 		service.ApplySummaryIcons(t.Context(), groups[gi].Items, map[string]projects.ArcaneComposeMetadata{})

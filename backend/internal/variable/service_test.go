@@ -86,11 +86,11 @@ func setupVariableServiceTest(t *testing.T) (*VariableService, *database.DB, str
 func createVariableTestEnvironment(t *testing.T, db *database.DB, id string) {
 	t.Helper()
 	require.NoError(t, db.Create(&environment.Environment{
-		BaseModel: database.BaseModel{ID: id},
-		Name:      "env-" + id,
-		ApiUrl:    "http://env-" + id,
-		Status:    "online",
-		Enabled:   true,
+		ID:      id,
+		Name:    "env-" + id,
+		ApiUrl:  "http://env-" + id,
+		Status:  "online",
+		Enabled: true,
 	}).Error)
 }
 
@@ -280,7 +280,7 @@ func TestSyncEnvironment_DirectMaterializesSecretsThroughAgentRoute(t *testing.T
 	defer server.Close()
 
 	require.NoError(t, db.Create(&environment.Environment{
-		BaseModel:   database.BaseModel{ID: "env-direct"},
+		ID:          "env-direct",
 		Name:        "Direct",
 		ApiUrl:      server.URL,
 		Status:      string(environment.EnvironmentStatusOnline),
@@ -303,7 +303,7 @@ func TestSyncEnvironment_EdgeMaterializesSecretsThroughAgentRoute(t *testing.T) 
 	service, db, _ := setupVariableServiceTest(t)
 	token := "edge-agent-token"
 	require.NoError(t, db.Create(&environment.Environment{
-		BaseModel:   database.BaseModel{ID: "env-edge"},
+		ID:          "env-edge",
 		Name:        "Edge",
 		ApiUrl:      "http://edge.invalid",
 		Status:      string(environment.EnvironmentStatusOnline),

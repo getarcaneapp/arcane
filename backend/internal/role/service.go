@@ -72,7 +72,7 @@ func (s *RoleService) EnsureBuiltInRoles(ctx context.Context) error {
 	return dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
 		for id, spec := range builtIns {
 			role := Role{
-				BaseModel:   database.BaseModel{ID: id},
+				ID:          id,
 				Name:        spec.name,
 				Description: new(spec.desc),
 				Permissions: database.StringSlice(spec.perm),

@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 
+	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/getarcaneapp/arcane/backend/v2/api/ws"
@@ -32,6 +33,12 @@ type GetDiagnosticsLogsOutput struct {
 	Body []logs.Entry
 }
 
+type ScanGoroutineLeaksInput struct{}
+
+type ScanGoroutineLeaksOutput struct {
+	Body system.GoroutineLeakReport
+}
+
 // RegisterDiagnostics registers the Huma diagnostics REST endpoints.
 func RegisterDiagnostics(api huma.API, diag *diagnostics.DiagnosticsService) {
 	h := &DiagnosticsHandler{diag: diag}
@@ -57,6 +64,17 @@ func RegisterDiagnostics(api huma.API, diag *diagnostics.DiagnosticsService) {
 		Security:    handlerutil.DefaultOperationSecurity(),
 		Middlewares: middleware.RequirePermission(api, authz.PermDiagnosticsRead),
 	}, h.GetRecentLogs)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "scan-goroutine-leaks",
+		Method:      http.MethodPost,
+		Path:        "/diagnostics/goroutineleak",
+		Summary:     "Scan for leaked goroutines",
+		Description: "Runs a goroutine leak-detection GC cycle and returns the goroutineleak pprof profile as text (leaked stacks only).",
+		Tags:        []string{"Diagnostics"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+		Middlewares: middleware.RequirePermission(api, authz.PermDiagnosticsRead),
+	}, h.ScanGoroutineLeaks)
 }
 
 func (h *DiagnosticsHandler) GetDiagnostics(_ context.Context, _ *DiagnosticsInput) (*GetDiagnosticsOutput, error) {
@@ -65,4 +83,12 @@ func (h *DiagnosticsHandler) GetDiagnostics(_ context.Context, _ *DiagnosticsInp
 
 func (h *DiagnosticsHandler) GetRecentLogs(_ context.Context, _ *DiagnosticsInput) (*GetDiagnosticsLogsOutput, error) {
 	return &GetDiagnosticsLogsOutput{Body: ws.LogBroadcaster().Recent()}, nil
+}
+
+func (h *DiagnosticsHandler) ScanGoroutineLeaks(_ context.Context, _ *ScanGoroutineLeaksInput) (*ScanGoroutineLeaksOutput, error) {
+	report, err := h.diag.ScanGoroutineLeaks()
+	if err != nil {
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to collect goroutine leak profile").Error())
+	}
+	return &ScanGoroutineLeaksOutput{Body: report}, nil
 }

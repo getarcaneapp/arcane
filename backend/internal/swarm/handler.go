@@ -1423,7 +1423,7 @@ func (h *SwarmHandler) GetJoinCandidates(ctx context.Context, input *GetSwarmJoi
 	if err := requireEasyJoinManagerPermissionsInternal(ctx, input.EnvironmentID); err != nil {
 		return nil, err
 	}
-	nodes, _, err := h.swarmService.ListNodesPaginated(ctx, input.EnvironmentID, pagination.QueryParams{Params: pagination.Params{Limit: -1}})
+	nodes, _, err := h.swarmService.ListNodesPaginated(ctx, input.EnvironmentID, pagination.QueryParams{Limit: -1})
 	if err != nil {
 		return nil, mapSwarmServiceError(err, "Failed to list Easy Join candidates")
 	}
@@ -1482,7 +1482,7 @@ func (h *SwarmHandler) JoinEnvironments(ctx context.Context, input *JoinSwarmEnv
 	}
 
 	if len(input.Body.RemoteAddrs) == 0 {
-		nodes, _, err := h.swarmService.ListNodesPaginated(ctx, input.EnvironmentID, pagination.QueryParams{Params: pagination.Params{Limit: -1}})
+		nodes, _, err := h.swarmService.ListNodesPaginated(ctx, input.EnvironmentID, pagination.QueryParams{Limit: -1})
 		if err != nil {
 			return nil, mapSwarmServiceError(err, "Failed to derive swarm manager addresses")
 		}

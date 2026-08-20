@@ -172,6 +172,7 @@ export function workspaceReadOnlyMessage(reason: WorkspaceReadOnlyReason | undef
 	if (reason === 'too_large') return m.workspace_large_readonly({ maxFileSizeMb });
 	if (reason === 'symlink') return m.workspace_symlink_readonly();
 	if (reason === 'special') return m.workspace_special_readonly();
+	if (reason === 'gitops_managed') return m.workspace_gitops_readonly();
 	return m.workspace_readonly();
 }
 

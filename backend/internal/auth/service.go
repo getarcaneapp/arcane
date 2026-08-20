@@ -11,6 +11,7 @@ import (
 	"maps"
 	"strings"
 	"time"
+	"uuid"
 
 	"emperror.dev/emperror"
 	"emperror.dev/errors"
@@ -26,7 +27,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
 	"github.com/getarcaneapp/arcane/types/v2/auth"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/google/uuid"
 	"github.com/samber/hot"
 )
 
@@ -495,7 +495,7 @@ func (s *AuthService) createOidcUser(ctx context.Context, userInfo auth.OidcUser
 	}
 
 	user := &common.User{
-		BaseModel:     database.BaseModel{ID: uuid.NewString()},
+		ID:            uuid.New().String(),
 		Username:      username,
 		DisplayName:   displayName,
 		Email:         new(userInfo.Email),
@@ -946,12 +946,10 @@ func (s *AuthService) buildTokenPairInternal(ctx context.Context, user *common.U
 	accessTokenExpiry := time.Now().Add(time.Duration(sessionTimeout) * time.Minute)
 
 	userClaims := userClaims{
-		RegisteredClaims: jwt.RegisteredClaims{
-			ID:        user.ID,
-			Subject:   "access",
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
-			ExpiresAt: jwt.NewNumericDate(accessTokenExpiry),
-		},
+		ID:         user.ID,
+		Subject:    "access",
+		IssuedAt:   jwt.NewNumericDate(time.Now()),
+		ExpiresAt:  jwt.NewNumericDate(accessTokenExpiry),
 		SessionID:  session.ID,
 		UserID:     user.ID,
 		Username:   user.Username,
@@ -974,12 +972,10 @@ func (s *AuthService) buildTokenPairInternal(ctx context.Context, user *common.U
 	}
 
 	refreshToken := jwt.NewWithClaims(jwt.SigningMethodHS256, refreshClaims{
-		RegisteredClaims: jwt.RegisteredClaims{
-			ID:        refreshJTI,
-			Subject:   "refresh",
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
-			ExpiresAt: jwt.NewNumericDate(session.ExpiresAt),
-		},
+		ID:         refreshJTI,
+		Subject:    "refresh",
+		IssuedAt:   jwt.NewNumericDate(time.Now()),
+		ExpiresAt:  jwt.NewNumericDate(session.ExpiresAt),
 		UserID:     user.ID,
 		SessionID:  session.ID,
 		AppVersion: config.Version,
@@ -1015,12 +1011,10 @@ func (s *AuthService) IssueFederatedToken(ctx context.Context, user *common.User
 	}
 
 	claims := userClaims{
-		RegisteredClaims: jwt.RegisteredClaims{
-			ID:        user.ID,
-			Subject:   "access",
-			IssuedAt:  jwt.NewNumericDate(now),
-			ExpiresAt: jwt.NewNumericDate(accessTokenExpiry),
-		},
+		ID:                    user.ID,
+		Subject:               "access",
+		IssuedAt:              jwt.NewNumericDate(now),
+		ExpiresAt:             jwt.NewNumericDate(accessTokenExpiry),
 		SessionID:             federatedSession.ID,
 		UserID:                user.ID,
 		Username:              user.Username,

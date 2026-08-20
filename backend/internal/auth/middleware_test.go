@@ -7,8 +7,6 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-
 	"context"
 	"net/http"
 	"net/http/httptest"
@@ -63,7 +61,7 @@ func (testPermissionResolver) ResolveApiKeyPermissions(_ context.Context, _ stri
 
 func TestAuthMiddleware_ManagerAuthResolvesPermissionsByKeyKind(t *testing.T) {
 	userID := "key-owner"
-	user := &common.User{BaseModel: database.BaseModel{ID: userID}, Username: "owner"}
+	user := &common.User{ID: userID, Username: "owner"}
 
 	cases := []struct {
 		name        string
@@ -82,7 +80,7 @@ func TestAuthMiddleware_ManagerAuthResolvesPermissionsByKeyKind(t *testing.T) {
 				NewAuthMiddleware(nil, &config.Config{}).
 					WithApiKeyValidator(testApiKeyValidator{
 						user: user,
-						key:  &apikey.ApiKey{BaseModel: database.BaseModel{ID: "key-1"}, Kind: tc.kind, UserID: &userID},
+						key:  &apikey.ApiKey{ID: "key-1", Kind: tc.kind, UserID: &userID},
 					}).
 					WithPermissionResolver(testPermissionResolver{}).
 					Add(),
@@ -112,7 +110,7 @@ func TestAuthMiddleware_ManagerAuthAcceptsEnvironmentAccessTokenViaAPIKey(t *tes
 		NewAuthMiddleware(nil, &config.Config{}).
 			WithEnvironmentAccessTokenResolver(testEnvironmentTokenResolver{
 				env: &environment.Environment{
-					BaseModel:   database.BaseModel{ID: "env-self"},
+					ID:          "env-self",
 					Name:        "Self Target",
 					AccessToken: &token,
 				},

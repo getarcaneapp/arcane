@@ -6,8 +6,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	projectpkg "github.com/getarcaneapp/arcane/backend/v2/internal/project"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-
 	"context"
 	"encoding/json"
 	"os"
@@ -48,11 +46,11 @@ func TestGitOpsSyncService_SyncProjectDirectory_PreservesUnreadableBindMountData
 	t.Cleanup(func() { _ = os.Chmod(secretPath, 0o644) })
 
 	project := &projectpkg.Project{
-		BaseModel: database.BaseModel{ID: "proj-unreadable-bindmount"},
-		Name:      "demo-project",
-		DirName:   new("demo-project"),
-		Path:      projectPath,
-		Status:    projectpkg.ProjectStatusStopped,
+		ID:      "proj-unreadable-bindmount",
+		Name:    "demo-project",
+		DirName: new("demo-project"),
+		Path:    projectPath,
+		Status:  projectpkg.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -60,7 +58,7 @@ func TestGitOpsSyncService_SyncProjectDirectory_PreservesUnreadableBindMountData
 	require.NoError(t, err)
 
 	sync := &projectpkg.GitOpsSync{
-		BaseModel:     database.BaseModel{ID: "sync-unreadable-bindmount"},
+		ID:            "sync-unreadable-bindmount",
 		Name:          "demo-sync",
 		EnvironmentID: "0",
 		RepositoryID:  "repo-1",

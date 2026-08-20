@@ -4,8 +4,8 @@ import (
 	"database/sql/driver"
 	"encoding/json/v2"
 	"time"
+	"uuid"
 
-	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 

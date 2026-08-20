@@ -3,8 +3,6 @@ package auth
 import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-
 	"context"
 	"errors"
 	"log/slog"
@@ -146,9 +144,9 @@ func tryAgentAuthInternal(ctx huma.Context, cfg *config.Config) (*common.User, b
 // bypasses every check; the user's Roles field is intentionally empty.
 func createAgentSudoUserInternal() *common.User {
 	return &common.User{
-		BaseModel: database.BaseModel{ID: "agent"},
-		Email:     new("agent@getarcane.app"),
-		Username:  "agent",
+		ID:       "agent",
+		Email:    new("agent@getarcane.app"),
+		Username: "agent",
 	}
 }
 
@@ -173,8 +171,8 @@ func applyProxiedIconCatalogInternal(ctx huma.Context, user *common.User) {
 
 func createEnvironmentUserInternal(env *environment.Environment) *common.User {
 	return &common.User{
-		BaseModel: database.BaseModel{ID: "environment:" + env.ID},
-		Username:  env.Name,
+		ID:       "environment:" + env.ID,
+		Username: env.Name,
 	}
 }
 

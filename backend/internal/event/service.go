@@ -81,9 +81,7 @@ func (s *EventService) CreateEvent(ctx context.Context, req CreateEventRequest) 
 		EnvironmentID: req.EnvironmentID,
 		Metadata:      req.Metadata,
 		Timestamp:     time.Now(),
-		BaseModel: database.BaseModel{
-			CreatedAt: time.Now(),
-		},
+		CreatedAt:     time.Now(),
 	}
 
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {

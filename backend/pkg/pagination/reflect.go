@@ -17,19 +17,33 @@ func PaginateAndSortDB(params QueryParams, query *gorm.DB, result any) (Response
 		sortDirection = "asc"
 	}
 
+	modelType := reflect.TypeOf(result).Elem().Elem()
 	capitalizedSortColumn := stringutils.CapitalizeFirstLetter(sortColumn)
-	sortField, sortFieldFound := reflect.TypeOf(result).Elem().Elem().FieldByName(capitalizedSortColumn)
+	sortField, sortFieldFound := modelType.FieldByName(capitalizedSortColumn)
 	isSortable, _ := strconv.ParseBool(sortField.Tag.Get("sortable"))
 
 	sortDirection = normalizeSortDirection(sortDirection)
 
+	var orderColumns []clause.OrderByColumn
+	columnName := ""
 	if sortFieldFound && isSortable {
-		columnName := stringutils.CamelCaseToSnakeCase(sortColumn)
-		query = query.Clauses(clause.OrderBy{
-			Columns: []clause.OrderByColumn{
-				{Column: clause.Column{Name: columnName}, Desc: sortDirection == "desc"},
-			},
+		columnName = stringutils.CamelCaseToSnakeCase(sortColumn)
+		orderColumns = append(orderColumns, clause.OrderByColumn{
+			Column: clause.Column{Name: columnName},
+			Desc:   sortDirection == "desc",
 		})
+	}
+	// Without a total order the page cut is undefined: rows can repeat or go
+	// missing across pages when the requested column has ties (or no sort was
+	// requested at all) and the database reorders a plain scan. Tie-break on the
+	// primary key whenever the model has one.
+	if _, hasID := modelType.FieldByName("ID"); hasID && columnName != "id" {
+		orderColumns = append(orderColumns, clause.OrderByColumn{
+			Column: clause.Column{Table: clause.CurrentTable, Name: "id"},
+		})
+	}
+	if len(orderColumns) > 0 {
+		query = query.Clauses(clause.OrderBy{Columns: orderColumns})
 	}
 
 	limit := params.Limit

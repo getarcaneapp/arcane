@@ -993,8 +993,8 @@ func parseRepoAndTagFromRepoTag(repoTag string) (repo, tag string) {
 		return repo, tag
 	}
 
-	if lastColonIdx := strings.LastIndex(repoTag, ":"); lastColonIdx != -1 {
-		return repoTag[:lastColonIdx], repoTag[lastColonIdx+1:]
+	if before, after, found := strings.CutLast(repoTag, ":"); found {
+		return before, after
 	}
 	return repoTag, "latest"
 }
@@ -1004,11 +1004,8 @@ func parseRepoFromDigests(repoDigests []string) mo.Option[string] {
 		if rd == "<none>@<none>" {
 			continue
 		}
-		if at := strings.LastIndex(rd, "@"); at != -1 {
-			candidateRepo := rd[:at]
-			if candidateRepo != "" {
-				return mo.Some(candidateRepo)
-			}
+		if candidateRepo, _, found := strings.CutLast(rd, "@"); found && candidateRepo != "" {
+			return mo.Some(candidateRepo)
 		}
 	}
 	return mo.None[string]()
@@ -1098,7 +1095,13 @@ func (s *ImageService) getImagePaginationConfig() pagination.Config[imagetypes.S
 			{
 				Key: "repo",
 				Fn: func(a, b imagetypes.Summary) int {
-					return strings.Compare(a.Repo, b.Repo)
+					if cmp := strings.Compare(a.Repo, b.Repo); cmp != 0 {
+						return cmp
+					}
+					if cmp := strings.Compare(a.Tag, b.Tag); cmp != 0 {
+						return cmp
+					}
+					return strings.Compare(a.ID, b.ID)
 				},
 			},
 			{

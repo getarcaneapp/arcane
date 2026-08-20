@@ -117,7 +117,7 @@ func (s *LifecycleService) RunPreDeploy(ctx context.Context, project *Project, a
 		return nil
 	}
 
-	sync, err := s.loadGitOpsSyncForProjectInternal(ctx, project.ID)
+	sync, err := loadGitOpsSyncForProjectInternal(ctx, s.db, project.ID)
 	if err != nil {
 		return errors.WrapIf(err, "failed to load gitops sync for lifecycle hook")
 	}
@@ -454,13 +454,13 @@ func (s *LifecycleService) emitLifecycleEventInternal(
 // loadGitOpsSyncForProjectInternal returns the GitOps sync linked to the
 // given project, or nil if the project is not GitOps-managed. A nil sync
 // with nil error is a normal outcome, not a failure.
-func (s *LifecycleService) loadGitOpsSyncForProjectInternal(ctx context.Context, projectID string) (*GitOpsSync, error) {
+func loadGitOpsSyncForProjectInternal(ctx context.Context, db *database.DB, projectID string) (*GitOpsSync, error) {
 	if projectID == "" {
 		return nil, nil
 	}
 
 	var sync GitOpsSync
-	err := s.db.WithContext(ctx).
+	err := db.WithContext(ctx).
 		Where("project_id = ?", projectID).
 		First(&sync).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -499,7 +499,18 @@ func validateScriptPathInternal(ctx context.Context, projectPath, scriptPath str
 
 	entry, err := acfs.Stat(ctx, absProject, "/"+filepath.ToSlash(scriptPath), false)
 	if err != nil {
-		return describeScriptStatErrorInternal(err, projectPath, scriptPath, absScript)
+		if errors.Is(err, os.ErrPermission) {
+			// The stat runs as Arcane's own uid, but the script executes in the
+			// runner container as that image's user — which may well be able to
+			// read a path Arcane cannot traverse (#3373). Proceed and let the
+			// container run surface any real problem.
+			slog.WarnContext(ctx, "cannot inspect pre-deploy script as the Arcane user; proceeding, the runner container may still be able to read it",
+				"scriptPath", scriptPath,
+				"detail", describeLifecyclePathAccessInternal(projectPath, absScript),
+			)
+			return nil
+		}
+		return errors.WrapIff(err, "stat script %q", scriptPath)
 	}
 	if entry.IsSymlink {
 		return errors.Errorf("script path %q is a symlink; symlinks are not allowed", scriptPath)
@@ -508,19 +519,6 @@ func validateScriptPathInternal(ctx context.Context, projectPath, scriptPath str
 		return errors.Errorf("script path %q refers to a directory", scriptPath)
 	}
 	return nil
-}
-
-func describeScriptStatErrorInternal(err error, projectPath, scriptPath, resolvedScriptPath string) error {
-	if errors.Is(err, os.ErrPermission) {
-		return errors.WrapIff(
-			err,
-			"Arcane pre-deploy validation could not inspect script %q. %s",
-			scriptPath,
-			describeLifecyclePathAccessInternal(projectPath, resolvedScriptPath),
-		)
-	}
-
-	return errors.WrapIff(err, "stat script %q", scriptPath)
 }
 
 // ParseEnvText reads admin-configured env config as the

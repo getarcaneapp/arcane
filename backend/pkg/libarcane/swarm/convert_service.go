@@ -71,10 +71,8 @@ func buildServiceSpecInternal(
 	capabilityAdd, capabilityDrop := dockeropts.EffectiveCapAddCapDrop(service.CapAdd, service.CapDrop)
 
 	spec := swarm.ServiceSpec{
-		Annotations: swarm.Annotations{
-			Name:   serviceName,
-			Labels: serviceLabels,
-		},
+		Name:   serviceName,
+		Labels: serviceLabels,
 		TaskTemplate: swarm.TaskSpec{
 			ContainerSpec: &swarm.ContainerSpec{
 				Image:           service.Image,

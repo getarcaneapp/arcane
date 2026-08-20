@@ -4,20 +4,17 @@ import (
 	"encoding/json/v2"
 	"testing"
 
-	"github.com/moby/moby/api/types/system"
 	"github.com/stretchr/testify/require"
 )
 
 func TestInfoMarshalsEmbeddedDockerFieldsAtTopLevel(t *testing.T) {
 	data, err := json.Marshal(Info{
-		Info: system.Info{
-			Name:              "arcane-host",
-			NCPU:              8,
-			MemTotal:          16 * 1024 * 1024 * 1024,
-			ContainersRunning: 3,
-		},
-		Success:    true,
-		APIVersion: "1.55",
+		Name:              "arcane-host",
+		NCPU:              8,
+		MemTotal:          16 * 1024 * 1024 * 1024,
+		ContainersRunning: 3,
+		Success:           true,
+		APIVersion:        "1.55",
 	})
 
 	require.NoError(t, err,

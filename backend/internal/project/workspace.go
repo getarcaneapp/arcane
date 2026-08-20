@@ -6,6 +6,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 
 	"context"
+	"encoding/json/v2"
 	"io"
 	"net/http"
 	"os"
@@ -47,6 +48,14 @@ func (s *ProjectService) GetProjectWorkspace(ctx context.Context, projectID stri
 	)
 	if err != nil {
 		return nil, errors.WrapIf(err, "read project workspace")
+	}
+	if ownedPaths, ownedErr := s.gitOpsOwnedWorkspacePathsInternal(ctx, proj); ownedErr == nil && len(ownedPaths) > 0 {
+		for i := range files {
+			if _, ok := ownedPaths[files[i].RelativePath]; ok {
+				files[i].Editable = false
+				files[i].ReadOnlyReason = workspacetypes.FileReadOnlyGitOpsManaged
+			}
+		}
 	}
 	return &workspacetypes.Workspace{Files: files, FileTreeRevision: revision, FileTreeTruncated: truncated}, nil
 }
@@ -93,8 +102,16 @@ func (s *ProjectService) GetProjectWorkspaceFile(ctx context.Context, projectID,
 		response.ReadOnlyReason = workspacetypes.FileReadOnlyBinary
 		return response, nil
 	}
-	response.Editable = true
 	response.Content = string(content)
+	if ownedPaths, ownedErr := s.gitOpsOwnedWorkspacePathsInternal(ctx, proj); ownedErr == nil {
+		if _, ok := ownedPaths[rel]; ok {
+			// Sync-owned files stay viewable but read-only: git is their
+			// source of truth (#3634).
+			response.ReadOnlyReason = workspacetypes.FileReadOnlyGitOpsManaged
+			return response, nil
+		}
+	}
+	response.Editable = true
 	return response, nil
 }
 
@@ -121,8 +138,15 @@ func (s *ProjectService) UpdateProjectWorkspace(ctx context.Context, projectID s
 	if err != nil {
 		return nil, err
 	}
-	if isGitOpsManagedProjectInternal(proj) {
-		return nil, common.Classify(common.ErrProjectWorkspaceForbidden, errors.New("GitOps-managed project workspaces cannot be edited"))
+	// Only the paths the GitOps sync owns are locked; the rest of the
+	// directory is operator-owned overlay (e.g. secret env files a public
+	// repo cannot carry) and stays editable (#3634).
+	ownedPaths, err := s.gitOpsOwnedWorkspacePathsInternal(ctx, proj)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateWorkspaceChangesAgainstGitOpsInternal(manifest.FileChanges, ownedPaths); err != nil {
+		return nil, err
 	}
 	if err := s.EnsureProjectPathUnderRoot(ctx, proj, true); err != nil {
 		return nil, err
@@ -221,19 +245,7 @@ func (s *ProjectService) projectWorkspaceApplyOptionsInternal(ctx context.Contex
 func (s *ProjectService) prepareProjectWorkspaceBackupInternal(ctx context.Context, projectsDirectory, projectPath string, changes []projecttypes.WorkspaceFileChange) (*projects.ProjectUpdateBackup, func(), error) {
 	scope := projects.ProjectUpdateBackupScope{}
 	for _, change := range changes {
-		rel, err := utils.NormalizeRelativePath(change.RelativePath)
-		if err != nil {
-			continue
-		}
-		scope.Paths = append(scope.Paths, rel)
-		switch change.Operation {
-		case projecttypes.FileOpRename:
-			if newName, nameErr := utils.ValidateFileName(change.NewName); nameErr == nil {
-				scope.Paths = append(scope.Paths, filepath.ToSlash(filepath.Join(filepath.Dir(rel), newName)))
-			}
-		case projecttypes.FileOpMove:
-			scope.Paths = append(scope.Paths, filepath.ToSlash(filepath.Join(change.NewParentPath, filepath.Base(rel))))
-		}
+		scope.Paths = append(scope.Paths, workspaceChangeTargetPathsInternal(change)...)
 	}
 	backup, err := backupProjectDirectoryInternal(ctx, projectsDirectory, projectPath, scope)
 	if err != nil {
@@ -248,6 +260,97 @@ func (s *ProjectService) prepareProjectWorkspaceBackupInternal(ctx context.Conte
 
 func isGitOpsManagedProjectInternal(proj *Project) bool {
 	return proj != nil && proj.GitOpsManagedBy != nil && strings.TrimSpace(*proj.GitOpsManagedBy) != ""
+}
+
+// gitOpsOwnedWorkspacePathsInternal returns the workspace-relative paths owned
+// by the project's GitOps sync — the files git writes on every sync. Only
+// these are locked for workspace editing; anything else in the directory is
+// operator-owned overlay (secret env files, bind-mounted configs) that the
+// sync engine deliberately never prunes (#3634). Returns nil for projects
+// without a live sync, including a stale gitops_managed_by marker.
+func (s *ProjectService) gitOpsOwnedWorkspacePathsInternal(ctx context.Context, proj *Project) (map[string]struct{}, error) {
+	if !isGitOpsManagedProjectInternal(proj) {
+		return nil, nil
+	}
+	sync, err := loadGitOpsSyncForProjectInternal(ctx, s.db, proj.ID)
+	if err != nil {
+		return nil, errors.WrapIf(err, "load gitops sync for workspace")
+	}
+	if sync == nil {
+		return nil, nil
+	}
+
+	owned := make(map[string]struct{})
+	add := func(p string) {
+		if rel, err := utils.NormalizeRelativePath(p); err == nil {
+			owned[rel] = struct{}{}
+		}
+	}
+	if sync.SyncedFiles != nil && *sync.SyncedFiles != "" {
+		var files []string
+		// Fail closed: an incomplete ownership set would expose synced files
+		// as editable, and the next sync would silently overwrite the edits.
+		if err := json.Unmarshal([]byte(*sync.SyncedFiles), &files); err != nil {
+			return nil, errors.WrapIf(err, "parse gitops synced files for workspace")
+		}
+		for _, f := range files {
+			add(f)
+		}
+	}
+	if sync.ComposePath != "" {
+		add(filepath.Base(sync.ComposePath))
+	}
+	return owned, nil
+}
+
+// workspaceChangeTargetPathsInternal lists every normalized project-relative
+// path a workspace file change can create, overwrite or delete. Shared by the
+// backup scope and the GitOps ownership check so the two cannot diverge.
+func workspaceChangeTargetPathsInternal(change projecttypes.WorkspaceFileChange) []string {
+	rel, err := utils.NormalizeRelativePath(change.RelativePath)
+	if err != nil {
+		return nil
+	}
+	paths := []string{rel}
+	switch change.Operation {
+	case projecttypes.FileOpRename:
+		if newName, nameErr := utils.ValidateFileName(change.NewName); nameErr == nil {
+			paths = append(paths, filepath.ToSlash(filepath.Join(filepath.Dir(rel), newName)))
+		}
+	case projecttypes.FileOpMove:
+		paths = append(paths, filepath.ToSlash(filepath.Join(change.NewParentPath, filepath.Base(rel))))
+	}
+	return paths
+}
+
+// validateWorkspaceChangesAgainstGitOpsInternal rejects file changes that
+// touch a sync-owned path, directly or by deleting/renaming a folder that
+// still holds one.
+func validateWorkspaceChangesAgainstGitOpsInternal(changes []projecttypes.WorkspaceFileChange, owned map[string]struct{}) error {
+	if len(owned) == 0 {
+		return nil
+	}
+	touchesOwned := func(target string) bool {
+		if _, ok := owned[target]; ok {
+			return true
+		}
+		prefix := target + "/"
+		for ownedPath := range owned {
+			if strings.HasPrefix(ownedPath, prefix) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, change := range changes {
+		for _, target := range workspaceChangeTargetPathsInternal(change) {
+			if touchesOwned(target) {
+				return common.Classify(common.ErrProjectWorkspaceForbidden,
+					errors.Errorf("%q is managed by git sync and can only be changed in the git repository", target))
+			}
+		}
+	}
+	return nil
 }
 
 func wrapProjectWorkspaceErrorInternal(err error) error {

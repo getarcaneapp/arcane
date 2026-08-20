@@ -426,11 +426,9 @@ func (h *SettingsHandler) updateSettingsForLocalEnvironment(ctx context.Context,
 	settingDtos := make([]settingstypes.SettingDto, 0, len(updatedSettings))
 	for _, setting := range updatedSettings {
 		settingDtos = append(settingDtos, settingstypes.SettingDto{
-			PublicSetting: settingstypes.PublicSetting{
-				Key:   setting.Key,
-				Type:  "string",
-				Value: setting.Value,
-			},
+			Key:   setting.Key,
+			Type:  "string",
+			Value: setting.Value,
 		})
 	}
 

@@ -58,13 +58,13 @@ func TestResetMFACommandServiceStatePreservesPasskey(t *testing.T) {
 	db := newResetMFATestDBInternal(t)
 	ctx := context.Background()
 	user := &common.User{
-		BaseModel:         database.BaseModel{ID: "mfa-reset-user"},
+		ID:                "mfa-reset-user",
 		Username:          "alice",
 		PasskeyMFAEnabled: true,
 	}
 	require.NoError(t, db.Create(user).Error)
 	passkeyRecord := &passkey.Passkey{
-		BaseModel:    database.BaseModel{ID: "mfa-reset-passkey"},
+		ID:           "mfa-reset-passkey",
 		UserID:       user.ID,
 		RPID:         "arcane.example.test",
 		CredentialID: []byte("credential"),
@@ -78,12 +78,12 @@ func TestResetMFACommandServiceStatePreservesPasskey(t *testing.T) {
 	secondSession, _, err := sessionService.CreateSession(ctx, user.ID, time.Now().Add(time.Hour), auth.SessionMeta{})
 	require.NoError(t, err)
 	require.NoError(t, db.Create(&passkey.PasskeyRecoveryCode{
-		BaseModel: database.BaseModel{ID: "mfa-reset-code"},
-		UserID:    user.ID,
-		CodeHash:  "stored-hash",
+		ID:       "mfa-reset-code",
+		UserID:   user.ID,
+		CodeHash: "stored-hash",
 	}).Error)
 	transaction := &passkey.AuthTransaction{
-		BaseModel: database.BaseModel{ID: "mfa-reset-transaction"},
+		ID:        "mfa-reset-transaction",
 		Kind:      "mfa",
 		UserID:    user.ID,
 		Source:    session.UserSessionSourceLocal,
@@ -92,7 +92,7 @@ func TestResetMFACommandServiceStatePreservesPasskey(t *testing.T) {
 	}
 	require.NoError(t, db.Create(transaction).Error)
 	require.NoError(t, db.Create(&passkey.PasskeyCeremony{
-		BaseModel:         database.BaseModel{ID: "mfa-reset-ceremony"},
+		ID:                "mfa-reset-ceremony",
 		Purpose:           "mfa",
 		UserID:            new(user.ID),
 		AuthTransactionID: new(transaction.ID),

@@ -122,10 +122,10 @@ test.describe('Diagnostics logs', () => {
 			}
 		});
 
-		await page.goto('/settings/diagnostics');
+		await page.goto('/settings/diagnostics?tab=logs');
 		await page.waitForLoadState('domcontentloaded');
 
-		await expect(page).toHaveURL(/\/settings\/diagnostics$/);
+		await expect(page).toHaveURL(/\/settings\/diagnostics/);
 		await expect(page.getByText('duplicate diagnostic entry', { exact: true })).toHaveCount(2);
 
 		expect(recentLogsRequests).toBe(0);

@@ -1,5 +1,5 @@
 import BaseAPIService from './api-service';
-import type { Diagnostics, LogEntry, PprofProfile } from '#lib/types/diagnostics';
+import type { Diagnostics, GoroutineLeakReport, LogEntry, PprofProfile } from '#lib/types/diagnostics';
 
 class DiagnosticsAPIService extends BaseAPIService {
 	/** One-shot runtime/memory/GC + WebSocket snapshot (used for initial paint). */
@@ -23,6 +23,14 @@ class DiagnosticsAPIService extends BaseAPIService {
 		return (res.data ?? '') as string;
 	}
 
+	/** Run a leak-detection GC and return leaked-goroutine stacks (debug=1 text). */
+	async scanGoroutineLeaks(): Promise<GoroutineLeakReport> {
+		const res = await this.api.post('/diagnostics/goroutineleak', undefined, {
+			timeout: 60000
+		});
+		return res.data as GoroutineLeakReport;
+	}
+
 	/**
 	 * Download a raw pprof profile via the authed client (so bearer/API-key auth
 	 * is attached) and trigger a browser save. `profile` and `trace` are
@@ -37,8 +45,13 @@ class DiagnosticsAPIService extends BaseAPIService {
 		const res = await this.api.get(`/debug/pprof/${profile}`, {
 			params,
 			responseType: 'blob',
-			// Sampled profiles block for their full duration.
-			timeout: profile === 'profile' || profile === 'trace' ? (seconds ?? defaultSeconds) * 1000 + 15000 : undefined
+			// Sampled profiles block for their full duration; goroutineleak runs a GC.
+			timeout:
+				profile === 'profile' || profile === 'trace'
+					? (seconds ?? defaultSeconds) * 1000 + 15000
+					: profile === 'goroutineleak'
+						? 60000
+						: undefined
 		});
 
 		const blob = res.data as Blob;
