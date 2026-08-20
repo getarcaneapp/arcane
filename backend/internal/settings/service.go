@@ -14,10 +14,10 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+	"uuid"
 
 	"emperror.dev/errors"
 
-	"github.com/google/uuid"
 	"github.com/samber/mo"
 	"gorm.io/gorm"
 
@@ -886,12 +886,7 @@ func (s *SettingsService) setupInstanceID(ctx context.Context) error {
 		return nil
 	}
 
-	createdInstanceID, err := uuid.NewRandom()
-	if err != nil {
-		return errors.WrapIf(err, "failed to created a new instance ID")
-	}
-
-	err = s.UpdateSetting(ctx, "instanceId", createdInstanceID.String())
+	err := s.UpdateSetting(ctx, "instanceId", uuid.New().String())
 	if err != nil {
 		return errors.WrapIf(err, "failed to set instance ID in database")
 	}
@@ -997,11 +992,7 @@ func (s *SettingsService) EnsureEncryptionKey(ctx context.Context) (string, erro
 			}
 
 			notFound := errors.Is(err, gorm.ErrRecordNotFound)
-			u, genErr := uuid.NewRandom()
-			if genErr != nil {
-				return errors.WrapIf(genErr, "failed to generate encryption key")
-			}
-			sum := sha256.Sum256([]byte(u.String()))
+			sum := sha256.Sum256([]byte(uuid.New().String()))
 			generatedKey := base64.StdEncoding.EncodeToString(sum[:])
 			key = generatedKey
 

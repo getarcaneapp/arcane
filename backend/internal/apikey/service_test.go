@@ -69,8 +69,8 @@ func createTestAPIKeyUser(t *testing.T, ctx context.Context, userService *user.U
 	}
 
 	user := &common.User{
-		BaseModel: database.BaseModel{ID: id},
-		Username:  username,
+		ID:       id,
+		Username: username,
 	}
 
 	created, err := userService.CreateUser(ctx, user)
@@ -112,8 +112,8 @@ func createDefaultAdminUser(t *testing.T, ctx context.Context, userService *user
 	t.Helper()
 
 	user := &common.User{
-		BaseModel: database.BaseModel{ID: "default-admin-user"},
-		Username:  defaultAdminUsername,
+		ID:       "default-admin-user",
+		Username: defaultAdminUsername,
 	}
 
 	created, err := userService.CreateUser(ctx, user)
@@ -136,7 +136,7 @@ func TestListApiKeysPermissionQueryCountIsConstant(t *testing.T) {
 			for i := range keyCount {
 				keyID := fmt.Sprintf("key-%d", i)
 				apiKeys[i] = ApiKey{
-					BaseModel: database.BaseModel{ID: keyID},
+					ID:        keyID,
 					Name:      keyID,
 					KeyHash:   "hash",
 					KeyPrefix: fmt.Sprintf("arc_%04d", i),
@@ -144,7 +144,7 @@ func TestListApiKeysPermissionQueryCountIsConstant(t *testing.T) {
 					UserID:    &userID,
 				}
 				permissions[i] = role.ApiKeyPermission{
-					BaseModel:  database.BaseModel{ID: fmt.Sprintf("permission-%d", i)},
+					ID:         fmt.Sprintf("permission-%d", i),
 					ApiKeyID:   keyID,
 					Permission: authz.PermContainersList,
 				}
@@ -158,7 +158,7 @@ func TestListApiKeysPermissionQueryCountIsConstant(t *testing.T) {
 			}))
 
 			result, _, err := service.ListApiKeys(context.Background(), pagination.QueryParams{
-				Params: pagination.Params{Limit: 100},
+				Limit: 100,
 			})
 			require.NoError(t, err)
 			require.Len(t, result, keyCount)
@@ -756,10 +756,10 @@ func TestApiKeyProtectedWhileEnvironmentReferenced(t *testing.T) {
 	require.NoError(t, err)
 
 	env := &testEnvironmentRow{
-		BaseModel: database.BaseModel{ID: "env-referenced"},
-		Name:      "referenced",
-		ApiUrl:    "http://localhost:2375",
-		ApiKeyID:  &created.ID,
+		ID:       "env-referenced",
+		Name:     "referenced",
+		ApiUrl:   "http://localhost:2375",
+		ApiKeyID: &created.ID,
 	}
 	require.NoError(t, db.WithContext(ctx).Create(env).Error)
 
@@ -772,7 +772,7 @@ func TestApiKeyProtectedWhileEnvironmentReferenced(t *testing.T) {
 	// still protect them.
 	legacyUserID := "legacy-owner"
 	legacy := &ApiKey{
-		BaseModel:     database.BaseModel{ID: "legacy-key"},
+		ID:            "legacy-key",
 		Name:          "Environment Bootstrap Key - legacy",
 		KeyHash:       "hash",
 		KeyPrefix:     "arc_lgcy",
@@ -933,11 +933,11 @@ func TestBackfillPermsForKeyDeduplicatesGlobalAndEnvironmentPermissions(t *testi
 	envID := "env-1"
 	now := time.Now()
 	require.NoError(t, db.WithContext(ctx).Create(&testEnvironmentRow{
-		BaseModel: database.BaseModel{ID: envID, CreatedAt: now, UpdatedAt: &now},
-		Name:      "env-" + envID,
-		ApiUrl:    "http://localhost:3552",
-		Status:    "online",
-		Enabled:   true,
+		ID: envID, CreatedAt: now, UpdatedAt: &now,
+		Name:    "env-" + envID,
+		ApiUrl:  "http://localhost:3552",
+		Status:  "online",
+		Enabled: true,
 	}).Error)
 
 	require.NoError(t, roleSvc.SetUserAssignments(ctx, owner.ID, []role.UserRoleAssignment{

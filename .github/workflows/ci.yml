@@ -1,8 +1,5 @@
 name: CI
 
-env:
-  GOEXPERIMENT: jsonv2
-
 on:
   pull_request:
     branches: [main, "release/**", "breaking/**"]

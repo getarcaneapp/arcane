@@ -81,8 +81,8 @@ func IsWebSocketUpgradeRequest(r *http.Request) bool {
 
 func isLocalhost(host string) bool {
 	hostOnly := host
-	if idx := strings.LastIndex(host, ":"); idx != -1 {
-		hostOnly = host[:idx]
+	if before, _, found := strings.CutLast(host, ":"); found {
+		hostOnly = before
 	}
 
 	return hostOnly == "localhost" ||

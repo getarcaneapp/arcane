@@ -569,8 +569,8 @@ func (s *GitRepositoryService) createNewRepository(ctx context.Context, item git
 		SSHHostKeyVerification: sshHostKeyVerification,
 		Description:            item.Description,
 		Enabled:                item.Enabled,
+		ID:                     item.ID,
 	}
-	repo.ID = item.ID
 
 	if err := s.db.WithContext(ctx).Create(&repo).Error; err != nil {
 		return errors.WrapIff(err, "failed to create repository %s", item.ID)

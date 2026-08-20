@@ -1,3 +1,33 @@
+## v2.8.1
+
+### Bug fixes
+
+* report never-pulled image refs as a distinct 'not pulled' state instead of failing the update check ([#3631](https://github.com/getarcaneapp/arcane/pull/3631) by @kmendell)
+* localize category cards ([#3596](https://github.com/getarcaneapp/arcane/pull/3596) by @InfinityPacer)
+* coalesce concurrent Docker image/container list calls to cut duplicate decodes ([#3635](https://github.com/getarcaneapp/arcane/pull/3635) by @kmendell)
+* gate project archiving on live Docker state instead of stale persisted status([c487936](https://github.com/getarcaneapp/arcane/commit/c487936819c6dfbc8ed651293f149d89bf76edfd) by @kmendell)
+* use stored credentials for non-Docker Hub registries ([#3639](https://github.com/getarcaneapp/arcane/pull/3639) by @BobzTH)
+* add missing options to project redeploy dropdown([f7cb885](https://github.com/getarcaneapp/arcane/commit/f7cb8856213112e994132dbf8380bfca91dd4ecf) by @kmendell)
+* go1.26.6 h2c ReadHeaderTimeout regression([6d4f222](https://github.com/getarcaneapp/arcane/commit/6d4f222389cfa48e52d575bc3ae4a459904053cc) by @kmendell)
+* use errors.Is(err, fs.ErrNotExist) for acfs error checks ([#3647](https://github.com/getarcaneapp/arcane/pull/3647) by @rohitkumbhar)
+* unblock git sync workspaces and pre-deploy hooks on permission edges ([#3637](https://github.com/getarcaneapp/arcane/pull/3637) by @kmendell)
+
+### Dependencies
+
+* bump the aws-sdk-go-v2 group in /backend with 3 updates ([#3616](https://github.com/getarcaneapp/arcane/pull/3616) by @dependabot[bot])
+* bump golang.org/x/mod from 0.38.0 to 0.39.0 in /backend ([#3618](https://github.com/getarcaneapp/arcane/pull/3618) by @dependabot[bot])
+* bump the tanstack-table group across 1 directory with 2 updates ([#3613](https://github.com/getarcaneapp/arcane/pull/3613) by @dependabot[bot])
+* bump github.com/docker/compose to v5.5.0 ([#3643](https://github.com/getarcaneapp/arcane/pull/3643) by @kmendell)
+* bump to go v1.26.6([ce37184](https://github.com/getarcaneapp/arcane/commit/ce371847f03e061e4adabdbaf36b52933512b9cb) by @kmendell)
+
+### Other
+
+* move models into standalone domain packages ([#3636](https://github.com/getarcaneapp/arcane/pull/3636) by @kmendell)
+
+
+
+**Full Changelog**: https://github.com/getarcaneapp/arcane/compare/v2.8.0...v2.8.1
+
 ## v2.8.0
 
 ### New features

@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"strings"
 	"time"
+	"uuid"
 
 	"emperror.dev/errors"
 
@@ -14,7 +15,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/dbutil"
 	"github.com/getarcaneapp/arcane/types/v2/auth"
-	"github.com/google/uuid"
 	"github.com/samber/mo"
 	"gorm.io/gorm"
 )
@@ -28,7 +28,7 @@ func NewSessionService(db *database.DB) *SessionService {
 }
 
 func (s *SessionService) CreateSession(ctx context.Context, userID string, expiresAt time.Time, meta auth.SessionMeta) (*UserSession, string, error) {
-	refreshJTI := uuid.NewString()
+	refreshJTI := uuid.New().String()
 	refreshHash := hashRefreshJTIInternal(refreshJTI)
 
 	now := time.Now()
@@ -56,7 +56,7 @@ func (s *SessionService) CreateSession(ctx context.Context, userID string, expir
 }
 
 func (s *SessionService) CreateFederatedSession(ctx context.Context, userID string, expiresAt time.Time, credentialID string) (*UserSession, error) {
-	refreshHash := hashRefreshJTIInternal(uuid.NewString())
+	refreshHash := hashRefreshJTIInternal(uuid.New().String())
 	now := time.Now()
 
 	session := &UserSession{
@@ -95,7 +95,7 @@ func (s *SessionService) RotateRefreshToken(ctx context.Context, sessionID strin
 		return nil, "", common.ErrInvalidToken
 	}
 
-	newRefreshJTI := uuid.NewString()
+	newRefreshJTI := uuid.New().String()
 	newHash := hashRefreshJTIInternal(newRefreshJTI)
 
 	now := time.Now()

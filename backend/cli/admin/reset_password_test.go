@@ -49,7 +49,7 @@ func createGlobalAdminInternal(t *testing.T, db *database.DB) (*common.User, *ro
 	passwordHash, err := userService.HashPassword("old-password")
 	require.NoError(t, err)
 	adminUser, err := userService.CreateUser(ctx, &common.User{
-		BaseModel:              database.BaseModel{ID: "admin-1"},
+		ID:                     "admin-1",
 		Username:               "arcane",
 		PasswordHash:           passwordHash,
 		RequiresPasswordChange: true,
@@ -124,7 +124,7 @@ func TestResetPasswordInternalRejectsNonAdmin(t *testing.T) {
 	passwordHash, err := userService.HashPassword("old-password")
 	require.NoError(t, err)
 	nonAdmin, err := userService.CreateUser(ctx, &common.User{
-		BaseModel:              database.BaseModel{ID: "user-1"},
+		ID:                     "user-1",
 		Username:               "operator",
 		PasswordHash:           passwordHash,
 		RequiresPasswordChange: true,

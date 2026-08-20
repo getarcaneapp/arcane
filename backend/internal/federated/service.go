@@ -13,11 +13,11 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"uuid"
 
 	"emperror.dev/errors"
 
 	"github.com/coreos/go-oidc/v3/oidc"
-	"github.com/google/uuid"
 	"github.com/samber/mo"
 	"golang.org/x/sync/singleflight"
 	"gorm.io/gorm"
@@ -172,7 +172,7 @@ func (s *FederatedCredentialService) Create(ctx context.Context, callerUserID st
 	var created FederatedCredential
 	err = dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
 		serviceUser := common.User{
-			Username:         "svc_federated_" + strings.ReplaceAll(uuid.NewString(), "-", ""),
+			Username:         "svc_federated_" + strings.ReplaceAll(uuid.New().String(), "-", ""),
 			DisplayName:      mo.EmptyableToOption(strings.TrimSpace("Federated: " + normalized.Name)).ToPointer(),
 			IsServiceAccount: true,
 		}

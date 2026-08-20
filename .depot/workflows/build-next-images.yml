@@ -73,6 +73,12 @@ jobs:
           username: ${{ vars.GHCR_USERNAME }}
           password: ${{ secrets.ARCANE_BOT_TOKEN }}
 
+      - name: Login to Docker Hub
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKER_USER }}
+          password: ${{ secrets.DOCKER_PAT }}
+
       - name: Compute next image version
         id: next-version
         run: just next-image-version github-output

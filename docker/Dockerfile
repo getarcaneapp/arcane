@@ -29,8 +29,7 @@ ENV NODE_OPTIONS="--max-old-space-size=4096"
 RUN pnpm -C frontend build
 
 # Stage 2: Build Backend
-FROM --platform=$BUILDPLATFORM golang:1.26.6-trixie AS backend-builder
-ENV GOEXPERIMENT=jsonv2
+FROM --platform=$BUILDPLATFORM golang:1.27-trixie AS backend-builder
 ARG TARGETARCH
 ARG TARGETVARIANT
 ARG BUILD_TAGS
@@ -61,9 +60,9 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     if [ "${BUILD_TIME}" = "unknown" ]; then BUILD_TIME=$(jq -r '.buildTime // "unknown"' ../arcane.json); fi && \
     export GOARCH="${TARGETARCH}" && \
     if [ "${TARGETARCH}" = "arm" ]; then \
-        GOARM="${TARGETVARIANT#v}"; \
-        if [ -z "${GOARM}" ]; then GOARM="7"; fi; \
-        export GOARM; \
+    GOARM="${TARGETVARIANT#v}"; \
+    if [ -z "${GOARM}" ]; then GOARM="7"; fi; \
+    export GOARM; \
     fi && \
     CGO_ENABLED=0 GOOS=linux \
     go build \

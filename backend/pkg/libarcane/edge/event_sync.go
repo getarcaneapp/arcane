@@ -3,10 +3,9 @@ package edge
 import (
 	"strings"
 	"sync"
+	"uuid"
 
 	"emperror.dev/errors"
-
-	"github.com/google/uuid"
 )
 
 const (
@@ -63,7 +62,7 @@ func PublishEventToManager(event *TunnelEvent) error {
 	}
 
 	msg := &TunnelMessage{
-		ID:    uuid.NewString(),
+		ID:    uuid.New().String(),
 		Type:  MessageTypeEvent,
 		Event: cloneTunnelEvent(event),
 	}

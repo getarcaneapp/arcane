@@ -433,7 +433,7 @@ func newComposeBuildImageUpdateServiceInternal(t *testing.T) (*ImageUpdateServic
 	db := setupImageUpdateTestDB(t)
 	buildRefsJSON := `["test2:latest"]`
 	require.NoError(t, db.Create(&testProjectRow{
-		BaseModel:          database.BaseModel{ID: "compose-build-project"},
+		ID:                 "compose-build-project",
 		Name:               "compose-build-project",
 		BuildImageRefsJSON: &buildRefsJSON,
 	}).Error)
@@ -449,9 +449,7 @@ func newComposeBuildImageUpdateServiceInternal(t *testing.T) (*ImageUpdateServic
 			distributionInspectFn: func(context.Context, string, client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
 				registryCalls.Add(1)
 				return client.DistributionInspectResult{
-					DistributionInspect: dockerregistry.DistributionInspect{
-						Descriptor: ocispec.Descriptor{Digest: digest.Digest(remoteDigest)},
-					},
+					Descriptor: ocispec.Descriptor{Digest: digest.Digest(remoteDigest)},
 				}, nil
 			},
 		}, nil
@@ -502,7 +500,7 @@ func TestImageUpdateService_CheckMultipleImages_ComposeBuildMissingLocallySkipsR
 	db := setupImageUpdateTestDB(t)
 	buildRefsJSON := `["test2:latest"]`
 	require.NoError(t, db.Create(&testProjectRow{
-		BaseModel:          database.BaseModel{ID: "compose-build-missing-project"},
+		ID:                 "compose-build-missing-project",
 		Name:               "compose-build-missing-project",
 		BuildImageRefsJSON: &buildRefsJSON,
 	}).Error)
@@ -1069,10 +1067,8 @@ func TestImageUpdateService_CheckMultipleImages_UsesDockerHubCredentialsOnFirstA
 				assert.Equal(t, "https://index.docker.io/v1/", authCfg.ServerAddress)
 
 				return client.DistributionInspectResult{
-					DistributionInspect: dockerregistry.DistributionInspect{
-						Descriptor: ocispec.Descriptor{
-							Digest: digest.Digest(remoteDigest),
-						},
+					Descriptor: ocispec.Descriptor{
+						Digest: digest.Digest(remoteDigest),
 					},
 				}, nil
 			},

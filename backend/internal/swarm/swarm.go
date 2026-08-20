@@ -574,7 +574,7 @@ func (s *SwarmService) GetNode(ctx context.Context, environmentID, nodeID string
 // ReconcileNodeAgents verifies visible environment identities and persists only
 // unique node matches. Ambiguous and mismatched identities remain unchanged.
 func (s *SwarmService) ReconcileNodeAgents(ctx context.Context, environmentID string) (*swarmtypes.NodeAgentReconcileResponse, error) {
-	items, _, err := s.ListNodesPaginated(ctx, environmentID, pagination.QueryParams{Params: pagination.Params{Limit: -1}})
+	items, _, err := s.ListNodesPaginated(ctx, environmentID, pagination.QueryParams{Limit: -1})
 	if err != nil {
 		return nil, err
 	}
@@ -896,7 +896,7 @@ func (s *SwarmService) JoinEnvironments(ctx context.Context, managerEnvironmentI
 	if err != nil {
 		return nil, err
 	}
-	nodes, _, err := s.ListNodesPaginated(ctx, managerEnvironmentID, pagination.QueryParams{Params: pagination.Params{Limit: -1}})
+	nodes, _, err := s.ListNodesPaginated(ctx, managerEnvironmentID, pagination.QueryParams{Limit: -1})
 	if err != nil {
 		return nil, err
 	}
@@ -1087,8 +1087,8 @@ func (s *SwarmService) buildNodeAgentStatusInternal(nodeID string, env *environm
 		Connected:     &live,
 		LastHeartbeat: runtime.lastHeartbeat,
 		LastPollAt:    runtime.lastPollAt,
-	}
-	status.EnvironmentName = &env.Name
+
+		EnvironmentName: &env.Name}
 	environmentType := "direct"
 	if env.IsEdge {
 		environmentType = "edge"

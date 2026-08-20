@@ -996,11 +996,8 @@ func extractRepoAndTagFromImage(dockerImage image.InspectResponse) (repo, tag st
 			if rd == "<none>@<none>" {
 				continue
 			}
-			if at := strings.LastIndex(rd, "@"); at != -1 {
-				repoCandidate := rd[:at]
-				if repoCandidate != "" {
-					return repoCandidate, "<none>"
-				}
+			if repoCandidate, _, found := strings.CutLast(rd, "@"); found && repoCandidate != "" {
+				return repoCandidate, "<none>"
 			}
 		}
 	}

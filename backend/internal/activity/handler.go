@@ -284,7 +284,7 @@ func (h *ActivityHandler) cancelRequestedByInternal(ctx context.Context, forward
 func (h *ActivityHandler) RunLocalStreamProducer(ctx context.Context, limit int, events chan<- activitytypes.StreamEvent) {
 	sendSnapshot := func() bool {
 		activities, _, err := h.activityService.ListActivitiesPaginated(ctx, "0", pagination.QueryParams{
-			Params: pagination.Params{Limit: resolveActivityStreamLimitInternal(limit)},
+			Limit: resolveActivityStreamLimitInternal(limit),
 		})
 		if err != nil {
 			if ctx.Err() == nil {

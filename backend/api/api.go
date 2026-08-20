@@ -167,8 +167,8 @@ func qualifyGenericArcaneArgumentsInternal(pkgPath, typeName, schemaName string)
 	}
 
 	outerPackage := strings.TrimPrefix(pkgPath, arcaneTypesPrefix)
-	if separator := strings.LastIndexByte(outerPackage, '/'); separator >= 0 {
-		outerPackage = outerPackage[separator+1:]
+	if _, after, found := strings.CutLast(outerPackage, "/"); found {
+		outerPackage = after
 	}
 
 	plainSchemaName := huma.DefaultSchemaNamer(reflect.TypeFor[struct{}](), typeName)
@@ -193,8 +193,8 @@ func qualifyGenericArcaneArgumentsInternal(pkgPath, typeName, schemaName string)
 		}
 
 		innerPackage := afterPrefix[:separator]
-		if nestedSeparator := strings.LastIndexByte(innerPackage, '/'); nestedSeparator >= 0 {
-			innerPackage = innerPackage[nestedSeparator+1:]
+		if _, after, found := strings.CutLast(innerPackage, "/"); found {
+			innerPackage = after
 		}
 
 		replacement := ""

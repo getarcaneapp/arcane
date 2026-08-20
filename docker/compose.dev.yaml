@@ -36,8 +36,6 @@ services:
       context: ..
       dockerfile: docker/Dockerfile.dev
       target: backend-dev
-      args:
-        GO_VERSION: "1.26.0"
     container_name: arcane-backend-dev
     ports:
       - "3552:3552"
@@ -85,8 +83,6 @@ services:
       context: ..
       dockerfile: docker/Dockerfile.dev
       target: backend-dev
-      args:
-        GO_VERSION: "1.26.0"
     container_name: arcane-agent
     ports:
       - "3553:3553"

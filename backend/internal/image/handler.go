@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
 
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
@@ -408,13 +407,9 @@ func (h *ImageHandler) GetImage(ctx context.Context, input *GetImageInput) (*Get
 
 // GetImageAttestations returns in-toto attestation statements attached to an image.
 func (h *ImageHandler) GetImageAttestations(ctx context.Context, input *GetImageAttestationsInput) (*GetImageAttestationsOutput, error) {
-	imageName, err := url.PathUnescape(input.ImageName)
+	imageName, err := validateImageNameInternal(input.ImageName)
 	if err != nil {
-		return nil, huma.Error400BadRequest(fmt.Sprintf("invalid image name %q", input.ImageName))
-	}
-	imageName = strings.TrimSpace(imageName)
-	if imageName == "" {
-		return nil, huma.Error400BadRequest("image name is required")
+		return nil, err
 	}
 
 	if input.Platform != "" {
@@ -442,7 +437,7 @@ func (h *ImageHandler) GetImageAttestations(ctx context.Context, input *GetImage
 
 // TagImage adds a repository tag to an image.
 func (h *ImageHandler) TagImage(ctx context.Context, input *TagImageInput) (*TagImageOutput, error) {
-	imageName, err := decodeImageNameInternal(input.ImageName)
+	imageName, err := validateImageNameInternal(input.ImageName)
 	if err != nil {
 		return nil, err
 	}
@@ -469,7 +464,7 @@ func (h *ImageHandler) TagImage(ctx context.Context, input *TagImageInput) (*Tag
 
 // GetImageHistory returns Docker image layer history.
 func (h *ImageHandler) GetImageHistory(ctx context.Context, input *GetImageHistoryInput) (*GetImageHistoryOutput, error) {
-	imageName, err := decodeImageNameInternal(input.ImageName)
+	imageName, err := validateImageNameInternal(input.ImageName)
 	if err != nil {
 		return nil, err
 	}
@@ -513,7 +508,7 @@ func (h *ImageHandler) SearchImages(ctx context.Context, input *SearchImagesInpu
 
 // ExportImage streams a Docker image tar archive.
 func (h *ImageHandler) ExportImage(ctx context.Context, input *ExportImageInput) (*huma.StreamResponse, error) {
-	imageName, err := decodeImageNameInternal(input.ImageName)
+	imageName, err := validateImageNameInternal(input.ImageName)
 	if err != nil {
 		return nil, err
 	}
@@ -535,12 +530,8 @@ func (h *ImageHandler) ExportImage(ctx context.Context, input *ExportImageInput)
 	}, nil
 }
 
-func decodeImageNameInternal(raw string) (string, error) {
-	imageName, err := url.PathUnescape(raw)
-	if err != nil {
-		return "", huma.Error400BadRequest(fmt.Sprintf("invalid image name %q", raw))
-	}
-	imageName = strings.TrimSpace(imageName)
+func validateImageNameInternal(raw string) (string, error) {
+	imageName := strings.TrimSpace(raw)
 	if imageName == "" {
 		return "", huma.Error400BadRequest("image name is required")
 	}

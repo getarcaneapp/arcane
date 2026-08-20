@@ -344,9 +344,7 @@ func (s *ActivityService) StartActivity(ctx context.Context, req StartActivityRe
 		LatestMessage:        strings.TrimSpace(req.LatestMessage),
 		StartedAt:            now,
 		Metadata:             cloneJSONInternal(req.Metadata),
-		BaseModel: database.BaseModel{
-			CreatedAt: now,
-		},
+		CreatedAt:            now,
 	}
 	if model.Type == "" {
 		model.Type = activitytypes.TypeAutoUpdate
@@ -586,11 +584,9 @@ func buildAppendBatchInternal(activityID string, reqs []AppendActivityMessageReq
 			Level:      level,
 			Message:    messageText,
 			Payload:    cloneJSONInternal(req.Payload),
-			BaseModel: database.BaseModel{
-				// Spread inside the shared timestamp so the created_at sort
-				// used for retrieval keeps the original line order.
-				CreatedAt: now.Add(time.Duration(len(messages)) * time.Microsecond),
-			},
+			// Spread inside the shared timestamp so the created_at sort
+			// used for retrieval keeps the original line order.
+			CreatedAt: now.Add(time.Duration(len(messages)) * time.Microsecond),
 		})
 
 		latestMessage = messageText

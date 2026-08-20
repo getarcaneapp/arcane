@@ -184,11 +184,11 @@ func TestDashboardService_GetSnapshot_ReturnsDashboardSnapshot(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services:\n  app:\n    image: repo/worker:latest\n"), 0o644))
 	dirName := "project-with-update"
 	require.NoError(t, db.WithContext(context.Background()).Create(&project.Project{
-		BaseModel: database.BaseModel{ID: "project-with-update"},
-		Name:      "project-with-update",
-		DirName:   &dirName,
-		Path:      projectPath,
-		Status:    project.ProjectStatusStopped,
+		ID:      "project-with-update",
+		Name:    "project-with-update",
+		DirName: &dirName,
+		Path:    projectPath,
+		Status:  project.ProjectStatusStopped,
 	}).Error)
 	projectSvc := project.NewProjectService(db, settingsSvc, nil, image.NewImageService(db, nil, nil, nil, nil, nil), nil, nil, nil, nil, config.Load())
 	svc := NewDashboardService(db, dockerSvc, nil, projectSvc, nil, settingsSvc, nil, nil, nil, volume.NewVolumeService(db, nil, nil, nil, nil, nil, nil, nil, nil, nil))
@@ -277,11 +277,9 @@ func createTestRemoteEnvironmentInternal(t *testing.T, db *database.DB, environm
 	t.Helper()
 	now := time.Now()
 	require.NoError(t, db.Create(&environment.Environment{
-		BaseModel: database.BaseModel{
-			ID:        environmentID,
-			CreatedAt: now,
-			UpdatedAt: &now,
-		},
+		ID:          environmentID,
+		CreatedAt:   now,
+		UpdatedAt:   &now,
 		Name:        name,
 		ApiUrl:      apiURL,
 		Status:      string(environment.EnvironmentStatusOnline),

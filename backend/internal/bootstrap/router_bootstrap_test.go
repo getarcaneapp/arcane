@@ -1,15 +1,48 @@
 package bootstrap
 
 import (
+	"context"
 	"net"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/danielgtaylor/huma/v2/adapters/humaecho"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cookie"
 	"github.com/labstack/echo/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestNewEchoInternal_DecodesPathParams(t *testing.T) {
+	router := newEchoInternal()
+	api := humaecho.NewWithGroup(router, router.Group("/api"), huma.DefaultConfig("test", "1.0.0"))
+
+	var got string
+	huma.Register(api, huma.Operation{
+		OperationID: "get-image",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/images/{imageId}",
+	}, func(_ context.Context, input *struct {
+		ID      string `path:"id"`
+		ImageID string `path:"imageId"`
+	}) (*struct{}, error) {
+		got = input.ImageID
+		return nil, nil
+	})
+
+	// RFC 3986 §6.2.2.2: these are all the same URI and must resolve identically.
+	for _, segment := range []string{"sha256:abc", "sha256%3Aabc", "%73ha256:abc"} {
+		got = ""
+		req := httptest.NewRequest(http.MethodGet, "/api/environments/0/images/"+segment, nil)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		require.Equal(t, http.StatusNoContent, rec.Code, "segment %q", segment)
+		require.Equal(t, "sha256:abc", got, "segment %q", segment)
+	}
+}
 
 func TestSecureCookieContextMiddleware_TrustGating(t *testing.T) {
 	_, loopback, err := net.ParseCIDR("127.0.0.0/8")

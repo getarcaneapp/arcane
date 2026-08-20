@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"uuid"
 
 	"emperror.dev/errors"
 
@@ -19,7 +20,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/google/uuid"
 	"github.com/samber/mo"
 )
 
@@ -101,7 +101,7 @@ func NewTunnelClient(cfg *Config, handler http.Handler) *TunnelClient {
 		managerGRPCAddr:        managerGRPCAddr,
 		localPort:              localPort,
 		requestTimeout:         DefaultRequestTimeout,
-		agentInstanceID:        uuid.NewString(),
+		agentInstanceID:        uuid.New().String(),
 	}
 }
 

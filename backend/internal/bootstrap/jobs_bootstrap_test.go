@@ -3,8 +3,6 @@ package bootstrap
 import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-
 	"context"
 	"slices"
 	"testing"
@@ -52,8 +50,8 @@ type timeoutSyncEnvironmentStubInternal struct {
 
 func (s *timeoutSyncEnvironmentStubInternal) ListRemoteEnvironments(context.Context) ([]environment.Environment, error) {
 	return []environment.Environment{{
-		BaseModel: database.BaseModel{ID: "remote"},
-		Name:      "remote",
+		ID:   "remote",
+		Name: "remote",
 	}}, nil
 }
 

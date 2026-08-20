@@ -59,7 +59,7 @@ func TestNewHumaMiddleware_AcceptsEnvironmentAccessTokenViaAPIKey(t *testing.T) 
 	api := humaecho.NewWithGroup(router, apiGroup, humaConfig)
 	api.UseMiddleware(NewHumaMiddleware(api, &AuthService{}, nil, nil, testEnvironmentAccessResolver{
 		env: &environment.Environment{
-			BaseModel:   database.BaseModel{ID: "env-self"},
+			ID:          "env-self",
 			Name:        "Self Target",
 			AccessToken: &token,
 		},
@@ -123,7 +123,7 @@ func TestNewHumaMiddleware_UsesBearerWhenLoopbackProxySendsEnvironmentAccessToke
 	api := humaecho.NewWithGroup(router, apiGroup, humaConfig)
 	api.UseMiddleware(NewHumaMiddleware(api, authSvc, nil, staticPermissionResolverInternal{ps: ps}, testEnvironmentAccessResolver{
 		env: &environment.Environment{
-			BaseModel:   database.BaseModel{ID: "remote-env"},
+			ID:          "remote-env",
 			Name:        "Remote Env",
 			AccessToken: &envToken,
 		},
@@ -270,8 +270,8 @@ func TestNewHumaMiddleware_OpportunisticAuthOnPublicRoute(t *testing.T) {
 	authSvc := NewAuthService(userSvc, nil, nil, sessionSvc, nil, jwtSecret, cfg, nil)
 
 	_, err := userSvc.CreateUser(context.Background(), &common.User{
-		BaseModel: database.BaseModel{ID: "u-logout"},
-		Username:  "logouttest",
+		ID:       "u-logout",
+		Username: "logouttest",
 	})
 	require.NoError(t, err)
 
@@ -358,8 +358,8 @@ func TestNewHumaMiddleware_VersionMismatchIsRecoverable(t *testing.T) {
 	authSvc := NewAuthService(userSvc, nil, nil, sessionSvc, nil, jwtSecret, cfg, nil)
 
 	_, err := userSvc.CreateUser(context.Background(), &common.User{
-		BaseModel: database.BaseModel{ID: "u-ver"},
-		Username:  "vertest",
+		ID:       "u-ver",
+		Username: "vertest",
 	})
 	require.NoError(t, err)
 
@@ -487,8 +487,8 @@ func mintHumaMiddlewareTestTokenInternal(t *testing.T, userSvc *user.UserService
 	t.Helper()
 
 	_, err := userSvc.CreateUser(context.Background(), &common.User{
-		BaseModel: database.BaseModel{ID: userID},
-		Username:  userID,
+		ID:       userID,
+		Username: userID,
 	})
 	require.NoError(t, err)
 

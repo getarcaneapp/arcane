@@ -58,7 +58,7 @@ func createSwarmTestEnvironmentInternal(t *testing.T, db *database.DB, id, apiUR
 	t.Helper()
 	now := time.Now()
 	require.NoError(t, db.Create(&environment.Environment{
-		BaseModel:   database.BaseModel{ID: id, CreatedAt: now, UpdatedAt: &now},
+		ID: id, CreatedAt: now, UpdatedAt: &now,
 		Name:        "env-" + id,
 		ApiUrl:      apiURL,
 		Status:      status,
@@ -371,10 +371,8 @@ func TestSwarmService_ScaleService_HandlesServiceModesInternal(t *testing.T) {
 					}
 				case r.Method == http.MethodGet && r.URL.Path == "/v1.41/services/service-1":
 					if !assert.NoError(t, json.NewEncoder(w).Encode(swarm.Service{
-						ID: "service-1",
-						Meta: swarm.Meta{
-							Version: swarm.Version{Index: 7},
-						},
+						ID:      "service-1",
+						Version: swarm.Version{Index: 7},
 						Spec: swarm.ServiceSpec{
 							Annotations: swarm.Annotations{Name: "service-1"},
 							Mode:        tt.mode,

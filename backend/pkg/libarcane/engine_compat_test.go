@@ -59,18 +59,16 @@ func TestSanitizeRecreateHostConfigInternal(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			input := &containertypes.HostConfig{
-				Resources: containertypes.Resources{
-					MemorySwappiness: &swappiness,
-					CPUShares:        1024,
-				},
-				PublishAllPorts: true,
-				ReadonlyRootfs:  true,
-				NetworkMode:     "bridge",
-				ContainerIDFile: "/tmp/id",
-				VolumeDriver:    "local",
-				Annotations:     map[string]string{"test": "value"},
-				MaskedPaths:     []string{"/proc/kcore"},
-				ReadonlyPaths:   []string{"/proc/asound"},
+				MemorySwappiness: &swappiness,
+				CPUShares:        1024,
+				PublishAllPorts:  true,
+				ReadonlyRootfs:   true,
+				NetworkMode:      "bridge",
+				ContainerIDFile:  "/tmp/id",
+				VolumeDriver:     "local",
+				Annotations:      map[string]string{"test": "value"},
+				MaskedPaths:      []string{"/proc/kcore"},
+				ReadonlyPaths:    []string{"/proc/asound"},
 			}
 
 			cloned := cloneContainerHostConfigInternal(input)

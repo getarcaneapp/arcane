@@ -714,10 +714,8 @@ func TestContainerRegistryService_InspectImageDigest_AnonymousSuccess(t *testing
 				assert.Equal(t, "registry.example.com:5443/team/app:1.2.3", imageRef)
 				assert.Empty(t, options.EncodedRegistryAuth)
 				return client.DistributionInspectResult{
-					DistributionInspect: dockerregistry.DistributionInspect{
-						Descriptor: ocispec.Descriptor{
-							Digest: digest.Digest(wantDigest),
-						},
+					Descriptor: ocispec.Descriptor{
+						Digest: digest.Digest(wantDigest),
 					},
 				}, nil
 			},
@@ -788,10 +786,8 @@ func TestContainerRegistryService_InspectImageDigest_UsesStoredDockerHubCredenti
 				assert.Equal(t, "https://index.docker.io/v1/", authCfg.ServerAddress)
 
 				return client.DistributionInspectResult{
-					DistributionInspect: dockerregistry.DistributionInspect{
-						Descriptor: ocispec.Descriptor{
-							Digest: digest.Digest(wantDigest),
-						},
+					Descriptor: ocispec.Descriptor{
+						Digest: digest.Digest(wantDigest),
 					},
 				}, nil
 			},
@@ -825,10 +821,8 @@ func TestContainerRegistryService_InspectImageDigest_UsesStoredDockerHubCredenti
 				assert.Equal(t, "https://index.docker.io/v1/", authCfg.ServerAddress)
 
 				return client.DistributionInspectResult{
-					DistributionInspect: dockerregistry.DistributionInspect{
-						Descriptor: ocispec.Descriptor{
-							Digest: digest.Digest(wantDigest),
-						},
+					Descriptor: ocispec.Descriptor{
+						Digest: digest.Digest(wantDigest),
 					},
 				}, nil
 			},
@@ -861,10 +855,8 @@ func TestContainerRegistryService_InspectImageDigest_UsesStoredCredentialsForNon
 				assert.Equal(t, "ghcr-token", authCfg.Password)
 
 				return client.DistributionInspectResult{
-					DistributionInspect: dockerregistry.DistributionInspect{
-						Descriptor: ocispec.Descriptor{
-							Digest: digest.Digest(wantDigest),
-						},
+					Descriptor: ocispec.Descriptor{
+						Digest: digest.Digest(wantDigest),
 					},
 				}, nil
 			},
@@ -898,10 +890,8 @@ func TestContainerRegistryService_InspectImageDigest_UsesStoredCredentialsInstea
 				}
 
 				return client.DistributionInspectResult{
-					DistributionInspect: dockerregistry.DistributionInspect{
-						Descriptor: ocispec.Descriptor{
-							Digest: digest.Digest(wantDigest),
-						},
+					Descriptor: ocispec.Descriptor{
+						Digest: digest.Digest(wantDigest),
 					},
 				}, nil
 			},
@@ -931,10 +921,8 @@ func TestContainerRegistryService_InspectImageDigest_FallsBackToAnonymousWhenSto
 
 				anonymousCalls++
 				return client.DistributionInspectResult{
-					DistributionInspect: dockerregistry.DistributionInspect{
-						Descriptor: ocispec.Descriptor{
-							Digest: digest.Digest(wantDigest),
-						},
+					Descriptor: ocispec.Descriptor{
+						Digest: digest.Digest(wantDigest),
 					},
 				}, nil
 			},

@@ -15,6 +15,9 @@ type FilterAccessor[T any] struct {
 
 type Config[T any] struct {
 	SearchAccessors []SearchAccessor[T]
+	// SortBindings order matters: the first binding is the default sort when the
+	// requested key is empty or unknown, and serves as the tie-break for every
+	// other binding so pagination is deterministic.
 	SortBindings    []SortBinding[T]
 	FilterAccessors []FilterAccessor[T]
 }

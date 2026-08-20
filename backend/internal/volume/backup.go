@@ -13,6 +13,7 @@ import (
 	"path"
 	"strings"
 	"time"
+	"uuid"
 
 	"emperror.dev/errors"
 	"gorm.io/gorm"
@@ -30,7 +31,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/schedule"
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
-	"github.com/google/uuid"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
@@ -599,7 +599,7 @@ func (s *VolumeService) CreateBackup(ctx context.Context, volumeName string, use
 		Trigger: trigger, Destination: plan.destination, Format: VolumeBackupFormatRustic,
 		S3DestinationID: plan.s3DestinationID, PolicyID: request.PolicyID,
 	}
-	entry.ID = fmt.Sprintf("%s-%d-%s", volumeName, time.Now().UnixNano(), uuid.NewString()[:8])
+	entry.ID = fmt.Sprintf("%s-%d-%s", volumeName, time.Now().UnixNano(), uuid.New().String()[:8])
 	if err := s.db.WithContext(ctx).Create(entry).Error; err != nil {
 		return nil, err
 	}
@@ -1019,7 +1019,7 @@ func (s *VolumeService) downloadRusticBackupInternal(ctx context.Context, entry 
 	if err != nil {
 		return nil, 0, err
 	}
-	scratchVolume := "arcane-rustic-download-" + uuid.NewString()
+	scratchVolume := "arcane-rustic-download-" + uuid.New().String()
 	if _, err := dockerClient.VolumeCreate(ctx, client.VolumeCreateOptions{Name: scratchVolume, Labels: volumehelper.Labels()}); err != nil {
 		return nil, 0, fmt.Errorf("failed to create download scratch volume: %w", err)
 	}

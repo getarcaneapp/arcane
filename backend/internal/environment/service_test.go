@@ -164,8 +164,8 @@ func createTestEnvironmentServiceUser(t *testing.T, ctx context.Context, userSer
 	t.Helper()
 
 	user := &common.User{
-		BaseModel: database.BaseModel{ID: id},
-		Username:  fmt.Sprintf("user-%s", id),
+		ID:       id,
+		Username: fmt.Sprintf("user-%s", id),
 	}
 
 	created, err := userService.CreateUser(ctx, user)
@@ -183,11 +183,9 @@ func createNamedTestEnvironmentInternal(t *testing.T, db *database.DB, id, name,
 
 	now := time.Now()
 	env := &Environment{
-		BaseModel: database.BaseModel{
-			ID:        id,
-			CreatedAt: now,
-			UpdatedAt: &now,
-		},
+		ID:          id,
+		CreatedAt:   now,
+		UpdatedAt:   &now,
 		Name:        name,
 		ApiUrl:      apiURL,
 		Status:      string(EnvironmentStatusOnline),
@@ -203,11 +201,9 @@ func createTestEnvironmentWithState(t *testing.T, db *database.DB, id, apiURL, s
 
 	now := time.Now()
 	env := &Environment{
-		BaseModel: database.BaseModel{
-			ID:        id,
-			CreatedAt: now,
-			UpdatedAt: &now,
-		},
+		ID:          id,
+		CreatedAt:   now,
+		UpdatedAt:   &now,
 		Name:        "env-" + id,
 		ApiUrl:      apiURL,
 		Status:      status,
@@ -227,7 +223,7 @@ func TestEnvironmentService_DeleteEnvironment_CascadesGitOpsSyncs(t *testing.T) 
 	createTestEnvironment(t, db, "env-delete-gitops", "http://env.example", nil)
 	syncID := "sync-delete-env"
 	require.NoError(t, db.Create(&testGitOpsSyncRow{
-		BaseModel:     database.BaseModel{ID: syncID},
+		ID:            syncID,
 		Name:          "delete-env-sync",
 		EnvironmentID: "env-delete-gitops",
 		RepositoryID:  "repo-1",
@@ -236,7 +232,7 @@ func TestEnvironmentService_DeleteEnvironment_CascadesGitOpsSyncs(t *testing.T) 
 		SyncInterval:  15,
 	}).Error)
 	require.NoError(t, db.Create(&testProjectRow{
-		BaseModel:       database.BaseModel{ID: "project-managed-by-deleted-env"},
+		ID:              "project-managed-by-deleted-env",
 		Name:            "demo",
 		Path:            "/tmp/demo",
 		Status:          "stopped",
@@ -507,7 +503,7 @@ func TestEnvironmentService_SyncRepositoriesToEnvironment_UsesAgentHeaders(t *te
 	svc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
 
 	createTestGitRepository(t, db, gitrepo.GitRepository{
-		BaseModel:   database.BaseModel{ID: "repo-1", CreatedAt: time.Now()},
+		ID: "repo-1", CreatedAt: time.Now(),
 		Name:        "repo-1",
 		URL:         "https://github.com/getarcaneapp/arcane.git",
 		AuthType:    "http",
@@ -957,7 +953,7 @@ func TestEnvironmentService_EnsureSwarmNodeAgentEnvironment_ReusesLegacyHiddenRe
 	nodeID := "legacy-node"
 	token := "legacy-agent-token"
 	legacy := &Environment{
-		BaseModel:           database.BaseModel{ID: "legacy-agent"},
+		ID:                  "legacy-agent",
 		Name:                "Legacy node agent",
 		ApiUrl:              "edge://legacy-node",
 		Status:              string(EnvironmentStatusOffline),
@@ -1130,7 +1126,7 @@ func TestEnvironmentService_ListMethods_ExcludeHiddenEnvironments(t *testing.T) 
 		}).Error)
 
 	listedEnvironments, _, err := svc.ListEnvironmentsPaginated(ctx, pagination.QueryParams{
-		Params:  pagination.Params{Start: 0, Limit: 20},
+		Start: 0, Limit: 20,
 		Filters: map[string]string{},
 	}, nil)
 	require.NoError(t, err)
@@ -1160,7 +1156,7 @@ func TestEnvironmentService_ListEnvironmentsPaginated_FiltersByAccessibleEnvIDs(
 			filters["type"] = typeFilter
 		}
 		return pagination.QueryParams{
-			Params:  pagination.Params{Start: 0, Limit: 20},
+			Start: 0, Limit: 20,
 			Filters: filters,
 		}
 	}
@@ -1198,46 +1194,46 @@ func TestEnvironmentService_ListEnvironmentsPaginated_FiltersByRuntimeType(t *te
 	now := time.Now()
 	envs := []Environment{
 		{
-			BaseModel: database.BaseModel{ID: "0", CreatedAt: now, UpdatedAt: &now},
-			Name:      "Local",
-			ApiUrl:    "http://localhost:3552",
-			Status:    string(EnvironmentStatusOnline),
-			Enabled:   true,
+			ID: "0", CreatedAt: now, UpdatedAt: &now,
+			Name:    "Local",
+			ApiUrl:  "http://localhost:3552",
+			Status:  string(EnvironmentStatusOnline),
+			Enabled: true,
 		},
 		{
-			BaseModel: database.BaseModel{ID: "env-edge", CreatedAt: now, UpdatedAt: &now},
-			Name:      "Edge",
-			ApiUrl:    "edge://agent",
-			Status:    string(EnvironmentStatusOffline),
-			Enabled:   true,
-			IsEdge:    true,
+			ID: "env-edge", CreatedAt: now, UpdatedAt: &now,
+			Name:    "Edge",
+			ApiUrl:  "edge://agent",
+			Status:  string(EnvironmentStatusOffline),
+			Enabled: true,
+			IsEdge:  true,
 		},
 		{
-			BaseModel: database.BaseModel{ID: "env-grpc", CreatedAt: now, UpdatedAt: &now},
-			Name:      "gRPC",
-			ApiUrl:    "edge://grpc",
-			Status:    string(EnvironmentStatusOffline),
-			Enabled:   true,
-			IsEdge:    true,
+			ID: "env-grpc", CreatedAt: now, UpdatedAt: &now,
+			Name:    "gRPC",
+			ApiUrl:  "edge://grpc",
+			Status:  string(EnvironmentStatusOffline),
+			Enabled: true,
+			IsEdge:  true,
 		},
 		{
-			BaseModel: database.BaseModel{ID: "env-websocket", CreatedAt: now, UpdatedAt: &now},
-			Name:      "WebSocket",
-			ApiUrl:    "edge://websocket",
-			Status:    string(EnvironmentStatusOffline),
-			Enabled:   true,
-			IsEdge:    true,
+			ID: "env-websocket", CreatedAt: now, UpdatedAt: &now,
+			Name:    "WebSocket",
+			ApiUrl:  "edge://websocket",
+			Status:  string(EnvironmentStatusOffline),
+			Enabled: true,
+			IsEdge:  true,
 		},
 		{
-			BaseModel: database.BaseModel{ID: "env-polling", CreatedAt: now, UpdatedAt: &now},
-			Name:      "Polling",
-			ApiUrl:    "edge://polling",
-			Status:    string(EnvironmentStatusOffline),
-			Enabled:   true,
-			IsEdge:    true,
+			ID: "env-polling", CreatedAt: now, UpdatedAt: &now,
+			Name:    "Polling",
+			ApiUrl:  "edge://polling",
+			Status:  string(EnvironmentStatusOffline),
+			Enabled: true,
+			IsEdge:  true,
 		},
 		{
-			BaseModel:         database.BaseModel{ID: "env-last-ws", CreatedAt: now, UpdatedAt: &now},
+			ID: "env-last-ws", CreatedAt: now, UpdatedAt: &now,
 			Name:              "LastWebsocket",
 			ApiUrl:            "edge://last-ws",
 			Status:            string(EnvironmentStatusOffline),
@@ -1283,7 +1279,7 @@ func TestEnvironmentService_ListEnvironmentsPaginated_FiltersByRuntimeType(t *te
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			listedEnvironments, _, err := svc.ListEnvironmentsPaginated(ctx, pagination.QueryParams{
-				Params:  pagination.Params{Start: 0, Limit: 20},
+				Start: 0, Limit: 20,
 				Filters: map[string]string{"type": tt.typeFilter},
 			}, nil)
 			require.NoError(t, err)

@@ -5,10 +5,9 @@ import (
 	"net/http"
 	"slices"
 	"time"
+	"uuid"
 
 	"emperror.dev/errors"
-
-	"github.com/google/uuid"
 )
 
 const (
@@ -77,7 +76,7 @@ func (c *CommandClient) Execute(ctx context.Context, tunnel *AgentTunnel, req *C
 
 	chunkRequestBody := len(req.Body) > defaultCommandChunkSize && slices.Contains(tunnel.Capabilities, tunnelCapabilityChunkedRequest)
 	if chunkRequestBody {
-		transferID := uuid.NewString()
+		transferID := uuid.New().String()
 		msg.Body = nil
 		msg.Metadata = map[string]string{bodyTransferMetadataKey: transferID}
 	}

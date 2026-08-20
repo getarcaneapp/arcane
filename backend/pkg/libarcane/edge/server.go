@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"uuid"
 
 	"emperror.dev/emperror"
 	"emperror.dev/errors"
@@ -17,7 +18,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
 	certgen "github.com/getarcaneapp/arcane/cli/v2/pkg/generate"
-	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
 	"github.com/samber/mo"
 	"google.golang.org/grpc"
@@ -301,7 +301,7 @@ func (s *TunnelServer) populateSessionMetadata(tunnel *AgentTunnel, registerMsg 
 		return
 	}
 
-	tunnel.SessionID = uuid.NewString()
+	tunnel.SessionID = uuid.New().String()
 	tunnel.SecurityMode = securityMode
 	if tunnel.SecurityMode == "" {
 		tunnel.SecurityMode = "token"

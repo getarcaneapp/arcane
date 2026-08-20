@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"uuid"
 
 	"emperror.dev/errors"
 
@@ -22,7 +23,6 @@ import (
 	httputils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
-	"github.com/google/uuid"
 	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
 )
@@ -191,15 +191,13 @@ func (s *EnvironmentService) EnsureLocalEnvironment(ctx context.Context, appUrl 
 	// Create the local environment
 	now := time.Now()
 	localEnv := &Environment{
-		BaseModel: database.BaseModel{
-			ID:        LocalEnvironmentID,
-			CreatedAt: now,
-			UpdatedAt: new(now),
-		},
-		Name:    "Local Docker",
-		ApiUrl:  appUrl,
-		Status:  string(EnvironmentStatusOnline),
-		Enabled: true,
+		ID:        LocalEnvironmentID,
+		CreatedAt: now,
+		UpdatedAt: new(now),
+		Name:      "Local Docker",
+		ApiUrl:    appUrl,
+		Status:    string(EnvironmentStatusOnline),
+		Enabled:   true,
 	}
 
 	if err := s.db.WithContext(ctx).Create(localEnv).Error; err != nil {

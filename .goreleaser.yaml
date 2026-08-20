@@ -13,7 +13,6 @@ git:
 
 before:
   hooks:
-    # - just deps install all
     - just build single frontend
 
 builds:
@@ -23,7 +22,6 @@ builds:
     binary: arcane
     env:
       - CGO_ENABLED=0
-      - GOEXPERIMENT=jsonv2
     goos:
       - linux
       - darwin
@@ -64,7 +62,6 @@ builds:
       - exclude_frontend
     env:
       - CGO_ENABLED=0
-      - GOEXPERIMENT=jsonv2
     goos:
       - linux
       - darwin
@@ -101,7 +98,6 @@ builds:
     binary: arcane-cli
     env:
       - CGO_ENABLED=0
-      - GOEXPERIMENT=jsonv2
     goos:
       - linux
       - darwin
@@ -283,9 +279,9 @@ dockers_v2:
     images:
       - 'ghcr.io/getarcaneapp/arcane'
       - 'ghcr.io/getarcaneapp/manager'
+      - 'getarcaneapp/manager'
     tags:
       - '{{ if index .Env "BUILD_NEXT" }}next{{ end }}'
-      - '{{ if index .Env "BUILD_NEXT" }}next-static{{ end }}'
       - 'v{{ .Version }}'
       - '{{ if not (index .Env "BUILD_NEXT") }}v{{ .Major }}.{{ .Minor }}{{ end }}'
       - '{{ if not (index .Env "BUILD_NEXT") }}v{{ .Major }}{{ end }}'
@@ -315,9 +311,9 @@ dockers_v2:
     images:
       - 'ghcr.io/getarcaneapp/arcane-headless'
       - 'ghcr.io/getarcaneapp/agent'
+      - 'getarcaneapp/agent'
     tags:
       - '{{ if index .Env "BUILD_NEXT" }}next{{ end }}'
-      - '{{ if index .Env "BUILD_NEXT" }}next-static{{ end }}'
       - 'v{{ .Version }}'
       - '{{ if not (index .Env "BUILD_NEXT") }}v{{ .Major }}.{{ .Minor }}{{ end }}'
       - '{{ if not (index .Env "BUILD_NEXT") }}v{{ .Major }}{{ end }}'

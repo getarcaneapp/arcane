@@ -364,7 +364,14 @@ func (s *NetworkService) buildNetworkSortBindings() []pagination.SortBinding[net
 	return []pagination.SortBinding[networktypes.Summary]{
 		{
 			Key: "name",
-			Fn:  func(a, b networktypes.Summary) int { return strings.Compare(a.Name, b.Name) },
+			// Docker allows duplicate network names, so tie-break on ID to keep
+			// pagination deterministic.
+			Fn: func(a, b networktypes.Summary) int {
+				if c := strings.Compare(a.Name, b.Name); c != 0 {
+					return c
+				}
+				return strings.Compare(a.ID, b.ID)
+			},
 		},
 		{
 			Key: "driver",

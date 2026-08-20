@@ -16,9 +16,9 @@ import (
 func TestClient_RetriesIdempotentRequests(t *testing.T) {
 	t.Parallel()
 
-	var attempts int32
+	var attempts atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		current := atomic.AddInt32(&attempts, 1)
+		current := attempts.Add(1)
 		if current == 1 {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_, _ = w.Write([]byte(`{"error":"temporary"}`))
@@ -44,7 +44,7 @@ func TestClient_RetriesIdempotentRequests(t *testing.T) {
 
 	_ = resp.Body.Close()
 	{
-		got := atomic.LoadInt32(&attempts)
+		got := attempts.Load()
 		require.Equal(t, int32(2), got,
 			"expected 2 attempts, got %d", got)
 	}
@@ -54,9 +54,9 @@ func TestClient_RetriesIdempotentRequests(t *testing.T) {
 func TestClient_DoesNotRetryNonIdempotentRequests(t *testing.T) {
 	t.Parallel()
 
-	var attempts int32
+	var attempts atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt32(&attempts, 1)
+		attempts.Add(1)
 		w.WriteHeader(http.StatusServiceUnavailable)
 		_, _ = w.Write([]byte(`{"error":"temporary"}`))
 	}))
@@ -77,7 +77,7 @@ func TestClient_DoesNotRetryNonIdempotentRequests(t *testing.T) {
 
 	_ = resp.Body.Close()
 	{
-		got := atomic.LoadInt32(&attempts)
+		got := attempts.Load()
 		require.Equal(t, int32(1), got,
 			"expected 1 attempt, got %d", got)
 	}

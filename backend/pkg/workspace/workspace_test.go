@@ -7,8 +7,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func intPointer(value int) *int { return &value }
-
 func TestEffectiveMaxFileSizeMB(t *testing.T) {
 	require.Equal(t, DefaultMaxFileSizeMB, EffectiveMaxFileSizeMB(0))
 	require.Equal(t, DefaultMaxFileSizeMB, EffectiveMaxFileSizeMB(-1))
@@ -38,9 +36,9 @@ func TestValidateTextContentUsesDynamicMiBLimit(t *testing.T) {
 
 func TestValidateUploadIndices(t *testing.T) {
 	valid := []UploadReference{
-		{Operation: "create_file", UploadIndex: intPointer(1)},
+		{Operation: "create_file", UploadIndex: new(1)},
 		{Operation: "create_folder"},
-		{Operation: "update_file", UploadIndex: intPointer(0)},
+		{Operation: "update_file", UploadIndex: new(0)},
 	}
 	require.NoError(t, ValidateUploadIndices(valid, 2, "create_file", "update_file"))
 
@@ -51,11 +49,11 @@ func TestValidateUploadIndices(t *testing.T) {
 		message     string
 	}{
 		{name: "missing", changes: []UploadReference{{Operation: "create_file"}}, uploadCount: 0, message: "required"},
-		{name: "unexpected", changes: []UploadReference{{Operation: "delete", UploadIndex: intPointer(0)}}, uploadCount: 1, message: "not allowed"},
-		{name: "negative", changes: []UploadReference{{Operation: "create_file", UploadIndex: intPointer(-1)}}, uploadCount: 1, message: "out of range"},
-		{name: "out of range", changes: []UploadReference{{Operation: "create_file", UploadIndex: intPointer(1)}}, uploadCount: 1, message: "out of range"},
-		{name: "duplicate", changes: []UploadReference{{Operation: "create_file", UploadIndex: intPointer(0)}, {Operation: "update_file", UploadIndex: intPointer(0)}}, uploadCount: 1, message: "duplicated"},
-		{name: "unused", changes: []UploadReference{{Operation: "create_file", UploadIndex: intPointer(0)}}, uploadCount: 2, message: "unused"},
+		{name: "unexpected", changes: []UploadReference{{Operation: "delete", UploadIndex: new(0)}}, uploadCount: 1, message: "not allowed"},
+		{name: "negative", changes: []UploadReference{{Operation: "create_file", UploadIndex: new(-1)}}, uploadCount: 1, message: "out of range"},
+		{name: "out of range", changes: []UploadReference{{Operation: "create_file", UploadIndex: new(1)}}, uploadCount: 1, message: "out of range"},
+		{name: "duplicate", changes: []UploadReference{{Operation: "create_file", UploadIndex: new(0)}, {Operation: "update_file", UploadIndex: new(0)}}, uploadCount: 1, message: "duplicated"},
+		{name: "unused", changes: []UploadReference{{Operation: "create_file", UploadIndex: new(0)}}, uploadCount: 2, message: "unused"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

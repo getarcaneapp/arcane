@@ -1,8 +1,6 @@
 package user
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-
 	"context"
 	"strings"
 	"time"
@@ -209,9 +207,7 @@ func (h *UserHandler) CreateUser(ctx context.Context, input *CreateUserInput) (*
 		Email:        input.Body.Email,
 		Locale:       input.Body.Locale,
 		TimeFormat:   usertypes.TimeFormatAuto,
-		BaseModel: database.BaseModel{
-			CreatedAt: time.Now(),
-		},
+		CreatedAt:    time.Now(),
 	}
 	if input.Body.TimeFormat != nil {
 		userModel.TimeFormat = *input.Body.TimeFormat
