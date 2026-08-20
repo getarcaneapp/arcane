@@ -54,7 +54,7 @@
     "marked": "^18.0.9",
     "mode-watcher": "^1.1.0",
     "runed": "^0.37.1",
-    "svelte": "^5.56.8",
+    "svelte": "^5.56.9",
     "svelte-codemirror-editor": "^2.1.0",
     "svelte-easy-crop": "^5.0.1",
     "svelte-sonner": "^1.1.1",
