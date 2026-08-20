@@ -57,7 +57,7 @@
     "svelte": "^5.56.9",
     "svelte-codemirror-editor": "^2.1.0",
     "svelte-easy-crop": "^5.0.1",
-    "svelte-sonner": "^1.1.1",
+    "svelte-sonner": "^1.2.1",
     "tailwind-merge": "^3.6.0",
     "tailwind-variants": "^3.3.1",
     "vaul-svelte": "1.0.0-next.7",
