@@ -227,8 +227,8 @@ importers:
         specifier: ^2.2.513
         version: 2.2.513
       '@inlang/paraglide-js':
-        specifier: 2.23.2
-        version: 2.23.2(@typescript/typescript6@6.0.2)(@voidzero-dev/vite-plus-core@0.2.9(@types/node@26.2.0)(@typescript/typescript6@6.0.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))
+        specifier: 2.24.1
+        version: 2.24.1(@typescript/typescript6@6.0.2)(@voidzero-dev/vite-plus-core@0.2.9(@types/node@26.2.0)(@typescript/typescript6@6.0.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))
       '@sveltejs/adapter-static':
         specifier: '>=4.0.0-next.2'
         version: 4.0.0-next.4(@sveltejs/kit@3.0.0-next.23(@sveltejs/vite-plugin-svelte@7.3.0(@voidzero-dev/vite-plus-core@0.2.9(@types/node@26.2.0)(@typescript/typescript6@6.0.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))(svelte@5.56.9))(@typescript/typescript6@6.0.2)(@voidzero-dev/vite-plus-core@0.2.9(@types/node@26.2.0)(@typescript/typescript6@6.0.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))(svelte@5.56.9))
@@ -869,8 +869,8 @@ packages:
   '@iconify/utils@3.1.3':
     resolution: {integrity: sha512-LPKOXPn/zV+zis1oOfGWogaXVpqUybF3ZS6SCZIsz8vg0ivVp9+fVqyYB7xq0aiST/VhUQYGO1qo6uoYSiEJqw==}
 
-  '@inlang/paraglide-js@2.23.2':
-    resolution: {integrity: sha512-tzWnZ6DEQ3JRxpSM/lsmfUFSNXLymvlfUei4uX1lo/Qh3a8OfxZ5nchGrEM+p0aLX4m5ZMrVuMKfaD0qXJFeoA==}
+  '@inlang/paraglide-js@2.24.1':
+    resolution: {integrity: sha512-r/gak0kY2yuqgz0RFxccb7A89fgcLpiqoEbYfv3nxlqyhdW2v8NajE1A2xiXrv/iAo7WCX4zk8EJAhL69rcp0g==}
     hasBin: true
     peerDependencies:
       typescript: '>=5.6'
@@ -884,8 +884,8 @@ packages:
   '@inlang/recommend-sherlock@0.2.1':
     resolution: {integrity: sha512-ckv8HvHy/iTqaVAEKrr+gnl+p3XFNwe5D2+6w6wJk2ORV2XkcRkKOJ/XsTUJbPSiyi4PI+p+T3bqbmNx/rDUlg==}
 
-  '@inlang/sdk@2.10.2':
-    resolution: {integrity: sha512-O1ki72SNK6LPagaGrvlioBb1mWKvump7cO7P85hfGZjdFTmDdn3icI0A6MvaBsB3P9KQHAjzyubnN1OslGufTw==}
+  '@inlang/sdk@3.0.1':
+    resolution: {integrity: sha512-QvyMYjCqF7CnrTp8ZaPiuwpmxsoQPIDgfqGeWfqi4FDxBREye4QdyaZS4DGwIlCZXybF/YMj0TtL2uBfbmajug==}
     engines: {node: '>=20.0.0'}
 
   '@internationalized/date@3.12.3':
@@ -934,12 +934,28 @@ packages:
   '@lezer/yaml@1.0.4':
     resolution: {integrity: sha512-2lrrHqxalACEbxIbsjhqGpSW8kWpUKuY6RHgnSAFZa6qK62wvnPxA8hGOwOoDbwHcOFs5M4o27mjGu+P7TvBmw==}
 
-  '@lix-js/sdk@0.4.10':
-    resolution: {integrity: sha512-0dMInAJK/67guTG5rRZaCEhvzC5cCXENOjaePA5AqMXrCE97kaY7SRor9e2vnoGsFIiGqXKlT0MCIoZj36G0gg==}
-    engines: {node: '>=18'}
+  '@lix-js/sdk-darwin-arm64@0.12.2':
+    resolution: {integrity: sha512-0mBRIfgZfaey1/d0mijv7fBIGPeaTIMCDOPr3s4RUlHy/j+llNmAyDS2iNlalFh9nQGys7JNzo2Hv3FQbdKmug==}
+    cpu: [arm64]
+    os: [darwin]
 
-  '@lix-js/server-protocol-schema@0.1.1':
-    resolution: {integrity: sha512-jBeALB6prAbtr5q4vTuxnRZZv1M2rKe8iNqRQhFJ4Tv7150unEa0vKyz0hs8Gl3fUGsWaNJBh3J8++fpbrpRBQ==}
+  '@lix-js/sdk-linux-arm64@0.12.2':
+    resolution: {integrity: sha512-817uJlC2KTIKDaqQvALTu03hEJpNxEA+9d33FNs8sOm9pAguOWiAK1zGA2SD0IgS9Q8NqQeABLb84OesW5/NCA==}
+    cpu: [arm64]
+    os: [linux]
+
+  '@lix-js/sdk-linux-x64@0.12.2':
+    resolution: {integrity: sha512-rA7lw1jBr6azBHR5Sh/RzOKSAlRcmVea7VeI4VQqpy0PZs+5tWoK9iVC41V4oCIKssRv2wrkbvyP3CqInhoknQ==}
+    cpu: [x64]
+    os: [linux]
+
+  '@lix-js/sdk-win32-x64@0.12.2':
+    resolution: {integrity: sha512-y9IikCdrYx6cFnfqeUvYKPw6KBY016U2F2wYDILYZDZndccK2xw7lJChX163w9PewMwY3GsC/UqRBi5yqFAJ2w==}
+    cpu: [x64]
+    os: [win32]
+
+  '@lix-js/sdk@0.12.2':
+    resolution: {integrity: sha512-sKGOPdVKdChS5q60F4VQE4ZTcf0B7ZJM3KGCVQFN2suVNKhHcllbsCiwRYuM5WL7Yu1ql7YexltJ2FCsDqKePg==}
 
   '@marijn/find-cluster-break@1.0.3':
     resolution: {integrity: sha512-FY+MKLBoTsLNJF/eLWaOsXGdz6uh3Iu1axjPf6TUq92IYumcTcXWHoS747JARLkcdlJ/Waiaxc5wQfFO8jC6NA==}
@@ -2340,14 +2356,6 @@ packages:
   decimal.js@10.6.0:
     resolution: {integrity: sha512-YpgQiITW3JXGntzdUmyUR1V812Hn8T1YVXhCu+wO3OpS4eU9l4YdD3qjyiKdV6mvV29zapkMeD390UVEf2lkUg==}
 
-  dedent@1.5.1:
-    resolution: {integrity: sha512-+LxW+KLWxu3HW3M2w2ympwtqPrqYRzU8fqi6Fhd18fBALe15blJPI/I4+UHveMVG6lJqB4JNd4UG0S5cnVHwIg==}
-    peerDependencies:
-      babel-plugin-macros: ^3.1.0
-    peerDependenciesMeta:
-      babel-plugin-macros:
-        optional: true
-
   deepmerge@4.3.1:
     resolution: {integrity: sha512-3sUqbMEc77XqpdNO7FRyRog+eW3ph+GYCbj+rK+uYyRMuwsVy0rMiVtPn+QJlKFvWP/1PYpapqYn0Me2knFn+A==}
     engines: {node: '>=0.10.0'}
@@ -2503,6 +2511,9 @@ packages:
       picomatch:
         optional: true
 
+  fflate@0.8.3:
+    resolution: {integrity: sha512-tbZNuJrLwGUp3zshBtdy4W+ORxZuIh8a5ilyIEQDC5rY1f3U20JMry0Ll3WBzU58EZKsEuJFXhb5gwv8CsPvgA==}
+
   formsnap@2.0.1:
     resolution: {integrity: sha512-iJSe4YKd/W6WhLwKDVJU9FQeaJRpEFuolhju7ZXlRpUVyDdqFdMP8AUBICgnVvQPyP41IPAlBa/v0Eo35iE6wQ==}
     engines: {node: '>=18', pnpm: '>=8.7.0'}
@@ -2541,10 +2552,6 @@ packages:
   htmlparser2@8.0.2:
     resolution: {integrity: sha512-GYdjWKDkbRLkZ5geuHs5NY1puJ+PXwP7+fHPRz06Eirsb9ugf6d8kkXav6ADhcODhFFPMIXyxkxSuMf3D6NCFA==}
 
-  human-id@4.2.0:
-    resolution: {integrity: sha512-K3GbkIWqyvvlpfhBPlbEvD97TtqBpAYA4kt+cn2lD2x2HuohzZCibcA2nOlnJT6exqvJLggoB5nv2dNf192nEA==}
-    hasBin: true
-
   import-meta-resolve@4.2.0:
     resolution: {integrity: sha512-Iqv2fzaTQN28s/FwZAoFq0ZSs/7hMAHJVX+w8PZl3cY19Pxk6jFFalxQoIfW2826i/fDLXv8IiEZRIT0lDuWcg==}
 
@@ -2576,9 +2583,6 @@ packages:
   joi@18.2.3:
     resolution: {integrity: sha512-N5A3KTWQpPWT4ExxxPlUx7WmykGXRzhNidWhV41d6Abu9YfI2NyWCJuxdPnslJCPWtbRpSVOWSnSS6GakLM/Rg==}
     engines: {node: '>= 20'}
-
-  js-sha256@0.11.1:
-    resolution: {integrity: sha512-o6WSo/LUvY2uC4j7mO50a2ms7E/EAdbP0swigLV+nzHKTTaYnaLIWJ02VdXrsJX0vGedDESQnLsOekr94ryfjg==}
 
   js-tokens@4.0.0:
     resolution: {integrity: sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==}
@@ -4023,10 +4027,10 @@ snapshots:
       '@iconify/types': 2.0.0
       import-meta-resolve: 4.2.0
 
-  '@inlang/paraglide-js@2.23.2(@typescript/typescript6@6.0.2)(@voidzero-dev/vite-plus-core@0.2.9(@types/node@26.2.0)(@typescript/typescript6@6.0.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))':
+  '@inlang/paraglide-js@2.24.1(@typescript/typescript6@6.0.2)(@voidzero-dev/vite-plus-core@0.2.9(@types/node@26.2.0)(@typescript/typescript6@6.0.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))':
     dependencies:
       '@inlang/recommend-sherlock': 0.2.1
-      '@inlang/sdk': 2.10.2
+      '@inlang/sdk': 3.0.1
       commander: 11.1.0
       consola: 3.4.0
       json5: 2.2.3
@@ -4035,22 +4039,18 @@ snapshots:
     optionalDependencies:
       typescript: '@typescript/typescript6@6.0.2'
       vite: '@voidzero-dev/vite-plus-core@0.2.9(@types/node@26.2.0)(@typescript/typescript6@6.0.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0)'
-    transitivePeerDependencies:
-      - babel-plugin-macros
 
   '@inlang/recommend-sherlock@0.2.1':
     dependencies:
       comment-json: 4.6.2
 
-  '@inlang/sdk@2.10.2':
+  '@inlang/sdk@3.0.1':
     dependencies:
-      '@lix-js/sdk': 0.4.10
+      '@lix-js/sdk': 0.12.2
       '@sinclair/typebox': 0.31.30
       kysely: 0.29.4
       sqlite-wasm-kysely: 0.3.0(kysely@0.29.4)
       uuid: 14.0.1
-    transitivePeerDependencies:
-      - babel-plugin-macros
 
   '@internationalized/date@3.12.3':
     dependencies:
@@ -4120,19 +4120,26 @@ snapshots:
       '@lezer/highlight': 1.2.3
       '@lezer/lr': 1.4.10
 
-  '@lix-js/sdk@0.4.10':
-    dependencies:
-      '@lix-js/server-protocol-schema': 0.1.1
-      dedent: 1.5.1
-      human-id: 4.2.0
-      js-sha256: 0.11.1
-      kysely: 0.29.4
-      sqlite-wasm-kysely: 0.3.0(kysely@0.29.4)
-      uuid: 14.0.1
-    transitivePeerDependencies:
-      - babel-plugin-macros
+  '@lix-js/sdk-darwin-arm64@0.12.2':
+    optional: true
 
-  '@lix-js/server-protocol-schema@0.1.1': {}
+  '@lix-js/sdk-linux-arm64@0.12.2':
+    optional: true
+
+  '@lix-js/sdk-linux-x64@0.12.2':
+    optional: true
+
+  '@lix-js/sdk-win32-x64@0.12.2':
+    optional: true
+
+  '@lix-js/sdk@0.12.2':
+    dependencies:
+      fflate: 0.8.3
+    optionalDependencies:
+      '@lix-js/sdk-darwin-arm64': 0.12.2
+      '@lix-js/sdk-linux-arm64': 0.12.2
+      '@lix-js/sdk-linux-x64': 0.12.2
+      '@lix-js/sdk-win32-x64': 0.12.2
 
   '@marijn/find-cluster-break@1.0.3': {}
 
@@ -5268,8 +5275,6 @@ snapshots:
 
   decimal.js@10.6.0: {}
 
-  dedent@1.5.1: {}
-
   deepmerge@4.3.1: {}
 
   dequal@2.0.3: {}
@@ -5469,6 +5474,8 @@ snapshots:
     optionalDependencies:
       picomatch: 4.0.5
 
+  fflate@0.8.3: {}
+
   formsnap@2.0.1(svelte@5.56.9)(sveltekit-superforms@2.30.2(@sveltejs/kit@3.0.0-next.23(@sveltejs/vite-plugin-svelte@7.3.0(@voidzero-dev/vite-plus-core@0.2.9(@types/node@26.2.0)(@typescript/typescript6@6.0.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))(svelte@5.56.9))(@typescript/typescript6@6.0.2)(@voidzero-dev/vite-plus-core@0.2.9(@types/node@26.2.0)(@typescript/typescript6@6.0.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))(svelte@5.56.9))(@typescript/typescript6@6.0.2)(svelte@5.56.9)):
     dependencies:
       svelte: 5.56.9
@@ -5512,8 +5519,6 @@ snapshots:
       domutils: 3.2.2
       entities: 4.5.0
 
-  human-id@4.2.0: {}
-
   import-meta-resolve@4.2.0: {}
 
   inline-style-parser@0.2.7: {}
@@ -5548,8 +5553,6 @@ snapshots:
       '@hapi/topo': 6.0.2
       '@standard-schema/spec': 1.1.0
     optional: true
-
-  js-sha256@0.11.1: {}
 
   js-tokens@4.0.0: {}
 
