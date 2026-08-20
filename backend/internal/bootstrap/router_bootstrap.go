@@ -176,12 +176,25 @@ type RouterParams struct {
 	TunnelRegistry *edge.TunnelRegistry
 }
 
+// newEchoInternal builds the Echo instance with path parameter values
+// percent-decoded before they reach handlers (RFC 3986 §6.2.2.2); route
+// matching still happens on the escaped path, so an encoded "/" cannot
+// change which route matches.
+func newEchoInternal() *echo.Echo {
+	return echo.NewWithConfig(echo.Config{
+		Router: echo.NewRouter(echo.RouterConfig{
+			AllowOverwritingRoute:   true,
+			UnescapePathParamValues: true,
+		}),
+	})
+}
+
 func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 	ctx := p.Context
 	cfg := p.Config
 	deps := p.HandlerDeps
 
-	e := echo.New()
+	e := newEchoInternal()
 
 	trustedProxyNets := parseTrustedProxyCIDRsInternal(cfg.TrustedProxies)
 	if cfg.TrustedProxies != "" && len(trustedProxyNets) == 0 {
