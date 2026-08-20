@@ -1,4 +1,4 @@
-version: "2"
+version: '2'
 run:
   tests: false
   timeout: 5m
@@ -11,7 +11,6 @@ linters:
     - asciicheck
     - bidichk
     - bodyclose
-    - canonicalheader
     - clickhouselint
     - contextcheck
     - copyloopvar
@@ -118,13 +117,13 @@ linters:
     rules:
       - linters:
           - revive
-        text: "var-naming:"
+        text: 'var-naming:'
       - linters:
           - revive
-        text: "unused-parameter:"
+        text: 'unused-parameter:'
       - linters:
           - revive
-        text: "exported:"
+        text: 'exported:'
       - linters:
           - forbidigo
         path: cli/

@@ -59,17 +59,9 @@ type ListImagesInput struct {
 	Updates       string `query:"updates" doc:"Filter by update availability (true/false)"`
 }
 
-type ListImagesOutput struct {
-	Body base.Paginated[image.Summary]
-}
-
 type GetImageInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ImageID       string `path:"imageId" doc:"Image ID"`
-}
-
-type GetImageOutput struct {
-	Body base.ApiResponse[image.DetailSummary]
 }
 
 type GetImageAttestationsInput struct {
@@ -80,18 +72,10 @@ type GetImageAttestationsInput struct {
 	WithStatement bool   `query:"statement" default:"false" doc:"Include verbatim statement JSON bodies"`
 }
 
-type GetImageAttestationsOutput struct {
-	Body base.ApiResponse[image.AttestationList]
-}
-
 type TagImageInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ImageName     string `path:"name" doc:"Image ID or image reference"`
 	Body          image.TagRequest
-}
-
-type TagImageOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
 }
 
 type GetImageHistoryInput struct {
@@ -99,17 +83,9 @@ type GetImageHistoryInput struct {
 	ImageName     string `path:"name" doc:"Image ID or image reference"`
 }
 
-type GetImageHistoryOutput struct {
-	Body base.ApiResponse[[]image.HistoryItem]
-}
-
 type SearchImagesInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Term          string `query:"term" doc:"Search term"`
-}
-
-type SearchImagesOutput struct {
-	Body base.ApiResponse[[]image.SearchResult]
 }
 
 type ExportImageInput struct {
@@ -121,10 +97,6 @@ type RemoveImageInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ImageID       string `path:"imageId" doc:"Image ID"`
 	Force         bool   `query:"force" doc:"Force removal"`
-}
-
-type RemoveImageOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
 }
 
 type PullImageInput struct {
@@ -148,17 +120,9 @@ type ListImageBuildsInput struct {
 	Provider      string `query:"provider" doc:"Filter by provider"`
 }
 
-type ListImageBuildsOutput struct {
-	Body base.Paginated[image.BuildRecord]
-}
-
 type GetImageBuildInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	BuildID       string `path:"buildId" doc:"Build ID"`
-}
-
-type GetImageBuildOutput struct {
-	Body base.ApiResponse[image.BuildRecord]
 }
 
 type PruneImagesInput struct {
@@ -172,25 +136,13 @@ type PruneImagesInput struct {
 	}
 }
 
-type PruneImagesOutput struct {
-	Body base.ApiResponse[image.PruneReport]
-}
-
 type GetImageUsageCountsInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
-
-type GetImageUsageCountsOutput struct {
-	Body base.ApiResponse[image.UsageCounts]
 }
 
 type UploadImageInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Body          uploadtypes.ConsumeRequest
-}
-
-type UploadImageOutput struct {
-	Body base.ApiResponse[image.LoadResult]
 }
 
 // RegisterImages registers image management routes using Huma.
@@ -359,7 +311,7 @@ func RegisterImages(api huma.API, dockerService *docker.DockerClientService, ima
 }
 
 // ListImages returns a paginated list of images.
-func (h *ImageHandler) ListImages(ctx context.Context, input *ListImagesInput) (*ListImagesOutput, error) {
+func (h *ImageHandler) ListImages(ctx context.Context, input *ListImagesInput) (*handlerutil.Page[image.Summary], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	if input.InUse != "" {
 		params.Filters["inUse"] = input.InUse
@@ -381,7 +333,7 @@ func (h *ImageHandler) ListImages(ctx context.Context, input *ListImagesInput) (
 		images = []image.Summary{}
 	}
 
-	return &ListImagesOutput{
+	return &handlerutil.Page[image.Summary]{
 		Body: base.Paginated[image.Summary]{
 			Success:    true,
 			Data:       images,
@@ -391,13 +343,13 @@ func (h *ImageHandler) ListImages(ctx context.Context, input *ListImagesInput) (
 }
 
 // GetImage returns an image by ID.
-func (h *ImageHandler) GetImage(ctx context.Context, input *GetImageInput) (*GetImageOutput, error) {
+func (h *ImageHandler) GetImage(ctx context.Context, input *GetImageInput) (*handlerutil.Out[image.DetailSummary], error) {
 	out, err := h.imageService.GetImageDetail(ctx, input.ImageID)
 	if err != nil {
 		return nil, huma.Error404NotFound(errors.WithMessage(err, "Image not found").Error())
 	}
 
-	return &GetImageOutput{
+	return &handlerutil.Out[image.DetailSummary]{
 		Body: base.ApiResponse[image.DetailSummary]{
 			Success: true,
 			Data:    *out,
@@ -406,7 +358,7 @@ func (h *ImageHandler) GetImage(ctx context.Context, input *GetImageInput) (*Get
 }
 
 // GetImageAttestations returns in-toto attestation statements attached to an image.
-func (h *ImageHandler) GetImageAttestations(ctx context.Context, input *GetImageAttestationsInput) (*GetImageAttestationsOutput, error) {
+func (h *ImageHandler) GetImageAttestations(ctx context.Context, input *GetImageAttestationsInput) (*handlerutil.Out[image.AttestationList], error) {
 	imageName, err := validateImageNameInternal(input.ImageName)
 	if err != nil {
 		return nil, err
@@ -427,7 +379,7 @@ func (h *ImageHandler) GetImageAttestations(ctx context.Context, input *GetImage
 		return nil, huma.Error500InternalServerError(fmt.Sprintf("failed to get image attestations: %v", err))
 	}
 
-	return &GetImageAttestationsOutput{
+	return &handlerutil.Out[image.AttestationList]{
 		Body: base.ApiResponse[image.AttestationList]{
 			Success: true,
 			Data:    *out,
@@ -436,7 +388,7 @@ func (h *ImageHandler) GetImageAttestations(ctx context.Context, input *GetImage
 }
 
 // TagImage adds a repository tag to an image.
-func (h *ImageHandler) TagImage(ctx context.Context, input *TagImageInput) (*TagImageOutput, error) {
+func (h *ImageHandler) TagImage(ctx context.Context, input *TagImageInput) (*handlerutil.Out[base.MessageResponse], error) {
 	imageName, err := validateImageNameInternal(input.ImageName)
 	if err != nil {
 		return nil, err
@@ -454,7 +406,7 @@ func (h *ImageHandler) TagImage(ctx context.Context, input *TagImageInput) (*Tag
 		return nil, huma.Error500InternalServerError(fmt.Sprintf("failed to tag image: %v", err))
 	}
 
-	return &TagImageOutput{
+	return &handlerutil.Out[base.MessageResponse]{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data:    base.MessageResponse{Message: "Image tagged successfully"},
@@ -463,7 +415,7 @@ func (h *ImageHandler) TagImage(ctx context.Context, input *TagImageInput) (*Tag
 }
 
 // GetImageHistory returns Docker image layer history.
-func (h *ImageHandler) GetImageHistory(ctx context.Context, input *GetImageHistoryInput) (*GetImageHistoryOutput, error) {
+func (h *ImageHandler) GetImageHistory(ctx context.Context, input *GetImageHistoryInput) (*handlerutil.Out[[]image.HistoryItem], error) {
 	imageName, err := validateImageNameInternal(input.ImageName)
 	if err != nil {
 		return nil, err
@@ -477,7 +429,7 @@ func (h *ImageHandler) GetImageHistory(ctx context.Context, input *GetImageHisto
 		history = []image.HistoryItem{}
 	}
 
-	return &GetImageHistoryOutput{
+	return &handlerutil.Out[[]image.HistoryItem]{
 		Body: base.ApiResponse[[]image.HistoryItem]{
 			Success: true,
 			Data:    history,
@@ -486,7 +438,7 @@ func (h *ImageHandler) GetImageHistory(ctx context.Context, input *GetImageHisto
 }
 
 // SearchImages searches Docker Hub images.
-func (h *ImageHandler) SearchImages(ctx context.Context, input *SearchImagesInput) (*SearchImagesOutput, error) {
+func (h *ImageHandler) SearchImages(ctx context.Context, input *SearchImagesInput) (*handlerutil.Out[[]image.SearchResult], error) {
 	results, err := h.imageService.SearchImages(ctx, input.Term)
 	if err != nil {
 		if strings.Contains(err.Error(), "term is required") {
@@ -498,7 +450,7 @@ func (h *ImageHandler) SearchImages(ctx context.Context, input *SearchImagesInpu
 		results = []image.SearchResult{}
 	}
 
-	return &SearchImagesOutput{
+	return &handlerutil.Out[[]image.SearchResult]{
 		Body: base.ApiResponse[[]image.SearchResult]{
 			Success: true,
 			Data:    results,
@@ -548,7 +500,7 @@ func imageExportFileNameInternal(imageName string) string {
 }
 
 // RemoveImage removes a Docker image.
-func (h *ImageHandler) RemoveImage(ctx context.Context, input *RemoveImageInput) (*RemoveImageOutput, error) {
+func (h *ImageHandler) RemoveImage(ctx context.Context, input *RemoveImageInput) (*handlerutil.Out[base.MessageResponse], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -558,7 +510,7 @@ func (h *ImageHandler) RemoveImage(ctx context.Context, input *RemoveImageInput)
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to remove image").Error())
 	}
 
-	return &RemoveImageOutput{
+	return &handlerutil.Out[base.MessageResponse]{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data: base.MessageResponse{
@@ -685,7 +637,7 @@ func (h *ImageHandler) BuildImage(ctx context.Context, input *BuildImageInput) (
 }
 
 // ListImageBuilds returns a paginated list of image build history entries.
-func (h *ImageHandler) ListImageBuilds(ctx context.Context, input *ListImageBuildsInput) (*ListImageBuildsOutput, error) {
+func (h *ImageHandler) ListImageBuilds(ctx context.Context, input *ListImageBuildsInput) (*handlerutil.Page[image.BuildRecord], error) {
 	if input.EnvironmentID == "" {
 		return nil, huma.Error400BadRequest("Environment ID is required")
 	}
@@ -707,7 +659,7 @@ func (h *ImageHandler) ListImageBuilds(ctx context.Context, input *ListImageBuil
 		builds = []image.BuildRecord{}
 	}
 
-	return &ListImageBuildsOutput{
+	return &handlerutil.Page[image.BuildRecord]{
 		Body: base.Paginated[image.BuildRecord]{
 			Success:    true,
 			Data:       builds,
@@ -717,7 +669,7 @@ func (h *ImageHandler) ListImageBuilds(ctx context.Context, input *ListImageBuil
 }
 
 // GetImageBuild returns a single build history entry.
-func (h *ImageHandler) GetImageBuild(ctx context.Context, input *GetImageBuildInput) (*GetImageBuildOutput, error) {
+func (h *ImageHandler) GetImageBuild(ctx context.Context, input *GetImageBuildInput) (*handlerutil.Out[image.BuildRecord], error) {
 	if input.EnvironmentID == "" {
 		return nil, huma.Error400BadRequest("Environment ID is required")
 	}
@@ -734,7 +686,7 @@ func (h *ImageHandler) GetImageBuild(ctx context.Context, input *GetImageBuildIn
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to retrieve build history").Error())
 	}
 
-	return &GetImageBuildOutput{
+	return &handlerutil.Out[image.BuildRecord]{
 		Body: base.ApiResponse[image.BuildRecord]{
 			Success: true,
 			Data:    *buildRecord,
@@ -743,7 +695,7 @@ func (h *ImageHandler) GetImageBuild(ctx context.Context, input *GetImageBuildIn
 }
 
 // PruneImages removes unused Docker images.
-func (h *ImageHandler) PruneImages(ctx context.Context, input *PruneImagesInput) (*PruneImagesOutput, error) {
+func (h *ImageHandler) PruneImages(ctx context.Context, input *PruneImagesInput) (*handlerutil.Out[image.PruneReport], error) {
 	mode := resolvePruneImageModeInternal(input)
 	until := resolvePruneImageUntilInternal(input)
 
@@ -757,7 +709,7 @@ func (h *ImageHandler) PruneImages(ctx context.Context, input *PruneImagesInput)
 
 	out := image.NewPruneReport(*report)
 
-	return &PruneImagesOutput{
+	return &handlerutil.Out[image.PruneReport]{
 		Body: base.ApiResponse[image.PruneReport]{
 			Success: true,
 			Data:    out,
@@ -818,13 +770,13 @@ func resolveLegacyPruneImageModeInternal(dangling bool) string {
 }
 
 // GetImageUsageCounts returns counts of images by usage status.
-func (h *ImageHandler) GetImageUsageCounts(ctx context.Context, input *GetImageUsageCountsInput) (*GetImageUsageCountsOutput, error) {
+func (h *ImageHandler) GetImageUsageCounts(ctx context.Context, input *GetImageUsageCountsInput) (*handlerutil.Out[image.UsageCounts], error) {
 	_, counts, err := h.dockerService.GetAllImages(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to get image usage counts").Error())
 	}
 
-	return &GetImageUsageCountsOutput{
+	return &handlerutil.Out[image.UsageCounts]{
 		Body: base.ApiResponse[image.UsageCounts]{
 			Success: true,
 			Data:    counts,
@@ -833,7 +785,7 @@ func (h *ImageHandler) GetImageUsageCounts(ctx context.Context, input *GetImageU
 }
 
 // UploadImage uploads a Docker image from a tar archive.
-func (h *ImageHandler) UploadImage(ctx context.Context, input *UploadImageInput) (*UploadImageOutput, error) {
+func (h *ImageHandler) UploadImage(ctx context.Context, input *UploadImageInput) (*handlerutil.Out[image.LoadResult], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -856,7 +808,7 @@ func (h *ImageHandler) UploadImage(ctx context.Context, input *UploadImageInput)
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to load image").Error())
 	}
 
-	return &UploadImageOutput{
+	return &handlerutil.Out[image.LoadResult]{
 		Body: base.ApiResponse[image.LoadResult]{
 			Success: true,
 			Data:    *result,

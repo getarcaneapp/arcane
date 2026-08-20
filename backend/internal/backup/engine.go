@@ -317,7 +317,7 @@ func (e *Engine) executorForInternal(repositoryID string) (*actors.Executor, err
 	if executor, ok := e.executors.Get(repositoryID); ok {
 		return executor, nil
 	}
-	return actors.ApplyStateMap(e.lifecycleCtx, e.executors, "backup repository executor", func(values map[string]*actors.Executor) (*actors.Executor, bool, error) {
+	return e.executors.ApplyTyped(e.lifecycleCtx, "backup repository executor", func(values map[string]*actors.Executor) (*actors.Executor, bool, error) {
 		if executor, ok := values[repositoryID]; ok {
 			return executor, false, nil
 		}
@@ -341,7 +341,7 @@ func (e *Engine) runInternal(ctx context.Context, dockerClient *client.Client, r
 	if err != nil {
 		return "", err
 	}
-	return actors.Execute(ctx, executor, "rustic "+command[0], func(workCtx context.Context) (string, error) {
+	return executor.Execute(ctx, "rustic "+command[0], func(workCtx context.Context) (string, error) {
 		return e.runContainerInternal(workCtx, dockerClient, repository, password, command, extraMounts...)
 	}, nil)
 }

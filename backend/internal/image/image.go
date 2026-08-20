@@ -750,7 +750,7 @@ func (s *ImageService) ListImagesPaginated(ctx context.Context, params paginatio
 
 	config := s.getImagePaginationConfig()
 
-	result := pagination.SearchOrderAndPaginate(items, params, config)
+	result := config.SearchOrderAndPaginate(items, params)
 
 	if s.vulnerabilityService != nil && len(result.Items) > 0 {
 		pageImageIDs := getImageIDsFromSummariesInternal(result.Items)

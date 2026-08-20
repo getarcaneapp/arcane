@@ -10,7 +10,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	stderrors "errors"
 	"fmt"
 	"io"
@@ -127,14 +128,14 @@ func (s *VolumeService) readVolumeWorkspaceFromContainerInternal(ctx context.Con
 }
 
 func decodeVolumeWorkspaceWalkInternal(source io.Reader, maxEntries int, maxFileSizeBytes int64) (*workspacetypes.Workspace, error) {
-	decoder := json.NewDecoder(source)
+	decoder := jsontext.NewDecoder(source)
 	files := make([]workspacetypes.FileEntry, 0, min(maxEntries, 256))
 	classifications := make(map[string]string, min(maxEntries, 256))
 	trailerSeen := false
 	truncated := false
 	for {
 		var record acfstypes.WalkRecord
-		err := decoder.Decode(&record)
+		err := json.UnmarshalDecode(decoder, &record)
 		if stderrors.Is(err, io.EOF) {
 			break
 		}

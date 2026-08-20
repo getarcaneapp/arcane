@@ -71,14 +71,6 @@ type ChangePasswordInput struct {
 	Body authtypes.PasswordChange
 }
 
-type ChangePasswordOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
-}
-
-type LogoutAllOtherSessionsOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
-}
-
 type UpdateMyProfileBody struct {
 	DisplayName *string                `json:"displayName,omitempty"`
 	Email       *string                `json:"email,omitempty"`
@@ -92,24 +84,8 @@ type UpdateMyProfileInput struct {
 	Body UpdateMyProfileBody
 }
 
-type UpdateMyProfileOutput struct {
-	Body base.ApiResponse[usertypes.User]
-}
-
-type GetCurrentUserOutput struct {
-	Body base.ApiResponse[usertypes.User]
-}
-
 type UploadMyAvatarInput struct {
 	RawBody multipart.Form `contentType:"multipart/form-data"`
-}
-
-type UploadMyAvatarOutput struct {
-	Body base.ApiResponse[usertypes.User]
-}
-
-type DeleteMyAvatarOutput struct {
-	Body base.ApiResponse[usertypes.User]
 }
 
 // RegisterAuth registers authentication routes using Huma.
@@ -322,7 +298,7 @@ func (h *AuthHandler) Logout(ctx context.Context, input *struct{}) (*LogoutOutpu
 // GetCurrentUser returns the currently authenticated user's information.
 // Uses ToUserResponseDto (not the generic struct mapper) so the RBAC fields
 // (RoleAssignments, PermissionsByEnv) are resolved via RoleService.
-func (h *AuthHandler) GetCurrentUser(ctx context.Context, input *struct{}) (*GetCurrentUserOutput, error) {
+func (h *AuthHandler) GetCurrentUser(ctx context.Context, input *struct{}) (*handlerutil.Out[usertypes.User], error) {
 	userID, exists := middleware.GetUserIDFromContext(ctx)
 	if !exists {
 		return nil, huma.Error401Unauthorized("Not authenticated")
@@ -338,7 +314,7 @@ func (h *AuthHandler) GetCurrentUser(ctx context.Context, input *struct{}) (*Get
 		return nil, huma.Error500InternalServerError("Failed to map user")
 	}
 
-	return &GetCurrentUserOutput{
+	return &handlerutil.Out[usertypes.User]{
 		Body: base.ApiResponse[usertypes.User]{
 			Success: true,
 			Data:    out,
@@ -375,7 +351,7 @@ func (h *AuthHandler) RefreshToken(ctx context.Context, input *RefreshTokenInput
 }
 
 // ChangePassword changes the current user's password.
-func (h *AuthHandler) ChangePassword(ctx context.Context, input *ChangePasswordInput) (*ChangePasswordOutput, error) {
+func (h *AuthHandler) ChangePassword(ctx context.Context, input *ChangePasswordInput) (*handlerutil.Out[base.MessageResponse], error) {
 	userModel, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -398,7 +374,7 @@ func (h *AuthHandler) ChangePassword(ctx context.Context, input *ChangePasswordI
 		}
 	}
 
-	return &ChangePasswordOutput{
+	return &handlerutil.Out[base.MessageResponse]{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data: base.MessageResponse{
@@ -410,7 +386,7 @@ func (h *AuthHandler) ChangePassword(ctx context.Context, input *ChangePasswordI
 
 // LogoutAllOtherSessions revokes every active session for the current user
 // except the session making this request.
-func (h *AuthHandler) LogoutAllOtherSessions(ctx context.Context, input *struct{}) (*LogoutAllOtherSessionsOutput, error) {
+func (h *AuthHandler) LogoutAllOtherSessions(ctx context.Context, input *struct{}) (*handlerutil.Out[base.MessageResponse], error) {
 	userModel, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -421,7 +397,7 @@ func (h *AuthHandler) LogoutAllOtherSessions(ctx context.Context, input *struct{
 		return nil, huma.Error500InternalServerError("failed to revoke sessions: " + err.Error())
 	}
 
-	return &LogoutAllOtherSessionsOutput{
+	return &handlerutil.Out[base.MessageResponse]{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data: base.MessageResponse{
@@ -466,7 +442,7 @@ func mergePreferencesInternal(dst, src *usertypes.Preferences) {
 
 // UpdateMyProfile lets the current user update their own displayName and email.
 // OIDC-managed accounts are read-only here.
-func (h *AuthHandler) UpdateMyProfile(ctx context.Context, input *UpdateMyProfileInput) (*UpdateMyProfileOutput, error) {
+func (h *AuthHandler) UpdateMyProfile(ctx context.Context, input *UpdateMyProfileInput) (*handlerutil.Out[usertypes.User], error) {
 	currentUser, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -519,7 +495,7 @@ func (h *AuthHandler) UpdateMyProfile(ctx context.Context, input *UpdateMyProfil
 		return nil, huma.Error500InternalServerError("Failed to map user")
 	}
 
-	return &UpdateMyProfileOutput{
+	return &handlerutil.Out[usertypes.User]{
 		Body: base.ApiResponse[usertypes.User]{
 			Success: true,
 			Data:    out,
@@ -529,7 +505,7 @@ func (h *AuthHandler) UpdateMyProfile(ctx context.Context, input *UpdateMyProfil
 
 // UploadMyAvatar lets the current user upload a custom profile picture.
 // Accepts PNG, JPEG, or WebP images up to the configured avatar upload limit.
-func (h *AuthHandler) UploadMyAvatar(ctx context.Context, input *UploadMyAvatarInput) (*UploadMyAvatarOutput, error) {
+func (h *AuthHandler) UploadMyAvatar(ctx context.Context, input *UploadMyAvatarInput) (*handlerutil.Out[usertypes.User], error) {
 	currentUser, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -587,7 +563,7 @@ func (h *AuthHandler) UploadMyAvatar(ctx context.Context, input *UploadMyAvatarI
 		return nil, huma.Error500InternalServerError("Failed to map user")
 	}
 
-	return &UploadMyAvatarOutput{
+	return &handlerutil.Out[usertypes.User]{
 		Body: base.ApiResponse[usertypes.User]{
 			Success: true,
 			Data:    out,
@@ -608,7 +584,7 @@ func (h *AuthHandler) avatarMaxUploadSizeMbInternal(ctx context.Context) int {
 }
 
 // DeleteMyAvatar removes the current user's custom profile picture.
-func (h *AuthHandler) DeleteMyAvatar(ctx context.Context, input *struct{}) (*DeleteMyAvatarOutput, error) {
+func (h *AuthHandler) DeleteMyAvatar(ctx context.Context, input *struct{}) (*handlerutil.Out[usertypes.User], error) {
 	currentUser, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -629,7 +605,7 @@ func (h *AuthHandler) DeleteMyAvatar(ctx context.Context, input *struct{}) (*Del
 		return nil, huma.Error500InternalServerError("Failed to map user")
 	}
 
-	return &DeleteMyAvatarOutput{
+	return &handlerutil.Out[usertypes.User]{
 		Body: base.ApiResponse[usertypes.User]{
 			Success: true,
 			Data:    out,

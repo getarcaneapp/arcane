@@ -25,7 +25,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	authtypes "github.com/getarcaneapp/arcane/types/v2/auth"
-	"github.com/getarcaneapp/arcane/types/v2/base"
 	roletypes "github.com/getarcaneapp/arcane/types/v2/role"
 )
 
@@ -109,25 +108,13 @@ type ExchangeDeviceTokenOutput struct {
 
 type ListOidcRoleMappingsInput struct{}
 
-type ListOidcRoleMappingsOutput struct {
-	Body base.ApiResponse[[]roletypes.OidcRoleMapping]
-}
-
 type CreateOidcRoleMappingInput struct {
 	Body roletypes.CreateOidcRoleMapping
-}
-
-type CreateOidcRoleMappingOutput struct {
-	Body base.ApiResponse[roletypes.OidcRoleMapping]
 }
 
 type UpdateOidcRoleMappingInput struct {
 	ID   string `path:"id" doc:"Mapping ID"`
 	Body roletypes.UpdateOidcRoleMapping
-}
-
-type UpdateOidcRoleMappingOutput struct {
-	Body base.ApiResponse[roletypes.OidcRoleMapping]
 }
 
 type DeleteOidcRoleMappingInput struct {
@@ -521,12 +508,12 @@ func (h *OidcHandler) ExchangeDeviceToken(ctx context.Context, input *ExchangeDe
 // OIDC Role Mapping Handlers
 // ============================================================================
 
-func (h *OidcHandler) ListOidcRoleMappings(ctx context.Context, _ *ListOidcRoleMappingsInput) (*ListOidcRoleMappingsOutput, error) {
+func (h *OidcHandler) ListOidcRoleMappings(ctx context.Context, _ *ListOidcRoleMappingsInput) (*handlerutil.Out[[]roletypes.OidcRoleMapping], error) {
 	rows, err := h.roleService.ListOidcMappings(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to list mappings: " + err.Error())
 	}
-	out := &ListOidcRoleMappingsOutput{}
+	out := &handlerutil.Out[[]roletypes.OidcRoleMapping]{}
 	out.Body.Success = true
 	out.Body.Data = make([]roletypes.OidcRoleMapping, len(rows))
 	for i := range rows {
@@ -535,7 +522,7 @@ func (h *OidcHandler) ListOidcRoleMappings(ctx context.Context, _ *ListOidcRoleM
 	return out, nil
 }
 
-func (h *OidcHandler) CreateOidcRoleMapping(ctx context.Context, input *CreateOidcRoleMappingInput) (*CreateOidcRoleMappingOutput, error) {
+func (h *OidcHandler) CreateOidcRoleMapping(ctx context.Context, input *CreateOidcRoleMappingInput) (*handlerutil.Out[roletypes.OidcRoleMapping], error) {
 	claimValue := strings.TrimSpace(input.Body.ClaimValue)
 	roleID := strings.TrimSpace(input.Body.RoleID)
 	if claimValue == "" {
@@ -551,13 +538,13 @@ func (h *OidcHandler) CreateOidcRoleMapping(ctx context.Context, input *CreateOi
 		}
 		return nil, huma.Error500InternalServerError("failed to create mapping: " + err.Error())
 	}
-	out := &CreateOidcRoleMappingOutput{}
+	out := &handlerutil.Out[roletypes.OidcRoleMapping]{}
 	out.Body.Success = true
 	out.Body.Data = toOidcMappingDTO(mapping)
 	return out, nil
 }
 
-func (h *OidcHandler) UpdateOidcRoleMapping(ctx context.Context, input *UpdateOidcRoleMappingInput) (*UpdateOidcRoleMappingOutput, error) {
+func (h *OidcHandler) UpdateOidcRoleMapping(ctx context.Context, input *UpdateOidcRoleMappingInput) (*handlerutil.Out[roletypes.OidcRoleMapping], error) {
 	claimValue := strings.TrimSpace(input.Body.ClaimValue)
 	roleID := strings.TrimSpace(input.Body.RoleID)
 	if claimValue == "" {
@@ -579,7 +566,7 @@ func (h *OidcHandler) UpdateOidcRoleMapping(ctx context.Context, input *UpdateOi
 		}
 		return nil, huma.Error500InternalServerError("failed to update mapping: " + err.Error())
 	}
-	out := &UpdateOidcRoleMappingOutput{}
+	out := &handlerutil.Out[roletypes.OidcRoleMapping]{}
 	out.Body.Success = true
 	out.Body.Data = toOidcMappingDTO(mapping)
 	return out, nil

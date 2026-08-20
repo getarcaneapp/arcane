@@ -10,7 +10,6 @@ import (
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
 	apikeytypes "github.com/getarcaneapp/arcane/types/v2/apikey"
-	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/spf13/cobra"
 )
 
@@ -43,14 +42,8 @@ var apiKeysListCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.AuthMeApiKeys())
+		result, err := c.GetJSON[[]apikeytypes.ApiKey](cmd.Context(), types.AuthMeApiKeys())
 		if err != nil {
-			return errors.WrapIf(err, "failed to list API keys")
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result base.ApiResponse[[]apikeytypes.ApiKey]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
 			return errors.WrapIf(err, "failed to list API keys")
 		}
 
@@ -112,14 +105,8 @@ var apiKeysCreateCmd = &cobra.Command{
 			req.ExpiresAt = &parsed
 		}
 
-		resp, err := c.Post(cmd.Context(), types.AuthMeApiKeys(), req)
+		result, err := c.PostJSON[apikeytypes.ApiKeyCreatedDto](cmd.Context(), types.AuthMeApiKeys(), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to create API key")
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result base.ApiResponse[apikeytypes.ApiKeyCreatedDto]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
 			return errors.WrapIf(err, "failed to create API key")
 		}
 

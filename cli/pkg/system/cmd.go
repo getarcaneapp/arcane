@@ -1,8 +1,8 @@
 package system
 
 import (
-	"encoding/json"
 	"fmt"
+	"net/http"
 	"strconv"
 	"time"
 
@@ -11,7 +11,7 @@ import (
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
-	"github.com/getarcaneapp/arcane/types/v2/base"
+	"github.com/getarcaneapp/arcane/types/v2/container"
 	"github.com/getarcaneapp/arcane/types/v2/dockerinfo"
 	"github.com/getarcaneapp/arcane/types/v2/system"
 	"github.com/spf13/cobra"
@@ -42,28 +42,13 @@ var pruneCmd = &cobra.Command{
 			Networks:   &system.PruneNetworksOptions{Mode: system.PruneNetworkModeUnused},
 		}
 
-		resp, err := c.Post(cmd.Context(), types.SystemPrune(c.EnvID()), req)
+		result, err := c.PostJSON[system.PruneAllResult](cmd.Context(), types.SystemPrune(c.EnvID()), req)
 		if err != nil {
 			return errors.WrapIf(err, "failed to prune")
 		}
-		defer func() { _ = resp.Body.Close() }()
-
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to prune")
-		}
-
-		var result base.ApiResponse[system.PruneAllResult]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
-		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Header("System Prune Results")
@@ -83,16 +68,10 @@ var dockerInfoCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.SystemDockerInfo(c.EnvID()))
-		if err != nil {
-			return errors.WrapIf(err, "failed to get docker info")
-		}
-		defer func() { _ = resp.Body.Close() }()
-
 		// This endpoint returns dockerinfo.Info directly, not wrapped in an
 		// ApiResponse envelope.
-		var result dockerinfo.Info
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+		result, err := c.DoJSON[dockerinfo.Info](cmd.Context(), http.MethodGet, types.SystemDockerInfo(c.EnvID()), nil)
+		if err != nil {
 			return errors.WrapIf(err, "failed to get docker info")
 		}
 
@@ -127,34 +106,18 @@ var containersStartCmd = &cobra.Command{
 		}
 
 		path := types.SystemContainersStartAll(c.EnvID())
+		successMessage := "Started all containers"
 		if startStoppedOnlyFlag {
 			path = types.SystemStartStopped(c.EnvID())
-		}
-		resp, err := c.Post(cmd.Context(), path, nil)
-		if err != nil {
-			return errors.WrapIf(err, "failed to start containers")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to start containers")
+			successMessage = "Started all stopped containers"
 		}
 
-		if jsonOutput {
-			var result base.ApiResponse[any]
-			if err := json.NewDecoder(resp.Body).Decode(&result); err == nil {
-				if resultBytes, err := json.MarshalIndent(result.Data, "", "  "); err == nil {
-					fmt.Println(string(resultBytes))
-				}
-			}
-			return nil
-		}
-
-		if startStoppedOnlyFlag {
-			output.Success("Started all stopped containers")
-		} else {
-			output.Success("Started all containers")
-		}
-		return nil
+		return cmdutil.RunPostAction[container.ActionResult](cmd, c, cmdutil.PostActionSpec{
+			Path:           path,
+			FailureMessage: "failed to start containers",
+			SuccessMessage: successMessage,
+			JSON:           jsonOutput,
+		})
 	},
 }
 
@@ -168,18 +131,12 @@ var containersStopCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Post(cmd.Context(), types.SystemContainersStopAll(c.EnvID()), nil)
-		if err != nil {
-			return errors.WrapIf(err, "failed to stop all containers")
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to stop all containers")
-		}
-
-		output.Success("Stopped all containers")
-		return nil
+		return cmdutil.RunPostAction[container.ActionResult](cmd, c, cmdutil.PostActionSpec{
+			Path:           types.SystemContainersStopAll(c.EnvID()),
+			FailureMessage: "failed to stop all containers",
+			SuccessMessage: "Stopped all containers",
+			JSON:           jsonOutput,
+		})
 	},
 }
 
@@ -194,38 +151,26 @@ var convertCmd = &cobra.Command{
 			return err
 		}
 
-		req := map[string]string{"dockerRunCommand": args[0]}
-		resp, err := c.Post(cmd.Context(), types.SystemConvert(c.EnvID()), req)
-		if err != nil {
-			return errors.WrapIf(err, "failed to convert command")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to convert command")
-		}
-
-		var result struct {
+		// This endpoint returns its payload directly, not wrapped in an
+		// ApiResponse envelope.
+		type convertResult struct {
 			Success       bool   `json:"success"`
 			DockerCompose string `json:"dockerCompose"`
 			EnvVars       string `json:"envVars"`
 			ServiceName   string `json:"serviceName"`
 		}
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
+		req := map[string]string{"dockerRunCommand": args[0]}
+		result, err := c.DoJSON[convertResult](cmd.Context(), http.MethodPost, types.SystemConvert(c.EnvID()), req)
+		if err != nil {
+			return errors.WrapIf(err, "failed to convert command")
 		}
 
 		if jsonOutput {
-			out := map[string]string{
+			return cmdutil.PrintJSON(map[string]string{
 				"dockerCompose": result.DockerCompose,
 				"envVars":       result.EnvVars,
 				"serviceName":   result.ServiceName,
-			}
-			resultBytes, err := json.MarshalIndent(out, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			})
 		}
 
 		output.Header("Conversion Result")
@@ -280,27 +225,14 @@ var upgradeCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Post(cmd.Context(), types.SystemUpgrade(c.EnvID()), nil)
-		if err != nil {
-			return errors.WrapIf(err, "failed to upgrade system")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to upgrade system")
-		}
-
-		if jsonOutput {
-			var result base.ApiResponse[any]
-			if err := json.NewDecoder(resp.Body).Decode(&result); err == nil {
-				if resultBytes, err := json.MarshalIndent(result.Data, "", "  "); err == nil {
-					fmt.Println(string(resultBytes))
-				}
-			}
-			return nil
-		}
-
-		output.Success("System upgrade initiated")
-		return nil
+		// The upgrade payload type is backend-internal, so the envelope stays
+		// untyped to keep --json output complete.
+		return cmdutil.RunPostAction[any](cmd, c, cmdutil.PostActionSpec{
+			Path:           types.SystemUpgrade(c.EnvID()),
+			FailureMessage: "failed to upgrade system",
+			SuccessMessage: "System upgrade initiated",
+			JSON:           jsonOutput,
+		})
 	},
 }
 
@@ -312,32 +244,20 @@ func runUpgradeCheckInternal(cmd *cobra.Command) error {
 		return err
 	}
 
-	resp, err := c.Get(cmd.Context(), types.SystemUpgradeCheck(c.EnvID()))
-	if err != nil {
-		return errors.WrapIf(err, "failed to check for upgrades")
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-		return errors.WrapIf(err, "failed to check for upgrades")
-	}
-
-	var result struct {
+	// This endpoint returns its payload directly, not wrapped in an
+	// ApiResponse envelope.
+	type upgradeCheckResult struct {
 		CanUpgrade bool   `json:"canUpgrade"`
 		Error      bool   `json:"error"`
 		Message    string `json:"message"`
 	}
-	if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-		return err
+	result, err := c.DoJSON[upgradeCheckResult](cmd.Context(), http.MethodGet, types.SystemUpgradeCheck(c.EnvID()), nil)
+	if err != nil {
+		return errors.WrapIf(err, "failed to check for upgrades")
 	}
 
 	if jsonOutput {
-		resultBytes, err := json.MarshalIndent(result, "", "  ")
-		if err != nil {
-			return errors.WrapIf(err, "failed to marshal JSON")
-		}
-		fmt.Println(string(resultBytes))
-		return nil
+		return cmdutil.PrintJSON(result)
 	}
 
 	output.Header("Upgrade Check")
@@ -370,7 +290,7 @@ type environmentUpdateJob struct {
 	CompletedAt *time.Time `json:"completedAt,omitempty"`
 }
 
-func printUpdateAllJob(job environmentUpdateJob) {
+func printUpdateAllJobInternal(job environmentUpdateJob) {
 	output.KeyValue("Status", job.Status)
 	if job.Username != "" {
 		output.KeyValue("Triggered By", job.Username)
@@ -420,18 +340,9 @@ func runUpgradeAllInternal(cmd *cobra.Command) error {
 	}
 
 	if upgradeAllStatusFlag {
-		resp, err := c.Get(cmd.Context(), types.SystemUpgradeAllStatus(c.EnvID()))
+		result, err := c.GetJSON[environmentUpdateJob](cmd.Context(), types.SystemUpgradeAllStatus(c.EnvID()))
 		if err != nil {
 			return errors.WrapIf(err, "failed to get update-all status")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to get update-all status")
-		}
-
-		var result base.ApiResponse[environmentUpdateJob]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
 		}
 
 		if jsonOutput {
@@ -439,7 +350,7 @@ func runUpgradeAllInternal(cmd *cobra.Command) error {
 		}
 
 		output.Header("Update-All Status")
-		printUpdateAllJob(result.Data)
+		printUpdateAllJobInternal(result.Data)
 		return nil
 	}
 
@@ -454,18 +365,9 @@ func runUpgradeAllInternal(cmd *cobra.Command) error {
 		}
 	}
 
-	resp, err := c.Post(cmd.Context(), types.SystemUpgradeAll(c.EnvID()), nil)
+	result, err := c.PostJSON[environmentUpdateJob](cmd.Context(), types.SystemUpgradeAll(c.EnvID()), nil)
 	if err != nil {
 		return errors.WrapIf(err, "failed to trigger update-all")
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-		return errors.WrapIf(err, "failed to trigger update-all")
-	}
-
-	var result base.ApiResponse[environmentUpdateJob]
-	if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-		return err
 	}
 
 	if jsonOutput {
@@ -473,7 +375,7 @@ func runUpgradeAllInternal(cmd *cobra.Command) error {
 	}
 
 	output.Success("Update-all started")
-	printUpdateAllJob(result.Data)
+	printUpdateAllJobInternal(result.Data)
 	return nil
 }
 

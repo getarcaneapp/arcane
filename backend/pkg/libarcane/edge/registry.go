@@ -152,7 +152,7 @@ func (r *TunnelRegistry) RegisterSession(ctx context.Context, tunnel *AgentTunne
 		return false, false, "environment ID is required", nil
 	}
 
-	result, err := actors.ApplyStateMap(ctx, r.tunnels, "register edge tunnel session", func(tunnels map[string]*AgentTunnel) (registerSessionResultInternal, bool, error) {
+	result, err := r.tunnels.ApplyTyped(ctx, "register edge tunnel session", func(tunnels map[string]*AgentTunnel) (registerSessionResultInternal, bool, error) {
 		var result registerSessionResultInternal
 		if existing := tunnels[envID]; existing != nil {
 			if existing == tunnel {
@@ -212,7 +212,7 @@ func (r *TunnelRegistry) UnregisterCurrent(ctx context.Context, envID string, cu
 		removed           bool
 		activeReplacement bool
 	}
-	result, err := actors.ApplyStateMap(ctx, r.tunnels, "unregister current edge tunnel", func(tunnels map[string]*AgentTunnel) (resultInternal, bool, error) {
+	result, err := r.tunnels.ApplyTyped(ctx, "unregister current edge tunnel", func(tunnels map[string]*AgentTunnel) (resultInternal, bool, error) {
 		var result resultInternal
 		existing := tunnels[envID]
 		if existing != current {

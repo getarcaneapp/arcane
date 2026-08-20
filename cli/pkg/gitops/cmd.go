@@ -1,11 +1,7 @@
 package gitops
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
 	"strings"
 
@@ -16,7 +12,6 @@ import (
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/prompt"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
-	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/gitops"
 	"github.com/spf13/cobra"
 )
@@ -40,8 +35,6 @@ var (
 	gitopsUpdateInterval    int
 )
 
-const maxPromptOptions = 20
-
 // GitopsCmd is the parent command for gitops sync operations
 var GitopsCmd = &cobra.Command{
 	Use:     "gitops",
@@ -60,60 +53,35 @@ var listCmd = &cobra.Command{
 			return err
 		}
 
-		path := types.GitOpsSyncs(c.EnvID())
-		path, err = cmdutil.ApplyPaginationParams(cmd, path, cmdutil.ListParams{Resource: "gitops-syncs", Limit: limitFlag, FallbackDefault: 20, Start: startFlag, All: allFlag})
-		if err != nil {
-			return errors.WrapIf(err, "failed to build pagination query")
-		}
-
-		resp, err := c.Get(cmd.Context(), path)
-		if err != nil {
-			return errors.WrapIf(err, "failed to list gitops syncs")
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result base.Paginated[gitops.GitOpsSync]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
-		}
-
-		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
-		}
-
-		headers := []string{"ID", "NAME", "BRANCH", "AUTO-SYNC", "LAST STATUS", "LAST SYNC"}
-		rows := make([][]string, len(result.Data))
-		for i, sync := range result.Data {
-			autoSync := "false"
-			if sync.AutoSync {
-				autoSync = "true"
-			}
-			lastStatus := "-"
-			if sync.LastSyncStatus != nil {
-				lastStatus = *sync.LastSyncStatus
-			}
-			lastSync := "-"
-			if sync.LastSyncAt != nil {
-				lastSync = sync.LastSyncAt.Format("2006-01-02 15:04:05")
-			}
-			rows[i] = []string{
-				sync.ID,
-				sync.Name,
-				sync.Branch,
-				autoSync,
-				lastStatus,
-				lastSync,
-			}
-		}
-
-		output.Table(headers, rows)
-		output.Showing(len(result.Data), result.Pagination.TotalItems, "gitops syncs")
-		return nil
+		return cmdutil.RunList(cmd, c, cmdutil.ListSpec[gitops.GitOpsSync]{
+			Resource: "gitops syncs",
+			Endpoint: types.GitOpsSyncs(c.EnvID()),
+			Params:   cmdutil.ListParams{Resource: "gitops-syncs", Limit: limitFlag, FallbackDefault: 20, Start: startFlag, All: allFlag},
+			JSON:     jsonOutput,
+			Headers:  []string{"ID", "NAME", "BRANCH", "AUTO-SYNC", "LAST STATUS", "LAST SYNC"},
+			Row: func(sync gitops.GitOpsSync) []string {
+				autoSync := "false"
+				if sync.AutoSync {
+					autoSync = "true"
+				}
+				lastStatus := "-"
+				if sync.LastSyncStatus != nil {
+					lastStatus = *sync.LastSyncStatus
+				}
+				lastSync := "-"
+				if sync.LastSyncAt != nil {
+					lastSync = sync.LastSyncAt.Format("2006-01-02 15:04:05")
+				}
+				return []string{
+					sync.ID,
+					sync.Name,
+					sync.Branch,
+					autoSync,
+					lastStatus,
+					lastSync,
+				}
+			},
+		})
 	},
 }
 
@@ -147,28 +115,13 @@ var createCmd = &cobra.Command{
 			req.SyncInterval = &interval
 		}
 
-		resp, err := c.Post(cmd.Context(), types.GitOpsSyncs(c.EnvID()), req)
+		result, err := c.PostJSON[gitops.GitOpsSync](cmd.Context(), types.GitOpsSyncs(c.EnvID()), req)
 		if err != nil {
 			return errors.WrapIf(err, "failed to create gitops sync")
 		}
-		defer func() { _ = resp.Body.Close() }()
-
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to create gitops sync")
-		}
-
-		var result base.ApiResponse[gitops.GitOpsSync]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
-		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("GitOps sync %s created successfully (ID: %s)", result.Data.Name, result.Data.ID)
@@ -188,32 +141,21 @@ var getCmd = &cobra.Command{
 		}
 
 		allowPrompt := !jsonOutput && prompt.IsInteractive()
-		resolved, complete, err := resolveGitOpsSync(cmd.Context(), c, args[0], allowPrompt)
+		resolved, complete, err := gitopsSyncRef.Resolve(cmd.Context(), c, args[0], allowPrompt)
 		if err != nil {
 			return err
 		}
 
 		if !complete {
-			resp, err := c.Get(cmd.Context(), types.GitOpsSync(c.EnvID(), resolved.ID))
+			result, err := c.GetJSON[gitops.GitOpsSync](cmd.Context(), types.GitOpsSync(c.EnvID(), resolved.ID))
 			if err != nil {
 				return errors.WrapIf(err, "failed to get gitops sync")
-			}
-			defer func() { _ = resp.Body.Close() }()
-
-			var result base.ApiResponse[gitops.GitOpsSync]
-			if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-				return err
 			}
 			resolved = &result.Data
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(resolved, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(resolved)
 		}
 
 		output.Header("GitOps Sync Details")
@@ -248,7 +190,7 @@ var updateCmd = &cobra.Command{
 			return err
 		}
 
-		resolved, _, err := resolveGitOpsSync(cmd.Context(), c, args[0], false)
+		resolved, _, err := gitopsSyncRef.Resolve(cmd.Context(), c, args[0], false)
 		if err != nil {
 			return err
 		}
@@ -303,7 +245,7 @@ var deleteCmd = &cobra.Command{
 			return err
 		}
 
-		resolved, _, err := resolveGitOpsSync(cmd.Context(), c, args[0], false)
+		resolved, _, err := gitopsSyncRef.Resolve(cmd.Context(), c, args[0], false)
 		if err != nil {
 			return err
 		}
@@ -348,29 +290,18 @@ var statusCmd = &cobra.Command{
 			return err
 		}
 
-		resolved, _, err := resolveGitOpsSync(cmd.Context(), c, args[0], false)
+		resolved, _, err := gitopsSyncRef.Resolve(cmd.Context(), c, args[0], false)
 		if err != nil {
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.GitOpsSyncStatus(c.EnvID(), resolved.ID))
+		result, err := c.GetJSON[gitops.SyncStatus](cmd.Context(), types.GitOpsSyncStatus(c.EnvID(), resolved.ID))
 		if err != nil {
 			return errors.WrapIf(err, "failed to get gitops sync status")
 		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result base.ApiResponse[gitops.SyncStatus]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
-		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Header("GitOps Sync Status")
@@ -406,29 +337,18 @@ var syncCmd = &cobra.Command{
 			return err
 		}
 
-		resolved, _, err := resolveGitOpsSync(cmd.Context(), c, args[0], false)
+		resolved, _, err := gitopsSyncRef.Resolve(cmd.Context(), c, args[0], false)
 		if err != nil {
 			return err
 		}
 
-		resp, err := c.Post(cmd.Context(), types.GitOpsSyncTrigger(c.EnvID(), resolved.ID), nil)
+		result, err := c.PostJSON[gitops.SyncResult](cmd.Context(), types.GitOpsSyncTrigger(c.EnvID(), resolved.ID), nil)
 		if err != nil {
 			return errors.WrapIf(err, "failed to trigger gitops sync")
 		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result base.ApiResponse[gitops.SyncResult]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
-		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		if result.Data.Success {
@@ -455,7 +375,7 @@ var filesCmd = &cobra.Command{
 			return err
 		}
 
-		resolved, _, err := resolveGitOpsSync(cmd.Context(), c, args[0], false)
+		resolved, _, err := gitopsSyncRef.Resolve(cmd.Context(), c, args[0], false)
 		if err != nil {
 			return err
 		}
@@ -465,25 +385,14 @@ var filesCmd = &cobra.Command{
 			filesPath = cmdutil.AppendQuery(filesPath, url.Values{"path": []string{gitopsFilesPath}})
 		}
 
-		resp, err := c.Get(cmd.Context(), filesPath)
+		result, err := c.GetJSON[gitops.BrowseResponse](cmd.Context(), filesPath)
 		if err != nil {
 			return errors.WrapIf(err, "failed to get gitops sync files")
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result base.ApiResponse[gitops.BrowseResponse]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
 		}
 
 		files := result.Data.Files
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(files, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(files)
 		}
 
 		headers := []string{"NAME", "TYPE", "PATH", "SIZE"}
@@ -522,28 +431,13 @@ var importCmd = &cobra.Command{
 
 		// The endpoint accepts a batch, so a single sync still has to be wrapped
 		// in an array.
-		resp, err := c.Post(cmd.Context(), types.GitOpsSyncsImport(c.EnvID()), []gitops.ImportGitOpsSyncRequest{req})
+		result, err := c.PostJSON[gitops.ImportGitOpsSyncResponse](cmd.Context(), types.GitOpsSyncsImport(c.EnvID()), []gitops.ImportGitOpsSyncRequest{req})
 		if err != nil {
 			return errors.WrapIf(err, "failed to import gitops sync")
 		}
-		defer func() { _ = resp.Body.Close() }()
-
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to import gitops sync")
-		}
-
-		var result base.ApiResponse[gitops.ImportGitOpsSyncResponse]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
-		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Import completed: %d succeeded, %d failed", result.Data.SuccessCount, result.Data.FailedCount)
@@ -629,93 +523,22 @@ func init() {
 	_ = importCmd.MarkFlagRequired("compose-path")
 }
 
-func resolveGitOpsSync(ctx context.Context, c *client.Client, identifier string, allowPrompt bool) (*gitops.GitOpsSync, bool, error) {
-	trimmed := strings.TrimSpace(identifier)
-	if trimmed == "" {
-		return nil, false, errors.New("gitops sync identifier is required")
-	}
-
-	resp, err := c.Get(ctx, types.GitOpsSync(c.EnvID(), trimmed))
-	if err != nil {
-		return nil, false, errors.WrapIff(err, "failed to resolve gitops sync %q", trimmed)
-	}
-
-	bodyBytes, err := io.ReadAll(resp.Body)
-	_ = resp.Body.Close()
-	if err != nil {
-		return nil, false, errors.WrapIf(err, "failed to read gitops sync response")
-	}
-
-	if resp.StatusCode == http.StatusOK {
-		var result base.ApiResponse[gitops.GitOpsSync]
-		if err := json.Unmarshal(bodyBytes, &result); err != nil {
-			return nil, false, errors.WrapIf(err, "failed to parse gitops sync response")
+var gitopsSyncRef = cmdutil.ResourceRef[gitops.GitOpsSync, gitops.GitOpsSync]{
+	Singular: "gitops sync",
+	Plural:   "gitops syncs",
+	IDHint:   "the sync ID",
+	ListCmd:  "arcane gitops list",
+	GetPath:  types.GitOpsSync,
+	ListPath: types.GitOpsSyncs,
+	Matches:  gitOpsSyncMatches,
+	Label: func(match gitops.GitOpsSync) string {
+		lastStatus := "-"
+		if match.LastSyncStatus != nil {
+			lastStatus = *match.LastSyncStatus
 		}
-		return &result.Data, true, nil
-	}
-
-	if resp.StatusCode != http.StatusNotFound {
-		return nil, false, errors.Errorf("failed to resolve gitops sync %q (status %d): %s", trimmed, resp.StatusCode, strings.TrimSpace(string(bodyBytes)))
-	}
-
-	identifierLower := strings.ToLower(trimmed)
-
-	searchPath := fmt.Sprintf("%s?search=%s&limit=%d", types.GitOpsSyncs(c.EnvID()), url.QueryEscape(trimmed), cmdutil.ShowAllLimit)
-	searchResp, err := c.Get(ctx, searchPath)
-	if err != nil {
-		return nil, false, errors.WrapIf(err, "failed to search gitops syncs")
-	}
-
-	searchBody, err := io.ReadAll(searchResp.Body)
-	_ = searchResp.Body.Close()
-	if err != nil {
-		return nil, false, errors.WrapIf(err, "failed to read gitops syncs response")
-	}
-
-	if searchResp.StatusCode < 200 || searchResp.StatusCode >= 300 {
-		return nil, false, errors.Errorf("failed to search gitops syncs (status %d): %s", searchResp.StatusCode, strings.TrimSpace(string(searchBody)))
-	}
-
-	var result base.Paginated[gitops.GitOpsSync]
-	if err := json.Unmarshal(searchBody, &result); err != nil {
-		return nil, false, errors.WrapIf(err, "failed to parse gitops syncs response")
-	}
-
-	matches := make([]gitops.GitOpsSync, 0)
-	for _, sync := range result.Data {
-		if gitOpsSyncMatches(sync, identifierLower, trimmed) {
-			matches = append(matches, sync)
-		}
-	}
-
-	if len(matches) == 1 {
-		return &matches[0], false, nil
-	}
-
-	if len(matches) > 1 {
-		if !allowPrompt {
-			return nil, false, errors.Errorf("multiple gitops syncs match %q; use the sync ID or run `arcane gitops list`", trimmed)
-		}
-		if len(matches) > maxPromptOptions {
-			return nil, false, errors.Errorf("multiple gitops syncs match %q (%d results); refine your query or use the sync ID", trimmed, len(matches))
-		}
-
-		options := make([]string, 0, len(matches))
-		for _, match := range matches {
-			lastStatus := "-"
-			if match.LastSyncStatus != nil {
-				lastStatus = *match.LastSyncStatus
-			}
-			options = append(options, fmt.Sprintf("%s (%s, %s)", match.Name, match.ID, lastStatus))
-		}
-		choice, err := prompt.Select("gitops sync", options)
-		if err != nil {
-			return nil, false, err
-		}
-		return &matches[choice], false, nil
-	}
-
-	return nil, false, errors.Errorf("gitops sync %q not found; use the sync ID or run `arcane gitops list`", trimmed)
+		return fmt.Sprintf("%s (%s, %s)", match.Name, match.ID, lastStatus)
+	},
+	Promote: func(match gitops.GitOpsSync) *gitops.GitOpsSync { return &match },
 }
 
 func gitOpsSyncMatches(item gitops.GitOpsSync, identifierLower, original string) bool {

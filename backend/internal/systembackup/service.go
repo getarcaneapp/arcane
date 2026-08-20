@@ -4,7 +4,8 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base32"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -187,7 +188,7 @@ func (s *SystemBackupService) manifestPathInternal() (string, error) {
 
 func (s *SystemBackupService) writeManifestInternal(ctx context.Context, backupID string) error {
 	manifest := recoverytypes.Manifest{FormatVersion: 1, ArcaneVersion: config.Version, BackupID: backupID, ActivityID: activitylib.IDFromContext(ctx), CreatedAt: time.Now().UTC(), Environment: s.recoveryEnvironmentInternal(ctx)}
-	data, err := json.MarshalIndent(manifest, "", "  ")
+	data, err := json.Marshal(manifest, jsontext.WithIndent("  "))
 	if err != nil {
 		return fmt.Errorf("failed to encode recovery manifest: %w", err)
 	}

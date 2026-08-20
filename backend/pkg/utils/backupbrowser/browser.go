@@ -111,14 +111,15 @@ func compareEntriesInternal(left, right backuptypes.BackupFileEntry) int {
 
 // Browse searches, orders, and paginates backup entries using the standard pagination contract.
 func Browse(entries []backuptypes.BackupFileEntry, params pagination.QueryParams) ([]backuptypes.BackupFileEntry, pagination.Response) {
-	result := pagination.SearchOrderAndPaginate(entries, params, pagination.Config[backuptypes.BackupFileEntry]{
+	config := pagination.Config[backuptypes.BackupFileEntry]{
 		SearchAccessors: []pagination.SearchAccessor[backuptypes.BackupFileEntry]{
 			func(entry backuptypes.BackupFileEntry) (string, error) { return entry.Path, nil },
 		},
 		SortBindings: []pagination.SortBinding[backuptypes.BackupFileEntry]{
 			{Key: "path", Fn: compareEntriesInternal},
 		},
-	})
+	}
+	result := config.SearchOrderAndPaginate(entries, params)
 	return result.Items, pagination.BuildResponse(result.TotalCount, result.TotalAvailable, params)
 }
 

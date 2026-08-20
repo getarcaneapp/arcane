@@ -7,7 +7,6 @@ import (
 	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
@@ -27,10 +26,6 @@ type PatchImageInput struct {
 	Body          imagepatch.PatchOptions
 }
 
-type PatchImageOutput struct {
-	Body base.ApiResponse[imagepatch.PatchRecord]
-}
-
 type ListPatchTargetsInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Search        string `query:"search" doc:"Search query"`
@@ -38,10 +33,6 @@ type ListPatchTargetsInput struct {
 	Order         string `query:"order" default:"desc" doc:"Sort direction"`
 	Start         int    `query:"start" default:"0" doc:"Start offset"`
 	Limit         int    `query:"limit" default:"20" doc:"Limit"`
-}
-
-type ListPatchTargetsOutput struct {
-	Body base.Paginated[imagepatch.PatchTarget]
 }
 
 type ListImagePatchesInput struct {
@@ -54,10 +45,6 @@ type ListImagePatchesInput struct {
 	Status        string `query:"status" doc:"Filter by patch status"`
 }
 
-type ListImagePatchesOutput struct {
-	Body base.Paginated[imagepatch.PatchRecord]
-}
-
 // RegisterImagePatches registers image patching routes using Huma.
 func RegisterImagePatches(api huma.API, imagePatchService *ImagePatchService, appCtx handlerutil.ActivityAppContext) {
 	h := &ImagePatchHandler{
@@ -65,39 +52,19 @@ func RegisterImagePatches(api huma.API, imagePatchService *ImagePatchService, ap
 		appCtx:            appCtx.Context(),
 	}
 
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "list-image-patches",
-		Method:      http.MethodGet,
-		Path:        "/environments/{id}/images/patches",
-		Summary:     "List image patches",
-		Description: "Retrieves the paginated image patch history for the environment",
-		Tags:        []string{"Images"},
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermImagesList, h.ListImagePatches)
-
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "list-image-patch-targets",
-		Method:      http.MethodGet,
-		Path:        "/environments/{id}/images/patch-targets",
-		Summary:     "List image patch targets",
-		Description: "Retrieves scanned images with fixable vulnerability counts and their latest patch run",
-		Tags:        []string{"Images"},
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermVulnsRead, h.ListPatchTargets)
-
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "patch-image",
-		Method:      http.MethodPost,
-		Path:        "/environments/{id}/images/{imageId}/patch",
-		Summary:     "Patch image",
-		Description: "Patches OS package vulnerabilities in the image using Copacetic, producing a new patched tag",
-		Tags:        []string{"Images"},
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermImagesPatch, h.PatchImage)
+	handlerutil.RegisterSecured(api,
+		handlerutil.Operation("list-image-patches", http.MethodGet, "/environments/{id}/images/patches", "List image patches", "Retrieves the paginated image patch history for the environment", "Images"),
+		authz.PermImagesList, h.ListImagePatches)
+	handlerutil.RegisterSecured(api,
+		handlerutil.Operation("list-image-patch-targets", http.MethodGet, "/environments/{id}/images/patch-targets", "List image patch targets", "Retrieves scanned images with fixable vulnerability counts and their latest patch run", "Images"),
+		authz.PermVulnsRead, h.ListPatchTargets)
+	handlerutil.RegisterSecured(api,
+		handlerutil.Operation("patch-image", http.MethodPost, "/environments/{id}/images/{imageId}/patch", "Patch image", "Patches OS package vulnerabilities in the image using Copacetic, producing a new patched tag", "Images"),
+		authz.PermImagesPatch, h.PatchImage)
 }
 
 // PatchImage starts a background patch run for an image.
-func (h *ImagePatchHandler) PatchImage(ctx context.Context, input *PatchImageInput) (*PatchImageOutput, error) {
+func (h *ImagePatchHandler) PatchImage(ctx context.Context, input *PatchImageInput) (*handlerutil.Out[imagepatch.PatchRecord], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -116,7 +83,7 @@ func (h *ImagePatchHandler) PatchImage(ctx context.Context, input *PatchImageInp
 		}
 	}
 
-	return &PatchImageOutput{
+	return &handlerutil.Out[imagepatch.PatchRecord]{
 		Body: base.ApiResponse[imagepatch.PatchRecord]{
 			Success: true,
 			Data:    *record,
@@ -125,7 +92,7 @@ func (h *ImagePatchHandler) PatchImage(ctx context.Context, input *PatchImageInp
 }
 
 // ListPatchTargets returns scanned images with fixable counts and latest patch runs.
-func (h *ImagePatchHandler) ListPatchTargets(ctx context.Context, input *ListPatchTargetsInput) (*ListPatchTargetsOutput, error) {
+func (h *ImagePatchHandler) ListPatchTargets(ctx context.Context, input *ListPatchTargetsInput) (*handlerutil.Page[imagepatch.PatchTarget], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 
 	targets, paginationResp, err := h.imagePatchService.ListPatchTargets(ctx, input.EnvironmentID, params)
@@ -136,7 +103,7 @@ func (h *ImagePatchHandler) ListPatchTargets(ctx context.Context, input *ListPat
 		targets = []imagepatch.PatchTarget{}
 	}
 
-	return &ListPatchTargetsOutput{
+	return &handlerutil.Page[imagepatch.PatchTarget]{
 		Body: base.Paginated[imagepatch.PatchTarget]{
 			Success:    true,
 			Data:       targets,
@@ -146,7 +113,7 @@ func (h *ImagePatchHandler) ListPatchTargets(ctx context.Context, input *ListPat
 }
 
 // ListImagePatches returns the paginated patch history for the environment.
-func (h *ImagePatchHandler) ListImagePatches(ctx context.Context, input *ListImagePatchesInput) (*ListImagePatchesOutput, error) {
+func (h *ImagePatchHandler) ListImagePatches(ctx context.Context, input *ListImagePatchesInput) (*handlerutil.Page[imagepatch.PatchRecord], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	if input.Status != "" {
 		params.Filters["status"] = input.Status
@@ -160,7 +127,7 @@ func (h *ImagePatchHandler) ListImagePatches(ctx context.Context, input *ListIma
 		records = []imagepatch.PatchRecord{}
 	}
 
-	return &ListImagePatchesOutput{
+	return &handlerutil.Page[imagepatch.PatchRecord]{
 		Body: base.Paginated[imagepatch.PatchRecord]{
 			Success:    true,
 			Data:       records,

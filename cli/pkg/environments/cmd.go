@@ -1,8 +1,8 @@
 package environments
 
 import (
-	"encoding/json"
 	"fmt"
+	"net/http"
 	"sort"
 	"strconv"
 	"strings"
@@ -71,51 +71,26 @@ var listCmd = &cobra.Command{
 			return err
 		}
 
-		path := types.Environments()
-		path, err = cmdutil.ApplyPaginationParams(cmd, path, cmdutil.ListParams{Resource: "environments", Limit: limitFlag, FallbackDefault: 20, Start: startFlag, All: allFlag})
-		if err != nil {
-			return errors.WrapIf(err, "failed to build pagination query")
-		}
-
-		resp, err := c.Get(cmd.Context(), path)
-		if err != nil {
-			return errors.WrapIf(err, "failed to list environments")
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result base.Paginated[environment.Environment]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
-		}
-
-		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
-		}
-
-		headers := []string{"ID", "NAME", "API URL", "STATUS", "ENABLED"}
-		rows := make([][]string, len(result.Data))
-		for i, env := range result.Data {
-			enabled := "false"
-			if env.Enabled {
-				enabled = "true"
-			}
-			rows[i] = []string{
-				env.ID,
-				env.Name,
-				env.ApiUrl,
-				env.Status,
-				enabled,
-			}
-		}
-
-		output.Table(headers, rows)
-		output.Showing(len(result.Data), result.Pagination.TotalItems, "environments")
-		return nil
+		return cmdutil.RunList(cmd, c, cmdutil.ListSpec[environment.Environment]{
+			Resource: "environments",
+			Endpoint: types.Environments(),
+			Params:   cmdutil.ListParams{Resource: "environments", Limit: limitFlag, FallbackDefault: 20, Start: startFlag, All: allFlag},
+			JSON:     jsonOutput,
+			Headers:  []string{"ID", "NAME", "API URL", "STATUS", "ENABLED"},
+			Row: func(env environment.Environment) []string {
+				enabled := "false"
+				if env.Enabled {
+					enabled = "true"
+				}
+				return []string{
+					env.ID,
+					env.Name,
+					env.ApiUrl,
+					env.Status,
+					enabled,
+				}
+			},
+		})
 	},
 }
 
@@ -142,12 +117,7 @@ var deleteCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Delete(cmd.Context(), types.Environment(args[0]))
-		if err != nil {
-			return errors.WrapIf(err, "failed to delete environment")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
+		if _, err := c.DeleteJSON[base.MessageResponse](cmd.Context(), types.Environment(args[0])); err != nil {
 			return errors.WrapIf(err, "failed to delete environment")
 		}
 
@@ -167,24 +137,13 @@ var getCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.Environment(args[0]))
+		result, err := c.GetJSON[environment.Environment](cmd.Context(), types.Environment(args[0]))
 		if err != nil {
 			return errors.WrapIf(err, "failed to get environment")
 		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result base.ApiResponse[environment.Environment]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
-		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(buildEnvironmentPayloadInternal(result.Data), "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(buildEnvironmentPayloadInternal(result.Data))
 		}
 
 		output.Header("Environment Details")
@@ -208,27 +167,12 @@ var testCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Post(cmd.Context(), types.EnvironmentTest(args[0]), nil)
-		if err != nil {
-			return errors.WrapIf(err, "failed to test environment")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to test environment")
-		}
-
-		if jsonOutput {
-			var result base.ApiResponse[any]
-			if err := json.NewDecoder(resp.Body).Decode(&result); err == nil {
-				if resultBytes, err := json.MarshalIndent(result.Data, "", "  "); err == nil {
-					fmt.Println(string(resultBytes))
-				}
-			}
-			return nil
-		}
-
-		output.Success("Environment connection test successful")
-		return nil
+		return cmdutil.RunPostAction[environment.Test](cmd, c, cmdutil.PostActionSpec{
+			Path:           types.EnvironmentTest(args[0]),
+			FailureMessage: "failed to test environment",
+			SuccessMessage: "Environment connection test successful",
+			JSON:           jsonOutput,
+		})
 	},
 }
 
@@ -253,15 +197,9 @@ var switchCmd = &cobra.Command{
 		}
 
 		path := fmt.Sprintf("%s?limit=%d", types.Environments(), cmdutil.ShowAllLimit)
-		resp, err := c.Get(cmd.Context(), path)
+		result, err := c.DoJSON[base.Paginated[environment.Environment]](cmd.Context(), http.MethodGet, path, nil)
 		if err != nil {
 			return errors.WrapIf(err, "failed to list environments")
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result base.Paginated[environment.Environment]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
 		}
 
 		if len(result.Data) == 0 {
@@ -373,27 +311,13 @@ var updateCmd = &cobra.Command{
 			req.Enabled = new(false)
 		}
 
-		resp, err := c.Put(cmd.Context(), types.Environment(args[0]), req)
+		result, err := c.PutJSON[environment.Environment](cmd.Context(), types.Environment(args[0]), req)
 		if err != nil {
 			return errors.WrapIf(err, "failed to update environment")
 		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to update environment")
-		}
-
-		var result base.ApiResponse[environment.Environment]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
-		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(buildEnvironmentPayloadInternal(result.Data), "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(buildEnvironmentPayloadInternal(result.Data))
 		}
 
 		output.Success("Environment updated successfully")
@@ -432,27 +356,13 @@ var createCmd = &cobra.Command{
 			req.Enabled = new(!envCreateDisabled)
 		}
 
-		resp, err := c.Post(cmd.Context(), types.Environments(), req)
+		result, err := c.PostJSON[environment.Environment](cmd.Context(), types.Environments(), req)
 		if err != nil {
 			return errors.WrapIf(err, "failed to create environment")
 		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to create environment")
-		}
-
-		var result base.ApiResponse[environment.Environment]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
-		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(buildEnvironmentPayloadInternal(result.Data), "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(buildEnvironmentPayloadInternal(result.Data))
 		}
 
 		output.Success("Environment created successfully")
@@ -479,27 +389,13 @@ var versionCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.EnvironmentVersion(args[0]))
+		result, err := c.GetJSON[version.Info](cmd.Context(), types.EnvironmentVersion(args[0]))
 		if err != nil {
 			return errors.WrapIf(err, "failed to get environment version")
 		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to get environment version")
-		}
-
-		var result base.ApiResponse[version.Info]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
-		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Header("Environment Version")

@@ -9,7 +9,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-func PaginateAndSortDB(params QueryParams, query *gorm.DB, result any) (Response, error) {
+func PaginateAndSortDB[M any](params QueryParams, query *gorm.DB, result *[]M) (Response, error) {
 	sortColumn := params.Sort
 	sortDirection := string(params.Order)
 
@@ -17,7 +17,7 @@ func PaginateAndSortDB(params QueryParams, query *gorm.DB, result any) (Response
 		sortDirection = "asc"
 	}
 
-	modelType := reflect.TypeOf(result).Elem().Elem()
+	modelType := reflect.TypeFor[M]()
 	capitalizedSortColumn := stringutils.CapitalizeFirstLetter(sortColumn)
 	sortField, sortFieldFound := modelType.FieldByName(capitalizedSortColumn)
 	isSortable, _ := strconv.ParseBool(sortField.Tag.Get("sortable"))
@@ -67,7 +67,7 @@ func PaginateAndSortDB(params QueryParams, query *gorm.DB, result any) (Response
 // paginateDBAll returns all results without pagination limits.
 // When skipCount is true the COUNT(*) is elided and TotalItems/TotalPages are returned as UnknownTotal.
 // Count runs before Find so it sees a clean session (Find sets Statement.Dest in GORM v2).
-func paginateDBAll(query *gorm.DB, result any, skipCount bool) (Response, error) {
+func paginateDBAll[M any](query *gorm.DB, result *[]M, skipCount bool) (Response, error) {
 	var totalItems int64
 	if !skipCount {
 		if err := query.Count(&totalItems).Error; err != nil {
@@ -99,7 +99,7 @@ func paginateDBAll(query *gorm.DB, result any, skipCount bool) (Response, error)
 // paginateDB applies offset/limit pagination. When skipCount is true the COUNT(*) is elided
 // and TotalItems/TotalPages are returned as UnknownTotal.
 // Count runs before Find so it sees a clean session (Find sets Statement.Dest in GORM v2).
-func paginateDB(offset int, pageSize int, query *gorm.DB, result any, skipCount bool) (Response, error) {
+func paginateDB[M any](offset int, pageSize int, query *gorm.DB, result *[]M, skipCount bool) (Response, error) {
 	if offset < 0 {
 		offset = 0
 	}

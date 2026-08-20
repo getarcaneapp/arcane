@@ -37,7 +37,7 @@ func (s *SettingsSearchService) GetSettingsCategories() []category.Category {
 
 func (s *SettingsSearchService) buildCategoriesFromModel() []category.Category {
 	// Extract category metadata from struct tags (catmeta)
-	catMetaMap := utils.ExtractCategoryMetadata(Settings{}, nil)
+	catMetaMap := utils.ExtractCategoryMetadata[Settings]()
 
 	// map category id -> list of settings
 	categories := map[string][]meta.Metadata{}

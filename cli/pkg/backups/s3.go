@@ -1,7 +1,6 @@
 package backups
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -10,6 +9,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/prompt"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
 	"github.com/getarcaneapp/arcane/types/v2/backup"
 	"github.com/getarcaneapp/arcane/types/v2/base"
@@ -46,65 +46,29 @@ var s3ListCmd = &cobra.Command{
 			return err
 		}
 
-		path, err := cmdutil.ApplyPaginationParams(cmd, types.BackupsS3(), cmdutil.ListParams{
-			Resource:        "s3 destinations",
-			Limit:           limitFlag,
-			FallbackDefault: 20,
-			Start:           startFlag,
-			All:             allFlag,
+		return cmdutil.RunList(cmd, c, cmdutil.ListSpec[backup.S3Destination]{
+			Resource: "S3 destinations",
+			Endpoint: types.BackupsS3(),
+			Params:   cmdutil.ListParams{Resource: "s3 destinations", Limit: limitFlag, FallbackDefault: 20, Start: startFlag, All: allFlag},
+			JSON:     cmdutil.JSONOutputEnabled(cmd),
+			Headers:  []string{"ID", "NAME", "BUCKET", "REGION", "ENDPOINT", "SSL", "SECRET"},
+			Row: func(dest backup.S3Destination) []string {
+				secret := "Not set"
+				if dest.SecretConfigured {
+					secret = "Set"
+				}
+				return []string{
+					dest.ID,
+					dest.Name,
+					dest.Bucket,
+					dest.Region,
+					dest.Endpoint,
+					strconv.FormatBool(dest.UseSSL),
+					secret,
+				}
+			},
 		})
-		if err != nil {
-			return errors.WrapIf(err, "failed to build pagination query")
-		}
-
-		resp, err := c.Get(cmd.Context(), path)
-		if err != nil {
-			return errors.WrapIf(err, "failed to list S3 destinations")
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		body, err := cmdutil.ReadJSONBody(resp)
-		if err != nil {
-			return errors.WrapIf(err, "failed to list S3 destinations")
-		}
-
-		if cmdutil.JSONOutputEnabled(cmd) {
-			return cmdutil.PrintRawJSON(body)
-		}
-
-		var result base.Paginated[backup.S3Destination]
-		if err := json.Unmarshal(body, &result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
-		}
-
-		output.Table(s3TableHeaders(), s3TableRows(result.Data))
-		output.Showing(len(result.Data), result.Pagination.TotalItems, "S3 destinations")
-		return nil
 	},
-}
-
-func s3TableHeaders() []string {
-	return []string{"ID", "NAME", "BUCKET", "REGION", "ENDPOINT", "SSL", "SECRET"}
-}
-
-func s3TableRows(destinations []backup.S3Destination) [][]string {
-	rows := make([][]string, len(destinations))
-	for i, dest := range destinations {
-		secret := "Not set"
-		if dest.SecretConfigured {
-			secret = "Set"
-		}
-		rows[i] = []string{
-			dest.ID,
-			dest.Name,
-			dest.Bucket,
-			dest.Region,
-			dest.Endpoint,
-			strconv.FormatBool(dest.UseSSL),
-			secret,
-		}
-	}
-	return rows
 }
 
 var s3GetCmd = &cobra.Command{
@@ -118,50 +82,25 @@ var s3GetCmd = &cobra.Command{
 			return err
 		}
 
-		resolved, err := resolveS3Destination(cmd.Context(), c, args[0], !cmdutil.JSONOutputEnabled(cmd))
+		resolved, _, err := s3DestinationRef.Resolve(cmd.Context(), c, args[0], !cmdutil.JSONOutputEnabled(cmd) && prompt.IsInteractive())
 		if err != nil {
 			return err
 		}
-
-		resp, err := c.Get(cmd.Context(), types.BackupsS3Destination(resolved.ID))
-		if err != nil {
-			return errors.WrapIf(err, "failed to get S3 destination")
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		body, err := cmdutil.ReadJSONBody(resp)
-		if err != nil {
-			return errors.WrapIf(err, "failed to get S3 destination")
-		}
+		dest := *resolved
 
 		if !s3GetInUse {
 			if cmdutil.JSONOutputEnabled(cmd) {
-				return cmdutil.PrintRawJSON(body)
-			}
-			var dest backup.S3Destination
-			if err := json.Unmarshal(body, &dest); err != nil {
-				return errors.WrapIf(err, "failed to parse response")
+				return cmdutil.PrintJSON(dest)
 			}
 			printS3Destination(dest)
 			return nil
 		}
 
-		var dest backup.S3Destination
-		if err := json.Unmarshal(body, &dest); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
-		}
-
-		usageResp, err := c.Get(cmd.Context(), types.BackupsS3DestinationInUse(resolved.ID))
+		usage, err := c.DoJSON[struct {
+			InUse bool `json:"inUse"`
+		}](cmd.Context(), http.MethodGet, types.BackupsS3DestinationInUse(resolved.ID), nil)
 		if err != nil {
 			return errors.WrapIf(err, "failed to check S3 destination usage")
-		}
-		defer func() { _ = usageResp.Body.Close() }()
-
-		var usage struct {
-			InUse bool `json:"inUse"`
-		}
-		if err := cmdutil.DecodeJSON(usageResp, &usage); err != nil {
-			return err
 		}
 
 		if cmdutil.JSONOutputEnabled(cmd) {
@@ -222,27 +161,13 @@ var s3CreateCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Post(cmd.Context(), types.BackupsS3(), s3DestinationFromFlags())
-		if err != nil {
-			return errors.WrapIf(err, "failed to create S3 destination")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to create S3 destination")
-		}
-
-		body, err := cmdutil.ReadJSONBody(resp)
+		dest, err := c.DoJSON[backup.S3Destination](cmd.Context(), http.MethodPost, types.BackupsS3(), s3DestinationFromFlags())
 		if err != nil {
 			return errors.WrapIf(err, "failed to create S3 destination")
 		}
 
 		if cmdutil.JSONOutputEnabled(cmd) {
-			return cmdutil.PrintRawJSON(body)
-		}
-
-		var dest backup.S3Destination
-		if err := json.Unmarshal(body, &dest); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+			return cmdutil.PrintJSON(dest)
 		}
 
 		output.Success("S3 destination %s created successfully", dest.Name)
@@ -262,32 +187,18 @@ var s3UpdateCmd = &cobra.Command{
 			return err
 		}
 
-		resolved, err := resolveS3Destination(cmd.Context(), c, args[0], !cmdutil.JSONOutputEnabled(cmd))
+		resolved, _, err := s3DestinationRef.Resolve(cmd.Context(), c, args[0], !cmdutil.JSONOutputEnabled(cmd) && prompt.IsInteractive())
 		if err != nil {
 			return err
 		}
 
-		resp, err := c.Put(cmd.Context(), types.BackupsS3Destination(resolved.ID), s3DestinationFromFlags())
-		if err != nil {
-			return errors.WrapIf(err, "failed to update S3 destination")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to update S3 destination")
-		}
-
-		body, err := cmdutil.ReadJSONBody(resp)
+		dest, err := c.DoJSON[backup.S3Destination](cmd.Context(), http.MethodPut, types.BackupsS3Destination(resolved.ID), s3DestinationFromFlags())
 		if err != nil {
 			return errors.WrapIf(err, "failed to update S3 destination")
 		}
 
 		if cmdutil.JSONOutputEnabled(cmd) {
-			return cmdutil.PrintRawJSON(body)
-		}
-
-		var dest backup.S3Destination
-		if err := json.Unmarshal(body, &dest); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+			return cmdutil.PrintJSON(dest)
 		}
 
 		output.Success("S3 destination %s updated successfully", dest.Name)
@@ -308,7 +219,7 @@ var s3DeleteCmd = &cobra.Command{
 			return err
 		}
 
-		resolved, err := resolveS3Destination(cmd.Context(), c, args[0], !forceFlag && !cmdutil.JSONOutputEnabled(cmd))
+		resolved, _, err := s3DestinationRef.Resolve(cmd.Context(), c, args[0], !forceFlag && !cmdutil.JSONOutputEnabled(cmd) && prompt.IsInteractive())
 		if err != nil {
 			return err
 		}
@@ -324,21 +235,13 @@ var s3DeleteCmd = &cobra.Command{
 			}
 		}
 
-		resp, err := c.Delete(cmd.Context(), types.BackupsS3Destination(resolved.ID))
+		result, err := c.DeleteJSON[base.MessageResponse](cmd.Context(), types.BackupsS3Destination(resolved.ID))
 		if err != nil {
-			return errors.WrapIf(err, "failed to delete S3 destination")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
 			return errors.WrapIf(err, "failed to delete S3 destination")
 		}
 
 		if cmdutil.JSONOutputEnabled(cmd) {
-			body, err := cmdutil.ReadJSONBody(resp)
-			if err != nil {
-				return errors.WrapIf(err, "failed to delete S3 destination")
-			}
-			return cmdutil.PrintRawJSON(body)
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("S3 destination %s deleted successfully", resolved.Name)
@@ -367,39 +270,28 @@ passing the connection flags (--name, --bucket, --region, ...) with no argument.
 			return err
 		}
 
-		var resp *http.Response
+		testPath := types.BackupsS3Test()
+		var testBody any = s3DestinationFromFlags()
 		if len(args) == 1 {
 			if connectionFlagsSet {
 				return errors.New("pass either a saved destination name or ID, or the connection flags, not both")
 			}
-			resolved, err := resolveS3Destination(cmd.Context(), c, args[0], !cmdutil.JSONOutputEnabled(cmd))
+			resolved, _, err := s3DestinationRef.Resolve(cmd.Context(), c, args[0], !cmdutil.JSONOutputEnabled(cmd) && prompt.IsInteractive())
 			if err != nil {
 				return err
 			}
-			resp, err = c.Post(cmd.Context(), types.BackupsS3DestinationTest(resolved.ID), nil)
-			if err != nil {
-				return errors.WrapIf(err, "failed to test S3 destination")
-			}
-		} else {
-			if s3Bucket == "" {
-				return errors.New("either a destination name or ID, or connection flags (--name, --bucket, --region, ...) are required")
-			}
-			resp, err = c.Post(cmd.Context(), types.BackupsS3Test(), s3DestinationFromFlags())
-			if err != nil {
-				return errors.WrapIf(err, "failed to test S3 destination")
-			}
+			testPath, testBody = types.BackupsS3DestinationTest(resolved.ID), nil
+		} else if s3Bucket == "" {
+			return errors.New("either a destination name or ID, or connection flags (--name, --bucket, --region, ...) are required")
 		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
+
+		result, err := c.PostJSON[base.MessageResponse](cmd.Context(), testPath, testBody)
+		if err != nil {
 			return errors.WrapIf(err, "failed to test S3 destination")
 		}
 
 		if cmdutil.JSONOutputEnabled(cmd) {
-			body, err := cmdutil.ReadJSONBody(resp)
-			if err != nil {
-				return errors.WrapIf(err, "failed to test S3 destination")
-			}
-			return cmdutil.PrintRawJSON(body)
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("S3 connection test succeeded")

@@ -1,7 +1,6 @@
 package events
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"emperror.dev/errors"
@@ -41,38 +40,25 @@ var listCmd = &cobra.Command{
 			return err
 		}
 
-		path := types.Events()
+		endpoint := types.Events()
 		if envOnlyFlag {
-			path = types.EventsEnvironment(c.EnvID())
-		}
-		path, err = cmdutil.ApplyPaginationParams(cmd, path, cmdutil.ListParams{Resource: "events", Limit: limitFlag, FallbackDefault: 20, Start: startFlag, All: allFlag})
-		if err != nil {
-			return errors.WrapIf(err, "failed to build pagination query")
+			endpoint = types.EventsEnvironment(c.EnvID())
 		}
 
-		resp, err := c.Get(cmd.Context(), path)
-		if err != nil {
-			return errors.WrapIf(err, "failed to list events")
-		}
-		defer func() { _ = resp.Body.Close() }()
+		return cmdutil.RunList(cmd, c, eventListSpecInternal(endpoint))
+	},
+}
 
-		var result base.Paginated[event.Event]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
-		}
-
-		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
-		}
-
-		headers := []string{"ID", "TYPE", "RESOURCE", "USER", "TIMESTAMP"}
-		rows := make([][]string, len(result.Data))
-		for i, evt := range result.Data {
+// eventListSpecInternal builds the shared list spec for the global and
+// per-environment event list commands, which render identically.
+func eventListSpecInternal(endpoint string) cmdutil.ListSpec[event.Event] {
+	return cmdutil.ListSpec[event.Event]{
+		Resource: "events",
+		Endpoint: endpoint,
+		Params:   cmdutil.ListParams{Resource: "events", Limit: limitFlag, FallbackDefault: 20, Start: startFlag, All: allFlag},
+		JSON:     jsonOutput,
+		Headers:  []string{"ID", "TYPE", "RESOURCE", "USER", "TIMESTAMP"},
+		Row: func(evt event.Event) []string {
 			resource := ""
 			if evt.ResourceName != nil && evt.ResourceType != nil {
 				resource = fmt.Sprintf("%s (%s)", *evt.ResourceName, *evt.ResourceType)
@@ -81,19 +67,15 @@ var listCmd = &cobra.Command{
 			if evt.Username != nil {
 				username = *evt.Username
 			}
-			rows[i] = []string{
+			return []string{
 				evt.ID,
 				evt.Type,
 				resource,
 				username,
 				evt.Timestamp.String(),
 			}
-		}
-
-		output.Table(headers, rows)
-		output.Showing(len(result.Data), result.Pagination.TotalItems, "events")
-		return nil
-	},
+		},
+	}
 }
 
 var deleteCmd = &cobra.Command{
@@ -119,12 +101,7 @@ var deleteCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Delete(cmd.Context(), types.Event(args[0]))
-		if err != nil {
-			return errors.WrapIf(err, "failed to delete event")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
+		if _, err := c.DeleteJSON[base.MessageResponse](cmd.Context(), types.Event(args[0])); err != nil {
 			return errors.WrapIf(err, "failed to delete event")
 		}
 
@@ -143,32 +120,21 @@ var statsCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.EventsStats())
-		if err != nil {
-			return errors.WrapIf(err, "failed to get event stats")
-		}
-		defer func() { _ = resp.Body.Close() }()
-
 		// The severity counts DTO lives only in the backend's internal event
 		// package, so mirror its wire shape here.
-		var result base.ApiResponse[struct {
+		result, err := c.GetJSON[struct {
 			Total   int64 `json:"total"`
 			Info    int64 `json:"info"`
 			Success int64 `json:"success"`
 			Warning int64 `json:"warning"`
 			Error   int64 `json:"error"`
-		}]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
+		}](cmd.Context(), types.EventsStats())
+		if err != nil {
+			return errors.WrapIf(err, "failed to get event stats")
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Header("Event Stats")

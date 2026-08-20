@@ -10,7 +10,6 @@ import (
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
-	"github.com/getarcaneapp/arcane/types/v2/base"
 	roletypes "github.com/getarcaneapp/arcane/types/v2/role"
 	"github.com/spf13/cobra"
 )
@@ -53,14 +52,8 @@ var listCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		resp, err := c.Get(cmd.Context(), types.OidcRoleMappings())
+		result, err := c.GetJSON[[]roletypes.OidcRoleMapping](cmd.Context(), types.OidcRoleMappings())
 		if err != nil {
-			return errors.WrapIf(err, "failed to list OIDC mappings")
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result base.ApiResponse[[]roletypes.OidcRoleMapping]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
 			return errors.WrapIf(err, "failed to list OIDC mappings")
 		}
 
@@ -105,13 +98,8 @@ var createCmd = &cobra.Command{
 			req.EnvironmentID = new(createEnvironment)
 		}
 
-		resp, err := c.Post(cmd.Context(), types.OidcRoleMappings(), req)
+		result, err := c.PostJSON[roletypes.OidcRoleMapping](cmd.Context(), types.OidcRoleMappings(), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to create OIDC mapping")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		var result base.ApiResponse[roletypes.OidcRoleMapping]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
 			return errors.WrapIf(err, "failed to create OIDC mapping")
 		}
 
@@ -223,13 +211,8 @@ func fetchMappingInternal(cmd *cobra.Command, id string) (*roletypes.OidcRoleMap
 	if err != nil {
 		return nil, err
 	}
-	resp, err := c.Get(cmd.Context(), types.OidcRoleMappings())
+	result, err := c.GetJSON[[]roletypes.OidcRoleMapping](cmd.Context(), types.OidcRoleMappings())
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to load current mapping")
-	}
-	defer func() { _ = resp.Body.Close() }()
-	var result base.ApiResponse[[]roletypes.OidcRoleMapping]
-	if err := cmdutil.DecodeJSON(resp, &result); err != nil {
 		return nil, errors.WrapIf(err, "failed to load current mapping")
 	}
 	for i := range result.Data {

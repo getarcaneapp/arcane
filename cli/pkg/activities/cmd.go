@@ -3,7 +3,6 @@
 package activities
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -15,7 +14,6 @@ import (
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
-	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/spf13/cobra"
 )
 
@@ -49,17 +47,6 @@ var listCmd = &cobra.Command{
 			return err
 		}
 
-		path, err := cmdutil.ApplyPaginationParams(cmd, types.Activities(c.EnvID()), cmdutil.ListParams{
-			Resource:        "activities",
-			Limit:           limitFlag,
-			FallbackDefault: 50,
-			Start:           startFlag,
-			All:             allFlag,
-		})
-		if err != nil {
-			return errors.WrapIf(err, "failed to build pagination query")
-		}
-
 		query := url.Values{}
 		if statusFlag != "" {
 			query.Set("status", statusFlag)
@@ -70,47 +57,26 @@ var listCmd = &cobra.Command{
 		if resourceTypeFlag != "" {
 			query.Set("resourceType", resourceTypeFlag)
 		}
-		if len(query) > 0 {
-			path = cmdutil.AppendQuery(path, query)
-		}
 
-		resp, err := c.Get(cmd.Context(), path)
-		if err != nil {
-			return errors.WrapIf(err, "failed to list activities")
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		body, err := cmdutil.ReadJSONBody(resp)
-		if err != nil {
-			return errors.WrapIf(err, "failed to list activities")
-		}
-
-		if jsonOutput {
-			return cmdutil.PrintRawJSON(body)
-		}
-
-		var result base.Paginated[activitytypes.Activity]
-		if err := json.Unmarshal(body, &result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
-		}
-
-		headers := []string{"ID", "TYPE", "STATUS", "RESOURCE", "STARTED", "PROGRESS", "MESSAGE"}
-		rows := make([][]string, len(result.Data))
-		for i, item := range result.Data {
-			rows[i] = []string{
-				item.ID,
-				string(item.Type),
-				string(item.Status),
-				activityResource(item),
-				item.StartedAt.Format(time.RFC3339),
-				activityProgress(item),
-				activityMessage(item),
-			}
-		}
-
-		output.Table(headers, rows)
-		output.Showing(len(result.Data), result.Pagination.TotalItems, "activities")
-		return nil
+		return cmdutil.RunList(cmd, c, cmdutil.ListSpec[activitytypes.Activity]{
+			Resource: "activities",
+			Endpoint: types.Activities(c.EnvID()),
+			Params:   cmdutil.ListParams{Resource: "activities", Limit: limitFlag, FallbackDefault: 50, Start: startFlag, All: allFlag},
+			Query:    query,
+			JSON:     jsonOutput,
+			Headers:  []string{"ID", "TYPE", "STATUS", "RESOURCE", "STARTED", "PROGRESS", "MESSAGE"},
+			Row: func(item activitytypes.Activity) []string {
+				return []string{
+					item.ID,
+					string(item.Type),
+					string(item.Status),
+					activityResource(item),
+					item.StartedAt.Format(time.RFC3339),
+					activityProgress(item),
+					activityMessage(item),
+				}
+			},
+		})
 	},
 }
 
@@ -129,24 +95,13 @@ var getCmd = &cobra.Command{
 			types.Activity(c.EnvID(), args[0]),
 			url.Values{"limit": []string{strconv.Itoa(messagesFlag)}},
 		)
-		resp, err := c.Get(cmd.Context(), path)
-		if err != nil {
-			return errors.WrapIf(err, "failed to get activity")
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		body, err := cmdutil.ReadJSONBody(resp)
+		result, err := c.GetJSON[activitytypes.Detail](cmd.Context(), path)
 		if err != nil {
 			return errors.WrapIf(err, "failed to get activity")
 		}
 
 		if jsonOutput {
-			return cmdutil.PrintRawJSON(body)
-		}
-
-		var result base.ApiResponse[activitytypes.Detail]
-		if err := json.Unmarshal(body, &result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		item := result.Data.Activity
@@ -213,14 +168,8 @@ var cancelCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Post(cmd.Context(), types.ActivityCancel(c.EnvID(), args[0]), nil)
+		result, err := c.PostJSON[activitytypes.Activity](cmd.Context(), types.ActivityCancel(c.EnvID(), args[0]), nil)
 		if err != nil {
-			return errors.WrapIf(err, "failed to cancel activity")
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result base.ApiResponse[activitytypes.Activity]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
 			return errors.WrapIf(err, "failed to cancel activity")
 		}
 
@@ -254,14 +203,8 @@ var clearCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Delete(cmd.Context(), types.ActivitiesHistory(c.EnvID()))
+		result, err := c.DeleteJSON[activitytypes.ClearHistoryResult](cmd.Context(), types.ActivitiesHistory(c.EnvID()))
 		if err != nil {
-			return errors.WrapIf(err, "failed to clear activity history")
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result base.ApiResponse[activitytypes.ClearHistoryResult]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
 			return errors.WrapIf(err, "failed to clear activity history")
 		}
 

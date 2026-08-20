@@ -8,6 +8,7 @@ import (
 
 	"emperror.dev/errors"
 
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/samber/mo"
 	"github.com/samber/mo/result"
 )
@@ -45,28 +46,32 @@ func GetBoolClaim(m map[string]any, key string) bool {
 	return false
 }
 
-// GetStringSliceClaim extracts a string slice claim from a map
-func GetStringSliceClaim(m map[string]any, key string) []string {
-	return StringSliceFromClaimValue(m[key])
-}
-
-// StringSliceFromClaimValue flattens a claim value into a slice of strings.
-// Accepts string (comma or space separated), []string, []any, or nil.
-func StringSliceFromClaimValue(v any) []string {
+// StringSliceFromValue flattens a claim value into a slice of strings.
+// Accepts string (trimmed, single element), []string, []any (string elements
+// only), or nil. Unlike GetStringSliceClaim it never splits a single string
+// into multiple values, so it is safe for claims whose values may legally
+// contain separators (e.g. aud URIs).
+func StringSliceFromValue(v any) []string {
 	switch t := v.(type) {
 	case []string:
-		return t
+		return stringSliceFromStringsInternal(t)
 	case []any:
-		out := make([]string, 0, len(t))
-		for _, it := range t {
-			if s, ok := it.(string); ok && s != "" {
-				out = append(out, s)
-			}
-		}
-		if len(out) > 0 {
-			return out
-		}
+		return stringSliceFromInterfacesInternal(t)
 	case string:
+		return stringSliceFromStringsInternal([]string{t})
+	}
+	return nil
+}
+
+// GetStringSliceClaim extracts a string slice claim from a map. A single
+// string value is split on commas or spaces (group/role claims are commonly
+// delivered that way).
+func GetStringSliceClaim(m map[string]any, key string) []string {
+	v, ok := m[key]
+	if !ok || v == nil {
+		return nil
+	}
+	if t, ok := v.(string); ok {
 		s := strings.TrimSpace(t)
 		if s == "" {
 			return nil
@@ -86,7 +91,29 @@ func StringSliceFromClaimValue(v any) []string {
 		}
 		return strings.Fields(s)
 	}
-	return nil
+	return StringSliceFromValue(v)
+}
+
+func stringSliceFromStringsInternal[S ~string](items []S) []string {
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		if s := strings.TrimSpace(string(item)); s != "" {
+			out = append(out, s)
+		}
+	}
+	return utils.UniqueNonEmptyStrings(out)
+}
+
+func stringSliceFromInterfacesInternal[T any](items []T) []string {
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		if s, ok := any(item).(string); ok {
+			if trimmed := strings.TrimSpace(s); trimmed != "" {
+				out = append(out, trimmed)
+			}
+		}
+	}
+	return utils.UniqueNonEmptyStrings(out)
 }
 
 // ParseJWTClaims decodes and unmarshals the payload part of a JWT

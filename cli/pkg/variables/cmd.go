@@ -2,17 +2,16 @@ package variables
 
 import (
 	"fmt"
-	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	"emperror.dev/errors"
 
+	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
-	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/env"
 	"github.com/spf13/cobra"
 )
@@ -101,17 +100,8 @@ var listCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.Variables())
+		result, err := c.GetJSON[[]env.GlobalVariable](cmd.Context(), types.Variables())
 		if err != nil {
-			return errors.WrapIf(err, "failed to list variables")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to list variables")
-		}
-
-		var result base.ApiResponse[[]env.GlobalVariable]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
 			return errors.WrapIf(err, "failed to list variables")
 		}
 
@@ -159,18 +149,9 @@ var createCmd = &cobra.Command{
 			EnvironmentIDs:  createEnvIDs,
 		}
 
-		resp, err := c.Post(cmd.Context(), types.Variables(), req)
+		result, err := c.PostJSON[env.GlobalVariableMutationResponse](cmd.Context(), types.Variables(), req)
 		if err != nil {
 			return errors.WrapIf(err, "failed to create variable")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to create variable")
-		}
-
-		var result base.ApiResponse[env.GlobalVariableMutationResponse]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
 		}
 
 		return printMutationResult(result.Data, fmt.Sprintf("Variable %s created successfully", createKey))
@@ -209,18 +190,9 @@ var updateCmd = &cobra.Command{
 			return errors.New("no updates provided (set at least one flag)")
 		}
 
-		resp, err := c.Put(cmd.Context(), types.Variable(args[0]), req)
+		result, err := c.PutJSON[env.GlobalVariableMutationResponse](cmd.Context(), types.Variable(args[0]), req)
 		if err != nil {
 			return errors.WrapIf(err, "failed to update variable")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to update variable")
-		}
-
-		var result base.ApiResponse[env.GlobalVariableMutationResponse]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
 		}
 
 		return printMutationResult(result.Data, "Variable updated successfully")
@@ -250,18 +222,9 @@ var deleteCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Delete(cmd.Context(), types.Variable(args[0]))
+		result, err := c.DeleteJSON[env.GlobalVariableMutationResponse](cmd.Context(), types.Variable(args[0]))
 		if err != nil {
 			return errors.WrapIf(err, "failed to delete variable")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to delete variable")
-		}
-
-		var result base.ApiResponse[env.GlobalVariableMutationResponse]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
 		}
 
 		return printMutationResult(result.Data, "Variable deleted successfully")
@@ -278,25 +241,16 @@ var syncCmd = &cobra.Command{
 			return err
 		}
 
-		var response *http.Response
+		var result *client.APIResponse[[]env.EnvironmentSyncStatus]
 		failureMessage := "failed to sync variables"
 		if syncStatusFlag {
 			failureMessage = "failed to get variable sync status"
-			response, err = c.Get(cmd.Context(), types.VariablesSyncStatus())
+			result, err = c.GetJSON[[]env.EnvironmentSyncStatus](cmd.Context(), types.VariablesSyncStatus())
 		} else {
-			response, err = c.Post(cmd.Context(), types.VariablesSync(), nil)
+			result, err = c.PostJSON[[]env.EnvironmentSyncStatus](cmd.Context(), types.VariablesSync(), nil)
 		}
 		if err != nil {
 			return errors.WrapIff(err, "%s", failureMessage)
-		}
-		defer func() { _ = response.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(response); err != nil {
-			return errors.WrapIff(err, "%s", failureMessage)
-		}
-
-		var result base.ApiResponse[[]env.EnvironmentSyncStatus]
-		if err := cmdutil.DecodeJSON(response, &result); err != nil {
-			return err
 		}
 
 		if jsonOutput {

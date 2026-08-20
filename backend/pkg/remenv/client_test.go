@@ -114,22 +114,20 @@ func TestClientDoJSON_ClassifiesStatusAndDecodeErrors(t *testing.T) {
 
 	client := NewClient(server.Client(), nil)
 
-	var statusOut map[string]any
-	err := client.DoJSON(context.Background(), Request{
+	_, err := client.DoJSON[map[string]any](context.Background(), Request{
 		Method: http.MethodGet,
 		URL:    server.URL + "/status",
 		Path:   "/status",
-	}, &statusOut)
+	})
 	var statusErr *StatusError
 	require.ErrorAs(t, err, &statusErr)
 	require.Equal(t, http.StatusBadGateway, statusErr.StatusCode)
 
-	var decodeOut map[string]any
-	err = client.DoJSON(context.Background(), Request{
+	_, err = client.DoJSON[map[string]any](context.Background(), Request{
 		Method: http.MethodGet,
 		URL:    server.URL + "/decode",
 		Path:   "/decode",
-	}, &decodeOut)
+	})
 	var decodeErr *DecodeError
 	require.ErrorAs(t, err, &decodeErr)
 }

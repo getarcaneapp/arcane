@@ -1,8 +1,7 @@
 package version
 
 import (
-	"encoding/json"
-	"fmt"
+	"net/http"
 
 	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
@@ -31,36 +30,15 @@ var VersionCmd = &cobra.Command{
 		// neither displayVersion nor revision. /api/app-version returns the full
 		// version.Info, including the update-check fields printed below.
 		logger.GetLogger().Debug("Sending request", "endpoint", clitypes.AppVersionEndpoint)
-		resp, err := c.Get(cmd.Context(), clitypes.AppVersionEndpoint)
+		result, err := c.DoJSON[version.Info](cmd.Context(), http.MethodGet, clitypes.AppVersionEndpoint, nil)
 		if err != nil {
 			return errors.WrapIf(err, "failed to get version")
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		logger.GetLogger().Debug("Response received", "status", resp.Status)
-
-		body, err := cmdutil.ReadJSONBody(resp)
-		if err != nil {
-			return errors.WrapIf(err, "failed to get version")
-		}
-
-		logger.GetLogger().Debug("Raw response", "body", string(body))
-
-		var result version.Info
-
-		if err := json.Unmarshal(body, &result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
 		}
 
 		logger.GetLogger().Debug("Parsed version data", "result", result)
 
 		if cmdutil.JSONOutputEnabled(cmd) {
-			resultBytes, err := json.MarshalIndent(result, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result)
 		}
 
 		output.Header("Arcane Environment Details: \n")

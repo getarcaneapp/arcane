@@ -388,7 +388,7 @@ func setupTimeoutSettingsSubscriptionInternal(params settingsSubscriptionsParams
 	}
 	timeoutSyncContext, cancelTimeoutSync := context.WithCancel(params.LifecycleCtx)
 	subscribe(libarcane.TimeoutSettingKeys(), func(updates []libarcane.SettingUpdate) {
-		_, err := actors.Submit(timeoutSyncContext, timeoutSyncExecutor, "sync timeout settings to remote environments", func(ctx context.Context) (actors.NoPayload, error) {
+		_, err := timeoutSyncExecutor.Submit(timeoutSyncContext, "sync timeout settings to remote environments", func(ctx context.Context) (actors.NoPayload, error) {
 			syncTimeoutSettingsToAgentsInternal(ctx, params.Environment, updates)
 			return actors.NoPayload{}, nil
 		}, nil)

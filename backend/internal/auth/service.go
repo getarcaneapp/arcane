@@ -657,14 +657,14 @@ func (s *AuthService) extractOidcGroups(ctx context.Context, userInfo auth.OidcU
 
 	if claim != "" {
 		if v, ok := jwtclaims.GetByPath(userInfo.Extra, claim).Get(); ok {
-			if groups := jwtclaims.StringSliceFromClaimValue(v); len(groups) > 0 {
+			if groups := jwtclaims.GetStringSliceClaim(map[string]any{"groups": v}, "groups"); len(groups) > 0 {
 				return groups
 			}
 		}
 		if tokenResp != nil && tokenResp.IDToken != "" {
 			if parsed := jwtclaims.ParseJWTClaims(tokenResp.IDToken); parsed != nil {
 				if v, ok := jwtclaims.GetByPath(parsed, claim).Get(); ok {
-					if groups := jwtclaims.StringSliceFromClaimValue(v); len(groups) > 0 {
+					if groups := jwtclaims.GetStringSliceClaim(map[string]any{"groups": v}, "groups"); len(groups) > 0 {
 						return groups
 					}
 				}

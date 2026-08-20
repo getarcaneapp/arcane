@@ -3,7 +3,6 @@
 package webhooks
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
@@ -46,24 +45,13 @@ var listCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.Webhooks(c.EnvID()))
-		if err != nil {
-			return errors.WrapIf(err, "failed to list webhooks")
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		body, err := cmdutil.ReadJSONBody(resp)
+		result, err := c.GetJSON[[]webhook.Summary](cmd.Context(), types.Webhooks(c.EnvID()))
 		if err != nil {
 			return errors.WrapIf(err, "failed to list webhooks")
 		}
 
 		if jsonOutput {
-			return cmdutil.PrintRawJSON(body)
-		}
-
-		var result base.ApiResponse[[]webhook.Summary]
-		if err := json.Unmarshal(body, &result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		headers := []string{"ID", "NAME", "ACTION", "TARGET", "TOKEN", "ENABLED", "LAST TRIGGERED"}
@@ -111,14 +99,8 @@ var createCmd = &cobra.Command{
 			TargetID:   createTargetID,
 		}
 
-		resp, err := c.Post(cmd.Context(), types.Webhooks(c.EnvID()), req)
+		result, err := c.PostJSON[webhook.Created](cmd.Context(), types.Webhooks(c.EnvID()), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to create webhook")
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result base.ApiResponse[webhook.Created]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
 			return errors.WrapIf(err, "failed to create webhook")
 		}
 
@@ -157,12 +139,7 @@ var updateCmd = &cobra.Command{
 		}
 
 		req := webhook.UpdateInput{Enabled: updateEnabled}
-		resp, err := c.Request(cmd.Context(), http.MethodPatch, types.Webhook(c.EnvID(), args[0]), req)
-		if err != nil {
-			return errors.WrapIf(err, "failed to update webhook")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
+		if _, err := c.DoJSON[base.ApiResponse[any]](cmd.Context(), http.MethodPatch, types.Webhook(c.EnvID(), args[0]), req); err != nil {
 			return errors.WrapIf(err, "failed to update webhook")
 		}
 
@@ -202,12 +179,7 @@ var deleteCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Delete(cmd.Context(), types.Webhook(c.EnvID(), args[0]))
-		if err != nil {
-			return errors.WrapIf(err, "failed to delete webhook")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
+		if _, err := c.DeleteJSON[any](cmd.Context(), types.Webhook(c.EnvID(), args[0])); err != nil {
 			return errors.WrapIf(err, "failed to delete webhook")
 		}
 
@@ -228,13 +200,7 @@ var triggerCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Post(cmd.Context(), types.WebhookTrigger(args[0]), nil)
-		if err != nil {
-			return errors.WrapIf(err, "failed to trigger webhook")
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		body, err := cmdutil.ReadJSONBody(resp)
+		body, err := c.DoRaw(cmd.Context(), http.MethodPost, types.WebhookTrigger(args[0]), nil)
 		if err != nil {
 			return errors.WrapIf(err, "failed to trigger webhook")
 		}

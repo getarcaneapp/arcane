@@ -26,10 +26,6 @@ type UpdateJobSchedulesInput struct {
 	Body jobschedule.Update `doc:"Job schedule update data"`
 }
 
-type UpdateJobSchedulesOutput struct {
-	Body base.ApiResponse[jobschedule.Config]
-}
-
 type ListJobsInput struct {
 	ID string `path:"id" doc:"Environment ID"`
 }
@@ -49,8 +45,8 @@ type RunJobOutput struct {
 
 func RegisterJobSchedules(api huma.API, jobSvc *JobService, envSvc *environment.EnvironmentService) {
 	h := &JobSchedulesHandler{
-		jobService:         jobSvc,
-		environmentService: envSvc,
+		jobService:      jobSvc,
+		proxyRemoteJSON: envSvc.ProxyJSONRequest,
 	}
 
 	middleware.RegisterWithPermission(api, huma.Operation{
@@ -95,13 +91,13 @@ func RegisterJobSchedules(api huma.API, jobSvc *JobService, envSvc *environment.
 }
 
 type JobSchedulesHandler struct {
-	jobService         *JobService
-	environmentService *environment.EnvironmentService
+	jobService      *JobService
+	proxyRemoteJSON handlerutil.RemoteJSONProxy
 }
 
 func (h *JobSchedulesHandler) ListJobs(ctx context.Context, input *ListJobsInput) (*GetJobsOutput, error) {
 	if input.ID != "0" {
-		jobs, err := handlerutil.ProxyRemoteJSON[jobschedule.JobListResponse](ctx, h.environmentService.ProxyJSONRequest, input.ID, http.MethodGet, "/api/environments/0/jobs", nil)
+		jobs, err := h.proxyRemoteJSON.JSON[jobschedule.JobListResponse](ctx, input.ID, http.MethodGet, "/api/environments/0/jobs", nil)
 		if err != nil {
 			return nil, err
 		}
@@ -118,7 +114,7 @@ func (h *JobSchedulesHandler) ListJobs(ctx context.Context, input *ListJobsInput
 
 func (h *JobSchedulesHandler) RunJob(ctx context.Context, input *RunJobInput) (*RunJobOutput, error) {
 	if input.ID != "0" {
-		runResp, err := handlerutil.ProxyRemoteJSON[jobschedule.JobRunResponse](ctx, h.environmentService.ProxyJSONRequest, input.ID, http.MethodPost, "/api/environments/0/jobs/"+input.JobID+"/run", nil)
+		runResp, err := h.proxyRemoteJSON.JSON[jobschedule.JobRunResponse](ctx, input.ID, http.MethodPost, "/api/environments/0/jobs/"+input.JobID+"/run", nil)
 		if err != nil {
 			return nil, err
 		}
@@ -140,7 +136,7 @@ func (h *JobSchedulesHandler) RunJob(ctx context.Context, input *RunJobInput) (*
 
 func (h *JobSchedulesHandler) Get(ctx context.Context, input *GetJobSchedulesInput) (*GetJobSchedulesOutput, error) {
 	if input.ID != "0" {
-		cfg, err := handlerutil.ProxyRemoteJSON[jobschedule.Config](ctx, h.environmentService.ProxyJSONRequest, input.ID, http.MethodGet, "/api/environments/0/job-schedules", nil)
+		cfg, err := h.proxyRemoteJSON.JSON[jobschedule.Config](ctx, input.ID, http.MethodGet, "/api/environments/0/job-schedules", nil)
 		if err != nil {
 			return nil, err
 		}
@@ -151,14 +147,14 @@ func (h *JobSchedulesHandler) Get(ctx context.Context, input *GetJobSchedulesInp
 	return &GetJobSchedulesOutput{Body: cfg}, nil
 }
 
-func (h *JobSchedulesHandler) Update(ctx context.Context, input *UpdateJobSchedulesInput) (*UpdateJobSchedulesOutput, error) {
+func (h *JobSchedulesHandler) Update(ctx context.Context, input *UpdateJobSchedulesInput) (*handlerutil.Out[jobschedule.Config], error) {
 	if input.ID != "0" {
-		apiResp, err := handlerutil.ProxyRemoteJSON[base.ApiResponse[jobschedule.Config]](ctx, h.environmentService.ProxyJSONRequest, input.ID, http.MethodPut, "/api/environments/0/job-schedules", input.Body)
+		apiResp, err := h.proxyRemoteJSON.JSON[base.ApiResponse[jobschedule.Config]](ctx, input.ID, http.MethodPut, "/api/environments/0/job-schedules", input.Body)
 		if err != nil {
 			return nil, err
 		}
 
-		return &UpdateJobSchedulesOutput{Body: *apiResp}, nil
+		return &handlerutil.Out[jobschedule.Config]{Body: *apiResp}, nil
 	}
 
 	cfg, err := h.jobService.UpdateJobSchedules(ctx, input.Body)
@@ -166,7 +162,7 @@ func (h *JobSchedulesHandler) Update(ctx context.Context, input *UpdateJobSchedu
 		return nil, huma.Error400BadRequest(err.Error())
 	}
 
-	return &UpdateJobSchedulesOutput{
+	return &handlerutil.Out[jobschedule.Config]{
 		Body: base.ApiResponse[jobschedule.Config]{
 			Success: true,
 			Data:    cfg,

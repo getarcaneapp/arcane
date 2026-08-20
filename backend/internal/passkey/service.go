@@ -12,7 +12,7 @@ import (
 	"encoding/base32"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/v2"
 	"log/slog"
 	"net/url"
 	"strings"

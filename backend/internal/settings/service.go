@@ -125,7 +125,7 @@ func (s *SettingsService) SubscribeSettingsChanges(keys []string, callback func(
 			}
 		}
 		if len(matching) > 0 {
-			_, err := actors.Submit(context.WithoutCancel(s.lifecycleCtx), s.effects, "apply settings change effects", func(context.Context) (actors.NoPayload, error) {
+			_, err := s.effects.Submit(context.WithoutCancel(s.lifecycleCtx), "apply settings change effects", func(context.Context) (actors.NoPayload, error) {
 				callback(matching)
 				return actors.NoPayload{}, nil
 			}, nil)
@@ -139,7 +139,7 @@ func (s *SettingsService) SubscribeSettingsChanges(keys []string, callback func(
 // NotifySettingsChanges publishes current values for keys through the settings
 // actor. It is used when another settings-table workflow performs persistence.
 func (s *SettingsService) NotifySettingsChanges(ctx context.Context, keys ...string) error {
-	_, err := actors.Execute(ctx, s.writes, "notify settings changes", func(context.Context) ([]libarcane.SettingUpdate, error) {
+	_, err := s.writes.Execute(ctx, "notify settings changes", func(context.Context) ([]libarcane.SettingUpdate, error) {
 		updates := make([]libarcane.SettingUpdate, 0, len(keys))
 		cfg := s.GetSettingsConfig()
 		for _, key := range keys {
@@ -498,7 +498,7 @@ func (s *SettingsService) UpdateSetting(ctx context.Context, key, value string) 
 	if err := libarcane.ValidateCronSetting(key, value); err != nil {
 		return errors.WrapIff(err, "invalid cron expression for %s", key)
 	}
-	_, err := actors.Execute(ctx, s.writes, "update setting", func(writeCtx context.Context) (actors.NoPayload, error) {
+	_, err := s.writes.Execute(ctx, "update setting", func(writeCtx context.Context) (actors.NoPayload, error) {
 		if err := s.updateSettingValueNoRefreshInternal(writeCtx, key, value); err != nil {
 			return actors.NoPayload{}, err
 		}
@@ -514,7 +514,7 @@ func (s *SettingsService) UpdateSettingValues(ctx context.Context, updates []lib
 	for _, update := range updates {
 		values = append(values, SettingVariable{Key: update.Key, Value: update.Value})
 	}
-	_, err := actors.Execute(ctx, s.writes, "update setting values", func(writeCtx context.Context) (actors.NoPayload, error) {
+	_, err := s.writes.Execute(ctx, "update setting values", func(writeCtx context.Context) (actors.NoPayload, error) {
 		if err := s.persistSettings(writeCtx, values); err != nil {
 			return actors.NoPayload{}, err
 		}
@@ -536,7 +536,7 @@ func (s *SettingsService) updateSettingValueNoRefreshInternal(ctx context.Contex
 // UpdateSettings publishes the refreshed snapshot before returning. Each
 // subscriber's effects remain ordered and may finish after this method returns.
 func (s *SettingsService) UpdateSettings(ctx context.Context, updates settingstypes.Update) ([]SettingVariable, error) {
-	result, err := actors.Execute(ctx, s.writes, "update settings", func(writeCtx context.Context) (settingsUpdateResultInternal, error) {
+	result, err := s.writes.Execute(ctx, "update settings", func(writeCtx context.Context) (settingsUpdateResultInternal, error) {
 		return s.updateSettingsInternal(writeCtx, updates)
 	}, func(result settingsUpdateResultInternal, err error) {
 		if err == nil && len(result.changes) > 0 {
@@ -716,7 +716,7 @@ func (s *SettingsService) persistSettings(ctx context.Context, values []SettingV
 }
 
 func (s *SettingsService) EnsureDefaultSettings(ctx context.Context) error {
-	_, err := actors.Execute(ctx, s.writes, "ensure default settings", func(writeCtx context.Context) (actors.NoPayload, error) {
+	_, err := s.writes.Execute(ctx, "ensure default settings", func(writeCtx context.Context) (actors.NoPayload, error) {
 		defaultSettings := s.getDefaultSettings()
 		defaultSettingVars := defaultSettings.ToSettingVariableSlice(SettingVisibilityAll, false)
 
@@ -748,7 +748,7 @@ func (s *SettingsService) EnsureDefaultSettings(ctx context.Context) error {
 }
 
 func (s *SettingsService) PruneUnknownSettings(ctx context.Context) error {
-	_, err := actors.Execute(ctx, s.writes, "prune unknown settings", func(writeCtx context.Context) (actors.NoPayload, error) {
+	_, err := s.writes.Execute(ctx, "prune unknown settings", func(writeCtx context.Context) (actors.NoPayload, error) {
 		allowedKeys := allowedSettingKeys()
 		if len(allowedKeys) == 0 {
 			return actors.NoPayload{}, nil
@@ -772,7 +772,7 @@ func (s *SettingsService) PruneUnknownSettings(ctx context.Context) error {
 }
 
 func (s *SettingsService) PersistEnvSettingsIfMissing(ctx context.Context) error {
-	_, err := actors.Execute(ctx, s.writes, "persist environment settings", func(writeCtx context.Context) (actors.NoPayload, error) {
+	_, err := s.writes.Execute(ctx, "persist environment settings", func(writeCtx context.Context) (actors.NoPayload, error) {
 		rt := reflect.TypeFor[Settings]()
 		appCfg := config.Load()
 		isEnvOnlyMode := appCfg.AgentMode || appCfg.UIConfigurationDisabled
@@ -907,7 +907,7 @@ func (s *SettingsService) setupInstanceID(ctx context.Context) error {
 	return nil
 }
 
-func settingValueInternal[T any](ctx context.Context, s *SettingsService, key string, parse func(string) (T, error)) mo.Option[T] {
+func (s *SettingsService) settingValue[T any](ctx context.Context, key string, parse func(string) (T, error)) mo.Option[T] {
 	cfg := s.getEffectiveSettingsConfigInternal(ctx)
 	value, _, _, err := cfg.FieldByKey(key)
 	if err != nil || value == "" {
@@ -922,15 +922,15 @@ func settingValueInternal[T any](ctx context.Context, s *SettingsService, key st
 }
 
 func (s *SettingsService) GetBoolSetting(ctx context.Context, key string, defaultValue bool) bool {
-	return settingValueInternal(ctx, s, key, strconv.ParseBool).OrElse(defaultValue)
+	return s.settingValue(ctx, key, strconv.ParseBool).OrElse(defaultValue)
 }
 
 func (s *SettingsService) GetIntSetting(ctx context.Context, key string, defaultValue int) int {
-	return settingValueInternal(ctx, s, key, strconv.Atoi).OrElse(defaultValue)
+	return s.settingValue(ctx, key, strconv.Atoi).OrElse(defaultValue)
 }
 
 func (s *SettingsService) GetStringSetting(ctx context.Context, key, defaultValue string) string {
-	return settingValueInternal(ctx, s, key, func(value string) (string, error) { return value, nil }).OrElse(defaultValue)
+	return s.settingValue(ctx, key, func(value string) (string, error) { return value, nil }).OrElse(defaultValue)
 }
 
 func (s *SettingsService) SetBoolSetting(ctx context.Context, key string, value bool) error {
@@ -966,7 +966,7 @@ func ParseExcludedContainerNames(raw string) []string {
 // the autoUpdateExcludedContainers setting. When excluded is true the container
 // is added to the list; when false it is removed.
 func (s *SettingsService) SetContainerAutoUpdateExclusionInternal(ctx context.Context, containerName string, excluded bool) error {
-	_, err := actors.Execute(ctx, s.writes, "update container auto-update exclusion", func(writeCtx context.Context) (actors.NoPayload, error) {
+	_, err := s.writes.Execute(ctx, "update container auto-update exclusion", func(writeCtx context.Context) (actors.NoPayload, error) {
 		ordered := ParseExcludedContainerNames(s.GetStringSetting(writeCtx, "autoUpdateExcludedContainers", ""))
 
 		if excluded {
@@ -992,7 +992,7 @@ func (s *SettingsService) SetContainerAutoUpdateExclusionInternal(ctx context.Co
 }
 
 func (s *SettingsService) EnsureEncryptionKey(ctx context.Context) (string, error) {
-	return actors.Execute(ctx, s.writes, "ensure encryption key", func(writeCtx context.Context) (string, error) {
+	return s.writes.Execute(ctx, "ensure encryption key", func(writeCtx context.Context) (string, error) {
 		const keyName = "encryptionKey"
 		var key string
 
@@ -1037,7 +1037,7 @@ func (s *SettingsService) EnsureEncryptionKey(ctx context.Context) (string, erro
 }
 
 func (s *SettingsService) EnsureJwtSigningKey(ctx context.Context) (*mldsa.PrivateKey, error) {
-	return actors.Execute(ctx, s.writes, "ensure jwt signing key", func(writeCtx context.Context) (*mldsa.PrivateKey, error) {
+	return s.writes.Execute(ctx, "ensure jwt signing key", func(writeCtx context.Context) (*mldsa.PrivateKey, error) {
 		const keyName = "jwtSigningKeySeed"
 		var key *mldsa.PrivateKey
 
@@ -1094,7 +1094,7 @@ func (s *SettingsService) NormalizeProjectsDirectory(ctx context.Context, projec
 		return nil
 	}
 
-	_, err := actors.Execute(ctx, s.writes, "normalize projects directory", func(writeCtx context.Context) (string, error) {
+	_, err := s.writes.Execute(ctx, "normalize projects directory", func(writeCtx context.Context) (string, error) {
 		var projectsDirSetting SettingVariable
 		err := s.db.WithContext(writeCtx).Where("key = ?", "projectsDirectory").First(&projectsDirSetting).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -1142,7 +1142,7 @@ func (s *SettingsService) NormalizeBuildsDirectory(ctx context.Context) error {
 		return nil
 	}
 
-	_, err := actors.Execute(ctx, s.writes, "normalize builds directory", func(writeCtx context.Context) (string, error) {
+	_, err := s.writes.Execute(ctx, "normalize builds directory", func(writeCtx context.Context) (string, error) {
 		var buildsDirSetting SettingVariable
 		err := s.db.WithContext(writeCtx).Where("key = ?", buildsKey).First(&buildsDirSetting).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {

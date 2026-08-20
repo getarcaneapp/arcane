@@ -38,14 +38,11 @@ func UploadFileInChunks(ctx context.Context, c *client.Client, kind, filePath st
 		return "", errors.WrapIf(err, "failed to stat file")
 	}
 
-	var created struct {
-		Success bool                `json:"success"`
-		Data    uploadtypes.Session `json:"data"`
-	}
-	if err := c.DoJSON(ctx, http.MethodPost, types.UploadSessions(c.EnvID(), kind), uploadtypes.CreateSessionRequest{
+	created, err := c.PostJSON[uploadtypes.Session](ctx, types.UploadSessions(c.EnvID(), kind), uploadtypes.CreateSessionRequest{
 		Filename: filepath.Base(filePath),
 		Size:     fileInfo.Size(),
-	}, &created); err != nil {
+	})
+	if err != nil {
 		return "", errors.WrapIf(err, "failed to create upload session")
 	}
 	session := created.Data

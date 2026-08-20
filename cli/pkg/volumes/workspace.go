@@ -2,7 +2,7 @@ package volumes
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"mime/multipart"
 	"net/http"
@@ -15,7 +15,6 @@ import (
 
 	"emperror.dev/errors"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/prompt"
@@ -32,13 +31,13 @@ var workspaceCmd = &cobra.Command{
 	Args:         cobra.RangeArgs(1, 2),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := client.NewFromConfig()
+		c, err := cmdutil.ClientFromCommand(cmd)
 		if err != nil {
 			return err
 		}
 
 		allowPrompt := !jsonOutput && prompt.IsInteractive()
-		resolved, err := resolveVolume(cmd.Context(), c, args[0], allowPrompt)
+		resolved, _, err := volumeRef.Resolve(cmd.Context(), c, args[0], allowPrompt)
 		if err != nil {
 			return err
 		}
@@ -110,13 +109,13 @@ var workspaceCatCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(2),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := client.NewFromConfig()
+		c, err := cmdutil.ClientFromCommand(cmd)
 		if err != nil {
 			return err
 		}
 
 		allowPrompt := !jsonOutput && prompt.IsInteractive()
-		resolved, err := resolveVolume(cmd.Context(), c, args[0], allowPrompt)
+		resolved, _, err := volumeRef.Resolve(cmd.Context(), c, args[0], allowPrompt)
 		if err != nil {
 			return err
 		}
@@ -158,13 +157,13 @@ var workspaceDownloadCmd = &cobra.Command{
 	Args:         cobra.RangeArgs(2, 3),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := client.NewFromConfig()
+		c, err := cmdutil.ClientFromCommand(cmd)
 		if err != nil {
 			return err
 		}
 
 		allowPrompt := prompt.IsInteractive()
-		resolved, err := resolveVolume(cmd.Context(), c, args[0], allowPrompt)
+		resolved, _, err := volumeRef.Resolve(cmd.Context(), c, args[0], allowPrompt)
 		if err != nil {
 			return err
 		}
@@ -208,13 +207,13 @@ var workspacePutCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(3),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := client.NewFromConfig()
+		c, err := cmdutil.ClientFromCommand(cmd)
 		if err != nil {
 			return err
 		}
 
 		allowPrompt := !forceFlag && prompt.IsInteractive()
-		resolved, err := resolveVolume(cmd.Context(), c, args[0], allowPrompt)
+		resolved, _, err := volumeRef.Resolve(cmd.Context(), c, args[0], allowPrompt)
 		if err != nil {
 			return err
 		}

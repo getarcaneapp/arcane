@@ -18,8 +18,8 @@ import (
 // VariableHandler handles manager-level global variables and the separate
 // agent-only materialization channel used to push effective values.
 type VariableHandler struct {
-	variableService    *VariableService
-	environmentService *environment.EnvironmentService
+	variableService *VariableService
+	proxyRemoteJSON handlerutil.RemoteJSONProxy
 }
 
 // ============================================================================
@@ -28,16 +28,8 @@ type VariableHandler struct {
 
 type ListGlobalVariablesInput struct{}
 
-type ListGlobalVariablesOutput struct {
-	Body base.ApiResponse[[]env.GlobalVariable]
-}
-
 type CreateGlobalVariableInput struct {
 	Body env.CreateGlobalVariableRequest
-}
-
-type CreateGlobalVariableOutput struct {
-	Body base.ApiResponse[env.GlobalVariableMutationResponse]
 }
 
 type UpdateGlobalVariableInput struct {
@@ -45,36 +37,16 @@ type UpdateGlobalVariableInput struct {
 	Body env.UpdateGlobalVariableRequest
 }
 
-type UpdateGlobalVariableOutput struct {
-	Body base.ApiResponse[env.GlobalVariableMutationResponse]
-}
-
 type DeleteGlobalVariableInput struct {
 	ID string `path:"id" doc:"Variable ID"`
 }
 
-type DeleteGlobalVariableOutput struct {
-	Body base.ApiResponse[env.GlobalVariableMutationResponse]
-}
-
 type SyncGlobalVariablesInput struct{}
-
-type SyncGlobalVariablesOutput struct {
-	Body base.ApiResponse[[]env.EnvironmentSyncStatus]
-}
 
 type GetGlobalVariableSyncStatusInput struct{}
 
-type GetGlobalVariableSyncStatusOutput struct {
-	Body base.ApiResponse[[]env.EnvironmentSyncStatus]
-}
-
 type GetGlobalVariablesInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
-
-type GetGlobalVariablesOutput struct {
-	Body base.ApiResponse[[]env.Variable]
 }
 
 type UpdateGlobalVariablesInput struct {
@@ -82,16 +54,12 @@ type UpdateGlobalVariablesInput struct {
 	Body          env.Summary
 }
 
-type UpdateGlobalVariablesOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
-}
-
 // ============================================================================
 // Route Registration
 // ============================================================================
 
 func RegisterVariables(api huma.API, variableService *VariableService, environmentService *environment.EnvironmentService) {
-	h := &VariableHandler{variableService: variableService, environmentService: environmentService}
+	h := &VariableHandler{variableService: variableService, proxyRemoteJSON: environmentService.ProxyJSONRequest}
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "listVariables",
@@ -158,7 +126,7 @@ func RegisterVariables(api huma.API, variableService *VariableService, environme
 // channel on agents. It must never be registered on a manager API because its
 // response intentionally contains decrypted values for .env.global.
 func RegisterMaterializedVariables(api huma.API, variableService *VariableService, environmentService *environment.EnvironmentService) {
-	h := &VariableHandler{variableService: variableService, environmentService: environmentService}
+	h := &VariableHandler{variableService: variableService, proxyRemoteJSON: environmentService.ProxyJSONRequest}
 
 	huma.Register(api, huma.Operation{
 		OperationID: "getGlobalVariables",
@@ -187,13 +155,13 @@ func RegisterMaterializedVariables(api huma.API, variableService *VariableServic
 // Handler Methods
 // ============================================================================
 
-func (h *VariableHandler) ListVariables(ctx context.Context, _ *ListGlobalVariablesInput) (*ListGlobalVariablesOutput, error) {
+func (h *VariableHandler) ListVariables(ctx context.Context, _ *ListGlobalVariablesInput) (*handlerutil.Out[[]env.GlobalVariable], error) {
 	variables, err := h.variableService.ListVariables(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 
-	return &ListGlobalVariablesOutput{
+	return &handlerutil.Out[[]env.GlobalVariable]{
 		Body: base.ApiResponse[[]env.GlobalVariable]{
 			Success: true,
 			Data:    variables,
@@ -201,13 +169,13 @@ func (h *VariableHandler) ListVariables(ctx context.Context, _ *ListGlobalVariab
 	}, nil
 }
 
-func (h *VariableHandler) CreateVariable(ctx context.Context, input *CreateGlobalVariableInput) (*CreateGlobalVariableOutput, error) {
+func (h *VariableHandler) CreateVariable(ctx context.Context, input *CreateGlobalVariableInput) (*handlerutil.Out[env.GlobalVariableMutationResponse], error) {
 	variable, err := h.variableService.CreateVariable(ctx, input.Body)
 	if err != nil {
 		return nil, variableMutationHTTPErrorInternal(err)
 	}
 
-	return &CreateGlobalVariableOutput{
+	return &handlerutil.Out[env.GlobalVariableMutationResponse]{
 		Body: base.ApiResponse[env.GlobalVariableMutationResponse]{
 			Success: true,
 			Data: env.GlobalVariableMutationResponse{
@@ -218,13 +186,13 @@ func (h *VariableHandler) CreateVariable(ctx context.Context, input *CreateGloba
 	}, nil
 }
 
-func (h *VariableHandler) UpdateVariable(ctx context.Context, input *UpdateGlobalVariableInput) (*UpdateGlobalVariableOutput, error) {
+func (h *VariableHandler) UpdateVariable(ctx context.Context, input *UpdateGlobalVariableInput) (*handlerutil.Out[env.GlobalVariableMutationResponse], error) {
 	variable, err := h.variableService.UpdateVariable(ctx, input.ID, input.Body)
 	if err != nil {
 		return nil, variableMutationHTTPErrorInternal(err)
 	}
 
-	return &UpdateGlobalVariableOutput{
+	return &handlerutil.Out[env.GlobalVariableMutationResponse]{
 		Body: base.ApiResponse[env.GlobalVariableMutationResponse]{
 			Success: true,
 			Data: env.GlobalVariableMutationResponse{
@@ -235,12 +203,12 @@ func (h *VariableHandler) UpdateVariable(ctx context.Context, input *UpdateGloba
 	}, nil
 }
 
-func (h *VariableHandler) DeleteVariable(ctx context.Context, input *DeleteGlobalVariableInput) (*DeleteGlobalVariableOutput, error) {
+func (h *VariableHandler) DeleteVariable(ctx context.Context, input *DeleteGlobalVariableInput) (*handlerutil.Out[env.GlobalVariableMutationResponse], error) {
 	if err := h.variableService.DeleteVariable(ctx, input.ID); err != nil {
 		return nil, variableMutationHTTPErrorInternal(err)
 	}
 
-	return &DeleteGlobalVariableOutput{
+	return &handlerutil.Out[env.GlobalVariableMutationResponse]{
 		Body: base.ApiResponse[env.GlobalVariableMutationResponse]{
 			Success: true,
 			Data: env.GlobalVariableMutationResponse{
@@ -250,8 +218,8 @@ func (h *VariableHandler) DeleteVariable(ctx context.Context, input *DeleteGloba
 	}, nil
 }
 
-func (h *VariableHandler) SyncVariables(ctx context.Context, _ *SyncGlobalVariablesInput) (*SyncGlobalVariablesOutput, error) {
-	return &SyncGlobalVariablesOutput{
+func (h *VariableHandler) SyncVariables(ctx context.Context, _ *SyncGlobalVariablesInput) (*handlerutil.Out[[]env.EnvironmentSyncStatus], error) {
+	return &handlerutil.Out[[]env.EnvironmentSyncStatus]{
 		Body: base.ApiResponse[[]env.EnvironmentSyncStatus]{
 			Success: true,
 			Data:    h.variableService.SyncAll(ctx),
@@ -259,8 +227,8 @@ func (h *VariableHandler) SyncVariables(ctx context.Context, _ *SyncGlobalVariab
 	}, nil
 }
 
-func (h *VariableHandler) GetSyncStatus(_ context.Context, _ *GetGlobalVariableSyncStatusInput) (*GetGlobalVariableSyncStatusOutput, error) {
-	return &GetGlobalVariableSyncStatusOutput{
+func (h *VariableHandler) GetSyncStatus(_ context.Context, _ *GetGlobalVariableSyncStatusInput) (*handlerutil.Out[[]env.EnvironmentSyncStatus], error) {
+	return &handlerutil.Out[[]env.EnvironmentSyncStatus]{
 		Body: base.ApiResponse[[]env.EnvironmentSyncStatus]{
 			Success: true,
 			Data:    h.variableService.SyncStatuses(),
@@ -270,13 +238,13 @@ func (h *VariableHandler) GetSyncStatus(_ context.Context, _ *GetGlobalVariableS
 
 // GetMaterializedVariables returns the environment's materialized .env.global
 // content (local file for environment "0", proxied to the agent otherwise).
-func (h *VariableHandler) GetMaterializedVariables(ctx context.Context, input *GetGlobalVariablesInput) (*GetGlobalVariablesOutput, error) {
+func (h *VariableHandler) GetMaterializedVariables(ctx context.Context, input *GetGlobalVariablesInput) (*handlerutil.Out[[]env.Variable], error) {
 	if input.EnvironmentID != "0" {
-		response, err := handlerutil.ProxyRemoteJSON[base.ApiResponse[[]env.Variable]](ctx, h.environmentService.ProxyJSONRequest, input.EnvironmentID, http.MethodGet, "/api/environments/0/templates/variables", nil)
+		response, err := h.proxyRemoteJSON.JSON[base.ApiResponse[[]env.Variable]](ctx, input.EnvironmentID, http.MethodGet, "/api/environments/0/templates/variables", nil)
 		if err != nil {
 			return nil, err
 		}
-		return &GetGlobalVariablesOutput{Body: *response}, nil
+		return &handlerutil.Out[[]env.Variable]{Body: *response}, nil
 	}
 
 	vars, err := h.variableService.ReadLocalEnvFile(ctx)
@@ -284,7 +252,7 @@ func (h *VariableHandler) GetMaterializedVariables(ctx context.Context, input *G
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to retrieve global variables").Error())
 	}
 
-	return &GetGlobalVariablesOutput{
+	return &handlerutil.Out[[]env.Variable]{
 		Body: base.ApiResponse[[]env.Variable]{
 			Success: true,
 			Data:    vars,
@@ -294,13 +262,13 @@ func (h *VariableHandler) GetMaterializedVariables(ctx context.Context, input *G
 
 // UpdateMaterializedVariables replaces the environment's materialized
 // .env.global content (local file for environment "0", proxied otherwise).
-func (h *VariableHandler) UpdateMaterializedVariables(ctx context.Context, input *UpdateGlobalVariablesInput) (*UpdateGlobalVariablesOutput, error) {
+func (h *VariableHandler) UpdateMaterializedVariables(ctx context.Context, input *UpdateGlobalVariablesInput) (*handlerutil.Out[base.MessageResponse], error) {
 	if input.EnvironmentID != "0" {
-		response, err := handlerutil.ProxyRemoteJSON[base.ApiResponse[base.MessageResponse]](ctx, h.environmentService.ProxyJSONRequest, input.EnvironmentID, http.MethodPut, "/api/environments/0/templates/variables", input.Body)
+		response, err := h.proxyRemoteJSON.JSON[base.ApiResponse[base.MessageResponse]](ctx, input.EnvironmentID, http.MethodPut, "/api/environments/0/templates/variables", input.Body)
 		if err != nil {
 			return nil, err
 		}
-		return &UpdateGlobalVariablesOutput{Body: *response}, nil
+		return &handlerutil.Out[base.MessageResponse]{Body: *response}, nil
 	}
 
 	if err := h.variableService.WriteLocalEnvFile(ctx, input.Body.Variables); err != nil {
@@ -310,7 +278,7 @@ func (h *VariableHandler) UpdateMaterializedVariables(ctx context.Context, input
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to update global variables").Error())
 	}
 
-	return &UpdateGlobalVariablesOutput{
+	return &handlerutil.Out[base.MessageResponse]{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data: base.MessageResponse{

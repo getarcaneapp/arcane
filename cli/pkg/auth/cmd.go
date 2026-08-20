@@ -1,9 +1,10 @@
 package auth
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -18,6 +19,7 @@ import (
 	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
 	"github.com/getarcaneapp/arcane/types/v2/auth"
 	"github.com/getarcaneapp/arcane/types/v2/base"
+	"github.com/getarcaneapp/arcane/types/v2/user"
 	"github.com/spf13/cobra"
 )
 
@@ -138,18 +140,13 @@ var loginCmd = &cobra.Command{
 			}
 
 			if cmdutil.JSONOutputEnabled(cmd) || jsonOutput {
-				resultBytes, err := json.MarshalIndent(map[string]any{
+				return cmdutil.PrintJSON(map[string]any{
 					"success":      tokenResult.Success,
 					"token":        tokenResult.Token,
 					"refreshToken": tokenResult.RefreshToken,
 					"expiresAt":    tokenResult.ExpiresAt,
 					"user":         tokenResult.User,
-				}, "", "  ")
-				if err != nil {
-					return errors.WrapIf(err, "failed to marshal JSON")
-				}
-				fmt.Println(string(resultBytes))
-				return nil
+				})
 			}
 
 			cfg, err := config.Load()
@@ -181,12 +178,8 @@ var logoutCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Post(cmd.Context(), types.AuthLogout(), nil)
+		result, err := c.PostJSON[base.MessageResponse](cmd.Context(), types.AuthLogout(), nil)
 		if err != nil {
-			return errors.WrapIf(err, "logout failed")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
 			return errors.WrapIf(err, "logout failed")
 		}
 
@@ -202,13 +195,7 @@ var logoutCmd = &cobra.Command{
 		}
 
 		if cmdutil.JSONOutputEnabled(cmd) || jsonOutput {
-			var result base.ApiResponse[any]
-			if err := json.NewDecoder(resp.Body).Decode(&result); err == nil {
-				if resultBytes, err := json.MarshalIndent(result.Data, "", "  "); err == nil {
-					fmt.Println(string(resultBytes))
-				}
-			}
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Logout successful")
@@ -228,36 +215,17 @@ var meCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.AuthMe())
+		result, err := c.GetJSON[user.User](cmd.Context(), types.AuthMe())
 		if err != nil {
 			return errors.WrapIf(err, "failed to get user info")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to get user info")
-		}
-
-		var result base.ApiResponse[any]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
 		}
 
 		if cmdutil.JSONOutputEnabled(cmd) || jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Header("Current User")
-		userBytes, err := json.MarshalIndent(result.Data, "", "  ")
-		if err != nil {
-			return errors.WrapIf(err, "failed to marshal user data")
-		}
-		fmt.Println(string(userBytes))
-		return nil
+		return cmdutil.PrintJSON(result.Data)
 	},
 }
 
@@ -304,23 +272,13 @@ var passwordCmd = &cobra.Command{
 			return errors.WrapIf(err, "failed to marshal request")
 		}
 
-		resp, err := c.Post(cmd.Context(), types.AuthPassword(), reqBody)
+		result, err := c.PostJSON[base.MessageResponse](cmd.Context(), types.AuthPassword(), reqBody)
 		if err != nil {
-			return errors.WrapIf(err, "password change failed")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
 			return errors.WrapIf(err, "password change failed")
 		}
 
 		if cmdutil.JSONOutputEnabled(cmd) || jsonOutput {
-			var result base.ApiResponse[any]
-			if err := json.NewDecoder(resp.Body).Decode(&result); err == nil {
-				if resultBytes, err := json.MarshalIndent(result.Data, "", "  "); err == nil {
-					fmt.Println(string(resultBytes))
-				}
-			}
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Password changed successfully")
@@ -360,31 +318,17 @@ var refreshCmd = &cobra.Command{
 			return errors.WrapIf(err, "failed to marshal request")
 		}
 
-		resp, err := c.Post(cmd.Context(), types.AuthRefresh(), reqBody)
+		result, err := c.PostJSON[auth.TokenRefreshResponse](cmd.Context(), types.AuthRefresh(), reqBody)
 		if err != nil {
 			return errors.WrapIf(err, "token refresh failed")
 		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "token refresh failed")
-		}
-
-		var result base.ApiResponse[auth.TokenRefreshResponse]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
-		}
 
 		if cmdutil.JSONOutputEnabled(cmd) || jsonOutput {
-			resultBytes, err := json.MarshalIndent(map[string]any{
+			return cmdutil.PrintJSON(map[string]any{
 				"token":        result.Data.Token,
 				"refreshToken": result.Data.RefreshToken,
 				"expiresAt":    result.Data.ExpiresAt,
-			}, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			})
 		}
 
 		// Save new JWT token to config
@@ -415,31 +359,20 @@ var oidcStatusCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.OIDCStatus())
-		if err != nil {
-			return errors.WrapIf(err, "failed to get OIDC status")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to get OIDC status")
-		}
-
-		var result struct {
+		// This endpoint returns its payload directly, not wrapped in an
+		// ApiResponse envelope.
+		type oidcStatusResult struct {
 			EnvForced     bool `json:"envForced"`
 			EnvConfigured bool `json:"envConfigured"`
 			MergeAccounts bool `json:"mergeAccounts"`
 		}
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
+		result, err := c.DoJSON[oidcStatusResult](cmd.Context(), http.MethodGet, types.OIDCStatus(), nil)
+		if err != nil {
+			return errors.WrapIf(err, "failed to get OIDC status")
 		}
 
 		if cmdutil.JSONOutputEnabled(cmd) || jsonOutput {
-			resultBytes, err := json.MarshalIndent(result, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result)
 		}
 
 		output.Header("OIDC Status")

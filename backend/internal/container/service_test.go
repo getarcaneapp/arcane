@@ -175,10 +175,9 @@ func TestBuildContainerFilterAccessors_FiltersStandaloneContainers(t *testing.T)
 		{ID: "compose", Labels: map[string]string{"com.docker.compose.project": "alpha"}, UpdateInfo: updateInfo},
 	}
 
-	result := pagination.SearchOrderAndPaginate(
+	result := pagination.Config[containertypes.Summary]{FilterAccessors: service.buildContainerFilterAccessors()}.SearchOrderAndPaginate(
 		items,
 		pagination.QueryParams{Filters: map[string]string{"standalone": "true", "updates": "has_update"}},
-		pagination.Config[containertypes.Summary]{FilterAccessors: service.buildContainerFilterAccessors()},
 	)
 
 	require.Len(t, result.Items, 1)

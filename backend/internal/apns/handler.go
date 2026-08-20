@@ -17,20 +17,8 @@ type ApnsHandler struct {
 	service *ApnsService
 }
 
-type StatusOutput struct {
-	Body base.ApiResponse[apnstypes.Status]
-}
-
-type PairingTokenOutput struct {
-	Body base.ApiResponse[apnstypes.PairingToken]
-}
-
 type RegisterDeviceInput struct {
 	Body apnstypes.RegisterDeviceRequest
-}
-
-type DeviceOutput struct {
-	Body base.ApiResponse[apnstypes.Device]
 }
 
 type UpdateDeviceInput struct {
@@ -42,69 +30,21 @@ type DeviceIDInput struct {
 	ID string `path:"id" doc:"Device ID"`
 }
 
-type MessageOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
-}
-
 func RegisterApns(api huma.API, service *ApnsService) {
 	h := &ApnsHandler{service: service}
-	tags := []string{"Mobile Push"}
 
-	huma.Register(api, huma.Operation{
-		OperationID: "get-apns-status",
-		Method:      http.MethodGet,
-		Path:        "/apns/status",
-		Summary:     "Get mobile push status",
-		Description: "Whether mobile push is enabled and the caller's registered devices",
-		Tags:        tags,
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, h.Status)
+	huma.Register(api, securedApnsOperationInternal("get-apns-status", http.MethodGet, "/apns/status", "Get mobile push status", "Whether mobile push is enabled and the caller's registered devices"), h.Status)
+	huma.Register(api, securedApnsOperationInternal("create-apns-pairing-token", http.MethodPost, "/apns/pairing-token", "Issue a pairing token", "Issue a short-lived signed token the mobile app presents to the push relay"), h.PairingToken)
+	huma.Register(api, securedApnsOperationInternal("register-apns-device", http.MethodPost, "/apns/devices", "Register a mobile device", ""), h.RegisterDevice)
+	huma.Register(api, securedApnsOperationInternal("update-apns-device", http.MethodPatch, "/apns/devices/{id}", "Update a mobile device", ""), h.UpdateDevice)
+	huma.Register(api, securedApnsOperationInternal("delete-apns-device", http.MethodDelete, "/apns/devices/{id}", "Remove a mobile device", ""), h.DeleteDevice)
+	huma.Register(api, securedApnsOperationInternal("test-apns-device", http.MethodPost, "/apns/devices/{id}/test", "Send a test push", ""), h.TestDevice)
+}
 
-	huma.Register(api, huma.Operation{
-		OperationID: "create-apns-pairing-token",
-		Method:      http.MethodPost,
-		Path:        "/apns/pairing-token",
-		Summary:     "Issue a pairing token",
-		Description: "Issue a short-lived signed token the mobile app presents to the push relay",
-		Tags:        tags,
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, h.PairingToken)
-
-	huma.Register(api, huma.Operation{
-		OperationID: "register-apns-device",
-		Method:      http.MethodPost,
-		Path:        "/apns/devices",
-		Summary:     "Register a mobile device",
-		Tags:        tags,
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, h.RegisterDevice)
-
-	huma.Register(api, huma.Operation{
-		OperationID: "update-apns-device",
-		Method:      http.MethodPatch,
-		Path:        "/apns/devices/{id}",
-		Summary:     "Update a mobile device",
-		Tags:        tags,
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, h.UpdateDevice)
-
-	huma.Register(api, huma.Operation{
-		OperationID: "delete-apns-device",
-		Method:      http.MethodDelete,
-		Path:        "/apns/devices/{id}",
-		Summary:     "Remove a mobile device",
-		Tags:        tags,
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, h.DeleteDevice)
-
-	huma.Register(api, huma.Operation{
-		OperationID: "test-apns-device",
-		Method:      http.MethodPost,
-		Path:        "/apns/devices/{id}/test",
-		Summary:     "Send a test push",
-		Tags:        tags,
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, h.TestDevice)
+func securedApnsOperationInternal(operationID, method, path, summary, description string) huma.Operation {
+	op := handlerutil.Operation(operationID, method, path, summary, description, "Mobile Push")
+	op.Security = handlerutil.DefaultOperationSecurity()
+	return op
 }
 
 func apnsHTTPErrorInternal(err error) error {
@@ -122,7 +62,7 @@ func apnsHTTPErrorInternal(err error) error {
 	}
 }
 
-func (h *ApnsHandler) Status(ctx context.Context, _ *struct{}) (*StatusOutput, error) {
+func (h *ApnsHandler) Status(ctx context.Context, _ *struct{}) (*handlerutil.Out[apnstypes.Status], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -131,10 +71,10 @@ func (h *ApnsHandler) Status(ctx context.Context, _ *struct{}) (*StatusOutput, e
 	if err != nil {
 		return nil, apnsHTTPErrorInternal(err)
 	}
-	return &StatusOutput{Body: base.ApiResponse[apnstypes.Status]{Success: true, Data: status}}, nil
+	return &handlerutil.Out[apnstypes.Status]{Body: base.ApiResponse[apnstypes.Status]{Success: true, Data: status}}, nil
 }
 
-func (h *ApnsHandler) PairingToken(ctx context.Context, _ *struct{}) (*PairingTokenOutput, error) {
+func (h *ApnsHandler) PairingToken(ctx context.Context, _ *struct{}) (*handlerutil.Out[apnstypes.PairingToken], error) {
 	if _, err := handlerutil.RequireUser(ctx); err != nil {
 		return nil, err
 	}
@@ -142,10 +82,10 @@ func (h *ApnsHandler) PairingToken(ctx context.Context, _ *struct{}) (*PairingTo
 	if err != nil {
 		return nil, apnsHTTPErrorInternal(err)
 	}
-	return &PairingTokenOutput{Body: base.ApiResponse[apnstypes.PairingToken]{Success: true, Data: token}}, nil
+	return &handlerutil.Out[apnstypes.PairingToken]{Body: base.ApiResponse[apnstypes.PairingToken]{Success: true, Data: token}}, nil
 }
 
-func (h *ApnsHandler) RegisterDevice(ctx context.Context, input *RegisterDeviceInput) (*DeviceOutput, error) {
+func (h *ApnsHandler) RegisterDevice(ctx context.Context, input *RegisterDeviceInput) (*handlerutil.Out[apnstypes.Device], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -154,10 +94,10 @@ func (h *ApnsHandler) RegisterDevice(ctx context.Context, input *RegisterDeviceI
 	if err != nil {
 		return nil, apnsHTTPErrorInternal(err)
 	}
-	return &DeviceOutput{Body: base.ApiResponse[apnstypes.Device]{Success: true, Data: device}}, nil
+	return &handlerutil.Out[apnstypes.Device]{Body: base.ApiResponse[apnstypes.Device]{Success: true, Data: device}}, nil
 }
 
-func (h *ApnsHandler) UpdateDevice(ctx context.Context, input *UpdateDeviceInput) (*DeviceOutput, error) {
+func (h *ApnsHandler) UpdateDevice(ctx context.Context, input *UpdateDeviceInput) (*handlerutil.Out[apnstypes.Device], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -166,10 +106,10 @@ func (h *ApnsHandler) UpdateDevice(ctx context.Context, input *UpdateDeviceInput
 	if err != nil {
 		return nil, apnsHTTPErrorInternal(err)
 	}
-	return &DeviceOutput{Body: base.ApiResponse[apnstypes.Device]{Success: true, Data: device}}, nil
+	return &handlerutil.Out[apnstypes.Device]{Body: base.ApiResponse[apnstypes.Device]{Success: true, Data: device}}, nil
 }
 
-func (h *ApnsHandler) DeleteDevice(ctx context.Context, input *DeviceIDInput) (*MessageOutput, error) {
+func (h *ApnsHandler) DeleteDevice(ctx context.Context, input *DeviceIDInput) (*handlerutil.Out[base.MessageResponse], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -177,10 +117,10 @@ func (h *ApnsHandler) DeleteDevice(ctx context.Context, input *DeviceIDInput) (*
 	if err := h.service.DeleteDevice(ctx, user.ID, input.ID); err != nil {
 		return nil, apnsHTTPErrorInternal(err)
 	}
-	return &MessageOutput{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Device removed"}}}, nil
+	return &handlerutil.Out[base.MessageResponse]{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Device removed"}}}, nil
 }
 
-func (h *ApnsHandler) TestDevice(ctx context.Context, input *DeviceIDInput) (*MessageOutput, error) {
+func (h *ApnsHandler) TestDevice(ctx context.Context, input *DeviceIDInput) (*handlerutil.Out[base.MessageResponse], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -188,5 +128,5 @@ func (h *ApnsHandler) TestDevice(ctx context.Context, input *DeviceIDInput) (*Me
 	if err := h.service.TestDevice(ctx, user.ID, input.ID); err != nil {
 		return nil, apnsHTTPErrorInternal(err)
 	}
-	return &MessageOutput{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Test notification queued"}}}, nil
+	return &handlerutil.Out[base.MessageResponse]{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Test notification queued"}}}, nil
 }

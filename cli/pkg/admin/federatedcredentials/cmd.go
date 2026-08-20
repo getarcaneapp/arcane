@@ -67,48 +67,24 @@ var listCmd = &cobra.Command{
 			return err
 		}
 
-		path, err := cmdutil.ApplyPaginationParams(cmd, types.FederatedCredentials(), cmdutil.ListParams{
-			Resource:        "federated-credentials",
-			Limit:           limitFlag,
-			FallbackDefault: 20,
-			Start:           startFlag,
-			All:             allFlag,
+		return cmdutil.RunList(cmd, c, cmdutil.ListSpec[federatedtypes.FederatedCredential]{
+			Resource: "federated credentials",
+			Endpoint: types.FederatedCredentials(),
+			Params:   cmdutil.ListParams{Resource: "federated-credentials", Limit: limitFlag, FallbackDefault: 20, Start: startFlag, All: allFlag},
+			JSON:     jsonOutput,
+			Headers:  []string{"ID", "NAME", "ISSUER", "SUBJECT", "ROLE", "ENABLED"},
+			Row: func(cred federatedtypes.FederatedCredential) []string {
+				role := cred.RoleName
+				if role == "" {
+					role = cred.RoleID
+				}
+				enabled := "false"
+				if cred.Enabled {
+					enabled = "true"
+				}
+				return []string{cred.ID, cred.Name, cred.IssuerURL, cred.SubjectMatch, role, enabled}
+			},
 		})
-		if err != nil {
-			return errors.WrapIf(err, "failed to build pagination query")
-		}
-
-		resp, err := c.Get(cmd.Context(), path)
-		if err != nil {
-			return errors.WrapIf(err, "failed to list federated credentials")
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result base.Paginated[federatedtypes.FederatedCredential]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return errors.WrapIf(err, "failed to list federated credentials")
-		}
-
-		if jsonOutput {
-			return cmdutil.PrintJSON(result.Data)
-		}
-
-		headers := []string{"ID", "NAME", "ISSUER", "SUBJECT", "ROLE", "ENABLED"}
-		rows := make([][]string, len(result.Data))
-		for i, cred := range result.Data {
-			role := cred.RoleName
-			if role == "" {
-				role = cred.RoleID
-			}
-			enabled := "false"
-			if cred.Enabled {
-				enabled = "true"
-			}
-			rows[i] = []string{cred.ID, cred.Name, cred.IssuerURL, cred.SubjectMatch, role, enabled}
-		}
-		output.Table(headers, rows)
-		output.Showing(len(result.Data), result.Pagination.TotalItems, "federated credentials")
-		return nil
 	},
 }
 
@@ -123,14 +99,8 @@ var getCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.FederatedCredential(args[0]))
+		result, err := c.GetJSON[federatedtypes.FederatedCredential](cmd.Context(), types.FederatedCredential(args[0]))
 		if err != nil {
-			return errors.WrapIf(err, "failed to get federated credential")
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result base.ApiResponse[federatedtypes.FederatedCredential]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
 			return errors.WrapIf(err, "failed to get federated credential")
 		}
 
@@ -182,14 +152,8 @@ var createCmd = &cobra.Command{
 			req.ExpiresAt = &parsed
 		}
 
-		resp, err := c.Post(cmd.Context(), types.FederatedCredentials(), req)
+		result, err := c.PostJSON[federatedtypes.FederatedCredential](cmd.Context(), types.FederatedCredentials(), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to create federated credential")
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result base.ApiResponse[federatedtypes.FederatedCredential]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
 			return errors.WrapIf(err, "failed to create federated credential")
 		}
 
@@ -266,14 +230,8 @@ var updateCmd = &cobra.Command{
 			req.ExpiresAt = &parsed
 		}
 
-		resp, err := c.Put(cmd.Context(), types.FederatedCredential(args[0]), req)
+		result, err := c.PutJSON[federatedtypes.FederatedCredential](cmd.Context(), types.FederatedCredential(args[0]), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to update federated credential")
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result base.ApiResponse[federatedtypes.FederatedCredential]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
 			return errors.WrapIf(err, "failed to update federated credential")
 		}
 
@@ -310,12 +268,7 @@ var deleteCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Delete(cmd.Context(), types.FederatedCredential(args[0]))
-		if err != nil {
-			return errors.WrapIf(err, "failed to delete federated credential")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
+		if _, err := c.DeleteJSON[base.MessageResponse](cmd.Context(), types.FederatedCredential(args[0])); err != nil {
 			return errors.WrapIf(err, "failed to delete federated credential")
 		}
 

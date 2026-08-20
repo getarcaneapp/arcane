@@ -6,7 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"net/http"
@@ -20,6 +20,7 @@ import (
 
 	"emperror.dev/errors"
 
+	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/config"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
 	"github.com/spf13/cobra"
@@ -143,12 +144,7 @@ func runCLIUpdateInternal(ctx context.Context, overrideChannel string) error {
 	}
 
 	if jsonOutput {
-		resultBytes, err := json.MarshalIndent(plan, "", "  ")
-		if err != nil {
-			return errors.WrapIf(err, "failed to marshal JSON")
-		}
-		fmt.Println(string(resultBytes))
-		return nil
+		return cmdutil.PrintJSON(plan)
 	}
 
 	output.Header("Arcane CLI Update")
@@ -395,7 +391,7 @@ func fetchLatestGitHubReleaseInternal(ctx context.Context) (string, error) {
 	}
 
 	var latest githubLatestRelease
-	if err := json.NewDecoder(resp.Body).Decode(&latest); err != nil {
+	if err := json.UnmarshalRead(resp.Body, &latest); err != nil {
 		return "", errors.WrapIf(err, "failed to fetch latest GitHub release")
 	}
 	return strings.TrimSpace(latest.TagName), nil

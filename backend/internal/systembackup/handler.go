@@ -45,13 +45,6 @@ type ListBackupHistoryInput struct {
 	Type   string `query:"type"`
 }
 
-type ListBackupHistoryOutput struct {
-	Body struct {
-		Data       []backuptypes.HistoryEntry `json:"data"`
-		Pagination base.PaginationResponse    `json:"pagination"`
-	}
-}
-
 type SystemVolumeBackupConfigOutput struct {
 	Body backuptypes.SystemVolumeBackupPolicyCollection
 }
@@ -70,13 +63,6 @@ type SystemVolumeBackupRunOutput struct {
 
 type RunSystemVolumeBackupsInput struct {
 	Body *backuptypes.RunSystemVolumeBackupsRequest `json:"body,omitempty"`
-}
-
-type ListSystemBackupsOutput struct {
-	Body struct {
-		Data       []backuptypes.SystemBackupRun `json:"data"`
-		Pagination base.PaginationResponse       `json:"pagination"`
-	}
 }
 
 type SystemBackupPoliciesOutput struct {
@@ -113,11 +99,6 @@ type BrowseSystemBackupFilesInput struct {
 	Body   backuptypes.SystemBackupRecoveryKey
 }
 
-// BrowseSystemBackupFilesOutput contains a page of project files and folders.
-type BrowseSystemBackupFilesOutput struct {
-	Body base.Paginated[backuptypes.BackupFileEntry]
-}
-
 // RestoreSystemBackupFilesInput selects project files to restore from a system backup.
 type RestoreSystemBackupFilesInput struct {
 	ID   string `path:"id"`
@@ -133,10 +114,6 @@ type DeleteSystemBackupInput struct {
 }
 type DiscoverSystemBackupsInput struct {
 	Body backuptypes.DiscoverSystemBackupsRequest
-}
-type DiscoverSystemBackupsOutput struct{ Body base.ApiResponse[int] }
-type SystemBackupMessageOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
 }
 
 func RegisterSystemBackups(api huma.API, service *SystemBackupService, activityService *activity.ActivityService, appCtx handlerutil.ActivityAppContext) {
@@ -161,16 +138,20 @@ func RegisterSystemBackups(api huma.API, service *SystemBackupService, activityS
 	middleware.RegisterWithPermission(api, huma.Operation{OperationID: "delete-system-backup", Method: http.MethodDelete, Path: "/backups/{id}", Summary: "Delete Arcane system backup", Tags: []string{"System Backups"}, Middlewares: adminOnly}, authz.PermSystemBackupsManage, h.Delete)
 }
 
-func (h *SystemBackupHandler) ListHistory(ctx context.Context, input *ListBackupHistoryInput) (*ListBackupHistoryOutput, error) {
+func (h *SystemBackupHandler) ListHistory(ctx context.Context, input *ListBackupHistoryInput) (*handlerutil.Page[backuptypes.HistoryEntry], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	params.Filters = map[string]string{"type": input.Type}
 	history, page, err := h.service.ListBackupHistory(ctx, params)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	out := &ListBackupHistoryOutput{}
-	out.Body.Data, out.Body.Pagination = history, handlerutil.PaginationResponse(page)
-	return out, nil
+	return &handlerutil.Page[backuptypes.HistoryEntry]{
+		Body: base.Paginated[backuptypes.HistoryEntry]{
+			Success:    true,
+			Data:       history,
+			Pagination: handlerutil.PaginationResponse(page),
+		},
+	}, nil
 }
 
 func (h *SystemBackupHandler) GetSystemVolumeConfig(ctx context.Context, _ *struct{}) (*SystemVolumeBackupConfigOutput, error) {
@@ -212,15 +193,19 @@ func (h *SystemBackupHandler) RunSystemVolumeBackups(ctx context.Context, input 
 	return &SystemVolumeBackupRunOutput{Body: *result}, nil
 }
 
-func (h *SystemBackupHandler) List(ctx context.Context, input *ListSystemBackupsInput) (*ListSystemBackupsOutput, error) {
+func (h *SystemBackupHandler) List(ctx context.Context, input *ListSystemBackupsInput) (*handlerutil.Page[backuptypes.SystemBackupRun], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	runs, page, err := h.service.ListBackups(ctx, params)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	out := &ListSystemBackupsOutput{}
-	out.Body.Data, out.Body.Pagination = runs, handlerutil.PaginationResponse(page)
-	return out, nil
+	return &handlerutil.Page[backuptypes.SystemBackupRun]{
+		Body: base.Paginated[backuptypes.SystemBackupRun]{
+			Success:    true,
+			Data:       runs,
+			Pagination: handlerutil.PaginationResponse(page),
+		},
+	}, nil
 }
 
 func (h *SystemBackupHandler) GetPolicies(ctx context.Context, _ *struct{}) (*SystemBackupPoliciesOutput, error) {
@@ -281,7 +266,7 @@ func (h *SystemBackupHandler) SetRecoveryKey(ctx context.Context, input *SetSyst
 	return &SystemBackupRecoveryKeyOutput{Body: *status}, nil
 }
 
-func (h *SystemBackupHandler) Discover(ctx context.Context, input *DiscoverSystemBackupsInput) (*DiscoverSystemBackupsOutput, error) {
+func (h *SystemBackupHandler) Discover(ctx context.Context, input *DiscoverSystemBackupsInput) (*handlerutil.Out[int], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -299,7 +284,7 @@ func (h *SystemBackupHandler) Discover(ctx context.Context, input *DiscoverSyste
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
-	return &DiscoverSystemBackupsOutput{Body: base.ApiResponse[int]{Success: true, Data: count}}, nil
+	return &handlerutil.Out[int]{Body: base.ApiResponse[int]{Success: true, Data: count}}, nil
 }
 
 func (h *SystemBackupHandler) Create(ctx context.Context, input *CreateSystemBackupInput) (*SystemBackupOutput, error) {
@@ -327,7 +312,7 @@ func (h *SystemBackupHandler) Create(ctx context.Context, input *CreateSystemBac
 	return &SystemBackupOutput{Body: dto}, nil
 }
 
-func (h *SystemBackupHandler) Restore(ctx context.Context, input *RestoreSystemBackupInput) (*SystemBackupMessageOutput, error) {
+func (h *SystemBackupHandler) Restore(ctx context.Context, input *RestoreSystemBackupInput) (*handlerutil.Out[base.MessageResponse], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -346,19 +331,19 @@ func (h *SystemBackupHandler) Restore(ctx context.Context, input *RestoreSystemB
 }
 
 // BrowseFiles returns one lazy-loaded project tree page.
-func (h *SystemBackupHandler) BrowseFiles(ctx context.Context, input *BrowseSystemBackupFilesInput) (*BrowseSystemBackupFilesOutput, error) {
+func (h *SystemBackupHandler) BrowseFiles(ctx context.Context, input *BrowseSystemBackupFilesInput) (*handlerutil.Page[backuptypes.BackupFileEntry], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, "", "", input.Search)
 	items, page, err := h.service.BrowseBackupFiles(ctx, input.ID, input.Body.RecoveryKey, input.Path, params)
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
-	return &BrowseSystemBackupFilesOutput{Body: base.Paginated[backuptypes.BackupFileEntry]{
+	return &handlerutil.Page[backuptypes.BackupFileEntry]{Body: base.Paginated[backuptypes.BackupFileEntry]{
 		Success: true, Data: items, Pagination: handlerutil.PaginationResponse(page),
 	}}, nil
 }
 
 // RestoreFiles restores selected project files from a system backup.
-func (h *SystemBackupHandler) RestoreFiles(ctx context.Context, input *RestoreSystemBackupFilesInput) (*SystemBackupMessageOutput, error) {
+func (h *SystemBackupHandler) RestoreFiles(ctx context.Context, input *RestoreSystemBackupFilesInput) (*handlerutil.Out[base.MessageResponse], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -404,7 +389,7 @@ func (h *SystemBackupHandler) Upload(ctx context.Context, input *UploadSystemBac
 	return &SystemBackupOutput{Body: dto}, nil
 }
 
-func (h *SystemBackupHandler) Delete(ctx context.Context, input *DeleteSystemBackupInput) (*SystemBackupMessageOutput, error) {
+func (h *SystemBackupHandler) Delete(ctx context.Context, input *DeleteSystemBackupInput) (*handlerutil.Out[base.MessageResponse], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -422,6 +407,6 @@ func (h *SystemBackupHandler) Delete(ctx context.Context, input *DeleteSystemBac
 	return messageOutputInternal("Arcane system backup deleted successfully", activityID), nil
 }
 
-func messageOutputInternal(message, activityID string) *SystemBackupMessageOutput {
-	return &SystemBackupMessageOutput{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: message, ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()}}}
+func messageOutputInternal(message, activityID string) *handlerutil.Out[base.MessageResponse] {
+	return &handlerutil.Out[base.MessageResponse]{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: message, ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()}}}
 }

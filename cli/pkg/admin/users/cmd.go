@@ -1,7 +1,6 @@
 package users
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -12,7 +11,6 @@ import (
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
-	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/user"
 	"github.com/spf13/cobra"
 )
@@ -102,55 +100,30 @@ var listCmd = &cobra.Command{
 			return err
 		}
 
-		path := types.Users()
-		path, err = cmdutil.ApplyPaginationParams(cmd, path, cmdutil.ListParams{Resource: "users", Limit: limitFlag, FallbackDefault: 20, Start: startFlag, All: allFlag})
-		if err != nil {
-			return errors.WrapIf(err, "failed to build pagination query")
-		}
-
-		resp, err := c.Get(cmd.Context(), path)
-		if err != nil {
-			return errors.WrapIf(err, "failed to list users")
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result base.Paginated[user.User]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
-		}
-
-		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
-		}
-
-		headers := []string{"ID", "USERNAME", "DISPLAY NAME", "EMAIL", "ROLE ASSIGNMENTS"}
-		rows := make([][]string, len(result.Data))
-		for i, usr := range result.Data {
-			displayName := ""
-			if usr.DisplayName != nil {
-				displayName = *usr.DisplayName
-			}
-			email := ""
-			if usr.Email != nil {
-				email = *usr.Email
-			}
-			rows[i] = []string{
-				usr.ID,
-				usr.Username,
-				displayName,
-				email,
-				summarizeRoleAssignments(usr.RoleAssignments),
-			}
-		}
-
-		output.Table(headers, rows)
-		output.Showing(len(result.Data), result.Pagination.TotalItems, "users")
-		return nil
+		return cmdutil.RunList(cmd, c, cmdutil.ListSpec[user.User]{
+			Resource: "users",
+			Endpoint: types.Users(),
+			Params:   cmdutil.ListParams{Resource: "users", Limit: limitFlag, FallbackDefault: 20, Start: startFlag, All: allFlag},
+			JSON:     jsonOutput,
+			Headers:  []string{"ID", "USERNAME", "DISPLAY NAME", "EMAIL", "ROLE ASSIGNMENTS"},
+			Row: func(usr user.User) []string {
+				displayName := ""
+				if usr.DisplayName != nil {
+					displayName = *usr.DisplayName
+				}
+				email := ""
+				if usr.Email != nil {
+					email = *usr.Email
+				}
+				return []string{
+					usr.ID,
+					usr.Username,
+					displayName,
+					email,
+					summarizeRoleAssignments(usr.RoleAssignments),
+				}
+			},
+		})
 	},
 }
 
@@ -188,27 +161,13 @@ var createCmd = &cobra.Command{
 			req.Email = &userCreateEmail
 		}
 
-		resp, err := c.Post(cmd.Context(), types.Users(), req)
+		result, err := c.PostJSON[user.User](cmd.Context(), types.Users(), req)
 		if err != nil {
 			return errors.WrapIf(err, "failed to create user")
 		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to create user")
-		}
-
-		var result base.ApiResponse[user.User]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
-		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("User %s created successfully", result.Data.Username)
@@ -230,24 +189,13 @@ var getCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.User(args[0]))
+		result, err := c.GetJSON[user.User](cmd.Context(), types.User(args[0]))
 		if err != nil {
 			return errors.WrapIf(err, "failed to get user")
 		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result base.ApiResponse[user.User]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
-		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Header("User Details")
@@ -298,23 +246,13 @@ var updateCmd = &cobra.Command{
 			req.Email = &userUpdateEmail
 		}
 
-		resp, err := c.Put(cmd.Context(), types.User(args[0]), req)
+		result, err := c.PutJSON[user.User](cmd.Context(), types.User(args[0]), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to update user")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
 			return errors.WrapIf(err, "failed to update user")
 		}
 
 		if jsonOutput {
-			var result base.ApiResponse[any]
-			if err := json.NewDecoder(resp.Body).Decode(&result); err == nil {
-				if resultBytes, err := json.MarshalIndent(result.Data, "", "  "); err == nil {
-					fmt.Println(string(resultBytes))
-				}
-			}
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("User updated successfully")

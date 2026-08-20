@@ -28,34 +28,18 @@ type RunUpdaterInput struct {
 	Body          *updater.Options `doc:"Updater run options"`
 }
 
-type RunUpdaterOutput struct {
-	Body base.ApiResponse[*updater.Result]
-}
-
 type UpdateContainerInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ContainerID   string `path:"containerId" doc:"Container ID to update"`
-}
-
-type UpdateContainerOutput struct {
-	Body base.ApiResponse[*updater.Result]
 }
 
 type GetUpdaterStatusInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
 
-type GetUpdaterStatusOutput struct {
-	Body base.ApiResponse[updater.Status]
-}
-
 type GetUpdaterHistoryInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Limit         int    `query:"limit" default:"50" doc:"Number of history entries to return"`
-}
-
-type GetUpdaterHistoryOutput struct {
-	Body base.ApiResponse[[]AutoUpdateRecord]
 }
 
 // RegisterUpdater registers updater management routes using Huma.
@@ -107,7 +91,7 @@ func RegisterUpdater(api huma.API, updaterService *UpdaterService, appCtx handle
 }
 
 // RunUpdater applies pending container updates.
-func (h *UpdaterHandler) RunUpdater(ctx context.Context, input *RunUpdaterInput) (*RunUpdaterOutput, error) {
+func (h *UpdaterHandler) RunUpdater(ctx context.Context, input *RunUpdaterInput) (*handlerutil.Out[*updater.Result], error) {
 	options := updater.Options{}
 	if input.Body != nil {
 		options = *input.Body
@@ -122,7 +106,7 @@ func (h *UpdaterHandler) RunUpdater(ctx context.Context, input *RunUpdaterInput)
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to run updater").Error())
 	}
 
-	return &RunUpdaterOutput{
+	return &handlerutil.Out[*updater.Result]{
 		Body: base.ApiResponse[*updater.Result]{
 			Success: true,
 			Data:    out,
@@ -131,10 +115,10 @@ func (h *UpdaterHandler) RunUpdater(ctx context.Context, input *RunUpdaterInput)
 }
 
 // GetUpdaterStatus returns the current status of the updater.
-func (h *UpdaterHandler) GetUpdaterStatus(ctx context.Context, input *GetUpdaterStatusInput) (*GetUpdaterStatusOutput, error) {
+func (h *UpdaterHandler) GetUpdaterStatus(ctx context.Context, input *GetUpdaterStatusInput) (*handlerutil.Out[updater.Status], error) {
 	status := h.updaterService.GetStatus()
 
-	return &GetUpdaterStatusOutput{
+	return &handlerutil.Out[updater.Status]{
 		Body: base.ApiResponse[updater.Status]{
 			Success: true,
 			Data:    status,
@@ -143,7 +127,7 @@ func (h *UpdaterHandler) GetUpdaterStatus(ctx context.Context, input *GetUpdater
 }
 
 // GetUpdaterHistory returns the history of update operations.
-func (h *UpdaterHandler) GetUpdaterHistory(ctx context.Context, input *GetUpdaterHistoryInput) (*GetUpdaterHistoryOutput, error) {
+func (h *UpdaterHandler) GetUpdaterHistory(ctx context.Context, input *GetUpdaterHistoryInput) (*handlerutil.Out[[]AutoUpdateRecord], error) {
 	limit := input.Limit
 	if limit <= 0 {
 		limit = 50
@@ -154,7 +138,7 @@ func (h *UpdaterHandler) GetUpdaterHistory(ctx context.Context, input *GetUpdate
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to get updater history").Error())
 	}
 
-	return &GetUpdaterHistoryOutput{
+	return &handlerutil.Out[[]AutoUpdateRecord]{
 		Body: base.ApiResponse[[]AutoUpdateRecord]{
 			Success: true,
 			Data:    history,
@@ -163,14 +147,14 @@ func (h *UpdaterHandler) GetUpdaterHistory(ctx context.Context, input *GetUpdate
 }
 
 // UpdateContainer updates a single container by pulling the latest image and applying the appropriate update flow.
-func (h *UpdaterHandler) UpdateContainer(ctx context.Context, input *UpdateContainerInput) (*UpdateContainerOutput, error) {
+func (h *UpdaterHandler) UpdateContainer(ctx context.Context, input *UpdateContainerInput) (*handlerutil.Out[*updater.Result], error) {
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	out, err := h.updaterService.UpdateSingleContainer(runtimeCtx, input.ContainerID)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to run updater").Error())
 	}
 
-	return &UpdateContainerOutput{
+	return &handlerutil.Out[*updater.Result]{
 		Body: base.ApiResponse[*updater.Result]{
 			Success: true,
 			Data:    out,

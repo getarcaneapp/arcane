@@ -1,8 +1,8 @@
 package jobs
 
 import (
-	"encoding/json"
 	"fmt"
+	"net/http"
 	"strconv"
 	"time"
 
@@ -12,7 +12,6 @@ import (
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
-	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/jobschedule"
 	"github.com/spf13/cobra"
 )
@@ -36,27 +35,13 @@ var getCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.JobSchedules(c.EnvID()))
+		cfg, err := c.DoJSON[jobschedule.Config](cmd.Context(), http.MethodGet, types.JobSchedules(c.EnvID()), nil)
 		if err != nil {
 			return errors.WrapIf(err, "failed to get job schedules")
 		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to get job schedules")
-		}
-
-		var cfg jobschedule.Config
-		if err := cmdutil.DecodeJSON(resp, &cfg); err != nil {
-			return err
-		}
 
 		if jsonOutput {
-			b, err := json.MarshalIndent(cfg, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(b))
-			return nil
+			return cmdutil.PrintJSON(cfg)
 		}
 
 		output.Header("Job Schedules")
@@ -98,24 +83,13 @@ var updateCmd = &cobra.Command{
 			return errors.New("no updates provided (set at least one interval flag)")
 		}
 
-		resp, err := c.Put(cmd.Context(), types.JobSchedules(c.EnvID()), req)
+		result, err := c.PutJSON[jobschedule.Config](cmd.Context(), types.JobSchedules(c.EnvID()), req)
 		if err != nil {
 			return errors.WrapIf(err, "failed to update job schedules")
 		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result base.ApiResponse[jobschedule.Config]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
-		}
 
 		if jsonOutput {
-			b, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(b))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Job schedules updated")
@@ -137,18 +111,9 @@ var listCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.Jobs(c.EnvID()))
+		result, err := c.DoJSON[jobschedule.JobListResponse](cmd.Context(), http.MethodGet, types.Jobs(c.EnvID()), nil)
 		if err != nil {
 			return errors.WrapIf(err, "failed to list jobs")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to list jobs")
-		}
-
-		var result jobschedule.JobListResponse
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
 		}
 
 		if jsonOutput {
@@ -189,18 +154,9 @@ var runCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Post(cmd.Context(), types.JobRun(c.EnvID(), args[0]), nil)
+		result, err := c.DoJSON[jobschedule.JobRunResponse](cmd.Context(), http.MethodPost, types.JobRun(c.EnvID(), args[0]), nil)
 		if err != nil {
 			return errors.WrapIf(err, "failed to run job")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to run job")
-		}
-
-		var result jobschedule.JobRunResponse
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
 		}
 
 		if jsonOutput {

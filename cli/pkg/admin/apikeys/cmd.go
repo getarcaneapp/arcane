@@ -95,51 +95,31 @@ var listCmd = &cobra.Command{
 			return err
 		}
 
-		path := types.ApiKeys()
-		path, err = cmdutil.ApplyPaginationParams(cmd, path, cmdutil.ListParams{Resource: "apikeys", Limit: limitFlag, FallbackDefault: 20, Start: startFlag, All: allFlag})
-		if err != nil {
-			return errors.WrapIf(err, "failed to build pagination query")
-		}
-
-		resp, err := c.Get(cmd.Context(), path)
-		if err != nil {
-			return errors.WrapIf(err, "failed to list API keys")
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result base.Paginated[apikey.ApiKey]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return errors.WrapIf(err, "failed to list API keys")
-		}
-
-		if jsonOutput {
-			return cmdutil.PrintJSON(result)
-		}
-
-		headers := []string{"ID", "NAME", "DESCRIPTION", "PERMISSIONS", "CREATED", "LAST USED"}
-		rows := make([][]string, len(result.Data))
-		for i, key := range result.Data {
-			description := ""
-			if key.Description != nil {
-				description = *key.Description
-			}
-			lastUsed := "Never"
-			if key.LastUsedAt != nil {
-				lastUsed = key.LastUsedAt.Format("2006-01-02 15:04")
-			}
-			rows[i] = []string{
-				key.ID,
-				key.Name,
-				description,
-				strconv.Itoa(len(key.Permissions)),
-				key.CreatedAt.Format("2006-01-02 15:04"),
-				lastUsed,
-			}
-		}
-
-		output.Table(headers, rows)
-		output.Showing(len(result.Data), result.Pagination.TotalItems, "API keys")
-		return nil
+		return cmdutil.RunList(cmd, c, cmdutil.ListSpec[apikey.ApiKey]{
+			Resource: "API keys",
+			Endpoint: types.ApiKeys(),
+			Params:   cmdutil.ListParams{Resource: "apikeys", Limit: limitFlag, FallbackDefault: 20, Start: startFlag, All: allFlag},
+			JSON:     jsonOutput,
+			Headers:  []string{"ID", "NAME", "DESCRIPTION", "PERMISSIONS", "CREATED", "LAST USED"},
+			Row: func(key apikey.ApiKey) []string {
+				description := ""
+				if key.Description != nil {
+					description = *key.Description
+				}
+				lastUsed := "Never"
+				if key.LastUsedAt != nil {
+					lastUsed = key.LastUsedAt.Format("2006-01-02 15:04")
+				}
+				return []string{
+					key.ID,
+					key.Name,
+					description,
+					strconv.Itoa(len(key.Permissions)),
+					key.CreatedAt.Format("2006-01-02 15:04"),
+					lastUsed,
+				}
+			},
+		})
 	},
 }
 
@@ -178,14 +158,8 @@ var createCmd = &cobra.Command{
 			createReq.ExpiresAt = &parsed
 		}
 
-		resp, err := c.Post(cmd.Context(), types.ApiKeys(), createReq)
+		result, err := c.PostJSON[apikey.ApiKeyCreatedDto](cmd.Context(), types.ApiKeys(), createReq)
 		if err != nil {
-			return errors.WrapIf(err, "failed to create API key")
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result base.ApiResponse[apikey.ApiKeyCreatedDto]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
 			return errors.WrapIf(err, "failed to create API key")
 		}
 
@@ -227,20 +201,12 @@ var deleteCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Delete(cmd.Context(), types.ApiKey(args[0]))
+		result, err := c.DeleteJSON[base.MessageResponse](cmd.Context(), types.ApiKey(args[0]))
 		if err != nil {
-			return errors.WrapIf(err, "failed to delete API key")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
 			return errors.WrapIf(err, "failed to delete API key")
 		}
 
 		if jsonOutput {
-			var result base.ApiResponse[any]
-			if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-				return errors.WrapIf(err, "failed to delete API key")
-			}
 			return cmdutil.PrintJSON(result.Data)
 		}
 
@@ -260,14 +226,8 @@ var getCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.ApiKey(args[0]))
+		result, err := c.GetJSON[apikey.ApiKey](cmd.Context(), types.ApiKey(args[0]))
 		if err != nil {
-			return errors.WrapIf(err, "failed to get API key")
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result base.ApiResponse[apikey.ApiKey]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
 			return errors.WrapIf(err, "failed to get API key")
 		}
 
@@ -340,20 +300,12 @@ var updateCmd = &cobra.Command{
 			req.Permissions = &grants
 		}
 
-		resp, err := c.Put(cmd.Context(), types.ApiKey(args[0]), req)
+		result, err := c.PutJSON[apikey.ApiKey](cmd.Context(), types.ApiKey(args[0]), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to update API key")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
 			return errors.WrapIf(err, "failed to update API key")
 		}
 
 		if jsonOutput {
-			var result base.ApiResponse[any]
-			if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-				return errors.WrapIf(err, "failed to update API key")
-			}
 			return cmdutil.PrintJSON(result.Data)
 		}
 

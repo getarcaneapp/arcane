@@ -105,14 +105,13 @@ func (f *Fingerprint) Sum() uint64 {
 	return f.h.Sum64()
 }
 
-// FingerprintOf hashes a slice of items with a per-item writer, including the
-// slice length so resizing or reordering changes the result. The writer receives
-// a pointer so large structs are not copied per item.
-func FingerprintOf[T any](items []T, write func(*Fingerprint, *T)) uint64 {
-	f := NewFingerprint()
+// Slice hashes a slice of items with a per-item writer, including the slice
+// length so resizing or reordering changes the result. The writer receives a
+// pointer so large structs are not copied per item.
+func (f *Fingerprint) Slice[T any](items []T, write func(*Fingerprint, *T)) *Fingerprint {
 	f.Int(int64(len(items)))
 	for i := range items {
 		write(f, &items[i])
 	}
-	return f.Sum()
+	return f
 }
