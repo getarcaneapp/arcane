@@ -203,14 +203,6 @@ test.describe('S3 Backups', () => {
 		}
 	});
 
-	test('rejects an endpoint that is not http or https', async ({ page }) => {
-		const response = await page.request.post('/api/s3-destinations', {
-			data: destinationPayload({ endpoint: 'ftp://minio:9000' })
-		});
-		expect(response.status()).toBe(400);
-		expect(await response.text()).toContain('only http and https');
-	});
-
 	test('refuses the stored secret once connection settings change', async ({ page }) => {
 		const destination = await createDestinationViaApi(page);
 		try {

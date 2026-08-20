@@ -65,7 +65,7 @@
 
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
 	const canBackupVolume = $derived(hasPermission('volumes:backup', currentEnvId));
-	const canDeleteBackup = $derived(hasPermission('volumes:delete', currentEnvId));
+	const canDeleteBackup = $derived(hasPermission('volumes:backup', currentEnvId));
 
 	let backupsPaginated = $state<VolumeBackupListResponse>({
 		data: [],
@@ -414,7 +414,7 @@
 				</DropdownMenu.Item>
 			{/each}
 		{/if}
-		<IfPermitted perm="volumes:delete">
+		<IfPermitted perm="volumes:backup">
 			<DropdownMenu.Separator />
 			<DropdownMenu.Item variant="destructive" onclick={() => handleDelete(item)}>
 				<TrashIcon class="size-4" />

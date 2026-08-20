@@ -2,9 +2,10 @@ package s3
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
+
+	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
@@ -34,37 +35,9 @@ func NewS3DestinationService(db *database.DB) *S3DestinationService {
 	return &S3DestinationService{db: db}
 }
 
-func fromCreateDestinationInternal(input backuptypes.CreateS3Destination) s3config.Configuration {
+func destinationConfigurationInternal(id string, input backuptypes.CreateS3Destination) s3config.Configuration {
 	return s3config.Configuration{
-		Name:            input.Name,
-		Endpoint:        input.Endpoint,
-		Bucket:          input.Bucket,
-		Region:          input.Region,
-		AccessKeyID:     input.AccessKeyID,
-		SecretAccessKey: input.SecretAccessKey,
-		Prefix:          input.Prefix,
-		UseSSL:          input.UseSSL,
-		ForcePathStyle:  input.ForcePathStyle,
-	}.Normalized()
-}
-
-func fromUpdateDestinationInternal(input backuptypes.UpdateS3Destination) s3config.Configuration {
-	return s3config.Configuration{
-		Name:            input.Name,
-		Endpoint:        input.Endpoint,
-		Bucket:          input.Bucket,
-		Region:          input.Region,
-		AccessKeyID:     input.AccessKeyID,
-		SecretAccessKey: input.SecretAccessKey,
-		Prefix:          input.Prefix,
-		UseSSL:          input.UseSSL,
-		ForcePathStyle:  input.ForcePathStyle,
-	}.Normalized()
-}
-
-func fromSyncDestinationInternal(input backuptypes.S3DestinationSync) s3config.Configuration {
-	return s3config.Configuration{
-		ID:              input.ID,
+		ID:              id,
 		Name:            input.Name,
 		Endpoint:        input.Endpoint,
 		Bucket:          input.Bucket,
@@ -140,7 +113,7 @@ func applyS3ConfigurationInternal(destination *S3Destination, configuration s3co
 }
 
 func (s *S3DestinationService) CreateS3Destination(ctx context.Context, input backuptypes.CreateS3Destination) (*backuptypes.S3Destination, error) {
-	configuration := fromCreateDestinationInternal(input)
+	configuration := destinationConfigurationInternal("", input)
 	if err := configuration.Validate(true); err != nil {
 		return nil, err
 	}
@@ -174,7 +147,7 @@ func storedConfigurationInternal(destination *S3Destination) s3config.Configurat
 }
 
 func (s *S3DestinationService) UpdateS3Destination(ctx context.Context, id string, input backuptypes.UpdateS3Destination) (*backuptypes.S3Destination, error) {
-	configuration := fromUpdateDestinationInternal(input)
+	configuration := destinationConfigurationInternal("", input)
 	if err := configuration.Validate(false); err != nil {
 		return nil, err
 	}
@@ -223,7 +196,7 @@ func (s *S3DestinationService) DeleteS3Destination(ctx context.Context, id strin
 	return nil
 }
 
-// DestinationInUse reports whether any local backup record, policy, or setting
+// DestinationInUse reports whether any local backup record or policy
 // references the destination.
 func (s *S3DestinationService) DestinationInUse(ctx context.Context, id string) (bool, error) {
 	db := s.db.WithContext(ctx)
@@ -232,7 +205,6 @@ func (s *S3DestinationService) DestinationInUse(ctx context.Context, id string) 
 		db.Table("system_backup_policies").Where("s3_destination_id = ? AND s3_enabled = ?", id, true),
 		db.Table("volume_backups").Where("s3_destination_id = ? AND remote_snapshot_id <> ''", id),
 		db.Table("volume_backup_policies").Where("s3_destination_id = ? AND s3_enabled = ?", id, true),
-		db.Table("settings").Where("key = ? AND value = ?", "backupS3DestinationId", id),
 	}
 	for _, query := range counts {
 		var count int64
@@ -267,7 +239,7 @@ func (s *S3DestinationService) SyncS3Destinations(ctx context.Context, destinati
 
 	syncedIDs := make(map[string]struct{}, len(destinations))
 	for _, item := range destinations {
-		configuration := fromSyncDestinationInternal(item)
+		configuration := destinationConfigurationInternal(item.ID, item.CreateS3Destination)
 		if configuration.ID == "" {
 			return errors.New("S3 destination ID is required")
 		}
@@ -280,7 +252,7 @@ func (s *S3DestinationService) SyncS3Destinations(ctx context.Context, destinati
 		}
 		destination, exists := existingByID[configuration.ID]
 		if !exists {
-			destination = &S3Destination{BaseModel: database.BaseModel{ID: configuration.ID}}
+			destination = &S3Destination{ID: configuration.ID}
 		}
 		applyS3ConfigurationInternal(destination, configuration, encryptedSecret)
 		if !item.CreatedAt.IsZero() {
@@ -303,7 +275,7 @@ func (s *S3DestinationService) SyncS3Destinations(ctx context.Context, destinati
 			continue
 		}
 		if err := s.DeleteS3Destination(ctx, existing[i].ID); err != nil {
-			removeErr = errors.Join(removeErr, fmt.Errorf("failed to remove unsynced S3 destination %s: %w", existing[i].ID, err))
+			removeErr = errors.Combine(removeErr, fmt.Errorf("failed to remove unsynced S3 destination %s: %w", existing[i].ID, err))
 		}
 	}
 	return removeErr
@@ -339,7 +311,7 @@ func (s *S3DestinationService) TestS3Destination(ctx context.Context, id string,
 		return err
 	}
 	if input != nil {
-		updated := fromUpdateDestinationInternal(*input)
+		updated := destinationConfigurationInternal("", *input)
 		updated.ID = configuration.ID
 		if updated.SecretAccessKey == "" {
 			// The stored secret may only sign requests against the stored
@@ -355,5 +327,5 @@ func (s *S3DestinationService) TestS3Destination(ctx context.Context, id string,
 }
 
 func (s *S3DestinationService) TestS3DestinationConfiguration(ctx context.Context, input backuptypes.CreateS3Destination) error {
-	return s3config.TestConnection(ctx, fromCreateDestinationInternal(input))
+	return s3config.TestConnection(ctx, destinationConfigurationInternal("", input))
 }

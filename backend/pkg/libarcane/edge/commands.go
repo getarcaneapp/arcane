@@ -14,6 +14,8 @@ var commandRoutes = []commandRoute{
 	{Method: http.MethodGet, PathPattern: "/api/swarm/node-identity", CommandName: "swarm.node_identity"},
 	{Method: http.MethodPost, PathPattern: "/api/container-registries/sync", CommandName: "container_registry.sync"},
 	{Method: http.MethodPost, PathPattern: "/api/git-repositories/sync", CommandName: "git_repository.sync"},
+	{Method: http.MethodPost, PathPattern: "/api/s3-destinations/sync", CommandName: "s3_destination.sync"},
+	{Method: http.MethodGet, PathPattern: "/api/s3-destinations/{id}/in-use", CommandName: "s3_destination.in_use"},
 
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/containers", CommandName: "container.list"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/containers/counts", CommandName: "container.counts"},
@@ -121,6 +123,9 @@ var commandRoutes = []commandRoute{
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/volumes/{volumeName}/backups/{backupId}/restore", CommandName: "volume.backup.restore"},
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/volumes/{volumeName}/backups/{backupId}/restore-files", CommandName: "volume.backup.restore_files"},
 	{Method: http.MethodDelete, PathPattern: "/api/environments/{id}/volumes/backups/{backupId}", CommandName: "volume.backup.delete"},
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/volumes/backups/{backupId}/download", CommandName: "volume.backup.download"},
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/volumes/{volumeName}/backup-policy", CommandName: "volume.backup_policy.get"},
+	{Method: http.MethodPut, PathPattern: "/api/environments/{id}/volumes/{volumeName}/backup-policy", CommandName: "volume.backup_policy.update"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/volumes/backups/{backupId}/has-path", CommandName: "volume.backup.has_path"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/volumes/backups/{backupId}/files", CommandName: "volume.backup.files"},
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/volumes/backups/{backupId}/upload", CommandName: "volume.backup.upload"},

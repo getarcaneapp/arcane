@@ -1,15 +1,15 @@
 package recovery
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"strings"
+
+	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/cli/upgrade"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -17,8 +17,6 @@ import (
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	rusticruntime "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/rustic"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
-	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
@@ -33,14 +31,14 @@ var RestoreCmd = &cobra.Command{
 	Use:    "recovery-restore",
 	Short:  "Apply a prepared Arcane recovery snapshot",
 	Hidden: true,
-	RunE:   runRestore,
+	RunE:   runRestoreInternal,
 }
 
 func init() {
 	RestoreCmd.Flags().StringVar(&requestPath, "request", "/app/data/.arcane-recovery-request.json", "Prepared recovery request")
 }
 
-func runRestore(_ *cobra.Command, _ []string) error {
+func runRestoreInternal(_ *cobra.Command, _ []string) error {
 	ctx := context.Background()
 	data, err := os.ReadFile(requestPath)
 	if err != nil {
@@ -63,7 +61,7 @@ func runRestore(_ *cobra.Command, _ []string) error {
 	if _, err := dockerClient.ContainerStop(ctx, request.ContainerID, client.ContainerStopOptions{Timeout: new(30)}); err != nil {
 		return fmt.Errorf("stop Arcane container: %w", err)
 	}
-	if err := restoreSnapshot(ctx, dockerClient, request); err != nil {
+	if err := restoreSnapshotInternal(ctx, dockerClient, request); err != nil {
 		_, _ = dockerClient.ContainerStart(ctx, request.ContainerID, client.ContainerStartOptions{})
 		return err
 	}
@@ -185,7 +183,7 @@ WHERE `+where+` AND status = 'running'`, arguments...)
 	return err
 }
 
-func restoreSnapshot(ctx context.Context, dockerClient *client.Client, request recoverytypes.RestoreRequest) error {
+func restoreSnapshotInternal(ctx context.Context, dockerClient *client.Client, request recoverytypes.RestoreRequest) error {
 	if _, err := dockerClient.ImageInspect(ctx, rusticImage); err != nil {
 		reader, pullErr := dockerClient.ImagePull(ctx, rusticImage, client.ImagePullOptions{})
 		if pullErr != nil {
@@ -197,57 +195,18 @@ func restoreSnapshot(ctx context.Context, dockerClient *client.Client, request r
 		}
 		_ = reader.Close()
 	}
-	environment := append([]string{}, request.RepositoryEnvironment...)
-	environment = append(environment, "RUSTIC_PASSWORD="+request.RecoveryKey, "RUSTIC_NO_PROGRESS=true", "RUSTIC_LOG_LEVEL=error")
 	mounts := append([]mount.Mount{}, request.RepositoryMounts...)
 	request.AppDataMount.Target = "/restore"
 	request.AppDataMount.ReadOnly = false
 	mounts = append(mounts, request.AppDataMount)
-	hostConfig := volumehelper.HostConfig(rusticImage, nil, mounts)
-	hostConfig.AutoRemove = false
 	snapshotPath := strings.TrimSpace(request.SnapshotPath)
 	if snapshotPath == "" {
 		snapshotPath = "/"
 	}
-	created, err := dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
-		Config: &container.Config{
-			Image:  rusticImage,
-			Cmd:    []string{"restore", "--delete", request.SnapshotID + ":" + snapshotPath, "/restore"},
-			Env:    environment,
-			Labels: volumehelper.Labels(),
-		},
-		HostConfig: hostConfig,
-	})
-	if err != nil {
-		return fmt.Errorf("create Rustic restore container: %w", err)
+	command := []string{"restore", "--delete", request.SnapshotID + ":" + snapshotPath, "/restore"}
+	if _, err := rusticruntime.Run(ctx, dockerClient, request.RecoveryKey, command, request.RepositoryEnvironment, mounts, container.NetworkMode(request.NetworkMode)); err != nil {
+		slog.Error("Rustic system restore failed", "error", err)
+		return fmt.Errorf("rustic system restore failed: %w", err)
 	}
-	defer func() { _, _ = dockerClient.ContainerRemove(ctx, created.ID, volumehelper.RemoveOptions()) }()
-	if _, err := dockerClient.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); err != nil {
-		return fmt.Errorf("start Rustic restore container: %w", err)
-	}
-	wait := dockerClient.ContainerWait(ctx, created.ID, client.ContainerWaitOptions{Condition: container.WaitConditionNotRunning})
-	var status container.WaitResponse
-	select {
-	case err := <-wait.Error:
-		if err != nil {
-			return fmt.Errorf("wait for Rustic restore: %w", err)
-		}
-	case status = <-wait.Result:
-	}
-	if status.StatusCode == 0 {
-		return nil
-	}
-	logs, err := dockerClient.ContainerLogs(ctx, created.ID, client.ContainerLogsOptions{ShowStdout: true, ShowStderr: true})
-	if err != nil {
-		return fmt.Errorf("rustic restore exited with code %d", status.StatusCode)
-	}
-	defer func() { _ = logs.Close() }()
-	var stdout, stderr bytes.Buffer
-	_, _ = stdcopy.StdCopy(&stdout, &stderr, logs)
-	message := strings.TrimSpace(stderr.String())
-	if message == "" {
-		message = strings.TrimSpace(stdout.String())
-	}
-	slog.Error("Rustic system restore failed", "status", status.StatusCode)
-	return fmt.Errorf("rustic restore exited with code %d: %s", status.StatusCode, message)
+	return nil
 }

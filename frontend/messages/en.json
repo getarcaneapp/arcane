@@ -3241,7 +3241,7 @@
   "system_backups_recovery_key_schedule_required": "Configure a recovery key before enabling this schedule.",
   "system_backups_setup_recovery_key": "Set up recovery key",
   "system_backups_replace_recovery_key": "Replace recovery key",
-  "system_backups_replace_recovery_key_description": "Replacing the key does not re-encrypt existing backups. Keep the previous key to restore backups created with it.",
+  "system_backups_replace_recovery_key_description": "The key that created your backups is the only one that can open them. While any system backup exists the key cannot be replaced; delete the existing backups first.",
   "system_backups_recovery_key_saved": "Recovery key configured.",
   "system_backups_recovery_key_save_failed": "Failed to configure the recovery key.",
   "system_backups_recovery_key_generate_failed": "Failed to generate the recovery key.",

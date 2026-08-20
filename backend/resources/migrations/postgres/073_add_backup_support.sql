@@ -81,7 +81,7 @@ CREATE TABLE system_backup_recovery_config (
 );
 
 -- +goose Down
--- Refuse to downgrade while Rustic-format backups exist: the pre-071 schema cannot
+-- Refuse to downgrade while Rustic-format backups exist: the pre-073 schema cannot
 -- represent them and their snapshots would become unreachable.
 -- +goose StatementBegin
 DO $$

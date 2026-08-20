@@ -102,7 +102,7 @@ var accessSurfacesInternal = []AccessSurface{
 	settingsCategorySurfaceInternal("notifications", "/settings/notifications", "Notifications", AccessScopeModeGlobalOnly, []string{PermNotificationsManage}),
 	settingsCategorySurfaceInternal("roles", "/settings/roles", "Roles", AccessScopeModeGlobalOnly, []string{PermRolesList, PermRolesRead}),
 	settingsCategorySurfaceInternal("s3destinations", "/settings/s3-destinations", "S3 Destinations", AccessScopeModeGlobalOnly, []string{PermS3DestinationsList, PermS3DestinationsRead}),
-	settingsCategorySurfaceInternal("systembackups", "/settings/system-backups", "System Backups", AccessScopeModeGlobalOnly, []string{PermSettingsRead}),
+	globalAdminSettingsCategorySurfaceInternal("systembackups", "/settings/system-backups", "System Backups"),
 	routeSurfaceInternal("route.settings.roles.new", "/settings/roles/new", "Create role", AccessScopeModeGlobalOnly, []string{PermRolesList, PermRolesRead}, 0),
 	routeSurfaceInternal("route.settings.roles.detail", "/settings/roles/{id}", "Role", AccessScopeModeGlobalOnly, []string{PermRolesList, PermRolesRead}, 0),
 	settingsCategorySurfaceInternal("timeouts", "/settings/timeouts", "Timeouts", AccessScopeModeGlobalOnly, []string{PermSettingsRead}),
@@ -243,6 +243,14 @@ func routeSurfaceInternal(id, url, label, scopeMode string, permissions []string
 
 func globalAdminRouteSurfaceInternal(id, url, label string) AccessSurface {
 	surface := routeSurfaceInternal(id, url, label, AccessScopeModeGlobalOnly, AllPermissions(), 0)
+	surface.MatchMode = AccessMatchModeAllOf
+	return surface
+}
+
+// globalAdminSettingsCategorySurfaceInternal approximates the global-admin
+// gate its routes enforce: only admins hold every permission.
+func globalAdminSettingsCategorySurfaceInternal(categoryID, url, label string) AccessSurface {
+	surface := settingsCategorySurfaceInternal(categoryID, url, label, AccessScopeModeGlobalOnly, AllPermissions())
 	surface.MatchMode = AccessMatchModeAllOf
 	return surface
 }

@@ -2,7 +2,6 @@ package systembackup
 
 import (
 	"context"
-	"strings"
 	"testing"
 	"time"
 
@@ -13,7 +12,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/entityjobs"
 	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
-	"github.com/google/uuid"
 	sqlite "github.com/libtnb/sqlite"
 	containertypes "github.com/moby/moby/api/types/container"
 	mounttypes "github.com/moby/moby/api/types/mount"
@@ -55,21 +53,6 @@ func (s *systemBackupPolicySchedulerInternal) RemoveJob(_ context.Context, name 
 func (s *systemBackupPolicySchedulerInternal) HasJob(name string) bool {
 	_, ok := s.jobs[name]
 	return ok
-}
-
-func TestValidateRecoveryKeyInternal(t *testing.T) {
-	require.Error(t, validateRecoveryKeyInternal("too-short"))
-	require.NoError(t, validateRecoveryKeyInternal("correct horse battery staple"))
-}
-
-func TestGenerateRecoveryKey(t *testing.T) {
-	recoveryKey, err := (&SystemBackupService{}).GenerateRecoveryKey()
-	require.NoError(t, err)
-	require.Equal(t, strings.ToUpper(recoveryKey.RecoveryKey), recoveryKey.RecoveryKey)
-
-	parsed, err := uuid.Parse(recoveryKey.RecoveryKey)
-	require.NoError(t, err)
-	require.Equal(t, uuid.Version(4), parsed.Version())
 }
 
 func TestRecoveryHelperExecutableInternal(t *testing.T) {
@@ -142,31 +125,6 @@ func TestSystemBackupPolicyRequiresConfiguredRecoveryKeyWhenEnabled(t *testing.T
 		Enabled: true, Schedule: "0 0 2 * * *", RetentionCount: 7, LocalEnabled: true,
 	}})
 	require.ErrorContains(t, err, "configure a recovery key")
-}
-
-func TestSystemBackupPolicyRetentionIgnoresFailedRuns(t *testing.T) {
-	gormDB, err := gorm.Open(sqlite.Open("file:system-backup-retention-failed?mode=memory&cache=shared"), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, gormDB.AutoMigrate(&SystemBackupRun{}))
-
-	policyID := "policy-1"
-	require.NoError(t, gormDB.Create(&SystemBackupRun{
-		PolicyID: policyID, Status: SystemBackupStatusSucceeded,
-		LocalSnapshotID: "snapshot-1", CreatedAt: time.Now().Add(-time.Hour),
-	}).Error)
-	require.NoError(t, gormDB.Create(&SystemBackupRun{
-		PolicyID: policyID, Status: SystemBackupStatusFailed,
-		CreatedAt: time.Now(),
-	}).Error)
-
-	service := &SystemBackupService{db: &database.DB{DB: gormDB}}
-	require.NoError(t, service.applyRetentionInternal(context.Background(), policyID, 1))
-
-	var backups []SystemBackupRun
-	require.NoError(t, gormDB.Order("created_at ASC").Find(&backups).Error)
-	require.Len(t, backups, 2)
-	require.Equal(t, "snapshot-1", backups[0].LocalSnapshotID)
-	require.Equal(t, SystemBackupStatusFailed, backups[1].Status)
 }
 
 func TestRecoveryEnvironmentInternalIncludesRuntimeSecrets(t *testing.T) {

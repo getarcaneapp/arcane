@@ -906,6 +906,9 @@ func (h *VolumeHandler) CreateBackup(ctx context.Context, input *CreateBackupInp
 		})
 		return backupErr
 	})
+	if errors.Is(err, ErrVolumeBackupAlreadyRunning) {
+		return nil, huma.Error409Conflict(err.Error())
+	}
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}

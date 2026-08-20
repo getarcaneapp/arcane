@@ -701,10 +701,24 @@ func TestVolumeBackupPolicy_RetentionIgnoresFailedRuns(t *testing.T) {
 	require.Equal(t, VolumeBackupStatusFailed, backups[1].Status)
 }
 
-func TestVolumeBackupPolicy_UpdateRejectsInvalidCron(t *testing.T) {
-	service := &VolumeService{}
-	_, err := service.UpdateBackupPolicies(context.Background(), "app-data", []volumetypes.UpdateBackupPolicy{{Schedule: "not a cron", LocalEnabled: true}})
+func TestVolumeBackup_ValidationErrors(t *testing.T) {
+	gormDB, err := gorm.Open(sqlite.Open("file:volume-backup-validation?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, gormDB.AutoMigrate(&VolumeBackupPolicy{}))
+	service := &VolumeService{db: &database.DB{DB: gormDB}}
+	ctx := context.Background()
+
+	_, err = service.UpdateBackupPolicies(ctx, "app-data", []volumetypes.UpdateBackupPolicy{{Schedule: "not a cron", LocalEnabled: true}})
 	require.ErrorContains(t, err, "invalid volume backup schedule")
+
+	_, err = service.UpdateBackupPolicies(ctx, "app-data", []volumetypes.UpdateBackupPolicy{{Schedule: "0 0 2 * * *", RetentionCount: 7}})
+	require.ErrorContains(t, err, "select at least one volume backup destination")
+
+	_, err = service.CreateBackup(ctx, "app-data", common.User{}, VolumeBackupTriggerManual, volumetypes.CreateBackupRequest{Destination: volumetypes.BackupDestination("invalid")})
+	require.EqualError(t, err, "invalid volume backup destination")
+
+	_, err = service.CreateBackup(ctx, "app-data", common.User{}, VolumeBackupTriggerManual, volumetypes.CreateBackupRequest{Destination: volumetypes.BackupDestinationS3})
+	require.EqualError(t, err, "select an S3 destination for the volume backup")
 }
 
 func TestVolumeBackupPolicy_ScheduledRunCreatesActivity(t *testing.T) {
@@ -741,12 +755,6 @@ func TestVolumeBackupPolicy_ScheduledRunCreatesActivity(t *testing.T) {
 	require.Equal(t, activitytypes.StatusFailed, activity.Status)
 	require.Equal(t, "scheduled_volume_backup", activity.Metadata["action"])
 	require.Equal(t, policy.Schedule, activity.Metadata["schedule"])
-}
-
-func TestVolumeBackupPolicy_UpdateRejectsMissingDestination(t *testing.T) {
-	service := &VolumeService{}
-	_, err := service.UpdateBackupPolicies(context.Background(), "app-data", []volumetypes.UpdateBackupPolicy{{Schedule: "0 0 2 * * *", RetentionCount: 7}})
-	require.ErrorContains(t, err, "select at least one volume backup destination")
 }
 
 func TestVolumeBackupPolicy_UpdateUsesSelectedS3Destination(t *testing.T) {
@@ -795,30 +803,6 @@ func TestVolumeBackupPolicy_UpdateUsesSelectedS3Destination(t *testing.T) {
 	require.False(t, stored.LocalEnabled)
 	require.True(t, stored.S3Enabled)
 	require.Equal(t, destination.ID, stored.S3DestinationID)
-}
-
-func TestVolumeBackup_CreateRejectsInvalidDestination(t *testing.T) {
-	service := &VolumeService{}
-	_, err := service.CreateBackup(
-		context.Background(),
-		"app-data",
-		common.User{},
-		VolumeBackupTriggerManual,
-		volumetypes.CreateBackupRequest{Destination: volumetypes.BackupDestination("invalid")},
-	)
-	require.EqualError(t, err, "invalid volume backup destination")
-}
-
-func TestVolumeBackup_CreateRemoteRequiresDestination(t *testing.T) {
-	service := &VolumeService{}
-	_, err := service.CreateBackup(
-		context.Background(),
-		"app-data",
-		common.User{},
-		VolumeBackupTriggerManual,
-		volumetypes.CreateBackupRequest{Destination: volumetypes.BackupDestinationS3},
-	)
-	require.EqualError(t, err, "select an S3 destination for the volume backup")
 }
 
 func TestVolumeBackup_ListResolvesDestinationName(t *testing.T) {
@@ -898,7 +882,7 @@ func TestVolumeBackupContainerLifecycleStopsAndRestartsOnlyRunningContainersUsin
 
 	service, dockerClient := setupVolumeBackupLifecycleTestInternal(t, serverHandler)
 	actor := common.User{BaseModel: database.BaseModel{ID: "user-1"}, Username: "tester"}
-	stopped, err := service.stopRunningContainersForBackupInternal(context.Background(), dockerClient, "app-data", actor)
+	stopped, err := service.stopRunningContainersForBackupInternal(context.Background(), dockerClient, "app-data", actor, false)
 	require.NoError(t, err)
 	require.Len(t, stopped, 1)
 	require.Equal(t, "uses-volume", stopped[0].ID)
@@ -942,7 +926,7 @@ func TestVolumeBackupContainerLifecycleRollsBackStoppedContainersOnStopFailure(t
 
 	service, dockerClient := setupVolumeBackupLifecycleTestInternal(t, serverHandler)
 	actor := common.User{BaseModel: database.BaseModel{ID: "user-1"}, Username: "tester"}
-	stillStopped, err := service.stopRunningContainersForBackupInternal(context.Background(), dockerClient, "app-data", actor)
+	stillStopped, err := service.stopRunningContainersForBackupInternal(context.Background(), dockerClient, "app-data", actor, false)
 	require.ErrorContains(t, err, "failed to stop container second")
 	require.Empty(t, stillStopped)
 	require.Equal(t, []string{"stop:first", "stop:second", "start:first"}, operations)
@@ -1002,7 +986,7 @@ func TestVolumeBackupContainerLifecycleWaitsForRunningComposeReplacement(t *test
 
 	service, dockerClient := setupVolumeBackupLifecycleTestInternal(t, serverHandler)
 	actor := common.User{BaseModel: database.BaseModel{ID: "user-1"}, Username: "tester"}
-	stopped, err := service.stopRunningContainersForBackupInternal(context.Background(), dockerClient, "app-data", actor)
+	stopped, err := service.stopRunningContainersForBackupInternal(context.Background(), dockerClient, "app-data", actor, false)
 	require.NoError(t, err)
 	require.Len(t, stopped, 1)
 	require.Equal(t, "old-id", stopped[0].ID)

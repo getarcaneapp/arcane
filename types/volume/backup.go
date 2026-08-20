@@ -1,5 +1,7 @@
 package volume
 
+import "github.com/getarcaneapp/arcane/types/v2/backup"
+
 type BackupDestination string
 
 const (
@@ -58,16 +60,7 @@ type BackupPolicy struct {
 	LastRun           *BackupEntry `json:"lastRun,omitempty"`
 }
 
-type UpdateBackupPolicy struct {
-	ID              string `json:"id,omitempty"`
-	Enabled         bool   `json:"enabled"`
-	Schedule        string `json:"schedule"`
-	RetentionCount  int    `json:"retentionCount"`
-	StopContainers  bool   `json:"stopContainers"`
-	LocalEnabled    bool   `json:"localEnabled"`
-	S3Enabled       bool   `json:"s3Enabled"`
-	S3DestinationID string `json:"s3DestinationId,omitempty"`
-}
+type UpdateBackupPolicy = backup.UpdateBackupPolicy
 
 type BackupPolicyCollection struct {
 	Policies    []BackupPolicy `json:"policies"`

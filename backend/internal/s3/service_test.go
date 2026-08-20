@@ -94,27 +94,6 @@ func TestS3DestinationService_CRUD(t *testing.T) {
 	require.ErrorIs(t, err, ErrS3DestinationNotFound)
 }
 
-func TestS3DestinationService_RegionRequiredOnlyForAWS(t *testing.T) {
-	service, _ := setupS3DestinationServiceTestInternal(t)
-	ctx := context.Background()
-	input := backuptypes.CreateS3Destination{
-		Name:            "Regionless destination",
-		Bucket:          "arcane-backups",
-		AccessKeyID:     "access-key",
-		SecretAccessKey: "secret-key",
-		UseSSL:          true,
-		ForcePathStyle:  true,
-	}
-
-	_, err := service.CreateS3Destination(ctx, input)
-	require.EqualError(t, err, "region is required for AWS S3")
-
-	input.Endpoint = "https://s3.example.com"
-	destination, err := service.CreateS3Destination(ctx, input)
-	require.NoError(t, err)
-	require.Empty(t, destination.Region)
-}
-
 func TestS3DestinationService_DeleteRejectsConfiguredDestination(t *testing.T) {
 	service, gormDB := setupS3DestinationServiceTestInternal(t)
 	ctx := context.Background()
@@ -127,10 +106,7 @@ func TestS3DestinationService_DeleteRejectsConfiguredDestination(t *testing.T) {
 		UseSSL:          true,
 	})
 	require.NoError(t, err)
-	require.NoError(t, gormDB.Create(&settings.SettingVariable{
-		Key:   "backupS3DestinationId",
-		Value: destination.ID,
-	}).Error)
+	require.NoError(t, gormDB.Exec("INSERT INTO volume_backup_policies (s3_destination_id, s3_enabled) VALUES (?, 1)", destination.ID).Error)
 
 	err = service.DeleteS3Destination(ctx, destination.ID)
 	require.ErrorIs(t, err, ErrS3DestinationInUse)

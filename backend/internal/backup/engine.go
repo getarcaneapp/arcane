@@ -4,7 +4,6 @@
 package backup
 
 import (
-	"bytes"
 	"context"
 	"encoding/json/v2"
 	"fmt"
@@ -21,7 +20,6 @@ import (
 	rusticruntime "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/rustic"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
 	"github.com/google/uuid"
-	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
@@ -210,7 +208,10 @@ func (e *Engine) ForgetSnapshot(ctx context.Context, dockerClient *client.Client
 
 // Replicate copies one snapshot between repositories by restoring it into a
 // temporary volume and backing that volume up into the target repository. The
-// source is read once from the repository, never from the live data.
+// source is read once from the repository, never from the live data. Rustic's
+// native `copy` would move only missing packs, but it addresses the target via
+// a TOML config profile, which the env-only Repository cannot express yet —
+// the materialize-and-rebackup here trades disk and I/O for that simplicity.
 func (e *Engine) Replicate(ctx context.Context, dockerClient *client.Client, from Repository, fromSnapshotID string, to Repository, password, label string) (Snapshot, error) {
 	temporaryVolume := "arcane-rustic-copy-" + uuid.NewString()
 	if _, err := dockerClient.VolumeCreate(ctx, client.VolumeCreateOptions{Name: temporaryVolume, Labels: volumehelper.Labels()}); err != nil {
@@ -289,60 +290,7 @@ func (e *Engine) runContainerInternal(ctx context.Context, dockerClient *client.
 	if err := e.ensureImageInternal(ctx, dockerClient); err != nil {
 		return "", err
 	}
-	environment := append([]string{}, repository.Environment...)
-	environment = append(environment,
-		"RUSTIC_PASSWORD="+password,
-		"RUSTIC_NO_PROGRESS=true",
-		"RUSTIC_LOG_LEVEL=error",
-	)
 	mounts := append([]mount.Mount{}, repository.Mounts...)
 	mounts = append(mounts, extraMounts...)
-	hostConfig := volumehelper.HostConfig(rusticruntime.DefaultImage, nil, mounts)
-	hostConfig.AutoRemove = false
-	hostConfig.NetworkMode = arcaneNetworkModeInternal(ctx, dockerClient)
-	created, err := dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
-		Config: &container.Config{
-			Image:  rusticruntime.DefaultImage,
-			Cmd:    command,
-			Env:    environment,
-			Labels: volumehelper.Labels(),
-		},
-		HostConfig: hostConfig,
-	})
-	if err != nil {
-		return "", fmt.Errorf("failed to create Rustic container: %w", err)
-	}
-	defer func() {
-		_, _ = dockerClient.ContainerRemove(context.WithoutCancel(ctx), created.ID, volumehelper.RemoveOptions())
-	}()
-	if _, err := dockerClient.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); err != nil {
-		return "", fmt.Errorf("failed to start Rustic container: %w", err)
-	}
-	wait := dockerClient.ContainerWait(ctx, created.ID, client.ContainerWaitOptions{Condition: container.WaitConditionNotRunning})
-	var status container.WaitResponse
-	select {
-	case err := <-wait.Error:
-		if err != nil {
-			return "", fmt.Errorf("failed to wait for Rustic container: %w", err)
-		}
-	case status = <-wait.Result:
-	}
-	logs, err := dockerClient.ContainerLogs(ctx, created.ID, client.ContainerLogsOptions{ShowStdout: true, ShowStderr: true})
-	if err != nil {
-		return "", fmt.Errorf("failed to read Rustic output: %w", err)
-	}
-	defer func() { _ = logs.Close() }()
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	if _, err := stdcopy.StdCopy(&stdout, &stderr, logs); err != nil {
-		return "", fmt.Errorf("failed to decode Rustic output: %w", err)
-	}
-	if status.StatusCode != 0 {
-		message := strings.TrimSpace(stderr.String())
-		if message == "" {
-			message = strings.TrimSpace(stdout.String())
-		}
-		return "", fmt.Errorf("rustic exited with code %d: %s", status.StatusCode, message)
-	}
-	return strings.TrimSpace(stdout.String()), nil
+	return rusticruntime.Run(ctx, dockerClient, password, command, repository.Environment, mounts, arcaneNetworkModeInternal(ctx, dockerClient))
 }

@@ -21,6 +21,10 @@ type RestoreRequest struct {
 	RepositoryEnvironment []string      `json:"repositoryEnvironment"`
 	RepositoryMounts      []mount.Mount `json:"repositoryMounts"`
 	AppDataMount          mount.Mount   `json:"appDataMount"`
+	// NetworkMode attaches the detached Rustic restore container to one of
+	// Arcane's networks so network-local S3 endpoints stay reachable while
+	// Arcane itself is stopped.
+	NetworkMode string `json:"networkMode,omitempty"`
 }
 
 type SafetyBackup struct {

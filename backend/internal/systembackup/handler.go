@@ -2,9 +2,10 @@ package systembackup
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"strings"
+
+	"emperror.dev/errors"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"

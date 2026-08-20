@@ -6,7 +6,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	stderrors "errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -28,7 +27,6 @@ import (
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/schedule"
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/moby/moby/api/types/container"
@@ -179,7 +177,7 @@ func (s *VolumeService) ensureBackupVolumeInternal(ctx context.Context) error {
 	return nil
 }
 
-func (s *VolumeService) stopRunningContainersForBackupInternal(ctx context.Context, dockerClient *client.Client, volumeName string, user common.User) ([]container.Summary, error) {
+func (s *VolumeService) stopRunningContainersForBackupInternal(ctx context.Context, dockerClient *client.Client, volumeName string, user common.User, refuseArcaneWriters bool) ([]container.Summary, error) {
 	if s.containerService == nil {
 		return nil, errors.New("container service is unavailable")
 	}
@@ -189,8 +187,10 @@ func (s *VolumeService) stopRunningContainersForBackupInternal(ctx context.Conte
 	}
 
 	eligible := make([]container.Summary, 0, len(containers.Items))
+	arcaneOwned := make([]container.Summary, 0, 2)
 	for _, candidate := range containers.Items {
 		if strings.EqualFold(candidate.Labels["com.getarcaneapp.arcane"], "true") || strings.EqualFold(candidate.Labels["com.getarcaneapp.arcane.agent"], "true") {
+			arcaneOwned = append(arcaneOwned, candidate)
 			continue
 		}
 		// Arcane's own helper containers mount the volume as well, but they are
@@ -201,6 +201,13 @@ func (s *VolumeService) stopRunningContainersForBackupInternal(ctx context.Conte
 			continue
 		}
 		eligible = append(eligible, candidate)
+	}
+	// Restores rewrite the volume in place; refusing beats corrupting the data
+	// under a labeled container this pass deliberately never stops.
+	if refuseArcaneWriters {
+		if writers := docker.FilterContainersUsingVolume(arcaneOwned, volumeName); len(writers) > 0 {
+			return nil, fmt.Errorf("volume %s is mounted by a running Arcane-managed container; restoring under it would corrupt its data", volumeName)
+		}
 	}
 	containerIDs := docker.FilterContainersUsingVolume(eligible, volumeName)
 	containersByID := make(map[string]container.Summary, len(eligible))
@@ -371,42 +378,22 @@ func (s *VolumeService) ListBackupsPaginated(ctx context.Context, volumeName str
 		}
 	}
 	if s.s3Destinations != nil && hasS3Destination {
+		// Destination names are decoration; never fail the listing over them.
 		destinations, destinationErr := s.s3Destinations.ListAllS3Destinations(ctx)
 		if destinationErr != nil {
-			return nil, pagination.Response{}, fmt.Errorf("failed to resolve volume backup S3 destinations: %w", destinationErr)
+			slog.WarnContext(ctx, "could not resolve volume backup S3 destination names", "volume", volumeName, "error", destinationErr)
+		} else {
+			destinationNames := make(map[string]string, len(destinations))
+			for _, destination := range destinations {
+				destinationNames[destination.ID] = destination.Name
+			}
+			for i := range backups {
+				backups[i].S3DestinationName = destinationNames[backups[i].S3DestinationID]
+			}
 		}
-		destinationNames := make(map[string]string, len(destinations))
-		for _, destination := range destinations {
-			destinationNames[destination.ID] = destination.Name
-		}
-		for i := range backups {
-			backups[i].S3DestinationName = destinationNames[backups[i].S3DestinationID]
-		}
 	}
 
-	paginationResp := s.buildPaginationResponseFromCountsInternal(totalItems, totalItems, params)
-	return backups, paginationResp, nil
-}
-
-func (s *VolumeService) buildPaginationResponseFromCountsInternal(totalCount int64, totalAvailable int64, params pagination.QueryParams) pagination.Response {
-	slog.Debug("volume service: build pagination response", "total_count", totalCount, "total_available", totalAvailable, "start", params.Start, "limit", params.Limit)
-	totalPages := int64(0)
-	if params.Limit > 0 {
-		totalPages = (totalCount + int64(params.Limit) - 1) / int64(params.Limit)
-	}
-
-	page := 1
-	if params.Limit > 0 {
-		page = (params.Start / params.Limit) + 1
-	}
-
-	return pagination.Response{
-		TotalPages:      totalPages,
-		TotalItems:      totalCount,
-		CurrentPage:     page,
-		ItemsPerPage:    params.Limit,
-		GrandTotalItems: totalAvailable,
-	}
+	return backups, pagination.BuildResponse(totalItems, totalItems, params), nil
 }
 
 func (s *VolumeService) ListBackups(ctx context.Context, volumeName string) ([]VolumeBackup, error) {
@@ -610,7 +597,7 @@ func (s *VolumeService) CreateBackup(ctx context.Context, volumeName string, use
 			entry.Status, entry.Error = VolumeBackupStatusSucceeded, ""
 		}
 		if saveErr := s.db.WithContext(context.WithoutCancel(ctx)).Save(entry).Error; saveErr != nil {
-			err = stderrors.Join(err, fmt.Errorf("failed to save volume backup result: %w", saveErr))
+			err = errors.Combine(err, fmt.Errorf("failed to save volume backup result: %w", saveErr))
 		}
 	}()
 	dockerClient, err := s.dockerService.GetClient(ctx)
@@ -620,12 +607,12 @@ func (s *VolumeService) CreateBackup(ctx context.Context, volumeName string, use
 	var stopped []container.Summary
 	containersStopped := false
 	if plan.policy != nil && plan.policy.StopContainers {
-		stopped, err = s.stopRunningContainersForBackupInternal(ctx, dockerClient, volumeName, user)
+		stopped, err = s.stopRunningContainersForBackupInternal(ctx, dockerClient, volumeName, user, false)
 		containersStopped = len(stopped) > 0
 		defer func() {
 			if containersStopped {
 				_, restartErr := s.startContainersAfterBackupInternal(context.WithoutCancel(ctx), dockerClient, stopped, user)
-				err = stderrors.Join(err, restartErr)
+				err = errors.Combine(err, restartErr)
 			}
 		}()
 		if err != nil {
@@ -677,9 +664,12 @@ func (s *VolumeService) CreateBackup(ctx context.Context, volumeName string, use
 			return entry, err
 		}
 	}
+	// Retention failures must not fail the run: the backup itself succeeded,
+	// and the deferred status-save would otherwise mark it failed and hide it
+	// from ExpiredRunIDs forever.
 	if trigger != VolumeBackupTriggerSafety && plan.policy != nil && plan.policy.RetentionCount > 0 {
-		if err := s.applyVolumeBackupRetentionInternal(ctx, plan.policy.ID, plan.policy.RetentionCount); err != nil {
-			return entry, fmt.Errorf("failed to apply volume backup retention: %w", err)
+		if retentionErr := s.applyVolumeBackupRetentionInternal(ctx, plan.policy.ID, plan.policy.RetentionCount); retentionErr != nil {
+			slog.ErrorContext(ctx, "Volume backup retention failed", "volume", volumeName, "policy", plan.policy.ID, "error", retentionErr)
 		}
 	}
 	metadata := database.JSON{"action": "backup_create", "backup_id": entry.ID, "size": entry.Size, "destination": entry.Destination}
@@ -691,6 +681,18 @@ func (s *VolumeService) CreateBackup(ctx context.Context, volumeName string, use
 
 func (s *VolumeService) UploadBackup(ctx context.Context, backupID, s3DestinationID string) (*VolumeBackup, error) {
 	var entry VolumeBackup
+	if err := s.db.WithContext(ctx).Where("id = ?", backupID).First(&entry).Error; err != nil {
+		return nil, err
+	}
+	lease, admitted, err := s.engine.TryAcquireRun(ctx, backup.VolumeAdmissionScope, entry.VolumeName)
+	if err != nil {
+		return nil, err
+	}
+	if !admitted {
+		return nil, ErrVolumeBackupAlreadyRunning
+	}
+	defer lease.Release()
+	// Reload under the lease: a delete may have raced the first read.
 	if err := s.db.WithContext(ctx).Where("id = ?", backupID).First(&entry).Error; err != nil {
 		return nil, err
 	}
@@ -739,6 +741,25 @@ func (s *VolumeService) DeleteBackup(ctx context.Context, backupID string, user 
 	if err := s.db.WithContext(ctx).Where("id = ?", backupID).First(&entry).Error; err != nil {
 		return err
 	}
+	// Deletes contend with create/restore/upload on the volume's run lease so
+	// a slow operation cannot resurrect or double-forget snapshots. Retention
+	// deletes run under CreateBackup's lease and call the internal path.
+	lease, admitted, err := s.engine.TryAcquireRun(ctx, backup.VolumeAdmissionScope, entry.VolumeName)
+	if err != nil {
+		return err
+	}
+	if !admitted {
+		return ErrVolumeBackupAlreadyRunning
+	}
+	defer lease.Release()
+	return s.deleteBackupInternal(ctx, backupID, user)
+}
+
+func (s *VolumeService) deleteBackupInternal(ctx context.Context, backupID string, user *common.User) error {
+	var entry VolumeBackup
+	if err := s.db.WithContext(ctx).Where("id = ?", backupID).First(&entry).Error; err != nil {
+		return err
+	}
 	if entry.Format == VolumeBackupFormatArchive {
 		return s.deleteArchiveBackupInternal(ctx, &entry, user)
 	}
@@ -753,7 +774,7 @@ func (s *VolumeService) DeleteBackup(ctx context.Context, backupID string, user 
 			repoErr = s.engine.ForgetSnapshot(ctx, dockerClient, repository, s.rusticPasswordInternal(), entry.LocalSnapshotID)
 		}
 		if repoErr != nil {
-			deleteErr = stderrors.Join(deleteErr, fmt.Errorf("failed to delete local Rustic snapshot: %w", repoErr))
+			deleteErr = errors.Combine(deleteErr, fmt.Errorf("failed to delete local Rustic snapshot: %w", repoErr))
 		} else {
 			entry.LocalSnapshotID = ""
 		}
@@ -764,7 +785,7 @@ func (s *VolumeService) DeleteBackup(ctx context.Context, backupID string, user 
 			repoErr = s.engine.ForgetSnapshot(ctx, dockerClient, repository, s.rusticPasswordInternal(), entry.RemoteSnapshotID)
 		}
 		if repoErr != nil {
-			deleteErr = stderrors.Join(deleteErr, fmt.Errorf("failed to delete S3 Rustic snapshot: %w", repoErr))
+			deleteErr = errors.Combine(deleteErr, fmt.Errorf("failed to delete S3 Rustic snapshot: %w", repoErr))
 		} else {
 			entry.RemoteSnapshotID = ""
 			entry.S3DestinationID = ""
@@ -781,7 +802,7 @@ func (s *VolumeService) DeleteBackup(ctx context.Context, backupID string, user 
 		}
 		entry.Error = deleteErr.Error()
 		if saveErr := s.db.WithContext(ctx).Save(&entry).Error; saveErr != nil {
-			deleteErr = stderrors.Join(deleteErr, saveErr)
+			deleteErr = errors.Combine(deleteErr, saveErr)
 		}
 		return deleteErr
 	}
@@ -828,12 +849,12 @@ func (s *VolumeService) RestoreBackup(ctx context.Context, volumeName, backupID 
 			return err
 		}
 	}
-	stopped, err := s.stopRunningContainersForBackupInternal(ctx, dockerClient, volumeName, user)
+	stopped, err := s.stopRunningContainersForBackupInternal(ctx, dockerClient, volumeName, user, true)
 	containersStopped := len(stopped) > 0
 	defer func() {
 		if containersStopped {
 			_, restartErr := s.startContainersAfterBackupInternal(context.WithoutCancel(ctx), dockerClient, stopped, user)
-			err = stderrors.Join(err, restartErr)
+			err = errors.Combine(err, restartErr)
 		}
 	}()
 	if err != nil {
@@ -937,12 +958,12 @@ func (s *VolumeService) RestoreBackupFiles(ctx context.Context, volumeName, back
 			return err
 		}
 	}
-	stopped, err := s.stopRunningContainersForBackupInternal(ctx, dockerClient, volumeName, user)
+	stopped, err := s.stopRunningContainersForBackupInternal(ctx, dockerClient, volumeName, user, true)
 	containersStopped := len(stopped) > 0
 	defer func() {
 		if containersStopped {
 			_, restartErr := s.startContainersAfterBackupInternal(context.WithoutCancel(ctx), dockerClient, stopped, user)
-			err = stderrors.Join(err, restartErr)
+			err = errors.Combine(err, restartErr)
 		}
 	}()
 	if err != nil {
@@ -1447,7 +1468,7 @@ func (s *VolumeService) GetBackupPolicies(ctx context.Context, volumeName string
 		if listErr == nil {
 			result.S3Available = len(available) > 0
 			for _, destination := range available {
-				destinations[destination.ID] = s3domain.S3Destination{BaseModel: database.BaseModel{ID: destination.ID}, Name: destination.Name, Bucket: destination.Bucket}
+				destinations[destination.ID] = s3domain.S3Destination{ID: destination.ID, Name: destination.Name, Bucket: destination.Bucket}
 			}
 		}
 	}
@@ -1473,87 +1494,36 @@ func (s *VolumeService) GetBackupPolicies(ctx context.Context, volumeName string
 	return result, nil
 }
 
-//nolint:gocognit // policy validation, persistence, and job replacement must remain atomic from the caller's perspective
 func (s *VolumeService) UpdateBackupPolicies(ctx context.Context, volumeName string, updates []volumetypes.UpdateBackupPolicy) (*volumetypes.BackupPolicyCollection, error) {
-	for i := range updates {
-		schedule, err := schedule.NormalizeSixField(updates[i].Schedule, "volume backup")
-		if err != nil {
-			return nil, err
-		}
-		updates[i].Schedule = schedule
-		if updates[i].RetentionCount < 0 || updates[i].RetentionCount > 3650 {
-			return nil, errors.New("retentionCount must be between 0 and 3650")
-		}
-		if !updates[i].LocalEnabled && !updates[i].S3Enabled {
-			return nil, errors.New("select at least one volume backup destination")
-		}
-		if updates[i].S3Enabled {
-			if s.s3Destinations == nil {
-				return nil, errors.New("S3 backup destinations are unavailable")
-			}
-			if strings.TrimSpace(updates[i].S3DestinationID) == "" {
-				return nil, errors.New("select an S3 destination for volume backups")
-			}
-			if _, err := s.s3Destinations.Configuration(ctx, updates[i].S3DestinationID); err != nil {
-				return nil, errors.New("select a valid S3 destination for volume backups")
-			}
-		} else {
-			updates[i].S3DestinationID = ""
-		}
-	}
 	existing, err := s.loadVolumeBackupPoliciesInternal(ctx, volumeName)
 	if err != nil {
 		return nil, err
 	}
-	byID := make(map[string]VolumeBackupPolicy, len(existing))
-	for i := range existing {
-		byID[existing[i].ID] = existing[i]
-	}
-	policies := make([]VolumeBackupPolicy, 0, len(updates))
-	kept := make(map[string]struct{}, len(updates))
-	for _, update := range updates {
-		policy := VolumeBackupPolicy{VolumeName: volumeName}
-		if update.ID != "" {
-			var ok bool
-			policy, ok = byID[update.ID]
-			if !ok {
-				return nil, errors.New("volume backup policy not found")
+	reconcile := backup.PolicyReconciliation[VolumeBackupPolicy]{
+		Domain:   "volume",
+		DB:       s.db,
+		Existing: existing,
+		ID:       func(policy *VolumeBackupPolicy) string { return policy.ID },
+		New:      func() VolumeBackupPolicy { return VolumeBackupPolicy{VolumeName: volumeName} },
+		Apply: func(policy *VolumeBackupPolicy, update volumetypes.UpdateBackupPolicy) {
+			policy.Enabled, policy.Schedule, policy.RetentionCount = update.Enabled, update.Schedule, update.RetentionCount
+			policy.StopContainers, policy.LocalEnabled, policy.S3Enabled = update.StopContainers, update.LocalEnabled, update.S3Enabled
+			policy.S3DestinationID = update.S3DestinationID
+		},
+		S3Configured: func(ctx context.Context, destinationID string) error {
+			if s.s3Destinations == nil {
+				return errors.New("S3 backup destinations are unavailable")
 			}
-			if _, duplicate := kept[update.ID]; duplicate {
-				return nil, errors.New("duplicate volume backup policy")
+			if _, err := s.s3Destinations.Configuration(ctx, destinationID); err != nil {
+				return errors.New("select a valid S3 destination for volume backups")
 			}
-			kept[update.ID] = struct{}{}
-		}
-		policy.Enabled, policy.Schedule, policy.RetentionCount = update.Enabled, update.Schedule, update.RetentionCount
-		policy.StopContainers, policy.LocalEnabled, policy.S3Enabled = update.StopContainers, update.LocalEnabled, update.S3Enabled
-		policy.S3DestinationID = update.S3DestinationID
-		policies = append(policies, policy)
+			return nil
+		},
+		Unregister: s.jobs.Unregister,
+		Reschedule: s.rescheduleVolumeBackupPolicyInternal,
 	}
-	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		for i := range policies {
-			if saveErr := tx.Save(&policies[i]).Error; saveErr != nil {
-				return saveErr
-			}
-		}
-		for i := range existing {
-			if _, ok := kept[existing[i].ID]; !ok {
-				if deleteErr := tx.Delete(&existing[i]).Error; deleteErr != nil {
-					return deleteErr
-				}
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to save volume backup policies: %w", err)
-	}
-	for i := range existing {
-		if _, ok := kept[existing[i].ID]; !ok {
-			s.jobs.Unregister(ctx, existing[i].ID)
-		}
-	}
-	for i := range policies {
-		s.rescheduleVolumeBackupPolicyInternal(ctx, &policies[i])
+	if err := reconcile.Run(ctx, updates); err != nil {
+		return nil, err
 	}
 	return s.GetBackupPolicies(ctx, volumeName)
 }
@@ -1564,7 +1534,7 @@ func (s *VolumeService) applyVolumeBackupRetentionInternal(ctx context.Context, 
 		return err
 	}
 	for _, id := range expired {
-		if err := s.DeleteBackup(ctx, id, nil); err != nil {
+		if err := s.deleteBackupInternal(ctx, id, nil); err != nil {
 			return err
 		}
 	}

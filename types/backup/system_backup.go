@@ -37,15 +37,20 @@ type SystemBackupPolicy struct {
 	LastRun           *SystemBackupRun `json:"lastRun,omitempty"`
 }
 
-type UpdateSystemBackupPolicy struct {
+// UpdateBackupPolicy is the shared policy-update payload for every backup
+// domain; StopContainers only applies to volume backups.
+type UpdateBackupPolicy struct {
 	ID              string `json:"id,omitempty"`
 	Enabled         bool   `json:"enabled"`
 	Schedule        string `json:"schedule"`
 	RetentionCount  int    `json:"retentionCount"`
+	StopContainers  bool   `json:"stopContainers,omitempty"`
 	LocalEnabled    bool   `json:"localEnabled"`
 	S3Enabled       bool   `json:"s3Enabled"`
 	S3DestinationID string `json:"s3DestinationId,omitempty"`
 }
+
+type UpdateSystemBackupPolicy = UpdateBackupPolicy
 
 type SystemBackupPolicyCollection struct {
 	Policies          []SystemBackupPolicy `json:"policies"`

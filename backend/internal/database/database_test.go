@@ -202,18 +202,18 @@ func TestMigration070_PasskeysAndMFA_UpAndDown(t *testing.T) {
 	assert.Zero(t, columnCount)
 }
 
-// TestMigration071_BackupSupport_PreservesExistingBackups proves that
+// TestMigration073_BackupSupport_PreservesExistingBackups proves that
 // pre-existing volume backup rows survive the backup-support migration as
 // format=archive, and that downgrading is refused while Rustic rows exist.
-func TestMigration071_BackupSupport_PreservesExistingBackups(t *testing.T) {
+func TestMigration073_BackupSupport_PreservesExistingBackups(t *testing.T) {
 	ctx := context.Background()
 	rawDB, _ := newSQLiteSQLDBInternal(t, t.TempDir(), "arcane-backup-support.db")
 
-	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 70))
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 72))
 	_, err := rawDB.ExecContext(ctx, `INSERT INTO volume_backups (id, volume_name, size, created_at) VALUES ('legacy-1', 'app-data', 42, CURRENT_TIMESTAMP)`)
 	require.NoError(t, err)
 
-	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 71))
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 73))
 	var format, status, destination string
 	var size int64
 	require.NoError(t, rawDB.QueryRow(`SELECT format, status, destination, size FROM volume_backups WHERE id = 'legacy-1'`).Scan(&format, &status, &destination, &size))
@@ -225,13 +225,13 @@ func TestMigration071_BackupSupport_PreservesExistingBackups(t *testing.T) {
 	// Downgrade is refused while a Rustic-format row exists.
 	_, err = rawDB.ExecContext(ctx, `INSERT INTO volume_backups (id, volume_name, size, created_at, format, local_snapshot_id) VALUES ('rustic-1', 'app-data', 7, CURRENT_TIMESTAMP, 'rustic', 'snap-1')`)
 	require.NoError(t, err)
-	err = migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 70)
+	err = migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 72)
 	require.Error(t, err)
 
 	// With only archive rows left, the downgrade succeeds and keeps the row.
 	_, err = rawDB.ExecContext(ctx, `DELETE FROM volume_backups WHERE id = 'rustic-1'`)
 	require.NoError(t, err)
-	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 70))
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 72))
 	var count int
 	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM volume_backups WHERE id = 'legacy-1'`).Scan(&count))
 	assert.Equal(t, 1, count)
@@ -275,11 +275,11 @@ func TestMigration072_ProjectTags_UpDownAndCascade(t *testing.T) {
 	assert.Zero(t, tableCount)
 }
 
-func TestMigration073_RenamesVolumeWorkspaceLegacyKeys(t *testing.T) {
+func TestMigration071_RenamesVolumeWorkspaceLegacyKeys(t *testing.T) {
 	ctx := context.Background()
 	rawDB, _ := newSQLiteSQLDBInternal(t, t.TempDir(), "arcane-volume-workspace-keys.db")
 
-	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 72))
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 70))
 	_, err := rawDB.Exec(`DELETE FROM settings WHERE key = 'volumeHelperIdleTimeout'`)
 	require.NoError(t, err)
 	_, err = rawDB.Exec(`INSERT INTO settings (key, value) VALUES ('volumeBrowserHelperIdleTimeout', '27')`)
@@ -291,7 +291,7 @@ func TestMigration073_RenamesVolumeWorkspaceLegacyKeys(t *testing.T) {
 	_, err = rawDB.Exec(`INSERT INTO api_key_permissions (id, api_key_id, permission) VALUES ('grant-browse', 'key-workspace', 'volumes:browse'), ('grant-read', 'key-workspace', 'volumes:read')`)
 	require.NoError(t, err)
 
-	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 73))
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 71))
 	var timeout string
 	require.NoError(t, rawDB.QueryRow(`SELECT value FROM settings WHERE key = 'volumeHelperIdleTimeout'`).Scan(&timeout))
 	assert.Equal(t, "27", timeout)
@@ -307,7 +307,7 @@ func TestMigration073_RenamesVolumeWorkspaceLegacyKeys(t *testing.T) {
 	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM api_key_permissions WHERE permission = 'volumes:browse'`).Scan(&count))
 	assert.Zero(t, count)
 
-	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 72))
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 70))
 	require.NoError(t, rawDB.QueryRow(`SELECT value FROM settings WHERE key = 'volumeBrowserHelperIdleTimeout'`).Scan(&timeout))
 	assert.Equal(t, "27", timeout)
 }
