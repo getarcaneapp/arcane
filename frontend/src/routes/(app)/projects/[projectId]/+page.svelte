@@ -626,7 +626,7 @@
 		// cached detail instead of replacing it wholesale.
 		queryClient.setQueryData(
 			queryKeys.projects.detail(currentEnvId, updatedProject.id),
-			(old: Project | undefined) => ({ ...(old ?? {}), ...updatedProject }) as Project
+			(old: Project | undefined) => ({ ...old, ...updatedProject }) as Project
 		);
 		await Promise.all([
 			queryClient.invalidateQueries({ queryKey: ['projects', currentEnvId] }),
@@ -851,10 +851,12 @@
 	function updateLoadedProjectWorkspaceSource(kind: ProjectWorkspaceSource, relativePath: string, content: string) {
 		if (kind === 'include') {
 			ensureIncludeFileUiState(relativePath);
-			loadedIncludeFileContents = {
-				...loadedIncludeFileContents,
-				[relativePath]: content
-			};
+			if (loadedIncludeFileContents[relativePath] !== content) {
+				loadedIncludeFileContents = {
+					...loadedIncludeFileContents,
+					[relativePath]: content
+				};
+			}
 			if (includeFilesState[relativePath] === undefined) {
 				includeFilesState = {
 					...includeFilesState,
@@ -864,6 +866,7 @@
 			return;
 		}
 
+		if (loadedDirectoryFileContents[relativePath] === content) return;
 		loadedDirectoryFileContents = {
 			...loadedDirectoryFileContents,
 			[relativePath]: content
@@ -1098,6 +1101,40 @@
 		}
 
 		void loadProjectWorkspaceFileDraft(relativePath);
+	});
+
+	async function loadProjectSourceFile(kind: 'include' | 'directory', relativePath: string) {
+		projectWorkspaceLoading = {
+			...projectWorkspaceLoading,
+			[relativePath]: true
+		};
+		projectWorkspaceLoadErrors = removeWorkspaceFileRecord(projectWorkspaceLoadErrors, relativePath);
+
+		try {
+			await getProjectWorkspaceFileResource(kind, relativePath);
+		} catch (error) {
+			projectWorkspaceLoadErrors = {
+				...projectWorkspaceLoadErrors,
+				[relativePath]: error instanceof Error ? error.message : String(error)
+			};
+		} finally {
+			projectWorkspaceLoading = removeWorkspaceFileRecord(projectWorkspaceLoading, relativePath);
+		}
+	}
+
+	$effect(() => {
+		const relativePath = selectedIncludeTab;
+		if (!relativePath) return;
+		const kind = includeFilePaths.has(relativePath) ? 'include' : 'directory';
+		const loaded =
+			kind === 'include'
+				? includeFilesState[relativePath] !== undefined
+				: loadedDirectoryFileContents[relativePath] !== undefined;
+		if (loaded || projectWorkspaceLoading[relativePath] || projectWorkspaceLoadErrors[relativePath] !== undefined) {
+			return;
+		}
+
+		void loadProjectSourceFile(kind, relativePath);
 	});
 
 	function remapProjectWorkspaceState(oldPath: string, newPath: string) {
@@ -1708,7 +1745,7 @@
 															<div class="flex h-full min-h-0 items-center justify-center px-4 text-sm text-destructive">
 																{projectWorkspaceLoadErrors[relativePath]}
 															</div>
-														{:else if selectedProjectWorkspaceMetadata?.editable === false}
+														{:else if selectedProjectWorkspaceMetadata?.editable === false && selectedProjectWorkspaceMetadata.content === undefined}
 															<div
 																class="flex h-full min-h-0 items-center justify-center px-4 text-center text-sm text-muted-foreground"
 															>
@@ -1717,6 +1754,17 @@
 																	projectWorkspaceMaxFileSizeMb
 																)}
 															</div>
+														{:else if selectedProjectWorkspaceMetadata?.editable === false}
+															<CodePanel
+																variant="plain"
+																open={true}
+																title={relativePath}
+																language={workspaceFileLanguage(relativePath)}
+																validationMode="none"
+																value={selectedProjectWorkspaceMetadata.content ?? ''}
+																readOnly={true}
+																editorContext={codeEditorContext}
+															/>
 														{:else if projectWorkspaceContents[relativePath] === undefined}
 															<div class="flex h-full min-h-0 items-center justify-center text-muted-foreground">
 																{m.common_loading()}
@@ -1782,43 +1830,41 @@
 
 								{#if selectedIncludeTab}
 									{@const includeFile = project?.includeFiles?.find((f) => f.relativePath === selectedIncludeTab)}
-									{@const dirFile = !includeFile
-										? projectWorkspaceEntries.find((f) => f.relativePath === selectedIncludeTab)
-										: undefined}
-									{@const fileKind = includeFile ? 'include' : 'directory'}
-									{#await getProjectWorkspaceFileResource(fileKind, selectedIncludeTab)}
+									{@const workspaceEntry = projectWorkspaceEntries.find((f) => f.relativePath === selectedIncludeTab)}
+									{@const dirFile = !includeFile ? workspaceEntry : undefined}
+									{@const sourceLocked = workspaceEntry?.locked === true}
+									{#if projectWorkspaceLoadErrors[selectedIncludeTab]}
+										<div class="flex h-full min-h-0 items-center justify-center rounded-lg border px-4 text-sm text-destructive">
+											{projectWorkspaceLoadErrors[selectedIncludeTab]}
+										</div>
+									{:else if includeFile && includeFilesState[includeFile.relativePath] !== undefined}
+										<CodePanel
+											bind:open={includeFilesPanelStates[includeFile.relativePath]}
+											title={includeFile.relativePath}
+											language="yaml"
+											validationMode="compose"
+											bind:value={includeFilesState[includeFile.relativePath]}
+											readOnly={sourceLocked}
+											bind:hasErrors={includeFilesHasErrors[includeFile.relativePath]}
+											bind:validationReady={includeFilesValidationReady[includeFile.relativePath]}
+											fileId={`project:${projectId}:include:${includeFile.relativePath}`}
+											originalValue={serverIncludeFiles[includeFile.relativePath] ?? ''}
+											enableDiff={true}
+											editorContext={codeEditorContext}
+										/>
+									{:else if dirFile && loadedDirectoryFileContents[dirFile.relativePath] !== undefined}
+										<CodePanel
+											open={true}
+											title={dirFile.relativePath}
+											language="env"
+											value={loadedDirectoryFileContents[dirFile.relativePath]}
+											readOnly={true}
+										/>
+									{:else}
 										<div class="flex h-full min-h-0 items-center justify-center rounded-lg border text-muted-foreground">
 											{m.common_loading()}
 										</div>
-									{:then loaded}
-										{#if includeFile}
-											<CodePanel
-												bind:open={includeFilesPanelStates[includeFile.relativePath]}
-												title={includeFile.relativePath}
-												language="yaml"
-												validationMode="compose"
-												bind:value={includeFilesState[includeFile.relativePath]}
-												bind:hasErrors={includeFilesHasErrors[includeFile.relativePath]}
-												bind:validationReady={includeFilesValidationReady[includeFile.relativePath]}
-												fileId={`project:${projectId}:include:${includeFile.relativePath}`}
-												originalValue={serverIncludeFiles[includeFile.relativePath] ?? ''}
-												enableDiff={true}
-												editorContext={codeEditorContext}
-											/>
-										{:else if dirFile}
-											<CodePanel
-												open={true}
-												title={loaded.relativePath}
-												language="env"
-												value={loaded.content ?? ''}
-												readOnly={true}
-											/>
-										{/if}
-									{:catch error}
-										<div class="flex h-full min-h-0 items-center justify-center rounded-lg border px-4 text-sm text-destructive">
-											{error instanceof Error ? error.message : String(error)}
-										</div>
-									{/await}
+									{/if}
 								{:else}
 									<ResizableSplit
 										class="min-h-0 flex-1 lg:gap-2"
