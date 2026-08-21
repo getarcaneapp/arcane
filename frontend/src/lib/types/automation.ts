@@ -125,6 +125,8 @@ export interface GitOpsSyncCreateDto {
 	autoSync?: boolean;
 	syncInterval?: number;
 	syncDirectory?: boolean;
+	pullImageAfterSync?: boolean;
+	redeployAfterSync?: boolean;
 	maxSyncFiles?: number;
 	maxSyncTotalSize?: number;
 	maxSyncBinarySize?: number;
@@ -146,6 +148,8 @@ export interface GitOpsSyncUpdateDto {
 	autoSync?: boolean;
 	syncInterval?: number;
 	syncDirectory?: boolean;
+	pullImageAfterSync?: boolean;
+	redeployAfterSync?: boolean;
 	maxSyncFiles?: number;
 	maxSyncTotalSize?: number;
 	maxSyncBinarySize?: number;
@@ -171,6 +175,8 @@ export interface GitOpsSync {
 	autoSync: boolean;
 	syncInterval: number;
 	syncDirectory: boolean;
+	pullImageAfterSync: boolean;
+	redeployAfterSync: boolean;
 	syncedFiles?: string;
 	maxSyncFiles: number;
 	maxSyncTotalSize: number;

@@ -98,6 +98,23 @@ type GitOpsSync struct {
 	PreDeployTimeoutSec    int        `json:"preDeployTimeoutSec" gorm:"column:pre_deploy_timeout_sec;default:60"`
 	AutoSync               bool       `json:"autoSync" sortable:"true" search:"auto,automatic,sync,continuous,scheduled"`
 	SyncDirectory          bool       `json:"syncDirectory" gorm:"column:sync_directory"` // Sync entire directory containing compose file
+	// PullImageAfterSync pulls each service's image right after a sync that changed
+	// managed content, even when the project is stopped. Without this, images are
+	// only pulled as a side effect of RedeployProject, which itself only runs when
+	// the project is already Running or PartiallyRunning at sync time — so a
+	// stopped container can be left referencing an image tag that was since
+	// re-pointed or pruned upstream, and won't be recoverable until it's manually
+	// redeployed.
+	PullImageAfterSync bool `json:"pullImageAfterSync" gorm:"column:pull_image_after_sync;default:false"`
+
+	// RedeployAfterSync recreates the project's containers with freshly pulled
+	// images right after a sync that changed managed content, regardless of
+	// whether the project is currently running or stopped — mirroring
+	// Portainer's "Re-pull image" stack option. When enabled it supersedes
+	// PullImageAfterSync's stopped-project behavior (a redeploy already pulls),
+	// but a stopped project is still only started if this is enabled; leaving
+	// only PullImageAfterSync on keeps a stopped project stopped.
+	RedeployAfterSync bool `json:"redeployAfterSync" gorm:"column:redeploy_after_sync;default:false"`
 }
 
 func (GitOpsSync) TableName() string {
