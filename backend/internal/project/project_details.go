@@ -216,7 +216,7 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 	resp.UpdatedAt = proj.UpdatedAt.Format(time.RFC3339)
 	resp.IsArchived = proj.IsArchived
 	resp.ArchivedAt = proj.ArchivedAt
-	resp.HasBuildDirective = false
+	resp.HasBuildDirective = proj.BuildImageRefsJSON != nil && len(projects.ParseImageRefsJSON(*proj.BuildImageRefsJSON)) > 0
 	resp.DirName = mo.PointerToOption(proj.DirName).OrEmpty()
 	resp.RelativePath = getProjectRelativePathInternal(projectsDir, proj.Path)
 	resp.GitOpsManagedBy = proj.GitOpsManagedBy

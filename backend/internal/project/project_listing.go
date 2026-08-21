@@ -805,6 +805,7 @@ func (s *ProjectService) fetchProjectStatusConcurrently(ctx context.Context, pro
 			results[i].DirName = mo.PointerToOption(p.DirName).OrEmpty()
 			results[i].RelativePath = getProjectRelativePathInternal(projectsDir, p.Path)
 			results[i].GitOpsManagedBy = p.GitOpsManagedBy
+			results[i].HasBuildDirective = p.BuildImageRefsJSON != nil && len(projects.ParseImageRefsJSON(*p.BuildImageRefsJSON)) > 0
 			meta := s.ProjectMetadata(ctx, p, metaEnv)
 			applyResolvedProjectIconInternal(&results[i], iconcatalog.Resolve(IconCatalogForContext(ctx), meta.ProjectIcon))
 			results[i].URLs = meta.ProjectURLS
@@ -837,6 +838,7 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, projectsDir string
 	resp.DirName = mo.PointerToOption(p.DirName).OrEmpty()
 	resp.RelativePath = getProjectRelativePathInternal(projectsDir, p.Path)
 	resp.GitOpsManagedBy = p.GitOpsManagedBy
+	resp.HasBuildDirective = p.BuildImageRefsJSON != nil && len(projects.ParseImageRefsJSON(*p.BuildImageRefsJSON)) > 0
 	meta := s.ProjectMetadata(ctx, p, metaEnv)
 	applyResolvedProjectIconInternal(&resp, iconcatalog.Resolve(IconCatalogForContext(ctx), meta.ProjectIcon))
 	resp.URLs = meta.ProjectURLS

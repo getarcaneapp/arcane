@@ -7186,3 +7186,31 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenTargetPres
 	require.FileExists(t, filepath.Join(oldPath, "compose.yaml"))
 	require.NoDirExists(t, newPath)
 }
+
+func TestProjectService_MapProjectToDto_SeedsHasBuildDirectiveFromPersistedRefs(t *testing.T) {
+	ctx := context.Background()
+	db := setupProjectTestDB(t)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	require.NoError(t, err)
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
+	metaEnv := &projectMetadataEnvInternal{projectsDirectory: t.TempDir()}
+
+	now := time.Now()
+	tests := []struct {
+		name               string
+		buildImageRefsJSON *string
+		want               bool
+	}{
+		{name: "build refs persisted", buildImageRefsJSON: new(`["demo-worker"]`), want: true},
+		{name: "no build services", buildImageRefsJSON: new(`[]`), want: false},
+		{name: "refs never resolved", buildImageRefsJSON: nil, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := Project{ID: tt.name, Name: tt.name, Path: t.TempDir(), UpdatedAt: &now, BuildImageRefsJSON: tt.buildImageRefsJSON}
+			assert.Equal(t, tt.want, svc.mapProjectToDto(ctx, metaEnv.projectsDirectory, p, nil, "", nil, metaEnv).HasBuildDirective)
+		})
+	}
+}
