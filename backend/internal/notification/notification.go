@@ -268,6 +268,21 @@ func (s *NotificationService) dispatchForTargetInternal(ctx context.Context, tar
 		}
 		logManagerDispatchNotificationInternal(ctx, target, payload.Kind)
 		return dispatchResponse, s.sendContainerUpdateNotificationForTargetInternal(ctx, target, payload.ContainerUpdate.ContainerName, payload.ContainerUpdate.ImageRef, payload.ContainerUpdate.OldDigest, payload.ContainerUpdate.NewDigest)
+	case notificationdto.DispatchKindBatchContainerUpdate:
+		if payload.BatchContainerUpdate == nil {
+			return notificationdto.DispatchResponse{}, errors.New("batch container update payload is required")
+		}
+		logManagerDispatchNotificationInternal(ctx, target, payload.Kind)
+		entries := make([]notifications.ContainerUpdateBatchEntry, 0, len(payload.BatchContainerUpdate.Updates))
+		for _, update := range payload.BatchContainerUpdate.Updates {
+			entries = append(entries, notifications.ContainerUpdateBatchEntry{
+				ContainerName: update.ContainerName,
+				ImageRef:      update.ImageRef,
+				OldDigest:     update.OldDigest,
+				NewDigest:     update.NewDigest,
+			})
+		}
+		return dispatchResponse, s.sendBatchContainerUpdateNotificationForTargetInternal(ctx, target, entries)
 	case notificationdto.DispatchKindVulnerabilityFound:
 		if payload.VulnerabilityFound == nil {
 			return notificationdto.DispatchResponse{}, errors.New("vulnerability payload is required")
@@ -726,6 +741,23 @@ func (s *NotificationService) batchImageUpdateNotificationContentInternal(enviro
 func (s *NotificationService) SendBatchContainerUpdateNotification(ctx context.Context, entries []notifications.ContainerUpdateBatchEntry) error {
 	if len(entries) == 0 {
 		return nil
+	}
+
+	if s.config != nil && s.config.AgentMode {
+		updates := make([]notificationdto.DispatchContainerUpdate, 0, len(entries))
+		for _, entry := range entries {
+			updates = append(updates, notificationdto.DispatchContainerUpdate{
+				ContainerName: entry.ContainerName,
+				ImageRef:      entry.ImageRef,
+				OldDigest:     entry.OldDigest,
+				NewDigest:     entry.NewDigest,
+			})
+		}
+		_, err := s.dispatchNotificationToManagerInternal(ctx, notificationdto.DispatchRequest{
+			Kind:                 notificationdto.DispatchKindBatchContainerUpdate,
+			BatchContainerUpdate: &notificationdto.DispatchBatchContainerUpdate{Updates: updates},
+		})
+		return err
 	}
 
 	target, err := s.resolveNotificationTargetInternal(ctx, "")

@@ -176,7 +176,7 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, options arcaneupdater
 	ctx = s.trackActivityInternal(ctx, activityID)
 	ctx = contextWithActivityIDInternal(ctx, activityID)
 	notifyBatch := &containerUpdateBatchInternal{}
-	ctx = withBatchedContainerUpdatesInternal(ctx, notifyBatch)
+	ctx = context.WithValue(ctx, containerUpdateBatchContextKeyInternal{}, notifyBatch)
 
 	defer func() {
 		s.flushBatchedContainerUpdatesInternal(ctx, notifyBatch)
@@ -754,14 +754,11 @@ func (s *UpdaterService) Notify(ctx context.Context, notification updater.Notifi
 // so a single auto-update run produces one batched notification.
 type containerUpdateBatchInternal struct {
 	sync.Mutex
+
 	entries []notifications.ContainerUpdateBatchEntry
 }
 
 type containerUpdateBatchContextKeyInternal struct{}
-
-func withBatchedContainerUpdatesInternal(ctx context.Context, batch *containerUpdateBatchInternal) context.Context {
-	return context.WithValue(ctx, containerUpdateBatchContextKeyInternal{}, batch)
-}
 
 func batchedContainerUpdatesFromContextInternal(ctx context.Context) *containerUpdateBatchInternal {
 	batch, _ := ctx.Value(containerUpdateBatchContextKeyInternal{}).(*containerUpdateBatchInternal)

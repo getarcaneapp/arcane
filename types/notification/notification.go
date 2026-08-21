@@ -96,12 +96,13 @@ type TestResponse struct {
 type DispatchKind string
 
 const (
-	DispatchKindImageUpdate        DispatchKind = "image_update"
-	DispatchKindBatchImageUpdate   DispatchKind = "batch_image_update"
-	DispatchKindContainerUpdate    DispatchKind = "container_update"
-	DispatchKindVulnerabilityFound DispatchKind = "vulnerability_found"
-	DispatchKindPruneReport        DispatchKind = "prune_report"
-	DispatchKindAutoHeal           DispatchKind = "auto_heal"
+	DispatchKindImageUpdate          DispatchKind = "image_update"
+	DispatchKindBatchImageUpdate     DispatchKind = "batch_image_update"
+	DispatchKindContainerUpdate      DispatchKind = "container_update"
+	DispatchKindBatchContainerUpdate DispatchKind = "batch_container_update"
+	DispatchKindVulnerabilityFound   DispatchKind = "vulnerability_found"
+	DispatchKindPruneReport          DispatchKind = "prune_report"
+	DispatchKindAutoHeal             DispatchKind = "auto_heal"
 )
 
 type DispatchImageUpdate struct {
@@ -118,6 +119,10 @@ type DispatchContainerUpdate struct {
 	ImageRef      string `json:"imageRef"`
 	OldDigest     string `json:"oldDigest,omitempty"`
 	NewDigest     string `json:"newDigest,omitempty"`
+}
+
+type DispatchBatchContainerUpdate struct {
+	Updates []DispatchContainerUpdate `json:"updates"`
 }
 
 type DispatchVulnerabilityFound struct {
@@ -140,13 +145,14 @@ type DispatchAutoHeal struct {
 }
 
 type DispatchRequest struct {
-	Kind               DispatchKind                `json:"kind"`
-	ImageUpdate        *DispatchImageUpdate        `json:"imageUpdate,omitempty"`
-	BatchImageUpdate   *DispatchBatchImageUpdate   `json:"batchImageUpdate,omitempty"`
-	ContainerUpdate    *DispatchContainerUpdate    `json:"containerUpdate,omitempty"`
-	VulnerabilityFound *DispatchVulnerabilityFound `json:"vulnerabilityFound,omitempty"`
-	PruneReport        *DispatchPruneReport        `json:"pruneReport,omitempty"`
-	AutoHeal           *DispatchAutoHeal           `json:"autoHeal,omitempty"`
+	Kind                 DispatchKind                  `json:"kind"`
+	ImageUpdate          *DispatchImageUpdate          `json:"imageUpdate,omitempty"`
+	BatchImageUpdate     *DispatchBatchImageUpdate     `json:"batchImageUpdate,omitempty"`
+	ContainerUpdate      *DispatchContainerUpdate      `json:"containerUpdate,omitempty"`
+	BatchContainerUpdate *DispatchBatchContainerUpdate `json:"batchContainerUpdate,omitempty"`
+	VulnerabilityFound   *DispatchVulnerabilityFound   `json:"vulnerabilityFound,omitempty"`
+	PruneReport          *DispatchPruneReport          `json:"pruneReport,omitempty"`
+	AutoHeal             *DispatchAutoHeal             `json:"autoHeal,omitempty"`
 }
 
 type DispatchResponse struct {

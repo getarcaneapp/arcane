@@ -165,6 +165,7 @@ type ContainerUpdateBatchEntry struct {
 	NewDigest     string
 }
 
+// BuildBatchContainerUpdateNotificationMessage builds a formatted notification for a batch of container updates.
 func BuildBatchContainerUpdateNotificationMessage(format MessageFormat, environmentName string, entries []ContainerUpdateBatchEntry) string {
 	title := "Containers Updated"
 	description := fmt.Sprintf("%d container(s) were updated.", len(entries))
@@ -183,14 +184,14 @@ func BuildBatchContainerUpdateNotificationMessage(format MessageFormat, environm
 
 	for _, entry := range sorted {
 		switch format {
+		case MessageFormatPlain:
+			fmt.Fprintf(&message, "%s\n", entry.ContainerName)
 		case MessageFormatMarkdown:
 			fmt.Fprintf(&message, "**%s**\n", entry.ContainerName)
 		case MessageFormatSlack:
 			fmt.Fprintf(&message, "*%s*\n", entry.ContainerName)
 		case MessageFormatHTML:
 			fmt.Fprintf(&message, "<b>%s</b>\n", entry.ContainerName)
-		default:
-			fmt.Fprintf(&message, "%s\n", entry.ContainerName)
 		}
 		fmt.Fprintf(&message, "• Image: %s\n", entry.ImageRef)
 		if entry.OldDigest != "" {
