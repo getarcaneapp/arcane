@@ -1182,8 +1182,7 @@ func (s *GitOpsSyncService) redeployIfRunningAfterSync(ctx context.Context, sync
 	running := err == nil && (details.Status == string(projectpkg.ProjectStatusRunning) || details.Status == string(projectpkg.ProjectStatusPartiallyRunning))
 
 	if !running && !sync.RedeployAfterSync {
-		s.pullImageAfterSyncIfConfiguredInternal(ctx, sync, project, actor)
-		return nil
+		return s.pullImageAfterSyncIfConfiguredInternal(ctx, sync, project, actor)
 	}
 
 	slog.InfoContext(ctx, "Redeploying project due to content change from Git sync", "syncMode", syncMode, "projectName", project.Name, "projectId", project.ID, "wasRunning", running)
@@ -1199,9 +1198,9 @@ func (s *GitOpsSyncService) redeployIfRunningAfterSync(ctx context.Context, sync
 // running), when the sync has PullImageAfterSync enabled. Best-effort: a pull
 // failure is logged but never fails the sync itself, mirroring how
 // RedeployProject treats its own pre-deploy pull.
-func (s *GitOpsSyncService) pullImageAfterSyncIfConfiguredInternal(ctx context.Context, sync *projectpkg.GitOpsSync, project *projectpkg.Project, actor common.User) {
+func (s *GitOpsSyncService) pullImageAfterSyncIfConfiguredInternal(ctx context.Context, sync *projectpkg.GitOpsSync, project *projectpkg.Project, actor common.User) error {
 	if !sync.PullImageAfterSync {
-		return
+		return nil
 	}
 
 	credentials, cerr := s.projectService.ResolveRegistryCredentials(ctx)
@@ -1210,8 +1209,10 @@ func (s *GitOpsSyncService) pullImageAfterSyncIfConfiguredInternal(ctx context.C
 	}
 	slog.InfoContext(ctx, "Pulling project images after Git sync (project not running)", "projectName", project.Name, "projectId", project.ID)
 	if err := s.projectService.PullProjectImages(ctx, project.ID, io.Discard, actor, credentials); err != nil {
-		slog.WarnContext(ctx, "failed to pull project images after Git sync", "error", err, "projectId", project.ID)
+		slog.ErrorContext(ctx, "failed to pull project images after Git sync", "error", err, "projectId", project.ID)
+		return common.Classify(common.ErrRedeployAfterSyncFailed, errors.WrapIf(err, "post-sync image pull failed"))
 	}
+	return nil
 }
 
 // logSyncSuccess records the Git sync completion event once the filesystem and
@@ -1621,11 +1622,15 @@ func (s *GitOpsSyncService) updateProjectForSyncInternal(ctx context.Context, sy
 			// RedeployProject (and its pull side effect) never runs. Pull
 			// explicitly if this sync opted into PullImageAfterSync, so a
 			// stopped container isn't left referencing an image tag that's
-			// since been re-pointed or pruned upstream.
-			s.pullImageAfterSyncIfConfiguredInternal(ctx, sync, project, actor)
+			// since been re-pointed or pruned upstream. A pull failure is
+			// returned rather than swallowed, so it surfaces on the sync
+			// row's LastSyncError instead of the sync silently reporting
+			// success with a stale image.
+			if err := s.pullImageAfterSyncIfConfiguredInternal(ctx, sync, project, actor); err != nil {
+				return err
+			}
 		}
 	}
-
 	return nil
 }
 
