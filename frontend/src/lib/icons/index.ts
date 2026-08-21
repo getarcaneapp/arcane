@@ -119,3 +119,4 @@ export { default as ShieldXIcon } from 'virtual:icons/solar/shield-cross-linear'
 export { default as ScanIcon } from 'virtual:icons/solar/magnifer-linear';
 export { default as AlertTriangleIcon } from 'virtual:icons/solar/danger-triangle-linear';
 export { default as HammerIcon } from 'virtual:icons/gravity-ui/hammer';
+export { default as CloudStorageIcon } from 'virtual:icons/solar/cloud-storage-linear';

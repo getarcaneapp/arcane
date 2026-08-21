@@ -14,8 +14,8 @@ var commandRoutes = []commandRoute{
 	{Method: http.MethodGet, PathPattern: "/api/swarm/node-identity", CommandName: "swarm.node_identity"},
 	{Method: http.MethodPost, PathPattern: "/api/container-registries/sync", CommandName: "container_registry.sync"},
 	{Method: http.MethodPost, PathPattern: "/api/git-repositories/sync", CommandName: "git_repository.sync"},
-	{Method: http.MethodPost, PathPattern: "/api/s3-destinations/sync", CommandName: "s3_destination.sync"},
-	{Method: http.MethodGet, PathPattern: "/api/s3-destinations/{id}/in-use", CommandName: "s3_destination.in_use"},
+	{Method: http.MethodPost, PathPattern: "/api/backups/s3/sync", CommandName: "s3_destination.sync"},
+	{Method: http.MethodGet, PathPattern: "/api/backups/s3/{id}/in-use", CommandName: "s3_destination.in_use"},
 
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/containers", CommandName: "container.list"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/containers/counts", CommandName: "container.counts"},

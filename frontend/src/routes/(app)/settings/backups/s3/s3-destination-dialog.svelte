@@ -3,11 +3,9 @@
 	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
 	import FormInput from '#lib/components/form/form-input.svelte';
 	import LabeledSwitch from '#lib/components/form/labeled-switch.svelte';
-	import { ArcaneButton } from '#lib/components/arcane-button';
 	import type { CreateS3Destination, S3Destination } from '#lib/types/s3-destination';
 	import { createForm, preventDefault } from '#lib/utils/settings';
 	import { s3DestinationService } from '#lib/services/s3-destination-service';
-	import { TestIcon } from '#lib/icons';
 	import { toast } from 'svelte-sonner';
 	import { z } from 'zod/v4';
 	import * as m from '#lib/paraglide/messages.js';
@@ -176,27 +174,21 @@
 	{/snippet}
 	{#snippet footer()}
 		<div class="flex w-full flex-col gap-2">
-			<ArcaneButton
-				action="base"
-				type="button"
-				class="w-full"
-				icon={TestIcon}
-				customLabel={m.test_connection()}
-				disabled={saving || testing}
-				loading={testing}
-				onclick={handleTest}
-			/>
 			<p class={connectionVerified ? 'text-xs text-green-600' : 'text-xs text-muted-foreground'}>
 				{connectionVerified ? m.s3_destination_test_verified() : m.s3_destination_test_required()}
 			</p>
 			<SheetFooterActions
 				bind:open
 				cancelDisabled={saving || testing}
-				submitAction={destination ? 'save' : 'create'}
-				submitDisabled={saving || testing || !connectionVerified}
-				submitLoading={saving}
-				onSubmit={handleSubmit}
-				submitLabel={destination ? m.common_save_changes() : m.s3_destination_add_title()}
+				submitAction={connectionVerified ? (destination ? 'save' : 'create') : 'test'}
+				submitDisabled={saving || testing}
+				submitLoading={saving || testing}
+				onSubmit={() => (connectionVerified ? handleSubmit() : handleTest())}
+				submitLabel={connectionVerified
+					? destination
+						? m.common_save_changes()
+						: m.s3_destination_add_title()
+					: m.test_connection()}
 			/>
 		</div>
 	{/snippet}

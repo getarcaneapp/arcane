@@ -1,18 +1,19 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
+	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 	import settingsStore from '#lib/stores/config-store';
 	import { SettingsPageLayout, type SettingsActionButton } from '#lib/layouts';
-	import { BackupIcon, LockIcon } from '#lib/icons';
-	import { Badge } from '#lib/components/ui/badge';
+	import { AlertIcon, BackupIcon, CloudStorageIcon, LockIcon, ResetIcon } from '#lib/icons';
+	import * as Alert from '#lib/components/ui/alert';
 	import { CopyButton } from '#lib/components/ui/copy-button';
 	import { Input } from '#lib/components/ui/input';
-	import { Label } from '#lib/components/ui/label';
 	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog';
 	import { ArcaneButton } from '#lib/components/arcane-button';
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
 	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
 	import { systemBackupService } from '#lib/services/system-backup-service';
+	import { hasPermission } from '#lib/utils/auth';
 	import { backupDestinationOptions, backupPolicyDestinationDisplay, s3DestinationOptions } from '#lib/utils/backups';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared';
 	import type { SystemBackupDestination, SystemBackupRun } from '#lib/types/system-backup';
@@ -37,9 +38,9 @@
 	let recoveryKey = $state('');
 	let newRecoveryKey = $state('');
 	let loading = $state(false);
-	let savingKey = $state(false);
 	let generatingKey = $state(false);
 	const isReadOnly = $derived.by(() => $settingsStore.uiConfigDisabled);
+	const canManageRecoveryKey = $derived(hasPermission('system-backups:recovery-key'));
 	const destinationOptions = $derived(backupDestinationOptions(data.destinations.length > 0));
 	const s3Options = $derived(s3DestinationOptions(data.destinations));
 	const configurationOptions = $derived([
@@ -54,14 +55,23 @@
 			description: backupPolicyDestinationDisplay(item)
 		}))
 	]);
+	// Restore and discover may target backups keyed by another instance, so
+	// they accept a typed (previously generated) key. Everything else only
+	// ever uses this instance's stored key.
+	const actionNeedsTypedKey = $derived(action === 'restore' || action === 'discover');
+	const recoveryKeyPattern = /^[A-Z2-7]{6}(-[A-Z2-7]{6}){7}$/;
 	const keyError = $derived(
-		recoveryKey.length > 0 && recoveryKey.trim().length < 16 ? m.system_backups_recovery_key_required() : ''
+		actionNeedsTypedKey && recoveryKey.length > 0 && !recoveryKeyPattern.test(recoveryKey.trim())
+			? m.system_backups_recovery_key_required()
+			: ''
 	);
-	const actionKeyInvalid = $derived(!policyCollection.recoveryKeyStored && recoveryKey.trim().length < 16);
-	const newKeyError = $derived(
-		newRecoveryKey.length > 0 && newRecoveryKey.trim().length < 16 ? m.system_backups_recovery_key_required() : ''
-	);
-	const newKeyInvalid = $derived(newRecoveryKey.trim().length < 16);
+	const actionKeyInvalid = $derived.by(() => {
+		if (actionNeedsTypedKey) return !policyCollection.recoveryKeyStored && !recoveryKeyPattern.test(recoveryKey.trim());
+		// Deleting is always allowed; the backend only asks for the key when
+		// the run still has snapshots to forget.
+		if (action === 'delete') return false;
+		return !policyCollection.recoveryKeyStored;
+	});
 	const destinationError = $derived(
 		backupConfiguration === 'custom' &&
 			((action === 'create' && destination !== 'local') || action === 'upload' || action === 'discover') &&
@@ -76,16 +86,19 @@
 		policyOpen = true;
 	}
 
+	// Generating persists the key in the same step; the dialog only ever shows
+	// an already-saved key, with one job: get the user to store it elsewhere.
 	async function openRecoveryKey() {
 		newRecoveryKey = '';
-		keyOpen = true;
 		generatingKey = true;
 		try {
 			const generated = await systemBackupService.generateRecoveryKey();
+			await systemBackupService.setRecoveryKey(generated.recoveryKey);
 			newRecoveryKey = generated.recoveryKey;
+			policyCollection = { ...policyCollection, recoveryKeyStored: true };
+			keyOpen = true;
 		} catch (error) {
-			keyOpen = false;
-			toast.error(error instanceof Error ? error.message : m.system_backups_recovery_key_generate_failed());
+			toast.error(error instanceof Error ? error.message : m.system_backups_recovery_key_save_failed());
 		} finally {
 			generatingKey = false;
 		}
@@ -121,24 +134,25 @@
 		backups = await systemBackupService.list(requestOptions);
 	}
 
-	async function saveRecoveryKey() {
-		if (newKeyInvalid) return;
-		savingKey = true;
-		try {
-			await systemBackupService.setRecoveryKey(newRecoveryKey);
-			policyCollection = { ...policyCollection, recoveryKeyStored: true };
-			newRecoveryKey = '';
-			keyOpen = false;
-			toast.success(m.system_backups_recovery_key_saved());
-		} catch (error) {
-			toast.error(error instanceof Error ? error.message : m.system_backups_recovery_key_save_failed());
-		} finally {
-			savingKey = false;
-		}
-	}
+	// With a stored key the S3 repositories are scanned automatically, so
+	// remote snapshots just appear in the table; the manual Find S3 backups
+	// flow only exists for fresh instances that must supply an old key.
+	let autoDiscovered = false;
+	$effect(() => {
+		if (autoDiscovered || !policyCollection.recoveryKeyStored || data.destinations.length === 0) return;
+		autoDiscovered = true;
+		void (async () => {
+			try {
+				const counts = await Promise.all(data.destinations.map((item) => systemBackupService.discover(item.id, '')));
+				if (counts.some((count) => count > 0)) await refresh();
+			} catch (error) {
+				console.warn('S3 backup discovery failed', error);
+			}
+		})();
+	});
 
 	async function submitAction() {
-		if (invalid) return;
+		if (loading || invalid) return;
 		loading = true;
 		try {
 			if (action === 'create') {
@@ -184,87 +198,96 @@
 	}
 
 	const actionButtons: SettingsActionButton[] = $derived.by(() => [
+		...(policyCollection.recoveryKeyStored && canManageRecoveryKey
+			? [
+					{
+						id: 'reset-recovery-key',
+						action: 'refresh',
+						icon: ResetIcon,
+						label: m.system_backups_reset_recovery_key(),
+						loading: generatingKey,
+						onclick: openRecoveryKey,
+						disabled: isReadOnly
+					} satisfies SettingsActionButton
+				]
+			: []),
 		{
-			id: 'schedule',
-			action: 'base',
-			label: m.system_backups_add_schedule(),
-			size: 'default',
-			onclick: () => openPolicy(),
-			disabled: isReadOnly
+			id: 's3-destinations',
+			action: 'edit',
+			icon: CloudStorageIcon,
+			label: m.s3_destinations_title(),
+			onclick: () => goto('/settings/backups/s3')
 		},
-		{
-			id: 'discover',
-			action: 'base',
-			label: m.system_backups_discover(),
-			size: 'default',
-			onclick: () => openAction('discover'),
-			disabled: isReadOnly || data.destinations.length === 0
-		},
+		...(!policyCollection.recoveryKeyStored
+			? [
+					{
+						id: 'discover',
+						action: 'inspect',
+						label: m.system_backups_discover(),
+						onclick: () => openAction('discover'),
+						disabled: isReadOnly || data.destinations.length === 0
+					} satisfies SettingsActionButton
+				]
+			: []),
 		{
 			id: 'create',
 			action: 'create',
-			label: m.volumes_backup_create(),
-			size: 'default',
-			onclick: () => openAction('create'),
-			disabled: isReadOnly
+			label: m.common_create(),
+			disabled: isReadOnly,
+			options: [
+				{ label: m.jobs_schedule(), onclick: () => openPolicy() },
+				{ label: m.volumes_workspace_backup(), onclick: () => openAction('create') }
+			]
 		}
 	]);
 </script>
 
 {#snippet recoveryKeySummary()}
-	<div class="flex items-center justify-between rounded-md border px-3 py-2">
-		<div class="flex items-center gap-2">
-			<LockIcon class="size-4 text-muted-foreground" />
-			<span class="text-sm font-medium">{m.system_backups_recovery_key()}</span>
-			<Badge variant={policyCollection.recoveryKeyStored ? 'green' : 'gray'}>
-				{policyCollection.recoveryKeyStored ? m.common_configured() : m.common_not_configured()}
-			</Badge>
+	{#if !policyCollection.recoveryKeyStored}
+		<div class="flex items-center justify-between gap-3 rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2">
+			<div class="flex min-w-0 items-center gap-2">
+				<LockIcon class="size-4 shrink-0 text-amber-500" />
+				<p class="text-sm">{m.system_backups_recovery_key_needed()}</p>
+			</div>
+			<ArcaneButton
+				action="edit"
+				size="sm"
+				customLabel={m.system_backups_setup_recovery_key()}
+				loading={generatingKey}
+				onclick={openRecoveryKey}
+				disabled={isReadOnly || !canManageRecoveryKey}
+			/>
 		</div>
-		<ArcaneButton
-			action="edit"
-			customLabel={policyCollection.recoveryKeyStored
-				? m.system_backups_replace_recovery_key()
-				: m.system_backups_setup_recovery_key()}
-			onclick={openRecoveryKey}
-			disabled={isReadOnly}
-		/>
-	</div>
+	{/if}
 {/snippet}
 
 {#snippet recoveryKeyDialog()}
 	<ResponsiveDialog
 		bind:open={keyOpen}
-		title={policyCollection.recoveryKeyStored ? m.system_backups_replace_recovery_key() : m.system_backups_setup_recovery_key()}
-		description={policyCollection.recoveryKeyStored
-			? m.system_backups_replace_recovery_key_description()
-			: m.system_backups_recovery_key_description()}
+		title={m.system_backups_recovery_key()}
+		description={m.system_backups_recovery_key_saved()}
 		contentClass="sm:max-w-[560px]"
 	>
 		{#snippet children()}
-			<div class="space-y-2.5 py-2">
-				<Label for="system-backup-recovery-key" class="text-sm font-medium">{m.system_backups_recovery_key()}</Label>
+			<div class="space-y-3 py-2">
 				<div class="flex items-center gap-2">
 					<Input
 						id="system-backup-recovery-key"
 						value={newRecoveryKey}
 						readonly
-						disabled={generatingKey}
 						spellcheck={false}
 						class="font-mono tracking-wide uppercase"
 					/>
-					{#if newRecoveryKey}<CopyButton text={newRecoveryKey} variant="outline" tabindex={0} class="shrink-0" />{/if}
+					<CopyButton text={newRecoveryKey} variant="outline" tabindex={0} class="shrink-0" />
 				</div>
-				{#if newKeyError}<p class="text-xs font-medium text-destructive">{newKeyError}</p>{/if}
+				<Alert.Root variant="destructive">
+					<AlertIcon class="size-4" />
+					<Alert.Description>{m.system_backups_recovery_key_alert()}</Alert.Description>
+				</Alert.Root>
 			</div>
 		{/snippet}
 		{#snippet footer()}
-			<ArcaneButton action="cancel" onclick={() => (keyOpen = false)} disabled={savingKey} />
-			<ArcaneButton
-				action="save"
-				onclick={saveRecoveryKey}
-				loading={savingKey}
-				disabled={savingKey || generatingKey || newKeyInvalid}
-			/>
+			<ArcaneButton action="confirm" customLabel={m.common_done()} onclick={() => (keyOpen = false)} />
 		{/snippet}
 	</ResponsiveDialog>
 {/snippet}
@@ -306,17 +329,33 @@
 						options={s3Options}
 					/>
 				{/if}
-				<TextInputWithLabel
-					value={recoveryKey}
-					onChange={(value) => (recoveryKey = value)}
-					error={keyError || null}
-					label={m.system_backups_recovery_key()}
-					description={policyCollection.recoveryKeyStored
-						? m.system_backups_recovery_key_saved_description()
-						: m.system_backups_recovery_key_description()}
-					type="password"
-					autocomplete="current-password"
-				/>
+				{#if actionNeedsTypedKey}
+					<TextInputWithLabel
+						value={recoveryKey}
+						onChange={(value) => (recoveryKey = value)}
+						error={keyError || null}
+						label={m.system_backups_recovery_key()}
+						description={policyCollection.recoveryKeyStored
+							? m.system_backups_recovery_key_saved_description()
+							: m.system_backups_recovery_key_enter_description()}
+						type="password"
+						autocomplete="current-password"
+					/>
+				{:else if action !== 'delete' && !policyCollection.recoveryKeyStored}
+					<div class="flex items-center justify-between gap-3 rounded-md border px-3 py-2">
+						<p class="text-sm text-muted-foreground">{m.system_backups_recovery_key_needed()}</p>
+						<ArcaneButton
+							action="edit"
+							size="sm"
+							customLabel={m.system_backups_setup_recovery_key()}
+							loading={generatingKey}
+							onclick={() => {
+								actionOpen = false;
+								openRecoveryKey();
+							}}
+						/>
+					</div>
+				{/if}
 			</div>
 		{/snippet}
 		{#snippet footer()}

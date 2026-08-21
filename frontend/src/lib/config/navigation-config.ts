@@ -26,7 +26,6 @@ import {
 	UpdateIcon,
 	VariableIcon,
 	ActivityIcon,
-	RemoteEnvironmentIcon,
 	BackupIcon
 } from '#lib/icons';
 import { m } from '#lib/paraglide/messages';
@@ -225,14 +224,8 @@ export const navigationItems: NavigationSections = {
 					accessSurfaceId: 'settings.category.activity'
 				},
 				{
-					title: m.s3_destinations_title(),
-					url: '/settings/s3-destinations',
-					icon: RemoteEnvironmentIcon,
-					accessSurfaceId: 'settings.category.s3destinations'
-				},
-				{
 					title: m.system_backups_title(),
-					url: '/settings/system-backups',
+					url: '/settings/backups',
 					icon: BackupIcon,
 					accessSurfaceId: 'settings.category.systembackups',
 					adminOnly: true

@@ -102,6 +102,12 @@ var permissionCatalog = []PermissionCatalogResource{
 		{"test", PermS3DestinationsTest, "Test", ""},
 		{"sync", PermS3DestinationsSync, "Sync", ""},
 	}},
+	{"system-backups", "System Backups", PermissionScopeGlobal, []PermissionCatalogAction{
+		{"read", PermSystemBackupsRead, "Read", ""},
+		{"manage", PermSystemBackupsManage, "Manage", ""},
+		{"restore", PermSystemBackupsRestore, "Restore", ""},
+		{"recovery-key", PermSystemBackupsRecoveryKey, "Recovery Key", ""},
+	}},
 	{"events", "Events", PermissionScopeGlobal, []PermissionCatalogAction{
 		{"read", PermEventsRead, "Read", ""},
 		{"delete", PermEventsDelete, "Delete", ""},

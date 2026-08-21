@@ -476,7 +476,7 @@ func TestEnvironmentService_SyncS3DestinationsToEnvironment(t *testing.T) {
 	accessToken := "agent-token"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, http.MethodPost, r.Method)
-		require.Equal(t, "/api/s3-destinations/sync", r.URL.Path)
+		require.Equal(t, "/api/backups/s3/sync", r.URL.Path)
 		require.Equal(t, accessToken, r.Header.Get("X-API-Key"))
 		require.Equal(t, accessToken, r.Header.Get("X-Arcane-Agent-Token"))
 

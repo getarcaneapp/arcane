@@ -37,7 +37,7 @@ async function createDestinationViaApi(
 	page: Page,
 	overrides: Record<string, unknown> = {}
 ): Promise<S3Destination> {
-	const response = await page.request.post('/api/s3-destinations', {
+	const response = await page.request.post('/api/backups/s3', {
 		data: destinationPayload(overrides)
 	});
 	if (!response.ok()) {
@@ -49,7 +49,7 @@ async function createDestinationViaApi(
 }
 
 async function deleteDestinationViaApi(page: Page, destinationId: string) {
-	await page.request.delete(`/api/s3-destinations/${destinationId}`).catch(() => undefined);
+	await page.request.delete(`/api/backups/s3/${destinationId}`).catch(() => undefined);
 }
 
 async function createVolumeViaApi(page: Page, volumeName: string) {
@@ -196,7 +196,7 @@ test.describe('S3 Backups', () => {
 			expect(destination.secretConfigured).toBe(true);
 
 			// Uploads, downloads, and deletes a probe object in the bucket.
-			const test = await page.request.post(`/api/s3-destinations/${destination.id}/test`);
+			const test = await page.request.post(`/api/backups/s3/${destination.id}/test`);
 			expect(test.status(), await test.text()).toBe(200);
 		} finally {
 			await deleteDestinationViaApi(page, destination.id);
@@ -206,7 +206,7 @@ test.describe('S3 Backups', () => {
 	test('refuses the stored secret once connection settings change', async ({ page }) => {
 		const destination = await createDestinationViaApi(page);
 		try {
-			const withoutSecret = await page.request.put(`/api/s3-destinations/${destination.id}`, {
+			const withoutSecret = await page.request.put(`/api/backups/s3/${destination.id}`, {
 				data: destinationPayload({
 					name: destination.name,
 					bucket: 'someone-elses-bucket',
@@ -217,7 +217,7 @@ test.describe('S3 Backups', () => {
 			expect(await withoutSecret.text()).toContain('re-enter the secret access key');
 
 			// The same edit is accepted once the secret is supplied again.
-			const withSecret = await page.request.put(`/api/s3-destinations/${destination.id}`, {
+			const withSecret = await page.request.put(`/api/backups/s3/${destination.id}`, {
 				data: destinationPayload({ name: destination.name, prefix: `e2e/${Date.now()}-moved` })
 			});
 			expect(withSecret.status(), await withSecret.text()).toBe(200);
@@ -297,14 +297,14 @@ test.describe('S3 Backups', () => {
 			backupId = created.id;
 			await waitForBackup(page, volumeName, created.id);
 
-			const blocked = await page.request.delete(`/api/s3-destinations/${destination.id}`);
+			const blocked = await page.request.delete(`/api/backups/s3/${destination.id}`);
 			expect(blocked.status()).toBe(409);
 
 			await page.request.delete(`/api/environments/0/volumes/backups/${created.id}`);
 			backupId = undefined;
 
 			const remoteEnvironments = await countRemoteEnvironments(page);
-			const allowed = await page.request.delete(`/api/s3-destinations/${destination.id}`);
+			const allowed = await page.request.delete(`/api/backups/s3/${destination.id}`);
 			if (remoteEnvironments === 0) {
 				expect(allowed.status(), await allowed.text()).toBe(200);
 			} else {

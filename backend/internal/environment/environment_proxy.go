@@ -108,7 +108,7 @@ func (s *EnvironmentService) CheckS3DestinationReferences(ctx context.Context, d
 		var result struct {
 			InUse bool `json:"inUse"`
 		}
-		if err := s.ProxyJSONRequestForEnvironment(ctx, env, http.MethodGet, "/api/s3-destinations/"+url.PathEscape(destinationID)+"/in-use", nil, &result); err != nil {
+		if err := s.ProxyJSONRequestForEnvironment(ctx, env, http.MethodGet, "/api/backups/s3/"+url.PathEscape(destinationID)+"/in-use", nil, &result); err != nil {
 			return errors.WrapIff(err, "cannot verify S3 destination references on environment %s; restore connectivity before deleting", env.Name)
 		}
 		if result.InUse {
@@ -380,7 +380,7 @@ func (s *EnvironmentService) SyncRegistriesToEnvironment(ctx context.Context, en
 
 // SyncS3DestinationsToEnvironment sends manager-owned destinations to one remote environment.
 func (s *EnvironmentService) SyncS3DestinationsToEnvironment(ctx context.Context, environmentID string) error {
-	return fanOutSyncToEnvironmentInternal(ctx, s, environmentID, "S3 destinations", "/api/s3-destinations/sync",
+	return fanOutSyncToEnvironmentInternal(ctx, s, environmentID, "S3 destinations", "/api/backups/s3/sync",
 		func(_ context.Context, destination s3domain.S3Destination) (backuptypes.S3DestinationSync, bool, error) {
 			secret, err := crypto.Decrypt(destination.SecretAccessKey)
 			if err != nil {

@@ -6,7 +6,7 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { getContext } from 'svelte';
 	import { m } from '#lib/paraglide/messages';
-	import { EllipsisIcon, ResetIcon, type IconType } from '#lib/icons';
+	import { EllipsisIcon, ResetIcon, type IconType, ArrowDownIcon } from '#lib/icons';
 	import { cn } from '#lib/utils';
 	import type { SettingsActionButton, SettingsPageType, SettingsStatCard } from './types.js';
 
@@ -49,15 +49,51 @@
 
 {#snippet ActionButtonList(buttons: SettingsActionButton[])}
 	{#each buttons as button}
-		<ArcaneButton
-			action={button.action}
-			customLabel={button.label}
-			loadingLabel={button.loadingLabel}
-			loading={button.loading}
-			disabled={button.disabled}
-			onclick={button.onclick}
-			size={button.size ?? 'sm'}
-		/>
+		{#if button.options?.length}
+			<DropdownMenu.Root>
+				<DropdownMenu.Trigger>
+					{#snippet child({ props })}
+						<ArcaneButton
+							{...props}
+							action={button.action}
+							icon={button.icon}
+							customLabel={button.label}
+							disabled={button.disabled}
+							size={button.size ?? 'default'}
+						>
+							<ArrowDownIcon class="size-3.5 opacity-60" />
+						</ArcaneButton>
+					{/snippet}
+				</DropdownMenu.Trigger>
+				<DropdownMenu.Content
+					align="end"
+					class="z-[var(--arcane-z-surface)] min-w-[160px] rounded-xl border bg-popover/90 p-1 shadow-lg backdrop-blur-md"
+				>
+					<DropdownMenu.Group>
+						{#each button.options as option}
+							<DropdownMenu.Item onclick={option.onclick} disabled={option.disabled}>
+								{#if option.icon}
+									{@const OptionIcon = option.icon}
+									<OptionIcon class="size-4" />
+								{/if}
+								{option.label}
+							</DropdownMenu.Item>
+						{/each}
+					</DropdownMenu.Group>
+				</DropdownMenu.Content>
+			</DropdownMenu.Root>
+		{:else}
+			<ArcaneButton
+				action={button.action}
+				icon={button.icon}
+				customLabel={button.label}
+				loadingLabel={button.loadingLabel}
+				loading={button.loading}
+				disabled={button.disabled}
+				onclick={button.onclick}
+				size={button.size ?? 'default'}
+			/>
+		{/if}
 	{/each}
 {/snippet}
 
@@ -163,9 +199,18 @@
 								>
 									<DropdownMenu.Group>
 										{#each mobileDropdownButtons as button}
-											<DropdownMenu.Item onclick={button.onclick} disabled={button.disabled || button.loading}>
-												{button.loading ? button.loadingLabel || button.label : button.label}
-											</DropdownMenu.Item>
+											{#if button.options?.length}
+												<DropdownMenu.Label>{button.label}</DropdownMenu.Label>
+												{#each button.options as option}
+													<DropdownMenu.Item onclick={option.onclick} disabled={button.disabled || option.disabled}>
+														{option.label}
+													</DropdownMenu.Item>
+												{/each}
+											{:else}
+												<DropdownMenu.Item onclick={button.onclick} disabled={button.disabled || button.loading}>
+													{button.loading ? button.loadingLabel || button.label : button.label}
+												</DropdownMenu.Item>
+											{/if}
 										{/each}
 									</DropdownMenu.Group>
 								</DropdownMenu.Content>

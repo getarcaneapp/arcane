@@ -94,6 +94,18 @@ const (
 	PermS3DestinationsTest   = "s3-destinations:test"
 	PermS3DestinationsSync   = "s3-destinations:sync"
 
+	// PermSystemBackupsRead and siblings gate Arcane's own system backups.
+	// Every route additionally requires a global admin; the dedicated grants
+	// exist so admin-owned scoped API keys can be limited to this surface
+	// instead of carrying settings:read/write. Restore is separate because it
+	// replaces the whole instance.
+	PermSystemBackupsRead    = "system-backups:read"
+	PermSystemBackupsManage  = "system-backups:manage"
+	PermSystemBackupsRestore = "system-backups:restore"
+	// PermSystemBackupsRecoveryKey is separate from manage: regenerating the
+	// key invalidates access to the existing repositories.
+	PermSystemBackupsRecoveryKey = "system-backups:recovery-key"
+
 	PermEventsRead          = "events:read"
 	PermEventsDelete        = "events:delete"
 	PermCustomizeManage     = "customize:manage"

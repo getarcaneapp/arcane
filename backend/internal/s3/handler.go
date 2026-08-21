@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	s3DestinationPathInternal          = "/s3-destinations"
+	s3DestinationPathInternal          = "/backups/s3"
 	s3DestinationTagInternal           = "S3 Destinations"
 	s3ConnectionTestSuccessInternal    = "S3 connection test succeeded"
 	s3RemoteSyncFailureMessageInternal = "Failed to fan out S3 destination sync to remote environments"

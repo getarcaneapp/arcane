@@ -85,12 +85,12 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 	scheduler := &systemBackupPolicySchedulerInternal{jobs: make(map[string]schedulertypes.Job)}
 	require.NoError(t, service.SetScheduler(context.Background(), scheduler, newSystemBackupAdmissionGateForTestInternal(t)))
 
-	status, err := service.SetRecoveryKey(context.Background(), "correct horse battery staple")
+	status, err := service.SetRecoveryKey(context.Background(), "QWERTY-ABCDEF-234567-GHIJKL-MNOPQR-STUVWX-YZ2345-ZXCVBN")
 	require.NoError(t, err)
 	require.True(t, status.Configured)
 	storedKey, err := service.recoveryKeyInternal(context.Background(), "")
 	require.NoError(t, err)
-	require.Equal(t, "correct horse battery staple", storedKey)
+	require.Equal(t, "QWERTY-ABCDEF-234567-GHIJKL-MNOPQR-STUVWX-YZ2345-ZXCVBN", storedKey)
 
 	collection, err := service.UpdatePolicies(context.Background(), []backuptypes.UpdateSystemBackupPolicy{
 		{Enabled: true, Schedule: "0 0 2 * * *", RetentionCount: 5, LocalEnabled: true},

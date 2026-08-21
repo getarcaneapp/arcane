@@ -283,6 +283,24 @@ func TestVariablePermissionsAreSeparateGlobalGrantsWithBuiltInAccess(t *testing.
 	}
 }
 
+func TestSystemBackupPermissionsAreAdminOnlyGlobalGrants(t *testing.T) {
+	builtInRoles := map[string][]string{
+		"Editor":          BuiltInEditorPermissions(),
+		"No-Shell Editor": BuiltInNoShellEditorPermissions(),
+		"Viewer":          BuiltInViewerPermissions(),
+		"Monitor":         BuiltInMonitorPermissions(),
+		"Deployer":        BuiltInDeployerPermissions(),
+	}
+	for _, permission := range []string{PermSystemBackupsRead, PermSystemBackupsManage, PermSystemBackupsRestore, PermSystemBackupsRecoveryKey} {
+		require.True(t, IsKnownPermission(permission), "system backup permission %q must be known", permission)
+		require.True(t, IsOrgLevel(permission), "system backup permission %q must be global", permission)
+		require.Contains(t, AllPermissions(), permission, "Admin must receive %q", permission)
+		for name, permissions := range builtInRoles {
+			require.NotContains(t, permissions, permission, "%s must not receive %q", name, permission)
+		}
+	}
+}
+
 func TestS3DestinationPermissionsAreSeparateGlobalGrantsWithBuiltInAccess(t *testing.T) {
 	s3Permissions := []string{
 		PermS3DestinationsList,
