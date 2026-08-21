@@ -372,6 +372,7 @@ func (h *OidcHandler) HandleOidcCallback(ctx context.Context, input *HandleOidcC
 	meta := handlerutil.SessionMetaFromContext(ctx, input.UserAgent)
 	userModel, isNewUser, err := h.authService.PrepareOidcLogin(ctx, *userInfo, tokenResp)
 	if err != nil {
+		slog.ErrorContext(ctx, "OIDC login preparation failed", "error", err, "subject", userInfo.Subject)
 		return nil, huma.Error500InternalServerError("Authentication failed")
 	}
 
@@ -474,6 +475,7 @@ func (h *OidcHandler) ExchangeDeviceToken(ctx context.Context, input *ExchangeDe
 	meta := handlerutil.SessionMetaFromContext(ctx, input.UserAgent)
 	userModel, isNewUser, err := h.authService.PrepareOidcLogin(ctx, *userInfo, tokenResp)
 	if err != nil {
+		slog.ErrorContext(ctx, "OIDC login preparation failed", "error", err, "subject", userInfo.Subject)
 		return nil, huma.Error500InternalServerError("Authentication failed")
 	}
 	// The device flow has no way to satisfy a WebAuthn assertion: the CLI has no

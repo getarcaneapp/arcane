@@ -38,10 +38,14 @@
 	// still update profile fields but must not call the assignments endpoint.
 	const isAdmin = $derived(userStore.isGlobalAdmin());
 
-	// availableRoleAssignments for the edit form — strip the source field, the
-	// editor only needs (roleId, environmentId) tuples.
+	// availableRoleAssignments for the edit form — manual assignments only,
+	// stripped to (roleId, environmentId) tuples. OIDC-sourced assignments must
+	// not round-trip: PUT /users/{id}/role-assignments replaces source='manual'
+	// rows, so resubmitting oidc rows would duplicate them as manual.
 	const editingAssignments = $derived(
-		userToEdit?.roleAssignments?.map((a) => ({ roleId: a.roleId, environmentId: a.environmentId })) ?? []
+		userToEdit?.roleAssignments
+			?.filter((a) => a.source !== 'oidc')
+			.map((a) => ({ roleId: a.roleId, environmentId: a.environmentId })) ?? []
 	);
 
 	let isLoading = $state({
@@ -81,6 +85,24 @@
 				// Split: profile fields go to PUT /users/{id}; role assignments
 				// go to PUT /users/{id}/role-assignments (separate endpoint).
 				const { roleAssignments, ...profile } = user;
+
+				// OIDC users submit role assignments only — skip the empty profile PUT.
+				if (Object.keys(profile).length === 0 && isAdmin && roleAssignments) {
+					const assignmentsResult = await tryCatch(roleService.setUserAssignments(userId, { assignments: roleAssignments }));
+					handleApiResultWithCallbacks({
+						result: assignmentsResult,
+						message: m.common_update_failed({ resource: `${m.resource_user()} "${safeUsername}"` }),
+						setLoadingState: (value) => (isLoading[loading] = value),
+						onSuccess: async () => {
+							toast.success(m.common_update_success({ resource: `${m.resource_user()} "${safeUsername}"` }));
+							users = await userService.getUsers(requestOptions);
+							isDialogOpen.edit = false;
+							userToEdit = null;
+						}
+					});
+					return;
+				}
+
 				const result = await tryCatch(userService.update(userId, profile));
 				handleApiResultWithCallbacks({
 					result,
