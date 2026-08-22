@@ -235,6 +235,20 @@ type GitOpsSync struct {
 	//
 	// Required: true
 	SyncDirectory bool `json:"syncDirectory"`
+
+	// PullImageAfterSync indicates whether each service's image should be pulled
+	// right after a sync that changes managed content, even if the project is
+	// currently stopped.
+	//
+	// Required: true
+	PullImageAfterSync bool `json:"pullImageAfterSync"`
+
+	// RedeployAfterSync indicates whether the project should be redeployed
+	// (recreated with freshly pulled images) right after a sync that changes
+	// managed content, regardless of whether it's currently running or stopped.
+	//
+	// Required: true
+	RedeployAfterSync bool `json:"redeployAfterSync"`
 }
 
 // SyncCounts contains counts of syncs by status within the current filtered set.
@@ -405,6 +419,21 @@ type CreateSyncRequest struct {
 	// Required: false
 	SyncDirectory *bool `json:"syncDirectory,omitempty"`
 
+	// PullImageAfterSync indicates whether each service's image should be pulled
+	// right after a sync that changes managed content, even if the project is
+	// currently stopped. Default: false.
+	//
+	// Required: false
+	PullImageAfterSync *bool `json:"pullImageAfterSync,omitempty"`
+
+	// RedeployAfterSync indicates whether the project should be redeployed
+	// (recreated with freshly pulled images) right after a sync that changes
+	// managed content, regardless of whether it's currently running or stopped.
+	// Default: false.
+	//
+	// Required: false
+	RedeployAfterSync *bool `json:"redeployAfterSync,omitempty"`
+
 	// MaxSyncFiles is the maximum number of files to sync.
 	// 0 means unlimited; env var overrides take precedence.
 	// Default: 0
@@ -515,6 +544,21 @@ type UpdateSyncRequest struct {
 	//
 	// Required: false
 	SyncDirectory *bool `json:"syncDirectory,omitempty"`
+
+	// PullImageAfterSync indicates whether each service's image should be pulled
+	// right after a sync that changes managed content, even if the project is
+	// currently stopped. Default: false.
+	//
+	// Required: false
+	PullImageAfterSync *bool `json:"pullImageAfterSync,omitempty"`
+
+	// RedeployAfterSync indicates whether the project should be redeployed
+	// (recreated with freshly pulled images) right after a sync that changes
+	// managed content, regardless of whether it's currently running or stopped.
+	// Default: false.
+	//
+	// Required: false
+	RedeployAfterSync *bool `json:"redeployAfterSync,omitempty"`
 
 	// MaxSyncFiles is the maximum number of files to sync.
 	// 0 means unlimited; env var overrides take precedence.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json/v2"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
 	"maps"
@@ -632,6 +633,12 @@ func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string
 	if req.SyncDirectory != nil {
 		syncRecord.SyncDirectory = *req.SyncDirectory
 	}
+	if req.PullImageAfterSync != nil {
+		syncRecord.PullImageAfterSync = *req.PullImageAfterSync
+	}
+	if req.RedeployAfterSync != nil {
+		syncRecord.RedeployAfterSync = *req.RedeployAfterSync
+	}
 	if err := validateSyncLimits(req.MaxSyncFiles, req.MaxSyncTotalSize, req.MaxSyncBinarySize); err != nil {
 		return nil, err
 	}
@@ -746,6 +753,12 @@ func (s *GitOpsSyncService) UpdateSync(ctx context.Context, environmentID, id st
 	}
 	if req.SyncDirectory != nil {
 		updates["sync_directory"] = *req.SyncDirectory
+	}
+	if req.PullImageAfterSync != nil {
+		updates["pull_image_after_sync"] = *req.PullImageAfterSync
+	}
+	if req.RedeployAfterSync != nil {
+		updates["redeploy_after_sync"] = *req.RedeployAfterSync
 	}
 	if err := validateSyncLimits(req.MaxSyncFiles, req.MaxSyncTotalSize, req.MaxSyncBinarySize); err != nil {
 		return nil, err
@@ -1022,7 +1035,7 @@ func (s *GitOpsSyncService) performDirectorySync(ctx context.Context, sync *proj
 	}
 
 	if contentsChanged {
-		if redeployErr := s.redeployIfRunningAfterSync(ctx, project, actor, "directory"); redeployErr != nil {
+		if redeployErr := s.redeployIfRunningAfterSync(ctx, sync, project, actor, "directory"); redeployErr != nil {
 			if errors.Is(redeployErr, common.ErrRedeployAfterSyncFailed) {
 				s.markSyncRedeployFailedInternal(ctx, sync, id, source.commitHash, syncedFiles, redeployErr, actor, result)
 			}
@@ -1150,23 +1163,54 @@ func (s *GitOpsSyncService) performSwarmStackSyncInternal(ctx context.Context, s
 	return result, nil
 }
 
-// redeployIfRunningAfterSync redeploys a project only when it is already
-// running and the latest sync actually changed managed content. Returns a
-// common.ErrRedeployAfterSyncFailed when the redeploy itself fails; callers
-// surface that on the sync row's LastSyncError.
-func (s *GitOpsSyncService) redeployIfRunningAfterSync(ctx context.Context, project *projectpkg.Project, actor common.User, syncMode string) error {
+// redeployIfRunningAfterSync redeploys a project when it is already running,
+// or when the sync has RedeployAfterSync enabled (in which case a stopped
+// project is redeployed too, mirroring Portainer's "Re-pull image" stack
+// option). Returns a common.ErrRedeployAfterSyncFailed when the redeploy
+// itself fails; callers surface that on the sync row's LastSyncError.
+//
+// When neither condition holds — project stopped and RedeployAfterSync off —
+// RedeployProject is never called (Arcane does not start a stopped project on
+// its behalf by default), which also means the image pull that RedeployProject
+// performs as a side effect never happens. Left alone, that can leave a
+// stopped container referencing an image tag that was since re-pointed or
+// pruned upstream, with no local copy to fall back on at next start. If the
+// sync opted into PullImageAfterSync, pull the image here instead so it stays
+// available even while the project is stopped.
+func (s *GitOpsSyncService) redeployIfRunningAfterSync(ctx context.Context, sync *projectpkg.GitOpsSync, project *projectpkg.Project, actor common.User, syncMode string) error {
 	details, err := s.projectService.GetProjectDetails(ctx, project.ID, projecttypes.DetailsOptions{})
-	if err != nil {
-		return nil //nolint:nilerr // best-effort: skip post-sync redeploy when project state can't be determined
-	}
-	if details.Status != string(projectpkg.ProjectStatusRunning) && details.Status != string(projectpkg.ProjectStatusPartiallyRunning) {
-		return nil
+	running := err == nil && (details.Status == string(projectpkg.ProjectStatusRunning) || details.Status == string(projectpkg.ProjectStatusPartiallyRunning))
+
+	if !running && !sync.RedeployAfterSync {
+		return s.pullImageAfterSyncIfConfiguredInternal(ctx, sync, project, actor)
 	}
 
-	slog.InfoContext(ctx, "Redeploying project due to content change from Git sync", "syncMode", syncMode, "projectName", project.Name, "projectId", project.ID)
+	slog.InfoContext(ctx, "Redeploying project due to content change from Git sync", "syncMode", syncMode, "projectName", project.Name, "projectId", project.ID, "wasRunning", running)
 	if err := s.projectService.RedeployProject(ctx, project.ID, actor, nil); err != nil {
 		slog.ErrorContext(ctx, "Failed to redeploy project after Git sync", "syncMode", syncMode, "error", err, "projectId", project.ID)
 		return common.Classify(common.ErrRedeployAfterSyncFailed, errors.WrapIf(err, "redeploy failed"))
+	}
+	return nil
+}
+
+// pullImageAfterSyncIfConfiguredInternal pulls each service's image for a
+// project that Git sync changed but did not redeploy (because it wasn't
+// running), when the sync has PullImageAfterSync enabled. Best-effort: a pull
+// failure is logged but never fails the sync itself, mirroring how
+// RedeployProject treats its own pre-deploy pull.
+func (s *GitOpsSyncService) pullImageAfterSyncIfConfiguredInternal(ctx context.Context, sync *projectpkg.GitOpsSync, project *projectpkg.Project, actor common.User) error {
+	if !sync.PullImageAfterSync {
+		return nil
+	}
+
+	credentials, cerr := s.projectService.ResolveRegistryCredentials(ctx)
+	if cerr != nil {
+		slog.WarnContext(ctx, "failed to resolve registry credentials for post-sync pull", "error", cerr, "projectId", project.ID)
+	}
+	slog.InfoContext(ctx, "Pulling project images after Git sync (project not running)", "projectName", project.Name, "projectId", project.ID)
+	if err := s.projectService.PullProjectImages(ctx, project.ID, io.Discard, actor, credentials); err != nil {
+		slog.ErrorContext(ctx, "failed to pull project images after Git sync", "error", err, "projectId", project.ID)
+		return common.Classify(common.ErrRedeployAfterSyncFailed, errors.WrapIf(err, "post-sync image pull failed"))
 	}
 	return nil
 }
@@ -1516,6 +1560,20 @@ func (s *GitOpsSyncService) createProjectForSyncInternal(ctx context.Context, sy
 
 	slog.InfoContext(ctx, "Created project for GitOps sync", "projectName", sync.ProjectName, "projectId", project.ID)
 
+	// A freshly created project has no containers yet, so it's always
+	// "stopped" from RedeployProject's point of view — mirror
+	// updateProjectForSyncInternal's post-sync behavior here instead of
+	// silently leaving the new project undeployed with no image pulled.
+	if sync.RedeployAfterSync {
+		slog.InfoContext(ctx, "Redeploying newly created project from Git sync", "projectName", project.Name, "projectId", project.ID)
+		if err := s.projectService.RedeployProject(ctx, project.ID, actor, nil); err != nil {
+			slog.ErrorContext(ctx, "Failed to redeploy newly created project after Git sync", "error", err, "projectId", project.ID)
+			return nil, common.Classify(common.ErrRedeployAfterSyncFailed, errors.WrapIf(err, "redeploy failed"))
+		}
+	} else if err := s.pullImageAfterSyncIfConfiguredInternal(ctx, sync, project, actor); err != nil {
+		return nil, err
+	}
+
 	return project, nil
 }
 
@@ -1566,15 +1624,27 @@ func (s *GitOpsSyncService) updateProjectForSyncInternal(ctx context.Context, sy
 	// can reflect it on the sync row's LastSyncError.
 	if contentChanged {
 		details, err := s.projectService.GetProjectDetails(ctx, project.ID, projecttypes.DetailsOptions{})
-		if err == nil && (details.Status == string(projectpkg.ProjectStatusRunning) || details.Status == string(projectpkg.ProjectStatusPartiallyRunning)) {
-			slog.InfoContext(ctx, "Redeploying project due to content change from Git sync", "projectName", project.Name, "projectId", project.ID)
+		running := err == nil && (details.Status == string(projectpkg.ProjectStatusRunning) || details.Status == string(projectpkg.ProjectStatusPartiallyRunning))
+		if running || sync.RedeployAfterSync {
+			slog.InfoContext(ctx, "Redeploying project due to content change from Git sync", "projectName", project.Name, "projectId", project.ID, "wasRunning", running)
 			if err := s.projectService.RedeployProject(ctx, project.ID, actor, nil); err != nil {
 				slog.ErrorContext(ctx, "Failed to redeploy project after Git sync", "error", err, "projectId", project.ID)
 				return common.Classify(common.ErrRedeployAfterSyncFailed, errors.WrapIf(err, "redeploy failed"))
 			}
+		} else {
+			// Project isn't running and RedeployAfterSync is off, so
+			// RedeployProject (and its pull side effect) never runs. Pull
+			// explicitly if this sync opted into PullImageAfterSync, so a
+			// stopped container isn't left referencing an image tag that's
+			// since been re-pointed or pruned upstream. A pull failure is
+			// returned rather than swallowed, so it surfaces on the sync
+			// row's LastSyncError instead of the sync silently reporting
+			// success with a stale image.
+			if err := s.pullImageAfterSyncIfConfiguredInternal(ctx, sync, project, actor); err != nil {
+				return err
+			}
 		}
 	}
-
 	return nil
 }
 

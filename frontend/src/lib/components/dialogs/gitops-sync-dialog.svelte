@@ -87,6 +87,8 @@
 		branch: z.string().min(1, m.common_required()),
 		composePath: z.string().min(1, m.common_required()),
 		syncDirectory: z.boolean().default(false),
+		pullImageAfterSync: z.boolean().default(false),
+		redeployAfterSync: z.boolean().default(false),
 		maxSyncFiles: z.coerce.number().int().nonnegative(),
 		maxSyncTotalSizeMb: z.coerce.number().int().nonnegative(),
 		maxSyncBinarySizeMb: z.coerce.number().int().nonnegative(),
@@ -128,6 +130,8 @@
 		composePath:
 			open && syncToEdit ? syncToEdit.composePath : selectedTargetType === 'swarm_stack' ? 'compose.yml' : 'docker-compose.yml',
 		syncDirectory: open && syncToEdit ? (syncToEdit.syncDirectory ?? false) : false,
+		pullImageAfterSync: open && syncToEdit ? (syncToEdit.pullImageAfterSync ?? false) : false,
+		redeployAfterSync: open && syncToEdit ? (syncToEdit.redeployAfterSync ?? false) : false,
 		maxSyncFiles: open && syncToEdit ? (syncToEdit.maxSyncFiles ?? 0) : (settingsQuery.data?.gitSyncMaxFiles ?? 0),
 		maxSyncTotalSizeMb:
 			open && syncToEdit
@@ -249,6 +253,8 @@
 			targetType: selectedTargetType,
 			projectName: data.name,
 			syncDirectory: data.syncDirectory,
+			pullImageAfterSync: data.pullImageAfterSync,
+			redeployAfterSync: data.redeployAfterSync,
 			maxSyncFiles: data.maxSyncFiles,
 			maxSyncTotalSize: megabytesToBytesInternal(data.maxSyncTotalSizeMb),
 			maxSyncBinarySize: megabytesToBytesInternal(data.maxSyncBinarySizeMb),
@@ -424,6 +430,40 @@
 								<p class="text-xs text-muted-foreground">{m.common_auto_sync_description()}</p>
 								{#if $inputs.autoSync.error}
 									<p class="text-xs font-medium text-destructive">{$inputs.autoSync.error}</p>
+								{/if}
+							</div>
+						</div>
+
+						<div class="flex items-start gap-3">
+							<Switch
+								id="pullImageAfterSyncSwitch"
+								bind:checked={$inputs.pullImageAfterSync.value}
+								disabled={$inputs.redeployAfterSync.value}
+							/>
+							<div class="space-y-1">
+								<Label for="pullImageAfterSyncSwitch" class="mb-0 text-sm leading-none font-medium"
+									>{m.git_sync_pull_image_after_sync()}</Label
+								>
+								<p class="text-xs text-muted-foreground">
+									{$inputs.redeployAfterSync.value
+										? m.git_sync_pull_image_after_sync_redundant_description()
+										: m.git_sync_pull_image_after_sync_description()}
+								</p>
+								{#if $inputs.pullImageAfterSync.error}
+									<p class="text-xs font-medium text-destructive">{$inputs.pullImageAfterSync.error}</p>
+								{/if}
+							</div>
+						</div>
+
+						<div class="flex items-start gap-3">
+							<Switch id="redeployAfterSyncSwitch" bind:checked={$inputs.redeployAfterSync.value} />
+							<div class="space-y-1">
+								<Label for="redeployAfterSyncSwitch" class="mb-0 text-sm leading-none font-medium"
+									>{m.git_sync_redeploy_after_sync()}</Label
+								>
+								<p class="text-xs text-muted-foreground">{m.git_sync_redeploy_after_sync_description()}</p>
+								{#if $inputs.redeployAfterSync.error}
+									<p class="text-xs font-medium text-destructive">{$inputs.redeployAfterSync.error}</p>
 								{/if}
 							</div>
 						</div>
