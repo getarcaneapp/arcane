@@ -99,7 +99,6 @@ type GitOpsSync struct {
 	AutoSync               bool       `json:"autoSync" sortable:"true" search:"auto,automatic,sync,continuous,scheduled"`
 	SyncDirectory          bool       `json:"syncDirectory" gorm:"column:sync_directory"` // Sync entire directory containing compose file
 	PullImageAfterSync bool `json:"pullImageAfterSync" gorm:"column:pull_image_after_sync;default:false"`
-
 	RedeployAfterSync bool `json:"redeployAfterSync" gorm:"column:redeploy_after_sync;default:false"`
 }
 
