@@ -501,7 +501,7 @@
   "account_passkey_mfa_disabled": "MFA désactivé",
   "account_passkey_mfa_recovery_codes": "Codes de récupération",
   "account_passkey_mfa_recovery_codes_description": "Conservez ces codes dans un endroit sûr. Chaque code ne peut être utilisé qu'une seule fois.",
-  "account_passkey_mfa_recovery_codes_remaining": "{count} nombre de codes de récupération restants",
+  "account_passkey_mfa_recovery_codes_remaining": "{count} codes de récupération restants",
   "account_passkey_mfa_regenerate": "Recréer les codes",
   "account_passkey_mfa_regenerate_failed": "Impossible de régénérer les codes de récupération",
   "account_passkey_mfa_codes_warning": "Ces codes ne s'affichent qu'une seule fois. Enregistrez-les avant de fermer ce message.",
