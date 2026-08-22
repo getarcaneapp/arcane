@@ -1560,6 +1560,20 @@ func (s *GitOpsSyncService) createProjectForSyncInternal(ctx context.Context, sy
 
 	slog.InfoContext(ctx, "Created project for GitOps sync", "projectName", sync.ProjectName, "projectId", project.ID)
 
+	// A freshly created project has no containers yet, so it's always
+	// "stopped" from RedeployProject's point of view — mirror
+	// updateProjectForSyncInternal's post-sync behavior here instead of
+	// silently leaving the new project undeployed with no image pulled.
+	if sync.RedeployAfterSync {
+		slog.InfoContext(ctx, "Redeploying newly created project from Git sync", "projectName", project.Name, "projectId", project.ID)
+		if err := s.projectService.RedeployProject(ctx, project.ID, actor, nil); err != nil {
+			slog.ErrorContext(ctx, "Failed to redeploy newly created project after Git sync", "error", err, "projectId", project.ID)
+			return nil, common.Classify(common.ErrRedeployAfterSyncFailed, errors.WrapIf(err, "redeploy failed"))
+		}
+	} else if err := s.pullImageAfterSyncIfConfiguredInternal(ctx, sync, project, actor); err != nil {
+		return nil, err
+	}
+
 	return project, nil
 }
 
