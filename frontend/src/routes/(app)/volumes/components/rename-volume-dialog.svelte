@@ -28,14 +28,11 @@
 	);
 
 	function handleOpenChange(isOpen: boolean) {
-		if (!isOpen) error = null;
-	}
-
-	$effect(() => {
-		if (!open) return;
-		newName = volume?.name ?? '';
+		if (isOpen) {
+			newName = volume?.name ?? '';
+		}
 		error = null;
-	});
+	}
 
 	function submit() {
 		const normalizedName = newName.trim();
