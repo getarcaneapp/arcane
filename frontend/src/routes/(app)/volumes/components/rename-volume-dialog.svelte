@@ -84,7 +84,10 @@
 			</div>
 
 			{#if isManaged}
-				<Alert.Root variant="warning">
+				<Alert.Root
+					variant="warning"
+					class="text-amber-600 dark:text-amber-400 [&>svg]:text-amber-600 dark:[&>svg]:text-amber-400"
+				>
 					<AlertTriangleIcon class="size-4" />
 					<Alert.Title>{m.volumes_rename_managed_warning_title()}</Alert.Title>
 					<Alert.Description class="text-foreground">{m.volumes_rename_managed_warning_description()}</Alert.Description>
