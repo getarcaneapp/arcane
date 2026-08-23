@@ -56,6 +56,7 @@ const (
 	EventTypeGitSyncError  EventType = "git.sync.error"
 
 	EventTypeVolumeCreate EventType = "volume.create"
+	EventTypeVolumeRename EventType = "volume.rename"
 	EventTypeVolumeDelete EventType = "volume.delete"
 	EventTypeVolumeError  EventType = "volume.error"
 

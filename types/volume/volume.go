@@ -129,6 +129,14 @@ type Create struct {
 	Labels map[string]string `json:"labels,omitempty" doc:"User-defined labels"`
 }
 
+// Rename is used to rename an existing volume.
+type Rename struct {
+	// Name is the new volume name.
+	//
+	// Required: true
+	Name string `json:"name" minLength:"1" doc:"New volume name"`
+}
+
 // NewSummary creates a Volume from a docker volume.Volume, calculating InUse
 // based on whether the volume has a reference count of 1 or more.
 //

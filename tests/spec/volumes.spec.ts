@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { fetchVolumeCountsWithRetry } from '../utils/fetch.util';
 import { VolumeUsageCounts } from 'types/volumes.type';
+import { openRowActionsMenu } from '../utils/table-actions.util';
 
 let volumeCount: VolumeUsageCounts = { inuse: 0, unused: 0, total: 0 };
 
@@ -250,6 +251,54 @@ test.describe('Volumes Page', () => {
 			expect(response.ok()).toBe(true);
 		} finally {
 			await removeVolumeViaApi(page, volumeName);
+		}
+	});
+
+	test('Rename unused volume', async ({ page }) => {
+		const sourceName = `test-rename-source-${Date.now()}`;
+		const targetName = sourceName.replace('source', 'target');
+
+		try {
+			await createVolumeViaApi(page, sourceName);
+			await page.goto('/volumes');
+
+			const row = page
+				.getByRole('row')
+				.filter({ has: page.getByRole('link', { name: sourceName, exact: true }) });
+			const menu = await openRowActionsMenu(page, row);
+			await menu.getByRole('menuitem', { name: 'Rename', exact: true }).click();
+
+			const dialog = page.getByRole('dialog');
+			await expect(dialog).toBeVisible();
+			await dialog.getByLabel('New volume name').fill(targetName);
+
+			const renameRequest = page.waitForResponse((response) => {
+				const request = response.request();
+				return (
+					request.method() === 'POST' &&
+					new URL(response.url()).pathname.endsWith(
+						`/volumes/${encodeURIComponent(sourceName)}/rename`
+					)
+				);
+			});
+			await dialog.getByRole('button', { name: 'Rename', exact: true }).click();
+			const response = await renameRequest;
+			expect(response.ok(), await response.text()).toBe(true);
+
+			await expect(page.getByRole('link', { name: targetName, exact: true })).toBeVisible();
+			expect(
+				(
+					await page.request.get(`/api/environments/0/volumes/${encodeURIComponent(sourceName)}`)
+				).status()
+			).toBe(404);
+			expect(
+				(
+					await page.request.get(`/api/environments/0/volumes/${encodeURIComponent(targetName)}`)
+				).ok()
+			).toBe(true);
+		} finally {
+			await removeVolumeViaApi(page, sourceName);
+			await removeVolumeViaApi(page, targetName);
 		}
 	});
 

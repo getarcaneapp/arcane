@@ -16,12 +16,14 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 
 	"emperror.dev/errors"
+	cerrdefs "github.com/containerd/errdefs"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/upload"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
+	volumeops "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumes"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
@@ -83,6 +85,16 @@ type CreateVolumeInput struct {
 }
 
 type CreateVolumeOutput struct {
+	Body base.ApiResponse[*volumetypes.Volume]
+}
+
+type RenameVolumeInput struct {
+	EnvironmentID string             `path:"id" doc:"Environment ID"`
+	VolumeName    string             `path:"volumeName" doc:"Current volume name"`
+	Body          volumetypes.Rename `doc:"Volume rename data"`
+}
+
+type RenameVolumeOutput struct {
 	Body base.ApiResponse[*volumetypes.Volume]
 }
 
@@ -343,6 +355,16 @@ func RegisterVolumes(api huma.API, dockerService *docker.DockerClientService, vo
 		Tags:        []string{"Volumes"},
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}, authz.PermVolumesDelete, h.RemoveVolume)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "rename-volume",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/volumes/{volumeName}/rename",
+		Summary:     "Rename a volume",
+		Description: "Copy an unused Docker volume to a new name and remove the source",
+		Tags:        []string{"Volumes"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermVolumesRename, h.RenameVolume)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "prune-volumes",
@@ -698,6 +720,66 @@ func (h *VolumeHandler) CreateVolume(ctx context.Context, input *CreateVolumeInp
 			Data:    response,
 		},
 	}, nil
+}
+
+// RenameVolume renames an unused Docker volume.
+func (h *VolumeHandler) RenameVolume(ctx context.Context, input *RenameVolumeInput) (*RenameVolumeOutput, error) {
+	if input.EnvironmentID != "0" {
+		if h.environmentService == nil {
+			return nil, huma.Error500InternalServerError("environment service not available")
+		}
+		remotePath := fmt.Sprintf("/api/environments/0/volumes/%s/rename", url.PathEscape(input.VolumeName))
+		response, err := handlerutil.ProxyRemoteJSON[base.ApiResponse[*volumetypes.Volume]](ctx, h.environmentService.ProxyJSONRequest, input.EnvironmentID, http.MethodPost, remotePath, input.Body)
+		if err != nil {
+			return nil, err
+		}
+		return &RenameVolumeOutput{Body: *response}, nil
+	}
+
+	user, err := handlerutil.RequireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var response *volumetypes.Volume
+	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
+		EnvironmentID:  input.EnvironmentID,
+		Type:           activitytypes.TypeResourceAction,
+		ResourceType:   "volume",
+		ResourceID:     input.VolumeName,
+		ResourceName:   input.VolumeName,
+		User:           user,
+		Step:           "Renaming volume",
+		Message:        "Renaming volume",
+		SuccessMessage: "Volume renamed successfully",
+		Metadata: database.JSON{
+			"action":  "rename_volume",
+			"oldName": input.VolumeName,
+			"newName": input.Body.Name,
+		},
+	}, func(runtimeCtx context.Context) error {
+		var renameErr error
+		response, renameErr = h.volumeService.RenameVolume(runtimeCtx, input.VolumeName, input.Body.Name, *user)
+		return renameErr
+	})
+	if err != nil {
+		var conflictErr *volumeops.ProjectVolumeRenameConflictError
+		var inUseErr *volumeops.ProjectVolumeRenameInUseError
+		switch {
+		case errors.Is(err, ErrVolumeRenameInvalid), errors.Is(err, ErrVolumeRenameProtected), cerrdefs.IsInvalidArgument(err):
+			return nil, huma.Error400BadRequest(err.Error())
+		case errors.As(err, &conflictErr), errors.As(err, &inUseErr):
+			return nil, huma.Error409Conflict(err.Error())
+		case cerrdefs.IsNotFound(err):
+			return nil, huma.Error404NotFound(err.Error())
+		default:
+			return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to rename volume").Error())
+		}
+	}
+	response.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
+
+	return &RenameVolumeOutput{Body: base.ApiResponse[*volumetypes.Volume]{Success: true, Data: response}}, nil
 }
 
 // RemoveVolume removes a Docker volume.
