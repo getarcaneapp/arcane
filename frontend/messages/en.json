@@ -938,7 +938,7 @@
   "volumes_rename_new_name": "New volume name",
   "volumes_rename_same_name": "Enter a different volume name",
   "volumes_rename_managed_warning_title": "Deployment-managed volume",
-  "volumes_rename_managed_warning_description": "This volume is managed by a Compose project or Swarm stack. Its deployment still references the current name and may recreate the original volume.",
+  "volumes_rename_managed_warning_description": "A project that still references this volume may recreate the original volume unless its configuration is updated.",
   "volumes_rename_success": "Volume {oldName} renamed to {newName}",
   "volumes_rename_failed": "Failed to rename volume {name}",
   "volumes_remove_confirm_message": "Are you sure you want to remove volume {name}?",

@@ -26,16 +26,20 @@
 	const isManaged = $derived(
 		Boolean(volume?.labels?.['com.docker.compose.project'] || volume?.labels?.['com.docker.stack.namespace'])
 	);
+	const normalizedName = $derived(newName.trim());
+	const canRename = $derived(Boolean(volume && normalizedName && normalizedName !== volume.name));
+
+	$effect(() => {
+		if (!open) return;
+		newName = volume?.name ?? '';
+		error = null;
+	});
 
 	function handleOpenChange(isOpen: boolean) {
-		if (isOpen) {
-			newName = volume?.name ?? '';
-		}
-		error = null;
+		if (!isOpen) error = null;
 	}
 
 	function submit() {
-		const normalizedName = newName.trim();
 		if (!normalizedName) {
 			error = m.volume_name_required();
 			return;
@@ -83,7 +87,7 @@
 				<Alert.Root variant="warning">
 					<AlertTriangleIcon class="size-4" />
 					<Alert.Title>{m.volumes_rename_managed_warning_title()}</Alert.Title>
-					<Alert.Description>{m.volumes_rename_managed_warning_description()}</Alert.Description>
+					<Alert.Description class="text-foreground">{m.volumes_rename_managed_warning_description()}</Alert.Description>
 				</Alert.Root>
 			{/if}
 		</form>
@@ -97,7 +101,7 @@
 			form="rename-volume-form"
 			customLabel={m.rename()}
 			loading={isLoading}
-			disabled={!volume}
+			disabled={!canRename || isLoading}
 		/>
 	{/snippet}
 </ResponsiveDialog.Root>
