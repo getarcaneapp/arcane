@@ -780,6 +780,10 @@ export interface VolumeCreateRequest {
 	labels?: Record<string, string>;
 }
 
+export interface VolumeRenameRequest {
+	name: string;
+}
+
 export interface VolumeSummaryDto {
 	id: string;
 	name: string;

@@ -6,6 +6,15 @@ import type { ProjectUpdateInfo } from '#lib/types/swarm';
 import type { SwarmServiceModeName, SwarmServiceModeSpec } from '#lib/types/swarm';
 import type { VulnerabilityScanSummary } from '#lib/types/environment';
 
+// --- Compose / Swarm management labels ---
+
+export const COMPOSE_PROJECT_LABEL = 'com.docker.compose.project';
+export const SWARM_STACK_LABEL = 'com.docker.stack.namespace';
+
+export function getManagedByLabel(labels?: Record<string, string> | null): string | undefined {
+	return labels?.[COMPOSE_PROJECT_LABEL] || labels?.[SWARM_STACK_LABEL] || undefined;
+}
+
 // --- Container stats math ---
 
 export function calculateCPUPercent(stats: ContainerStats | null): number {

@@ -6,7 +6,12 @@
 	import { formatDistanceToNow } from 'date-fns';
 	import { InfoIcon, ConnectionIcon } from '#lib/icons';
 	import { formatDateTimeShort, truncateImageDigest } from '#lib/utils/formatting';
-	import { getSwarmServiceModeLabel, getSwarmServiceModeVariant, isSwarmServiceModeScalable } from '#lib/utils/docker';
+	import {
+		SWARM_STACK_LABEL,
+		getSwarmServiceModeLabel,
+		getSwarmServiceModeVariant,
+		isSwarmServiceModeScalable
+	} from '#lib/utils/docker';
 	import { KeyValueCard } from '#lib/components/resource-detail';
 
 	interface Props {
@@ -34,7 +39,7 @@
 		}
 	}
 
-	const stackName = $derived(labels?.['com.docker.stack.namespace'] || '');
+	const stackName = $derived(labels?.[SWARM_STACK_LABEL] || '');
 	const nodes = $derived((service?.nodes as string[]) || []);
 	const versionIndex = $derived(service?.version?.index ?? service?.version?.Index ?? 0);
 	const updateStatus = $derived(service?.updateStatus as Record<string, any> | null | undefined);

@@ -99,6 +99,8 @@ var (
 	ErrVolumeWorkspaceForbidden                = Classify(ErrForbidden, errors.Sentinel("Forbidden volume workspace path"))
 	ErrVolumeWorkspaceBadRequest               = Classify(ErrBadRequest, errors.Sentinel("Invalid volume workspace request"))
 	ErrVolumeWorkspaceNotFound                 = Classify(ErrNotFound, errors.Sentinel("Volume workspace file not found"))
+	ErrVolumeRenameInvalid                     = Classify(ErrBadRequest, errors.Sentinel("source and target volume names must be non-empty and different"))
+	ErrVolumeRenameProtected                   = Classify(ErrBadRequest, errors.Sentinel("Arcane's internal volumes cannot be renamed"))
 	ErrProjectComposeFileNotFound              = Classify(ErrNotFound, errors.Sentinel("Project compose file not found"))
 	ErrComposeFileNotFound                     = Classify(ErrNotFound, errors.Sentinel("no compose file found"))
 	ErrEnvironmentInvalidProxyTarget           = Classify(ErrBadRequest, errors.Sentinel("Invalid proxy target URL"))
