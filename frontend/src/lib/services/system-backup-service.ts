@@ -39,6 +39,14 @@ class SystemBackupService extends BaseAPIService {
 		await this.handleResponse(this.api.post(`/backups/${id}/restore`, { recoveryKey }));
 	}
 
+	async listFiles(id: string, recoveryKey: string): Promise<string[]> {
+		return this.handleResponse(this.api.post(`/backups/${id}/files`, { recoveryKey }));
+	}
+
+	async restoreFiles(id: string, recoveryKey: string, paths: string[]): Promise<unknown> {
+		return this.handleResponse(this.api.post(`/backups/${id}/restore-files`, { recoveryKey, paths }));
+	}
+
 	async upload(id: string, s3DestinationId: string, recoveryKey: string): Promise<SystemBackupRun> {
 		return this.handleResponse(this.api.post(`/backups/${id}/upload`, { s3DestinationId, recoveryKey }));
 	}

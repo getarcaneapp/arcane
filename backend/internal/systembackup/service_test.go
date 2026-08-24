@@ -2,6 +2,7 @@ package systembackup
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -154,4 +155,81 @@ func TestSystemSnapshotPathFromFilesInternal(t *testing.T) {
 
 	_, err = systemSnapshotPathFromFilesInternal([]string{"/arcane.db"})
 	require.ErrorContains(t, err, "does not contain an Arcane recovery manifest")
+}
+
+func TestProjectFilesFromSnapshotInternal(t *testing.T) {
+	tests := []struct {
+		name         string
+		files        []string
+		snapshotPath string
+		projectsPath string
+		databasePath string
+		expected     []string
+	}{
+		{
+			name: "current snapshot root",
+			files: []string{
+				"/.arcane-recovery.json", "/arcane.db", "/arcane.db-wal", "/templates/demo.yaml",
+				"/projects/demo/docker-compose.yaml", "/projects/demo/.env", "/projects/demo/data/", "/projects/demo/.env",
+			},
+			snapshotPath: "/", projectsPath: "projects", databasePath: "arcane.db",
+			expected: []string{"demo/.env", "demo/docker-compose.yaml"},
+		},
+		{
+			name: "legacy snapshot and custom projects root",
+			files: []string{
+				"/app/data/.arcane-recovery.json", "/app/data/arcane.db", "/app/data/custom/projects/nested/app/compose.yaml",
+				"/app/data/projects/ignored/compose.yaml",
+			},
+			snapshotPath: "/app/data", projectsPath: "custom/projects", databasePath: "arcane.db",
+			expected: []string{"nested/app/compose.yaml"},
+		},
+		{
+			name: "projects directory is data root",
+			files: []string{
+				"/.arcane-recovery.json", "/.arcane-recovery-request.json", "/custom.db", "/custom.db-shm", "/demo/config.yaml",
+			},
+			snapshotPath: "/", projectsPath: "", databasePath: "custom.db",
+			expected: []string{"demo/config.yaml"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			require.Equal(t, test.expected, projectFilesFromSnapshotInternal(test.files, test.snapshotPath, test.projectsPath, test.databasePath))
+		})
+	}
+}
+
+func TestValidateRequestedProjectFilesInternal(t *testing.T) {
+	available := []string{"demo/.env", "demo/docker-compose.yaml"}
+	selected, err := validateRequestedProjectFilesInternal([]string{"demo/./.env", "demo/.env", "demo/docker-compose.yaml"}, available)
+	require.NoError(t, err)
+	require.Equal(t, []string{"demo/.env", "demo/docker-compose.yaml"}, selected)
+
+	for _, requested := range [][]string{
+		nil,
+		{"../arcane.db"},
+		{"demo/../arcane.db"},
+		{"/demo/.env"},
+		{`demo\.env`},
+		{"demo/missing.yaml"},
+	} {
+		_, err := validateRequestedProjectFilesInternal(requested, available)
+		require.ErrorIs(t, err, errInvalidSystemBackupFilePath)
+	}
+}
+
+func TestProjectsRelativePathInternal(t *testing.T) {
+	dataDirectory := filepath.Join(t.TempDir(), "data")
+	service := &SystemBackupService{config: &config.Config{
+		DatabaseURL:       "file:" + filepath.ToSlash(filepath.Join(dataDirectory, "arcane.db")),
+		ProjectsDirectory: filepath.Join(dataDirectory, "custom", "projects"),
+	}}
+	relative, err := service.projectsRelativePathInternal(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "custom/projects", relative)
+
+	service.config.ProjectsDirectory = filepath.Join(filepath.Dir(dataDirectory), "external-projects")
+	_, err = service.projectsRelativePathInternal(context.Background())
+	require.ErrorContains(t, err, "outside Arcane's system backup data")
 }

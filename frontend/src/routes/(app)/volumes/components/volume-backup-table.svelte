@@ -7,7 +7,6 @@
 	import type { S3Destination } from '#lib/types/s3-destination';
 	import { onMount } from 'svelte';
 	import {
-		LoadingSpinnerIcon,
 		TrashIcon,
 		AddIcon,
 		ClockIcon,
@@ -36,10 +35,8 @@
 	import RowActionsMenu from '#lib/components/file-browser/row-actions-menu.svelte';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog';
 	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog';
-	import { Input } from '#lib/components/ui/input';
-	import { ScrollArea } from '#lib/components/ui/scroll-area';
-	import * as Checkbox from '#lib/components/ui/checkbox';
 	import * as Alert from '#lib/components/ui/alert';
+	import BackupFilePicker from '#lib/components/backup-file-picker.svelte';
 	import { environmentStore } from '#lib/stores/environment.store.svelte';
 	import { hasPermission } from '#lib/utils/auth';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
@@ -102,12 +99,6 @@
 	let backupFilesLoading = $state(false);
 	let backupFilesSearch = $state('');
 	let selectedPaths = $state<string[]>([]);
-	const filteredBackupFiles = $derived.by(() => {
-		const q = backupFilesSearch.trim().toLowerCase();
-		if (!q) return backupFiles;
-		return backupFiles.filter((p) => p.toLowerCase().includes(q));
-	});
-
 	async function loadData(options: SearchPaginationSortRequest): Promise<VolumeBackupListResponse> {
 		try {
 			const result = await volumeBackupService.listBackups(volumeName, options);
@@ -225,28 +216,6 @@
 		} finally {
 			backupFilesLoading = false;
 		}
-	}
-
-	function togglePath(path: string, checked: boolean) {
-		if (checked) {
-			if (!selectedPaths.includes(path)) {
-				selectedPaths = [...selectedPaths, path];
-			}
-			return;
-		}
-		selectedPaths = selectedPaths.filter((p) => p !== path);
-	}
-
-	function selectAllVisible() {
-		const next = new Set(selectedPaths);
-		for (const p of filteredBackupFiles) {
-			next.add(p);
-		}
-		selectedPaths = Array.from(next);
-	}
-
-	function clearSelection() {
-		selectedPaths = [];
 	}
 
 	async function handleRestore(backup: BackupEntry) {
@@ -589,35 +558,7 @@
 				</Alert.Description>
 			</Alert.Root>
 
-			<div class="flex items-center justify-between gap-2">
-				<Input class="h-9" placeholder={m.volume_search_files()} bind:value={backupFilesSearch} />
-				<div class="flex items-center gap-2">
-					<ArcaneButton action="base" tone="ghost" size="sm" onclick={selectAllVisible} customLabel={m.common_select_all()} />
-					<ArcaneButton action="base" tone="ghost" size="sm" onclick={clearSelection} customLabel={m.common_clear()} />
-				</div>
-			</div>
-
-			<ScrollArea class="h-64 rounded-md border">
-				{#if backupFilesLoading}
-					<div class="flex items-center justify-center py-8">
-						<LoadingSpinnerIcon class="size-5 text-muted-foreground" />
-					</div>
-				{:else if filteredBackupFiles.length === 0}
-					<div class="flex items-center justify-center py-8 text-sm text-muted-foreground">{m.volume_backup_no_files()}</div>
-				{:else}
-					<div class="divide-y divide-border/40">
-						{#each filteredBackupFiles as filePath (filePath)}
-							<div class="flex items-center gap-3 px-3 py-2">
-								<Checkbox.Root
-									checked={selectedPaths.includes(filePath)}
-									onCheckedChange={(value) => togglePath(filePath, !!value)}
-								/>
-								<code class="font-mono text-xs break-all">{filePath}</code>
-							</div>
-						{/each}
-					</div>
-				{/if}
-			</ScrollArea>
+			<BackupFilePicker files={backupFiles} loading={backupFilesLoading} bind:selectedPaths bind:search={backupFilesSearch} />
 
 			<Alert.Root variant="warning" class="py-2 [&>svg]:top-2">
 				<AlertIcon class="size-4" />

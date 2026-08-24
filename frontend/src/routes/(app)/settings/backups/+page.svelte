@@ -4,7 +4,7 @@
 	import { toast } from 'svelte-sonner';
 	import settingsStore from '#lib/stores/config-store';
 	import { SettingsPageLayout, type SettingsActionButton } from '#lib/layouts';
-	import { AlertIcon, BackupIcon, CloudStorageIcon, LockIcon, ResetIcon } from '#lib/icons';
+	import { AlertIcon, BackupIcon, CloudStorageIcon, InfoIcon, LockIcon, ResetIcon } from '#lib/icons';
 	import * as Alert from '#lib/components/ui/alert';
 	import { CopyButton } from '#lib/components/ui/copy-button';
 	import { Input } from '#lib/components/ui/input';
@@ -21,6 +21,8 @@
 	import SystemBackupTable from './system-backup-table.svelte';
 	import BackupPolicyDialog from '#lib/components/backup-policy-dialog.svelte';
 	import BackupPolicyCard from '#lib/components/backup-policy-card.svelte';
+	import BackupFilePicker from '#lib/components/backup-file-picker.svelte';
+	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
 
 	let { data } = $props();
 	let backups = $state(untrack(() => data.backups));
@@ -39,6 +41,15 @@
 	let newRecoveryKey = $state('');
 	let loading = $state(false);
 	let generatingKey = $state(false);
+	let restoreFilesOpen = $state(false);
+	let restoreFilesTarget = $state<SystemBackupRun | null>(null);
+	let restoreFilesRecoveryKey = $state('');
+	let restoreFiles = $state<string[]>([]);
+	let restoreFilesSelectedPaths = $state<string[]>([]);
+	let restoreFilesSearch = $state('');
+	let restoreFilesLoading = $state(false);
+	let restoreFilesLoaded = $state(false);
+	let restoringFiles = $state(false);
 	const isReadOnly = $derived.by(() => $settingsStore.uiConfigDisabled);
 	const canManageRecoveryKey = $derived(hasPermission('system-backups:recovery-key'));
 	const destinationOptions = $derived(backupDestinationOptions(data.destinations.length > 0));
@@ -60,6 +71,15 @@
 	// ever uses this instance's stored key.
 	const actionNeedsTypedKey = $derived(action === 'restore' || action === 'discover');
 	const recoveryKeyPattern = /^[A-Z2-7]{6}(-[A-Z2-7]{6}){7}$/;
+	const restoreFilesKeyError = $derived(
+		restoreFilesRecoveryKey.length > 0 && !recoveryKeyPattern.test(restoreFilesRecoveryKey.trim())
+			? m.system_backups_recovery_key_required()
+			: ''
+	);
+	const restoreFilesKeyInvalid = $derived(
+		Boolean(restoreFilesKeyError) ||
+			(!policyCollection.recoveryKeyStored && !recoveryKeyPattern.test(restoreFilesRecoveryKey.trim()))
+	);
 	const keyError = $derived(
 		actionNeedsTypedKey && recoveryKey.length > 0 && !recoveryKeyPattern.test(recoveryKey.trim())
 			? m.system_backups_recovery_key_required()
@@ -117,6 +137,75 @@
 		recoveryKey = '';
 		actionOpen = true;
 	}
+
+	async function openRestoreFiles(backup: SystemBackupRun) {
+		restoreFilesTarget = backup;
+		restoreFilesRecoveryKey = '';
+		restoreFiles = [];
+		restoreFilesSelectedPaths = [];
+		restoreFilesSearch = '';
+		restoreFilesLoaded = false;
+		restoreFilesOpen = true;
+		if (policyCollection.recoveryKeyStored) await loadRestoreFiles();
+	}
+
+	function closeRestoreFiles() {
+		restoreFilesOpen = false;
+		restoreFilesTarget = null;
+		restoreFilesRecoveryKey = '';
+		restoreFiles = [];
+		restoreFilesSelectedPaths = [];
+		restoreFilesSearch = '';
+		restoreFilesLoaded = false;
+	}
+
+	function updateRestoreFilesRecoveryKey(value: string) {
+		restoreFilesRecoveryKey = value;
+		restoreFiles = [];
+		restoreFilesSelectedPaths = [];
+		restoreFilesSearch = '';
+		restoreFilesLoaded = false;
+	}
+
+	async function loadRestoreFiles() {
+		if (!restoreFilesTarget || restoreFilesKeyInvalid || restoreFilesLoading) return;
+		restoreFilesLoading = true;
+		restoreFiles = [];
+		restoreFilesSelectedPaths = [];
+		restoreFilesSearch = '';
+		restoreFilesLoaded = false;
+		try {
+			restoreFiles = await systemBackupService.listFiles(restoreFilesTarget.id, restoreFilesRecoveryKey.trim());
+			restoreFilesLoaded = true;
+		} catch (error) {
+			toast.error(error instanceof Error ? error.message : m.system_backups_restore_files_failed());
+		} finally {
+			restoreFilesLoading = false;
+		}
+	}
+
+	async function restoreSelectedFiles() {
+		if (!restoreFilesTarget || !restoreFilesLoaded || restoreFilesSelectedPaths.length === 0 || restoringFiles) return;
+		restoringFiles = true;
+		try {
+			const result = await systemBackupService.restoreFiles(
+				restoreFilesTarget.id,
+				restoreFilesRecoveryKey.trim(),
+				restoreFilesSelectedPaths
+			);
+			toast.success(
+				m.system_backups_restore_files_success({ count: restoreFilesSelectedPaths.length }),
+				activityToastOptions(extractActivityId(result))
+			);
+			closeRestoreFiles();
+			await refresh();
+		} catch (error) {
+			toast.error(error instanceof Error ? error.message : m.system_backups_restore_files_failed());
+		} finally {
+			restoringFiles = false;
+		}
+	}
+
 	function dialogTitle() {
 		if (action === 'restore') return m.system_backups_restore_title();
 		if (action === 'upload') return m.system_backups_upload_title();
@@ -371,6 +460,79 @@
 	</ResponsiveDialog>
 {/snippet}
 
+{#snippet restoreFilesDialog()}
+	<ResponsiveDialog
+		bind:open={restoreFilesOpen}
+		onOpenChange={(open) => {
+			if (!open) closeRestoreFiles();
+		}}
+		title={m.volume_restore_files()}
+		description={m.system_backups_restore_files_description()}
+		contentClass="sm:max-w-[640px]"
+	>
+		{#snippet children()}
+			<div class="space-y-3 py-2">
+				<Alert.Root class="py-2 [&>svg]:top-2">
+					<InfoIcon class="size-4" />
+					<Alert.Description class="text-xs">
+						{m.system_backups_restore_files_lifecycle_info()}
+					</Alert.Description>
+				</Alert.Root>
+
+				<div class="flex items-end gap-2">
+					<div class="min-w-0 flex-1">
+						<TextInputWithLabel
+							value={restoreFilesRecoveryKey}
+							onChange={updateRestoreFilesRecoveryKey}
+							error={restoreFilesKeyError || null}
+							label={m.system_backups_recovery_key()}
+							description={policyCollection.recoveryKeyStored
+								? m.system_backups_recovery_key_saved_description()
+								: m.system_backups_recovery_key_enter_description()}
+							type="password"
+							autocomplete="current-password"
+						/>
+					</div>
+					<ArcaneButton
+						action="inspect"
+						customLabel={m.system_backups_load_files()}
+						onclick={loadRestoreFiles}
+						loading={restoreFilesLoading}
+						disabled={restoreFilesLoading || restoreFilesKeyInvalid}
+					/>
+				</div>
+
+				{#if restoreFilesLoading || restoreFilesLoaded}
+					<BackupFilePicker
+						files={restoreFiles}
+						loading={restoreFilesLoading}
+						bind:selectedPaths={restoreFilesSelectedPaths}
+						bind:search={restoreFilesSearch}
+					/>
+
+					<Alert.Root variant="warning" class="py-2 [&>svg]:top-2">
+						<AlertIcon class="size-4" />
+						<Alert.Description class="text-xs">
+							{m.volumes_backup_overwrite_warning()}
+						</Alert.Description>
+					</Alert.Root>
+				{/if}
+			</div>
+		{/snippet}
+
+		{#snippet footer()}
+			<ArcaneButton action="cancel" onclick={closeRestoreFiles} disabled={restoringFiles} />
+			<ArcaneButton
+				action="confirm"
+				customLabel={m.volume_restore_files()}
+				onclick={restoreSelectedFiles}
+				loading={restoringFiles}
+				disabled={restoringFiles || !restoreFilesLoaded || restoreFilesSelectedPaths.length === 0}
+			/>
+		{/snippet}
+	</ResponsiveDialog>
+{/snippet}
+
 <SettingsPageLayout
 	title={m.system_backups_title()}
 	description={m.system_backups_description()}
@@ -401,6 +563,7 @@
 				bind:requestOptions
 				onChanged={(options) => systemBackupService.list(options)}
 				onRestore={(item) => openAction('restore', item)}
+				onRestoreFiles={openRestoreFiles}
 				onUpload={(item) => openAction('upload', item)}
 				onDelete={(item) => openAction('delete', item)}
 			/>
@@ -430,5 +593,6 @@
 
 		{@render recoveryKeyDialog()}
 		{@render actionDialog()}
+		{@render restoreFilesDialog()}
 	{/snippet}
 </SettingsPageLayout>
