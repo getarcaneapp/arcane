@@ -16,7 +16,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 
 	"emperror.dev/errors"
-	cerrdefs "github.com/containerd/errdefs"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
@@ -766,12 +765,15 @@ func (h *VolumeHandler) RenameVolume(ctx context.Context, input *RenameVolumeInp
 	if err != nil {
 		var conflictErr *volumeops.ProjectVolumeRenameConflictError
 		var inUseErr *volumeops.ProjectVolumeRenameInUseError
+		var spaceErr *volumeops.ProjectVolumeRenameInsufficientSpaceError
 		switch {
-		case errors.Is(err, ErrVolumeRenameInvalid), errors.Is(err, ErrVolumeRenameProtected), cerrdefs.IsInvalidArgument(err):
+		case errors.Is(err, common.ErrBadRequest):
 			return nil, huma.Error400BadRequest(err.Error())
 		case errors.As(err, &conflictErr), errors.As(err, &inUseErr):
 			return nil, huma.Error409Conflict(err.Error())
-		case cerrdefs.IsNotFound(err):
+		case errors.As(err, &spaceErr):
+			return nil, huma.NewError(http.StatusInsufficientStorage, err.Error())
+		case errors.Is(err, common.ErrNotFound):
 			return nil, huma.Error404NotFound(err.Error())
 		default:
 			return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to rename volume").Error())

@@ -7,18 +7,15 @@ import (
 	"strings"
 
 	"emperror.dev/errors"
+	cerrdefs "github.com/containerd/errdefs"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	volumeops "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumes"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
+	"github.com/moby/moby/client"
 	"gorm.io/gorm"
-)
-
-var (
-	ErrVolumeRenameInvalid   = errors.New("source and target volume names must be non-empty and different")
-	ErrVolumeRenameProtected = errors.New("Arcane's backup volume cannot be renamed")
 )
 
 // RenameVolume copies an unused volume to a new name and removes the source.
@@ -26,70 +23,81 @@ func (s *VolumeService) RenameVolume(ctx context.Context, oldName, newName strin
 	oldName = strings.TrimSpace(oldName)
 	newName = strings.TrimSpace(newName)
 	if oldName == "" || newName == "" || oldName == newName {
-		return nil, ErrVolumeRenameInvalid
+		return nil, common.ErrVolumeRenameInvalid
 	}
 	if strings.EqualFold(oldName, s.backupVolumeName) || strings.EqualFold(newName, s.backupVolumeName) {
-		return nil, ErrVolumeRenameProtected
+		return nil, common.ErrVolumeRenameProtected
 	}
 
 	defer s.workspaceLocks.Lock(oldName)()
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		s.logVolumeRenameErrorInternal(ctx, oldName, newName, user, err)
+		s.logVolumeRenameErrorInternal(ctx, oldName, newName, user, "connect", err)
 		return nil, errors.WrapIf(err, "failed to connect to Docker")
 	}
-	if err := s.StopHelper(ctx, oldName); err != nil {
-		s.logVolumeRenameErrorInternal(ctx, oldName, newName, user, err)
-		return nil, errors.WrapIf(err, "failed to stop volume browse helper")
+
+	source, err := dockerClient.VolumeInspect(ctx, oldName, client.VolumeInspectOptions{})
+	if err != nil {
+		if cerrdefs.IsNotFound(err) {
+			err = common.Classify(common.ErrNotFound, err)
+		}
+		s.logVolumeRenameErrorInternal(ctx, oldName, newName, user, "inspect", err)
+		return nil, errors.WrapIf(err, "inspect source volume")
+	}
+	if s.isInternalVolumeInternal(volumetypes.NewSummary(source.Volume)) {
+		return nil, common.ErrVolumeRenameProtected
+	}
+
+	// Stop any read-only browse helper first; a helper mounting the volume would
+	// otherwise fail the detached-source check with "in use".
+	if stopErr := s.StopHelper(ctx, oldName); stopErr != nil {
+		slog.WarnContext(ctx, "could not stop volume browse helper before rename", "volume", oldName, "error", stopErr.Error())
 	}
 
 	migration, err := volumeops.PlanRename(ctx, dockerClient, oldName, newName)
 	if err != nil {
-		s.logVolumeRenameErrorInternal(ctx, oldName, newName, user, err)
+		s.logVolumeRenameErrorInternal(ctx, oldName, newName, user, "plan", err)
 		return nil, err
 	}
 	if err := migration.Apply(ctx); err != nil {
-		s.logVolumeRenameErrorInternal(ctx, oldName, newName, user, err)
+		if cerrdefs.IsInvalidArgument(err) {
+			err = common.Classify(common.ErrBadRequest, err)
+		}
+		s.logVolumeRenameErrorInternal(ctx, oldName, newName, user, "apply", err)
 		return nil, err
 	}
 
-	policies, err := s.renameVolumeMetadataInternal(ctx, oldName, newName)
-	if err != nil {
+	if err := s.renameVolumeMetadataInternal(ctx, oldName, newName); err != nil {
 		rollbackErr := migration.Rollback(ctx)
 		combinedErr := stderrors.Join(errors.WrapIf(err, "rename volume metadata"), rollbackErr)
-		s.logVolumeRenameErrorInternal(ctx, oldName, newName, user, combinedErr)
+		s.logVolumeRenameErrorInternal(ctx, oldName, newName, user, "metadata", combinedErr)
 		return nil, combinedErr
 	}
 
-	committer, ok := migration.(volumeops.Committer)
-	if !ok {
-		rollbackErr := migration.Rollback(ctx)
-		metadataErr := s.renameVolumeMetadataWithoutPoliciesInternal(ctx, newName, oldName)
-		combinedErr := stderrors.Join(errors.New("volume rename migration cannot be committed"), metadataErr, rollbackErr)
-		s.logVolumeRenameErrorInternal(ctx, oldName, newName, user, combinedErr)
-		return nil, combinedErr
-	}
-	if err := committer.Commit(ctx); err != nil {
-		oldExists, inspectErr := volumeops.VolumeExists(ctx, dockerClient, oldName)
-		if inspectErr != nil || oldExists {
-			metadataErr := s.renameVolumeMetadataWithoutPoliciesInternal(ctx, newName, oldName)
-			rollbackErr := migration.Rollback(ctx)
-			combinedErr := stderrors.Join(err, inspectErr, metadataErr, rollbackErr)
-			s.logVolumeRenameErrorInternal(ctx, oldName, newName, user, combinedErr)
-			return nil, combinedErr
+	if committer, ok := migration.(volumeops.Committer); ok {
+		if err := committer.Commit(ctx); err != nil {
+			var cleanupErr *volumeops.SourceCleanupError
+			if errors.As(err, &cleanupErr) {
+				// The copy and metadata are committed; only removing the source
+				// failed, so the rename itself succeeded.
+				slog.WarnContext(ctx, "volume renamed but source volume could not be removed", "oldVolume", oldName, "newVolume", newName, "error", err.Error())
+			} else {
+				metadataErr := s.renameVolumeMetadataInternal(ctx, newName, oldName)
+				rollbackErr := migration.Rollback(ctx)
+				combinedErr := stderrors.Join(err, metadataErr, rollbackErr)
+				s.logVolumeRenameErrorInternal(ctx, oldName, newName, user, "commit", combinedErr)
+				return nil, combinedErr
+			}
 		}
 	}
 
-	for i := range policies {
-		s.rescheduleVolumeBackupPolicyInternal(ctx, &policies[i])
-	}
 	s.removeHelperEntry(oldName)
 	dockerutil.InvalidateVolumeUsageCache(dockerClient)
 
 	renamed, err := s.GetVolumeByName(ctx, newName)
 	if err != nil {
-		s.logVolumeRenameErrorInternal(ctx, oldName, newName, user, err)
+		s.logVolumeRenameErrorInternal(ctx, oldName, newName, user, "inspect-renamed", err)
 		return nil, errors.WrapIf(err, "inspect renamed volume")
 	}
 
@@ -101,26 +109,9 @@ func (s *VolumeService) RenameVolume(ctx context.Context, oldName, newName strin
 	return renamed, nil
 }
 
-func (s *VolumeService) renameVolumeMetadataInternal(ctx context.Context, oldName, newName string) ([]VolumeBackupPolicy, error) {
-	if s.db == nil {
-		return nil, nil
-	}
-
-	var policies []VolumeBackupPolicy
-	err := s.db.WithContext(ctx).Where("volume_name = ?", oldName).Find(&policies).Error
-	if err != nil {
-		return nil, errors.WrapIf(err, "load volume backup policies")
-	}
-	if err := s.renameVolumeMetadataWithoutPoliciesInternal(ctx, oldName, newName); err != nil {
-		return nil, err
-	}
-	for i := range policies {
-		policies[i].VolumeName = newName
-	}
-	return policies, nil
-}
-
-func (s *VolumeService) renameVolumeMetadataWithoutPoliciesInternal(ctx context.Context, oldName, newName string) error {
+// Backup jobs are keyed by policy ID and re-read the policy row on every run,
+// so renaming volume_name requires no job rescheduling.
+func (s *VolumeService) renameVolumeMetadataInternal(ctx context.Context, oldName, newName string) error {
 	if s.db == nil {
 		return nil
 	}
@@ -136,9 +127,10 @@ func (s *VolumeService) renameVolumeMetadataWithoutPoliciesInternal(ctx context.
 	})
 }
 
-func (s *VolumeService) logVolumeRenameErrorInternal(ctx context.Context, oldName, newName string, user common.User, err error) {
+func (s *VolumeService) logVolumeRenameErrorInternal(ctx context.Context, oldName, newName string, user common.User, step string, err error) {
 	s.eventService.LogErrorEvent(ctx, event.EventTypeVolumeError, "volume", oldName, oldName, user.ID, user.Username, "0", err, database.JSON{
 		"action":  "rename",
+		"step":    step,
 		"oldName": oldName,
 		"newName": newName,
 	})

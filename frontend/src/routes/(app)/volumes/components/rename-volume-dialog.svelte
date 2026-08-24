@@ -1,12 +1,12 @@
 <script lang="ts">
-	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
-	import { Input } from '#lib/components/ui/input/index.js';
-	import { Label } from '#lib/components/ui/label/index.js';
+	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
+	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import { AlertTriangleIcon } from '#lib/icons';
 	import { m } from '#lib/paraglide/messages';
 	import type { VolumeSummaryDto } from '#lib/types/docker';
+	import { getManagedByLabel } from '#lib/utils/docker';
 
 	let {
 		open = $bindable(false),
@@ -23,9 +23,7 @@
 	let newName = $state('');
 	let error = $state<string | null>(null);
 
-	const isManaged = $derived(
-		Boolean(volume?.labels?.['com.docker.compose.project'] || volume?.labels?.['com.docker.stack.namespace'])
-	);
+	const isManaged = $derived(Boolean(getManagedByLabel(volume?.labels)));
 	const normalizedName = $derived(newName.trim());
 	const canRename = $derived(Boolean(volume && normalizedName && normalizedName !== volume.name));
 
@@ -69,25 +67,17 @@
 			}}
 			class="space-y-4 py-4"
 		>
-			<div class="space-y-2">
-				<Label for="rename-volume-name">{m.volumes_rename_new_name()}</Label>
-				<Input
-					id="rename-volume-name"
-					bind:value={newName}
-					disabled={isLoading}
-					aria-invalid={Boolean(error)}
-					autocomplete="off"
-				/>
-				{#if error}
-					<p class="text-sm text-destructive">{error}</p>
-				{/if}
-			</div>
+			<TextInputWithLabel
+				id="rename-volume-name"
+				bind:value={newName}
+				label={m.volumes_rename_new_name()}
+				{error}
+				disabled={isLoading}
+				autocomplete="off"
+			/>
 
 			{#if isManaged}
-				<Alert.Root
-					variant="warning"
-					class="text-amber-600 dark:text-amber-400 [&>svg]:text-amber-600 dark:[&>svg]:text-amber-400"
-				>
+				<Alert.Root variant="warning">
 					<AlertTriangleIcon class="size-4" />
 					<Alert.Title>{m.volumes_rename_managed_warning_title()}</Alert.Title>
 					<Alert.Description class="text-foreground">{m.volumes_rename_managed_warning_description()}</Alert.Description>
@@ -97,14 +87,14 @@
 	{/snippet}
 
 	{#snippet footer()}
-		<ArcaneButton action="cancel" tone="outline" onclick={() => (open = false)} disabled={isLoading} />
-		<ArcaneButton
-			action="edit"
-			type="submit"
-			form="rename-volume-form"
-			customLabel={m.rename()}
-			loading={isLoading}
-			disabled={!canRename || isLoading}
+		<SheetFooterActions
+			onCancel={() => (open = false)}
+			cancelDisabled={isLoading}
+			submitAction="edit"
+			submitLabel={m.rename()}
+			submitForm="rename-volume-form"
+			submitLoading={isLoading}
+			submitDisabled={!canRename || isLoading}
 		/>
 	{/snippet}
 </ResponsiveDialog.Root>

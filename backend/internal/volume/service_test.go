@@ -318,13 +318,13 @@ func TestRenameVolumeRejectsInvalidAndProtectedNames(t *testing.T) {
 	service := &VolumeService{backupVolumeName: "arcane-backups"}
 
 	_, err := service.RenameVolume(t.Context(), "data", "data", common.User{})
-	require.ErrorIs(t, err, ErrVolumeRenameInvalid)
+	require.ErrorIs(t, err, common.ErrVolumeRenameInvalid)
 
 	_, err = service.RenameVolume(t.Context(), "arcane-backups", "renamed-backups", common.User{})
-	require.ErrorIs(t, err, ErrVolumeRenameProtected)
+	require.ErrorIs(t, err, common.ErrVolumeRenameProtected)
 
 	_, err = service.RenameVolume(t.Context(), "data", "arcane-backups", common.User{})
-	require.ErrorIs(t, err, ErrVolumeRenameProtected)
+	require.ErrorIs(t, err, common.ErrVolumeRenameProtected)
 }
 
 func TestRenameVolumeMetadataInternalPreservesPoliciesAndHistory(t *testing.T) {
@@ -337,10 +337,7 @@ func TestRenameVolumeMetadataInternalPreservesPoliciesAndHistory(t *testing.T) {
 	require.NoError(t, gormDB.Create(&VolumeBackup{VolumeName: "source-data", PolicyID: policy.ID}).Error)
 
 	service := &VolumeService{db: &database.DB{DB: gormDB}}
-	policies, err := service.renameVolumeMetadataInternal(t.Context(), "source-data", "renamed-data")
-	require.NoError(t, err)
-	require.Len(t, policies, 1)
-	require.Equal(t, "renamed-data", policies[0].VolumeName)
+	require.NoError(t, service.renameVolumeMetadataInternal(t.Context(), "source-data", "renamed-data"))
 
 	var renamedPolicy VolumeBackupPolicy
 	require.NoError(t, gormDB.Where("id = ?", policy.ID).First(&renamedPolicy).Error)
