@@ -4,8 +4,6 @@ const VOLUME_NAME = 'backup-picker-e2e';
 const BACKUP_ID = 'backup-picker-snapshot';
 const SYSTEM_BACKUP_ID = 'system-picker-id';
 
-test.use({ storageState: { cookies: [], origins: [] } });
-
 type BrowseRequest = {
 	path: string;
 	search: string;

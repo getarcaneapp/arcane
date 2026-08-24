@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -177,7 +178,40 @@ func (e *Engine) ListSnapshotFilesAtPath(ctx context.Context, dockerClient *clie
 	if err := json.Unmarshal([]byte(output), &files); err != nil {
 		return nil, fmt.Errorf("failed to decode Rustic file list: %w", err)
 	}
-	return files, nil
+	if recursive || len(files) == 0 {
+		return files, nil
+	}
+	// Rustic's JSON listing omits node types; the stable long listing restores them.
+	longCommand := slices.Clone(command)
+	longCommand[1] = "--long"
+	longOutput, err := e.runInternal(ctx, dockerClient, repository, password, longCommand)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list Rustic snapshot metadata: %w", err)
+	}
+	return markSnapshotDirectoriesInternal(files, longOutput)
+}
+
+func markSnapshotDirectoriesInternal(files []string, longOutput string) ([]string, error) {
+	if len(files) == 0 {
+		if strings.TrimSpace(longOutput) != "" {
+			return nil, errors.New("rustic file and metadata listings have different lengths")
+		}
+		return []string{}, nil
+	}
+	lines := strings.Split(strings.ReplaceAll(longOutput, "\r\n", "\n"), "\n")
+	if len(lines) != len(files) {
+		return nil, errors.New("rustic file and metadata listings have different lengths")
+	}
+	marked := slices.Clone(files)
+	for index, line := range lines {
+		if line == "" {
+			return nil, errors.New("rustic returned empty file metadata")
+		}
+		if line[0] == 'd' && !strings.HasSuffix(marked[index], "/") {
+			marked[index] += "/"
+		}
+	}
+	return marked, nil
 }
 
 // ReadSnapshotTextFile returns one text file from a snapshot.
