@@ -77,18 +77,17 @@ func InspectCurrentArcaneContainer(ctx context.Context, dockerClient *client.Cli
 		return nil, errors.New("docker client is not available")
 	}
 
-	// A cgroup-derived container ID is definitively the current container, so
-	// that inspect is trusted even without the Arcane label (custom images).
-	// With network_mode: service:<sidecar> the hostname belongs to the sidecar
-	// container, so a hostname-derived inspect is only trusted directly when it
-	// carries the Arcane label (#3544); an unlabeled hostname hit is kept as a
-	// last resort so the label lookup can't hijack detection either way.
+	// With network_mode: service:<sidecar> both the hostname and the cgroup
+	// mountinfo fallback resolve the netns-owning sidecar — the container's
+	// /etc/hostname, /etc/hosts and /etc/resolv.conf bind-mounts come from the
+	// sidecar's container directory — so no derived target is authoritative. A
+	// derived inspect is only trusted directly when it carries the Arcane label
+	// (#3544, #3693); an unlabeled hit is kept as a last resort so the label
+	// lookup can't hijack detection either way. Custom images without the label
+	// behind a sidecar stay undetectable and must carry the label themselves.
 	var unlabeled *container.InspectResponse
-	if target, fromContainerID, err := CurrentContainerInspectTarget(cgroup.CurrentContainerID, os.Hostname); err == nil && target != "" {
+	if target, err := CurrentContainerInspectTarget(cgroup.CurrentContainerID, os.Hostname); err == nil && target != "" {
 		if inspect, inspectErr := ContainerInspectWithCompatibility(ctx, dockerClient, target, client.ContainerInspectOptions{}); inspectErr == nil {
-			if fromContainerID {
-				return &inspect.Container, nil
-			}
 			if inspect.Container.Config != nil && strings.EqualFold(strings.TrimSpace(inspect.Container.Config.Labels[labels.LabelArcane]), "true") {
 				return &inspect.Container, nil
 			}
@@ -101,10 +100,10 @@ func InspectCurrentArcaneContainer(ctx context.Context, dockerClient *client.Cli
 		if err != nil {
 			return nil, errors.WrapIf(err, "inspect Arcane container")
 		}
-		// An unlabeled hostname hit is only overridden by the labeled match when
-		// that match shares the hostname container's network namespace — i.e. the
-		// hostname really belonged to its sidecar (#3544). Otherwise the labeled
-		// container is a different Arcane instance and the hostname hit is us.
+		// An unlabeled derived hit is only overridden by the labeled match when
+		// that match shares the derived container's network namespace — i.e. the
+		// derived target really was its sidecar (#3544, #3693). Otherwise the
+		// labeled container is a different Arcane instance and the hit is us.
 		if unlabeled == nil || sharesNetworkNamespaceInternal(&inspect.Container, unlabeled) {
 			return &inspect.Container, nil
 		}
@@ -133,13 +132,15 @@ func sharesNetworkNamespaceInternal(candidate, owner *container.InspectResponse)
 }
 
 // CurrentContainerInspectTarget resolves the identifier used to inspect Arcane's
-// current container. The second return reports whether the target came from the
-// cgroup container ID (authoritative) rather than the hostname fallback.
-func CurrentContainerInspectTarget(currentContainerID func() (string, error), hostname func() (string, error)) (string, bool, error) {
+// current container: the detected container ID when available, the hostname
+// otherwise. Neither source is authoritative — under network_mode:
+// container:<sidecar> both can resolve the netns-owning sidecar — so callers
+// must validate the inspected container (see InspectCurrentArcaneContainer).
+func CurrentContainerInspectTarget(currentContainerID func() (string, error), hostname func() (string, error)) (string, error) {
 	if currentContainerID != nil {
 		if containerID, err := currentContainerID(); err == nil {
 			if containerID = strings.TrimSpace(containerID); containerID != "" {
-				return containerID, true, nil
+				return containerID, nil
 			}
 		}
 	}
@@ -150,8 +151,8 @@ func CurrentContainerInspectTarget(currentContainerID func() (string, error), ho
 
 	value, err := hostname()
 	if err != nil {
-		return "", false, err
+		return "", err
 	}
 
-	return strings.TrimSpace(value), false, nil
+	return strings.TrimSpace(value), nil
 }

@@ -3684,7 +3684,6 @@ func TestBuildDiscoveredComposeProjectUpdateRowsInternal(t *testing.T) {
 		CurrentVersion: "7",
 		CheckTime:      now,
 	}).Error)
-
 	rows := buildDiscoveredComposeProjectUpdateRowsInternal(ctx, []container.Summary{
 		{
 			ID:      "media-web",

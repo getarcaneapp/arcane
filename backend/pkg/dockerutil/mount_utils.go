@@ -2,7 +2,6 @@ package docker
 
 import (
 	"context"
-	"os"
 	"strings"
 
 	"github.com/moby/moby/api/types/container"
@@ -10,28 +9,23 @@ import (
 	"github.com/moby/moby/client"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
-	"go.getarcane.app/sys/cgroup"
 )
 
 // MountForCurrentContainerSubpath inspects the current container, finds the
 // existing mount whose destination covers containerPath, and returns a Mount
 // suitable for use in another container creation that exposes the same data
-// at target. Returns nil + no error if Arcane isn't running inside a
-// container or no suitable mount is found — callers can fall back to a
-// plain bind on containerPath in that case.
+// at target. Returns nil + no error when no suitable mount is found, and an
+// error when the current container can't be detected — callers can fall back
+// to a plain bind on containerPath in either case.
 func MountForCurrentContainerSubpath(ctx context.Context, dockerCli *client.Client, containerPath, target string) (*mount.Mount, error) {
 	if dockerCli == nil {
 		return nil, nil
 	}
-	inspectTarget, _, err := libarcane.CurrentContainerInspectTarget(cgroup.CurrentContainerID, os.Hostname)
+	inspect, err := libarcane.InspectCurrentArcaneContainer(ctx, dockerCli)
 	if err != nil {
 		return nil, err
 	}
-	inspect, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerCli, inspectTarget, client.ContainerInspectOptions{})
-	if err != nil {
-		return nil, err
-	}
-	return MountForSubpath(inspect.Container.Mounts, containerPath, target), nil
+	return MountForSubpath(inspect.Mounts, containerPath, target), nil
 }
 
 // MountForSubpath returns a Mount that exposes a subpath of one of the

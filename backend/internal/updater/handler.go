@@ -6,6 +6,7 @@ import (
 
 	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
@@ -115,6 +116,9 @@ func (h *UpdaterHandler) RunUpdater(ctx context.Context, input *RunUpdaterInput)
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	out, err := h.updaterService.ApplyPending(runtimeCtx, options)
 	if err != nil {
+		if errors.Is(err, common.ErrBadRequest) {
+			return nil, huma.Error400BadRequest(errors.WithMessage(err, "Failed to run updater").Error())
+		}
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to run updater").Error())
 	}
 

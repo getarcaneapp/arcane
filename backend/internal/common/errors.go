@@ -64,6 +64,7 @@ var (
 	ErrSessionRevoked                          = Classify(ErrUnauthorized, errors.Sentinel("Session has been revoked"))
 	ErrUpgradeInProgress                       = Classify(ErrConflict, errors.Sentinel("an upgrade is already in progress"))
 	ErrUpdateAllInProgress                     = Classify(ErrConflict, errors.Sentinel("an update-all job is already in progress"))
+	ErrUpdaterNoContainersMatched              = Classify(ErrBadRequest, errors.Sentinel("no compose-managed containers matched the requested resources"))
 	ErrTemplateNotFound                        = Classify(ErrNotFound, errors.Sentinel("Template not found"))
 	ErrInvalidEnvKey                           = Classify(ErrValidation, errors.Sentinel("Invalid environment key"))
 	ErrGlobalVariableNotFound                  = Classify(ErrNotFound, errors.Sentinel("Global variable not found"))

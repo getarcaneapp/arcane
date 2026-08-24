@@ -13,40 +13,37 @@ import (
 
 func TestCurrentContainerInspectTarget(t *testing.T) {
 	t.Run("prefers detected container id over hostname", func(t *testing.T) {
-		target, fromContainerID, err := CurrentContainerInspectTarget(
+		target, err := CurrentContainerInspectTarget(
 			func() (string, error) { return "0123456789ab", nil },
 			func() (string, error) { return "rpi4", nil },
 		)
 
 		require.NoError(t, err)
 		require.Equal(t, "0123456789ab", target)
-		require.True(t, fromContainerID)
 	})
 
 	t.Run("falls back to hostname when container id unavailable", func(t *testing.T) {
-		target, fromContainerID, err := CurrentContainerInspectTarget(
+		target, err := CurrentContainerInspectTarget(
 			func() (string, error) { return "", errors.New("no container id found") },
 			func() (string, error) { return "rpi4", nil },
 		)
 
 		require.NoError(t, err)
 		require.Equal(t, "rpi4", target)
-		require.False(t, fromContainerID)
 	})
 
 	t.Run("trims whitespace from detected container id", func(t *testing.T) {
-		target, fromContainerID, err := CurrentContainerInspectTarget(
+		target, err := CurrentContainerInspectTarget(
 			func() (string, error) { return "  0123456789ab  ", nil },
 			func() (string, error) { return "rpi4", nil },
 		)
 
 		require.NoError(t, err)
 		require.Equal(t, "0123456789ab", target)
-		require.True(t, fromContainerID)
 	})
 
 	t.Run("returns hostname error when fallback fails", func(t *testing.T) {
-		target, fromContainerID, err := CurrentContainerInspectTarget(
+		target, err := CurrentContainerInspectTarget(
 			func() (string, error) { return "", errors.New("no container id found") },
 			func() (string, error) { return "", errors.New("hostname unavailable") },
 		)
@@ -54,14 +51,14 @@ func TestCurrentContainerInspectTarget(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "hostname unavailable")
 		require.Empty(t, target)
-		require.False(t, fromContainerID)
 	})
 }
 
 func TestInspectCurrentArcaneContainer_FallsBackToLabelWhenHostnameIsSidecar(t *testing.T) {
-	// With network_mode: service:<sidecar> the hostname inspect returns the
-	// sidecar container (no Arcane label); detection must fall back to the
-	// label lookup instead of trusting it (#3544).
+	// With network_mode: service:<sidecar> both the hostname and the cgroup
+	// mountinfo fallback resolve the sidecar container (no Arcane label);
+	// detection must fall back to the label lookup instead of trusting the
+	// derived inspect (#3544, #3693).
 	dockerClient := newTestDockerClient(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
