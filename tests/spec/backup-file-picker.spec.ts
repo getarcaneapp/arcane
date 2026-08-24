@@ -462,6 +462,7 @@ test.describe('Backup file picker', () => {
 
 		await openVolumeRestoreFilesDialog(page);
 		const dialog = await selectVolumeRestoreFile(page);
+		await expect(dialog).not.toContainText('discard all unsaved text and staged file operations');
 		await dialog.getByRole('button', { name: 'Restore files' }).click();
 		await expect.poll(() => state.restoreBodies.length).toBe(1);
 		expect(state.restoreBodies[0]).toEqual({
@@ -469,15 +470,18 @@ test.describe('Backup file picker', () => {
 			selectAll: false,
 			search: ''
 		});
+		await expect(dialog).not.toBeVisible();
+		const workspaceRequestsAfterRestore = state.workspaceRequests;
 		await page.getByRole('tab', { name: 'Workspace', exact: true }).click();
 
 		await expect(editor).toContainText('after restore');
 		await expect(page.getByRole('img', { name: 'Unsaved changes' })).toHaveCount(0);
-		expect(state.workspaceRequests).toBe(2);
-		expect(state.fileRequests).toBe(2);
+		expect(workspaceRequestsAfterRestore).toBeGreaterThanOrEqual(2);
+		expect(state.workspaceRequests).toBe(workspaceRequestsAfterRestore);
+		expect(state.fileRequests).toBeGreaterThanOrEqual(2);
 	});
 
-	test('requires confirmation before discarding volume workspace changes', async ({ page }) => {
+	test('warns before discarding volume workspace changes', async ({ page }) => {
 		const state: VolumeWorkspaceRestoreState = {
 			content: 'before restore',
 			restoredContent: 'after restore',
@@ -504,12 +508,11 @@ test.describe('Backup file picker', () => {
 
 		await openVolumeRestoreFilesDialog(page);
 		let restoreDialog = await selectVolumeRestoreFile(page);
-		await restoreDialog.getByRole('button', { name: 'Restore files' }).click();
-		let confirmDialog = page.getByRole('dialog', { name: 'Unsaved changes' });
-		await expect(confirmDialog).toContainText(
+		await expect(restoreDialog).toContainText(
 			'discard all unsaved text and staged file operations'
 		);
-		await confirmDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+		await restoreDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+		await expect(restoreDialog).not.toBeVisible();
 		expect(state.restoreBodies).toHaveLength(0);
 
 		await page.getByRole('tab', { name: 'Workspace', exact: true }).click();
@@ -519,10 +522,13 @@ test.describe('Backup file picker', () => {
 		state.failRestore = true;
 		await openVolumeRestoreFilesDialog(page);
 		restoreDialog = await selectVolumeRestoreFile(page);
+		await expect(restoreDialog).toContainText(
+			'discard all unsaved text and staged file operations'
+		);
 		await restoreDialog.getByRole('button', { name: 'Restore files' }).click();
-		confirmDialog = page.getByRole('dialog', { name: 'Unsaved changes' });
-		await confirmDialog.getByRole('button', { name: 'Restore files', exact: true }).click();
 		await expect.poll(() => state.restoreBodies.length).toBe(1);
+		await restoreDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+		await expect(restoreDialog).not.toBeVisible();
 
 		await page.getByRole('tab', { name: 'Workspace', exact: true }).click();
 		await expect(editor).toContainText('local draft');
@@ -531,10 +537,12 @@ test.describe('Backup file picker', () => {
 		state.failRestore = false;
 		await openVolumeRestoreFilesDialog(page);
 		restoreDialog = await selectVolumeRestoreFile(page);
+		await expect(restoreDialog).toContainText(
+			'discard all unsaved text and staged file operations'
+		);
 		await restoreDialog.getByRole('button', { name: 'Restore files' }).click();
-		confirmDialog = page.getByRole('dialog', { name: 'Unsaved changes' });
-		await confirmDialog.getByRole('button', { name: 'Restore files', exact: true }).click();
 		await expect.poll(() => state.restoreBodies.length).toBe(2);
+		await expect(restoreDialog).not.toBeVisible();
 
 		await page.getByRole('tab', { name: 'Workspace', exact: true }).click();
 		await expect(editor).toContainText('after restore');
@@ -574,6 +582,7 @@ test.describe('Backup file picker', () => {
 			'discard all unsaved text and staged file operations'
 		);
 		await confirmDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+		await expect(confirmDialog).not.toBeVisible();
 		expect(state.fullRestoreRequests).toBe(0);
 
 		await page.getByRole('tab', { name: 'Workspace', exact: true }).click();

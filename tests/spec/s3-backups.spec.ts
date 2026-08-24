@@ -80,7 +80,13 @@ async function getVolumeWorkspaceRevision(page: Page, volumeName: string) {
 	return body.data.fileTreeRevision as string;
 }
 
-async function writeVolumeFile(page: Page, volumeName: string, fileName: string, content: string) {
+async function writeVolumeFile(
+	page: Page,
+	volumeName: string,
+	fileName: string,
+	content: string,
+	operation: 'create_file' | 'update_file' = 'create_file'
+) {
 	const fileTreeRevision = await getVolumeWorkspaceRevision(page, volumeName);
 	const response = await page.request.put(
 		`/api/environments/0/volumes/${encodeURIComponent(volumeName)}/workspace`,
@@ -88,7 +94,7 @@ async function writeVolumeFile(page: Page, volumeName: string, fileName: string,
 			multipart: {
 				manifest: JSON.stringify({
 					fileTreeRevision,
-					fileChanges: [{ operation: 'create_file', relativePath: fileName, uploadIndex: 0 }]
+					fileChanges: [{ operation, relativePath: fileName, uploadIndex: 0 }]
 				}),
 				files: { name: fileName, mimeType: 'text/plain', buffer: Buffer.from(content) }
 			}
@@ -241,7 +247,7 @@ test.describe('S3 Backups', () => {
 			expect(JSON.stringify((await files.json())?.data ?? [])).toContain('payload.txt');
 
 			const replacementContent = 'x'.repeat(fileContent.length);
-			await writeVolumeFile(page, volumeName, 'payload.txt', replacementContent);
+			await writeVolumeFile(page, volumeName, 'payload.txt', replacementContent, 'update_file');
 			expect(await readVolumeFile(page, volumeName, '/payload.txt')).toBe(replacementContent);
 
 			const restore = await page.request.post(

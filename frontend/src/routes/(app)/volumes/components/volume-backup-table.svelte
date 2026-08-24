@@ -261,19 +261,6 @@
 		if (!restoreTarget) return;
 		if (!selectAllBackupFiles && !selectedPaths.length) return;
 
-		if (hasWorkspaceChanges) {
-			openConfirmDialog({
-				title: m.common_unsaved_changes(),
-				message: m.volumes_backup_restore_discard_changes(),
-				confirm: {
-					label: m.volume_restore_files(),
-					destructive: true,
-					action: restoreFilesInternal
-				}
-			});
-			return;
-		}
-
 		await restoreFilesInternal();
 	}
 
@@ -595,6 +582,15 @@
 					{m.volume_backup_restore_files_lifecycle_info()}
 				</Alert.Description>
 			</Alert.Root>
+
+			{#if hasWorkspaceChanges}
+				<Alert.Root variant="warning" class="py-2 [&>svg]:top-2">
+					<AlertIcon class="size-4" />
+					<Alert.Description class="text-xs">
+						{m.volumes_backup_restore_discard_changes()}
+					</Alert.Description>
+				</Alert.Root>
+			{/if}
 
 			{#if backupFileProvider}
 				<BackupFilePicker
