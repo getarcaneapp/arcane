@@ -47,7 +47,6 @@
 		"ansi-to-html": "^0.7.2",
 		"bits-ui": "^2.18.1",
 		"clsx": "^2.1.1",
-		"date-fns": "^4.4.0",
 		"embla-carousel-svelte": "^8.6.0",
 		"formsnap": "^2.0.1",
 		"ky": "^2.0.2",
@@ -60,6 +59,7 @@
 		"svelte-sonner": "^1.2.1",
 		"tailwind-merge": "^3.6.0",
 		"tailwind-variants": "^3.3.1",
+		"temporal-polyfill": "^1.0.4",
 		"vaul-svelte": "1.0.0-next.7",
 		"yaml": "^2.9.0",
 		"zod": "^4.4.3"

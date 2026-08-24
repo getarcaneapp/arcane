@@ -1,4 +1,5 @@
 import type { SwarmTaskSummary } from '#lib/types/swarm';
+import { instantEpochMilliseconds } from '#lib/utils/formatting';
 
 const SWARM_TASK_STATE_ORDER: Record<string, number> = {
 	running: 0,
@@ -28,10 +29,11 @@ export function getSwarmTaskIconVariant(state: string): 'emerald' | 'amber' | 'r
 }
 
 export function sortSwarmTasks(raw: SwarmTaskSummary[]): SwarmTaskSummary[] {
+	const updatedMs = new Map(raw.map((t) => [t, instantEpochMilliseconds(t.updatedAt) ?? 0]));
 	return [...raw].sort((a, b) => {
 		const stateA = SWARM_TASK_STATE_ORDER[a.currentState] ?? 99;
 		const stateB = SWARM_TASK_STATE_ORDER[b.currentState] ?? 99;
 		if (stateA !== stateB) return stateA - stateB;
-		return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+		return (updatedMs.get(b) ?? 0) - (updatedMs.get(a) ?? 0);
 	});
 }

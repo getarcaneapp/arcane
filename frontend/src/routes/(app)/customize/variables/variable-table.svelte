@@ -13,7 +13,7 @@
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
 	import { VariableIcon, LockIcon, EditIcon, TrashIcon, ClockIcon, GlobeIcon } from '#lib/icons';
 	import { m } from '#lib/paraglide/messages';
-	import { formatDateTime } from '#lib/utils/formatting';
+	import { formatDateTime, instantEpochMilliseconds } from '#lib/utils/formatting';
 
 	let {
 		variables = $bindable(),
@@ -59,7 +59,8 @@
 			list.sort((a, b) => a.key.localeCompare(b.key));
 			if (sort.direction === 'desc') list.reverse();
 		} else if (sort?.column === 'updatedAt') {
-			list.sort((a, b) => new Date(updatedTimestamp(a)).getTime() - new Date(updatedTimestamp(b)).getTime());
+			const updatedMs = new Map(list.map((v) => [v, instantEpochMilliseconds(updatedTimestamp(v)) ?? 0]));
+			list.sort((a, b) => (updatedMs.get(a) ?? 0) - (updatedMs.get(b) ?? 0));
 			if (sort.direction === 'desc') list.reverse();
 		}
 		return list;

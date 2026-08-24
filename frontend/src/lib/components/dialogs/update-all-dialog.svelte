@@ -17,7 +17,7 @@
 	import BaseAPIService from '#lib/services/api-service';
 	import ReleaseNotes from '#lib/components/release-notes.svelte';
 	import type { AppVersionInformation } from '#lib/types/settings';
-	import { formatDistanceToNow } from 'date-fns';
+	import { formatRelativeTime, nowInstantString } from '#lib/utils/formatting';
 	import VersionUpdateSummary from './version-update-summary.svelte';
 
 	// open has no $bindable fallback: upstream binds can start out undefined, and
@@ -161,10 +161,7 @@
 	const releaseUrl = $derived(versionInformation?.releaseUrl ?? '');
 	const releasedAgo = $derived.by(() => {
 		const at = versionInformation?.releasedAt;
-		if (!at) return '';
-		const date = new Date(at);
-		if (Number.isNaN(date.getTime())) return '';
-		return formatDistanceToNow(date, { addSuffix: true });
+		return at ? formatRelativeTime(at) : '';
 	});
 
 	const title = $derived.by(() => {
@@ -282,7 +279,7 @@
 		job = {
 			id: 'demo',
 			status: 'running',
-			createdAt: new Date().toISOString(),
+			createdAt: nowInstantString(),
 			results: demo.map((entry, index) => ({
 				environmentId: index === 0 ? MANAGER_ENVIRONMENT_ID : `demo-${index}`,
 				environmentName: entry.name,
@@ -315,7 +312,7 @@
 
 		if (phase !== 'running' || !job) return;
 		job.status = 'completed';
-		job.completedAt = new Date().toISOString();
+		job.completedAt = nowInstantString();
 		phase = 'finished';
 	}
 </script>

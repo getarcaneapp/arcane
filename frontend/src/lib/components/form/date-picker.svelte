@@ -5,59 +5,37 @@
 	import { m } from '#lib/paraglide/messages';
 	import { getLocale } from '#lib/paraglide/runtime';
 	import { cn } from '#lib/utils';
-	import { CalendarDate, DateFormatter, getLocalTimeZone, type DateValue } from '@internationalized/date';
+	import { CalendarDate, type DateValue } from '@internationalized/date';
+	import { Temporal } from 'temporal-polyfill';
 	import type { HTMLAttributes } from 'svelte/elements';
 	import { CalendarIcon } from '#lib/icons';
 
 	type Props = {
-		value?: Date;
+		value?: Temporal.PlainDate;
 		id?: string;
 		disabled?: boolean;
 	} & HTMLAttributes<HTMLDivElement>;
 
 	let { value = $bindable(undefined), id, disabled = false, ...restProps }: Props = $props();
 
-	let calendarDisplayDate: CalendarDate | undefined = $state(value ? dateToCalendarDate(value) : undefined);
-
 	let open = $state(false);
 
-	function dateToCalendarDate(d: Date): CalendarDate {
-		return new CalendarDate(d.getFullYear(), d.getMonth() + 1, d.getDate());
+	function toCalendarDateInternal(date: Temporal.PlainDate): CalendarDate {
+		return new CalendarDate(date.year, date.month, date.day);
 	}
 
-	$effect(() => {
-		if (calendarDisplayDate) {
-			const newExternalDate = calendarDisplayDate.toDate(getLocalTimeZone());
-			if (!value || value.getTime() !== newExternalDate.getTime()) {
-				value = newExternalDate;
-			}
-		} else {
-			if (value !== undefined) {
-				value = undefined;
-			}
-		}
-	});
+	const calendarDisplayDate = $derived(value ? toCalendarDateInternal(value) : undefined);
 
-	$effect(() => {
-		if (value) {
-			const newInternalCalendarDate = dateToCalendarDate(value);
-			if (!calendarDisplayDate || calendarDisplayDate.compare(newInternalCalendarDate) !== 0) {
-				calendarDisplayDate = newInternalCalendarDate;
-			}
-		} else {
-			if (calendarDisplayDate !== undefined) {
-				calendarDisplayDate = undefined;
-			}
-		}
-	});
-
-	function handleCalendarInteraction(_newDateValue?: DateValue) {
+	function handleCalendarInteraction(newDateValue?: DateValue) {
+		value = newDateValue
+			? Temporal.PlainDate.from({ year: newDateValue.year, month: newDateValue.month, day: newDateValue.day })
+			: undefined;
 		open = false;
 	}
 
-	const df = new DateFormatter(getLocale(), {
-		dateStyle: 'long'
-	});
+	function formatDateInternal(date: Temporal.PlainDate): string {
+		return date.toLocaleString(getLocale(), { dateStyle: 'long' });
+	}
 </script>
 
 <div class="w-full" {...restProps}>
@@ -71,13 +49,19 @@
 					class={cn('w-full justify-start text-left font-normal', !value && 'text-muted-foreground')}
 					aria-label={m.select_a_date()}
 					icon={CalendarIcon}
-					customLabel={calendarDisplayDate ? df.format(calendarDisplayDate.toDate(getLocalTimeZone())) : m.select_a_date()}
+					customLabel={value ? formatDateInternal(value) : m.select_a_date()}
 					{disabled}
 				/>
 			{/snippet}
 		</Popover.Trigger>
 		<Popover.Content class="w-auto p-0" align="start">
-			<Calendar type="single" bind:value={calendarDisplayDate} onValueChange={handleCalendarInteraction} initialFocus />
+			<Calendar
+				type="single"
+				value={calendarDisplayDate}
+				onValueChange={handleCalendarInteraction}
+				locale={getLocale()}
+				initialFocus
+			/>
 		</Popover.Content>
 	</Popover.Root>
 </div>

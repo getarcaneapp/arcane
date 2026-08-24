@@ -9,7 +9,8 @@
 	import ActivityOutput from './activity-output.svelte';
 	import { confirmCancelActivity } from './activity-cancel';
 	import { activityStatusLabel, activityStatusVariant, activityTypeIcon, activityTypeLabel } from './activity-labels';
-	import { formatDateTime } from '#lib/utils/formatting';
+	import { formatDateTime, parseInstant } from '#lib/utils/formatting';
+	import { Temporal } from 'temporal-polyfill';
 
 	let { activity }: { activity: Activity } = $props();
 
@@ -35,13 +36,14 @@
 			return m.common_na();
 		}
 		return formatDateTime(value, {
-			datePattern: 'MMM d,',
+			dateStyle: 'month-day',
 			includeSeconds: true
 		});
 	}
 
 	function formatDurationInternal(value: Activity | null): string {
-		const durationMs = value?.durationMs ?? (value?.startedAt ? Date.now() - new Date(value.startedAt).getTime() : 0);
+		const startedAt = parseInstant(value?.startedAt);
+		const durationMs = value?.durationMs ?? (startedAt ? startedAt.until(Temporal.Now.instant()).total('milliseconds') : 0);
 		if (!durationMs || Number.isNaN(durationMs)) {
 			return m.common_na();
 		}

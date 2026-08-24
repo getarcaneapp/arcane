@@ -8,7 +8,7 @@
 	import { m } from '#lib/paraglide/messages';
 	import { ReconnectingWebSocket } from '#lib/utils/ws';
 	import { cn } from '#lib/utils';
-	import { ansiToHtml, formatDateTime } from '#lib/utils/formatting';
+	import { ansiToHtml, formatDateTime, nowInstantString } from '#lib/utils/formatting';
 	import { onDestroy } from 'svelte';
 	import {
 		buildLogDisplayEntries,
@@ -284,7 +284,7 @@
 
 	function processLogObject(obj: any) {
 		if (!obj || typeof obj !== 'object') return;
-		const { level = 'stdout', message = '', timestamp = new Date().toISOString(), service, containerId } = obj;
+		const { level = 'stdout', message = '', timestamp = nowInstantString(), service, containerId } = obj;
 
 		addLogEntry({
 			level,
@@ -321,7 +321,7 @@
 	}
 
 	function addLogEntry(logData: { level: string; message: string; timestamp?: string; service?: string; containerId?: string }) {
-		const timestamp = logData.timestamp || new Date().toISOString();
+		const timestamp = logData.timestamp || nowInstantString();
 		const { isJson, isStructured, parsed } = tryParseStructuredLog(logData.message);
 
 		if (isStructured && !hasAutoEnabledStructuredView && !showParsedJson) {
@@ -452,7 +452,7 @@
 		if (!timestamp) return '';
 		return (
 			formatDateTime(timestamp, {
-				datePattern: 'P',
+				dateStyle: 'short',
 				includeSeconds: true
 			}) || timestamp
 		);

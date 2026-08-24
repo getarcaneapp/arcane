@@ -1,5 +1,5 @@
 import { m } from '#lib/paraglide/messages';
-import { formatDistanceToNow } from 'date-fns';
+import { formatRelativeTime } from '#lib/utils/formatting';
 
 export function getSwarmSpecName(spec: Record<string, unknown> | null | undefined, fallback: string): string {
 	const name = spec && typeof spec === 'object' ? spec['Name'] : undefined;
@@ -27,5 +27,5 @@ export function encodeTextToBase64(value: string): string {
 
 export function formatSwarmTimestamp(timestamp: string): string {
 	if (!timestamp) return m.common_unknown();
-	return formatDistanceToNow(new Date(timestamp), { addSuffix: true });
+	return formatRelativeTime(timestamp) || m.common_unknown();
 }

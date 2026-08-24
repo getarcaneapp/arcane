@@ -1,7 +1,10 @@
 <script lang="ts">
 	import { formatDateTimeShort } from '#lib/utils/formatting';
+	import { Temporal } from 'temporal-polyfill';
 
 	let { value }: { value: unknown } = $props();
+
+	const seconds = $derived(Number(value || 0));
 </script>
 
-{formatDateTimeShort(new Date(Number(value || 0) * 1000))}
+{Number.isFinite(seconds) ? formatDateTimeShort(Temporal.Instant.fromEpochMilliseconds(Math.trunc(seconds * 1000))) : ''}

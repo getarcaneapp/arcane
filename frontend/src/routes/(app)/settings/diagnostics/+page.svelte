@@ -36,7 +36,7 @@
 	let connected = $state(false);
 	let paused = $state(false);
 	let lastUpdated = $state(0);
-	let now = $state(Date.now());
+	let now = $state(performance.now());
 	let error = $state<string | null>(null);
 
 	let ws: ReconnectingWebSocket<Diagnostics> | null = null;
@@ -209,7 +209,7 @@
 
 	function applySnapshot(d: Diagnostics) {
 		diag = d;
-		lastUpdated = Date.now();
+		lastUpdated = performance.now();
 		error = null;
 	}
 
@@ -301,7 +301,7 @@
 	onMount(() => {
 		refresh();
 		openStream();
-		tick = setInterval(() => (now = Date.now()), 1000);
+		tick = setInterval(() => (now = performance.now()), 1000);
 		return () => {
 			closeStream();
 			if (tick) clearInterval(tick);

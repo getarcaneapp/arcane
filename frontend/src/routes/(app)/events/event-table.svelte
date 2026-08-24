@@ -7,7 +7,7 @@
 	import { Badge } from '#lib/components/ui/badge';
 	import { tryCatch } from '#lib/utils/api';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api';
-	import { formatDistanceToNow } from 'date-fns';
+	import { formatRelativeTime } from '#lib/utils/formatting';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
 	import type { Event } from '#lib/types/shared';
 	import type { ColumnSpec, MobileFieldVisibility } from '#lib/components/arcane-table';
@@ -187,8 +187,7 @@
 			variant: eventSeverityIconVariant(item.severity)
 		})}
 		title={(item: Event) => item.title}
-		subtitle={(item: Event) =>
-			(mobileFieldVisibility['timestamp'] ?? true) ? formatDistanceToNow(new Date(item.timestamp), { addSuffix: true }) : null}
+		subtitle={(item: Event) => ((mobileFieldVisibility['timestamp'] ?? true) ? formatRelativeTime(item.timestamp) : null)}
 		badges={[
 			(item: Event) =>
 				(mobileFieldVisibility['severity'] ?? true)

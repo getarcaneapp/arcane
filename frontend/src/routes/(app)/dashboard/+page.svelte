@@ -4,6 +4,7 @@
 	import DashboardAllEnvironmentsView from './dashboard-all-environments-view.svelte';
 	import userStore from '#lib/stores/user-store';
 	import { m } from '#lib/paraglide/messages';
+	import { Temporal } from 'temporal-polyfill';
 
 	let { data }: PageProps = $props();
 
@@ -24,7 +25,7 @@
 	});
 
 	const greetingBase = $derived.by(() => {
-		const hour = new Date().getHours();
+		const hour = Temporal.Now.zonedDateTimeISO().hour;
 		if (hour >= 5 && hour < 12) return m.dashboard_greeting_morning();
 		if (hour >= 12 && hour < 18) return m.dashboard_greeting_afternoon();
 		if (hour >= 18 && hour < 23) return m.dashboard_greeting_evening();

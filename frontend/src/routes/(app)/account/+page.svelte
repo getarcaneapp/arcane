@@ -4,7 +4,6 @@
 	import { toast } from 'svelte-sonner';
 	import { mode } from 'mode-watcher';
 	import ThemeModeSelector from '#lib/components/theme-mode/theme-mode-selector.svelte';
-	import { format, formatDistanceToNow } from 'date-fns';
 	import HeaderCard from '#lib/components/header-card.svelte';
 	import ApiKeyFormSheet from '#lib/components/sheets/api-key-form-sheet.svelte';
 	import PasskeySettings from '#lib/components/auth/passkey-settings.svelte';
@@ -34,10 +33,12 @@
 	import settingsStore from '#lib/stores/config-store';
 	import { getDefaultProfilePicture } from '#lib/utils/docker';
 	import { avatarUploadLimitBytes, prepareAvatarUploadFile } from '#lib/utils/avatar-upload';
+	import { formatDate, formatRelativeTime } from '#lib/utils/formatting';
 	import { cn } from '#lib/utils';
 	import { GLOBAL_SCOPE } from '#lib/types/auth';
 	import type { ApiKey, ApiKeyCreated, ApiKeyPermissionGrant, CreateUserApiKey, UserPreferences } from '#lib/types/auth';
 	import type { ApplicationTheme, IconCatalog } from '#lib/types/settings';
+	import { Temporal } from 'temporal-polyfill';
 	import {
 		UserIcon,
 		LogoutIcon,
@@ -79,24 +80,6 @@
 		return BUILT_IN_ROLE_LABELS[roleId] ?? roleId.replace(/^role_/, '').replace(/_/g, ' ');
 	}
 
-	function safeFormatDate(input: string | undefined, fmt: string): string | null {
-		if (!input) return null;
-		try {
-			return format(new Date(input), fmt);
-		} catch {
-			return null;
-		}
-	}
-
-	function safeFormatRelative(input: string | undefined): string | null {
-		if (!input) return null;
-		try {
-			return formatDistanceToNow(new Date(input), { addSuffix: true });
-		} catch {
-			return null;
-		}
-	}
-
 	const currentUser = $derived($userStore);
 	const isOidcUser = $derived(Boolean(currentUser?.oidcSubjectId));
 
@@ -121,7 +104,7 @@
 
 	let revokingAll = $state(false);
 	let avatarUrl = $state<string>(getDefaultProfilePicture());
-	let avatarCacheBuster = $state(Date.now());
+	let avatarCacheBuster = $state(Temporal.Now.instant().epochMilliseconds);
 	const avatarSrc = $derived(currentUser?.avatarUrl ? `${currentUser.avatarUrl}?t=${avatarCacheBuster}` : '');
 	let cropperAvatarSrc = $derived(avatarSrc || avatarUrl);
 
@@ -279,7 +262,7 @@
 
 			const updatedUser = await userService.uploadMyAvatar(preparedFile.file);
 			await userStore.setUser(updatedUser);
-			avatarCacheBuster = Date.now();
+			avatarCacheBuster = Temporal.Now.instant().epochMilliseconds;
 			toast.success(m.account_avatar_upload_success());
 		} catch (err) {
 			toast.error(err instanceof Error ? err.message : m.account_avatar_upload_failed());
@@ -304,7 +287,7 @@
 		try {
 			const updatedUser = await userService.deleteMyAvatar();
 			await userStore.setUser(updatedUser);
-			avatarCacheBuster = Date.now();
+			avatarCacheBuster = Temporal.Now.instant().epochMilliseconds;
 			toast.success(m.account_avatar_remove_success());
 		} catch (err) {
 			toast.error(err instanceof Error ? err.message : m.account_avatar_remove_failed());
@@ -501,15 +484,15 @@
 								</div>
 							</div>
 							<div class="hidden text-right sm:block">
-								{#if safeFormatDate(currentUser.createdAt, 'PP')}
+								{#if formatDate(currentUser.createdAt)}
 									<div class="text-xs text-muted-foreground">
 										{m.account_member_since()}
-										{safeFormatDate(currentUser.createdAt, 'PP')}
+										{formatDate(currentUser.createdAt)}
 									</div>
 								{/if}
 								<div class="text-xs text-muted-foreground" title={currentUser.lastLogin ?? ''}>
 									{m.account_last_login_prefix()}
-									{safeFormatRelative(currentUser.lastLogin) ?? m.common_never()}
+									{formatRelativeTime(currentUser.lastLogin) || m.common_never()}
 								</div>
 							</div>
 						</div>
@@ -709,11 +692,11 @@
 										</div>
 										<div class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
 											<code class="rounded bg-muted/40 px-1.5 py-0.5 font-mono">{key.keyPrefix}…</code>
-											{#if safeFormatDate(key.createdAt, 'PP')}
-												<span>{m.common_created()} {safeFormatDate(key.createdAt, 'PP')}</span>
+											{#if formatDate(key.createdAt)}
+												<span>{m.common_created()} {formatDate(key.createdAt)}</span>
 												<span aria-hidden="true">·</span>
 											{/if}
-											<span>{m.last_used()} {safeFormatRelative(key.lastUsedAt) ?? m.common_never()}</span>
+											<span>{m.last_used()} {formatRelativeTime(key.lastUsedAt) || m.common_never()}</span>
 										</div>
 									</li>
 								{/each}

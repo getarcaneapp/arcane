@@ -32,6 +32,7 @@
 	import IconImage from '#lib/components/icon-image.svelte';
 	import { COMPOSE_PROJECT_LABEL, getContainerIpAddresses, getThemedIconUrl, parseImageRef } from '#lib/utils/docker';
 	import { hasAnyLoadingState } from '#lib/utils/bulk-actions';
+	import { Temporal } from 'temporal-polyfill';
 	import { createContainerActions } from './container-table.actions';
 	import {
 		getActionStatusMessage,
@@ -500,7 +501,7 @@
 
 {#snippet CreatedCell({ item }: { item: ContainerSummaryDto })}
 	<span class="text-sm">
-		{item.created ? formatDateTimeShort(new Date(item.created * 1000)) : m.common_na()}
+		{item.created ? formatDateTimeShort(Temporal.Instant.fromEpochMilliseconds(item.created * 1000)) : m.common_na()}
 	</span>
 {/snippet}
 
@@ -586,7 +587,7 @@
 		footer={(mobileFieldVisibility['created'] ?? true)
 			? {
 					label: m.common_created(),
-					getValue: (item) => formatDateTimeShort(new Date(item.created * 1000)),
+					getValue: (item) => formatDateTimeShort(Temporal.Instant.fromEpochMilliseconds(item.created * 1000)),
 					icon: ClockIcon
 				}
 			: undefined}

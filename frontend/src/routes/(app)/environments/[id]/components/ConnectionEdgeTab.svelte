@@ -26,17 +26,6 @@
 		}
 		return { text: m.environments_edge_mtls_certificate_status_valid(), variant: 'green' };
 	});
-
-	function formatDateTime(value?: string): string {
-		if (!value) return m.common_never();
-
-		const date = new Date(value);
-		if (Number.isNaN(date.getTime())) {
-			return m.common_unknown();
-		}
-
-		return formatDateTimeShort(date);
-	}
 </script>
 
 {#snippet badgeTile(label: string, text: string, variant: BadgeVariant)}
@@ -93,7 +82,9 @@
 						)}
 						{@render tile(
 							m.environments_edge_mtls_certificate_expires_label(),
-							environment.edgeMTLSCertificate.expiresAt ? formatDateTime(environment.edgeMTLSCertificate.expiresAt) : '—',
+							environment.edgeMTLSCertificate.expiresAt
+								? formatDateTimeShort(environment.edgeMTLSCertificate.expiresAt) || m.common_unknown()
+								: '—',
 							{
 								subtext:
 									environment.edgeMTLSCertificate.daysRemaining !== undefined
