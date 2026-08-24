@@ -20,11 +20,13 @@
 	let {
 		column,
 		title,
+		emptyTitle,
 		options,
 		showCheckboxes = true
 	}: {
 		column: FilterableColumn;
 		title: string;
+		emptyTitle?: string;
 		options: {
 			label: string;
 			value: string | boolean;
@@ -46,7 +48,7 @@
 				tone="ghost"
 				size="sm"
 				icon={FilterIcon}
-				customLabel={title}
+				customLabel={selectedValues.size === 0 ? (emptyTitle ?? title) : title}
 				class={cn(
 					'h-8 border border-dashed border-input hover:bg-card/60 hover:text-inherit',
 					selectedValues.size > 0 && 'border-solid border-primary/40 bg-primary/10 text-foreground'

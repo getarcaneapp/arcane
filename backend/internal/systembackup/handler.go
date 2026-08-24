@@ -35,6 +35,38 @@ type ListSystemBackupsInput struct {
 	Limit  int    `query:"limit" default:"20"`
 }
 
+type ListBackupHistoryInput struct {
+	Search string `query:"search"`
+	Sort   string `query:"sort" default:"createdAt"`
+	Order  string `query:"order" default:"desc"`
+	Start  int    `query:"start" default:"0"`
+	Limit  int    `query:"limit" default:"20"`
+	Type   string `query:"type"`
+}
+
+type ListBackupHistoryOutput struct {
+	Body struct {
+		Data       []backuptypes.HistoryEntry `json:"data"`
+		Pagination base.PaginationResponse    `json:"pagination"`
+	}
+}
+
+type SystemVolumeBackupConfigOutput struct {
+	Body backuptypes.SystemVolumeBackupConfig
+}
+
+type UpdateSystemVolumeBackupConfigInput struct {
+	Body backuptypes.SystemVolumeBackupConfig
+}
+
+type SystemVolumeBackupOptionsOutput struct {
+	Body []backuptypes.SystemVolumeBackupOption
+}
+
+type SystemVolumeBackupRunOutput struct {
+	Body backuptypes.SystemVolumeBackupRunResult
+}
+
 type ListSystemBackupsOutput struct {
 	Body struct {
 		Data       []backuptypes.SystemBackupRun `json:"data"`
@@ -85,6 +117,11 @@ func RegisterSystemBackups(api huma.API, service *SystemBackupService, activityS
 	h := &SystemBackupHandler{service: service, activity: activityService, appCtx: appCtx.Context()}
 	adminOnly := middleware.RequireGlobalAdmin(api)
 	middleware.RegisterWithPermission(api, huma.Operation{OperationID: "list-system-backups", Method: http.MethodGet, Path: "/backups", Summary: "List Arcane system backups", Tags: []string{"System Backups"}, Middlewares: adminOnly}, authz.PermSystemBackupsRead, h.List)
+	middleware.RegisterWithPermission(api, huma.Operation{OperationID: "list-backup-history", Method: http.MethodGet, Path: "/backups/history", Summary: "List unified backup history", Tags: []string{"System Backups"}, Middlewares: adminOnly}, authz.PermSystemBackupsRead, h.ListHistory)
+	middleware.RegisterWithPermission(api, huma.Operation{OperationID: "get-system-volume-backup-config", Method: http.MethodGet, Path: "/backups/volumes/config", Summary: "Get system-managed volume backup configuration", Tags: []string{"System Backups"}, Middlewares: adminOnly}, authz.PermSystemBackupsRead, h.GetSystemVolumeConfig)
+	middleware.RegisterWithPermission(api, huma.Operation{OperationID: "update-system-volume-backup-config", Method: http.MethodPut, Path: "/backups/volumes/config", Summary: "Update system-managed volume backup configuration", Tags: []string{"System Backups"}, Middlewares: adminOnly}, authz.PermSystemBackupsManage, h.UpdateSystemVolumeConfig)
+	middleware.RegisterWithPermission(api, huma.Operation{OperationID: "list-system-volume-backup-options", Method: http.MethodGet, Path: "/backups/volumes/options", Summary: "List volumes available to system-managed backups", Tags: []string{"System Backups"}, Middlewares: adminOnly}, authz.PermSystemBackupsRead, h.ListSystemVolumeOptions)
+	middleware.RegisterWithPermission(api, huma.Operation{OperationID: "run-system-volume-backups", Method: http.MethodPost, Path: "/backups/volumes/run", Summary: "Run system-managed volume backups", Tags: []string{"System Backups"}, Middlewares: adminOnly}, authz.PermSystemBackupsManage, h.RunSystemVolumeBackups)
 	middleware.RegisterWithPermission(api, huma.Operation{OperationID: "get-system-backup-policies", Method: http.MethodGet, Path: "/backups/policies", Summary: "Get Arcane system backup policies", Tags: []string{"System Backups"}, Middlewares: adminOnly}, authz.PermSystemBackupsRead, h.GetPolicies)
 	middleware.RegisterWithPermission(api, huma.Operation{OperationID: "update-system-backup-policies", Method: http.MethodPut, Path: "/backups/policies", Summary: "Update Arcane system backup policies", Tags: []string{"System Backups"}, Middlewares: adminOnly}, authz.PermSystemBackupsManage, h.UpdatePolicies)
 	middleware.RegisterWithPermission(api, huma.Operation{OperationID: "generate-system-backup-recovery-key", Method: http.MethodPost, Path: "/backups/recovery-key/generate", Summary: "Generate an Arcane system backup recovery key", Tags: []string{"System Backups"}, Middlewares: adminOnly}, authz.PermSystemBackupsRecoveryKey, h.GenerateRecoveryKey)
@@ -94,6 +131,52 @@ func RegisterSystemBackups(api huma.API, service *SystemBackupService, activityS
 	middleware.RegisterWithPermission(api, huma.Operation{OperationID: "restore-system-backup", Method: http.MethodPost, Path: "/backups/{id}/restore", Summary: "Restore Arcane system backup", Tags: []string{"System Backups"}, Middlewares: adminOnly}, authz.PermSystemBackupsRestore, h.Restore)
 	middleware.RegisterWithPermission(api, huma.Operation{OperationID: "upload-system-backup", Method: http.MethodPost, Path: "/backups/{id}/upload", Summary: "Upload Arcane system backup", Tags: []string{"System Backups"}, Middlewares: adminOnly}, authz.PermSystemBackupsManage, h.Upload)
 	middleware.RegisterWithPermission(api, huma.Operation{OperationID: "delete-system-backup", Method: http.MethodDelete, Path: "/backups/{id}", Summary: "Delete Arcane system backup", Tags: []string{"System Backups"}, Middlewares: adminOnly}, authz.PermSystemBackupsManage, h.Delete)
+}
+
+func (h *SystemBackupHandler) ListHistory(ctx context.Context, input *ListBackupHistoryInput) (*ListBackupHistoryOutput, error) {
+	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
+	history, page, err := h.service.ListBackupHistory(ctx, params, input.Type)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	out := &ListBackupHistoryOutput{}
+	out.Body.Data, out.Body.Pagination = history, handlerutil.PaginationResponse(page)
+	return out, nil
+}
+
+func (h *SystemBackupHandler) GetSystemVolumeConfig(ctx context.Context, _ *struct{}) (*SystemVolumeBackupConfigOutput, error) {
+	config, err := h.service.GetSystemVolumeBackupConfig(ctx)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	return &SystemVolumeBackupConfigOutput{Body: *config}, nil
+}
+
+func (h *SystemBackupHandler) UpdateSystemVolumeConfig(ctx context.Context, input *UpdateSystemVolumeBackupConfigInput) (*SystemVolumeBackupConfigOutput, error) {
+	config, err := h.service.UpdateSystemVolumeBackupConfig(ctx, input.Body)
+	if err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	return &SystemVolumeBackupConfigOutput{Body: *config}, nil
+}
+
+func (h *SystemBackupHandler) ListSystemVolumeOptions(ctx context.Context, _ *struct{}) (*SystemVolumeBackupOptionsOutput, error) {
+	options, err := h.service.ListSystemVolumeBackupOptions(ctx)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	return &SystemVolumeBackupOptionsOutput{Body: options}, nil
+}
+
+func (h *SystemBackupHandler) RunSystemVolumeBackups(ctx context.Context, _ *struct{}) (*SystemVolumeBackupRunOutput, error) {
+	result, err := h.service.RunSystemVolumeBackups(ctx)
+	if errors.Is(err, ErrSystemBackupAlreadyRunning) {
+		return nil, huma.Error409Conflict(err.Error())
+	}
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	return &SystemVolumeBackupRunOutput{Body: *result}, nil
 }
 
 func (h *SystemBackupHandler) List(ctx context.Context, input *ListSystemBackupsInput) (*ListSystemBackupsOutput, error) {

@@ -28,6 +28,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
+	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
@@ -319,9 +320,15 @@ func (s *VolumeService) startContainersAfterBackupInternal(ctx context.Context, 
 }
 
 func (s *VolumeService) ListBackupsPaginated(ctx context.Context, volumeName string, params pagination.QueryParams) ([]VolumeBackup, pagination.Response, error) {
+	return s.ListBackupsPaginatedByType(ctx, volumeName, params, "")
+}
+
+// ListBackupsPaginatedByType lists a volume's backups with an optional management-origin filter.
+func (s *VolumeService) ListBackupsPaginatedByType(ctx context.Context, volumeName string, params pagination.QueryParams, typeFilter string) ([]VolumeBackup, pagination.Response, error) {
 	slog.DebugContext(ctx, "volume service: list backups paginated", "volume", volumeName, "search", params.Search, "sort", params.Sort, "order", params.Order, "start", params.Start, "limit", params.Limit)
 	var backups []VolumeBackup
 	query := s.db.WithContext(ctx).Model(&VolumeBackup{}).Where("volume_name = ?", volumeName)
+	query = applyBackupManagementFilterInternal(query, typeFilter)
 
 	if params.Search != "" {
 		pattern := "%" + params.Search + "%"
@@ -392,8 +399,35 @@ func (s *VolumeService) ListBackupsPaginated(ctx context.Context, volumeName str
 			}
 		}
 	}
+	for i := range backups {
+		backups[i].Type = volumeBackupManagementTypeInternal(backups[i].PolicyID)
+	}
 
 	return backups, pagination.BuildResponse(totalItems, totalItems, params), nil
+}
+
+func applyBackupManagementFilterInternal(query *gorm.DB, typeFilter string) *gorm.DB {
+	selected := make(map[string]struct{}, 2)
+	for value := range strings.SplitSeq(typeFilter, ",") {
+		value = strings.TrimSpace(value)
+		if value == string(backuptypes.ManagementTypeSystem) || value == string(backuptypes.ManagementTypeVolume) {
+			selected[value] = struct{}{}
+		}
+	}
+	if len(selected) != 1 {
+		return query
+	}
+	if _, ok := selected[string(backuptypes.ManagementTypeSystem)]; ok {
+		return query.Where("policy_id LIKE ?", backuptypes.SystemVolumePolicyPrefix+"%")
+	}
+	return query.Where("policy_id NOT LIKE ? OR policy_id IS NULL", backuptypes.SystemVolumePolicyPrefix+"%")
+}
+
+func volumeBackupManagementTypeInternal(policyID string) backuptypes.ManagementType {
+	if strings.HasPrefix(policyID, backuptypes.SystemVolumePolicyPrefix) {
+		return backuptypes.ManagementTypeSystem
+	}
+	return backuptypes.ManagementTypeVolume
 }
 
 func (s *VolumeService) ListBackups(ctx context.Context, volumeName string) ([]VolumeBackup, error) {
@@ -508,12 +542,16 @@ type backupPlanInternal struct {
 }
 
 func (s *VolumeService) resolveBackupPlanInternal(ctx context.Context, volumeName string, trigger VolumeBackupTrigger, request volumetypes.CreateBackupRequest) (backupPlanInternal, error) {
+	return s.resolveBackupPlanWithPolicyInternal(ctx, volumeName, trigger, request, nil)
+}
+
+func (s *VolumeService) resolveBackupPlanWithPolicyInternal(ctx context.Context, volumeName string, trigger VolumeBackupTrigger, request volumetypes.CreateBackupRequest, suppliedPolicy *VolumeBackupPolicy) (backupPlanInternal, error) {
 	destination := request.Destination
 	if destination != "" && destination != volumetypes.BackupDestinationLocal && destination != volumetypes.BackupDestinationS3 && destination != volumetypes.BackupDestinationLocalS3 {
 		return backupPlanInternal{}, errors.New("invalid volume backup destination")
 	}
-	var policy *VolumeBackupPolicy
-	if trigger != VolumeBackupTriggerSafety {
+	policy := suppliedPolicy
+	if trigger != VolumeBackupTriggerSafety && policy == nil {
 		var err error
 		policy, err = s.loadVolumeBackupPolicyInternal(ctx, volumeName, request.PolicyID)
 		if err != nil {
@@ -560,18 +598,40 @@ func (s *VolumeService) resolveBackupPlanInternal(ctx context.Context, volumeNam
 	return backupPlanInternal{policy: policy, localEnabled: localEnabled, s3Enabled: s3Enabled, s3DestinationID: s3DestinationID, destination: destination}, nil
 }
 
-//nolint:gocognit,gocyclo // backup orchestration keeps cleanup and persistence transitions in one transaction-like flow
 func (s *VolumeService) CreateBackup(ctx context.Context, volumeName string, user common.User, trigger VolumeBackupTrigger, request volumetypes.CreateBackupRequest) (_ *VolumeBackup, err error) {
-	workspaceLock, _ := ctx.Value(volumeWorkspaceLockContextKeyInternal{}).(volumeWorkspaceLockContextInternal)
-	if workspaceLock.service != s || workspaceLock.volumeName != volumeName {
-		defer s.workspaceLocks.Lock(volumeName)()
-	}
 	if trigger == "" {
 		trigger = VolumeBackupTriggerManual
 	}
 	plan, err := s.resolveBackupPlanInternal(ctx, volumeName, trigger, request)
 	if err != nil {
 		return nil, err
+	}
+	return s.createBackupInternal(ctx, volumeName, user, trigger, request.PolicyID, plan)
+}
+
+// CreateSystemManagedBackup runs the existing volume backup workflow with a transient centralized policy.
+func (s *VolumeService) CreateSystemManagedBackup(ctx context.Context, volumeName string, user common.User, policyID string, policy backuptypes.UpdateBackupPolicy) (*VolumeBackup, error) {
+	if !strings.HasPrefix(policyID, backuptypes.SystemVolumePolicyPrefix) {
+		return nil, errors.New("invalid system-managed volume backup policy id")
+	}
+	transient := &VolumeBackupPolicy{
+		VolumeName: volumeName, Enabled: true, Schedule: policy.Schedule, RetentionCount: policy.RetentionCount,
+		StopContainers: policy.StopContainers, LocalEnabled: policy.LocalEnabled, S3Enabled: policy.S3Enabled,
+		S3DestinationID: policy.S3DestinationID,
+	}
+	transient.ID = policyID
+	plan, err := s.resolveBackupPlanWithPolicyInternal(ctx, volumeName, VolumeBackupTriggerScheduled, volumetypes.CreateBackupRequest{}, transient)
+	if err != nil {
+		return nil, err
+	}
+	return s.createBackupInternal(ctx, volumeName, user, VolumeBackupTriggerScheduled, policyID, plan)
+}
+
+//nolint:gocognit // backup orchestration keeps cleanup and persistence transitions in one transaction-like flow
+func (s *VolumeService) createBackupInternal(ctx context.Context, volumeName string, user common.User, trigger VolumeBackupTrigger, policyID string, plan backupPlanInternal) (_ *VolumeBackup, err error) {
+	workspaceLock, _ := ctx.Value(volumeWorkspaceLockContextKeyInternal{}).(volumeWorkspaceLockContextInternal)
+	if workspaceLock.service != s || workspaceLock.volumeName != volumeName {
+		defer s.workspaceLocks.Lock(volumeName)()
 	}
 	lease, admitted, leaseErr := s.engine.TryAcquireRun(ctx, backup.VolumeAdmissionScope, volumeName)
 	if leaseErr != nil {
@@ -584,7 +644,7 @@ func (s *VolumeService) CreateBackup(ctx context.Context, volumeName string, use
 	entry := &VolumeBackup{
 		VolumeName: volumeName, CreatedAt: time.Now(), Status: VolumeBackupStatusRunning,
 		Trigger: trigger, Destination: plan.destination, Format: VolumeBackupFormatRustic,
-		S3DestinationID: plan.s3DestinationID, PolicyID: request.PolicyID,
+		S3DestinationID: plan.s3DestinationID, PolicyID: policyID, Type: volumeBackupManagementTypeInternal(policyID),
 	}
 	entry.ID = fmt.Sprintf("%s-%d-%s", volumeName, time.Now().UnixNano(), uuid.New().String()[:8])
 	if err := s.db.WithContext(ctx).Create(entry).Error; err != nil {
@@ -677,6 +737,16 @@ func (s *VolumeService) CreateBackup(ctx context.Context, volumeName string, use
 		slog.WarnContext(ctx, "could not log volume backup create event", "volume", volumeName, "error", logErr)
 	}
 	return entry, nil
+}
+
+// HasEnabledBackupPolicy reports whether a volume-level schedule takes precedence over centralized backups.
+func (s *VolumeService) HasEnabledBackupPolicy(ctx context.Context, volumeName string) (bool, error) {
+	var count int64
+	if err := s.db.WithContext(ctx).Model(&VolumeBackupPolicy{}).
+		Where("volume_name = ? AND enabled = ?", volumeName, true).Count(&count).Error; err != nil {
+		return false, fmt.Errorf("failed to load volume backup policy override: %w", err)
+	}
+	return count > 0, nil
 }
 
 func (s *VolumeService) UploadBackup(ctx context.Context, backupID, s3DestinationID string) (*VolumeBackup, error) {

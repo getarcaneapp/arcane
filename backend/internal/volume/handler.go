@@ -161,6 +161,7 @@ type ListBackupsInput struct {
 	Order         string `query:"order" default:"asc" doc:"Sort direction"`
 	Start         int    `query:"start" default:"0" doc:"Start index"`
 	Limit         int    `query:"limit" default:"20" doc:"Limit"`
+	Type          string `query:"type" doc:"Management origin filter"`
 }
 
 type VolumeBackupPaginatedResponse struct {
@@ -850,7 +851,7 @@ func (h *VolumeHandler) ListBackups(ctx context.Context, input *ListBackupsInput
 		params.Limit = 20
 	}
 
-	backups, paginationResp, err := h.volumeService.ListBackupsPaginated(ctx, input.VolumeName, params)
+	backups, paginationResp, err := h.volumeService.ListBackupsPaginatedByType(ctx, input.VolumeName, params, input.Type)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}

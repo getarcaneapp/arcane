@@ -2,10 +2,14 @@ import BaseAPIService from './api-service';
 import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
 import type {
 	CreateSystemBackup,
+	BackupHistoryEntry,
 	SystemBackupPolicyCollection,
 	SystemBackupRecoveryKey,
 	SystemBackupRun,
-	UpdateSystemBackupPolicy
+	UpdateSystemBackupPolicy,
+	SystemVolumeBackupConfig,
+	SystemVolumeBackupOption,
+	SystemVolumeBackupRunResult
 } from '#lib/types/system-backup';
 import { transformPaginationParams } from '#lib/utils/tables';
 
@@ -13,6 +17,27 @@ class SystemBackupService extends BaseAPIService {
 	async list(options?: SearchPaginationSortRequest): Promise<Paginated<SystemBackupRun>> {
 		const response = await this.api.get('/backups', { params: transformPaginationParams(options) });
 		return response.data;
+	}
+
+	async listHistory(options?: SearchPaginationSortRequest): Promise<Paginated<BackupHistoryEntry>> {
+		const response = await this.api.get('/backups/history', { params: transformPaginationParams(options) });
+		return response.data;
+	}
+
+	async getSystemVolumeConfig(): Promise<SystemVolumeBackupConfig> {
+		return this.handleResponse(this.api.get('/backups/volumes/config'));
+	}
+
+	async updateSystemVolumeConfig(config: SystemVolumeBackupConfig): Promise<SystemVolumeBackupConfig> {
+		return this.handleResponse(this.api.put('/backups/volumes/config', config));
+	}
+
+	async listSystemVolumeOptions(): Promise<SystemVolumeBackupOption[]> {
+		return this.handleResponse(this.api.get('/backups/volumes/options'));
+	}
+
+	async runSystemVolumeBackups(): Promise<SystemVolumeBackupRunResult> {
+		return this.handleResponse(this.api.post('/backups/volumes/run'));
 	}
 
 	async getPolicies(): Promise<SystemBackupPolicyCollection> {

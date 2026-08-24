@@ -78,27 +78,11 @@ func (r PolicyReconciliation[P]) Run(ctx context.Context, updates []backuptypes.
 // in place (canonical schedule, cleared destination when S3 is off).
 func (r PolicyReconciliation[P]) validateInternal(ctx context.Context, updates []backuptypes.UpdateBackupPolicy) error {
 	for i := range updates {
-		normalized, err := schedule.NormalizeSixField(updates[i].Schedule, r.Domain+" backup")
+		normalized, err := ValidatePolicyUpdate(ctx, r.Domain, updates[i], r.S3Configured)
 		if err != nil {
 			return err
 		}
-		updates[i].Schedule = normalized
-		if updates[i].RetentionCount < 0 || updates[i].RetentionCount > 3650 {
-			return errors.New("retentionCount must be between 0 and 3650")
-		}
-		if !updates[i].LocalEnabled && !updates[i].S3Enabled {
-			return fmt.Errorf("select at least one %s backup destination", r.Domain)
-		}
-		if updates[i].S3Enabled {
-			if strings.TrimSpace(updates[i].S3DestinationID) == "" {
-				return fmt.Errorf("select an S3 destination for %s backups", r.Domain)
-			}
-			if err := r.S3Configured(ctx, updates[i].S3DestinationID); err != nil {
-				return err
-			}
-		} else {
-			updates[i].S3DestinationID = ""
-		}
+		updates[i] = normalized
 		if r.ValidateUpdate != nil {
 			if err := r.ValidateUpdate(updates[i]); err != nil {
 				return err
@@ -106,6 +90,35 @@ func (r PolicyReconciliation[P]) validateInternal(ctx context.Context, updates [
 		}
 	}
 	return nil
+}
+
+// ValidatePolicyUpdate applies the shared cron, retention, and destination rules used by backup policies.
+func ValidatePolicyUpdate(ctx context.Context, domain string, update backuptypes.UpdateBackupPolicy, s3Configured func(context.Context, string) error) (backuptypes.UpdateBackupPolicy, error) {
+	normalized, err := schedule.NormalizeSixField(update.Schedule, domain+" backup")
+	if err != nil {
+		return update, err
+	}
+	update.Schedule = normalized
+	if update.RetentionCount < 0 || update.RetentionCount > 3650 {
+		return update, errors.New("retentionCount must be between 0 and 3650")
+	}
+	if !update.LocalEnabled && !update.S3Enabled {
+		return update, fmt.Errorf("select at least one %s backup destination", domain)
+	}
+	if update.S3Enabled {
+		if strings.TrimSpace(update.S3DestinationID) == "" {
+			return update, fmt.Errorf("select an S3 destination for %s backups", domain)
+		}
+		if s3Configured == nil {
+			return update, errors.New("S3 backup destinations are unavailable")
+		}
+		if err := s3Configured(ctx, update.S3DestinationID); err != nil {
+			return update, err
+		}
+	} else {
+		update.S3DestinationID = ""
+	}
+	return update, nil
 }
 
 // buildInternal maps the updates onto existing or new policy rows and reports

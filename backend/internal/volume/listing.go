@@ -3,6 +3,8 @@ package volume
 import (
 	"context"
 	"log/slog"
+	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -12,6 +14,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
@@ -294,6 +297,66 @@ func (s *VolumeService) isInternalVolumeInternal(v volumetypes.Volume) bool {
 	}
 
 	return libarcane.IsInternalContainer(v.Labels)
+}
+
+var generatedAnonymousVolumeNameInternal = regexp.MustCompile(`^[a-f0-9]{64}$`)
+
+func isAnonymousVolumeInternal(v volume.Volume) bool {
+	if _, ok := v.Labels["com.docker.volume.anonymous"]; ok {
+		return true
+	}
+	return generatedAnonymousVolumeNameInternal.MatchString(v.Name)
+}
+
+func mountedVolumeNamesInternal(mounts []container.MountPoint) map[string]struct{} {
+	names := make(map[string]struct{})
+	for _, item := range mounts {
+		if item.Type != mount.TypeVolume {
+			continue
+		}
+		name := strings.TrimSpace(item.Name)
+		if name == "" {
+			name = strings.TrimSpace(item.Source)
+		}
+		if name != "" {
+			names[name] = struct{}{}
+		}
+	}
+	return names
+}
+
+// ListBackupVolumeOptions returns the current non-internal volumes used by centralized backup selection.
+func (s *VolumeService) ListBackupVolumeOptions(ctx context.Context) ([]backuptypes.SystemVolumeBackupOption, error) {
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		return nil, errors.WrapIf(err, "failed to connect to Docker")
+	}
+	result, err := dockerClient.VolumeList(ctx, client.VolumeListOptions{})
+	if err != nil {
+		return nil, errors.WrapIf(err, "failed to list Docker volumes")
+	}
+	arcaneVolumes := make(map[string]struct{})
+	if inspect, inspectErr := libarcane.InspectCurrentArcaneContainer(ctx, dockerClient); inspectErr == nil && inspect != nil {
+		arcaneVolumes = mountedVolumeNamesInternal(inspect.Mounts)
+	} else if inspectErr != nil {
+		slog.DebugContext(ctx, "volume service: could not identify Arcane-mounted volumes for centralized backups", "error", inspectErr)
+	}
+	options := make([]backuptypes.SystemVolumeBackupOption, 0, len(result.Items))
+	for _, item := range result.Items {
+		if s.isInternalVolumeInternal(volumetypes.NewSummary(item)) {
+			continue
+		}
+		if _, isArcaneVolume := arcaneVolumes[item.Name]; isArcaneVolume {
+			continue
+		}
+		options = append(options, backuptypes.SystemVolumeBackupOption{
+			Name: item.Name, Anonymous: isAnonymousVolumeInternal(item), Available: true,
+		})
+	}
+	slices.SortFunc(options, func(a, b backuptypes.SystemVolumeBackupOption) int {
+		return strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
+	})
+	return options, nil
 }
 
 func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params pagination.QueryParams, includeInternal bool) ([]volumetypes.Volume, pagination.Response, volumetypes.UsageCounts, error) {

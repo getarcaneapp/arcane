@@ -1,6 +1,7 @@
 export type BackupDestination = 'local' | 's3' | 'local_s3';
 export type BackupStatus = 'running' | 'succeeded' | 'failed';
 export type BackupTrigger = 'manual' | 'scheduled' | 'safety';
+export type BackupManagementType = 'system' | 'volume';
 
 export type BackupRun = {
 	id: string;
@@ -16,6 +17,7 @@ export type BackupRun = {
 	s3DestinationName?: string;
 	policyId?: string;
 	error?: string;
+	type?: BackupManagementType;
 };
 
 export type BackupPolicyForm = {

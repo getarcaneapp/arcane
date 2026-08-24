@@ -40,6 +40,7 @@
 	import { ScrollArea } from '#lib/components/ui/scroll-area';
 	import * as Checkbox from '#lib/components/ui/checkbox';
 	import * as Alert from '#lib/components/ui/alert';
+	import { Badge } from '#lib/components/ui/badge';
 	import { environmentStore } from '#lib/stores/environment.store.svelte';
 	import { hasPermission } from '#lib/utils/auth';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
@@ -315,6 +316,16 @@
 
 	const columns = [
 		{ accessorKey: 'id', title: m.common_id(), sortable: true, cell: IdCell },
+		{
+			accessorKey: 'type',
+			title: m.common_type(),
+			sortable: false,
+			cell: TypeCell,
+			filterOptions: [
+				{ label: m.backups_system_managed(), value: 'system' },
+				{ label: m.backups_volume_managed(), value: 'volume' }
+			]
+		},
 		{ accessorKey: 'status', title: m.common_status(), sortable: true, cell: StatusCell },
 		{ accessorKey: 'trigger', title: m.volume_backup_trigger(), sortable: true, cell: TriggerCell },
 		{ accessorKey: 'destination', title: m.backups_destination_label(), sortable: true, cell: DestinationCell },
@@ -331,6 +342,7 @@
 	] satisfies ColumnSpec<BackupEntry>[];
 
 	const mobileFields = [
+		{ id: 'type', label: m.common_type(), defaultVisible: true },
 		{ id: 'status', label: m.common_status(), defaultVisible: true },
 		{ id: 'trigger', label: m.volume_backup_trigger(), defaultVisible: true },
 		{ id: 'destination', label: m.backups_destination_label(), defaultVisible: true },
@@ -359,6 +371,12 @@
 
 {#snippet StatusCell({ item }: { item: BackupEntry })}
 	<BackupStatusCell status={item.status} />
+{/snippet}
+
+{#snippet TypeCell({ item }: { item: BackupEntry })}
+	<Badge variant={item.type === 'system' ? 'blue' : 'gray'}>
+		{item.type === 'system' ? m.backups_system_managed() : m.backups_volume_managed()}
+	</Badge>
 {/snippet}
 
 {#snippet TriggerCell({ item }: { item: BackupEntry })}
@@ -484,6 +502,12 @@
 		{item}
 		icon={{ component: VolumesIcon, variant: 'blue' }}
 		title={(item) => item.id}
+		badges={[
+			(item) => ({
+				variant: item.type === 'system' ? 'blue' : 'gray',
+				text: item.type === 'system' ? m.backups_system_managed() : m.backups_volume_managed()
+			})
+		]}
 		fields={[
 			{
 				label: m.volume_backup_trigger(),

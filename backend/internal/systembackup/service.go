@@ -28,6 +28,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	recoverytypes "github.com/getarcaneapp/arcane/backend/v2/internal/recovery"
 	s3domain "github.com/getarcaneapp/arcane/backend/v2/internal/s3"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/system"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
@@ -64,14 +65,15 @@ type SystemBackupService struct {
 	engine          *backup.Engine
 	s3Destinations  *s3domain.S3DestinationService
 	activityService *activity.ActivityService
+	settingsService *settings.SettingsService
 	config          *config.Config
 	jobs            *entityjobs.Registry
 }
 
-func NewSystemBackupService(db *database.DB, dockerService *docker.DockerClientService, volumeService *volume.VolumeService, engine *backup.Engine, s3Destinations *s3domain.S3DestinationService, activityService *activity.ActivityService, cfg *config.Config) *SystemBackupService {
+func NewSystemBackupService(db *database.DB, dockerService *docker.DockerClientService, volumeService *volume.VolumeService, engine *backup.Engine, s3Destinations *s3domain.S3DestinationService, activityService *activity.ActivityService, settingsService *settings.SettingsService, cfg *config.Config) *SystemBackupService {
 	return &SystemBackupService{
 		db: db, dockerService: dockerService, volumeService: volumeService, engine: engine,
-		s3Destinations: s3Destinations, activityService: activityService, config: cfg,
+		s3Destinations: s3Destinations, activityService: activityService, settingsService: settingsService, config: cfg,
 		jobs: entityjobs.New("system-backup:", backup.SystemAdmissionScope),
 	}
 }
@@ -1024,6 +1026,11 @@ func (s *SystemBackupService) RegisterBackupJobOnStartup(ctx context.Context) {
 	}
 	for i := range policies {
 		s.rescheduleSystemBackupPolicyInternal(ctx, &policies[i])
+	}
+	if config, configErr := s.loadSystemVolumeBackupConfigInternal(); configErr != nil {
+		slog.ErrorContext(ctx, "Failed to load system-managed volume backup configuration", "error", configErr)
+	} else {
+		s.rescheduleSystemVolumeBackupInternal(ctx, config)
 	}
 	slog.InfoContext(ctx, "Registered scheduled Arcane system backup jobs", "count", len(policies))
 }

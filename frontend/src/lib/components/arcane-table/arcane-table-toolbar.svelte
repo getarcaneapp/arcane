@@ -74,6 +74,11 @@
 	);
 	const typeColumn = $derived(table.getAllColumns().some((col) => col.id === 'type') ? table.getColumn('type') : undefined);
 	const typeColumnFilterOptions = $derived(typeColumn?.columnDef.meta?.filterOptions ?? []);
+	const isBackupTypeFilter = $derived(
+		typeColumnFilterOptions.length === 2 &&
+			typeColumnFilterOptions.some((option) => option.value === 'system') &&
+			typeColumnFilterOptions.some((option) => option.value === 'volume')
+	);
 	const tagsColumn = $derived(table.getAllColumns().some((col) => col.id === 'tags') ? table.getColumn('tags') : undefined);
 	const tagsColumnFilterOptions = $derived(tagsColumn?.columnDef.meta?.filterOptions ?? []);
 
@@ -99,7 +104,12 @@
 
 {#snippet filterList()}
 	{#if typeColumn && typeColumnFilterOptions.length > 0}
-		<DataTableFacetedFilter column={typeColumn} title={m.common_type()} options={typeColumnFilterOptions} />
+		<DataTableFacetedFilter
+			column={typeColumn}
+			title={m.common_type()}
+			emptyTitle={isBackupTypeFilter ? m.backups_all_backups() : undefined}
+			options={typeColumnFilterOptions}
+		/>
 	{/if}
 	{#if tagsColumn && tagsColumnFilterOptions.length > 0}
 		<DataTableFacetedFilter column={tagsColumn} title={m.common_tags()} options={tagsColumnFilterOptions} />
