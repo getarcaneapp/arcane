@@ -348,6 +348,33 @@ func (s *SystemBackupService) CreateBackup(ctx context.Context, user common.User
 	return s.createBackupInternal(ctx, trigger, request)
 }
 
+func (s *SystemBackupService) createStagedSystemRecoverySnapshotInternal(ctx context.Context, dockerClient *client.Client, recoveryKey, backupID, destinationID string, localEnabled, s3Enabled bool) (backup.Snapshot, backup.Repository, bool, error) {
+	localRepository, err := s.localRepositoryInternal(ctx, dockerClient, false)
+	var snapshot backup.Snapshot
+	if err == nil {
+		snapshot, err = s.snapshotWithDatabaseLockInternal(ctx, dockerClient, localRepository, recoveryKey, backupID)
+	}
+	if err == nil {
+		return snapshot, localRepository, false, nil
+	}
+	localStagingErr := fmt.Errorf("failed to create local system recovery staging snapshot: %w", err)
+	if localEnabled || !s3Enabled {
+		return backup.Snapshot{}, backup.Repository{}, false, localStagingErr
+	}
+	// S3-only backups normally use local staging so the database lock does
+	// not span an upload. If local storage is unusable, write directly to
+	// S3 so remote backups and restore safety snapshots remain available.
+	remoteRepository, repoErr := s.remoteRepositoryInternal(ctx, destinationID)
+	if repoErr != nil {
+		return backup.Snapshot{}, backup.Repository{}, false, errors.Combine(localStagingErr, repoErr)
+	}
+	remoteSnapshot, snapshotErr := s.snapshotWithDatabaseLockInternal(ctx, dockerClient, remoteRepository, recoveryKey, backupID)
+	if snapshotErr != nil {
+		return backup.Snapshot{}, backup.Repository{}, false, errors.Combine(localStagingErr, fmt.Errorf("failed to create S3 system recovery snapshot: %w", snapshotErr))
+	}
+	return remoteSnapshot, remoteRepository, true, nil
+}
+
 func (s *SystemBackupService) createBackupInternal(ctx context.Context, trigger SystemBackupTrigger, request backuptypes.CreateSystemBackupRequest) (_ *SystemBackupRun, err error) {
 	if !s.SupportedDatabaseProvider() {
 		return nil, errors.New("arcane system recovery currently requires the SQLite database provider")
@@ -379,17 +406,20 @@ func (s *SystemBackupService) createBackupInternal(ctx context.Context, trigger 
 	if err != nil {
 		return run, err
 	}
-	localRepository, err := s.localRepositoryInternal(ctx, dockerClient, false)
+	stagedSnapshot, stagingRepository, directRemote, err := s.createStagedSystemRecoverySnapshotInternal(
+		ctx, dockerClient, recoveryKey, run.ID, destinationID, localEnabled, s3Enabled,
+	)
 	if err != nil {
 		return run, err
 	}
+	if directRemote {
+		run.RemoteSnapshotID, run.Size = stagedSnapshot.ID, stagedSnapshot.Size
+		return run, nil
+	}
+	localRepository := stagingRepository
 	// The database is locked only while the local staging snapshot is taken.
 	// An S3 copy replicates that immutable snapshot afterwards, so the
 	// exclusive lock never spans a network upload and the source is read once.
-	stagedSnapshot, err := s.snapshotWithDatabaseLockInternal(ctx, dockerClient, localRepository, recoveryKey, run.ID)
-	if err != nil {
-		return run, err
-	}
 	// The staged snapshot is kept only for local-enabled runs. Forgetting it in
 	// a defer covers the failure paths too: a failed replication otherwise
 	// orphans one unreferenced snapshot in the staging repository per run.
@@ -422,9 +452,8 @@ func (s *SystemBackupService) createBackupInternal(ctx context.Context, trigger 
 	return run, nil
 }
 
-// snapshotWithDatabaseLockInternal takes the local staging snapshot while the
-// SQLite database is checkpointed and exclusively locked, and releases the
-// lock before returning.
+// snapshotWithDatabaseLockInternal takes a snapshot while the SQLite database
+// is checkpointed and exclusively locked, and releases the lock before returning.
 func (s *SystemBackupService) snapshotWithDatabaseLockInternal(ctx context.Context, dockerClient *client.Client, repository backup.Repository, recoveryKey, backupID string) (backup.Snapshot, error) {
 	if err := s.writeManifestInternal(ctx, backupID); err != nil {
 		return backup.Snapshot{}, err
@@ -452,7 +481,7 @@ func (s *SystemBackupService) snapshotWithDatabaseLockInternal(ctx context.Conte
 	defer func() { _, _ = connection.ExecContext(context.WithoutCancel(ctx), "ROLLBACK") }()
 	snapshot, err := s.createSnapshotInternal(ctx, dockerClient, repository, recoveryKey)
 	if err != nil {
-		return backup.Snapshot{}, fmt.Errorf("failed to create local system recovery snapshot: %w", err)
+		return backup.Snapshot{}, fmt.Errorf("failed to create system recovery snapshot: %w", err)
 	}
 	return snapshot, nil
 }
@@ -500,9 +529,11 @@ type systemBackupSnapshotEngineInternal interface {
 }
 
 type systemBackupSnapshotLocationInternal struct {
-	name       string
-	repository backup.Repository
-	snapshotID string
+	name            string
+	destination     backuptypes.SystemBackupDestination
+	s3DestinationID string
+	repository      backup.Repository
+	snapshotID      string
 }
 
 type systemBackupSnapshotInternal struct {
@@ -529,7 +560,10 @@ func (s *SystemBackupService) backupSnapshotLocationsInternal(ctx context.Contex
 		if err != nil {
 			setupErr = errors.Combine(setupErr, fmt.Errorf("open local system backup repository: %w", err))
 		} else {
-			locations = append(locations, systemBackupSnapshotLocationInternal{name: "local", repository: repository, snapshotID: run.LocalSnapshotID})
+			locations = append(locations, systemBackupSnapshotLocationInternal{
+				name: "local", destination: backuptypes.SystemBackupDestinationLocal,
+				repository: repository, snapshotID: run.LocalSnapshotID,
+			})
 		}
 	}
 	if run.RemoteSnapshotID != "" {
@@ -537,7 +571,10 @@ func (s *SystemBackupService) backupSnapshotLocationsInternal(ctx context.Contex
 		if err != nil {
 			setupErr = errors.Combine(setupErr, fmt.Errorf("open S3 system backup repository: %w", err))
 		} else {
-			locations = append(locations, systemBackupSnapshotLocationInternal{name: "S3", repository: repository, snapshotID: run.RemoteSnapshotID})
+			locations = append(locations, systemBackupSnapshotLocationInternal{
+				name: "S3", destination: backuptypes.SystemBackupDestinationS3, s3DestinationID: run.S3DestinationID,
+				repository: repository, snapshotID: run.RemoteSnapshotID,
+			})
 		}
 	}
 	if len(locations) == 0 && setupErr == nil {
@@ -887,13 +924,34 @@ func snapshotDataPathsInternal(files []string, snapshotPath string) map[string]s
 	return result
 }
 
-func (s *SystemBackupService) prepareSafetySnapshotInternal(ctx context.Context, dockerClient *client.Client, run *SystemBackupRun, recoveryKey string) (systemBackupSafetySnapshotInternal, error) {
-	repository, err := s.localRepositoryInternal(ctx, dockerClient, true)
-	if err != nil {
-		return systemBackupSafetySnapshotInternal{}, fmt.Errorf("open pre-restore system backup repository: %w", err)
+func safetyBackupRequestInternal(source systemBackupSnapshotInternal, recoveryKey string) backuptypes.CreateSystemBackupRequest {
+	request := backuptypes.CreateSystemBackupRequest{
+		Destination: backuptypes.SystemBackupDestinationLocal,
+		RecoveryKey: recoveryKey,
 	}
-	location := systemBackupSnapshotLocationInternal{name: "safety", repository: repository, snapshotID: run.LocalSnapshotID}
-	snapshot, err := inspectReadableBackupSnapshotInternal(ctx, s.engine, dockerClient, location, recoveryKey)
+	if source.destination == backuptypes.SystemBackupDestinationS3 {
+		request.Destination = backuptypes.SystemBackupDestinationS3
+		request.S3DestinationID = source.s3DestinationID
+	}
+	return request
+}
+
+func safetySnapshotLocationInternal(source systemBackupSnapshotInternal, run *SystemBackupRun) (systemBackupSnapshotLocationInternal, error) {
+	location := source.systemBackupSnapshotLocationInternal
+	location.name = "safety"
+	if source.destination == backuptypes.SystemBackupDestinationS3 {
+		location.snapshotID = run.RemoteSnapshotID
+	} else {
+		location.snapshotID = run.LocalSnapshotID
+	}
+	if location.snapshotID == "" {
+		return systemBackupSnapshotLocationInternal{}, errors.New("pre-restore system backup has no snapshot in the selected repository")
+	}
+	return location, nil
+}
+
+func prepareSafetySnapshotInternal(ctx context.Context, engine systemBackupSnapshotEngineInternal, dockerClient *client.Client, location systemBackupSnapshotLocationInternal, recoveryKey string) (systemBackupSafetySnapshotInternal, error) {
+	snapshot, err := inspectReadableBackupSnapshotInternal(ctx, engine, dockerClient, location, recoveryKey)
 	if err != nil {
 		return systemBackupSafetySnapshotInternal{}, fmt.Errorf("open pre-restore system backup: %w", err)
 	}
@@ -1018,7 +1076,7 @@ func restoreSelectedProjectFilesInternal(ctx context.Context, engine systemBacku
 	return nil
 }
 
-// RestoreBackupFiles restores selected project files after creating a local safety snapshot.
+// RestoreBackupFiles restores selected project files after creating a safety snapshot.
 func (s *SystemBackupService) RestoreBackupFiles(ctx context.Context, id string, request backuptypes.RestoreSystemBackupFilesRequest, user common.User) error {
 	lease, admitted, err := s.engine.TryAcquireRun(ctx, backup.SystemAdmissionScope, systemAdmissionID)
 	if err != nil {
@@ -1056,14 +1114,16 @@ func (s *SystemBackupService) RestoreBackupFiles(ctx context.Context, id string,
 	if err != nil {
 		return err
 	}
-	safetyRun, err := s.createBackupInternal(ctx, SystemBackupTriggerSafety, backuptypes.CreateSystemBackupRequest{
-		Destination: backuptypes.SystemBackupDestinationLocal,
-		RecoveryKey: key,
-	})
+	source := snapshots[0]
+	safetyRun, err := s.createBackupInternal(ctx, SystemBackupTriggerSafety, safetyBackupRequestInternal(source, key))
 	if err != nil {
 		return fmt.Errorf("failed to create pre-restore system backup: %w", err)
 	}
-	safety, err := s.prepareSafetySnapshotInternal(ctx, dockerClient, safetyRun, key)
+	safetyLocation, err := safetySnapshotLocationInternal(source, safetyRun)
+	if err != nil {
+		return err
+	}
+	safety, err := prepareSafetySnapshotInternal(ctx, s.engine, dockerClient, safetyLocation, key)
 	if err != nil {
 		return err
 	}

@@ -402,6 +402,37 @@ func TestAvailableProjectBackupSnapshotsFallsBackToRemoteInternal(t *testing.T) 
 	}
 }
 
+func TestSafetySnapshotFollowsRemoteRestoreSourceInternal(t *testing.T) {
+	remoteRepository := backup.Repository{ID: "remote"}
+	source := systemBackupSnapshotInternal{systemBackupSnapshotLocationInternal: systemBackupSnapshotLocationInternal{
+		name: "S3", destination: backuptypes.SystemBackupDestinationS3, s3DestinationID: "destination",
+		repository: remoteRepository, snapshotID: "source",
+	}}
+	request := safetyBackupRequestInternal(source, "key")
+	require.Equal(t, backuptypes.SystemBackupDestinationS3, request.Destination)
+	require.Equal(t, "destination", request.S3DestinationID)
+
+	location, err := safetySnapshotLocationInternal(source, &SystemBackupRun{RemoteSnapshotID: "safety"})
+	require.NoError(t, err)
+	require.Equal(t, "safety", location.name)
+	require.Equal(t, remoteRepository, location.repository)
+	require.Equal(t, "safety", location.snapshotID)
+
+	engine := &systemBackupSnapshotEngineStubInternal{
+		listInternal: func(repository backup.Repository, snapshotID string) ([]string, error) {
+			require.Equal(t, remoteRepository, repository)
+			require.Equal(t, "safety", snapshotID)
+			return []string{"/.arcane-recovery.json", "/projects/demo/compose.yaml"}, nil
+		},
+		readInternal:    func(backup.Repository, string, string) (string, error) { return "", nil },
+		restoreInternal: func(backup.Repository, string, backup.RestoreOptions) error { return nil },
+	}
+	safety, err := prepareSafetySnapshotInternal(t.Context(), engine, nil, location, "key")
+	require.NoError(t, err)
+	require.Equal(t, remoteRepository, safety.repository)
+	require.Contains(t, safety.dataPaths, "projects/demo/compose.yaml")
+}
+
 type systemBackupRestoreCallInternal struct {
 	snapshotID string
 	options    backup.RestoreOptions
