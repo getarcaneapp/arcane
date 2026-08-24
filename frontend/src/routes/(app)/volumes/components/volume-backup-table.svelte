@@ -583,15 +583,6 @@
 				</Alert.Description>
 			</Alert.Root>
 
-			{#if hasWorkspaceChanges}
-				<Alert.Root variant="warning" class="py-2 [&>svg]:top-2">
-					<AlertIcon class="size-4" />
-					<Alert.Description class="text-xs">
-						{m.volumes_backup_restore_discard_changes()}
-					</Alert.Description>
-				</Alert.Root>
-			{/if}
-
 			{#if backupFileProvider}
 				<BackupFilePicker
 					provider={backupFileProvider}
@@ -607,6 +598,15 @@
 					{m.volumes_backup_overwrite_warning()}
 				</Alert.Description>
 			</Alert.Root>
+
+			{#if hasWorkspaceChanges}
+				<Alert.Root variant="warning" class="py-2 [&>svg]:top-2">
+					<AlertIcon class="size-4" />
+					<Alert.Description class="text-xs">
+						{m.volumes_backup_restore_discard_changes()}
+					</Alert.Description>
+				</Alert.Root>
+			{/if}
 		</div>
 	{/snippet}
 
