@@ -48,7 +48,6 @@
 		buildWorkspaceMultipartUpdate,
 		isWorkspaceFileSelectionUnder,
 		joinWorkspaceFilePath,
-		normalizeWorkspaceRelativePath,
 		remapSelectedWorkspaceFileKey,
 		remapWorkspaceFileRecord,
 		removeWorkspaceFileRecord,
@@ -111,10 +110,7 @@
 	let selectedWorkspaceFile = $state('');
 	let openWorkspaceTabs = $state<string[]>([]);
 	let workspaceTreePaneWidth = $state(420);
-	let workspaceTabActive = $state(false);
-	let workspaceTabVisited = $state(false);
 	type VolumeWorkspaceUIPrefs = { selectedFile: string; openTabs: string[] };
-	type WorkspaceRestoreSelection = { paths: string[]; selectAll: boolean };
 	let workspacePrefs: PersistedState<VolumeWorkspaceUIPrefs> | null = null;
 	let lastWorkspacePrefsKey = $state('');
 
@@ -209,20 +205,7 @@
 	);
 
 	$effect(() => {
-		if (selectedTab !== 'workspace') {
-			workspaceTabActive = false;
-			return;
-		}
-
-		workspaceRequested = true;
-		if (workspaceTabActive) return;
-		workspaceTabActive = true;
-		if (!workspaceTabVisited) {
-			workspaceTabVisited = true;
-			return;
-		}
-
-		void untrack(() => refreshVolumeWorkspaceOnActivation());
+		if (selectedTab === 'workspace') workspaceRequested = true;
 	});
 
 	$effect(() => {
@@ -274,17 +257,6 @@
 		persistWorkspacePrefs();
 	}
 
-	function canRebaseVolumeWorkspaceFileContent(relativePath: string): boolean {
-		const hasTextDraft =
-			workspaceFileContents[relativePath] !== undefined &&
-			workspaceFileContents[relativePath] !== loadedWorkspaceFileContents[relativePath];
-		const hasFileChange = workspaceFileChanges.some(
-			(change) =>
-				workspaceFilePathMatches(relativePath, change.relativePath) || workspaceFilePathMatches(change.relativePath, relativePath)
-		);
-		return !hasTextDraft && !hasFileChange;
-	}
-
 	async function loadWorkspaceFile(relativePath: string) {
 		if (!relativePath || workspaceFileMetadata[relativePath] || workspaceFileLoading[relativePath]) return;
 		const entry = visibleWorkspaceFiles.find((file) => file.relativePath === relativePath);
@@ -326,17 +298,13 @@
 		try {
 			const file = await volumeWorkspaceService.getWorkspaceFile(volume.name, relativePath, currentEnvId);
 			if (loadVersion !== (workspaceFileLoadVersions.get(relativePath) ?? 0)) return;
-			const shouldRebaseContent = canRebaseVolumeWorkspaceFileContent(relativePath);
 			workspaceFileMetadata = { ...workspaceFileMetadata, [relativePath]: file };
 			if (file.editable) {
 				const content = file.content ?? '';
 				loadedWorkspaceFileContents = { ...loadedWorkspaceFileContents, [relativePath]: content };
-				if (shouldRebaseContent) {
+				if (workspaceFileContents[relativePath] === undefined) {
 					workspaceFileContents = { ...workspaceFileContents, [relativePath]: content };
 				}
-			} else if (shouldRebaseContent) {
-				workspaceFileContents = removeWorkspaceFileRecord(workspaceFileContents, relativePath);
-				loadedWorkspaceFileContents = removeWorkspaceFileRecord(loadedWorkspaceFileContents, relativePath);
 			}
 		} catch (error) {
 			if (loadVersion !== (workspaceFileLoadVersions.get(relativePath) ?? 0)) return;
@@ -532,41 +500,9 @@
 		workspaceFileLoadVersions.set(relativePath, (workspaceFileLoadVersions.get(relativePath) ?? 0) + 1);
 	}
 
-	function clearCleanVolumeWorkspaceFileCache(selection: WorkspaceRestoreSelection) {
-		const restoredPaths = selection.paths.map(normalizeWorkspaceRelativePath).filter(Boolean);
-		const cachedPaths = new Set([
-			...Object.keys(workspaceFileContents),
-			...Object.keys(loadedWorkspaceFileContents),
-			...Object.keys(workspaceFileMetadata),
-			...Object.keys(workspaceFileLoadErrors),
-			...Object.keys(workspaceFileLoading),
-			...Object.keys(workspaceRestoreRecords)
-		]);
-
-		for (const relativePath of cachedPaths) {
-			if (!selection.selectAll && !restoredPaths.some((rootPath) => workspaceFilePathMatches(relativePath, rootPath))) {
-				continue;
-			}
-			if (!canRebaseVolumeWorkspaceFileContent(relativePath)) continue;
-
-			expireWorkspaceFileLoad(relativePath);
-			workspaceFileContents = removeWorkspaceFileRecord(workspaceFileContents, relativePath);
-			loadedWorkspaceFileContents = removeWorkspaceFileRecord(loadedWorkspaceFileContents, relativePath);
-			workspaceFileMetadata = removeWorkspaceFileRecord(workspaceFileMetadata, relativePath);
-			workspaceFileLoadErrors = removeWorkspaceFileRecord(workspaceFileLoadErrors, relativePath);
-			workspaceFileLoading = removeWorkspaceFileRecord(workspaceFileLoading, relativePath);
-			workspaceRestoreRecords = removeWorkspaceFileRecord(workspaceRestoreRecords, relativePath);
-		}
-	}
-
-	async function refreshRestoredVolumeWorkspace(selection: WorkspaceRestoreSelection) {
-		clearCleanVolumeWorkspaceFileCache(selection);
-
-		await queryClient.invalidateQueries({ queryKey: queryKeys.volumes.workspace(currentEnvId, volume.name) });
-	}
-
-	async function refreshVolumeWorkspaceOnActivation() {
-		clearCleanVolumeWorkspaceFileCache({ paths: [], selectAll: true });
+	async function refreshRestoredVolumeWorkspace() {
+		await queryClient.cancelQueries({ queryKey: queryKeys.volumes.workspace(currentEnvId, volume.name) });
+		clearVolumeWorkspaceDrafts();
 		await workspaceQuery.refetch();
 	}
 
@@ -954,7 +890,7 @@
 						</div>
 					{/if}
 				{:else if tab === 'backups'}
-					<BackupList volumeName={volume.name} onWorkspaceRestored={refreshRestoredVolumeWorkspace} />
+					<BackupList volumeName={volume.name} {hasWorkspaceChanges} onWorkspaceRestored={refreshRestoredVolumeWorkspace} />
 				{/if}
 			</div>
 		{/snippet}

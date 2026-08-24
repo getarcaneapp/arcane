@@ -59,17 +59,14 @@
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
 	import type { BackupFileProvider } from '#lib/types/backup';
 
-	type WorkspaceRestoreSelection = {
-		paths: string[];
-		selectAll: boolean;
-	};
-
 	let {
 		volumeName,
+		hasWorkspaceChanges = false,
 		onWorkspaceRestored
 	}: {
 		volumeName: string;
-		onWorkspaceRestored?: (selection: WorkspaceRestoreSelection) => void | Promise<void>;
+		hasWorkspaceChanges?: boolean;
+		onWorkspaceRestored?: () => void | Promise<void>;
 	} = $props();
 
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
@@ -239,14 +236,17 @@
 
 		openConfirmDialog({
 			title: m.volumes_backup_restore_title(),
-			message: m.volumes_backup_restore_message({ volumeName }) + usageWarning,
+			message:
+				m.volumes_backup_restore_message({ volumeName }) +
+				usageWarning +
+				(hasWorkspaceChanges ? `\n\n${m.volumes_backup_restore_discard_changes()}` : ''),
 			confirm: {
 				label: m.volumes_backups_restore(),
-				destructive: !!usageWarning,
+				destructive: !!usageWarning || hasWorkspaceChanges,
 				action: async () => {
 					try {
 						const result = await volumeBackupService.restoreBackup(volumeName, backup.id);
-						await onWorkspaceRestored?.({ paths: [], selectAll: true });
+						await onWorkspaceRestored?.();
 						toast.success(m.volumes_backup_restore_success(), activityToastOptions(extractActivityId(result)));
 						await loadData(requestOptions);
 					} catch (error) {
@@ -261,14 +261,34 @@
 		if (!restoreTarget) return;
 		if (!selectAllBackupFiles && !selectedPaths.length) return;
 
-		const selection = { paths: [...selectedPaths], selectAll: selectAllBackupFiles } satisfies WorkspaceRestoreSelection;
+		if (hasWorkspaceChanges) {
+			openConfirmDialog({
+				title: m.common_unsaved_changes(),
+				message: m.volumes_backup_restore_discard_changes(),
+				confirm: {
+					label: m.volume_restore_files(),
+					destructive: true,
+					action: restoreFilesInternal
+				}
+			});
+			return;
+		}
+
+		await restoreFilesInternal();
+	}
+
+	async function restoreFilesInternal() {
+		if (!restoreTarget) return;
+		if (!selectAllBackupFiles && !selectedPaths.length) return;
+
+		const selection = { paths: [...selectedPaths], selectAll: selectAllBackupFiles };
 		restoringFiles = true;
 		try {
 			const result = await volumeBackupService.restoreBackupFiles(volumeName, restoreTarget.id, {
 				...selection,
 				search: selection.selectAll ? backupFilesSearch.trim() : undefined
 			});
-			await onWorkspaceRestored?.(selection);
+			await onWorkspaceRestored?.();
 			toast.success(m.volumes_backup_restore_selection_success(), activityToastOptions(extractActivityId(result)));
 			showRestoreFiles = false;
 		} catch (error) {

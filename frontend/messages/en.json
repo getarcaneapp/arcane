@@ -956,6 +956,7 @@
   "volumes_backup_restore_success": "Volume restored successfully. A safety backup was created before restoring.",
   "volumes_backup_restore_files_success": "{count} file(s) restored successfully. A safety backup was created before restoring.",
   "volumes_backup_restore_selection_success": "The selected backup content was restored successfully. A safety backup was created before restoring.",
+  "volumes_backup_restore_discard_changes": "You have unsaved workspace changes. Continuing will discard all unsaved text and staged file operations after the restore succeeds.",
   "backup_file_browser_select_all_matches": "Select all search matches",
   "backup_file_browser_load_remaining_failed": "The remaining backup files could not be loaded.",
   "volumes_backup_safety_info": "A safety backup will be created automatically before restoring, so you can undo this operation if needed.",

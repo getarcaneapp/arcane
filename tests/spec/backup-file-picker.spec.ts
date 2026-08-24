@@ -1,4 +1,4 @@
-import { expect, test, type Page, type Route } from '@playwright/test';
+import { expect, test, type Locator, type Page, type Route } from '@playwright/test';
 
 const VOLUME_NAME = 'backup-picker-e2e';
 const BACKUP_ID = 'backup-picker-snapshot';
@@ -149,11 +149,124 @@ async function mockVolumeBackupPage(page: Page, browse: BrowseHandler) {
 	);
 
 	await page.goto(`/volumes/${encodedVolume}?tab=backups`);
+	await openVolumeRestoreFilesDialog(page);
+}
+
+type VolumeWorkspaceRestoreState = {
+	content: string;
+	restoredContent: string;
+	revision: number;
+	failRestore: boolean;
+	workspaceRequests: number;
+	fileRequests: number;
+	restoreBodies: Array<Record<string, unknown>>;
+	fullRestoreRequests: number;
+};
+
+async function mockVolumeWorkspaceRestore(page: Page, state: VolumeWorkspaceRestoreState) {
+	const encodedVolume = encodeURIComponent(VOLUME_NAME);
+	await page.route(
+		new RegExp(`/api/environments/0/volumes/${encodedVolume}/workspace$`),
+		async (route) => {
+			state.workspaceRequests += 1;
+			await route.fulfill({
+				json: response({
+					files: [
+						{
+							path: '/workspace.txt',
+							relativePath: 'workspace.txt',
+							name: 'workspace.txt',
+							isDirectory: false,
+							size: state.content.length,
+							mode: '-rw-r--r--',
+							isSymlink: false,
+							editable: true
+						}
+					],
+					fileTreeRevision: `revision-${state.revision}`,
+					fileTreeTruncated: false
+				})
+			});
+		}
+	);
+	await page.route(
+		new RegExp(`/api/environments/0/volumes/${encodedVolume}/workspace/file(?:\\?.*)?$`),
+		async (route) => {
+			state.fileRequests += 1;
+			await route.fulfill({
+				json: response({
+					path: '/workspace.txt',
+					relativePath: 'workspace.txt',
+					name: 'workspace.txt',
+					size: state.content.length,
+					mimeType: 'text/plain',
+					content: state.content,
+					editable: true
+				})
+			});
+		}
+	);
+	await page.route(
+		new RegExp(`/api/environments/0/volumes/${encodedVolume}/backups/${BACKUP_ID}/restore-files$`),
+		async (route) => {
+			state.restoreBodies.push(route.request().postDataJSON() as Record<string, unknown>);
+			if (state.failRestore) {
+				await route.fulfill({ status: 500, json: { success: false, message: 'restore failed' } });
+				return;
+			}
+			state.content = state.restoredContent;
+			state.revision += 1;
+			await route.fulfill({ json: response({ message: 'restored' }) });
+		}
+	);
+	await page.route(
+		new RegExp(`/api/environments/0/volumes/${encodedVolume}/backups/${BACKUP_ID}/restore$`),
+		async (route) => {
+			state.fullRestoreRequests += 1;
+			state.content = state.restoredContent;
+			state.revision += 1;
+			await route.fulfill({ json: response({ message: 'restored' }) });
+		}
+	);
+	await page.route(
+		new RegExp(`/api/environments/0/volumes/${encodedVolume}/usage$`),
+		async (route) => {
+			await route.fulfill({ json: response({ inUse: false, containers: [] }) });
+		}
+	);
+}
+
+async function openVolumeRestoreFilesDialog(page: Page) {
+	await page.getByRole('tab', { name: 'Backups', exact: true }).click();
 	await expect(page.getByText(BACKUP_ID, { exact: true }).first()).toBeVisible();
 	const backupRow = page.getByRole('row').filter({ hasText: BACKUP_ID }).first();
 	await backupRow.getByRole('button', { name: 'Open menu' }).click();
 	await page.getByRole('menuitem', { name: 'Restore files' }).click();
 	await expect(page.getByRole('dialog', { name: 'Restore files' })).toBeVisible();
+}
+
+async function selectVolumeRestoreFile(page: Page) {
+	const dialog = page.getByRole('dialog', { name: 'Restore files' });
+	await dialog.locator('[data-path="workspace.txt"]').getByRole('checkbox').click();
+	return dialog;
+}
+
+async function openVolumeWorkspaceEditor(page: Page) {
+	await page.getByRole('tab', { name: 'Workspace', exact: true }).click();
+	await page
+		.locator('[data-path="workspace.txt"]')
+		.getByRole('button', { name: 'workspace.txt', exact: true })
+		.first()
+		.click();
+	const editor = page.locator('.arcane-code-editor .cm-content').first();
+	await expect(editor).toBeVisible();
+	return editor;
+}
+
+async function replaceEditorText(page: Page, editor: Locator, content: string) {
+	await editor.click({ position: { x: 10, y: 10 } });
+	await editor.press('ControlOrMeta+A');
+	await page.keyboard.insertText(content);
 }
 
 async function mockProjectWorkspacePage(
@@ -322,66 +435,18 @@ function rootEntries(count: number) {
 }
 
 test.describe('Backup file picker', () => {
-	test('refreshes clean volume workspace files when returning to the workspace tab', async ({
-		page
-	}) => {
-		const encodedVolume = encodeURIComponent(VOLUME_NAME);
-		let fileContent = 'before restore';
-		let workspaceRequests = 0;
-		let fileRequests = 0;
-		const restoreBodies: Array<Record<string, unknown>> = [];
-
-		await page.route(
-			new RegExp(`/api/environments/0/volumes/${encodedVolume}/workspace$`),
-			async (route) => {
-				workspaceRequests += 1;
-				await route.fulfill({
-					json: response({
-						files: [
-							{
-								path: '/workspace.txt',
-								relativePath: 'workspace.txt',
-								name: 'workspace.txt',
-								isDirectory: false,
-								size: fileContent.length,
-								mode: '-rw-r--r--',
-								isSymlink: false,
-								editable: true
-							}
-						],
-						fileTreeRevision: `revision-${workspaceRequests}`,
-						fileTreeTruncated: false
-					})
-				});
-			}
-		);
-		await page.route(
-			new RegExp(`/api/environments/0/volumes/${encodedVolume}/workspace/file(?:\\?.*)?$`),
-			async (route) => {
-				fileRequests += 1;
-				await route.fulfill({
-					json: response({
-						path: '/workspace.txt',
-						relativePath: 'workspace.txt',
-						name: 'workspace.txt',
-						size: fileContent.length,
-						mimeType: 'text/plain',
-						content: fileContent,
-						editable: true
-					})
-				});
-			}
-		);
-		await page.route(
-			new RegExp(
-				`/api/environments/0/volumes/${encodedVolume}/backups/${BACKUP_ID}/restore-files$`
-			),
-			async (route) => {
-				restoreBodies.push(route.request().postDataJSON() as Record<string, unknown>);
-				fileContent = 'after restore';
-				await route.fulfill({ json: response({ message: 'restored' }) });
-			}
-		);
+	test('refreshes clean volume workspace files after restore', async ({ page }) => {
+		const state: VolumeWorkspaceRestoreState = {
+			content: 'before restore',
+			restoredContent: 'after restore',
+			revision: 1,
+			failRestore: false,
+			workspaceRequests: 0,
+			fileRequests: 0,
+			restoreBodies: [],
+			fullRestoreRequests: 0
+		};
+		await mockVolumeWorkspaceRestore(page, state);
 
 		await mockVolumeBackupPage(page, async (_request, route) => {
 			await route.fulfill({
@@ -392,29 +457,128 @@ test.describe('Backup file picker', () => {
 		});
 
 		await page.keyboard.press('Escape');
-		await page.getByRole('tab', { name: 'Workspace', exact: true }).click();
-		await page
-			.locator('[data-path="workspace.txt"]')
-			.getByRole('button', { name: 'workspace.txt' })
-			.click();
-		const editor = page.locator('.arcane-code-editor .cm-content').first();
+		const editor = await openVolumeWorkspaceEditor(page);
 		await expect(editor).toContainText('before restore');
 
-		await page.getByRole('tab', { name: 'Backups', exact: true }).click();
-		const backupRow = page.getByRole('row').filter({ hasText: BACKUP_ID }).first();
-		await backupRow.getByRole('button', { name: 'Open menu' }).click();
-		await page.getByRole('menuitem', { name: 'Restore files' }).click();
-		const dialog = page.getByRole('dialog', { name: 'Restore files' });
-		await dialog.locator('[data-path="workspace.txt"]').getByRole('checkbox').click();
+		await openVolumeRestoreFilesDialog(page);
+		const dialog = await selectVolumeRestoreFile(page);
 		await dialog.getByRole('button', { name: 'Restore files' }).click();
-		await expect.poll(() => restoreBodies.length).toBe(1);
-		expect(restoreBodies[0]).toEqual({ paths: ['workspace.txt'], selectAll: false, search: '' });
+		await expect.poll(() => state.restoreBodies.length).toBe(1);
+		expect(state.restoreBodies[0]).toEqual({
+			paths: ['workspace.txt'],
+			selectAll: false,
+			search: ''
+		});
 		await page.getByRole('tab', { name: 'Workspace', exact: true }).click();
 
 		await expect(editor).toContainText('after restore');
 		await expect(page.getByRole('img', { name: 'Unsaved changes' })).toHaveCount(0);
-		expect(workspaceRequests).toBeGreaterThanOrEqual(2);
-		expect(fileRequests).toBeGreaterThanOrEqual(2);
+		expect(state.workspaceRequests).toBe(2);
+		expect(state.fileRequests).toBe(2);
+	});
+
+	test('requires confirmation before discarding volume workspace changes', async ({ page }) => {
+		const state: VolumeWorkspaceRestoreState = {
+			content: 'before restore',
+			restoredContent: 'after restore',
+			revision: 1,
+			failRestore: false,
+			workspaceRequests: 0,
+			fileRequests: 0,
+			restoreBodies: [],
+			fullRestoreRequests: 0
+		};
+		await mockVolumeWorkspaceRestore(page, state);
+		await mockVolumeBackupPage(page, async (_request, route) => {
+			await route.fulfill({
+				json: response({
+					entries: [{ path: 'workspace.txt', name: 'workspace.txt', isDirectory: false }]
+				})
+			});
+		});
+
+		await page.keyboard.press('Escape');
+		const editor = await openVolumeWorkspaceEditor(page);
+		await replaceEditorText(page, editor, 'local draft');
+		await expect(page.getByRole('img', { name: 'Unsaved changes' })).toHaveCount(1);
+
+		await openVolumeRestoreFilesDialog(page);
+		let restoreDialog = await selectVolumeRestoreFile(page);
+		await restoreDialog.getByRole('button', { name: 'Restore files' }).click();
+		let confirmDialog = page.getByRole('dialog', { name: 'Unsaved changes' });
+		await expect(confirmDialog).toContainText(
+			'discard all unsaved text and staged file operations'
+		);
+		await confirmDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+		expect(state.restoreBodies).toHaveLength(0);
+
+		await page.getByRole('tab', { name: 'Workspace', exact: true }).click();
+		await expect(editor).toContainText('local draft');
+		await expect(page.getByRole('img', { name: 'Unsaved changes' })).toHaveCount(1);
+
+		state.failRestore = true;
+		await openVolumeRestoreFilesDialog(page);
+		restoreDialog = await selectVolumeRestoreFile(page);
+		await restoreDialog.getByRole('button', { name: 'Restore files' }).click();
+		confirmDialog = page.getByRole('dialog', { name: 'Unsaved changes' });
+		await confirmDialog.getByRole('button', { name: 'Restore files', exact: true }).click();
+		await expect.poll(() => state.restoreBodies.length).toBe(1);
+
+		await page.getByRole('tab', { name: 'Workspace', exact: true }).click();
+		await expect(editor).toContainText('local draft');
+		await expect(page.getByRole('img', { name: 'Unsaved changes' })).toHaveCount(1);
+
+		state.failRestore = false;
+		await openVolumeRestoreFilesDialog(page);
+		restoreDialog = await selectVolumeRestoreFile(page);
+		await restoreDialog.getByRole('button', { name: 'Restore files' }).click();
+		confirmDialog = page.getByRole('dialog', { name: 'Unsaved changes' });
+		await confirmDialog.getByRole('button', { name: 'Restore files', exact: true }).click();
+		await expect.poll(() => state.restoreBodies.length).toBe(2);
+
+		await page.getByRole('tab', { name: 'Workspace', exact: true }).click();
+		await expect(editor).toContainText('after restore');
+		await expect(page.getByRole('img', { name: 'Unsaved changes' })).toHaveCount(0);
+	});
+
+	test('warns before a full volume restore discards workspace changes', async ({ page }) => {
+		const state: VolumeWorkspaceRestoreState = {
+			content: 'before restore',
+			restoredContent: 'after restore',
+			revision: 1,
+			failRestore: false,
+			workspaceRequests: 0,
+			fileRequests: 0,
+			restoreBodies: [],
+			fullRestoreRequests: 0
+		};
+		await mockVolumeWorkspaceRestore(page, state);
+		await mockVolumeBackupPage(page, async (_request, route) => {
+			await route.fulfill({
+				json: response({
+					entries: [{ path: 'workspace.txt', name: 'workspace.txt', isDirectory: false }]
+				})
+			});
+		});
+
+		await page.keyboard.press('Escape');
+		const editor = await openVolumeWorkspaceEditor(page);
+		await replaceEditorText(page, editor, 'local draft');
+		await page.getByRole('tab', { name: 'Backups', exact: true }).click();
+		const backupRow = page.getByRole('row').filter({ hasText: BACKUP_ID }).first();
+		await backupRow.getByRole('button', { name: 'Open menu' }).click();
+		await page.getByRole('menuitem', { name: 'Restore', exact: true }).click();
+
+		const confirmDialog = page.getByRole('dialog', { name: 'Restore Volume' });
+		await expect(confirmDialog).toContainText(
+			'discard all unsaved text and staged file operations'
+		);
+		await confirmDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+		expect(state.fullRestoreRequests).toBe(0);
+
+		await page.getByRole('tab', { name: 'Workspace', exact: true }).click();
+		await expect(editor).toContainText('local draft');
+		await expect(page.getByRole('img', { name: 'Unsaved changes' })).toHaveCount(1);
 	});
 
 	test('refreshes clean project workspace files after a system restore', async ({ page }) => {
