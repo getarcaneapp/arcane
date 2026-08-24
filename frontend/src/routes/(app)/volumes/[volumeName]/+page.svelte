@@ -107,10 +107,14 @@
 	let workspaceFileLoadErrors = $state<Record<string, string>>({});
 	let workspaceFileLoading = $state<Record<string, boolean>>({});
 	let workspaceRestoreRecords = $state<Record<string, true>>({});
+	const workspaceFileLoadVersions = new Map<string, number>();
 	let selectedWorkspaceFile = $state('');
 	let openWorkspaceTabs = $state<string[]>([]);
 	let workspaceTreePaneWidth = $state(420);
+	let workspaceTabActive = $state(false);
+	let workspaceTabVisited = $state(false);
 	type VolumeWorkspaceUIPrefs = { selectedFile: string; openTabs: string[] };
+	type WorkspaceRestoreSelection = { paths: string[]; selectAll: boolean };
 	let workspacePrefs: PersistedState<VolumeWorkspaceUIPrefs> | null = null;
 	let lastWorkspacePrefsKey = $state('');
 
@@ -205,7 +209,20 @@
 	);
 
 	$effect(() => {
-		if (selectedTab === 'workspace') workspaceRequested = true;
+		if (selectedTab !== 'workspace') {
+			workspaceTabActive = false;
+			return;
+		}
+
+		workspaceRequested = true;
+		if (workspaceTabActive) return;
+		workspaceTabActive = true;
+		if (!workspaceTabVisited) {
+			workspaceTabVisited = true;
+			return;
+		}
+
+		void untrack(() => refreshVolumeWorkspaceOnActivation());
 	});
 
 	$effect(() => {
@@ -294,8 +311,10 @@
 
 		workspaceFileLoading = { ...workspaceFileLoading, [relativePath]: true };
 		workspaceFileLoadErrors = removeWorkspaceFileRecord(workspaceFileLoadErrors, relativePath);
+		const loadVersion = workspaceFileLoadVersions.get(relativePath) ?? 0;
 		try {
 			const file = await volumeWorkspaceService.getWorkspaceFile(volume.name, relativePath, currentEnvId);
+			if (loadVersion !== (workspaceFileLoadVersions.get(relativePath) ?? 0)) return;
 			workspaceFileMetadata = { ...workspaceFileMetadata, [relativePath]: file };
 			if (file.editable) {
 				const content = file.content ?? '';
@@ -305,12 +324,15 @@
 				}
 			}
 		} catch (error) {
+			if (loadVersion !== (workspaceFileLoadVersions.get(relativePath) ?? 0)) return;
 			workspaceFileLoadErrors = {
 				...workspaceFileLoadErrors,
 				[relativePath]: error instanceof Error ? error.message : String(error)
 			};
 		} finally {
-			workspaceFileLoading = removeWorkspaceFileRecord(workspaceFileLoading, relativePath);
+			if (loadVersion === (workspaceFileLoadVersions.get(relativePath) ?? 0)) {
+				workspaceFileLoading = removeWorkspaceFileRecord(workspaceFileLoading, relativePath);
+			}
 		}
 	}
 
@@ -481,6 +503,7 @@
 	}
 
 	function clearVolumeWorkspaceDrafts() {
+		for (const relativePath of Object.keys(workspaceFileLoading)) expireWorkspaceFileLoad(relativePath);
 		workspaceFileChanges = [];
 		workspaceFileContents = {};
 		loadedWorkspaceFileContents = {};
@@ -490,14 +513,19 @@
 		workspaceRestoreRecords = {};
 	}
 
-	async function refreshRestoredVolumeWorkspace(selection: { paths: string[]; selectAll: boolean }) {
+	function expireWorkspaceFileLoad(relativePath: string) {
+		workspaceFileLoadVersions.set(relativePath, (workspaceFileLoadVersions.get(relativePath) ?? 0) + 1);
+	}
+
+	function clearCleanVolumeWorkspaceFileCache(selection: WorkspaceRestoreSelection) {
 		const restoredPaths = selection.paths.map(normalizeWorkspaceRelativePath).filter(Boolean);
 		const cachedPaths = new Set([
 			...Object.keys(workspaceFileContents),
 			...Object.keys(loadedWorkspaceFileContents),
 			...Object.keys(workspaceFileMetadata),
 			...Object.keys(workspaceFileLoadErrors),
-			...Object.keys(workspaceFileLoading)
+			...Object.keys(workspaceFileLoading),
+			...Object.keys(workspaceRestoreRecords)
 		]);
 
 		for (const relativePath of cachedPaths) {
@@ -514,6 +542,7 @@
 			);
 			if (hasTextDraft || hasFileChange) continue;
 
+			expireWorkspaceFileLoad(relativePath);
 			workspaceFileContents = removeWorkspaceFileRecord(workspaceFileContents, relativePath);
 			loadedWorkspaceFileContents = removeWorkspaceFileRecord(loadedWorkspaceFileContents, relativePath);
 			workspaceFileMetadata = removeWorkspaceFileRecord(workspaceFileMetadata, relativePath);
@@ -521,8 +550,17 @@
 			workspaceFileLoading = removeWorkspaceFileRecord(workspaceFileLoading, relativePath);
 			workspaceRestoreRecords = removeWorkspaceFileRecord(workspaceRestoreRecords, relativePath);
 		}
+	}
+
+	async function refreshRestoredVolumeWorkspace(selection: WorkspaceRestoreSelection) {
+		clearCleanVolumeWorkspaceFileCache(selection);
 
 		await queryClient.invalidateQueries({ queryKey: queryKeys.volumes.workspace(currentEnvId, volume.name) });
+	}
+
+	async function refreshVolumeWorkspaceOnActivation() {
+		clearCleanVolumeWorkspaceFileCache({ paths: [], selectAll: true });
+		await workspaceQuery.refetch();
 	}
 
 	async function handleSaveVolumeWorkspace() {

@@ -211,6 +211,83 @@ function rootEntries(count: number) {
 }
 
 test.describe('Backup file picker', () => {
+	test('refreshes clean volume workspace files when returning to the workspace tab', async ({
+		page
+	}) => {
+		const encodedVolume = encodeURIComponent(VOLUME_NAME);
+		let fileContent = 'before restore';
+		let workspaceRequests = 0;
+		let fileRequests = 0;
+
+		await page.route(
+			new RegExp(`/api/environments/0/volumes/${encodedVolume}/workspace$`),
+			async (route) => {
+				workspaceRequests += 1;
+				await route.fulfill({
+					json: response({
+						files: [
+							{
+								path: '/workspace.txt',
+								relativePath: 'workspace.txt',
+								name: 'workspace.txt',
+								isDirectory: false,
+								size: fileContent.length,
+								mode: '-rw-r--r--',
+								isSymlink: false,
+								editable: true
+							}
+						],
+						fileTreeRevision: `revision-${workspaceRequests}`,
+						fileTreeTruncated: false
+					})
+				});
+			}
+		);
+		await page.route(
+			new RegExp(`/api/environments/0/volumes/${encodedVolume}/workspace/file(?:\\?.*)?$`),
+			async (route) => {
+				fileRequests += 1;
+				await route.fulfill({
+					json: response({
+						path: '/workspace.txt',
+						relativePath: 'workspace.txt',
+						name: 'workspace.txt',
+						size: fileContent.length,
+						mimeType: 'text/plain',
+						content: fileContent,
+						editable: true
+					})
+				});
+			}
+		);
+
+		await mockVolumeBackupPage(page, async (_request, route) => {
+			await route.fulfill({
+				json: response({
+					entries: [{ path: 'workspace.txt', name: 'workspace.txt', isDirectory: false }]
+				})
+			});
+		});
+
+		await page.keyboard.press('Escape');
+		await page.getByRole('tab', { name: 'Workspace', exact: true }).click();
+		await page
+			.locator('[data-path="workspace.txt"]')
+			.getByRole('button', { name: 'workspace.txt' })
+			.click();
+		const editor = page.locator('.arcane-code-editor .cm-content').first();
+		await expect(editor).toContainText('before restore');
+
+		await page.getByRole('tab', { name: 'Backups', exact: true }).click();
+		fileContent = 'after restore';
+		await page.getByRole('tab', { name: 'Workspace', exact: true }).click();
+
+		await expect(editor).toContainText('after restore');
+		await expect(page.getByRole('img', { name: 'Unsaved changes' })).toHaveCount(0);
+		expect(workspaceRequests).toBeGreaterThanOrEqual(2);
+		expect(fileRequests).toBeGreaterThanOrEqual(2);
+	});
+
 	test('loads folders lazily, walks continuation pages, retains rows on retry, and bounds mounted rows', async ({
 		page
 	}) => {
