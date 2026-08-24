@@ -59,7 +59,18 @@
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
 	import type { BackupFileProvider } from '#lib/types/backup';
 
-	let { volumeName }: { volumeName: string } = $props();
+	type WorkspaceRestoreSelection = {
+		paths: string[];
+		selectAll: boolean;
+	};
+
+	let {
+		volumeName,
+		onWorkspaceRestored
+	}: {
+		volumeName: string;
+		onWorkspaceRestored?: (selection: WorkspaceRestoreSelection) => void | Promise<void>;
+	} = $props();
 
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
 	const canBackupVolume = $derived(hasPermission('volumes:backup', currentEnvId));
@@ -235,6 +246,7 @@
 				action: async () => {
 					try {
 						const result = await volumeBackupService.restoreBackup(volumeName, backup.id);
+						await onWorkspaceRestored?.({ paths: [], selectAll: true });
 						toast.success(m.volumes_backup_restore_success(), activityToastOptions(extractActivityId(result)));
 						await loadData(requestOptions);
 					} catch (error) {
@@ -249,13 +261,14 @@
 		if (!restoreTarget) return;
 		if (!selectAllBackupFiles && !selectedPaths.length) return;
 
+		const selection = { paths: [...selectedPaths], selectAll: selectAllBackupFiles } satisfies WorkspaceRestoreSelection;
 		restoringFiles = true;
 		try {
 			const result = await volumeBackupService.restoreBackupFiles(volumeName, restoreTarget.id, {
-				paths: selectedPaths,
-				selectAll: selectAllBackupFiles,
-				search: selectAllBackupFiles ? backupFilesSearch.trim() : undefined
+				...selection,
+				search: selection.selectAll ? backupFilesSearch.trim() : undefined
 			});
+			await onWorkspaceRestored?.(selection);
 			toast.success(m.volumes_backup_restore_selection_success(), activityToastOptions(extractActivityId(result)));
 			showRestoreFiles = false;
 		} catch (error) {

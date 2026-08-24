@@ -48,6 +48,7 @@
 		buildWorkspaceMultipartUpdate,
 		isWorkspaceFileSelectionUnder,
 		joinWorkspaceFilePath,
+		normalizeWorkspaceRelativePath,
 		remapSelectedWorkspaceFileKey,
 		remapWorkspaceFileRecord,
 		removeWorkspaceFileRecord,
@@ -489,6 +490,41 @@
 		workspaceRestoreRecords = {};
 	}
 
+	async function refreshRestoredVolumeWorkspace(selection: { paths: string[]; selectAll: boolean }) {
+		const restoredPaths = selection.paths.map(normalizeWorkspaceRelativePath).filter(Boolean);
+		const cachedPaths = new Set([
+			...Object.keys(workspaceFileContents),
+			...Object.keys(loadedWorkspaceFileContents),
+			...Object.keys(workspaceFileMetadata),
+			...Object.keys(workspaceFileLoadErrors),
+			...Object.keys(workspaceFileLoading)
+		]);
+
+		for (const relativePath of cachedPaths) {
+			if (!selection.selectAll && !restoredPaths.some((rootPath) => workspaceFilePathMatches(relativePath, rootPath))) {
+				continue;
+			}
+			const hasTextDraft =
+				workspaceFileContents[relativePath] !== undefined &&
+				workspaceFileContents[relativePath] !== loadedWorkspaceFileContents[relativePath];
+			const hasFileChange = workspaceFileChanges.some(
+				(change) =>
+					workspaceFilePathMatches(relativePath, change.relativePath) ||
+					workspaceFilePathMatches(change.relativePath, relativePath)
+			);
+			if (hasTextDraft || hasFileChange) continue;
+
+			workspaceFileContents = removeWorkspaceFileRecord(workspaceFileContents, relativePath);
+			loadedWorkspaceFileContents = removeWorkspaceFileRecord(loadedWorkspaceFileContents, relativePath);
+			workspaceFileMetadata = removeWorkspaceFileRecord(workspaceFileMetadata, relativePath);
+			workspaceFileLoadErrors = removeWorkspaceFileRecord(workspaceFileLoadErrors, relativePath);
+			workspaceFileLoading = removeWorkspaceFileRecord(workspaceFileLoading, relativePath);
+			workspaceRestoreRecords = removeWorkspaceFileRecord(workspaceRestoreRecords, relativePath);
+		}
+
+		await queryClient.invalidateQueries({ queryKey: queryKeys.volumes.workspace(currentEnvId, volume.name) });
+	}
+
 	async function handleSaveVolumeWorkspace() {
 		if (!workspaceQuery.data || !canSaveWorkspace) return;
 		const update = buildWorkspaceMultipartUpdate(workspaceFileChanges, workspaceFileContents, loadedWorkspaceFileContents);
@@ -873,7 +909,7 @@
 						</div>
 					{/if}
 				{:else if tab === 'backups'}
-					<BackupList volumeName={volume.name} />
+					<BackupList volumeName={volume.name} onWorkspaceRestored={refreshRestoredVolumeWorkspace} />
 				{/if}
 			</div>
 		{/snippet}
