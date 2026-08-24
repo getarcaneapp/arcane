@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"path"
 	"slices"
 	"strings"
 	"time"
@@ -157,8 +158,8 @@ func (e *Engine) ListSnapshotFiles(ctx context.Context, dockerClient *client.Cli
 	return e.ListSnapshotFilesAtPath(ctx, dockerClient, repository, password, snapshotID, "", true)
 }
 
-// ListSnapshotFilesAtPath lists a snapshot path. A supplied path is
-// nonrecursive unless recursive is true, matching Rustic's native tree walk.
+// ListSnapshotFilesAtPath lists a snapshot path and returns paths relative to
+// the snapshot root. A supplied path is nonrecursive unless recursive is true.
 func (e *Engine) ListSnapshotFilesAtPath(ctx context.Context, dockerClient *client.Client, repository Repository, password, snapshotID, filePath string, recursive bool) ([]string, error) {
 	command := []string{"ls", "--json"}
 	if recursive {
@@ -178,17 +179,37 @@ func (e *Engine) ListSnapshotFilesAtPath(ctx context.Context, dockerClient *clie
 	if err := json.Unmarshal([]byte(output), &files); err != nil {
 		return nil, fmt.Errorf("failed to decode Rustic file list: %w", err)
 	}
-	if recursive || len(files) == 0 {
-		return files, nil
+	if !recursive && len(files) > 0 {
+		// Rustic's JSON listing omits node types; the stable long listing restores them.
+		longCommand := slices.Clone(command)
+		longCommand[1] = "--long"
+		longOutput, err := e.runInternal(ctx, dockerClient, repository, password, longCommand)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list Rustic snapshot metadata: %w", err)
+		}
+		files, err = markSnapshotDirectoriesInternal(files, longOutput)
+		if err != nil {
+			return nil, err
+		}
 	}
-	// Rustic's JSON listing omits node types; the stable long listing restores them.
-	longCommand := slices.Clone(command)
-	longCommand[1] = "--long"
-	longOutput, err := e.runInternal(ctx, dockerClient, repository, password, longCommand)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list Rustic snapshot metadata: %w", err)
+	return qualifySnapshotListingInternal(files, cleanedPath), nil
+}
+
+func qualifySnapshotListingInternal(files []string, snapshotPath string) []string {
+	qualified := slices.Clone(files)
+	prefix := strings.Trim(strings.TrimSpace(snapshotPath), "/")
+	if prefix == "" {
+		return qualified
 	}
-	return markSnapshotDirectoriesInternal(files, longOutput)
+	for index, file := range qualified {
+		directory := strings.HasSuffix(file, "/")
+		relative := strings.TrimPrefix(strings.TrimPrefix(file, "./"), "/")
+		qualified[index] = path.Join(prefix, relative)
+		if directory {
+			qualified[index] += "/"
+		}
+	}
+	return qualified
 }
 
 func markSnapshotDirectoriesInternal(files []string, longOutput string) ([]string, error) {

@@ -17,6 +17,14 @@ func TestBuildEntriesSynthesizesAndSortsDirectoriesInternal(t *testing.T) {
 	}, entries)
 }
 
+func TestBuildEntriesNestedBrowseInternal(t *testing.T) {
+	entries := BuildEntries([]string{"folder/nested/", "folder/file.txt"}, "folder", false)
+	require.Equal(t, []backuptypes.BackupFileEntry{
+		{Path: "folder/nested", Name: "nested", IsDirectory: true},
+		{Path: "folder/file.txt", Name: "file.txt"},
+	}, entries)
+}
+
 func TestPageWalkReachesEveryEntryInternal(t *testing.T) {
 	entries := BuildEntries([]string{"d/", "a.txt", "b.txt", "c.txt", "d/e.txt"}, "", true)
 	var walked []backuptypes.BackupFileEntry

@@ -294,6 +294,17 @@ func TestProjectEntriesFromSnapshotSynthesizesFoldersAndExcludesProtectedDataInt
 	}, entries)
 }
 
+func TestProjectEntriesFromSnapshotNestedBrowseInternal(t *testing.T) {
+	entries := projectEntriesFromSnapshotInternal([]string{
+		"/app/data/custom/projects/demo/nested/",
+		"/app/data/custom/projects/demo/compose.yaml",
+	}, "/app/data", "custom/projects", "arcane.db", "demo", false)
+	require.Equal(t, []backuptypes.BackupFileEntry{
+		{Path: "demo/nested", Name: "nested", IsDirectory: true},
+		{Path: "demo/compose.yaml", Name: "compose.yaml"},
+	}, entries)
+}
+
 func TestNormalizeSystemBackupSelectionInternal(t *testing.T) {
 	snapshot := systemBackupSnapshotInternal{
 		projectsPath: "historical",

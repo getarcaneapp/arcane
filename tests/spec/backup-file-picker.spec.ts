@@ -218,10 +218,23 @@ test.describe('Backup file picker', () => {
 		let continuationAttempts = 0;
 		await mockVolumeBackupPage(page, async (request, route) => {
 			requests.push(request);
+			if (request.path === 'folder/nested') {
+				await route.fulfill({
+					json: response({
+						entries: [
+							{ path: 'folder/nested/grandchild.txt', name: 'grandchild.txt', isDirectory: false }
+						]
+					})
+				});
+				return;
+			}
 			if (request.path === 'folder') {
 				await route.fulfill({
 					json: response({
-						entries: [{ path: 'folder/child.txt', name: 'child.txt', isDirectory: false }]
+						entries: [
+							{ path: 'folder/nested', name: 'nested', isDirectory: true },
+							{ path: 'folder/child.txt', name: 'child.txt', isDirectory: false }
+						]
 					})
 				});
 				return;
@@ -254,6 +267,14 @@ test.describe('Backup file picker', () => {
 			.click();
 		await expect.poll(() => requests.filter((request) => request.path === 'folder').length).toBe(1);
 		await expect(tree.locator('[data-path="folder/child.txt"]')).toBeVisible();
+		await tree
+			.locator('[data-path="folder/nested"]')
+			.getByRole('button', { name: 'Expand nested' })
+			.click();
+		await expect
+			.poll(() => requests.filter((request) => request.path === 'folder/nested').length)
+			.toBe(1);
+		await expect(tree.locator('[data-path="folder/nested/grandchild.txt"]')).toBeVisible();
 
 		await tree.evaluate((element) => {
 			element.scrollTop = element.scrollHeight;
