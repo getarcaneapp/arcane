@@ -663,6 +663,7 @@ var eventDefinitions = map[EventType]eventDefinition{
 	EventTypeProjectError:  {"Project error: %s", "An error occurred with project '%s'", EventSeverityError},
 
 	EventTypeVolumeCreate:             {"Volume created: %s", "Volume '%s' has been created", EventSeveritySuccess},
+	EventTypeVolumeRename:             {"Volume renamed: %s", "Volume '%s' has been renamed", EventSeveritySuccess},
 	EventTypeVolumeDelete:             {"Volume deleted: %s", "Volume '%s' has been deleted", EventSeverityWarning},
 	EventTypeVolumeError:              {"Volume error: %s", "An error occurred with volume '%s'", EventSeverityError},
 	EventTypeVolumeFileCreate:         {"Volume file created: %s", "A file or directory was created in volume '%s'", EventSeveritySuccess},

@@ -34,7 +34,12 @@
 	);
 </script>
 
-<UpdateAllDialog bind:open={upgradeCheck.showConfirmDialog} {versionInformation} canConfirm={upgradeCheck.shouldShowUpgrade} />
+<UpdateAllDialog
+	bind:open={upgradeCheck.showConfirmDialog}
+	{versionInformation}
+	canConfirm={upgradeCheck.shouldShowUpgrade}
+	debugDemo={debug}
+/>
 
 {#if upgradeCheck.shouldShowBanner}
 	<div class={cn('pb-2', isCollapsed ? 'px-1' : 'px-3')}>

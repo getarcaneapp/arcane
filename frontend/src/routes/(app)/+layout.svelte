@@ -50,9 +50,6 @@
 		return flattenNavigationItems(items).filter((item) => item.shortcut?.length);
 	});
 
-	// Environment liveness is pushed for as long as the app shell is mounted, so
-	// every surface that reads environmentStore — the board, the environments
-	// table, the switcher — sees an agent reconnect without a page load.
 	$effect(() => {
 		if (!user) {
 			return;
@@ -108,13 +105,6 @@
 
 <svelte:window onkeydown={handleNavigationShortcut} />
 
-<!--
-	`children` is rendered at a single, stable call site so the page subtree is NOT
-	torn down and recreated when `isMobile` flips across the 768px breakpoint. A
-	remount would re-run each page's one-time state setup and silently discard
-	unsaved edits (e.g. the project compose editor). Only the surrounding chrome and
-	classes are toggled by viewport. See issue #2938.
--->
 <Sidebar.Provider class={isMobile.current ? 'h-auto min-h-dvh' : undefined}>
 	{#if !isMobile.current}
 		<AppSidebar {versionInformation} {user} {swarmEnabled} {permissionsManifest} />

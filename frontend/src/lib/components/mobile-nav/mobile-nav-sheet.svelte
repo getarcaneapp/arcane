@@ -201,7 +201,12 @@
 	</Drawer.Content>
 </Drawer.Root>
 
-<UpdateAllDialog bind:open={upgradeCheck.showConfirmDialog} {versionInformation} canConfirm={upgradeCheck.shouldShowUpgrade} />
+<UpdateAllDialog
+	bind:open={upgradeCheck.showConfirmDialog}
+	{versionInformation}
+	canConfirm={upgradeCheck.shouldShowUpgrade}
+	debugDemo={debug}
+/>
 
 <style>
 	:global(.scrollbar-hide) {
