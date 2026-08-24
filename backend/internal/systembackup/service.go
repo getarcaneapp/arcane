@@ -119,7 +119,7 @@ func recoveryHelperExecutableInternal(mounts []containertypes.MountPoint, execut
 	return systemRecoveryHelperPath, executableMount, nil
 }
 
-func (s *SystemBackupService) recoveryEnvironmentInternal() map[string]string {
+func (s *SystemBackupService) recoveryEnvironmentInternal(ctx context.Context) map[string]string {
 	result := make(map[string]string)
 	var visit func(reflect.Value)
 	visit = func(value reflect.Value) {
@@ -155,6 +155,9 @@ func (s *SystemBackupService) recoveryEnvironmentInternal() map[string]string {
 		}
 	}
 	visit(reflect.ValueOf(s.config))
+	if s.settingsService != nil {
+		result["PROJECTS_DIRECTORY"] = s.settingsService.GetStringSetting(ctx, "projectsDirectory", result["PROJECTS_DIRECTORY"])
+	}
 	return result
 }
 
@@ -189,7 +192,7 @@ func (s *SystemBackupService) manifestPathInternal() (string, error) {
 }
 
 func (s *SystemBackupService) writeManifestInternal(ctx context.Context, backupID string) error {
-	manifest := recoverytypes.Manifest{FormatVersion: 1, ArcaneVersion: config.Version, BackupID: backupID, ActivityID: activitylib.IDFromContext(ctx), CreatedAt: time.Now().UTC(), Environment: s.recoveryEnvironmentInternal()}
+	manifest := recoverytypes.Manifest{FormatVersion: 1, ArcaneVersion: config.Version, BackupID: backupID, ActivityID: activitylib.IDFromContext(ctx), CreatedAt: time.Now().UTC(), Environment: s.recoveryEnvironmentInternal(ctx)}
 	data, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to encode recovery manifest: %w", err)
@@ -268,14 +271,6 @@ func systemSnapshotPathFromFilesInternal(files []string) (string, error) {
 		}
 	}
 	return "", errors.New("system recovery snapshot does not contain an Arcane recovery manifest")
-}
-
-func (s *SystemBackupService) snapshotPathInternal(ctx context.Context, dockerClient *client.Client, repository backup.Repository, recoveryKey, snapshotID string) (string, error) {
-	files, err := s.engine.ListSnapshotFiles(ctx, dockerClient, repository, recoveryKey, snapshotID)
-	if err != nil {
-		return "", fmt.Errorf("failed to inspect system recovery snapshot: %w", err)
-	}
-	return systemSnapshotPathFromFilesInternal(files)
 }
 
 func (s *SystemBackupService) recoveryKeyInternal(ctx context.Context, supplied string) (string, error) {
@@ -496,56 +491,214 @@ func (s *SystemBackupService) backupInternal(ctx context.Context, id string) (*S
 	return &run, nil
 }
 
-func (s *SystemBackupService) repositoryForBackupInternal(ctx context.Context, dockerClient *client.Client, run *SystemBackupRun) (backup.Repository, string, error) {
-	switch {
-	case run.LocalSnapshotID != "":
+type systemBackupSnapshotEngineInternal interface {
+	ListSnapshotFiles(ctx context.Context, dockerClient *client.Client, repository backup.Repository, password, snapshotID string) ([]string, error)
+	ReadSnapshotTextFile(ctx context.Context, dockerClient *client.Client, repository backup.Repository, password, snapshotID, filePath string) (string, error)
+	RestoreSnapshot(ctx context.Context, dockerClient *client.Client, repository backup.Repository, password, snapshotID string, target mount.Mount, options backup.RestoreOptions) error
+}
+
+type systemBackupSnapshotLocationInternal struct {
+	name       string
+	repository backup.Repository
+	snapshotID string
+}
+
+type systemBackupSnapshotInternal struct {
+	systemBackupSnapshotLocationInternal
+
+	files        []string
+	snapshotPath string
+	projectsPath string
+}
+
+type systemBackupSafetySnapshotInternal struct {
+	systemBackupSnapshotLocationInternal
+
+	snapshotPath string
+	dataPaths    map[string]struct{}
+}
+
+func (s *SystemBackupService) backupSnapshotLocationsInternal(ctx context.Context, dockerClient *client.Client, run *SystemBackupRun) ([]systemBackupSnapshotLocationInternal, error) {
+	locations := make([]systemBackupSnapshotLocationInternal, 0, 2)
+	var setupErr error
+	if run.LocalSnapshotID != "" {
 		repository, err := s.localRepositoryInternal(ctx, dockerClient, true)
-		return repository, run.LocalSnapshotID, err
-	case run.RemoteSnapshotID != "":
+		if err != nil {
+			setupErr = errors.Combine(setupErr, fmt.Errorf("open local system backup repository: %w", err))
+		} else {
+			locations = append(locations, systemBackupSnapshotLocationInternal{name: "local", repository: repository, snapshotID: run.LocalSnapshotID})
+		}
+	}
+	if run.RemoteSnapshotID != "" {
 		repository, err := s.remoteRepositoryInternal(ctx, run.S3DestinationID)
-		return repository, run.RemoteSnapshotID, err
-	default:
-		return backup.Repository{}, "", errors.New("system backup has no Rustic snapshot")
+		if err != nil {
+			setupErr = errors.Combine(setupErr, fmt.Errorf("open S3 system backup repository: %w", err))
+		} else {
+			locations = append(locations, systemBackupSnapshotLocationInternal{name: "S3", repository: repository, snapshotID: run.RemoteSnapshotID})
+		}
 	}
+	if len(locations) == 0 && setupErr == nil {
+		setupErr = errors.New("system backup has no Rustic snapshot")
+	}
+	return locations, setupErr
 }
 
-func (s *SystemBackupService) projectsRelativePathInternal(ctx context.Context) (string, error) {
-	configured := s.config.ProjectsDirectory
-	if s.settingsService != nil {
-		configured = s.settingsService.GetStringSetting(ctx, "projectsDirectory", configured)
-	}
-	projectsDirectory := projects.ResolveConfiguredContainerDirectory(configured, "/app/data/projects")
-	dataDirectory, err := s.dataDirectoryInternal()
+func inspectReadableBackupSnapshotInternal(ctx context.Context, engine systemBackupSnapshotEngineInternal, dockerClient *client.Client, location systemBackupSnapshotLocationInternal, recoveryKey string) (systemBackupSnapshotInternal, error) {
+	files, err := engine.ListSnapshotFiles(ctx, dockerClient, location.repository, recoveryKey, location.snapshotID)
 	if err != nil {
-		return "", err
+		return systemBackupSnapshotInternal{}, fmt.Errorf("inspect %s system recovery snapshot: %w", location.name, err)
 	}
-	relative, err := filepath.Rel(dataDirectory, projectsDirectory)
+	snapshotPath, err := systemSnapshotPathFromFilesInternal(files)
 	if err != nil {
-		return "", fmt.Errorf("resolve projects directory within Arcane data: %w", err)
+		return systemBackupSnapshotInternal{}, fmt.Errorf("inspect %s system recovery snapshot: %w", location.name, err)
 	}
-	relative = filepath.ToSlash(relative)
-	if relative == "." {
-		return "", nil
-	}
-	if relative == ".." || strings.HasPrefix(relative, "../") {
-		return "", errors.New("the configured projects directory is outside Arcane's system backup data")
-	}
-	return strings.Trim(relative, "/"), nil
+	return systemBackupSnapshotInternal{systemBackupSnapshotLocationInternal: location, files: files, snapshotPath: snapshotPath}, nil
 }
 
-func (s *SystemBackupService) databaseRelativePathInternal() (string, error) {
-	parsed, err := url.Parse(s.config.DatabaseURL)
+func firstReadableBackupSnapshotInternal(ctx context.Context, engine systemBackupSnapshotEngineInternal, dockerClient *client.Client, locations []systemBackupSnapshotLocationInternal, recoveryKey string, setupErr error) (systemBackupSnapshotInternal, error) {
+	inspectErr := setupErr
+	for _, location := range locations {
+		snapshot, err := inspectReadableBackupSnapshotInternal(ctx, engine, dockerClient, location, recoveryKey)
+		if err == nil {
+			return snapshot, nil
+		}
+		inspectErr = errors.Combine(inspectErr, err)
+	}
+	if inspectErr == nil {
+		inspectErr = errors.New("system backup has no Rustic snapshot")
+	}
+	return systemBackupSnapshotInternal{}, fmt.Errorf("failed to open system recovery snapshot: %w", inspectErr)
+}
+
+func recoveryManifestDatabasePathInternal(manifest recoverytypes.Manifest) (string, error) {
+	databaseURL := strings.TrimSpace(manifest.Environment["DATABASE_URL"])
+	if databaseURL == "" {
+		return "", errors.New("system recovery manifest does not record the database path")
+	}
+	parsed, err := url.Parse(databaseURL)
 	if err != nil {
-		return "", fmt.Errorf("parse Arcane database URL: %w", err)
+		return "", fmt.Errorf("parse database URL from system recovery manifest: %w", err)
 	}
 	databasePath := parsed.Opaque
 	if databasePath == "" {
 		databasePath = parsed.Path
 	}
-	if strings.TrimSpace(databasePath) == "" {
-		return "", errors.New("cannot resolve the Arcane database path")
+	databasePath = strings.ReplaceAll(strings.TrimSpace(databasePath), `\`, "/")
+	if databasePath == "" {
+		return "", errors.New("system recovery manifest contains an empty database path")
 	}
-	return filepath.ToSlash(filepath.Base(databasePath)), nil
+	return path.Clean(databasePath), nil
+}
+
+func portablePathIsAbsInternal(filePath string) bool {
+	return path.IsAbs(filePath) || (len(filePath) >= 3 && filePath[1] == ':' && filePath[2] == '/')
+}
+
+func projectsRelativePathFromManifestInternal(manifest recoverytypes.Manifest) (string, error) {
+	configured := strings.TrimSpace(manifest.Environment["PROJECTS_DIRECTORY"])
+	if configured == "" {
+		return "", errors.New("system recovery manifest does not record the projects directory")
+	}
+	if strings.HasPrefix(configured, "/") {
+		if separator := strings.Index(configured, ":"); separator > 0 {
+			configured = configured[:separator]
+		}
+	}
+	projectsPath := path.Clean(strings.ReplaceAll(configured, `\`, "/"))
+	databasePath, err := recoveryManifestDatabasePathInternal(manifest)
+	if err != nil {
+		return "", err
+	}
+	dataPath := path.Dir(databasePath)
+	dataAbsolute := portablePathIsAbsInternal(dataPath)
+	projectsAbsolute := portablePathIsAbsInternal(projectsPath)
+	if !dataAbsolute && projectsAbsolute {
+		relativeDataPath := strings.Trim(dataPath, "/")
+		if relativeDataPath == "." {
+			return "", errors.New("cannot relate the absolute projects directory to the relative database path in the system recovery manifest")
+		}
+		marker := "/" + relativeDataPath
+		index := strings.LastIndex(projectsPath, marker)
+		if index < 0 || (len(projectsPath) > index+len(marker) && projectsPath[index+len(marker)] != '/') {
+			return "", errors.New("cannot relate the projects directory to the database path in the system recovery manifest")
+		}
+		dataPath = projectsPath[:index+len(marker)]
+		dataAbsolute = true
+	} else if dataAbsolute && !projectsAbsolute {
+		projectsPath = path.Join(path.Dir(dataPath), projectsPath)
+		projectsAbsolute = true
+	}
+	if dataAbsolute != projectsAbsolute {
+		return "", errors.New("projects and database paths in the system recovery manifest use incompatible roots")
+	}
+	if projectsPath == dataPath {
+		return "", nil
+	}
+	if !utils.FilePathMatches(projectsPath, dataPath) {
+		return "", errors.New("the backup-time projects directory is outside Arcane's system backup data")
+	}
+	return strings.TrimPrefix(projectsPath, dataPath+"/"), nil
+}
+
+func databaseRelativePathFromManifestInternal(manifest recoverytypes.Manifest) (string, error) {
+	databasePath, err := recoveryManifestDatabasePathInternal(manifest)
+	if err != nil {
+		return "", err
+	}
+	return path.Base(databasePath), nil
+}
+
+func inspectProjectBackupSnapshotInternal(ctx context.Context, engine systemBackupSnapshotEngineInternal, dockerClient *client.Client, location systemBackupSnapshotLocationInternal, recoveryKey string) (systemBackupSnapshotInternal, error) {
+	snapshot, err := inspectReadableBackupSnapshotInternal(ctx, engine, dockerClient, location, recoveryKey)
+	if err != nil {
+		return systemBackupSnapshotInternal{}, err
+	}
+	manifestPath := path.Join(snapshot.snapshotPath, systemRecoveryManifestName)
+	manifestData, err := engine.ReadSnapshotTextFile(ctx, dockerClient, location.repository, recoveryKey, location.snapshotID, manifestPath)
+	if err != nil {
+		return systemBackupSnapshotInternal{}, fmt.Errorf("read %s system recovery manifest: %w", location.name, err)
+	}
+	var manifest recoverytypes.Manifest
+	if err := json.Unmarshal([]byte(manifestData), &manifest); err != nil {
+		return systemBackupSnapshotInternal{}, fmt.Errorf("decode %s system recovery manifest: %w", location.name, err)
+	}
+	if manifest.FormatVersion != 1 {
+		return systemBackupSnapshotInternal{}, fmt.Errorf("%s system recovery manifest uses unsupported format %d", location.name, manifest.FormatVersion)
+	}
+	projectsPath, err := projectsRelativePathFromManifestInternal(manifest)
+	if err != nil {
+		return systemBackupSnapshotInternal{}, fmt.Errorf("resolve projects directory from %s system recovery manifest: %w", location.name, err)
+	}
+	databasePath, err := databaseRelativePathFromManifestInternal(manifest)
+	if err != nil {
+		return systemBackupSnapshotInternal{}, fmt.Errorf("resolve database path from %s system recovery manifest: %w", location.name, err)
+	}
+	snapshot.projectsPath = projectsPath
+	snapshot.files = projectFilesFromSnapshotInternal(snapshot.files, snapshot.snapshotPath, projectsPath, databasePath)
+	return snapshot, nil
+}
+
+func availableProjectBackupSnapshotsInternal(ctx context.Context, engine systemBackupSnapshotEngineInternal, dockerClient *client.Client, locations []systemBackupSnapshotLocationInternal, recoveryKey string, setupErr error, firstOnly bool) ([]systemBackupSnapshotInternal, error) {
+	snapshots := make([]systemBackupSnapshotInternal, 0, len(locations))
+	inspectErr := setupErr
+	for _, location := range locations {
+		snapshot, err := inspectProjectBackupSnapshotInternal(ctx, engine, dockerClient, location, recoveryKey)
+		if err != nil {
+			inspectErr = errors.Combine(inspectErr, err)
+			continue
+		}
+		snapshots = append(snapshots, snapshot)
+		if firstOnly {
+			break
+		}
+	}
+	if len(snapshots) == 0 {
+		if inspectErr == nil {
+			inspectErr = errors.New("system backup has no Rustic snapshot")
+		}
+		return nil, fmt.Errorf("failed to open project files in system recovery snapshot: %w", inspectErr)
+	}
+	return snapshots, nil
 }
 
 func snapshotRelativePathInternal(filePath, snapshotPath string) (string, bool) {
@@ -634,26 +787,7 @@ func validateRequestedProjectFilesInternal(requested, available []string) ([]str
 	return result, nil
 }
 
-func (s *SystemBackupService) projectSnapshotFilesInternal(ctx context.Context, dockerClient *client.Client, repository backup.Repository, recoveryKey, snapshotID string) ([]string, string, string, error) {
-	files, err := s.engine.ListSnapshotFiles(ctx, dockerClient, repository, recoveryKey, snapshotID)
-	if err != nil {
-		return nil, "", "", fmt.Errorf("failed to inspect system recovery snapshot: %w", err)
-	}
-	snapshotPath, err := systemSnapshotPathFromFilesInternal(files)
-	if err != nil {
-		return nil, "", "", err
-	}
-	projectsPath, err := s.projectsRelativePathInternal(ctx)
-	if err != nil {
-		return nil, "", "", err
-	}
-	databasePath, err := s.databaseRelativePathInternal()
-	if err != nil {
-		return nil, "", "", err
-	}
-	return projectFilesFromSnapshotInternal(files, snapshotPath, projectsPath, databasePath), snapshotPath, projectsPath, nil
-}
-
+// ListBackupFiles lists project files eligible for selective restore from a system backup.
 func (s *SystemBackupService) ListBackupFiles(ctx context.Context, id, recoveryKey string) ([]string, error) {
 	run, err := s.backupInternal(ctx, id)
 	if err != nil {
@@ -670,14 +804,121 @@ func (s *SystemBackupService) ListBackupFiles(ctx context.Context, id, recoveryK
 	if err != nil {
 		return nil, err
 	}
-	repository, snapshotID, err := s.repositoryForBackupInternal(ctx, dockerClient, run)
+	locations, setupErr := s.backupSnapshotLocationsInternal(ctx, dockerClient, run)
+	snapshots, err := availableProjectBackupSnapshotsInternal(ctx, s.engine, dockerClient, locations, key, setupErr, true)
 	if err != nil {
 		return nil, err
 	}
-	files, _, _, err := s.projectSnapshotFilesInternal(ctx, dockerClient, repository, key, snapshotID)
-	return files, err
+	return snapshots[0].files, nil
 }
 
+func snapshotDataPathsInternal(files []string, snapshotPath string) map[string]struct{} {
+	result := make(map[string]struct{}, len(files))
+	for _, file := range files {
+		if relative, ok := snapshotRelativePathInternal(file, snapshotPath); ok {
+			result[relative] = struct{}{}
+		}
+	}
+	return result
+}
+
+func (s *SystemBackupService) prepareSafetySnapshotInternal(ctx context.Context, dockerClient *client.Client, run *SystemBackupRun, recoveryKey string) (systemBackupSafetySnapshotInternal, error) {
+	repository, err := s.localRepositoryInternal(ctx, dockerClient, true)
+	if err != nil {
+		return systemBackupSafetySnapshotInternal{}, fmt.Errorf("open pre-restore system backup repository: %w", err)
+	}
+	location := systemBackupSnapshotLocationInternal{name: "safety", repository: repository, snapshotID: run.LocalSnapshotID}
+	snapshot, err := inspectReadableBackupSnapshotInternal(ctx, s.engine, dockerClient, location, recoveryKey)
+	if err != nil {
+		return systemBackupSafetySnapshotInternal{}, fmt.Errorf("open pre-restore system backup: %w", err)
+	}
+	return systemBackupSafetySnapshotInternal{
+		systemBackupSnapshotLocationInternal: location,
+		snapshotPath:                         snapshot.snapshotPath,
+		dataPaths:                            snapshotDataPathsInternal(snapshot.files, snapshot.snapshotPath),
+	}, nil
+}
+
+type removeProjectFileFuncInternal func(string, string) error
+
+func (s *SystemBackupService) removeProjectFileInternal(projectsPath, selectedPath string) error {
+	dataDirectory, err := s.dataDirectoryInternal()
+	if err != nil {
+		return err
+	}
+	dataRelative := path.Join(projectsPath, selectedPath)
+	root, err := os.OpenRoot(dataDirectory)
+	if err != nil {
+		return fmt.Errorf("open Arcane data directory: %w", err)
+	}
+	defer func() { _ = root.Close() }()
+	if err := root.Remove(filepath.FromSlash(dataRelative)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("remove %s: %w", dataRelative, err)
+	}
+	return nil
+}
+
+func restoreProjectFileFromSnapshotsInternal(ctx context.Context, engine systemBackupSnapshotEngineInternal, dockerClient *client.Client, snapshots []systemBackupSnapshotInternal, recoveryKey, projectsPath, selectedPath string, dataMount mount.Mount) error {
+	var restoreErr error
+	for _, snapshot := range snapshots {
+		if snapshot.projectsPath != projectsPath || !slices.Contains(snapshot.files, selectedPath) {
+			continue
+		}
+		err := engine.RestoreSnapshot(ctx, dockerClient, snapshot.repository, recoveryKey, snapshot.snapshotID, dataMount, backup.RestoreOptions{
+			SourcePath:      path.Join(snapshot.snapshotPath, projectsPath, selectedPath),
+			DestinationPath: path.Join(dataMount.Target, projectsPath, selectedPath),
+		})
+		if err == nil {
+			return nil
+		}
+		restoreErr = errors.Combine(restoreErr, fmt.Errorf("restore from %s snapshot: %w", snapshot.name, err))
+	}
+	if restoreErr == nil {
+		restoreErr = errors.New("file is unavailable in every readable system recovery snapshot")
+	}
+	return restoreErr
+}
+
+func rollbackProjectFilesInternal(ctx context.Context, engine systemBackupSnapshotEngineInternal, dockerClient *client.Client, safety systemBackupSafetySnapshotInternal, recoveryKey, projectsPath string, selected []string, dataMount mount.Mount, removeFile removeProjectFileFuncInternal) error {
+	var rollbackErr error
+	for _, selectedPath := range slices.Backward(selected) {
+		dataRelative := path.Join(projectsPath, selectedPath)
+		if _, existed := safety.dataPaths[dataRelative]; !existed {
+			if err := removeFile(projectsPath, selectedPath); err != nil {
+				rollbackErr = errors.Combine(rollbackErr, fmt.Errorf("remove newly restored project file %s: %w", selectedPath, err))
+			}
+			continue
+		}
+		if err := engine.RestoreSnapshot(ctx, dockerClient, safety.repository, recoveryKey, safety.snapshotID, dataMount, backup.RestoreOptions{
+			SourcePath:      path.Join(safety.snapshotPath, dataRelative),
+			DestinationPath: path.Join(dataMount.Target, dataRelative),
+		}); err != nil {
+			rollbackErr = errors.Combine(rollbackErr, fmt.Errorf("restore project file %s from safety backup: %w", selectedPath, err))
+		}
+	}
+	return rollbackErr
+}
+
+func restoreSelectedProjectFilesInternal(ctx context.Context, engine systemBackupSnapshotEngineInternal, dockerClient *client.Client, snapshots []systemBackupSnapshotInternal, safety systemBackupSafetySnapshotInternal, recoveryKey string, selected []string, dataMount mount.Mount, removeFile removeProjectFileFuncInternal) error {
+	projectsPath := snapshots[0].projectsPath
+	restored := make([]string, 0, len(selected))
+	for _, selectedPath := range selected {
+		if err := restoreProjectFileFromSnapshotsInternal(ctx, engine, dockerClient, snapshots, recoveryKey, projectsPath, selectedPath, dataMount); err != nil {
+			affected := slices.Clone(restored)
+			affected = append(affected, selectedPath)
+			rollbackErr := rollbackProjectFilesInternal(context.WithoutCancel(ctx), engine, dockerClient, safety, recoveryKey, projectsPath, affected, dataMount, removeFile)
+			restoreErr := fmt.Errorf("failed to restore project file %s from system backup: %w", selectedPath, err)
+			if rollbackErr != nil {
+				return errors.Combine(restoreErr, fmt.Errorf("failed to roll back project files from pre-restore system backup: %w", rollbackErr))
+			}
+			return fmt.Errorf("%w; affected project files were rolled back", restoreErr)
+		}
+		restored = append(restored, selectedPath)
+	}
+	return nil
+}
+
+// RestoreBackupFiles restores selected project files after creating a local safety snapshot.
 func (s *SystemBackupService) RestoreBackupFiles(ctx context.Context, id string, request backuptypes.RestoreSystemBackupFilesRequest, user common.User) error {
 	lease, admitted, err := s.engine.TryAcquireRun(ctx, backup.SystemAdmissionScope, systemAdmissionID)
 	if err != nil {
@@ -702,15 +943,12 @@ func (s *SystemBackupService) RestoreBackupFiles(ctx context.Context, id string,
 	if err != nil {
 		return err
 	}
-	repository, snapshotID, err := s.repositoryForBackupInternal(ctx, dockerClient, run)
+	locations, setupErr := s.backupSnapshotLocationsInternal(ctx, dockerClient, run)
+	snapshots, err := availableProjectBackupSnapshotsInternal(ctx, s.engine, dockerClient, locations, key, setupErr, false)
 	if err != nil {
 		return err
 	}
-	available, snapshotPath, projectsPath, err := s.projectSnapshotFilesInternal(ctx, dockerClient, repository, key, snapshotID)
-	if err != nil {
-		return err
-	}
-	selected, err := validateRequestedProjectFilesInternal(request.Paths, available)
+	selected, err := validateRequestedProjectFilesInternal(request.Paths, snapshots[0].files)
 	if err != nil {
 		return err
 	}
@@ -718,22 +956,18 @@ func (s *SystemBackupService) RestoreBackupFiles(ctx context.Context, id string,
 	if err != nil {
 		return err
 	}
-	if _, err := s.createBackupInternal(ctx, SystemBackupTriggerSafety, backuptypes.CreateSystemBackupRequest{
+	safetyRun, err := s.createBackupInternal(ctx, SystemBackupTriggerSafety, backuptypes.CreateSystemBackupRequest{
 		Destination: backuptypes.SystemBackupDestinationLocal,
 		RecoveryKey: key,
-	}); err != nil {
+	})
+	if err != nil {
 		return fmt.Errorf("failed to create pre-restore system backup: %w", err)
 	}
-	for _, selectedPath := range selected {
-		sourcePath := path.Join(snapshotPath, projectsPath, selectedPath)
-		destinationPath := path.Join(dataMount.Target, projectsPath, selectedPath)
-		if err := s.engine.RestoreSnapshot(ctx, dockerClient, repository, key, snapshotID, dataMount, backup.RestoreOptions{
-			SourcePath: sourcePath, DestinationPath: destinationPath,
-		}); err != nil {
-			return fmt.Errorf("failed to restore project file %s from system backup: %w", selectedPath, err)
-		}
+	safety, err := s.prepareSafetySnapshotInternal(ctx, dockerClient, safetyRun, key)
+	if err != nil {
+		return err
 	}
-	return nil
+	return restoreSelectedProjectFilesInternal(ctx, s.engine, dockerClient, snapshots, safety, key, selected, dataMount, s.removeProjectFileInternal)
 }
 
 func (s *SystemBackupService) DeleteBackup(ctx context.Context, id, recoveryKey string) error {
@@ -935,23 +1169,20 @@ func (s *SystemBackupService) RestoreBackup(ctx context.Context, id, recoveryKey
 	if appDataMount == nil {
 		return errors.New("arcane system restore requires /app/data to be mounted")
 	}
-	repository, snapshotID, err := s.repositoryForBackupInternal(ctx, dockerClient, run)
-	if err != nil {
-		return err
-	}
-	snapshotPath, err := s.snapshotPathInternal(ctx, dockerClient, repository, key, snapshotID)
+	locations, setupErr := s.backupSnapshotLocationsInternal(ctx, dockerClient, run)
+	snapshot, err := firstReadableBackupSnapshotInternal(ctx, s.engine, dockerClient, locations, key, setupErr)
 	if err != nil {
 		return err
 	}
 	request := recoverytypes.RestoreRequest{
-		BackupID: run.ID, ContainerID: current.ID, ContainerImage: current.Config.Image, SnapshotID: snapshotID, SnapshotPath: snapshotPath, RecoveryKey: key,
+		BackupID: run.ID, ContainerID: current.ID, ContainerImage: current.Config.Image, SnapshotID: snapshot.snapshotID, SnapshotPath: snapshot.snapshotPath, RecoveryKey: key,
 		LocalSnapshotID: run.LocalSnapshotID, RemoteSnapshotID: run.RemoteSnapshotID, S3DestinationID: run.S3DestinationID,
 		Size: run.Size, NetworkMode: rusticRestoreNetworkModeInternal(&current),
 		SafetyBackup: &recoverytypes.SafetyBackup{
 			ID: safetyBackup.ID, LocalSnapshotID: safetyBackup.LocalSnapshotID,
 			Size: safetyBackup.Size, CreatedAt: safetyBackup.CreatedAt,
 		},
-		RepositoryEnvironment: repository.Environment, RepositoryMounts: repository.Mounts, AppDataMount: *appDataMount,
+		RepositoryEnvironment: snapshot.repository.Environment, RepositoryMounts: snapshot.repository.Mounts, AppDataMount: *appDataMount,
 	}
 	requestData, err := json.Marshal(request)
 	if err != nil {

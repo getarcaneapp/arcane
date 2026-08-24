@@ -164,6 +164,17 @@ func (e *Engine) ListSnapshotFiles(ctx context.Context, dockerClient *client.Cli
 	return files, nil
 }
 
+// ReadSnapshotTextFile returns one text file from a snapshot.
+func (e *Engine) ReadSnapshotTextFile(ctx context.Context, dockerClient *client.Client, repository Repository, password, snapshotID, filePath string) (string, error) {
+	output, err := e.runInternal(ctx, dockerClient, repository, password, []string{
+		"dump", "--archive", "content", "--", snapshotID + ":/" + strings.TrimPrefix(filePath, "/"),
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to read Rustic snapshot file: %w", err)
+	}
+	return output, nil
+}
+
 // DiscoveredSnapshot describes one snapshot found in a repository.
 type DiscoveredSnapshot struct {
 	ID      string    `json:"id"`

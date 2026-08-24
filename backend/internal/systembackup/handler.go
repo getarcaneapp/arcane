@@ -65,11 +65,17 @@ type RestoreSystemBackupInput struct {
 	ID   string `path:"id"`
 	Body backuptypes.RestoreSystemBackupRequest
 }
+
+// ListSystemBackupFilesInput identifies a system backup whose project files should be listed.
 type ListSystemBackupFilesInput struct {
 	ID   string `path:"id"`
 	Body backuptypes.ListSystemBackupFilesRequest
 }
+
+// ListSystemBackupFilesOutput contains project files eligible for selective restore.
 type ListSystemBackupFilesOutput struct{ Body base.ApiResponse[[]string] }
+
+// RestoreSystemBackupFilesInput selects project files to restore from a system backup.
 type RestoreSystemBackupFilesInput struct {
 	ID   string `path:"id"`
 	Body backuptypes.RestoreSystemBackupFilesRequest
@@ -240,6 +246,7 @@ func (h *SystemBackupHandler) Restore(ctx context.Context, input *RestoreSystemB
 	return messageOutputInternal("Arcane system restore started", activityID), nil
 }
 
+// ListFiles lists project files eligible for selective restore from a system backup.
 func (h *SystemBackupHandler) ListFiles(ctx context.Context, input *ListSystemBackupFilesInput) (*ListSystemBackupFilesOutput, error) {
 	files, err := h.service.ListBackupFiles(ctx, input.ID, input.Body.RecoveryKey)
 	if err != nil {
@@ -248,6 +255,7 @@ func (h *SystemBackupHandler) ListFiles(ctx context.Context, input *ListSystemBa
 	return &ListSystemBackupFilesOutput{Body: base.ApiResponse[[]string]{Success: true, Data: files}}, nil
 }
 
+// RestoreFiles restores selected project files from a system backup.
 func (h *SystemBackupHandler) RestoreFiles(ctx context.Context, input *RestoreSystemBackupFilesInput) (*SystemBackupMessageOutput, error) {
 	if len(input.Body.Paths) == 0 {
 		return nil, huma.Error400BadRequest("paths are required")
