@@ -136,7 +136,12 @@ func (e *Engine) CreateSnapshot(ctx context.Context, dockerClient *client.Client
 
 // RestoreSnapshot restores a snapshot (or one path inside it) onto the target mount.
 func (e *Engine) RestoreSnapshot(ctx context.Context, dockerClient *client.Client, repository Repository, password, snapshotID string, target mount.Mount, options RestoreOptions) error {
-	command := []string{"restore"}
+	_, err := e.runInternal(ctx, dockerClient, repository, password, restoreCommandInternal(snapshotID, target, options), target)
+	return err
+}
+
+func restoreCommandInternal(snapshotID string, target mount.Mount, options RestoreOptions) []string {
+	command := []string{"restore", "--verify-existing"}
 	if options.DeleteExtra {
 		command = append(command, "--delete")
 	}
@@ -149,8 +154,7 @@ func (e *Engine) RestoreSnapshot(ctx context.Context, dockerClient *client.Clien
 		destination = target.Target
 	}
 	command = append(command, "--", source, destination)
-	_, err := e.runInternal(ctx, dockerClient, repository, password, command, target)
-	return err
+	return command
 }
 
 // ListSnapshotFiles returns every path recorded in the snapshot.

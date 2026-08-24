@@ -112,25 +112,6 @@ async function readVolumeFile(page: Page, volumeName: string, filePath: string) 
 	return typeof content === 'string' ? content : null;
 }
 
-async function deleteVolumeFile(page: Page, volumeName: string, filePath: string) {
-	const relativePath = filePath.replace(/^\/+/, '');
-	const fileTreeRevision = await getVolumeWorkspaceRevision(page, volumeName);
-	const response = await page.request.put(
-		`/api/environments/0/volumes/${encodeURIComponent(volumeName)}/workspace`,
-		{
-			multipart: {
-				manifest: JSON.stringify({
-					fileTreeRevision,
-					fileChanges: [{ operation: 'delete', relativePath }]
-				})
-			}
-		}
-	);
-	if (!response.ok()) {
-		throw new Error(`Failed to delete ${filePath}: ${response.status()} ${await response.text()}`);
-	}
-}
-
 async function listBackups(page: Page, volumeName: string): Promise<BackupEntry[]> {
 	const response = await page.request.get(
 		`/api/environments/0/volumes/${encodeURIComponent(volumeName)}/backups`
@@ -259,8 +240,9 @@ test.describe('S3 Backups', () => {
 			expect(files.status(), await files.text()).toBe(200);
 			expect(JSON.stringify((await files.json())?.data ?? [])).toContain('payload.txt');
 
-			await deleteVolumeFile(page, volumeName, '/payload.txt');
-			expect(await readVolumeFile(page, volumeName, '/payload.txt')).toBeNull();
+			const replacementContent = 'x'.repeat(fileContent.length);
+			await writeVolumeFile(page, volumeName, 'payload.txt', replacementContent);
+			expect(await readVolumeFile(page, volumeName, '/payload.txt')).toBe(replacementContent);
 
 			const restore = await page.request.post(
 				`/api/environments/0/volumes/${encodeURIComponent(volumeName)}/backups/${created.id}/restore`,
