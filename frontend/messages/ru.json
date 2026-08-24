@@ -939,7 +939,7 @@
   "volumes_rename_same_name": "Введите другое имя тома",
   "volumes_rename_managed_warning_title": "Том, управляемый системой развертывания",
   "volumes_rename_managed_warning_description": "Проект, в котором по-прежнему используется ссылка на этот том, может воссоздать исходный том, если его конфигурация не будет обновлена.",
-  "volumes_rename_success": "Том « {oldName} » переименован в {newName}",
+  "volumes_rename_success": "Том «{oldName}» переименован в «{newName}»",
   "volumes_rename_failed": "Не удалось переименовать том {name}",
   "volumes_remove_confirm_message": "Вы уверены, что хотите удалить том {name}?",
   "volumes_remove_selected_title": "Удалить тома(и) {count}",
