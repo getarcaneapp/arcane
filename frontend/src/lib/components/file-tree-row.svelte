@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import * as Checkbox from '#lib/components/ui/checkbox';
+	import { Spinner } from '#lib/components/ui/spinner';
 	import { ArrowDownIcon, ArrowRightIcon, FileTextIcon, FolderOpenIcon, LockIcon } from '#lib/icons';
 	import { cn } from '#lib/utils';
 
@@ -16,6 +17,7 @@
 		checked = false,
 		indeterminate = false,
 		disabled = false,
+		loading = false,
 		pending = false,
 		locked = false,
 		expandLabel,
@@ -38,6 +40,7 @@
 		checked?: boolean;
 		indeterminate?: boolean;
 		disabled?: boolean;
+		loading?: boolean;
 		pending?: boolean;
 		locked?: boolean;
 		expandLabel: string;
@@ -95,7 +98,12 @@
 		onclick={onActivate}
 	>
 		{#if isDirectory}
-			<FolderOpenIcon class="size-4 shrink-0 text-amber-500" />
+			<span class="relative size-4 shrink-0">
+				<FolderOpenIcon class={cn('size-4 text-amber-500', loading && 'opacity-40')} />
+				{#if loading}
+					<Spinner aria-hidden="true" class="absolute inset-0 size-4 text-foreground" />
+				{/if}
+			</span>
 		{:else}
 			<FileTextIcon class="size-4 shrink-0 text-muted-foreground" />
 		{/if}

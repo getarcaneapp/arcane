@@ -2,8 +2,8 @@
 	import { ArcaneButton } from '#lib/components/arcane-button';
 	import FileTreeRow from '#lib/components/file-tree-row.svelte';
 	import { Input } from '#lib/components/ui/input';
+	import { Spinner } from '#lib/components/ui/spinner';
 	import { createVirtualizer } from '#lib/components/ui/virtualizer.svelte';
-	import { LoadingSpinnerIcon } from '#lib/icons';
 	import type { BackupFileEntry, BackupFileProvider } from '#lib/types/backup';
 	import * as m from '#lib/paraglide/messages.js';
 
@@ -81,9 +81,15 @@
 				appendFolderRowsInternal(result, entry.path, depth + 1);
 			}
 		}
-		if (state.loading || state.error || state.nextStart !== undefined) {
+		const initialNestedFolderLoad = folder !== '' && state.loading && state.entries.length === 0;
+		if (!initialNestedFolderLoad && (state.loading || state.error || state.nextStart !== undefined)) {
 			result.push({ kind: 'continuation', folder, depth });
 		}
+	}
+
+	function folderLoadingInternal(folder: string): boolean {
+		const state = pages[folder];
+		return state?.loading === true && state.entries.length === 0;
 	}
 
 	function resetPagesInternal() {
@@ -235,7 +241,7 @@
 	<div bind:this={scrollElement} class="h-64 overflow-auto rounded-md border p-1" data-backup-file-tree>
 		{#if rootLoading}
 			<div class="flex items-center justify-center py-8">
-				<LoadingSpinnerIcon class="size-5 text-muted-foreground" />
+				<Spinner class="size-5 text-muted-foreground" />
 			</div>
 		{:else if rootEmpty}
 			<div class="flex items-center justify-center py-8 text-sm text-muted-foreground">
@@ -264,6 +270,7 @@
 									checked={entryCheckedInternal(row.entry)}
 									indeterminate={entryIndeterminateInternal(row.entry)}
 									disabled={selectAll || coveringAncestorInternal(row.entry.path) !== undefined}
+									loading={row.entry.isDirectory && expandedFolders.has(row.entry.path) && folderLoadingInternal(row.entry.path)}
 									expandLabel={m.workspace_file_expand_folder({ name: row.entry.name })}
 									collapseLabel={m.workspace_file_collapse_folder({ name: row.entry.name })}
 									onToggle={() => toggleFolderInternal(row.entry.path)}
@@ -275,7 +282,10 @@
 								/>
 							{:else}
 								{@const state = pages[row.folder]}
-								<div class="flex min-h-8 items-center gap-2 px-3 text-xs text-muted-foreground">
+								<div
+									class="flex min-h-8 items-center gap-1.5 pr-2 text-xs text-muted-foreground"
+									style={`padding-left: ${0.5 + row.depth * 1}rem`}
+								>
 									{#if state?.error}
 										<span>{m.backup_file_browser_load_remaining_failed()}</span>
 										<ArcaneButton
@@ -286,7 +296,12 @@
 											onclick={() => loadPageInternal(row.folder, state.nextStart ?? 0, state.entries.length === 0)}
 										/>
 									{:else}
-										<LoadingSpinnerIcon class="size-4" />
+										{#if !searchActive}
+											<span class="inline-flex size-4 shrink-0"></span>
+										{/if}
+										<span class="inline-flex size-4 shrink-0 items-center justify-center">
+											<Spinner class="size-4" />
+										</span>
 									{/if}
 								</div>
 							{/if}

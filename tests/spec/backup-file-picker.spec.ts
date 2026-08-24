@@ -467,8 +467,7 @@ test.describe('Backup file picker', () => {
 		await expect.poll(() => state.restoreBodies.length).toBe(1);
 		expect(state.restoreBodies[0]).toEqual({
 			paths: ['workspace.txt'],
-			selectAll: false,
-			search: ''
+			selectAll: false
 		});
 		await expect(dialog).not.toBeVisible();
 		const workspaceRequestsAfterRestore = state.workspaceRequests;
