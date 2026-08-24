@@ -549,6 +549,7 @@ type systemBackupSafetySnapshotInternal struct {
 	systemBackupSnapshotLocationInternal
 
 	snapshotPath string
+	projectsPath string
 	dataPaths    map[string]struct{}
 }
 
@@ -951,14 +952,19 @@ func safetySnapshotLocationInternal(source systemBackupSnapshotInternal, run *Sy
 }
 
 func prepareSafetySnapshotInternal(ctx context.Context, engine systemBackupSnapshotEngineInternal, dockerClient *client.Client, location systemBackupSnapshotLocationInternal, recoveryKey string) (systemBackupSafetySnapshotInternal, error) {
-	snapshot, err := inspectReadableBackupSnapshotInternal(ctx, engine, dockerClient, location, recoveryKey)
+	snapshot, _, err := inspectProjectBackupSnapshotManifestInternal(ctx, engine, dockerClient, location, recoveryKey)
+	if err != nil {
+		return systemBackupSafetySnapshotInternal{}, fmt.Errorf("open pre-restore system backup: %w", err)
+	}
+	files, err := engine.ListSnapshotFiles(ctx, dockerClient, location.repository, recoveryKey, location.snapshotID)
 	if err != nil {
 		return systemBackupSafetySnapshotInternal{}, fmt.Errorf("open pre-restore system backup: %w", err)
 	}
 	return systemBackupSafetySnapshotInternal{
 		systemBackupSnapshotLocationInternal: location,
 		snapshotPath:                         snapshot.snapshotPath,
-		dataPaths:                            snapshotDataPathsInternal(snapshot.files, snapshot.snapshotPath),
+		projectsPath:                         snapshot.projectsPath,
+		dataPaths:                            snapshotDataPathsInternal(files, snapshot.snapshotPath),
 	}, nil
 }
 
@@ -1035,21 +1041,22 @@ func safetySnapshotContainsPathInternal(safety systemBackupSafetySnapshotInterna
 func rollbackProjectFilesInternal(ctx context.Context, engine systemBackupSnapshotEngineInternal, dockerClient *client.Client, safety systemBackupSafetySnapshotInternal, recoveryKey, projectsPath string, selected []backuptypes.BackupFileEntry, dataMount mount.Mount, removeFile removeProjectFileFuncInternal) error {
 	var rollbackErr error
 	for _, selectedEntry := range slices.Backward(selected) {
-		dataRelative := path.Join(projectsPath, selectedEntry.Path)
-		if !safetySnapshotContainsPathInternal(safety, dataRelative) {
+		destinationRelative := path.Join(projectsPath, selectedEntry.Path)
+		safetyRelative := path.Join(safety.projectsPath, selectedEntry.Path)
+		if !safetySnapshotContainsPathInternal(safety, safetyRelative) {
 			if err := removeFile(projectsPath, selectedEntry.Path); err != nil {
 				rollbackErr = errors.Combine(rollbackErr, fmt.Errorf("remove newly restored project path %s: %w", selectedEntry.Path, err))
 			}
 			continue
 		}
-		sourcePath := path.Join(safety.snapshotPath, dataRelative)
+		sourcePath := path.Join(safety.snapshotPath, safetyRelative)
 		if selectedEntry.IsDirectory {
 			sourcePath += "/"
 		}
 		if err := engine.RestoreSnapshot(ctx, dockerClient, safety.repository, recoveryKey, safety.snapshotID, dataMount, backup.RestoreOptions{
 			DeleteExtra:     selectedEntry.IsDirectory,
 			SourcePath:      sourcePath,
-			DestinationPath: path.Join(dataMount.Target, dataRelative),
+			DestinationPath: path.Join(dataMount.Target, destinationRelative),
 		}); err != nil {
 			rollbackErr = errors.Combine(rollbackErr, fmt.Errorf("restore project path %s from safety backup: %w", selectedEntry.Path, err))
 		}
