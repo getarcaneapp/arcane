@@ -66,7 +66,17 @@ func stripTrailingProjectCounterInternal(name string) string {
 	return withoutDigits[:len(withoutDigits)-1]
 }
 
-func DetectComposeFile(dir string) (string, error) {
+// DetectComposeFile returns the base compose file for dir. COMPOSE_FILE in the
+// project's .env takes precedence over standard detection, mirroring `docker
+// compose`; projectsDir locates .env.global for the COMPOSE_DISABLE_ENV_FILE
+// check and may be empty where no projects directory applies.
+func DetectComposeFile(ctx context.Context, projectsDir, dir string) (string, error) {
+	if files, err := ComposeFileEnvSelection(ctx, projectsDir, dir); err != nil {
+		return "", err
+	} else if len(files) > 0 {
+		return files[0], nil
+	}
+
 	// Stays on os.*: compose files may be symlinks resolving outside any
 	// confinement root, and dir itself can be an imported project living
 	// outside the projects directory; acfs cannot follow either.
@@ -350,20 +360,39 @@ func LoadComposeProject(
 		slog.WarnContext(ctx, "Failed to set PWD environment variable", "workdir", workdir, "error", absErr)
 	}
 
-	// Pass full environment to compose-go for interpolation, compose-go will use this for ${VAR} expansion in the compose file
-	configFiles := []composetypes.ConfigFile{
-		{Filename: composeFile},
+	// Deployment-relevant COMPOSE_* variables (COMPOSE_FILE, COMPOSE_PROFILES,
+	// COMPOSE_PROJECT_NAME) come from the merged project environment.
+	envOpts, envOptsErr := ParseComposeEnvOptions(workdir, fullEnvMap)
+	if envOptsErr != nil {
+		return nil, envOptsErr
 	}
-	// Merge a Docker Compose override file (compose.override.yaml, etc.) when
-	// present alongside the base file, as `docker compose` does. Only auto-load an
-	// override when the base was discovered by its standard filename: `docker
-	// compose` never auto-loads overrides for an explicit custom `-f` file, and
-	// our custom-YAML fallback scan (e.g. mystack.yaml) is that case. Listing the
-	// override after the base makes it take precedence.
-	if slices.Contains(composeFileCandidates, filepath.Base(composeFile)) {
-		if overrideFile := DetectComposeOverrideFile(workdir); overrideFile != "" {
-			configFiles = append(configFiles, composetypes.ConfigFile{Filename: overrideFile})
-			slog.DebugContext(ctx, "merging compose override file", "base", composeFile, "override", overrideFile)
+
+	// Pass full environment to compose-go for interpolation, compose-go will use this for ${VAR} expansion in the compose file
+	var configFiles []composetypes.ConfigFile
+	switch {
+	case len(envOpts.ConfigFiles) > 0:
+		// COMPOSE_FILE selects the exact file set (first entry is the base, later
+		// entries merge over it). As `docker compose` does for an explicit `-f`,
+		// no override file is auto-loaded.
+		for _, f := range envOpts.ConfigFiles {
+			configFiles = append(configFiles, composetypes.ConfigFile{Filename: f})
+		}
+		if !slices.Contains(envOpts.ConfigFiles, composeFile) {
+			slog.DebugContext(ctx, "COMPOSE_FILE selection supersedes resolved compose file", "resolved", composeFile, "selection", envOpts.ConfigFiles)
+		}
+	default:
+		configFiles = []composetypes.ConfigFile{{Filename: composeFile}}
+		// Merge a Docker Compose override file (compose.override.yaml, etc.) when
+		// present alongside the base file, as `docker compose` does. Only auto-load an
+		// override when the base was discovered by its standard filename: `docker
+		// compose` never auto-loads overrides for an explicit custom `-f` file, and
+		// our custom-YAML fallback scan (e.g. mystack.yaml) is that case. Listing the
+		// override after the base makes it take precedence.
+		if slices.Contains(composeFileCandidates, filepath.Base(composeFile)) {
+			if overrideFile := DetectComposeOverrideFile(workdir); overrideFile != "" {
+				configFiles = append(configFiles, composetypes.ConfigFile{Filename: overrideFile})
+				slog.DebugContext(ctx, "merging compose override file", "base", composeFile, "override", overrideFile)
+			}
 		}
 	}
 
@@ -375,8 +404,17 @@ func LoadComposeProject(
 	}
 
 	loaderOptions := []func(*loader.Options){func(opts *loader.Options) {
-		if projectName != "" {
+		// A caller-supplied name acts like `docker compose -p`, which outranks
+		// COMPOSE_PROJECT_NAME. Only when no name is forced (e.g. the sync
+		// metadata path passes "") does COMPOSE_PROJECT_NAME take effect.
+		switch {
+		case projectName != "":
 			opts.SetProjectName(projectName, false)
+		case envOpts.ProjectName != "":
+			opts.SetProjectName(loader.NormalizeProjectName(envOpts.ProjectName), true)
+		}
+		if len(envOpts.Profiles) > 0 {
+			loader.WithProfiles(envOpts.Profiles)(opts)
 		}
 		// Discard env_file after folding into environment, as the compose CLI
 		// does, so config-hashes match and both tools stop recreating services.
@@ -540,7 +578,7 @@ func injectServiceConfiguration(project *composetypes.Project, injectionVars Env
 }
 
 func LoadComposeProjectFromDir(ctx context.Context, dir, projectName, projectsDirectory string, autoInjectEnv bool, pathMapper *PathMapper) (*composetypes.Project, string, error) {
-	composeFile, err := DetectComposeFile(dir)
+	composeFile, err := DetectComposeFile(ctx, projectsDirectory, dir)
 	if err != nil {
 		return nil, "", err
 	}

@@ -87,7 +87,7 @@ func TestReadProjectFiles(t *testing.T) {
 		require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services:\n  app:\n    image: nginx:alpine\n"), 0o644))
 		require.NoError(t, os.WriteFile(filepath.Join(projectPath, ".env"), []byte("TZ=UTC\n"), 0o644))
 
-		composeContent, envContent, err := ReadProjectFiles(projectPath, "")
+		composeContent, envContent, err := ReadProjectFiles(t.Context(), projectPath, "")
 		require.NoError(t, err)
 		assert.Contains(t, composeContent, "services:")
 		assert.Equal(t, "TZ=UTC\n", envContent)
@@ -98,7 +98,7 @@ func TestReadProjectFiles(t *testing.T) {
 		require.NoError(t, os.WriteFile(filepath.Join(projectPath, "radarr.yaml"), []byte("services:\n  app:\n    image: lscr.io/linuxserver/radarr:latest\n"), 0o644))
 		require.NoError(t, os.WriteFile(filepath.Join(projectPath, ".env"), []byte("TZ=UTC\n"), 0o644))
 
-		composeContent, envContent, err := ReadProjectFiles(projectPath, filepath.Join(projectPath, "radarr.yaml"))
+		composeContent, envContent, err := ReadProjectFiles(t.Context(), projectPath, filepath.Join(projectPath, "radarr.yaml"))
 		require.NoError(t, err)
 		assert.Contains(t, composeContent, "radarr")
 		assert.Equal(t, "TZ=UTC\n", envContent)

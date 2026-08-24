@@ -1327,6 +1327,8 @@
   "compose_override_hint": "Overrides are merged on top of the compose file at deploy. Clear the content and save to remove the override file.",
   "compose_override_add": "Add override file",
   "compose_override_remove": "Remove override",
+  "compose_multiple_files_title": "Multiple compose files",
+  "compose_multiple_files_description": "This project deploys the compose files below, selected by COMPOSE_FILE in its .env. Files other than the base are edited in the Workspace view.",
   "compose_no_services_found": "No services found for this project",
   "compose_service_not_created": "Not created",
   "compose_name_change_not_allowed": "Project name cannot be changed while running. Please stop the project first.",

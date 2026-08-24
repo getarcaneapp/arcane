@@ -16,6 +16,7 @@ import (
 
 	"emperror.dev/errors"
 
+	"github.com/compose-spec/compose-go/v2/consts"
 	"github.com/compose-spec/compose-go/v2/dotenv"
 	"github.com/samber/hot"
 	"go.getarcane.app/acfs"
@@ -118,16 +119,48 @@ func (l *EnvLoader) LoadEnvironment(ctx context.Context) (envMap EnvMap, injecti
 		}
 	}
 
-	projectEnvPath := filepath.Join(l.workdir, EffectiveEnvFileName)
-	if err := l.loadAndMergeProjectEnv(ctx, projectEnvPath, envMap, injectionVars); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			slog.DebugContext(ctx, "Project .env file does not exist", "path", projectEnvPath)
-		} else {
-			slog.WarnContext(ctx, "Failed to load project env", "path", projectEnvPath, "error", err)
+	// COMPOSE_DISABLE_ENV_FILE skips the project .env entirely, as `docker
+	// compose` does. It is read from the sources merged so far — in practice
+	// only .env.global, since the process-env allowlist never includes
+	// COMPOSE_* variables.
+	if parseComposeBoolInternal(envMap, consts.ComposeDisableDefaultEnvFile) {
+		slog.DebugContext(ctx, "COMPOSE_DISABLE_ENV_FILE set; skipping project .env", "workdir", l.workdir)
+	} else {
+		projectEnvPath := filepath.Join(l.workdir, EffectiveEnvFileName)
+		if err := l.loadAndMergeProjectEnv(ctx, projectEnvPath, envMap, injectionVars); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				slog.DebugContext(ctx, "Project .env file does not exist", "path", projectEnvPath)
+			} else {
+				slog.WarnContext(ctx, "Failed to load project env", "path", projectEnvPath, "error", err)
+			}
 		}
 	}
 
+	// COMPOSE_ENV_FILES, when declared, layers additional env files on top of
+	// the project .env (later entries win). Reuses the mtime-keyed cache.
+	l.mergeComposeEnvFilesInternal(ctx, envMap, injectionVars)
+
 	return envMap, injectionVars, nil
+}
+
+func (l *EnvLoader) mergeComposeEnvFilesInternal(ctx context.Context, envMap, injectionVars EnvMap) {
+	parse := func(path string, contextEnv EnvMap) (EnvMap, error) {
+		key := strings.Join([]string{path, l.projectsDir, strconv.FormatBool(l.autoInjectEnv), envContextFingerprintInternal(contextEnv)}, "\x00")
+		entry, err := loadCachedEnvFileInternal(ctx, projectEnvFileCache, key, path, contextEnv)
+		if err != nil {
+			return nil, err
+		}
+		if !entry.exists {
+			return nil, nil
+		}
+		return entry.values, nil
+	}
+	onMerged := func(values EnvMap) {
+		if l.autoInjectEnv {
+			maps.Copy(injectionVars, values)
+		}
+	}
+	mergeComposeEnvFilesInternal(ctx, l.workdir, envMap, parse, onMerged)
 }
 
 func (l *EnvLoader) loadAndMergeGlobalEnv(ctx context.Context, path string, envMap, injectionVars EnvMap) error {

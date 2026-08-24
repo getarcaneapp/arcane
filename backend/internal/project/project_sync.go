@@ -152,7 +152,7 @@ func (s *ProjectService) SyncProjectsFromFileSystem(ctx context.Context) error {
 		return nil
 	}
 
-	discoveredProjects, discoveryErr := projects.DiscoverProjectDirectories(projectsDir, followProjectSymlinks, s.config.ProjectScanMaxDepth)
+	discoveredProjects, discoveryErr := projects.DiscoverProjectDirectories(ctx, projectsDir, followProjectSymlinks, s.config.ProjectScanMaxDepth)
 	if discoveryErr != nil {
 		if os.IsNotExist(discoveryErr) {
 			return nil
