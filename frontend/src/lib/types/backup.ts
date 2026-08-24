@@ -48,3 +48,31 @@ export type BackupPolicyUpdate = {
 	s3DestinationId: string;
 	stopContainers?: boolean;
 };
+
+export type BackupFileEntry = {
+	path: string;
+	name: string;
+	isDirectory: boolean;
+};
+
+export type BackupFilePage = {
+	entries: BackupFileEntry[];
+	nextStart?: number;
+};
+
+export type BackupFileBrowseRequest = {
+	path?: string;
+	search?: string;
+	start?: number;
+	limit?: number;
+};
+
+export type BackupRestoreSelection = {
+	paths: string[];
+	selectAll: boolean;
+	search?: string;
+};
+
+export type BackupFileProvider = {
+	browse(request: BackupFileBrowseRequest): Promise<BackupFilePage>;
+};

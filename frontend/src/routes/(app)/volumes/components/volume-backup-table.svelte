@@ -57,6 +57,7 @@
 		s3DestinationOptions as buildS3DestinationOptions
 	} from '#lib/utils/backups';
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
+	import type { BackupFileProvider } from '#lib/types/backup';
 
 	let { volumeName }: { volumeName: string } = $props();
 
@@ -95,10 +96,10 @@
 	let restoringFiles = $state(false);
 	let showRestoreFiles = $state(false);
 	let restoreTarget = $state<BackupEntry | null>(null);
-	let backupFiles = $state<string[]>([]);
-	let backupFilesLoading = $state(false);
+	let backupFileProvider = $state<BackupFileProvider | null>(null);
 	let backupFilesSearch = $state('');
 	let selectedPaths = $state<string[]>([]);
+	let selectAllBackupFiles = $state(false);
 	async function loadData(options: SearchPaginationSortRequest): Promise<VolumeBackupListResponse> {
 		try {
 			const result = await volumeBackupService.listBackups(volumeName, options);
@@ -202,20 +203,15 @@
 		}
 	}
 
-	async function openRestoreFilesDialog(backup: BackupEntry) {
+	function openRestoreFilesDialog(backup: BackupEntry) {
 		restoreTarget = backup;
 		selectedPaths = [];
-		backupFiles = [];
+		selectAllBackupFiles = false;
 		backupFilesSearch = '';
+		backupFileProvider = {
+			browse: (request) => volumeBackupService.browseBackupFiles(backup.id, request)
+		};
 		showRestoreFiles = true;
-		backupFilesLoading = true;
-		try {
-			backupFiles = await volumeBackupService.listBackupFiles(backup.id);
-		} catch (error) {
-			toast.error(error instanceof Error ? error.message : m.common_failed());
-		} finally {
-			backupFilesLoading = false;
-		}
 	}
 
 	async function handleRestore(backup: BackupEntry) {
@@ -251,15 +247,16 @@
 
 	async function handleRestoreFiles() {
 		if (!restoreTarget) return;
-		if (!selectedPaths.length) return;
+		if (!selectAllBackupFiles && !selectedPaths.length) return;
 
 		restoringFiles = true;
 		try {
-			const result = await volumeBackupService.restoreBackupFiles(volumeName, restoreTarget.id, selectedPaths);
-			toast.success(
-				m.volumes_backup_restore_files_success({ count: selectedPaths.length }),
-				activityToastOptions(extractActivityId(result))
-			);
+			const result = await volumeBackupService.restoreBackupFiles(volumeName, restoreTarget.id, {
+				paths: selectedPaths,
+				selectAll: selectAllBackupFiles,
+				search: selectAllBackupFiles ? backupFilesSearch.trim() : undefined
+			});
+			toast.success(m.volumes_backup_restore_selection_success(), activityToastOptions(extractActivityId(result)));
 			showRestoreFiles = false;
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : m.common_failed());
@@ -545,6 +542,14 @@
 
 <ResponsiveDialog
 	bind:open={showRestoreFiles}
+	onOpenChange={(open) => {
+		if (!open) {
+			backupFileProvider = null;
+			selectedPaths = [];
+			selectAllBackupFiles = false;
+			backupFilesSearch = '';
+		}
+	}}
 	title={m.volume_restore_files()}
 	description={m.volumes_backup_restore_desc()}
 	contentClass="sm:max-w-[640px]"
@@ -558,7 +563,14 @@
 				</Alert.Description>
 			</Alert.Root>
 
-			<BackupFilePicker files={backupFiles} loading={backupFilesLoading} bind:selectedPaths bind:search={backupFilesSearch} />
+			{#if backupFileProvider}
+				<BackupFilePicker
+					provider={backupFileProvider}
+					bind:selectedPaths
+					bind:selectAll={selectAllBackupFiles}
+					bind:search={backupFilesSearch}
+				/>
+			{/if}
 
 			<Alert.Root variant="warning" class="py-2 [&>svg]:top-2">
 				<AlertIcon class="size-4" />
@@ -575,6 +587,7 @@
 			onclick={() => {
 				showRestoreFiles = false;
 				selectedPaths = [];
+				selectAllBackupFiles = false;
 				backupFilesSearch = '';
 			}}
 		/>
@@ -584,7 +597,7 @@
 				customLabel={m.volume_restore_files()}
 				onclick={handleRestoreFiles}
 				loading={restoringFiles}
-				disabled={restoringFiles || selectedPaths.length === 0}
+				disabled={restoringFiles || (!selectAllBackupFiles && selectedPaths.length === 0)}
 			/>
 		{/if}
 	{/snippet}

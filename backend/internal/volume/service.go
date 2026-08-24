@@ -49,6 +49,8 @@ type VolumeService struct {
 	workspaceMaxDepth         int
 	workspaceMaxEntries       int
 	workspaceMaxFileSizeBytes int64
+	backupBrowserPageSize     int
+	backupBrowserMaxPageSize  int
 	workspaceLocks            utils.KeyedMutex
 	helperMu                  sync.Mutex
 	helperByVolume            map[string]*volumeHelper
@@ -82,12 +84,25 @@ func NewVolumeService(db *database.DB, dockerService *docker.DockerClientService
 	workspaceMaxDepth := 50
 	workspaceMaxEntries := 10000
 	workspaceMaxFileSizeMB := workspacepkg.DefaultMaxFileSizeMB
+	backupBrowserPageSize := 250
+	backupBrowserMaxPageSize := 1000
 	if cfg != nil {
 		backupVolumeName = cfg.BackupVolumeName
 		encryptionKey = cfg.EncryptionKey
 		workspaceMaxDepth = cfg.VolumeWorkspaceMaxDepth
 		workspaceMaxEntries = cfg.VolumeWorkspaceMaxEntries
 		workspaceMaxFileSizeMB = cfg.VolumeWorkspaceMaxFileSizeMB
+		backupBrowserPageSize = cfg.BackupFileBrowserDefaultPageSize
+		backupBrowserMaxPageSize = cfg.BackupFileBrowserMaxPageSize
+	}
+	if backupBrowserPageSize <= 0 {
+		backupBrowserPageSize = 250
+	}
+	if backupBrowserMaxPageSize <= 0 {
+		backupBrowserMaxPageSize = 1000
+	}
+	if backupBrowserPageSize > backupBrowserMaxPageSize {
+		backupBrowserPageSize = backupBrowserMaxPageSize
 	}
 	if strings.TrimSpace(backupVolumeName) == "" {
 		backupVolumeName = "arcane-backups"
@@ -107,6 +122,8 @@ func NewVolumeService(db *database.DB, dockerService *docker.DockerClientService
 		workspaceMaxDepth:         workspaceMaxDepth,
 		workspaceMaxEntries:       workspaceMaxEntries,
 		workspaceMaxFileSizeBytes: workspacepkg.MaxFileSizeBytes(workspaceMaxFileSizeMB),
+		backupBrowserPageSize:     backupBrowserPageSize,
+		backupBrowserMaxPageSize:  backupBrowserMaxPageSize,
 		helperByVolume:            make(map[string]*volumeHelper),
 		jobs:                      entityjobs.New("volume-backup:", backup.VolumeAdmissionScope),
 	}

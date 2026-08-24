@@ -128,6 +128,7 @@ var commandRoutes = []commandRoute{
 	{Method: http.MethodPut, PathPattern: "/api/environments/{id}/volumes/{volumeName}/backup-policy", CommandName: "volume.backup_policy.update"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/volumes/backups/{backupId}/has-path", CommandName: "volume.backup.has_path"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/volumes/backups/{backupId}/files", CommandName: "volume.backup.files"},
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/volumes/backups/{backupId}/files/browse", CommandName: "volume.backup.files_browse"},
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/volumes/backups/{backupId}/upload", CommandName: "volume.backup.upload"},
 
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/builds/browse", CommandName: "build_workspace.browse.list"},

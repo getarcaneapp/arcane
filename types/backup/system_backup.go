@@ -85,10 +85,19 @@ type ListSystemBackupFilesRequest struct {
 	RecoveryKey string `json:"recoveryKey"`
 }
 
+// BrowseSystemBackupFilesRequest opens an encrypted system backup and selects
+// one page from its project-file tree.
+type BrowseSystemBackupFilesRequest struct {
+	BrowseBackupFilesRequest
+
+	RecoveryKey string `json:"recoveryKey"`
+}
+
 // RestoreSystemBackupFilesRequest selects project files to restore from a system backup.
 type RestoreSystemBackupFilesRequest struct {
-	RecoveryKey string   `json:"recoveryKey"`
-	Paths       []string `json:"paths"`
+	RestoreSelection
+
+	RecoveryKey string `json:"recoveryKey"`
 }
 
 type UploadSystemBackupRequest struct {

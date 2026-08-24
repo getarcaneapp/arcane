@@ -9,7 +9,7 @@ import {
 
 // The three platform adapters (`observeElementRect` / `observeElementOffset` / `scrollToFn`) are
 // supplied for the caller, so they only provide the data-driven options (count, getScrollElement,
-// estimateSize, …).
+// estimateSize, and so on).
 type SuppliedKeys = 'observeElementRect' | 'observeElementOffset' | 'scrollToFn';
 type CreateVirtualizerOptions<TScroll extends Element, TItem extends Element> = Omit<
 	VirtualizerOptions<TScroll, TItem>,
@@ -21,10 +21,10 @@ type CreateVirtualizerOptions<TScroll extends Element, TItem extends Element> = 
  * A Svelte 5 runes wrapper around `@tanstack/virtual-core`.
  *
  * We wrap the framework-agnostic core directly (rather than `@tanstack/svelte-virtual`, whose v3
- * adapter still uses Svelte 4 stores and mis-tracks the scroll-element binding under runes) — the
- * same approach the repo took for `@tanstack/table-core`. `onChange` pushes the recomputed window
+ * adapter still uses Svelte 4 stores and mis-tracks the scroll-element binding under runes), using
+ * the same approach the repo took for `@tanstack/table-core`. `onChange` pushes the recomputed window
  * into `$state`, and `$effect.pre` re-applies options whenever the reactive inputs (row count,
- * scroll element, …) change.
+ * scroll element, and related values) change.
  *
  * Pass `options` as a thunk so its reactive reads are tracked.
  */
@@ -71,7 +71,7 @@ export function createVirtualizer<TScroll extends Element, TItem extends Element
 		get totalSize() {
 			return totalSize;
 		},
-		/** `use:` action target — measures real row heights for accurate offsets. */
+		/** `use:` action target that measures real row heights for accurate offsets. */
 		measureElement: (node: TItem) => instance.measureElement(node)
 	};
 }

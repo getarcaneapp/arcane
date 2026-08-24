@@ -153,7 +153,23 @@ func (e *Engine) RestoreSnapshot(ctx context.Context, dockerClient *client.Clien
 
 // ListSnapshotFiles returns every path recorded in the snapshot.
 func (e *Engine) ListSnapshotFiles(ctx context.Context, dockerClient *client.Client, repository Repository, password, snapshotID string) ([]string, error) {
-	output, err := e.runInternal(ctx, dockerClient, repository, password, []string{"ls", "--json", "--recursive", "--", snapshotID + ":/"})
+	return e.ListSnapshotFilesAtPath(ctx, dockerClient, repository, password, snapshotID, "", true)
+}
+
+// ListSnapshotFilesAtPath lists a snapshot path. A supplied path is
+// nonrecursive unless recursive is true, matching Rustic's native tree walk.
+func (e *Engine) ListSnapshotFilesAtPath(ctx context.Context, dockerClient *client.Client, repository Repository, password, snapshotID, filePath string, recursive bool) ([]string, error) {
+	command := []string{"ls", "--json"}
+	if recursive {
+		command = append(command, "--recursive")
+	}
+	cleanedPath := strings.Trim(strings.TrimSpace(filePath), "/")
+	source := snapshotID + ":/" + cleanedPath
+	if cleanedPath != "" && strings.HasSuffix(strings.TrimSpace(filePath), "/") {
+		source += "/"
+	}
+	command = append(command, "--", source)
+	output, err := e.runInternal(ctx, dockerClient, repository, password, command)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list Rustic snapshot: %w", err)
 	}

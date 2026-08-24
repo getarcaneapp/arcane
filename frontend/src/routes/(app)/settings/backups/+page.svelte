@@ -23,6 +23,7 @@
 	import BackupPolicyCard from '#lib/components/backup-policy-card.svelte';
 	import BackupFilePicker from '#lib/components/backup-file-picker.svelte';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
+	import type { BackupFileProvider } from '#lib/types/backup';
 
 	let { data } = $props();
 	let backups = $state(untrack(() => data.backups));
@@ -44,10 +45,10 @@
 	let restoreFilesOpen = $state(false);
 	let restoreFilesTarget = $state<SystemBackupRun | null>(null);
 	let restoreFilesRecoveryKey = $state('');
-	let restoreFiles = $state<string[]>([]);
+	let restoreFilesProvider = $state<BackupFileProvider | null>(null);
 	let restoreFilesSelectedPaths = $state<string[]>([]);
+	let restoreFilesSelectAll = $state(false);
 	let restoreFilesSearch = $state('');
-	let restoreFilesLoading = $state(false);
 	let restoreFilesLoaded = $state(false);
 	let restoringFiles = $state(false);
 	const isReadOnly = $derived.by(() => $settingsStore.uiConfigDisabled);
@@ -141,62 +142,64 @@
 	async function openRestoreFiles(backup: SystemBackupRun) {
 		restoreFilesTarget = backup;
 		restoreFilesRecoveryKey = '';
-		restoreFiles = [];
+		restoreFilesProvider = null;
 		restoreFilesSelectedPaths = [];
+		restoreFilesSelectAll = false;
 		restoreFilesSearch = '';
 		restoreFilesLoaded = false;
 		restoreFilesOpen = true;
-		if (policyCollection.recoveryKeyStored) await loadRestoreFiles();
+		if (policyCollection.recoveryKeyStored) loadRestoreFiles();
 	}
 
 	function closeRestoreFiles() {
 		restoreFilesOpen = false;
 		restoreFilesTarget = null;
 		restoreFilesRecoveryKey = '';
-		restoreFiles = [];
+		restoreFilesProvider = null;
 		restoreFilesSelectedPaths = [];
+		restoreFilesSelectAll = false;
 		restoreFilesSearch = '';
 		restoreFilesLoaded = false;
 	}
 
 	function updateRestoreFilesRecoveryKey(value: string) {
 		restoreFilesRecoveryKey = value;
-		restoreFiles = [];
+		restoreFilesProvider = null;
 		restoreFilesSelectedPaths = [];
+		restoreFilesSelectAll = false;
 		restoreFilesSearch = '';
 		restoreFilesLoaded = false;
 	}
 
-	async function loadRestoreFiles() {
-		if (!restoreFilesTarget || restoreFilesKeyInvalid || restoreFilesLoading) return;
-		restoreFilesLoading = true;
-		restoreFiles = [];
+	function loadRestoreFiles() {
+		if (!restoreFilesTarget || restoreFilesKeyInvalid) return;
 		restoreFilesSelectedPaths = [];
+		restoreFilesSelectAll = false;
 		restoreFilesSearch = '';
-		restoreFilesLoaded = false;
-		try {
-			restoreFiles = await systemBackupService.listFiles(restoreFilesTarget.id, restoreFilesRecoveryKey.trim());
-			restoreFilesLoaded = true;
-		} catch (error) {
-			toast.error(error instanceof Error ? error.message : m.system_backups_restore_files_failed());
-		} finally {
-			restoreFilesLoading = false;
-		}
+		const backupID = restoreFilesTarget.id;
+		const recoveryKey = restoreFilesRecoveryKey.trim();
+		restoreFilesProvider = {
+			browse: (request) => systemBackupService.browseFiles(backupID, recoveryKey, request)
+		};
+		restoreFilesLoaded = true;
 	}
 
 	async function restoreSelectedFiles() {
-		if (!restoreFilesTarget || !restoreFilesLoaded || restoreFilesSelectedPaths.length === 0 || restoringFiles) return;
+		if (
+			!restoreFilesTarget ||
+			!restoreFilesLoaded ||
+			(!restoreFilesSelectAll && restoreFilesSelectedPaths.length === 0) ||
+			restoringFiles
+		)
+			return;
 		restoringFiles = true;
 		try {
-			const result = await systemBackupService.restoreFiles(
-				restoreFilesTarget.id,
-				restoreFilesRecoveryKey.trim(),
-				restoreFilesSelectedPaths
-			);
-			toast.success(
-				m.system_backups_restore_files_success({ count: restoreFilesSelectedPaths.length }),
-				activityToastOptions(extractActivityId(result))
-			);
+			const result = await systemBackupService.restoreFiles(restoreFilesTarget.id, restoreFilesRecoveryKey.trim(), {
+				paths: restoreFilesSelectedPaths,
+				selectAll: restoreFilesSelectAll,
+				search: restoreFilesSelectAll ? restoreFilesSearch.trim() : undefined
+			});
+			toast.success(m.system_backups_restore_selection_success(), activityToastOptions(extractActivityId(result)));
 			closeRestoreFiles();
 			await refresh();
 		} catch (error) {
@@ -497,16 +500,15 @@
 						action="inspect"
 						customLabel={m.system_backups_load_files()}
 						onclick={loadRestoreFiles}
-						loading={restoreFilesLoading}
-						disabled={restoreFilesLoading || restoreFilesKeyInvalid}
+						disabled={restoreFilesKeyInvalid}
 					/>
 				</div>
 
-				{#if restoreFilesLoading || restoreFilesLoaded}
+				{#if restoreFilesProvider}
 					<BackupFilePicker
-						files={restoreFiles}
-						loading={restoreFilesLoading}
+						provider={restoreFilesProvider}
 						bind:selectedPaths={restoreFilesSelectedPaths}
+						bind:selectAll={restoreFilesSelectAll}
 						bind:search={restoreFilesSearch}
 					/>
 
@@ -527,7 +529,7 @@
 				customLabel={m.volume_restore_files()}
 				onclick={restoreSelectedFiles}
 				loading={restoringFiles}
-				disabled={restoringFiles || !restoreFilesLoaded || restoreFilesSelectedPaths.length === 0}
+				disabled={restoringFiles || !restoreFilesLoaded || (!restoreFilesSelectAll && restoreFilesSelectedPaths.length === 0)}
 			/>
 		{/snippet}
 	</ResponsiveDialog>
