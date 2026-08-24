@@ -82,6 +82,7 @@
 		removeWorkspaceFileRecord,
 		readWorkspaceTextUpload,
 		workspaceReadOnlyMessage,
+		workspaceFilePathMatches,
 		type WorkspaceFileEntry
 	} from '#lib/utils/workspace-files';
 	import { composeTreeSplitProps, extractComposeYamlName } from '#lib/utils/compose-flow';
@@ -120,6 +121,7 @@
 	let projectWorkspaceLoading = $state<Record<string, boolean>>({});
 	let projectWorkspaceFileMetadata = $state<Record<string, ProjectWorkspaceFileContent>>({});
 	let projectWorkspaceFilePromises: Record<string, Promise<IncludeFile | ProjectWorkspaceFileContent> | undefined> = {};
+	const projectWorkspaceFileLoadVersions = new Map<string, number>();
 	const globalVariableMap = $derived(globalVariablesToMap(data.globalVariables));
 	const projectWorkspaceMaxFileSizeMb = $derived($settingsStore?.projectWorkspaceMaxFileSizeMb ?? 10);
 
@@ -129,6 +131,7 @@
 		initialData: data.project,
 		refetchOnMount: (query) => query.state.isInvalidated
 	}));
+	let lastProjectDetails = $state<Project | null>(untrack(() => projectDetailQuery.data ?? data.project));
 	const projectTagsQuery = createQuery(() => ({
 		queryKey: queryKeys.projects.tags(envId),
 		queryFn: () => projectService.getProjectTagsForEnvironment(envId)
@@ -156,6 +159,7 @@
 		queryKey: queryKeys.projects.workspace(envId, projectId),
 		queryFn: () => projectWorkspaceService.getWorkspace(projectId, envId)
 	}));
+	let lastProjectWorkspaceRevision = $state<string | null>(untrack(() => projectWorkspaceQuery.data?.fileTreeRevision ?? null));
 
 	const lifecycleSyncQuery = createQuery(() => {
 		const syncId = data.project?.gitOpsManagedBy;
@@ -565,6 +569,7 @@
 	}
 
 	function clearLoadedProjectWorkspaceCache() {
+		for (const relativePath of Object.keys(projectWorkspaceLoading)) expireProjectWorkspaceFileLoad(relativePath);
 		loadedIncludeFileContents = {};
 		loadedDirectoryFileContents = {};
 		loadedProjectWorkspaceContents = {};
@@ -618,6 +623,56 @@
 			)
 		};
 	}
+
+	function projectEditableStateMatchesDetails(details: Project): boolean {
+		const includeBaselines = getProjectIncludeFileContents(withLoadedProjectIncludeContent(details));
+		const includeFilesClean = Object.entries(includeFilesState).every(
+			([relativePath, content]) => content === includeBaselines[relativePath]
+		);
+		const workspaceFilesClean = Object.entries(projectWorkspaceContents).every(
+			([relativePath, content]) => content === loadedProjectWorkspaceContents[relativePath]
+		);
+
+		return (
+			$inputs.name.value === (details.name || '') &&
+			$inputs.composeContent.value === (details.composeContent || '') &&
+			$inputs.overrideContent.value === (details.overrideContent || '') &&
+			$inputs.envContent.value === (details.envContent || '') &&
+			includeFilesClean &&
+			projectWorkspaceChanges.length === 0 &&
+			workspaceFilesClean
+		);
+	}
+
+	function projectEditableFieldsChanged(previous: Project, current: Project): boolean {
+		if (
+			previous.name !== current.name ||
+			previous.composeContent !== current.composeContent ||
+			previous.overrideContent !== current.overrideContent ||
+			previous.envContent !== current.envContent
+		) {
+			return true;
+		}
+
+		const previousIncludes = getProjectIncludeFileContents(withLoadedProjectIncludeContent(previous));
+		const currentIncludes = getProjectIncludeFileContents(withLoadedProjectIncludeContent(current));
+		const includePaths = new Set([...Object.keys(previousIncludes), ...Object.keys(currentIncludes)]);
+		return [...includePaths].some((relativePath) => previousIncludes[relativePath] !== currentIncludes[relativePath]);
+	}
+
+	$effect(() => {
+		const details = projectDetailQuery.data;
+		if (!details || details === lastProjectDetails) return;
+
+		const previous = lastProjectDetails;
+		const shouldRebase =
+			previous !== null &&
+			untrack(() => projectEditableFieldsChanged(previous, details) && projectEditableStateMatchesDetails(previous));
+		lastProjectDetails = details;
+		if (shouldRebase) {
+			untrack(() => rebaseEditorDraft(details, { clearLoadedFileCache: true }));
+		}
+	});
 
 	async function syncProjectQueries(updatedProject: Project) {
 		const currentEnvId = envId ?? (await environmentStore.getCurrentEnvironmentId());
@@ -873,13 +928,55 @@
 		};
 	}
 
+	function canRebaseProjectWorkspaceFileContent(relativePath: string): boolean {
+		const hasTextDraft =
+			projectWorkspaceContents[relativePath] !== undefined &&
+			projectWorkspaceContents[relativePath] !== loadedProjectWorkspaceContents[relativePath];
+		const hasFileChange = projectWorkspaceChanges.some(
+			(change) =>
+				workspaceFilePathMatches(relativePath, change.relativePath) || workspaceFilePathMatches(change.relativePath, relativePath)
+		);
+		return !hasTextDraft && !hasFileChange;
+	}
+
+	function expireProjectWorkspaceFileLoad(relativePath: string) {
+		projectWorkspaceFileLoadVersions.set(relativePath, (projectWorkspaceFileLoadVersions.get(relativePath) ?? 0) + 1);
+	}
+
+	function clearCleanProjectWorkspaceFileCache() {
+		const cachedPaths = new Set([
+			...Object.keys(projectWorkspaceContents),
+			...Object.keys(loadedProjectWorkspaceContents),
+			...Object.keys(projectWorkspaceFileMetadata),
+			...Object.keys(projectWorkspaceLoadErrors),
+			...Object.keys(projectWorkspaceLoading)
+		]);
+
+		for (const relativePath of cachedPaths) {
+			if (!canRebaseProjectWorkspaceFileContent(relativePath)) continue;
+
+			expireProjectWorkspaceFileLoad(relativePath);
+			projectWorkspaceContents = removeWorkspaceFileRecord(projectWorkspaceContents, relativePath);
+			loadedProjectWorkspaceContents = removeWorkspaceFileRecord(loadedProjectWorkspaceContents, relativePath);
+			projectWorkspaceFileMetadata = removeWorkspaceFileRecord(projectWorkspaceFileMetadata, relativePath);
+			projectWorkspaceLoadErrors = removeWorkspaceFileRecord(projectWorkspaceLoadErrors, relativePath);
+			projectWorkspaceLoading = removeWorkspaceFileRecord(projectWorkspaceLoading, relativePath);
+			const currentProjectId = project?.id;
+			if (currentProjectId) {
+				delete projectWorkspaceFilePromises[getProjectWorkspaceCacheKey(currentProjectId, 'workspace', relativePath)];
+			}
+		}
+		loadedDirectoryFileContents = {};
+	}
+
 	function updateLoadedProjectWorkspaceFile(relativePath: string, content: string) {
 		ensureProjectWorkspaceUiState(relativePath);
+		const shouldRebaseContent = canRebaseProjectWorkspaceFileContent(relativePath);
 		loadedProjectWorkspaceContents = {
 			...loadedProjectWorkspaceContents,
 			[relativePath]: content
 		};
-		if (projectWorkspaceContents[relativePath] === undefined) {
+		if (shouldRebaseContent) {
 			projectWorkspaceContents = {
 				...projectWorkspaceContents,
 				[relativePath]: content
@@ -967,7 +1064,9 @@
 			}
 			return file;
 		})().finally(() => {
-			delete projectWorkspaceFilePromises[requestKey];
+			if (projectWorkspaceFilePromises[requestKey] === promise) {
+				delete projectWorkspaceFilePromises[requestKey];
+			}
 		});
 
 		projectWorkspaceFilePromises[requestKey] = promise;
@@ -1073,18 +1172,23 @@
 			[relativePath]: true
 		};
 		projectWorkspaceLoadErrors = removeWorkspaceFileRecord(projectWorkspaceLoadErrors, relativePath);
+		const loadVersion = projectWorkspaceFileLoadVersions.get(relativePath) ?? 0;
 
 		try {
 			const file = await getProjectWorkspaceFileResource('workspace', relativePath);
+			if (loadVersion !== (projectWorkspaceFileLoadVersions.get(relativePath) ?? 0)) return;
 			projectWorkspaceFileMetadata = { ...projectWorkspaceFileMetadata, [relativePath]: file };
 			if (file.editable) updateLoadedProjectWorkspaceFile(relativePath, file.content ?? '');
 		} catch (error) {
+			if (loadVersion !== (projectWorkspaceFileLoadVersions.get(relativePath) ?? 0)) return;
 			projectWorkspaceLoadErrors = {
 				...projectWorkspaceLoadErrors,
 				[relativePath]: error instanceof Error ? error.message : String(error)
 			};
 		} finally {
-			projectWorkspaceLoading = removeWorkspaceFileRecord(projectWorkspaceLoading, relativePath);
+			if (loadVersion === (projectWorkspaceFileLoadVersions.get(relativePath) ?? 0)) {
+				projectWorkspaceLoading = removeWorkspaceFileRecord(projectWorkspaceLoading, relativePath);
+			}
 		}
 	}
 
@@ -1101,6 +1205,19 @@
 		}
 
 		void loadProjectWorkspaceFileDraft(relativePath);
+	});
+
+	$effect(() => {
+		const revision = projectWorkspaceQuery.data?.fileTreeRevision;
+		if (revision === undefined || revision === lastProjectWorkspaceRevision) return;
+
+		if (lastProjectWorkspaceRevision === null) {
+			lastProjectWorkspaceRevision = revision;
+			return;
+		}
+
+		lastProjectWorkspaceRevision = revision;
+		untrack(clearCleanProjectWorkspaceFileCache);
 	});
 
 	async function loadProjectSourceFile(kind: 'include' | 'directory', relativePath: string) {

@@ -4,6 +4,7 @@ import { toast } from 'svelte-sonner';
 
 export interface APIRequestConfig {
 	baseURL?: string;
+	cache?: RequestCache;
 	data?: unknown;
 	headers?: HeadersInit;
 	params?: SearchParamsOption;
@@ -299,6 +300,7 @@ class APIClient {
 				headers.set('X-Arcane-Batch-Id', activeActivityBatchIdInternal);
 			}
 			const options: KyOptions = {
+				cache: config.cache,
 				method,
 				headers,
 				retry: config.retry ?? 0,

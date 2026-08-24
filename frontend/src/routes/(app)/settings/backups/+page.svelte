@@ -24,6 +24,7 @@
 	import BackupFilePicker from '#lib/components/backup-file-picker.svelte';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
 	import type { BackupFileProvider } from '#lib/types/backup';
+	import { queryKeys } from '#lib/query/query-keys';
 	import { useQueryClient } from '@tanstack/svelte-query';
 
 	let { data } = $props();
@@ -201,7 +202,9 @@
 				selectAll: restoreFilesSelectAll,
 				search: restoreFilesSelectAll ? restoreFilesSearch.trim() : undefined
 			});
-			await queryClient.invalidateQueries({ queryKey: ['project', '0'] });
+			const projectQueryKey = queryKeys.projects.environment('0');
+			await queryClient.cancelQueries({ queryKey: projectQueryKey });
+			queryClient.removeQueries({ queryKey: projectQueryKey });
 			toast.success(m.system_backups_restore_selection_success(), activityToastOptions(extractActivityId(result)));
 			closeRestoreFiles();
 			await refresh();

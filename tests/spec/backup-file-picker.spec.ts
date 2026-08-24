@@ -3,6 +3,7 @@ import { expect, test, type Page, type Route } from '@playwright/test';
 const VOLUME_NAME = 'backup-picker-e2e';
 const BACKUP_ID = 'backup-picker-snapshot';
 const SYSTEM_BACKUP_ID = 'system-picker-id';
+const PROJECT_ID = 'backup-picker-project';
 
 type BrowseRequest = {
 	path: string;
@@ -155,10 +156,104 @@ async function mockVolumeBackupPage(page: Page, browse: BrowseHandler) {
 	await expect(page.getByRole('dialog', { name: 'Restore files' })).toBeVisible();
 }
 
+async function mockProjectWorkspacePage(
+	page: Page,
+	workspaceState: () => { content: string; revision: number }
+) {
+	const encodedProject = encodeURIComponent(PROJECT_ID);
+	await mockAppShell(page);
+	await page.route(/\/api\/variables(?:\?.*)?$/, async (route) => {
+		await route.fulfill({ json: response([]) });
+	});
+	await page.route(/\/api\/environments\/0\/projects\/tags$/, async (route) => {
+		await route.fulfill({ json: response([]) });
+	});
+	await page.route(
+		new RegExp(`/api/environments/0/projects/${encodedProject}/workspace$`),
+		async (route) => {
+			const state = workspaceState();
+			await route.fulfill({
+				json: response({
+					files: [
+						{
+							path: `/projects/${PROJECT_ID}/workspace.txt`,
+							relativePath: 'workspace.txt',
+							name: 'workspace.txt',
+							isDirectory: false,
+							size: state.content.length,
+							mode: '-rw-r--r--',
+							isSymlink: false,
+							editable: true
+						}
+					],
+					fileTreeRevision: `revision-${state.revision}`,
+					fileTreeTruncated: false
+				})
+			});
+		}
+	);
+	await page.route(
+		new RegExp(`/api/environments/0/projects/${encodedProject}/workspace/file(?:\\?.*)?$`),
+		async (route) => {
+			const state = workspaceState();
+			await route.fulfill({
+				json: response({
+					path: `/projects/${PROJECT_ID}/workspace.txt`,
+					relativePath: 'workspace.txt',
+					name: 'workspace.txt',
+					size: state.content.length,
+					mimeType: 'text/plain',
+					content: state.content,
+					editable: true
+				})
+			});
+		}
+	);
+	await page.route(
+		new RegExp(`/api/environments/0/projects/${encodedProject}(?:/(compose|runtime|updates))?$`),
+		async (route) => {
+			const section = new URL(route.request().url()).pathname.split('/').at(-1);
+			const project = {
+				id: PROJECT_ID,
+				name: PROJECT_ID,
+				path: `/projects/${PROJECT_ID}`,
+				dirName: PROJECT_ID,
+				status: 'stopped',
+				serviceCount: 0,
+				runningCount: 0,
+				isArchived: false,
+				hasBuildDirective: false,
+				createdAt: new Date().toISOString(),
+				updatedAt: new Date().toISOString(),
+				tags: [],
+				services: [],
+				runtimeServices: [],
+				includeFiles: []
+			};
+
+			if (section === 'compose') {
+				await route.fulfill({
+					json: response({
+						...project,
+						composeContent: 'services: {}\n',
+						envContent: '',
+						overrideContent: '',
+						composeFileName: 'compose.yaml'
+					})
+				});
+				return;
+			}
+
+			await route.fulfill({ json: response(project) });
+		}
+	);
+}
+
 async function mockSystemBackupPage(
 	page: Page,
 	browse: (body: Record<string, unknown>, route: Route) => Promise<void>,
-	restore: (body: Record<string, unknown>, route: Route) => Promise<void>
+	restore: (body: Record<string, unknown>, route: Route) => Promise<void>,
+	openPage = true
 ) {
 	await mockAppShell(page);
 	await page.route(/\/api\/backups(?:\?.*)?$/, async (route) => {
@@ -189,13 +284,29 @@ async function mockSystemBackupPage(
 	await page.route(new RegExp(`/api/backups/${SYSTEM_BACKUP_ID}/restore-files$`), async (route) => {
 		await restore(route.request().postDataJSON() as Record<string, unknown>, route);
 	});
+	if (!openPage) return;
 
 	await page.goto('/settings/backups');
+	await openSystemRestoreDialog(page);
+}
+
+async function openSystemRestoreDialog(page: Page) {
 	await expect(page.getByText(SYSTEM_BACKUP_ID, { exact: false }).first()).toBeVisible();
 	const backupRow = page.getByRole('row').filter({ hasText: SYSTEM_BACKUP_ID }).first();
 	await backupRow.getByRole('button', { name: 'Open menu' }).click();
 	await page.getByRole('menuitem', { name: 'Restore files' }).click();
 	await expect(page.getByRole('dialog', { name: 'Restore files' })).toBeVisible();
+}
+
+async function navigateInApp(page: Page, path: string) {
+	await page.evaluate((targetPath) => {
+		const link = document.createElement('a');
+		link.href = targetPath;
+		document.body.append(link);
+		link.click();
+		link.remove();
+	}, path);
+	await page.waitForURL((url) => url.pathname === path.split('?')[0]);
 }
 
 function rootEntries(count: number) {
@@ -218,6 +329,7 @@ test.describe('Backup file picker', () => {
 		let fileContent = 'before restore';
 		let workspaceRequests = 0;
 		let fileRequests = 0;
+		const restoreBodies: Array<Record<string, unknown>> = [];
 
 		await page.route(
 			new RegExp(`/api/environments/0/volumes/${encodedVolume}/workspace$`),
@@ -260,6 +372,16 @@ test.describe('Backup file picker', () => {
 				});
 			}
 		);
+		await page.route(
+			new RegExp(
+				`/api/environments/0/volumes/${encodedVolume}/backups/${BACKUP_ID}/restore-files$`
+			),
+			async (route) => {
+				restoreBodies.push(route.request().postDataJSON() as Record<string, unknown>);
+				fileContent = 'after restore';
+				await route.fulfill({ json: response({ message: 'restored' }) });
+			}
+		);
 
 		await mockVolumeBackupPage(page, async (_request, route) => {
 			await route.fulfill({
@@ -279,13 +401,73 @@ test.describe('Backup file picker', () => {
 		await expect(editor).toContainText('before restore');
 
 		await page.getByRole('tab', { name: 'Backups', exact: true }).click();
-		fileContent = 'after restore';
+		const backupRow = page.getByRole('row').filter({ hasText: BACKUP_ID }).first();
+		await backupRow.getByRole('button', { name: 'Open menu' }).click();
+		await page.getByRole('menuitem', { name: 'Restore files' }).click();
+		const dialog = page.getByRole('dialog', { name: 'Restore files' });
+		await dialog.locator('[data-path="workspace.txt"]').getByRole('checkbox').click();
+		await dialog.getByRole('button', { name: 'Restore files' }).click();
+		await expect.poll(() => restoreBodies.length).toBe(1);
+		expect(restoreBodies[0]).toEqual({ paths: ['workspace.txt'], selectAll: false, search: '' });
 		await page.getByRole('tab', { name: 'Workspace', exact: true }).click();
 
 		await expect(editor).toContainText('after restore');
 		await expect(page.getByRole('img', { name: 'Unsaved changes' })).toHaveCount(0);
 		expect(workspaceRequests).toBeGreaterThanOrEqual(2);
 		expect(fileRequests).toBeGreaterThanOrEqual(2);
+	});
+
+	test('refreshes clean project workspace files after a system restore', async ({ page }) => {
+		const workspaceState = { content: 'before restore', revision: 1 };
+		const restoreBodies: Array<Record<string, unknown>> = [];
+		await mockProjectWorkspacePage(page, () => workspaceState);
+
+		await page.goto(`/projects/${PROJECT_ID}?tab=compose`);
+		await page
+			.locator('[data-path="workspace.txt"]')
+			.getByRole('button', { name: 'workspace.txt' })
+			.click();
+		const editor = page.locator('.arcane-code-editor .cm-content').first();
+		await expect(editor).toContainText('before restore');
+
+		await mockSystemBackupPage(
+			page,
+			async (_body, route) => {
+				await route.fulfill({
+					json: response({
+						entries: [
+							{
+								path: `${PROJECT_ID}/workspace.txt`,
+								name: 'workspace.txt',
+								isDirectory: false
+							}
+						]
+					})
+				});
+			},
+			async (body, route) => {
+				restoreBodies.push(body);
+				workspaceState.content = 'after restore';
+				workspaceState.revision += 1;
+				await route.fulfill({ json: response({ message: 'restored' }) });
+			},
+			false
+		);
+		await navigateInApp(page, '/settings/backups');
+		await openSystemRestoreDialog(page);
+
+		const dialog = page.getByRole('dialog', { name: 'Restore files' });
+		await dialog.locator(`[data-path="${PROJECT_ID}/workspace.txt"]`).getByRole('checkbox').click();
+		await dialog.getByRole('button', { name: 'Restore files' }).click();
+		await expect.poll(() => restoreBodies.length).toBe(1);
+
+		await navigateInApp(page, `/projects/${PROJECT_ID}?tab=compose`);
+		await page
+			.locator('[data-path="workspace.txt"]')
+			.getByRole('button', { name: 'workspace.txt' })
+			.click();
+		await expect(editor).toContainText('after restore');
+		await expect(page.getByRole('img', { name: 'Unsaved changes' })).toHaveCount(0);
 	});
 
 	test('loads folders lazily, walks continuation pages, retains rows on retry, and bounds mounted rows', async ({

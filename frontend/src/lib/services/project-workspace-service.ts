@@ -10,13 +10,16 @@ class ProjectWorkspaceService extends BaseAPIService {
 
 	async getWorkspace(projectId: string, environmentId?: string): Promise<ProjectWorkspace> {
 		const envId = await this.resolveEnvironmentId(environmentId);
-		return this.handleResponse(this.api.get(`/environments/${envId}/projects/${projectId}/workspace`));
+		return this.handleResponse(this.api.get(`/environments/${envId}/projects/${projectId}/workspace`, { cache: 'no-store' }));
 	}
 
 	async getWorkspaceFile(projectId: string, relativePath: string, environmentId?: string): Promise<ProjectWorkspaceFileContent> {
 		const envId = await this.resolveEnvironmentId(environmentId);
 		return this.handleResponse(
-			this.api.get(`/environments/${envId}/projects/${projectId}/workspace/file`, { params: { relativePath } })
+			this.api.get(`/environments/${envId}/projects/${projectId}/workspace/file`, {
+				cache: 'no-store',
+				params: { relativePath }
+			})
 		);
 	}
 

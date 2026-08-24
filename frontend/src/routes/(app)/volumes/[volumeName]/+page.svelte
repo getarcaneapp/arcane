@@ -274,6 +274,17 @@
 		persistWorkspacePrefs();
 	}
 
+	function canRebaseVolumeWorkspaceFileContent(relativePath: string): boolean {
+		const hasTextDraft =
+			workspaceFileContents[relativePath] !== undefined &&
+			workspaceFileContents[relativePath] !== loadedWorkspaceFileContents[relativePath];
+		const hasFileChange = workspaceFileChanges.some(
+			(change) =>
+				workspaceFilePathMatches(relativePath, change.relativePath) || workspaceFilePathMatches(change.relativePath, relativePath)
+		);
+		return !hasTextDraft && !hasFileChange;
+	}
+
 	async function loadWorkspaceFile(relativePath: string) {
 		if (!relativePath || workspaceFileMetadata[relativePath] || workspaceFileLoading[relativePath]) return;
 		const entry = visibleWorkspaceFiles.find((file) => file.relativePath === relativePath);
@@ -315,13 +326,17 @@
 		try {
 			const file = await volumeWorkspaceService.getWorkspaceFile(volume.name, relativePath, currentEnvId);
 			if (loadVersion !== (workspaceFileLoadVersions.get(relativePath) ?? 0)) return;
+			const shouldRebaseContent = canRebaseVolumeWorkspaceFileContent(relativePath);
 			workspaceFileMetadata = { ...workspaceFileMetadata, [relativePath]: file };
 			if (file.editable) {
 				const content = file.content ?? '';
 				loadedWorkspaceFileContents = { ...loadedWorkspaceFileContents, [relativePath]: content };
-				if (workspaceFileContents[relativePath] === undefined) {
+				if (shouldRebaseContent) {
 					workspaceFileContents = { ...workspaceFileContents, [relativePath]: content };
 				}
+			} else if (shouldRebaseContent) {
+				workspaceFileContents = removeWorkspaceFileRecord(workspaceFileContents, relativePath);
+				loadedWorkspaceFileContents = removeWorkspaceFileRecord(loadedWorkspaceFileContents, relativePath);
 			}
 		} catch (error) {
 			if (loadVersion !== (workspaceFileLoadVersions.get(relativePath) ?? 0)) return;
@@ -532,15 +547,7 @@
 			if (!selection.selectAll && !restoredPaths.some((rootPath) => workspaceFilePathMatches(relativePath, rootPath))) {
 				continue;
 			}
-			const hasTextDraft =
-				workspaceFileContents[relativePath] !== undefined &&
-				workspaceFileContents[relativePath] !== loadedWorkspaceFileContents[relativePath];
-			const hasFileChange = workspaceFileChanges.some(
-				(change) =>
-					workspaceFilePathMatches(relativePath, change.relativePath) ||
-					workspaceFilePathMatches(change.relativePath, relativePath)
-			);
-			if (hasTextDraft || hasFileChange) continue;
+			if (!canRebaseVolumeWorkspaceFileContent(relativePath)) continue;
 
 			expireWorkspaceFileLoad(relativePath);
 			workspaceFileContents = removeWorkspaceFileRecord(workspaceFileContents, relativePath);
