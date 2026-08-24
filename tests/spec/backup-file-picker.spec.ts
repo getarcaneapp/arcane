@@ -425,7 +425,8 @@ test.describe('Backup file picker', () => {
 		await page.goto(`/projects/${PROJECT_ID}?tab=compose`);
 		await page
 			.locator('[data-path="workspace.txt"]')
-			.getByRole('button', { name: 'workspace.txt' })
+			.getByRole('button', { name: 'workspace.txt', exact: true })
+			.first()
 			.click();
 		const editor = page.locator('.arcane-code-editor .cm-content').first();
 		await expect(editor).toContainText('before restore');
@@ -464,7 +465,8 @@ test.describe('Backup file picker', () => {
 		await navigateInApp(page, `/projects/${PROJECT_ID}?tab=compose`);
 		await page
 			.locator('[data-path="workspace.txt"]')
-			.getByRole('button', { name: 'workspace.txt' })
+			.getByRole('button', { name: 'workspace.txt', exact: true })
+			.first()
 			.click();
 		await expect(editor).toContainText('after restore');
 		await expect(page.getByRole('img', { name: 'Unsaved changes' })).toHaveCount(0);
