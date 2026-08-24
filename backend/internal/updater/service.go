@@ -261,7 +261,7 @@ func (s *UpdaterService) applyScopedUpdatesInternal(ctx context.Context, options
 		return err
 	}
 	if len(containerIDs) == 0 {
-		return errors.Errorf("no containers matched the requested %s resources", strings.TrimSpace(options.Type))
+		return common.ErrUpdaterNoContainersMatched
 	}
 
 	engineOpts := updater.Options{Force: options.ForceUpdate, DryRun: options.DryRun}
@@ -329,8 +329,10 @@ func (s *UpdaterService) containerIDsForProjectsInternal(ctx context.Context, pr
 
 	names := make(map[string]struct{}, len(projectRefs))
 	for _, ref := range projectRefs {
-		name := ref
-		if s.deps.Projects != nil {
+		name := strings.TrimSpace(ref)
+		if discoveredName, discovered := strings.CutPrefix(name, "compose:"); discovered {
+			name = discoveredName
+		} else if s.deps.Projects != nil {
 			if project, lookupErr := s.deps.Projects.GetProjectFromDatabaseByID(ctx, ref); lookupErr == nil && project != nil {
 				switch {
 				case project.ComposeProjectName != nil && strings.TrimSpace(*project.ComposeProjectName) != "":
@@ -350,6 +352,9 @@ func (s *UpdaterService) containerIDsForProjectsInternal(ctx context.Context, pr
 
 	var ids []string
 	for _, summary := range containers {
+		if dockerutil.ComposeServiceLabel(summary.Labels) == "" {
+			continue
+		}
 		project := strings.ToLower(strings.TrimSpace(dockerutil.ComposeProjectLabel(summary.Labels)))
 		if project == "" {
 			continue

@@ -265,12 +265,18 @@
 	// from a dev-guarded callsite.
 	async function runDebugDemo() {
 		const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+		// Big enough fleet (10) to exercise the scrolling list (#3655).
 		const demo: Array<{ name: string; outcome: UpdateAllEnvironmentStatus; to: string; error?: string }> = [
 			{ name: 'Local Docker', outcome: 'updated', to: 'v0.9.2' },
 			{ name: 'palladium', outcome: 'updated', to: 'v0.9.2' },
 			{ name: 'naswidc1.ofkm.us', outcome: 'up_to_date', to: 'v0.9.1' },
 			{ name: 'ofkm-cloud', outcome: 'skipped_offline', to: '' },
-			{ name: 'parquetide', outcome: 'failed', to: '', error: 'dial tcp 10.0.0.9:3552: connect: connection refused' }
+			{ name: 'parquetide', outcome: 'failed', to: '', error: 'dial tcp 10.0.0.9:3552: connect: connection refused' },
+			{ name: 'edge-nuc-01', outcome: 'updated', to: 'v0.9.2' },
+			{ name: 'edge-nuc-02', outcome: 'updated', to: 'v0.9.2' },
+			{ name: 'hetzner-fsn1', outcome: 'triggered', to: 'v0.9.2' },
+			{ name: 'homelab-pi5', outcome: 'up_to_date', to: 'v0.9.1' },
+			{ name: 'staging.ofkm.us', outcome: 'updated', to: 'v0.9.2' }
 		];
 
 		job = {
@@ -291,7 +297,7 @@
 			const starting = job?.results?.[index];
 			if (phase !== 'running' || !starting) return;
 			starting.status = 'updating';
-			await wait(1400);
+			await wait(700);
 
 			// The manager restart is the one moment the reconnecting banner shows.
 			if (index === 0) {
@@ -407,7 +413,9 @@
 
 			{#if totalCount > 0}
 				<div class="border-t border-border/60">
-					<ScrollArea.Root class="max-h-72">
+					<!-- Native scroller: ScrollArea's percentage-height viewport resolves to auto
+					     under a max-height-only parent, so it never clips (#3655). -->
+					<div class="max-h-72 overflow-y-auto">
 						<ul class="divide-y divide-border/50">
 							{#each results as result (result.environmentId)}
 								{@const versions = versionLine(result)}
@@ -448,7 +456,7 @@
 								</li>
 							{/each}
 						</ul>
-					</ScrollArea.Root>
+					</div>
 				</div>
 			{:else}
 				<div class="flex items-center gap-2 border-t border-border/60 px-6 py-4 text-sm text-muted-foreground">

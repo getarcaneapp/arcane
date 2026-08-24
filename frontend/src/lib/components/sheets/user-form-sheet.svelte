@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
-	import * as Alert from '#lib/components/ui/alert/index.js';
+	import { Badge } from '#lib/components/ui/badge';
 	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
 	import FormInput from '#lib/components/form/form-input.svelte';
 	import RoleAssignmentsEditor from '#lib/components/forms/role-assignments-editor.svelte';
@@ -46,8 +46,7 @@
 	let canEditUsername = $derived(!isEditMode || allowUsernameEdit);
 
 	let isOidcUser = $derived(!!userToEdit?.oidcSubjectId);
-	let hasOidcAssignments = $derived(!!userToEdit?.roleAssignments?.some((a) => a.source === 'oidc'));
-	let assignmentsDisabled = $derived(isOidcUser && hasOidcAssignments);
+	let oidcAssignments = $derived(userToEdit?.roleAssignments?.filter((a) => a.source === 'oidc') ?? []);
 
 	const formSchema = z.object({
 		username: z
@@ -68,7 +67,9 @@
 					environmentId: z.string().optional()
 				})
 			)
-			.min(1, m.users_role_assignments_required())
+			// OIDC users may get all their roles from OIDC mappings, so zero
+			// manual assignments is valid for them.
+			.refine((assignments) => isOidcUser || assignments.length >= 1, m.users_role_assignments_required())
 	});
 
 	let formData = $derived({
@@ -182,20 +183,24 @@
 				<div>
 					<label for="roleAssignments" class="text-sm font-medium">{m.users_role_assignments_label()}</label>
 					<p class="mb-2 text-xs text-muted-foreground">{m.users_role_assignments_description()}</p>
-					{#if assignmentsDisabled}
-						<Alert.Root variant="default" class="mb-3">
-							<Alert.Description>
-								{m.users_role_assignments_oidc_managed()}
-								<a href="/settings/authentication" class="ml-2 text-primary underline">{m.users_role_assignments_oidc_link()}</a>
-							</Alert.Description>
-						</Alert.Root>
+					{#if oidcAssignments.length > 0}
+						<div class="mb-3">
+							<p class="text-xs text-muted-foreground">
+								{m.oidc_synced_role_assignments()}
+								<a href="/settings/authentication" class="ml-1 text-primary underline">{m.users_role_assignments_oidc_link()}</a>
+							</p>
+							<div class="mt-2 flex flex-wrap gap-2">
+								{#each oidcAssignments as assignment (`${assignment.roleId}-${assignment.environmentId ?? 'global'}`)}
+									<Badge variant="outline">
+										{roles.find((r) => r.id === assignment.roleId)?.name ?? assignment.roleId}
+										·
+										{environments.find((e) => e.id === assignment.environmentId)?.name ?? m.global_org_wide()}
+									</Badge>
+								{/each}
+							</div>
+						</div>
 					{/if}
-					<RoleAssignmentsEditor
-						bind:assignments={$inputs.roleAssignments.value}
-						{roles}
-						{environments}
-						disabled={assignmentsDisabled}
-					/>
+					<RoleAssignmentsEditor bind:assignments={$inputs.roleAssignments.value} {roles} {environments} />
 					{#if $inputs.roleAssignments.error}
 						<p class="mt-1 text-xs text-destructive">{$inputs.roleAssignments.error}</p>
 					{/if}

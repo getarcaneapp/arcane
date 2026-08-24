@@ -1,5 +1,6 @@
 import { m } from '#lib/paraglide/messages';
 import type { ContainerSummaryDto } from '#lib/types/docker';
+import { COMPOSE_PROJECT_LABEL } from '#lib/utils/docker';
 
 export type ActionStatus =
 	| 'starting'
@@ -46,7 +47,7 @@ export function getStateBadgeVariant(state: string): StateBadgeVariant {
 }
 
 export function getProjectName(container: ContainerSummaryDto): string {
-	const projectLabel = container.labels?.['com.docker.compose.project'];
+	const projectLabel = container.labels?.[COMPOSE_PROJECT_LABEL];
 	return projectLabel || 'No Project';
 }
 

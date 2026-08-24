@@ -6,6 +6,7 @@ import type {
 	VolumeUsageDto,
 	VolumeUsageCounts,
 	VolumeCreateRequest,
+	VolumeRenameRequest,
 	VolumeSizeInfo
 } from '#lib/types/docker';
 import type { SearchPaginationSortRequest, Paginated } from '#lib/types/shared';
@@ -60,6 +61,13 @@ class VolumeService extends BaseAPIService {
 	async createVolume(options: VolumeCreateRequest, environmentId?: string): Promise<any> {
 		const envId = await this.resolveEnvironmentId(environmentId);
 		return this.handleResponse(this.api.post(`/environments/${envId}/volumes`, options));
+	}
+
+	async renameVolume(sourceName: string, options: VolumeRenameRequest, environmentId?: string): Promise<VolumeDetailDto> {
+		const envId = await this.resolveEnvironmentId(environmentId);
+		return this.handleResponse(
+			this.api.post(`/environments/${envId}/volumes/${encodeURIComponent(sourceName)}/rename`, options)
+		) as Promise<VolumeDetailDto>;
 	}
 
 	async deleteVolume(volumeName: string): Promise<any> {

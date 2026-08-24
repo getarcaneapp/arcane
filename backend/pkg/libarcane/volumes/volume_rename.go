@@ -38,11 +38,12 @@ type JournalSource interface {
 }
 
 type projectVolumeRenameEntryInternal struct {
-	Key       string
-	OldName   string
-	NewName   string
-	OldVolume volume.Volume
-	NewConfig composetypes.VolumeConfig
+	Key           string
+	OldName       string
+	NewName       string
+	OldVolume     volume.Volume
+	NewConfig     composetypes.VolumeConfig
+	CreateOptions client.VolumeCreateOptions
 }
 
 type dockerProjectVolumeRenameMigrationInternal struct {
@@ -101,6 +102,50 @@ func PlanMigration(ctx context.Context, dockerClient *client.Client, composeProj
 		entries:        entries,
 		oldComposeName: oldComposeName,
 		newComposeName: newComposeName,
+	}, nil
+}
+
+// PlanRename validates and prepares an unused Docker volume for a copy-based rename.
+func PlanRename(ctx context.Context, dockerClient *client.Client, oldName, newName string) (Migration, error) {
+	if dockerClient == nil {
+		return nil, errors.New("docker service unavailable")
+	}
+
+	oldName = strings.TrimSpace(oldName)
+	newName = strings.TrimSpace(newName)
+	if oldName == "" || newName == "" {
+		return nil, errors.New("source and target volume names are required")
+	}
+	if oldName == newName {
+		return nil, errors.New("source and target volume names must differ")
+	}
+
+	oldVolume, err := dockerClient.VolumeInspect(ctx, oldName, client.VolumeInspectOptions{})
+	if err != nil {
+		return nil, errors.WrapIff(err, "inspect source volume %s", oldName)
+	}
+	if err := ensureProjectRenameSourceVolumeDetachedInternal(ctx, dockerClient, oldName); err != nil {
+		return nil, err
+	}
+	if err := ensureProjectRenameTargetVolumeAbsentInternal(ctx, dockerClient, newName); err != nil {
+		return nil, err
+	}
+
+	entry := projectVolumeRenameEntryInternal{
+		OldName:   oldName,
+		NewName:   newName,
+		OldVolume: oldVolume.Volume,
+		CreateOptions: client.VolumeCreateOptions{
+			Name:       newName,
+			Driver:     oldVolume.Volume.Driver,
+			DriverOpts: cloneStringMapInternal(oldVolume.Volume.Options),
+			Labels:     cloneStringMapInternal(oldVolume.Volume.Labels),
+		},
+	}
+
+	return &dockerProjectVolumeRenameMigrationInternal{
+		dockerClient: dockerClient,
+		entries:      []projectVolumeRenameEntryInternal{entry},
 	}, nil
 }
 
@@ -356,6 +401,13 @@ func ensureProjectRenameSourceVolumeDetachedInternal(ctx context.Context, docker
 }
 
 func createProjectRenamedVolumeInternal(ctx context.Context, dockerClient *client.Client, entry projectVolumeRenameEntryInternal) error {
+	if strings.TrimSpace(entry.CreateOptions.Name) != "" {
+		if _, err := dockerClient.VolumeCreate(ctx, entry.CreateOptions); err != nil {
+			return errors.WrapIff(err, "create target volume %s", entry.NewName)
+		}
+		return nil
+	}
+
 	labels := map[string]string{}
 	maps.Copy(labels, entry.OldVolume.Labels)
 	maps.Copy(labels, entry.NewConfig.Labels)

@@ -316,6 +316,18 @@ func TestGenerateUsernameFromEmail(t *testing.T) {
 
 }
 
+func TestUniqueOidcUsernameInternal(t *testing.T) {
+	u := uniqueOidcUsernameInternal("alice", "1234567890abcdef")
+
+	assert.Equal(t, "alice_90abcdef", u,
+		"suffixed username %q", u)
+
+	u2 := uniqueOidcUsernameInternal("alice", "short")
+
+	assert.Equal(t, "alice_short", u2,
+		"short subject username %q", u2)
+}
+
 func TestPersistOidcTokens_SetsFields(t *testing.T) {
 	s := newTestAuthService("")
 	user := &common.User{}

@@ -17,7 +17,7 @@
 	import { volumeService } from '#lib/services/volume-service';
 	import { bytes } from '#lib/utils/formatting';
 	import { inUseBadge } from '#lib/utils/mobile-card-badges';
-	import { TrashIcon, InspectIcon, VolumesIcon, CalendarIcon } from '#lib/icons';
+	import { TrashIcon, InspectIcon, VolumesIcon, CalendarIcon, EditIcon } from '#lib/icons';
 	import { Spinner } from '#lib/components/ui/spinner';
 	import settingsStore from '#lib/stores/config-store';
 	import { untrack } from 'svelte';
@@ -28,6 +28,7 @@
 	import userStore from '#lib/stores/user-store';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
 	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions';
+	import RenameVolumeDialog from './components/rename-volume-dialog.svelte';
 
 	let {
 		volumes = $bindable(),
@@ -42,8 +43,12 @@
 	} = $props();
 
 	let isLoading = $state({
-		removing: false
+		removing: false,
+		renaming: false
 	});
+	let volumeToRename = $state<VolumeSummaryDto | null>(null);
+	let renameDialogOpen = $state(false);
+	let renameEnvironmentId = $state('0');
 
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
 	// Track the user store: hasPermission reads it non-reactively, so without
@@ -51,6 +56,10 @@
 	const canDeleteVolume = $derived.by(() => {
 		$userStore;
 		return hasPermission('volumes:delete', currentEnvId);
+	});
+	const canRenameVolume = $derived.by(() => {
+		$userStore;
+		return hasPermission('volumes:rename', currentEnvId);
 	});
 	let customSettings = $state<Record<string, unknown>>({});
 	let showInternal = $derived.by(() => {
@@ -156,6 +165,29 @@
 						}
 					});
 				}
+			}
+		});
+	}
+
+	function handleRenameVolume(item: VolumeSummaryDto) {
+		volumeToRename = item;
+		renameEnvironmentId = currentEnvId;
+		renameDialogOpen = true;
+	}
+
+	async function handleRenameSubmit(newName: string) {
+		if (!volumeToRename) return;
+		const oldName = volumeToRename.name;
+		isLoading.renaming = true;
+		handleApiResultWithCallbacks({
+			result: await tryCatch(volumeService.renameVolume(oldName, { name: newName }, renameEnvironmentId)),
+			message: m.volumes_rename_failed({ name: oldName }),
+			setLoadingState: (value) => (isLoading.renaming = value),
+			onSuccess: async (data) => {
+				toast.success(m.volumes_rename_success({ oldName, newName }), activityToastOptions(extractActivityId(data)));
+				renameDialogOpen = false;
+				volumeToRename = null;
+				if (renameEnvironmentId === currentEnvId) await refreshVolumes();
 			}
 		});
 	}
@@ -325,9 +357,21 @@
 			{m.common_inspect()}
 		</DropdownMenu.Item>
 
-		{#if canDeleteVolume}
+		{#if canRenameVolume || canDeleteVolume}
 			<DropdownMenu.Separator />
+		{/if}
 
+		{#if canRenameVolume}
+			<DropdownMenu.Item
+				onclick={() => handleRenameVolume(item)}
+				disabled={item.inUse || isBackupVolume(item) || isLoading.renaming}
+			>
+				<EditIcon class="size-4" />
+				{m.rename()}
+			</DropdownMenu.Item>
+		{/if}
+
+		{#if canDeleteVolume}
 			<DropdownMenu.Item
 				variant="destructive"
 				onclick={() => handleRemoveVolumeConfirm(item.name)}
@@ -361,6 +405,13 @@
 	rowActions={RowActions}
 	mobileCard={VolumeMobileCardSnippet}
 	customViewOptions={CustomViewOptions}
+/>
+
+<RenameVolumeDialog
+	bind:open={renameDialogOpen}
+	volume={volumeToRename}
+	isLoading={isLoading.renaming}
+	onSubmit={handleRenameSubmit}
 />
 
 {#snippet CustomViewOptions()}

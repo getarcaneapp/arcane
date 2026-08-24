@@ -6,7 +6,8 @@
 		variants: {
 			variant: {
 				default: 'text-foreground',
-				warning: 'border-amber-600/50 text-amber-300 dark:border-amber-600 [&>svg]:text-amber-300',
+				warning:
+					'border-amber-600/50 text-amber-600 dark:border-amber-600 dark:text-amber-400 [&>svg]:text-amber-600 dark:[&>svg]:text-amber-400',
 				destructive: 'border-destructive/50 text-destructive dark:border-destructive [&>svg]:text-destructive'
 			}
 		},

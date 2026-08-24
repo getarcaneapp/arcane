@@ -275,16 +275,14 @@
 
 {#snippet RowActions({ item }: { item: User })}
 	<RowActionsMenu>
-		{#if !item.oidcSubjectId}
-			<IfPermitted perm="users:update">
-				<DropdownMenu.Item onclick={() => onEditUser(item)}>
-					<EditIcon class="size-4" />
-					{m.common_edit()}
-				</DropdownMenu.Item>
+		<IfPermitted perm="users:update">
+			<DropdownMenu.Item onclick={() => onEditUser(item)}>
+				<EditIcon class="size-4" />
+				{m.common_edit()}
+			</DropdownMenu.Item>
 
-				<DropdownMenu.Separator />
-			</IfPermitted>
-		{/if}
+			<DropdownMenu.Separator />
+		</IfPermitted>
 
 		<IfPermitted perm="users:delete">
 			<DropdownMenu.Item

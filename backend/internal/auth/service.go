@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"strconv"
 	"strings"
 	"time"
 	"uuid"
@@ -416,6 +417,12 @@ func (s *AuthService) findOrCreateOidcUser(ctx context.Context, userInfo auth.Oi
 
 	created, err := s.createOidcUser(ctx, userInfo, tokenResp)
 	if err != nil {
+		// A concurrent login for the same subject may have created the
+		// account between our lookup and the insert; resolve to it
+		// instead of failing the login.
+		if existing, lookupErr := s.userService.GetUserByOidcSubjectId(ctx, userInfo.Subject); lookupErr == nil {
+			return s.updateExistingOidcUser(ctx, existing, userInfo, tokenResp)
+		}
 		return nil, false, err
 	}
 	return created, true, nil
@@ -477,11 +484,9 @@ func (s *AuthService) validateMergeEmailVerification(userInfo auth.OidcUserInfo)
 }
 
 func (s *AuthService) createOidcUser(ctx context.Context, userInfo auth.OidcUserInfo, tokenResp *auth.OidcTokenResponse) (*common.User, error) {
-	var username string
-	if userInfo.PreferredUsername == "" {
-		username = generateUsernameFromEmail(userInfo.Email, userInfo.Subject)
-	} else {
-		username = userInfo.PreferredUsername
+	username, err := s.resolveOidcUsernameInternal(ctx, userInfo)
+	if err != nil {
+		return nil, err
 	}
 
 	var displayName *string
@@ -505,13 +510,60 @@ func (s *AuthService) createOidcUser(ctx context.Context, userInfo auth.OidcUser
 
 	s.persistOidcTokens(user, tokenResp)
 
-	if _, err := s.userService.CreateUser(ctx, user); err != nil {
-		return nil, err
+	// The username probe is not atomic with the insert: a concurrent
+	// first-time login can claim the candidate in between, failing the
+	// unique constraint. Probe again for a fresh candidate and retry.
+	var createErr error
+	for attempt := range 3 {
+		if attempt > 0 {
+			if user.Username, err = s.resolveOidcUsernameInternal(ctx, userInfo); err != nil {
+				return nil, err
+			}
+		}
+		if _, createErr = s.userService.CreateUser(ctx, user); createErr == nil {
+			break
+		}
+	}
+	if createErr != nil {
+		return nil, createErr
 	}
 	if err := s.syncOidcRoleAssignments(ctx, user, userInfo, tokenResp); err != nil {
 		slog.WarnContext(ctx, "failed to sync OIDC role assignments on user create", "error", err, "user_id", user.ID)
 	}
 	return user, nil
+}
+
+// resolveOidcUsernameInternal returns the preferred username for a new OIDC
+// user, or a currently unclaimed collision-free candidate when an existing
+// account already owns it.
+func (s *AuthService) resolveOidcUsernameInternal(ctx context.Context, userInfo auth.OidcUserInfo) (string, error) {
+	var username string
+	if userInfo.PreferredUsername == "" {
+		username = generateUsernameFromEmail(userInfo.Email, userInfo.Subject)
+	} else {
+		username = userInfo.PreferredUsername
+	}
+
+	if _, lookupErr := s.userService.GetUserByUsername(ctx, username); errors.Is(lookupErr, common.ErrUserNotFound) {
+		return username, nil
+	} else if lookupErr != nil {
+		return "", lookupErr
+	}
+
+	base := uniqueOidcUsernameInternal(username, userInfo.Subject)
+	unique := base
+	for i := 2; ; i++ {
+		_, candidateErr := s.userService.GetUserByUsername(ctx, unique)
+		if errors.Is(candidateErr, common.ErrUserNotFound) {
+			slog.InfoContext(ctx, "OIDC username already taken by an existing account; assigning a unique username instead",
+				"username", username, "unique_username", unique, "subject", userInfo.Subject)
+			return unique, nil
+		}
+		if candidateErr != nil {
+			return "", candidateErr
+		}
+		unique = base + "_" + strconv.Itoa(i)
+	}
 }
 
 func (s *AuthService) updateOidcUser(ctx context.Context, user *common.User, userInfo auth.OidcUserInfo, tokenResp *auth.OidcTokenResponse) error {
@@ -1054,6 +1106,17 @@ func generateUsernameFromEmail(email, subject string) string {
 		return "user_" + subject[len(subject)-8:]
 	}
 	return "user_" + subject
+}
+
+// uniqueOidcUsernameInternal derives a collision-free username candidate by
+// suffixing the tail of the OIDC subject, mirroring generateUsernameFromEmail's
+// fallback format.
+func uniqueOidcUsernameInternal(base, subject string) string {
+	suffix := subject
+	if len(suffix) > 8 {
+		suffix = suffix[len(suffix)-8:]
+	}
+	return base + "_" + suffix
 }
 
 func (s *AuthService) runInBackground(ctx context.Context, name string, fn func(ctx context.Context) error) {
