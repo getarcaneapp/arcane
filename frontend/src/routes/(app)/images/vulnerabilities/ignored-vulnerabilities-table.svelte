@@ -5,6 +5,7 @@
 	import { ShieldAlertIcon, CodeIcon, ImagesIcon, EyeOnIcon } from '#lib/icons';
 	import { ArcaneButton } from '#lib/components/arcane-button';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
+	import { formatDate } from '#lib/utils/formatting';
 
 	let {
 		ignoredVulnerabilities,
@@ -21,11 +22,6 @@
 	} = $props();
 
 	const DEFAULT_PAGE_SIZE = 20;
-
-	function formatDate(dateString: string): string {
-		const date = new Date(dateString);
-		return date.toLocaleDateString();
-	}
 
 	function handlePageChange(page: number) {
 		const newOptions: SearchPaginationSortRequest = {
@@ -77,7 +73,7 @@
 								{item.imageId.substring(0, 12)}...
 							</span>
 						</span>
-						<span>• {formatDate(item.createdAt)}</span>
+						<span>• {formatDate(item.createdAt) || m.common_unknown()}</span>
 					</div>
 					{#if item.reason}
 						<div class="text-xs text-muted-foreground italic">

@@ -15,11 +15,12 @@ import (
 )
 
 var (
-	limitFlag  int
-	startFlag  int
-	allFlag    bool
-	forceFlag  bool
-	jsonOutput bool
+	limitFlag   int
+	startFlag   int
+	allFlag     bool
+	forceFlag   bool
+	jsonOutput  bool
+	envOnlyFlag bool
 )
 
 // EventsCmd is the parent command for event operations
@@ -40,7 +41,10 @@ var listCmd = &cobra.Command{
 			return err
 		}
 
-		path := types.Endpoints.Events()
+		path := types.Events()
+		if envOnlyFlag {
+			path = types.EventsEnvironment(c.EnvID())
+		}
 		path, err = cmdutil.ApplyPaginationParams(cmd, path, cmdutil.ListParams{Resource: "events", Limit: limitFlag, FallbackDefault: 20, Start: startFlag, All: allFlag})
 		if err != nil {
 			return errors.WrapIf(err, "failed to build pagination query")
@@ -49,68 +53,6 @@ var listCmd = &cobra.Command{
 		resp, err := c.Get(cmd.Context(), path)
 		if err != nil {
 			return errors.WrapIf(err, "failed to list events")
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result base.Paginated[event.Event]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
-		}
-
-		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
-		}
-
-		headers := []string{"ID", "TYPE", "RESOURCE", "USER", "TIMESTAMP"}
-		rows := make([][]string, len(result.Data))
-		for i, evt := range result.Data {
-			resource := ""
-			if evt.ResourceName != nil && evt.ResourceType != nil {
-				resource = fmt.Sprintf("%s (%s)", *evt.ResourceName, *evt.ResourceType)
-			}
-			username := ""
-			if evt.Username != nil {
-				username = *evt.Username
-			}
-			rows[i] = []string{
-				evt.ID,
-				evt.Type,
-				resource,
-				username,
-				evt.Timestamp.String(),
-			}
-		}
-
-		output.Table(headers, rows)
-		output.Showing(len(result.Data), result.Pagination.TotalItems, "events")
-		return nil
-	},
-}
-
-var listEnvCmd = &cobra.Command{
-	Use:          "list-env",
-	Short:        "List events for current environment",
-	SilenceUsage: true,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := client.NewFromConfig()
-		if err != nil {
-			return err
-		}
-
-		path := types.Endpoints.EventsEnvironment(c.EnvID())
-		path, err = cmdutil.ApplyPaginationParams(cmd, path, cmdutil.ListParams{Resource: "events", Limit: limitFlag, FallbackDefault: 20, Start: startFlag, All: allFlag})
-		if err != nil {
-			return errors.WrapIf(err, "failed to build pagination query")
-		}
-
-		resp, err := c.Get(cmd.Context(), path)
-		if err != nil {
-			return errors.WrapIf(err, "failed to list environment events")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
@@ -177,7 +119,7 @@ var deleteCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Delete(cmd.Context(), types.Endpoints.Event(args[0]))
+		resp, err := c.Delete(cmd.Context(), types.Event(args[0]))
 		if err != nil {
 			return errors.WrapIf(err, "failed to delete event")
 		}
@@ -191,21 +133,68 @@ var deleteCmd = &cobra.Command{
 	},
 }
 
+var statsCmd = &cobra.Command{
+	Use:          "stats",
+	Short:        "Show global event counts by severity",
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := client.NewFromConfig()
+		if err != nil {
+			return err
+		}
+
+		resp, err := c.Get(cmd.Context(), types.EventsStats())
+		if err != nil {
+			return errors.WrapIf(err, "failed to get event stats")
+		}
+		defer func() { _ = resp.Body.Close() }()
+
+		// The severity counts DTO lives only in the backend's internal event
+		// package, so mirror its wire shape here.
+		var result base.ApiResponse[struct {
+			Total   int64 `json:"total"`
+			Info    int64 `json:"info"`
+			Success int64 `json:"success"`
+			Warning int64 `json:"warning"`
+			Error   int64 `json:"error"`
+		}]
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
+		}
+
+		if jsonOutput {
+			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
+			if err != nil {
+				return errors.WrapIf(err, "failed to marshal JSON")
+			}
+			fmt.Println(string(resultBytes))
+			return nil
+		}
+
+		output.Header("Event Stats")
+		output.KeyValue("Total", result.Data.Total)
+		output.KeyValue("Info", result.Data.Info)
+		output.KeyValue("Success", result.Data.Success)
+		output.KeyValue("Warning", result.Data.Warning)
+		output.KeyValue("Error", result.Data.Error)
+		return nil
+	},
+}
+
 func init() {
 	EventsCmd.AddCommand(listCmd)
-	EventsCmd.AddCommand(listEnvCmd)
 	EventsCmd.AddCommand(deleteCmd)
+	EventsCmd.AddCommand(statsCmd)
 
 	listCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of events to show")
 	listCmd.Flags().IntVar(&startFlag, "start", 0, cmdutil.StartFlagUsage)
 	listCmd.Flags().BoolVarP(&allFlag, "all", "a", false, cmdutil.AllFlagUsage)
 	listCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 
-	listEnvCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of events to show")
-	listEnvCmd.Flags().IntVar(&startFlag, "start", 0, cmdutil.StartFlagUsage)
-	listEnvCmd.Flags().BoolVarP(&allFlag, "all", "a", false, cmdutil.AllFlagUsage)
-	listEnvCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
+	listCmd.Flags().BoolVar(&envOnlyFlag, "environment", false, "Only list events for the current environment")
 
 	deleteCmd.Flags().BoolVarP(&forceFlag, "force", "f", false, "Force deletion without confirmation")
 	deleteCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
+
+	statsCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 }

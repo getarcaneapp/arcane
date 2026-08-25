@@ -66,7 +66,7 @@ func TestSystemContainersStartAllSurfacesServerError(t *testing.T) {
 	configPath := writeCLIIntegrationConfigInternal(t, srv.URL)
 	outBuf, errOut, err := executeCLIIntegrationCommandInternal(
 		t,
-		[]string{"--config", configPath, "system", "containers-start-all"},
+		[]string{"--config", configPath, "system", "containers", "start"},
 	)
 
 	require.Error(t, err,

@@ -11,8 +11,10 @@
 	import type { Environment } from '#lib/types/environment';
 	import { z } from 'zod/v4';
 	import { createForm, preventDefault } from '#lib/utils/settings';
+	import { plainDateFromInstant, plainDateToInstantString } from '#lib/utils/formatting';
 	import * as m from '#lib/paraglide/messages.js';
 	import { InfoIcon } from '#lib/icons';
+	import { Temporal } from 'temporal-polyfill';
 
 	type Props = {
 		open: boolean;
@@ -54,7 +56,7 @@
 			.int()
 			.min(60, m.federated_credential_ttl_min())
 			.max(3600, m.federated_credential_ttl_max()),
-		expiresAt: z.date().optional()
+		expiresAt: z.instanceof(Temporal.PlainDate).optional()
 	});
 
 	const formData = $derived({
@@ -69,7 +71,7 @@
 		roleId: credentialToEdit?.roleId ?? roles[0]?.id ?? '',
 		environmentId: credentialToEdit?.environmentId ?? GLOBAL_OPTION_ID,
 		tokenTtlSeconds: credentialToEdit?.tokenTtlSeconds ?? 900,
-		expiresAt: credentialToEdit?.expiresAt ? new Date(credentialToEdit.expiresAt) : undefined
+		expiresAt: plainDateFromInstant(credentialToEdit?.expiresAt)
 	});
 
 	const { inputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, formData));
@@ -121,7 +123,7 @@
 			roleId: data.roleId,
 			environmentId: data.environmentId === GLOBAL_OPTION_ID ? undefined : data.environmentId,
 			tokenTtlSeconds: data.tokenTtlSeconds,
-			expiresAt: data.expiresAt ? data.expiresAt.toISOString() : undefined
+			expiresAt: data.expiresAt ? plainDateToInstantString(data.expiresAt) : undefined
 		};
 
 		onSubmit({ credential: payload, isEditMode, credentialId: credentialToEdit?.id });

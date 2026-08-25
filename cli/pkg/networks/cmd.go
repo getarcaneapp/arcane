@@ -31,6 +31,27 @@ var (
 	unusedOnlyFlag bool
 )
 
+var (
+	networkCreateName       string
+	networkCreateDriver     string
+	networkCreateSubnet     string
+	networkCreateGateway    string
+	networkCreateIPRange    string
+	networkCreateInternal   bool
+	networkCreateAttachable bool
+	networkCreateIPv6       bool
+	networkCreateLabels     []string
+	networkCreateOpts       []string
+)
+
+var (
+	connectAliases []string
+	connectIPv4    string
+	connectIPv6    string
+
+	disconnectForce bool
+)
+
 const maxPromptOptions = 20
 
 // NetworksCmd is the parent command for network operations
@@ -54,7 +75,7 @@ var listCmd = &cobra.Command{
 			return err
 		}
 
-		path, err := cmdutil.ApplyPaginationParams(cmd, types.Endpoints.Networks(c.EnvID()), cmdutil.ListParams{
+		path, err := cmdutil.ApplyPaginationParams(cmd, types.Networks(c.EnvID()), cmdutil.ListParams{
 			Resource:        "networks",
 			Limit:           limitFlag,
 			FallbackDefault: 20,
@@ -134,7 +155,7 @@ var getCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.Endpoints.Network(c.EnvID(), resolvedID))
+		resp, err := c.Get(cmd.Context(), types.Network(c.EnvID(), resolvedID))
 		if err != nil {
 			return errors.WrapIf(err, "failed to get network")
 		}
@@ -206,7 +227,7 @@ var deleteCmd = &cobra.Command{
 			}
 		}
 
-		resp, err := c.Delete(cmd.Context(), types.Endpoints.Network(c.EnvID(), resolvedID))
+		resp, err := c.Delete(cmd.Context(), types.Network(c.EnvID(), resolvedID))
 		if err != nil {
 			return errors.WrapIf(err, "failed to delete network")
 		}
@@ -243,7 +264,7 @@ var countsCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.Endpoints.NetworksCounts(c.EnvID()))
+		resp, err := c.Get(cmd.Context(), types.NetworksCounts(c.EnvID()))
 		if err != nil {
 			return errors.WrapIf(err, "failed to get network counts")
 		}
@@ -292,7 +313,7 @@ var pruneCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Post(cmd.Context(), types.Endpoints.NetworksPrune(c.EnvID()), nil)
+		resp, err := c.Post(cmd.Context(), types.NetworksPrune(c.EnvID()), nil)
 		if err != nil {
 			return errors.WrapIf(err, "failed to prune networks")
 		}
@@ -322,12 +343,262 @@ var pruneCmd = &cobra.Command{
 	},
 }
 
+var createCmd = &cobra.Command{
+	Use:          "create",
+	Short:        "Create a network",
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := client.NewFromConfig()
+		if err != nil {
+			return err
+		}
+
+		req := network.CreateRequest{
+			Name: networkCreateName,
+			Options: network.CreateOptions{
+				Driver:     networkCreateDriver,
+				Internal:   networkCreateInternal,
+				Attachable: networkCreateAttachable,
+				EnableIPv6: networkCreateIPv6,
+			},
+		}
+
+		if networkCreateSubnet != "" || networkCreateGateway != "" || networkCreateIPRange != "" {
+			req.Options.IPAM = &network.IPAM{
+				Config: []network.IPAMConfig{{
+					Subnet:  networkCreateSubnet,
+					Gateway: networkCreateGateway,
+					IPRange: networkCreateIPRange,
+				}},
+			}
+		}
+
+		if len(networkCreateOpts) > 0 {
+			req.Options.Options = make(map[string]string)
+			for _, opt := range networkCreateOpts {
+				parts := strings.SplitN(opt, "=", 2)
+				if len(parts) == 2 {
+					req.Options.Options[parts[0]] = parts[1]
+				}
+			}
+		}
+
+		if len(networkCreateLabels) > 0 {
+			req.Options.Labels = make(map[string]string)
+			for _, lbl := range networkCreateLabels {
+				parts := strings.SplitN(lbl, "=", 2)
+				if len(parts) == 2 {
+					req.Options.Labels[parts[0]] = parts[1]
+				}
+			}
+		}
+
+		resp, err := c.Post(cmd.Context(), types.Networks(c.EnvID()), req)
+		if err != nil {
+			return errors.WrapIf(err, "failed to create network")
+		}
+		defer func() { _ = resp.Body.Close() }()
+		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
+			return errors.WrapIf(err, "failed to create network")
+		}
+
+		var result base.ApiResponse[network.CreateResponse]
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
+		}
+
+		if jsonOutput {
+			return cmdutil.PrintJSON(result.Data)
+		}
+
+		output.Success("Network %s created successfully", networkCreateName)
+		output.KeyValue("ID", result.Data.ID)
+		if result.Data.Warning != "" {
+			output.Warning("%s", result.Data.Warning)
+		}
+		return nil
+	},
+}
+
+var connectCmd = &cobra.Command{
+	Use:          "connect <network-id|name> <container-id|name>",
+	Short:        "Connect a container to a network",
+	Args:         cobra.ExactArgs(2),
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := client.NewFromConfig()
+		if err != nil {
+			return err
+		}
+
+		allowPrompt := !jsonOutput && prompt.IsInteractive()
+		resolvedID, resolvedName, err := resolveNetworkID(cmd.Context(), c, args[0], allowPrompt)
+		if err != nil {
+			return err
+		}
+
+		req := network.ConnectContainerRequest{
+			ContainerID: args[1],
+			Aliases:     connectAliases,
+			IPv4Address: connectIPv4,
+			IPv6Address: connectIPv6,
+		}
+
+		resp, err := c.Post(cmd.Context(), types.NetworkConnect(c.EnvID(), resolvedID), req)
+		if err != nil {
+			return errors.WrapIf(err, "failed to connect container to network")
+		}
+		defer func() { _ = resp.Body.Close() }()
+		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
+			return errors.WrapIf(err, "failed to connect container to network")
+		}
+
+		var result base.ApiResponse[base.MessageResponse]
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
+		}
+
+		if jsonOutput {
+			return cmdutil.PrintJSON(result.Data)
+		}
+
+		display := resolvedName
+		if display == "" {
+			display = shortID(resolvedID)
+		}
+		output.Success("Container %s connected to network %s", args[1], display)
+		return nil
+	},
+}
+
+var disconnectCmd = &cobra.Command{
+	Use:          "disconnect <network-id|name> <container-id|name>",
+	Short:        "Disconnect a container from a network",
+	Args:         cobra.ExactArgs(2),
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := client.NewFromConfig()
+		if err != nil {
+			return err
+		}
+
+		allowPrompt := !jsonOutput && prompt.IsInteractive()
+		resolvedID, resolvedName, err := resolveNetworkID(cmd.Context(), c, args[0], allowPrompt)
+		if err != nil {
+			return err
+		}
+
+		req := network.DisconnectContainerRequest{
+			ContainerID: args[1],
+			Force:       disconnectForce,
+		}
+
+		resp, err := c.Post(cmd.Context(), types.NetworkDisconnect(c.EnvID(), resolvedID), req)
+		if err != nil {
+			return errors.WrapIf(err, "failed to disconnect container from network")
+		}
+		defer func() { _ = resp.Body.Close() }()
+		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
+			return errors.WrapIf(err, "failed to disconnect container from network")
+		}
+
+		var result base.ApiResponse[base.MessageResponse]
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
+		}
+
+		if jsonOutput {
+			return cmdutil.PrintJSON(result.Data)
+		}
+
+		display := resolvedName
+		if display == "" {
+			display = shortID(resolvedID)
+		}
+		output.Success("Container %s disconnected from network %s", args[1], display)
+		return nil
+	},
+}
+
+var topologyCmd = &cobra.Command{
+	Use:          "topology",
+	Short:        "Show the network topology",
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := client.NewFromConfig()
+		if err != nil {
+			return err
+		}
+
+		resp, err := c.Get(cmd.Context(), types.NetworksTopology(c.EnvID()))
+		if err != nil {
+			return errors.WrapIf(err, "failed to get network topology")
+		}
+		defer func() { _ = resp.Body.Close() }()
+
+		var result base.ApiResponse[network.Topology]
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
+		}
+
+		if jsonOutput {
+			return cmdutil.PrintJSON(result.Data)
+		}
+
+		nodeNames := make(map[string]string, len(result.Data.Nodes))
+		networkCount := 0
+		containerCount := 0
+		for _, node := range result.Data.Nodes {
+			name := node.Name
+			if name == "" {
+				name = shortID(node.ID)
+			}
+			nodeNames[node.ID] = name
+			switch node.Type {
+			case network.TopologyNodeTypeNetwork:
+				networkCount++
+			case network.TopologyNodeTypeContainer:
+				containerCount++
+			}
+		}
+
+		output.Header("Network Topology")
+		output.KeyValue("Networks", networkCount)
+		output.KeyValue("Containers", containerCount)
+		output.KeyValue("Connections", len(result.Data.Edges))
+
+		if len(result.Data.Edges) == 0 {
+			return nil
+		}
+
+		headers := []string{"NETWORK", "CONTAINER", "IPV4", "IPV6"}
+		rows := make([][]string, len(result.Data.Edges))
+		for i, edge := range result.Data.Edges {
+			source := nodeNames[edge.Source]
+			if source == "" {
+				source = shortID(edge.Source)
+			}
+			target := nodeNames[edge.Target]
+			if target == "" {
+				target = shortID(edge.Target)
+			}
+			rows[i] = []string{source, target, edge.IPv4Address, edge.IPv6Address}
+		}
+		output.Table(headers, rows)
+		return nil
+	},
+}
+
 func init() {
 	NetworksCmd.AddCommand(listCmd)
 	NetworksCmd.AddCommand(getCmd)
 	NetworksCmd.AddCommand(deleteCmd)
 	NetworksCmd.AddCommand(countsCmd)
 	NetworksCmd.AddCommand(pruneCmd)
+	NetworksCmd.AddCommand(createCmd)
+	NetworksCmd.AddCommand(connectCmd)
+	NetworksCmd.AddCommand(disconnectCmd)
+	NetworksCmd.AddCommand(topologyCmd)
 
 	// List command flags
 	listCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of networks to show")
@@ -350,6 +621,33 @@ func init() {
 
 	// Counts command flags
 	countsCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
+
+	// Create command flags
+	createCmd.Flags().StringVar(&networkCreateName, "name", "", "Network name (required)")
+	createCmd.Flags().StringVar(&networkCreateDriver, "driver", "", "Network driver (e.g. bridge, overlay)")
+	createCmd.Flags().StringVar(&networkCreateSubnet, "subnet", "", "Subnet in CIDR format")
+	createCmd.Flags().StringVar(&networkCreateGateway, "gateway", "", "IPv4 or IPv6 gateway for the subnet")
+	createCmd.Flags().StringVar(&networkCreateIPRange, "ip-range", "", "Allocate container IPs from a sub-range")
+	createCmd.Flags().BoolVar(&networkCreateInternal, "internal", false, "Restrict external access to the network")
+	createCmd.Flags().BoolVar(&networkCreateAttachable, "attachable", false, "Allow manual container attachment")
+	createCmd.Flags().BoolVar(&networkCreateIPv6, "ipv6", false, "Enable IPv6 networking")
+	createCmd.Flags().StringArrayVar(&networkCreateLabels, "label", nil, "Label (KEY=VALUE)")
+	createCmd.Flags().StringArrayVar(&networkCreateOpts, "opt", nil, "Driver option (KEY=VALUE)")
+	createCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
+	_ = createCmd.MarkFlagRequired("name")
+
+	// Connect command flags
+	connectCmd.Flags().StringArrayVar(&connectAliases, "alias", nil, "Network-scoped alias for the container")
+	connectCmd.Flags().StringVar(&connectIPv4, "ip", "", "Static IPv4 address")
+	connectCmd.Flags().StringVar(&connectIPv6, "ip6", "", "Static IPv6 address")
+	connectCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
+
+	// Disconnect command flags
+	disconnectCmd.Flags().BoolVarP(&disconnectForce, "force", "f", false, "Force the disconnect")
+	disconnectCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
+
+	// Topology command flags
+	topologyCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 }
 
 func shortID(id string) string {
@@ -365,7 +663,7 @@ func resolveNetworkID(ctx context.Context, c *client.Client, identifier string, 
 		return "", "", errors.New("network identifier is required")
 	}
 
-	resp, err := c.Get(ctx, types.Endpoints.Network(c.EnvID(), trimmed))
+	resp, err := c.Get(ctx, types.Network(c.EnvID(), trimmed))
 	if err != nil {
 		return "", "", errors.WrapIff(err, "failed to resolve network %q", trimmed)
 	}
@@ -388,7 +686,7 @@ func resolveNetworkID(ctx context.Context, c *client.Client, identifier string, 
 		return "", "", errors.Errorf("failed to resolve network %q (status %d): %s", trimmed, resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
-	searchPath := fmt.Sprintf("%s?search=%s&limit=%d", types.Endpoints.Networks(c.EnvID()), url.QueryEscape(trimmed), cmdutil.ShowAllLimit)
+	searchPath := fmt.Sprintf("%s?search=%s&limit=%d", types.Networks(c.EnvID()), url.QueryEscape(trimmed), cmdutil.ShowAllLimit)
 	searchResp, err := c.Get(ctx, searchPath)
 	if err != nil {
 		return "", "", errors.WrapIf(err, "failed to search networks")

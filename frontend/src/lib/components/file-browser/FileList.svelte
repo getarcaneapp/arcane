@@ -19,7 +19,7 @@
 	import * as Tooltip from '#lib/components/ui/tooltip';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog';
 	import RowActionsMenu from './row-actions-menu.svelte';
-	import { bytes, formatDateTimeShort } from '#lib/utils/formatting';
+	import { bytes, formatDateTimeShort, instantEpochMilliseconds } from '#lib/utils/formatting';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
 
 	let {
@@ -60,12 +60,12 @@
 	// svelte-ignore state_referenced_locally
 	void mobileFieldVisibility;
 
-	function compareByColumn(a: FileEntry, b: FileEntry, column: string): number {
+	function compareByColumn(a: FileEntry, b: FileEntry, column: string, modTimeMs: Map<FileEntry, number> | null): number {
 		switch (column) {
 			case 'size':
 				return Number(a.size) - Number(b.size);
 			case 'modTime':
-				return new Date(a.modTime).getTime() - new Date(b.modTime).getTime();
+				return (modTimeMs?.get(a) ?? 0) - (modTimeMs?.get(b) ?? 0);
 			case 'name':
 			default:
 				return a.name.localeCompare(b.name);
@@ -76,11 +76,13 @@
 		const sortColumn = requestOptions?.sort?.column ?? 'name';
 		const direction = requestOptions?.sort?.direction === 'desc' ? -1 : 1;
 		const items = files.slice();
+		// Parse once per row instead of per comparison.
+		const modTimeMs = sortColumn === 'modTime' ? new Map(items.map((f) => [f, instantEpochMilliseconds(f.modTime) ?? 0])) : null;
 		return items.sort((a, b) => {
 			if (a.isDirectory !== b.isDirectory) {
 				return a.isDirectory ? -1 : 1;
 			}
-			const diff = compareByColumn(a, b, sortColumn);
+			const diff = compareByColumn(a, b, sortColumn, modTimeMs);
 			if (diff !== 0) return diff * direction;
 			return a.name.localeCompare(b.name);
 		});

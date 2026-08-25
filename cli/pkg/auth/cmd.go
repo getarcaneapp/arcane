@@ -45,7 +45,7 @@ var loginCmd = &cobra.Command{
 			return errors.WrapIf(err, "failed to marshal request")
 		}
 
-		resp, err := c.Post(cmd.Context(), types.Endpoints.OIDCDeviceCode(), reqBody)
+		resp, err := c.Post(cmd.Context(), types.OIDCDeviceCode(), reqBody)
 		if err != nil {
 			return errors.WrapIf(err, "device authorization failed")
 		}
@@ -98,7 +98,7 @@ var loginCmd = &cobra.Command{
 				return cmd.Context().Err()
 			}
 
-			tokenResp, err := c.Post(cmd.Context(), types.Endpoints.OIDCDeviceToken(), tokenReqBody)
+			tokenResp, err := c.Post(cmd.Context(), types.OIDCDeviceToken(), tokenReqBody)
 			if err != nil {
 				return errors.WrapIf(err, "device token exchange failed")
 			}
@@ -181,7 +181,7 @@ var logoutCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Post(cmd.Context(), types.Endpoints.AuthLogout(), nil)
+		resp, err := c.Post(cmd.Context(), types.AuthLogout(), nil)
 		if err != nil {
 			return errors.WrapIf(err, "logout failed")
 		}
@@ -228,7 +228,7 @@ var meCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.Endpoints.AuthMe())
+		resp, err := c.Get(cmd.Context(), types.AuthMe())
 		if err != nil {
 			return errors.WrapIf(err, "failed to get user info")
 		}
@@ -304,7 +304,7 @@ var passwordCmd = &cobra.Command{
 			return errors.WrapIf(err, "failed to marshal request")
 		}
 
-		resp, err := c.Post(cmd.Context(), types.Endpoints.AuthPassword(), reqBody)
+		resp, err := c.Post(cmd.Context(), types.AuthPassword(), reqBody)
 		if err != nil {
 			return errors.WrapIf(err, "password change failed")
 		}
@@ -360,7 +360,7 @@ var refreshCmd = &cobra.Command{
 			return errors.WrapIf(err, "failed to marshal request")
 		}
 
-		resp, err := c.Post(cmd.Context(), types.Endpoints.AuthRefresh(), reqBody)
+		resp, err := c.Post(cmd.Context(), types.AuthRefresh(), reqBody)
 		if err != nil {
 			return errors.WrapIf(err, "token refresh failed")
 		}
@@ -405,7 +405,8 @@ var refreshCmd = &cobra.Command{
 }
 
 var oidcStatusCmd = &cobra.Command{
-	Use:          "oidc-status",
+	Use:          "oidc",
+	Aliases:      []string{"oidc-status"},
 	Short:        "Show OIDC configuration status",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -414,7 +415,7 @@ var oidcStatusCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.Endpoints.OIDCStatus())
+		resp, err := c.Get(cmd.Context(), types.OIDCStatus())
 		if err != nil {
 			return errors.WrapIf(err, "failed to get OIDC status")
 		}

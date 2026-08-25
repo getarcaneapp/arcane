@@ -103,6 +103,12 @@ function expectPaginated(value: unknown): void {
 	);
 }
 
+// The command must exit 0 and print parseable JSON; the payload shape (array,
+// object, or null on empty) is the command's own concern.
+function expectJsonValue(value: unknown): void {
+	expect(value === null || typeof value === 'object' || Array.isArray(value)).toBe(true);
+}
+
 const readOnlyJsonSmokeCommands: JsonSmokeCommand[] = [
 	{
 		name: 'images list',
@@ -211,10 +217,12 @@ const readOnlyJsonSmokeCommands: JsonSmokeCommand[] = [
 		}
 	},
 	{
-		name: 'templates variables',
-		args: ['templates', 'variables', '--json'],
+		name: 'variables list',
+		args: ['variables', 'list', '--json'],
 		expectation: (value) => {
-			expect(value === null || Array.isArray(value)).toBe(true);
+			const envelope = value as { success?: boolean; data?: unknown };
+			expect(envelope.success).toBe(true);
+			expect(envelope.data === null || Array.isArray(envelope.data)).toBe(true);
 		}
 	},
 	{
@@ -228,8 +236,8 @@ const readOnlyJsonSmokeCommands: JsonSmokeCommand[] = [
 		expectation: expectPaginated
 	},
 	{
-		name: 'admin events list-env',
-		args: ['admin', 'events', 'list-env', '--limit', '5', '--json'],
+		name: 'admin events list --environment',
+		args: ['admin', 'events', 'list', '--environment', '--limit', '5', '--json'],
 		expectation: expectPaginated
 	},
 	{
@@ -238,6 +246,86 @@ const readOnlyJsonSmokeCommands: JsonSmokeCommand[] = [
 		expectation: (value) => {
 			expect(value).toEqual(expect.any(Array));
 		}
+	},
+	{
+		name: 'containers counts',
+		args: ['containers', 'counts', '--json'],
+		expectation: expectJsonValue
+	},
+	{
+		name: 'images updates summary',
+		args: ['images', 'updates', 'summary', '--json'],
+		expectation: expectJsonValue
+	},
+	{
+		name: 'system info',
+		args: ['system', 'info', '--json'],
+		expectation: expectJsonValue
+	},
+	{
+		name: 'projects tags',
+		args: ['projects', 'tags', '--json'],
+		expectation: expectJsonValue
+	},
+	{
+		name: 'jobs list',
+		args: ['jobs', 'list', '--json'],
+		expectation: expectJsonValue
+	},
+	{
+		name: 'registries usage',
+		args: ['registries', 'usage', '--json'],
+		expectation: expectJsonValue
+	},
+	{
+		name: 'admin events stats',
+		args: ['admin', 'events', 'stats', '--json'],
+		expectation: expectJsonValue
+	},
+	{
+		name: 'admin federated list',
+		args: ['admin', 'federated', 'list', '--json'],
+		expectation: expectJsonValue
+	},
+	{
+		name: 'auth keys list',
+		args: ['auth', 'keys', 'list', '--json'],
+		expectation: expectJsonValue
+	},
+	{
+		name: 'backups list',
+		args: ['backups', 'list', '--json'],
+		expectation: expectJsonValue
+	},
+	{
+		name: 'backups policies',
+		args: ['backups', 'policies', '--json'],
+		expectation: expectJsonValue
+	},
+	{
+		name: 'backups s3 list',
+		args: ['backups', 's3', 'list', '--json'],
+		expectation: expectJsonValue
+	},
+	{
+		name: 'activities list',
+		args: ['activities', 'list', '--json'],
+		expectation: expectJsonValue
+	},
+	{
+		name: 'webhooks list',
+		args: ['webhooks', 'list', '--json'],
+		expectation: expectJsonValue
+	},
+	{
+		name: 'vulnerabilities status',
+		args: ['vulnerabilities', 'status', '--json'],
+		expectation: expectJsonValue
+	},
+	{
+		name: 'vulnerabilities ignored',
+		args: ['vulnerabilities', 'ignored', '--json'],
+		expectation: expectJsonValue
 	}
 ];
 

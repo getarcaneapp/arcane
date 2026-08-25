@@ -31,15 +31,12 @@
 package images
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -96,7 +93,7 @@ var imagesListCmd = &cobra.Command{
 			return errors.New("--inuse and --unused cannot be used together")
 		}
 
-		path := types.Endpoints.Images(c.EnvID())
+		path := types.Images(c.EnvID())
 
 		// Parse the path to handle query params
 		u, err := url.Parse(path)
@@ -203,7 +200,7 @@ var imagesGetCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		path := types.Endpoints.Image(c.EnvID(), imageID)
+		path := types.Image(c.EnvID(), imageID)
 
 		log.Debugf("Getting image details from: %s", path)
 
@@ -299,7 +296,7 @@ var imagesRemoveCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		path := types.Endpoints.Image(c.EnvID(), imageID)
+		path := types.Image(c.EnvID(), imageID)
 
 		if removeForce {
 			u, err := url.Parse(path)
@@ -369,7 +366,7 @@ var imagesPullCmd = &cobra.Command{
 		c.SetTimeout(30 * time.Minute)
 
 		imageName := args[0]
-		path := types.Endpoints.ImagesPull(c.EnvID())
+		path := types.ImagesPull(c.EnvID())
 
 		log.Debugf("Pulling image from: %s", path)
 
@@ -490,7 +487,7 @@ var imagesPruneCmd = &cobra.Command{
 			return err
 		}
 
-		path := types.Endpoints.ImagesPrune(c.EnvID())
+		path := types.ImagesPrune(c.EnvID())
 
 		log.Debugf("Pruning images from: %s", path)
 
@@ -561,7 +558,7 @@ var imagesCountsCmd = &cobra.Command{
 			return err
 		}
 
-		path := types.Endpoints.ImagesCounts(c.EnvID())
+		path := types.ImagesCounts(c.EnvID())
 
 		log.Debugf("Getting image counts from: %s", path)
 
@@ -619,87 +616,17 @@ var imagesUploadCmd = &cobra.Command{
 
 		filePath := args[0]
 
-		// Open the file
-		file, err := os.Open(filePath)
-		if err != nil {
-			return errors.WrapIf(err, "failed to open file")
-		}
-		defer func() { _ = file.Close() }()
-		fileInfo, err := file.Stat()
-		if err != nil {
-			return errors.WrapIf(err, "failed to stat file")
-		}
-
-		// Create the chunked upload session; the file is sent as independently
-		// retried chunks so reverse-proxy body limits never see the full size.
-		var created struct {
-			Success bool                `json:"success"`
-			Data    uploadtypes.Session `json:"data"`
-		}
-		createPath := types.Endpoints.UploadSessions(c.EnvID(), uploadtypes.KindImage)
-		if err := c.DoJSON(cmd.Context(), http.MethodPost, createPath, uploadtypes.CreateSessionRequest{
-			Filename: filepath.Base(filePath),
-			Size:     fileInfo.Size(),
-		}, &created); err != nil {
-			return errors.WrapIf(err, "failed to create upload session")
-		}
-		session := created.Data
-
-		log.Debugf("Uploading image %s as %d chunks of %d bytes (session %s)", filePath, session.TotalChunks, session.ChunkSize, session.ID)
 		output.Info("Uploading image: %s", filePath)
 
 		jsonOutput := cmdutil.JSONOutputEnabled(cmd)
-		var progressUI *output.Progress
-		if !jsonOutput {
-			progressUI = output.StartProgress("Uploading", fileInfo.Size())
-			defer progressUI.Stop()
-		}
-
-		deleteSession := func() {
-			if resp, deleteErr := c.Delete(context.WithoutCancel(cmd.Context()), types.Endpoints.UploadSession(c.EnvID(), uploadtypes.KindImage, session.ID)); deleteErr == nil {
-				_ = resp.Body.Close()
-			}
-		}
-
-		buf := make([]byte, session.ChunkSize)
-		for index := range session.TotalChunks {
-			expected := session.ChunkSize
-			if index == session.TotalChunks-1 {
-				expected = session.Size - int64(index)*session.ChunkSize
-			}
-			if _, err := io.ReadFull(file, buf[:expected]); err != nil {
-				deleteSession()
-				return errors.WrapIf(err, "failed to read file")
-			}
-
-			chunkPath := types.Endpoints.UploadSessionChunk(c.EnvID(), uploadtypes.KindImage, session.ID, index)
-			for attempt := 1; ; attempt++ {
-				resp, chunkErr := c.RequestRaw(cmd.Context(), http.MethodPut, chunkPath, bytes.NewReader(buf[:expected]), map[string]string{"Content-Type": "application/octet-stream"})
-				if chunkErr == nil {
-					ok := resp.StatusCode >= 200 && resp.StatusCode < 300
-					if !ok {
-						errorBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-						chunkErr = errors.Errorf("chunk %d failed (status %d): %s", index, resp.StatusCode, strings.TrimSpace(string(errorBody)))
-					}
-					_ = resp.Body.Close()
-					if ok {
-						break
-					}
-				}
-				if attempt >= 3 {
-					deleteSession()
-					return errors.WrapIf(chunkErr, "failed to upload image")
-				}
-				log.Debugf("Retrying chunk %d after error: %v", index, chunkErr)
-			}
-			if progressUI != nil {
-				progressUI.Add(expected)
-			}
-		}
-
-		respBody, err := c.DoRaw(cmd.Context(), http.MethodPost, types.Endpoints.ImagesUpload(c.EnvID()), uploadtypes.ConsumeRequest{UploadID: session.ID})
+		sessionID, err := cmdutil.UploadFileInChunks(cmd.Context(), c, uploadtypes.KindImage, filePath, !jsonOutput)
 		if err != nil {
-			deleteSession()
+			return err
+		}
+
+		respBody, err := c.DoRaw(cmd.Context(), http.MethodPost, types.ImagesUpload(c.EnvID()), uploadtypes.ConsumeRequest{UploadID: sessionID})
+		if err != nil {
+			cmdutil.AbortUploadSession(cmd.Context(), c, uploadtypes.KindImage, sessionID)
 			return errors.WrapIf(err, "failed to upload image")
 		}
 
@@ -801,7 +728,7 @@ func resolveImageID(ctx context.Context, c *client.Client, identifier string, al
 }
 
 func resolveImageByID(ctx context.Context, c *client.Client, identifier string) (string, bool, error) {
-	resp, err := c.Get(ctx, types.Endpoints.Image(c.EnvID(), identifier))
+	resp, err := c.Get(ctx, types.Image(c.EnvID(), identifier))
 	if err != nil {
 		return "", false, errors.WrapIff(err, "failed to resolve image %q", identifier)
 	}
@@ -851,7 +778,7 @@ func buildImageSearchTerms(trimmed string) []string {
 }
 
 func searchImageMatches(ctx context.Context, c *client.Client, term, trimmed string) ([]image.Summary, error) {
-	searchPath := fmt.Sprintf("%s?search=%s&limit=%d", types.Endpoints.Images(c.EnvID()), url.QueryEscape(term), cmdutil.ShowAllLimit)
+	searchPath := fmt.Sprintf("%s?search=%s&limit=%d", types.Images(c.EnvID()), url.QueryEscape(term), cmdutil.ShowAllLimit)
 	searchResp, err := c.Get(ctx, searchPath)
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to search images")

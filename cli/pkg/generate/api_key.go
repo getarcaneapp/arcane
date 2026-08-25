@@ -15,9 +15,10 @@ const (
 )
 
 var apiKeyCmd = &cobra.Command{
-	Use:   "api-key",
-	Short: "Generate a static admin API key",
-	Long:  `Generate a static Arcane API key suitable for ADMIN_STATIC_API_KEY. This is just a local generation, nothing is stored to the database with these commands.`,
+	Use:     "apikey",
+	Aliases: []string{"api-key"},
+	Short:   "Generate a static admin API key",
+	Long:    `Generate a static Arcane API key suitable for ADMIN_STATIC_API_KEY. This is just a local generation, nothing is stored to the database with these commands.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return generateAPIKeyOutputInternal()
 	},

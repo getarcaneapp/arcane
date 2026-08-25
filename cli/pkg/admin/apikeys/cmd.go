@@ -79,8 +79,8 @@ func parsePermissionGrantsInternal(tokens []string) ([]apikey.PermissionGrant, e
 
 // ApiKeysCmd is the parent command for API key operations
 var ApiKeysCmd = &cobra.Command{
-	Use:     "api-keys",
-	Aliases: []string{"apikey", "keys", "key"},
+	Use:     "keys",
+	Aliases: []string{"api-keys", "apikey", "key"},
 	Short:   "Manage API keys",
 }
 
@@ -95,7 +95,7 @@ var listCmd = &cobra.Command{
 			return err
 		}
 
-		path := types.Endpoints.ApiKeys()
+		path := types.ApiKeys()
 		path, err = cmdutil.ApplyPaginationParams(cmd, path, cmdutil.ListParams{Resource: "apikeys", Limit: limitFlag, FallbackDefault: 20, Start: startFlag, All: allFlag})
 		if err != nil {
 			return errors.WrapIf(err, "failed to build pagination query")
@@ -178,7 +178,7 @@ var createCmd = &cobra.Command{
 			createReq.ExpiresAt = &parsed
 		}
 
-		resp, err := c.Post(cmd.Context(), types.Endpoints.ApiKeys(), createReq)
+		resp, err := c.Post(cmd.Context(), types.ApiKeys(), createReq)
 		if err != nil {
 			return errors.WrapIf(err, "failed to create API key")
 		}
@@ -227,7 +227,7 @@ var deleteCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Delete(cmd.Context(), types.Endpoints.ApiKey(args[0]))
+		resp, err := c.Delete(cmd.Context(), types.ApiKey(args[0]))
 		if err != nil {
 			return errors.WrapIf(err, "failed to delete API key")
 		}
@@ -260,7 +260,7 @@ var getCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.Endpoints.ApiKey(args[0]))
+		resp, err := c.Get(cmd.Context(), types.ApiKey(args[0]))
 		if err != nil {
 			return errors.WrapIf(err, "failed to get API key")
 		}
@@ -340,7 +340,7 @@ var updateCmd = &cobra.Command{
 			req.Permissions = &grants
 		}
 
-		resp, err := c.Put(cmd.Context(), types.Endpoints.ApiKey(args[0]), req)
+		resp, err := c.Put(cmd.Context(), types.ApiKey(args[0]), req)
 		if err != nil {
 			return errors.WrapIf(err, "failed to update API key")
 		}

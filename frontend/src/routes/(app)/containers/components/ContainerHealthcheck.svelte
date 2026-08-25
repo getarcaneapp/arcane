@@ -4,8 +4,8 @@
 	import { m } from '#lib/paraglide/messages';
 	import type { ContainerDetailsDto, ContainerHealthLogEntry, ContainerHealthcheckDto } from '#lib/types/docker';
 	import { HealthIcon, SettingsIcon, FileTextIcon } from '#lib/icons';
-	import { formatDistanceToNow } from 'date-fns';
-	import { formatDateTime } from '#lib/utils/formatting';
+	import { formatDateTime, formatRelativeTime, parseInstant } from '#lib/utils/formatting';
+	import { Temporal } from 'temporal-polyfill';
 
 	interface Props {
 		container: ContainerDetailsDto;
@@ -19,7 +19,7 @@
 	// Docker sends duration values in nanoseconds. Convert to a compact human string.
 	function formatDurationNs(ns: number | undefined | null): string {
 		if (!ns || ns <= 0) return m.common_unknown();
-		const ms = ns / 1_000_000;
+		const ms = Temporal.Duration.from({ nanoseconds: Math.trunc(ns) }).total('milliseconds');
 		if (ms < 1000) return `${Math.round(ms)}ms`;
 		const totalSeconds = Math.round(ms / 1000);
 		if (totalSeconds < 60) return `${totalSeconds}s`;
@@ -31,20 +31,12 @@
 		return mins ? `${hours}h ${mins}m` : `${hours}h`;
 	}
 
-	function parseDockerDate(input: string | undefined | null): Date | null {
-		if (!input) return null;
-		const s = String(input).trim();
-		if (!s || s.startsWith('0001-01-01')) return null;
-		const d = new Date(s);
-		return isNaN(d.getTime()) ? null : d;
-	}
-
 	function normalizeLog(entries: ContainerHealthLogEntry[] | undefined) {
 		if (!entries) return [];
 		return entries
 			.map((e) => ({
-				start: parseDockerDate(e.start),
-				end: parseDockerDate(e.end),
+				start: parseInstant(e.start),
+				end: parseInstant(e.end),
 				exitCode: (e.exitCode ?? 0) as number,
 				output: (e.output ?? '') as string
 			}))
@@ -78,26 +70,25 @@
 	});
 
 	// Estimate the next probe time: lastProbe.end + interval (clamped to "now" if overdue).
-	const nextCheck = $derived.by<{ at: Date; overdue: boolean } | null>(() => {
+	const nextCheck = $derived.by<{ at: Temporal.Instant; overdue: boolean } | null>(() => {
 		if (!container?.state?.running) return null;
 		const intervalNs = healthcheck?.interval;
 		if (!intervalNs || !lastProbe?.end) return null;
-		const next = new Date(lastProbe.end.getTime() + intervalNs / 1_000_000);
-		const now = new Date();
-		return { at: next, overdue: next.getTime() <= now.getTime() };
+		const next = lastProbe.end.add({ nanoseconds: Math.trunc(intervalNs) });
+		return { at: next, overdue: Temporal.Instant.compare(next, Temporal.Now.instant()) <= 0 };
 	});
 
-	function probeDuration(start: Date | null, end: Date | null): string {
+	function probeDuration(start: Temporal.Instant | null, end: Temporal.Instant | null): string {
 		if (!start || !end) return '—';
-		const ms = end.getTime() - start.getTime();
+		const ms = start.until(end, { largestUnit: 'millisecond' }).total('milliseconds');
 		if (ms < 0) return '—';
-		if (ms < 1000) return `${ms}ms`;
+		if (ms < 1000) return `${Math.round(ms)}ms`;
 		return `${(ms / 1000).toFixed(2)}s`;
 	}
 
-	function formatProbeDate(d: Date | null): string {
-		if (!d) return '—';
-		return formatDateTime(d) || d.toISOString();
+	function formatProbeDate(instant: Temporal.Instant | null): string {
+		if (!instant) return '—';
+		return formatDateTime(instant) || instant.toString({ smallestUnit: 'millisecond' });
 	}
 
 	const retriesBudget = $derived.by(() => {
@@ -107,8 +98,8 @@
 		return { retries, failing, remaining: Math.max(0, retries - failing) };
 	});
 
-	function probeKey(probe: { start: Date | null; end: Date | null; exitCode: number }): string {
-		return `${probe.start?.getTime() ?? ''}-${probe.end?.getTime() ?? ''}-${probe.exitCode}`;
+	function probeKey(probe: { start: Temporal.Instant | null; end: Temporal.Instant | null; exitCode: number }): string {
+		return `${probe.start?.epochNanoseconds ?? ''}-${probe.end?.epochNanoseconds ?? ''}-${probe.exitCode}`;
 	}
 
 	let expanded = $state<Record<string, boolean>>({});
@@ -174,7 +165,7 @@
 								{#if nextCheck.overdue}
 									{m.health_next_check_running_now()}
 								{:else}
-									{formatDistanceToNow(nextCheck.at, { addSuffix: true })}
+									{formatRelativeTime(nextCheck.at)}
 								{/if}
 							</div>
 						</Card.Content>
@@ -298,7 +289,7 @@
 											>{`${m.health_exit_code()}: ${probe.exitCode}`}</Badge
 										>
 										<span class="text-xs text-muted-foreground" title={formatProbeDate(probe.start)}>
-											{probe.start ? formatDistanceToNow(probe.start, { addSuffix: true }) : '—'}
+											{probe.start ? formatRelativeTime(probe.start) : '—'}
 										</span>
 										<span class="text-xs text-muted-foreground">
 											{m.duration()}: {probeDuration(probe.start, probe.end)}

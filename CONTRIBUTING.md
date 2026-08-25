@@ -143,9 +143,8 @@ just lint frontend
 just format frontend
 just format all --check
 
-# Dependencies and Go modules
+# Dependencies
 just deps install all
-just gomod tidy all
 ```
 
 ### Environment Management

@@ -3,6 +3,7 @@ package admin
 import (
 	"github.com/getarcaneapp/arcane/cli/v2/pkg/admin/apikeys"
 	"github.com/getarcaneapp/arcane/cli/v2/pkg/admin/events"
+	"github.com/getarcaneapp/arcane/cli/v2/pkg/admin/federatedcredentials"
 	"github.com/getarcaneapp/arcane/cli/v2/pkg/admin/notifications"
 	"github.com/getarcaneapp/arcane/cli/v2/pkg/admin/oidcmappings"
 	"github.com/getarcaneapp/arcane/cli/v2/pkg/admin/roles"
@@ -22,6 +23,7 @@ func init() {
 	AdminCmd.AddCommand(roles.RolesCmd)
 	AdminCmd.AddCommand(oidcmappings.OidcMappingsCmd)
 	AdminCmd.AddCommand(apikeys.ApiKeysCmd)
+	AdminCmd.AddCommand(federatedcredentials.FederatedCredentialsCmd)
 	AdminCmd.AddCommand(events.EventsCmd)
 	AdminCmd.AddCommand(notifications.NotificationsCmd)
 }

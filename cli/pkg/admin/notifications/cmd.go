@@ -3,6 +3,7 @@ package notifications
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"strconv"
 
 	"emperror.dev/errors"
@@ -42,7 +43,7 @@ var settingsGetCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.Endpoints.NotificationsSettings(c.EnvID()))
+		resp, err := c.Get(cmd.Context(), types.NotificationsSettings(c.EnvID()))
 		if err != nil {
 			return errors.WrapIf(err, "failed to get settings")
 		}
@@ -100,7 +101,7 @@ var settingsDeleteCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Delete(cmd.Context(), types.Endpoints.NotificationSettingsProvider(c.EnvID(), args[0]))
+		resp, err := c.Delete(cmd.Context(), types.NotificationSettingsProvider(c.EnvID(), args[0]))
 		if err != nil {
 			return errors.WrapIf(err, "failed to delete notification settings")
 		}
@@ -110,6 +111,78 @@ var settingsDeleteCmd = &cobra.Command{
 		}
 
 		output.Success("Notification settings for %s deleted successfully", args[0])
+		return nil
+	},
+}
+
+var (
+	setProvider string
+	setEnabled  bool
+	setConfig   string
+	setFile     string
+)
+
+var settingsSetCmd = &cobra.Command{
+	Use:          "set",
+	Short:        "Create or update notification provider settings",
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		var req notification.Update
+		if setFile != "" {
+			data, err := os.ReadFile(setFile)
+			if err != nil {
+				return errors.WrapIf(err, "failed to read settings file")
+			}
+			if err := json.Unmarshal(data, &req); err != nil {
+				return errors.WrapIf(err, "failed to parse settings file")
+			}
+		}
+
+		if cmd.Flags().Changed("provider") {
+			req.Provider = notification.Provider(setProvider)
+		}
+		if cmd.Flags().Changed("enabled") {
+			req.Enabled = setEnabled
+		}
+		if cmd.Flags().Changed("config") {
+			if err := json.Unmarshal([]byte(setConfig), &req.Config); err != nil {
+				return errors.WrapIf(err, "failed to parse --config JSON")
+			}
+		}
+
+		if req.Provider == "" {
+			return errors.New("provider is required (use --provider or --file)")
+		}
+		if req.Config == nil {
+			return errors.New("config is required (use --config or --file)")
+		}
+
+		c, err := cmdutil.ClientFromCommand(cmd)
+		if err != nil {
+			return err
+		}
+
+		resp, err := c.Post(cmd.Context(), types.NotificationsSettings(c.EnvID()), req)
+		if err != nil {
+			return errors.WrapIf(err, "failed to save notification settings")
+		}
+		defer func() { _ = resp.Body.Close() }()
+		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
+			return errors.WrapIf(err, "failed to save notification settings")
+		}
+
+		var result notification.Response
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
+		}
+
+		if jsonOutput {
+			return cmdutil.PrintJSON(result)
+		}
+
+		output.Success("Notification settings for %s saved successfully", result.Provider)
+		output.KeyValue("ID", strconv.FormatUint(uint64(result.ID), 10))
+		output.KeyValue("Enabled", strconv.FormatBool(result.Enabled))
 		return nil
 	},
 }
@@ -125,7 +198,7 @@ var testProviderCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Post(cmd.Context(), types.Endpoints.NotificationsTestProvider(c.EnvID(), args[0]), nil)
+		resp, err := c.Post(cmd.Context(), types.NotificationsTestProvider(c.EnvID(), args[0]), nil)
 		if err != nil {
 			return errors.WrapIf(err, "failed to test notification provider")
 		}
@@ -154,9 +227,16 @@ func init() {
 	NotificationsCmd.AddCommand(testProviderCmd)
 
 	settingsCmd.AddCommand(settingsGetCmd)
+	settingsCmd.AddCommand(settingsSetCmd)
 	settingsCmd.AddCommand(settingsDeleteCmd)
 
 	settingsGetCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
+
+	settingsSetCmd.Flags().StringVar(&setProvider, "provider", "", "Notification provider (e.g. discord, email, telegram)")
+	settingsSetCmd.Flags().BoolVar(&setEnabled, "enabled", false, "Enable the provider")
+	settingsSetCmd.Flags().StringVar(&setConfig, "config", "", "Provider configuration as a JSON object")
+	settingsSetCmd.Flags().StringVar(&setFile, "file", "", "Path to a JSON file with provider, enabled, and config fields")
+	settingsSetCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	settingsDeleteCmd.Flags().BoolVarP(&notifForceFlag, "force", "f", false, "Force deletion without confirmation")
 	settingsDeleteCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	testProviderCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")

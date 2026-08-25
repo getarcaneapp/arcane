@@ -476,7 +476,7 @@ func (c *Client) refreshAccessToken(ctx context.Context) error {
 	if c.baseURLParsed == nil {
 		return errors.New("invalid base URL")
 	}
-	refreshURL := c.baseURLParsed.ResolveReference(&url.URL{Path: types.Endpoints.AuthRefresh()}).String()
+	refreshURL := c.baseURLParsed.ResolveReference(&url.URL{Path: types.AuthRefresh()}).String()
 	logger.GetLogger().Debug("Sending token refresh request", "url", refreshURL)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, refreshURL, bytes.NewReader(bodyBytes))

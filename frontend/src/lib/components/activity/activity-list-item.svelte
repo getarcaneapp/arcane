@@ -4,7 +4,7 @@
 	import { ArrowDownIcon } from '#lib/icons';
 	import { m } from '#lib/paraglide/messages';
 	import { cn } from '#lib/utils';
-	import { formatDistanceToNow } from 'date-fns';
+	import { formatRelativeTime } from '#lib/utils/formatting';
 	import type { Activity, ActivityStatus } from '#lib/types/activity.type';
 	import { activityStatusLabel, activityStatusVariant, activityTypeIcon, activityTypeLabel } from './activity-labels';
 
@@ -31,7 +31,7 @@
 	const startedByName = $derived(activity.startedBy?.displayName || activity.startedBy?.username);
 
 	const referenceDate = $derived(activity.endedAt || activity.startedAt);
-	const relativeTime = $derived(referenceDate ? formatDistanceToNow(new Date(referenceDate), { addSuffix: true }) : '');
+	const relativeTime = $derived(formatRelativeTime(referenceDate));
 
 	function statusAccentClass(status: ActivityStatus): string {
 		switch (status) {

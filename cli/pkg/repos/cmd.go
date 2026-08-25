@@ -83,7 +83,7 @@ var listCmd = &cobra.Command{
 			return err
 		}
 
-		path := types.Endpoints.GitRepositories()
+		path := types.GitRepositories()
 		path, err = cmdutil.ApplyPaginationParams(cmd, path, cmdutil.ListParams{Resource: "repos", Limit: limitFlag, FallbackDefault: 20, Start: startFlag, All: allFlag})
 		if err != nil {
 			return errors.WrapIf(err, "failed to build pagination query")
@@ -171,7 +171,7 @@ var createCmd = &cobra.Command{
 			req.Enabled = &repoCreateEnabled
 		}
 
-		resp, err := c.Post(cmd.Context(), types.Endpoints.GitRepositories(), req)
+		resp, err := c.Post(cmd.Context(), types.GitRepositories(), req)
 		if err != nil {
 			return errors.WrapIf(err, "failed to create repository")
 		}
@@ -300,7 +300,7 @@ var updateCmd = &cobra.Command{
 			req.Enabled = &repoUpdateEnabled
 		}
 
-		resp, err := c.Put(cmd.Context(), types.Endpoints.GitRepository(resolved.ID), req)
+		resp, err := c.Put(cmd.Context(), types.GitRepository(resolved.ID), req)
 		if err != nil {
 			return errors.WrapIf(err, "failed to update repository")
 		}
@@ -365,7 +365,7 @@ var deleteCmd = &cobra.Command{
 			}
 		}
 
-		resp, err := c.Delete(cmd.Context(), types.Endpoints.GitRepository(resolved.ID))
+		resp, err := c.Delete(cmd.Context(), types.GitRepository(resolved.ID))
 		if err != nil {
 			return errors.WrapIf(err, "failed to delete repository")
 		}
@@ -395,7 +395,7 @@ var testCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Post(cmd.Context(), types.Endpoints.GitRepositoryTest(resolved.ID), nil)
+		resp, err := c.Post(cmd.Context(), types.GitRepositoryTest(resolved.ID), nil)
 		if err != nil {
 			return errors.WrapIf(err, "failed to test repository")
 		}
@@ -435,7 +435,7 @@ var branchesCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.Endpoints.GitRepositoryBranches(resolved.ID))
+		resp, err := c.Get(cmd.Context(), types.GitRepositoryBranches(resolved.ID))
 		if err != nil {
 			return errors.WrapIf(err, "failed to list branches")
 		}
@@ -490,7 +490,7 @@ var filesCmd = &cobra.Command{
 			return err
 		}
 
-		path := types.Endpoints.GitRepositoryFiles(resolved.ID)
+		path := types.GitRepositoryFiles(resolved.ID)
 		params := url.Values{}
 		if filesBranch != "" {
 			params.Set("branch", filesBranch)
@@ -554,7 +554,7 @@ func resolveGitRepository(ctx context.Context, c *client.Client, identifier stri
 	}
 
 	// Try direct GET by ID.
-	resp, err := c.Get(ctx, types.Endpoints.GitRepository(trimmed))
+	resp, err := c.Get(ctx, types.GitRepository(trimmed))
 	if err == nil {
 		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode == http.StatusOK {
@@ -568,7 +568,7 @@ func resolveGitRepository(ctx context.Context, c *client.Client, identifier stri
 	}
 
 	// Fallback: search via list endpoint.
-	listPath := cmdutil.AppendQuery(types.Endpoints.GitRepositories(), url.Values{"limit": []string{strconv.Itoa(cmdutil.ShowAllLimit)}})
+	listPath := cmdutil.AppendQuery(types.GitRepositories(), url.Values{"limit": []string{strconv.Itoa(cmdutil.ShowAllLimit)}})
 	listResp, err := c.Get(ctx, listPath)
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to search repositories")

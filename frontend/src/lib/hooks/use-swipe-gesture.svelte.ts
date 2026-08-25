@@ -48,7 +48,7 @@ export class SwipeGestureDetector {
 
 			this.startX = touch.clientX;
 			this.startY = touch.clientY;
-			this.startTime = Date.now();
+			this.startTime = performance.now();
 		};
 
 		const handleTouchEnd = (e: TouchEvent) => {
@@ -57,7 +57,7 @@ export class SwipeGestureDetector {
 
 			const endX = touch.clientX;
 			const endY = touch.clientY;
-			const endTime = Date.now();
+			const endTime = performance.now();
 
 			const deltaX = endX - this.startX;
 			const deltaY = endY - this.startY;

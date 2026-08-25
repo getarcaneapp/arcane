@@ -39,7 +39,7 @@ var statusCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.Endpoints.UpdaterStatus(c.EnvID()))
+		resp, err := c.Get(cmd.Context(), types.UpdaterStatus(c.EnvID()))
 		if err != nil {
 			return errors.WrapIf(err, "failed to get updater status")
 		}
@@ -79,7 +79,7 @@ var runCmd = &cobra.Command{
 		// Updater run can take a long time as it pulls images and restarts containers
 		c.SetTimeout(30 * time.Minute)
 
-		resp, err := c.Post(cmd.Context(), types.Endpoints.UpdaterRun(c.EnvID()), nil)
+		resp, err := c.Post(cmd.Context(), types.UpdaterRun(c.EnvID()), nil)
 		if err != nil {
 			return errors.WrapIf(err, "failed to run updater")
 		}
@@ -136,7 +136,7 @@ var historyCmd = &cobra.Command{
 			return err
 		}
 
-		path := types.Endpoints.UpdaterHistory(c.EnvID())
+		path := types.UpdaterHistory(c.EnvID())
 		if cmd.Flags().Changed("limit") {
 			path = cmdutil.AppendQuery(path, url.Values{"limit": []string{strconv.Itoa(historyLimit)}})
 		}

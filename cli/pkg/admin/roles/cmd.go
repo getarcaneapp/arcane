@@ -66,7 +66,7 @@ var listCmd = &cobra.Command{
 			return err
 		}
 
-		path := types.Endpoints.Roles()
+		path := types.Roles()
 		path, err = cmdutil.ApplyPaginationParams(cmd, path, cmdutil.ListParams{Resource: "roles", Limit: limitFlag, FallbackDefault: 20, Start: startFlag, All: allFlag})
 		if err != nil {
 			return errors.WrapIf(err, "failed to build pagination query")
@@ -118,7 +118,7 @@ var getCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		resp, err := c.Get(cmd.Context(), types.Endpoints.Role(args[0]))
+		resp, err := c.Get(cmd.Context(), types.Role(args[0]))
 		if err != nil {
 			return errors.WrapIf(err, "failed to get role")
 		}
@@ -177,7 +177,7 @@ var createCmd = &cobra.Command{
 			req.Description = &roleCreateDescription
 		}
 
-		resp, err := c.Post(cmd.Context(), types.Endpoints.Roles(), req)
+		resp, err := c.Post(cmd.Context(), types.Roles(), req)
 		if err != nil {
 			return errors.WrapIf(err, "failed to create role")
 		}
@@ -231,7 +231,7 @@ var updateCmd = &cobra.Command{
 			req.Permissions = roleUpdatePermissions
 		}
 
-		resp, err := c.Put(cmd.Context(), types.Endpoints.Role(args[0]), req)
+		resp, err := c.Put(cmd.Context(), types.Role(args[0]), req)
 		if err != nil {
 			return errors.WrapIf(err, "failed to update role")
 		}
@@ -266,7 +266,7 @@ var deleteCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		resp, err := c.Delete(cmd.Context(), types.Endpoints.Role(args[0]))
+		resp, err := c.Delete(cmd.Context(), types.Role(args[0]))
 		if err != nil {
 			return errors.WrapIf(err, "failed to delete role")
 		}
@@ -291,7 +291,7 @@ var permissionsCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		resp, err := c.Get(cmd.Context(), types.Endpoints.RolesAvailablePermissions())
+		resp, err := c.Get(cmd.Context(), types.RolesAvailablePermissions())
 		if err != nil {
 			return errors.WrapIf(err, "failed to load permission manifest")
 		}
@@ -330,7 +330,7 @@ var assignmentsCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		resp, err := c.Get(cmd.Context(), types.Endpoints.UserRoleAssignments(args[0]))
+		resp, err := c.Get(cmd.Context(), types.UserRoleAssignments(args[0]))
 		if err != nil {
 			return errors.WrapIf(err, "failed to list assignments")
 		}
@@ -385,7 +385,7 @@ var assignCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		resp, err := c.Put(cmd.Context(), types.Endpoints.UserRoleAssignments(args[0]), req)
+		resp, err := c.Put(cmd.Context(), types.UserRoleAssignments(args[0]), req)
 		if err != nil {
 			return errors.WrapIf(err, "failed to set assignments")
 		}
@@ -432,7 +432,7 @@ func fetchRoleInternal(cmd *cobra.Command, id string) (*roletypes.Role, error) {
 	if err != nil {
 		return nil, err
 	}
-	resp, err := c.Get(cmd.Context(), types.Endpoints.Role(id))
+	resp, err := c.Get(cmd.Context(), types.Role(id))
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to load current role")
 	}

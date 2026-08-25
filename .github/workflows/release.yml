@@ -115,6 +115,8 @@ jobs:
           NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
           NODE_VERSION: ${{ steps.frontend-versions.outputs.node_version }}
           SVELTEKIT_VERSION: ${{ steps.frontend-versions.outputs.sveltekit_version }}
+          OPENAI_BASE_URL: https://openrouter.ai/api/v1
+          OPENAI_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
 
       - name: Resolve image digests
         id: digests

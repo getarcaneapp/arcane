@@ -235,11 +235,11 @@
 	}
 
 	function suppressSchemaHoverForSelection() {
-		schemaHoverSuppressedUntil = Date.now() + schemaHoverSelectionSuppressionMs;
+		schemaHoverSuppressedUntil = performance.now() + schemaHoverSelectionSuppressionMs;
 	}
 
 	function isSchemaHoverSuppressed(view: EditorView): boolean {
-		return hasNonEmptySelection(view) || nativeSelectionTouchesEditor(view) || Date.now() < schemaHoverSuppressedUntil;
+		return hasNonEmptySelection(view) || nativeSelectionTouchesEditor(view) || performance.now() < schemaHoverSuppressedUntil;
 	}
 
 	function closeActiveSchemaHoverForSelection(view: EditorView) {

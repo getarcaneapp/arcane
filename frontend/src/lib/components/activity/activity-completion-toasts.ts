@@ -51,7 +51,7 @@ export function markActivityToastShown(activityId: string | undefined) {
 	if (!activityId) {
 		return;
 	}
-	const now = Date.now();
+	const now = performance.now();
 	for (const [id, shownAt] of shownActivityIds) {
 		if (now - shownAt > SHOWN_SUPPRESSION_MS) {
 			shownActivityIds.delete(id);
@@ -62,7 +62,7 @@ export function markActivityToastShown(activityId: string | undefined) {
 
 function wasToastShownInternal(activityId: string): boolean {
 	const shownAt = shownActivityIds.get(activityId);
-	return shownAt !== undefined && Date.now() - shownAt <= SHOWN_SUPPRESSION_MS;
+	return shownAt !== undefined && performance.now() - shownAt <= SHOWN_SUPPRESSION_MS;
 }
 
 export function queueActivityCompletionToast(activity: Activity) {

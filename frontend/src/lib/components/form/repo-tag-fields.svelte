@@ -4,8 +4,8 @@
 	import type { FormInput as FormInputType } from '#lib/utils/settings';
 
 	interface Props {
-		repository: FormInputType<string | boolean | number | Date | undefined>;
-		tag: FormInputType<string | boolean | number | Date | undefined>;
+		repository: FormInputType<string | boolean | number | undefined>;
+		tag: FormInputType<string | boolean | number | undefined>;
 	}
 
 	let { repository = $bindable(), tag = $bindable() }: Props = $props();

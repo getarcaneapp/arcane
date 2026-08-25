@@ -30,8 +30,8 @@ var VersionCmd = &cobra.Command{
 		// /api/version returns the trimmed version.Check payload, which carries
 		// neither displayVersion nor revision. /api/app-version returns the full
 		// version.Info, including the update-check fields printed below.
-		logger.GetLogger().Debug("Sending request", "endpoint", clitypes.Endpoints.AppVersionEndpoint)
-		resp, err := c.Get(cmd.Context(), clitypes.Endpoints.AppVersionEndpoint)
+		logger.GetLogger().Debug("Sending request", "endpoint", clitypes.AppVersionEndpoint)
+		resp, err := c.Get(cmd.Context(), clitypes.AppVersionEndpoint)
 		if err != nil {
 			return errors.WrapIf(err, "failed to get version")
 		}

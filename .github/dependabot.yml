@@ -4,6 +4,10 @@ updates:
     directories:
       - "/"
     patterns: ["*"]
+    ignore:
+      - dependency-name: "typescript"
+        versions:
+          - ">=7.0.0 <7.1.0"
     cooldown:
       default-days: 2
     schedule:

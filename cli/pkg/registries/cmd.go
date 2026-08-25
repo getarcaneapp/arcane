@@ -3,6 +3,7 @@ package registries
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 
 	"emperror.dev/errors"
 
@@ -57,7 +58,7 @@ var listCmd = &cobra.Command{
 			return err
 		}
 
-		path := types.Endpoints.ContainerRegistries()
+		path := types.ContainerRegistries()
 		path, err = cmdutil.ApplyPaginationParams(cmd, path, cmdutil.ListParams{Resource: "registries", Limit: limitFlag, FallbackDefault: 20, Start: startFlag, All: allFlag})
 		if err != nil {
 			return errors.WrapIf(err, "failed to build pagination query")
@@ -120,7 +121,7 @@ var testCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Post(cmd.Context(), types.Endpoints.ContainerRegistryTest(args[0]), nil)
+		resp, err := c.Post(cmd.Context(), types.ContainerRegistryTest(args[0]), nil)
 		if err != nil {
 			return errors.WrapIf(err, "failed to test registry")
 		}
@@ -155,7 +156,7 @@ var getCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.Endpoints.ContainerRegistry(args[0]))
+		resp, err := c.Get(cmd.Context(), types.ContainerRegistry(args[0]))
 		if err != nil {
 			return errors.WrapIf(err, "failed to get registry")
 		}
@@ -214,7 +215,7 @@ var createCmd = &cobra.Command{
 			"awsRegion":          registryCreateAWSRegion,
 		}
 
-		resp, err := c.Post(cmd.Context(), types.Endpoints.ContainerRegistries(), req)
+		resp, err := c.Post(cmd.Context(), types.ContainerRegistries(), req)
 		if err != nil {
 			return errors.WrapIf(err, "failed to create registry")
 		}
@@ -305,7 +306,7 @@ var updateCmd = &cobra.Command{
 			return errors.New("no updates provided; use --url, --username, --password, --enabled, or --disabled")
 		}
 
-		resp, err := c.Put(cmd.Context(), types.Endpoints.ContainerRegistry(args[0]), req)
+		resp, err := c.Put(cmd.Context(), types.ContainerRegistry(args[0]), req)
 		if err != nil {
 			return errors.WrapIf(err, "failed to update registry")
 		}
@@ -352,7 +353,7 @@ var deleteCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Delete(cmd.Context(), types.Endpoints.ContainerRegistry(args[0]))
+		resp, err := c.Delete(cmd.Context(), types.ContainerRegistry(args[0]))
 		if err != nil {
 			return errors.WrapIf(err, "failed to delete registry")
 		}
@@ -366,6 +367,69 @@ var deleteCmd = &cobra.Command{
 	},
 }
 
+var usageCmd = &cobra.Command{
+	Use:          "usage",
+	Aliases:      []string{"pull-usage"},
+	Short:        "Show pull usage and rate limits for configured registries",
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := client.NewFromConfig()
+		if err != nil {
+			return err
+		}
+
+		resp, err := c.Get(cmd.Context(), types.ContainerRegistriesPullUsage())
+		if err != nil {
+			return errors.WrapIf(err, "failed to get registry pull usage")
+		}
+		defer func() { _ = resp.Body.Close() }()
+
+		var result base.ApiResponse[containerregistry.PullUsageResponse]
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
+		}
+
+		if jsonOutput {
+			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
+			if err != nil {
+				return errors.WrapIf(err, "failed to marshal JSON")
+			}
+			fmt.Println(string(resultBytes))
+			return nil
+		}
+
+		if len(result.Data.Registries) == 0 {
+			output.Info("No registries configured")
+			return nil
+		}
+
+		formatCount := func(value *int) string {
+			if value == nil {
+				return "-"
+			}
+			return strconv.Itoa(*value)
+		}
+
+		headers := []string{"NAME", "REGISTRY", "PROVIDER", "LIMIT", "REMAINING", "USED", "OBSERVED", "CHECKED", "ERROR"}
+		rows := make([][]string, len(result.Data.Registries))
+		for i, usage := range result.Data.Registries {
+			rows[i] = []string{
+				usage.DisplayName,
+				usage.Registry,
+				usage.Provider,
+				formatCount(usage.Limit),
+				formatCount(usage.Remaining),
+				formatCount(usage.Used),
+				strconv.FormatInt(usage.ObservedPulls, 10),
+				usage.CheckedAt.Format("2006-01-02 15:04"),
+				usage.Error,
+			}
+		}
+		output.Table(headers, rows)
+		return nil
+	},
+}
+
 func init() {
 	RegistriesCmd.AddCommand(listCmd)
 	RegistriesCmd.AddCommand(getCmd)
@@ -373,6 +437,7 @@ func init() {
 	RegistriesCmd.AddCommand(testCmd)
 	RegistriesCmd.AddCommand(updateCmd)
 	RegistriesCmd.AddCommand(deleteCmd)
+	RegistriesCmd.AddCommand(usageCmd)
 
 	listCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of registries to show")
 	listCmd.Flags().IntVar(&startFlag, "start", 0, cmdutil.StartFlagUsage)
@@ -405,4 +470,6 @@ func init() {
 
 	deleteCmd.Flags().BoolVarP(&forceFlag, "force", "f", false, "Force deletion without confirmation")
 	deleteCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
+
+	usageCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 }

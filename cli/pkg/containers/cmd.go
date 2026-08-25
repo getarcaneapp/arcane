@@ -154,7 +154,7 @@ func runContainersList(cmd *cobra.Command, forceHasUpdateFilter bool) error {
 }
 
 func buildContainersListPath(cmd *cobra.Command, c *client.Client, forceHasUpdateFilter bool) (string, error) {
-	path, err := cmdutil.ApplyPaginationParams(cmd, types.Endpoints.Containers(c.EnvID()), cmdutil.ListParams{
+	path, err := cmdutil.ApplyPaginationParams(cmd, types.Containers(c.EnvID()), cmdutil.ListParams{
 		Resource:        "containers",
 		Limit:           containersLimit,
 		FallbackDefault: 20,
@@ -233,7 +233,7 @@ var containersGetCmd = &cobra.Command{
 		}
 
 		if !complete {
-			path := types.Endpoints.Container(c.EnvID(), resolved.ID)
+			path := types.Container(c.EnvID(), resolved.ID)
 			resp, err := c.Get(cmd.Context(), path)
 			if err != nil {
 				return errors.WrapIf(err, "failed to get container")
@@ -273,7 +273,7 @@ var containersStartCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runContainerPostAction[base.MessageResponse](cmd, args[0], containerPostActionConfig[base.MessageResponse]{
-			endpoint:       types.Endpoints.ContainerStart,
+			endpoint:       types.ContainerStart,
 			failureMessage: "failed to start container",
 			successVerb:    "started",
 		})
@@ -287,7 +287,7 @@ var containersStopCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runContainerPostAction[base.MessageResponse](cmd, args[0], containerPostActionConfig[base.MessageResponse]{
-			endpoint:       types.Endpoints.ContainerStop,
+			endpoint:       types.ContainerStop,
 			failureMessage: "failed to stop container",
 			successVerb:    "stopped",
 		})
@@ -301,7 +301,7 @@ var containersRestartCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runContainerPostAction[base.MessageResponse](cmd, args[0], containerPostActionConfig[base.MessageResponse]{
-			endpoint:       types.Endpoints.ContainerRestart,
+			endpoint:       types.ContainerRestart,
 			failureMessage: "failed to restart container",
 			successVerb:    "restarted",
 		})
@@ -317,7 +317,7 @@ var containersUpdateCmd = &cobra.Command{
 		// This route is served by the updater handler, so it answers with an
 		// updater.Result rather than a container.ActionResult.
 		return runContainerPostAction[updater.Result](cmd, args[0], containerPostActionConfig[updater.Result]{
-			endpoint:       types.Endpoints.ContainerUpdate,
+			endpoint:       types.ContainerUpdate,
 			failureMessage: "failed to update container",
 			successVerb:    "updated",
 			timeout:        30 * time.Minute,
@@ -332,7 +332,7 @@ var containersRedeployCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runContainerPostAction[container.Details](cmd, args[0], containerPostActionConfig[container.Details]{
-			endpoint:       types.Endpoints.ContainerRedeploy,
+			endpoint:       types.ContainerRedeploy,
 			failureMessage: "failed to redeploy container",
 			successVerb:    "redeployed",
 			timeout:        30 * time.Minute,
@@ -424,7 +424,7 @@ var containersDeleteCmd = &cobra.Command{
 		query := url.Values{}
 		query.Set("force", strconv.FormatBool(forceFlag))
 		query.Set("volumes", strconv.FormatBool(containersDeleteVolumes))
-		path := types.Endpoints.Container(c.EnvID(), resolved.ID) + "?" + query.Encode()
+		path := types.Container(c.EnvID(), resolved.ID) + "?" + query.Encode()
 		resp, err := c.Delete(cmd.Context(), path)
 		if err != nil {
 			return errors.WrapIf(err, "failed to delete container")
@@ -468,7 +468,7 @@ var containersCountsCmd = &cobra.Command{
 			return err
 		}
 
-		path := types.Endpoints.ContainersCounts(c.EnvID())
+		path := types.ContainersCounts(c.EnvID())
 		resp, err := c.Get(cmd.Context(), path)
 		if err != nil {
 			return errors.WrapIf(err, "failed to get container counts")
@@ -593,7 +593,7 @@ var containersCreateCmd = &cobra.Command{
 			return errors.New("--image is required")
 		}
 
-		path := types.Endpoints.Containers(c.EnvID())
+		path := types.Containers(c.EnvID())
 		resp, err := c.Post(cmd.Context(), path, req)
 		if err != nil {
 			return errors.WrapIf(err, "failed to create container")
@@ -749,7 +749,7 @@ func resolveContainer(ctx context.Context, c *client.Client, identifier string, 
 }
 
 func fetchContainerByIdentifier(ctx context.Context, c *client.Client, identifier string) (*container.Details, bool, bool, error) {
-	resp, err := c.Get(ctx, types.Endpoints.Container(c.EnvID(), identifier))
+	resp, err := c.Get(ctx, types.Container(c.EnvID(), identifier))
 	if err != nil {
 		return nil, false, false, errors.WrapIff(err, "failed to resolve container %q", identifier)
 	}
@@ -776,7 +776,7 @@ func fetchContainerByIdentifier(ctx context.Context, c *client.Client, identifie
 }
 
 func searchContainerMatches(ctx context.Context, c *client.Client, identifier string) ([]container.Summary, error) {
-	searchPath := fmt.Sprintf("%s?search=%s&limit=%d", types.Endpoints.Containers(c.EnvID()), url.QueryEscape(identifier), cmdutil.ShowAllLimit)
+	searchPath := fmt.Sprintf("%s?search=%s&limit=%d", types.Containers(c.EnvID()), url.QueryEscape(identifier), cmdutil.ShowAllLimit)
 	searchResp, err := c.Get(ctx, searchPath)
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to search containers")
@@ -846,7 +846,7 @@ func containerDetailsFromSummary(summary container.Summary) *container.Details {
 }
 
 func fallbackContainerByIDPrefix(ctx context.Context, c *client.Client, identifierLower string) (*container.Details, bool, error) {
-	fallbackPath := fmt.Sprintf("%s?limit=%d", types.Endpoints.Containers(c.EnvID()), cmdutil.ShowAllLimit)
+	fallbackPath := fmt.Sprintf("%s?limit=%d", types.Containers(c.EnvID()), cmdutil.ShowAllLimit)
 	fallbackResp, err := c.Get(ctx, fallbackPath)
 	if err != nil {
 		return nil, false, errors.WrapIf(err, "failed to search containers")

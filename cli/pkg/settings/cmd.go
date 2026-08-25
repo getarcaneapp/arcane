@@ -30,7 +30,7 @@ var listCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runSettingsList(cmd, settingsListConfig{
-			endpoint:       types.Endpoints.Settings,
+			endpoint:       types.Settings,
 			failureMessage: "failed to get settings",
 			totalLabel:     "settings",
 		})
@@ -59,7 +59,7 @@ var updateCmd = &cobra.Command{
 			return errors.WrapIf(err, "failed to parse settings file")
 		}
 
-		resp, err := c.Put(cmd.Context(), types.Endpoints.Settings(c.EnvID()), req)
+		resp, err := c.Put(cmd.Context(), types.Settings(c.EnvID()), req)
 		if err != nil {
 			return errors.WrapIf(err, "failed to update settings")
 		}
@@ -89,7 +89,7 @@ var publicCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runSettingsList(cmd, settingsListConfig{
-			endpoint:       types.Endpoints.SettingsPublic,
+			endpoint:       types.SettingsPublic,
 			failureMessage: "failed to get public settings",
 			totalLabel:     "public settings",
 		})

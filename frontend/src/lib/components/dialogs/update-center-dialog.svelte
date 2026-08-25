@@ -12,7 +12,7 @@
 	import { ExternalLinkIcon, SuccessIcon } from '#lib/icons';
 	import type { AppVersionInformation } from '#lib/types/settings';
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
-	import { formatDistanceToNow } from 'date-fns';
+	import { formatRelativeTime } from '#lib/utils/formatting';
 	import ReleaseNotes from '#lib/components/release-notes.svelte';
 	import VersionUpdateSummary from './version-update-summary.svelte';
 
@@ -99,14 +99,7 @@
 
 	const releasedAgo = $derived.by(() => {
 		const at = effectiveReleasedAt;
-		if (!at) return '';
-		try {
-			const date = new Date(at);
-			if (Number.isNaN(date.getTime())) return '';
-			return formatDistanceToNow(date, { addSuffix: true });
-		} catch {
-			return '';
-		}
+		return at ? formatRelativeTime(at) : '';
 	});
 
 	let upgradeStatus = $state<'upgrading' | 'waiting' | 'ready' | 'complete'>('upgrading');
@@ -224,7 +217,7 @@
 				// at least 2 unrelated requests successfully. The agent is alive and
 				// has had time to act on our POST — its response just never came back.
 				if (triggerResolvedAt === null && successfulPolls >= 2) {
-					triggerResolvedAt = Date.now();
+					triggerResolvedAt = performance.now();
 					log('trigger-implicit-resolved', {
 						reason: 'agent-answered-poll-without-trigger-response',
 						successfulPolls
@@ -237,7 +230,7 @@
 				const changed = versionInfoChanged(baselineVersionInfo, info);
 
 				const triggerSettledAt = triggerResolvedAt;
-				const sinceTriggerMs = triggerSettledAt === null ? null : Date.now() - triggerSettledAt;
+				const sinceTriggerMs = triggerSettledAt === null ? null : performance.now() - triggerSettledAt;
 
 				log('version-check', {
 					currentVersion: info.currentVersion,
@@ -372,7 +365,7 @@
 		const triggerPromise = Promise.resolve()
 			.then(() => onConfirm())
 			.then((result) => {
-				triggerResolvedAt = Date.now();
+				triggerResolvedAt = performance.now();
 				reportedUpToDate = !!result && result.upToDate === true;
 				log('trigger-resolved', { upToDate: reportedUpToDate });
 			})

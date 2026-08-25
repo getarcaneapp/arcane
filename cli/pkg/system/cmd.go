@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"time"
 
 	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
@@ -41,7 +42,7 @@ var pruneCmd = &cobra.Command{
 			Networks:   &system.PruneNetworksOptions{Mode: system.PruneNetworkModeUnused},
 		}
 
-		resp, err := c.Post(cmd.Context(), types.Endpoints.SystemPrune(c.EnvID()), req)
+		resp, err := c.Post(cmd.Context(), types.SystemPrune(c.EnvID()), req)
 		if err != nil {
 			return errors.WrapIf(err, "failed to prune")
 		}
@@ -72,7 +73,8 @@ var pruneCmd = &cobra.Command{
 }
 
 var dockerInfoCmd = &cobra.Command{
-	Use:          "docker-info",
+	Use:          "info",
+	Aliases:      []string{"docker-info"},
 	Short:        "Get Docker daemon information",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -81,7 +83,7 @@ var dockerInfoCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.Endpoints.SystemDockerInfo(c.EnvID()))
+		resp, err := c.Get(cmd.Context(), types.SystemDockerInfo(c.EnvID()))
 		if err != nil {
 			return errors.WrapIf(err, "failed to get docker info")
 		}
@@ -107,8 +109,15 @@ var dockerInfoCmd = &cobra.Command{
 	},
 }
 
-var containersStartAllCmd = &cobra.Command{
-	Use:          "containers-start-all",
+var systemContainersCmd = &cobra.Command{
+	Use:   "containers",
+	Short: "Bulk container operations",
+}
+
+var startStoppedOnlyFlag bool
+
+var containersStartCmd = &cobra.Command{
+	Use:          "start",
 	Short:        "Start all containers",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -117,63 +126,17 @@ var containersStartAllCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Post(cmd.Context(), types.Endpoints.SystemContainersStartAll(c.EnvID()), nil)
+		path := types.SystemContainersStartAll(c.EnvID())
+		if startStoppedOnlyFlag {
+			path = types.SystemStartStopped(c.EnvID())
+		}
+		resp, err := c.Post(cmd.Context(), path, nil)
 		if err != nil {
-			return errors.WrapIf(err, "failed to start all containers")
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to start all containers")
-		}
-
-		output.Success("Started all containers")
-		return nil
-	},
-}
-
-var containersStopAllCmd = &cobra.Command{
-	Use:          "containers-stop-all",
-	Short:        "Stop all containers",
-	SilenceUsage: true,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := client.NewFromConfig()
-		if err != nil {
-			return err
-		}
-
-		resp, err := c.Post(cmd.Context(), types.Endpoints.SystemContainersStopAll(c.EnvID()), nil)
-		if err != nil {
-			return errors.WrapIf(err, "failed to stop all containers")
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to stop all containers")
-		}
-
-		output.Success("Stopped all containers")
-		return nil
-	},
-}
-
-var startStoppedCmd = &cobra.Command{
-	Use:          "start-stopped",
-	Short:        "Start all stopped containers",
-	SilenceUsage: true,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := client.NewFromConfig()
-		if err != nil {
-			return err
-		}
-
-		resp, err := c.Post(cmd.Context(), types.Endpoints.SystemStartStopped(c.EnvID()), nil)
-		if err != nil {
-			return errors.WrapIf(err, "failed to start stopped containers")
+			return errors.WrapIf(err, "failed to start containers")
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to start stopped containers")
+			return errors.WrapIf(err, "failed to start containers")
 		}
 
 		if jsonOutput {
@@ -186,7 +149,36 @@ var startStoppedCmd = &cobra.Command{
 			return nil
 		}
 
-		output.Success("Started all stopped containers")
+		if startStoppedOnlyFlag {
+			output.Success("Started all stopped containers")
+		} else {
+			output.Success("Started all containers")
+		}
+		return nil
+	},
+}
+
+var containersStopCmd = &cobra.Command{
+	Use:          "stop",
+	Short:        "Stop all containers",
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := client.NewFromConfig()
+		if err != nil {
+			return err
+		}
+
+		resp, err := c.Post(cmd.Context(), types.SystemContainersStopAll(c.EnvID()), nil)
+		if err != nil {
+			return errors.WrapIf(err, "failed to stop all containers")
+		}
+		defer func() { _ = resp.Body.Close() }()
+
+		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
+			return errors.WrapIf(err, "failed to stop all containers")
+		}
+
+		output.Success("Stopped all containers")
 		return nil
 	},
 }
@@ -203,7 +195,7 @@ var convertCmd = &cobra.Command{
 		}
 
 		req := map[string]string{"dockerRunCommand": args[0]}
-		resp, err := c.Post(cmd.Context(), types.Endpoints.SystemConvert(c.EnvID()), req)
+		resp, err := c.Post(cmd.Context(), types.SystemConvert(c.EnvID()), req)
 		if err != nil {
 			return errors.WrapIf(err, "failed to convert command")
 		}
@@ -259,6 +251,19 @@ var upgradeCmd = &cobra.Command{
 	Short:        "Trigger system upgrade",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if upgradeAllStatusFlag && !upgradeAllFlag {
+			return errors.New("--status requires --all")
+		}
+		if upgradeCheckFlag && upgradeAllFlag {
+			return errors.New("--check cannot be combined with --all")
+		}
+		if upgradeAllFlag {
+			return runUpgradeAllInternal(cmd)
+		}
+		if upgradeCheckFlag {
+			return runUpgradeCheckInternal(cmd)
+		}
+
 		if !forceFlag {
 			confirmed, err := cmdutil.Confirm(cmd, "Are you sure you want to upgrade the system?")
 			if err != nil {
@@ -275,7 +280,7 @@ var upgradeCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Post(cmd.Context(), types.Endpoints.SystemUpgrade(c.EnvID()), nil)
+		resp, err := c.Post(cmd.Context(), types.SystemUpgrade(c.EnvID()), nil)
 		if err != nil {
 			return errors.WrapIf(err, "failed to upgrade system")
 		}
@@ -299,71 +304,197 @@ var upgradeCmd = &cobra.Command{
 	},
 }
 
-var upgradeCheckCmd = &cobra.Command{
-	Use:          "upgrade-check",
-	Short:        "Check for available upgrades",
-	SilenceUsage: true,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := client.NewFromConfig()
-		if err != nil {
-			return err
-		}
+var upgradeCheckFlag bool
 
-		resp, err := c.Get(cmd.Context(), types.Endpoints.SystemUpgradeCheck(c.EnvID()))
+func runUpgradeCheckInternal(cmd *cobra.Command) error {
+	c, err := client.NewFromConfig()
+	if err != nil {
+		return err
+	}
+
+	resp, err := c.Get(cmd.Context(), types.SystemUpgradeCheck(c.EnvID()))
+	if err != nil {
+		return errors.WrapIf(err, "failed to check for upgrades")
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
+		return errors.WrapIf(err, "failed to check for upgrades")
+	}
+
+	var result struct {
+		CanUpgrade bool   `json:"canUpgrade"`
+		Error      bool   `json:"error"`
+		Message    string `json:"message"`
+	}
+	if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+		return err
+	}
+
+	if jsonOutput {
+		resultBytes, err := json.MarshalIndent(result, "", "  ")
 		if err != nil {
-			return errors.WrapIf(err, "failed to check for upgrades")
+			return errors.WrapIf(err, "failed to marshal JSON")
+		}
+		fmt.Println(string(resultBytes))
+		return nil
+	}
+
+	output.Header("Upgrade Check")
+	output.KeyValue("Can Upgrade", strconv.FormatBool(result.CanUpgrade))
+	output.KeyValue("Message", result.Message)
+	if result.Error {
+		output.KeyValue("Error", "true")
+	}
+	return nil
+}
+
+// environmentUpdateJob mirrors the backend's fleet-wide update job payload
+// (backend/internal/system.EnvironmentUpdateJob), which is not exported in the
+// shared types module.
+type environmentUpdateJob struct {
+	ID                    string `json:"id"`
+	Status                string `json:"status"`
+	Username              string `json:"username"`
+	ManagerVersionAtStart string `json:"managerVersionAtStart"`
+	ManagerTargetVersion  string `json:"managerTargetVersion"`
+	Results               []struct {
+		EnvironmentID   string `json:"environmentId"`
+		EnvironmentName string `json:"environmentName"`
+		Status          string `json:"status"`
+		FromVersion     string `json:"fromVersion,omitempty"`
+		ToVersion       string `json:"toVersion,omitempty"`
+		Error           string `json:"error,omitempty"`
+	} `json:"results,omitempty"`
+	Error       *string    `json:"error,omitempty"`
+	CompletedAt *time.Time `json:"completedAt,omitempty"`
+}
+
+func printUpdateAllJob(job environmentUpdateJob) {
+	output.KeyValue("Status", job.Status)
+	if job.Username != "" {
+		output.KeyValue("Triggered By", job.Username)
+	}
+	if job.ManagerVersionAtStart != "" {
+		output.KeyValue("Manager Version", job.ManagerVersionAtStart)
+	}
+	if job.ManagerTargetVersion != "" {
+		output.KeyValue("Target Version", job.ManagerTargetVersion)
+	}
+	if job.Error != nil && *job.Error != "" {
+		output.KeyValue("Error", *job.Error)
+	}
+	if job.CompletedAt != nil {
+		output.KeyValue("Completed At", job.CompletedAt.Format(time.RFC3339))
+	}
+	if len(job.Results) == 0 {
+		return
+	}
+
+	headers := []string{"ENVIRONMENT", "STATUS", "FROM", "TO", "ERROR"}
+	rows := make([][]string, len(job.Results))
+	for i, res := range job.Results {
+		name := res.EnvironmentName
+		if name == "" {
+			name = res.EnvironmentID
+		}
+		resErr := res.Error
+		if resErr == "" {
+			resErr = "-"
+		}
+		rows[i] = []string{name, res.Status, res.FromVersion, res.ToVersion, resErr}
+	}
+	fmt.Println()
+	output.Table(headers, rows)
+}
+
+var (
+	upgradeAllFlag       bool
+	upgradeAllStatusFlag bool
+)
+
+func runUpgradeAllInternal(cmd *cobra.Command) error {
+	c, err := cmdutil.ClientFromCommand(cmd)
+	if err != nil {
+		return err
+	}
+
+	if upgradeAllStatusFlag {
+		resp, err := c.Get(cmd.Context(), types.SystemUpgradeAllStatus(c.EnvID()))
+		if err != nil {
+			return errors.WrapIf(err, "failed to get update-all status")
 		}
 		defer func() { _ = resp.Body.Close() }()
-
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to check for upgrades")
+			return errors.WrapIf(err, "failed to get update-all status")
 		}
 
-		var result struct {
-			CanUpgrade bool   `json:"canUpgrade"`
-			Error      bool   `json:"error"`
-			Message    string `json:"message"`
-		}
+		var result base.ApiResponse[environmentUpdateJob]
 		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
 			return err
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
-		output.Header("Upgrade Check")
-		output.KeyValue("Can Upgrade", strconv.FormatBool(result.CanUpgrade))
-		output.KeyValue("Message", result.Message)
-		if result.Error {
-			output.KeyValue("Error", "true")
-		}
+		output.Header("Update-All Status")
+		printUpdateAllJob(result.Data)
 		return nil
-	},
+	}
+
+	if !forceFlag {
+		confirmed, err := cmdutil.Confirm(cmd, "Are you sure you want to update all environments?")
+		if err != nil {
+			return err
+		}
+		if !confirmed {
+			fmt.Println("Cancelled")
+			return nil
+		}
+	}
+
+	resp, err := c.Post(cmd.Context(), types.SystemUpgradeAll(c.EnvID()), nil)
+	if err != nil {
+		return errors.WrapIf(err, "failed to trigger update-all")
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
+		return errors.WrapIf(err, "failed to trigger update-all")
+	}
+
+	var result base.ApiResponse[environmentUpdateJob]
+	if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+		return err
+	}
+
+	if jsonOutput {
+		return cmdutil.PrintJSON(result.Data)
+	}
+
+	output.Success("Update-all started")
+	printUpdateAllJob(result.Data)
+	return nil
 }
 
 func init() {
 	SystemCmd.AddCommand(pruneCmd)
 	SystemCmd.AddCommand(dockerInfoCmd)
-	SystemCmd.AddCommand(containersStartAllCmd)
-	SystemCmd.AddCommand(containersStopAllCmd)
-	SystemCmd.AddCommand(startStoppedCmd)
+	SystemCmd.AddCommand(systemContainersCmd)
 	SystemCmd.AddCommand(convertCmd)
 	SystemCmd.AddCommand(upgradeCmd)
-	SystemCmd.AddCommand(upgradeCheckCmd)
+	systemContainersCmd.AddCommand(containersStartCmd)
+	systemContainersCmd.AddCommand(containersStopCmd)
 
 	pruneCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	dockerInfoCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
-	containersStartAllCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
-	containersStopAllCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
-	startStoppedCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
+	containersStartCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
+	containersStartCmd.Flags().BoolVar(&startStoppedOnlyFlag, "stopped", false, "Only start containers that are currently stopped")
+	containersStopCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	convertCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	upgradeCmd.Flags().BoolVarP(&forceFlag, "force", "f", false, "Skip confirmation")
 	upgradeCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
-	upgradeCheckCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
+	upgradeCmd.Flags().BoolVar(&upgradeAllFlag, "all", false, "Update all environments with available updates")
+	upgradeCmd.Flags().BoolVar(&upgradeAllStatusFlag, "status", false, "Show the status of the latest update-all job (requires --all)")
+	upgradeCmd.Flags().BoolVar(&upgradeCheckFlag, "check", false, "Only check whether an upgrade is available")
 }

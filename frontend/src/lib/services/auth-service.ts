@@ -9,6 +9,8 @@ import { activityStore } from '#lib/stores/activity.store.svelte';
 import { dashboardStore } from '#lib/stores/dashboard.store.svelte';
 import { environmentStatusStore } from '#lib/stores/environment-status.store.svelte';
 import { getEffectiveLandingPage } from '#lib/utils/navigation';
+import { parseInstant } from '#lib/utils/formatting';
+import { Temporal } from 'temporal-polyfill';
 
 const REFRESH_TOKEN_KEY = 'arcane_refresh_token';
 const TOKEN_EXPIRY_KEY = 'arcane_token_expiry';
@@ -72,9 +74,9 @@ class AuthService extends BaseAPIService {
 			clearTimeout(this.refreshTimer);
 		}
 
-		const expiryTime = new Date(expiresAt).getTime();
-		const now = Date.now();
-		const timeUntilExpiry = expiryTime - now;
+		const expiryTime = parseInstant(expiresAt);
+		if (!expiryTime) return;
+		const timeUntilExpiry = Temporal.Now.instant().until(expiryTime).total('milliseconds');
 		const refreshTime = Math.max(0, timeUntilExpiry - REFRESH_BUFFER_MS);
 
 		if (refreshTime > 0) {

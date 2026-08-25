@@ -4,7 +4,7 @@
 		startRegistration,
 		type PublicKeyCredentialCreationOptionsJSON
 	} from '@simplewebauthn/browser';
-	import { format } from 'date-fns';
+	import { Temporal } from 'temporal-polyfill';
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog';
@@ -13,6 +13,7 @@
 	import { Input } from '#lib/components/ui/input';
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { m } from '#lib/paraglide/messages';
+	import { formatDate, parseInstant } from '#lib/utils/formatting';
 	import { passkeyService } from '#lib/services/passkey-service';
 	import type { MFAStatus, Passkey, PasskeyCapabilities, StepUpGrant } from '#lib/types/auth';
 	import StepUpDialog from './step-up-dialog.svelte';
@@ -36,15 +37,7 @@
 	// One step-up covers every management action until the grant expires, so a
 	// run of changes (add passkey, enable MFA, regenerate codes) prompts once.
 	let grantToken = $state('');
-	let grantExpiresAt = $state(0);
-
-	function safeFormatDate(input: string): string {
-		try {
-			return format(new Date(input), 'PP');
-		} catch {
-			return input;
-		}
-	}
+	let grantExpiresAt = $state<Temporal.Instant | null>(null);
 
 	function passkeyErrorDescription(value: unknown, fallback: string): string {
 		if (!(value instanceof Error) || !value.message.trim()) return fallback;
@@ -71,12 +64,16 @@
 
 	function clearStepUpGrant() {
 		grantToken = '';
-		grantExpiresAt = 0;
+		grantExpiresAt = null;
 	}
 
 	function activeStepUpToken(): string {
 		// Small margin so a grant does not expire between check and request.
-		return grantToken && grantExpiresAt - 5000 > Date.now() ? grantToken : '';
+		return grantToken &&
+			grantExpiresAt &&
+			Temporal.Instant.compare(grantExpiresAt.subtract({ seconds: 5 }), Temporal.Now.instant()) > 0
+			? grantToken
+			: '';
 	}
 
 	async function loadAccountData(): Promise<PasskeyCapabilities | null> {
@@ -143,7 +140,7 @@
 
 	async function handleStepUpResolved(grant: StepUpGrant) {
 		grantToken = grant.token;
-		grantExpiresAt = new Date(grant.expiresAt).getTime();
+		grantExpiresAt = parseInstant(grant.expiresAt);
 		const action = pendingAction;
 		pendingAction = null;
 		if (!action) return;
@@ -402,7 +399,7 @@
 										<div class="truncate text-sm font-medium">{passkey.name}</div>
 										<div class="mt-1 text-xs text-muted-foreground">
 											{#if passkey.lastUsedAt}
-												{m.account_passkey_last_used({ date: safeFormatDate(passkey.lastUsedAt) })}
+												{m.account_passkey_last_used({ date: formatDate(passkey.lastUsedAt) || passkey.lastUsedAt })}
 											{:else}
 												{m.account_passkey_never_used()}
 											{/if}

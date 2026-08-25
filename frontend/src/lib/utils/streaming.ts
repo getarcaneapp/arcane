@@ -1,3 +1,5 @@
+import { Temporal } from 'temporal-polyfill';
+
 /**
  * Returns a value unique to each call, for use as a cache-busting query param on
  * stream URLs. Without it, intermediaries that key on the URL — a reverse proxy
@@ -12,7 +14,7 @@ export function streamCacheBuster(): string {
 	if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
 		return crypto.randomUUID();
 	}
-	return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+	return `${Temporal.Now.instant().epochMilliseconds}-${Math.random().toString(36).slice(2)}`;
 }
 
 /**

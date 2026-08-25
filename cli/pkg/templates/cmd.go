@@ -22,7 +22,6 @@ import (
 	"github.com/getarcaneapp/arcane/cli/v2/internal/prompt"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
 	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/env"
 	"github.com/getarcaneapp/arcane/types/v2/template"
 	"github.com/spf13/cobra"
 )
@@ -48,11 +47,6 @@ var (
 	templateDefaultsSaveFile  string
 	templateDefaultsEnvFile   string
 	templateFetchURL          string
-	templateVarsUpdateKey     string
-	templateVarsUpdateValue   string
-	templateVarsUpdateSecret  bool
-	templateVarsUpdateAllEnvs bool
-	templateVarsUpdateEnvIDs  []string
 	templateRegUpdateName     string
 	templateRegUpdateURL      string
 	templateRegUpdateDesc     string
@@ -89,7 +83,7 @@ var listCmd = &cobra.Command{
 			if cmd.Flags().Changed("limit") || cmd.Flags().Changed("start") {
 				return errors.New("--all cannot be combined with explicit pagination flags")
 			}
-			path = types.Endpoints.TemplatesAll()
+			path = types.TemplatesAll()
 			resp, err := c.Get(cmd.Context(), path)
 			if err != nil {
 				return errors.WrapIf(err, "failed to list templates")
@@ -105,7 +99,7 @@ var listCmd = &cobra.Command{
 			totalItems = int64(len(result.Data))
 			jsonPayload = result.Data
 		} else {
-			path = types.Endpoints.Templates()
+			path = types.Templates()
 			path, err = cmdutil.ApplyPaginationParams(cmd, path, cmdutil.ListParams{Resource: "templates", Limit: limitFlag, FallbackDefault: 20, Start: startFlag})
 			if err != nil {
 				return errors.WrapIf(err, "failed to build pagination query")
@@ -171,7 +165,7 @@ var defaultCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.Endpoints.TemplatesDefault())
+		resp, err := c.Get(cmd.Context(), types.TemplatesDefault())
 		if err != nil {
 			return errors.WrapIf(err, "failed to get default templates")
 		}
@@ -209,7 +203,7 @@ var contentCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.Endpoints.TemplateContent(args[0]))
+		resp, err := c.Get(cmd.Context(), types.TemplateContent(args[0]))
 		if err != nil {
 			return errors.WrapIf(err, "failed to get template content")
 		}
@@ -255,7 +249,7 @@ var registriesCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.Endpoints.TemplatesRegistries())
+		resp, err := c.Get(cmd.Context(), types.TemplatesRegistries())
 		if err != nil {
 			return errors.WrapIf(err, "failed to list registries")
 		}
@@ -296,52 +290,34 @@ var registriesCmd = &cobra.Command{
 	},
 }
 
-var variablesCmd = &cobra.Command{
-	Use:          "variables",
-	Aliases:      []string{"vars"},
-	Short:        "List global variables",
-	SilenceUsage: true,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := client.NewFromConfig()
+func runTemplateDelete(cmd *cobra.Command, label, path string) error {
+	if !forceFlag {
+		confirmed, err := cmdutil.Confirm(cmd, fmt.Sprintf("Are you sure you want to delete %s?", label))
 		if err != nil {
 			return err
 		}
-
-		resp, err := c.Get(cmd.Context(), types.Endpoints.TemplatesVariables())
-		if err != nil {
-			return errors.WrapIf(err, "failed to list variables")
+		if !confirmed {
+			fmt.Println("Cancelled")
+			return nil
 		}
-		defer func() { _ = resp.Body.Close() }()
+	}
 
-		var result base.ApiResponse[[]env.GlobalVariable]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return errors.WrapIf(err, "failed to list variables")
-		}
+	c, err := client.NewFromConfig()
+	if err != nil {
+		return err
+	}
 
-		if jsonOutput {
-			return cmdutil.PrintJSON(result.Data)
-		}
+	resp, err := c.Delete(cmd.Context(), path)
+	if err != nil {
+		return errors.WrapIff(err, "failed to delete %s", label)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
+		return errors.WrapIff(err, "failed to delete %s", label)
+	}
 
-		headers := []string{"ID", "KEY", "VALUE", "SECRET", "SCOPE"}
-		rows := make([][]string, len(result.Data))
-		for i, v := range result.Data {
-			scope := "all environments"
-			if !v.AllEnvironments {
-				scope = strings.Join(v.EnvironmentIDs, ", ")
-			}
-			rows[i] = []string{
-				v.ID,
-				v.Key,
-				v.Value,
-				strconv.FormatBool(v.IsSecret),
-				scope,
-			}
-		}
-
-		output.Table(headers, rows)
-		fmt.Printf("\nTotal: %d variables\n", len(result.Data))
-		return nil
-	},
+	output.Success("Deleted %s successfully", label)
+	return nil
 }
 
 var deleteCmd = &cobra.Command{
@@ -351,69 +327,18 @@ var deleteCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if !forceFlag {
-			confirmed, err := cmdutil.Confirm(cmd, fmt.Sprintf("Are you sure you want to delete template %s?", args[0]))
-			if err != nil {
-				return err
-			}
-			if !confirmed {
-				fmt.Println("Cancelled")
-				return nil
-			}
-		}
-
-		c, err := client.NewFromConfig()
-		if err != nil {
-			return err
-		}
-
-		resp, err := c.Delete(cmd.Context(), types.Endpoints.Template(args[0]))
-		if err != nil {
-			return errors.WrapIf(err, "failed to delete template")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to delete template")
-		}
-
-		output.Success("Template deleted successfully")
-		return nil
+		return runTemplateDelete(cmd, "template "+args[0], types.Template(args[0]))
 	},
 }
 
 var deleteRegistryCmd = &cobra.Command{
-	Use:          "delete-registry <registry-id>",
+	Use:          "delete <registry-id>",
+	Aliases:      []string{"rm", "remove"},
 	Short:        "Delete template registry",
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if !forceFlag {
-			confirmed, err := cmdutil.Confirm(cmd, fmt.Sprintf("Are you sure you want to delete template registry %s?", args[0]))
-			if err != nil {
-				return err
-			}
-			if !confirmed {
-				fmt.Println("Cancelled")
-				return nil
-			}
-		}
-
-		c, err := client.NewFromConfig()
-		if err != nil {
-			return err
-		}
-
-		resp, err := c.Delete(cmd.Context(), types.Endpoints.TemplateRegistry(args[0]))
-		if err != nil {
-			return errors.WrapIf(err, "failed to delete registry")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to delete registry")
-		}
-
-		output.Success("Template registry deleted successfully")
-		return nil
+		return runTemplateDelete(cmd, "template registry "+args[0], types.TemplateRegistry(args[0]))
 	},
 }
 
@@ -469,7 +394,7 @@ func resolveTemplate(ctx context.Context, c *client.Client, identifier string) (
 		return nil, errors.New("template identifier is required")
 	}
 
-	resp, err := c.Get(ctx, types.Endpoints.Template(trimmed))
+	resp, err := c.Get(ctx, types.Template(trimmed))
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to get template")
 	}
@@ -488,7 +413,7 @@ func resolveTemplate(ctx context.Context, c *client.Client, identifier string) (
 		return nil, errors.Errorf("failed to get template: request failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
-	listResp, err := c.Get(ctx, types.Endpoints.TemplatesAll())
+	listResp, err := c.Get(ctx, types.TemplatesAll())
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to search templates")
 	}
@@ -854,7 +779,7 @@ var createCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Post(cmd.Context(), types.Endpoints.Templates(), req)
+		resp, err := c.Post(cmd.Context(), types.Templates(), req)
 		if err != nil {
 			return errors.WrapIf(err, "failed to create template")
 		}
@@ -931,7 +856,7 @@ var updateCmd = &cobra.Command{
 			req.EnvContent = string(envContent)
 		}
 
-		resp, err := c.Put(cmd.Context(), types.Endpoints.Template(args[0]), req)
+		resp, err := c.Put(cmd.Context(), types.Template(args[0]), req)
 		if err != nil {
 			return errors.WrapIf(err, "failed to update template")
 		}
@@ -964,7 +889,7 @@ var downloadCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Post(cmd.Context(), types.Endpoints.TemplateDownload(args[0]), nil)
+		resp, err := c.Post(cmd.Context(), types.TemplateDownload(args[0]), nil)
 		if err != nil {
 			return errors.WrapIf(err, "failed to download template")
 		}
@@ -996,7 +921,7 @@ var downloadCmd = &cobra.Command{
 }
 
 var defaultsSaveCmd = &cobra.Command{
-	Use:          "defaults-save",
+	Use:          "save",
 	Short:        "Save default templates",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -1022,7 +947,7 @@ var defaultsSaveCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Post(cmd.Context(), types.Endpoints.TemplatesDefault(), req)
+		resp, err := c.Post(cmd.Context(), types.TemplatesDefault(), req)
 		if err != nil {
 			return errors.WrapIf(err, "failed to save default templates")
 		}
@@ -1044,62 +969,8 @@ var defaultsSaveCmd = &cobra.Command{
 	},
 }
 
-var variablesUpdateCmd = &cobra.Command{
-	Use:          "variables-update <variable-id>",
-	Aliases:      []string{"vars-update"},
-	Short:        "Update a global variable",
-	Args:         cobra.ExactArgs(1),
-	SilenceUsage: true,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		// Only the flags that were set are sent; every field on the request is a
-		// pointer, and the server keeps the current value for the ones omitted.
-		var req env.UpdateGlobalVariableRequest
-		if cmd.Flags().Changed("key") {
-			req.Key = &templateVarsUpdateKey
-		}
-		if cmd.Flags().Changed("value") {
-			req.Value = &templateVarsUpdateValue
-		}
-		if cmd.Flags().Changed("secret") {
-			req.IsSecret = &templateVarsUpdateSecret
-		}
-		if cmd.Flags().Changed("all-environments") {
-			req.AllEnvironments = &templateVarsUpdateAllEnvs
-		}
-		if cmd.Flags().Changed("environment") {
-			req.EnvironmentIDs = &templateVarsUpdateEnvIDs
-		}
-		if req.Key == nil && req.Value == nil && req.IsSecret == nil && req.AllEnvironments == nil && req.EnvironmentIDs == nil {
-			return errors.New("no changes requested; pass at least one of --key, --value, --secret, --all-environments or --environment")
-		}
-
-		c, err := client.NewFromConfig()
-		if err != nil {
-			return err
-		}
-
-		resp, err := c.Put(cmd.Context(), types.Endpoints.Variable(args[0]), req)
-		if err != nil {
-			return errors.WrapIf(err, "failed to update variable")
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result base.ApiResponse[env.GlobalVariableMutationResponse]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return errors.WrapIf(err, "failed to update variable")
-		}
-
-		if jsonOutput {
-			return cmdutil.PrintJSON(result.Data)
-		}
-
-		output.Success("Variable updated successfully")
-		return nil
-	},
-}
-
 var registriesUpdateCmd = &cobra.Command{
-	Use:          "registries-update <registry-id>",
+	Use:          "update <registry-id>",
 	Short:        "Update a template registry",
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
@@ -1143,7 +1014,7 @@ var registriesUpdateCmd = &cobra.Command{
 			req.Enabled = false
 		}
 
-		resp, err := c.Put(cmd.Context(), types.Endpoints.TemplateRegistry(args[0]), req)
+		resp, err := c.Put(cmd.Context(), types.TemplateRegistry(args[0]), req)
 		if err != nil {
 			return errors.WrapIf(err, "failed to update registry")
 		}
@@ -1168,7 +1039,7 @@ var registriesUpdateCmd = &cobra.Command{
 
 // fetchTemplateInternal loads a single template, including its content.
 func fetchTemplateInternal(cmd *cobra.Command, c *client.Client, id string) (template.Template, error) {
-	resp, err := c.Get(cmd.Context(), types.Endpoints.Template(id))
+	resp, err := c.Get(cmd.Context(), types.Template(id))
 	if err != nil {
 		return template.Template{}, errors.WrapIf(err, "failed to load template")
 	}
@@ -1184,7 +1055,7 @@ func fetchTemplateInternal(cmd *cobra.Command, c *client.Client, id string) (tem
 // fetchTemplateRegistryInternal looks a registry up by ID. The API exposes no
 // get-by-id route for template registries, so this filters the list.
 func fetchTemplateRegistryInternal(cmd *cobra.Command, c *client.Client, id string) (template.TemplateRegistry, error) {
-	resp, err := c.Get(cmd.Context(), types.Endpoints.TemplatesRegistries())
+	resp, err := c.Get(cmd.Context(), types.TemplatesRegistries())
 	if err != nil {
 		return template.TemplateRegistry{}, errors.WrapIf(err, "failed to load registry")
 	}
@@ -1213,7 +1084,7 @@ var fetchCmd = &cobra.Command{
 			return err
 		}
 
-		path := cmdutil.AppendQuery(types.Endpoints.TemplateFetch(), url.Values{"url": []string{templateFetchURL}})
+		path := cmdutil.AppendQuery(types.TemplateFetch(), url.Values{"url": []string{templateFetchURL}})
 		resp, err := c.Get(cmd.Context(), path)
 		if err != nil {
 			return errors.WrapIf(err, "failed to fetch templates")
@@ -1246,17 +1117,15 @@ func init() {
 	TemplatesCmd.AddCommand(defaultCmd)
 	TemplatesCmd.AddCommand(contentCmd)
 	TemplatesCmd.AddCommand(registriesCmd)
-	TemplatesCmd.AddCommand(variablesCmd)
 	TemplatesCmd.AddCommand(deleteCmd)
-	TemplatesCmd.AddCommand(deleteRegistryCmd)
 	TemplatesCmd.AddCommand(getCmd)
 	TemplatesCmd.AddCommand(createCmd)
 	TemplatesCmd.AddCommand(updateCmd)
 	TemplatesCmd.AddCommand(downloadCmd)
-	TemplatesCmd.AddCommand(defaultsSaveCmd)
-	TemplatesCmd.AddCommand(variablesUpdateCmd)
-	TemplatesCmd.AddCommand(registriesUpdateCmd)
 	TemplatesCmd.AddCommand(fetchCmd)
+	defaultCmd.AddCommand(defaultsSaveCmd)
+	registriesCmd.AddCommand(registriesUpdateCmd)
+	registriesCmd.AddCommand(deleteRegistryCmd)
 
 	listCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of templates to show")
 	listCmd.Flags().IntVar(&startFlag, "start", 0, "Offset for pagination")
@@ -1265,7 +1134,6 @@ func init() {
 	defaultCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	contentCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	registriesCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
-	variablesCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 
 	deleteCmd.Flags().BoolVarP(&forceFlag, "force", "f", false, "Force deletion without confirmation")
 	deleteCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
@@ -1302,16 +1170,7 @@ func init() {
 	defaultsSaveCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	_ = defaultsSaveCmd.MarkFlagRequired("file")
 
-	// variables-update command flags
-	variablesUpdateCmd.Flags().StringVar(&templateVarsUpdateKey, "key", "", "New variable key")
-	variablesUpdateCmd.Flags().StringVar(&templateVarsUpdateValue, "value", "", "New variable value")
-	variablesUpdateCmd.Flags().BoolVar(&templateVarsUpdateSecret, "secret", false, "Mark the variable as a secret")
-	variablesUpdateCmd.Flags().BoolVar(&templateVarsUpdateAllEnvs, "all-environments", false, "Scope the variable to all environments")
-	variablesUpdateCmd.Flags().StringSliceVar(&templateVarsUpdateEnvIDs, "environment", nil, "Environment IDs to scope the variable to (repeatable)")
-	variablesUpdateCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
-	_ = variablesUpdateCmd.MarkFlagRequired("file")
-
-	// registries-update command flags
+	// registries update command flags
 	registriesUpdateCmd.Flags().StringVar(&templateRegUpdateName, "name", "", "Registry name")
 	registriesUpdateCmd.Flags().StringVar(&templateRegUpdateURL, "url", "", "Registry URL")
 	registriesUpdateCmd.Flags().StringVar(&templateRegUpdateDesc, "description", "", "Registry description")

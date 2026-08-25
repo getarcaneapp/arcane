@@ -257,7 +257,7 @@ func TestAdminEventsListEnvSendsLimitAndStart(t *testing.T) {
 	configPath := writeCLIIntegrationConfigInternal(t, srv.URL)
 	_, errOut, err := executeCLIIntegrationCommandInternal(
 		t,
-		[]string{"--config", configPath, "admin", "events", "list-env", "--json", "--limit", "3", "--start", "6"},
+		[]string{"--config", configPath, "admin", "events", "list", "--environment", "--json", "--limit", "3", "--start", "6"},
 	)
 
 	require.NoError(t, err,
