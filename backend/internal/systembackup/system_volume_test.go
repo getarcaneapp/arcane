@@ -86,10 +86,6 @@ func TestSystemVolumeBackupSelectionInternal(t *testing.T) {
 	}
 }
 
-func TestNormalizeVolumeNamesInternal(t *testing.T) {
-	require.Equal(t, []string{"app", "cache"}, normalizeVolumeNamesInternal([]string{" cache ", "app", "cache", ""}))
-}
-
 func TestSystemVolumePolicyIDInternalIsStableAndScoped(t *testing.T) {
 	first := systemVolumePolicyIDInternal("nightly", "app-data")
 	require.Equal(t, first, systemVolumePolicyIDInternal("nightly", "app-data"))
@@ -139,6 +135,37 @@ func TestListBackupHistoryClassifiesAndFiltersOrigins(t *testing.T) {
 	require.Len(t, volumeRows, 1)
 	require.Equal(t, backuptypes.ManagementTypeVolume, volumeRows[0].Type)
 	require.Equal(t, "cache", volumeRows[0].ResourceName)
+}
+
+func TestListBackupHistoryUsesStablePaginatedOrdering(t *testing.T) {
+	gormDB, err := gorm.Open(sqlite.Open("file:system-volume-history-order?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, gormDB.AutoMigrate(&SystemBackupRun{}, &volume.VolumeBackup{}))
+	createdAt := time.Now().UTC()
+	for _, id := range []string{"backup-b", "backup-a"} {
+		require.NoError(t, gormDB.Create(&SystemBackupRun{
+			BaseModel:   database.BaseModel{ID: id},
+			CreatedAt:   createdAt,
+			Status:      SystemBackupStatusSucceeded,
+			Trigger:     SystemBackupTriggerManual,
+			Destination: backuptypes.SystemBackupDestinationLocal,
+		}).Error)
+	}
+	service := &SystemBackupService{db: &database.DB{DB: gormDB}}
+
+	first, firstPage, err := service.ListBackupHistory(context.Background(), pagination.QueryParams{
+		Sort: "createdAt", Order: pagination.SortDesc, Limit: 1,
+	}, "")
+	require.NoError(t, err)
+	second, secondPage, err := service.ListBackupHistory(context.Background(), pagination.QueryParams{
+		Sort: "createdAt", Order: pagination.SortDesc, Start: 1, Limit: 1,
+	}, "")
+	require.NoError(t, err)
+	require.EqualValues(t, 2, firstPage.TotalItems)
+	require.Equal(t, 1, firstPage.ItemsPerPage)
+	require.Equal(t, 2, secondPage.CurrentPage)
+	require.Equal(t, "backup-a", first[0].ID)
+	require.Equal(t, "backup-b", second[0].ID)
 }
 
 func TestDefaultSystemVolumeBackupPolicyInternal(t *testing.T) {
@@ -208,6 +235,31 @@ func TestSystemVolumeBackupPoliciesPersistAndRescheduleIndependentlyInternal(t *
 	require.NoError(t, err)
 	require.False(t, scheduler.HasJob(firstJobName))
 	require.False(t, scheduler.HasJob(secondJobName))
+}
+
+func TestSystemVolumeBackupPolicyReconciliationRejectsInvalidIDsInternal(t *testing.T) {
+	service := &SystemBackupService{
+		settingsService: newSystemVolumeSettingsServiceInternal(t),
+		jobs:            entityjobs.New("system-backup:", backup.SystemAdmissionScope),
+	}
+	update := defaultSystemVolumePolicyUpdateForTestInternal()
+	saved, err := service.UpdateSystemVolumeBackupConfig(context.Background(), []backuptypes.UpdateSystemVolumeBackupPolicy{update})
+	require.NoError(t, err)
+	require.Len(t, saved.Policies, 1)
+
+	existing := update
+	existing.ID = saved.Policies[0].ID
+	_, err = service.UpdateSystemVolumeBackupConfig(context.Background(), []backuptypes.UpdateSystemVolumeBackupPolicy{existing, existing})
+	require.ErrorContains(t, err, "duplicate system-managed volume backup policy")
+
+	missing := update
+	missing.ID = "missing"
+	_, err = service.UpdateSystemVolumeBackupConfig(context.Background(), []backuptypes.UpdateSystemVolumeBackupPolicy{missing})
+	require.ErrorContains(t, err, "system-managed volume backup policy not found")
+
+	loaded, err := service.GetSystemVolumeBackupConfig(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, saved, loaded)
 }
 
 func TestSystemVolumeBackupPolicyValidationInternal(t *testing.T) {
@@ -327,4 +379,17 @@ func TestResolveSystemVolumeRunPolicySupportsDisabledSavedPolicyInternal(t *test
 		Custom: &backuptypes.SystemVolumeBackupCustomRun{Destination: "archive"},
 	})
 	require.Error(t, err)
+}
+
+func TestRunSystemVolumeBackupsRejectsAdmissionContentionInternal(t *testing.T) {
+	gate := newSystemBackupAdmissionGateForTestInternal(t)
+	engine := backup.NewEngine(t.Context(), nil, gate, nil)
+	lease, admitted, err := engine.TryAcquireRun(t.Context(), backup.SystemAdmissionScope, systemAdmissionID)
+	require.NoError(t, err)
+	require.True(t, admitted)
+	t.Cleanup(lease.Release)
+	service := &SystemBackupService{volumeService: &volume.VolumeService{}, engine: engine}
+
+	_, err = service.RunSystemVolumeBackups(t.Context(), backuptypes.RunSystemVolumeBackupsRequest{})
+	require.ErrorIs(t, err, ErrSystemBackupAlreadyRunning)
 }

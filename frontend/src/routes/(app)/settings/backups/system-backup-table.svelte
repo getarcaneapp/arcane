@@ -8,12 +8,18 @@
 	import BackupDestinationCell from '#lib/components/arcane-table/cells/backup-destination-cell.svelte';
 	import BackupSizeCell from '#lib/components/arcane-table/cells/backup-size-cell.svelte';
 	import CreatedAtCell from '#lib/components/arcane-table/cells/created-at-cell.svelte';
-	import { Badge } from '#lib/components/ui/badge';
+	import BackupManagementCell from '#lib/components/arcane-table/cells/backup-management-cell.svelte';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
 	import type { BackupHistoryEntry } from '#lib/types/system-backup';
 	import { BackupIcon, RestartIcon, TrashIcon, UploadIcon, ClockIcon, VolumesIcon } from '#lib/icons';
 	import { bytes, formatDateTimeShort } from '#lib/utils/formatting';
-	import { backupStatusLabel, backupStatusVariant, backupTriggerLabel } from '#lib/utils/backups';
+	import {
+		backupManagementFilterOptions,
+		backupManagementLabel,
+		backupStatusLabel,
+		backupStatusVariant,
+		backupTriggerLabel
+	} from '#lib/utils/backups';
 	import * as m from '#lib/paraglide/messages.js';
 
 	let {
@@ -35,10 +41,6 @@
 	} = $props();
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
-	const typeFilterOptions = [
-		{ label: m.backups_system_managed(), value: 'system' },
-		{ label: m.backups_volume_managed(), value: 'volume' }
-	];
 	const columns = [
 		{ accessorKey: 'id', title: m.system_backups_id(), sortable: false, cell: IdCell },
 		{ accessorKey: 'resourceName', title: m.backups_resource(), sortable: true, cell: ResourceCell },
@@ -47,7 +49,8 @@
 			title: m.common_type(),
 			sortable: true,
 			cell: TypeCell,
-			filterOptions: typeFilterOptions
+			filterOptions: backupManagementFilterOptions(),
+			filterEmptyTitle: m.backups_all_backups()
 		},
 		{ accessorKey: 'status', title: m.common_status(), sortable: true, cell: StatusCell },
 		{ accessorKey: 'trigger', title: m.volume_backup_trigger(), sortable: true, cell: TriggerCell },
@@ -69,7 +72,7 @@
 {#snippet IdCell({ item }: { item: BackupHistoryEntry })}<code class="text-xs">{item.id.slice(0, 18)}…</code>{/snippet}
 {#snippet ResourceCell({ item }: { item: BackupHistoryEntry })}<span class="font-medium">{item.resourceName}</span>{/snippet}
 {#snippet TypeCell({ item }: { item: BackupHistoryEntry })}
-	<Badge variant="purple">{item.type === 'system' ? m.backups_system_managed() : m.backups_volume_managed()}</Badge>
+	<BackupManagementCell type={item.type} />
 {/snippet}
 {#snippet StatusCell({ item }: { item: BackupHistoryEntry })}<BackupStatusCell status={item.status} />{/snippet}
 {#snippet TriggerCell({ item }: { item: BackupHistoryEntry })}<BackupTriggerCell trigger={item.trigger} />{/snippet}
@@ -112,7 +115,7 @@
 			}),
 			(item) => ({
 				variant: 'purple',
-				text: item.type === 'system' ? m.backups_system_managed() : m.backups_volume_managed()
+				text: backupManagementLabel(item.type)
 			})
 		]}
 		fields={[

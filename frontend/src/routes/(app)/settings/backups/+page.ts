@@ -3,7 +3,6 @@ import { systemBackupService } from '#lib/services/system-backup-service';
 import { s3DestinationService } from '#lib/services/s3-destination-service';
 import { resolveInitialTableRequest } from '#lib/utils/tables';
 import type { SearchPaginationSortRequest } from '#lib/types/shared';
-import type { SystemVolumeBackupOption } from '#lib/types/system-backup';
 
 export const load: PageLoad = async () => {
 	const requestOptions = resolveInitialTableRequest('arcane-system-backups-table', {
@@ -16,6 +15,5 @@ export const load: PageLoad = async () => {
 		s3DestinationService.listAll(),
 		systemBackupService.getSystemVolumeConfig()
 	]);
-	const systemVolumeOptions: SystemVolumeBackupOption[] = [];
-	return { backups, policyCollection, destinations, systemVolumePolicyCollection, systemVolumeOptions, requestOptions };
+	return { backups, policyCollection, destinations, systemVolumePolicyCollection, requestOptions };
 };

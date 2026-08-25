@@ -16,7 +16,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestListBackupsPaginatedByTypeInternal(t *testing.T) {
+func TestListBackupsPaginatedByManagementTypeInternal(t *testing.T) {
 	gormDB, err := gorm.Open(sqlite.Open("file:volume-backup-management?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, gormDB.AutoMigrate(&VolumeBackup{}))
@@ -29,13 +29,17 @@ func TestListBackupsPaginatedByTypeInternal(t *testing.T) {
 	}
 	service := &VolumeService{db: &database.DB{DB: gormDB}}
 
-	systemRows, page, err := service.ListBackupsPaginatedByType(context.Background(), "app", pagination.QueryParams{}, "system")
+	systemRows, page, err := service.ListBackupsPaginated(context.Background(), "app", pagination.QueryParams{
+		Filters: map[string]string{"type": "system"},
+	})
 	require.NoError(t, err)
 	require.EqualValues(t, 1, page.TotalItems)
 	require.Len(t, systemRows, 1)
 	require.Equal(t, backuptypes.ManagementTypeSystem, systemRows[0].Type)
 
-	volumeRows, page, err := service.ListBackupsPaginatedByType(context.Background(), "app", pagination.QueryParams{}, "volume")
+	volumeRows, page, err := service.ListBackupsPaginated(context.Background(), "app", pagination.QueryParams{
+		Filters: map[string]string{"type": "volume"},
+	})
 	require.NoError(t, err)
 	require.EqualValues(t, 2, page.TotalItems)
 	require.Len(t, volumeRows, 2)

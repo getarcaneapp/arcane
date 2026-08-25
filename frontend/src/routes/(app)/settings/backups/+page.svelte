@@ -17,7 +17,12 @@
 	import { hasPermission } from '#lib/utils/auth';
 	import { backupDestinationOptions, backupPolicyDestinationDisplay, s3DestinationOptions } from '#lib/utils/backups';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared';
-	import type { BackupHistoryEntry, SystemBackupDestination, SystemVolumeBackupSelectionMode } from '#lib/types/system-backup';
+	import type {
+		BackupHistoryEntry,
+		SystemBackupDestination,
+		SystemVolumeBackupOption,
+		SystemVolumeBackupSelectionMode
+	} from '#lib/types/system-backup';
 	import { environmentStore } from '#lib/stores/environment.store.svelte';
 	import * as m from '#lib/paraglide/messages.js';
 	import SystemBackupTable from './system-backup-table.svelte';
@@ -29,7 +34,7 @@
 	let backups = $state(untrack(() => data.backups));
 	let policyCollection = $state(untrack(() => data.policyCollection));
 	let systemVolumePolicyCollection = $state(untrack(() => data.systemVolumePolicyCollection));
-	let systemVolumeOptions = $state(untrack(() => data.systemVolumeOptions));
+	let systemVolumeOptions = $state<SystemVolumeBackupOption[]>([]);
 	let requestOptions = $state<SearchPaginationSortRequest>(untrack(() => data.requestOptions));
 	let scheduleOpen = $state(false);
 	let scheduleType = $state<'system' | 'volume'>('system');
@@ -47,6 +52,7 @@
 	let volumeNames = $state<string[]>([]);
 	let ignoreAnonymous = $state(true);
 	let systemVolumeOptionsLoading = $state(false);
+	let systemVolumeOptionsLoaded = $state(false);
 	let recoveryKey = $state('');
 	let newRecoveryKey = $state('');
 	let loading = $state(false);
@@ -158,10 +164,11 @@
 	}
 
 	async function loadSystemVolumeOptions() {
-		if (systemVolumeOptionsLoading) return;
+		if (systemVolumeOptionsLoading || systemVolumeOptionsLoaded) return;
 		systemVolumeOptionsLoading = true;
 		try {
 			systemVolumeOptions = await systemBackupService.listSystemVolumeOptions();
+			systemVolumeOptionsLoaded = true;
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : m.system_volume_backups_options_failed());
 		} finally {
@@ -539,6 +546,9 @@
 				volumePolicies={systemVolumePolicyCollection.policies}
 				recoveryKeyStored={policyCollection.recoveryKeyStored}
 				destinations={data.destinations}
+				volumeOptions={systemVolumeOptions}
+				volumeOptionsLoading={systemVolumeOptionsLoading}
+				onLoadVolumeOptions={loadSystemVolumeOptions}
 				onSystemSaved={(policies) => (policyCollection = { ...policyCollection, policies })}
 				onVolumeSaved={(policies) => (systemVolumePolicyCollection = { policies })}
 			/>

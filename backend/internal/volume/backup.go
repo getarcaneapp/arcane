@@ -320,15 +320,10 @@ func (s *VolumeService) startContainersAfterBackupInternal(ctx context.Context, 
 }
 
 func (s *VolumeService) ListBackupsPaginated(ctx context.Context, volumeName string, params pagination.QueryParams) ([]VolumeBackup, pagination.Response, error) {
-	return s.ListBackupsPaginatedByType(ctx, volumeName, params, "")
-}
-
-// ListBackupsPaginatedByType lists a volume's backups with an optional management-origin filter.
-func (s *VolumeService) ListBackupsPaginatedByType(ctx context.Context, volumeName string, params pagination.QueryParams, typeFilter string) ([]VolumeBackup, pagination.Response, error) {
 	slog.DebugContext(ctx, "volume service: list backups paginated", "volume", volumeName, "search", params.Search, "sort", params.Sort, "order", params.Order, "start", params.Start, "limit", params.Limit)
 	var backups []VolumeBackup
 	query := s.db.WithContext(ctx).Model(&VolumeBackup{}).Where("volume_name = ?", volumeName)
-	query = applyBackupManagementFilterInternal(query, typeFilter)
+	query = applyBackupManagementFilterInternal(query, params.Filters["type"])
 
 	if params.Search != "" {
 		pattern := "%" + params.Search + "%"
@@ -407,17 +402,11 @@ func (s *VolumeService) ListBackupsPaginatedByType(ctx context.Context, volumeNa
 }
 
 func applyBackupManagementFilterInternal(query *gorm.DB, typeFilter string) *gorm.DB {
-	selected := make(map[string]struct{}, 2)
-	for value := range strings.SplitSeq(typeFilter, ",") {
-		value = strings.TrimSpace(value)
-		if value == string(backuptypes.ManagementTypeSystem) || value == string(backuptypes.ManagementTypeVolume) {
-			selected[value] = struct{}{}
-		}
-	}
-	if len(selected) != 1 {
+	managementType, filtered := backup.ParseManagementTypeFilter(typeFilter)
+	if !filtered {
 		return query
 	}
-	if _, ok := selected[string(backuptypes.ManagementTypeSystem)]; ok {
+	if managementType == backuptypes.ManagementTypeSystem {
 		return query.Where("policy_id LIKE ?", backuptypes.SystemVolumePolicyPrefix+"%")
 	}
 	return query.Where("policy_id NOT LIKE ? OR policy_id IS NULL", backuptypes.SystemVolumePolicyPrefix+"%")
@@ -541,11 +530,7 @@ type backupPlanInternal struct {
 	destination     volumetypes.BackupDestination
 }
 
-func (s *VolumeService) resolveBackupPlanInternal(ctx context.Context, volumeName string, trigger VolumeBackupTrigger, request volumetypes.CreateBackupRequest) (backupPlanInternal, error) {
-	return s.resolveBackupPlanWithPolicyInternal(ctx, volumeName, trigger, request, nil)
-}
-
-func (s *VolumeService) resolveBackupPlanWithPolicyInternal(ctx context.Context, volumeName string, trigger VolumeBackupTrigger, request volumetypes.CreateBackupRequest, suppliedPolicy *VolumeBackupPolicy) (backupPlanInternal, error) {
+func (s *VolumeService) resolveBackupPlanInternal(ctx context.Context, volumeName string, trigger VolumeBackupTrigger, request volumetypes.CreateBackupRequest, suppliedPolicy *VolumeBackupPolicy) (backupPlanInternal, error) {
 	destination := request.Destination
 	if destination != "" && destination != volumetypes.BackupDestinationLocal && destination != volumetypes.BackupDestinationS3 && destination != volumetypes.BackupDestinationLocalS3 {
 		return backupPlanInternal{}, errors.New("invalid volume backup destination")
@@ -602,7 +587,7 @@ func (s *VolumeService) CreateBackup(ctx context.Context, volumeName string, use
 	if trigger == "" {
 		trigger = VolumeBackupTriggerManual
 	}
-	plan, err := s.resolveBackupPlanInternal(ctx, volumeName, trigger, request)
+	plan, err := s.resolveBackupPlanInternal(ctx, volumeName, trigger, request, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -623,7 +608,7 @@ func (s *VolumeService) CreateSystemManagedBackup(ctx context.Context, volumeNam
 		S3DestinationID: policy.S3DestinationID,
 	}
 	transient.ID = policyID
-	plan, err := s.resolveBackupPlanWithPolicyInternal(ctx, volumeName, trigger, volumetypes.CreateBackupRequest{}, transient)
+	plan, err := s.resolveBackupPlanInternal(ctx, volumeName, trigger, volumetypes.CreateBackupRequest{}, transient)
 	if err != nil {
 		return nil, err
 	}
@@ -1572,24 +1557,30 @@ func (s *VolumeService) UpdateBackupPolicies(ctx context.Context, volumeName str
 	if err != nil {
 		return nil, err
 	}
-	reconcile := backup.PolicyReconciliation[VolumeBackupPolicy]{
+	reconcile := backup.PolicyReconciliation[VolumeBackupPolicy, volumetypes.UpdateBackupPolicy]{
 		Domain:   "volume",
 		DB:       s.db,
 		Existing: existing,
 		ID:       func(policy *VolumeBackupPolicy) string { return policy.ID },
+		UpdateID: func(update volumetypes.UpdateBackupPolicy) string { return update.ID },
 		New:      func() VolumeBackupPolicy { return VolumeBackupPolicy{VolumeName: volumeName} },
-		Apply: func(policy *VolumeBackupPolicy, update volumetypes.UpdateBackupPolicy) {
+		Build: func(ctx context.Context, policy *VolumeBackupPolicy, update volumetypes.UpdateBackupPolicy) error {
+			normalized, err := backup.ValidatePolicyUpdate(ctx, "volume", update, func(ctx context.Context, destinationID string) error {
+				if s.s3Destinations == nil {
+					return errors.New("S3 backup destinations are unavailable")
+				}
+				if _, destinationErr := s.s3Destinations.Configuration(ctx, destinationID); destinationErr != nil {
+					return errors.New("select a valid S3 destination for volume backups")
+				}
+				return nil
+			})
+			if err != nil {
+				return err
+			}
+			update = normalized
 			policy.Enabled, policy.Schedule, policy.RetentionCount = update.Enabled, update.Schedule, update.RetentionCount
 			policy.StopContainers, policy.LocalEnabled, policy.S3Enabled = update.StopContainers, update.LocalEnabled, update.S3Enabled
 			policy.S3DestinationID = update.S3DestinationID
-		},
-		S3Configured: func(ctx context.Context, destinationID string) error {
-			if s.s3Destinations == nil {
-				return errors.New("S3 backup destinations are unavailable")
-			}
-			if _, err := s.s3Destinations.Configuration(ctx, destinationID); err != nil {
-				return errors.New("select a valid S3 destination for volume backups")
-			}
 			return nil
 		},
 		Unregister: s.jobs.Unregister,

@@ -96,12 +96,12 @@ type SystemVolumeBackupRunResult struct {
 
 // HistoryEntry is a common view over Arcane recovery and volume backup records.
 type HistoryEntry struct {
-	ID                string                  `json:"id"`
-	Size              int64                   `json:"size"`
-	CreatedAt         time.Time               `json:"createdAt"`
-	Status            string                  `json:"status"`
-	Trigger           string                  `json:"trigger"`
-	Destination       SystemBackupDestination `json:"destination"`
+	ID                string                  `json:"id" sortable:"true"`
+	Size              int64                   `json:"size" sortable:"true"`
+	CreatedAt         time.Time               `json:"createdAt" sortable:"true"`
+	Status            string                  `json:"status" sortable:"true"`
+	Trigger           string                  `json:"trigger" sortable:"true"`
+	Destination       SystemBackupDestination `json:"destination" sortable:"true"`
 	Format            string                  `json:"format,omitempty"`
 	LocalSnapshotID   string                  `json:"localSnapshotId,omitempty"`
 	RemoteSnapshotID  string                  `json:"remoteSnapshotId,omitempty"`
@@ -109,7 +109,7 @@ type HistoryEntry struct {
 	S3DestinationName string                  `json:"s3DestinationName,omitempty"`
 	PolicyID          string                  `json:"policyId,omitempty"`
 	Error             string                  `json:"error,omitempty"`
-	Type              ManagementType          `json:"type"`
+	Type              ManagementType          `json:"type" sortable:"true"`
 	ResourceType      string                  `json:"resourceType"`
-	ResourceName      string                  `json:"resourceName"`
+	ResourceName      string                  `json:"resourceName" sortable:"true"`
 }

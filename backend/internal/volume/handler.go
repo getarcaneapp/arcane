@@ -929,13 +929,16 @@ func (h *VolumeHandler) ListBackups(ctx context.Context, input *ListBackupsInput
 		Order:  pagination.SortOrder(input.Order),
 		Start:  input.Start,
 		Limit:  input.Limit,
+		Filters: map[string]string{
+			"type": input.Type,
+		},
 	}
 
 	if params.Limit == 0 {
 		params.Limit = 20
 	}
 
-	backups, paginationResp, err := h.volumeService.ListBackupsPaginatedByType(ctx, input.VolumeName, params, input.Type)
+	backups, paginationResp, err := h.volumeService.ListBackupsPaginated(ctx, input.VolumeName, params)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}

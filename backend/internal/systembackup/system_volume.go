@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"maps"
 	"slices"
 	"strings"
 
@@ -18,6 +17,7 @@ import (
 	s3domain "github.com/getarcaneapp/arcane/backend/v2/internal/s3"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -66,7 +66,8 @@ func (s *SystemBackupService) loadSystemVolumeBackupPoliciesInternal() (*backupt
 		collection.Policies = append(collection.Policies, legacy)
 	}
 	for i := range collection.Policies {
-		collection.Policies[i].VolumeNames = normalizeVolumeNamesInternal(collection.Policies[i].VolumeNames)
+		collection.Policies[i].VolumeNames = utils.UniqueNonEmptyStrings(collection.Policies[i].VolumeNames)
+		slices.Sort(collection.Policies[i].VolumeNames)
 	}
 	return collection, nil
 }
@@ -151,7 +152,8 @@ func (s *SystemBackupService) normalizeSystemVolumePolicyUpdateInternal(ctx cont
 	if err != nil {
 		return backuptypes.SystemVolumeBackupPolicy{}, err
 	}
-	names := normalizeVolumeNamesInternal(input.VolumeNames)
+	names := utils.UniqueNonEmptyStrings(input.VolumeNames)
+	slices.Sort(names)
 	if input.SelectionMode == backuptypes.SystemVolumeSelectionAll {
 		names = []string{}
 	}
@@ -172,58 +174,39 @@ func (s *SystemBackupService) UpdateSystemVolumeBackupConfig(ctx context.Context
 	if err != nil {
 		return nil, err
 	}
-	byID := make(map[string]backuptypes.SystemVolumeBackupPolicy, len(existing.Policies))
-	for _, policy := range existing.Policies {
-		byID[policy.ID] = policy
-	}
-	policies := make([]backuptypes.SystemVolumeBackupPolicy, 0, len(updates))
-	kept := make(map[string]struct{}, len(updates))
-	for _, update := range updates {
-		if update.ID != "" {
-			if _, ok := byID[update.ID]; !ok {
-				return nil, errors.New("system-managed volume backup policy not found")
+	reconcile := backup.PolicyReconciliation[backuptypes.SystemVolumeBackupPolicy, backuptypes.UpdateSystemVolumeBackupPolicy]{
+		Domain:   "system-managed volume",
+		Existing: existing.Policies,
+		ID:       func(policy *backuptypes.SystemVolumeBackupPolicy) string { return policy.ID },
+		UpdateID: func(update backuptypes.UpdateSystemVolumeBackupPolicy) string { return update.ID },
+		New: func() backuptypes.SystemVolumeBackupPolicy {
+			return backuptypes.SystemVolumeBackupPolicy{ID: uuid.NewString()}
+		},
+		Build: func(ctx context.Context, policy *backuptypes.SystemVolumeBackupPolicy, update backuptypes.UpdateSystemVolumeBackupPolicy) error {
+			normalized, normalizeErr := s.normalizeSystemVolumePolicyUpdateInternal(ctx, update)
+			if normalizeErr != nil {
+				return normalizeErr
 			}
-			if _, duplicate := kept[update.ID]; duplicate {
-				return nil, errors.New("duplicate system-managed volume backup policy")
+			normalized.ID = policy.ID
+			*policy = normalized
+			return nil
+		},
+		Persist: func(ctx context.Context, policies []backuptypes.SystemVolumeBackupPolicy) error {
+			encoded, encodeErr := json.Marshal(backuptypes.SystemVolumeBackupPolicyCollection{Policies: policies})
+			if encodeErr != nil {
+				return fmt.Errorf("encode policies: %w", encodeErr)
 			}
-		} else {
-			update.ID = uuid.NewString()
-		}
-		policy, normalizeErr := s.normalizeSystemVolumePolicyUpdateInternal(ctx, update)
-		if normalizeErr != nil {
-			return nil, normalizeErr
-		}
-		kept[policy.ID] = struct{}{}
-		policies = append(policies, policy)
+			return s.settingsService.UpdateSetting(ctx, systemVolumeBackupConfigKey, string(encoded))
+		},
+		Unregister: func(ctx context.Context, policyID string) {
+			s.jobs.Unregister(ctx, systemVolumeBackupJobPrefix+policyID)
+		},
+		Reschedule: s.rescheduleSystemVolumeBackupInternal,
 	}
-	encoded, err := json.Marshal(backuptypes.SystemVolumeBackupPolicyCollection{Policies: policies})
-	if err != nil {
-		return nil, fmt.Errorf("encode system-managed volume backup policies: %w", err)
-	}
-	if err := s.settingsService.UpdateSetting(ctx, systemVolumeBackupConfigKey, string(encoded)); err != nil {
-		return nil, fmt.Errorf("save system-managed volume backup policies: %w", err)
-	}
-	for _, policy := range existing.Policies {
-		if _, ok := kept[policy.ID]; !ok {
-			s.jobs.Unregister(ctx, systemVolumeBackupJobPrefix+policy.ID)
-		}
-	}
-	for i := range policies {
-		s.rescheduleSystemVolumeBackupInternal(ctx, &policies[i])
+	if err := reconcile.Run(ctx, updates); err != nil {
+		return nil, err
 	}
 	return s.GetSystemVolumeBackupConfig(ctx)
-}
-
-func normalizeVolumeNamesInternal(names []string) []string {
-	unique := make(map[string]struct{}, len(names))
-	for _, name := range names {
-		if name = strings.TrimSpace(name); name != "" {
-			unique[name] = struct{}{}
-		}
-	}
-	result := slices.Collect(maps.Keys(unique))
-	slices.Sort(result)
-	return result
 }
 
 // ListSystemVolumeBackupOptions returns live choices plus configured names that are currently unavailable.
@@ -339,8 +322,6 @@ func (s *SystemBackupService) runSystemVolumeBackupsInternal(ctx context.Context
 	if s.volumeService == nil {
 		return nil, errors.New("volume service is unavailable")
 	}
-	s.systemVolumeRunMu.Lock()
-	defer s.systemVolumeRunMu.Unlock()
 	policyConfig, manualPolicy, err := s.resolveSystemVolumeRunPolicyInternal(ctx, request)
 	if err != nil {
 		return nil, err
@@ -434,68 +415,45 @@ func (s *SystemBackupService) rescheduleSystemVolumeBackupInternal(ctx context.C
 	})
 }
 
-const backupHistoryUnionInternal = `(SELECT id, size, created_at, status, trigger, destination, '' AS format, local_snapshot_id, remote_snapshot_id, s3_destination_id, policy_id, error, 'system' AS type, 'system' AS resource_type, 'Arcane' AS resource_name FROM system_backup_runs UNION ALL SELECT id, size, created_at, status, trigger, destination, format, local_snapshot_id, remote_snapshot_id, s3_destination_id, policy_id, error, CASE WHEN policy_id LIKE 'system-volume:%' THEN 'system' ELSE 'volume' END AS type, 'volume' AS resource_type, volume_name AS resource_name FROM volume_backups) AS backup_history`
+const backupHistoryUnionInternal = `SELECT id, size, created_at, status, trigger, destination, '' AS format, local_snapshot_id, remote_snapshot_id, s3_destination_id, policy_id, error, 'system' AS type, 'system' AS resource_type, 'Arcane' AS resource_name FROM system_backup_runs UNION ALL SELECT id, size, created_at, status, trigger, destination, format, local_snapshot_id, remote_snapshot_id, s3_destination_id, policy_id, error, CASE WHEN policy_id LIKE 'system-volume:%' THEN 'system' ELSE 'volume' END AS type, 'volume' AS resource_type, volume_name AS resource_name FROM volume_backups`
 
 // ListBackupHistory returns a unified, server-paginated view of local backup records.
 func (s *SystemBackupService) ListBackupHistory(ctx context.Context, params pagination.QueryParams, typeFilter string) ([]backuptypes.HistoryEntry, pagination.Response, error) {
-	query := s.db.WithContext(ctx).Table(backupHistoryUnionInternal)
+	query := s.db.WithContext(ctx).Table("(?) AS backup_history", s.db.Raw(backupHistoryUnionInternal))
 	if term := strings.TrimSpace(params.Search); term != "" {
 		pattern := "%" + term + "%"
 		query = query.Where("id LIKE ? OR status LIKE ? OR trigger LIKE ? OR destination LIKE ? OR COALESCE(error, '') LIKE ? OR resource_name LIKE ? OR resource_type LIKE ? OR type LIKE ?", pattern, pattern, pattern, pattern, pattern, pattern, pattern, pattern)
 	}
 	query = applyHistoryTypeFilterInternal(query, typeFilter)
-	var total int64
-	if err := query.Count(&total).Error; err != nil {
-		return nil, pagination.Response{}, fmt.Errorf("count backup history: %w", err)
+	if params.Sort == "" {
+		params.Sort = "createdAt"
+		params.Order = pagination.SortDesc
 	}
-	sortColumn := "created_at"
 	switch params.Sort {
-	case "id":
-		sortColumn = "id"
-	case "size":
-		sortColumn = "size"
-	case "status":
-		sortColumn = "status"
-	case "trigger":
-		sortColumn = "trigger"
-	case "destination":
-		sortColumn = "destination"
-	case "type":
-		sortColumn = "type"
-	case "resourceName", "resource_name":
-		sortColumn = "resource_name"
-	}
-	order := "ASC"
-	if params.Order == pagination.SortDesc {
-		order = "DESC"
-	}
-	query = query.Order(sortColumn + " " + order)
-	if params.Limit > 0 {
-		query = query.Offset(params.Start).Limit(params.Limit)
+	case "created_at":
+		params.Sort = "createdAt"
+	case "resource_name":
+		params.Sort = "resourceName"
+	case "id", "size", "createdAt", "status", "trigger", "destination", "type", "resourceName":
+	default:
+		params.Sort = "createdAt"
 	}
 	var history []backuptypes.HistoryEntry
-	if err := query.Scan(&history).Error; err != nil {
+	page, err := pagination.PaginateAndSortDB(params, query, &history)
+	if err != nil {
 		return nil, pagination.Response{}, fmt.Errorf("list backup history: %w", err)
 	}
 	decorateHistoryDestinationsInternal(ctx, s.s3Destinations, history)
-	return history, pagination.BuildResponse(total, total, params), nil
+	page.GrandTotalItems = page.TotalItems
+	return history, page, nil
 }
 
 func applyHistoryTypeFilterInternal(query *gorm.DB, typeFilter string) *gorm.DB {
-	selected := make(map[string]struct{}, 2)
-	for value := range strings.SplitSeq(typeFilter, ",") {
-		value = strings.TrimSpace(value)
-		if value == string(backuptypes.ManagementTypeSystem) || value == string(backuptypes.ManagementTypeVolume) {
-			selected[value] = struct{}{}
-		}
-	}
-	if len(selected) != 1 {
+	managementType, filtered := backup.ParseManagementTypeFilter(typeFilter)
+	if !filtered {
 		return query
 	}
-	for value := range selected {
-		return query.Where("type = ?", value)
-	}
-	return query
+	return query.Where("type = ?", managementType)
 }
 
 func decorateHistoryDestinationsInternal(ctx context.Context, service *s3domain.S3DestinationService, history []backuptypes.HistoryEntry) {

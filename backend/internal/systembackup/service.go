@@ -15,7 +15,6 @@ import (
 	"regexp"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 
 	"emperror.dev/errors"
@@ -60,16 +59,15 @@ const (
 var ErrSystemBackupAlreadyRunning = errors.New("an Arcane system backup is already running")
 
 type SystemBackupService struct {
-	db                *database.DB
-	dockerService     *docker.DockerClientService
-	volumeService     *volume.VolumeService
-	engine            *backup.Engine
-	s3Destinations    *s3domain.S3DestinationService
-	activityService   *activity.ActivityService
-	settingsService   *settings.SettingsService
-	config            *config.Config
-	jobs              *entityjobs.Registry
-	systemVolumeRunMu sync.Mutex
+	db              *database.DB
+	dockerService   *docker.DockerClientService
+	volumeService   *volume.VolumeService
+	engine          *backup.Engine
+	s3Destinations  *s3domain.S3DestinationService
+	activityService *activity.ActivityService
+	settingsService *settings.SettingsService
+	config          *config.Config
+	jobs            *entityjobs.Registry
 }
 
 func NewSystemBackupService(db *database.DB, dockerService *docker.DockerClientService, volumeService *volume.VolumeService, engine *backup.Engine, s3Destinations *s3domain.S3DestinationService, activityService *activity.ActivityService, settingsService *settings.SettingsService, cfg *config.Config) *SystemBackupService {
@@ -921,29 +919,32 @@ func (s *SystemBackupService) UpdatePolicies(ctx context.Context, updates []back
 	if err != nil {
 		return nil, err
 	}
-	reconcile := backup.PolicyReconciliation[SystemBackupPolicy]{
+	reconcile := backup.PolicyReconciliation[SystemBackupPolicy, backuptypes.UpdateSystemBackupPolicy]{
 		Domain:   "system",
 		DB:       s.db,
 		Existing: existing,
 		ID:       func(policy *SystemBackupPolicy) string { return policy.ID },
+		UpdateID: func(update backuptypes.UpdateSystemBackupPolicy) string { return update.ID },
 		New:      func() SystemBackupPolicy { return SystemBackupPolicy{} },
-		Apply: func(policy *SystemBackupPolicy, update backuptypes.UpdateBackupPolicy) {
-			policy.Enabled, policy.Schedule, policy.RetentionCount = update.Enabled, update.Schedule, update.RetentionCount
-			policy.LocalEnabled, policy.S3Enabled, policy.S3DestinationID = update.LocalEnabled, update.S3Enabled, update.S3DestinationID
-		},
-		ValidateUpdate: func(update backuptypes.UpdateBackupPolicy) error {
+		Build: func(ctx context.Context, policy *SystemBackupPolicy, update backuptypes.UpdateSystemBackupPolicy) error {
+			normalized, normalizeErr := backup.ValidatePolicyUpdate(ctx, "system", update, func(ctx context.Context, destinationID string) error {
+				if _, destinationErr := s.s3Destinations.Configuration(ctx, destinationID); destinationErr != nil {
+					return errors.New("select a valid S3 destination for system backups")
+				}
+				return nil
+			})
+			if normalizeErr != nil {
+				return normalizeErr
+			}
+			update = normalized
 			if update.Enabled && !configured {
 				return errors.New("configure a recovery key before enabling scheduled system backups")
 			}
 			if update.Enabled && !s.SupportedDatabaseProvider() {
 				return errors.New("scheduled system backups require the SQLite database provider")
 			}
-			return nil
-		},
-		S3Configured: func(ctx context.Context, destinationID string) error {
-			if _, err := s.s3Destinations.Configuration(ctx, destinationID); err != nil {
-				return errors.New("select a valid S3 destination for system backups")
-			}
+			policy.Enabled, policy.Schedule, policy.RetentionCount = update.Enabled, update.Schedule, update.RetentionCount
+			policy.LocalEnabled, policy.S3Enabled, policy.S3DestinationID = update.LocalEnabled, update.S3Enabled, update.S3DestinationID
 			return nil
 		},
 		Unregister: s.jobs.Unregister,
