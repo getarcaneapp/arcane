@@ -177,6 +177,10 @@ test.describe('System-managed volume backups', () => {
 		await expect(dialog.getByText(unavailableName)).toBeVisible();
 		await expect(dialog.getByText('Unavailable')).toBeVisible();
 		await expect(dialog.getByText('Anonymous')).toBeVisible();
+		await dialog.getByLabel('Volume selection').click();
+		await page.getByRole('option', { name: 'Blocklist' }).click();
+		await expect(dialog.getByLabel('Volume selection')).toContainText('Blocklist');
+		await expect(dialog.getByText('Excluded volumes')).toBeVisible();
 		await dialog.locator('label').filter({ hasText: liveName }).getByRole('checkbox').click();
 		await dialog.getByRole('button', { name: 'Save' }).click();
 		await expect(dialog).toBeHidden();
@@ -240,13 +244,14 @@ test.describe('System-managed volume backups', () => {
 			await expect(page.getByRole('button', { name: 'All backups' })).toBeVisible();
 			await page.getByTestId('facet-type-trigger').click();
 			await page.getByTestId('facet-type-option-system').click();
-			await expect(page.getByText('central-volume')).toBeVisible();
-			await expect(page.getByText(volumeName)).toHaveCount(0);
+			const historyTable = page.getByRole('table');
+			await expect(historyTable.getByText('central-volume')).toBeVisible();
+			await expect(historyTable.getByText(volumeName)).toHaveCount(0);
 
 			await page.getByTestId('facet-type-option-system').click();
 			await page.getByTestId('facet-type-option-volume').click();
-			await expect(page.getByText(volumeName)).toBeVisible();
-			await expect(page.getByText('central-volume')).toHaveCount(0);
+			await expect(historyTable.getByText(volumeName)).toBeVisible();
+			await expect(historyTable.getByText('central-volume')).toHaveCount(0);
 
 			await page.keyboard.press('Escape');
 			const row = page.getByRole('row').filter({ hasText: volumeName });
@@ -276,12 +281,13 @@ test.describe('System-managed volume backups', () => {
 			);
 
 			await page.goto(`/volumes/${encodeURIComponent(volumeName)}?tab=backups`);
-			await expect(page.getByText('System-managed').first()).toHaveClass(/text-purple-/);
-			await expect(page.getByText('Volume-managed').first()).toHaveClass(/text-purple-/);
+			const backupTable = page.getByRole('table');
+			await expect(backupTable.getByText('System-managed')).toHaveClass(/text-purple-/);
+			await expect(backupTable.getByText('Volume-managed')).toHaveClass(/text-purple-/);
 			await page.getByTestId('facet-type-trigger').click();
 			await page.getByTestId('facet-type-option-system').click();
-			await expect(page.getByText('System-managed').first()).toBeVisible();
-			await expect(page.getByText('Volume-managed')).toHaveCount(0);
+			await expect(backupTable.getByText('System-managed')).toBeVisible();
+			await expect(backupTable.getByText('Volume-managed')).toHaveCount(0);
 		} finally {
 			await removeVolumeViaApi(page, volumeName);
 		}
