@@ -530,17 +530,19 @@
 		</div>
 	{/snippet}
 	{#snippet additionalContent()}
-		<SystemBackupScheduleDialog
-			bind:open={scheduleOpen}
-			initialType={scheduleType}
-			policyId={editingScheduleId}
-			systemPolicies={policyCollection.policies}
-			volumePolicies={systemVolumePolicyCollection.policies}
-			recoveryKeyStored={policyCollection.recoveryKeyStored}
-			destinations={data.destinations}
-			onSystemSaved={(policies) => (policyCollection = { ...policyCollection, policies })}
-			onVolumeSaved={(policies) => (systemVolumePolicyCollection = { policies })}
-		/>
+		{#if scheduleOpen}
+			<SystemBackupScheduleDialog
+				bind:open={scheduleOpen}
+				initialType={scheduleType}
+				policyId={editingScheduleId}
+				systemPolicies={policyCollection.policies}
+				volumePolicies={systemVolumePolicyCollection.policies}
+				recoveryKeyStored={policyCollection.recoveryKeyStored}
+				destinations={data.destinations}
+				onSystemSaved={(policies) => (policyCollection = { ...policyCollection, policies })}
+				onVolumeSaved={(policies) => (systemVolumePolicyCollection = { policies })}
+			/>
+		{/if}
 
 		{@render recoveryKeyDialog()}
 		{@render actionDialog()}

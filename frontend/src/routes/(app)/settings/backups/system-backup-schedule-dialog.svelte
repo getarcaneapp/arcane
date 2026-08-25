@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog';
 	import { ArcaneButton } from '#lib/components/arcane-button';
@@ -43,18 +44,33 @@
 		onVolumeSaved: (policies: SystemVolumeBackupPolicy[]) => void;
 	} = $props();
 
-	let backupType = $state<BackupType>('system');
-	let form = $state<BackupPolicyForm>(newForm('system'));
-	let selectionMode = $state<SystemVolumeBackupSelectionMode>('all');
-	let volumeNames = $state<string[]>([]);
-	let ignoreAnonymous = $state(true);
+	const initialState = untrack(() => {
+		const systemPolicy = initialType === 'system' ? systemPolicies.find((item) => item.id === policyId) : undefined;
+		const volumePolicy = initialType === 'volume' ? volumePolicies.find((item) => item.id === policyId) : undefined;
+		const policy = systemPolicy ?? volumePolicy;
+
+		return {
+			backupType: initialType,
+			form: policy ? policyForm(policy) : newForm(initialType),
+			selectionMode: volumePolicy?.selectionMode ?? ('all' as SystemVolumeBackupSelectionMode),
+			volumeNames: volumePolicy ? [...volumePolicy.volumeNames] : [],
+			ignoreAnonymous: volumePolicy?.ignoreAnonymous ?? true,
+			editing: Boolean(policyId)
+		};
+	});
+
+	let backupType = $state<BackupType>(initialState.backupType);
+	let form = $state<BackupPolicyForm>(initialState.form);
+	let selectionMode = $state<SystemVolumeBackupSelectionMode>(initialState.selectionMode);
+	let volumeNames = $state<string[]>(initialState.volumeNames);
+	let ignoreAnonymous = $state(initialState.ignoreAnonymous);
 	let options = $state<SystemVolumeBackupOption[]>([]);
 	let optionsLoading = $state(false);
 	let saving = $state(false);
 	let deleting = $state(false);
 	let serverError = $state('');
 
-	const editing = $derived(Boolean(policyId));
+	const editing = initialState.editing;
 	const typeOptions = $derived([
 		{ label: m.system(), value: 'system', description: m.system_backups_type_system_description() },
 		{ label: m.resource_volume_cap(), value: 'volume', description: m.system_backups_type_volume_description() }
@@ -113,19 +129,7 @@
 		}
 	}
 
-	$effect(() => {
-		if (!open) return;
-		backupType = initialType;
-		const systemPolicy = initialType === 'system' ? systemPolicies.find((item) => item.id === policyId) : undefined;
-		const volumePolicy = initialType === 'volume' ? volumePolicies.find((item) => item.id === policyId) : undefined;
-		const policy = systemPolicy ?? volumePolicy;
-		form = policy ? policyForm(policy) : newForm(initialType);
-		selectionMode = volumePolicy?.selectionMode ?? 'all';
-		volumeNames = volumePolicy ? [...volumePolicy.volumeNames] : [];
-		ignoreAnonymous = volumePolicy?.ignoreAnonymous ?? true;
-		serverError = '';
-		if (initialType === 'volume') void loadVolumeOptions();
-	});
+	if (initialState.backupType === 'volume') void loadVolumeOptions();
 
 	function changeType(value: string) {
 		if (editing) return;
