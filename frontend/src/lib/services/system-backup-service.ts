@@ -7,9 +7,11 @@ import type {
 	SystemBackupRecoveryKey,
 	SystemBackupRun,
 	UpdateSystemBackupPolicy,
-	SystemVolumeBackupConfig,
+	SystemVolumeBackupPolicyCollection,
+	UpdateSystemVolumeBackupPolicy,
 	SystemVolumeBackupOption,
-	SystemVolumeBackupRunResult
+	SystemVolumeBackupRunResult,
+	RunSystemVolumeBackups
 } from '#lib/types/system-backup';
 import { transformPaginationParams } from '#lib/utils/tables';
 
@@ -24,20 +26,20 @@ class SystemBackupService extends BaseAPIService {
 		return response.data;
 	}
 
-	async getSystemVolumeConfig(): Promise<SystemVolumeBackupConfig> {
+	async getSystemVolumeConfig(): Promise<SystemVolumeBackupPolicyCollection> {
 		return this.handleResponse(this.api.get('/backups/volumes/config'));
 	}
 
-	async updateSystemVolumeConfig(config: SystemVolumeBackupConfig): Promise<SystemVolumeBackupConfig> {
-		return this.handleResponse(this.api.put('/backups/volumes/config', config));
+	async updateSystemVolumeConfig(policies: UpdateSystemVolumeBackupPolicy[]): Promise<SystemVolumeBackupPolicyCollection> {
+		return this.handleResponse(this.api.put('/backups/volumes/config', { policies }));
 	}
 
 	async listSystemVolumeOptions(): Promise<SystemVolumeBackupOption[]> {
 		return this.handleResponse(this.api.get('/backups/volumes/options'));
 	}
 
-	async runSystemVolumeBackups(): Promise<SystemVolumeBackupRunResult> {
-		return this.handleResponse(this.api.post('/backups/volumes/run'));
+	async runSystemVolumeBackups(request: RunSystemVolumeBackups = {}): Promise<SystemVolumeBackupRunResult> {
+		return this.handleResponse(this.api.post('/backups/volumes/run', request));
 	}
 
 	async getPolicies(): Promise<SystemBackupPolicyCollection> {

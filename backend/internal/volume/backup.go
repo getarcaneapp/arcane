@@ -610,9 +610,12 @@ func (s *VolumeService) CreateBackup(ctx context.Context, volumeName string, use
 }
 
 // CreateSystemManagedBackup runs the existing volume backup workflow with a transient centralized policy.
-func (s *VolumeService) CreateSystemManagedBackup(ctx context.Context, volumeName string, user common.User, policyID string, policy backuptypes.UpdateBackupPolicy) (*VolumeBackup, error) {
+func (s *VolumeService) CreateSystemManagedBackup(ctx context.Context, volumeName string, user common.User, trigger VolumeBackupTrigger, policyID string, policy backuptypes.UpdateBackupPolicy) (*VolumeBackup, error) {
 	if !strings.HasPrefix(policyID, backuptypes.SystemVolumePolicyPrefix) {
 		return nil, errors.New("invalid system-managed volume backup policy id")
+	}
+	if trigger == "" {
+		trigger = VolumeBackupTriggerManual
 	}
 	transient := &VolumeBackupPolicy{
 		VolumeName: volumeName, Enabled: true, Schedule: policy.Schedule, RetentionCount: policy.RetentionCount,
@@ -620,11 +623,11 @@ func (s *VolumeService) CreateSystemManagedBackup(ctx context.Context, volumeNam
 		S3DestinationID: policy.S3DestinationID,
 	}
 	transient.ID = policyID
-	plan, err := s.resolveBackupPlanWithPolicyInternal(ctx, volumeName, VolumeBackupTriggerScheduled, volumetypes.CreateBackupRequest{}, transient)
+	plan, err := s.resolveBackupPlanWithPolicyInternal(ctx, volumeName, trigger, volumetypes.CreateBackupRequest{}, transient)
 	if err != nil {
 		return nil, err
 	}
-	return s.createBackupInternal(ctx, volumeName, user, VolumeBackupTriggerScheduled, policyID, plan)
+	return s.createBackupInternal(ctx, volumeName, user, trigger, policyID, plan)
 }
 
 //nolint:gocognit // backup orchestration keeps cleanup and persistence transitions in one transaction-like flow

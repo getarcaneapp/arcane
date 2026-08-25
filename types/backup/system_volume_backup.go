@@ -22,8 +22,9 @@ const (
 	SystemVolumeSelectionBlocklist SystemVolumeSelectionMode = "blocklist"
 )
 
-// SystemVolumeBackupConfig is the single manager-owned policy for local Docker volumes.
-type SystemVolumeBackupConfig struct {
+// SystemVolumeBackupPolicy is one manager-owned policy for local Docker volumes.
+type SystemVolumeBackupPolicy struct {
+	ID                string                    `json:"id"`
 	Enabled           bool                      `json:"enabled"`
 	Schedule          string                    `json:"schedule"`
 	RetentionCount    int                       `json:"retentionCount"`
@@ -35,6 +36,40 @@ type SystemVolumeBackupConfig struct {
 	SelectionMode     SystemVolumeSelectionMode `json:"selectionMode"`
 	VolumeNames       []string                  `json:"volumeNames"`
 	IgnoreAnonymous   bool                      `json:"ignoreAnonymous"`
+	LastRun           *SystemBackupRun          `json:"lastRun,omitempty"`
+}
+
+// UpdateSystemVolumeBackupPolicy is the writable centralized policy shape.
+type UpdateSystemVolumeBackupPolicy struct {
+	UpdateBackupPolicy
+
+	SelectionMode   SystemVolumeSelectionMode `json:"selectionMode"`
+	VolumeNames     []string                  `json:"volumeNames"`
+	IgnoreAnonymous bool                      `json:"ignoreAnonymous"`
+}
+
+type SystemVolumeBackupPolicyCollection struct {
+	Policies []SystemVolumeBackupPolicy `json:"policies"`
+}
+
+type UpdateSystemVolumeBackupPolicies struct {
+	Policies []UpdateSystemVolumeBackupPolicy `json:"policies"`
+}
+
+// SystemVolumeBackupCustomRun is a transient policy used by Create -> Backup.
+type SystemVolumeBackupCustomRun struct {
+	Destination     SystemBackupDestination   `json:"destination"`
+	S3DestinationID string                    `json:"s3DestinationId,omitempty"`
+	StopContainers  bool                      `json:"stopContainers"`
+	SelectionMode   SystemVolumeSelectionMode `json:"selectionMode"`
+	VolumeNames     []string                  `json:"volumeNames"`
+	IgnoreAnonymous bool                      `json:"ignoreAnonymous"`
+}
+
+// RunSystemVolumeBackupsRequest selects a saved policy or supplies a transient custom policy.
+type RunSystemVolumeBackupsRequest struct {
+	PolicyID string                       `json:"policyId,omitempty"`
+	Custom   *SystemVolumeBackupCustomRun `json:"custom,omitempty"`
 }
 
 // SystemVolumeBackupOption describes a selectable live or unavailable configured volume.

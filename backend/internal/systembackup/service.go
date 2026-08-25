@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"emperror.dev/errors"
@@ -59,15 +60,16 @@ const (
 var ErrSystemBackupAlreadyRunning = errors.New("an Arcane system backup is already running")
 
 type SystemBackupService struct {
-	db              *database.DB
-	dockerService   *docker.DockerClientService
-	volumeService   *volume.VolumeService
-	engine          *backup.Engine
-	s3Destinations  *s3domain.S3DestinationService
-	activityService *activity.ActivityService
-	settingsService *settings.SettingsService
-	config          *config.Config
-	jobs            *entityjobs.Registry
+	db                *database.DB
+	dockerService     *docker.DockerClientService
+	volumeService     *volume.VolumeService
+	engine            *backup.Engine
+	s3Destinations    *s3domain.S3DestinationService
+	activityService   *activity.ActivityService
+	settingsService   *settings.SettingsService
+	config            *config.Config
+	jobs              *entityjobs.Registry
+	systemVolumeRunMu sync.Mutex
 }
 
 func NewSystemBackupService(db *database.DB, dockerService *docker.DockerClientService, volumeService *volume.VolumeService, engine *backup.Engine, s3Destinations *s3domain.S3DestinationService, activityService *activity.ActivityService, settingsService *settings.SettingsService, cfg *config.Config) *SystemBackupService {
@@ -1027,12 +1029,17 @@ func (s *SystemBackupService) RegisterBackupJobOnStartup(ctx context.Context) {
 	for i := range policies {
 		s.rescheduleSystemBackupPolicyInternal(ctx, &policies[i])
 	}
-	if config, configErr := s.loadSystemVolumeBackupConfigInternal(); configErr != nil {
-		slog.ErrorContext(ctx, "Failed to load system-managed volume backup configuration", "error", configErr)
+	volumePolicyCount := 0
+	volumePolicies, configErr := s.loadSystemVolumeBackupPoliciesInternal()
+	if configErr != nil {
+		slog.ErrorContext(ctx, "Failed to load system-managed volume backup policies", "error", configErr)
 	} else {
-		s.rescheduleSystemVolumeBackupInternal(ctx, config)
+		volumePolicyCount = len(volumePolicies.Policies)
+		for i := range volumePolicies.Policies {
+			s.rescheduleSystemVolumeBackupInternal(ctx, &volumePolicies.Policies[i])
+		}
 	}
-	slog.InfoContext(ctx, "Registered scheduled Arcane system backup jobs", "count", len(policies))
+	slog.InfoContext(ctx, "Registered backup schedules", "systemPolicies", len(policies), "volumePolicies", volumePolicyCount)
 }
 
 func (s *SystemBackupService) applyRetentionInternal(ctx context.Context, policyID string, keep int) error {

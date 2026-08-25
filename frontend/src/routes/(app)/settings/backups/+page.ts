@@ -10,12 +10,12 @@ export const load: PageLoad = async () => {
 		pagination: { page: 1, limit: 20 },
 		sort: { column: 'createdAt', direction: 'desc' }
 	} satisfies SearchPaginationSortRequest);
-	const [backups, policyCollection, destinations, systemVolumeConfig] = await Promise.all([
+	const [backups, policyCollection, destinations, systemVolumePolicyCollection] = await Promise.all([
 		systemBackupService.listHistory(requestOptions),
 		systemBackupService.getPolicies(),
 		s3DestinationService.listAll(),
 		systemBackupService.getSystemVolumeConfig()
 	]);
 	const systemVolumeOptions: SystemVolumeBackupOption[] = [];
-	return { backups, policyCollection, destinations, systemVolumeConfig, systemVolumeOptions, requestOptions };
+	return { backups, policyCollection, destinations, systemVolumePolicyCollection, systemVolumeOptions, requestOptions };
 };

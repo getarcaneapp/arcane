@@ -69,7 +69,7 @@
 {#snippet IdCell({ item }: { item: BackupHistoryEntry })}<code class="text-xs">{item.id.slice(0, 18)}…</code>{/snippet}
 {#snippet ResourceCell({ item }: { item: BackupHistoryEntry })}<span class="font-medium">{item.resourceName}</span>{/snippet}
 {#snippet TypeCell({ item }: { item: BackupHistoryEntry })}
-	<Badge variant={item.type === 'system' ? 'blue' : 'gray'}
+	<Badge variant={item.type === 'system' ? 'purple' : 'blue'}
 		>{item.type === 'system' ? m.backups_system_managed() : m.backups_volume_managed()}</Badge
 	>
 {/snippet}
@@ -113,7 +113,7 @@
 				text: backupStatusLabel(item.status)
 			}),
 			(item) => ({
-				variant: item.type === 'system' ? 'blue' : 'gray',
+				variant: item.type === 'system' ? 'purple' : 'blue',
 				text: item.type === 'system' ? m.backups_system_managed() : m.backups_volume_managed()
 			})
 		]}

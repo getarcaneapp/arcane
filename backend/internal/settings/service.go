@@ -293,7 +293,7 @@ func DefaultSettingsConfig() *Settings {
 		DepotToken:             SettingVariable{Value: ""},
 
 		InstanceID:               SettingVariable{Value: ""},
-		SystemVolumeBackupConfig: SettingVariable{Value: `{"enabled":false,"schedule":"0 0 2 * * *","retentionCount":7,"stopContainers":false,"localEnabled":true,"s3Enabled":false,"selectionMode":"all","volumeNames":[],"ignoreAnonymous":true}`},
+		SystemVolumeBackupConfig: SettingVariable{Value: `{"policies":[]}`},
 	}
 }
 

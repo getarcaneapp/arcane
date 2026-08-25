@@ -10,38 +10,43 @@
 	import { Input } from '#lib/components/ui/input';
 	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog';
 	import { ArcaneButton } from '#lib/components/arcane-button';
-	import { Badge } from '#lib/components/ui/badge';
+	import LabeledSwitch from '#lib/components/form/labeled-switch.svelte';
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
 	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
 	import { systemBackupService } from '#lib/services/system-backup-service';
 	import { hasPermission } from '#lib/utils/auth';
 	import { backupDestinationOptions, backupPolicyDestinationDisplay, s3DestinationOptions } from '#lib/utils/backups';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared';
-	import type { BackupHistoryEntry, SystemBackupDestination } from '#lib/types/system-backup';
+	import type { BackupHistoryEntry, SystemBackupDestination, SystemVolumeBackupSelectionMode } from '#lib/types/system-backup';
 	import { environmentStore } from '#lib/stores/environment.store.svelte';
 	import * as m from '#lib/paraglide/messages.js';
 	import SystemBackupTable from './system-backup-table.svelte';
-	import BackupPolicyDialog from '#lib/components/backup-policy-dialog.svelte';
 	import BackupPolicyCard from '#lib/components/backup-policy-card.svelte';
-	import SystemVolumeBackupDialog from './system-volume-backup-dialog.svelte';
+	import SystemBackupScheduleDialog from './system-backup-schedule-dialog.svelte';
+	import SystemVolumeScopeFields from './system-volume-scope-fields.svelte';
 
 	let { data } = $props();
 	let backups = $state(untrack(() => data.backups));
 	let policyCollection = $state(untrack(() => data.policyCollection));
-	let systemVolumeConfig = $state(untrack(() => data.systemVolumeConfig));
+	let systemVolumePolicyCollection = $state(untrack(() => data.systemVolumePolicyCollection));
 	let systemVolumeOptions = $state(untrack(() => data.systemVolumeOptions));
 	let requestOptions = $state<SearchPaginationSortRequest>(untrack(() => data.requestOptions));
-	let policyOpen = $state(false);
-	let editingPolicyId = $state<string | undefined>();
+	let scheduleOpen = $state(false);
+	let scheduleType = $state<'system' | 'volume'>('system');
+	let editingScheduleId = $state<string | undefined>();
 	let keyOpen = $state(false);
 	let actionOpen = $state(false);
 	let action = $state<'create' | 'restore' | 'upload' | 'delete' | 'discover'>('create');
 	let selected = $state<BackupHistoryEntry | null>(null);
-	let systemVolumeConfigOpen = $state(false);
-	let runningSystemVolumes = $state(false);
+	let backupType = $state<'system' | 'volume'>('system');
 	let backupConfiguration = $state('custom');
 	let destination = $state<SystemBackupDestination>('local');
 	let s3DestinationId = $state('');
+	let stopContainers = $state(false);
+	let selectionMode = $state<SystemVolumeBackupSelectionMode>('all');
+	let volumeNames = $state<string[]>([]);
+	let ignoreAnonymous = $state(true);
+	let systemVolumeOptionsLoading = $state(false);
 	let recoveryKey = $state('');
 	let newRecoveryKey = $state('');
 	let loading = $state(false);
@@ -50,13 +55,17 @@
 	const canManageRecoveryKey = $derived(hasPermission('system-backups:recovery-key'));
 	const destinationOptions = $derived(backupDestinationOptions(data.destinations.length > 0));
 	const s3Options = $derived(s3DestinationOptions(data.destinations));
+	const backupTypeOptions = $derived([
+		{ label: m.system(), value: 'system', description: m.system_backups_type_system_description() },
+		{ label: m.resource_volume_cap(), value: 'volume', description: m.system_backups_type_volume_description() }
+	]);
 	const configurationOptions = $derived([
 		{
 			label: m.system_backups_custom_configuration(),
 			value: 'custom',
 			description: m.system_backups_custom_configuration_description()
 		},
-		...policyCollection.policies.map((item) => ({
+		...(backupType === 'system' ? policyCollection.policies : systemVolumePolicyCollection.policies).map((item) => ({
 			label: item.schedule,
 			value: item.id,
 			description: backupPolicyDestinationDisplay(item)
@@ -73,6 +82,7 @@
 			: ''
 	);
 	const actionKeyInvalid = $derived.by(() => {
+		if (action === 'create' && backupType === 'volume') return false;
 		if (actionNeedsTypedKey) return !policyCollection.recoveryKeyStored && !recoveryKeyPattern.test(recoveryKey.trim());
 		// Deleting is always allowed; the backend only asks for the key when
 		// the run still has snapshots to forget.
@@ -88,9 +98,10 @@
 	);
 	const invalid = $derived(Boolean(actionKeyInvalid || keyError || destinationError));
 
-	function openPolicy(id?: string) {
-		editingPolicyId = id;
-		policyOpen = true;
+	function openSchedule(type: 'system' | 'volume' = 'system', id?: string) {
+		scheduleType = type;
+		editingScheduleId = id;
+		scheduleOpen = true;
 	}
 
 	// Generating persists the key in the same step; the dialog only ever shows
@@ -114,8 +125,13 @@
 	function openAction(next: typeof action, backup: BackupHistoryEntry | null = null) {
 		action = next;
 		selected = backup;
+		backupType = 'system';
 		backupConfiguration = 'custom';
 		destination = 'local';
+		stopContainers = false;
+		selectionMode = 'all';
+		volumeNames = [];
+		ignoreAnonymous = true;
 		s3DestinationId =
 			backup?.s3DestinationId ||
 			policyCollection.policies.find((item) => item.s3DestinationId)?.s3DestinationId ||
@@ -135,40 +151,30 @@
 		if (action === 'restore') return m.system_backups_restore_description();
 		if (action === 'delete') return m.system_backups_delete_description();
 		if (action === 'discover') return m.system_backups_discover_description();
-		return m.system_backups_dialog_description();
+		return backupType === 'volume' ? m.system_volume_backups_description() : m.system_backups_dialog_description();
 	}
 	async function refresh() {
 		backups = await systemBackupService.listHistory(requestOptions);
 	}
 
-	async function openSystemVolumeConfig() {
+	async function loadSystemVolumeOptions() {
+		if (systemVolumeOptionsLoading) return;
+		systemVolumeOptionsLoading = true;
 		try {
 			systemVolumeOptions = await systemBackupService.listSystemVolumeOptions();
-			systemVolumeConfigOpen = true;
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : m.system_volume_backups_options_failed());
+		} finally {
+			systemVolumeOptionsLoading = false;
 		}
 	}
 
-	async function runSystemVolumeBackups() {
-		if (runningSystemVolumes) return;
-		runningSystemVolumes = true;
-		try {
-			const result = await systemBackupService.runSystemVolumeBackups();
-			toast.success(
-				m.system_volume_backups_run_result({
-					matched: result.matched,
-					succeeded: result.succeeded,
-					failed: result.failed,
-					skipped: result.skipped
-				})
-			);
-			await refresh();
-		} catch (error) {
-			toast.error(error instanceof Error ? error.message : m.system_volume_backups_run_failed());
-		} finally {
-			runningSystemVolumes = false;
-		}
+	function changeBackupType(value: string) {
+		backupType = value as 'system' | 'volume';
+		backupConfiguration = 'custom';
+		destination = 'local';
+		s3DestinationId = data.destinations[0]?.id ?? '';
+		if (backupType === 'volume') void loadSystemVolumeOptions();
 	}
 
 	async function openVolumeBackups(backup: BackupHistoryEntry) {
@@ -199,12 +205,37 @@
 		loading = true;
 		try {
 			if (action === 'create') {
-				await systemBackupService.create(
-					backupConfiguration === 'custom'
-						? { destination, s3DestinationId: destination === 'local' ? '' : s3DestinationId, recoveryKey }
-						: { policyId: backupConfiguration, recoveryKey }
-				);
-				toast.success(m.system_backups_created());
+				if (backupType === 'system') {
+					await systemBackupService.create(
+						backupConfiguration === 'custom'
+							? { destination, s3DestinationId: destination === 'local' ? '' : s3DestinationId, recoveryKey }
+							: { policyId: backupConfiguration, recoveryKey }
+					);
+					toast.success(m.system_backups_created());
+				} else {
+					const result = await systemBackupService.runSystemVolumeBackups(
+						backupConfiguration === 'custom'
+							? {
+									custom: {
+										destination,
+										s3DestinationId: destination === 'local' ? '' : s3DestinationId,
+										stopContainers,
+										selectionMode,
+										volumeNames,
+										ignoreAnonymous
+									}
+								}
+							: { policyId: backupConfiguration }
+					);
+					toast.success(
+						m.system_volume_backups_run_result({
+							matched: result.matched,
+							succeeded: result.succeeded,
+							failed: result.failed,
+							skipped: result.skipped
+						})
+					);
+				}
 				await refresh();
 			} else if (action === 'restore' && selected) {
 				await systemBackupService.restore(selected.id, recoveryKey);
@@ -233,7 +264,9 @@
 							? m.backups_upload_s3_failed()
 							: action === 'discover'
 								? m.system_backups_discover_failed()
-								: m.system_backups_create_failed();
+								: backupType === 'volume'
+									? m.system_volume_backups_run_failed()
+									: m.system_backups_create_failed();
 			toast.error(error instanceof Error ? error.message : fallback);
 		} finally {
 			loading = false;
@@ -278,7 +311,7 @@
 			label: m.common_create(),
 			disabled: isReadOnly,
 			options: [
-				{ label: m.jobs_schedule(), onclick: () => openPolicy() },
+				{ label: m.jobs_schedule(), onclick: () => openSchedule() },
 				{ label: m.volumes_workspace_backup(), onclick: () => openAction('create') }
 			]
 		}
@@ -309,7 +342,7 @@
 		bind:open={keyOpen}
 		title={m.system_backups_recovery_key()}
 		description={m.system_backups_recovery_key_saved()}
-		contentClass="sm:max-w-[560px]"
+		contentClass={action === 'create' ? 'sm:max-w-[760px]' : 'sm:max-w-[560px]'}
 	>
 		{#snippet children()}
 			<div class="space-y-3 py-2">
@@ -340,13 +373,21 @@
 		bind:open={actionOpen}
 		title={dialogTitle()}
 		description={dialogDescription()}
-		contentClass="sm:max-w-[560px]"
+		contentClass={action === 'create' ? 'sm:max-w-[760px]' : 'sm:max-w-[560px]'}
 	>
 		{#snippet children()}
 			<div class="space-y-5 py-2">
 				{#if action === 'create'}
 					<SelectWithLabel
-						id="manual-system-backup-configuration"
+						id="manual-backup-type"
+						value={backupType}
+						onValueChange={changeBackupType}
+						label={m.backups_backup_type()}
+						description={m.backups_backup_type_description()}
+						options={backupTypeOptions}
+					/>
+					<SelectWithLabel
+						id="manual-backup-configuration"
 						value={backupConfiguration}
 						onValueChange={(value) => (backupConfiguration = value)}
 						label={m.system_backups_backup_configuration()}
@@ -354,12 +395,21 @@
 					/>
 					{#if backupConfiguration === 'custom'}
 						<SelectWithLabel
-							id="manual-system-backup-destination"
+							id="manual-backup-destination"
 							value={destination}
 							onValueChange={(value) => (destination = value as SystemBackupDestination)}
 							label={m.backups_destination_label()}
 							options={destinationOptions}
 						/>
+						{#if backupType === 'volume'}
+							<LabeledSwitch
+								id="manual-volume-backup-stop-containers"
+								checked={stopContainers}
+								onCheckedChange={(value) => (stopContainers = value)}
+								label={m.volume_backup_stop_containers()}
+								description={m.volume_backup_stop_containers_description()}
+							/>
+						{/if}
 					{/if}
 				{/if}
 				{#if action === 'upload' || action === 'discover' || (action === 'create' && backupConfiguration === 'custom' && destination !== 'local')}
@@ -370,6 +420,21 @@
 						label={m.volume_backup_s3_destination_label()}
 						error={destinationError || null}
 						options={s3Options}
+					/>
+				{/if}
+				{#if action === 'create' && backupType === 'volume' && backupConfiguration === 'custom'}
+					<SystemVolumeScopeFields
+						idPrefix="manual-volume-backup"
+						{selectionMode}
+						{volumeNames}
+						{ignoreAnonymous}
+						options={systemVolumeOptions}
+						loading={systemVolumeOptionsLoading}
+						onChange={(values) => {
+							selectionMode = values.selectionMode ?? selectionMode;
+							volumeNames = values.volumeNames ?? volumeNames;
+							ignoreAnonymous = values.ignoreAnonymous ?? ignoreAnonymous;
+						}}
 					/>
 				{/if}
 				{#if actionNeedsTypedKey}
@@ -384,7 +449,7 @@
 						type="password"
 						autocomplete="current-password"
 					/>
-				{:else if action !== 'delete' && !policyCollection.recoveryKeyStored}
+				{:else if action !== 'delete' && !(action === 'create' && backupType === 'volume') && !policyCollection.recoveryKeyStored}
 					<div class="flex items-center justify-between gap-3 rounded-md border px-3 py-2">
 						<p class="text-sm text-muted-foreground">{m.system_backups_recovery_key_needed()}</p>
 						<ArcaneButton
@@ -428,50 +493,29 @@
 
 			<div class="space-y-2">
 				<h2 class="text-lg font-semibold">{m.system_backups_schedules()}</h2>
-				{#if policyCollection.policies.length}
+				{#if policyCollection.policies.length || systemVolumePolicyCollection.policies.length}
 					<div class="grid grid-cols-1 gap-1.5 text-xs text-muted-foreground sm:grid-cols-2 xl:grid-cols-3">
 						{#each policyCollection.policies as policy (policy.id)}
-							<BackupPolicyCard {policy} onEdit={() => openPolicy(policy.id)} editDisabled={isReadOnly} />
+							<BackupPolicyCard
+								{policy}
+								resourceType="system"
+								onEdit={() => openSchedule('system', policy.id)}
+								editDisabled={isReadOnly}
+							/>
+						{/each}
+						{#each systemVolumePolicyCollection.policies as policy (policy.id)}
+							<BackupPolicyCard
+								{policy}
+								resourceType="volume"
+								showStopContainers
+								onEdit={() => openSchedule('volume', policy.id)}
+								editDisabled={isReadOnly}
+							/>
 						{/each}
 					</div>
 				{:else}
 					<p class="text-sm text-muted-foreground">{m.system_backups_no_schedules()}</p>
 				{/if}
-
-				<div class="mt-3 flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between">
-					<div class="min-w-0 space-y-1">
-						<div class="flex flex-wrap items-center gap-2">
-							<h3 class="font-medium">{m.system_volume_backups_title()}</h3>
-							<Badge variant={systemVolumeConfig.enabled ? 'green' : 'gray'}>
-								{systemVolumeConfig.enabled ? m.common_enabled() : m.common_disabled()}
-							</Badge>
-						</div>
-						<p class="text-sm text-muted-foreground">
-							{m.system_volume_backups_summary({
-								schedule: systemVolumeConfig.schedule,
-								retention: systemVolumeConfig.retentionCount,
-								mode: systemVolumeConfig.selectionMode
-							})}
-						</p>
-					</div>
-					<div class="flex shrink-0 gap-2">
-						<ArcaneButton
-							action="create"
-							size="sm"
-							customLabel={m.system_volume_backups_run_now()}
-							loading={runningSystemVolumes}
-							disabled={isReadOnly || runningSystemVolumes}
-							onclick={runSystemVolumeBackups}
-						/>
-						<ArcaneButton
-							action="edit"
-							size="sm"
-							customLabel={m.common_edit()}
-							disabled={isReadOnly}
-							onclick={openSystemVolumeConfig}
-						/>
-					</div>
-				</div>
 			</div>
 
 			<SystemBackupTable
@@ -486,34 +530,16 @@
 		</div>
 	{/snippet}
 	{#snippet additionalContent()}
-		<BackupPolicyDialog
-			bind:open={policyOpen}
-			idPrefix="system-backup-policy"
-			policies={policyCollection.policies}
-			policyId={editingPolicyId}
-			addTitle={m.system_backups_add_schedule()}
-			description={m.system_backups_schedule_description()}
-			enabledDescription={m.system_backups_enabled_description()}
-			enabledError={policyCollection.recoveryKeyStored ? null : m.system_backups_recovery_key_schedule_required()}
-			defaultSchedule="0 0 3 * * *"
-			defaultEnabled={policyCollection.recoveryKeyStored}
+		<SystemBackupScheduleDialog
+			bind:open={scheduleOpen}
+			initialType={scheduleType}
+			policyId={editingScheduleId}
+			systemPolicies={policyCollection.policies}
+			volumePolicies={systemVolumePolicyCollection.policies}
+			recoveryKeyStored={policyCollection.recoveryKeyStored}
 			destinations={data.destinations}
-			updatePolicies={async (policies) => (await systemBackupService.updatePolicies(policies)).policies}
-			messages={{
-				saved: m.system_backups_policy_saved(),
-				saveFailed: m.system_backups_policy_failed(),
-				removed: m.system_backups_schedule_removed()
-			}}
-			onSaved={(policies) => (policyCollection = { ...policyCollection, policies })}
-		/>
-
-		<SystemVolumeBackupDialog
-			bind:open={systemVolumeConfigOpen}
-			config={systemVolumeConfig}
-			options={systemVolumeOptions}
-			destinations={data.destinations}
-			updateConfig={(config) => systemBackupService.updateSystemVolumeConfig(config)}
-			onSaved={(config) => (systemVolumeConfig = config)}
+			onSystemSaved={(policies) => (policyCollection = { ...policyCollection, policies })}
+			onVolumeSaved={(policies) => (systemVolumePolicyCollection = { policies })}
 		/>
 
 		{@render recoveryKeyDialog()}

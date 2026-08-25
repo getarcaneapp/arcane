@@ -55,22 +55,22 @@ func TestSystemVolumeBackupSelectionInternal(t *testing.T) {
 	}
 	tests := []struct {
 		name     string
-		config   backuptypes.SystemVolumeBackupConfig
+		config   backuptypes.SystemVolumeBackupPolicy
 		expected []string
 	}{
 		{
 			name:     "all includes future named volumes",
-			config:   backuptypes.SystemVolumeBackupConfig{SelectionMode: backuptypes.SystemVolumeSelectionAll, IgnoreAnonymous: true},
+			config:   backuptypes.SystemVolumeBackupPolicy{SelectionMode: backuptypes.SystemVolumeSelectionAll, IgnoreAnonymous: true},
 			expected: []string{"app", "cache"},
 		},
 		{
 			name:     "allowlist includes exact live names only",
-			config:   backuptypes.SystemVolumeBackupConfig{SelectionMode: backuptypes.SystemVolumeSelectionAllowlist, VolumeNames: []string{"app", "deleted"}},
+			config:   backuptypes.SystemVolumeBackupPolicy{SelectionMode: backuptypes.SystemVolumeSelectionAllowlist, VolumeNames: []string{"app", "deleted"}},
 			expected: []string{"app"},
 		},
 		{
 			name:     "blocklist includes unselected future and anonymous volumes",
-			config:   backuptypes.SystemVolumeBackupConfig{SelectionMode: backuptypes.SystemVolumeSelectionBlocklist, VolumeNames: []string{"cache"}},
+			config:   backuptypes.SystemVolumeBackupPolicy{SelectionMode: backuptypes.SystemVolumeSelectionBlocklist, VolumeNames: []string{"cache"}},
 			expected: []string{"app", "anonymous"},
 		},
 	}
@@ -91,10 +91,13 @@ func TestNormalizeVolumeNamesInternal(t *testing.T) {
 }
 
 func TestSystemVolumePolicyIDInternalIsStableAndScoped(t *testing.T) {
-	first := systemVolumePolicyIDInternal("app-data")
-	require.Equal(t, first, systemVolumePolicyIDInternal("app-data"))
-	require.NotEqual(t, first, systemVolumePolicyIDInternal("other-data"))
+	first := systemVolumePolicyIDInternal("nightly", "app-data")
+	require.Equal(t, first, systemVolumePolicyIDInternal("nightly", "app-data"))
+	require.NotEqual(t, first, systemVolumePolicyIDInternal("daily", "app-data"))
+	require.NotEqual(t, first, systemVolumePolicyIDInternal("nightly", "other-data"))
 	require.Contains(t, first, backuptypes.SystemVolumePolicyPrefix)
+	require.NotEqual(t, first, systemVolumeManualPolicyIDInternal("app-data"))
+	require.NotContains(t, systemVolumePolicyIDInternal(legacySystemVolumePolicyID, "app-data")[len(backuptypes.SystemVolumePolicyPrefix):], ":")
 }
 
 func TestListBackupHistoryClassifiesAndFiltersOrigins(t *testing.T) {
@@ -109,7 +112,7 @@ func TestListBackupHistoryClassifiesAndFiltersOrigins(t *testing.T) {
 	require.NoError(t, gormDB.Create(&volume.VolumeBackup{
 		VolumeName: "app-data", CreatedAt: now.Add(-time.Minute), Status: volume.VolumeBackupStatusSucceeded,
 		Trigger: volume.VolumeBackupTriggerScheduled, Destination: volumetypes.BackupDestinationLocal,
-		Format: volume.VolumeBackupFormatRustic, PolicyID: systemVolumePolicyIDInternal("app-data"),
+		Format: volume.VolumeBackupFormatRustic, PolicyID: systemVolumePolicyIDInternal("nightly", "app-data"),
 	}).Error)
 	require.NoError(t, gormDB.Create(&volume.VolumeBackup{
 		VolumeName: "cache", CreatedAt: now, Status: volume.VolumeBackupStatusSucceeded,
@@ -138,8 +141,8 @@ func TestListBackupHistoryClassifiesAndFiltersOrigins(t *testing.T) {
 	require.Equal(t, "cache", volumeRows[0].ResourceName)
 }
 
-func TestDefaultSystemVolumeBackupConfigInternal(t *testing.T) {
-	config := defaultSystemVolumeBackupConfigInternal()
+func TestDefaultSystemVolumeBackupPolicyInternal(t *testing.T) {
+	config := defaultSystemVolumeBackupPolicyInternal()
 	require.False(t, config.Enabled)
 	require.Equal(t, defaultSystemVolumeSchedule, config.Schedule)
 	require.Equal(t, 7, config.RetentionCount)
@@ -148,7 +151,26 @@ func TestDefaultSystemVolumeBackupConfigInternal(t *testing.T) {
 	require.Equal(t, backuptypes.SystemVolumeSelectionAll, config.SelectionMode)
 }
 
-func TestSystemVolumeBackupConfigPersistsAndReschedulesInternal(t *testing.T) {
+func TestSystemVolumeBackupPolicyCollectionDefaultsEmptyInternal(t *testing.T) {
+	service := &SystemBackupService{settingsService: newSystemVolumeSettingsServiceInternal(t)}
+
+	loaded, err := service.GetSystemVolumeBackupConfig(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, loaded.Policies)
+	require.Empty(t, loaded.Policies)
+}
+
+func defaultSystemVolumePolicyUpdateForTestInternal() backuptypes.UpdateSystemVolumeBackupPolicy {
+	policy := defaultSystemVolumeBackupPolicyInternal()
+	return backuptypes.UpdateSystemVolumeBackupPolicy{
+		Enabled: policy.Enabled, Schedule: policy.Schedule, RetentionCount: policy.RetentionCount,
+		StopContainers: policy.StopContainers, LocalEnabled: policy.LocalEnabled, S3Enabled: policy.S3Enabled,
+		S3DestinationID: policy.S3DestinationID,
+		SelectionMode:   policy.SelectionMode, VolumeNames: policy.VolumeNames, IgnoreAnonymous: policy.IgnoreAnonymous,
+	}
+}
+
+func TestSystemVolumeBackupPoliciesPersistAndRescheduleIndependentlyInternal(t *testing.T) {
 	settingsService := newSystemVolumeSettingsServiceInternal(t)
 	service := &SystemBackupService{
 		settingsService: settingsService,
@@ -157,43 +179,52 @@ func TestSystemVolumeBackupConfigPersistsAndReschedulesInternal(t *testing.T) {
 	scheduler := &systemBackupPolicySchedulerInternal{jobs: make(map[string]schedulertypes.Job)}
 	require.NoError(t, service.SetScheduler(context.Background(), scheduler, newSystemBackupAdmissionGateForTestInternal(t)))
 
-	saved, err := service.UpdateSystemVolumeBackupConfig(context.Background(), backuptypes.SystemVolumeBackupConfig{
-		Enabled: true, Schedule: "0 15 2 * * *", RetentionCount: 9, LocalEnabled: true,
-		SelectionMode:   backuptypes.SystemVolumeSelectionBlocklist,
-		VolumeNames:     []string{" cache ", "app", "cache", ""},
-		IgnoreAnonymous: true,
-	})
+	first := defaultSystemVolumePolicyUpdateForTestInternal()
+	first.Enabled, first.Schedule, first.RetentionCount = true, "0 15 2 * * *", 9
+	first.SelectionMode = backuptypes.SystemVolumeSelectionBlocklist
+	first.VolumeNames = []string{" cache ", "app", "cache", ""}
+	second := defaultSystemVolumePolicyUpdateForTestInternal()
+	second.Enabled, second.Schedule = true, "0 30 4 * * *"
+	saved, err := service.UpdateSystemVolumeBackupConfig(context.Background(), []backuptypes.UpdateSystemVolumeBackupPolicy{first, second})
 	require.NoError(t, err)
-	require.Equal(t, []string{"app", "cache"}, saved.VolumeNames)
-	jobName := service.jobs.JobName(systemVolumeBackupJobID)
-	require.True(t, scheduler.HasJob(jobName))
-	require.Equal(t, saved.Schedule, scheduler.jobs[jobName].Schedule(context.Background()))
+	require.Len(t, saved.Policies, 2)
+	require.Equal(t, []string{"app", "cache"}, saved.Policies[0].VolumeNames)
+	require.NotEmpty(t, saved.Policies[0].ID)
+	require.NotEqual(t, saved.Policies[0].ID, saved.Policies[1].ID)
+	firstJobName := service.jobs.JobName(systemVolumeBackupJobPrefix + saved.Policies[0].ID)
+	secondJobName := service.jobs.JobName(systemVolumeBackupJobPrefix + saved.Policies[1].ID)
+	require.True(t, scheduler.HasJob(firstJobName))
+	require.True(t, scheduler.HasJob(secondJobName))
+	require.Equal(t, saved.Policies[0].Schedule, scheduler.jobs[firstJobName].Schedule(context.Background()))
 
 	reloaded, err := service.GetSystemVolumeBackupConfig(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, saved, reloaded)
 
-	saved.Enabled = false
-	_, err = service.UpdateSystemVolumeBackupConfig(context.Background(), *saved)
+	remaining := defaultSystemVolumePolicyUpdateForTestInternal()
+	remaining.ID = saved.Policies[1].ID
+	remaining.Enabled = false
+	_, err = service.UpdateSystemVolumeBackupConfig(context.Background(), []backuptypes.UpdateSystemVolumeBackupPolicy{remaining})
 	require.NoError(t, err)
-	require.False(t, scheduler.HasJob(jobName))
+	require.False(t, scheduler.HasJob(firstJobName))
+	require.False(t, scheduler.HasJob(secondJobName))
 }
 
-func TestSystemVolumeBackupConfigValidationInternal(t *testing.T) {
+func TestSystemVolumeBackupPolicyValidationInternal(t *testing.T) {
 	service := &SystemBackupService{
 		settingsService: newSystemVolumeSettingsServiceInternal(t),
 		jobs:            entityjobs.New("system-backup:", backup.SystemAdmissionScope),
 	}
-	valid := defaultSystemVolumeBackupConfigInternal()
+	valid := defaultSystemVolumePolicyUpdateForTestInternal()
 	tests := []struct {
 		name   string
-		mutate func(*backuptypes.SystemVolumeBackupConfig)
+		mutate func(*backuptypes.UpdateSystemVolumeBackupPolicy)
 	}{
-		{name: "selection mode", mutate: func(config *backuptypes.SystemVolumeBackupConfig) { config.SelectionMode = "snapshot" }},
-		{name: "cron", mutate: func(config *backuptypes.SystemVolumeBackupConfig) { config.Schedule = "not cron" }},
-		{name: "retention", mutate: func(config *backuptypes.SystemVolumeBackupConfig) { config.RetentionCount = 3651 }},
-		{name: "destination", mutate: func(config *backuptypes.SystemVolumeBackupConfig) { config.LocalEnabled = false }},
-		{name: "s3 destination", mutate: func(config *backuptypes.SystemVolumeBackupConfig) {
+		{name: "selection mode", mutate: func(config *backuptypes.UpdateSystemVolumeBackupPolicy) { config.SelectionMode = "snapshot" }},
+		{name: "cron", mutate: func(config *backuptypes.UpdateSystemVolumeBackupPolicy) { config.Schedule = "not cron" }},
+		{name: "retention", mutate: func(config *backuptypes.UpdateSystemVolumeBackupPolicy) { config.RetentionCount = 3651 }},
+		{name: "destination", mutate: func(config *backuptypes.UpdateSystemVolumeBackupPolicy) { config.LocalEnabled = false }},
+		{name: "s3 destination", mutate: func(config *backuptypes.UpdateSystemVolumeBackupPolicy) {
 			config.LocalEnabled = false
 			config.S3Enabled = true
 		}},
@@ -202,7 +233,7 @@ func TestSystemVolumeBackupConfigValidationInternal(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			config := valid
 			tt.mutate(&config)
-			_, err := service.UpdateSystemVolumeBackupConfig(context.Background(), config)
+			_, err := service.UpdateSystemVolumeBackupConfig(context.Background(), []backuptypes.UpdateSystemVolumeBackupPolicy{config})
 			require.Error(t, err)
 		})
 	}
@@ -213,10 +244,87 @@ func TestSystemVolumeBackupAllModeDoesNotPersistNamesInternal(t *testing.T) {
 		settingsService: newSystemVolumeSettingsServiceInternal(t),
 		jobs:            entityjobs.New("system-backup:", backup.SystemAdmissionScope),
 	}
-	config := defaultSystemVolumeBackupConfigInternal()
+	config := defaultSystemVolumePolicyUpdateForTestInternal()
 	config.VolumeNames = []string{"old-selection"}
 
-	saved, err := service.UpdateSystemVolumeBackupConfig(context.Background(), config)
+	saved, err := service.UpdateSystemVolumeBackupConfig(context.Background(), []backuptypes.UpdateSystemVolumeBackupPolicy{config})
 	require.NoError(t, err)
-	require.Empty(t, saved.VolumeNames)
+	require.Empty(t, saved.Policies[0].VolumeNames)
+}
+
+func TestSystemVolumeBackupConfigLoadsLegacySingletonInternal(t *testing.T) {
+	settingsService := newSystemVolumeSettingsServiceInternal(t)
+	require.NoError(t, settingsService.UpdateSetting(context.Background(), systemVolumeBackupConfigKey, `{"enabled":true,"schedule":"0 0 5 * * *","retentionCount":3,"stopContainers":false,"localEnabled":true,"s3Enabled":false,"selectionMode":"allowlist","volumeNames":["app"],"ignoreAnonymous":true}`))
+	gormDB, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, gormDB.AutoMigrate(&volume.VolumeBackup{}))
+	legacyPolicyID := systemVolumePolicyIDInternal(legacySystemVolumePolicyID, "app")
+	require.NoError(t, gormDB.Create(&volume.VolumeBackup{
+		VolumeName: "app", CreatedAt: time.Now().Add(-time.Minute), Status: volume.VolumeBackupStatusSucceeded,
+		Trigger: volume.VolumeBackupTriggerScheduled, Destination: volumetypes.BackupDestinationLocal,
+		Format: volume.VolumeBackupFormatRustic, PolicyID: legacyPolicyID,
+	}).Error)
+	require.NoError(t, gormDB.Create(&volume.VolumeBackup{
+		VolumeName: "other", CreatedAt: time.Now(), Status: volume.VolumeBackupStatusSucceeded,
+		Trigger: volume.VolumeBackupTriggerManual, Destination: volumetypes.BackupDestinationLocal,
+		Format: volume.VolumeBackupFormatRustic, PolicyID: systemVolumeManualPolicyIDInternal("other"),
+	}).Error)
+	service := &SystemBackupService{db: &database.DB{DB: gormDB}, settingsService: settingsService, jobs: entityjobs.New("system-backup:", backup.SystemAdmissionScope)}
+
+	loaded, err := service.GetSystemVolumeBackupConfig(context.Background())
+	require.NoError(t, err)
+	require.Len(t, loaded.Policies, 1)
+	require.Equal(t, legacySystemVolumePolicyID, loaded.Policies[0].ID)
+	require.Equal(t, []string{"app"}, loaded.Policies[0].VolumeNames)
+	require.Equal(t, legacyPolicyID, loaded.Policies[0].LastRun.PolicyID)
+}
+
+func TestSystemVolumeBackupConfigNormalizesNullPolicyCollectionInternal(t *testing.T) {
+	settingsService := newSystemVolumeSettingsServiceInternal(t)
+	require.NoError(t, settingsService.UpdateSetting(context.Background(), systemVolumeBackupConfigKey, `{"policies":null}`))
+	service := &SystemBackupService{settingsService: settingsService, jobs: entityjobs.New("system-backup:", backup.SystemAdmissionScope)}
+
+	loaded, err := service.GetSystemVolumeBackupConfig(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, loaded.Policies)
+	require.Empty(t, loaded.Policies)
+}
+
+func TestCustomSystemVolumePolicyDefaultsAndManualIdentityInternal(t *testing.T) {
+	service := &SystemBackupService{}
+	policy, manual, err := service.resolveSystemVolumeRunPolicyInternal(context.Background(), backuptypes.RunSystemVolumeBackupsRequest{})
+	require.NoError(t, err)
+	require.True(t, manual)
+	require.True(t, policy.LocalEnabled)
+	require.Zero(t, policy.RetentionCount)
+	require.True(t, policy.IgnoreAnonymous)
+	require.Equal(t, backuptypes.SystemVolumeSelectionAll, policy.SelectionMode)
+	require.Contains(t, systemVolumeManualPolicyIDInternal("app"), backuptypes.SystemVolumePolicyPrefix+"manual:")
+}
+
+func TestResolveSystemVolumeRunPolicySupportsDisabledSavedPolicyInternal(t *testing.T) {
+	service := &SystemBackupService{
+		settingsService: newSystemVolumeSettingsServiceInternal(t),
+		jobs:            entityjobs.New("system-backup:", backup.SystemAdmissionScope),
+	}
+	update := defaultSystemVolumePolicyUpdateForTestInternal()
+	update.Enabled = false
+	saved, err := service.UpdateSystemVolumeBackupConfig(context.Background(), []backuptypes.UpdateSystemVolumeBackupPolicy{update})
+	require.NoError(t, err)
+
+	policy, manual, err := service.resolveSystemVolumeRunPolicyInternal(context.Background(), backuptypes.RunSystemVolumeBackupsRequest{PolicyID: saved.Policies[0].ID})
+	require.NoError(t, err)
+	require.False(t, manual)
+	require.False(t, policy.Enabled)
+
+	_, _, err = service.resolveSystemVolumeRunPolicyInternal(context.Background(), backuptypes.RunSystemVolumeBackupsRequest{
+		PolicyID: saved.Policies[0].ID,
+		Custom:   &backuptypes.SystemVolumeBackupCustomRun{Destination: backuptypes.SystemBackupDestinationLocal},
+	})
+	require.Error(t, err)
+
+	_, _, err = service.resolveSystemVolumeRunPolicyInternal(context.Background(), backuptypes.RunSystemVolumeBackupsRequest{
+		Custom: &backuptypes.SystemVolumeBackupCustomRun{Destination: "archive"},
+	})
+	require.Error(t, err)
 }

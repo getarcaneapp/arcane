@@ -2,7 +2,8 @@ import { expect, test, type Page } from '@playwright/test';
 
 type ManagementType = 'system' | 'volume';
 
-type SystemVolumeBackupConfig = {
+type SystemVolumeBackupPolicy = {
+	id: string;
 	enabled: boolean;
 	schedule: string;
 	retentionCount: number;
@@ -13,6 +14,8 @@ type SystemVolumeBackupConfig = {
 	volumeNames: string[];
 	ignoreAnonymous: boolean;
 };
+
+type SystemVolumeBackupPolicyCollection = { policies: SystemVolumeBackupPolicy[] };
 
 type HistoryEntry = {
 	id: string;
@@ -28,7 +31,8 @@ type HistoryEntry = {
 	resourceName: string;
 };
 
-const defaultConfig: SystemVolumeBackupConfig = {
+const defaultPolicy: SystemVolumeBackupPolicy = {
+	id: 'volume-nightly',
 	enabled: false,
 	schedule: '0 0 2 * * *',
 	retentionCount: 7,
@@ -83,24 +87,51 @@ async function removeVolumeViaApi(page: Page, volumeName: string) {
 
 async function mockSystemBackupPage(
 	page: Page,
-	config: SystemVolumeBackupConfig,
+	collection: SystemVolumeBackupPolicyCollection,
 	options: { name: string; anonymous: boolean; available: boolean }[],
 	history: HistoryEntry[] = []
 ) {
-	let savedConfig = structuredClone(config);
+	let savedCollection = structuredClone(collection);
+	const runRequests: unknown[] = [];
 
 	await page.route('**/api/backups/volumes/config', async (route) => {
 		if (route.request().method() === 'PUT') {
-			savedConfig = (await route.request().postDataJSON()) as SystemVolumeBackupConfig;
+			const input = (await route.request().postDataJSON()) as {
+				policies: SystemVolumeBackupPolicy[];
+			};
+			savedCollection = {
+				policies: input.policies.map((policy, index) => ({
+					...policy,
+					id: policy.id || `volume-created-${index}`
+				}))
+			};
 		}
-		await route.fulfill({ json: savedConfig });
+		await route.fulfill({ json: savedCollection });
+	});
+	await page.route('**/api/backups/policies', async (route) => {
+		await route.fulfill({
+			json: {
+				policies: [
+					{
+						id: 'system-nightly',
+						enabled: true,
+						schedule: '0 0 3 * * *',
+						retentionCount: 7,
+						localEnabled: true,
+						s3Enabled: false
+					}
+				],
+				recoveryKeyStored: true
+			}
+		});
 	});
 	await page.route('**/api/backups/volumes/options', (route) => route.fulfill({ json: options }));
-	await page.route('**/api/backups/volumes/run', (route) =>
-		route.fulfill({
+	await page.route('**/api/backups/volumes/run', async (route) => {
+		runRequests.push(await route.request().postDataJSON());
+		return route.fulfill({
 			json: { matched: 2, succeeded: 1, failed: 0, skipped: 1, failures: [] }
-		})
-	);
+		});
+	});
 	await page.route('**/api/backups/history**', (route) => {
 		const type = new URL(route.request().url()).searchParams.get('type');
 		const rows =
@@ -108,19 +139,26 @@ async function mockSystemBackupPage(
 		return route.fulfill({ json: paginated(rows) });
 	});
 
-	return { savedConfig: () => savedConfig };
+	return { savedCollection: () => savedCollection, runRequests: () => runRequests };
 }
 
 test.describe('System-managed volume backups', () => {
-	test('edits live selection, retains unavailable names, and runs while disabled', async ({
-		page
-	}) => {
+	test('creates multiple volume schedules and runs a saved schedule', async ({ page }) => {
 		const liveName = `e2e-live-volume-${Date.now()}`;
 		const anonymousName = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 		const unavailableName = 'deleted-volume';
 		const mock = await mockSystemBackupPage(
 			page,
-			{ ...defaultConfig, selectionMode: 'allowlist', volumeNames: [unavailableName] },
+			{
+				policies: [
+					{
+						...defaultPolicy,
+						enabled: false,
+						selectionMode: 'allowlist',
+						volumeNames: [unavailableName]
+					}
+				]
+			},
 			[
 				{ name: liveName, anonymous: false, available: true },
 				{ name: anonymousName, anonymous: true, available: true },
@@ -129,9 +167,12 @@ test.describe('System-managed volume backups', () => {
 		);
 
 		await page.goto('/settings/backups');
-		const card = page.getByRole('heading', { name: 'All volume backups' }).locator('../..');
-		await card.getByRole('button', { name: 'Edit' }).click();
-		const dialog = page.getByRole('dialog', { name: 'All volume backups' });
+		const systemCard = page.getByTestId('backup-policy-system-system-nightly');
+		const volumeCard = page.getByTestId('backup-policy-volume-volume-nightly');
+		await expect(systemCard.getByText('System')).toHaveClass(/text-purple-/);
+		await expect(volumeCard.getByText('Volume')).toHaveClass(/text-blue-/);
+		await volumeCard.getByRole('button', { name: 'Edit Schedule' }).click();
+		const dialog = page.getByRole('dialog', { name: 'Edit Schedule' });
 
 		await expect(dialog.getByText(unavailableName)).toBeVisible();
 		await expect(dialog.getByText('Unavailable')).toBeVisible();
@@ -139,10 +180,49 @@ test.describe('System-managed volume backups', () => {
 		await dialog.locator('label').filter({ hasText: liveName }).getByRole('checkbox').click();
 		await dialog.getByRole('button', { name: 'Save' }).click();
 		await expect(dialog).toBeHidden();
-		expect(mock.savedConfig().volumeNames).toEqual([unavailableName, liveName]);
+		expect(mock.savedCollection().policies[0]?.volumeNames).toEqual([unavailableName, liveName]);
 
-		await card.getByRole('button', { name: 'Run now' }).click();
+		await page.getByRole('button', { name: 'Create' }).click();
+		await page.getByRole('menuitem', { name: 'Schedule' }).click();
+		const createSchedule = page.getByRole('dialog', { name: 'Create schedule' });
+		await createSchedule.getByLabel('Backup type').click();
+		await page.getByRole('option', { name: 'Volume' }).click();
+		await createSchedule.getByLabel('Schedule').fill('0 30 4 * * *');
+		await createSchedule.getByRole('button', { name: 'Save' }).click();
+		await expect(createSchedule).toBeHidden();
+		expect(mock.savedCollection().policies).toHaveLength(2);
+		await expect(page.getByText('Volume', { exact: true })).toHaveCount(2);
+
+		await page.getByRole('button', { name: 'Create' }).click();
+		await page.getByRole('menuitem', { name: 'Backup' }).click();
+		const createBackup = page.getByRole('dialog', { name: 'Create Backup' });
+		await createBackup.getByLabel('Backup type').click();
+		await page.getByRole('option', { name: 'Volume' }).click();
+		await createBackup.getByLabel('Backup configuration').click();
+		await page.getByRole('option', { name: '0 0 2 * * *' }).click();
+		await createBackup.getByRole('button', { name: 'Create Backup' }).click();
 		await expect(page.getByText('Matched 2; 1 succeeded, 0 failed, and 1 skipped.')).toBeVisible();
+		expect(mock.runRequests()).toContainEqual({ policyId: 'volume-nightly' });
+
+		await page.getByRole('button', { name: 'Create' }).click();
+		await page.getByRole('menuitem', { name: 'Backup' }).click();
+		const customBackup = page.getByRole('dialog', { name: 'Create Backup' });
+		await customBackup.getByLabel('Backup type').click();
+		await page.getByRole('option', { name: 'Volume' }).click();
+		await customBackup.getByLabel('Volume selection').click();
+		await page.getByRole('option', { name: 'Allowlist' }).click();
+		await customBackup.locator('label').filter({ hasText: liveName }).getByRole('checkbox').click();
+		await customBackup.getByRole('button', { name: 'Create Backup' }).click();
+		expect(mock.runRequests()).toContainEqual({
+			custom: {
+				destination: 'local',
+				s3DestinationId: '',
+				stopContainers: false,
+				selectionMode: 'allowlist',
+				volumeNames: [liveName],
+				ignoreAnonymous: true
+			}
+		});
 	});
 
 	test('filters unified history and opens the owning volume backup tab', async ({ page }) => {
@@ -151,7 +231,7 @@ test.describe('System-managed volume backups', () => {
 		try {
 			await mockSystemBackupPage(
 				page,
-				defaultConfig,
+				{ policies: [] },
 				[],
 				[historyEntry('central-volume', 'system'), historyEntry(volumeName, 'volume')]
 			);
@@ -196,8 +276,8 @@ test.describe('System-managed volume backups', () => {
 			);
 
 			await page.goto(`/volumes/${encodeURIComponent(volumeName)}?tab=backups`);
-			await expect(page.getByText('System-managed').first()).toBeVisible();
-			await expect(page.getByText('Volume-managed').first()).toBeVisible();
+			await expect(page.getByText('System-managed').first()).toHaveClass(/text-purple-/);
+			await expect(page.getByText('Volume-managed').first()).toHaveClass(/text-blue-/);
 			await page.getByTestId('facet-type-trigger').click();
 			await page.getByTestId('facet-type-option-system').click();
 			await expect(page.getByText('System-managed').first()).toBeVisible();
