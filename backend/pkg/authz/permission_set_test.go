@@ -420,6 +420,13 @@ func TestPermissionCatalogDerivesKnownPermissionsAndScopes(t *testing.T) {
 	}
 }
 
+func TestVolumeRenamePermissionIsEditorOnlyByDefault(t *testing.T) {
+	require.Contains(t, AllPermissions(), PermVolumesRename)
+	require.Contains(t, BuiltInEditorPermissions(), PermVolumesRename)
+	require.NotContains(t, BuiltInViewerPermissions(), PermVolumesRename)
+	require.NotContains(t, BuiltInDeployerPermissions(), PermVolumesRename)
+}
+
 func TestNotificationsManageRequiresGlobalScope(t *testing.T) {
 
 	require.True(t, IsOrgLevel(PermNotificationsManage),

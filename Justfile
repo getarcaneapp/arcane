@@ -276,10 +276,13 @@ _format-check-go:
 
 [group('quality')]
 _format-all:
-    @just _format-frontend
-    @just _format-js
-    @just _format-go
-    @just _format-just
+    #!/usr/bin/env bash
+    # Run every formatter even if one fails, so e.g. a vp/pnpm hiccup can't skip gofmt
+    failed=0
+    for target in frontend js go just; do
+        just "_format-${target}" || failed=1
+    done
+    exit "${failed}"
 
 [group('quality')]
 _format-check-all:
@@ -479,43 +482,6 @@ _deps-dedupe-all: _deps-dedupe-node
 [group('deps')]
 deps action="update" target="all":
     @just "_deps-{{ action }}-{{ target }}"
-
-# -----------------------------------------------------------------------------
-# Go modules
-# -----------------------------------------------------------------------------
-
-# Run go mod tidy in backend module
-[group('gomod')]
-_gomod-tidy-backend:
-    cd backend && go mod tidy
-
-# Run go mod tidy in CLI module
-[group('gomod')]
-_gomod-tidy-cli:
-    cd cli && go mod tidy
-
-# Run go mod tidy in types module
-[group('gomod')]
-_gomod-tidy-types:
-    cd types && go mod tidy
-
-# Run go mod tidy in all Go modules
-[group('gomod')]
-_gomod-tidy-go: _gomod-tidy-backend _gomod-tidy-cli _gomod-tidy-types
-
-[group('gomod')]
-_gomod-tidy-all:
-    @just _gomod-tidy-go
-    go work sync
-
-[group('gomod')]
-_gomod-sync-all:
-    go work sync
-
-# Go module targets. Valid: "tidy [backend|cli|types|go|all]", "sync all".
-[group('gomod')]
-gomod action="tidy" target="all":
-    @just "_gomod-{{ action }}-{{ target }}"
 
 # -----------------------------------------------------------------------------
 # Code generation and docs

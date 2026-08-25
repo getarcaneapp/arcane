@@ -60,7 +60,7 @@ var listCmd = &cobra.Command{
 			return err
 		}
 
-		path := types.Endpoints.GitOpsSyncs(c.EnvID())
+		path := types.GitOpsSyncs(c.EnvID())
 		path, err = cmdutil.ApplyPaginationParams(cmd, path, cmdutil.ListParams{Resource: "gitops-syncs", Limit: limitFlag, FallbackDefault: 20, Start: startFlag, All: allFlag})
 		if err != nil {
 			return errors.WrapIf(err, "failed to build pagination query")
@@ -147,7 +147,7 @@ var createCmd = &cobra.Command{
 			req.SyncInterval = &interval
 		}
 
-		resp, err := c.Post(cmd.Context(), types.Endpoints.GitOpsSyncs(c.EnvID()), req)
+		resp, err := c.Post(cmd.Context(), types.GitOpsSyncs(c.EnvID()), req)
 		if err != nil {
 			return errors.WrapIf(err, "failed to create gitops sync")
 		}
@@ -194,7 +194,7 @@ var getCmd = &cobra.Command{
 		}
 
 		if !complete {
-			resp, err := c.Get(cmd.Context(), types.Endpoints.GitOpsSync(c.EnvID(), resolved.ID))
+			resp, err := c.Get(cmd.Context(), types.GitOpsSync(c.EnvID(), resolved.ID))
 			if err != nil {
 				return errors.WrapIf(err, "failed to get gitops sync")
 			}
@@ -276,7 +276,7 @@ var updateCmd = &cobra.Command{
 			req.SyncInterval = &gitopsUpdateInterval
 		}
 
-		resp, err := c.Put(cmd.Context(), types.Endpoints.GitOpsSync(c.EnvID(), resolved.ID), req)
+		resp, err := c.Put(cmd.Context(), types.GitOpsSync(c.EnvID(), resolved.ID), req)
 		if err != nil {
 			return errors.WrapIf(err, "failed to update gitops sync")
 		}
@@ -323,7 +323,7 @@ var deleteCmd = &cobra.Command{
 			}
 		}
 
-		resp, err := c.Delete(cmd.Context(), types.Endpoints.GitOpsSync(c.EnvID(), resolved.ID))
+		resp, err := c.Delete(cmd.Context(), types.GitOpsSync(c.EnvID(), resolved.ID))
 		if err != nil {
 			return errors.WrapIf(err, "failed to delete gitops sync")
 		}
@@ -353,7 +353,7 @@ var statusCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.Endpoints.GitOpsSyncStatus(c.EnvID(), resolved.ID))
+		resp, err := c.Get(cmd.Context(), types.GitOpsSyncStatus(c.EnvID(), resolved.ID))
 		if err != nil {
 			return errors.WrapIf(err, "failed to get gitops sync status")
 		}
@@ -411,7 +411,7 @@ var syncCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Post(cmd.Context(), types.Endpoints.GitOpsSyncTrigger(c.EnvID(), resolved.ID), nil)
+		resp, err := c.Post(cmd.Context(), types.GitOpsSyncTrigger(c.EnvID(), resolved.ID), nil)
 		if err != nil {
 			return errors.WrapIf(err, "failed to trigger gitops sync")
 		}
@@ -460,7 +460,7 @@ var filesCmd = &cobra.Command{
 			return err
 		}
 
-		filesPath := types.Endpoints.GitOpsSyncFiles(c.EnvID(), resolved.ID)
+		filesPath := types.GitOpsSyncFiles(c.EnvID(), resolved.ID)
 		if gitopsFilesPath != "" {
 			filesPath = cmdutil.AppendQuery(filesPath, url.Values{"path": []string{gitopsFilesPath}})
 		}
@@ -522,7 +522,7 @@ var importCmd = &cobra.Command{
 
 		// The endpoint accepts a batch, so a single sync still has to be wrapped
 		// in an array.
-		resp, err := c.Post(cmd.Context(), types.Endpoints.GitOpsSyncsImport(c.EnvID()), []gitops.ImportGitOpsSyncRequest{req})
+		resp, err := c.Post(cmd.Context(), types.GitOpsSyncsImport(c.EnvID()), []gitops.ImportGitOpsSyncRequest{req})
 		if err != nil {
 			return errors.WrapIf(err, "failed to import gitops sync")
 		}
@@ -635,7 +635,7 @@ func resolveGitOpsSync(ctx context.Context, c *client.Client, identifier string,
 		return nil, false, errors.New("gitops sync identifier is required")
 	}
 
-	resp, err := c.Get(ctx, types.Endpoints.GitOpsSync(c.EnvID(), trimmed))
+	resp, err := c.Get(ctx, types.GitOpsSync(c.EnvID(), trimmed))
 	if err != nil {
 		return nil, false, errors.WrapIff(err, "failed to resolve gitops sync %q", trimmed)
 	}
@@ -660,7 +660,7 @@ func resolveGitOpsSync(ctx context.Context, c *client.Client, identifier string,
 
 	identifierLower := strings.ToLower(trimmed)
 
-	searchPath := fmt.Sprintf("%s?search=%s&limit=%d", types.Endpoints.GitOpsSyncs(c.EnvID()), url.QueryEscape(trimmed), cmdutil.ShowAllLimit)
+	searchPath := fmt.Sprintf("%s?search=%s&limit=%d", types.GitOpsSyncs(c.EnvID()), url.QueryEscape(trimmed), cmdutil.ShowAllLimit)
 	searchResp, err := c.Get(ctx, searchPath)
 	if err != nil {
 		return nil, false, errors.WrapIf(err, "failed to search gitops syncs")

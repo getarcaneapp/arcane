@@ -156,7 +156,7 @@ func runProjectsList(cmd *cobra.Command, forceHasUpdateFilter bool) error {
 }
 
 func buildProjectsListPath(cmd *cobra.Command, c *client.Client, forceHasUpdateFilter bool) (string, error) {
-	path, err := cmdutil.ApplyPaginationParams(cmd, types.Endpoints.Projects(c.EnvID()), cmdutil.ListParams{
+	path, err := cmdutil.ApplyPaginationParams(cmd, types.Projects(c.EnvID()), cmdutil.ListParams{
 		Resource:        "projects",
 		Limit:           limitFlag,
 		FallbackDefault: 20,
@@ -235,7 +235,7 @@ var destroyCmd = &cobra.Command{
 			}
 		}
 
-		resp, err := c.DeleteWithBody(cmd.Context(), types.Endpoints.ProjectDestroy(c.EnvID(), resolved.ID), project.Destroy{
+		resp, err := c.DeleteWithBody(cmd.Context(), types.ProjectDestroy(c.EnvID(), resolved.ID), project.Destroy{
 			RemoveFiles:   &destroyRemoveFiles,
 			RemoveVolumes: destroyRemoveVolumes,
 		})
@@ -270,7 +270,7 @@ var getCmd = &cobra.Command{
 		}
 
 		if !complete {
-			resp, err := c.Get(cmd.Context(), types.Endpoints.Project(c.EnvID(), resolved.ID))
+			resp, err := c.Get(cmd.Context(), types.Project(c.EnvID(), resolved.ID))
 			if err != nil {
 				return errors.WrapIf(err, "failed to get project")
 			}
@@ -309,7 +309,7 @@ var upCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runProjectPostAction(cmd, args[0], projectPostActionConfig{
-			endpoint:       types.Endpoints.ProjectUp,
+			endpoint:       types.ProjectUp,
 			failureMessage: "failed to start project",
 			successMessage: "Project %s started successfully",
 			timeout:        30 * time.Minute,
@@ -325,7 +325,7 @@ var downCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runProjectPostAction(cmd, args[0], projectPostActionConfig{
-			endpoint:       types.Endpoints.ProjectDown,
+			endpoint:       types.ProjectDown,
 			failureMessage: "failed to stop project",
 			successMessage: "Project %s stopped successfully",
 		})
@@ -339,7 +339,7 @@ var restartCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runProjectPostAction(cmd, args[0], projectPostActionConfig{
-			endpoint:       types.Endpoints.ProjectRestart,
+			endpoint:       types.ProjectRestart,
 			failureMessage: "failed to restart project",
 			successMessage: "Project %s restarted successfully",
 		})
@@ -353,7 +353,7 @@ var redeployCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runProjectPostAction(cmd, args[0], projectPostActionConfig{
-			endpoint:       types.Endpoints.ProjectRedeploy,
+			endpoint:       types.ProjectRedeploy,
 			failureMessage: "failed to redeploy project",
 			successMessage: "Project %s redeployed successfully",
 			timeout:        30 * time.Minute,
@@ -369,7 +369,7 @@ var pullCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runProjectPostAction(cmd, args[0], projectPostActionConfig{
-			endpoint:       types.Endpoints.ProjectPull,
+			endpoint:       types.ProjectPull,
 			failureMessage: "failed to pull images",
 			successMessage: "Images pulled successfully for project %s",
 			timeout:        30 * time.Minute,
@@ -509,7 +509,7 @@ var createCmd = &cobra.Command{
 			return errors.WrapIf(err, "failed to finalize project request")
 		}
 
-		resp, err := c.RequestRaw(cmd.Context(), http.MethodPost, types.Endpoints.Projects(c.EnvID()), &requestBody, map[string]string{"Content-Type": writer.FormDataContentType()})
+		resp, err := c.RequestRaw(cmd.Context(), http.MethodPost, types.Projects(c.EnvID()), &requestBody, map[string]string{"Content-Type": writer.FormDataContentType()})
 		if err != nil {
 			return errors.WrapIf(err, "failed to create project")
 		}
@@ -580,7 +580,7 @@ var updateCmd = &cobra.Command{
 			body.EnvContent = new(string(envBytes))
 		}
 
-		resp, err := c.Put(cmd.Context(), types.Endpoints.Project(c.EnvID(), resolved.ID), body)
+		resp, err := c.Put(cmd.Context(), types.Project(c.EnvID(), resolved.ID), body)
 		if err != nil {
 			return errors.WrapIf(err, "failed to update project")
 		}
@@ -608,8 +608,9 @@ var updateCmd = &cobra.Command{
 }
 
 var updateIncludesCmd = &cobra.Command{
-	Use:          "update-includes <project-id|name>",
-	Short:        "Update an include file in a project",
+	Use:          "update <project-id|name>",
+	Aliases:      []string{"update-includes"},
+	Short:        "Update an include file in a project workspace",
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -628,7 +629,7 @@ var updateIncludesCmd = &cobra.Command{
 			return errors.WrapIf(err, "failed to read include file")
 		}
 
-		workspaceResponse, err := c.Get(cmd.Context(), types.Endpoints.ProjectWorkspace(c.EnvID(), resolved.ID))
+		workspaceResponse, err := c.Get(cmd.Context(), types.ProjectWorkspace(c.EnvID(), resolved.ID))
 		if err != nil {
 			return errors.WrapIf(err, "failed to get project workspace")
 		}
@@ -674,7 +675,7 @@ var updateIncludesCmd = &cobra.Command{
 			return errors.WrapIf(err, "failed to finalize workspace upload")
 		}
 
-		resp, err := c.RequestRaw(cmd.Context(), http.MethodPut, types.Endpoints.ProjectWorkspace(c.EnvID(), resolved.ID), &requestBody, map[string]string{"Content-Type": writer.FormDataContentType()})
+		resp, err := c.RequestRaw(cmd.Context(), http.MethodPut, types.ProjectWorkspace(c.EnvID(), resolved.ID), &requestBody, map[string]string{"Content-Type": writer.FormDataContentType()})
 		if err != nil {
 			return errors.WrapIf(err, "failed to update include file")
 		}
@@ -711,7 +712,7 @@ var countsCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.Endpoints.ProjectsCounts(c.EnvID()))
+		resp, err := c.Get(cmd.Context(), types.ProjectsCounts(c.EnvID()))
 		if err != nil {
 			return errors.WrapIf(err, "failed to get project counts")
 		}
@@ -752,7 +753,7 @@ func init() {
 	ProjectsCmd.AddCommand(destroyCmd)
 	ProjectsCmd.AddCommand(createCmd)
 	ProjectsCmd.AddCommand(updateCmd)
-	ProjectsCmd.AddCommand(updateIncludesCmd)
+	workspaceCmd.AddCommand(updateIncludesCmd)
 
 	// List command flags
 	listCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of projects to show")
@@ -805,7 +806,7 @@ func resolveProject(ctx context.Context, c *client.Client, identifier string, al
 		return nil, false, errors.New("project identifier is required")
 	}
 
-	resp, err := c.Get(ctx, types.Endpoints.Project(c.EnvID(), trimmed))
+	resp, err := c.Get(ctx, types.Project(c.EnvID(), trimmed))
 	if err != nil {
 		return nil, false, errors.WrapIff(err, "failed to resolve project %q", trimmed)
 	}
@@ -830,7 +831,7 @@ func resolveProject(ctx context.Context, c *client.Client, identifier string, al
 
 	identifierLower := strings.ToLower(trimmed)
 
-	searchPath := fmt.Sprintf("%s?search=%s&limit=%d", types.Endpoints.Projects(c.EnvID()), url.QueryEscape(trimmed), cmdutil.ShowAllLimit)
+	searchPath := fmt.Sprintf("%s?search=%s&limit=%d", types.Projects(c.EnvID()), url.QueryEscape(trimmed), cmdutil.ShowAllLimit)
 	searchResp, err := c.Get(ctx, searchPath)
 	if err != nil {
 		return nil, false, errors.WrapIf(err, "failed to search projects")

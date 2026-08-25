@@ -2,7 +2,7 @@
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { goto } from '$app/navigation';
 	import { Badge } from '#lib/components/ui/badge';
-	import { bytes, formatDateTimeShort } from '#lib/utils/formatting';
+	import { bytes, formatDateTimeShort, nowInstantString } from '#lib/utils/formatting';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api';
 	import { tryCatch } from '#lib/utils/api';
@@ -93,7 +93,7 @@
 		try {
 			const result = await vulnerabilityService.scanImage(image.id);
 			vulnerabilityScan = result;
-			lastScanRequestedAt = result.scanTime || new Date().toISOString();
+			lastScanRequestedAt = result.scanTime || nowInstantString();
 			if (isVulnerabilityScanInProgress(result.status)) {
 				toastVulnerabilityScanStatus(result, { includeStarted: true });
 				beginScanPolling(true);

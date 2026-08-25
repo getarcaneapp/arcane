@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { goto, refreshAll } from '$app/navigation';
-	import { formatDistanceToNow } from 'date-fns';
 	import { onDestroy, onMount, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { type ActionButton } from '#lib/components/action-button-group/index.js';
@@ -19,7 +18,7 @@
 	import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte';
 	import userStore from '#lib/stores/user-store';
 	import { hasAnyPermission, hasPermission } from '#lib/utils/auth';
-	import { formatDateTime } from '#lib/utils/formatting';
+	import { formatDateTime, formatRelativeTime, parseInstant } from '#lib/utils/formatting';
 	import type {
 		DashboardActionItemKind,
 		DashboardEnvironmentCardState,
@@ -480,14 +479,14 @@
 			return { label: m.activity(), value: m.common_never(), title: m.common_never() };
 		}
 
-		const parsed = new Date(labelAndValue.raw);
-		if (Number.isNaN(parsed.getTime())) {
+		const parsed = parseInstant(labelAndValue.raw);
+		if (!parsed) {
 			return { label: labelAndValue.label, value: m.common_unknown(), title: m.common_unknown() };
 		}
 
 		return {
 			label: labelAndValue.label,
-			value: formatDistanceToNow(parsed, { addSuffix: true }),
+			value: formatRelativeTime(parsed),
 			title: formatDateTime(parsed)
 		};
 	}

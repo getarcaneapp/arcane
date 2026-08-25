@@ -34,8 +34,8 @@ var (
 
 // OidcMappingsCmd is the parent command for OIDC role mapping operations.
 var OidcMappingsCmd = &cobra.Command{
-	Use:     "oidc-mappings",
-	Aliases: []string{"oidc-mapping", "oidc"},
+	Use:     "oidc",
+	Aliases: []string{"oidc-mappings", "oidc-mapping"},
 	Short:   "Manage OIDC group → role mappings",
 	Long: "Manage OIDC group → role mappings. On every OIDC login, Arcane " +
 		"looks up the user's groups claim and applies the matching mappings " +
@@ -53,7 +53,7 @@ var listCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		resp, err := c.Get(cmd.Context(), types.Endpoints.OidcRoleMappings())
+		resp, err := c.Get(cmd.Context(), types.OidcRoleMappings())
 		if err != nil {
 			return errors.WrapIf(err, "failed to list OIDC mappings")
 		}
@@ -105,7 +105,7 @@ var createCmd = &cobra.Command{
 			req.EnvironmentID = new(createEnvironment)
 		}
 
-		resp, err := c.Post(cmd.Context(), types.Endpoints.OidcRoleMappings(), req)
+		resp, err := c.Post(cmd.Context(), types.OidcRoleMappings(), req)
 		if err != nil {
 			return errors.WrapIf(err, "failed to create OIDC mapping")
 		}
@@ -168,7 +168,7 @@ var updateCmd = &cobra.Command{
 			}
 		}
 
-		resp, err := c.Put(cmd.Context(), types.Endpoints.OidcRoleMapping(args[0]), req)
+		resp, err := c.Put(cmd.Context(), types.OidcRoleMapping(args[0]), req)
 		if err != nil {
 			return errors.WrapIf(err, "failed to update OIDC mapping")
 		}
@@ -202,7 +202,7 @@ var deleteCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		resp, err := c.Delete(cmd.Context(), types.Endpoints.OidcRoleMapping(args[0]))
+		resp, err := c.Delete(cmd.Context(), types.OidcRoleMapping(args[0]))
 		if err != nil {
 			return errors.WrapIf(err, "failed to delete OIDC mapping")
 		}
@@ -223,7 +223,7 @@ func fetchMappingInternal(cmd *cobra.Command, id string) (*roletypes.OidcRoleMap
 	if err != nil {
 		return nil, err
 	}
-	resp, err := c.Get(cmd.Context(), types.Endpoints.OidcRoleMappings())
+	resp, err := c.Get(cmd.Context(), types.OidcRoleMappings())
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to load current mapping")
 	}

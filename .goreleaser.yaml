@@ -397,7 +397,34 @@ blobs:
     disable: '{{ if not (index .Env "BUILD_NEXT") }}true{{ end }}'
 
 changelog:
-  disable: true
+  disable: '{{ if isEnvSet "SKIP_CHANGELOG" }}true{{ else if isEnvSet "OPENAI_API_KEY" }}false{{ else }}true{{ end }}'
+  use: github
+  filters:
+    include:
+      - '^feat'
+      - '^fix'
+      - '^perf'
+      - '^docs'
+      - '^refactor'
+      - '^test'
+      - '^style'
+      - '^build'
+      - '^ci'
+      - '^revert'
+      - '^chore\(deps\)'
+  ai:
+    use: openai
+    model: openai/gpt-5.6-luna-pro
+    prompt: |
+      Rewrite these release notes for Arcane, a Docker management app.
+      Start with a short intro highlighting the most notable changes, wrapped
+      in a GitHub alert blockquote (a "> [!NOTE]" line followed by "> " prefixed
+      lines). The intro's first sentence must begin with "This release adds" or
+      "This release fixes". Group related changes, merge dependency bumps of the same
+      dependency into one line, and keep it concise. Keep each entry's pull
+      request or commit reference and its author attribution. No emojis.
+
+      {{ .ReleaseNotes }}
 
 announce:
   discord:
@@ -419,9 +446,5 @@ release:
   replace_existing_artifacts: true
   prerelease: auto
   make_latest: true
-  mode: keep-existing
+  mode: replace
   name_template: '{{.Tag}}'
-  footer: |
-    ---
-
-    Released by [GoReleaser](https://github.com/goreleaser/goreleaser).

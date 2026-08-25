@@ -38,6 +38,15 @@ var (
 )
 
 var (
+	envCreateName        string
+	envCreateApiUrl      string
+	envCreateAccessToken string
+	envCreateUseApiKey   bool
+	envCreateEdge        bool
+	envCreateDisabled    bool
+)
+
+var (
 	statusOnlineStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#22c55e"))
 	statusOfflineStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#ef4444"))
 	statusMutedStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#94a3b8"))
@@ -62,7 +71,7 @@ var listCmd = &cobra.Command{
 			return err
 		}
 
-		path := types.Endpoints.Environments()
+		path := types.Environments()
 		path, err = cmdutil.ApplyPaginationParams(cmd, path, cmdutil.ListParams{Resource: "environments", Limit: limitFlag, FallbackDefault: 20, Start: startFlag, All: allFlag})
 		if err != nil {
 			return errors.WrapIf(err, "failed to build pagination query")
@@ -133,7 +142,7 @@ var deleteCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Delete(cmd.Context(), types.Endpoints.Environment(args[0]))
+		resp, err := c.Delete(cmd.Context(), types.Environment(args[0]))
 		if err != nil {
 			return errors.WrapIf(err, "failed to delete environment")
 		}
@@ -158,7 +167,7 @@ var getCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.Endpoints.Environment(args[0]))
+		resp, err := c.Get(cmd.Context(), types.Environment(args[0]))
 		if err != nil {
 			return errors.WrapIf(err, "failed to get environment")
 		}
@@ -199,7 +208,7 @@ var testCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Post(cmd.Context(), types.Endpoints.EnvironmentTest(args[0]), nil)
+		resp, err := c.Post(cmd.Context(), types.EnvironmentTest(args[0]), nil)
 		if err != nil {
 			return errors.WrapIf(err, "failed to test environment")
 		}
@@ -243,7 +252,7 @@ var switchCmd = &cobra.Command{
 			return err
 		}
 
-		path := fmt.Sprintf("%s?limit=%d", types.Endpoints.Environments(), cmdutil.ShowAllLimit)
+		path := fmt.Sprintf("%s?limit=%d", types.Environments(), cmdutil.ShowAllLimit)
 		resp, err := c.Get(cmd.Context(), path)
 		if err != nil {
 			return errors.WrapIf(err, "failed to list environments")
@@ -364,7 +373,7 @@ var updateCmd = &cobra.Command{
 			req.Enabled = new(false)
 		}
 
-		resp, err := c.Put(cmd.Context(), types.Endpoints.Environment(args[0]), req)
+		resp, err := c.Put(cmd.Context(), types.Environment(args[0]), req)
 		if err != nil {
 			return errors.WrapIf(err, "failed to update environment")
 		}
@@ -396,6 +405,69 @@ var updateCmd = &cobra.Command{
 	},
 }
 
+var createCmd = &cobra.Command{
+	Use:          "create",
+	Short:        "Create environment",
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := client.NewFromConfig()
+		if err != nil {
+			return err
+		}
+
+		req := environment.Create{ApiUrl: envCreateApiUrl}
+		if cmd.Flags().Changed("name") {
+			req.Name = &envCreateName
+		}
+		if cmd.Flags().Changed("access-token") {
+			req.AccessToken = &envCreateAccessToken
+		}
+		if cmd.Flags().Changed("use-api-key") {
+			req.UseApiKey = &envCreateUseApiKey
+		}
+		if cmd.Flags().Changed("edge") {
+			req.IsEdge = &envCreateEdge
+		}
+		if cmd.Flags().Changed("disabled") {
+			req.Enabled = new(!envCreateDisabled)
+		}
+
+		resp, err := c.Post(cmd.Context(), types.Environments(), req)
+		if err != nil {
+			return errors.WrapIf(err, "failed to create environment")
+		}
+		defer func() { _ = resp.Body.Close() }()
+		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
+			return errors.WrapIf(err, "failed to create environment")
+		}
+
+		var result base.ApiResponse[environment.Environment]
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
+		}
+
+		if jsonOutput {
+			resultBytes, err := json.MarshalIndent(buildEnvironmentPayloadInternal(result.Data), "", "  ")
+			if err != nil {
+				return errors.WrapIf(err, "failed to marshal JSON")
+			}
+			fmt.Println(string(resultBytes))
+			return nil
+		}
+
+		output.Success("Environment created successfully")
+		output.KeyValue("ID", result.Data.ID)
+		output.KeyValue("Name", result.Data.Name)
+		output.KeyValue("API URL", result.Data.ApiUrl)
+		output.KeyValue("Enabled", result.Data.Enabled)
+		if result.Data.ApiKey != nil && *result.Data.ApiKey != "" {
+			output.Warning("Pairing API key (shown only once) — store it now:")
+			output.KeyValue("API Key", *result.Data.ApiKey)
+		}
+		return nil
+	},
+}
+
 var versionCmd = &cobra.Command{
 	Use:          "version <id>",
 	Short:        "Get environment version",
@@ -407,7 +479,7 @@ var versionCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.Endpoints.EnvironmentVersion(args[0]))
+		resp, err := c.Get(cmd.Context(), types.EnvironmentVersion(args[0]))
 		if err != nil {
 			return errors.WrapIf(err, "failed to get environment version")
 		}
@@ -478,6 +550,7 @@ func init() {
 	EnvironmentsCmd.AddCommand(switchCmd)
 	EnvironmentsCmd.AddCommand(updateCmd)
 	EnvironmentsCmd.AddCommand(versionCmd)
+	EnvironmentsCmd.AddCommand(createCmd)
 
 	// List command flags
 	listCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of environments to show")
@@ -504,4 +577,14 @@ func init() {
 
 	// Version command flags
 	versionCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
+
+	// Create command flags
+	createCmd.Flags().StringVar(&envCreateApiUrl, "api-url", "", "API URL of the environment (required)")
+	createCmd.Flags().StringVar(&envCreateName, "name", "", "Environment name")
+	createCmd.Flags().StringVar(&envCreateAccessToken, "access-token", "", "Access token for legacy pairing")
+	createCmd.Flags().BoolVar(&envCreateUseApiKey, "use-api-key", false, "Pair using a generated API key (shown once)")
+	createCmd.Flags().BoolVar(&envCreateEdge, "edge", false, "Create as an edge environment")
+	createCmd.Flags().BoolVar(&envCreateDisabled, "disabled", false, "Create environment in disabled state")
+	createCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
+	_ = createCmd.MarkFlagRequired("api-url")
 }

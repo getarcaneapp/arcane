@@ -3,6 +3,8 @@ package jobs
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
+	"time"
 
 	"emperror.dev/errors"
 
@@ -34,7 +36,7 @@ var getCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.Endpoints.JobSchedules(c.EnvID()))
+		resp, err := c.Get(cmd.Context(), types.JobSchedules(c.EnvID()))
 		if err != nil {
 			return errors.WrapIf(err, "failed to get job schedules")
 		}
@@ -96,7 +98,7 @@ var updateCmd = &cobra.Command{
 			return errors.New("no updates provided (set at least one interval flag)")
 		}
 
-		resp, err := c.Put(cmd.Context(), types.Endpoints.JobSchedules(c.EnvID()), req)
+		resp, err := c.Put(cmd.Context(), types.JobSchedules(c.EnvID()), req)
 		if err != nil {
 			return errors.WrapIf(err, "failed to update job schedules")
 		}
@@ -124,12 +126,105 @@ var updateCmd = &cobra.Command{
 	},
 }
 
+var listCmd = &cobra.Command{
+	Use:          "list",
+	Aliases:      []string{"ls"},
+	Short:        "List background jobs",
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := cmdutil.ClientFromCommand(cmd)
+		if err != nil {
+			return err
+		}
+
+		resp, err := c.Get(cmd.Context(), types.Jobs(c.EnvID()))
+		if err != nil {
+			return errors.WrapIf(err, "failed to list jobs")
+		}
+		defer func() { _ = resp.Body.Close() }()
+		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
+			return errors.WrapIf(err, "failed to list jobs")
+		}
+
+		var result jobschedule.JobListResponse
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
+		}
+
+		if jsonOutput {
+			return cmdutil.PrintJSON(result)
+		}
+
+		headers := []string{"ID", "NAME", "CATEGORY", "SCHEDULE", "NEXT RUN", "ENABLED"}
+		rows := make([][]string, len(result.Jobs))
+		for i, job := range result.Jobs {
+			nextRun := "-"
+			if job.NextRun != nil {
+				nextRun = job.NextRun.Format(time.RFC3339)
+			}
+			rows[i] = []string{
+				job.ID,
+				job.Name,
+				job.Category,
+				job.Schedule,
+				nextRun,
+				strconv.FormatBool(job.Enabled),
+			}
+		}
+
+		output.Table(headers, rows)
+		fmt.Printf("\nTotal: %d jobs\n", len(result.Jobs))
+		return nil
+	},
+}
+
+var runCmd = &cobra.Command{
+	Use:          "run <job-id>",
+	Short:        "Run a background job now",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := cmdutil.ClientFromCommand(cmd)
+		if err != nil {
+			return err
+		}
+
+		resp, err := c.Post(cmd.Context(), types.JobRun(c.EnvID(), args[0]), nil)
+		if err != nil {
+			return errors.WrapIf(err, "failed to run job")
+		}
+		defer func() { _ = resp.Body.Close() }()
+		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
+			return errors.WrapIf(err, "failed to run job")
+		}
+
+		var result jobschedule.JobRunResponse
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
+		}
+
+		if jsonOutput {
+			return cmdutil.PrintJSON(result)
+		}
+
+		if !result.Success {
+			return errors.Errorf("job %s failed: %s", args[0], result.Message)
+		}
+		output.Success("%s", result.Message)
+		return nil
+	},
+}
+
 func init() {
 	JobsCmd.AddCommand(getCmd)
 	JobsCmd.AddCommand(updateCmd)
+	JobsCmd.AddCommand(listCmd)
+	JobsCmd.AddCommand(runCmd)
 
 	getCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	updateCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
+	listCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
+	runCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 
 	updateCmd.Flags().StringVar(&environmentHealthInterval, "environment-health-interval", "", "Environment health job interval (cron expression)")
 	updateCmd.Flags().StringVar(&eventCleanupInterval, "event-cleanup-interval", "", "Event cleanup job interval (cron expression)")

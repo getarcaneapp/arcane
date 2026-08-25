@@ -124,6 +124,10 @@ linters:
       - linters:
           - forbidigo
         path: cli/
+      # Endpoint path builders are intentional one-line functions.
+      - linters:
+          - shimbad
+        path: internal/types/endpoints\.go
     paths:
       - '.*\.pb\.go$'
       - third_party$

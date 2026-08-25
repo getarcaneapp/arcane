@@ -5,6 +5,17 @@ import type { SearchPaginationSortRequest } from '#lib/types/shared';
 import type { ProjectUpdateInfo } from '#lib/types/swarm';
 import type { SwarmServiceModeName, SwarmServiceModeSpec } from '#lib/types/swarm';
 import type { VulnerabilityScanSummary } from '#lib/types/environment';
+import { instantEpochMilliseconds } from '#lib/utils/formatting';
+import type { Temporal } from 'temporal-polyfill';
+
+// --- Compose / Swarm management labels ---
+
+export const COMPOSE_PROJECT_LABEL = 'com.docker.compose.project';
+export const SWARM_STACK_LABEL = 'com.docker.stack.namespace';
+
+export function getManagedByLabel(labels?: Record<string, string> | null): string | undefined {
+	return labels?.[COMPOSE_PROJECT_LABEL] || labels?.[SWARM_STACK_LABEL] || undefined;
+}
 
 // --- Container stats math ---
 
@@ -225,7 +236,7 @@ export type VulnerabilityScanPollOptions = {
 };
 
 export type VulnerabilityScanStabilizeOptions = {
-	scanRequestedAt?: string | number | Date | null;
+	scanRequestedAt?: string | number | Temporal.Instant | null;
 	failedRecheckDelayMs?: number;
 	maxFailedRechecks?: number;
 	staleFailureGraceMs?: number;
@@ -237,17 +248,12 @@ function delay(ms: number): Promise<void> {
 	});
 }
 
-function toTimestampMs(value?: string | number | Date | null): number {
+function toTimestampMs(value?: string | number | Temporal.Instant | null): number {
 	if (value == null) return 0;
-	if (value instanceof Date) {
-		const ts = value.getTime();
-		return Number.isFinite(ts) ? ts : 0;
-	}
 	if (typeof value === 'number') {
 		return Number.isFinite(value) ? value : 0;
 	}
-	const ts = Date.parse(value);
-	return Number.isFinite(ts) ? ts : 0;
+	return instantEpochMilliseconds(value) ?? 0;
 }
 
 export function isVulnerabilityScanInProgress(status?: string | null): boolean {
@@ -257,7 +263,7 @@ export function isVulnerabilityScanInProgress(status?: string | null): boolean {
 
 export function isLikelyStaleFailedSummary(
 	summary: VulnerabilityScanSummary,
-	scanRequestedAt?: string | number | Date | null,
+	scanRequestedAt?: string | number | Temporal.Instant | null,
 	staleFailureGraceMs = 1500
 ): boolean {
 	if (summary.status !== 'failed') return false;

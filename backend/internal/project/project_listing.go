@@ -408,6 +408,9 @@ func buildDiscoveredComposeProjectUpdateRowsInternal(
 ) []project.Details {
 	containersByProject := make(map[string][]container.Summary)
 	for _, c := range composeContainers {
+		if dockerutil.ComposeServiceLabel(c.Labels) == "" {
+			continue
+		}
 		projectName := dockerutil.ComposeProjectLabel(c.Labels)
 		if projectName == "" {
 			continue

@@ -142,7 +142,7 @@ export class MobileNavGestures {
 		e.preventDefault();
 		if (this.options.menuOpen || !this.options.scrollToHideEnabled || e.deltaY <= 0) return;
 
-		const now = Date.now();
+		const now = performance.now();
 		const velocity = e.deltaY / Math.max(1, now - this.lastWheelTime);
 
 		if (velocity > this.flickVelocityThreshold) {

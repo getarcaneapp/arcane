@@ -53,9 +53,7 @@
 
 	const lastCheckedAtLabel = $derived.by(() => {
 		if (!updateInfo?.lastCheckedAt) return null;
-		const parsed = new Date(updateInfo.lastCheckedAt);
-		if (Number.isNaN(parsed.getTime())) return null;
-		return formatDateTimeShort(parsed);
+		return formatDateTimeShort(updateInfo.lastCheckedAt) || null;
 	});
 
 	const stateMeta = $derived.by(

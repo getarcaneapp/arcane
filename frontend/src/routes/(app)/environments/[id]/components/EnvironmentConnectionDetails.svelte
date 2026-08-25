@@ -57,17 +57,6 @@
 
 		return { text: m.inactive(), variant: 'gray' };
 	});
-
-	function formatDateTime(value?: string): string {
-		if (!value) return m.common_never();
-
-		const date = new Date(value);
-		if (Number.isNaN(date.getTime())) {
-			return m.common_unknown();
-		}
-
-		return formatDateTimeShort(date);
-	}
 </script>
 
 {#snippet badgeTile(label: string, text: string, variant: BadgeVariant)}
@@ -97,9 +86,18 @@
 	{#if tunnelTypeBadge}
 		{@render badgeTile(m.environments_edge_tunnel_type_label(), tunnelTypeBadge.text, tunnelTypeBadge.variant)}
 	{/if}
-	{@render tile(m.environments_edge_connected_since_label(), formatDateTime(environment.connectedAt))}
-	{@render tile(m.environments_edge_last_heartbeat_label(), formatDateTime(environment.lastHeartbeat))}
+	{@render tile(
+		m.environments_edge_connected_since_label(),
+		environment.connectedAt ? formatDateTimeShort(environment.connectedAt) || m.common_unknown() : m.common_never()
+	)}
+	{@render tile(
+		m.environments_edge_last_heartbeat_label(),
+		environment.lastHeartbeat ? formatDateTimeShort(environment.lastHeartbeat) || m.common_unknown() : m.common_never()
+	)}
 	{#if controlPlaneBadge}
-		{@render tile(m.environments_edge_last_poll_label(), formatDateTime(environment.lastPollAt))}
+		{@render tile(
+			m.environments_edge_last_poll_label(),
+			environment.lastPollAt ? formatDateTimeShort(environment.lastPollAt) || m.common_unknown() : m.common_never()
+		)}
 	{/if}
 </div>

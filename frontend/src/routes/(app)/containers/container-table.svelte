@@ -30,8 +30,9 @@
 	import { environmentStore } from '#lib/stores/environment.store.svelte';
 	import { hasPermission } from '#lib/utils/auth';
 	import IconImage from '#lib/components/icon-image.svelte';
-	import { getContainerIpAddresses, getThemedIconUrl, parseImageRef } from '#lib/utils/docker';
+	import { COMPOSE_PROJECT_LABEL, getContainerIpAddresses, getThemedIconUrl, parseImageRef } from '#lib/utils/docker';
 	import { hasAnyLoadingState } from '#lib/utils/bulk-actions';
+	import { Temporal } from 'temporal-polyfill';
 	import { createContainerActions } from './container-table.actions';
 	import {
 		getActionStatusMessage,
@@ -400,7 +401,7 @@
 {#snippet NameCell({ item }: { item: ContainerSummaryDto })}
 	{@const displayName = getContainerDisplayName(item)}
 	{@const iconUrl = getThemedIconUrl(item, mode.current)}
-	{@const projectLabel = item.labels?.['com.docker.compose.project']}
+	{@const projectLabel = item.labels?.[COMPOSE_PROJECT_LABEL]}
 	<div class="flex items-center gap-2">
 		<IconImage src={iconUrl} alt={displayName} fallback={BoxIcon} class="size-6" containerClass="size-8" />
 		<a class="font-medium hover:underline" href="/containers/{item.id}">{displayName}</a>
@@ -500,7 +501,7 @@
 
 {#snippet CreatedCell({ item }: { item: ContainerSummaryDto })}
 	<span class="text-sm">
-		{item.created ? formatDateTimeShort(new Date(item.created * 1000)) : m.common_na()}
+		{item.created ? formatDateTimeShort(Temporal.Instant.fromEpochMilliseconds(item.created * 1000)) : m.common_na()}
 	</span>
 {/snippet}
 
@@ -586,7 +587,7 @@
 		footer={(mobileFieldVisibility['created'] ?? true)
 			? {
 					label: m.common_created(),
-					getValue: (item) => formatDateTimeShort(new Date(item.created * 1000)),
+					getValue: (item) => formatDateTimeShort(Temporal.Instant.fromEpochMilliseconds(item.created * 1000)),
 					icon: ClockIcon
 				}
 			: undefined}
@@ -636,7 +637,7 @@
 				{m.common_inspect()}
 			</DropdownMenu.Item>
 
-			{#if canEditContainers && !item.redeployDisabled && !item.labels?.['com.docker.compose.project']}
+			{#if canEditContainers && !item.redeployDisabled && !item.labels?.[COMPOSE_PROJECT_LABEL]}
 				<DropdownMenu.Item onclick={() => goto(`/containers/${item.id}/edit`)} disabled={isAnyLoading}>
 					<EditIcon class="size-4" />
 					{m.common_edit()}

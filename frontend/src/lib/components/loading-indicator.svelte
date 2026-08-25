@@ -26,10 +26,10 @@
 		if (active) {
 			showTO = setTimeout(() => {
 				visible = true;
-				startedAt = Date.now();
+				startedAt = performance.now();
 			}, delay);
 		} else {
-			const elapsed = Date.now() - startedAt;
+			const elapsed = performance.now() - startedAt;
 			const remaining = Math.max(0, minDuration - elapsed);
 			hideTO = setTimeout(() => (visible = false), remaining);
 		}

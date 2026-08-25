@@ -6,6 +6,8 @@
 	import type { ApiKey } from '#lib/types/auth';
 	import type { PermissionsManifest, ApiKeyPermissionGrant } from '#lib/types/auth';
 	import { normalizePermissionSelection } from '#lib/utils/permissions';
+	import { plainDateFromInstant, plainDateToInstantString } from '#lib/utils/formatting';
+	import { Temporal } from 'temporal-polyfill';
 	import { z } from 'zod/v4';
 	import { createForm, preventDefault } from '#lib/utils/settings';
 	import * as m from '#lib/paraglide/messages.js';
@@ -50,7 +52,7 @@
 		z.object({
 			name: z.string().min(1, m.common_field_required({ field: m.common_name() })),
 			description: z.string().optional(),
-			expiresAt: z.date().optional(),
+			expiresAt: z.instanceof(Temporal.PlainDate).optional(),
 			permissions: hidePermissions
 				? z.array(z.string()).default([])
 				: z.array(z.string()).min(1, m.pick_at_least_one_permission())
@@ -60,7 +62,7 @@
 	let formData = $derived({
 		name: apiKeyToEdit?.name || '',
 		description: apiKeyToEdit?.description || '',
-		expiresAt: apiKeyToEdit?.expiresAt ? new Date(apiKeyToEdit.expiresAt) : undefined,
+		expiresAt: plainDateFromInstant(apiKeyToEdit?.expiresAt),
 		permissions:
 			hidePermissions || !manifest
 				? []
@@ -81,7 +83,7 @@
 		const apiKeyData = {
 			name: data.name,
 			description: data.description || undefined,
-			expiresAt: data.expiresAt ? data.expiresAt.toISOString() : undefined,
+			expiresAt: data.expiresAt ? plainDateToInstantString(data.expiresAt) : undefined,
 			// v1: persist all picks as global grants (environmentId undefined).
 			// env-scoped picking is a follow-up. Personal keys carry no grants.
 			...(hidePermissions ? {} : { permissions: data.permissions.map((p) => ({ permission: p })) })

@@ -1,7 +1,7 @@
 import Convert from 'ansi-to-html';
-import { format as formatDate, setDefaultOptions, type Locale as DateFnsLocale } from 'date-fns';
+import { Temporal } from 'temporal-polyfill';
 import { z } from 'zod/v4';
-import { setLocale as setParaglideLocale, type Locale } from '#lib/paraglide/runtime';
+import { getLocale, setLocale as setParaglideLocale, type Locale } from '#lib/paraglide/runtime';
 import { timeFormatStore } from '#lib/stores/time-format.store.svelte';
 
 // --- String helpers ---
@@ -160,125 +160,233 @@ export const bytes = bytesWithHelpers;
 
 // --- Locale-aware date/time formatting ---
 
+export type InstantInput = Temporal.Instant | string | null | undefined;
+
+type DateDisplayStyle = 'short' | 'medium' | 'month-day';
+
 type AbsoluteDateTimeFormatOptions = {
-	datePattern?: string;
+	dateStyle?: DateDisplayStyle;
 	includeSeconds?: boolean;
+	timeZone?: string;
 };
 
-function getTimePattern(includeSeconds: boolean): string {
-	const timeFormat = timeFormatStore.current;
-	if (timeFormat === '12h') {
-		return includeSeconds ? 'h:mm:ss a' : 'h:mm a';
+type RelativeTimeFormatOptions = {
+	base?: InstantInput;
+};
+
+type RelativeTimeUnit = 'second' | 'minute' | 'hour' | 'day' | 'month' | 'year';
+
+type RelativeTimeValue = {
+	unit: RelativeTimeUnit;
+	value: number;
+};
+
+const dateTimeFormatterCache = new Map<string, Intl.DateTimeFormat>();
+const relativeTimeFormatterCache = new Map<string, Intl.RelativeTimeFormat>();
+const elapsedTimeFormatterCache = new Map<string, Intl.NumberFormat>();
+
+const dateFormatOptions: Record<DateDisplayStyle, Intl.DateTimeFormatOptions> = {
+	short: { day: 'numeric', month: 'numeric', year: 'numeric' },
+	medium: { day: 'numeric', month: 'short', year: 'numeric' },
+	'month-day': { day: 'numeric', month: 'short' }
+};
+
+export function parseInstant(value: InstantInput): Temporal.Instant | null {
+	if (!value) return null;
+	if (typeof value !== 'string') return value;
+
+	const normalized = value.trim();
+	// Docker zero-values missing timestamps as 0001-01-01T00:00:00Z.
+	if (!normalized || normalized.startsWith('0001-01-01')) return null;
+
+	try {
+		return Temporal.Instant.from(normalized);
+	} catch {
+		// Third-party-shaped timestamps (offset-less, date-only, human-readable)
+		// that strict ISO parsing rejects but Date historically accepted.
+		const epochMs = Date.parse(normalized);
+		return Number.isNaN(epochMs) ? null : Temporal.Instant.fromEpochMilliseconds(epochMs);
 	}
-	if (timeFormat === '24h') {
-		return includeSeconds ? 'HH:mm:ss' : 'HH:mm';
-	}
-	return includeSeconds ? 'pp' : 'p';
 }
 
-function formatAbsoluteDateTime(date: Date | string | null | undefined, options: AbsoluteDateTimeFormatOptions): string {
-	if (!date) return '';
-	const d = typeof date === 'string' ? new Date(date) : date;
-	if (isNaN(d.getTime())) return '';
+export function instantEpochMilliseconds(value: InstantInput): number | null {
+	return parseInstant(value)?.epochMilliseconds ?? null;
+}
 
-	const includeSeconds = options.includeSeconds ?? true;
-	const timePattern = getTimePattern(includeSeconds);
-	const useLocaleLongFormat = timeFormatStore.current === 'auto' && ['P', 'PP'].includes(options.datePattern ?? '');
-	const pattern = options.datePattern
-		? useLocaleLongFormat
-			? `${options.datePattern}${timePattern}`
-			: `${options.datePattern} ${timePattern}`
-		: timePattern;
+export function nowInstantString(): string {
+	return Temporal.Now.instant().toString({ smallestUnit: 'millisecond' });
+}
 
-	return formatDate(d, pattern);
+// The polyfill's Temporal.Now.timeZoneId() constructs a fresh Intl.DateTimeFormat
+// on every call, so resolve the local zone once per session.
+const localTimeZoneId = Temporal.Now.timeZoneId();
+
+export function plainDateFromInstant(value: InstantInput, timeZone = localTimeZoneId): Temporal.PlainDate | undefined {
+	return parseInstant(value)?.toZonedDateTimeISO(timeZone).toPlainDate();
+}
+
+export function plainDateToInstantString(value: Temporal.PlainDate, timeZone = localTimeZoneId): string {
+	return value.toZonedDateTime({ timeZone, plainTime: '00:00' }).toInstant().toString({ smallestUnit: 'millisecond' });
+}
+
+function dateTimeFormatterInternal(
+	dateStyle: DateDisplayStyle | undefined,
+	includeTime: boolean,
+	includeSeconds: boolean,
+	timeZone: string
+): Intl.DateTimeFormat {
+	const locale = getLocale();
+	const timeFormat = timeFormatStore.current;
+	const key = `${locale}|${timeZone}|${dateStyle ?? 'none'}|${includeTime}|${includeSeconds}|${timeFormat}`;
+	const cached = dateTimeFormatterCache.get(key);
+	if (cached) return cached;
+
+	const options: Intl.DateTimeFormatOptions = {
+		...(dateStyle ? dateFormatOptions[dateStyle] : {}),
+		timeZone
+	};
+
+	if (includeTime) {
+		options.hour = 'numeric';
+		options.minute = '2-digit';
+		if (includeSeconds) options.second = '2-digit';
+		if (timeFormat === '12h') options.hour12 = true;
+		if (timeFormat === '24h') options.hour12 = false;
+	}
+
+	const formatter = new Intl.DateTimeFormat(locale, options);
+	dateTimeFormatterCache.set(key, formatter);
+	return formatter;
+}
+
+function formatAbsoluteDateTimeInternal(
+	value: InstantInput,
+	options: AbsoluteDateTimeFormatOptions,
+	includeTime: boolean
+): string {
+	const instant = parseInstant(value);
+	if (!instant) return '';
+
+	const timeZone = options.timeZone ?? localTimeZoneId;
+	const formatter = dateTimeFormatterInternal(options.dateStyle, includeTime, options.includeSeconds ?? true, timeZone);
+	return formatter.format(instant.epochMilliseconds);
+}
+
+export function formatDate(
+	value: InstantInput,
+	options: Pick<AbsoluteDateTimeFormatOptions, 'dateStyle' | 'timeZone'> = { dateStyle: 'medium' }
+): string {
+	return formatAbsoluteDateTimeInternal(value, { ...options, dateStyle: options.dateStyle ?? 'medium' }, false);
 }
 
 export function formatDateTime(
-	date: Date | string | null | undefined,
-	options: AbsoluteDateTimeFormatOptions = { datePattern: 'PP', includeSeconds: true }
+	value: InstantInput,
+	options: AbsoluteDateTimeFormatOptions = { dateStyle: 'medium', includeSeconds: true }
 ): string {
-	return formatAbsoluteDateTime(date, options);
+	return formatAbsoluteDateTimeInternal(value, { ...options, dateStyle: options.dateStyle ?? 'medium' }, true);
 }
 
-export function formatDateTimeShort(date: Date | string | null | undefined): string {
-	return formatAbsoluteDateTime(date, { datePattern: 'PP', includeSeconds: false });
+export function formatDateTimeShort(value: InstantInput): string {
+	return formatAbsoluteDateTimeInternal(value, { dateStyle: 'medium', includeSeconds: false }, true);
 }
 
-export function formatOptionalDateTime(date: Date | string | null | undefined, fallback = '-'): string {
-	if (!date) return fallback;
-	return formatDateTime(date) || fallback;
+export function formatOptionalDateTime(value: InstantInput, fallback = '-'): string {
+	if (!value) return fallback;
+	return formatDateTime(value) || fallback;
 }
 
-export function isPastDate(date: Date | string | null | undefined): boolean {
-	if (!date) return false;
-	const d = typeof date === 'string' ? new Date(date) : date;
-	return !isNaN(d.getTime()) && d < new Date();
+export function isPastDate(value: InstantInput): boolean {
+	const instant = parseInstant(value);
+	return instant ? Temporal.Instant.compare(instant, Temporal.Now.instant()) < 0 : false;
 }
 
-export function formatTime(date: Date | string | null | undefined): string {
-	return formatAbsoluteDateTime(date, { includeSeconds: true });
+export function formatTime(value: InstantInput): string {
+	return formatAbsoluteDateTimeInternal(value, { includeSeconds: true }, true);
 }
 
-type DateFnsLocaleModule = {
-	[key: string]: DateFnsLocale;
-};
+function relativeTimeValueInternal(target: Temporal.Instant, base: Temporal.Instant): RelativeTimeValue {
+	const deltaSeconds = (target.epochMilliseconds - base.epochMilliseconds) / 1000;
+	const magnitude = Math.abs(deltaSeconds);
+	const direction = Math.sign(deltaSeconds) || 1;
+	// Math.round rounds halves toward +Infinity, which would make past deltas
+	// round differently than future ones; round the magnitude and reapply the sign.
+	const round = (value: number) => direction * Math.round(magnitude / value);
 
-function resolveDateFnsLocale(loader: () => Promise<DateFnsLocaleModule>): Promise<DateFnsLocale> {
-	return loader().then((module) => {
-		const locale = (module as { default?: DateFnsLocale }).default ?? Object.values(module)[0];
-		if (!locale) {
-			throw new Error('date-fns locale module did not export a locale');
-		}
-		return locale;
+	// Past sub-30s deltas read as "now"; future ones keep their direction so a
+	// pending run never looks like it already happened.
+	if (magnitude < 30) return { unit: 'second', value: direction > 0 ? Math.max(1, Math.round(magnitude)) : 0 };
+	if (magnitude < 90) return { unit: 'minute', value: direction };
+	if (magnitude < 45 * 60) return { unit: 'minute', value: round(60) };
+	if (magnitude < 90 * 60) return { unit: 'hour', value: direction };
+	if (magnitude < 22 * 60 * 60) return { unit: 'hour', value: round(60 * 60) };
+	if (magnitude < 36 * 60 * 60) return { unit: 'day', value: direction };
+	if (magnitude < 26 * 24 * 60 * 60) return { unit: 'day', value: round(24 * 60 * 60) };
+	if (magnitude < 45 * 24 * 60 * 60) return { unit: 'month', value: direction };
+	if (magnitude < 320 * 24 * 60 * 60) {
+		return { unit: 'month', value: round(30.4375 * 24 * 60 * 60) };
+	}
+	if (magnitude < 548 * 24 * 60 * 60) return { unit: 'year', value: direction };
+	return { unit: 'year', value: round(365.2425 * 24 * 60 * 60) };
+}
+
+function relativeTimeFormatterInternal(numeric: 'always' | 'auto'): Intl.RelativeTimeFormat {
+	const locale = getLocale();
+	const key = `${locale}|${numeric}`;
+	const cached = relativeTimeFormatterCache.get(key);
+	if (cached) return cached;
+
+	const formatter = new Intl.RelativeTimeFormat(locale, { numeric });
+	relativeTimeFormatterCache.set(key, formatter);
+	return formatter;
+}
+
+export function formatRelativeTime(value: InstantInput, options: RelativeTimeFormatOptions = {}): string {
+	const target = parseInstant(value);
+	const base = options.base ? parseInstant(options.base) : Temporal.Now.instant();
+	if (!target || !base) return '';
+
+	const relative = relativeTimeValueInternal(target, base);
+	const numeric = relative.value === 0 ? 'auto' : 'always';
+	return relativeTimeFormatterInternal(numeric).format(relative.value, relative.unit);
+}
+
+function elapsedTimeFormatterInternal(unit: RelativeTimeUnit): Intl.NumberFormat {
+	const locale = getLocale();
+	const key = `${locale}|${unit}`;
+	const cached = elapsedTimeFormatterCache.get(key);
+	if (cached) return cached;
+
+	const formatter = new Intl.NumberFormat(locale, {
+		style: 'unit',
+		unit,
+		unitDisplay: 'long'
 	});
+	elapsedTimeFormatterCache.set(key, formatter);
+	return formatter;
 }
 
-const dateFnsLocaleLoaders: Record<Locale, () => Promise<DateFnsLocale>> = {
-	cs: () => resolveDateFnsLocale(() => import('date-fns/locale/cs')),
-	da: () => resolveDateFnsLocale(() => import('date-fns/locale/da')),
-	de: () => resolveDateFnsLocale(() => import('date-fns/locale/de')),
-	el: () => resolveDateFnsLocale(() => import('date-fns/locale/el')),
-	en: () => resolveDateFnsLocale(() => import('date-fns/locale/en-US')),
-	eo: () => resolveDateFnsLocale(() => import('date-fns/locale/eo')),
-	es: () => resolveDateFnsLocale(() => import('date-fns/locale/es')),
-	fr: () => resolveDateFnsLocale(() => import('date-fns/locale/fr')),
-	hu: () => resolveDateFnsLocale(() => import('date-fns/locale/hu')),
-	it: () => resolveDateFnsLocale(() => import('date-fns/locale/it')),
-	ja: () => resolveDateFnsLocale(() => import('date-fns/locale/ja')),
-	ko: () => resolveDateFnsLocale(() => import('date-fns/locale/ko')),
-	nl: () => resolveDateFnsLocale(() => import('date-fns/locale/nl')),
-	pl: () => resolveDateFnsLocale(() => import('date-fns/locale/pl')),
-	'pt-BR': () => resolveDateFnsLocale(() => import('date-fns/locale/pt-BR')),
-	ru: () => resolveDateFnsLocale(() => import('date-fns/locale/ru')),
-	sv: () => resolveDateFnsLocale(() => import('date-fns/locale/sv')),
-	tr: () => resolveDateFnsLocale(() => import('date-fns/locale/tr')),
-	uk: () => resolveDateFnsLocale(() => import('date-fns/locale/uk')),
-	vi: () => resolveDateFnsLocale(() => import('date-fns/locale/vi')),
-	'zh-CN': () => resolveDateFnsLocale(() => import('date-fns/locale/zh-CN')),
-	'zh-TW': () => resolveDateFnsLocale(() => import('date-fns/locale/zh-TW'))
-};
+export function formatElapsedTime(value: InstantInput, options: RelativeTimeFormatOptions = {}): string {
+	const target = parseInstant(value);
+	const base = options.base ? parseInstant(options.base) : Temporal.Now.instant();
+	if (!target || !base) return '';
+
+	const relative = relativeTimeValueInternal(target, base);
+	const elapsedValue =
+		relative.value === 0
+			? Math.round(Math.abs(target.epochMilliseconds - base.epochMilliseconds) / 1000)
+			: Math.abs(relative.value);
+	return elapsedTimeFormatterInternal(relative.unit).format(elapsedValue);
+}
 
 export async function setLocale(locale: Locale, reload = true) {
-	const [zodResult, dateFnsResult] = await Promise.allSettled([
-		import(`../../../node_modules/zod/v4/locales/${locale}.js`),
-		dateFnsLocaleLoaders[locale]()
-	]);
-
-	if (zodResult.status === 'fulfilled') {
-		z.config(zodResult.value.default());
-	} else {
-		console.warn(`Failed to load zod locale for ${locale}:`, zodResult.reason);
+	try {
+		const zodLocale = await import(`../../../node_modules/zod/v4/locales/${locale}.js`);
+		z.config(zodLocale.default());
+	} catch (error) {
+		console.warn(`Failed to load zod locale for ${locale}:`, error);
 	}
 
 	setParaglideLocale(locale, { reload });
-
-	if (dateFnsResult.status === 'fulfilled') {
-		setDefaultOptions({
-			locale: dateFnsResult.value
-		});
-	} else {
-		console.warn(`Failed to load date-fns locale for ${locale}:`, dateFnsResult.reason);
-	}
 }
 
 // --- ANSI conversion ---

@@ -6,6 +6,7 @@
 	import { imageService } from '#lib/services/image-service';
 	import type { ImageHistoryItemDto } from '#lib/types/docker';
 	import { m } from '#lib/paraglide/messages';
+	import { Temporal } from 'temporal-polyfill';
 
 	let { imageId }: { imageId: string } = $props();
 
@@ -33,7 +34,7 @@
 
 	function formatCreated(created: number) {
 		if (!created) return m.common_na();
-		return formatDateTimeShort(new Date(created * 1000));
+		return formatDateTimeShort(Temporal.Instant.fromEpochMilliseconds(created * 1000));
 	}
 </script>
 

@@ -63,7 +63,7 @@ var listCmd = &cobra.Command{
 			return err
 		}
 
-		path, err := cmdutil.ApplyPaginationParams(cmd, types.Endpoints.Volumes(c.EnvID()), cmdutil.ListParams{
+		path, err := cmdutil.ApplyPaginationParams(cmd, types.Volumes(c.EnvID()), cmdutil.ListParams{
 			Resource:        "volumes",
 			Limit:           limitFlag,
 			FallbackDefault: 20,
@@ -202,7 +202,7 @@ var deleteCmd = &cobra.Command{
 		}
 
 		deletePath := cmdutil.AppendQuery(
-			types.Endpoints.Volume(c.EnvID(), resolved.Name),
+			types.Volume(c.EnvID(), resolved.Name),
 			url.Values{"force": []string{strconv.FormatBool(forceFlag)}},
 		)
 		resp, err := c.Delete(cmd.Context(), deletePath)
@@ -225,7 +225,7 @@ var countsCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runVolumeDataCommand(cmd, volumeDataCommandConfig{
-			endpoint:       types.Endpoints.VolumesCounts,
+			endpoint:       types.VolumesCounts,
 			failureMessage: "failed to get volume counts",
 			header:         "Volume Usage Counts",
 			marshalMessage: "failed to marshal volume counts",
@@ -254,7 +254,7 @@ var pruneCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Post(cmd.Context(), types.Endpoints.VolumesPrune(c.EnvID()), nil)
+		resp, err := c.Post(cmd.Context(), types.VolumesPrune(c.EnvID()), nil)
 		if err != nil {
 			return errors.WrapIf(err, "failed to prune volumes")
 		}
@@ -288,7 +288,7 @@ var sizesCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runVolumeDataCommand(cmd, volumeDataCommandConfig{
-			endpoint:       types.Endpoints.VolumesSizes,
+			endpoint:       types.VolumesSizes,
 			failureMessage: "failed to get volume sizes",
 			header:         "Volume Sizes",
 			marshalMessage: "failed to marshal volume sizes",
@@ -355,7 +355,7 @@ var usageCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.Endpoints.VolumeUsage(c.EnvID(), resolved.Name))
+		resp, err := c.Get(cmd.Context(), types.VolumeUsage(c.EnvID(), resolved.Name))
 		if err != nil {
 			return errors.WrapIf(err, "failed to get volume usage")
 		}
@@ -420,7 +420,7 @@ var createCmd = &cobra.Command{
 			}
 		}
 
-		path := types.Endpoints.Volumes(c.EnvID())
+		path := types.Volumes(c.EnvID())
 		resp, err := c.Post(cmd.Context(), path, req)
 		if err != nil {
 			return errors.WrapIf(err, "failed to create volume")
@@ -502,7 +502,7 @@ func resolveVolume(ctx context.Context, c *client.Client, identifier string, all
 		return nil, errors.New("volume identifier is required")
 	}
 
-	resp, err := c.Get(ctx, types.Endpoints.Volume(c.EnvID(), trimmed))
+	resp, err := c.Get(ctx, types.Volume(c.EnvID(), trimmed))
 	if err != nil {
 		return nil, errors.WrapIff(err, "failed to resolve volume %q", trimmed)
 	}
@@ -525,7 +525,7 @@ func resolveVolume(ctx context.Context, c *client.Client, identifier string, all
 		return nil, errors.Errorf("failed to resolve volume %q (status %d): %s", trimmed, resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
-	searchPath := fmt.Sprintf("%s?search=%s&limit=%d", types.Endpoints.Volumes(c.EnvID()), url.QueryEscape(trimmed), cmdutil.ShowAllLimit)
+	searchPath := fmt.Sprintf("%s?search=%s&limit=%d", types.Volumes(c.EnvID()), url.QueryEscape(trimmed), cmdutil.ShowAllLimit)
 	searchResp, err := c.Get(ctx, searchPath)
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to search volumes")

@@ -7,7 +7,7 @@
 	import { swarmService } from '#lib/services/swarm-service';
 	import type { SwarmStackSummary } from '#lib/types/swarm';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
-	import { formatDistanceToNow } from 'date-fns';
+	import { formatRelativeTime } from '#lib/utils/formatting';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog';
@@ -26,11 +26,6 @@
 	} = $props();
 
 	let isLoading = $state(false);
-
-	function formatTimestamp(timestamp: string) {
-		if (!timestamp) return m.common_unknown();
-		return formatDistanceToNow(new Date(timestamp), { addSuffix: true });
-	}
 
 	function inspectStack(stack: SwarmStackSummary) {
 		goto(`/swarm/stacks/${encodeURIComponent(stack.name)}`);
@@ -82,11 +77,11 @@
 {/snippet}
 
 {#snippet CreatedCell({ value }: { value: unknown })}
-	<span class="text-sm">{formatTimestamp(String(value ?? ''))}</span>
+	<span class="text-sm">{formatRelativeTime(String(value ?? '')) || m.common_unknown()}</span>
 {/snippet}
 
 {#snippet UpdatedCell({ value }: { value: unknown })}
-	<span class="text-sm">{formatTimestamp(String(value ?? ''))}</span>
+	<span class="text-sm">{formatRelativeTime(String(value ?? '')) || m.common_unknown()}</span>
 {/snippet}
 
 {#snippet StackMobileCardSnippet({
@@ -104,7 +99,7 @@
 		})}
 		title={(item: SwarmStackSummary) => item.name}
 		subtitle={(item: SwarmStackSummary) =>
-			(mobileFieldVisibility['createdAt'] ?? true) ? formatTimestamp(item.createdAt) : null}
+			(mobileFieldVisibility['createdAt'] ?? true) ? formatRelativeTime(item.createdAt) || m.common_unknown() : null}
 		fields={[
 			{
 				label: m.services(),
@@ -115,7 +110,7 @@
 			},
 			{
 				label: m.common_updated(),
-				getValue: (item: SwarmStackSummary) => formatTimestamp(item.updatedAt),
+				getValue: (item: SwarmStackSummary) => formatRelativeTime(item.updatedAt) || m.common_unknown(),
 				icon: LayersIcon,
 				iconVariant: 'gray' as const,
 				show: mobileFieldVisibility['updatedAt'] ?? false

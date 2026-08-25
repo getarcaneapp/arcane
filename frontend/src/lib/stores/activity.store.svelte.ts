@@ -23,6 +23,7 @@ import type { Environment } from '#lib/types/environment';
 import userStore from '#lib/stores/user-store';
 import { get } from 'svelte/store';
 import { discardPendingActivityToasts, queueActivityCompletionToast } from '#lib/components/activity/activity-completion-toasts';
+import { instantEpochMilliseconds } from '#lib/utils/formatting';
 
 const ACTIVITY_LIST_LIMIT = 50;
 const ACTIVITY_DETAIL_LIMIT = 500;
@@ -32,11 +33,12 @@ type ActivityEnvironmentState = StreamEnvStateBase & {
 };
 
 function sortActivitiesInternal(items: Activity[]): Activity[] {
+	const sortTimeMs = new Map(items.map((a) => [a, getActivitySortTimeInternal(a)]));
 	return [...items].sort((a, b) => {
 		const aActive = isActiveStatusInternal(a.status);
 		const bActive = isActiveStatusInternal(b.status);
 		if (aActive !== bActive) return aActive ? -1 : 1;
-		const diff = getActivitySortTimeInternal(b) - getActivitySortTimeInternal(a);
+		const diff = (sortTimeMs.get(b) ?? 0) - (sortTimeMs.get(a) ?? 0);
 		if (diff !== 0) return diff;
 		return b.id.localeCompare(a.id);
 	});
@@ -46,7 +48,7 @@ function sortActivitiesInternal(items: Activity[]): Activity[] {
 // so progress updates never reshuffle them; terminal rows sort by endedAt.
 function getActivitySortTimeInternal(activity: Activity): number {
 	const value = activity.endedAt || activity.createdAt || activity.startedAt;
-	return value ? new Date(value).getTime() : 0;
+	return instantEpochMilliseconds(value) ?? 0;
 }
 
 function isActiveStatusInternal(status: ActivityStatus): boolean {

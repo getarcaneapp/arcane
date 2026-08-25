@@ -182,7 +182,7 @@ func exchangeFederatedTokenInternal(cmd *cobra.Command, c *client.Client, subjec
 		form.Set("audience", strings.TrimSpace(audience))
 	}
 
-	resp, err := c.RequestRaw(cmd.Context(), http.MethodPost, types.Endpoints.AuthFederated(), strings.NewReader(form.Encode()), map[string]string{
+	resp, err := c.RequestRaw(cmd.Context(), http.MethodPost, types.AuthFederated(), strings.NewReader(form.Encode()), map[string]string{
 		"Content-Type": "application/x-www-form-urlencoded",
 	})
 	if err != nil {

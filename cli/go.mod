@@ -5,8 +5,8 @@ go 1.27
 replace github.com/getarcaneapp/arcane/types/v2 => ../types
 
 require (
-	charm.land/bubbles/v2 v2.1.1
-	charm.land/bubbletea/v2 v2.0.8
+	charm.land/bubbles/v2 v2.2.0
+	charm.land/bubbletea/v2 v2.0.9
 	charm.land/fang/v2 v2.0.1
 	charm.land/lipgloss/v2 v2.0.6
 	charm.land/log/v2 v2.0.0
@@ -14,13 +14,13 @@ require (
 	github.com/charmbracelet/x/term v0.2.2
 	github.com/getarcaneapp/arcane/types/v2 v2.6.0
 	github.com/go-viper/mapstructure/v2 v2.5.0
-	github.com/mattn/go-runewidth v0.0.27
+	github.com/mattn/go-runewidth v0.0.28
 	github.com/samber/hot v0.13.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.12.1
-	go.getarcane.app/acfs v0.4.1
+	go.getarcane.app/acfs v0.4.2
 	go.getarcane.app/sys/bytes v0.1.0
 )
 

@@ -27,6 +27,7 @@
 	import { hasPermission } from '#lib/utils/auth';
 	import { isDepotBuildAvailable } from '#lib/utils/build-provider';
 	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import { Temporal } from 'temporal-polyfill';
 
 	type TargetType = 'container' | 'project';
 	type LoadingStates = {
@@ -316,7 +317,7 @@
 			confirm: {
 				label: m.common_redeploy(),
 				action: async () => {
-					const operationStartedAt = Math.floor(Date.now() / 1000);
+					const operationStartedAt = Math.floor(Temporal.Now.instant().epochMilliseconds / 1000);
 					if (watch) {
 						operationWatchStore.start(`${m.common_redeploy()} — ${name ?? id}`);
 					}
@@ -371,7 +372,7 @@
 	async function handleDeploy(options?: DeployProjectOptions, watch = false) {
 		setLoading('start', true);
 
-		const operationStartedAt = Math.floor(Date.now() / 1000);
+		const operationStartedAt = Math.floor(Temporal.Now.instant().epochMilliseconds / 1000);
 		if (watch) {
 			operationWatchStore.start(`${deployButtonLabel} — ${name ?? id}`);
 		}

@@ -5,6 +5,7 @@
 	import { Textarea } from '#lib/components/ui/textarea';
 	import { Switch } from '#lib/components/ui/switch';
 	import { Label } from '#lib/components/ui/label';
+	import type { Temporal } from 'temporal-polyfill';
 	import type { Snippet } from 'svelte';
 	import type { HTMLAttributes } from 'svelte/elements';
 	import type { FormInput } from '#lib/utils/settings';
@@ -23,7 +24,7 @@
 		autocomplete = 'off',
 		...restProps
 	}: HTMLAttributes<HTMLDivElement> & {
-		input?: FormInput<string | boolean | number | Date | undefined>;
+		input?: FormInput<string | boolean | number | Temporal.PlainDate | undefined>;
 		label?: string;
 		description?: string;
 		helpText?: string;
@@ -55,7 +56,7 @@
 			{:else if type === 'textarea'}
 				<Textarea {id} {placeholder} {rows} bind:value={input.value as string} {disabled} />
 			{:else if type === 'date'}
-				<DatePicker {id} bind:value={input.value as Date} {disabled} />
+				<DatePicker {id} bind:value={input.value as Temporal.PlainDate} {disabled} />
 			{:else}
 				<Input {id} {placeholder} {type} bind:value={input.value} {disabled} {autocomplete} />
 			{/if}

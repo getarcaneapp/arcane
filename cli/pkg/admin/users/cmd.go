@@ -102,7 +102,7 @@ var listCmd = &cobra.Command{
 			return err
 		}
 
-		path := types.Endpoints.Users()
+		path := types.Users()
 		path, err = cmdutil.ApplyPaginationParams(cmd, path, cmdutil.ListParams{Resource: "users", Limit: limitFlag, FallbackDefault: 20, Start: startFlag, All: allFlag})
 		if err != nil {
 			return errors.WrapIf(err, "failed to build pagination query")
@@ -188,7 +188,7 @@ var createCmd = &cobra.Command{
 			req.Email = &userCreateEmail
 		}
 
-		resp, err := c.Post(cmd.Context(), types.Endpoints.Users(), req)
+		resp, err := c.Post(cmd.Context(), types.Users(), req)
 		if err != nil {
 			return errors.WrapIf(err, "failed to create user")
 		}
@@ -230,7 +230,7 @@ var getCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.Endpoints.User(args[0]))
+		resp, err := c.Get(cmd.Context(), types.User(args[0]))
 		if err != nil {
 			return errors.WrapIf(err, "failed to get user")
 		}
@@ -298,7 +298,7 @@ var updateCmd = &cobra.Command{
 			req.Email = &userUpdateEmail
 		}
 
-		resp, err := c.Put(cmd.Context(), types.Endpoints.User(args[0]), req)
+		resp, err := c.Put(cmd.Context(), types.User(args[0]), req)
 		if err != nil {
 			return errors.WrapIf(err, "failed to update user")
 		}
@@ -345,7 +345,7 @@ var deleteCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Delete(cmd.Context(), types.Endpoints.User(args[0]))
+		resp, err := c.Delete(cmd.Context(), types.User(args[0]))
 		if err != nil {
 			return errors.WrapIf(err, "failed to delete user")
 		}

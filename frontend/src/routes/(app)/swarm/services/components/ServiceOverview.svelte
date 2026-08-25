@@ -3,10 +3,14 @@
 	import { Badge } from '#lib/components/ui/badge';
 	import { m } from '#lib/paraglide/messages';
 	import type { SwarmServiceInspect } from '#lib/types/swarm';
-	import { formatDistanceToNow } from 'date-fns';
 	import { InfoIcon, ConnectionIcon } from '#lib/icons';
-	import { formatDateTimeShort, truncateImageDigest } from '#lib/utils/formatting';
-	import { getSwarmServiceModeLabel, getSwarmServiceModeVariant, isSwarmServiceModeScalable } from '#lib/utils/docker';
+	import { formatDateTimeShort, formatRelativeTime, truncateImageDigest } from '#lib/utils/formatting';
+	import {
+		SWARM_STACK_LABEL,
+		getSwarmServiceModeLabel,
+		getSwarmServiceModeVariant,
+		isSwarmServiceModeScalable
+	} from '#lib/utils/docker';
 	import { KeyValueCard } from '#lib/components/resource-detail';
 
 	interface Props {
@@ -20,21 +24,7 @@
 
 	let { service, serviceName, serviceImage, serviceMode, desiredReplicas, labels }: Props = $props();
 
-	function formatDate(input: string | undefined | null): string {
-		if (!input) return m.common_na();
-		return formatDateTimeShort(input) || m.common_na();
-	}
-
-	function formatRelative(input: string | undefined | null): string {
-		if (!input) return m.common_na();
-		try {
-			return formatDistanceToNow(new Date(input), { addSuffix: true });
-		} catch {
-			return m.common_na();
-		}
-	}
-
-	const stackName = $derived(labels?.['com.docker.stack.namespace'] || '');
+	const stackName = $derived(labels?.[SWARM_STACK_LABEL] || '');
 	const nodes = $derived((service?.nodes as string[]) || []);
 	const versionIndex = $derived(service?.version?.index ?? service?.version?.Index ?? 0);
 	const updateStatus = $derived(service?.updateStatus as Record<string, any> | null | undefined);
@@ -117,10 +107,10 @@
 						{m.common_created()}
 					</div>
 					<div class="text-sm font-medium text-foreground">
-						{formatRelative(service.createdAt)}
+						{formatRelativeTime(service.createdAt) || m.common_na()}
 					</div>
 					<div class="text-xs text-muted-foreground">
-						{formatDate(service.createdAt)}
+						{formatDateTimeShort(service.createdAt) || m.common_na()}
 					</div>
 				</Card.Content>
 			</Card.Root>
@@ -131,10 +121,10 @@
 						{m.common_updated()}
 					</div>
 					<div class="text-sm font-medium text-foreground">
-						{formatRelative(service.updatedAt)}
+						{formatRelativeTime(service.updatedAt) || m.common_na()}
 					</div>
 					<div class="text-xs text-muted-foreground">
-						{formatDate(service.updatedAt)}
+						{formatDateTimeShort(service.updatedAt) || m.common_na()}
 					</div>
 				</Card.Content>
 			</Card.Root>
@@ -180,7 +170,7 @@
 						</div>
 						{#if updateStatus['CompletedAt']}
 							<div class="text-xs text-muted-foreground">
-								{formatRelative(updateStatus['CompletedAt'])}
+								{formatRelativeTime(String(updateStatus['CompletedAt'])) || m.common_na()}
 							</div>
 						{/if}
 					</Card.Content>

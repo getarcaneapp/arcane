@@ -24,6 +24,7 @@
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
 	import UncheckedRingIcon from '#lib/components/unchecked-ring-icon.svelte';
 	import { mergeProps } from 'bits-ui';
+	import { instantEpochMilliseconds, nowInstantString } from '#lib/utils/formatting';
 
 	interface Props {
 		updateInfo?: ImageUpdateData;
@@ -56,8 +57,7 @@
 
 	function getCheckTimeValue(info?: ImageUpdateData): number {
 		if (!info?.checkTime) return 0;
-		const parsed = Date.parse(info.checkTime);
-		return Number.isNaN(parsed) ? 0 : parsed;
+		return instantEpochMilliseconds(info.checkTime) ?? 0;
 	}
 
 	const imageUpdateQuery = createQuery<ImageUpdateData>(() => ({
@@ -82,7 +82,7 @@
 			currentDigest: '',
 			latestVersion: '',
 			latestDigest: '',
-			checkTime: new Date().toISOString(),
+			checkTime: nowInstantString(),
 			responseTimeMs: 0,
 			error: imageUpdateQuery.error instanceof Error ? imageUpdateQuery.error.message : m.images_update_check_failed()
 		};
@@ -190,7 +190,7 @@
 					currentDigest: '',
 					latestVersion: '',
 					latestDigest: '',
-					checkTime: new Date().toISOString(),
+					checkTime: nowInstantString(),
 					responseTimeMs: 0,
 					error: message
 				});
@@ -208,7 +208,7 @@
 				currentDigest: '',
 				latestVersion: '',
 				latestDigest: '',
-				checkTime: new Date().toISOString(),
+				checkTime: nowInstantString(),
 				responseTimeMs: 0,
 				error: (error as Error)?.message || m.images_update_check_failed()
 			};

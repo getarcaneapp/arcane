@@ -314,6 +314,40 @@ func TestIsInternalVolumeInternal(t *testing.T) {
 	require.False(t, svc.isInternalVolumeInternal(volumetypes.Volume{Name: "user-volume"}))
 }
 
+func TestRenameVolumeRejectsInvalidAndProtectedNames(t *testing.T) {
+	service := &VolumeService{backupVolumeName: "arcane-backups"}
+
+	_, err := service.RenameVolume(t.Context(), "data", "data", common.User{})
+	require.ErrorIs(t, err, common.ErrVolumeRenameInvalid)
+
+	_, err = service.RenameVolume(t.Context(), "arcane-backups", "renamed-backups", common.User{})
+	require.ErrorIs(t, err, common.ErrVolumeRenameProtected)
+
+	_, err = service.RenameVolume(t.Context(), "data", "arcane-backups", common.User{})
+	require.ErrorIs(t, err, common.ErrVolumeRenameProtected)
+}
+
+func TestRenameVolumeMetadataInternalPreservesPoliciesAndHistory(t *testing.T) {
+	gormDB, err := gorm.Open(sqlite.Open("file:volume-rename-metadata?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, gormDB.AutoMigrate(&VolumeBackupPolicy{}, &VolumeBackup{}))
+
+	policy := VolumeBackupPolicy{VolumeName: "source-data", Schedule: defaultVolumeBackupSchedule, LocalEnabled: true}
+	require.NoError(t, gormDB.Create(&policy).Error)
+	require.NoError(t, gormDB.Create(&VolumeBackup{VolumeName: "source-data", PolicyID: policy.ID}).Error)
+
+	service := &VolumeService{db: &database.DB{DB: gormDB}}
+	require.NoError(t, service.renameVolumeMetadataInternal(t.Context(), "source-data", "renamed-data"))
+
+	var renamedPolicy VolumeBackupPolicy
+	require.NoError(t, gormDB.Where("id = ?", policy.ID).First(&renamedPolicy).Error)
+	require.Equal(t, "renamed-data", renamedPolicy.VolumeName)
+
+	var backupEntry VolumeBackup
+	require.NoError(t, gormDB.Where("policy_id = ?", policy.ID).First(&backupEntry).Error)
+	require.Equal(t, "renamed-data", backupEntry.VolumeName)
+}
+
 func TestBuildVolumePruneOptionsInternal_PreservesTrivyCache(t *testing.T) {
 	options := buildVolumePruneOptionsInternal(true, true)
 

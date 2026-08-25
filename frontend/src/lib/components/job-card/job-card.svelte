@@ -6,8 +6,7 @@
 	import * as Card from '#lib/components/ui/card';
 	import { Spinner } from '#lib/components/ui/spinner';
 	import { jobScheduleService } from '#lib/services/job-schedule-service';
-	import { formatDistanceToNow } from 'date-fns';
-	import { formatDateTimeShort } from '#lib/utils/formatting';
+	import { formatDateTimeShort, formatRelativeTime, parseInstant } from '#lib/utils/formatting';
 	import type { Snippet } from 'svelte';
 	import type { JobStatus } from '#lib/types/settings';
 	import JobScheduleDialog from './job-schedule-dialog.svelte';
@@ -39,9 +38,10 @@
 
 	const nextRunText = $derived.by(() => {
 		if (!job.nextRun) return null;
-		const nextRunDate = new Date(job.nextRun);
-		const relative = formatDistanceToNow(nextRunDate, { addSuffix: true });
-		const absolute = formatDateTimeShort(nextRunDate);
+		const nextRun = parseInstant(job.nextRun);
+		if (!nextRun) return null;
+		const relative = formatRelativeTime(nextRun);
+		const absolute = formatDateTimeShort(nextRun);
 		return `${relative} (${absolute})`;
 	});
 

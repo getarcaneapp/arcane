@@ -162,6 +162,7 @@ var permissionCatalog = []PermissionCatalogResource{
 		{"list", PermVolumesList, "List", ""},
 		{"read", PermVolumesRead, "Read", ""},
 		{"create", PermVolumesCreate, "Create", ""},
+		{"rename", PermVolumesRename, "Rename", ""},
 		{"delete", PermVolumesDelete, "Delete", ""},
 		{"prune", PermVolumesPrune, "Prune", ""},
 		{"upload", PermVolumesUpload, "Upload", ""},

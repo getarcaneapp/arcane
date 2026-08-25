@@ -22,11 +22,13 @@
 //
 //   - admin: Administration & platform management
 //   - auth: Authentication operations
+//   - backups: Manage Arcane system backups
 //   - config: Manage CLI configuration
 //   - containers: Manage containers
 //   - images: Manage Docker images and updates
 //   - jobs: Manage background jobs
 //   - generate: Generate secrets and tokens
+//   - variables: Manage global variables
 //   - version: Display version information
 package cli
 
@@ -48,6 +50,7 @@ import (
 	runtimectx "github.com/getarcaneapp/arcane/cli/v2/internal/runtime"
 	"github.com/getarcaneapp/arcane/cli/v2/pkg/admin"
 	"github.com/getarcaneapp/arcane/cli/v2/pkg/auth"
+	"github.com/getarcaneapp/arcane/cli/v2/pkg/backups"
 	"github.com/getarcaneapp/arcane/cli/v2/pkg/completion"
 	configClient "github.com/getarcaneapp/arcane/cli/v2/pkg/config"
 	"github.com/getarcaneapp/arcane/cli/v2/pkg/containers"
@@ -66,6 +69,7 @@ import (
 	"github.com/getarcaneapp/arcane/cli/v2/pkg/system"
 	"github.com/getarcaneapp/arcane/cli/v2/pkg/templates"
 	"github.com/getarcaneapp/arcane/cli/v2/pkg/updater"
+	"github.com/getarcaneapp/arcane/cli/v2/pkg/variables"
 	"github.com/getarcaneapp/arcane/cli/v2/pkg/version"
 	"github.com/getarcaneapp/arcane/cli/v2/pkg/volumes"
 	"github.com/spf13/cobra"
@@ -268,6 +272,8 @@ func init() {
 	rootCmd.AddCommand(selfupdate.Cmd)
 	rootCmd.AddCommand(admin.AdminCmd)
 	rootCmd.AddCommand(gitops.GitopsCmd)
+	rootCmd.AddCommand(backups.BackupsCmd)
+	rootCmd.AddCommand(variables.VariablesCmd)
 
 	instrumentCommandTreeInternal(rootCmd)
 }

@@ -3,8 +3,7 @@
 	import { Switch } from '#lib/components/ui/switch';
 	import { m } from '#lib/paraglide/messages';
 	import type { ContainerDetailsDto } from '#lib/types/docker';
-	import { formatDistanceToNow } from 'date-fns';
-	import { formatDateTimeShort } from '#lib/utils/formatting';
+	import { formatDateTimeShort, formatElapsedTime, formatRelativeTime, parseInstant } from '#lib/utils/formatting';
 	import { StartIcon, StopIcon, NetworksIcon, VolumesIcon, HealthIcon } from '#lib/icons';
 	import { containerService } from '#lib/services/container-service';
 	import { DetailMetaStrip, DetailSection, KeyValueCard, type DetailMetaItem } from '#lib/components/resource-detail';
@@ -43,50 +42,9 @@
 		}
 	}
 
-	function parseDockerDate(input: string | Date | undefined | null): Date | null {
-		if (!input) return null;
-		if (input instanceof Date) return isNaN(input.getTime()) ? null : input;
-
-		const s = String(input).trim();
-		if (!s || s.startsWith('0001-01-01')) return null;
-
-		const m = s.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(\.\d+)?Z$/);
-		let normalized = s;
-		if (m) {
-			const base = m[1];
-			const frac = m[2] ? m[2].slice(1) : '';
-			const ms = frac ? '.' + frac.slice(0, 3).padEnd(3, '0') : '';
-			normalized = `${base}${ms}Z`;
-		}
-
-		const d = new Date(normalized);
-		return isNaN(d.getTime()) ? null : d;
-	}
-
-	function formatDockerDate(input: string | Date | undefined | null): string {
-		const d = parseDockerDate(input);
-		return d ? formatDateTimeShort(d) : 'N/A';
-	}
-
-	function formatRelativeDate(input: string | Date | undefined | null): string {
-		const d = parseDockerDate(input);
-		if (!d) return 'N/A';
-		try {
-			return formatDistanceToNow(d, { addSuffix: true });
-		} catch {
-			return 'N/A';
-		}
-	}
-
-	function getUptime(input: string | Date | undefined | null): string {
-		const d = parseDockerDate(input);
-		if (!d) return 'N/A';
-		try {
-			return formatDistanceToNow(d, { addSuffix: false });
-		} catch {
-			return 'N/A';
-		}
-	}
+	const createdInstant = $derived(parseInstant(container.created));
+	const startedInstant = $derived(parseInstant(container.state?.startedAt));
+	const finishedInstant = $derived(parseInstant(container.state?.finishedAt));
 
 	const restartPolicy = $derived(container.hostConfig?.restartPolicy || 'no');
 
@@ -124,7 +82,7 @@
 	const metaItems = $derived.by(() => {
 		const items: DetailMetaItem[] = [{ icon: VolumesIcon, value: container.image || m.common_na(), mono: true }];
 		if (container.state?.running) {
-			items.push({ icon: StartIcon, label: m.common_uptime(), value: getUptime(container.state.startedAt) });
+			items.push({ icon: StartIcon, label: m.common_uptime(), value: formatElapsedTime(startedInstant) || m.common_na() });
 		} else {
 			items.push({ icon: StopIcon, value: container.state?.status || m.common_stopped() });
 		}
@@ -166,19 +124,19 @@
 			<KeyValueCard label={m.common_image_id()} valueTitle={m.common_click_to_select()}>{container.imageId}</KeyValueCard>
 
 			<KeyValueCard label={m.common_created()} valueClass="text-sm font-medium text-foreground">
-				{formatRelativeDate(container?.created)}
-				<div class="text-xs font-normal text-muted-foreground">{formatDockerDate(container?.created)}</div>
+				{formatRelativeTime(createdInstant) || m.common_na()}
+				<div class="text-xs font-normal text-muted-foreground">{formatDateTimeShort(createdInstant) || m.common_na()}</div>
 			</KeyValueCard>
 
 			{#if container.state?.running}
 				<KeyValueCard label={m.common_started()} valueClass="text-sm font-medium text-foreground">
-					{formatRelativeDate(container.state.startedAt)}
-					<div class="text-xs font-normal text-muted-foreground">{formatDockerDate(container.state.startedAt)}</div>
+					{formatRelativeTime(startedInstant) || m.common_na()}
+					<div class="text-xs font-normal text-muted-foreground">{formatDateTimeShort(startedInstant) || m.common_na()}</div>
 				</KeyValueCard>
 			{:else if container.state?.finishedAt && !container.state.finishedAt.startsWith('0001')}
 				<KeyValueCard label={m.common_finished()} valueClass="text-sm font-medium text-foreground">
-					{formatRelativeDate(container.state.finishedAt)}
-					<div class="text-xs font-normal text-muted-foreground">{formatDockerDate(container.state.finishedAt)}</div>
+					{formatRelativeTime(finishedInstant) || m.common_na()}
+					<div class="text-xs font-normal text-muted-foreground">{formatDateTimeShort(finishedInstant) || m.common_na()}</div>
 				</KeyValueCard>
 			{/if}
 

@@ -290,7 +290,7 @@ func TestImagesUpdatesCheckRequiresImageRef(t *testing.T) {
 	require.Error(t, err,
 		"expected missing image reference to fail, got output %q", outBuf)
 
-	require.False(t, !strings.Contains(err.Error(), "1 arg") || !strings.Contains(err.Error(), "received 0"),
+	require.Contains(t, err.Error(), "at least one image reference",
 		"unexpected argument error: %v", err)
 
 }

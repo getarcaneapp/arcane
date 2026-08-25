@@ -3,6 +3,8 @@ package updates
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"sort"
 	"strconv"
 
 	"emperror.dev/errors"
@@ -21,10 +23,13 @@ var UpdatesCmd = &cobra.Command{
 	Short: "Check for image updates",
 }
 
+var checkAll bool
+
 var checkCmd = &cobra.Command{
-	Use:          "check <image-ref>",
-	Short:        "Check an image reference for updates",
-	Args:         cobra.ExactArgs(1),
+	Use:          "check [image-ref...]",
+	Short:        "Check image references for updates",
+	Long:         "Check image references for updates.\n\nWith a single reference the update status is checked directly; with multiple references a batch check is performed. With --all every image is checked.",
+	Args:         cobra.ArbitraryArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c, err := client.NewFromConfig()
@@ -32,7 +37,31 @@ var checkCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.Endpoints.ImageUpdatesCheck(c.EnvID(), args[0]))
+		if checkAll {
+			if len(args) > 0 {
+				return errors.New("--all cannot be combined with image references")
+			}
+			// The handler declares a non-pointer Body, so an empty body is a 400.
+			resp, err := c.Post(cmd.Context(), types.ImageUpdatesCheckAll(c.EnvID()), imageupdate.CheckAllImagesRequest{})
+			if err != nil {
+				return errors.WrapIf(err, "failed to check all updates")
+			}
+			return printBatchResults(resp, "failed to check all updates")
+		}
+
+		if len(args) == 0 {
+			return errors.New("at least one image reference is required (or use --all)")
+		}
+
+		if len(args) > 1 {
+			resp, err := c.Post(cmd.Context(), types.ImageUpdatesCheckBatch(c.EnvID()), imageupdate.BatchImageUpdateRequest{ImageRefs: args})
+			if err != nil {
+				return errors.WrapIf(err, "failed to check updates")
+			}
+			return printBatchResults(resp, "failed to check updates")
+		}
+
+		resp, err := c.Get(cmd.Context(), types.ImageUpdatesCheck(c.EnvID(), args[0]))
 		if err != nil {
 			return errors.WrapIf(err, "failed to check updates")
 		}
@@ -67,6 +96,7 @@ var checkCmd = &cobra.Command{
 
 var checkAllCmd = &cobra.Command{
 	Use:          "check-all",
+	Hidden:       true,
 	Short:        "Check all images for updates",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -76,7 +106,7 @@ var checkAllCmd = &cobra.Command{
 		}
 
 		// The handler declares a non-pointer Body, so an empty body is a 400.
-		resp, err := c.Post(cmd.Context(), types.Endpoints.ImageUpdatesCheckAll(c.EnvID()), imageupdate.CheckAllImagesRequest{})
+		resp, err := c.Post(cmd.Context(), types.ImageUpdatesCheckAll(c.EnvID()), imageupdate.CheckAllImagesRequest{})
 		if err != nil {
 			return errors.WrapIf(err, "failed to check all updates")
 		}
@@ -111,6 +141,7 @@ var checkAllCmd = &cobra.Command{
 
 var checkImageCmd = &cobra.Command{
 	Use:          "check-image <image-id>",
+	Hidden:       true,
 	Short:        "Check specific image for updates",
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
@@ -120,7 +151,7 @@ var checkImageCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.Endpoints.ImageUpdatesCheckById(c.EnvID(), args[0]))
+		resp, err := c.Get(cmd.Context(), types.ImageUpdatesCheckById(c.EnvID(), args[0]))
 		if err != nil {
 			return errors.WrapIf(err, "failed to check image update")
 		}
@@ -162,7 +193,7 @@ var summaryCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.Endpoints.ImageUpdatesSummary(c.EnvID()))
+		resp, err := c.Get(cmd.Context(), types.ImageUpdatesSummary(c.EnvID()))
 		if err != nil {
 			return errors.WrapIf(err, "failed to get summary")
 		}
@@ -190,8 +221,58 @@ var summaryCmd = &cobra.Command{
 	},
 }
 
+// printBatchResults decodes a batch update-check response and prints every
+// requested reference, including up-to-date and failed checks.
+func printBatchResults(resp *http.Response, wrapMsg string) error {
+	result, err := client.DecodeResponseStrict[imageupdate.BatchResponse](resp)
+	if err != nil {
+		return errors.WrapIf(err, wrapMsg)
+	}
+
+	if jsonOutput {
+		resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
+		if err != nil {
+			return errors.WrapIf(err, "failed to marshal JSON")
+		}
+		fmt.Println(string(resultBytes))
+		return nil
+	}
+
+	refs := make([]string, 0, len(result.Data))
+	for imageRef := range result.Data {
+		refs = append(refs, imageRef)
+	}
+	sort.Strings(refs)
+
+	headers := []string{"IMAGE", "UPDATE", "CURRENT", "LATEST", "TYPE"}
+	rows := make([][]string, 0, len(refs))
+	updatesAvailable := 0
+	for _, imageRef := range refs {
+		update := result.Data[imageRef]
+		if update == nil {
+			rows = append(rows, []string{imageRef, "unknown", "", "", ""})
+			continue
+		}
+		if update.Error != "" {
+			rows = append(rows, []string{imageRef, "error", update.CurrentVersion, "", update.Error})
+			continue
+		}
+		if update.HasUpdate {
+			updatesAvailable++
+			rows = append(rows, []string{imageRef, "Yes", update.CurrentVersion, update.LatestVersion, update.UpdateType})
+			continue
+		}
+		rows = append(rows, []string{imageRef, "No", update.CurrentVersion, "", ""})
+	}
+
+	output.Table(headers, rows)
+	fmt.Printf("\nTotal: %d images checked, %d updates available\n", len(result.Data), updatesAvailable)
+	return nil
+}
+
 func init() {
 	UpdatesCmd.AddCommand(checkCmd)
+	checkCmd.Flags().BoolVar(&checkAll, "all", false, "Check every image for updates")
 	UpdatesCmd.AddCommand(checkAllCmd)
 	UpdatesCmd.AddCommand(checkImageCmd)
 	UpdatesCmd.AddCommand(summaryCmd)

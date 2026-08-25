@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { formatDistance } from 'date-fns';
+	import { Temporal } from 'temporal-polyfill';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { cn } from '#lib/utils';
@@ -8,6 +8,8 @@
 	import { DetailMetaStrip } from '#lib/components/resource-detail';
 	import type { Environment, EnvironmentStatus } from '#lib/types/environment';
 	import type { AppVersionInformation } from '#lib/types/settings';
+	import { formatRelativeTime } from '#lib/utils/formatting';
+	import { createSubscriber } from 'svelte/reactivity';
 
 	let {
 		environment,
@@ -78,29 +80,19 @@
 		remoteVersion?.displayVersion || remoteVersion?.currentTag || remoteVersion?.currentVersion || ''
 	);
 
-	function formatRelative(value: string | undefined, base: number): string {
-		if (!value) return m.common_never();
-
-		const date = new Date(value);
-		if (Number.isNaN(date.getTime())) {
-			return m.common_unknown();
-		}
-
-		return formatDistance(date, base, { addSuffix: true });
-	}
-
 	// The relative heartbeat ("2 minutes ago") must keep ticking even when
 	// lastHeartbeat stops changing (e.g. a silent agent); otherwise it would
-	// freeze at the value from the last fetch. Recompute against a ticking base.
-	let nowTick = $state(Date.now());
-
-	$effect(() => {
-		if (!environment.isEdge) return;
-		const interval = setInterval(() => (nowTick = Date.now()), 30_000);
+	// freeze at the value from the last fetch. Invalidate its consumer on a timer.
+	const subscribeToHeartbeatClock = createSubscriber((update) => {
+		const interval = setInterval(update, 30_000);
 		return () => clearInterval(interval);
 	});
 
-	let heartbeatRelative = $derived(formatRelative(environment.lastHeartbeat, nowTick));
+	let heartbeatRelative = $derived.by(() => {
+		if (!environment.lastHeartbeat) return m.common_never();
+		subscribeToHeartbeatClock();
+		return formatRelativeTime(environment.lastHeartbeat, { base: Temporal.Now.instant() }) || m.common_unknown();
+	});
 </script>
 
 <DetailMetaStrip>

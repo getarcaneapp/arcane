@@ -6,7 +6,7 @@
 	import { goto } from '$app/navigation';
 	import { onDestroy } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import { bytes, formatDateTimeShort } from '#lib/utils/formatting';
+	import { bytes, formatDateTimeShort, nowInstantString } from '#lib/utils/formatting';
 	import { inUseBadge } from '#lib/utils/mobile-card-badges';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog';
 	import { Badge } from '#lib/components/ui/badge/index.js';
@@ -32,6 +32,7 @@
 	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions';
 	import InUseStatus from '#lib/components/arcane-table/cells/in-use-status.svelte';
 	import UnixCreatedCell from '#lib/components/arcane-table/cells/unix-created-cell.svelte';
+	import { Temporal } from 'temporal-polyfill';
 
 	import {
 		DownloadIcon,
@@ -197,7 +198,7 @@
 			message: m.vuln_scan_failed(),
 			setLoadingState: () => {},
 			onSuccess: async (data) => {
-				scanRequestedAtByImage[imageId] = data.scanTime || new Date().toISOString();
+				scanRequestedAtByImage[imageId] = data.scanTime || nowInstantString();
 				const summary: VulnerabilityScanSummary = {
 					imageId: data.imageId,
 					scanTime: data.scanTime,
@@ -639,7 +640,7 @@
 		footer={(mobileFieldVisibility['created'] ?? true)
 			? {
 					label: m.common_created(),
-					getValue: (item) => formatDateTimeShort(new Date(Number(item.created || 0) * 1000)),
+					getValue: (item) => formatDateTimeShort(Temporal.Instant.fromEpochMilliseconds(Number(item.created || 0) * 1000)),
 					icon: ClockIcon
 				}
 			: undefined}
