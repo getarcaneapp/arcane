@@ -3,6 +3,7 @@ package middleware
 import (
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
@@ -166,7 +167,7 @@ func TestPerTokenRateLimitForPaths_TracksDistinctTokensNotIP(t *testing.T) {
 	router := echo.New()
 	router.IPExtractor = echo.ExtractIPDirect()
 
-	router.Use(PerTokenRateLimitForPaths([]string{"/webhooks/trigger/:token"}, 60, 1))
+	router.Use(PerTokenRateLimitForPaths([]string{"/webhooks/trigger/:token"}, 60, 1, nil))
 	router.POST("/webhooks/trigger/:token", func(c *echo.Context) error {
 		return c.NoContent(http.StatusOK)
 	})
@@ -193,7 +194,7 @@ func TestPerTokenRateLimitForPaths_FallsBackToIPWhenTokenMissing(t *testing.T) {
 	router := echo.New()
 	router.IPExtractor = echo.ExtractIPDirect()
 
-	router.Use(PerTokenRateLimitForPaths([]string{"/webhooks/trigger/:token"}, 60, 1))
+	router.Use(PerTokenRateLimitForPaths([]string{"/webhooks/trigger/:token"}, 60, 1, nil))
 	router.POST("/webhooks/trigger/:token", func(c *echo.Context) error {
 		return c.NoContent(http.StatusOK)
 	})
@@ -210,11 +211,92 @@ func TestPerTokenRateLimitForPaths_FallsBackToIPWhenTokenMissing(t *testing.T) {
 	require.NotEqual(t, http.StatusInternalServerError, rec.Code)
 }
 
+func TestPerTokenRateLimitForPaths_IPCeilingBoundsUnseenTokenCycling(t *testing.T) {
+	router := echo.New()
+	router.IPExtractor = echo.ExtractIPDirect()
+
+	dbLookups := 0
+	router.Use(PerTokenRateLimitForPaths([]string{"/webhooks/trigger/:token"}, 60, 1, nil))
+	router.POST("/webhooks/trigger/:token", func(c *echo.Context) error {
+		// Stands in for the webhook service's database-backed token lookup:
+		// every request that reaches the handler pays this cost, regardless
+		// of whether the token turns out to be valid.
+		dbLookups++
+		return c.NoContent(http.StatusNotFound)
+	})
+
+	doReq := func(token string) int {
+		req := httptest.NewRequest(http.MethodPost, "/webhooks/trigger/"+token, nil)
+		req.RemoteAddr = "192.0.2.10:4000" // same source IP for every request
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	// A never-ending stream of distinct, invalid tokens from one IP must
+	// still be bounded by the IP-wide ceiling (burst * multiplier), not
+	// admitted indefinitely just because each token is new to the token
+	// bucket map. This is what stops an attacker from using fresh random
+	// tokens to bypass rate limiting and hammer the downstream token lookup.
+	rejections := 0
+	for i := range 200 {
+		if doReq(strconv.Itoa(i)) == http.StatusTooManyRequests {
+			rejections++
+		}
+	}
+
+	require.Positive(t, rejections, "expected the IP ceiling to reject some requests once its burst is exhausted")
+	require.Less(t, dbLookups, 200, "unseen tokens must not all reach the handler/downstream lookup")
+}
+
+func TestPerTokenRateLimitForPaths_MalformedTokensGetNoBucketButStillHitIPCeiling(t *testing.T) {
+	router := echo.New()
+	router.IPExtractor = echo.ExtractIPDirect()
+
+	isValidShape := func(token string) bool {
+		return token == "well-formed"
+	}
+
+	// PerTokenRateLimitForPaths widens the IP ceiling by
+	// perTokenRateLimitIPMultiplierInternal relative to the burst given
+	// here, so with burst=2 the real IP-level burst is
+	// 2*perTokenRateLimitIPMultiplierInternal. If malformed tokens got
+	// their own per-token bucket instead of being folded into the IP-only
+	// path, they could rack up far more successes than that; if they are
+	// correctly bounded by the (wider) IP ceiling alone, successes must
+	// stop there.
+	const perMinute, burst = 2, 2
+	const ipBurst = burst * perTokenRateLimitIPMultiplierInternal
+
+	router.Use(PerTokenRateLimitForPaths([]string{"/webhooks/trigger/:token"}, perMinute, burst, isValidShape))
+	router.POST("/webhooks/trigger/:token", func(c *echo.Context) error {
+		return c.NoContent(http.StatusOK)
+	})
+
+	doReq := func(token string) int {
+		req := httptest.NewRequest(http.MethodPost, "/webhooks/trigger/"+token, nil)
+		req.RemoteAddr = "192.0.2.10:4000"
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	successes := 0
+	for i := range ipBurst + 10 {
+		if doReq("not-well-formed-"+strconv.Itoa(i)) == http.StatusOK {
+			successes++
+		}
+	}
+
+	require.LessOrEqual(t, successes, ipBurst,
+		"malformed tokens must be bounded by the IP ceiling, not given their own per-token bucket")
+}
+
 func TestPerTokenRateLimitForPaths_AppliesOnlyToConfiguredPaths(t *testing.T) {
 	router := echo.New()
 	router.IPExtractor = echo.ExtractIPDirect()
 
-	router.Use(PerTokenRateLimitForPaths([]string{"/webhooks/trigger/:token"}, 60, 1))
+	router.Use(PerTokenRateLimitForPaths([]string{"/webhooks/trigger/:token"}, 60, 1, nil))
 	router.POST("/webhooks/trigger/:token", func(c *echo.Context) error {
 		return c.NoContent(http.StatusOK)
 	})

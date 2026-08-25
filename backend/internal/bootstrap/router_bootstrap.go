@@ -26,6 +26,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/federated"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/webhook"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cookie"
@@ -240,8 +241,13 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 	// Keyed by the webhook token itself rather than the source IP, so a burst
 	// of triggers from one Git host (e.g. Forgejo/GitHub sending many webhooks
 	// from the same IP) cannot exhaust the budget for unrelated webhooks.
+	// A wider IP ceiling is checked first (see PerTokenRateLimitForPaths) so
+	// that cycling through arbitrary invalid tokens cannot bypass rate
+	// limiting to hammer the database-backed token lookup; structurally
+	// malformed tokens are also rejected before a bucket is ever allocated
+	// for them, via webhook.IsWellFormedToken.
 	apiGroup.Use(middleware.PerTokenRateLimitForPaths(
-		[]string{"/api/webhooks/trigger/:token"}, 60, 10,
+		[]string{"/api/webhooks/trigger/:token"}, 60, 10, webhook.IsWellFormedToken,
 	))
 	// Agent event ingestion authenticates on the agent token alone and sits
 	// outside the auth middleware, so it needs its own brute-force ceiling.
