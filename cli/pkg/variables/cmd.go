@@ -1,7 +1,6 @@
 package variables
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -116,18 +115,13 @@ var listCmd = &cobra.Command{
 			return errors.WrapIf(err, "failed to list variables")
 		}
 
-		body, err := cmdutil.ReadJSONBody(resp)
-		if err != nil {
+		var result base.ApiResponse[[]env.GlobalVariable]
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
 			return errors.WrapIf(err, "failed to list variables")
 		}
 
 		if jsonOutput {
-			return cmdutil.PrintRawJSON(body)
-		}
-
-		var result base.ApiResponse[[]env.GlobalVariable]
-		if err := json.Unmarshal(body, &result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		headers := []string{"ID", "KEY", "SCOPE", "SECRET", "VALUE"}
