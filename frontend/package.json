@@ -45,7 +45,7 @@
 		"@xyflow/svelte": "^1.6.3",
 		"ajv": "^8.20.0",
 		"ansi-to-html": "^0.7.2",
-		"bits-ui": "^2.18.1",
+		"bits-ui": "^2.19.0",
 		"clsx": "^2.1.1",
 		"embla-carousel-svelte": "^8.6.0",
 		"formsnap": "^2.0.1",
