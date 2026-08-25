@@ -1117,7 +1117,7 @@ release *args:
         git add .arcane.json
 
         # Update version in frontend/package.json
-        jq --arg new_version "$NEW_VERSION" '.version = $new_version' frontend/package.json > frontend/package_tmp.json && mv frontend/package_tmp.json frontend/package.json
+        jq --tab --arg new_version "$NEW_VERSION" '.version = $new_version' frontend/package.json > frontend/package_tmp.json && mv frontend/package_tmp.json frontend/package.json
         git add frontend/package.json
 
         # Generate changelog

@@ -19,24 +19,19 @@ import (
 )
 
 var (
-	jsonOutput bool
-	forceFlag  bool
-)
-
-var (
-	createKey     string
-	createValue   string
-	createSecret  bool
-	createAllEnvs bool
-	createEnvIDs  []string
-)
-
-var (
-	updateKey     string
-	updateValue   string
-	updateSecret  bool
-	updateAllEnvs bool
-	updateEnvIDs  []string
+	jsonOutput     bool
+	forceFlag      bool
+	createKey      string
+	createValue    string
+	createSecret   bool
+	createAllEnvs  bool
+	createEnvIDs   []string
+	updateKey      string
+	updateValue    string
+	updateSecret   bool
+	updateAllEnvs  bool
+	updateEnvIDs   []string
+	syncStatusFlag bool
 )
 
 // VariablesCmd is the parent command for global variable operations.
@@ -278,8 +273,6 @@ var deleteCmd = &cobra.Command{
 		return printMutationResult(result.Data, "Variable deleted successfully")
 	},
 }
-
-var syncStatusFlag bool
 
 var syncCmd = &cobra.Command{
 	Use:          "sync",

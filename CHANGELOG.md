@@ -1,3 +1,64 @@
+## v2.9.0
+
+### New features
+
+* automated s3 backup ([#3459](https://github.com/getarcaneapp/arcane/pull/3459) by @affeldt28)
+* batch container-update notifications ([#3650](https://github.com/getarcaneapp/arcane/pull/3650) by @wyx1818)
+* add ability to edit standalone containers ([#3646](https://github.com/getarcaneapp/arcane/pull/3646) by @kmendell)
+* add unused volume rename ([#3704](https://github.com/getarcaneapp/arcane/pull/3704) by @neurekadev)
+* pull and redeploy images after GitOps sync for stopped projects ([#3698](https://github.com/getarcaneapp/arcane/pull/3698) by @ohOgil)
+
+### CLI - New features
+
+* add commands for latest server features and adopt hyphen-free command naming([d84511b](https://github.com/getarcaneapp/arcane/commit/d84511b8d67bef5fe3117832c9173ecc987e38da) by @kmendell)
+* add vulnerabilities, activities, and webhooks commands with e2e coverage([f4f9df0](https://github.com/getarcaneapp/arcane/commit/f4f9df0e8f1373a9e7fcba145383fcda8b4b3fc2) by @kmendell)
+
+### Bug fixes
+
+* stable ordering for page walks without an explicit sort ([#3648](https://github.com/getarcaneapp/arcane/pull/3648) by @kmendell)
+* percent-decode path parameters before use ([#3682](https://github.com/getarcaneapp/arcane/pull/3682) by @kmendell)
+* show git-synced project files read-only instead of hiding or crashing ([#3690](https://github.com/getarcaneapp/arcane/pull/3690) by @kmendell)
+* backend not sending build directive for projects ([#3691](https://github.com/getarcaneapp/arcane/pull/3691) by @kmendell)
+* allow assigning roles to OIDC users and handle username collisions on OIDC login ([#3692](https://github.com/getarcaneapp/arcane/pull/3692) by @kmendell)
+* make update-all dialog list scroll with large fleets([b7a619b](https://github.com/getarcaneapp/arcane/commit/b7a619b2c7f8f08f05cc78f3db51ac6aa63e9ef4) by @kmendell)
+* validate cgroup-derived container ID during self-detection under network_mode service ([#3710](https://github.com/getarcaneapp/arcane/pull/3710) by @kmendell)
+* handle discovered Compose project updates ([#3711](https://github.com/getarcaneapp/arcane/pull/3711) by @kmendell)
+
+### Dependencies
+
+* bump @sveltejs/kit from 3.0.0-next.21 to 3.0.0-next.23 ([#3672](https://github.com/getarcaneapp/arcane/pull/3672) by @dependabot[bot])
+* bump svelte from 5.56.8 to 5.56.9 ([#3666](https://github.com/getarcaneapp/arcane/pull/3666) by @dependabot[bot])
+* bump svelte-sonner from 1.1.1 to 1.2.1 ([#3670](https://github.com/getarcaneapp/arcane/pull/3670) by @dependabot[bot])
+* bump @xyflow/svelte from 1.6.2 to 1.6.3 ([#3668](https://github.com/getarcaneapp/arcane/pull/3668) by @dependabot[bot])
+* bump charm.land/lipgloss/v2 from 2.0.5 to 2.0.6 in /cli ([#3662](https://github.com/getarcaneapp/arcane/pull/3662) by @dependabot[bot])
+* bump @codemirror/view from 6.43.8 to 6.43.9 in the codemirror group across 1 directory ([#3664](https://github.com/getarcaneapp/arcane/pull/3664) by @dependabot[bot])
+* bump the aws-sdk-go-v2 group in /backend with 5 updates ([#3731](https://github.com/getarcaneapp/arcane/pull/3731) by @dependabot[bot])
+* bump github.com/samber/slog-echo/v2 from 2.0.0 to 2.1.0 in /backend ([#3735](https://github.com/getarcaneapp/arcane/pull/3735) by @dependabot[bot])
+* bump go.getarcane.app/acfs from 0.4.1 to 0.4.2 in /cli ([#3722](https://github.com/getarcaneapp/arcane/pull/3722) by @dependabot[bot])
+* bump github.com/mattn/go-runewidth from 0.0.27 to 0.0.28 in /cli ([#3719](https://github.com/getarcaneapp/arcane/pull/3719) by @dependabot[bot])
+* bump go.getarcane.app/acfs from 0.4.1 to 0.4.2 in /backend ([#3732](https://github.com/getarcaneapp/arcane/pull/3732) by @dependabot[bot])
+* bump go.getarcane.app/updater from 0.7.2 to 0.7.3 in /backend ([#3733](https://github.com/getarcaneapp/arcane/pull/3733) by @dependabot[bot])
+* bump go.getarcane.app/docker/convert from 0.1.0 to 0.2.0 in /backend ([#3734](https://github.com/getarcaneapp/arcane/pull/3734) by @dependabot[bot])
+* bump charm.land/bubbletea/v2 from 2.0.8 to 2.0.9 in /cli ([#3720](https://github.com/getarcaneapp/arcane/pull/3720) by @dependabot[bot])
+* bump charm.land/bubbles/v2 from 2.1.1 to 2.2.0 in /cli ([#3721](https://github.com/getarcaneapp/arcane/pull/3721) by @dependabot[bot])
+* bump @sveltejs/kit from 3.0.0-next.23 to 3.0.0-next.25 ([#3727](https://github.com/getarcaneapp/arcane/pull/3727) by @dependabot[bot])
+* bump @tanstack/svelte-query from 6.1.38 to 6.1.39 ([#3725](https://github.com/getarcaneapp/arcane/pull/3725) by @dependabot[bot])
+* bump bits-ui from 2.18.1 to 2.19.0 ([#3728](https://github.com/getarcaneapp/arcane/pull/3728) by @dependabot[bot])
+* bump marked from 18.0.9 to 18.0.10 ([#3729](https://github.com/getarcaneapp/arcane/pull/3729) by @dependabot[bot])
+* bump vite-plus to 0.3.0([f3002cb](https://github.com/getarcaneapp/arcane/commit/f3002cbd30db67f0bd4e05feaf9dec830b1b35a3) by @kmendell)
+* bump svelte from 5.56.9 to 5.56.10 ([#3724](https://github.com/getarcaneapp/arcane/pull/3724) by @dependabot[bot])
+* bump @tanstack/virtual-core from 3.17.7 to 3.17.8 ([#3723](https://github.com/getarcaneapp/arcane/pull/3723) by @dependabot[bot])
+
+### Other
+
+* upgrade to go 1.27.0 ([#3680](https://github.com/getarcaneapp/arcane/pull/3680) by @kmendell)
+* use native temporal for time/date parsing ([#3714](https://github.com/getarcaneapp/arcane/pull/3714) by @kmendell)
+* use ai generation for github release notes ([#3739](https://github.com/getarcaneapp/arcane/pull/3739) by @kmendell)
+
+
+
+**Full Changelog**: https://github.com/getarcaneapp/arcane/compare/v2.8.1...v2.9.0
+
 ## v2.8.1
 
 ### Bug fixes

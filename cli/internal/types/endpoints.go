@@ -455,6 +455,63 @@ func BackupsS3DestinationInUse(id string) string {
 	return pathf("/api/backups/s3/%s/in-use", id)
 }
 
+// Vulnerability endpoints
+
+func ImageVulnerabilitiesScan(envID, imageID string) string {
+	return pathf("/api/environments/%s/images/%s/vulnerabilities/scan", envID, imageID)
+}
+func ImageVulnerabilities(envID, imageID string) string {
+	return pathf("/api/environments/%s/images/%s/vulnerabilities", envID, imageID)
+}
+func ImageVulnerabilitiesSummary(envID, imageID string) string {
+	return pathf("/api/environments/%s/images/%s/vulnerabilities/summary", envID, imageID)
+}
+func ImageVulnerabilitiesList(envID, imageID string) string {
+	return pathf("/api/environments/%s/images/%s/vulnerabilities/list", envID, imageID)
+}
+func ImagesVulnerabilitiesSummaries(envID string) string {
+	return pathf("/api/environments/%s/images/vulnerabilities/summaries", envID)
+}
+func VulnerabilitiesScannerStatus(envID string) string {
+	return pathf("/api/environments/%s/vulnerabilities/scanner-status", envID)
+}
+func VulnerabilitiesSummary(envID string) string {
+	return pathf("/api/environments/%s/vulnerabilities/summary", envID)
+}
+func VulnerabilitiesAll(envID string) string {
+	return pathf("/api/environments/%s/vulnerabilities/all", envID)
+}
+func VulnerabilitiesIgnored(envID string) string {
+	return pathf("/api/environments/%s/vulnerabilities/ignored", envID)
+}
+func VulnerabilitiesIgnore(envID string) string {
+	return pathf("/api/environments/%s/vulnerabilities/ignore", envID)
+}
+func VulnerabilityIgnore(envID, ignoreID string) string {
+	return pathf("/api/environments/%s/vulnerabilities/ignore/%s", envID, ignoreID)
+}
+
+// Activity endpoints
+
+func Activities(envID string) string { return pathf("/api/environments/%s/activities", envID) }
+func Activity(envID, activityID string) string {
+	return pathf("/api/environments/%s/activities/%s", envID, activityID)
+}
+func ActivityCancel(envID, activityID string) string {
+	return pathf("/api/environments/%s/activities/%s/cancel", envID, activityID)
+}
+func ActivitiesHistory(envID string) string {
+	return pathf("/api/environments/%s/activities/history", envID)
+}
+
+// Webhook endpoints
+
+func Webhooks(envID string) string { return pathf("/api/environments/%s/webhooks", envID) }
+func Webhook(envID, webhookID string) string {
+	return pathf("/api/environments/%s/webhooks/%s", envID, webhookID)
+}
+func WebhookTrigger(token string) string { return pathf("/api/webhooks/trigger/%s", token) }
+
 // GitOps sync endpoints
 
 func GitOpsSyncs(envID string) string { return pathf("/api/environments/%s/gitops-syncs", envID) }

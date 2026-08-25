@@ -18,14 +18,11 @@ import (
 )
 
 var (
-	limitFlag  int
-	startFlag  int
-	allFlag    bool
-	forceFlag  bool
-	jsonOutput bool
-)
-
-var (
+	limitFlag          int
+	startFlag          int
+	allFlag            bool
+	forceFlag          bool
+	jsonOutput         bool
 	createName         string
 	createDescription  string
 	createDisabled     bool
@@ -38,9 +35,6 @@ var (
 	createEnvironment  string
 	createTokenTTL     int
 	createExpiresAt    string
-)
-
-var (
 	updateName         string
 	updateDescription  string
 	updateEnabled      bool
