@@ -165,6 +165,49 @@ func agentTokenRateLimitKeyInternal(token string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// PerTokenRateLimitForPaths returns an Echo middleware that applies a rate
+// limit keyed by the ":token" route param instead of the client IP, but only
+// when c.Path() (the registered route pattern) is in paths. Each token gets
+// its own independent token bucket, so a burst on one webhook does not
+// deplete the budget for another webhook, even when both are triggered from
+// the same source IP (e.g. a shared Git host). Requests with no token param
+// fall back to PerIPRateLimit so the route is never left unprotected.
+func PerTokenRateLimitForPaths(paths []string, perMinute int, burst int) echo.MiddlewareFunc {
+	if perMinute <= 0 {
+		perMinute = 10
+	}
+	if burst <= 0 {
+		burst = perMinute
+	}
+	limiter := newIPRateLimiterInternal(rate.Every(time.Minute/time.Duration(perMinute)), burst)
+	ipFallback := PerIPRateLimit(perMinute, burst)
+
+	pathSet := make(map[string]struct{}, len(paths))
+	for _, p := range paths {
+		pathSet[p] = struct{}{}
+	}
+
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		gatedByIP := ipFallback(next)
+		return func(c *echo.Context) error {
+			if _, ok := pathSet[c.Path()]; !ok {
+				return next(c)
+			}
+
+			token := strings.TrimSpace(c.Param("token"))
+			if token == "" {
+				return gatedByIP(c)
+			}
+
+			if !limiter.allow(agentTokenRateLimitKeyInternal(token)) {
+				c.Response().Header().Set("Retry-After", "60")
+				return c.JSON(http.StatusTooManyRequests, map[string]any{"error": "rate limit exceeded"})
+			}
+			return next(c)
+		}
+	}
+}
+
 // PerIPRateLimitForPaths returns an Echo middleware that applies a per-IP
 // rate limit only when c.Path() (the registered route pattern) is in paths.
 // Each path gets its own independent token bucket, so traffic on one path

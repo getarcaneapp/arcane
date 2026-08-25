@@ -237,7 +237,10 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 	apiGroup.Use(middleware.PerIPRateLimitForPaths(
 		[]string{"/api/auth/federated/token"}, 10, 10,
 	))
-	apiGroup.Use(middleware.PerIPRateLimitForPaths(
+	// Keyed by the webhook token itself rather than the source IP, so a burst
+	// of triggers from one Git host (e.g. Forgejo/GitHub sending many webhooks
+	// from the same IP) cannot exhaust the budget for unrelated webhooks.
+	apiGroup.Use(middleware.PerTokenRateLimitForPaths(
 		[]string{"/api/webhooks/trigger/:token"}, 60, 10,
 	))
 	// Agent event ingestion authenticates on the agent token alone and sits

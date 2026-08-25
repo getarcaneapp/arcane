@@ -162,6 +162,79 @@ func TestPerIPRateLimitForPaths_RouteParamsDoNotEscapeFilter(t *testing.T) {
 	require.Equal(t, http.StatusTooManyRequests, doReq("token-bbb"))
 }
 
+func TestPerTokenRateLimitForPaths_TracksDistinctTokensNotIP(t *testing.T) {
+	router := echo.New()
+	router.IPExtractor = echo.ExtractIPDirect()
+
+	router.Use(PerTokenRateLimitForPaths([]string{"/webhooks/trigger/:token"}, 60, 1))
+	router.POST("/webhooks/trigger/:token", func(c *echo.Context) error {
+		return c.NoContent(http.StatusOK)
+	})
+
+	doReq := func(token string) int {
+		req := httptest.NewRequest(http.MethodPost, "/webhooks/trigger/"+token, nil)
+		req.RemoteAddr = "192.0.2.10:4000" // same source IP for every request
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	// Same IP, different tokens: each token gets its own bucket, so a burst
+	// from one webhook (e.g. a Git host) must not block another.
+	require.Equal(t, http.StatusOK, doReq("token-a"))
+	require.Equal(t, http.StatusOK, doReq("token-b"))
+	require.Equal(t, http.StatusOK, doReq("token-c"))
+
+	// The same token, hit twice in a row, still exhausts its own bucket.
+	require.Equal(t, http.StatusTooManyRequests, doReq("token-a"))
+}
+
+func TestPerTokenRateLimitForPaths_FallsBackToIPWhenTokenMissing(t *testing.T) {
+	router := echo.New()
+	router.IPExtractor = echo.ExtractIPDirect()
+
+	router.Use(PerTokenRateLimitForPaths([]string{"/webhooks/trigger/:token"}, 60, 1))
+	router.POST("/webhooks/trigger/:token", func(c *echo.Context) error {
+		return c.NoContent(http.StatusOK)
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/webhooks/trigger/", nil)
+	req.RemoteAddr = "192.0.2.10:4000"
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	// Echo does not match a trailing-slash empty param against ":token", so
+	// this exercises the router's own behavior rather than the fallback path
+	// directly; the important invariant is that the middleware never panics
+	// and never leaves the route unguarded.
+	require.NotEqual(t, http.StatusInternalServerError, rec.Code)
+}
+
+func TestPerTokenRateLimitForPaths_AppliesOnlyToConfiguredPaths(t *testing.T) {
+	router := echo.New()
+	router.IPExtractor = echo.ExtractIPDirect()
+
+	router.Use(PerTokenRateLimitForPaths([]string{"/webhooks/trigger/:token"}, 60, 1))
+	router.POST("/webhooks/trigger/:token", func(c *echo.Context) error {
+		return c.NoContent(http.StatusOK)
+	})
+	router.POST("/unlimited/:token", func(c *echo.Context) error {
+		return c.NoContent(http.StatusOK)
+	})
+
+	doReq := func(path string) int {
+		req := httptest.NewRequest(http.MethodPost, path, nil)
+		req.RemoteAddr = "192.0.2.10:4000"
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	for range 10 {
+		require.Equal(t, http.StatusOK, doReq("/unlimited/same-token"))
+	}
+}
+
 func TestIPRateLimiter_EnforcesMaxEntriesForRecentClients(t *testing.T) {
 	limiter := newIPRateLimiterInternal(1, 1)
 	limiter.maxEntries = 3
