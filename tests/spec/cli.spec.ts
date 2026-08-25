@@ -220,9 +220,7 @@ const readOnlyJsonSmokeCommands: JsonSmokeCommand[] = [
 		name: 'variables list',
 		args: ['variables', 'list', '--json'],
 		expectation: (value) => {
-			const envelope = value as { success?: boolean; data?: unknown };
-			expect(envelope.success).toBe(true);
-			expect(envelope.data === null || Array.isArray(envelope.data)).toBe(true);
+			expect(value === null || Array.isArray(value)).toBe(true);
 		}
 	},
 	{
