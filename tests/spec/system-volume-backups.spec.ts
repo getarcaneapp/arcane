@@ -186,7 +186,7 @@ test.describe('System-managed volume backups', () => {
 		await expect(dialog).toBeHidden();
 		expect(mock.savedCollection().policies[0]?.volumeNames).toEqual([unavailableName, liveName]);
 
-		await page.getByRole('button', { name: 'Create' }).click();
+		await page.getByRole('button', { name: 'Create', exact: true }).click();
 		await page.getByRole('menuitem', { name: 'Schedule' }).click();
 		const createSchedule = page.getByRole('dialog', { name: 'Create schedule' });
 		await createSchedule.getByLabel('Backup type').click();
@@ -197,7 +197,7 @@ test.describe('System-managed volume backups', () => {
 		expect(mock.savedCollection().policies).toHaveLength(2);
 		await expect(page.getByText('Volume', { exact: true })).toHaveCount(2);
 
-		await page.getByRole('button', { name: 'Create' }).click();
+		await page.getByRole('button', { name: 'Create', exact: true }).click();
 		await page.getByRole('menuitem', { name: 'Backup' }).click();
 		const createBackup = page.getByRole('dialog', { name: 'Create Backup' });
 		await createBackup.getByLabel('Backup type').click();
@@ -208,7 +208,7 @@ test.describe('System-managed volume backups', () => {
 		await expect(page.getByText('Matched 2; 1 succeeded, 0 failed, and 1 skipped.')).toBeVisible();
 		expect(mock.runRequests()).toContainEqual({ policyId: 'volume-nightly' });
 
-		await page.getByRole('button', { name: 'Create' }).click();
+		await page.getByRole('button', { name: 'Create', exact: true }).click();
 		await page.getByRole('menuitem', { name: 'Backup' }).click();
 		const customBackup = page.getByRole('dialog', { name: 'Create Backup' });
 		await customBackup.getByLabel('Backup type').click();
