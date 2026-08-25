@@ -148,8 +148,8 @@ importers:
         specifier: 9.1.2
         version: 9.1.2
       '@tanstack/virtual-core':
-        specifier: ^3.17.7
-        version: 3.17.7
+        specifier: ^3.17.8
+        version: 3.17.8
       '@uiw/codemirror-themes':
         specifier: ^4.25.11
         version: 4.25.11(@codemirror/language@6.12.4)(@codemirror/state@6.7.1)(@codemirror/view@6.43.9)
@@ -1570,8 +1570,8 @@ packages:
     resolution: {integrity: sha512-ONpWQeass1sfg80CWF1NSwQ8r3GiqxA2lT/EdqIcrDEPZ0Z+0mM94eQoFYLPN0Kztzj8TQVb2+PrSZSItqA61g==}
     engines: {node: '>=20'}
 
-  '@tanstack/virtual-core@3.17.7':
-    resolution: {integrity: sha512-bp+v10y65sp2H7WpWfIMyxTNfl8ZVfxFTLRjPIFRryi6FV/J33z4IS53WO4pTk36KlvJ4iLiQz+oaydDC1xbcA==}
+  '@tanstack/virtual-core@3.17.8':
+    resolution: {integrity: sha512-BfEvehNpOT75r5Ksc5xW6NZuXujTfb7nlSEyVu4XHG3gdxNg1KqXruWbDewXOUaUYIo4oRbSfkjIajz4MAT8tA==}
 
   '@testing-library/dom@10.4.1':
     resolution: {integrity: sha512-o4PXJQidqJl82ckFaXUeoAW+XysPLauYI43Abki5hABd853iMhitooc6znOnczgbTYmEP6U6/y1ZyKAIsvMKGg==}
@@ -4524,7 +4524,7 @@ snapshots:
     dependencies:
       '@tanstack/store': 0.11.1
 
-  '@tanstack/virtual-core@3.17.7': {}
+  '@tanstack/virtual-core@3.17.8': {}
 
   '@testing-library/dom@10.4.1':
     dependencies:
