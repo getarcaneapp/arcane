@@ -49,6 +49,7 @@
 	/>
 	{#if enabledError}<p class="text-sm text-destructive">{enabledError}</p>{/if}
 	<TextInputWithLabel
+		id={`${idPrefix}-schedule`}
 		value={form.schedule}
 		onChange={(schedule) => onChange({ schedule })}
 		error={scheduleError}
@@ -59,6 +60,7 @@
 		placeholder={schedulePlaceholder}
 	/>
 	<TextInputWithLabel
+		id={`${idPrefix}-retention`}
 		value={form.retentionCount}
 		onChange={(retentionCount) => onChange({ retentionCount: Number(retentionCount) })}
 		error={retentionError}

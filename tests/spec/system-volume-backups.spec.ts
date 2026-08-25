@@ -191,7 +191,7 @@ test.describe('System-managed volume backups', () => {
 		const createSchedule = page.getByRole('dialog', { name: 'Create schedule' });
 		await createSchedule.getByLabel('Backup type').click();
 		await page.getByRole('option', { name: 'Volume' }).click();
-		await createSchedule.getByLabel('Schedule').fill('0 30 4 * * *');
+		await createSchedule.getByLabel('Schedule', { exact: true }).fill('0 30 4 * * *');
 		await createSchedule.getByRole('button', { name: 'Save' }).click();
 		await expect(createSchedule).toBeHidden();
 		expect(mock.savedCollection().policies).toHaveLength(2);
