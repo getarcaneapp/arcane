@@ -109,40 +109,6 @@ func TestConfig_LoadWorkspaceLimits(t *testing.T) {
 	})
 }
 
-func TestConfig_LoadBackupFileBrowserPageSizes(t *testing.T) {
-	t.Run("defaults", func(t *testing.T) {
-		cfg := Load()
-		require.Equal(t, 250, cfg.BackupFileBrowserDefaultPageSize)
-		require.Equal(t, 1000, cfg.BackupFileBrowserMaxPageSize)
-	})
-
-	t.Run("positive overrides", func(t *testing.T) {
-		t.Setenv("BACKUP_FILE_BROWSER_DEFAULT_PAGE_SIZE", "125")
-		t.Setenv("BACKUP_FILE_BROWSER_MAX_PAGE_SIZE", "500")
-		cfg := Load()
-		require.Equal(t, 125, cfg.BackupFileBrowserDefaultPageSize)
-		require.Equal(t, 500, cfg.BackupFileBrowserMaxPageSize)
-	})
-
-	for _, value := range []string{"0", "-1", "not-a-number"} {
-		t.Run("invalid values use defaults "+value, func(t *testing.T) {
-			t.Setenv("BACKUP_FILE_BROWSER_DEFAULT_PAGE_SIZE", value)
-			t.Setenv("BACKUP_FILE_BROWSER_MAX_PAGE_SIZE", value)
-			cfg := Load()
-			require.Equal(t, 250, cfg.BackupFileBrowserDefaultPageSize)
-			require.Equal(t, 1000, cfg.BackupFileBrowserMaxPageSize)
-		})
-	}
-
-	t.Run("default is clamped to maximum", func(t *testing.T) {
-		t.Setenv("BACKUP_FILE_BROWSER_DEFAULT_PAGE_SIZE", "800")
-		t.Setenv("BACKUP_FILE_BROWSER_MAX_PAGE_SIZE", "300")
-		cfg := Load()
-		require.Equal(t, 300, cfg.BackupFileBrowserDefaultPageSize)
-		require.Equal(t, 300, cfg.BackupFileBrowserMaxPageSize)
-	})
-}
-
 func TestConfig_DockerSecretsFileSupport(t *testing.T) {
 	// Save original env vars
 	origEncryptionKey := os.Getenv("ENCRYPTION_KEY")

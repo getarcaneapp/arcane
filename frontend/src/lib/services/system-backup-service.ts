@@ -8,7 +8,7 @@ import type {
 	UpdateSystemBackupPolicy
 } from '#lib/types/system-backup';
 import { transformPaginationParams } from '#lib/utils/tables';
-import type { BackupFileBrowseRequest, BackupFilePage, BackupRestoreSelection } from '#lib/types/backup';
+import type { BackupFileBrowseRequest, BackupFileEntry, BackupRestoreSelection } from '#lib/types/backup';
 
 class SystemBackupService extends BaseAPIService {
 	async list(options?: SearchPaginationSortRequest): Promise<Paginated<SystemBackupRun>> {
@@ -40,12 +40,9 @@ class SystemBackupService extends BaseAPIService {
 		await this.handleResponse(this.api.post(`/backups/${id}/restore`, { recoveryKey }));
 	}
 
-	async listFiles(id: string, recoveryKey: string): Promise<string[]> {
-		return this.handleResponse(this.api.post(`/backups/${id}/files`, { recoveryKey }));
-	}
-
-	async browseFiles(id: string, recoveryKey: string, request: BackupFileBrowseRequest): Promise<BackupFilePage> {
-		return this.handleResponse(this.api.post(`/backups/${id}/files/browse`, { recoveryKey, ...request }));
+	async browseFiles(id: string, recoveryKey: string, request: BackupFileBrowseRequest): Promise<Paginated<BackupFileEntry>> {
+		const response = await this.api.post(`/backups/${id}/files/browse`, { recoveryKey }, { params: request });
+		return response.data;
 	}
 
 	async restoreFiles(id: string, recoveryKey: string, selection: BackupRestoreSelection): Promise<unknown> {

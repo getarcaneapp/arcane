@@ -66,24 +66,19 @@ type RestoreSystemBackupInput struct {
 	Body backuptypes.RestoreSystemBackupRequest
 }
 
-// ListSystemBackupFilesInput identifies a system backup whose project files should be listed.
-type ListSystemBackupFilesInput struct {
-	ID   string `path:"id"`
-	Body backuptypes.ListSystemBackupFilesRequest
-}
-
-// ListSystemBackupFilesOutput contains project files eligible for selective restore.
-type ListSystemBackupFilesOutput struct{ Body base.ApiResponse[[]string] }
-
 // BrowseSystemBackupFilesInput selects one page of a system backup tree.
 type BrowseSystemBackupFilesInput struct {
-	ID   string `path:"id"`
-	Body backuptypes.BrowseSystemBackupFilesRequest
+	ID     string `path:"id"`
+	Path   string `query:"path" doc:"Folder path relative to the backup root"`
+	Search string `query:"search" doc:"Case-insensitive full-path search"`
+	Start  int    `query:"start" default:"0" doc:"Start index for the page"`
+	Limit  int    `query:"limit" default:"20" doc:"Requested page size"`
+	Body   backuptypes.SystemBackupRecoveryKey
 }
 
 // BrowseSystemBackupFilesOutput contains a page of project files and folders.
 type BrowseSystemBackupFilesOutput struct {
-	Body base.ApiResponse[backuptypes.BackupFilePage]
+	Body base.Paginated[backuptypes.BackupFileEntry]
 }
 
 // RestoreSystemBackupFilesInput selects project files to restore from a system backup.
@@ -118,7 +113,6 @@ func RegisterSystemBackups(api huma.API, service *SystemBackupService, activityS
 	middleware.RegisterWithPermission(api, huma.Operation{OperationID: "create-system-backup", Method: http.MethodPost, Path: "/backups", Summary: "Create Arcane system backup", Tags: []string{"System Backups"}, Middlewares: adminOnly}, authz.PermSystemBackupsManage, h.Create)
 	middleware.RegisterWithPermission(api, huma.Operation{OperationID: "discover-system-backups", Method: http.MethodPost, Path: "/backups/discover", Summary: "Discover Arcane system backups in S3", Tags: []string{"System Backups"}, Middlewares: adminOnly}, authz.PermSystemBackupsManage, h.Discover)
 	middleware.RegisterWithPermission(api, huma.Operation{OperationID: "restore-system-backup", Method: http.MethodPost, Path: "/backups/{id}/restore", Summary: "Restore Arcane system backup", Tags: []string{"System Backups"}, Middlewares: adminOnly}, authz.PermSystemBackupsRestore, h.Restore)
-	middleware.RegisterWithPermission(api, huma.Operation{OperationID: "list-system-backup-files", Method: http.MethodPost, Path: "/backups/{id}/files", Summary: "List project files in an Arcane system backup", Tags: []string{"System Backups"}, Middlewares: adminOnly}, authz.PermSystemBackupsRead, h.ListFiles)
 	middleware.RegisterWithPermission(api, huma.Operation{OperationID: "browse-system-backup-files", Method: http.MethodPost, Path: "/backups/{id}/files/browse", Summary: "Browse project files in an Arcane system backup", Tags: []string{"System Backups"}, Middlewares: adminOnly}, authz.PermSystemBackupsRead, h.BrowseFiles)
 	middleware.RegisterWithPermission(api, huma.Operation{OperationID: "restore-system-backup-files", Method: http.MethodPost, Path: "/backups/{id}/restore-files", Summary: "Restore project files from an Arcane system backup", Tags: []string{"System Backups"}, Middlewares: adminOnly}, authz.PermSystemBackupsRestore, h.RestoreFiles)
 	middleware.RegisterWithPermission(api, huma.Operation{OperationID: "upload-system-backup", Method: http.MethodPost, Path: "/backups/{id}/upload", Summary: "Upload Arcane system backup", Tags: []string{"System Backups"}, Middlewares: adminOnly}, authz.PermSystemBackupsManage, h.Upload)
@@ -258,32 +252,20 @@ func (h *SystemBackupHandler) Restore(ctx context.Context, input *RestoreSystemB
 	return messageOutputInternal("Arcane system restore started", activityID), nil
 }
 
-// ListFiles lists project files eligible for selective restore from a system backup.
-func (h *SystemBackupHandler) ListFiles(ctx context.Context, input *ListSystemBackupFilesInput) (*ListSystemBackupFilesOutput, error) {
-	files, err := h.service.ListBackupFiles(ctx, input.ID, input.Body.RecoveryKey)
-	if err != nil {
-		return nil, huma.Error400BadRequest(err.Error())
-	}
-	return &ListSystemBackupFilesOutput{Body: base.ApiResponse[[]string]{Success: true, Data: files}}, nil
-}
-
 // BrowseFiles returns one lazy-loaded project tree page.
 func (h *SystemBackupHandler) BrowseFiles(ctx context.Context, input *BrowseSystemBackupFilesInput) (*BrowseSystemBackupFilesOutput, error) {
-	page, err := h.service.BrowseBackupFiles(ctx, input.ID, input.Body)
+	params := handlerutil.PaginationParams(input.Start, input.Limit, "", "", input.Search)
+	items, page, err := h.service.BrowseBackupFiles(ctx, input.ID, input.Body.RecoveryKey, input.Path, params)
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
-	return &BrowseSystemBackupFilesOutput{Body: base.ApiResponse[backuptypes.BackupFilePage]{Success: true, Data: page}}, nil
+	return &BrowseSystemBackupFilesOutput{Body: base.Paginated[backuptypes.BackupFileEntry]{
+		Success: true, Data: items, Pagination: handlerutil.PaginationResponse(page),
+	}}, nil
 }
 
 // RestoreFiles restores selected project files from a system backup.
 func (h *SystemBackupHandler) RestoreFiles(ctx context.Context, input *RestoreSystemBackupFilesInput) (*SystemBackupMessageOutput, error) {
-	if input.Body.SelectAll && len(input.Body.Paths) > 0 {
-		return nil, huma.Error400BadRequest("selectAll cannot be combined with explicit paths")
-	}
-	if !input.Body.SelectAll && len(input.Body.Paths) == 0 {
-		return nil, huma.Error400BadRequest("paths are required")
-	}
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err

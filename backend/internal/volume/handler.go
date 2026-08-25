@@ -264,12 +264,12 @@ type BrowseBackupFilesInput struct {
 	BackupID      string `path:"backupId" doc:"Backup ID"`
 	Path          string `query:"path" doc:"Folder path relative to the backup root"`
 	Search        string `query:"search" doc:"Case-insensitive full-path search"`
-	Start         int    `query:"start" doc:"Start index for the page"`
-	Limit         int    `query:"limit" doc:"Requested page size"`
+	Start         int    `query:"start" default:"0" doc:"Start index for the page"`
+	Limit         int    `query:"limit" default:"20" doc:"Requested page size"`
 }
 
 type BrowseBackupFilesOutput struct {
-	Body base.ApiResponse[backuptypes.BackupFilePage]
+	Body base.Paginated[backuptypes.BackupFileEntry]
 }
 
 type DeleteBackupInput struct {
@@ -1067,13 +1067,6 @@ func (h *VolumeHandler) RestoreBackupFiles(ctx context.Context, input *RestoreBa
 		return nil, err
 	}
 
-	if input.Body.SelectAll && len(input.Body.Paths) > 0 {
-		return nil, huma.Error400BadRequest("selectAll cannot be combined with explicit paths")
-	}
-	if !input.Body.SelectAll && len(input.Body.Paths) == 0 {
-		return nil, huma.Error400BadRequest("paths are required")
-	}
-
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
@@ -1143,16 +1136,17 @@ func (h *VolumeHandler) ListBackupFiles(ctx context.Context, input *ListBackupFi
 }
 
 func (h *VolumeHandler) BrowseBackupFiles(ctx context.Context, input *BrowseBackupFilesInput) (*BrowseBackupFilesOutput, error) {
-	page, err := h.volumeService.BrowseBackupFiles(ctx, input.BackupID, backuptypes.BrowseBackupFilesRequest{
-		Path: input.Path, Search: input.Search, Start: input.Start, Limit: input.Limit,
-	})
+	params := handlerutil.PaginationParams(input.Start, input.Limit, "", "", input.Search)
+	items, page, err := h.volumeService.BrowseBackupFiles(ctx, input.BackupID, input.Path, params)
 	if errors.Is(err, errInvalidVolumeBackupSelectionInternal) {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	return &BrowseBackupFilesOutput{Body: base.ApiResponse[backuptypes.BackupFilePage]{Success: true, Data: page}}, nil
+	return &BrowseBackupFilesOutput{Body: base.Paginated[backuptypes.BackupFileEntry]{
+		Success: true, Data: items, Pagination: handlerutil.PaginationResponse(page),
+	}}, nil
 }
 
 func (h *VolumeHandler) DeleteBackup(ctx context.Context, input *DeleteBackupInput) (*DeleteBackupOutput, error) {

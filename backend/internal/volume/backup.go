@@ -906,34 +906,30 @@ func (s *VolumeService) ListBackupFiles(ctx context.Context, backupID string) ([
 	if err != nil {
 		return nil, err
 	}
-	return s.engine.ListSnapshotFiles(ctx, dockerClient, repository, s.rusticPasswordInternal(), snapshotID)
+	return s.engine.ListSnapshotFiles(ctx, dockerClient, repository, s.rusticPasswordInternal(), snapshotID, "", true)
 }
 
 // BrowseBackupFiles returns one lazy-loaded page from a volume backup tree.
-func (s *VolumeService) BrowseBackupFiles(ctx context.Context, backupID string, request backuptypes.BrowseBackupFilesRequest) (backuptypes.BackupFilePage, error) {
-	browsePath, err := backupbrowser.NormalizePath(request.Path, true)
-	if err != nil || request.Start < 0 {
-		return backuptypes.BackupFilePage{}, fmt.Errorf("%w: invalid browse path or start", errInvalidVolumeBackupSelectionInternal)
+func (s *VolumeService) BrowseBackupFiles(ctx context.Context, backupID, requestedPath string, params pagination.QueryParams) ([]backuptypes.BackupFileEntry, pagination.Response, error) {
+	browsePath, err := backupbrowser.NormalizePath(requestedPath, true)
+	if err != nil || params.Start < 0 {
+		return nil, pagination.Response{}, fmt.Errorf("%w: invalid browse path or start", errInvalidVolumeBackupSelectionInternal)
 	}
 	var entry VolumeBackup
 	if err := s.db.WithContext(ctx).Where("id = ?", backupID).First(&entry).Error; err != nil {
-		return backuptypes.BackupFilePage{}, err
+		return nil, pagination.Response{}, err
 	}
-	search := strings.TrimSpace(request.Search)
+	search := strings.TrimSpace(params.Search)
 	listPath, recursive := browsePath, false
 	if search != "" {
 		listPath, recursive = "", true
 	}
 	entries, err := s.backupFileEntriesInternal(ctx, &entry, listPath, recursive)
 	if err != nil {
-		return backuptypes.BackupFilePage{}, err
+		return nil, pagination.Response{}, err
 	}
-	pageSize := s.backupBrowserPageSize
-	if request.Limit > 0 {
-		pageSize = request.Limit
-	}
-	pageSize = min(pageSize, s.backupBrowserMaxPageSize)
-	return backupbrowser.Page(entries, search, request.Start, pageSize), nil
+	items, page := backupbrowser.Browse(entries, params)
+	return items, page, nil
 }
 
 func (s *VolumeService) backupFileEntriesInternal(ctx context.Context, entry *VolumeBackup, browsePath string, recursive bool) ([]backuptypes.BackupFileEntry, error) {
@@ -952,7 +948,7 @@ func (s *VolumeService) backupFileEntriesInternal(ctx context.Context, entry *Vo
 	if err != nil {
 		return nil, err
 	}
-	listed, err := s.engine.ListSnapshotFilesAtPath(ctx, dockerClient, repository, s.rusticPasswordInternal(), snapshotID, browsePath+"/", recursive)
+	listed, err := s.engine.ListSnapshotFiles(ctx, dockerClient, repository, s.rusticPasswordInternal(), snapshotID, browsePath+"/", recursive)
 	if err != nil {
 		return nil, err
 	}
@@ -983,8 +979,12 @@ type volumeBackupRestoreSelectionInternal struct {
 }
 
 func (s *VolumeService) resolveVolumeBackupRestoreSelectionInternal(ctx context.Context, dockerClient *client.Client, entry *VolumeBackup, repository backup.Repository, snapshotID string, selection backuptypes.RestoreSelection) (volumeBackupRestoreSelectionInternal, error) {
-	resolved := volumeBackupRestoreSelectionInternal{
-		globalRoot: selection.SelectAll && strings.TrimSpace(selection.Search) == "",
+	resolved := volumeBackupRestoreSelectionInternal{}
+	if selection.SelectAll && strings.TrimSpace(selection.Search) == "" {
+		if _, err := backupbrowser.NormalizeSelection(selection, []backuptypes.BackupFileEntry{{Path: "", IsDirectory: true}}); err != nil {
+			return volumeBackupRestoreSelectionInternal{}, fmt.Errorf("%w: %w", errInvalidVolumeBackupSelectionInternal, err)
+		}
+		resolved.globalRoot = true
 	}
 	if resolved.globalRoot {
 		return resolved, nil
@@ -996,7 +996,7 @@ func (s *VolumeService) resolveVolumeBackupRestoreSelectionInternal(ctx context.
 		eligible = backupbrowser.BuildEntries(resolved.archivePaths, "", true)
 	} else {
 		var listed []string
-		listed, err = s.engine.ListSnapshotFiles(ctx, dockerClient, repository, s.rusticPasswordInternal(), snapshotID)
+		listed, err = s.engine.ListSnapshotFiles(ctx, dockerClient, repository, s.rusticPasswordInternal(), snapshotID, "", true)
 		eligible = backupbrowser.BuildEntries(listed, "", true)
 	}
 	if err != nil {
@@ -1038,12 +1038,6 @@ func (s *VolumeService) restoreVolumeBackupSelectionInternal(ctx context.Context
 }
 
 func (s *VolumeService) RestoreBackupFiles(ctx context.Context, volumeName, backupID string, selection backuptypes.RestoreSelection, user common.User) (err error) {
-	if selection.SelectAll && len(selection.Paths) > 0 {
-		return fmt.Errorf("%w: selectAll cannot be combined with explicit paths", errInvalidVolumeBackupSelectionInternal)
-	}
-	if !selection.SelectAll && len(selection.Paths) == 0 {
-		return fmt.Errorf("%w: no paths provided", errInvalidVolumeBackupSelectionInternal)
-	}
 	var entry VolumeBackup
 	if err := s.db.WithContext(ctx).Where("id = ?", backupID).First(&entry).Error; err != nil {
 		return err

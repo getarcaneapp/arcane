@@ -111,10 +111,6 @@ type Config struct {
 	RegistryTimeout        int    `env:"REGISTRY_TIMEOUT" default:"0"`
 	ProxyRequestTimeout    int    `env:"PROXY_REQUEST_TIMEOUT" default:"0"`
 	BackupVolumeName       string `env:"ARCANE_BACKUP_VOLUME_NAME" default:"arcane-backups"`
-	// BackupFileBrowserDefaultPageSize controls backup browser batching when a client omits limit.
-	BackupFileBrowserDefaultPageSize int `env:"BACKUP_FILE_BROWSER_DEFAULT_PAGE_SIZE" default:"250"`
-	// BackupFileBrowserMaxPageSize caps explicit backup browser page sizes.
-	BackupFileBrowserMaxPageSize int `env:"BACKUP_FILE_BROWSER_MAX_PAGE_SIZE" default:"1000"`
 
 	// Timezone for cron job scheduling. Uses IANA timezone names (e.g., "America/New_York", "Europe/London").
 	// "Local" uses the system's local timezone, "UTC" for Coordinated Universal Time.
@@ -128,25 +124,12 @@ func Load() *Config {
 	applyAgentModeDefaults(cfg)
 	applyProxyDefaults(cfg)
 	applyWorkspaceDefaults(cfg)
-	applyBackupFileBrowserDefaultsInternal(cfg)
 
 	// Set global file permissions
 	utils.FilePerm = cfg.FilePerm
 	utils.DirPerm = cfg.DirPerm
 
 	return cfg
-}
-
-func applyBackupFileBrowserDefaultsInternal(cfg *Config) {
-	if cfg.BackupFileBrowserDefaultPageSize <= 0 {
-		cfg.BackupFileBrowserDefaultPageSize = 250
-	}
-	if cfg.BackupFileBrowserMaxPageSize <= 0 {
-		cfg.BackupFileBrowserMaxPageSize = 1000
-	}
-	if cfg.BackupFileBrowserDefaultPageSize > cfg.BackupFileBrowserMaxPageSize {
-		cfg.BackupFileBrowserDefaultPageSize = cfg.BackupFileBrowserMaxPageSize
-	}
 }
 
 type ProjectWorkspaceConfig struct {

@@ -3,6 +3,7 @@
 package backupbrowser
 
 import (
+	"cmp"
 	"fmt"
 	"path"
 	"slices"
@@ -10,6 +11,7 @@ import (
 	"strings"
 
 	"emperror.dev/errors"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
 )
 
@@ -82,53 +84,37 @@ func BuildEntries(paths []string, browsePath string, recursive bool) []backuptyp
 	for _, entry := range entries {
 		result = append(result, entry)
 	}
-	SortEntries(result)
+	slices.SortStableFunc(result, compareEntriesInternal)
 	return result
 }
 
-// SortEntries orders directories first and then uses case-insensitive name and path ordering.
-func SortEntries(entries []backuptypes.BackupFileEntry) {
-	sort.SliceStable(entries, func(i, j int) bool {
-		left, right := entries[i], entries[j]
-		if left.IsDirectory != right.IsDirectory {
-			return left.IsDirectory
+func compareEntriesInternal(left, right backuptypes.BackupFileEntry) int {
+	if left.IsDirectory != right.IsDirectory {
+		if left.IsDirectory {
+			return -1
 		}
-		leftName, rightName := strings.ToLower(left.Name), strings.ToLower(right.Name)
-		if leftName != rightName {
-			return leftName < rightName
-		}
-		leftPath, rightPath := strings.ToLower(left.Path), strings.ToLower(right.Path)
-		if leftPath != rightPath {
-			return leftPath < rightPath
-		}
-		return left.Path < right.Path
-	})
+		return 1
+	}
+	if result := cmp.Compare(strings.ToLower(left.Name), strings.ToLower(right.Name)); result != 0 {
+		return result
+	}
+	if result := cmp.Compare(strings.ToLower(left.Path), strings.ToLower(right.Path)); result != 0 {
+		return result
+	}
+	return cmp.Compare(left.Path, right.Path)
 }
 
-// Page filters entries by full relative path and returns one cursor-like page.
-func Page(entries []backuptypes.BackupFileEntry, search string, start, limit int) backuptypes.BackupFilePage {
-	query := strings.ToLower(strings.TrimSpace(search))
-	filtered := entries
-	if query != "" {
-		filtered = make([]backuptypes.BackupFileEntry, 0, len(entries))
-		for _, entry := range entries {
-			if strings.Contains(strings.ToLower(entry.Path), query) {
-				filtered = append(filtered, entry)
-			}
-		}
-	}
-	if start < 0 {
-		start = 0
-	}
-	if start >= len(filtered) || limit <= 0 {
-		return backuptypes.BackupFilePage{Entries: []backuptypes.BackupFileEntry{}}
-	}
-	end := min(start+limit, len(filtered))
-	page := backuptypes.BackupFilePage{Entries: slices.Clone(filtered[start:end])}
-	if end < len(filtered) {
-		page.NextStart = &end
-	}
-	return page
+// Browse searches, orders, and paginates backup entries using the standard pagination contract.
+func Browse(entries []backuptypes.BackupFileEntry, params pagination.QueryParams) ([]backuptypes.BackupFileEntry, pagination.Response) {
+	result := pagination.SearchOrderAndPaginate(entries, params, pagination.Config[backuptypes.BackupFileEntry]{
+		SearchAccessors: []pagination.SearchAccessor[backuptypes.BackupFileEntry]{
+			func(entry backuptypes.BackupFileEntry) (string, error) { return entry.Path, nil },
+		},
+		SortBindings: []pagination.SortBinding[backuptypes.BackupFileEntry]{
+			{Key: "path", Fn: compareEntriesInternal},
+		},
+	})
+	return result.Items, pagination.BuildResponse(result.TotalCount, result.TotalAvailable, params)
 }
 
 // NormalizeSelection validates explicit selections against eligible entries,

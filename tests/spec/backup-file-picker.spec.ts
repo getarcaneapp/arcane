@@ -14,8 +14,28 @@ type BrowseRequest = {
 
 type BrowseHandler = (request: BrowseRequest, route: Route) => Promise<void>;
 
+type BackupFileEntry = {
+	path: string;
+	name: string;
+	isDirectory: boolean;
+};
+
 function response(data: unknown) {
 	return { success: true, data };
+}
+
+function browseResponse(data: BackupFileEntry[], totalItems = data.length, start = 0, limit = 20) {
+	return {
+		success: true,
+		data,
+		pagination: {
+			totalPages: Math.max(1, Math.ceil(totalItems / limit)),
+			totalItems,
+			currentPage: Math.floor(start / limit) + 1,
+			itemsPerPage: limit,
+			grandTotalItems: totalItems
+		}
+	};
 }
 
 async function mockAppShell(page: Page) {
@@ -364,7 +384,7 @@ async function mockProjectWorkspacePage(
 
 async function mockSystemBackupPage(
 	page: Page,
-	browse: (body: Record<string, unknown>, route: Route) => Promise<void>,
+	browse: (request: BrowseRequest, body: Record<string, unknown>, route: Route) => Promise<void>,
 	restore: (body: Record<string, unknown>, route: Route) => Promise<void>,
 	openPage = true
 ) {
@@ -391,9 +411,22 @@ async function mockSystemBackupPage(
 	await page.route(/\/api\/backups\/policies$/, async (route) => {
 		await route.fulfill({ json: response({ policies: [], recoveryKeyStored: true }) });
 	});
-	await page.route(new RegExp(`/api/backups/${SYSTEM_BACKUP_ID}/files/browse$`), async (route) => {
-		await browse(route.request().postDataJSON() as Record<string, unknown>, route);
-	});
+	await page.route(
+		new RegExp(`/api/backups/${SYSTEM_BACKUP_ID}/files/browse(?:\\?.*)?$`),
+		async (route) => {
+			const url = new URL(route.request().url());
+			await browse(
+				{
+					path: url.searchParams.get('path') ?? '',
+					search: url.searchParams.get('search') ?? '',
+					start: Number(url.searchParams.get('start') ?? 0),
+					limit: url.searchParams.get('limit')
+				},
+				route.request().postDataJSON() as Record<string, unknown>,
+				route
+			);
+		}
+	);
 	await page.route(new RegExp(`/api/backups/${SYSTEM_BACKUP_ID}/restore-files$`), async (route) => {
 		await restore(route.request().postDataJSON() as Record<string, unknown>, route);
 	});
@@ -450,9 +483,7 @@ test.describe('Backup file picker', () => {
 
 		await mockVolumeBackupPage(page, async (_request, route) => {
 			await route.fulfill({
-				json: response({
-					entries: [{ path: 'workspace.txt', name: 'workspace.txt', isDirectory: false }]
-				})
+				json: browseResponse([{ path: 'workspace.txt', name: 'workspace.txt', isDirectory: false }])
 			});
 		});
 
@@ -494,9 +525,7 @@ test.describe('Backup file picker', () => {
 		await mockVolumeWorkspaceRestore(page, state);
 		await mockVolumeBackupPage(page, async (_request, route) => {
 			await route.fulfill({
-				json: response({
-					entries: [{ path: 'workspace.txt', name: 'workspace.txt', isDirectory: false }]
-				})
+				json: browseResponse([{ path: 'workspace.txt', name: 'workspace.txt', isDirectory: false }])
 			});
 		});
 
@@ -562,9 +591,7 @@ test.describe('Backup file picker', () => {
 		await mockVolumeWorkspaceRestore(page, state);
 		await mockVolumeBackupPage(page, async (_request, route) => {
 			await route.fulfill({
-				json: response({
-					entries: [{ path: 'workspace.txt', name: 'workspace.txt', isDirectory: false }]
-				})
+				json: browseResponse([{ path: 'workspace.txt', name: 'workspace.txt', isDirectory: false }])
 			});
 		});
 
@@ -605,17 +632,15 @@ test.describe('Backup file picker', () => {
 
 		await mockSystemBackupPage(
 			page,
-			async (_body, route) => {
+			async (_request, _body, route) => {
 				await route.fulfill({
-					json: response({
-						entries: [
-							{
-								path: `${PROJECT_ID}/workspace.txt`,
-								name: 'workspace.txt',
-								isDirectory: false
-							}
-						]
-					})
+					json: browseResponse([
+						{
+							path: `${PROJECT_ID}/workspace.txt`,
+							name: 'workspace.txt',
+							isDirectory: false
+						}
+					])
 				});
 			},
 			async (body, route) => {
@@ -653,39 +678,33 @@ test.describe('Backup file picker', () => {
 			requests.push(request);
 			if (request.path === 'folder/nested') {
 				await route.fulfill({
-					json: response({
-						entries: [
-							{ path: 'folder/nested/grandchild.txt', name: 'grandchild.txt', isDirectory: false }
-						]
-					})
+					json: browseResponse([
+						{ path: 'folder/nested/grandchild.txt', name: 'grandchild.txt', isDirectory: false }
+					])
 				});
 				return;
 			}
 			if (request.path === 'folder') {
 				await route.fulfill({
-					json: response({
-						entries: [
-							{ path: 'folder/nested', name: 'nested', isDirectory: true },
-							{ path: 'folder/child.txt', name: 'child.txt', isDirectory: false }
-						]
-					})
+					json: browseResponse([
+						{ path: 'folder/nested', name: 'nested', isDirectory: true },
+						{ path: 'folder/child.txt', name: 'child.txt', isDirectory: false }
+					])
 				});
 				return;
 			}
-			if (request.start === 250) {
+			if (request.start === 20) {
 				continuationAttempts += 1;
 				if (continuationAttempts === 1) {
 					await route.fulfill({ status: 500, json: { message: 'interrupted' } });
 					return;
 				}
 				await route.fulfill({
-					json: response({
-						entries: [{ path: 'last.txt', name: 'last.txt', isDirectory: false }]
-					})
+					json: browseResponse([{ path: 'last.txt', name: 'last.txt', isDirectory: false }], 21, 20)
 				});
 				return;
 			}
-			await route.fulfill({ json: response({ entries: rootEntries(250), nextStart: 250 }) });
+			await route.fulfill({ json: browseResponse(rootEntries(20), 21) });
 		});
 
 		await expect.poll(() => requests.length).toBe(1);
@@ -744,36 +763,30 @@ test.describe('Backup file picker', () => {
 		await mockVolumeBackupPage(page, async (request, route) => {
 			if (request.search) {
 				await route.fulfill({
-					json: response({
-						entries: [
-							{
-								path: `folder/${request.search}.txt`,
-								name: `${request.search}.txt`,
-								isDirectory: false
-							}
-						]
-					})
+					json: browseResponse([
+						{
+							path: `folder/${request.search}.txt`,
+							name: `${request.search}.txt`,
+							isDirectory: false
+						}
+					])
 				});
 				return;
 			}
 			if (request.path === 'folder') {
 				await route.fulfill({
-					json: response({
-						entries: [
-							{ path: 'folder/a.txt', name: 'a.txt', isDirectory: false },
-							{ path: 'folder/b.txt', name: 'b.txt', isDirectory: false }
-						]
-					})
+					json: browseResponse([
+						{ path: 'folder/a.txt', name: 'a.txt', isDirectory: false },
+						{ path: 'folder/b.txt', name: 'b.txt', isDirectory: false }
+					])
 				});
 				return;
 			}
 			await route.fulfill({
-				json: response({
-					entries: [
-						{ path: 'folder', name: 'folder', isDirectory: true },
-						{ path: 'root.txt', name: 'root.txt', isDirectory: false }
-					]
-				})
+				json: browseResponse([
+					{ path: 'folder', name: 'folder', isDirectory: true },
+					{ path: 'root.txt', name: 'root.txt', isDirectory: false }
+				])
 			});
 		});
 
@@ -797,19 +810,17 @@ test.describe('Backup file picker', () => {
 		await mockVolumeBackupPage(page, async (request, route) => {
 			if (request.search) {
 				await route.fulfill({
-					json: response({
-						entries: [
-							{
-								path: `folder/${request.search}.txt`,
-								name: `${request.search}.txt`,
-								isDirectory: false
-							}
-						]
-					})
+					json: browseResponse([
+						{
+							path: `folder/${request.search}.txt`,
+							name: `${request.search}.txt`,
+							isDirectory: false
+						}
+					])
 				});
 				return;
 			}
-			await route.fulfill({ json: response({ entries: rootEntries(2) }) });
+			await route.fulfill({ json: browseResponse(rootEntries(2)) });
 		});
 		const reopened = page.getByRole('dialog', { name: 'Restore files' });
 		await reopened.getByPlaceholder('Search files').fill('match');
@@ -821,7 +832,7 @@ test.describe('Backup file picker', () => {
 
 	test('keeps a synthetic 100,000-entry result bounded to the viewport', async ({ page }) => {
 		await mockVolumeBackupPage(page, async (_request, route) => {
-			await route.fulfill({ json: response({ entries: rootEntries(100_000) }) });
+			await route.fulfill({ json: browseResponse(rootEntries(100_000), 100_000, 0, 100_000) });
 		});
 		const tree = page.locator('[data-backup-file-tree]');
 		await expect(tree.locator('[data-path="folder"]')).toBeVisible();
@@ -836,14 +847,16 @@ test.describe('Backup file picker', () => {
 	test('uses the same provider selection contract in the system backup dialog', async ({
 		page
 	}) => {
+		const browseRequests: BrowseRequest[] = [];
 		const browseBodies: Array<Record<string, unknown>> = [];
 		const restoreBodies: Array<Record<string, unknown>> = [];
 		await mockSystemBackupPage(
 			page,
-			async (body, route) => {
+			async (request, body, route) => {
+				browseRequests.push(request);
 				browseBodies.push(body);
 				await route.fulfill({
-					json: response({ entries: [{ path: 'project', name: 'project', isDirectory: true }] })
+					json: browseResponse([{ path: 'project', name: 'project', isDirectory: true }])
 				});
 			},
 			async (body, route) => {
@@ -853,7 +866,8 @@ test.describe('Backup file picker', () => {
 		);
 
 		await expect.poll(() => browseBodies.length).toBe(1);
-		expect(browseBodies[0]).toEqual({ recoveryKey: '', path: '' });
+		expect(browseBodies[0]).toEqual({ recoveryKey: '' });
+		expect(browseRequests[0]).toMatchObject({ path: '', search: '', start: 0, limit: null });
 		const dialog = page.getByRole('dialog', { name: 'Restore files' });
 		await dialog.getByRole('button', { name: 'Select all' }).click();
 		await dialog.getByRole('button', { name: 'Restore files' }).click();

@@ -522,8 +522,7 @@ func (s *SystemBackupService) backupInternal(ctx context.Context, id string) (*S
 }
 
 type systemBackupSnapshotEngineInternal interface {
-	ListSnapshotFiles(ctx context.Context, dockerClient *client.Client, repository backup.Repository, password, snapshotID string) ([]string, error)
-	ListSnapshotFilesAtPath(ctx context.Context, dockerClient *client.Client, repository backup.Repository, password, snapshotID, filePath string, recursive bool) ([]string, error)
+	ListSnapshotFiles(ctx context.Context, dockerClient *client.Client, repository backup.Repository, password, snapshotID, filePath string, recursive bool) ([]string, error)
 	ReadSnapshotTextFile(ctx context.Context, dockerClient *client.Client, repository backup.Repository, password, snapshotID, filePath string) (string, error)
 	RestoreSnapshot(ctx context.Context, dockerClient *client.Client, repository backup.Repository, password, snapshotID string, target mount.Mount, options backup.RestoreOptions) error
 }
@@ -584,7 +583,7 @@ func (s *SystemBackupService) backupSnapshotLocationsInternal(ctx context.Contex
 }
 
 func inspectReadableBackupSnapshotInternal(ctx context.Context, engine systemBackupSnapshotEngineInternal, dockerClient *client.Client, location systemBackupSnapshotLocationInternal, recoveryKey string) (systemBackupSnapshotInternal, error) {
-	files, err := engine.ListSnapshotFiles(ctx, dockerClient, location.repository, recoveryKey, location.snapshotID)
+	files, err := engine.ListSnapshotFiles(ctx, dockerClient, location.repository, recoveryKey, location.snapshotID, "", true)
 	if err != nil {
 		return systemBackupSnapshotInternal{}, fmt.Errorf("inspect %s system recovery snapshot: %w", location.name, err)
 	}
@@ -694,12 +693,11 @@ func inspectProjectBackupSnapshotInternal(ctx context.Context, engine systemBack
 		return systemBackupSnapshotInternal{}, err
 	}
 	root := path.Join(snapshot.snapshotPath, snapshot.projectsPath)
-	listed, err := engine.ListSnapshotFilesAtPath(ctx, dockerClient, location.repository, recoveryKey, location.snapshotID, root+"/", true)
+	listed, err := engine.ListSnapshotFiles(ctx, dockerClient, location.repository, recoveryKey, location.snapshotID, root+"/", true)
 	if err != nil {
 		return systemBackupSnapshotInternal{}, fmt.Errorf("inspect %s project files: %w", location.name, err)
 	}
 	snapshot.entries = projectEntriesFromSnapshotInternal(listed, snapshot.snapshotPath, snapshot.projectsPath, databasePath, "", true)
-	snapshot.files = projectFilePathsInternal(snapshot.entries)
 	return snapshot, nil
 }
 
@@ -815,65 +813,29 @@ func projectEntriesFromSnapshotInternal(files []string, snapshotPath, projectsPa
 	return backupbrowser.BuildEntries(eligible, browsePath, recursive)
 }
 
-func projectFilePathsInternal(entries []backuptypes.BackupFileEntry) []string {
-	result := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		if !entry.IsDirectory {
-			result = append(result, entry.Path)
-		}
+// BrowseBackupFiles returns one page from the backup's logical project tree.
+func (s *SystemBackupService) BrowseBackupFiles(ctx context.Context, id, recoveryKey, requestedPath string, params pagination.QueryParams) ([]backuptypes.BackupFileEntry, pagination.Response, error) {
+	browsePath, err := backupbrowser.NormalizePath(requestedPath, true)
+	if err != nil || params.Start < 0 {
+		return nil, pagination.Response{}, fmt.Errorf("%w: invalid browse path or start", errInvalidSystemBackupFilePath)
 	}
-	slices.Sort(result)
-	return result
-}
-
-// ListBackupFiles lists project files eligible for selective restore from a system backup.
-func (s *SystemBackupService) ListBackupFiles(ctx context.Context, id, recoveryKey string) ([]string, error) {
 	run, err := s.backupInternal(ctx, id)
 	if err != nil {
-		return nil, err
+		return nil, pagination.Response{}, err
 	}
 	if run.Status != SystemBackupStatusSucceeded {
-		return nil, errors.New("only successful system backups can be opened")
+		return nil, pagination.Response{}, errors.New("only successful system backups can be opened")
 	}
 	key, err := s.recoveryKeyInternal(ctx, recoveryKey)
 	if err != nil {
-		return nil, err
+		return nil, pagination.Response{}, err
 	}
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, err
+		return nil, pagination.Response{}, err
 	}
 	locations, setupErr := s.backupSnapshotLocationsInternal(ctx, dockerClient, run)
-	snapshots, err := availableProjectBackupSnapshotsInternal(ctx, s.engine, dockerClient, locations, key, setupErr, true)
-	if err != nil {
-		return nil, err
-	}
-	return snapshots[0].files, nil
-}
-
-// BrowseBackupFiles returns one page from the backup's logical project tree.
-func (s *SystemBackupService) BrowseBackupFiles(ctx context.Context, id string, request backuptypes.BrowseSystemBackupFilesRequest) (backuptypes.BackupFilePage, error) {
-	browsePath, err := backupbrowser.NormalizePath(request.Path, true)
-	if err != nil || request.Start < 0 {
-		return backuptypes.BackupFilePage{}, fmt.Errorf("%w: invalid browse path or start", errInvalidSystemBackupFilePath)
-	}
-	run, err := s.backupInternal(ctx, id)
-	if err != nil {
-		return backuptypes.BackupFilePage{}, err
-	}
-	if run.Status != SystemBackupStatusSucceeded {
-		return backuptypes.BackupFilePage{}, errors.New("only successful system backups can be opened")
-	}
-	key, err := s.recoveryKeyInternal(ctx, request.RecoveryKey)
-	if err != nil {
-		return backuptypes.BackupFilePage{}, err
-	}
-	dockerClient, err := s.dockerService.GetClient(ctx)
-	if err != nil {
-		return backuptypes.BackupFilePage{}, err
-	}
-	locations, setupErr := s.backupSnapshotLocationsInternal(ctx, dockerClient, run)
-	search := strings.TrimSpace(request.Search)
+	search := strings.TrimSpace(params.Search)
 	browseErr := setupErr
 	for _, location := range locations {
 		snapshot, databasePath, inspectErr := inspectProjectBackupSnapshotManifestInternal(ctx, s.engine, dockerClient, location, key)
@@ -887,31 +849,16 @@ func (s *SystemBackupService) BrowseBackupFiles(ctx context.Context, id string, 
 			listPath, recursive = "", true
 		}
 		snapshotRoot := path.Join(snapshot.snapshotPath, snapshot.projectsPath, listPath)
-		listed, listErr := s.engine.ListSnapshotFilesAtPath(ctx, dockerClient, location.repository, key, location.snapshotID, snapshotRoot+"/", recursive)
+		listed, listErr := s.engine.ListSnapshotFiles(ctx, dockerClient, location.repository, key, location.snapshotID, snapshotRoot+"/", recursive)
 		if listErr != nil {
 			browseErr = errors.Combine(browseErr, fmt.Errorf("browse %s system recovery snapshot: %w", location.name, listErr))
 			continue
 		}
 		entries := projectEntriesFromSnapshotInternal(listed, snapshot.snapshotPath, snapshot.projectsPath, databasePath, listPath, recursive)
-		return backupbrowser.Page(entries, search, request.Start, s.backupFileBrowserPageSizeInternal(request.Limit)), nil
+		items, page := backupbrowser.Browse(entries, params)
+		return items, page, nil
 	}
-	return backuptypes.BackupFilePage{}, fmt.Errorf("failed to browse project files in system recovery snapshot: %w", browseErr)
-}
-
-func (s *SystemBackupService) backupFileBrowserPageSizeInternal(requested int) int {
-	pageSize, maximum := 250, 1000
-	if s.config != nil {
-		if s.config.BackupFileBrowserDefaultPageSize > 0 {
-			pageSize = s.config.BackupFileBrowserDefaultPageSize
-		}
-		if s.config.BackupFileBrowserMaxPageSize > 0 {
-			maximum = s.config.BackupFileBrowserMaxPageSize
-		}
-	}
-	if requested > 0 {
-		pageSize = requested
-	}
-	return min(pageSize, maximum)
+	return nil, pagination.Response{}, fmt.Errorf("failed to browse project files in system recovery snapshot: %w", browseErr)
 }
 
 func snapshotDataPathsInternal(files []string, snapshotPath string) map[string]struct{} {
@@ -1132,10 +1079,7 @@ func (s *SystemBackupService) RestoreBackupFiles(ctx context.Context, id string,
 
 func normalizeSystemBackupSelectionInternal(selection backuptypes.RestoreSelection, snapshot systemBackupSnapshotInternal) ([]backuptypes.BackupFileEntry, error) {
 	if selection.SelectAll && strings.TrimSpace(selection.Search) == "" && snapshot.projectsPath != "" {
-		if len(selection.Paths) > 0 {
-			return nil, errors.New("selectAll cannot be combined with explicit paths")
-		}
-		return []backuptypes.BackupFileEntry{{Path: "", Name: path.Base(snapshot.projectsPath), IsDirectory: true}}, nil
+		return backupbrowser.NormalizeSelection(selection, []backuptypes.BackupFileEntry{{Path: "", Name: path.Base(snapshot.projectsPath), IsDirectory: true}})
 	}
 	return backupbrowser.NormalizeSelection(selection, snapshot.entries)
 }

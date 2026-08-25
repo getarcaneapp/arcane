@@ -9,7 +9,7 @@
 
 	type FolderPageState = {
 		entries: BackupFileEntry[];
-		nextStart?: number;
+		continuationStart?: number;
 		loading: boolean;
 		error: boolean;
 		requestID: number;
@@ -82,7 +82,7 @@
 			}
 		}
 		const initialNestedFolderLoad = folder !== '' && state.loading && state.entries.length === 0;
-		if (!initialNestedFolderLoad && (state.loading || state.error || state.nextStart !== undefined)) {
+		if (!initialNestedFolderLoad && (state.loading || state.error || state.continuationStart !== undefined)) {
 			result.push({ kind: 'continuation', folder, depth });
 		}
 	}
@@ -112,11 +112,12 @@
 			});
 			const latest = pages[folder];
 			if (generation !== requestGeneration || latest?.requestID !== requestID) return;
-			const merged = replace ? page.entries : [...latest.entries, ...page.entries];
+			const merged = replace ? page.data : [...latest.entries, ...page.data];
 			const unique = Array.from(new Map(merged.map((entry) => [entry.path, entry])).values());
+			const continuationStart = start + page.data.length;
 			updatePageInternal(folder, {
 				entries: unique,
-				nextStart: page.nextStart,
+				continuationStart: continuationStart < page.pagination.totalItems ? continuationStart : undefined,
 				loading: false,
 				error: false,
 				requestID
@@ -216,8 +217,8 @@
 			const row = rows[virtualItem.index];
 			if (row?.kind !== 'continuation') continue;
 			const state = pages[row.folder];
-			if (state?.nextStart !== undefined && !state.loading && !state.error) {
-				void loadPageInternal(row.folder, state.nextStart, false);
+			if (state?.continuationStart !== undefined && !state.loading && !state.error) {
+				void loadPageInternal(row.folder, state.continuationStart, false);
 			}
 		}
 	});
@@ -293,7 +294,7 @@
 											tone="ghost"
 											size="sm"
 											customLabel={m.common_retry()}
-											onclick={() => loadPageInternal(row.folder, state.nextStart ?? 0, state.entries.length === 0)}
+											onclick={() => loadPageInternal(row.folder, state.continuationStart ?? 0, state.entries.length === 0)}
 										/>
 									{:else}
 										{#if !searchActive}

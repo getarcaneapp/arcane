@@ -51,6 +51,29 @@ func TestRestoreCommandInternal(t *testing.T) {
 	}
 }
 
+func TestListSnapshotCommandInternal(t *testing.T) {
+	tests := []struct {
+		name          string
+		filePath      string
+		recursive     bool
+		expected      []string
+		expectedClean string
+	}{
+		{name: "root recursive", recursive: true, expected: []string{"ls", "--json", "--recursive", "--", "snapshot:/"}},
+		{name: "root nonrecursive", expected: []string{"ls", "--json", "--", "snapshot:/"}},
+		{name: "nested folder", filePath: "/folder/", expected: []string{"ls", "--json", "--", "snapshot:/folder/"}, expectedClean: "folder"},
+		{name: "nested recursive", filePath: "folder/nested", recursive: true, expected: []string{"ls", "--json", "--recursive", "--", "snapshot:/folder/nested"}, expectedClean: "folder/nested"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			command, cleaned := listSnapshotCommandInternal("snapshot", test.filePath, test.recursive)
+			require.Equal(t, test.expected, command)
+			require.Equal(t, test.expectedClean, cleaned)
+		})
+	}
+}
+
 func TestMarkSnapshotDirectoriesInternal(t *testing.T) {
 	files := []string{"/volume", "/volume/folder", "/volume/file.txt", "/volume/link"}
 	longOutput := "drwxr-xr-x root root 0 1 Jan 2026 00:00 \"/volume\"\r\n" +

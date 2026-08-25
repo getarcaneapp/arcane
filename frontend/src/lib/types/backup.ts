@@ -1,3 +1,5 @@
+import type { Paginated } from './shared';
+
 export type BackupDestination = 'local' | 's3' | 'local_s3';
 export type BackupStatus = 'running' | 'succeeded' | 'failed';
 export type BackupTrigger = 'manual' | 'scheduled' | 'safety';
@@ -55,11 +57,6 @@ export type BackupFileEntry = {
 	isDirectory: boolean;
 };
 
-export type BackupFilePage = {
-	entries: BackupFileEntry[];
-	nextStart?: number;
-};
-
 export type BackupFileBrowseRequest = {
 	path?: string;
 	search?: string;
@@ -74,5 +71,5 @@ export type BackupRestoreSelection = {
 };
 
 export type BackupFileProvider = {
-	browse(request: BackupFileBrowseRequest): Promise<BackupFilePage>;
+	browse(request: BackupFileBrowseRequest): Promise<Paginated<BackupFileEntry>>;
 };

@@ -157,24 +157,10 @@ func restoreCommandInternal(snapshotID string, target mount.Mount, options Resto
 	return command
 }
 
-// ListSnapshotFiles returns every path recorded in the snapshot.
-func (e *Engine) ListSnapshotFiles(ctx context.Context, dockerClient *client.Client, repository Repository, password, snapshotID string) ([]string, error) {
-	return e.ListSnapshotFilesAtPath(ctx, dockerClient, repository, password, snapshotID, "", true)
-}
-
-// ListSnapshotFilesAtPath lists a snapshot path and returns paths relative to
-// the snapshot root. A supplied path is nonrecursive unless recursive is true.
-func (e *Engine) ListSnapshotFilesAtPath(ctx context.Context, dockerClient *client.Client, repository Repository, password, snapshotID, filePath string, recursive bool) ([]string, error) {
-	command := []string{"ls", "--json"}
-	if recursive {
-		command = append(command, "--recursive")
-	}
-	cleanedPath := strings.Trim(strings.TrimSpace(filePath), "/")
-	source := snapshotID + ":/" + cleanedPath
-	if cleanedPath != "" && strings.HasSuffix(strings.TrimSpace(filePath), "/") {
-		source += "/"
-	}
-	command = append(command, "--", source)
+// ListSnapshotFiles lists a snapshot path and returns paths relative to the
+// snapshot root. A supplied path is nonrecursive unless recursive is true.
+func (e *Engine) ListSnapshotFiles(ctx context.Context, dockerClient *client.Client, repository Repository, password, snapshotID, filePath string, recursive bool) ([]string, error) {
+	command, cleanedPath := listSnapshotCommandInternal(snapshotID, filePath, recursive)
 	output, err := e.runInternal(ctx, dockerClient, repository, password, command)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list Rustic snapshot: %w", err)
@@ -197,6 +183,20 @@ func (e *Engine) ListSnapshotFilesAtPath(ctx context.Context, dockerClient *clie
 		}
 	}
 	return qualifySnapshotListingInternal(files, cleanedPath), nil
+}
+
+func listSnapshotCommandInternal(snapshotID, filePath string, recursive bool) ([]string, string) {
+	command := []string{"ls", "--json"}
+	if recursive {
+		command = append(command, "--recursive")
+	}
+	cleanedPath := strings.Trim(strings.TrimSpace(filePath), "/")
+	source := snapshotID + ":/" + cleanedPath
+	if cleanedPath != "" && strings.HasSuffix(strings.TrimSpace(filePath), "/") {
+		source += "/"
+	}
+	command = append(command, "--", source)
+	return command, cleanedPath
 }
 
 func qualifySnapshotListingInternal(files []string, snapshotPath string) []string {

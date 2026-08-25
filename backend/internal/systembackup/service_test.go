@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -199,7 +200,14 @@ func TestProjectFilesFromSnapshotInternal(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			entries := projectEntriesFromSnapshotInternal(test.files, test.snapshotPath, test.projectsPath, test.databasePath, "", true)
-			require.Equal(t, test.expected, projectFilePathsInternal(entries))
+			actual := make([]string, 0, len(entries))
+			for _, entry := range entries {
+				if !entry.IsDirectory {
+					actual = append(actual, entry.Path)
+				}
+			}
+			slices.Sort(actual)
+			require.Equal(t, test.expected, actual)
 		})
 	}
 }
@@ -317,6 +325,12 @@ func TestNormalizeSystemBackupSelectionInternal(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []backuptypes.BackupFileEntry{{Path: "", Name: "historical", IsDirectory: true}}, selected)
 
+	_, err = normalizeSystemBackupSelectionInternal(
+		backuptypes.RestoreSelection{SelectAll: true, Paths: []string{"demo"}},
+		snapshot,
+	)
+	require.ErrorContains(t, err, "cannot be combined")
+
 	selected, err = normalizeSystemBackupSelectionInternal(
 		backuptypes.RestoreSelection{Paths: []string{"demo/compose.yaml", "demo"}},
 		snapshot,
@@ -331,11 +345,7 @@ type systemBackupSnapshotEngineStubInternal struct {
 	restoreInternal func(backup.Repository, string, backup.RestoreOptions) error
 }
 
-func (s *systemBackupSnapshotEngineStubInternal) ListSnapshotFiles(_ context.Context, _ *client.Client, repository backup.Repository, _ string, snapshotID string) ([]string, error) {
-	return s.listInternal(repository, snapshotID)
-}
-
-func (s *systemBackupSnapshotEngineStubInternal) ListSnapshotFilesAtPath(_ context.Context, _ *client.Client, repository backup.Repository, _ string, snapshotID, _ string, _ bool) ([]string, error) {
+func (s *systemBackupSnapshotEngineStubInternal) ListSnapshotFiles(_ context.Context, _ *client.Client, repository backup.Repository, _ string, snapshotID, _ string, _ bool) ([]string, error) {
 	return s.listInternal(repository, snapshotID)
 }
 
@@ -397,7 +407,7 @@ func TestAvailableProjectBackupSnapshotsFallsBackToRemoteInternal(t *testing.T) 
 			require.NoError(t, err)
 			require.Len(t, snapshots, 1)
 			require.Equal(t, "remote-snapshot", snapshots[0].snapshotID)
-			require.Equal(t, []string{"demo/compose.yaml"}, snapshots[0].files)
+			require.Equal(t, []backuptypes.BackupFileEntry{{Path: "demo", Name: "demo", IsDirectory: true}, {Path: "demo/compose.yaml", Name: "compose.yaml"}}, snapshots[0].entries)
 		})
 	}
 }

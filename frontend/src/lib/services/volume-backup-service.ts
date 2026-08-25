@@ -9,7 +9,7 @@ import type {
 } from '#lib/types/shared';
 import type { SearchPaginationSortRequest, Paginated } from '#lib/types/shared';
 import { transformPaginationParams } from '#lib/utils/tables';
-import type { BackupFileBrowseRequest, BackupFilePage, BackupRestoreSelection } from '#lib/types/backup';
+import type { BackupFileBrowseRequest, BackupFileEntry, BackupRestoreSelection } from '#lib/types/backup';
 
 export type VolumeBackupListResponse = Paginated<BackupEntry> & { warnings?: string[] };
 
@@ -51,11 +51,12 @@ class VolumeBackupService extends BaseAPIService {
 		);
 	}
 
-	async browseBackupFiles(backupId: string, request: BackupFileBrowseRequest): Promise<BackupFilePage> {
+	async browseBackupFiles(backupId: string, request: BackupFileBrowseRequest): Promise<Paginated<BackupFileEntry>> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.handleResponse(
-			this.api.get(`/environments/${envId}/volumes/backups/${backupId}/files/browse`, { params: request })
-		);
+		const response = await this.api.get(`/environments/${envId}/volumes/backups/${backupId}/files/browse`, {
+			params: request
+		});
+		return response.data;
 	}
 
 	async backupHasPath(backupId: string, filePath: string): Promise<boolean> {
