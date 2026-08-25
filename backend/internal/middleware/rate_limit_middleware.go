@@ -170,14 +170,65 @@ func agentTokenRateLimitKeyInternal(token string) string {
 // tokens in a burst (e.g. a Git host firing several webhooks at once).
 const perTokenRateLimitIPMultiplierInternal = 10
 
+// knownValidTokenTTLInternal is how long a token that has already produced
+// a non-404 response is exempted from the shared IP ceiling. This keeps a
+// busy attacker cycling through invalid tokens from starving a legitimate,
+// already-confirmed webhook sharing the same source IP.
+const knownValidTokenTTLInternal = 10 * time.Minute
+
+// knownTokenCache tracks tokens that have already been confirmed to exist
+// (any response other than 404), so repeat requests for them can bypass the
+// shared IP ceiling and go straight to their own per-token bucket.
+type knownTokenCache struct {
+	mu      sync.Mutex
+	seenAt  map[string]time.Time
+	ttl     time.Duration
+	maxSize int
+}
+
+func newKnownTokenCacheInternal(ttl time.Duration) *knownTokenCache {
+	return &knownTokenCache{seenAt: make(map[string]time.Time), ttl: ttl, maxSize: 10000}
+}
+
+func (c *knownTokenCache) markValid(key string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.seenAt) >= c.maxSize {
+		return // full: skip caching rather than grow unbounded
+	}
+	c.seenAt[key] = time.Now()
+}
+
+func (c *knownTokenCache) isKnownValid(key string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	seen, ok := c.seenAt[key]
+	if !ok {
+		return false
+	}
+	if time.Since(seen) > c.ttl {
+		delete(c.seenAt, key)
+		return false
+	}
+	return true
+}
+
 // PerTokenRateLimitForPaths rate-limits by client IP first (at
 // perTokenRateLimitIPMultiplierInternal times perMinute/burst), then by the
 // ":token" route param, for paths in the paths list (matched against
-// c.Path()). The IP check always runs and bounds abuse from cycling through
-// arbitrary tokens; the token check isolates buckets between distinct valid
-// webhooks sharing an IP. isValidShape, if given, rejects malformed tokens
-// before they get a bucket; it must be cheap and side-effect free.
-func PerTokenRateLimitForPaths(paths []string, perMinute int, burst int, isValidShape func(string) bool) echo.MiddlewareFunc {
+// c.Path()). Once isValidResponse confirms a token via a successful
+// request, that token is cached and bypasses the IP ceiling on later
+// requests, so an attacker cycling through invalid tokens on a shared IP
+// cannot starve a legitimate, already-confirmed webhook. isValidShape, if
+// given, rejects malformed tokens before they get a bucket; both callbacks
+// must be cheap and side-effect free.
+func PerTokenRateLimitForPaths(
+	paths []string,
+	perMinute int,
+	burst int,
+	isValidShape func(token string) bool,
+	isValidResponse func(status int) bool,
+) echo.MiddlewareFunc {
 	if perMinute <= 0 {
 		perMinute = 10
 	}
@@ -189,6 +240,7 @@ func PerTokenRateLimitForPaths(paths []string, perMinute int, burst int, isValid
 		burst*perTokenRateLimitIPMultiplierInternal,
 	)
 	tokenLimiter := newIPRateLimiterInternal(rate.Every(time.Minute/time.Duration(perMinute)), burst)
+	knownTokens := newKnownTokenCacheInternal(knownValidTokenTTLInternal)
 
 	pathSet := make(map[string]struct{}, len(paths))
 	for _, p := range paths {
@@ -201,21 +253,45 @@ func PerTokenRateLimitForPaths(paths []string, perMinute int, burst int, isValid
 				return next(c)
 			}
 
+			token := strings.TrimSpace(c.Param("token"))
+			wellFormed := token != "" && (isValidShape == nil || isValidShape(token))
+			tokenKey := ""
+			if wellFormed {
+				tokenKey = agentTokenRateLimitKeyInternal(token)
+			}
+
+			// A token already confirmed to exist skips the shared IP
+			// ceiling and goes straight to its own bucket, so it can't be
+			// starved by unrelated traffic on the same IP.
+			if wellFormed && knownTokens.isKnownValid(tokenKey) {
+				if !tokenLimiter.allow(tokenKey) {
+					c.Response().Header().Set("Retry-After", "60")
+					return c.JSON(http.StatusTooManyRequests, map[string]any{"error": "rate limit exceeded"})
+				}
+				return next(c)
+			}
+
 			if !ipLimiter.allow(clientIPForRateLimitInternal(c)) {
 				c.Response().Header().Set("Retry-After", "60")
 				return c.JSON(http.StatusTooManyRequests, map[string]any{"error": "rate limit exceeded"})
 			}
 
-			token := strings.TrimSpace(c.Param("token"))
-			if token == "" || (isValidShape != nil && !isValidShape(token)) {
+			if !wellFormed {
 				return next(c)
 			}
 
-			if !tokenLimiter.allow(agentTokenRateLimitKeyInternal(token)) {
+			if !tokenLimiter.allow(tokenKey) {
 				c.Response().Header().Set("Retry-After", "60")
 				return c.JSON(http.StatusTooManyRequests, map[string]any{"error": "rate limit exceeded"})
 			}
-			return next(c)
+
+			err := next(c)
+			if err == nil && isValidResponse != nil {
+				if resp, ok := c.Response().(*echo.Response); ok && isValidResponse(resp.Status) {
+					knownTokens.markValid(tokenKey)
+				}
+			}
+			return err
 		}
 	}
 }

@@ -169,13 +169,14 @@ func newTokenRateLimitTestRouterInternal(
 	t *testing.T,
 	perMinute, burst int,
 	isValidShape func(string) bool,
+	isValidResponse func(int) bool,
 	handler echo.HandlerFunc,
 ) (doReq func(token string) int) {
 	t.Helper()
 
 	router := echo.New()
 	router.IPExtractor = echo.ExtractIPDirect()
-	router.Use(PerTokenRateLimitForPaths([]string{"/webhooks/trigger/:token"}, perMinute, burst, isValidShape))
+	router.Use(PerTokenRateLimitForPaths([]string{"/webhooks/trigger/:token"}, perMinute, burst, isValidShape, isValidResponse))
 	router.POST("/webhooks/trigger/:token", handler)
 
 	return func(token string) int {
@@ -191,8 +192,12 @@ func okHandlerInternal(c *echo.Context) error {
 	return c.NoContent(http.StatusOK)
 }
 
+func isStatusOKInternal(status int) bool {
+	return status == http.StatusOK
+}
+
 func TestPerTokenRateLimitForPaths_TracksDistinctTokensNotIP(t *testing.T) {
-	doReq := newTokenRateLimitTestRouterInternal(t, 60, 1, nil, okHandlerInternal)
+	doReq := newTokenRateLimitTestRouterInternal(t, 60, 1, nil, isStatusOKInternal, okHandlerInternal)
 
 	require.Equal(t, http.StatusOK, doReq("token-a"))
 	require.Equal(t, http.StatusOK, doReq("token-b"))
@@ -201,7 +206,7 @@ func TestPerTokenRateLimitForPaths_TracksDistinctTokensNotIP(t *testing.T) {
 }
 
 func TestPerTokenRateLimitForPaths_FallsBackToIPWhenTokenMissing(t *testing.T) {
-	doReq := newTokenRateLimitTestRouterInternal(t, 60, 1, nil, okHandlerInternal)
+	doReq := newTokenRateLimitTestRouterInternal(t, 60, 1, nil, isStatusOKInternal, okHandlerInternal)
 
 	code := doReq("")
 
@@ -210,7 +215,7 @@ func TestPerTokenRateLimitForPaths_FallsBackToIPWhenTokenMissing(t *testing.T) {
 
 func TestPerTokenRateLimitForPaths_IPCeilingBoundsUnseenTokenCycling(t *testing.T) {
 	dbLookups := 0
-	doReq := newTokenRateLimitTestRouterInternal(t, 60, 1, nil, func(c *echo.Context) error {
+	doReq := newTokenRateLimitTestRouterInternal(t, 60, 1, nil, isStatusOKInternal, func(c *echo.Context) error {
 		dbLookups++
 		return c.NoContent(http.StatusNotFound)
 	})
@@ -233,7 +238,7 @@ func TestPerTokenRateLimitForPaths_MalformedTokensGetNoBucketButStillHitIPCeilin
 	const perMinute, burst = 2, 2
 	const ipBurst = burst * perTokenRateLimitIPMultiplierInternal
 
-	doReq := newTokenRateLimitTestRouterInternal(t, perMinute, burst, isValidShape, okHandlerInternal)
+	doReq := newTokenRateLimitTestRouterInternal(t, perMinute, burst, isValidShape, isStatusOKInternal, okHandlerInternal)
 
 	successes := 0
 	for i := range ipBurst + 10 {
@@ -246,11 +251,29 @@ func TestPerTokenRateLimitForPaths_MalformedTokensGetNoBucketButStillHitIPCeilin
 		"malformed tokens must be bounded by the IP ceiling, not given their own per-token bucket")
 }
 
+func TestPerTokenRateLimitForPaths_KnownValidTokenBypassesExhaustedIPCeiling(t *testing.T) {
+	const perMinute, burst = 2, 2
+	const ipBurst = burst * perTokenRateLimitIPMultiplierInternal
+
+	doReq := newTokenRateLimitTestRouterInternal(t, perMinute, burst, nil, isStatusOKInternal, okHandlerInternal)
+
+	// Confirm "good-token" once, then exhaust the shared IP ceiling with
+	// unrelated tokens.
+	require.Equal(t, http.StatusOK, doReq("good-token"))
+	for i := 0; i < ipBurst+10; i++ {
+		doReq("burner-" + strconv.Itoa(i))
+	}
+
+	// The already-confirmed token must still get through: it now bypasses
+	// the exhausted shared IP ceiling and only answers to its own bucket.
+	require.Equal(t, http.StatusOK, doReq("good-token"))
+}
+
 func TestPerTokenRateLimitForPaths_AppliesOnlyToConfiguredPaths(t *testing.T) {
 	router := echo.New()
 	router.IPExtractor = echo.ExtractIPDirect()
 
-	router.Use(PerTokenRateLimitForPaths([]string{"/webhooks/trigger/:token"}, 60, 1, nil))
+	router.Use(PerTokenRateLimitForPaths([]string{"/webhooks/trigger/:token"}, 60, 1, nil, isStatusOKInternal))
 	router.POST("/webhooks/trigger/:token", func(c *echo.Context) error {
 		return c.NoContent(http.StatusOK)
 	})

@@ -243,6 +243,7 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 	// PerTokenRateLimitForPaths for the IP ceiling and shape-check layers.
 	apiGroup.Use(middleware.PerTokenRateLimitForPaths(
 		[]string{"/api/webhooks/trigger/:token"}, 60, 10, webhook.IsWellFormedToken,
+		func(status int) bool { return status == http.StatusAccepted || status == http.StatusForbidden },
 	))
 	// Agent event ingestion authenticates on the agent token alone and sits
 	// outside the auth middleware, so it needs its own brute-force ceiling.
