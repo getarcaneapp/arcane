@@ -211,8 +211,8 @@ const readOnlyJsonSmokeCommands: JsonSmokeCommand[] = [
 		}
 	},
 	{
-		name: 'templates variables',
-		args: ['templates', 'variables', '--json'],
+		name: 'variables list',
+		args: ['variables', 'list', '--json'],
 		expectation: (value) => {
 			expect(value === null || Array.isArray(value)).toBe(true);
 		}
@@ -228,8 +228,8 @@ const readOnlyJsonSmokeCommands: JsonSmokeCommand[] = [
 		expectation: expectPaginated
 	},
 	{
-		name: 'admin events list-env',
-		args: ['admin', 'events', 'list-env', '--limit', '5', '--json'],
+		name: 'admin events list --environment',
+		args: ['admin', 'events', 'list', '--environment', '--limit', '5', '--json'],
 		expectation: expectPaginated
 	},
 	{
