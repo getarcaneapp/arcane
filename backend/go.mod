@@ -64,7 +64,7 @@ require (
 	go.getarcane.app/streams v0.4.0
 	go.getarcane.app/sys/cgroup v0.1.1
 	go.getarcane.app/sys/crypto v0.1.0
-	go.getarcane.app/updater v0.7.2
+	go.getarcane.app/updater v0.7.3
 	go.uber.org/fx v1.24.0
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
 	golang.org/x/crypto v0.55.0
