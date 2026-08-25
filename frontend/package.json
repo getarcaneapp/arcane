@@ -70,7 +70,7 @@
 		"@sveltejs/adapter-static": "^4.0.0-next.4",
 		"@sveltejs/vite-plugin-svelte": "^7.3.0",
 		"@tailwindcss/vite": "^4.3.3",
-		"@tanstack/svelte-query-devtools": "^6.1.38",
+		"@tanstack/svelte-query-devtools": "^6.1.39",
 		"@types/node": "^26.2.0",
 		"@typescript/native-preview": "7.0.0-dev.20260707.2",
 		"fallow": "^3.17.0",
