@@ -175,6 +175,24 @@ var jobMetadataRegistry = map[string]JobMetadata{
 			},
 		},
 	},
+	"auto-patch": {
+		ID:             "auto-patch",
+		Name:           "Image Auto Patch",
+		Description:    "Patches images whose latest vulnerability scan found fixable OS package vulnerabilities using Copacetic",
+		Category:       "security",
+		SettingsKey:    "imageAutoPatchInterval",
+		EnabledKey:     "imageAutoPatchEnabled",
+		ManagerOnly:    false,
+		IsContinuous:   false,
+		CanRunManually: true,
+		Prerequisites: []JobPrerequisiteMetadata{
+			{
+				SettingKey:  "imageAutoPatchEnabled",
+				Label:       "Scheduled image patching enabled",
+				SettingsURL: "/settings/security",
+			},
+		},
+	},
 	"auto-heal": {
 		ID:             "auto-heal",
 		Name:           "Auto Heal",

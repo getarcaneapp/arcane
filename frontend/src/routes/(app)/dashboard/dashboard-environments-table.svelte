@@ -111,7 +111,7 @@
 						<Table.Cell class="tabular-nums">{row.images}</Table.Cell>
 						<Table.Cell>{@render actionCount(row.updates, '/updates', UpdateIcon, 'amber')}</Table.Cell>
 						<Table.Cell>
-							{@render actionCount(row.vulnerabilities, '/images/vulnerabilities', ShieldAlertIcon, 'red')}
+							{@render actionCount(row.vulnerabilities, '/security', ShieldAlertIcon, 'red')}
 						</Table.Cell>
 						<Table.Cell class="text-right">{@render metric(row.cpu, 'cpu')}</Table.Cell>
 						<Table.Cell class="text-right">{@render metric(row.memory, 'memory')}</Table.Cell>

@@ -146,6 +146,24 @@ func (s *ImageUpdateService) composeBuildImageRefsInternal(ctx context.Context) 
 		}
 	}
 
+	// Copacetic-patched tags only exist in the local daemon, so treat them like
+	// locally built images instead of failing a remote registry lookup. Never
+	// fail the update check over patch history.
+	var patchedRefs []string
+	if err := s.db.WithContext(ctx).
+		Table("image_patches").
+		Where("status = ?", "completed").
+		Distinct().
+		Pluck("patched_ref", &patchedRefs).Error; err != nil {
+		slog.DebugContext(ctx, "failed to load patched image references", "error", err)
+	}
+	for _, imageRef := range patchedRefs {
+		normalized := refs.NormalizeImageUpdateRef(imageRef)
+		if normalized != "" {
+			buildRefs[normalized] = struct{}{}
+		}
+	}
+
 	return buildRefs, nil
 }
 

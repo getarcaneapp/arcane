@@ -347,6 +347,32 @@ type Update struct {
 	// Required: false
 	TrivyIgnoreUnfixed *string `json:"trivyIgnoreUnfixed,omitempty"`
 
+	// ImagePatchSuffix is the suffix appended to the source tag when patching an image.
+	//
+	// Required: false
+	ImagePatchSuffix *string `json:"imagePatchSuffix,omitempty"`
+
+	// ImagePatchTimeoutSec is the timeout for a single image patch operation in seconds.
+	//
+	// Required: false
+	ImagePatchTimeoutSec *string `json:"imagePatchTimeoutSec,omitempty"`
+
+	// ImagePatchAllPlatforms patches every platform in a multi-platform image
+	// instead of only the platform the server runs on.
+	//
+	// Required: false
+	ImagePatchAllPlatforms *string `json:"imagePatchAllPlatforms,omitempty"`
+
+	// ImageAutoPatchEnabled enables scheduled patching of images with fixable vulnerabilities.
+	//
+	// Required: false
+	ImageAutoPatchEnabled *string `json:"imageAutoPatchEnabled,omitempty"`
+
+	// ImageAutoPatchInterval is the cron expression for scheduled image patching.
+	//
+	// Required: false
+	ImageAutoPatchInterval *string `json:"imageAutoPatchInterval,omitempty"`
+
 	// OidcClientId is the OIDC client identifier.
 	//
 	// Required: false

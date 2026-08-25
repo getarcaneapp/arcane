@@ -71,6 +71,7 @@ func (s *JobService) GetJobSchedules(ctx context.Context) jobschedule.Config {
 		PollingInterval:                s.settings.GetStringSetting(ctx, "pollingInterval", defaults.PollingInterval.Value),
 		ScheduledPruneInterval:         s.settings.GetStringSetting(ctx, "scheduledPruneInterval", defaults.ScheduledPruneInterval.Value),
 		VulnerabilityScanInterval:      s.settings.GetStringSetting(ctx, "vulnerabilityScanInterval", defaults.VulnerabilityScanInterval.Value),
+		ImageAutoPatchInterval:         s.settings.GetStringSetting(ctx, "imageAutoPatchInterval", defaults.ImageAutoPatchInterval.Value),
 		AutoHealInterval:               s.settings.GetStringSetting(ctx, "autoHealInterval", defaults.AutoHealInterval.Value),
 	}
 }
@@ -98,6 +99,7 @@ func (s *JobService) UpdateJobSchedules(ctx context.Context, updates jobschedule
 		{key: "pollingInterval", current: current.PollingInterval, update: updates.PollingInterval},
 		{key: "scheduledPruneInterval", current: current.ScheduledPruneInterval, update: updates.ScheduledPruneInterval},
 		{key: "vulnerabilityScanInterval", current: current.VulnerabilityScanInterval, update: updates.VulnerabilityScanInterval},
+		{key: "imageAutoPatchInterval", current: current.ImageAutoPatchInterval, update: updates.ImageAutoPatchInterval},
 		{key: "autoHealInterval", current: current.AutoHealInterval, update: updates.AutoHealInterval},
 	}
 

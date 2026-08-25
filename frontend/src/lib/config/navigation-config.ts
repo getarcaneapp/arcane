@@ -71,6 +71,12 @@ export const navigationItems: NavigationSections = {
 			accessSurfaceId: 'route.updates'
 		},
 		{
+			title: m.security(),
+			url: '/security',
+			icon: ShieldAlertIcon,
+			accessSurfaceId: 'route.images.vulnerabilities'
+		},
+		{
 			title: m.projects_title(),
 			url: '/projects',
 			icon: ProjectsIcon,
@@ -99,15 +105,7 @@ export const navigationItems: NavigationSections = {
 			icon: ImagesIcon,
 			shortcut: ['mod', '6'],
 			accessSurfaceId: 'route.images',
-			items: [
-				{ title: m.builds(), url: '/images/builds', icon: HammerIcon, accessSurfaceId: 'route.images.builds' },
-				{
-					title: m.vuln_title(),
-					url: '/images/vulnerabilities',
-					icon: ShieldAlertIcon,
-					accessSurfaceId: 'route.images.vulnerabilities'
-				}
-			]
+			items: [{ title: m.builds(), url: '/images/builds', icon: HammerIcon, accessSurfaceId: 'route.images.builds' }]
 		},
 		{
 			title: m.resource_networks_cap(),

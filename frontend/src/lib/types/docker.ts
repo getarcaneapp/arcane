@@ -581,6 +581,51 @@ export interface ImageAttestationRequestOptions {
 
 export type ImageUpdateData = ImageUpdateInfoDto;
 
+export type ImagePatchMode = 'update-all' | 'report';
+export type ImagePatchStatus = 'patching' | 'completed' | 'failed';
+
+export interface ImagePatchOptions {
+	suffix?: string;
+	patchedTag?: string;
+	timeoutSeconds?: number;
+	scanId?: string;
+	ignoreErrors?: boolean;
+}
+
+export interface ImagePatchRecordDto {
+	id: string;
+	environmentId: string;
+	originalImageId: string;
+	originalRef: string;
+	originalDigest?: string;
+	patchedRef: string;
+	mode: ImagePatchMode;
+	status: ImagePatchStatus;
+	packagesUpdated?: number;
+	error?: string;
+	activityId?: string;
+	durationMs?: number;
+	createdAt: string;
+	updatedAt?: string;
+}
+
+export interface ImagePatchScanSummaryDto {
+	fixableCount: number;
+	totalCount: number;
+	scanTime: string;
+}
+
+export interface ImagePatchTargetDto {
+	imageId: string;
+	imageRef: string;
+	fixableCount: number;
+	totalCount: number;
+	scanTime: string;
+	localOnly?: boolean;
+	lastPatch?: ImagePatchRecordDto;
+	lastPatchScan?: ImagePatchScanSummaryDto;
+}
+
 export type ImageBuildStatus = 'running' | 'success' | 'failed';
 
 export interface ImageBuildRecord {

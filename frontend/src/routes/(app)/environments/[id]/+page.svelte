@@ -31,6 +31,7 @@
 	import JobsTab from './components/JobsTab.svelte';
 	import { environmentFormSchema, type EnvironmentFormValues } from './components/environment-form-schema';
 	import TrivySecuritySettings from '#lib/components/settings/trivy-security-settings.svelte';
+	import ImagePatchSettings from '#lib/components/settings/image-patch-settings.svelte';
 	import LifecycleSecuritySettings from '#lib/components/settings/lifecycle-security-settings.svelte';
 	import { useEasyJoinCandidates } from '#lib/hooks/use-easy-join-candidates.svelte';
 	import EasyJoinDialog from '../../swarm/cluster/easy-join-dialog.svelte';
@@ -43,7 +44,10 @@
 		JobsIcon,
 		ResetIcon,
 		ConnectionIcon,
-		VolumesIcon
+		VolumesIcon,
+		ScanIcon,
+		ShieldCheckIcon,
+		CodeIcon
 	} from '#lib/icons';
 
 	let { data } = $props();
@@ -219,6 +223,13 @@
 	});
 	const activeTab = $derived(urlTab.value);
 
+	let securitySubTab = $state('trivy');
+	const securityTabItems: TabItem[] = [
+		{ value: 'trivy', label: m.security_vulnerability_scanning_heading(), icon: ScanIcon },
+		{ value: 'patching', label: m.security_image_patching_heading(), icon: ShieldCheckIcon },
+		{ value: 'lifecycle', label: m.security_lifecycle_hooks_heading(), icon: CodeIcon }
+	];
+
 	$effect(() => {
 		// Don't bounce away when gitops is the only tab (offline/disabled environment) — the
 		// header still needs to be reachable to fix the connection.
@@ -281,6 +292,10 @@
 		trivyServerUrl: settings?.trivyServerUrl || '',
 		trivyServerToken: settings?.trivyServerToken || '',
 		trivyIgnoreUnfixed: settings?.trivyIgnoreUnfixed ?? true,
+		imagePatchSuffix: settings?.imagePatchSuffix || 'patched',
+		imagePatchTimeoutSec: settings?.imagePatchTimeoutSec ?? 600,
+		imagePatchAllPlatforms: settings?.imagePatchAllPlatforms ?? false,
+		imageAutoPatchEnabled: settings?.imageAutoPatchEnabled ?? false,
 		lifecycleEnabled: settings?.lifecycleEnabled ?? false,
 		lifecycleDefaultRunnerImage: settings?.lifecycleDefaultRunnerImage || 'alpine:latest',
 		lifecycleMaxTimeoutSec: settings?.lifecycleMaxTimeoutSec ?? 300,
@@ -343,6 +358,10 @@
 				trivyServerUrl: formData.trivyServerUrl,
 				trivyServerToken: formData.trivyServerToken,
 				trivyIgnoreUnfixed: formData.trivyIgnoreUnfixed,
+				imagePatchSuffix: formData.imagePatchSuffix,
+				imagePatchTimeoutSec: formData.imagePatchTimeoutSec,
+				imagePatchAllPlatforms: formData.imagePatchAllPlatforms,
+				imageAutoPatchEnabled: formData.imageAutoPatchEnabled,
 				lifecycleEnabled: formData.lifecycleEnabled,
 				lifecycleDefaultRunnerImage: formData.lifecycleDefaultRunnerImage,
 				lifecycleMaxTimeoutSec: formData.lifecycleMaxTimeoutSec,
@@ -735,9 +754,27 @@
 				<DockerTab {formInputs} {shellSelectValue} {handleShellSelectChange} {shellOptions} />
 			</Tabs.Content>
 
-			<Tabs.Content value="security" class="space-y-6">
-				<TrivySecuritySettings {formInputs} environmentId={environment.id} />
-				<LifecycleSecuritySettings {formInputs} />
+			<Tabs.Content value="security">
+				<Tabs.Root bind:value={securitySubTab} class="w-full">
+					<div class="mb-4">
+						<TabBar
+							items={securityTabItems}
+							value={securitySubTab}
+							onValueChange={(value) => {
+								securitySubTab = value;
+							}}
+						/>
+					</div>
+					<Tabs.Content value="trivy">
+						<TrivySecuritySettings {formInputs} environmentId={environment.id} />
+					</Tabs.Content>
+					<Tabs.Content value="patching">
+						<ImagePatchSettings {formInputs} />
+					</Tabs.Content>
+					<Tabs.Content value="lifecycle">
+						<LifecycleSecuritySettings {formInputs} />
+					</Tabs.Content>
+				</Tabs.Root>
 			</Tabs.Content>
 
 			<Tabs.Content value="jobs">
