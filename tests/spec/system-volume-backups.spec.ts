@@ -175,8 +175,8 @@ test.describe('System-managed volume backups', () => {
 		const dialog = page.getByRole('dialog', { name: 'Edit Schedule' });
 
 		await expect(dialog.getByText(unavailableName)).toBeVisible();
-		await expect(dialog.getByText('Unavailable')).toBeVisible();
-		await expect(dialog.getByText('Anonymous')).toBeVisible();
+		await expect(dialog.getByText('Unavailable', { exact: true })).toBeVisible();
+		await expect(dialog.getByText('Anonymous', { exact: true })).toBeVisible();
 		await dialog.getByLabel('Volume selection').click();
 		await page.getByRole('option', { name: 'Blocklist' }).click();
 		await expect(dialog.getByLabel('Volume selection')).toContainText('Blocklist');
