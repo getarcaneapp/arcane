@@ -238,14 +238,9 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 	apiGroup.Use(middleware.PerIPRateLimitForPaths(
 		[]string{"/api/auth/federated/token"}, 10, 10,
 	))
-	// Keyed by the webhook token itself rather than the source IP, so a burst
-	// of triggers from one Git host (e.g. Forgejo/GitHub sending many webhooks
-	// from the same IP) cannot exhaust the budget for unrelated webhooks.
-	// A wider IP ceiling is checked first (see PerTokenRateLimitForPaths) so
-	// that cycling through arbitrary invalid tokens cannot bypass rate
-	// limiting to hammer the database-backed token lookup; structurally
-	// malformed tokens are also rejected before a bucket is ever allocated
-	// for them, via webhook.IsWellFormedToken.
+	// Keyed by webhook token rather than source IP, so distinct webhooks on
+	// the same Git host don't share a rate-limit budget. See
+	// PerTokenRateLimitForPaths for the IP ceiling and shape-check layers.
 	apiGroup.Use(middleware.PerTokenRateLimitForPaths(
 		[]string{"/api/webhooks/trigger/:token"}, 60, 10, webhook.IsWellFormedToken,
 	))

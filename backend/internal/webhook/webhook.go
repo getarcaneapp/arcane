@@ -119,14 +119,9 @@ func parseWebhookPrefixInternal(raw string) (string, error) {
 	return webhookTokenPrefix + hexPart[:webhookTokenPrefixLen], nil
 }
 
-// IsWellFormedToken reports whether raw has the shape of a webhook token
-// (correct prefix, exact hex length, and hex alphabet) without touching the
-// database. It exists so callers outside this package — notably rate
-// limiting middleware — can reject structurally invalid tokens before any
-// per-token state (e.g. a rate-limit bucket) is allocated for them, without
-// duplicating the token format or performing a lookup/hash themselves.
-// A true result is not proof the token exists or is enabled; only
-// TriggerByToken can determine that.
+// IsWellFormedToken reports whether raw has the shape of a webhook token,
+// without a database lookup. A true result is not proof the token exists;
+// only TriggerByToken can determine that.
 func IsWellFormedToken(raw string) bool {
 	raw = strings.TrimSpace(raw)
 	hexPart, ok := strings.CutPrefix(raw, webhookTokenPrefix)

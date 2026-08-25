@@ -163,12 +163,8 @@ func TestPerIPRateLimitForPaths_RouteParamsDoNotEscapeFilter(t *testing.T) {
 	require.Equal(t, http.StatusTooManyRequests, doReq("token-bbb"))
 }
 
-// newTokenRateLimitTestRouterInternal builds an Echo router with
-// PerTokenRateLimitForPaths mounted ahead of a handler, plus a doReq helper
-// that always posts from the same source IP (192.0.2.10). Centralizing this
-// setup keeps the PerTokenRateLimitForPaths tests focused on the scenario
-// each one is actually verifying, rather than each repeating router/request
-// wiring that isn't itself under test.
+// newTokenRateLimitTestRouterInternal wires PerTokenRateLimitForPaths ahead
+// of handler and returns a doReq helper posting from a fixed source IP.
 func newTokenRateLimitTestRouterInternal(
 	t *testing.T,
 	perMinute, burst int,
@@ -184,7 +180,7 @@ func newTokenRateLimitTestRouterInternal(
 
 	return func(token string) int {
 		req := httptest.NewRequest(http.MethodPost, "/webhooks/trigger/"+token, nil)
-		req.RemoteAddr = "192.0.2.10:4000" // same source IP for every request
+		req.RemoteAddr = "192.0.2.10:4000"
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, req)
 		return rec.Code
@@ -198,13 +194,9 @@ func okHandlerInternal(c *echo.Context) error {
 func TestPerTokenRateLimitForPaths_TracksDistinctTokensNotIP(t *testing.T) {
 	doReq := newTokenRateLimitTestRouterInternal(t, 60, 1, nil, okHandlerInternal)
 
-	// Same IP, different tokens: each token gets its own bucket, so a burst
-	// from one webhook (e.g. a Git host) must not block another.
 	require.Equal(t, http.StatusOK, doReq("token-a"))
 	require.Equal(t, http.StatusOK, doReq("token-b"))
 	require.Equal(t, http.StatusOK, doReq("token-c"))
-
-	// The same token, hit twice in a row, still exhausts its own bucket.
 	require.Equal(t, http.StatusTooManyRequests, doReq("token-a"))
 }
 
@@ -213,28 +205,16 @@ func TestPerTokenRateLimitForPaths_FallsBackToIPWhenTokenMissing(t *testing.T) {
 
 	code := doReq("")
 
-	// Echo does not match a trailing-slash empty param against ":token", so
-	// this exercises the router's own behavior rather than the fallback path
-	// directly; the important invariant is that the middleware never panics
-	// and never leaves the route unguarded.
 	require.NotEqual(t, http.StatusInternalServerError, code)
 }
 
 func TestPerTokenRateLimitForPaths_IPCeilingBoundsUnseenTokenCycling(t *testing.T) {
 	dbLookups := 0
 	doReq := newTokenRateLimitTestRouterInternal(t, 60, 1, nil, func(c *echo.Context) error {
-		// Stands in for the webhook service's database-backed token lookup:
-		// every request that reaches the handler pays this cost, regardless
-		// of whether the token turns out to be valid.
 		dbLookups++
 		return c.NoContent(http.StatusNotFound)
 	})
 
-	// A never-ending stream of distinct, invalid tokens from one IP must
-	// still be bounded by the IP-wide ceiling (burst * multiplier), not
-	// admitted indefinitely just because each token is new to the token
-	// bucket map. This is what stops an attacker from using fresh random
-	// tokens to bypass rate limiting and hammer the downstream token lookup.
 	rejections := 0
 	for i := range 200 {
 		if doReq(strconv.Itoa(i)) == http.StatusTooManyRequests {
@@ -250,15 +230,6 @@ func TestPerTokenRateLimitForPaths_MalformedTokensGetNoBucketButStillHitIPCeilin
 	isValidShape := func(token string) bool {
 		return token == "well-formed"
 	}
-
-	// PerTokenRateLimitForPaths widens the IP ceiling by
-	// perTokenRateLimitIPMultiplierInternal relative to the burst given
-	// here, so with burst=2 the real IP-level burst is
-	// 2*perTokenRateLimitIPMultiplierInternal. If malformed tokens got
-	// their own per-token bucket instead of being folded into the IP-only
-	// path, they could rack up far more successes than that; if they are
-	// correctly bounded by the (wider) IP ceiling alone, successes must
-	// stop there.
 	const perMinute, burst = 2, 2
 	const ipBurst = burst * perTokenRateLimitIPMultiplierInternal
 

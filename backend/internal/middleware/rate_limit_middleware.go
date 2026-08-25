@@ -165,42 +165,18 @@ func agentTokenRateLimitKeyInternal(token string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// perTokenRateLimitIPMultiplierInternal widens the IP-level ceiling relative
-// to the per-token ceiling in PerTokenRateLimitForPaths. A single IP
-// legitimately fans out to many distinct, valid tokens (e.g. a Git host
-// triggering several webhooks in quick succession), so the IP bucket must
-// absorb that fan-out; it only needs to stay tight enough to bound the cost
-// of an attacker cycling through invalid tokens, not to match the per-token
-// rate one-for-one.
+// perTokenRateLimitIPMultiplierInternal widens the IP ceiling relative to
+// the per-token ceiling, since one IP can legitimately trigger many valid
+// tokens in a burst (e.g. a Git host firing several webhooks at once).
 const perTokenRateLimitIPMultiplierInternal = 10
 
-// PerTokenRateLimitForPaths returns an Echo middleware that rate-limits by
-// BOTH client IP and the ":token" route param, for paths in the paths list
-// (matched against c.Path(), the registered route pattern).
-//
-// The IP limit is checked first and always applies, at a wider ceiling
-// (perTokenRateLimitIPMultiplierInternal times perMinute/burst): it is what
-// bounds an unauthenticated caller from cycling through arbitrary invalid
-// tokens to force repeated downstream lookups (e.g. a database-backed token
-// check), since a fresh, never-seen token would otherwise always be admitted
-// before that lookup happens. Only requests that pass the IP limit, carry a
-// non-empty token, and pass isValidShape (if provided) are additionally
-// checked against a bucket keyed by the token itself (SHA-256 hashed), at
-// the exact perMinute/burst given. That second, tighter layer is what stops
-// one busy, legitimate webhook from starving a different webhook's budget
-// when both are triggered from the same source IP (e.g. a shared Git host)
-// — it isolates buckets between tokens without ever exempting an
-// unrecognized token from the IP-wide ceiling.
-//
-// isValidShape lets the caller reject tokens that are structurally
-// malformed (wrong prefix/length/alphabet) before a per-token bucket is
-// ever allocated for them, without this package needing to know the
-// concrete token format. A malformed token never reaches the wrapped
-// handler; the IP ceiling above is still the only thing standing between
-// an attacker and this middleware for such tokens, matching the behavior
-// for a request with no token param at all. isValidShape may be nil, in
-// which case every non-empty token gets its own bucket (previous
-// behavior). It must be cheap and side-effect free: no I/O, no locking.
+// PerTokenRateLimitForPaths rate-limits by client IP first (at
+// perTokenRateLimitIPMultiplierInternal times perMinute/burst), then by the
+// ":token" route param, for paths in the paths list (matched against
+// c.Path()). The IP check always runs and bounds abuse from cycling through
+// arbitrary tokens; the token check isolates buckets between distinct valid
+// webhooks sharing an IP. isValidShape, if given, rejects malformed tokens
+// before they get a bucket; it must be cheap and side-effect free.
 func PerTokenRateLimitForPaths(paths []string, perMinute int, burst int, isValidShape func(string) bool) echo.MiddlewareFunc {
 	if perMinute <= 0 {
 		perMinute = 10
@@ -225,10 +201,6 @@ func PerTokenRateLimitForPaths(paths []string, perMinute int, burst int, isValid
 				return next(c)
 			}
 
-			// IP ceiling first, always: this is what bounds an unauthenticated
-			// caller cycling through arbitrary invalid tokens, since a fresh,
-			// never-seen token would otherwise always be admitted below before
-			// the caller (the webhook service) gets a chance to reject it.
 			if !ipLimiter.allow(clientIPForRateLimitInternal(c)) {
 				c.Response().Header().Set("Retry-After", "60")
 				return c.JSON(http.StatusTooManyRequests, map[string]any{"error": "rate limit exceeded"})
@@ -239,10 +211,6 @@ func PerTokenRateLimitForPaths(paths []string, perMinute int, burst int, isValid
 				return next(c)
 			}
 
-			// Second layer, only reached once the IP ceiling is satisfied:
-			// isolates buckets between distinct tokens so a burst on one
-			// webhook cannot deplete the budget for another webhook sharing
-			// the same source IP (e.g. a shared Git host).
 			if !tokenLimiter.allow(agentTokenRateLimitKeyInternal(token)) {
 				c.Response().Header().Set("Retry-After", "60")
 				return c.JSON(http.StatusTooManyRequests, map[string]any{"error": "rate limit exceeded"})
