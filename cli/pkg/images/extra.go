@@ -264,6 +264,23 @@ var (
 	attestationsPlatform      string
 	attestationsPredicateType string
 	attestationsStatement     bool
+	buildTags                 []string
+	buildDockerfile           string
+	buildInlineFile           string
+	buildArgs                 []string
+	buildTarget               string
+	buildPlatforms            []string
+	buildNetwork              string
+	buildProvider             string
+	buildNoCache              bool
+	buildPull                 bool
+	buildPush                 bool
+	buildLoad                 bool
+	buildsLimit               int
+	buildsStart               int
+	buildsAll                 bool
+	buildsStatus              string
+	buildsProvider            string
 )
 
 var imagesAttestationsCmd = &cobra.Command{
@@ -348,21 +365,6 @@ var imagesAttestationsCmd = &cobra.Command{
 		return nil
 	},
 }
-
-var (
-	buildTags       []string
-	buildDockerfile string
-	buildInlineFile string
-	buildArgs       []string
-	buildTarget     string
-	buildPlatforms  []string
-	buildNetwork    string
-	buildProvider   string
-	buildNoCache    bool
-	buildPull       bool
-	buildPush       bool
-	buildLoad       bool
-)
 
 var imagesBuildCmd = &cobra.Command{
 	Use:          "build <context-dir|git-url>",
@@ -501,14 +503,6 @@ func streamBuildOutput(body io.Reader) error {
 	}
 	return nil
 }
-
-var (
-	buildsLimit    int
-	buildsStart    int
-	buildsAll      bool
-	buildsStatus   string
-	buildsProvider string
-)
 
 var imagesBuildsCmd = &cobra.Command{
 	Use:          "builds",

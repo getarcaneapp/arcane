@@ -30,18 +30,15 @@ var (
 	backupUploadS3Destination string
 	restorePaths              []string
 	restoreArchiveFile        string
-)
-
-var (
-	policyEnabled        bool
-	policySchedule       string
-	policyRetention      int
-	policyStopContainers bool
-	policyLocal          bool
-	policyS3             bool
-	policyS3Destination  string
-	policyID             string
-	policyFile           string
+	policyEnabled             bool
+	policySchedule            string
+	policyRetention           int
+	policyStopContainers      bool
+	policyLocal               bool
+	policyS3                  bool
+	policyS3Destination       string
+	policyID                  string
+	policyFile                string
 )
 
 // backupsListResponse mirrors the backend's paginated volume backup response,

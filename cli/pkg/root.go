@@ -48,6 +48,7 @@ import (
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/runstate"
 	runtimectx "github.com/getarcaneapp/arcane/cli/v2/internal/runtime"
+	"github.com/getarcaneapp/arcane/cli/v2/pkg/activities"
 	"github.com/getarcaneapp/arcane/cli/v2/pkg/admin"
 	"github.com/getarcaneapp/arcane/cli/v2/pkg/auth"
 	"github.com/getarcaneapp/arcane/cli/v2/pkg/backups"
@@ -72,6 +73,8 @@ import (
 	"github.com/getarcaneapp/arcane/cli/v2/pkg/variables"
 	"github.com/getarcaneapp/arcane/cli/v2/pkg/version"
 	"github.com/getarcaneapp/arcane/cli/v2/pkg/volumes"
+	"github.com/getarcaneapp/arcane/cli/v2/pkg/vulnerabilities"
+	"github.com/getarcaneapp/arcane/cli/v2/pkg/webhooks"
 	"github.com/spf13/cobra"
 )
 
@@ -274,6 +277,9 @@ func init() {
 	rootCmd.AddCommand(gitops.GitopsCmd)
 	rootCmd.AddCommand(backups.BackupsCmd)
 	rootCmd.AddCommand(variables.VariablesCmd)
+	rootCmd.AddCommand(vulnerabilities.VulnerabilitiesCmd)
+	rootCmd.AddCommand(activities.ActivitiesCmd)
+	rootCmd.AddCommand(webhooks.WebhooksCmd)
 
 	instrumentCommandTreeInternal(rootCmd)
 }
