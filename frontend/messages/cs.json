@@ -1834,7 +1834,7 @@
   "git_sync_sync_files": "Synchronizovat soubory",
   "git_sync_sync_files_description": "Zkopírujte soubory stejné úrovně ze složky \"compose\" do spravovaného projektu. Je-li tato funkce deaktivována, Arcane synchronizuje pouze vybraný compose soubor.",
   "git_sync_sync_files_locked_hint": "Zamčeno, dokud je nakonfigurován háček před nasazením.",
-  "git_sync_pull_image_after_sync": "Načíst obrázek po synchronizaci",
+  "git_sync_pull_image_after_sync": "Stáhnout obraz po synchronizaci",
   "git_sync_pull_image_after_sync_description": "Načtěte obraz každé služby ihned poté, co synchronizace změní soubor compose, a to i v případě, že je projekt právě zastaven. Bez této funkce se obrazy načtou pouze tehdy, když je projekt již spuštěn (v rámci automatického opětovného nasazení) nebo při ručním opětovném nasazení/načtení.",
   "git_sync_pull_image_after_sync_redundant_description": "Tuto funkci již pokrývá funkce „Redeploy After Sync“, která stahuje obrázky v rámci opětovného nasazení.",
   "git_sync_redeploy_after_sync": "Přeuspořádat po synchronizaci",
