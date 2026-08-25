@@ -20,7 +20,7 @@ require (
 	github.com/spf13/pflag v1.0.10
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.12.1
-	go.getarcane.app/acfs v0.4.1
+	go.getarcane.app/acfs v0.4.2
 	go.getarcane.app/sys/bytes v0.1.0
 )
 
