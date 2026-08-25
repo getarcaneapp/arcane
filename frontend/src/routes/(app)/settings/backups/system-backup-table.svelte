@@ -69,9 +69,7 @@
 {#snippet IdCell({ item }: { item: BackupHistoryEntry })}<code class="text-xs">{item.id.slice(0, 18)}…</code>{/snippet}
 {#snippet ResourceCell({ item }: { item: BackupHistoryEntry })}<span class="font-medium">{item.resourceName}</span>{/snippet}
 {#snippet TypeCell({ item }: { item: BackupHistoryEntry })}
-	<Badge variant={item.type === 'system' ? 'purple' : 'blue'}
-		>{item.type === 'system' ? m.backups_system_managed() : m.backups_volume_managed()}</Badge
-	>
+	<Badge variant="purple">{item.type === 'system' ? m.backups_system_managed() : m.backups_volume_managed()}</Badge>
 {/snippet}
 {#snippet StatusCell({ item }: { item: BackupHistoryEntry })}<BackupStatusCell status={item.status} />{/snippet}
 {#snippet TriggerCell({ item }: { item: BackupHistoryEntry })}<BackupTriggerCell trigger={item.trigger} />{/snippet}
@@ -113,7 +111,7 @@
 				text: backupStatusLabel(item.status)
 			}),
 			(item) => ({
-				variant: item.type === 'system' ? 'purple' : 'blue',
+				variant: 'purple',
 				text: item.type === 'system' ? m.backups_system_managed() : m.backups_volume_managed()
 			})
 		]}

@@ -374,7 +374,7 @@
 {/snippet}
 
 {#snippet TypeCell({ item }: { item: BackupEntry })}
-	<Badge variant={item.type === 'system' ? 'purple' : 'blue'}>
+	<Badge variant="purple">
 		{item.type === 'system' ? m.backups_system_managed() : m.backups_volume_managed()}
 	</Badge>
 {/snippet}
@@ -504,7 +504,7 @@
 		title={(item) => item.id}
 		badges={[
 			(item) => ({
-				variant: item.type === 'system' ? 'purple' : 'blue',
+				variant: 'purple',
 				text: item.type === 'system' ? m.backups_system_managed() : m.backups_volume_managed()
 			})
 		]}

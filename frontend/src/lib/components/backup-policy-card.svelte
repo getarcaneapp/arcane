@@ -38,7 +38,7 @@
 	<code class="truncate">{policy.schedule}</code>
 	<div class="flex items-center gap-1.5 justify-self-end">
 		{#if resourceType}
-			<Badge variant={resourceType === 'system' ? 'purple' : 'blue'}>
+			<Badge variant="purple">
 				{resourceType === 'system' ? m.system() : m.resource_volume_cap()}
 			</Badge>
 		{/if}

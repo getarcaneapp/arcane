@@ -170,7 +170,7 @@ test.describe('System-managed volume backups', () => {
 		const systemCard = page.getByTestId('backup-policy-system-system-nightly');
 		const volumeCard = page.getByTestId('backup-policy-volume-volume-nightly');
 		await expect(systemCard.getByText('System')).toHaveClass(/text-purple-/);
-		await expect(volumeCard.getByText('Volume')).toHaveClass(/text-blue-/);
+		await expect(volumeCard.getByText('Volume')).toHaveClass(/text-purple-/);
 		await volumeCard.getByRole('button', { name: 'Edit Schedule' }).click();
 		const dialog = page.getByRole('dialog', { name: 'Edit Schedule' });
 
@@ -277,7 +277,7 @@ test.describe('System-managed volume backups', () => {
 
 			await page.goto(`/volumes/${encodeURIComponent(volumeName)}?tab=backups`);
 			await expect(page.getByText('System-managed').first()).toHaveClass(/text-purple-/);
-			await expect(page.getByText('Volume-managed').first()).toHaveClass(/text-blue-/);
+			await expect(page.getByText('Volume-managed').first()).toHaveClass(/text-purple-/);
 			await page.getByTestId('facet-type-trigger').click();
 			await page.getByTestId('facet-type-option-system').click();
 			await expect(page.getByText('System-managed').first()).toBeVisible();
