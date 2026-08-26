@@ -168,14 +168,14 @@ func TestPerIPRateLimitForPaths_RouteParamsDoNotEscapeFilter(t *testing.T) {
 func newTokenRateLimitTestRouterInternal(
 	t *testing.T,
 	perMinute, burst int,
-	isValidShape func(string) bool,
+	isAuthentic func(string) bool,
 	handler echo.HandlerFunc,
 ) (doReq func(token string) int) {
 	t.Helper()
 
 	router := echo.New()
 	router.IPExtractor = echo.ExtractIPDirect()
-	router.Use(PerTokenRateLimitForPaths([]string{"/webhooks/trigger/:token"}, perMinute, burst, isValidShape))
+	router.Use(PerTokenRateLimitForPaths([]string{"/webhooks/trigger/:token"}, perMinute, burst, isAuthentic))
 	router.POST("/webhooks/trigger/:token", handler)
 
 	return func(token string) int {
@@ -208,9 +208,10 @@ func TestPerTokenRateLimitForPaths_FallsBackToIPWhenTokenMissing(t *testing.T) {
 	require.NotEqual(t, http.StatusInternalServerError, code)
 }
 
-func TestPerTokenRateLimitForPaths_IPCeilingBoundsUnseenTokenCycling(t *testing.T) {
+func TestPerTokenRateLimitForPaths_IPCeilingBoundsUnauthenticTokenCycling(t *testing.T) {
+	rejectAll := func(string) bool { return false }
 	dbLookups := 0
-	doReq := newTokenRateLimitTestRouterInternal(t, 60, 1, nil, func(c *echo.Context) error {
+	doReq := newTokenRateLimitTestRouterInternal(t, 60, 1, rejectAll, func(c *echo.Context) error {
 		dbLookups++
 		return c.NoContent(http.StatusNotFound)
 	})
@@ -227,13 +228,13 @@ func TestPerTokenRateLimitForPaths_IPCeilingBoundsUnseenTokenCycling(t *testing.
 }
 
 func TestPerTokenRateLimitForPaths_MalformedTokensGetNoBucketButStillHitIPCeiling(t *testing.T) {
-	isValidShape := func(token string) bool {
+	isAuthentic := func(token string) bool {
 		return token == "well-formed"
 	}
 	const perMinute, burst = 2, 2
 	const ipBurst = burst * perTokenRateLimitIPMultiplierInternal
 
-	doReq := newTokenRateLimitTestRouterInternal(t, perMinute, burst, isValidShape, okHandlerInternal)
+	doReq := newTokenRateLimitTestRouterInternal(t, perMinute, burst, isAuthentic, okHandlerInternal)
 
 	successes := 0
 	for i := range ipBurst + 10 {
@@ -244,6 +245,22 @@ func TestPerTokenRateLimitForPaths_MalformedTokensGetNoBucketButStillHitIPCeilin
 
 	require.LessOrEqual(t, successes, ipBurst,
 		"malformed tokens must be bounded by the IP ceiling, not given their own per-token bucket")
+}
+
+func TestPerTokenRateLimitForPaths_AuthenticTokenNotStarvedByGarbageFromSameIP(t *testing.T) {
+	isAuthentic := func(token string) bool {
+		return token == "authentic"
+	}
+	doReq := newTokenRateLimitTestRouterInternal(t, 2, 2, isAuthentic, okHandlerInternal)
+
+	for i := range 100 {
+		doReq("garbage-" + strconv.Itoa(i))
+	}
+	require.Equal(t, http.StatusTooManyRequests, doReq("garbage-final"),
+		"IP ceiling must be exhausted by the garbage traffic")
+
+	require.Equal(t, http.StatusOK, doReq("authentic"),
+		"an authentic token must not be starved by garbage traffic from its source IP")
 }
 
 func TestPerTokenRateLimitForPaths_AppliesOnlyToConfiguredPaths(t *testing.T) {

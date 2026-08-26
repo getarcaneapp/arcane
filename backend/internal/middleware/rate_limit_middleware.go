@@ -165,25 +165,15 @@ func agentTokenRateLimitKeyInternal(token string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// perTokenRateLimitIPMultiplierInternal widens the IP ceiling relative to
-// the per-token ceiling, since one IP can legitimately trigger many valid
-// tokens in a burst (e.g. a Git host firing several webhooks at once).
+// perTokenRateLimitIPMultiplierInternal widens the IP ceiling for traffic that fails isAuthentic.
 const perTokenRateLimitIPMultiplierInternal = 10
 
-// PerTokenRateLimitForPaths rate-limits by client IP first (at
-// PerTokenRateLimitForPaths rate-limits by client IP first (at
-// perTokenRateLimitIPMultiplierInternal times perMinute/burst), then by the
-// ":token" route param, for paths in the paths list (matched against
-// c.Path()). The IP check always runs first and bounds abuse from cycling
-// through arbitrary tokens; the token check isolates buckets between
-// distinct valid webhooks sharing an IP. isValidShape, if given, rejects
-// malformed tokens before they get a bucket; it must be cheap and
-// side-effect free.
+// PerTokenRateLimitForPaths limits authentic tokens per token (skipping the IP ceiling) and everything else per IP.
 func PerTokenRateLimitForPaths(
 	paths []string,
 	perMinute int,
 	burst int,
-	isValidShape func(token string) bool,
+	isAuthentic func(token string) bool,
 ) echo.MiddlewareFunc {
 	if perMinute <= 0 {
 		perMinute = 10
@@ -208,17 +198,16 @@ func PerTokenRateLimitForPaths(
 				return next(c)
 			}
 
-			if !ipLimiter.allow(clientIPForRateLimitInternal(c)) {
-				c.Response().Header().Set("Retry-After", "60")
-				return c.JSON(http.StatusTooManyRequests, map[string]any{"error": "rate limit exceeded"})
-			}
-
 			token := strings.TrimSpace(c.Param("token"))
-			if token == "" || (isValidShape != nil && !isValidShape(token)) {
+			if token != "" && (isAuthentic == nil || isAuthentic(token)) {
+				if !tokenLimiter.allow(agentTokenRateLimitKeyInternal(token)) {
+					c.Response().Header().Set("Retry-After", "60")
+					return c.JSON(http.StatusTooManyRequests, map[string]any{"error": "rate limit exceeded"})
+				}
 				return next(c)
 			}
 
-			if !tokenLimiter.allow(agentTokenRateLimitKeyInternal(token)) {
+			if !ipLimiter.allow(clientIPForRateLimitInternal(c)) {
 				c.Response().Header().Set("Retry-After", "60")
 				return c.JSON(http.StatusTooManyRequests, map[string]any{"error": "rate limit exceeded"})
 			}

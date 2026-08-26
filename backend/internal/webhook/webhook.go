@@ -119,17 +119,22 @@ func parseWebhookPrefixInternal(raw string) (string, error) {
 	return webhookTokenPrefix + hexPart[:webhookTokenPrefixLen], nil
 }
 
-// IsWellFormedToken reports whether raw has the shape of a webhook token,
-// without a database lookup. A true result is not proof the token exists;
-// only TriggerByToken can determine that.
-func IsWellFormedToken(raw string) bool {
+// IsAuthenticToken reports whether raw decrypts under the server key, proving a valid key.
+func IsAuthenticToken(raw string) bool {
 	raw = strings.TrimSpace(raw)
 	hexPart, ok := strings.CutPrefix(raw, webhookTokenPrefix)
-	if !ok || len(hexPart) != webhookTokenLength*2 {
+	if !ok || len(hexPart) <= webhookTokenPrefixLen {
 		return false
 	}
-	_, err := hex.DecodeString(hexPart)
-	return err == nil
+	encryptedBytes, err := hex.DecodeString(hexPart)
+	if err != nil {
+		return false
+	}
+	secretHex, err := libcrypto.Decrypt(base64.StdEncoding.EncodeToString(encryptedBytes))
+	if err != nil {
+		return false
+	}
+	return len(secretHex) == webhookTokenLength*2
 }
 
 func defaultWebhookActionTypeInternal(targetType string) (string, error) {

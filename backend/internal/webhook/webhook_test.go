@@ -128,36 +128,38 @@ func TestParseWebhookPrefix_LeadingWhitespaceStripped(t *testing.T) {
 	assert.Equal(t, "arc_wh_01020304", prefix)
 }
 
-func TestIsWellFormedToken_AcceptsCorrectShape(t *testing.T) {
-	raw := "arc_wh_0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
-	assert.True(t, IsWellFormedToken(raw))
+func TestIsAuthenticToken_AcceptsGeneratedToken(t *testing.T) {
+	initWebhookTokenCryptoForTests()
+
+	raw, _, _, err := generateWebhookTokenInternal()
+	require.NoError(t, err)
+
+	assert.True(t, IsAuthenticToken(raw))
+	assert.True(t, IsAuthenticToken("  "+raw+"  "))
 }
 
-func TestIsWellFormedToken_AcceptsWithSurroundingWhitespace(t *testing.T) {
-	raw := "  arc_wh_0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20  "
-	assert.True(t, IsWellFormedToken(raw))
+func TestIsAuthenticToken_RejectsTamperedToken(t *testing.T) {
+	initWebhookTokenCryptoForTests()
+
+	raw, _, _, err := generateWebhookTokenInternal()
+	require.NoError(t, err)
+
+	last := raw[len(raw)-1]
+	flipped := "a"
+	if last == 'a' {
+		flipped = "b"
+	}
+	assert.False(t, IsAuthenticToken(raw[:len(raw)-1]+flipped))
 }
 
-func TestIsWellFormedToken_RejectsWrongPrefix(t *testing.T) {
-	assert.False(t, IsWellFormedToken("not_a_webhook_0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"))
-}
+func TestIsAuthenticToken_RejectsForgedHexTokens(t *testing.T) {
+	initWebhookTokenCryptoForTests()
 
-func TestIsWellFormedToken_RejectsShortHexPart(t *testing.T) {
-	assert.False(t, IsWellFormedToken("arc_wh_0102030405060708")) // valid prefix used by parseWebhookPrefixInternal, but not a full token
-}
-
-func TestIsWellFormedToken_RejectsLongHexPart(t *testing.T) {
-	assert.False(t, IsWellFormedToken("arc_wh_0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2000"))
-}
-
-func TestIsWellFormedToken_RejectsNonHexCharacters(t *testing.T) {
-	// Same length as a real token's hex part (64 chars), but not valid hex —
-	// a naive length-only check would incorrectly accept this.
-	assert.False(t, IsWellFormedToken("arc_wh_zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"))
-}
-
-func TestIsWellFormedToken_RejectsEmpty(t *testing.T) {
-	assert.False(t, IsWellFormedToken(""))
+	assert.False(t, IsAuthenticToken("arc_wh_0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"))
+	assert.False(t, IsAuthenticToken("not_a_webhook_0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"))
+	assert.False(t, IsAuthenticToken("arc_wh_zzzzzzzz"))
+	assert.False(t, IsAuthenticToken("arc_wh_01020304"))
+	assert.False(t, IsAuthenticToken(""))
 }
 
 // --- CreateWebhook ---

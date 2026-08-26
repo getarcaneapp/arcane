@@ -238,11 +238,9 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 	apiGroup.Use(middleware.PerIPRateLimitForPaths(
 		[]string{"/api/auth/federated/token"}, 10, 10,
 	))
-	// Keyed by webhook token rather than source IP, so distinct webhooks on
-	// the same Git host don't share a rate-limit budget. See
-	// PerTokenRateLimitForPaths for the IP ceiling and shape-check layers.
+	// Keyed per token for authentic tokens, per source IP for everything else.
 	apiGroup.Use(middleware.PerTokenRateLimitForPaths(
-		[]string{"/api/webhooks/trigger/:token"}, 60, 10, webhook.IsWellFormedToken,
+		[]string{"/api/webhooks/trigger/:token"}, 60, 10, webhook.IsAuthenticToken,
 	))
 	// Agent event ingestion authenticates on the agent token alone and sits
 	// outside the auth middleware, so it needs its own brute-force ceiling.
