@@ -1,12 +1,18 @@
 <script lang="ts">
 	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import type { AppVersionInformation } from '#lib/types/settings';
+	import { Switch } from '#lib/components/ui/switch/index.js';
+	import type { AppVersionInformation, Settings } from '#lib/types/settings';
 	import { m } from '#lib/paraglide/messages';
 	import { CopyButton } from '#lib/components/ui/copy-button';
 	import { getApplicationLogo } from '#lib/utils/docker';
 	import { accentColorPreviewStore } from '#lib/utils/theme';
 	import { ExternalLinkIcon, GithubIcon, BookOpenIcon } from '#lib/icons';
+	import { hasPermission } from '#lib/utils/auth';
+	import settingsStore from '#lib/stores/config-store';
+	import { settingsService } from '#lib/services/settings-service';
+	import { handleApiResultWithCallbacks, tryCatch } from '#lib/utils/api';
+	import { toast } from 'svelte-sonner';
 
 	interface Props {
 		open: boolean;
@@ -36,6 +42,22 @@
 	const enabledFeatures = $derived((displayInfo.enabledFeatures ?? []).filter(Boolean).join(', '));
 	const accentColor = $derived($accentColorPreviewStore);
 	const logoUrl = $derived(getApplicationLogo(false, accentColor, accentColor));
+
+	const canToggleExperimental = $derived(hasPermission('settings:write'));
+	const experimentalEnabled = $derived($settingsStore?.experimentalFeaturesEnabled === true);
+	let savingExperimental = $state(false);
+
+	async function handleExperimentalToggle(enabled: boolean) {
+		handleApiResultWithCallbacks<Settings>({
+			result: await tryCatch(settingsService.updateSettings({ experimentalFeaturesEnabled: enabled })),
+			message: m.common_update_failed({ resource: m.settings() }),
+			setLoadingState: (value) => (savingExperimental = value),
+			onSuccess: async (updated) => {
+				settingsStore.set(updated);
+				toast.success(m.common_update_success({ resource: m.settings() }));
+			}
+		});
+	}
 </script>
 
 <ResponsiveDialog {open} {onOpenChange} contentClass="sm:max-w-md">
@@ -69,6 +91,22 @@
 		{/if}
 
 		{@render infoRow(m.version_info_build_features(), enabledFeatures || '-')}
+
+		{#if canToggleExperimental}
+			<div class="flex items-center justify-between gap-3 border-b border-border/50 py-3 last:border-0">
+				<div class="flex flex-col gap-1">
+					<span class="text-sm font-medium text-foreground">{m.experimental_features()}</span>
+					<span class="text-sm text-muted-foreground">{m.experimental_features_description()}</span>
+				</div>
+				<Switch
+					id="experimental-features-toggle"
+					checked={experimentalEnabled}
+					disabled={savingExperimental}
+					aria-label={m.experimental_features()}
+					onCheckedChange={handleExperimentalToggle}
+				/>
+			</div>
+		{/if}
 
 		{#if displayInfo.currentDigest}
 			{@render infoRowWithCopy(m.version_info_digest(), displayInfo.currentDigest, displayInfo.currentDigest)}

@@ -54,6 +54,7 @@ export type Settings = {
 	gitSyncMaxBinarySizeMb: number;
 	baseServerUrl: string;
 	enableGravatar: boolean;
+	experimentalFeaturesEnabled: boolean;
 	avatarMaxUploadSizeMb: number;
 	uiConfigDisabled: boolean;
 	defaultShell: string;

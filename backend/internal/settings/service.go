@@ -232,6 +232,7 @@ func DefaultSettingsConfig() *Settings {
 		VolumeHelperIdleTimeout:         SettingVariable{Value: "10"},
 		BaseServerURL:                   SettingVariable{Value: "http://localhost"},
 		EnableGravatar:                  SettingVariable{Value: "true"},
+		ExperimentalFeaturesEnabled:     SettingVariable{Value: "false"},
 		AvatarMaxUploadSizeMb:           SettingVariable{Value: "2"},
 		DefaultShell:                    SettingVariable{Value: "/bin/sh"},
 		DockerHost:                      SettingVariable{Value: "unix:///var/run/docker.sock"},

@@ -303,6 +303,7 @@ var expectedSettingOverrideKeys = []string{
 	"enableGravatar",
 	"environmentHealthInterval",
 	"eventCleanupInterval",
+	"experimentalFeaturesEnabled",
 	"expiredSessionsCleanupInterval",
 	"followProjectSymlinks",
 	"gitOperationTimeout",

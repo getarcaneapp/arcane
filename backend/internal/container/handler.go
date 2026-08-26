@@ -160,6 +160,15 @@ type CommitContainerOutput struct {
 	Body base.ApiResponse[containertypes.CommitResult]
 }
 
+type GenerateComposeInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	Body          containertypes.GenerateComposeRequest
+}
+
+type GenerateComposeOutput struct {
+	Body base.ApiResponse[containertypes.GenerateComposeResponse]
+}
+
 func RegisterContainers(api huma.API, containerSvc *ContainerService, dockerSvc *docker.DockerClientService, settingsSvc *settings.SettingsService, activitySvc *activity.ActivityService, appCtx handlerutil.ActivityAppContext) {
 	h := &ContainerHandler{
 		containerService: containerSvc,
@@ -280,6 +289,16 @@ func RegisterContainers(api huma.API, containerSvc *ContainerService, dockerSvc 
 		Tags:        []string{"Containers"},
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}, authz.PermContainersRedeploy, h.RedeployContainer)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "generate-compose",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/containers/generate-compose",
+		Summary:     "Generate compose file",
+		Description: "Generate a compose file from existing containers",
+		Tags:        []string{"Containers"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermContainersRead, h.GenerateCompose)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-container-edit-config",
@@ -657,6 +676,20 @@ func (h *ContainerHandler) GetContainer(ctx context.Context, input *GetContainer
 		Body: base.ApiResponse[containertypes.Details]{
 			Success: true,
 			Data:    details,
+		},
+	}, nil
+}
+
+func (h *ContainerHandler) GenerateCompose(ctx context.Context, input *GenerateComposeInput) (*GenerateComposeOutput, error) {
+	composeContent, err := h.containerService.GenerateCompose(ctx, input.Body.ContainerIDs)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to generate compose file").Error())
+	}
+
+	return &GenerateComposeOutput{
+		Body: base.ApiResponse[containertypes.GenerateComposeResponse]{
+			Success: true,
+			Data:    containertypes.GenerateComposeResponse{ComposeContent: composeContent},
 		},
 	}, nil
 }

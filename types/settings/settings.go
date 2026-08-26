@@ -241,6 +241,8 @@ type Update struct {
 	// Required: false
 	AvatarMaxUploadSizeMb *string `json:"avatarMaxUploadSizeMb,omitempty"`
 
+	ExperimentalFeaturesEnabled *string `json:"experimentalFeaturesEnabled,omitempty"`
+
 	// DefaultShell is the default shell used for container execution.
 	//
 	// Required: false

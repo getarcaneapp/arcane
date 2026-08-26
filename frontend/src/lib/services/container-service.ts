@@ -104,8 +104,11 @@ class ContainerService extends BaseAPIService {
 		return this.handleResponse(this.api.post(`/environments/${envId}/containers/${containerId}/commit`, request));
 	}
 
-	async deleteContainer(containerId: string, opts?: { force?: boolean; volumes?: boolean }): Promise<any> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async deleteContainer(
+		containerId: string,
+		opts?: { force?: boolean; volumes?: boolean; environmentId?: string }
+	): Promise<any> {
+		const envId = await this.resolveEnvironmentId(opts?.environmentId);
 		const params: Record<string, string> = {};
 		if (opts?.force !== undefined) params['force'] = String(!!opts.force);
 		if (opts?.volumes !== undefined) params['volumes'] = String(!!opts.volumes);
@@ -121,6 +124,11 @@ class ContainerService extends BaseAPIService {
 	async redeployContainer(containerId: string): Promise<ContainerDetailsDto> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		return this.handleResponse(this.api.post(`/environments/${envId}/containers/${containerId}/redeploy`));
+	}
+
+	async generateCompose(containerIds: string[], environmentId?: string): Promise<{ composeContent: string }> {
+		const envId = await this.resolveEnvironmentId(environmentId);
+		return this.handleResponse(this.api.post(`/environments/${envId}/containers/generate-compose`, { containerIds }));
 	}
 
 	async getContainerEditConfig(containerId: string, environmentId?: string): Promise<ContainerEditConfigDto> {

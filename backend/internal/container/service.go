@@ -636,6 +636,19 @@ func (s *ContainerService) findComposeServiceContainerIDInternal(ctx context.Con
 	return firstMatch
 }
 
+func (s *ContainerService) GenerateCompose(ctx context.Context, containerIDs []string) (string, error) {
+	proj, err := projects.ComposeGenerate(ctx, s.dockerService.DockerHost(), "", containerIDs)
+	if err != nil {
+		return "", err
+	}
+
+	content, err := proj.MarshalYAML()
+	if err != nil {
+		return "", errors.WithMessage(err, "failed to marshal generated compose project")
+	}
+	return string(content), nil
+}
+
 func (s *ContainerService) RedeployContainer(ctx context.Context, containerID string, user common.User) (string, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
