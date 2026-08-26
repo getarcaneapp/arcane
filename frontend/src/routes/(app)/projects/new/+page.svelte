@@ -15,6 +15,9 @@
 	import EditorTabStrip from '#lib/components/editor-tab-strip.svelte';
 	import { environmentStore } from '#lib/stores/environment.store.svelte';
 	import { hasPermission } from '#lib/utils/auth';
+	import { containerService } from '#lib/services/container-service';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog';
+	import { extractApiErrorMessage, tryCatch } from '#lib/utils/api';
 	import { ComposeEditorSplit } from '#lib/components/compose';
 	import ResizableSplit from '#lib/components/resizable-split.svelte';
 	import { Switch } from '#lib/components/ui/switch';
@@ -63,6 +66,8 @@
 
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
 	const canCreateProject = $derived(hasPermission('projects:create', currentEnvId));
+	const canDeleteContainers = $derived(hasPermission('containers:delete', currentEnvId));
+	const sourceContainerIds = $derived(data.sourceContainerIds ?? []);
 	const projectWorkspaceMaxFileSizeMb = $derived($settingsStore?.projectWorkspaceMaxFileSizeMb ?? 10);
 
 	let ui = $state({
@@ -79,7 +84,11 @@
 	// Initial form values intentionally come from the page load data once.
 	// svelte-ignore state_referenced_locally
 	const formData = {
-		name: data.selectedTemplate ? templateNameSlug(data.selectedTemplate.name) : '',
+		name: data.selectedTemplate
+			? templateNameSlug(data.selectedTemplate.name)
+			: data.sourceContainerName
+				? templateNameSlug(data.sourceContainerName)
+				: '',
 		composeContent: data.defaultTemplate || '',
 		envContent: data.envTemplate || ''
 	};
@@ -192,10 +201,23 @@
 	const effectiveName = $derived(composeYamlName ?? $inputs.name.value);
 
 	async function handleSubmit() {
-		await handleCreateProject();
+		if (sourceContainerIds.length > 0 && canDeleteContainers) {
+			openConfirmDialog({
+				title: m.compose_create_project(),
+				message: m.convert_create_message(),
+				confirm: {
+					label: m.compose_create_project(),
+					button: 'create',
+					action: (checkboxStates) => handleCreateProject(!!checkboxStates['removeOriginals'])
+				},
+				checkboxes: [{ id: 'removeOriginals', label: m.remove_original_containers() }]
+			});
+			return;
+		}
+		await handleCreateProject(false);
 	}
 
-	async function handleCreateProject() {
+	async function handleCreateProject(removeOriginals: boolean) {
 		// Sync the authoritative compose name into form state at submit time so
 		// validation and the create payload use it (event-time write, not an effect).
 		if (composeYamlName) form.setValue('name', composeYamlName);
@@ -210,6 +232,17 @@
 					m.common_create_success({ resource: `${m.resource_project()} "${name}"` }),
 					activityToastOptions(extractActivityId(project))
 				);
+				if (removeOriginals && canDeleteContainers) {
+					for (const containerId of sourceContainerIds) {
+						const { error } = await tryCatch(
+							containerService.deleteContainer(containerId, {
+								force: true,
+								environmentId: data.sourceEnvironmentId
+							})
+						);
+						if (error) toast.error(m.containers_remove_failed(), { description: extractApiErrorMessage(error) });
+					}
+				}
 				// fallow-ignore-next-line code-duplication -- create-success handler; navigation target diverges per page
 				goto(`/projects/${project.id}`, { refreshAll: true });
 			}

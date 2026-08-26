@@ -68,7 +68,9 @@ var accessSurfacesInternal = []AccessSurface{
 	routeSurfaceInternal("route.images", "/images", "Images", AccessScopeModeSelectedEnvPlusGlobal, []string{PermImagesList, PermImagesRead}, 50),
 	routeSurfaceInternal("route.images.detail", "/images/{imageId}", "Image", AccessScopeModeSelectedEnvPlusGlobal, []string{PermImagesList, PermImagesRead}, 0),
 	routeSurfaceInternal("route.images.builds", "/images/builds", "Builds", AccessScopeModeSelectedEnvPlusGlobal, []string{PermImagesBuild}, 0),
-	routeSurfaceInternal("route.images.vulnerabilities", "/images/vulnerabilities", "Vulnerabilities", AccessScopeModeSelectedEnvPlusGlobal, []string{PermVulnsRead}, 0),
+	// The security page moved from /images/vulnerabilities; the surface ID stays
+	// stable so saved role access scopes keep working.
+	routeSurfaceInternal("route.images.vulnerabilities", "/security", "Security", AccessScopeModeSelectedEnvPlusGlobal, []string{PermVulnsRead}, 55),
 	routeSurfaceInternal("route.updates", "/updates", "Image Updates", AccessScopeModeSelectedEnvPlusGlobal, []string{PermImageUpdatesRead}, 0),
 	routeSurfaceInternal("route.networks", "/networks", "Networks", AccessScopeModeSelectedEnvPlusGlobal, []string{PermNetworksList, PermNetworksRead}, 70),
 	routeSurfaceInternal("route.networks.detail", "/networks/{networkId}", "Network", AccessScopeModeSelectedEnvPlusGlobal, []string{PermNetworksList, PermNetworksRead}, 0),

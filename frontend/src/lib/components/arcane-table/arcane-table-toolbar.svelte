@@ -18,6 +18,7 @@
 	import { ResetIcon, SearchIcon, FilterIcon } from '#lib/icons';
 	import type { BulkAction } from './arcane-table.types.svelte';
 	import * as Popover from '#lib/components/ui/popover/index.js';
+	import * as ArcaneTooltip from '#lib/components/arcane-tooltip';
 
 	let {
 		table,
@@ -195,17 +196,26 @@
 			<div class="order-2 flex shrink-0 items-center gap-1.5">
 				{#each bulkActions as bulkAction (bulkAction.id)}
 					{@const actionType = bulkAction.action === 'up' ? 'start' : bulkAction.action === 'down' ? 'stop' : bulkAction.action}
-					<ArcaneButton
-						action={actionType}
-						size="sm"
-						icon={bulkAction.icon}
-						customLabel={bulkAction.label}
-						onclick={() => bulkAction.onClick(selectedIds!)}
-						disabled={bulkAction.disabled || bulkAction.loading}
-						loading={bulkAction.loading}
-						title={bulkAction.disabled ? bulkAction.disabledReason : undefined}
-						class="h-9"
-					/>
+					<ArcaneTooltip.Root>
+						<ArcaneTooltip.Trigger>
+							{#snippet child({ props })}
+								<ArcaneButton
+									{...props}
+									action={actionType}
+									size="icon"
+									icon={bulkAction.icon}
+									customLabel={bulkAction.label}
+									onclick={() => bulkAction.onClick(selectedIds!)}
+									disabled={bulkAction.disabled || bulkAction.loading}
+									loading={bulkAction.loading}
+									title={bulkAction.disabled ? bulkAction.disabledReason : undefined}
+								/>
+							{/snippet}
+						</ArcaneTooltip.Trigger>
+						<ArcaneTooltip.Content side="bottom">
+							{bulkAction.label}
+						</ArcaneTooltip.Content>
+					</ArcaneTooltip.Root>
 				{/each}
 			</div>
 		{/if}

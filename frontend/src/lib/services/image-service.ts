@@ -10,7 +10,10 @@ import type {
 	ImageAttestationRequestOptions,
 	ImageHistoryItemDto,
 	ImageSearchResultDto,
-	ImageTagRequest
+	ImageTagRequest,
+	ImagePatchOptions,
+	ImagePatchRecordDto,
+	ImagePatchTargetDto
 } from '#lib/types/docker';
 import type { SearchPaginationSortRequest, Paginated } from '#lib/types/shared';
 import type { AutoUpdateCheck, AutoUpdateResult } from '#lib/types/automation';
@@ -157,6 +160,20 @@ class ImageService extends BaseAPIService {
 	async pruneImages(options: PruneImagesOptions, environmentId?: string): Promise<any> {
 		const envId = await this.resolveEnvironmentId(environmentId);
 		return this.handleResponse(this.api.post(`/environments/${envId}/images/prune`, options));
+	}
+
+	async patchImage(imageId: string, options?: ImagePatchOptions): Promise<ImagePatchRecordDto> {
+		const envId = await environmentStore.getCurrentEnvironmentId();
+		return this.handleResponse(
+			this.api.post(`/environments/${envId}/images/${encodeURIComponent(imageId)}/patch`, options ?? {})
+		);
+	}
+
+	async listPatchTargets(options?: SearchPaginationSortRequest): Promise<Paginated<ImagePatchTargetDto>> {
+		const envId = await environmentStore.getCurrentEnvironmentId();
+		const params = transformPaginationParams(options);
+		const res = await this.api.get(`/environments/${envId}/images/patch-targets`, { params });
+		return res.data;
 	}
 
 	async checkImageUpdateByID(imageId: string): Promise<ImageUpdateInfoDto> {

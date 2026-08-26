@@ -6,6 +6,7 @@ import { z } from 'zod/v4';
 export type LocalSettings = {
 	edgeMTLSManagerCAAvailable?: boolean;
 	avatarMaxUploadSizeMb: number;
+	experimentalFeaturesEnabled?: boolean;
 };
 
 const LOCAL_SETTING_KEYS = new Set([
@@ -25,7 +26,8 @@ const LOCAL_SETTING_KEYS = new Set([
 	'oidcGroupsClaim',
 	'oidcProviderName',
 	'oidcProviderLogoUrl',
-	'edgeMTLSManagerCAAvailable'
+	'edgeMTLSManagerCAAvailable',
+	'experimentalFeaturesEnabled'
 ]);
 
 export function isLocalSetting(key: string): boolean {

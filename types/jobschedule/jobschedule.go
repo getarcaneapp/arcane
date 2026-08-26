@@ -15,6 +15,7 @@ type Config struct {
 	PollingInterval                string `json:"pollingInterval"`
 	ScheduledPruneInterval         string `json:"scheduledPruneInterval"`
 	VulnerabilityScanInterval      string `json:"vulnerabilityScanInterval"`
+	ImageAutoPatchInterval         string `json:"imageAutoPatchInterval"`
 	AutoHealInterval               string `json:"autoHealInterval"`
 }
 
@@ -30,6 +31,7 @@ type Update struct {
 	PollingInterval                *string `json:"pollingInterval,omitempty"`
 	ScheduledPruneInterval         *string `json:"scheduledPruneInterval,omitempty"`
 	VulnerabilityScanInterval      *string `json:"vulnerabilityScanInterval,omitempty"`
+	ImageAutoPatchInterval         *string `json:"imageAutoPatchInterval,omitempty"`
 	AutoHealInterval               *string `json:"autoHealInterval,omitempty"`
 }
 

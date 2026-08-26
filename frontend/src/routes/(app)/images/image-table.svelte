@@ -42,6 +42,7 @@
 		VolumesIcon,
 		ClockIcon,
 		ScanIcon,
+		ShieldCheckIcon,
 		ProjectsIcon,
 		ContainersIcon,
 		TagIcon
@@ -87,13 +88,15 @@
 		$userStore;
 		return hasPermission('images:tag', currentEnvId);
 	});
+	const canPatchImage = $derived.by(() => {
+		$userStore;
+		return hasPermission('images:patch', currentEnvId);
+	});
 	const canReadImage = $derived.by(() => {
 		$userStore;
 		return hasPermission('images:read', currentEnvId);
 	});
 
-	let isPullingInline = $state<Record<string, boolean>>({});
-	let isScanningInline = $state<Record<string, boolean>>({});
 	let tagDialogImage = $state<ImageSummaryDto | null>(null);
 	let scanRequestedAtByImage = $state<Record<string, string>>({});
 	let scanPollTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -167,13 +170,11 @@
 			}
 		});
 	}
-	async function handleInlineImagePull(imageId: string, repoTag: string) {
+	async function handleInlineImagePull(repoTag: string) {
 		if (!repoTag || repoTag === '<none>:<none>') {
 			toast.error(m.images_pull_no_tag());
 			return;
 		}
-
-		isPullingInline[imageId] = true;
 
 		const result = await tryCatch(imageService.pullImage(repoTag));
 		handleApiResultWithCallbacks({
@@ -185,13 +186,9 @@
 				await refreshImages();
 			}
 		});
-
-		isPullingInline[imageId] = false;
 	}
 
 	async function handleInlineVulnerabilityScan(imageId: string) {
-		isScanningInline[imageId] = true;
-
 		const result = await tryCatch(vulnerabilityService.scanImage(imageId));
 		handleApiResultWithCallbacks({
 			result,
@@ -223,13 +220,23 @@
 				startBatchScanPolling();
 			}
 		});
-
-		isScanningInline[imageId] = false;
 	}
 
 	async function handleExportImage(imageId: string) {
 		const url = await imageService.getImageExportUrl(imageId);
 		window.open(url, '_blank', 'noopener,noreferrer');
+	}
+
+	async function handleInlineImagePatch(imageId: string) {
+		const result = await tryCatch(imageService.patchImage(imageId));
+		handleApiResultWithCallbacks({
+			result,
+			message: m.images_patch_failed(),
+			setLoadingState: () => {},
+			onSuccess: async (data) => {
+				toast.info(m.images_patch_started({ patchedRef: data.patchedRef }), activityToastOptions(data.activityId));
+			}
+		});
 	}
 
 	async function handleUpdateInfoChanged(imageId: string, newUpdateInfo: ImageUpdateInfoDto) {
@@ -674,28 +681,31 @@
 			</DropdownMenu.Item>
 		{/if}
 
+		{@const usableTag = item.repoTags?.find((tag) => tag !== '<none>:<none>')}
 		{#if canPullImage}
-			<DropdownMenu.Item
-				onclick={() => handleInlineImagePull(item.id, item.repoTags?.[0] || '')}
-				disabled={isPullingInline[item.id] || !item.repoTags?.[0]}
-			>
-				{#if isPullingInline[item.id]}
-					<Spinner class="size-4" />
-				{:else}
-					<DownloadIcon class="size-4" />
-				{/if}
+			<DropdownMenu.Item onclick={() => handleInlineImagePull(usableTag || '')} disabled={!usableTag}>
+				<DownloadIcon class="size-4" />
 				{m.pull()}
 			</DropdownMenu.Item>
 		{/if}
 
 		{#if canScanImage}
-			<DropdownMenu.Item onclick={() => handleInlineVulnerabilityScan(item.id)} disabled={isScanningInline[item.id]}>
-				{#if isScanningInline[item.id]}
-					<Spinner class="size-4" />
-				{:else}
-					<ScanIcon class="size-4" />
-				{/if}
+			<DropdownMenu.Item onclick={() => handleInlineVulnerabilityScan(item.id)}>
+				<ScanIcon class="size-4" />
 				{m.vuln_scan()}
+			</DropdownMenu.Item>
+		{/if}
+
+		{#if canPatchImage}
+			{@const imageIsLocal = !item.repoDigests || item.repoDigests.length === 0}
+			<DropdownMenu.Item onclick={() => handleInlineImagePatch(item.id)} disabled={imageIsLocal || !usableTag}>
+				<ShieldCheckIcon class="size-4" />
+				<div class="flex flex-col items-start">
+					<span>{m.images_patch()}</span>
+					{#if imageIsLocal}
+						<span class="text-xs text-muted-foreground">{m.security_local_image_unpatchable()}</span>
+					{/if}
+				</div>
 			</DropdownMenu.Item>
 		{/if}
 

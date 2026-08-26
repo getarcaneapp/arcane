@@ -51,6 +51,7 @@
 	// fallow-ignore-next-line code-duplication -- permission $derived declarations; script-level, no shared render surface
 	const canDeleteImage = $derived(hasPermission('images:delete', currentEnvId));
 	const canScanImage = $derived(hasPermission('vulnerabilities:scan', currentEnvId));
+	const canPatchImage = $derived(hasPermission('images:patch', currentEnvId));
 	const canTagImage = $derived(hasPermission('images:tag', currentEnvId));
 	const canReadImage = $derived(hasPermission('images:read', currentEnvId));
 
@@ -58,7 +59,8 @@
 		pulling: false,
 		removing: false,
 		exporting: false,
-		scanning: false
+		scanning: false,
+		patching: false
 	});
 	let tagDialogOpen = $state(false);
 
@@ -106,6 +108,24 @@
 		} finally {
 			isLoading.scanning = false;
 		}
+	}
+
+	async function handlePatchImage() {
+		if (!image?.id || isLoading.patching) return;
+		isLoading.patching = true;
+
+		// Prefer the stored scan report when one exists; fall back to
+		// patching all outdated OS packages.
+		const options = vulnerabilityScan?.hasReport ? { scanId: image.id } : undefined;
+		const result = await tryCatch(imageService.patchImage(image.id, options));
+		handleApiResultWithCallbacks({
+			result,
+			message: m.images_patch_failed(),
+			setLoadingState: (value) => (isLoading.patching = value),
+			onSuccess: async (data) => {
+				toast.info(m.images_patch_started({ patchedRef: data.patchedRef }), activityToastOptions(data.activityId));
+			}
+		});
 	}
 
 	function stopPolling() {
@@ -281,6 +301,18 @@
 				loading: isLoading.scanning,
 				disabled: isLoading.scanning,
 				onclick: handleScanImage
+			});
+		}
+		// Locally built images have no registry source to patch from; the
+		// security page explains this, the header just omits the action.
+		if (canPatchImage && image?.repoTags?.[0] && (image?.repoDigests?.length ?? 0) > 0) {
+			list.push({
+				id: 'patch',
+				action: 'patch',
+				label: m.images_patch(),
+				loading: isLoading.patching,
+				disabled: isLoading.patching,
+				onclick: handlePatchImage
 			});
 		}
 		if (canDeleteImage) {

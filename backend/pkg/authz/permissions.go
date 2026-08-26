@@ -155,6 +155,7 @@ const (
 	PermImagesPrune  = "images:prune"
 	PermImagesDelete = "images:delete"
 	PermImagesUpload = "images:upload"
+	PermImagesPatch  = "images:patch"
 
 	PermVolumesList   = "volumes:list"
 	PermVolumesRead   = "volumes:read"
@@ -326,7 +327,7 @@ func BuiltInEditorPermissions() []string {
 		// Full env-scoped Docker management
 		PermContainersList, PermContainersRead, PermContainersLogs, PermContainersCreate, PermContainersStart, PermContainersStop, PermContainersRestart, PermContainersRedeploy, PermContainersEdit, PermContainersKill, PermContainersPause, PermContainersDelete, PermContainersExec, PermContainersAutoUpdate,
 		PermProjectsList, PermProjectsRead, PermProjectsLogs, PermProjectsCreate, PermProjectsUpdate, PermProjectsDeploy, PermProjectsDown, PermProjectsRestart, PermProjectsDelete, PermProjectsArchive,
-		PermImagesList, PermImagesRead, PermImagesPull, PermImagesPush, PermImagesBuild, PermImagesTag, PermImagesCommit, PermImagesPrune, PermImagesDelete, PermImagesUpload,
+		PermImagesList, PermImagesRead, PermImagesPull, PermImagesPush, PermImagesBuild, PermImagesTag, PermImagesCommit, PermImagesPrune, PermImagesDelete, PermImagesUpload, PermImagesPatch,
 		PermVolumesList, PermVolumesRead, PermVolumesCreate, PermVolumesRename, PermVolumesDelete, PermVolumesPrune, PermVolumesUpload, PermVolumesBackup,
 		PermNetworksList, PermNetworksRead, PermNetworksCreate, PermNetworksDelete, PermNetworksPrune, PermNetworksConnect, PermNetworksDisconnect,
 		PermSwarmRead, PermSwarmSpec, PermSwarmNodes, PermSwarmServices, PermSwarmServicesLogs, PermSwarmStacks, PermSwarmConfigs, PermSwarmSecrets,

@@ -23,6 +23,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/gitrepo"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/health"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/imagepatch"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/job"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/network"
@@ -235,6 +236,7 @@ type HandlerDeps struct {
 	Port              *port.PortService
 	Swarm             *swarm.Module
 	ImageUpdate       *imageupdate.Module
+	ImagePatch        *imagepatch.Module
 	Auth              *auth.Module
 	Passkey           *passkey.PasskeyService
 	Oidc              *oidc.OidcService
@@ -422,6 +424,7 @@ func registerHandlersInternal(api huma.API, deps HandlerDeps, handlerAppCtx hand
 	deps.Upload.RegisterRoutes(api)
 	build.RegisterBuildWorkspaces(api, deps.BuildWorkspace, deps.Upload.Service())
 	deps.ImageUpdate.RegisterRoutes(api, handlerAppCtx)
+	deps.ImagePatch.RegisterRoutes(api, handlerAppCtx)
 	deps.Settings.RegisterRoutes(api)
 	deps.S3Destination.RegisterRoutes(api)
 	deps.SystemBackup.RegisterRoutes(api, handlerAppCtx)

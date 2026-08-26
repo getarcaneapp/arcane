@@ -9,6 +9,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/gitops"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/imagepatch"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/network"
@@ -67,6 +68,8 @@ var ServiceOptions = fx.Options(
 		notification.New,
 		vulnerability.NewVulnerabilityService,
 		vulnerability.New,
+		imagepatch.NewImagePatchService,
+		imagepatch.New,
 		imageupdate.NewImageUpdateService,
 		image.NewImageService,
 		provideImageUpdateModuleInternal,
@@ -135,6 +138,7 @@ var JobOptions = fx.Options(
 		scheduler.NewScheduledPruneJob,
 		provideFilesystemWatcherJobInternal,
 		scheduler.NewVulnerabilityScanJob,
+		scheduler.NewAutoPatchJob,
 		scheduler.NewAutoHealJob,
 		scheduler.NewActivitySweepJob,
 		scheduler.NewUploadSessionsCleanupJob,
