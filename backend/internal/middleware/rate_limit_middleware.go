@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/labstack/echo/v5"
+	"github.com/samber/hot"
 	"golang.org/x/time/rate"
 )
 
@@ -165,63 +166,33 @@ func agentTokenRateLimitKeyInternal(token string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// perTokenRateLimitIPMultiplierInternal widens the IP ceiling relative to
-// the per-token ceiling, since one IP can legitimately trigger many valid
-// tokens in a burst (e.g. a Git host firing several webhooks at once).
-const perTokenRateLimitIPMultiplierInternal = 10
+const (
+	// perTokenRateLimitIPMultiplierInternal widens the IP ceiling relative to
+	// the per-token ceiling, since one IP can legitimately trigger many valid
+	// tokens in a burst (e.g. a Git host firing several webhooks at once).
+	perTokenRateLimitIPMultiplierInternal = 10
 
-// knownValidTokenTTLInternal is how long a token that has already produced
-// a non-404 response is exempted from the shared IP ceiling. This keeps a
-// busy attacker cycling through invalid tokens from starving a legitimate,
-// already-confirmed webhook sharing the same source IP.
-const knownValidTokenTTLInternal = 10 * time.Minute
+	// knownValidTokenTTLInternal is how long a confirmed-valid token is
+	// exempted from the shared IP ceiling, so it can't be starved by
+	// unrelated traffic on the same IP.
+	knownValidTokenTTLInternal = 10 * time.Minute
+)
 
-// knownTokenCache tracks tokens that have already been confirmed to exist
-// (any response other than 404), so repeat requests for them can bypass the
-// shared IP ceiling and go straight to their own per-token bucket.
-type knownTokenCache struct {
-	mu      sync.Mutex
-	seenAt  map[string]time.Time
-	ttl     time.Duration
-	maxSize int
-}
+// knownTokenCacheSizeInternal caps how many confirmed-valid tokens are
+// remembered at once; LRU eviction keeps the cache bounded under abuse.
+const knownTokenCacheSizeInternal = 10000
 
-func newKnownTokenCacheInternal(ttl time.Duration) *knownTokenCache {
-	return &knownTokenCache{seenAt: make(map[string]time.Time), ttl: ttl, maxSize: 10000}
-}
-
-func (c *knownTokenCache) markValid(key string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if len(c.seenAt) >= c.maxSize {
-		return // full: skip caching rather than grow unbounded
-	}
-	c.seenAt[key] = time.Now()
-}
-
-func (c *knownTokenCache) isKnownValid(key string) bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	seen, ok := c.seenAt[key]
-	if !ok {
-		return false
-	}
-	if time.Since(seen) > c.ttl {
-		delete(c.seenAt, key)
-		return false
-	}
-	return true
+func newKnownTokenCacheInternal(ttl time.Duration) *hot.HotCache[string, struct{}] {
+	return hot.NewHotCache[string, struct{}](hot.LRU, knownTokenCacheSizeInternal).
+		WithTTL(ttl).
+		WithJanitor().
+		Build()
 }
 
 // PerTokenRateLimitForPaths rate-limits by client IP first (at
 // perTokenRateLimitIPMultiplierInternal times perMinute/burst), then by the
 // ":token" route param, for paths in the paths list (matched against
-// c.Path()). Once isValidResponse confirms a token via a successful
-// request, that token is cached and bypasses the IP ceiling on later
-// requests, so an attacker cycling through invalid tokens on a shared IP
-// cannot starve a legitimate, already-confirmed webhook. isValidShape, if
-// given, rejects malformed tokens before they get a bucket; both callbacks
-// must be cheap and side-effect free.
+// c.Path()).
 func PerTokenRateLimitForPaths(
 	paths []string,
 	perMinute int,
@@ -263,12 +234,14 @@ func PerTokenRateLimitForPaths(
 			// A token already confirmed to exist skips the shared IP
 			// ceiling and goes straight to its own bucket, so it can't be
 			// starved by unrelated traffic on the same IP.
-			if wellFormed && knownTokens.isKnownValid(tokenKey) {
-				if !tokenLimiter.allow(tokenKey) {
-					c.Response().Header().Set("Retry-After", "60")
-					return c.JSON(http.StatusTooManyRequests, map[string]any{"error": "rate limit exceeded"})
+			if wellFormed {
+				if _, known, _ := knownTokens.Get(tokenKey); known {
+					if !tokenLimiter.allow(tokenKey) {
+						c.Response().Header().Set("Retry-After", "60")
+						return c.JSON(http.StatusTooManyRequests, map[string]any{"error": "rate limit exceeded"})
+					}
+					return next(c)
 				}
-				return next(c)
 			}
 
 			if !ipLimiter.allow(clientIPForRateLimitInternal(c)) {
@@ -288,7 +261,7 @@ func PerTokenRateLimitForPaths(
 			err := next(c)
 			if err == nil && isValidResponse != nil {
 				if resp, ok := c.Response().(*echo.Response); ok && isValidResponse(resp.Status) {
-					knownTokens.markValid(tokenKey)
+					knownTokens.Set(tokenKey, struct{}{})
 				}
 			}
 			return err
