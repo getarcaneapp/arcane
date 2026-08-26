@@ -9,6 +9,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
@@ -280,7 +281,7 @@ func (h *SystemBackupHandler) RestoreFiles(ctx context.Context, input *RestoreSy
 	if errors.Is(err, ErrSystemBackupAlreadyRunning) {
 		return nil, huma.Error409Conflict(err.Error())
 	}
-	if errors.Is(err, errInvalidSystemBackupFilePath) {
+	if errors.Is(err, common.ErrBadRequest) {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
 	if err != nil {

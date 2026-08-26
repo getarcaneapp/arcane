@@ -142,13 +142,12 @@
 		actionOpen = true;
 	}
 
+	// The picker resets its own selection and search whenever the provider
+	// changes, so the dialog only manages target, key, and provider.
 	async function openRestoreFiles(backup: SystemBackupRun) {
 		restoreFilesTarget = backup;
 		restoreFilesRecoveryKey = '';
 		restoreFilesProvider = null;
-		restoreFilesSelectedPaths = [];
-		restoreFilesSelectAll = false;
-		restoreFilesSearch = '';
 		restoreFilesLoaded = false;
 		restoreFilesOpen = true;
 		if (policyCollection.recoveryKeyStored) loadRestoreFiles();
@@ -159,26 +158,17 @@
 		restoreFilesTarget = null;
 		restoreFilesRecoveryKey = '';
 		restoreFilesProvider = null;
-		restoreFilesSelectedPaths = [];
-		restoreFilesSelectAll = false;
-		restoreFilesSearch = '';
 		restoreFilesLoaded = false;
 	}
 
 	function updateRestoreFilesRecoveryKey(value: string) {
 		restoreFilesRecoveryKey = value;
 		restoreFilesProvider = null;
-		restoreFilesSelectedPaths = [];
-		restoreFilesSelectAll = false;
-		restoreFilesSearch = '';
 		restoreFilesLoaded = false;
 	}
 
 	function loadRestoreFiles() {
 		if (!restoreFilesTarget || restoreFilesKeyInvalid) return;
-		restoreFilesSelectedPaths = [];
-		restoreFilesSelectAll = false;
-		restoreFilesSearch = '';
 		const backupID = restoreFilesTarget.id;
 		const recoveryKey = restoreFilesRecoveryKey.trim();
 		restoreFilesProvider = {

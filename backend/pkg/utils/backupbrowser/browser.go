@@ -12,32 +12,41 @@ import (
 
 	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
 )
 
 // NormalizePath validates and normalizes a path relative to a backup root.
 func NormalizePath(value string, allowEmpty bool) (string, error) {
 	trimmed := strings.TrimSpace(strings.ReplaceAll(value, `\`, "/"))
-	if trimmed == "" {
+	if trimmed == "" || path.Clean(trimmed) == "." {
 		if allowEmpty {
 			return "", nil
 		}
 		return "", errors.New("backup path is required")
 	}
-	if path.IsAbs(trimmed) || strings.HasPrefix(trimmed, "/") || slices.Contains(strings.Split(trimmed, "/"), "..") {
+	// Reject ".." segments before cleaning: "a/../b" must not sneak through as "b".
+	if slices.Contains(strings.Split(trimmed, "/"), "..") {
 		return "", errors.New("backup path must stay within the restore root")
 	}
-	cleaned := path.Clean(trimmed)
-	if cleaned == "." {
-		if allowEmpty {
-			return "", nil
-		}
-		return "", errors.New("backup path is required")
-	}
-	if cleaned == ".." || strings.HasPrefix(cleaned, "../") {
+	cleaned, err := utils.NormalizeRelativePath(trimmed)
+	if err != nil {
 		return "", errors.New("backup path must stay within the restore root")
 	}
 	return cleaned, nil
+}
+
+// ListScope resolves the snapshot listing scope for one browse request: the
+// whole tree when searching, otherwise just the requested folder.
+func ListScope(requestedPath string, params pagination.QueryParams) (listPath string, recursive bool, err error) {
+	browsePath, err := NormalizePath(requestedPath, true)
+	if err != nil || params.Start < 0 {
+		return "", false, errors.New("invalid browse path or start")
+	}
+	if strings.TrimSpace(params.Search) != "" {
+		return "", true, nil
+	}
+	return browsePath, false, nil
 }
 
 // BuildEntries converts archive or Rustic path output into a synthesized tree.
@@ -56,14 +65,10 @@ func BuildEntries(paths []string, browsePath string, recursive bool) []backuptyp
 		}
 		relative := candidate
 		if root != "" {
-			if candidate == root {
+			if candidate == root || !utils.FilePathMatches(candidate, root) {
 				continue
 			}
-			prefix := root + "/"
-			if !strings.HasPrefix(candidate, prefix) {
-				continue
-			}
-			relative = strings.TrimPrefix(candidate, prefix)
+			relative = strings.TrimPrefix(candidate, root+"/")
 		}
 		segments := strings.Split(relative, "/")
 		if len(segments) == 0 || segments[0] == "" {
@@ -216,14 +221,8 @@ func collapseSelectionCandidatesInternal(candidates []backuptypes.BackupFileEntr
 
 func normalizeListedPathInternal(raw string) (string, bool) {
 	trimmed := strings.TrimSpace(strings.ReplaceAll(raw, `\`, "/"))
-	trimmed = strings.TrimSuffix(trimmed, "/")
-	trimmed = strings.TrimPrefix(trimmed, "./")
-	trimmed = strings.TrimPrefix(trimmed, "/")
-	if trimmed == "" || slices.Contains(strings.Split(trimmed, "/"), "..") {
-		return "", false
-	}
-	cleaned := path.Clean(trimmed)
-	if cleaned == "." || cleaned == ".." || strings.HasPrefix(cleaned, "../") {
+	cleaned, err := NormalizePath(strings.TrimPrefix(strings.TrimSuffix(trimmed, "/"), "/"), false)
+	if err != nil {
 		return "", false
 	}
 	return cleaned, true

@@ -73,6 +73,7 @@ var (
 	ErrGlobalVariableSecretValueRequired       = Classify(ErrValidation, errors.Sentinel("A new value is required when making a secret variable readable"))
 	ErrContainerComposeManaged                 = Classify(ErrConflict, errors.Sentinel("container is managed by a compose project; edit it via the project editor"))
 	ErrContainerNameTaken                      = Classify(ErrConflict, errors.Sentinel("a container with this name already exists"))
+	ErrInvalidBackupSelection                  = Classify(ErrBadRequest, errors.Sentinel("invalid backup file selection"))
 	ErrSwarmNotEnabled                         = Classify(ErrBadRequest, errors.Sentinel("Swarm mode is not enabled"))
 	ErrSwarmManagerRequired                    = Classify(ErrForbidden, errors.Sentinel("Swarm manager access required"))
 	ErrRoleNotFound                            = Classify(ErrNotFound, errors.Sentinel("Role not found"))

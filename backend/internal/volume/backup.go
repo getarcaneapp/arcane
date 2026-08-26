@@ -50,8 +50,6 @@ const (
 	backupStorageModeNamedVolumeFallback backupStorageMode = "named_volume_fallback"
 )
 
-var errInvalidVolumeBackupSelectionInternal = errors.New("invalid volume backup file selection")
-
 const backupMountMissingWarning = "No volume is mounted at /backups in the Arcane container. Backups will only live inside Docker unless you mount a host path."
 
 const (
@@ -911,18 +909,13 @@ func (s *VolumeService) ListBackupFiles(ctx context.Context, backupID string) ([
 
 // BrowseBackupFiles returns one lazy-loaded page from a volume backup tree.
 func (s *VolumeService) BrowseBackupFiles(ctx context.Context, backupID, requestedPath string, params pagination.QueryParams) ([]backuptypes.BackupFileEntry, pagination.Response, error) {
-	browsePath, err := backupbrowser.NormalizePath(requestedPath, true)
-	if err != nil || params.Start < 0 {
-		return nil, pagination.Response{}, fmt.Errorf("%w: invalid browse path or start", errInvalidVolumeBackupSelectionInternal)
+	listPath, recursive, err := backupbrowser.ListScope(requestedPath, params)
+	if err != nil {
+		return nil, pagination.Response{}, fmt.Errorf("%w: %w", common.ErrInvalidBackupSelection, err)
 	}
 	var entry VolumeBackup
 	if err := s.db.WithContext(ctx).Where("id = ?", backupID).First(&entry).Error; err != nil {
 		return nil, pagination.Response{}, err
-	}
-	search := strings.TrimSpace(params.Search)
-	listPath, recursive := browsePath, false
-	if search != "" {
-		listPath, recursive = "", true
 	}
 	entries, err := s.backupFileEntriesInternal(ctx, &entry, listPath, recursive)
 	if err != nil {
@@ -979,16 +972,13 @@ type volumeBackupRestoreSelectionInternal struct {
 }
 
 func (s *VolumeService) resolveVolumeBackupRestoreSelectionInternal(ctx context.Context, dockerClient *client.Client, entry *VolumeBackup, repository backup.Repository, snapshotID string, selection backuptypes.RestoreSelection) (volumeBackupRestoreSelectionInternal, error) {
-	resolved := volumeBackupRestoreSelectionInternal{}
 	if selection.SelectAll && strings.TrimSpace(selection.Search) == "" {
 		if _, err := backupbrowser.NormalizeSelection(selection, []backuptypes.BackupFileEntry{{Path: "", IsDirectory: true}}); err != nil {
-			return volumeBackupRestoreSelectionInternal{}, fmt.Errorf("%w: %w", errInvalidVolumeBackupSelectionInternal, err)
+			return volumeBackupRestoreSelectionInternal{}, fmt.Errorf("%w: %w", common.ErrInvalidBackupSelection, err)
 		}
-		resolved.globalRoot = true
+		return volumeBackupRestoreSelectionInternal{globalRoot: true}, nil
 	}
-	if resolved.globalRoot {
-		return resolved, nil
-	}
+	resolved := volumeBackupRestoreSelectionInternal{}
 	var eligible []backuptypes.BackupFileEntry
 	var err error
 	if entry.Format == VolumeBackupFormatArchive {
@@ -1004,7 +994,7 @@ func (s *VolumeService) resolveVolumeBackupRestoreSelectionInternal(ctx context.
 	}
 	resolved.entries, err = backupbrowser.NormalizeSelection(selection, eligible)
 	if err != nil {
-		return volumeBackupRestoreSelectionInternal{}, fmt.Errorf("%w: %w", errInvalidVolumeBackupSelectionInternal, err)
+		return volumeBackupRestoreSelectionInternal{}, fmt.Errorf("%w: %w", common.ErrInvalidBackupSelection, err)
 	}
 	return resolved, nil
 }

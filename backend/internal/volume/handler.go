@@ -1088,7 +1088,7 @@ func (h *VolumeHandler) RestoreBackupFiles(ctx context.Context, input *RestoreBa
 	}, func(runtimeCtx context.Context) error {
 		return h.volumeService.RestoreBackupFiles(runtimeCtx, input.VolumeName, input.BackupID, input.Body, *user)
 	})
-	if errors.Is(err, errInvalidVolumeBackupSelectionInternal) {
+	if errors.Is(err, common.ErrBadRequest) {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
 	if err != nil {
@@ -1138,7 +1138,7 @@ func (h *VolumeHandler) ListBackupFiles(ctx context.Context, input *ListBackupFi
 func (h *VolumeHandler) BrowseBackupFiles(ctx context.Context, input *BrowseBackupFilesInput) (*BrowseBackupFilesOutput, error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, "", "", input.Search)
 	items, page, err := h.volumeService.BrowseBackupFiles(ctx, input.BackupID, input.Path, params)
-	if errors.Is(err, errInvalidVolumeBackupSelectionInternal) {
+	if errors.Is(err, common.ErrBadRequest) {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
 	if err != nil {

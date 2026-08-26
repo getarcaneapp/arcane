@@ -213,9 +213,7 @@
 
 	function openRestoreFilesDialog(backup: BackupEntry) {
 		restoreTarget = backup;
-		selectedPaths = [];
-		selectAllBackupFiles = false;
-		backupFilesSearch = '';
+		// The picker clears its selection and search when it sees the new provider.
 		backupFileProvider = {
 			browse: (request) => volumeBackupService.browseBackupFiles(backup.id, request)
 		};
@@ -258,13 +256,6 @@
 	}
 
 	async function handleRestoreFiles() {
-		if (!restoreTarget) return;
-		if (!selectAllBackupFiles && !selectedPaths.length) return;
-
-		await restoreFilesInternal();
-	}
-
-	async function restoreFilesInternal() {
 		if (!restoreTarget) return;
 		if (!selectAllBackupFiles && !selectedPaths.length) return;
 
@@ -563,12 +554,7 @@
 <ResponsiveDialog
 	bind:open={showRestoreFiles}
 	onOpenChange={(open) => {
-		if (!open) {
-			backupFileProvider = null;
-			selectedPaths = [];
-			selectAllBackupFiles = false;
-			backupFilesSearch = '';
-		}
+		if (!open) backupFileProvider = null;
 	}}
 	title={m.volume_restore_files()}
 	description={m.volumes_backup_restore_desc()}
@@ -615,9 +601,7 @@
 			action="cancel"
 			onclick={() => {
 				showRestoreFiles = false;
-				selectedPaths = [];
-				selectAllBackupFiles = false;
-				backupFilesSearch = '';
+				backupFileProvider = null;
 			}}
 		/>
 		{#if canBackupVolume}

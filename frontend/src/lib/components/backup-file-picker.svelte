@@ -190,11 +190,18 @@
 		selectionSearch = '';
 	}
 
+	// A new provider means a new backup tree: the picker owns clearing its
+	// selection and search state so every parent dialog doesn't have to.
 	$effect(() => {
 		const currentProvider = provider;
 		if (initializedProvider === currentProvider) return;
 		initializedProvider = currentProvider;
-		debouncedSearch = search.trim();
+		selectedPaths = [];
+		selectAll = false;
+		selectionSearch = '';
+		selectedDirectoryPaths = new Set();
+		search = '';
+		debouncedSearch = '';
 		resetPagesInternal();
 	});
 

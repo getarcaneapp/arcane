@@ -269,12 +269,10 @@ func TestInspectProjectBackupSnapshotManifestUsesDirectCurrentAndLegacyPathsInte
 				},
 				restoreInternal: func(backup.Repository, string, backup.RestoreOptions) error { return nil },
 			}
-			snapshot, databasePath, err := inspectProjectBackupSnapshotManifestInternal(
+			session := systemBackupSnapshotSessionInternal{engine: engine, recoveryKey: "key"}
+			snapshot, databasePath, err := session.inspectProjectManifestInternal(
 				t.Context(),
-				engine,
-				nil,
 				systemBackupSnapshotLocationInternal{name: "test", snapshotID: "snapshot"},
-				"key",
 			)
 			require.NoError(t, err)
 			require.Equal(t, test.snapshotPath, snapshot.snapshotPath)
@@ -403,7 +401,8 @@ func TestAvailableProjectBackupSnapshotsFallsBackToRemoteInternal(t *testing.T) 
 				restoreInternal: func(backup.Repository, string, backup.RestoreOptions) error { return nil },
 			}
 
-			snapshots, err := availableProjectBackupSnapshotsInternal(t.Context(), engine, nil, test.locations, "key", test.setupErr, true)
+			session := systemBackupSnapshotSessionInternal{engine: engine, recoveryKey: "key"}
+			snapshots, err := session.availableProjectSnapshotsInternal(t.Context(), test.locations, test.setupErr, true)
 			require.NoError(t, err)
 			require.Len(t, snapshots, 1)
 			require.Equal(t, "remote-snapshot", snapshots[0].snapshotID)
@@ -418,16 +417,6 @@ func TestSafetySnapshotFollowsRemoteRestoreSourceInternal(t *testing.T) {
 		name: "S3", destination: backuptypes.SystemBackupDestinationS3, s3DestinationID: "destination",
 		repository: remoteRepository, snapshotID: "source",
 	}}
-	request := safetyBackupRequestInternal(source, "key")
-	require.Equal(t, backuptypes.SystemBackupDestinationS3, request.Destination)
-	require.Equal(t, "destination", request.S3DestinationID)
-
-	location, err := safetySnapshotLocationInternal(source, &SystemBackupRun{RemoteSnapshotID: "safety"})
-	require.NoError(t, err)
-	require.Equal(t, "safety", location.name)
-	require.Equal(t, remoteRepository, location.repository)
-	require.Equal(t, "safety", location.snapshotID)
-
 	engine := &systemBackupSnapshotEngineStubInternal{
 		listInternal: func(repository backup.Repository, snapshotID string) ([]string, error) {
 			require.Equal(t, remoteRepository, repository)
@@ -437,9 +426,12 @@ func TestSafetySnapshotFollowsRemoteRestoreSourceInternal(t *testing.T) {
 		readInternal:    func(backup.Repository, string, string) (string, error) { return "", nil },
 		restoreInternal: func(backup.Repository, string, backup.RestoreOptions) error { return nil },
 	}
-	safety, err := prepareSafetySnapshotInternal(t.Context(), engine, nil, location, "key")
+	session := systemBackupSnapshotSessionInternal{engine: engine, recoveryKey: "key"}
+	safety, err := session.openSafetySnapshotInternal(t.Context(), source, &SystemBackupRun{RemoteSnapshotID: "safety"})
 	require.NoError(t, err)
+	require.Equal(t, "safety", safety.name)
 	require.Equal(t, remoteRepository, safety.repository)
+	require.Equal(t, "safety", safety.snapshotID)
 	require.Contains(t, safety.dataPaths, "projects/demo/compose.yaml")
 }
 
@@ -466,10 +458,11 @@ func TestRestoreSelectedProjectFilesFallsBackToRemoteInternal(t *testing.T) {
 		{systemBackupSnapshotLocationInternal: systemBackupSnapshotLocationInternal{name: "S3", snapshotID: "remote-snapshot"}, files: []string{"demo/compose.yaml"}, entries: []backuptypes.BackupFileEntry{{Path: "demo/compose.yaml", Name: "compose.yaml"}}, snapshotPath: "/", projectsPath: "projects"},
 	}
 	removed := false
-	err := restoreSelectedProjectFilesInternal(t.Context(), engine, nil, snapshots, systemBackupSafetySnapshotInternal{}, "key", []backuptypes.BackupFileEntry{{Path: "demo/compose.yaml", Name: "compose.yaml"}}, mounttypes.Mount{Target: "/arcane-data"}, func(string, string) error {
+	session := systemBackupSnapshotSessionInternal{engine: engine, recoveryKey: "key", removeFile: func(context.Context, string, string) error {
 		removed = true
 		return nil
-	})
+	}}
+	err := session.restoreSelectedInternal(t.Context(), snapshots, systemBackupSafetySnapshotInternal{}, []backuptypes.BackupFileEntry{{Path: "demo/compose.yaml", Name: "compose.yaml"}}, mounttypes.Mount{Target: "/arcane-data"})
 	require.NoError(t, err)
 	require.False(t, removed)
 	require.Equal(t, []string{"local-snapshot", "remote-snapshot"}, []string{calls[0].snapshotID, calls[1].snapshotID})
@@ -500,10 +493,11 @@ func TestRestoreSelectedProjectFilesRollsBackHistoricalProjectRootInternal(t *te
 		dataPaths:                            map[string]struct{}{"historical/demo/compose.yaml": {}, "current/demo/compose.yaml": {}},
 	}
 	var removed []string
-	err := restoreSelectedProjectFilesInternal(t.Context(), engine, nil, snapshots, safety, "key", []backuptypes.BackupFileEntry{{Path: "demo/compose.yaml", Name: "compose.yaml"}, {Path: "demo/.env", Name: ".env"}}, mounttypes.Mount{Target: "/arcane-data"}, func(projectsPath, selectedPath string) error {
+	session := systemBackupSnapshotSessionInternal{engine: engine, recoveryKey: "key", removeFile: func(_ context.Context, projectsPath, selectedPath string) error {
 		removed = append(removed, projectsPath+"/"+selectedPath)
 		return nil
-	})
+	}}
+	err := session.restoreSelectedInternal(t.Context(), snapshots, safety, []backuptypes.BackupFileEntry{{Path: "demo/compose.yaml", Name: "compose.yaml"}, {Path: "demo/.env", Name: ".env"}}, mounttypes.Mount{Target: "/arcane-data"})
 	require.ErrorContains(t, err, "affected project files were rolled back")
 	require.Equal(t, []string{"source", "source", "safety"}, []string{calls[0].snapshotID, calls[1].snapshotID, calls[2].snapshotID})
 	require.Equal(t, "/historical/demo/compose.yaml", calls[2].options.SourcePath)
@@ -540,20 +534,11 @@ func TestRestoreSelectedProjectFoldersRollsBackWithDeleteInternal(t *testing.T) 
 		dataPaths:                            map[string]struct{}{"projects/existing/file.txt": {}},
 	}
 	var removed []string
-	err := restoreSelectedProjectFilesInternal(
-		t.Context(),
-		engine,
-		nil,
-		snapshots,
-		safety,
-		"key",
-		selected,
-		mounttypes.Mount{Target: "/arcane-data"},
-		func(projectsPath, selectedPath string) error {
-			removed = append(removed, projectsPath+"/"+selectedPath)
-			return nil
-		},
-	)
+	session := systemBackupSnapshotSessionInternal{engine: engine, recoveryKey: "key", removeFile: func(_ context.Context, projectsPath, selectedPath string) error {
+		removed = append(removed, projectsPath+"/"+selectedPath)
+		return nil
+	}}
+	err := session.restoreSelectedInternal(t.Context(), snapshots, safety, selected, mounttypes.Mount{Target: "/arcane-data"})
 	require.ErrorContains(t, err, "affected project files were rolled back")
 	require.Equal(t, []string{"projects/new"}, removed)
 	require.True(t, calls[0].options.DeleteExtra)
