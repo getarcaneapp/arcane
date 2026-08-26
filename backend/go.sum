@@ -661,8 +661,8 @@ github.com/rogpeppe/go-internal v1.14.1/go.mod h1:MaRKkUm5W0goXpeCfT7UZI6fk/L7L7
 github.com/russross/blackfriday/v2 v2.1.0/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQDYRxCVz55jmeOWTM=
 github.com/samber/go-singleflightx v0.3.2 h1:jXbUU0fvis8Fdv4HGONboX5WdEZcYLoBEcKiE+ITCyQ=
 github.com/samber/go-singleflightx v0.3.2/go.mod h1:X2BR+oheHIYc73PvxRMlcASg6KYYTQyUYpdVU7t/ux4=
-github.com/samber/hot v0.13.0 h1:4/OyD5xNfhmdHqyKWHHSisiytp93gA3knkWZLAvld2w=
-github.com/samber/hot v0.13.0/go.mod h1:NB9v5U4NfDx7jmlrP+zHuqCuLUsywgAtCH7XOAkOxAg=
+github.com/samber/hot v0.13.1 h1:cTIS9spjhKs3k6QfL1N2m7qdAud8Aiw8oXsjxR58dxo=
+github.com/samber/hot v0.13.1/go.mod h1:NB9v5U4NfDx7jmlrP+zHuqCuLUsywgAtCH7XOAkOxAg=
 github.com/samber/lo v1.53.0 h1:t975lj2py4kJPQ6haz1QMgtId2gtmfktACxIXArw3HM=
 github.com/samber/lo v1.53.0/go.mod h1:4+MXEGsJzbKGaUEQFKBq2xtfuznW9oz/WrgyzMzRoM0=
 github.com/samber/mo v1.17.0 h1:EbeLc7nxIdpalstxQQakLOcXxULuMRqo7PJPtY18bQg=
