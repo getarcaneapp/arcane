@@ -62,7 +62,7 @@ func writeDockerExecAttachResponseInternal(t *testing.T, w http.ResponseWriter, 
 		t.Errorf("hijack Docker exec response: %v", err)
 		return
 	}
-	defer connection.Close()
+	defer func() { _ = connection.Close() }()
 	if _, err := fmt.Fprint(buffer, "HTTP/1.1 101 UPGRADED\r\nContent-Type: application/vnd.docker.raw-stream\r\nConnection: Upgrade\r\nUpgrade: tcp\r\n\r\n"); err != nil {
 		t.Errorf("write Docker exec response headers: %v", err)
 		return
@@ -439,12 +439,12 @@ func TestStageVolumeWorkspaceChangesClearsAndCopiesContentsInOneArchive(t *testi
 		{UploadIndex: &firstUpload},
 		{},
 		{UploadIndex: &secondUpload},
-	}, map[int][]byte{0: []byte("alpha"), 1: {}})
+	}, map[int][]byte{0: []byte("alpha"), 1: {}}, volumeWorkspaceWriteIdentityInternal{})
 	require.NoError(t, err)
 	require.Equal(t, volumeWorkspaceStagedFileInternal{path: "/tmp/arcane-workspace/change-0", size: 5}, firstStaged[0])
 	require.Equal(t, volumeWorkspaceStagedFileInternal{path: "/tmp/arcane-workspace/change-2", size: 0}, firstStaged[2])
 
-	secondStaged, err := service.stageVolumeWorkspaceChangesInternal(context.Background(), dockerClient, "helper", []volumetypes.WorkspaceFileChange{{UploadIndex: &firstUpload}}, map[int][]byte{0: []byte("second")})
+	secondStaged, err := service.stageVolumeWorkspaceChangesInternal(context.Background(), dockerClient, "helper", []volumetypes.WorkspaceFileChange{{UploadIndex: &firstUpload}}, map[int][]byte{0: []byte("second")}, volumeWorkspaceWriteIdentityInternal{})
 	require.NoError(t, err)
 	require.Equal(t, volumeWorkspaceStagedFileInternal{path: "/tmp/arcane-workspace/change-0", size: 6}, secondStaged[0])
 
@@ -456,6 +456,99 @@ func TestStageVolumeWorkspaceChangesClearsAndCopiesContentsInOneArchive(t *testi
 		{"change-0": "alpha", "change-2": ""},
 		{"change-0": "second"},
 	}, copiedArchives)
+}
+
+func TestVolumeWorkspaceWriteIdentityFromConfigUserInternal(t *testing.T) {
+	root := volumeWorkspaceWriteIdentityInternal{}
+	for _, configUser := range []string{"", "root", "0", "0:0", "0:1000", "node", "1000:node", "99999999999999999999"} {
+		require.Equalf(t, root, volumeWorkspaceWriteIdentityFromConfigUserInternal(configUser), "config user %q", configUser)
+	}
+	require.Equal(t, volumeWorkspaceWriteIdentityInternal{execUser: "1000", uid: 1000}, volumeWorkspaceWriteIdentityFromConfigUserInternal("1000"))
+	require.Equal(t, volumeWorkspaceWriteIdentityInternal{execUser: "1000:1000", uid: 1000, gid: 1000}, volumeWorkspaceWriteIdentityFromConfigUserInternal(" 1000:1000 "))
+	require.Equal(t, volumeWorkspaceWriteIdentityInternal{execUser: "1000:0", uid: 1000, gid: 0}, volumeWorkspaceWriteIdentityFromConfigUserInternal("1000:0"))
+}
+
+func TestVolumeWorkspaceWritesUseRuntimeIdentity(t *testing.T) {
+	type execRequestInternal struct {
+		user string
+		cmd  []string
+	}
+	var execRequests []execRequestInternal
+	var archiveQueries []string
+	var archiveHeaders []*tar.Header
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/helper/exec"):
+			var request struct {
+				User string   `json:"User"`
+				Cmd  []string `json:"Cmd"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				t.Errorf("decode exec request: %v", err)
+				return
+			}
+			execRequests = append(execRequests, execRequestInternal{user: request.User, cmd: request.Cmd})
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(map[string]string{"Id": fmt.Sprintf("exec-%d", len(execRequests))}); err != nil {
+				t.Errorf("encode exec response: %v", err)
+			}
+		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/exec/exec-") && strings.HasSuffix(r.URL.Path, "/start"):
+			_, _ = io.Copy(io.Discard, r.Body)
+			applyResponse, err := json.Marshal(acfstypes.ApplyResponse{Version: acfstypes.ProtocolVersion, Applied: 1})
+			if err != nil {
+				t.Errorf("encode apply response: %v", err)
+				return
+			}
+			writeDockerExecAttachResponseInternal(t, w, string(applyResponse))
+		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/exec/exec-") && strings.HasSuffix(r.URL.Path, "/json"):
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(map[string]any{"Running": false, "ExitCode": 0}); err != nil {
+				t.Errorf("encode exec inspect response: %v", err)
+			}
+		case r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/containers/helper/archive"):
+			archiveQueries = append(archiveQueries, r.URL.Query().Get("copyUIDGID"))
+			tarReader := tar.NewReader(r.Body)
+			for {
+				header, err := tarReader.Next()
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				if err != nil {
+					t.Errorf("read staging archive: %v", err)
+					return
+				}
+				archiveHeaders = append(archiveHeaders, header)
+				if _, err := io.Copy(io.Discard, tarReader); err != nil {
+					t.Errorf("read staging archive content: %v", err)
+					return
+				}
+			}
+			w.WriteHeader(http.StatusOK)
+		default:
+			http.Error(w, "unexpected Docker request: "+r.Method+" "+r.URL.Path, http.StatusInternalServerError)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	dockerClient := newVolumeWorkspaceTestDockerClientInternal(t, server)
+	service := &VolumeService{dockerService: docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(dockerClient)}
+	identity := volumeWorkspaceWriteIdentityFromConfigUserInternal("1000:1000")
+	uploadIndex := 0
+	changes := []volumetypes.WorkspaceFileChange{{Operation: volumetypes.FileOpCreateFile, RelativePath: "config.txt", UploadIndex: &uploadIndex}}
+	stagedFiles, err := service.stageVolumeWorkspaceChangesInternal(context.Background(), dockerClient, "helper", changes, map[int][]byte{0: []byte("content")}, identity)
+	require.NoError(t, err)
+	require.NoError(t, service.executeVolumeWorkspaceACFSBatchInternal(context.Background(), dockerClient, "helper", changes, stagedFiles, 0, identity))
+
+	require.Len(t, execRequests, 2)
+	require.Empty(t, execRequests[0].user)
+	require.Equal(t, "1000:1000", execRequests[1].user)
+	require.Equal(t, []string{"acfs", "apply", "--root", "/volume", "--staging", "/tmp/arcane-workspace", "--manifest", "manifest-0.json"}, execRequests[1].cmd)
+	require.Equal(t, []string{"true", "true"}, archiveQueries)
+	require.Len(t, archiveHeaders, 2)
+	for _, header := range archiveHeaders {
+		require.Equal(t, 1000, header.Uid)
+		require.Equal(t, 1000, header.Gid)
+	}
 }
 
 func TestUpdateVolumeWorkspaceRejectsStaleRevisionBeforeStaging(t *testing.T) {

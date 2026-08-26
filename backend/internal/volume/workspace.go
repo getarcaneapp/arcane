@@ -28,6 +28,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	acfsutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/acfs"
@@ -241,7 +242,7 @@ func (s *VolumeService) GetVolumeWorkspaceFile(ctx context.Context, volumeName, 
 	if err := s.requireVolumeHelperACFSInternal(ctx, volumeName, containerID); err != nil {
 		return nil, err
 	}
-	stdout, stderr, err := s.execInContainerInternal(ctx, containerID, []string{
+	stdout, stderr, err := s.execInContainerInternal(ctx, containerID, "", []string{
 		"acfs", "stat", "--root", "/volume", "--path", "/" + rel,
 	})
 	if err != nil {
@@ -522,7 +523,7 @@ func (s *VolumeService) validateVolumeWorkspacePathInternal(ctx context.Context,
 	if allowMissing {
 		allowMissingValue = "1"
 	}
-	_, stderr, err := s.execInContainerInternal(ctx, containerID, []string{"sh", "-c", volumeWorkspaceValidatePathScriptInternal, "sh", relativePath, allowMissingValue})
+	_, stderr, err := s.execInContainerInternal(ctx, containerID, "", []string{"sh", "-c", volumeWorkspaceValidatePathScriptInternal, "sh", relativePath, allowMissingValue})
 	if err != nil {
 		return classifyVolumeWorkspaceExecErrorInternal(err, stderr, "validate volume workspace path")
 	}
@@ -609,7 +610,8 @@ func (s *VolumeService) UpdateVolumeWorkspace(ctx context.Context, volumeName st
 	if err != nil {
 		return nil, err
 	}
-	stagedFiles, err := s.stageVolumeWorkspaceChangesInternal(ctx, dockerClient, containerID, manifest.FileChanges, uploads)
+	identity := s.resolveVolumeWorkspaceWriteIdentityInternal(ctx, dockerClient, containerID, volumeName)
+	stagedFiles, err := s.stageVolumeWorkspaceChangesInternal(ctx, dockerClient, containerID, manifest.FileChanges, uploads, identity)
 	if err != nil {
 		return nil, err
 	}
@@ -639,6 +641,7 @@ func (s *VolumeService) UpdateVolumeWorkspace(ctx context.Context, volumeName st
 		volumeName,
 		manifest.FileChanges,
 		stagedFiles,
+		identity,
 		func() error { return s.restoreVolumeWorkspaceScopeInternal(ctx, containerID, backup) },
 	); err != nil {
 		return nil, err
@@ -661,6 +664,84 @@ func (s *VolumeService) UpdateVolumeWorkspace(ctx context.Context, volumeName st
 	return workspace, nil
 }
 
+// volumeWorkspaceWriteIdentityInternal is the identity workspace file mutations run as,
+// so files land owned by the user the consuming container runs with. The zero value means root.
+type volumeWorkspaceWriteIdentityInternal struct {
+	execUser string
+	uid      int
+	gid      int
+}
+
+func volumeWorkspaceWriteIdentityFromConfigUserInternal(configUser string) volumeWorkspaceWriteIdentityInternal {
+	trimmed := strings.TrimSpace(configUser)
+	if trimmed == "" {
+		return volumeWorkspaceWriteIdentityInternal{}
+	}
+	// Named users cannot be resolved against the helper image, and uid 0 is already the default.
+	uidPart, gidPart, hasGID := strings.Cut(trimmed, ":")
+	uid, err := strconv.ParseUint(uidPart, 10, 32)
+	if err != nil || uid == 0 {
+		return volumeWorkspaceWriteIdentityInternal{}
+	}
+	var gid uint64
+	if hasGID {
+		gid, err = strconv.ParseUint(gidPart, 10, 32)
+		if err != nil {
+			return volumeWorkspaceWriteIdentityInternal{}
+		}
+	}
+	return volumeWorkspaceWriteIdentityInternal{execUser: trimmed, uid: int(uid), gid: int(gid)}
+}
+
+func (s *VolumeService) resolveVolumeWorkspaceWriteIdentityInternal(ctx context.Context, dockerClient *client.Client, containerID, volumeName string) volumeWorkspaceWriteIdentityInternal {
+	consumerIDs, err := dockerutil.GetContainersUsingVolume(ctx, dockerClient, volumeName)
+	if err != nil {
+		slog.WarnContext(ctx, "could not list containers for volume workspace write identity", "volume", volumeName, "error", err.Error())
+	}
+	identity := volumeWorkspaceWriteIdentityInternal{}
+	identitySource := ""
+	for _, consumerID := range consumerIDs {
+		inspect, inspectErr := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, consumerID, client.ContainerInspectOptions{})
+		if inspectErr != nil || inspect.Container.Config == nil {
+			// An uninspectable consumer could declare a conflicting user, so the identity is
+			// indeterminate; defer to the volume root's owner.
+			slog.WarnContext(ctx, "could not inspect volume consumer; using volume root owner for workspace writes", "volume", volumeName, "container_id", consumerID)
+			identity = volumeWorkspaceWriteIdentityInternal{}
+			break
+		}
+		parsed := volumeWorkspaceWriteIdentityFromConfigUserInternal(inspect.Container.Config.User)
+		if parsed.execUser == "" {
+			continue
+		}
+		if identity.execUser == "" {
+			identity, identitySource = parsed, consumerID
+			continue
+		}
+		// Consumers disagree; picking either would depend on Docker's list order, so defer to
+		// the volume root's owner instead.
+		if identity.execUser != parsed.execUser {
+			slog.WarnContext(ctx, "volume consumers declare conflicting users; using volume root owner for workspace writes", "volume", volumeName, "identity", identity.execUser, "conflicting_identity", parsed.execUser)
+			identity = volumeWorkspaceWriteIdentityInternal{}
+			break
+		}
+	}
+	if identity.execUser != "" {
+		slog.InfoContext(ctx, "volume workspace writes run as container user", "volume", volumeName, "identity", identity.execUser, "source_container_id", identitySource)
+		return identity
+	}
+	// PUID-style images drop privileges after start, so Config.User stays empty; the owner of the
+	// volume root is the next best signal for the runtime identity.
+	stdout, _, err := s.execInContainerInternal(ctx, containerID, "", []string{"stat", "-c", "%u:%g", "/volume"})
+	if err != nil {
+		return volumeWorkspaceWriteIdentityInternal{}
+	}
+	identity = volumeWorkspaceWriteIdentityFromConfigUserInternal(stdout)
+	if identity.execUser != "" {
+		slog.InfoContext(ctx, "volume workspace writes run as volume root owner", "volume", volumeName, "identity", identity.execUser)
+	}
+	return identity
+}
+
 type volumeWorkspaceStagedFileInternal struct {
 	path string
 	size int64
@@ -672,8 +753,8 @@ type volumeWorkspaceStagedContentInternal struct {
 	size    int64
 }
 
-func (s *VolumeService) stageVolumeWorkspaceChangesInternal(ctx context.Context, dockerClient *client.Client, containerID string, changes []volumetypes.WorkspaceFileChange, uploads map[int][]byte) (map[int]volumeWorkspaceStagedFileInternal, error) {
-	if _, _, err := s.execInContainerInternal(ctx, containerID, []string{"sh", "-c", "rm -rf -- /tmp/arcane-workspace && mkdir -p -- /tmp/arcane-workspace"}); err != nil {
+func (s *VolumeService) stageVolumeWorkspaceChangesInternal(ctx context.Context, dockerClient *client.Client, containerID string, changes []volumetypes.WorkspaceFileChange, uploads map[int][]byte, identity volumeWorkspaceWriteIdentityInternal) (map[int]volumeWorkspaceStagedFileInternal, error) {
+	if _, _, err := s.execInContainerInternal(ctx, containerID, "", []string{"sh", "-c", "rm -rf -- /tmp/arcane-workspace && mkdir -p -- /tmp/arcane-workspace"}); err != nil {
 		return nil, errors.WrapIf(err, "prepare volume workspace staging directory")
 	}
 
@@ -697,7 +778,7 @@ func (s *VolumeService) stageVolumeWorkspaceChangesInternal(ctx context.Context,
 	if len(stagedContents) == 0 {
 		return stagedFiles, nil
 	}
-	if err := s.copyVolumeWorkspaceFilesToContainerInternal(ctx, dockerClient, containerID, stagedContents); err != nil {
+	if err := s.copyVolumeWorkspaceFilesToContainerInternal(ctx, dockerClient, containerID, stagedContents, identity); err != nil {
 		return nil, err
 	}
 	return stagedFiles, nil
@@ -717,6 +798,7 @@ func (s *VolumeService) applyVolumeWorkspaceChangesInternal(
 	volumeName string,
 	changes []volumetypes.WorkspaceFileChange,
 	stagedFiles map[int]volumeWorkspaceStagedFileInternal,
+	identity volumeWorkspaceWriteIdentityInternal,
 	rollback func() error,
 ) error {
 	rollbackFailureInternal := func(applyErr error) error {
@@ -740,7 +822,7 @@ func (s *VolumeService) applyVolumeWorkspaceChangesInternal(
 		for end < len(changes) && changes[end].Operation != volumetypes.FileOpRestoreFile {
 			end++
 		}
-		if err := s.executeVolumeWorkspaceACFSBatchInternal(ctx, dockerClient, containerID, changes[index:end], stagedFiles, index); err != nil {
+		if err := s.executeVolumeWorkspaceACFSBatchInternal(ctx, dockerClient, containerID, changes[index:end], stagedFiles, index, identity); err != nil {
 			return rollbackFailureInternal(err)
 		}
 		index = end
@@ -755,6 +837,7 @@ func (s *VolumeService) executeVolumeWorkspaceACFSBatchInternal(
 	changes []volumetypes.WorkspaceFileChange,
 	stagedFiles map[int]volumeWorkspaceStagedFileInternal,
 	startIndex int,
+	identity volumeWorkspaceWriteIdentityInternal,
 ) error {
 	applyChanges := make([]acfstypes.ApplyChange, 0, len(changes))
 	for offset, change := range changes {
@@ -777,11 +860,11 @@ func (s *VolumeService) executeVolumeWorkspaceACFSBatchInternal(
 		name:    manifestName,
 		content: io.NopCloser(bytes.NewReader(manifestContent)),
 		size:    int64(len(manifestContent)),
-	}}); err != nil {
+	}}, identity); err != nil {
 		return err
 	}
 
-	stdout, stderr, err := s.execInContainerInternal(ctx, containerID, []string{
+	stdout, stderr, err := s.execInContainerInternal(ctx, containerID, identity.execUser, []string{
 		"acfs", "apply", "--root", "/volume", "--staging", "/tmp/arcane-workspace", "--manifest", manifestName,
 	})
 	if err != nil {
@@ -885,14 +968,14 @@ func validateVolumeWorkspaceFileChangeInternal(change volumetypes.WorkspaceFileC
 	return nil
 }
 
-func (s *VolumeService) copyVolumeWorkspaceFilesToContainerInternal(ctx context.Context, dockerClient *client.Client, containerID string, contents []volumeWorkspaceStagedContentInternal) error {
+func (s *VolumeService) copyVolumeWorkspaceFilesToContainerInternal(ctx context.Context, dockerClient *client.Client, containerID string, contents []volumeWorkspaceStagedContentInternal, identity volumeWorkspaceWriteIdentityInternal) error {
 	pipeReader, pipeWriter := io.Pipe()
 	archiveDone := make(chan error, 1)
 	go func() {
 		tarWriter := tar.NewWriter(pipeWriter)
 		var err error
 		for _, stagedContent := range contents {
-			if err = tarWriter.WriteHeader(&tar.Header{Name: stagedContent.name, Mode: 0o600, Size: stagedContent.size}); err != nil {
+			if err = tarWriter.WriteHeader(&tar.Header{Name: stagedContent.name, Mode: 0o600, Size: stagedContent.size, Uid: identity.uid, Gid: identity.gid}); err != nil {
 				break
 			}
 			if _, err = io.CopyN(tarWriter, stagedContent.content, stagedContent.size); err != nil {
@@ -905,7 +988,7 @@ func (s *VolumeService) copyVolumeWorkspaceFilesToContainerInternal(ctx context.
 		_ = pipeWriter.CloseWithError(err)
 		archiveDone <- err
 	}()
-	_, copyErr := dockerClient.CopyToContainer(ctx, containerID, client.CopyToContainerOptions{DestinationPath: "/tmp/arcane-workspace", Content: pipeReader})
+	_, copyErr := dockerClient.CopyToContainer(ctx, containerID, client.CopyToContainerOptions{DestinationPath: "/tmp/arcane-workspace", Content: pipeReader, CopyUIDGID: identity.execUser != ""})
 	_ = pipeReader.Close()
 	archiveErr := <-archiveDone
 	for _, stagedContent := range contents {
@@ -1041,7 +1124,7 @@ tar -cf "$archive" "./$entry"
 printf 'present\0'`
 
 func (s *VolumeService) backupVolumeWorkspaceScopeInternal(ctx context.Context, containerID string, scope []string) (*volumeWorkspaceBackupInternal, error) {
-	if _, _, err := s.execInContainerInternal(ctx, containerID, []string{"mkdir", "-p", "/tmp/arcane-workspace"}); err != nil {
+	if _, _, err := s.execInContainerInternal(ctx, containerID, "", []string{"mkdir", "-p", "/tmp/arcane-workspace"}); err != nil {
 		return nil, errors.WrapIf(err, "prepare volume workspace backup directory")
 	}
 	backup := &volumeWorkspaceBackupInternal{
@@ -1050,7 +1133,7 @@ func (s *VolumeService) backupVolumeWorkspaceScopeInternal(ctx context.Context, 
 	}
 	for index, relativePath := range scope {
 		archivePath := fmt.Sprintf("/tmp/arcane-workspace/backup-%d.tar", index)
-		stdout, stderr, err := s.execInContainerInternal(ctx, containerID, []string{"sh", "-c", volumeWorkspaceBackupCreateScriptInternal, "sh", relativePath, archivePath})
+		stdout, stderr, err := s.execInContainerInternal(ctx, containerID, "", []string{"sh", "-c", volumeWorkspaceBackupCreateScriptInternal, "sh", relativePath, archivePath})
 		if err != nil {
 			return nil, classifyVolumeWorkspaceExecErrorInternal(err, stderr, "back up volume workspace path")
 		}
@@ -1091,7 +1174,7 @@ func (s *VolumeService) restoreVolumeWorkspaceScopeInternal(ctx context.Context,
 	removePaths := volumeWorkspaceRollbackPathsInternal(backup)
 	args := append([]string{"sh", "-c", `set -e
 for rel do rm -rf -- "/volume/$rel"; done`, "sh"}, removePaths...)
-	if _, stderr, err := s.execInContainerInternal(ctx, containerID, args); err != nil {
+	if _, stderr, err := s.execInContainerInternal(ctx, containerID, "", args); err != nil {
 		return classifyVolumeWorkspaceExecErrorInternal(err, stderr, "remove failed volume workspace changes")
 	}
 
@@ -1101,10 +1184,10 @@ for rel do rm -rf -- "/volume/$rel"; done`, "sh"}, removePaths...)
 		if parent != "." {
 			containerParent = path.Join(containerParent, parent)
 		}
-		if _, stderr, err := s.execInContainerInternal(ctx, containerID, []string{"mkdir", "-p", containerParent}); err != nil {
+		if _, stderr, err := s.execInContainerInternal(ctx, containerID, "", []string{"mkdir", "-p", containerParent}); err != nil {
 			return classifyVolumeWorkspaceExecErrorInternal(err, stderr, "recreate volume workspace backup parent")
 		}
-		if _, stderr, err := s.execInContainerInternal(ctx, containerID, []string{"tar", "-xf", archive.archivePath, "-C", containerParent}); err != nil {
+		if _, stderr, err := s.execInContainerInternal(ctx, containerID, "", []string{"tar", "-xf", archive.archivePath, "-C", containerParent}); err != nil {
 			return classifyVolumeWorkspaceExecErrorInternal(err, stderr, "restore volume workspace backup")
 		}
 	}

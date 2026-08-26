@@ -46,7 +46,7 @@ func (s *VolumeService) requireVolumeHelperACFSInternal(ctx context.Context, vol
 	}
 	s.helperMu.Unlock()
 
-	stdout, stderr, err := s.execInContainerInternal(ctx, containerID, []string{"acfs", "version"})
+	stdout, stderr, err := s.execInContainerInternal(ctx, containerID, "", []string{"acfs", "version"})
 	if err != nil {
 		return errors.WrapIf(err, "volume workspace requires an ACFS-capable tools image: "+strings.TrimSpace(stderr))
 	}
@@ -472,8 +472,8 @@ func (s *VolumeService) removeHelperEntry(volumeName string) {
 	s.helperMu.Unlock()
 }
 
-func (s *VolumeService) execInContainerInternal(ctx context.Context, containerID string, cmd []string) (string, string, error) {
-	slog.DebugContext(ctx, "volume service: exec in container", "container_id", containerID, "cmd", cmd)
+func (s *VolumeService) execInContainerInternal(ctx context.Context, containerID, execUser string, cmd []string) (string, string, error) {
+	slog.DebugContext(ctx, "volume service: exec in container", "container_id", containerID, "user", execUser, "cmd", cmd)
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return "", "", err
@@ -481,6 +481,7 @@ func (s *VolumeService) execInContainerInternal(ctx context.Context, containerID
 
 	var stdout, stderr bytes.Buffer
 	exitCode, err := dockerutil.ExecInContainer(ctx, dockerClient, containerID, client.ExecCreateOptions{
+		User:         execUser,
 		AttachStdout: true,
 		AttachStderr: true,
 		Cmd:          cmd,
