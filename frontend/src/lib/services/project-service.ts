@@ -110,7 +110,9 @@ class ProjectService extends BaseAPIService {
 	}
 
 	private async getProjectSection(path: string): Promise<Project> {
-		const response = await this.handleResponse<{ project?: Project; success?: boolean } | Project>(this.api.get(path));
+		const response = await this.handleResponse<{ project?: Project; success?: boolean } | Project>(
+			this.api.get(path, { cache: 'no-store' })
+		);
 		return 'project' in response && response.project ? response.project : (response as Project);
 	}
 

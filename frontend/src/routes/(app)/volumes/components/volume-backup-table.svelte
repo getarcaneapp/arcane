@@ -7,7 +7,6 @@
 	import type { S3Destination } from '#lib/types/s3-destination';
 	import { onMount } from 'svelte';
 	import {
-		LoadingSpinnerIcon,
 		TrashIcon,
 		AddIcon,
 		ClockIcon,
@@ -36,10 +35,8 @@
 	import RowActionsMenu from '#lib/components/file-browser/row-actions-menu.svelte';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog';
 	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog';
-	import { Input } from '#lib/components/ui/input';
-	import { ScrollArea } from '#lib/components/ui/scroll-area';
-	import * as Checkbox from '#lib/components/ui/checkbox';
 	import * as Alert from '#lib/components/ui/alert';
+	import BackupFilePicker from '#lib/components/backup-file-picker.svelte';
 	import { environmentStore } from '#lib/stores/environment.store.svelte';
 	import { hasPermission } from '#lib/utils/auth';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
@@ -64,8 +61,17 @@
 		s3DestinationOptions as buildS3DestinationOptions
 	} from '#lib/utils/backups';
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
+	import type { BackupFileProvider } from '#lib/types/backup';
 
-	let { volumeName }: { volumeName: string } = $props();
+	let {
+		volumeName,
+		hasWorkspaceChanges = false,
+		onWorkspaceRestored
+	}: {
+		volumeName: string;
+		hasWorkspaceChanges?: boolean;
+		onWorkspaceRestored?: () => void | Promise<void>;
+	} = $props();
 
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
 	const canBackupVolume = $derived(hasPermission('volumes:backup', currentEnvId));
@@ -102,16 +108,10 @@
 	let restoringFiles = $state(false);
 	let showRestoreFiles = $state(false);
 	let restoreTarget = $state<BackupEntry | null>(null);
-	let backupFiles = $state<string[]>([]);
-	let backupFilesLoading = $state(false);
+	let backupFileProvider = $state<BackupFileProvider | null>(null);
 	let backupFilesSearch = $state('');
 	let selectedPaths = $state<string[]>([]);
-	const filteredBackupFiles = $derived.by(() => {
-		const q = backupFilesSearch.trim().toLowerCase();
-		if (!q) return backupFiles;
-		return backupFiles.filter((p) => p.toLowerCase().includes(q));
-	});
-
+	let selectAllBackupFiles = $state(false);
 	async function loadData(options: SearchPaginationSortRequest): Promise<VolumeBackupListResponse> {
 		try {
 			const result = await volumeBackupService.listBackups(volumeName, options);
@@ -215,42 +215,13 @@
 		}
 	}
 
-	async function openRestoreFilesDialog(backup: BackupEntry) {
+	function openRestoreFilesDialog(backup: BackupEntry) {
 		restoreTarget = backup;
-		selectedPaths = [];
-		backupFiles = [];
-		backupFilesSearch = '';
+		// The picker clears its selection and search when it sees the new provider.
+		backupFileProvider = {
+			browse: (request) => volumeBackupService.browseBackupFiles(backup.id, request)
+		};
 		showRestoreFiles = true;
-		backupFilesLoading = true;
-		try {
-			backupFiles = await volumeBackupService.listBackupFiles(backup.id);
-		} catch (error) {
-			toast.error(error instanceof Error ? error.message : m.common_failed());
-		} finally {
-			backupFilesLoading = false;
-		}
-	}
-
-	function togglePath(path: string, checked: boolean) {
-		if (checked) {
-			if (!selectedPaths.includes(path)) {
-				selectedPaths = [...selectedPaths, path];
-			}
-			return;
-		}
-		selectedPaths = selectedPaths.filter((p) => p !== path);
-	}
-
-	function selectAllVisible() {
-		const next = new Set(selectedPaths);
-		for (const p of filteredBackupFiles) {
-			next.add(p);
-		}
-		selectedPaths = Array.from(next);
-	}
-
-	function clearSelection() {
-		selectedPaths = [];
 	}
 
 	async function handleRestore(backup: BackupEntry) {
@@ -267,13 +238,17 @@
 
 		openConfirmDialog({
 			title: m.volumes_backup_restore_title(),
-			message: m.volumes_backup_restore_message({ volumeName }) + usageWarning,
+			message:
+				m.volumes_backup_restore_message({ volumeName }) +
+				usageWarning +
+				(hasWorkspaceChanges ? `\n\n${m.volumes_backup_restore_discard_changes()}` : ''),
 			confirm: {
 				label: m.volumes_backups_restore(),
-				destructive: !!usageWarning,
+				destructive: !!usageWarning || hasWorkspaceChanges,
 				action: async () => {
 					try {
 						const result = await volumeBackupService.restoreBackup(volumeName, backup.id);
+						await onWorkspaceRestored?.();
 						toast.success(m.volumes_backup_restore_success(), activityToastOptions(extractActivityId(result)));
 						await loadData(requestOptions);
 					} catch (error) {
@@ -286,15 +261,17 @@
 
 	async function handleRestoreFiles() {
 		if (!restoreTarget) return;
-		if (!selectedPaths.length) return;
+		if (!selectAllBackupFiles && !selectedPaths.length) return;
 
+		const selection = { paths: [...selectedPaths], selectAll: selectAllBackupFiles };
 		restoringFiles = true;
 		try {
-			const result = await volumeBackupService.restoreBackupFiles(volumeName, restoreTarget.id, selectedPaths);
-			toast.success(
-				m.volumes_backup_restore_files_success({ count: selectedPaths.length }),
-				activityToastOptions(extractActivityId(result))
-			);
+			const result = await volumeBackupService.restoreBackupFiles(volumeName, restoreTarget.id, {
+				...selection,
+				search: selection.selectAll ? backupFilesSearch.trim() : undefined
+			});
+			await onWorkspaceRestored?.();
+			toast.success(m.volumes_backup_restore_selection_success(), activityToastOptions(extractActivityId(result)));
 			showRestoreFiles = false;
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : m.common_failed());
@@ -599,6 +576,9 @@
 
 <ResponsiveDialog
 	bind:open={showRestoreFiles}
+	onOpenChange={(open) => {
+		if (!open) backupFileProvider = null;
+	}}
 	title={m.volume_restore_files()}
 	description={m.volumes_backup_restore_desc()}
 	contentClass="sm:max-w-[640px]"
@@ -612,35 +592,14 @@
 				</Alert.Description>
 			</Alert.Root>
 
-			<div class="flex items-center justify-between gap-2">
-				<Input class="h-9" placeholder={m.volume_search_files()} bind:value={backupFilesSearch} />
-				<div class="flex items-center gap-2">
-					<ArcaneButton action="base" tone="ghost" size="sm" onclick={selectAllVisible} customLabel={m.common_select_all()} />
-					<ArcaneButton action="base" tone="ghost" size="sm" onclick={clearSelection} customLabel={m.common_clear()} />
-				</div>
-			</div>
-
-			<ScrollArea class="h-64 rounded-md border">
-				{#if backupFilesLoading}
-					<div class="flex items-center justify-center py-8">
-						<LoadingSpinnerIcon class="size-5 text-muted-foreground" />
-					</div>
-				{:else if filteredBackupFiles.length === 0}
-					<div class="flex items-center justify-center py-8 text-sm text-muted-foreground">{m.volume_backup_no_files()}</div>
-				{:else}
-					<div class="divide-y divide-border/40">
-						{#each filteredBackupFiles as filePath (filePath)}
-							<div class="flex items-center gap-3 px-3 py-2">
-								<Checkbox.Root
-									checked={selectedPaths.includes(filePath)}
-									onCheckedChange={(value) => togglePath(filePath, !!value)}
-								/>
-								<code class="font-mono text-xs break-all">{filePath}</code>
-							</div>
-						{/each}
-					</div>
-				{/if}
-			</ScrollArea>
+			{#if backupFileProvider}
+				<BackupFilePicker
+					provider={backupFileProvider}
+					bind:selectedPaths
+					bind:selectAll={selectAllBackupFiles}
+					bind:search={backupFilesSearch}
+				/>
+			{/if}
 
 			<Alert.Root variant="warning" class="py-2 [&>svg]:top-2">
 				<AlertIcon class="size-4" />
@@ -648,6 +607,15 @@
 					{m.volumes_backup_overwrite_warning()}
 				</Alert.Description>
 			</Alert.Root>
+
+			{#if hasWorkspaceChanges}
+				<Alert.Root variant="warning" class="py-2 [&>svg]:top-2">
+					<AlertIcon class="size-4" />
+					<Alert.Description class="text-xs">
+						{m.volumes_backup_restore_discard_changes()}
+					</Alert.Description>
+				</Alert.Root>
+			{/if}
 		</div>
 	{/snippet}
 
@@ -656,8 +624,7 @@
 			action="cancel"
 			onclick={() => {
 				showRestoreFiles = false;
-				selectedPaths = [];
-				backupFilesSearch = '';
+				backupFileProvider = null;
 			}}
 		/>
 		{#if canBackupVolume}
@@ -666,7 +633,7 @@
 				customLabel={m.volume_restore_files()}
 				onclick={handleRestoreFiles}
 				loading={restoringFiles}
-				disabled={restoringFiles || selectedPaths.length === 0}
+				disabled={restoringFiles || (!selectAllBackupFiles && selectedPaths.length === 0)}
 			/>
 		{/if}
 	{/snippet}

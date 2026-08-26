@@ -3,6 +3,7 @@ package utils
 import (
 	"hash"
 	"io"
+	"net/url"
 	"path"
 	"path/filepath"
 	"strconv"
@@ -10,6 +11,20 @@ import (
 
 	"emperror.dev/errors"
 )
+
+// SQLitePathFromDSN returns the filesystem portion of a SQLite file DSN.
+// For "file:data/arcane.db?..." the path is carried in Opaque; for
+// "file:/abs/path.db" it is in Path. In-memory DSNs yield ":memory:" or "".
+func SQLitePathFromDSN(dsn string) (string, error) {
+	parsed, err := url.Parse(dsn)
+	if err != nil {
+		return "", err
+	}
+	if parsed.Opaque != "" {
+		return parsed.Opaque, nil
+	}
+	return parsed.Path, nil
+}
 
 // NormalizeRelativePath validates and normalizes a slash-delimited path rooted
 // at a managed file tree. The returned path never begins with a slash.

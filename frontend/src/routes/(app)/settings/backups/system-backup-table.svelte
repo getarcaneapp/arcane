@@ -11,7 +11,7 @@
 	import BackupManagementCell from '#lib/components/arcane-table/cells/backup-management-cell.svelte';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
 	import type { BackupHistoryEntry } from '#lib/types/system-backup';
-	import { BackupIcon, RestartIcon, TrashIcon, UploadIcon, ClockIcon, VolumesIcon } from '#lib/icons';
+	import { BackupIcon, RestartIcon, TrashIcon, UploadIcon, ClockIcon, VolumesIcon, FileTextIcon } from '#lib/icons';
 	import { bytes, formatDateTimeShort } from '#lib/utils/formatting';
 	import {
 		backupManagementFilterOptions,
@@ -27,6 +27,7 @@
 		requestOptions = $bindable(),
 		onChanged,
 		onRestore,
+		onRestoreFiles,
 		onUpload,
 		onDelete,
 		onOpenVolume
@@ -35,6 +36,7 @@
 		requestOptions: SearchPaginationSortRequest;
 		onChanged: (options: SearchPaginationSortRequest) => Promise<Paginated<BackupHistoryEntry>>;
 		onRestore: (backup: BackupHistoryEntry) => void;
+		onRestoreFiles: (backup: BackupHistoryEntry) => void;
 		onUpload: (backup: BackupHistoryEntry) => void;
 		onDelete: (backup: BackupHistoryEntry) => void;
 		onOpenVolume: (backup: BackupHistoryEntry) => void;
@@ -87,6 +89,9 @@
 		{#if item.resourceType === 'system'}
 			<DropdownMenu.Item onclick={() => onRestore(item)} disabled={item.status !== 'succeeded'}
 				><RestartIcon class="size-4" />{m.volumes_backups_restore()}</DropdownMenu.Item
+			>
+			<DropdownMenu.Item onclick={() => onRestoreFiles(item)} disabled={item.status !== 'succeeded'}
+				><FileTextIcon class="size-4" />{m.volume_restore_files()}</DropdownMenu.Item
 			>
 			{#if item.localSnapshotId && !item.remoteSnapshotId}
 				<DropdownMenu.Item onclick={() => onUpload(item)}><UploadIcon class="size-4" />{m.backups_upload_s3()}</DropdownMenu.Item>

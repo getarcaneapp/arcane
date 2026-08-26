@@ -10,13 +10,16 @@ class VolumeWorkspaceService extends BaseAPIService {
 
 	async getWorkspace(volumeName: string, environmentId?: string): Promise<VolumeWorkspace> {
 		const envId = await this.resolveEnvironmentId(environmentId);
-		return this.handleResponse(this.api.get(`/environments/${envId}/volumes/${volumeName}/workspace`));
+		return this.handleResponse(this.api.get(`/environments/${envId}/volumes/${volumeName}/workspace`, { cache: 'no-store' }));
 	}
 
 	async getWorkspaceFile(volumeName: string, relativePath: string, environmentId?: string): Promise<VolumeWorkspaceFileContent> {
 		const envId = await this.resolveEnvironmentId(environmentId);
 		return this.handleResponse(
-			this.api.get(`/environments/${envId}/volumes/${volumeName}/workspace/file`, { params: { relativePath } })
+			this.api.get(`/environments/${envId}/volumes/${volumeName}/workspace/file`, {
+				cache: 'no-store',
+				params: { relativePath }
+			})
 		);
 	}
 

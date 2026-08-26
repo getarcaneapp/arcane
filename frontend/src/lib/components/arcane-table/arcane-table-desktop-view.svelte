@@ -1,7 +1,7 @@
 <script lang="ts" generics="TData extends Record<string, any> & { id: string }">
 	import type { ArcaneCell, ArcaneFeatures, ArcaneRow, ArcaneSvelteTable } from './table-features';
 	import { FlexRender as FlexRenderBase } from '@tanstack/svelte-table';
-	import { createVirtualizer } from './virtualizer.svelte';
+	import { createVirtualizer } from '../ui/virtualizer.svelte';
 	import Skeleton from '#lib/components/ui/skeleton/skeleton.svelte';
 	import * as Table from '#lib/components/ui/table/index.js';
 	import { ArrowRightIcon, ArrowDownIcon } from '#lib/icons';

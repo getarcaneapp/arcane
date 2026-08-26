@@ -1,11 +1,13 @@
 <script lang="ts">
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import FileTreeRow from '#lib/components/file-tree-row.svelte';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog';
 	import * as Dialog from '#lib/components/ui/dialog';
 	import { Input } from '#lib/components/ui/input';
 	import { Label } from '#lib/components/ui/label';
 	import * as Tooltip from '#lib/components/ui/tooltip/index.js';
 	import * as TreeView from '#lib/components/ui/tree-view/index.js';
+	import { createVirtualizer } from '#lib/components/ui/virtualizer.svelte';
 	import {
 		ArrowDownIcon,
 		ArrowRightIcon,
@@ -122,6 +124,7 @@
 	let uploadInputKey = $state(0);
 	let dialogSubmitting = $state(false);
 	let dialogError = $state<string | null>(null);
+	let treeScrollElement = $state<HTMLElement | null>(null);
 
 	const entryByPath = $derived.by(() => new Map(entries.map((entry) => [entry.relativePath, entry])));
 	const selectedWorkspacePath = $derived(selectedFile.startsWith('file:') ? selectedFile.slice(5) : '');
@@ -163,6 +166,13 @@
 		allDestinationOptions.filter((option) => option.relativePath === '' || isDestinationVisible(option.relativePath))
 	);
 	const hasValidDestination = $derived(allDestinationOptions.some((option) => !option.disabled));
+	const rowVirtualizer = createVirtualizer<HTMLElement, HTMLDivElement>(() => ({
+		count: rows.length,
+		getScrollElement: () => treeScrollElement,
+		getItemKey: (index) => rows[index]?.relativePath ?? index,
+		estimateSize: () => 32,
+		overscan: 8
+	}));
 
 	function toggleFolder(relativePath: string) {
 		activeFolderPath = relativePath;
@@ -568,7 +578,7 @@
 		<div class="border-b border-border px-3 py-2 text-xs text-muted-foreground">{readOnlyMessage}</div>
 	{/if}
 
-	<div class="min-h-0 flex-1 overflow-auto">
+	<div bind:this={treeScrollElement} class="min-h-0 flex-1 overflow-auto">
 		<TreeView.Root class="min-w-max p-2 whitespace-nowrap">
 			{#each leadingRows as leadingRow (leadingRow.key)}
 				<button
@@ -600,142 +610,124 @@
 			{#if rows.length === 0}
 				<div class="px-7 py-3 text-xs text-muted-foreground">{emptyMessage}</div>
 			{:else}
-				{#each rows as row (row.relativePath)}
-					<div
-						class={cn(
-							'group flex w-full items-center gap-1.5 rounded-md px-2 py-0.5 text-[13px] hover:bg-accent',
-							selectedFile === `file:${row.relativePath}` && 'bg-accent'
-						)}
-						style={`padding-left: ${0.5 + row.depth * 1}rem`}
-					>
-						{#if row.isDirectory}
-							<button
-								type="button"
-								class="inline-flex size-4 shrink-0 items-center justify-center rounded hover:bg-muted"
-								aria-label={openFolders[row.relativePath]
-									? m.workspace_file_collapse_folder({ name: row.name })
-									: m.workspace_file_expand_folder({ name: row.name })}
-								onclick={() => toggleFolder(row.relativePath)}
+				<div class="relative" style={`height: ${rowVirtualizer.totalSize}px`}>
+					{#each rowVirtualizer.virtualItems as virtualItem (virtualItem.key)}
+						{@const row = rows[virtualItem.index]}
+						{#if row}
+							<div
+								class="absolute top-0 left-0 w-full"
+								style={`transform: translateY(${virtualItem.start}px)`}
+								data-index={virtualItem.index}
+								use:rowVirtualizer.measureElement
 							>
-								{#if openFolders[row.relativePath] === true}
-									<ArrowDownIcon class="size-3.5" />
-								{:else}
-									<ArrowRightIcon class="size-3.5" />
-								{/if}
-							</button>
-						{:else if hasDirectories}
-							<span class="inline-flex size-4 shrink-0 items-center justify-center"></span>
-						{/if}
-
-						<button
-							type="button"
-							class="flex min-w-0 flex-1 items-center gap-1.5 py-1 text-left"
-							onclick={() => (row.isDirectory ? toggleFolder(row.relativePath) : onSelect(`file:${row.relativePath}`))}
-						>
-							{#if row.isDirectory}
-								<FolderOpenIcon class="size-4 shrink-0 text-amber-500" />
-							{:else}
-								<FileTextIcon class="size-4 shrink-0 text-muted-foreground" />
-							{/if}
-							<span class="min-w-0 truncate">{row.name}</span>
-							{#if row.pending}
-								<span
-									class="size-1.5 shrink-0 rounded-full bg-primary"
-									role="img"
-									aria-label={m.common_unsaved_changes()}
-									title={m.common_unsaved_changes()}
-								></span>
-							{/if}
-						</button>
-
-						{#if row.locked || row.isSymlink || onRename || onMove || onDelete || onDownload || onRestore}
-							<div class="flex shrink-0 items-center gap-0.5">
-								{#if onDownload && !row.isDirectory && !row.pending}
-									<Tooltip.Root>
-										<Tooltip.Trigger>
-											<button
-												type="button"
-												class="inline-flex size-6 items-center justify-center rounded text-foreground hover:bg-foreground/10"
-												aria-label={m.templates_download()}
-												onclick={() => onDownload?.(row.relativePath)}
-											>
-												<DownloadIcon class="size-3.5" />
-											</button>
-										</Tooltip.Trigger>
-										<Tooltip.Content>{m.templates_download()}</Tooltip.Content>
-									</Tooltip.Root>
-								{/if}
-								{#if row.locked || row.isSymlink}
-									<LockIcon class="mx-1 size-3.5 shrink-0 text-muted-foreground" aria-label={lockedLabel} />
-								{:else}
-									{#if onRestore && !row.isDirectory && !row.pending}
-										<Tooltip.Root>
-											<Tooltip.Trigger>
-												<button
-													type="button"
-													class="inline-flex size-6 items-center justify-center rounded text-foreground hover:bg-foreground/10"
-													aria-label={m.workspace_restore()}
-													onclick={() => onRestore?.(row.relativePath)}
-												>
-													<RefreshIcon class="size-3.5" />
-												</button>
-											</Tooltip.Trigger>
-											<Tooltip.Content>{m.workspace_restore()}</Tooltip.Content>
-										</Tooltip.Root>
-									{/if}
-									{#if onRename}
-										<Tooltip.Root>
-											<Tooltip.Trigger>
-												<button
-													type="button"
-													class="inline-flex size-6 items-center justify-center rounded text-foreground hover:bg-foreground/10"
-													aria-label={m.workspace_file_rename_label({ name: row.relativePath })}
-													{disabled}
-													onclick={() => openRenameDialog(row.relativePath)}
-												>
-													<EditIcon class="size-3.5" />
-												</button>
-											</Tooltip.Trigger>
-											<Tooltip.Content>{m.rename()}</Tooltip.Content>
-										</Tooltip.Root>
-									{/if}
-									{#if onMove}
-										<Tooltip.Root>
-											<Tooltip.Trigger>
-												<button
-													type="button"
-													class="inline-flex size-6 items-center justify-center rounded text-foreground hover:bg-foreground/10"
-													aria-label={m.workspace_file_move_label({ name: row.relativePath })}
-													{disabled}
-													onclick={() => openMoveDialog(row.relativePath)}
-												>
-													<FolderMoveIcon class="size-3.5" />
-												</button>
-											</Tooltip.Trigger>
-											<Tooltip.Content>{m.move()}</Tooltip.Content>
-										</Tooltip.Root>
-									{/if}
-									{#if onDelete}
-										<Tooltip.Root>
-											<Tooltip.Trigger>
-												<button
-													type="button"
-													class="inline-flex size-6 items-center justify-center rounded text-destructive hover:bg-destructive/10"
-													aria-label={m.delete_name({ name: row.relativePath })}
-													{disabled}
-													onclick={() => handleDelete(row)}
-												>
-													<TrashIcon class="size-3.5" />
-												</button>
-											</Tooltip.Trigger>
-											<Tooltip.Content>{m.common_delete()}</Tooltip.Content>
-										</Tooltip.Root>
-									{/if}
-								{/if}
+								<FileTreeRow
+									name={row.name}
+									path={row.relativePath}
+									depth={row.depth}
+									isDirectory={row.isDirectory}
+									expanded={openFolders[row.relativePath] === true}
+									showDisclosure={hasDirectories}
+									selected={selectedFile === `file:${row.relativePath}`}
+									pending={row.pending}
+									pendingLabel={m.common_unsaved_changes()}
+									expandLabel={m.workspace_file_expand_folder({ name: row.name })}
+									collapseLabel={m.workspace_file_collapse_folder({ name: row.name })}
+									onToggle={() => toggleFolder(row.relativePath)}
+									onActivate={() => (row.isDirectory ? toggleFolder(row.relativePath) : onSelect(`file:${row.relativePath}`))}
+								>
+									{#snippet trailing()}
+										{#if row.locked || row.isSymlink || onRename || onMove || onDelete || onDownload || onRestore}
+											<div class="flex shrink-0 items-center gap-0.5">
+												{#if onDownload && !row.isDirectory && !row.pending}
+													<Tooltip.Root>
+														<Tooltip.Trigger>
+															<button
+																type="button"
+																class="inline-flex size-6 items-center justify-center rounded text-foreground hover:bg-foreground/10"
+																aria-label={m.templates_download()}
+																onclick={() => onDownload?.(row.relativePath)}
+															>
+																<DownloadIcon class="size-3.5" />
+															</button>
+														</Tooltip.Trigger>
+														<Tooltip.Content>{m.templates_download()}</Tooltip.Content>
+													</Tooltip.Root>
+												{/if}
+												{#if row.locked || row.isSymlink}
+													<LockIcon class="mx-1 size-3.5 shrink-0 text-muted-foreground" aria-label={lockedLabel} />
+												{:else}
+													{#if onRestore && !row.isDirectory && !row.pending}
+														<Tooltip.Root>
+															<Tooltip.Trigger>
+																<button
+																	type="button"
+																	class="inline-flex size-6 items-center justify-center rounded text-foreground hover:bg-foreground/10"
+																	aria-label={m.workspace_restore()}
+																	onclick={() => onRestore?.(row.relativePath)}
+																>
+																	<RefreshIcon class="size-3.5" />
+																</button>
+															</Tooltip.Trigger>
+															<Tooltip.Content>{m.workspace_restore()}</Tooltip.Content>
+														</Tooltip.Root>
+													{/if}
+													{#if onRename}
+														<Tooltip.Root>
+															<Tooltip.Trigger>
+																<button
+																	type="button"
+																	class="inline-flex size-6 items-center justify-center rounded text-foreground hover:bg-foreground/10"
+																	aria-label={m.workspace_file_rename_label({ name: row.relativePath })}
+																	{disabled}
+																	onclick={() => openRenameDialog(row.relativePath)}
+																>
+																	<EditIcon class="size-3.5" />
+																</button>
+															</Tooltip.Trigger>
+															<Tooltip.Content>{m.rename()}</Tooltip.Content>
+														</Tooltip.Root>
+													{/if}
+													{#if onMove}
+														<Tooltip.Root>
+															<Tooltip.Trigger>
+																<button
+																	type="button"
+																	class="inline-flex size-6 items-center justify-center rounded text-foreground hover:bg-foreground/10"
+																	aria-label={m.workspace_file_move_label({ name: row.relativePath })}
+																	{disabled}
+																	onclick={() => openMoveDialog(row.relativePath)}
+																>
+																	<FolderMoveIcon class="size-3.5" />
+																</button>
+															</Tooltip.Trigger>
+															<Tooltip.Content>{m.move()}</Tooltip.Content>
+														</Tooltip.Root>
+													{/if}
+													{#if onDelete}
+														<Tooltip.Root>
+															<Tooltip.Trigger>
+																<button
+																	type="button"
+																	class="inline-flex size-6 items-center justify-center rounded text-destructive hover:bg-destructive/10"
+																	aria-label={m.delete_name({ name: row.relativePath })}
+																	{disabled}
+																	onclick={() => handleDelete(row)}
+																>
+																	<TrashIcon class="size-3.5" />
+																</button>
+															</Tooltip.Trigger>
+															<Tooltip.Content>{m.common_delete()}</Tooltip.Content>
+														</Tooltip.Root>
+													{/if}
+												{/if}
+											</div>
+										{/if}
+									{/snippet}
+								</FileTreeRow>
 							</div>
 						{/if}
-					</div>
-				{/each}
+					{/each}
+				</div>
 			{/if}
 		</TreeView.Root>
 	</div>
