@@ -58,7 +58,7 @@ require (
 	github.com/samber/mo v1.17.0
 	github.com/samber/slog-echo/v2 v2.1.0
 	github.com/shirou/gopsutil/v4 v4.26.7
-	github.com/sirupsen/logrus v1.10.0
+	github.com/sirupsen/logrus v1.10.1
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.12.1
 	github.com/subosito/gotenv v1.6.0
