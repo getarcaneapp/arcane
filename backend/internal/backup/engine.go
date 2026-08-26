@@ -136,11 +136,6 @@ func (e *Engine) CreateSnapshot(ctx context.Context, dockerClient *client.Client
 
 // RestoreSnapshot restores a snapshot (or one path inside it) onto the target mount.
 func (e *Engine) RestoreSnapshot(ctx context.Context, dockerClient *client.Client, repository Repository, password, snapshotID string, target mount.Mount, options RestoreOptions) error {
-	_, err := e.runInternal(ctx, dockerClient, repository, password, restoreCommandInternal(snapshotID, target, options), target)
-	return err
-}
-
-func restoreCommandInternal(snapshotID string, target mount.Mount, options RestoreOptions) []string {
 	command := []string{"restore", "--verify-existing"}
 	if options.DeleteExtra {
 		command = append(command, "--delete")
@@ -154,13 +149,23 @@ func restoreCommandInternal(snapshotID string, target mount.Mount, options Resto
 		destination = target.Target
 	}
 	command = append(command, "--", source, destination)
-	return command
+	_, err := e.runInternal(ctx, dockerClient, repository, password, command, target)
+	return err
 }
 
 // ListSnapshotFiles lists a snapshot path and returns paths relative to the
 // snapshot root. A supplied path is nonrecursive unless recursive is true.
 func (e *Engine) ListSnapshotFiles(ctx context.Context, dockerClient *client.Client, repository Repository, password, snapshotID, filePath string, recursive bool) ([]string, error) {
-	command, cleanedPath := listSnapshotCommandInternal(snapshotID, filePath, recursive)
+	command := []string{"ls", "--json"}
+	if recursive {
+		command = append(command, "--recursive")
+	}
+	cleanedPath := strings.Trim(strings.TrimSpace(filePath), "/")
+	source := snapshotID + ":/" + cleanedPath
+	if cleanedPath != "" && strings.HasSuffix(strings.TrimSpace(filePath), "/") {
+		source += "/"
+	}
+	command = append(command, "--", source)
 	output, err := e.runInternal(ctx, dockerClient, repository, password, command)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list Rustic snapshot: %w", err)
@@ -183,20 +188,6 @@ func (e *Engine) ListSnapshotFiles(ctx context.Context, dockerClient *client.Cli
 		}
 	}
 	return qualifySnapshotListingInternal(files, cleanedPath), nil
-}
-
-func listSnapshotCommandInternal(snapshotID, filePath string, recursive bool) ([]string, string) {
-	command := []string{"ls", "--json"}
-	if recursive {
-		command = append(command, "--recursive")
-	}
-	cleanedPath := strings.Trim(strings.TrimSpace(filePath), "/")
-	source := snapshotID + ":/" + cleanedPath
-	if cleanedPath != "" && strings.HasSuffix(strings.TrimSpace(filePath), "/") {
-		source += "/"
-	}
-	command = append(command, "--", source)
-	return command, cleanedPath
 }
 
 func qualifySnapshotListingInternal(files []string, snapshotPath string) []string {

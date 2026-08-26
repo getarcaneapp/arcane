@@ -514,12 +514,6 @@ func (s *SystemBackupService) backupInternal(ctx context.Context, id string) (*S
 	return &run, nil
 }
 
-type systemBackupSnapshotEngineInternal interface {
-	ListSnapshotFiles(ctx context.Context, dockerClient *client.Client, repository backup.Repository, password, snapshotID, filePath string, recursive bool) ([]string, error)
-	ReadSnapshotTextFile(ctx context.Context, dockerClient *client.Client, repository backup.Repository, password, snapshotID, filePath string) (string, error)
-	RestoreSnapshot(ctx context.Context, dockerClient *client.Client, repository backup.Repository, password, snapshotID string, target mount.Mount, options backup.RestoreOptions) error
-}
-
 type systemBackupSnapshotLocationInternal struct {
 	name            string
 	destination     backuptypes.SystemBackupDestination
@@ -544,21 +538,17 @@ type systemBackupSafetySnapshotInternal struct {
 	dataPaths    map[string]struct{}
 }
 
-// systemBackupSnapshotSessionInternal bundles the collaborators a browse or
-// restore operation needs at every snapshot step, so the steps below don't
-// each thread engine, Docker client, and recovery key through their signatures.
+// systemBackupSnapshotSessionInternal carries the Docker client and resolved
+// recovery key through one browse or restore operation, so the snapshot steps
+// below don't each thread them through their signatures.
 type systemBackupSnapshotSessionInternal struct {
-	engine       systemBackupSnapshotEngineInternal
+	service      *SystemBackupService
 	dockerClient *client.Client
 	recoveryKey  string
-	removeFile   func(ctx context.Context, projectsPath, selectedPath string) error
 }
 
 func (s *SystemBackupService) snapshotSessionInternal(dockerClient *client.Client, recoveryKey string) systemBackupSnapshotSessionInternal {
-	return systemBackupSnapshotSessionInternal{
-		engine: s.engine, dockerClient: dockerClient, recoveryKey: recoveryKey,
-		removeFile: s.removeProjectFileInternal,
-	}
+	return systemBackupSnapshotSessionInternal{service: s, dockerClient: dockerClient, recoveryKey: recoveryKey}
 }
 
 func (s *SystemBackupService) backupSnapshotLocationsInternal(ctx context.Context, dockerClient *client.Client, run *SystemBackupRun) ([]systemBackupSnapshotLocationInternal, error) {
@@ -593,7 +583,7 @@ func (s *SystemBackupService) backupSnapshotLocationsInternal(ctx context.Contex
 }
 
 func (session systemBackupSnapshotSessionInternal) inspectReadableSnapshotInternal(ctx context.Context, location systemBackupSnapshotLocationInternal) (systemBackupSnapshotInternal, error) {
-	files, err := session.engine.ListSnapshotFiles(ctx, session.dockerClient, location.repository, session.recoveryKey, location.snapshotID, "", true)
+	files, err := session.service.engine.ListSnapshotFiles(ctx, session.dockerClient, location.repository, session.recoveryKey, location.snapshotID, "", true)
 	if err != nil {
 		return systemBackupSnapshotInternal{}, fmt.Errorf("inspect %s system recovery snapshot: %w", location.name, err)
 	}
@@ -691,7 +681,7 @@ func (session systemBackupSnapshotSessionInternal) inspectProjectSnapshotInterna
 		return systemBackupSnapshotInternal{}, err
 	}
 	root := path.Join(snapshot.snapshotPath, snapshot.projectsPath)
-	listed, err := session.engine.ListSnapshotFiles(ctx, session.dockerClient, location.repository, session.recoveryKey, location.snapshotID, root+"/", true)
+	listed, err := session.service.engine.ListSnapshotFiles(ctx, session.dockerClient, location.repository, session.recoveryKey, location.snapshotID, root+"/", true)
 	if err != nil {
 		return systemBackupSnapshotInternal{}, fmt.Errorf("inspect %s project files: %w", location.name, err)
 	}
@@ -705,7 +695,7 @@ func (session systemBackupSnapshotSessionInternal) inspectProjectManifestInterna
 	var readErr error
 	found := false
 	for _, candidate := range []string{"/", "/app/data"} {
-		data, err := session.engine.ReadSnapshotTextFile(ctx, session.dockerClient, location.repository, session.recoveryKey, location.snapshotID, path.Join(candidate, systemRecoveryManifestName))
+		data, err := session.service.engine.ReadSnapshotTextFile(ctx, session.dockerClient, location.repository, session.recoveryKey, location.snapshotID, path.Join(candidate, systemRecoveryManifestName))
 		if err != nil {
 			readErr = errors.Combine(readErr, err)
 			continue
@@ -902,7 +892,7 @@ func (session systemBackupSnapshotSessionInternal) restoreEntryInternal(ctx cont
 		if selected.IsDirectory {
 			sourcePath += "/"
 		}
-		err := session.engine.RestoreSnapshot(ctx, session.dockerClient, snapshot.repository, session.recoveryKey, snapshot.snapshotID, dataMount, backup.RestoreOptions{
+		err := session.service.engine.RestoreSnapshot(ctx, session.dockerClient, snapshot.repository, session.recoveryKey, snapshot.snapshotID, dataMount, backup.RestoreOptions{
 			DeleteExtra:     selected.IsDirectory,
 			SourcePath:      sourcePath,
 			DestinationPath: path.Join(dataMount.Target, projectsPath, selected.Path),
@@ -948,7 +938,7 @@ func (session systemBackupSnapshotSessionInternal) rollbackInternal(ctx context.
 	for _, selectedEntry := range slices.Backward(selected) {
 		dataRelative := path.Join(projectsPath, selectedEntry.Path)
 		if !safetySnapshotContainsPathInternal(safety, dataRelative) {
-			if err := session.removeFile(ctx, projectsPath, selectedEntry.Path); err != nil {
+			if err := session.service.removeProjectFileInternal(ctx, projectsPath, selectedEntry.Path); err != nil {
 				rollbackErr = errors.Combine(rollbackErr, fmt.Errorf("remove newly restored project path %s: %w", selectedEntry.Path, err))
 			}
 			continue
@@ -957,7 +947,7 @@ func (session systemBackupSnapshotSessionInternal) rollbackInternal(ctx context.
 		if selectedEntry.IsDirectory {
 			sourcePath += "/"
 		}
-		if err := session.engine.RestoreSnapshot(ctx, session.dockerClient, safety.repository, session.recoveryKey, safety.snapshotID, dataMount, backup.RestoreOptions{
+		if err := session.service.engine.RestoreSnapshot(ctx, session.dockerClient, safety.repository, session.recoveryKey, safety.snapshotID, dataMount, backup.RestoreOptions{
 			DeleteExtra:     selectedEntry.IsDirectory,
 			SourcePath:      sourcePath,
 			DestinationPath: path.Join(dataMount.Target, dataRelative),

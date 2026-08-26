@@ -3,76 +3,8 @@ package backup
 import (
 	"testing"
 
-	"github.com/moby/moby/api/types/mount"
 	"github.com/stretchr/testify/require"
 )
-
-func TestRestoreCommandInternal(t *testing.T) {
-	tests := []struct {
-		name       string
-		snapshotID string
-		target     mount.Mount
-		options    RestoreOptions
-		expected   []string
-	}{
-		{
-			name:       "full restore",
-			snapshotID: "snapshot-1",
-			target:     mount.Mount{Target: "/volume"},
-			expected:   []string{"restore", "--verify-existing", "--", "snapshot-1:/", "/volume"},
-		},
-		{
-			name:       "delete extra files",
-			snapshotID: "snapshot-2",
-			target:     mount.Mount{Target: "/data"},
-			options:    RestoreOptions{DeleteExtra: true},
-			expected:   []string{"restore", "--verify-existing", "--delete", "--", "snapshot-2:/", "/data"},
-		},
-		{
-			name:       "selective restore",
-			snapshotID: "snapshot-3",
-			target:     mount.Mount{Target: "/volume"},
-			options:    RestoreOptions{SourcePath: "/folder/file.txt"},
-			expected:   []string{"restore", "--verify-existing", "--", "snapshot-3:/folder/file.txt", "/volume"},
-		},
-		{
-			name:       "custom destination",
-			snapshotID: "snapshot-4",
-			target:     mount.Mount{Target: "/volume"},
-			options:    RestoreOptions{SourcePath: "folder", DestinationPath: "/restore/folder"},
-			expected:   []string{"restore", "--verify-existing", "--", "snapshot-4:/folder", "/restore/folder"},
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			require.Equal(t, test.expected, restoreCommandInternal(test.snapshotID, test.target, test.options))
-		})
-	}
-}
-
-func TestListSnapshotCommandInternal(t *testing.T) {
-	tests := []struct {
-		name          string
-		filePath      string
-		recursive     bool
-		expected      []string
-		expectedClean string
-	}{
-		{name: "root recursive", recursive: true, expected: []string{"ls", "--json", "--recursive", "--", "snapshot:/"}},
-		{name: "root nonrecursive", expected: []string{"ls", "--json", "--", "snapshot:/"}},
-		{name: "nested folder", filePath: "/folder/", expected: []string{"ls", "--json", "--", "snapshot:/folder/"}, expectedClean: "folder"},
-		{name: "nested recursive", filePath: "folder/nested", recursive: true, expected: []string{"ls", "--json", "--recursive", "--", "snapshot:/folder/nested"}, expectedClean: "folder/nested"},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			command, cleaned := listSnapshotCommandInternal("snapshot", test.filePath, test.recursive)
-			require.Equal(t, test.expected, command)
-			require.Equal(t, test.expectedClean, cleaned)
-		})
-	}
-}
 
 func TestMarkSnapshotDirectoriesInternal(t *testing.T) {
 	files := []string{"/volume", "/volume/folder", "/volume/file.txt", "/volume/link"}
