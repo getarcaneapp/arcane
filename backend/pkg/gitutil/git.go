@@ -37,6 +37,9 @@ import (
 // binarySniffBytes is how much of a file is inspected to classify it as binary.
 const binarySniffBytes = 512
 
+// cloneScratchPrefix names the per-run clone scratch dirs created by Clone.
+const cloneScratchPrefix = "gitops-"
+
 // go-git's file transport execs the git binary, which doesn't exist in the
 // distroless image. Unregister it so a repository URL can never reach it.
 func init() {
@@ -311,7 +314,7 @@ func (c *Client) Clone(ctx context.Context, url, branch string, auth AuthConfig)
 	if err := os.MkdirAll(workDir, 0o755); err != nil {
 		return "", errors.WrapIf(err, "failed to create work dir")
 	}
-	tmpDir, err := os.MkdirTemp(workDir, "gitops-*")
+	tmpDir, err := os.MkdirTemp(workDir, cloneScratchPrefix+"*")
 	if err != nil {
 		return "", errors.WrapIf(err, "failed to create temp dir")
 	}
@@ -548,6 +551,50 @@ func (c *Client) BrowseTree(ctx context.Context, repoPath, targetPath string) ([
 // clone directory itself is what gets deleted.
 func (c *Client) Cleanup(repoPath string) error {
 	return os.RemoveAll(repoPath)
+}
+
+// PurgeScratchDirs removes clone scratch dirs ("gitops-*") under the work dir
+// whose mtime is older than maxAge. maxAge <= 0 removes all (boot sweep).
+func (c *Client) PurgeScratchDirs(ctx context.Context, maxAge time.Duration) (int, error) {
+	root := c.workDir
+	if root == "" {
+		root = os.TempDir()
+	}
+
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return 0, nil
+		}
+		return 0, errors.WrapIff(err, "failed to read git work dir %s", root)
+	}
+
+	removed := 0
+	for _, entry := range entries {
+		if err := ctx.Err(); err != nil {
+			return removed, err
+		}
+		entryPath := filepath.Join(root, entry.Name())
+		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), cloneScratchPrefix) {
+			continue
+		}
+		if maxAge > 0 {
+			info, infoErr := entry.Info()
+			if infoErr != nil {
+				slog.WarnContext(ctx, "Failed to stat git clone scratch dir", "path", entryPath, "error", infoErr)
+				continue
+			}
+			if time.Since(info.ModTime()) < maxAge {
+				continue
+			}
+		}
+		if rmErr := os.RemoveAll(entryPath); rmErr != nil {
+			slog.WarnContext(ctx, "Failed to remove git clone scratch dir", "path", entryPath, "error", rmErr)
+			continue
+		}
+		removed++
+	}
+	return removed, nil
 }
 
 // CommitInfo holds information about a git commit

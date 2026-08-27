@@ -390,6 +390,44 @@ func TestGitOpsSyncService_CleanupLeakedScratchDirsOnStartup_RemovesOrphans(t *t
 	assert.NoError(t, err, "real project dir must be kept")
 }
 
+// TestGitOpsSyncService_CleanupLeakedCloneDirsOnStartup_RemovesAll verifies the
+// startup sweep purges leaked git clone scratch dirs from the git work dir.
+func TestGitOpsSyncService_CleanupLeakedCloneDirsOnStartup_RemovesAll(t *testing.T) {
+	ctx := context.Background()
+	svc, _, _ := setupGitOpsSyncDirectoryTestService(t)
+
+	workDir := t.TempDir()
+	svc.repoService = &gitrepo.GitRepositoryService{Client: git.NewClient(workDir)}
+
+	cloneDirs := []string{
+		filepath.Join(workDir, "gitops-stale"),
+		filepath.Join(workDir, "gitops-fresh"),
+	}
+	for _, p := range cloneDirs {
+		require.NoError(t, os.MkdirAll(p, 0o755))
+	}
+	unrelated := filepath.Join(workDir, "keep-me")
+	require.NoError(t, os.MkdirAll(unrelated, 0o755))
+
+	require.NoError(t, svc.CleanupLeakedCloneDirsOnStartup(ctx))
+
+	for _, p := range cloneDirs {
+		_, err := os.Stat(p)
+		require.ErrorIs(t, err, os.ErrNotExist, "clone scratch dir should be removed: %s", p)
+	}
+	_, err := os.Stat(unrelated)
+	assert.NoError(t, err, "unrelated dir must be kept")
+}
+
+// TestGitOpsSyncService_CleanupLeakedCloneDirsOnStartup_NilRepoServiceIsNoop
+// verifies the sweep tolerates a service built without a repo service.
+func TestGitOpsSyncService_CleanupLeakedCloneDirsOnStartup_NilRepoServiceIsNoop(t *testing.T) {
+	svc, _, _ := setupGitOpsSyncDirectoryTestService(t)
+	svc.repoService = nil
+
+	require.NoError(t, svc.CleanupLeakedCloneDirsOnStartup(context.Background()))
+}
+
 // TestGitOpsSyncService_SyncProjectDirectory_RefusesDuplicateOnNameCollision verifies a
 // directory sync refuses to create a "-N" sibling when its target name is already taken
 // by a non-adoptable directory; instead it errors as a broken binding and disables auto-sync.

@@ -120,6 +120,11 @@ func (s *BuildService) BuildImage(ctx context.Context, environmentID string, req
 
 	startedAt := time.Now()
 	cleanupResolvedContext := func() error { return nil }
+	defer func() {
+		if cleanupErr := cleanupResolvedContext(); cleanupErr != nil {
+			slog.WarnContext(ctx, "failed to cleanup temporary git build context", "error", cleanupErr)
+		}
+	}()
 	var (
 		result *buildtypes.BuildResult
 		err    error
@@ -135,9 +140,6 @@ func (s *BuildService) BuildImage(ctx context.Context, environmentID string, req
 	completedAt := time.Now()
 	if logWriter != nil {
 		_ = logWriter.Close()
-	}
-	if cleanupErr := cleanupResolvedContext(); cleanupErr != nil {
-		slog.WarnContext(ctx, "failed to cleanup temporary git build context", "error", cleanupErr)
 	}
 
 	if s.db != nil && buildRecordID != "" {

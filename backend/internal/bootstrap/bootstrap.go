@@ -319,6 +319,9 @@ func initializeGitOpsStartupStateInternal(appCtx context.Context, gitOpsSync *gi
 	if err := gitOpsSync.CleanupLeakedScratchDirsOnStartup(appCtx); err != nil {
 		slog.WarnContext(appCtx, "Failed to clean up leaked GitOps scratch directories on startup", "error", err)
 	}
+	if err := gitOpsSync.CleanupLeakedCloneDirsOnStartup(appCtx); err != nil {
+		slog.WarnContext(appCtx, "Failed to clean up leaked git clone directories on startup", "error", err)
+	}
 	if err := gitOpsSync.ReconcileDirectorySyncProjectsOnStartup(appCtx); err != nil {
 		slog.WarnContext(appCtx, "Failed to reconcile directory GitOps projects on startup", "error", err)
 	}

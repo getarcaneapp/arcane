@@ -142,5 +142,6 @@ var JobOptions = fx.Options(
 		scheduler.NewAutoHealJob,
 		scheduler.NewActivitySweepJob,
 		scheduler.NewUploadSessionsCleanupJob,
+		scheduler.NewGitCloneCleanupJob,
 	),
 )

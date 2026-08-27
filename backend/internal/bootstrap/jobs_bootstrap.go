@@ -95,6 +95,7 @@ type registerJobsParams struct {
 	AutoHeal               *scheduler.AutoHealJob
 	ActivitySweep          *scheduler.ActivitySweepJob
 	UploadSessionsCleanup  *scheduler.UploadSessionsCleanupJob
+	GitCloneCleanup        *scheduler.GitCloneCleanupJob
 }
 
 func registerJobs(params registerJobsParams) error {
@@ -137,6 +138,7 @@ func registerJobs(params registerJobsParams) error {
 		params.AutoHeal,
 		params.ActivitySweep,
 		params.UploadSessionsCleanup,
+		params.GitCloneCleanup,
 	} {
 		if err := params.Scheduler.RegisterJob(job); err != nil {
 			return err
