@@ -160,6 +160,7 @@ func TestIsAuthenticToken_RejectsForgedHexTokens(t *testing.T) {
 	assert.False(t, IsAuthenticToken("arc_wh_zzzzzzzz"))
 	assert.False(t, IsAuthenticToken("arc_wh_01020304"))
 	assert.False(t, IsAuthenticToken(""))
+	assert.False(t, IsAuthenticToken(webhookTokenPrefix+strings.Repeat("ab", 512*1024)), "oversized hex must fail the length gate before any decoding")
 }
 
 // --- CreateWebhook ---

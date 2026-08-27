@@ -48,6 +48,8 @@ const (
 	webhookTokenPrefix    = "arc_wh_"
 	webhookTokenLength    = 32 // raw bytes → 64 hex chars
 	webhookTokenPrefixLen = 8  // chars of the hex portion used as lookup prefix
+	// hex length of a generated token's ciphertext: GCM nonce (12) + encrypted secretHex + GCM tag (16)
+	webhookTokenHexLen = 2 * (12 + webhookTokenLength*2 + 16)
 )
 
 type WebhookService struct {
@@ -120,10 +122,12 @@ func parseWebhookPrefixInternal(raw string) (string, error) {
 }
 
 // IsAuthenticToken reports whether raw decrypts under the server key, proving a valid key.
+// The exact-length gate caps the work at one fixed-size decrypt, keeping it safe to call
+// on unauthenticated requests before rate limiting.
 func IsAuthenticToken(raw string) bool {
 	raw = strings.TrimSpace(raw)
 	hexPart, ok := strings.CutPrefix(raw, webhookTokenPrefix)
-	if !ok || len(hexPart) <= webhookTokenPrefixLen {
+	if !ok || len(hexPart) != webhookTokenHexLen {
 		return false
 	}
 	encryptedBytes, err := hex.DecodeString(hexPart)
