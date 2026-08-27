@@ -5,7 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 
 const IMAGE = process.env.ARCANE_RUNTIME_TEST_IMAGE || 'arcane:playwright-tests';
-const HELPER_IMAGE = process.env.ARCANE_RUNTIME_HELPER_IMAGE || 'alpine:latest';
+const HELPER_IMAGE =
+	process.env.ARCANE_RUNTIME_HELPER_IMAGE || 'public.ecr.aws/docker/library/alpine:3.20';
 const HEALTH_PATH = '/api/health';
 
 function docker(args: string[], options?: { stdio?: 'pipe' | 'inherit' }) {

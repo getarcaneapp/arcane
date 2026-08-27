@@ -8,6 +8,12 @@ const ROUTES = {
 	apiImageUpdatesSummary: '/api/environments/0/image-updates/summary'
 };
 
+const TEST_IMAGE_REFS = {
+	nginx: 'public.ecr.aws/nginx/nginx:stable-alpine',
+	alpine: 'public.ecr.aws/docker/library/alpine:3.20',
+	busybox: 'public.ecr.aws/docker/library/busybox:1.37'
+};
+
 interface BatchUpdateResponse {
 	success: boolean;
 	data: Record<
@@ -264,7 +270,7 @@ test.describe('Image Update UI - Individual Image Update Check via Hover Card', 
 
 test.describe('Image Update API Endpoints', () => {
 	test('should check batch image updates via API', async ({ page }) => {
-		const imageRefs = ['nginx:latest', 'alpine:latest'];
+		const imageRefs = [TEST_IMAGE_REFS.nginx, TEST_IMAGE_REFS.alpine];
 
 		const res = await page.request.post(ROUTES.apiImageUpdatesCheckBatch, {
 			data: {
@@ -364,7 +370,7 @@ test.describe('Batch Update Checks', () => {
 	});
 
 	test('should return results for each image in batch', async ({ page }) => {
-		const imageRefs = ['nginx:latest', 'alpine:latest', 'busybox:latest'];
+		const imageRefs = [TEST_IMAGE_REFS.nginx, TEST_IMAGE_REFS.alpine, TEST_IMAGE_REFS.busybox];
 
 		const res = await page.request.post(ROUTES.apiImageUpdatesCheckBatch, {
 			data: {
@@ -384,7 +390,7 @@ test.describe('Batch Update Checks', () => {
 	});
 
 	test('should handle mixed valid and invalid images in batch', async ({ page }) => {
-		const imageRefs = ['nginx:latest', 'invalid-registry.example.com/nonexistent:latest'];
+		const imageRefs = [TEST_IMAGE_REFS.nginx, 'invalid-registry.example.com/nonexistent:latest'];
 
 		const res = await page.request.post(ROUTES.apiImageUpdatesCheckBatch, {
 			data: {
@@ -397,8 +403,8 @@ test.describe('Batch Update Checks', () => {
 		const json = (await res.json()) as BatchUpdateResponse;
 		expect(json.success).toBe(true);
 
-		// nginx should succeed
-		expect(json.data['nginx:latest']).toBeDefined();
+		// The Public ECR image should succeed.
+		expect(json.data[TEST_IMAGE_REFS.nginx]).toBeDefined();
 
 		// Invalid image should have an error
 		const invalidResult = json.data['invalid-registry.example.com/nonexistent:latest'];

@@ -40,6 +40,7 @@ type PatchOptions struct {
 // PatchScanSummary is the scan outcome of a patched image, used to verify a
 // patch actually removed the fixable vulnerabilities.
 type PatchScanSummary struct {
+	Status       string    `json:"status"`
 	FixableCount int       `json:"fixableCount"`
 	TotalCount   int       `json:"totalCount"`
 	ScanTime     time.Time `json:"scanTime"`

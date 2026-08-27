@@ -115,17 +115,17 @@ type UpdateProject struct {
 	// Name of the project.
 	//
 	// Required: false
-	Name *string `json:"name,omitempty"`
+	Name *string `json:"name,omitzero"`
 
 	// ComposeContent is the Docker Compose file content.
 	//
 	// Required: false
-	ComposeContent *string `json:"composeContent,omitempty"`
+	ComposeContent *string `json:"composeContent,omitzero"`
 
 	// EnvContent is the environment file content.
 	//
 	// Required: false
-	EnvContent *string `json:"envContent,omitempty"`
+	EnvContent *string `json:"envContent,omitzero"`
 
 	// OverrideContent is the Docker Compose override file content merged on top of
 	// the base compose file at deploy. Its tri-state controls the on-disk override:
@@ -134,7 +134,7 @@ type UpdateProject struct {
 	// override file; a non-nil non-empty string writes it.
 	//
 	// Required: false
-	OverrideContent *string `json:"overrideContent,omitempty"`
+	OverrideContent *string `json:"overrideContent,omitzero"`
 }
 
 // DeployOptions configures project deploy behavior.

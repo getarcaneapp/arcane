@@ -1237,7 +1237,7 @@ func (s *VolumeService) downloadRusticBackupInternal(ctx context.Context, entry 
 		removeScratch()
 	}
 	archivePath := "/tmp/" + entry.ID + ".tar.gz"
-	if _, _, err := s.execInContainerInternal(ctx, containerID, []string{"tar", "-czf", archivePath, "-C", "/volume", "."}); err != nil {
+	if _, _, err := s.execInContainerInternal(ctx, containerID, "", []string{"tar", "-czf", archivePath, "-C", "/volume", "."}); err != nil {
 		cleanup()
 		return nil, 0, fmt.Errorf("failed to package Rustic snapshot for download: %w", err)
 	}
@@ -1340,7 +1340,7 @@ func (s *VolumeService) deleteArchiveBackupInternal(ctx context.Context, entry *
 		filename, filenameErr := s.backupArchiveFilenameInternal(backupID)
 		if filenameErr != nil {
 			slog.WarnContext(ctx, "failed to sanitize backup id for file cleanup", "backup_id", backupID, "error", filenameErr.Error())
-		} else if _, _, err = s.execInContainerInternal(ctx, containerID, []string{"rm", "-f", path.Join("/volume", filename)}); err != nil {
+		} else if _, _, err = s.execInContainerInternal(ctx, containerID, "", []string{"rm", "-f", path.Join("/volume", filename)}); err != nil {
 			slog.WarnContext(ctx, "failed to delete backup file (orphan file may remain)", "backup_id", backupID, "error", err.Error())
 		}
 	}
@@ -1433,7 +1433,7 @@ func (s *VolumeService) listArchiveBackupPathsInternal(ctx context.Context, back
 		return nil, err
 	}
 	defer cleanup()
-	stdout, _, err := s.execInContainerInternal(ctx, containerID, []string{"tar", "-tzf", path.Join("/volume", filename)})
+	stdout, _, err := s.execInContainerInternal(ctx, containerID, "", []string{"tar", "-tzf", path.Join("/volume", filename)})
 	if err != nil {
 		return nil, err
 	}
@@ -1464,7 +1464,7 @@ func (s *VolumeService) restoreBackupFilesInContainerInternal(ctx context.Contex
 	for _, cleaned := range cleanedPaths {
 		args = append(args, "./"+cleaned)
 	}
-	_, stderr, err := s.execInContainerInternal(ctx, containerID, args)
+	_, stderr, err := s.execInContainerInternal(ctx, containerID, "", args)
 	return stderr, errors.WrapIf(err, "failed to restore files")
 }
 
@@ -1559,7 +1559,7 @@ func (s *VolumeService) UploadAndRestore(ctx context.Context, volumeName string,
 	defer cleanup()
 
 	tmpDir := fmt.Sprintf("/volume/.restore_tmp_%d", time.Now().UnixNano())
-	_, stderr, err := s.execInContainerInternal(ctx, containerID, []string{"mkdir", "-p", tmpDir})
+	_, stderr, err := s.execInContainerInternal(ctx, containerID, "", []string{"mkdir", "-p", tmpDir})
 	if err != nil {
 		return errors.WrapIf(err, "failed to create temp restore dir")
 	}
@@ -1578,7 +1578,7 @@ func (s *VolumeService) UploadAndRestore(ctx context.Context, volumeName string,
 		return errors.WrapIf(err, "failed to restore from uploaded archive")
 	}
 
-	_, stderr, err = s.execInContainerInternal(ctx, containerID, []string{"sh", "-c", fmt.Sprintf("test -n \"$(find %s -mindepth 1 -maxdepth 1 -print -quit)\"", tmpDir)})
+	_, stderr, err = s.execInContainerInternal(ctx, containerID, "", []string{"sh", "-c", fmt.Sprintf("test -n \"$(find %s -mindepth 1 -maxdepth 1 -print -quit)\"", tmpDir)})
 	if err != nil {
 		return errors.WrapIf(err, "uploaded archive appears empty or invalid")
 	}
@@ -1586,7 +1586,7 @@ func (s *VolumeService) UploadAndRestore(ctx context.Context, volumeName string,
 		slog.DebugContext(ctx, "volume service: restore validate stderr", "volume", volumeName, "stderr", strings.TrimSpace(stderr))
 	}
 
-	_, stderr, err = s.execInContainerInternal(ctx, containerID, []string{"sh", "-c", "rm -rf /volume/* /volume/.[!.]* /volume/..?* 2>/dev/null || true"})
+	_, stderr, err = s.execInContainerInternal(ctx, containerID, "", []string{"sh", "-c", "rm -rf /volume/* /volume/.[!.]* /volume/..?* 2>/dev/null || true"})
 	if err != nil {
 		return errors.WrapIf(err, "failed to clear volume before restore")
 	}
@@ -1595,7 +1595,7 @@ func (s *VolumeService) UploadAndRestore(ctx context.Context, volumeName string,
 	}
 
 	moveCmd := fmt.Sprintf("find %s -mindepth 1 -maxdepth 1 -exec mv -- {} /volume/ \\; && rmdir %s", tmpDir, tmpDir)
-	_, stderr, err = s.execInContainerInternal(ctx, containerID, []string{"sh", "-c", moveCmd})
+	_, stderr, err = s.execInContainerInternal(ctx, containerID, "", []string{"sh", "-c", moveCmd})
 	if err != nil {
 		return errors.WrapIf(err, "failed to move restored files into place")
 	}

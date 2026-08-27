@@ -38,27 +38,27 @@ type Update struct {
 	// ApiUrl is the URL of the environment API.
 	//
 	// Required: false
-	ApiUrl *string `json:"apiUrl,omitempty" binding:"omitempty,url"`
+	ApiUrl *string `json:"apiUrl,omitzero" binding:"omitempty,url"`
 
 	// Name of the environment.
 	//
 	// Required: false
-	Name *string `json:"name,omitempty"`
+	Name *string `json:"name,omitzero"`
 
 	// Enabled indicates if the environment is enabled.
 	//
 	// Required: false
-	Enabled *bool `json:"enabled,omitempty"`
+	Enabled *bool `json:"enabled,omitzero"`
 
 	// AccessToken for authentication with the environment.
 	//
 	// Required: false
-	AccessToken *string `json:"accessToken,omitempty"`
+	AccessToken *string `json:"accessToken,omitzero"`
 
 	// RegenerateApiKey indicates whether to regenerate the API key.
 	//
 	// Required: false
-	RegenerateApiKey *bool `json:"regenerateApiKey,omitempty"`
+	RegenerateApiKey *bool `json:"regenerateApiKey,omitzero"`
 }
 
 type Test struct {

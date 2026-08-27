@@ -10,7 +10,7 @@
 	import { m } from '#lib/paraglide/messages';
 	import type { ColumnSpec } from '#lib/components/arcane-table/arcane-table.types.svelte';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
-	import type { ImagePatchTargetDto, ImagePatchStatus } from '#lib/types/docker';
+	import type { ImagePatchTargetDto } from '#lib/types/docker';
 	import { ShieldCheckIcon, ImagesIcon, ClockIcon } from '#lib/icons';
 	import { formatDateTimeShort } from '#lib/utils/formatting';
 	import { environmentStore } from '#lib/stores/environment.store.svelte';
@@ -55,17 +55,17 @@
 		}
 	}
 
-	function patchStatusLabel(status: ImagePatchStatus) {
-		switch (status) {
-			case 'patching':
-				return m.common_running();
-			case 'completed':
-				return m.common_success();
-			case 'failed':
-				return m.common_failed();
-			default:
-				return m.common_unknown();
+	function lastPatchState(item: PatchTargetRow): { label: string; variant: 'green' | 'red' | 'blue' | 'amber' } | null {
+		const patch = item.lastPatch;
+		if (!patch) return null;
+		if (patch.status === 'failed') return { label: m.common_failed(), variant: 'red' };
+		if (patch.status !== 'completed') return { label: m.common_running(), variant: 'blue' };
+		const scan = item.lastPatchScan;
+		if (!scan || scan.status === 'pending' || scan.status === 'scanning') {
+			return { label: m.security_verify_scan_pending(), variant: 'blue' };
 		}
+		if (scan.status === 'failed') return { label: m.security_verify_failed(), variant: 'amber' };
+		return { label: m.common_success(), variant: 'green' };
 	}
 
 	function lastPatchTooltip(item: PatchTargetRow) {
@@ -74,24 +74,16 @@
 		if (patch.status === 'failed' && patch.error) {
 			return patch.error;
 		}
+		if (patch.status === 'completed' && item.lastPatchScan?.status === 'completed') {
+			return `${m.security_fixable_after_patch({ count: item.lastPatchScan.fixableCount })} · ${formatDateTimeShort(patch.createdAt)}`;
+		}
 		return formatDateTimeShort(patch.createdAt);
 	}
 
-	function patchStatusVariant(status: ImagePatchStatus): 'green' | 'red' | 'blue' {
-		switch (status) {
-			case 'completed':
-				return 'green';
-			case 'failed':
-				return 'red';
-			default:
-				return 'blue';
-		}
-	}
-
 	const columns = $derived([
-		{ accessorKey: 'imageRef', title: m.common_image(), cell: ImageCell },
-		{ accessorKey: 'fixableCount', title: m.security_fixable(), cell: FixableCell },
-		{ accessorKey: 'scanTime', title: m.security_last_scanned(), cell: ScannedCell },
+		{ id: 'imageName', accessorKey: 'imageRef', title: m.common_image(), sortable: true, cell: ImageCell },
+		{ accessorKey: 'fixableCount', title: m.security_fixable(), sortable: true, cell: FixableCell },
+		{ accessorKey: 'scanTime', title: m.security_last_scanned(), sortable: true, cell: ScannedCell },
 		{ id: 'lastPatch', title: m.security_last_patch(), cell: LastPatchCell },
 		{ id: 'patchedRef', title: m.security_patched_ref(), cell: PatchedRefCell }
 	] satisfies ColumnSpec<PatchTargetRow>[]);
@@ -135,20 +127,10 @@
 {/snippet}
 
 {#snippet LastPatchCell({ item }: { item: PatchTargetRow })}
-	{#if item.lastPatch}
-		<div class="flex items-center gap-2" title={lastPatchTooltip(item)}>
-			<Badge variant={patchStatusVariant(item.lastPatch.status)} size="sm" minWidth="20">
-				{patchStatusLabel(item.lastPatch.status)}
-			</Badge>
-			{#if item.lastPatch.status === 'completed'}
-				{#if item.lastPatchScan}
-					<span class="text-xs {item.lastPatchScan.fixableCount === 0 ? 'text-emerald-500' : 'text-amber-500'}">
-						{m.security_fixable_after_patch({ count: item.lastPatchScan.fixableCount })}
-					</span>
-				{:else}
-					<span class="text-xs text-muted-foreground">{m.security_verify_scan_pending()}</span>
-				{/if}
-			{/if}
+	{@const state = lastPatchState(item)}
+	{#if state}
+		<div class="flex items-center" title={lastPatchTooltip(item)}>
+			<Badge variant={state.variant} size="sm" minWidth="20">{state.label}</Badge>
 		</div>
 	{:else}
 		<span class="text-xs text-muted-foreground">{m.security_not_patched()}</span>
@@ -173,10 +155,11 @@
 					: m.security_no_fixable()
 				: null}
 		badges={[
-			(item) =>
-				(mobileFieldVisibility['lastPatch'] ?? true) && item.lastPatch
-					? { variant: patchStatusVariant(item.lastPatch.status), text: patchStatusLabel(item.lastPatch.status) }
-					: null
+			(item) => {
+				if (!(mobileFieldVisibility['lastPatch'] ?? true)) return null;
+				const state = lastPatchState(item);
+				return state ? { variant: state.variant, text: state.label } : null;
+			}
 		]}
 		fields={[
 			{

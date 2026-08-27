@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -712,7 +713,14 @@ func (s *ImageUpdateService) getAllImageRefsInternal(ctx context.Context, limit 
 		return imageRefsFromSummariesInternal(imageList.Items, limit), nil
 	}
 
-	return filterImageSummariesByContainerOptOutInternal(imageList.Items, containerList.Items, limit), nil
+	excludedContainers := make(map[string]bool)
+	if s.settingsService != nil {
+		for _, name := range settings.ParseExcludedContainerNames(s.settingsService.GetStringSetting(ctx, "autoUpdateExcludedContainers", "")) {
+			excludedContainers[name] = true
+		}
+	}
+
+	return filterImageSummariesByContainerOptOutInternal(imageList.Items, containerList.Items, excludedContainers, limit), nil
 }
 
 func imageRefsFromSummariesInternal(images []image.Summary, limit int) []string {
@@ -744,12 +752,14 @@ type imageContainerUsageInternal struct {
 	eligible bool
 }
 
-func filterImageSummariesByContainerOptOutInternal(images []image.Summary, containers []container.Summary, limit int) []string {
+func filterImageSummariesByContainerOptOutInternal(images []image.Summary, containers []container.Summary, excludedContainers map[string]bool, limit int) []string {
 	usageByImageID := make(map[string]imageContainerUsageInternal)
 	usageByRef := make(map[string]imageContainerUsageInternal)
 
 	for _, summary := range containers {
-		disabled := labels.IsUpdateDisabled(summary.Labels)
+		disabled := labels.IsUpdateDisabled(summary.Labels) || slices.ContainsFunc(summary.Names, func(name string) bool {
+			return excludedContainers[strings.TrimPrefix(name, "/")]
+		})
 		usage := imageContainerUsageInternal{
 			optedOut: disabled,
 			eligible: !disabled,

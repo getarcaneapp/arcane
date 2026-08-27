@@ -16,6 +16,7 @@
 	import { TabBar, type TabItem } from '#lib/components/tab-bar';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import { activityStore } from '#lib/stores/activity.store.svelte';
 	import { hasPermission } from '#lib/utils/auth';
 	import { mapVulnerabilityPage, mapVulnerabilityRequest } from '#lib/utils/vulnerability';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte';
@@ -30,7 +31,7 @@
 	let showIgnored = $state(false);
 
 	function withIgnoredFilter(options: SearchPaginationSortRequest, show: boolean): SearchPaginationSortRequest {
-		const filters = { ...(options.filters ?? {}) };
+		const filters = { ...options.filters };
 		if (show) {
 			filters['ignored'] = 'true';
 		} else {
@@ -67,9 +68,7 @@
 		data: [],
 		pagination: { totalPages: 0, totalItems: 0, currentPage: 1, itemsPerPage: 20 }
 	});
-	let patchRequestOptions = $state<SearchPaginationSortRequest>({
-		pagination: { page: 1, limit: 20 }
-	});
+	let patchRequestOptions = $state<SearchPaginationSortRequest>(untrack(() => data.patchRequestOptions));
 	async function loadPatches() {
 		try {
 			const response = await imageService.listPatchTargets(patchRequestOptions);
@@ -199,6 +198,21 @@
 	});
 
 	useEnvironmentRefresh(refreshAll);
+
+	let activePatchActivityIds = new Set<string>();
+	$effect(() => {
+		const active = new Set(
+			activityStore.activities
+				.filter(
+					(a) =>
+						(a.type === 'image_patch' || a.type === 'vulnerability_scan') && (a.status === 'queued' || a.status === 'running')
+				)
+				.map((a) => a.id)
+		);
+		const finished = [...activePatchActivityIds].some((id) => !active.has(id));
+		activePatchActivityIds = active;
+		if (finished) void loadPatches();
+	});
 
 	$effect(() => () => {
 		destroyed = true;

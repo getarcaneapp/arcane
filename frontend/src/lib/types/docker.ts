@@ -610,6 +610,7 @@ export interface ImagePatchRecordDto {
 }
 
 export interface ImagePatchScanSummaryDto {
+	status: 'pending' | 'scanning' | 'completed' | 'failed';
 	fixableCount: number;
 	totalCount: number;
 	scanTime: string;

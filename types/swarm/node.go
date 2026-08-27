@@ -135,7 +135,7 @@ type NodeUpdateRequest struct {
 	// Name overrides the node name annotation.
 	//
 	// Required: false
-	Name *string `json:"name,omitempty"`
+	Name *string `json:"name,omitzero"`
 
 	// Labels updates node labels.
 	//
@@ -145,12 +145,12 @@ type NodeUpdateRequest struct {
 	// Role updates node role (manager or worker).
 	//
 	// Required: false
-	Role *swarm.NodeRole `json:"role,omitempty"`
+	Role *swarm.NodeRole `json:"role,omitzero"`
 
 	// Availability updates node availability (active, pause, drain).
 	//
 	// Required: false
-	Availability *swarm.NodeAvailability `json:"availability,omitempty"`
+	Availability *swarm.NodeAvailability `json:"availability,omitzero"`
 }
 
 // NewNodeSummary converts a Docker swarm node into the API-facing NodeSummary shape.

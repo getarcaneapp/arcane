@@ -324,48 +324,48 @@ type UpdateRepositoryRequest struct {
 	// Name of the git repository.
 	//
 	// Required: false
-	Name *string `json:"name,omitempty"`
+	Name *string `json:"name,omitzero"`
 
 	// URL of the git repository.
 	//
 	// Required: false
-	URL *string `json:"url,omitempty"`
+	URL *string `json:"url,omitzero"`
 
 	// AuthType specifies the authentication method (none, http, ssh).
 	//
 	// Required: false
-	AuthType *string `json:"authType,omitempty"`
+	AuthType *string `json:"authType,omitzero"`
 
 	// Username for HTTP authentication.
 	//
 	// Required: false
-	Username *string `json:"username,omitempty"`
+	Username *string `json:"username,omitzero"`
 
 	// Token for HTTP authentication.
 	//
 	// Required: false
-	Token *string `json:"token,omitempty"`
+	Token *string `json:"token,omitzero"`
 
 	// SSHKey for SSH authentication.
 	//
 	// Required: false
-	SSHKey *string `json:"sshKey,omitempty"`
+	SSHKey *string `json:"sshKey,omitzero"`
 
 	// SSHHostKeyVerification specifies how SSH host keys are verified.
 	// Options: strict (require known_hosts), accept_new (auto-add new hosts), skip (disable verification).
 	//
 	// Required: false
-	SSHHostKeyVerification *string `json:"sshHostKeyVerification,omitempty"`
+	SSHHostKeyVerification *string `json:"sshHostKeyVerification,omitzero"`
 
 	// Description of the git repository.
 	//
 	// Required: false
-	Description *string `json:"description,omitempty"`
+	Description *string `json:"description,omitzero"`
 
 	// Enabled indicates if the repository is enabled.
 	//
 	// Required: false
-	Enabled *bool `json:"enabled,omitempty"`
+	Enabled *bool `json:"enabled,omitzero"`
 }
 
 // CreateSyncRequest represents the request to create a gitops sync.
@@ -501,56 +501,56 @@ type UpdateSyncRequest struct {
 	// Name of the sync configuration.
 	//
 	// Required: false
-	Name *string `json:"name,omitempty"`
+	Name *string `json:"name,omitzero"`
 
 	// RepositoryID is the ID of the git repository to sync from.
 	//
 	// Required: false
-	RepositoryID *string `json:"repositoryId,omitempty"`
+	RepositoryID *string `json:"repositoryId,omitzero"`
 
 	// Branch to sync from.
 	//
 	// Required: false
-	Branch *string `json:"branch,omitempty"`
+	Branch *string `json:"branch,omitzero"`
 
 	// ComposePath is the path to the docker-compose file in the repository.
 	//
 	// Required: false
-	ComposePath *string `json:"composePath,omitempty"`
+	ComposePath *string `json:"composePath,omitzero"`
 
 	// TargetType specifies if this sync targets a "project" or "swarm_stack".
 	//
 	// Required: false
-	TargetType *string `json:"targetType,omitempty"`
+	TargetType *string `json:"targetType,omitzero"`
 
 	// ProjectName is the name of the project or stack to create/update.
 	//
 	// Required: false
-	ProjectName *string `json:"projectName,omitempty"`
+	ProjectName *string `json:"projectName,omitzero"`
 
 	// AutoSync indicates if the sync should run automatically.
 	//
 	// Required: false
-	AutoSync *bool `json:"autoSync,omitempty"`
+	AutoSync *bool `json:"autoSync,omitzero"`
 
 	// SyncInterval is the interval in minutes between automatic syncs.
 	//
 	// Required: false
-	SyncInterval *int `json:"syncInterval,omitempty"`
+	SyncInterval *int `json:"syncInterval,omitzero"`
 
 	// SyncDirectory indicates if the entire directory containing the compose file should be synced.
 	// When true, all files in the compose file's directory are synced.
 	// When false, only the compose file itself is synced.
 	//
 	// Required: false
-	SyncDirectory *bool `json:"syncDirectory,omitempty"`
+	SyncDirectory *bool `json:"syncDirectory,omitzero"`
 
 	// PullImageAfterSync indicates whether each service's image should be pulled
 	// right after a sync that changes managed content, even if the project is
 	// currently stopped. Default: false.
 	//
 	// Required: false
-	PullImageAfterSync *bool `json:"pullImageAfterSync,omitempty"`
+	PullImageAfterSync *bool `json:"pullImageAfterSync,omitzero"`
 
 	// RedeployAfterSync indicates whether the project should be redeployed
 	// (recreated with freshly pulled images) right after a sync that changes
@@ -558,65 +558,65 @@ type UpdateSyncRequest struct {
 	// Default: false.
 	//
 	// Required: false
-	RedeployAfterSync *bool `json:"redeployAfterSync,omitempty"`
+	RedeployAfterSync *bool `json:"redeployAfterSync,omitzero"`
 
 	// MaxSyncFiles is the maximum number of files to sync.
 	// 0 means unlimited; env var overrides take precedence.
 	//
 	// Required: false
-	MaxSyncFiles *int `json:"maxSyncFiles,omitempty"`
+	MaxSyncFiles *int `json:"maxSyncFiles,omitzero"`
 
 	// MaxSyncTotalSize is the maximum total size in bytes for all synced files.
 	// 0 means unlimited; env var overrides take precedence.
 	//
 	// Required: false
-	MaxSyncTotalSize *int64 `json:"maxSyncTotalSize,omitempty"`
+	MaxSyncTotalSize *int64 `json:"maxSyncTotalSize,omitzero"`
 
 	// MaxSyncBinarySize is the maximum size in bytes for individual binary files.
 	// 0 means unlimited; env var overrides take precedence.
 	//
 	// Required: false
-	MaxSyncBinarySize *int64 `json:"maxSyncBinarySize,omitempty"`
+	MaxSyncBinarySize *int64 `json:"maxSyncBinarySize,omitzero"`
 
 	// PreDeployScriptPath is the optional path inside the synced repo to a
 	// script executed in a throwaway container before each deploy. Set to
 	// an empty string to clear an existing configuration.
 	//
 	// Required: false
-	PreDeployScriptPath *string `json:"preDeployScriptPath,omitempty"`
+	PreDeployScriptPath *string `json:"preDeployScriptPath,omitzero"`
 
 	// PreDeployRunnerImage is the image used to run the pre-deploy script.
 	// When omitted, the lifecycleDefaultRunnerImage setting is used.
 	//
 	// Required: false
-	PreDeployRunnerImage *string `json:"preDeployRunnerImage,omitempty"`
+	PreDeployRunnerImage *string `json:"preDeployRunnerImage,omitzero"`
 
 	// PreDeployEnv is the env config exposed to the script, one KEY=VALUE
 	// entry per line; same format as a .env file. Keys must match POSIX
 	// identifier syntax.
 	//
 	// Required: false
-	PreDeployEnv *string `json:"preDeployEnv,omitempty"`
+	PreDeployEnv *string `json:"preDeployEnv,omitzero"`
 
 	// PreDeployExtraMounts is the bind-mount config added to the runner
 	// container, one entry per line in docker -v "src:tgt[:ro|:rw]" form.
 	// Source and target must be absolute paths.
 	//
 	// Required: false
-	PreDeployExtraMounts *string `json:"preDeployExtraMounts,omitempty"`
+	PreDeployExtraMounts *string `json:"preDeployExtraMounts,omitzero"`
 
 	// PreDeployTimeoutSec bounds the script execution. Capped by the
 	// lifecycleMaxTimeoutSec global setting at validation time.
 	//
 	// Required: false
-	PreDeployTimeoutSec *int `json:"preDeployTimeoutSec,omitempty"`
+	PreDeployTimeoutSec *int `json:"preDeployTimeoutSec,omitzero"`
 
 	// PreDeployNetworkMode is the Docker network mode for the runner
 	// container. Set to "none", "bridge", "host", or a named Docker
 	// network. Empty string resets to the default ("none").
 	//
 	// Required: false
-	PreDeployNetworkMode *string `json:"preDeployNetworkMode,omitempty"`
+	PreDeployNetworkMode *string `json:"preDeployNetworkMode,omitzero"`
 }
 
 // HasPreDeployConfig reports whether the request carries any pre-deploy

@@ -59,18 +59,18 @@ type CreateFederatedCredential struct {
 // UpdateFederatedCredential is the request body for updating a federated
 // workload identity credential.
 type UpdateFederatedCredential struct {
-	Name            *string    `json:"name,omitempty" maxLength:"255" doc:"Display name"`
-	Description     *string    `json:"description,omitempty" maxLength:"1000" doc:"Optional description"`
-	Enabled         *bool      `json:"enabled,omitempty" doc:"Whether exchanges are allowed"`
-	IssuerURL       *string    `json:"issuerUrl,omitempty" format:"uri" doc:"Trusted external OIDC issuer URL"`
+	Name            *string    `json:"name,omitzero" maxLength:"255" doc:"Display name"`
+	Description     *string    `json:"description,omitzero" maxLength:"1000" doc:"Optional description"`
+	Enabled         *bool      `json:"enabled,omitzero" doc:"Whether exchanges are allowed"`
+	IssuerURL       *string    `json:"issuerUrl,omitzero" format:"uri" doc:"Trusted external OIDC issuer URL"`
 	Audiences       []string   `json:"audiences,omitempty" minItems:"1" doc:"Allowed external token audiences"`
-	SubjectClaim    *string    `json:"subjectClaim,omitempty" doc:"Claim path to match against"`
-	SubjectMatch    *string    `json:"subjectMatch,omitempty" minLength:"1" doc:"Exact subject or anchored glob pattern"`
-	MatchType       *string    `json:"matchType,omitempty" enum:"exact,glob" doc:"Subject match strategy"`
-	RoleID          *string    `json:"roleId,omitempty" minLength:"1" doc:"Mapped role ID"`
-	EnvironmentID   *string    `json:"environmentId,omitempty" doc:"Optional environment scope for the role assignment"`
-	TokenTTLSeconds *int       `json:"tokenTtlSeconds,omitempty" minimum:"60" maximum:"3600" doc:"Issued token lifetime in seconds"`
-	ExpiresAt       *time.Time `json:"expiresAt,omitempty" doc:"Optional credential expiration"`
+	SubjectClaim    *string    `json:"subjectClaim,omitzero" doc:"Claim path to match against"`
+	SubjectMatch    *string    `json:"subjectMatch,omitzero" minLength:"1" doc:"Exact subject or anchored glob pattern"`
+	MatchType       *string    `json:"matchType,omitzero" enum:"exact,glob" doc:"Subject match strategy"`
+	RoleID          *string    `json:"roleId,omitzero" minLength:"1" doc:"Mapped role ID"`
+	EnvironmentID   *string    `json:"environmentId,omitzero" doc:"Optional environment scope for the role assignment"`
+	TokenTTLSeconds *int       `json:"tokenTtlSeconds,omitzero" minimum:"60" maximum:"3600" doc:"Issued token lifetime in seconds"`
+	ExpiresAt       *time.Time `json:"expiresAt,omitzero" doc:"Optional credential expiration"`
 }
 
 // TokenExchangeRequest is the RFC 8693 token exchange form payload after

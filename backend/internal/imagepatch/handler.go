@@ -34,8 +34,10 @@ type PatchImageOutput struct {
 type ListPatchTargetsInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Search        string `query:"search" doc:"Search query"`
-	Start         int    `query:"start" doc:"Start offset"`
-	Limit         int    `query:"limit" doc:"Limit"`
+	Sort          string `query:"sort" doc:"Column to sort by"`
+	Order         string `query:"order" default:"desc" doc:"Sort direction"`
+	Start         int    `query:"start" default:"0" doc:"Start offset"`
+	Limit         int    `query:"limit" default:"20" doc:"Limit"`
 }
 
 type ListPatchTargetsOutput struct {
@@ -124,7 +126,7 @@ func (h *ImagePatchHandler) PatchImage(ctx context.Context, input *PatchImageInp
 
 // ListPatchTargets returns scanned images with fixable counts and latest patch runs.
 func (h *ImagePatchHandler) ListPatchTargets(ctx context.Context, input *ListPatchTargetsInput) (*ListPatchTargetsOutput, error) {
-	params := handlerutil.PaginationParams(input.Start, input.Limit, "", "", input.Search)
+	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 
 	targets, paginationResp, err := h.imagePatchService.ListPatchTargets(ctx, input.EnvironmentID, params)
 	if err != nil {

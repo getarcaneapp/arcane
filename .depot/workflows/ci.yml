@@ -194,8 +194,8 @@ jobs:
       - name: Pull and save test images
         run: |
           docker pull public.ecr.aws/nginx/nginx:stable-alpine
-          docker pull ghcr.io/linuxserver/radarr:nightly
-          docker save public.ecr.aws/nginx/nginx:stable-alpine ghcr.io/linuxserver/radarr:nightly > /tmp/test-images.tar
+          docker pull public.ecr.aws/docker/library/busybox:1.37
+          docker save public.ecr.aws/nginx/nginx:stable-alpine public.ecr.aws/docker/library/busybox:1.37 > /tmp/test-images.tar
 
       - name: Setup and Install Playwright Dependencies
         run: just deps install tests

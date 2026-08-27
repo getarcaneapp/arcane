@@ -22,6 +22,17 @@ export const load: PageLoad = async ({ parent }) => {
 		}
 	} satisfies SearchPaginationSortRequest);
 
+	const patchRequestOptions = resolveInitialTableRequest('arcane-security-patch-table', {
+		pagination: {
+			page: 1,
+			limit: 20
+		},
+		sort: {
+			column: 'scanTime',
+			direction: 'desc'
+		}
+	} satisfies SearchPaginationSortRequest);
+
 	const requestForApi = mapVulnerabilityRequest(vulnerabilityRequestOptions);
 
 	let summary;
@@ -44,6 +55,7 @@ export const load: PageLoad = async ({ parent }) => {
 	return {
 		summary,
 		vulnerabilities: mapVulnerabilityPage(vulnerabilities, vulnerabilityRequestOptions),
-		vulnerabilityRequestOptions
+		vulnerabilityRequestOptions,
+		patchRequestOptions
 	};
 };

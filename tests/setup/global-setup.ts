@@ -27,7 +27,7 @@ function ensureProjectsDirIsContainerWritable(projectsDir: string) {
 			'--rm',
 			'-v',
 			`${projectsDir}:/projects`,
-			'alpine',
+			'public.ecr.aws/docker/library/alpine:3.20',
 			'sh',
 			'-c',
 			'chmod -R 777 /projects'

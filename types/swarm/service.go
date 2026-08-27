@@ -235,7 +235,7 @@ type ServiceUpdateRequest struct {
 	// Options are additional update options for the service.
 	//
 	// Required: false
-	Options *ServiceUpdateOptions `json:"options,omitempty"`
+	Options *ServiceUpdateOptions `json:"options,omitzero"`
 }
 
 type ServiceCreateResponse struct {

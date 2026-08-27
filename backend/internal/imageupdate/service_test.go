@@ -2250,6 +2250,29 @@ func TestImageUpdateService_GetAllImageRefsFallsBackWhenContainerDiscoveryFailsI
 	assert.Equal(t, []string{firstRef, secondRef}, got)
 }
 
+func TestFilterImageSummariesByContainerOptOutHonorsSettingsExclusionsInternal(t *testing.T) {
+	const (
+		excludedRef = "local/excluded:latest"
+		sharedRef   = "local/shared:latest"
+	)
+
+	images := []dockertypesimage.Summary{
+		{ID: "sha256:excluded", RepoTags: []string{excludedRef}},
+		{ID: "sha256:shared", RepoTags: []string{sharedRef}},
+	}
+	containers := []dockertypescontainer.Summary{
+		{ID: "c1", Names: []string{"/excluded-app"}, ImageID: "sha256:excluded", Image: excludedRef},
+		{ID: "c2", Names: []string{"/shared-excluded"}, ImageID: "sha256:shared", Image: sharedRef},
+		{ID: "c3", Names: []string{"/shared-enabled"}, ImageID: "sha256:shared", Image: sharedRef},
+	}
+	excluded := map[string]bool{"excluded-app": true, "shared-excluded": true, "unknown-name": true}
+
+	got := filterImageSummariesByContainerOptOutInternal(images, containers, excluded, 0)
+
+	assert.NotContains(t, got, excludedRef)
+	assert.Contains(t, got, sharedRef)
+}
+
 // testProjectRow is a minimal stand-in for project.Project: the project
 // package imports this one, so the in-package test cannot import it back.
 type testProjectRow struct {

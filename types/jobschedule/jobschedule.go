@@ -23,16 +23,16 @@ type Config struct {
 //
 // Any nil field is ignored.
 type Update struct {
-	EnvironmentHealthInterval      *string `json:"environmentHealthInterval,omitempty"`
-	EventCleanupInterval           *string `json:"eventCleanupInterval,omitempty"`
-	ExpiredSessionsCleanupInterval *string `json:"expiredSessionsCleanupInterval,omitempty"`
-	AutoUpdateInterval             *string `json:"autoUpdateInterval,omitempty"`
-	DockerClientRefreshInterval    *string `json:"dockerClientRefreshInterval,omitempty"`
-	PollingInterval                *string `json:"pollingInterval,omitempty"`
-	ScheduledPruneInterval         *string `json:"scheduledPruneInterval,omitempty"`
-	VulnerabilityScanInterval      *string `json:"vulnerabilityScanInterval,omitempty"`
-	ImageAutoPatchInterval         *string `json:"imageAutoPatchInterval,omitempty"`
-	AutoHealInterval               *string `json:"autoHealInterval,omitempty"`
+	EnvironmentHealthInterval      *string `json:"environmentHealthInterval,omitzero"`
+	EventCleanupInterval           *string `json:"eventCleanupInterval,omitzero"`
+	ExpiredSessionsCleanupInterval *string `json:"expiredSessionsCleanupInterval,omitzero"`
+	AutoUpdateInterval             *string `json:"autoUpdateInterval,omitzero"`
+	DockerClientRefreshInterval    *string `json:"dockerClientRefreshInterval,omitzero"`
+	PollingInterval                *string `json:"pollingInterval,omitzero"`
+	ScheduledPruneInterval         *string `json:"scheduledPruneInterval,omitzero"`
+	VulnerabilityScanInterval      *string `json:"vulnerabilityScanInterval,omitzero"`
+	ImageAutoPatchInterval         *string `json:"imageAutoPatchInterval,omitzero"`
+	AutoHealInterval               *string `json:"autoHealInterval,omitzero"`
 }
 
 // JobStatus represents the current status and metadata for a background job.

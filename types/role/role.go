@@ -28,7 +28,7 @@ type CreateRole struct {
 // cannot be updated and will return 403.
 type UpdateRole struct {
 	Name        string   `json:"name" minLength:"1" maxLength:"100" doc:"Display name of the role"`
-	Description *string  `json:"description,omitempty" maxLength:"500" doc:"Optional human description"`
+	Description *string  `json:"description,omitzero" maxLength:"500" doc:"Optional human description"`
 	Permissions []string `json:"permissions" minItems:"1" doc:"Permission strings granted by this role"`
 }
 
@@ -91,7 +91,7 @@ type CreateOidcRoleMapping struct {
 type UpdateOidcRoleMapping struct {
 	ClaimValue    string  `json:"claimValue" minLength:"1"`
 	RoleID        string  `json:"roleId" minLength:"1"`
-	EnvironmentID *string `json:"environmentId,omitempty"`
+	EnvironmentID *string `json:"environmentId,omitzero"`
 }
 
 // PermissionsManifest describes every permission the server recognizes,

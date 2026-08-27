@@ -27,8 +27,10 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 	buildapi "go.getarcane.app/builds/api"
-	"go.getarcane.app/builds/pkg/utils/contextsource"
+	"go.getarcane.app/builds/pkg/contextsource"
 	buildtypes "go.getarcane.app/builds/types"
+	"go.getarcane.app/kit/pkg/capture"
+	arcanekit "go.getarcane.app/kit/pkg/git"
 	"gorm.io/gorm"
 )
 
@@ -99,7 +101,7 @@ func (s *BuildService) BuildImage(ctx context.Context, environmentID string, req
 
 	// The builder emits raw docker-CLI text. The log capture stores it verbatim
 	// for build history; the progress writer gets it framed as {"log":...} lines.
-	logCapture := buildapi.NewLogCapture(buildHistoryOutputLimitBytes)
+	logCapture := capture.New(buildHistoryOutputLimitBytes)
 	writer := io.Writer(logCapture)
 	var logWriter io.WriteCloser
 	if progressWriter != nil {
@@ -287,7 +289,7 @@ func (s *BuildService) resolveBuildRequestInternal(
 	if matchedRepository {
 		writeBuildProgressStatusInternal(progressWriter, serviceName, "using saved git credentials for "+source.RepositoryURL)
 	}
-	if contextsource.RequiresGitRemoteProbe(source.RepositoryURL) {
+	if arcanekit.RequiresRemoteProbe(source.RepositoryURL) {
 		writeBuildProgressStatusInternal(progressWriter, serviceName, "verifying remote git repository "+source.RepositoryURL)
 		if err := s.probeGitContextInternal(ctx, source.RepositoryURL, authConfig); err != nil {
 			return buildtypes.BuildRequest{}, func() error { return nil }, errors.WrapIff(err, "failed to verify remote git repository %q", source.RepositoryURL)

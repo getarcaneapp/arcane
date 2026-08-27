@@ -42,12 +42,12 @@ type CreateUser struct {
 // UpdateUser represents the request body for updating a user.
 // Role assignments are managed separately via PUT /users/{userId}/role-assignments.
 type UpdateUser struct {
-	Username    *string     `json:"username,omitempty" minLength:"1" maxLength:"255" pattern:"^[^@]+$" patternDescription:"username without an @ character" doc:"Username of the user; may not contain @"`
-	DisplayName *string     `json:"displayName,omitempty" maxLength:"255" doc:"Display name of the user"`
-	Email       *string     `json:"email,omitempty" doc:"Email address of the user"`
-	Locale      *string     `json:"locale,omitempty" doc:"Locale preference of the user"`
-	TimeFormat  *TimeFormat `json:"timeFormat,omitempty" enum:"auto,12h,24h" doc:"Preferred time display format"`
-	Password    *string     `json:"password,omitempty" minLength:"8" doc:"New password for the user"`
+	Username    *string     `json:"username,omitzero" minLength:"1" maxLength:"255" pattern:"^[^@]+$" patternDescription:"username without an @ character" doc:"Username of the user; may not contain @"`
+	DisplayName *string     `json:"displayName,omitzero" maxLength:"255" doc:"Display name of the user"`
+	Email       *string     `json:"email,omitzero" doc:"Email address of the user"`
+	Locale      *string     `json:"locale,omitzero" doc:"Locale preference of the user"`
+	TimeFormat  *TimeFormat `json:"timeFormat,omitzero" enum:"auto,12h,24h" doc:"Preferred time display format"`
+	Password    *string     `json:"password,omitzero" minLength:"8" doc:"New password for the user"`
 }
 
 // RoleAssignmentSummary is a compact form of a user's role assignment used

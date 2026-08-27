@@ -52,8 +52,8 @@ type ApiKeyCreatedDto struct {
 
 // UpdateApiKey represents the request body for updating an API key.
 type UpdateApiKey struct {
-	Name        *string           `json:"name,omitempty" maxLength:"255" doc:"New name for the API key"`
-	Description *string           `json:"description,omitempty" maxLength:"1000" doc:"New description for the API key"`
-	ExpiresAt   *time.Time        `json:"expiresAt,omitempty" doc:"New expiration date for the API key"`
+	Name        *string           `json:"name,omitzero" maxLength:"255" doc:"New name for the API key"`
+	Description *string           `json:"description,omitzero" maxLength:"1000" doc:"New description for the API key"`
+	ExpiresAt   *time.Time        `json:"expiresAt,omitzero" doc:"New expiration date for the API key"`
 	Permissions []PermissionGrant `json:"permissions,omitempty" doc:"Replace the key's permission grants. Omit to leave unchanged. Cannot exceed the updater's own permissions."`
 }
