@@ -369,6 +369,7 @@ export interface MemoryStats {
 		file_writeback?: number;
 		inactive_anon?: number;
 		inactive_file?: number;
+		total_inactive_file?: number;
 		kernel_stack?: number;
 		pgactivate?: number;
 		pgdeactivate?: number;

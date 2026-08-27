@@ -802,8 +802,8 @@ go.getarcane.app/docker/convert v0.3.0 h1:yKsepx7UVQTXccZpMzxoySLrv0kE2qv7p7wfMP
 go.getarcane.app/docker/convert v0.3.0/go.mod h1:RtKwdUxye+Ildzzc577qngIfhBeKuOM+XUfV9O1yyyg=
 go.getarcane.app/kit v0.1.0 h1:82oO/i1fS4xbzAG4Xc8ALOWOwW4kwQYDdBpVHE19QkI=
 go.getarcane.app/kit v0.1.0/go.mod h1:oiH4hLowxfQYFtmldyk/y79XYBHYfzgd86MrSQS9UEg=
-go.getarcane.app/streams v0.4.0 h1:MtBX1SVgt3nrcRNr5SYAvckGp9a5qeSjMTw/LAGwlzk=
-go.getarcane.app/streams v0.4.0/go.mod h1:LHMKblQvsL1nqKh/Y+KgQbwFSMI2I7bs9u8ZwZqzjnQ=
+go.getarcane.app/streams v0.4.2 h1:+xrRHiOt25cLbFTDpPLzv7eFkk7biwDz5YjBXkbWUPw=
+go.getarcane.app/streams v0.4.2/go.mod h1:wwQ5HIYYBZzktUNmSI3Q/VJ6A6KgGiYWk5q/UzID+oY=
 go.getarcane.app/sys/cgroup v0.2.0 h1:JGkz23FoNNgLjq0y4k2uUPtKhlh4StpnmS4STyICq6E=
 go.getarcane.app/sys/cgroup v0.2.0/go.mod h1:y+FJhJrzEjzATNmVDPZCNrtzkPy4FXKvN1V0BSxi20M=
 go.getarcane.app/sys/crypto v0.2.0 h1:qX1WjxMRRtoeKDK07sfhqEQh79VtUnAWfp82ukkDo9k=

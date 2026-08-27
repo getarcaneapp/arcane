@@ -67,7 +67,7 @@ require (
 	go.getarcane.app/builds v0.4.0
 	go.getarcane.app/docker/convert v0.3.0
 	go.getarcane.app/kit v0.1.0
-	go.getarcane.app/streams v0.4.0
+	go.getarcane.app/streams v0.4.2
 	go.getarcane.app/sys/cgroup v0.2.0
 	go.getarcane.app/sys/crypto v0.2.0
 	go.getarcane.app/updater v0.8.0

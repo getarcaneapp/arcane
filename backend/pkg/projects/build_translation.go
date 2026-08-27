@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/imageref"
 )
 
 // BuildArgsFromCompose flattens compose build args into a string map, dropping nil values.
@@ -122,7 +123,7 @@ func BuildLocalImageTag(projectID, projectName, serviceName string) string {
 		servicePart = "service"
 	}
 
-	return fmt.Sprintf("arcane.local/%s-%s/%s:latest", projectPart, shortID, servicePart)
+	return fmt.Sprintf("%s/%s-%s/%s:latest", imageref.LocalBuildRegistry, projectPart, shortID, servicePart)
 }
 
 // SanitizeImageComponent lowercases a value and replaces characters that are

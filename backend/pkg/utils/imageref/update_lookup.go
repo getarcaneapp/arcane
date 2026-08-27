@@ -9,6 +9,9 @@ import (
 	registryauth "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/registryauth"
 )
 
+// LocalBuildRegistry is Arcane's reserved registry host for locally built image tags.
+const LocalBuildRegistry = "arcane.local"
+
 // ParseUpdateLookup normalizes an image reference into the repository and tag
 // candidates used to match persisted update records.
 func ParseUpdateLookup(imageRef string) (originalRef, tag string, repositoryCandidates map[string]struct{}, ok bool) {
