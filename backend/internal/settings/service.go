@@ -938,27 +938,32 @@ func (s *SettingsService) SetStringSetting(ctx context.Context, key, value strin
 	return s.UpdateSetting(ctx, key, value)
 }
 
+// ParseExcludedContainerNames returns the trimmed, deduplicated names from a comma-separated exclusion list.
+func ParseExcludedContainerNames(raw string) []string {
+	seen := make(map[string]struct{})
+	var ordered []string
+	for part := range strings.SplitSeq(raw, ",") {
+		name := strings.TrimSpace(part)
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; !ok {
+			seen[name] = struct{}{}
+			ordered = append(ordered, name)
+		}
+	}
+	return ordered
+}
+
 // SetContainerAutoUpdateExclusionInternal adds or removes a container name from
 // the autoUpdateExcludedContainers setting. When excluded is true the container
 // is added to the list; when false it is removed.
 func (s *SettingsService) SetContainerAutoUpdateExclusionInternal(ctx context.Context, containerName string, excluded bool) error {
 	_, err := actors.Execute(ctx, s.writes, "update container auto-update exclusion", func(writeCtx context.Context) (actors.NoPayload, error) {
-		raw := s.GetStringSetting(writeCtx, "autoUpdateExcludedContainers", "")
-		existing := make(map[string]struct{})
-		var ordered []string
-		for part := range strings.SplitSeq(raw, ",") {
-			name := strings.TrimSpace(part)
-			if name == "" {
-				continue
-			}
-			if _, ok := existing[name]; !ok {
-				existing[name] = struct{}{}
-				ordered = append(ordered, name)
-			}
-		}
+		ordered := ParseExcludedContainerNames(s.GetStringSetting(writeCtx, "autoUpdateExcludedContainers", ""))
 
 		if excluded {
-			if _, ok := existing[containerName]; !ok {
+			if !slices.Contains(ordered, containerName) {
 				ordered = append(ordered, containerName)
 			}
 		} else {
