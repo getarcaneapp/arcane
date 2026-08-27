@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -143,6 +144,24 @@ func (s *ImageUpdateService) composeBuildImageRefsInternal(ctx context.Context) 
 			if normalized != "" {
 				buildRefs[normalized] = struct{}{}
 			}
+		}
+	}
+
+	// Copacetic-patched tags only exist in the local daemon, so treat them like
+	// locally built images instead of failing a remote registry lookup. Never
+	// fail the update check over patch history.
+	var patchedRefs []string
+	if err := s.db.WithContext(ctx).
+		Table("image_patches").
+		Where("status = ?", "completed").
+		Distinct().
+		Pluck("patched_ref", &patchedRefs).Error; err != nil {
+		slog.DebugContext(ctx, "failed to load patched image references", "error", err)
+	}
+	for _, imageRef := range patchedRefs {
+		normalized := refs.NormalizeImageUpdateRef(imageRef)
+		if normalized != "" {
+			buildRefs[normalized] = struct{}{}
 		}
 	}
 
@@ -395,6 +414,15 @@ func digestPinnedImageUpdateResultInternal(imageRef string) mo.Option[*imageupda
 	})
 }
 
+func isLocalBuildImageRefInternal(imageRef string, composeBuildRefs map[string]struct{}) bool {
+	if named, err := ref.ParseNormalizedNamed(strings.TrimSpace(imageRef)); err == nil &&
+		registryauth.NormalizeRegistryForComparison(ref.Domain(named)) == imageref.LocalBuildRegistry {
+		return true
+	}
+	_, ok := composeBuildRefs[refs.NormalizeImageUpdateRef(imageRef)]
+	return ok
+}
+
 func (s *ImageUpdateService) checkDigestUpdateWithSnapshotInternal(ctx context.Context, parts *ImageParts, composeBuildRefs map[string]struct{}) (*imageupdate.Response, *localImageSnapshot, error) {
 	if s.registryService == nil {
 		return nil, nil, errors.New("registry service unavailable")
@@ -406,10 +434,8 @@ func (s *ImageUpdateService) checkDigestUpdateWithSnapshotInternal(ctx context.C
 	if err == nil && snapshot.IsLocalBuild {
 		return localBuildImageUpdateResultInternal(snapshot, int(time.Since(start).Milliseconds())), snapshot, nil
 	}
-	if err != nil && cerrdefs.IsNotFound(err) {
-		if _, isComposeBuild := composeBuildRefs[refs.NormalizeImageUpdateRef(imageRef)]; isComposeBuild {
-			return missingLocalBuildImageUpdateResultInternal(parts.Tag, int(time.Since(start).Milliseconds())), nil, nil
-		}
+	if err != nil && cerrdefs.IsNotFound(err) && isLocalBuildImageRefInternal(imageRef, composeBuildRefs) {
+		return missingLocalBuildImageUpdateResultInternal(parts.Tag, int(time.Since(start).Milliseconds())), nil, nil
 	}
 
 	registryCtx, registryCancel := s.registryContextInternal(ctx)
@@ -694,7 +720,14 @@ func (s *ImageUpdateService) getAllImageRefsInternal(ctx context.Context, limit 
 		return imageRefsFromSummariesInternal(imageList.Items, limit), nil
 	}
 
-	return filterImageSummariesByContainerOptOutInternal(imageList.Items, containerList.Items, limit), nil
+	excludedContainers := make(map[string]bool)
+	if s.settingsService != nil {
+		for _, name := range settings.ParseExcludedContainerNames(s.settingsService.GetStringSetting(ctx, "autoUpdateExcludedContainers", "")) {
+			excludedContainers[name] = true
+		}
+	}
+
+	return filterImageSummariesByContainerOptOutInternal(imageList.Items, containerList.Items, excludedContainers, limit), nil
 }
 
 func imageRefsFromSummariesInternal(images []image.Summary, limit int) []string {
@@ -726,12 +759,14 @@ type imageContainerUsageInternal struct {
 	eligible bool
 }
 
-func filterImageSummariesByContainerOptOutInternal(images []image.Summary, containers []container.Summary, limit int) []string {
+func filterImageSummariesByContainerOptOutInternal(images []image.Summary, containers []container.Summary, excludedContainers map[string]bool, limit int) []string {
 	usageByImageID := make(map[string]imageContainerUsageInternal)
 	usageByRef := make(map[string]imageContainerUsageInternal)
 
 	for _, summary := range containers {
-		disabled := labels.IsUpdateDisabled(summary.Labels)
+		disabled := labels.IsUpdateDisabled(summary.Labels) || slices.ContainsFunc(summary.Names, func(name string) bool {
+			return excludedContainers[strings.TrimPrefix(name, "/")]
+		})
 		usage := imageContainerUsageInternal{
 			optedOut: disabled,
 			eligible: !disabled,
@@ -840,10 +875,7 @@ func (s *ImageUpdateService) inspectLocalImageSnapshotInternal(ctx context.Conte
 		primaryDigest = inspectResponse.ID
 		allDigests = []string{primaryDigest}
 	}
-	if normalizedRef := refs.NormalizeImageUpdateRef(imageRef); normalizedRef != "" {
-		_, isComposeBuild := composeBuildRefs[normalizedRef]
-		isLocalBuild = isLocalBuild || isComposeBuild
-	}
+	isLocalBuild = isLocalBuild || isLocalBuildImageRefInternal(imageRef, composeBuildRefs)
 
 	repo, tag := extractRepoAndTagFromImage(inspectResponse.InspectResponse)
 	tag = tagWithFallbackInternal(tag, s.parseImageReference(imageRef))
@@ -1309,10 +1341,8 @@ func (s *ImageUpdateService) checkSingleImageInBatchInternal(ctx context.Context
 	if ldErr == nil && snapshot.IsLocalBuild {
 		return localBuildImageUpdateResultInternal(snapshot, int(time.Since(start).Milliseconds())), snapshot
 	}
-	if ldErr != nil && cerrdefs.IsNotFound(ldErr) {
-		if _, isComposeBuild := composeBuildRefs[refs.NormalizeImageUpdateRef(imageRef)]; isComposeBuild {
-			return missingLocalBuildImageUpdateResultInternal(parts.Tag, int(time.Since(start).Milliseconds())), nil
-		}
+	if ldErr != nil && cerrdefs.IsNotFound(ldErr) && isLocalBuildImageRefInternal(imageRef, composeBuildRefs) {
+		return missingLocalBuildImageUpdateResultInternal(parts.Tag, int(time.Since(start).Milliseconds())), nil
 	}
 
 	registryCtx, registryCancel := s.registryContextInternal(ctx)

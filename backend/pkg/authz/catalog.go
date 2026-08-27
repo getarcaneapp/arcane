@@ -157,6 +157,7 @@ var permissionCatalog = []PermissionCatalogResource{
 		{"prune", PermImagesPrune, "Prune", ""},
 		{"delete", PermImagesDelete, "Delete", ""},
 		{"upload", PermImagesUpload, "Upload", ""},
+		{"patch", PermImagesPatch, "Patch", ""},
 	}},
 	{"volumes", "Volumes", PermissionScopeEnv, []PermissionCatalogAction{
 		{"list", PermVolumesList, "List", ""},

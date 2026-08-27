@@ -138,6 +138,18 @@ func ComposePs(ctx context.Context, dockerHost string, proj *types.Project, serv
 	return c.svc.Ps(ctx, proj.Name, api.PsOptions{All: all, Services: services})
 }
 
+func ComposeGenerate(ctx context.Context, dockerHost, projectName string, containerIDs []string) (*types.Project, error) {
+	c, shared, err := plainComposeClientInternal(ctx, dockerHost)
+	if err != nil {
+		return nil, err
+	}
+	if !shared {
+		defer func() { _ = c.Close() }()
+	}
+
+	return c.svc.Generate(ctx, api.GenerateOptions{ProjectName: projectName, Containers: containerIDs})
+}
+
 func ComposeDown(ctx context.Context, proj *types.Project, removeVolumes bool) error {
 	downCtx, cancel := detachFromHTTPContextInternal(ctx, defaultComposeTimeout)
 	defer cancel()

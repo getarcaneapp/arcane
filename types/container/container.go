@@ -400,6 +400,16 @@ type CommitResult struct {
 	ID string `json:"id"`
 }
 
+// GenerateComposeRequest selects the containers to convert into a compose project.
+type GenerateComposeRequest struct {
+	ContainerIDs []string `json:"containerIds" minItems:"1" doc:"IDs of the containers to convert"`
+}
+
+// GenerateComposeResponse carries the compose file generated from containers.
+type GenerateComposeResponse struct {
+	ComposeContent string `json:"composeContent"`
+}
+
 // StatusCounts contains counts of containers by status.
 type StatusCounts struct {
 	// RunningContainers is the number of running containers.

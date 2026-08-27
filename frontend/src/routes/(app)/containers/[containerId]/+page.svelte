@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import { refreshAll } from '$app/navigation';
+	import { goto, refreshAll } from '$app/navigation';
+	import settingsStore from '#lib/stores/config-store';
 	import ActionButtons from '#lib/components/action-buttons.svelte';
 	import { Badge } from '#lib/components/ui/badge';
 	import { bytes } from '#lib/utils/formatting';
@@ -46,7 +47,7 @@
 	import { environmentStore } from '#lib/stores/environment.store.svelte';
 	import { hasPermission } from '#lib/utils/auth';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import { EditIcon, ImagesIcon, PauseIcon, PlayIcon, UpdateIcon, ZapIcon } from '#lib/icons';
+	import { EditIcon, ImagesIcon, PauseIcon, PlayIcon, ProjectsIcon, UpdateIcon, ZapIcon } from '#lib/icons';
 	import { runContainerLifecycleAction, confirmAndUpdateContainer } from '#lib/utils/container-actions';
 	import { imageService } from '#lib/services/image-service';
 	import type { ImageUpdateInfoDto } from '#lib/types/docker';
@@ -141,6 +142,11 @@
 	);
 	const canKillContainer = $derived(hasPermission('containers:kill', currentEnvId));
 	const canCommitImage = $derived(hasPermission('images:commit', currentEnvId));
+	const canConvertToCompose = $derived(
+		hasPermission('projects:create', currentEnvId) &&
+			!container?.composeInfo &&
+			$settingsStore?.experimentalFeaturesEnabled === true
+	);
 	const containerStatus = $derived(container?.state?.status ?? '');
 	const isContainerRunning = $derived(containerStatus === 'running' || !!container?.state?.running);
 	const isContainerPaused = $derived(containerStatus === 'paused');
@@ -387,6 +393,17 @@
 								href={`/containers/${container.id}/edit`}
 							/>
 						{/if}
+						{#if canConvertToCompose}
+							<ArcaneButton
+								action="base"
+								{size}
+								{showLabel}
+								customLabel={m.compose_convert_action()}
+								icon={ProjectsIcon}
+								disabled={actionButtonsLifecyclePending}
+								href={`/projects/new?fromContainers=${container.id}&fromEnv=${encodeURIComponent(currentEnvId)}`}
+							/>
+						{/if}
 						{#if canUpdateContainer && updateInfo?.hasUpdate}
 							<ArcaneButton
 								action="base"
@@ -439,6 +456,15 @@
 					{/snippet}
 
 					{#snippet beforeRemoveMenuItems(actionButtonsLifecyclePending)}
+						{#if canConvertToCompose}
+							<DropdownMenu.Item
+								disabled={actionButtonsLifecyclePending}
+								onclick={() => goto(`/projects/new?fromContainers=${container.id}&fromEnv=${encodeURIComponent(currentEnvId)}`)}
+							>
+								<ProjectsIcon class="size-4" />
+								{m.compose_convert_action()}
+							</DropdownMenu.Item>
+						{/if}
 						{#if canUpdateContainer && updateInfo?.hasUpdate}
 							<DropdownMenu.Item disabled={updateLoading || actionButtonsLifecyclePending} onclick={handleUpdateContainer}>
 								<UpdateIcon class="size-4" />

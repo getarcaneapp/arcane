@@ -1,6 +1,6 @@
 services:
   nginx:
-    image: nginx:alpine
+    image: public.ecr.aws/nginx/nginx:stable-alpine
     container_name: nginx_service
     env_file:
       - .env

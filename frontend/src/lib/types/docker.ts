@@ -369,6 +369,7 @@ export interface MemoryStats {
 		file_writeback?: number;
 		inactive_anon?: number;
 		inactive_file?: number;
+		total_inactive_file?: number;
 		kernel_stack?: number;
 		pgactivate?: number;
 		pgdeactivate?: number;
@@ -580,6 +581,52 @@ export interface ImageAttestationRequestOptions {
 }
 
 export type ImageUpdateData = ImageUpdateInfoDto;
+
+export type ImagePatchMode = 'update-all' | 'report';
+export type ImagePatchStatus = 'patching' | 'completed' | 'failed';
+
+export interface ImagePatchOptions {
+	suffix?: string;
+	patchedTag?: string;
+	timeoutSeconds?: number;
+	scanId?: string;
+	ignoreErrors?: boolean;
+}
+
+export interface ImagePatchRecordDto {
+	id: string;
+	environmentId: string;
+	originalImageId: string;
+	originalRef: string;
+	originalDigest?: string;
+	patchedRef: string;
+	mode: ImagePatchMode;
+	status: ImagePatchStatus;
+	packagesUpdated?: number;
+	error?: string;
+	activityId?: string;
+	durationMs?: number;
+	createdAt: string;
+	updatedAt?: string;
+}
+
+export interface ImagePatchScanSummaryDto {
+	status: 'pending' | 'scanning' | 'completed' | 'failed';
+	fixableCount: number;
+	totalCount: number;
+	scanTime: string;
+}
+
+export interface ImagePatchTargetDto {
+	imageId: string;
+	imageRef: string;
+	fixableCount: number;
+	totalCount: number;
+	scanTime: string;
+	localOnly?: boolean;
+	lastPatch?: ImagePatchRecordDto;
+	lastPatchScan?: ImagePatchScanSummaryDto;
+}
 
 export type ImageBuildStatus = 'running' | 'success' | 'failed';
 

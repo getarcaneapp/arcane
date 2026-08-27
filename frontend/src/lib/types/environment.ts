@@ -137,6 +137,8 @@ export interface Vulnerability {
 export interface VulnerabilityWithImage extends Vulnerability {
 	imageId: string;
 	imageName: string;
+	ignored?: boolean;
+	ignoreId?: string;
 }
 
 export interface SeveritySummary {
@@ -166,6 +168,7 @@ export interface VulnerabilityScanResult {
 	error?: string;
 	duration?: number;
 	scannerVersion?: string;
+	hasReport?: boolean;
 }
 
 export interface VulnerabilityScanSummary {

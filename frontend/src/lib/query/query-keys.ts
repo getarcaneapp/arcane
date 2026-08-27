@@ -110,6 +110,7 @@ export const queryKeys = {
 	},
 	projects: {
 		all: ['projects'] as const,
+		environment: (environmentId: string) => ['project', environmentId] as const,
 		list: (environmentId: string, options: SearchPaginationSortRequest) =>
 			['projects', environmentId, stableSerialize(options)] as const,
 		checkUpdates: (environmentId: string) => ['projects', 'check-updates', environmentId] as const,

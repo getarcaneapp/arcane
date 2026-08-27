@@ -49,8 +49,15 @@ export function calculateMemoryUsage(stats: ContainerStats | null): number {
 	if (!stats?.memory_stats) return 0;
 
 	const usage = stats.memory_stats.usage || 0;
-	const inactiveFile = stats.memory_stats.stats?.inactive_file || 0;
-	return Math.max(usage - inactiveFile, 0);
+	const totalInactiveFile = stats.memory_stats.stats?.total_inactive_file;
+	if (totalInactiveFile !== undefined && totalInactiveFile < usage) {
+		return usage - totalInactiveFile;
+	}
+	const inactiveFile = stats.memory_stats.stats?.inactive_file;
+	if (inactiveFile !== undefined && inactiveFile < usage) {
+		return usage - inactiveFile;
+	}
+	return usage;
 }
 
 export function getContainerIpAddresses(container: ContainerSummaryDto): string[] {
@@ -191,7 +198,7 @@ export function ensureUpdatesFilter<T extends SearchPaginationSortRequest>(optio
 	return {
 		...options,
 		filters: {
-			...(options.filters ?? {}),
+			...options.filters,
 			updates: updatesFilter
 		}
 	};
@@ -202,7 +209,7 @@ export function ensureStandaloneContainerUpdatesFilter<T extends SearchPaginatio
 	return {
 		...next,
 		filters: {
-			...(next.filters ?? {}),
+			...next.filters,
 			standalone: true
 		}
 	};

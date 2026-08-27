@@ -28,6 +28,7 @@ import {
 	ZapIcon,
 	TagIcon,
 	ScanIcon,
+	ShieldCheckIcon,
 	ImagesIcon,
 	TestIcon,
 	BoxIcon
@@ -236,6 +237,12 @@ export const actionConfigs = {
 	scan: {
 		defaultLabel: m.vuln_scan(),
 		IconComponent: ScanIcon,
+		tone: 'outline-scan',
+		loadingLabel: m.common_processing()
+	},
+	patch: {
+		defaultLabel: m.images_patch(),
+		IconComponent: ShieldCheckIcon,
 		tone: 'outline-scan',
 		loadingLabel: m.common_processing()
 	},

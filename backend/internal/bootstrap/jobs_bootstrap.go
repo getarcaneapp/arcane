@@ -91,6 +91,7 @@ type registerJobsParams struct {
 	ScheduledPrune         *scheduler.ScheduledPruneJob
 	FilesystemWatcher      *scheduler.FilesystemWatcherJob
 	VulnerabilityScan      *scheduler.VulnerabilityScanJob
+	AutoPatch              *scheduler.AutoPatchJob
 	AutoHeal               *scheduler.AutoHealJob
 	ActivitySweep          *scheduler.ActivitySweepJob
 	UploadSessionsCleanup  *scheduler.UploadSessionsCleanupJob
@@ -132,6 +133,7 @@ func registerJobs(params registerJobsParams) error {
 		params.ExpiredSessionsCleanup,
 		params.ScheduledPrune,
 		params.VulnerabilityScan,
+		params.AutoPatch,
 		params.AutoHeal,
 		params.ActivitySweep,
 		params.UploadSessionsCleanup,
@@ -174,6 +176,7 @@ func registerJobs(params registerJobsParams) error {
 		FilesystemWatcher:  params.FilesystemWatcher,
 		ScheduledPrune:     params.ScheduledPrune,
 		VulnerabilityScan:  params.VulnerabilityScan,
+		AutoPatch:          params.AutoPatch,
 		AutoHeal:           params.AutoHeal,
 	}); err != nil {
 		return err
@@ -252,6 +255,7 @@ type settingsSubscriptionsParams struct {
 	FilesystemWatcher  *scheduler.FilesystemWatcherJob
 	ScheduledPrune     *scheduler.ScheduledPruneJob
 	VulnerabilityScan  *scheduler.VulnerabilityScanJob
+	AutoPatch          *scheduler.AutoPatchJob
 	AutoHeal           *scheduler.AutoHealJob
 }
 
@@ -327,6 +331,12 @@ func setupSettingsSubscriptionsInternal(params settingsSubscriptionsParams) erro
 			}
 		},
 	)
+
+	subscribe([]string{"imageAutoPatchEnabled", "imageAutoPatchInterval"}, func(_ []libarcane.SettingUpdate) {
+		if err := params.Scheduler.RescheduleJob(params.LifecycleCtx, params.AutoPatch); err != nil {
+			slog.WarnContext(params.LifecycleCtx, "Failed to reschedule auto-patch job", "error", err)
+		}
+	})
 
 	subscribe(
 		[]string{"autoHealEnabled", "autoHealInterval", "autoHealExcludedContainers", "autoHealMaxRestarts", "autoHealRestartWindow"},

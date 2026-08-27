@@ -34,6 +34,7 @@
 	import { hasAnyLoadingState } from '#lib/utils/bulk-actions';
 	import { Temporal } from 'temporal-polyfill';
 	import { createContainerActions } from './container-table.actions';
+	import settingsStore from '#lib/stores/config-store';
 	import {
 		getActionStatusMessage,
 		getContainerDisplayName,
@@ -195,6 +196,18 @@
 	const canEditContainers = $derived(hasPermission('containers:edit', currentEnvId));
 	const canKillContainers = $derived(hasPermission('containers:kill', currentEnvId));
 	const canPauseContainers = $derived(hasPermission('containers:pause', currentEnvId));
+	const canConvertToCompose = $derived(
+		hasPermission('projects:create', currentEnvId) && $settingsStore?.experimentalFeaturesEnabled === true
+	);
+
+	function handleBulkConvert(ids: string[]) {
+		const convertibleIds = ids.filter((id) => {
+			const container = containers.data?.find((c) => c.id === id);
+			return container && !container.labels?.[COMPOSE_PROJECT_LABEL];
+		});
+		if (convertibleIds.length === 0) return;
+		goto(`/projects/new?fromContainers=${convertibleIds.join(',')}&fromEnv=${encodeURIComponent(currentEnvId)}`);
+	}
 
 	// The dialog is mounted only while a row is targeted, so it gets fresh state on
 	// every open; clearing the target unmounts it.
@@ -338,7 +351,19 @@
 			loading: isBulkLoading.remove,
 			disabled: !resourcesCurrent || isAnyLoading,
 			icon: TrashIcon
-		}
+		},
+		...(canConvertToCompose
+			? [
+					{
+						id: 'convert',
+						label: m.containers_bulk_convert({ count: selectedIds?.length ?? 0 }),
+						action: 'base' as const,
+						onClick: handleBulkConvert,
+						disabled: !resourcesCurrent || isAnyLoading,
+						icon: ProjectsIcon
+					}
+				]
+			: [])
 	]);
 
 	// Icon for each group
@@ -641,6 +666,16 @@
 				<DropdownMenu.Item onclick={() => goto(`/containers/${item.id}/edit`)} disabled={isAnyLoading}>
 					<EditIcon class="size-4" />
 					{m.common_edit()}
+				</DropdownMenu.Item>
+			{/if}
+
+			{#if canConvertToCompose && !item.labels?.[COMPOSE_PROJECT_LABEL]}
+				<DropdownMenu.Item
+					onclick={() => goto(`/projects/new?fromContainers=${item.id}&fromEnv=${encodeURIComponent(currentEnvId)}`)}
+					disabled={isAnyLoading}
+				>
+					<ProjectsIcon class="size-4" />
+					{m.compose_convert_action()}
 				</DropdownMenu.Item>
 			{/if}
 

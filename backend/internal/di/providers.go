@@ -259,8 +259,8 @@ func provideVolumeServiceInternal(module *volume.Module) *volume.VolumeService {
 	return module.Service()
 }
 
-func provideSystemBackupServiceInternal(db *database.DB, dockerService *docker.DockerClientService, volumeModule *volume.Module, engine *backup.Engine, s3Service *s3domain.S3DestinationService, activityService *activity.ActivityService, cfg *config.Config) *systembackup.SystemBackupService {
-	return systembackup.NewSystemBackupService(db, dockerService, volumeModule.Service(), engine, s3Service, activityService, cfg)
+func provideSystemBackupServiceInternal(db *database.DB, dockerService *docker.DockerClientService, volumeModule *volume.Module, engine *backup.Engine, s3Service *s3domain.S3DestinationService, activityService *activity.ActivityService, settingsService *settings.SettingsService, cfg *config.Config) *systembackup.SystemBackupService {
+	return systembackup.NewSystemBackupService(db, dockerService, volumeModule.Service(), engine, s3Service, activityService, settingsService, cfg)
 }
 
 func provideContainerModuleInternal(ctx context.Context, event *event.EventService, docker *docker.DockerClientService, image *image.ImageService, settings *settings.SettingsService, project *project.ProjectService, activity *activity.ActivityService) *container.Module {

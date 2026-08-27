@@ -23,6 +23,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/resources"
 )
 
@@ -683,15 +684,9 @@ func ensureSQLiteDirectoryInternal(connString string) error {
 	if !strings.HasPrefix(connString, "file:") {
 		return nil
 	}
-	u, err := url.Parse(connString)
+	pathPart, err := utils.SQLitePathFromDSN(connString)
 	if err != nil {
 		return errors.WrapIf(err, "failed to parse SQLite DSN")
-	}
-
-	// For "file:data/arcane.db?...", path is in Opaque; for "file:/abs/path.db", it's in Path.
-	pathPart := u.Opaque
-	if pathPart == "" {
-		pathPart = u.Path
 	}
 	if pathPart == "" || strings.HasPrefix(pathPart, ":memory:") {
 		return nil

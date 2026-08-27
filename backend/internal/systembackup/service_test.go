@@ -2,6 +2,7 @@ package systembackup
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	recoverytypes "github.com/getarcaneapp/arcane/backend/v2/internal/recovery"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/entityjobs"
 	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
@@ -135,7 +137,7 @@ func TestRecoveryEnvironmentInternalIncludesRuntimeSecrets(t *testing.T) {
 		OidcClientSecret:  "oidc-secret",
 		FilePerm:          0o640,
 	}
-	environment := (&SystemBackupService{config: cfg}).recoveryEnvironmentInternal()
+	environment := (&SystemBackupService{config: cfg}).recoveryEnvironmentInternal(context.Background())
 	require.Equal(t, "jwt-secret", environment["JWT_SECRET"])
 	require.Equal(t, "encryption-secret", environment["ENCRYPTION_KEY"])
 	require.Equal(t, "admin-key", environment["ADMIN_STATIC_API_KEY"])
@@ -154,4 +156,140 @@ func TestSystemSnapshotPathFromFilesInternal(t *testing.T) {
 
 	_, err = systemSnapshotPathFromFilesInternal([]string{"/arcane.db"})
 	require.ErrorContains(t, err, "does not contain an Arcane recovery manifest")
+}
+
+func TestProjectFilesFromSnapshotInternal(t *testing.T) {
+	tests := []struct {
+		name         string
+		files        []string
+		snapshotPath string
+		projectsPath string
+		databasePath string
+		expected     []string
+	}{
+		{
+			name: "current snapshot root",
+			files: []string{
+				"/.arcane-recovery.json", "/arcane.db", "/arcane.db-wal", "/templates/demo.yaml",
+				"/projects/demo/docker-compose.yaml", "/projects/demo/.env", "/projects/demo/data/", "/projects/demo/.env",
+			},
+			snapshotPath: "/", projectsPath: "projects", databasePath: "arcane.db",
+			expected: []string{"demo/.env", "demo/docker-compose.yaml"},
+		},
+		{
+			name: "legacy snapshot and custom projects root",
+			files: []string{
+				"/app/data/.arcane-recovery.json", "/app/data/arcane.db", "/app/data/custom/projects/nested/app/compose.yaml",
+				"/app/data/projects/ignored/compose.yaml",
+			},
+			snapshotPath: "/app/data", projectsPath: "custom/projects", databasePath: "arcane.db",
+			expected: []string{"nested/app/compose.yaml"},
+		},
+		{
+			name: "projects directory is data root",
+			files: []string{
+				"/.arcane-recovery.json", "/.arcane-recovery-request.json", "/custom.db", "/custom.db-shm", "/demo/config.yaml",
+			},
+			snapshotPath: "/", projectsPath: "", databasePath: "custom.db",
+			expected: []string{"demo/config.yaml"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			entries := projectEntriesFromSnapshotInternal(test.files, test.snapshotPath, test.projectsPath, test.databasePath, "", true)
+			actual := make([]string, 0, len(entries))
+			for _, entry := range entries {
+				if !entry.IsDirectory {
+					actual = append(actual, entry.Path)
+				}
+			}
+			slices.Sort(actual)
+			require.Equal(t, test.expected, actual)
+		})
+	}
+}
+
+func TestProjectsRelativePathFromManifestInternal(t *testing.T) {
+	tests := []struct {
+		name              string
+		databaseURL       string
+		projectsDirectory string
+		expected          string
+		errorContains     string
+	}{
+		{name: "absolute database path", databaseURL: "file:/app/data/arcane.db", projectsDirectory: "/app/data/historical", expected: "historical"},
+		{name: "relative default database path", databaseURL: "file:data/arcane.db", projectsDirectory: "/app/data/historical", expected: "historical"},
+		{name: "projects mapping", databaseURL: "file:/app/data/arcane.db", projectsDirectory: "/app/data/historical:/host/projects", expected: "historical"},
+		{name: "data root", databaseURL: "file:/app/data/arcane.db", projectsDirectory: "/app/data", expected: ""},
+		{name: "outside data", databaseURL: "file:/app/data/arcane.db", projectsDirectory: "/srv/projects", errorContains: "outside Arcane's system backup data"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			manifest := recoverytypes.Manifest{Environment: map[string]string{
+				"DATABASE_URL":       test.databaseURL,
+				"PROJECTS_DIRECTORY": test.projectsDirectory,
+			}}
+			relative, err := projectsRelativePathFromManifestInternal(manifest)
+			if test.errorContains != "" {
+				require.ErrorContains(t, err, test.errorContains)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, test.expected, relative)
+		})
+	}
+}
+
+func TestProjectEntriesFromSnapshotSynthesizesFoldersAndExcludesProtectedDataInternal(t *testing.T) {
+	entries := projectEntriesFromSnapshotInternal([]string{
+		"/.arcane-recovery.json",
+		"/.arcane-recovery-request.json",
+		"/arcane.db",
+		"/arcane.db-wal",
+		"/arcane.db-shm",
+		"/arcane.db-journal",
+		"/demo/nested/compose.yaml",
+		"/z.txt",
+	}, "/", "", "arcane.db", "", false)
+	require.Equal(t, []backuptypes.BackupFileEntry{
+		{Path: "demo", Name: "demo", IsDirectory: true},
+		{Path: "z.txt", Name: "z.txt"},
+	}, entries)
+}
+
+func TestProjectEntriesFromSnapshotNestedBrowseInternal(t *testing.T) {
+	entries := projectEntriesFromSnapshotInternal([]string{
+		"/app/data/custom/projects/demo/nested/",
+		"/app/data/custom/projects/demo/compose.yaml",
+	}, "/app/data", "custom/projects", "arcane.db", "demo", false)
+	require.Equal(t, []backuptypes.BackupFileEntry{
+		{Path: "demo/nested", Name: "nested", IsDirectory: true},
+		{Path: "demo/compose.yaml", Name: "compose.yaml"},
+	}, entries)
+}
+
+func TestNormalizeSystemBackupSelectionInternal(t *testing.T) {
+	snapshot := systemBackupSnapshotInternal{
+		projectsPath: "historical",
+		entries: []backuptypes.BackupFileEntry{
+			{Path: "demo", Name: "demo", IsDirectory: true},
+			{Path: "demo/compose.yaml", Name: "compose.yaml"},
+		},
+	}
+	selected, err := normalizeSystemBackupSelectionInternal(backuptypes.RestoreSelection{SelectAll: true}, snapshot)
+	require.NoError(t, err)
+	require.Equal(t, []backuptypes.BackupFileEntry{{Path: "", Name: "historical", IsDirectory: true}}, selected)
+
+	_, err = normalizeSystemBackupSelectionInternal(
+		backuptypes.RestoreSelection{SelectAll: true, Paths: []string{"demo"}},
+		snapshot,
+	)
+	require.ErrorContains(t, err, "cannot be combined")
+
+	selected, err = normalizeSystemBackupSelectionInternal(
+		backuptypes.RestoreSelection{Paths: []string{"demo/compose.yaml", "demo"}},
+		snapshot,
+	)
+	require.NoError(t, err)
+	require.Equal(t, []backuptypes.BackupFileEntry{{Path: "demo", Name: "demo", IsDirectory: true}}, selected)
 }

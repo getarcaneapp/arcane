@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"path"
+	"slices"
 	"strings"
 	"time"
 
@@ -134,7 +136,7 @@ func (e *Engine) CreateSnapshot(ctx context.Context, dockerClient *client.Client
 
 // RestoreSnapshot restores a snapshot (or one path inside it) onto the target mount.
 func (e *Engine) RestoreSnapshot(ctx context.Context, dockerClient *client.Client, repository Repository, password, snapshotID string, target mount.Mount, options RestoreOptions) error {
-	command := []string{"restore"}
+	command := []string{"restore", "--verify-existing"}
 	if options.DeleteExtra {
 		command = append(command, "--delete")
 	}
@@ -151,9 +153,20 @@ func (e *Engine) RestoreSnapshot(ctx context.Context, dockerClient *client.Clien
 	return err
 }
 
-// ListSnapshotFiles returns every path recorded in the snapshot.
-func (e *Engine) ListSnapshotFiles(ctx context.Context, dockerClient *client.Client, repository Repository, password, snapshotID string) ([]string, error) {
-	output, err := e.runInternal(ctx, dockerClient, repository, password, []string{"ls", "--json", "--recursive", "--", snapshotID + ":/"})
+// ListSnapshotFiles lists a snapshot path and returns paths relative to the
+// snapshot root. A supplied path is nonrecursive unless recursive is true.
+func (e *Engine) ListSnapshotFiles(ctx context.Context, dockerClient *client.Client, repository Repository, password, snapshotID, filePath string, recursive bool) ([]string, error) {
+	command := []string{"ls", "--json"}
+	if recursive {
+		command = append(command, "--recursive")
+	}
+	cleanedPath := strings.Trim(strings.TrimSpace(filePath), "/")
+	source := snapshotID + ":/" + cleanedPath
+	if cleanedPath != "" && strings.HasSuffix(strings.TrimSpace(filePath), "/") {
+		source += "/"
+	}
+	command = append(command, "--", source)
+	output, err := e.runInternal(ctx, dockerClient, repository, password, command)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list Rustic snapshot: %w", err)
 	}
@@ -161,7 +174,71 @@ func (e *Engine) ListSnapshotFiles(ctx context.Context, dockerClient *client.Cli
 	if err := json.Unmarshal([]byte(output), &files); err != nil {
 		return nil, fmt.Errorf("failed to decode Rustic file list: %w", err)
 	}
-	return files, nil
+	if !recursive && len(files) > 0 {
+		// Rustic's JSON listing omits node types; the stable long listing restores them.
+		longCommand := slices.Clone(command)
+		longCommand[1] = "--long"
+		longOutput, err := e.runInternal(ctx, dockerClient, repository, password, longCommand)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list Rustic snapshot metadata: %w", err)
+		}
+		files, err = markSnapshotDirectoriesInternal(files, longOutput)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return qualifySnapshotListingInternal(files, cleanedPath), nil
+}
+
+func qualifySnapshotListingInternal(files []string, snapshotPath string) []string {
+	qualified := slices.Clone(files)
+	prefix := strings.Trim(strings.TrimSpace(snapshotPath), "/")
+	if prefix == "" {
+		return qualified
+	}
+	for index, file := range qualified {
+		directory := strings.HasSuffix(file, "/")
+		relative := strings.TrimPrefix(strings.TrimPrefix(file, "./"), "/")
+		qualified[index] = path.Join(prefix, relative)
+		if directory {
+			qualified[index] += "/"
+		}
+	}
+	return qualified
+}
+
+func markSnapshotDirectoriesInternal(files []string, longOutput string) ([]string, error) {
+	if len(files) == 0 {
+		if strings.TrimSpace(longOutput) != "" {
+			return nil, errors.New("rustic file and metadata listings have different lengths")
+		}
+		return []string{}, nil
+	}
+	lines := strings.Split(strings.ReplaceAll(longOutput, "\r\n", "\n"), "\n")
+	if len(lines) != len(files) {
+		return nil, errors.New("rustic file and metadata listings have different lengths")
+	}
+	marked := slices.Clone(files)
+	for index, line := range lines {
+		if line == "" {
+			return nil, errors.New("rustic returned empty file metadata")
+		}
+		if line[0] == 'd' && !strings.HasSuffix(marked[index], "/") {
+			marked[index] += "/"
+		}
+	}
+	return marked, nil
+}
+
+// ReadSnapshotTextFile returns one text file from a snapshot.
+func (e *Engine) ReadSnapshotTextFile(ctx context.Context, dockerClient *client.Client, repository Repository, password, snapshotID, filePath string) (string, error) {
+	output, err := e.runInternal(ctx, dockerClient, repository, password, []string{
+		"dump", "--archive", "content", "--", snapshotID + ":/" + strings.TrimPrefix(filePath, "/"),
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to read Rustic snapshot file: %w", err)
+	}
+	return output, nil
 }
 
 // DiscoveredSnapshot describes one snapshot found in a repository.

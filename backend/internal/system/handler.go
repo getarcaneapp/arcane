@@ -48,10 +48,6 @@ type SystemHealthInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
 
-type SystemHealthOutput struct {
-	Status int `status:"200"`
-}
-
 type GetDockerInfoInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
@@ -285,7 +281,7 @@ func (h *SystemHandler) rejectIfAgentModeInternal() error {
 }
 
 // Health checks if the Docker daemon is responsive.
-func (h *SystemHandler) Health(ctx context.Context, input *SystemHealthInput) (*SystemHealthOutput, error) {
+func (h *SystemHandler) Health(ctx context.Context, input *SystemHealthInput) (*struct{}, error) {
 	dockerClient, err := h.dockerService.GetClient(ctx)
 	if err != nil {
 		return nil, huma.Error503ServiceUnavailable(errors.WithMessage(err, "Failed to connect to Docker").Error())
@@ -296,7 +292,7 @@ func (h *SystemHandler) Health(ctx context.Context, input *SystemHealthInput) (*
 		return nil, huma.Error503ServiceUnavailable(errors.WithMessage(err, "Docker is not responsive").Error())
 	}
 
-	return &SystemHealthOutput{}, nil
+	return nil, nil
 }
 
 // GetDockerInfo returns Docker daemon version and system information.

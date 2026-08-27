@@ -5,23 +5,23 @@ go 1.27
 replace github.com/getarcaneapp/arcane/types/v2 => ../types
 
 require (
-	charm.land/bubbles/v2 v2.2.0
+	charm.land/bubbles/v2 v2.2.1
 	charm.land/bubbletea/v2 v2.0.9
 	charm.land/fang/v2 v2.0.1
 	charm.land/lipgloss/v2 v2.0.6
 	charm.land/log/v2 v2.0.0
 	emperror.dev/errors v0.8.1
 	github.com/charmbracelet/x/term v0.2.2
-	github.com/getarcaneapp/arcane/types/v2 v2.6.0
+	github.com/getarcaneapp/arcane/types/v2 v2.9.0
 	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/mattn/go-runewidth v0.0.28
-	github.com/samber/hot v0.13.0
+	github.com/samber/hot v0.13.1
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.12.1
-	go.getarcane.app/acfs v0.4.2
-	go.getarcane.app/sys/bytes v0.1.0
+	go.getarcane.app/acfs v0.5.0
+	go.getarcane.app/sys/bytes v0.2.0
 )
 
 require (
@@ -72,10 +72,11 @@ require (
 	github.com/prometheus/common v0.70.1 // indirect
 	github.com/prometheus/procfs v0.21.1 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
+	github.com/rogpeppe/go-internal v1.15.0 // indirect
 	github.com/sagikazarmark/locafero v0.12.0 // indirect
 	github.com/sahilm/fuzzy v0.1.3 // indirect
 	github.com/samber/go-singleflightx v0.3.2 // indirect
-	github.com/sirupsen/logrus v1.10.0 // indirect
+	github.com/sirupsen/logrus v1.10.1 // indirect
 	github.com/spf13/afero v1.15.0 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect

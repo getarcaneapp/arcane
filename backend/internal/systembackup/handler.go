@@ -9,6 +9,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
@@ -65,6 +66,27 @@ type RestoreSystemBackupInput struct {
 	ID   string `path:"id"`
 	Body backuptypes.RestoreSystemBackupRequest
 }
+
+// BrowseSystemBackupFilesInput selects one page of a system backup tree.
+type BrowseSystemBackupFilesInput struct {
+	ID     string `path:"id"`
+	Path   string `query:"path" doc:"Folder path relative to the backup root"`
+	Search string `query:"search" doc:"Case-insensitive full-path search"`
+	Start  int    `query:"start" default:"0" doc:"Start index for the page"`
+	Limit  int    `query:"limit" default:"20" doc:"Requested page size"`
+	Body   backuptypes.SystemBackupRecoveryKey
+}
+
+// BrowseSystemBackupFilesOutput contains a page of project files and folders.
+type BrowseSystemBackupFilesOutput struct {
+	Body base.Paginated[backuptypes.BackupFileEntry]
+}
+
+// RestoreSystemBackupFilesInput selects project files to restore from a system backup.
+type RestoreSystemBackupFilesInput struct {
+	ID   string `path:"id"`
+	Body backuptypes.RestoreSystemBackupFilesRequest
+}
 type UploadSystemBackupInput struct {
 	ID   string `path:"id"`
 	Body backuptypes.UploadSystemBackupRequest
@@ -92,6 +114,8 @@ func RegisterSystemBackups(api huma.API, service *SystemBackupService, activityS
 	middleware.RegisterWithPermission(api, huma.Operation{OperationID: "create-system-backup", Method: http.MethodPost, Path: "/backups", Summary: "Create Arcane system backup", Tags: []string{"System Backups"}, Middlewares: adminOnly}, authz.PermSystemBackupsManage, h.Create)
 	middleware.RegisterWithPermission(api, huma.Operation{OperationID: "discover-system-backups", Method: http.MethodPost, Path: "/backups/discover", Summary: "Discover Arcane system backups in S3", Tags: []string{"System Backups"}, Middlewares: adminOnly}, authz.PermSystemBackupsManage, h.Discover)
 	middleware.RegisterWithPermission(api, huma.Operation{OperationID: "restore-system-backup", Method: http.MethodPost, Path: "/backups/{id}/restore", Summary: "Restore Arcane system backup", Tags: []string{"System Backups"}, Middlewares: adminOnly}, authz.PermSystemBackupsRestore, h.Restore)
+	middleware.RegisterWithPermission(api, huma.Operation{OperationID: "browse-system-backup-files", Method: http.MethodPost, Path: "/backups/{id}/files/browse", Summary: "Browse project files in an Arcane system backup", Tags: []string{"System Backups"}, Middlewares: adminOnly}, authz.PermSystemBackupsRead, h.BrowseFiles)
+	middleware.RegisterWithPermission(api, huma.Operation{OperationID: "restore-system-backup-files", Method: http.MethodPost, Path: "/backups/{id}/restore-files", Summary: "Restore project files from an Arcane system backup", Tags: []string{"System Backups"}, Middlewares: adminOnly}, authz.PermSystemBackupsRestore, h.RestoreFiles)
 	middleware.RegisterWithPermission(api, huma.Operation{OperationID: "upload-system-backup", Method: http.MethodPost, Path: "/backups/{id}/upload", Summary: "Upload Arcane system backup", Tags: []string{"System Backups"}, Middlewares: adminOnly}, authz.PermSystemBackupsManage, h.Upload)
 	middleware.RegisterWithPermission(api, huma.Operation{OperationID: "delete-system-backup", Method: http.MethodDelete, Path: "/backups/{id}", Summary: "Delete Arcane system backup", Tags: []string{"System Backups"}, Middlewares: adminOnly}, authz.PermSystemBackupsManage, h.Delete)
 }
@@ -227,6 +251,43 @@ func (h *SystemBackupHandler) Restore(ctx context.Context, input *RestoreSystemB
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 	return messageOutputInternal("Arcane system restore started", activityID), nil
+}
+
+// BrowseFiles returns one lazy-loaded project tree page.
+func (h *SystemBackupHandler) BrowseFiles(ctx context.Context, input *BrowseSystemBackupFilesInput) (*BrowseSystemBackupFilesOutput, error) {
+	params := handlerutil.PaginationParams(input.Start, input.Limit, "", "", input.Search)
+	items, page, err := h.service.BrowseBackupFiles(ctx, input.ID, input.Body.RecoveryKey, input.Path, params)
+	if err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	return &BrowseSystemBackupFilesOutput{Body: base.Paginated[backuptypes.BackupFileEntry]{
+		Success: true, Data: items, Pagination: handlerutil.PaginationResponse(page),
+	}}, nil
+}
+
+// RestoreFiles restores selected project files from a system backup.
+func (h *SystemBackupHandler) RestoreFiles(ctx context.Context, input *RestoreSystemBackupFilesInput) (*SystemBackupMessageOutput, error) {
+	user, err := handlerutil.RequireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	activityID, err := activitylib.RunHandlerActivity(utils.ActivityRuntimeContext(ctx, h.appCtx), h.activity, activitylib.HandlerOptions{
+		EnvironmentID: "0", Type: activitytypes.TypeResourceAction, ResourceType: "system_backup", ResourceID: input.ID, ResourceName: "Arcane", User: user,
+		Step: "Restoring project files", Message: "Restoring project files from Arcane system backup", SuccessMessage: "Arcane project files restored successfully",
+		Metadata: database.JSON{"action": "restore_system_backup_files", "backupId": input.ID, "pathCount": len(input.Body.Paths), "selectAll": input.Body.SelectAll, "search": input.Body.Search},
+	}, func(activityCtx context.Context) error {
+		return h.service.RestoreBackupFiles(activityCtx, input.ID, input.Body, *user)
+	})
+	if errors.Is(err, ErrSystemBackupAlreadyRunning) {
+		return nil, huma.Error409Conflict(err.Error())
+	}
+	if errors.Is(err, common.ErrBadRequest) {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	return messageOutputInternal("Arcane project files restored successfully", activityID), nil
 }
 
 func (h *SystemBackupHandler) Upload(ctx context.Context, input *UploadSystemBackupInput) (*SystemBackupOutput, error) {

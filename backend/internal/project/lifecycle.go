@@ -36,7 +36,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"go.getarcane.app/acfs"
-	buildapi "go.getarcane.app/builds/api"
+	"go.getarcane.app/kit/pkg/capture"
 )
 
 // Lifecycle hook configuration limits and conventions.
@@ -310,8 +310,8 @@ func (s *LifecycleService) runScriptInContainerInternal(
 		return "", "", 0, errors.WrapIf(err, "stream lifecycle container logs")
 	}
 
-	stdoutBuf := buildapi.NewLogCapture(lifecycleMaxOutputBytes)
-	stderrBuf := buildapi.NewLogCapture(lifecycleMaxOutputBytes)
+	stdoutBuf := capture.New(lifecycleMaxOutputBytes)
+	stderrBuf := capture.New(lifecycleMaxOutputBytes)
 	logDone := make(chan error, 1)
 	go func() {
 		_, copyErr := stdcopy.StdCopy(stdoutBuf, stderrBuf, logs)

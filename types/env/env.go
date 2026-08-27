@@ -35,11 +35,11 @@ type CreateGlobalVariableRequest struct {
 // UpdateGlobalVariableRequest updates a variable; nil fields keep the current
 // value. A nil Value on a secret variable keeps the stored ciphertext.
 type UpdateGlobalVariableRequest struct {
-	Key             *string   `json:"key,omitempty"`
-	Value           *string   `json:"value,omitempty"`
-	IsSecret        *bool     `json:"isSecret,omitempty"`
-	AllEnvironments *bool     `json:"allEnvironments,omitempty"`
-	EnvironmentIDs  *[]string `json:"environmentIds,omitempty"`
+	Key             *string   `json:"key,omitzero"`
+	Value           *string   `json:"value,omitzero"`
+	IsSecret        *bool     `json:"isSecret,omitzero"`
+	AllEnvironments *bool     `json:"allEnvironments,omitzero"`
+	EnvironmentIDs  *[]string `json:"environmentIds,omitzero"`
 }
 
 type EnvironmentSyncStatus struct {

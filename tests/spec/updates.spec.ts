@@ -3,8 +3,16 @@ import { test, expect, type Page } from '@playwright/test';
 const UPDATES_ROUTE = '/updates';
 
 const CONTAINERS = [
-	{ id: 'update-row-a', name: 'updates-alpha', image: 'ghcr.io/example/alpha:1.0' },
-	{ id: 'update-row-b', name: 'updates-beta', image: 'ghcr.io/example/beta:1.0' }
+	{
+		id: 'update-row-a',
+		name: 'updates-alpha',
+		image: 'public.ecr.aws/docker/library/alpine:3.20'
+	},
+	{
+		id: 'update-row-b',
+		name: 'updates-beta',
+		image: 'public.ecr.aws/docker/library/busybox:1.37'
+	}
 ];
 
 function containerWithUpdate(container: (typeof CONTAINERS)[number]) {

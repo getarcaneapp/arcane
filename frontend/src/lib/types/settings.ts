@@ -54,6 +54,7 @@ export type Settings = {
 	gitSyncMaxBinarySizeMb: number;
 	baseServerUrl: string;
 	enableGravatar: boolean;
+	experimentalFeaturesEnabled: boolean;
 	avatarMaxUploadSizeMb: number;
 	uiConfigDisabled: boolean;
 	defaultShell: string;
@@ -78,6 +79,11 @@ export type Settings = {
 	trivyServerUrl: string;
 	trivyServerToken: string;
 	trivyIgnoreUnfixed: boolean;
+	imagePatchSuffix: string;
+	imagePatchTimeoutSec: number;
+	imagePatchAllPlatforms: boolean;
+	imageAutoPatchEnabled: boolean;
+	imageAutoPatchInterval: string;
 	lifecycleEnabled: boolean;
 	lifecycleDefaultRunnerImage: string;
 	lifecycleMaxTimeoutSec: number;
@@ -160,6 +166,7 @@ export type JobSchedules = {
 	pollingInterval: string;
 	scheduledPruneInterval: string;
 	vulnerabilityScanInterval: string;
+	imageAutoPatchInterval: string;
 	autoHealInterval: string;
 };
 

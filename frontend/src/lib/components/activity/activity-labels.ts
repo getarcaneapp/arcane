@@ -9,6 +9,7 @@ import {
 	RefreshIcon,
 	RestartIcon,
 	ScanIcon,
+	ShieldCheckIcon,
 	StartIcon,
 	StopIcon,
 	TrashIcon
@@ -54,6 +55,8 @@ export function activityTypeLabel(type: ActivityType): string {
 			return m.activity_type_image_build();
 		case 'image_update_check':
 			return m.activity_type_image_update_check();
+		case 'image_patch':
+			return m.activity_type_image_patch();
 		case 'project_pull':
 			return m.activity_type_project_pull();
 		case 'project_build':
@@ -117,6 +120,8 @@ export function activityTypeIcon(type: ActivityType): IconType {
 			return TrashIcon;
 		case 'vulnerability_scan':
 			return ScanIcon;
+		case 'image_patch':
+			return ShieldCheckIcon;
 		case 'auto_update':
 			return RefreshIcon;
 		case 'system_prune':

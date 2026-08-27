@@ -174,7 +174,7 @@ type Sync struct {
 	// Description of the container registry.
 	//
 	// Required: false
-	Description *string `json:"description,omitempty"`
+	Description *string `json:"description,omitzero"`
 
 	// Insecure indicates if the registry uses an insecure connection (HTTP).
 	//

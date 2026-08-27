@@ -232,6 +232,7 @@ func DefaultSettingsConfig() *Settings {
 		VolumeHelperIdleTimeout:         SettingVariable{Value: "10"},
 		BaseServerURL:                   SettingVariable{Value: "http://localhost"},
 		EnableGravatar:                  SettingVariable{Value: "true"},
+		ExperimentalFeaturesEnabled:     SettingVariable{Value: "false"},
 		AvatarMaxUploadSizeMb:           SettingVariable{Value: "2"},
 		DefaultShell:                    SettingVariable{Value: "/bin/sh"},
 		DockerHost:                      SettingVariable{Value: "unix:///var/run/docker.sock"},
@@ -282,6 +283,11 @@ func DefaultSettingsConfig() *Settings {
 		DockerAPITimeout:       SettingVariable{Value: "30"},
 		DockerImagePullTimeout: SettingVariable{Value: "600"},
 		TrivyScanTimeout:       SettingVariable{Value: "900"},
+		ImagePatchSuffix:       SettingVariable{Value: "patched"},
+		ImagePatchTimeoutSec:   SettingVariable{Value: "600"},
+		ImagePatchAllPlatforms: SettingVariable{Value: "false"},
+		ImageAutoPatchEnabled:  SettingVariable{Value: "false"},
+		ImageAutoPatchInterval: SettingVariable{Value: "0 0 3 * * *"},
 		GitOperationTimeout:    SettingVariable{Value: "300"},
 		HTTPClientTimeout:      SettingVariable{Value: "30"},
 		RegistryTimeout:        SettingVariable{Value: "30"},
@@ -932,27 +938,32 @@ func (s *SettingsService) SetStringSetting(ctx context.Context, key, value strin
 	return s.UpdateSetting(ctx, key, value)
 }
 
+// ParseExcludedContainerNames returns the trimmed, deduplicated names from a comma-separated exclusion list.
+func ParseExcludedContainerNames(raw string) []string {
+	seen := make(map[string]struct{})
+	var ordered []string
+	for part := range strings.SplitSeq(raw, ",") {
+		name := strings.TrimSpace(part)
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; !ok {
+			seen[name] = struct{}{}
+			ordered = append(ordered, name)
+		}
+	}
+	return ordered
+}
+
 // SetContainerAutoUpdateExclusionInternal adds or removes a container name from
 // the autoUpdateExcludedContainers setting. When excluded is true the container
 // is added to the list; when false it is removed.
 func (s *SettingsService) SetContainerAutoUpdateExclusionInternal(ctx context.Context, containerName string, excluded bool) error {
 	_, err := actors.Execute(ctx, s.writes, "update container auto-update exclusion", func(writeCtx context.Context) (actors.NoPayload, error) {
-		raw := s.GetStringSetting(writeCtx, "autoUpdateExcludedContainers", "")
-		existing := make(map[string]struct{})
-		var ordered []string
-		for part := range strings.SplitSeq(raw, ",") {
-			name := strings.TrimSpace(part)
-			if name == "" {
-				continue
-			}
-			if _, ok := existing[name]; !ok {
-				existing[name] = struct{}{}
-				ordered = append(ordered, name)
-			}
-		}
+		ordered := ParseExcludedContainerNames(s.GetStringSetting(writeCtx, "autoUpdateExcludedContainers", ""))
 
 		if excluded {
-			if _, ok := existing[containerName]; !ok {
+			if !slices.Contains(ordered, containerName) {
 				ordered = append(ordered, containerName)
 			}
 		} else {

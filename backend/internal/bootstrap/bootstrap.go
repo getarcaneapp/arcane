@@ -30,6 +30,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/variable"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/vulnerability"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/startup"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
@@ -163,17 +164,18 @@ type initializeStartupStateParams struct {
 	Config     *config.Config
 	HTTPClient *http.Client
 
-	Volume      *volume.Module
-	Settings    *settings.SettingsService
-	Environment *environment.EnvironmentService
-	GitOpsSync  *gitops.GitOpsSyncService
-	Project     *project.ProjectService
-	Variable    *variable.VariableService
-	Docker      *docker.DockerClientService
-	Swarm       *swarm.SwarmService
-	Role        *role.RoleService
-	User        *user.UserService
-	ApiKey      *apikey.ApiKeyService
+	Volume        *volume.Module
+	Settings      *settings.SettingsService
+	Environment   *environment.EnvironmentService
+	GitOpsSync    *gitops.GitOpsSyncService
+	Project       *project.ProjectService
+	Variable      *variable.VariableService
+	Docker        *docker.DockerClientService
+	Swarm         *swarm.SwarmService
+	Role          *role.RoleService
+	User          *user.UserService
+	ApiKey        *apikey.ApiKeyService
+	Vulnerability *vulnerability.VulnerabilityService
 }
 
 func initializeStartupState(p initializeStartupStateParams) {
@@ -222,6 +224,7 @@ func initializeStartupState(p initializeStartupStateParams) {
 		slog.WarnContext(appCtx, "Failed to ensure local environment", "error", err)
 	}
 	initializeGitOpsStartupStateInternal(appCtx, p.GitOpsSync)
+	p.Vulnerability.ImportLegacyReportFiles(appCtx)
 	if p.Project != nil {
 		if err := p.Project.RecoverProjectRenameJournals(appCtx); err != nil {
 			slog.WarnContext(appCtx, "Failed to recover interrupted project rename operations on startup", "error", err)

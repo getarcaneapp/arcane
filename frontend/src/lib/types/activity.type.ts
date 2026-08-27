@@ -4,6 +4,7 @@ export type ActivityType =
 	| 'image_pull'
 	| 'image_build'
 	| 'image_update_check'
+	| 'image_patch'
 	| 'project_pull'
 	| 'project_build'
 	| 'project_deploy'

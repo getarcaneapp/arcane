@@ -534,6 +534,92 @@ func TestImageUpdateService_CheckMultipleImages_ComposeBuildMissingLocallySkipsR
 	assert.Zero(t, registryCalls.Load())
 }
 
+func newArcaneLocalImageUpdateServiceInternal(t *testing.T, imageExists bool) (*ImageUpdateService, *atomic.Int32) {
+	t.Helper()
+
+	db := setupImageUpdateTestDB(t)
+	localDigest := digest.FromString("arcane-local-build").String()
+	dockerServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if imageExists && strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json") {
+			w.Header().Set("Content-Type", "application/json")
+			assert.NoError(t, json.NewEncoder(w).Encode(dockertypesimage.InspectResponse{
+				ID:          "sha256:arcane-local-image-id",
+				RepoTags:    []string{"arcane.local/demo-2ab41b29/worker:latest"},
+				RepoDigests: []string{"arcane.local/demo-2ab41b29/worker@" + localDigest},
+			}))
+			return
+		}
+		http.Error(w, "No such image", http.StatusNotFound)
+	}))
+	t.Cleanup(dockerServer.Close)
+
+	var registryCalls atomic.Int32
+	registryService := registry.NewContainerRegistryService(db, func(context.Context) (registry.RegistryDaemonClient, error) {
+		return &fakeRegistryDaemonClient{
+			distributionInspectFn: func(context.Context, string, client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+				registryCalls.Add(1)
+				return client.DistributionInspectResult{
+					Descriptor: ocispec.Descriptor{Digest: digest.FromString("arcane-local-remote")},
+				}, nil
+			},
+		}, nil
+	}, nil)
+
+	dockerService := &docker.DockerClientService{Client: newImageUpdateTestDockerClientInternal(t, dockerServer)}
+	eventService := event.NewEventService(db, nil, nil)
+	return NewImageUpdateService(db, nil, registryService, dockerService, eventService, nil, nil), &registryCalls
+}
+
+func TestImageUpdateService_CheckImageUpdate_ArcaneLocalHostSkipsRegistry(t *testing.T) {
+	svc, registryCalls := newArcaneLocalImageUpdateServiceInternal(t, true)
+	staleError := "failed to get remote digest"
+	require.NoError(t, svc.db.Create(&ImageUpdateRecord{
+		ID:         "sha256:arcane-local-image-id",
+		Repository: "arcane.local/demo-2ab41b29/worker",
+		Tag:        "latest",
+		LastError:  &staleError,
+		CheckTime:  time.Now(),
+	}).Error)
+
+	result, err := svc.CheckImageUpdate(context.Background(), "arcane.local/demo-2ab41b29/worker:latest")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, UpdateTypeLocal, result.UpdateType)
+	assert.False(t, result.HasUpdate)
+	assert.Empty(t, result.Error)
+	assert.Zero(t, registryCalls.Load())
+
+	var saved ImageUpdateRecord
+	require.NoError(t, svc.db.First(&saved, "id = ?", "sha256:arcane-local-image-id").Error)
+	assert.Equal(t, UpdateTypeLocal, saved.UpdateType)
+	assert.Nil(t, saved.LastError)
+}
+
+func TestImageUpdateService_CheckMultipleImages_ArcaneLocalMissingImageSkipsRegistry(t *testing.T) {
+	svc, registryCalls := newArcaneLocalImageUpdateServiceInternal(t, false)
+
+	results, err := svc.CheckMultipleImages(context.Background(), []string{"arcane.local/demo-2ab41b29/worker:latest"}, nil)
+	require.NoError(t, err)
+	result := results["arcane.local/demo-2ab41b29/worker:latest"]
+	require.NotNil(t, result)
+	assert.Empty(t, result.Error)
+	assert.False(t, result.HasUpdate)
+	assert.Equal(t, UpdateTypeLocal, result.UpdateType)
+	assert.Zero(t, registryCalls.Load())
+}
+
+func TestImageUpdateService_CheckMultipleImages_OtherDottedRegistryStillChecked(t *testing.T) {
+	svc, registryCalls := newArcaneLocalImageUpdateServiceInternal(t, false)
+
+	results, err := svc.CheckMultipleImages(context.Background(), []string{"registry.local/team/app:latest"}, nil)
+	require.NoError(t, err)
+	result := results["registry.local/team/app:latest"]
+	require.NotNil(t, result)
+	assert.Empty(t, result.Error)
+	assert.Equal(t, UpdateTypeNotPulled, result.UpdateType)
+	assert.Positive(t, registryCalls.Load())
+}
+
 func TestImageUpdateService_InspectLocalImageSnapshot_NoRepoDigestsRemainsLocal(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json") {
@@ -2248,6 +2334,29 @@ func TestImageUpdateService_GetAllImageRefsFallsBackWhenContainerDiscoveryFailsI
 
 	require.NoError(t, err)
 	assert.Equal(t, []string{firstRef, secondRef}, got)
+}
+
+func TestFilterImageSummariesByContainerOptOutHonorsSettingsExclusionsInternal(t *testing.T) {
+	const (
+		excludedRef = "local/excluded:latest"
+		sharedRef   = "local/shared:latest"
+	)
+
+	images := []dockertypesimage.Summary{
+		{ID: "sha256:excluded", RepoTags: []string{excludedRef}},
+		{ID: "sha256:shared", RepoTags: []string{sharedRef}},
+	}
+	containers := []dockertypescontainer.Summary{
+		{ID: "c1", Names: []string{"/excluded-app"}, ImageID: "sha256:excluded", Image: excludedRef},
+		{ID: "c2", Names: []string{"/shared-excluded"}, ImageID: "sha256:shared", Image: sharedRef},
+		{ID: "c3", Names: []string{"/shared-enabled"}, ImageID: "sha256:shared", Image: sharedRef},
+	}
+	excluded := map[string]bool{"excluded-app": true, "shared-excluded": true, "unknown-name": true}
+
+	got := filterImageSummariesByContainerOptOutInternal(images, containers, excluded, 0)
+
+	assert.NotContains(t, got, excludedRef)
+	assert.Contains(t, got, sharedRef)
 }
 
 // testProjectRow is a minimal stand-in for project.Project: the project

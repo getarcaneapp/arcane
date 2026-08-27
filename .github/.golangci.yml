@@ -100,6 +100,10 @@ linters:
           msg: use WrapIf, WrapIff, or WithStackIf so an existing stack is preserved
     gomoddirectives:
       replace-local: true
+      replace-allow-list:
+        # Copacetic v0.14.2 only compiles against the buildx v0.32 imagetools
+        # API; drop once copa supports buildx >= 0.35 and the pin is removed.
+        - github.com/docker/buildx
     importas:
       alias:
         - pkg: errors

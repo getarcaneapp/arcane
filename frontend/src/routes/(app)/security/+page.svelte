@@ -5,15 +5,18 @@
 	import { imageService } from '#lib/services/image-service';
 	import { parallelRefresh } from '#lib/utils/api';
 	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte';
-	import type { EnvironmentVulnerabilitySummary, VulnerabilityWithImage, IgnoredVulnerability } from '#lib/types/environment';
+	import type { EnvironmentVulnerabilitySummary, VulnerabilityWithImage } from '#lib/types/environment';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
 	import { onMount, untrack } from 'svelte';
 	import SecurityVulnerabilityTable from './security-vulnerability-table.svelte';
-	import IgnoredVulnerabilitiesTable from './ignored-vulnerabilities-table.svelte';
+	import SecurityPatchTable from './security-patch-table.svelte';
+	import type { ImagePatchTargetDto } from '#lib/types/docker';
 	import { toast } from 'svelte-sonner';
-	import { InspectIcon } from '#lib/icons';
+	import { InspectIcon, ShieldAlertIcon, ShieldCheckIcon } from '#lib/icons';
+	import { TabBar, type TabItem } from '#lib/components/tab-bar';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import { activityStore } from '#lib/stores/activity.store.svelte';
 	import { hasPermission } from '#lib/utils/auth';
 	import { mapVulnerabilityPage, mapVulnerabilityRequest } from '#lib/utils/vulnerability';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte';
@@ -25,26 +28,56 @@
 
 	let vulnerabilities = $state<Paginated<VulnerabilityRow>>(untrack(() => data.vulnerabilities));
 	let requestOptions = $state<SearchPaginationSortRequest>(untrack(() => data.vulnerabilityRequestOptions));
+	let showIgnored = $state(false);
+
+	function withIgnoredFilter(options: SearchPaginationSortRequest, show: boolean): SearchPaginationSortRequest {
+		const filters = { ...options.filters };
+		if (show) {
+			filters['ignored'] = 'true';
+		} else {
+			delete filters['ignored'];
+		}
+
+		return {
+			...options,
+			filters: Object.keys(filters).length > 0 ? filters : undefined
+		};
+	}
+
+	function toggleIgnored(next: boolean) {
+		showIgnored = next;
+	}
 	let isLoading = $state({ refreshing: false, scanningAll: false });
 	let scanProgress = $state({ current: 0, total: 0 });
 	const urlTab = useUrlTab({
-		validTabs: () => ['vulnerabilities', 'ignored'],
+		validTabs: () => ['vulnerabilities', 'patches'],
 		defaultTab: () => 'vulnerabilities'
 	});
+	const securityTabItems: TabItem[] = [
+		{ value: 'vulnerabilities', label: m.vuln_title(), icon: ShieldAlertIcon },
+		{ value: 'patches', label: m.patches(), icon: ShieldCheckIcon }
+	];
 	const activeTab = $derived(urlTab.value);
 	let scanPollTimeout: ReturnType<typeof setTimeout> | null = null;
 	// Set once on destroy so an in-flight poll tick can't re-arm a timer on a dead component.
 	let destroyed = false;
 
-	// Ignored vulnerabilities state
-	let ignoredVulnerabilities = $state<Paginated<IgnoredVulnerability>>({
+	// Patch targets, loaded when the tab is first opened
+	type PatchTargetRow = ImagePatchTargetDto & { id: string };
+	let patchTargets = $state<Paginated<PatchTargetRow>>({
 		data: [],
 		pagination: { totalPages: 0, totalItems: 0, currentPage: 1, itemsPerPage: 20 }
 	});
-	let ignoredRequestOptions = $state<SearchPaginationSortRequest>({
-		pagination: { page: 1, limit: 20 }
-	});
-	let isLoadingIgnored = $state(false);
+	let patchRequestOptions = $state<SearchPaginationSortRequest>(untrack(() => data.patchRequestOptions));
+	async function loadPatches() {
+		try {
+			const response = await imageService.listPatchTargets(patchRequestOptions);
+			patchTargets = { ...response, data: (response.data ?? []).map((t) => ({ ...t, id: t.imageId })) };
+		} catch (error) {
+			console.error('Failed to load image patch targets:', error);
+			toast.error(m.common_refresh_failed({ resource: m.patches() }));
+		}
+	}
 
 	const summaryCounts = $derived.by(() => ({
 		critical: summary?.summary?.critical ?? 0,
@@ -73,7 +106,7 @@
 	});
 
 	async function refreshAll() {
-		const requestForApi = mapVulnerabilityRequest(requestOptions);
+		const requestForApi = mapVulnerabilityRequest(withIgnoredFilter(requestOptions, showIgnored));
 		await parallelRefresh(
 			{
 				summary: {
@@ -85,6 +118,12 @@
 					fetch: () => vulnerabilityService.getAllVulnerabilities(requestForApi),
 					onSuccess: (data) => (vulnerabilities = mapVulnerabilityPage(data, requestOptions)),
 					errorMessage: m.common_refresh_failed({ resource: m.vuln_title() })
+				},
+				patches: {
+					fetch: () => imageService.listPatchTargets(patchRequestOptions),
+					onSuccess: (data) =>
+						(patchTargets = { ...data, data: (data.data ?? []).map((t: ImagePatchTargetDto) => ({ ...t, id: t.imageId })) }),
+					errorMessage: m.common_refresh_failed({ resource: m.patches() })
 				}
 			},
 			(v) => (isLoading.refreshing = v)
@@ -150,51 +189,30 @@
 		scanPollTimeout = setTimeout(tick, POLL_INTERVAL_MS);
 	}
 
-	async function loadIgnoredVulnerabilities(options?: SearchPaginationSortRequest) {
-		if (isLoadingIgnored) return;
-		isLoadingIgnored = true;
-		try {
-			const request = options ?? ignoredRequestOptions;
-			const response = await vulnerabilityService.getIgnoredVulnerabilities(request);
-			ignoredVulnerabilities = response;
-			if (options) {
-				ignoredRequestOptions = options;
-			}
-		} catch (error) {
-			console.error('Failed to load ignored vulnerabilities:', error);
-			toast.error(m.common_refresh_failed({ resource: m.vuln_ignored_title() }));
-		} finally {
-			isLoadingIgnored = false;
-		}
-	}
-
-	async function handleUnignore(ignoreId: string) {
-		try {
-			await vulnerabilityService.unignoreVulnerability(ignoreId);
-			toast.success(m.vuln_unignore_success());
-			// Refresh both lists
-			await loadIgnoredVulnerabilities();
-			await refreshAll();
-		} catch (error) {
-			console.error('Failed to unignore vulnerability:', error);
-			toast.error(m.vuln_unignore_failed());
-		}
-	}
-
 	function handleTabChange(value: string) {
 		urlTab.select(value);
-		if (value === 'ignored' && ignoredVulnerabilities.data.length === 0) {
-			void loadIgnoredVulnerabilities();
-		}
 	}
 
 	onMount(() => {
-		if (activeTab === 'ignored' && ignoredVulnerabilities.data.length === 0) {
-			void loadIgnoredVulnerabilities();
-		}
+		void loadPatches();
 	});
 
 	useEnvironmentRefresh(refreshAll);
+
+	let activePatchActivityIds = new Set<string>();
+	$effect(() => {
+		const active = new Set(
+			activityStore.activities
+				.filter(
+					(a) =>
+						(a.type === 'image_patch' || a.type === 'vulnerability_scan') && (a.status === 'queued' || a.status === 'running')
+				)
+				.map((a) => a.id)
+		);
+		const finished = [...activePatchActivityIds].some((id) => !active.has(id));
+		activePatchActivityIds = active;
+		if (finished) void loadPatches();
+	});
 
 	$effect(() => () => {
 		destroyed = true;
@@ -297,7 +315,6 @@
 <ResourcePageLayout title={m.security()} subtitle={m.security_subtitle()} {actionButtons}>
 	{#snippet mainContent()}
 		<div class="space-y-6">
-			<!-- Minimal overview: one compact block -->
 			<div class="rounded-lg border border-border/40 bg-muted/20 px-4 py-3">
 				<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 					<div class="flex items-baseline gap-4 text-xs text-muted-foreground">
@@ -326,25 +343,16 @@
 				</div>
 			</div>
 
-			<Tabs.Root value={activeTab} onValueChange={handleTabChange}>
-				<Tabs.List class="grid w-full grid-cols-2">
-					<Tabs.Trigger value="vulnerabilities">{m.vuln_title()}</Tabs.Trigger>
-					<Tabs.Trigger value="ignored">{m.vuln_ignored_title()}</Tabs.Trigger>
-				</Tabs.List>
+			<Tabs.Root value={activeTab}>
+				<TabBar items={securityTabItems} value={activeTab} onValueChange={handleTabChange} />
 				<Tabs.Content value="vulnerabilities" class="mt-4">
 					<div class="rounded-xl border border-border/60">
-						<SecurityVulnerabilityTable bind:vulnerabilities bind:requestOptions />
+						<SecurityVulnerabilityTable bind:vulnerabilities bind:requestOptions {showIgnored} onToggleIgnored={toggleIgnored} />
 					</div>
 				</Tabs.Content>
-				<Tabs.Content value="ignored" class="mt-4">
+				<Tabs.Content value="patches" class="mt-4">
 					<div class="rounded-xl border border-border/60">
-						<IgnoredVulnerabilitiesTable
-							{ignoredVulnerabilities}
-							requestOptions={ignoredRequestOptions}
-							isLoading={isLoadingIgnored}
-							onRefresh={loadIgnoredVulnerabilities}
-							onUnignore={handleUnignore}
-						/>
+						<SecurityPatchTable bind:targets={patchTargets} bind:requestOptions={patchRequestOptions} />
 					</div>
 				</Tabs.Content>
 			</Tabs.Root>

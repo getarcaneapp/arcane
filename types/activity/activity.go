@@ -35,6 +35,7 @@ const (
 	TypeContainerPause    Type = "container_pause"
 	TypeContainerUnpause  Type = "container_unpause"
 	TypeVulnerabilityScan Type = "vulnerability_scan"
+	TypeImagePatch        Type = "image_patch"
 	TypeAutoUpdate        Type = "auto_update"
 	TypeSystemPrune       Type = "system_prune"
 	TypeResourceAction    Type = "resource_action"

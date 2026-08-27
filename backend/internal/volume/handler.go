@@ -27,6 +27,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
+	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	uploadtypes "github.com/getarcaneapp/arcane/types/v2/upload"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
@@ -228,9 +229,7 @@ type RestoreBackupFilesInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	VolumeName    string `path:"volumeName" doc:"Volume name"`
 	BackupID      string `path:"backupId" doc:"Backup ID"`
-	Body          struct {
-		Paths []string `json:"paths" doc:"Paths to restore from backup"`
-	}
+	Body          backuptypes.RestoreSelection
 }
 
 type RestoreBackupFilesOutput struct {
@@ -258,6 +257,19 @@ type ListBackupFilesInput struct {
 
 type ListBackupFilesOutput struct {
 	Body base.ApiResponse[[]string]
+}
+
+type BrowseBackupFilesInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	BackupID      string `path:"backupId" doc:"Backup ID"`
+	Path          string `query:"path" doc:"Folder path relative to the backup root"`
+	Search        string `query:"search" doc:"Case-insensitive full-path search"`
+	Start         int    `query:"start" default:"0" doc:"Start index for the page"`
+	Limit         int    `query:"limit" default:"20" doc:"Requested page size"`
+}
+
+type BrowseBackupFilesOutput struct {
+	Body base.Paginated[backuptypes.BackupFileEntry]
 }
 
 type DeleteBackupInput struct {
@@ -500,6 +512,15 @@ func RegisterVolumes(api huma.API, dockerService *docker.DockerClientService, vo
 		Tags:        []string{"Volume Backup"},
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}, authz.PermVolumesRead, h.ListBackupFiles)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "browse-volume-backup-files",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/volumes/backups/{backupId}/files/browse",
+		Summary:     "Browse files in a volume backup",
+		Tags:        []string{"Volume Backup"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermVolumesRead, h.BrowseBackupFiles)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "upload-volume-backup",
@@ -1046,10 +1067,6 @@ func (h *VolumeHandler) RestoreBackupFiles(ctx context.Context, input *RestoreBa
 		return nil, err
 	}
 
-	if len(input.Body.Paths) == 0 {
-		return nil, huma.Error400BadRequest("paths are required")
-	}
-
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
@@ -1062,13 +1079,18 @@ func (h *VolumeHandler) RestoreBackupFiles(ctx context.Context, input *RestoreBa
 		Message:        "Restoring files from volume backup",
 		SuccessMessage: "Restore initiated successfully",
 		Metadata: database.JSON{
-			"action":   "restore_volume_backup_files",
-			"backupId": input.BackupID,
-			"paths":    input.Body.Paths,
+			"action":    "restore_volume_backup_files",
+			"backupId":  input.BackupID,
+			"paths":     input.Body.Paths,
+			"selectAll": input.Body.SelectAll,
+			"search":    input.Body.Search,
 		},
 	}, func(runtimeCtx context.Context) error {
-		return h.volumeService.RestoreBackupFiles(runtimeCtx, input.VolumeName, input.BackupID, input.Body.Paths, *user)
+		return h.volumeService.RestoreBackupFiles(runtimeCtx, input.VolumeName, input.BackupID, input.Body, *user)
 	})
+	if errors.Is(err, common.ErrBadRequest) {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
@@ -1111,6 +1133,20 @@ func (h *VolumeHandler) ListBackupFiles(ctx context.Context, input *ListBackupFi
 			Data:    files,
 		},
 	}, nil
+}
+
+func (h *VolumeHandler) BrowseBackupFiles(ctx context.Context, input *BrowseBackupFilesInput) (*BrowseBackupFilesOutput, error) {
+	params := handlerutil.PaginationParams(input.Start, input.Limit, "", "", input.Search)
+	items, page, err := h.volumeService.BrowseBackupFiles(ctx, input.BackupID, input.Path, params)
+	if errors.Is(err, common.ErrBadRequest) {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	return &BrowseBackupFilesOutput{Body: base.Paginated[backuptypes.BackupFileEntry]{
+		Success: true, Data: items, Pagination: handlerutil.PaginationResponse(page),
+	}}, nil
 }
 
 func (h *VolumeHandler) DeleteBackup(ctx context.Context, input *DeleteBackupInput) (*DeleteBackupOutput, error) {

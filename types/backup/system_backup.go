@@ -80,6 +80,13 @@ type RestoreSystemBackupRequest struct {
 	RecoveryKey string `json:"recoveryKey"`
 }
 
+// RestoreSystemBackupFilesRequest selects project files to restore from a system backup.
+type RestoreSystemBackupFilesRequest struct {
+	RestoreSelection
+
+	RecoveryKey string `json:"recoveryKey"`
+}
+
 type UploadSystemBackupRequest struct {
 	S3DestinationID string `json:"s3DestinationId"`
 	RecoveryKey     string `json:"recoveryKey"`

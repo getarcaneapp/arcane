@@ -127,7 +127,7 @@
 		queryKey: queryKeys.projects.detail(envId, projectId),
 		queryFn: () => projectService.getProjectForEnvironment(envId, projectId),
 		initialData: data.project,
-		refetchOnMount: false
+		refetchOnMount: (query) => query.state.isInvalidated
 	}));
 	const projectTagsQuery = createQuery(() => ({
 		queryKey: queryKeys.projects.tags(envId),

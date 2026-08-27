@@ -10,7 +10,7 @@
 	import CreatedAtCell from '#lib/components/arcane-table/cells/created-at-cell.svelte';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
 	import type { SystemBackupRun } from '#lib/types/system-backup';
-	import { BackupIcon, RestartIcon, TrashIcon, UploadIcon, ClockIcon } from '#lib/icons';
+	import { BackupIcon, RestartIcon, TrashIcon, UploadIcon, ClockIcon, FileTextIcon } from '#lib/icons';
 	import { bytes, formatDateTimeShort } from '#lib/utils/formatting';
 	import { backupDestinationDisplay, backupStatusLabel, backupStatusVariant, backupTriggerLabel } from '#lib/utils/backups';
 	import * as m from '#lib/paraglide/messages.js';
@@ -20,6 +20,7 @@
 		requestOptions = $bindable(),
 		onChanged,
 		onRestore,
+		onRestoreFiles,
 		onUpload,
 		onDelete
 	}: {
@@ -27,6 +28,7 @@
 		requestOptions: SearchPaginationSortRequest;
 		onChanged: (options: SearchPaginationSortRequest) => Promise<Paginated<SystemBackupRun>>;
 		onRestore: (backup: SystemBackupRun) => void;
+		onRestoreFiles: (backup: SystemBackupRun) => void;
 		onUpload: (backup: SystemBackupRun) => void;
 		onDelete: (backup: SystemBackupRun) => void;
 	} = $props();
@@ -62,6 +64,9 @@
 	<RowActionsMenu>
 		<DropdownMenu.Item onclick={() => onRestore(item)} disabled={item.status !== 'succeeded'}
 			><RestartIcon class="size-4" />{m.volumes_backups_restore()}</DropdownMenu.Item
+		>
+		<DropdownMenu.Item onclick={() => onRestoreFiles(item)} disabled={item.status !== 'succeeded'}
+			><FileTextIcon class="size-4" />{m.volume_restore_files()}</DropdownMenu.Item
 		>
 		{#if item.localSnapshotId && !item.remoteSnapshotId}
 			<DropdownMenu.Item onclick={() => onUpload(item)}><UploadIcon class="size-4" />{m.backups_upload_s3()}</DropdownMenu.Item>

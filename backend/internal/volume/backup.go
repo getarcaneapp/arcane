@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"path"
+	"slices"
 	"strings"
 	"time"
 	"uuid"
@@ -27,7 +28,9 @@ import (
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/backupbrowser"
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
+	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
@@ -901,7 +904,48 @@ func (s *VolumeService) ListBackupFiles(ctx context.Context, backupID string) ([
 	if err != nil {
 		return nil, err
 	}
-	return s.engine.ListSnapshotFiles(ctx, dockerClient, repository, s.rusticPasswordInternal(), snapshotID)
+	return s.engine.ListSnapshotFiles(ctx, dockerClient, repository, s.rusticPasswordInternal(), snapshotID, "", true)
+}
+
+// BrowseBackupFiles returns one lazy-loaded page from a volume backup tree.
+func (s *VolumeService) BrowseBackupFiles(ctx context.Context, backupID, requestedPath string, params pagination.QueryParams) ([]backuptypes.BackupFileEntry, pagination.Response, error) {
+	listPath, recursive, err := backupbrowser.ListScope(requestedPath, params)
+	if err != nil {
+		return nil, pagination.Response{}, fmt.Errorf("%w: %w", common.ErrInvalidBackupSelection, err)
+	}
+	var entry VolumeBackup
+	if err := s.db.WithContext(ctx).Where("id = ?", backupID).First(&entry).Error; err != nil {
+		return nil, pagination.Response{}, err
+	}
+	entries, err := s.backupFileEntriesInternal(ctx, &entry, listPath, recursive)
+	if err != nil {
+		return nil, pagination.Response{}, err
+	}
+	items, page := backupbrowser.Browse(entries, params)
+	return items, page, nil
+}
+
+func (s *VolumeService) backupFileEntriesInternal(ctx context.Context, entry *VolumeBackup, browsePath string, recursive bool) ([]backuptypes.BackupFileEntry, error) {
+	if entry.Format == VolumeBackupFormatArchive {
+		paths, err := s.listArchiveBackupPathsInternal(ctx, entry.ID)
+		if err != nil {
+			return nil, err
+		}
+		return backupbrowser.BuildEntries(paths, browsePath, recursive), nil
+	}
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+	repository, snapshotID, err := s.rusticRepositoryForBackupInternal(ctx, dockerClient, entry)
+	if err != nil {
+		return nil, err
+	}
+	listed, err := s.engine.ListSnapshotFiles(ctx, dockerClient, repository, s.rusticPasswordInternal(), snapshotID, browsePath+"/", recursive)
+	if err != nil {
+		return nil, err
+	}
+	return backupbrowser.BuildEntries(listed, browsePath, recursive), nil
 }
 
 func (s *VolumeService) BackupHasPath(ctx context.Context, backupID, filePath string) (bool, error) {
@@ -921,10 +965,69 @@ func (s *VolumeService) BackupHasPath(ctx context.Context, backupID, filePath st
 	return false, nil
 }
 
-func (s *VolumeService) RestoreBackupFiles(ctx context.Context, volumeName, backupID string, paths []string, user common.User) (err error) {
-	if len(paths) == 0 {
-		return errors.New("no paths provided")
+type volumeBackupRestoreSelectionInternal struct {
+	entries      []backuptypes.BackupFileEntry
+	archivePaths []string
+	globalRoot   bool
+}
+
+func (s *VolumeService) resolveVolumeBackupRestoreSelectionInternal(ctx context.Context, dockerClient *client.Client, entry *VolumeBackup, repository backup.Repository, snapshotID string, selection backuptypes.RestoreSelection) (volumeBackupRestoreSelectionInternal, error) {
+	if selection.SelectAll && strings.TrimSpace(selection.Search) == "" {
+		if _, err := backupbrowser.NormalizeSelection(selection, []backuptypes.BackupFileEntry{{Path: "", IsDirectory: true}}); err != nil {
+			return volumeBackupRestoreSelectionInternal{}, fmt.Errorf("%w: %w", common.ErrInvalidBackupSelection, err)
+		}
+		return volumeBackupRestoreSelectionInternal{globalRoot: true}, nil
 	}
+	resolved := volumeBackupRestoreSelectionInternal{}
+	var eligible []backuptypes.BackupFileEntry
+	var err error
+	if entry.Format == VolumeBackupFormatArchive {
+		resolved.archivePaths, err = s.listArchiveBackupPathsInternal(ctx, entry.ID)
+		eligible = backupbrowser.BuildEntries(resolved.archivePaths, "", true)
+	} else {
+		var listed []string
+		listed, err = s.engine.ListSnapshotFiles(ctx, dockerClient, repository, s.rusticPasswordInternal(), snapshotID, "", true)
+		eligible = backupbrowser.BuildEntries(listed, "", true)
+	}
+	if err != nil {
+		return volumeBackupRestoreSelectionInternal{}, err
+	}
+	resolved.entries, err = backupbrowser.NormalizeSelection(selection, eligible)
+	if err != nil {
+		return volumeBackupRestoreSelectionInternal{}, fmt.Errorf("%w: %w", common.ErrInvalidBackupSelection, err)
+	}
+	return resolved, nil
+}
+
+func (s *VolumeService) restoreVolumeBackupSelectionInternal(ctx context.Context, dockerClient *client.Client, volumeName, backupID string, entry *VolumeBackup, repository backup.Repository, snapshotID string, selection volumeBackupRestoreSelectionInternal) error {
+	if entry.Format == VolumeBackupFormatArchive {
+		if selection.globalRoot {
+			return s.restoreArchiveBackupInternal(ctx, dockerClient, volumeName, backupID)
+		}
+		members := archiveMembersForSelectionInternal(selection.archivePaths, selection.entries)
+		return s.restoreArchiveBackupFilesInternal(ctx, dockerClient, volumeName, backupID, members)
+	}
+	target := mount.Mount{Type: mount.TypeVolume, Source: volumeName, Target: "/volume"}
+	if selection.globalRoot {
+		if err := s.engine.RestoreSnapshot(ctx, dockerClient, repository, s.rusticPasswordInternal(), snapshotID, target, backup.RestoreOptions{DeleteExtra: true}); err != nil {
+			return fmt.Errorf("failed to restore Rustic snapshot: %w", err)
+		}
+		return nil
+	}
+	for _, selectedEntry := range selection.entries {
+		sourcePath := selectedEntry.Path
+		if selectedEntry.IsDirectory {
+			sourcePath += "/"
+		}
+		options := backup.RestoreOptions{DeleteExtra: selectedEntry.IsDirectory, SourcePath: sourcePath, DestinationPath: path.Join(target.Target, selectedEntry.Path)}
+		if err := s.engine.RestoreSnapshot(ctx, dockerClient, repository, s.rusticPasswordInternal(), snapshotID, target, options); err != nil {
+			return fmt.Errorf("failed to restore %s from Rustic snapshot: %w", selectedEntry.Path, err)
+		}
+	}
+	return nil
+}
+
+func (s *VolumeService) RestoreBackupFiles(ctx context.Context, volumeName, backupID string, selection backuptypes.RestoreSelection, user common.User) (err error) {
 	var entry VolumeBackup
 	if err := s.db.WithContext(ctx).Where("id = ?", backupID).First(&entry).Error; err != nil {
 		return err
@@ -938,14 +1041,6 @@ func (s *VolumeService) RestoreBackupFiles(ctx context.Context, volumeName, back
 		service:    s,
 		volumeName: volumeName,
 	})
-	cleanedPaths := make([]string, 0, len(paths))
-	for _, requestedPath := range paths {
-		cleaned, cleanErr := s.sanitizeBackupPathInternal(requestedPath)
-		if cleanErr != nil {
-			return cleanErr
-		}
-		cleanedPaths = append(cleanedPaths, cleaned)
-	}
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return err
@@ -957,6 +1052,10 @@ func (s *VolumeService) RestoreBackupFiles(ctx context.Context, volumeName, back
 		if err != nil {
 			return err
 		}
+	}
+	resolvedSelection, err := s.resolveVolumeBackupRestoreSelectionInternal(ctx, dockerClient, &entry, repository, snapshotID, selection)
+	if err != nil {
+		return err
 	}
 	stopped, err := s.stopRunningContainersForBackupInternal(ctx, dockerClient, volumeName, user, true)
 	containersStopped := len(stopped) > 0
@@ -973,16 +1072,8 @@ func (s *VolumeService) RestoreBackupFiles(ctx context.Context, volumeName, back
 	if err != nil {
 		return fmt.Errorf("failed to create pre-restore backup: %w", err)
 	}
-	if entry.Format == VolumeBackupFormatArchive {
-		if err := s.restoreArchiveBackupFilesInternal(ctx, dockerClient, volumeName, backupID, cleanedPaths); err != nil {
-			return err
-		}
-	} else {
-		for _, cleaned := range cleanedPaths {
-			if err := s.engine.RestoreSnapshot(ctx, dockerClient, repository, s.rusticPasswordInternal(), snapshotID, mount.Mount{Type: mount.TypeVolume, Source: volumeName, Target: "/volume"}, backup.RestoreOptions{SourcePath: cleaned, DestinationPath: path.Join("/volume", cleaned)}); err != nil {
-				return fmt.Errorf("failed to restore %s from Rustic snapshot: %w", cleaned, err)
-			}
-		}
+	if err := s.restoreVolumeBackupSelectionInternal(ctx, dockerClient, volumeName, backupID, &entry, repository, snapshotID, resolvedSelection); err != nil {
+		return err
 	}
 	if containersStopped {
 		stopped, err = s.startContainersAfterBackupInternal(context.WithoutCancel(ctx), dockerClient, stopped, user)
@@ -991,11 +1082,33 @@ func (s *VolumeService) RestoreBackupFiles(ctx context.Context, volumeName, back
 			return err
 		}
 	}
-	metadata := database.JSON{"action": "backup_restore_files", "backup_id": backupID, "pre_restore_backupId": preBackup.ID, "paths_count": len(cleanedPaths)}
+	metadata := database.JSON{"action": "backup_restore_files", "backup_id": backupID, "pre_restore_backupId": preBackup.ID, "paths_count": len(resolvedSelection.entries), "select_all": selection.SelectAll, "search": selection.Search}
 	if logErr := s.eventService.LogVolumeEvent(ctx, event.EventTypeVolumeBackupRestoreFiles, volumeName, volumeName, user.ID, user.Username, "0", metadata); logErr != nil {
 		slog.WarnContext(ctx, "could not log volume backup restore files event", "volume", volumeName, "error", logErr)
 	}
 	return nil
+}
+
+func archiveMembersForSelectionInternal(paths []string, selected []backuptypes.BackupFileEntry) []string {
+	files := make([]string, 0, len(paths))
+	for _, raw := range paths {
+		directory := strings.HasSuffix(strings.TrimSpace(raw), "/")
+		cleaned, err := backupbrowser.NormalizePath(strings.TrimSuffix(strings.TrimPrefix(strings.TrimSpace(raw), "./"), "/"), false)
+		if err != nil {
+			continue
+		}
+		for _, entry := range selected {
+			if cleaned == entry.Path || (entry.IsDirectory && strings.HasPrefix(cleaned, entry.Path+"/")) {
+				if directory {
+					cleaned += "/"
+				}
+				files = append(files, cleaned)
+				break
+			}
+		}
+	}
+	slices.Sort(files)
+	return slices.Compact(files)
 }
 
 // DownloadBackup streams a backup as a tar.gz archive. Legacy archive rows
@@ -1067,7 +1180,7 @@ func (s *VolumeService) downloadRusticBackupInternal(ctx context.Context, entry 
 		removeScratch()
 	}
 	archivePath := "/tmp/" + entry.ID + ".tar.gz"
-	if _, _, err := s.execInContainerInternal(ctx, containerID, []string{"tar", "-czf", archivePath, "-C", "/volume", "."}); err != nil {
+	if _, _, err := s.execInContainerInternal(ctx, containerID, "", []string{"tar", "-czf", archivePath, "-C", "/volume", "."}); err != nil {
 		cleanup()
 		return nil, 0, fmt.Errorf("failed to package Rustic snapshot for download: %w", err)
 	}
@@ -1170,7 +1283,7 @@ func (s *VolumeService) deleteArchiveBackupInternal(ctx context.Context, entry *
 		filename, filenameErr := s.backupArchiveFilenameInternal(backupID)
 		if filenameErr != nil {
 			slog.WarnContext(ctx, "failed to sanitize backup id for file cleanup", "backup_id", backupID, "error", filenameErr.Error())
-		} else if _, _, err = s.execInContainerInternal(ctx, containerID, []string{"rm", "-f", path.Join("/volume", filename)}); err != nil {
+		} else if _, _, err = s.execInContainerInternal(ctx, containerID, "", []string{"rm", "-f", path.Join("/volume", filename)}); err != nil {
 			slog.WarnContext(ctx, "failed to delete backup file (orphan file may remain)", "backup_id", backupID, "error", err.Error())
 		}
 	}
@@ -1232,6 +1345,20 @@ func (s *VolumeService) restoreArchiveBackupInternal(ctx context.Context, docker
 }
 
 func (s *VolumeService) listArchiveBackupFilesInternal(ctx context.Context, backupID string) ([]string, error) {
+	paths, err := s.listArchiveBackupPathsInternal(ctx, backupID)
+	if err != nil {
+		return nil, err
+	}
+	files := make([]string, 0, len(paths))
+	for _, candidate := range paths {
+		if !strings.HasSuffix(candidate, "/") {
+			files = append(files, candidate)
+		}
+	}
+	return files, nil
+}
+
+func (s *VolumeService) listArchiveBackupPathsInternal(ctx context.Context, backupID string) ([]string, error) {
 	filename, err := s.backupArchiveFilenameInternal(backupID)
 	if err != nil {
 		return nil, err
@@ -1249,7 +1376,7 @@ func (s *VolumeService) listArchiveBackupFilesInternal(ctx context.Context, back
 		return nil, err
 	}
 	defer cleanup()
-	stdout, _, err := s.execInContainerInternal(ctx, containerID, []string{"tar", "-tzf", path.Join("/volume", filename)})
+	stdout, _, err := s.execInContainerInternal(ctx, containerID, "", []string{"tar", "-tzf", path.Join("/volume", filename)})
 	if err != nil {
 		return nil, err
 	}
@@ -1262,7 +1389,7 @@ func (s *VolumeService) listArchiveBackupFilesInternal(ctx context.Context, back
 			continue
 		}
 		clean = strings.TrimPrefix(clean, "./")
-		if strings.HasSuffix(clean, "/") {
+		if clean == "" {
 			continue
 		}
 		if _, ok := seen[clean]; ok {
@@ -1280,7 +1407,7 @@ func (s *VolumeService) restoreBackupFilesInContainerInternal(ctx context.Contex
 	for _, cleaned := range cleanedPaths {
 		args = append(args, "./"+cleaned)
 	}
-	_, stderr, err := s.execInContainerInternal(ctx, containerID, args)
+	_, stderr, err := s.execInContainerInternal(ctx, containerID, "", args)
 	return stderr, errors.WrapIf(err, "failed to restore files")
 }
 
@@ -1375,7 +1502,7 @@ func (s *VolumeService) UploadAndRestore(ctx context.Context, volumeName string,
 	defer cleanup()
 
 	tmpDir := fmt.Sprintf("/volume/.restore_tmp_%d", time.Now().UnixNano())
-	_, stderr, err := s.execInContainerInternal(ctx, containerID, []string{"mkdir", "-p", tmpDir})
+	_, stderr, err := s.execInContainerInternal(ctx, containerID, "", []string{"mkdir", "-p", tmpDir})
 	if err != nil {
 		return errors.WrapIf(err, "failed to create temp restore dir")
 	}
@@ -1394,7 +1521,7 @@ func (s *VolumeService) UploadAndRestore(ctx context.Context, volumeName string,
 		return errors.WrapIf(err, "failed to restore from uploaded archive")
 	}
 
-	_, stderr, err = s.execInContainerInternal(ctx, containerID, []string{"sh", "-c", fmt.Sprintf("test -n \"$(find %s -mindepth 1 -maxdepth 1 -print -quit)\"", tmpDir)})
+	_, stderr, err = s.execInContainerInternal(ctx, containerID, "", []string{"sh", "-c", fmt.Sprintf("test -n \"$(find %s -mindepth 1 -maxdepth 1 -print -quit)\"", tmpDir)})
 	if err != nil {
 		return errors.WrapIf(err, "uploaded archive appears empty or invalid")
 	}
@@ -1402,7 +1529,7 @@ func (s *VolumeService) UploadAndRestore(ctx context.Context, volumeName string,
 		slog.DebugContext(ctx, "volume service: restore validate stderr", "volume", volumeName, "stderr", strings.TrimSpace(stderr))
 	}
 
-	_, stderr, err = s.execInContainerInternal(ctx, containerID, []string{"sh", "-c", "rm -rf /volume/* /volume/.[!.]* /volume/..?* 2>/dev/null || true"})
+	_, stderr, err = s.execInContainerInternal(ctx, containerID, "", []string{"sh", "-c", "rm -rf /volume/* /volume/.[!.]* /volume/..?* 2>/dev/null || true"})
 	if err != nil {
 		return errors.WrapIf(err, "failed to clear volume before restore")
 	}
@@ -1411,7 +1538,7 @@ func (s *VolumeService) UploadAndRestore(ctx context.Context, volumeName string,
 	}
 
 	moveCmd := fmt.Sprintf("find %s -mindepth 1 -maxdepth 1 -exec mv -- {} /volume/ \\; && rmdir %s", tmpDir, tmpDir)
-	_, stderr, err = s.execInContainerInternal(ctx, containerID, []string{"sh", "-c", moveCmd})
+	_, stderr, err = s.execInContainerInternal(ctx, containerID, "", []string{"sh", "-c", moveCmd})
 	if err != nil {
 		return errors.WrapIf(err, "failed to move restored files into place")
 	}

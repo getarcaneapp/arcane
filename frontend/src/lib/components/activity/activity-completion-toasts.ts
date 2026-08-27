@@ -36,6 +36,7 @@ const LONG_RUNNING_TYPES = new Set<ActivityType>([
 	'project_redeploy',
 	'container_redeploy',
 	'vulnerability_scan',
+	'image_patch',
 	'auto_update',
 	'system_prune'
 ]);
