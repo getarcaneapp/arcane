@@ -365,7 +365,6 @@ var expectedSettingOverrideKeys = []string{
 	"trivyImage",
 	"trivyMemoryLimitMb",
 	"trivyNetwork",
-	"trivyPreserveCacheOnVolumePrune",
 	"trivyPrivileged",
 	"trivyResourceLimitsEnabled",
 	"trivyScanTimeout",

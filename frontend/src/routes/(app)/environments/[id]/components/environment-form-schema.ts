@@ -37,7 +37,6 @@ export const environmentFormSchema = z
 		trivyNetwork: z.string(),
 		trivySecurityOpts: z.string(),
 		trivyPrivileged: z.boolean(),
-		trivyPreserveCacheOnVolumePrune: z.boolean(),
 		trivyResourceLimitsEnabled: z.boolean(),
 		trivyCpuLimit: z.coerce.number().int(m.security_session_timeout_integer()).nonnegative(),
 		trivyMemoryLimitMb: z.coerce.number().int().nonnegative(),

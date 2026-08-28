@@ -300,11 +300,6 @@ type Update struct {
 	// Required: false
 	TrivyPrivileged *string `json:"trivyPrivileged,omitzero"`
 
-	// TrivyPreserveCacheOnVolumePrune controls whether the Trivy cache volume is excluded from manual and scheduled volume prune runs.
-	//
-	// Required: false
-	TrivyPreserveCacheOnVolumePrune *string `json:"trivyPreserveCacheOnVolumePrune,omitzero"`
-
 	// TrivyResourceLimitsEnabled controls whether CPU and memory limits are applied to Trivy scan containers.
 	//
 	// Required: false

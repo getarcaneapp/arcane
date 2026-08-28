@@ -348,38 +348,30 @@ func TestRenameVolumeMetadataInternalPreservesPoliciesAndHistory(t *testing.T) {
 	require.Equal(t, "renamed-data", backupEntry.VolumeName)
 }
 
-func TestBuildVolumePruneOptionsInternal_PreservesTrivyCache(t *testing.T) {
-	options := buildVolumePruneOptionsInternal(true, true)
+func TestBuildVolumePruneOptionsInternal_PreservesInternalVolumes(t *testing.T) {
+	options := buildVolumePruneOptionsInternal(true)
 
 	require.True(t, options.All)
 	require.NotNil(t, options.Filters)
-	require.True(t, options.Filters["label!"][trivyCacheVolumePruneFilterValue])
+	require.True(t, options.Filters["label!"][internalVolumePruneFilterValue])
 }
 
-func TestBuildVolumePruneOptionsInternal_PreservesTrivyCacheForAnonymousVolumes(t *testing.T) {
-	options := buildVolumePruneOptionsInternal(false, true)
+func TestBuildVolumePruneOptionsInternal_PreservesInternalVolumesForAnonymousVolumes(t *testing.T) {
+	options := buildVolumePruneOptionsInternal(false)
 
 	require.False(t, options.All)
 	require.NotNil(t, options.Filters)
-	require.True(t, options.Filters["label!"][trivyCacheVolumePruneFilterValue])
-}
-
-func TestBuildVolumePruneOptionsInternal_DisabledPreservationOmitsFilter(t *testing.T) {
-	options := buildVolumePruneOptionsInternal(true, false)
-
-	require.True(t, options.All)
-	require.Nil(t, options.Filters)
+	require.True(t, options.Filters["label!"][internalVolumePruneFilterValue])
 }
 
 func TestBuildVolumePruneMetadataInternal(t *testing.T) {
-	metadata := buildVolumePruneMetadataInternal(true, 2, 4096, true)
+	metadata := buildVolumePruneMetadataInternal(true, 2, 4096)
 
 	require.Equal(t, "prune", metadata["action"])
 	require.Equal(t, true, metadata["all"])
 	require.Equal(t, 2, metadata["volumesDeleted"])
 	require.EqualValues(t, 4096, metadata["spaceReclaimed"])
-	require.Equal(t, true, metadata["preserveTrivyCache"])
-	require.Equal(t, trivyCacheVolumePruneFilterValue, metadata["trivyCacheFilterLabel"])
+	require.Equal(t, internalVolumePruneFilterValue, metadata["internalVolumeFilterLabel"])
 }
 
 func TestResolveBackupStorageMountFromMountsInternal(t *testing.T) {

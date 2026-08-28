@@ -20,7 +20,6 @@
 		| 'trivyNetwork'
 		| 'trivySecurityOpts'
 		| 'trivyPrivileged'
-		| 'trivyPreserveCacheOnVolumePrune'
 		| 'trivyResourceLimitsEnabled'
 		| 'trivyCpuLimit'
 		| 'trivyMemoryLimitMb'
@@ -270,14 +269,6 @@
 				</Alert.Description>
 			</Alert.Root>
 		{/if}
-
-		<SettingsRow
-			label={m.security_trivy_preserve_cache_on_volume_prune_label()}
-			description={m.security_trivy_preserve_cache_on_volume_prune_description()}
-			layout="inline"
-		>
-			<Switch id="trivyPreserveCacheOnVolumePruneSwitch" bind:checked={$formInputs.trivyPreserveCacheOnVolumePrune.value} />
-		</SettingsRow>
 
 		<div class="space-y-4">
 			<SettingsRow
