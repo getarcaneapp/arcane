@@ -456,7 +456,7 @@ func (s *passkeyService) BeginRegistration(ctx context.Context, userID, sessionI
 	creation, session, err := s.webAuthn.BeginRegistration(
 		adapter,
 		webauthn.WithExclusions(exclusions),
-		webauthn.WithExtensions(map[string]any{"credProps": true}),
+		webauthn.WithExtensions(webauthn.WithExtensionCredProps()),
 		webauthn.WithResidentKeyRequirement(protocol.ResidentKeyRequirementRequired),
 	)
 	if err != nil {
