@@ -1534,8 +1534,6 @@
   "security_trivy_privileged_label": "Trivy Привилегированный",
   "security_trivy_privileged_description": "Запускайте контейнеры сканирования Trivy в привилегированном режиме, если этого требует политика безопасности хоста.",
   "security_trivy_privileged_note": "Используйте эту функцию только в качестве запасного варианта, когда опций безопасности недостаточно.",
-  "security_trivy_preserve_cache_on_volume_prune_label": "Сохранение кэша Trivy при очистке томов",
-  "security_trivy_preserve_cache_on_volume_prune_description": "Сохраните том кэша Trivy, когда Arcane удаляет неиспользуемые тома Docker.",
   "security_trivy_network_fetch_failed": "Не удалось загрузить сети Docker; показываются только встроенные опции.",
   "security_trivy_resource_limits_label": "Ограничения ресурсов Trivy",
   "security_trivy_resource_limits_description": "Настроить ограничения процессора и памяти для контейнеров сканирования Trivy.",
