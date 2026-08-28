@@ -1534,8 +1534,6 @@
   "security_trivy_privileged_label": "Trivy 特权模式",
   "security_trivy_privileged_description": "当主机安全策略要求时，以特权模式运行 Trivy 扫描容器。",
   "security_trivy_privileged_note": "仅当安全选项不足时，才将其用作备选方案。",
-  "security_trivy_preserve_cache_on_volume_prune_label": "清理数据卷时保留 Trivy 缓存",
-  "security_trivy_preserve_cache_on_volume_prune_description": "当 Arcane 清理未使用的 Docker 卷时，保留 Trivy 缓存卷。",
   "security_trivy_network_fetch_failed": "无法加载 Docker 网络；仅显示内置选项。",
   "security_trivy_resource_limits_label": "Trivy 资源限制",
   "security_trivy_resource_limits_description": "配置 Trivy 扫描容器的 CPU 与内存限制",
