@@ -1534,8 +1534,6 @@
   "security_trivy_privileged_label": "Trivy Bevoorrecht",
   "security_trivy_privileged_description": "Voer Trivy-scancontainers uit in bevoorrechte modus wanneer het hostbeveiligingsbeleid dit vereist.",
   "security_trivy_privileged_note": "Gebruik dit alleen als noodoplossing als de beveiligingsopties niet voldoende zijn.",
-  "security_trivy_preserve_cache_on_volume_prune_label": "Trivy-cache bewaren op volume afstemmen",
-  "security_trivy_preserve_cache_on_volume_prune_description": "Bewaar het Trivy-cachevolume wanneer Arcane ongebruikte Docker-volumes verwijdert.",
   "security_trivy_network_fetch_failed": "Docker netwerken kunnen niet worden geladen; alleen ingebouwde opties tonen.",
   "security_trivy_resource_limits_label": "Trivy Grondstoffen Limieten",
   "security_trivy_resource_limits_description": "Configureer CPU en geheugen limieten voor Trivy scan containers.",
