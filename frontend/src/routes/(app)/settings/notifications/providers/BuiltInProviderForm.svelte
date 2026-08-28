@@ -21,6 +21,13 @@
 	const GENERIC_PAYLOAD_TEMPLATE_VARS =
 		'{{.title}}, {{.message}}, {{.environment}}, {{.environmentId}}, {{.event}}, {{.timestamp}}';
 
+	// Accepts RFC 5322 "Display Name <addr@example.com>" as well as a bare address,
+	// matching what backend/pkg/utils/notifications parses with net/mail.ParseAddress.
+	function extractEmailAddress(value: string): string {
+		const match = value.match(/<([^<>]+)>\s*$/);
+		return match ? match[1].trim() : value;
+	}
+
 	interface Props {
 		provider: NotificationProviderKey;
 		values: AnyBuiltInValues;
@@ -150,7 +157,7 @@
 				if (!d.fromAddress.trim()) {
 					ctx.addIssue({ code: 'custom', message: 'From address is required when email is enabled', path: ['fromAddress'] });
 				} else {
-					const v = z.string().email().safeParse(d.fromAddress.trim());
+					const v = z.string().email().safeParse(extractEmailAddress(d.fromAddress.trim()));
 					if (!v.success) {
 						ctx.addIssue({ code: 'custom', message: 'Invalid email address format', path: ['fromAddress'] });
 					}
@@ -469,8 +476,7 @@
 				id: 'from-address',
 				label: m.notifications_email_from_address_label(),
 				placeholder: m.notifications_email_from_address_placeholder(),
-				helpText: m.notifications_email_from_address_help(),
-				inputType: 'email'
+				helpText: m.notifications_email_from_address_help()
 			},
 			{
 				kind: 'textarea',

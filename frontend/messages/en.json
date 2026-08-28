@@ -2349,7 +2349,7 @@
   "notifications_email_password_help": "SMTP authentication password",
   "notifications_email_from_address_label": "From Address",
   "notifications_email_from_address_placeholder": "notifications@example.com",
-  "notifications_email_from_address_help": "Email address to send notifications from",
+  "notifications_email_from_address_help": "Email address to send notifications from. You can optionally include a display name, e.g. Arcane <notifications@example.com>",
   "notifications_email_to_addresses_label": "To Addresses",
   "notifications_email_to_addresses_placeholder": "user1@example.com, user2@example.com",
   "notifications_email_to_addresses_help": "Comma-separated list of email addresses to send notifications to",
