@@ -23,9 +23,18 @@
 
 	// Accepts RFC 5322 "Display Name <addr@example.com>" as well as a bare address,
 	// matching what backend/pkg/utils/notifications parses with net/mail.ParseAddress.
+	// The display name must be either a quoted string (which may contain "<"/">") or an
+	// unquoted phrase without "@", angle brackets, quotes, or commas; anything else is left
+	// as-is so the surrounding email check rejects the whole malformed string.
 	function extractEmailAddress(value: string): string {
-		const match = value.match(/<([^<>]+)>\s*$/);
-		return match ? match[1].trim() : value;
+		const match = value.match(/^\s*(.*?)\s*<([^<>]+)>\s*$/);
+		if (!match) return value;
+		const namePart = (match[1] ?? '').trim();
+		const address = (match[2] ?? '').trim();
+		if (namePart === '') return address;
+		const isQuotedName = /^"(?:[^"\\]|\\.)*"$/.test(namePart);
+		const isUnquotedName = /^[^"<>,@]+$/.test(namePart);
+		return isQuotedName || isUnquotedName ? address : value;
 	}
 
 	interface Props {
