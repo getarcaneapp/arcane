@@ -1534,8 +1534,6 @@
   "security_trivy_privileged_label": "Privilégio Trivy",
   "security_trivy_privileged_description": "Execute os contêineres de varredura Trivy em modo privilegiado quando a política de segurança do host assim o exigir.",
   "security_trivy_privileged_note": "Use isso apenas como um recurso alternativo quando as opções de segurança não forem suficientes.",
-  "security_trivy_preserve_cache_on_volume_prune_label": "Preservar o cache do Trivy no Volume Prune",
-  "security_trivy_preserve_cache_on_volume_prune_description": "Mantenha o volume de cache do Trivy quando o Arcane remover os volumes do Docker não utilizados.",
   "security_trivy_network_fetch_failed": "Não foi possível carregar as redes Docker; exibindo apenas opções incorporadas.",
   "security_trivy_resource_limits_label": "Limites de Recursos Trivy",
   "security_trivy_resource_limits_description": "Configurar os limites de CPU e memória para os contêineres de verificação Trivy.",
