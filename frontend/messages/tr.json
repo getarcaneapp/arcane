@@ -1534,8 +1534,6 @@
   "security_trivy_privileged_label": "Trivy Ayrıcalıklı",
   "security_trivy_privileged_description": "Ana bilgisayar güvenlik politikası gerektirdiğinde, Trivy tarama konteynerlerini ayrıcalıklı modda çalıştırın.",
   "security_trivy_privileged_note": "Bunu yalnızca güvenlik seçeneklerinin yetersiz kaldığı durumlarda yedek çözüm olarak kullanın.",
-  "security_trivy_preserve_cache_on_volume_prune_label": "Birim Budama İşlemi Sırasında Trivy Önbelleğini Koruma",
-  "security_trivy_preserve_cache_on_volume_prune_description": "Arcane, kullanılmayan Docker birimlerini budarken Trivy önbellek birimini koruyun.",
   "security_trivy_network_fetch_failed": "Docker ağları yüklenemedi; yalnızca yerleşik seçenekler gösteriliyor.",
   "security_trivy_resource_limits_label": "Trivy Kaynak Sınırları",
   "security_trivy_resource_limits_description": "Trivy tarama konteynerleri için CPU ve bellek sınırlarını yapılandırın.",
