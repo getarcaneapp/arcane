@@ -190,26 +190,28 @@
 
 <ResourcePageLayout title={messages.pageTitle} subtitle={messages.pageSubtitle} {icon} {actionButtons} {statCards}>
 	{#snippet mainContent()}
-		<div class="grid gap-4 lg:grid-cols-[1fr,1.1fr]">
-			<Card.Root class="pt-0">
-				<Card.Header>
-					<Card.Title>{messages.createTitle}</Card.Title>
-					<Card.Description>{messages.createSubtitle}</Card.Description>
-				</Card.Header>
-				<Card.Content class="space-y-3 pb-6">
-					<Input placeholder={messages.namePlaceholder} bind:value={createName} />
-					<Textarea rows={10} bind:value={createData} placeholder={messages.dataPlaceholder} class="font-mono text-xs" />
-					<IfPermitted perm={permission}>
-						<ArcaneButton
-							action="create"
-							customLabel={messages.createButton}
-							onclick={handleCreate}
-							disabled={!canManage || isLoading.create}
-							loading={isLoading.create}
-						/>
-					</IfPermitted>
-				</Card.Content>
-			</Card.Root>
+		<div class={canManage ? 'grid gap-4 lg:grid-cols-[1fr,1.1fr]' : 'grid gap-4'}>
+			{#if canManage}
+				<Card.Root class="pt-0">
+					<Card.Header>
+						<Card.Title>{messages.createTitle}</Card.Title>
+						<Card.Description>{messages.createSubtitle}</Card.Description>
+					</Card.Header>
+					<Card.Content class="space-y-3 pb-6">
+						<Input placeholder={messages.namePlaceholder} bind:value={createName} />
+						<Textarea rows={10} bind:value={createData} placeholder={messages.dataPlaceholder} class="font-mono text-xs" />
+						<IfPermitted perm={permission}>
+							<ArcaneButton
+								action="create"
+								customLabel={messages.createButton}
+								onclick={handleCreate}
+								disabled={isLoading.create}
+								loading={isLoading.create}
+							/>
+						</IfPermitted>
+					</Card.Content>
+				</Card.Root>
+			{/if}
 
 			<div class="space-y-4">
 				<Card.Root class="pt-0">
@@ -252,16 +254,18 @@
 												class="font-mono text-xs"
 												readonly
 											/>
-											<div class="flex flex-wrap items-center gap-2 pt-1">
-												<ArcaneButton
-													action="remove"
-													customLabel={messages.deleteButton}
-													icon={TrashIcon}
-													onclick={() => handleRemove(item)}
-													disabled={!canManage || isLoading.delete}
-													loading={isLoading.delete}
-												/>
-											</div>
+											{#if canManage}
+												<div class="flex flex-wrap items-center gap-2 pt-1">
+													<ArcaneButton
+														action="remove"
+														customLabel={messages.deleteButton}
+														icon={TrashIcon}
+														onclick={() => handleRemove(item)}
+														disabled={isLoading.delete}
+														loading={isLoading.delete}
+													/>
+												</div>
+											{/if}
 										</div>
 									{/if}
 								</Card.Root>
