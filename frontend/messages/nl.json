@@ -1327,6 +1327,8 @@
   "compose_override_hint": "Overrides worden bij de implementatie bovenop het compose-bestand samengevoegd. Wis de inhoud en sla het bestand op om het override-bestand te verwijderen.",
   "compose_override_add": "Overrides-bestand toevoegen",
   "compose_override_remove": "Overschrijving ongedaan maken",
+  "compose_multiple_files_title": "Meerdere opmaakbestanden",
+  "compose_multiple_files_description": "Dit project implementeert de onderstaande compose-bestanden, geselecteerd via COMPOSE_FILE in het .env-bestand. Bestanden die niet tot de basis behoren, worden bewerkt in de Workspace-weergave.",
   "compose_no_services_found": "Geen services gevonden voor dit project",
   "compose_service_not_created": "Niet aangemaakt",
   "compose_name_change_not_allowed": "Projectnaam kan niet worden gewijzigd tijdens het uitvoeren. Gelieve het project eerst te stoppen.",
