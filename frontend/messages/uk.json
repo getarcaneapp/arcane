@@ -1327,6 +1327,8 @@
   "compose_override_hint": "Під час розгортання перезаписи об’єднуються з файлом compose. Щоб видалити файл перезапису, очистіть його вміст і збережіть.",
   "compose_override_add": "Додати файл перевизначення",
   "compose_override_remove": "Скасувати перевизначення",
+  "compose_multiple_files_title": "Кілька файлів компоузу",
+  "compose_multiple_files_description": "У цьому проєкті використовуються наведені нижче файли compose, обрані за допомогою параметра COMPOSE_FILE у файлі .env. Файли, що не входять до базового набору, редагуються у вікні «Робоча область».",
   "compose_no_services_found": "No services found for this project",
   "compose_service_not_created": "Not created",
   "compose_name_change_not_allowed": "Project name cannot be changed while running. Please stop the project first.",
