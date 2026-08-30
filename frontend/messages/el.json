@@ -1327,6 +1327,8 @@
   "compose_override_hint": "Οι αντικαταστάσεις ενσωματώνονται στο αρχείο σύνθεσης κατά την ανάπτυξη. Διαγράψτε το περιεχόμενο και αποθηκεύστε για να καταργήσετε το αρχείο αντικατάστασης.",
   "compose_override_add": "Προσθήκη αρχείου παράκαμψης",
   "compose_override_remove": "Αφαίρεση παράκαμψης",
+  "compose_multiple_files_title": "Πολλαπλά αρχεία σύνταξης",
+  "compose_multiple_files_description": "Αυτό το έργο αναπτύσσει τα παρακάτω αρχεία σύνθεσης, τα οποία επιλέγονται από τη μεταβλητή COMPOSE_FILE στο αρχείο .env του. Τα αρχεία εκτός από το βασικό αρχείο επεξεργάζονται στην προβολή «Χώρος εργασίας».",
   "compose_no_services_found": "No services found for this project",
   "compose_service_not_created": "Not created",
   "compose_name_change_not_allowed": "Project name cannot be changed while running. Please stop the project first.",
