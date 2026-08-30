@@ -1327,6 +1327,8 @@
   "compose_override_hint": "在部署時，覆寫內容會合併到 compose 檔案之上。若要移除覆寫檔案，請清除內容並儲存。",
   "compose_override_add": "新增覆寫檔案",
   "compose_override_remove": "移除覆寫",
+  "compose_multiple_files_title": "多個 Compose 檔案",
+  "compose_multiple_files_description": "此專案會部署以下由其 .env 檔案中的 COMPOSE_FILE 選定的 compose 檔案。除 base 以外的檔案，可於「工作區」檢視中進行編輯。",
   "compose_no_services_found": "在此專案找不到服務",
   "compose_service_not_created": "未建立",
   "compose_name_change_not_allowed": "專案執行中無法變更專案名稱。請先停止專案。",
