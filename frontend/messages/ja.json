@@ -1327,6 +1327,8 @@
   "compose_override_hint": "オーバーライドは、デプロイ時にコンポーズファイルの上にマージされます。オーバーライドファイルを削除するには、内容を消去して保存してください。",
   "compose_override_add": "オーバーライドファイルを追加する",
   "compose_override_remove": "オーバーライドを解除する",
+  "compose_multiple_files_title": "複数のコンポーズファイル",
+  "compose_multiple_files_description": "このプロジェクトでは、.env ファイル内の COMPOSE_FILE で指定された以下のコンポーズファイルがデプロイされます。base 以外のファイルは、ワークスペースビューで編集します。",
   "compose_no_services_found": "No services found for this project",
   "compose_service_not_created": "Not created",
   "compose_name_change_not_allowed": "Project name cannot be changed while running. Please stop the project first.",
