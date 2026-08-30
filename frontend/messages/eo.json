@@ -1327,6 +1327,8 @@
   "compose_override_hint": "Superregadoj estas kunfanditaj sur la kompozicia dosiero dum deplojado. Forigu la enhavon kaj konservu por forigi la superregaddosieron.",
   "compose_override_add": "Aldoni superregilan dosieron",
   "compose_override_remove": "Forigu superregon",
+  "compose_multiple_files_title": "Pluraj kompozaj dosieroj",
+  "compose_multiple_files_description": "Ĉi tiu projekto deplojas la sube listigitajn compose-dosierojn, elektitajn per COMPOSE_FILE en ĝia .env. Dosieroj krom la baza estas redaktataj en la laborspaca vido.",
   "compose_no_services_found": "Neniuj servoj trovitaj por ĉi tiu projekto",
   "compose_service_not_created": "Ne kreita",
   "compose_name_change_not_allowed": "La projekta nomo ne povas esti ŝanĝita dum rulado. Bonvolu unue haltigi la projekton.",
