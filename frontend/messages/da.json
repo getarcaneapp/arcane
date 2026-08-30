@@ -1327,6 +1327,8 @@
   "compose_override_hint": "Overskrivninger flettes ind i compose-filen ved implementering. Slet indholdet og gem for at fjerne overskrivningsfilen.",
   "compose_override_add": "Tilføj en overskrivningsfil",
   "compose_override_remove": "Fjern overstyring",
+  "compose_multiple_files_title": "Flere komponeringsfiler",
+  "compose_multiple_files_description": "Dette projekt implementerer nedenstående compose-filer, der er valgt via COMPOSE_FILE i .env-filen. Filer, der ikke er en del af basismappen, redigeres i visningen »Workspace«.",
   "compose_no_services_found": "No services found for this project",
   "compose_service_not_created": "Not created",
   "compose_name_change_not_allowed": "Project name cannot be changed while running. Please stop the project first.",
