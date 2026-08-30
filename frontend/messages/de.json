@@ -1327,6 +1327,8 @@
   "compose_override_hint": "Überschreibungen werden beim Deployment in die Compose-Datei integriert. Löschen Sie den Inhalt und speichern Sie die Datei, um die Überschreibungsdatei zu entfernen.",
   "compose_override_add": "Überschreibungsdatei hinzufügen",
   "compose_override_remove": "Überschreibung aufheben",
+  "compose_multiple_files_title": "Mehrere Compose-Dateien",
+  "compose_multiple_files_description": "Bei diesem Projekt werden die unten aufgeführten Compose-Dateien verwendet, die über die Variable COMPOSE_FILE in der .env-Datei ausgewählt werden. Andere Dateien als die Basisdatei werden in der Ansicht „Workspace“ bearbeitet.",
   "compose_no_services_found": "Keine Services für dieses Projekt gefunden",
   "compose_service_not_created": "Nicht erstellt",
   "compose_name_change_not_allowed": "Der Projektname kann im laufenden Betrieb nicht geändert werden. Bitte stoppe das Projekt zuerst.",
