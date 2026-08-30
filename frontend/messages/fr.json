@@ -1327,6 +1327,8 @@
   "compose_override_hint": "Les modifications sont fusionnées avec le fichier « compose » lors du déploiement. Effacez le contenu puis enregistrez pour supprimer le fichier de modification.",
   "compose_override_add": "Ajouter un fichier de remplacement",
   "compose_override_remove": "Supprimer la dérogation",
+  "compose_multiple_files_title": "Plusieurs fichiers de composition",
+  "compose_multiple_files_description": "Ce projet déploie les fichiers de composition ci-dessous, sélectionnés par la variable COMPOSE_FILE dans son fichier .env. Les fichiers autres que le fichier de base sont modifiés dans la vue « Espace de travail ».",
   "compose_no_services_found": "Aucun service trouvé pour ce projet",
   "compose_service_not_created": "Non créé",
   "compose_name_change_not_allowed": "Le nom du projet ne peut pas être modifié pendant son exécution. Veuillez d'abord arrêter le projet.",
