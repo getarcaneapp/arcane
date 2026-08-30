@@ -516,4 +516,9 @@ type Update struct {
 	//
 	// Required: false
 	DepotToken *string `json:"depotToken,omitzero"`
+
+	// ApnsEnabled lets users pair the mobile app for native push notifications.
+	//
+	// Required: false
+	ApnsEnabled *string `json:"apnsEnabled,omitzero"`
 }

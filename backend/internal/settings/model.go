@@ -170,6 +170,10 @@ type Settings struct {
 	// Notifications category (placeholder for category metadata only - actual settings managed via notification service)
 	NotificationsCategoryPlaceholder SettingVariable `key:"notificationsCategory,internal" meta:"label=Notifications;type=internal;keywords=notifications,alerts,email,discord,webhooks,events,messages;category=notifications;description=Configure notification providers and alerts" catmeta:"id=notifications;title=Notifications;icon=bell;url=/settings/notifications;description=Configure email and Discord notifications for container and image updates"`
 
+	ApnsEnabled    SettingVariable `key:"apnsEnabled,authrequired" meta:"label=Mobile Push Notifications;type=boolean;keywords=apns,push,mobile,ios,notifications,relay;category=notifications;description=Let users receive native push notifications in the Arcane mobile app"`
+	ApnsChannelID  SettingVariable `key:"apnsChannelId,internal"`
+	ApnsSigningKey SettingVariable `key:"apnsSigningKey,internal,sensitive"`
+
 	AgentToken SettingVariable `key:"agentToken,internal,sensitive"`
 	InstanceID SettingVariable `key:"instanceId,internal"`
 

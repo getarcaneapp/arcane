@@ -1,6 +1,9 @@
 <script lang="ts">
 	import * as Tabs from '#lib/components/ui/tabs';
 	import * as Dialog from '#lib/components/ui/dialog';
+	import * as Alert from '#lib/components/ui/alert';
+	import { Switch } from '#lib/components/ui/switch/index.js';
+	import SettingsRow from '#lib/components/settings/settings-row.svelte';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { toast } from 'svelte-sonner';
 	import { getContext, onMount } from 'svelte';
@@ -10,7 +13,10 @@
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte';
 	import { notificationService } from '#lib/services/notification-service';
 	import { type NotificationProviderKey, NOTIFICATION_PROVIDER_KEYS } from '#lib/types/notifications';
-	import { NotificationsIcon } from '#lib/icons';
+	import { AlertIcon, NotificationsIcon } from '#lib/icons';
+	import { settingsService } from '#lib/services/settings-service';
+	import type { Settings } from '#lib/types/settings';
+	import { hasPermission } from '#lib/utils/auth';
 	import { TabBar, type TabItem } from '#lib/components/tab-bar';
 	import { BuiltInProviderForm } from './providers';
 	import {
@@ -23,7 +29,10 @@
 		type NotificationSettingsByProvider,
 		updateNotificationProviderFormState
 	} from '#lib/utils/notification-providers';
-	import { extractApiErrorMessage } from '#lib/utils/api';
+	import { extractApiErrorMessage, handleApiResultWithCallbacks, tryCatch } from '#lib/utils/api';
+	import { apnsService } from '#lib/services/apns-service';
+	import type { ApnsDevice } from '#lib/types/apns';
+	import { formatRelativeTime } from '#lib/utils/formatting';
 
 	let { data } = $props();
 
@@ -32,20 +41,30 @@
 	let isTesting = $state(false);
 	let showUnsavedDialog = $state(false);
 	let pendingTestAction: (() => Promise<void>) | null = $state(null);
-	const urlTab = useUrlTab<NotificationProviderKey>({
-		validTabs: () => NOTIFICATION_PROVIDER_KEYS,
+	type NotificationTab = NotificationProviderKey | 'mobile';
+	const NOTIFICATION_TABS: readonly NotificationTab[] = [...NOTIFICATION_PROVIDER_KEYS, 'mobile'];
+	const urlTab = useUrlTab<NotificationTab>({
+		validTabs: () => NOTIFICATION_TABS,
 		defaultTab: () => 'email'
 	});
 	const providerTab = $derived(urlTab.value);
-	const providerTabItems = NOTIFICATION_PROVIDER_KEYS.map(
-		(provider) =>
-			({
-				value: provider,
-				label: getNotificationProviderDefinition(provider).label()
-			}) satisfies TabItem
-	);
+	const tabItems: TabItem[] = [
+		...NOTIFICATION_PROVIDER_KEYS.map(
+			(provider) =>
+				({
+					value: provider,
+					label: getNotificationProviderDefinition(provider).label()
+				}) satisfies TabItem
+		),
+		{ value: 'mobile', label: m.notifications_mobile_push_tab() }
+	];
 
 	const isReadOnly = $derived.by(() => $settingsStore.uiConfigDisabled);
+	const canToggleMobilePush = $derived(hasPermission('settings:write'));
+	const mobilePushEnabled = $derived($settingsStore?.apnsEnabled === true);
+	let savingMobilePush = $state(false);
+	let mobileDevices = $state<ApnsDevice[]>([]);
+	let testingDeviceId = $state<string | null>(null);
 
 	type SettingsFormState = {
 		hasChanges: boolean;
@@ -85,6 +104,7 @@
 		savedSettings = createNotificationSettingsByProvider(data?.notificationSettings ?? []);
 		providerValues = createNotificationProviderFormState(savedSettings);
 		providerBaselines = cloneNotificationProviderFormState(providerValues);
+		if (mobilePushEnabled) void loadMobileDevices();
 	});
 
 	async function onSubmit() {
@@ -124,6 +144,49 @@
 		} finally {
 			isLoading = false;
 		}
+	}
+
+	async function handleMobilePushToggle(enabled: boolean) {
+		handleApiResultWithCallbacks<Settings>({
+			result: await tryCatch(settingsService.updateSettings({ apnsEnabled: enabled })),
+			message: m.common_update_failed({ resource: m.settings() }),
+			setLoadingState: (value) => (savingMobilePush = value),
+			onSuccess: async (updated) => {
+				settingsStore.set(updated);
+				if (enabled) {
+					await loadMobileDevices();
+				} else {
+					mobileDevices = [];
+				}
+				toast.success(m.common_update_success({ resource: m.settings() }));
+			}
+		});
+	}
+
+	async function loadMobileDevices() {
+		const { data } = await tryCatch(apnsService.getStatus());
+		mobileDevices = data?.devices ?? [];
+	}
+
+	async function testMobileDevice(device: ApnsDevice) {
+		testingDeviceId = device.id;
+		const { error } = await tryCatch(apnsService.testDevice(device.id));
+		testingDeviceId = null;
+		if (error) {
+			toast.error(extractApiErrorMessage(error));
+			return;
+		}
+		toast.success(m.notifications_mobile_test_sent({ device: device.label || device.id }));
+	}
+
+	async function removeMobileDevice(device: ApnsDevice) {
+		const { error } = await tryCatch(apnsService.deleteDevice(device.id));
+		if (error) {
+			toast.error(extractApiErrorMessage(error));
+			return;
+		}
+		toast.success(m.notifications_mobile_device_removed({ device: device.label || device.id }));
+		await loadMobileDevices();
 	}
 
 	function resetForm() {
@@ -175,7 +238,7 @@
 	{#snippet mainContent()}
 		<fieldset disabled={isReadOnly} class="relative w-full min-w-0">
 			<Tabs.Root value={providerTab} class="flex min-h-0 w-full min-w-0 flex-col">
-				<TabBar items={providerTabItems} value={providerTab} onValueChange={urlTab.select} class="self-start" />
+				<TabBar items={tabItems} value={providerTab} onValueChange={urlTab.select} class="self-start" />
 
 				{#each NOTIFICATION_PROVIDER_KEYS as provider (provider)}
 					<Tabs.Content value={provider} class="mt-4 space-y-4">
@@ -192,6 +255,54 @@
 						/>
 					</Tabs.Content>
 				{/each}
+				<Tabs.Content value="mobile" class="mt-4 space-y-4">
+					<SettingsRow
+						label={m.notifications_mobile_push_label()}
+						description={m.notifications_mobile_push_description()}
+						layout="inline"
+					>
+						<Switch
+							id="apnsEnabled"
+							checked={mobilePushEnabled}
+							disabled={isReadOnly || !canToggleMobilePush || savingMobilePush}
+							onCheckedChange={(checked) => void handleMobilePushToggle(checked)}
+						/>
+					</SettingsRow>
+					{#if mobilePushEnabled}
+						<div class="space-y-2">
+							<p class="text-sm font-medium">{m.notifications_mobile_devices()}</p>
+							{#if mobileDevices.length === 0}
+								<p class="text-xs text-muted-foreground">{m.notifications_mobile_devices_empty()}</p>
+							{:else}
+								<ul class="divide-y divide-border/40">
+									{#each mobileDevices as device (device.id)}
+										<li class="flex items-center justify-between gap-3 py-2">
+											<div class="min-w-0">
+												<p class="truncate text-sm">{device.label || device.id}</p>
+												{#if device.lastSeenAt}
+													<p class="text-xs text-muted-foreground">{formatRelativeTime(device.lastSeenAt)}</p>
+												{/if}
+											</div>
+											<div class="flex shrink-0 items-center gap-2">
+												<ArcaneButton
+													action="test"
+													size="sm"
+													loading={testingDeviceId === device.id}
+													onclick={() => testMobileDevice(device)}
+												/>
+												<ArcaneButton action="remove" size="sm" onclick={() => removeMobileDevice(device)} />
+											</div>
+										</li>
+									{/each}
+								</ul>
+							{/if}
+						</div>
+					{/if}
+					<Alert.Root variant="warning" class="py-2 [&>svg]:top-2">
+						<AlertIcon class="size-4" />
+						<Alert.Description class="text-xs">{m.notifications_mobile_push_external_warning()}</Alert.Description>
+					</Alert.Root>
+				</Tabs.Content>
 			</Tabs.Root>
 		</fieldset>
 	{/snippet}

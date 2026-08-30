@@ -297,6 +297,10 @@ func DefaultSettingsConfig() *Settings {
 		DepotProjectId:         SettingVariable{Value: ""},
 		DepotToken:             SettingVariable{Value: ""},
 
+		ApnsEnabled:    SettingVariable{Value: "false"},
+		ApnsChannelID:  SettingVariable{Value: ""},
+		ApnsSigningKey: SettingVariable{Value: ""},
+
 		InstanceID: SettingVariable{Value: ""},
 	}
 }

@@ -3,6 +3,7 @@ package di
 
 import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/apns"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/appimages"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/build"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/diagnostics"
@@ -64,6 +65,8 @@ var ServiceOptions = fx.Options(
 		environment.NewEnvironmentService,
 		provideEnvironmentModuleInternal,
 		provideSettingsModuleInternal,
+		apns.NewApnsService,
+		apns.New,
 		notification.NewNotificationService,
 		notification.New,
 		vulnerability.NewVulnerabilityService,
@@ -143,5 +146,6 @@ var JobOptions = fx.Options(
 		scheduler.NewActivitySweepJob,
 		scheduler.NewUploadSessionsCleanupJob,
 		scheduler.NewGitCloneCleanupJob,
+		scheduler.NewApnsOutboxJob,
 	),
 )

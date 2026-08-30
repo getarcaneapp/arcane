@@ -7,6 +7,7 @@ export type LocalSettings = {
 	edgeMTLSManagerCAAvailable?: boolean;
 	avatarMaxUploadSizeMb: number;
 	experimentalFeaturesEnabled?: boolean;
+	apnsEnabled?: boolean;
 };
 
 const LOCAL_SETTING_KEYS = new Set([
@@ -27,7 +28,8 @@ const LOCAL_SETTING_KEYS = new Set([
 	'oidcProviderName',
 	'oidcProviderLogoUrl',
 	'edgeMTLSManagerCAAvailable',
-	'experimentalFeaturesEnabled'
+	'experimentalFeaturesEnabled',
+	'apnsEnabled'
 ]);
 
 export function isLocalSetting(key: string): boolean {

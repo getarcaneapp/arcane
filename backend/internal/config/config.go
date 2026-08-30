@@ -45,6 +45,8 @@ type Config struct {
 	JWTRefreshExpiry      time.Duration  `env:"JWT_REFRESH_EXPIRY" default:"168h"`
 	EncryptionKey         string         `env:"ENCRYPTION_KEY" default:"arcane-dev-key-32-characters!!!" options:"file"`
 	AdminStaticAPIKey     string         `env:"ADMIN_STATIC_API_KEY" default:"" options:"file"`
+	ApnsRelayUrl          string         `env:"APNS_RELAY_URL" default:"https://apns.getarcane.app" options:"trimTrailingSlash"`
+	ApnsKeyAlgorithm      string         `env:"APNS_KEY_ALGORITHM" default:"ed25519" options:"toLower"`
 
 	OidcEnabled                bool   `env:"OIDC_ENABLED" default:"false"`
 	OidcClientID               string `env:"OIDC_CLIENT_ID" default:"" options:"file"`

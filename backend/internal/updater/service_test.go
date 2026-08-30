@@ -529,7 +529,7 @@ func TestUpdaterService_PendingImageUpdatesFlushesPendingNotificationsInternal(t
 		},
 	}).Error)
 
-	notif := notification.NewNotificationService(db, nil, nil, nil)
+	notif := notification.NewNotificationService(db, nil, nil, nil, nil)
 	imageUpdates := imageupdate.NewImageUpdateService(db, nil, nil, nil, nil, notif, nil)
 	svc, svcErr := NewUpdaterService(db, nil, nil, nil, imageUpdates, nil, nil, nil, notif, nil, nil)
 	require.NoError(t, svcErr)
@@ -560,7 +560,7 @@ func TestUpdaterService_PendingImageUpdatesNoProvidersLeavesUnnotifiedInternal(t
 	db := setupProjectTestDBInternal(t)
 	require.NoError(t, db.AutoMigrate(&imageupdate.ImageUpdateRecord{}, &notification.NotificationSettings{}))
 
-	notif := notification.NewNotificationService(db, nil, nil, nil)
+	notif := notification.NewNotificationService(db, nil, nil, nil, nil)
 	imageUpdates := imageupdate.NewImageUpdateService(db, nil, nil, nil, nil, notif, nil)
 	svc, svcErr := NewUpdaterService(db, nil, nil, nil, imageUpdates, nil, nil, nil, notif, nil, nil)
 	require.NoError(t, svcErr)
