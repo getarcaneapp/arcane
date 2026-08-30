@@ -163,7 +163,8 @@ func RegisterSystemBackups(api huma.API, service *SystemBackupService, activityS
 
 func (h *SystemBackupHandler) ListHistory(ctx context.Context, input *ListBackupHistoryInput) (*ListBackupHistoryOutput, error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
-	history, page, err := h.service.ListBackupHistory(ctx, params, input.Type)
+	params.Filters = map[string]string{"type": input.Type}
+	history, page, err := h.service.ListBackupHistory(ctx, params)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}

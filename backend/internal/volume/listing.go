@@ -4,7 +4,6 @@ import (
 	"context"
 	"log/slog"
 	"regexp"
-	"slices"
 	"strings"
 	"time"
 
@@ -353,9 +352,6 @@ func (s *VolumeService) ListBackupVolumeOptions(ctx context.Context) ([]backupty
 			Name: item.Name, Anonymous: isAnonymousVolumeInternal(item), Available: true,
 		})
 	}
-	slices.SortFunc(options, func(a, b backuptypes.SystemVolumeBackupOption) int {
-		return strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
-	})
 	return options, nil
 }
 

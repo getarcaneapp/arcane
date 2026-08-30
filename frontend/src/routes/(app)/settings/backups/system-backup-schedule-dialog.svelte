@@ -69,10 +69,6 @@
 		ignoreAnonymous = true;
 	}
 
-	function systemPayload(policy: SystemBackupPolicy): UpdateSystemBackupPolicy {
-		return backupPolicyUpdateFromPolicy(policy);
-	}
-
 	function volumePayload(policy: SystemVolumeBackupPolicy): UpdateSystemVolumeBackupPolicy {
 		return {
 			...backupPolicyUpdateFromPolicy(policy, true),
@@ -150,8 +146,6 @@
 		{destinations}
 		resetKey={backupType}
 		beforeFields={TypeField}
-		policyPayload={systemPayload}
-		extendUpdate={(update) => update}
 		updatePolicies={updateSystemPolicies}
 		messages={{
 			saved: m.system_backups_policy_saved(),

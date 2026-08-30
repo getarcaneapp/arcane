@@ -43,7 +43,6 @@ export type ColumnSpec<T extends RowData> = {
 	class?: string;
 	filterFn?: ArcaneFilterFn<T>;
 	filterOptions?: FilterOption[];
-	filterEmptyTitle?: string;
 	width?: ColumnWidth;
 	align?: ColumnAlign;
 	truncate?: boolean;

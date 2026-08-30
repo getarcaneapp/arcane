@@ -1,4 +1,4 @@
-<script lang="ts" generics="TPolicy extends BackupPolicy, TUpdate extends { id: string }">
+<script lang="ts" generics="TPolicy extends BackupPolicy, TUpdate extends { id: string } = BackupPolicyUpdate">
 	import { untrack, type Snippet } from 'svelte';
 	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog';
 	import { ArcaneButton } from '#lib/components/arcane-button';
@@ -6,7 +6,7 @@
 	import type { BackupPolicy, BackupPolicyForm, BackupPolicyUpdate } from '#lib/types/backup';
 	import type { S3Destination } from '#lib/types/s3-destination';
 	import { s3DestinationService } from '#lib/services/s3-destination-service';
-	import { backupDestinationFromFlags, backupPolicyDestinationValues } from '#lib/utils/backups';
+	import { backupDestinationFromFlags, backupPolicyDestinationValues, backupPolicyUpdateFromPolicy } from '#lib/utils/backups';
 	import { toast } from 'svelte-sonner';
 	import * as m from '#lib/paraglide/messages.js';
 
@@ -28,8 +28,8 @@
 		resetKey,
 		beforeFields,
 		afterFields,
-		policyPayload,
-		extendUpdate,
+		policyPayload = (policy) => backupPolicyUpdateFromPolicy(policy, showStopContainers) as unknown as TUpdate,
+		extendUpdate = (update) => update as unknown as TUpdate,
 		updatePolicies,
 		messages,
 		onSaved,
@@ -51,8 +51,8 @@
 		resetKey?: string;
 		beforeFields?: Snippet;
 		afterFields?: Snippet;
-		policyPayload: (policy: TPolicy) => TUpdate;
-		extendUpdate: (update: BackupPolicyUpdate) => TUpdate;
+		policyPayload?: (policy: TPolicy) => TUpdate;
+		extendUpdate?: (update: BackupPolicyUpdate) => TUpdate;
 		updatePolicies: (policies: TUpdate[]) => Promise<TPolicy[]>;
 		messages: { saved: string; saveFailed: string; removed: string };
 		onSaved: (policies: TPolicy[]) => void;

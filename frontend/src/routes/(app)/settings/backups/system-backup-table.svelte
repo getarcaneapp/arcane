@@ -51,8 +51,7 @@
 			title: m.common_type(),
 			sortable: true,
 			cell: TypeCell,
-			filterOptions: backupManagementFilterOptions(),
-			filterEmptyTitle: m.backups_all_backups()
+			filterOptions: backupManagementFilterOptions()
 		},
 		{ accessorKey: 'status', title: m.common_status(), sortable: true, cell: StatusCell },
 		{ accessorKey: 'trigger', title: m.volume_backup_trigger(), sortable: true, cell: TriggerCell },

@@ -1512,12 +1512,7 @@ func (s *SystemBackupService) UpdatePolicies(ctx context.Context, updates []back
 		UpdateID: func(update backuptypes.UpdateSystemBackupPolicy) string { return update.ID },
 		New:      func() SystemBackupPolicy { return SystemBackupPolicy{} },
 		Build: func(ctx context.Context, policy *SystemBackupPolicy, update backuptypes.UpdateSystemBackupPolicy) error {
-			normalized, normalizeErr := backup.ValidatePolicyUpdate(ctx, "system", update, func(ctx context.Context, destinationID string) error {
-				if _, destinationErr := s.s3Destinations.Configuration(ctx, destinationID); destinationErr != nil {
-					return errors.New("select a valid S3 destination for system backups")
-				}
-				return nil
-			})
+			normalized, normalizeErr := backup.ValidatePolicyUpdate(ctx, "system", update, s.s3Destinations)
 			if normalizeErr != nil {
 				return normalizeErr
 			}

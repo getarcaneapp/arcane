@@ -20,7 +20,6 @@ import type { ColumnAlign, ColumnWidth, FilterOption } from './arcane-table.type
 export interface ArcaneColumnMeta {
 	title?: string;
 	filterOptions?: FilterOption[];
-	filterEmptyTitle?: string;
 	width?: ColumnWidth;
 	align?: ColumnAlign;
 	truncate?: boolean;

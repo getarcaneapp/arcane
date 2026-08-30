@@ -274,7 +274,13 @@
 
 	async function openVolumeBackups(backup: BackupHistoryEntry) {
 		const localEnvironment = environmentStore.getLocalEnvironment();
-		if (localEnvironment) await environmentStore.setEnvironment(localEnvironment);
+		if (!localEnvironment) return;
+		try {
+			await environmentStore.setEnvironment(localEnvironment);
+		} catch (error) {
+			toast.error(error instanceof Error ? error.message : m.environments_connect_error());
+			return;
+		}
 		await goto(`/volumes/${encodeURIComponent(backup.resourceName)}?tab=backups`);
 	}
 

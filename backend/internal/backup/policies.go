@@ -8,6 +8,7 @@ import (
 	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	s3domain "github.com/getarcaneapp/arcane/backend/v2/internal/s3"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/schedule"
 	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
 	"gorm.io/gorm"
@@ -78,7 +79,7 @@ func (r PolicyReconciliation[P, U]) persistInternal(ctx context.Context, policie
 }
 
 // ValidatePolicyUpdate applies the shared cron, retention, and destination rules used by backup policies.
-func ValidatePolicyUpdate(ctx context.Context, domain string, update backuptypes.UpdateBackupPolicy, s3Configured func(context.Context, string) error) (backuptypes.UpdateBackupPolicy, error) {
+func ValidatePolicyUpdate(ctx context.Context, domain string, update backuptypes.UpdateBackupPolicy, s3 *s3domain.S3DestinationService) (backuptypes.UpdateBackupPolicy, error) {
 	normalized, err := schedule.NormalizeSixField(update.Schedule, domain+" backup")
 	if err != nil {
 		return update, err
@@ -94,11 +95,11 @@ func ValidatePolicyUpdate(ctx context.Context, domain string, update backuptypes
 		if strings.TrimSpace(update.S3DestinationID) == "" {
 			return update, fmt.Errorf("select an S3 destination for %s backups", domain)
 		}
-		if s3Configured == nil {
+		if s3 == nil {
 			return update, errors.New("S3 backup destinations are unavailable")
 		}
-		if err := s3Configured(ctx, update.S3DestinationID); err != nil {
-			return update, err
+		if _, err := s3.Configuration(ctx, update.S3DestinationID); err != nil {
+			return update, fmt.Errorf("select a valid S3 destination for %s backups", domain)
 		}
 	} else {
 		update.S3DestinationID = ""

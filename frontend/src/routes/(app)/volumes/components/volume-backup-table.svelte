@@ -56,7 +56,6 @@
 		backupDestinationDisplay,
 		backupManagementFilterOptions,
 		backupManagementLabel,
-		backupPolicyUpdateFromPolicy,
 		backupTriggerLabel,
 		s3DestinationOptions as buildS3DestinationOptions
 	} from '#lib/utils/backups';
@@ -301,8 +300,7 @@
 			title: m.common_type(),
 			sortable: false,
 			cell: TypeCell,
-			filterOptions: backupManagementFilterOptions(),
-			filterEmptyTitle: m.backups_all_backups()
+			filterOptions: backupManagementFilterOptions()
 		},
 		{ accessorKey: 'status', title: m.common_status(), sortable: true, cell: StatusCell },
 		{ accessorKey: 'trigger', title: m.volume_backup_trigger(), sortable: true, cell: TriggerCell },
@@ -682,8 +680,6 @@
 	enabledDescription={m.volume_backup_policy_enabled_description()}
 	defaultSchedule="0 0 2 * * *"
 	showStopContainers
-	policyPayload={(policy) => backupPolicyUpdateFromPolicy(policy, true)}
-	extendUpdate={(update) => update}
 	updatePolicies={async (policies) => (await volumeBackupService.updatePolicies(volumeName, policies)).policies}
 	messages={{
 		saved: m.volume_backup_policy_saved(),

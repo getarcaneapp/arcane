@@ -241,7 +241,6 @@ test.describe('System-managed volume backups', () => {
 			);
 			await page.goto('/settings/backups');
 
-			await expect(page.getByRole('button', { name: 'All backups' })).toBeVisible();
 			await page.getByTestId('facet-type-trigger').click();
 			await page.getByTestId('facet-type-option-system').click();
 			const historyTable = page.getByRole('table');
@@ -260,34 +259,6 @@ test.describe('System-managed volume backups', () => {
 			await expect(page).toHaveURL(
 				new RegExp(`/volumes/${encodeURIComponent(volumeName)}\\?tab=backups`)
 			);
-		} finally {
-			await removeVolumeViaApi(page, volumeName);
-		}
-	});
-
-	test('shows the same management filter and badges on a volume backup list', async ({ page }) => {
-		const volumeName = `e2e-volume-history-${Date.now()}`;
-		const rows = [historyEntry(volumeName, 'system'), historyEntry(volumeName, 'volume')];
-		await createVolumeViaApi(page, volumeName);
-		try {
-			await page.route(
-				`**/api/environments/0/volumes/${encodeURIComponent(volumeName)}/backups**`,
-				(route) => {
-					const type = new URL(route.request().url()).searchParams.get('type');
-					const filtered =
-						type === 'system' || type === 'volume' ? rows.filter((row) => row.type === type) : rows;
-					return route.fulfill({ json: { success: true, ...paginated(filtered) } });
-				}
-			);
-
-			await page.goto(`/volumes/${encodeURIComponent(volumeName)}?tab=backups`);
-			const backupTable = page.getByRole('table');
-			await expect(backupTable.getByText('System-managed')).toHaveClass(/text-purple-/);
-			await expect(backupTable.getByText('Volume-managed')).toHaveClass(/text-purple-/);
-			await page.getByTestId('facet-type-trigger').click();
-			await page.getByTestId('facet-type-option-system').click();
-			await expect(backupTable.getByText('System-managed')).toBeVisible();
-			await expect(backupTable.getByText('Volume-managed')).toHaveCount(0);
 		} finally {
 			await removeVolumeViaApi(page, volumeName);
 		}

@@ -403,12 +403,21 @@ func (s *VolumeService) ListBackupsPaginated(ctx context.Context, volumeName str
 	return backups, pagination.BuildResponse(totalItems, totalItems, params), nil
 }
 
+// applyBackupManagementFilterInternal derives the facet from the policy_id prefix; both or neither value selected means no filter.
 func applyBackupManagementFilterInternal(query *gorm.DB, typeFilter string) *gorm.DB {
-	managementType, filtered := backup.ParseManagementTypeFilter(typeFilter)
-	if !filtered {
+	var system, volume bool
+	for value := range strings.SplitSeq(typeFilter, ",") {
+		switch backuptypes.ManagementType(strings.TrimSpace(value)) {
+		case backuptypes.ManagementTypeSystem:
+			system = true
+		case backuptypes.ManagementTypeVolume:
+			volume = true
+		}
+	}
+	if system == volume {
 		return query
 	}
-	if managementType == backuptypes.ManagementTypeSystem {
+	if system {
 		return query.Where("policy_id LIKE ?", backuptypes.SystemVolumePolicyPrefix+"%")
 	}
 	return query.Where("policy_id NOT LIKE ? OR policy_id IS NULL", backuptypes.SystemVolumePolicyPrefix+"%")
@@ -1729,15 +1738,7 @@ func (s *VolumeService) UpdateBackupPolicies(ctx context.Context, volumeName str
 		UpdateID: func(update volumetypes.UpdateBackupPolicy) string { return update.ID },
 		New:      func() VolumeBackupPolicy { return VolumeBackupPolicy{VolumeName: volumeName} },
 		Build: func(ctx context.Context, policy *VolumeBackupPolicy, update volumetypes.UpdateBackupPolicy) error {
-			normalized, err := backup.ValidatePolicyUpdate(ctx, "volume", update, func(ctx context.Context, destinationID string) error {
-				if s.s3Destinations == nil {
-					return errors.New("S3 backup destinations are unavailable")
-				}
-				if _, destinationErr := s.s3Destinations.Configuration(ctx, destinationID); destinationErr != nil {
-					return errors.New("select a valid S3 destination for volume backups")
-				}
-				return nil
-			})
+			normalized, err := backup.ValidatePolicyUpdate(ctx, "volume", update, s.s3Destinations)
 			if err != nil {
 				return err
 			}

@@ -370,7 +370,6 @@
 				meta: {
 					title: spec.title,
 					filterOptions: spec.filterOptions,
-					filterEmptyTitle: spec.filterEmptyTitle,
 					width: spec.width,
 					align: spec.align,
 					truncate: spec.truncate
@@ -440,7 +439,6 @@
 	function getColumnsKey(specs: ColumnSpec<TData>[], hasRowActions: boolean, isSelectionDisabled: boolean): string {
 		const columnsMetadata = specs.map((spec, index) => ({
 			id: spec.id ?? spec.accessorKey ?? `col_${index}`,
-			filterEmptyTitle: spec.filterEmptyTitle,
 			filterOptions: spec.filterOptions?.map((option) => ({
 				value: option.value,
 				label: option.label,

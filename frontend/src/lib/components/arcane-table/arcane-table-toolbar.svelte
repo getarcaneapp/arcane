@@ -100,12 +100,7 @@
 
 {#snippet filterList()}
 	{#if typeColumn && typeColumnFilterOptions.length > 0}
-		<DataTableFacetedFilter
-			column={typeColumn}
-			title={m.common_type()}
-			emptyTitle={typeColumn.columnDef.meta?.filterEmptyTitle}
-			options={typeColumnFilterOptions}
-		/>
+		<DataTableFacetedFilter column={typeColumn} title={m.common_type()} options={typeColumnFilterOptions} />
 	{/if}
 	{#if tagsColumn && tagsColumnFilterOptions.length > 0}
 		<DataTableFacetedFilter column={tagsColumn} title={m.common_tags()} options={tagsColumnFilterOptions} />

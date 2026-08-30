@@ -3399,7 +3399,6 @@
   "network_live_change_note": "Live network changes are lost when the container is recreated unless they are also saved via Edit.",
   "common_connect": "Connect",
   "common_disconnect": "Disconnect",
-  "backups_all_backups": "All backups",
   "backups_system_managed": "System-managed",
   "backups_volume_managed": "Volume-managed",
   "backups_backup_type": "Backup type",
