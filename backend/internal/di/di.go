@@ -2,9 +2,12 @@
 package di
 
 import (
+	"emperror.dev/emperror"
+
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apns"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/appimages"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/build"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/diagnostics"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
@@ -41,7 +44,7 @@ var ActorOptions = fx.Options(
 
 // ServiceOptions provides the backend service graph.
 var ServiceOptions = fx.Options(
-	fx.Supply(new(logging.SlogErrorHandler)),
+	fx.Supply(fx.Annotate(new(logging.SlogErrorHandler), fx.As(new(emperror.ErrorHandler)))),
 	fx.Provide(
 		// Infrastructure values consumed by services.
 		provideResourcesFSInternal,
@@ -113,7 +116,7 @@ var ServiceOptions = fx.Options(
 		provideVolumeServiceInternal,
 		provideSystemBackupServiceInternal,
 		systembackup.New,
-		provideAuthServiceInternal,
+		auth.NewAuthService,
 		provideAuthModuleInternal,
 		provideContainerRegistryModuleInternal,
 		provideContainerRegistryServiceInternal,

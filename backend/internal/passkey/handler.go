@@ -737,7 +737,7 @@ func marshalCredentialInternal(credential map[string]any) ([]byte, error) {
 
 func tokenCookieInternal(ctx context.Context, tokenPair *auth.TokenPair) []string {
 	maxAge := max(int(time.Until(tokenPair.ExpiresAt).Seconds()), 0) + 60
-	return []string{cookie.BuildTokenCookieStringFor(maxAge, tokenPair.AccessToken, cookie.SecureCookieFromContext(ctx))}
+	return cookie.BuildTokenCookieStringFor(maxAge, tokenPair.AccessToken, cookie.SecureCookieFromContext(ctx))
 }
 
 func passkeyHTTPErrorInternal(err error) error {

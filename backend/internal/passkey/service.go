@@ -455,6 +455,7 @@ func (s *passkeyService) BeginRegistration(ctx context.Context, userID, sessionI
 	exclusions := webauthn.Credentials(adapter.credentials).CredentialDescriptors()
 	creation, session, err := s.webAuthn.BeginRegistration(
 		adapter,
+		webauthn.WithCredentialParameters(webauthn.CredentialParametersPQCRecommendedL3()),
 		webauthn.WithExclusions(exclusions),
 		webauthn.WithExtensions(webauthn.WithExtensionCredProps()),
 		webauthn.WithResidentKeyRequirement(protocol.ResidentKeyRequirementRequired),

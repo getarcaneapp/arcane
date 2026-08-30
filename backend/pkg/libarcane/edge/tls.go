@@ -3,8 +3,10 @@ package edge
 import (
 	"bytes"
 	"context"
+	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
+	"crypto/mldsa"
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
@@ -447,6 +449,11 @@ func buildManagerClientTLSConfigInternal(cfg *Config) (*tls.Config, error) {
 			}
 			return nil, errors.WrapIf(err, "failed to load edge mTLS client certificate")
 		}
+		if cert.Leaf != nil {
+			if _, ok := cert.Leaf.PublicKey.(*mldsa.PublicKey); ok {
+				tlsConfig.MinVersion = tls.VersionTLS13
+			}
+		}
 		tlsConfig.Certificates = []tls.Certificate{cert}
 	}
 
@@ -743,7 +750,7 @@ func ensureManagerCAInternal(ctx context.Context, assetsDir string) (string, str
 	_ = acfs.Remove(ctx, assetsDir, "/"+generatedMTLSCACertFileName)
 	_ = acfs.Remove(ctx, assetsDir, "/"+generatedMTLSCAKeyFileName)
 
-	privateKey, err := certgen.GenerateP384PrivateKey()
+	privateKey, err := certgen.GenerateMLDSA87PrivateKey()
 	if err != nil {
 		return "", "", false, errors.WrapIf(err, "failed to generate CA private key")
 	}
@@ -753,7 +760,7 @@ func ensureManagerCAInternal(ctx context.Context, assetsDir string) (string, str
 		return "", "", false, err
 	}
 
-	certDER, err := x509.CreateCertificate(rand.Reader, template, template, &privateKey.PublicKey, privateKey)
+	certDER, err := x509.CreateCertificate(rand.Reader, template, template, privateKey.PublicKey(), privateKey)
 	if err != nil {
 		return "", "", false, errors.WrapIf(err, "failed to create CA certificate")
 	}
@@ -761,7 +768,7 @@ func ensureManagerCAInternal(ctx context.Context, assetsDir string) (string, str
 	if err := writePEMFileInternal(caCertPath, "CERTIFICATE", certDER, utils.FilePerm); err != nil {
 		return "", "", false, err
 	}
-	caKeyDER, err := x509.MarshalECPrivateKey(privateKey)
+	caKeyDER, err := x509.MarshalPKCS8PrivateKey(privateKey)
 	if err != nil {
 		return "", "", false, errors.WrapIf(err, "failed to marshal CA private key")
 	}
@@ -807,13 +814,9 @@ func ensureClientCertificateInternal(ctx context.Context, assetsDir string, envI
 		return "", "", false, errors.WrapIf(err, "failed to parse CA certificate")
 	}
 
-	caKeyBlock, _ := pem.Decode(caKeyPEM)
-	if caKeyBlock == nil {
-		return "", "", false, errors.New("failed to parse CA private key PEM")
-	}
-	caKey, err := x509.ParseECPrivateKey(caKeyBlock.Bytes)
+	caKey, err := parsePrivateKeyPEMInternal(caKeyPEM, "CA")
 	if err != nil {
-		return "", "", false, errors.WrapIf(err, "failed to parse CA private key")
+		return "", "", false, err
 	}
 
 	safeEnvID := generatedAssetNameSanitizer.ReplaceAllString(strings.TrimSpace(envID), "_")
@@ -841,7 +844,7 @@ func ensureClientCertificateInternal(ctx context.Context, assetsDir string, envI
 		_ = acfs.Remove(ctx, clientDir, "/"+generatedMTLSClientKeyName)
 	}
 
-	privateKey, err := certgen.GenerateP384PrivateKey()
+	privateKey, err := generateKeyLikeInternal(caKey)
 	if err != nil {
 		return "", "", false, errors.WrapIf(err, "failed to generate client private key")
 	}
@@ -851,7 +854,7 @@ func ensureClientCertificateInternal(ctx context.Context, assetsDir string, envI
 		return "", "", false, err
 	}
 
-	certDER, err := x509.CreateCertificate(rand.Reader, template, caCert, &privateKey.PublicKey, caKey)
+	certDER, err := x509.CreateCertificate(rand.Reader, template, caCert, privateKey.Public(), caKey)
 	if err != nil {
 		return "", "", false, errors.WrapIf(err, "failed to create client certificate")
 	}
@@ -859,11 +862,20 @@ func ensureClientCertificateInternal(ctx context.Context, assetsDir string, envI
 	if err := writePEMFileInternal(clientCertPath, "CERTIFICATE", certDER, utils.FilePerm); err != nil {
 		return "", "", false, err
 	}
-	clientKeyDER, err := x509.MarshalECPrivateKey(privateKey)
+	// P-384 leaves keep the SEC1 framing so agents from before the ML-DSA
+	// migration can still parse keys issued during a rolling upgrade.
+	var clientKeyDER []byte
+	keyPEMType := "PRIVATE KEY"
+	if ecKey, ok := privateKey.(*ecdsa.PrivateKey); ok {
+		keyPEMType = "EC PRIVATE KEY"
+		clientKeyDER, err = x509.MarshalECPrivateKey(ecKey)
+	} else {
+		clientKeyDER, err = x509.MarshalPKCS8PrivateKey(privateKey)
+	}
 	if err != nil {
 		return "", "", false, errors.WrapIf(err, "failed to marshal client private key")
 	}
-	if err := writePEMFileInternal(clientKeyPath, "EC PRIVATE KEY", clientKeyDER, 0o600); err != nil {
+	if err := writePEMFileInternal(clientKeyPath, keyPEMType, clientKeyDER, 0o600); err != nil {
 		return "", "", false, err
 	}
 
@@ -929,24 +941,16 @@ func validateGeneratedCAInternal(certPath, keyPath string) error {
 	if !cert.IsCA {
 		return errors.New("generated CA certificate is not a CA")
 	}
-	publicKey, ok := cert.PublicKey.(*ecdsa.PublicKey)
-	if !ok || publicKey.Curve != elliptic.P384() {
-		return errors.New("generated CA certificate is not ECDSA P-384")
+	if err := validateGeneratedKeyTypeInternal(cert.PublicKey, "generated CA certificate"); err != nil {
+		return err
 	}
 	keyPEM, err := readCAKeyPEMInternal(keyPath)
 	if err != nil {
 		return err
 	}
-	keyBlock, _ := pem.Decode(keyPEM)
-	if keyBlock == nil {
-		return errors.Errorf("failed to parse CA private key PEM %s", keyPath)
-	}
-	privateKey, err := x509.ParseECPrivateKey(keyBlock.Bytes)
+	privateKey, err := parsePrivateKeyPEMInternal(keyPEM, "generated CA")
 	if err != nil {
-		return errors.WrapIff(err, "failed to parse CA private key %s", keyPath)
-	}
-	if privateKey.Curve != elliptic.P384() {
-		return errors.New("generated CA private key is not ECDSA P-384")
+		return err
 	}
 	if err := validateCertificateKeyPairInternal(cert, privateKey, "generated CA"); err != nil {
 		return err
@@ -969,16 +973,12 @@ func validateGeneratedClientCertificateInternal(certPath, keyPath string, expect
 	if expectedURISAN != nil && !certificateHasURISANInternal(cert, expectedURISAN) {
 		return errors.Errorf("generated client certificate URI SAN does not match expected %s", expectedURISAN.String())
 	}
-	publicKey, ok := cert.PublicKey.(*ecdsa.PublicKey)
-	if !ok || publicKey.Curve != elliptic.P384() {
-		return errors.New("generated client certificate is not ECDSA P-384")
-	}
-	privateKey, err := readECPrivateKeyInternal(keyPath)
-	if err != nil {
+	if err := validateGeneratedKeyTypeInternal(cert.PublicKey, "generated client certificate"); err != nil {
 		return err
 	}
-	if privateKey.Curve != elliptic.P384() {
-		return errors.New("generated client private key is not ECDSA P-384")
+	privateKey, err := readPrivateKeyInternal(keyPath)
+	if err != nil {
+		return err
 	}
 	if err := validateCertificateKeyPairInternal(cert, privateKey, "generated client"); err != nil {
 		return err
@@ -1011,7 +1011,7 @@ func agentMTLSAssetsNeedEnrollmentInternal(certPath string, keyPath string, now 
 	if err != nil {
 		return true, err.Error()
 	}
-	privateKey, err := readECPrivateKeyInternal(keyPath)
+	privateKey, err := readPrivateKeyInternal(keyPath)
 	if err != nil {
 		return true, err.Error()
 	}
@@ -1033,7 +1033,7 @@ func agentMTLSAssetsNeedEnrollmentInternal(certPath string, keyPath string, now 
 	return false, ""
 }
 
-func validateCertificateKeyPairInternal(cert *x509.Certificate, privateKey *ecdsa.PrivateKey, label string) error {
+func validateCertificateKeyPairInternal(cert *x509.Certificate, privateKey crypto.Signer, label string) error {
 	if cert == nil {
 		return errors.Errorf("%s certificate is required", label)
 	}
@@ -1041,16 +1041,11 @@ func validateCertificateKeyPairInternal(cert *x509.Certificate, privateKey *ecds
 		return errors.Errorf("%s private key is required", label)
 	}
 
-	publicKey, ok := cert.PublicKey.(*ecdsa.PublicKey)
-	if !ok {
-		return errors.Errorf("%s certificate public key is not ECDSA", label)
-	}
-
-	certPublicKeyDER, err := x509.MarshalPKIXPublicKey(publicKey)
+	certPublicKeyDER, err := x509.MarshalPKIXPublicKey(cert.PublicKey)
 	if err != nil {
 		return errors.WrapIff(err, "failed to marshal %s certificate public key", label)
 	}
-	privatePublicKeyDER, err := x509.MarshalPKIXPublicKey(&privateKey.PublicKey)
+	privatePublicKeyDER, err := x509.MarshalPKIXPublicKey(privateKey.Public())
 	if err != nil {
 		return errors.WrapIff(err, "failed to marshal %s private key public key", label)
 	}
@@ -1059,6 +1054,46 @@ func validateCertificateKeyPairInternal(cert *x509.Certificate, privateKey *ecds
 	}
 
 	return nil
+}
+
+func validateGeneratedKeyTypeInternal(publicKey any, label string) error {
+	switch key := publicKey.(type) {
+	case *ecdsa.PublicKey:
+		if key.Curve == elliptic.P384() {
+			return nil
+		}
+	case *mldsa.PublicKey:
+		if key.Parameters() == mldsa.MLDSA87() {
+			return nil
+		}
+	}
+	return errors.Errorf("%s is not ECDSA P-384 or ML-DSA-87", label)
+}
+
+func generateKeyLikeInternal(caKey crypto.Signer) (crypto.Signer, error) {
+	if _, ok := caKey.(*ecdsa.PrivateKey); ok {
+		return certgen.GenerateP384PrivateKey()
+	}
+	return certgen.GenerateMLDSA87PrivateKey()
+}
+
+func parsePrivateKeyPEMInternal(pemBytes []byte, label string) (crypto.Signer, error) {
+	block, _ := pem.Decode(pemBytes)
+	if block == nil {
+		return nil, errors.Errorf("failed to parse %s private key PEM", label)
+	}
+	if key, err := x509.ParsePKCS8PrivateKey(block.Bytes); err == nil {
+		signer, ok := key.(crypto.Signer)
+		if !ok {
+			return nil, errors.Errorf("%s private key is not a signer", label)
+		}
+		return signer, nil
+	}
+	key, err := x509.ParseECPrivateKey(block.Bytes)
+	if err != nil {
+		return nil, errors.WrapIff(err, "failed to parse %s private key", label)
+	}
+	return key, nil
 }
 
 func readCertificateInternal(path string) (*x509.Certificate, error) {
@@ -1079,22 +1114,14 @@ func readCertificateInternal(path string) (*x509.Certificate, error) {
 	return cert, nil
 }
 
-func readECPrivateKeyInternal(path string) (*ecdsa.PrivateKey, error) {
+func readPrivateKeyInternal(path string) (crypto.Signer, error) {
 	// os.* rather than acfs: callers pass both generated-asset paths and
 	// user-configured absolute key paths, so no single confinement root exists.
 	pemBytes, err := os.ReadFile(path)
 	if err != nil {
 		return nil, errors.WrapIff(err, "failed to read private key %s", path)
 	}
-	block, _ := pem.Decode(pemBytes)
-	if block == nil {
-		return nil, errors.Errorf("failed to parse private key PEM %s", path)
-	}
-	privateKey, err := x509.ParseECPrivateKey(block.Bytes)
-	if err != nil {
-		return nil, errors.WrapIff(err, "failed to parse EC private key %s", path)
-	}
-	return privateKey, nil
+	return parsePrivateKeyPEMInternal(pemBytes, path)
 }
 
 func lockEdgeMTLSPathInternal(ctx context.Context, dir string, lockName string) (func(), error) {
@@ -1238,7 +1265,7 @@ var caKeyEncryptInternal = libcrypto.Encrypt
 // writeCAKeyFileInternal writes the edge CA private key to disk using envelope
 // encryption via libcrypto.
 func writeCAKeyFileInternal(path string, derBytes []byte) error {
-	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: derBytes})
+	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: derBytes})
 	if pemBytes == nil {
 		return errors.New("failed to encode CA private key to PEM")
 	}

@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -25,7 +26,7 @@ const (
 // Config holds all application configuration.
 // Fields tagged with `env` will be loaded from the corresponding environment variable.
 // Fields with `options:"file"` support Docker secrets via the _FILE suffix.
-// Available options: file, toLower, trimTrailingSlash
+// Available options: file, toLower, trimTrailingSlash, deprecated
 type Config struct {
 	// BuildablesConfig contains feature-specific configuration that can be conditionally compiled
 	BuildablesConfig
@@ -41,7 +42,7 @@ type Config struct {
 	TLSCertFile           string         `env:"TLS_CERT_FILE" default:""`
 	TLSKeyFile            string         `env:"TLS_KEY_FILE" default:""`
 	Environment           AppEnvironment `env:"ENVIRONMENT" default:"production"`
-	JWTSecret             string         `env:"JWT_SECRET" default:"default-jwt-secret-change-me" options:"file"`
+	JWTSecret             string         `env:"JWT_SECRET" options:"file,deprecated"`
 	JWTRefreshExpiry      time.Duration  `env:"JWT_REFRESH_EXPIRY" default:"168h"`
 	EncryptionKey         string         `env:"ENCRYPTION_KEY" default:"arcane-dev-key-32-characters!!!" options:"file"`
 	AdminStaticAPIKey     string         `env:"ADMIN_STATIC_API_KEY" default:"" options:"file"`
@@ -228,6 +229,23 @@ func loadFromEnv(cfg *Config) {
 
 		setFieldValueInternal(field, fieldType, envValue)
 	})
+}
+
+// DeprecatedEnvVarsSet returns the env names of fields tagged deprecated that
+// still carry a value, so bootstrap can warn once logging is configured.
+func (c *Config) DeprecatedEnvVarsSet() []string {
+	var envNames []string
+	v := reflect.ValueOf(c).Elem()
+	visitConfigFields(v, func(field reflect.Value, fieldType reflect.StructField) {
+		if !slices.Contains(strings.Split(fieldType.Tag.Get("options"), ","), "deprecated") {
+			return
+		}
+		if field.Kind() == reflect.String && field.String() == "" {
+			return
+		}
+		envNames = append(envNames, fieldType.Tag.Get("env"))
+	})
+	return envNames
 }
 
 // applyOptions processes special options for Config fields after initial load.

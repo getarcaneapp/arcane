@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cookie"
 	"github.com/labstack/echo/v5"
 )
 
@@ -41,8 +42,8 @@ func SetAuthHeader(req *http.Request, c *echo.Context) {
 	// Forward Authorization header or cookie token
 	if auth := c.Request().Header.Get(HeaderAuthorization); auth != "" {
 		req.Header.Set(HeaderAuthorization, auth)
-	} else if ck, err := c.Cookie("token"); err == nil && ck != nil && ck.Value != "" {
-		req.Header.Set(HeaderAuthorization, "Bearer "+ck.Value)
+	} else if token, err := cookie.GetTokenCookie(c.Request()); err == nil && token != "" {
+		req.Header.Set(HeaderAuthorization, "Bearer "+token)
 	}
 }
 
@@ -64,8 +65,8 @@ func BuildWebSocketHeaders(c *echo.Context, accessToken *string) http.Header {
 	// Forward authorization (header or cookie)
 	if auth := req.Header.Get(HeaderAuthorization); auth != "" {
 		headers.Set(HeaderAuthorization, auth)
-	} else if ck, err := c.Cookie("token"); err == nil && ck != nil && ck.Value != "" {
-		headers.Set(HeaderAuthorization, "Bearer "+ck.Value)
+	} else if token, err := cookie.GetTokenCookie(req); err == nil && token != "" {
+		headers.Set(HeaderAuthorization, "Bearer "+token)
 	}
 
 	// Forward cookies if no other auth is present

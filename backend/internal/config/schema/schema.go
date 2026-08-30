@@ -53,6 +53,7 @@ type ConfigEntry struct {
 	Description  string   `json:"description,omitempty"`
 	Options      []string `json:"options,omitempty"`
 	SupportsFile bool     `json:"supportsFile,omitempty"`
+	Deprecated   bool     `json:"deprecated,omitempty"`
 	Conditional  bool     `json:"conditional,omitempty"`
 	BuildTags    []string `json:"buildTags,omitempty"`
 	Source       string   `json:"source"`
@@ -264,6 +265,7 @@ func parseStructEnvFieldsInternal(filename, structName string, opts envFieldOpti
 				Description:  description,
 				Options:      options,
 				SupportsFile: slices.Contains(options, "file"),
+				Deprecated:   slices.Contains(options, "deprecated"),
 				Conditional:  opts.conditional,
 				BuildTags:    slices.Clone(opts.buildTags),
 				Source:       opts.sourceType,

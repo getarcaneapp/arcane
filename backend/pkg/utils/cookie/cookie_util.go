@@ -2,7 +2,9 @@ package cookie
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"strings"
 )
 
 var (
@@ -10,6 +12,20 @@ var (
 	InsecureTokenCookieName = "token"        // #nosec G101: cookie name label, not a credential
 	OidcStateCookieName     = "oidc_state"
 )
+
+// Browsers cap a single cookie (name + value) at 4096 bytes, so tokens larger
+// than that are split across numbered chunk cookies and reassembled on read.
+const (
+	tokenCookieChunkSize = 3072
+	tokenCookieMaxChunks = 4
+)
+
+func tokenCookieChunkNameInternal(base string, index int) string {
+	if index == 0 {
+		return base
+	}
+	return fmt.Sprintf("%s.%d", base, index)
+}
 
 // SecureCookieContextKey is the context key under which router middleware
 // records its trusted secure-cookie decision (a bool derived from TLS or
@@ -38,39 +54,78 @@ func ClearTokenCookie(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func GetTokenCookie(r *http.Request) (string, error) {
-	if c, err := r.Cookie(TokenCookieName); err == nil {
-		return c.Value, nil
-	}
-	c, err := r.Cookie(InsecureTokenCookieName)
-	if err != nil {
-		return "", err
-	}
-	return c.Value, nil
+func GetTokenCookieFromHeader(cookieHeader string) (string, error) {
+	return GetTokenCookie(&http.Request{Header: http.Header{"Cookie": []string{cookieHeader}}})
 }
 
-// BuildTokenCookieStringFor builds a Set-Cookie header string matching the
-// current request security context. Callers must pass the trusted secure flag
-// from SecureCookieFromContext / SecureCookieFromRequest so the cookie name
-// (__Host-token vs. token) round-trips correctly behind HTTPS reverse proxies.
-func BuildTokenCookieStringFor(maxAgeInSeconds int, token string, secure bool) string {
+func GetTokenCookie(r *http.Request) (string, error) {
+	if value, err := readTokenCookieInternal(r, TokenCookieName); err == nil {
+		return value, nil
+	}
+	return readTokenCookieInternal(r, InsecureTokenCookieName)
+}
+
+func readTokenCookieInternal(r *http.Request, base string) (string, error) {
+	byName := make(map[string]string, len(r.Cookies()))
+	for _, c := range r.Cookies() {
+		byName[c.Name] = c.Value
+	}
+	first, ok := byName[base]
+	if !ok {
+		return "", http.ErrNoCookie
+	}
+	var value strings.Builder
+	value.WriteString(first)
+	for i := 1; ; i++ {
+		chunk, ok := byName[tokenCookieChunkNameInternal(base, i)]
+		if !ok {
+			break
+		}
+		value.WriteString(chunk)
+	}
+	return value.String(), nil
+}
+
+// BuildTokenCookieStringFor builds Set-Cookie header strings matching the
+// current request security context, splitting the token across chunk cookies
+// when it exceeds the per-cookie browser limit and clearing unused chunk slots
+// so stale chunks from a longer previous token cannot corrupt reassembly.
+// Callers must pass the trusted secure flag from SecureCookieFromContext /
+// SecureCookieFromRequest so the cookie name (__Host-token vs. token)
+// round-trips correctly behind HTTPS reverse proxies.
+func BuildTokenCookieStringFor(maxAgeInSeconds int, token string, secure bool) []string {
 	if maxAgeInSeconds < 0 {
 		maxAgeInSeconds = 0
 	}
-	cookieName := InsecureTokenCookieName
+	base := InsecureTokenCookieName
 	if secure {
-		cookieName = TokenCookieName
+		base = TokenCookieName
 	}
-	cookie := &http.Cookie{ // #nosec G124: Secure mirrors the trusted request context so the cookie can round-trip through HTTPS reverse proxies.
-		Name:     cookieName,
-		Value:    token,
-		Path:     "/",
-		MaxAge:   maxAgeInSeconds,
-		HttpOnly: true,
-		Secure:   secure,
-		SameSite: http.SameSiteLaxMode,
+
+	var chunks []string
+	for len(token) > tokenCookieChunkSize {
+		chunks = append(chunks, token[:tokenCookieChunkSize])
+		token = token[tokenCookieChunkSize:]
 	}
-	return cookie.String()
+	chunks = append(chunks, token)
+
+	var headers []string
+	for i, chunk := range chunks {
+		cookie := &http.Cookie{ // #nosec G124: Secure mirrors the trusted request context so the cookie can round-trip through HTTPS reverse proxies.
+			Name:     tokenCookieChunkNameInternal(base, i),
+			Value:    chunk,
+			Path:     "/",
+			MaxAge:   maxAgeInSeconds,
+			HttpOnly: true,
+			Secure:   secure,
+			SameSite: http.SameSiteLaxMode,
+		}
+		headers = append(headers, cookie.String())
+	}
+	for i := len(chunks); i < tokenCookieMaxChunks; i++ {
+		headers = append(headers, buildClearTokenCookieStringInternal(tokenCookieChunkNameInternal(base, i), secure))
+	}
+	return headers
 }
 
 // BuildClearTokenCookieStringsFor builds Set-Cookie header strings to clear
@@ -78,9 +133,12 @@ func BuildTokenCookieStringFor(maxAgeInSeconds int, token string, secure bool) s
 // also clear the HTTP fallback cookie so stale sessions from older releases are
 // flushed instead of being re-presented forever.
 func BuildClearTokenCookieStringsFor(secure bool) []string {
-	headers := []string{buildClearTokenCookieStringInternal(InsecureTokenCookieName, false)}
-	if secure {
-		headers = append(headers, buildClearTokenCookieStringInternal(TokenCookieName, true))
+	var headers []string
+	for i := range tokenCookieMaxChunks {
+		headers = append(headers, buildClearTokenCookieStringInternal(tokenCookieChunkNameInternal(InsecureTokenCookieName, i), false))
+		if secure {
+			headers = append(headers, buildClearTokenCookieStringInternal(tokenCookieChunkNameInternal(TokenCookieName, i), true))
+		}
 	}
 	return headers
 }

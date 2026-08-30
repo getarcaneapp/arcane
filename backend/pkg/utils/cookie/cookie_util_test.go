@@ -32,21 +32,41 @@ func TestSecureCookieFromRequest(t *testing.T) {
 
 func TestBuildTokenCookieStringFor(t *testing.T) {
 	t.Run("secure uses host-prefixed secure cookie", func(t *testing.T) {
-		header := BuildTokenCookieStringFor(60, "abc", true)
+		headers := BuildTokenCookieStringFor(60, "abc", true)
 
-		cookies := readSetCookieHeadersInternal(t, header)
-		require.Len(t, cookies, 1)
+		cookies := readSetCookieHeadersInternal(t, headers...)
+		require.Len(t, cookies, tokenCookieMaxChunks)
 		assert.Equal(t, TokenCookieName, cookies[0].Name)
+		assert.Equal(t, "abc", cookies[0].Value)
 		assert.True(t, cookies[0].Secure)
+		for _, clear := range cookies[1:] {
+			assert.Equal(t, -1, clear.MaxAge)
+		}
 	})
 
 	t.Run("insecure uses fallback cookie", func(t *testing.T) {
-		header := BuildTokenCookieStringFor(60, "abc", false)
+		headers := BuildTokenCookieStringFor(60, "abc", false)
 
-		cookies := readSetCookieHeadersInternal(t, header)
-		require.Len(t, cookies, 1)
+		cookies := readSetCookieHeadersInternal(t, headers...)
+		require.Len(t, cookies, tokenCookieMaxChunks)
 		assert.Equal(t, InsecureTokenCookieName, cookies[0].Name)
 		assert.False(t, cookies[0].Secure)
+	})
+
+	t.Run("large token chunks and reassembles", func(t *testing.T) {
+		token := strings.Repeat("a", tokenCookieChunkSize) + strings.Repeat("b", tokenCookieChunkSize) + "tail"
+		headers := BuildTokenCookieStringFor(60, token, true)
+
+		req := httptest.NewRequest("GET", "https://example.com/", nil)
+		for _, c := range readSetCookieHeadersInternal(t, headers...) {
+			if c.MaxAge >= 0 {
+				req.AddCookie(&http.Cookie{Name: c.Name, Value: c.Value})
+			}
+		}
+
+		got, err := GetTokenCookie(req)
+		require.NoError(t, err)
+		assert.Equal(t, token, got)
 	})
 }
 
@@ -54,7 +74,7 @@ func TestBuildClearTokenCookieStringsFor(t *testing.T) {
 	t.Run("secure clears fallback and host-prefixed cookies", func(t *testing.T) {
 		headers := BuildClearTokenCookieStringsFor(true)
 
-		require.Len(t, headers, 2)
+		require.Len(t, headers, 2*tokenCookieMaxChunks)
 		assert.Equal(t, InsecureTokenCookieName, readSetCookieHeadersInternal(t, headers[0])[0].Name)
 		secureCookie := readSetCookieHeadersInternal(t, headers[1])[0]
 		assert.Equal(t, TokenCookieName, secureCookie.Name)
@@ -64,7 +84,7 @@ func TestBuildClearTokenCookieStringsFor(t *testing.T) {
 	t.Run("insecure clears only fallback cookie", func(t *testing.T) {
 		headers := BuildClearTokenCookieStringsFor(false)
 
-		require.Len(t, headers, 1)
+		require.Len(t, headers, tokenCookieMaxChunks)
 		clearCookie := readSetCookieHeadersInternal(t, headers[0])[0]
 		assert.Equal(t, InsecureTokenCookieName, clearCookie.Name)
 		assert.False(t, clearCookie.Secure)

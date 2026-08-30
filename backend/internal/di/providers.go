@@ -28,7 +28,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
 	s3domain "github.com/getarcaneapp/arcane/backend/v2/internal/s3"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/swarm"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/systembackup"
@@ -50,7 +49,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/webhook"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler"
-	arcanelogging "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/logging"
 	"github.com/getarcaneapp/arcane/backend/v2/resources"
 	"go.uber.org/fx"
 )
@@ -272,10 +270,6 @@ func provideContainerModuleInternal(event *event.EventService, docker *docker.Do
 		Project:  project,
 		Activity: activity,
 	})
-}
-
-func provideAuthServiceInternal(user *user.UserService, settings *settings.SettingsService, event *event.EventService, session *session.SessionService, role *role.RoleService, cfg *config.Config, errorHandler *arcanelogging.SlogErrorHandler) *auth.AuthService {
-	return auth.NewAuthService(user, settings, event, session, role, cfg.JWTSecret, cfg, errorHandler)
 }
 
 func provideAuthModuleInternal(service *auth.AuthService, userService *user.UserService, settingsService *settings.SettingsService, passkeyService *passkey.PasskeyService) *auth.Module {

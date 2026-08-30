@@ -174,8 +174,9 @@ type Settings struct {
 	ApnsChannelID  SettingVariable `key:"apnsChannelId,internal"`
 	ApnsSigningKey SettingVariable `key:"apnsSigningKey,internal,sensitive"`
 
-	AgentToken SettingVariable `key:"agentToken,internal,sensitive"`
-	InstanceID SettingVariable `key:"instanceId,internal"`
+	AgentToken        SettingVariable `key:"agentToken,internal,sensitive"`
+	JwtSigningKeySeed SettingVariable `key:"jwtSigningKeySeed,internal,sensitive"`
+	InstanceID        SettingVariable `key:"instanceId,internal"`
 
 	// Users category (admin management page - no actual settings)
 	UsersCategoryPlaceholder SettingVariable `key:"usersCategory,internal" meta:"label=Users;type=internal;keywords=users,accounts,management,admin,access,permissions,roles;category=users;description=Manage user accounts and permissions" catmeta:"id=users;title=Users;icon=user;url=/settings/users;description=Manage user accounts and access control"`

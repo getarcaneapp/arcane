@@ -22,7 +22,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const maxFederatedErrorBody = 4096
+const (
+	maxFederatedErrorBody    = 4096
+	maxFederatedResponseBody = 1 << 20
+)
 
 var federatedCmd = &cobra.Command{
 	Use:          "federated",
@@ -190,12 +193,14 @@ func exchangeFederatedTokenInternal(cmd *cobra.Command, c *client.Client, subjec
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxFederatedErrorBody))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxFederatedErrorBody))
+		return nil, errors.Errorf("federated token exchange failed (status %d): %s", resp.StatusCode, redactedFederatedExchangeMessageInternal(body))
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxFederatedResponseBody))
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to read federated token response")
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, errors.Errorf("federated token exchange failed (status %d): %s", resp.StatusCode, redactedFederatedExchangeMessageInternal(body))
 	}
 
 	var tokenResp federatedtypes.FederatedTokenResponse

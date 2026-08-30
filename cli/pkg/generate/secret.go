@@ -18,7 +18,7 @@ var (
 var secretCmd = &cobra.Command{
 	Use:   "secret",
 	Short: "Generate cryptographic secrets",
-	Long:  `Generate secure cryptographic secrets for ENCRYPTION_KEY and JWT_SECRET.`,
+	Long:  `Generate a secure cryptographic secret for ENCRYPTION_KEY.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return generateSecrets()
 	},
@@ -36,22 +36,17 @@ func generateSecrets() error {
 		return errors.WrapIf(err, "failed to generate encryption key")
 	}
 
-	jwtSecret := make([]byte, secretLength)
-	if _, err := rand.Read(jwtSecret); err != nil {
-		return errors.WrapIf(err, "failed to generate JWT secret")
-	}
-
 	switch secretFormat {
 	case "base64":
-		printBase64Format(encryptionKey, jwtSecret)
+		printBase64Format(encryptionKey)
 	case "hex":
-		printHexFormat(encryptionKey, jwtSecret)
+		printHexFormat(encryptionKey)
 	case "env":
-		printEnvFormat(encryptionKey, jwtSecret)
+		printEnvFormat(encryptionKey)
 	case "docker":
-		printDockerFormat(encryptionKey, jwtSecret)
+		printDockerFormat(encryptionKey)
 	case "all":
-		printAllFormats(encryptionKey, jwtSecret)
+		printAllFormats(encryptionKey)
 	default:
 		return errors.Errorf("unknown format: %s (supported: base64, hex, env, docker, all)", secretFormat)
 	}
@@ -59,36 +54,32 @@ func generateSecrets() error {
 	return nil
 }
 
-func printBase64Format(encKey, jwtKey []byte) {
+func printBase64Format(encKey []byte) {
 	fmt.Println("BASE64")
 	fmt.Println("------")
 	fmt.Printf("ENCRYPTION_KEY=%s\n", base64.StdEncoding.EncodeToString(encKey))
-	fmt.Printf("JWT_SECRET=%s\n", base64.StdEncoding.EncodeToString(jwtKey))
 }
 
-func printHexFormat(encKey, jwtKey []byte) {
+func printHexFormat(encKey []byte) {
 	fmt.Println("HEX")
 	fmt.Println("---")
 	fmt.Printf("ENCRYPTION_KEY=%s\n", hex.EncodeToString(encKey))
-	fmt.Printf("JWT_SECRET=%s\n", hex.EncodeToString(jwtKey))
 }
 
-func printEnvFormat(encKey, jwtKey []byte) {
+func printEnvFormat(encKey []byte) {
 	fmt.Println("ENV (.env) FORMAT")
 	fmt.Println("-------------------")
 	fmt.Printf("ENCRYPTION_KEY=%s\n", base64.StdEncoding.EncodeToString(encKey))
-	fmt.Printf("JWT_SECRET=%s\n", base64.StdEncoding.EncodeToString(jwtKey))
 }
 
-func printDockerFormat(encKey, jwtKey []byte) {
+func printDockerFormat(encKey []byte) {
 	fmt.Println("DOCKER COMPOSE ENVIRONMENT")
 	fmt.Println("--------------------------")
 	fmt.Println("environment:")
 	fmt.Printf("  - ENCRYPTION_KEY=%s\n", base64.StdEncoding.EncodeToString(encKey))
-	fmt.Printf("  - JWT_SECRET=%s\n", base64.StdEncoding.EncodeToString(jwtKey))
 }
 
-func printAllFormats(encKey, jwtKey []byte) {
+func printAllFormats(encKey []byte) {
 	fmt.Println("Arcane cryptographic secrets")
 	fmt.Println("===========================")
 	fmt.Println()
@@ -96,19 +87,16 @@ func printAllFormats(encKey, jwtKey []byte) {
 	fmt.Println("ENV (.env) - recommended")
 	fmt.Println("------------------------")
 	fmt.Printf("ENCRYPTION_KEY=%s\n", base64.StdEncoding.EncodeToString(encKey))
-	fmt.Printf("JWT_SECRET=%s\n", base64.StdEncoding.EncodeToString(jwtKey))
 	fmt.Println()
 
 	fmt.Println("Docker Compose (environment block)")
 	fmt.Println("-------------------------------")
 	fmt.Println("environment:")
 	fmt.Printf("  - ENCRYPTION_KEY=%s\n", base64.StdEncoding.EncodeToString(encKey))
-	fmt.Printf("  - JWT_SECRET=%s\n", base64.StdEncoding.EncodeToString(jwtKey))
 	fmt.Println()
 
 	fmt.Println("HEX")
 	fmt.Println("---")
 	fmt.Printf("ENCRYPTION_KEY=%s\n", hex.EncodeToString(encKey))
-	fmt.Printf("JWT_SECRET=%s\n", hex.EncodeToString(jwtKey))
 	fmt.Println()
 }
