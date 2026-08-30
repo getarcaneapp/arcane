@@ -1327,6 +1327,8 @@
   "compose_override_hint": "Podczas wdrażania nadpisania są scalane z plikiem kompozycji. Aby usunąć plik nadpisujący, należy wyczyścić jego zawartość i zapisać zmiany.",
   "compose_override_add": "Dodaj plik nadpisujący",
   "compose_override_remove": "Usuń nadpisanie",
+  "compose_multiple_files_title": "Wiele plików kompozycji",
+  "compose_multiple_files_description": "W ramach tego projektu wdrażane są poniższe pliki kompozycji, wybrane na podstawie zmiennej COMPOSE_FILE w pliku .env. Pliki inne niż plik bazowy są edytowane w widoku „Workspace”.",
   "compose_no_services_found": "No services found for this project",
   "compose_service_not_created": "Not created",
   "compose_name_change_not_allowed": "Project name cannot be changed while running. Please stop the project first.",
