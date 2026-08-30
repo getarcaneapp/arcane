@@ -1327,6 +1327,8 @@
   "compose_override_hint": "Överskrivningarna slås samman med kompositfilen vid distributionen. Rensa innehållet och spara för att ta bort överskrivningsfilen.",
   "compose_override_add": "Lägg till en överskrivningsfil",
   "compose_override_remove": "Ta bort överskrivningen",
+  "compose_multiple_files_title": "Flera kompositionsfiler",
+  "compose_multiple_files_description": "I detta projekt används nedanstående compose-filer, som väljs ut via variabeln COMPOSE_FILE i .env-filen. Andra filer än basfilen redigeras i vyn ”Workspace”.",
   "compose_no_services_found": "No services found for this project",
   "compose_service_not_created": "Not created",
   "compose_name_change_not_allowed": "Project name cannot be changed while running. Please stop the project first.",
