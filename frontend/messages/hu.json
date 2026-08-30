@@ -1327,6 +1327,8 @@
   "compose_override_hint": "A felülírások a telepítés során beépülnek a compose fájlba. A felülírási fájl eltávolításához törölje a tartalmát, majd mentse el a fájlt.",
   "compose_override_add": "Felülírási fájl hozzáadása",
   "compose_override_remove": "A felülírás eltávolítása",
+  "compose_multiple_files_title": "Több compose fájl",
+  "compose_multiple_files_description": "Ez a projekt az alábbi compose-fájlokat telepíti, amelyeket a .env fájlban a COMPOSE_FILE változó határoz meg. Az alapfájlon kívüli fájlokat a „Workspace” nézetben lehet szerkeszteni.",
   "compose_no_services_found": "No services found for this project",
   "compose_service_not_created": "Not created",
   "compose_name_change_not_allowed": "Project name cannot be changed while running. Please stop the project first.",
