@@ -1327,6 +1327,8 @@
   "compose_override_hint": "As substituições são incorporadas ao arquivo de composição durante a implantação. Limpe o conteúdo e salve para remover o arquivo de substituição.",
   "compose_override_add": "Adicionar arquivo de substituição",
   "compose_override_remove": "Remover a substituição",
+  "compose_multiple_files_title": "Vários arquivos de composição",
+  "compose_multiple_files_description": "Este projeto implanta os arquivos de composição abaixo, selecionados pela variável COMPOSE_FILE no arquivo .env. Os arquivos que não sejam o arquivo base são editados na visualização “Workspace”.",
   "compose_no_services_found": "Nenhum serviço encontrado para este projeto",
   "compose_service_not_created": "Não criado",
   "compose_name_change_not_allowed": "O nome do projeto não pode ser alterado durante a execução. Pare-o para realizar essa ação.",
