@@ -1327,6 +1327,8 @@
   "compose_override_hint": "Các thiết lập ghi đè sẽ được hợp nhất vào tệp compose khi triển khai. Hãy xóa nội dung và lưu lại để xóa tệp ghi đè.",
   "compose_override_add": "Thêm tệp ghi đè",
   "compose_override_remove": "Hủy bỏ thiết lập ghi đè",
+  "compose_multiple_files_title": "Nhiều tệp cấu hình",
+  "compose_multiple_files_description": "Dự án này triển khai các tệp compose dưới đây, được chọn thông qua biến môi trường COMPOSE_FILE trong tệp .env. Các tệp khác ngoài tệp gốc được chỉnh sửa trong giao diện Workspace.",
   "compose_no_services_found": "Không tìm thấy service nào cho Project này",
   "compose_service_not_created": "Chưa được tạo",
   "compose_name_change_not_allowed": "Không thể thay đổi tên Project khi đang chạy. Vui lòng dừng Project trước.",
