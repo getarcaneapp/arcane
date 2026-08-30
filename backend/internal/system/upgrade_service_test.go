@@ -9,6 +9,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
+	versiontypes "github.com/getarcaneapp/arcane/types/v2/version"
 	containertypes "github.com/moby/moby/api/types/container"
 	mounttypes "github.com/moby/moby/api/types/mount"
 	networktypes "github.com/moby/moby/api/types/network"
@@ -302,6 +303,79 @@ func TestUpdateAllAgentFailureStatus(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			require.Equal(t, tt.want, updateAllAgentFailureStatusInternal(tt.err))
+		})
+	}
+}
+
+// A blank-target self-upgrade resolves its image from the version check (#3687).
+// Explicit targets from the updater engine never reach this function.
+func TestResolveSelfUpgradeTargetImageInternal(t *testing.T) {
+	tests := []struct {
+		name         string
+		currentImage string
+		info         *versiontypes.Info
+		want         string
+		wantErr      string
+	}{
+		{
+			name:         "agent pinned to an older release moves to the newest",
+			currentImage: "ghcr.io/getarcaneapp/arcane-agent:v2.8.0",
+			info:         &versiontypes.Info{NewestVersion: "v2.9.0"},
+			want:         "ghcr.io/getarcaneapp/arcane-agent:v2.9.0",
+		},
+		{
+			name:         "already-current exact version keeps its reference",
+			currentImage: "ghcr.io/getarcaneapp/arcane:v2.9.0",
+			info:         &versiontypes.Info{NewestVersion: "v2.9.0"},
+			want:         "ghcr.io/getarcaneapp/arcane:v2.9.0",
+		},
+		{
+			name:         "older newest release refuses a downgrade",
+			currentImage: "ghcr.io/getarcaneapp/arcane:v2.9.0",
+			info:         &versiontypes.Info{NewestVersion: "v2.8.0"},
+			wantErr:      "downgrade",
+		},
+		{
+			name:         "unresolved newest release aborts an exact-version upgrade",
+			currentImage: "ghcr.io/getarcaneapp/arcane:v2.8.0",
+			info:         &versiontypes.Info{},
+			wantErr:      "could not be resolved",
+		},
+		{
+			name:         "latest channel keeps its reference",
+			currentImage: "ghcr.io/getarcaneapp/arcane:latest",
+			info:         &versiontypes.Info{NewestVersion: "v2.9.0"},
+			want:         "ghcr.io/getarcaneapp/arcane:latest",
+		},
+		{
+			name:         "minor channel keeps its reference",
+			currentImage: "ghcr.io/getarcaneapp/arcane:v2.9",
+			info:         &versiontypes.Info{NewestVersion: "v2.9.1"},
+			want:         "ghcr.io/getarcaneapp/arcane:v2.9",
+		},
+		{
+			name:         "digest pin moves to the resolved newest digest",
+			currentImage: "ghcr.io/getarcaneapp/arcane@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			info:         &versiontypes.Info{NewestDigest: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+			want:         "ghcr.io/getarcaneapp/arcane@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		},
+		{
+			name:         "digest pin without a resolved newest digest fails",
+			currentImage: "ghcr.io/getarcaneapp/arcane@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			info:         &versiontypes.Info{},
+			wantErr:      "digest-pinned",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := resolveSelfUpgradeTargetImageInternal(tt.currentImage, tt.info)
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
 		})
 	}
 }

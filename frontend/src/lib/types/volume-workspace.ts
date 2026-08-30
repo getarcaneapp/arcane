@@ -1,12 +1,5 @@
-import type {
-	Workspace,
-	WorkspaceFileChange,
-	WorkspaceFileContent,
-	WorkspaceFileEntry,
-	WorkspaceReadOnlyReason
-} from './workspace';
+import type { Workspace, WorkspaceFileChange, WorkspaceFileContent, WorkspaceReadOnlyReason } from './workspace';
 
-export type VolumeWorkspaceFile = WorkspaceFileEntry;
 export type VolumeWorkspace = Workspace;
 export interface VolumeWorkspaceFileContent extends Omit<WorkspaceFileContent, 'readOnlyReason'> {
 	readOnlyReason?: WorkspaceReadOnlyReason | 'restore_pending';

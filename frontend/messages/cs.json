@@ -1534,8 +1534,6 @@
   "security_trivy_privileged_label": "Trivy privilegovaný",
   "security_trivy_privileged_description": "Spouštějte skenování kontejnerů Trivy v privilegovaném režimu, když to vyžaduje bezpečnostní politika hostitele.",
   "security_trivy_privileged_note": "Použijte to jen jako náhradní řešení, když zabezpečovací možnosti nejsou dostatečné.",
-  "security_trivy_preserve_cache_on_volume_prune_label": "Zachovat mezipaměť Trivy při promazání svazků",
-  "security_trivy_preserve_cache_on_volume_prune_description": "Ponechat svazek mezipaměti Trivy, když Arcane promazává nepoužívané Docker svazky.",
   "security_trivy_network_fetch_failed": "Nelze načíst Docker sítě; zobrazují se pouze vestavěné možnosti.",
   "security_trivy_resource_limits_label": "Limity zdrojů Trivy",
   "security_trivy_resource_limits_description": "Nastavte limity CPU a paměti pro kontejnery skenování Trivy.",

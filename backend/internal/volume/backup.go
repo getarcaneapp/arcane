@@ -823,53 +823,91 @@ func (s *VolumeService) deleteBackupInternal(ctx context.Context, backupID strin
 	if entry.Format == VolumeBackupFormatArchive {
 		return s.deleteArchiveBackupInternal(ctx, &entry, user)
 	}
+	return s.deleteRusticBackupsInternal(ctx, []*VolumeBackup{&entry}, user)
+}
+
+// deleteRusticBackupsInternal forgets snapshots grouped by repository so each repository is pruned once.
+func (s *VolumeService) deleteRusticBackupsInternal(ctx context.Context, entries []*VolumeBackup, user *common.User) error {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return err
 	}
-	var deleteErr error
-	if entry.LocalSnapshotID != "" {
-		repository, repoErr := s.localRusticRepositoryInternal(ctx, dockerClient, false)
-		if repoErr == nil {
-			repoErr = s.engine.ForgetSnapshot(ctx, dockerClient, repository, s.rusticPasswordInternal(), entry.LocalSnapshotID)
+	var localEntries []*VolumeBackup
+	remoteGroups := make(map[string][]*VolumeBackup)
+	for _, entry := range entries {
+		if entry.LocalSnapshotID != "" {
+			localEntries = append(localEntries, entry)
 		}
-		if repoErr != nil {
-			deleteErr = errors.Combine(deleteErr, fmt.Errorf("failed to delete local Rustic snapshot: %w", repoErr))
-		} else {
-			entry.LocalSnapshotID = ""
+		if entry.RemoteSnapshotID != "" {
+			remoteGroups[entry.S3DestinationID] = append(remoteGroups[entry.S3DestinationID], entry)
 		}
 	}
-	if entry.RemoteSnapshotID != "" {
-		repository, repoErr := s.remoteRusticRepositoryInternal(ctx, entry.S3DestinationID)
-		if repoErr == nil {
-			repoErr = s.engine.ForgetSnapshot(ctx, dockerClient, repository, s.rusticPasswordInternal(), entry.RemoteSnapshotID)
-		}
-		if repoErr != nil {
-			deleteErr = errors.Combine(deleteErr, fmt.Errorf("failed to delete S3 Rustic snapshot: %w", repoErr))
-		} else {
-			entry.RemoteSnapshotID = ""
-			entry.S3DestinationID = ""
-		}
+	deleteErr := s.forgetLocalSnapshotsInternal(ctx, dockerClient, localEntries)
+	for destinationID, group := range remoteGroups {
+		deleteErr = errors.Combine(deleteErr, s.forgetRemoteSnapshotsInternal(ctx, dockerClient, destinationID, group))
 	}
-	if deleteErr != nil {
+	for _, entry := range entries {
+		if entry.LocalSnapshotID == "" && entry.RemoteSnapshotID == "" {
+			if err := s.db.WithContext(ctx).Delete(entry).Error; err != nil {
+				deleteErr = errors.Combine(deleteErr, fmt.Errorf("failed to delete volume backup record: %w", err))
+				continue
+			}
+			s.logBackupDeleteEventInternal(ctx, entry.VolumeName, entry.ID, user)
+			continue
+		}
 		switch {
 		case entry.LocalSnapshotID != "" && entry.RemoteSnapshotID != "":
 			entry.Destination = volumetypes.BackupDestinationLocalS3
 		case entry.LocalSnapshotID != "":
 			entry.Destination = volumetypes.BackupDestinationLocal
-		case entry.RemoteSnapshotID != "":
+		default:
 			entry.Destination = volumetypes.BackupDestinationS3
 		}
 		entry.Error = deleteErr.Error()
-		if saveErr := s.db.WithContext(ctx).Save(&entry).Error; saveErr != nil {
+		if saveErr := s.db.WithContext(ctx).Save(entry).Error; saveErr != nil {
 			deleteErr = errors.Combine(deleteErr, saveErr)
 		}
-		return deleteErr
 	}
-	if err := s.db.WithContext(ctx).Delete(&entry).Error; err != nil {
-		return fmt.Errorf("failed to delete volume backup record: %w", err)
+	return deleteErr
+}
+
+func (s *VolumeService) forgetLocalSnapshotsInternal(ctx context.Context, dockerClient *client.Client, entries []*VolumeBackup) error {
+	if len(entries) == 0 {
+		return nil
 	}
-	s.logBackupDeleteEventInternal(ctx, entry.VolumeName, backupID, user)
+	snapshotIDs := make([]string, len(entries))
+	for index, entry := range entries {
+		snapshotIDs[index] = entry.LocalSnapshotID
+	}
+	repository, repoErr := s.localRusticRepositoryInternal(ctx, dockerClient, false)
+	if repoErr == nil {
+		repoErr = s.engine.ForgetSnapshots(ctx, dockerClient, repository, s.rusticPasswordInternal(), snapshotIDs)
+	}
+	if repoErr != nil {
+		return fmt.Errorf("failed to delete local Rustic snapshots: %w", repoErr)
+	}
+	for _, entry := range entries {
+		entry.LocalSnapshotID = ""
+	}
+	return nil
+}
+
+func (s *VolumeService) forgetRemoteSnapshotsInternal(ctx context.Context, dockerClient *client.Client, destinationID string, entries []*VolumeBackup) error {
+	snapshotIDs := make([]string, len(entries))
+	for index, entry := range entries {
+		snapshotIDs[index] = entry.RemoteSnapshotID
+	}
+	repository, repoErr := s.remoteRusticRepositoryInternal(ctx, destinationID)
+	if repoErr == nil {
+		repoErr = s.engine.ForgetSnapshots(ctx, dockerClient, repository, s.rusticPasswordInternal(), snapshotIDs)
+	}
+	if repoErr != nil {
+		return fmt.Errorf("failed to delete S3 Rustic snapshots: %w", repoErr)
+	}
+	for _, entry := range entries {
+		entry.RemoteSnapshotID = ""
+		entry.S3DestinationID = ""
+	}
 	return nil
 }
 
@@ -1720,15 +1758,14 @@ func (s *VolumeService) UpdateBackupPolicies(ctx context.Context, volumeName str
 
 func (s *VolumeService) applyVolumeBackupRetentionInternal(ctx context.Context, policyID string, retentionCount int) error {
 	expired, err := backup.ExpiredRunIDs(ctx, s.db, "volume_backups", policyID, retentionCount)
-	if err != nil {
+	if err != nil || len(expired) == 0 {
 		return err
 	}
-	for _, id := range expired {
-		if err := s.deleteBackupInternal(ctx, id, nil); err != nil {
-			return err
-		}
+	var entries []*VolumeBackup
+	if err := s.db.WithContext(ctx).Where("id IN ?", expired).Find(&entries).Error; err != nil {
+		return err
 	}
-	return nil
+	return s.deleteRusticBackupsInternal(ctx, entries, nil)
 }
 
 func (s *VolumeService) runScheduledBackupInternal(ctx context.Context, policyID string) {

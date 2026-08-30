@@ -6,26 +6,34 @@ test.describe('Notification settings', () => {
 		await tab.scrollIntoViewIfNeeded();
 		await expect(tab).toBeVisible();
 		await tab.click();
-		await expect(page.getByRole('tabpanel', { name, exact: true })).toBeVisible();
+		await expect(page.getByRole('tabpanel').filter({ visible: true })).toBeVisible();
 	};
 
 	const enableCurrentProvider = async (page: Page) => {
-		const toggle = page.getByRole('switch').first();
+		const providerPanel = page.getByRole('tabpanel').filter({ visible: true });
+		const toggle = providerPanel.getByRole('switch').first();
 		await expect(toggle).toBeVisible();
 		await toggle.click();
-		await expect(page.locator('[data-dropdown-menu-trigger]').last()).toBeVisible({
+		await expect(providerPanel.locator('[data-dropdown-menu-trigger]')).toBeVisible({
 			timeout: 10000
 		});
 	};
 
 	const openTestMenu = async (page: Page) => {
-		const trigger = page.locator('[data-dropdown-menu-trigger]').last();
+		const trigger = page
+			.getByRole('tabpanel')
+			.filter({ visible: true })
+			.locator('[data-dropdown-menu-trigger]');
 		await expect(trigger).toBeVisible({ timeout: 10000 });
 		await trigger.click();
 	};
 
 	// Shared setup for all notification tests
-	const setupNotificationTest = async (page: Page, provider: string) => {
+	const setupNotificationTest = async (
+		page: Page,
+		provider: string,
+		options: { failProviders?: ReadonlySet<string> } = {}
+	) => {
 		const observedErrors: string[] = [];
 
 		page.on('pageerror', (err) => {
@@ -40,6 +48,8 @@ test.describe('Notification settings', () => {
 
 		let saveEndpointCalled = false;
 		let testEndpointCalled = false;
+		const attemptedProviders: string[] = [];
+		const savedProviders: string[] = [];
 		// Saved settings are kept in memory and served back on GET so that a
 		// reload round-trips them through the form like the real backend would.
 		const persistedSettings: Array<Record<string, unknown>> = [];
@@ -58,6 +68,17 @@ test.describe('Notification settings', () => {
 			if (req.method() === 'POST') {
 				saveEndpointCalled = true;
 				const saved = req.postDataJSON() as Record<string, unknown>;
+				const savedProvider = String(saved.provider ?? '');
+				attemptedProviders.push(savedProvider);
+				if (options.failProviders?.has(savedProvider)) {
+					await route.fulfill({
+						status: 500,
+						contentType: 'application/json',
+						body: JSON.stringify({ error: `${savedProvider} save failed` })
+					});
+					return;
+				}
+				savedProviders.push(savedProvider);
 				const index = persistedSettings.findIndex((s) => s.provider === saved.provider);
 				if (index >= 0) {
 					persistedSettings[index] = saved;
@@ -98,9 +119,42 @@ test.describe('Notification settings', () => {
 				).toHaveLength(0);
 			},
 			wasTestEndpointCalled: () => testEndpointCalled,
-			wasSaveEndpointCalled: () => saveEndpointCalled
+			wasSaveEndpointCalled: () => saveEndpointCalled,
+			getAttemptedProviders: () => [...attemptedProviders],
+			getSavedProviders: () => [...savedProviders]
 		};
 	};
+
+	test('saves only changed providers and retains failed providers as dirty', async ({ page }) => {
+		const { getAttemptedProviders, getSavedProviders } = await setupNotificationTest(
+			page,
+			'discord',
+			{
+				failProviders: new Set(['email'])
+			}
+		);
+
+		await openProviderTab(page, 'Discord');
+		await enableCurrentProvider(page);
+		await page.getByPlaceholder('Enter webhook ID').fill('123456789');
+		await page.getByPlaceholder('Enter webhook token').fill('abc-def-ghi');
+
+		await openProviderTab(page, 'Email');
+		await enableCurrentProvider(page);
+		await page.getByPlaceholder('smtp.example.com').fill('smtp.example.com');
+		await page.getByPlaceholder('notifications@example.com').fill('notifications@example.com');
+		await page.getByPlaceholder('user1@example.com, user2@example.com').fill('user1@example.com');
+
+		const saveButton = page.getByRole('button', { name: 'Save', exact: true });
+		await saveButton.click();
+		await expect.poll(getAttemptedProviders).toEqual(['email', 'discord']);
+		await expect.poll(getSavedProviders).toEqual(['discord']);
+		await expect(page.getByText(/Failed to save Email settings:/)).toBeVisible();
+		await expect(saveButton).toBeEnabled();
+
+		await saveButton.click();
+		await expect.poll(getAttemptedProviders).toEqual(['email', 'discord', 'email']);
+	});
 
 	test('should persist the selected provider tab in the URL', async ({ page }) => {
 		await setupNotificationTest(page, 'discord');

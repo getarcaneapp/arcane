@@ -92,7 +92,7 @@
 	const serviceImage = $derived(containerSpec?.Image || '');
 
 	const serviceMode = $derived(getSwarmServiceModeFromSpec(spec?.Mode));
-	const canScaleService = $derived(isSwarmServiceModeScalable(serviceMode));
+	const showsReplicas = $derived(isSwarmServiceModeScalable(serviceMode));
 
 	const desiredReplicas = $derived.by(() => {
 		if (serviceMode === 'global') return 0;
@@ -171,6 +171,8 @@
 	const hasMounts = $derived(mounts.length > 0);
 
 	const envId = $derived(environmentStore.selected?.id || '0');
+	const canManageServices = $derived(hasPermission('swarm:services', envId));
+	const canScaleService = $derived(canManageServices && showsReplicas);
 	const canViewServiceLogs = $derived(hasPermission('swarm:services:logs', envId));
 
 	const tabItems = $derived<TabItem[]>([
@@ -298,7 +300,7 @@
 					{serviceName}
 				</h1>
 				<Badge variant={getSwarmServiceModeVariant(serviceMode)} minWidth="20">{getSwarmServiceModeLabel(serviceMode)}</Badge>
-				{#if canScaleService}
+				{#if showsReplicas}
 					<span class="font-mono text-sm text-muted-foreground">
 						{desiredReplicas}
 						{m.swarm_replicas()}
@@ -308,36 +310,38 @@
 		{/snippet}
 
 		{#snippet headerActions()}
-			<div class="flex items-center gap-2">
-				{#if canScaleService}
-					<div class="flex items-center gap-2">
-						<Input
-							type="number"
-							min="0"
-							step="1"
-							value={scaleReplicas}
-							oninput={onScaleReplicasInput}
-							class="h-8 w-20"
-							disabled={isLoading.scale}
-						/>
-						<ArcaneButton action="base" tone="outline" size="sm" onclick={handleScale} disabled={isLoading.scale}>
-							{m.swarm_service_scale()}
-						</ArcaneButton>
-					</div>
-				{/if}
-				<ArcaneButton action="base" tone="outline" size="sm" onclick={openEdit} disabled={isLoading.update}>
-					<EditIcon class="size-4" />
-					<span class="hidden sm:inline">{m.common_edit()}</span>
-				</ArcaneButton>
-				<ArcaneButton action="base" tone="outline" size="sm" onclick={handleRollback} disabled={isLoading.rollback}>
-					<RedeployIcon class="size-4" />
-					<span class="hidden sm:inline">{m.swarm_service_rollback()}</span>
-				</ArcaneButton>
-				<ArcaneButton action="base" tone="outline-destructive" size="sm" onclick={handleDelete} disabled={isLoading.remove}>
-					<TrashIcon class="size-4" />
-					<span class="hidden sm:inline">{m.common_delete()}</span>
-				</ArcaneButton>
-			</div>
+			{#if canManageServices}
+				<div class="flex items-center gap-2">
+					{#if canScaleService}
+						<div class="flex items-center gap-2">
+							<Input
+								type="number"
+								min="0"
+								step="1"
+								value={scaleReplicas}
+								oninput={onScaleReplicasInput}
+								class="h-8 w-20"
+								disabled={isLoading.scale}
+							/>
+							<ArcaneButton action="base" tone="outline" size="sm" onclick={handleScale} disabled={isLoading.scale}>
+								{m.swarm_service_scale()}
+							</ArcaneButton>
+						</div>
+					{/if}
+					<ArcaneButton action="base" tone="outline" size="sm" onclick={openEdit} disabled={isLoading.update}>
+						<EditIcon class="size-4" />
+						<span class="hidden sm:inline">{m.common_edit()}</span>
+					</ArcaneButton>
+					<ArcaneButton action="base" tone="outline" size="sm" onclick={handleRollback} disabled={isLoading.rollback}>
+						<RedeployIcon class="size-4" />
+						<span class="hidden sm:inline">{m.swarm_service_rollback()}</span>
+					</ArcaneButton>
+					<ArcaneButton action="base" tone="outline-destructive" size="sm" onclick={handleDelete} disabled={isLoading.remove}>
+						<TrashIcon class="size-4" />
+						<span class="hidden sm:inline">{m.common_delete()}</span>
+					</ArcaneButton>
+				</div>
+			{/if}
 		{/snippet}
 
 		{#snippet tabContent(_activeTab)}

@@ -8,7 +8,7 @@
 	import { handleApiResultWithCallbacks } from '#lib/utils/api';
 	import { ResourcePageLayout, type StatCardConfig } from '#lib/layouts/index.js';
 	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte';
-	import { parallelRefresh } from '#lib/utils/api';
+	import { simpleRefresh } from '#lib/utils/api';
 	import { createRefreshActionButtons } from '#lib/utils/resource-actions';
 	import type { SwarmServiceCreateSpec } from '#lib/types/swarm';
 	import SwarmServicesTable from './services-table.svelte';
@@ -24,17 +24,11 @@
 	let showCreateDialog = $state(false);
 
 	async function refresh() {
-		await parallelRefresh(
-			{
-				services: {
-					fetch: () => swarmService.getServices(requestOptions),
-					onSuccess: (data) => {
-						services = data;
-					},
-					errorMessage: m.common_refresh_failed({ resource: m.services() })
-				}
-			},
-			(v) => (isLoading.refresh = v)
+		await simpleRefresh(
+			() => swarmService.getServices(requestOptions),
+			(data) => (services = data),
+			m.common_refresh_failed({ resource: m.services() }),
+			(loading) => (isLoading.refresh = loading)
 		);
 	}
 
@@ -61,9 +55,11 @@
 
 	const actionButtons = $derived.by(() =>
 		createRefreshActionButtons({
-			canCreate: canCreateService,
-			createLabel: m.common_create_button({ resource: m.swarm_service() }),
-			onCreate: () => (showCreateDialog = true),
+			create: {
+				allowed: canCreateService,
+				label: m.common_create_button({ resource: m.swarm_service() }),
+				onclick: () => (showCreateDialog = true)
+			},
 			refreshLabel: m.common_refresh(),
 			onRefresh: refresh,
 			refreshing: isLoading.refresh

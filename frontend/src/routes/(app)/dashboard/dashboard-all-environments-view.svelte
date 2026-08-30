@@ -5,47 +5,38 @@
 	import { type ActionButton } from '#lib/components/action-button-group/index.js';
 	import { cn } from '#lib/utils';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import { Badge, badgeVariants } from '#lib/components/ui/badge';
 	import PruneConfirmationDialog from '#lib/components/dialogs/prune-confirmation-dialog.svelte';
 	import DockerInfoDialog from '#lib/components/dialogs/docker-info-dialog.svelte';
 	import { Skeleton } from '#lib/components/ui/skeleton';
-	import * as Card from '#lib/components/ui/card/index.js';
 	import { m } from '#lib/paraglide/messages';
 	import { settingsService } from '#lib/services/settings-service';
 	import { systemService } from '#lib/services/system-service';
 	import { activityStore } from '#lib/stores/activity.store.svelte';
 	import { dashboardStore } from '#lib/stores/dashboard.store.svelte';
-	import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte';
+	import { environmentStore } from '#lib/stores/environment.store.svelte';
 	import userStore from '#lib/stores/user-store';
 	import { hasAnyPermission, hasPermission } from '#lib/utils/auth';
-	import { formatDateTime, formatRelativeTime, parseInstant } from '#lib/utils/formatting';
 	import type {
 		DashboardActionItemKind,
 		DashboardEnvironmentCardState,
 		DashboardEnvironmentOverview,
-		DashboardOverviewSummary,
-		DashboardSnapshot,
 		SystemStats
 	} from '#lib/types/shared';
 	import type { Environment } from '#lib/types/environment';
 	import type { DockerInfo } from '#lib/types/docker';
 	import type { PruneType, SystemPruneRequest } from '#lib/types/automation';
-	import type { Settings } from '#lib/types/settings';
+	import type { AppVersionInformation, Settings } from '#lib/types/settings';
 	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api';
 	import { tryCatch } from '#lib/utils/api';
-	import { isEnvironmentOnline, resolveEnvironmentStatus } from '#lib/utils/docker';
+	import { isEnvironmentOnline } from '#lib/utils/docker';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
 	import { createStatsWebSocket, type ReconnectingWebSocket } from '#lib/utils/ws';
-	import { bytes } from '#lib/utils/formatting';
 	import {
 		ContainersIcon,
-		CpuIcon,
 		EnvironmentsIcon,
-		GpuIcon,
 		ImagesIcon,
 		InfoIcon,
 		InspectIcon,
-		MemoryStickIcon,
 		RefreshIcon,
 		TrashIcon,
 		UpdateIcon,
@@ -54,13 +45,21 @@
 		LayoutGridIcon,
 		LayoutListIcon
 	} from '#lib/icons';
-	import DashboardMetricTile from './dash-metric-tile.svelte';
-	import DashboardEnvironmentUpgradeAction from './dashboard-environment-upgrade-action.svelte';
 	import DashboardEnvironmentsTable, { type EnvironmentTableRow } from './dashboard-environments-table.svelte';
+	import DashboardEnvironmentCard from './dashboard-environment-card.svelte';
 	import { PersistedState } from 'runed';
-	import * as ArcaneTooltip from '#lib/components/arcane-tooltip';
-	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
-	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import {
+		buildOverviewSummary,
+		createBaseEnvironmentOverview,
+		formatContainerOverviewLabel,
+		formatImageOverviewLabel,
+		formatVolumeOverviewLabel,
+		getCpuMetric,
+		getDiskMetric,
+		getEnvironmentCardSortRank,
+		getMemoryMetric,
+		shouldLoadEnvironment
+	} from './dashboard-overview';
 
 	let {
 		heroGreeting,
@@ -72,7 +71,18 @@
 		debugUpgrade?: boolean;
 	} = $props();
 
-	const emptySnapshotSettings: DashboardSnapshot['settings'] = {};
+	const DEBUG_VERSION_INFO: AppVersionInformation = {
+		currentVersion: 'debug',
+		displayVersion: 'debug',
+		revision: 'debug',
+		shortRevision: 'debug',
+		goVersion: '',
+		nodeVersion: '',
+		svelteKitVersion: '',
+		isSemverVersion: false,
+		newestVersion: 'debug-v2',
+		updateAvailable: true
+	};
 
 	type EnvironmentLiveStatsState = {
 		stats: SystemStats | null;
@@ -114,55 +124,6 @@
 	}
 	function canUpgradeEnvironment(): boolean {
 		return hasPermission('environments:update');
-	}
-
-	function shouldLoadEnvironment(environment: Environment): boolean {
-		return environment.enabled && isEnvironmentOnline(environment);
-	}
-
-	function createBaseEnvironmentOverview(environment: Environment): DashboardEnvironmentOverview {
-		return {
-			environment,
-			containers: { runningContainers: 0, stoppedContainers: 0, totalContainers: 0 },
-			imageUsageCounts: { imagesInuse: 0, imagesUnused: 0, totalImages: 0, totalImageSize: 0 },
-			actionItems: { items: [] },
-			settings: emptySnapshotSettings,
-			snapshotState: 'skipped'
-		};
-	}
-
-	function getEnvironmentCardSortRank(environment: Environment): number {
-		if (shouldLoadEnvironment(environment)) {
-			return 0;
-		}
-
-		if (environment.enabled) {
-			return 1;
-		}
-
-		return 2;
-	}
-
-	function buildOverviewSummaryFromItemsInternal(settledEnvironments: DashboardEnvironmentOverview[]): DashboardOverviewSummary {
-		return {
-			totalEnvironments: settledEnvironments.length,
-			reachableEnvironments: settledEnvironments.filter(
-				(item) => item.environment.enabled && isEnvironmentOnline(item.environment)
-			).length,
-			unavailableEnvironments: settledEnvironments.filter(
-				(item) => item.environment.enabled && !isEnvironmentOnline(item.environment)
-			).length,
-			disabledEnvironments: settledEnvironments.filter((item) => !item.environment.enabled).length,
-			totalContainers: settledEnvironments.reduce((total, item) => total + item.containers.totalContainers, 0),
-			runningContainers: settledEnvironments.reduce((total, item) => total + item.containers.runningContainers, 0),
-			stoppedContainers: settledEnvironments.reduce((total, item) => total + item.containers.stoppedContainers, 0),
-			totalImages: settledEnvironments.reduce((total, item) => total + item.imageUsageCounts.totalImages, 0),
-			imagesInUse: settledEnvironments.reduce((total, item) => total + item.imageUsageCounts.imagesInuse, 0),
-			imagesUnused: settledEnvironments.reduce((total, item) => total + item.imageUsageCounts.imagesUnused, 0),
-			totalVolumes: settledEnvironments.reduce((total, item) => total + (item.volumeUsageCounts?.total ?? 0), 0),
-			volumesInUse: settledEnvironments.reduce((total, item) => total + (item.volumeUsageCounts?.inuse ?? 0), 0),
-			volumesUnused: settledEnvironments.reduce((total, item) => total + (item.volumeUsageCounts?.unused ?? 0), 0)
-		};
 	}
 
 	function createEmptyLiveStatsState(): EnvironmentLiveStatsState {
@@ -332,7 +293,7 @@
 
 		return {
 			overviewById,
-			summary: buildOverviewSummaryFromItemsInternal(items)
+			summary: buildOverviewSummary(items)
 		};
 	});
 
@@ -434,117 +395,8 @@
 		}
 	}
 
-	function getRoleBadge(environment: Environment): { text: string; variant: 'primary' | 'gray' } {
-		return environment.id === LOCAL_DOCKER_ENVIRONMENT_ID
-			? { text: m.manager(), variant: 'primary' }
-			: { text: m.agent(), variant: 'gray' };
-	}
-
-	function getResolvedStatusLabel(environment: Environment): string {
-		switch (resolveEnvironmentStatus(environment)) {
-			case 'online':
-				return m.common_online();
-			case 'standby':
-				return m.common_standby();
-			case 'pending':
-				return m.common_pending();
-			case 'error':
-				return m.common_error();
-			default:
-				return m.common_offline();
-		}
-	}
-
-	function getActivityMeta(environment: Environment): { label: string; value: string; title: string } {
-		if (!isEnvironmentOnline(environment)) {
-			const statusLabel = getResolvedStatusLabel(environment);
-			return {
-				label: m.activity(),
-				value: statusLabel,
-				title: statusLabel
-			};
-		}
-
-		const labelAndValue = environment.lastHeartbeat
-			? { label: m.environments_edge_last_heartbeat_label(), raw: environment.lastHeartbeat }
-			: environment.lastPollAt
-				? { label: m.environments_edge_last_poll_label(), raw: environment.lastPollAt }
-				: environment.connectedAt
-					? { label: m.environments_edge_connected_since_label(), raw: environment.connectedAt }
-					: environment.lastSeen
-						? { label: m.dashboard_all_last_seen(), raw: environment.lastSeen }
-						: null;
-
-		if (!labelAndValue?.raw) {
-			return { label: m.activity(), value: m.common_never(), title: m.common_never() };
-		}
-
-		const parsed = parseInstant(labelAndValue.raw);
-		if (!parsed) {
-			return { label: labelAndValue.label, value: m.common_unknown(), title: m.common_unknown() };
-		}
-
-		return {
-			label: labelAndValue.label,
-			value: formatRelativeTime(parsed),
-			title: formatDateTime(parsed)
-		};
-	}
-
-	function formatPercent(value: number | null | undefined): string {
-		return value === null || value === undefined ? '--' : `${value.toFixed(1)}%`;
-	}
-
 	function getLiveStatsState(environmentId: string): EnvironmentLiveStatsState | null {
 		return liveStatsByEnvironmentId[environmentId] ?? null;
-	}
-
-	function getCpuMetric(stats: SystemStats | null): number | null {
-		return stats?.cpuUsage ?? null;
-	}
-
-	function getMemoryMetric(stats: SystemStats | null): number | null {
-		if (stats?.memoryUsage === undefined || !stats.memoryTotal) {
-			return null;
-		}
-
-		return (stats.memoryUsage / stats.memoryTotal) * 100;
-	}
-
-	function getDiskMetric(stats: SystemStats | null): number | null {
-		if (stats?.diskUsage === undefined || !stats.diskTotal || stats.diskTotal <= 0) {
-			return null;
-		}
-
-		return (stats.diskUsage / stats.diskTotal) * 100;
-	}
-
-	function getCpuMetricLabel(stats: SystemStats | null): string {
-		if (!stats) {
-			return '--';
-		}
-
-		return `${stats.cpuCount ?? 0} ${m.common_cpus()}`;
-	}
-
-	function getCapacityLabel(used: number | undefined, total: number | undefined): string {
-		if (used === undefined || total === undefined || total <= 0) {
-			return '--';
-		}
-
-		return `${bytes.format(used, { unitSeparator: ' ' }) ?? '-'} / ${bytes.format(total, { unitSeparator: ' ' }) ?? '-'}`;
-	}
-
-	function getGpuMetric(stats: SystemStats | null): number | null {
-		const gpus = stats?.gpus?.filter((gpu) => gpu.memoryTotal > 0) ?? [];
-		if (gpus.length === 0) return null;
-		const totalPercent = gpus.reduce((sum, gpu) => sum + (gpu.memoryUsed / gpu.memoryTotal) * 100, 0);
-		return totalPercent / gpus.length;
-	}
-
-	function getGpuMetricLabel(stats: SystemStats | null): string {
-		const count = stats?.gpuCount ?? 0;
-		return count > 0 ? `${count} ${count === 1 ? m.dashboard_meter_gpu_device() : m.dashboard_meter_gpu_devices()}` : '--';
 	}
 
 	function canPruneEnvironment(item: DashboardEnvironmentOverview): boolean {
@@ -664,30 +516,6 @@
 		const checking = checkedEnvironments < loadableEnvironmentCards.length;
 		return { pending, checking };
 	});
-
-	function formatContainerOverviewLabel(summary: DashboardOverviewSummary): string {
-		if (summary.totalContainers === 0) {
-			return m.dashboard_all_no_containers();
-		}
-
-		return m.dashboard_all_container_summary({ running: summary.runningContainers, stopped: summary.stoppedContainers });
-	}
-
-	function formatImageOverviewLabel(summary: DashboardOverviewSummary): string {
-		if (summary.totalImages === 0) {
-			return m.dashboard_all_no_images();
-		}
-
-		return m.dashboard_all_image_summary({ inUse: summary.imagesInUse, unused: summary.imagesUnused });
-	}
-
-	function formatVolumeOverviewLabel(summary: DashboardOverviewSummary): string {
-		if (summary.totalVolumes === 0) {
-			return m.dashboard_all_no_volumes();
-		}
-
-		return m.dashboard_all_volume_summary({ inUse: summary.volumesInUse, unused: summary.volumesUnused });
-	}
 
 	async function openPruneDialog(item: DashboardEnvironmentOverview) {
 		if (!canPruneEnvironment(item) || pruneDefaultsLoadingId) {
@@ -918,228 +746,27 @@
 					{#each environmentCards as item (item.environment.id)}
 						{@const baseItem = createBaseEnvironmentOverview(item.environment)}
 						{@const environment = baseItem.environment}
-						{@const roleBadge = getRoleBadge(environment)}
-						{@const activity = getActivityMeta(environment)}
+						{@const overview = boardState.overviewById.get(environment.id) ?? baseItem}
 						{@const isCurrent = currentEnvironmentId === environment.id}
 						{@const liveStatsState = getLiveStatsState(environment.id)}
 						{@const systemStats = liveStatsState?.stats ?? null}
 						{@const liveStatsLoading = liveStatsState?.loading ?? shouldLoadEnvironment(environment)}
-						{@const cpuMetric = getCpuMetric(systemStats)}
-						{@const memoryMetric = getMemoryMetric(systemStats)}
-						{@const diskMetric = getDiskMetric(systemStats)}
-						{@const gpuMetric = getGpuMetric(systemStats)}
-						{@const [useButton, ...menuButtons] = getEnvironmentActionButtons(
-							boardState.overviewById.get(environment.id) ?? baseItem,
-							isCurrent
-						)}
-
-						<Card.Root
-							variant="outlined"
-							class={`dashboard-environment-card [container-type:inline-size] overflow-hidden border transition-[background-color,border-color,box-shadow] hover:shadow-[0_0_24px_-8px_color-mix(in_oklch,var(--primary)_40%,transparent)] ${isCurrent ? 'border-primary/40 bg-primary/5' : 'border-border/60 hover:border-primary/25'}`}
-						>
-							<Card.Content class="space-y-4 p-4 sm:p-5">
-								<div class="flex flex-col gap-3 border-b border-border/60 pb-4 sm:flex-row sm:items-start sm:justify-between">
-									<div class="min-w-0 space-y-2">
-										<div class="flex min-w-0 flex-wrap items-center gap-2">
-											<div class="max-w-full min-w-0 text-base font-semibold tracking-tight break-words">{environment.name}</div>
-											<Badge variant={roleBadge.variant} size="sm">{roleBadge.text}</Badge>
-											{#if boardState}
-												{@const loadedItem = boardState.overviewById.get(environment.id) ?? baseItem}
-												{@const vInfo =
-													loadedItem.versionInfo ||
-													(debugUpgrade
-														? ({ displayVersion: 'debug', updateAvailable: true, newestVersion: 'debug-v2' } as any)
-														: null)}
-												{#if vInfo}
-													<div class="flex items-center">
-														{#if vInfo.updateAvailable || debugUpgrade}
-															<ArcaneTooltip.Root>
-																<ArcaneTooltip.Trigger
-																	class={cn(badgeVariants({ variant: 'gray', size: 'sm' }), 'font-mono hover:text-foreground')}
-																>
-																	{vInfo.displayVersion || vInfo.currentTag || vInfo.currentVersion || 'unknown'}
-																	<span class="relative ml-1.5 flex h-2 w-2">
-																		<span
-																			class="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75"
-																		></span>
-																		<span class="relative inline-flex h-2 w-2 rounded-full bg-amber-500"></span>
-																	</span>
-																</ArcaneTooltip.Trigger>
-																<ArcaneTooltip.Content class="flex flex-col items-start gap-2">
-																	<span>
-																		{m.sidebar_update_available()}{#if vInfo.newestVersion || vInfo.newestDigest}: {vInfo.newestVersion ||
-																				vInfo.newestDigest.slice(0, 12)}{/if}
-																	</span>
-																	<DashboardEnvironmentUpgradeAction
-																		{environment}
-																		versionInfo={vInfo}
-																		canUpgrade={canUpgradeEnvironment()}
-																		debug={debugUpgrade}
-																		onRefreshRequested={refreshOverview}
-																		render="trigger"
-																		bind:open={upgradeDialogOpenById[environment.id]}
-																		bind:upgrading={upgradeDialogUpgradingById[environment.id]}
-																	/>
-																</ArcaneTooltip.Content>
-															</ArcaneTooltip.Root>
-														{:else}
-															<Badge variant="gray" size="sm" class="font-mono">
-																{vInfo.displayVersion || vInfo.currentTag || vInfo.currentVersion || 'unknown'}
-															</Badge>
-														{/if}
-													</div>
-													{#if vInfo.updateAvailable || debugUpgrade}
-														<DashboardEnvironmentUpgradeAction
-															{environment}
-															versionInfo={vInfo}
-															canUpgrade={canUpgradeEnvironment()}
-															debug={debugUpgrade}
-															onRefreshRequested={refreshOverview}
-															render="dialog"
-															bind:open={upgradeDialogOpenById[environment.id]}
-															bind:upgrading={upgradeDialogUpgradingById[environment.id]}
-														/>
-													{/if}
-												{/if}
-											{/if}
-										</div>
-
-										<div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground/70">
-											<span class="font-mono">{environment.apiUrl}</span>
-											<span>•</span>
-											<span title={activity.title}>{activity.label}: {activity.value}</span>
-										</div>
-									</div>
-
-									<div class="flex shrink-0 items-center gap-1 pt-1 sm:pt-0">
-										{#if useButton}
-											<ArcaneButton
-												action="base"
-												size="sm"
-												tone="ghost"
-												icon={EnvironmentsIcon}
-												customLabel={isCurrent ? m.common_current() : useButton.label}
-												loading={useButton.loading}
-												disabled={useButton.disabled}
-												onclick={useButton.onclick}
-												class={cn(isCurrent && 'disabled:opacity-100 [&_svg]:text-primary!')}
-											/>
-										{/if}
-										<RowActionsMenu>
-											{#each menuButtons as btn (btn.id)}
-												<DropdownMenu.Item
-													disabled={!!(btn.disabled || btn.loading)}
-													onclick={btn.onclick}
-													class={cn(btn.action === 'prune' && 'text-destructive data-highlighted:text-destructive')}
-												>
-													{#if btn.icon}
-														<btn.icon class="size-4" />
-													{/if}
-													{btn.label}
-												</DropdownMenu.Item>
-											{/each}
-										</RowActionsMenu>
-									</div>
-								</div>
-
-								{#if shouldLoadEnvironment(environment) || isEnvironmentOnline(environment)}
-									{#if isEnvironmentSnapshotLoading(environment.id)}
-										<Skeleton class="h-4 w-64" />
-									{:else}
-										{@const loadedItem = boardState.overviewById.get(environment.id) ?? baseItem}
-										<div class="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-muted-foreground">
-											<span>
-												<span class="font-semibold text-foreground tabular-nums"
-													>{loadedItem.containers.runningContainers}/{loadedItem.containers.totalContainers}</span
-												>
-												{String(m.common_running()).toLowerCase()}
-											</span>
-											<span class="text-border">·</span>
-											<span>
-												<span class="font-semibold text-foreground tabular-nums">{loadedItem.imageUsageCounts.totalImages}</span>
-												{String(m.images()).toLowerCase()}
-											</span>
-											<span class="text-border">·</span>
-											<span>
-												<span class="font-semibold text-foreground tabular-nums">{loadedItem.actionItems.items.length}</span>
-												{String(m.dashboard_action_items_title()).toLowerCase()}
-											</span>
-										</div>
-									{/if}
-								{:else}
-									<div class="border-t border-border/60 pt-3 text-sm">
-										<p class="font-medium">{m.dashboard_all_environment_unavailable_title()}</p>
-										<p class="mt-1 text-muted-foreground">{m.dashboard_all_environment_unavailable_description()}</p>
-									</div>
-								{/if}
-
-								{#if shouldLoadEnvironment(environment)}
-									<div class="border-t border-border/60 pt-3">
-										<div class="grid grid-cols-1 gap-1 {gpuMetric !== null ? 'sm:grid-cols-2 lg:grid-cols-4' : 'sm:grid-cols-3'}">
-											{#if liveStatsLoading}
-												{#each [1, 2, 3] as tile (tile)}
-													<div class="min-w-0 px-2.5 py-2.5">
-														<div class="flex items-start justify-between gap-2">
-															<Skeleton class="h-3 w-20" />
-															<Skeleton class="h-5 w-12" />
-														</div>
-														<Skeleton class="mt-2 h-3 w-24" />
-														<Skeleton class="mt-3 h-1.5 w-full" />
-													</div>
-												{/each}
-											{:else}
-												<DashboardMetricTile
-													title={m.cpu_usage()}
-													icon={CpuIcon}
-													value={formatPercent(cpuMetric)}
-													label={getCpuMetricLabel(systemStats)}
-													meterValue={cpuMetric}
-												/>
-
-												<DashboardMetricTile
-													title={m.memory_usage()}
-													icon={MemoryStickIcon}
-													value={formatPercent(memoryMetric)}
-													label={getCapacityLabel(systemStats?.memoryUsage, systemStats?.memoryTotal)}
-													labelClass="truncate"
-													meterValue={memoryMetric}
-												/>
-
-												<DashboardMetricTile
-													title={m.dashboard_meter_disk()}
-													icon={VolumesIcon}
-													value={formatPercent(diskMetric)}
-													label={getCapacityLabel(systemStats?.diskUsage, systemStats?.diskTotal)}
-													labelClass="truncate"
-													meterValue={diskMetric}
-												/>
-
-												{#if gpuMetric !== null}
-													<DashboardMetricTile
-														title={m.dashboard_meter_gpu()}
-														icon={GpuIcon}
-														value={formatPercent(gpuMetric)}
-														label={getGpuMetricLabel(systemStats)}
-														meterValue={gpuMetric}
-													/>
-												{/if}
-											{/if}
-										</div>
-									</div>
-								{/if}
-
-								{#if boardState}
-									{@const loadedItem = boardState.overviewById.get(environment.id) ?? baseItem}
-									{#if loadedItem.snapshotError}
-										<div
-											class="rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-xs text-red-700 dark:text-red-300"
-										>
-											{m.dashboard_all_summary_unavailable({ error: loadedItem.snapshotError })}
-										</div>
-									{/if}
-								{/if}
-							</Card.Content>
-						</Card.Root>
+						{@const [useButton, ...menuButtons] = getEnvironmentActionButtons(overview, isCurrent)}
+						<DashboardEnvironmentCard
+							{overview}
+							{isCurrent}
+							{systemStats}
+							{liveStatsLoading}
+							snapshotLoading={isEnvironmentSnapshotLoading(environment.id)}
+							{useButton}
+							{menuButtons}
+							{debugUpgrade}
+							debugVersionInfo={DEBUG_VERSION_INFO}
+							canUpgrade={canUpgradeEnvironment()}
+							onRefreshRequested={refreshOverview}
+							bind:upgradeOpen={upgradeDialogOpenById[environment.id]}
+							bind:upgradeLoading={upgradeDialogUpgradingById[environment.id]}
+						/>
 					{/each}
 				</div>
 			</div>

@@ -41,11 +41,15 @@
 	let {
 		environments = $bindable(),
 		selectedIds = $bindable(),
-		requestOptions = $bindable()
+		requestOptions = $bindable(),
+		onDeleteSelected,
+		bulkDeleteLoading = false
 	}: {
 		environments: Paginated<Environment>;
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
+		onDeleteSelected: (ids: string[]) => void;
+		bulkDeleteLoading?: boolean;
 	} = $props();
 
 	let isLoading = $state({ removing: false, testing: false, upgrading: false, toggling: false });
@@ -87,52 +91,6 @@
 	function openEasyJoin(item: Environment) {
 		easyJoinTarget = item;
 		easyJoinDialogOpen = true;
-	}
-
-	async function handleDeleteSelected(ids: string[]) {
-		if (!ids?.length) return;
-
-		openConfirmDialog({
-			title: m.environments_remove_selected_title({ count: ids.length }),
-			message: m.environments_remove_selected_message({ count: ids.length }),
-			confirm: {
-				label: m.common_remove(),
-				destructive: true,
-				action: async () => {
-					isLoading.removing = true;
-					let successCount = 0;
-					let failureCount = 0;
-
-					for (const id of ids) {
-						const result = await tryCatch(environmentManagementService.delete(id));
-						handleApiResultWithCallbacks({
-							result,
-							message: m.common_bulk_remove_failed({ count: ids.length, resource: m.environments_title() }),
-							setLoadingState: () => {},
-							onSuccess: () => {
-								successCount++;
-							}
-						});
-						if (result.error) failureCount++;
-					}
-
-					isLoading.removing = false;
-
-					if (successCount > 0) {
-						const msg = m.common_bulk_remove_success({ count: successCount, resource: m.environments_title() });
-						toast.success(msg);
-						environments = await environmentManagementService.getEnvironments(requestOptions);
-						await environmentStore.initialize(environments.data);
-					}
-					if (failureCount > 0) {
-						const msg = m.common_bulk_remove_failed({ count: failureCount, resource: m.environments_title() });
-						toast.error(msg);
-					}
-
-					selectedIds = [];
-				}
-			}
-		});
 	}
 
 	async function handleDeleteOne(id: string, hostname: string) {
@@ -195,7 +153,7 @@
 		try {
 			const result = await systemUpgradeService.triggerUpgrade(envId);
 			if (!result.success) {
-				throw new Error(result.error || m.upgrade_failed({ error: 'Unknown error' }));
+				throw new Error(result.error || m.upgrade_failed({ error: m.common_unknown() }));
 			}
 			toast.success(m.upgrade_success());
 			return { upToDate: result.upToDate };
@@ -286,9 +244,9 @@
 			id: 'remove',
 			label: m.common_remove_selected_count({ count: selectedIds?.length ?? 0 }),
 			action: 'remove',
-			onClick: handleDeleteSelected,
-			loading: isLoading.removing,
-			disabled: isLoading.removing,
+			onClick: onDeleteSelected,
+			loading: bulkDeleteLoading,
+			disabled: bulkDeleteLoading || isLoading.removing,
 			icon: TrashIcon
 		}
 	]);

@@ -4,6 +4,7 @@
 	import { operationWatchStore } from '#lib/stores/operation-watch.store.svelte';
 	import { ansiToHtml } from '#lib/utils/formatting';
 	import { m } from '#lib/paraglide/messages';
+	import PinnedScrollRegion from '#lib/components/pinned-scroll-region.svelte';
 
 	// Dismissing an attached session stops the project (the Ctrl-C of a
 	// non-detached compose up), so every close attempt confirms first.
@@ -21,28 +22,6 @@
 			}
 		});
 	});
-
-	let container = $state<HTMLElement | null>(null);
-	let pinnedToBottom = $state(true);
-
-	function handleScroll() {
-		if (!container) {
-			return;
-		}
-		pinnedToBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 24;
-	}
-
-	$effect(() => {
-		operationWatchStore.lines.length;
-		if (!container || !pinnedToBottom) {
-			return;
-		}
-		queueMicrotask(() => {
-			if (container && pinnedToBottom) {
-				container.scrollTop = container.scrollHeight;
-			}
-		});
-	});
 </script>
 
 <ResponsiveDialog
@@ -52,9 +31,8 @@
 	class="min-h-0"
 >
 	<div class="space-y-3 pb-4">
-		<div
-			bind:this={container}
-			onscroll={handleScroll}
+		<PinnedScrollRegion
+			itemCount={operationWatchStore.lines.length}
 			class="max-h-[70vh] min-h-[280px] overflow-auto rounded-lg border border-border/50 bg-zinc-950 p-4 font-mono text-[12px] leading-relaxed text-zinc-100"
 		>
 			{#each operationWatchStore.lines as line, idx (idx)}
@@ -66,7 +44,7 @@
 					{m.activity_output_loading()}
 				</div>
 			{/if}
-		</div>
+		</PinnedScrollRegion>
 
 		{#if operationWatchStore.error}
 			<div class="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">

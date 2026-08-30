@@ -3,13 +3,11 @@ import { m } from '#lib/paraglide/messages';
 import {
 	joinWorkspaceFilePath,
 	validateWorkspaceFileName,
-	workspaceFileBasename,
 	workspaceFileParentPath,
-	workspaceFilePathMatches,
-	type WorkspaceFileEntry
+	type WorkspaceDisplayEntry
 } from '#lib/utils/workspace-files';
 
-export type ProjectWorkspaceEntry = WorkspaceFileEntry;
+export type ProjectWorkspaceEntry = WorkspaceDisplayEntry;
 
 const reservedRootNames = new Set([
 	'.env',
@@ -76,24 +74,4 @@ export function planProjectWorkspaceFileRename(
 		return null;
 	}
 	return { newName: normalizedName, newPath };
-}
-
-export function planProjectWorkspaceFileMove(
-	entry: Pick<WorkspaceFileEntry, 'isDirectory'> | undefined,
-	existingPaths: ReadonlySet<string>,
-	relativePath: string,
-	newParentPath: string
-): string | null {
-	if (!entry) return null;
-	if (newParentPath === workspaceFileParentPath(relativePath)) return null;
-	if (entry.isDirectory && newParentPath && workspaceFilePathMatches(newParentPath, relativePath)) {
-		toast.error(m.workspace_file_invalid_move_destination());
-		return null;
-	}
-	const newPath = joinWorkspaceFilePath(newParentPath, workspaceFileBasename(relativePath));
-	if (newPath !== relativePath && existingPaths.has(newPath)) {
-		toast.error(m.workspace_file_duplicate_name());
-		return null;
-	}
-	return newPath;
 }

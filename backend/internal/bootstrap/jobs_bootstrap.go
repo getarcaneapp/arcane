@@ -9,6 +9,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/apns"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/gitops"
@@ -80,6 +81,7 @@ type registerJobsParams struct {
 	Volume       *volume.VolumeService
 	SystemBackup *systembackup.SystemBackupService
 	Admission    *actors.Gate[actors.AdmissionKey]
+	Apns         *apns.ApnsService
 
 	AutoUpdate             *scheduler.AutoUpdateJob
 	ImageUpdateWatcher     *scheduler.ImageUpdateWatcher
@@ -95,6 +97,8 @@ type registerJobsParams struct {
 	AutoHeal               *scheduler.AutoHealJob
 	ActivitySweep          *scheduler.ActivitySweepJob
 	UploadSessionsCleanup  *scheduler.UploadSessionsCleanupJob
+	GitCloneCleanup        *scheduler.GitCloneCleanupJob
+	ApnsOutbox             *scheduler.ApnsOutboxJob
 }
 
 func registerJobs(params registerJobsParams) error {
@@ -137,6 +141,8 @@ func registerJobs(params registerJobsParams) error {
 		params.AutoHeal,
 		params.ActivitySweep,
 		params.UploadSessionsCleanup,
+		params.GitCloneCleanup,
+		params.ApnsOutbox,
 	} {
 		if err := params.Scheduler.RegisterJob(job); err != nil {
 			return err
@@ -178,6 +184,8 @@ func registerJobs(params registerJobsParams) error {
 		VulnerabilityScan:  params.VulnerabilityScan,
 		AutoPatch:          params.AutoPatch,
 		AutoHeal:           params.AutoHeal,
+		Apns:               params.Apns,
+		ApnsOutbox:         params.ApnsOutbox,
 	}); err != nil {
 		return err
 	}
@@ -257,6 +265,8 @@ type settingsSubscriptionsParams struct {
 	VulnerabilityScan  *scheduler.VulnerabilityScanJob
 	AutoPatch          *scheduler.AutoPatchJob
 	AutoHeal           *scheduler.AutoHealJob
+	Apns               *apns.ApnsService
+	ApnsOutbox         *scheduler.ApnsOutboxJob
 }
 
 type settingsChangeSubscriberInternal interface {
@@ -290,6 +300,12 @@ func setupSettingsSubscriptionsInternal(params settingsSubscriptionsParams) erro
 		if err := params.Scheduler.RescheduleJob(params.LifecycleCtx, params.AutoUpdate); err != nil {
 			slog.WarnContext(params.LifecycleCtx, "Failed to reschedule auto-update job", "error", err)
 		}
+	})
+
+	subscribe([]string{"apnsEnabled"}, func(updates []libarcane.SettingUpdate) {
+		params.Apns.ApplyEnabledUpdates(params.LifecycleCtx, updates, func() error {
+			return params.Scheduler.RescheduleJob(params.LifecycleCtx, params.ApnsOutbox)
+		})
 	})
 
 	subscribe([]string{"autoUpdate", "autoUpdateInterval"}, func(_ []libarcane.SettingUpdate) {

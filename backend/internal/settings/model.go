@@ -131,7 +131,6 @@ type Settings struct {
 	TrivyNetwork                    SettingVariable `key:"trivyNetwork,envOverride" meta:"label=Trivy Network;type=text;keywords=trivy,network,mode,bridge,host,none,scanner,vulnerability,security;category=security;description=Docker network mode/network name used for Trivy scan containers. Leave empty to inherit Arcane's network automatically."`
 	TrivySecurityOpts               SettingVariable `key:"trivySecurityOpts,envOverride" meta:"label=Trivy Security Options;type=textarea;keywords=trivy,security,opt,security_opt,selinux,labels,apparmor,scanner;category=security;description=Docker security options applied to Trivy scan containers. Use commas or new lines to separate entries (for example: label=disable)"`
 	TrivyPrivileged                 SettingVariable `key:"trivyPrivileged,envOverride" meta:"label=Trivy Privileged;type=boolean;keywords=trivy,privileged,security,selinux,scanner;category=security;description=Run Trivy scan containers in privileged mode when required by the host security policy"`
-	TrivyPreserveCacheOnVolumePrune SettingVariable `key:"trivyPreserveCacheOnVolumePrune,envOverride" meta:"label=Preserve Trivy Cache On Volume Prune;type=boolean;keywords=trivy,cache,volume,prune,preserve,cleanup,security;category=security;description=Keep the Trivy cache volume when unused volumes are pruned manually or on a schedule"`
 	TrivyResourceLimitsEnabled      SettingVariable `key:"trivyResourceLimitsEnabled,envOverride" meta:"label=Trivy Resource Limits;type=boolean;keywords=trivy,resources,limits,cpu,memory,ram,security,scan;category=security;description=Enable CPU and memory limits for Trivy scan containers"`
 	TrivyCpuLimit                   SettingVariable `key:"trivyCpuLimit,envOverride" meta:"label=Trivy CPU Limit (cores);type=number;keywords=trivy,cpu,cores,limit,scanner,resources;category=security;description=Maximum CPU cores for Trivy scan containers (supports decimals, e.g. 1.5). Set 0 to disable CPU limit"`
 	TrivyMemoryLimitMb              SettingVariable `key:"trivyMemoryLimitMb,envOverride" meta:"label=Trivy Memory Limit (MB);type=number;keywords=trivy,memory,ram,mb,limit,scanner,resources;category=security;description=Maximum memory for Trivy scan containers in MB. Set 0 to disable memory limit"`
@@ -170,6 +169,10 @@ type Settings struct {
 
 	// Notifications category (placeholder for category metadata only - actual settings managed via notification service)
 	NotificationsCategoryPlaceholder SettingVariable `key:"notificationsCategory,internal" meta:"label=Notifications;type=internal;keywords=notifications,alerts,email,discord,webhooks,events,messages;category=notifications;description=Configure notification providers and alerts" catmeta:"id=notifications;title=Notifications;icon=bell;url=/settings/notifications;description=Configure email and Discord notifications for container and image updates"`
+
+	ApnsEnabled    SettingVariable `key:"apnsEnabled,authrequired" meta:"label=Mobile Push Notifications;type=boolean;keywords=apns,push,mobile,ios,notifications,relay;category=notifications;description=Let users receive native push notifications in the Arcane mobile app"`
+	ApnsChannelID  SettingVariable `key:"apnsChannelId,internal"`
+	ApnsSigningKey SettingVariable `key:"apnsSigningKey,internal,sensitive"`
 
 	AgentToken SettingVariable `key:"agentToken,internal,sensitive"`
 	InstanceID SettingVariable `key:"instanceId,internal"`

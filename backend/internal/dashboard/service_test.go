@@ -362,7 +362,7 @@ func TestDashboardService_GetSnapshot_CachesFullSnapshotsPerIconCatalog(t *testi
 	}
 
 	dockerSvc := newDashboardTestDockerService(t, settingsSvc, containers, images, nil)
-	containerSvc := container.NewContainerService(t.Context(), nil, dockerSvc, nil, settingsSvc, nil)
+	containerSvc := container.NewContainerService(nil, dockerSvc, nil, settingsSvc, nil)
 	svc := NewDashboardService(db, dockerSvc, containerSvc, nil, nil, settingsSvc, nil, nil, nil, nil)
 
 	defaultSnapshot, err := svc.GetSnapshot(context.Background(), DashboardActionItemsOptions{}, true)

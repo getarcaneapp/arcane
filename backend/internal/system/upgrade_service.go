@@ -16,6 +16,7 @@ import (
 	"emperror.dev/errors"
 
 	cerrdefs "github.com/containerd/errdefs"
+	ref "github.com/distribution/reference"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
@@ -29,16 +30,17 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/vuln"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	versiontypes "github.com/getarcaneapp/arcane/types/v2/version"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
+	"github.com/opencontainers/go-digest"
 	"go.getarcane.app/sys/cgroup"
 	"go.getarcane.app/updater"
 	"go.getarcane.app/updater/labels"
+	"golang.org/x/mod/semver"
 )
-
-const defaultArcaneUpgraderImageInternal = "ghcr.io/getarcaneapp/arcane:latest"
 
 type SystemUpgradeService struct {
 	upgrading       atomic.Bool
@@ -102,9 +104,10 @@ func (s *SystemUpgradeService) AlreadyOnNewestImage(ctx context.Context) bool {
 
 // TriggerUpgradeViaCLI spawns the upgrade CLI command in a separate container and
 // returns that upgrader container's ID. This avoids self-termination issues by running
-// the upgrade from outside. A zero-value target upgrades the current container to its
-// own image tag; the updater engine passes an explicit target with the resolved new
-// image. Update-all uses the returned ID to tell an upgrade that recreated this
+// the upgrade from outside. A zero-value target resolves the image to upgrade to from
+// the version check (see resolveSelfUpgradeTargetImageInternal); the updater engine
+// passes an explicit target with the resolved new image, which is used as-is.
+// Update-all uses the returned ID to tell an upgrade that recreated this
 // container from one that found nothing to do — see watchManagerUpgraderInternal.
 func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user common.User, target updater.SelfUpdateTarget) (string, error) {
 	if !s.upgrading.CompareAndSwap(false, true) {
@@ -135,7 +138,10 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user co
 		binaryPath = determineUpgradeBinaryPathInternal(currentContainer.Config.Labels)
 	}
 
-	targetImage := strings.TrimSpace(target.NewImageRef)
+	targetImage, err := s.resolveUpgradeTargetImageInternal(ctx, currentContainer, target.NewImageRef)
+	if err != nil {
+		return "", err
+	}
 
 	// Log upgrade event
 	metadata := database.JSON{
@@ -150,17 +156,8 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user co
 	}
 
 	// Run the upgrader from the image we are upgrading to, so the upgrade CLI
-	// is the new version. Without a resolved target image, fall back to the
-	// running container's own image reference.
+	// is the new version.
 	upgraderImage := targetImage
-	if upgraderImage == "" {
-		upgraderImage = defaultArcaneUpgraderImageInternal
-		if currentContainer.Config != nil {
-			if img := strings.TrimSpace(currentContainer.Config.Image); img != "" {
-				upgraderImage = img
-			}
-		}
-	}
 	slog.Debug("Using upgrader image", "image", upgraderImage)
 
 	slog.Info("Spawning upgrade CLI command", "containerName", containerName, "upgraderImage", upgraderImage)
@@ -320,6 +317,130 @@ func determineUpgradeBinaryPathInternal(containerLabels map[string]string) strin
 	}
 
 	return "/app/arcane"
+}
+
+// resolveUpgradeTargetImageInternal picks the image the upgrade should move to.
+// Explicit targets from the updater engine are authoritative. A blank target
+// (manual trigger, update-all) resolves against the version check so a
+// version-pinned install actually moves to the newest release (#3687).
+func (s *SystemUpgradeService) resolveUpgradeTargetImageInternal(ctx context.Context, currentContainer container.InspectResponse, explicitImageRef string) (string, error) {
+	if targetImage := strings.TrimSpace(explicitImageRef); targetImage != "" {
+		return targetImage, nil
+	}
+
+	currentImageRef := ""
+	if currentContainer.Config != nil {
+		currentImageRef = strings.TrimSpace(currentContainer.Config.Image)
+	}
+	var info *versiontypes.Info
+	if s.versionService != nil {
+		info = s.versionService.GetAppVersionInfo(ctx)
+	}
+	resolved, err := resolveSelfUpgradeTargetImageInternal(currentImageRef, info)
+	if err != nil {
+		return "", errors.WrapIf(err, "resolve upgrade target image")
+	}
+	return resolved, nil
+}
+
+// resolveSelfUpgradeTargetImageInternal resolves the image for a blank-target
+// self-upgrade from the running container's reference and the version check.
+// Exact release tags (vX.Y.Z) move to the newest release; mutable channels and
+// untagged references keep theirs; digest pins move only to a resolved newest
+// digest. Unresolved or older exact-version targets fail instead of
+// reinstalling or downgrading (#3687).
+func resolveSelfUpgradeTargetImageInternal(currentImageRef string, info *versiontypes.Info) (string, error) {
+	currentImageRef = strings.TrimSpace(currentImageRef)
+	if currentImageRef == "" {
+		return "", errors.New("running container has no image reference to upgrade from")
+	}
+
+	parsed, err := ref.Parse(currentImageRef)
+	if err != nil {
+		return "", errors.WrapIff(err, "parse current image reference %q", currentImageRef)
+	}
+	named, ok := parsed.(ref.Named)
+	if !ok {
+		return "", errors.Errorf("current image reference %q is not a named image", currentImageRef)
+	}
+
+	newestDigest, newestVersion := newestTargetIdentifiersInternal(info)
+
+	// Digest-pinned installs only move when the version check resolved a new
+	// digest; otherwise there is nothing to point them at.
+	if _, isDigested := parsed.(ref.Digested); isDigested {
+		if newestDigest == "" {
+			return "", errors.New("image is digest-pinned but no newest digest could be resolved; refusing an upgrade that could not move it")
+		}
+		targetDigest := digest.Digest(newestDigest)
+		if err := targetDigest.Validate(); err != nil {
+			return "", errors.WrapIff(err, "resolved newest digest %q is not a valid digest", newestDigest)
+		}
+		withDigest, err := ref.WithDigest(named, targetDigest)
+		if err != nil {
+			return "", errors.WrapIff(err, "build target reference for %q", named.Name())
+		}
+		return withDigest.String(), nil
+	}
+
+	tagged, isTagged := parsed.(ref.Tagged)
+	if !isTagged || !isExactReleaseTagInternal(tagged.Tag()) {
+		// Mutable channel or untagged: the pull re-resolves whatever the name
+		// points at, so keeping the reference advances the digest in place.
+		return currentImageRef, nil
+	}
+
+	if newestVersion == "" {
+		return "", errors.Errorf("running exact release %q but the newest release could not be resolved", tagged.Tag())
+	}
+	newest := utils.EnsureVPrefix(newestVersion)
+	if !semver.IsValid(newest) {
+		return "", errors.Errorf("resolved newest version %q is not a valid semver release", newestVersion)
+	}
+	if semver.Compare(newest, utils.EnsureVPrefix(tagged.Tag())) < 0 {
+		return "", errors.Errorf("newest release %q is older than the running %q; refusing to downgrade", newestVersion, tagged.Tag())
+	}
+
+	withTag, err := ref.WithTag(named, newest)
+	if err != nil {
+		return "", errors.WrapIff(err, "build target reference for %q", named.Name())
+	}
+	return withTag.String(), nil
+}
+
+// isExactReleaseTagInternal reports whether tag pins an exact release version
+// (vX.Y.Z, prereleases included). Short channels like v2 or v2.9 are mutable.
+// The x/mod/semver parser is deliberately lenient (it accepts v2 and v2.9), so
+// the three numeric components are checked explicitly.
+func isExactReleaseTagInternal(tag string) bool {
+	core := strings.TrimPrefix(strings.TrimSpace(tag), "v")
+	if i := strings.IndexAny(core, "-+"); i >= 0 {
+		core = core[:i]
+	}
+	parts := strings.Split(core, ".")
+	if len(parts) != 3 {
+		return false
+	}
+	for _, part := range parts {
+		if part == "" {
+			return false
+		}
+		for _, c := range part {
+			if c < '0' || c > '9' {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// newestTargetIdentifiersInternal reads the version-check result nil-safely: the
+// service may be unavailable and the check itself may resolve neither identifier.
+func newestTargetIdentifiersInternal(info *versiontypes.Info) (newestDigest, newestVersion string) {
+	if info == nil {
+		return "", ""
+	}
+	return strings.TrimSpace(info.NewestDigest), strings.TrimSpace(info.NewestVersion)
 }
 
 // ResolveUpgraderRuntimeOptions determines how a helper container reaches the Docker daemon.

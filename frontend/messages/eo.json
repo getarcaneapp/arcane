@@ -1534,8 +1534,6 @@
   "security_trivy_privileged_label": "Trivy Privilegita",
   "security_trivy_privileged_description": "Rulu Trivy-skaniĝon de ujoj en privilegiita reĝimo kiam la sekureca politiko de la gastiganto tion postulas.",
   "security_trivy_privileged_note": "Uzu ĉi tion nur kiel rezervan rimedon, kiam sekurecaj opcioj ne sufiĉas.",
-  "security_trivy_preserve_cache_on_volume_prune_label": "Konservi Trivy-kaŝmemoron sur Volum-Prunado",
-  "security_trivy_preserve_cache_on_volume_prune_description": "Konservu la Trivy-kaŝvolumon kiam Arcane forprunas neuzatajn Docker-volumojn.",
   "security_trivy_network_fetch_failed": "Ne eblis ŝargi Docker-retojn; montriĝas nur la enkonstruitaj opcioj.",
   "security_trivy_resource_limits_label": "Trivy-rimedlimoj",
   "security_trivy_resource_limits_description": "Konfiguru CPU- kaj memorlimojn por Trivy-skanaĵaj ujoj.",

@@ -67,7 +67,6 @@
 	import { globalVariablesToMap } from '#lib/utils/template-load';
 	import {
 		planProjectWorkspaceFileCreate,
-		planProjectWorkspaceFileMove,
 		planProjectWorkspaceFileRename,
 		validateProjectWorkspaceFileName
 	} from '../components/project-workspace-utils';
@@ -75,6 +74,7 @@
 		applyWorkspaceFileChangesForDisplay,
 		buildWorkspaceMultipartUpdate,
 		isWorkspaceFileSelectionUnder,
+		planWorkspaceFileMove,
 		workspaceFileBasename,
 		workspaceFileLanguage,
 		remapWorkspaceFileRecord,
@@ -82,7 +82,7 @@
 		removeWorkspaceFileRecord,
 		readWorkspaceTextUpload,
 		workspaceReadOnlyMessage,
-		type WorkspaceFileEntry
+		type WorkspaceDisplayEntry
 	} from '#lib/utils/workspace-files';
 	import { composeTreeSplitProps, extractComposeYamlName } from '#lib/utils/compose-flow';
 
@@ -936,7 +936,7 @@
 
 		if (targetFile.content !== undefined) {
 			if (kind === 'workspace') {
-				const workspaceTarget = targetFile as WorkspaceFileEntry;
+				const workspaceTarget = targetFile as WorkspaceDisplayEntry;
 				updateLoadedProjectWorkspaceFile(relativePath, workspaceTarget.content ?? '');
 				return {
 					path: workspaceTarget.path,
@@ -1231,7 +1231,7 @@
 
 	function moveProjectWorkspaceFile(relativePath: string, newParentPath: string) {
 		const entry = projectWorkspaceEntries.find((file) => file.relativePath === relativePath);
-		const newPath = planProjectWorkspaceFileMove(entry, projectWorkspacePaths, relativePath, newParentPath);
+		const newPath = planWorkspaceFileMove(entry, projectWorkspacePaths, relativePath, newParentPath);
 		if (!newPath) return;
 		projectWorkspaceChanges = [...projectWorkspaceChanges, { operation: 'move', relativePath, newParentPath }];
 		remapProjectWorkspaceState(relativePath, newPath);

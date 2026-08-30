@@ -3,10 +3,8 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
-	import { openConfirmDialog } from '#lib/components/confirm-dialog';
 	import { toast } from 'svelte-sonner';
-	import { handleApiResultWithCallbacks } from '#lib/utils/api';
-	import { tryCatch } from '#lib/utils/api';
+	import { handleApiResultWithCallbacks, tryCatch } from '#lib/utils/api';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
 	import type { ContainerRegistry, ContainerRegistryPullUsage } from '#lib/types/docker';
 	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '#lib/components/arcane-table';
@@ -19,6 +17,7 @@
 	import { hasPermission } from '#lib/utils/auth';
 	import { getRegistryDisplayName } from '#lib/utils/registry';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
+	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions';
 
 	let {
 		registries = $bindable(),
@@ -54,66 +53,49 @@
 		return m.registries_observed_pulls_value({ count: usage.observedPulls });
 	}
 
-	async function handleDeleteSelected(ids: string[]) {
+	function handleDeleteSelected(ids: string[]) {
 		if (!ids?.length) return;
+		const selectedRegistryIds = [...ids];
 
-		openConfirmDialog({
-			title: m.registries_remove_selected_title({ count: ids.length }),
-			message: m.registries_remove_selected_message({ count: ids.length }),
-			confirm: {
-				label: m.common_remove(),
-				destructive: true,
-				action: async () => {
-					let successCount = 0;
-					let failureCount = 0;
-					for (const id of ids) {
-						removingId = id;
-						const reg = registries.data.find((r) => r.id === id);
-						const result = await tryCatch(containerRegistryService.deleteRegistry(id));
-						if (result.error) {
-							failureCount++;
-							toast.error(m.registries_delete_failed({ url: reg?.url ?? m.common_unknown() }));
-						} else {
-							successCount++;
-						}
-					}
-
-					if (successCount > 0) {
-						toast.success(m.registries_bulk_remove_success({ count: successCount }));
-						registries = await containerRegistryService.getRegistries(requestOptions);
-					}
-					if (failureCount > 0) toast.error(m.registries_bulk_remove_failed({ count: failureCount }));
-
-					selectedIds = [];
-					removingId = null;
-				}
-			}
+		bulkConfirmAndRun({
+			ids: selectedRegistryIds,
+			title: m.registries_remove_selected_title({ count: selectedRegistryIds.length }),
+			message: m.registries_remove_selected_message({ count: selectedRegistryIds.length }),
+			confirmLabel: m.common_remove(),
+			destructive: true,
+			run: (id) => {
+				removingId = id;
+				return containerRegistryService.deleteRegistry(id);
+			},
+			messages: {
+				success: (count) => m.registries_bulk_remove_success({ count }),
+				partial: (success, total, failed) =>
+					m.common_bulk_remove_partial({ success, total, failed, resource: m.registries_title() }),
+				failure: () => m.registries_bulk_remove_failed({ count: selectedRegistryIds.length })
+			},
+			setLoading: (loading) => (isLoading.removing = loading),
+			onComplete: async ({ success }) => {
+				removingId = null;
+				if (success > 0) registries = await containerRegistryService.getRegistries(requestOptions);
+			},
+			clearSelection: () => (selectedIds = []),
+			sequential: true
 		});
 	}
 
-	async function handleDeleteOne(id: string, url: string) {
+	function handleDeleteOne(id: string, url: string) {
 		const safeUrl = url ?? m.common_unknown();
-		openConfirmDialog({
+		confirmAndRun({
 			title: m.common_remove_title({ resource: m.resource_registry() }),
 			message: m.registries_remove_message({ url: safeUrl }),
-			confirm: {
-				label: m.common_remove(),
-				destructive: true,
-				action: async () => {
-					removingId = id;
-
-					const result = await tryCatch(containerRegistryService.deleteRegistry(id));
-					handleApiResultWithCallbacks({
-						result,
-						message: m.registries_delete_failed({ url: safeUrl }),
-						setLoadingState: (value) => (value ? null : (removingId = null)),
-						onSuccess: async () => {
-							toast.success(m.common_delete_success({ resource: `${m.resource_registry()} "${safeUrl}"` }));
-							registries = await containerRegistryService.getRegistries(requestOptions);
-							removingId = null;
-						}
-					});
-				}
+			confirmLabel: m.common_remove(),
+			destructive: true,
+			setLoading: (loading) => (removingId = loading ? id : null),
+			run: () => containerRegistryService.deleteRegistry(id),
+			failureMessage: m.registries_delete_failed({ url: safeUrl }),
+			onSuccess: async () => {
+				toast.success(m.common_delete_success({ resource: `${m.resource_registry()} "${safeUrl}"` }));
+				registries = await containerRegistryService.getRegistries(requestOptions);
 			}
 		});
 	}
@@ -127,7 +109,8 @@
 			message: m.registries_test_failed({ url: safeUrl }),
 			setLoadingState: (value) => (value ? null : (testingId = null)),
 			onSuccess: (resp) => {
-				const msg = (resp as any)?.message ?? m.common_unknown();
+				const msg =
+					resp && typeof resp === 'object' && 'message' in resp ? String(resp.message ?? m.common_unknown()) : m.common_unknown();
 				toast.success(m.registries_test_success({ url: safeUrl, message: msg }));
 				testingId = null;
 			}
@@ -158,7 +141,7 @@
 			accessorKey: 'enabled',
 			title: m.common_status(),
 			sortable: true,
-			cell: enabledStatusCol
+			cellComponent: EnabledStatusCell
 		},
 		{
 			id: 'pullUsage',
@@ -170,7 +153,7 @@
 			accessorKey: 'createdAt',
 			title: m.common_created(),
 			sortable: true,
-			cell: createdAtCol
+			cellComponent: CreatedAtCell
 		}
 	] satisfies ColumnSpec<ContainerRegistry>[];
 
@@ -201,14 +184,6 @@
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 </script>
-
-{#snippet enabledStatusCol({ value }: { value: unknown })}
-	<EnabledStatusCell {value} />
-{/snippet}
-
-{#snippet createdAtCol({ value }: { value: unknown })}
-	<CreatedAtCell {value} />
-{/snippet}
 
 {#snippet UrlCell({ item }: { item: ContainerRegistry })}
 	<div class="flex flex-col">

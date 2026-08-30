@@ -1731,7 +1731,7 @@ func TestImageUpdateService_SendBatchNotifications_DetachesCanceledContext(t *te
 		},
 	}).Error)
 
-	notif := notification.NewNotificationService(db, nil, nil, nil)
+	notif := notification.NewNotificationService(db, nil, nil, nil, nil)
 	svc := NewImageUpdateService(db, nil, nil, nil, nil, notif, nil)
 
 	rec := ImageUpdateRecord{
@@ -1770,7 +1770,7 @@ func TestImageUpdateService_SendBatchNotifications_NoEligibleProviders_LeavesUnn
 	db := setupImageUpdateTestDB(t)
 	require.NoError(t, db.AutoMigrate(&notification.NotificationSettings{}))
 
-	notif := notification.NewNotificationService(db, nil, nil, nil)
+	notif := notification.NewNotificationService(db, nil, nil, nil, nil)
 	svc := NewImageUpdateService(db, nil, nil, nil, nil, notif, nil)
 
 	rec := ImageUpdateRecord{
@@ -1822,7 +1822,7 @@ func TestImageUpdateService_SendBatchNotifications_PartialFailureStillMarksNotif
 		}).Error)
 	}
 
-	notif := notification.NewNotificationService(db, nil, nil, nil)
+	notif := notification.NewNotificationService(db, nil, nil, nil, nil)
 	svc := NewImageUpdateService(db, nil, nil, nil, nil, notif, nil)
 
 	rec := ImageUpdateRecord{

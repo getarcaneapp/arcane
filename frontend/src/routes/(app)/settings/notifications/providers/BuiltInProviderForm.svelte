@@ -11,6 +11,7 @@
 	} from './NotificationProviderTestMenu.svelte';
 	import { mapZodFieldErrors } from './provider-form-validation';
 	import type { ProviderFormSchema } from './provider-form-schema';
+	import { getNotificationProviderDefinition } from '#lib/utils/notification-providers';
 
 	type AnyBuiltInValues = ProviderFormValuesMap[NotificationProviderKey];
 
@@ -42,53 +43,6 @@
 		hasExistingToken = false,
 		onTest
 	}: Props = $props();
-
-	const providerMeta: Record<NotificationProviderKey, { title: string; description: string }> = {
-		discord: {
-			title: m.notifications_discord_title(),
-			description: m.notifications_discord_description()
-		},
-		email: {
-			title: m.common_email(),
-			description: m.notifications_email_description()
-		},
-		telegram: {
-			title: m.notifications_telegram_title(),
-			description: m.notifications_telegram_description()
-		},
-		signal: {
-			title: m.notifications_signal_title(),
-			description: m.notifications_signal_description()
-		},
-		slack: {
-			title: m.notifications_slack_title(),
-			description: m.notifications_slack_description()
-		},
-		ntfy: {
-			title: m.notifications_ntfy_title(),
-			description: m.notifications_ntfy_description()
-		},
-		pushover: {
-			title: m.notifications_pushover_title(),
-			description: m.notifications_pushover_description()
-		},
-		gotify: {
-			title: m.notifications_gotify_title(),
-			description: m.notifications_gotify_description()
-		},
-		matrix: {
-			title: m.notifications_matrix_title(),
-			description: m.notifications_matrix_description()
-		},
-		googlechat: {
-			title: m.notifications_googlechat_title(),
-			description: m.notifications_googlechat_description()
-		},
-		generic: {
-			title: m.notifications_generic_title(),
-			description: m.notifications_generic_description()
-		}
-	};
 
 	const eventSubscriptionSchemaFields = {
 		eventImageUpdate: z.boolean(),
@@ -126,8 +80,8 @@
 			})
 			.superRefine((d, ctx) => {
 				if (!d.enabled) return;
-				addRequiredTrimmedFieldIssue(ctx, d.webhookId, 'webhookId', 'Webhook ID is required when Discord is enabled');
-				addRequiredCredentialIssue(ctx, d.token, 'token', 'Webhook Token is required when Discord is enabled');
+				addRequiredTrimmedFieldIssue(ctx, d.webhookId, 'webhookId', m.common_required());
+				addRequiredCredentialIssue(ctx, d.token, 'token', m.common_required());
 			}),
 		email: z
 			.object({
@@ -145,20 +99,20 @@
 			.superRefine((d, ctx) => {
 				if (!d.enabled) return;
 				if (!d.smtpHost.trim()) {
-					ctx.addIssue({ code: 'custom', message: 'SMTP host is required when email is enabled', path: ['smtpHost'] });
+					ctx.addIssue({ code: 'custom', message: m.common_required(), path: ['smtpHost'] });
 				}
 				if (!d.fromAddress.trim()) {
-					ctx.addIssue({ code: 'custom', message: 'From address is required when email is enabled', path: ['fromAddress'] });
+					ctx.addIssue({ code: 'custom', message: m.common_required(), path: ['fromAddress'] });
 				} else {
 					const v = z.string().email().safeParse(d.fromAddress.trim());
 					if (!v.success) {
-						ctx.addIssue({ code: 'custom', message: 'Invalid email address format', path: ['fromAddress'] });
+						ctx.addIssue({ code: 'custom', message: m.common_invalid_email(), path: ['fromAddress'] });
 					}
 				}
 				if (!d.toAddresses.trim()) {
 					ctx.addIssue({
 						code: 'custom',
-						message: 'At least one recipient address is required when email is enabled',
+						message: m.common_required(),
 						path: ['toAddresses']
 					});
 				} else {
@@ -174,7 +128,7 @@
 					if (invalid.length > 0) {
 						ctx.addIssue({
 							code: 'custom',
-							message: `Invalid email addresses: ${invalid.join(', ')}`,
+							message: m.notifications_email_invalid_addresses({ addresses: invalid.join(', ') }),
 							path: ['toAddresses']
 						});
 					}
@@ -192,11 +146,11 @@
 			})
 			.superRefine((d, ctx) => {
 				if (!d.enabled) return;
-				addRequiredCredentialIssue(ctx, d.botToken, 'botToken', 'Bot Token is required when Telegram is enabled');
+				addRequiredCredentialIssue(ctx, d.botToken, 'botToken', m.common_required());
 				if (!d.chatIds.trim()) {
 					ctx.addIssue({
 						code: 'custom',
-						message: 'At least one Chat ID is required when Telegram is enabled',
+						message: m.common_required(),
 						path: ['chatIds']
 					});
 				}
@@ -296,9 +250,9 @@
 			})
 			.superRefine((d, ctx) => {
 				if (!d.enabled) return;
-				addRequiredTrimmedFieldIssue(ctx, d.topic, 'topic', 'Topic is required when Ntfy is enabled');
+				addRequiredTrimmedFieldIssue(ctx, d.topic, 'topic', m.common_required());
 				if (d.port > 0 && (d.port < 1 || d.port > 65535)) {
-					addCustomFieldIssue(ctx, 'port', 'Port must be between 1 and 65535');
+					addCustomFieldIssue(ctx, 'port', m.notifications_signal_port_invalid());
 				}
 			}),
 		pushover: z
@@ -358,7 +312,7 @@
 			})
 			.superRefine((d, ctx) => {
 				if (!d.enabled) return;
-				addRequiredTrimmedFieldIssue(ctx, d.webhookUrl, 'webhookUrl', 'Webhook URL is required when Google Chat is enabled');
+				addRequiredTrimmedFieldIssue(ctx, d.webhookUrl, 'webhookUrl', m.common_required());
 			}),
 		generic: z
 			.object({
@@ -375,7 +329,7 @@
 			})
 			.superRefine((d, ctx) => {
 				if (!d.enabled) return;
-				addRequiredTrimmedFieldIssue(ctx, d.webhookUrl, 'webhookUrl', 'Webhook URL is required when Generic Webhook is enabled');
+				addRequiredTrimmedFieldIssue(ctx, d.webhookUrl, 'webhookUrl', m.common_required());
 			})
 	};
 
@@ -489,9 +443,9 @@
 				placeholder: m.notifications_email_tls_mode_placeholder(),
 				description: m.notifications_email_tls_mode_description(),
 				options: [
-					{ value: 'none', label: 'None' },
-					{ value: 'starttls', label: 'StartTLS' },
-					{ value: 'ssl', label: 'SSL/TLS' }
+					{ value: 'none', label: m.notifications_email_tls_none() },
+					{ value: 'starttls', label: m.notifications_email_tls_starttls() },
+					{ value: 'ssl', label: m.notifications_email_tls_ssl() }
 				]
 			},
 			{
@@ -504,9 +458,9 @@
 				options: [
 					{ value: 'auto', label: m.notifications_email_auth_mode_option_auto() },
 					{ value: 'none', label: m.notifications_email_auth_mode_option_none() },
-					{ value: 'plain', label: 'PLAIN' },
-					{ value: 'login', label: 'LOGIN' },
-					{ value: 'crammd5', label: 'CRAM-MD5' }
+					{ value: 'plain', label: m.notifications_email_auth_plain() },
+					{ value: 'login', label: m.notifications_email_auth_login() },
+					{ value: 'crammd5', label: m.notifications_email_auth_cram_md5() }
 				]
 			}
 		],
@@ -515,27 +469,27 @@
 				kind: 'input',
 				key: 'botToken',
 				id: 'telegram-bot-token',
-				label: 'Bot Token',
-				placeholder: '123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11',
-				helpText: 'The bot token from @BotFather',
+				label: m.notifications_telegram_bot_token_label(),
+				placeholder: m.notifications_telegram_bot_token_placeholder(),
+				helpText: m.notifications_telegram_bot_token_help(),
 				inputType: 'password'
 			},
 			{
 				kind: 'textarea',
 				key: 'chatIds',
 				id: 'telegram-chat-ids',
-				label: 'Chat IDs',
-				placeholder: '@channel, 123456789, @another_channel',
-				helpText: 'Comma-separated list of chat IDs or @channel names',
+				label: m.notifications_telegram_chat_ids_label(),
+				placeholder: m.notifications_telegram_chat_ids_placeholder(),
+				helpText: m.notifications_telegram_chat_ids_help(),
 				rows: 2
 			},
 			{
 				kind: 'input',
 				key: 'title',
 				id: 'telegram-title',
-				label: 'Title (Optional)',
-				placeholder: 'Arcane Notifications',
-				helpText: 'Custom title for notifications'
+				label: m.notifications_telegram_title_label(),
+				placeholder: m.notifications_telegram_title_placeholder(),
+				helpText: m.notifications_telegram_title_help()
 			},
 			{
 				kind: 'row',
@@ -545,15 +499,15 @@
 						kind: 'switch',
 						key: 'preview',
 						id: 'telegram-preview',
-						label: 'Enable Link Previews',
-						description: 'Show web page previews for URLs in messages'
+						label: m.notifications_telegram_preview_label(),
+						description: m.notifications_telegram_preview_description()
 					},
 					{
 						kind: 'switch',
 						key: 'notification',
 						id: 'telegram-notification',
-						label: 'Enable Notification Sound',
-						description: 'Play notification sound when messages are received'
+						label: m.notifications_telegram_sound_label(),
+						description: m.notifications_telegram_sound_description()
 					}
 				]
 			}
@@ -774,11 +728,11 @@
 				label: m.priority(),
 				description: m.notifications_ntfy_priority_help(),
 				options: [
-					{ value: 'min', label: 'Min (1)' },
-					{ value: 'low', label: 'Low (2)' },
-					{ value: 'default', label: 'Default (3)' },
-					{ value: 'high', label: 'High (4)' },
-					{ value: 'max', label: 'Max/Urgent (5)' }
+					{ value: 'min', label: `${m.notifications_priority_min()} (1)` },
+					{ value: 'low', label: `${m.notifications_priority_low()} (2)` },
+					{ value: 'default', label: `${m.notifications_priority_default()} (3)` },
+					{ value: 'high', label: `${m.notifications_priority_high()} (4)` },
+					{ value: 'max', label: `${m.notifications_priority_max_urgent()} (5)` }
 				]
 			},
 			{
@@ -935,19 +889,19 @@
 				description: m.notifications_gotify_priority_help(),
 				valueType: 'number',
 				options: [
-					{ value: '-2', label: '-2 (Min)' },
-					{ value: '-1', label: '-1 (Low)' },
-					{ value: '0', label: '0 (None)' },
-					{ value: '1', label: '1 (Low)' },
+					{ value: '-2', label: `-2 (${m.notifications_priority_min()})` },
+					{ value: '-1', label: `-1 (${m.notifications_priority_low()})` },
+					{ value: '0', label: `0 (${m.none()})` },
+					{ value: '1', label: `1 (${m.notifications_priority_low()})` },
 					{ value: '2', label: '2' },
 					{ value: '3', label: '3' },
-					{ value: '4', label: '4 (Normal)' },
+					{ value: '4', label: `4 (${m.notifications_priority_normal()})` },
 					{ value: '5', label: '5' },
 					{ value: '6', label: '6' },
-					{ value: '7', label: '7 (High)' },
+					{ value: '7', label: `7 (${m.notifications_priority_high()})` },
 					{ value: '8', label: '8' },
 					{ value: '9', label: '9' },
-					{ value: '10', label: '10 (Max)' }
+					{ value: '10', label: `10 (${m.notifications_priority_max()})` }
 				]
 			},
 			{
@@ -1125,7 +1079,7 @@
 		mapZodFieldErrors<AnyBuiltInValues>(validation as z.ZodSafeParseResult<AnyBuiltInValues>)
 	);
 	const selectedSchema = $derived(providerFormSchemas[provider] as ProviderFormSchema<AnyBuiltInValues>);
-	const selectedMeta = $derived(providerMeta[provider]);
+	const selectedMeta = $derived(getNotificationProviderDefinition(provider));
 
 	export function isValid(): boolean {
 		return validation.success;
@@ -1134,8 +1088,8 @@
 
 <ProviderFormWrapper
 	id={provider}
-	title={selectedMeta.title}
-	description={selectedMeta.description}
+	title={selectedMeta.label()}
+	description={selectedMeta.description()}
 	bind:enabled={values.enabled}
 	{disabled}
 >

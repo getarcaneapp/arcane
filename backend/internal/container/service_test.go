@@ -248,7 +248,6 @@ func TestContainerServiceCommitContainerCallsDockerAPIInternal(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	svc := NewContainerService(
-		context.Background(),
 		event.NewEventService(db, nil, nil),
 		docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClientInternal(t, server)),
 		nil,
@@ -296,7 +295,6 @@ func TestContainerServiceCommitContainerOmitsReferenceWhenRepositoryEmptyInterna
 	t.Cleanup(server.Close)
 
 	svc := NewContainerService(
-		context.Background(),
 		event.NewEventService(db, nil, nil),
 		docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClientInternal(t, server)),
 		nil,

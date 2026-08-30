@@ -112,7 +112,7 @@
 			accessorKey: 'timestamp',
 			title: m.events_col_time(),
 			sortable: true,
-			cell: TimeCell
+			cellComponent: RelativeTimeCell
 		}
 	] satisfies ColumnSpec<Event>[];
 
@@ -165,14 +165,10 @@
 
 {#snippet UserCell({ value }: { value: unknown })}
 	{#if String(value ?? '') === 'System'}
-		<span class="text-sm text-muted-foreground italic">System</span>
+		<span class="text-sm text-muted-foreground italic">{m.system()}</span>
 	{:else}
 		<span class="text-sm">{String(value ?? '—')}</span>
 	{/if}
-{/snippet}
-
-{#snippet TimeCell({ value }: { value: unknown })}
-	<RelativeTimeCell {value} />
 {/snippet}
 
 {#snippet ExpandedEvent({ item }: { item: Event })}

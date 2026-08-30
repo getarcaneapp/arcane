@@ -18,15 +18,21 @@ import (
 // invocation contract, shared by the backup engine and the detached recovery
 // helper; the image must already be present. The standard RUSTIC_* variables
 // are appended to environment, and networkMode is applied verbatim ("" keeps
-// the default network).
+// the default network). Every run mounts the shared CacheVolume.
 func Run(ctx context.Context, dockerClient *client.Client, password string, command, environment []string, mounts []mount.Mount, networkMode container.NetworkMode) (string, error) {
+	if _, err := dockerClient.VolumeCreate(ctx, client.VolumeCreateOptions{Name: CacheVolume, Labels: volumehelper.Labels()}); err != nil {
+		return "", fmt.Errorf("failed to provision Rustic cache volume: %w", err)
+	}
 	env := append([]string{}, environment...)
 	env = append(env,
 		"RUSTIC_PASSWORD="+password,
 		"RUSTIC_NO_PROGRESS=true",
 		"RUSTIC_LOG_LEVEL=error",
+		"RUSTIC_CACHE_DIR=/cache",
 	)
-	hostConfig := volumehelper.HostConfig(DefaultImage, nil, mounts)
+	allMounts := append([]mount.Mount{}, mounts...)
+	allMounts = append(allMounts, mount.Mount{Type: mount.TypeVolume, Source: CacheVolume, Target: "/cache"})
+	hostConfig := volumehelper.HostConfig(DefaultImage, nil, allMounts)
 	hostConfig.AutoRemove = false
 	hostConfig.NetworkMode = networkMode
 	created, err := dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{

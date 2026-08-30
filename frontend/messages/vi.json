@@ -1534,8 +1534,6 @@
   "security_trivy_privileged_label": "Trivy Đặc quyền",
   "security_trivy_privileged_description": "Chạy các container quét Trivy ở chế độ đặc quyền khi chính sách bảo mật của máy chủ yêu cầu.",
   "security_trivy_privileged_note": "Chỉ nên sử dụng phương án này như một giải pháp dự phòng khi các tùy chọn bảo mật hiện có không đủ.",
-  "security_trivy_preserve_cache_on_volume_prune_label": "Giữ lại bộ nhớ đệm Trivy khi dọn dẹp phân vùng",
-  "security_trivy_preserve_cache_on_volume_prune_description": "Giữ lại khối lượng bộ nhớ đệm Trivy khi Arcane xóa các khối lượng Docker không được sử dụng.",
   "security_trivy_network_fetch_failed": "Không thể tải mạng Docker; chỉ hiển thị các tùy chọn tích hợp sẵn.",
   "security_trivy_resource_limits_label": "Giới hạn tài nguyên Trivy",
   "security_trivy_resource_limits_description": "Cấu hình giới hạn CPU và bộ nhớ cho các container quét Trivy.",

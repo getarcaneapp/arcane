@@ -177,7 +177,7 @@ function createActivityStore() {
 		if (!activity.startedBy?.userId || !currentUserId || activity.startedBy.userId !== currentUserId) {
 			return;
 		}
-		queueActivityCompletionToast(activity);
+		queueActivityCompletionToast(activity, openCenterInternal);
 	}
 
 	const core = createEnvironmentStreamStore<ActivityEnvironmentState, ActivityStreamEvent>({
@@ -464,6 +464,17 @@ function createActivityStore() {
 		}
 	}
 
+	function openCenterInternal(activityId?: string, batchId?: string) {
+		_open = true;
+		discardPendingActivityToasts();
+		if (activityId) {
+			setActivityExpanded(activityId, true);
+		}
+		if (batchId) {
+			setBatchExpandedInternal(batchId, true);
+		}
+	}
+
 	function environmentFailuresInternal(): ActivityEnvironmentFailure[] {
 		return Object.values(core.environmentStates)
 			.filter((state) => state.streamError)
@@ -667,16 +678,7 @@ function createActivityStore() {
 				discardPendingActivityToasts();
 			}
 		},
-		openCenter: (activityId?: string, batchId?: string) => {
-			_open = true;
-			discardPendingActivityToasts();
-			if (activityId) {
-				setActivityExpanded(activityId, true);
-			}
-			if (batchId) {
-				setBatchExpandedInternal(batchId, true);
-			}
-		},
+		openCenter: openCenterInternal,
 		retryLoadDetail: (activityId: string) => {
 			const nextErrors = { ..._detailErrorIds };
 			delete nextErrors[activityId];

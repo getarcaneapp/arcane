@@ -8,7 +8,7 @@ import type {
 	WorkspaceReadOnlyReason
 } from '#lib/types/workspace';
 
-export interface WorkspaceFileEntry extends Omit<WorkspaceFileDto, 'editable' | 'isSymlink' | 'readOnlyReason'> {
+export interface WorkspaceDisplayEntry extends Omit<WorkspaceFileDto, 'editable' | 'isSymlink' | 'readOnlyReason'> {
 	editable?: boolean;
 	isSymlink?: boolean;
 	readOnlyReason?: WorkspaceReadOnlyReason | 'restore_pending';
@@ -77,7 +77,7 @@ export function buildWorkspaceMultipartUpdate<T extends WorkspaceDisplayFileChan
 	return { fileChanges, files };
 }
 
-export function normalizeWorkspaceRelativePath(relativePath: string): string {
+function normalizeWorkspaceRelativePath(relativePath: string): string {
 	return relativePath.trim().replaceAll('\\', '/').split('/').filter(Boolean).join('/');
 }
 
@@ -138,7 +138,7 @@ export function planWorkspaceFileRename(
 }
 
 export function planWorkspaceFileMove(
-	entry: Pick<WorkspaceFileEntry, 'isDirectory'> | undefined,
+	entry: Pick<WorkspaceDisplayEntry, 'isDirectory'> | undefined,
 	existingPaths: ReadonlySet<string>,
 	relativePath: string,
 	newParentPath: string
@@ -220,17 +220,17 @@ export function workspaceFileLanguage(relativePath: string): CodeLanguage {
 	return 'plaintext';
 }
 
-export function compareWorkspaceFileEntries(a: WorkspaceFileEntry, b: WorkspaceFileEntry): number {
+export function compareWorkspaceFileEntries(a: WorkspaceDisplayEntry, b: WorkspaceDisplayEntry): number {
 	if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
 	const baseComparison = a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
 	return baseComparison || a.name.localeCompare(b.name);
 }
 
 export function applyWorkspaceFileChangesForDisplay(
-	files: WorkspaceFileEntry[],
+	files: WorkspaceDisplayEntry[],
 	changes: WorkspaceDisplayFileChange[]
-): WorkspaceFileEntry[] {
-	const entries = new Map<string, WorkspaceFileEntry>();
+): WorkspaceDisplayEntry[] {
+	const entries = new Map<string, WorkspaceDisplayEntry>();
 
 	for (const file of files) {
 		const modeType = file.mode?.[0];
@@ -280,7 +280,7 @@ export function applyWorkspaceFileChangesForDisplay(
 					change.operation === 'rename' && change.newName
 						? joinWorkspaceFilePath(workspaceFileParentPath(relativePath), change.newName)
 						: joinWorkspaceFilePath(change.newParentPath ?? '', workspaceFileBasename(relativePath));
-				const remapped = new Map<string, WorkspaceFileEntry>();
+				const remapped = new Map<string, WorkspaceDisplayEntry>();
 				for (const [entryPath, current] of entries.entries()) {
 					if (!workspaceFilePathMatches(entryPath, relativePath)) {
 						remapped.set(entryPath, current);

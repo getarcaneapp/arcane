@@ -126,6 +126,14 @@ function cleanupNetwork(name: string) {
 	}
 }
 
+function cleanupVolume(name: string) {
+	try {
+		docker(['volume', 'rm', '-f', name], { stdio: 'inherit' });
+	} catch {
+		// ignore cleanup failures
+	}
+}
+
 async function waitForHealth(container: string) {
 	const port = dockerPort(container);
 	expect(port).not.toBe('');
@@ -269,16 +277,17 @@ test.describe.serial('Docker runtime identity', () => {
 
 	test('runs as the requested UID and GID without chowning a mounted projects directory', async () => {
 		const containerName = uniqueName('arcane-puid');
-		const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'arcane-puid-data-'));
+		const dataVolume = uniqueName('arcane-puid-data');
 		const projectsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'arcane-puid-projects-'));
 		const sentinelPath = path.join(projectsDir, 'sentinel.txt');
 		fs.writeFileSync(sentinelPath, 'sentinel\n');
+		docker(['volume', 'create', dataVolume]);
 
 		const baselineProjectsStat = dockerFileStat(projectsDir, '/mnt/sentinel.txt');
 
 		try {
 			dockerRunContainer([
-				...defaultRunArgs(containerName, dataDir),
+				...defaultRunArgs(containerName, dataVolume),
 				'-e',
 				'PUID=1001',
 				'-e',
@@ -331,20 +340,21 @@ test.describe.serial('Docker runtime identity', () => {
 			expect(dockerLogs(containerName)).not.toContain('/root/.docker/config.json');
 		} finally {
 			cleanupContainer(containerName);
-			cleanupDir(dataDir);
+			cleanupVolume(dataVolume);
 			cleanupDir(projectsDir);
 		}
 	});
 
 	test('default non-root runtime prepares mounted writable roots', async () => {
 		const containerName = uniqueName('arcane-default-nonroot');
-		const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'arcane-default-nonroot-data-'));
+		const dataVolume = uniqueName('arcane-default-nonroot-data');
 		const projectsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'arcane-default-nonroot-projects-'));
 		const buildsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'arcane-default-nonroot-builds-'));
+		docker(['volume', 'create', dataVolume]);
 
 		try {
 			dockerRunContainer([
-				...defaultRunArgs(containerName, dataDir),
+				...defaultRunArgs(containerName, dataVolume),
 				'-v',
 				'/var/run/docker.sock:/var/run/docker.sock',
 				'-v',
@@ -390,7 +400,7 @@ test.describe.serial('Docker runtime identity', () => {
 			expect(buildsWrite).toBe('65532:65532');
 		} finally {
 			cleanupContainer(containerName);
-			cleanupDir(dataDir);
+			cleanupVolume(dataVolume);
 			cleanupDir(projectsDir);
 			cleanupDir(buildsDir);
 		}
@@ -400,7 +410,8 @@ test.describe.serial('Docker runtime identity', () => {
 		const networkName = uniqueName('arcane-proxy-net');
 		const proxyName = uniqueName('arcane-proxy');
 		const containerName = uniqueName('arcane-proxy-app');
-		const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'arcane-proxy-data-'));
+		const dataVolume = uniqueName('arcane-proxy-data');
+		docker(['volume', 'create', dataVolume]);
 
 		try {
 			docker(['network', 'create', networkName], { stdio: 'inherit' });
@@ -437,7 +448,7 @@ test.describe.serial('Docker runtime identity', () => {
 			await new Promise((resolve) => setTimeout(resolve, 2_000));
 
 			dockerRunContainer([
-				...defaultRunArgs(containerName, dataDir),
+				...defaultRunArgs(containerName, dataVolume),
 				'--network',
 				networkName,
 				'-e',
@@ -478,7 +489,7 @@ test.describe.serial('Docker runtime identity', () => {
 			cleanupContainer(containerName);
 			cleanupContainer(proxyName);
 			cleanupNetwork(networkName);
-			cleanupDir(dataDir);
+			cleanupVolume(dataVolume);
 		}
 	});
 });

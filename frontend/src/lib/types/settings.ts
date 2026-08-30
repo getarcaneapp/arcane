@@ -55,6 +55,7 @@ export type Settings = {
 	baseServerUrl: string;
 	enableGravatar: boolean;
 	experimentalFeaturesEnabled: boolean;
+	apnsEnabled?: boolean;
 	avatarMaxUploadSizeMb: number;
 	uiConfigDisabled: boolean;
 	defaultShell: string;
@@ -70,7 +71,6 @@ export type Settings = {
 	trivyNetwork: string;
 	trivySecurityOpts: string;
 	trivyPrivileged: boolean;
-	trivyPreserveCacheOnVolumePrune: boolean;
 	trivyResourceLimitsEnabled: boolean;
 	trivyCpuLimit: number;
 	trivyMemoryLimitMb: number;

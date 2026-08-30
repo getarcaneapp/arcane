@@ -263,8 +263,8 @@ func provideSystemBackupServiceInternal(db *database.DB, dockerService *docker.D
 	return systembackup.NewSystemBackupService(db, dockerService, volumeModule.Service(), engine, s3Service, activityService, settingsService, cfg)
 }
 
-func provideContainerModuleInternal(ctx context.Context, event *event.EventService, docker *docker.DockerClientService, image *image.ImageService, settings *settings.SettingsService, project *project.ProjectService, activity *activity.ActivityService) *container.Module {
-	return container.New(ctx, container.Dependencies{
+func provideContainerModuleInternal(event *event.EventService, docker *docker.DockerClientService, image *image.ImageService, settings *settings.SettingsService, project *project.ProjectService, activity *activity.ActivityService) *container.Module {
+	return container.New(container.Dependencies{
 		Event:    event,
 		Docker:   docker,
 		Image:    image,

@@ -21,24 +21,16 @@
 	import { environmentStore } from '#lib/stores/environment.store.svelte';
 	import DockerRunConverterDialog from '#lib/components/compose/docker-run-converter-dialog.svelte';
 	import { globalVariablesToMap } from '#lib/utils/template-load';
-	import type { WorkspaceFileDraft } from '#lib/types/workspace';
 	import type { SwarmSyncFile } from '#lib/types/swarm';
 	import {
-		isWorkspaceFileSelectionUnder,
 		planWorkspaceFileCreate,
 		planWorkspaceFileMove,
 		planWorkspaceFileRename,
-		readWorkspaceTextUpload,
-		remapWorkspaceFilePath,
-		remapWorkspaceFileRecord,
-		remapSelectedWorkspaceFileKey,
-		removeWorkspaceFileRecord,
 		validateWorkspaceFileName,
 		workspaceFileBasename,
-		workspaceFileLanguage,
-		workspaceFilePathMatches,
-		type WorkspaceFileEntry
+		workspaceFileLanguage
 	} from '#lib/utils/workspace-files';
+	import { WorkspaceDraftState } from '#lib/components/workspace-editor/workspace-draft-state.svelte';
 	import settingsStore from '#lib/stores/config-store';
 	import {
 		createComposeEditorSchema,
@@ -116,26 +108,24 @@
 		return btoa(encoded);
 	}
 
-	let stackFiles = $state<WorkspaceFileDraft[]>(
-		untrack(() => (data.sourceFiles ?? []).map((file) => ({ relativePath: file.relativePath, isDirectory: false })))
-	);
-	let stackFileContents = $state<Record<string, string>>(
-		untrack(() =>
+	const stackWorkspace = new WorkspaceDraftState({
+		initialFiles: untrack(() =>
+			(data.sourceFiles ?? []).map((file) => ({ relativePath: file.relativePath, isDirectory: false }))
+		),
+		initialContents: untrack(() =>
 			Object.fromEntries((data.sourceFiles ?? []).map((file) => [file.relativePath, decodeStackFileContent(file.content)]))
-		)
-	);
-	const stackFileEntries = $derived.by<WorkspaceFileEntry[]>(() =>
-		stackFiles.map((file) => ({
-			path: file.relativePath,
-			relativePath: file.relativePath,
-			name: workspaceFileBasename(file.relativePath),
-			isDirectory: !!file.isDirectory,
-			size: file.isDirectory ? 0 : (stackFileContents[file.relativePath]?.length ?? 0),
-			content: file.isDirectory ? undefined : (stackFileContents[file.relativePath] ?? ''),
-			pending: false
-		}))
-	);
-	const stackFilePaths = $derived.by(() => new Set(stackFileEntries.map((file) => file.relativePath)));
+		),
+		initialOpenTabs: ['compose'],
+		initialSelection: 'compose',
+		fallbackTab: 'compose',
+		pendingEntries: false,
+		isFixedTab: (key) => key === 'compose' || key === 'env' || key === 'override',
+		isTabAvailable: (key) => key !== 'override' || overrideActive,
+		planCreate: planWorkspaceFileCreate,
+		planRename: planWorkspaceFileRename,
+		planMove: planWorkspaceFileMove
+	});
+	const stackFileEntries = $derived(stackWorkspace.entries);
 	const stackWorkspaceLeadingRows = $derived.by(() => [
 		{ key: 'compose', label: 'compose.yaml', iconClass: 'text-blue-500', locked: true },
 		...(overrideActive
@@ -144,24 +134,11 @@
 		{ key: 'env', label: '.env', iconClass: 'text-green-500', locked: true }
 	]);
 
-	let selectedStackFile = $state('compose');
-	let openStackTabs = $state<string[]>(['compose']);
 	let stackTreeWidth = $state<number | null>(null);
 	let treeOutlineOpen = $state(false);
 	let treeCommandPaletteOpen = $state(false);
-	const stackOpenTabs = $derived.by(() => {
-		const valid = openStackTabs.filter((key) => {
-			if (key === 'compose' || key === 'env') return true;
-			if (key === 'override') return overrideActive;
-			if (!key.startsWith('file:')) return false;
-			const entry = stackFileEntries.find((file) => file.relativePath === key.slice(5));
-			return !!entry && !entry.isDirectory;
-		});
-		return valid.length > 0 ? valid : ['compose'];
-	});
-	const activeStackTab = $derived(
-		stackOpenTabs.includes(selectedStackFile) ? selectedStackFile : (stackOpenTabs[0] ?? 'compose')
-	);
+	const stackOpenTabs = $derived(stackWorkspace.validOpenTabs);
+	const activeStackTab = $derived(stackWorkspace.activeTab);
 	const stackTabs = $derived(
 		stackOpenTabs.map((key) => ({
 			key,
@@ -187,102 +164,23 @@
 		}))
 	);
 
-	function isStackDirectoryKey(key: string): boolean {
-		if (!key.startsWith('file:')) return false;
-		return stackFileEntries.find((file) => file.relativePath === key.slice(5))?.isDirectory === true;
-	}
-
-	function openStackTab(key: string) {
-		if (!isStackDirectoryKey(key) && !openStackTabs.includes(key)) {
-			openStackTabs = [...openStackTabs, key];
-		}
-		selectedStackFile = key;
-	}
-
-	function closeStackTab(key: string) {
-		const index = stackOpenTabs.indexOf(key);
-		const remaining = stackOpenTabs.filter((tab) => tab !== key);
-		openStackTabs = openStackTabs.filter((tab) => tab !== key);
-		if (selectedStackFile === key) {
-			selectedStackFile = remaining[Math.min(Math.max(index - 1, 0), remaining.length - 1)] ?? 'compose';
-		}
-	}
-
 	function addOverride() {
 		overrideActive = true;
-		openStackTab('override');
+		stackWorkspace.openTab('override');
 	}
 
 	function removeOverride() {
 		overrideContent = '';
 		overrideActive = false;
-		closeStackTab('override');
-	}
-
-	function createStackFile(parentPath: string, name: string, content = '') {
-		const relativePath = planWorkspaceFileCreate(stackFilePaths, parentPath, name);
-		if (!relativePath) return;
-		stackFiles = [...stackFiles, { relativePath, isDirectory: false }];
-		stackFileContents = { ...stackFileContents, [relativePath]: content };
-		openStackTab(`file:${relativePath}`);
-	}
-
-	async function uploadStackFile(parentPath: string, files: File[]): Promise<string | void> {
-		const file = files[0];
-		if (!file) return m.workspace_upload_file_required();
-		const result = await readWorkspaceTextUpload(file, workspaceMaxFileSizeMb);
-		if (result.error) return result.error;
-		createStackFile(parentPath, file.name, result.content ?? '');
-	}
-
-	function createStackFolder(parentPath: string, name: string) {
-		const relativePath = planWorkspaceFileCreate(stackFilePaths, parentPath, name);
-		if (!relativePath) return;
-		stackFiles = [...stackFiles, { relativePath, isDirectory: true }];
-		selectedStackFile = `file:${relativePath}`;
-	}
-
-	function applyStackFilePathChange(oldPath: string, newPath: string) {
-		stackFiles = stackFiles.map((file) => ({
-			...file,
-			relativePath: remapWorkspaceFilePath(file.relativePath, oldPath, newPath)
-		}));
-		stackFileContents = remapWorkspaceFileRecord(stackFileContents, oldPath, newPath);
-		openStackTabs = openStackTabs.map((tab) => remapSelectedWorkspaceFileKey(tab, oldPath, newPath) ?? tab);
-		const remappedSelection = remapSelectedWorkspaceFileKey(selectedStackFile, oldPath, newPath);
-		if (remappedSelection) {
-			selectedStackFile = remappedSelection;
-		}
-	}
-
-	function renameStackFile(relativePath: string, newName: string) {
-		const plan = planWorkspaceFileRename(stackFilePaths, relativePath, newName);
-		if (!plan) return;
-		applyStackFilePathChange(relativePath, plan.newPath);
-	}
-
-	function moveStackFile(relativePath: string, newParentPath: string) {
-		const entry = stackFileEntries.find((file) => file.relativePath === relativePath);
-		const newPath = planWorkspaceFileMove(entry, stackFilePaths, relativePath, newParentPath);
-		if (!newPath) return;
-		applyStackFilePathChange(relativePath, newPath);
-	}
-
-	function deleteStackFile(relativePath: string) {
-		stackFiles = stackFiles.filter((file) => !workspaceFilePathMatches(file.relativePath, relativePath));
-		stackFileContents = removeWorkspaceFileRecord(stackFileContents, relativePath);
-		openStackTabs = openStackTabs.filter((tab) => !isWorkspaceFileSelectionUnder(tab, relativePath));
-		if (isWorkspaceFileSelectionUnder(selectedStackFile, relativePath)) {
-			selectedStackFile = stackOpenTabs[0] ?? 'compose';
-		}
+		stackWorkspace.closeTab('override');
 	}
 
 	function buildStackFilePayload(): SwarmSyncFile[] {
-		return stackFiles
+		return stackWorkspace.files
 			.filter((file) => !file.isDirectory)
 			.map((file) => ({
 				relativePath: file.relativePath,
-				content: encodeStackFileContent(stackFileContents[file.relativePath] ?? '')
+				content: encodeStackFileContent(stackWorkspace.contents[file.relativePath] ?? '')
 			}));
 	}
 
@@ -377,7 +275,7 @@
 						variant="inline"
 						error={$inputs.name.error ?? undefined}
 						originalValue={initialName}
-						placeholder={m.compose_project_name_placeholder?.() || 'Enter name...'}
+						placeholder={m.compose_project_name_placeholder()}
 						canEdit={!isEditMode && !ui.saving && !ui.isLoadingTemplateContent}
 						class="hidden sm:block"
 					/>
@@ -487,22 +385,27 @@
 								<WorkspaceFileTreePanel
 									leadingRows={stackWorkspaceLeadingRows}
 									entries={stackFileEntries}
-									selectedFile={selectedStackFile}
+									selectedFile={stackWorkspace.selectedKey}
 									disabled={ui.saving || ui.isLoadingTemplateContent}
-									onSelect={openStackTab}
-									onCreateFile={createStackFile}
-									onCreateFolder={createStackFolder}
-									onUpload={uploadStackFile}
+									onSelect={stackWorkspace.openTab}
+									onCreateFile={stackWorkspace.createFile}
+									onCreateFolder={stackWorkspace.createFolder}
+									onUpload={(parentPath, files) => stackWorkspace.uploadFile(parentPath, files, workspaceMaxFileSizeMb)}
 									validateName={(name) => validateWorkspaceFileName(name)}
-									onRename={renameStackFile}
-									onMove={moveStackFile}
-									onDelete={deleteStackFile}
+									onRename={stackWorkspace.rename}
+									onMove={stackWorkspace.move}
+									onDelete={stackWorkspace.remove}
 								/>
 							{/snippet}
 
 							{#snippet second()}
 								<div class="flex h-full min-h-0 flex-1 flex-col">
-									<EditorTabStrip tabs={stackTabs} activeKey={activeStackTab} onSelect={openStackTab} onClose={closeStackTab}>
+									<EditorTabStrip
+										tabs={stackTabs}
+										activeKey={activeStackTab}
+										onSelect={stackWorkspace.openTab}
+										onClose={stackWorkspace.closeTab}
+									>
 										{#snippet actions()}
 											<ComposeFileEditorPanel
 												outlineOpen={treeOutlineOpen}
@@ -575,7 +478,7 @@
 													title={relativePath}
 													language={workspaceFileLanguage(relativePath)}
 													validationMode="none"
-													bind:value={stackFileContents[relativePath]}
+													bind:value={stackWorkspace.contents[relativePath]}
 													fileId={`swarm:stacks:${isEditMode ? initialName : 'new'}:file:${relativePath}`}
 													editorContext={stackEditorContext}
 													bind:outlineOpen={treeOutlineOpen}

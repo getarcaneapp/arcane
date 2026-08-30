@@ -3,8 +3,6 @@
 package container
 
 import (
-	"context"
-
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
@@ -33,9 +31,9 @@ type Module struct {
 }
 
 // New builds the container domain from its dependencies.
-func New(ctx context.Context, deps Dependencies) *Module {
+func New(deps Dependencies) *Module {
 	return &Module{
-		service: NewContainerService(ctx, deps.Event, deps.Docker, deps.Image, deps.Settings, deps.Project),
+		service: NewContainerService(deps.Event, deps.Docker, deps.Image, deps.Settings, deps.Project),
 		deps:    deps,
 	}
 }

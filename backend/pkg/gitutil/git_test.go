@@ -727,6 +727,51 @@ func generateTestPublicKeyVariant(t *testing.T) gossh.PublicKey {
 	return key
 }
 
+func TestPurgeScratchDirs(t *testing.T) {
+	ctx := context.Background()
+	workDir := t.TempDir()
+	client := NewClient(workDir)
+
+	staleDir := filepath.Join(workDir, "gitops-stale")
+	freshDir := filepath.Join(workDir, "gitops-fresh")
+	keepDir := filepath.Join(workDir, "keep-me")
+	scratchFile := filepath.Join(workDir, "gitops-file")
+	require.NoError(t, os.MkdirAll(staleDir, 0o755))
+	require.NoError(t, os.MkdirAll(freshDir, 0o755))
+	require.NoError(t, os.MkdirAll(keepDir, 0o755))
+	require.NoError(t, os.WriteFile(scratchFile, []byte("x"), 0o644))
+	staleTime := time.Now().Add(-3 * time.Hour)
+	require.NoError(t, os.Chtimes(staleDir, staleTime, staleTime))
+
+	removed, err := client.PurgeScratchDirs(ctx, 2*time.Hour)
+	require.NoError(t, err)
+	assert.Equal(t, 1, removed, "only the stale clone dir should be removed")
+
+	_, err = os.Stat(staleDir)
+	require.ErrorIs(t, err, os.ErrNotExist, "stale clone dir should be removed")
+	for _, p := range []string{freshDir, keepDir, scratchFile} {
+		_, err := os.Stat(p)
+		assert.NoError(t, err, "must be kept by the age-cutoff purge: %s", p)
+	}
+
+	removed, err = client.PurgeScratchDirs(ctx, 0)
+	require.NoError(t, err)
+	assert.Equal(t, 1, removed, "boot sweep should remove the remaining clone dir")
+
+	_, err = os.Stat(freshDir)
+	require.ErrorIs(t, err, os.ErrNotExist, "boot sweep should remove fresh clone dirs")
+	for _, p := range []string{keepDir, scratchFile} {
+		_, err := os.Stat(p)
+		assert.NoError(t, err, "boot sweep must keep non-scratch entries: %s", p)
+	}
+
+	t.Run("missing work dir is not an error", func(t *testing.T) {
+		removed, err := NewClient(filepath.Join(t.TempDir(), "missing")).PurgeScratchDirs(ctx, 0)
+		require.NoError(t, err)
+		assert.Equal(t, 0, removed)
+	})
+}
+
 func TestNormalizeURL(t *testing.T) {
 	cases := []struct {
 		name    string

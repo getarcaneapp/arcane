@@ -4,9 +4,6 @@
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
 	import { Badge } from '#lib/components/ui/badge';
 	import { toast } from 'svelte-sonner';
-	import { openConfirmDialog } from '#lib/components/confirm-dialog';
-	import { handleApiResultWithCallbacks } from '#lib/utils/api';
-	import { tryCatch } from '#lib/utils/api';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
 	import type { FederatedCredential } from '#lib/types/auth';
 	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '#lib/components/arcane-table';
@@ -16,6 +13,7 @@
 	import * as m from '#lib/paraglide/messages.js';
 	import { LockIcon, TrashIcon, EditIcon } from '#lib/icons';
 	import { isGlobalAdmin } from '#lib/utils/auth';
+	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions';
 
 	let {
 		federatedCredentials = $bindable(),
@@ -57,73 +55,45 @@
 		return `${role} / ${getScope(credential)}`;
 	}
 
-	async function handleDeleteSelected() {
+	function handleDeleteSelected() {
 		if (selectedIds.length === 0) return;
+		const ids = [...selectedIds];
 
-		openConfirmDialog({
-			title: m.federated_credential_delete_selected_title({ count: selectedIds.length }),
-			message: m.federated_credential_delete_selected_message({ count: selectedIds.length }),
-			confirm: {
-				label: m.common_delete(),
-				destructive: true,
-				action: async () => {
-					isLoading.removing = true;
-					let successCount = 0;
-					let failureCount = 0;
-
-					for (const credentialId of selectedIds) {
-						const result = await tryCatch(federatedCredentialService.delete(credentialId));
-						handleApiResultWithCallbacks({
-							result,
-							message: m.federated_credential_delete_failed({ name: credentialId }),
-							setLoadingState: () => {},
-							onSuccess: () => {
-								successCount++;
-							}
-						});
-
-						if (result.error) {
-							failureCount++;
-						}
-					}
-
-					isLoading.removing = false;
-
-					if (successCount > 0) {
-						toast.success(m.federated_credential_bulk_delete_success({ count: successCount }));
-						await onFederatedCredentialsChanged();
-					}
-
-					if (failureCount > 0) {
-						toast.error(m.federated_credential_bulk_delete_failed({ count: failureCount }));
-					}
-
-					selectedIds = [];
-				}
-			}
+		bulkConfirmAndRun({
+			ids,
+			title: m.federated_credential_delete_selected_title({ count: ids.length }),
+			message: m.federated_credential_delete_selected_message({ count: ids.length }),
+			confirmLabel: m.common_delete(),
+			destructive: true,
+			run: (credentialId) => federatedCredentialService.delete(credentialId),
+			messages: {
+				success: (count) => m.federated_credential_bulk_delete_success({ count }),
+				partial: (success, total, failed) =>
+					m.common_bulk_delete_partial({ success, total, failed, resource: m.federated_credential_page_title() }),
+				failure: () => m.federated_credential_bulk_delete_failed({ count: ids.length })
+			},
+			setLoading: (loading) => (isLoading.removing = loading),
+			onComplete: async ({ success }) => {
+				if (success > 0) await onFederatedCredentialsChanged();
+			},
+			clearSelection: () => (selectedIds = []),
+			sequential: true
 		});
 	}
 
-	async function handleDeleteFederatedCredential(credentialId: string, name: string) {
+	function handleDeleteFederatedCredential(credentialId: string, name: string) {
 		const safeName = name?.trim() || m.common_unknown();
-		openConfirmDialog({
+		confirmAndRun({
 			title: m.federated_credential_delete_title({ name: safeName }),
 			message: m.federated_credential_delete_message({ name: safeName }),
-			confirm: {
-				label: m.common_delete(),
-				destructive: true,
-				action: async () => {
-					isLoading.removing = true;
-					handleApiResultWithCallbacks({
-						result: await tryCatch(federatedCredentialService.delete(credentialId)),
-						message: m.federated_credential_delete_failed({ name: safeName }),
-						setLoadingState: (value) => (isLoading.removing = value),
-						onSuccess: async () => {
-							toast.success(m.federated_credential_delete_success({ name: safeName }));
-							await onFederatedCredentialsChanged();
-						}
-					});
-				}
+			confirmLabel: m.common_delete(),
+			destructive: true,
+			setLoading: (loading) => (isLoading.removing = loading),
+			run: () => federatedCredentialService.delete(credentialId),
+			failureMessage: m.federated_credential_delete_failed({ name: safeName }),
+			onSuccess: async () => {
+				toast.success(m.federated_credential_delete_success({ name: safeName }));
+				await onFederatedCredentialsChanged();
 			}
 		});
 	}

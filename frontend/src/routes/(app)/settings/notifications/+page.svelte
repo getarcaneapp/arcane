@@ -1,6 +1,9 @@
 <script lang="ts">
 	import * as Tabs from '#lib/components/ui/tabs';
 	import * as Dialog from '#lib/components/ui/dialog';
+	import * as Alert from '#lib/components/ui/alert';
+	import { Switch } from '#lib/components/ui/switch/index.js';
+	import SettingsRow from '#lib/components/settings/settings-row.svelte';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { toast } from 'svelte-sonner';
 	import { getContext, onMount } from 'svelte';
@@ -9,47 +12,27 @@
 	import { m } from '#lib/paraglide/messages';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte';
 	import { notificationService } from '#lib/services/notification-service';
-	import type { NotificationSettings } from '#lib/types/notifications';
-	import {
-		type DiscordFormValues,
-		type EmailFormValues,
-		type TelegramFormValues,
-		type SignalFormValues,
-		type SlackFormValues,
-		type NtfyFormValues,
-		type PushoverFormValues,
-		type GotifyFormValues,
-		type MatrixFormValues,
-		type GoogleChatFormValues,
-		type GenericFormValues,
-		type NotificationProviderKey,
-		NOTIFICATION_PROVIDER_KEYS,
-		discordSettingsToFormValues,
-		emailSettingsToFormValues,
-		telegramSettingsToFormValues,
-		signalSettingsToFormValues,
-		slackSettingsToFormValues,
-		ntfySettingsToFormValues,
-		pushoverSettingsToFormValues,
-		gotifySettingsToFormValues,
-		matrixSettingsToFormValues,
-		googleChatSettingsToFormValues,
-		genericSettingsToFormValues,
-		discordFormValuesToSettings,
-		emailFormValuesToSettings,
-		telegramFormValuesToSettings,
-		signalFormValuesToSettings,
-		slackFormValuesToSettings,
-		ntfyFormValuesToSettings,
-		pushoverFormValuesToSettings,
-		gotifyFormValuesToSettings,
-		matrixFormValuesToSettings,
-		googleChatFormValuesToSettings,
-		genericFormValuesToSettings
-	} from '#lib/types/notifications';
-	import { NotificationsIcon } from '#lib/icons';
+	import { type NotificationProviderKey, NOTIFICATION_PROVIDER_KEYS } from '#lib/types/notifications';
+	import { AlertIcon, NotificationsIcon } from '#lib/icons';
+	import { settingsService } from '#lib/services/settings-service';
+	import type { Settings } from '#lib/types/settings';
+	import { hasPermission } from '#lib/utils/auth';
 	import { TabBar, type TabItem } from '#lib/components/tab-bar';
 	import { BuiltInProviderForm } from './providers';
+	import {
+		cloneNotificationProviderFormState,
+		createNotificationProviderFormState,
+		createNotificationSettingsByProvider,
+		getNotificationProviderDefinition,
+		notificationProviderFormValuesToSettings,
+		type NotificationProviderFormState,
+		type NotificationSettingsByProvider,
+		updateNotificationProviderFormState
+	} from '#lib/utils/notification-providers';
+	import { extractApiErrorMessage, handleApiResultWithCallbacks, tryCatch } from '#lib/utils/api';
+	import { apnsService } from '#lib/services/apns-service';
+	import type { ApnsDevice } from '#lib/types/apns';
+	import { formatRelativeTime } from '#lib/utils/formatting';
 
 	let { data } = $props();
 
@@ -58,114 +41,52 @@
 	let isTesting = $state(false);
 	let showUnsavedDialog = $state(false);
 	let pendingTestAction: (() => Promise<void>) | null = $state(null);
-	const urlTab = useUrlTab<NotificationProviderKey>({
-		validTabs: () => NOTIFICATION_PROVIDER_KEYS,
+	type NotificationTab = NotificationProviderKey | 'mobile';
+	const NOTIFICATION_TABS: readonly NotificationTab[] = [...NOTIFICATION_PROVIDER_KEYS, 'mobile'];
+	const urlTab = useUrlTab<NotificationTab>({
+		validTabs: () => NOTIFICATION_TABS,
 		defaultTab: () => 'email'
 	});
 	const providerTab = $derived(urlTab.value);
-	// Providers whose display name is not just a capitalised key.
-	const providerTabLabels: Partial<Record<NotificationProviderKey, string>> = {
-		googlechat: 'Google Chat'
-	};
-	const providerTabItems = NOTIFICATION_PROVIDER_KEYS.map(
-		(provider) =>
-			({
-				value: provider,
-				label: providerTabLabels[provider] ?? provider.charAt(0).toUpperCase() + provider.slice(1)
-			}) satisfies TabItem
-	);
+	const tabItems: TabItem[] = [
+		...NOTIFICATION_PROVIDER_KEYS.map(
+			(provider) =>
+				({
+					value: provider,
+					label: getNotificationProviderDefinition(provider).label()
+				}) satisfies TabItem
+		),
+		{ value: 'mobile', label: m.notifications_mobile_push_tab() }
+	];
 
 	const isReadOnly = $derived.by(() => $settingsStore.uiConfigDisabled);
+	const canToggleMobilePush = $derived(hasPermission('settings:write'));
+	const mobilePushEnabled = $derived($settingsStore?.apnsEnabled === true);
+	let savingMobilePush = $state(false);
+	let mobileDevices = $state<ApnsDevice[]>([]);
+	let testingDeviceId = $state<string | null>(null);
 
-	// Settings form context
-	let formState: any = null;
-	try {
-		formState = getContext('settingsFormState') as any;
-	} catch {
-		// Context not available (shouldn't happen in settings routes)
-	}
+	type SettingsFormState = {
+		hasChanges: boolean;
+		isLoading: boolean;
+		saveFunction: (() => Promise<void>) | null;
+		resetFunction: (() => void) | null;
+	};
+	type ProviderFormRef = { isValid: () => boolean };
 
-	// Provider form references for validation
-	let emailFormRef: ReturnType<typeof BuiltInProviderForm>;
-	let discordFormRef: ReturnType<typeof BuiltInProviderForm>;
-	let telegramFormRef: ReturnType<typeof BuiltInProviderForm>;
-	let signalFormRef: ReturnType<typeof BuiltInProviderForm>;
-	let slackFormRef: ReturnType<typeof BuiltInProviderForm>;
-	let ntfyFormRef: ReturnType<typeof BuiltInProviderForm>;
-	let pushoverFormRef: ReturnType<typeof BuiltInProviderForm>;
-	let gotifyFormRef: ReturnType<typeof BuiltInProviderForm>;
-	let matrixFormRef: ReturnType<typeof BuiltInProviderForm>;
-	let googlechatFormRef: ReturnType<typeof BuiltInProviderForm>;
-	let genericFormRef: ReturnType<typeof BuiltInProviderForm>;
-
-	// Saved settings from server (used to detect if settings exist)
-	let savedSettings = $state<Record<NotificationProviderKey, NotificationSettings | null>>({
-		email: null,
-		discord: null,
-		telegram: null,
-		signal: null,
-		slack: null,
-		ntfy: null,
-		pushover: null,
-		gotify: null,
-		matrix: null,
-		googlechat: null,
-		generic: null
-	});
-
-	// Current form values - these are what the user edits
-	let emailValues = $state<EmailFormValues>(emailSettingsToFormValues());
-	let discordValues = $state<DiscordFormValues>(discordSettingsToFormValues());
-	let telegramValues = $state<TelegramFormValues>(telegramSettingsToFormValues());
-	let signalValues = $state<SignalFormValues>(signalSettingsToFormValues());
-	let slackValues = $state<SlackFormValues>(slackSettingsToFormValues());
-	let ntfyValues = $state<NtfyFormValues>(ntfySettingsToFormValues());
-	let pushoverValues = $state<PushoverFormValues>(pushoverSettingsToFormValues());
-	let gotifyValues = $state<GotifyFormValues>(gotifySettingsToFormValues());
-	let matrixValues = $state<MatrixFormValues>(matrixSettingsToFormValues());
-	let googlechatValues = $state<GoogleChatFormValues>(googleChatSettingsToFormValues());
-	let genericValues = $state<GenericFormValues>(genericSettingsToFormValues());
-
-	// Baseline values - what was last saved (for change detection)
-	let emailBaseline = $state<EmailFormValues>(emailSettingsToFormValues());
-	let discordBaseline = $state<DiscordFormValues>(discordSettingsToFormValues());
-	let telegramBaseline = $state<TelegramFormValues>(telegramSettingsToFormValues());
-	let signalBaseline = $state<SignalFormValues>(signalSettingsToFormValues());
-	let slackBaseline = $state<SlackFormValues>(slackSettingsToFormValues());
-	let ntfyBaseline = $state<NtfyFormValues>(ntfySettingsToFormValues());
-	let pushoverBaseline = $state<PushoverFormValues>(pushoverSettingsToFormValues());
-	let gotifyBaseline = $state<GotifyFormValues>(gotifySettingsToFormValues());
-	let matrixBaseline = $state<MatrixFormValues>(matrixSettingsToFormValues());
-	let googlechatBaseline = $state<GoogleChatFormValues>(googleChatSettingsToFormValues());
-	let genericBaseline = $state<GenericFormValues>(genericSettingsToFormValues());
-
-	// Change detection
-	const emailHasChanges = $derived(JSON.stringify(emailValues) !== JSON.stringify(emailBaseline));
-	const discordHasChanges = $derived(JSON.stringify(discordValues) !== JSON.stringify(discordBaseline));
-	const telegramHasChanges = $derived(JSON.stringify(telegramValues) !== JSON.stringify(telegramBaseline));
-	const signalHasChanges = $derived(JSON.stringify(signalValues) !== JSON.stringify(signalBaseline));
-	const slackHasChanges = $derived(JSON.stringify(slackValues) !== JSON.stringify(slackBaseline));
-	const ntfyHasChanges = $derived(JSON.stringify(ntfyValues) !== JSON.stringify(ntfyBaseline));
-	const pushoverHasChanges = $derived(JSON.stringify(pushoverValues) !== JSON.stringify(pushoverBaseline));
-	const gotifyHasChanges = $derived(JSON.stringify(gotifyValues) !== JSON.stringify(gotifyBaseline));
-	const matrixHasChanges = $derived(JSON.stringify(matrixValues) !== JSON.stringify(matrixBaseline));
-	const googlechatHasChanges = $derived(JSON.stringify(googlechatValues) !== JSON.stringify(googlechatBaseline));
-	const genericHasChanges = $derived(JSON.stringify(genericValues) !== JSON.stringify(genericBaseline));
-	const hasChanges = $derived(
-		emailHasChanges ||
-			discordHasChanges ||
-			telegramHasChanges ||
-			signalHasChanges ||
-			slackHasChanges ||
-			ntfyHasChanges ||
-			pushoverHasChanges ||
-			gotifyHasChanges ||
-			matrixHasChanges ||
-			googlechatHasChanges ||
-			genericHasChanges
+	const formState = getContext<SettingsFormState | undefined>('settingsFormState');
+	let providerFormRefs = $state<Partial<Record<NotificationProviderKey, ProviderFormRef>>>({});
+	let savedSettings = $state<NotificationSettingsByProvider>(createNotificationSettingsByProvider());
+	let providerValues = $state<NotificationProviderFormState>(createNotificationProviderFormState());
+	let providerBaselines = $state<NotificationProviderFormState>(createNotificationProviderFormState());
+	const changedProviders = $derived.by(() =>
+		NOTIFICATION_PROVIDER_KEYS.filter(
+			(provider) => JSON.stringify(providerValues[provider]) !== JSON.stringify(providerBaselines[provider])
+		)
 	);
+	const hasChanges = $derived(changedProviders.length > 0);
 
-	function hasSavedCredential(settings: NotificationSettings | null, field: string) {
+	function hasSavedCredential(settings: NotificationSettingsByProvider[NotificationProviderKey], field: string) {
 		return settings?.config ? Object.prototype.hasOwnProperty.call(settings.config, field) : false;
 	}
 
@@ -179,78 +100,15 @@
 		}
 	});
 
-	// Load initial data
-	onMount(async () => {
-		// Load built-in provider settings
-		for (const provider of NOTIFICATION_PROVIDER_KEYS) {
-			const found = data?.notificationSettings?.find((s: NotificationSettings) => s.provider === provider);
-			savedSettings[provider] = found ?? null;
-		}
-
-		// Apply saved values to form
-		emailValues = emailSettingsToFormValues(savedSettings.email ?? undefined);
-		emailBaseline = { ...emailValues };
-
-		discordValues = discordSettingsToFormValues(savedSettings.discord ?? undefined);
-		discordBaseline = { ...discordValues };
-
-		telegramValues = telegramSettingsToFormValues(savedSettings.telegram ?? undefined);
-		telegramBaseline = { ...telegramValues };
-
-		signalValues = signalSettingsToFormValues(savedSettings.signal ?? undefined);
-		signalBaseline = { ...signalValues };
-
-		slackValues = slackSettingsToFormValues(savedSettings.slack ?? undefined);
-		slackBaseline = { ...slackValues };
-
-		ntfyValues = ntfySettingsToFormValues(savedSettings.ntfy ?? undefined);
-		ntfyBaseline = { ...ntfyValues };
-
-		pushoverValues = pushoverSettingsToFormValues(savedSettings.pushover ?? undefined);
-		pushoverBaseline = { ...pushoverValues };
-
-		gotifyValues = gotifySettingsToFormValues(savedSettings.gotify ?? undefined);
-		gotifyBaseline = { ...gotifyValues };
-
-		matrixValues = matrixSettingsToFormValues(savedSettings.matrix ?? undefined);
-		matrixBaseline = { ...matrixValues };
-
-		googlechatValues = googleChatSettingsToFormValues(savedSettings.googlechat ?? undefined);
-		googlechatBaseline = { ...googlechatValues };
-
-		genericValues = genericSettingsToFormValues(savedSettings.generic ?? undefined);
-		genericBaseline = { ...genericValues };
+	onMount(() => {
+		savedSettings = createNotificationSettingsByProvider(data?.notificationSettings ?? []);
+		providerValues = createNotificationProviderFormState(savedSettings);
+		providerBaselines = cloneNotificationProviderFormState(providerValues);
+		if (mobilePushEnabled) void loadMobileDevices();
 	});
 
 	async function onSubmit() {
-		// Validate all forms
-		const emailValid = emailFormRef?.isValid() ?? true;
-		const discordValid = discordFormRef?.isValid() ?? true;
-		const telegramValid = telegramFormRef?.isValid() ?? true;
-		const signalValid = signalFormRef?.isValid() ?? true;
-		const slackValid = slackFormRef?.isValid() ?? true;
-		const ntfyValid = ntfyFormRef?.isValid() ?? true;
-		const pushoverValid = pushoverFormRef?.isValid() ?? true;
-		const gotifyValid = gotifyFormRef?.isValid() ?? true;
-		const matrixValid = matrixFormRef?.isValid() ?? true;
-		const googlechatValid = googlechatFormRef?.isValid() ?? true;
-		const genericValid = genericFormRef?.isValid() ?? true;
-
-		if (
-			!(
-				emailValid &&
-				discordValid &&
-				telegramValid &&
-				signalValid &&
-				slackValid &&
-				ntfyValid &&
-				pushoverValid &&
-				gotifyValid &&
-				matrixValid &&
-				googlechatValid &&
-				genericValid
-			)
-		) {
+		if (NOTIFICATION_PROVIDER_KEYS.some((provider) => providerFormRefs[provider]?.isValid() === false)) {
 			toast.error(m.common_form_errors());
 			return;
 		}
@@ -259,146 +117,19 @@
 
 		try {
 			const errors: string[] = [];
-
-			// Save Email settings if changed
-			if (emailHasChanges) {
+			for (const provider of changedProviders) {
 				try {
-					const settings = emailFormValuesToSettings(emailValues);
-					await notificationService.updateSettings('email', settings);
-					savedSettings.email = settings;
-					emailBaseline = { ...emailValues };
-				} catch (error: any) {
-					const errorMsg = error?.response?.data?.error || error.message || 'Unknown error';
-					errors.push(m.notifications_saved_failed({ provider: 'Email', error: errorMsg }));
-				}
-			}
-
-			// Save Discord settings if changed
-			if (discordHasChanges) {
-				try {
-					const settings = discordFormValuesToSettings(discordValues);
-					await notificationService.updateSettings('discord', settings);
-					savedSettings.discord = settings;
-					discordBaseline = { ...discordValues };
-				} catch (error: any) {
-					const errorMsg = error?.response?.data?.error || error.message || 'Unknown error';
-					errors.push(m.notifications_saved_failed({ provider: 'Discord', error: errorMsg }));
-				}
-			}
-
-			// Save Telegram settings if changed
-			if (telegramHasChanges) {
-				try {
-					const settings = telegramFormValuesToSettings(telegramValues);
-					await notificationService.updateSettings('telegram', settings);
-					savedSettings.telegram = settings;
-					telegramBaseline = { ...telegramValues };
-				} catch (error: any) {
-					const errorMsg = error?.response?.data?.error || error.message || 'Unknown error';
-					errors.push(m.notifications_saved_failed({ provider: 'Telegram', error: errorMsg }));
-				}
-			}
-
-			// Save Signal settings if changed
-			if (signalHasChanges) {
-				try {
-					const settings = signalFormValuesToSettings(signalValues);
-					savedSettings.signal = await notificationService.updateSettings('signal', settings);
-					signalBaseline = { ...signalValues };
-				} catch (error: any) {
-					const errorMsg = error?.response?.data?.error || error.message || 'Unknown error';
-					errors.push(m.notifications_saved_failed({ provider: 'Signal', error: errorMsg }));
-				}
-			}
-
-			// Save Slack settings if changed
-			if (slackHasChanges) {
-				try {
-					const settings = slackFormValuesToSettings(slackValues);
-					await notificationService.updateSettings('slack', settings);
-					savedSettings.slack = settings;
-					slackBaseline = { ...slackValues };
-				} catch (error: any) {
-					const errorMsg = error?.response?.data?.error || error.message || 'Unknown error';
-					errors.push(m.notifications_saved_failed({ provider: 'Slack', error: errorMsg }));
-				}
-			}
-
-			// Save Ntfy settings if changed
-			if (ntfyHasChanges) {
-				try {
-					const settings = ntfyFormValuesToSettings(ntfyValues);
-					await notificationService.updateSettings('ntfy', settings);
-					savedSettings.ntfy = settings;
-					ntfyBaseline = { ...ntfyValues };
-				} catch (error: any) {
-					const errorMsg = error?.response?.data?.error || error.message || 'Unknown error';
-					errors.push(m.notifications_saved_failed({ provider: 'Ntfy', error: errorMsg }));
-				}
-			}
-
-			// Save Pushover settings if changed
-			if (pushoverHasChanges) {
-				try {
-					const settings = pushoverFormValuesToSettings(pushoverValues);
-					await notificationService.updateSettings('pushover', settings);
-					savedSettings.pushover = settings;
-					pushoverBaseline = { ...pushoverValues };
-				} catch (error: any) {
-					const errorMsg = error?.response?.data?.error || error.message || 'Unknown error';
-					errors.push(m.notifications_saved_failed({ provider: 'Pushover', error: errorMsg }));
-				}
-			}
-
-			// Save Gotify settings if changed
-			if (gotifyHasChanges) {
-				try {
-					const settings = gotifyFormValuesToSettings(gotifyValues);
-					await notificationService.updateSettings('gotify', settings);
-					savedSettings.gotify = settings;
-					gotifyBaseline = { ...gotifyValues };
-				} catch (error: any) {
-					const errorMsg = error?.response?.data?.error || error.message || 'Unknown error';
-					errors.push(m.notifications_saved_failed({ provider: 'Gotify', error: errorMsg }));
-				}
-			}
-
-			// Save Matrix settings if changed
-			if (matrixHasChanges) {
-				try {
-					const settings = matrixFormValuesToSettings(matrixValues);
-					await notificationService.updateSettings('matrix', settings);
-					savedSettings.matrix = settings;
-					matrixBaseline = { ...matrixValues };
-				} catch (error: any) {
-					const errorMsg = error?.response?.data?.error || error.message || 'Unknown error';
-					errors.push(m.notifications_saved_failed({ provider: 'Matrix', error: errorMsg }));
-				}
-			}
-
-			// Save Google Chat settings if changed
-			if (googlechatHasChanges) {
-				try {
-					const settings = googleChatFormValuesToSettings(googlechatValues);
-					await notificationService.updateSettings('googlechat', settings);
-					savedSettings.googlechat = settings;
-					googlechatBaseline = { ...googlechatValues };
-				} catch (error: any) {
-					const errorMsg = error?.response?.data?.error || error.message || 'Unknown error';
-					errors.push(m.notifications_saved_failed({ provider: 'Google Chat', error: errorMsg }));
-				}
-			}
-
-			// Save Generic settings if changed
-			if (genericHasChanges) {
-				try {
-					const settings = genericFormValuesToSettings(genericValues);
-					await notificationService.updateSettings('generic', settings);
-					savedSettings.generic = settings;
-					genericBaseline = { ...genericValues };
-				} catch (error: any) {
-					const errorMsg = error?.response?.data?.error || error.message || 'Unknown error';
-					errors.push(m.notifications_saved_failed({ provider: 'Generic', error: errorMsg }));
+					const settings = notificationProviderFormValuesToSettings(provider, providerValues[provider]);
+					const saved = await notificationService.updateSettings(provider, settings);
+					savedSettings = { ...savedSettings, [provider]: saved };
+					providerBaselines = updateNotificationProviderFormState(providerBaselines, provider, providerValues[provider]);
+				} catch (error) {
+					errors.push(
+						m.notifications_saved_failed({
+							provider: getNotificationProviderDefinition(provider).label(),
+							error: extractApiErrorMessage(error)
+						})
+					);
 				}
 			}
 
@@ -415,18 +146,51 @@
 		}
 	}
 
+	async function handleMobilePushToggle(enabled: boolean) {
+		handleApiResultWithCallbacks<Settings>({
+			result: await tryCatch(settingsService.updateSettings({ apnsEnabled: enabled })),
+			message: m.common_update_failed({ resource: m.settings() }),
+			setLoadingState: (value) => (savingMobilePush = value),
+			onSuccess: async (updated) => {
+				settingsStore.set(updated);
+				if (enabled) {
+					await loadMobileDevices();
+				} else {
+					mobileDevices = [];
+				}
+				toast.success(m.common_update_success({ resource: m.settings() }));
+			}
+		});
+	}
+
+	async function loadMobileDevices() {
+		const { data } = await tryCatch(apnsService.getStatus());
+		mobileDevices = data?.devices ?? [];
+	}
+
+	async function testMobileDevice(device: ApnsDevice) {
+		testingDeviceId = device.id;
+		const { error } = await tryCatch(apnsService.testDevice(device.id));
+		testingDeviceId = null;
+		if (error) {
+			toast.error(extractApiErrorMessage(error));
+			return;
+		}
+		toast.success(m.notifications_mobile_test_sent({ device: device.label || device.id }));
+	}
+
+	async function removeMobileDevice(device: ApnsDevice) {
+		const { error } = await tryCatch(apnsService.deleteDevice(device.id));
+		if (error) {
+			toast.error(extractApiErrorMessage(error));
+			return;
+		}
+		toast.success(m.notifications_mobile_device_removed({ device: device.label || device.id }));
+		await loadMobileDevices();
+	}
+
 	function resetForm() {
-		emailValues = { ...emailBaseline };
-		discordValues = { ...discordBaseline };
-		telegramValues = { ...telegramBaseline };
-		signalValues = { ...signalBaseline };
-		slackValues = { ...slackBaseline };
-		ntfyValues = { ...ntfyBaseline };
-		pushoverValues = { ...pushoverBaseline };
-		gotifyValues = { ...gotifyBaseline };
-		matrixValues = { ...matrixBaseline };
-		googlechatValues = { ...googlechatBaseline };
-		genericValues = { ...genericBaseline };
+		providerValues = cloneNotificationProviderFormState(providerBaselines);
 	}
 
 	async function testNotification(provider: NotificationProviderKey, testType: string = 'simple') {
@@ -445,11 +209,10 @@
 			if (result?.data?.warning) {
 				toast.warning(m.notifications_test_warning({ warning: result.data.warning }));
 			} else {
-				toast.success(m.notifications_test_success({ provider: provider.charAt(0).toUpperCase() + provider.slice(1) }));
+				toast.success(m.notifications_test_success({ provider: getNotificationProviderDefinition(provider).label() }));
 			}
-		} catch (error: any) {
-			const errorMsg = error?.response?.data?.error || error.message || m.common_unknown();
-			toast.error(m.notifications_test_failed({ error: errorMsg }));
+		} catch (error) {
+			toast.error(m.notifications_test_failed({ error: extractApiErrorMessage(error) }));
 		} finally {
 			isTesting = false;
 		}
@@ -475,140 +238,70 @@
 	{#snippet mainContent()}
 		<fieldset disabled={isReadOnly} class="relative w-full min-w-0">
 			<Tabs.Root value={providerTab} class="flex min-h-0 w-full min-w-0 flex-col">
-				<TabBar items={providerTabItems} value={providerTab} onValueChange={urlTab.select} class="self-start" />
+				<TabBar items={tabItems} value={providerTab} onValueChange={urlTab.select} class="self-start" />
 
-				<Tabs.Content value="email" class="mt-4 space-y-4">
-					<BuiltInProviderForm
-						bind:this={emailFormRef}
-						provider="email"
-						bind:values={emailValues}
-						disabled={isReadOnly}
-						{isTesting}
-						hasExistingCredentials={savedSettings.email !== null}
-						onTest={(testType) => testNotification('email', testType)}
-					/>
-				</Tabs.Content>
-
-				<Tabs.Content value="discord" class="mt-4 space-y-4">
-					<BuiltInProviderForm
-						bind:this={discordFormRef}
-						provider="discord"
-						bind:values={discordValues}
-						disabled={isReadOnly}
-						{isTesting}
-						hasExistingCredentials={savedSettings.discord !== null}
-						onTest={(testType) => testNotification('discord', testType)}
-					/>
-				</Tabs.Content>
-
-				<Tabs.Content value="telegram" class="mt-4 space-y-4">
-					<BuiltInProviderForm
-						bind:this={telegramFormRef}
-						provider="telegram"
-						bind:values={telegramValues}
-						disabled={isReadOnly}
-						{isTesting}
-						hasExistingCredentials={savedSettings.telegram !== null}
-						onTest={(testType) => testNotification('telegram', testType)}
-					/>
-				</Tabs.Content>
-
-				<Tabs.Content value="signal" class="mt-4 space-y-4">
-					<BuiltInProviderForm
-						bind:this={signalFormRef}
-						provider="signal"
-						bind:values={signalValues}
-						disabled={isReadOnly}
-						{isTesting}
-						hasExistingCredentials={savedSettings.signal !== null}
-						hasExistingPassword={hasSavedCredential(savedSettings.signal, 'password')}
-						hasExistingToken={hasSavedCredential(savedSettings.signal, 'token')}
-						onTest={(testType) => testNotification('signal', testType)}
-					/>
-				</Tabs.Content>
-
-				<Tabs.Content value="slack" class="mt-4 space-y-4">
-					<BuiltInProviderForm
-						bind:this={slackFormRef}
-						provider="slack"
-						bind:values={slackValues}
-						disabled={isReadOnly}
-						{isTesting}
-						hasExistingCredentials={savedSettings.slack !== null}
-						onTest={(testType) => testNotification('slack', testType)}
-					/>
-				</Tabs.Content>
-
-				<Tabs.Content value="ntfy" class="mt-4 space-y-4">
-					<BuiltInProviderForm
-						bind:this={ntfyFormRef}
-						provider="ntfy"
-						bind:values={ntfyValues}
-						disabled={isReadOnly}
-						{isTesting}
-						hasExistingCredentials={savedSettings.ntfy !== null}
-						onTest={(testType) => testNotification('ntfy', testType)}
-					/>
-				</Tabs.Content>
-
-				<Tabs.Content value="pushover" class="mt-4 space-y-4">
-					<BuiltInProviderForm
-						bind:this={pushoverFormRef}
-						provider="pushover"
-						bind:values={pushoverValues}
-						disabled={isReadOnly}
-						{isTesting}
-						hasExistingCredentials={savedSettings.pushover !== null}
-						onTest={(testType) => testNotification('pushover', testType)}
-					/>
-				</Tabs.Content>
-
-				<Tabs.Content value="gotify" class="mt-4 space-y-4">
-					<BuiltInProviderForm
-						bind:this={gotifyFormRef}
-						provider="gotify"
-						bind:values={gotifyValues}
-						disabled={isReadOnly}
-						{isTesting}
-						hasExistingCredentials={savedSettings.gotify !== null}
-						onTest={(testType) => testNotification('gotify', testType)}
-					/>
-				</Tabs.Content>
-
-				<Tabs.Content value="matrix" class="mt-4 space-y-4">
-					<BuiltInProviderForm
-						bind:this={matrixFormRef}
-						provider="matrix"
-						bind:values={matrixValues}
-						disabled={isReadOnly}
-						{isTesting}
-						hasExistingCredentials={savedSettings.matrix !== null}
-						onTest={(testType) => testNotification('matrix', testType)}
-					/>
-				</Tabs.Content>
-
-				<Tabs.Content value="googlechat" class="mt-4 space-y-4">
-					<BuiltInProviderForm
-						bind:this={googlechatFormRef}
-						provider="googlechat"
-						bind:values={googlechatValues}
-						disabled={isReadOnly}
-						{isTesting}
-						hasExistingCredentials={savedSettings.googlechat !== null}
-						onTest={(testType) => testNotification('googlechat', testType)}
-					/>
-				</Tabs.Content>
-
-				<Tabs.Content value="generic" class="mt-4 space-y-4">
-					<BuiltInProviderForm
-						bind:this={genericFormRef}
-						provider="generic"
-						bind:values={genericValues}
-						disabled={isReadOnly}
-						{isTesting}
-						hasExistingCredentials={savedSettings.generic !== null}
-						onTest={(testType) => testNotification('generic', testType)}
-					/>
+				{#each NOTIFICATION_PROVIDER_KEYS as provider (provider)}
+					<Tabs.Content value={provider} class="mt-4 space-y-4">
+						<BuiltInProviderForm
+							bind:this={providerFormRefs[provider]}
+							{provider}
+							bind:values={providerValues[provider]}
+							disabled={isReadOnly}
+							{isTesting}
+							hasExistingCredentials={savedSettings[provider] !== null}
+							hasExistingPassword={provider === 'signal' && hasSavedCredential(savedSettings.signal, 'password')}
+							hasExistingToken={provider === 'signal' && hasSavedCredential(savedSettings.signal, 'token')}
+							onTest={(testType) => testNotification(provider, testType)}
+						/>
+					</Tabs.Content>
+				{/each}
+				<Tabs.Content value="mobile" class="mt-4 space-y-4">
+					<SettingsRow
+						label={m.notifications_mobile_push_label()}
+						description={m.notifications_mobile_push_description()}
+						layout="inline"
+					>
+						<Switch
+							id="apnsEnabled"
+							checked={mobilePushEnabled}
+							disabled={isReadOnly || !canToggleMobilePush || savingMobilePush}
+							onCheckedChange={(checked) => void handleMobilePushToggle(checked)}
+						/>
+					</SettingsRow>
+					{#if mobilePushEnabled}
+						<div class="space-y-2">
+							<p class="text-sm font-medium">{m.notifications_mobile_devices()}</p>
+							{#if mobileDevices.length === 0}
+								<p class="text-xs text-muted-foreground">{m.notifications_mobile_devices_empty()}</p>
+							{:else}
+								<ul class="divide-y divide-border/40">
+									{#each mobileDevices as device (device.id)}
+										<li class="flex items-center justify-between gap-3 py-2">
+											<div class="min-w-0">
+												<p class="truncate text-sm">{device.label || device.id}</p>
+												{#if device.lastSeenAt}
+													<p class="text-xs text-muted-foreground">{formatRelativeTime(device.lastSeenAt)}</p>
+												{/if}
+											</div>
+											<div class="flex shrink-0 items-center gap-2">
+												<ArcaneButton
+													action="test"
+													size="sm"
+													loading={testingDeviceId === device.id}
+													onclick={() => testMobileDevice(device)}
+												/>
+												<ArcaneButton action="remove" size="sm" onclick={() => removeMobileDevice(device)} />
+											</div>
+										</li>
+									{/each}
+								</ul>
+							{/if}
+						</div>
+					{/if}
+					<Alert.Root variant="warning" class="py-2 [&>svg]:top-2">
+						<AlertIcon class="size-4" />
+						<Alert.Description class="text-xs">{m.notifications_mobile_push_external_warning()}</Alert.Description>
+					</Alert.Root>
 				</Tabs.Content>
 			</Tabs.Root>
 		</fieldset>

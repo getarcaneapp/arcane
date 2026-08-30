@@ -1316,6 +1316,23 @@ func (s *GitOpsSyncService) CleanupLeakedScratchDirsOnStartup(ctx context.Contex
 	return nil
 }
 
+// CleanupLeakedCloneDirsOnStartup removes leaked git clone scratch dirs
+// ("gitops-*") under the git work dir; safe because no sync holds a clone yet.
+func (s *GitOpsSyncService) CleanupLeakedCloneDirsOnStartup(ctx context.Context) error {
+	if s.repoService == nil || s.repoService.Client == nil {
+		return nil
+	}
+
+	removed, err := s.repoService.PurgeScratchDirs(ctx, 0)
+	if err != nil {
+		return errors.WrapIf(err, "failed to purge leaked git clone scratch directories")
+	}
+	if removed > 0 {
+		slog.InfoContext(ctx, "Cleaned up leaked git clone scratch directories on startup", "count", removed)
+	}
+	return nil
+}
+
 func (s *GitOpsSyncService) CleanupOrphanedSyncsOnStartup(ctx context.Context) error {
 	var syncIDs []string
 	if err := s.db.WithContext(ctx).Model(&projectpkg.GitOpsSync{}).

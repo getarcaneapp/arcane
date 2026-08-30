@@ -35,7 +35,7 @@ class ContainerRegistryService extends BaseAPIService {
 		return this.handleResponse(this.api.delete(`/container-registries/${id}`));
 	}
 
-	async testRegistry(id: string): Promise<any> {
+	async testRegistry(id: string): Promise<unknown> {
 		return this.handleResponse(this.api.post(`/container-registries/${id}/test`));
 	}
 }

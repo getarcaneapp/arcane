@@ -55,8 +55,12 @@
 	// Set context so forms can update the header state
 	setContext('settingsFormState', formState);
 
-	// Reset form state before navigating to a new page
-	beforeNavigate(() => {
+	// Query-only navigation keeps the same form mounted, so preserve its actions.
+	beforeNavigate(({ from, to }) => {
+		if (from?.url.pathname === to?.url.pathname) {
+			return;
+		}
+
 		formState.hasChanges = false;
 		formState.isLoading = false;
 		formState.saveFunction = null;

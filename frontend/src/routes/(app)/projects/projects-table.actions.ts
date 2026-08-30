@@ -10,6 +10,7 @@ import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toa
 import type { TableActionConfig, TableBulkActionConfig } from '#lib/utils/table-action-types';
 import { toast } from 'svelte-sonner';
 import type { ActionStatus } from './projects-table.helpers';
+import { bulkConfirmAndRun } from '#lib/utils/bulk-actions';
 
 type BulkLoadingState = {
 	up: boolean;
@@ -114,7 +115,7 @@ export function createProjectActions({
 					await refreshProjects();
 				}
 			});
-		} catch (error) {
+		} catch {
 			toast.error(m.common_action_failed());
 			actionStatus[id] = '';
 		}
@@ -177,36 +178,23 @@ export function createProjectActions({
 	async function runBulkAction(ids: string[], config: BulkActionConfig): Promise<void> {
 		if (!ids || ids.length === 0) return;
 
-		openConfirmDialog({
+		bulkConfirmAndRun({
+			ids,
 			title: config.title(ids.length),
 			message: config.message(ids.length),
-			confirm: {
-				label: config.label,
-				destructive: config.destructive ?? false,
-				action: async () => {
-					isBulkLoading[config.loadingKey] = true;
-
-					try {
-						const results = await Promise.allSettled(ids.map((id) => config.run(id)));
-
-						const successCount = results.filter((result) => result.status === 'fulfilled').length;
-						const failureCount = results.length - successCount;
-
-						if (successCount === ids.length) {
-							toast.success(config.success(successCount));
-						} else if (successCount > 0) {
-							toast.warning(config.partial(successCount, ids.length, failureCount));
-						} else {
-							toast.error(config.failure());
-						}
-
-						await refreshProjects(getRequestOptions());
-						setSelectedIds([]);
-					} finally {
-						isBulkLoading[config.loadingKey] = false;
-					}
-				}
-			}
+			confirmLabel: config.label,
+			destructive: config.destructive ?? false,
+			run: (id) => config.run(id),
+			messages: {
+				success: config.success,
+				partial: config.partial,
+				failure: config.failure
+			},
+			setLoading: (loading) => {
+				isBulkLoading[config.loadingKey] = loading;
+			},
+			onComplete: () => refreshProjects(getRequestOptions()),
+			clearSelection: () => setSelectedIds([])
 		});
 	}
 

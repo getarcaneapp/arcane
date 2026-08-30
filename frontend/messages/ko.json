@@ -1534,8 +1534,6 @@
   "security_trivy_privileged_label": "Trivy Privileged 모드",
   "security_trivy_privileged_description": "호스트 보안 정책상 필요한 경우 Trivy 스캔 컨테이너를 Privileged 모드로 실행합니다.",
   "security_trivy_privileged_note": "보안 옵션만으로 충분하지 않을 때 최후의 수단(Fallback)으로만 사용하세요.",
-  "security_trivy_preserve_cache_on_volume_prune_label": "볼륨 정리(Prune) 시 Trivy 캐시 보존",
-  "security_trivy_preserve_cache_on_volume_prune_description": "Arcane이 미사용 Docker 볼륨을 정리(Prune)할 때 Trivy 캐시 볼륨을 삭제하지 않고 유지합니다.",
   "security_trivy_network_fetch_failed": "Docker 네트워크 목록을 불러올 수 없어 기본 제공 옵션만 표시합니다.",
   "security_trivy_resource_limits_label": "Trivy 리소스 제한",
   "security_trivy_resource_limits_description": "Trivy 스캔 컨테이너의 CPU 및 메모리 제한을 설정합니다.",

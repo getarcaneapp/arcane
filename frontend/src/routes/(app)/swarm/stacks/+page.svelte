@@ -5,7 +5,7 @@
 	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type StatCardConfig } from '#lib/layouts/index.js';
 	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte';
-	import { parallelRefresh } from '#lib/utils/api';
+	import { simpleRefresh } from '#lib/utils/api';
 	import { createRefreshActionButtons } from '#lib/utils/resource-actions';
 	import SwarmStacksTable from './stacks-table.svelte';
 	import { goto } from '$app/navigation';
@@ -19,17 +19,11 @@
 	let isLoading = $state({ refresh: false });
 
 	async function refresh() {
-		await parallelRefresh(
-			{
-				stacks: {
-					fetch: () => swarmService.getStacks(requestOptions),
-					onSuccess: (data) => {
-						stacks = data;
-					},
-					errorMessage: m.common_refresh_failed({ resource: m.swarm_stacks_title() })
-				}
-			},
-			(v) => (isLoading.refresh = v)
+		await simpleRefresh(
+			() => swarmService.getStacks(requestOptions),
+			(data) => (stacks = data),
+			m.common_refresh_failed({ resource: m.swarm_stacks_title() }),
+			(loading) => (isLoading.refresh = loading)
 		);
 	}
 
@@ -42,9 +36,11 @@
 
 	const actionButtons = $derived.by(() =>
 		createRefreshActionButtons({
-			canCreate: canCreateStack,
-			createLabel: m.common_create_button({ resource: m.swarm_stack() }),
-			onCreate: () => goto('/swarm/stacks/new'),
+			create: {
+				allowed: canCreateStack,
+				label: m.common_create_button({ resource: m.swarm_stack() }),
+				onclick: () => goto('/swarm/stacks/new')
+			},
 			refreshLabel: m.common_refresh(),
 			onRefresh: refresh,
 			refreshing: isLoading.refresh

@@ -26,7 +26,7 @@ export type ColumnAlign = 'left' | 'center' | 'right';
 
 export type ColumnSpec<T extends RowData> = {
 	accessorKey?: keyof T & string;
-	accessorFn?: (row: T) => any;
+	accessorFn?: (row: T) => unknown;
 	id?: string;
 	title: string;
 	hidden?: boolean;
@@ -37,6 +37,8 @@ export type ColumnSpec<T extends RowData> = {
 	 */
 	clientSort?: boolean;
 	cell?: Snippet<[{ row: ArcaneRow<T>; item: T; value: unknown }]>;
+	/** Render a shared value-only Svelte component without a per-table wrapper snippet. */
+	cellComponent?: Component<{ value: unknown }>;
 	header?: Snippet<[{ column: ArcaneColumn<T>; title: string; class?: string }]>;
 	class?: string;
 	filterFn?: ArcaneFilterFn<T>;
@@ -154,7 +156,7 @@ export type BulkAction = {
 	disabled?: boolean;
 	disabledReason?: string;
 	loading?: boolean;
-	icon?: any;
+	icon?: Component;
 };
 
 // Grouping types

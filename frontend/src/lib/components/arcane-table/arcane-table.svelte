@@ -387,6 +387,7 @@
 					const item = row.original as TData;
 					const value = accessorKey ? row.getValue(accessorKey) : getValue?.();
 					if (spec.cell) return renderSnippet(spec.cell, { row, item, value });
+					if (spec.cellComponent) return renderComponent(spec.cellComponent, { value });
 					return renderComponent(ArcaneTableCell, { value });
 				},
 				enableSorting: !!spec.sortable || !!spec.clientSort,

@@ -1534,8 +1534,6 @@
   "security_trivy_privileged_label": "Trivy 提權",
   "security_trivy_privileged_description": "當主機安全原則需要時，以提權模式執行 Trivy 掃描容器。",
   "security_trivy_privileged_note": "只有在安全選項不足時，才使用此功能作為後備。",
-  "security_trivy_preserve_cache_on_volume_prune_label": "將 Trivy 快取儲存在資料卷上",
-  "security_trivy_preserve_cache_on_volume_prune_description": "當 Arcane 移除未使用的 Docker 磁碟區時，保留 Trivy 快取磁碟區。",
   "security_trivy_network_fetch_failed": "無法載入 Docker 網路；僅顯示內建選項。",
   "security_trivy_resource_limits_label": "Trivy 資源限制",
   "security_trivy_resource_limits_description": "設定 Trivy 掃描容器時的 CPU 和記憶體限制。",

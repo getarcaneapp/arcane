@@ -3,10 +3,11 @@
 	import { m } from '#lib/paraglide/messages';
 	import { swarmService } from '#lib/services/swarm-service';
 	import { untrack } from 'svelte';
-	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
+	import { ResourcePageLayout, type StatCardConfig } from '#lib/layouts/index.js';
 	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte';
-	import { parallelRefresh } from '#lib/utils/api';
+	import { simpleRefresh } from '#lib/utils/api';
 	import SwarmTasksTable from './tasks-table.svelte';
+	import { createRefreshActionButtons } from '#lib/utils/resource-actions';
 
 	let { data } = $props();
 
@@ -23,17 +24,11 @@
 	}
 
 	async function refresh() {
-		await parallelRefresh(
-			{
-				tasks: {
-					fetch: () => fetchTasks(requestOptions),
-					onSuccess: (data) => {
-						tasks = data;
-					},
-					errorMessage: m.common_refresh_failed({ resource: m.tasks() })
-				}
-			},
-			(v) => (isLoading.refresh = v)
+		await simpleRefresh(
+			() => fetchTasks(requestOptions),
+			(data) => (tasks = data),
+			m.common_refresh_failed({ resource: m.tasks() }),
+			(loading) => (isLoading.refresh = loading)
 		);
 	}
 
@@ -41,16 +36,13 @@
 
 	const totalTasks = $derived(tasks?.pagination?.totalItems ?? tasks?.data?.length ?? 0);
 
-	const actionButtons: ActionButton[] = $derived([
-		{
-			id: 'refresh',
-			action: 'restart',
-			label: m.common_refresh(),
-			onclick: refresh,
-			loading: isLoading.refresh,
-			disabled: isLoading.refresh
-		}
-	]);
+	const actionButtons = $derived(
+		createRefreshActionButtons({
+			refreshLabel: m.common_refresh(),
+			onRefresh: refresh,
+			refreshing: isLoading.refresh
+		})
+	);
 
 	const statCards: StatCardConfig[] = $derived([
 		{

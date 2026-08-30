@@ -73,7 +73,7 @@ type volumeWorkspaceLockContextInternal struct {
 	volumeName string
 }
 
-const trivyCacheVolumePruneFilterValue = libarcane.InternalResourceLabel + "=true"
+const internalVolumePruneFilterValue = libarcane.InternalResourceLabel + "=true"
 
 func NewVolumeService(db *database.DB, dockerService *docker.DockerClientService, eventService *event.EventService, activityService *activity.ActivityService, settingsService *settings.SettingsService, containerService *container.ContainerService, imageService *image.ImageService, engine *backup.Engine, s3Destinations *s3domain.S3DestinationService, cfg *config.Config) *VolumeService {
 	slog.Debug("volume service: new")
@@ -239,19 +239,16 @@ func (s *VolumeService) PruneVolumesWithOptions(ctx context.Context, all bool) (
 	// volume. Helpers are re-created on demand on the next browse request.
 	s.CleanupHelperContainers(ctx)
 
-	preserveTrivyCache := s.preserveTrivyCacheOnVolumePruneInternal()
-
 	// Docker's VolumesPrune behavior (API v1.42+):
 	// - Without 'all' flag: Only removes anonymous (unnamed) volumes that are not in use
 	// - With 'all=true' flag: Removes ALL unused volumes (both named and anonymous)
 	// Note: Volumes are considered "in use" if referenced by any container (running or stopped)
-	volumePruneOptions := buildVolumePruneOptionsInternal(all, preserveTrivyCache)
-	volumePruneResult, err := dockerClient.VolumePrune(ctx, volumePruneOptions)
+	volumePruneResult, err := dockerClient.VolumePrune(ctx, buildVolumePruneOptionsInternal(all))
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to prune volumes")
 	}
 
-	metadata := buildVolumePruneMetadataInternal(all, len(volumePruneResult.Report.VolumesDeleted), volumePruneResult.Report.SpaceReclaimed, preserveTrivyCache)
+	metadata := buildVolumePruneMetadataInternal(all, len(volumePruneResult.Report.VolumesDeleted), volumePruneResult.Report.SpaceReclaimed)
 	if logErr := s.eventService.LogVolumeEvent(ctx, event.EventTypeVolumeDelete, "", "bulk_prune", common.SystemUser.ID, common.SystemUser.Username, "0", metadata); logErr != nil {
 		slog.WarnContext(ctx, "could not log volume prune action", "error", logErr.Error())
 	}
@@ -269,36 +266,18 @@ func (s *VolumeService) PruneVolumesWithOptions(ctx context.Context, all bool) (
 	}, nil
 }
 
-func (s *VolumeService) preserveTrivyCacheOnVolumePruneInternal() bool {
-	if s.settingsService == nil {
-		return true
-	}
-
-	return s.settingsService.GetSettingsConfig().TrivyPreserveCacheOnVolumePrune.IsTrue()
-}
-
-func buildVolumePruneOptionsInternal(all, preserveTrivyCache bool) client.VolumePruneOptions {
-	options := client.VolumePruneOptions{
-		All: all,
-	}
-	if !preserveTrivyCache {
-		return options
-	}
-
+func buildVolumePruneOptionsInternal(all bool) client.VolumePruneOptions {
 	filters := make(client.Filters)
-	filters = filters.Add("label!", trivyCacheVolumePruneFilterValue)
-	options.Filters = filters
-
-	return options
+	filters = filters.Add("label!", internalVolumePruneFilterValue)
+	return client.VolumePruneOptions{All: all, Filters: filters}
 }
 
-func buildVolumePruneMetadataInternal(all bool, volumesDeleted int, spaceReclaimed uint64, preserveTrivyCache bool) database.JSON {
+func buildVolumePruneMetadataInternal(all bool, volumesDeleted int, spaceReclaimed uint64) database.JSON {
 	return database.JSON{
-		"action":                "prune",
-		"all":                   all,
-		"volumesDeleted":        volumesDeleted,
-		"spaceReclaimed":        spaceReclaimed,
-		"preserveTrivyCache":    preserveTrivyCache,
-		"trivyCacheFilterLabel": trivyCacheVolumePruneFilterValue,
+		"action":                    "prune",
+		"all":                       all,
+		"volumesDeleted":            volumesDeleted,
+		"spaceReclaimed":            spaceReclaimed,
+		"internalVolumeFilterLabel": internalVolumePruneFilterValue,
 	}
 }

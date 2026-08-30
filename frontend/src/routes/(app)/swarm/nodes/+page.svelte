@@ -4,12 +4,13 @@
 	import { m } from '#lib/paraglide/messages';
 	import { swarmService } from '#lib/services/swarm-service';
 	import { untrack } from 'svelte';
-	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
+	import { ResourcePageLayout, type StatCardConfig } from '#lib/layouts/index.js';
 	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte';
-	import { parallelRefresh } from '#lib/utils/api';
+	import { simpleRefresh } from '#lib/utils/api';
 	import SwarmNodesTable from './nodes-table.svelte';
 	import { hasPermission } from '#lib/utils/auth';
 	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import { createRefreshActionButtons } from '#lib/utils/resource-actions';
 
 	let { data } = $props();
 
@@ -21,17 +22,11 @@
 	const canManageNodes = $derived(hasPermission('swarm:nodes', currentEnvironmentId ?? undefined));
 
 	async function refresh() {
-		await parallelRefresh(
-			{
-				nodes: {
-					fetch: () => swarmService.getNodes(requestOptions),
-					onSuccess: (data) => {
-						nodes = data;
-					},
-					errorMessage: m.common_refresh_failed({ resource: m.nodes() })
-				}
-			},
-			(v) => (isLoading.refresh = v)
+		await simpleRefresh(
+			() => swarmService.getNodes(requestOptions),
+			(data) => (nodes = data),
+			m.common_refresh_failed({ resource: m.nodes() }),
+			(loading) => (isLoading.refresh = loading)
 		);
 	}
 
@@ -53,16 +48,13 @@
 	);
 	const uncoveredNodeCount = $derived(uncoveredNodes.length);
 
-	const actionButtons: ActionButton[] = $derived([
-		{
-			id: 'refresh',
-			action: 'restart',
-			label: m.common_refresh(),
-			onclick: refresh,
-			loading: isLoading.refresh,
-			disabled: isLoading.refresh
-		}
-	]);
+	const actionButtons = $derived(
+		createRefreshActionButtons({
+			refreshLabel: m.common_refresh(),
+			onRefresh: refresh,
+			refreshing: isLoading.refresh
+		})
+	);
 
 	const statCards: StatCardConfig[] = $derived([
 		{

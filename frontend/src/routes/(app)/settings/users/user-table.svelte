@@ -3,11 +3,8 @@
 	import { toast } from 'svelte-sonner';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
-	import { openConfirmDialog } from '#lib/components/confirm-dialog';
 	import { Badge } from '#lib/components/ui/badge';
 	import * as ArcaneTooltip from '#lib/components/arcane-tooltip';
-	import { handleApiResultWithCallbacks } from '#lib/utils/api';
-	import { tryCatch } from '#lib/utils/api';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
 	import type { User } from '#lib/types/auth';
 	import type { Role } from '#lib/types/auth';
@@ -18,6 +15,7 @@
 	import { userService } from '#lib/services/user-service';
 	import { UserIcon, TrashIcon, EditIcon } from '#lib/icons';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
+	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions';
 
 	let {
 		users = $bindable(),
@@ -51,77 +49,46 @@
 
 	const hasProtectedSelection = $derived.by(() => selectedUsers.some((user) => !canDeleteUser(user)));
 
-	async function handleDeleteSelected() {
+	function handleDeleteSelected() {
 		if (selectedIds.length === 0 || hasProtectedSelection) return;
+		const ids = [...selectedIds];
 
-		openConfirmDialog({
-			title: m.users_delete_selected_title({ count: selectedIds.length }),
-			message: m.users_delete_selected_message({ count: selectedIds.length, users: selectedIds.length }),
-			confirm: {
-				label: m.common_delete(),
-				destructive: true,
-				action: async () => {
-					isLoading.removing = true;
-					let successCount = 0;
-					let failureCount = 0;
-
-					for (const userId of selectedIds) {
-						const result = await tryCatch(userService.delete(userId));
-						handleApiResultWithCallbacks({
-							result,
-							message: m.users_delete_selected_item_failed({ id: userId }),
-							setLoadingState: () => {},
-							onSuccess: () => {
-								successCount++;
-							}
-						});
-
-						if (result.error) {
-							failureCount++;
-						}
-					}
-
-					isLoading.removing = false;
-
-					if (successCount > 0) {
-						const msg = m.common_bulk_delete_success({ count: successCount, resource: m.users_title() });
-						toast.success(msg);
-						await onUsersChanged();
-					}
-
-					if (failureCount > 0) {
-						const msg = m.common_bulk_delete_failed({ count: failureCount, resource: m.users_title() });
-						toast.error(msg);
-					}
-
-					selectedIds = [];
-				}
-			}
+		bulkConfirmAndRun({
+			ids,
+			title: m.users_delete_selected_title({ count: ids.length }),
+			message: m.users_delete_selected_message({ count: ids.length, users: ids.length }),
+			confirmLabel: m.common_delete(),
+			destructive: true,
+			run: (userId) => userService.delete(userId),
+			messages: {
+				success: (count) => m.common_bulk_delete_success({ count, resource: m.users_title() }),
+				partial: (success, total, failed) => m.common_bulk_delete_partial({ success, total, failed, resource: m.users_title() }),
+				failure: () => m.common_bulk_delete_failed({ count: ids.length, resource: m.users_title() })
+			},
+			setLoading: (loading) => (isLoading.removing = loading),
+			onComplete: async ({ success }) => {
+				if (success > 0) await onUsersChanged();
+			},
+			clearSelection: () => (selectedIds = []),
+			sequential: true
 		});
 	}
 
-	async function handleDeleteUser(user: User) {
+	function handleDeleteUser(user: User) {
 		if (!canDeleteUser(user)) return;
 
 		const safeName = user.username?.trim() || m.common_unknown();
-		openConfirmDialog({
+		confirmAndRun({
 			title: m.users_delete_user_title({ username: safeName }),
 			message: m.users_delete_user_message({ username: safeName }),
-			confirm: {
-				label: m.common_delete(),
-				destructive: true,
-				action: async () => {
-					isLoading.removing = true;
-					handleApiResultWithCallbacks({
-						result: await tryCatch(userService.delete(user.id)),
-						message: m.users_delete_user_failed({ username: safeName }),
-						setLoadingState: (value) => (isLoading.removing = value),
-						onSuccess: async () => {
-							toast.success(m.users_delete_user_success({ username: safeName }));
-							await onUsersChanged();
-						}
-					});
-				}
+			confirmLabel: m.common_delete(),
+			destructive: true,
+			setLoading: (loading) => (isLoading.removing = loading),
+			run: () => userService.delete(user.id),
+			failureMessage: m.users_delete_user_failed({ username: safeName }),
+			onSuccess: async () => {
+				toast.success(m.users_delete_user_success({ username: safeName }));
+				await onUsersChanged();
 			}
 		});
 	}

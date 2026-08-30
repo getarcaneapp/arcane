@@ -1534,8 +1534,6 @@
   "security_trivy_privileged_label": "些細な特権",
   "security_trivy_privileged_description": "ホストのセキュリティ・ポリシーが必要な場合は、特権モードでTrivyスキャン・コンテナを実行する。",
   "security_trivy_privileged_note": "これは、セキュリティ・オプションが十分でない場合の代替手段としてのみ使用する。",
-  "security_trivy_preserve_cache_on_volume_prune_label": "ボリューム・プルーンのTrivyキャッシュの保存",
-  "security_trivy_preserve_cache_on_volume_prune_description": "Arcaneが未使用のDockerボリュームを削除する際、Trivyキャッシュボリュームを保持する。",
   "security_trivy_network_fetch_failed": "Dockerネットワークをロードできませんでした。組み込みオプションのみ表示します。",
   "security_trivy_resource_limits_label": "トリビー資源制限",
   "security_trivy_resource_limits_description": "Trivy スキャンコンテナの CPU とメモリの制限を設定します。",

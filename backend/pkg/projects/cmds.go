@@ -163,14 +163,18 @@ func ComposeDown(ctx context.Context, proj *types.Project, removeVolumes bool) e
 	return c.svc.Down(downCtx, proj.Name, api.DownOptions{RemoveOrphans: true, Volumes: removeVolumes})
 }
 
+// ComposeLogs streams a project's logs through the compose service. The
+// one-shot client for this call is built with the log-parity wrapper so
+// non-TTY containers keep their stderr metadata; deploy, attach, and other
+// compose operations use plain clients.
 func ComposeLogs(ctx context.Context, projectName string, out io.Writer, follow bool, tail, since string, timestamps bool) error {
-	c, err := NewClient(ctx, "", nil, nil)
+	c, err := NewClient(ctx, "", nil, nil, streamDemuxedLogsInternal)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = c.Close() }()
 
-	return c.svc.Logs(ctx, projectName, writerConsumer{out: out}, api.LogOptions{Follow: follow, Tail: tail, Since: since, Timestamps: timestamps})
+	return c.svc.Logs(ctx, projectName, &writerConsumer{out: out}, api.LogOptions{Follow: follow, Tail: tail, Since: since, Timestamps: timestamps})
 }
 
 // ListGlobalComposeContainers lists every container carrying a compose

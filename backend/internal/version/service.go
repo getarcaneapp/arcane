@@ -18,6 +18,7 @@ import (
 	"golang.org/x/mod/semver"
 
 	"github.com/getarcaneapp/arcane/backend/v2/buildables"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/apns"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
@@ -296,7 +297,7 @@ func (s *VersionService) GetAppVersionInfo(ctx context.Context) *version.Info {
 		GoVersion:        config.GoVersion(),
 		NodeVersion:      config.NodeVersion,
 		SvelteKitVersion: config.SvelteKitVersion,
-		EnabledFeatures:  parseEnabledFeatures(),
+		EnabledFeatures:  append(parseEnabledFeatures(), apns.FeatureName),
 		BuildTime:        config.BuildTime,
 		IsSemverVersion:  isSemver,
 		UpdateAvailable:  false,
