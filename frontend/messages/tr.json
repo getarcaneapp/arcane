@@ -1327,6 +1327,8 @@
   "compose_override_hint": "Yerine geçecek dosyalar, dağıtım sırasında compose dosyasının üzerinde birleştirilir. Yerine geçirme dosyasını silmek için içeriği temizleyin ve dosyayı kaydedin.",
   "compose_override_add": "Yerine geçecek dosya ekle",
   "compose_override_remove": "Yerine geçecek dosyayı kaldır",
+  "compose_multiple_files_title": "Birden fazla oluşturma dosyası",
+  "compose_multiple_files_description": "Bu proje, .env dosyasındaki COMPOSE_FILE değişkeniyle belirlenen aşağıdaki compose dosyalarını kullanır. Temel dosya dışındaki dosyalar, Çalışma Alanı görünümünde düzenlenir.",
   "compose_no_services_found": "Bu proje için herhangi bir hizmet bulunamadı",
   "compose_service_not_created": "Oluşturulmadı",
   "compose_name_change_not_allowed": "Proje Adı çalışırken değiştirilemez. Lütfen önce projeyi durdurun.",
