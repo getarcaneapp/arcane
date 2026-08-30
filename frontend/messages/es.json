@@ -1327,6 +1327,8 @@
   "compose_override_hint": "Las anulaciones se combinan sobre el archivo Compose en el despliegue. Borre el contenido y guarde para eliminar el archivo de anulación.",
   "compose_override_add": "Añadir archivo de anulación",
   "compose_override_remove": "Eliminar anulación",
+  "compose_multiple_files_title": "Varios archivos de composición",
+  "compose_multiple_files_description": "Este proyecto implementa los archivos de configuración que se indican a continuación, seleccionados mediante la variable COMPOSE_FILE en su archivo .env. Los archivos que no sean los básicos se editan en la vista «Workspace».",
   "compose_no_services_found": "No se han encontrado servicios para este proyecto",
   "compose_service_not_created": "No creado",
   "compose_name_change_not_allowed": "El nombre del proyecto no se puede cambiar mientras se ejecuta. Por favor detenga el proyecto primero.",
