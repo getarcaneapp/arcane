@@ -1327,6 +1327,8 @@
   "compose_override_hint": "Při nasazení se přepsání sloučí s původním compose souborem. Chcete-li soubor s přepsáním odstranit, vymažte jeho obsah a uložte jej.",
   "compose_override_add": "Přidat soubor s přepsáním",
   "compose_override_remove": "Odstranit přepsání",
+  "compose_multiple_files_title": "Více souborů pro sestavení",
+  "compose_multiple_files_description": "Tento projekt nasazuje níže uvedené soubory compose, které jsou vybrány proměnnou COMPOSE_FILE v souboru .env. Soubory jiné než základní se upravují v zobrazení „Workspace“.",
   "compose_no_services_found": "Pro tento projekt nebyly nalezeny žádné služby",
   "compose_service_not_created": "Nevytvořeno",
   "compose_name_change_not_allowed": "Název projektu nelze měnit během běhu. Nejprve zastavte projekt.",
