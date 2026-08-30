@@ -28,7 +28,6 @@ import (
 	"go.getarcane.app/docker/convert"
 	converttypes "go.getarcane.app/docker/convert/types"
 	"go.getarcane.app/sys/cgroup"
-	"go.getarcane.app/updater"
 )
 
 // SystemHandler handles system management endpoints.
@@ -114,7 +113,12 @@ type CheckUpgradeOutput struct {
 }
 
 type TriggerUpgradeInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
+	EnvironmentID string              `path:"id" doc:"Environment ID"`
+	Body          *TriggerUpgradeBody `doc:"Optional upgrade parameters"`
+}
+
+type TriggerUpgradeBody struct {
+	TargetVersion string `json:"targetVersion,omitempty" doc:"Release version to upgrade to; overrides this instance's own version check"`
 }
 
 // TriggerUpgradeData reports the upgrade was accepted. UpToDate lets a client skip
@@ -514,7 +518,12 @@ func (h *SystemHandler) TriggerUpgrade(ctx context.Context, input *TriggerUpgrad
 	// container: the upgrade itself may replace it.
 	upToDate := h.upgradeService.AlreadyOnNewestImage(ctx)
 
-	_, err = h.upgradeService.TriggerUpgradeViaCLI(ctx, *user, updater.SelfUpdateTarget{})
+	targetVersion := ""
+	if input.Body != nil {
+		targetVersion = input.Body.TargetVersion
+	}
+
+	err = h.upgradeService.TriggerUpgradeAsync(utils.ActivityRuntimeContext(ctx, h.appCtx), *user, targetVersion)
 	if err != nil {
 		slog.Error("System upgrade failed", "error", err, "user", user.Username)
 
@@ -527,7 +536,7 @@ func (h *SystemHandler) TriggerUpgrade(ctx context.Context, input *TriggerUpgrad
 
 	message := "Upgrade initiated successfully. A new container is being created and will replace this one shortly."
 	if upToDate {
-		message = "Already running the newest image. The upgrade pulled it again and left the container in place."
+		message = "Already running the newest image. The upgrade pulls it again and leaves the container in place."
 	}
 
 	return &TriggerUpgradeOutput{

@@ -1,19 +1,21 @@
 package projects
 
 import (
+	"context"
 	"maps"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"emperror.dev/errors"
+	"github.com/compose-spec/compose-go/v2/consts"
 	"github.com/compose-spec/compose-go/v2/dotenv"
 )
 
 // BuildValidationEnvironment resolves the env a compose file is validated
 // against. It matches the project-visible env sources without inheriting the
 // Arcane process environment, which may contain unrelated secrets.
-func BuildValidationEnvironment(projectsDirectory, projectPath string, effectiveEnvContent *string) (EnvMap, error) {
+func BuildValidationEnvironment(ctx context.Context, projectsDirectory, projectPath string, effectiveEnvContent *string) (EnvMap, error) {
 	fullEnvMap := make(EnvMap)
 	if absWorkdir, absErr := filepath.Abs(projectPath); absErr == nil {
 		fullEnvMap["PWD"] = absWorkdir
@@ -28,21 +30,25 @@ func BuildValidationEnvironment(projectsDirectory, projectPath string, effective
 	}
 	maps.Copy(fullEnvMap, globalEnv)
 
-	if effectiveEnvContent != nil {
-		projectEnv, err := ParseValidationEnvContent(*effectiveEnvContent, fullEnvMap)
-		if err != nil {
-			return nil, errors.WrapIf(err, "parse provided env content")
+	// Mirror LoadEnvironment's COMPOSE_DISABLE_ENV_FILE / COMPOSE_ENV_FILES
+	// handling so the validation env matches the runtime env exactly.
+	if !parseComposeBoolInternal(fullEnvMap, consts.ComposeDisableDefaultEnvFile) {
+		if effectiveEnvContent != nil {
+			projectEnv, err := ParseValidationEnvContent(*effectiveEnvContent, fullEnvMap)
+			if err != nil {
+				return nil, errors.WrapIf(err, "parse provided env content")
+			}
+			maps.Copy(fullEnvMap, projectEnv)
+		} else {
+			projectEnv, err := ParseValidationEnvFile(filepath.Join(projectPath, ".env"), fullEnvMap)
+			if err != nil {
+				return nil, errors.WrapIf(err, "parse project env file")
+			}
+			maps.Copy(fullEnvMap, projectEnv)
 		}
-		maps.Copy(fullEnvMap, projectEnv)
-		return fullEnvMap, nil
 	}
 
-	projectEnvPath := filepath.Join(projectPath, ".env")
-	projectEnv, err := ParseValidationEnvFile(projectEnvPath, fullEnvMap)
-	if err != nil {
-		return nil, errors.WrapIf(err, "parse project env file")
-	}
-	maps.Copy(fullEnvMap, projectEnv)
+	mergeComposeEnvFilesInternal(ctx, projectPath, fullEnvMap, ParseValidationEnvFile, nil)
 
 	return fullEnvMap, nil
 }

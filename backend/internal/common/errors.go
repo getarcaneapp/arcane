@@ -113,6 +113,7 @@ var (
 	ErrVolumeRenameProtected                   = Classify(ErrBadRequest, errors.Sentinel("Arcane's internal volumes cannot be renamed"))
 	ErrProjectComposeFileNotFound              = Classify(ErrNotFound, errors.Sentinel("Project compose file not found"))
 	ErrComposeFileNotFound                     = Classify(ErrNotFound, errors.Sentinel("no compose file found"))
+	ErrComposeFileEnvInvalid                   = Classify(ErrValidation, errors.Sentinel("invalid COMPOSE_FILE selection"))
 	ErrEnvironmentInvalidProxyTarget           = Classify(ErrBadRequest, errors.Sentinel("Invalid proxy target URL"))
 	ErrEnvironmentConnectionTestFailed         = Classify(ErrBadRequest, errors.Sentinel("Environment connection test failed"))
 	ErrUnsafeRemoteURL                         = Classify(ErrBadRequest, errors.Sentinel("Remote URL is not allowed"))

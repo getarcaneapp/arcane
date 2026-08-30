@@ -1068,6 +1068,17 @@ func singleFileSyncedFilesInternal(sync *projectpkg.GitOpsSync, source *prepared
 func (s *GitOpsSyncService) performSingleFileSyncInternal(ctx context.Context, sync *projectpkg.GitOpsSync, id string, actor common.User, result *gitops.SyncResult, source *preparedSyncSource) (*gitops.SyncResult, error) {
 	slog.InfoContext(ctx, "Using single file sync mode", "syncId", id, "composePath", sync.ComposePath)
 
+	// Single-file sync copies only the one compose file (plus .env and a sibling
+	// override). If the synced .env references additional files via COMPOSE_FILE
+	// or COMPOSE_ENV_FILES, those files never reach the project, so direct the
+	// user to directory sync instead of silently deploying an incomplete
+	// selection.
+	if composeFileEnvNeedsDirectorySyncInternal(sync, source) {
+		return result, s.failSync(ctx, id, result, sync, actor,
+			"COMPOSE_FILE or COMPOSE_ENV_FILES references additional files",
+			"the synced .env references additional files via COMPOSE_FILE or COMPOSE_ENV_FILES; enable \"Sync entire directory\" for this sync")
+	}
+
 	syncedFiles := singleFileSyncedFilesInternal(sync, source)
 
 	project, err := s.getOrCreateProjectInternal(ctx, sync, id, source.composeContent, source.envContent, source.overrideContent, source.overrideFileName, result, actor)
@@ -1085,6 +1096,47 @@ func (s *GitOpsSyncService) performSingleFileSyncInternal(ctx context.Context, s
 	slog.InfoContext(ctx, "GitOps sync completed", "syncId", id, "project", project.Name)
 
 	return result, nil
+}
+
+// composeFileEnvNeedsDirectorySyncInternal reports whether the synced .env
+// declares a COMPOSE_FILE or COMPOSE_ENV_FILES selection that single-file sync
+// cannot satisfy — i.e. it references any file other than the ones single-file
+// sync actually ships (the synced compose file, its sibling override, and .env
+// itself), or any file in a subdirectory.
+func composeFileEnvNeedsDirectorySyncInternal(sync *projectpkg.GitOpsSync, source *preparedSyncSource) bool {
+	if source == nil || source.envContent == nil {
+		return false
+	}
+	envMap, err := projects.ParseProjectEnvContent(*source.envContent, nil)
+	if err != nil || len(envMap) == 0 {
+		return false
+	}
+
+	allowedComposeFiles := map[string]struct{}{filepath.Base(sync.ComposePath): {}}
+	if source.overrideFileName != "" {
+		allowedComposeFiles[source.overrideFileName] = struct{}{}
+	}
+	if entriesNeedDirectorySyncInternal(projects.ComposeFileEntriesFromEnv(envMap), allowedComposeFiles) {
+		return true
+	}
+
+	// Single-file sync writes the synced env content to .env, so a
+	// self-reference is satisfiable; anything else never reaches the project.
+	return entriesNeedDirectorySyncInternal(projects.ComposeEnvFileEntriesFromEnv(envMap), map[string]struct{}{projects.EffectiveEnvFileName: {}})
+}
+
+func entriesNeedDirectorySyncInternal(entries []string, allowed map[string]struct{}) bool {
+	for _, entry := range entries {
+		// Normalize so relative prefixes like "./compose.yaml" match allowed.
+		cleaned := filepath.Clean(entry)
+		if cleaned != filepath.Base(cleaned) {
+			return true // nested path can't be single-file synced
+		}
+		if _, ok := allowed[cleaned]; !ok {
+			return true
+		}
+	}
+	return false
 }
 
 // performSwarmStackSyncInternal executes a single file sync targeted at a Swarm Stack

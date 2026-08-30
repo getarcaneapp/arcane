@@ -97,7 +97,7 @@ func (s *ProjectService) countProjectFolders(ctx context.Context) (int, error) {
 		return 0, nil
 	}
 
-	discoveredProjects, discoveryErr := projects.DiscoverProjectDirectories(projectsDir, followProjectSymlinks, s.config.ProjectScanMaxDepth)
+	discoveredProjects, discoveryErr := projects.DiscoverProjectDirectories(ctx, projectsDir, followProjectSymlinks, s.config.ProjectScanMaxDepth)
 	if discoveryErr != nil {
 		return 0, errors.WrapIff(discoveryErr, "failed to discover project directories in %s", projectsDir)
 	}

@@ -444,6 +444,14 @@ type Details struct {
 	// Required: false
 	ComposeFileName string `json:"composeFileName,omitempty"`
 
+	// ComposeFiles is the ordered project-relative list of compose files selected
+	// by a COMPOSE_FILE entry in the project's .env. It is populated only when
+	// COMPOSE_FILE selects more than one file; otherwise it is empty and
+	// ComposeFileName is authoritative.
+	//
+	// Required: false
+	ComposeFiles []string `json:"composeFiles,omitempty"`
+
 	// EnvContent is the environment file content.
 	//
 	// Required: false

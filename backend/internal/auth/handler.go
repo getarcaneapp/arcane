@@ -280,7 +280,7 @@ func (h *AuthHandler) Login(ctx context.Context, input *LoginInput) (*LoginOutpu
 	expiresAt := tokenPair.ExpiresAt
 
 	return &LoginOutput{
-		SetCookie: []string{cookie.BuildTokenCookieStringFor(maxAge, tokenPair.AccessToken, cookie.SecureCookieFromContext(ctx))},
+		SetCookie: cookie.BuildTokenCookieStringFor(maxAge, tokenPair.AccessToken, cookie.SecureCookieFromContext(ctx)),
 		Body: base.ApiResponse[authtypes.AuthenticationResponse]{
 			Success: true,
 			Data: authtypes.AuthenticationResponse{
@@ -362,7 +362,7 @@ func (h *AuthHandler) RefreshToken(ctx context.Context, input *RefreshTokenInput
 	maxAge += 60
 
 	return &RefreshTokenOutput{
-		SetCookie: []string{cookie.BuildTokenCookieStringFor(maxAge, tokenPair.AccessToken, cookie.SecureCookieFromContext(ctx))},
+		SetCookie: cookie.BuildTokenCookieStringFor(maxAge, tokenPair.AccessToken, cookie.SecureCookieFromContext(ctx)),
 		Body: base.ApiResponse[authtypes.TokenRefreshResponse]{
 			Success: true,
 			Data: authtypes.TokenRefreshResponse{

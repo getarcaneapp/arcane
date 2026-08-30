@@ -364,7 +364,7 @@ func (s *TemplateService) DeleteTemplate(ctx context.Context, id string) error {
 
 		templatePath := filepath.Join(baseDir, existing.Name)
 		if entry, err := acfs.Stat(ctx, baseDir, "/"+existing.Name, false); err == nil && entry.IsDirectory {
-			if _, err := projects.DetectComposeFile(templatePath); err == nil {
+			if _, err := projects.DetectComposeFile(ctx, "", templatePath); err == nil {
 				if err := acfs.RemoveAll(ctx, baseDir, entry.Path); err != nil {
 					return errors.WrapIf(err, "failed to delete template directory")
 				}
@@ -1067,7 +1067,7 @@ func (s *TemplateService) upsertFilesystemTemplate(ctx context.Context, name, de
 }
 
 func (s *TemplateService) processFolderEntry(ctx context.Context, baseDir, folder string) error {
-	compose, envPtr, desc, found, err := projects.ReadFolderComposeTemplate(baseDir, folder)
+	compose, envPtr, desc, found, err := projects.ReadFolderComposeTemplate(ctx, baseDir, folder)
 	if err != nil || !found {
 		return err
 	}

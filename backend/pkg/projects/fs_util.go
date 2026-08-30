@@ -13,6 +13,7 @@ import (
 
 	"emperror.dev/errors"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/samber/mo"
@@ -104,15 +105,21 @@ func isBackendModuleRoot(path string) bool {
 // ReadProjectFiles stays on os.*: compose and env files may be symlinks
 // resolving outside any confinement root, and projectPath can be an imported
 // project outside the projects directory; acfs cannot follow either.
-func ReadProjectFiles(projectPath, composePath string) (composeContent, envContent string, err error) {
+func ReadProjectFiles(ctx context.Context, projectPath, composePath string) (composeContent, envContent string, err error) {
 	if strings.TrimSpace(composePath) == "" {
-		composePath, _ = DetectComposeFile(projectPath)
+		detected, derr := DetectComposeFile(ctx, "", projectPath)
+		if derr != nil && !errors.Is(derr, common.ErrComposeFileNotFound) {
+			return "", "", derr
+		}
+		composePath = detected
 	}
 
 	if strings.TrimSpace(composePath) != "" {
-		if content, rerr := os.ReadFile(composePath); rerr == nil {
-			composeContent = string(content)
+		content, rerr := os.ReadFile(composePath)
+		if rerr != nil {
+			return "", "", errors.WrapIff(rerr, "failed to read compose file %s", composePath)
 		}
+		composeContent = string(content)
 	}
 
 	envPath := filepath.Join(projectPath, ".env")

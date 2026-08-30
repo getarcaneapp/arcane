@@ -550,7 +550,7 @@ services:
 	// merge rather than tracked as a raw synced file.
 	require.ElementsMatch(t, []string{"docker-compose.yaml", "meta.yaml"}, syncedFiles)
 
-	composePath, detectErr := projects.DetectComposeFile(project.Path)
+	composePath, detectErr := projects.DetectComposeFile(t.Context(), "", project.Path)
 	require.NoError(t, detectErr)
 	assert.Equal(t, filepath.Join(project.Path, "docker-compose.yaml"), composePath)
 
@@ -650,7 +650,7 @@ services:
 	require.True(t, changed)
 	require.ElementsMatch(t, []string{"docker-compose.yaml", "nested/feature.yaml"}, syncedFiles)
 
-	composePath, detectErr := projects.DetectComposeFile(updatedProject.Path)
+	composePath, detectErr := projects.DetectComposeFile(t.Context(), "", updatedProject.Path)
 	require.NoError(t, detectErr)
 	assert.Equal(t, filepath.Join(updatedProject.Path, "docker-compose.yaml"), composePath)
 
@@ -945,7 +945,7 @@ func TestGitOpsSyncService_DirectorySync_RealWalkWithNestedConfig(t *testing.T) 
 	require.True(t, changed)
 	require.ElementsMatch(t, []string{"docker-compose.yml", "config/dynamic_config.yml"}, syncedFiles)
 
-	composePath, detectErr := projects.DetectComposeFile(project.Path)
+	composePath, detectErr := projects.DetectComposeFile(t.Context(), "", project.Path)
 	require.NoError(t, detectErr)
 	assert.Equal(t, filepath.Join(project.Path, "docker-compose.yml"), composePath)
 

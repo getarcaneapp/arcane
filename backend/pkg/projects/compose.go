@@ -5,7 +5,6 @@ import (
 	"io"
 	"log/slog"
 	"maps"
-	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -29,18 +28,34 @@ type Client struct {
 	logWriter io.WriteCloser
 }
 
-// composeClientOptionInternal selects internal wiring variants for one-shot
-// compose clients.
-type composeClientOptionInternal uint8
+type composeClientConfigInternal struct {
+	isLogDemuxEnabled bool
+	serviceOptions    []compose.Option
+}
+
+type composeClientOptionInternal func(*composeClientConfigInternal)
 
 // streamDemuxedLogsInternal wires the log-parity wrapper so non-TTY container
 // log responses keep stderr metadata as Arcane's [STDERR] marker.
-const streamDemuxedLogsInternal composeClientOptionInternal = 1
+func streamDemuxedLogsInternal(config *composeClientConfigInternal) {
+	config.isLogDemuxEnabled = true
+}
+
+func withComposeServiceOptionsInternal(options ...compose.Option) composeClientOptionInternal {
+	return func(config *composeClientConfigInternal) {
+		config.serviceOptions = append(config.serviceOptions, options...)
+	}
+}
 
 // NewClient builds a compose client. dockerHost, when non-empty, pins the
 // docker CLI to that daemon endpoint instead of letting it resolve one from
 // the environment.
 func NewClient(ctx context.Context, dockerHost string, authConfigs map[string]registry.AuthConfig, prompt compose.Prompt, options ...composeClientOptionInternal) (*Client, error) {
+	config := composeClientConfigInternal{}
+	for _, option := range options {
+		option(&config)
+	}
+
 	cli, err := command.NewDockerCli()
 	if err != nil {
 		return nil, err
@@ -61,7 +76,7 @@ func NewClient(ctx context.Context, dockerHost string, authConfigs map[string]re
 	}
 
 	composeCLI := wrapDockerCLIWithInspectCompatibilityInternal(cli)
-	if slices.Contains(options, streamDemuxedLogsInternal) {
+	if config.isLogDemuxEnabled {
 		composeCLI = wrapDockerCLIWithLogsDemuxInternal(cli)
 	}
 
@@ -96,6 +111,7 @@ func NewClient(ctx context.Context, dockerHost string, authConfigs map[string]re
 			compose.WithErrorStream(logWriter),
 		)
 	}
+	serviceOptions = append(serviceOptions, config.serviceOptions...)
 
 	svc, err := compose.NewComposeService(composeCLI, serviceOptions...)
 	if err != nil {

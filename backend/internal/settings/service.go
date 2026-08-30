@@ -2,6 +2,7 @@ package settings
 
 import (
 	"context"
+	"crypto/mldsa"
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
@@ -20,6 +21,8 @@ import (
 
 	"github.com/samber/mo"
 	"gorm.io/gorm"
+
+	libcrypto "go.getarcane.app/sys/crypto"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
@@ -1027,6 +1030,58 @@ func (s *SettingsService) EnsureEncryptionKey(ctx context.Context) (string, erro
 		})
 		if err != nil {
 			return "", err
+		}
+
+		return key, nil
+	}, nil)
+}
+
+func (s *SettingsService) EnsureJwtSigningKey(ctx context.Context) (*mldsa.PrivateKey, error) {
+	return actors.Execute(ctx, s.writes, "ensure jwt signing key", func(writeCtx context.Context) (*mldsa.PrivateKey, error) {
+		const keyName = "jwtSigningKeySeed"
+		var key *mldsa.PrivateKey
+
+		err := s.db.WithContext(writeCtx).Transaction(func(tx *gorm.DB) error {
+			var sv SettingVariable
+			err := tx.Where("key = ?", keyName).First(&sv).Error
+
+			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+				return errors.WrapIf(err, "failed to load jwt signing key")
+			}
+
+			if sv.Value != "" {
+				decoded, decErr := libcrypto.Decrypt(sv.Value)
+				if decErr != nil {
+					return errors.WrapIf(decErr, "failed to decrypt jwt signing key")
+				}
+				seed, decErr := base64.StdEncoding.DecodeString(decoded)
+				if decErr != nil {
+					return errors.WrapIf(decErr, "failed to decode jwt signing key")
+				}
+				key, decErr = mldsa.NewPrivateKey(mldsa.MLDSA87(), seed)
+				return errors.WrapIf(decErr, "failed to load jwt signing key")
+			}
+
+			notFound := errors.Is(err, gorm.ErrRecordNotFound)
+			generated, genErr := mldsa.GenerateKey(mldsa.MLDSA87())
+			if genErr != nil {
+				return errors.WrapIf(genErr, "failed to generate jwt signing key")
+			}
+			encrypted, encErr := libcrypto.Encrypt(base64.StdEncoding.EncodeToString(generated.Bytes()))
+			if encErr != nil {
+				return errors.WrapIf(encErr, "failed to encrypt jwt signing key")
+			}
+			key = generated
+
+			if notFound {
+				return errors.WrapIf(tx.Create(&SettingVariable{Key: keyName, Value: encrypted}).Error, "failed to persist jwt signing key")
+			}
+			return errors.WrapIf(tx.Model(&SettingVariable{}).
+				Where("key = ?", keyName).
+				Update("value", encrypted).Error, "failed to update jwt signing key")
+		})
+		if err != nil {
+			return nil, err
 		}
 
 		return key, nil

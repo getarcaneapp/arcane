@@ -33,7 +33,7 @@ func TestReadFolderComposeTemplate_DetectsAllVariants(t *testing.T) {
 			require.NoError(t, os.MkdirAll(folderPath, 0o755))
 			require.NoError(t, os.WriteFile(filepath.Join(folderPath, tc.fileName), []byte(composeContent), 0o600))
 
-			content, env, desc, found, err := ReadFolderComposeTemplate(baseDir, folder)
+			content, env, desc, found, err := ReadFolderComposeTemplate(t.Context(), baseDir, folder)
 			require.NoError(t, err)
 			require.True(t, found, "expected template to be detected for %s", tc.fileName)
 			assert.Equal(t, composeContent, content)
@@ -53,7 +53,7 @@ func TestReadFolderComposeTemplate_ReadsEnvExample(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(folderPath, "compose.yml"), []byte("services: {}\n"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(folderPath, ".env.example"), []byte("KEY=value\n"), 0o600))
 
-	_, env, _, found, err := ReadFolderComposeTemplate(baseDir, folder)
+	_, env, _, found, err := ReadFolderComposeTemplate(t.Context(), baseDir, folder)
 	require.NoError(t, err)
 	require.True(t, found)
 	require.NotNil(t, env)

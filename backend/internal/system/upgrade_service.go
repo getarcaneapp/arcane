@@ -2,6 +2,7 @@ package system
 
 import (
 	"context"
+	"encoding/json/v2"
 	stderrors "errors"
 	"fmt"
 	"io"
@@ -110,24 +111,62 @@ func (s *SystemUpgradeService) AlreadyOnNewestImage(ctx context.Context) bool {
 // Update-all uses the returned ID to tell an upgrade that recreated this
 // container from one that found nothing to do — see watchManagerUpgraderInternal.
 func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user common.User, target updater.SelfUpdateTarget) (string, error) {
-	if !s.upgrading.CompareAndSwap(false, true) {
-		return "", common.Classify(common.ErrUpgradeInProgress, errors.New("an upgrade is already in progress"))
+	prepared, err := s.prepareUpgradeInternal(ctx, user, target, "")
+	if err != nil {
+		return "", err
 	}
-	defer s.upgrading.Store(false)
+	return s.runPreparedUpgradeInternal(ctx, prepared)
+}
+
+// TriggerUpgradeAsync validates synchronously, then pulls and spawns the upgrader in the background (#3628).
+// The run follows the app lifecycle with a deadline so a stalled daemon cannot hold the upgrading guard forever.
+func (s *SystemUpgradeService) TriggerUpgradeAsync(ctx context.Context, user common.User, targetVersion string) error {
+	prepared, err := s.prepareUpgradeInternal(ctx, user, updater.SelfUpdateTarget{}, targetVersion)
+	if err != nil {
+		return err
+	}
+	settings := s.settingsService.GetSettingsConfig()
+	runTimeout := timeouts.GetDuration(settings.DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull) + time.Minute
+	runCtx, cancel := context.WithTimeout(utils.ActivityRuntimeContext(ctx, nil), runTimeout)
+	go func() {
+		defer cancel()
+		if _, err := s.runPreparedUpgradeInternal(runCtx, prepared); err != nil {
+			slog.Error("Background self-upgrade failed", "error", err, "targetImage", prepared.targetImage)
+		}
+	}()
+	return nil
+}
+
+type preparedUpgradeInternal struct {
+	current       container.InspectResponse
+	containerName string
+	binaryPath    string
+	targetImage   string
+}
+
+// prepareUpgradeInternal takes the upgrading guard, released by runPreparedUpgradeInternal (or here on error).
+func (s *SystemUpgradeService) prepareUpgradeInternal(ctx context.Context, user common.User, target updater.SelfUpdateTarget, targetVersion string) (prepared *preparedUpgradeInternal, err error) {
+	if !s.upgrading.CompareAndSwap(false, true) {
+		return nil, common.Classify(common.ErrUpgradeInProgress, errors.New("an upgrade is already in progress"))
+	}
+	defer func() {
+		if err != nil {
+			s.upgrading.Store(false)
+		}
+	}()
 
 	containerId := strings.TrimSpace(target.ContainerID)
 	if containerId == "" {
 		// Fall back to the container this process runs in
-		var err error
 		containerId, err = s.getCurrentContainerIDInternal(ctx)
 		if err != nil {
-			return "", errors.WrapIf(err, "get current container")
+			return nil, errors.WrapIf(err, "get current container")
 		}
 	}
 
 	currentContainer, err := s.findArcaneContainerInternal(ctx, containerId)
 	if err != nil {
-		return "", errors.WrapIf(err, "inspect container")
+		return nil, errors.WrapIf(err, "inspect container")
 	}
 
 	containerName := strings.TrimPrefix(currentContainer.Name, "/")
@@ -138,9 +177,9 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user co
 		binaryPath = determineUpgradeBinaryPathInternal(currentContainer.Config.Labels)
 	}
 
-	targetImage, err := s.resolveUpgradeTargetImageInternal(ctx, currentContainer, target.NewImageRef)
+	targetImage, err := s.resolveUpgradeTargetImageInternal(ctx, currentContainer, target.NewImageRef, targetVersion)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	// Log upgrade event
@@ -155,12 +194,23 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user co
 		slog.Warn("Failed to log upgrade event", "error", err)
 	}
 
+	return &preparedUpgradeInternal{
+		current:       currentContainer,
+		containerName: containerName,
+		binaryPath:    binaryPath,
+		targetImage:   targetImage,
+	}, nil
+}
+
+func (s *SystemUpgradeService) runPreparedUpgradeInternal(ctx context.Context, prepared *preparedUpgradeInternal) (string, error) {
+	defer s.upgrading.Store(false)
+
 	// Run the upgrader from the image we are upgrading to, so the upgrade CLI
 	// is the new version.
-	upgraderImage := targetImage
+	upgraderImage := prepared.targetImage
 	slog.Debug("Using upgrader image", "image", upgraderImage)
 
-	slog.Info("Spawning upgrade CLI command", "containerName", containerName, "upgraderImage", upgraderImage)
+	slog.Info("Spawning upgrade CLI command", "containerName", prepared.containerName, "upgraderImage", upgraderImage)
 
 	// Spawn the upgrade command in a detached container
 	// This will run independently of the current container
@@ -194,7 +244,7 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user co
 	slog.Info("Upgrader image pulled successfully", "image", upgraderImage)
 
 	// Try to get the /app/data mount from current container so upgrade logs persist.
-	appDataMount := dockerutils.MountForDestination(currentContainer.Mounts, "/app/data", "/app/data")
+	appDataMount := dockerutils.MountForDestination(prepared.current.Mounts, "/app/data", "/app/data")
 	if appDataMount == nil {
 		slog.Warn("Could not detect /app/data mount; upgrader logs may not persist")
 	} else {
@@ -205,7 +255,7 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user co
 	containerEnv, runtimeMounts, networkMode, err := ResolveUpgraderRuntimeOptions(
 		ctx,
 		s.dockerService.DockerHost(),
-		&currentContainer,
+		&prepared.current,
 		func(ctx context.Context, containerPath string) (string, error) {
 			return projects.GetHostPathForContainerPath(ctx, dockerClient, containerPath)
 		},
@@ -221,9 +271,9 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user co
 		return "", errors.WrapIf(err, "resolve upgrader docker runtime")
 	}
 
-	upgradeCmd := []string{binaryPath, "upgrade", "--container", containerName}
-	if targetImage != "" {
-		upgradeCmd = append(upgradeCmd, "--image", targetImage)
+	upgradeCmd := []string{prepared.binaryPath, "upgrade", "--container", prepared.containerName}
+	if prepared.targetImage != "" {
+		upgradeCmd = append(upgradeCmd, "--image", prepared.targetImage)
 	}
 
 	config := &container.Config{
@@ -258,9 +308,9 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user co
 	// Inherit the security context that lets the running Arcane container reach
 	// the Docker socket (e.g. SELinux label=disable, privileged); the upgrader
 	// needs the same access on hardened hosts.
-	if currentContainer.HostConfig != nil {
-		hostConfig.SecurityOpt = slices.Clone(currentContainer.HostConfig.SecurityOpt)
-		hostConfig.Privileged = currentContainer.HostConfig.Privileged
+	if prepared.current.HostConfig != nil {
+		hostConfig.SecurityOpt = slices.Clone(prepared.current.HostConfig.SecurityOpt)
+		hostConfig.Privileged = prepared.current.HostConfig.Privileged
 	}
 	// On SELinux-enforcing hosts the socket carries container_var_run_t, which
 	// container processes cannot connect to regardless of UID; without an
@@ -269,12 +319,12 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user co
 		hostConfig.SecurityOpt = append(hostConfig.SecurityOpt, "label=disable")
 	}
 
-	containerName = fmt.Sprintf("%s-upgrader-%d", containerName, time.Now().Unix())
+	upgraderName := fmt.Sprintf("%s-upgrader-%d", prepared.containerName, time.Now().Unix())
 
 	resp, err := dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Config:     config,
 		HostConfig: hostConfig,
-		Name:       containerName,
+		Name:       upgraderName,
 	})
 	if err != nil {
 		return "", errors.WrapIf(err, "create upgrader container")
@@ -286,7 +336,7 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user co
 		return "", errors.WrapIf(err, "start upgrader container")
 	}
 
-	slog.Info("Upgrade container started", "upgraderId", resp.ID[:12], "upgraderName", containerName)
+	slog.Info("Upgrade container started", "upgraderId", resp.ID[:12], "upgraderName", upgraderName)
 
 	return resp.ID, nil
 }
@@ -323,7 +373,7 @@ func determineUpgradeBinaryPathInternal(containerLabels map[string]string) strin
 // Explicit targets from the updater engine are authoritative. A blank target
 // (manual trigger, update-all) resolves against the version check so a
 // version-pinned install actually moves to the newest release (#3687).
-func (s *SystemUpgradeService) resolveUpgradeTargetImageInternal(ctx context.Context, currentContainer container.InspectResponse, explicitImageRef string) (string, error) {
+func (s *SystemUpgradeService) resolveUpgradeTargetImageInternal(ctx context.Context, currentContainer container.InspectResponse, explicitImageRef string, targetVersion string) (string, error) {
 	if targetImage := strings.TrimSpace(explicitImageRef); targetImage != "" {
 		return targetImage, nil
 	}
@@ -335,6 +385,15 @@ func (s *SystemUpgradeService) resolveUpgradeTargetImageInternal(ctx context.Con
 	var info *versiontypes.Info
 	if s.versionService != nil {
 		info = s.versionService.GetAppVersionInfo(ctx)
+	}
+	// A manager-supplied target version outranks this instance's own version check.
+	if targetVersion = strings.TrimSpace(targetVersion); targetVersion != "" {
+		merged := versiontypes.Info{}
+		if info != nil {
+			merged = *info
+		}
+		merged.NewestVersion = targetVersion
+		info = &merged
 	}
 	resolved, err := resolveSelfUpgradeTargetImageInternal(currentImageRef, info)
 	if err != nil {
@@ -574,7 +633,7 @@ const (
 	updateAllStaleThresholdInternal      = time.Hour
 	updateAllAgentRequestTimeoutInternal = 15 * time.Second
 	updateAllConfirmPollIntervalInternal = 10 * time.Second
-	updateAllConfirmTimeoutInternal      = 2 * time.Minute
+	updateAllConfirmTimeoutInternal      = 5 * time.Minute
 	updateAllErrorMaxLenInternal         = 500
 
 	// How long to watch the manager's upgrader container for an exit. Generous: it
@@ -1003,11 +1062,27 @@ func (s *SystemUpgradeService) upgradeAgentInternal(ctx context.Context, env *en
 		result.Error = truncateUpdateAllErrorInternal(err)
 		return
 	}
+	// The manager's newest release outranks the agent's own check, mirrored into info
+	// so the recorded target, up-to-date check and confirm poll track what was sent.
+	var triggerBody []byte
+	if s.versionService != nil {
+		if managerInfo := s.versionService.GetAppVersionInfo(ctx); managerInfo != nil {
+			if newest := strings.TrimSpace(managerInfo.NewestVersion); newest != "" {
+				body, err := json.Marshal(TriggerUpgradeBody{TargetVersion: newest})
+				if err != nil {
+					slog.WarnContext(ctx, "update-all: failed to marshal trigger body", "environmentId", envID, "error", err)
+				} else {
+					info.NewestVersion = newest
+					triggerBody = body
+				}
+			}
+		}
+	}
 	result.FromVersion = info.CurrentVersion
 	result.ToVersion = updateAllTargetVersionInternal(&info)
 
 	triggerCtx, cancel := context.WithTimeout(ctx, updateAllAgentRequestTimeoutInternal)
-	resp, err := env.ExecuteRemoteRequest(triggerCtx, envID, http.MethodPost, "/api/environments/0/system/upgrade", nil)
+	resp, err := env.ExecuteRemoteRequest(triggerCtx, envID, http.MethodPost, "/api/environments/0/system/upgrade", triggerBody)
 	cancel()
 	if err != nil {
 		result.Status = EnvironmentUpdateResultStatusFailed

@@ -1272,6 +1272,44 @@ next-image-version mode="":
     fi
 
 [group('release')]
+_utils-list-feats:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    if ! command -v gh >/dev/null 2>&1; then
+        echo "GitHub CLI is required. Install it from https://cli.github.com/." >&2
+        exit 1
+    fi
+
+    if ! gh auth status --hostname github.com >/dev/null 2>&1; then
+        echo "GitHub CLI is not authenticated. Run: gh auth login" >&2
+        exit 1
+    fi
+
+    issues=$(
+        gh issue list \
+            --repo getarcaneapp/arcane \
+            --type Feature \
+            --state open \
+            --limit 10000 \
+            --json number,title,state,url,reactionGroups \
+            --jq 'map(. + {upvotes: ([.reactionGroups[]? | select(.content == "THUMBS_UP") | .users.totalCount] | add // 0)}) | sort_by(.upvotes, .number) | reverse | .[] | [.upvotes, .number, .state, .title, .url] | @tsv'
+    )
+
+    if [ -z "$issues" ]; then
+        echo "No open Feature issues found."
+        exit 0
+    fi
+
+    echo "Open Feature issues by upvotes:"
+    echo ""
+
+    while IFS=$'\t' read -r upvotes number state title url; do
+        printf "%3d 👍 - #%-4s [%s] %s\n" "$upvotes" "$number" "$state" "$title"
+        printf "         %s\n\n" "$url"
+    done <<< "$issues"
+
+[group('release')]
 _utils-list-fixes:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -1713,7 +1751,7 @@ _utils-hotfix:
     echo -e "${GREEN}✅ Main branch updated with version ${NEW_VERSION}${NC}"
     echo ""
 
-# Utils targets. Valid: "list-fixes", "hotfix".
+# Utils targets. Valid: "list-feats", "list-fixes", "hotfix".
 [group('release')]
 utils target *args:
     @just "_utils-{{ target }}" {{ args }}

@@ -405,7 +405,7 @@ func (h *OidcHandler) HandleOidcCallback(ctx context.Context, input *HandleOidcC
 	if mobileRedirectURI == "" {
 		maxAge := max(int(time.Until(tokenPair.ExpiresAt).Seconds()), 0)
 		maxAge += 60 // Add 60 seconds buffer for clock skew
-		setCookies = append(setCookies, cookie.BuildTokenCookieStringFor(maxAge, tokenPair.AccessToken, cookie.SecureCookieFromContext(ctx)))
+		setCookies = append(setCookies, cookie.BuildTokenCookieStringFor(maxAge, tokenPair.AccessToken, cookie.SecureCookieFromContext(ctx))...)
 	}
 	expiresAt := tokenPair.ExpiresAt
 
@@ -497,7 +497,7 @@ func (h *OidcHandler) ExchangeDeviceToken(ctx context.Context, input *ExchangeDe
 	maxAge += 60
 	expiresAt := tokenPair.ExpiresAt
 
-	tokenCookie := cookie.BuildTokenCookieStringFor(maxAge, tokenPair.AccessToken, cookie.SecureCookieFromContext(ctx))
+	tokenCookies := cookie.BuildTokenCookieStringFor(maxAge, tokenPair.AccessToken, cookie.SecureCookieFromContext(ctx))
 
 	userDto, err := h.userService.ToUserResponseDto(ctx, *userModel)
 	if err != nil {
@@ -505,7 +505,7 @@ func (h *OidcHandler) ExchangeDeviceToken(ctx context.Context, input *ExchangeDe
 	}
 
 	return &ExchangeDeviceTokenOutput{
-		SetCookie: []string{tokenCookie},
+		SetCookie: tokenCookies,
 		Body: authtypes.AuthenticationResponse{
 			Success:      true,
 			Status:       authtypes.AuthenticationStatusAuthenticated,

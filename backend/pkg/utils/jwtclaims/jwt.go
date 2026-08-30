@@ -1,7 +1,6 @@
 package jwtclaims
 
 import (
-	"crypto/rand"
 	"encoding/base64"
 	"encoding/json/v2"
 	"fmt"
@@ -48,10 +47,12 @@ func GetBoolClaim(m map[string]any, key string) bool {
 
 // GetStringSliceClaim extracts a string slice claim from a map
 func GetStringSliceClaim(m map[string]any, key string) []string {
-	v, ok := m[key]
-	if !ok || v == nil {
-		return nil
-	}
+	return StringSliceFromClaimValue(m[key])
+}
+
+// StringSliceFromClaimValue flattens a claim value into a slice of strings.
+// Accepts string (comma or space separated), []string, []any, or nil.
+func StringSliceFromClaimValue(v any) []string {
 	switch t := v.(type) {
 	case []string:
 		return t
@@ -86,47 +87,6 @@ func GetStringSliceClaim(m map[string]any, key string) []string {
 		return strings.Fields(s)
 	}
 	return nil
-}
-
-const (
-	// knownInsecureJWTSecret is the placeholder shipped in config.go's struct
-	// tag; it must never sign real tokens. Keep in sync with the `default:` tag
-	// on Config.JWTSecret.
-	knownInsecureJWTSecret = "default-jwt-secret-change-me" // #nosec G101: public placeholder config default, intentionally rejected for production signing
-	// minJWTSecretLength matches the 32-byte floor enforced for ENCRYPTION_KEY.
-	minJWTSecretLength = 32
-)
-
-// CheckOrGenerateJwtSecret returns the HMAC signing key for JWTs.
-//
-// When requireExplicit is true (production manager), a real secret is mandatory:
-// an empty, default, or too-short JWT_SECRET panics at startup — mirroring the
-// ENCRYPTION_KEY guard in go.getarcane.app/sys/crypto. Otherwise (development / agent mode)
-// a random per-boot key is generated when none (or only the public default) is
-// configured, so the public default never becomes a live signing key.
-func CheckOrGenerateJwtSecret(jwtSecret string, requireExplicit bool) []byte {
-	isDefault := jwtSecret == "" || jwtSecret == knownInsecureJWTSecret
-
-	if requireExplicit {
-		if isDefault {
-			panic("JWT_SECRET is required in production. Set JWT_SECRET to a unique " +
-				"random value of at least 32 characters (e.g. `openssl rand -base64 32`).")
-		}
-		if len(jwtSecret) < minJWTSecretLength {
-			panic(fmt.Sprintf("JWT_SECRET must be at least %d characters (got %d).",
-				minJWTSecretLength, len(jwtSecret)))
-		}
-		return []byte(jwtSecret)
-	}
-
-	if isDefault {
-		secretBytes := make([]byte, 32)
-		if _, err := rand.Read(secretBytes); err != nil {
-			panic(errors.WrapIf(err, "failed to generate random JWT secret"))
-		}
-		return secretBytes
-	}
-	return []byte(jwtSecret)
 }
 
 // ParseJWTClaims decodes and unmarshals the payload part of a JWT

@@ -33,7 +33,7 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 		return nil, err
 	}
 
-	name = resolveAuthoritativeProjectNameInternal(&proj, name, composeContent)
+	name = resolveAuthoritativeProjectNameInternal(ctx, &proj, name, composeContent)
 	renameRequested := isProjectRenameRequestedInternal(&proj, name)
 	if err := s.recoverProjectRenameJournalForProjectInternal(ctx, projectID); err != nil {
 		if renameRequested {
@@ -45,7 +45,7 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 		if err != nil {
 			return nil, err
 		}
-		name = resolveAuthoritativeProjectNameInternal(&proj, name, composeContent)
+		name = resolveAuthoritativeProjectNameInternal(ctx, &proj, name, composeContent)
 	}
 
 	if err := ensureProjectMutableInternal(&proj); err != nil {
@@ -92,7 +92,7 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 // the compose file is authoritative over the submitted project name. For
 // name-only renames, it checks the compose file on disk so the lock can't be
 // bypassed via the API.
-func resolveAuthoritativeProjectNameInternal(proj *Project, name *string, composeContent *string) *string {
+func resolveAuthoritativeProjectNameInternal(ctx context.Context, proj *Project, name *string, composeContent *string) *string {
 	if composeContent != nil {
 		if yamlName := projects.ComposeContentProjectName(*composeContent); yamlName != "" {
 			return &yamlName
@@ -100,7 +100,7 @@ func resolveAuthoritativeProjectNameInternal(proj *Project, name *string, compos
 		return name
 	}
 	if name != nil {
-		if onDiskCompose, _, readErr := projects.ReadProjectFiles(proj.Path, ""); readErr == nil {
+		if onDiskCompose, _, readErr := projects.ReadProjectFiles(ctx, proj.Path, ""); readErr == nil {
 			if yamlName := projects.ComposeContentProjectName(onDiskCompose); yamlName != "" {
 				return &yamlName
 			}
@@ -258,18 +258,21 @@ func (s *ProjectService) ApplyGitSyncProjectFiles(ctx context.Context, projectID
 		return nil, errors.WrapIf(err, "invalid compose file")
 	}
 
-	if err := projects.WriteComposeFile(ctx, projectsDirectory, proj.Path, composeContent); err != nil {
-		return nil, errors.WrapIf(err, "failed to save compose file")
+	backup, cleanupBackup, err := s.prepareProjectUpdateBackupInternal(ctx, projectsDirectory, proj.Path, &composeContent, gitEnvContent, gitOverrideContent)
+	if err != nil {
+		return nil, err
 	}
-	if err := persistGitSyncEnvFilesInternal(ctx, proj.Path, projectsDirectory, envUpdate); err != nil {
-		return nil, errors.WrapIf(err, "failed to sync git env files")
+	defer cleanupBackup()
+
+	journalActive := false
+	projectStateCommitted := false
+	if err := s.applyGitSyncProjectFilesInternal(ctx, &proj, projectsDirectory, composeContent, envUpdate, gitOverrideContent, gitOverrideFileName, &projectStateCommitted); err != nil {
+		// A failure after the env persist would otherwise leave the project with
+		// new env values and an old or partially updated compose file set.
+		err = s.handleProjectUpdateFailureInternal(ctx, projectID, projectsDirectory, &proj, backup, &journalActive, projectStateCommitted, err)
+		return nil, err
 	}
-	if err := projects.WriteComposeOverrideFile(ctx, projectsDirectory, proj.Path, gitOverrideContent, gitOverrideFileName); err != nil {
-		return nil, errors.WrapIf(err, "failed to sync git override file")
-	}
-	if err := s.db.WithContext(ctx).Save(&proj).Error; err != nil {
-		return nil, errors.WrapIf(err, "failed to update project")
-	}
+
 	s.refreshComposeProjectNameInternal(ctx, &proj)
 	s.refreshProjectImageRefsInternal(ctx, &proj)
 	if err := s.reconcileComposeTagsForProjectInternal(ctx, &proj); err != nil {
@@ -295,6 +298,30 @@ func (s *ProjectService) ApplyGitSyncProjectFiles(ctx context.Context, projectID
 	s.logProjectEventInternal(ctx, event.EventTypeProjectUpdate, proj.ID, proj.Name, user, metadata, "could not log git sync project update action")
 
 	return &proj, nil
+}
+
+// applyGitSyncProjectFilesInternal persists the synced env, compose, and
+// override files, then the project row. The env is persisted first so
+// WriteComposeFile targets the COMPOSE_FILE base the updated .env selects, not
+// the one the old .env selected. When it fails before the project row is saved,
+// the caller restores the pre-update backup.
+func (s *ProjectService) applyGitSyncProjectFilesInternal(ctx context.Context, proj *Project, projectsDirectory, composeContent string, envUpdate gitSyncEnvUpdateInternal, gitOverrideContent *string, gitOverrideFileName string, projectStateCommitted *bool) error {
+	if err := persistGitSyncEnvFilesInternal(ctx, proj.Path, projectsDirectory, envUpdate); err != nil {
+		return errors.WrapIf(err, "failed to sync git env files")
+	}
+	if err := projects.WriteComposeFile(ctx, projectsDirectory, proj.Path, composeContent); err != nil {
+		return errors.WrapIf(err, "failed to save compose file")
+	}
+	if err := projects.WriteComposeOverrideFile(ctx, projectsDirectory, proj.Path, gitOverrideContent, gitOverrideFileName); err != nil {
+		return errors.WrapIf(err, "failed to sync git override file")
+	}
+	if err := s.db.WithContext(ctx).Save(proj).Error; err != nil {
+		return errors.WrapIf(err, "failed to update project")
+	}
+	if projectStateCommitted != nil {
+		*projectStateCommitted = true
+	}
+	return nil
 }
 
 func (s *ProjectService) getProjectForUpdate(ctx context.Context, projectID string) (Project, string, error) {
@@ -486,14 +513,18 @@ func (s *ProjectService) persistUpdatedProjectFiles(ctx context.Context, proj *P
 		if err := validateComposeContentForUpdate(ctx, projectsDirectory, proj.Path, proj.Name, *composeContent, effectiveEnvContent, valOverride, valOverrideName, false); err != nil {
 			return errors.WrapIf(err, "invalid compose file")
 		}
-		if err := projects.WriteComposeFile(ctx, projectsDirectory, proj.Path, *composeContent); err != nil {
-			return errors.WrapIf(err, "failed to save project files")
-		}
+		// The env is persisted first so WriteComposeFile targets the COMPOSE_FILE
+		// base the updated .env selects, not the one the old .env selected. A
+		// non-nil composeContent is an explicit submission and is always written;
+		// clients omit it when the compose editor is unchanged.
 		if envContent != nil {
 			if err := persistEffectiveEnvContentInternal(ctx, proj.Path, projectsDirectory, *envContent); err != nil {
 				return errors.WrapIf(err, "failed to save project files")
 			}
 		} else if err := s.ensureEffectiveEnvFileInternal(ctx, proj.Path, projectsDirectory); err != nil {
+			return errors.WrapIf(err, "failed to save project files")
+		}
+		if err := projects.WriteComposeFile(ctx, projectsDirectory, proj.Path, *composeContent); err != nil {
 			return errors.WrapIf(err, "failed to save project files")
 		}
 		if err := projects.ApplyOverrideFileChange(ctx, projectsDirectory, proj.Path, overrideContent); err != nil {
@@ -518,7 +549,7 @@ func (s *ProjectService) persistUpdatedProjectFiles(ctx context.Context, proj *P
 // *with* its override still validates, and a delete that would break the base
 // fails before touching disk.
 func (s *ProjectService) persistOverrideOnlyUpdateInternal(ctx context.Context, proj *Project, projectsDirectory string, envContent, overrideContent *string) error {
-	baseContent, _, err := projects.ReadProjectFiles(proj.Path, "")
+	baseContent, _, err := projects.ReadProjectFiles(ctx, proj.Path, "")
 	if err != nil {
 		return errors.WrapIf(err, "failed to read project files")
 	}
@@ -548,27 +579,63 @@ func validateComposeContentForUpdate(ctx context.Context, projectsDirectory, pro
 		}
 	}()
 
-	fullEnvMap, envErr := projects.BuildValidationEnvironment(projectsDirectory, projectPath, effectiveEnvContent)
+	fullEnvMap, envErr := projects.BuildValidationEnvironment(ctx, projectsDirectory, projectPath, effectiveEnvContent)
 	if envErr != nil {
 		return envErr
 	}
 
-	validationProjectName := projects.NormalizeProjectName(projectName)
-	configFiles := []composetypes.ConfigFile{
-		{Filename: filepath.Join(projectPath, "compose.yaml"), Content: []byte(composeContent)},
+	// COMPOSE_FILE in the (edited) env selects the exact file set, so validate
+	// against it — a save that introduces a broken selection fails fast.
+	envOpts, envOptsErr := projects.ParseComposeEnvOptions(projectPath, fullEnvMap)
+	if envOptsErr != nil {
+		return envOptsErr
 	}
-	// When an override is supplied, validate the *merged* config as `docker
-	// compose` would deploy it. Overrides can add services and are layered on
-	// top (listed after the base so the override wins).
-	if overrideContent != nil {
+
+	validationProjectName := projects.NormalizeProjectName(projectName)
+	var configFiles []composetypes.ConfigFile
+	switch {
+	case len(envOpts.ConfigFiles) > 0:
+		// The compose tab edits the base (first) file. Later entries are read
+		// from disk; existence was already checked while parsing COMPOSE_FILE. An
+		// Arcane-managed override lives in the project root and only applies when
+		// that exact path is listed in the selection (docker skips auto-overrides
+		// for an explicit file set); a same-named file in a subdirectory is not
+		// the managed override.
 		overrideName := strings.TrimSpace(overrideFileName)
 		if overrideName == "" {
 			overrideName = projects.DefaultComposeOverrideFileName
 		}
-		configFiles = append(configFiles, composetypes.ConfigFile{
-			Filename: filepath.Join(projectPath, overrideName),
-			Content:  []byte(*overrideContent),
-		})
+		overridePath := ""
+		if absProjectPath, absErr := filepath.Abs(filepath.Clean(projectPath)); absErr == nil {
+			overridePath = filepath.Join(absProjectPath, overrideName)
+		}
+		for i, f := range envOpts.ConfigFiles {
+			switch {
+			case i == 0:
+				configFiles = append(configFiles, composetypes.ConfigFile{Filename: f, Content: []byte(composeContent)})
+			case overrideContent != nil && overridePath != "" && f == overridePath:
+				configFiles = append(configFiles, composetypes.ConfigFile{Filename: f, Content: []byte(*overrideContent)})
+			default:
+				configFiles = append(configFiles, composetypes.ConfigFile{Filename: f})
+			}
+		}
+	default:
+		configFiles = []composetypes.ConfigFile{
+			{Filename: filepath.Join(projectPath, "compose.yaml"), Content: []byte(composeContent)},
+		}
+		// When an override is supplied, validate the *merged* config as `docker
+		// compose` would deploy it. Overrides can add services and are layered on
+		// top (listed after the base so the override wins).
+		if overrideContent != nil {
+			overrideName := strings.TrimSpace(overrideFileName)
+			if overrideName == "" {
+				overrideName = projects.DefaultComposeOverrideFileName
+			}
+			configFiles = append(configFiles, composetypes.ConfigFile{
+				Filename: filepath.Join(projectPath, overrideName),
+				Content:  []byte(*overrideContent),
+			})
+		}
 	}
 
 	cfg := composetypes.ConfigDetails{

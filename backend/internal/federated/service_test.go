@@ -2,6 +2,7 @@ package federated
 
 import (
 	"context"
+	"crypto/mldsa"
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/base64"
@@ -148,9 +149,11 @@ func setupFederatedCredentialServiceInternal(t *testing.T, issuer *federatedTest
 	settingsSvc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	eventSvc := event.NewEventService(db, &config.Config{}, nil)
-	authSvc := auth.NewAuthService(userSvc, settingsSvc, eventSvc, sessionSvc, roleSvc, "test-federated-secret", &config.Config{
+	signingKey, err := mldsa.GenerateKey(mldsa.MLDSA87())
+	require.NoError(t, err)
+	authSvc := auth.NewAuthService(userSvc, settingsSvc, eventSvc, sessionSvc, roleSvc, &config.Config{
 		JWTRefreshExpiry: 24 * time.Hour,
-	}, nil)
+	}, nil).WithSigningKey(signingKey)
 
 	service := NewFederatedCredentialService(db, authSvc, userSvc, settingsSvc, eventSvc, issuer.server.Client()).WithRoleService(roleSvc)
 
