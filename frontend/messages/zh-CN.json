@@ -1327,6 +1327,8 @@
   "compose_override_hint": "在部署时，覆盖文件会合并到 compose 文件之上。清空内容并保存即可删除覆盖文件。",
   "compose_override_add": "添加覆盖文件",
   "compose_override_remove": "取消覆盖",
+  "compose_multiple_files_title": "多个compose文件",
+  "compose_multiple_files_description": "该项目部署了以下由其 .env 文件中的 COMPOSE_FILE 选项选定的 compose 文件。除 base 文件以外的其他文件可在“工作区”视图中进行编辑。",
   "compose_no_services_found": "没有找到该项目的服务",
   "compose_service_not_created": "未创建",
   "compose_name_change_not_allowed": "无法在项目运行时更改项目名称。请先停止项目。",
