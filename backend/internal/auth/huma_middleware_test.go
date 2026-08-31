@@ -23,9 +23,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mldsajose"
 	authtypes "github.com/getarcaneapp/arcane/types/v2/auth"
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/labstack/echo/v5"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
@@ -281,7 +279,7 @@ func TestNewHumaMiddleware_OpportunisticAuthOnPublicRoute(t *testing.T) {
 	session, _, err := sessionSvc.CreateSession(context.Background(), "u-logout", exp, authtypes.SessionMeta{})
 	require.NoError(t, err)
 
-	claims := jwt.MapClaims{
+	claims := map[string]any{
 		"jti":      "u-logout",
 		"sub":      "access",
 		"iat":      time.Now().Unix(),
@@ -291,8 +289,7 @@ func TestNewHumaMiddleware_OpportunisticAuthOnPublicRoute(t *testing.T) {
 		"username": "logouttest",
 		"roles":    []string{"user"},
 	}
-	token, err := jwt.NewWithClaims(mldsajose.SigningMethodMLDSA87, claims).SignedString(signingKey)
-	require.NoError(t, err)
+	token := signJWXTokenInternal(t, signingKey, claims)
 
 	router := echo.New()
 	apiGroup := router.Group("/api")
@@ -371,7 +368,7 @@ func TestNewHumaMiddleware_VersionMismatchIsRecoverable(t *testing.T) {
 
 	// An empty appVersion omits the claim, which passes the version check (no pin).
 	mintToken := func(appVersion string) string {
-		claims := jwt.MapClaims{
+		claims := map[string]any{
 			"jti":      "u-ver",
 			"sub":      "access",
 			"iat":      time.Now().Unix(),
@@ -383,9 +380,7 @@ func TestNewHumaMiddleware_VersionMismatchIsRecoverable(t *testing.T) {
 		if appVersion != "" {
 			claims["app_version"] = appVersion
 		}
-		token, signErr := jwt.NewWithClaims(mldsajose.SigningMethodMLDSA87, claims).SignedString(signingKey)
-		require.NoError(t, signErr)
-		return token
+		return signJWXTokenInternal(t, signingKey, claims)
 	}
 
 	router := echo.New()
@@ -498,7 +493,7 @@ func mintHumaMiddlewareTestTokenInternal(t *testing.T, userSvc *user.UserService
 	session, _, err := sessionSvc.CreateSession(context.Background(), userID, exp, authtypes.SessionMeta{})
 	require.NoError(t, err)
 
-	claims := jwt.MapClaims{
+	claims := map[string]any{
 		"jti":      userID,
 		"sub":      "access",
 		"iat":      time.Now().Unix(),
@@ -507,9 +502,7 @@ func mintHumaMiddlewareTestTokenInternal(t *testing.T, userSvc *user.UserService
 		"user_id":  userID,
 		"username": userID,
 	}
-	token, err := jwt.NewWithClaims(mldsajose.SigningMethodMLDSA87, claims).SignedString(signingKey)
-	require.NoError(t, err)
-	return token
+	return signJWXTokenInternal(t, signingKey, claims)
 }
 
 func (r staticPermissionResolverInternal) ResolvePermissions(_ context.Context, _ *common.User) (*authz.PermissionSet, error) {

@@ -48,6 +48,7 @@ var ServiceOptions = fx.Options(
 	fx.Provide(
 		// Infrastructure values consumed by services.
 		provideResourcesFSInternal,
+		provideJWKSetManagerInternal,
 
 		// Services constructed directly through their public constructors.
 		provideEventModuleInternal,

@@ -3,12 +3,9 @@ package federated
 import (
 	"context"
 	"crypto/mldsa"
-	"crypto/rand"
-	"crypto/rsa"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -16,7 +13,9 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-	"github.com/golang-jwt/jwt/v5"
+	"github.com/lestrrat-go/jwx/v4/jwa"
+	"github.com/lestrrat-go/jwx/v4/jws"
+	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/fx/fxtest"
@@ -33,13 +32,14 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/oidcjwk"
 	federatedtypes "github.com/getarcaneapp/arcane/types/v2/federated"
 	"github.com/stretchr/testify/assert"
 )
 
 type federatedTestIssuerInternal struct {
 	IssuerURL string
-	private   *rsa.PrivateKey
+	private   *mldsa.PrivateKey
 	keyID     string
 	server    *httptest.Server
 }
@@ -47,7 +47,7 @@ type federatedTestIssuerInternal struct {
 func newFederatedTestIssuerInternal(t *testing.T) *federatedTestIssuerInternal {
 	t.Helper()
 
-	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	privateKey, err := mldsa.GenerateKey(mldsa.MLDSA87())
 	require.NoError(t, err)
 
 	issuer := &federatedTestIssuerInternal{
@@ -63,22 +63,21 @@ func newFederatedTestIssuerInternal(t *testing.T) *federatedTestIssuerInternal {
 			"authorization_endpoint":                issuer.IssuerURL + "/authorize",
 			"token_endpoint":                        issuer.IssuerURL + "/token",
 			"subject_types_supported":               []string{"public"},
-			"id_token_signing_alg_values_supported": []string{"RS256"},
+			"id_token_signing_alg_values_supported": []string{jwa.MLDSA87().String()},
 		})) {
 			return
 		}
 	})
 	mux.HandleFunc("/jwks", func(w http.ResponseWriter, _ *http.Request) {
-		pub := privateKey.PublicKey
+		pub := privateKey.PublicKey()
 		if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{
 			"keys": []map[string]any{
 				{
-					"kty": "RSA",
+					"kty": "AKP",
 					"use": "sig",
 					"kid": issuer.keyID,
-					"alg": "RS256",
-					"n":   base64.RawURLEncoding.EncodeToString(pub.N.Bytes()),
-					"e":   base64.RawURLEncoding.EncodeToString(big.NewInt(int64(pub.E)).Bytes()),
+					"alg": jwa.MLDSA87().String(),
+					"pub": base64.RawURLEncoding.EncodeToString(pub.Bytes()),
 				},
 			},
 		})) {
@@ -97,20 +96,20 @@ func (i *federatedTestIssuerInternal) tokenInternal(t *testing.T, subject string
 	t.Helper()
 
 	now := time.Now()
-	claims := jwt.MapClaims{
-		"iss": i.IssuerURL,
-		"sub": subject,
-		"aud": audience,
-		"iat": now.Unix(),
-		"nbf": now.Add(-time.Minute).Unix(),
-		"exp": now.Add(5 * time.Minute).Unix(),
-	}
-
-	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
-	token.Header["kid"] = i.keyID
-	signed, err := token.SignedString(i.private)
+	token, err := jwt.NewBuilder().
+		Issuer(i.IssuerURL).
+		Subject(subject).
+		Audience(audience).
+		IssuedAt(now).
+		NotBefore(now.Add(-time.Minute)).
+		Expiration(now.Add(5 * time.Minute)).
+		Build()
 	require.NoError(t, err)
-	return signed
+	headers := jws.NewHeaders()
+	require.NoError(t, headers.Set(jws.KeyIDKey, i.keyID))
+	signed, err := jwt.Sign(token, jwt.WithKey(jwa.MLDSA87(), i.private, jws.WithProtectedHeaders(headers)))
+	require.NoError(t, err)
+	return string(signed)
 }
 
 func setupFederatedCredentialServiceTestDBInternal(t *testing.T) *database.DB {
@@ -155,7 +154,13 @@ func setupFederatedCredentialServiceInternal(t *testing.T, issuer *federatedTest
 		JWTRefreshExpiry: 24 * time.Hour,
 	}, nil).WithSigningKey(signingKey)
 
-	service := NewFederatedCredentialService(db, authSvc, userSvc, settingsSvc, eventSvc, issuer.server.Client()).WithRoleService(roleSvc)
+	keySetManager := oidcjwk.NewKeySetManager(t.Context())
+	t.Cleanup(func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		require.NoError(t, keySetManager.Shutdown(shutdownCtx))
+	})
+	service := NewFederatedCredentialService(db, authSvc, userSvc, settingsSvc, eventSvc, issuer.server.Client(), keySetManager).WithRoleService(roleSvc)
 
 	viewerRole := role.Role{
 		ID:          "role-federated-viewer",

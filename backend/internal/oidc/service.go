@@ -27,7 +27,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/jwtclaims"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mldsajose"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/oidcjwk"
 	authtypes "github.com/getarcaneapp/arcane/types/v2/auth"
 )
 
@@ -39,16 +39,11 @@ type OidcService struct {
 	insecureHttpClient *http.Client
 	providerMutex      sync.RWMutex
 	providerCache      *hot.HotCache[oidcProviderKey, *oidc.Provider]
-	keySets            map[oidcKeySetKey]*mldsajose.KeySet
+	keySetManager      *oidcjwk.KeySetManager
 }
 
 type oidcProviderKey struct {
 	issuer  string
-	skipTLS bool
-}
-
-type oidcKeySetKey struct {
-	jwksURL string
 	skipTLS bool
 }
 
@@ -60,7 +55,7 @@ type OidcState struct {
 	CreatedAt    time.Time `json:"created_at"`
 }
 
-func NewOidcService(authService *auth.AuthService, settingsService *settings.SettingsService, cfg *config.Config, httpClient *http.Client) *OidcService {
+func NewOidcService(authService *auth.AuthService, settingsService *settings.SettingsService, cfg *config.Config, httpClient *http.Client, keySetManager *oidcjwk.KeySetManager) *OidcService {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
@@ -75,29 +70,17 @@ func NewOidcService(authService *auth.AuthService, settingsService *settings.Set
 		settingsService: settingsService,
 		config:          cfg,
 		httpClient:      &oidcClient,
-		keySets:         map[oidcKeySetKey]*mldsajose.KeySet{},
+		keySetManager:   keySetManager,
 	}
 	service.providerCache = hot.NewHotCache[oidcProviderKey, *oidc.Provider](hot.LRU, 4).Build()
 	return service
 }
 
-func (s *OidcService) keySetInternal(ctx context.Context, jwksURL string, skipTLS bool) *mldsajose.KeySet {
-	key := oidcKeySetKey{jwksURL: jwksURL, skipTLS: skipTLS}
-	s.providerMutex.RLock()
-	keySet := s.keySets[key]
-	s.providerMutex.RUnlock()
-	if keySet != nil {
-		return keySet
+func (s *OidcService) keySetInternal(ctx context.Context, jwksURL string, skipTLS bool) (oidc.KeySet, error) {
+	if s.keySetManager == nil {
+		return nil, errors.New("JWK set manager is not configured")
 	}
-
-	clientCtx := oidc.ClientContext(context.WithoutCancel(ctx), s.getHttpClientInternal(skipTLS))
-	s.providerMutex.Lock()
-	defer s.providerMutex.Unlock()
-	if keySet = s.keySets[key]; keySet == nil {
-		keySet = mldsajose.NewKeySet(clientCtx, jwksURL)
-		s.keySets[key] = keySet
-	}
-	return keySet
+	return s.keySetManager.KeySet(context.WithoutCancel(ctx), s.getHttpClientInternal(skipTLS), jwksURL)
 }
 
 func (s *OidcService) getEffectiveConfigInternal(ctx context.Context) (*settings.OidcConfig, error) {
@@ -541,7 +524,7 @@ func (s *OidcService) verifyIDTokenInternal(ctx context.Context, provider *oidc.
 
 	verifierConfig := &oidc.Config{
 		ClientID:             cfg.ClientID,
-		SupportedSigningAlgs: mldsajose.SupportedSigningAlgs(),
+		SupportedSigningAlgs: oidcjwk.SupportedSigningAlgs(),
 	}
 
 	var issuer, jwksURL string
@@ -561,8 +544,12 @@ func (s *OidcService) verifyIDTokenInternal(ctx context.Context, provider *oidc.
 		return nil, "", errors.New("jwks URI must be configured when using manual OIDC endpoints")
 	}
 
+	keySet, err := s.keySetInternal(ctx, jwksURL, cfg.SkipTlsVerify)
+	if err != nil {
+		return nil, "", errors.WrapIf(err, "failed to configure provider JWK set")
+	}
 	providerCtx := oidc.ClientContext(ctx, s.getHttpClientInternal(cfg.SkipTlsVerify))
-	verifier := oidc.NewVerifier(issuer, s.keySetInternal(ctx, jwksURL, cfg.SkipTlsVerify), verifierConfig)
+	verifier := oidc.NewVerifier(issuer, keySet, verifierConfig)
 
 	idToken, err := verifier.Verify(providerCtx, rawIDToken)
 	if err != nil {
