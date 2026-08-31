@@ -67,7 +67,6 @@
 	import { globalVariablesToMap } from '#lib/utils/template-load';
 	import {
 		planProjectWorkspaceFileCreate,
-		planProjectWorkspaceFileMove,
 		planProjectWorkspaceFileRename,
 		validateProjectWorkspaceFileName
 	} from '../components/project-workspace-utils';
@@ -75,6 +74,7 @@
 		applyWorkspaceFileChangesForDisplay,
 		buildWorkspaceMultipartUpdate,
 		isWorkspaceFileSelectionUnder,
+		planWorkspaceFileMove,
 		workspaceFileBasename,
 		workspaceFileLanguage,
 		remapWorkspaceFileRecord,
@@ -82,7 +82,7 @@
 		removeWorkspaceFileRecord,
 		readWorkspaceTextUpload,
 		workspaceReadOnlyMessage,
-		type WorkspaceFileEntry
+		type WorkspaceDisplayEntry
 	} from '#lib/utils/workspace-files';
 	import { composeTreeSplitProps, extractComposeYamlName } from '#lib/utils/compose-flow';
 
@@ -283,6 +283,7 @@
 	// read-only the paths the sync itself owns.
 	let canEditProjectWorkspace = $derived(canUpdateProject && !project?.isArchived);
 	let composeFileName = $derived(project?.composeFileName || 'compose.yaml');
+	let composeFiles = $derived(project?.composeFiles ?? []);
 	// Set when the user opts to add an override to a project that has none yet.
 	let overrideEditorRequested = $state(false);
 	// The backend only sets overrideFileName when an override file exists on disk.
@@ -732,7 +733,9 @@
 
 		const { composeContent, envContent, overrideContent } = validated;
 		const namePayload = isGitOpsManaged ? undefined : effectiveName;
-		const composePayload = isGitOpsManaged ? undefined : composeContent;
+		// Only send the compose when the editor is dirty: an unchanged echo would
+		// be written to whatever base the retargeted COMPOSE_FILE selects.
+		const composePayload = isGitOpsManaged || !composeHasChanges ? undefined : composeContent;
 		const envPayload = envContent !== serverEnvContent ? envContent : undefined;
 		// Blank override => delete, which the backend treats as a no-op when none
 		// exists, so we can always send it (except for read-only GitOps projects).
@@ -936,7 +939,7 @@
 
 		if (targetFile.content !== undefined) {
 			if (kind === 'workspace') {
-				const workspaceTarget = targetFile as WorkspaceFileEntry;
+				const workspaceTarget = targetFile as WorkspaceDisplayEntry;
 				updateLoadedProjectWorkspaceFile(relativePath, workspaceTarget.content ?? '');
 				return {
 					path: workspaceTarget.path,
@@ -1231,7 +1234,7 @@
 
 	function moveProjectWorkspaceFile(relativePath: string, newParentPath: string) {
 		const entry = projectWorkspaceEntries.find((file) => file.relativePath === relativePath);
-		const newPath = planProjectWorkspaceFileMove(entry, projectWorkspacePaths, relativePath, newParentPath);
+		const newPath = planWorkspaceFileMove(entry, projectWorkspacePaths, relativePath, newParentPath);
 		if (!newPath) return;
 		projectWorkspaceChanges = [...projectWorkspaceChanges, { operation: 'move', relativePath, newParentPath }];
 		remapProjectWorkspaceState(relativePath, newPath);
@@ -1613,6 +1616,20 @@
 									/>
 								{/if}
 							</div>
+						</Alert.Root>
+					{/if}
+					{#if composeFiles.length > 1}
+						<Alert.Root variant="default" class="mb-4">
+							<AlertIcon class="size-4" />
+							<Alert.Title>{m.compose_multiple_files_title()}</Alert.Title>
+							<Alert.Description>
+								{m.compose_multiple_files_description()}
+								<div class="mt-2 flex flex-wrap gap-1.5">
+									{#each composeFiles as file, i (i)}
+										<span class="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{file}</span>
+									{/each}
+								</div>
+							</Alert.Description>
 						</Alert.Root>
 					{/if}
 					<div class="mb-2 flex shrink-0 items-center justify-end gap-2">

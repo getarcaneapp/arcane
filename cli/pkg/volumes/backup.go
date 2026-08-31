@@ -1,7 +1,7 @@
 package volumes
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"mime"
@@ -56,13 +56,13 @@ var renameCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(2),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := client.NewFromConfig()
+		c, err := cmdutil.ClientFromCommand(cmd)
 		if err != nil {
 			return err
 		}
 
 		allowPrompt := !forceFlag && !jsonOutput && prompt.IsInteractive()
-		resolved, err := resolveVolume(cmd.Context(), c, args[0], allowPrompt)
+		resolved, _, err := volumeRef.Resolve(cmd.Context(), c, args[0], allowPrompt)
 		if err != nil {
 			return err
 		}
@@ -78,18 +78,9 @@ var renameCmd = &cobra.Command{
 			}
 		}
 
-		resp, err := c.Post(cmd.Context(), types.VolumeRename(c.EnvID(), resolved.Name), volume.Rename{Name: args[1]})
+		result, err := c.PostJSON[volume.Volume](cmd.Context(), types.VolumeRename(c.EnvID(), resolved.Name), volume.Rename{Name: args[1]})
 		if err != nil {
 			return errors.WrapIf(err, "failed to rename volume")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to rename volume")
-		}
-
-		var result base.ApiResponse[volume.Volume]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
 		}
 
 		if jsonOutput {
@@ -107,29 +98,20 @@ var backupsPolicyCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := client.NewFromConfig()
+		c, err := cmdutil.ClientFromCommand(cmd)
 		if err != nil {
 			return err
 		}
 
 		allowPrompt := !jsonOutput && prompt.IsInteractive()
-		resolved, err := resolveVolume(cmd.Context(), c, args[0], allowPrompt)
+		resolved, _, err := volumeRef.Resolve(cmd.Context(), c, args[0], allowPrompt)
 		if err != nil {
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.VolumeBackupPolicy(c.EnvID(), resolved.Name))
+		result, err := c.GetJSON[volume.BackupPolicyCollection](cmd.Context(), types.VolumeBackupPolicy(c.EnvID(), resolved.Name))
 		if err != nil {
 			return errors.WrapIf(err, "failed to get backup policies")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to get backup policies")
-		}
-
-		var result base.ApiResponse[volume.BackupPolicyCollection]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
 		}
 
 		if jsonOutput {
@@ -147,13 +129,13 @@ var backupsPolicyUpdateCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := client.NewFromConfig()
+		c, err := cmdutil.ClientFromCommand(cmd)
 		if err != nil {
 			return err
 		}
 
 		allowPrompt := !jsonOutput && prompt.IsInteractive()
-		resolved, err := resolveVolume(cmd.Context(), c, args[0], allowPrompt)
+		resolved, _, err := volumeRef.Resolve(cmd.Context(), c, args[0], allowPrompt)
 		if err != nil {
 			return err
 		}
@@ -174,18 +156,9 @@ var backupsPolicyUpdateCmd = &cobra.Command{
 			}
 		}
 
-		resp, err := c.Put(cmd.Context(), types.VolumeBackupPolicy(c.EnvID(), resolved.Name), payload)
+		result, err := c.PutJSON[volume.BackupPolicyCollection](cmd.Context(), types.VolumeBackupPolicy(c.EnvID(), resolved.Name), payload)
 		if err != nil {
 			return errors.WrapIf(err, "failed to update backup policies")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to update backup policies")
-		}
-
-		var result base.ApiResponse[volume.BackupPolicyCollection]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
 		}
 
 		if jsonOutput {
@@ -204,18 +177,9 @@ var backupsPolicyUpdateCmd = &cobra.Command{
 func buildPolicyUpdate(cmd *cobra.Command, c *client.Client, volumeName string) (volume.UpdateBackupPolicies, error) {
 	var payload volume.UpdateBackupPolicies
 
-	resp, err := c.Get(cmd.Context(), types.VolumeBackupPolicy(c.EnvID(), volumeName))
+	current, err := c.GetJSON[volume.BackupPolicyCollection](cmd.Context(), types.VolumeBackupPolicy(c.EnvID(), volumeName))
 	if err != nil {
 		return payload, errors.WrapIf(err, "failed to get current backup policies")
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-		return payload, errors.WrapIf(err, "failed to get current backup policies")
-	}
-
-	var current base.ApiResponse[volume.BackupPolicyCollection]
-	if err := cmdutil.DecodeJSON(resp, &current); err != nil {
-		return payload, err
 	}
 
 	payload.Policies = make([]volume.UpdateBackupPolicy, len(current.Data.Policies))
@@ -331,13 +295,13 @@ var backupsListCmd = &cobra.Command{
 }
 
 func runListBackups(cmd *cobra.Command, args []string) error {
-	c, err := client.NewFromConfig()
+	c, err := cmdutil.ClientFromCommand(cmd)
 	if err != nil {
 		return err
 	}
 
 	allowPrompt := !jsonOutput && prompt.IsInteractive()
-	resolved, err := resolveVolume(cmd.Context(), c, args[0], allowPrompt)
+	resolved, _, err := volumeRef.Resolve(cmd.Context(), c, args[0], allowPrompt)
 	if err != nil {
 		return err
 	}
@@ -353,24 +317,13 @@ func runListBackups(cmd *cobra.Command, args []string) error {
 		return errors.WrapIf(err, "failed to build pagination query")
 	}
 
-	resp, err := c.Get(cmd.Context(), path)
-	if err != nil {
-		return errors.WrapIf(err, "failed to list backups")
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	body, err := cmdutil.ReadJSONBody(resp)
+	result, err := c.DoJSON[backupsListResponse](cmd.Context(), http.MethodGet, path, nil)
 	if err != nil {
 		return errors.WrapIf(err, "failed to list backups")
 	}
 
 	if jsonOutput {
-		return cmdutil.PrintRawJSON(body)
-	}
-
-	var result backupsListResponse
-	if err := json.Unmarshal(body, &result); err != nil {
-		return errors.WrapIf(err, "failed to parse response")
+		return cmdutil.PrintJSON(result)
 	}
 
 	headers := []string{"ID", "SIZE", "CREATED", "STATUS", "TRIGGER", "DESTINATION", "FORMAT"}
@@ -401,13 +354,13 @@ var backupsCreateCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := client.NewFromConfig()
+		c, err := cmdutil.ClientFromCommand(cmd)
 		if err != nil {
 			return err
 		}
 
 		allowPrompt := !jsonOutput && prompt.IsInteractive()
-		resolved, err := resolveVolume(cmd.Context(), c, args[0], allowPrompt)
+		resolved, _, err := volumeRef.Resolve(cmd.Context(), c, args[0], allowPrompt)
 		if err != nil {
 			return err
 		}
@@ -418,18 +371,9 @@ var backupsCreateCmd = &cobra.Command{
 			S3DestinationID: backupCreateS3Destination,
 		}
 
-		resp, err := c.Post(cmd.Context(), types.VolumeBackups(c.EnvID(), resolved.Name), req)
+		result, err := c.PostJSON[volume.BackupEntry](cmd.Context(), types.VolumeBackups(c.EnvID(), resolved.Name), req)
 		if err != nil {
 			return errors.WrapIf(err, "failed to create backup")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to create backup")
-		}
-
-		var result base.ApiResponse[volume.BackupEntry]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
 		}
 
 		if jsonOutput {
@@ -468,13 +412,13 @@ and restored instead (no backup ID).`,
 			return errors.New("--path cannot be used with --file")
 		}
 
-		c, err := client.NewFromConfig()
+		c, err := cmdutil.ClientFromCommand(cmd)
 		if err != nil {
 			return err
 		}
 
 		allowPrompt := !forceFlag && prompt.IsInteractive()
-		resolved, err := resolveVolume(cmd.Context(), c, args[0], allowPrompt)
+		resolved, _, err := volumeRef.Resolve(cmd.Context(), c, args[0], allowPrompt)
 		if err != nil {
 			return err
 		}
@@ -499,21 +443,13 @@ and restored instead (no backup ID).`,
 			}
 		}
 
-		resp, err := c.Post(cmd.Context(), types.VolumeBackupRestore(c.EnvID(), resolved.Name, backupID), nil)
+		result, err := c.PostJSON[base.MessageResponse](cmd.Context(), types.VolumeBackupRestore(c.EnvID(), resolved.Name, backupID), nil)
 		if err != nil {
-			return errors.WrapIf(err, "failed to restore backup")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
 			return errors.WrapIf(err, "failed to restore backup")
 		}
 
 		if jsonOutput {
-			body, err := cmdutil.ReadJSONBody(resp)
-			if err != nil {
-				return err
-			}
-			return cmdutil.PrintRawJSON(body)
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Restore of volume %s from backup %s initiated", resolved.Name, backupID)
@@ -537,21 +473,13 @@ func runRestorePaths(cmd *cobra.Command, c *client.Client, volumeName, backupID 
 		Paths []string `json:"paths"`
 	}{Paths: restorePaths}
 
-	resp, err := c.Post(cmd.Context(), types.VolumeBackupRestoreFiles(c.EnvID(), volumeName, backupID), body)
+	result, err := c.PostJSON[base.MessageResponse](cmd.Context(), types.VolumeBackupRestoreFiles(c.EnvID(), volumeName, backupID), body)
 	if err != nil {
-		return errors.WrapIf(err, "failed to restore backup files")
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
 		return errors.WrapIf(err, "failed to restore backup files")
 	}
 
 	if jsonOutput {
-		respBody, err := cmdutil.ReadJSONBody(resp)
-		if err != nil {
-			return err
-		}
-		return cmdutil.PrintRawJSON(respBody)
+		return cmdutil.PrintJSON(result.Data)
 	}
 
 	output.Success("Restore of %d path(s) into volume %s initiated", len(restorePaths), volumeName)
@@ -611,17 +539,12 @@ var backupsDeleteCmd = &cobra.Command{
 			}
 		}
 
-		c, err := client.NewFromConfig()
+		c, err := cmdutil.ClientFromCommand(cmd)
 		if err != nil {
 			return err
 		}
 
-		resp, err := c.Delete(cmd.Context(), types.VolumeBackup(c.EnvID(), args[0]))
-		if err != nil {
-			return errors.WrapIf(err, "failed to delete backup")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
+		if _, err := c.DeleteJSON[base.MessageResponse](cmd.Context(), types.VolumeBackup(c.EnvID(), args[0])); err != nil {
 			return errors.WrapIf(err, "failed to delete backup")
 		}
 
@@ -636,7 +559,7 @@ var backupsUploadCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := client.NewFromConfig()
+		c, err := cmdutil.ClientFromCommand(cmd)
 		if err != nil {
 			return err
 		}
@@ -645,18 +568,9 @@ var backupsUploadCmd = &cobra.Command{
 		c.SetTimeout(30 * time.Minute)
 
 		req := volume.UploadBackupRequest{S3DestinationID: backupUploadS3Destination}
-		resp, err := c.Post(cmd.Context(), types.VolumeBackupUpload(c.EnvID(), args[0]), req)
+		result, err := c.PostJSON[volume.BackupEntry](cmd.Context(), types.VolumeBackupUpload(c.EnvID(), args[0]), req)
 		if err != nil {
 			return errors.WrapIf(err, "failed to upload backup")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to upload backup")
-		}
-
-		var result base.ApiResponse[volume.BackupEntry]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
 		}
 
 		if jsonOutput {
@@ -674,7 +588,7 @@ var backupsDownloadCmd = &cobra.Command{
 	Args:         cobra.RangeArgs(1, 2),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := client.NewFromConfig()
+		c, err := cmdutil.ClientFromCommand(cmd)
 		if err != nil {
 			return err
 		}
@@ -740,23 +654,14 @@ var backupsFilesCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := client.NewFromConfig()
+		c, err := cmdutil.ClientFromCommand(cmd)
 		if err != nil {
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.VolumeBackupFiles(c.EnvID(), args[0]))
+		result, err := c.GetJSON[[]string](cmd.Context(), types.VolumeBackupFiles(c.EnvID(), args[0]))
 		if err != nil {
 			return errors.WrapIf(err, "failed to list backup files")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to list backup files")
-		}
-
-		var result base.ApiResponse[[]string]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
 		}
 
 		if jsonOutput {

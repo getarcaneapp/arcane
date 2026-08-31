@@ -12,7 +12,7 @@ import (
 	"encoding/base32"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/v2"
 	"log/slog"
 	"net/url"
 	"strings"
@@ -455,8 +455,9 @@ func (s *passkeyService) BeginRegistration(ctx context.Context, userID, sessionI
 	exclusions := webauthn.Credentials(adapter.credentials).CredentialDescriptors()
 	creation, session, err := s.webAuthn.BeginRegistration(
 		adapter,
+		webauthn.WithCredentialParameters(webauthn.CredentialParametersPQCRecommendedL3()),
 		webauthn.WithExclusions(exclusions),
-		webauthn.WithExtensions(map[string]any{"credProps": true}),
+		webauthn.WithExtensions(webauthn.WithExtensionCredProps()),
 		webauthn.WithResidentKeyRequirement(protocol.ResidentKeyRequirementRequired),
 	)
 	if err != nil {

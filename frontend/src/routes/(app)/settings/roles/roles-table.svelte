@@ -4,10 +4,7 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
 	import * as ArcaneTooltip from '#lib/components/arcane-tooltip';
-	import { openConfirmDialog } from '#lib/components/confirm-dialog';
 	import { Badge } from '#lib/components/ui/badge';
-	import { handleApiResultWithCallbacks } from '#lib/utils/api';
-	import { tryCatch } from '#lib/utils/api';
 	import { goto } from '$app/navigation';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
 	import type { Role } from '#lib/types/auth';
@@ -19,6 +16,7 @@
 	import { ShieldAlertIcon, TrashIcon, EditIcon } from '#lib/icons';
 	import userStore from '#lib/stores/user-store';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
+	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions';
 
 	let {
 		roles = $bindable(),
@@ -69,75 +67,46 @@
 	const deletableSelectedIds = $derived.by(() => selectedRoles.filter((role) => !role.builtIn).map((role) => role.id));
 	const hasBuiltInSelection = $derived.by(() => selectedRoles.some((role) => role.builtIn));
 
-	async function handleDeleteSelected() {
+	function handleDeleteSelected() {
 		if (deletableSelectedIds.length === 0) return;
+		const ids = [...deletableSelectedIds];
 
-		openConfirmDialog({
-			title: m.roles_delete_selected_title({ count: deletableSelectedIds.length }),
+		bulkConfirmAndRun({
+			ids,
+			title: m.roles_delete_selected_title({ count: ids.length }),
 			message: m.roles_delete_message({ name: m.common_unknown() }),
-			confirm: {
-				label: m.common_delete(),
-				destructive: true,
-				action: async () => {
-					isLoading.removing = true;
-					let successCount = 0;
-					let failureCount = 0;
-
-					for (const roleId of deletableSelectedIds) {
-						const result = await tryCatch(roleService.delete(roleId));
-						handleApiResultWithCallbacks({
-							result,
-							message: m.common_delete_failed({ resource: `${m.resource_role()} "${roleId}"` }),
-							setLoadingState: () => {},
-							onSuccess: () => {
-								successCount++;
-							}
-						});
-
-						if (result.error) {
-							failureCount++;
-						}
-					}
-
-					isLoading.removing = false;
-
-					if (successCount > 0) {
-						toast.success(m.common_bulk_delete_success({ count: successCount, resource: m.roles_title() }));
-						await onRolesChanged();
-					}
-
-					if (failureCount > 0) {
-						toast.error(m.common_bulk_delete_failed({ count: failureCount, resource: m.roles_title() }));
-					}
-
-					selectedIds = [];
-				}
-			}
+			confirmLabel: m.common_delete(),
+			destructive: true,
+			run: (roleId) => roleService.delete(roleId),
+			messages: {
+				success: (count) => m.common_bulk_delete_success({ count, resource: m.roles_title() }),
+				partial: (success, total, failed) => m.common_bulk_delete_partial({ success, total, failed, resource: m.roles_title() }),
+				failure: () => m.common_bulk_delete_failed({ count: ids.length, resource: m.roles_title() })
+			},
+			setLoading: (loading) => (isLoading.removing = loading),
+			onComplete: async ({ success }) => {
+				if (success > 0) await onRolesChanged();
+			},
+			clearSelection: () => (selectedIds = []),
+			sequential: true
 		});
 	}
 
-	async function handleDeleteRole(role: Role) {
+	function handleDeleteRole(role: Role) {
 		if (role.builtIn) return;
 
 		const safeName = role.name?.trim() || m.common_unknown();
-		openConfirmDialog({
+		confirmAndRun({
 			title: m.roles_delete_title({ name: safeName }),
 			message: m.roles_delete_message({ name: safeName }),
-			confirm: {
-				label: m.common_delete(),
-				destructive: true,
-				action: async () => {
-					isLoading.removing = true;
-					handleApiResultWithCallbacks({
-						result: await tryCatch(roleService.delete(role.id)),
-						message: m.common_delete_failed({ resource: `${m.resource_role()} "${safeName}"` }),
-						setLoadingState: (value) => (isLoading.removing = value),
-						onSuccess: async () => {
-							toast.success(m.common_delete_success({ resource: `${m.resource_role()} "${safeName}"` }));
-							await onRolesChanged();
-						}
-					});
-				}
+			confirmLabel: m.common_delete(),
+			destructive: true,
+			setLoading: (loading) => (isLoading.removing = loading),
+			run: () => roleService.delete(role.id),
+			failureMessage: m.common_delete_failed({ resource: `${m.resource_role()} "${safeName}"` }),
+			onSuccess: async () => {
+				toast.success(m.common_delete_success({ resource: `${m.resource_role()} "${safeName}"` }));
+				await onRolesChanged();
 			}
 		});
 	}

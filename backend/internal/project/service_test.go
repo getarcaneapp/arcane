@@ -2055,6 +2055,159 @@ func TestProjectService_UpdateProject_AllowsMissingEnvFileDuringComposeValidatio
 	require.NoError(t, statErr)
 }
 
+func TestProjectService_UpdateProject_EnvRetargetWritesExplicitIdenticalComposeToSelectedBase(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	require.NoError(t, err)
+
+	eventService := event.NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+
+	dirName := "retarget-explicit"
+	projectPath := filepath.Join(projectsDir, dirName)
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+
+	baseContent := "services:\n  base:\n    image: nginx:alpine\n"
+	altContent := "services:\n  alt:\n    image: busybox:latest\n"
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte(baseContent), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "alt.yaml"), []byte(altContent), 0o644))
+
+	project := &Project{
+		ID:      "proj-retarget-explicit",
+		Name:    dirName,
+		DirName: &dirName,
+		Path:    projectPath,
+		Status:  ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	// An explicit composeContent is authoritative even when it is
+	// byte-identical to the previous base: the caller intends the retargeted
+	// base to carry this content.
+	explicitCompose := baseContent
+	_, err = svc.UpdateProject(ctx, project.ID, nil, &explicitCompose, new("COMPOSE_FILE=alt.yaml\n"), nil, common.User{
+		ID:       "u1",
+		Username: "tester",
+	})
+	require.NoError(t, err)
+
+	altOnDisk, readErr := os.ReadFile(filepath.Join(projectPath, "alt.yaml"))
+	require.NoError(t, readErr)
+	assert.Equal(t, baseContent, string(altOnDisk), "an explicit submission must be written to the newly selected base")
+
+	baseOnDisk, readErr := os.ReadFile(filepath.Join(projectPath, "compose.yaml"))
+	require.NoError(t, readErr)
+	assert.Equal(t, baseContent, string(baseOnDisk))
+
+	envOnDisk, readErr := os.ReadFile(filepath.Join(projectPath, ".env"))
+	require.NoError(t, readErr)
+	assert.Contains(t, string(envOnDisk), "COMPOSE_FILE=alt.yaml")
+}
+
+func TestProjectService_UpdateProject_EnvRetargetWithoutComposePayloadPreservesNewBase(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	require.NoError(t, err)
+
+	eventService := event.NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+
+	dirName := "retarget-omit"
+	projectPath := filepath.Join(projectsDir, dirName)
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+
+	baseContent := "services:\n  base:\n    image: nginx:alpine\n"
+	altContent := "services:\n  alt:\n    image: busybox:latest\n"
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte(baseContent), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "alt.yaml"), []byte(altContent), 0o644))
+
+	project := &Project{
+		ID:      "proj-retarget-omit",
+		Name:    dirName,
+		DirName: &dirName,
+		Path:    projectPath,
+		Status:  ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	// Clients omit composeContent when the compose editor is unchanged: an
+	// env-only retarget must switch the selection without touching either file.
+	_, err = svc.UpdateProject(ctx, project.ID, nil, nil, new("COMPOSE_FILE=alt.yaml\n"), nil, common.User{
+		ID:       "u1",
+		Username: "tester",
+	})
+	require.NoError(t, err)
+
+	altOnDisk, readErr := os.ReadFile(filepath.Join(projectPath, "alt.yaml"))
+	require.NoError(t, readErr)
+	assert.Equal(t, altContent, string(altOnDisk), "the newly selected base must keep its own content")
+
+	baseOnDisk, readErr := os.ReadFile(filepath.Join(projectPath, "compose.yaml"))
+	require.NoError(t, readErr)
+	assert.Equal(t, baseContent, string(baseOnDisk))
+
+	envOnDisk, readErr := os.ReadFile(filepath.Join(projectPath, ".env"))
+	require.NoError(t, readErr)
+	assert.Contains(t, string(envOnDisk), "COMPOSE_FILE=alt.yaml")
+}
+
+func TestProjectService_UpdateProject_EnvRetargetWritesEditedComposeToSelectedBase(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	require.NoError(t, err)
+
+	eventService := event.NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+
+	dirName := "retarget-edit"
+	projectPath := filepath.Join(projectsDir, dirName)
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+
+	baseContent := "services:\n  base:\n    image: nginx:alpine\n"
+	altContent := "services:\n  alt:\n    image: busybox:latest\n"
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte(baseContent), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "alt.yaml"), []byte(altContent), 0o644))
+
+	project := &Project{
+		ID:      "proj-retarget-edit",
+		Name:    dirName,
+		DirName: &dirName,
+		Path:    projectPath,
+		Status:  ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	editedCompose := "services:\n  alt:\n    image: redis:alpine\n"
+	_, err = svc.UpdateProject(ctx, project.ID, nil, &editedCompose, new("COMPOSE_FILE=alt.yaml\n"), nil, common.User{
+		ID:       "u1",
+		Username: "tester",
+	})
+	require.NoError(t, err)
+
+	altOnDisk, readErr := os.ReadFile(filepath.Join(projectPath, "alt.yaml"))
+	require.NoError(t, readErr)
+	assert.Equal(t, editedCompose, string(altOnDisk), "an edited compose must be written to the newly selected base")
+
+	baseOnDisk, readErr := os.ReadFile(filepath.Join(projectPath, "compose.yaml"))
+	require.NoError(t, readErr)
+	assert.Equal(t, baseContent, string(baseOnDisk))
+}
+
 func TestProjectService_UpdateProject_AllowsMissingLocalIncludeDuringComposeValidation(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := context.Background()

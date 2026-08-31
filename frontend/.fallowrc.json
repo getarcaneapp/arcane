@@ -3,6 +3,7 @@
 	"entry": [
 		"src/routes/**/*.{svelte,ts,js}",
 		"src/hooks.*.ts",
+		"src/service-worker/index.ts",
 		"src/lib/paraglide/messages/_index.js",
 		"src/lib/index.ts",
 		"src/lib/components/**/index.ts"
@@ -32,6 +33,10 @@
 		{
 			"file": "src/lib/components/code-editor/analysis/compose-schema.ts",
 			"exports": ["getComposeSchemaContext", "getCompletionOptionsForPath", "getEnumValueCompletions", "getSchemaDocForPath"]
+		},
+		{
+			"file": "src/lib/icons/index.ts",
+			"exports": ["LayoutGridIcon", "LayoutListIcon", "MonitorSpeakerIcon"]
 		}
 	],
 	"ignoreExportsUsedInFile": {

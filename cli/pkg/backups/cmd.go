@@ -1,9 +1,10 @@
 package backups
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"strconv"
 
@@ -77,58 +78,28 @@ var listCmd = &cobra.Command{
 			return err
 		}
 
-		path, err := cmdutil.ApplyPaginationParams(cmd, types.Backups(), cmdutil.ListParams{
-			Resource:        "backups",
-			Limit:           limitFlag,
-			FallbackDefault: 20,
-			Start:           startFlag,
-			All:             allFlag,
+		return cmdutil.RunList(cmd, c, cmdutil.ListSpec[backup.SystemBackupRun]{
+			Resource: "backups",
+			Endpoint: types.Backups(),
+			Params:   cmdutil.ListParams{Resource: "backups", Limit: limitFlag, FallbackDefault: 20, Start: startFlag, All: allFlag},
+			JSON:     cmdutil.JSONOutputEnabled(cmd),
+			Headers:  []string{"ID", "STATUS", "TRIGGER", "DESTINATION", "SIZE", "S3 DESTINATION", "CREATED"},
+			Row: func(run backup.SystemBackupRun) []string {
+				size := ""
+				if run.Size > 0 {
+					size = output.Bytes(run.Size)
+				}
+				return []string{
+					run.ID,
+					run.Status,
+					run.Trigger,
+					string(run.Destination),
+					size,
+					run.S3DestinationName,
+					run.CreatedAt.Format("2006-01-02 15:04"),
+				}
+			},
 		})
-		if err != nil {
-			return errors.WrapIf(err, "failed to build pagination query")
-		}
-
-		resp, err := c.Get(cmd.Context(), path)
-		if err != nil {
-			return errors.WrapIf(err, "failed to list backups")
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		body, err := cmdutil.ReadJSONBody(resp)
-		if err != nil {
-			return errors.WrapIf(err, "failed to list backups")
-		}
-
-		if cmdutil.JSONOutputEnabled(cmd) {
-			return cmdutil.PrintRawJSON(body)
-		}
-
-		var result base.Paginated[backup.SystemBackupRun]
-		if err := json.Unmarshal(body, &result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
-		}
-
-		headers := []string{"ID", "STATUS", "TRIGGER", "DESTINATION", "SIZE", "S3 DESTINATION", "CREATED"}
-		rows := make([][]string, len(result.Data))
-		for i, run := range result.Data {
-			size := ""
-			if run.Size > 0 {
-				size = output.Bytes(run.Size)
-			}
-			rows[i] = []string{
-				run.ID,
-				run.Status,
-				run.Trigger,
-				string(run.Destination),
-				size,
-				run.S3DestinationName,
-				run.CreatedAt.Format("2006-01-02 15:04"),
-			}
-		}
-
-		output.Table(headers, rows)
-		output.Showing(len(result.Data), result.Pagination.TotalItems, "backups")
-		return nil
 	},
 }
 
@@ -147,7 +118,7 @@ alone stores it in S3, and --local together with --s3-destination stores it in b
 
 		s3DestinationID := ""
 		if createS3Destination != "" {
-			resolved, err := resolveS3Destination(cmd.Context(), c, createS3Destination, !cmdutil.JSONOutputEnabled(cmd))
+			resolved, _, err := s3DestinationRef.Resolve(cmd.Context(), c, createS3Destination, !cmdutil.JSONOutputEnabled(cmd) && prompt.IsInteractive())
 			if err != nil {
 				return err
 			}
@@ -182,27 +153,13 @@ alone stores it in S3, and --local together with --s3-destination stores it in b
 			PolicyID:        createPolicyID,
 		}
 
-		resp, err := c.Post(cmd.Context(), types.Backups(), req)
-		if err != nil {
-			return errors.WrapIf(err, "failed to create backup")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to create backup")
-		}
-
-		body, err := cmdutil.ReadJSONBody(resp)
+		run, err := c.DoJSON[backup.SystemBackupRun](cmd.Context(), http.MethodPost, types.Backups(), req)
 		if err != nil {
 			return errors.WrapIf(err, "failed to create backup")
 		}
 
 		if cmdutil.JSONOutputEnabled(cmd) {
-			return cmdutil.PrintRawJSON(body)
-		}
-
-		var run backup.SystemBackupRun
-		if err := json.Unmarshal(body, &run); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+			return cmdutil.PrintJSON(run)
 		}
 
 		output.Success("Backup %s created successfully", run.ID)
@@ -242,21 +199,13 @@ var deleteCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.DeleteWithBody(cmd.Context(), types.Backup(args[0]), backup.DeleteSystemBackupRequest{RecoveryKey: deleteRecoveryKey})
+		result, err := c.DoJSON[base.ApiResponse[base.MessageResponse]](cmd.Context(), http.MethodDelete, types.Backup(args[0]), backup.DeleteSystemBackupRequest{RecoveryKey: deleteRecoveryKey})
 		if err != nil {
-			return errors.WrapIf(err, "failed to delete backup")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
 			return errors.WrapIf(err, "failed to delete backup")
 		}
 
 		if cmdutil.JSONOutputEnabled(cmd) {
-			body, err := cmdutil.ReadJSONBody(resp)
-			if err != nil {
-				return errors.WrapIf(err, "failed to delete backup")
-			}
-			return cmdutil.PrintRawJSON(body)
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Backup %s deleted successfully", args[0])
@@ -305,27 +254,13 @@ var restoreCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Post(cmd.Context(), types.BackupRestore(args[0]), backup.RestoreSystemBackupRequest{RecoveryKey: key})
-		if err != nil {
-			return errors.WrapIf(err, "failed to restore backup")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to restore backup")
-		}
-
-		body, err := cmdutil.ReadJSONBody(resp)
+		result, err := c.PostJSON[base.MessageResponse](cmd.Context(), types.BackupRestore(args[0]), backup.RestoreSystemBackupRequest{RecoveryKey: key})
 		if err != nil {
 			return errors.WrapIf(err, "failed to restore backup")
 		}
 
 		if cmdutil.JSONOutputEnabled(cmd) {
-			return cmdutil.PrintRawJSON(body)
-		}
-
-		var result base.ApiResponse[base.MessageResponse]
-		if err := json.Unmarshal(body, &result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("%s", result.Data.Message)
@@ -345,7 +280,7 @@ var uploadCmd = &cobra.Command{
 			return err
 		}
 
-		resolved, err := resolveS3Destination(cmd.Context(), c, uploadS3Destination, !cmdutil.JSONOutputEnabled(cmd))
+		resolved, _, err := s3DestinationRef.Resolve(cmd.Context(), c, uploadS3Destination, !cmdutil.JSONOutputEnabled(cmd) && prompt.IsInteractive())
 		if err != nil {
 			return err
 		}
@@ -355,27 +290,13 @@ var uploadCmd = &cobra.Command{
 			RecoveryKey:     uploadRecoveryKey,
 		}
 
-		resp, err := c.Post(cmd.Context(), types.BackupUpload(args[0]), req)
-		if err != nil {
-			return errors.WrapIf(err, "failed to upload backup")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to upload backup")
-		}
-
-		body, err := cmdutil.ReadJSONBody(resp)
+		run, err := c.DoJSON[backup.SystemBackupRun](cmd.Context(), http.MethodPost, types.BackupUpload(args[0]), req)
 		if err != nil {
 			return errors.WrapIf(err, "failed to upload backup")
 		}
 
 		if cmdutil.JSONOutputEnabled(cmd) {
-			return cmdutil.PrintRawJSON(body)
-		}
-
-		var run backup.SystemBackupRun
-		if err := json.Unmarshal(body, &run); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+			return cmdutil.PrintJSON(run)
 		}
 
 		output.Success("Backup %s uploaded successfully", run.ID)
@@ -399,7 +320,7 @@ var discoverCmd = &cobra.Command{
 			return err
 		}
 
-		resolved, err := resolveS3Destination(cmd.Context(), c, discoverS3Destination, !cmdutil.JSONOutputEnabled(cmd))
+		resolved, _, err := s3DestinationRef.Resolve(cmd.Context(), c, discoverS3Destination, !cmdutil.JSONOutputEnabled(cmd) && prompt.IsInteractive())
 		if err != nil {
 			return err
 		}
@@ -409,27 +330,13 @@ var discoverCmd = &cobra.Command{
 			RecoveryKey:     discoverRecoveryKey,
 		}
 
-		resp, err := c.Post(cmd.Context(), types.BackupsDiscover(), req)
-		if err != nil {
-			return errors.WrapIf(err, "failed to discover backups")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to discover backups")
-		}
-
-		body, err := cmdutil.ReadJSONBody(resp)
+		result, err := c.PostJSON[int](cmd.Context(), types.BackupsDiscover(), req)
 		if err != nil {
 			return errors.WrapIf(err, "failed to discover backups")
 		}
 
 		if cmdutil.JSONOutputEnabled(cmd) {
-			return cmdutil.PrintRawJSON(body)
-		}
-
-		var result base.ApiResponse[int]
-		if err := json.Unmarshal(body, &result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Discovered %d backup(s)", result.Data)
@@ -448,24 +355,13 @@ var policiesCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.BackupsPolicies())
-		if err != nil {
-			return errors.WrapIf(err, "failed to get backup policies")
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		body, err := cmdutil.ReadJSONBody(resp)
+		result, err := c.DoJSON[backup.SystemBackupPolicyCollection](cmd.Context(), http.MethodGet, types.BackupsPolicies(), nil)
 		if err != nil {
 			return errors.WrapIf(err, "failed to get backup policies")
 		}
 
 		if cmdutil.JSONOutputEnabled(cmd) {
-			return cmdutil.PrintRawJSON(body)
-		}
-
-		var result backup.SystemBackupPolicyCollection
-		if err := json.Unmarshal(body, &result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+			return cmdutil.PrintJSON(result)
 		}
 
 		printPolicies(result)
@@ -540,18 +436,9 @@ Alternatively, --file replaces all policies from a raw JSON payload.`,
 				return errors.WrapIf(err, "failed to parse policies file")
 			}
 		} else {
-			currentResp, err := c.Get(cmd.Context(), types.BackupsPolicies())
+			current, err := c.DoJSON[backup.SystemBackupPolicyCollection](cmd.Context(), http.MethodGet, types.BackupsPolicies(), nil)
 			if err != nil {
 				return errors.WrapIf(err, "failed to get current backup policies")
-			}
-			defer func() { _ = currentResp.Body.Close() }()
-			if err := cmdutil.EnsureSuccessStatus(currentResp); err != nil {
-				return errors.WrapIf(err, "failed to get current backup policies")
-			}
-
-			var current backup.SystemBackupPolicyCollection
-			if err := cmdutil.DecodeJSON(currentResp, &current); err != nil {
-				return err
 			}
 
 			req.Policies = make([]backup.UpdateSystemBackupPolicy, len(current.Policies))
@@ -607,7 +494,7 @@ Alternatively, --file replaces all policies from a raw JSON payload.`,
 				target.S3Enabled = policiesUpdateS3
 			}
 			if cmd.Flags().Changed("s3-destination") {
-				resolved, err := resolveS3Destination(cmd.Context(), c, policiesUpdateS3Destination, !cmdutil.JSONOutputEnabled(cmd))
+				resolved, _, err := s3DestinationRef.Resolve(cmd.Context(), c, policiesUpdateS3Destination, !cmdutil.JSONOutputEnabled(cmd) && prompt.IsInteractive())
 				if err != nil {
 					return err
 				}
@@ -618,27 +505,13 @@ Alternatively, --file replaces all policies from a raw JSON payload.`,
 			}
 		}
 
-		resp, err := c.Put(cmd.Context(), types.BackupsPolicies(), req)
-		if err != nil {
-			return errors.WrapIf(err, "failed to update backup policies")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to update backup policies")
-		}
-
-		body, err := cmdutil.ReadJSONBody(resp)
+		result, err := c.DoJSON[backup.SystemBackupPolicyCollection](cmd.Context(), http.MethodPut, types.BackupsPolicies(), req)
 		if err != nil {
 			return errors.WrapIf(err, "failed to update backup policies")
 		}
 
 		if cmdutil.JSONOutputEnabled(cmd) {
-			return cmdutil.PrintRawJSON(body)
-		}
-
-		var result backup.SystemBackupPolicyCollection
-		if err := json.Unmarshal(body, &result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+			return cmdutil.PrintJSON(result)
 		}
 
 		output.Success("Backup policies updated successfully")
@@ -663,23 +536,9 @@ var recoveryKeyGenerateCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Post(cmd.Context(), types.BackupsRecoveryKeyGenerate(), nil)
+		result, err := c.DoJSON[backup.SystemBackupRecoveryKey](cmd.Context(), http.MethodPost, types.BackupsRecoveryKeyGenerate(), nil)
 		if err != nil {
 			return errors.WrapIf(err, "failed to generate recovery key")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to generate recovery key")
-		}
-
-		body, err := cmdutil.ReadJSONBody(resp)
-		if err != nil {
-			return errors.WrapIf(err, "failed to generate recovery key")
-		}
-
-		var result backup.SystemBackupRecoveryKey
-		if err := json.Unmarshal(body, &result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
 		}
 
 		if cmdutil.JSONOutputEnabled(cmd) {
@@ -688,7 +547,7 @@ var recoveryKeyGenerateCmd = &cobra.Command{
 					return err
 				}
 			}
-			return cmdutil.PrintRawJSON(body)
+			return cmdutil.PrintJSON(result)
 		}
 
 		output.Header("Generated Recovery Key")
@@ -742,21 +601,13 @@ var recoveryKeySetCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Put(cmd.Context(), types.BackupsRecoveryKey(), backup.SystemBackupRecoveryKey{RecoveryKey: key})
+		status, err := c.DoJSON[backup.SystemBackupRecoveryKeyStatus](cmd.Context(), http.MethodPut, types.BackupsRecoveryKey(), backup.SystemBackupRecoveryKey{RecoveryKey: key})
 		if err != nil {
-			return errors.WrapIf(err, "failed to set recovery key")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
 			return errors.WrapIf(err, "failed to set recovery key")
 		}
 
 		if cmdutil.JSONOutputEnabled(cmd) {
-			body, err := cmdutil.ReadJSONBody(resp)
-			if err != nil {
-				return errors.WrapIf(err, "failed to set recovery key")
-			}
-			return cmdutil.PrintRawJSON(body)
+			return cmdutil.PrintJSON(status)
 		}
 
 		output.Success("Recovery key configured successfully")
@@ -765,12 +616,8 @@ var recoveryKeySetCmd = &cobra.Command{
 }
 
 func storeRecoveryKey(cmd *cobra.Command, c *client.Client, key string) error {
-	resp, err := c.Put(cmd.Context(), types.BackupsRecoveryKey(), backup.SystemBackupRecoveryKey{RecoveryKey: key})
-	if err != nil {
-		return errors.WrapIf(err, "failed to store recovery key")
-	}
-	defer func() { _ = resp.Body.Close() }()
-	return errors.WrapIf(cmdutil.EnsureSuccessStatus(resp), "failed to store recovery key")
+	_, err := c.DoJSON[backup.SystemBackupRecoveryKeyStatus](cmd.Context(), http.MethodPut, types.BackupsRecoveryKey(), backup.SystemBackupRecoveryKey{RecoveryKey: key})
+	return errors.WrapIf(err, "failed to store recovery key")
 }
 
 func init() {

@@ -2,7 +2,8 @@ package imagepatch
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"log/slog"
 	"maps"
 	"os"
@@ -279,7 +280,7 @@ func (s *ImagePatchService) patchInBackgroundInternal(ctx context.Context, recor
 	if vexOutputPath != "" {
 		if data, err := acfs.ReadFile(ctx, filepath.Dir(vexOutputPath), "/"+filepath.Base(vexOutputPath)); err == nil {
 			var doc struct {
-				Statements []json.RawMessage `json:"statements"`
+				Statements []jsontext.Value `json:"statements"`
 			}
 			if err := json.Unmarshal(data, &doc); err == nil {
 				count := len(doc.Statements)
@@ -390,7 +391,7 @@ func (s *ImagePatchService) writeRegistryAuthConfigInternal(ctx context.Context)
 	}
 
 	var arcane struct {
-		Auths map[string]json.RawMessage `json:"auths"`
+		Auths map[string]jsontext.Value `json:"auths"`
 	}
 	if err := json.Unmarshal(arcaneConfig, &arcane); err != nil {
 		return
@@ -401,7 +402,7 @@ func (s *ImagePatchService) writeRegistryAuthConfigInternal(ctx context.Context)
 		return
 	}
 
-	merged := map[string]json.RawMessage{}
+	merged := map[string]jsontext.Value{}
 	if existing, err := acfs.ReadFile(ctx, configDir, "/config.json"); err == nil {
 		if err := json.Unmarshal(existing, &merged); err != nil {
 			slog.WarnContext(ctx, "existing docker config is not valid JSON; leaving it untouched", "path", configDir, "error", err)
@@ -409,10 +410,10 @@ func (s *ImagePatchService) writeRegistryAuthConfigInternal(ctx context.Context)
 		}
 	}
 
-	auths := map[string]json.RawMessage{}
+	auths := map[string]jsontext.Value{}
 	if raw, ok := merged["auths"]; ok {
 		if err := json.Unmarshal(raw, &auths); err != nil {
-			auths = map[string]json.RawMessage{}
+			auths = map[string]jsontext.Value{}
 		}
 	}
 	maps.Copy(auths, arcane.Auths)

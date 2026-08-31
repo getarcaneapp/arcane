@@ -91,9 +91,9 @@
 	const columns = [
 		{ accessorKey: 'name', title: m.common_name(), sortable: true, cell: NameCell },
 		{ accessorKey: 'imageRef', title: m.common_image(), sortable: true, cell: ImageCell },
-		{ accessorKey: 'currentValue', title: m.common_current(), sortable: false, cell: DigestCol },
-		{ accessorKey: 'latestValue', title: m.image_update_latest_digest_label(), sortable: false, cell: DigestCol },
-		{ accessorKey: 'checkedAt', title: m.common_updated(), sortable: false, cell: CheckedAtCol }
+		{ accessorKey: 'currentValue', title: m.common_current(), sortable: false, cellComponent: DigestCell },
+		{ accessorKey: 'latestValue', title: m.image_update_latest_digest_label(), sortable: false, cellComponent: DigestCell },
+		{ accessorKey: 'checkedAt', title: m.common_updated(), sortable: false, cellComponent: CheckedAtCell }
 	] satisfies ColumnSpec<ContainerUpdateRow>[];
 
 	const mobileFields = [
@@ -194,14 +194,6 @@
 {#snippet ImageCell({ item }: { item: ContainerUpdateRow })}
 	<!-- fallow-ignore-next-line code-duplication -- parallel container/project update tables; cells shared via components, thin column wrappers differ by row type -->
 	<code class="text-xs">{item.imageRef}</code>
-{/snippet}
-
-{#snippet DigestCol({ value }: { value: unknown })}
-	<DigestCell {value} />
-{/snippet}
-
-{#snippet CheckedAtCol({ value }: { value: unknown })}
-	<CheckedAtCell {value} />
 {/snippet}
 
 {#snippet RowActions({ item }: { item: ContainerUpdateRow })}

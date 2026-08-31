@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"maps"
 	"strings"
+	"sync"
 	"sync/atomic"
 
 	"github.com/docker/cli/cli/command"
@@ -27,10 +28,34 @@ type Client struct {
 	logWriter io.WriteCloser
 }
 
+type composeClientConfigInternal struct {
+	isLogDemuxEnabled bool
+	serviceOptions    []compose.Option
+}
+
+type composeClientOptionInternal func(*composeClientConfigInternal)
+
+// streamDemuxedLogsInternal wires the log-parity wrapper so non-TTY container
+// log responses keep stderr metadata as Arcane's [STDERR] marker.
+func streamDemuxedLogsInternal(config *composeClientConfigInternal) {
+	config.isLogDemuxEnabled = true
+}
+
+func withComposeServiceOptionsInternal(options ...compose.Option) composeClientOptionInternal {
+	return func(config *composeClientConfigInternal) {
+		config.serviceOptions = append(config.serviceOptions, options...)
+	}
+}
+
 // NewClient builds a compose client. dockerHost, when non-empty, pins the
 // docker CLI to that daemon endpoint instead of letting it resolve one from
 // the environment.
-func NewClient(ctx context.Context, dockerHost string, authConfigs map[string]registry.AuthConfig, prompt compose.Prompt) (*Client, error) {
+func NewClient(ctx context.Context, dockerHost string, authConfigs map[string]registry.AuthConfig, prompt compose.Prompt, options ...composeClientOptionInternal) (*Client, error) {
+	config := composeClientConfigInternal{}
+	for _, option := range options {
+		option(&config)
+	}
+
 	cli, err := command.NewDockerCli()
 	if err != nil {
 		return nil, err
@@ -51,6 +76,9 @@ func NewClient(ctx context.Context, dockerHost string, authConfigs map[string]re
 	}
 
 	composeCLI := wrapDockerCLIWithInspectCompatibilityInternal(cli)
+	if config.isLogDemuxEnabled {
+		composeCLI = wrapDockerCLIWithLogsDemuxInternal(cli)
+	}
 
 	// When the caller streams operation output, render compose's own progress
 	// events exactly as `docker compose --progress=plain` prints them.
@@ -83,6 +111,7 @@ func NewClient(ctx context.Context, dockerHost string, authConfigs map[string]re
 			compose.WithErrorStream(logWriter),
 		)
 	}
+	serviceOptions = append(serviceOptions, config.serviceOptions...)
 
 	svc, err := compose.NewComposeService(composeCLI, serviceOptions...)
 	if err != nil {
@@ -192,21 +221,35 @@ func (c *Client) Close() error {
 	return nil
 }
 
-type writerConsumer struct{ out io.Writer }
+// writerConsumer serializes compose log events: compose may stream several
+// containers concurrently into one consumer.
+type writerConsumer struct {
+	out            io.Writer
+	mu             sync.Mutex
+	writeErrLogged bool
+}
 
-func (w writerConsumer) Register(container string)    {}
-func (w writerConsumer) Start(container string)       {}
-func (w writerConsumer) Stop(container string)        {}
-func (w writerConsumer) Status(container, msg string) {}
-func (w writerConsumer) Log(container, msg string) {
+// stderrLogLinePrefixInternal marks stderr content so the project-log parser
+// (pkg/libarcane/ws) can classify lines the same way container logs do.
+const stderrLogLinePrefixInternal = "[STDERR] "
+
+func (w *writerConsumer) Register(container string)    {}
+func (w *writerConsumer) Start(container string)       {}
+func (w *writerConsumer) Stop(container string)        {}
+func (w *writerConsumer) Status(container, msg string) {}
+func (w *writerConsumer) Log(container, msg string) {
 	w.write(container, msg)
 }
 
-func (w writerConsumer) Err(container, msg string) {
-	w.write(container, msg)
+func (w *writerConsumer) Err(container, msg string) {
+	if msg == "" || strings.HasPrefix(msg, stderrLogLinePrefixInternal) {
+		w.write(container, msg)
+		return
+	}
+	w.write(container, stderrLogLinePrefixInternal+msg)
 }
 
-func (w writerConsumer) write(container, msg string) {
+func (w *writerConsumer) write(container, msg string) {
 	if w.out == nil {
 		return
 	}
@@ -217,5 +260,10 @@ func (w writerConsumer) write(container, msg string) {
 	if !strings.HasSuffix(output, "\n") {
 		output += "\n"
 	}
-	_, _ = io.WriteString(w.out, output)
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if _, err := io.WriteString(w.out, output); err != nil && !w.writeErrLogged {
+		w.writeErrLogged = true
+		slog.Debug("project log output write failed; subsequent output may be truncated", "error", err)
+	}
 }

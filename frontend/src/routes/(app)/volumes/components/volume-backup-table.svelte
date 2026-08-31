@@ -48,11 +48,14 @@
 	import BackupDestinationCell from '#lib/components/arcane-table/cells/backup-destination-cell.svelte';
 	import BackupSizeCell from '#lib/components/arcane-table/cells/backup-size-cell.svelte';
 	import CreatedAtCell from '#lib/components/arcane-table/cells/created-at-cell.svelte';
+	import BackupManagementCell from '#lib/components/arcane-table/cells/backup-management-cell.svelte';
 	import { cn } from '#lib/utils';
 	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions';
 	import { extractApiErrorMessage } from '#lib/utils/api';
 	import {
 		backupDestinationDisplay,
+		backupManagementFilterOptions,
+		backupManagementLabel,
 		backupTriggerLabel,
 		s3DestinationOptions as buildS3DestinationOptions
 	} from '#lib/utils/backups';
@@ -292,6 +295,13 @@
 
 	const columns = [
 		{ accessorKey: 'id', title: m.common_id(), sortable: true, cell: IdCell },
+		{
+			accessorKey: 'type',
+			title: m.common_type(),
+			sortable: false,
+			cell: TypeCell,
+			filterOptions: backupManagementFilterOptions()
+		},
 		{ accessorKey: 'status', title: m.common_status(), sortable: true, cell: StatusCell },
 		{ accessorKey: 'trigger', title: m.volume_backup_trigger(), sortable: true, cell: TriggerCell },
 		{ accessorKey: 'destination', title: m.backups_destination_label(), sortable: true, cell: DestinationCell },
@@ -308,6 +318,7 @@
 	] satisfies ColumnSpec<BackupEntry>[];
 
 	const mobileFields = [
+		{ id: 'type', label: m.common_type(), defaultVisible: true },
 		{ id: 'status', label: m.common_status(), defaultVisible: true },
 		{ id: 'trigger', label: m.volume_backup_trigger(), defaultVisible: true },
 		{ id: 'destination', label: m.backups_destination_label(), defaultVisible: true },
@@ -336,6 +347,10 @@
 
 {#snippet StatusCell({ item }: { item: BackupEntry })}
 	<BackupStatusCell status={item.status} />
+{/snippet}
+
+{#snippet TypeCell({ item }: { item: BackupEntry })}
+	<BackupManagementCell type={item.type} />
 {/snippet}
 
 {#snippet TriggerCell({ item }: { item: BackupEntry })}
@@ -461,6 +476,12 @@
 		{item}
 		icon={{ component: VolumesIcon, variant: 'blue' }}
 		title={(item) => item.id}
+		badges={[
+			(item) => ({
+				variant: 'purple',
+				text: backupManagementLabel(item.type)
+			})
+		]}
 		fields={[
 			{
 				label: m.volume_backup_trigger(),

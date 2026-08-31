@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
+	"crypto/mldsa"
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
@@ -20,6 +21,7 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	certgen "github.com/getarcaneapp/arcane/cli/v2/pkg/generate"
 	"github.com/stretchr/testify/require"
 	libcrypto "go.getarcane.app/sys/crypto"
 	"google.golang.org/grpc/credentials"
@@ -80,21 +82,23 @@ func TestGenerateManagerClientMTLSAssetsWithContext(t *testing.T) {
 	require.Equal(t, "/app/data/edge-mtls-agent/agent.crt", assets.Files[1].ContainerPath)
 	require.Equal(t, "agent.key", assets.Files[2].Name)
 	require.Equal(t, "/app/data/edge-mtls-agent/agent.key", assets.Files[2].ContainerPath)
-	require.Contains(t, assets.Files[2].Content, "BEGIN EC PRIVATE KEY")
+	require.Contains(t, assets.Files[2].Content, "BEGIN PRIVATE KEY")
 
 	keyBlock, _ := pem.Decode([]byte(assets.Files[2].Content))
 	require.NotNil(t, keyBlock)
-	privateKey, err := x509.ParseECPrivateKey(keyBlock.Bytes)
+	parsedKey, err := x509.ParsePKCS8PrivateKey(keyBlock.Bytes)
 	require.NoError(t, err)
-	require.Equal(t, elliptic.P384(), privateKey.Curve)
+	privateKey, ok := parsedKey.(*mldsa.PrivateKey)
+	require.True(t, ok)
+	require.Equal(t, mldsa.MLDSA87(), privateKey.PublicKey().Parameters())
 
 	certBlock, _ := pem.Decode([]byte(assets.Files[1].Content))
 	require.NotNil(t, certBlock)
 	cert, err := x509.ParseCertificate(certBlock.Bytes)
 	require.NoError(t, err)
-	publicKey, ok := cert.PublicKey.(*ecdsa.PublicKey)
+	publicKey, ok := cert.PublicKey.(*mldsa.PublicKey)
 	require.True(t, ok)
-	require.Equal(t, elliptic.P384(), publicKey.Curve)
+	require.Equal(t, mldsa.MLDSA87(), publicKey.Parameters())
 	require.Equal(t, "Lab-Server-env-123", cert.Subject.CommonName)
 	require.Len(t, cert.URIs, 1)
 	require.Equal(t, "spiffe://manager.example.com/edge/env-123", cert.URIs[0].String())
@@ -507,14 +511,14 @@ func TestCAKey_EncryptedOnDiskWhenCryptoInitialized(t *testing.T) {
 
 	raw, err := os.ReadFile(caKeyPath)
 	require.NoError(t, err)
-	require.NotContains(t, string(raw), "BEGIN EC PRIVATE KEY",
+	require.NotContains(t, string(raw), "BEGIN PRIVATE KEY",
 		"encrypted CA key file must not contain plain PEM markers")
 
 	pemBytes, err := readCAKeyPEMInternal(caKeyPath)
 	require.NoError(t, err)
 	block, _ := pem.Decode(pemBytes)
 	require.NotNil(t, block)
-	_, err = x509.ParseECPrivateKey(block.Bytes)
+	_, err = x509.ParsePKCS8PrivateKey(block.Bytes)
 	require.NoError(t, err)
 
 	clientCertPath, clientKeyPath, _, err := ensureClientCertificateInternal(context.Background(), assetsDir, "env-round", "Round Trip", "https://manager.example.com")
@@ -608,4 +612,91 @@ func TestShouldAutoEnrollAgentMTLSInternal(t *testing.T) {
 	cfg.EdgeMTLSCertFile = filepath.Join(t.TempDir(), "agent.crt")
 	cfg.EdgeMTLSKeyFile = filepath.Join(t.TempDir(), "agent.key")
 	require.False(t, shouldAutoEnrollAgentMTLSInternal(cfg))
+}
+
+func TestGeneratedMLDSAAssets_HandshakeWithVerifiedClientCertificate(t *testing.T) {
+	assetsDir := t.TempDir()
+	cfg := &Config{
+		EdgeMTLSMode:      EdgeMTLSModeRequired,
+		EdgeMTLSAssetsDir: assetsDir,
+		AppURL:            "https://manager.example.com",
+	}
+	_, err := GenerateManagerClientMTLSAssetsWithContext(context.Background(), cfg, "env-hs", "Handshake")
+	require.NoError(t, err)
+
+	caCertPath := filepath.Join(assetsDir, "ca.crt")
+	caCertPEM, err := os.ReadFile(caCertPath)
+	require.NoError(t, err)
+	caBlock, _ := pem.Decode(caCertPEM)
+	require.NotNil(t, caBlock)
+	caCert, err := x509.ParseCertificate(caBlock.Bytes)
+	require.NoError(t, err)
+	caKeyPEM, err := readCAKeyPEMInternal(filepath.Join(assetsDir, "ca.key"))
+	require.NoError(t, err)
+	caKey, err := parsePrivateKeyPEMInternal(caKeyPEM, "CA")
+	require.NoError(t, err)
+
+	serverKey, err := certgen.GenerateMLDSA87PrivateKey()
+	require.NoError(t, err)
+	serverTemplate, err := certgen.NewServerTLSTemplate("localhost", []string{"localhost", "127.0.0.1"})
+	require.NoError(t, err)
+	serverDER, err := x509.CreateCertificate(rand.Reader, serverTemplate, caCert, serverKey.PublicKey(), caKey)
+	require.NoError(t, err)
+
+	serverTLS, err := BuildManagerServerTLSConfig(&Config{
+		EdgeMTLSMode:   EdgeMTLSModeRequired,
+		EdgeMTLSCAFile: caCertPath,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, serverTLS)
+	serverTLS.Certificates = []tls.Certificate{{Certificate: [][]byte{serverDER}, PrivateKey: serverKey}}
+
+	clientCertPath, err := GeneratedManagerClientMTLSCertPath(cfg, "env-hs")
+	require.NoError(t, err)
+	clientTLS, err := buildManagerClientTLSConfigInternal(&Config{
+		EdgeMTLSMode:       EdgeMTLSModeRequired,
+		EdgeMTLSCAFile:     caCertPath,
+		EdgeMTLSCertFile:   clientCertPath,
+		EdgeMTLSKeyFile:    filepath.Join(filepath.Dir(clientCertPath), "agent.key"),
+		EdgeMTLSServerName: "localhost",
+		ManagerApiUrl:      "https://localhost/api",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, clientTLS)
+	require.Equal(t, uint16(tls.VersionTLS13), clientTLS.MinVersion)
+
+	listener, err := tls.Listen("tcp", "127.0.0.1:0", serverTLS)
+	require.NoError(t, err)
+	defer listener.Close()
+
+	type handshakeResult struct {
+		state tls.ConnectionState
+		err   error
+	}
+	resultCh := make(chan handshakeResult, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			resultCh <- handshakeResult{err: err}
+			return
+		}
+		defer conn.Close()
+		tlsConn := conn.(*tls.Conn)
+		if err := tlsConn.Handshake(); err != nil {
+			resultCh <- handshakeResult{err: err}
+			return
+		}
+		resultCh <- handshakeResult{state: tlsConn.ConnectionState()}
+	}()
+
+	conn, err := tls.Dial("tcp", listener.Addr().String(), clientTLS)
+	require.NoError(t, err)
+	defer conn.Close()
+	require.Equal(t, uint16(tls.VersionTLS13), conn.ConnectionState().Version)
+
+	result := <-resultCh
+	require.NoError(t, result.err)
+	require.Equal(t, uint16(tls.VersionTLS13), result.state.Version)
+	require.True(t, hasVerifiedPeerCertificateInternal(&result.state))
+	require.NoError(t, verifiedPeerCertificateEnvironmentIDMatchesInternal(&result.state, "env-hs", "manager.example.com"))
 }

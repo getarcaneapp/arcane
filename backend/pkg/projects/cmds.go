@@ -86,18 +86,27 @@ func ComposeUp(ctx context.Context, proj *types.Project, services []string, remo
 		prompt = compose.AlwaysOkPrompt()
 	}
 
-	c, err := NewClient(composeCtx, "", authConfigs, prompt)
+	// COMPOSE_* deployment variables ride on the loaded project's environment.
+	// Selection errors were already surfaced at load, so parse best-effort here.
+	envOpts, _ := ParseComposeEnvOptions(proj.WorkingDir, EnvMap(proj.Environment))
+
+	var clientOptions []composeClientOptionInternal
+	if envOpts.ParallelLimit > 0 {
+		clientOptions = append(clientOptions, withComposeServiceOptionsInternal(compose.WithMaxConcurrency(envOpts.ParallelLimit)))
+	}
+
+	c, err := NewClient(composeCtx, "", authConfigs, prompt, clientOptions...)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = c.Close() }()
 
-	upOptions, startOptions := composeUpOptions(proj, services, removeOrphans, forceRecreate, waitTimeout)
+	upOptions, startOptions := composeUpOptions(proj, services, removeOrphans, forceRecreate, waitTimeout, envOpts)
 
 	return c.svc.Up(composeCtx, proj, api.UpOptions{Create: upOptions, Start: startOptions})
 }
 
-func composeUpOptions(proj *types.Project, services []string, removeOrphans bool, forceRecreate bool, waitTimeout time.Duration) (api.CreateOptions, api.StartOptions) {
+func composeUpOptions(proj *types.Project, services []string, removeOrphans bool, forceRecreate bool, waitTimeout time.Duration, envOpts ComposeEnvOptions) (api.CreateOptions, api.StartOptions) {
 	recreatePolicy := api.RecreateDiverged
 	if forceRecreate {
 		recreatePolicy = api.RecreateForce
@@ -107,7 +116,9 @@ func composeUpOptions(proj *types.Project, services []string, removeOrphans bool
 		Services:             services,
 		Recreate:             recreatePolicy,
 		RecreateDependencies: api.RecreateDiverged,
-		RemoveOrphans:        removeOrphans,
+		// A caller opt-in (or GitOps-forced true) still wins over COMPOSE_REMOVE_ORPHANS.
+		RemoveOrphans: removeOrphans || envOpts.RemoveOrphans,
+		IgnoreOrphans: envOpts.IgnoreOrphans,
 	}
 
 	startOptions := api.StartOptions{
@@ -163,14 +174,18 @@ func ComposeDown(ctx context.Context, proj *types.Project, removeVolumes bool) e
 	return c.svc.Down(downCtx, proj.Name, api.DownOptions{RemoveOrphans: true, Volumes: removeVolumes})
 }
 
+// ComposeLogs streams a project's logs through the compose service. The
+// one-shot client for this call is built with the log-parity wrapper so
+// non-TTY containers keep their stderr metadata; deploy, attach, and other
+// compose operations use plain clients.
 func ComposeLogs(ctx context.Context, projectName string, out io.Writer, follow bool, tail, since string, timestamps bool) error {
-	c, err := NewClient(ctx, "", nil, nil)
+	c, err := NewClient(ctx, "", nil, nil, streamDemuxedLogsInternal)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = c.Close() }()
 
-	return c.svc.Logs(ctx, projectName, writerConsumer{out: out}, api.LogOptions{Follow: follow, Tail: tail, Since: since, Timestamps: timestamps})
+	return c.svc.Logs(ctx, projectName, &writerConsumer{out: out}, api.LogOptions{Follow: follow, Tail: tail, Since: since, Timestamps: timestamps})
 }
 
 // ListGlobalComposeContainers lists every container carrying a compose

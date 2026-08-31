@@ -2,7 +2,6 @@ import { toast } from 'svelte-sonner';
 import { PersistedState } from 'runed';
 import { m } from '#lib/paraglide/messages';
 import type { Activity, ActivityType } from '#lib/types/activity.type';
-import { activityStore } from '#lib/stores/activity.store.svelte';
 import { activityTypeLabel } from './activity-labels';
 
 /**
@@ -41,7 +40,10 @@ const LONG_RUNNING_TYPES = new Set<ActivityType>([
 	'system_prune'
 ]);
 
-let pending: Activity[] = [];
+type ActivityToastNavigator = (activityId?: string, batchId?: string) => void;
+type PendingActivityToast = { activity: Activity; navigate: ActivityToastNavigator };
+
+let pending: PendingActivityToast[] = [];
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 let hardFlushTimer: ReturnType<typeof setTimeout> | null = null;
 const shownActivityIds = new Map<string, number>();
@@ -66,14 +68,14 @@ function wasToastShownInternal(activityId: string): boolean {
 	return shownAt !== undefined && performance.now() - shownAt <= SHOWN_SUPPRESSION_MS;
 }
 
-export function queueActivityCompletionToast(activity: Activity) {
+export function queueActivityCompletionToast(activity: Activity, navigate: ActivityToastNavigator) {
 	if (!activityCompletionToastsEnabled.current) {
 		return;
 	}
 	if (!LONG_RUNNING_TYPES.has(activity.type)) {
 		return;
 	}
-	pending.push(activity);
+	pending.push({ activity, navigate });
 	if (debounceTimer) {
 		clearTimeout(debounceTimer);
 	}
@@ -106,19 +108,20 @@ function flushInternal() {
 		return;
 	}
 
-	const groups = new Map<string, Activity[]>();
-	for (const activity of items) {
+	const groups = new Map<string, PendingActivityToast[]>();
+	for (const item of items) {
+		const { activity } = item;
 		const key = activity.batchId ?? `${activity.type}:${activity.status}`;
 		const group = groups.get(key);
 		if (group) {
-			group.push(activity);
+			group.push(item);
 		} else {
-			groups.set(key, [activity]);
+			groups.set(key, [item]);
 		}
 	}
 	for (const members of groups.values()) {
 		// A response toast (single or bulk summary) already covered this work.
-		if (members.some((activity) => wasToastShownInternal(activity.id))) {
+		if (members.some(({ activity }) => wasToastShownInternal(activity.id))) {
 			continue;
 		}
 		emitGroupToastInternal(members);
@@ -131,8 +134,9 @@ function shortenDockerIdInternal(value: string): string {
 	return /^[0-9a-f]{25,64}$/i.test(value) ? value.slice(0, 12) : value;
 }
 
-function emitGroupToastInternal(members: Activity[]) {
-	const first = members[0];
+function emitGroupToastInternal(members: PendingActivityToast[]) {
+	const firstItem = members[0];
+	const first = firstItem?.activity;
 	if (!first) {
 		return;
 	}
@@ -140,7 +144,7 @@ function emitGroupToastInternal(members: Activity[]) {
 	if (members.length === 1) {
 		const rawName = first.resourceName || first.resourceId || '';
 		const name = rawName ? shortenDockerIdInternal(rawName) : activityTypeLabel(first.type);
-		const action = viewActionInternal(first.id, first.batchId);
+		const action = viewActionInternal(first.id, first.batchId, firstItem.navigate);
 		if (first.status === 'failed') {
 			toast.error(m.activity_toast_failed({ name }), { action });
 		} else {
@@ -150,8 +154,8 @@ function emitGroupToastInternal(members: Activity[]) {
 	}
 
 	const type = activityTypeLabel(first.type);
-	const failed = members.filter((activity) => activity.status === 'failed').length;
-	const action = viewActionInternal(undefined, first.batchId);
+	const failed = members.filter(({ activity }) => activity.status === 'failed').length;
+	const action = viewActionInternal(undefined, first.batchId, firstItem.navigate);
 	if (failed > 0) {
 		toast.error(m.activity_toast_batch_partial({ type, failed, total: members.length }), { action });
 	} else {
@@ -159,9 +163,9 @@ function emitGroupToastInternal(members: Activity[]) {
 	}
 }
 
-function viewActionInternal(activityId: string | undefined, batchId: string | undefined) {
+function viewActionInternal(activityId: string | undefined, batchId: string | undefined, navigate: ActivityToastNavigator) {
 	return {
 		label: m.activity_toast_view(),
-		onClick: () => activityStore.openCenter(activityId, batchId)
+		onClick: () => navigate(activityId, batchId)
 	};
 }

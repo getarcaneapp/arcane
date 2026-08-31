@@ -1,21 +1,21 @@
 <script lang="ts">
-	import { toast } from 'svelte-sonner';
 	import EventTable from './event-table.svelte';
-	import { openConfirmDialog } from '#lib/components/confirm-dialog';
 	import { m } from '#lib/paraglide/messages';
 	import { eventService } from '#lib/services/event-service';
 	import { queryKeys } from '#lib/query/query-keys';
 	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
-	import { createMutation, createQuery, keepPreviousData } from '@tanstack/svelte-query';
+	import { createQuery, keepPreviousData } from '@tanstack/svelte-query';
 	import { AlertIcon, CheckIcon, CloseIcon, EventsIcon, InfoIcon } from '#lib/icons';
 	import { hasPermission } from '#lib/utils/auth';
+	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions';
 
 	let { data } = $props();
 
 	let events = $state(untrack(() => data.events));
 	let selectedIds = $state<string[]>([]);
 	let requestOptions = $state(untrack(() => data.eventRequestOptions));
+	let isDeleting = $state(false);
 
 	const eventsQuery = createQuery(() => ({
 		queryKey: queryKeys.events.listGlobal(requestOptions),
@@ -28,35 +28,6 @@
 		queryKey: queryKeys.events.statsGlobal(),
 		queryFn: () => eventService.getEventStats(),
 		initialData: data.eventStats
-	}));
-
-	const deleteSelectedMutation = createMutation(() => ({
-		mutationKey: queryKeys.events.deleteSelectedGlobal(),
-		mutationFn: async (ids: string[]) => {
-			let successCount = 0;
-			let failureCount = 0;
-
-			for (const eventId of ids) {
-				try {
-					await eventService.delete(eventId);
-					successCount += 1;
-				} catch {
-					failureCount += 1;
-				}
-			}
-
-			return { successCount, failureCount };
-		},
-		onSuccess: async ({ successCount, failureCount }) => {
-			if (successCount > 0) {
-				toast.success(m.common_bulk_delete_success({ count: successCount, resource: m.events_title() }));
-				await refresh();
-			}
-			if (failureCount > 0) {
-				toast.error(m.common_bulk_delete_failed({ count: failureCount, resource: m.events_title() }));
-			}
-			selectedIds = [];
-		}
 	}));
 
 	$effect(() => {
@@ -97,19 +68,28 @@
 		};
 	}
 
-	async function handleDeleteSelected() {
+	function handleDeleteSelected() {
 		if (selectedIds.length === 0) return;
+		const ids = [...selectedIds];
 
-		openConfirmDialog({
-			title: m.events_delete_selected_title({ count: selectedIds.length }),
-			message: m.events_delete_selected_message({ count: selectedIds.length }),
-			confirm: {
-				label: m.common_delete(),
-				destructive: true,
-				action: async () => {
-					await deleteSelectedMutation.mutateAsync([...selectedIds]);
-				}
-			}
+		bulkConfirmAndRun({
+			ids,
+			title: m.events_delete_selected_title({ count: ids.length }),
+			message: m.events_delete_selected_message({ count: ids.length }),
+			confirmLabel: m.common_delete(),
+			destructive: true,
+			run: (eventId) => eventService.delete(eventId),
+			messages: {
+				success: (count) => m.common_bulk_delete_success({ count, resource: m.events_title() }),
+				partial: (success, total, failed) => m.common_bulk_delete_partial({ success, total, failed, resource: m.events_title() }),
+				failure: () => m.common_bulk_delete_failed({ count: ids.length, resource: m.events_title() })
+			},
+			setLoading: (loading) => (isDeleting = loading),
+			onComplete: async ({ success }) => {
+				if (success > 0) await refresh();
+			},
+			clearSelection: () => (selectedIds = []),
+			sequential: true
 		});
 	}
 
@@ -123,8 +103,8 @@
 						action: 'remove' as const,
 						label: m.common_remove_selected(),
 						onclick: handleDeleteSelected,
-						loading: deleteSelectedMutation.isPending,
-						disabled: deleteSelectedMutation.isPending
+						loading: isDeleting,
+						disabled: isDeleting
 					}
 				]
 			: []),

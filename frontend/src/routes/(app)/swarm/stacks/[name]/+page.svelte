@@ -22,6 +22,8 @@
 	import SwarmTasksTable from '../../tasks/tasks-table.svelte';
 	import type { SwarmStackSource } from '#lib/types/swarm';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte';
+	import { hasPermission } from '#lib/utils/auth';
+	import { environmentStore } from '#lib/stores/environment.store.svelte';
 
 	let { data } = $props();
 
@@ -74,7 +76,9 @@
 
 	const stackName = $derived(stack?.name ?? data.stackName);
 	const hasLiveStack = $derived((stack?.services ?? 0) > 0);
-	const canViewSource = $derived(sourceState !== 'forbidden');
+	const currentEnvId = $derived(environmentStore.selected?.id || '0');
+	const canManageStacks = $derived(hasPermission('swarm:stacks', currentEnvId));
+	const canViewSource = $derived(canManageStacks && sourceState !== 'forbidden');
 	const tabItems = $derived<TabItem[]>([
 		...(hasLiveStack ? [{ value: 'services', label: m.services(), icon: DockIcon }] : []),
 		...(hasLiveStack ? [{ value: 'tasks', label: m.tasks(), icon: JobsIcon }] : []),
@@ -102,6 +106,11 @@
 	}
 
 	async function refreshSource(showErrorToast = false) {
+		if (!canManageStacks) {
+			source = null;
+			sourceState = 'forbidden';
+			return;
+		}
 		try {
 			source = await swarmService.getStackSource(stackName);
 			sourceState = 'available';
@@ -151,7 +160,9 @@
 			} else {
 				toast.error(m.common_refresh_failed({ resource: `${m.tasks()} (${stackName})` }));
 			}
-			await refreshSource(true);
+			if (canManageStacks) {
+				await refreshSource(true);
+			}
 		} finally {
 			isLoading.refresh = false;
 		}
@@ -160,7 +171,9 @@
 	useEnvironmentRefresh(refresh);
 
 	onMount(() => {
-		void refreshSource();
+		if (canManageStacks) {
+			void refreshSource();
+		}
 	});
 
 	function handleDelete() {
@@ -186,23 +199,27 @@
 	}
 
 	const actionButtons: ActionButton[] = $derived([
-		{
-			id: 'edit',
-			action: 'base',
-			label: m.common_edit(),
-			icon: EditIcon,
-			onclick: () => goto(`/swarm/stacks/new?fromStack=${encodeURIComponent(stackName)}`),
-			disabled: isLoading.remove
-		},
-		{
-			id: 'remove',
-			action: 'remove',
-			label: m.common_delete(),
-			icon: TrashIcon,
-			onclick: handleDelete,
-			loading: isLoading.remove,
-			disabled: isLoading.remove
-		},
+		...(canManageStacks
+			? [
+					{
+						id: 'edit',
+						action: 'base' as const,
+						label: m.common_edit(),
+						icon: EditIcon,
+						onclick: () => goto(`/swarm/stacks/new?fromStack=${encodeURIComponent(stackName)}`),
+						disabled: isLoading.remove
+					},
+					{
+						id: 'remove',
+						action: 'remove' as const,
+						label: m.common_delete(),
+						icon: TrashIcon,
+						onclick: handleDelete,
+						loading: isLoading.remove,
+						disabled: isLoading.remove
+					}
+				]
+			: []),
 		{
 			id: 'refresh',
 			action: 'restart',

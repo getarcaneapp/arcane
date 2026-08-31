@@ -9,10 +9,7 @@ package vulnerabilities
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -23,8 +20,7 @@ import (
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/image"
+	"github.com/getarcaneapp/arcane/cli/v2/pkg/images"
 	"github.com/getarcaneapp/arcane/types/v2/vulnerability"
 	"github.com/spf13/cobra"
 )
@@ -62,21 +58,12 @@ var statusCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.VulnerabilitiesScannerStatus(c.EnvID()))
-		if err != nil {
-			return errors.WrapIf(err, "failed to get scanner status")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to get scanner status")
-		}
-
-		var result base.ApiResponse[struct {
+		result, err := c.GetJSON[struct {
 			Available bool   `json:"available"`
 			Version   string `json:"version,omitempty"`
-		}]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
+		}](cmd.Context(), types.VulnerabilitiesScannerStatus(c.EnvID()))
+		if err != nil {
+			return errors.WrapIf(err, "failed to get scanner status")
 		}
 
 		if jsonOutput {
@@ -102,18 +89,9 @@ var summaryCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.VulnerabilitiesSummary(c.EnvID()))
+		result, err := c.GetJSON[vulnerability.EnvironmentVulnerabilitySummary](cmd.Context(), types.VulnerabilitiesSummary(c.EnvID()))
 		if err != nil {
 			return errors.WrapIf(err, "failed to get vulnerability summary")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to get vulnerability summary")
-		}
-
-		var result base.ApiResponse[vulnerability.EnvironmentVulnerabilitySummary]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
 		}
 
 		if jsonOutput {
@@ -139,17 +117,6 @@ var listCmd = &cobra.Command{
 			return err
 		}
 
-		path, err := cmdutil.ApplyPaginationParams(cmd, types.VulnerabilitiesAll(c.EnvID()), cmdutil.ListParams{
-			Resource:        "vulnerabilities",
-			Limit:           limitFlag,
-			FallbackDefault: 20,
-			Start:           startFlag,
-			All:             allFlag,
-		})
-		if err != nil {
-			return errors.WrapIf(err, "failed to build pagination query")
-		}
-
 		query := url.Values{}
 		if severityFlag != "" {
 			query.Set("severity", strings.ToUpper(severityFlag))
@@ -157,46 +124,25 @@ var listCmd = &cobra.Command{
 		if imageFlag != "" {
 			query.Set("imageName", imageFlag)
 		}
-		if len(query) > 0 {
-			path = cmdutil.AppendQuery(path, query)
-		}
 
-		resp, err := c.Get(cmd.Context(), path)
-		if err != nil {
-			return errors.WrapIf(err, "failed to list vulnerabilities")
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		body, err := cmdutil.ReadJSONBody(resp)
-		if err != nil {
-			return errors.WrapIf(err, "failed to list vulnerabilities")
-		}
-
-		if jsonOutput {
-			return cmdutil.PrintRawJSON(body)
-		}
-
-		var result base.Paginated[vulnerability.VulnerabilityWithImage]
-		if err := json.Unmarshal(body, &result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
-		}
-
-		headers := []string{"CVE ID", "SEVERITY", "IMAGE", "PACKAGE", "VERSION", "FIXED IN"}
-		rows := make([][]string, len(result.Data))
-		for i, item := range result.Data {
-			rows[i] = []string{
-				item.VulnerabilityID,
-				string(item.Severity),
-				item.ImageName,
-				item.PkgName,
-				item.InstalledVersion,
-				orDash(item.FixedVersion),
-			}
-		}
-
-		output.Table(headers, rows)
-		output.Showing(len(result.Data), result.Pagination.TotalItems, "vulnerabilities")
-		return nil
+		return cmdutil.RunList(cmd, c, cmdutil.ListSpec[vulnerability.VulnerabilityWithImage]{
+			Resource: "vulnerabilities",
+			Endpoint: types.VulnerabilitiesAll(c.EnvID()),
+			Params:   cmdutil.ListParams{Resource: "vulnerabilities", Limit: limitFlag, FallbackDefault: 20, Start: startFlag, All: allFlag},
+			Query:    query,
+			JSON:     jsonOutput,
+			Headers:  []string{"CVE ID", "SEVERITY", "IMAGE", "PACKAGE", "VERSION", "FIXED IN"},
+			Row: func(item vulnerability.VulnerabilityWithImage) []string {
+				return []string{
+					item.VulnerabilityID,
+					string(item.Severity),
+					item.ImageName,
+					item.PkgName,
+					item.InstalledVersion,
+					orDash(item.FixedVersion),
+				}
+			},
+		})
 	},
 }
 
@@ -219,18 +165,9 @@ var scanCmd = &cobra.Command{
 		// Scans can take a long time on large images.
 		c.SetTimeout(30 * time.Minute)
 
-		resp, err := c.Post(cmd.Context(), types.ImageVulnerabilitiesScan(c.EnvID(), imageID), nil)
+		result, err := c.PostJSON[vulnerability.ScanResult](cmd.Context(), types.ImageVulnerabilitiesScan(c.EnvID(), imageID), nil)
 		if err != nil {
 			return errors.WrapIf(err, "failed to scan image")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to scan image")
-		}
-
-		var result base.ApiResponse[vulnerability.ScanResult]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
 		}
 
 		if jsonOutput {
@@ -274,72 +211,35 @@ var imageCmd = &cobra.Command{
 			return runImageSummary(cmd, c, imageID)
 		}
 
-		path, err := cmdutil.ApplyPaginationParams(cmd, types.ImageVulnerabilitiesList(c.EnvID(), imageID), cmdutil.ListParams{
-			Resource:        "vulnerabilities",
-			Limit:           limitFlag,
-			FallbackDefault: 20,
-			Start:           startFlag,
-			All:             allFlag,
-		})
-		if err != nil {
-			return errors.WrapIf(err, "failed to build pagination query")
-		}
-
+		query := url.Values{}
 		if severityFlag != "" {
-			path = cmdutil.AppendQuery(path, url.Values{"severity": []string{strings.ToUpper(severityFlag)}})
+			query.Set("severity", strings.ToUpper(severityFlag))
 		}
 
-		resp, err := c.Get(cmd.Context(), path)
-		if err != nil {
-			return errors.WrapIf(err, "failed to list image vulnerabilities")
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		body, err := cmdutil.ReadJSONBody(resp)
-		if err != nil {
-			return errors.WrapIf(err, "failed to list image vulnerabilities")
-		}
-
-		if jsonOutput {
-			return cmdutil.PrintRawJSON(body)
-		}
-
-		var result base.Paginated[vulnerability.Vulnerability]
-		if err := json.Unmarshal(body, &result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
-		}
-
-		headers := []string{"CVE ID", "SEVERITY", "PACKAGE", "VERSION", "FIXED IN"}
-		rows := make([][]string, len(result.Data))
-		for i, item := range result.Data {
-			rows[i] = []string{
-				item.VulnerabilityID,
-				string(item.Severity),
-				item.PkgName,
-				item.InstalledVersion,
-				orDash(item.FixedVersion),
-			}
-		}
-
-		output.Table(headers, rows)
-		output.Showing(len(result.Data), result.Pagination.TotalItems, "vulnerabilities")
-		return nil
+		return cmdutil.RunList(cmd, c, cmdutil.ListSpec[vulnerability.Vulnerability]{
+			Resource: "vulnerabilities",
+			Endpoint: types.ImageVulnerabilitiesList(c.EnvID(), imageID),
+			Params:   cmdutil.ListParams{Resource: "vulnerabilities", Limit: limitFlag, FallbackDefault: 20, Start: startFlag, All: allFlag},
+			Query:    query,
+			JSON:     jsonOutput,
+			Headers:  []string{"CVE ID", "SEVERITY", "PACKAGE", "VERSION", "FIXED IN"},
+			Row: func(item vulnerability.Vulnerability) []string {
+				return []string{
+					item.VulnerabilityID,
+					string(item.Severity),
+					item.PkgName,
+					item.InstalledVersion,
+					orDash(item.FixedVersion),
+				}
+			},
+		})
 	},
 }
 
 func runImageSummary(cmd *cobra.Command, c *client.Client, imageID string) error {
-	resp, err := c.Get(cmd.Context(), types.ImageVulnerabilitiesSummary(c.EnvID(), imageID))
+	result, err := c.GetJSON[vulnerability.ScanSummary](cmd.Context(), types.ImageVulnerabilitiesSummary(c.EnvID(), imageID))
 	if err != nil {
 		return errors.WrapIf(err, "failed to get image vulnerability summary")
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-		return errors.WrapIf(err, "failed to get image vulnerability summary")
-	}
-
-	var result base.ApiResponse[vulnerability.ScanSummary]
-	if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-		return err
 	}
 
 	if jsonOutput {
@@ -386,18 +286,9 @@ var ignoreCmd = &cobra.Command{
 			payload.Reason = &ignoreReasonFlag
 		}
 
-		resp, err := c.Post(cmd.Context(), types.VulnerabilitiesIgnore(c.EnvID()), payload)
+		result, err := c.PostJSON[vulnerability.IgnoredVulnerability](cmd.Context(), types.VulnerabilitiesIgnore(c.EnvID()), payload)
 		if err != nil {
 			return errors.WrapIf(err, "failed to ignore vulnerability")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to ignore vulnerability")
-		}
-
-		var result base.ApiResponse[vulnerability.IgnoredVulnerability]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
 		}
 
 		if jsonOutput {
@@ -420,57 +311,27 @@ var ignoredCmd = &cobra.Command{
 			return err
 		}
 
-		path, err := cmdutil.ApplyPaginationParams(cmd, types.VulnerabilitiesIgnored(c.EnvID()), cmdutil.ListParams{
-			Resource:        "vulnerabilities",
-			Limit:           limitFlag,
-			FallbackDefault: 20,
-			Start:           startFlag,
-			All:             allFlag,
+		return cmdutil.RunList(cmd, c, cmdutil.ListSpec[vulnerability.IgnoredVulnerability]{
+			Resource: "ignored vulnerabilities",
+			Endpoint: types.VulnerabilitiesIgnored(c.EnvID()),
+			Params:   cmdutil.ListParams{Resource: "vulnerabilities", Limit: limitFlag, FallbackDefault: 20, Start: startFlag, All: allFlag},
+			JSON:     jsonOutput,
+			Headers:  []string{"ID", "CVE ID", "IMAGE ID", "PACKAGE", "REASON", "CREATED"},
+			Row: func(item vulnerability.IgnoredVulnerability) []string {
+				reason := ""
+				if item.Reason != nil {
+					reason = *item.Reason
+				}
+				return []string{
+					item.ID,
+					item.VulnerabilityID,
+					shortImageID(item.ImageID),
+					item.PkgName,
+					orDash(reason),
+					item.CreatedAt.Format(time.RFC3339),
+				}
+			},
 		})
-		if err != nil {
-			return errors.WrapIf(err, "failed to build pagination query")
-		}
-
-		resp, err := c.Get(cmd.Context(), path)
-		if err != nil {
-			return errors.WrapIf(err, "failed to list ignored vulnerabilities")
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		body, err := cmdutil.ReadJSONBody(resp)
-		if err != nil {
-			return errors.WrapIf(err, "failed to list ignored vulnerabilities")
-		}
-
-		if jsonOutput {
-			return cmdutil.PrintRawJSON(body)
-		}
-
-		var result base.Paginated[vulnerability.IgnoredVulnerability]
-		if err := json.Unmarshal(body, &result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
-		}
-
-		headers := []string{"ID", "CVE ID", "IMAGE ID", "PACKAGE", "REASON", "CREATED"}
-		rows := make([][]string, len(result.Data))
-		for i, item := range result.Data {
-			reason := ""
-			if item.Reason != nil {
-				reason = *item.Reason
-			}
-			rows[i] = []string{
-				item.ID,
-				item.VulnerabilityID,
-				shortImageID(item.ImageID),
-				item.PkgName,
-				orDash(reason),
-				item.CreatedAt.Format(time.RFC3339),
-			}
-		}
-
-		output.Table(headers, rows)
-		output.Showing(len(result.Data), result.Pagination.TotalItems, "ignored vulnerabilities")
-		return nil
 	},
 }
 
@@ -496,12 +357,7 @@ var unignoreCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Delete(cmd.Context(), types.VulnerabilityIgnore(c.EnvID(), args[0]))
-		if err != nil {
-			return errors.WrapIf(err, "failed to remove ignore record")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
+		if _, err := c.DeleteJSON[struct{}](cmd.Context(), types.VulnerabilityIgnore(c.EnvID(), args[0])); err != nil {
 			return errors.WrapIf(err, "failed to remove ignore record")
 		}
 
@@ -584,88 +440,11 @@ func shortImageID(id string) string {
 }
 
 // resolveImageID resolves an image name, tag, or (partial) ID to a full image
-// ID. It first tries a direct lookup and falls back to a server-side search.
+// ID via the shared images resolver.
 func resolveImageID(ctx context.Context, c *client.Client, identifier string) (string, error) {
-	trimmed := strings.TrimSpace(identifier)
-	if trimmed == "" {
-		return "", errors.New("image identifier is required")
-	}
-
-	resp, err := c.Get(ctx, types.Image(c.EnvID(), trimmed))
+	resolved, _, err := images.ImageRef.Resolve(ctx, c, identifier, false)
 	if err != nil {
-		return "", errors.WrapIff(err, "failed to resolve image %q", trimmed)
+		return "", err
 	}
-
-	body, err := io.ReadAll(resp.Body)
-	_ = resp.Body.Close()
-	if err != nil {
-		return "", errors.WrapIf(err, "failed to read image response")
-	}
-
-	if resp.StatusCode == http.StatusOK {
-		var result base.ApiResponse[image.DetailSummary]
-		if err := json.Unmarshal(body, &result); err != nil {
-			return "", errors.WrapIf(err, "failed to parse image response")
-		}
-		if result.Data.ID == "" {
-			return "", errors.Errorf("image lookup for %q returned empty ID", trimmed)
-		}
-		return result.Data.ID, nil
-	}
-
-	if resp.StatusCode != http.StatusNotFound {
-		return "", errors.Errorf("failed to resolve image %q (status %d): %s", trimmed, resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-
-	searchPath := fmt.Sprintf("%s?search=%s&limit=%d", types.Images(c.EnvID()), url.QueryEscape(trimmed), cmdutil.ShowAllLimit)
-	searchResp, err := c.Get(ctx, searchPath)
-	if err != nil {
-		return "", errors.WrapIf(err, "failed to search images")
-	}
-
-	searchBody, err := cmdutil.ReadJSONBody(searchResp)
-	_ = searchResp.Body.Close()
-	if err != nil {
-		return "", errors.WrapIf(err, "failed to search images")
-	}
-
-	var result base.Paginated[image.Summary]
-	if err := json.Unmarshal(searchBody, &result); err != nil {
-		return "", errors.WrapIf(err, "failed to parse images response")
-	}
-
-	identifierLower := strings.ToLower(trimmed)
-	matches := make([]image.Summary, 0)
-	for _, item := range result.Data {
-		if imageMatches(item, trimmed, identifierLower) {
-			matches = append(matches, item)
-		}
-	}
-
-	switch len(matches) {
-	case 1:
-		return matches[0].ID, nil
-	case 0:
-		return "", errors.Errorf("image %q not found; use the image ID or run `arcane images list`", trimmed)
-	default:
-		return "", errors.Errorf("multiple images match %q; use the image ID or run `arcane images list`", trimmed)
-	}
-}
-
-func imageMatches(item image.Summary, trimmed, identifierLower string) bool {
-	idLower := strings.ToLower(item.ID)
-	if idLower == identifierLower || (len(identifierLower) >= 4 && strings.HasPrefix(idLower, identifierLower)) {
-		return true
-	}
-	for _, tag := range item.RepoTags {
-		if strings.EqualFold(tag, trimmed) || strings.Contains(strings.ToLower(tag), identifierLower) {
-			return true
-		}
-	}
-	for _, digest := range item.RepoDigests {
-		if strings.EqualFold(digest, trimmed) || strings.Contains(strings.ToLower(digest), identifierLower) {
-			return true
-		}
-	}
-	return false
+	return resolved.ID, nil
 }

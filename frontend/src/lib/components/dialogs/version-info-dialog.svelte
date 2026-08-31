@@ -66,9 +66,7 @@
 			<img src={logoUrl} alt="Arcane" class="size-7" />
 			<div class="flex flex-col gap-0.5">
 				<span class="text-xl leading-none">{m.version_info_title()}</span>
-				<span class="text-sm font-normal text-muted-foreground"
-					>{(displayInfo.displayVersion || displayInfo.currentVersion).replace(/^v/, '')}</span
-				>
+				<span class="text-sm font-normal text-muted-foreground">{displayInfo.displayVersion || displayInfo.currentVersion}</span>
 			</div>
 		</div>
 	{/snippet}

@@ -147,16 +147,22 @@ func TestSwarmService_FetchSwarmNodeIdentityViaEdgeInternal_UsesEnvironmentAcces
 	require.True(t, identity.SwarmActive)
 }
 
-func stubStackSourceUpdateDeployInternal(t *testing.T) *int {
+type stackSourceDeployRecorder struct {
+	calls   int
+	lastReq swarmtypes.StackDeployRequest
+}
+
+func stubStackSourceUpdateDeployInternal(t *testing.T) *stackSourceDeployRecorder {
 	t.Helper()
 	original := deployStackAfterSourceUpdateInternal
 	t.Cleanup(func() { deployStackAfterSourceUpdateInternal = original })
-	calls := 0
+	rec := &stackSourceDeployRecorder{}
 	deployStackAfterSourceUpdateInternal = func(_ *SwarmService, _ context.Context, _ string, req swarmtypes.StackDeployRequest) (*swarmtypes.StackDeployResponse, error) {
-		calls++
+		rec.calls++
+		rec.lastReq = req
 		return &swarmtypes.StackDeployResponse{Name: req.Name}, nil
 	}
-	return &calls
+	return rec
 }
 
 func TestSwarmService_UpdateAndGetStackSource_UsesStoredFilesWithoutSwarmManager(t *testing.T) {
@@ -169,7 +175,7 @@ func TestSwarmService_UpdateAndGetStackSource_UsesStoredFilesWithoutSwarmManager
 	require.NoError(t, err)
 
 	svc := NewSwarmService(nil, settingsSvc, nil, nil, nil)
-	deployCalls := stubStackSourceUpdateDeployInternal(t)
+	deployRec := stubStackSourceUpdateDeployInternal(t)
 
 	updated, err := svc.UpdateStackSource(ctx, "0", "demo-stack", swarmtypes.StackSourceUpdateRequest{
 		ComposeContent: "services:\n  web:\n    image: nginx:alpine\n",
@@ -178,7 +184,10 @@ func TestSwarmService_UpdateAndGetStackSource_UsesStoredFilesWithoutSwarmManager
 	require.NoError(t, err)
 	require.Equal(t, "demo-stack", updated.Name)
 	// Saving stack source must trigger an actual stack deploy (#3463).
-	require.Equal(t, 1, *deployCalls)
+	require.Equal(t, 1, deployRec.calls)
+	// The edit-path redeploy must carry registry auth, the same as Git Sync (#3778):
+	// a service added in the edit has no previous spec to fall back on.
+	require.True(t, deployRec.lastReq.WithRegistryAuth)
 
 	composePath := filepath.Join(rootDir, "0", "demo-stack", "compose.yaml")
 	envPath := filepath.Join(rootDir, "0", "demo-stack", ".env")

@@ -1,8 +1,60 @@
-import type { BackupDestination, BackupRun } from './backup';
+import type { BackupDestination, BackupManagementType, BackupPolicy, BackupRun } from './backup';
 
 export type SystemBackupDestination = BackupDestination;
 
 export type SystemBackupRun = BackupRun;
+
+export type BackupHistoryEntry = BackupRun & {
+	type: BackupManagementType;
+	resourceType: 'system' | 'volume';
+	resourceName: string;
+};
+
+export type SystemVolumeBackupSelectionMode = 'all' | 'allowlist' | 'blocklist';
+
+export type SystemVolumeBackupPolicy = BackupPolicy & {
+	s3DestinationName?: string;
+	selectionMode: SystemVolumeBackupSelectionMode;
+	volumeNames: string[];
+	ignoreAnonymous: boolean;
+	lastRun?: SystemBackupRun;
+};
+
+export type UpdateSystemVolumeBackupPolicy = Omit<SystemVolumeBackupPolicy, 's3DestinationName' | 'lastRun'> & {
+	s3DestinationId: string;
+};
+
+export type SystemVolumeBackupPolicyCollection = {
+	policies: SystemVolumeBackupPolicy[];
+};
+
+export type SystemVolumeBackupOption = {
+	name: string;
+	anonymous: boolean;
+	available: boolean;
+};
+
+export type SystemVolumeBackupRunResult = {
+	matched: number;
+	succeeded: number;
+	failed: number;
+	skipped: number;
+	failures: { volumeName: string; error: string }[];
+};
+
+export type SystemVolumeBackupCustomRun = {
+	destination: BackupDestination;
+	s3DestinationId?: string;
+	stopContainers: boolean;
+	selectionMode: SystemVolumeBackupSelectionMode;
+	volumeNames: string[];
+	ignoreAnonymous: boolean;
+};
+
+export type RunSystemVolumeBackups = {
+	policyId?: string;
+	custom?: SystemVolumeBackupCustomRun;
+};
 
 export type SystemBackupPolicy = {
 	id: string;

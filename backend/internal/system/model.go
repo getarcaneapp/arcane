@@ -4,10 +4,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 
 	"database/sql/driver"
-	"encoding/json/v2"
 	"time"
-
-	"emperror.dev/errors"
 )
 
 // EnvironmentUpdateJobStatus is the lifecycle status of a fleet-wide "update all
@@ -71,25 +68,11 @@ type EnvironmentUpdateResult struct {
 type EnvironmentUpdateResults []EnvironmentUpdateResult
 
 func (r EnvironmentUpdateResults) Value() (driver.Value, error) {
-	if r == nil {
-		return nil, nil
-	}
-	return json.Marshal(r)
+	return database.JSONValue(r == nil, r)
 }
 
 func (r *EnvironmentUpdateResults) Scan(value any) error {
-	if value == nil {
-		*r = nil
-		return nil
-	}
-	switch v := value.(type) {
-	case []byte:
-		return json.Unmarshal(v, r)
-	case string:
-		return json.Unmarshal([]byte(v), r)
-	default:
-		return errors.Errorf("unsupported scan type for EnvironmentUpdateResults: %T", value)
-	}
+	return database.JSONScan(r, value)
 }
 
 // EnvironmentUpdateJob is a persisted fleet-wide update orchestration record. It

@@ -34,6 +34,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/dbutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/jwtclaims"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mldsajose"
 	federatedtypes "github.com/getarcaneapp/arcane/types/v2/federated"
 )
 
@@ -51,7 +52,7 @@ type FederatedCredentialService struct {
 	roleService     *role.RoleService
 	httpClient      *http.Client
 	providerMu      sync.RWMutex
-	providers       map[string]*oidc.Provider
+	keySets         map[string]*mldsajose.KeySet
 	providerGroup   singleflight.Group
 }
 
@@ -74,7 +75,7 @@ func NewFederatedCredentialService(
 		settingsService: settingsService,
 		eventService:    eventService,
 		httpClient:      httpClient,
-		providers:       make(map[string]*oidc.Provider),
+		keySets:         make(map[string]*mldsajose.KeySet),
 	}
 }
 
@@ -389,13 +390,16 @@ func (s *FederatedCredentialService) listEnabledCredentialsForIssuerInternal(ctx
 }
 
 func (s *FederatedCredentialService) verifySubjectTokenInternal(ctx context.Context, issuer string, rawToken string) (*oidc.IDToken, map[string]any, error) {
-	provider, err := s.providerForIssuerInternal(ctx, issuer)
+	keySet, err := s.keySetForIssuerInternal(ctx, issuer)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	providerCtx := oidc.ClientContext(ctx, s.httpClient)
-	verifier := provider.Verifier(&oidc.Config{SkipClientIDCheck: true})
+	verifier := oidc.NewVerifier(issuer, keySet, &oidc.Config{
+		SkipClientIDCheck:    true,
+		SupportedSigningAlgs: mldsajose.SupportedSigningAlgs(),
+	})
 	idToken, err := verifier.Verify(providerCtx, rawToken)
 	if err != nil {
 		return nil, nil, err
@@ -454,11 +458,11 @@ func isUniqueConstraintErrorInternal(err error) bool {
 	return strings.Contains(msg, "unique") || strings.Contains(msg, "duplicate key")
 }
 
-func (s *FederatedCredentialService) providerForIssuerInternal(ctx context.Context, issuer string) (*oidc.Provider, error) {
+func (s *FederatedCredentialService) keySetForIssuerInternal(ctx context.Context, issuer string) (*mldsajose.KeySet, error) {
 	s.providerMu.RLock()
-	if provider := s.providers[issuer]; provider != nil {
+	if keySet := s.keySets[issuer]; keySet != nil {
 		s.providerMu.RUnlock()
-		return provider, nil
+		return keySet, nil
 	}
 	s.providerMu.RUnlock()
 
@@ -469,20 +473,31 @@ func (s *FederatedCredentialService) providerForIssuerInternal(ctx context.Conte
 			return nil, errors.WrapIf(err, "failed to discover federated issuer")
 		}
 
+		var meta struct {
+			JWKSURL string `json:"jwks_uri"`
+		}
+		if err := provider.Claims(&meta); err != nil {
+			return nil, errors.WrapIf(err, "failed to read federated issuer metadata")
+		}
+		if meta.JWKSURL == "" {
+			return nil, errors.New("federated issuer metadata is missing jwks_uri")
+		}
+
+		keySet := mldsajose.NewKeySet(providerCtx, meta.JWKSURL)
 		s.providerMu.Lock()
-		s.providers[issuer] = provider
+		s.keySets[issuer] = keySet
 		s.providerMu.Unlock()
-		return provider, nil
+		return keySet, nil
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	provider, ok := v.(*oidc.Provider)
-	if !ok || provider == nil {
-		return nil, errors.New("federated issuer discovery returned invalid provider")
+	keySet, ok := v.(*mldsajose.KeySet)
+	if !ok || keySet == nil {
+		return nil, errors.New("federated issuer discovery returned invalid key set")
 	}
-	return provider, nil
+	return keySet, nil
 }
 
 func selectMatchingCredentialInternal(credentials []FederatedCredential, tokenAudiences []string, claims map[string]any) *FederatedCredential {
@@ -555,7 +570,7 @@ func unverifiedTokenExchangeMetadataInternal(rawToken string) (string, string, [
 	if claims == nil {
 		return "", "", nil
 	}
-	return stringClaimByPathInternal(claims, "iss"), stringClaimByPathInternal(claims, "sub"), stringSliceClaimInternal(claims, "aud")
+	return stringClaimByPathInternal(claims, "iss"), stringClaimByPathInternal(claims, "sub"), utils.UniqueNonEmptyStrings(jwtclaims.StringSliceFromValue(jwtclaims.GetByPath(claims, "aud").OrEmpty()))
 }
 
 func stringClaimByPathInternal(claims map[string]any, path string) string {
@@ -564,32 +579,6 @@ func stringClaimByPathInternal(claims map[string]any, path string) string {
 		return ""
 	}
 	return utils.ToString(value)
-}
-
-func stringSliceClaimInternal(claims map[string]any, path string) []string {
-	value, ok := jwtclaims.GetByPath(claims, path).Get()
-	if !ok || value == nil {
-		return nil
-	}
-	switch typed := value.(type) {
-	case string:
-		if strings.TrimSpace(typed) == "" {
-			return nil
-		}
-		return []string{strings.TrimSpace(typed)}
-	case []string:
-		return utils.UniqueNonEmptyStrings(typed)
-	case []any:
-		out := make([]string, 0, len(typed))
-		for _, item := range typed {
-			if value := utils.ToString(item); value != "" {
-				out = append(out, value)
-			}
-		}
-		return utils.UniqueNonEmptyStrings(out)
-	default:
-		return nil
-	}
 }
 
 func normalizeCreateFederatedCredentialInternal(req federatedtypes.CreateFederatedCredential) (federatedtypes.CreateFederatedCredential, error) {

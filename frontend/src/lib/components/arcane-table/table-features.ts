@@ -8,7 +8,7 @@ import {
 	type SvelteTable
 } from '@tanstack/svelte-table';
 import { metaHelper } from '@tanstack/table-core';
-import type { Cell, Column, ColumnDef, FilterFn, Header, Row, RowData, Table } from '@tanstack/table-core';
+import type { Cell, Column, ColumnDef, FilterFn, Row, RowData, Table } from '@tanstack/table-core';
 // Type-only cycle with arcane-table.types.svelte.ts (which imports only types from here) — erased at emit.
 import type { ColumnAlign, ColumnWidth, FilterOption } from './arcane-table.types.svelte';
 
@@ -67,7 +67,6 @@ export type ArcaneColumnDef<T extends RowData> = ColumnDef<ArcaneFeatures, T>;
 export type ArcaneRow<T extends RowData> = Row<ArcaneFeatures, T>;
 export type ArcaneColumn<T extends RowData> = Column<ArcaneFeatures, T>;
 export type ArcaneCell<T extends RowData> = Cell<ArcaneFeatures, T>;
-export type ArcaneHeader<T extends RowData> = Header<ArcaneFeatures, T>;
 /** Core table type — used for callback contexts and read-only method access. */
 export type ArcaneTable<T extends RowData> = Table<ArcaneFeatures, T>;
 /** The Svelte adapter table instance — adds reactive `.state` (read state slices). */

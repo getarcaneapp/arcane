@@ -432,34 +432,30 @@
 			<InspectIcon class="size-4" />
 			{m.common_inspect()}
 		</DropdownMenu.Item>
-		<DropdownMenu.Item onclick={() => openAgentDialog(item)} disabled={!canManageNodes}>
-			<EdgeConnectionIcon class="size-4" />
-			{getSwarmNodeAgentActionLabel(item.agent?.state)}
-		</DropdownMenu.Item>
-		<DropdownMenu.Separator />
-		<DropdownMenu.Item onclick={() => promoteNode(item)} disabled={!canManageNodes || isLoading || item.role === 'manager'}>
-			{m.swarm_node_promote()}
-		</DropdownMenu.Item>
-		<DropdownMenu.Item onclick={() => demoteNode(item)} disabled={!canManageNodes || isLoading || item.role !== 'manager'}>
-			{m.swarm_node_demote()}
-		</DropdownMenu.Item>
-		<DropdownMenu.Item
-			onclick={() => setAvailability(item, 'drain')}
-			disabled={!canManageNodes || isLoading || item.availability === 'drain'}
-		>
-			{m.drain()}
-		</DropdownMenu.Item>
-		<DropdownMenu.Item
-			onclick={() => setAvailability(item, 'active')}
-			disabled={!canManageNodes || isLoading || item.availability === 'active'}
-		>
-			{m.swarm_node_activate()}
-		</DropdownMenu.Item>
-		<DropdownMenu.Separator />
-		<DropdownMenu.Item variant="destructive" onclick={() => removeNode(item)} disabled={!canManageNodes || isLoading}>
-			<TrashIcon class="size-4" />
-			{m.common_delete()}
-		</DropdownMenu.Item>
+		{#if canManageNodes}
+			<DropdownMenu.Item onclick={() => openAgentDialog(item)}>
+				<EdgeConnectionIcon class="size-4" />
+				{getSwarmNodeAgentActionLabel(item.agent?.state)}
+			</DropdownMenu.Item>
+			<DropdownMenu.Separator />
+			<DropdownMenu.Item onclick={() => promoteNode(item)} disabled={isLoading || item.role === 'manager'}>
+				{m.swarm_node_promote()}
+			</DropdownMenu.Item>
+			<DropdownMenu.Item onclick={() => demoteNode(item)} disabled={isLoading || item.role !== 'manager'}>
+				{m.swarm_node_demote()}
+			</DropdownMenu.Item>
+			<DropdownMenu.Item onclick={() => setAvailability(item, 'drain')} disabled={isLoading || item.availability === 'drain'}>
+				{m.drain()}
+			</DropdownMenu.Item>
+			<DropdownMenu.Item onclick={() => setAvailability(item, 'active')} disabled={isLoading || item.availability === 'active'}>
+				{m.swarm_node_activate()}
+			</DropdownMenu.Item>
+			<DropdownMenu.Separator />
+			<DropdownMenu.Item variant="destructive" onclick={() => removeNode(item)} disabled={isLoading}>
+				<TrashIcon class="size-4" />
+				{m.common_delete()}
+			</DropdownMenu.Item>
+		{/if}
 	</RowActionsMenu>
 {/snippet}
 

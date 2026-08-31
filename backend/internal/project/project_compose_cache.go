@@ -40,7 +40,13 @@ type composeCacheEntry struct {
 	composePath   string
 	composeMtime  time.Time
 	includeMtimes map[string]time.Time
-	project       *composetypes.Project
+	// envMtimes tracks the env files that influence file selection and
+	// interpolation (.env, .env.global, COMPOSE_ENV_FILES entries). A zero time
+	// records a file that did not exist when the entry was cached, so its later
+	// appearance also invalidates. Needed because .env now selects the file set
+	// via COMPOSE_FILE.
+	envMtimes map[string]time.Time
+	project   *composetypes.Project
 }
 
 func newParsedComposeCacheInternal() *parsedComposeCacheInternal {
@@ -148,9 +154,29 @@ func (s *ProjectService) rebuildComposeNameCacheInternal(ctx context.Context) er
 	return nil
 }
 
+// ResolveProjectComposeFile returns the base compose file for a project. The
+// precedence mirrors `docker compose`: COMPOSE_FILE in the merged environment
+// (.env.global first, the project's .env on top) wins, then a GitOps sync's
+// configured compose path, then standard detection.
 func (s *ProjectService) ResolveProjectComposeFile(ctx context.Context, proj *Project) (string, error) {
 	if proj == nil {
 		return "", errors.New("project is nil")
+	}
+
+	projectsDirectory := ""
+	if s.settingsService != nil {
+		var dirErr error
+		projectsDirectory, dirErr = s.GetProjectsDirectory(ctx)
+		if dirErr != nil {
+			// The .env.global layer is skipped for an empty projects directory;
+			// keep resolution working but surface the misconfiguration.
+			slog.WarnContext(ctx, "failed to resolve projects directory for compose selection", "projectID", proj.ID, "error", dirErr)
+		}
+	}
+	if files, selErr := projects.ComposeFileEnvSelection(ctx, projectsDirectory, proj.Path); selErr != nil {
+		return "", selErr
+	} else if len(files) > 0 {
+		return files[0], nil
 	}
 
 	if proj.GitOpsManagedBy != nil && strings.TrimSpace(*proj.GitOpsManagedBy) != "" {
@@ -178,7 +204,7 @@ func (s *ProjectService) ResolveProjectComposeFile(ctx context.Context, proj *Pr
 		}
 	}
 
-	composeFile, err := projects.DetectComposeFile(proj.Path)
+	composeFile, err := projects.DetectComposeFile(ctx, projectsDirectory, proj.Path)
 	if err != nil {
 		return "", common.Classify(common.ErrProjectComposeFileNotFound, errors.WrapIf(err, "Project compose file not found"))
 	}
@@ -231,6 +257,10 @@ func (s *ProjectService) getCachedComposeProjectInternal(ctx context.Context, pr
 		s.parsedCompose.entries.Delete(proj.ID)
 	}
 
+	if cfg == nil {
+		cfg = s.settingsService.GetSettingsOrDefaults(ctx)
+	}
+
 	entry, found, err := s.parsedCompose.entries.GetWithLoaders(proj.ID, func(_ []string) (map[string]composeCacheEntry, error) {
 		composeProject, composePath, err := s.loadComposeProjectForProjectInternal(ctx, proj, cfg)
 		if err != nil {
@@ -240,6 +270,7 @@ func (s *ProjectService) getCachedComposeProjectInternal(ctx context.Context, pr
 		entry := composeCacheEntry{
 			composePath:   composePath,
 			includeMtimes: make(map[string]time.Time),
+			envMtimes:     collectEnvMtimesInternal(proj, getProjectsDirectoryOrDefaultInternal(ctx, cfg), composeProject),
 			project:       composeProject,
 		}
 		// os.Stat rather than acfs here and below: see
@@ -275,6 +306,34 @@ func (s *ProjectService) getCachedComposeProjectInternal(ctx context.Context, pr
 	return entry.project, nil
 }
 
+// collectEnvMtimesInternal records the mtimes of every env file that influences
+// compose-file selection or interpolation for a project: the project .env, the
+// global .env.global, and any COMPOSE_ENV_FILES entries. A file that does not
+// exist is recorded as a zero time so its later appearance invalidates too.
+func collectEnvMtimesInternal(proj *Project, projectsDirectory string, composeProject *composetypes.Project) map[string]time.Time {
+	paths := []string{
+		filepath.Join(proj.Path, projects.EffectiveEnvFileName),
+		filepath.Join(projectsDirectory, projects.GlobalEnvFileName),
+	}
+	if composeProject != nil {
+		if envOpts, err := projects.ParseComposeEnvOptions(composeProject.WorkingDir, projects.EnvMap(composeProject.Environment)); err == nil {
+			paths = append(paths, envOpts.EnvFiles...)
+		}
+	}
+
+	mtimes := make(map[string]time.Time, len(paths))
+	for _, p := range paths {
+		// os.Stat rather than acfs: env files may be symlinks resolving outside
+		// any confinement root (a supported setup).
+		if info, err := os.Stat(p); err == nil {
+			mtimes[p] = info.ModTime()
+		} else {
+			mtimes[p] = time.Time{}
+		}
+	}
+	return mtimes
+}
+
 // The compose file and its includes are absolute paths compose-go resolved, and
 // either may legitimately be a symlink to, or a file under, a directory outside
 // the project (#3556). These invalidation probes therefore stay on os.Stat
@@ -291,6 +350,21 @@ func validComposeCacheEntryInternal(entry composeCacheEntry) bool {
 	for includePath, cachedMtime := range entry.includeMtimes {
 		info, err := os.Stat(includePath)
 		if err != nil || !info.ModTime().Equal(cachedMtime) {
+			return false
+		}
+	}
+	for envPath, cachedMtime := range entry.envMtimes {
+		info, err := os.Stat(envPath)
+		switch {
+		case err != nil:
+			// Present when cached, now gone/unreadable: invalidate.
+			if !cachedMtime.IsZero() {
+				return false
+			}
+		case cachedMtime.IsZero():
+			// Absent when cached, now present: invalidate.
+			return false
+		case !info.ModTime().Equal(cachedMtime):
 			return false
 		}
 	}

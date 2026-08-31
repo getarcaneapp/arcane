@@ -15,7 +15,7 @@ export function getRegistryDisplayName(registry: RegistryIdentity): string {
 }
 
 /** Strips the scheme and trailing slashes so a registry URL can be used as an image host. */
-export function normalizeRegistryHost(url: string): string {
+function normalizeRegistryHost(url: string): string {
 	return url.replace(/^https?:\/\//, '').replace(/\/+$/, '');
 }
 

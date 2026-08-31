@@ -1,7 +1,6 @@
 package updater
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -12,7 +11,6 @@ import (
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
-	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/updater"
 	"github.com/spf13/cobra"
 )
@@ -39,24 +37,13 @@ var statusCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.UpdaterStatus(c.EnvID()))
+		result, err := c.GetJSON[updater.Status](cmd.Context(), types.UpdaterStatus(c.EnvID()))
 		if err != nil {
 			return errors.WrapIf(err, "failed to get updater status")
 		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result base.ApiResponse[updater.Status]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
-		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Header("Updater Status")
@@ -79,24 +66,13 @@ var runCmd = &cobra.Command{
 		// Updater run can take a long time as it pulls images and restarts containers
 		c.SetTimeout(30 * time.Minute)
 
-		resp, err := c.Post(cmd.Context(), types.UpdaterRun(c.EnvID()), nil)
+		result, err := c.PostJSON[updater.Result](cmd.Context(), types.UpdaterRun(c.EnvID()), nil)
 		if err != nil {
 			return errors.WrapIf(err, "failed to run updater")
 		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result base.ApiResponse[updater.Result]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
-		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Header("Updater Results")
@@ -141,14 +117,8 @@ var historyCmd = &cobra.Command{
 			path = cmdutil.AppendQuery(path, url.Values{"limit": []string{strconv.Itoa(historyLimit)}})
 		}
 
-		resp, err := c.Get(cmd.Context(), path)
+		result, err := c.GetJSON[[]autoUpdateRecord](cmd.Context(), path)
 		if err != nil {
-			return errors.WrapIf(err, "failed to get updater history")
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result base.ApiResponse[[]autoUpdateRecord]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
 			return errors.WrapIf(err, "failed to get updater history")
 		}
 

@@ -1,7 +1,7 @@
 import { writable } from 'svelte/store';
 import type { ApplicationTheme } from '#lib/types/settings';
 
-export const APPLICATION_THEME_VALUES = [
+const APPLICATION_THEME_VALUES = [
 	'default',
 	'graphite',
 	'ocean',

@@ -50,7 +50,7 @@ func (s *GitRepositoryService) GetRepositoriesPaginated(ctx context.Context, par
 	q = pagination.ApplyBooleanFilter(q, "enabled", params.Filters["enabled"])
 	q = pagination.ApplyFilter(q, "auth_type", params.Filters["authType"])
 
-	out, paginationResp, err := pagination.PaginateSortAndMapDB[GitRepository, gitops.GitRepository](params, q, &repositories)
+	out, paginationResp, err := params.PaginateSortAndMapDB[GitRepository, gitops.GitRepository](q, &repositories)
 	if err != nil {
 		return nil, pagination.Response{}, errors.WrapIf(err, "failed to list git repositories")
 	}

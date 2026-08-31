@@ -101,24 +101,30 @@ func TestComposeUpOptions_RemoveOrphans(t *testing.T) {
 	proj := &composetypes.Project{Name: "test"}
 
 	t.Run("removeOrphans true propagates to CreateOptions", func(t *testing.T) {
-		upOptions, _ := composeUpOptions(proj, nil, true, false, 0)
+		upOptions, _ := composeUpOptions(proj, nil, true, false, 0, ComposeEnvOptions{})
 		require.True(t, upOptions.RemoveOrphans)
 	})
 
 	t.Run("removeOrphans false leaves CreateOptions disabled", func(t *testing.T) {
-		upOptions, _ := composeUpOptions(proj, nil, false, false, 0)
+		upOptions, _ := composeUpOptions(proj, nil, false, false, 0, ComposeEnvOptions{})
 		require.False(t, upOptions.RemoveOrphans)
 	})
 
 	t.Run("removeOrphans is independent of forceRecreate", func(t *testing.T) {
 		// forceRecreate drives the Recreate policy, not RemoveOrphans.
-		upOptions, _ := composeUpOptions(proj, nil, true, true, 0)
+		upOptions, _ := composeUpOptions(proj, nil, true, true, 0, ComposeEnvOptions{})
 		require.True(t, upOptions.RemoveOrphans)
 		require.Equal(t, api.RecreateForce, upOptions.Recreate)
 
-		upOptions, _ = composeUpOptions(proj, nil, false, true, 0)
+		upOptions, _ = composeUpOptions(proj, nil, false, true, 0, ComposeEnvOptions{})
 		require.False(t, upOptions.RemoveOrphans)
 		require.Equal(t, api.RecreateForce, upOptions.Recreate)
+	})
+
+	t.Run("COMPOSE_REMOVE_ORPHANS / COMPOSE_IGNORE_ORPHANS propagate", func(t *testing.T) {
+		upOptions, _ := composeUpOptions(proj, nil, false, false, 0, ComposeEnvOptions{RemoveOrphans: true, IgnoreOrphans: true})
+		require.True(t, upOptions.RemoveOrphans)
+		require.True(t, upOptions.IgnoreOrphans)
 	})
 }
 

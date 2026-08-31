@@ -22,14 +22,14 @@ type Config[T any] struct {
 	FilterAccessors []FilterAccessor[T]
 }
 
-func SearchOrderAndPaginate[T any](items []T, params QueryParams, searchConfig Config[T]) FilterResult[T] {
+func (c Config[T]) SearchOrderAndPaginate(items []T, params QueryParams) FilterResult[T] {
 	totalAvailable := len(items)
 
-	items = searchFn(items, params.SearchQuery, searchConfig.SearchAccessors)
-	items = filterFn(items, params.Filters, searchConfig.FilterAccessors)
+	items = searchFn(items, params.SearchQuery, c.SearchAccessors)
+	items = filterFn(items, params.Filters, c.FilterAccessors)
 
 	return FilterResult[T]{
-		Items:          OrderAndPaginate(items, params, searchConfig),
+		Items:          c.OrderAndPaginate(items, params),
 		TotalCount:     int64(len(items)),
 		TotalAvailable: int64(totalAvailable),
 	}
@@ -39,20 +39,20 @@ func SearchOrderAndPaginate[T any](items []T, params QueryParams, searchConfig C
 // the search term or filters — for callers that already filtered while
 // building the item list (e.g. dropping non-matches during an incremental
 // decode) and only need ordering plus the page cut.
-func OrderAndPaginate[T any](items []T, params QueryParams, config Config[T]) []T {
-	items = sortFunction(items, params.SortParams, config.SortBindings)
+func (c Config[T]) OrderAndPaginate(items []T, params QueryParams) []T {
+	items = sortFunction(items, params.SortParams, c.SortBindings)
 	return paginateItemsFunction(items, params.Params)
 }
 
 // MatchesSearchAndFilters reports whether a single item passes params' search
-// term and filters under config — the same predicate SearchOrderAndPaginate
+// term and filters under the config — the same predicate SearchOrderAndPaginate
 // applies. It lets callers that decode large payloads incrementally drop
 // non-matching items as they go instead of materializing everything first.
-func MatchesSearchAndFilters[T any](item T, params QueryParams, config Config[T]) bool {
+func (c Config[T]) MatchesSearchAndFilters(item T, params QueryParams) bool {
 	search := strings.ToLower(strings.TrimSpace(params.Search))
 	if search != "" {
 		matched := false
-		for _, accessor := range config.SearchAccessors {
+		for _, accessor := range c.SearchAccessors {
 			value, err := accessor(item)
 			if err == nil && strings.Contains(strings.ToLower(value), search) {
 				matched = true
@@ -67,7 +67,7 @@ func MatchesSearchAndFilters[T any](item T, params QueryParams, config Config[T]
 	if len(params.Filters) == 0 {
 		return true
 	}
-	return itemMatches(item, params.Filters, config.FilterAccessors)
+	return itemMatches(item, params.Filters, c.FilterAccessors)
 }
 
 func filterFn[T any](items []T, filters map[string]string, accessors []FilterAccessor[T]) []T {

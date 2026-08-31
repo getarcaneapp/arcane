@@ -1,5 +1,4 @@
 <script lang="ts">
-	import * as Card from '#lib/components/ui/card/index.js';
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import * as Alert from '#lib/components/ui/alert';
@@ -13,6 +12,7 @@
 	import type { SearchPaginationSortRequest } from '#lib/types/shared';
 	import type { Settings } from '#lib/types/settings';
 	import type { Readable } from 'svelte/store';
+	import SectionCard from '#lib/components/section-card.svelte';
 
 	type TrivySecurityFormValues = Pick<
 		Settings,
@@ -20,7 +20,6 @@
 		| 'trivyNetwork'
 		| 'trivySecurityOpts'
 		| 'trivyPrivileged'
-		| 'trivyPreserveCacheOnVolumePrune'
 		| 'trivyResourceLimitsEnabled'
 		| 'trivyCpuLimit'
 		| 'trivyMemoryLimitMb'
@@ -62,9 +61,9 @@
 			label: m.auto(),
 			description: m.security_trivy_network_auto_description()
 		},
-		{ value: 'bridge', label: 'bridge' },
-		{ value: 'host', label: 'host' },
-		{ value: 'none', label: 'none' }
+		{ value: 'bridge', label: m.security_trivy_network_bridge() },
+		{ value: 'host', label: m.security_trivy_network_host() },
+		{ value: 'none', label: m.security_trivy_network_none() }
 	];
 
 	let customTrivyNetworkOptions = $state<TrivyNetworkOption[]>([]);
@@ -150,178 +149,166 @@
 	});
 </script>
 
-<Card.Root class="flex flex-col">
-	<Card.Header icon={SecurityIcon}>
-		<div class="flex flex-col space-y-1.5">
-			<Card.Title>
-				<h2>{m.security_vulnerability_scanning_heading()}</h2>
-			</Card.Title>
-		</div>
-	</Card.Header>
-	<Card.Content class="divide-y divide-border/40 lg:p-6 lg:pt-0 [&>*]:py-5 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
-		<div class="max-w-xl">
-			<TextInputWithLabel
-				bind:value={$formInputs.trivyImage.value}
-				error={$formInputs.trivyImage.error}
-				disabled={true}
-				label={m.security_trivy_image_label()}
-				description={m.security_trivy_image_description()}
-				helpText={m.security_trivy_image_note()}
-				placeholder="ghcr.io/getarcaneapp/tools:latest"
-				type="text"
-			/>
-		</div>
+<SectionCard
+	title={m.security_vulnerability_scanning_heading()}
+	icon={SecurityIcon}
+	class="flex flex-col"
+	contentClass="divide-y divide-border/40 lg:p-6 lg:pt-0 [&>*]:py-5 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0"
+>
+	<div class="max-w-xl">
+		<TextInputWithLabel
+			bind:value={$formInputs.trivyImage.value}
+			error={$formInputs.trivyImage.error}
+			disabled={true}
+			label={m.security_trivy_image_label()}
+			description={m.security_trivy_image_description()}
+			helpText={m.security_trivy_image_note()}
+			placeholder="ghcr.io/getarcaneapp/tools:latest"
+			type="text"
+		/>
+	</div>
 
-		<SettingsRow
-			label={m.security_trivy_ignore_unfixed_label()}
-			description={m.security_trivy_ignore_unfixed_description()}
-			layout="inline"
-		>
-			<Switch id="trivyIgnoreUnfixedSwitch" bind:checked={$formInputs.trivyIgnoreUnfixed.value} />
-		</SettingsRow>
+	<SettingsRow
+		label={m.security_trivy_ignore_unfixed_label()}
+		description={m.security_trivy_ignore_unfixed_description()}
+		layout="inline"
+	>
+		<Switch id="trivyIgnoreUnfixedSwitch" bind:checked={$formInputs.trivyIgnoreUnfixed.value} />
+	</SettingsRow>
 
-		<SettingsRow
-			label={m.security_trivy_network_label()}
-			description={m.security_trivy_network_description()}
-			helpText={m.security_trivy_network_help()}
-			contentClass="max-w-xs"
-		>
-			<SearchableSelect
-				triggerId="trivyNetwork"
-				items={trivyNetworkOptions.map((option) => ({
-					value: option.value,
-					label: option.label,
-					hint: option.description
-				}))}
-				bind:value={$formInputs.trivyNetwork.value}
-				onSelect={(value) => ($formInputs.trivyNetwork.value = value)}
-				placeholder={false}
-				class="w-full justify-between"
-			/>
-			{#if $formInputs.trivyNetwork.error}
-				<p class="mt-2 text-sm text-destructive">{$formInputs.trivyNetwork.error}</p>
-			{/if}
-		</SettingsRow>
-
-		<div class="space-y-4">
-			<SettingsRow
-				label={m.security_trivy_server_enabled_label()}
-				description={m.security_trivy_server_enabled_description()}
-				layout="inline"
-			>
-				<Switch id="trivyServerEnabledSwitch" bind:checked={$formInputs.trivyServerEnabled.value} />
-			</SettingsRow>
-			{#if $formInputs.trivyServerEnabled.value}
-				<div class="space-y-4 border-l-2 border-border/60 pl-5">
-					<TextInputWithLabel
-						bind:value={$formInputs.trivyServerUrl.value}
-						error={$formInputs.trivyServerUrl.error}
-						label={m.security_trivy_server_url_label()}
-						description={m.security_trivy_server_url_description()}
-						placeholder={m.security_trivy_server_url_placeholder()}
-						type="url"
-					/>
-					<TextInputWithLabel
-						bind:value={$formInputs.trivyServerToken.value}
-						error={$formInputs.trivyServerToken.error}
-						label={m.security_trivy_server_token_label()}
-						description={m.security_trivy_server_token_description()}
-						type="password"
-					/>
-					<Alert.Root variant="default" class="border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950">
-						<InfoIcon class="h-4 w-4 text-amber-900 dark:text-amber-100" />
-						<Alert.Description class="text-amber-800 dark:text-amber-200">
-							{m.security_trivy_server_note()}
-						</Alert.Description>
-					</Alert.Root>
-				</div>
-			{/if}
-		</div>
-
-		<SettingsRow
-			label={m.security_trivy_security_opts_label()}
-			description={m.security_trivy_security_opts_description()}
-			helpText={m.security_trivy_security_opts_help()}
-		>
-			<Textarea
-				bind:value={$formInputs.trivySecurityOpts.value}
-				aria-label={m.security_trivy_security_opts_label()}
-				class="min-h-28 font-mono text-sm"
-				placeholder={m.security_trivy_security_opts_placeholder()}
-				rows={4}
-			/>
-			{#if $formInputs.trivySecurityOpts.error}
-				<p class="mt-2 text-sm text-destructive">{$formInputs.trivySecurityOpts.error}</p>
-			{/if}
-		</SettingsRow>
-
-		<SettingsRow
-			label={m.security_trivy_privileged_label()}
-			description={m.security_trivy_privileged_description()}
-			layout="inline"
-		>
-			<Switch id="trivyPrivilegedSwitch" bind:checked={$formInputs.trivyPrivileged.value} />
-		</SettingsRow>
-		{#if $formInputs.trivyPrivileged.value}
-			<Alert.Root variant="default" class="border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950">
-				<InfoIcon class="h-4 w-4 text-amber-900 dark:text-amber-100" />
-				<Alert.Description class="text-amber-800 dark:text-amber-200">
-					{m.security_trivy_privileged_note()}
-				</Alert.Description>
-			</Alert.Root>
+	<SettingsRow
+		label={m.security_trivy_network_label()}
+		description={m.security_trivy_network_description()}
+		helpText={m.security_trivy_network_help()}
+		contentClass="max-w-xs"
+	>
+		<SearchableSelect
+			triggerId="trivyNetwork"
+			items={trivyNetworkOptions.map((option) => ({
+				value: option.value,
+				label: option.label,
+				hint: option.description
+			}))}
+			bind:value={$formInputs.trivyNetwork.value}
+			onSelect={(value) => ($formInputs.trivyNetwork.value = value)}
+			placeholder={false}
+			class="w-full justify-between"
+		/>
+		{#if $formInputs.trivyNetwork.error}
+			<p class="mt-2 text-sm text-destructive">{$formInputs.trivyNetwork.error}</p>
 		{/if}
+	</SettingsRow>
 
+	<div class="space-y-4">
 		<SettingsRow
-			label={m.security_trivy_preserve_cache_on_volume_prune_label()}
-			description={m.security_trivy_preserve_cache_on_volume_prune_description()}
+			label={m.security_trivy_server_enabled_label()}
+			description={m.security_trivy_server_enabled_description()}
 			layout="inline"
 		>
-			<Switch id="trivyPreserveCacheOnVolumePruneSwitch" bind:checked={$formInputs.trivyPreserveCacheOnVolumePrune.value} />
+			<Switch id="trivyServerEnabledSwitch" bind:checked={$formInputs.trivyServerEnabled.value} />
 		</SettingsRow>
-
-		<div class="space-y-4">
-			<SettingsRow
-				label={m.security_trivy_resource_limits_label()}
-				description={m.security_trivy_resource_limits_description()}
-				layout="inline"
-			>
-				<Switch
-					id="trivyResourceLimitsEnabledSwitch"
-					bind:checked={$formInputs.trivyResourceLimitsEnabled.value}
-					onCheckedChange={handleTrivyResourceLimitsChange}
+		{#if $formInputs.trivyServerEnabled.value}
+			<div class="space-y-4 border-l-2 border-border/60 pl-5">
+				<TextInputWithLabel
+					bind:value={$formInputs.trivyServerUrl.value}
+					error={$formInputs.trivyServerUrl.error}
+					label={m.security_trivy_server_url_label()}
+					description={m.security_trivy_server_url_description()}
+					placeholder={m.security_trivy_server_url_placeholder()}
+					type="url"
 				/>
-			</SettingsRow>
-			{#if $formInputs.trivyResourceLimitsEnabled.value}
-				<div class="space-y-4 border-l-2 border-border/60 pl-5">
-					<div class="grid gap-4 sm:grid-cols-2">
-						<TextInputWithLabel
-							bind:value={$formInputs.trivyCpuLimit.value}
-							error={$formInputs.trivyCpuLimit.error}
-							disabled={!$formInputs.trivyResourceLimitsEnabled.value}
-							label={m.security_trivy_cpu_limit_label()}
-							helpText={m.security_trivy_cpu_limit_help()}
-							type="number"
-						/>
-						<TextInputWithLabel
-							bind:value={$formInputs.trivyMemoryLimitMb.value}
-							error={$formInputs.trivyMemoryLimitMb.error}
-							disabled={!$formInputs.trivyResourceLimitsEnabled.value}
-							label={m.security_trivy_memory_limit_label()}
-							reserveHelpTextSpace={true}
-							type="number"
-						/>
-					</div>
-					<div class="max-w-xs">
-						<TextInputWithLabel
-							bind:value={$formInputs.trivyConcurrentScanContainers.value}
-							error={$formInputs.trivyConcurrentScanContainers.error}
-							label={m.security_trivy_concurrent_scan_containers_label()}
-							helpText={m.security_trivy_concurrent_scan_containers_help()}
-							type="number"
-						/>
-					</div>
+				<TextInputWithLabel
+					bind:value={$formInputs.trivyServerToken.value}
+					error={$formInputs.trivyServerToken.error}
+					label={m.security_trivy_server_token_label()}
+					description={m.security_trivy_server_token_description()}
+					type="password"
+				/>
+				<Alert.Root variant="default" class="border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950">
+					<InfoIcon class="h-4 w-4 text-amber-900 dark:text-amber-100" />
+					<Alert.Description class="text-amber-800 dark:text-amber-200">
+						{m.security_trivy_server_note()}
+					</Alert.Description>
+				</Alert.Root>
+			</div>
+		{/if}
+	</div>
+
+	<SettingsRow
+		label={m.security_trivy_security_opts_label()}
+		description={m.security_trivy_security_opts_description()}
+		helpText={m.security_trivy_security_opts_help()}
+	>
+		<Textarea
+			bind:value={$formInputs.trivySecurityOpts.value}
+			aria-label={m.security_trivy_security_opts_label()}
+			class="min-h-28 font-mono text-sm"
+			placeholder={m.security_trivy_security_opts_placeholder()}
+			rows={4}
+		/>
+		{#if $formInputs.trivySecurityOpts.error}
+			<p class="mt-2 text-sm text-destructive">{$formInputs.trivySecurityOpts.error}</p>
+		{/if}
+	</SettingsRow>
+
+	<SettingsRow
+		label={m.security_trivy_privileged_label()}
+		description={m.security_trivy_privileged_description()}
+		layout="inline"
+	>
+		<Switch id="trivyPrivilegedSwitch" bind:checked={$formInputs.trivyPrivileged.value} />
+	</SettingsRow>
+	{#if $formInputs.trivyPrivileged.value}
+		<Alert.Root variant="default" class="border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950">
+			<InfoIcon class="h-4 w-4 text-amber-900 dark:text-amber-100" />
+			<Alert.Description class="text-amber-800 dark:text-amber-200">
+				{m.security_trivy_privileged_note()}
+			</Alert.Description>
+		</Alert.Root>
+	{/if}
+
+	<div class="space-y-4">
+		<SettingsRow
+			label={m.security_trivy_resource_limits_label()}
+			description={m.security_trivy_resource_limits_description()}
+			layout="inline"
+		>
+			<Switch
+				id="trivyResourceLimitsEnabledSwitch"
+				bind:checked={$formInputs.trivyResourceLimitsEnabled.value}
+				onCheckedChange={handleTrivyResourceLimitsChange}
+			/>
+		</SettingsRow>
+		{#if $formInputs.trivyResourceLimitsEnabled.value}
+			<div class="space-y-4 border-l-2 border-border/60 pl-5">
+				<div class="grid gap-4 sm:grid-cols-2">
+					<TextInputWithLabel
+						bind:value={$formInputs.trivyCpuLimit.value}
+						error={$formInputs.trivyCpuLimit.error}
+						disabled={!$formInputs.trivyResourceLimitsEnabled.value}
+						label={m.security_trivy_cpu_limit_label()}
+						helpText={m.security_trivy_cpu_limit_help()}
+						type="number"
+					/>
+					<TextInputWithLabel
+						bind:value={$formInputs.trivyMemoryLimitMb.value}
+						error={$formInputs.trivyMemoryLimitMb.error}
+						disabled={!$formInputs.trivyResourceLimitsEnabled.value}
+						label={m.security_trivy_memory_limit_label()}
+						reserveHelpTextSpace={true}
+						type="number"
+					/>
 				</div>
-			{/if}
-		</div>
-	</Card.Content>
-</Card.Root>
+				<div class="max-w-xs">
+					<TextInputWithLabel
+						bind:value={$formInputs.trivyConcurrentScanContainers.value}
+						error={$formInputs.trivyConcurrentScanContainers.error}
+						label={m.security_trivy_concurrent_scan_containers_label()}
+						helpText={m.security_trivy_concurrent_scan_containers_help()}
+						type="number"
+					/>
+				</div>
+			</div>
+		{/if}
+	</div>
+</SectionCard>

@@ -2,7 +2,8 @@ package cmdutil
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"net/http"
@@ -50,7 +51,7 @@ func DecodeJSON[T any](resp *http.Response, out *T) error {
 	if out == nil {
 		return errors.New("nil decode target")
 	}
-	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+	if err := json.UnmarshalRead(resp.Body, out); err != nil {
 		return errors.WrapIf(err, "failed to parse response")
 	}
 	return nil
@@ -74,9 +75,9 @@ func ReadJSONBody(resp *http.Response) ([]byte, error) {
 
 // PrintRawJSON pretty-prints a raw JSON document, falling back to the bytes as-is.
 func PrintRawJSON(body []byte) error {
-	var buf bytes.Buffer
-	if json.Indent(&buf, body, "", "  ") == nil {
-		fmt.Println(buf.String())
+	value := jsontext.Value(bytes.Clone(body))
+	if value.Indent(jsontext.WithIndent("  ")) == nil {
+		fmt.Println(value.String())
 		return nil
 	}
 	// Not valid JSON: echo the server's bytes verbatim rather than swallow them.
@@ -86,7 +87,7 @@ func PrintRawJSON(body []byte) error {
 
 // PrintJSON prints indented JSON to stdout.
 func PrintJSON(v any) error {
-	b, err := json.MarshalIndent(v, "", "  ")
+	b, err := json.Marshal(v, jsontext.WithIndent("  "))
 	if err != nil {
 		return errors.WrapIf(err, "failed to marshal JSON")
 	}

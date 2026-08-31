@@ -29,10 +29,6 @@ type ListApiKeysInput struct {
 	Limit  int    `query:"limit" default:"20" doc:"Number of items per page"`
 }
 
-type ListApiKeysOutput struct {
-	Body base.Paginated[apikeytypes.ApiKey]
-}
-
 type CreateApiKeyInput struct {
 	Body apikeytypes.CreateApiKey
 }
@@ -41,16 +37,8 @@ type CreateMyApiKeyInput struct {
 	Body apikeytypes.CreateUserApiKey
 }
 
-type CreateApiKeyOutput struct {
-	Body base.ApiResponse[apikeytypes.ApiKeyCreatedDto]
-}
-
 type GetApiKeyInput struct {
 	ID string `path:"id" doc:"API key ID"`
-}
-
-type GetApiKeyOutput struct {
-	Body base.ApiResponse[apikeytypes.ApiKey]
 }
 
 type UpdateApiKeyInput struct {
@@ -58,20 +46,8 @@ type UpdateApiKeyInput struct {
 	Body apikeytypes.UpdateApiKey
 }
 
-type UpdateApiKeyOutput struct {
-	Body base.ApiResponse[apikeytypes.ApiKey]
-}
-
 type DeleteApiKeyInput struct {
 	ID string `path:"id" doc:"API key ID"`
-}
-
-type DeleteApiKeyOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
-}
-
-type ListMyApiKeysOutput struct {
-	Body base.ApiResponse[[]apikeytypes.ApiKey]
 }
 
 // RegisterApiKeys registers API key management routes using Huma.
@@ -176,7 +152,7 @@ func RegisterApiKeys(api huma.API, apiKeyService *ApiKeyService) {
 }
 
 // ListApiKeys returns a paginated list of API keys.
-func (h *ApiKeyHandler) ListApiKeys(ctx context.Context, input *ListApiKeysInput) (*ListApiKeysOutput, error) {
+func (h *ApiKeyHandler) ListApiKeys(ctx context.Context, input *ListApiKeysInput) (*handlerutil.Page[apikeytypes.ApiKey], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 
 	apiKeys, paginationResp, err := h.apiKeyService.ListApiKeys(ctx, params)
@@ -184,7 +160,7 @@ func (h *ApiKeyHandler) ListApiKeys(ctx context.Context, input *ListApiKeysInput
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to list API keys").Error())
 	}
 
-	return &ListApiKeysOutput{
+	return &handlerutil.Page[apikeytypes.ApiKey]{
 		Body: base.Paginated[apikeytypes.ApiKey]{
 			Success:    true,
 			Data:       apiKeys,
@@ -195,7 +171,7 @@ func (h *ApiKeyHandler) ListApiKeys(ctx context.Context, input *ListApiKeysInput
 
 // CreateApiKey creates a new scoped API key. Requested grants are capped by
 // the calling credential's effective permissions.
-func (h *ApiKeyHandler) CreateApiKey(ctx context.Context, input *CreateApiKeyInput) (*CreateApiKeyOutput, error) {
+func (h *ApiKeyHandler) CreateApiKey(ctx context.Context, input *CreateApiKeyInput) (*handlerutil.Out[apikeytypes.ApiKeyCreatedDto], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -210,7 +186,7 @@ func (h *ApiKeyHandler) CreateApiKey(ctx context.Context, input *CreateApiKeyInp
 		return nil, huma.Error500InternalServerError("Failed to create API key")
 	}
 
-	return &CreateApiKeyOutput{
+	return &handlerutil.Out[apikeytypes.ApiKeyCreatedDto]{
 		Body: base.ApiResponse[apikeytypes.ApiKeyCreatedDto]{
 			Success: true,
 			Data:    *apiKey,
@@ -219,13 +195,13 @@ func (h *ApiKeyHandler) CreateApiKey(ctx context.Context, input *CreateApiKeyInp
 }
 
 // GetApiKey returns details of a specific API key.
-func (h *ApiKeyHandler) GetApiKey(ctx context.Context, input *GetApiKeyInput) (*GetApiKeyOutput, error) {
+func (h *ApiKeyHandler) GetApiKey(ctx context.Context, input *GetApiKeyInput) (*handlerutil.Out[apikeytypes.ApiKey], error) {
 	apiKey, err := h.apiKeyService.GetApiKey(ctx, input.ID)
 	if err != nil {
 		return nil, huma.Error404NotFound("API key not found")
 	}
 
-	return &GetApiKeyOutput{
+	return &handlerutil.Out[apikeytypes.ApiKey]{
 		Body: base.ApiResponse[apikeytypes.ApiKey]{
 			Success: true,
 			Data:    *apiKey,
@@ -234,7 +210,7 @@ func (h *ApiKeyHandler) GetApiKey(ctx context.Context, input *GetApiKeyInput) (*
 }
 
 // UpdateApiKey updates an existing API key.
-func (h *ApiKeyHandler) UpdateApiKey(ctx context.Context, input *UpdateApiKeyInput) (*UpdateApiKeyOutput, error) {
+func (h *ApiKeyHandler) UpdateApiKey(ctx context.Context, input *UpdateApiKeyInput) (*handlerutil.Out[apikeytypes.ApiKey], error) {
 	if _, err := handlerutil.RequireUser(ctx); err != nil {
 		return nil, err
 	}
@@ -257,7 +233,7 @@ func (h *ApiKeyHandler) UpdateApiKey(ctx context.Context, input *UpdateApiKeyInp
 		return nil, huma.Error500InternalServerError("Failed to update API key")
 	}
 
-	return &UpdateApiKeyOutput{
+	return &handlerutil.Out[apikeytypes.ApiKey]{
 		Body: base.ApiResponse[apikeytypes.ApiKey]{
 			Success: true,
 			Data:    *apiKey,
@@ -266,7 +242,7 @@ func (h *ApiKeyHandler) UpdateApiKey(ctx context.Context, input *UpdateApiKeyInp
 }
 
 // DeleteApiKey deletes an API key.
-func (h *ApiKeyHandler) DeleteApiKey(ctx context.Context, input *DeleteApiKeyInput) (*DeleteApiKeyOutput, error) {
+func (h *ApiKeyHandler) DeleteApiKey(ctx context.Context, input *DeleteApiKeyInput) (*handlerutil.Out[base.MessageResponse], error) {
 	if err := h.apiKeyService.DeleteApiKey(ctx, input.ID); err != nil {
 		if errors.Is(err, ErrApiKeyNotFound) {
 			return nil, huma.Error404NotFound("API key not found")
@@ -277,7 +253,7 @@ func (h *ApiKeyHandler) DeleteApiKey(ctx context.Context, input *DeleteApiKeyInp
 		return nil, huma.Error500InternalServerError("Failed to delete API key")
 	}
 
-	return &DeleteApiKeyOutput{
+	return &handlerutil.Out[base.MessageResponse]{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data: base.MessageResponse{
@@ -288,7 +264,7 @@ func (h *ApiKeyHandler) DeleteApiKey(ctx context.Context, input *DeleteApiKeyInp
 }
 
 // ListMyApiKeys lists API keys owned by the current user (self-service).
-func (h *ApiKeyHandler) ListMyApiKeys(ctx context.Context, input *struct{}) (*ListMyApiKeysOutput, error) {
+func (h *ApiKeyHandler) ListMyApiKeys(ctx context.Context, input *struct{}) (*handlerutil.Out[[]apikeytypes.ApiKey], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -299,7 +275,7 @@ func (h *ApiKeyHandler) ListMyApiKeys(ctx context.Context, input *struct{}) (*Li
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to list API keys").Error())
 	}
 
-	return &ListMyApiKeysOutput{
+	return &handlerutil.Out[[]apikeytypes.ApiKey]{
 		Body: base.ApiResponse[[]apikeytypes.ApiKey]{
 			Success: true,
 			Data:    keys,
@@ -310,7 +286,7 @@ func (h *ApiKeyHandler) ListMyApiKeys(ctx context.Context, input *struct{}) (*Li
 // CreateMyApiKey creates a new personal API key owned by the current user
 // (self-service). Personal keys inherit the owner's role permissions, and may
 // only be minted from an interactive session — never by another API key.
-func (h *ApiKeyHandler) CreateMyApiKey(ctx context.Context, input *CreateMyApiKeyInput) (*CreateApiKeyOutput, error) {
+func (h *ApiKeyHandler) CreateMyApiKey(ctx context.Context, input *CreateMyApiKeyInput) (*handlerutil.Out[apikeytypes.ApiKeyCreatedDto], error) {
 	// Defense in depth alongside the BearerAuth-only Security requirement:
 	// only session auth sets a session ID, so API-key and sudo callers stop here.
 	if _, ok := middleware.GetCurrentSessionIDFromContext(ctx); !ok {
@@ -327,7 +303,7 @@ func (h *ApiKeyHandler) CreateMyApiKey(ctx context.Context, input *CreateMyApiKe
 		return nil, huma.Error500InternalServerError("Failed to create API key")
 	}
 
-	return &CreateApiKeyOutput{
+	return &handlerutil.Out[apikeytypes.ApiKeyCreatedDto]{
 		Body: base.ApiResponse[apikeytypes.ApiKeyCreatedDto]{
 			Success: true,
 			Data:    *apiKey,
@@ -338,7 +314,7 @@ func (h *ApiKeyHandler) CreateMyApiKey(ctx context.Context, input *CreateMyApiKe
 // DeleteMyApiKey deletes one of the current user's API keys, validating
 // ownership before removal so the endpoint can't be used to delete other
 // users' keys.
-func (h *ApiKeyHandler) DeleteMyApiKey(ctx context.Context, input *DeleteApiKeyInput) (*DeleteApiKeyOutput, error) {
+func (h *ApiKeyHandler) DeleteMyApiKey(ctx context.Context, input *DeleteApiKeyInput) (*handlerutil.Out[base.MessageResponse], error) {
 	// Defense in depth alongside the BearerAuth-only Security requirement:
 	// only session auth sets a session ID, so API-key and sudo callers stop here.
 	if _, ok := middleware.GetCurrentSessionIDFromContext(ctx); !ok {
@@ -368,7 +344,7 @@ func (h *ApiKeyHandler) DeleteMyApiKey(ctx context.Context, input *DeleteApiKeyI
 		return nil, huma.Error500InternalServerError("Failed to delete API key")
 	}
 
-	return &DeleteApiKeyOutput{
+	return &handlerutil.Out[base.MessageResponse]{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data: base.MessageResponse{

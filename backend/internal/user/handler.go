@@ -37,24 +37,12 @@ type ListUsersInput struct {
 	Limit  int    `query:"limit" default:"20" doc:"Items per page"`
 }
 
-type ListUsersOutput struct {
-	Body base.Paginated[usertypes.User]
-}
-
 type CreateUserInput struct {
 	Body usertypes.CreateUser
 }
 
-type CreateUserOutput struct {
-	Body base.ApiResponse[usertypes.User]
-}
-
 type GetUserInput struct {
 	UserID string `path:"userId" doc:"User ID"`
-}
-
-type GetUserOutput struct {
-	Body base.ApiResponse[usertypes.User]
 }
 
 type UpdateUserInput struct {
@@ -62,16 +50,8 @@ type UpdateUserInput struct {
 	Body   usertypes.UpdateUser
 }
 
-type UpdateUserOutput struct {
-	Body base.ApiResponse[usertypes.User]
-}
-
 type DeleteUserInput struct {
 	UserID string `path:"userId" doc:"User ID"`
-}
-
-type DeleteUserOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
 }
 
 type GetUserAvatarInput struct {
@@ -166,7 +146,7 @@ func RegisterUsers(api huma.API, userService *UserService, invalidateUserTokenCa
 // ============================================================================
 
 // ListUsers returns a paginated list of users.
-func (h *UserHandler) ListUsers(ctx context.Context, input *ListUsersInput) (*ListUsersOutput, error) {
+func (h *UserHandler) ListUsers(ctx context.Context, input *ListUsersInput) (*handlerutil.Page[usertypes.User], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 
 	users, paginationResp, err := h.userService.ListUsersPaginated(ctx, params)
@@ -174,7 +154,7 @@ func (h *UserHandler) ListUsers(ctx context.Context, input *ListUsersInput) (*Li
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to list users").Error())
 	}
 
-	return &ListUsersOutput{
+	return &handlerutil.Page[usertypes.User]{
 		Body: base.Paginated[usertypes.User]{
 			Success:    true,
 			Data:       users,
@@ -184,7 +164,7 @@ func (h *UserHandler) ListUsers(ctx context.Context, input *ListUsersInput) (*Li
 }
 
 // CreateUser creates a new usertypes.
-func (h *UserHandler) CreateUser(ctx context.Context, input *CreateUserInput) (*CreateUserOutput, error) {
+func (h *UserHandler) CreateUser(ctx context.Context, input *CreateUserInput) (*handlerutil.Out[usertypes.User], error) {
 	normalizedEmail, err := NormalizeOptionalEmail(input.Body.Email)
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
@@ -223,7 +203,7 @@ func (h *UserHandler) CreateUser(ctx context.Context, input *CreateUserInput) (*
 		return nil, huma.Error500InternalServerError("Failed to map user")
 	}
 
-	return &CreateUserOutput{
+	return &handlerutil.Out[usertypes.User]{
 		Body: base.ApiResponse[usertypes.User]{
 			Success: true,
 			Data:    out,
@@ -232,7 +212,7 @@ func (h *UserHandler) CreateUser(ctx context.Context, input *CreateUserInput) (*
 }
 
 // GetUser returns a user by ID.
-func (h *UserHandler) GetUser(ctx context.Context, input *GetUserInput) (*GetUserOutput, error) {
+func (h *UserHandler) GetUser(ctx context.Context, input *GetUserInput) (*handlerutil.Out[usertypes.User], error) {
 	userModel, err := h.userService.GetUserByID(ctx, input.UserID)
 	if err != nil {
 		return nil, huma.Error404NotFound("User not found")
@@ -243,7 +223,7 @@ func (h *UserHandler) GetUser(ctx context.Context, input *GetUserInput) (*GetUse
 		return nil, huma.Error500InternalServerError("Failed to map user")
 	}
 
-	return &GetUserOutput{
+	return &handlerutil.Out[usertypes.User]{
 		Body: base.ApiResponse[usertypes.User]{
 			Success: true,
 			Data:    out,
@@ -252,7 +232,7 @@ func (h *UserHandler) GetUser(ctx context.Context, input *GetUserInput) (*GetUse
 }
 
 // UpdateUser updates a usertypes.
-func (h *UserHandler) UpdateUser(ctx context.Context, input *UpdateUserInput) (*UpdateUserOutput, error) {
+func (h *UserHandler) UpdateUser(ctx context.Context, input *UpdateUserInput) (*handlerutil.Out[usertypes.User], error) {
 	userModel, err := h.userService.GetUserByID(ctx, input.UserID)
 	if err != nil {
 		return nil, huma.Error404NotFound("User not found")
@@ -321,7 +301,7 @@ func (h *UserHandler) UpdateUser(ctx context.Context, input *UpdateUserInput) (*
 		return nil, huma.Error500InternalServerError("Failed to map user")
 	}
 
-	return &UpdateUserOutput{
+	return &handlerutil.Out[usertypes.User]{
 		Body: base.ApiResponse[usertypes.User]{
 			Success: true,
 			Data:    out,
@@ -330,7 +310,7 @@ func (h *UserHandler) UpdateUser(ctx context.Context, input *UpdateUserInput) (*
 }
 
 // DeleteUser deletes a usertypes.
-func (h *UserHandler) DeleteUser(ctx context.Context, input *DeleteUserInput) (*DeleteUserOutput, error) {
+func (h *UserHandler) DeleteUser(ctx context.Context, input *DeleteUserInput) (*handlerutil.Out[base.MessageResponse], error) {
 	// Privilege ordering: a non-admin caller may not delete a global admin
 	// target. The service enforces the same check; this pre-check produces a
 	// clean 403 without entering the delete path.
@@ -363,7 +343,7 @@ func (h *UserHandler) DeleteUser(ctx context.Context, input *DeleteUserInput) (*
 		h.invalidateUserTokenCache(input.UserID)
 	}
 
-	return &DeleteUserOutput{
+	return &handlerutil.Out[base.MessageResponse]{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data: base.MessageResponse{

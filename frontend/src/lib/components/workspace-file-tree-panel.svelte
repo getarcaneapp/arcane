@@ -32,11 +32,11 @@
 		workspaceFileParentPath,
 		workspaceFilePathMatches,
 		validateWorkspaceFileName,
-		type WorkspaceFileEntry
+		type WorkspaceDisplayEntry
 	} from '#lib/utils/workspace-files';
 
 	type DialogMode = 'create_file' | 'create_folder' | 'rename' | 'move' | 'upload';
-	type TreeRow = WorkspaceFileEntry & {
+	type TreeRow = WorkspaceDisplayEntry & {
 		depth: number;
 		hasChildren: boolean;
 	};
@@ -60,7 +60,7 @@
 	interface Props {
 		title?: string;
 		leadingRows?: WorkspaceTreeLeadingRow[];
-		entries: WorkspaceFileEntry[];
+		entries: WorkspaceDisplayEntry[];
 		selectedFile: string;
 		disabled?: boolean;
 		readOnlyMessage?: string;
@@ -182,8 +182,8 @@
 		};
 	}
 
-	function flattenRows(files: WorkspaceFileEntry[], folderStates: Record<string, boolean>): TreeRow[] {
-		const byParent = new Map<string, WorkspaceFileEntry[]>();
+	function flattenRows(files: WorkspaceDisplayEntry[], folderStates: Record<string, boolean>): TreeRow[] {
+		const byParent = new Map<string, WorkspaceDisplayEntry[]>();
 		for (const entry of files) {
 			const parentPath = workspaceFileParentPath(entry.relativePath);
 			const siblings = byParent.get(parentPath) ?? [];
@@ -497,7 +497,7 @@
 		dialogOpen = false;
 	}
 
-	function handleDelete(entry: WorkspaceFileEntry) {
+	function handleDelete(entry: WorkspaceDisplayEntry) {
 		if (disabled) return;
 		openConfirmDialog({
 			title: m.delete_name({ name: entry.relativePath }),

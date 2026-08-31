@@ -69,10 +69,6 @@ type ListEnvironmentsInput struct {
 	Type   string `query:"type" doc:"Filter by environment type (comma-separated: http,edge,websocket,grpc,polling)"`
 }
 
-type ListEnvironmentsOutput struct {
-	Body base.Paginated[environment.Environment]
-}
-
 type CreateEnvironmentInput struct {
 	Body environment.Create
 }
@@ -83,16 +79,8 @@ type EnvironmentWithApiKey struct {
 	ApiKey *string `json:"apiKey,omitempty" doc:"API key for pairing (only shown once during creation)"`
 }
 
-type CreateEnvironmentOutput struct {
-	Body base.ApiResponse[EnvironmentWithApiKey]
-}
-
 type GetEnvironmentInput struct {
 	ID string `path:"id" doc:"Environment ID"`
-}
-
-type GetEnvironmentOutput struct {
-	Body base.ApiResponse[environment.Environment]
 }
 
 type UpdateEnvironmentInput struct {
@@ -100,16 +88,8 @@ type UpdateEnvironmentInput struct {
 	Body environment.Update
 }
 
-type UpdateEnvironmentOutput struct {
-	Body base.ApiResponse[environment.Environment]
-}
-
 type DeleteEnvironmentInput struct {
 	ID string `path:"id" doc:"Environment ID"`
-}
-
-type DeleteEnvironmentOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
 }
 
 type TestConnectionInput struct {
@@ -117,16 +97,8 @@ type TestConnectionInput struct {
 	Body *environment.TestConnectionRequest `json:"body,omitempty"`
 }
 
-type TestConnectionOutput struct {
-	Body base.ApiResponse[environment.Test]
-}
-
 type UpdateHeartbeatInput struct {
 	ID string `path:"id" doc:"Environment ID"`
-}
-
-type UpdateHeartbeatOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
 }
 
 type PairAgentInput struct {
@@ -134,24 +106,12 @@ type PairAgentInput struct {
 	Body *environment.AgentPairRequest `json:"body,omitempty"`
 }
 
-type PairAgentOutput struct {
-	Body base.ApiResponse[environment.AgentPairResponse]
-}
-
 type SyncEnvironmentInput struct {
 	ID string `path:"id" doc:"Environment ID"`
 }
 
-type SyncEnvironmentOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
-}
-
 type PairEnvironmentInput struct {
 	XAPIKey string `header:"X-API-Key" doc:"API key for environment pairing"`
-}
-
-type PairEnvironmentOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
 }
 
 type DeploymentSnippet struct {
@@ -164,16 +124,8 @@ type GetDeploymentSnippetsInput struct {
 	ID string `path:"id" doc:"Environment ID"`
 }
 
-type GetDeploymentSnippetsOutput struct {
-	Body base.ApiResponse[DeploymentSnippet]
-}
-
 type GetEnvironmentVersionInput struct {
 	ID string `path:"id" doc:"Environment ID"`
-}
-
-type GetEnvironmentVersionOutput struct {
-	Body base.ApiResponse[version.Info]
 }
 
 type DownloadEdgeMTLSCAInput struct{}
@@ -370,7 +322,7 @@ func RegisterEnvironments(api huma.API, h *EnvironmentHandler) {
 // ============================================================================
 
 // ListEnvironments returns a paginated list of environments.
-func (h *EnvironmentHandler) ListEnvironments(ctx context.Context, input *ListEnvironmentsInput) (*ListEnvironmentsOutput, error) {
+func (h *EnvironmentHandler) ListEnvironments(ctx context.Context, input *ListEnvironmentsInput) (*handlerutil.Page[environment.Environment], error) {
 	// The list endpoint backs both the environments management page and the
 	// environment switcher, so any authenticated caller may reach it. Global
 	// listers (sudo, global admins, or holders of the org-level
@@ -398,7 +350,7 @@ func (h *EnvironmentHandler) ListEnvironments(ctx context.Context, input *ListEn
 		h.applyEdgeRuntimeStateInternal(&envs[i])
 	}
 
-	return &ListEnvironmentsOutput{
+	return &handlerutil.Page[environment.Environment]{
 		Body: base.Paginated[environment.Environment]{
 			Success:    true,
 			Data:       envs,
@@ -464,7 +416,7 @@ func (h *EnvironmentHandler) visibleEnvironmentsForInternal(ctx context.Context,
 // the bytes for comparison — most ticks change nothing and the encoded snapshot
 // was thrown away immediately.
 func fingerprintEnvironmentsInternal(envs []environment.Environment) uint64 {
-	return utils.FingerprintOf(envs, func(f *utils.Fingerprint, env *environment.Environment) {
+	return utils.NewFingerprint().Slice(envs, func(f *utils.Fingerprint, env *environment.Environment) {
 		f.String(env.ID).
 			String(env.Name).
 			String(env.ApiUrl).
@@ -494,7 +446,7 @@ func fingerprintEnvironmentsInternal(envs []environment.Environment) uint64 {
 			OptInt(cert.DaysRemaining).
 			Bool(cert.Expired).
 			Bool(cert.ExpiringSoon)
-	})
+	}).Sum()
 }
 
 func (h *EnvironmentHandler) RunStreamProducer(ctx context.Context, ps *authz.PermissionSet, events chan<- environment.StreamEvent) {
@@ -556,7 +508,7 @@ func (h *EnvironmentHandler) RunStreamProducer(ctx context.Context, ps *authz.Pe
 }
 
 // CreateEnvironment creates a new environment.
-func (h *EnvironmentHandler) CreateEnvironment(ctx context.Context, input *CreateEnvironmentInput) (*CreateEnvironmentOutput, error) {
+func (h *EnvironmentHandler) CreateEnvironment(ctx context.Context, input *CreateEnvironmentInput) (*handlerutil.Out[EnvironmentWithApiKey], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -586,7 +538,7 @@ func (h *EnvironmentHandler) CreateEnvironment(ctx context.Context, input *Creat
 	return h.createEnvironmentLegacyInternal(ctx, env, user, input.Body)
 }
 
-func (h *EnvironmentHandler) createEnvironmentWithApiKeyInternal(ctx context.Context, env *Environment, user *common.User) (*CreateEnvironmentOutput, error) {
+func (h *EnvironmentHandler) createEnvironmentWithApiKeyInternal(ctx context.Context, env *Environment, user *common.User) (*handlerutil.Out[EnvironmentWithApiKey], error) {
 	// New API key-based pairing flow
 	env.Status = string(EnvironmentStatusPending)
 
@@ -631,7 +583,7 @@ func (h *EnvironmentHandler) createEnvironmentWithApiKeyInternal(ctx context.Con
 	}
 	h.applyEdgeRuntimeStateInternal(&out)
 
-	return &CreateEnvironmentOutput{
+	return &handlerutil.Out[EnvironmentWithApiKey]{
 		Body: base.ApiResponse[EnvironmentWithApiKey]{
 			Success: true,
 			Data: EnvironmentWithApiKey{
@@ -642,7 +594,7 @@ func (h *EnvironmentHandler) createEnvironmentWithApiKeyInternal(ctx context.Con
 	}, nil
 }
 
-func (h *EnvironmentHandler) createEnvironmentLegacyInternal(ctx context.Context, env *Environment, user *common.User, body environment.Create) (*CreateEnvironmentOutput, error) {
+func (h *EnvironmentHandler) createEnvironmentLegacyInternal(ctx context.Context, env *Environment, user *common.User, body environment.Create) (*handlerutil.Out[EnvironmentWithApiKey], error) {
 	if body.AccessToken != nil && *body.AccessToken != "" {
 		env.AccessToken = body.AccessToken
 	}
@@ -663,7 +615,7 @@ func (h *EnvironmentHandler) createEnvironmentLegacyInternal(ctx context.Context
 	}
 	h.applyEdgeRuntimeStateInternal(&out)
 
-	return &CreateEnvironmentOutput{
+	return &handlerutil.Out[EnvironmentWithApiKey]{
 		Body: base.ApiResponse[EnvironmentWithApiKey]{
 			Success: true,
 			Data: EnvironmentWithApiKey{
@@ -674,7 +626,7 @@ func (h *EnvironmentHandler) createEnvironmentLegacyInternal(ctx context.Context
 }
 
 // GetEnvironment returns an environment by ID.
-func (h *EnvironmentHandler) GetEnvironment(ctx context.Context, input *GetEnvironmentInput) (*GetEnvironmentOutput, error) {
+func (h *EnvironmentHandler) GetEnvironment(ctx context.Context, input *GetEnvironmentInput) (*handlerutil.Out[environment.Environment], error) {
 	env, err := h.environmentService.GetEnvironmentByID(ctx, input.ID)
 	if err != nil {
 		return nil, huma.Error404NotFound("Environment not found")
@@ -691,7 +643,7 @@ func (h *EnvironmentHandler) GetEnvironment(ctx context.Context, input *GetEnvir
 		}
 	}
 
-	return &GetEnvironmentOutput{
+	return &handlerutil.Out[environment.Environment]{
 		Body: base.ApiResponse[environment.Environment]{
 			Success: true,
 			Data:    out,
@@ -700,7 +652,7 @@ func (h *EnvironmentHandler) GetEnvironment(ctx context.Context, input *GetEnvir
 }
 
 // UpdateEnvironment updates an environment.
-func (h *EnvironmentHandler) UpdateEnvironment(ctx context.Context, input *UpdateEnvironmentInput) (*UpdateEnvironmentOutput, error) {
+func (h *EnvironmentHandler) UpdateEnvironment(ctx context.Context, input *UpdateEnvironmentInput) (*handlerutil.Out[environment.Environment], error) {
 	isLocalEnv := input.ID == localDockerEnvironmentID
 	updates := h.buildUpdateMapInternal(&input.Body, isLocalEnv)
 
@@ -791,7 +743,7 @@ func (h *EnvironmentHandler) UpdateEnvironment(ctx context.Context, input *Updat
 	// Set the API key on the response if regenerated
 	out.ApiKey = newApiKey
 
-	return &UpdateEnvironmentOutput{
+	return &handlerutil.Out[environment.Environment]{
 		Body: base.ApiResponse[environment.Environment]{
 			Success: true,
 			Data:    out,
@@ -804,7 +756,7 @@ func (h *EnvironmentHandler) applyEdgeRuntimeStateInternal(env *environment.Envi
 }
 
 // DeleteEnvironment deletes an environment.
-func (h *EnvironmentHandler) DeleteEnvironment(ctx context.Context, input *DeleteEnvironmentInput) (*DeleteEnvironmentOutput, error) {
+func (h *EnvironmentHandler) DeleteEnvironment(ctx context.Context, input *DeleteEnvironmentInput) (*handlerutil.Out[base.MessageResponse], error) {
 	if input.ID == localDockerEnvironmentID {
 		return nil, huma.Error400BadRequest("Cannot delete local environment")
 	}
@@ -819,7 +771,7 @@ func (h *EnvironmentHandler) DeleteEnvironment(ctx context.Context, input *Delet
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to delete environment").Error())
 	}
 
-	return &DeleteEnvironmentOutput{
+	return &handlerutil.Out[base.MessageResponse]{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data: base.MessageResponse{
@@ -830,7 +782,7 @@ func (h *EnvironmentHandler) DeleteEnvironment(ctx context.Context, input *Delet
 }
 
 // TestConnection tests connectivity to an environment.
-func (h *EnvironmentHandler) TestConnection(ctx context.Context, input *TestConnectionInput) (*TestConnectionOutput, error) {
+func (h *EnvironmentHandler) TestConnection(ctx context.Context, input *TestConnectionInput) (*handlerutil.Out[environment.Test], error) {
 	var apiUrl *string
 	if input.Body != nil {
 		apiUrl = input.Body.ApiUrl
@@ -851,7 +803,7 @@ func (h *EnvironmentHandler) TestConnection(ctx context.Context, input *TestConn
 			apiErr := common.ToAPIError(err)
 			err = huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
 		}
-		return &TestConnectionOutput{
+		return &handlerutil.Out[environment.Test]{
 			Body: base.ApiResponse[environment.Test]{
 				Success: false,
 				Data:    resp,
@@ -859,7 +811,7 @@ func (h *EnvironmentHandler) TestConnection(ctx context.Context, input *TestConn
 		}, err
 	}
 
-	return &TestConnectionOutput{
+	return &handlerutil.Out[environment.Test]{
 		Body: base.ApiResponse[environment.Test]{
 			Success: true,
 			Data:    resp,
@@ -868,12 +820,12 @@ func (h *EnvironmentHandler) TestConnection(ctx context.Context, input *TestConn
 }
 
 // UpdateHeartbeat updates the heartbeat for an environment.
-func (h *EnvironmentHandler) UpdateHeartbeat(ctx context.Context, input *UpdateHeartbeatInput) (*UpdateHeartbeatOutput, error) {
+func (h *EnvironmentHandler) UpdateHeartbeat(ctx context.Context, input *UpdateHeartbeatInput) (*handlerutil.Out[base.MessageResponse], error) {
 	if err := h.environmentService.UpdateEnvironmentHeartbeat(ctx, input.ID); err != nil {
 		return nil, huma.Error500InternalServerError("Failed to update heartbeat")
 	}
 
-	return &UpdateHeartbeatOutput{
+	return &handlerutil.Out[base.MessageResponse]{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data: base.MessageResponse{
@@ -884,7 +836,7 @@ func (h *EnvironmentHandler) UpdateHeartbeat(ctx context.Context, input *UpdateH
 }
 
 // PairAgent generates or rotates the local agent pairing token.
-func (h *EnvironmentHandler) PairAgent(ctx context.Context, input *PairAgentInput) (*PairAgentOutput, error) {
+func (h *EnvironmentHandler) PairAgent(ctx context.Context, input *PairAgentInput) (*handlerutil.Out[environment.AgentPairResponse], error) {
 	if input.ID != localDockerEnvironmentID {
 		return nil, huma.Error404NotFound("Not found")
 	}
@@ -898,7 +850,7 @@ func (h *EnvironmentHandler) PairAgent(ctx context.Context, input *PairAgentInpu
 		return nil, huma.Error500InternalServerError("Failed to persist agent token")
 	}
 
-	return &PairAgentOutput{
+	return &handlerutil.Out[environment.AgentPairResponse]{
 		Body: base.ApiResponse[environment.AgentPairResponse]{
 			Success: true,
 			Data: environment.AgentPairResponse{
@@ -909,7 +861,7 @@ func (h *EnvironmentHandler) PairAgent(ctx context.Context, input *PairAgentInpu
 }
 
 // SyncEnvironment syncs manager-owned resources to an environment.
-func (h *EnvironmentHandler) SyncEnvironment(ctx context.Context, input *SyncEnvironmentInput) (*SyncEnvironmentOutput, error) {
+func (h *EnvironmentHandler) SyncEnvironment(ctx context.Context, input *SyncEnvironmentInput) (*handlerutil.Out[base.MessageResponse], error) {
 	// Sync registries
 	if err := h.environmentService.SyncRegistriesToEnvironment(ctx, input.ID); err != nil {
 		slog.WarnContext(ctx, "Failed to sync registries", "environmentID", input.ID, "error", err.Error())
@@ -924,7 +876,7 @@ func (h *EnvironmentHandler) SyncEnvironment(ctx context.Context, input *SyncEnv
 		slog.WarnContext(ctx, "Failed to sync git repositories", "environmentID", input.ID, "error", err.Error())
 	}
 
-	return &SyncEnvironmentOutput{
+	return &handlerutil.Out[base.MessageResponse]{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data: base.MessageResponse{
@@ -1027,7 +979,7 @@ func (h *EnvironmentHandler) triggerEnvironmentResourceSyncInternal(ctx context.
 }
 
 // PairEnvironment handles agent pairing callback with API key.
-func (h *EnvironmentHandler) PairEnvironment(ctx context.Context, input *PairEnvironmentInput) (*PairEnvironmentOutput, error) {
+func (h *EnvironmentHandler) PairEnvironment(ctx context.Context, input *PairEnvironmentInput) (*handlerutil.Out[base.MessageResponse], error) {
 	if input.XAPIKey == "" {
 		return nil, huma.Error400BadRequest("X-API-Key header is required")
 	}
@@ -1064,7 +1016,7 @@ func (h *EnvironmentHandler) PairEnvironment(ctx context.Context, input *PairEnv
 	slog.InfoContext(ctx, "Environment pairing completed", "environmentID", *envID, "environmentName", env.Name)
 	h.triggerEnvironmentResourceSyncInternal(ctx, *envID, env.Name, "environment pairing")
 
-	return &PairEnvironmentOutput{
+	return &handlerutil.Out[base.MessageResponse]{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data: base.MessageResponse{
@@ -1075,7 +1027,7 @@ func (h *EnvironmentHandler) PairEnvironment(ctx context.Context, input *PairEnv
 }
 
 // GetDeploymentSnippets returns deployment snippets for an environment.
-func (h *EnvironmentHandler) GetDeploymentSnippets(ctx context.Context, input *GetDeploymentSnippetsInput) (*GetDeploymentSnippetsOutput, error) {
+func (h *EnvironmentHandler) GetDeploymentSnippets(ctx context.Context, input *GetDeploymentSnippetsInput) (*handlerutil.Out[DeploymentSnippet], error) {
 	env, err := h.environmentService.GetEnvironmentByID(ctx, input.ID)
 	if err != nil {
 		return nil, huma.Error404NotFound("Environment not found")
@@ -1133,7 +1085,7 @@ func (h *EnvironmentHandler) GetDeploymentSnippets(ctx context.Context, input *G
 		}
 	}
 
-	return &GetDeploymentSnippetsOutput{
+	return &handlerutil.Out[DeploymentSnippet]{
 		Body: base.ApiResponse[DeploymentSnippet]{
 			Success: true,
 			Data: DeploymentSnippet{
@@ -1146,7 +1098,7 @@ func (h *EnvironmentHandler) GetDeploymentSnippets(ctx context.Context, input *G
 }
 
 // GetEnvironmentVersion returns the version of a remote environment.
-func (h *EnvironmentHandler) GetEnvironmentVersion(ctx context.Context, input *GetEnvironmentVersionInput) (*GetEnvironmentVersionOutput, error) {
+func (h *EnvironmentHandler) GetEnvironmentVersion(ctx context.Context, input *GetEnvironmentVersionInput) (*handlerutil.Out[version.Info], error) {
 	env, err := h.environmentService.GetEnvironmentByID(ctx, input.ID)
 	if err != nil {
 		return nil, huma.Error404NotFound("Environment not found")
@@ -1213,7 +1165,7 @@ func (h *EnvironmentHandler) GetEnvironmentVersion(ctx context.Context, input *G
 		// Don't fail the request if heartbeat update fails
 	}
 
-	return &GetEnvironmentVersionOutput{
+	return &handlerutil.Out[version.Info]{
 		Body: base.ApiResponse[version.Info]{
 			Success: true,
 			Data:    versionInfo,

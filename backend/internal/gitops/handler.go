@@ -43,17 +43,9 @@ type CreateGitOpsSyncInput struct {
 	Body          gitops.CreateSyncRequest
 }
 
-type CreateGitOpsSyncOutput struct {
-	Body base.ApiResponse[gitops.GitOpsSync]
-}
-
 type GetGitOpsSyncInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	SyncID        string `path:"syncId" doc:"Sync ID"`
-}
-
-type GetGitOpsSyncOutput struct {
-	Body base.ApiResponse[gitops.GitOpsSync]
 }
 
 type UpdateGitOpsSyncInput struct {
@@ -62,17 +54,9 @@ type UpdateGitOpsSyncInput struct {
 	Body          gitops.UpdateSyncRequest
 }
 
-type UpdateGitOpsSyncOutput struct {
-	Body base.ApiResponse[gitops.GitOpsSync]
-}
-
 type DeleteGitOpsSyncInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	SyncID        string `path:"syncId" doc:"Sync ID"`
-}
-
-type DeleteGitOpsSyncOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
 }
 
 type PerformSyncInput struct {
@@ -80,17 +64,9 @@ type PerformSyncInput struct {
 	SyncID        string `path:"syncId" doc:"Sync ID"`
 }
 
-type PerformSyncOutput struct {
-	Body base.ApiResponse[gitops.SyncResult]
-}
-
 type GetSyncStatusInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	SyncID        string `path:"syncId" doc:"Sync ID"`
-}
-
-type GetSyncStatusOutput struct {
-	Body base.ApiResponse[gitops.SyncStatus]
 }
 
 type BrowseSyncFilesInput struct {
@@ -99,17 +75,9 @@ type BrowseSyncFilesInput struct {
 	Path          string `query:"path" doc:"Path to browse (optional)"`
 }
 
-type BrowseSyncFilesOutput struct {
-	Body base.ApiResponse[gitops.BrowseResponse]
-}
-
 type ImportGitOpsSyncsInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Body          []gitops.ImportGitOpsSyncRequest
-}
-
-type ImportGitOpsSyncsOutput struct {
-	Body base.ApiResponse[gitops.ImportGitOpsSyncResponse]
 }
 
 // ============================================================================
@@ -177,7 +145,7 @@ func (h *GitOpsSyncHandler) ListSyncs(ctx context.Context, input *ListGitOpsSync
 }
 
 // CreateSync creates a new GitOps sync.
-func (h *GitOpsSyncHandler) CreateSync(ctx context.Context, input *CreateGitOpsSyncInput) (*CreateGitOpsSyncOutput, error) {
+func (h *GitOpsSyncHandler) CreateSync(ctx context.Context, input *CreateGitOpsSyncInput) (*handlerutil.Out[gitops.GitOpsSync], error) {
 	if err := requireLifecyclePermissionInternal(ctx, input.EnvironmentID, input.Body.HasPreDeployConfig()); err != nil {
 		return nil, err
 	}
@@ -197,13 +165,13 @@ func (h *GitOpsSyncHandler) CreateSync(ctx context.Context, input *CreateGitOpsS
 		return nil, mapErr
 	}
 
-	return &CreateGitOpsSyncOutput{
+	return &handlerutil.Out[gitops.GitOpsSync]{
 		Body: body,
 	}, nil
 }
 
 // ImportSyncs imports multiple GitOps syncs.
-func (h *GitOpsSyncHandler) ImportSyncs(ctx context.Context, input *ImportGitOpsSyncsInput) (*ImportGitOpsSyncsOutput, error) {
+func (h *GitOpsSyncHandler) ImportSyncs(ctx context.Context, input *ImportGitOpsSyncsInput) (*handlerutil.Out[gitops.ImportGitOpsSyncResponse], error) {
 	actor := handlerutil.CurrentActor(ctx)
 
 	response, err := h.syncService.ImportSyncs(ctx, input.EnvironmentID, input.Body, actor)
@@ -211,7 +179,7 @@ func (h *GitOpsSyncHandler) ImportSyncs(ctx context.Context, input *ImportGitOps
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 
-	return &ImportGitOpsSyncsOutput{
+	return &handlerutil.Out[gitops.ImportGitOpsSyncResponse]{
 		Body: base.ApiResponse[gitops.ImportGitOpsSyncResponse]{
 			Success: true,
 			Data:    *response,
@@ -220,7 +188,7 @@ func (h *GitOpsSyncHandler) ImportSyncs(ctx context.Context, input *ImportGitOps
 }
 
 // GetSync returns a GitOps sync by ID.
-func (h *GitOpsSyncHandler) GetSync(ctx context.Context, input *GetGitOpsSyncInput) (*GetGitOpsSyncOutput, error) {
+func (h *GitOpsSyncHandler) GetSync(ctx context.Context, input *GetGitOpsSyncInput) (*handlerutil.Out[gitops.GitOpsSync], error) {
 	sync, err := h.syncService.GetSyncByID(ctx, input.EnvironmentID, input.SyncID)
 	if err != nil {
 		apiErr := common.ToAPIError(err)
@@ -234,13 +202,13 @@ func (h *GitOpsSyncHandler) GetSync(ctx context.Context, input *GetGitOpsSyncInp
 		return nil, mapErr
 	}
 
-	return &GetGitOpsSyncOutput{
+	return &handlerutil.Out[gitops.GitOpsSync]{
 		Body: body,
 	}, nil
 }
 
 // UpdateSync updates an existing GitOps sync.
-func (h *GitOpsSyncHandler) UpdateSync(ctx context.Context, input *UpdateGitOpsSyncInput) (*UpdateGitOpsSyncOutput, error) {
+func (h *GitOpsSyncHandler) UpdateSync(ctx context.Context, input *UpdateGitOpsSyncInput) (*handlerutil.Out[gitops.GitOpsSync], error) {
 	if err := requireLifecyclePermissionInternal(ctx, input.EnvironmentID, input.Body.HasPreDeployConfig()); err != nil {
 		return nil, err
 	}
@@ -260,13 +228,13 @@ func (h *GitOpsSyncHandler) UpdateSync(ctx context.Context, input *UpdateGitOpsS
 		return nil, mapErr
 	}
 
-	return &UpdateGitOpsSyncOutput{
+	return &handlerutil.Out[gitops.GitOpsSync]{
 		Body: body,
 	}, nil
 }
 
 // DeleteSync deletes a GitOps sync by ID.
-func (h *GitOpsSyncHandler) DeleteSync(ctx context.Context, input *DeleteGitOpsSyncInput) (*DeleteGitOpsSyncOutput, error) {
+func (h *GitOpsSyncHandler) DeleteSync(ctx context.Context, input *DeleteGitOpsSyncInput) (*handlerutil.Out[base.MessageResponse], error) {
 	actor := handlerutil.CurrentActor(ctx)
 
 	if err := h.syncService.DeleteSync(ctx, input.EnvironmentID, input.SyncID, actor); err != nil {
@@ -274,7 +242,7 @@ func (h *GitOpsSyncHandler) DeleteSync(ctx context.Context, input *DeleteGitOpsS
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to delete GitOps sync")
 	}
 
-	return &DeleteGitOpsSyncOutput{
+	return &handlerutil.Out[base.MessageResponse]{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data: base.MessageResponse{
@@ -285,7 +253,7 @@ func (h *GitOpsSyncHandler) DeleteSync(ctx context.Context, input *DeleteGitOpsS
 }
 
 // PerformSync manually triggers a sync operation.
-func (h *GitOpsSyncHandler) PerformSync(ctx context.Context, input *PerformSyncInput) (*PerformSyncOutput, error) {
+func (h *GitOpsSyncHandler) PerformSync(ctx context.Context, input *PerformSyncInput) (*handlerutil.Out[gitops.SyncResult], error) {
 	actor := handlerutil.CurrentActor(ctx)
 
 	result, err := h.syncService.PerformSync(ctx, input.EnvironmentID, input.SyncID, actor)
@@ -294,7 +262,7 @@ func (h *GitOpsSyncHandler) PerformSync(ctx context.Context, input *PerformSyncI
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to perform GitOps sync")
 	}
 
-	return &PerformSyncOutput{
+	return &handlerutil.Out[gitops.SyncResult]{
 		Body: base.ApiResponse[gitops.SyncResult]{
 			Success: result.Success,
 			Data:    *result,
@@ -303,14 +271,14 @@ func (h *GitOpsSyncHandler) PerformSync(ctx context.Context, input *PerformSyncI
 }
 
 // GetStatus returns the current status of a GitOps sync.
-func (h *GitOpsSyncHandler) GetStatus(ctx context.Context, input *GetSyncStatusInput) (*GetSyncStatusOutput, error) {
+func (h *GitOpsSyncHandler) GetStatus(ctx context.Context, input *GetSyncStatusInput) (*handlerutil.Out[gitops.SyncStatus], error) {
 	status, err := h.syncService.GetSyncStatus(ctx, input.EnvironmentID, input.SyncID)
 	if err != nil {
 		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to get GitOps sync status")
 	}
 
-	return &GetSyncStatusOutput{
+	return &handlerutil.Out[gitops.SyncStatus]{
 		Body: base.ApiResponse[gitops.SyncStatus]{
 			Success: true,
 			Data:    *status,
@@ -319,14 +287,14 @@ func (h *GitOpsSyncHandler) GetStatus(ctx context.Context, input *GetSyncStatusI
 }
 
 // BrowseFiles returns the file tree at the specified path in the repository.
-func (h *GitOpsSyncHandler) BrowseFiles(ctx context.Context, input *BrowseSyncFilesInput) (*BrowseSyncFilesOutput, error) {
+func (h *GitOpsSyncHandler) BrowseFiles(ctx context.Context, input *BrowseSyncFilesInput) (*handlerutil.Out[gitops.BrowseResponse], error) {
 	response, err := h.syncService.BrowseFiles(ctx, input.EnvironmentID, input.SyncID, input.Path)
 	if err != nil {
 		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to browse GitOps sync files")
 	}
 
-	return &BrowseSyncFilesOutput{
+	return &handlerutil.Out[gitops.BrowseResponse]{
 		Body: base.ApiResponse[gitops.BrowseResponse]{
 			Success: true,
 			Data:    *response,

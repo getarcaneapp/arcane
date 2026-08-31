@@ -389,7 +389,7 @@ async function mockSystemBackupPage(
 	openPage = true
 ) {
 	await mockAppShell(page);
-	await page.route(/\/api\/backups(?:\?.*)?$/, async (route) => {
+	await page.route(/\/api\/backups\/history(?:\?.*)?$/, async (route) => {
 		await route.fulfill({
 			json: {
 				success: true,
@@ -401,7 +401,10 @@ async function mockSystemBackupPage(
 						status: 'succeeded',
 						trigger: 'manual',
 						destination: 'local',
-						localSnapshotId: 'system-snapshot'
+						localSnapshotId: 'system-snapshot',
+						type: 'system',
+						resourceType: 'system',
+						resourceName: 'Arcane system'
 					}
 				],
 				pagination: { currentPage: 1, totalPages: 1, totalItems: 1, itemsPerPage: 20 }

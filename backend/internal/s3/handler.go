@@ -34,13 +34,6 @@ type listS3DestinationsInputInternal struct {
 	Limit  int    `query:"limit" default:"20" doc:"Limit"`
 }
 
-type listS3DestinationsOutputInternal struct {
-	Body struct {
-		Data       []backuptypes.S3Destination `json:"data"`
-		Pagination base.PaginationResponse     `json:"pagination"`
-	}
-}
-
 type listAllS3DestinationsOutputInternal struct {
 	Body []backuptypes.S3Destination
 }
@@ -60,10 +53,6 @@ type updateS3DestinationInputInternal struct {
 
 type s3DestinationOutputInternal struct {
 	Body backuptypes.S3Destination
-}
-
-type s3DestinationMessageOutputInternal struct {
-	Body base.ApiResponse[base.MessageResponse]
 }
 
 type testS3DestinationInputInternal struct {
@@ -130,16 +119,19 @@ func (h *s3DestinationHandlerInternal) inUseInternal(ctx context.Context, input 
 	return output, nil
 }
 
-func (h *s3DestinationHandlerInternal) listInternal(ctx context.Context, input *listS3DestinationsInputInternal) (*listS3DestinationsOutputInternal, error) {
+func (h *s3DestinationHandlerInternal) listInternal(ctx context.Context, input *listS3DestinationsInputInternal) (*handlerutil.Page[backuptypes.S3Destination], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	destinations, paginationResponse, err := h.service.ListS3Destinations(ctx, params)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	output := &listS3DestinationsOutputInternal{}
-	output.Body.Data = destinations
-	output.Body.Pagination = handlerutil.PaginationResponse(paginationResponse)
-	return output, nil
+	return &handlerutil.Page[backuptypes.S3Destination]{
+		Body: base.Paginated[backuptypes.S3Destination]{
+			Success:    true,
+			Data:       destinations,
+			Pagination: handlerutil.PaginationResponse(paginationResponse),
+		},
+	}, nil
 }
 
 func (h *s3DestinationHandlerInternal) listAllInternal(ctx context.Context, _ *struct{}) (*listAllS3DestinationsOutputInternal, error) {
@@ -150,7 +142,7 @@ func (h *s3DestinationHandlerInternal) listAllInternal(ctx context.Context, _ *s
 	return &listAllS3DestinationsOutputInternal{Body: destinations}, nil
 }
 
-func (h *s3DestinationHandlerInternal) getInternal(ctx context.Context, input *s3DestinationIDInputInternal) (*s3DestinationOutputInternal, error) {
+func (h *s3DestinationHandlerInternal) getInternal(ctx context.Context, input *s3DestinationIDInputInternal) (*handlerutil.Out[backuptypes.S3Destination], error) {
 	destination, err := h.service.GetS3Destination(ctx, input.ID)
 	if errors.Is(err, ErrS3DestinationNotFound) {
 		return nil, huma.Error404NotFound(err.Error())
@@ -158,7 +150,7 @@ func (h *s3DestinationHandlerInternal) getInternal(ctx context.Context, input *s
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	return &s3DestinationOutputInternal{Body: *destination}, nil
+	return &handlerutil.Out[backuptypes.S3Destination]{Body: base.ApiResponse[backuptypes.S3Destination]{Success: true, Data: *destination}}, nil
 }
 
 func (h *s3DestinationHandlerInternal) createInternal(ctx context.Context, input *createS3DestinationInputInternal) (*s3DestinationOutputInternal, error) {
@@ -191,7 +183,7 @@ func (h *s3DestinationHandlerInternal) updateInternal(ctx context.Context, input
 	return &s3DestinationOutputInternal{Body: *destination}, nil
 }
 
-func (h *s3DestinationHandlerInternal) deleteInternal(ctx context.Context, input *s3DestinationIDInputInternal) (*s3DestinationMessageOutputInternal, error) {
+func (h *s3DestinationHandlerInternal) deleteInternal(ctx context.Context, input *s3DestinationIDInputInternal) (*handlerutil.Out[base.MessageResponse], error) {
 	err := h.service.DeleteS3Destination(ctx, input.ID)
 	if errors.Is(err, ErrS3DestinationNotFound) {
 		return nil, huma.Error404NotFound(err.Error())
@@ -203,17 +195,17 @@ func (h *s3DestinationHandlerInternal) deleteInternal(ctx context.Context, input
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 	h.triggerRemoteSyncInternal(ctx, "S3 destination deletion")
-	return &s3DestinationMessageOutputInternal{Body: successMessageResponseInternal("S3 destination deleted successfully")}, nil
+	return &handlerutil.Out[base.MessageResponse]{Body: successMessageResponseInternal("S3 destination deleted successfully")}, nil
 }
 
-func (h *s3DestinationHandlerInternal) testInternal(ctx context.Context, input *testS3DestinationInputInternal) (*s3DestinationMessageOutputInternal, error) {
+func (h *s3DestinationHandlerInternal) testInternal(ctx context.Context, input *testS3DestinationInputInternal) (*handlerutil.Out[base.MessageResponse], error) {
 	if err := h.service.TestS3Destination(ctx, input.ID, input.Body); err != nil {
 		if errors.Is(err, ErrS3DestinationNotFound) {
 			return nil, huma.Error404NotFound(err.Error())
 		}
 		return nil, huma.Error400BadRequest(err.Error())
 	}
-	return &s3DestinationMessageOutputInternal{Body: successMessageResponseInternal(s3ConnectionTestSuccessInternal)}, nil
+	return &handlerutil.Out[base.MessageResponse]{Body: successMessageResponseInternal(s3ConnectionTestSuccessInternal)}, nil
 }
 
 func successMessageResponseInternal(message string) base.ApiResponse[base.MessageResponse] {
@@ -232,16 +224,16 @@ func (h *s3DestinationHandlerInternal) triggerRemoteSyncInternal(ctx context.Con
 	}(detachedCtx, reason)
 }
 
-func (h *s3DestinationHandlerInternal) testConfigurationInternal(ctx context.Context, input *testS3DestinationConfigurationInputInternal) (*s3DestinationMessageOutputInternal, error) {
+func (h *s3DestinationHandlerInternal) testConfigurationInternal(ctx context.Context, input *testS3DestinationConfigurationInputInternal) (*handlerutil.Out[base.MessageResponse], error) {
 	if err := h.service.TestS3DestinationConfiguration(ctx, input.Body); err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
-	return &s3DestinationMessageOutputInternal{Body: successMessageResponseInternal(s3ConnectionTestSuccessInternal)}, nil
+	return &handlerutil.Out[base.MessageResponse]{Body: successMessageResponseInternal(s3ConnectionTestSuccessInternal)}, nil
 }
 
-func (h *s3DestinationHandlerInternal) syncInternal(ctx context.Context, input *syncS3DestinationsInputInternal) (*s3DestinationMessageOutputInternal, error) {
+func (h *s3DestinationHandlerInternal) syncInternal(ctx context.Context, input *syncS3DestinationsInputInternal) (*handlerutil.Out[base.MessageResponse], error) {
 	if err := h.service.SyncS3Destinations(ctx, input.Body.Destinations); err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
-	return &s3DestinationMessageOutputInternal{Body: successMessageResponseInternal("S3 destinations synced successfully")}, nil
+	return &handlerutil.Out[base.MessageResponse]{Body: successMessageResponseInternal("S3 destinations synced successfully")}, nil
 }

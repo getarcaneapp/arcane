@@ -131,7 +131,6 @@ type Settings struct {
 	TrivyNetwork                    SettingVariable `key:"trivyNetwork,envOverride" meta:"label=Trivy Network;type=text;keywords=trivy,network,mode,bridge,host,none,scanner,vulnerability,security;category=security;description=Docker network mode/network name used for Trivy scan containers. Leave empty to inherit Arcane's network automatically."`
 	TrivySecurityOpts               SettingVariable `key:"trivySecurityOpts,envOverride" meta:"label=Trivy Security Options;type=textarea;keywords=trivy,security,opt,security_opt,selinux,labels,apparmor,scanner;category=security;description=Docker security options applied to Trivy scan containers. Use commas or new lines to separate entries (for example: label=disable)"`
 	TrivyPrivileged                 SettingVariable `key:"trivyPrivileged,envOverride" meta:"label=Trivy Privileged;type=boolean;keywords=trivy,privileged,security,selinux,scanner;category=security;description=Run Trivy scan containers in privileged mode when required by the host security policy"`
-	TrivyPreserveCacheOnVolumePrune SettingVariable `key:"trivyPreserveCacheOnVolumePrune,envOverride" meta:"label=Preserve Trivy Cache On Volume Prune;type=boolean;keywords=trivy,cache,volume,prune,preserve,cleanup,security;category=security;description=Keep the Trivy cache volume when unused volumes are pruned manually or on a schedule"`
 	TrivyResourceLimitsEnabled      SettingVariable `key:"trivyResourceLimitsEnabled,envOverride" meta:"label=Trivy Resource Limits;type=boolean;keywords=trivy,resources,limits,cpu,memory,ram,security,scan;category=security;description=Enable CPU and memory limits for Trivy scan containers"`
 	TrivyCpuLimit                   SettingVariable `key:"trivyCpuLimit,envOverride" meta:"label=Trivy CPU Limit (cores);type=number;keywords=trivy,cpu,cores,limit,scanner,resources;category=security;description=Maximum CPU cores for Trivy scan containers (supports decimals, e.g. 1.5). Set 0 to disable CPU limit"`
 	TrivyMemoryLimitMb              SettingVariable `key:"trivyMemoryLimitMb,envOverride" meta:"label=Trivy Memory Limit (MB);type=number;keywords=trivy,memory,ram,mb,limit,scanner,resources;category=security;description=Maximum memory for Trivy scan containers in MB. Set 0 to disable memory limit"`
@@ -171,8 +170,13 @@ type Settings struct {
 	// Notifications category (placeholder for category metadata only - actual settings managed via notification service)
 	NotificationsCategoryPlaceholder SettingVariable `key:"notificationsCategory,internal" meta:"label=Notifications;type=internal;keywords=notifications,alerts,email,discord,webhooks,events,messages;category=notifications;description=Configure notification providers and alerts" catmeta:"id=notifications;title=Notifications;icon=bell;url=/settings/notifications;description=Configure email and Discord notifications for container and image updates"`
 
-	AgentToken SettingVariable `key:"agentToken,internal,sensitive"`
-	InstanceID SettingVariable `key:"instanceId,internal"`
+	ApnsEnabled    SettingVariable `key:"apnsEnabled,authrequired" meta:"label=Mobile Push Notifications;type=boolean;keywords=apns,push,mobile,ios,notifications,relay;category=notifications;description=Let users receive native push notifications in the Arcane mobile app"`
+	ApnsChannelID  SettingVariable `key:"apnsChannelId,internal"`
+	ApnsSigningKey SettingVariable `key:"apnsSigningKey,internal,sensitive"`
+
+	AgentToken        SettingVariable `key:"agentToken,internal,sensitive"`
+	JwtSigningKeySeed SettingVariable `key:"jwtSigningKeySeed,internal,sensitive"`
+	InstanceID        SettingVariable `key:"instanceId,internal"`
 
 	// Users category (admin management page - no actual settings)
 	UsersCategoryPlaceholder SettingVariable `key:"usersCategory,internal" meta:"label=Users;type=internal;keywords=users,accounts,management,admin,access,permissions,roles;category=users;description=Manage user accounts and permissions" catmeta:"id=users;title=Users;icon=user;url=/settings/users;description=Manage user accounts and access control"`
@@ -183,6 +187,7 @@ type Settings struct {
 	S3DestinationsCategoryPlaceholder SettingVariable `key:"s3DestinationsCategory,internal" meta:"label=S3 Destinations;type=internal;keywords=s3,storage,backup,aws,minio,backblaze,hetzner;category=s3destinations;description=Manage reusable S3-compatible storage destinations" catmeta:"id=s3destinations;title=S3 Destinations;icon=remoteenvironment;url=/settings/backups/s3;description=Create and manage reusable S3-compatible backup destinations"`
 
 	SystemBackupsCategoryPlaceholder SettingVariable `key:"systemBackupsCategory,internal" meta:"label=Backups;type=internal;keywords=backup,recovery,restore,configuration,secrets;category=systembackups;description=Back up and restore this Arcane instance" catmeta:"id=systembackups;title=Backups;icon=backup;url=/settings/backups;description=Create encrypted recovery backups of Arcane data and configuration"`
+	SystemVolumeBackupConfig         SettingVariable `key:"systemVolumeBackupConfig,internal"`
 
 	FederatedCredentialsCategoryPlaceholder SettingVariable `key:"federatedCredentialsCategory,internal" meta:"label=Federated Credentials;type=internal;keywords=federated,credentials,workload,identity,oidc,token exchange,ci,github,gitlab;category=authentication;description=Manage workload identity federation credentials"`
 

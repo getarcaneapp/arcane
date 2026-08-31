@@ -30,24 +30,12 @@ type ListGitRepositoriesInput struct {
 	Limit  int    `query:"limit" default:"20" doc:"Items per page"`
 }
 
-type ListGitRepositoriesOutput struct {
-	Body base.Paginated[gitops.GitRepository]
-}
-
 type CreateGitRepositoryInput struct {
 	Body CreateGitRepositoryRequest
 }
 
-type CreateGitRepositoryOutput struct {
-	Body base.ApiResponse[gitops.GitRepository]
-}
-
 type GetGitRepositoryInput struct {
 	ID string `path:"id" doc:"Repository ID"`
-}
-
-type GetGitRepositoryOutput struct {
-	Body base.ApiResponse[gitops.GitRepository]
 }
 
 type UpdateGitRepositoryInput struct {
@@ -55,16 +43,8 @@ type UpdateGitRepositoryInput struct {
 	Body UpdateGitRepositoryRequest
 }
 
-type UpdateGitRepositoryOutput struct {
-	Body base.ApiResponse[gitops.GitRepository]
-}
-
 type DeleteGitRepositoryInput struct {
 	ID string `path:"id" doc:"Repository ID"`
-}
-
-type DeleteGitRepositoryOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
 }
 
 type TestGitRepositoryInput struct {
@@ -72,16 +52,8 @@ type TestGitRepositoryInput struct {
 	Branch string `query:"branch" doc:"Branch to test (optional, uses repository default branch when omitted)"`
 }
 
-type TestGitRepositoryOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
-}
-
 type ListBranchesInput struct {
 	ID string `path:"id" doc:"Repository ID"`
-}
-
-type ListBranchesOutput struct {
-	Body base.ApiResponse[gitops.BranchesResponse]
 }
 
 type BrowseFilesInput struct {
@@ -90,16 +62,8 @@ type BrowseFilesInput struct {
 	Path   string `query:"path" doc:"Path within repository (optional)"`
 }
 
-type BrowseFilesOutput struct {
-	Body base.ApiResponse[gitops.BrowseResponse]
-}
-
 type SyncGitRepositoriesInput struct {
 	Body gitops.RepositorySyncRequest
-}
-
-type SyncGitRepositoriesOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
 }
 
 // ============================================================================
@@ -126,7 +90,7 @@ func RegisterGitRepositories(api huma.API, repoService *GitRepositoryService) {
 // ============================================================================
 
 // ListRepositories returns a paginated list of git repositories.
-func (h *GitRepositoryHandler) ListRepositories(ctx context.Context, input *ListGitRepositoriesInput) (*ListGitRepositoriesOutput, error) {
+func (h *GitRepositoryHandler) ListRepositories(ctx context.Context, input *ListGitRepositoriesInput) (*handlerutil.Page[gitops.GitRepository], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 
 	repositories, paginationResp, err := h.repoService.GetRepositoriesPaginated(ctx, params)
@@ -134,7 +98,7 @@ func (h *GitRepositoryHandler) ListRepositories(ctx context.Context, input *List
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to list git repositories").Error())
 	}
 
-	return &ListGitRepositoriesOutput{
+	return &handlerutil.Page[gitops.GitRepository]{
 		Body: base.Paginated[gitops.GitRepository]{
 			Success:    true,
 			Data:       repositories,
@@ -144,7 +108,7 @@ func (h *GitRepositoryHandler) ListRepositories(ctx context.Context, input *List
 }
 
 // CreateRepository creates a new git repository.
-func (h *GitRepositoryHandler) CreateRepository(ctx context.Context, input *CreateGitRepositoryInput) (*CreateGitRepositoryOutput, error) {
+func (h *GitRepositoryHandler) CreateRepository(ctx context.Context, input *CreateGitRepositoryInput) (*handlerutil.Out[gitops.GitRepository], error) {
 	actor := handlerutil.CurrentActor(ctx)
 
 	repo, err := h.repoService.CreateRepository(ctx, input.Body, actor)
@@ -160,13 +124,13 @@ func (h *GitRepositoryHandler) CreateRepository(ctx context.Context, input *Crea
 		return nil, mapErr
 	}
 
-	return &CreateGitRepositoryOutput{
+	return &handlerutil.Out[gitops.GitRepository]{
 		Body: body,
 	}, nil
 }
 
 // GetRepository returns a git repository by ID.
-func (h *GitRepositoryHandler) GetRepository(ctx context.Context, input *GetGitRepositoryInput) (*GetGitRepositoryOutput, error) {
+func (h *GitRepositoryHandler) GetRepository(ctx context.Context, input *GetGitRepositoryInput) (*handlerutil.Out[gitops.GitRepository], error) {
 	repo, err := h.repoService.GetRepositoryByID(ctx, input.ID)
 	if err != nil {
 		apiErr := common.ToAPIError(err)
@@ -180,13 +144,13 @@ func (h *GitRepositoryHandler) GetRepository(ctx context.Context, input *GetGitR
 		return nil, mapErr
 	}
 
-	return &GetGitRepositoryOutput{
+	return &handlerutil.Out[gitops.GitRepository]{
 		Body: body,
 	}, nil
 }
 
 // UpdateRepository updates an existing git repository.
-func (h *GitRepositoryHandler) UpdateRepository(ctx context.Context, input *UpdateGitRepositoryInput) (*UpdateGitRepositoryOutput, error) {
+func (h *GitRepositoryHandler) UpdateRepository(ctx context.Context, input *UpdateGitRepositoryInput) (*handlerutil.Out[gitops.GitRepository], error) {
 	actor := handlerutil.CurrentActor(ctx)
 
 	repo, err := h.repoService.UpdateRepository(ctx, input.ID, input.Body, actor)
@@ -202,13 +166,13 @@ func (h *GitRepositoryHandler) UpdateRepository(ctx context.Context, input *Upda
 		return nil, mapErr
 	}
 
-	return &UpdateGitRepositoryOutput{
+	return &handlerutil.Out[gitops.GitRepository]{
 		Body: body,
 	}, nil
 }
 
 // DeleteRepository deletes a git repository by ID.
-func (h *GitRepositoryHandler) DeleteRepository(ctx context.Context, input *DeleteGitRepositoryInput) (*DeleteGitRepositoryOutput, error) {
+func (h *GitRepositoryHandler) DeleteRepository(ctx context.Context, input *DeleteGitRepositoryInput) (*handlerutil.Out[base.MessageResponse], error) {
 	actor := handlerutil.CurrentActor(ctx)
 
 	if err := h.repoService.DeleteRepository(ctx, input.ID, actor); err != nil {
@@ -216,7 +180,7 @@ func (h *GitRepositoryHandler) DeleteRepository(ctx context.Context, input *Dele
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to delete git repository")
 	}
 
-	return &DeleteGitRepositoryOutput{
+	return &handlerutil.Out[base.MessageResponse]{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data: base.MessageResponse{
@@ -227,14 +191,14 @@ func (h *GitRepositoryHandler) DeleteRepository(ctx context.Context, input *Dele
 }
 
 // TestRepository tests connectivity and authentication to a git repository.
-func (h *GitRepositoryHandler) TestRepository(ctx context.Context, input *TestGitRepositoryInput) (*TestGitRepositoryOutput, error) {
+func (h *GitRepositoryHandler) TestRepository(ctx context.Context, input *TestGitRepositoryInput) (*handlerutil.Out[base.MessageResponse], error) {
 	actor := handlerutil.CurrentActor(ctx)
 
 	if err := h.repoService.TestConnection(ctx, input.ID, input.Branch, actor); err != nil {
 		return nil, huma.Error400BadRequest(errors.WithMessage(err, "Failed to test git repository connection").Error())
 	}
 
-	return &TestGitRepositoryOutput{
+	return &handlerutil.Out[base.MessageResponse]{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data: base.MessageResponse{
@@ -245,13 +209,13 @@ func (h *GitRepositoryHandler) TestRepository(ctx context.Context, input *TestGi
 }
 
 // ListBranches returns all branches from a git repository.
-func (h *GitRepositoryHandler) ListBranches(ctx context.Context, input *ListBranchesInput) (*ListBranchesOutput, error) {
+func (h *GitRepositoryHandler) ListBranches(ctx context.Context, input *ListBranchesInput) (*handlerutil.Out[gitops.BranchesResponse], error) {
 	branches, err := h.repoService.ListBranches(ctx, input.ID)
 	if err != nil {
 		return nil, huma.Error400BadRequest(errors.WithMessage(err, "Failed to test git repository connection").Error())
 	}
 
-	return &ListBranchesOutput{
+	return &handlerutil.Out[gitops.BranchesResponse]{
 		Body: base.ApiResponse[gitops.BranchesResponse]{
 			Success: true,
 			Data: gitops.BranchesResponse{
@@ -262,7 +226,7 @@ func (h *GitRepositoryHandler) ListBranches(ctx context.Context, input *ListBran
 }
 
 // BrowseFiles returns files and directories from a git repository.
-func (h *GitRepositoryHandler) BrowseFiles(ctx context.Context, input *BrowseFilesInput) (*BrowseFilesOutput, error) {
+func (h *GitRepositoryHandler) BrowseFiles(ctx context.Context, input *BrowseFilesInput) (*handlerutil.Out[gitops.BrowseResponse], error) {
 	if input.Branch == "" {
 		return nil, huma.Error400BadRequest("branch parameter is required")
 	}
@@ -272,7 +236,7 @@ func (h *GitRepositoryHandler) BrowseFiles(ctx context.Context, input *BrowseFil
 		return nil, huma.Error400BadRequest(errors.WithMessage(err, "Failed to test git repository connection").Error())
 	}
 
-	return &BrowseFilesOutput{
+	return &handlerutil.Out[gitops.BrowseResponse]{
 		Body: base.ApiResponse[gitops.BrowseResponse]{
 			Success: true,
 			Data:    *result,
@@ -281,13 +245,13 @@ func (h *GitRepositoryHandler) BrowseFiles(ctx context.Context, input *BrowseFil
 }
 
 // SyncRepositories syncs git repositories from a manager to this agent instance.
-func (h *GitRepositoryHandler) SyncRepositories(ctx context.Context, input *SyncGitRepositoriesInput) (*SyncGitRepositoriesOutput, error) {
+func (h *GitRepositoryHandler) SyncRepositories(ctx context.Context, input *SyncGitRepositoriesInput) (*handlerutil.Out[base.MessageResponse], error) {
 	if err := h.repoService.SyncRepositories(ctx, input.Body.Repositories); err != nil {
 		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), errors.WithMessage(err, "Failed to sync git repositories").Error())
 	}
 
-	return &SyncGitRepositoriesOutput{
+	return &handlerutil.Out[base.MessageResponse]{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data: base.MessageResponse{

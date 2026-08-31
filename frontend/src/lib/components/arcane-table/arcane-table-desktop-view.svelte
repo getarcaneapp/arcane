@@ -184,7 +184,7 @@
 		<!-- Pinned row actions: a floating chip at the row's end, always present in its own gutter. -->
 		<div class="flex items-center justify-end py-1 pr-3 pl-2" data-row-select-ignore>
 			<div
-				class="flex items-center gap-0.5 rounded-full border border-border/50 bg-card/90 p-0.5 shadow-sm backdrop-blur-sm transition-all duration-150 group-hover/row:border-border group-hover/row:shadow-md"
+				class="flex items-center gap-0.5 rounded-full border border-border/50 bg-card/90 p-0.5 shadow-sm transition-all duration-150 group-hover/row:border-border group-hover/row:shadow-md"
 			>
 				<FlexRender {cell} />
 			</div>
@@ -243,7 +243,7 @@
 {#snippet emptyState()}
 	<Table.Row>
 		<Table.Cell colspan={columnsCount} class="h-48">
-			<TableEmpty class={cn('rounded-lg py-12', unstyled ? 'bg-transparent' : 'bg-card/30 backdrop-blur-sm')} />
+			<TableEmpty class={cn('rounded-lg py-12', unstyled ? 'bg-transparent' : 'bg-card/30')} />
 		</Table.Cell>
 	</Table.Row>
 {/snippet}
@@ -264,9 +264,12 @@
 	class={cn(
 		'h-full w-full',
 		unstyled &&
-			'[&_td]:bg-transparent! [&_thead]:bg-transparent! [&_thead]:backdrop-blur-none [&_tr]:border-border/40! [&_tr]:bg-transparent! [&_tr]:hover:bg-transparent! [&_tr:hover_td]:bg-transparent! [&_tr[data-state=selected]]:bg-transparent! [&_tr[data-state=selected]_td]:bg-transparent!'
+			'[&_td]:bg-transparent! [&_thead]:bg-transparent! [&_tr]:border-border/40! [&_tr]:bg-transparent! [&_tr]:hover:bg-transparent! [&_tr:hover_td]:bg-transparent! [&_tr[data-state=selected]]:bg-transparent! [&_tr[data-state=selected]_td]:bg-transparent!'
 	)}
 >
+	{#if !unstyled}
+		<div aria-hidden="true" class="sticky top-0 z-[var(--arcane-z-sticky)] -mb-10 h-10 backdrop-blur-sm"></div>
+	{/if}
 	<Table.Root class={shouldVirtualize ? 'table-fixed' : undefined}>
 		<Table.Header>
 			{#each table.getHeaderGroups() as headerGroup (headerGroup.id)}

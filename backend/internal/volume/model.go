@@ -1,10 +1,10 @@
 package volume
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-
 	"time"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
 	"github.com/getarcaneapp/arcane/types/v2/volume"
 )
 
@@ -34,20 +34,21 @@ const (
 type VolumeBackup struct {
 	database.BaseModel
 
-	VolumeName        string                   `json:"volumeName" gorm:"column:volume_name;index"`
-	Size              int64                    `json:"size" gorm:"column:size"`
-	CreatedAt         time.Time                `json:"createdAt" gorm:"column:created_at"`
-	Status            VolumeBackupStatus       `json:"status" gorm:"column:status;type:text;not null;default:succeeded"`
-	Trigger           VolumeBackupTrigger      `json:"trigger" gorm:"column:trigger;type:text;not null;default:manual"`
-	Destination       volume.BackupDestination `json:"destination" gorm:"column:destination;type:text;not null;default:local"`
-	Format            VolumeBackupFormat       `json:"format" gorm:"column:format;type:text;not null;default:archive"`
-	LocalSnapshotID   string                   `json:"localSnapshotId,omitempty" gorm:"column:local_snapshot_id;type:text"`
-	RemoteSnapshotID  string                   `json:"remoteSnapshotId,omitempty" gorm:"column:remote_snapshot_id;type:text"`
-	S3DestinationID   string                   `json:"s3DestinationId,omitempty" gorm:"column:s3_destination_id;type:text;index"`
-	S3DestinationName string                   `json:"s3DestinationName,omitempty" gorm:"-"`
-	PolicyID          string                   `json:"policyId,omitempty" gorm:"column:policy_id;type:text;index"`
-	Error             string                   `json:"error,omitempty" gorm:"column:error;type:text"`
-	ActivityID        *string                  `json:"activityId,omitempty" gorm:"-"`
+	VolumeName        string                     `json:"volumeName" gorm:"column:volume_name;index"`
+	Size              int64                      `json:"size" gorm:"column:size"`
+	CreatedAt         time.Time                  `json:"createdAt" gorm:"column:created_at"`
+	Status            VolumeBackupStatus         `json:"status" gorm:"column:status;type:text;not null;default:succeeded"`
+	Trigger           VolumeBackupTrigger        `json:"trigger" gorm:"column:trigger;type:text;not null;default:manual"`
+	Destination       volume.BackupDestination   `json:"destination" gorm:"column:destination;type:text;not null;default:local"`
+	Format            VolumeBackupFormat         `json:"format" gorm:"column:format;type:text;not null;default:archive"`
+	LocalSnapshotID   string                     `json:"localSnapshotId,omitempty" gorm:"column:local_snapshot_id;type:text"`
+	RemoteSnapshotID  string                     `json:"remoteSnapshotId,omitempty" gorm:"column:remote_snapshot_id;type:text"`
+	S3DestinationID   string                     `json:"s3DestinationId,omitempty" gorm:"column:s3_destination_id;type:text;index"`
+	S3DestinationName string                     `json:"s3DestinationName,omitempty" gorm:"-"`
+	PolicyID          string                     `json:"policyId,omitempty" gorm:"column:policy_id;type:text;index"`
+	Error             string                     `json:"error,omitempty" gorm:"column:error;type:text"`
+	ActivityID        *string                    `json:"activityId,omitempty" gorm:"-"`
+	Type              backuptypes.ManagementType `json:"type" gorm:"-"`
 }
 
 func (*VolumeBackup) TableName() string {
@@ -70,6 +71,7 @@ func (b *VolumeBackup) ToDTO() volume.BackupEntry {
 		S3DestinationName: b.S3DestinationName,
 		PolicyID:          b.PolicyID,
 		Error:             b.Error,
+		Type:              b.Type,
 	}
 }
 

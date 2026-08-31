@@ -1,5 +1,13 @@
 import { m } from '#lib/paraglide/messages';
-import type { BackupDestination, BackupRun, BackupStatus, BackupTrigger } from '#lib/types/backup';
+import type {
+	BackupDestination,
+	BackupManagementType,
+	BackupPolicy,
+	BackupPolicyUpdate,
+	BackupRun,
+	BackupStatus,
+	BackupTrigger
+} from '#lib/types/backup';
 import type { S3Destination } from '#lib/types/s3-destination';
 
 export function backupStatusLabel(status: BackupStatus): string {
@@ -18,6 +26,17 @@ export function backupTriggerLabel(trigger: BackupTrigger): string {
 	if (trigger === 'scheduled') return m.backups_trigger_scheduled();
 	if (trigger === 'safety') return m.backups_trigger_safety();
 	return m.backups_trigger_manual();
+}
+
+export function backupManagementLabel(type?: BackupManagementType): string {
+	return type === 'system' ? m.backups_system_managed() : m.backups_volume_managed();
+}
+
+export function backupManagementFilterOptions() {
+	return [
+		{ label: m.backups_system_managed(), value: 'system' },
+		{ label: m.backups_volume_managed(), value: 'volume' }
+	];
 }
 
 export function backupDestinationLabel(destination: BackupDestination): string {
@@ -83,5 +102,18 @@ export function backupPolicyDestinationValues(destination: BackupDestination, s3
 		localEnabled: destination !== 's3',
 		s3Enabled: destination !== 'local',
 		s3DestinationId: destination === 'local' ? '' : s3DestinationId
+	};
+}
+
+export function backupPolicyUpdateFromPolicy(policy: BackupPolicy, includeStopContainers = false): BackupPolicyUpdate {
+	return {
+		id: policy.id,
+		enabled: policy.enabled,
+		schedule: policy.schedule,
+		retentionCount: policy.retentionCount,
+		localEnabled: policy.localEnabled,
+		s3Enabled: policy.s3Enabled,
+		s3DestinationId: policy.s3DestinationId ?? '',
+		...(includeStopContainers ? { stopContainers: policy.stopContainers ?? false } : {})
 	};
 }

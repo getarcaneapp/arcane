@@ -2,7 +2,7 @@ package images
 
 import (
 	"bufio"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"net/http"
@@ -40,27 +40,13 @@ var imagesSearchCmd = &cobra.Command{
 
 		log.Debugf("Searching images from: %s", path)
 
-		resp, err := c.Get(cmd.Context(), path)
-		if err != nil {
-			return errors.WrapIf(err, "failed to search images")
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		body, err := cmdutil.ReadJSONBody(resp)
+		result, err := c.GetJSON[[]image.SearchResult](cmd.Context(), path)
 		if err != nil {
 			return errors.WrapIf(err, "failed to search images")
 		}
 
 		if cmdutil.JSONOutputEnabled(cmd) {
-			return cmdutil.PrintRawJSON(body)
-		}
-
-		var result struct {
-			Success bool                 `json:"success"`
-			Data    []image.SearchResult `json:"data"`
-		}
-		if err := json.Unmarshal(body, &result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		headers := []string{"NAME", "DESCRIPTION", "STARS", "OFFICIAL"}
@@ -95,10 +81,11 @@ var imagesHistoryCmd = &cobra.Command{
 		jsonOutput := cmdutil.JSONOutputEnabled(cmd)
 		allowPrompt := !jsonOutput && prompt.IsInteractive()
 
-		imageID, err := resolveImageID(cmd.Context(), c, args[0], allowPrompt)
+		resolved, _, err := ImageRef.Resolve(cmd.Context(), c, args[0], allowPrompt)
 		if err != nil {
 			return err
 		}
+		imageID := resolved.ID
 		path := types.ImageHistory(c.EnvID(), imageID)
 
 		log.Debugf("Getting image history from: %s", path)
@@ -157,10 +144,11 @@ var imagesTagCmd = &cobra.Command{
 		jsonOutput := cmdutil.JSONOutputEnabled(cmd)
 		allowPrompt := !jsonOutput && prompt.IsInteractive()
 
-		imageID, err := resolveImageID(cmd.Context(), c, args[0], allowPrompt)
+		resolved, _, err := ImageRef.Resolve(cmd.Context(), c, args[0], allowPrompt)
 		if err != nil {
 			return err
 		}
+		imageID := resolved.ID
 
 		repository, tag := splitImageRef(args[1])
 		if repository == "" {
@@ -217,10 +205,11 @@ var imagesExportCmd = &cobra.Command{
 
 		allowPrompt := prompt.IsInteractive()
 
-		imageID, err := resolveImageID(cmd.Context(), c, args[0], allowPrompt)
+		resolved, _, err := ImageRef.Resolve(cmd.Context(), c, args[0], allowPrompt)
 		if err != nil {
 			return err
 		}
+		imageID := resolved.ID
 
 		outputFile := exportFileName(args[0])
 		if len(args) == 2 {
@@ -509,74 +498,36 @@ var imagesBuildsCmd = &cobra.Command{
 	Short:        "List image build history",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		log := logger.GetLogger()
 		c, err := cmdutil.ClientFromCommand(cmd)
 		if err != nil {
 			return err
 		}
 
-		u, err := url.Parse(types.ImageBuilds(c.EnvID()))
-		if err != nil {
-			return errors.WrapIf(err, "failed to parse endpoint path")
-		}
-		q := u.Query()
+		query := url.Values{}
 		if buildsStatus != "" {
-			q.Set("status", buildsStatus)
+			query.Set("status", buildsStatus)
 		}
 		if buildsProvider != "" {
-			q.Set("provider", buildsProvider)
+			query.Set("provider", buildsProvider)
 		}
-		u.RawQuery = q.Encode()
 
-		path, err := cmdutil.ApplyPaginationParams(cmd, u.String(), cmdutil.ListParams{
-			Resource:        "builds",
-			Limit:           buildsLimit,
-			FallbackDefault: 0,
-			Start:           buildsStart,
-			All:             buildsAll,
+		return cmdutil.RunList(cmd, c, cmdutil.ListSpec[image.BuildRecord]{
+			Resource: "builds",
+			Endpoint: types.ImageBuilds(c.EnvID()),
+			Params:   cmdutil.ListParams{Resource: "builds", Limit: buildsLimit, FallbackDefault: 0, Start: buildsStart, All: buildsAll},
+			Query:    query,
+			JSON:     cmdutil.JSONOutputEnabled(cmd),
+			Headers:  []string{"ID", "IMAGE", "STATUS", "STARTED", "DURATION"},
+			Row: func(record image.BuildRecord) []string {
+				return []string{
+					record.ID,
+					buildImageLabel(record),
+					output.TintStatus(record.Status),
+					record.CreatedAt.Format(time.RFC3339),
+					buildDurationLabel(record.DurationMs),
+				}
+			},
 		})
-		if err != nil {
-			return errors.WrapIf(err, "failed to build pagination query")
-		}
-
-		log.Debugf("Listing image builds from: %s", path)
-
-		resp, err := c.Get(cmd.Context(), path)
-		if err != nil {
-			return errors.WrapIf(err, "failed to list image builds")
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		body, err := cmdutil.ReadJSONBody(resp)
-		if err != nil {
-			return errors.WrapIf(err, "failed to list image builds")
-		}
-
-		if cmdutil.JSONOutputEnabled(cmd) {
-			return cmdutil.PrintRawJSON(body)
-		}
-
-		var result base.Paginated[image.BuildRecord]
-		if err := json.Unmarshal(body, &result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
-		}
-
-		headers := []string{"ID", "IMAGE", "STATUS", "STARTED", "DURATION"}
-		var rows [][]string
-		for _, record := range result.Data {
-			rows = append(rows, []string{
-				record.ID,
-				buildImageLabel(record),
-				output.TintStatus(record.Status),
-				record.CreatedAt.Format(time.RFC3339),
-				buildDurationLabel(record.DurationMs),
-			})
-		}
-
-		output.Table(headers, rows)
-		output.Showing(len(result.Data), result.Pagination.TotalItems, "builds")
-
-		return nil
 	},
 }
 

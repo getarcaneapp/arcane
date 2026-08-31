@@ -370,7 +370,7 @@ func (s *NetworkService) ListNetworksPaginated(ctx context.Context, params pagin
 
 	items := s.convertToNetworkSummaries(rawNets, inUseByID, inUseByName)
 	config := s.buildNetworkPaginationConfig()
-	result := pagination.SearchOrderAndPaginate(items, params, config)
+	result := config.SearchOrderAndPaginate(items, params)
 	counts := s.calculateNetworkUsageCounts(items)
 	paginationResp := pagination.BuildResponse(result.TotalCount, result.TotalAvailable, params)
 

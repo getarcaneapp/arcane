@@ -21,7 +21,6 @@ import (
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/events"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
@@ -41,7 +40,6 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 	"github.com/samber/hot"
-	"go.getarcane.app/streams/bus"
 	containerstats "go.getarcane.app/streams/stats"
 	"go.getarcane.app/sys/cgroup"
 	"go.getarcane.app/updater/labels"
@@ -54,7 +52,6 @@ type ContainerService struct {
 	settingsService *settings.SettingsService
 	projectService  *project.ProjectService
 	statsHistory    containerstats.Store
-	updateInfoCache *hot.HotCache[string, *imagetypes.UpdateInfo]
 	iconMetaCache   *hot.HotCache[string, projects.ArcaneComposeMetadata]
 }
 
@@ -71,42 +68,18 @@ type ContainerListResult struct {
 	Counts     containertypes.StatusCounts
 }
 
-func NewContainerService(ctx context.Context, eventService *event.EventService, dockerService *docker.DockerClientService, imageService *image.ImageService, settingsService *settings.SettingsService, projectService *project.ProjectService) *ContainerService {
-	svc := &ContainerService{
+func NewContainerService(eventService *event.EventService, dockerService *docker.DockerClientService, imageService *image.ImageService, settingsService *settings.SettingsService, projectService *project.ProjectService) *ContainerService {
+	return &ContainerService{
 		eventService:    eventService,
 		dockerService:   dockerService,
 		imageService:    imageService,
 		settingsService: settingsService,
 		projectService:  projectService,
-		updateInfoCache: hot.NewHotCache[string, *imagetypes.UpdateInfo](hot.LRU, 4096).Build(),
 		iconMetaCache: hot.NewHotCache[string, projects.ArcaneComposeMetadata](hot.LRU, 1024).
 			WithTTL(containerIconMetadataTTL).
 			WithJanitor().
 			Build(),
 	}
-	svc.subscribeUpdateInfoCacheInvalidationInternal(ctx)
-	return svc
-}
-
-func (s *ContainerService) subscribeUpdateInfoCacheInvalidationInternal(ctx context.Context) {
-	if s.dockerService == nil || s.updateInfoCache == nil || s.dockerService.EventBus() == nil {
-		return
-	}
-	ch, unsubscribe := s.dockerService.EventBus().Subscribe(events.ImageEventType, bus.WithSubscriberBuffer(16))
-	go func() {
-		defer unsubscribe()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case _, ok := <-ch:
-				if !ok {
-					return
-				}
-				s.updateInfoCache.Purge()
-			}
-		}
-	}()
 }
 
 func buildCleanNetworkingConfigInternal(containerInspect container.InspectResponse, apiVersion string) *network.NetworkingConfig {
@@ -1495,7 +1468,7 @@ func (s *ContainerService) ListContainersPaginated(
 
 	dockerContainers = FilterInternalContainers(dockerContainers, includeInternal)
 	imageIDs := CollectImageIDs(dockerContainers)
-	updateInfoMap := s.getUpdateInfoMap(ctx, imageIDs)
+	updateInfoMap := s.getUpdateInfoMapInternal(ctx, imageIDs)
 	currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
 	items := s.BuildSummaries(dockerContainers, updateInfoMap, currentContainerID, currentContainerErr)
 
@@ -1507,7 +1480,7 @@ func (s *ContainerService) ListContainersPaginated(
 		ungroupedParams.Start = 0
 		ungroupedParams.Limit = -1
 
-		result := pagination.SearchOrderAndPaginate(items, ungroupedParams, config)
+		result := config.SearchOrderAndPaginate(items, ungroupedParams)
 		groups, paginationResp := paginateContainerProjectGroupsInternal(result, params)
 
 		// Icons must be resolved before flattening: groups hold value copies,
@@ -1525,7 +1498,7 @@ func (s *ContainerService) ListContainersPaginated(
 		}, nil
 	}
 
-	result := pagination.SearchOrderAndPaginate(items, params, config)
+	result := config.SearchOrderAndPaginate(items, params)
 	s.ApplySummaryIcons(ctx, result.Items, nil)
 	paginationResp := pagination.BuildResponse(result.TotalCount, result.TotalAvailable, params)
 
@@ -1661,42 +1634,15 @@ func CollectImageIDs(containers []container.Summary) []string {
 	return imageIDs
 }
 
-func (s *ContainerService) getUpdateInfoMap(ctx context.Context, imageIDs []string) map[string]*imagetypes.UpdateInfo {
+func (s *ContainerService) getUpdateInfoMapInternal(ctx context.Context, imageIDs []string) map[string]*imagetypes.UpdateInfo {
 	if s.imageService == nil || len(imageIDs) == 0 {
 		return make(map[string]*imagetypes.UpdateInfo)
 	}
 
-	if s.updateInfoCache == nil {
-		updateInfoMap, err := s.imageService.GetUpdateInfoByImageIDs(ctx, imageIDs)
-		if err != nil {
-			slog.WarnContext(ctx, "Failed to fetch image update info for containers", "error", err)
-			return make(map[string]*imagetypes.UpdateInfo)
-		}
-		return updateInfoMap
-	}
-
-	infos, _, err := s.updateInfoCache.GetManyWithLoaders(imageIDs, func(missingIDs []string) (map[string]*imagetypes.UpdateInfo, error) {
-		loaded, loadErr := s.imageService.GetUpdateInfoByImageIDs(ctx, missingIDs)
-		if loadErr != nil {
-			return nil, loadErr
-		}
-		for _, imageID := range missingIDs {
-			if _, ok := loaded[imageID]; !ok {
-				loaded[imageID] = nil
-			}
-		}
-		return loaded, nil
-	})
+	updateInfoMap, err := s.imageService.GetUpdateInfoByImageIDs(ctx, imageIDs)
 	if err != nil {
-		slog.WarnContext(ctx, "Failed to fetch image update info for container images", "imageIDs", len(imageIDs), "error", err)
-		infos, _ = s.updateInfoCache.PeekMany(imageIDs)
-	}
-
-	updateInfoMap := make(map[string]*imagetypes.UpdateInfo, len(infos))
-	for imageID, info := range infos {
-		if info != nil {
-			updateInfoMap[imageID] = info
-		}
+		slog.WarnContext(ctx, "Failed to fetch image update info for containers", "error", err)
+		return make(map[string]*imagetypes.UpdateInfo)
 	}
 	return updateInfoMap
 }

@@ -10,11 +10,13 @@ import (
 	"io"
 	"log/slog"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"emperror.dev/errors"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
@@ -188,11 +190,11 @@ func (s *ProjectService) GetProjectContent(ctx context.Context, projectID string
 	}
 
 	composePath, composeErr := s.ResolveProjectComposeFile(ctx, proj)
-	if composeErr != nil {
-		composePath = ""
+	if composeErr != nil && !errors.Is(composeErr, common.ErrProjectComposeFileNotFound) {
+		return "", "", "", composeErr
 	}
 
-	composeContent, envContent, err = projects.ReadProjectFiles(proj.Path, composePath)
+	composeContent, envContent, err = projects.ReadProjectFiles(ctx, proj.Path, composePath)
 	if err != nil {
 		return "", "", "", err
 	}
@@ -200,12 +202,30 @@ func (s *ProjectService) GetProjectContent(ctx context.Context, projectID string
 	return composeContent, envContent, projects.ReadComposeOverrideContent(proj.Path), nil
 }
 
+func (s *ProjectService) populateDetailsComposeContentInternal(ctx context.Context, proj *Project, opts project.DetailsOptions, composeSelection []string, resp *project.Details) error {
+	if !opts.IncludeComposeContent {
+		return nil
+	}
+	composeContent, _, overrideContent, err := s.GetProjectContent(ctx, proj.ID)
+	if err != nil {
+		return errors.WrapIf(err, "failed to read project compose content")
+	}
+	resp.ComposeContent = composeContent
+	resp.OverrideFileName, resp.OverrideContent = resolveDetailsOverrideInternal(proj.Path, overrideContent, composeSelection)
+	return nil
+}
+
 func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string, opts project.DetailsOptions) (project.Details, error) {
 	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
 		return project.Details{}, err
 	}
-	projectsDir, _ := s.GetProjectsDirectory(ctx)
+	projectsDir, projectsDirErr := s.GetProjectsDirectory(ctx)
+	if projectsDirErr != nil {
+		// Relative paths and the .env.global selection layer degrade without a
+		// projects directory; keep the details response intact but log it.
+		slog.WarnContext(ctx, "failed to resolve projects directory for project details", "projectID", projectID, "error", projectsDirErr)
+	}
 
 	var resp project.Details
 	if err := mapper.MapStruct(proj, &resp); err != nil {
@@ -233,13 +253,20 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 	resp.RunningCount = proj.RunningCount
 	resp.Status = string(proj.Status)
 
-	if opts.IncludeComposeContent {
-		composeContent, _, overrideContent, _ := s.GetProjectContent(ctx, projectID)
-		resp.ComposeContent = composeContent
-		resp.OverrideContent = overrideContent
-		if overridePath := projects.DetectComposeOverrideFile(proj.Path); overridePath != "" {
-			resp.OverrideFileName = filepath.Base(overridePath)
-		}
+	// COMPOSE_FILE in the project's .env selects the compose file set; when set,
+	// `docker compose` skips auto-overrides and Arcane deploys exactly this list.
+	// ComposeFiles is populated only for a multi-file selection. A broken
+	// selection keeps the details response intact but logs the failure so the
+	// configuration problem is diagnosable.
+	composeSelection, selErr := projects.ComposeFileEnvSelection(ctx, projectsDir, proj.Path)
+	if selErr != nil {
+		slog.WarnContext(ctx, "failed to resolve COMPOSE_FILE selection for project details", "projectID", proj.ID, "path", proj.Path, "error", selErr)
+		composeSelection = nil
+	}
+	resp.ComposeFiles = composeSelectionRelativePathsInternal(proj.Path, composeSelection)
+
+	if err := s.populateDetailsComposeContentInternal(ctx, proj, opts, composeSelection, &resp); err != nil {
+		return project.Details{}, err
 	}
 	if opts.IncludeEnvState {
 		envState, err := projects.ReadProjectEnvState(proj.Path)
@@ -292,6 +319,61 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 	}
 
 	return resp, nil
+}
+
+// composeSelectionRelativePathsInternal converts a multi-file COMPOSE_FILE
+// selection (absolute paths) into ordered project-relative paths for the details
+// DTO. It returns nil for a single-file or empty selection, where ComposeFileName
+// is authoritative.
+func composeSelectionRelativePathsInternal(projectPath string, selection []string) []string {
+	if len(selection) <= 1 {
+		return nil
+	}
+	rels := make([]string, 0, len(selection))
+	for _, f := range selection {
+		if rel, err := filepath.Rel(projectPath, f); err == nil {
+			rels = append(rels, rel)
+		} else {
+			rels = append(rels, filepath.Base(f))
+		}
+	}
+	return rels
+}
+
+// resolveDetailsOverrideInternal resolves the override file name and content for
+// the details response. When a COMPOSE_FILE selection is active and does not
+// include the override, it is suppressed so the UI does not invite edits that
+// deploy would ignore.
+func resolveDetailsOverrideInternal(projectPath, overrideContent string, composeSelection []string) (fileName, content string) {
+	overridePath := projects.DetectComposeOverrideFile(projectPath)
+	if suppressOverrideForComposeSelectionInternal(composeSelection, overridePath) {
+		return "", ""
+	}
+	if overridePath != "" {
+		fileName = filepath.Base(overridePath)
+	}
+	return fileName, overrideContent
+}
+
+// suppressOverrideForComposeSelectionInternal reports whether an Arcane-managed
+// override should be hidden from the details response: a COMPOSE_FILE selection
+// is active and does not list the detected override file (docker skips
+// auto-overrides for an explicit file set). Paths are compared in full, not by
+// base name, so a same-named file in a subdirectory does not count as the
+// project-root override.
+func suppressOverrideForComposeSelectionInternal(selection []string, overridePath string) bool {
+	if len(selection) == 0 {
+		return false
+	}
+	if overridePath == "" {
+		return true
+	}
+	absOverride, err := filepath.Abs(filepath.Clean(overridePath))
+	if err != nil {
+		return true
+	}
+	// Selection entries are already absolute, cleaned paths.
+	return !slices.Contains(selection, absOverride)
 }
 
 func buildProjectRuntimeServicesInternal(services []ProjectServiceInfo) []project.RuntimeService {

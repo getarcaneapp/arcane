@@ -363,7 +363,7 @@ func TestTunnelServer_HandleMTLSEnroll(t *testing.T) {
 	assert.Equal(t, "ca.crt", resp.Files[0].Name)
 	assert.Contains(t, resp.Files[0].Content, "BEGIN CERTIFICATE")
 	assert.Equal(t, "agent.key", resp.Files[2].Name)
-	assert.Contains(t, resp.Files[2].Content, "BEGIN EC PRIVATE KEY")
+	assert.Contains(t, resp.Files[2].Content, "BEGIN PRIVATE KEY")
 
 	certBlock, _ := pem.Decode([]byte(resp.Files[1].Content))
 	require.NotNil(t, certBlock)

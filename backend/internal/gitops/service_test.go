@@ -26,6 +26,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/entityjobs"
 	"github.com/getarcaneapp/arcane/types/v2/gitops"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
+	swarmtypes "github.com/getarcaneapp/arcane/types/v2/swarm"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -390,6 +391,44 @@ func TestGitOpsSyncService_CleanupLeakedScratchDirsOnStartup_RemovesOrphans(t *t
 	assert.NoError(t, err, "real project dir must be kept")
 }
 
+// TestGitOpsSyncService_CleanupLeakedCloneDirsOnStartup_RemovesAll verifies the
+// startup sweep purges leaked git clone scratch dirs from the git work dir.
+func TestGitOpsSyncService_CleanupLeakedCloneDirsOnStartup_RemovesAll(t *testing.T) {
+	ctx := context.Background()
+	svc, _, _ := setupGitOpsSyncDirectoryTestService(t)
+
+	workDir := t.TempDir()
+	svc.repoService = &gitrepo.GitRepositoryService{Client: git.NewClient(workDir)}
+
+	cloneDirs := []string{
+		filepath.Join(workDir, "gitops-stale"),
+		filepath.Join(workDir, "gitops-fresh"),
+	}
+	for _, p := range cloneDirs {
+		require.NoError(t, os.MkdirAll(p, 0o755))
+	}
+	unrelated := filepath.Join(workDir, "keep-me")
+	require.NoError(t, os.MkdirAll(unrelated, 0o755))
+
+	require.NoError(t, svc.CleanupLeakedCloneDirsOnStartup(ctx))
+
+	for _, p := range cloneDirs {
+		_, err := os.Stat(p)
+		require.ErrorIs(t, err, os.ErrNotExist, "clone scratch dir should be removed: %s", p)
+	}
+	_, err := os.Stat(unrelated)
+	assert.NoError(t, err, "unrelated dir must be kept")
+}
+
+// TestGitOpsSyncService_CleanupLeakedCloneDirsOnStartup_NilRepoServiceIsNoop
+// verifies the sweep tolerates a service built without a repo service.
+func TestGitOpsSyncService_CleanupLeakedCloneDirsOnStartup_NilRepoServiceIsNoop(t *testing.T) {
+	svc, _, _ := setupGitOpsSyncDirectoryTestService(t)
+	svc.repoService = nil
+
+	require.NoError(t, svc.CleanupLeakedCloneDirsOnStartup(context.Background()))
+}
+
 // TestGitOpsSyncService_SyncProjectDirectory_RefusesDuplicateOnNameCollision verifies a
 // directory sync refuses to create a "-N" sibling when its target name is already taken
 // by a non-adoptable directory; instead it errors as a broken binding and disables auto-sync.
@@ -512,7 +551,7 @@ services:
 	// merge rather than tracked as a raw synced file.
 	require.ElementsMatch(t, []string{"docker-compose.yaml", "meta.yaml"}, syncedFiles)
 
-	composePath, detectErr := projects.DetectComposeFile(project.Path)
+	composePath, detectErr := projects.DetectComposeFile(t.Context(), "", project.Path)
 	require.NoError(t, detectErr)
 	assert.Equal(t, filepath.Join(project.Path, "docker-compose.yaml"), composePath)
 
@@ -612,7 +651,7 @@ services:
 	require.True(t, changed)
 	require.ElementsMatch(t, []string{"docker-compose.yaml", "nested/feature.yaml"}, syncedFiles)
 
-	composePath, detectErr := projects.DetectComposeFile(updatedProject.Path)
+	composePath, detectErr := projects.DetectComposeFile(t.Context(), "", updatedProject.Path)
 	require.NoError(t, detectErr)
 	assert.Equal(t, filepath.Join(updatedProject.Path, "docker-compose.yaml"), composePath)
 
@@ -907,7 +946,7 @@ func TestGitOpsSyncService_DirectorySync_RealWalkWithNestedConfig(t *testing.T) 
 	require.True(t, changed)
 	require.ElementsMatch(t, []string{"docker-compose.yml", "config/dynamic_config.yml"}, syncedFiles)
 
-	composePath, detectErr := projects.DetectComposeFile(project.Path)
+	composePath, detectErr := projects.DetectComposeFile(t.Context(), "", project.Path)
 	require.NoError(t, detectErr)
 	assert.Equal(t, filepath.Join(project.Path, "docker-compose.yml"), composePath)
 
@@ -1348,6 +1387,78 @@ func TestGitOpsSyncService_GetOrCreateProjectInternal_FailsWhenBoundProjectMissi
 	require.NotNil(t, storedSync.LastSyncError)
 	assert.Contains(t, *storedSync.LastSyncError, "project binding")
 	assert.Contains(t, testScheduler.removed, entityjobs.GitOpsSyncJobPrefix+sync.ID)
+}
+
+// TestBuildSwarmStackDeployRequestInternal guards the Git Sync swarm deploy request.
+// WithRegistryAuth must always be set: swarm tasks pull with only the auth embedded in
+// the service spec, so a request without it makes every private image fail to pull.
+func TestBuildSwarmStackDeployRequestInternal(t *testing.T) {
+	t.Parallel()
+
+	files := []swarmtypes.SyncFile{{RelativePath: "configs/app.conf", Content: []byte("k=v")}}
+
+	cases := []struct {
+		name            string
+		sync            *projectpkg.GitOpsSync
+		source          *preparedSyncSource
+		overrideContent string
+		envContent      string
+		files           []swarmtypes.SyncFile
+		want            swarmtypes.StackDeployRequest
+	}{
+		{
+			name:            "populates all fields and enables registry auth",
+			sync:            &projectpkg.GitOpsSync{ProjectName: "descent", ComposePath: "deploy/swarm/compose.yaml"},
+			source:          &preparedSyncSource{repoPath: "/tmp/repo", composeContent: "services: {}\n"},
+			overrideContent: "override",
+			envContent:      "A=1",
+			files:           files,
+			want: swarmtypes.StackDeployRequest{
+				Name:             "descent",
+				ComposeContent:   "services: {}\n",
+				OverrideContent:  "override",
+				EnvContent:       "A=1",
+				Files:            files,
+				Prune:            true,
+				WithRegistryAuth: true,
+				WorkingDir:       filepath.Join("/tmp/repo", "deploy/swarm"),
+			},
+		},
+		{
+			name:   "enables registry auth with empty optional content and a root-level compose path",
+			sync:   &projectpkg.GitOpsSync{ProjectName: "ptest", ComposePath: "compose.yaml"},
+			source: &preparedSyncSource{repoPath: "/tmp/repo", composeContent: "services: {}\n"},
+			want: swarmtypes.StackDeployRequest{
+				Name:             "ptest",
+				ComposeContent:   "services: {}\n",
+				Prune:            true,
+				WithRegistryAuth: true,
+				WorkingDir:       "/tmp/repo",
+			},
+		},
+		{
+			name:   "passes an empty file list through unchanged",
+			sync:   &projectpkg.GitOpsSync{ProjectName: "ptest", ComposePath: "stacks/compose.yaml"},
+			source: &preparedSyncSource{repoPath: "/tmp/repo", composeContent: "services: {}\n"},
+			// performSwarmStackSyncInternal always passes a non-nil slice; the builder must not reshape it.
+			files: []swarmtypes.SyncFile{},
+			want: swarmtypes.StackDeployRequest{
+				Name:             "ptest",
+				ComposeContent:   "services: {}\n",
+				Files:            []swarmtypes.SyncFile{},
+				Prune:            true,
+				WithRegistryAuth: true,
+				WorkingDir:       filepath.Join("/tmp/repo", "stacks"),
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := buildSwarmStackDeployRequestInternal(tc.sync, tc.source, tc.overrideContent, tc.envContent, tc.files)
+			assert.Equal(t, tc.want, got)
+		})
+	}
 }
 
 func TestEnvContentChangedInternal(t *testing.T) {

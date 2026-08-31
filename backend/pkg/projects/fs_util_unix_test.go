@@ -19,7 +19,7 @@ func TestDiscoverProjectDirectories_UnreadableRootErrorIsActionable(t *testing.T
 	require.NoError(t, os.Chmod(root, 0o000))
 	t.Cleanup(func() { _ = os.Chmod(root, 0o755) })
 
-	_, err := DiscoverProjectDirectories(root, false, 0)
+	_, err := DiscoverProjectDirectories(t.Context(), root, false, 0)
 	require.Error(t, err)
 	// The bare "permission denied" must be wrapped with the runtime identity
 	// and remediation hints (#3489).

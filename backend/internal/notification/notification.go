@@ -18,6 +18,7 @@ import (
 
 	"emperror.dev/errors"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/apns"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -64,6 +65,7 @@ type NotificationService struct {
 	config         *config.Config
 	environmentSvc *environment.EnvironmentService
 	eventSvc       *event.EventService
+	apnsSvc        *apns.ApnsService
 	httpClient     *http.Client
 }
 
@@ -85,12 +87,13 @@ func (s *NotificationService) ResolveNotificationTarget(ctx context.Context, env
 	return s.resolveNotificationTargetInternal(ctx, environmentID)
 }
 
-func NewNotificationService(db *database.DB, cfg *config.Config, environmentSvc *environment.EnvironmentService, eventSvc *event.EventService) *NotificationService {
+func NewNotificationService(db *database.DB, cfg *config.Config, environmentSvc *environment.EnvironmentService, eventSvc *event.EventService, apnsSvc *apns.ApnsService) *NotificationService {
 	return &NotificationService{
 		db:             db,
 		config:         cfg,
 		environmentSvc: environmentSvc,
 		eventSvc:       eventSvc,
+		apnsSvc:        apnsSvc,
 		httpClient:     &http.Client{Timeout: 15 * time.Second},
 	}
 }
@@ -597,6 +600,12 @@ func (s *NotificationService) notifyEnabledProvidersInternal(
 
 		status, errMsg := collectNotificationSendResultInternal(&errs, setting.Provider, sendErr)
 		s.logNotification(ctx, target.EnvironmentID, setting.Provider, logRef, status, errMsg, metadata)
+	}
+
+	if s.apnsSvc != nil {
+		if err := s.apnsSvc.Enqueue(ctx, target.EnvironmentID, target.EnvironmentName, eventType, logRef, metadata); err != nil {
+			slog.WarnContext(ctx, "Failed to enqueue mobile push notification", "error", err)
+		}
 	}
 
 	if len(errs) > 0 {

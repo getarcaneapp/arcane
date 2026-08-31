@@ -4,9 +4,6 @@
 	import { page } from '$app/state';
 	import NewEnvironmentSheet from '#lib/components/sheets/new-environment-sheet.svelte';
 	import EnvironmentTable from './environment-table.svelte';
-	import { tryCatch } from '#lib/utils/api';
-	import { handleApiResultWithCallbacks } from '#lib/utils/api';
-	import { openConfirmDialog } from '#lib/components/confirm-dialog';
 	import { m } from '#lib/paraglide/messages';
 	import { environmentManagementService } from '#lib/services/env-mgmt-service';
 	import { untrack } from 'svelte';
@@ -16,6 +13,7 @@
 	import { hasPermission } from '#lib/utils/auth';
 	import { DownloadIcon, UpdateIcon } from '#lib/icons';
 	import UpdateAllDialog from '#lib/components/dialogs/update-all-dialog.svelte';
+	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions';
 
 	let { data } = $props();
 
@@ -39,45 +37,31 @@
 	const canDeleteEnvironment = $derived(hasPermission('environments:delete'));
 	const canUpdateEnvironments = $derived(hasPermission('system:upgrade'));
 
-	async function handleBulkDelete() {
-		if (selectedIds.length === 0) return;
+	function handleBulkDelete(ids: string[] = selectedIds) {
+		if (ids.length === 0) return;
+		const environmentIds = [...ids];
 
-		openConfirmDialog({
-			title: m.environments_remove_selected_title({ count: selectedIds.length }),
+		bulkConfirmAndRun({
+			ids: environmentIds,
+			title: m.environments_remove_selected_title({ count: environmentIds.length }),
 			message: m.environments_remove_selected_message(),
-			confirm: {
-				label: m.common_remove(),
-				destructive: true,
-				action: async () => {
-					isLoading.deleting = true;
-					let successCount = 0;
-					let failureCount = 0;
-
-					for (const id of selectedIds) {
-						const result = await tryCatch(environmentManagementService.delete(id));
-						handleApiResultWithCallbacks({
-							result,
-							message: m.common_bulk_remove_failed({ count: selectedIds.length, resource: m.environments_title() }),
-							setLoadingState: () => {},
-							onSuccess: () => {
-								successCount += 1;
-							}
-						});
-						if (result.error) failureCount += 1;
-					}
-
-					isLoading.deleting = false;
-					if (successCount > 0) {
-						toast.success(m.common_bulk_remove_success({ count: successCount, resource: m.environments_title() }));
-						await refresh();
-						await environmentStore.initialize(environments.data);
-					}
-					if (failureCount > 0) {
-						toast.error(m.common_bulk_remove_failed({ count: failureCount, resource: m.environments_title() }));
-					}
-					selectedIds = [];
-				}
-			}
+			confirmLabel: m.common_remove(),
+			destructive: true,
+			run: (id) => environmentManagementService.delete(id),
+			messages: {
+				success: (count) => m.common_bulk_remove_success({ count, resource: m.environments_title() }),
+				partial: (success, total, failed) =>
+					m.common_bulk_remove_partial({ success, total, failed, resource: m.environments_title() }),
+				failure: () => m.common_bulk_remove_failed({ count: environmentIds.length, resource: m.environments_title() })
+			},
+			setLoading: (loading) => (isLoading.deleting = loading),
+			onComplete: async ({ success }) => {
+				if (success === 0) return;
+				await refresh();
+				await environmentStore.initialize(environments.data);
+			},
+			clearSelection: () => (selectedIds = []),
+			sequential: true
 		});
 	}
 
@@ -155,7 +139,13 @@
 
 <ResourcePageLayout title={m.environments_title()} subtitle={m.environments_subtitle()} {actionButtons}>
 	{#snippet mainContent()}
-		<EnvironmentTable bind:environments bind:selectedIds bind:requestOptions />
+		<EnvironmentTable
+			bind:environments
+			bind:selectedIds
+			bind:requestOptions
+			onDeleteSelected={handleBulkDelete}
+			bulkDeleteLoading={isLoading.deleting}
+		/>
 	{/snippet}
 
 	{#snippet additionalContent()}

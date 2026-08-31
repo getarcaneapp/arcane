@@ -8,7 +8,7 @@
 <TabsPrimitive.List
 	bind:ref
 	class={cn(
-		'inline-flex items-center justify-start gap-1 rounded-lg border border-border/60 bg-muted/40 p-1 text-muted-foreground',
+		'inline-flex max-w-full flex-wrap items-center justify-start gap-1 rounded-lg border border-border/60 bg-muted/40 p-1 text-muted-foreground',
 		className
 	)}
 	{...restProps}

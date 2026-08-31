@@ -75,17 +75,16 @@ func (s *StateMap[K, V]) Apply(ctx context.Context, label string, mutate func(ma
 	if mutate == nil {
 		return errors.New("state map mutation unavailable")
 	}
-	_, err := ApplyStateMap(ctx, s, label, func(values map[K]V) (NoPayload, bool, error) {
+	_, err := s.ApplyTyped(ctx, label, func(values map[K]V) (NoPayload, bool, error) {
 		changed, err := mutate(values)
 		return NoPayload{}, changed, err
 	})
 	return err
 }
 
-// ApplyStateMap serializes a typed mutation and publishes its resulting state.
-func ApplyStateMap[K comparable, V, R any](
+// ApplyTyped serializes a typed mutation and publishes its resulting state.
+func (s *StateMap[K, V]) ApplyTyped[R any](
 	ctx context.Context,
-	s *StateMap[K, V],
 	label string,
 	mutate func(map[K]V) (result R, changed bool, err error),
 ) (R, error) {
@@ -111,7 +110,7 @@ func ApplyStateMap[K comparable, V, R any](
 		return result, err
 	}
 	if s.executor != nil {
-		return Execute(ctx, s.executor, label, work, nil)
+		return s.executor.Execute(ctx, label, work, nil)
 	}
 
 	s.mu.Lock()
@@ -121,7 +120,7 @@ func ApplyStateMap[K comparable, V, R any](
 
 // Store publishes a value and returns the value it replaced, if any.
 func (s *StateMap[K, V]) Store(ctx context.Context, label string, key K, value V) (V, bool, error) {
-	result, err := ApplyStateMap(ctx, s, label, func(values map[K]V) (stateMapValueInternal[V], bool, error) {
+	result, err := s.ApplyTyped(ctx, label, func(values map[K]V) (stateMapValueInternal[V], bool, error) {
 		previous, replaced := values[key]
 		values[key] = value
 		return stateMapValueInternal[V]{value: previous, found: replaced}, true, nil
@@ -131,7 +130,7 @@ func (s *StateMap[K, V]) Store(ctx context.Context, label string, key K, value V
 
 // Remove deletes and returns one value.
 func (s *StateMap[K, V]) Remove(ctx context.Context, label string, key K) (V, bool, error) {
-	result, err := ApplyStateMap(ctx, s, label, func(values map[K]V) (stateMapValueInternal[V], bool, error) {
+	result, err := s.ApplyTyped(ctx, label, func(values map[K]V) (stateMapValueInternal[V], bool, error) {
 		value, removed := values[key]
 		if removed {
 			delete(values, key)
@@ -146,7 +145,7 @@ func (s *StateMap[K, V]) RemoveWhere(ctx context.Context, label string, predicat
 	if predicate == nil {
 		return nil, errors.New("state map predicate unavailable")
 	}
-	return ApplyStateMap(ctx, s, label, func(values map[K]V) ([]V, bool, error) {
+	return s.ApplyTyped(ctx, label, func(values map[K]V) ([]V, bool, error) {
 		removed := make([]V, 0)
 		for key, value := range values {
 			if predicate(key, value) {

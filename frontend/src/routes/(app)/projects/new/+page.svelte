@@ -24,7 +24,6 @@
 	import DockerRunConverterDialog from '#lib/components/compose/docker-run-converter-dialog.svelte';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
 	import { globalVariablesToMap } from '#lib/utils/template-load';
-	import type { ProjectWorkspaceFileDraft } from '#lib/types/project-workspace';
 	import type { ProjectTag } from '#lib/types/swarm';
 	import ProjectTagEditor from '#lib/components/project-tag-editor.svelte';
 	import { createQuery } from '@tanstack/svelte-query';
@@ -32,22 +31,11 @@
 	import settingsStore from '#lib/stores/config-store';
 	import {
 		planProjectWorkspaceFileCreate,
-		planProjectWorkspaceFileMove,
 		planProjectWorkspaceFileRename,
 		validateProjectWorkspaceFileName
 	} from '../components/project-workspace-utils';
-	import {
-		isWorkspaceFileSelectionUnder,
-		workspaceFileBasename,
-		workspaceFileLanguage,
-		workspaceFilePathMatches,
-		remapWorkspaceFilePath,
-		remapWorkspaceFileRecord,
-		remapSelectedWorkspaceFileKey,
-		removeWorkspaceFileRecord,
-		readWorkspaceTextUpload,
-		type WorkspaceFileEntry
-	} from '#lib/utils/workspace-files';
+	import { planWorkspaceFileMove, workspaceFileBasename, workspaceFileLanguage } from '#lib/utils/workspace-files';
+	import { WorkspaceDraftState } from '#lib/components/workspace-editor/workspace-draft-state.svelte';
 	import {
 		composeTreeSplitProps,
 		createComposeEditorSchema,
@@ -98,18 +86,22 @@
 	let composeOpen = $state(true);
 	let envOpen = $state(true);
 	let layoutMode = $state<'classic' | 'tree'>('classic');
-	let selectedEditorFile = $state<'compose' | 'env' | string>('compose');
 	let treePaneWidth = $state(280);
-	let newProjectWorkspaceFiles = $state<ProjectWorkspaceFileDraft[]>([]);
+	const workspaceDraft = new WorkspaceDraftState({
+		fallbackTab: 'compose',
+		initialOpenTabs: ['compose'],
+		initialSelection: 'compose',
+		isFixedTab: (key) => key === 'compose' || key === 'env',
+		planCreate: planProjectWorkspaceFileCreate,
+		planRename: planProjectWorkspaceFileRename,
+		planMove: planWorkspaceFileMove
+	});
 	let newProjectTags = $state<ProjectTag[]>([]);
 	const projectTagsQuery = createQuery(() => ({
 		queryKey: queryKeys.projects.tags(currentEnvId),
 		queryFn: () => projectService.getProjectTagsForEnvironment(currentEnvId)
 	}));
 	const availableProjectTags = $derived(projectTagsQuery.data ?? []);
-	let newProjectWorkspaceContents = $state<Record<string, string>>({});
-	let newProjectWorkspaceHasErrors = $state<Record<string, boolean>>({});
-	let newProjectWorkspaceValidationReady = $state<Record<string, boolean>>({});
 	let validation = $state({
 		composeHasErrors: false,
 		envHasErrors: false,
@@ -118,36 +110,16 @@
 	});
 
 	const globalVariableMap = $derived(globalVariablesToMap(data.globalVariables));
-	const newProjectWorkspaceEntries = $derived.by<WorkspaceFileEntry[]>(() =>
-		newProjectWorkspaceFiles.map((file) => ({
-			path: file.relativePath,
-			relativePath: file.relativePath,
-			name: workspaceFileBasename(file.relativePath),
-			isDirectory: !!file.isDirectory,
-			size: file.isDirectory ? 0 : (newProjectWorkspaceContents[file.relativePath]?.length ?? 0),
-			content: file.isDirectory ? undefined : (newProjectWorkspaceContents[file.relativePath] ?? ''),
-			pending: true
-		}))
-	);
-	const newProjectWorkspacePaths = $derived.by(() => new Set(newProjectWorkspaceEntries.map((file) => file.relativePath)));
+	const newProjectWorkspaceEntries = $derived(workspaceDraft.entries);
 	const newProjectWorkspaceLeadingRows = [
 		{ key: 'compose', label: 'compose.yaml', iconClass: 'text-blue-500', locked: true },
 		{ key: 'env', label: '.env', iconClass: 'text-green-500', locked: true }
 	];
-	let openProjectTabs = $state<string[]>(['compose']);
 	let treeOutlineOpen = $state(false);
 	let treeDiffOpen = $state(false);
 	let treeCommandPaletteOpen = $state(false);
-	const openTabs = $derived.by(() => {
-		const valid = openProjectTabs.filter((key) => {
-			if (key === 'compose' || key === 'env') return true;
-			if (!key.startsWith('file:')) return false;
-			const entry = newProjectWorkspaceEntries.find((file) => file.relativePath === key.slice(5));
-			return !!entry && !entry.isDirectory;
-		});
-		return valid.length > 0 ? valid : ['compose'];
-	});
-	const activeProjectTab = $derived(openTabs.includes(selectedEditorFile) ? selectedEditorFile : (openTabs[0] ?? 'compose'));
+	const openTabs = $derived(workspaceDraft.validOpenTabs);
+	const activeProjectTab = $derived(workspaceDraft.activeTab);
 	const projectTabs = $derived(
 		openTabs.map((key) => ({
 			key,
@@ -158,26 +130,6 @@
 		}))
 	);
 
-	function isNewProjectDirectoryKey(key: string): boolean {
-		if (!key.startsWith('file:')) return false;
-		return newProjectWorkspaceEntries.find((file) => file.relativePath === key.slice(5))?.isDirectory === true;
-	}
-
-	function openEditorFileTab(key: string) {
-		if (!isNewProjectDirectoryKey(key) && !openProjectTabs.includes(key)) {
-			openProjectTabs = [...openProjectTabs, key];
-		}
-		selectedEditorFile = key;
-	}
-
-	function closeEditorFileTab(key: string) {
-		const index = openTabs.indexOf(key);
-		const remaining = openTabs.filter((tab) => tab !== key);
-		openProjectTabs = openProjectTabs.filter((tab) => tab !== key);
-		if (selectedEditorFile === key) {
-			selectedEditorFile = remaining[Math.min(Math.max(index - 1, 0), remaining.length - 1)] ?? 'compose';
-		}
-	}
 	const validationState = $derived(
 		getTemplateEditorValidationState(
 			validation.composeValidationReady,
@@ -225,7 +177,7 @@
 			validate: () => validateTemplateEditorForm(validationState, form.validate),
 			setLoading: (value) => (ui.saving = value),
 			submit: ({ name, composeContent, envContent }) =>
-				projectService.createProject(name, composeContent, envContent, buildNewProjectWorkspacePayload(), newProjectTags),
+				projectService.createProject(name, composeContent, envContent, workspaceDraft.toDrafts(), newProjectTags),
 			failureMessage: (name) => m.common_create_failed({ resource: `${m.resource_project()} "${name}"` }),
 			onSuccess: async (project, { name }) => {
 				toast.success(
@@ -257,94 +209,6 @@
 		setLoading: (value) => (ui.creatingTemplate = value),
 		hasEditorErrors: () => hasEditorErrors
 	});
-
-	function ensureNewProjectWorkspaceUiState(relativePath: string) {
-		if (newProjectWorkspaceHasErrors[relativePath] === undefined) {
-			newProjectWorkspaceHasErrors = {
-				...newProjectWorkspaceHasErrors,
-				[relativePath]: false
-			};
-		}
-		if (newProjectWorkspaceValidationReady[relativePath] === undefined) {
-			newProjectWorkspaceValidationReady = {
-				...newProjectWorkspaceValidationReady,
-				[relativePath]: true
-			};
-		}
-	}
-
-	function createNewProjectWorkspaceFile(parentPath: string, name: string, content = '') {
-		const relativePath = planProjectWorkspaceFileCreate(newProjectWorkspacePaths, parentPath, name);
-		if (!relativePath) return;
-		newProjectWorkspaceFiles = [...newProjectWorkspaceFiles, { relativePath, isDirectory: false }];
-		newProjectWorkspaceContents = { ...newProjectWorkspaceContents, [relativePath]: content };
-		ensureNewProjectWorkspaceUiState(relativePath);
-		openEditorFileTab(`file:${relativePath}`);
-	}
-
-	async function uploadNewProjectWorkspaceFiles(parentPath: string, files: File[]): Promise<string | void> {
-		const file = files[0];
-		if (!file) return m.workspace_upload_file_required();
-		const result = await readWorkspaceTextUpload(file, projectWorkspaceMaxFileSizeMb);
-		if (result.error) return result.error;
-		createNewProjectWorkspaceFile(parentPath, file.name, result.content ?? '');
-	}
-
-	function createNewProjectFolder(parentPath: string, name: string) {
-		const relativePath = planProjectWorkspaceFileCreate(newProjectWorkspacePaths, parentPath, name);
-		if (!relativePath) return;
-		newProjectWorkspaceFiles = [...newProjectWorkspaceFiles, { relativePath, isDirectory: true }];
-		selectedEditorFile = `file:${relativePath}`;
-	}
-
-	function applyNewProjectWorkspacePathChange(oldPath: string, newPath: string) {
-		newProjectWorkspaceFiles = newProjectWorkspaceFiles.map((file) => ({
-			...file,
-			relativePath: remapWorkspaceFilePath(file.relativePath, oldPath, newPath)
-		}));
-		newProjectWorkspaceContents = remapWorkspaceFileRecord(newProjectWorkspaceContents, oldPath, newPath);
-		newProjectWorkspaceHasErrors = remapWorkspaceFileRecord(newProjectWorkspaceHasErrors, oldPath, newPath);
-		newProjectWorkspaceValidationReady = remapWorkspaceFileRecord(newProjectWorkspaceValidationReady, oldPath, newPath);
-		openProjectTabs = openProjectTabs.map((tab) => remapSelectedWorkspaceFileKey(tab, oldPath, newPath) ?? tab);
-		const remappedSelection = remapSelectedWorkspaceFileKey(selectedEditorFile, oldPath, newPath);
-		if (remappedSelection) {
-			selectedEditorFile = remappedSelection;
-		}
-	}
-
-	function renameNewProjectWorkspaceFile(relativePath: string, newName: string) {
-		const plan = planProjectWorkspaceFileRename(newProjectWorkspacePaths, relativePath, newName);
-		if (!plan) return;
-		applyNewProjectWorkspacePathChange(relativePath, plan.newPath);
-	}
-
-	function moveNewProjectWorkspaceFile(relativePath: string, newParentPath: string) {
-		const entry = newProjectWorkspaceEntries.find((file) => file.relativePath === relativePath);
-		const newPath = planProjectWorkspaceFileMove(entry, newProjectWorkspacePaths, relativePath, newParentPath);
-		if (!newPath) return;
-		applyNewProjectWorkspacePathChange(relativePath, newPath);
-	}
-
-	function deleteNewProjectWorkspaceFile(relativePath: string) {
-		newProjectWorkspaceFiles = newProjectWorkspaceFiles.filter(
-			(file) => !workspaceFilePathMatches(file.relativePath, relativePath)
-		);
-		newProjectWorkspaceContents = removeWorkspaceFileRecord(newProjectWorkspaceContents, relativePath);
-		newProjectWorkspaceHasErrors = removeWorkspaceFileRecord(newProjectWorkspaceHasErrors, relativePath);
-		newProjectWorkspaceValidationReady = removeWorkspaceFileRecord(newProjectWorkspaceValidationReady, relativePath);
-		openProjectTabs = openProjectTabs.filter((tab) => !isWorkspaceFileSelectionUnder(tab, relativePath));
-		if (isWorkspaceFileSelectionUnder(selectedEditorFile, relativePath)) {
-			selectedEditorFile = openTabs[0] ?? 'compose';
-		}
-	}
-
-	function buildNewProjectWorkspacePayload(): ProjectWorkspaceFileDraft[] {
-		return newProjectWorkspaceFiles.map((file) => ({
-			relativePath: file.relativePath,
-			isDirectory: !!file.isDirectory,
-			content: file.isDirectory ? undefined : (newProjectWorkspaceContents[file.relativePath] ?? '')
-		}));
-	}
 
 	function composePanelProps() {
 		return {
@@ -391,7 +255,7 @@
 						variant="inline"
 						error={$inputs.name.error ?? undefined}
 						originalValue=""
-						placeholder={m.compose_project_name_placeholder?.() || 'Enter project name...'}
+						placeholder={m.compose_project_name_placeholder()}
 						canEdit={!ui.saving && !ui.isLoadingTemplateContent && !composeYamlName}
 						disabledMessage={composeYamlName ? m.compose_project_name_defined_in_yaml() : undefined}
 						class="hidden sm:block"
@@ -476,7 +340,7 @@
 						aria-label={m.project_view_description()}
 						onCheckedChange={(checked) => {
 							layoutMode = checked ? 'tree' : 'classic';
-							openEditorFileTab('compose');
+							workspaceDraft.openTab('compose');
 						}}
 					/>
 				</div>
@@ -495,16 +359,16 @@
 								<WorkspaceFileTreePanel
 									leadingRows={newProjectWorkspaceLeadingRows}
 									entries={newProjectWorkspaceEntries}
-									selectedFile={selectedEditorFile}
+									selectedFile={workspaceDraft.selectedKey}
 									disabled={ui.saving || ui.isLoadingTemplateContent}
-									onSelect={openEditorFileTab}
-									onCreateFile={createNewProjectWorkspaceFile}
-									onCreateFolder={createNewProjectFolder}
-									onUpload={uploadNewProjectWorkspaceFiles}
+									onSelect={workspaceDraft.openTab}
+									onCreateFile={workspaceDraft.createFile}
+									onCreateFolder={workspaceDraft.createFolder}
+									onUpload={(parentPath, files) => workspaceDraft.uploadFile(parentPath, files, projectWorkspaceMaxFileSizeMb)}
 									validateName={(name, parentPath) => validateProjectWorkspaceFileName(name, parentPath)}
-									onRename={renameNewProjectWorkspaceFile}
-									onMove={moveNewProjectWorkspaceFile}
-									onDelete={deleteNewProjectWorkspaceFile}
+									onRename={workspaceDraft.rename}
+									onMove={workspaceDraft.move}
+									onDelete={workspaceDraft.remove}
 								/>
 							{/snippet}
 
@@ -513,8 +377,8 @@
 									<EditorTabStrip
 										tabs={projectTabs}
 										activeKey={activeProjectTab}
-										onSelect={openEditorFileTab}
-										onClose={closeEditorFileTab}
+										onSelect={workspaceDraft.openTab}
+										onClose={workspaceDraft.closeTab}
 									>
 										{#snippet actions()}
 											<ComposeFileEditorPanel
@@ -563,9 +427,9 @@
 													title={relativePath}
 													language={workspaceFileLanguage(relativePath)}
 													validationMode="none"
-													bind:value={newProjectWorkspaceContents[relativePath]}
-													bind:hasErrors={newProjectWorkspaceHasErrors[relativePath]}
-													bind:validationReady={newProjectWorkspaceValidationReady[relativePath]}
+													bind:value={workspaceDraft.contents[relativePath]}
+													bind:hasErrors={workspaceDraft.hasErrors[relativePath]}
+													bind:validationReady={workspaceDraft.validationReady[relativePath]}
 													fileId={`projects:new:file:${relativePath}`}
 													originalValue=""
 													enableDiff={true}

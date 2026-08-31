@@ -44,8 +44,8 @@ func ComposeFileCandidates() []string {
 }
 
 // detectExistingComposeFileInternal finds an existing compose file in the directory
-func detectExistingComposeFileInternal(dir string) string {
-	composePath, err := DetectComposeFile(dir)
+func detectExistingComposeFileInternal(ctx context.Context, projectsRoot, dir string) string {
+	composePath, err := DetectComposeFile(ctx, projectsRoot, dir)
 	if err == nil {
 		return composePath
 	}
@@ -68,7 +68,7 @@ func WriteComposeFile(ctx context.Context, projectsRoot, dirPath, content string
 	}
 
 	composeFileName := DefaultComposeFileName
-	if existingFile := detectExistingComposeFileInternal(dirPath); existingFile != "" {
+	if existingFile := detectExistingComposeFileInternal(ctx, projectsRoot, dirPath); existingFile != "" {
 		composeFileName = filepath.Base(existingFile)
 	}
 

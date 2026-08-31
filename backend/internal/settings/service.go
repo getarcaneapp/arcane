@@ -2,6 +2,7 @@ package settings
 
 import (
 	"context"
+	"crypto/mldsa"
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
@@ -20,6 +21,8 @@ import (
 
 	"github.com/samber/mo"
 	"gorm.io/gorm"
+
+	libcrypto "go.getarcane.app/sys/crypto"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
@@ -122,7 +125,7 @@ func (s *SettingsService) SubscribeSettingsChanges(keys []string, callback func(
 			}
 		}
 		if len(matching) > 0 {
-			_, err := actors.Submit(context.WithoutCancel(s.lifecycleCtx), s.effects, "apply settings change effects", func(context.Context) (actors.NoPayload, error) {
+			_, err := s.effects.Submit(context.WithoutCancel(s.lifecycleCtx), "apply settings change effects", func(context.Context) (actors.NoPayload, error) {
 				callback(matching)
 				return actors.NoPayload{}, nil
 			}, nil)
@@ -136,7 +139,7 @@ func (s *SettingsService) SubscribeSettingsChanges(keys []string, callback func(
 // NotifySettingsChanges publishes current values for keys through the settings
 // actor. It is used when another settings-table workflow performs persistence.
 func (s *SettingsService) NotifySettingsChanges(ctx context.Context, keys ...string) error {
-	_, err := actors.Execute(ctx, s.writes, "notify settings changes", func(context.Context) ([]libarcane.SettingUpdate, error) {
+	_, err := s.writes.Execute(ctx, "notify settings changes", func(context.Context) ([]libarcane.SettingUpdate, error) {
 		updates := make([]libarcane.SettingUpdate, 0, len(keys))
 		cfg := s.GetSettingsConfig()
 		for _, key := range keys {
@@ -194,91 +197,90 @@ func (s *SettingsService) getDefaultSettings() *Settings {
 // DefaultSettingsConfig returns the canonical default settings model used by Arcane.
 func DefaultSettingsConfig() *Settings {
 	return &Settings{
-		ProjectsDirectory:               SettingVariable{Value: "/app/data/projects"},
-		TemplatesDirectory:              SettingVariable{Value: "/app/data/templates"},
-		FollowProjectSymlinks:           SettingVariable{Value: "false"},
-		SwarmStackSourcesDirectory:      SettingVariable{Value: "/app/data/swarm/sources"},
-		DiskUsagePath:                   SettingVariable{Value: "/app/data/projects"},
-		AutoUpdate:                      SettingVariable{Value: "false"},
-		AutoUpdateInterval:              SettingVariable{Value: "0 0 0 * * *"},
-		AutoUpdateExcludedContainers:    SettingVariable{Value: ""},
-		PollingEnabled:                  SettingVariable{Value: "true"},
-		PollingInterval:                 SettingVariable{Value: "0 0 * * * *"},
-		ImageEventWatcherEnabled:        SettingVariable{Value: "false"},
-		DockerClientRefreshInterval:     SettingVariable{Value: "*/30 * * * * *"},
-		EventCleanupInterval:            SettingVariable{Value: "0 0 */6 * * *"},
-		ExpiredSessionsCleanupInterval:  SettingVariable{Value: "0 0 0 * * *"},
-		ActivityHistoryRetentionDays:    SettingVariable{Value: "30"},
-		ActivityHistoryMaxEntries:       SettingVariable{Value: "1000"},
-		MaxConcurrentActivities:         SettingVariable{Value: "5"},
-		AutoInjectEnv:                   SettingVariable{Value: "false"},
-		DefaultDeployPullPolicy:         SettingVariable{Value: "missing"},
-		ScheduledPruneEnabled:           SettingVariable{Value: "false"},
-		ScheduledPruneInterval:          SettingVariable{Value: "0 0 0 * * *"},
-		PruneContainerMode:              SettingVariable{Value: "stopped"},
-		PruneContainerUntil:             SettingVariable{Value: ""},
-		PruneImageMode:                  SettingVariable{Value: "dangling"},
-		PruneImageUntil:                 SettingVariable{Value: ""},
-		PruneVolumeMode:                 SettingVariable{Value: "none"},
-		PruneNetworkMode:                SettingVariable{Value: "unused"},
-		PruneNetworkUntil:               SettingVariable{Value: ""},
-		PruneBuildCacheMode:             SettingVariable{Value: "none"},
-		PruneBuildCacheUntil:            SettingVariable{Value: ""},
-		AutoHealEnabled:                 SettingVariable{Value: "false"},
-		AutoHealInterval:                SettingVariable{Value: "*/30 * * * * *"},
-		AutoHealExcludedContainers:      SettingVariable{Value: ""},
-		AutoHealMaxRestarts:             SettingVariable{Value: "5"},
-		AutoHealRestartWindow:           SettingVariable{Value: "30"},
-		VolumeHelperIdleTimeout:         SettingVariable{Value: "10"},
-		BaseServerURL:                   SettingVariable{Value: "http://localhost"},
-		EnableGravatar:                  SettingVariable{Value: "true"},
-		ExperimentalFeaturesEnabled:     SettingVariable{Value: "false"},
-		AvatarMaxUploadSizeMb:           SettingVariable{Value: "2"},
-		DefaultShell:                    SettingVariable{Value: "/bin/sh"},
-		DockerHost:                      SettingVariable{Value: "unix:///var/run/docker.sock"},
-		BuildsDirectory:                 SettingVariable{Value: "/builds"},
-		AuthLocalEnabled:                SettingVariable{Value: "true"},
-		AuthSessionTimeout:              SettingVariable{Value: "1440"},
-		AuthPasswordPolicy:              SettingVariable{Value: "strong"},
-		VulnerabilityScanEnabled:        SettingVariable{Value: "false"},
-		VulnerabilityScanInterval:       SettingVariable{Value: "0 0 0 * * *"},
-		TrivyImage:                      SettingVariable{Value: DefaultTrivyImage},
-		TrivyNetwork:                    SettingVariable{Value: ""},
-		TrivySecurityOpts:               SettingVariable{Value: ""},
-		TrivyPrivileged:                 SettingVariable{Value: "false"},
-		TrivyPreserveCacheOnVolumePrune: SettingVariable{Value: "true"},
-		TrivyResourceLimitsEnabled:      SettingVariable{Value: "true"},
-		TrivyCpuLimit:                   SettingVariable{Value: "1"},
-		TrivyMemoryLimitMb:              SettingVariable{Value: "0"},
-		TrivyConcurrentScanContainers:   SettingVariable{Value: "1"},
-		TrivyServerEnabled:              SettingVariable{Value: "false"},
-		TrivyServerUrl:                  SettingVariable{Value: ""},
-		TrivyServerToken:                SettingVariable{Value: ""},
-		TrivyIgnoreUnfixed:              SettingVariable{Value: "true"},
-		OidcEnabled:                     SettingVariable{Value: "false"},
-		OidcClientId:                    SettingVariable{Value: ""},
-		OidcClientSecret:                SettingVariable{Value: ""},
-		OidcIssuerUrl:                   SettingVariable{Value: ""},
-		OidcAuthorizationEndpoint:       SettingVariable{Value: ""},
-		OidcTokenEndpoint:               SettingVariable{Value: ""},
-		OidcUserinfoEndpoint:            SettingVariable{Value: ""},
-		OidcJwksEndpoint:                SettingVariable{Value: ""},
-		OidcScopes:                      SettingVariable{Value: "openid email profile"},
-		OidcGroupsClaim:                 SettingVariable{Value: "groups"},
-		OidcSkipTlsVerify:               SettingVariable{Value: "false"},
-		OidcAutoRedirectToProvider:      SettingVariable{Value: "false"},
-		OidcMergeAccounts:               SettingVariable{Value: "false"},
-		OidcProviderName:                SettingVariable{Value: ""},
-		OidcProviderLogoUrl:             SettingVariable{Value: ""},
-		OidcMobileRedirectUris:          SettingVariable{Value: "arcane-mobile://oidc-callback"},
-		MaxImageUploadSize:              SettingVariable{Value: "500"},
-		GitSyncMaxFiles:                 SettingVariable{Value: "500"},
-		GitSyncMaxTotalSizeMb:           SettingVariable{Value: "50"},
-		GitSyncMaxBinarySizeMb:          SettingVariable{Value: "10"},
-		EnvironmentHealthInterval:       SettingVariable{Value: "0 */2 * * * *"},
-		LifecycleEnabled:                SettingVariable{Value: "false"},
-		LifecycleDefaultRunnerImage:     SettingVariable{Value: "alpine:latest"},
-		LifecycleMaxTimeoutSec:          SettingVariable{Value: "300"},
+		ProjectsDirectory:              SettingVariable{Value: "/app/data/projects"},
+		TemplatesDirectory:             SettingVariable{Value: "/app/data/templates"},
+		FollowProjectSymlinks:          SettingVariable{Value: "false"},
+		SwarmStackSourcesDirectory:     SettingVariable{Value: "/app/data/swarm/sources"},
+		DiskUsagePath:                  SettingVariable{Value: "/app/data/projects"},
+		AutoUpdate:                     SettingVariable{Value: "false"},
+		AutoUpdateInterval:             SettingVariable{Value: "0 0 0 * * *"},
+		AutoUpdateExcludedContainers:   SettingVariable{Value: ""},
+		PollingEnabled:                 SettingVariable{Value: "true"},
+		PollingInterval:                SettingVariable{Value: "0 0 * * * *"},
+		ImageEventWatcherEnabled:       SettingVariable{Value: "false"},
+		DockerClientRefreshInterval:    SettingVariable{Value: "*/30 * * * * *"},
+		EventCleanupInterval:           SettingVariable{Value: "0 0 */6 * * *"},
+		ExpiredSessionsCleanupInterval: SettingVariable{Value: "0 0 0 * * *"},
+		ActivityHistoryRetentionDays:   SettingVariable{Value: "30"},
+		ActivityHistoryMaxEntries:      SettingVariable{Value: "1000"},
+		MaxConcurrentActivities:        SettingVariable{Value: "5"},
+		AutoInjectEnv:                  SettingVariable{Value: "false"},
+		DefaultDeployPullPolicy:        SettingVariable{Value: "missing"},
+		ScheduledPruneEnabled:          SettingVariable{Value: "false"},
+		ScheduledPruneInterval:         SettingVariable{Value: "0 0 0 * * *"},
+		PruneContainerMode:             SettingVariable{Value: "stopped"},
+		PruneContainerUntil:            SettingVariable{Value: ""},
+		PruneImageMode:                 SettingVariable{Value: "dangling"},
+		PruneImageUntil:                SettingVariable{Value: ""},
+		PruneVolumeMode:                SettingVariable{Value: "none"},
+		PruneNetworkMode:               SettingVariable{Value: "unused"},
+		PruneNetworkUntil:              SettingVariable{Value: ""},
+		PruneBuildCacheMode:            SettingVariable{Value: "none"},
+		PruneBuildCacheUntil:           SettingVariable{Value: ""},
+		AutoHealEnabled:                SettingVariable{Value: "false"},
+		AutoHealInterval:               SettingVariable{Value: "*/30 * * * * *"},
+		AutoHealExcludedContainers:     SettingVariable{Value: ""},
+		AutoHealMaxRestarts:            SettingVariable{Value: "5"},
+		AutoHealRestartWindow:          SettingVariable{Value: "30"},
+		VolumeHelperIdleTimeout:        SettingVariable{Value: "10"},
+		BaseServerURL:                  SettingVariable{Value: "http://localhost"},
+		EnableGravatar:                 SettingVariable{Value: "true"},
+		ExperimentalFeaturesEnabled:    SettingVariable{Value: "false"},
+		AvatarMaxUploadSizeMb:          SettingVariable{Value: "2"},
+		DefaultShell:                   SettingVariable{Value: "/bin/sh"},
+		DockerHost:                     SettingVariable{Value: "unix:///var/run/docker.sock"},
+		BuildsDirectory:                SettingVariable{Value: "/builds"},
+		AuthLocalEnabled:               SettingVariable{Value: "true"},
+		AuthSessionTimeout:             SettingVariable{Value: "1440"},
+		AuthPasswordPolicy:             SettingVariable{Value: "strong"},
+		VulnerabilityScanEnabled:       SettingVariable{Value: "false"},
+		VulnerabilityScanInterval:      SettingVariable{Value: "0 0 0 * * *"},
+		TrivyImage:                     SettingVariable{Value: DefaultTrivyImage},
+		TrivyNetwork:                   SettingVariable{Value: ""},
+		TrivySecurityOpts:              SettingVariable{Value: ""},
+		TrivyPrivileged:                SettingVariable{Value: "false"},
+		TrivyResourceLimitsEnabled:     SettingVariable{Value: "true"},
+		TrivyCpuLimit:                  SettingVariable{Value: "1"},
+		TrivyMemoryLimitMb:             SettingVariable{Value: "0"},
+		TrivyConcurrentScanContainers:  SettingVariable{Value: "1"},
+		TrivyServerEnabled:             SettingVariable{Value: "false"},
+		TrivyServerUrl:                 SettingVariable{Value: ""},
+		TrivyServerToken:               SettingVariable{Value: ""},
+		TrivyIgnoreUnfixed:             SettingVariable{Value: "true"},
+		OidcEnabled:                    SettingVariable{Value: "false"},
+		OidcClientId:                   SettingVariable{Value: ""},
+		OidcClientSecret:               SettingVariable{Value: ""},
+		OidcIssuerUrl:                  SettingVariable{Value: ""},
+		OidcAuthorizationEndpoint:      SettingVariable{Value: ""},
+		OidcTokenEndpoint:              SettingVariable{Value: ""},
+		OidcUserinfoEndpoint:           SettingVariable{Value: ""},
+		OidcJwksEndpoint:               SettingVariable{Value: ""},
+		OidcScopes:                     SettingVariable{Value: "openid email profile"},
+		OidcGroupsClaim:                SettingVariable{Value: "groups"},
+		OidcSkipTlsVerify:              SettingVariable{Value: "false"},
+		OidcAutoRedirectToProvider:     SettingVariable{Value: "false"},
+		OidcMergeAccounts:              SettingVariable{Value: "false"},
+		OidcProviderName:               SettingVariable{Value: ""},
+		OidcProviderLogoUrl:            SettingVariable{Value: ""},
+		OidcMobileRedirectUris:         SettingVariable{Value: "arcane-mobile://oidc-callback"},
+		MaxImageUploadSize:             SettingVariable{Value: "500"},
+		GitSyncMaxFiles:                SettingVariable{Value: "500"},
+		GitSyncMaxTotalSizeMb:          SettingVariable{Value: "50"},
+		GitSyncMaxBinarySizeMb:         SettingVariable{Value: "10"},
+		EnvironmentHealthInterval:      SettingVariable{Value: "0 */2 * * * *"},
+		LifecycleEnabled:               SettingVariable{Value: "false"},
+		LifecycleDefaultRunnerImage:    SettingVariable{Value: "alpine:latest"},
+		LifecycleMaxTimeoutSec:         SettingVariable{Value: "300"},
 
 		DockerAPITimeout:       SettingVariable{Value: "30"},
 		DockerImagePullTimeout: SettingVariable{Value: "600"},
@@ -298,7 +300,12 @@ func DefaultSettingsConfig() *Settings {
 		DepotProjectId:         SettingVariable{Value: ""},
 		DepotToken:             SettingVariable{Value: ""},
 
-		InstanceID: SettingVariable{Value: ""},
+		ApnsEnabled:    SettingVariable{Value: "false"},
+		ApnsChannelID:  SettingVariable{Value: ""},
+		ApnsSigningKey: SettingVariable{Value: ""},
+
+		InstanceID:               SettingVariable{Value: ""},
+		SystemVolumeBackupConfig: SettingVariable{Value: `{"policies":[]}`},
 	}
 }
 
@@ -491,7 +498,7 @@ func (s *SettingsService) UpdateSetting(ctx context.Context, key, value string) 
 	if err := libarcane.ValidateCronSetting(key, value); err != nil {
 		return errors.WrapIff(err, "invalid cron expression for %s", key)
 	}
-	_, err := actors.Execute(ctx, s.writes, "update setting", func(writeCtx context.Context) (actors.NoPayload, error) {
+	_, err := s.writes.Execute(ctx, "update setting", func(writeCtx context.Context) (actors.NoPayload, error) {
 		if err := s.updateSettingValueNoRefreshInternal(writeCtx, key, value); err != nil {
 			return actors.NoPayload{}, err
 		}
@@ -507,7 +514,7 @@ func (s *SettingsService) UpdateSettingValues(ctx context.Context, updates []lib
 	for _, update := range updates {
 		values = append(values, SettingVariable{Key: update.Key, Value: update.Value})
 	}
-	_, err := actors.Execute(ctx, s.writes, "update setting values", func(writeCtx context.Context) (actors.NoPayload, error) {
+	_, err := s.writes.Execute(ctx, "update setting values", func(writeCtx context.Context) (actors.NoPayload, error) {
 		if err := s.persistSettings(writeCtx, values); err != nil {
 			return actors.NoPayload{}, err
 		}
@@ -529,7 +536,7 @@ func (s *SettingsService) updateSettingValueNoRefreshInternal(ctx context.Contex
 // UpdateSettings publishes the refreshed snapshot before returning. Each
 // subscriber's effects remain ordered and may finish after this method returns.
 func (s *SettingsService) UpdateSettings(ctx context.Context, updates settingstypes.Update) ([]SettingVariable, error) {
-	result, err := actors.Execute(ctx, s.writes, "update settings", func(writeCtx context.Context) (settingsUpdateResultInternal, error) {
+	result, err := s.writes.Execute(ctx, "update settings", func(writeCtx context.Context) (settingsUpdateResultInternal, error) {
 		return s.updateSettingsInternal(writeCtx, updates)
 	}, func(result settingsUpdateResultInternal, err error) {
 		if err == nil && len(result.changes) > 0 {
@@ -709,7 +716,7 @@ func (s *SettingsService) persistSettings(ctx context.Context, values []SettingV
 }
 
 func (s *SettingsService) EnsureDefaultSettings(ctx context.Context) error {
-	_, err := actors.Execute(ctx, s.writes, "ensure default settings", func(writeCtx context.Context) (actors.NoPayload, error) {
+	_, err := s.writes.Execute(ctx, "ensure default settings", func(writeCtx context.Context) (actors.NoPayload, error) {
 		defaultSettings := s.getDefaultSettings()
 		defaultSettingVars := defaultSettings.ToSettingVariableSlice(SettingVisibilityAll, false)
 
@@ -741,7 +748,7 @@ func (s *SettingsService) EnsureDefaultSettings(ctx context.Context) error {
 }
 
 func (s *SettingsService) PruneUnknownSettings(ctx context.Context) error {
-	_, err := actors.Execute(ctx, s.writes, "prune unknown settings", func(writeCtx context.Context) (actors.NoPayload, error) {
+	_, err := s.writes.Execute(ctx, "prune unknown settings", func(writeCtx context.Context) (actors.NoPayload, error) {
 		allowedKeys := allowedSettingKeys()
 		if len(allowedKeys) == 0 {
 			return actors.NoPayload{}, nil
@@ -765,7 +772,7 @@ func (s *SettingsService) PruneUnknownSettings(ctx context.Context) error {
 }
 
 func (s *SettingsService) PersistEnvSettingsIfMissing(ctx context.Context) error {
-	_, err := actors.Execute(ctx, s.writes, "persist environment settings", func(writeCtx context.Context) (actors.NoPayload, error) {
+	_, err := s.writes.Execute(ctx, "persist environment settings", func(writeCtx context.Context) (actors.NoPayload, error) {
 		rt := reflect.TypeFor[Settings]()
 		appCfg := config.Load()
 		isEnvOnlyMode := appCfg.AgentMode || appCfg.UIConfigurationDisabled
@@ -900,7 +907,7 @@ func (s *SettingsService) setupInstanceID(ctx context.Context) error {
 	return nil
 }
 
-func settingValueInternal[T any](ctx context.Context, s *SettingsService, key string, parse func(string) (T, error)) mo.Option[T] {
+func (s *SettingsService) settingValue[T any](ctx context.Context, key string, parse func(string) (T, error)) mo.Option[T] {
 	cfg := s.getEffectiveSettingsConfigInternal(ctx)
 	value, _, _, err := cfg.FieldByKey(key)
 	if err != nil || value == "" {
@@ -915,15 +922,15 @@ func settingValueInternal[T any](ctx context.Context, s *SettingsService, key st
 }
 
 func (s *SettingsService) GetBoolSetting(ctx context.Context, key string, defaultValue bool) bool {
-	return settingValueInternal(ctx, s, key, strconv.ParseBool).OrElse(defaultValue)
+	return s.settingValue(ctx, key, strconv.ParseBool).OrElse(defaultValue)
 }
 
 func (s *SettingsService) GetIntSetting(ctx context.Context, key string, defaultValue int) int {
-	return settingValueInternal(ctx, s, key, strconv.Atoi).OrElse(defaultValue)
+	return s.settingValue(ctx, key, strconv.Atoi).OrElse(defaultValue)
 }
 
 func (s *SettingsService) GetStringSetting(ctx context.Context, key, defaultValue string) string {
-	return settingValueInternal(ctx, s, key, func(value string) (string, error) { return value, nil }).OrElse(defaultValue)
+	return s.settingValue(ctx, key, func(value string) (string, error) { return value, nil }).OrElse(defaultValue)
 }
 
 func (s *SettingsService) SetBoolSetting(ctx context.Context, key string, value bool) error {
@@ -959,7 +966,7 @@ func ParseExcludedContainerNames(raw string) []string {
 // the autoUpdateExcludedContainers setting. When excluded is true the container
 // is added to the list; when false it is removed.
 func (s *SettingsService) SetContainerAutoUpdateExclusionInternal(ctx context.Context, containerName string, excluded bool) error {
-	_, err := actors.Execute(ctx, s.writes, "update container auto-update exclusion", func(writeCtx context.Context) (actors.NoPayload, error) {
+	_, err := s.writes.Execute(ctx, "update container auto-update exclusion", func(writeCtx context.Context) (actors.NoPayload, error) {
 		ordered := ParseExcludedContainerNames(s.GetStringSetting(writeCtx, "autoUpdateExcludedContainers", ""))
 
 		if excluded {
@@ -985,7 +992,7 @@ func (s *SettingsService) SetContainerAutoUpdateExclusionInternal(ctx context.Co
 }
 
 func (s *SettingsService) EnsureEncryptionKey(ctx context.Context) (string, error) {
-	return actors.Execute(ctx, s.writes, "ensure encryption key", func(writeCtx context.Context) (string, error) {
+	return s.writes.Execute(ctx, "ensure encryption key", func(writeCtx context.Context) (string, error) {
 		const keyName = "encryptionKey"
 		var key string
 
@@ -1029,13 +1036,65 @@ func (s *SettingsService) EnsureEncryptionKey(ctx context.Context) (string, erro
 	}, nil)
 }
 
+func (s *SettingsService) EnsureJwtSigningKey(ctx context.Context) (*mldsa.PrivateKey, error) {
+	return s.writes.Execute(ctx, "ensure jwt signing key", func(writeCtx context.Context) (*mldsa.PrivateKey, error) {
+		const keyName = "jwtSigningKeySeed"
+		var key *mldsa.PrivateKey
+
+		err := s.db.WithContext(writeCtx).Transaction(func(tx *gorm.DB) error {
+			var sv SettingVariable
+			err := tx.Where("key = ?", keyName).First(&sv).Error
+
+			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+				return errors.WrapIf(err, "failed to load jwt signing key")
+			}
+
+			if sv.Value != "" {
+				decoded, decErr := libcrypto.Decrypt(sv.Value)
+				if decErr != nil {
+					return errors.WrapIf(decErr, "failed to decrypt jwt signing key")
+				}
+				seed, decErr := base64.StdEncoding.DecodeString(decoded)
+				if decErr != nil {
+					return errors.WrapIf(decErr, "failed to decode jwt signing key")
+				}
+				key, decErr = mldsa.NewPrivateKey(mldsa.MLDSA87(), seed)
+				return errors.WrapIf(decErr, "failed to load jwt signing key")
+			}
+
+			notFound := errors.Is(err, gorm.ErrRecordNotFound)
+			generated, genErr := mldsa.GenerateKey(mldsa.MLDSA87())
+			if genErr != nil {
+				return errors.WrapIf(genErr, "failed to generate jwt signing key")
+			}
+			encrypted, encErr := libcrypto.Encrypt(base64.StdEncoding.EncodeToString(generated.Bytes()))
+			if encErr != nil {
+				return errors.WrapIf(encErr, "failed to encrypt jwt signing key")
+			}
+			key = generated
+
+			if notFound {
+				return errors.WrapIf(tx.Create(&SettingVariable{Key: keyName, Value: encrypted}).Error, "failed to persist jwt signing key")
+			}
+			return errors.WrapIf(tx.Model(&SettingVariable{}).
+				Where("key = ?", keyName).
+				Update("value", encrypted).Error, "failed to update jwt signing key")
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		return key, nil
+	}, nil)
+}
+
 func (s *SettingsService) NormalizeProjectsDirectory(ctx context.Context, projectsDirEnv string) error {
 	if projectsDirEnv != "" {
 		slog.DebugContext(ctx, "PROJECTS_DIRECTORY environment variable is set, skipping normalization", "value", projectsDirEnv)
 		return nil
 	}
 
-	_, err := actors.Execute(ctx, s.writes, "normalize projects directory", func(writeCtx context.Context) (string, error) {
+	_, err := s.writes.Execute(ctx, "normalize projects directory", func(writeCtx context.Context) (string, error) {
 		var projectsDirSetting SettingVariable
 		err := s.db.WithContext(writeCtx).Where("key = ?", "projectsDirectory").First(&projectsDirSetting).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -1083,7 +1142,7 @@ func (s *SettingsService) NormalizeBuildsDirectory(ctx context.Context) error {
 		return nil
 	}
 
-	_, err := actors.Execute(ctx, s.writes, "normalize builds directory", func(writeCtx context.Context) (string, error) {
+	_, err := s.writes.Execute(ctx, "normalize builds directory", func(writeCtx context.Context) (string, error) {
 		var buildsDirSetting SettingVariable
 		err := s.db.WithContext(writeCtx).Where("key = ?", buildsKey).First(&buildsDirSetting).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {

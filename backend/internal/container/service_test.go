@@ -175,10 +175,9 @@ func TestBuildContainerFilterAccessors_FiltersStandaloneContainers(t *testing.T)
 		{ID: "compose", Labels: map[string]string{"com.docker.compose.project": "alpha"}, UpdateInfo: updateInfo},
 	}
 
-	result := pagination.SearchOrderAndPaginate(
+	result := pagination.Config[containertypes.Summary]{FilterAccessors: service.buildContainerFilterAccessors()}.SearchOrderAndPaginate(
 		items,
 		pagination.QueryParams{Filters: map[string]string{"standalone": "true", "updates": "has_update"}},
-		pagination.Config[containertypes.Summary]{FilterAccessors: service.buildContainerFilterAccessors()},
 	)
 
 	require.Len(t, result.Items, 1)
@@ -248,7 +247,6 @@ func TestContainerServiceCommitContainerCallsDockerAPIInternal(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	svc := NewContainerService(
-		context.Background(),
 		event.NewEventService(db, nil, nil),
 		docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClientInternal(t, server)),
 		nil,
@@ -296,7 +294,6 @@ func TestContainerServiceCommitContainerOmitsReferenceWhenRepositoryEmptyInterna
 	t.Cleanup(server.Close)
 
 	svc := NewContainerService(
-		context.Background(),
 		event.NewEventService(db, nil, nil),
 		docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClientInternal(t, server)),
 		nil,

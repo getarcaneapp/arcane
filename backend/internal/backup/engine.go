@@ -277,9 +277,13 @@ func (e *Engine) ListSnapshots(ctx context.Context, dockerClient *client.Client,
 	return snapshots, nil
 }
 
-// ForgetSnapshot removes the snapshot from the repository and prunes its data.
-func (e *Engine) ForgetSnapshot(ctx context.Context, dockerClient *client.Client, repository Repository, password, snapshotID string) error {
-	_, err := e.runInternal(ctx, dockerClient, repository, password, []string{"forget", "--prune", "--", snapshotID})
+// ForgetSnapshots removes the snapshots from the repository and prunes their
+// data in a single pass.
+func (e *Engine) ForgetSnapshots(ctx context.Context, dockerClient *client.Client, repository Repository, password string, snapshotIDs []string) error {
+	if len(snapshotIDs) == 0 {
+		return errors.New("at least one snapshot ID is required")
+	}
+	_, err := e.runInternal(ctx, dockerClient, repository, password, append([]string{"forget", "--prune", "--"}, snapshotIDs...))
 	return err
 }
 
@@ -313,7 +317,7 @@ func (e *Engine) executorForInternal(repositoryID string) (*actors.Executor, err
 	if executor, ok := e.executors.Get(repositoryID); ok {
 		return executor, nil
 	}
-	return actors.ApplyStateMap(e.lifecycleCtx, e.executors, "backup repository executor", func(values map[string]*actors.Executor) (*actors.Executor, bool, error) {
+	return e.executors.ApplyTyped(e.lifecycleCtx, "backup repository executor", func(values map[string]*actors.Executor) (*actors.Executor, bool, error) {
 		if executor, ok := values[repositoryID]; ok {
 			return executor, false, nil
 		}
@@ -337,7 +341,7 @@ func (e *Engine) runInternal(ctx context.Context, dockerClient *client.Client, r
 	if err != nil {
 		return "", err
 	}
-	return actors.Execute(ctx, executor, "rustic "+command[0], func(workCtx context.Context) (string, error) {
+	return executor.Execute(ctx, "rustic "+command[0], func(workCtx context.Context) (string, error) {
 		return e.runContainerInternal(workCtx, dockerClient, repository, password, command, extraMounts...)
 	}, nil)
 }

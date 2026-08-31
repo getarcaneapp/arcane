@@ -1,9 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { z } from 'zod/v4';
-	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
-	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { m } from '#lib/paraglide/messages';
 	import settingsStore from '#lib/stores/config-store';
 	import { createForm } from '#lib/utils/settings';
@@ -13,42 +11,31 @@
 	import { ResourceDetailLayout } from '#lib/layouts/index.js';
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
 	import { sanitizeLogText } from '#lib/utils/formatting';
-	import { formatDateTimeShort } from '#lib/utils/formatting';
-	import IfPermitted from '#lib/components/if-permitted.svelte';
-	import {
-		CodeIcon,
-		TerminalIcon,
-		ArrowDownIcon,
-		ClockIcon,
-		TagIcon,
-		SettingsIcon,
-		InfoIcon,
-		EllipsisIcon,
-		RedeployIcon
-	} from '#lib/icons';
+	import { CodeIcon, TerminalIcon } from '#lib/icons';
 	import * as Card from '#lib/components/ui/card';
-	import { Spinner } from '#lib/components/ui/spinner/index.js';
-	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
-	import type { ColumnSpec, MobileFieldVisibility } from '#lib/components/arcane-table';
-	import { UniversalMobileCard } from '#lib/components/arcane-table';
-	import { Badge } from '#lib/components/ui/badge';
-	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
 	import { extractErrorMessage } from '#lib/utils/docker';
 	import ResizableSplit from '#lib/components/resizable-split.svelte';
 	import BuildControls from './components/build-controls.svelte';
 	import BuildWorkspacePanel from './components/build-workspace-panel.svelte';
 	import BuildConfigPanel from './components/build-config-panel.svelte';
 	import BuildOutputPanel from './components/build-output-panel.svelte';
+	import ImageBuildHistoryPanel from './components/image-build-history-panel.svelte';
 	import type { BuildProviderOption, SelectOption } from './components/build-form.types';
-	import { imageService } from '#lib/services/image-service';
 	import { containerRegistryService } from '#lib/services/container-registry-service';
 	import { buildImageReference, getRegistryDisplayName } from '#lib/utils/registry';
 	import { parseList } from '#lib/utils/form-parsers';
-	import type { ImageBuildRecord, ImageBuildStatus } from '#lib/types/docker';
-	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
+	import type { ImageBuildRecord } from '#lib/types/docker';
+	import type { SearchPaginationSortRequest } from '#lib/types/shared';
 	import { queryKeys } from '#lib/query/query-keys';
 	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte';
+	import {
+		formatBuildArgs,
+		formatKeyValueMap,
+		formatStringList,
+		getContextPathFromBuild,
+		isGitBuildContextSource
+	} from './image-build-history';
 
 	let {}: PageProps = $props();
 
@@ -160,30 +147,9 @@
 	let buildTab = $state('workspace');
 	let rightPanelTab = $state<'config' | 'output'>('config');
 	let showAdvanced = $state(false);
-	const EMPTY_BUILD_HISTORY: Paginated<ImageBuildRecord> = {
-		data: [],
-		pagination: { totalPages: 1, totalItems: 0, currentPage: 1, itemsPerPage: 20 }
-	};
-
-	let buildHistoryRequestOptions = $state<SearchPaginationSortRequest>({
-		pagination: { page: 1, limit: 20 },
-		sort: { column: 'createdAt', direction: 'desc' }
-	});
-	let buildHistorySelectedIds = $state<string[]>([]);
-	let buildHistoryMobileFieldVisibility = $state<Record<string, boolean>>({});
-	let buildHistorySelectedOptimistic = $state<ImageBuildRecord | null>(null);
-	let buildHistorySelectedId = $state<string | null>(null);
-	let buildHistoryDetailsOpen = $state(false);
 
 	const selectedEnvId = $derived(environmentStore.selected?.id || '0');
 	const queryClient = useQueryClient();
-
-	const buildHistoryQuery = createQuery(() => ({
-		queryKey: queryKeys.images.buildsList(selectedEnvId, buildHistoryRequestOptions),
-		queryFn: () => imageService.getImageBuilds(buildHistoryRequestOptions)
-	}));
-
-	const buildHistoryItems = $derived<Paginated<ImageBuildRecord>>(buildHistoryQuery.data ?? EMPTY_BUILD_HISTORY);
 	const resolvedProvider = $derived(depotAvailable ? $inputs.provider.value : 'local');
 	const isPushMode = $derived(resolvedProvider === 'depot' ? true : $inputs.push.value);
 
@@ -234,41 +200,6 @@
 			$inputs.repositoryName.value = '';
 		}
 	});
-
-	let buildHistoryQueryLastError: string | null = null;
-
-	$effect(() => {
-		const err = buildHistoryQuery.error as any;
-		if (!err) return;
-		const message = err?.message ? String(err.message) : m.common_error();
-		if (message && message !== buildHistoryQueryLastError) {
-			buildHistoryQueryLastError = message;
-			toast.error(message);
-		}
-	});
-
-	const buildHistoryDetailQuery = createQuery(() => ({
-		queryKey: buildHistorySelectedId
-			? queryKeys.images.buildRecord(selectedEnvId, buildHistorySelectedId)
-			: (['images', selectedEnvId, 'builds', 'none'] as const),
-		queryFn: () => imageService.getImageBuild(buildHistorySelectedId!),
-		enabled: !!buildHistorySelectedId && buildHistoryDetailsOpen
-	}));
-
-	const buildHistorySelected = $derived<ImageBuildRecord | null>(buildHistoryDetailQuery.data ?? buildHistorySelectedOptimistic);
-
-	let buildHistoryDetailLastError: string | null = null;
-
-	$effect(() => {
-		const err = buildHistoryDetailQuery.error as any;
-		if (!err) return;
-		const message = err?.message ? String(err.message) : m.common_error();
-		if (message && message !== buildHistoryDetailLastError) {
-			buildHistoryDetailLastError = message;
-			toast.error(message);
-		}
-	});
-	const buildHistoryDetailsLoading = $derived(buildHistoryDetailQuery.isPending || buildHistoryDetailQuery.isFetching);
 
 	type ImageBuildRequest = { envId: string; provider: 'local' | 'depot' } & Pick<
 		ImageBuildRecord,
@@ -404,57 +335,6 @@
 		{ value: 'history', label: m.builds() }
 	]);
 
-	type BuildOutputEntry = {
-		text: string;
-		isError: boolean;
-	};
-
-	const buildHistoryOutputEntries = $derived.by(() => parseBuildOutput(buildHistorySelected?.output ?? ''));
-
-	function getBuildTitle(build: ImageBuildRecord) {
-		return build.tags?.[0] || buildContextDisplayName(build.contextDir) || build.contextDir;
-	}
-
-	const buildHistoryColumns = [
-		{
-			accessorKey: 'status',
-			title: m.common_status(),
-			sortable: true,
-			cell: BuildHistoryStatusCell
-		},
-		{
-			id: 'tags',
-			title: m.common_tags(),
-			cell: BuildHistoryTagsCell
-		},
-		{
-			accessorKey: 'provider',
-			title: m.build_provider(),
-			sortable: true,
-			cell: BuildHistoryProviderCell
-		},
-		{
-			accessorKey: 'createdAt',
-			title: m.common_created(),
-			sortable: true,
-			cell: BuildHistoryTimeCell
-		},
-		{
-			accessorKey: 'durationMs',
-			title: m.duration(),
-			cell: BuildHistoryDurationCell
-		}
-	] satisfies ColumnSpec<ImageBuildRecord>[];
-
-	const buildHistoryMobileFields = [
-		{ id: 'status', label: m.common_status(), defaultVisible: true },
-		{ id: 'tags', label: m.common_tags(), defaultVisible: true },
-		{ id: 'context', label: m.build_context(), defaultVisible: true },
-		{ id: 'provider', label: m.build_provider(), defaultVisible: true },
-		{ id: 'createdAt', label: m.common_created(), defaultVisible: true },
-		{ id: 'durationMs', label: m.duration(), defaultVisible: false }
-	];
-
 	onMount(() => {
 		const mq = window.matchMedia('(min-width: 1024px)');
 		const update = () => {
@@ -573,148 +453,6 @@
 		return null;
 	}
 
-	function formatKeyValueMap(values?: Record<string, string>) {
-		if (!values || Object.keys(values).length === 0) return '';
-		return Object.entries(values)
-			.map(([key, value]) => `${key}=${value}`)
-			.join('\n');
-	}
-
-	function formatStringList(values?: string[]) {
-		if (!values || values.length === 0) return '';
-		return values.join('\n');
-	}
-
-	function formatTimestamp(value?: string) {
-		if (!value) return '-';
-		return formatDateTimeShort(value) || value;
-	}
-
-	function formatDuration(ms?: number) {
-		if (!ms || ms <= 0) return '-';
-		const totalSeconds = Math.round(ms / 1000);
-		const minutes = Math.floor(totalSeconds / 60);
-		const seconds = totalSeconds % 60;
-		if (minutes > 0) return `${minutes}m ${seconds}s`;
-		return `${seconds}s`;
-	}
-
-	function formatBuildArgs(buildArgs?: Record<string, string>) {
-		return formatKeyValueMap(buildArgs);
-	}
-
-	function isGitBuildContextSource(value?: string): boolean {
-		const trimmed = value?.trim();
-		if (!trimmed) return false;
-		const base = trimmed.split('#', 1)[0]?.trim() ?? '';
-		if (!base) return false;
-		if (base.startsWith('git@')) return true;
-		try {
-			const parsed = new URL(base);
-			const protocol = parsed.protocol.toLowerCase();
-			if (protocol === 'ssh:' || protocol === 'git:') return true;
-			if (protocol === 'http:' || protocol === 'https:') {
-				return parsed.pathname !== '/';
-			}
-		} catch {
-			return false;
-		}
-		return false;
-	}
-
-	function buildContextDisplayName(value?: string): string {
-		const trimmed = value?.trim();
-		if (!trimmed) return '';
-		if (!isGitBuildContextSource(trimmed)) {
-			return trimmed.split('/').pop() || trimmed;
-		}
-
-		const withoutFragment = trimmed.split('#', 1)[0] ?? trimmed;
-		const normalized = withoutFragment.endsWith('/') ? withoutFragment.slice(0, -1) : withoutFragment;
-		const repoName = normalized.split('/').pop() || normalized;
-		return repoName.replace(/\.git$/i, '');
-	}
-
-	function getContextPathFromBuild(build: ImageBuildRecord) {
-		if (isGitBuildContextSource(build.contextDir)) return '/';
-		const root = buildsRoot.endsWith('/') ? buildsRoot.slice(0, -1) : buildsRoot;
-		if (!build.contextDir || build.contextDir === root) return '/';
-		if (build.contextDir.startsWith(`${root}/`)) {
-			return build.contextDir.slice(root.length);
-		}
-		return '/';
-	}
-
-	// Build history output is the raw docker CLI text of the build. Records
-	// written before the raw-output change contain NDJSON progress events; pull
-	// their text out so old history stays readable.
-	function parseBuildOutput(output: string): BuildOutputEntry[] {
-		if (!output) return [];
-		return output
-			.split('\n')
-			.map((line) => line.trim())
-			.filter(Boolean)
-			.map((line) => {
-				try {
-					const data = JSON.parse(line) as Record<string, unknown>;
-					if (data && typeof data === 'object') {
-						const error = data['error'];
-						if (error) {
-							const message =
-								typeof error === 'object' && error !== null ? ((error as { message?: string }).message ?? line) : String(error);
-							return { text: sanitizeLogText(message), isError: true } satisfies BuildOutputEntry;
-						}
-						const text = data['log'] ?? data['status'] ?? data['stream'];
-						if (typeof text === 'string') {
-							return { text: sanitizeLogText(text), isError: false } satisfies BuildOutputEntry;
-						}
-					}
-				} catch {
-					// Raw text line.
-				}
-				return { text: sanitizeLogText(line), isError: false } satisfies BuildOutputEntry;
-			})
-			.filter((entry) => entry.text.trim() !== '');
-	}
-
-	function buildHistoryStatusLabel(status?: ImageBuildStatus) {
-		switch (status) {
-			case 'running':
-				return m.common_running();
-			case 'success':
-				return m.common_success();
-			case 'failed':
-				return m.common_failed();
-			default:
-				return m.common_unknown();
-		}
-	}
-
-	function getStatusBadgeVariant(status?: ImageBuildStatus) {
-		switch (status) {
-			case 'success':
-				return 'green';
-			case 'failed':
-				return 'red';
-			case 'running':
-				return 'blue';
-			default:
-				return 'gray';
-		}
-	}
-
-	async function loadBuildHistory(options: SearchPaginationSortRequest = buildHistoryRequestOptions) {
-		buildHistoryRequestOptions = options;
-		const result = await buildHistoryQuery.refetch();
-		return result.data ?? buildHistoryQuery.data ?? EMPTY_BUILD_HISTORY;
-	}
-
-	function openBuildDetails(build: ImageBuildRecord) {
-		buildHistorySelectedId = build.id;
-		buildHistorySelectedOptimistic = build;
-		buildHistoryDetailsOpen = true;
-	}
-
 	function applyBuildConfig(build: ImageBuildRecord) {
 		form.setValue('tags', build.tags?.join(', ') ?? '');
 		form.setValue('dockerfile', build.dockerfile ?? '');
@@ -761,12 +499,11 @@
 		} else {
 			contextMode = 'workspace';
 			remoteContextSource = '';
-			selectedContextPath = getContextPathFromBuild(build);
+			selectedContextPath = getContextPathFromBuild(build, buildsRoot);
 		}
 		mainUrlTab.select('build');
 		rightPanelTab = 'config';
 		buildTab = 'configuration';
-		buildHistoryDetailsOpen = false;
 	}
 
 	async function handleSubmit() {
@@ -853,8 +590,8 @@
 			const resolvedEnvId = await environmentStore.getCurrentEnvironmentId();
 			await buildMutation.mutateAsync({ envId: resolvedEnvId, ...payload });
 			toast.success(m.build_completed());
-		} catch (error: any) {
-			const message = sanitizeLogText(String(error?.message || m.build_failed()));
+		} catch (error) {
+			const message = sanitizeLogText(error instanceof Error ? error.message : m.build_failed());
 			buildError = message;
 			buildStatusText = message.toLowerCase().startsWith(m.build_failed().toLowerCase())
 				? message
@@ -904,343 +641,9 @@
 	/>
 {/snippet}
 
-{#snippet BuildHistoryStatusCell({ value }: { value: unknown })}
-	<Badge variant={getStatusBadgeVariant(value as ImageBuildStatus)} size="sm" minWidth="20"
-		>{buildHistoryStatusLabel(value as ImageBuildStatus)}</Badge
-	>
-{/snippet}
-
-{#snippet BuildHistoryTagsCell({ item }: { item: ImageBuildRecord })}
-	<div class="space-y-1">
-		<div class="text-sm font-medium">{getBuildTitle(item)}</div>
-		<div class="truncate text-xs text-muted-foreground">{item.contextDir}</div>
-	</div>
-{/snippet}
-
-{#snippet BuildHistoryProviderCell({ value }: { value: unknown })}
-	<span class="text-sm">{String(value ?? '-') || '-'}</span>
-{/snippet}
-
-{#snippet BuildHistoryTimeCell({ value }: { value: unknown })}
-	<span class="text-sm">{formatTimestamp(String(value ?? ''))}</span>
-{/snippet}
-
-{#snippet BuildHistoryDurationCell({ value }: { value: unknown })}
-	<span class="text-sm">{formatDuration(Number(value ?? 0))}</span>
-{/snippet}
-
-{#snippet BuildHistoryRowActions({ item }: { item: ImageBuildRecord })}
-	<DropdownMenu.Root>
-		<DropdownMenu.Trigger data-row-select-ignore>
-			<ArcaneButton action="inspect" tone="ghost" size="icon" showLabel={false} icon={EllipsisIcon} />
-		</DropdownMenu.Trigger>
-		<DropdownMenu.Content align="end">
-			<DropdownMenu.Item onclick={() => openBuildDetails(item)}>
-				<InfoIcon class="size-4" />
-				{m.common_view_details()}
-			</DropdownMenu.Item>
-		</DropdownMenu.Content>
-	</DropdownMenu.Root>
-{/snippet}
-
-{#snippet BuildHistoryMobileCard({
-	item,
-	mobileFieldVisibility
-}: {
-	item: ImageBuildRecord;
-	mobileFieldVisibility: MobileFieldVisibility;
-})}
-	<UniversalMobileCard
-		{item}
-		icon={(item: ImageBuildRecord) => ({
-			component: TerminalIcon,
-			variant:
-				item.status === 'success' ? 'emerald' : item.status === 'failed' ? 'red' : item.status === 'running' ? 'blue' : 'gray'
-		})}
-		title={(item: ImageBuildRecord) => getBuildTitle(item)}
-		subtitle={(item: ImageBuildRecord) => ((mobileFieldVisibility['context'] ?? true) ? item.contextDir : null)}
-		badges={[
-			(item: ImageBuildRecord) => ({
-				variant: getStatusBadgeVariant(item.status),
-				text: buildHistoryStatusLabel(item.status)
-			})
-		]}
-		fields={[
-			{
-				label: m.common_tags(),
-				getValue: (item: ImageBuildRecord) => item.tags?.join(', ') || '-',
-				icon: TagIcon,
-				iconVariant: 'gray' as const,
-				show: mobileFieldVisibility['tags'] ?? true
-			},
-			{
-				label: m.build_provider(),
-				getValue: (item: ImageBuildRecord) => item.provider || '-',
-				icon: SettingsIcon,
-				iconVariant: 'gray' as const,
-				show: mobileFieldVisibility['provider'] ?? true
-			},
-			{
-				label: m.common_created(),
-				getValue: (item: ImageBuildRecord) => formatTimestamp(item.createdAt),
-				icon: ClockIcon,
-				iconVariant: 'gray' as const,
-				show: mobileFieldVisibility['createdAt'] ?? true
-			},
-			{
-				label: m.duration(),
-				getValue: (item: ImageBuildRecord) => formatDuration(item.durationMs ?? 0),
-				icon: ArrowDownIcon,
-				iconVariant: 'gray' as const,
-				show: mobileFieldVisibility['durationMs'] ?? false
-			}
-		]}
-		onclick={(item: ImageBuildRecord) => openBuildDetails(item)}
-	/>
-{/snippet}
-
 {#snippet historyContent()}
-	<div class="flex h-full flex-col p-6">
-		<ArcaneTable
-			persistKey="arcane-build-history-table"
-			items={buildHistoryItems}
-			bind:requestOptions={buildHistoryRequestOptions}
-			bind:selectedIds={buildHistorySelectedIds}
-			bind:mobileFieldVisibility={buildHistoryMobileFieldVisibility}
-			onRefresh={loadBuildHistory}
-			selectionDisabled={true}
-			columns={buildHistoryColumns}
-			mobileFields={buildHistoryMobileFields}
-			rowActions={BuildHistoryRowActions}
-			mobileCard={BuildHistoryMobileCard}
-		/>
-
-		<ResponsiveDialog
-			bind:open={buildHistoryDetailsOpen}
-			title={buildHistorySelected ? (buildHistorySelected.tags?.[0] ?? m.build_output()) : m.build_output()}
-			description={buildHistorySelected ? buildHistorySelected.contextDir : undefined}
-			contentClass="sm:max-w-[1100px]"
-			class="min-h-0 lg:overflow-hidden"
-		>
-			<div class="space-y-4 pb-4">
-				{#if buildHistorySelected}
-					<div class="flex flex-wrap items-center justify-between gap-3 text-sm">
-						<div class="flex flex-wrap items-center gap-2">
-							<Badge variant={getStatusBadgeVariant(buildHistorySelected.status)} size="sm" minWidth="20"
-								>{buildHistoryStatusLabel(buildHistorySelected.status)}</Badge
-							>
-							{#if buildHistorySelected.provider}
-								<span class="text-muted-foreground">{buildHistorySelected.provider}</span>
-							{/if}
-							{#if buildHistorySelected.durationMs}
-								<span class="text-muted-foreground">{formatDuration(buildHistorySelected.durationMs)}</span>
-							{/if}
-							<span class="text-muted-foreground">{formatTimestamp(buildHistorySelected.createdAt)}</span>
-						</div>
-						<IfPermitted perm="images:build">
-							<ArcaneButton
-								action="base"
-								tone="outline"
-								size="sm"
-								icon={RedeployIcon}
-								customLabel={m.build_rebuild()}
-								onclick={() => buildHistorySelected && applyBuildConfig(buildHistorySelected)}
-							/>
-						</IfPermitted>
-					</div>
-					{#if buildHistorySelected.errorMessage}
-						<div class="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
-							{buildHistorySelected.errorMessage}
-						</div>
-					{/if}
-				{/if}
-
-				<div class="grid gap-4 lg:h-[70vh] lg:grid-cols-[360px_minmax(0,1fr)] lg:items-stretch">
-					<div class="min-h-0 space-y-3 lg:overflow-auto lg:overscroll-contain lg:pr-1">
-						{#if buildHistorySelected}
-							<div class="grid gap-3">
-								<div class="rounded-lg border border-border/60 bg-zinc-950/40 p-3">
-									<div class="text-[10px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">
-										{m.build_context()}
-									</div>
-									<div class="mt-2 font-mono text-xs break-all">{buildHistorySelected.contextDir}</div>
-								</div>
-								<div class="rounded-lg border border-border/60 bg-zinc-950/40 p-3">
-									<div class="text-[10px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">
-										{m.common_tags()}
-									</div>
-									<div class="mt-2 text-xs">
-										{buildHistorySelected.tags?.join(', ') || '-'}
-									</div>
-								</div>
-								<div class="rounded-lg border border-border/60 bg-zinc-950/40 p-3">
-									<div class="text-[10px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">
-										{m.dockerfile()}
-									</div>
-									<div class="mt-2 text-xs">{buildHistorySelected.dockerfile || '-'}</div>
-								</div>
-								<div class="rounded-lg border border-border/60 bg-zinc-950/40 p-3">
-									<div class="text-[10px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">
-										{m.target()}
-									</div>
-									<div class="mt-2 text-xs">{buildHistorySelected.target || '-'}</div>
-								</div>
-								<div class="rounded-lg border border-border/60 bg-zinc-950/40 p-3">
-									<div class="text-[10px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">
-										{m.platforms_label()}
-									</div>
-									<div class="mt-2 text-xs">{buildHistorySelected.platforms?.join(', ') || '-'}</div>
-								</div>
-								<div class="rounded-lg border border-border/60 bg-zinc-950/40 p-3">
-									<div class="text-[10px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">
-										{m.build_provider()}
-									</div>
-									<div class="mt-2 text-xs">{buildHistorySelected.provider || '-'}</div>
-								</div>
-								<div class="rounded-lg border border-border/60 bg-zinc-950/40 p-3">
-									<div class="text-[10px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">
-										{m.push()} / {m.load()}
-									</div>
-									<div class="mt-2 text-xs">
-										{buildHistorySelected.push ? m.common_yes() : m.common_no()} / {buildHistorySelected.load
-											? m.common_yes()
-											: m.common_no()}
-									</div>
-								</div>
-								<div class="rounded-lg border border-border/60 bg-zinc-950/40 p-3">
-									<div class="text-[10px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">
-										{m.build_no_cache_pull_base_label()}
-									</div>
-									<div class="mt-2 text-xs">
-										{buildHistorySelected.noCache ? m.common_yes() : m.common_no()} / {buildHistorySelected.pull
-											? m.common_yes()
-											: m.common_no()}
-									</div>
-								</div>
-								<div class="rounded-lg border border-border/60 bg-zinc-950/40 p-3">
-									<div class="text-[10px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">
-										{m.resource_network_cap()}
-									</div>
-									<div class="mt-2 text-xs">{buildHistorySelected.network || '-'}</div>
-								</div>
-								<div class="rounded-lg border border-border/60 bg-zinc-950/40 p-3">
-									<div class="text-[10px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">
-										{m.build_args()}
-									</div>
-									{#if buildHistorySelected.buildArgs && Object.keys(buildHistorySelected.buildArgs).length > 0}
-										<pre class="mt-2 font-mono text-[11px] wrap-break-word whitespace-pre-wrap">
-												{formatBuildArgs(buildHistorySelected.buildArgs)}
-											</pre>
-									{:else}
-										<div class="mt-2 text-xs">-</div>
-									{/if}
-								</div>
-								<div class="rounded-lg border border-border/60 bg-zinc-950/40 p-3">
-									<div class="text-[10px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">
-										{m.common_labels()}
-									</div>
-									{#if buildHistorySelected.labels && Object.keys(buildHistorySelected.labels).length > 0}
-										<pre class="mt-2 font-mono text-[11px] wrap-break-word whitespace-pre-wrap">
-											{formatKeyValueMap(buildHistorySelected.labels)}
-										</pre>
-									{:else}
-										<div class="mt-2 text-xs">-</div>
-									{/if}
-								</div>
-								<div class="rounded-lg border border-border/60 bg-zinc-950/40 p-3">
-									<div class="text-[10px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">
-										{m.build_cache_from_label()}
-									</div>
-									<div class="mt-2 text-xs">{buildHistorySelected.cacheFrom?.join(', ') || '-'}</div>
-								</div>
-								<div class="rounded-lg border border-border/60 bg-zinc-950/40 p-3">
-									<div class="text-[10px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">
-										{m.build_cache_to_label()}
-									</div>
-									<div class="mt-2 text-xs">{buildHistorySelected.cacheTo?.join(', ') || '-'}</div>
-								</div>
-								<div class="rounded-lg border border-border/60 bg-zinc-950/40 p-3">
-									<div class="text-[10px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">
-										{m.isolation()}
-									</div>
-									<div class="mt-2 text-xs">{buildHistorySelected.isolation || '-'}</div>
-								</div>
-								<div class="rounded-lg border border-border/60 bg-zinc-950/40 p-3">
-									<div class="text-[10px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">
-										{m.build_shm_size_short_label()}
-									</div>
-									<div class="mt-2 text-xs">
-										{buildHistorySelected.shmSize ? m.build_bytes({ size: String(buildHistorySelected.shmSize) }) : '-'}
-									</div>
-								</div>
-								<div class="rounded-lg border border-border/60 bg-zinc-950/40 p-3">
-									<div class="text-[10px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">
-										{m.build_ulimits_label()}
-									</div>
-									{#if buildHistorySelected.ulimits && Object.keys(buildHistorySelected.ulimits).length > 0}
-										<pre class="mt-2 font-mono text-[11px] wrap-break-word whitespace-pre-wrap">
-											{formatKeyValueMap(buildHistorySelected.ulimits)}
-										</pre>
-									{:else}
-										<div class="mt-2 text-xs">-</div>
-									{/if}
-								</div>
-								<div class="rounded-lg border border-border/60 bg-zinc-950/40 p-3">
-									<div class="text-[10px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">
-										{m.build_entitlements_label()}
-									</div>
-									<div class="mt-2 text-xs">{buildHistorySelected.entitlements?.join(', ') || '-'}</div>
-								</div>
-								<div class="rounded-lg border border-border/60 bg-zinc-950/40 p-3">
-									<div class="text-[10px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">
-										{m.build_privileged_heading_label()}
-									</div>
-									<div class="mt-2 text-xs">{buildHistorySelected.privileged ? m.common_yes() : m.common_no()}</div>
-								</div>
-								<div class="rounded-lg border border-border/60 bg-zinc-950/40 p-3">
-									<div class="text-[10px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">
-										{m.build_extra_hosts_label()}
-									</div>
-									<div class="mt-2 text-xs">{buildHistorySelected.extraHosts?.join(', ') || '-'}</div>
-								</div>
-							</div>
-						{/if}
-					</div>
-					<div class="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/30">
-						<div class="flex items-center justify-between border-b border-border/60 px-4 py-3">
-							<div class="text-sm font-medium">{m.build_output()}</div>
-							{#if buildHistorySelected?.outputTruncated}
-								<span class="text-xs text-amber-400">{m.build_output_truncated()}</span>
-							{/if}
-						</div>
-						<div class="max-h-[60vh] min-h-[260px] overflow-auto overscroll-contain p-4 lg:max-h-none lg:min-h-0 lg:flex-1">
-							{#if buildHistoryDetailsLoading}
-								<div class="flex h-full items-center justify-center">
-									<Spinner class="size-6 text-muted-foreground" />
-								</div>
-							{:else if buildHistorySelected?.output}
-								{#if buildHistoryOutputEntries.length > 0}
-									<div class="rounded-lg border border-border/50 bg-zinc-950/40 p-3 font-mono text-xs leading-relaxed">
-										{#each buildHistoryOutputEntries as entry, entryIndex (entry.text + entryIndex)}
-											<div class={`break-words whitespace-pre-wrap ${entry.isError ? 'text-destructive' : 'text-foreground'}`}>
-												{entry.text}
-											</div>
-										{/each}
-									</div>
-								{:else}
-									<div class="text-sm text-muted-foreground">{m.build_output_placeholder()}</div>
-								{/if}
-							{:else}
-								<div class="text-sm text-muted-foreground">{m.build_output_placeholder()}</div>
-							{/if}
-						</div>
-					</div>
-				</div>
-			</div>
-		</ResponsiveDialog>
-	</div>
+	<ImageBuildHistoryPanel environmentId={selectedEnvId} onApplyBuild={applyBuildConfig} />
 {/snippet}
-
 <!-- Right panel with tabs (config + output) -->
 {#snippet rightPanel()}
 	<div class="flex h-full flex-col">

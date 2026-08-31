@@ -150,6 +150,12 @@ func isWeakProductionEncryptionKeyInternal(encryptionKey, environment string, ag
 	return len(strings.TrimPrefix(key, "raw:")) < 32
 }
 
+func warnDeprecatedEnvVarsInternal(cfg *config.Config) {
+	for _, envName := range cfg.DeprecatedEnvVarsSet() {
+		slog.Warn("Deprecated environment variable is set and no longer used; remove it from your environment", "env", envName)
+	}
+}
+
 func newConfiguredHTTPClient(cfg *config.Config) *http.Client {
 	if cfg.HTTPClientTimeout > 0 {
 		return httpx.NewHTTPClientWithTimeout(time.Duration(cfg.HTTPClientTimeout) * time.Second)
@@ -195,6 +201,8 @@ func initializeStartupState(p initializeStartupStateParams) {
 		AutoLoginUsername: cfg.AutoLoginUsername,
 		AdminStaticAPIKey: cfg.AdminStaticAPIKey,
 	}
+
+	warnDeprecatedEnvVarsInternal(cfg)
 
 	startup.LoadAgentToken(appCtx, runtimeCfg, p.Settings.GetStringSetting)
 	startup.EnsureEncryptionKey(appCtx, runtimeCfg, p.Settings.EnsureEncryptionKey)
@@ -318,6 +326,9 @@ func initializeGitOpsStartupStateInternal(appCtx context.Context, gitOpsSync *gi
 	// them as phantom projects and before the directory-sync reconcile runs.
 	if err := gitOpsSync.CleanupLeakedScratchDirsOnStartup(appCtx); err != nil {
 		slog.WarnContext(appCtx, "Failed to clean up leaked GitOps scratch directories on startup", "error", err)
+	}
+	if err := gitOpsSync.CleanupLeakedCloneDirsOnStartup(appCtx); err != nil {
+		slog.WarnContext(appCtx, "Failed to clean up leaked git clone directories on startup", "error", err)
 	}
 	if err := gitOpsSync.ReconcileDirectorySyncProjectsOnStartup(appCtx); err != nil {
 		slog.WarnContext(appCtx, "Failed to reconcile directory GitOps projects on startup", "error", err)

@@ -254,9 +254,8 @@ func (w *ImageUpdateWatcher) RunNow(ctx context.Context) error {
 		return errors.New("image update watcher is not running")
 	}
 
-	admission, err := actors.Request[imageUpdateMessageKindInternal, context.Context, *actors.Promise[error]](
+	admission, err := process.Request[imageUpdateMessageKindInternal, context.Context, *actors.Promise[error]](
 		ctx,
-		process,
 		actors.Message[imageUpdateMessageKindInternal, context.Context]{Kind: imageUpdateManualScanRequestMessageInternal, Value: ctx},
 	)
 	if err != nil {

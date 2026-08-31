@@ -34,7 +34,7 @@ func TestDetectComposeFile_SupportsPodmanComposeNames(t *testing.T) {
 			expectedPath := filepath.Join(dir, tc.fileName)
 			require.NoError(t, os.WriteFile(expectedPath, []byte(composeContent), 0o600))
 
-			composePath, err := DetectComposeFile(dir)
+			composePath, err := DetectComposeFile(t.Context(), "", dir)
 			require.NoError(t, err)
 			assert.Equal(t, expectedPath, composePath)
 		})
@@ -48,7 +48,7 @@ func TestDetectComposeFile_SupportsSingleCustomComposeName(t *testing.T) {
 	expectedPath := filepath.Join(dir, "radarr.yaml")
 	require.NoError(t, os.WriteFile(expectedPath, []byte("services:\n  app:\n    image: nginx:alpine\n"), 0o600))
 
-	composePath, err := DetectComposeFile(dir)
+	composePath, err := DetectComposeFile(t.Context(), "", dir)
 	require.NoError(t, err)
 	assert.Equal(t, expectedPath, composePath)
 }
@@ -63,7 +63,7 @@ func TestDetectComposeFile_PrefersDirectoryMatchedCustomComposeName(t *testing.T
 	require.NoError(t, os.WriteFile(expectedPath, []byte("services:\n  app:\n    image: nginx:alpine\n"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("x-extra: true\n"), 0o600))
 
-	composePath, err := DetectComposeFile(dir)
+	composePath, err := DetectComposeFile(t.Context(), "", dir)
 	require.NoError(t, err)
 	assert.Equal(t, expectedPath, composePath)
 }
@@ -75,7 +75,7 @@ func TestDetectComposeFile_ReturnsErrorForAmbiguousCustomComposeNames(t *testing
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "alpha.yaml"), []byte("services:\n  a:\n    image: nginx:alpine\n"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "beta.yml"), []byte("services:\n  b:\n    image: busybox:latest\n"), 0o600))
 
-	_, err := DetectComposeFile(dir)
+	_, err := DetectComposeFile(t.Context(), "", dir)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "multiple custom compose files")
 }
@@ -86,7 +86,7 @@ func TestDetectComposeFile_IgnoresSingleNonComposeYaml(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "values.yaml"), []byte("replicaCount: 2\nimage:\n  tag: latest\n"), 0o600))
 
-	_, err := DetectComposeFile(dir)
+	_, err := DetectComposeFile(t.Context(), "", dir)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no compose file found")
 }
@@ -127,7 +127,7 @@ func TestDetectComposeFile_ReturnsBaseNotOverride(t *testing.T) {
 	require.NoError(t, os.WriteFile(basePath, []byte("services:\n  app:\n    image: nginx:alpine\n"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "compose.override.yaml"), []byte("services:\n  app:\n    image: busybox:latest\n"), 0o600))
 
-	detected, err := DetectComposeFile(dir)
+	detected, err := DetectComposeFile(t.Context(), "", dir)
 	require.NoError(t, err)
 	assert.Equal(t, basePath, detected)
 }
@@ -138,7 +138,7 @@ func TestDetectComposeFile_IgnoresOverrideOnlyDirectory(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "compose.override.yaml"), []byte("services:\n  app:\n    image: busybox:latest\n"), 0o600))
 
-	_, err := DetectComposeFile(dir)
+	_, err := DetectComposeFile(t.Context(), "", dir)
 	require.Error(t, err)
 }
 
@@ -160,6 +160,29 @@ func TestLoadComposeProject_MergesComposeOverrideFile(t *testing.T) {
 	assert.Contains(t, app.Environment, "FROM_BASE")
 	assert.Contains(t, app.Environment, "FROM_OVERRIDE")
 	assert.Equal(t, []string{basePath, overridePath}, project.ComposeFiles)
+}
+
+func TestLoadComposeProject_ComposeFileEnvSelectsFilesAndSkipsOverride(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	basePath := filepath.Join(dir, "base.yml")
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "sub"), 0o755))
+	extraPath := filepath.Join(dir, "sub", "extra.yml")
+	require.NoError(t, os.WriteFile(basePath, []byte("services:\n  app:\n    image: nginx:alpine\n"), 0o600))
+	require.NoError(t, os.WriteFile(extraPath, []byte("services:\n  worker:\n    image: busybox:latest\n"), 0o600))
+	// A standard override on disk must NOT be auto-merged when COMPOSE_FILE is set.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "compose.override.yaml"), []byte("services:\n  app:\n    image: alpine:3\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".env"), []byte("COMPOSE_FILE=base.yml:sub/extra.yml\n"), 0o600))
+
+	project, err := LoadComposeProject(context.Background(), basePath, "demo", dir, false, nil, nil, nil, false)
+	require.NoError(t, err)
+	require.NotNil(t, project)
+
+	assert.Contains(t, project.Services, "app")
+	assert.Contains(t, project.Services, "worker")
+	assert.Equal(t, "nginx:alpine", project.Services["app"].Image, "override must not be merged when COMPOSE_FILE is set")
+	assert.Equal(t, []string{basePath, extraPath}, project.ComposeFiles)
 }
 
 func TestLoadComposeProject_ArcaneProcessEnvInterpolation(t *testing.T) {

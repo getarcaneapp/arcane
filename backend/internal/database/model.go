@@ -6,6 +6,7 @@ import (
 	"time"
 	"uuid"
 
+	"emperror.dev/errors"
 	"gorm.io/gorm"
 )
 
@@ -30,52 +31,50 @@ func (m *BaseModel) BeforeUpdate(_ *gorm.DB) (err error) {
 	return nil
 }
 
-//nolint:recvcheck
-type JSON map[string]any
-
-func (j JSON) Value() (driver.Value, error) {
-	if j == nil {
+// JSONValue marshals a JSON TEXT column value. isNil stores SQL NULL instead
+// of the JSON literal "null" for nil maps/slices.
+func JSONValue(isNil bool, value any) (driver.Value, error) {
+	if isNil {
 		return nil, nil
 	}
-	return json.Marshal(j)
+	return json.Marshal(value)
 }
 
-func (j *JSON) Scan(value any) error {
+// JSONScan unmarshals a JSON TEXT column into dest, treating NULL as the zero value.
+func JSONScan[T any](dest *T, value any) error {
 	if value == nil {
-		*j = nil
+		var zero T
+		*dest = zero
 		return nil
 	}
 	switch v := value.(type) {
 	case []byte:
-		return json.Unmarshal(v, j)
+		return json.Unmarshal(v, dest)
 	case string:
-		return json.Unmarshal([]byte(v), j)
+		return json.Unmarshal([]byte(v), dest)
 	default:
-		return json.Unmarshal(nil, j)
+		return errors.Errorf("unsupported scan type for %T: %T", *dest, value)
 	}
+}
+
+//nolint:recvcheck
+type JSON map[string]any
+
+func (j JSON) Value() (driver.Value, error) {
+	return JSONValue(j == nil, j)
+}
+
+func (j *JSON) Scan(value any) error {
+	return JSONScan(j, value)
 }
 
 //nolint:recvcheck
 type StringSlice []string
 
 func (s StringSlice) Value() (driver.Value, error) {
-	if s == nil {
-		return nil, nil
-	}
-	return json.Marshal(s)
+	return JSONValue(s == nil, s)
 }
 
 func (s *StringSlice) Scan(value any) error {
-	if value == nil {
-		*s = nil
-		return nil
-	}
-	switch v := value.(type) {
-	case []byte:
-		return json.Unmarshal(v, s)
-	case string:
-		return json.Unmarshal([]byte(v), s)
-	default:
-		return json.Unmarshal(nil, s)
-	}
+	return JSONScan(s, value)
 }

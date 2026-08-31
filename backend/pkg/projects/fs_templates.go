@@ -16,9 +16,9 @@ import (
 // ReadFolderComposeTemplate stays on os.* for its reads: template folders are
 // user-managed on disk, so compose/env files may be symlinks resolving outside
 // any confinement root, which acfs cannot follow.
-func ReadFolderComposeTemplate(baseDir, folder string) (string, *string, string, bool, error) {
+func ReadFolderComposeTemplate(ctx context.Context, baseDir, folder string) (string, *string, string, bool, error) {
 	folderPath := filepath.Join(baseDir, folder)
-	composePath, err := DetectComposeFile(folderPath)
+	composePath, err := DetectComposeFile(ctx, "", folderPath)
 	if err != nil {
 		if errors.Is(err, common.ErrComposeFileNotFound) {
 			return "", nil, "", false, nil

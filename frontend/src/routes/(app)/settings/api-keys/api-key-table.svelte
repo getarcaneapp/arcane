@@ -5,10 +5,7 @@
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
 	import { CopyButton } from '#lib/components/ui/copy-button';
 	import { toast } from 'svelte-sonner';
-	import { openConfirmDialog } from '#lib/components/confirm-dialog';
 	import { Badge } from '#lib/components/ui/badge';
-	import { handleApiResultWithCallbacks } from '#lib/utils/api';
-	import { tryCatch } from '#lib/utils/api';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
 	import type { ApiKey } from '#lib/types/auth';
 	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '#lib/components/arcane-table';
@@ -18,6 +15,7 @@
 	import * as m from '#lib/paraglide/messages.js';
 	import { ApiKeyIcon, TrashIcon, EditIcon } from '#lib/icons';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
+	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions';
 
 	let {
 		apiKeys = $bindable(),
@@ -66,7 +64,7 @@
 			.map((apiKey) => apiKey.id)
 	);
 
-	async function handleDeleteSelected() {
+	function handleDeleteSelected() {
 		if (selectedIds.length === 0) return;
 		if (selectedDeletableApiKeyIds.length === 0) {
 			toast.info(m.api_key_bulk_delete_static_only());
@@ -75,71 +73,43 @@
 		if (selectedStaticApiKeyCount > 0) {
 			toast.info(m.api_key_bulk_delete_static_skipped({ count: selectedStaticApiKeyCount }));
 		}
+		const ids = [...selectedDeletableApiKeyIds];
 
-		openConfirmDialog({
-			title: m.api_key_delete_selected_title({ count: selectedDeletableApiKeyIds.length }),
-			message: m.api_key_delete_selected_message({ count: selectedDeletableApiKeyIds.length }),
-			confirm: {
-				label: m.common_delete(),
-				destructive: true,
-				action: async () => {
-					isLoading.removing = true;
-					let successCount = 0;
-					let failureCount = 0;
-
-					for (const apiKeyId of selectedDeletableApiKeyIds) {
-						const result = await tryCatch(apiKeyService.delete(apiKeyId));
-						handleApiResultWithCallbacks({
-							result,
-							message: m.api_key_delete_failed({ name: apiKeyId }),
-							setLoadingState: () => {},
-							onSuccess: () => {
-								successCount++;
-							}
-						});
-
-						if (result.error) {
-							failureCount++;
-						}
-					}
-
-					isLoading.removing = false;
-
-					if (successCount > 0) {
-						toast.success(m.api_key_bulk_delete_success({ count: successCount }));
-						await onApiKeysChanged();
-					}
-
-					if (failureCount > 0) {
-						toast.error(m.api_key_bulk_delete_failed({ count: failureCount }));
-					}
-
-					selectedIds = [];
-				}
-			}
+		bulkConfirmAndRun({
+			ids,
+			title: m.api_key_delete_selected_title({ count: ids.length }),
+			message: m.api_key_delete_selected_message({ count: ids.length }),
+			confirmLabel: m.common_delete(),
+			destructive: true,
+			run: (apiKeyId) => apiKeyService.delete(apiKeyId),
+			messages: {
+				success: (count) => m.api_key_bulk_delete_success({ count }),
+				partial: (success, total, failed) =>
+					m.common_bulk_delete_partial({ success, total, failed, resource: m.api_key_page_title() }),
+				failure: () => m.api_key_bulk_delete_failed({ count: ids.length })
+			},
+			setLoading: (loading) => (isLoading.removing = loading),
+			onComplete: async ({ success }) => {
+				if (success > 0) await onApiKeysChanged();
+			},
+			clearSelection: () => (selectedIds = []),
+			sequential: true
 		});
 	}
 
-	async function handleDeleteApiKey(apiKeyId: string, name: string) {
+	function handleDeleteApiKey(apiKeyId: string, name: string) {
 		const safeName = name?.trim() || m.common_unknown();
-		openConfirmDialog({
+		confirmAndRun({
 			title: m.api_key_delete_title({ name: safeName }),
 			message: m.api_key_delete_message({ name: safeName }),
-			confirm: {
-				label: m.common_delete(),
-				destructive: true,
-				action: async () => {
-					isLoading.removing = true;
-					handleApiResultWithCallbacks({
-						result: await tryCatch(apiKeyService.delete(apiKeyId)),
-						message: m.api_key_delete_failed({ name: safeName }),
-						setLoadingState: (value) => (isLoading.removing = value),
-						onSuccess: async () => {
-							toast.success(m.api_key_delete_success({ name: safeName }));
-							await onApiKeysChanged();
-						}
-					});
-				}
+			confirmLabel: m.common_delete(),
+			destructive: true,
+			setLoading: (loading) => (isLoading.removing = loading),
+			run: () => apiKeyService.delete(apiKeyId),
+			failureMessage: m.api_key_delete_failed({ name: safeName }),
+			onSuccess: async () => {
+				toast.success(m.api_key_delete_success({ name: safeName }));
+				await onApiKeysChanged();
 			}
 		});
 	}

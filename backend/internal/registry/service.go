@@ -156,7 +156,7 @@ func (s *ContainerRegistryService) GetRegistriesPaginated(ctx context.Context, p
 	q = pagination.ApplyBooleanFilter(q, "enabled", params.Filters["enabled"])
 	q = pagination.ApplyBooleanFilter(q, "insecure", params.Filters["insecure"])
 
-	out, paginationResp, err := pagination.PaginateSortAndMapDB[ContainerRegistry, containerregistry.ContainerRegistry](params, q, &registries)
+	out, paginationResp, err := params.PaginateSortAndMapDB[ContainerRegistry, containerregistry.ContainerRegistry](q, &registries)
 	if err != nil {
 		return nil, pagination.Response{}, errors.WrapIf(err, "failed to list container registries")
 	}

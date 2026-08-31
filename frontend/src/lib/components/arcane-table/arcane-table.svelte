@@ -386,6 +386,7 @@
 					const item = row.original as TData;
 					const value = accessorKey ? row.getValue(accessorKey) : getValue?.();
 					if (spec.cell) return renderSnippet(spec.cell, { row, item, value });
+					if (spec.cellComponent) return renderComponent(spec.cellComponent, { value });
 					return renderComponent(ArcaneTableCell, { value });
 				},
 				enableSorting: !!spec.sortable || !!spec.clientSort,
@@ -737,9 +738,7 @@
 
 	// Styled/unstyled differ only in wrapper chrome; the inner table/mobile/pagination tree is shared.
 	const shellClass = $derived(
-		unstyled
-			? 'flex h-full min-h-0 flex-col'
-			: 'bg-background/60 flex h-full min-h-0 flex-col overflow-hidden rounded-xl border backdrop-blur-sm'
+		unstyled ? 'flex h-full min-h-0 flex-col' : 'bg-background/60 flex h-full min-h-0 flex-col overflow-hidden rounded-xl border'
 	);
 	const toolbarWrapClass = $derived(unstyled ? 'w-full shrink-0 border-b' : 'border-border/50 w-full shrink-0 border-b');
 </script>
@@ -788,7 +787,7 @@
 
 		<div
 			bind:this={desktopScrollEl}
-			class="[isolation:isolate] hidden h-full min-h-0 flex-1 overflow-auto bg-background/80 md:block"
+			class="[isolation:isolate] hidden h-full min-h-0 flex-1 overflow-auto bg-background md:block"
 		>
 			<ArcaneTableDesktopView
 				{table}

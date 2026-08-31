@@ -352,26 +352,12 @@ func extractBearerTokenInternal(ctx huma.Context) string {
 	}
 
 	// Try cookie as fallback
-	cookieHeader := ctx.Header("Cookie")
-	if cookieHeader != "" {
-		return extractTokenFromCookieHeaderInternal(cookieHeader)
-	}
-
-	return ""
-}
-
-// extractTokenFromCookieHeaderInternal parses the token cookie from a Cookie header string.
-func extractTokenFromCookieHeaderInternal(cookieHeader string) string {
-	cookies := strings.SplitSeq(cookieHeader, ";")
-	for c := range cookies {
-		c = strings.TrimSpace(c)
-		if after, ok := strings.CutPrefix(c, "token="); ok {
-			return after
-		}
-		if after, ok := strings.CutPrefix(c, "__Host-token="); ok {
-			return after
+	if cookieHeader := ctx.Header("Cookie"); cookieHeader != "" {
+		if token, err := cookie.GetTokenCookieFromHeader(cookieHeader); err == nil {
+			return token
 		}
 	}
+
 	return ""
 }
 

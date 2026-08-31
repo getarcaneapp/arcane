@@ -8,6 +8,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 
 	"context"
+	"crypto/mldsa"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -22,6 +23,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mldsajose"
 	authtypes "github.com/getarcaneapp/arcane/types/v2/auth"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/labstack/echo/v5"
@@ -103,9 +105,9 @@ func TestNewHumaMiddleware_UsesBearerWhenLoopbackProxySendsEnvironmentAccessToke
 	userSvc := user.NewUserService(db)
 	sessionSvc := session.NewSessionService(db)
 
-	jwtSecret := "test-secret-please-do-not-use-in-prod"
-	authSvc := NewAuthService(userSvc, nil, nil, sessionSvc, nil, jwtSecret, &config.Config{JWTRefreshExpiry: 24 * time.Hour}, nil)
-	bearerToken := mintHumaMiddlewareTestTokenInternal(t, userSvc, sessionSvc, jwtSecret, "u-loopback")
+	signingKey := newTestSigningKeyInternal()
+	authSvc := NewAuthService(userSvc, nil, nil, sessionSvc, nil, &config.Config{JWTRefreshExpiry: 24 * time.Hour}, nil).WithSigningKey(signingKey)
+	bearerToken := mintHumaMiddlewareTestTokenInternal(t, userSvc, sessionSvc, signingKey, "u-loopback")
 
 	ps := authz.NewPermissionSet()
 	ps.AddEnv("0", authz.PermContainersStart)
@@ -265,9 +267,9 @@ func TestNewHumaMiddleware_OpportunisticAuthOnPublicRoute(t *testing.T) {
 	userSvc := user.NewUserService(db)
 	sessionSvc := session.NewSessionService(db)
 
-	jwtSecret := "test-secret-please-do-not-use-in-prod"
+	signingKey := newTestSigningKeyInternal()
 	cfg := &config.Config{JWTRefreshExpiry: 24 * time.Hour}
-	authSvc := NewAuthService(userSvc, nil, nil, sessionSvc, nil, jwtSecret, cfg, nil)
+	authSvc := NewAuthService(userSvc, nil, nil, sessionSvc, nil, cfg, nil).WithSigningKey(signingKey)
 
 	_, err := userSvc.CreateUser(context.Background(), &common.User{
 		ID:       "u-logout",
@@ -289,7 +291,7 @@ func TestNewHumaMiddleware_OpportunisticAuthOnPublicRoute(t *testing.T) {
 		"username": "logouttest",
 		"roles":    []string{"user"},
 	}
-	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(jwtSecret))
+	token, err := jwt.NewWithClaims(mldsajose.SigningMethodMLDSA87, claims).SignedString(signingKey)
 	require.NoError(t, err)
 
 	router := echo.New()
@@ -353,9 +355,9 @@ func TestNewHumaMiddleware_VersionMismatchIsRecoverable(t *testing.T) {
 	userSvc := user.NewUserService(db)
 	sessionSvc := session.NewSessionService(db)
 
-	jwtSecret := "test-secret-please-do-not-use-in-prod"
+	signingKey := newTestSigningKeyInternal()
 	cfg := &config.Config{JWTRefreshExpiry: 24 * time.Hour}
-	authSvc := NewAuthService(userSvc, nil, nil, sessionSvc, nil, jwtSecret, cfg, nil)
+	authSvc := NewAuthService(userSvc, nil, nil, sessionSvc, nil, cfg, nil).WithSigningKey(signingKey)
 
 	_, err := userSvc.CreateUser(context.Background(), &common.User{
 		ID:       "u-ver",
@@ -381,7 +383,7 @@ func TestNewHumaMiddleware_VersionMismatchIsRecoverable(t *testing.T) {
 		if appVersion != "" {
 			claims["app_version"] = appVersion
 		}
-		token, signErr := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(jwtSecret))
+		token, signErr := jwt.NewWithClaims(mldsajose.SigningMethodMLDSA87, claims).SignedString(signingKey)
 		require.NoError(t, signErr)
 		return token
 	}
@@ -483,7 +485,7 @@ func setupAuthMiddlewareTestDBInternal(t *testing.T) *database.DB {
 	return &database.DB{DB: db}
 }
 
-func mintHumaMiddlewareTestTokenInternal(t *testing.T, userSvc *user.UserService, sessionSvc *session.SessionService, jwtSecret string, userID string) string {
+func mintHumaMiddlewareTestTokenInternal(t *testing.T, userSvc *user.UserService, sessionSvc *session.SessionService, signingKey *mldsa.PrivateKey, userID string) string {
 	t.Helper()
 
 	_, err := userSvc.CreateUser(context.Background(), &common.User{
@@ -505,7 +507,7 @@ func mintHumaMiddlewareTestTokenInternal(t *testing.T, userSvc *user.UserService
 		"user_id":  userID,
 		"username": userID,
 	}
-	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(jwtSecret))
+	token, err := jwt.NewWithClaims(mldsajose.SigningMethodMLDSA87, claims).SignedString(signingKey)
 	require.NoError(t, err)
 	return token
 }

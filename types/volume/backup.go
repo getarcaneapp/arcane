@@ -28,20 +28,21 @@ const (
 )
 
 type BackupEntry struct {
-	ID                string            `json:"id" doc:"Unique identifier of the backup"`
-	VolumeName        string            `json:"volumeName" doc:"Name of the volume"`
-	Size              int64             `json:"size" doc:"Total size of the backup contents"`
-	CreatedAt         string            `json:"createdAt" doc:"When the backup was created"`
-	Status            string            `json:"status" doc:"Backup result status"`
-	Trigger           string            `json:"trigger" doc:"How the backup was started"`
-	Destination       BackupDestination `json:"destination" doc:"Requested backup storage target"`
-	Format            BackupFormat      `json:"format" doc:"Storage format of the backup: legacy tar.gz archive or Rustic snapshot"`
-	LocalSnapshotID   string            `json:"localSnapshotId,omitempty" doc:"Snapshot ID in the local Rustic repository"`
-	RemoteSnapshotID  string            `json:"remoteSnapshotId,omitempty" doc:"Snapshot ID in the S3 Rustic repository"`
-	S3DestinationID   string            `json:"s3DestinationId,omitempty" doc:"S3 destination used by the backup"`
-	S3DestinationName string            `json:"s3DestinationName,omitempty" doc:"Name of the S3 destination used by the backup"`
-	PolicyID          string            `json:"policyId,omitempty" doc:"Backup policy that created the backup"`
-	Error             string            `json:"error,omitempty" doc:"Backup error when the run failed"`
+	ID                string                `json:"id" doc:"Unique identifier of the backup"`
+	VolumeName        string                `json:"volumeName" doc:"Name of the volume"`
+	Size              int64                 `json:"size" doc:"Total size of the backup contents"`
+	CreatedAt         string                `json:"createdAt" doc:"When the backup was created"`
+	Status            string                `json:"status" doc:"Backup result status"`
+	Trigger           string                `json:"trigger" doc:"How the backup was started"`
+	Destination       BackupDestination     `json:"destination" doc:"Requested backup storage target"`
+	Format            BackupFormat          `json:"format" doc:"Storage format of the backup: legacy tar.gz archive or Rustic snapshot"`
+	LocalSnapshotID   string                `json:"localSnapshotId,omitempty" doc:"Snapshot ID in the local Rustic repository"`
+	RemoteSnapshotID  string                `json:"remoteSnapshotId,omitempty" doc:"Snapshot ID in the S3 Rustic repository"`
+	S3DestinationID   string                `json:"s3DestinationId,omitempty" doc:"S3 destination used by the backup"`
+	S3DestinationName string                `json:"s3DestinationName,omitempty" doc:"Name of the S3 destination used by the backup"`
+	PolicyID          string                `json:"policyId,omitempty" doc:"Backup policy that created the backup"`
+	Error             string                `json:"error,omitempty" doc:"Backup error when the run failed"`
+	Type              backup.ManagementType `json:"type" doc:"Whether the backup was system-managed or volume-managed"`
 }
 
 type BackupPolicy struct {

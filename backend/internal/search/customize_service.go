@@ -37,7 +37,7 @@ func (s *CustomizeSearchService) GetCustomizeCategories() []category.Category {
 
 func (s *CustomizeSearchService) buildCategoriesFromModel() []category.Category {
 	// Extract category metadata from struct tags (catmeta)
-	catMetaMap := utils.ExtractCategoryMetadata(CustomizeItem{}, nil)
+	catMetaMap := utils.ExtractCategoryMetadata[CustomizeItem]()
 
 	// map category id -> list of customizations
 	categories := map[string][]meta.Metadata{}

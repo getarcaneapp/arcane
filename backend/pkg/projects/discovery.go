@@ -1,6 +1,7 @@
 package projects
 
 import (
+	"context"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -67,7 +68,7 @@ func IsProjectDirectoryPath(path string, followSymlinks bool) (bool, error) {
 	return resolvedInfo.IsDir(), nil
 }
 
-func DiscoverProjectDirectories(root string, followSymlinks bool, maxDepth int) ([]DiscoveredProjectDir, error) {
+func DiscoverProjectDirectories(ctx context.Context, root string, followSymlinks bool, maxDepth int) ([]DiscoveredProjectDir, error) {
 	root = filepath.Clean(root)
 
 	isDir, err := IsProjectDirectoryPath(root, followSymlinks)
@@ -79,7 +80,7 @@ func DiscoverProjectDirectories(root string, followSymlinks bool, maxDepth int) 
 	ancestors := make(map[string]struct{})
 
 	if err == nil {
-		err = walkProjectDirectoriesInternal(root, true, 0, maxDepth, followSymlinks, ancestors, &discovered)
+		err = walkProjectDirectoriesInternal(ctx, root, root, true, 0, maxDepth, followSymlinks, ancestors, &discovered)
 	}
 	if err != nil {
 		// The process runs as the PUID/PGID runtime user (default 65532) even
@@ -98,7 +99,7 @@ func DiscoverProjectDirectories(root string, followSymlinks bool, maxDepth int) 
 	return discovered, nil
 }
 
-func walkProjectDirectoriesInternal(path string, isRoot bool, currentDepth int, maxDepth int, followSymlinks bool, ancestors map[string]struct{}, discovered *[]DiscoveredProjectDir) error {
+func walkProjectDirectoriesInternal(ctx context.Context, root, path string, isRoot bool, currentDepth int, maxDepth int, followSymlinks bool, ancestors map[string]struct{}, discovered *[]DiscoveredProjectDir) error {
 	if !isRoot {
 		name := filepath.Base(path)
 		if IsInternalScratchDirName(name) || IsFilesystemSnapshotDirName(name) {
@@ -129,7 +130,7 @@ func walkProjectDirectoriesInternal(path string, isRoot bool, currentDepth int, 
 	// The projects root directory itself is exempt — we always descend into it
 	// so siblings under the root are all discovered, even if the root happens
 	// to contain its own compose file.
-	if _, err := DetectComposeFile(path); err == nil {
+	if _, err := DetectComposeFile(ctx, root, path); err == nil {
 		*discovered = append(*discovered, DiscoveredProjectDir{
 			DirName: filepath.Base(path),
 			Path:    path,
@@ -158,7 +159,7 @@ func walkProjectDirectoriesInternal(path string, isRoot bool, currentDepth int, 
 			continue
 		}
 
-		if err := walkProjectDirectoriesInternal(childPath, false, currentDepth+1, maxDepth, followSymlinks, ancestors, discovered); err != nil {
+		if err := walkProjectDirectoriesInternal(ctx, root, childPath, false, currentDepth+1, maxDepth, followSymlinks, ancestors, discovered); err != nil {
 			return err
 		}
 	}

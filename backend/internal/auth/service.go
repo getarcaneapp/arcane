@@ -4,6 +4,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 
 	"context"
+	"crypto/mldsa"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"maps"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"uuid"
 
@@ -25,6 +27,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/jwtclaims"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mldsajose"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
 	"github.com/getarcaneapp/arcane/types/v2/auth"
 	"github.com/golang-jwt/jwt/v5"
@@ -83,7 +86,8 @@ type AuthService struct {
 	eventService    *event.EventService
 	sessionService  *session.SessionService
 	roleService     *role.RoleService
-	jwtSecret       []byte
+	signingKeyMu    sync.Mutex
+	signingKey      *mldsa.PrivateKey
 	refreshExpiry   time.Duration
 	config          *config.Config
 	errorHandler    emperror.ErrorHandler
@@ -93,10 +97,7 @@ type AuthService struct {
 	tokenCache *hot.HotCache[string, verifiedTokenEntry]
 }
 
-func NewAuthService(userService *user.UserService, settingsService *settings.SettingsService, eventService *event.EventService, sessionService *session.SessionService, roleService *role.RoleService, jwtSecret string, cfg *config.Config, errorHandler emperror.ErrorHandler) *AuthService {
-	// Production managers must supply an explicit, non-default JWT_SECRET (fail
-	// closed, mirroring the ENCRYPTION_KEY guard). Dev and agent mode auto-generate.
-	requireExplicitSecret := cfg.Environment == config.AppEnvironmentProduction && !cfg.AgentMode
+func NewAuthService(userService *user.UserService, settingsService *settings.SettingsService, eventService *event.EventService, sessionService *session.SessionService, roleService *role.RoleService, cfg *config.Config, errorHandler emperror.ErrorHandler) *AuthService {
 	if errorHandler == nil {
 		errorHandler = emperror.NoopHandler{}
 	}
@@ -106,7 +107,6 @@ func NewAuthService(userService *user.UserService, settingsService *settings.Set
 		eventService:    eventService,
 		sessionService:  sessionService,
 		roleService:     roleService,
-		jwtSecret:       jwtclaims.CheckOrGenerateJwtSecret(jwtSecret, requireExplicitSecret),
 		refreshExpiry:   cfg.JWTRefreshExpiry,
 		config:          cfg,
 		errorHandler:    errorHandler,
@@ -657,14 +657,14 @@ func (s *AuthService) extractOidcGroups(ctx context.Context, userInfo auth.OidcU
 
 	if claim != "" {
 		if v, ok := jwtclaims.GetByPath(userInfo.Extra, claim).Get(); ok {
-			if groups := stringValuesFromClaim(v); len(groups) > 0 {
+			if groups := jwtclaims.GetStringSliceClaim(map[string]any{"groups": v}, "groups"); len(groups) > 0 {
 				return groups
 			}
 		}
 		if tokenResp != nil && tokenResp.IDToken != "" {
 			if parsed := jwtclaims.ParseJWTClaims(tokenResp.IDToken); parsed != nil {
 				if v, ok := jwtclaims.GetByPath(parsed, claim).Get(); ok {
-					if groups := stringValuesFromClaim(v); len(groups) > 0 {
+					if groups := jwtclaims.GetStringSliceClaim(map[string]any{"groups": v}, "groups"); len(groups) > 0 {
 						return groups
 					}
 				}
@@ -687,32 +687,6 @@ func (s *AuthService) oidcGroupsClaim(ctx context.Context) string {
 	return v
 }
 
-// stringValuesFromClaim flattens a claim value into a slice of strings.
-// Accepts string, []string, []any (coerces each element to string), or nil.
-func stringValuesFromClaim(v any) []string {
-	switch typed := v.(type) {
-	case nil:
-		return nil
-	case string:
-		if typed == "" {
-			return nil
-		}
-		return []string{typed}
-	case []string:
-		return typed
-	case []any:
-		out := make([]string, 0, len(typed))
-		for _, item := range typed {
-			if s, ok := item.(string); ok && s != "" {
-				out = append(out, s)
-			}
-		}
-		return out
-	default:
-		return nil
-	}
-}
-
 func (s *AuthService) persistOidcTokens(user *common.User, tokenResp *auth.OidcTokenResponse) {
 	if tokenResp == nil {
 		return
@@ -728,14 +702,40 @@ func (s *AuthService) persistOidcTokens(user *common.User, tokenResp *auth.OidcT
 	}
 }
 
+func (s *AuthService) WithSigningKey(key *mldsa.PrivateKey) *AuthService {
+	s.signingKey = key
+	return s
+}
+
+func (s *AuthService) signingKeyInternal(ctx context.Context) (*mldsa.PrivateKey, error) {
+	s.signingKeyMu.Lock()
+	defer s.signingKeyMu.Unlock()
+	if s.signingKey != nil {
+		return s.signingKey, nil
+	}
+	if s.settingsService == nil {
+		return nil, common.Classify(common.ErrUnavailable, errors.New("JWT signing key is not configured"))
+	}
+	key, err := s.settingsService.EnsureJwtSigningKey(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s.signingKey = key
+	return key, nil
+}
+
 func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string, meta auth.SessionMeta) (*TokenPair, error) {
+	signingKey, err := s.signingKeyInternal(ctx)
+	if err != nil {
+		return nil, err
+	}
 	token, err := jwt.ParseWithClaims(refreshToken, &refreshClaims{},
 		func(t *jwt.Token) (any, error) {
-			if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			if _, ok := t.Method.(*mldsajose.SigningMethodMLDSA); !ok {
 				return nil, errors.Errorf("unexpected signing method: %v", t.Header["alg"])
 			}
-			return s.jwtSecret, nil
-		})
+			return signingKey.PublicKey(), nil
+		}, jwt.WithValidMethods([]string{mldsajose.AlgMLDSA87}))
 	if err != nil {
 		return nil, common.ErrInvalidToken
 	}
@@ -795,13 +795,17 @@ func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string, met
 }
 
 func (s *AuthService) VerifyToken(ctx context.Context, accessToken string) (*common.User, string, error) {
+	signingKey, err := s.signingKeyInternal(ctx)
+	if err != nil {
+		return nil, "", err
+	}
 	token, err := jwt.ParseWithClaims(accessToken, &userClaims{},
 		func(t *jwt.Token) (any, error) {
-			if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			if _, ok := t.Method.(*mldsajose.SigningMethodMLDSA); !ok {
 				return nil, errors.Errorf("unexpected signing method: %v", t.Header["alg"])
 			}
-			return s.jwtSecret, nil
-		})
+			return signingKey.PublicKey(), nil
+		}, jwt.WithValidMethods([]string{mldsajose.AlgMLDSA87}))
 	if err != nil {
 		if strings.Contains(err.Error(), "token is expired") {
 			return nil, "", common.ErrExpiredToken
@@ -863,7 +867,7 @@ func (s *AuthService) VerifyToken(ctx context.Context, accessToken string) (*com
 
 	// Verify user exists in DB
 	// This ensures that if the database is wiped or user is deleted, the token becomes invalid
-	// even if the JWT signature is still valid (e.g. same JWT_SECRET).
+	// even if the JWT signature is still valid (e.g. same signing key).
 	dbUser, err := s.userService.GetUserByID(ctx, claims.ID)
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {
@@ -1016,14 +1020,19 @@ func (s *AuthService) buildTokenPairInternal(ctx context.Context, user *common.U
 		userClaims.DisplayName = *user.DisplayName
 	}
 
-	accessToken := jwt.NewWithClaims(jwt.SigningMethodHS256, userClaims)
-
-	accessTokenString, err := accessToken.SignedString(s.jwtSecret)
+	signingKey, err := s.signingKeyInternal(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	refreshToken := jwt.NewWithClaims(jwt.SigningMethodHS256, refreshClaims{
+	accessToken := jwt.NewWithClaims(mldsajose.SigningMethodMLDSA87, userClaims)
+
+	accessTokenString, err := accessToken.SignedString(signingKey)
+	if err != nil {
+		return nil, err
+	}
+
+	refreshToken := jwt.NewWithClaims(mldsajose.SigningMethodMLDSA87, refreshClaims{
 		ID:         refreshJTI,
 		Subject:    "refresh",
 		IssuedAt:   jwt.NewNumericDate(time.Now()),
@@ -1033,7 +1042,7 @@ func (s *AuthService) buildTokenPairInternal(ctx context.Context, user *common.U
 		AppVersion: config.Version,
 	})
 
-	refreshTokenString, err := refreshToken.SignedString(s.jwtSecret)
+	refreshTokenString, err := refreshToken.SignedString(signingKey)
 	if err != nil {
 		return nil, err
 	}
@@ -1082,8 +1091,12 @@ func (s *AuthService) IssueFederatedToken(ctx context.Context, user *common.User
 		claims.DisplayName = *user.DisplayName
 	}
 
-	accessToken := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	accessTokenString, err := accessToken.SignedString(s.jwtSecret)
+	signingKey, err := s.signingKeyInternal(ctx)
+	if err != nil {
+		return nil, err
+	}
+	accessToken := jwt.NewWithClaims(mldsajose.SigningMethodMLDSA87, claims)
+	accessTokenString, err := accessToken.SignedString(signingKey)
 	if err != nil {
 		return nil, err
 	}

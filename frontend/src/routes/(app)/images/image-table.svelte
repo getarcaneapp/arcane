@@ -416,7 +416,7 @@
 			class: 'text-center'
 		},
 		{ accessorKey: 'size', title: m.common_size(), sortable: true, cell: SizeCell },
-		{ accessorKey: 'created', title: m.common_created(), sortable: true, cell: CreatedCell }
+		{ accessorKey: 'created', title: m.common_created(), sortable: true, cellComponent: UnixCreatedCell }
 	] satisfies ColumnSpec<ImageSummaryDto>[];
 
 	const mobileFields = [
@@ -473,10 +473,6 @@
 
 {#snippet SizeCell({ value }: { value: unknown })}
 	{bytes.format(Number(value ?? 0))}
-{/snippet}
-
-{#snippet CreatedCell({ value }: { value: unknown })}
-	<UnixCreatedCell {value} />
 {/snippet}
 
 {#snippet StatusCell({ item }: { item: ImageSummaryDto })}

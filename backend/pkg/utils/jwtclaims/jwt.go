@@ -1,7 +1,6 @@
 package jwtclaims
 
 import (
-	"crypto/rand"
 	"encoding/base64"
 	"encoding/json/v2"
 	"fmt"
@@ -9,6 +8,7 @@ import (
 
 	"emperror.dev/errors"
 
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/samber/mo"
 	"github.com/samber/mo/result"
 )
@@ -46,26 +46,32 @@ func GetBoolClaim(m map[string]any, key string) bool {
 	return false
 }
 
-// GetStringSliceClaim extracts a string slice claim from a map
+// StringSliceFromValue flattens a claim value into a slice of strings.
+// Accepts string (trimmed, single element), []string, []any (string elements
+// only), or nil. Unlike GetStringSliceClaim it never splits a single string
+// into multiple values, so it is safe for claims whose values may legally
+// contain separators (e.g. aud URIs).
+func StringSliceFromValue(v any) []string {
+	switch t := v.(type) {
+	case []string:
+		return stringSliceFromStringsInternal(t)
+	case []any:
+		return stringSliceFromInterfacesInternal(t)
+	case string:
+		return stringSliceFromStringsInternal([]string{t})
+	}
+	return nil
+}
+
+// GetStringSliceClaim extracts a string slice claim from a map. A single
+// string value is split on commas or spaces (group/role claims are commonly
+// delivered that way).
 func GetStringSliceClaim(m map[string]any, key string) []string {
 	v, ok := m[key]
 	if !ok || v == nil {
 		return nil
 	}
-	switch t := v.(type) {
-	case []string:
-		return t
-	case []any:
-		out := make([]string, 0, len(t))
-		for _, it := range t {
-			if s, ok := it.(string); ok && s != "" {
-				out = append(out, s)
-			}
-		}
-		if len(out) > 0 {
-			return out
-		}
-	case string:
+	if t, ok := v.(string); ok {
 		s := strings.TrimSpace(t)
 		if s == "" {
 			return nil
@@ -85,48 +91,29 @@ func GetStringSliceClaim(m map[string]any, key string) []string {
 		}
 		return strings.Fields(s)
 	}
-	return nil
+	return StringSliceFromValue(v)
 }
 
-const (
-	// knownInsecureJWTSecret is the placeholder shipped in config.go's struct
-	// tag; it must never sign real tokens. Keep in sync with the `default:` tag
-	// on Config.JWTSecret.
-	knownInsecureJWTSecret = "default-jwt-secret-change-me" // #nosec G101: public placeholder config default, intentionally rejected for production signing
-	// minJWTSecretLength matches the 32-byte floor enforced for ENCRYPTION_KEY.
-	minJWTSecretLength = 32
-)
-
-// CheckOrGenerateJwtSecret returns the HMAC signing key for JWTs.
-//
-// When requireExplicit is true (production manager), a real secret is mandatory:
-// an empty, default, or too-short JWT_SECRET panics at startup — mirroring the
-// ENCRYPTION_KEY guard in go.getarcane.app/sys/crypto. Otherwise (development / agent mode)
-// a random per-boot key is generated when none (or only the public default) is
-// configured, so the public default never becomes a live signing key.
-func CheckOrGenerateJwtSecret(jwtSecret string, requireExplicit bool) []byte {
-	isDefault := jwtSecret == "" || jwtSecret == knownInsecureJWTSecret
-
-	if requireExplicit {
-		if isDefault {
-			panic("JWT_SECRET is required in production. Set JWT_SECRET to a unique " +
-				"random value of at least 32 characters (e.g. `openssl rand -base64 32`).")
+func stringSliceFromStringsInternal[S ~string](items []S) []string {
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		if s := strings.TrimSpace(string(item)); s != "" {
+			out = append(out, s)
 		}
-		if len(jwtSecret) < minJWTSecretLength {
-			panic(fmt.Sprintf("JWT_SECRET must be at least %d characters (got %d).",
-				minJWTSecretLength, len(jwtSecret)))
-		}
-		return []byte(jwtSecret)
 	}
+	return utils.UniqueNonEmptyStrings(out)
+}
 
-	if isDefault {
-		secretBytes := make([]byte, 32)
-		if _, err := rand.Read(secretBytes); err != nil {
-			panic(errors.WrapIf(err, "failed to generate random JWT secret"))
+func stringSliceFromInterfacesInternal[T any](items []T) []string {
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		if s, ok := any(item).(string); ok {
+			if trimmed := strings.TrimSpace(s); trimmed != "" {
+				out = append(out, trimmed)
+			}
 		}
-		return secretBytes
 	}
-	return []byte(jwtSecret)
+	return utils.UniqueNonEmptyStrings(out)
 }
 
 // ParseJWTClaims decodes and unmarshals the payload part of a JWT

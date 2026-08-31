@@ -6,13 +6,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json/v2"
-	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
 
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 
 	"github.com/samber/mo"
@@ -150,14 +150,14 @@ func (w *Writer) processLineInternal(line string) mo.Option[writerAppendMessage]
 	if errorValue, ok := payload["error"]; ok && errorValue != nil {
 		return mo.Some(writerAppendMessage{
 			level:   activitytypes.MessageLevelError,
-			message: valueToStringInternal(errorValue),
+			message: utils.ToString(errorValue),
 			payload: payload,
 			step:    w.defaultStep,
 		})
 	}
 
 	if logValue, ok := payload["log"]; ok {
-		message := valueToStringInternal(logValue)
+		message := utils.ToString(logValue)
 		if strings.TrimSpace(message) == "" {
 			return mo.None[writerAppendMessage]()
 		}
@@ -266,17 +266,4 @@ func doneInternal(ctx context.Context) <-chan struct{} {
 		return nil
 	}
 	return ctx.Done()
-}
-
-func valueToStringInternal(value any) string {
-	switch typed := value.(type) {
-	case string:
-		return typed
-	case fmt.Stringer:
-		return typed.String()
-	case nil:
-		return ""
-	default:
-		return fmt.Sprint(typed)
-	}
 }

@@ -8,44 +8,60 @@ import (
 	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	s3domain "github.com/getarcaneapp/arcane/backend/v2/internal/s3"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/schedule"
 	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
 	"gorm.io/gorm"
 )
 
 // PolicyReconciliation reconciles a full set of policy updates against the
-// existing rows of one backup domain: shared validation, create/update/delete
-// in a single transaction, and the scheduled-job swap. Volume and system
-// backups both run through it so the flow cannot drift between them.
-type PolicyReconciliation[P any] struct {
+// existing policies of one backup domain, then swaps the scheduled jobs.
+type PolicyReconciliation[P, U any] struct {
 	// Domain names the backup flavor in validation errors ("volume", "system").
 	Domain string
 	DB     *database.DB
 	// Existing is every policy currently persisted for the reconciled scope.
 	Existing []P
 	ID       func(*P) string
+	UpdateID func(U) string
 	// New returns the blank policy for created entries, pre-scoped by the
 	// caller (e.g. with the volume name set).
-	New   func() P
-	Apply func(*P, backuptypes.UpdateBackupPolicy)
-	// ValidateUpdate adds per-domain checks on top of the shared ones; nil skips.
-	ValidateUpdate func(backuptypes.UpdateBackupPolicy) error
-	// S3Configured verifies the destination exists and is usable; its error is
-	// returned to the caller verbatim.
-	S3Configured func(ctx context.Context, destinationID string) error
-	Unregister   func(ctx context.Context, policyID string)
-	Reschedule   func(ctx context.Context, policy *P)
+	New func() P
+	// Build validates an update and applies it to an existing or new policy.
+	Build func(ctx context.Context, policy *P, update U) error
+	// Persist overrides the default GORM transaction for settings-backed policies.
+	Persist    func(ctx context.Context, policies []P) error
+	Unregister func(ctx context.Context, policyID string)
+	Reschedule func(ctx context.Context, policy *P)
 }
 
-func (r PolicyReconciliation[P]) Run(ctx context.Context, updates []backuptypes.UpdateBackupPolicy) error {
-	if err := r.validateInternal(ctx, updates); err != nil {
-		return err
-	}
-	policies, kept, err := r.buildInternal(updates)
+func (r PolicyReconciliation[P, U]) Run(ctx context.Context, updates []U) error {
+	policies, kept, err := r.buildInternal(ctx, updates)
 	if err != nil {
 		return err
 	}
-	err = r.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	if err := r.persistInternal(ctx, policies, kept); err != nil {
+		return fmt.Errorf("failed to save %s backup policies: %w", r.Domain, err)
+	}
+	for i := range r.Existing {
+		if _, ok := kept[r.ID(&r.Existing[i])]; !ok {
+			r.Unregister(ctx, r.ID(&r.Existing[i]))
+		}
+	}
+	for i := range policies {
+		r.Reschedule(ctx, &policies[i])
+	}
+	return nil
+}
+
+func (r PolicyReconciliation[P, U]) persistInternal(ctx context.Context, policies []P, kept map[string]struct{}) error {
+	if r.Persist != nil {
+		return r.Persist(ctx, policies)
+	}
+	if r.DB == nil {
+		return errors.New("backup policy database is unavailable")
+	}
+	return r.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for i := range policies {
 			if saveErr := tx.Save(&policies[i]).Error; saveErr != nil {
 				return saveErr
@@ -60,57 +76,40 @@ func (r PolicyReconciliation[P]) Run(ctx context.Context, updates []backuptypes.
 		}
 		return nil
 	})
-	if err != nil {
-		return fmt.Errorf("failed to save %s backup policies: %w", r.Domain, err)
-	}
-	for i := range r.Existing {
-		if _, ok := kept[r.ID(&r.Existing[i])]; !ok {
-			r.Unregister(ctx, r.ID(&r.Existing[i]))
-		}
-	}
-	for i := range policies {
-		r.Reschedule(ctx, &policies[i])
-	}
-	return nil
 }
 
-// validateInternal checks the shared policy rules and normalizes the updates
-// in place (canonical schedule, cleared destination when S3 is off).
-func (r PolicyReconciliation[P]) validateInternal(ctx context.Context, updates []backuptypes.UpdateBackupPolicy) error {
-	for i := range updates {
-		normalized, err := schedule.NormalizeSixField(updates[i].Schedule, r.Domain+" backup")
-		if err != nil {
-			return err
-		}
-		updates[i].Schedule = normalized
-		if updates[i].RetentionCount < 0 || updates[i].RetentionCount > 3650 {
-			return errors.New("retentionCount must be between 0 and 3650")
-		}
-		if !updates[i].LocalEnabled && !updates[i].S3Enabled {
-			return fmt.Errorf("select at least one %s backup destination", r.Domain)
-		}
-		if updates[i].S3Enabled {
-			if strings.TrimSpace(updates[i].S3DestinationID) == "" {
-				return fmt.Errorf("select an S3 destination for %s backups", r.Domain)
-			}
-			if err := r.S3Configured(ctx, updates[i].S3DestinationID); err != nil {
-				return err
-			}
-		} else {
-			updates[i].S3DestinationID = ""
-		}
-		if r.ValidateUpdate != nil {
-			if err := r.ValidateUpdate(updates[i]); err != nil {
-				return err
-			}
-		}
+// ValidatePolicyUpdate applies the shared cron, retention, and destination rules used by backup policies.
+func ValidatePolicyUpdate(ctx context.Context, domain string, update backuptypes.UpdateBackupPolicy, s3 *s3domain.S3DestinationService) (backuptypes.UpdateBackupPolicy, error) {
+	normalized, err := schedule.NormalizeSixField(update.Schedule, domain+" backup")
+	if err != nil {
+		return update, err
 	}
-	return nil
+	update.Schedule = normalized
+	if update.RetentionCount < 0 || update.RetentionCount > 3650 {
+		return update, errors.New("retentionCount must be between 0 and 3650")
+	}
+	if !update.LocalEnabled && !update.S3Enabled {
+		return update, fmt.Errorf("select at least one %s backup destination", domain)
+	}
+	if update.S3Enabled {
+		if strings.TrimSpace(update.S3DestinationID) == "" {
+			return update, fmt.Errorf("select an S3 destination for %s backups", domain)
+		}
+		if s3 == nil {
+			return update, errors.New("S3 backup destinations are unavailable")
+		}
+		if _, err := s3.Configuration(ctx, update.S3DestinationID); err != nil {
+			return update, fmt.Errorf("select a valid S3 destination for %s backups", domain)
+		}
+	} else {
+		update.S3DestinationID = ""
+	}
+	return update, nil
 }
 
 // buildInternal maps the updates onto existing or new policy rows and reports
 // which existing IDs survive the reconciliation.
-func (r PolicyReconciliation[P]) buildInternal(updates []backuptypes.UpdateBackupPolicy) ([]P, map[string]struct{}, error) {
+func (r PolicyReconciliation[P, U]) buildInternal(ctx context.Context, updates []U) ([]P, map[string]struct{}, error) {
 	byID := make(map[string]P, len(r.Existing))
 	for i := range r.Existing {
 		byID[r.ID(&r.Existing[i])] = r.Existing[i]
@@ -119,18 +118,23 @@ func (r PolicyReconciliation[P]) buildInternal(updates []backuptypes.UpdateBacku
 	kept := make(map[string]struct{}, len(updates))
 	for _, update := range updates {
 		policy := r.New()
-		if update.ID != "" {
+		updateID := r.UpdateID(update)
+		if updateID != "" {
 			var ok bool
-			policy, ok = byID[update.ID]
+			policy, ok = byID[updateID]
 			if !ok {
 				return nil, nil, fmt.Errorf("%s backup policy not found", r.Domain)
 			}
-			if _, duplicate := kept[update.ID]; duplicate {
+			if _, duplicate := kept[updateID]; duplicate {
 				return nil, nil, fmt.Errorf("duplicate %s backup policy", r.Domain)
 			}
-			kept[update.ID] = struct{}{}
 		}
-		r.Apply(&policy, update)
+		if err := r.Build(ctx, &policy, update); err != nil {
+			return nil, nil, err
+		}
+		if policyID := r.ID(&policy); policyID != "" {
+			kept[policyID] = struct{}{}
+		}
 		policies = append(policies, policy)
 	}
 	return policies, kept, nil

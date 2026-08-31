@@ -1,11 +1,12 @@
-<script lang="ts" generics="TPolicy extends BackupPolicy">
+<script lang="ts" generics="TPolicy extends BackupPolicy, TUpdate extends { id: string } = BackupPolicyUpdate">
+	import { untrack, type Snippet } from 'svelte';
 	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog';
 	import { ArcaneButton } from '#lib/components/arcane-button';
 	import BackupPolicyFields from '#lib/components/backup-policy-fields.svelte';
 	import type { BackupPolicy, BackupPolicyForm, BackupPolicyUpdate } from '#lib/types/backup';
 	import type { S3Destination } from '#lib/types/s3-destination';
 	import { s3DestinationService } from '#lib/services/s3-destination-service';
-	import { backupDestinationFromFlags, backupPolicyDestinationValues } from '#lib/utils/backups';
+	import { backupDestinationFromFlags, backupPolicyDestinationValues, backupPolicyUpdateFromPolicy } from '#lib/utils/backups';
 	import { toast } from 'svelte-sonner';
 	import * as m from '#lib/paraglide/messages.js';
 
@@ -24,9 +25,16 @@
 		defaultEnabled = true,
 		showStopContainers = false,
 		destinations,
+		resetKey,
+		beforeFields,
+		afterFields,
+		policyPayload = (policy) => backupPolicyUpdateFromPolicy(policy, showStopContainers) as unknown as TUpdate,
+		extendUpdate = (update) => update as unknown as TUpdate,
 		updatePolicies,
 		messages,
-		onSaved
+		onSaved,
+		onReset,
+		contentClass = 'sm:max-w-[720px]'
 	}: {
 		open: boolean;
 		idPrefix: string;
@@ -40,9 +48,16 @@
 		defaultEnabled?: boolean;
 		showStopContainers?: boolean;
 		destinations?: S3Destination[];
-		updatePolicies: (policies: BackupPolicyUpdate[]) => Promise<TPolicy[]>;
+		resetKey?: string;
+		beforeFields?: Snippet;
+		afterFields?: Snippet;
+		policyPayload?: (policy: TPolicy) => TUpdate;
+		extendUpdate?: (update: BackupPolicyUpdate) => TUpdate;
+		updatePolicies: (policies: TUpdate[]) => Promise<TPolicy[]>;
 		messages: { saved: string; saveFailed: string; removed: string };
 		onSaved: (policies: TPolicy[]) => void;
+		onReset?: (policy?: TPolicy) => void;
+		contentClass?: string;
 	} = $props();
 
 	let saving = $state(false);
@@ -98,50 +113,41 @@
 
 	$effect(() => {
 		if (!open) return;
-		const policy = policies.find((item) => item.id === policyId);
-		form = policy
-			? {
-					id: policy.id,
-					enabled: policy.enabled,
-					schedule: policy.schedule,
-					retentionCount: policy.retentionCount,
-					stopContainers: policy.stopContainers ?? false,
-					s3DestinationId: policy.s3DestinationId || '',
-					destination: backupDestinationFromFlags(policy.localEnabled, policy.s3Enabled)
-				}
-			: newPolicy();
-		if (!destinations) void loadDestinations();
+		resetKey;
+		untrack(() => {
+			const policy = policies.find((item) => item.id === policyId);
+			form = policy
+				? {
+						id: policy.id,
+						enabled: policy.enabled,
+						schedule: policy.schedule,
+						retentionCount: policy.retentionCount,
+						stopContainers: policy.stopContainers ?? false,
+						s3DestinationId: policy.s3DestinationId || '',
+						destination: backupDestinationFromFlags(policy.localEnabled, policy.s3Enabled)
+					}
+				: newPolicy();
+			onReset?.(policy);
+			if (!destinations) void loadDestinations();
+		});
 	});
 
 	function updateForm(values: Partial<BackupPolicyForm>) {
 		form = { ...form, ...values, serverError: undefined };
 	}
 
-	function policyPayload(policy: BackupPolicy): BackupPolicyUpdate {
-		return {
-			id: policy.id,
-			enabled: policy.enabled,
-			schedule: policy.schedule,
-			retentionCount: policy.retentionCount,
-			localEnabled: policy.localEnabled,
-			s3Enabled: policy.s3Enabled,
-			s3DestinationId: policy.s3DestinationId ?? '',
-			...(showStopContainers ? { stopContainers: policy.stopContainers ?? false } : {})
-		};
-	}
-
 	async function savePolicies() {
 		if (formInvalid) return;
 		saving = true;
 		try {
-			const current: BackupPolicyUpdate = {
+			const current = extendUpdate({
 				id: form.id,
 				enabled: form.enabled,
 				schedule: form.schedule,
 				retentionCount: Number(form.retentionCount),
 				...backupPolicyDestinationValues(form.destination, form.s3DestinationId),
 				...(showStopContainers ? { stopContainers: form.stopContainers ?? false } : {})
-			};
+			});
 			const existing = policies.map(policyPayload);
 			const next = policyId ? existing.map((policy) => (policy.id === policyId ? current : policy)) : [...existing, current];
 			onSaved(await updatePolicies(next));
@@ -171,9 +177,12 @@
 	}
 </script>
 
-<ResponsiveDialog bind:open title={policyId ? m.jobs_edit_schedule() : addTitle} {description} contentClass="sm:max-w-[720px]">
+<ResponsiveDialog bind:open title={policyId ? m.jobs_edit_schedule() : addTitle} {description} {contentClass}>
 	{#snippet children()}
 		<div class="space-y-4 py-2">
+			{#if beforeFields}
+				{@render beforeFields()}
+			{/if}
 			<BackupPolicyFields
 				{idPrefix}
 				{form}
@@ -188,6 +197,9 @@
 				{destinationsLoading}
 				onChange={updateForm}
 			/>
+			{#if afterFields}
+				{@render afterFields()}
+			{/if}
 		</div>
 	{/snippet}
 	{#snippet footer()}

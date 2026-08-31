@@ -113,12 +113,12 @@ func (a *Actor) Stop(ctx context.Context) error {
 }
 
 // Request sends one typed request and consumes its response.
-func Request[K comparable, Q, R any](ctx context.Context, a *Actor, request Message[K, Q]) (Message[K, R], error) {
+func (a *Actor) Request[K comparable, Q, R any](ctx context.Context, request Message[K, Q]) (Message[K, R], error) {
 	if a == nil {
 		var zero Message[K, R]
 		return zero, errors.New("actor unavailable")
 	}
-	return requestHandleInternal[K, Q, R](ctx, a.handle, request)
+	return a.handle.request[K, Q, R](ctx, request)
 }
 
 func (a *behaviorActorInternal) Receive(ctx *actor.Context) {

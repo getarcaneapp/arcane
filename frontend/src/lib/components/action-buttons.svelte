@@ -389,8 +389,9 @@
 			await refreshAll();
 			itemState = 'running';
 			onActionComplete('running');
-		} catch (e: any) {
-			const message = e?.message || m.common_action_failed_with_type({ action: m.common_start(), type });
+		} catch (error) {
+			const message =
+				error instanceof Error ? error.message : m.common_action_failed_with_type({ action: m.common_start(), type });
 			if (watch) {
 				operationWatchStore.fail(message);
 			} else {
@@ -460,20 +461,16 @@
 		}
 
 		try {
-			projectService
-				.pullProjectImages(id, watch ? (frame: unknown) => operationWatchStore.onLine(frame) : () => {})
-				.then(async () => {
-					await refreshAll();
-					onActionComplete(itemState);
-				})
-				.catch((error: any) => {
-					const message = error?.message || m.images_pull_failed();
-					if (watch) {
-						operationWatchStore.fail(message);
-					} else {
-						toast.error(message);
-					}
-				});
+			await projectService.pullProjectImages(id, watch ? (frame: unknown) => operationWatchStore.onLine(frame) : () => {});
+			await refreshAll();
+			onActionComplete(itemState);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : m.images_pull_failed();
+			if (watch) {
+				operationWatchStore.fail(message);
+			} else {
+				toast.error(message);
+			}
 		} finally {
 			setLoading('pull', false);
 		}
@@ -484,23 +481,19 @@
 
 		try {
 			const buildProvider = projectBuildProvider;
-			projectService
-				.buildProjectImages(
-					id,
-					{
-						provider: buildProvider,
-						push: buildProvider === 'depot',
-						load: buildProvider !== 'depot'
-					},
-					() => {}
-				)
-				.then(async () => {
-					await refreshAll();
-				})
-				.catch((error: any) => {
-					const message = error?.message || m.build_failed();
-					toast.error(message);
-				});
+			await projectService.buildProjectImages(
+				id,
+				{
+					provider: buildProvider,
+					push: buildProvider === 'depot',
+					load: buildProvider !== 'depot'
+				},
+				() => {}
+			);
+			await refreshAll();
+		} catch (error) {
+			const message = error instanceof Error ? error.message : m.build_failed();
+			toast.error(message);
 		} finally {
 			setLoading('build', false);
 		}

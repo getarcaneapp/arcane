@@ -123,7 +123,7 @@ func TestRequestReturnsTypedResponseInternal(t *testing.T) {
 	)
 	require.NoError(t, err)
 	for range 10 {
-		response, requestErr := Request[messageKindInternal, int, string](t.Context(), applicationActor, Message[messageKindInternal, int]{Kind: requestMessageInternal, Value: 1})
+		response, requestErr := applicationActor.Request[messageKindInternal, int, string](t.Context(), Message[messageKindInternal, int]{Kind: requestMessageInternal, Value: 1})
 		require.NoError(t, requestErr)
 		require.Equal(t, responseMessageInternal, response.Kind)
 		require.Equal(t, "ok", response.Value)
@@ -150,7 +150,7 @@ func TestRequestFailsWhenHandlerReturnsWithoutResponseInternal(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	_, err = Request[messageKindInternal, int, string](context.Background(), applicationActor, Message[messageKindInternal, int]{Kind: requestMessageInternal})
+	_, err = applicationActor.Request[messageKindInternal, int, string](context.Background(), Message[messageKindInternal, int]{Kind: requestMessageInternal})
 	require.ErrorContains(t, err, "without response")
 
 	stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)

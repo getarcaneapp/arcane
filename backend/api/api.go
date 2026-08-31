@@ -11,6 +11,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/apns"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/appimages"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/build"
@@ -252,6 +253,7 @@ type HandlerDeps struct {
 	Version           *version.VersionService
 	Notification      *notification.Module
 	ApiKey            *apikey.Module
+	Apns              *apns.Module
 	Federated         *federated.FederatedCredentialService
 	GitRepository     *gitrepo.Module
 	GitOpsSync        *gitops.Module
@@ -435,6 +437,7 @@ func registerHandlersInternal(api huma.API, deps HandlerDeps, handlerAppCtx hand
 	network.RegisterNetworks(api, deps.Network, deps.Docker, deps.Activity.Service(), handlerAppCtx)
 	deps.Swarm.RegisterRoutes(api)
 	deps.Notification.RegisterRoutes(api)
+	deps.Apns.RegisterRoutes(api)
 	deps.Updater.RegisterRoutes(api, handlerAppCtx)
 	deps.Search.RegisterRoutes(api)
 	deps.System.RegisterRoutes(api, handlerAppCtx)

@@ -426,9 +426,6 @@ func Variable(id string) string   { return pathf("/api/variables/%s", id) }
 func VariablesSync() string       { return "/api/variables/sync" }
 func VariablesSyncStatus() string { return "/api/variables/sync-status" }
 
-// TemplatesVariables is the historical alias for the global variables listing.
-func TemplatesVariables() string { return "/api/variables" }
-
 // System backup endpoints (admin-only)
 
 func Backups() string                    { return "/api/backups" }

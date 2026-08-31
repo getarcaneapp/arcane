@@ -38,10 +38,6 @@ type GetDashboardInput struct {
 	DebugAllGood  bool   `query:"debugAllGood" default:"false" doc:"Debug mode: force an empty action item list"`
 }
 
-type GetDashboardOutput struct {
-	Body base.ApiResponse[dashboardtypes.Snapshot]
-}
-
 const (
 	dashboardStreamHeartbeatInterval    = 15 * time.Second
 	dashboardStreamLocalPollInterval    = 15 * time.Second
@@ -75,7 +71,7 @@ func RegisterDashboard(api huma.API, dashboardService *DashboardService, environ
 	}, authz.PermDashboardRead, h.GetDashboard)
 }
 
-func (h *DashboardHandler) GetDashboard(ctx context.Context, input *GetDashboardInput) (*GetDashboardOutput, error) {
+func (h *DashboardHandler) GetDashboard(ctx context.Context, input *GetDashboardInput) (*handlerutil.Out[dashboardtypes.Snapshot], error) {
 	// EnvironmentID is consumed by env proxy/auth middleware for routing/validation.
 	_ = input.EnvironmentID
 
@@ -90,7 +86,7 @@ func (h *DashboardHandler) GetDashboard(ctx context.Context, input *GetDashboard
 		return nil, huma.Error500InternalServerError("dashboard snapshot not available")
 	}
 
-	return &GetDashboardOutput{
+	return &handlerutil.Out[dashboardtypes.Snapshot]{
 		Body: base.ApiResponse[dashboardtypes.Snapshot]{
 			Success: true,
 			Data:    *snapshot,

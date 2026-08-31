@@ -1,12 +1,11 @@
 package doctor
 
 import (
-	"encoding/json"
-	"fmt"
 	"strings"
 
 	"emperror.dev/errors"
 
+	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/config"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
 	runtimectx "github.com/getarcaneapp/arcane/cli/v2/internal/runtime"
@@ -105,11 +104,9 @@ var DoctorCmd = &cobra.Command{
 		}
 
 		if jsonOutput || app.IsJSON() {
-			b, err := json.MarshalIndent(rep, "", "  ")
-			if err != nil {
+			if err := cmdutil.PrintJSON(rep); err != nil {
 				return errors.WrapIf(err, "failed to marshal doctor output")
 			}
-			fmt.Println(string(b))
 		} else {
 			output.Header("Arcane CLI Diagnostics")
 			rows := make([][]string, 0, len(rep.Checks))

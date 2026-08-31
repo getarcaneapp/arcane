@@ -137,7 +137,7 @@
 	</div>
 
 	<Tabs.Root {value} onValueChange={handleModeChange}>
-		<Tabs.List class="h-8 w-full">
+		<Tabs.List class="min-h-8 w-full">
 			{#each modeOptions as option (option.value)}
 				<Tabs.Trigger
 					value={option.value}

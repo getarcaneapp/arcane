@@ -1,8 +1,10 @@
 package generate
 
 import (
+	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
+	"crypto/mldsa"
 	crand "crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
@@ -40,7 +42,7 @@ var (
 var mtlsCmd = &cobra.Command{
 	Use:   "mtls",
 	Short: "Generate Arcane edge mTLS assets",
-	Long:  `Generate an Arcane-managed edge mTLS CA and agent client certificate bundle using ECDSA P-384.`,
+	Long:  `Generate an Arcane-managed edge mTLS CA and agent client certificate bundle using ML-DSA-87.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return generateMTLSOutputInternal()
 	},
@@ -81,7 +83,7 @@ func generateMTLSOutputInternal() error {
 		return err
 	}
 
-	fmt.Println("Generated Arcane edge mTLS assets (ECDSA P-384)")
+	fmt.Println("Generated Arcane edge mTLS assets (ML-DSA-87)")
 	fmt.Printf("CA cert: %s\n", paths.CACertPath)
 	fmt.Printf("CA key: %s\n", paths.CAKeyPath)
 	fmt.Printf("Agent cert: %s\n", paths.ClientCertPath)
@@ -135,7 +137,7 @@ func generateEdgeMTLSBundleInternal(outDir, envID string, appURL string) (*edgeM
 		return nil, errors.WrapIf(err, "failed to create output directory")
 	}
 
-	caKey, err := GenerateP384PrivateKey()
+	caKey, err := GenerateMLDSA87PrivateKey()
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to generate CA private key")
 	}
@@ -144,12 +146,12 @@ func generateEdgeMTLSBundleInternal(outDir, envID string, appURL string) (*edgeM
 		return nil, err
 	}
 
-	caDER, err := x509.CreateCertificate(crand.Reader, caTemplate, caTemplate, &caKey.PublicKey, caKey)
+	caDER, err := x509.CreateCertificate(crand.Reader, caTemplate, caTemplate, caKey.PublicKey(), caKey)
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to create CA certificate")
 	}
 
-	clientKey, err := GenerateP384PrivateKey()
+	clientKey, err := GenerateMLDSA87PrivateKey()
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to generate client private key")
 	}
@@ -167,7 +169,7 @@ func generateEdgeMTLSBundleInternal(outDir, envID string, appURL string) (*edgeM
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to parse generated CA certificate")
 	}
-	clientDER, err := x509.CreateCertificate(crand.Reader, clientTemplate, caCert, &clientKey.PublicKey, caKey)
+	clientDER, err := x509.CreateCertificate(crand.Reader, clientTemplate, caCert, clientKey.PublicKey(), caKey)
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to create client certificate")
 	}
@@ -232,6 +234,11 @@ func generateServerTLSBundleInternal(outDir, commonName string, hosts []string, 
 // GenerateP384PrivateKey generates an ECDSA P-384 private key.
 func GenerateP384PrivateKey() (*ecdsa.PrivateKey, error) {
 	return ecdsa.GenerateKey(elliptic.P384(), crand.Reader)
+}
+
+// GenerateMLDSA87PrivateKey generates an ML-DSA-87 private key.
+func GenerateMLDSA87PrivateKey() (*mldsa.PrivateKey, error) {
+	return mldsa.GenerateKey(mldsa.MLDSA87())
 }
 
 // NewEdgeMTLSCATemplate builds Arcane's edge mTLS CA certificate template.
@@ -361,15 +368,15 @@ func randomSerialInternal() (*big.Int, error) {
 	return serial, nil
 }
 
-func writeCertificateBundleInternal(certPath, keyPath string, certDER []byte, privateKey *ecdsa.PrivateKey) error {
-	keyDER, err := x509.MarshalECPrivateKey(privateKey)
+func writeCertificateBundleInternal(certPath, keyPath string, certDER []byte, privateKey crypto.PrivateKey) error {
+	keyDER, err := x509.MarshalPKCS8PrivateKey(privateKey)
 	if err != nil {
-		return errors.WrapIf(err, "failed to marshal EC private key")
+		return errors.WrapIf(err, "failed to marshal private key")
 	}
 	if err := writePEMFileInternal(certPath, "CERTIFICATE", certDER, 0o644); err != nil {
 		return err
 	}
-	if err := writePEMFileInternal(keyPath, "EC PRIVATE KEY", keyDER, 0o600); err != nil {
+	if err := writePEMFileInternal(keyPath, "PRIVATE KEY", keyDER, 0o600); err != nil {
 		return err
 	}
 	return nil

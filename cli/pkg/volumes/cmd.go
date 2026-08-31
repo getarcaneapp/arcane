@@ -1,11 +1,7 @@
 package volumes
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -17,7 +13,6 @@ import (
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/prompt"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
-	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/spf13/cobra"
 )
@@ -40,8 +35,6 @@ var (
 	volumeCreateLabels []string
 )
 
-const maxPromptOptions = 20
-
 // VolumesCmd is the parent command for volume operations
 var VolumesCmd = &cobra.Command{
 	Use:     "volumes",
@@ -63,17 +56,6 @@ var listCmd = &cobra.Command{
 			return err
 		}
 
-		path, err := cmdutil.ApplyPaginationParams(cmd, types.Volumes(c.EnvID()), cmdutil.ListParams{
-			Resource:        "volumes",
-			Limit:           limitFlag,
-			FallbackDefault: 20,
-			Start:           startFlag,
-			All:             allFlag,
-		})
-		if err != nil {
-			return errors.WrapIf(err, "failed to build pagination query")
-		}
-
 		// Filter server-side so that pagination and the reported totals apply to
 		// the matching set rather than to whichever page happened to be fetched.
 		query := url.Values{}
@@ -86,49 +68,34 @@ var listCmd = &cobra.Command{
 		if includeInternalFlag {
 			query.Set("includeInternal", "true")
 		}
-		if len(query) > 0 {
-			path = cmdutil.AppendQuery(path, query)
-		}
 
-		resp, err := c.Get(cmd.Context(), path)
-		if err != nil {
-			return errors.WrapIf(err, "failed to list volumes")
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		body, err := cmdutil.ReadJSONBody(resp)
-		if err != nil {
-			return errors.WrapIf(err, "failed to list volumes")
-		}
-
-		if jsonOutput {
-			return cmdutil.PrintRawJSON(body)
-		}
-
-		var result base.Paginated[volume.Volume]
-		if err := json.Unmarshal(body, &result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
-		}
-
-		headers := []string{"NAME", "DRIVER", "MOUNTPOINT", "CREATED", "IN USE"}
-		rows := make([][]string, len(result.Data))
-		for i, vol := range result.Data {
-			inUse := "No"
-			if vol.InUse {
-				inUse = "Yes"
-			}
-			rows[i] = []string{
-				vol.Name,
-				vol.Driver,
-				vol.Mountpoint,
-				vol.CreatedAt,
-				inUse,
-			}
-		}
-
-		output.Table(headers, rows)
-		output.Showing(len(result.Data), result.Pagination.TotalItems, "volumes")
-		return nil
+		return cmdutil.RunList(cmd, c, cmdutil.ListSpec[volume.Volume]{
+			Resource: "volumes",
+			Endpoint: types.Volumes(c.EnvID()),
+			Params: cmdutil.ListParams{
+				Resource:        "volumes",
+				Limit:           limitFlag,
+				FallbackDefault: 20,
+				Start:           startFlag,
+				All:             allFlag,
+			},
+			Query:   query,
+			JSON:    jsonOutput,
+			Headers: []string{"NAME", "DRIVER", "MOUNTPOINT", "CREATED", "IN USE"},
+			Row: func(vol volume.Volume) []string {
+				inUse := "No"
+				if vol.InUse {
+					inUse = "Yes"
+				}
+				return []string{
+					vol.Name,
+					vol.Driver,
+					vol.Mountpoint,
+					vol.CreatedAt,
+					inUse,
+				}
+			},
+		})
 	},
 }
 
@@ -144,18 +111,13 @@ var getCmd = &cobra.Command{
 		}
 
 		allowPrompt := !jsonOutput && prompt.IsInteractive()
-		resolved, err := resolveVolume(cmd.Context(), c, args[0], allowPrompt)
+		resolved, _, err := volumeRef.Resolve(cmd.Context(), c, args[0], allowPrompt)
 		if err != nil {
 			return err
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(resolved, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(resolved)
 		}
 
 		output.Header("Volume Details")
@@ -185,7 +147,7 @@ var deleteCmd = &cobra.Command{
 		}
 
 		allowPrompt := !forceFlag && prompt.IsInteractive()
-		resolved, err := resolveVolume(cmd.Context(), c, args[0], allowPrompt)
+		resolved, _, err := volumeRef.Resolve(cmd.Context(), c, args[0], allowPrompt)
 		if err != nil {
 			return err
 		}
@@ -254,31 +216,12 @@ var pruneCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Post(cmd.Context(), types.VolumesPrune(c.EnvID()), nil)
-		if err != nil {
-			return errors.WrapIf(err, "failed to prune volumes")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to prune volumes")
-		}
-
-		var result base.ApiResponse[any]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
-		}
-
-		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
-		}
-
-		output.Success("Volumes pruned successfully")
-		return nil
+		return cmdutil.RunPostAction[any](cmd, c, cmdutil.PostActionSpec{
+			Path:           types.VolumesPrune(c.EnvID()),
+			FailureMessage: "failed to prune volumes",
+			SuccessMessage: "Volumes pruned successfully",
+			JSON:           jsonOutput,
+		})
 	},
 }
 
@@ -309,33 +252,15 @@ func runVolumeDataCommand(cmd *cobra.Command, cfg volumeDataCommandConfig) error
 		return err
 	}
 
-	resp, err := c.Get(cmd.Context(), cfg.endpoint(c.EnvID()))
+	result, err := c.GetJSON[any](cmd.Context(), cfg.endpoint(c.EnvID()))
 	if err != nil {
 		return errors.WrapIff(err, "%s", cfg.failureMessage)
 	}
-	defer func() { _ = resp.Body.Close() }()
 
-	var result base.ApiResponse[any]
-	if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-		return err
+	if !jsonOutput {
+		output.Header("%s", cfg.header)
 	}
-
-	resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-	if err != nil {
-		if jsonOutput {
-			return errors.WrapIf(err, "failed to marshal JSON")
-		}
-		return errors.WrapIff(err, "%s", cfg.marshalMessage)
-	}
-
-	if jsonOutput {
-		fmt.Println(string(resultBytes))
-		return nil
-	}
-
-	output.Header("%s", cfg.header)
-	fmt.Println(string(resultBytes))
-	return nil
+	return errors.WrapIff(cmdutil.PrintJSON(result.Data), "%s", cfg.marshalMessage)
 }
 
 var usageCmd = &cobra.Command{
@@ -350,38 +275,22 @@ var usageCmd = &cobra.Command{
 		}
 
 		allowPrompt := !jsonOutput && prompt.IsInteractive()
-		resolved, err := resolveVolume(cmd.Context(), c, args[0], allowPrompt)
+		resolved, _, err := volumeRef.Resolve(cmd.Context(), c, args[0], allowPrompt)
 		if err != nil {
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.VolumeUsage(c.EnvID(), resolved.Name))
+		result, err := c.GetJSON[any](cmd.Context(), types.VolumeUsage(c.EnvID(), resolved.Name))
 		if err != nil {
 			return errors.WrapIf(err, "failed to get volume usage")
 		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result base.ApiResponse[any]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
-		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Header("Volume Usage: %s", resolved.Name)
-		resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-		if err != nil {
-			return errors.WrapIf(err, "failed to marshal volume usage")
-		}
-		fmt.Println(string(resultBytes))
-		return nil
+		return cmdutil.PrintJSON(result.Data)
 	},
 }
 
@@ -420,28 +329,13 @@ var createCmd = &cobra.Command{
 			}
 		}
 
-		path := types.Volumes(c.EnvID())
-		resp, err := c.Post(cmd.Context(), path, req)
+		result, err := c.PostJSON[volume.Volume](cmd.Context(), types.Volumes(c.EnvID()), req)
 		if err != nil {
 			return errors.WrapIf(err, "failed to create volume")
 		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to create volume")
-		}
-
-		var result base.ApiResponse[volume.Volume]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
-		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Volume %s created successfully", result.Data.Name)
@@ -496,92 +390,21 @@ func init() {
 	_ = createCmd.MarkFlagRequired("name")
 }
 
-func resolveVolume(ctx context.Context, c *client.Client, identifier string, allowPrompt bool) (*volume.Volume, error) {
-	trimmed := strings.TrimSpace(identifier)
-	if trimmed == "" {
-		return nil, errors.New("volume identifier is required")
-	}
-
-	resp, err := c.Get(ctx, types.Volume(c.EnvID(), trimmed))
-	if err != nil {
-		return nil, errors.WrapIff(err, "failed to resolve volume %q", trimmed)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	_ = resp.Body.Close()
-	if err != nil {
-		return nil, errors.WrapIf(err, "failed to read volume response")
-	}
-
-	if resp.StatusCode == http.StatusOK {
-		var result base.ApiResponse[volume.Volume]
-		if err := json.Unmarshal(body, &result); err != nil {
-			return nil, errors.WrapIf(err, "failed to parse volume response")
+var volumeRef = cmdutil.ResourceRef[volume.Volume, volume.Volume]{
+	Singular: "volume",
+	Plural:   "volumes",
+	IDHint:   "the volume name",
+	ListCmd:  "arcane volumes list",
+	GetPath:  types.Volume,
+	ListPath: types.Volumes,
+	Matches:  volumeMatches,
+	Label: func(match volume.Volume) string {
+		if match.Driver != "" {
+			return fmt.Sprintf("%s (%s)", match.Name, match.Driver)
 		}
-		return &result.Data, nil
-	}
-
-	if resp.StatusCode != http.StatusNotFound {
-		return nil, errors.Errorf("failed to resolve volume %q (status %d): %s", trimmed, resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-
-	searchPath := fmt.Sprintf("%s?search=%s&limit=%d", types.Volumes(c.EnvID()), url.QueryEscape(trimmed), cmdutil.ShowAllLimit)
-	searchResp, err := c.Get(ctx, searchPath)
-	if err != nil {
-		return nil, errors.WrapIf(err, "failed to search volumes")
-	}
-
-	searchBody, err := io.ReadAll(searchResp.Body)
-	_ = searchResp.Body.Close()
-	if err != nil {
-		return nil, errors.WrapIf(err, "failed to read volumes response")
-	}
-
-	if searchResp.StatusCode < 200 || searchResp.StatusCode >= 300 {
-		return nil, errors.Errorf("failed to search volumes (status %d): %s", searchResp.StatusCode, strings.TrimSpace(string(searchBody)))
-	}
-
-	var result base.Paginated[volume.Volume]
-	if err := json.Unmarshal(searchBody, &result); err != nil {
-		return nil, errors.WrapIf(err, "failed to parse volumes response")
-	}
-
-	identifierLower := strings.ToLower(trimmed)
-	matches := make([]volume.Volume, 0)
-	for _, item := range result.Data {
-		if volumeMatches(item, identifierLower, trimmed) {
-			matches = append(matches, item)
-		}
-	}
-
-	if len(matches) == 1 {
-		return &matches[0], nil
-	}
-
-	if len(matches) > 1 {
-		if !allowPrompt {
-			return nil, errors.Errorf("multiple volumes match %q; use the volume name or run `arcane volumes list`", trimmed)
-		}
-		if len(matches) > maxPromptOptions {
-			return nil, errors.Errorf("multiple volumes match %q (%d results); refine your query or use the volume name", trimmed, len(matches))
-		}
-
-		options := make([]string, 0, len(matches))
-		for _, match := range matches {
-			label := match.Name
-			if match.Driver != "" {
-				label = fmt.Sprintf("%s (%s)", match.Name, match.Driver)
-			}
-			options = append(options, label)
-		}
-		choice, err := prompt.Select("volume", options)
-		if err != nil {
-			return nil, err
-		}
-		return &matches[choice], nil
-	}
-
-	return nil, errors.Errorf("volume %q not found; use the volume name or run `arcane volumes list`", trimmed)
+		return match.Name
+	},
+	Promote: func(match volume.Volume) *volume.Volume { return &match },
 }
 
 func volumeMatches(item volume.Volume, identifierLower, original string) bool {

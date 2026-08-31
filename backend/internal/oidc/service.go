@@ -27,6 +27,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/jwtclaims"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mldsajose"
 	authtypes "github.com/getarcaneapp/arcane/types/v2/auth"
 )
 
@@ -38,10 +39,16 @@ type OidcService struct {
 	insecureHttpClient *http.Client
 	providerMutex      sync.RWMutex
 	providerCache      *hot.HotCache[oidcProviderKey, *oidc.Provider]
+	keySets            map[oidcKeySetKey]*mldsajose.KeySet
 }
 
 type oidcProviderKey struct {
 	issuer  string
+	skipTLS bool
+}
+
+type oidcKeySetKey struct {
+	jwksURL string
 	skipTLS bool
 }
 
@@ -68,9 +75,29 @@ func NewOidcService(authService *auth.AuthService, settingsService *settings.Set
 		settingsService: settingsService,
 		config:          cfg,
 		httpClient:      &oidcClient,
+		keySets:         map[oidcKeySetKey]*mldsajose.KeySet{},
 	}
 	service.providerCache = hot.NewHotCache[oidcProviderKey, *oidc.Provider](hot.LRU, 4).Build()
 	return service
+}
+
+func (s *OidcService) keySetInternal(ctx context.Context, jwksURL string, skipTLS bool) *mldsajose.KeySet {
+	key := oidcKeySetKey{jwksURL: jwksURL, skipTLS: skipTLS}
+	s.providerMutex.RLock()
+	keySet := s.keySets[key]
+	s.providerMutex.RUnlock()
+	if keySet != nil {
+		return keySet
+	}
+
+	clientCtx := oidc.ClientContext(context.WithoutCancel(ctx), s.getHttpClientInternal(skipTLS))
+	s.providerMutex.Lock()
+	defer s.providerMutex.Unlock()
+	if keySet = s.keySets[key]; keySet == nil {
+		keySet = mldsajose.NewKeySet(clientCtx, jwksURL)
+		s.keySets[key] = keySet
+	}
+	return keySet
 }
 
 func (s *OidcService) getEffectiveConfigInternal(ctx context.Context) (*settings.OidcConfig, error) {
@@ -513,24 +540,29 @@ func (s *OidcService) verifyIDTokenInternal(ctx context.Context, provider *oidc.
 	}
 
 	verifierConfig := &oidc.Config{
-		ClientID: cfg.ClientID,
+		ClientID:             cfg.ClientID,
+		SupportedSigningAlgs: mldsajose.SupportedSigningAlgs(),
 	}
 
-	if nonce != "" {
-		verifierConfig.Now = time.Now
+	var issuer, jwksURL string
+	if provider != nil {
+		var meta struct {
+			Issuer  string `json:"issuer"`
+			JWKSURL string `json:"jwks_uri"`
+		}
+		if err := provider.Claims(&meta); err != nil {
+			return nil, "", errors.WrapIf(err, "failed to read provider metadata")
+		}
+		issuer, jwksURL = meta.Issuer, meta.JWKSURL
+	} else {
+		issuer, jwksURL = cfg.IssuerURL, cfg.JwksURI
+	}
+	if jwksURL == "" {
+		return nil, "", errors.New("jwks URI must be configured when using manual OIDC endpoints")
 	}
 
 	providerCtx := oidc.ClientContext(ctx, s.getHttpClientInternal(cfg.SkipTlsVerify))
-	var verifier *oidc.IDTokenVerifier
-	if provider != nil {
-		verifier = provider.Verifier(verifierConfig)
-	} else {
-		if cfg.JwksURI == "" {
-			return nil, "", errors.New("jwks URI must be configured when using manual OIDC endpoints")
-		}
-		keySet := oidc.NewRemoteKeySet(providerCtx, cfg.JwksURI)
-		verifier = oidc.NewVerifier(cfg.IssuerURL, keySet, verifierConfig)
-	}
+	verifier := oidc.NewVerifier(issuer, s.keySetInternal(ctx, jwksURL, cfg.SkipTlsVerify), verifierConfig)
 
 	idToken, err := verifier.Verify(providerCtx, rawIDToken)
 	if err != nil {

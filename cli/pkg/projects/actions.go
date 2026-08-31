@@ -1,7 +1,6 @@
 package projects
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,7 +12,6 @@ import (
 
 	"emperror.dev/errors"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
@@ -39,32 +37,18 @@ var tagsCmd = &cobra.Command{
 	Short:        "List project tags for the environment",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := client.NewFromConfig()
+		c, err := cmdutil.ClientFromCommand(cmd)
 		if err != nil {
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.ProjectsTags(c.EnvID()))
+		result, err := c.GetJSON[[]project.TagOption](cmd.Context(), types.ProjectsTags(c.EnvID()))
 		if err != nil {
 			return errors.WrapIf(err, "failed to list project tags")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to list project tags")
-		}
-
-		var result base.ApiResponse[[]project.TagOption]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Header("Project Tags")
@@ -91,12 +75,12 @@ var tagCmd = &cobra.Command{
 			return errors.New("--color can only be used with --add")
 		}
 
-		c, err := client.NewFromConfig()
+		c, err := cmdutil.ClientFromCommand(cmd)
 		if err != nil {
 			return err
 		}
 
-		resolved, _, err := resolveProject(cmd.Context(), c, args[0], false)
+		resolved, _, err := projectRef.Resolve(cmd.Context(), c, args[0], false)
 		if err != nil {
 			return err
 		}
@@ -110,27 +94,13 @@ var tagCmd = &cobra.Command{
 			body.Name = tagRemove
 		}
 
-		resp, err := c.Request(cmd.Context(), http.MethodPatch, types.ProjectTags(c.EnvID(), resolved.ID), body)
+		result, err := c.DoJSON[base.ApiResponse[project.UpdateTagResponse]](cmd.Context(), http.MethodPatch, types.ProjectTags(c.EnvID(), resolved.ID), body)
 		if err != nil {
 			return errors.WrapIf(err, "failed to update project tag")
 		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to update project tag")
-		}
-
-		var result base.ApiResponse[project.UpdateTagResponse]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
-		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		names := make([]string, len(result.Data.Tags))
@@ -149,10 +119,19 @@ var archiveCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runProjectPostAction(cmd, args[0], projectPostActionConfig{
-			endpoint:       types.ProjectArchive,
-			failureMessage: "failed to archive project",
-			successMessage: "Project %s archived successfully",
+		c, err := cmdutil.ClientFromCommand(cmd)
+		if err != nil {
+			return err
+		}
+		resolved, _, err := projectRef.Resolve(cmd.Context(), c, args[0], false)
+		if err != nil {
+			return err
+		}
+		return cmdutil.RunPostAction[base.MessageResponse](cmd, c, cmdutil.PostActionSpec{
+			Path:           types.ProjectArchive(c.EnvID(), resolved.ID),
+			FailureMessage: "failed to archive project",
+			SuccessMessage: fmt.Sprintf("Project %s archived successfully", resolved.Name),
+			JSON:           jsonOutput,
 		})
 	},
 }
@@ -163,10 +142,19 @@ var unarchiveCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runProjectPostAction(cmd, args[0], projectPostActionConfig{
-			endpoint:       types.ProjectUnarchive,
-			failureMessage: "failed to unarchive project",
-			successMessage: "Project %s unarchived successfully",
+		c, err := cmdutil.ClientFromCommand(cmd)
+		if err != nil {
+			return err
+		}
+		resolved, _, err := projectRef.Resolve(cmd.Context(), c, args[0], false)
+		if err != nil {
+			return err
+		}
+		return cmdutil.RunPostAction[base.MessageResponse](cmd, c, cmdutil.PostActionSpec{
+			Path:           types.ProjectUnarchive(c.EnvID(), resolved.ID),
+			FailureMessage: "failed to unarchive project",
+			SuccessMessage: fmt.Sprintf("Project %s unarchived successfully", resolved.Name),
+			JSON:           jsonOutput,
 		})
 	},
 }
@@ -177,12 +165,12 @@ var buildCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := client.NewFromConfig()
+		c, err := cmdutil.ClientFromCommand(cmd)
 		if err != nil {
 			return err
 		}
 
-		resolved, _, err := resolveProject(cmd.Context(), c, args[0], false)
+		resolved, _, err := projectRef.Resolve(cmd.Context(), c, args[0], false)
 		if err != nil {
 			return err
 		}
@@ -226,12 +214,12 @@ var updateServicesCmd = &cobra.Command{
 	Args:         cobra.MinimumNArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := client.NewFromConfig()
+		c, err := cmdutil.ClientFromCommand(cmd)
 		if err != nil {
 			return err
 		}
 
-		resolved, _, err := resolveProject(cmd.Context(), c, args[0], false)
+		resolved, _, err := projectRef.Resolve(cmd.Context(), c, args[0], false)
 		if err != nil {
 			return err
 		}
@@ -242,27 +230,13 @@ var updateServicesCmd = &cobra.Command{
 			Services []string `json:"services,omitempty"`
 		}{Services: args[1:]}
 
-		resp, err := c.Post(cmd.Context(), types.ProjectUpdateServices(c.EnvID(), resolved.ID), body)
+		result, err := c.PostJSON[base.MessageResponse](cmd.Context(), types.ProjectUpdateServices(c.EnvID(), resolved.ID), body)
 		if err != nil {
 			return errors.WrapIf(err, "failed to update project services")
 		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to update project services")
-		}
-
-		var result base.ApiResponse[base.MessageResponse]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
-		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Services updated successfully for project %s", resolved.Name)
@@ -281,38 +255,24 @@ var workspaceCatCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(2),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := client.NewFromConfig()
+		c, err := cmdutil.ClientFromCommand(cmd)
 		if err != nil {
 			return err
 		}
 
-		resolved, _, err := resolveProject(cmd.Context(), c, args[0], false)
+		resolved, _, err := projectRef.Resolve(cmd.Context(), c, args[0], false)
 		if err != nil {
 			return err
 		}
 
 		reqPath := types.ProjectWorkspaceFile(c.EnvID(), resolved.ID) + "?relativePath=" + url.QueryEscape(args[1])
-		resp, err := c.Get(cmd.Context(), reqPath)
+		result, err := c.GetJSON[workspacetypes.FileContent](cmd.Context(), reqPath)
 		if err != nil {
 			return errors.WrapIf(err, "failed to get workspace file")
 		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to get workspace file")
-		}
-
-		var result base.ApiResponse[workspacetypes.FileContent]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return err
-		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		if result.Data.Content == "" && result.Data.ReadOnlyReason != "" {
@@ -329,12 +289,12 @@ var workspaceDownloadCmd = &cobra.Command{
 	Args:         cobra.RangeArgs(2, 3),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := client.NewFromConfig()
+		c, err := cmdutil.ClientFromCommand(cmd)
 		if err != nil {
 			return err
 		}
 
-		resolved, _, err := resolveProject(cmd.Context(), c, args[0], false)
+		resolved, _, err := projectRef.Resolve(cmd.Context(), c, args[0], false)
 		if err != nil {
 			return err
 		}

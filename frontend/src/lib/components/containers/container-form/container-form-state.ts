@@ -100,7 +100,7 @@ export type ContainerFormRows = {
 
 // Splits a command string into words, honoring single/double quotes so
 // entries like `sh -c "echo hi"` survive the round-trip.
-export function splitShellWords(input: string): string[] {
+function splitShellWords(input: string): string[] {
 	const words: string[] = [];
 	const re = /"([^"]*)"|'([^']*)'|(\S+)/g;
 	for (const match of input.matchAll(re)) {

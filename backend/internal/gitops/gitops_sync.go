@@ -1068,6 +1068,17 @@ func singleFileSyncedFilesInternal(sync *projectpkg.GitOpsSync, source *prepared
 func (s *GitOpsSyncService) performSingleFileSyncInternal(ctx context.Context, sync *projectpkg.GitOpsSync, id string, actor common.User, result *gitops.SyncResult, source *preparedSyncSource) (*gitops.SyncResult, error) {
 	slog.InfoContext(ctx, "Using single file sync mode", "syncId", id, "composePath", sync.ComposePath)
 
+	// Single-file sync copies only the one compose file (plus .env and a sibling
+	// override). If the synced .env references additional files via COMPOSE_FILE
+	// or COMPOSE_ENV_FILES, those files never reach the project, so direct the
+	// user to directory sync instead of silently deploying an incomplete
+	// selection.
+	if composeFileEnvNeedsDirectorySyncInternal(sync, source) {
+		return result, s.failSync(ctx, id, result, sync, actor,
+			"COMPOSE_FILE or COMPOSE_ENV_FILES references additional files",
+			"the synced .env references additional files via COMPOSE_FILE or COMPOSE_ENV_FILES; enable \"Sync entire directory\" for this sync")
+	}
+
 	syncedFiles := singleFileSyncedFilesInternal(sync, source)
 
 	project, err := s.getOrCreateProjectInternal(ctx, sync, id, source.composeContent, source.envContent, source.overrideContent, source.overrideFileName, result, actor)
@@ -1085,6 +1096,65 @@ func (s *GitOpsSyncService) performSingleFileSyncInternal(ctx context.Context, s
 	slog.InfoContext(ctx, "GitOps sync completed", "syncId", id, "project", project.Name)
 
 	return result, nil
+}
+
+// composeFileEnvNeedsDirectorySyncInternal reports whether the synced .env
+// declares a COMPOSE_FILE or COMPOSE_ENV_FILES selection that single-file sync
+// cannot satisfy — i.e. it references any file other than the ones single-file
+// sync actually ships (the synced compose file, its sibling override, and .env
+// itself), or any file in a subdirectory.
+func composeFileEnvNeedsDirectorySyncInternal(sync *projectpkg.GitOpsSync, source *preparedSyncSource) bool {
+	if source == nil || source.envContent == nil {
+		return false
+	}
+	envMap, err := projects.ParseProjectEnvContent(*source.envContent, nil)
+	if err != nil || len(envMap) == 0 {
+		return false
+	}
+
+	allowedComposeFiles := map[string]struct{}{filepath.Base(sync.ComposePath): {}}
+	if source.overrideFileName != "" {
+		allowedComposeFiles[source.overrideFileName] = struct{}{}
+	}
+	if entriesNeedDirectorySyncInternal(projects.ComposeFileEntriesFromEnv(envMap), allowedComposeFiles) {
+		return true
+	}
+
+	// Single-file sync writes the synced env content to .env, so a
+	// self-reference is satisfiable; anything else never reaches the project.
+	return entriesNeedDirectorySyncInternal(projects.ComposeEnvFileEntriesFromEnv(envMap), map[string]struct{}{projects.EffectiveEnvFileName: {}})
+}
+
+func entriesNeedDirectorySyncInternal(entries []string, allowed map[string]struct{}) bool {
+	for _, entry := range entries {
+		// Normalize so relative prefixes like "./compose.yaml" match allowed.
+		cleaned := filepath.Clean(entry)
+		if cleaned != filepath.Base(cleaned) {
+			return true // nested path can't be single-file synced
+		}
+		if _, ok := allowed[cleaned]; !ok {
+			return true
+		}
+	}
+	return false
+}
+
+// buildSwarmStackDeployRequestInternal assembles the deploy request for a Git Sync that targets
+// a Swarm stack. WithRegistryAuth is always set so the Git Sync path resolves stored registry
+// credentials the same way a direct stack deploy does. Resolution happens per image at deploy
+// time and yields nothing unless a configured container registry matches that image's host, so
+// stacks built only from public images are unaffected.
+func buildSwarmStackDeployRequestInternal(sync *projectpkg.GitOpsSync, source *preparedSyncSource, overrideContent string, envContent string, swarmFiles []swarmtypes.SyncFile) swarmtypes.StackDeployRequest {
+	return swarmtypes.StackDeployRequest{
+		Name:             sync.ProjectName,
+		ComposeContent:   source.composeContent,
+		OverrideContent:  overrideContent,
+		EnvContent:       envContent,
+		Files:            swarmFiles,
+		Prune:            true,
+		WithRegistryAuth: true,
+		WorkingDir:       filepath.Dir(filepath.Join(source.repoPath, sync.ComposePath)),
+	}
 }
 
 // performSwarmStackSyncInternal executes a single file sync targeted at a Swarm Stack
@@ -1124,15 +1194,7 @@ func (s *GitOpsSyncService) performSwarmStackSyncInternal(ctx context.Context, s
 		syncedFiles = append(syncedFiles, f.RelativePath)
 	}
 
-	req := swarmtypes.StackDeployRequest{
-		Name:            sync.ProjectName,
-		ComposeContent:  source.composeContent,
-		OverrideContent: overrideContent,
-		EnvContent:      envContent,
-		Files:           swarmFiles,
-		Prune:           true,
-		WorkingDir:      filepath.Dir(filepath.Join(source.repoPath, sync.ComposePath)),
-	}
+	req := buildSwarmStackDeployRequestInternal(sync, source, overrideContent, envContent, swarmFiles)
 
 	if _, err := s.swarmService.DeployStack(ctx, sync.EnvironmentID, req); err != nil {
 		return result, s.failSync(ctx, id, result, sync, actor, "Failed to deploy swarm stack", err.Error())
@@ -1312,6 +1374,23 @@ func (s *GitOpsSyncService) CleanupLeakedScratchDirsOnStartup(ctx context.Contex
 	}
 	if removed > 0 {
 		slog.InfoContext(ctx, "Cleaned up leaked GitOps scratch directories on startup", "count", removed)
+	}
+	return nil
+}
+
+// CleanupLeakedCloneDirsOnStartup removes leaked git clone scratch dirs
+// ("gitops-*") under the git work dir; safe because no sync holds a clone yet.
+func (s *GitOpsSyncService) CleanupLeakedCloneDirsOnStartup(ctx context.Context) error {
+	if s.repoService == nil || s.repoService.Client == nil {
+		return nil
+	}
+
+	removed, err := s.repoService.PurgeScratchDirs(ctx, 0)
+	if err != nil {
+		return errors.WrapIf(err, "failed to purge leaked git clone scratch directories")
+	}
+	if removed > 0 {
+		slog.InfoContext(ctx, "Cleaned up leaked git clone scratch directories on startup", "count", removed)
 	}
 	return nil
 }

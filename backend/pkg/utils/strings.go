@@ -168,3 +168,13 @@ func GetStringOrDefault(m map[string]any, key, defaultValue string) string {
 	}
 	return defaultValue
 }
+
+// EnsureVPrefix guarantees a version string carries the "v" prefix that
+// semver comparisons and release tags expect.
+func EnsureVPrefix(version string) string {
+	trimmed := strings.TrimSpace(version)
+	if strings.HasPrefix(trimmed, "v") {
+		return trimmed
+	}
+	return "v" + trimmed
+}

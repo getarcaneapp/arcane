@@ -15,7 +15,6 @@ import (
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
-	"github.com/getarcaneapp/arcane/types/v2/base"
 	roletypes "github.com/getarcaneapp/arcane/types/v2/role"
 	"github.com/spf13/cobra"
 )
@@ -66,45 +65,26 @@ var listCmd = &cobra.Command{
 			return err
 		}
 
-		path := types.Roles()
-		path, err = cmdutil.ApplyPaginationParams(cmd, path, cmdutil.ListParams{Resource: "roles", Limit: limitFlag, FallbackDefault: 20, Start: startFlag, All: allFlag})
-		if err != nil {
-			return errors.WrapIf(err, "failed to build pagination query")
-		}
-
-		resp, err := c.Get(cmd.Context(), path)
-		if err != nil {
-			return errors.WrapIf(err, "failed to list roles")
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result base.Paginated[roletypes.Role]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return errors.WrapIf(err, "failed to list roles")
-		}
-
-		if jsonOutput {
-			return cmdutil.PrintJSON(result)
-		}
-
-		headers := []string{"ID", "NAME", "TYPE", "USERS", "PERMISSIONS"}
-		rows := make([][]string, len(result.Data))
-		for i, r := range result.Data {
-			roleType := "custom"
-			if r.BuiltIn {
-				roleType = "built-in"
-			}
-			rows[i] = []string{
-				r.ID,
-				r.Name,
-				roleType,
-				strconv.Itoa(r.AssignedUserCount),
-				strconv.Itoa(len(r.Permissions)),
-			}
-		}
-		output.Table(headers, rows)
-		output.Showing(len(result.Data), result.Pagination.TotalItems, "roles")
-		return nil
+		return cmdutil.RunList(cmd, c, cmdutil.ListSpec[roletypes.Role]{
+			Resource: "roles",
+			Endpoint: types.Roles(),
+			Params:   cmdutil.ListParams{Resource: "roles", Limit: limitFlag, FallbackDefault: 20, Start: startFlag, All: allFlag},
+			JSON:     jsonOutput,
+			Headers:  []string{"ID", "NAME", "TYPE", "USERS", "PERMISSIONS"},
+			Row: func(r roletypes.Role) []string {
+				roleType := "custom"
+				if r.BuiltIn {
+					roleType = "built-in"
+				}
+				return []string{
+					r.ID,
+					r.Name,
+					roleType,
+					strconv.Itoa(r.AssignedUserCount),
+					strconv.Itoa(len(r.Permissions)),
+				}
+			},
+		})
 	},
 }
 
@@ -118,14 +98,8 @@ var getCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		resp, err := c.Get(cmd.Context(), types.Role(args[0]))
+		result, err := c.GetJSON[roletypes.Role](cmd.Context(), types.Role(args[0]))
 		if err != nil {
-			return errors.WrapIf(err, "failed to get role")
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result base.ApiResponse[roletypes.Role]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
 			return errors.WrapIf(err, "failed to get role")
 		}
 
@@ -177,13 +151,8 @@ var createCmd = &cobra.Command{
 			req.Description = &roleCreateDescription
 		}
 
-		resp, err := c.Post(cmd.Context(), types.Roles(), req)
+		result, err := c.PostJSON[roletypes.Role](cmd.Context(), types.Roles(), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to create role")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		var result base.ApiResponse[roletypes.Role]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
 			return errors.WrapIf(err, "failed to create role")
 		}
 
@@ -291,14 +260,8 @@ var permissionsCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		resp, err := c.Get(cmd.Context(), types.RolesAvailablePermissions())
+		result, err := c.GetJSON[roletypes.PermissionsManifest](cmd.Context(), types.RolesAvailablePermissions())
 		if err != nil {
-			return errors.WrapIf(err, "failed to load permission manifest")
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result base.ApiResponse[roletypes.PermissionsManifest]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
 			return errors.WrapIf(err, "failed to load permission manifest")
 		}
 
@@ -330,14 +293,8 @@ var assignmentsCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		resp, err := c.Get(cmd.Context(), types.UserRoleAssignments(args[0]))
+		result, err := c.GetJSON[[]roletypes.RoleAssignment](cmd.Context(), types.UserRoleAssignments(args[0]))
 		if err != nil {
-			return errors.WrapIf(err, "failed to list assignments")
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result base.ApiResponse[[]roletypes.RoleAssignment]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
 			return errors.WrapIf(err, "failed to list assignments")
 		}
 
@@ -385,13 +342,8 @@ var assignCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		resp, err := c.Put(cmd.Context(), types.UserRoleAssignments(args[0]), req)
+		result, err := c.PutJSON[[]roletypes.RoleAssignment](cmd.Context(), types.UserRoleAssignments(args[0]), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to set assignments")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		var result base.ApiResponse[[]roletypes.RoleAssignment]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
 			return errors.WrapIf(err, "failed to set assignments")
 		}
 		if jsonOutput {
@@ -432,13 +384,8 @@ func fetchRoleInternal(cmd *cobra.Command, id string) (*roletypes.Role, error) {
 	if err != nil {
 		return nil, err
 	}
-	resp, err := c.Get(cmd.Context(), types.Role(id))
+	result, err := c.GetJSON[roletypes.Role](cmd.Context(), types.Role(id))
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to load current role")
-	}
-	defer func() { _ = resp.Body.Close() }()
-	var result base.ApiResponse[roletypes.Role]
-	if err := cmdutil.DecodeJSON(resp, &result); err != nil {
 		return nil, errors.WrapIf(err, "failed to load current role")
 	}
 	return &result.Data, nil

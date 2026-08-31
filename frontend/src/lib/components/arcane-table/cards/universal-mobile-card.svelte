@@ -147,7 +147,7 @@
 					{@const IconComponent = resolvedIcon.component}
 					<div
 						class={cn(
-							'flex shrink-0 items-center justify-center rounded-xl ring-1 backdrop-blur-sm transition-transform duration-200 ring-inset group-hover:scale-105',
+							'flex shrink-0 items-center justify-center rounded-xl ring-1 transition-transform duration-200 ring-inset group-hover:scale-105',
 							compact ? 'size-10' : 'size-11',
 							getIconBgClass(resolvedIcon.variant),
 							'ring-white/5'

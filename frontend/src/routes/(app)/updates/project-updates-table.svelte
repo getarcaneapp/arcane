@@ -98,9 +98,9 @@
 	const columns = [
 		{ accessorKey: 'name', title: m.common_name(), sortable: true, cell: NameCell },
 		{ accessorKey: 'imageSummary', title: m.common_image(), sortable: false, cell: ImageCell },
-		{ accessorKey: 'currentValue', title: m.common_current(), sortable: false, cell: DigestCol },
-		{ accessorKey: 'latestValue', title: m.image_update_latest_digest_label(), sortable: false, cell: DigestCol },
-		{ accessorKey: 'checkedAt', title: m.common_updated(), sortable: false, cell: CheckedAtCol }
+		{ accessorKey: 'currentValue', title: m.common_current(), sortable: false, cellComponent: DigestCell },
+		{ accessorKey: 'latestValue', title: m.image_update_latest_digest_label(), sortable: false, cellComponent: DigestCell },
+		{ accessorKey: 'checkedAt', title: m.common_updated(), sortable: false, cellComponent: CheckedAtCell }
 	] satisfies ColumnSpec<ProjectUpdateRow>[];
 
 	const mobileFields = [
@@ -181,14 +181,6 @@
 			{item.imageSummary}
 		</span>
 	</div>
-{/snippet}
-
-{#snippet DigestCol({ value }: { value: unknown })}
-	<DigestCell {value} />
-{/snippet}
-
-{#snippet CheckedAtCol({ value }: { value: unknown })}
-	<CheckedAtCell {value} />
 {/snippet}
 
 {#snippet RowActions({ item }: { item: ProjectUpdateRow })}

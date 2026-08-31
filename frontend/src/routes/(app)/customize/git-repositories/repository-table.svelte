@@ -147,13 +147,13 @@
 			accessorKey: 'enabled',
 			title: m.common_status(),
 			sortable: true,
-			cell: enabledStatusCol
+			cellComponent: EnabledStatusCell
 		},
 		{
 			accessorKey: 'createdAt',
 			title: m.common_created(),
 			sortable: true,
-			cell: createdAtCol
+			cellComponent: CreatedAtCell
 		}
 	] satisfies ColumnSpec<GitRepository>[];
 
@@ -166,15 +166,6 @@
 		{ id: 'createdAt', label: m.common_created(), defaultVisible: true }
 	];
 </script>
-
-<!-- fallow-ignore-next-line code-duplication -- cell wrapper snippet around the shared EnabledStatusCell; arcane-table cell: API requires a per-table Snippet -->
-{#snippet enabledStatusCol({ value }: { value: unknown })}
-	<EnabledStatusCell {value} />
-{/snippet}
-
-{#snippet createdAtCol({ value }: { value: unknown })}
-	<CreatedAtCell {value} />
-{/snippet}
 
 {#snippet NameCell({ value }: { value: unknown })}
 	<div class="flex items-center gap-2">
@@ -202,7 +193,6 @@
 	item,
 	mobileFieldVisibility
 }: {
-	row: any;
 	item: GitRepository;
 	mobileFieldVisibility: FieldVisibility;
 })}

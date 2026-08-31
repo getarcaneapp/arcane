@@ -78,9 +78,7 @@
 
 {#snippet emptyState()}
 	<div class="p-4">
-		<TableEmpty
-			class={cn('min-h-48 rounded-xl py-12', unstyled ? 'border-transparent bg-transparent' : 'bg-card/30 backdrop-blur-sm')}
-		/>
+		<TableEmpty class={cn('min-h-48 rounded-xl py-12', unstyled ? 'border-transparent bg-transparent' : 'bg-card/30')} />
 	</div>
 {/snippet}
 

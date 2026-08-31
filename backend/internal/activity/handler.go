@@ -56,26 +56,14 @@ type ListActivitiesInput struct {
 	ResourceType  string `query:"resourceType" doc:"Filter by resource type"`
 }
 
-type ListActivitiesOutput struct {
-	Body base.Paginated[activitytypes.Activity]
-}
-
 type GetActivityInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ActivityID    string `path:"activityId" doc:"Activity ID"`
 	Limit         int    `query:"limit" default:"500" doc:"Maximum messages to return"`
 }
 
-type GetActivityOutput struct {
-	Body base.ApiResponse[activitytypes.Detail]
-}
-
 type ClearActivityHistoryInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
-
-type ClearActivityHistoryOutput struct {
-	Body base.ApiResponse[activitytypes.ClearHistoryResult]
 }
 
 type StreamAllActivitiesInput struct {
@@ -93,10 +81,6 @@ type CancelActivityInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ActivityID    string `path:"activityId" doc:"Activity ID"`
 	RequestedBy   string `query:"requestedBy" doc:"Display name to attribute the cancellation to (used when proxying to a remote environment)"`
-}
-
-type CancelActivityOutput struct {
-	Body base.ApiResponse[activitytypes.Activity]
 }
 
 func NewHandler(activityService *ActivityService, environment EnvironmentDependencies) *ActivityHandler {
@@ -149,7 +133,7 @@ func RegisterActivities(api huma.API, h *ActivityHandler) {
 	}, authz.PermActivitiesDelete, h.ClearHistory)
 }
 
-func (h *ActivityHandler) ListActivities(ctx context.Context, input *ListActivitiesInput) (*ListActivitiesOutput, error) {
+func (h *ActivityHandler) ListActivities(ctx context.Context, input *ListActivitiesInput) (*handlerutil.Page[activitytypes.Activity], error) {
 	if input.EnvironmentID != "0" {
 		return h.proxyListActivitiesInternal(ctx, input)
 	}
@@ -171,7 +155,7 @@ func (h *ActivityHandler) ListActivities(ctx context.Context, input *ListActivit
 	}
 	h.applyActivitySourceLabelsInternal(ctx, input.EnvironmentID, activities)
 
-	return &ListActivitiesOutput{
+	return &handlerutil.Page[activitytypes.Activity]{
 		Body: base.Paginated[activitytypes.Activity]{
 			Success:    true,
 			Data:       activities,
@@ -180,7 +164,7 @@ func (h *ActivityHandler) ListActivities(ctx context.Context, input *ListActivit
 	}, nil
 }
 
-func (h *ActivityHandler) GetActivity(ctx context.Context, input *GetActivityInput) (*GetActivityOutput, error) {
+func (h *ActivityHandler) GetActivity(ctx context.Context, input *GetActivityInput) (*handlerutil.Out[activitytypes.Detail], error) {
 	if input.EnvironmentID != "0" {
 		return h.proxyGetActivityInternal(ctx, input)
 	}
@@ -197,7 +181,7 @@ func (h *ActivityHandler) GetActivity(ctx context.Context, input *GetActivityInp
 	}
 	h.applyActivitySourceLabelInternal(ctx, input.EnvironmentID, &detail.Activity)
 
-	return &GetActivityOutput{
+	return &handlerutil.Out[activitytypes.Detail]{
 		Body: base.ApiResponse[activitytypes.Detail]{
 			Success: true,
 			Data:    *detail,
@@ -205,7 +189,7 @@ func (h *ActivityHandler) GetActivity(ctx context.Context, input *GetActivityInp
 	}, nil
 }
 
-func (h *ActivityHandler) ClearHistory(ctx context.Context, input *ClearActivityHistoryInput) (*ClearActivityHistoryOutput, error) {
+func (h *ActivityHandler) ClearHistory(ctx context.Context, input *ClearActivityHistoryInput) (*handlerutil.Out[activitytypes.ClearHistoryResult], error) {
 	if input.EnvironmentID != "0" {
 		return h.proxyClearHistoryInternal(ctx, input)
 	}
@@ -215,7 +199,7 @@ func (h *ActivityHandler) ClearHistory(ctx context.Context, input *ClearActivity
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 
-	return &ClearActivityHistoryOutput{
+	return &handlerutil.Out[activitytypes.ClearHistoryResult]{
 		Body: base.ApiResponse[activitytypes.ClearHistoryResult]{
 			Success: true,
 			Data:    activitytypes.ClearHistoryResult{Deleted: deleted},
@@ -223,7 +207,7 @@ func (h *ActivityHandler) ClearHistory(ctx context.Context, input *ClearActivity
 	}, nil
 }
 
-func (h *ActivityHandler) CancelActivity(ctx context.Context, input *CancelActivityInput) (*CancelActivityOutput, error) {
+func (h *ActivityHandler) CancelActivity(ctx context.Context, input *CancelActivityInput) (*handlerutil.Out[activitytypes.Activity], error) {
 	if input.EnvironmentID != "0" {
 		return h.proxyCancelActivityInternal(ctx, input)
 	}
@@ -245,7 +229,7 @@ func (h *ActivityHandler) CancelActivity(ctx context.Context, input *CancelActiv
 	}
 	h.applyActivitySourceLabelInternal(ctx, input.EnvironmentID, cancelled)
 
-	return &CancelActivityOutput{
+	return &handlerutil.Out[activitytypes.Activity]{
 		Body: base.ApiResponse[activitytypes.Activity]{
 			Success: true,
 			Data:    *cancelled,
@@ -253,17 +237,17 @@ func (h *ActivityHandler) CancelActivity(ctx context.Context, input *CancelActiv
 	}, nil
 }
 
-func (h *ActivityHandler) proxyCancelActivityInternal(ctx context.Context, input *CancelActivityInput) (*CancelActivityOutput, error) {
+func (h *ActivityHandler) proxyCancelActivityInternal(ctx context.Context, input *CancelActivityInput) (*handlerutil.Out[activitytypes.Activity], error) {
 	path := fmt.Sprintf("/api/environments/0/activities/%s/cancel", url.PathEscape(input.ActivityID))
 	if requestedBy := h.cancelRequestedByInternal(ctx, input.RequestedBy); requestedBy != "" {
 		path += "?requestedBy=" + url.QueryEscape(requestedBy)
 	}
-	out, err := handlerutil.ProxyRemoteJSON[base.ApiResponse[activitytypes.Activity]](ctx, h.environment.ProxyJSONRequest, input.EnvironmentID, http.MethodPost, path, nil)
+	out, err := h.environment.ProxyJSONRequest.JSON[base.ApiResponse[activitytypes.Activity]](ctx, input.EnvironmentID, http.MethodPost, path, nil)
 	if err != nil {
 		return nil, err
 	}
 	h.applyActivitySourceLabelInternal(ctx, input.EnvironmentID, &out.Data)
-	return &CancelActivityOutput{Body: *out}, nil
+	return &handlerutil.Out[activitytypes.Activity]{Body: *out}, nil
 }
 
 // cancelRequestedByInternal resolves a human-readable name for the cancellation
@@ -480,42 +464,42 @@ func (h *ActivityHandler) runRemoteActivityStreamPollerInternal(ctx context.Cont
 	}
 }
 
-func (h *ActivityHandler) proxyListActivitiesInternal(ctx context.Context, input *ListActivitiesInput) (*ListActivitiesOutput, error) {
+func (h *ActivityHandler) proxyListActivitiesInternal(ctx context.Context, input *ListActivitiesInput) (*handlerutil.Page[activitytypes.Activity], error) {
 	path := "/api/environments/0/activities?" + activityListQueryInternal(input).Encode()
-	out, err := handlerutil.ProxyRemoteJSON[base.Paginated[activitytypes.Activity]](ctx, h.environment.ProxyJSONRequest, input.EnvironmentID, http.MethodGet, path, nil)
+	out, err := h.environment.ProxyJSONRequest.JSON[base.Paginated[activitytypes.Activity]](ctx, input.EnvironmentID, http.MethodGet, path, nil)
 	if err != nil {
 		return nil, err
 	}
 	h.applyActivitySourceLabelsInternal(ctx, input.EnvironmentID, out.Data)
-	return &ListActivitiesOutput{Body: *out}, nil
+	return &handlerutil.Page[activitytypes.Activity]{Body: *out}, nil
 }
 
-func (h *ActivityHandler) proxyListActivitiesForEnvironmentInternal(ctx context.Context, environment environment.Environment, input *ListActivitiesInput) (*ListActivitiesOutput, error) {
+func (h *ActivityHandler) proxyListActivitiesForEnvironmentInternal(ctx context.Context, environment environment.Environment, input *ListActivitiesInput) (*handlerutil.Page[activitytypes.Activity], error) {
 	path := "/api/environments/0/activities?" + activityListQueryInternal(input).Encode()
 	var out base.Paginated[activitytypes.Activity]
 	if err := h.environment.ProxyJSONRequestForEnvironment(ctx, environment, http.MethodGet, path, nil, &out); err != nil {
 		return nil, handlerutil.TranslateRemoteProxyError(err)
 	}
 	applyActivitySourceLabelsForEnvironmentInternal(environment, out.Data)
-	return &ListActivitiesOutput{Body: out}, nil
+	return &handlerutil.Page[activitytypes.Activity]{Body: out}, nil
 }
 
-func (h *ActivityHandler) proxyGetActivityInternal(ctx context.Context, input *GetActivityInput) (*GetActivityOutput, error) {
+func (h *ActivityHandler) proxyGetActivityInternal(ctx context.Context, input *GetActivityInput) (*handlerutil.Out[activitytypes.Detail], error) {
 	path := fmt.Sprintf("/api/environments/0/activities/%s?limit=%d", url.PathEscape(input.ActivityID), input.Limit)
-	out, err := handlerutil.ProxyRemoteJSON[base.ApiResponse[activitytypes.Detail]](ctx, h.environment.ProxyJSONRequest, input.EnvironmentID, http.MethodGet, path, nil)
+	out, err := h.environment.ProxyJSONRequest.JSON[base.ApiResponse[activitytypes.Detail]](ctx, input.EnvironmentID, http.MethodGet, path, nil)
 	if err != nil {
 		return nil, err
 	}
 	h.applyActivitySourceLabelInternal(ctx, input.EnvironmentID, &out.Data.Activity)
-	return &GetActivityOutput{Body: *out}, nil
+	return &handlerutil.Out[activitytypes.Detail]{Body: *out}, nil
 }
 
-func (h *ActivityHandler) proxyClearHistoryInternal(ctx context.Context, input *ClearActivityHistoryInput) (*ClearActivityHistoryOutput, error) {
-	out, err := handlerutil.ProxyRemoteJSON[base.ApiResponse[activitytypes.ClearHistoryResult]](ctx, h.environment.ProxyJSONRequest, input.EnvironmentID, http.MethodDelete, "/api/environments/0/activities/history", nil)
+func (h *ActivityHandler) proxyClearHistoryInternal(ctx context.Context, input *ClearActivityHistoryInput) (*handlerutil.Out[activitytypes.ClearHistoryResult], error) {
+	out, err := h.environment.ProxyJSONRequest.JSON[base.ApiResponse[activitytypes.ClearHistoryResult]](ctx, input.EnvironmentID, http.MethodDelete, "/api/environments/0/activities/history", nil)
 	if err != nil {
 		return nil, err
 	}
-	return &ClearActivityHistoryOutput{Body: *out}, nil
+	return &handlerutil.Out[activitytypes.ClearHistoryResult]{Body: *out}, nil
 }
 
 func (h *ActivityHandler) applyActivitySourceLabelsInternal(ctx context.Context, environmentID string, activities []activitytypes.Activity) {

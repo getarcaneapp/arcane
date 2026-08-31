@@ -1,29 +1,29 @@
 import type { ActionButton } from '#lib/layouts';
 
 type CreateRefreshActionOptions = {
-	canCreate: boolean;
-	createLabel: string;
-	onCreate: () => void;
+	create?: {
+		allowed: boolean;
+		label: string;
+		onclick: () => void;
+	};
 	refreshLabel: string;
 	onRefresh: () => void | Promise<void>;
 	refreshing: boolean;
 };
 
 export function createRefreshActionButtons({
-	canCreate,
-	createLabel,
-	onCreate,
+	create,
 	refreshLabel,
 	onRefresh,
 	refreshing
 }: CreateRefreshActionOptions): ActionButton[] {
 	const buttons: ActionButton[] = [];
-	if (canCreate) {
+	if (create?.allowed) {
 		buttons.push({
 			id: 'create',
 			action: 'create',
-			label: createLabel,
-			onclick: onCreate
+			label: create.label,
+			onclick: create.onclick
 		});
 	}
 	buttons.push({

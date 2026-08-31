@@ -30,7 +30,7 @@ func TestGetAutoLoginConfig_Enabled(t *testing.T) {
 	require.NoError(t, settingsSvc.EnsureDefaultSettings(ctx))
 	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "authLocalEnabled", true))
 
-	s := newTestAuthService("")
+	s := newTestAuthService()
 	s.config = &config.Config{
 		BuildablesConfig: config.BuildablesConfig{
 			AutoLoginUsername: "autologinuser",
@@ -56,7 +56,7 @@ func TestGetAutoLoginConfig_DisabledWhenLocalAuthDisabled(t *testing.T) {
 	require.NoError(t, settingsSvc.EnsureDefaultSettings(ctx))
 	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "authLocalEnabled", false))
 
-	s := newTestAuthService("")
+	s := newTestAuthService()
 	s.config = &config.Config{
 		BuildablesConfig: config.BuildablesConfig{
 			AutoLoginUsername: "autologinuser",
@@ -74,7 +74,7 @@ func TestGetAutoLoginConfig_DisabledWhenLocalAuthDisabled(t *testing.T) {
 
 func TestGetAutoLoginPassword(t *testing.T) {
 	enableAutoLoginFeature(t)
-	s := newTestAuthService("")
+	s := newTestAuthService()
 	s.config = &config.Config{
 		BuildablesConfig: config.BuildablesConfig{
 			AutoLoginPassword: "my-secret-password",
@@ -87,7 +87,7 @@ func TestGetAutoLoginPassword(t *testing.T) {
 
 func TestGetAutoLoginPassword_EmptyWhenNotConfigured(t *testing.T) {
 	enableAutoLoginFeature(t)
-	s := newTestAuthService("")
+	s := newTestAuthService()
 	s.config = &config.Config{
 		BuildablesConfig: config.BuildablesConfig{
 			AutoLoginPassword: "",

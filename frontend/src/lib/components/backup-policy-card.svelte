@@ -15,11 +15,13 @@
 
 	let {
 		policy,
+		resourceType,
 		showStopContainers = false,
 		onEdit,
 		editDisabled = false
 	}: {
 		policy: CardPolicy;
+		resourceType?: 'system' | 'volume';
 		showStopContainers?: boolean;
 		onEdit?: () => void;
 		editDisabled?: boolean;
@@ -28,10 +30,18 @@
 	const s3Name = $derived(policy.s3DestinationName || policy.s3Bucket || policy.s3DestinationId || '');
 </script>
 
-<div class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-1.5 gap-y-0.5 rounded-md border px-2 py-1">
+<div
+	class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-1.5 gap-y-0.5 rounded-md border px-2 py-1"
+	data-testid={resourceType ? `backup-policy-${resourceType}-${policy.id}` : undefined}
+>
 	<Badge variant={policy.enabled ? 'green' : 'gray'}>{policy.enabled ? m.common_enabled() : m.common_disabled()}</Badge>
 	<code class="truncate">{policy.schedule}</code>
 	<div class="flex items-center gap-1.5 justify-self-end">
+		{#if resourceType}
+			<Badge variant="purple">
+				{resourceType === 'system' ? m.system() : m.resource_volume_cap()}
+			</Badge>
+		{/if}
 		<Badge variant="blue">{backupDestinationLabel(backupDestinationFromFlags(policy.localEnabled, policy.s3Enabled))}</Badge>
 		{#if onEdit}
 			<ArcaneButton

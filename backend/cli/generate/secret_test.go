@@ -56,31 +56,24 @@ func TestSecretDefaultBase64(t *testing.T) {
 	require.Contains(t, out, "BASE64",
 		"expected BASE64 header in output, got: %q", out)
 
-	// find ENCRYPTION_KEY= and JWT_SECRET= lines and ensure they are valid base64
-	var encVal, jwtVal string
+	// find the ENCRYPTION_KEY= line and ensure it is valid base64
+	var encVal string
 	for line := range strings.SplitSeq(out, "\n") {
 		if after, ok := strings.CutPrefix(line, "ENCRYPTION_KEY="); ok {
 			encVal = after
 		}
-		if after, ok := strings.CutPrefix(line, "JWT_SECRET="); ok {
-			jwtVal = after
-		}
 	}
 
-	require.False(t, encVal == "" || jwtVal == "",
-		"missing keys in output: enc=%q jwt=%q out=%q", encVal, jwtVal, out)
+	require.NotEmpty(t, encVal,
+		"missing ENCRYPTION_KEY in output: %q", out)
+	require.NotContains(t, out, "JWT_SECRET",
+		"JWT_SECRET is no longer emitted, got: %q", out)
 
 	if b, err := base64.StdEncoding.DecodeString(encVal); err != nil {
 		require.FailNowf(t, "unexpected failure", "ENCRYPTION_KEY is not valid base64: %v (value=%q)", err, encVal)
 	} else if len(b) != 32 {
 		require.Len(t, b, 32,
 			"ENCRYPTION_KEY decoded length != 32 bytes: %d", len(b))
-	}
-	if b, err := base64.StdEncoding.DecodeString(jwtVal); err != nil {
-		require.FailNowf(t, "unexpected failure", "JWT_SECRET is not valid base64: %v (value=%q)", err, jwtVal)
-	} else if len(b) != 32 {
-		require.Len(t, b, 32,
-			"JWT_SECRET decoded length != 32 bytes: %d", len(b))
 	}
 }
 
@@ -112,8 +105,8 @@ func TestSecretAllFormatContainsSections(t *testing.T) {
 
 	}
 
-	// verify hex values decode to 32 bytes
-	var hexEnc, hexJwt string
+	// verify the hex value decodes to 32 bytes
+	var hexEnc string
 	for line := range strings.SplitSeq(out, "\n") {
 		if after, ok := strings.CutPrefix(line, "ENCRYPTION_KEY="); ok {
 			v := after
@@ -123,28 +116,17 @@ func TestSecretAllFormatContainsSections(t *testing.T) {
 				continue
 			}
 		}
-		if after, ok := strings.CutPrefix(line, "JWT_SECRET="); ok {
-			v := after
-			if len(v) >= 64 {
-				hexJwt = v
-				continue
-			}
-		}
 	}
 
-	require.False(t, hexEnc == "" || hexJwt == "",
-		"hex values not found in output (enc=%q jwt=%q) output:\n%s", hexEnc, hexJwt, out)
+	require.NotEmpty(t, hexEnc,
+		"hex value not found in output:\n%s", out)
+	require.NotContains(t, out, "JWT_SECRET",
+		"JWT_SECRET is no longer emitted, got: %q", out)
 
 	if b, err := hex.DecodeString(strings.TrimSpace(hexEnc)); err != nil {
 		require.FailNowf(t, "unexpected failure", "ENCRYPTION_KEY hex decode failed: %v", err)
 	} else if len(b) != 32 {
 		require.Len(t, b, 32,
 			"ENCRYPTION_KEY hex decoded length != 32: %d", len(b))
-	}
-	if b, err := hex.DecodeString(strings.TrimSpace(hexJwt)); err != nil {
-		require.FailNowf(t, "unexpected failure", "JWT_SECRET hex decode failed: %v", err)
-	} else if len(b) != 32 {
-		require.Len(t, b, 32,
-			"JWT_SECRET hex decoded length != 32: %d", len(b))
 	}
 }
