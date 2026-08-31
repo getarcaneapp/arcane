@@ -1,186 +1,168 @@
-import { test as setup, expect } from '@playwright/test';
+import { expect, test as setup, type Page } from '../fixtures/test.fixture';
+import { readApiData } from '../utils/fetch.util';
 
-/**
- * GitOps Test Setup
- *
- * This setup:
- * 1. Registers a Git repository in Arcane (GitHub)
- * 2. Configures Arcane to sync from this repository
- */
 const GITOPS_REPO_NAME = 'gitsyncs-test-repo';
 const GITOPS_REPO_URL = 'https://github.com/getarcaneapp/gitsyncs.git';
 const GITOPS_REPO_BRANCH = 'main';
 const GITOPS_COMPOSE_PATH = 'compose-test-repo/compose.yaml';
 const GITOPS_SYNC_NAME = 'gitops-test-sync';
+const GITOPS_PROJECT_NAME = 'gitops-test-project';
 
-setup('create gitops sync in arcane', async ({ page }) => {
-	console.log('Creating GitOps sync configuration in Arcane...');
+type GitRepository = {
+	id: string;
+	name: string;
+	url: string;
+	authType: string;
+	enabled: boolean;
+};
 
-	// Step 1: Create a Git Repository in Arcane pointing to GitHub
-	await page.goto('/customize/git-repositories');
-	await page.waitForLoadState('load');
+type GitOpsSync = {
+	id: string;
+	name: string;
+	projectId?: string;
+	projectName: string;
+	lastSyncStatus?: string;
+	lastSyncError?: string;
+	lastSyncCommit?: string;
+};
 
-	// Check if test repo already exists
-	const existingRepo = page.getByRole('cell', { name: GITOPS_REPO_NAME });
-	if ((await existingRepo.count()) === 0) {
-		console.log('Creating Git repository in Arcane...');
+type GitOpsProject = {
+	id: string;
+	name: string;
+	gitOpsManagedBy?: string;
+	lastSyncCommit?: string;
+};
 
-		// Click Add Repository button
-		const addRepoButton = page.getByRole('button', { name: /Add.*Repository/i });
-		await addRepoButton.click();
+async function listRepositories(page: Page): Promise<GitRepository[]> {
+	const response = await page.request.get(
+		`/api/customize/git-repositories?search=${encodeURIComponent(GITOPS_REPO_NAME)}&start=0&limit=100`
+	);
+	return readApiData<GitRepository[]>(response, 'List Git repositories');
+}
 
-		// Wait for dialog
-		const dialog = page.getByRole('dialog');
-		await expect(dialog).toBeVisible();
+async function ensureRepository(page: Page): Promise<GitRepository> {
+	const existing = (await listRepositories(page)).find(
+		(repository) => repository.name === GITOPS_REPO_NAME
+	);
+	const body = {
+		name: GITOPS_REPO_NAME,
+		url: GITOPS_REPO_URL,
+		authType: 'none',
+		enabled: true
+	};
 
-		// Fill repository form - use specific labels to avoid ambiguity
-		await dialog.getByRole('textbox', { name: /Repository Name/i }).fill(GITOPS_REPO_NAME);
-		await dialog.getByRole('textbox', { name: /Repository URL/i }).fill(GITOPS_REPO_URL);
+	const repository = existing
+		? await readApiData<GitRepository>(
+				await page.request.put(`/api/customize/git-repositories/${existing.id}`, { data: body }),
+				'Update GitOps test repository'
+			)
+		: await readApiData<GitRepository>(
+				await page.request.post('/api/customize/git-repositories', { data: body }),
+				'Create GitOps test repository'
+			);
 
-		// Select "None" for auth type (public repo) - click the auth type dropdown
-		const authTrigger = dialog.locator('#authType');
-		if ((await authTrigger.count()) > 0) {
-			await authTrigger.click();
-			await page.waitForTimeout(300);
-			const noneOption = page.getByRole('option', { name: /None|No Auth/i });
-			if ((await noneOption.count()) > 0) {
-				await noneOption.click();
-			} else {
-				await page.keyboard.press('Escape');
+	await readApiData<{ message: string }>(
+		await page.request.post(
+			`/api/customize/git-repositories/${repository.id}/test?branch=${encodeURIComponent(GITOPS_REPO_BRANCH)}`
+		),
+		'Test GitOps repository connection'
+	);
+
+	return repository;
+}
+
+async function listSyncs(page: Page): Promise<GitOpsSync[]> {
+	const response = await page.request.get(
+		`/api/environments/0/gitops-syncs?search=${encodeURIComponent(GITOPS_SYNC_NAME)}&start=0&limit=100`
+	);
+	return readApiData<GitOpsSync[]>(response, 'List GitOps syncs');
+}
+
+async function ensureSync(page: Page, repositoryId: string): Promise<GitOpsSync> {
+	const existing = (await listSyncs(page)).find((sync) => sync.name === GITOPS_SYNC_NAME);
+	const body = {
+		name: GITOPS_SYNC_NAME,
+		repositoryId,
+		branch: GITOPS_REPO_BRANCH,
+		composePath: GITOPS_COMPOSE_PATH,
+		targetType: 'project',
+		projectName: GITOPS_PROJECT_NAME,
+		autoSync: false,
+		syncDirectory: false,
+		pullImageAfterSync: false,
+		redeployAfterSync: false
+	};
+
+	return existing
+		? readApiData<GitOpsSync>(
+				await page.request.put(`/api/environments/0/gitops-syncs/${existing.id}`, {
+					data: body
+				}),
+				'Update GitOps test sync'
+			)
+		: readApiData<GitOpsSync>(
+				await page.request.post('/api/environments/0/gitops-syncs', { data: body }),
+				'Create GitOps test sync'
+			);
+}
+
+async function getSync(page: Page, syncId: string): Promise<GitOpsSync> {
+	return readApiData<GitOpsSync>(
+		await page.request.get(`/api/environments/0/gitops-syncs/${syncId}`),
+		'Get GitOps test sync'
+	);
+}
+
+async function getProjects(page: Page): Promise<GitOpsProject[]> {
+	return readApiData<GitOpsProject[]>(
+		await page.request.get('/api/environments/0/projects?start=0&limit=100'),
+		'List projects after GitOps sync'
+	);
+}
+
+setup('create and verify the GitOps project prerequisite', async ({ page }) => {
+	setup.setTimeout(120_000);
+
+	const repository = await ensureRepository(page);
+	let sync = await ensureSync(page, repository.id);
+
+	await readApiData<{ success: boolean; message: string }>(
+		await page.request.post(`/api/environments/0/gitops-syncs/${sync.id}/sync`),
+		'Run GitOps test sync'
+	);
+
+	await expect
+		.poll(
+			async () => {
+				sync = await getSync(page, sync.id);
+				return {
+					status: sync.lastSyncStatus,
+					hasProject: Boolean(sync.projectId),
+					hasCommit: Boolean(sync.lastSyncCommit),
+					error: sync.lastSyncError ?? null
+				};
+			},
+			{
+				message: 'Expected GitOps sync to bind a managed project and commit',
+				timeout: 60_000,
+				intervals: [500, 1_000, 2_000]
 			}
-		}
+		)
+		.toEqual({ status: 'success', hasProject: true, hasCommit: true, error: null });
 
-		// Submit the form
-		const submitButton = dialog.getByRole('button', { name: /Add Repository/i });
-		await submitButton.click();
+	const projects = await getProjects(page);
+	const project = projects.find((candidate) => candidate.id === sync.projectId);
 
-		// Wait for success or error
-		await page.waitForTimeout(2000);
-		const successToast = page.getByText(/created|success/i);
-		if ((await successToast.count()) > 0) {
-			console.log('Git repository created successfully in Arcane');
-		} else {
-			console.log('Repository may already exist or creation had issues, continuing...');
-		}
-	} else {
-		console.log('Git repository already exists in Arcane');
-	}
+	expect(project, 'Expected the GitOps sync project to exist in the projects API').toBeDefined();
+	expect(project!.name).toBe(GITOPS_PROJECT_NAME);
+	expect(project!.gitOpsManagedBy).toBe(sync.id);
 
-	// Step 2: Create GitOps Sync
-	await page.goto('/environments/0/gitops');
-	await page.waitForLoadState('load');
+	const projectDetail = await readApiData<GitOpsProject>(
+		await page.request.get(`/api/environments/0/projects/${project!.id}`),
+		'Get GitOps managed project details'
+	);
+	expect(projectDetail.lastSyncCommit).toBe(sync.lastSyncCommit);
 
-	// Check if sync already exists
-	const existingSync = page.getByRole('cell', { name: GITOPS_SYNC_NAME });
-	if ((await existingSync.count()) === 0) {
-		console.log('Creating GitOps sync...');
-
-		// Click Add Sync button
-		const addSyncButton = page.getByRole('button', { name: /Add.*Sync/i });
-		await addSyncButton.click();
-
-		// Wait for dialog
-		const dialog = page.getByRole('dialog');
-		await expect(dialog).toBeVisible();
-
-		// Wait for dialog content to load
-		await page.waitForTimeout(1000);
-
-		// Fill sync form - Name field (use specific selector)
-		const nameInput = dialog.getByRole('textbox', { name: /Sync Name/i });
-		await nameInput.fill(GITOPS_SYNC_NAME);
-
-		// Select repository from dropdown
-		const repoTrigger = dialog.locator('#repository, [id*="repository"]').first();
-		if ((await repoTrigger.count()) > 0) {
-			await repoTrigger.click();
-			await page.waitForTimeout(300);
-			const repoOption = page.getByRole('option', { name: GITOPS_REPO_NAME });
-			if ((await repoOption.count()) > 0) {
-				await repoOption.click();
-			}
-		}
-
-		// Wait for branches to load
-		await page.waitForTimeout(2000);
-
-		// Select or enter branch
-		const branchTrigger = dialog.locator('#branch, [id*="branch"]').first();
-		if ((await branchTrigger.count()) > 0) {
-			const isSelect = (await branchTrigger.getAttribute('role')) === 'combobox';
-			if (isSelect) {
-				await branchTrigger.click();
-				await page.waitForTimeout(300);
-				const mainOption = page.getByRole('option', { name: new RegExp(GITOPS_REPO_BRANCH, 'i') });
-				if ((await mainOption.count()) > 0) {
-					await mainOption.click();
-				} else {
-					await page.keyboard.press('Escape');
-				}
-			}
-		}
-
-		// Enter compose path
-		const composePathInput = dialog.getByPlaceholder(/docker-compose|compose/i);
-		if ((await composePathInput.count()) > 0) {
-			await composePathInput.fill(GITOPS_COMPOSE_PATH);
-		}
-
-		// Disable auto-sync for tests
-		const autoSyncSwitch = dialog.locator('#autoSyncSwitch');
-		if ((await autoSyncSwitch.count()) > 0) {
-			const isChecked = await autoSyncSwitch.getAttribute('data-state');
-			if (isChecked === 'checked') {
-				await autoSyncSwitch.click();
-			}
-		}
-
-		// Submit the form
-		const submitButton = dialog
-			.getByRole('button', { name: /Add.*Sync|Create/i })
-			.filter({ hasNotText: /Cancel/ });
-		await submitButton.click();
-
-		// Wait for result
-		await page.waitForTimeout(3000);
-		console.log('GitOps sync configuration created');
-	} else {
-		console.log('GitOps sync already exists');
-	}
-
-	// Step 3: Trigger initial sync to create the managed project
-	console.log('Triggering initial sync...');
-	await page.reload();
-	await page.waitForLoadState('load');
-
-	// Find the sync row and trigger sync
-	const syncRow = page.locator('tr').filter({ hasText: GITOPS_SYNC_NAME }).first();
-	if ((await syncRow.count()) > 0) {
-		// Look for sync button or menu
-		const syncButton = syncRow.getByRole('button', { name: /Sync|Sync Now/i });
-		const menuButton = syncRow.getByRole('button', { name: /menu|actions|Open menu/i });
-
-		if ((await syncButton.count()) > 0) {
-			await syncButton.click();
-		} else if ((await menuButton.count()) > 0) {
-			await syncRow.hover();
-			await menuButton.click();
-			await page.waitForTimeout(300);
-			const syncMenuItem = page.getByRole('menuitem', { name: /Sync/i });
-			if ((await syncMenuItem.count()) > 0) {
-				await syncMenuItem.click();
-			}
-		}
-
-		// Wait for sync to complete
-		await page.waitForTimeout(5000);
-		console.log('Initial sync triggered');
-	}
-
-	// Verify project was created
 	await page.goto('/projects');
-	await page.waitForLoadState('load');
-	await page.waitForTimeout(2000);
-
-	console.log('GitOps test setup complete!');
+	await expect(page.getByRole('link', { name: GITOPS_PROJECT_NAME, exact: true })).toBeVisible();
 });

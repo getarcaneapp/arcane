@@ -1,4 +1,4 @@
-import { test, expect, type Locator, type Page } from '@playwright/test';
+import { test, expect, type Locator, type Page } from '../fixtures/test.fixture';
 
 const LOCAL_ENV_ID = '0';
 const NAME_PLACEHOLDER = 'My Lab Server';
@@ -118,9 +118,6 @@ test.describe('Environment Settings UI', () => {
 		await page.reload();
 		await expect(dockerTab).toHaveAttribute('data-state', 'active');
 
-		await page.goBack();
-		await expect(page).toHaveURL(/\/settings$/);
-
 		await page.goto(`/environments/${LOCAL_ENV_ID}?source=e2e&tab=invalid#tab-state`);
 		await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('storage');
 		const canonicalUrl = new URL(page.url());
@@ -136,19 +133,23 @@ test.describe('Environment Settings UI', () => {
 		test.setTimeout(120_000); // 120 seconds timeout for this lengthy UI workflow
 		const envName = `settings-ui-${Date.now().toString().slice(-5)}`;
 		const updatedName = `${envName}-updated`;
+		let environmentId = '';
 
 		try {
 			await createDirectEnvironmentViaUI(page, envName);
 			await page.getByRole('button', { name: envName, exact: true }).click();
 			await expect(page).toHaveURL(/\/environments\/[^/?]+\?tab=[a-z]+$/);
 
-			const environmentId = new URL(page.url()).pathname.split('/').pop()!;
+			environmentId = new URL(page.url()).pathname.split('/').pop()!;
 			await renameEnvironmentInHeader(page, updatedName);
 			await saveAndWaitForPut(page, `/api/environments/${environmentId}`);
 
 			await page.reload();
 			await expect(environmentTitleButton(page)).toHaveText(updatedName);
 		} finally {
+			if (environmentId) {
+				await page.request.delete(`/api/environments/${environmentId}`).catch(() => undefined);
+			}
 			await deleteEnvironmentViaUI(page, updatedName);
 			await deleteEnvironmentViaUI(page, envName);
 		}

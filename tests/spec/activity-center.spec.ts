@@ -1,4 +1,4 @@
-import { test, expect, type Locator, type Page, type Route } from '@playwright/test';
+import { test, expect, type Locator, type Page, type Route } from '../fixtures/test.fixture';
 
 type MockEnvironment = {
 	id: string;

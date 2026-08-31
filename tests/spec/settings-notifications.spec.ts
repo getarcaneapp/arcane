@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from '../fixtures/test.fixture';
 
 test.describe('Notification settings', () => {
 	const openProviderTab = async (page: Page, name: string) => {

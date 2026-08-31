@@ -57,35 +57,35 @@
 
 <svelte:head><title>{pageTitle}</title></svelte:head>
 
-<div class={cn('flex min-h-dvh flex-col', 'bg-transparent')}>
-	{#if !settings && data.user}
-		<Error message={m.error_occurred()} showButton={true} />
-	{:else}
-		<Tooltip.Provider>
-			<QueryClientProvider client={data.queryClient}>
+<QueryClientProvider client={data.queryClient}>
+	<div class={cn('flex min-h-dvh flex-col', 'bg-transparent')}>
+		{#if !settings && data.user}
+			<Error message={m.error_occurred()} showButton={true} />
+		{:else}
+			<Tooltip.Provider>
 				{@render children()}
 				<FirstLoginPasswordDialog open={showPasswordChangeDialog} onSuccess={handlePasswordChangeSuccess} />
 				{#if dev}
 					<SvelteQueryDevtools />
 				{/if}
-			</QueryClientProvider>
-		</Tooltip.Provider>
-	{/if}
-</div>
+			</Tooltip.Provider>
+		{/if}
+	</div>
 
-<ModeWatcher disableTransitions={false} />
-<Toaster
-	position={isMobile.current || isTablet.current ? 'top-center' : 'bottom-right'}
-	toastOptions={{
-		classes: {
-			toast: 'border border-primary/30!',
-			title: 'text-foreground',
-			description: 'text-muted-foreground',
-			actionButton: 'bg-primary text-primary-foreground hover:bg-primary/90',
-			cancelButton: 'bg-muted text-muted-foreground hover:bg-muted/80',
-			closeButton: 'text-muted-foreground hover:text-foreground'
-		}
-	}}
-/>
-<ConfirmDialog />
-<LoadingIndicator active={isNavigating} thickness="h-1.5" />
+	<ModeWatcher disableTransitions={false} />
+	<Toaster
+		position={isMobile.current || isTablet.current ? 'top-center' : 'bottom-right'}
+		toastOptions={{
+			classes: {
+				toast: 'border border-primary/30!',
+				title: 'text-foreground',
+				description: 'text-muted-foreground',
+				actionButton: 'bg-primary text-primary-foreground hover:bg-primary/90',
+				cancelButton: 'bg-muted text-muted-foreground hover:bg-muted/80',
+				closeButton: 'text-muted-foreground hover:text-foreground'
+			}
+		}}
+	/>
+	<ConfirmDialog />
+	<LoadingIndicator active={isNavigating} thickness="h-1.5" />
+</QueryClientProvider>

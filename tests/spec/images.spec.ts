@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from '../fixtures/test.fixture';
 import { fetchImageCountsWithRetry, fetchImagesWithRetry } from '../utils/fetch.util';
 import { ImageUsageCounts } from 'types/image.type';
 import { openRowActionsMenu } from '../utils/table-actions.util';
@@ -147,13 +147,28 @@ test.describe('Images Page', () => {
 	test('should align /images/counts with usage derived from /images list', async ({ page }) => {
 		await navigateToImages(page);
 
-		const allImages = await fetchAllImagesForUsage(page);
-		const derivedInUse = allImages.filter((img) => !!img.inUse).length;
-		const derivedUnused = allImages.length - derivedInUse;
-
-		expect(imageCounts.totalImages).toBe(allImages.length);
-		expect(imageCounts.imagesInuse).toBe(derivedInUse);
-		expect(imageCounts.imagesUnused).toBe(derivedUnused);
+		await expect
+			.poll(
+				async () => {
+					const [allImages, counts] = await Promise.all([
+						fetchAllImagesForUsage(page),
+						fetchImageCountsWithRetry(page)
+					]);
+					const derivedInUse = allImages.filter((image) => !!image.inUse).length;
+					return {
+						totalDifference: counts.totalImages - allImages.length,
+						inUseDifference: counts.imagesInuse - derivedInUse,
+						unusedDifference: counts.imagesUnused - (allImages.length - derivedInUse)
+					};
+				},
+				{
+					message:
+						'Expected image usage counts and the image list to describe the same Docker state',
+					timeout: 30_000,
+					intervals: [500, 1_000, 2_000]
+				}
+			)
+			.toEqual({ totalDifference: 0, inUseDifference: 0, unusedDifference: 0 });
 	});
 
 	test('should display the image table when images exist', async ({ page }) => {

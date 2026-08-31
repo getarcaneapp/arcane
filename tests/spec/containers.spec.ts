@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from '../fixtures/test.fixture';
 import { fetchContainersWithRetry, type Paginated } from '../utils/fetch.util';
 import { ContainerSummary } from 'types/containers.type';
 import { openRowActionsMenu } from '../utils/table-actions.util';
@@ -368,5 +368,23 @@ test.describe('Containers Page network IP addresses', () => {
 
 		await expect(row).toContainText('10.10.0.5');
 		await expect(row).toContainText('172.20.0.10');
+	});
+});
+
+test.describe('Container form', () => {
+	test('capability selectors remain stateless when value is not bound', async ({ page }) => {
+		await page.goto('/containers/new');
+		await page.getByRole('tab', { name: 'Advanced', exact: true }).click();
+
+		const capAdd = page.getByText('Add capabilities', { exact: true }).locator('..');
+		const selector = capAdd.getByRole('combobox');
+		await selector.click();
+		await page.getByRole('option', { name: 'NET_ADMIN', exact: true }).click();
+
+		const badge = capAdd.locator('[data-slot="badge"]').filter({ hasText: 'NET_ADMIN' });
+		await expect(badge).toBeVisible();
+		await badge.getByRole('button').click();
+		await expect(badge).toHaveCount(0);
+		await expect(selector).toContainText('Select an option');
 	});
 });

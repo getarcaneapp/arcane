@@ -220,7 +220,7 @@ export function rowsFromEditConfig(cfg: ContainerEditConfigDto): ContainerFormRo
 		for (const binding of bindings) {
 			rows.ports.push({
 				hostIp: binding.hostIp ?? '',
-				hostPort: binding.hostPort,
+				hostPort: binding.hostPort ?? '',
 				containerPort: portPart ?? '',
 				protocol: protocolPart === 'udp' ? 'udp' : 'tcp'
 			});

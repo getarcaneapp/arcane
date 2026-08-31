@@ -1,21 +1,32 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from '../fixtures/test.fixture';
 import { fetchNetworksCountsWithRetry } from '../utils/fetch.util';
+import authUtil from '../utils/auth.util';
 
 async function navigateToNetworks(page: Page) {
 	await page.goto('/networks');
 	await page.waitForLoadState('load');
+	await expect(page.getByRole('heading', { level: 1, name: 'Networks' })).toBeVisible();
+}
+
+async function ensureAuthenticated(page: Page) {
+	const currentUserResponse = await page.request.get('/api/auth/me');
+	if (!currentUserResponse.ok()) {
+		await authUtil.login(page);
+		await expect(page.getByRole('button', { name: 'Card view', exact: true })).toBeVisible();
+	}
 }
 
 test.beforeEach(async ({ page }) => {
+	await ensureAuthenticated(page);
 	await navigateToNetworks(page);
 });
 
 async function createNetworkViaUI(page: Page, networkName: string) {
-	await navigateToNetworks(page);
 	await page.getByRole('button', { name: 'Create Network' }).first().click();
-	await expect(page.getByRole('dialog')).toBeVisible();
-	await expect(page.getByRole('heading', { name: 'Create New Network' })).toBeVisible();
-	await page.getByLabel('Network Name *').fill(networkName);
+	const dialog = page.getByRole('dialog');
+	await expect(dialog).toBeVisible();
+	await expect(dialog.getByRole('heading', { name: 'Create New Network' })).toBeVisible();
+	await dialog.getByLabel('Network Name *').fill(networkName);
 
 	const createRequest = page.waitForResponse(
 		(response) => {
@@ -26,7 +37,7 @@ async function createNetworkViaUI(page: Page, networkName: string) {
 		{ timeout: 15000 }
 	);
 
-	await page.getByRole('dialog').getByRole('button', { name: 'Create Network' }).click();
+	await dialog.getByRole('button', { name: 'Create Network' }).click();
 	const createResponse = await createRequest;
 	const responseBody = await createResponse.json().catch(() => undefined);
 	if (!createResponse.ok()) {
@@ -35,11 +46,14 @@ async function createNetworkViaUI(page: Page, networkName: string) {
 			`Failed to create network ${networkName}: ${createResponse.status()} ${responseText}`
 		);
 	}
+	await expect(dialog).toBeHidden();
+	await expect(page.getByText(networkName, { exact: true }).first()).toBeVisible();
 
 	return responseBody?.data?.id ?? networkName;
 }
 
 async function createNetworkViaApi(page: Page, networkName: string) {
+	await page.goto('about:blank');
 	const response = await page.request.post('/api/environments/0/networks', {
 		data: {
 			name: networkName,
@@ -77,6 +91,7 @@ async function findNetworkRow(page: Page, networkName: string, maxRetries = 10) 
 }
 
 async function removeNetworkViaApi(page: Page, networkName: string) {
+	await page.goto('about:blank');
 	await page.request
 		.delete(`/api/environments/0/networks/${encodeURIComponent(networkName)}`)
 		.catch(() => undefined);
@@ -115,7 +130,7 @@ test.describe('Networks Page', () => {
 		}
 	});
 
-	test('Open Create Network sheet', async ({ page }) => {
+	test('@cross-browser creates and removes a network through the UI', async ({ page }) => {
 		const networkName = `test-network-${Date.now()}`;
 		try {
 			const networkId = await createNetworkViaUI(page, networkName);
@@ -123,6 +138,21 @@ test.describe('Networks Page', () => {
 				`/api/environments/0/networks/${encodeURIComponent(networkId)}`
 			);
 			expect(response.ok()).toBe(true);
+
+			await page.goto(`/networks/${encodeURIComponent(networkId)}`);
+			await expect(page.getByRole('heading', { name: networkName, level: 1 })).toBeVisible();
+			await page.getByRole('button', { name: 'Remove', exact: true }).click();
+			await page.getByRole('dialog').getByRole('button', { name: 'Remove', exact: true }).click();
+			await expect(page).toHaveURL('/networks');
+			await expect(page.getByRole('heading', { name: 'Networks', level: 1 })).toBeVisible();
+			await expect
+				.poll(async () => {
+					const removed = await page.request.get(
+						`/api/environments/0/networks/${encodeURIComponent(networkId)}`
+					);
+					return removed.status();
+				})
+				.toBe(404);
 		} finally {
 			await removeNetworkViaApi(page, networkName);
 		}

@@ -234,12 +234,15 @@ jobs:
           - name: sqlite
             compose_file: setup/compose.yaml
             port: 3000
+            playwright_projects: --project=chromium --project=mobile-chromium --project=tablet-chromium --project=firefox --project=accessibility
           - name: postgres
             compose_file: setup/compose-postgres.yaml
             port: 3001
+            playwright_projects: --project=chromium
           - name: proxy
             compose_file: setup/compose-proxy.yaml
             port: 3002
+            playwright_projects: --project=chromium
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -280,7 +283,7 @@ jobs:
         run: just deps install tests
 
       - name: Run Playwright E2E tests
-        run: vp -C tests exec playwright test --project=chromium
+        run: vp -C tests exec playwright test ${{ matrix.database.playwright_projects }}
         env:
           COMPOSE_FILE: ${{ matrix.database.compose_file }}
           BASE_URL: http://localhost:${{ matrix.database.port }}

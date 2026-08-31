@@ -1,4 +1,5 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from '../fixtures/test.fixture';
+import authUtil from '../utils/auth.util';
 
 const REFRESH_TOKEN_KEY = 'arcane_refresh_token';
 const TOKEN_EXPIRY_KEY = 'arcane_token_expiry';
@@ -84,7 +85,51 @@ async function mockRefreshSuccess(page: Page, delayMs = 0): Promise<() => number
 	return () => callCount;
 }
 
+test('signed-in OIDC callbacks reach the callback exchange', async ({ page }) => {
+	let callbackPayload: { code: string; state: string } | undefined;
+	await page.route(/\/api\/oidc\/callback$/, async (route) => {
+		callbackPayload = route.request().postDataJSON() as { code: string; state: string };
+		await route.fulfill({
+			status: 400,
+			contentType: 'application/json',
+			body: JSON.stringify({ success: false, message: 'Callback exchange reached' })
+		});
+	});
+
+	await page.goto('/oidc/callback?code=callback-code&state=callback-state');
+
+	await expect
+		.poll(() => callbackPayload)
+		.toEqual({
+			code: 'callback-code',
+			state: 'callback-state'
+		});
+	await expect(page).toHaveURL(/\/oidc\/callback\?/);
+});
+
 test.describe('Token refresh behaviour', () => {
+	test('@cross-browser rejects invalid credentials and accepts the configured admin password', async ({
+		page
+	}) => {
+		await page.context().clearCookies();
+		await page.goto('/login');
+		await page.getByLabel('Username').fill('arcane');
+		await page.getByLabel('Password').fill('not-the-admin-password');
+		await page.getByRole('button', { name: 'Sign in to Arcane', exact: true }).click();
+
+		await expect(
+			page.getByRole('alert').filter({ hasText: 'Invalid username or password' })
+		).toBeVisible();
+
+		await page.getByLabel('Password').fill(authUtil.TEST_PASSWORD);
+		await page.getByRole('button', { name: 'Sign in to Arcane', exact: true }).click();
+		await expect(page).toHaveURL('/dashboard');
+		await expect(page.getByRole('button', { name: 'Card view', exact: true })).toBeVisible();
+		await expect(
+			page.locator('main').getByText('Dashboard', { exact: true }).first()
+		).toBeVisible();
+	});
+
 	test('version mismatch 401 on /auth/me during page load is silently recovered', async ({
 		page
 	}) => {

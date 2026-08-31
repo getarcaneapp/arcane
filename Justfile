@@ -417,9 +417,9 @@ _deps-install-tests:
     vp -C tests install
     # --with-deps shells out to apt-get, so skip it on non-Debian systems
     if command -v apt-get >/dev/null 2>&1; then \
-        vp -C tests exec playwright install --with-deps chromium; \
+        vp -C tests exec playwright install --with-deps chromium firefox; \
     else \
-        vp -C tests exec playwright install chromium; \
+        vp -C tests exec playwright install chromium firefox; \
     fi
 
 # Install backend Go dependencies

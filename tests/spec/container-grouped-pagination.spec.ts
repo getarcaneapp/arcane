@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from '../fixtures/test.fixture';
 
 type MockContainer = {
 	id: string;
@@ -66,6 +66,7 @@ function buildContainersResponse(containers: MockContainer[], start: number, lim
 
 test('grouped containers do not split the same project across pages', async ({ page, context }) => {
 	await page.addInitScript(() => {
+		localStorage.removeItem('selectedEnvironmentId');
 		localStorage.removeItem('arcane-container-table');
 		localStorage.setItem('container-groups-collapsed', JSON.stringify({ immich: false }));
 		localStorage.removeItem('collapsible-cards-expanded');

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../fixtures/test.fixture';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -8,6 +8,57 @@ const IMAGE = process.env.ARCANE_RUNTIME_TEST_IMAGE || 'arcane:playwright-tests'
 const HELPER_IMAGE =
 	process.env.ARCANE_RUNTIME_HELPER_IMAGE || 'public.ecr.aws/docker/library/alpine:3.20';
 const HEALTH_PATH = '/api/health';
+const SOCKET_PROXY_IMAGE = 'wollomatic/socket-proxy:1.13.1';
+const SOCKET_PROXY_ARGUMENTS = [
+	'-listenip=0.0.0.0',
+	'-allowfrom=0.0.0.0/0',
+	'-allowGET=(/v[\\d.]+)?/_ping',
+	'-allowGET=(/v[\\d.]+)?/events(/.*)?',
+	'-allowGET=(/v[\\d.]+)?/version',
+	'-allowGET=(/v[\\d.]+)?/containers(/.*)?',
+	'-allowGET=(/v[\\d.]+)?/exec(/.*)?',
+	'-allowGET=(/v[\\d.]+)?/images(/.*)?',
+	'-allowGET=(/v[\\d.]+)?/info(/.*)?',
+	'-allowGET=(/v[\\d.]+)?/networks(/.*)?',
+	'-allowGET=(/v[\\d.]+)?/volumes(/.*)?',
+	'-allowHEAD=(/v[\\d.]+)?/_ping',
+	'-allowHEAD=(/v[\\d.]+)?/events(/.*)?',
+	'-allowHEAD=(/v[\\d.]+)?/version',
+	'-allowHEAD=(/v[\\d.]+)?/containers(/.*)?',
+	'-allowHEAD=(/v[\\d.]+)?/exec(/.*)?',
+	'-allowHEAD=(/v[\\d.]+)?/images(/.*)?',
+	'-allowHEAD=(/v[\\d.]+)?/info(/.*)?',
+	'-allowHEAD=(/v[\\d.]+)?/networks(/.*)?',
+	'-allowHEAD=(/v[\\d.]+)?/volumes(/.*)?',
+	'-allowPOST=(/v[\\d.]+)?/_ping',
+	'-allowPOST=(/v[\\d.]+)?/events(/.*)?',
+	'-allowPOST=(/v[\\d.]+)?/version',
+	'-allowPOST=(/v[\\d.]+)?/containers(/.*)?',
+	'-allowPOST=(/v[\\d.]+)?/exec(/.*)?',
+	'-allowPOST=(/v[\\d.]+)?/images(/.*)?',
+	'-allowPOST=(/v[\\d.]+)?/info(/.*)?',
+	'-allowPOST=(/v[\\d.]+)?/networks(/.*)?',
+	'-allowPOST=(/v[\\d.]+)?/volumes(/.*)?',
+	'-allowPOST=(/v[\\d.]+)?/commit',
+	'-allowPUT=(/v[\\d.]+)?/_ping',
+	'-allowPUT=(/v[\\d.]+)?/events(/.*)?',
+	'-allowPUT=(/v[\\d.]+)?/version',
+	'-allowPUT=(/v[\\d.]+)?/containers(/.*)?',
+	'-allowPUT=(/v[\\d.]+)?/exec(/.*)?',
+	'-allowPUT=(/v[\\d.]+)?/images(/.*)?',
+	'-allowPUT=(/v[\\d.]+)?/info(/.*)?',
+	'-allowPUT=(/v[\\d.]+)?/networks(/.*)?',
+	'-allowPUT=(/v[\\d.]+)?/volumes(/.*)?',
+	'-allowDELETE=(/v[\\d.]+)?/_ping',
+	'-allowDELETE=(/v[\\d.]+)?/events(/.*)?',
+	'-allowDELETE=(/v[\\d.]+)?/version',
+	'-allowDELETE=(/v[\\d.]+)?/containers(/.*)?',
+	'-allowDELETE=(/v[\\d.]+)?/exec(/.*)?',
+	'-allowDELETE=(/v[\\d.]+)?/images(/.*)?',
+	'-allowDELETE=(/v[\\d.]+)?/info(/.*)?',
+	'-allowDELETE=(/v[\\d.]+)?/networks(/.*)?',
+	'-allowDELETE=(/v[\\d.]+)?/volumes(/.*)?'
+];
 
 function docker(args: string[], options?: { stdio?: 'pipe' | 'inherit' }) {
 	const output = execFileSync('docker', args, {
@@ -81,6 +132,33 @@ function dockerPort(container: string) {
 
 function dockerLogs(container: string) {
 	return docker(['logs', container]);
+}
+
+function dockerProxyRequest(network: string, proxy: string, path: string) {
+	return docker([
+		'run',
+		'--rm',
+		'--network',
+		network,
+		HELPER_IMAGE,
+		'wget',
+		'-qO-',
+		`http://${proxy}:2375${path}`
+	]);
+}
+
+function dockerProxyStatus(network: string, proxy: string, path: string) {
+	const url = `http://${proxy}:2375${path}`;
+	return docker([
+		'run',
+		'--rm',
+		'--network',
+		network,
+		HELPER_IMAGE,
+		'sh',
+		'-lc',
+		`wget -S -O /dev/null ${shellQuote(url)} 2>&1 | sed -n 's/.*HTTP\\/[0-9.]* \\([0-9][0-9][0-9]\\).*/\\1/p' | tail -n 1`
+	]);
 }
 
 function dockerFileStat(volumePath: string, filePath: string) {
@@ -421,31 +499,20 @@ test.describe.serial('Docker runtime identity', () => {
 				proxyName,
 				'--network',
 				networkName,
-				'-e',
-				'EVENTS=1',
-				'-e',
-				'PING=1',
-				'-e',
-				'VERSION=1',
-				'-e',
-				'AUTH=0',
-				'-e',
-				'POST=1',
-				'-e',
-				'CONTAINERS=1',
-				'-e',
-				'IMAGES=1',
-				'-e',
-				'INFO=1',
-				'-e',
-				'NETWORKS=1',
-				'-e',
-				'VOLUMES=1',
+				'--user',
+				'0:0',
 				'-v',
 				'/var/run/docker.sock:/var/run/docker.sock:ro',
-				'tecnativa/docker-socket-proxy:latest'
+				SOCKET_PROXY_IMAGE,
+				...SOCKET_PROXY_ARGUMENTS
 			]);
-			await new Promise((resolve) => setTimeout(resolve, 2_000));
+			await expect
+				.poll(() => dockerProxyRequest(networkName, proxyName, '/version'), {
+					timeout: 30_000,
+					intervals: [500, 1_000, 2_000]
+				})
+				.toContain('ApiVersion');
+			expect(dockerProxyStatus(networkName, proxyName, '/v1.51/swarm')).toBe('403');
 
 			dockerRunContainer([
 				...defaultRunArgs(containerName, dataVolume),

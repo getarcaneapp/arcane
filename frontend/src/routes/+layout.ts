@@ -15,6 +15,10 @@ import { authService } from '#lib/services/auth-service';
 import { tryCatch } from '#lib/utils/api';
 import { QueryClient } from '@tanstack/svelte-query';
 import { queryKeys } from '#lib/query/query-keys';
+import { redirect } from '@sveltejs/kit';
+import { getAuthRedirectPath, userHasPermission } from '#lib/utils/auth';
+import { getEffectiveLandingPage } from '#lib/utils/navigation';
+import type { LayoutLoad } from './$types';
 
 export const ssr = false;
 
@@ -33,7 +37,7 @@ const queryClient = new QueryClient({
 
 let authenticatedUserId: string | null | undefined;
 
-export const load = async () => {
+export const load: LayoutLoad = async ({ url }) => {
 	const versionInformationRequest = versionService.getVersionInformation();
 	const autoLoginConfigRequest = browser
 		? queryClient.fetchQuery({
@@ -87,8 +91,11 @@ export const load = async () => {
 			await environmentStore.initialize([]);
 		}
 
+		const settingsRequest = userHasPermission(user, 'settings:read')
+			? settingsService.getSettings().catch(() => settingsService.getPublicSettings().catch(() => null))
+			: settingsService.getPublicSettings().catch(() => null);
 		const [loadedSettings, loadedSwarmStatus, loadedPermissionsManifest] = await Promise.all([
-			settingsService.getSettings().catch(() => null),
+			settingsRequest,
 			swarmService.getSwarmStatus().catch(() => null),
 			permissionsManifestRequest
 		]);
@@ -149,6 +156,18 @@ export const load = async () => {
 			releasedAt: info.releasedAt
 		};
 	} catch {}
+
+	const redirectPath = getAuthRedirectPath(
+		url.pathname,
+		user,
+		environmentStore.selected?.id || '0',
+		permissionsManifest,
+		permissionsManifestLoadFailed,
+		getEffectiveLandingPage()
+	);
+	if (redirectPath && redirectPath !== url.pathname) {
+		throw redirect(302, redirectPath);
+	}
 
 	return {
 		user,
