@@ -18,6 +18,8 @@
 
 	let dropdownOpen = $state(false);
 
+	const displayLabel = $derived(user.displayName || user.username);
+
 	$effect(() => {
 		if (sidebar.state === 'collapsed' && !sidebar.isHovered && dropdownOpen) {
 			dropdownOpen = false;
@@ -47,32 +49,30 @@
 						class="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
 						{...props}
 					>
-						{#if user && user.displayName}
-							{#key user?.updatedAt}
-								<Avatar.Root class="size-8 rounded-lg">
-									{#if user?.avatarUrl}
-										<Avatar.Image src={`${user.avatarUrl}?t=${user.updatedAt}`} alt={user.displayName} />
-									{:else if $settingsStore.enableGravatar}
-										{#await getGravatarUrl(user?.email)}
-											<!-- Loading gravatar, show fallback -->
-										{:then url}
-											<Avatar.Image src={url} alt={user.displayName} />
-										{:catch}
-											<!-- Gravatar failed, show fallback -->
-										{/await}
-									{/if}
-									<Avatar.Fallback class="rounded-lg bg-primary text-sm font-semibold text-primary-foreground">
-										{user.displayName?.charAt(0).toUpperCase()}
-									</Avatar.Fallback>
-								</Avatar.Root>
-							{/key}
-							{#if !isCollapsed}
-								<div class="grid flex-1 pl-0 text-left text-sm leading-tight">
-									<span class="truncate font-medium">{user.displayName}</span>
-									<span class="truncate text-xs">{user.email}</span>
-								</div>
-								<ArrowsUpDownIcon class="ml-auto size-4 shrink-0 text-muted-foreground" />
-							{/if}
+						{#key user?.updatedAt}
+							<Avatar.Root class="size-8 rounded-lg">
+								{#if user?.avatarUrl}
+									<Avatar.Image src={`${user.avatarUrl}?t=${user.updatedAt}`} alt={displayLabel} />
+								{:else if $settingsStore.enableGravatar}
+									{#await getGravatarUrl(user?.email)}
+										<!-- Loading gravatar, show fallback -->
+									{:then url}
+										<Avatar.Image src={url} alt={displayLabel} />
+									{:catch}
+										<!-- Gravatar failed, show fallback -->
+									{/await}
+								{/if}
+								<Avatar.Fallback class="rounded-lg bg-primary text-sm font-semibold text-primary-foreground">
+									{displayLabel.charAt(0).toUpperCase()}
+								</Avatar.Fallback>
+							</Avatar.Root>
+						{/key}
+						{#if !isCollapsed}
+							<div class="grid flex-1 pl-0 text-left text-sm leading-tight">
+								<span class="truncate font-medium">{displayLabel}</span>
+								<span class="truncate text-xs">{user.email}</span>
+							</div>
+							<ArrowsUpDownIcon class="ml-auto size-4 shrink-0 text-muted-foreground" />
 						{/if}
 					</Sidebar.MenuButton>
 				{/snippet}
@@ -99,23 +99,23 @@
 						{#key user?.updatedAt}
 							<Avatar.Root class="size-8 shrink-0 rounded-lg">
 								{#if user?.avatarUrl}
-									<Avatar.Image src={`${user.avatarUrl}?t=${user.updatedAt}`} alt={user.displayName} />
+									<Avatar.Image src={`${user.avatarUrl}?t=${user.updatedAt}`} alt={displayLabel} />
 								{:else if $settingsStore.enableGravatar}
 									{#await getGravatarUrl(user?.email)}
 										<!-- Loading gravatar, show fallback -->
 									{:then url}
-										<Avatar.Image src={url} alt={user.displayName} />
+										<Avatar.Image src={url} alt={displayLabel} />
 									{:catch}
 										<!-- Gravatar failed, show fallback -->
 									{/await}
 								{/if}
 								<Avatar.Fallback class="rounded-lg bg-primary text-xs font-semibold text-primary-foreground">
-									{user.displayName?.charAt(0).toUpperCase()}
+									{displayLabel.charAt(0).toUpperCase()}
 								</Avatar.Fallback>
 							</Avatar.Root>
 						{/key}
 						<div class="grid min-w-0 flex-1 leading-tight">
-							<span class="truncate text-sm font-medium">{user.displayName}</span>
+							<span class="truncate text-sm font-medium">{displayLabel}</span>
 							<span class="truncate text-xs text-muted-foreground">{user.email}</span>
 						</div>
 					</div>

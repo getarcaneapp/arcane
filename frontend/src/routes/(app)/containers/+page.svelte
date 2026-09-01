@@ -103,6 +103,9 @@
 			}
 		};
 		requestOptions = nextOptions;
+		if (!hasPermission('containers:list', envId)) {
+			return;
+		}
 		return refreshContainers(buildRequestOptions(nextOptions), envId);
 	}
 
@@ -116,17 +119,20 @@
 
 	const containerStatusCounts = $derived(resourcesReady ? (containers.counts ?? countsFallback) : countsFallback);
 
+	const canCreateContainers = $derived(hasPermission('containers:create', envId));
 	const canAutoUpdate = $derived(hasPermission('containers:autoupdate', envId));
 
 	const actionButtons: ActionButton[] = $derived(
 		[
-			{
-				id: 'create',
-				action: 'create',
-				label: m.common_create_button({ resource: m.container() }),
-				onclick: () => goto('/containers/new'),
-				disabled: !resourcesReady
-			},
+			canCreateContainers
+				? {
+						id: 'create',
+						action: 'create',
+						label: m.common_create_button({ resource: m.container() }),
+						onclick: () => goto('/containers/new'),
+						disabled: !resourcesReady
+					}
+				: null,
 			canAutoUpdate
 				? {
 						id: 'check-updates',

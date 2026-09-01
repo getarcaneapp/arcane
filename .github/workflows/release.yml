@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   release:
-    runs-on: depot-ubuntu-24.04-8
+    runs-on: depot-ubuntu-24.04-16
 
     env:
       MANAGER_IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/arcane
@@ -41,30 +41,21 @@ jobs:
       - name: Set up Depot CLI
         uses: depot/setup-action@v1
         with:
-          oidc: true
+          configure-docker: true
 
-      - name: Setup depot buildx driver
-        run: depot configure-docker
-
-      - name: Login to GHCR
+      - name: Login to container registries
         uses: docker/login-action@v4
         with:
-          registry: ghcr.io
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Login to Quay
-        uses: docker/login-action@v4
-        with:
-          registry: quay.io
-          username: ${{ secrets.QUAY_USERNAME }}
-          password: ${{ secrets.QUAY_TOKEN }}
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v4
-        with:
-          username: ${{ secrets.DOCKER_USER }}
-          password: ${{ secrets.DOCKER_PAT }}
+          registry-auth: |
+            - registry: ghcr.io
+              username: ${{ github.repository_owner }}
+              password: ${{ secrets.GITHUB_TOKEN }}
+            - registry: quay.io
+              username: ${{ secrets.QUAY_USERNAME }}
+              password: ${{ secrets.QUAY_TOKEN }}
+            - registry: docker.io
+              username: ${{ secrets.DOCKER_USER }}
+              password: ${{ secrets.DOCKER_PAT }}
 
       - name: Install Frontend Dependencies
         run: just deps install frontend

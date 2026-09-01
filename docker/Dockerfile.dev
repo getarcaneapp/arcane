@@ -1,34 +1,30 @@
 # syntax=docker/dockerfile:1
 
 # Stage 1: Frontend Development with optimized caching
-FROM --platform=$BUILDPLATFORM node:26-trixie-slim AS frontend-dev
+FROM --platform=$BUILDPLATFORM ghcr.io/voidzero-dev/vite-plus:latest AS frontend-dev
 
-RUN npm install -g --force corepack && corepack enable pnpm
-
-ENV PNPM_HOME="/pnpm"
-ENV PATH="$PNPM_HOME:$PATH"
 ENV CI=true
 
 WORKDIR /app
 
-# pnpm fetch needs the workspace manifests for offline installs
-COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
-COPY frontend/package.json ./frontend/package.json
+# Copy dependency manifests first to preserve the install layer cache
+COPY --chown=vp:vp pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+COPY --chown=vp:vp frontend/package.json ./frontend/package.json
 
-# Fetch dependencies with cache mount
-RUN --mount=type=cache,id=arcane-pnpm-v2,target=/pnpm/store,sharing=locked \
-    pnpm fetch && \
-    pnpm install -r --offline --frozen-lockfile
+# Install dependencies with a persistent package store cache
+RUN mkdir -p /home/vp/.local/share/pnpm/store
+RUN --mount=type=cache,id=arcane-pnpm-v3,target=/home/vp/.local/share/pnpm/store,sharing=locked,uid=1000,gid=1000 \
+    vp install --frozen-lockfile --prefer-offline
 
 # Copy frontend source
-COPY frontend ./frontend
+COPY --chown=vp:vp frontend ./frontend
 
 ENV NODE_ENV=development \
     PORT=3000
 
 EXPOSE 3000
 
-CMD ["pnpm", "-C", "frontend", "dev", "--host", "0.0.0.0"]
+CMD ["vp", "-C", "frontend", "run", "dev"]
 
 # Stage 2: Backend Development with optimized caching
 FROM --platform=$BUILDPLATFORM golang:1.27-trixie AS backend-dev

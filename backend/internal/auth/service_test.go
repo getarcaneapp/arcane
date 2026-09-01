@@ -9,6 +9,8 @@ import (
 
 	"context"
 	"crypto/mldsa"
+	"encoding/base64"
+	"encoding/json/v2"
 	"testing"
 	"time"
 
@@ -24,9 +26,9 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mldsajose"
 	"github.com/getarcaneapp/arcane/types/v2/auth"
-	"github.com/golang-jwt/jwt/v5"
+	"github.com/lestrrat-go/jwx/v4/jwa"
+	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/samber/hot"
 	"github.com/stretchr/testify/assert"
 )
@@ -93,31 +95,59 @@ func newTestAuthService() *AuthService {
 	}
 }
 
+func signLegacyTokenInternal(t testing.TB, key *mldsa.PrivateKey, claims map[string]any) string {
+	t.Helper()
+	header, err := json.Marshal(map[string]string{"alg": jwa.MLDSA87().String(), "typ": "JWT"})
+	require.NoError(t, err)
+	payload, err := json.Marshal(claims)
+	require.NoError(t, err)
+	signingInput := base64.RawURLEncoding.EncodeToString(header) + "." + base64.RawURLEncoding.EncodeToString(payload)
+	signature, err := key.Sign(nil, []byte(signingInput), nil)
+	require.NoError(t, err)
+	return signingInput + "." + base64.RawURLEncoding.EncodeToString(signature)
+}
+
+func signJWXTokenInternal(t testing.TB, key *mldsa.PrivateKey, claims map[string]any) string {
+	t.Helper()
+	payload, err := json.Marshal(claims)
+	require.NoError(t, err)
+	token, err := jwt.ParseInsecure(payload)
+	require.NoError(t, err)
+	signed, err := jwt.Sign(token, jwt.WithKey(jwa.MLDSA87(), key))
+	require.NoError(t, err)
+	return string(signed)
+}
+
+func signUnsignedTokenInternal(t testing.TB, claims map[string]any) string {
+	t.Helper()
+	payload, err := json.Marshal(claims)
+	require.NoError(t, err)
+	token, err := jwt.ParseInsecure(payload)
+	require.NoError(t, err)
+	signed, err := jwt.Sign(token, jwt.WithInsecureNoSignature())
+	require.NoError(t, err)
+	return string(signed)
+}
+
 func makeAccessToken(t *testing.T, key *mldsa.PrivateKey, subject string, id string, username string, _ []string, email, displayName string, exp time.Time, sessionIDs ...string) string {
 	t.Helper()
 	sessionID := ""
 	if len(sessionIDs) > 0 {
 		sessionID = sessionIDs[0]
 	}
-	claims := userClaims{
-		ID:          id,
-		Subject:     subject,
-		IssuedAt:    jwt.NewNumericDate(time.Now()),
-		ExpiresAt:   jwt.NewNumericDate(exp),
-		SessionID:   sessionID,
-		UserID:      id,
-		Username:    username,
-		Email:       email,
-		DisplayName: displayName,
-		AppVersion:  config.Version,
+	claims := map[string]any{
+		"jti":          id,
+		"sub":          subject,
+		"iat":          time.Now().Unix(),
+		"exp":          exp.Unix(),
+		"sid":          sessionID,
+		"user_id":      id,
+		"username":     username,
+		"email":        email,
+		"display_name": displayName,
+		"app_version":  config.Version,
 	}
-	tok := jwt.NewWithClaims(mldsajose.SigningMethodMLDSA87, claims)
-	signed, err := tok.SignedString(key)
-
-	require.NoError(t, err,
-		"sign:  %v", err)
-
-	return signed
+	return signLegacyTokenInternal(t, key, claims)
 }
 
 func makeRefreshToken(t *testing.T, key *mldsa.PrivateKey, subject string, id string, exp time.Time, userIDAndSessionID ...string) string {
@@ -130,22 +160,16 @@ func makeRefreshToken(t *testing.T, key *mldsa.PrivateKey, subject string, id st
 	if len(userIDAndSessionID) > 1 {
 		sessionID = userIDAndSessionID[1]
 	}
-	claims := refreshClaims{
-		ID:         id,
-		Subject:    subject,
-		IssuedAt:   jwt.NewNumericDate(time.Now()),
-		ExpiresAt:  jwt.NewNumericDate(exp),
-		UserID:     userID,
-		SessionID:  sessionID,
-		AppVersion: config.Version,
+	claims := map[string]any{
+		"jti":         id,
+		"sub":         subject,
+		"iat":         time.Now().Unix(),
+		"exp":         exp.Unix(),
+		"user_id":     userID,
+		"sid":         sessionID,
+		"app_version": config.Version,
 	}
-	tok := jwt.NewWithClaims(mldsajose.SigningMethodMLDSA87, claims)
-	signed, err := tok.SignedString(key)
-
-	require.NoError(t, err,
-		"sign: %v", err)
-
-	return signed
+	return signLegacyTokenInternal(t, key, claims)
 }
 
 func createTestSession(t *testing.T, db *database.DB, userID string, expiresAt time.Time) (*session.UserSession, string) {
@@ -159,15 +183,9 @@ func createTestSession(t *testing.T, db *database.DB, userID string, expiresAt t
 	return session, refreshJTI
 }
 
-func makeUnsignedToken(t *testing.T, claims jwt.Claims) string {
+func makeUnsignedToken(t *testing.T, claims map[string]any) string {
 	t.Helper()
-	tok := jwt.NewWithClaims(jwt.SigningMethodNone, claims)
-	signed, err := tok.SignedString(jwt.UnsafeAllowNoneSignatureType)
-
-	require.NoError(t, err,
-		"sign none: %v", err)
-
-	return signed
+	return signUnsignedTokenInternal(t, claims)
 }
 
 func TestVerifyToken_ValidClaims(t *testing.T) {
@@ -213,14 +231,14 @@ func TestVerifyToken_ValidClaims(t *testing.T) {
 func TestVerifyToken_RejectsNonMLDSAAlg(t *testing.T) {
 	s := newTestAuthService()
 	exp := time.Now().Add(5 * time.Minute)
-	token := makeUnsignedToken(t, userClaims{
-		ID:         "u1",
-		Subject:    "access",
-		IssuedAt:   jwt.NewNumericDate(time.Now()),
-		ExpiresAt:  jwt.NewNumericDate(exp),
-		UserID:     "u1",
-		Username:   "bob",
-		AppVersion: config.Version,
+	token := makeUnsignedToken(t, map[string]any{
+		"jti":         "u1",
+		"sub":         "access",
+		"iat":         time.Now().Unix(),
+		"exp":         exp.Unix(),
+		"user_id":     "u1",
+		"username":    "bob",
+		"app_version": config.Version,
 	})
 
 	_, _, err := s.VerifyToken(context.Background(), token)
@@ -353,7 +371,7 @@ func TestVerifyToken_VersionMismatch(t *testing.T) {
 
 	oldVersion := config.Version
 	config.Version = "1.0.0"
-	token := makeAccessToken(t, s.signingKey, "access", "u1", "bob", []string{"user"}, "", "", exp)
+	token := makeAccessToken(t, s.signingKey, "access", "u1", "bob", []string{"user"}, "", "", exp, "session-version-mismatch")
 	config.Version = "2.0.0"
 
 	_, _, err := s.VerifyToken(context.Background(), token)
@@ -427,21 +445,17 @@ func TestRefreshToken_VersionMismatchRotates(t *testing.T) {
 	require.NotEmpty(t, tokenPair.AccessToken)
 	require.NotEmpty(t, tokenPair.RefreshToken)
 
-	parsedAccess, err := jwt.ParseWithClaims(tokenPair.AccessToken, &userClaims{}, func(*jwt.Token) (any, error) {
-		return s.signingKey.PublicKey(), nil
-	})
+	parsedAccess, err := jwt.ParseString(tokenPair.AccessToken, jwt.WithKey(jwa.MLDSA87(), s.signingKey.PublicKey()))
 	require.NoError(t, err)
-	accessClaims, ok := parsedAccess.Claims.(*userClaims)
-	require.True(t, ok)
-	require.Equal(t, "2.0.0", accessClaims.AppVersion)
+	accessVersion, err := jwt.Get[string](parsedAccess, claimAppVersion)
+	require.NoError(t, err)
+	require.Equal(t, "2.0.0", accessVersion)
 
-	parsedRefresh, err := jwt.ParseWithClaims(tokenPair.RefreshToken, &refreshClaims{}, func(*jwt.Token) (any, error) {
-		return s.signingKey.PublicKey(), nil
-	})
+	parsedRefresh, err := jwt.ParseString(tokenPair.RefreshToken, jwt.WithKey(jwa.MLDSA87(), s.signingKey.PublicKey()))
 	require.NoError(t, err)
-	rClaims, ok := parsedRefresh.Claims.(*refreshClaims)
-	require.True(t, ok)
-	require.Equal(t, "2.0.0", rClaims.AppVersion)
+	refreshVersion, err := jwt.Get[string](parsedRefresh, claimAppVersion)
+	require.NoError(t, err)
+	require.Equal(t, "2.0.0", refreshVersion)
 }
 
 func TestVerifyToken_RejectsRevokedSession(t *testing.T) {
@@ -654,11 +668,11 @@ func TestChangePassword_KeepsCurrentSessionAlive(t *testing.T) {
 func TestRefreshToken_RejectsNonHMACAlg(t *testing.T) {
 	s := newTestAuthService()
 	exp := time.Now().Add(5 * time.Minute)
-	token := makeUnsignedToken(t, jwt.RegisteredClaims{
-		ID:        "u1",
-		Subject:   "refresh",
-		IssuedAt:  jwt.NewNumericDate(time.Now()),
-		ExpiresAt: jwt.NewNumericDate(exp),
+	token := makeUnsignedToken(t, map[string]any{
+		"jti": "u1",
+		"sub": "refresh",
+		"iat": time.Now().Unix(),
+		"exp": exp.Unix(),
 	})
 
 	_, err := s.RefreshToken(context.Background(), token, auth.SessionMeta{})

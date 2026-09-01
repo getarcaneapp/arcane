@@ -45,6 +45,9 @@ tests/test-results/*
 tests/.report/*
 tests/.auth/
 tests/.bin/
+tests/setup/projects/*
+!tests/setup/projects/test-project-static/
+!tests/setup/projects/test-project-static/**
 backend/test-results/
 cli/test-results/
 types/test-results/

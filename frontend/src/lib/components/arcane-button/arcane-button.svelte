@@ -65,6 +65,8 @@
 		onclick,
 		onClickPromise,
 		class: className,
+		role,
+		'aria-label': ariaLabel,
 		children,
 		...rest
 	}: ArcaneButtonProps = $props();
@@ -86,10 +88,10 @@
 	href={href && !disabled ? href : undefined}
 	disabled={href ? undefined : disabled || loading}
 	aria-disabled={href ? disabled : undefined}
-	role={href && disabled ? 'link' : undefined}
+	role={href && disabled ? 'link' : role}
 	tabindex={href && disabled ? -1 : tabindex}
 	class={cn('relative', arcaneButtonVariants({ tone: tone ?? config.tone, size, hoverEffect }), className)}
-	aria-label={children ? undefined : isIconOnlyButton ? displayLabel : undefined}
+	aria-label={ariaLabel ?? (children ? undefined : isIconOnlyButton ? displayLabel : undefined)}
 	bind:this={ref}
 	onclick={async (e: any) => {
 		onclick?.(e);

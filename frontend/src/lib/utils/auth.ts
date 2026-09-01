@@ -49,7 +49,8 @@ const PROTECTED_PREFIXES = [
 	'/updates'
 ];
 
-const UNAUTHENTICATED_ONLY_PREFIXES = ['/login', '/oidc/login', '/oidc/callback', '/auth/oidc/callback', '/img', '/favicon.ico'];
+const UNAUTHENTICATED_ONLY_PREFIXES = ['/login', '/oidc/login', '/img', '/favicon.ico'];
+const AUTH_CALLBACK_PREFIXES = ['/oidc/callback', '/auth/oidc/callback'];
 
 function isUserGlobalAdmin(user: User): boolean {
 	if (typeof user.isGlobalAdmin === 'boolean') return user.isGlobalAdmin;
@@ -60,6 +61,13 @@ function isUserGlobalAdmin(user: User): boolean {
 
 export function userIsGlobalAdmin(user: User | null | undefined): boolean {
 	return !!user && isUserGlobalAdmin(user);
+}
+
+export function userHasPermission(user: User | null | undefined, permission: string, envId?: string): boolean {
+	if (!user?.permissionsByEnv) return false;
+	const global = user.permissionsByEnv[GLOBAL_SCOPE] ?? [];
+	if (global.includes(SUDO_PERMISSION) || global.includes(permission)) return true;
+	return envId ? (user.permissionsByEnv[envId] ?? []).includes(permission) : false;
 }
 
 function isAdminOnlyRoute(path: string): boolean {
@@ -102,6 +110,10 @@ export function getAuthRedirectPath(
 
 	if (path === '/') {
 		return isSignedIn ? landingPath : '/login';
+	}
+
+	if (matchesAny(path, AUTH_CALLBACK_PREFIXES)) {
+		return null;
 	}
 
 	if (!isSignedIn && matchesAny(path, PROTECTED_PREFIXES)) {

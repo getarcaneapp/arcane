@@ -33,6 +33,8 @@ jobs:
 
       - name: Set up Depot CLI
         uses: depot/setup-action@v1
+        with:
+          configure-docker: true
 
       - name: Setup Just
         uses: extractions/setup-just@v4

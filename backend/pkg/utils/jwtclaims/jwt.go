@@ -1,16 +1,13 @@
 package jwtclaims
 
 import (
-	"encoding/base64"
-	"encoding/json/v2"
 	"fmt"
+	"maps"
 	"strings"
 
-	"emperror.dev/errors"
-
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/samber/mo"
-	"github.com/samber/mo/result"
 )
 
 // GetStringClaim extracts a string claim from a map
@@ -116,26 +113,18 @@ func stringSliceFromInterfacesInternal[T any](items []T) []string {
 	return utils.UniqueNonEmptyStrings(out)
 }
 
-// ParseJWTClaims decodes and unmarshals the payload part of a JWT
+// ParseJWTClaims parses unverified JWT metadata for pre-verification routing.
 func ParseJWTClaims(idToken string) map[string]any {
-	return result.Pipe3(
-		mo.Ok(idToken),
-		result.FlatMap(func(token string) mo.Result[[]string] {
-			parts := strings.Split(token, ".")
-			if len(parts) < 2 {
-				return mo.Err[[]string](errors.New("JWT has no payload"))
-			}
-			return mo.Ok(parts)
-		}),
-		result.FlatMap(func(parts []string) mo.Result[[]byte] {
-			return mo.TupleToResult(base64.RawURLEncoding.DecodeString(parts[1]))
-		}),
-		result.FlatMap(func(payload []byte) mo.Result[map[string]any] {
-			var claims map[string]any
-			err := json.Unmarshal(payload, &claims)
-			return mo.TupleToResult(claims, err)
-		}),
-	).OrElse(nil)
+	token, err := jwt.ParseInsecure([]byte(idToken), jwt.WithStrictStringClaims(true))
+	if err != nil {
+		return nil
+	}
+
+	claims := maps.Collect(token.Claims())
+	if audience, ok := token.Audience(); ok {
+		claims[jwt.AudienceKey] = audience
+	}
+	return claims
 }
 
 // GetByPath extracts a value from a nested map using a dot-separated path

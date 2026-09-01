@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from '../fixtures/test.fixture';
 import { fetchVolumeCountsWithRetry } from '../utils/fetch.util';
 import { VolumeUsageCounts } from 'types/volumes.type';
 import { openRowActionsMenu } from '../utils/table-actions.util';
@@ -261,6 +261,8 @@ test.describe('Volumes Page', () => {
 		try {
 			await createVolumeViaApi(page, sourceName);
 			await page.goto('/volumes');
+			const search = page.getByPlaceholder('Search…');
+			await search.fill(sourceName);
 
 			const row = page
 				.getByRole('row')
@@ -285,6 +287,7 @@ test.describe('Volumes Page', () => {
 			const response = await renameRequest;
 			expect(response.ok(), await response.text()).toBe(true);
 
+			await search.fill(targetName);
 			await expect(page.getByRole('link', { name: targetName, exact: true })).toBeVisible();
 			expect(
 				(

@@ -1,4 +1,5 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from '../fixtures/test.fixture';
+import { openRowActionsMenu } from '../utils/table-actions.util';
 
 // The MinIO sidecar in the compose stack. Arcane reaches it over the compose
 // network, and so must the Rustic helper container it starts for each backup.
@@ -176,6 +177,100 @@ async function createBackupViaApi(
 }
 
 test.describe('S3 Backups', () => {
+	test('creates, tests, edits, and deletes a destination through settings', async ({ page }) => {
+		test.setTimeout(120_000);
+		const suffix = Date.now();
+		const name = `e2e-minio-ui-${suffix}`;
+		const updatedName = `${name}-updated`;
+		let destinationId: string | undefined;
+
+		try {
+			await page.goto('/settings/backups/s3');
+			await page.getByRole('button', { name: 'Add destination', exact: true }).click();
+
+			let dialog = page.getByRole('dialog');
+			await expect(dialog.getByRole('heading', { name: 'Add S3 destination' })).toBeVisible();
+			await dialog.getByLabel('Name', { exact: true }).fill(name);
+			await dialog.getByLabel('Endpoint', { exact: true }).fill(S3_ENDPOINT);
+			await dialog.getByLabel('Bucket', { exact: true }).fill(S3_BUCKET);
+			await dialog.getByLabel('Access key ID', { exact: true }).fill(S3_ACCESS_KEY_ID);
+			await dialog.getByLabel('Secret access key', { exact: true }).fill(S3_SECRET_ACCESS_KEY);
+			await dialog.getByLabel('Path prefix', { exact: true }).fill(`e2e/ui/${suffix}`);
+
+			const sslSwitch = dialog.getByRole('switch', { name: 'Use SSL', exact: true });
+			if (await sslSwitch.isChecked()) await sslSwitch.click();
+
+			await dialog.getByRole('button', { name: 'Test Connection', exact: true }).click();
+			await expect(
+				page.getByText(`Connection to ${name} succeeded`, { exact: true })
+			).toBeVisible();
+			await expect(
+				page.getByText('Connection verified. You can now save this destination.')
+			).toBeVisible();
+			await dialog.getByRole('button', { name: 'Add S3 destination', exact: true }).click();
+
+			await expect(page.getByText(`Created ${name}`, { exact: true })).toBeVisible();
+			let destinationRow = page.getByRole('row').filter({ hasText: name });
+			await expect(destinationRow).toBeVisible();
+
+			const listResponse = await page.request.get('/api/backups/s3?start=0&limit=100');
+			expect(listResponse.status(), await listResponse.text()).toBe(200);
+			const destinations = (await listResponse.json()).data as S3Destination[];
+			destinationId = destinations.find((destination) => destination.name === name)?.id;
+			expect(destinationId).toBeTruthy();
+
+			let menu = await openRowActionsMenu(page, destinationRow);
+			await menu.getByRole('menuitem', { name: 'Test Connection', exact: true }).click();
+			await expect(
+				page.getByText(`Connection to ${name} succeeded`, { exact: true }).last()
+			).toBeVisible();
+
+			menu = await openRowActionsMenu(page, destinationRow);
+			await menu.getByRole('menuitem', { name: 'Edit', exact: true }).click();
+			dialog = page.getByRole('dialog');
+			await expect(dialog.getByRole('heading', { name: 'Edit S3 destination' })).toBeVisible();
+			await dialog.getByLabel('Name', { exact: true }).fill(updatedName);
+			await dialog.getByLabel('Path prefix', { exact: true }).fill(`e2e/ui/${suffix}/updated`);
+			await dialog.getByRole('button', { name: 'Test Connection', exact: true }).click();
+			await expect(
+				page.getByText(`Connection to ${updatedName} succeeded`, { exact: true })
+			).toBeVisible();
+			await dialog.getByRole('button', { name: 'Save Changes', exact: true }).click();
+
+			await expect(page.getByText(`Updated ${updatedName}`, { exact: true })).toBeVisible();
+			destinationRow = page.getByRole('row').filter({ hasText: updatedName });
+			await expect(destinationRow).toBeVisible();
+			await expect
+				.poll(() => countRemoteEnvironments(page), {
+					message: 'Expected temporary remote environments to be removed before S3 deletion',
+					timeout: 90_000,
+					intervals: [1_000, 2_000]
+				})
+				.toBe(0);
+
+			menu = await openRowActionsMenu(page, destinationRow);
+			await menu.getByRole('menuitem', { name: 'Delete', exact: true }).click();
+			const confirmDialog = page.getByRole('dialog', { name: `Delete ${updatedName}` });
+			await expect(
+				confirmDialog.getByRole('heading', { name: `Delete ${updatedName}` })
+			).toBeVisible();
+			const deleteResponsePromise = page.waitForResponse(
+				(response) =>
+					response.request().method() === 'DELETE' &&
+					new URL(response.url()).pathname === `/api/backups/s3/${destinationId}`
+			);
+			await confirmDialog.getByRole('button', { name: 'Delete', exact: true }).click();
+			const deleteResponse = await deleteResponsePromise;
+			expect(deleteResponse.ok(), await deleteResponse.text()).toBe(true);
+
+			await expect(page.getByText(`Deleted ${updatedName}`, { exact: true })).toBeVisible();
+			await expect(destinationRow).toHaveCount(0);
+			destinationId = undefined;
+		} finally {
+			if (destinationId) await deleteDestinationViaApi(page, destinationId);
+		}
+	});
+
 	test('creates a destination and verifies connectivity against MinIO', async ({ page }) => {
 		const destination = await createDestinationViaApi(page);
 		try {

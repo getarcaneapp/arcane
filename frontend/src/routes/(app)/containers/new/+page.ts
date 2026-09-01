@@ -1,11 +1,12 @@
 import type { PageLoad } from './$types';
 import { redirect } from '@sveltejs/kit';
 import { environmentStore } from '#lib/stores/environment.store.svelte';
-import { hasPermission } from '#lib/utils/auth';
+import { userHasPermission } from '#lib/utils/auth';
 
-export const load: PageLoad = async () => {
+export const load: PageLoad = async ({ parent }) => {
+	const { user } = await parent();
 	const envId = await environmentStore.getCurrentEnvironmentId();
-	if (!hasPermission('containers:create', envId)) {
+	if (!userHasPermission(user, 'containers:create', envId)) {
 		redirect(302, '/containers');
 	}
 

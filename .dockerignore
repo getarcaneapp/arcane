@@ -5,6 +5,7 @@
 
 # Build artifacts
 node_modules
+.pnpm-store
 build
 .svelte-kit
 coverage

@@ -1,3 +1,61 @@
+## v2.10.0
+
+### New features
+
+* add selective system restores and harden recovery ([#3708](https://github.com/getarcaneapp/arcane/pull/3708) by @neurekadev)
+* add experimental Convert to Compose for running containers ([#3746](https://github.com/getarcaneapp/arcane/pull/3746) by @kmendell)
+* add copacetic direct image patching ([#3744](https://github.com/getarcaneapp/arcane/pull/3744) by @kmendell)
+* add native apple push notifications for the ios app ([#3783](https://github.com/getarcaneapp/arcane/pull/3783) by @kmendell)
+* honor COMPOSE_FILE and other pre-defined env vars ([#3709](https://github.com/getarcaneapp/arcane/pull/3709) by @kmendell)
+* sessions, OIDC, passkeys, and edge mTLS now signed and verified with ML-DSA-87 ([#3785](https://github.com/getarcaneapp/arcane/pull/3785) by @kmendell)
+* add system-managed volume backup scheduling ([#3737](https://github.com/getarcaneapp/arcane/pull/3737) by @neurekadev)
+
+### Bug fixes
+
+* only patch os level issues with copa([e95c553](https://github.com/getarcaneapp/arcane/commit/e95c55326a59a615993113e0ee809df734a40b0a) by @kmendell)
+* return 200 from environment health check([6b46c36](https://github.com/getarcaneapp/arcane/commit/6b46c36a237328fc0728ac8fd02e8bc79a149986) by @kmendell)
+* serialize explicit empty values in partial-update DTOs with omitzero([2459256](https://github.com/getarcaneapp/arcane/commit/24592561d9154da35d7fecd380e12c50e3c5783a) by @kmendell)
+* write workspace files as the volume's runtime identity instead of root ([#3745](https://github.com/getarcaneapp/arcane/pull/3745) by @kmendell)
+* store raw trivy reports in the database and fix patch-target pagination([53e7e82](https://github.com/getarcaneapp/arcane/commit/53e7e82715bfebd9ed0d1a27dc0b777d0bbd68b0) by @kmendell)
+* honor UI container exclusions in image update discovery ([#3763](https://github.com/getarcaneapp/arcane/pull/3763) by @kmendell)
+* match Docker CLI memory accounting for cgroup v1 containers([4c479f1](https://github.com/getarcaneapp/arcane/commit/4c479f1c5b01ae6932e2de2ad91ca79aa6874edc) by @kmendell)
+* stop checking Arcane-built local images against a registry([8d10b7d](https://github.com/getarcaneapp/arcane/commit/8d10b7db2d34aefa44f0f9a684f3b84b2ae355d7) by @kmendell)
+* purge leftover git clone scratch directories ([#3771](https://github.com/getarcaneapp/arcane/pull/3771) by @kmendell)
+* resolve upgrade target image for blank-target self-upgrades ([#3772](https://github.com/getarcaneapp/arcane/pull/3772) by @kmendell)
+* preserve stderr stream and Docker timestamps in project logs ([#3770](https://github.com/getarcaneapp/arcane/pull/3770) by @kmendell)
+* query image update info directly instead of caching per container listing([509c6e8](https://github.com/getarcaneapp/arcane/commit/509c6e81babef8c3ac0b4bf9c418c1d3115c50a8) by @kmendell)
+* cut S3 backup download amplification ([#3773](https://github.com/getarcaneapp/arcane/pull/3773) by @kmendell)
+* allow Viewer role to browse Swarm resources ([#3779](https://github.com/getarcaneapp/arcane/pull/3779) by @kmendell)
+* accept display name in email notification From Address ([#3776](https://github.com/getarcaneapp/arcane/pull/3776) by @ohOgil)
+* keep dialog width wrapped inside the content([5e7acb6](https://github.com/getarcaneapp/arcane/commit/5e7acb61d3bb6ef4bc60a80266c424f1d40d02c2) by @kmendell)
+* trigger agent self-upgrades asynchronously and pass the manager's resolved target version ([#3786](https://github.com/getarcaneapp/arcane/pull/3786) by @kmendell)
+* forward registry auth when deploying a Swarm stack from Git Sync or a source edit ([#3787](https://github.com/getarcaneapp/arcane/pull/3787) by @elfensky)
+
+### Performance improvements
+
+* fix performance issues when scrolling tables in all views([1243d8e](https://github.com/getarcaneapp/arcane/commit/1243d8e0bafdc110b8443ef710d999e5104ce632) by @kmendell)
+
+### Dependencies
+
+* bump github.com/aquasecurity/trivy from 0.69.3 to 0.72.0 in /backend ([#3748](https://github.com/getarcaneapp/arcane/pull/3748) by @dependabot[bot])
+* bump github.com/sirupsen/logrus from 1.10.0 to 1.10.1 in /backend ([#3753](https://github.com/getarcaneapp/arcane/pull/3753) by @dependabot[bot])
+* bump github.com/quay/claircore from 1.5.52 to 1.5.53 in /backend ([#3747](https://github.com/getarcaneapp/arcane/pull/3747) by @dependabot[bot])
+* bump github.com/samber/hot from 0.13.0 to 0.13.1 in /backend ([#3754](https://github.com/getarcaneapp/arcane/pull/3754) by @dependabot[bot])
+* bump charm.land/bubbles/v2 from 2.2.0 to 2.2.1 in /cli ([#3752](https://github.com/getarcaneapp/arcane/pull/3752) by @dependabot[bot])
+* bump @tanstack/svelte-query from 6.1.39 to 6.1.43 ([#3761](https://github.com/getarcaneapp/arcane/pull/3761) by @dependabot[bot])
+* bump github.com/google/go-containerregistry from 0.21.9 to 0.22.0 in /backend ([#3755](https://github.com/getarcaneapp/arcane/pull/3755) by @dependabot[bot])
+* bump marked from 18.0.10 to 18.0.11 ([#3759](https://github.com/getarcaneapp/arcane/pull/3759) by @dependabot[bot])
+
+### Other
+
+* move frontend files into more maintainable structure([938882a](https://github.com/getarcaneapp/arcane/commit/938882a174322a1bbc6fe50fe926a4c61820797b) by @kmendell)
+* use generics to eliminate rudundant logic ([#3683](https://github.com/getarcaneapp/arcane/pull/3683) by @kmendell)
+* migrate JWT and JWKS handling to jwx v4 ([#3790](https://github.com/getarcaneapp/arcane/pull/3790) by @kmendell)
+
+
+
+**Full Changelog**: https://github.com/getarcaneapp/arcane/compare/v2.9.0...v2.10.0
+
 ## v2.9.0
 
 ### New features

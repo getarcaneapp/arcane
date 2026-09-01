@@ -49,6 +49,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/webhook"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/oidcjwk"
 	"github.com/getarcaneapp/arcane/backend/v2/resources"
 	"go.uber.org/fx"
 )
@@ -363,8 +364,14 @@ func provideApiKeyServiceInternal(module *apikey.Module) *apikey.ApiKeyService {
 	return module.Service()
 }
 
-func provideFederatedCredentialServiceInternal(db *database.DB, auth *auth.AuthService, user *user.UserService, settings *settings.SettingsService, event *event.EventService, httpClient *http.Client, role *role.RoleService) *federated.FederatedCredentialService {
-	return federated.NewFederatedCredentialService(db, auth, user, settings, event, httpClient).WithRoleService(role)
+func provideJWKSetManagerInternal(ctx context.Context, lc fx.Lifecycle) *oidcjwk.KeySetManager {
+	manager := oidcjwk.NewKeySetManager(ctx)
+	lc.Append(fx.Hook{OnStop: manager.Shutdown})
+	return manager
+}
+
+func provideFederatedCredentialServiceInternal(db *database.DB, auth *auth.AuthService, user *user.UserService, settings *settings.SettingsService, event *event.EventService, httpClient *http.Client, role *role.RoleService, keySetManager *oidcjwk.KeySetManager) *federated.FederatedCredentialService {
+	return federated.NewFederatedCredentialService(db, auth, user, settings, event, httpClient, keySetManager).WithRoleService(role)
 }
 
 func provideAuthMiddlewareInternal(authService *auth.AuthService, apiKey *apikey.ApiKeyService, env *environment.EnvironmentService, role *role.RoleService, cfg *config.Config) *auth.AuthMiddleware {

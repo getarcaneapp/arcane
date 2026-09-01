@@ -18,7 +18,7 @@ export interface BaseContainer {
 
 export interface PortBinding {
 	hostIp?: string;
-	hostPort: string;
+	hostPort?: string;
 }
 
 export interface RestartPolicy {

@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from '../fixtures/test.fixture';
 import { createTestApiKeys, deleteTestApiKeys } from '../utils/playwright.util';
 import { openRowActionsMenu } from '../utils/table-actions.util';
 

@@ -50,6 +50,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/webhook"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/oidcjwk"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/fx"
 )
@@ -102,6 +103,7 @@ type graphParams struct {
 	Role              *role.RoleService
 	Variable          *variable.VariableService
 	AuthMiddleware    *auth.AuthMiddleware
+	JWKSetManager     *oidcjwk.KeySetManager
 
 	AutoUpdate             *scheduler.AutoUpdateJob
 	ImageUpdateWatcher     *scheduler.ImageUpdateWatcher

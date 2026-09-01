@@ -14,7 +14,7 @@ services:
       - ${HOST_PROJECT_ROOT:-..}/pnpm-lock.yaml:/app/pnpm-lock.yaml:ro
       - /app/node_modules
       - /app/frontend/node_modules
-      - pnpm-cache:/root/.local/share/pnpm/store
+      - pnpm-cache:/home/vp/.local/share/pnpm/store
     environment:
       - NODE_ENV=development
       - DEV_BACKEND_URL=http://backend:3552
@@ -143,7 +143,7 @@ volumes:
     name: arcane-go-mod-cache
 
   pnpm-cache:
-    name: arcane-pnpm-cache
+    name: arcane-vite-plus-pnpm-cache
 
   arcane-builds:
     name: arcane-builds

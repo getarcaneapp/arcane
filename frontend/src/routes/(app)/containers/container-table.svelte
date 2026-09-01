@@ -194,6 +194,11 @@
 	const resourcesCurrent = $derived(environmentId === currentEnvId);
 	const canUpdateContainers = $derived(hasPermission('containers:autoupdate', currentEnvId));
 	const canEditContainers = $derived(hasPermission('containers:edit', currentEnvId));
+	const canStartContainers = $derived(hasPermission('containers:start', currentEnvId));
+	const canStopContainers = $derived(hasPermission('containers:stop', currentEnvId));
+	const canRestartContainers = $derived(hasPermission('containers:restart', currentEnvId));
+	const canRedeployContainers = $derived(hasPermission('containers:redeploy', currentEnvId));
+	const canDeleteContainers = $derived(hasPermission('containers:delete', currentEnvId));
 	const canKillContainers = $derived(hasPermission('containers:kill', currentEnvId));
 	const canPauseContainers = $derived(hasPermission('containers:pause', currentEnvId));
 	const canConvertToCompose = $derived(
@@ -316,42 +321,58 @@
 	];
 
 	const bulkActions = $derived.by<BulkAction[]>(() => [
-		{
-			id: 'start',
-			label: m.containers_bulk_start({ count: selectedIds?.length ?? 0 }),
-			action: 'start',
-			onClick: handleBulkStart,
-			loading: isBulkLoading.start,
-			disabled: !resourcesCurrent || isAnyLoading,
-			icon: StartIcon
-		},
-		{
-			id: 'stop',
-			label: m.containers_bulk_stop({ count: selectedIds?.length ?? 0 }),
-			action: 'stop',
-			onClick: handleBulkStop,
-			loading: isBulkLoading.stop,
-			disabled: !resourcesCurrent || isAnyLoading,
-			icon: StopIcon
-		},
-		{
-			id: 'restart',
-			label: m.containers_bulk_restart({ count: selectedIds?.length ?? 0 }),
-			action: 'restart',
-			onClick: handleBulkRestart,
-			loading: isBulkLoading.restart,
-			disabled: !resourcesCurrent || isAnyLoading,
-			icon: RefreshIcon
-		},
-		{
-			id: 'remove',
-			label: m.containers_bulk_remove({ count: selectedIds?.length ?? 0 }),
-			action: 'remove',
-			onClick: handleBulkRemove,
-			loading: isBulkLoading.remove,
-			disabled: !resourcesCurrent || isAnyLoading,
-			icon: TrashIcon
-		},
+		...(canStartContainers
+			? [
+					{
+						id: 'start',
+						label: m.containers_bulk_start({ count: selectedIds?.length ?? 0 }),
+						action: 'start' as const,
+						onClick: handleBulkStart,
+						loading: isBulkLoading.start,
+						disabled: !resourcesCurrent || isAnyLoading,
+						icon: StartIcon
+					}
+				]
+			: []),
+		...(canStopContainers
+			? [
+					{
+						id: 'stop',
+						label: m.containers_bulk_stop({ count: selectedIds?.length ?? 0 }),
+						action: 'stop' as const,
+						onClick: handleBulkStop,
+						loading: isBulkLoading.stop,
+						disabled: !resourcesCurrent || isAnyLoading,
+						icon: StopIcon
+					}
+				]
+			: []),
+		...(canRestartContainers
+			? [
+					{
+						id: 'restart',
+						label: m.containers_bulk_restart({ count: selectedIds?.length ?? 0 }),
+						action: 'restart' as const,
+						onClick: handleBulkRestart,
+						loading: isBulkLoading.restart,
+						disabled: !resourcesCurrent || isAnyLoading,
+						icon: RefreshIcon
+					}
+				]
+			: []),
+		...(canDeleteContainers
+			? [
+					{
+						id: 'remove',
+						label: m.containers_bulk_remove({ count: selectedIds?.length ?? 0 }),
+						action: 'remove' as const,
+						onClick: handleBulkRemove,
+						loading: isBulkLoading.remove,
+						disabled: !resourcesCurrent || isAnyLoading,
+						icon: TrashIcon
+					}
+				]
+			: []),
 		...(canConvertToCompose
 			? [
 					{
@@ -456,7 +477,7 @@
 			<Badge variant={getStateBadgeVariant(item.state)} minWidth="20">{getContainerStatusLabel(item.state)}</Badge>
 		{/if}
 		<div class="flex items-center gap-1">
-			{#if !status && item.state !== 'running'}
+			{#if !status && item.state !== 'running' && canStartContainers}
 				<ArcaneButton
 					action="base"
 					tone="outline"
@@ -467,7 +488,7 @@
 					icon={StartIcon}
 					title={m.common_start()}
 				/>
-			{:else if !status && item.state === 'running'}
+			{:else if !status && item.state === 'running' && canStopContainers}
 				<ArcaneButton
 					action="base"
 					tone="outline"
@@ -705,7 +726,7 @@
 						{m.common_unpause()}
 					</DropdownMenu.Item>
 				{/if}
-			{:else if item.state !== 'running'}
+			{:else if item.state !== 'running' && canStartContainers}
 				<DropdownMenu.Item
 					onclick={() => performContainerAction('start', item.id)}
 					disabled={status === 'starting' || isAnyLoading}
@@ -717,22 +738,26 @@
 					{/if}
 					{m.common_start()}
 				</DropdownMenu.Item>
-			{:else}
-				<ContainerActionMenuItem
-					icon={StopIcon}
-					label={m.common_stop()}
-					onclick={() => performContainerAction('stop', item.id)}
-					loading={status === 'stopping'}
-					disabled={status === 'stopping' || isAnyLoading}
-				/>
+			{:else if item.state === 'running'}
+				{#if canStopContainers}
+					<ContainerActionMenuItem
+						icon={StopIcon}
+						label={m.common_stop()}
+						onclick={() => performContainerAction('stop', item.id)}
+						loading={status === 'stopping'}
+						disabled={status === 'stopping' || isAnyLoading}
+					/>
+				{/if}
 
-				<ContainerActionMenuItem
-					icon={RefreshIcon}
-					label={m.common_restart()}
-					onclick={() => performContainerAction('restart', item.id)}
-					loading={status === 'restarting'}
-					disabled={status === 'restarting' || isAnyLoading}
-				/>
+				{#if canRestartContainers}
+					<ContainerActionMenuItem
+						icon={RefreshIcon}
+						label={m.common_restart()}
+						onclick={() => performContainerAction('restart', item.id)}
+						loading={status === 'restarting'}
+						disabled={status === 'restarting' || isAnyLoading}
+					/>
+				{/if}
 
 				{#if canPauseContainers}
 					<DropdownMenu.Item
@@ -756,32 +781,36 @@
 				</DropdownMenu.Item>
 			{/if}
 
-			{#if item.redeployDisabled}
-				<DropdownMenu.Item disabled title={m.common_redeploy_disabled_arcane_self()}>
-					<RedeployIcon class="size-4 opacity-50" />
-					{m.common_redeploy()}
-				</DropdownMenu.Item>
-			{:else}
-				<DropdownMenu.Item onclick={() => handleRedeployContainer(item)} disabled={status === 'redeploying' || isAnyLoading}>
-					{#if status === 'redeploying'}
-						<Spinner class="size-4" />
-					{:else}
-						<RedeployIcon class="size-4" />
-					{/if}
-					{m.common_redeploy()}
-				</DropdownMenu.Item>
+			{#if canRedeployContainers}
+				{#if item.redeployDisabled}
+					<DropdownMenu.Item disabled title={m.common_redeploy_disabled_arcane_self()}>
+						<RedeployIcon class="size-4 opacity-50" />
+						{m.common_redeploy()}
+					</DropdownMenu.Item>
+				{:else}
+					<DropdownMenu.Item onclick={() => handleRedeployContainer(item)} disabled={status === 'redeploying' || isAnyLoading}>
+						{#if status === 'redeploying'}
+							<Spinner class="size-4" />
+						{:else}
+							<RedeployIcon class="size-4" />
+						{/if}
+						{m.common_redeploy()}
+					</DropdownMenu.Item>
+				{/if}
 			{/if}
 
 			<DropdownMenu.Separator />
 
-			<ContainerActionMenuItem
-				icon={TrashIcon}
-				label={m.common_remove()}
-				onclick={() => handleRemoveContainer(item.id, getContainerDisplayName(item))}
-				loading={status === 'removing'}
-				disabled={status === 'removing' || isAnyLoading}
-				destructive
-			/>
+			{#if canDeleteContainers}
+				<ContainerActionMenuItem
+					icon={TrashIcon}
+					label={m.common_remove()}
+					onclick={() => handleRemoveContainer(item.id, getContainerDisplayName(item))}
+					loading={status === 'removing'}
+					disabled={status === 'removing' || isAnyLoading}
+					destructive
+				/>
+			{/if}
 		</RowActionsMenu>
 	{/if}
 {/snippet}

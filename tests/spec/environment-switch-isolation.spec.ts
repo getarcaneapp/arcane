@@ -1,4 +1,4 @@
-import { expect, test, type Page, type Route } from '@playwright/test';
+import { expect, test, type Page, type Route } from '../fixtures/test.fixture';
 
 const localEnvironment = {
 	id: '0',
@@ -189,7 +189,11 @@ test.describe('Environment switch isolation', () => {
 		await expect(page.getByRole('link', { name: 'local-a-container', exact: true })).toHaveCount(0);
 	});
 
-	test('does not restore local rows when the remote request fails', async ({ page }) => {
+	test('does not restore local rows when the remote request fails', async ({
+		page,
+		pageErrorGuard
+	}) => {
+		pageErrorGuard.allow('remote unavailable');
 		await mockEnvironmentCatalog(page);
 		await page
 			.context()

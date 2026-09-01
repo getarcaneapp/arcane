@@ -1,6 +1,7 @@
-package mldsajose_test
+package oidcjwk_test
 
 import (
+	"context"
 	"crypto/mldsa"
 	"encoding/base64"
 	"encoding/json/v2"
@@ -11,8 +12,7 @@ import (
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mldsajose"
-	"github.com/golang-jwt/jwt/v5"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/oidcjwk"
 	"github.com/stretchr/testify/require"
 )
 
@@ -67,10 +67,17 @@ func TestKeySetVerifySignature(t *testing.T) {
 			}
 
 			ctx := t.Context()
-			keySet := mldsajose.NewKeySet(oidc.ClientContext(ctx, srv.Client()), srv.URL)
+			manager := oidcjwk.NewKeySetManager(ctx)
+			t.Cleanup(func() {
+				shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+				defer cancel()
+				require.NoError(t, manager.Shutdown(shutdownCtx))
+			})
+			keySet, err := manager.KeySet(ctx, srv.Client(), srv.URL)
+			require.NoError(t, err)
 			verifier := oidc.NewVerifier(srv.URL, keySet, &oidc.Config{
 				ClientID:             "arcane",
-				SupportedSigningAlgs: mldsajose.SupportedSigningAlgs(),
+				SupportedSigningAlgs: oidcjwk.SupportedSigningAlgs(),
 			})
 
 			idToken, err := verifier.Verify(ctx, token)
@@ -82,21 +89,4 @@ func TestKeySetVerifySignature(t *testing.T) {
 			require.Equal(t, "alice", idToken.Subject)
 		})
 	}
-}
-
-func TestSigningMethodMLDSA87(t *testing.T) {
-	sk, err := mldsa.GenerateKey(mldsajose.Parameters)
-	require.NoError(t, err)
-
-	signed, err := jwt.NewWithClaims(mldsajose.SigningMethodMLDSA87, jwt.MapClaims{"sub": "x"}).SignedString(sk)
-	require.NoError(t, err)
-
-	parsed, err := jwt.Parse(signed, func(t *jwt.Token) (any, error) {
-		return sk.PublicKey(), nil
-	}, jwt.WithValidMethods([]string{mldsajose.AlgMLDSA87}))
-	require.NoError(t, err)
-	require.True(t, parsed.Valid)
-
-	_, err = mldsajose.SigningMethodMLDSA87.Sign("payload", []byte("not-a-key"))
-	require.ErrorIs(t, err, mldsajose.ErrInvalidKeyType)
 }

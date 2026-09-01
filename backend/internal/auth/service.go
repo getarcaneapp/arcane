@@ -27,10 +27,10 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/jwtclaims"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mldsajose"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
 	"github.com/getarcaneapp/arcane/types/v2/auth"
-	"github.com/golang-jwt/jwt/v5"
+	"github.com/lestrrat-go/jwx/v4/jwa"
+	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/samber/hot"
 )
 
@@ -52,27 +52,6 @@ type AuthSettings struct {
 	OidcEnabled      bool                 `json:"oidcEnabled"`
 	SessionTimeout   int                  `json:"sessionTimeout"`
 	Oidc             *settings.OidcConfig `json:"oidc,omitempty"`
-}
-
-type userClaims struct {
-	jwt.RegisteredClaims
-
-	SessionID             string `json:"sid,omitempty"`
-	UserID                string `json:"user_id"`
-	Username              string `json:"username"`
-	Email                 string `json:"email,omitempty"`
-	DisplayName           string `json:"display_name,omitempty"`
-	AppVersion            string `json:"app_version,omitempty"`
-	TokenType             string `json:"token_type,omitempty"`
-	FederatedCredentialID string `json:"federated_credential_id,omitempty"`
-}
-
-type refreshClaims struct {
-	jwt.RegisteredClaims
-
-	UserID     string `json:"user_id"`
-	SessionID  string `json:"sid,omitempty"`
-	AppVersion string `json:"app_version,omitempty"`
 }
 
 type verifiedTokenEntry struct {
@@ -729,43 +708,15 @@ func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string, met
 	if err != nil {
 		return nil, err
 	}
-	token, err := jwt.ParseWithClaims(refreshToken, &refreshClaims{},
-		func(t *jwt.Token) (any, error) {
-			if _, ok := t.Method.(*mldsajose.SigningMethodMLDSA); !ok {
-				return nil, errors.Errorf("unexpected signing method: %v", t.Header["alg"])
-			}
-			return signingKey.PublicKey(), nil
-		}, jwt.WithValidMethods([]string{mldsajose.AlgMLDSA87}))
+	claims, err := parseRefreshTokenInternal(ctx, refreshToken, signingKey.PublicKey())
 	if err != nil {
-		return nil, common.ErrInvalidToken
-	}
-
-	if !token.Valid {
-		return nil, common.ErrInvalidToken
-	}
-
-	claims, ok := token.Claims.(*refreshClaims)
-	if !ok {
-		return nil, common.Classify(common.ErrTokenValidation, errors.New("Invalid token claims"))
-	}
-
-	if claims.Subject != "refresh" {
-		return nil, common.Classify(common.ErrTokenValidation, errors.New("Not a refresh token"))
+		return nil, err
 	}
 
 	if claims.AppVersion != "" && claims.AppVersion != config.Version {
 		slog.InfoContext(ctx, "Refresh token version mismatch — rotating to current version", "tokenVersion", claims.AppVersion, "currentVersion", config.Version)
 	}
 
-	if claims.UserID == "" {
-		return nil, common.Classify(common.ErrTokenValidation, errors.New("Missing user ID in token"))
-	}
-	if claims.ID == "" {
-		return nil, common.Classify(common.ErrTokenValidation, errors.New("Missing refresh token ID"))
-	}
-	if claims.SessionID == "" {
-		return nil, common.Classify(common.ErrTokenValidation, errors.New("Missing session ID in token"))
-	}
 	if s.sessionService == nil {
 		return nil, common.Classify(common.ErrUnavailable, errors.New("Session service is not configured"))
 	}
@@ -799,43 +750,14 @@ func (s *AuthService) VerifyToken(ctx context.Context, accessToken string) (*com
 	if err != nil {
 		return nil, "", err
 	}
-	token, err := jwt.ParseWithClaims(accessToken, &userClaims{},
-		func(t *jwt.Token) (any, error) {
-			if _, ok := t.Method.(*mldsajose.SigningMethodMLDSA); !ok {
-				return nil, errors.Errorf("unexpected signing method: %v", t.Header["alg"])
-			}
-			return signingKey.PublicKey(), nil
-		}, jwt.WithValidMethods([]string{mldsajose.AlgMLDSA87}))
+	claims, err := parseAccessTokenInternal(ctx, accessToken, signingKey.PublicKey())
 	if err != nil {
-		if strings.Contains(err.Error(), "token is expired") {
-			return nil, "", common.ErrExpiredToken
-		}
-		return nil, "", common.ErrInvalidToken
-	}
-
-	if !token.Valid {
-		return nil, "", common.ErrInvalidToken
-	}
-
-	claims, ok := token.Claims.(*userClaims)
-	if !ok {
-		return nil, "", common.Classify(common.ErrTokenValidation, errors.New("Invalid token claims"))
-	}
-
-	if claims.Subject != "access" {
-		return nil, "", common.Classify(common.ErrTokenValidation, errors.New("Not an access token"))
-	}
-
-	if claims.ID == "" {
-		return nil, "", common.Classify(common.ErrTokenValidation, errors.New("Missing user ID in token"))
+		return nil, "", err
 	}
 
 	if claims.AppVersion != "" && claims.AppVersion != config.Version {
 		slog.InfoContext(ctx, "Token version mismatch detected", "tokenVersion", claims.AppVersion, "currentVersion", config.Version, "user", claims.Username)
 		return nil, "", common.ErrTokenVersionMismatch
-	}
-	if claims.SessionID == "" {
-		return nil, "", common.Classify(common.ErrTokenValidation, errors.New("Missing session ID in token"))
 	}
 	if s.sessionService == nil {
 		return nil, "", common.Classify(common.ErrUnavailable, errors.New("Session service is not configured"))
@@ -843,7 +765,7 @@ func (s *AuthService) VerifyToken(ctx context.Context, accessToken string) (*com
 
 	tokenHash := hashTokenInternal(accessToken)
 	if cached, ok, _ := s.tokenCache.Get(tokenHash); ok {
-		if cached.User.ID != claims.ID || cached.SessionID != claims.SessionID {
+		if cached.User.ID != claims.UserID || cached.SessionID != claims.SessionID {
 			s.tokenCache.Delete(tokenHash)
 			return nil, "", common.ErrInvalidToken
 		}
@@ -868,7 +790,7 @@ func (s *AuthService) VerifyToken(ctx context.Context, accessToken string) (*com
 	// Verify user exists in DB
 	// This ensures that if the database is wiped or user is deleted, the token becomes invalid
 	// even if the JWT signature is still valid (e.g. same signing key).
-	dbUser, err := s.userService.GetUserByID(ctx, claims.ID)
+	dbUser, err := s.userService.GetUserByID(ctx, claims.UserID)
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {
 			return nil, "", common.ErrInvalidToken
@@ -998,58 +920,64 @@ func (s *AuthService) createSessionAndTokensInternal(ctx context.Context, user *
 
 func (s *AuthService) buildTokenPairInternal(ctx context.Context, user *common.User, session *session.UserSession, refreshJTI string) (*TokenPair, error) {
 	sessionTimeout, _ := s.GetSessionTimeout(ctx)
-
-	accessTokenExpiry := time.Now().Add(time.Duration(sessionTimeout) * time.Minute)
-
-	userClaims := userClaims{
-		ID:         user.ID,
-		Subject:    "access",
-		IssuedAt:   jwt.NewNumericDate(time.Now()),
-		ExpiresAt:  jwt.NewNumericDate(accessTokenExpiry),
-		SessionID:  session.ID,
-		UserID:     user.ID,
-		Username:   user.Username,
-		AppVersion: config.Version,
-	}
-
-	if user.Email != nil {
-		userClaims.Email = *user.Email
-	}
-
-	if user.DisplayName != nil {
-		userClaims.DisplayName = *user.DisplayName
-	}
+	now := time.Now()
+	accessTokenExpiry := now.Add(time.Duration(sessionTimeout) * time.Minute)
 
 	signingKey, err := s.signingKeyInternal(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	accessToken := jwt.NewWithClaims(mldsajose.SigningMethodMLDSA87, userClaims)
-
-	accessTokenString, err := accessToken.SignedString(signingKey)
+	accessBuilder := jwt.NewBuilder().
+		JwtID(user.ID).
+		Subject(accessTokenSubject).
+		IssuedAt(now).
+		Expiration(accessTokenExpiry).
+		Claim(claimSessionID, session.ID).
+		Claim(claimUserID, user.ID)
+	if user.Username != "" {
+		accessBuilder.Claim(claimUsername, user.Username)
+	}
+	if user.Email != nil && *user.Email != "" {
+		accessBuilder.Claim(claimEmail, *user.Email)
+	}
+	if user.DisplayName != nil && *user.DisplayName != "" {
+		accessBuilder.Claim(claimDisplayName, *user.DisplayName)
+	}
+	if config.Version != "" {
+		accessBuilder.Claim(claimAppVersion, config.Version)
+	}
+	accessToken, err := accessBuilder.Build()
+	if err != nil {
+		return nil, err
+	}
+	accessTokenBytes, err := jwt.Sign(accessToken, jwt.WithKey(jwa.MLDSA87(), signingKey))
 	if err != nil {
 		return nil, err
 	}
 
-	refreshToken := jwt.NewWithClaims(mldsajose.SigningMethodMLDSA87, refreshClaims{
-		ID:         refreshJTI,
-		Subject:    "refresh",
-		IssuedAt:   jwt.NewNumericDate(time.Now()),
-		ExpiresAt:  jwt.NewNumericDate(session.ExpiresAt),
-		UserID:     user.ID,
-		SessionID:  session.ID,
-		AppVersion: config.Version,
-	})
-
-	refreshTokenString, err := refreshToken.SignedString(signingKey)
+	refreshBuilder := jwt.NewBuilder().
+		JwtID(refreshJTI).
+		Subject(refreshTokenSubject).
+		IssuedAt(now).
+		Expiration(session.ExpiresAt).
+		Claim(claimUserID, user.ID).
+		Claim(claimSessionID, session.ID)
+	if config.Version != "" {
+		refreshBuilder.Claim(claimAppVersion, config.Version)
+	}
+	refreshToken, err := refreshBuilder.Build()
+	if err != nil {
+		return nil, err
+	}
+	refreshTokenBytes, err := jwt.Sign(refreshToken, jwt.WithKey(jwa.MLDSA87(), signingKey))
 	if err != nil {
 		return nil, err
 	}
 
 	return &TokenPair{
-		AccessToken:  accessTokenString,
-		RefreshToken: refreshTokenString,
+		AccessToken:  string(accessTokenBytes),
+		RefreshToken: string(refreshTokenBytes),
 		ExpiresAt:    accessTokenExpiry,
 	}, nil
 }
@@ -1071,38 +999,42 @@ func (s *AuthService) IssueFederatedToken(ctx context.Context, user *common.User
 		return nil, err
 	}
 
-	claims := userClaims{
-		ID:                    user.ID,
-		Subject:               "access",
-		IssuedAt:              jwt.NewNumericDate(now),
-		ExpiresAt:             jwt.NewNumericDate(accessTokenExpiry),
-		SessionID:             federatedSession.ID,
-		UserID:                user.ID,
-		Username:              user.Username,
-		AppVersion:            config.Version,
-		TokenType:             session.UserSessionSourceFederated,
-		FederatedCredentialID: credentialID,
-	}
-
-	if user.Email != nil {
-		claims.Email = *user.Email
-	}
-	if user.DisplayName != nil {
-		claims.DisplayName = *user.DisplayName
-	}
-
 	signingKey, err := s.signingKeyInternal(ctx)
 	if err != nil {
 		return nil, err
 	}
-	accessToken := jwt.NewWithClaims(mldsajose.SigningMethodMLDSA87, claims)
-	accessTokenString, err := accessToken.SignedString(signingKey)
+	builder := jwt.NewBuilder().
+		JwtID(user.ID).
+		Subject(accessTokenSubject).
+		IssuedAt(now).
+		Expiration(accessTokenExpiry).
+		Claim(claimSessionID, federatedSession.ID).
+		Claim(claimUserID, user.ID).
+		Claim(claimTokenType, session.UserSessionSourceFederated).
+		Claim(claimFederatedCredentialID, credentialID)
+	if user.Username != "" {
+		builder.Claim(claimUsername, user.Username)
+	}
+	if user.Email != nil && *user.Email != "" {
+		builder.Claim(claimEmail, *user.Email)
+	}
+	if user.DisplayName != nil && *user.DisplayName != "" {
+		builder.Claim(claimDisplayName, *user.DisplayName)
+	}
+	if config.Version != "" {
+		builder.Claim(claimAppVersion, config.Version)
+	}
+	accessToken, err := builder.Build()
+	if err != nil {
+		return nil, err
+	}
+	accessTokenBytes, err := jwt.Sign(accessToken, jwt.WithKey(jwa.MLDSA87(), signingKey))
 	if err != nil {
 		return nil, err
 	}
 
 	return &TokenPair{
-		AccessToken: accessTokenString,
+		AccessToken: string(accessTokenBytes),
 		ExpiresAt:   accessTokenExpiry,
 	}, nil
 }

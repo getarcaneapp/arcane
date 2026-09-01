@@ -35,11 +35,13 @@ services:
     environment:
       - ENVIRONMENT=testing
       - APP_ENV=test
+      - APP_URL=http://localhost:3001
       - PUID=65532
       - PGID=65532
       - DATABASE_URL=postgres://arcane:arcane_test_password@postgres:5432/arcane_test?sslmode=disable
       - ENCRYPTION_KEY=3JDIgolks2tJ9ymm1AdqzlYMWu0DUWyt
       - JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
+      - TRUSTED_PROXIES=172.16.0.0/12,192.168.0.0/16
       - ADMIN_STATIC_API_KEY=${E2E_ADMIN_STATIC_API_KEY:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

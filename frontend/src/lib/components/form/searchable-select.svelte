@@ -20,7 +20,7 @@
 
 	let {
 		items,
-		value = $bindable(''),
+		value = $bindable(),
 		displayText,
 		onSelect,
 		oninput,
@@ -141,9 +141,9 @@
 				{action}
 				tone={resolvedTone}
 				{size}
+				{...props}
 				role="combobox"
 				aria-expanded={open}
-				{...props}
 				{disabled}
 				id={triggerId}
 				class={cn(
@@ -194,6 +194,7 @@
 							class={cn(itemClass)}
 							onSelect={() => {
 								if (item.disabled) return;
+								if (value !== undefined) value = item.value;
 								onSelect?.(item.value);
 								closeAndFocusTrigger();
 							}}

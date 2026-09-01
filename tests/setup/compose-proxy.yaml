@@ -15,34 +15,71 @@ services:
       retries: 15
 
   docker-socket-proxy:
-    image: tecnativa/docker-socket-proxy:latest
+    image: wollomatic/socket-proxy:1.13.1
     container_name: arcane-docker-proxy-test
-    environment:
-      - EVENTS=1
-      - PING=1
-      - VERSION=1
-      - AUTH=0
-      - SECRETS=0
-      - POST=1
-      - BUILD=0
-      - COMMIT=0
-      - CONFIGS=0
-      - CONTAINERS=1
-      - DISTRIBUTION=0
-      - EXEC=1
-      - IMAGES=1
-      - INFO=1
-      - NETWORKS=1
-      - NODES=0
-      - PLUGINS=0
-      - SERVICES=0
-      - SESSION=0
-      - SWARM=0
-      - SYSTEM=0
-      - TASKS=0
-      - VOLUMES=1
+    user: '0:0'
+    command:
+      - '-listenip=0.0.0.0'
+      - '-allowfrom=arcane'
+      - '-allowhealthcheck'
+      - '-allowGET=(/v[\d.]+)?/_ping'
+      - '-allowGET=(/v[\d.]+)?/events(/.*)?'
+      - '-allowGET=(/v[\d.]+)?/version'
+      - '-allowGET=(/v[\d.]+)?/containers(/.*)?'
+      - '-allowGET=(/v[\d.]+)?/exec(/.*)?'
+      - '-allowGET=(/v[\d.]+)?/images(/.*)?'
+      - '-allowGET=(/v[\d.]+)?/info(/.*)?'
+      - '-allowGET=(/v[\d.]+)?/networks(/.*)?'
+      - '-allowGET=(/v[\d.]+)?/volumes(/.*)?'
+      - '-allowHEAD=(/v[\d.]+)?/_ping'
+      - '-allowHEAD=(/v[\d.]+)?/events(/.*)?'
+      - '-allowHEAD=(/v[\d.]+)?/version'
+      - '-allowHEAD=(/v[\d.]+)?/containers(/.*)?'
+      - '-allowHEAD=(/v[\d.]+)?/exec(/.*)?'
+      - '-allowHEAD=(/v[\d.]+)?/images(/.*)?'
+      - '-allowHEAD=(/v[\d.]+)?/info(/.*)?'
+      - '-allowHEAD=(/v[\d.]+)?/networks(/.*)?'
+      - '-allowHEAD=(/v[\d.]+)?/volumes(/.*)?'
+      - '-allowPOST=(/v[\d.]+)?/_ping'
+      - '-allowPOST=(/v[\d.]+)?/events(/.*)?'
+      - '-allowPOST=(/v[\d.]+)?/version'
+      - '-allowPOST=(/v[\d.]+)?/containers(/.*)?'
+      - '-allowPOST=(/v[\d.]+)?/exec(/.*)?'
+      - '-allowPOST=(/v[\d.]+)?/images(/.*)?'
+      - '-allowPOST=(/v[\d.]+)?/info(/.*)?'
+      - '-allowPOST=(/v[\d.]+)?/networks(/.*)?'
+      - '-allowPOST=(/v[\d.]+)?/volumes(/.*)?'
+      - '-allowPOST=(/v[\d.]+)?/commit'
+      - '-allowPUT=(/v[\d.]+)?/_ping'
+      - '-allowPUT=(/v[\d.]+)?/events(/.*)?'
+      - '-allowPUT=(/v[\d.]+)?/version'
+      - '-allowPUT=(/v[\d.]+)?/containers(/.*)?'
+      - '-allowPUT=(/v[\d.]+)?/exec(/.*)?'
+      - '-allowPUT=(/v[\d.]+)?/images(/.*)?'
+      - '-allowPUT=(/v[\d.]+)?/info(/.*)?'
+      - '-allowPUT=(/v[\d.]+)?/networks(/.*)?'
+      - '-allowPUT=(/v[\d.]+)?/volumes(/.*)?'
+      - '-allowDELETE=(/v[\d.]+)?/_ping'
+      - '-allowDELETE=(/v[\d.]+)?/events(/.*)?'
+      - '-allowDELETE=(/v[\d.]+)?/version'
+      - '-allowDELETE=(/v[\d.]+)?/containers(/.*)?'
+      - '-allowDELETE=(/v[\d.]+)?/exec(/.*)?'
+      - '-allowDELETE=(/v[\d.]+)?/images(/.*)?'
+      - '-allowDELETE=(/v[\d.]+)?/info(/.*)?'
+      - '-allowDELETE=(/v[\d.]+)?/networks(/.*)?'
+      - '-allowDELETE=(/v[\d.]+)?/volumes(/.*)?'
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ['CMD', './healthcheck']
+      interval: 2s
+      timeout: 5s
+      retries: 15
     restart: unless-stopped
 
   arcane:
@@ -54,10 +91,12 @@ services:
     environment:
       - ENVIRONMENT=testing
       - APP_ENV=test
+      - APP_URL=http://localhost:${E2E_PROXY_PORT:-3002}
       - PUID=65532
       - PGID=65532
       - ENCRYPTION_KEY=3JDIgolks2tJ9ymm1AdqzlYMWu0DUWyt
       - JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
+      - TRUSTED_PROXIES=172.16.0.0/12,192.168.0.0/16
       - ADMIN_STATIC_API_KEY=${E2E_ADMIN_STATIC_API_KEY:-}
       - DOCKER_HOST=tcp://docker-socket-proxy:2375
     volumes:
@@ -65,7 +104,7 @@ services:
       - ./projects:/app/data/projects
     depends_on:
       docker-socket-proxy:
-        condition: service_started
+        condition: service_healthy
       minio:
         condition: service_healthy
     build:

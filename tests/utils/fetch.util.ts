@@ -8,6 +8,34 @@ import { ApiKey } from 'types/api-key.type';
 
 export type Paginated<T> = { data: T[]; pagination?: { totalItems?: number } };
 
+type JsonResponse = {
+	ok(): boolean;
+	status(): number;
+	text(): Promise<string>;
+};
+
+export async function readApiData<T>(response: JsonResponse, action: string): Promise<T> {
+	const responseText = await response.text();
+	let parsed: unknown;
+
+	try {
+		parsed = JSON.parse(responseText);
+	} catch {
+		throw new Error(`${action} returned non-JSON response ${response.status()}: ${responseText}`);
+	}
+
+	if (typeof parsed !== 'object' || parsed === null) {
+		throw new Error(`${action} returned an invalid response ${response.status()}: ${responseText}`);
+	}
+
+	const payload = parsed as { success?: boolean; data?: T };
+	if (!response.ok() || payload.success === false || !('data' in payload)) {
+		throw new Error(`${action} failed with ${response.status()}: ${responseText}`);
+	}
+
+	return payload.data as T;
+}
+
 async function retry<T>(fn: () => Promise<T>, maxRetries: number, delayMs = 1000): Promise<T> {
 	let attempt = 0;
 	while (true) {

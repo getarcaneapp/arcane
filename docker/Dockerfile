@@ -3,30 +3,26 @@ ARG BUILD_TAGS=""
 ARG ARCANE_RUNTIME_BASE_IMAGE=ghcr.io/getarcaneapp/base:distroless
 
 # Stage 1: Build Frontend
-FROM --platform=$BUILDPLATFORM node:26-trixie-slim AS frontend-builder
-RUN npm install -g --force corepack@v0.34.5 && corepack enable
-ENV PNPM_HOME="/pnpm"
-ENV PATH="$PNPM_HOME:$PATH"
+FROM --platform=$BUILDPLATFORM ghcr.io/voidzero-dev/vite-plus:latest AS frontend-builder
 ENV CI=true
-WORKDIR /build
+WORKDIR /app
 
-COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
-COPY frontend/package.json ./frontend/package.json
+COPY --chown=vp:vp pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+COPY --chown=vp:vp frontend/package.json ./frontend/package.json
 
-RUN --mount=type=cache,id=arcane-pnpm-v2,target=/pnpm/store,sharing=locked \
-    pnpm fetch && \
-    pnpm install -r --offline --frozen-lockfile
+RUN --mount=type=cache,id=arcane-pnpm-v3,target=/home/vp/.local/share/pnpm/store,sharing=locked,uid=1000,gid=1000 \
+    vp install --frozen-lockfile --prefer-offline
 
 RUN printf 'NODE_VERSION=%s\nSVELTEKIT_VERSION=%s\n' \
-    "$(node --version)" \
-    "$(pnpm -C frontend exec node -p 'require("@sveltejs/kit/package.json").version')" \
+    "$(vp node --version)" \
+    "$(vp -C frontend node -p 'require("@sveltejs/kit/package.json").version')" \
     > /tmp/arcane-frontend-build.env
 
-COPY frontend ./frontend
+COPY --chown=vp:vp frontend ./frontend
 
 ENV BUILD_PATH=dist
 ENV NODE_OPTIONS="--max-old-space-size=4096"
-RUN pnpm -C frontend build
+RUN vp -C frontend run build
 
 # Stage 2: Build Backend
 FROM --platform=$BUILDPLATFORM golang:1.27-trixie AS backend-builder
@@ -51,7 +47,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 COPY backend ./
 COPY .arcane.json ../arcane.json
 
-COPY --from=frontend-builder /build/frontend/dist ./frontend/dist
+COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 COPY --from=frontend-builder /tmp/arcane-frontend-build.env /tmp/arcane-frontend-build.env
 RUN --mount=type=cache,target=/root/.cache/go-build \
     . /tmp/arcane-frontend-build.env && \

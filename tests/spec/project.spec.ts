@@ -1,4 +1,4 @@
-import { test, expect, type Locator, type Page, type Response } from '@playwright/test';
+import { test, expect, type Locator, type Page, type Response } from '../fixtures/test.fixture';
 import { fetchProjectCountsWithRetry, fetchProjectsWithRetry } from '../utils/fetch.util';
 import type { Activity } from '../types/activity.type';
 import { Project, ProjectStatusCounts } from 'types/project.type';
@@ -285,15 +285,19 @@ let projectCounts: ProjectStatusCounts = {
 	archivedProjects: 0
 };
 
+function getRequiredGitOpsProject(): Project & { id: string } {
+	const project = realProjects.find((candidate) => candidate.gitOpsManagedBy);
+	expect(project, 'GitOps setup must provide a managed project').toBeDefined();
+	expect(project!.id, 'GitOps setup project must have an ID').toBeTruthy();
+	return project as Project & { id: string };
+}
+
 test.beforeEach(async ({ page }) => {
 	await navigateToProjects(page);
 
-	try {
-		realProjects = await fetchProjectsWithRetry(page);
-		projectCounts = await fetchProjectCountsWithRetry(page);
-	} catch (error) {
-		realProjects = [];
-	}
+	realProjects = await fetchProjectsWithRetry(page);
+	projectCounts = await fetchProjectCountsWithRetry(page);
+	expect(realProjects.length, 'Project setup must provide at least one project').toBeGreaterThan(0);
 });
 
 test.describe('Projects Page', () => {
@@ -1013,17 +1017,14 @@ test.describe('New Compose Project Page', () => {
 
 test.describe('GitOps Managed Project', () => {
 	test('should navigate back to gitops when opened from the git syncs page', async ({ page }) => {
-		const gitOpsProject = realProjects.find((project) => project.gitOpsManagedBy);
-		test.skip(!gitOpsProject, 'No GitOps project links found');
+		const gitOpsProject = getRequiredGitOpsProject();
 
 		await page.goto('/environments/0/gitops');
 		await page.waitForLoadState('load');
 
-		const projectLink = page.getByRole('link', {
-			name: gitOpsProject!.name,
-			exact: true
-		});
+		const projectLink = page.locator(`a[href^='/projects/${gitOpsProject.id}?from=gitops']`);
 
+		await expect(projectLink).toBeVisible();
 		await projectLink.click();
 		await page.waitForURL(/\/projects\/.+/, { timeout: 10000 });
 
@@ -1036,10 +1037,9 @@ test.describe('GitOps Managed Project', () => {
 	});
 
 	test('should show read-only alert when project is GitOps managed', async ({ page }) => {
-		const gitOpsProject = realProjects.find((p) => p.gitOpsManagedBy);
-		test.skip(!gitOpsProject, 'No GitOps-managed projects found');
+		const gitOpsProject = getRequiredGitOpsProject();
 
-		await page.goto(`/projects/${gitOpsProject!.id}`);
+		await page.goto(`/projects/${gitOpsProject.id}`);
 		await page.waitForLoadState('load');
 
 		// Navigate to Configuration tab
@@ -1058,10 +1058,9 @@ test.describe('GitOps Managed Project', () => {
 	});
 
 	test('should display Sync from Git button when GitOps managed', async ({ page }) => {
-		const gitOpsProject = realProjects.find((p) => p.gitOpsManagedBy);
-		test.skip(!gitOpsProject, 'No GitOps-managed projects found');
+		const gitOpsProject = getRequiredGitOpsProject();
 
-		await page.goto(`/projects/${gitOpsProject!.id}`);
+		await page.goto(`/projects/${gitOpsProject.id}`);
 		await page.waitForLoadState('load');
 
 		const configTab = page.getByRole('tab', { name: 'Configuration', exact: true });
@@ -1073,34 +1072,33 @@ test.describe('GitOps Managed Project', () => {
 	});
 
 	test('should show last sync commit when GitOps managed', async ({ page }) => {
-		const gitOpsProject = realProjects.find((p) => p.gitOpsManagedBy && p.lastSyncCommit);
-		test.skip(!gitOpsProject, 'No GitOps-managed projects with sync commit found');
+		const gitOpsProject = getRequiredGitOpsProject();
+		const projectDetail = await fetchProjectDetail(page, gitOpsProject.id);
+		expect(projectDetail?.lastSyncCommit, 'GitOps setup must record a sync commit').toBeTruthy();
 
-		await page.goto(`/projects/${gitOpsProject!.id}`);
+		await page.goto(`/projects/${gitOpsProject.id}`);
 		await page.waitForLoadState('load');
 
 		// The commit hash should be visible somewhere on the page
-		const commitHash = gitOpsProject!.lastSyncCommit!.substring(0, 7);
+		const commitHash = projectDetail!.lastSyncCommit!.substring(0, 7);
 		await expect(page.getByText(commitHash)).toBeVisible();
 	});
 
 	test('should disable name editing when GitOps managed', async ({ page }) => {
-		const gitOpsProject = realProjects.find((p) => p.gitOpsManagedBy);
-		test.skip(!gitOpsProject, 'No GitOps-managed projects found');
+		const gitOpsProject = getRequiredGitOpsProject();
 
-		await page.goto(`/projects/${gitOpsProject!.id}`);
+		await page.goto(`/projects/${gitOpsProject.id}`);
 		await page.waitForLoadState('load');
 
 		// The name button should be disabled for GitOps-managed projects
-		const nameButton = page.getByRole('button', { name: gitOpsProject!.name });
+		const nameButton = page.getByRole('button', { name: gitOpsProject.name });
 		await expect(nameButton).toBeDisabled();
 	});
 
 	test('should have compose editor in read-only mode when GitOps managed', async ({ page }) => {
-		const gitOpsProject = realProjects.find((p) => p.gitOpsManagedBy);
-		test.skip(!gitOpsProject, 'No GitOps-managed projects found');
+		const gitOpsProject = getRequiredGitOpsProject();
 
-		await page.goto(`/projects/${gitOpsProject!.id}`);
+		await page.goto(`/projects/${gitOpsProject.id}`);
 		await page.waitForLoadState('load');
 
 		const configTab = page.getByRole('tab', { name: 'Configuration', exact: true });
@@ -1119,10 +1117,9 @@ test.describe('GitOps Managed Project', () => {
 	test('should allow editing env editor when GitOps managed in classic and tree view', async ({
 		page
 	}) => {
-		const gitOpsProject = realProjects.find((p) => p.gitOpsManagedBy);
-		test.skip(!gitOpsProject, 'No GitOps-managed projects found');
+		const gitOpsProject = getRequiredGitOpsProject();
 
-		await page.goto(`/projects/${gitOpsProject!.id}`);
+		await page.goto(`/projects/${gitOpsProject.id}`);
 		await page.waitForLoadState('load');
 
 		const configTab = page.getByRole('tab', { name: 'Configuration', exact: true });

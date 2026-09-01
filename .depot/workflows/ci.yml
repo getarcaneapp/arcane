@@ -48,6 +48,8 @@ jobs:
       - name: Set up Depot CLI
         if: matrix.module.gcc
         uses: depot/setup-action@v1
+        with:
+          configure-docker: true
 
       - name: Setup Go
         uses: actions/setup-go@v7
@@ -178,9 +180,8 @@ jobs:
 
       - name: Set up Depot CLI
         uses: depot/setup-action@v1
-
-      - name: Setup depot buildx driver
-        run: depot configure-docker
+        with:
+          configure-docker: true
 
       - name: Cache Playwright Browsers
         uses: actions/cache@v6
@@ -249,9 +250,8 @@ jobs:
 
       - name: Set up Depot CLI
         uses: depot/setup-action@v1
-
-      - name: Setup depot buildx driver
-        run: depot configure-docker
+        with:
+          configure-docker: true
 
       - name: Install Playwright test dependencies
         run: vp -C tests install

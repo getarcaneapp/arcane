@@ -38,7 +38,7 @@ type FederatedAuthOutput = {
 	persisted: boolean;
 };
 
-type JsonSmokeCommand = {
+type JsonReadOnlyCommand = {
 	name: string;
 	args: string[];
 	expectation: (value: unknown) => void;
@@ -109,7 +109,7 @@ function expectJsonValue(value: unknown): void {
 	expect(value === null || typeof value === 'object' || Array.isArray(value)).toBe(true);
 }
 
-const readOnlyJsonSmokeCommands: JsonSmokeCommand[] = [
+const readOnlyJsonCommands: JsonReadOnlyCommand[] = [
 	{
 		name: 'images list',
 		args: ['--output', 'json', 'images', 'list', '--limit', '5'],
@@ -526,7 +526,7 @@ test.describe('arcane-cli e2e', () => {
 		});
 	});
 
-	for (const command of readOnlyJsonSmokeCommands) {
+	for (const command of readOnlyJsonCommands) {
 		test(`${command.name} returns JSON`, async () => {
 			await withConfig(async (config) => {
 				const result = await runCommandJSON<unknown>(config.configPath, command.args);
