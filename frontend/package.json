@@ -62,7 +62,7 @@
 		"temporal-polyfill": "^1.0.4",
 		"vaul-svelte": "1.0.0-next.7",
 		"yaml": "^2.9.0",
-		"zod": "^4.4.3"
+		"zod": "^4.5.4"
 	},
 	"devDependencies": {
 		"@iconify/json": "^2.2.520",
