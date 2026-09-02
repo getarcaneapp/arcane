@@ -15,7 +15,6 @@
 	import { handleApiResultWithCallbacks } from '#lib/utils/api';
 	import { tryCatch } from '#lib/utils/api';
 	import { onMount } from 'svelte';
-	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog';
 	import SwarmServicesTable from '../../services/services-table.svelte';
@@ -27,11 +26,13 @@
 
 	let { data } = $props();
 
-	let stack = $state(untrack(() => data.stack));
-	let services = $state(untrack(() => data.services));
-	let tasks = $state(untrack(() => data.tasks));
-	let source = $state<SwarmStackSource | null>(untrack(() => data.source));
-	let sourceState = $state<'loading' | 'available' | 'missing' | 'forbidden' | 'error'>(untrack(() => data.sourceState));
+	let stack = $derived(data.stack);
+	let services = $derived(data.services);
+	let tasks = $derived(data.tasks);
+	let source = $derived<SwarmStackSource | null>(data.source);
+	let sourceState = $derived<'loading' | 'available' | 'missing' | 'forbidden' | 'error'>(data.sourceState);
+	let servicesRequestOptions = $derived(data.servicesRequestOptions);
+	let tasksRequestOptions = $derived(data.tasksRequestOptions);
 
 	let selectedSourceFile = $state('compose');
 	let openSourceTabs = $state<string[]>(['compose']);
@@ -69,8 +70,6 @@
 			selectedSourceFile = remaining[Math.min(Math.max(index - 1, 0), remaining.length - 1)] ?? 'compose';
 		}
 	}
-	let servicesRequestOptions = $state(untrack(() => data.servicesRequestOptions));
-	let tasksRequestOptions = $state(untrack(() => data.tasksRequestOptions));
 	type StackTab = 'services' | 'tasks' | 'source';
 	let isLoading = $state({ refresh: false, remove: false });
 

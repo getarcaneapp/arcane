@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 	import settingsStore from '#lib/stores/config-store';
@@ -37,11 +36,11 @@
 
 	let { data } = $props();
 	const queryClient = useQueryClient();
-	let backups = $state(untrack(() => data.backups));
-	let policyCollection = $state(untrack(() => data.policyCollection));
-	let systemVolumePolicyCollection = $state(untrack(() => data.systemVolumePolicyCollection));
+	let backups = $derived(data.backups);
+	let policyCollection = $derived(data.policyCollection);
+	let systemVolumePolicyCollection = $derived(data.systemVolumePolicyCollection);
 	let systemVolumeOptions = $state<SystemVolumeBackupOption[]>([]);
-	let requestOptions = $state<SearchPaginationSortRequest>(untrack(() => data.requestOptions));
+	let requestOptions = $derived<SearchPaginationSortRequest>(data.requestOptions);
 	let scheduleOpen = $state(false);
 	let scheduleType = $state<'system' | 'volume'>('system');
 	let editingScheduleId = $state<string | undefined>();

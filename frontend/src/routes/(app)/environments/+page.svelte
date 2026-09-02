@@ -6,7 +6,6 @@
 	import EnvironmentTable from './environment-table.svelte';
 	import { m } from '#lib/paraglide/messages';
 	import { environmentManagementService } from '#lib/services/env-mgmt-service';
-	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type ActionButton } from '#lib/layouts/index.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte';
 	import { simpleRefresh } from '#lib/utils/api';
@@ -17,9 +16,9 @@
 
 	let { data } = $props();
 
-	let environments = $state(untrack(() => data.environments));
+	let environments = $derived(data.environments);
 	let selectedIds = $state<string[]>([]);
-	let requestOptions = $state(untrack(() => data.environmentRequestOptions));
+	let requestOptions = $derived(data.environmentRequestOptions);
 	let showEnvironmentSheet = $state(false);
 	let showUpdateAllDialog = $state(false);
 	let isLoading = $state({ refresh: false, creating: false, deleting: false });

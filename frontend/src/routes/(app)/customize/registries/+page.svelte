@@ -10,19 +10,18 @@
 	import { m } from '#lib/paraglide/messages';
 	import { containerRegistryService } from '#lib/services/container-registry-service';
 	import { queryKeys } from '#lib/query/query-keys';
-	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type ActionButton } from '#lib/layouts/index.js';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { hasPermission } from '#lib/utils/auth';
 
 	let { data } = $props();
 
-	let registries = $state(untrack(() => data.registries));
+	let registries = $derived(data.registries);
 	let selectedIds = $state<string[]>([]);
 	let isRegistryDialogOpen = $state(false);
 	let isInfoDialogOpen = $state(false);
 	let registryToEdit = $state<ContainerRegistry | null>(null);
-	let requestOptions = $state(untrack(() => data.registryRequestOptions));
+	let requestOptions = $derived(data.registryRequestOptions);
 	const pullUsageQuery = createQuery(() => ({
 		queryKey: queryKeys.containerRegistries.pullUsage(),
 		queryFn: () => containerRegistryService.getPullUsage(),

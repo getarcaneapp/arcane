@@ -3,7 +3,6 @@
 	import { m } from '#lib/paraglide/messages';
 	import { eventService } from '#lib/services/event-service';
 	import { queryKeys } from '#lib/query/query-keys';
-	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { createQuery, keepPreviousData } from '@tanstack/svelte-query';
 	import { AlertIcon, CheckIcon, CloseIcon, EventsIcon, InfoIcon } from '#lib/icons';
@@ -12,9 +11,9 @@
 
 	let { data } = $props();
 
-	let events = $state(untrack(() => data.events));
+	let events = $derived(data.events);
 	let selectedIds = $state<string[]>([]);
-	let requestOptions = $state(untrack(() => data.eventRequestOptions));
+	let requestOptions = $derived(data.eventRequestOptions);
 	let isDeleting = $state(false);
 
 	const eventsQuery = createQuery(() => ({

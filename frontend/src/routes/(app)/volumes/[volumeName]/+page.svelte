@@ -22,7 +22,6 @@
 	import { handleApiResultWithCallbacks } from '#lib/utils/api';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { m } from '#lib/paraglide/messages';
-	import { untrack } from 'svelte';
 	import { volumeService } from '#lib/services/volume-service.js';
 	import { volumeWorkspaceService } from '#lib/services/volume-workspace-service';
 	import { type DetailAction } from '#lib/layouts';
@@ -70,8 +69,8 @@
 	import { volumeWorkspaceReadOnlyMessage } from '../components/volume-workspace-utils';
 
 	let { data } = $props();
-	let volume = $state(untrack(() => data.volume));
-	let containersDetailed = $state<{ id: string; name: string }[]>(untrack(() => data.containersDetailed ?? []));
+	let volume = $derived(data.volume);
+	let containersDetailed = $derived<{ id: string; name: string }[]>(data.containersDetailed ?? []);
 
 	const backupVolumeName = $derived.by(() => $settingsStore?.backupVolumeName || 'arcane-backups');
 	const isBackupVolume = $derived(volume?.name === backupVolumeName);

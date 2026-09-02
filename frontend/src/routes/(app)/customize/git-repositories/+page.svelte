@@ -7,17 +7,16 @@
 	import { tryCatch } from '#lib/utils/api';
 	import { m } from '#lib/paraglide/messages';
 	import { gitRepositoryService } from '#lib/services/git-repository-service';
-	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type ActionButton } from '#lib/layouts/index.js';
 	import { hasPermission } from '#lib/utils/auth';
 
 	let { data } = $props();
 
-	let repositories = $state(untrack(() => data.repositories));
+	let repositories = $derived(data.repositories);
 	let selectedIds = $state<string[]>([]);
 	let isRepositoryDialogOpen = $state(false);
 	let repositoryToEdit = $state<GitRepository | null>(null);
-	let requestOptions = $state(untrack(() => data.repositoryRequestOptions));
+	let requestOptions = $derived(data.repositoryRequestOptions);
 
 	let isLoading = $state({
 		create: false,

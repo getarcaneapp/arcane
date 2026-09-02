@@ -28,7 +28,6 @@
 	import { oidcMappingService } from '#lib/services/oidc-mapping-service';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api';
 	import { tryCatch } from '#lib/utils/api';
-	import { untrack } from 'svelte';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import { mergeProps } from 'bits-ui';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte';
@@ -65,7 +64,7 @@
 
 	// OIDC role mappings — co-located with the OIDC settings so admins
 	// configure the groups claim and the mappings that read it in one place.
-	let oidcMappings: OidcRoleMapping[] = $state(untrack(() => data.oidcMappings ?? []));
+	let oidcMappings: OidcRoleMapping[] = $derived(data.oidcMappings ?? []);
 	let mappingSheetOpen = $state(false);
 	let editingMapping: OidcRoleMapping | null = $state(null);
 	let mappingSaving = $state(false);

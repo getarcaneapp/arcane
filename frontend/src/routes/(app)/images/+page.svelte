@@ -27,8 +27,8 @@
 	let { data } = $props();
 	const queryClient = useQueryClient();
 
-	let images = $state(untrack(() => data.images));
-	let requestOptions = $state(untrack(() => data.imageRequestOptions));
+	let images = $derived(data.images);
+	let requestOptions = $derived(data.imageRequestOptions);
 	let selectedIds = $state<string[]>([]);
 	let isPullDialogOpen = $state(false);
 	let isRegistrySearchDialogOpen = $state(false);

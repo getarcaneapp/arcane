@@ -59,8 +59,8 @@
 
 	let containerSnapshot = $state<{ envId: string; value: ContainersPaginatedResponse } | null>(null);
 	let projectSnapshot = $state<{ envId: string; value: Paginated<Project> } | null>(null);
-	let containerRequestOptions = $state(untrack(() => data.containerRequestOptions as ContainerListRequestOptions));
-	let projectRequestOptions = $state(untrack(() => data.projectRequestOptions as SearchPaginationSortRequest));
+	let containerRequestOptions = $derived(data.containerRequestOptions as ContainerListRequestOptions);
+	let projectRequestOptions = $derived(data.projectRequestOptions as SearchPaginationSortRequest);
 	const envId = $derived(environmentStore.selected?.id || '0');
 
 	const containersQuery = createQuery(() => ({

@@ -15,7 +15,6 @@
 	import { settingsService } from '#lib/services/settings-service';
 	import userStore from '#lib/stores/user-store';
 	import settingsStore from '#lib/stores/config-store';
-	import { untrack } from 'svelte';
 	import { SettingsPageLayout, type SettingsActionButton } from '#lib/layouts/index.js';
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
 	import { Switch } from '#lib/components/ui/switch/index.js';
@@ -23,9 +22,9 @@
 
 	let { data } = $props();
 
-	let users = $state(untrack(() => data.users));
+	let users = $derived(data.users);
 	let selectedIds = $state<string[]>([]);
-	let requestOptions = $state<SearchPaginationSortRequest>(untrack(() => data.userRequestOptions));
+	let requestOptions = $derived<SearchPaginationSortRequest>(data.userRequestOptions);
 
 	let isDialogOpen = $state({
 		create: false,

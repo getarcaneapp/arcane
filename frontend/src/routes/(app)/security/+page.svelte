@@ -7,7 +7,7 @@
 	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte';
 	import type { EnvironmentVulnerabilitySummary, VulnerabilityWithImage } from '#lib/types/environment';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
-	import { onMount, untrack } from 'svelte';
+	import { onMount } from 'svelte';
 	import SecurityVulnerabilityTable from './security-vulnerability-table.svelte';
 	import SecurityPatchTable from './security-patch-table.svelte';
 	import type { ImagePatchTargetDto } from '#lib/types/docker';
@@ -23,11 +23,11 @@
 
 	let { data } = $props();
 
-	let summary = $state<EnvironmentVulnerabilitySummary>(untrack(() => data.summary));
+	let summary = $derived<EnvironmentVulnerabilitySummary>(data.summary);
 	type VulnerabilityRow = VulnerabilityWithImage & { id: string };
 
-	let vulnerabilities = $state<Paginated<VulnerabilityRow>>(untrack(() => data.vulnerabilities));
-	let requestOptions = $state<SearchPaginationSortRequest>(untrack(() => data.vulnerabilityRequestOptions));
+	let vulnerabilities = $derived<Paginated<VulnerabilityRow>>(data.vulnerabilities);
+	let requestOptions = $derived<SearchPaginationSortRequest>(data.vulnerabilityRequestOptions);
 	let showIgnored = $state(false);
 
 	function withIgnoredFilter(options: SearchPaginationSortRequest, show: boolean): SearchPaginationSortRequest {
@@ -68,7 +68,7 @@
 		data: [],
 		pagination: { totalPages: 0, totalItems: 0, currentPage: 1, itemsPerPage: 20 }
 	});
-	let patchRequestOptions = $state<SearchPaginationSortRequest>(untrack(() => data.patchRequestOptions));
+	let patchRequestOptions = $derived<SearchPaginationSortRequest>(data.patchRequestOptions);
 	async function loadPatches() {
 		try {
 			const response = await imageService.listPatchTargets(patchRequestOptions);

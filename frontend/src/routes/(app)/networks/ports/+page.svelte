@@ -10,7 +10,7 @@
 
 	let { data } = $props();
 
-	let requestOptions = $state(untrack(() => data.portRequestOptions));
+	let requestOptions = $derived(data.portRequestOptions);
 	let selectedIds = $state<string[]>([]);
 
 	const envId = $derived(environmentStore.selected?.id || '0');

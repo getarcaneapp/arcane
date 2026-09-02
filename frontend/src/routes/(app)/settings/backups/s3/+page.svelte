@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import settingsStore from '#lib/stores/config-store';
 	import { SettingsPageLayout, type SettingsActionButton } from '#lib/layouts';
@@ -13,8 +12,8 @@
 	import S3DestinationTable from './s3-destination-table.svelte';
 
 	let { data } = $props();
-	let destinations = $state(untrack(() => data.destinations));
-	let requestOptions = $state<SearchPaginationSortRequest>(untrack(() => data.requestOptions));
+	let destinations = $derived(data.destinations);
+	let requestOptions = $derived<SearchPaginationSortRequest>(data.requestOptions);
 	let selected = $state<S3Destination | null>(null);
 	let dialogOpen = $state(false);
 	let saving = $state(false);
