@@ -372,6 +372,7 @@
   "auth_tagline_line2": "Dizajnita por ĉiuj.",
   "auth_login_problem_title": "Ensaluta problemo",
   "auth_failed_title": "Aŭtentikigo malsukcesis",
+  "auth_proxy_login_error": "Arcane ne povis kompletigi ensaluton per inversa proksimilo. Kontrolu, ke Arcane estas atingebla kaj ke la proksimilo permesas la aŭtentikigajn kapliniojn, tiam provu denove.",
   "auth_no_login_methods_title": "Neniuj ensalut-metodoj agorditaj",
   "auth_no_login_methods_description": "Nuntempe neniu ensalut-metodo estas ebligita. Bonvolu kontakti administranton.",
   "auth_username_placeholder": "Enigu vian uzantnomon aŭ retpoŝton",
