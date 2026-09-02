@@ -233,6 +233,7 @@ func initializeStartupState(p initializeStartupStateParams) {
 	}
 	initializeGitOpsStartupStateInternal(appCtx, p.GitOpsSync)
 	p.Vulnerability.ImportLegacyReportFiles(appCtx)
+	p.Vulnerability.BackfillScanItems(appCtx)
 	if p.Project != nil {
 		if err := p.Project.RecoverProjectRenameJournals(appCtx); err != nil {
 			slog.WarnContext(appCtx, "Failed to recover interrupted project rename operations on startup", "error", err)
