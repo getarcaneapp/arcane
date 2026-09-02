@@ -1,8 +1,6 @@
 package notification
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -12,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -25,6 +24,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/notifications"
 	"github.com/getarcaneapp/arcane/types/v2/imageupdate"
 	notificationdto "github.com/getarcaneapp/arcane/types/v2/notification"
@@ -745,11 +745,14 @@ func TestNotificationService_NotifyEnabledProvidersInternal_SkipsFiltersAndAggre
 		require.NoError(t, db.WithContext(ctx).Create(&rows[i]).Error)
 	}
 
+	var dispatchedMu sync.Mutex
 	var dispatched []notifications.NotificationProvider
 	target := NotificationTarget{EnvironmentID: "0", EnvironmentName: "Local Docker"}
 	delivered, err := svc.notifyEnabledProvidersInternal(ctx, target, notifications.NotificationEventPruneReport, "loop-test", database.JSON{"eventType": "prune_report"},
 		func(_ context.Context, provider notifications.NotificationProvider, _ database.JSON) (bool, error) {
+			dispatchedMu.Lock()
 			dispatched = append(dispatched, provider)
+			dispatchedMu.Unlock()
 			if provider == notifications.NotificationProviderNtfy {
 				return true, errors.New("boom")
 			}
@@ -757,7 +760,7 @@ func TestNotificationService_NotifyEnabledProvidersInternal_SkipsFiltersAndAggre
 		})
 
 	// Disabled and event-disabled rows are never dispatched.
-	require.Equal(t, []notifications.NotificationProvider{notifications.NotificationProviderGotify, notifications.NotificationProviderNtfy}, dispatched)
+	require.ElementsMatch(t, []notifications.NotificationProvider{notifications.NotificationProviderGotify, notifications.NotificationProviderNtfy}, dispatched)
 	require.Equal(t, 1, delivered)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "notification errors: ntfy: boom")
@@ -772,6 +775,40 @@ func TestNotificationService_NotifyEnabledProvidersInternal_SkipsFiltersAndAggre
 	require.Equal(t, event.EventSeverityError, events[1].Severity)
 	require.Equal(t, "Notification failed via ntfy", events[1].Title)
 	require.Contains(t, events[1].Description, "boom")
+
+	// Completed attempts persist even when cancellation ends the caller's wait.
+	sqlDB, err := db.DB.DB()
+	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(1)
+	releaseLogging := make(chan struct{})
+	var releaseOnce sync.Once
+	defer releaseOnce.Do(func() { close(releaseLogging) })
+	require.NoError(t, db.Callback().Create().Before("gorm:create").Register("block_notification_events", func(tx *gorm.DB) {
+		if tx.Statement.Table == "events" {
+			<-releaseLogging
+		}
+	}))
+	canceledCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	returned := make(chan struct{})
+	go func() {
+		defer close(returned)
+		_, _ = svc.notifyEnabledProvidersInternal(canceledCtx, target, notifications.NotificationEventPruneReport, "canceled-loop-test", nil,
+			func(context.Context, notifications.NotificationProvider, database.JSON) (bool, error) {
+				cancel()
+				return true, nil
+			})
+	}()
+	select {
+	case <-returned:
+	case <-time.After(time.Second):
+		t.Fatal("notification call waited for event persistence after cancellation")
+	}
+	releaseOnce.Do(func() { close(releaseLogging) })
+	require.Eventually(t, func() bool {
+		var count int64
+		return db.WithContext(ctx).Model(&event.Event{}).Where("description = ?", "canceled-loop-test").Count(&count).Error == nil && count == 2
+	}, time.Second, 10*time.Millisecond)
 }
 
 func TestSupportedNotificationTestTypes_IncludesAutoHeal(t *testing.T) {

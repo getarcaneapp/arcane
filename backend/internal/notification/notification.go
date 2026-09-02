@@ -22,6 +22,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/notifications"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
@@ -29,6 +30,7 @@ import (
 	notificationdto "github.com/getarcaneapp/arcane/types/v2/notification"
 	"github.com/getarcaneapp/arcane/types/v2/system"
 	"go.getarcane.app/sys/crypto"
+	"golang.org/x/sync/errgroup"
 )
 
 var notificationCredentialFieldsByProviderInternal = map[notifications.NotificationProvider][]string{
@@ -518,9 +520,9 @@ func (s *NotificationService) isEventEnabled(config database.JSON, eventType not
 	return enabled
 }
 
-// logNotification records a delivery attempt in the event log so sends and
+// logNotificationInternal records a delivery attempt in the event log so sends and
 // failures are visible alongside every other Arcane event.
-func (s *NotificationService) logNotification(ctx context.Context, environmentID string, provider notifications.NotificationProvider, subject, status string, errMsg *string, metadata database.JSON) {
+func (s *NotificationService) logNotificationInternal(ctx context.Context, environmentID string, provider notifications.NotificationProvider, subject, status string, errMsg *string, metadata database.JSON) {
 	if s.eventSvc == nil {
 		return
 	}
@@ -540,7 +542,7 @@ func (s *NotificationService) logNotification(ctx context.Context, environmentID
 
 	resourceType := "notification"
 	providerName := string(provider)
-	if _, err := s.eventSvc.CreateEvent(ctx, event.CreateEventRequest{
+	req := event.CreateEventRequest{
 		Type:          event.EventTypeNotificationSend,
 		Severity:      severity,
 		Title:         title,
@@ -549,8 +551,23 @@ func (s *NotificationService) logNotification(ctx context.Context, environmentID
 		ResourceName:  &providerName,
 		EnvironmentID: &environmentID,
 		Metadata:      eventMetadata,
-	}); err != nil {
-		slog.WarnContext(ctx, "Failed to log notification event", "provider", providerName, "error", err.Error())
+	}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer utils.RecoverToError(nil, "notification event logging", "provider", providerName)
+		logCtx, cancelLog := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancelLog()
+		if _, err := s.eventSvc.CreateEvent(logCtx, req); err != nil {
+			slog.WarnContext(logCtx, "Failed to log notification event", "provider", providerName, "error", err.Error())
+		}
+	}()
+
+	// Cancellation ends the caller's wait, not persistence of a completed attempt.
+	select {
+	case <-done:
+	case <-ctx.Done():
 	}
 }
 
@@ -575,28 +592,41 @@ func (s *NotificationService) notifyEnabledProvidersInternal(
 		return 0, errors.WrapIf(err, "failed to get notification settings")
 	}
 
-	delivered := 0
-	var errs []string
+	eligible := make([]NotificationSettings, 0, len(settings))
 	for _, setting := range settings {
-		if !setting.Enabled {
-			continue
+		if setting.Enabled && s.isEventEnabled(setting.Config, eventType) {
+			eligible = append(eligible, setting)
 		}
-		if !s.isEventEnabled(setting.Config, eventType) {
-			continue
-		}
+	}
 
-		handled, sendErr := dispatch(ctx, setting.Provider, setting.Config)
-		if !handled {
+	handled := make([]bool, len(eligible))
+	sendErrs := make([]error, len(eligible))
+	var g errgroup.Group
+	g.SetLimit(notificationDispatchConcurrencyInternal)
+	for i, setting := range eligible {
+		g.Go(func() error {
+			defer utils.RecoverToError(&sendErrs[i], "notification dispatch", "provider", setting.Provider)
+			handled[i] = true
+			handled[i], sendErrs[i] = dispatch(ctx, setting.Provider, setting.Config)
+			return nil
+		})
+	}
+	var errs []string
+	if err := g.Wait(); err != nil {
+		errs = append(errs, fmt.Sprintf("notification dispatch: %v", err))
+	}
+
+	delivered := 0
+	for i, setting := range eligible {
+		if !handled[i] {
 			slog.WarnContext(ctx, "Unknown notification provider", "provider", setting.Provider)
 			continue
 		}
-
-		if sendErr == nil {
+		if sendErrs[i] == nil {
 			delivered++
 		}
-
-		status, errMsg := collectNotificationSendResultInternal(&errs, setting.Provider, sendErr)
-		s.logNotification(ctx, target.EnvironmentID, setting.Provider, logRef, status, errMsg, metadata)
+		status, errMsg := collectNotificationSendResultInternal(&errs, setting.Provider, sendErrs[i])
+		s.logNotificationInternal(ctx, target.EnvironmentID, setting.Provider, logRef, status, errMsg, metadata)
 	}
 
 	if s.apnsSvc != nil {
@@ -610,6 +640,8 @@ func (s *NotificationService) notifyEnabledProvidersInternal(
 	}
 	return delivered, nil
 }
+
+const notificationDispatchConcurrencyInternal = 4
 
 func collectNotificationSendResultInternal(errors *[]string, provider notifications.NotificationProvider, sendErr error) (string, *string) {
 	if sendErr == nil {
