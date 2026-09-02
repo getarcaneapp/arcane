@@ -1453,8 +1453,7 @@ func (s *ContainerService) ListContainersPaginated(
 	if !includeAll {
 		running := make([]container.Summary, 0, len(dockerContainers))
 		for _, dc := range dockerContainers {
-			switch dc.State {
-			case container.StateRunning, container.StatePaused, container.StateRestarting:
+			if dc.State == container.StateRunning || dc.State == container.StatePaused || dc.State == container.StateRestarting {
 				running = append(running, dc)
 			}
 		}
