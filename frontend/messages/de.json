@@ -372,6 +372,7 @@
   "auth_tagline_line2": "Konzipiert für alle.",
   "auth_login_problem_title": "Anmeldeproblem",
   "auth_failed_title": "Authentifizierung fehlgeschlagen",
+  "auth_proxy_login_error": "Arcane konnte die Anmeldung über den Reverse-Proxy nicht abschließen. Überprüfen Sie, ob Arcane erreichbar ist und ob der Proxy die Authentifizierungs-Header zulässt, und versuchen Sie es dann erneut.",
   "auth_no_login_methods_title": "Keine Anmeldemethoden konfiguriert",
   "auth_no_login_methods_description": "Derzeit sind keine Anmeldemethoden aktiviert. Bitte wende dich an einen Administrator.",
   "auth_username_placeholder": "Benutzernamen oder E-Mail eingeben",
