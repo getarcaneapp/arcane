@@ -372,6 +372,7 @@
   "auth_tagline_line2": "为所有人设计。",
   "auth_login_problem_title": "【不能登录】如何登录",
   "auth_failed_title": "身份验证失败",
+  "auth_proxy_login_error": "Arcane 无法通过反向代理完成登录。请检查是否可以访问 Arcane，并确认代理允许认证头信息，然后重试。",
   "auth_no_login_methods_title": "未配置登录方法",
   "auth_no_login_methods_description": "目前没有启用任何登录方式。请联系管理员。",
   "auth_username_placeholder": "输入您的用户名或电子邮件",
