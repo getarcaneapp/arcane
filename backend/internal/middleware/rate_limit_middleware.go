@@ -165,10 +165,12 @@ func agentTokenRateLimitKeyInternal(token string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// perTokenRateLimitIPMultiplierInternal widens the IP ceiling for traffic that fails isAuthentic.
-const perTokenRateLimitIPMultiplierInternal = 10
-
-// PerTokenRateLimitForPaths limits authentic tokens per token (skipping the IP ceiling) and everything else per IP.
+// PerTokenRateLimitForPaths limits authentic tokens per token (skipping the IP ceiling)
+// and everything else per IP. The isAuthentic check is a fixed-cost decrypt (microseconds,
+// a few KB) so it intentionally runs before the IP limiter: authentic tokens get their own
+// per-token buckets instead of contending for the shared IP budget, and a global decrypt
+// limiter is avoided because attackers could exhaust it and block every valid webhook.
+// A nil isAuthentic fails closed: nonempty tokens fall back to the shared IP limiter.
 func PerTokenRateLimitForPaths(
 	paths []string,
 	perMinute int,
@@ -181,10 +183,7 @@ func PerTokenRateLimitForPaths(
 	if burst <= 0 {
 		burst = perMinute
 	}
-	ipLimiter := newIPRateLimiterInternal(
-		rate.Every(time.Minute/time.Duration(perMinute*perTokenRateLimitIPMultiplierInternal)),
-		burst*perTokenRateLimitIPMultiplierInternal,
-	)
+	ipLimiter := newIPRateLimiterInternal(rate.Every(time.Minute/time.Duration(perMinute)), burst)
 	tokenLimiter := newIPRateLimiterInternal(rate.Every(time.Minute/time.Duration(perMinute)), burst)
 
 	pathSet := make(map[string]struct{}, len(paths))
@@ -199,7 +198,7 @@ func PerTokenRateLimitForPaths(
 			}
 
 			token := strings.TrimSpace(c.Param("token"))
-			if token != "" && (isAuthentic == nil || isAuthentic(token)) {
+			if token != "" && isAuthentic != nil && isAuthentic(token) {
 				if !tokenLimiter.allow(agentTokenRateLimitKeyInternal(token)) {
 					c.Response().Header().Set("Retry-After", "60")
 					return c.JSON(http.StatusTooManyRequests, map[string]any{"error": "rate limit exceeded"})

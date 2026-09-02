@@ -121,9 +121,12 @@ func parseWebhookPrefixInternal(raw string) (string, error) {
 	return webhookTokenPrefix + hexPart[:webhookTokenPrefixLen], nil
 }
 
-// IsAuthenticToken reports whether raw decrypts under the server key, proving a valid key.
-// The exact-length gate caps the work at one fixed-size decrypt, keeping it safe to call
-// on unauthenticated requests before rate limiting.
+// IsAuthenticToken reports whether raw is a valid webhook token envelope: it decrypts
+// under the server key to exactly 32 bytes of canonical lowercase hex. It proves envelope
+// shape only — it does not prove the webhook exists, is enabled, or may trigger an action;
+// the database lookup and stored token hash remain authoritative. The exact-length gate
+// caps the work at one fixed-size decrypt, keeping it safe to call on unauthenticated
+// requests before rate limiting.
 func IsAuthenticToken(raw string) bool {
 	raw = strings.TrimSpace(raw)
 	hexPart, ok := strings.CutPrefix(raw, webhookTokenPrefix)
@@ -135,10 +138,16 @@ func IsAuthenticToken(raw string) bool {
 		return false
 	}
 	secretHex, err := libcrypto.Decrypt(base64.StdEncoding.EncodeToString(encryptedBytes))
+	if err != nil || len(secretHex) != webhookTokenLength*2 {
+		return false
+	}
+	secret, err := hex.DecodeString(secretHex)
 	if err != nil {
 		return false
 	}
-	return len(secretHex) == webhookTokenLength*2
+	// hex.EncodeToString emits lowercase, so equality rejects non-canonical (e.g. uppercase)
+	// plaintext that would otherwise count as a webhook token envelope.
+	return hex.EncodeToString(secret) == secretHex
 }
 
 func defaultWebhookActionTypeInternal(targetType string) (string, error) {

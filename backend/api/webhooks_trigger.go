@@ -13,7 +13,8 @@ import (
 
 // RegisterWebhookTrigger registers the public (unauthenticated) trigger endpoint.
 // The token in the URL is the sole authentication mechanism.
-// Rate-limited via PerIPRateLimitForPaths in router_bootstrap.go.
+// Rate-limited via PerTokenRateLimitForPaths in router_bootstrap.go: authentic tokens
+// get per-token buckets, everything else shares a per-source-IP budget.
 func RegisterWebhookTrigger(g *echo.Group, webhookService *webhook.WebhookService, appCtx handlerutil.ActivityAppContext) {
 	g.POST("/webhooks/trigger/:token", func(c *echo.Context) error {
 		if webhookService == nil {

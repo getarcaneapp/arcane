@@ -192,7 +192,8 @@ func okHandlerInternal(c *echo.Context) error {
 }
 
 func TestPerTokenRateLimitForPaths_TracksDistinctTokensNotIP(t *testing.T) {
-	doReq := newTokenRateLimitTestRouterInternal(t, 60, 1, nil, okHandlerInternal)
+	acceptAll := func(string) bool { return true }
+	doReq := newTokenRateLimitTestRouterInternal(t, 60, 1, acceptAll, okHandlerInternal)
 
 	require.Equal(t, http.StatusOK, doReq("token-a"))
 	require.Equal(t, http.StatusOK, doReq("token-b"))
@@ -200,19 +201,24 @@ func TestPerTokenRateLimitForPaths_TracksDistinctTokensNotIP(t *testing.T) {
 	require.Equal(t, http.StatusTooManyRequests, doReq("token-a"))
 }
 
-func TestPerTokenRateLimitForPaths_FallsBackToIPWhenTokenMissing(t *testing.T) {
+// TestPerTokenRateLimitForPaths_NilAuthenticatorFailsClosedToSharedIPBucket proves
+// a nil isAuthentic does not hand out independent per-token buckets: all nonempty
+// tokens contend for one shared IP bucket and trip 429 together.
+func TestPerTokenRateLimitForPaths_NilAuthenticatorFailsClosedToSharedIPBucket(t *testing.T) {
 	doReq := newTokenRateLimitTestRouterInternal(t, 60, 1, nil, okHandlerInternal)
 
-	code := doReq("")
-
-	require.NotEqual(t, http.StatusInternalServerError, code)
+	require.Equal(t, http.StatusOK, doReq("token-a"))
+	require.Equal(t, http.StatusTooManyRequests, doReq("token-b"),
+		"a nil authenticator must fail closed: distinct tokens share the IP bucket")
+	require.Equal(t, http.StatusTooManyRequests, doReq("token-a"))
 }
 
 func TestPerTokenRateLimitForPaths_IPCeilingBoundsUnauthenticTokenCycling(t *testing.T) {
 	rejectAll := func(string) bool { return false }
-	dbLookups := 0
-	doReq := newTokenRateLimitTestRouterInternal(t, 60, 1, rejectAll, func(c *echo.Context) error {
-		dbLookups++
+	const perMinute, burst = 1, 3
+	handlerHits := 0
+	doReq := newTokenRateLimitTestRouterInternal(t, perMinute, burst, rejectAll, func(c *echo.Context) error {
+		handlerHits++
 		return c.NoContent(http.StatusNotFound)
 	})
 
@@ -224,7 +230,8 @@ func TestPerTokenRateLimitForPaths_IPCeilingBoundsUnauthenticTokenCycling(t *tes
 	}
 
 	require.Positive(t, rejections, "expected the IP ceiling to reject some requests once its burst is exhausted")
-	require.Less(t, dbLookups, 200, "unseen tokens must not all reach the handler/downstream lookup")
+	require.Equal(t, burst, handlerHits,
+		"distinct unauthenticated tokens from one IP must reach the handler only up to the configured burst; more would mean the old 10x IP allowance came back")
 }
 
 func TestPerTokenRateLimitForPaths_MalformedTokensGetNoBucketButStillHitIPCeiling(t *testing.T) {
@@ -232,18 +239,17 @@ func TestPerTokenRateLimitForPaths_MalformedTokensGetNoBucketButStillHitIPCeilin
 		return token == "well-formed"
 	}
 	const perMinute, burst = 2, 2
-	const ipBurst = burst * perTokenRateLimitIPMultiplierInternal
 
 	doReq := newTokenRateLimitTestRouterInternal(t, perMinute, burst, isAuthentic, okHandlerInternal)
 
 	successes := 0
-	for i := range ipBurst + 10 {
+	for i := range burst + 10 {
 		if doReq("not-well-formed-"+strconv.Itoa(i)) == http.StatusOK {
 			successes++
 		}
 	}
 
-	require.LessOrEqual(t, successes, ipBurst,
+	require.LessOrEqual(t, successes, burst,
 		"malformed tokens must be bounded by the IP ceiling, not given their own per-token bucket")
 }
 

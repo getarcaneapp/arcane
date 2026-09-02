@@ -4,6 +4,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -161,6 +162,67 @@ func TestIsAuthenticToken_RejectsForgedHexTokens(t *testing.T) {
 	assert.False(t, IsAuthenticToken("arc_wh_01020304"))
 	assert.False(t, IsAuthenticToken(""))
 	assert.False(t, IsAuthenticToken(webhookTokenPrefix+strings.Repeat("ab", 512*1024)), "oversized hex must fail the length gate before any decoding")
+}
+
+// encryptedTokenEnvelopeInternal wraps any plaintext in a well-formed webhook token
+// envelope (prefix + hex-encoded ciphertext) so tests can prove the plaintext contract,
+// not just the decrypt step, gates IsAuthenticToken.
+func encryptedTokenEnvelopeInternal(t *testing.T, plaintext string) string {
+	t.Helper()
+	initWebhookTokenCryptoForTests()
+
+	encrypted, err := libcrypto.Encrypt(plaintext)
+	require.NoError(t, err)
+	encryptedBytes, err := base64.StdEncoding.DecodeString(encrypted)
+	require.NoError(t, err)
+	return webhookTokenPrefix + hex.EncodeToString(encryptedBytes)
+}
+
+func TestIsAuthenticToken_RejectsValidlyEncryptedNonHexPlaintext(t *testing.T) {
+	// Decrypts cleanly under the server key but is not a hex-encoded webhook secret.
+	nonHex := encryptedTokenEnvelopeInternal(t, strings.Repeat("x", 64))
+	assert.False(t, IsAuthenticToken(nonHex),
+		"unrelated same-key ciphertext must not qualify as a webhook token envelope")
+
+	// Right length and valid hex characters, but not canonical lowercase hex.
+	uppercaseHex := encryptedTokenEnvelopeInternal(t, strings.ToUpper(strings.Repeat("ab", 32)))
+	assert.False(t, IsAuthenticToken(uppercaseHex),
+		"non-canonical (uppercase) hex plaintext must not qualify as a webhook token envelope")
+}
+
+func BenchmarkIsAuthenticToken(b *testing.B) {
+	initWebhookTokenCryptoForTests()
+
+	raw, _, _, err := generateWebhookTokenInternal()
+	require.NoError(b, err)
+
+	// Same byte length as a real envelope (12 nonce + 64 secret + 16 tag) but random
+	// ciphertext that will fail GCM authentication, i.e. a full-length forgery.
+	forgedBytes := make([]byte, 12+webhookTokenLength*2+16)
+	if _, err := rand.Read(forgedBytes); err != nil {
+		b.Fatal(err)
+	}
+	forged := webhookTokenPrefix + hex.EncodeToString(forgedBytes)
+
+	structurallyInvalid := "arc_wh_not-a-real-envelope"
+
+	for _, bm := range []struct {
+		name  string
+		token string
+	}{
+		{"Valid", raw},
+		{"ForgedFullLength", forged},
+		{"StructurallyInvalid", structurallyInvalid},
+	} {
+		b.Run(bm.name, func(b *testing.B) {
+			b.ReportAllocs()
+			var sink bool
+			for b.Loop() {
+				sink = IsAuthenticToken(bm.token)
+			}
+			_ = sink
+		})
+	}
 }
 
 // --- CreateWebhook ---
