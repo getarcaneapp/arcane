@@ -164,7 +164,17 @@ func handleAgentMessage(ctx context.Context, streamCtx context.Context, clientWS
 	case MessageTypeWebSocketData, MessageTypeStreamData:
 		return false, writeWebSocketData(streamCtx, clientWS, msg)
 	case MessageTypeWebSocketClose, MessageTypeStreamClose, MessageTypeStreamEnd:
-		slog.DebugContext(ctx, "Agent closed WebSocket stream", "stream_id", streamID)
+		slog.DebugContext(ctx, "Agent closed WebSocket stream", "stream_id", streamID, "error", msg.Error)
+		status, reason := websocket.StatusNormalClosure, msg.Error
+		if reason != "" {
+			status = websocket.StatusInternalError
+			if len(reason) > 123 {
+				reason = reason[:123]
+			}
+		}
+		if err := clientWS.Close(status, reason); err != nil {
+			slog.DebugContext(ctx, "Failed to close client WebSocket", "stream_id", streamID, "status", int(status), "error", err)
+		}
 		return true, nil
 	case MessageTypeRequest,
 		MessageTypeResponse,

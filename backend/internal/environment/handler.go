@@ -43,8 +43,9 @@ const localDockerEnvironmentID = "0"
 const (
 	// Only covers poll-mode TTL expiry; tunnel and health-check changes arrive
 	// on the service's runtime-change signal instead.
-	environmentStreamPollInterval = 5 * time.Second
-	environmentStreamRefreshFloor = 30 * time.Second
+	environmentStreamPollInterval   = 5 * time.Second
+	environmentStreamRefreshFloor   = 30 * time.Second
+	environmentStreamHubKeyInternal = "environments"
 )
 
 // EnvironmentHandler handles environment management endpoints.
@@ -54,6 +55,7 @@ type EnvironmentHandler struct {
 	apiKeyService      *apikey.ApiKeyService
 	eventService       *event.EventService
 	cfg                *config.Config
+	streamHub          *agg.Hub[[]environment.Environment]
 }
 
 // ============================================================================
@@ -151,6 +153,7 @@ func NewHandler(environmentService *EnvironmentService, settingsService *setting
 		apiKeyService:      apiKeyService,
 		eventService:       eventService,
 		cfg:                cfg,
+		streamHub:          agg.NewHub[[]environment.Environment](),
 	}
 }
 
@@ -383,17 +386,14 @@ func accessibleEnvironmentIDsInternal(ps *authz.PermissionSet) []string {
 	return ids
 }
 
-// visibleEnvironmentsForInternal returns the environments the caller may see,
-// with the manager's runtime overlay already applied. It reuses the same access
-// rules as ListEnvironments so the stream and the REST list can never disagree
-// about which environments a caller has.
-func (h *EnvironmentHandler) visibleEnvironmentsForInternal(ctx context.Context, ps *authz.PermissionSet) ([]environment.Environment, error) {
-	envs, err := h.environmentService.ListVisibleEnvironments(ctx)
-	if err != nil {
-		return nil, err
-	}
+// visibleEnvironmentsForInternal filters the shared environment snapshot down
+// to what the caller may see. It reuses the same access rules as
+// ListEnvironments so the stream and the REST list can never disagree about
+// which environments a caller has. The input slice is shared across stream
+// subscribers and must not be mutated.
+func visibleEnvironmentsForInternal(envs []environment.Environment, ps *authz.PermissionSet) []environment.Environment {
 	if environmentListerSeesAllInternal(ps) {
-		return envs, nil
+		return envs
 	}
 
 	allowed := make(map[string]struct{}, len(ps.PerEnv))
@@ -401,13 +401,13 @@ func (h *EnvironmentHandler) visibleEnvironmentsForInternal(ctx context.Context,
 		allowed[envID] = struct{}{}
 	}
 
-	filtered := envs[:0]
+	filtered := make([]environment.Environment, 0, len(allowed))
 	for _, env := range envs {
 		if _, ok := allowed[env.ID]; ok {
 			filtered = append(filtered, env)
 		}
 	}
-	return filtered, nil
+	return filtered
 }
 
 // fingerprintEnvironmentsInternal hashes every field of the visible environment
@@ -450,23 +450,12 @@ func fingerprintEnvironmentsInternal(envs []environment.Environment) uint64 {
 }
 
 func (h *EnvironmentHandler) RunStreamProducer(ctx context.Context, ps *authz.PermissionSet, events chan<- environment.StreamEvent) {
-	changes, unsubscribe := h.environmentService.SubscribeRuntimeChanges()
-	defer unsubscribe()
-
 	var lastFingerprint uint64
 	var haveFingerprint bool
 	var lastSentAt time.Time
 
-	send := func() bool {
-		envs, err := h.visibleEnvironmentsForInternal(ctx, ps)
-		if err != nil {
-			// A failed read must not end the stream; the next tick retries.
-			if ctx.Err() == nil {
-				slog.WarnContext(ctx, "environment stream failed to list environments", "error", err)
-			}
-			return ctx.Err() == nil
-		}
-
+	h.streamHub.Subscribe(ctx, environmentStreamHubKeyInternal, h.runEnvironmentStreamListerInternal, func(all []environment.Environment) bool {
+		envs := visibleEnvironmentsForInternal(all, ps)
 		fingerprint := fingerprintEnvironmentsInternal(envs)
 		// Re-send unchanged state on a floor so relative timestamps in the UI
 		// ("last seen 2 minutes ago") keep advancing.
@@ -482,11 +471,26 @@ func (h *EnvironmentHandler) RunStreamProducer(ctx context.Context, ps *authz.Pe
 			Environments: envs,
 			Timestamp:    time.Now(),
 		})
+	})
+}
+
+func (h *EnvironmentHandler) runEnvironmentStreamListerInternal(ctx context.Context, publish func([]environment.Environment)) {
+	changes, unsubscribe := h.environmentService.SubscribeRuntimeChanges()
+	defer unsubscribe()
+
+	list := func() {
+		envs, err := h.environmentService.ListVisibleEnvironments(ctx)
+		if err != nil {
+			// A failed read must not end the stream; the next tick retries.
+			if ctx.Err() == nil {
+				slog.WarnContext(ctx, "environment stream failed to list environments", "error", err)
+			}
+			return
+		}
+		publish(envs)
 	}
 
-	if !send() {
-		return
-	}
+	list()
 
 	ticker := time.NewTicker(environmentStreamPollInterval)
 	defer ticker.Stop()
@@ -496,13 +500,9 @@ func (h *EnvironmentHandler) RunStreamProducer(ctx context.Context, ps *authz.Pe
 		case <-ctx.Done():
 			return
 		case <-changes:
-			if !send() {
-				return
-			}
+			list()
 		case <-ticker.C:
-			if !send() {
-				return
-			}
+			list()
 		}
 	}
 }

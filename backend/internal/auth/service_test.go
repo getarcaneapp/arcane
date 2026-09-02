@@ -7,6 +7,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 
+	"bytes"
 	"context"
 	"crypto/mldsa"
 	"encoding/base64"
@@ -85,9 +86,10 @@ func newTestSigningKeyInternal() *mldsa.PrivateKey {
 
 func newTestAuthService() *AuthService {
 	return &AuthService{
-		signingKey:    newTestSigningKeyInternal(),
-		refreshExpiry: 24 * time.Hour,
-		config:        &config.Config{},
+		signingKey:        newTestSigningKeyInternal(),
+		browserSigningKey: bytes.Repeat([]byte{0x42}, browserSessionSigningKeySize),
+		refreshExpiry:     24 * time.Hour,
+		config:            &config.Config{},
 		tokenCache: hot.NewHotCache[string, verifiedTokenEntry](hot.LRU, 4096).
 			WithTTL(15 * time.Second).
 			WithJanitor().
@@ -231,7 +233,7 @@ func TestVerifyToken_ValidClaims(t *testing.T) {
 func TestVerifyToken_RejectsNonMLDSAAlg(t *testing.T) {
 	s := newTestAuthService()
 	exp := time.Now().Add(5 * time.Minute)
-	token := makeUnsignedToken(t, map[string]any{
+	payload, err := json.Marshal(map[string]any{
 		"jti":         "u1",
 		"sub":         "access",
 		"iat":         time.Now().Unix(),
@@ -240,8 +242,13 @@ func TestVerifyToken_RejectsNonMLDSAAlg(t *testing.T) {
 		"username":    "bob",
 		"app_version": config.Version,
 	})
+	require.NoError(t, err)
+	parsed, err := jwt.ParseInsecure(payload)
+	require.NoError(t, err)
+	token, err := jwt.Sign(parsed, jwt.WithKey(jwa.HS512(), s.browserSigningKey))
+	require.NoError(t, err)
 
-	_, _, err := s.VerifyToken(context.Background(), token)
+	_, _, err = s.VerifyToken(context.Background(), string(token))
 
 	assert.ErrorIs(t, err, common.ErrInvalidToken,
 		"want common.ErrInvalidToken, got %v", err)
@@ -407,7 +414,19 @@ func TestRefreshToken_Valid(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, tokenPair)
 	require.NotEmpty(t, tokenPair.AccessToken)
+	require.NotEmpty(t, tokenPair.BrowserToken)
 	require.NotEmpty(t, tokenPair.RefreshToken)
+	require.Less(t, len(tokenPair.BrowserToken), 1024)
+
+	accessAlgorithm, ok := signedTokenAlgorithmInternal(tokenPair.AccessToken)
+	require.True(t, ok)
+	require.Equal(t, jwa.MLDSA87().String(), accessAlgorithm)
+	browserAlgorithm, ok := signedTokenAlgorithmInternal(tokenPair.BrowserToken)
+	require.True(t, ok)
+	require.Equal(t, jwa.HS512().String(), browserAlgorithm)
+	refreshAlgorithm, ok := signedTokenAlgorithmInternal(tokenPair.RefreshToken)
+	require.True(t, ok)
+	require.Equal(t, jwa.MLDSA87().String(), refreshAlgorithm)
 }
 
 // A refresh token minted under an older config.Version must still refresh successfully
@@ -451,6 +470,21 @@ func TestRefreshToken_VersionMismatchRotates(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "2.0.0", accessVersion)
 
+	parsedBrowser, err := jwt.ParseString(tokenPair.BrowserToken, jwt.WithKey(jwa.HS512(), s.browserSigningKey))
+	require.NoError(t, err)
+	browserSubject, ok := parsedBrowser.Subject()
+	require.True(t, ok)
+	require.Equal(t, browserTokenSubject, browserSubject)
+	browserSessionID, err := jwt.Get[string](parsedBrowser, claimSessionID)
+	require.NoError(t, err)
+	require.Equal(t, session.ID, browserSessionID)
+	browserUserID, err := jwt.Get[string](parsedBrowser, claimUserID)
+	require.NoError(t, err)
+	require.Equal(t, user.ID, browserUserID)
+	browserVersion, err := jwt.Get[string](parsedBrowser, claimAppVersion)
+	require.NoError(t, err)
+	require.Equal(t, "2.0.0", browserVersion)
+
 	parsedRefresh, err := jwt.ParseString(tokenPair.RefreshToken, jwt.WithKey(jwa.MLDSA87(), s.signingKey.PublicKey()))
 	require.NoError(t, err)
 	refreshVersion, err := jwt.Get[string](parsedRefresh, claimAppVersion)
@@ -474,10 +508,23 @@ func TestVerifyToken_RejectsRevokedSession(t *testing.T) {
 
 	exp := time.Now().Add(5 * time.Minute)
 	session, _ := createTestSession(t, db, user.ID, exp)
-	require.NoError(t, s.RevokeSession(context.Background(), session.ID))
 	token := makeAccessToken(t, s.signingKey, "access", user.ID, user.Username, []string{"user"}, "", "", exp, session.ID)
+	browser, err := jwt.NewBuilder().
+		JwtID("revoked-browser-token").
+		Subject(browserTokenSubject).
+		IssuedAt(time.Now()).
+		Expiration(exp).
+		Claim(claimSessionID, session.ID).
+		Claim(claimUserID, user.ID).
+		Build()
+	require.NoError(t, err)
+	browserToken, err := jwt.Sign(browser, jwt.WithKey(jwa.HS512(), s.browserSigningKey))
+	require.NoError(t, err)
+	require.NoError(t, s.RevokeSession(context.Background(), session.ID))
 
 	_, _, err = s.VerifyToken(context.Background(), token)
+	require.ErrorIs(t, err, common.ErrSessionRevoked)
+	_, _, err = s.VerifyBrowserToken(context.Background(), string(browserToken))
 	require.ErrorIs(t, err, common.ErrSessionRevoked)
 }
 
@@ -544,10 +591,10 @@ func TestVerifyToken_RejectsRevokedCachedSession(t *testing.T) {
 
 	_, _, err = s.VerifyToken(context.Background(), token)
 	require.NoError(t, err)
-	require.NoError(t, session.NewSessionService(db).RevokeSession(context.Background(), sessionRecord.ID))
+	require.NoError(t, s.RevokeSession(context.Background(), sessionRecord.ID))
 
 	_, _, err = s.VerifyToken(context.Background(), token)
-	require.ErrorIs(t, err, common.ErrSessionRevoked, "expected cached access token to be rejected after cross-process revocation, got %v", err)
+	require.ErrorIs(t, err, common.ErrSessionRevoked, "expected cached access token to be rejected after revocation, got %v", err)
 }
 
 func TestRefreshToken_RotatesJTI(t *testing.T) {

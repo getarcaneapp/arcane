@@ -372,6 +372,7 @@
   "auth_tagline_line2": "Designed for everyone.",
   "auth_login_problem_title": "Login Problem",
   "auth_failed_title": "Authentication Failed",
+  "auth_proxy_login_error": "Arcane couldn't complete login through the reverse proxy. Check that Arcane is reachable and that the proxy allows the authentication headers, then try again.",
   "auth_no_login_methods_title": "No Login Methods Configured",
   "auth_no_login_methods_description": "There are currently no login methods enabled. Please contact an administrator.",
   "auth_username_placeholder": "Enter your username or email",

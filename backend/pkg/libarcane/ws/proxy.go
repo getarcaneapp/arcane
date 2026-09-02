@@ -71,6 +71,7 @@ func ProxyHTTP(w http.ResponseWriter, r *http.Request, remoteWS string, header h
 		for {
 			mt, msg, err := clientConn.Read(pumpCtx)
 			if err != nil {
+				relayCloseInternal(remoteConn, err)
 				return
 			}
 			if err := remoteConn.Write(pumpCtx, mt, msg); err != nil {
@@ -85,6 +86,7 @@ func ProxyHTTP(w http.ResponseWriter, r *http.Request, remoteWS string, header h
 		for {
 			mt, msg, err := remoteConn.Read(pumpCtx)
 			if err != nil {
+				relayCloseInternal(clientConn, err)
 				return
 			}
 			if err := clientConn.Write(pumpCtx, mt, msg); err != nil {
@@ -95,4 +97,20 @@ func ProxyHTTP(w http.ResponseWriter, r *http.Request, remoteWS string, header h
 
 	<-errc
 	return nil
+}
+
+// relayCloseInternal forwards a peer's close status to the other side of the
+// bridge so the terminating reason survives the proxy hop.
+func relayCloseInternal(conn *websocket.Conn, err error) {
+	var ce websocket.CloseError
+	if !errors.As(err, &ce) {
+		return
+	}
+	code := ce.Code
+	if code == websocket.StatusNoStatusRcvd {
+		code = websocket.StatusNormalClosure
+	}
+	if closeErr := conn.Close(code, ce.Reason); closeErr != nil {
+		slog.Debug("failed to relay websocket close", "status", int(code), "err", closeErr)
+	}
 }

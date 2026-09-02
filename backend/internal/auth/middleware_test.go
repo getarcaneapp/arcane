@@ -11,9 +11,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
+	usersvc "github.com/getarcaneapp/arcane/backend/v2/internal/user"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cookie"
+	authtypes "github.com/getarcaneapp/arcane/types/v2/auth"
 	"github.com/labstack/echo/v5"
 	"github.com/stretchr/testify/require"
 )
@@ -101,6 +106,53 @@ func TestAuthMiddleware_ManagerAuthResolvesPermissionsByKeyKind(t *testing.T) {
 			require.Equal(t, http.StatusOK, rec.Code)
 		})
 	}
+
+	t.Run("browser cookie uses owner role permissions", func(t *testing.T) {
+		ctx := context.Background()
+		db := setupAuthMiddlewareTestDBInternal(t)
+		userSvc := usersvc.NewUserService(db)
+		sessionSvc := session.NewSessionService(db)
+		settingsSvc, err := newSettingsServiceForAuthTestInternal(t, ctx, db)
+		require.NoError(t, err)
+		authSvc := newTestAuthService()
+		authSvc.userService = userSvc
+		authSvc.settingsService = settingsSvc
+		authSvc.sessionService = sessionSvc
+
+		browserUser := &common.User{ID: "browser-owner", Username: "browser-owner"}
+		_, err = userSvc.CreateUser(ctx, browserUser)
+		require.NoError(t, err)
+		expiresAt := time.Now().Add(time.Hour)
+		browserSession, refreshJTI, err := sessionSvc.CreateSession(ctx, browserUser.ID, expiresAt, authtypes.SessionMeta{})
+		require.NoError(t, err)
+		tokenPair, err := authSvc.buildTokenPairInternal(ctx, browserUser, browserSession, refreshJTI)
+		require.NoError(t, err)
+
+		router := echo.New()
+		router.Use(
+			NewAuthMiddleware(authSvc, &config.Config{}).
+				WithPermissionResolver(testPermissionResolver{}).
+				Add(),
+		)
+		router.GET("/secure", func(c *echo.Context) error {
+			ps, ok := c.Get("userPermissions").(*authz.PermissionSet)
+			require.True(t, ok)
+			require.True(t, ps.Allows("containers:list", ""))
+			return c.NoContent(http.StatusOK)
+		})
+
+		req := httptest.NewRequest(http.MethodGet, "/secure", nil)
+		req.Header.Set("Authorization", "Bearer "+tokenPair.BrowserToken)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusUnauthorized, rec.Code)
+
+		req = httptest.NewRequest(http.MethodGet, "/secure", nil)
+		req.AddCookie(&http.Cookie{Name: cookie.InsecureTokenCookieName, Value: tokenPair.BrowserToken})
+		rec = httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusOK, rec.Code)
+	})
 }
 
 func TestAuthMiddleware_ManagerAuthAcceptsEnvironmentAccessTokenViaAPIKey(t *testing.T) {

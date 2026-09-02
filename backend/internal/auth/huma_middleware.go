@@ -70,11 +70,18 @@ func parseSecurityRequirementsInternal(api huma.API, ctx operationProvider) secu
 // the caller can distinguish a missing/invalid token from a token-version
 // mismatch (which requires clearing the stale cookie).
 func tryBearerAuthInternal(ctx huma.Context, authService *AuthService) (*common.User, string, error) {
-	token := extractBearerTokenInternal(ctx)
+	token, fromCookie := extractBearerTokenInternal(ctx)
 	if token == "" {
 		return nil, "", nil
 	}
-	user, sessionID, err := authService.VerifyToken(ctx.Context(), token)
+	var user *common.User
+	var sessionID string
+	var err error
+	if fromCookie {
+		user, sessionID, err = authService.VerifyBrowserToken(ctx.Context(), token)
+	} else {
+		user, sessionID, err = authService.VerifyToken(ctx.Context(), token)
+	}
 	if err != nil {
 		return nil, "", err
 	}
@@ -243,7 +250,7 @@ func tryAgentAuthCtxInternal(ctx huma.Context, cfg *config.Config) (huma.Context
 // bearer token is present, but never fails the request. Used for public routes
 // (e.g. logout) that still need to know who the caller is when a token exists.
 func opportunisticBearerAuthInternal(ctx huma.Context, authService *AuthService, permResolver PermissionResolver) huma.Context {
-	if extractBearerTokenInternal(ctx) == "" {
+	if token, _ := extractBearerTokenInternal(ctx); token == "" {
 		return ctx
 	}
 	user, sessionID, err := tryBearerAuthInternal(ctx, authService)
@@ -273,7 +280,7 @@ func handleApiKeyAuthInternal(api huma.API, ctx huma.Context, authService *AuthS
 		return
 	}
 	if user, env, ok := tryEnvironmentAccessTokenAuthInternal(ctx, envTokenResolver, ctx.Header(utils.HeaderApiKey)); ok {
-		if allowBearerFallback && extractBearerTokenInternal(ctx) != "" {
+		if token, _ := extractBearerTokenInternal(ctx); allowBearerFallback && token != "" {
 			nextCtx, handled := handleBearerAuthInternal(api, ctx, authService, permResolver)
 			if handled {
 				if nextCtx != nil {
@@ -343,22 +350,22 @@ func resolveApiKeyPermissionsInternal(ctx context.Context, permResolver Permissi
 	return ps
 }
 
-// extractBearerTokenInternal extracts the JWT token from Authorization header or cookie.
-func extractBearerTokenInternal(ctx huma.Context) string {
+// extractBearerTokenInternal extracts the JWT token and reports whether it came from a cookie.
+func extractBearerTokenInternal(ctx huma.Context) (string, bool) {
 	// Try Authorization header first
 	authHeader := ctx.Header("Authorization")
 	if len(authHeader) > 7 && strings.ToLower(authHeader[:7]) == "bearer " {
-		return authHeader[7:]
+		return authHeader[7:], false
 	}
 
 	// Try cookie as fallback
 	if cookieHeader := ctx.Header("Cookie"); cookieHeader != "" {
 		if token, err := cookie.GetTokenCookieFromHeader(cookieHeader); err == nil {
-			return token
+			return token, true
 		}
 	}
 
-	return ""
+	return "", false
 }
 
 // setUserInContextInternal adds the authenticated user and the resolved

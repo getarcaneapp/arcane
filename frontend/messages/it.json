@@ -372,6 +372,7 @@
   "auth_tagline_line2": "Progettato per tutti.",
   "auth_login_problem_title": "Problema di accesso",
   "auth_failed_title": "Autenticazione Non Riuscita",
+  "auth_proxy_login_error": "Arcane non è riuscito a completare l'accesso tramite il proxy inverso. Verifica che Arcane sia raggiungibile e che il proxy consenta le intestazioni di autenticazione, quindi riprova.",
   "auth_no_login_methods_title": "Nessun Metodo Di Accesso Configurato",
   "auth_no_login_methods_description": "Al momento non ci sono metodi di accesso abilitati. Contatta un amministratore.",
   "auth_username_placeholder": "Inserisci il tuo nome utente o email",

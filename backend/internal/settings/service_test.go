@@ -2,6 +2,7 @@ package settings
 
 import (
 	"context"
+	"encoding/base64"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
+	libcrypto "go.getarcane.app/sys/crypto"
 	"go.uber.org/fx/fxtest"
 	"gorm.io/gorm"
 
@@ -764,6 +766,19 @@ func TestSettingsService_EnsureEncryptionKey(t *testing.T) {
 	var sv SettingVariable
 	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "encryptionKey").First(&sv).Error)
 	require.Equal(t, k1, sv.Value)
+	libcrypto.InitEncryption(&libcrypto.Config{EncryptionKey: k1, Environment: "development"})
+
+	browserKey1, err := svc.EnsureBrowserSessionSigningKey(ctx)
+	require.NoError(t, err)
+	require.Len(t, browserKey1, browserSessionSigningKeySize)
+	browserKey2, err := svc.EnsureBrowserSessionSigningKey(ctx)
+	require.NoError(t, err)
+	require.Equal(t, browserKey1, browserKey2, "browser signing key should be stable between calls")
+
+	var browserSetting SettingVariable
+	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "browserSessionSigningKey").First(&browserSetting).Error)
+	require.NotEmpty(t, browserSetting.Value)
+	require.NotEqual(t, base64.StdEncoding.EncodeToString(browserKey1), browserSetting.Value)
 }
 
 func TestSettingsService_LoadDatabaseSettings_ReloadsChanges(t *testing.T) {

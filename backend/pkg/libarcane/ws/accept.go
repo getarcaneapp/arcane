@@ -18,7 +18,6 @@ func Accept(w http.ResponseWriter, r *http.Request, checkOrigin func(*http.Reque
 	}
 	return websocket.Accept(w, r, &websocket.AcceptOptions{
 		InsecureSkipVerify: true, // origin validated above
-		CompressionMode:    websocket.CompressionContextTakeover,
 	})
 }
 

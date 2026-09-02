@@ -162,7 +162,7 @@ func (m *AuthMiddleware) managerAuth(ctx context.Context, c *echo.Context, next 
 		return m.apiKeyHeaderAuth(ctx, c, next, apiKey)
 	}
 
-	token := extractBearerOrCookieTokenInternal(c)
+	token, fromCookie := extractBearerOrCookieTokenInternal(c)
 	if token == "" {
 		if m.options.SuccessOptional {
 			return next(c)
@@ -173,7 +173,14 @@ func (m *AuthMiddleware) managerAuth(ctx context.Context, c *echo.Context, next 
 		})
 	}
 
-	user, sessionID, err := m.authService.VerifyToken(ctx, token)
+	var user *common.User
+	var sessionID string
+	var err error
+	if fromCookie {
+		user, sessionID, err = m.authService.VerifyBrowserToken(ctx, token)
+	} else {
+		user, sessionID, err = m.authService.VerifyToken(ctx, token)
+	}
 	if err != nil {
 		// A version mismatch means the app self-updated; the session is still valid
 		// (the refresh path tolerates the version change and rotates the token), so do
@@ -324,14 +331,14 @@ func environmentScopedInternal(c *echo.Context, env *environment.Environment) {
 	c.Set(string(middleware.ContextKeyAuthMethod), "environment_access_token")
 }
 
-func extractBearerOrCookieTokenInternal(c *echo.Context) string {
+func extractBearerOrCookieTokenInternal(c *echo.Context) (string, bool) {
 	req := c.Request()
 	authHeader := req.Header.Get("Authorization")
 	if after, ok := strings.CutPrefix(authHeader, "Bearer "); ok {
-		return after
+		return after, false
 	}
 	if tok, err := cookie.GetTokenCookie(req); err == nil && tok != "" {
-		return tok
+		return tok, true
 	}
-	return ""
+	return "", false
 }

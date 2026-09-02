@@ -103,14 +103,14 @@ func enrichVolumesWithUsageDataInternal(volumes []volume.Volume, usageVolumes []
 	return result
 }
 
-func buildVolumeContainerMapInternal(ctx context.Context, dockerClient *client.Client) (map[string][]string, error) {
-	containers, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
+func (s *VolumeService) buildVolumeContainerMapInternal(ctx context.Context) (map[string][]string, error) {
+	containers, err := s.dockerService.ListContainers(ctx)
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to list containers")
 	}
 
 	volumeContainerMap := make(map[string][]string)
-	for _, c := range containers.Items {
+	for _, c := range containers {
 		for _, m := range c.Mounts {
 			if m.Type == mount.TypeVolume && m.Name != "" {
 				volumeContainerMap[m.Name] = append(volumeContainerMap[m.Name], c.ID)
@@ -386,7 +386,7 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 	}(apiCtx)
 
 	go func(ctx context.Context) {
-		containerMap, err := buildVolumeContainerMapInternal(ctx, dockerClient)
+		containerMap, err := s.buildVolumeContainerMapInternal(ctx)
 		containerChan <- containerMapResult{containerMap: containerMap, err: err}
 	}(apiCtx)
 

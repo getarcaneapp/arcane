@@ -3,6 +3,7 @@ package settings
 import (
 	"context"
 	"crypto/mldsa"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
@@ -36,6 +37,8 @@ import (
 )
 
 const (
+	browserSessionSigningKeySize = 64
+
 	// DefaultArcaneToolsImage is the shared Arcane toolbox image used for helper commands.
 	DefaultArcaneToolsImage = "ghcr.io/getarcaneapp/tools:latest"
 	// DefaultTrivyImage is the default vulnerability scanner image setting.
@@ -1037,48 +1040,59 @@ func (s *SettingsService) EnsureEncryptionKey(ctx context.Context) (string, erro
 }
 
 func (s *SettingsService) EnsureJwtSigningKey(ctx context.Context) (*mldsa.PrivateKey, error) {
-	return s.writes.Execute(ctx, "ensure jwt signing key", func(writeCtx context.Context) (*mldsa.PrivateKey, error) {
-		const keyName = "jwtSigningKeySeed"
-		var key *mldsa.PrivateKey
+	seed, err := s.ensureEncryptedKeyInternal(ctx, "ensure jwt signing key", "jwtSigningKeySeed", mldsa.PrivateKeySize)
+	if err != nil {
+		return nil, err
+	}
+	key, err := mldsa.NewPrivateKey(mldsa.MLDSA87(), seed)
+	return key, errors.WrapIf(err, "failed to load jwt signing key")
+}
+
+func (s *SettingsService) EnsureBrowserSessionSigningKey(ctx context.Context) ([]byte, error) {
+	return s.ensureEncryptedKeyInternal(ctx, "ensure browser session signing key", "browserSessionSigningKey", browserSessionSigningKeySize)
+}
+
+func (s *SettingsService) ensureEncryptedKeyInternal(ctx context.Context, operation, keyName string, size int) ([]byte, error) {
+	return s.writes.Execute(ctx, operation, func(writeCtx context.Context) ([]byte, error) {
+		var key []byte
 
 		err := s.db.WithContext(writeCtx).Transaction(func(tx *gorm.DB) error {
 			var sv SettingVariable
 			err := tx.Where("key = ?", keyName).First(&sv).Error
-
 			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-				return errors.WrapIf(err, "failed to load jwt signing key")
+				return errors.WrapIf(err, "failed to load signing key")
 			}
 
 			if sv.Value != "" {
 				decoded, decErr := libcrypto.Decrypt(sv.Value)
 				if decErr != nil {
-					return errors.WrapIf(decErr, "failed to decrypt jwt signing key")
+					return errors.WrapIf(decErr, "failed to decrypt signing key")
 				}
-				seed, decErr := base64.StdEncoding.DecodeString(decoded)
+				key, decErr = base64.StdEncoding.DecodeString(decoded)
 				if decErr != nil {
-					return errors.WrapIf(decErr, "failed to decode jwt signing key")
+					return errors.WrapIf(decErr, "failed to decode signing key")
 				}
-				key, decErr = mldsa.NewPrivateKey(mldsa.MLDSA87(), seed)
-				return errors.WrapIf(decErr, "failed to load jwt signing key")
+				if len(key) != size {
+					return errors.Errorf("invalid signing key length: got %d, want %d", len(key), size)
+				}
+				return nil
 			}
 
-			notFound := errors.Is(err, gorm.ErrRecordNotFound)
-			generated, genErr := mldsa.GenerateKey(mldsa.MLDSA87())
-			if genErr != nil {
-				return errors.WrapIf(genErr, "failed to generate jwt signing key")
+			key = make([]byte, size)
+			if _, genErr := rand.Read(key); genErr != nil {
+				return errors.WrapIf(genErr, "failed to generate signing key")
 			}
-			encrypted, encErr := libcrypto.Encrypt(base64.StdEncoding.EncodeToString(generated.Bytes()))
+			encrypted, encErr := libcrypto.Encrypt(base64.StdEncoding.EncodeToString(key))
 			if encErr != nil {
-				return errors.WrapIf(encErr, "failed to encrypt jwt signing key")
+				return errors.WrapIf(encErr, "failed to encrypt signing key")
 			}
-			key = generated
 
-			if notFound {
-				return errors.WrapIf(tx.Create(&SettingVariable{Key: keyName, Value: encrypted}).Error, "failed to persist jwt signing key")
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errors.WrapIf(tx.Create(&SettingVariable{Key: keyName, Value: encrypted}).Error, "failed to persist signing key")
 			}
 			return errors.WrapIf(tx.Model(&SettingVariable{}).
 				Where("key = ?", keyName).
-				Update("value", encrypted).Error, "failed to update jwt signing key")
+				Update("value", encrypted).Error, "failed to update signing key")
 		})
 		if err != nil {
 			return nil, err

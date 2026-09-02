@@ -1,5 +1,7 @@
 import userStore from '#lib/stores/user-store';
 import { environmentStore } from '#lib/stores/environment.store.svelte';
+import { m } from '#lib/paraglide/messages';
+import { APIError } from '#lib/services/api-service';
 import {
 	canReachAccessSurface,
 	getFallbackAccessSurfaces,
@@ -8,6 +10,34 @@ import {
 } from '#lib/utils/access-policy';
 import { GLOBAL_SCOPE, SUDO_PERMISSION } from '#lib/types/auth';
 import type { PermissionsManifest, User } from '#lib/types/auth';
+
+export function normalizeAuthenticationError(error: unknown, fallback: string): { kind: 'proxy' | 'other'; message: string } {
+	if (error instanceof APIError) {
+		const responseData: unknown = error.response?.data;
+		const responseText = typeof responseData === 'string' ? responseData : '';
+		const lowerResponse = responseText.toLowerCase();
+		const isGatewayHTML =
+			error.status === 502 &&
+			(lowerResponse.includes('<html') || lowerResponse.includes('bad gateway') || lowerResponse.includes('openresty'));
+		const isHeaderLimit =
+			error.status === 431 ||
+			(error.status === 400 &&
+				(lowerResponse.includes('request header') || lowerResponse.includes('cookie')) &&
+				(lowerResponse.includes('large') || lowerResponse.includes('too big')));
+
+		if (isGatewayHTML || isHeaderLimit) {
+			return { kind: 'proxy', message: m.auth_proxy_login_error() };
+		}
+		if (responseText.trimStart().startsWith('<')) {
+			return { kind: 'other', message: fallback };
+		}
+	}
+
+	return {
+		kind: 'other',
+		message: error instanceof Error ? error.message : fallback
+	};
+}
 
 // --- Store-backed permission checks (for .svelte / runtime) ---
 

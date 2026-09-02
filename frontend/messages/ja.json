@@ -372,6 +372,7 @@
   "auth_tagline_line2": "すべての人のために設計されている。",
   "auth_login_problem_title": "Login Problem",
   "auth_failed_title": "Authentication Failed",
+  "auth_proxy_login_error": "Arcaneはリバースプロキシ経由でのログインを完了できませんでした。Arcaneにアクセスできること、およびプロキシが認証ヘッダーを受け入れていることを確認してから、再度お試しください。",
   "auth_no_login_methods_title": "No Login Methods Configured",
   "auth_no_login_methods_description": "There are currently no login methods enabled. Please contact an administrator.",
   "auth_username_placeholder": "ユーザー名またはメールアドレスを入力してください",

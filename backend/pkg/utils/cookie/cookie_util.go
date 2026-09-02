@@ -13,8 +13,8 @@ var (
 	OidcStateCookieName     = "oidc_state"
 )
 
-// Browsers cap a single cookie (name + value) at 4096 bytes, so tokens larger
-// than that are split across numbered chunk cookies and reassembled on read.
+// Legacy ML-DSA browser tokens exceed the 4096-byte cookie limit, so readers
+// retain numbered chunk support until existing sessions expire or refresh.
 const (
 	tokenCookieChunkSize = 3072
 	tokenCookieMaxChunks = 4
@@ -87,9 +87,9 @@ func readTokenCookieInternal(r *http.Request, base string) (string, error) {
 }
 
 // BuildTokenCookieStringFor builds Set-Cookie header strings matching the
-// current request security context, splitting the token across chunk cookies
-// when it exceeds the per-cookie browser limit and clearing unused chunk slots
-// so stale chunks from a longer previous token cannot corrupt reassembly.
+// current request security context. Compact browser tokens use one cookie;
+// legacy oversized tokens are chunked for upgrade compatibility. Unused chunk
+// slots are cleared so stale legacy chunks cannot corrupt reassembly.
 // Callers must pass the trusted secure flag from SecureCookieFromContext /
 // SecureCookieFromRequest so the cookie name (__Host-token vs. token)
 // round-trips correctly behind HTTPS reverse proxies.

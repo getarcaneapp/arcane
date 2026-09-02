@@ -93,8 +93,7 @@ type MobilePasskeyExchangeInput struct {
 }
 
 type MobilePasskeyExchangeOutput struct {
-	SetCookie []string `header:"Set-Cookie" doc:"Session cookie"`
-	Body      base.ApiResponse[authtypes.AuthenticationResponse]
+	Body base.ApiResponse[authtypes.AuthenticationResponse]
 }
 
 type PasskeyMFAStartInput struct {
@@ -400,8 +399,7 @@ func (h *PasskeyHandler) ExchangeMobilePasskeyLogin(ctx context.Context, input *
 		return nil, err
 	}
 	return &MobilePasskeyExchangeOutput{
-		SetCookie: tokenCookieInternal(ctx, tokenPair),
-		Body:      base.ApiResponse[authtypes.AuthenticationResponse]{Success: true, Data: *response},
+		Body: base.ApiResponse[authtypes.AuthenticationResponse]{Success: true, Data: *response},
 	}, nil
 }
 
@@ -681,7 +679,7 @@ func marshalCredentialInternal(credential map[string]any) ([]byte, error) {
 
 func tokenCookieInternal(ctx context.Context, tokenPair *auth.TokenPair) []string {
 	maxAge := max(int(time.Until(tokenPair.ExpiresAt).Seconds()), 0) + 60
-	return cookie.BuildTokenCookieStringFor(maxAge, tokenPair.AccessToken, cookie.SecureCookieFromContext(ctx))
+	return cookie.BuildTokenCookieStringFor(maxAge, tokenPair.BrowserToken, cookie.SecureCookieFromContext(ctx))
 }
 
 func passkeyHTTPErrorInternal(err error) error {

@@ -344,6 +344,13 @@ func listCoalescedInternal[T any](ctx context.Context, group *singleflight.Group
 	}
 }
 
+func (s *DockerClientService) apiTimeoutInternal() time.Duration {
+	if s.settingsService == nil {
+		return timeouts.DefaultDockerAPI
+	}
+	return timeouts.GetDuration(s.settingsService.GetSettingsConfig().DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI)
+}
+
 func (s *DockerClientService) ListContainers(ctx context.Context) ([]container.Summary, error) {
 	return listCoalescedInternal(ctx, &s.containerListFlight, func(ctx context.Context) ([]container.Summary, error) {
 		dockerClient, err := s.GetClient(ctx)
@@ -351,8 +358,7 @@ func (s *DockerClientService) ListContainers(ctx context.Context) ([]container.S
 			return nil, errors.WrapIf(err, "failed to connect to Docker")
 		}
 
-		settings := s.settingsService.GetSettingsConfig()
-		apiCtx, cancel := context.WithTimeout(ctx, timeouts.GetDuration(settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI))
+		apiCtx, cancel := context.WithTimeout(ctx, s.apiTimeoutInternal())
 		defer cancel()
 
 		containerList, err := dockerClient.ContainerList(apiCtx, client.ContainerListOptions{All: true})
@@ -370,8 +376,7 @@ func (s *DockerClientService) ListImages(ctx context.Context) ([]image.Summary, 
 			return nil, errors.WrapIf(err, "failed to connect to Docker")
 		}
 
-		settings := s.settingsService.GetSettingsConfig()
-		apiCtx, cancel := context.WithTimeout(ctx, timeouts.GetDuration(settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI))
+		apiCtx, cancel := context.WithTimeout(ctx, s.apiTimeoutInternal())
 		defer cancel()
 
 		imageList, err := dockerClient.ImageList(apiCtx, client.ImageListOptions{All: true})
@@ -388,8 +393,7 @@ func (s *DockerClientService) listNetworksInternal(ctx context.Context) ([]netwo
 		return nil, errors.WrapIf(err, "failed to connect to Docker")
 	}
 
-	settings := s.settingsService.GetSettingsConfig()
-	apiCtx, cancel := context.WithTimeout(ctx, timeouts.GetDuration(settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI))
+	apiCtx, cancel := context.WithTimeout(ctx, s.apiTimeoutInternal())
 	defer cancel()
 
 	networkList, err := libarcane.NetworkListWithCompatibility(apiCtx, dockerClient, client.NetworkListOptions{})
@@ -405,8 +409,7 @@ func (s *DockerClientService) listVolumesInternal(ctx context.Context) (*client.
 		return nil, errors.WrapIf(err, "failed to connect to Docker")
 	}
 
-	settings := s.settingsService.GetSettingsConfig()
-	apiCtx, cancel := context.WithTimeout(ctx, timeouts.GetDuration(settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI))
+	apiCtx, cancel := context.WithTimeout(ctx, s.apiTimeoutInternal())
 	defer cancel()
 
 	volResp, err := dockerClient.VolumeList(apiCtx, client.VolumeListOptions{})

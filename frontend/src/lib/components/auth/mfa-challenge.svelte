@@ -9,6 +9,7 @@
 	import * as InputGroup from '#lib/components/ui/input-group/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
+	import { normalizeAuthenticationError } from '#lib/utils/auth';
 
 	let {
 		challenge,
@@ -39,7 +40,7 @@
 			await onComplete(response);
 		} catch (value) {
 			if (!isCancelledError(value)) {
-				error = value instanceof Error ? value.message : m.auth_mfa_failed();
+				error = normalizeAuthenticationError(value, m.auth_mfa_failed()).message;
 			}
 		} finally {
 			busy = false;
@@ -56,7 +57,7 @@
 			const response = await passkeyService.finishRecovery(challenge.transactionId, recoveryCode.trim());
 			await onComplete(response);
 		} catch (value) {
-			error = value instanceof Error ? value.message : m.auth_mfa_failed();
+			error = normalizeAuthenticationError(value, m.auth_mfa_failed()).message;
 		} finally {
 			busy = false;
 		}

@@ -372,6 +372,7 @@
   "auth_tagline_line2": "Navrženo pro každého.",
   "auth_login_problem_title": "Problém s přihlášením",
   "auth_failed_title": "Ověření se nezdařilo",
+  "auth_proxy_login_error": "Arcane se nepodařilo přihlásit přes reverzní proxy. Zkontrolujte, zda je Arcane dostupný a zda proxy povoluje autentizační hlavičky, a poté to zkuste znovu.",
   "auth_no_login_methods_title": "Nejsou nakonfigurovány žádné metody přihlášení",
   "auth_no_login_methods_description": "V současné době nejsou povoleny žádné metody přihlášení. Kontaktujte prosím správce.",
   "auth_username_placeholder": "Zadejte vaše uživatelské jméno nebo email",

@@ -10,7 +10,7 @@
 	import { queryKeys } from '#lib/query/query-keys';
 	import { authService } from '#lib/services/auth-service';
 	import { environmentStore } from '#lib/stores/environment.store.svelte';
-	import { getAuthRedirectPath } from '#lib/utils/auth';
+	import { getAuthRedirectPath, normalizeAuthenticationError } from '#lib/utils/auth';
 	import { getEffectiveLandingPage } from '#lib/utils/navigation';
 	import MFAChallenge from '#lib/components/auth/mfa-challenge.svelte';
 	import OidcStatusPanel from '#lib/components/oidc-status-panel.svelte';
@@ -167,12 +167,16 @@
 				redirectCode = String((err as CallbackFailure).code);
 				userMessage = String((err as CallbackFailure).userMessage);
 			} else {
+				const normalized = normalizeAuthenticationError(err, m.auth_oidc_callback_error());
 				const unknownError = err as { message?: string };
-				if (unknownError?.message?.includes('network') || unknownError?.message?.includes('timeout')) {
+				if (normalized.kind === 'proxy') {
+					userMessage = normalized.message;
+					redirectCode = 'proxy_authentication_failed';
+				} else if (unknownError?.message?.includes('network') || unknownError?.message?.includes('timeout')) {
 					userMessage = String(m.auth_oidc_network_error());
 					redirectCode = 'oidc_network_error';
-				} else if (unknownError?.message && !unknownError.message.includes('Request failed')) {
-					userMessage = unknownError.message;
+				} else if (normalized.message && !normalized.message.includes('Request failed')) {
+					userMessage = normalized.message;
 				}
 			}
 

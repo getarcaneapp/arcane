@@ -372,6 +372,7 @@
   "auth_tagline_line2": "모두를 위한 디자인.",
   "auth_login_problem_title": "로그인 문제",
   "auth_failed_title": "인증 실패",
+  "auth_proxy_login_error": "Arcane이 리버스 프록시를 통해 로그인을 완료하지 못했습니다. Arcane에 접속할 수 있는지, 그리고 프록시가 인증 헤더를 허용하는지 확인한 후 다시 시도해 주십시오.",
   "auth_no_login_methods_title": "설정된 로그인 방법 없음",
   "auth_no_login_methods_description": "현재 활성화된 로그인 방법이 없습니다. 관리자에게 문의하세요.",
   "auth_username_placeholder": "사용자명 또는 이메일 입력",

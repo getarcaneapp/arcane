@@ -145,24 +145,26 @@ func createAuthValidatorInternal(deps api.HandlerDeps) middleware.AuthValidator 
 			return nil, nil, false
 		}
 
-		// Check for Bearer token authentication
-		token := ""
-		if auth := req.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
-			token = strings.TrimPrefix(auth, "Bearer ")
-		} else if cookieToken, err := cookie.GetTokenCookie(req); err == nil && cookieToken != "" {
-			token = cookieToken
-		}
-
-		if token == "" {
-			return nil, nil, false
-		}
-
-		user, _, err := deps.Auth.Service().VerifyToken(ctx, token)
-		if err != nil || user == nil {
+		user, ok := verifyRouterRequestUserInternal(ctx, deps.Auth.Service(), req)
+		if !ok {
 			return nil, nil, false
 		}
 		return resolveUser(ctx, user), user, true
 	}
+}
+
+func verifyRouterRequestUserInternal(ctx context.Context, authService *auth.AuthService, req *http.Request) (*common.User, bool) {
+	if authHeader := req.Header.Get("Authorization"); strings.HasPrefix(authHeader, "Bearer ") {
+		user, _, err := authService.VerifyToken(ctx, strings.TrimPrefix(authHeader, "Bearer "))
+		return user, err == nil && user != nil
+	}
+
+	browserToken, err := cookie.GetTokenCookie(req)
+	if err != nil || browserToken == "" {
+		return nil, false
+	}
+	user, _, err := authService.VerifyBrowserToken(ctx, browserToken)
+	return user, err == nil && user != nil
 }
 
 type RouterParams struct {

@@ -14,6 +14,7 @@
 	import { authService, MFARequiredError } from '#lib/services/auth-service';
 	import { passkeyService } from '#lib/services/passkey-service';
 	import type { AuthenticationResponse, MFAChallenge as MFAChallengeData } from '#lib/types/auth';
+	import { normalizeAuthenticationError } from '#lib/utils/auth';
 	import { getEffectiveLandingPage } from '#lib/utils/navigation';
 	import { queryKeys } from '#lib/query/query-keys';
 	import { getApplicationLogo } from '#lib/utils/docker';
@@ -75,7 +76,7 @@
 				error = null;
 				return;
 			}
-			error = err instanceof Error ? err.message : m.auth_unexpected_error();
+			error = normalizeAuthenticationError(err, m.auth_unexpected_error()).message;
 		}
 	}));
 
@@ -102,7 +103,7 @@
 				error = m.auth_passkey_cancelled();
 				return;
 			}
-			error = err instanceof Error ? err.message : m.auth_passkey_failed();
+			error = normalizeAuthenticationError(err, m.auth_passkey_failed()).message;
 		}
 	}));
 

@@ -33,9 +33,14 @@ func TestSecureCookieFromRequest(t *testing.T) {
 func TestBuildTokenCookieStringFor(t *testing.T) {
 	t.Run("secure uses host-prefixed secure cookie", func(t *testing.T) {
 		headers := BuildTokenCookieStringFor(60, "abc", true)
+		headerBytes := 0
+		for _, header := range headers {
+			headerBytes += len("Set-Cookie: ") + len(header) + len("\r\n")
+		}
 
 		cookies := readSetCookieHeadersInternal(t, headers...)
 		require.Len(t, cookies, tokenCookieMaxChunks)
+		require.Less(t, headerBytes, 1024)
 		assert.Equal(t, TokenCookieName, cookies[0].Name)
 		assert.Equal(t, "abc", cookies[0].Value)
 		assert.True(t, cookies[0].Secure)

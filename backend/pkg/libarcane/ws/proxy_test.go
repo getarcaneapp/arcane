@@ -102,6 +102,7 @@ func TestProxyHTTP_RemoteClose(t *testing.T) {
 	defer func() {
 		_ = clientConn.CloseNow()
 	}()
+	clientConn.CloseRead(t.Context())
 
 	// The proxy should complete (not hang)
 	select {

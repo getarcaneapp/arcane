@@ -372,6 +372,7 @@
   "auth_tagline_line2": "Utformad för alla.",
   "auth_login_problem_title": "Login Problem",
   "auth_failed_title": "Authentication Failed",
+  "auth_proxy_login_error": "Arcane kunde inte slutföra inloggningen via den omvända proxyn. Kontrollera att Arcane är nåbart och att proxyn tillåter autentiseringshuvuden, och försök sedan igen.",
   "auth_no_login_methods_title": "No Login Methods Configured",
   "auth_no_login_methods_description": "There are currently no login methods enabled. Please contact an administrator.",
   "auth_username_placeholder": "Enter your username or email",

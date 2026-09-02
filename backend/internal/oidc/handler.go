@@ -100,8 +100,7 @@ type ExchangeDeviceTokenInput struct {
 }
 
 type ExchangeDeviceTokenOutput struct {
-	SetCookie []string `header:"Set-Cookie" doc:"Session token cookie"`
-	Body      authtypes.AuthenticationResponse
+	Body authtypes.AuthenticationResponse
 }
 
 // --- OIDC role mapping I/O ---
@@ -392,7 +391,7 @@ func (h *OidcHandler) HandleOidcCallback(ctx context.Context, input *HandleOidcC
 	if mobileRedirectURI == "" {
 		maxAge := max(int(time.Until(tokenPair.ExpiresAt).Seconds()), 0)
 		maxAge += 60 // Add 60 seconds buffer for clock skew
-		setCookies = append(setCookies, cookie.BuildTokenCookieStringFor(maxAge, tokenPair.AccessToken, cookie.SecureCookieFromContext(ctx))...)
+		setCookies = append(setCookies, cookie.BuildTokenCookieStringFor(maxAge, tokenPair.BrowserToken, cookie.SecureCookieFromContext(ctx))...)
 	}
 	expiresAt := tokenPair.ExpiresAt
 
@@ -480,11 +479,7 @@ func (h *OidcHandler) ExchangeDeviceToken(ctx context.Context, input *ExchangeDe
 		return nil, huma.Error500InternalServerError("Authentication failed")
 	}
 
-	maxAge := max(int(time.Until(tokenPair.ExpiresAt).Seconds()), 0)
-	maxAge += 60
 	expiresAt := tokenPair.ExpiresAt
-
-	tokenCookies := cookie.BuildTokenCookieStringFor(maxAge, tokenPair.AccessToken, cookie.SecureCookieFromContext(ctx))
 
 	userDto, err := h.userService.ToUserResponseDto(ctx, *userModel)
 	if err != nil {
@@ -492,7 +487,6 @@ func (h *OidcHandler) ExchangeDeviceToken(ctx context.Context, input *ExchangeDe
 	}
 
 	return &ExchangeDeviceTokenOutput{
-		SetCookie: tokenCookies,
 		Body: authtypes.AuthenticationResponse{
 			Success:      true,
 			Status:       authtypes.AuthenticationStatusAuthenticated,

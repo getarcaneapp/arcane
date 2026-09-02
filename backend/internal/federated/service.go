@@ -238,6 +238,9 @@ func (s *FederatedCredentialService) Update(ctx context.Context, callerUserID, i
 	if roleChanged && s.roleService != nil {
 		s.roleService.InvalidateUser(updated.IdentityUserID)
 	}
+	if (revokeActiveSessions || roleChanged) && s.authService != nil {
+		s.authService.InvalidateUserTokenCache(updated.IdentityUserID)
+	}
 	return s.Get(ctx, id)
 }
 
@@ -264,6 +267,9 @@ func (s *FederatedCredentialService) Delete(ctx context.Context, id string) erro
 	}
 	if s.roleService != nil {
 		s.roleService.InvalidateUser(credential.IdentityUserID)
+	}
+	if s.authService != nil {
+		s.authService.InvalidateUserTokenCache(credential.IdentityUserID)
 	}
 	return nil
 }

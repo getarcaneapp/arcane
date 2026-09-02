@@ -7,6 +7,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 
+	"bytes"
 	"context"
 	"crypto/mldsa"
 	"net/http"
@@ -23,8 +24,11 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cookie"
 	authtypes "github.com/getarcaneapp/arcane/types/v2/auth"
 	"github.com/labstack/echo/v5"
+	"github.com/lestrrat-go/jwx/v4/jwa"
+	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -316,7 +320,7 @@ func TestNewHumaMiddleware_OpportunisticAuthOnPublicRoute(t *testing.T) {
 	t.Run("populates session ID when valid token presented", func(t *testing.T) {
 		sawSessionID = ""
 		req := httptest.NewRequest(http.MethodPost, "/api/public", nil)
-		req.Header.Set("Authorization", "Bearer "+token)
+		req.AddCookie(&http.Cookie{Name: cookie.InsecureTokenCookieName, Value: token})
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, req)
 		require.Equal(t, http.StatusOK, rec.Code)
@@ -353,8 +357,10 @@ func TestNewHumaMiddleware_VersionMismatchIsRecoverable(t *testing.T) {
 	sessionSvc := session.NewSessionService(db)
 
 	signingKey := newTestSigningKeyInternal()
+	browserSigningKey := bytes.Repeat([]byte{0x24}, browserSessionSigningKeySize)
 	cfg := &config.Config{JWTRefreshExpiry: 24 * time.Hour}
 	authSvc := NewAuthService(userSvc, nil, nil, sessionSvc, nil, cfg, nil).WithSigningKey(signingKey)
+	authSvc.browserSigningKey = browserSigningKey
 
 	_, err := userSvc.CreateUser(context.Background(), &common.User{
 		ID:       "u-ver",
@@ -368,19 +374,21 @@ func TestNewHumaMiddleware_VersionMismatchIsRecoverable(t *testing.T) {
 
 	// An empty appVersion omits the claim, which passes the version check (no pin).
 	mintToken := func(appVersion string) string {
-		claims := map[string]any{
-			"jti":      "u-ver",
-			"sub":      "access",
-			"iat":      time.Now().Unix(),
-			"exp":      exp.Unix(),
-			"sid":      session.ID,
-			"user_id":  "u-ver",
-			"username": "vertest",
-		}
+		builder := jwt.NewBuilder().
+			JwtID("browser-"+appVersion).
+			Subject(browserTokenSubject).
+			IssuedAt(time.Now()).
+			Expiration(exp).
+			Claim(claimSessionID, session.ID).
+			Claim(claimUserID, "u-ver")
 		if appVersion != "" {
-			claims["app_version"] = appVersion
+			builder.Claim(claimAppVersion, appVersion)
 		}
-		return signJWXTokenInternal(t, signingKey, claims)
+		token, err := builder.Build()
+		require.NoError(t, err)
+		signed, err := jwt.Sign(token, jwt.WithKey(jwa.HS512(), browserSigningKey))
+		require.NoError(t, err)
+		return string(signed)
 	}
 
 	router := echo.New()
@@ -403,7 +411,7 @@ func TestNewHumaMiddleware_VersionMismatchIsRecoverable(t *testing.T) {
 
 	t.Run("version mismatch returns a recoverable 401 without clearing cookies", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/protected", nil)
-		req.Header.Set("Authorization", "Bearer "+mintToken("v0.0.0-stale"))
+		req.AddCookie(&http.Cookie{Name: cookie.InsecureTokenCookieName, Value: mintToken("v0.0.0-stale")})
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, req)
 
@@ -415,11 +423,18 @@ func TestNewHumaMiddleware_VersionMismatchIsRecoverable(t *testing.T) {
 	})
 
 	t.Run("token without a version pin still authenticates", func(t *testing.T) {
+		token := mintToken("")
 		req := httptest.NewRequest(http.MethodGet, "/api/protected", nil)
-		req.Header.Set("Authorization", "Bearer "+mintToken(""))
+		req.AddCookie(&http.Cookie{Name: cookie.InsecureTokenCookieName, Value: token})
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, req)
 		require.Equal(t, http.StatusOK, rec.Code)
+
+		req = httptest.NewRequest(http.MethodGet, "/api/protected", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		rec = httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusUnauthorized, rec.Code)
 	})
 }
 

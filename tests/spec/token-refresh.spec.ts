@@ -108,15 +108,36 @@ test('signed-in OIDC callbacks reach the callback exchange', async ({ page }) =>
 });
 
 test.describe('Token refresh behaviour', () => {
-	test('@cross-browser rejects invalid credentials and accepts the configured admin password', async ({
+	test('@cross-browser shows useful login errors and accepts the configured admin password', async ({
 		page
 	}) => {
 		await page.context().clearCookies();
+		let gatewayFailurePending = true;
+		await page.route(/\/api\/auth\/login$/, async (route) => {
+			if (!gatewayFailurePending) {
+				await route.continue();
+				return;
+			}
+			gatewayFailurePending = false;
+			await route.fulfill({
+				status: 502,
+				contentType: 'text/html',
+				body: '<html><head><title>502 Bad Gateway</title></head><body><center>openresty</center></body></html>'
+			});
+		});
 		await page.goto('/login');
 		await page.getByLabel('Username').fill('arcane');
 		await page.getByLabel('Password').fill('not-the-admin-password');
 		await page.getByRole('button', { name: 'Sign in to Arcane', exact: true }).click();
 
+		const proxyAlert = page
+			.getByRole('alert')
+			.filter({ hasText: "Arcane couldn't complete login through the reverse proxy" });
+		await expect(proxyAlert).toBeVisible();
+		await expect(proxyAlert).not.toContainText('openresty');
+
+		await page.getByLabel('Password').fill('not-the-admin-password');
+		await page.getByRole('button', { name: 'Sign in to Arcane', exact: true }).click();
 		await expect(
 			page.getByRole('alert').filter({ hasText: 'Invalid username or password' })
 		).toBeVisible();
@@ -128,6 +149,16 @@ test.describe('Token refresh behaviour', () => {
 		await expect(
 			page.locator('main').getByText('Dashboard', { exact: true }).first()
 		).toBeVisible();
+
+		const tokenCookies = (await page.context().cookies()).filter(
+			(cookie) =>
+				cookie.name === 'token' ||
+				cookie.name === '__Host-token' ||
+				cookie.name.startsWith('token.') ||
+				cookie.name.startsWith('__Host-token.')
+		);
+		expect(tokenCookies).toHaveLength(1);
+		expect(tokenCookies[0]?.value.length).toBeLessThan(1024);
 	});
 
 	test('version mismatch 401 on /auth/me during page load is silently recovered', async ({

@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"maps"
 	"slices"
+	"sync"
 	"time"
 
 	"emperror.dev/errors"
@@ -29,6 +30,7 @@ type schedulerStateInternal struct {
 	runners     map[string]*actors.Runner
 	entryIDs    map[string]cron.EntryID
 	schedules   map[string]string
+	runLocks    map[string]*sync.Mutex
 	stopping    bool
 }
 
@@ -72,6 +74,7 @@ func NewJobScheduler(ctx context.Context, runtime *actors.Runtime, location *tim
 		runners:     make(map[string]*actors.Runner),
 		entryIDs:    make(map[string]cron.EntryID),
 		schedules:   make(map[string]string),
+		runLocks:    make(map[string]*sync.Mutex),
 	}
 	state, err := actors.NewState(ctx, runtime, "scheduler", "control-plane", 3, initial, func(value schedulerStateInternal) schedulerStateInternal {
 		value.jobs = slices.Clone(value.jobs)
@@ -81,6 +84,7 @@ func NewJobScheduler(ctx context.Context, runtime *actors.Runtime, location *tim
 		value.runners = maps.Clone(value.runners)
 		value.entryIDs = maps.Clone(value.entryIDs)
 		value.schedules = maps.Clone(value.schedules)
+		value.runLocks = maps.Clone(value.runLocks)
 		return value
 	})
 	if err != nil {
@@ -345,7 +349,12 @@ func (js *jobSchedulerInternal) upsertJobInternal(ctx context.Context, state *sc
 		delete(state.entryIDs, jobName)
 	}
 	if shouldSchedule {
-		entryID, nextRun = js.addCronEntryInternal(job, schedule, parsedSchedule)
+		runLock, ok := state.runLocks[jobName]
+		if !ok {
+			runLock = &sync.Mutex{}
+			state.runLocks[jobName] = runLock
+		}
+		entryID, nextRun = js.addCronEntryInternal(job, schedule, parsedSchedule, runLock)
 		state.entryIDs[jobName] = entryID
 	}
 	state.jobsByID[jobName] = job
@@ -360,8 +369,13 @@ func (js *jobSchedulerInternal) upsertJobInternal(ctx context.Context, state *sc
 	return nil
 }
 
-func (js *jobSchedulerInternal) addCronEntryInternal(job schedulertypes.Job, schedule string, parsedSchedule cron.Schedule) (cron.EntryID, *time.Time) {
+func (js *jobSchedulerInternal) addCronEntryInternal(job schedulertypes.Job, schedule string, parsedSchedule cron.Schedule, runLock *sync.Mutex) (cron.EntryID, *time.Time) {
 	entryID := js.cron.Schedule(parsedSchedule, cron.FuncJob(func() {
+		if !runLock.TryLock() {
+			slog.WarnContext(js.context, "Job skipped; previous run still in progress", "name", job.Name(), "schedule", schedule)
+			return
+		}
+		defer runLock.Unlock()
 		defer utils.RecoverToError(nil, "scheduled job", "name", job.Name(), "schedule", schedule)
 		slog.InfoContext(js.context, "Job starting", "name", job.Name(), "schedule", schedule)
 		job.Run(js.context)

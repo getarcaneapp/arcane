@@ -59,12 +59,12 @@ func (s *NetworkService) GetNetworkTopology(ctx context.Context) (*networktypes.
 		return nil, errors.WrapIf(err, "failed to connect to Docker")
 	}
 
-	containerList, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
+	containers, err := s.dockerService.ListContainers(ctx)
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to list containers")
 	}
 
-	containerInfoByID := buildTopologyContainerInfoInternal(containerList.Items)
+	containerInfoByID := buildTopologyContainerInfoInternal(containers)
 
 	networkList, err := libarcane.NetworkListWithCompatibility(ctx, dockerClient, client.NetworkListOptions{})
 	if err != nil {
@@ -354,11 +354,10 @@ func (s *NetworkService) ListNetworksPaginated(ctx context.Context, params pagin
 		return nil, pagination.Response{}, networktypes.UsageCounts{}, errors.WrapIf(err, "failed to connect to Docker")
 	}
 
-	containerList, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
+	containers, err := s.dockerService.ListContainers(ctx)
 	if err != nil {
 		return nil, pagination.Response{}, networktypes.UsageCounts{}, errors.WrapIf(err, "failed to list containers")
 	}
-	containers := containerList.Items
 
 	inUseByID, inUseByName := s.buildNetworkUsageMaps(containers)
 

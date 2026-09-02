@@ -372,6 +372,7 @@
   "auth_tagline_line2": "Herkes için tasarlandı.",
   "auth_login_problem_title": "Giriş Sorunu",
   "auth_failed_title": "Kimlik Doğrulama Başarısız",
+  "auth_proxy_login_error": "Arcane, ters proxy üzerinden oturum açma işlemini tamamlayamadı. Arcane'e erişilebildiğini ve proxy'nin kimlik doğrulama başlıklarına izin verdiğini kontrol edin, ardından tekrar deneyin.",
   "auth_no_login_methods_title": "Yapılandırılmış Oturum Açma Yöntemi Yok",
   "auth_no_login_methods_description": "Şu anda etkinleştirilmiş hiçbir oturum açma yöntemi bulunmamaktadır. Lütfen bir yöneticiyle iletişime geçin.",
   "auth_username_placeholder": "Kullanıcı adınızı veya Elektronik posta adresinizi girin",

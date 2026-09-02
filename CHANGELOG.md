@@ -1,3 +1,21 @@
+## v2.10.1
+
+### Bug fixes
+
+* fallback to username when display name is unset in sidebar user menu([0c7174f](https://github.com/getarcaneapp/arcane/commit/0c7174f1089079d79535563ac2d54b032ea6914a) by @kmendell)
+* issue a compact browser session cookie instead of the bigger ML-DSA access JWT([df7c24c](https://github.com/getarcaneapp/arcane/commit/df7c24c85e9d4fa9d380532db928ecc3aa13dc17) by @kmendell)
+* issue a compact browser session cookie instead of the bigger ML-DSA access JWT ([#3813](https://github.com/getarcaneapp/arcane/pull/3813) by @kmendell)
+
+### Dependencies
+
+* bump zod from 4.4.3 to 4.5.4 ([#3812](https://github.com/getarcaneapp/arcane/pull/3812) by @dependabot[bot])
+* bump github.com/shirou/gopsutil/v4 in /backend([c9ad2e6](https://github.com/getarcaneapp/arcane/commit/c9ad2e6f9f9751764e5608128b7e55abf9349b88) by @dependabot[bot])
+* bump github.com/shirou/gopsutil/v4 from 4.26.7 to 4.26.8 in /backend ([#3798](https://github.com/getarcaneapp/arcane/pull/3798) by @kmendell)
+
+
+
+**Full Changelog**: https://github.com/getarcaneapp/arcane/compare/v2.10.0...v2.10.1
+
 ## v2.10.0
 
 ### New features
