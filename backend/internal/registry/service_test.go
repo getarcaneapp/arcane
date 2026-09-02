@@ -939,9 +939,7 @@ func TestContainerRegistryService_InspectImageDigest_FallsBackToAnonymousWhenSto
 	assert.False(t, result.UsedCredential)
 }
 
-// A rate-limited credentialed attempt must not fall back to anonymous, because
-// the anonymous path shares the same per-registry quota and would just burn
-// another request against a quota that is already exhausted.
+// A rate-limited credential must not fall back to anonymous: both paths share the per-registry quota.
 func TestContainerRegistryService_InspectImageDigest_DoesNotFallBackToAnonymousOnCredentialRateLimit(t *testing.T) {
 	db := setupContainerRegistryTestDBInternal(t)
 	createTestPullRegistryInternal(t, db, "ghcr.io", "ghcr-user", "ghcr-token")
@@ -967,8 +965,7 @@ func TestContainerRegistryService_InspectImageDigest_DoesNotFallBackToAnonymousO
 	assert.True(t, result.UsedCredential)
 }
 
-// The direct-HTTP fallback must not burn an anonymous request (and its shared
-// per-registry quota) when a stored credential can resolve the digest.
+// The direct-HTTP fallback must not spend an anonymous request when a stored credential resolves the digest.
 func TestContainerRegistryService_InspectImageDigest_FallbackUsesStoredCredentialsBeforeAnonymous(t *testing.T) {
 	db := setupContainerRegistryTestDBInternal(t)
 	createTestPullRegistryInternal(t, db, "ghcr.io", "ghcr-user", "ghcr-token")
@@ -1156,8 +1153,7 @@ func TestContainerRegistryService_InspectImageDigest_RetriesStoredCredentialsAft
 	result, err := svc.InspectImageDigest(context.Background(), serverURL.Host+"/team/app:1.2.3", nil)
 	require.NoError(t, err)
 	assert.Equal(t, wantDigest, result.Digest)
-	// Stored credentials are tried up front; only after they are rejected does
-	// the lookup retry anonymously, which succeeds for a public image.
+	// Stored credentials go first; only after rejection does the lookup retry anonymously.
 	require.Len(t, authHeaders, 4)
 	assert.Equal(t, "Basic c3RvcmVkLXVzZXI6c3RvcmVkLXRva2Vu", authHeaders[0])
 	assert.Equal(t, "Bearer credential-token", authHeaders[1])
