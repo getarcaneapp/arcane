@@ -372,6 +372,7 @@
   "auth_tagline_line2": "專為每個人設計。",
   "auth_login_problem_title": "登入問題",
   "auth_failed_title": "身分驗證失敗",
+  "auth_proxy_login_error": "Arcane 無法透過反向代理伺服器完成登入。請確認能否連通 Arcane，並確認代理伺服器允許驗證標頭，然後請重新嘗試。",
   "auth_no_login_methods_title": "未設定任何登入方式",
   "auth_no_login_methods_description": "目前沒有啟用任何登入方式。請聯絡系統管理員。",
   "auth_username_placeholder": "請輸入使用者名稱或電子郵件",
