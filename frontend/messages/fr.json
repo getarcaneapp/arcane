@@ -372,6 +372,7 @@
   "auth_tagline_line2": "Conçu pour tous.",
   "auth_login_problem_title": "Problème de connexion",
   "auth_failed_title": "Échec de l'authentification",
+  "auth_proxy_login_error": "Arcane n'a pas pu se connecter via le proxy inverse. Vérifiez qu'Arcane est accessible et que le proxy autorise les en-têtes d'authentification, puis réessayez.",
   "auth_no_login_methods_title": "Aucune méthode de connexion configurée",
   "auth_no_login_methods_description": "Aucune méthode de connexion n'est actuellement activée. Veuillez contacter un administrateur.",
   "auth_username_placeholder": "Entrez votre nom d'utilisateur ou e-mail",
