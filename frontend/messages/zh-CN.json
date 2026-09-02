@@ -2026,7 +2026,7 @@
   "docker_info_system_time": "系统时间",
   "docker_info_root_dir": "根目录",
   "docker_info_experimental": "实验性",
-  "goroutines": "戈鲁廷斯",
+  "goroutines": "Goroutine 数量",
   "docker_info_file_descriptors": "文件描述符",
   "docker_info_init_binary": "Init 二进制文件",
   "docker_info_default_runtime": "默认运行时间",
