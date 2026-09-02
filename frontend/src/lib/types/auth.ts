@@ -227,7 +227,6 @@ export type AuthenticationResponse = {
 	user?: User;
 	mfa?: MFAChallenge;
 	error?: string;
-	requirePasswordChange?: boolean;
 };
 
 export type Passkey = {
