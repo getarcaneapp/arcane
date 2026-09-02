@@ -119,6 +119,18 @@ type Update struct {
 	// Required: false
 	DefaultDeployPullPolicy *string `json:"defaultDeployPullPolicy,omitzero" binding:"omitempty,oneof=missing always never"`
 
+	// ToolsImageRegistry is the container registry used to pull the Arcane tools helper image.
+	//
+	// Required: false
+	ToolsImageRegistry *string `json:"toolsImageRegistry,omitzero" binding:"omitempty,oneof=ghcr.io docker.io"`
+
+	// UpdateCheckRegistry is the registry queried when checking whether the
+	// running Arcane image has a newer digest. "auto" follows the registry the
+	// running image was pulled from.
+	//
+	// Required: false
+	UpdateCheckRegistry *string `json:"updateCheckRegistry,omitzero" binding:"omitempty,oneof=auto ghcr.io docker.io"`
+
 	// ScheduledPruneEnabled indicates if scheduled pruning is enabled.
 	//
 	// Required: false
@@ -278,10 +290,10 @@ type Update struct {
 	// Required: false
 	AuthPasswordPolicy *string `json:"authPasswordPolicy,omitzero"`
 
-	// TrivyImage overrides the container image used for vulnerability scans.
+	// TrivyDbRegistry is the container registry used to pull the Trivy vulnerability database artifacts.
 	//
 	// Required: false
-	TrivyImage *string `json:"trivyImage,omitzero"`
+	TrivyDbRegistry *string `json:"trivyDbRegistry,omitzero" binding:"omitempty,oneof=ghcr.io docker.io"`
 
 	// TrivyNetwork sets the Docker network mode/network name for Trivy scan containers.
 	// Leave empty to inherit Arcane's network automatically, with bridge as the final fallback.

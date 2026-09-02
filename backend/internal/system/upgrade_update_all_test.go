@@ -301,7 +301,7 @@ func TestResumeUpdateAllFinalizesManagerWithoutRerunningAgents(t *testing.T) {
 	// disabled=true keeps GetAppVersionInfo offline; nil docker => empty current digest.
 	// The reported version differs from ManagerVersionAtStart, so the manager upgrade
 	// is judged successful.
-	versionSvc := version.NewVersionService(nil, true, "v9.9.9-new", "", nil, nil, nil)
+	versionSvc := version.NewVersionService(nil, true, "v9.9.9-new", "", nil, nil, nil, nil)
 	svc := NewSystemUpgradeService(db, nil, versionSvc, event.NewEventService(db, nil, nil), nil)
 
 	job := &EnvironmentUpdateJob{

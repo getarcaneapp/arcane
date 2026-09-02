@@ -3,6 +3,7 @@
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import * as Alert from '#lib/components/ui/alert';
 	import SearchableSelect from '#lib/components/form/searchable-select.svelte';
+	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
 	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
 	import { SecurityIcon, InfoIcon } from '#lib/icons';
@@ -13,10 +14,11 @@
 	import type { Settings } from '#lib/types/settings';
 	import type { Readable } from 'svelte/store';
 	import SectionCard from '#lib/components/section-card.svelte';
+	import { arcaneImageRegistryOptions, arcaneTrivyDbImages } from '#lib/utils/registry';
 
 	type TrivySecurityFormValues = Pick<
 		Settings,
-		| 'trivyImage'
+		| 'trivyDbRegistry'
 		| 'trivyNetwork'
 		| 'trivySecurityOpts'
 		| 'trivyPrivileged'
@@ -156,16 +158,20 @@
 	contentClass="divide-y divide-border/40 lg:p-6 lg:pt-0 [&>*]:py-5 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0"
 >
 	<div class="max-w-xl">
-		<TextInputWithLabel
-			bind:value={$formInputs.trivyImage.value}
-			error={$formInputs.trivyImage.error}
-			disabled={true}
-			label={m.security_trivy_image_label()}
-			description={m.security_trivy_image_description()}
-			helpText={m.security_trivy_image_note()}
-			placeholder="ghcr.io/getarcaneapp/tools:latest"
-			type="text"
+		<SelectWithLabel
+			id="trivyDbRegistry"
+			name="trivyDbRegistry"
+			bind:value={$formInputs.trivyDbRegistry.value}
+			label={m.trivy_db_registry_label()}
+			description={m.trivy_db_registry_description()}
+			options={arcaneImageRegistryOptions()}
+			onValueChange={(v) => ($formInputs.trivyDbRegistry.value = v as 'ghcr.io' | 'docker.io')}
 		/>
+		<ul class="mt-2 space-y-0.5 font-mono text-xs text-muted-foreground">
+			{#each arcaneTrivyDbImages($formInputs.trivyDbRegistry.value) as image (image)}
+				<li>{image}</li>
+			{/each}
+		</ul>
 	</div>
 
 	<SettingsRow

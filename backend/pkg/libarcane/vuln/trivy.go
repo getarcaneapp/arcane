@@ -22,11 +22,10 @@ const (
 	// DefaultDockerHostURI is the fallback Docker endpoint used when none is configured.
 	DefaultDockerHostURI = "unix:///var/run/docker.sock"
 
-	// DefaultDBRepository / DefaultJavaDBRepository / DefaultChecksBundleRepository are the
-	// Arcane-mirrored Trivy database locations passed to the scanner.
-	DefaultDBRepository           = "ghcr.io/getarcaneapp/trivy-db:2"
-	DefaultJavaDBRepository       = "ghcr.io/getarcaneapp/trivy-java-db:1"
-	DefaultChecksBundleRepository = "ghcr.io/getarcaneapp/trivy-checks:1"
+	// DBRepository / JavaDBRepository / ChecksBundleRepository are the Arcane-mirrored Trivy database paths without a registry host.
+	DBRepository           = "getarcaneapp/trivy-db:2"
+	JavaDBRepository       = "getarcaneapp/trivy-java-db:1"
+	ChecksBundleRepository = "getarcaneapp/trivy-checks:1"
 )
 
 // ParseVersion extracts the version string from `trivy --version` output. It
@@ -135,13 +134,13 @@ func ScanCacheBackendArgs() []string {
 	return ScanCacheBackendArgsForArch(runtime.GOARCH)
 }
 
-// DefaultRepositoryArgs returns the Trivy DB repository flags pointing at the
-// Arcane-mirrored databases.
-func DefaultRepositoryArgs() []string {
+// RepositoryArgs returns the Trivy DB repository flags pointing at the Arcane-mirrored databases on the given registry.
+func RepositoryArgs(registry string) []string {
+	host := libarcane.ArcaneRegistryHost(registry)
 	return []string{
-		"--db-repository", DefaultDBRepository,
-		"--java-db-repository", DefaultJavaDBRepository,
-		"--checks-bundle-repository", DefaultChecksBundleRepository,
+		"--db-repository", host + "/" + DBRepository,
+		"--java-db-repository", host + "/" + JavaDBRepository,
+		"--checks-bundle-repository", host + "/" + ChecksBundleRepository,
 	}
 }
 
@@ -152,10 +151,10 @@ func DefaultRepositoryArgs() []string {
 // memory-mapped. With an empty serverURL it falls back to the standalone
 // local-database flags. The server token is passed via ServerTokenEnv rather than
 // a flag so it is not exposed in the process arguments.
-func ScanSourceArgs(serverURL string) []string {
+func ScanSourceArgs(serverURL string, registry string) []string {
 	serverURL = strings.TrimSpace(serverURL)
 	if serverURL == "" {
-		return append(ScanCacheBackendArgs(), DefaultRepositoryArgs()...)
+		return append(ScanCacheBackendArgs(), RepositoryArgs(registry)...)
 	}
 
 	return []string{"--server", serverURL}
@@ -216,9 +215,9 @@ func BuildDockerConfigJSON(authConfigs map[string]dockerregistry.AuthConfig) ([]
 }
 
 // BuildContainerConfig assembles the container.Config for a Trivy scan container.
-func BuildContainerConfig(trivyImage string, cmdArgs []string, env []string) *containertypes.Config {
+func BuildContainerConfig(scannerImage string, cmdArgs []string, env []string) *containertypes.Config {
 	return &containertypes.Config{
-		Image:      trivyImage,
+		Image:      scannerImage,
 		Entrypoint: []string{"trivy"},
 		Cmd:        cmdArgs,
 		Env:        append([]string(nil), env...),

@@ -53,6 +53,7 @@ type dockerProjectVolumeRenameMigrationInternal struct {
 	removedOld     []projectVolumeRenameEntryInternal
 	oldComposeName string
 	newComposeName string
+	toolsImage     string
 }
 
 type JournalVolume struct {
@@ -72,7 +73,7 @@ const (
 	projectVolumeCopyMountPathInternal = "/volume"
 )
 
-func PlanMigration(ctx context.Context, dockerClient *client.Client, composeProject *composetypes.Project, oldComposeName, newComposeName string) (Migration, error) {
+func PlanMigration(ctx context.Context, dockerClient *client.Client, composeProject *composetypes.Project, oldComposeName, newComposeName string, toolsImage string) (Migration, error) {
 	if dockerClient == nil {
 		return nil, errors.New("docker service unavailable")
 	}
@@ -102,11 +103,12 @@ func PlanMigration(ctx context.Context, dockerClient *client.Client, composeProj
 		entries:        entries,
 		oldComposeName: oldComposeName,
 		newComposeName: newComposeName,
+		toolsImage:     toolsImage,
 	}, nil
 }
 
 // PlanRename validates and prepares an unused Docker volume for a copy-based rename.
-func PlanRename(ctx context.Context, dockerClient *client.Client, oldName, newName string) (Migration, error) {
+func PlanRename(ctx context.Context, dockerClient *client.Client, oldName, newName string, toolsImage string) (Migration, error) {
 	if dockerClient == nil {
 		return nil, errors.New("docker service unavailable")
 	}
@@ -146,6 +148,7 @@ func PlanRename(ctx context.Context, dockerClient *client.Client, oldName, newNa
 	return &dockerProjectVolumeRenameMigrationInternal{
 		dockerClient: dockerClient,
 		entries:      []projectVolumeRenameEntryInternal{entry},
+		toolsImage:   toolsImage,
 	}, nil
 }
 
@@ -208,7 +211,7 @@ func (m *dockerProjectVolumeRenameMigrationInternal) Apply(ctx context.Context) 
 
 	dockerClient := m.dockerClient
 
-	copyRuntime, err := getProjectVolumeCopyRuntimeInternal(ctx, dockerClient)
+	copyRuntime, err := getProjectVolumeCopyRuntimeInternal(ctx, dockerClient, m.toolsImage)
 	if err != nil {
 		return err
 	}
@@ -562,12 +565,12 @@ func createProjectVolumeCopyHolderContainerInternal(ctx context.Context, dockerC
 	return resp.ID, cleanup, nil
 }
 
-func getProjectVolumeCopyRuntimeInternal(ctx context.Context, dockerClient *client.Client) (projectVolumeCopyRuntimeInternal, error) {
+func getProjectVolumeCopyRuntimeInternal(ctx context.Context, dockerClient *client.Client, toolsImage string) (projectVolumeCopyRuntimeInternal, error) {
 	if dockerClient == nil {
 		return projectVolumeCopyRuntimeInternal{}, errors.New("docker service unavailable")
 	}
 
-	image, err := volumehelper.ResolveHelperImage(ctx, dockerClient)
+	image, err := volumehelper.ResolveHelperImage(ctx, dockerClient, toolsImage)
 	if err != nil {
 		return projectVolumeCopyRuntimeInternal{}, err
 	}

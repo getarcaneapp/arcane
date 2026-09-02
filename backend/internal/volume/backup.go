@@ -1268,7 +1268,7 @@ func (s *VolumeService) downloadRusticBackupInternal(ctx context.Context, entry 
 		removeScratch()
 		return nil, 0, fmt.Errorf("failed to restore Rustic snapshot for download: %w", err)
 	}
-	helperImage, err := getVolumeHelperImageInternal(ctx, s.dockerService, s.imageService, dockerClient)
+	helperImage, err := s.getVolumeHelperImageInternal(ctx, dockerClient)
 	if err != nil {
 		removeScratch()
 		return nil, 0, err
@@ -1301,7 +1301,7 @@ func (s *VolumeService) createBackupTempContainerWithMountInternal(ctx context.C
 	}
 
 	if strings.TrimSpace(helperImage) == "" {
-		helperImage, err = getVolumeHelperImageInternal(ctx, s.dockerService, s.imageService, dockerClient)
+		helperImage, err = s.getVolumeHelperImageInternal(ctx, dockerClient)
 		if err != nil {
 			return "", nil, err
 		}
@@ -1400,7 +1400,7 @@ func (s *VolumeService) restoreArchiveBackupInternal(ctx context.Context, docker
 	if err != nil {
 		return err
 	}
-	helperImage, err := getVolumeHelperImageInternal(ctx, s.dockerService, s.imageService, dockerClient)
+	helperImage, err := s.getVolumeHelperImageInternal(ctx, dockerClient)
 	if err != nil {
 		return err
 	}
@@ -1530,7 +1530,7 @@ func (s *VolumeService) restoreArchiveBackupFilesInternal(ctx context.Context, d
 	if err != nil {
 		return err
 	}
-	helperImage, err := getVolumeHelperImageInternal(ctx, s.dockerService, s.imageService, dockerClient)
+	helperImage, err := s.getVolumeHelperImageInternal(ctx, dockerClient)
 	if err != nil {
 		return err
 	}

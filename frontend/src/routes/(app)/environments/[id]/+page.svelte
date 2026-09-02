@@ -279,7 +279,9 @@
 		pruneBuildCacheMode: settings?.pruneBuildCacheMode ?? 'none',
 		pruneBuildCacheUntil: settings?.pruneBuildCacheUntil ?? '',
 		vulnerabilityScanEnabled: settings?.vulnerabilityScanEnabled ?? false,
-		trivyImage: settings?.trivyImage || '',
+		toolsImageRegistry: settings?.toolsImageRegistry ?? 'ghcr.io',
+		updateCheckRegistry: settings?.updateCheckRegistry ?? 'auto',
+		trivyDbRegistry: settings?.trivyDbRegistry ?? 'ghcr.io',
 		trivyNetwork: settings?.trivyNetwork || '',
 		trivySecurityOpts: settings?.trivySecurityOpts || '',
 		trivyPrivileged: settings?.trivyPrivileged ?? false,
@@ -344,7 +346,9 @@
 				pruneBuildCacheMode: formData.pruneBuildCacheMode,
 				pruneBuildCacheUntil: formData.pruneBuildCacheUntil,
 				vulnerabilityScanEnabled: formData.vulnerabilityScanEnabled,
-				trivyImage: formData.trivyImage,
+				toolsImageRegistry: formData.toolsImageRegistry,
+				updateCheckRegistry: formData.updateCheckRegistry,
+				trivyDbRegistry: formData.trivyDbRegistry,
 				trivyNetwork: formData.trivyNetwork,
 				trivySecurityOpts: formData.trivySecurityOpts,
 				trivyPrivileged: formData.trivyPrivileged,
@@ -749,7 +753,7 @@
 			</Tabs.Content>
 
 			<Tabs.Content value="docker">
-				<DockerTab {formInputs} {shellSelectValue} {handleShellSelectChange} {shellOptions} />
+				<DockerTab {formInputs} environmentId={environment.id} {shellSelectValue} {handleShellSelectChange} {shellOptions} />
 			</Tabs.Content>
 
 			<Tabs.Content value="security">

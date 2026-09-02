@@ -19,6 +19,7 @@ export interface StorageTabProps {
 
 export interface DockerTabProps {
 	formInputs: EnvironmentFormInputs;
+	environmentId: string;
 	shellSelectValue: string;
 	handleShellSelectChange: (value: string) => void;
 	shellOptions: { value: string; label: string; description?: string }[];

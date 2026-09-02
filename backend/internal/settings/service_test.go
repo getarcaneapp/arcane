@@ -97,7 +97,7 @@ func TestSettingsService_EnsureDefaultSettings_Idempotent(t *testing.T) {
 	require.Equal(t, count1, count2)
 
 	// Spot-check core and automation defaults exist with correct values
-	for _, key := range []string{"authLocalEnabled", "projectsDirectory", "followProjectSymlinks", "autoUpdateExcludedContainers", "imageEventWatcherEnabled", "vulnerabilityScanEnabled", "vulnerabilityScanInterval", "trivyImage", "trivyNetwork", "trivySecurityOpts", "trivyPrivileged", "trivyResourceLimitsEnabled", "trivyCpuLimit", "trivyMemoryLimitMb", "trivyConcurrentScanContainers", "gitSyncMaxFiles", "gitSyncMaxTotalSizeMb", "gitSyncMaxBinarySizeMb", "lifecycleDefaultRunnerImage"} {
+	for _, key := range []string{"authLocalEnabled", "projectsDirectory", "followProjectSymlinks", "autoUpdateExcludedContainers", "imageEventWatcherEnabled", "vulnerabilityScanEnabled", "vulnerabilityScanInterval", "toolsImageRegistry", "updateCheckRegistry", "trivyDbRegistry", "trivyNetwork", "trivySecurityOpts", "trivyPrivileged", "trivyResourceLimitsEnabled", "trivyCpuLimit", "trivyMemoryLimitMb", "trivyConcurrentScanContainers", "gitSyncMaxFiles", "gitSyncMaxTotalSizeMb", "gitSyncMaxBinarySizeMb", "lifecycleDefaultRunnerImage"} {
 		var sv SettingVariable
 		err := svc.db.WithContext(ctx).Where("key = ?", key).First(&sv).Error
 		require.NoErrorf(t, err, "missing default key %s", key)
@@ -113,8 +113,12 @@ func TestSettingsService_EnsureDefaultSettings_Idempotent(t *testing.T) {
 			require.Equal(t, "false", sv.Value)
 		case "vulnerabilityScanInterval":
 			require.Equal(t, "0 0 0 * * *", sv.Value)
-		case "trivyImage":
-			require.Equal(t, DefaultTrivyImage, sv.Value)
+		case "toolsImageRegistry":
+			require.Equal(t, "ghcr.io", sv.Value)
+		case "updateCheckRegistry":
+			require.Equal(t, "auto", sv.Value)
+		case "trivyDbRegistry":
+			require.Equal(t, "ghcr.io", sv.Value)
 		case "lifecycleDefaultRunnerImage":
 			require.Equal(t, "alpine:latest", sv.Value)
 		case "trivyNetwork":
@@ -156,20 +160,6 @@ func TestSettingsService_ImageEventWatcherSettingPersists(t *testing.T) {
 	var stored SettingVariable
 	require.NoError(t, db.WithContext(ctx).Where("key = ?", "imageEventWatcherEnabled").First(&stored).Error)
 	require.Equal(t, "true", stored.Value)
-}
-
-func TestSettingsService_EnsureDefaultSettings_OverridesExistingTrivyImage(t *testing.T) {
-	ctx := context.Background()
-	db := setupSettingsTestDB(t)
-	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
-	require.NoError(t, err)
-
-	require.NoError(t, svc.UpdateSetting(ctx, "trivyImage", "ghcr.io/aquasecurity/trivy:latest"))
-	require.NoError(t, svc.EnsureDefaultSettings(ctx))
-
-	var sv SettingVariable
-	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "trivyImage").First(&sv).Error)
-	require.Equal(t, DefaultTrivyImage, sv.Value)
 }
 
 func TestSettingsService_GetSettings_UnknownKeysIgnored(t *testing.T) {
@@ -820,23 +810,6 @@ func TestSettingsService_LoadDatabaseSettings_UIConfigurationDisabled_Env(t *tes
 	cfg := svc.GetSettingsConfig()
 	require.Equal(t, "env/projects", cfg.ProjectsDirectory.Value)
 	require.Equal(t, "https://env.example", cfg.BaseServerURL.Value)
-}
-
-func TestSettingsService_PersistEnvSettingsIfMissing_DoesNotOverrideForcedTrivyImage(t *testing.T) {
-	ctx := context.Background()
-	db := setupSettingsTestDB(t)
-	t.Setenv("TRIVY_IMAGE", "ghcr.io/aquasecurity/trivy:latest")
-
-	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
-	require.NoError(t, err)
-	require.NoError(t, svc.EnsureDefaultSettings(ctx))
-
-	require.NoError(t, svc.PersistEnvSettingsIfMissing(ctx))
-
-	var sv SettingVariable
-	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "trivyImage").First(&sv).Error)
-	require.Equal(t, DefaultTrivyImage, sv.Value)
-	require.Equal(t, DefaultTrivyImage, svc.GetSettingsConfig().TrivyImage.Value)
 }
 
 func TestSettingsService_UpdateSettings_RefreshesCache(t *testing.T) {

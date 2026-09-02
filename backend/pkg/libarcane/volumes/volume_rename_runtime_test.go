@@ -27,10 +27,10 @@ func TestGetProjectVolumeCopyRuntimeInternal_UsesToolsImageWhenAvailable(t *test
 	}))
 	t.Cleanup(server.Close)
 
-	copyRuntime, err := getProjectVolumeCopyRuntimeInternal(context.Background(), newTestDockerClient(t, server))
+	copyRuntime, err := getProjectVolumeCopyRuntimeInternal(context.Background(), newTestDockerClient(t, server), volumehelper.ToolsImage(""))
 
 	require.NoError(t, err)
-	require.Equal(t, volumehelper.DefaultToolsImage, copyRuntime.Image)
+	require.Equal(t, volumehelper.ToolsImage(""), copyRuntime.Image)
 }
 
 func TestCreateProjectVolumeCopyHolderContainerInternal_UsesPassiveHolderCommand(t *testing.T) {

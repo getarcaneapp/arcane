@@ -11,9 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
-
 	"emperror.dev/errors"
 
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
@@ -66,7 +63,13 @@ func (s *VolumeService) requireVolumeHelperACFSInternal(ctx context.Context, vol
 	return nil
 }
 
-const volumeHelperImage = volumehelper.DefaultToolsImage
+func (s *VolumeService) toolsImageInternal() string {
+	registry := ""
+	if s.settingsService != nil {
+		registry = s.settingsService.GetSettingsConfig().ToolsImageRegistry.Value
+	}
+	return volumehelper.ToolsImage(registry)
+}
 
 func isUnlabeledVolumeHelperContainerInternal(c container.Summary) bool {
 	if !libarcane.IsInternalContainer(c.Labels) {
@@ -98,30 +101,32 @@ func isVolumeHelperContainerInternal(c container.Summary) bool {
 	return strings.EqualFold(c.Labels[volumehelper.ContainerLabel], "true")
 }
 
-func getVolumeHelperImageInternal(ctx context.Context, dockerService *docker.DockerClientService, imageService *image.ImageService, dockerClient *client.Client) (string, error) {
+func (s *VolumeService) getVolumeHelperImageInternal(ctx context.Context, dockerClient *client.Client) (string, error) {
 	slog.DebugContext(ctx, "volume service: resolve helper image")
 	var err error
 	if dockerClient == nil {
-		if dockerService == nil {
+		if s.dockerService == nil {
 			return "", errors.New("docker service unavailable")
 		}
-		dockerClient, err = dockerService.GetClient(ctx)
+		dockerClient, err = s.dockerService.GetClient(ctx)
 		if err != nil {
 			return "", errors.WrapIf(err, "failed to get docker client")
 		}
 	}
 
-	if _, err := dockerClient.ImageInspect(ctx, volumeHelperImage); err == nil {
-		slog.InfoContext(ctx, "volume service: helper image strategy selected", "strategy", "tools-local", "image", volumeHelperImage)
-		return volumeHelperImage, nil
+	toolsImage := s.toolsImageInternal()
+
+	if _, err := dockerClient.ImageInspect(ctx, toolsImage); err == nil {
+		slog.InfoContext(ctx, "volume service: helper image strategy selected", "strategy", "tools-local", "image", toolsImage)
+		return toolsImage, nil
 	}
 
 	var pullErr error
-	if imageService != nil {
-		pullImageErr := imageService.PullImage(ctx, volumeHelperImage, io.Discard, common.SystemUser, nil)
+	if s.imageService != nil {
+		pullImageErr := s.imageService.PullImage(ctx, toolsImage, io.Discard, common.SystemUser, nil)
 		if pullImageErr == nil {
-			slog.InfoContext(ctx, "volume service: helper image strategy selected", "strategy", "tools-pulled", "image", volumeHelperImage)
-			return volumeHelperImage, nil
+			slog.InfoContext(ctx, "volume service: helper image strategy selected", "strategy", "tools-pulled", "image", toolsImage)
+			return toolsImage, nil
 		}
 		pullErr = pullImageErr
 		slog.WarnContext(ctx, "volume service: failed to pull tools helper image, attempting arcane fallback", "error", pullImageErr.Error())
@@ -244,7 +249,7 @@ func (s *VolumeService) acquireHelperInternal(volumeName, containerID string) (f
 // returns a cleanup that removes it. Tracking of reusable helpers is
 // the caller's responsibility.
 func (s *VolumeService) startHelperContainerInternal(ctx context.Context, dockerClient *client.Client, volumeName string) (string, func(), error) {
-	helperImage, err := getVolumeHelperImageInternal(ctx, s.dockerService, s.imageService, dockerClient)
+	helperImage, err := s.getVolumeHelperImageInternal(ctx, dockerClient)
 	if err != nil {
 		return "", nil, err
 	}

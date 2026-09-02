@@ -23,6 +23,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/types/v2/version"
 	"github.com/samber/hot"
@@ -50,9 +51,10 @@ type VersionService struct {
 	containerRegistryService *registry.ContainerRegistryService
 	dockerService            *docker.DockerClientService
 	imageUpdateService       *imageupdate.ImageUpdateService
+	settingsService          *settings.SettingsService
 }
 
-func NewVersionService(httpClient *http.Client, disabled bool, version string, revision string, containerRegistryService *registry.ContainerRegistryService, dockerService *docker.DockerClientService, imageUpdateService *imageupdate.ImageUpdateService) *VersionService {
+func NewVersionService(httpClient *http.Client, disabled bool, version string, revision string, containerRegistryService *registry.ContainerRegistryService, dockerService *docker.DockerClientService, imageUpdateService *imageupdate.ImageUpdateService, settingsService *settings.SettingsService) *VersionService {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
@@ -64,6 +66,7 @@ func NewVersionService(httpClient *http.Client, disabled bool, version string, r
 		containerRegistryService: containerRegistryService,
 		dockerService:            dockerService,
 		imageUpdateService:       imageUpdateService,
+		settingsService:          settingsService,
 	}
 	loader := func(_ []struct{}) (map[struct{}]latestRelease, error) {
 		ctx, cancel := context.WithTimeout(context.Background(), defaultRequestTimeout)
@@ -278,6 +281,37 @@ func (s *VersionService) getDisplayVersion() string {
 	return versionValue
 }
 
+// updateCheckImageRefInternal points the digest lookup at the configured registry; "auto" keeps the running reference.
+func (s *VersionService) updateCheckImageRefInternal(currentImageRef string) string {
+	if s.settingsService == nil {
+		return currentImageRef
+	}
+	target := strings.TrimSpace(s.settingsService.GetSettingsConfig().UpdateCheckRegistry.Value)
+	if target == "" || target == "auto" {
+		return currentImageRef
+	}
+
+	named, err := ref.ParseNormalizedNamed(strings.TrimSpace(currentImageRef))
+	if err != nil || !strings.HasPrefix(ref.Path(named), "getarcaneapp/") {
+		return currentImageRef
+	}
+
+	host := libarcane.ArcaneRegistryHost(target)
+	repoPath := ref.Path(named)
+	if host == libarcane.DockerHubRegistryHost {
+		switch repoPath {
+		case "getarcaneapp/arcane":
+			repoPath = "getarcaneapp/manager"
+		case "getarcaneapp/arcane-headless":
+			repoPath = "getarcaneapp/agent"
+		}
+	}
+	if host == ref.Domain(named) && repoPath == ref.Path(named) {
+		return currentImageRef
+	}
+	return host + "/" + repoPath
+}
+
 // GetAppVersionInfo returns application version information including display version
 func (s *VersionService) GetAppVersionInfo(ctx context.Context) *version.Info {
 	isSemver := s.isSemverVersion()
@@ -308,14 +342,15 @@ func (s *VersionService) GetAppVersionInfo(ctx context.Context) *version.Info {
 		return info
 	}
 
-	digestUpdateAvailable, latestDigest := s.storedOrDigestBasedUpdateInternal(ctx, currentImageID, currentTag, currentDigest, currentImageRef)
+	checkImageRef := s.updateCheckImageRefInternal(currentImageRef)
+	digestUpdateAvailable, latestDigest := s.storedOrDigestBasedUpdateInternal(ctx, currentImageID, currentTag, currentDigest, currentImageRef, checkImageRef)
 	if latestDigest != "" {
 		info.NewestDigest = latestDigest
 	}
 
 	switch {
 	case isSemver && s.isNextBuildInternal(currentTag):
-		nextVersion := s.resolveNextVersionInternal(ctx, currentImageRef, currentTag, latestDigest)
+		nextVersion := s.resolveNextVersionInternal(ctx, checkImageRef, currentTag, latestDigest)
 		if nextVersion != "" && semver.Compare(nextVersion, ver) >= 0 {
 			info.NewestVersion = nextVersion
 		}
@@ -346,8 +381,9 @@ func (s *VersionService) GetAppVersionInfo(ctx context.Context) *version.Info {
 	return info
 }
 
-func (s *VersionService) storedOrDigestBasedUpdateInternal(ctx context.Context, currentImageID, currentTag, currentDigest, currentImageRef string) (bool, string) {
-	if s.imageUpdateService != nil && strings.TrimSpace(currentImageID) != "" {
+// storedOrDigestBasedUpdateInternal uses the stored poller row only when the check targets the running reference.
+func (s *VersionService) storedOrDigestBasedUpdateInternal(ctx context.Context, currentImageID, currentTag, currentDigest, currentImageRef, checkImageRef string) (bool, string) {
+	if s.imageUpdateService != nil && strings.TrimSpace(currentImageID) != "" && checkImageRef == currentImageRef {
 		record, found, err := s.imageUpdateService.StoredUpdateByImageID(ctx, currentImageID)
 		if err != nil {
 			slog.WarnContext(ctx, "Failed to read stored Arcane image update state", "imageID", currentImageID, "error", err)
@@ -356,8 +392,8 @@ func (s *VersionService) storedOrDigestBasedUpdateInternal(ctx context.Context, 
 		}
 	}
 
-	if currentTag != "" && currentDigest != "" && currentImageRef != "" && s.containerRegistryService != nil {
-		return s.checkDigestBasedUpdate(ctx, currentTag, currentDigest, currentImageRef)
+	if currentTag != "" && currentDigest != "" && checkImageRef != "" && s.containerRegistryService != nil {
+		return s.checkDigestBasedUpdate(ctx, currentTag, currentDigest, checkImageRef)
 	}
 
 	return false, ""

@@ -67,7 +67,9 @@ export type Settings = {
 	authLocalEnabled: boolean;
 	authSessionTimeout: number;
 	authPasswordPolicy: 'basic' | 'standard' | 'strong';
-	trivyImage: string;
+	toolsImageRegistry: 'ghcr.io' | 'docker.io';
+	updateCheckRegistry: 'auto' | 'ghcr.io' | 'docker.io';
+	trivyDbRegistry: 'ghcr.io' | 'docker.io';
 	trivyNetwork: string;
 	trivySecurityOpts: string;
 	trivyPrivileged: boolean;

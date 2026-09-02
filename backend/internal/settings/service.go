@@ -38,11 +38,6 @@ import (
 
 const (
 	browserSessionSigningKeySize = 64
-
-	// DefaultArcaneToolsImage is the shared Arcane toolbox image used for helper commands.
-	DefaultArcaneToolsImage = "ghcr.io/getarcaneapp/tools:latest"
-	// DefaultTrivyImage is the default vulnerability scanner image setting.
-	DefaultTrivyImage = DefaultArcaneToolsImage
 )
 
 type SettingsService struct {
@@ -219,6 +214,8 @@ func DefaultSettingsConfig() *Settings {
 		MaxConcurrentActivities:        SettingVariable{Value: "5"},
 		AutoInjectEnv:                  SettingVariable{Value: "false"},
 		DefaultDeployPullPolicy:        SettingVariable{Value: "missing"},
+		ToolsImageRegistry:             SettingVariable{Value: "ghcr.io"},
+		UpdateCheckRegistry:            SettingVariable{Value: "auto"},
 		ScheduledPruneEnabled:          SettingVariable{Value: "false"},
 		ScheduledPruneInterval:         SettingVariable{Value: "0 0 0 * * *"},
 		PruneContainerMode:             SettingVariable{Value: "stopped"},
@@ -248,7 +245,7 @@ func DefaultSettingsConfig() *Settings {
 		AuthPasswordPolicy:             SettingVariable{Value: "strong"},
 		VulnerabilityScanEnabled:       SettingVariable{Value: "false"},
 		VulnerabilityScanInterval:      SettingVariable{Value: "0 0 0 * * *"},
-		TrivyImage:                     SettingVariable{Value: DefaultTrivyImage},
+		TrivyDbRegistry:                SettingVariable{Value: "ghcr.io"},
 		TrivyNetwork:                   SettingVariable{Value: ""},
 		TrivySecurityOpts:              SettingVariable{Value: ""},
 		TrivyPrivileged:                SettingVariable{Value: "false"},
@@ -735,10 +732,6 @@ func (s *SettingsService) EnsureDefaultSettings(ctx context.Context) error {
 					}
 				case err != nil:
 					return errors.WrapIff(err, "failed to check for existing setting %s", defaultSetting.Key)
-				case defaultSetting.Key == "trivyImage" && existing.Value != defaultSetting.Value:
-					if err := tx.Model(&existing).Update("value", defaultSetting.Value).Error; err != nil {
-						return errors.WrapIff(err, "failed to enforce default setting %s", defaultSetting.Key)
-					}
 				}
 			}
 			return nil
@@ -832,10 +825,6 @@ func (s *SettingsService) processEnvField(ctx context.Context, tx *gorm.DB, fiel
 
 func (s *SettingsService) shouldProcessField(key, attrs string, isEnvOnlyMode bool) bool {
 	if key == "" || strings.Contains(attrs, "internal") {
-		return false
-	}
-
-	if key == "trivyImage" {
 		return false
 	}
 
