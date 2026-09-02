@@ -372,6 +372,7 @@
   "auth_tagline_line2": "Zaprojektowany dla każdego.",
   "auth_login_problem_title": "Problem z logowaniem",
   "auth_failed_title": "Uwierzytelnianie nie powiodło się",
+  "auth_proxy_login_error": "Program Arcane nie mógł zakończyć logowania za pośrednictwem serwera proxy odwrotnego. Sprawdź, czy połączenie z programem Arcane jest możliwe i czy serwer proxy zezwala na nagłówki uwierzytelniające, a następnie spróbuj ponownie.",
   "auth_no_login_methods_title": "Brak skonfigurowanych metod logowania",
   "auth_no_login_methods_description": "Obecnie nie ma włączonych żadnych metod logowania. Skontaktuj się z administratorem.",
   "auth_username_placeholder": "Wprowadź nazwę użytkownika lub e-mail",
