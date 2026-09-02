@@ -372,6 +372,7 @@
   "auth_tagline_line2": "Diseñado para todos.",
   "auth_login_problem_title": "Problema de inicio de sesión",
   "auth_failed_title": "Autenticación fallida",
+  "auth_proxy_login_error": "Arcane no ha podido completar el inicio de sesión a través del proxy inverso. Comprueba que se pueda acceder a Arcane y que el proxy permita los encabezados de autenticación; a continuación, vuelve a intentarlo.",
   "auth_no_login_methods_title": "No hay métodos de acceso configurados",
   "auth_no_login_methods_description": "Actualmente no hay métodos de inicio de sesión habilitados. Por favor, póngase en contacto con un administrador.",
   "auth_username_placeholder": "Introduce tu nombre de usuario o email",
