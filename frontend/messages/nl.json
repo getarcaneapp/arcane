@@ -372,6 +372,7 @@
   "auth_tagline_line2": "Ontworpen voor iedereen.",
   "auth_login_problem_title": "Login probleem",
   "auth_failed_title": "Authenticatie mislukt",
+  "auth_proxy_login_error": "Arcane kon de aanmelding via de reverse-proxy niet voltooien. Controleer of Arcane bereikbaar is en of de proxy de authenticatieheaders toestaat, en probeer het vervolgens opnieuw.",
   "auth_no_login_methods_title": "Geen loginmethoden geconfigureerd",
   "auth_no_login_methods_description": "Er zijn momenteel geen inlogmethoden ingeschakeld. Neem contact op met een beheerder.",
   "auth_username_placeholder": "Voer je gebruikersnaam of e-mailadres in",
