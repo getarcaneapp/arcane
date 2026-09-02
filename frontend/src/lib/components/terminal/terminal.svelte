@@ -23,6 +23,7 @@
 	let fitAddon: FitAddon | null = null;
 	let ws: WebSocket | null = null;
 	let isReconnecting = false;
+	let openedAt = 0;
 	let resizeObserver: ResizeObserver | null = null;
 	let isReady = $state(false);
 
@@ -126,6 +127,7 @@
 		ws.binaryType = 'arraybuffer';
 
 		ws.onopen = () => {
+			openedAt = Date.now();
 			onConnected?.();
 		};
 
@@ -150,7 +152,12 @@
 			if (!isReconnecting && terminal) {
 				// Surface the close code so reports of unexpected disconnects
 				// carry the reason (server 1000/1006, proxy 1001, ...) — see #3536.
-				console.warn('Terminal websocket closed', { code: event.code, reason: event.reason, wasClean: event.wasClean });
+				console.warn('Terminal websocket closed', {
+					code: event.code,
+					reason: event.reason,
+					wasClean: event.wasClean,
+					durationMs: openedAt ? Date.now() - openedAt : null
+				});
 				const detail = event.reason ? `${event.code}: ${event.reason}` : `${event.code}`;
 				terminal.writeln(`\r\n\x1b[33m${m.terminal_connection_closed()} (${detail})\x1b[0m`);
 				onDisconnected?.();

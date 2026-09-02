@@ -14,6 +14,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/labstack/echo/v5"
 
+	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
 	systemtypes "github.com/getarcaneapp/arcane/types/v2/system"
 )
 
@@ -43,37 +44,35 @@ func (h *WebSocketHandler) ContainerExec(c *echo.Context) error {
 		return nil
 	}
 	defer unregister()
-	defer func() {
-		if err := conn.CloseNow(); err != nil {
-			slog.Debug("Failed to close container exec websocket connection", "containerID", containerID, "error", err)
-		}
-	}()
+	defer func() { _ = conn.CloseNow() }()
 
 	// Allow large terminal pastes; coder/websocket's default limit is 32KB.
 	conn.SetReadLimit(1 << 20)
 
-	ctx, cancel := context.WithCancel(c.Request().Context())
-	defer cancel()
+	ctx, cancel := context.WithCancelCause(c.Request().Context())
+	defer cancel(nil)
 
 	// The pong is serviced by the concurrent stdin reader.
-	go keepWSConnAliveInternal(ctx, cancel, conn, 54*time.Second)
+	go keepWSConnAliveInternal(ctx, func() { cancel(errors.New("websocket ping failed")) }, conn, 54*time.Second)
 
 	h.runContainerExecInternal(ctx, cancel, conn, containerID, shell)
 	return nil
 }
 
-func (h *WebSocketHandler) runContainerExecInternal(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, containerID, shell string) {
-	// Create exec instance
+func (h *WebSocketHandler) runContainerExecInternal(ctx context.Context, cancel context.CancelCauseFunc, conn *websocket.Conn, containerID, shell string) {
+	started := time.Now()
+
 	execID, err := h.containerService.CreateExec(ctx, containerID, []string{shell})
 	if err != nil {
 		h.writeExecErrorInternal(ctx, conn, errors.WithMessage(err, "Error creating exec"))
+		closeExecInternal(ctx, conn, containerID, "", started, errors.WithMessage(err, "create exec"))
 		return
 	}
 
-	// Attach to exec
 	execSession, err := h.containerService.AttachExec(ctx, containerID, execID)
 	if err != nil {
 		h.writeExecErrorInternal(ctx, conn, errors.WithMessage(err, "Error attaching to exec"))
+		closeExecInternal(ctx, conn, containerID, execID, started, errors.WithMessage(err, "attach exec"))
 		return
 	}
 	// Cleanup must proceed even if the parent ctx is canceled, and must also
@@ -93,11 +92,15 @@ func (h *WebSocketHandler) runContainerExecInternal(ctx context.Context, cancel 
 		cleanup()
 	}()
 
-	done := make(chan struct{})
-	go h.pipeExecOutputInternal(ctx, conn, execSession.Stdout(), execID, containerID, done)
-	go h.pipeExecInputInternal(ctx, cancel, conn, execSession.Stdin(), execID, containerID)
+	done := make(chan error, 1)
+	go h.pipeExecOutputInternal(ctx, conn, execSession.Stdout(), done)
+	go h.pipeExecInputInternal(ctx, cancel, conn, execSession.Stdin())
 
-	<-done
+	cause := <-done
+	if ctxCause := context.Cause(ctx); ctxCause != nil {
+		cause = ctxCause
+	}
+	closeExecInternal(ctx, conn, containerID, execID, started, cause)
 }
 
 func (h *WebSocketHandler) writeExecErrorInternal(ctx context.Context, conn *websocket.Conn, err error) {
@@ -106,40 +109,72 @@ func (h *WebSocketHandler) writeExecErrorInternal(ctx context.Context, conn *web
 	_ = conn.Write(wctx, websocket.MessageText, []byte(err.Error()+"\r\n"))
 }
 
-func (h *WebSocketHandler) pipeExecOutputInternal(ctx context.Context, conn *websocket.Conn, stdout io.Reader, execID, containerID string, done chan<- struct{}) {
-	defer close(done)
+// closeExecInternal completes the close handshake with a status and reason
+// derived from the terminating cause, so the browser can show why the
+// session ended, and logs the outcome with the session duration.
+func closeExecInternal(ctx context.Context, conn *websocket.Conn, containerID, execID string, started time.Time, cause error) {
+	status, reason, level := websocket.StatusNormalClosure, "shell exited", slog.LevelInfo
+	switch {
+	case cause == nil:
+	case wshub.IsExpectedClose(cause):
+		reason, level = "", slog.LevelDebug
+	case errors.Is(cause, context.Canceled):
+		status, reason = websocket.StatusGoingAway, "server shutting down"
+	default:
+		status, reason, level = websocket.StatusInternalError, cause.Error(), slog.LevelWarn
+	}
+	if len(reason) > 123 {
+		reason = reason[:123]
+	}
+	closeErr := conn.Close(status, reason)
+	slog.Log(ctx, level, "Container exec session ended",
+		"containerID", containerID,
+		"execID", execID,
+		"status", int(status),
+		"reason", reason,
+		"cause", cause,
+		"duration", time.Since(started),
+		"closeError", closeErr,
+	)
+}
+
+func (h *WebSocketHandler) pipeExecOutputInternal(ctx context.Context, conn *websocket.Conn, stdout io.Reader, done chan<- error) {
 	buf := make([]byte, 4096)
 	for {
 		select {
 		case <-ctx.Done():
+			done <- context.Cause(ctx)
 			return
 		default:
 		}
 
 		n, err := stdout.Read(buf)
 		if err != nil {
-			slog.Debug("Exec stdout read error", "execID", execID, "containerID", containerID, "error", err)
+			if errors.Is(err, io.EOF) {
+				done <- nil
+			} else {
+				done <- errors.WithMessage(err, "exec output read")
+			}
 			return
 		}
 		if n > 0 {
 			if err := conn.Write(ctx, websocket.MessageBinary, buf[:n]); err != nil {
-				slog.Debug("Exec websocket write error", "execID", execID, "containerID", containerID, "error", err)
+				done <- errors.WithMessage(err, "websocket write")
 				return
 			}
 		}
 	}
 }
 
-func (h *WebSocketHandler) pipeExecInputInternal(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, stdin io.Writer, execID, containerID string) {
+func (h *WebSocketHandler) pipeExecInputInternal(ctx context.Context, cancel context.CancelCauseFunc, conn *websocket.Conn, stdin io.Writer) {
 	for {
 		_, data, err := conn.Read(ctx)
 		if err != nil {
-			slog.Debug("Exec websocket read error", "execID", execID, "containerID", containerID, "error", err)
-			cancel()
+			cancel(errors.WithMessage(err, "websocket read"))
 			return
 		}
 		if _, err := stdin.Write(data); err != nil {
-			slog.Debug("Exec stdin write error", "execID", execID, "containerID", containerID, "error", err)
+			cancel(errors.WithMessage(err, "exec input write"))
 			return
 		}
 	}
