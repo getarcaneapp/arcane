@@ -49,6 +49,12 @@ type composeCacheEntry struct {
 	project   *composetypes.Project
 }
 
+type projectMetadataEntryInternal struct {
+	composeCacheEntry
+
+	meta projects.ArcaneComposeMetadata
+}
+
 func newParsedComposeCacheInternal() *parsedComposeCacheInternal {
 	return &parsedComposeCacheInternal{entries: hot.NewHotCache[string, composeCacheEntry](hot.LRU, 2048).Build()}
 }
@@ -98,6 +104,15 @@ func (c *composeNameCacheInternal) replace(byName map[string]string) {
 	c.mu.Lock()
 	c.byName = byName
 	c.mu.Unlock()
+}
+
+func (s *ProjectService) invalidateProjectCachesInternal(projectID string) {
+	if s.parsedCompose != nil {
+		s.parsedCompose.invalidate(projectID)
+	}
+	if s.metaCache != nil {
+		s.metaCache.Delete(projectID)
+	}
 }
 
 func (c *parsedComposeCacheInternal) invalidate(projectID string) {
@@ -251,7 +266,7 @@ func (s *ProjectService) getCachedComposeProjectInternal(ctx context.Context, pr
 	}
 
 	if cached, ok := s.parsedCompose.entries.Peek(proj.ID); ok {
-		if validComposeCacheEntryInternal(cached) {
+		if cached.project != nil && validComposeCacheEntryInternal(cached) {
 			return cached.project, nil
 		}
 		s.parsedCompose.entries.Delete(proj.ID)
@@ -267,32 +282,18 @@ func (s *ProjectService) getCachedComposeProjectInternal(ctx context.Context, pr
 			return nil, err
 		}
 
-		entry := composeCacheEntry{
-			composePath:   composePath,
-			includeMtimes: make(map[string]time.Time),
-			envMtimes:     collectEnvMtimesInternal(proj, getProjectsDirectoryOrDefaultInternal(ctx, cfg), composeProject),
-			project:       composeProject,
-		}
-		// os.Stat rather than acfs here and below: see
-		// validComposeCacheEntryInternal — these paths may resolve outside the
-		// project directory (#3556).
-		if info, statErr := os.Stat(composePath); statErr == nil {
-			entry.composeMtime = info.ModTime()
-		} else {
-			return nil, errors.WrapIf(statErr, "stat compose file")
-		}
+		var composeFiles, composeEnvFiles []string
 		if composeProject != nil {
-			for _, composeFile := range composeProject.ComposeFiles {
-				if composeFile == "" || composeFile == composePath {
-					continue
-				}
-				info, statErr := os.Stat(composeFile)
-				if statErr != nil {
-					return nil, errors.WrapIff(statErr, "stat compose include %s", composeFile)
-				}
-				entry.includeMtimes[composeFile] = info.ModTime()
+			composeFiles = composeProject.ComposeFiles
+			if envOpts, err := projects.ParseComposeEnvOptions(composeProject.WorkingDir, projects.EnvMap(composeProject.Environment)); err == nil {
+				composeEnvFiles = envOpts.EnvFiles
 			}
 		}
+		entry, err := newComposeCacheEntryInternal(proj, getProjectsDirectoryOrDefaultInternal(ctx, cfg), composePath, composeFiles, composeEnvFiles)
+		if err != nil {
+			return nil, err
+		}
+		entry.project = composeProject
 
 		return map[string]composeCacheEntry{proj.ID: entry}, nil
 	})
@@ -306,32 +307,52 @@ func (s *ProjectService) getCachedComposeProjectInternal(ctx context.Context, pr
 	return entry.project, nil
 }
 
-// collectEnvMtimesInternal records the mtimes of every env file that influences
-// compose-file selection or interpolation for a project: the project .env, the
-// global .env.global, and any COMPOSE_ENV_FILES entries. A file that does not
-// exist is recorded as a zero time so its later appearance invalidates too.
-func collectEnvMtimesInternal(proj *Project, projectsDirectory string, composeProject *composetypes.Project) map[string]time.Time {
-	paths := []string{
-		filepath.Join(proj.Path, projects.EffectiveEnvFileName),
-		filepath.Join(projectsDirectory, projects.GlobalEnvFileName),
+// newComposeCacheEntryInternal snapshots the mtimes of every file a compose
+// load consumed: the root, every other merged config file (COMPOSE_FILE
+// entries, an auto-loaded override, includes), and the env files that select
+// and interpolate them (.env, .env.global, COMPOSE_ENV_FILES entries). An env
+// file that does not exist is recorded as a zero time so its later appearance
+// invalidates too. os.Stat rather than acfs throughout: see
+// validComposeCacheEntryInternal.
+func newComposeCacheEntryInternal(proj *Project, projectsDirectory, composePath string, composeFiles, composeEnvFiles []string) (composeCacheEntry, error) {
+	entry := composeCacheEntry{
+		composePath:   composePath,
+		includeMtimes: make(map[string]time.Time, len(composeFiles)),
+		envMtimes:     make(map[string]time.Time, 2+len(composeEnvFiles)),
 	}
-	if composeProject != nil {
-		if envOpts, err := projects.ParseComposeEnvOptions(composeProject.WorkingDir, projects.EnvMap(composeProject.Environment)); err == nil {
-			paths = append(paths, envOpts.EnvFiles...)
+	info, err := os.Stat(composePath)
+	if err != nil {
+		return composeCacheEntry{}, errors.WrapIf(err, "stat compose file")
+	}
+	entry.composeMtime = info.ModTime()
+
+	rootPath, err := filepath.Abs(composePath)
+	if err != nil {
+		rootPath = composePath
+	}
+	for _, composeFile := range composeFiles {
+		if composeFile == "" || composeFile == composePath || composeFile == rootPath {
+			continue
 		}
+		info, err := os.Stat(composeFile)
+		if err != nil {
+			return composeCacheEntry{}, errors.WrapIff(err, "stat compose file %s", composeFile)
+		}
+		entry.includeMtimes[composeFile] = info.ModTime()
 	}
 
-	mtimes := make(map[string]time.Time, len(paths))
-	for _, p := range paths {
-		// os.Stat rather than acfs: env files may be symlinks resolving outside
-		// any confinement root (a supported setup).
-		if info, err := os.Stat(p); err == nil {
-			mtimes[p] = info.ModTime()
+	envPaths := append([]string{
+		filepath.Join(proj.Path, projects.EffectiveEnvFileName),
+		filepath.Join(projectsDirectory, projects.GlobalEnvFileName),
+	}, composeEnvFiles...)
+	for _, envPath := range envPaths {
+		if info, err := os.Stat(envPath); err == nil {
+			entry.envMtimes[envPath] = info.ModTime()
 		} else {
-			mtimes[p] = time.Time{}
+			entry.envMtimes[envPath] = time.Time{}
 		}
 	}
-	return mtimes
+	return entry, nil
 }
 
 // The compose file and its includes are absolute paths compose-go resolved, and
@@ -339,7 +360,7 @@ func collectEnvMtimesInternal(proj *Project, projectsDirectory string, composePr
 // the project (#3556). These invalidation probes therefore stay on os.Stat
 // rather than a root-confined stat, which would reject those layouts.
 func validComposeCacheEntryInternal(entry composeCacheEntry) bool {
-	if entry.project == nil || entry.composePath == "" {
+	if entry.composePath == "" {
 		return false
 	}
 

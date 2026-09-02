@@ -4194,7 +4194,7 @@ func TestProjectService_MapProjectToDto_SetsRedeployDisabledFromRuntimeServices(
 						Labels: tt.labels,
 					},
 				},
-			}, tt.currentContainerID, tt.currentErr, nil)
+			}, tt.currentContainerID, tt.currentErr, projects.ArcaneComposeMetadata{})
 
 			require.Equal(t, tt.wantProject, details.RedeployDisabled)
 			require.Len(t, details.RuntimeServices, 1)
@@ -7362,7 +7362,7 @@ func TestProjectService_MapProjectToDto_SeedsHasBuildDirectiveFromPersistedRefs(
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p := Project{ID: tt.name, Name: tt.name, Path: t.TempDir(), UpdatedAt: &now, BuildImageRefsJSON: tt.buildImageRefsJSON}
-			assert.Equal(t, tt.want, svc.mapProjectToDto(ctx, metaEnv.projectsDirectory, p, nil, "", nil, metaEnv).HasBuildDirective)
+			assert.Equal(t, tt.want, svc.mapProjectToDto(ctx, metaEnv.projectsDirectory, p, nil, "", nil, svc.ProjectMetadata(ctx, p, metaEnv)).HasBuildDirective)
 		})
 	}
 }

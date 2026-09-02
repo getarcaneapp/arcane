@@ -7,6 +7,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"emperror.dev/errors"
@@ -49,6 +50,10 @@ type ArcaneComposeMetadata struct {
 	ProjectTagsAuthoritative bool
 	// ServiceIconSets maps service names to their fallback, light, and dark icon values.
 	ServiceIconSets map[string]IconSet
+	// ComposeFiles lists every compose file the metadata was parsed from: the root, COMPOSE_FILE entries, an auto-loaded override, and includes.
+	ComposeFiles []string
+	// EnvFiles lists every env file the parse read: the .env beside each parsed compose file plus resolved COMPOSE_ENV_FILES entries.
+	EnvFiles []string
 }
 
 // ParseArcaneComposeMetadata reads a Docker Compose file and extracts Arcane-specific metadata.
@@ -59,18 +64,41 @@ func ParseArcaneComposeMetadata(ctx context.Context, composeFilePath, projectsDi
 	}
 
 	workdir := filepath.Dir(composeFilePath)
+	var envMap map[string]string
 	if strings.TrimSpace(projectsDirectory) == "" {
-		envMap := loadComposeEnvironment(workdir)
-		return parseArcaneComposeMetadataFromFileInternal(ctx, composeFilePath, envMap, map[string]struct{}{})
+		envMap = loadComposeEnvironment(workdir)
+	} else {
+		envLoader := NewEnvLoader(projectsDirectory, workdir, autoInjectEnv)
+		loaded, _, err := envLoader.LoadEnvironment(ctx)
+		if err != nil {
+			return emptyArcaneComposeMetadataInternal(), errors.WrapIf(err, "load project environment")
+		}
+		envMap = loaded
 	}
 
-	envLoader := NewEnvLoader(projectsDirectory, workdir, autoInjectEnv)
-	envMap, _, err := envLoader.LoadEnvironment(ctx)
+	visited := map[string]struct{}{}
+	meta, err := parseArcaneComposeMetadataFromFileInternal(ctx, composeFilePath, envMap, visited)
 	if err != nil {
-		return emptyArcaneComposeMetadataInternal(), errors.WrapIf(err, "load project environment")
+		return meta, err
 	}
+	meta.ComposeFiles = utils.UniqueNonEmptyStrings(append(meta.ComposeFiles, slices.Collect(maps.Keys(visited))...))
+	slices.Sort(meta.ComposeFiles)
+	meta.EnvFiles = utils.UniqueNonEmptyStrings(append(meta.EnvFiles, resolveComposeEnvFilesInternal(workdir, envMap)...))
+	return meta, nil
+}
 
-	return parseArcaneComposeMetadataFromFileInternal(ctx, composeFilePath, envMap, map[string]struct{}{})
+// resolveComposeEnvFilesInternal resolves the COMPOSE_ENV_FILES entries env
+// declares against workdir, skipping entries that escape it, mirroring what
+// EnvLoader merges for that directory.
+func resolveComposeEnvFilesInternal(workdir string, env EnvMap) []string {
+	entries := ComposeEnvFileEntriesFromEnv(env)
+	resolved := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if path, err := ResolvePathWithinDir(workdir, entry); err == nil {
+			resolved = append(resolved, path)
+		}
+	}
+	return resolved
 }
 
 func parseArcaneComposeMetadataFromFileInternal(ctx context.Context, composeFilePath string, envMap map[string]string, visited map[string]struct{}) (ArcaneComposeMetadata, error) {
@@ -90,7 +118,7 @@ func parseArcaneComposeMetadataFromFileInternal(ctx context.Context, composeFile
 	visited[absPath] = struct{}{}
 
 	workdir := filepath.Dir(absPath)
-	mergedEnv := mergeEnvFromDotEnv(envMap, workdir)
+	mergedEnv, siblingEnv := mergeEnvFromDotEnv(envMap, workdir)
 
 	project, err := loadComposeProjectForMetadataFromFileInternal(ctx, absPath, mergedEnv)
 	if err != nil {
@@ -98,6 +126,12 @@ func parseArcaneComposeMetadataFromFileInternal(ctx context.Context, composeFile
 	}
 
 	meta = extractArcaneComposeMetadata(project)
+	if project != nil {
+		meta.ComposeFiles = slices.Clone(project.ComposeFiles)
+	}
+	// The nested load's EnvLoader reads the sibling .env and the COMPOSE_ENV_FILES
+	// it declares, even where the inherited environment overrides those values.
+	meta.EnvFiles = append([]string{filepath.Join(workdir, EffectiveEnvFileName)}, resolveComposeEnvFilesInternal(workdir, siblingEnv)...)
 
 	includePaths, err := parseIncludePaths(absPath)
 	if err != nil {
@@ -248,6 +282,8 @@ func mergeArcaneComposeMetadata(target *ArcaneComposeMetadata, source ArcaneComp
 	target.ProjectURLS = utils.UniqueNonEmptyStrings(append(target.ProjectURLS, source.ProjectURLS...))
 	target.ProjectTags = mergeComposeTagsInternal(target.ProjectTags, source.ProjectTags)
 	target.ProjectTagsAuthoritative = target.ProjectTagsAuthoritative && source.ProjectTagsAuthoritative
+	target.ComposeFiles = append(target.ComposeFiles, source.ComposeFiles...)
+	target.EnvFiles = append(target.EnvFiles, source.EnvFiles...)
 
 	if target.ServiceIconSets == nil {
 		target.ServiceIconSets = map[string]IconSet{}
@@ -319,11 +355,13 @@ func loadComposeEnvironment(workdir string) map[string]string {
 	return envMap
 }
 
-func mergeEnvFromDotEnv(envMap map[string]string, workdir string) map[string]string {
+// mergeEnvFromDotEnv layers workdir's .env under envMap (existing keys win) and
+// also returns the .env values on their own.
+func mergeEnvFromDotEnv(envMap map[string]string, workdir string) (map[string]string, EnvMap) {
 	merged := make(map[string]string, len(envMap)+1)
 	maps.Copy(merged, envMap)
 	if workdir == "" {
-		return merged
+		return merged, nil
 	}
 
 	if absWorkdir, err := filepath.Abs(workdir); err == nil {
@@ -337,12 +375,12 @@ func mergeEnvFromDotEnv(envMap map[string]string, workdir string) map[string]str
 	// confinement root (a supported setup).
 	info, err := os.Stat(envPath)
 	if err != nil || info.IsDir() {
-		return merged
+		return merged, nil
 	}
 
 	fileEnv, err := ParseProjectEnvFile(envPath, merged)
 	if err != nil {
-		return merged
+		return merged, nil
 	}
 
 	for k, v := range fileEnv {
@@ -351,7 +389,7 @@ func mergeEnvFromDotEnv(envMap map[string]string, workdir string) map[string]str
 		}
 	}
 
-	return merged
+	return merged, fileEnv
 }
 
 func parseIncludePaths(composeFilePath string) ([]string, error) {

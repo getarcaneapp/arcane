@@ -552,7 +552,7 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, r
 			}
 		}
 	}
-	s.parsedCompose.invalidate(projectID)
+	s.invalidateProjectCachesInternal(projectID)
 
 	metadata := database.JSON{"action": "destroy", "projectID": projectID, "projectName": proj.Name, "removeFiles": removeFiles, "removeVolumes": removeVolumes}
 	s.logProjectEventInternal(ctx, event.EventTypeProjectDelete, projectID, proj.Name, user, metadata, "could not log project destroy action")

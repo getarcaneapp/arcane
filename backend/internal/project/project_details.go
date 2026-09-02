@@ -458,7 +458,6 @@ func (s *ProjectService) enrichProjectsWithUpdateInfoInternal(
 	allImageRefs := make([]string, 0)
 	cfg := s.settingsService.GetSettingsOrDefaults(ctx)
 
-	const maxConcurrentComposeReads = 8
 	type imageRefsResult struct {
 		projectID string
 		refs      []string

@@ -37,7 +37,7 @@ func (s *ProjectService) refreshProjectImageRefsInternal(ctx context.Context, pr
 		return
 	}
 
-	s.parsedCompose.invalidate(proj.ID)
+	s.invalidateProjectCachesInternal(proj.ID)
 	refs, buildRefs, err := s.getProjectImageRefsFromComposeInternal(ctx, *proj, nil)
 	if err != nil {
 		if dbErr := s.db.WithContext(ctx).
@@ -84,7 +84,7 @@ func (s *ProjectService) HandleProjectFilesChanged(ctx context.Context, paths []
 		return
 	}
 	for i := range affected {
-		s.parsedCompose.invalidate(affected[i].ID)
+		s.invalidateProjectCachesInternal(affected[i].ID)
 		s.refreshProjectImageRefsInternal(ctx, &affected[i])
 		if err := s.reconcileComposeTagsForProjectInternal(ctx, &affected[i]); err != nil {
 			slog.WarnContext(ctx, "failed to reconcile Compose project tags after file change", "projectID", affected[i].ID, "error", err)
