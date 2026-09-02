@@ -11,7 +11,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
 	porttypes "github.com/getarcaneapp/arcane/types/v2/port"
-	"github.com/moby/moby/client"
 )
 
 type PortService struct {
@@ -23,18 +22,13 @@ func NewPortService(dockerService *docker.DockerClientService) *PortService {
 }
 
 func (s *PortService) ListPortsPaginated(ctx context.Context, params pagination.QueryParams) ([]porttypes.PortMapping, pagination.Response, error) {
-	dockerClient, err := s.dockerService.GetClient(ctx)
-	if err != nil {
-		return nil, pagination.Response{}, errors.WrapIf(err, "failed to connect to Docker")
-	}
-
-	containerList, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
+	containers, err := s.dockerService.ListContainers(ctx)
 	if err != nil {
 		return nil, pagination.Response{}, errors.WrapIf(err, "failed to list containers")
 	}
 
 	items := make([]porttypes.PortMapping, 0)
-	for _, rawContainer := range containerList.Items {
+	for _, rawContainer := range containers {
 		summary := containertypes.NewSummary(rawContainer)
 		containerName := primaryContainerNameInternal(summary.Names, summary.ID)
 		for _, port := range summary.Ports {

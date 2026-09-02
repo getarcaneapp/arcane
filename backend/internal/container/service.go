@@ -1446,24 +1446,19 @@ func (s *ContainerService) ListContainersPaginated(
 	includeInternal bool,
 	groupBy string,
 ) (ContainerListResult, error) {
-	var dockerContainers []container.Summary
-	if includeAll {
-		var err error
-		dockerContainers, err = s.dockerService.ListContainers(ctx)
-		if err != nil {
-			return ContainerListResult{}, err
+	dockerContainers, err := s.dockerService.ListContainers(ctx)
+	if err != nil {
+		return ContainerListResult{}, err
+	}
+	if !includeAll {
+		running := make([]container.Summary, 0, len(dockerContainers))
+		for _, dc := range dockerContainers {
+			switch dc.State {
+			case container.StateRunning, container.StatePaused, container.StateRestarting:
+				running = append(running, dc)
+			}
 		}
-	} else {
-		dockerClient, err := s.dockerService.GetClient(ctx)
-		if err != nil {
-			return ContainerListResult{}, errors.WrapIf(err, "failed to connect to Docker")
-		}
-
-		containerList, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: false})
-		if err != nil {
-			return ContainerListResult{}, errors.WrapIf(err, "failed to list Docker containers")
-		}
-		dockerContainers = containerList.Items
+		dockerContainers = running
 	}
 
 	dockerContainers = FilterInternalContainers(dockerContainers, includeInternal)
