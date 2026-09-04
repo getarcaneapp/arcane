@@ -807,6 +807,7 @@
   "images_remove_force_label": "Forzar eliminación",
   "images_pull_no_tag": "No se puede extraer imagen sin etiqueta de repositorio",
   "images_untagged": "Sin etiquetar",
+  "images_pinned_references": "Referencias destacadas",
   "images_used_by": "Usado por",
   "updates": "Actualizaciones",
   "updates_apply_success": "Se han aplicado  actualizaciones de {updated}",
