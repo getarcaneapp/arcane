@@ -807,6 +807,7 @@
   "images_remove_force_label": "Entfernen erzwingen",
   "images_pull_no_tag": "Image kann ohne Repository-Tag nicht gepullt werden",
   "images_untagged": "Ohne Tag",
+  "images_pinned_references": "Angeheftete Referenzen",
   "images_used_by": "Verwendet von",
   "updates": "Updates",
   "updates_apply_success": "{updated} Update(s) angewendet",
