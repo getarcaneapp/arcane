@@ -35,6 +35,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/startup"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	httpxtypes "github.com/getarcaneapp/arcane/types/v2/httpx"
 	"github.com/labstack/echo/v5"
 	"go.getarcane.app/streams/logs"
 	libcrypto "go.getarcane.app/sys/crypto"
@@ -113,7 +114,7 @@ func applicationOptions(appCtx context.Context, cfg *config.Config, db *database
 		fx.Supply(cfg, db, cancelApp),
 		fx.Provide(
 			func() context.Context { return appCtx },
-			newConfiguredHTTPClient,
+			newConfiguredHTTPClientInternal,
 		),
 		di.ActorOptions,
 		di.ServiceOptions,
@@ -156,11 +157,16 @@ func warnDeprecatedEnvVarsInternal(cfg *config.Config) {
 	}
 }
 
-func newConfiguredHTTPClient(cfg *config.Config) *http.Client {
-	if cfg.HTTPClientTimeout > 0 {
-		return httpx.NewHTTPClientWithTimeout(time.Duration(cfg.HTTPClientTimeout) * time.Second)
+func newConfiguredHTTPClientInternal(cfg *config.Config) *http.Client {
+	options := httpxtypes.ClientOptions{
+		Timeout:             10 * time.Second,
+		TLSHandshakeTimeout: 5 * time.Second,
 	}
-	return httpx.NewHTTPClient()
+	if cfg.HTTPClientTimeout > 0 {
+		options.Timeout = time.Duration(cfg.HTTPClientTimeout) * time.Second
+		options.TLSHandshakeTimeout = 10 * time.Second
+	}
+	return httpx.NewHTTPClient(options)
 }
 
 type initializeStartupStateParams struct {
@@ -233,6 +239,7 @@ func initializeStartupState(p initializeStartupStateParams) {
 	}
 	initializeGitOpsStartupStateInternal(appCtx, p.GitOpsSync)
 	p.Vulnerability.ImportLegacyReportFiles(appCtx)
+	p.Vulnerability.BackfillScanItems(appCtx)
 	if p.Project != nil {
 		if err := p.Project.RecoverProjectRenameJournals(appCtx); err != nil {
 			slog.WarnContext(appCtx, "Failed to recover interrupted project rename operations on startup", "error", err)
@@ -431,7 +438,7 @@ func startEdgeTunnelClientIfConfigured(appCtx context.Context, actorRuntime *act
 func handleAgentBootstrapPairing(ctx context.Context, cfg *config.Config, httpClient *http.Client) error {
 	slog.InfoContext(ctx, "Agent mode detected with token, attempting auto-pairing", "managerUrl", cfg.ManagerApiUrl)
 
-	pairURL := strings.TrimRight(cfg.GetManagerBaseURL(), "/") + "/api/environments/pair"
+	pairURL := strings.TrimRight(httpx.ManagerBaseURL(cfg.ManagerApiUrl), "/") + "/api/environments/pair"
 
 	reqCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()

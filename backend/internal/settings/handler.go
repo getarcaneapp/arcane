@@ -15,6 +15,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/search"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
@@ -455,7 +456,7 @@ func (h *SettingsHandler) Search(ctx context.Context, input *SearchSettingsInput
 	}
 
 	ps, _ := middleware.PermissionsFromContext(ctx)
-	results := h.settingsSearchService.Search(input.Body.Query)
+	results := search.Search(h.settingsSearchService.GetSettingsCategories(), input.Body.Query, searchtypes.SettingsProfile)
 	results.Results = filterSettingsCategoriesInternal(ps, results.Results)
 	results.Count = len(results.Results)
 	return &SearchSettingsOutput{Body: results}, nil

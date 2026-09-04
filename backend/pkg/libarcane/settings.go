@@ -2,11 +2,25 @@ package libarcane
 
 import (
 	"slices"
+	"strings"
 
 	"github.com/robfig/cron/v3"
 )
 
 const DepotTokenSettingKey = "depotToken"
+
+const (
+	GHCRRegistryHost      = "ghcr.io"
+	DockerHubRegistryHost = "docker.io"
+)
+
+// ArcaneRegistryHost normalizes a registry setting to a host that mirrors the getarcaneapp images, defaulting to GHCR.
+func ArcaneRegistryHost(registry string) string {
+	if strings.TrimSpace(registry) == DockerHubRegistryHost {
+		return DockerHubRegistryHost
+	}
+	return GHCRRegistryHost
+}
 
 type SettingUpdate struct {
 	Key   string `json:"key"`

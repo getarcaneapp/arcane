@@ -119,12 +119,23 @@ jobs:
           sbom: true
           provenance: true
 
+      - name: Request App Token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.ARCANE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.ARCANE_APP_PRIVATE_KEY }}
+          owner: getarcaneapp
+          repositories: arcane
+          permission-pull-requests: write
+
       - name: Find Comment
         uses: peter-evans/find-comment@v4
         id: fc
         with:
+          token: ${{ steps.app-token.outputs.token }}
           issue-number: ${{ github.event.pull_request.number }}
-          comment-author: "getarcaneappbot"
+          comment-author: "arcane-github-automation[bot]"
           body-includes: Container images for this PR have been built successfully!
 
       - name: Comment PR Images
@@ -132,7 +143,7 @@ jobs:
         with:
           comment-id: ${{ steps.fc.outputs.comment-id }}
           issue-number: ${{ github.event.pull_request.number }}
-          token: ${{ secrets.ARCANE_BOT_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
           body: |
             Container images for this PR have been built successfully!
 

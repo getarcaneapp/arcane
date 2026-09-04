@@ -1702,6 +1702,76 @@ func startTestTunnelServiceOnAPIPathInternal(t *testing.T, ctx context.Context, 
 	return "http://" + lis.Addr().String(), cleanup
 }
 
+func TestTunnelClient_connectAndServe_AutoDoesNotFallbackWhenEstablishedGRPCSessionDrops(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	envID := "env-auto-grpc-drop"
+	GetRegistry().Unregister(envID)
+	defer GetRegistry().Unregister(envID)
+
+	resolver := func(ctx context.Context, token string) (string, error) {
+		if token != "valid-token" {
+			return "", errors.New("invalid token")
+		}
+		return envID, nil
+	}
+
+	tunnelServer := NewTunnelServerWithRegistry(GetRegistry(), resolver, nil)
+	go tunnelServer.StartCleanupLoop(ctx)
+	defer tunnelServer.WaitForCleanupDone()
+
+	grpcManagerURL, stopGRPCManager := startTestGRPCTunnelServerOnAPIPathInternal(t, ctx, tunnelServer)
+	defer stopGRPCManager()
+
+	wsManagerURL, wsConnectedCh, stopWSManager := startTestWebSocketTunnelManagerInternal(t, ctx)
+	defer stopWSManager()
+
+	client := NewTunnelClient(&Config{
+		EdgeTransport: EdgeTransportAuto,
+		ManagerApiUrl: wsManagerURL,
+		AgentToken:    "valid-token",
+	}, http.NotFoundHandler())
+	grpcAddr, err := url.Parse(grpcManagerURL)
+	require.NoError(t, err)
+	client.managerGRPCAddr = grpcAddr.Host
+	client.healthySessionDuration = time.Millisecond
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- client.connectAndServe(ctx)
+	}()
+
+	var tunnel *AgentTunnel
+	require.Eventually(t, func() bool {
+		registered, ok := GetRegistry().Get(envID).Get()
+		if !ok || registered == nil || registered.Conn == nil || registered.Conn.IsClosed() {
+			return false
+		}
+		tunnel = registered
+		return true
+	}, 3*time.Second, 20*time.Millisecond)
+	require.Equal(t, EdgeTransportGRPC, tunnel.Conn.Transport())
+
+	time.Sleep(5 * time.Millisecond)
+	require.NoError(t, tunnel.CloseWithReason("manager restart"))
+
+	select {
+	case err := <-errCh:
+		require.ErrorIs(t, err, errEstablishedTunnelSessionEnded)
+	case <-time.After(3 * time.Second):
+		require.FailNow(t, "expected dropped gRPC session to return instead of falling back to websocket")
+	}
+
+	select {
+	case <-wsConnectedCh:
+		require.FailNow(t, "dropped gRPC session must not fall back to websocket")
+	default:
+	}
+	assert.Zero(t, client.grpcFailureStreakInternal())
+	cancel()
+}
+
 func TestTunnelClient_connectAndServePoll_OpensGRPCWhenRequired(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()

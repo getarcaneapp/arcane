@@ -112,37 +112,46 @@ func TestScanCacheBackendArgsForArch(t *testing.T) {
 	}
 }
 
-func TestDefaultRepositoryArgs(t *testing.T) {
-	args := DefaultRepositoryArgs()
-	require.Contains(t, args, "--db-repository")
-	require.Contains(t, args, DefaultDBRepository)
-	require.Contains(t, args, "--java-db-repository")
-	require.Contains(t, args, DefaultJavaDBRepository)
-	require.Contains(t, args, "--checks-bundle-repository")
-	require.Contains(t, args, DefaultChecksBundleRepository)
+func TestRepositoryArgs(t *testing.T) {
+	t.Run("default registry", func(t *testing.T) {
+		args := RepositoryArgs("")
+		require.Contains(t, args, "--db-repository")
+		require.Contains(t, args, "ghcr.io/"+DBRepository)
+		require.Contains(t, args, "--java-db-repository")
+		require.Contains(t, args, "ghcr.io/"+JavaDBRepository)
+		require.Contains(t, args, "--checks-bundle-repository")
+		require.Contains(t, args, "ghcr.io/"+ChecksBundleRepository)
+	})
+
+	t.Run("docker hub registry", func(t *testing.T) {
+		args := RepositoryArgs("docker.io")
+		require.Contains(t, args, "docker.io/"+DBRepository)
+		require.Contains(t, args, "docker.io/"+JavaDBRepository)
+		require.Contains(t, args, "docker.io/"+ChecksBundleRepository)
+	})
 }
 
 func TestScanSourceArgs(t *testing.T) {
 	t.Run("standalone uses local db repositories", func(t *testing.T) {
-		args := ScanSourceArgs("")
+		args := ScanSourceArgs("", "")
 		require.Contains(t, args, "--db-repository")
 		require.NotContains(t, args, "--server")
 	})
 
 	t.Run("blank server url falls back to standalone", func(t *testing.T) {
-		args := ScanSourceArgs("   ")
+		args := ScanSourceArgs("   ", "")
 		require.Contains(t, args, "--db-repository")
 		require.NotContains(t, args, "--server")
 	})
 
 	t.Run("server url replaces local db flags", func(t *testing.T) {
-		args := ScanSourceArgs(" http://trivy.example.com:4954 ")
+		args := ScanSourceArgs(" http://trivy.example.com:4954 ", "")
 		require.Equal(t, []string{"--server", "http://trivy.example.com:4954"}, args)
 		require.NotContains(t, args, "--db-repository")
 	})
 
 	t.Run("token never appears in args", func(t *testing.T) {
-		require.NotContains(t, ScanSourceArgs("http://trivy.example.com:4954"), "--token")
+		require.NotContains(t, ScanSourceArgs("http://trivy.example.com:4954", ""), "--token")
 	})
 }
 

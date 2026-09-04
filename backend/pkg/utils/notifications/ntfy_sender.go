@@ -8,7 +8,6 @@ import (
 
 	"emperror.dev/errors"
 
-	"github.com/nicholas-fedor/shoutrrr"
 	shoutrrrTypes "github.com/nicholas-fedor/shoutrrr/pkg/types"
 )
 
@@ -100,18 +99,5 @@ func SendNtfy(ctx context.Context, config NtfyConfig, message string) error {
 		return errors.WrapIf(err, "failed to build shoutrrr Ntfy URL")
 	}
 
-	sender, err := shoutrrr.CreateSenderWithOptions(shoutrrrTypes.SenderOptions{}, shoutrrrURL)
-	if err != nil {
-		return errors.WrapIf(err, "failed to create shoutrrr Ntfy sender")
-	}
-
-	params := &shoutrrrTypes.Params{}
-
-	errs := sender.Send(message, params)
-	for _, err := range errs {
-		if err != nil {
-			return errors.WrapIf(err, "failed to send Ntfy message via shoutrrr")
-		}
-	}
-	return nil
+	return sendShoutrrrInternal("Ntfy", shoutrrrURL, message, &shoutrrrTypes.Params{})
 }

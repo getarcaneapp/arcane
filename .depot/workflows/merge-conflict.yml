@@ -19,9 +19,19 @@ jobs:
       contents: read
       pull-requests: write
     steps:
+      - name: Request App Token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.ARCANE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.ARCANE_APP_PRIVATE_KEY }}
+          owner: getarcaneapp
+          repositories: arcane
+          permission-pull-requests: write
+
       - name: Apply label
         uses: eps1lon/actions-label-merge-conflict@v3.1.0
         with:
           dirtyLabel: "merge conflict"
           commentOnDirty: "This pull request has merge conflicts. Please resolve the conflicts so the PR can stay up-to-date and reviewed."
-          repoToken: "${{ secrets.GITHUB_TOKEN }}"
+          repoToken: "${{ steps.app-token.outputs.token }}"

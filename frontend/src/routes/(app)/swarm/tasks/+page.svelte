@@ -2,7 +2,6 @@
 	import { JobsIcon } from '#lib/icons';
 	import { m } from '#lib/paraglide/messages';
 	import { swarmService } from '#lib/services/swarm-service';
-	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type StatCardConfig } from '#lib/layouts/index.js';
 	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte';
 	import { simpleRefresh } from '#lib/utils/api';
@@ -11,9 +10,9 @@
 
 	let { data } = $props();
 
-	let tasks = $state(untrack(() => data.tasks));
-	let requestOptions = $state(untrack(() => data.requestOptions));
-	let nodeId = $state(untrack(() => data.nodeId ?? ''));
+	let tasks = $derived(data.tasks);
+	let requestOptions = $derived(data.requestOptions);
+	let nodeId = $derived(data.nodeId ?? '');
 	let isLoading = $state({ refresh: false });
 
 	async function fetchTasks(options: typeof requestOptions) {

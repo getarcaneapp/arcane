@@ -6,6 +6,7 @@ import type {
 	MFAStatus,
 	MobilePasskeyCompletion,
 	Passkey,
+	PasskeyLoginAvailability,
 	PasskeyCapabilities,
 	PasskeyChallenge,
 	RecoveryCodesResponse,
@@ -13,6 +14,10 @@ import type {
 } from '#lib/types/auth';
 
 class PasskeyService extends BaseAPIService {
+	async getLoginAvailability(): Promise<PasskeyLoginAvailability> {
+		return this.handleResponse(this.api.get('/auth/passkey/login/availability', { cache: 'no-store', timeout: 5000 }));
+	}
+
 	async beginLogin(): Promise<PasskeyChallenge> {
 		return this.handleResponse(this.api.post('/auth/passkey/login/begin'));
 	}

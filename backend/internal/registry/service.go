@@ -913,150 +913,66 @@ func (s *ContainerRegistryService) InspectImageDigest(ctx context.Context, image
 	return lastResult, nil
 }
 
+type digestFetchFunc func(ctx context.Context, credential *resolvedRegistryCredential) (string, error)
+
 func (s *ContainerRegistryService) inspectImageDigestViaDaemonInternal(ctx context.Context, normalizedRef, registryHost string, externalCreds []containerregistry.Credential) (*containerregistry.DigestResult, error) {
 	dockerClient, err := s.getDockerClientInternal(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	// Use stored credentials up front for any registry that has them. Anonymous
-	// requests share a per-registry quota with every other unauthenticated client,
-	// so an anonymous first attempt is rate limited for reasons unrelated to us.
-	if credentials, credErr := s.getMatchingRegistryCredentialsInternal(ctx, registryHost, externalCreds); credErr == nil && len(credentials) > 0 {
-		result, credentialErr := s.inspectImageDigestWithCredentialsInternal(ctx, dockerClient, normalizedRef, registryHost, credentials, nil)
-		// Docker Hub anonymous quotas are too small to be worth a retry; elsewhere a
-		// stale credential must not break public images that resolve anonymously.
-		if credentialErr == nil || isDockerHubRegistryInternal(registryHost) {
-			return result, credentialErr
-		}
-		slog.DebugContext(ctx, "credentialed distribution inspect failed, retrying anonymously",
-			"registry", registryHost,
-			"imageRef", normalizedRef,
-			"error", credentialErr.Error())
-	}
-
-	inspectResult, err := dockerClient.DistributionInspect(ctx, normalizedRef, client.DistributionInspectOptions{})
-	if err == nil {
-		digestValue, normalizeErr := digest.Normalize(inspectResult.Descriptor.Digest.String())
-		if normalizeErr != nil {
-			return nil, errors.WrapIff(normalizeErr, "distribution inspect returned invalid digest for %s", normalizedRef)
-		}
-		return &containerregistry.DigestResult{
-			Digest:       digestValue,
-			AuthMethod:   "anonymous",
-			AuthRegistry: registryHost,
-		}, nil
-	}
-	if !isUnauthorizedRegistryErrorInternal(err) {
-		return &containerregistry.DigestResult{AuthMethod: "anonymous", AuthRegistry: registryHost}, errors.
-			WrapIff(err, "distribution inspect failed for %s", normalizedRef)
-	}
-
-	credentials, credErr := s.getMatchingRegistryCredentialsInternal(ctx, registryHost, externalCreds)
-	if credErr != nil {
-		return &containerregistry.DigestResult{AuthMethod: "anonymous", AuthRegistry: registryHost}, errors.
-			WrapIf(stderrors.Join(err, credErr), "distribution inspect: anonymous access unauthorized; credential lookup failed")
-	}
-
-	return s.inspectImageDigestWithCredentialsInternal(ctx, dockerClient, normalizedRef, registryHost, credentials, err)
-}
-
-func (s *ContainerRegistryService) inspectImageDigestWithCredentialsInternal(ctx context.Context, dockerClient RegistryDaemonClient, normalizedRef, registryHost string, credentials []resolvedRegistryCredential, previousErr error) (*containerregistry.DigestResult, error) {
-	lastErr := previousErr
-	var lastCred resolvedRegistryCredential
-	for _, credential := range credentials {
-		lastCred = credential
-		authHeader, encodeErr := utilsregistry.EncodeAuthHeader(credential.Username, credential.Token, credential.ServerAddress)
-		if encodeErr != nil {
-			return nil, errors.WrapIff(encodeErr, "encode registry auth header for %s", registryHost)
-		}
-
-		inspectResult, err := dockerClient.DistributionInspect(ctx, normalizedRef, client.DistributionInspectOptions{
-			EncodedRegistryAuth: authHeader,
+	return s.inspectImageDigestWithCredentialsInternal(ctx, registryHost, "distribution inspect of "+normalizedRef, externalCreds,
+		func(ctx context.Context, credential *resolvedRegistryCredential) (string, error) {
+			return s.fetchDigestFromDaemonInternal(ctx, dockerClient, registryHost, normalizedRef, credential)
 		})
-		if err == nil {
-			digestValue, normalizeErr := digest.Normalize(inspectResult.Descriptor.Digest.String())
-			if normalizeErr != nil {
-				return nil, errors.WrapIff(normalizeErr, "distribution inspect returned invalid digest for %s", normalizedRef)
-			}
-			return &containerregistry.DigestResult{
-				Digest:         digestValue,
-				AuthMethod:     "credential",
-				AuthUsername:   credential.Username,
-				AuthRegistry:   registryHost,
-				UsedCredential: true,
-			}, nil
-		}
-		lastErr = err
-		if !isUnauthorizedRegistryErrorInternal(err) {
-			return &containerregistry.DigestResult{
-				AuthMethod:     "credential",
-				AuthUsername:   credential.Username,
-				AuthRegistry:   registryHost,
-				UsedCredential: true,
-			}, errors.WrapIff(err, "distribution inspect failed for %s with credentials", normalizedRef)
-		}
-	}
-
-	partial := &containerregistry.DigestResult{AuthMethod: "anonymous", AuthRegistry: registryHost}
-	if lastCred.Username != "" {
-		partial.AuthMethod = "credential"
-		partial.AuthUsername = lastCred.Username
-		partial.UsedCredential = true
-	}
-	if lastErr == nil {
-		return partial, errors.Errorf("distribution inspect failed for %s: no credentials available", normalizedRef)
-	}
-	return partial, errors.WrapIff(lastErr, "distribution inspect failed for %s", normalizedRef)
 }
 
 func (s *ContainerRegistryService) inspectImageDigestViaRegistryInternal(ctx context.Context, registryHost, repository, tag string, externalCreds []containerregistry.Credential) (*containerregistry.DigestResult, error) {
-	digestValue, err := s.fetchDigestFromRegistryInternal(ctx, registryHost, repository, tag, nil)
-	if err == nil {
-		return &containerregistry.DigestResult{
-			Digest:       digestValue,
-			AuthMethod:   "anonymous",
-			AuthRegistry: registryHost,
-		}, nil
-	}
-	if !isUnauthorizedRegistryErrorInternal(err) {
-		return &containerregistry.DigestResult{AuthMethod: "anonymous", AuthRegistry: registryHost}, errors.
-			WrapIff(err, "registry manifest inspect failed for %s/%s:%s", registryHost, repository, tag)
-	}
+	return s.inspectImageDigestWithCredentialsInternal(ctx, registryHost, "registry manifest inspect of "+registryHost+"/"+repository+":"+tag, externalCreds,
+		func(ctx context.Context, credential *resolvedRegistryCredential) (string, error) {
+			return s.fetchDigestFromRegistryInternal(ctx, registryHost, repository, tag, credential)
+		})
+}
 
+// Stored credentials go first: anonymous requests share a per-registry quota with every other unauthenticated client.
+func (s *ContainerRegistryService) inspectImageDigestWithCredentialsInternal(ctx context.Context, registryHost, operation string, externalCreds []containerregistry.Credential, fetch digestFetchFunc) (*containerregistry.DigestResult, error) {
 	credentials, credErr := s.getMatchingRegistryCredentialsInternal(ctx, registryHost, externalCreds)
-	if credErr != nil {
-		return &containerregistry.DigestResult{AuthMethod: "anonymous", AuthRegistry: registryHost}, errors.
-			WrapIf(stderrors.Join(err, credErr), "registry manifest inspect: anonymous access unauthorized; credential lookup failed")
-	}
 
-	lastErr := err
-	var lastCred resolvedRegistryCredential
+	var lastErr error
+	var lastResult *containerregistry.DigestResult
 	for _, credential := range credentials {
-		lastCred = credential
-
-		digestValue, err = s.fetchDigestFromRegistryInternal(ctx, registryHost, repository, tag, &credential)
+		lastResult = &containerregistry.DigestResult{AuthMethod: "credential", AuthUsername: credential.Username, AuthRegistry: registryHost, UsedCredential: true}
+		digestValue, err := fetch(ctx, &credential)
 		if err == nil {
-			return &containerregistry.DigestResult{
-				Digest:         digestValue,
-				AuthMethod:     "credential",
-				AuthUsername:   credential.Username,
-				AuthRegistry:   registryHost,
-				UsedCredential: true,
-			}, nil
+			lastResult.Digest = digestValue
+			return lastResult, nil
 		}
-
 		lastErr = err
+		if !isUnauthorizedRegistryErrorInternal(err) {
+			return lastResult, errors.WrapIff(err, "%s failed with credentials", operation)
+		}
+	}
+	if lastErr != nil {
+		// Docker Hub anonymous quotas are too small to be worth a retry; elsewhere a stale credential must not break public images.
+		if isDockerHubRegistryInternal(registryHost) {
+			return lastResult, errors.WrapIff(lastErr, "%s failed", operation)
+		}
+		slog.DebugContext(ctx, "credentialed digest lookup failed, retrying anonymously",
+			"registry", registryHost,
+			"operation", operation,
+			"error", lastErr.Error())
 	}
 
-	partial := &containerregistry.DigestResult{AuthMethod: "anonymous", AuthRegistry: registryHost}
-	if lastCred.Username != "" {
-		partial.AuthMethod = "credential"
-		partial.AuthUsername = lastCred.Username
-		partial.UsedCredential = true
+	result := &containerregistry.DigestResult{AuthMethod: "anonymous", AuthRegistry: registryHost}
+	digestValue, err := fetch(ctx, nil)
+	if err == nil {
+		result.Digest = digestValue
+		return result, nil
 	}
-
-	return partial, errors.WrapIff(lastErr, "registry manifest inspect failed for %s/%s:%s", registryHost, repository, tag)
+	if credErr != nil && isUnauthorizedRegistryErrorInternal(err) {
+		return result, errors.WrapIff(stderrors.Join(err, credErr), "%s: anonymous access unauthorized; credential lookup failed", operation)
+	}
+	return result, errors.WrapIff(err, "%s failed", operation)
 }
 
 func (s *ContainerRegistryService) getDockerClientInternal(ctx context.Context) (RegistryDaemonClient, error) {
@@ -1476,6 +1392,27 @@ func isDistributionFallbackEligibleInternal(err error) bool {
 	return strings.Contains(errLower, "context deadline exceeded") ||
 		strings.Contains(errLower, "client.timeout exceeded") ||
 		strings.Contains(errLower, "i/o timeout")
+}
+
+func (s *ContainerRegistryService) fetchDigestFromDaemonInternal(ctx context.Context, dockerClient RegistryDaemonClient, registryHost, normalizedRef string, credential *resolvedRegistryCredential) (string, error) {
+	var inspectOptions client.DistributionInspectOptions
+	if credential != nil {
+		authHeader, err := utilsregistry.EncodeAuthHeader(credential.Username, credential.Token, credential.ServerAddress)
+		if err != nil {
+			return "", errors.WrapIff(err, "encode registry auth header for %s", registryHost)
+		}
+		inspectOptions.EncodedRegistryAuth = authHeader
+	}
+
+	inspectResult, err := dockerClient.DistributionInspect(ctx, normalizedRef, inspectOptions)
+	if err != nil {
+		return "", err
+	}
+	digestValue, err := digest.Normalize(inspectResult.Descriptor.Digest.String())
+	if err != nil {
+		return "", errors.WrapIff(err, "distribution inspect returned invalid digest for %s", normalizedRef)
+	}
+	return digestValue, nil
 }
 
 func (s *ContainerRegistryService) fetchDigestFromRegistryInternal(ctx context.Context, registryHost, repository, tag string, credential *resolvedRegistryCredential) (string, error) {

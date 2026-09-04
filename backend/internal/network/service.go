@@ -359,7 +359,7 @@ func (s *NetworkService) ListNetworksPaginated(ctx context.Context, params pagin
 		return nil, pagination.Response{}, networktypes.UsageCounts{}, errors.WrapIf(err, "failed to list containers")
 	}
 
-	inUseByID, inUseByName := s.buildNetworkUsageMaps(containers)
+	inUseByID, inUseByName := dockerutil.BuildNetworkUsageMaps(containers)
 
 	networkList, err := libarcane.NetworkListWithCompatibility(ctx, dockerClient, client.NetworkListOptions{})
 	if err != nil {
@@ -376,23 +376,6 @@ func (s *NetworkService) ListNetworksPaginated(ctx context.Context, params pagin
 	return result.Items, paginationResp, counts, nil
 }
 
-func (s *NetworkService) buildNetworkUsageMaps(containers []container.Summary) (map[string]bool, map[string]bool) {
-	inUseByID := make(map[string]bool)
-	inUseByName := make(map[string]bool)
-	for _, c := range containers {
-		if c.NetworkSettings == nil || c.NetworkSettings.Networks == nil {
-			continue
-		}
-		for netName, es := range c.NetworkSettings.Networks {
-			if es.NetworkID != "" {
-				inUseByID[es.NetworkID] = true
-			}
-			inUseByName[netName] = true
-		}
-	}
-	return inUseByID, inUseByName
-}
-
 type topologyContainerInfo struct {
 	Name  string
 	Image string
@@ -404,7 +387,7 @@ func buildTopologyContainerInfoInternal(containers []container.Summary) map[stri
 	for _, rawContainer := range containers {
 		name := rawContainer.ID
 		if len(rawContainer.Names) > 0 {
-			name = strings.TrimPrefix(rawContainer.Names[0], "/")
+			name = dockerutil.ContainerNameFromNames(rawContainer.Names)
 		}
 		infoByID[rawContainer.ID] = topologyContainerInfo{
 			Name:  name,

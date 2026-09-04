@@ -10,13 +10,12 @@
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { Snippet } from '#lib/components/ui/snippet/index.js';
-	import { untrack } from 'svelte';
 	import { GlobeIcon } from '#lib/icons';
 	import * as m from '#lib/paraglide/messages.js';
 
 	let { data } = $props();
 
-	let webhooks = $state<Webhook[]>(untrack(() => data.webhooks));
+	let webhooks = $derived<Webhook[]>(data.webhooks);
 
 	let isDialogOpen = $state({
 		create: false,

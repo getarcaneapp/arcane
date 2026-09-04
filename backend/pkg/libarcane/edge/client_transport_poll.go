@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+
 	"emperror.dev/errors"
 
 	"github.com/cenkalti/backoff/v5"
@@ -22,7 +24,10 @@ var defaultPollManagedSessionStopTimeout = 5 * time.Second
 var errPollManagedSessionStopTimeout = errors.Sentinel("timed out waiting for poll-managed websocket session to stop")
 
 func (c *TunnelClient) connectAndServePoll(ctx context.Context) error {
-	managerBaseURL := strings.TrimRight(strings.TrimSpace(c.cfg.GetManagerBaseURL()), "/")
+	if c.cfg == nil {
+		return errors.New("manager base URL is empty")
+	}
+	managerBaseURL := strings.TrimRight(strings.TrimSpace(httpx.ManagerBaseURL(c.cfg.ManagerApiUrl)), "/")
 	if managerBaseURL == "" {
 		return errors.New("manager base URL is empty")
 	}

@@ -124,18 +124,18 @@ export function isSwarmServiceModeScalable(mode: string): boolean {
 }
 
 export function parseImageRef(imageRef: string): { repo: string; tag: string } {
-	// Handle images like "nginx:latest", "library/nginx:1.0", "ghcr.io/org/image:tag"
-	const lastColon = imageRef.lastIndexOf(':');
+	const namedRef = imageRef.split('@', 1)[0] ?? imageRef;
+	const lastColon = namedRef.lastIndexOf(':');
 	// Check if colon is part of a tag (not a port in registry URL)
-	const hasTag = lastColon > 0 && !imageRef.substring(lastColon).includes('/');
+	const hasTag = lastColon > 0 && !namedRef.substring(lastColon).includes('/');
 
 	if (hasTag) {
 		return {
-			repo: imageRef.substring(0, lastColon),
-			tag: imageRef.substring(lastColon + 1)
+			repo: namedRef.substring(0, lastColon),
+			tag: namedRef.substring(lastColon + 1)
 		};
 	}
-	return { repo: imageRef, tag: 'latest' };
+	return { repo: namedRef, tag: 'latest' };
 }
 
 // --- Project update status display ---

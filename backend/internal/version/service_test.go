@@ -121,7 +121,7 @@ func TestVersionService_GetAppVersionInfoDoesNotUseStoredDigestUpdateForSemverBu
 	})}
 	dockerService := docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClientInternal(t, server))
 	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
-	svc := NewVersionService(httpClient, false, "1.2.3", "revision", nil, dockerService, imageUpdateService)
+	svc := NewVersionService(httpClient, false, "1.2.3", "revision", nil, dockerService, imageUpdateService, nil)
 
 	info := svc.GetAppVersionInfo(ctx)
 
@@ -133,7 +133,7 @@ func TestVersionService_GetAppVersionInfoDoesNotUseStoredDigestUpdateForSemverBu
 }
 
 func TestVersionService_GetAppVersionInfoDisplaysSemverNextVersion(t *testing.T) {
-	svc := NewVersionService(nil, true, "2.4.0-next.2", "2c3e44a10ddda540d7e19fc2a876c931fc33a426", nil, nil, nil)
+	svc := NewVersionService(nil, true, "2.4.0-next.2", "2c3e44a10ddda540d7e19fc2a876c931fc33a426", nil, nil, nil, nil)
 
 	info := svc.GetAppVersionInfo(context.Background())
 
@@ -143,7 +143,7 @@ func TestVersionService_GetAppVersionInfoDisplaysSemverNextVersion(t *testing.T)
 }
 
 func TestVersionService_GetAppVersionInfoPreservesDevVersionInternal(t *testing.T) {
-	svc := NewVersionService(nil, true, "dev", "unknown", nil, nil, nil)
+	svc := NewVersionService(nil, true, "dev", "unknown", nil, nil, nil, nil)
 
 	info := svc.GetAppVersionInfo(context.Background())
 
@@ -204,7 +204,7 @@ func TestVersionService_IsNextBuildInternal(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			svc := NewVersionService(nil, true, tt.version, "rev", nil, nil, nil)
+			svc := NewVersionService(nil, true, tt.version, "rev", nil, nil, nil, nil)
 			assert.Equal(t, tt.want, svc.isNextBuildInternal(tt.currentTag))
 		})
 	}
@@ -311,7 +311,7 @@ func TestVersionService_GetAppVersionInfoNextChannelUsesImageLabelInternal(t *te
 	dockerService := docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClientInternal(t, server))
 	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
 	registrySvc := registry.NewContainerRegistryService(nil, nil, nil)
-	svc := NewVersionService(httpClient, false, "2.8.0-next.65", "revision", registrySvc, dockerService, imageUpdateService)
+	svc := NewVersionService(httpClient, false, "2.8.0-next.65", "revision", registrySvc, dockerService, imageUpdateService, nil)
 
 	info := svc.GetAppVersionInfo(ctx)
 
@@ -355,7 +355,7 @@ func TestVersionService_GetAppVersionInfoNextChannelLabelFailureFallsBackToDiges
 	dockerService := docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClientInternal(t, server))
 	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
 	registrySvc := registry.NewContainerRegistryService(nil, nil, nil)
-	svc := NewVersionService(nil, false, "2.8.0-next.65", "revision", registrySvc, dockerService, imageUpdateService)
+	svc := NewVersionService(nil, false, "2.8.0-next.65", "revision", registrySvc, dockerService, imageUpdateService, nil)
 
 	info := svc.GetAppVersionInfo(ctx)
 
@@ -376,7 +376,7 @@ func TestVersionService_GetAppVersionInfoSuppressesOlderStableForPrereleaseInter
 	})}
 	// An -rc. prerelease stays on the stable track; the downgrade guard must
 	// still drop the older stable tag rather than showing a backwards arrow.
-	svc := NewVersionService(httpClient, false, "2.8.0-rc.1", "revision", nil, nil, nil)
+	svc := NewVersionService(httpClient, false, "2.8.0-rc.1", "revision", nil, nil, nil, nil)
 
 	info := svc.GetAppVersionInfo(context.Background())
 

@@ -80,6 +80,19 @@ func (s *S3DestinationService) ListAllS3Destinations(ctx context.Context) ([]bac
 	return s3DestinationsToDTOsInternal(destinations), nil
 }
 
+// ListS3DestinationsByID indexes destination DTOs for backup metadata lookups.
+func (s *S3DestinationService) ListS3DestinationsByID(ctx context.Context) (map[string]backuptypes.S3Destination, error) {
+	destinations, err := s.ListAllS3Destinations(ctx)
+	if err != nil {
+		return nil, err
+	}
+	indexed := make(map[string]backuptypes.S3Destination, len(destinations))
+	for _, destination := range destinations {
+		indexed[destination.ID] = destination
+	}
+	return indexed, nil
+}
+
 func (s *S3DestinationService) getS3DestinationModelInternal(ctx context.Context, id string) (*S3Destination, error) {
 	var destination S3Destination
 	if err := s.db.WithContext(ctx).Where("id = ?", strings.TrimSpace(id)).First(&destination).Error; err != nil {

@@ -16,16 +16,27 @@ jobs:
     permissions:
       pull-requests: read
     steps:
+      - name: Request App Token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.ARCANE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.ARCANE_APP_PRIVATE_KEY }}
+          owner: getarcaneapp
+          repositories: arcane
+          permission-pull-requests: write
+
       - uses: amannn/action-semantic-pull-request@v6
         id: lint_pr_title
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
 
       - uses: marocchino/sticky-pull-request-comment@v3
         # When the previous steps fails, the workflow would stop. By adding this
         # condition you can continue the execution with the populated error message.
         if: always() && (steps.lint_pr_title.outputs.error_message != null)
         with:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           header: pr-title-lint-error
           message: |
             Hey there and thank you for opening this pull request! 👋🏼
@@ -42,5 +53,6 @@ jobs:
       - if: ${{ steps.lint_pr_title.outputs.error_message == null }}
         uses: marocchino/sticky-pull-request-comment@v3
         with:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           header: pr-title-lint-error
           delete: true

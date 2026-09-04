@@ -169,6 +169,19 @@ func RegisterPasskeys(api huma.API, passkeyService *PasskeyService, authService 
 	interactive := []map[string][]string{{"BearerAuth": {}}}
 
 	huma.Register(api, huma.Operation{
+		OperationID: "get-passkey-login-availability",
+		Method:      http.MethodGet,
+		Path:        "/auth/passkey/login/availability",
+		Summary:     "Get passkey login availability",
+		Tags:        []string{"Auth", "Passkeys"},
+		Security:    public,
+		Middlewares: huma.Middlewares{func(ctx huma.Context, next func(huma.Context)) {
+			ctx.SetHeader("Cache-Control", "no-store")
+			next(ctx)
+		}},
+	}, h.getLoginAvailabilityInternal)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "begin-passkey-login",
 		Method:      http.MethodPost,
 		Path:        "/auth/passkey/login/begin",
@@ -338,6 +351,14 @@ func RegisterPasskeys(api huma.API, passkeyService *PasskeyService, authService 
 		Tags:        []string{"Auth", "MFA"},
 		Security:    interactive,
 	}, h.RegenerateRecoveryCodes)
+}
+
+func (h *PasskeyHandler) getLoginAvailabilityInternal(ctx context.Context, _ *struct{}) (*handlerutil.Out[authtypes.PasskeyLoginAvailability], error) {
+	available, err := h.passkeyService.LoginAvailable(ctx)
+	if err != nil {
+		return nil, passkeyHTTPErrorInternal(err)
+	}
+	return &handlerutil.Out[authtypes.PasskeyLoginAvailability]{Body: base.ApiResponse[authtypes.PasskeyLoginAvailability]{Success: true, Data: authtypes.PasskeyLoginAvailability{Available: available}}}, nil
 }
 
 func (h *PasskeyHandler) BeginPasskeyLogin(ctx context.Context, _ *struct{}) (*handlerutil.Out[passkeyBeginResponse], error) {

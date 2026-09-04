@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+
 	"emperror.dev/errors"
 
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
@@ -141,7 +143,10 @@ func (c *TunnelClient) grpcConnectMethodInternal() string {
 }
 
 func (c *TunnelClient) useTLSForManagerGRPC() bool {
-	baseURL := strings.TrimSpace(c.cfg.GetManagerBaseURL())
+	if c.cfg == nil {
+		return false
+	}
+	baseURL := strings.TrimSpace(httpx.ManagerBaseURL(c.cfg.ManagerApiUrl))
 	if baseURL == "" {
 		return false
 	}

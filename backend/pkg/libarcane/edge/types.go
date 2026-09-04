@@ -45,6 +45,7 @@ type TunnelClient struct {
 	heartbeatInterval      time.Duration
 	registrationTimeout    time.Duration
 	websocketPreferenceTTL time.Duration
+	healthySessionDuration time.Duration
 	managerURL             string
 	managerGRPCAddr        string
 	localPort              string // Port the agent is running on locally

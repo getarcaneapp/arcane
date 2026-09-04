@@ -722,7 +722,7 @@ func (s *ImageUpdateService) getAllImageRefsInternal(ctx context.Context, limit 
 
 	excludedContainers := make(map[string]bool)
 	if s.settingsService != nil {
-		for _, name := range settings.ParseExcludedContainerNames(s.settingsService.GetStringSetting(ctx, "autoUpdateExcludedContainers", "")) {
+		for _, name := range utils.UniqueNonEmptyStrings(strings.Split(s.settingsService.GetStringSetting(ctx, "autoUpdateExcludedContainers", ""), ",")) {
 			excludedContainers[name] = true
 		}
 	}

@@ -8,6 +8,7 @@ import (
 
 	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
+	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
 	porttypes "github.com/getarcaneapp/arcane/types/v2/port"
@@ -132,7 +133,7 @@ func (s *PortService) buildPortSortBindings() []pagination.SortBinding[porttypes
 
 func primaryContainerNameInternal(names []string, id string) string {
 	if len(names) > 0 && names[0] != "" {
-		return strings.TrimPrefix(names[0], "/")
+		return dockerutil.ContainerNameFromNames(names)
 	}
 	if len(id) >= 12 {
 		return id[:12]

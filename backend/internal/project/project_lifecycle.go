@@ -27,7 +27,6 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	"github.com/getarcaneapp/arcane/types/v2/project"
-	"github.com/moby/moby/client"
 	"go.getarcane.app/acfs"
 	buildtypes "go.getarcane.app/builds/types"
 	"go.getarcane.app/sys/cgroup"
@@ -552,7 +551,7 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, r
 			}
 		}
 	}
-	s.parsedCompose.invalidate(projectID)
+	s.invalidateProjectCachesInternal(projectID)
 
 	metadata := database.JSON{"action": "destroy", "projectID": projectID, "projectName": proj.Name, "removeFiles": removeFiles, "removeVolumes": removeVolumes}
 	s.logProjectEventInternal(ctx, event.EventTypeProjectDelete, projectID, proj.Name, user, metadata, "could not log project destroy action")
@@ -1042,16 +1041,7 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, s
 	cfg := s.settingsService.GetSettingsOrDefaults(ctx)
 	projectsDirectory := getProjectsDirectoryOrDefaultInternal(ctx, cfg)
 
-	var dockerClient *client.Client
-	if s.dockerService != nil {
-		dockerClient, _ = s.dockerService.GetClient(ctx)
-	}
-	pathMapper := projects.NewPathMapperForConfiguredDirectory(
-		ctx,
-		s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects"),
-		"/app/data/projects",
-		dockerClient,
-	)
+	pathMapper := s.projectPathMapperInternal(ctx)
 
 	compProj, _, lerr := projects.LoadComposeProjectFromDir(ctx, proj.Path, projects.NormalizeProjectName(proj.Name), projectsDirectory, utils.BoolOrDefault(cfg.AutoInjectEnv.Value, false), pathMapper)
 	if lerr != nil {

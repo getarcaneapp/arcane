@@ -367,7 +367,7 @@ func TestNotificationService_SendBatchImageUpdateNotification_AgentModeSkipsNoOp
 func TestNotificationService_RenderEmailTemplate_IncludesEnvironment(t *testing.T) {
 	_, _, svc := setupNotificationTestServiceInternal(t)
 
-	htmlBody, textBody, err := svc.renderEmailTemplate("Homelab Prod", "nginx:latest", newNotificationTestUpdateInfoInternal())
+	htmlBody, textBody, err := svc.renderEmailTemplateInternal("Homelab Prod", "nginx:latest", newNotificationTestUpdateInfoInternal())
 	require.NoError(t, err)
 	require.Contains(t, htmlBody, "Homelab Prod")
 	require.Contains(t, textBody, "Homelab Prod")
@@ -379,7 +379,7 @@ func TestNotificationService_RenderEmailTemplate_IncludesEnvironment(t *testing.
 func TestNotificationService_RenderContainerUpdateEmailTemplate_IncludesEnvironment(t *testing.T) {
 	_, _, svc := setupNotificationTestServiceInternal(t)
 
-	htmlBody, textBody, err := svc.renderContainerUpdateEmailTemplate("Lab Remote", "nginx", "nginx:latest", "sha256:old", "sha256:new")
+	htmlBody, textBody, err := svc.renderContainerUpdateEmailTemplateInternal("Lab Remote", "nginx", "nginx:latest", "sha256:old", "sha256:new")
 	require.NoError(t, err)
 	require.Contains(t, htmlBody, "Lab Remote")
 	require.Contains(t, textBody, "Lab Remote")
@@ -402,7 +402,7 @@ func TestNotificationService_RenderBatchEmailTemplate_IncludesEnvironment(t *tes
 		},
 	}
 
-	htmlBody, textBody, err := svc.renderBatchEmailTemplate("Edge Cluster A", updates)
+	htmlBody, textBody, err := svc.renderBatchEmailTemplateInternal("Edge Cluster A", updates)
 	require.NoError(t, err)
 	require.Contains(t, htmlBody, "Edge Cluster A")
 	require.Contains(t, textBody, "Edge Cluster A")
@@ -414,7 +414,7 @@ func TestNotificationService_RenderBatchEmailTemplate_IncludesEnvironment(t *tes
 func TestNotificationService_RenderVulnerabilitySummaryEmailTemplate_IncludesEnvironment(t *testing.T) {
 	_, _, svc := setupNotificationTestServiceInternal(t)
 
-	htmlBody, textBody, err := svc.renderVulnerabilitySummaryEmailTemplate("Remote Alpha", VulnerabilityNotificationPayload{
+	htmlBody, textBody, err := svc.renderVulnerabilitySummaryEmailTemplateInternal("Remote Alpha", VulnerabilityNotificationPayload{
 		CVEID:        "Daily Summary - 2026-01-09",
 		ImageName:    "5 image(s) scanned, 2 with fixable vulnerabilities",
 		FixedVersion: "7 fixable vulnerability record(s)",
@@ -429,7 +429,7 @@ func TestNotificationService_RenderVulnerabilitySummaryEmailTemplate_IncludesEnv
 func TestNotificationService_RenderPruneReportEmailTemplate_IncludesEnvironment(t *testing.T) {
 	_, _, svc := setupNotificationTestServiceInternal(t)
 
-	htmlBody, textBody, err := svc.renderPruneReportEmailTemplate("Cluster West", &system.PruneAllResult{
+	htmlBody, textBody, err := svc.renderPruneReportEmailTemplateInternal("Cluster West", &system.PruneAllResult{
 		SpaceReclaimed:           3825205248,
 		ContainerSpaceReclaimed:  503316480,
 		ImageSpaceReclaimed:      2449473536,

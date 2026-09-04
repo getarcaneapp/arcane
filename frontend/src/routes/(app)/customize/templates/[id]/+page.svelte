@@ -11,7 +11,6 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { templateService } from '#lib/services/template-service';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog';
-	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { createForm } from '#lib/utils/settings';
 	import { formatDateTimeShort } from '#lib/utils/formatting';
@@ -58,10 +57,10 @@
 	// Form schema for custom template editing
 	const formSchema = createNamedTemplateSchema();
 
-	let originalName = $state(untrack(() => template.name));
-	let originalDescription = $state(untrack(() => template.description ?? ''));
-	let originalCompose = $state(untrack(() => data.templateData.content));
-	let originalEnv = $state(untrack(() => data.templateData.envContent));
+	let originalName = $derived(template.name);
+	let originalDescription = $derived(template.description ?? '');
+	let originalCompose = $derived(data.templateData.content);
+	let originalEnv = $derived(data.templateData.envContent);
 
 	let formData = $derived({
 		name: originalName,

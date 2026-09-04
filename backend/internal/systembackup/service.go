@@ -491,17 +491,15 @@ func (s *SystemBackupService) ListBackups(ctx context.Context, params pagination
 	if err != nil {
 		return nil, pagination.Response{}, fmt.Errorf("failed to list system backups: %w", err)
 	}
-	names := make(map[string]string)
+	names := make(map[string]backuptypes.S3Destination)
 	if s.s3Destinations != nil {
-		if destinations, listErr := s.s3Destinations.ListAllS3Destinations(ctx); listErr == nil {
-			for _, destination := range destinations {
-				names[destination.ID] = destination.Name
-			}
+		if available, listErr := s.s3Destinations.ListS3DestinationsByID(ctx); listErr == nil {
+			names = available
 		}
 	}
 	result := make([]backuptypes.SystemBackupRun, len(runs))
 	for i := range runs {
-		runs[i].S3DestinationName = names[runs[i].S3DestinationID]
+		runs[i].S3DestinationName = names[runs[i].S3DestinationID].Name
 		result[i] = runs[i].ToDTO()
 	}
 	return result, response, nil
@@ -1472,25 +1470,23 @@ func (s *SystemBackupService) GetPolicies(ctx context.Context) (*backuptypes.Sys
 	result := &backuptypes.SystemBackupPolicyCollection{
 		Policies: make([]backuptypes.SystemBackupPolicy, 0, len(policies)), RecoveryKeyStored: configured,
 	}
-	destinations := make(map[string]string)
+	destinations := make(map[string]backuptypes.S3Destination)
 	if s.s3Destinations != nil {
-		if available, listErr := s.s3Destinations.ListAllS3Destinations(ctx); listErr == nil {
-			for _, destination := range available {
-				destinations[destination.ID] = destination.Name
-			}
+		if available, listErr := s.s3Destinations.ListS3DestinationsByID(ctx); listErr == nil {
+			destinations = available
 		}
 	}
 	for i := range policies {
 		var lastRun *SystemBackupRun
 		var run SystemBackupRun
 		if runErr := s.db.WithContext(ctx).Where("policy_id = ?", policies[i].ID).Order("created_at DESC").First(&run).Error; runErr == nil {
-			run.S3DestinationName = destinations[run.S3DestinationID]
+			run.S3DestinationName = destinations[run.S3DestinationID].Name
 			lastRun = &run
 		} else if !errors.Is(runErr, gorm.ErrRecordNotFound) {
 			return nil, fmt.Errorf("failed to load latest system backup: %w", runErr)
 		}
 		dto := policies[i].ToDTO(lastRun)
-		dto.S3DestinationName = destinations[policies[i].S3DestinationID]
+		dto.S3DestinationName = destinations[policies[i].S3DestinationID].Name
 		result.Policies = append(result.Policies, dto)
 	}
 	return result, nil

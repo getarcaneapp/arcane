@@ -59,14 +59,10 @@
 
 <ResponsiveDialog
 	{open}
-	onOpenChange={(isOpen) => {
-		if (!isOpen) {
-			open = true;
-		}
-	}}
+	dismissible={false}
 	title={m.first_login_title()}
 	description={m.first_login_description()}
-	contentClass="sm:max-w-[425px] [&>button]:hidden"
+	contentClass="sm:max-w-[425px]"
 >
 	<form
 		onsubmit={(e) => {

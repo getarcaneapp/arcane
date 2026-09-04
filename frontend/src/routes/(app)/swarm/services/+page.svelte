@@ -3,7 +3,6 @@
 	import { m } from '#lib/paraglide/messages';
 	import { swarmService } from '#lib/services/swarm-service';
 	import { toast } from 'svelte-sonner';
-	import { untrack } from 'svelte';
 	import { tryCatch } from '#lib/utils/api';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api';
 	import { ResourcePageLayout, type StatCardConfig } from '#lib/layouts/index.js';
@@ -18,8 +17,8 @@
 
 	let { data } = $props();
 
-	let services = $state(untrack(() => data.services));
-	let requestOptions = $state(untrack(() => data.requestOptions));
+	let services = $derived(data.services);
+	let requestOptions = $derived(data.requestOptions);
 	let isLoading = $state({ refresh: false, creating: false });
 	let showCreateDialog = $state(false);
 

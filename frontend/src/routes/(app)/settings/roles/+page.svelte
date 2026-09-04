@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { ShieldAlertIcon } from '#lib/icons';
 	import { goto } from '$app/navigation';
-	import { untrack } from 'svelte';
 	import RolesTable from './roles-table.svelte';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared';
 	import { m } from '#lib/paraglide/messages';
@@ -13,9 +12,9 @@
 
 	const isAdmin = $derived(userStore.isGlobalAdmin());
 
-	let roles = $state(untrack(() => data.roles));
+	let roles = $derived(data.roles);
 	let selectedIds = $state<string[]>([]);
-	let requestOptions = $state<SearchPaginationSortRequest>(untrack(() => data.rolesRequestOptions));
+	let requestOptions = $derived<SearchPaginationSortRequest>(data.rolesRequestOptions);
 
 	async function refreshRoles() {
 		roles = await roleService.getRoles(requestOptions);

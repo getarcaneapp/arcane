@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
 
@@ -59,9 +58,9 @@ type ProjectService struct {
 	parsedCompose *parsedComposeCacheInternal
 	// metaCache holds per-project icon/URL metadata, keyed by project ID. Deriving
 	// it costs a full compose load (interpolation plus .env reads) and, for GitOps
-	// projects, a gitops_syncs lookup — per project, on every list request. Mirrors
-	// ContainerService.iconMetaCache.
-	metaCache *hot.HotCache[string, projects.ArcaneComposeMetadata]
+	// projects, a gitops_syncs lookup — per project, on every list request.
+	// Entries are validated by compose/include/env file mtimes rather than a TTL.
+	metaCache *hot.HotCache[string, projectMetadataEntryInternal]
 }
 
 // EnsureGitOpsProjectLinked persists the bidirectional GitOps/project binding
@@ -124,16 +123,7 @@ func (s *ProjectService) ValidateComposeDirectory(ctx context.Context, projectNa
 	if err != nil {
 		return 0, err
 	}
-	var dockerClient *client.Client
-	if s.dockerService != nil {
-		dockerClient, _ = s.dockerService.GetClient(ctx)
-	}
-	pathMapper := projects.NewPathMapperForConfiguredDirectory(
-		ctx,
-		s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects"),
-		"/app/data/projects",
-		dockerClient,
-	)
+	pathMapper := s.projectPathMapperInternal(ctx)
 	composeProject, err := projects.LoadComposeProject(
 		ctx,
 		filepath.Join(projectPath, composeFileName),
@@ -194,14 +184,12 @@ func (s *ProjectService) CreateGitOpsManagedProject(ctx context.Context, sync *G
 // projectMetadataEnvInternal carries the inputs ParseArcaneComposeMetadata needs
 // beyond the project itself. Resolving them costs a settings clone and a stat
 // syscall each, so list paths resolve once and reuse across every project.
+const maxConcurrentComposeReads = 8
+
 type projectMetadataEnvInternal struct {
 	projectsDirectory string
 	autoInjectEnv     bool
 }
-
-// projectMetadataTTL bounds how stale cached compose metadata can be. It matches
-// containerIconMetadataTTL so icons resolved from either service agree.
-const projectMetadataTTL = 5 * time.Second
 
 type registryCredentialsProviderInternal func(context.Context) ([]containerregistry.Credential, error)
 
@@ -217,10 +205,7 @@ func NewProjectService(db *database.DB, settingsService *settings.SettingsServic
 		containerRegistryService: containerRegistryService,
 		config:                   cfg,
 		parsedCompose:            newParsedComposeCacheInternal(),
-		metaCache: hot.NewHotCache[string, projects.ArcaneComposeMetadata](hot.LRU, 1024).
-			WithTTL(projectMetadataTTL).
-			WithJanitor().
-			Build(),
+		metaCache:                hot.NewHotCache[string, projectMetadataEntryInternal](hot.LRU, 1024).Build(),
 	}
 }
 
@@ -420,4 +405,17 @@ func (s *ProjectService) EnsureProjectPathUnderRoot(ctx context.Context, proj *P
 		}
 	}
 	return nil
+}
+
+func (s *ProjectService) projectPathMapperInternal(ctx context.Context) *projects.PathMapper {
+	var dockerClient *client.Client
+	if s.dockerService != nil {
+		dockerClient, _ = s.dockerService.GetClient(ctx)
+	}
+	return projects.NewPathMapperForConfiguredDirectory(
+		ctx,
+		s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects"),
+		"/app/data/projects",
+		dockerClient,
+	)
 }

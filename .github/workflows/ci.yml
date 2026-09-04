@@ -149,18 +149,30 @@ jobs:
           echo "$OUTPUT" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
+      - name: Request App Token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.ARCANE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.ARCANE_APP_PRIVATE_KEY }}
+          owner: getarcaneapp
+          repositories: arcane
+          permission-pull-requests: write
+
       - name: Find Comment
         uses: peter-evans/find-comment@v4
         id: fc
         with:
+          token: ${{ steps.app-token.outputs.token }}
           issue-number: ${{ github.event.pull_request.number }}
-          comment-author: "github-actions[bot]"
+          comment-author: "arcane-github-automation[bot]"
           body-includes: "## 🔍 Deadcode Analysis"
 
       - name: Delete comment if no deadcode found
         if: steps.deadcode.outputs.count == '0' && steps.fc.outputs.comment-id != ''
         uses: actions/github-script@v9
         with:
+          github-token: ${{ steps.app-token.outputs.token }}
           script: |
             github.rest.issues.deleteComment({
               owner: context.repo.owner,
@@ -174,6 +186,7 @@ jobs:
         with:
           comment-id: ${{ steps.fc.outputs.comment-id }}
           issue-number: ${{ github.event.pull_request.number }}
+          token: ${{ steps.app-token.outputs.token }}
           body: |
             ## 🔍 Deadcode Analysis
 

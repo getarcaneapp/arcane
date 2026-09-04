@@ -31,22 +31,24 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/system"
 	mobycontainer "github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
+	"github.com/samber/hot"
 	"github.com/samber/mo"
 	"go.getarcane.app/updater/labels"
 	"golang.org/x/sync/errgroup"
 )
 
 type SystemService struct {
-	db               *database.DB
-	dockerService    *docker.DockerClientService
-	containerService *container.ContainerService
-	imageService     *image.ImageService
-	volumeService    *volume.VolumeService
-	networkService   *network.NetworkService
-	settingsService  *settings.SettingsService
-	activityService  *activity.ActivityService
-	pruneMu          sync.Mutex
-	runningPrunes    map[string]string
+	db                    *database.DB
+	dockerService         *docker.DockerClientService
+	containerService      *container.ContainerService
+	imageService          *image.ImageService
+	volumeService         *volume.VolumeService
+	networkService        *network.NetworkService
+	settingsService       *settings.SettingsService
+	activityService       *activity.ActivityService
+	pruneMu               sync.Mutex
+	runningPrunes         map[string]string
+	dockerHostMemoryCache *hot.HotCache[struct{}, dockerHostMemoryInfo]
 }
 
 func NewSystemService(
@@ -69,6 +71,9 @@ func NewSystemService(
 		settingsService:  settingsService,
 		activityService:  activityService,
 		runningPrunes:    make(map[string]string),
+		dockerHostMemoryCache: hot.NewHotCache[struct{}, dockerHostMemoryInfo](hot.LRU, 1).
+			WithTTL(dockerHostMemoryCacheTTL).
+			Build(),
 	}
 }
 

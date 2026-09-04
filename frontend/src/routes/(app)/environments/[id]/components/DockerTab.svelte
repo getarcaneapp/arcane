@@ -8,14 +8,18 @@
 	import { m } from '#lib/paraglide/messages';
 	import { DockerBrandIcon } from '#lib/icons';
 	import type { DockerTabProps } from './tab-props';
+	import { arcaneImageRegistryOptions, arcaneToolsImage, arcaneUpdateCheckImage } from '#lib/utils/registry';
 
-	let { formInputs, shellSelectValue, handleShellSelectChange, shellOptions }: DockerTabProps = $props();
+	let { formInputs, environmentId, shellSelectValue, handleShellSelectChange, shellOptions }: DockerTabProps = $props();
 
 	const deployPullPolicyOptions = [
 		{ value: 'missing', label: 'Missing', description: m.deploy_pull_policy_missing() },
 		{ value: 'always', label: m.common_always(), description: m.deploy_pull_policy_always() },
 		{ value: 'never', label: m.common_never(), description: m.deploy_pull_policy_never() }
 	];
+
+	const registryOptions = arcaneImageRegistryOptions();
+	const updateCheckImage = $derived(arcaneUpdateCheckImage($formInputs.updateCheckRegistry.value, environmentId === '0'));
 
 	const pruneContainerModes = [
 		{ value: 'none', label: m.none() },
@@ -93,6 +97,34 @@
 					options={deployPullPolicyOptions}
 					onValueChange={(v) => ($formInputs.defaultDeployPullPolicy.value = v as 'missing' | 'always' | 'never')}
 				/>
+			</div>
+
+			<div class="space-y-2">
+				<SelectWithLabel
+					id="toolsImageRegistry"
+					name="toolsImageRegistry"
+					bind:value={$formInputs.toolsImageRegistry.value}
+					label={m.tools_image_registry_label()}
+					description={m.tools_image_registry_description()}
+					options={registryOptions}
+					onValueChange={(v) => ($formInputs.toolsImageRegistry.value = v as 'ghcr.io' | 'docker.io')}
+				/>
+				<p class="font-mono text-xs text-muted-foreground">{arcaneToolsImage($formInputs.toolsImageRegistry.value)}</p>
+			</div>
+
+			<div class="space-y-2">
+				<SelectWithLabel
+					id="updateCheckRegistry"
+					name="updateCheckRegistry"
+					bind:value={$formInputs.updateCheckRegistry.value}
+					label={m.update_check_registry_label()}
+					description={m.update_check_registry_description()}
+					options={[{ value: 'auto', label: m.auto() }, ...registryOptions]}
+					onValueChange={(v) => ($formInputs.updateCheckRegistry.value = v as 'auto' | 'ghcr.io' | 'docker.io')}
+				/>
+				<p class="text-xs text-muted-foreground {updateCheckImage ? 'font-mono' : ''}">
+					{updateCheckImage ?? m.follows_running_image()}
+				</p>
 			</div>
 
 			<TextInputWithLabel

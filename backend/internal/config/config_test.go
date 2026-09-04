@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -453,42 +455,42 @@ func TestConfig_GetManagerGRPCAddr(t *testing.T) {
 		cfg := &Config{
 			ManagerApiUrl: "https://manager.example.com:8443/api",
 		}
-		assert.Equal(t, "manager.example.com:8443", cfg.GetManagerGRPCAddr())
+		assert.Equal(t, "manager.example.com:8443", httpx.ManagerGRPCAddr(cfg.ManagerApiUrl))
 	})
 
 	t.Run("defaults to manager api https port when port is not set", func(t *testing.T) {
 		cfg := &Config{
 			ManagerApiUrl: "https://manager.example.com/api",
 		}
-		assert.Equal(t, "manager.example.com:443", cfg.GetManagerGRPCAddr())
+		assert.Equal(t, "manager.example.com:443", httpx.ManagerGRPCAddr(cfg.ManagerApiUrl))
 	})
 
 	t.Run("defaults to manager api http port when port is not set", func(t *testing.T) {
 		cfg := &Config{
 			ManagerApiUrl: "http://manager.example.com/api",
 		}
-		assert.Equal(t, "manager.example.com:80", cfg.GetManagerGRPCAddr())
+		assert.Equal(t, "manager.example.com:80", httpx.ManagerGRPCAddr(cfg.ManagerApiUrl))
 	})
 
 	t.Run("supports reverse-proxy path prefixes", func(t *testing.T) {
 		cfg := &Config{
 			ManagerApiUrl: "https://manager.example.com/arcane/api/",
 		}
-		assert.Equal(t, "manager.example.com:443", cfg.GetManagerGRPCAddr())
+		assert.Equal(t, "manager.example.com:443", httpx.ManagerGRPCAddr(cfg.ManagerApiUrl))
 	})
 
 	t.Run("supports ipv6 hosts behind reverse proxies", func(t *testing.T) {
 		cfg := &Config{
 			ManagerApiUrl: "https://[2001:db8::1]/arcane/api",
 		}
-		assert.Equal(t, "[2001:db8::1]:443", cfg.GetManagerGRPCAddr())
+		assert.Equal(t, "[2001:db8::1]:443", httpx.ManagerGRPCAddr(cfg.ManagerApiUrl))
 	})
 
 	t.Run("returns empty for invalid manager url", func(t *testing.T) {
 		cfg := &Config{
 			ManagerApiUrl: "://bad-url",
 		}
-		assert.Empty(t, cfg.GetManagerGRPCAddr())
+		assert.Empty(t, httpx.ManagerGRPCAddr(cfg.ManagerApiUrl))
 	})
 }
 
@@ -497,14 +499,14 @@ func TestConfig_GetManagerBaseURL(t *testing.T) {
 		cfg := &Config{
 			ManagerApiUrl: "https://manager.example.com/api/",
 		}
-		assert.Equal(t, "https://manager.example.com", cfg.GetManagerBaseURL())
+		assert.Equal(t, "https://manager.example.com", httpx.ManagerBaseURL(cfg.ManagerApiUrl))
 	})
 
 	t.Run("keeps reverse-proxy path prefix", func(t *testing.T) {
 		cfg := &Config{
 			ManagerApiUrl: "https://manager.example.com/arcane/api/",
 		}
-		assert.Equal(t, "https://manager.example.com/arcane", cfg.GetManagerBaseURL())
+		assert.Equal(t, "https://manager.example.com/arcane", httpx.ManagerBaseURL(cfg.ManagerApiUrl))
 	})
 }
 

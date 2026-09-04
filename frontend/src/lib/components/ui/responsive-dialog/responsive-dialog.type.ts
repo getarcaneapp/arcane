@@ -59,6 +59,12 @@ export interface ResponsiveDialogProps {
 	showCloseButton?: boolean;
 
 	/**
+	 * Whether the dialog can be closed by outside click, Escape, or the close button
+	 * @default true
+	 */
+	dismissible?: boolean;
+
+	/**
 	 * The variant of the dialog on desktop
 	 * @default 'dialog'
 	 */

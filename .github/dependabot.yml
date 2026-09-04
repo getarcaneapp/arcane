@@ -37,8 +37,6 @@ updates:
   - package-ecosystem: "gomod"
     directory: "/backend"
     patterns: ["*"]
-    cooldown:
-      default-days: 2
     schedule:
       interval: "weekly"
       day: "wednesday"
@@ -61,8 +59,6 @@ updates:
   - package-ecosystem: "gomod"
     directory: "/cli"
     patterns: ["*"]
-    cooldown:
-      default-days: 2
     schedule:
       interval: "weekly"
       day: "wednesday"
@@ -80,8 +76,6 @@ updates:
   - package-ecosystem: "gomod"
     directory: "/types"
     patterns: ["*"]
-    cooldown:
-      default-days: 2
     schedule:
       interval: "weekly"
       day: "wednesday"

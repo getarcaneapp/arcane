@@ -6,13 +6,10 @@ import (
 	"encoding/json/v2"
 	"fmt"
 	"html"
-	"html/template"
 	"io"
 	"log/slog"
 	"maps"
 	"net/http"
-	"net/mail"
-	"sort"
 	"strings"
 	"time"
 
@@ -25,9 +22,9 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/notifications"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
-	"github.com/getarcaneapp/arcane/backend/v2/resources"
 	"github.com/getarcaneapp/arcane/types/v2/imageupdate"
 	notificationdto "github.com/getarcaneapp/arcane/types/v2/notification"
 	"github.com/getarcaneapp/arcane/types/v2/system"
@@ -171,14 +168,14 @@ func (s *NotificationService) dispatchNotificationToManagerInternal(ctx context.
 	// Tunnel-connected edge agents typically have neither MANAGER_API_URL nor
 	// AGENT_TOKEN configured for HTTP; ride the agent-to-manager event channel
 	// instead so their notifications are not silently lost (#3002).
-	if s.config == nil || strings.TrimSpace(s.config.GetManagerBaseURL()) == "" || strings.TrimSpace(s.config.AgentToken) == "" {
+	if s.config == nil || strings.TrimSpace(httpx.ManagerBaseURL(s.config.ManagerApiUrl)) == "" || strings.TrimSpace(s.config.AgentToken) == "" {
 		if err := publishViaTunnel(); err != nil {
 			return notificationdto.DispatchResponse{}, errors.WrapIf(err, "notification dispatch needs either MANAGER_API_URL + AGENT_TOKEN or a connected edge tunnel")
 		}
 		return notificationdto.DispatchResponse{Message: "notification dispatched via edge tunnel"}, nil
 	}
 
-	dispatchURL := strings.TrimRight(s.config.GetManagerBaseURL(), "/") + "/api/notifications/dispatch"
+	dispatchURL := strings.TrimRight(httpx.ManagerBaseURL(s.config.ManagerApiUrl), "/") + "/api/notifications/dispatch"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, dispatchURL, bytes.NewReader(body))
 	if err != nil {
 		return notificationdto.DispatchResponse{}, errors.WrapIf(err, "failed to create notification dispatch request")
@@ -663,7 +660,7 @@ func (s *NotificationService) imageUpdateNotificationContentInternal(environment
 		}),
 		Title: "Container Image Update",
 		RenderEmail: func() (string, string, error) {
-			htmlBody, _, err := s.renderEmailTemplate(environmentName, imageRef, updateInfo)
+			htmlBody, _, err := s.renderEmailTemplateInternal(environmentName, imageRef, updateInfo)
 			if err != nil {
 				return "", "", errors.WrapIf(err, "failed to render email template")
 			}
@@ -682,7 +679,7 @@ func (s *NotificationService) containerUpdateNotificationContentInternal(environ
 		}),
 		Title: "Container Updated",
 		RenderEmail: func() (string, string, error) {
-			htmlBody, _, err := s.renderContainerUpdateEmailTemplate(environmentName, containerName, imageRef, oldDigest, newDigest)
+			htmlBody, _, err := s.renderContainerUpdateEmailTemplateInternal(environmentName, containerName, imageRef, oldDigest, newDigest)
 			if err != nil {
 				return "", "", errors.WrapIf(err, "failed to render email template")
 			}
@@ -711,7 +708,7 @@ func (s *NotificationService) vulnerabilityNotificationContentInternal(environme
 		Title:        defaultTitle,
 		DefaultTitle: defaultTitle,
 		RenderEmail: func() (string, string, error) {
-			htmlBody, _, err := s.renderVulnerabilitySummaryEmailTemplate(environmentName, payload)
+			htmlBody, _, err := s.renderVulnerabilitySummaryEmailTemplateInternal(environmentName, payload)
 			if err != nil {
 				return "", "", errors.WrapIf(err, "failed to render summary email template")
 			}
@@ -730,7 +727,7 @@ func (s *NotificationService) batchImageUpdateNotificationContentInternal(enviro
 		}),
 		Title: "Container Image Updates Available",
 		RenderEmail: func() (string, string, error) {
-			htmlBody, _, err := s.renderBatchEmailTemplate(environmentName, updates)
+			htmlBody, _, err := s.renderBatchEmailTemplateInternal(environmentName, updates)
 			if err != nil {
 				return "", "", errors.WrapIf(err, "failed to render email template")
 			}
@@ -804,7 +801,7 @@ func (s *NotificationService) batchContainerUpdateNotificationContentInternal(en
 		}),
 		Title: "Containers Updated",
 		RenderEmail: func() (string, string, error) {
-			htmlBody, _, err := s.renderBatchContainerUpdateEmailTemplate(environmentName, entries)
+			htmlBody, _, err := s.renderBatchContainerUpdateEmailTemplateInternal(environmentName, entries)
 			if err != nil {
 				return "", "", errors.WrapIf(err, "failed to render email template")
 			}
@@ -821,68 +818,6 @@ func (s *NotificationService) batchContainerUpdateNotificationContentInternal(en
 	}
 }
 
-func (s *NotificationService) renderBatchContainerUpdateEmailTemplate(environmentName string, entries []notifications.ContainerUpdateBatchEntry) (string, string, error) {
-	type batchEntry struct {
-		ContainerName string
-		ImageRef      string
-		OldDigest     string
-		NewDigest     string
-	}
-
-	sorted := make([]batchEntry, 0, len(entries))
-	for _, entry := range entries {
-		sorted = append(sorted, batchEntry{
-			ContainerName: entry.ContainerName,
-			ImageRef:      entry.ImageRef,
-			OldDigest:     entry.OldDigest,
-			NewDigest:     entry.NewDigest,
-		})
-	}
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i].ContainerName < sorted[j].ContainerName })
-
-	appURL := s.config.GetAppURL()
-	data := map[string]any{
-		"LogoURL":     appURL + logoURLPath,
-		"AppURL":      appURL,
-		"Environment": environmentName,
-		"UpdateCount": len(sorted),
-		"CompletedAt": time.Now().Format(time.RFC1123),
-		"Entries":     sorted,
-	}
-
-	htmlContent, err := resources.FS.ReadFile("email-templates/batch-container-updates_html.tmpl")
-	if err != nil {
-		return "", "", errors.WrapIf(err, "failed to read HTML template")
-	}
-
-	htmlTmpl, err := template.New("html").Parse(string(htmlContent))
-	if err != nil {
-		return "", "", errors.WrapIf(err, "failed to parse HTML template")
-	}
-
-	var htmlBuf bytes.Buffer
-	if err := htmlTmpl.ExecuteTemplate(&htmlBuf, "root", data); err != nil {
-		return "", "", errors.WrapIf(err, "failed to execute HTML template")
-	}
-
-	textContent, err := resources.FS.ReadFile("email-templates/batch-container-updates_text.tmpl")
-	if err != nil {
-		return "", "", errors.WrapIf(err, "failed to read text template")
-	}
-
-	textTmpl, err := template.New("text").Parse(string(textContent))
-	if err != nil {
-		return "", "", errors.WrapIf(err, "failed to parse text template")
-	}
-
-	var textBuf bytes.Buffer
-	if err := textTmpl.ExecuteTemplate(&textBuf, "root", data); err != nil {
-		return "", "", errors.WrapIf(err, "failed to execute text template")
-	}
-
-	return htmlBuf.String(), textBuf.String(), nil
-}
-
 func (s *NotificationService) pruneReportNotificationContentInternal(environmentName string, result *system.PruneAllResult) notifications.Content {
 	defaultTitle := notifications.BuildEmailSubject(environmentName, "System Prune Report")
 	return notifications.Content{
@@ -892,7 +827,7 @@ func (s *NotificationService) pruneReportNotificationContentInternal(environment
 		Title:        defaultTitle,
 		DefaultTitle: defaultTitle,
 		RenderEmail: func() (string, string, error) {
-			htmlBody, _, err := s.renderPruneReportEmailTemplate(environmentName, result)
+			htmlBody, _, err := s.renderPruneReportEmailTemplateInternal(environmentName, result)
 			if err != nil {
 				return "", "", errors.WrapIf(err, "failed to render email template")
 			}
@@ -1348,7 +1283,7 @@ func (s *NotificationService) TestNotification(ctx context.Context, environmentI
 	}
 
 	if provider == notifications.NotificationProviderEmail && testType == notificationTestTypeSimple {
-		return warning, s.sendTestEmail(ctx, target.EnvironmentName, setting.Config)
+		return warning, s.sendTestEmailInternal(ctx, target.EnvironmentName, setting.Config)
 	}
 
 	content := s.testNotificationContentInternal(target.EnvironmentName, testType)
@@ -1369,323 +1304,15 @@ func (s *NotificationService) TestNotification(ctx context.Context, environmentI
 
 const logoURLPath = "/api/app-images/logo-email"
 
-func (s *NotificationService) renderEmailTemplate(environmentName, imageRef string, updateInfo *imageupdate.Response) (string, string, error) {
-	appURL := s.config.GetAppURL()
-	logoURL := appURL + logoURLPath
-	data := map[string]any{
-		"LogoURL":       logoURL,
-		"AppURL":        appURL,
-		"Environment":   environmentName,
-		"ImageRef":      imageRef,
-		"HasUpdate":     updateInfo.HasUpdate,
-		"UpdateType":    updateInfo.UpdateType,
-		"CurrentDigest": updateInfo.CurrentDigest,
-		"LatestDigest":  updateInfo.LatestDigest,
-		"CheckTime":     updateInfo.CheckTime.Format(time.RFC1123),
-	}
-
-	htmlContent, err := resources.FS.ReadFile("email-templates/image-update_html.tmpl")
-	if err != nil {
-		return "", "", errors.WrapIf(err, "failed to read HTML template")
-	}
-
-	htmlTmpl, err := template.New("html").Parse(string(htmlContent))
-	if err != nil {
-		return "", "", errors.WrapIf(err, "failed to parse HTML template")
-	}
-
-	var htmlBuf bytes.Buffer
-	if err := htmlTmpl.ExecuteTemplate(&htmlBuf, "root", data); err != nil {
-		return "", "", errors.WrapIf(err, "failed to execute HTML template")
-	}
-
-	textContent, err := resources.FS.ReadFile("email-templates/image-update_text.tmpl")
-	if err != nil {
-		return "", "", errors.WrapIf(err, "failed to read text template")
-	}
-
-	textTmpl, err := template.New("text").Parse(string(textContent))
-	if err != nil {
-		return "", "", errors.WrapIf(err, "failed to parse text template")
-	}
-
-	var textBuf bytes.Buffer
-	if err := textTmpl.ExecuteTemplate(&textBuf, "root", data); err != nil {
-		return "", "", errors.WrapIf(err, "failed to execute text template")
-	}
-
-	return htmlBuf.String(), textBuf.String(), nil
-}
-
-func (s *NotificationService) renderContainerUpdateEmailTemplate(environmentName, containerName, imageRef, oldDigest, newDigest string) (string, string, error) {
-	appURL := s.config.GetAppURL()
-	logoURL := appURL + logoURLPath
-	data := map[string]any{
-		"LogoURL":       logoURL,
-		"AppURL":        appURL,
-		"Environment":   environmentName,
-		"ContainerName": containerName,
-		"ImageRef":      imageRef,
-		"OldDigest":     oldDigest,
-		"NewDigest":     newDigest,
-		"UpdateTime":    time.Now().Format(time.RFC1123),
-	}
-
-	htmlContent, err := resources.FS.ReadFile("email-templates/container-update_html.tmpl")
-	if err != nil {
-		return "", "", errors.WrapIf(err, "failed to read HTML template")
-	}
-
-	htmlTmpl, err := template.New("html").Parse(string(htmlContent))
-	if err != nil {
-		return "", "", errors.WrapIf(err, "failed to parse HTML template")
-	}
-
-	var htmlBuf bytes.Buffer
-	if err := htmlTmpl.ExecuteTemplate(&htmlBuf, "root", data); err != nil {
-		return "", "", errors.WrapIf(err, "failed to execute HTML template")
-	}
-
-	textContent, err := resources.FS.ReadFile("email-templates/container-update_text.tmpl")
-	if err != nil {
-		return "", "", errors.WrapIf(err, "failed to read text template")
-	}
-
-	textTmpl, err := template.New("text").Parse(string(textContent))
-	if err != nil {
-		return "", "", errors.WrapIf(err, "failed to parse text template")
-	}
-
-	var textBuf bytes.Buffer
-	if err := textTmpl.ExecuteTemplate(&textBuf, "root", data); err != nil {
-		return "", "", errors.WrapIf(err, "failed to execute text template")
-	}
-
-	return htmlBuf.String(), textBuf.String(), nil
-}
-
-func (s *NotificationService) sendTestEmail(ctx context.Context, environmentName string, config database.JSON) error {
-	var emailConfig notifications.EmailConfig
-	configBytes, err := json.Marshal(config)
-	if err != nil {
-		return errors.WrapIf(err, "failed to marshal email config")
-	}
-	if err := json.Unmarshal(configBytes, &emailConfig); err != nil {
-		return errors.WrapIf(err, "failed to unmarshal email config")
-	}
-
-	if emailConfig.SMTPHost == "" || emailConfig.SMTPPort == 0 {
-		return errors.New("SMTP host or port not configured")
-	}
-	if len(emailConfig.ToAddresses) == 0 {
-		return errors.New("no recipient email addresses configured")
-	}
-
-	if _, err := mail.ParseAddress(emailConfig.FromAddress); err != nil {
-		return errors.WrapIf(err, "invalid from address")
-	}
-	for _, addr := range emailConfig.ToAddresses {
-		if _, err := mail.ParseAddress(addr); err != nil {
-			return errors.WrapIff(err, "invalid to address %s", addr)
-		}
-	}
-
-	if err := notifications.DecryptStringCredential(&emailConfig.SMTPPassword); err != nil {
-		return err
-	}
-
-	htmlBody, _, err := s.renderTestEmailTemplate(environmentName)
-	if err != nil {
-		return errors.WrapIf(err, "failed to render test email template")
-	}
-
-	subject := notifications.BuildEmailSubject(environmentName, "Test Email from Arcane")
-	if err := notifications.SendEmail(ctx, emailConfig, subject, htmlBody); err != nil {
-		return errors.WrapIf(err, "failed to send email")
-	}
-
-	return nil
-}
-
-func (s *NotificationService) renderTestEmailTemplate(environmentName string) (string, string, error) {
-	appURL := s.config.GetAppURL()
-	logoURL := appURL + logoURLPath
-	data := map[string]any{
-		"LogoURL":     logoURL,
-		"AppURL":      appURL,
-		"Environment": environmentName,
-	}
-
-	htmlContent, err := resources.FS.ReadFile("email-templates/test_html.tmpl")
-	if err != nil {
-		return "", "", errors.WrapIf(err, "failed to read HTML template")
-	}
-
-	htmlTmpl, err := template.New("html").Parse(string(htmlContent))
-	if err != nil {
-		return "", "", errors.WrapIf(err, "failed to parse HTML template")
-	}
-
-	var htmlBuf bytes.Buffer
-	if err := htmlTmpl.ExecuteTemplate(&htmlBuf, "root", data); err != nil {
-		return "", "", errors.WrapIf(err, "failed to execute HTML template")
-	}
-
-	textContent, err := resources.FS.ReadFile("email-templates/test_text.tmpl")
-	if err != nil {
-		return "", "", errors.WrapIf(err, "failed to read text template")
-	}
-
-	textTmpl, err := template.New("text").Parse(string(textContent))
-	if err != nil {
-		return "", "", errors.WrapIf(err, "failed to parse text template")
-	}
-
-	var textBuf bytes.Buffer
-	if err := textTmpl.ExecuteTemplate(&textBuf, "root", data); err != nil {
-		return "", "", errors.WrapIf(err, "failed to execute text template")
-	}
-
-	return htmlBuf.String(), textBuf.String(), nil
-}
-
-func (s *NotificationService) renderBatchEmailTemplate(environmentName string, updates map[string]*imageupdate.Response) (string, string, error) {
-	// Build list of image names
-	imageList := make([]string, 0, len(updates))
-	for imageRef := range updates {
-		imageList = append(imageList, imageRef)
-	}
-
-	appURL := s.config.GetAppURL()
-	logoURL := appURL + logoURLPath
-	data := map[string]any{
-		"LogoURL":     logoURL,
-		"AppURL":      appURL,
-		"Environment": environmentName,
-		"UpdateCount": len(updates),
-		"CheckTime":   time.Now().Format(time.RFC1123),
-		"ImageList":   imageList,
-	}
-
-	htmlContent, err := resources.FS.ReadFile("email-templates/batch-image-updates_html.tmpl")
-	if err != nil {
-		return "", "", errors.WrapIf(err, "failed to read HTML template")
-	}
-
-	htmlTmpl, err := template.New("html").Parse(string(htmlContent))
-	if err != nil {
-		return "", "", errors.WrapIf(err, "failed to parse HTML template")
-	}
-
-	var htmlBuf bytes.Buffer
-	if err := htmlTmpl.ExecuteTemplate(&htmlBuf, "root", data); err != nil {
-		return "", "", errors.WrapIf(err, "failed to execute HTML template")
-	}
-
-	textContent, err := resources.FS.ReadFile("email-templates/batch-image-updates_text.tmpl")
-	if err != nil {
-		return "", "", errors.WrapIf(err, "failed to read text template")
-	}
-
-	textTmpl, err := template.New("text").Parse(string(textContent))
-	if err != nil {
-		return "", "", errors.WrapIf(err, "failed to parse text template")
-	}
-
-	var textBuf bytes.Buffer
-	if err := textTmpl.ExecuteTemplate(&textBuf, "root", data); err != nil {
-		return "", "", errors.WrapIf(err, "failed to execute text template")
-	}
-
-	return htmlBuf.String(), textBuf.String(), nil
-}
-
-func (s *NotificationService) renderVulnerabilitySummaryEmailTemplate(environmentName string, payload VulnerabilityNotificationPayload) (string, string, error) {
-	appURL := s.config.GetAppURL()
-	logoURL := appURL + logoURLPath
-	data := map[string]any{
-		"LogoURL":           logoURL,
-		"AppURL":            appURL,
-		"Environment":       environmentName,
-		"SummaryLabel":      payload.CVEID,
-		"Overview":          payload.ImageName,
-		"FixableCount":      payload.FixedVersion,
-		"SeverityBreakdown": payload.Severity,
-		"SampleCVEs":        payload.PkgName,
-	}
-
-	htmlContent, err := resources.FS.ReadFile("email-templates/vulnerability-summary_html.tmpl")
-	if err != nil {
-		return "", "", errors.WrapIf(err, "failed to read HTML template")
-	}
-	htmlTmpl, err := template.New("html").Parse(string(htmlContent))
-	if err != nil {
-		return "", "", errors.WrapIf(err, "failed to parse HTML template")
-	}
-	var htmlBuf bytes.Buffer
-	if err := htmlTmpl.ExecuteTemplate(&htmlBuf, "root", data); err != nil {
-		return "", "", errors.WrapIf(err, "failed to execute HTML template")
-	}
-
-	textContent, err := resources.FS.ReadFile("email-templates/vulnerability-summary_text.tmpl")
-	if err != nil {
-		return "", "", errors.WrapIf(err, "failed to read text template")
-	}
-	textTmpl, err := template.New("text").Parse(string(textContent))
-	if err != nil {
-		return "", "", errors.WrapIf(err, "failed to parse text template")
-	}
-	var textBuf bytes.Buffer
-	if err := textTmpl.ExecuteTemplate(&textBuf, "root", data); err != nil {
-		return "", "", errors.WrapIf(err, "failed to execute text template")
-	}
-	return htmlBuf.String(), textBuf.String(), nil
-}
-
-func (s *NotificationService) renderPruneReportEmailTemplate(environmentName string, result *system.PruneAllResult) (string, string, error) {
-	appURL := s.config.GetAppURL()
-	logoURL := appURL + logoURLPath
-	data := map[string]any{
-		"LogoURL":                  logoURL,
-		"AppURL":                   appURL,
-		"Environment":              environmentName,
-		"TotalSpaceReclaimed":      notifications.FormatBytes(result.SpaceReclaimed),
-		"ContainerSpaceReclaimed":  notifications.FormatBytes(result.ContainerSpaceReclaimed),
-		"ImageSpaceReclaimed":      notifications.FormatBytes(result.ImageSpaceReclaimed),
-		"VolumeSpaceReclaimed":     notifications.FormatBytes(result.VolumeSpaceReclaimed),
-		"BuildCacheSpaceReclaimed": notifications.FormatBytes(result.BuildCacheSpaceReclaimed),
-		"Time":                     time.Now().Format(time.RFC1123),
-	}
-
-	return s.renderTemplatesInternal("prune-report", data)
-}
-
-func (s *NotificationService) renderTemplatesInternal(name string, data any) (string, string, error) {
-	htmlContent, err := resources.FS.ReadFile(fmt.Sprintf("email-templates/%s_html.tmpl", name))
-	if err != nil {
-		return "", "", errors.WrapIf(err, "failed to read HTML template")
-	}
-
-	htmlTmpl, err := template.New("html").Parse(string(htmlContent))
-	if err != nil {
-		return "", "", errors.WrapIf(err, "failed to parse HTML template")
-	}
-
-	var htmlBuf bytes.Buffer
-	if err := htmlTmpl.ExecuteTemplate(&htmlBuf, "root", data); err != nil {
-		return "", "", errors.WrapIf(err, "failed to execute HTML template")
-	}
-
-	textContent, err := resources.FS.ReadFile(fmt.Sprintf("email-templates/%s_text.tmpl", name))
-	if err == nil {
-		textTmpl, err := template.New("text").Parse(string(textContent))
-		if err == nil {
-			var textBuf bytes.Buffer
-			if err := textTmpl.ExecuteTemplate(&textBuf, "root", data); err == nil {
-				return htmlBuf.String(), textBuf.String(), nil
+func (s *NotificationService) sendTestEmailInternal(ctx context.Context, environmentName string, config database.JSON) error {
+	_, err := notifications.Deliver(ctx, notifications.NotificationProviderEmail, config, notifications.Content{
+		RenderEmail: func() (string, string, error) {
+			htmlBody, _, err := s.renderTestEmailTemplateInternal(environmentName)
+			if err != nil {
+				return "", "", errors.WrapIf(err, "failed to render test email template")
 			}
-		}
-	}
-
-	return htmlBuf.String(), "", nil
+			return notifications.BuildEmailSubject(environmentName, "Test Email from Arcane"), htmlBody, nil
+		},
+	})
+	return err
 }

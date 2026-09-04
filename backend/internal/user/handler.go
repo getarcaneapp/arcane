@@ -276,6 +276,7 @@ func (h *UserHandler) UpdateUser(ctx context.Context, input *UpdateUserInput) (*
 			return nil, huma.Error500InternalServerError("Failed to hash password")
 		}
 		userModel.PasswordHash = hashedPassword
+		userModel.RequiresPasswordChange = false
 	}
 
 	updatedUser, err := h.userService.UpdateUser(ctx, userModel, callerPerms)

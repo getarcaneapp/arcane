@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
-	"net/url"
 	"os"
 	"reflect"
 	"slices"
@@ -13,6 +12,7 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 )
 
 type AppEnvironment string
@@ -482,46 +482,6 @@ func (c *Config) GetLocation() *time.Location {
 	return loc
 }
 
-// GetManagerBaseURL returns the base URL of the manager application.
-// It strips any trailing slashes or /api suffix from MANAGER_API_URL.
-func (c *Config) GetManagerBaseURL() string {
-	if c.ManagerApiUrl == "" {
-		return ""
-	}
-	managerURL := strings.TrimRight(c.ManagerApiUrl, "/")
-	managerURL = strings.TrimSuffix(managerURL, "/api")
-	return managerURL
-}
-
-// GetManagerGRPCAddr returns the manager gRPC address in host:port form.
-func (c *Config) GetManagerGRPCAddr() string {
-	baseURL := c.GetManagerBaseURL()
-	if baseURL == "" {
-		return ""
-	}
-
-	parsed, err := url.Parse(baseURL)
-	if err != nil {
-		return ""
-	}
-
-	host := parsed.Hostname()
-	if host == "" {
-		return ""
-	}
-
-	port := parsed.Port()
-	if port == "" {
-		if strings.EqualFold(parsed.Scheme, "https") {
-			port = "443"
-		} else {
-			port = "80"
-		}
-	}
-
-	return net.JoinHostPort(host, port)
-}
-
 // GetAppURL returns the effective application URL.
 // If in agent mode and APP_URL is not explicitly set, it returns the manager's URL.
 func (c *Config) GetAppURL() string {
@@ -532,7 +492,7 @@ func (c *Config) GetAppURL() string {
 
 	// If in agent mode and we have a manager URL, use the manager URL
 	if c.AgentMode {
-		if managerBase := c.GetManagerBaseURL(); managerBase != "" {
+		if managerBase := httpx.ManagerBaseURL(c.ManagerApiUrl); managerBase != "" {
 			return managerBase
 		}
 	}

@@ -283,6 +283,22 @@ func credentialFromModelInternal(row Passkey) webauthn.Credential {
 	}
 }
 
+// LoginAvailable reports whether a registered passkey can be used on this instance.
+func (s *passkeyService) LoginAvailable(ctx context.Context) (bool, error) {
+	if errors.Is(s.readyInternal(), ErrPasskeyServiceUnavailable) {
+		return false, nil
+	}
+
+	credentials := s.db.WithContext(ctx).Model(&Passkey{}).Select("1").
+		Joins("JOIN users ON users.id = passkeys.user_id").
+		Where("passkeys.rp_id = ?", s.rpID)
+	var available bool
+	if err := s.db.WithContext(ctx).Raw("SELECT EXISTS (?)", credentials).Scan(&available).Error; err != nil {
+		return false, errors.WrapIf(err, "failed to check passkey login availability")
+	}
+	return available, nil
+}
+
 func (s *passkeyService) BeginPasskeyLogin(ctx context.Context) (*PasskeyChallenge, error) {
 	if err := s.readyInternal(); err != nil {
 		return nil, err

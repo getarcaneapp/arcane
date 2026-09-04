@@ -3,49 +3,8 @@ package edge
 import (
 	"github.com/samber/mo"
 
-	"net/url"
 	"strings"
 )
-
-// GetManagerBaseURL returns the base URL of the manager application.
-// It strips any trailing slashes or /api suffix from MANAGER_API_URL.
-func (c *Config) GetManagerBaseURL() string {
-	if c == nil || c.ManagerApiUrl == "" {
-		return ""
-	}
-	managerURL := strings.TrimRight(c.ManagerApiUrl, "/")
-	managerURL = strings.TrimSuffix(managerURL, "/api")
-	return managerURL
-}
-
-// GetManagerGRPCAddr returns the manager gRPC address in host:port form.
-func (c *Config) GetManagerGRPCAddr() string {
-	baseURL := c.GetManagerBaseURL()
-	if baseURL == "" {
-		return ""
-	}
-
-	parsed, err := url.Parse(baseURL)
-	if err != nil {
-		return ""
-	}
-
-	host := parsed.Hostname()
-	if host == "" {
-		return ""
-	}
-
-	port := parsed.Port()
-	if port == "" {
-		if strings.EqualFold(parsed.Scheme, "https") {
-			port = "443"
-		} else {
-			port = "80"
-		}
-	}
-
-	return host + ":" + port
-}
 
 const (
 	// EdgeTransportAuto prefers gRPC and falls back to WebSocket automatically.

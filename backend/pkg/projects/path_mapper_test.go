@@ -13,6 +13,12 @@ import (
 func TestNewPathMapperForConfiguredDirectory(t *testing.T) {
 	ctx := context.Background()
 
+	t.Run("empty configuration uses default without Docker", func(t *testing.T) {
+		defaultDir := filepath.Join(t.TempDir(), "projects")
+		require.Nil(t, NewPathMapperForConfiguredDirectory(ctx, "", defaultDir, nil))
+		require.DirExists(t, defaultDir)
+	})
+
 	t.Run("matching paths do not need a mapper", func(t *testing.T) {
 		containerDir := t.TempDir()
 		pathMapper := NewPathMapperForConfiguredDirectory(ctx, containerDir, containerDir, nil)

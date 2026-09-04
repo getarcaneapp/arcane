@@ -82,3 +82,8 @@ type AutoLoginConfig struct {
 	Enabled  bool   `json:"enabled" doc:"Whether auto-login is enabled"`
 	Username string `json:"username" doc:"Username for auto-login (only returned if enabled)"`
 }
+
+// PasskeyLoginAvailability reports whether the instance has a usable passkey.
+type PasskeyLoginAvailability struct {
+	Available bool `json:"available" doc:"Whether a passkey is registered for the current WebAuthn domain"`
+}

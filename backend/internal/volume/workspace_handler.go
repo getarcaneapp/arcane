@@ -4,11 +4,9 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 
 	"context"
-	"io"
 	"mime/multipart"
 	"net/http"
 	"path"
-	"strconv"
 	"strings"
 
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
@@ -92,13 +90,7 @@ func (h *VolumeHandler) DownloadVolumeWorkspaceFile(ctx context.Context, input *
 	if err != nil {
 		return nil, volumeWorkspaceHTTPErrorInternal(err)
 	}
-	return &huma.StreamResponse{Body: func(humaCtx huma.Context) {
-		defer func() { _ = reader.Close() }()
-		humaCtx.SetHeader("Content-Type", "application/octet-stream")
-		humaCtx.SetHeader("Content-Disposition", "attachment; filename="+path.Base(input.RelativePath))
-		humaCtx.SetHeader("Content-Length", strconv.FormatInt(size, 10))
-		_, _ = io.Copy(humaCtx.BodyWriter(), reader)
-	}}, nil
+	return handlerutil.DownloadResponse(reader, size, path.Base(input.RelativePath)), nil
 }
 
 func requireVolumeWorkspacePermissionsInternal(ctx context.Context, environmentID string, changes []volumetypes.WorkspaceFileChange) error {

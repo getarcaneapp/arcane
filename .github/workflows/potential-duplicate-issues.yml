@@ -7,9 +7,19 @@ jobs:
     run:
         runs-on: depot-ubuntu-latest
         steps:
+            - name: Request App Token
+              id: app-token
+              uses: actions/create-github-app-token@v3
+              with:
+                  client-id: ${{ secrets.ARCANE_APP_CLIENT_ID }}
+                  private-key: ${{ secrets.ARCANE_APP_PRIVATE_KEY }}
+                  owner: getarcaneapp
+                  repositories: arcane
+                  permission-issues: write
+
             - uses: wow-actions/potential-duplicates@4d4ea0352e0383859279938e255179dd1dbb67b5 #v1.1.0
               with:
-                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
                   filter: ""
                   exclude: "regression"
                   label: potential-duplicate

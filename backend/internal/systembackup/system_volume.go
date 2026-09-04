@@ -66,17 +66,15 @@ func (s *SystemBackupService) GetSystemVolumeBackupConfig(ctx context.Context) (
 	if err != nil {
 		return nil, err
 	}
-	destinations := make(map[string]string)
+	destinations := make(map[string]backuptypes.S3Destination)
 	if s.s3Destinations != nil {
-		if available, listErr := s.s3Destinations.ListAllS3Destinations(ctx); listErr == nil {
-			for _, destination := range available {
-				destinations[destination.ID] = destination.Name
-			}
+		if available, listErr := s.s3Destinations.ListS3DestinationsByID(ctx); listErr == nil {
+			destinations = available
 		}
 	}
 	for i := range collection.Policies {
 		policy := &collection.Policies[i]
-		policy.S3DestinationName = destinations[policy.S3DestinationID]
+		policy.S3DestinationName = destinations[policy.S3DestinationID].Name
 		if s.db == nil {
 			continue
 		}
@@ -89,7 +87,7 @@ func (s *SystemBackupService) GetSystemVolumeBackupConfig(ctx context.Context) (
 				ID: lastRun.ID, Size: lastRun.Size, CreatedAt: lastRun.CreatedAt, Status: string(lastRun.Status),
 				Trigger: string(lastRun.Trigger), Destination: backuptypes.SystemBackupDestination(lastRun.Destination),
 				LocalSnapshotID: lastRun.LocalSnapshotID, RemoteSnapshotID: lastRun.RemoteSnapshotID,
-				S3DestinationID: lastRun.S3DestinationID, S3DestinationName: destinations[lastRun.S3DestinationID],
+				S3DestinationID: lastRun.S3DestinationID, S3DestinationName: destinations[lastRun.S3DestinationID].Name,
 				PolicyID: lastRun.PolicyID, Error: lastRun.Error,
 			}
 		} else if !errors.Is(runErr, gorm.ErrRecordNotFound) {
@@ -399,15 +397,11 @@ func decorateHistoryDestinationsInternal(ctx context.Context, service *s3domain.
 	if service == nil {
 		return
 	}
-	destinations, err := service.ListAllS3Destinations(ctx)
+	destinations, err := service.ListS3DestinationsByID(ctx)
 	if err != nil {
 		return
 	}
-	names := make(map[string]string, len(destinations))
-	for _, destination := range destinations {
-		names[destination.ID] = destination.Name
-	}
 	for i := range history {
-		history[i].S3DestinationName = names[history[i].S3DestinationID]
+		history[i].S3DestinationName = destinations[history[i].S3DestinationID].Name
 	}
 }

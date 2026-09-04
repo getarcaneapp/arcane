@@ -258,6 +258,46 @@ func TestDashboardService_GetSnapshot_DebugAllGoodOnlyClearsActionItems(t *testi
 	require.Empty(t, snapshot.ActionItems.Items)
 }
 
+func TestDashboardService_GetSnapshot_EnrichesPinnedReferencesInternal(t *testing.T) {
+	db, settingsSvc := setupDashboardServiceTestDB(t)
+
+	pinnedRef := "ghcr.io/syncthing/syncthing:2.1.3@sha256:8c8ff37ab6aa8be23b700648a90fa9412e214852e9fd6ea8477c8334792daec0"
+	containers := []dockercontainer.Summary{
+		{
+			ID:      "container-syncthing",
+			Names:   []string{"/syncthing"},
+			Image:   pinnedRef,
+			ImageID: "sha256:image-syncthing",
+			Created: 1800000000,
+			State:   "running",
+			Status:  "Up 1 hour",
+			Labels:  map[string]string{},
+		},
+	}
+	images := []dockerimage.Summary{
+		{
+			ID:          "sha256:image-syncthing",
+			RepoTags:    []string{},
+			RepoDigests: []string{"ghcr.io/syncthing/syncthing@sha256:8c8ff37ab6aa8be23b700648a90fa9412e214852e9fd6ea8477c8334792daec0"},
+			Created:     1720000000,
+			Size:        250,
+		},
+	}
+
+	dockerSvc := newDashboardTestDockerService(t, settingsSvc, containers, images, nil)
+	svc := NewDashboardService(db, dockerSvc, nil, nil, nil, settingsSvc, nil, nil, nil, nil)
+
+	snapshot, err := svc.GetSnapshot(context.Background(), DashboardActionItemsOptions{}, true)
+	require.NoError(t, err)
+	require.NotNil(t, snapshot)
+
+	require.Len(t, snapshot.Images.Data, 1)
+	assert.Equal(t, "sha256:image-syncthing", snapshot.Images.Data[0].ID)
+	assert.Equal(t, "ghcr.io/syncthing/syncthing", snapshot.Images.Data[0].Repo)
+	assert.Equal(t, "<none>", snapshot.Images.Data[0].Tag)
+	assert.Equal(t, []string{pinnedRef}, snapshot.Images.Data[0].PinnedReferences)
+}
+
 // Test fixtures shared by this package's tests.
 
 // createComposeProjectDirInternal writes a minimal single-service compose project under

@@ -1022,3 +1022,23 @@ func TestVolumeBackupContainerLifecycleWaitsForRunningComposeReplacement(t *test
 	require.Empty(t, remaining)
 	require.Equal(t, []string{"stop:old-id"}, operations)
 }
+
+func TestBackupPolicyDestinationLookupFailureInternal(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&VolumeBackupPolicy{}, &VolumeBackup{}, &s3domain.S3Destination{}))
+	policy := &VolumeBackupPolicy{VolumeName: "app-data", Schedule: "0 0 2 * * *", S3DestinationID: "missing"}
+	require.NoError(t, db.Create(policy).Error)
+	service := &VolumeService{db: &database.DB{DB: db}, s3Destinations: s3domain.NewS3DestinationService(&database.DB{DB: db})}
+	for _, drop := range []bool{false, true} {
+		if drop {
+			require.NoError(t, db.Migrator().DropTable(&s3domain.S3Destination{}))
+		}
+		collection, err := service.GetBackupPolicies(t.Context(), "app-data")
+		require.NoError(t, err)
+		require.Len(t, collection.Policies, 1)
+		require.False(t, collection.S3Available)
+		require.Empty(t, collection.Policies[0].S3DestinationName)
+		require.Empty(t, collection.Policies[0].S3Bucket)
+	}
+}

@@ -22,7 +22,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	s3domain "github.com/getarcaneapp/arcane/backend/v2/internal/s3"
 	docker "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
@@ -383,16 +382,12 @@ func (s *VolumeService) ListBackupsPaginated(ctx context.Context, volumeName str
 	}
 	if s.s3Destinations != nil && hasS3Destination {
 		// Destination names are decoration; never fail the listing over them.
-		destinations, destinationErr := s.s3Destinations.ListAllS3Destinations(ctx)
+		destinations, destinationErr := s.s3Destinations.ListS3DestinationsByID(ctx)
 		if destinationErr != nil {
 			slog.WarnContext(ctx, "could not resolve volume backup S3 destination names", "volume", volumeName, "error", destinationErr)
 		} else {
-			destinationNames := make(map[string]string, len(destinations))
-			for _, destination := range destinations {
-				destinationNames[destination.ID] = destination.Name
-			}
 			for i := range backups {
-				backups[i].S3DestinationName = destinationNames[backups[i].S3DestinationID]
+				backups[i].S3DestinationName = destinations[backups[i].S3DestinationID].Name
 			}
 		}
 	}
@@ -1268,7 +1263,7 @@ func (s *VolumeService) downloadRusticBackupInternal(ctx context.Context, entry 
 		removeScratch()
 		return nil, 0, fmt.Errorf("failed to restore Rustic snapshot for download: %w", err)
 	}
-	helperImage, err := getVolumeHelperImageInternal(ctx, s.dockerService, s.imageService, dockerClient)
+	helperImage, err := s.getVolumeHelperImageInternal(ctx, dockerClient)
 	if err != nil {
 		removeScratch()
 		return nil, 0, err
@@ -1301,7 +1296,7 @@ func (s *VolumeService) createBackupTempContainerWithMountInternal(ctx context.C
 	}
 
 	if strings.TrimSpace(helperImage) == "" {
-		helperImage, err = getVolumeHelperImageInternal(ctx, s.dockerService, s.imageService, dockerClient)
+		helperImage, err = s.getVolumeHelperImageInternal(ctx, dockerClient)
 		if err != nil {
 			return "", nil, err
 		}
@@ -1400,7 +1395,7 @@ func (s *VolumeService) restoreArchiveBackupInternal(ctx context.Context, docker
 	if err != nil {
 		return err
 	}
-	helperImage, err := getVolumeHelperImageInternal(ctx, s.dockerService, s.imageService, dockerClient)
+	helperImage, err := s.getVolumeHelperImageInternal(ctx, dockerClient)
 	if err != nil {
 		return err
 	}
@@ -1530,7 +1525,7 @@ func (s *VolumeService) restoreArchiveBackupFilesInternal(ctx context.Context, d
 	if err != nil {
 		return err
 	}
-	helperImage, err := getVolumeHelperImageInternal(ctx, s.dockerService, s.imageService, dockerClient)
+	helperImage, err := s.getVolumeHelperImageInternal(ctx, dockerClient)
 	if err != nil {
 		return err
 	}
@@ -1693,14 +1688,12 @@ func (s *VolumeService) GetBackupPolicies(ctx context.Context, volumeName string
 		return nil, err
 	}
 	result := &volumetypes.BackupPolicyCollection{Policies: make([]volumetypes.BackupPolicy, 0, len(policies))}
-	destinations := make(map[string]s3domain.S3Destination)
+	destinations := make(map[string]backuptypes.S3Destination)
 	if s.s3Destinations != nil {
-		available, listErr := s.s3Destinations.ListAllS3Destinations(ctx)
+		available, listErr := s.s3Destinations.ListS3DestinationsByID(ctx)
 		if listErr == nil {
 			result.S3Available = len(available) > 0
-			for _, destination := range available {
-				destinations[destination.ID] = s3domain.S3Destination{ID: destination.ID, Name: destination.Name, Bucket: destination.Bucket}
-			}
+			destinations = available
 		}
 	}
 	for i := range policies {

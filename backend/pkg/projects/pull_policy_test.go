@@ -25,11 +25,9 @@ func TestResolveServiceImagePullMode(t *testing.T) {
 			expected: ImagePullStep{Mode: ImagePullModeAlways},
 		},
 		{
-			// bare "refresh" is not a spec value; compose-go resolves it to
-			// missing, and compose v5.5.0 `up` follows that
-			name:     "bare refresh policy behaves as missing",
+			name:     "bare refresh policy has a zero refresh window",
 			service:  composetypes.ServiceConfig{PullPolicy: composetypes.PullPolicyRefresh},
-			expected: ImagePullStep{Mode: ImagePullModeIfMissing},
+			expected: ImagePullStep{Mode: ImagePullModeRefresh, RefreshAfter: 0},
 		},
 		{
 			name:     "daily policy is a 24h refresh window",

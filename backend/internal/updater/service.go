@@ -658,7 +658,7 @@ func (s *UpdaterService) ExcludedContainers(ctx context.Context) ([]string, erro
 	if s.deps.Settings == nil {
 		return nil, nil
 	}
-	return settings.ParseExcludedContainerNames(s.deps.Settings.GetStringSetting(ctx, "autoUpdateExcludedContainers", "")), nil
+	return utils.UniqueNonEmptyStrings(strings.Split(s.deps.Settings.GetStringSetting(ctx, "autoUpdateExcludedContainers", ""), ",")), nil
 }
 
 // ProjectByComposeName resolves an Arcane project from a Docker Compose project name.
@@ -1265,7 +1265,7 @@ func (s *UpdaterService) buildExcludedContainerSetInternal(ctx context.Context) 
 	if s.deps.Settings == nil {
 		return nil
 	}
-	names := settings.ParseExcludedContainerNames(s.deps.Settings.GetStringSetting(ctx, "autoUpdateExcludedContainers", ""))
+	names := utils.UniqueNonEmptyStrings(strings.Split(s.deps.Settings.GetStringSetting(ctx, "autoUpdateExcludedContainers", ""), ","))
 	if len(names) == 0 {
 		return nil
 	}

@@ -90,7 +90,7 @@ func (h *WebSocketHandler) acquireSystemStatsSamplerInternal(ctx context.Context
 
 	collect := h.systemStatsCollector
 	if collect == nil {
-		collect = h.collectSystemStats
+		collect = h.collectSystemStatsInternal
 	}
 
 	go func() {
@@ -215,13 +215,13 @@ func (h *WebSocketHandler) runSystemStatsSamplerInternal(ctx context.Context, wa
 	}
 }
 
-// collectSystemStats gathers all system statistics.
-func (h *WebSocketHandler) collectSystemStats(ctx context.Context) systemtypes.SystemStats {
+// collectSystemStatsInternal gathers all system statistics.
+func (h *WebSocketHandler) collectSystemStatsInternal(ctx context.Context) systemtypes.SystemStats {
 	cpuUsage, _ := h.cpuCache.Load()
 
 	cpuCount := h.getCPUCount()
 	memUsed, memTotal := h.getMemoryInfo()
-	cpuCount, memUsed, memTotal = h.applyCgroupLimits(cpuCount, memUsed, memTotal)
+	cpuCount, memUsed, memTotal = h.applyCgroupLimitsInternal(ctx, cpuCount, memUsed, memTotal)
 	diskUsed, diskTotal := h.getDiskInfo(ctx)
 	hostname := h.getHostname()
 	gpuStats, gpuCount := h.getGPUInfo(ctx)
@@ -281,22 +281,17 @@ func (h *WebSocketHandler) getMemoryInfo() (uint64, uint64) {
 	return used, memInfo.Total
 }
 
-// applyCgroupLimits applies cgroup limits when running in an LXC (or similar)
-// container where the limits represent the real hardware budget.
-//
-// It is intentionally a no-op inside Docker: Docker's --cpus / --memory flags
-// set artificial cgroup constraints that are unrelated to the host totals we
-// want to display. gopsutil already reads the correct host values there (via
-// the bind-mounted /proc). Applying cgroup limits on top would produce the
-// "#2343 regression" where the dashboard shows "512 MB RAM" while the host
-// has 32 GB (#1110).
-//
-// In LXC the situation is the opposite: gopsutil reads the host's /proc
-// (which shows the physical machine's RAM/CPU) rather than the slice of
-// resources actually allocated to the LXC guest. The cgroup limits ARE the
-// correct numbers to show.
-func (h *WebSocketHandler) applyCgroupLimits(cpuCount int, memUsed, memTotal uint64) (int, uint64, uint64) {
+// applyCgroupLimitsInternal uses guest resources without applying Docker's
+// per-container limits to host statistics.
+func (h *WebSocketHandler) applyCgroupLimitsInternal(
+	ctx context.Context, cpuCount int, memUsed, memTotal uint64,
+) (int, uint64, uint64) {
 	if cgroup.IsDockerContainer() {
+		if h.systemService != nil {
+			if used, total, ok := h.systemService.GetDockerHostMemory(ctx); ok {
+				return cpuCount, used, total
+			}
+		}
 		return cpuCount, memUsed, memTotal
 	}
 	cpuCount = applyCPUAffinityLimitInternal(cpuCount)
@@ -326,7 +321,7 @@ func (h *WebSocketHandler) applyCgroupLimits(cpuCount int, memUsed, memTotal uin
 // the only signal of the cores actually assigned — including gap bindings like
 // CPU1+CPU7 — while /proc/cpuinfo shows the whole host (#3161). runtime.NumCPU
 // reads that mask at process start. Not applied inside Docker, matching
-// applyCgroupLimits' host-totals convention there.
+// applyCgroupLimitsInternal's host-totals convention there.
 func applyCPUAffinityLimitInternal(cpuCount int) int {
 	if n := runtime.NumCPU(); n > 0 && (cpuCount == 0 || n < cpuCount) {
 		return n

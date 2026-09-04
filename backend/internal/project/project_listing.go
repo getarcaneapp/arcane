@@ -16,6 +16,7 @@ import (
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/iconcatalog"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
@@ -25,6 +26,7 @@ import (
 	"github.com/samber/mo"
 	"go.getarcane.app/sys/cgroup"
 	"go.getarcane.app/updater/labels"
+	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 )
 
@@ -800,6 +802,7 @@ func (s *ProjectService) fetchProjectStatusConcurrently(ctx context.Context, pro
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to list global compose containers", "error", err)
 		// Fallback: return basic info with unknown status
+		metas := s.resolveProjectMetadataConcurrentlyInternal(ctx, projectsList, metaEnv)
 		results := make([]project.Details, len(projectsList))
 		for i, p := range projectsList {
 			_ = mapper.MapStruct(p, &results[i])
@@ -809,9 +812,8 @@ func (s *ProjectService) fetchProjectStatusConcurrently(ctx context.Context, pro
 			results[i].RelativePath = getProjectRelativePathInternal(projectsDir, p.Path)
 			results[i].GitOpsManagedBy = p.GitOpsManagedBy
 			results[i].HasBuildDirective = p.BuildImageRefsJSON != nil && len(projects.ParseImageRefsJSON(*p.BuildImageRefsJSON)) > 0
-			meta := s.ProjectMetadata(ctx, p, metaEnv)
-			applyResolvedProjectIconInternal(&results[i], iconcatalog.Resolve(IconCatalogForContext(ctx), meta.ProjectIcon))
-			results[i].URLs = meta.ProjectURLS
+			applyResolvedProjectIconInternal(&results[i], iconcatalog.Resolve(IconCatalogForContext(ctx), metas[i].ProjectIcon))
+			results[i].URLs = metas[i].ProjectURLS
 			results[i].Status = string(ProjectStatusUnknown)
 		}
 		return results
@@ -821,16 +823,34 @@ func (s *ProjectService) fetchProjectStatusConcurrently(ctx context.Context, pro
 	containersByProject := groupComposeContainersByProjectInternal(containers)
 
 	// 3. Map to DTOs
+	metas := s.resolveProjectMetadataConcurrentlyInternal(ctx, projectsList, metaEnv)
 	results := make([]project.Details, len(projectsList))
 	currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
 	for i, p := range projectsList {
-		results[i] = s.mapProjectToDto(ctx, projectsDir, p, containersByProject, currentContainerID, currentContainerErr, metaEnv)
+		results[i] = s.mapProjectToDto(ctx, projectsDir, p, containersByProject, currentContainerID, currentContainerErr, metas[i])
 	}
 
 	return results
 }
 
-func (s *ProjectService) mapProjectToDto(ctx context.Context, projectsDir string, p Project, containersByProject map[string][]container.Summary, currentContainerID string, currentContainerErr error, metaEnv *projectMetadataEnvInternal) project.Details {
+func (s *ProjectService) resolveProjectMetadataConcurrentlyInternal(ctx context.Context, projectsList []Project, metaEnv *projectMetadataEnvInternal) []projects.ArcaneComposeMetadata {
+	metas := make([]projects.ArcaneComposeMetadata, len(projectsList))
+	var g errgroup.Group
+	g.SetLimit(maxConcurrentComposeReads)
+	for i := range projectsList {
+		g.Go(func() (workerErr error) {
+			defer utils.RecoverToError(&workerErr, "project metadata worker", "projectID", projectsList[i].ID)
+			metas[i] = s.ProjectMetadata(ctx, projectsList[i], metaEnv)
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		slog.WarnContext(ctx, "project metadata resolution failed", "error", err)
+	}
+	return metas
+}
+
+func (s *ProjectService) mapProjectToDto(ctx context.Context, projectsDir string, p Project, containersByProject map[string][]container.Summary, currentContainerID string, currentContainerErr error, meta projects.ArcaneComposeMetadata) project.Details {
 	var resp project.Details
 	_ = mapper.MapStruct(p, &resp)
 
@@ -842,7 +862,6 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, projectsDir string
 	resp.RelativePath = getProjectRelativePathInternal(projectsDir, p.Path)
 	resp.GitOpsManagedBy = p.GitOpsManagedBy
 	resp.HasBuildDirective = p.BuildImageRefsJSON != nil && len(projects.ParseImageRefsJSON(*p.BuildImageRefsJSON)) > 0
-	meta := s.ProjectMetadata(ctx, p, metaEnv)
 	applyResolvedProjectIconInternal(&resp, iconcatalog.Resolve(IconCatalogForContext(ctx), meta.ProjectIcon))
 	resp.URLs = meta.ProjectURLS
 
@@ -954,17 +973,22 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, projectsDir string
 }
 
 // ProjectMetadata resolves a project's icon sets and service URLs.
-// Results are cached for projectMetadataTTL because deriving them is expensive
-// (compose load with interpolation and .env reads, plus a gitops_syncs query for
-// GitOps-managed projects) and every project row on the list page needs it.
+// Results are cached until any compose file the parse merged (root, COMPOSE_FILE
+// entries, override, includes) or any env file it read changes on disk,
+// because deriving them is expensive (compose load with
+// interpolation and .env reads, plus a gitops_syncs query for GitOps-managed
+// projects) and every project row on the list page needs it.
 //
 // env may be nil, in which case the projects directory and autoInjectEnv setting
 // are resolved here; callers iterating over many projects should resolve them
 // once and pass them in.
 func (s *ProjectService) ProjectMetadata(ctx context.Context, p Project, env *projectMetadataEnvInternal) projects.ArcaneComposeMetadata {
 	if s.metaCache != nil && p.ID != "" {
-		if meta, ok, _ := s.metaCache.Get(p.ID); ok {
-			return meta
+		if entry, ok, _ := s.metaCache.Get(p.ID); ok {
+			if validComposeCacheEntryInternal(entry.composeCacheEntry) {
+				return entry.meta
+			}
+			s.metaCache.Delete(p.ID)
 		}
 	}
 
@@ -992,9 +1016,14 @@ func (s *ProjectService) ProjectMetadata(ctx context.Context, p Project, env *pr
 		return empty
 	}
 
-	if s.metaCache != nil && p.ID != "" {
-		s.metaCache.Set(p.ID, meta)
+	if s.metaCache == nil || p.ID == "" {
+		return meta
 	}
+	entry, err := newComposeCacheEntryInternal(&p, env.projectsDirectory, composeFile, meta.ComposeFiles, meta.EnvFiles)
+	if err != nil {
+		return meta
+	}
+	s.metaCache.Set(p.ID, projectMetadataEntryInternal{composeCacheEntry: entry, meta: meta})
 
 	return meta
 }

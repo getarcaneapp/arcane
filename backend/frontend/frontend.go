@@ -43,6 +43,9 @@ func RegisterFrontend(e *echo.Echo) error {
 		}
 
 		if _, statErr := fs.Stat(distFS, requestedPath); os.IsNotExist(statErr) {
+			if strings.HasPrefix(requestedPath, "_app/") {
+				return c.NoContent(http.StatusNotFound)
+			}
 			req.URL.Path = "/"
 		}
 
@@ -97,8 +100,8 @@ func (f *FileServerWithCaching) ServeHTTP(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Never cache index.html - it needs to be fresh to detect updates
-	if path == indexHtmlFileConstant {
+	// Never cache index.html or version.json - they need to be fresh to detect updates
+	if path == indexHtmlFileConstant || path == "_app/version.json" {
 		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 		w.Header().Set("Pragma", "no-cache")
 		w.Header().Set("Expires", "0")
@@ -107,7 +110,7 @@ func (f *FileServerWithCaching) ServeHTTP(w http.ResponseWriter, r *http.Request
 	}
 
 	// For immutable assets (with content hashes), use long-term caching
-	if strings.Contains(path, "/_app/immutable/") {
+	if strings.HasPrefix(path, "_app/immutable/") {
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		http.FileServer(f.root).ServeHTTP(w, r)
 		return

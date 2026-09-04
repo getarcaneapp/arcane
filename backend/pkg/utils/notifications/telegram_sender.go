@@ -5,9 +5,7 @@ import (
 
 	"emperror.dev/errors"
 
-	"github.com/nicholas-fedor/shoutrrr"
 	"github.com/nicholas-fedor/shoutrrr/pkg/services/chat/telegram"
-	shoutrrrTypes "github.com/nicholas-fedor/shoutrrr/pkg/types"
 )
 
 // BuildTelegramURL converts TelegramConfig to Shoutrrr URL format using shoutrrr's Config
@@ -52,16 +50,5 @@ func SendTelegram(ctx context.Context, config TelegramConfig, message string) er
 		return errors.WrapIf(err, "failed to build shoutrrr Telegram URL")
 	}
 
-	sender, err := shoutrrr.CreateSenderWithOptions(shoutrrrTypes.SenderOptions{}, shoutrrrURL)
-	if err != nil {
-		return errors.WrapIf(err, "failed to create shoutrrr Telegram sender")
-	}
-
-	errs := sender.Send(message, nil)
-	for _, err := range errs {
-		if err != nil {
-			return errors.WrapIf(err, "failed to send Telegram message via shoutrrr")
-		}
-	}
-	return nil
+	return sendShoutrrrInternal("Telegram", shoutrrrURL, message, nil)
 }

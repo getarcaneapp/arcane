@@ -13,6 +13,8 @@ import (
 	"time"
 	"uuid"
 
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+
 	"emperror.dev/errors"
 
 	"github.com/cenkalti/backoff/v5"
@@ -57,6 +59,9 @@ const (
 	// errTunnelRegistrationTimeout marks a registration attempt where the manager
 	// accepted the connection but never answered the register message.
 	errTunnelRegistrationTimeout = errors.Sentinel("timed out waiting for tunnel registration response")
+	// errEstablishedTunnelSessionEnded marks a session that the manager accepted
+	// and later dropped, as opposed to a transport that never connected.
+	errEstablishedTunnelSessionEnded = errors.Sentinel("established edge tunnel session ended")
 )
 
 func (t *commandRequestTransfer) stopInternal() {
@@ -78,11 +83,11 @@ func NewTunnelClient(cfg *Config, handler http.Handler) *TunnelClient {
 	}
 
 	managerURL := ""
-	if managerBaseURL := strings.TrimRight(cfg.GetManagerBaseURL(), "/"); managerBaseURL != "" {
+	if managerBaseURL := strings.TrimRight(httpx.ManagerBaseURL(cfg.ManagerApiUrl), "/"); managerBaseURL != "" {
 		// Convert HTTP to WebSocket URL
 		managerURL = HTTPToWebSocketURL(managerBaseURL) + "/api/tunnel/connect"
 	}
-	managerGRPCAddr := cfg.GetManagerGRPCAddr()
+	managerGRPCAddr := httpx.ManagerGRPCAddr(cfg.ManagerApiUrl)
 
 	// Get local port for WebSocket dialing
 	localPort := cfg.Port
@@ -97,6 +102,7 @@ func NewTunnelClient(cfg *Config, handler http.Handler) *TunnelClient {
 		heartbeatInterval:      DefaultHeartbeatInterval,
 		registrationTimeout:    DefaultGRPCRegistrationTimeout,
 		websocketPreferenceTTL: DefaultWebSocketPreferenceTTL,
+		healthySessionDuration: healthyTunnelSessionDuration,
 		managerURL:             managerURL,
 		managerGRPCAddr:        managerGRPCAddr,
 		localPort:              localPort,
@@ -170,10 +176,10 @@ func StartupLogAttrs(cfg *Config) []any {
 	}
 
 	managedSessionTransports := make([]string, 0, 2)
-	if UseGRPCEdgeTransport(cfg) || (UsePollEdgeTransport(cfg) && strings.TrimSpace(cfg.GetManagerGRPCAddr()) != "") {
+	if UseGRPCEdgeTransport(cfg) || (UsePollEdgeTransport(cfg) && strings.TrimSpace(httpx.ManagerGRPCAddr(cfg.ManagerApiUrl)) != "") {
 		managedSessionTransports = append(managedSessionTransports, EdgeTransportGRPC)
 	}
-	if UseWebSocketEdgeTransport(cfg) || (UsePollEdgeTransport(cfg) && strings.TrimSpace(cfg.GetManagerBaseURL()) != "") {
+	if UseWebSocketEdgeTransport(cfg) || (UsePollEdgeTransport(cfg) && strings.TrimSpace(httpx.ManagerBaseURL(cfg.ManagerApiUrl)) != "") {
 		managedSessionTransports = append(managedSessionTransports, EdgeTransportWebSocket)
 	}
 
@@ -186,10 +192,10 @@ func StartupLogAttrs(cfg *Config) []any {
 	if managerAPIURL := strings.TrimSpace(cfg.ManagerApiUrl); managerAPIURL != "" {
 		attrs = append(attrs, "manager_api_url", managerAPIURL)
 	}
-	if managerGRPCAddr := strings.TrimSpace(cfg.GetManagerGRPCAddr()); managerGRPCAddr != "" {
+	if managerGRPCAddr := strings.TrimSpace(httpx.ManagerGRPCAddr(cfg.ManagerApiUrl)); managerGRPCAddr != "" {
 		attrs = append(attrs, "manager_grpc_addr", managerGRPCAddr)
 	}
-	if managerBaseURL := strings.TrimSpace(cfg.GetManagerBaseURL()); managerBaseURL != "" {
+	if managerBaseURL := strings.TrimSpace(httpx.ManagerBaseURL(cfg.ManagerApiUrl)); managerBaseURL != "" {
 		attrs = append(attrs, "manager_base_url", managerBaseURL)
 	}
 
@@ -216,9 +222,16 @@ func (c *TunnelClient) connectAndServeManagedTunnelInternal(ctx context.Context)
 			return c.connectAndServeWebSocket(ctx)
 		}
 
+		sessionStart := time.Now()
 		if err := c.connectAndServeGRPC(ctx); err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
+			}
+			// A healthy gRPC session that the manager dropped (restart, redeploy)
+			// is not a broken gRPC path: let the outer loop back off and retry
+			// gRPC first instead of racing a websocket dial against the restart.
+			if errors.Is(err, errEstablishedTunnelSessionEnded) && time.Since(sessionStart) >= c.healthySessionDurationInternal() {
+				return err
 			}
 			c.noteGRPCTunnelFailureInternal()
 			if transports.websocket {
@@ -287,7 +300,7 @@ func (c *TunnelClient) managerWebSocketURLInternal() string {
 	if c.cfg == nil {
 		return ""
 	}
-	managerBaseURL := strings.TrimRight(strings.TrimSpace(c.cfg.GetManagerBaseURL()), "/")
+	managerBaseURL := strings.TrimRight(strings.TrimSpace(httpx.ManagerBaseURL(c.cfg.ManagerApiUrl)), "/")
 	if managerBaseURL == "" {
 		return ""
 	}
@@ -306,6 +319,13 @@ func (c *TunnelClient) requestTimeoutInternal() time.Duration {
 		return DefaultRequestTimeout
 	}
 	return c.requestTimeout
+}
+
+func (c *TunnelClient) healthySessionDurationInternal() time.Duration {
+	if c == nil || c.healthySessionDuration <= 0 {
+		return healthyTunnelSessionDuration
+	}
+	return c.healthySessionDuration
 }
 
 func (c *TunnelClient) websocketPreferenceTTLInternal() time.Duration {
@@ -483,7 +503,10 @@ func (c *TunnelClient) serveTunnelSessionInternal(ctx context.Context, conn Tunn
 
 	workers.Go(func() { c.heartbeatLoop(connCtx, conn) })
 
-	return c.messageLoop(connCtx, conn, &workers)
+	if err := c.messageLoop(connCtx, conn, &workers); err != nil {
+		return fmt.Errorf("%w: %w", errEstablishedTunnelSessionEnded, err)
+	}
+	return nil
 }
 
 // heartbeatLoop sends periodic heartbeats
@@ -1432,16 +1455,16 @@ func StartTunnelClient(ctx context.Context, runtime *actors.Runtime, cfg *Config
 	}
 
 	if UseGRPCEdgeTransport(cfg) {
-		if cfg.GetManagerGRPCAddr() == "" {
+		if httpx.ManagerGRPCAddr(cfg.ManagerApiUrl) == "" {
 			return nil, errors.New("MANAGER_API_URL with a valid host is required for gRPC transport")
 		}
 	}
 
-	if UseWebSocketEdgeTransport(cfg) && strings.TrimSpace(cfg.GetManagerBaseURL()) == "" {
+	if UseWebSocketEdgeTransport(cfg) && strings.TrimSpace(httpx.ManagerBaseURL(cfg.ManagerApiUrl)) == "" {
 		return nil, errors.New("MANAGER_API_URL is required for websocket transport")
 	}
 
-	if UsePollEdgeTransport(cfg) && strings.TrimSpace(cfg.GetManagerBaseURL()) == "" {
+	if UsePollEdgeTransport(cfg) && strings.TrimSpace(httpx.ManagerBaseURL(cfg.ManagerApiUrl)) == "" {
 		return nil, errors.New("MANAGER_API_URL is required for poll transport")
 	}
 

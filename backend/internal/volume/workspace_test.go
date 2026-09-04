@@ -700,7 +700,7 @@ func TestVolumeWorkspaceScriptsAgainstToolsImage(t *testing.T) {
 	}
 	runInVolume := func(volumeName, outerScript string, args ...string) string {
 		t.Helper()
-		dockerArgs := []string{"run", "--rm", "-v", volumeName + ":/volume", volumehelper.DefaultToolsImage, "sh", "-c", outerScript, "sh"}
+		dockerArgs := []string{"run", "--rm", "-v", volumeName + ":/volume", volumehelper.ToolsImage(""), "sh", "-c", outerScript, "sh"}
 		dockerArgs = append(dockerArgs, args...)
 		return runDocker(dockerArgs...)
 	}

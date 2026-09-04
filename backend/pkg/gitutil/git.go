@@ -118,8 +118,8 @@ type AuthConfig struct {
 	SSHHostKeyVerification string // strict, accept_new, skip
 }
 
-// getAuth returns the appropriate transport.AuthMethod
-func (c *Client) getAuth(config AuthConfig) (transport.AuthMethod, error) {
+// getAuthInternal returns the appropriate transport.AuthMethod.
+func (c *Client) getAuthInternal(url string, config AuthConfig) (transport.AuthMethod, error) {
 	switch config.AuthType {
 	case "http":
 		if config.Token != "" {
@@ -131,7 +131,15 @@ func (c *Client) getAuth(config AuthConfig) (transport.AuthMethod, error) {
 		return nil, nil
 	case "ssh":
 		if config.SSHKey != "" {
-			publicKeys, err := ssh.NewPublicKeys("git", []byte(config.SSHKey), "")
+			endpoint, err := transport.NewEndpoint(url)
+			if err != nil {
+				return nil, errors.WrapIf(err, "failed to parse SSH repository URL")
+			}
+			username := endpoint.User
+			if username == "" {
+				username = "git"
+			}
+			publicKeys, err := ssh.NewPublicKeys(username, []byte(config.SSHKey), "")
 			if err != nil {
 				return nil, errors.WrapIf(err, "failed to create ssh auth")
 			}
@@ -319,13 +327,13 @@ func (c *Client) Clone(ctx context.Context, url, branch string, auth AuthConfig)
 		return "", errors.WrapIf(err, "failed to create temp dir")
 	}
 
-	authMethod, err := c.getAuth(auth)
+	url, err = normalizeURL(url)
 	if err != nil {
 		_ = os.RemoveAll(tmpDir)
 		return "", err
 	}
 
-	url, err = normalizeURL(url)
+	authMethod, err := c.getAuthInternal(url, auth)
 	if err != nil {
 		_ = os.RemoveAll(tmpDir)
 		return "", err
@@ -448,12 +456,12 @@ func (c *Client) ProbeRemote(ctx context.Context, url string, auth AuthConfig) e
 }
 
 func (c *Client) listRemoteReferences(ctx context.Context, url string, auth AuthConfig) ([]*plumbing.Reference, error) {
-	authMethod, err := c.getAuth(auth)
+	url, err := normalizeURL(url)
 	if err != nil {
 		return nil, err
 	}
 
-	url, err = normalizeURL(url)
+	authMethod, err := c.getAuthInternal(url, auth)
 	if err != nil {
 		return nil, err
 	}

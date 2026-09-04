@@ -2,7 +2,6 @@
 	import { LayersIcon } from '#lib/icons';
 	import { m } from '#lib/paraglide/messages';
 	import { swarmService } from '#lib/services/swarm-service';
-	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type StatCardConfig } from '#lib/layouts/index.js';
 	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte';
 	import { simpleRefresh } from '#lib/utils/api';
@@ -14,8 +13,8 @@
 
 	let { data } = $props();
 
-	let stacks = $state(untrack(() => data.stacks));
-	let requestOptions = $state(untrack(() => data.requestOptions));
+	let stacks = $derived(data.stacks);
+	let requestOptions = $derived(data.requestOptions);
 	let isLoading = $state({ refresh: false });
 
 	async function refresh() {

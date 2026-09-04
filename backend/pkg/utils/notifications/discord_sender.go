@@ -5,9 +5,7 @@ import (
 
 	"emperror.dev/errors"
 
-	"github.com/nicholas-fedor/shoutrrr"
 	"github.com/nicholas-fedor/shoutrrr/pkg/services/chat/discord"
-	shoutrrrTypes "github.com/nicholas-fedor/shoutrrr/pkg/types"
 )
 
 // BuildDiscordURL converts DiscordConfig to Shoutrrr URL format using shoutrrr's Config
@@ -37,16 +35,5 @@ func SendDiscord(ctx context.Context, config DiscordConfig, message string) erro
 		return errors.WrapIf(err, "failed to build shoutrrr Discord URL")
 	}
 
-	sender, err := shoutrrr.CreateSenderWithOptions(shoutrrrTypes.SenderOptions{}, shoutrrrURL)
-	if err != nil {
-		return errors.WrapIf(err, "failed to create shoutrrr Discord sender")
-	}
-
-	errs := sender.Send(message, nil)
-	for _, err := range errs {
-		if err != nil {
-			return errors.WrapIf(err, "failed to send Discord message via shoutrrr")
-		}
-	}
-	return nil
+	return sendShoutrrrInternal("Discord", shoutrrrURL, message, nil)
 }

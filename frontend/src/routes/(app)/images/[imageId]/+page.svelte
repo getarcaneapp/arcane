@@ -26,9 +26,11 @@
 	import ImageHistoryPanel from './image-history-panel.svelte';
 	import ImageTagDialog from '../components/image-tag-dialog.svelte';
 	import VulnerabilityScanPanel from '#lib/components/vulnerability/vulnerability-scan-panel.svelte';
+	import { CopyButton } from '#lib/components/ui/copy-button';
 	import type { VulnerabilityScanResult } from '#lib/types/environment';
 	import { environmentStore } from '#lib/stores/environment.store.svelte';
 	import { hasPermission } from '#lib/utils/auth';
+	import { parseImageRef } from '#lib/utils/docker';
 	import { toastVulnerabilityScanStatus } from '#lib/utils/vulnerability';
 	import { VolumesIcon, ClockIcon, TagIcon, CpuIcon, ImagesIcon, LayersIcon, ShieldCheckIcon, InspectIcon } from '#lib/icons';
 
@@ -229,9 +231,17 @@
 	const architecture = $derived.by(() => image?.architecture || m.common_na());
 	const osName = $derived.by(() => image?.os || m.common_na());
 	const repoTags = $derived.by(() => image?.repoTags ?? []);
+	const pinnedRefs = $derived.by(() => image?.pinnedReferences ?? []);
 	const envVars = $derived.by(() => image?.config?.env ?? []);
-	const hasTags = $derived.by(() => repoTags.length > 0);
+	const hasTags = $derived.by(() => repoTags.length > 0 && repoTags[0] !== '<none>:<none>');
+	const hasPinnedRefs = $derived.by(() => pinnedRefs.length > 0);
 	const hasEnv = $derived.by(() => envVars.length > 0);
+	const detailTitle = $derived.by((): string => {
+		if (hasTags && repoTags[0]) return repoTags[0];
+		if (hasPinnedRefs && pinnedRefs[0]) return pinnedRefs[0];
+		return shortId;
+	});
+	const pinnedRepository = $derived.by(() => (pinnedRefs[0] ? parseImageRef(pinnedRefs[0]).repo : ''));
 
 	async function handleImageRemove(id: string) {
 		openConfirmDialog({
@@ -329,7 +339,7 @@
 	});
 </script>
 
-<ResourceDetailLayout backUrl="/images" backLabel={m.images()} title={image?.repoTags?.[0] || shortId} {actions}>
+<ResourceDetailLayout backUrl="/images" backLabel={m.images()} title={detailTitle} {actions}>
 	{#if image}
 		{#snippet kvTile(label: string, value: string, opts?: { class?: string })}
 			<KeyValueCard {label} cardClass={opts?.class} valueTitle={value}>
@@ -348,6 +358,27 @@
 						{ icon: CpuIcon, value: `${architecture} · ${osName}` }
 					]}
 				/>
+
+				{#if hasPinnedRefs}
+					<div class="space-y-2">
+						<span class="inline-flex items-center gap-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+							<TagIcon class="size-4" />
+							{m.images_pinned_references()}
+						</span>
+						<div class="flex flex-col gap-2">
+							{#each pinnedRefs as pin (pin)}
+								<div
+									class="flex max-w-2xl items-center justify-between gap-2 rounded-lg border border-border/50 bg-muted/40 p-2.5"
+								>
+									<span class="font-mono text-xs break-all text-foreground select-all" title={m.common_click_to_select()}>
+										{pin}
+									</span>
+									<CopyButton text={pin} size="icon" class="size-7 shrink-0" />
+								</div>
+							{/each}
+						</div>
+					</div>
+				{/if}
 
 				{#if hasTags}
 					<div class="flex flex-wrap items-center gap-2">
@@ -420,7 +451,8 @@
 	<ImageTagDialog
 		bind:open={tagDialogOpen}
 		imageId={image.id}
-		defaultRepository={image.repoTags?.[0]?.split(':')[0] ?? ''}
+		defaultRepository={image.repoTags?.[0]?.split(':')[0] ??
+			(pinnedRepository || (image.repo && image.repo !== '<none>' ? image.repo : ''))}
 		onTagged={() => goto(`/images/${image.id}`, { refreshAll: true })}
 	/>
 {/if}

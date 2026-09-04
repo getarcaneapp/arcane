@@ -5,9 +5,7 @@ import (
 
 	"emperror.dev/errors"
 
-	"github.com/nicholas-fedor/shoutrrr"
 	"github.com/nicholas-fedor/shoutrrr/pkg/services/chat/signal"
-	shoutrrrTypes "github.com/nicholas-fedor/shoutrrr/pkg/types"
 )
 
 // BuildSignalURL converts SignalConfig to Shoutrrr URL format using shoutrrr's Config
@@ -57,16 +55,5 @@ func SendSignal(ctx context.Context, config SignalConfig, message string) error 
 		return errors.WrapIf(err, "failed to build shoutrrr Signal URL")
 	}
 
-	sender, err := shoutrrr.CreateSenderWithOptions(shoutrrrTypes.SenderOptions{}, shoutrrrURL)
-	if err != nil {
-		return errors.WrapIf(err, "failed to create shoutrrr Signal sender")
-	}
-
-	errs := sender.Send(message, nil)
-	for _, err := range errs {
-		if err != nil {
-			return errors.WrapIf(err, "failed to send Signal message via shoutrrr")
-		}
-	}
-	return nil
+	return sendShoutrrrInternal("Signal", shoutrrrURL, message, nil)
 }

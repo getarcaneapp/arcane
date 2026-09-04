@@ -5,7 +5,6 @@ import { sveltekit } from '@sveltejs/kit/vite';
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 import { defineConfig, searchForWorkspaceRoot, lazyPlugins } from 'vite-plus';
 import Icons from 'unplugin-icons/vite';
-import packageJson from './package.json' with { type: 'json' };
 
 const devBackendURL = process.env['DEV_BACKEND_URL'] || 'http://localhost:3552';
 const parsedDevBackendURL = new URL(devBackendURL);
@@ -49,11 +48,7 @@ export default defineConfig(({ command }) => ({
 			adapter: adapter({
 				pages: process.env['BUILD_PATH'] ?? '../backend/frontend/dist',
 				fallback: 'index.html'
-			}),
-			version: {
-				name: packageJson.version,
-				pollInterval: 0
-			}
+			})
 		}),
 		paraglideVitePlugin({
 			project: './project.inlang',

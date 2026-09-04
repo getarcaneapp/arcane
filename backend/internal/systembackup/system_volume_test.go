@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	s3domain "github.com/getarcaneapp/arcane/backend/v2/internal/s3"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
@@ -96,4 +97,22 @@ func TestListBackupHistoryClassifiesAndFiltersOrigins(t *testing.T) {
 	require.Len(t, volumeRows, 1)
 	require.Equal(t, backuptypes.ManagementTypeVolume, volumeRows[0].Type)
 	require.Equal(t, "cache", volumeRows[0].ResourceName)
+}
+
+func TestHistoryDestinationDecorationInternal(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&s3domain.S3Destination{}))
+	destination := s3domain.S3Destination{Name: "Offsite", Bucket: "backups"}
+	require.NoError(t, db.Create(&destination).Error)
+	service := s3domain.NewS3DestinationService(&database.DB{DB: db})
+	history := []backuptypes.HistoryEntry{{S3DestinationID: destination.ID}, {S3DestinationID: "missing"}}
+	decorateHistoryDestinationsInternal(t.Context(), service, history)
+	require.Equal(t, "Offsite", history[0].S3DestinationName)
+	require.Empty(t, history[1].S3DestinationName)
+	require.NoError(t, db.Migrator().DropTable(&s3domain.S3Destination{}))
+	decorateHistoryDestinationsInternal(t.Context(), service, history)
+	require.Equal(t, "Offsite", history[0].S3DestinationName)
+	decorateHistoryDestinationsInternal(t.Context(), nil, history)
+	require.Equal(t, "Offsite", history[0].S3DestinationName)
 }

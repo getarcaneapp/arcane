@@ -109,6 +109,97 @@ async function fetchAllImagesForUsage(page: Page): Promise<any[]> {
 	return all;
 }
 
+async function mockPinnedImageFlow(page: Page) {
+	const digest = `sha256:${'8c8ff37a'.padEnd(64, '0')}`;
+	const alternateDigest = `sha256:${'9d9aa48b'.padEnd(64, '1')}`;
+	const repository = 'registry.example.com:5000/team/syncthing';
+	const pinnedReference = `${repository}:2.1.3@${digest}`;
+	const alternateReference = `${repository}:stable@${alternateDigest}`;
+	const imageId = `sha256:${'abc123'.padEnd(64, '0')}`;
+	const image = {
+		id: imageId,
+		repoTags: [],
+		repoDigests: [`${repository}@${digest}`],
+		pinnedReferences: [pinnedReference, alternateReference],
+		created: 1_725_000_000,
+		size: 123_456,
+		virtualSize: 123_456,
+		labels: null,
+		inUse: true,
+		usedBy: [{ type: 'container', name: 'syncthing', id: 'container-syncthing' }],
+		repo: repository,
+		tag: '<none>'
+	};
+
+	await page.route('**/api/environments/0/images**', async (route) => {
+		const request = route.request();
+		const url = new URL(request.url());
+		if (request.method() !== 'GET') {
+			await route.continue();
+			return;
+		}
+
+		if (url.pathname === ROUTES.apiImages) {
+			await route.fulfill({
+				status: 200,
+				contentType: 'application/json',
+				body: JSON.stringify({
+					success: true,
+					data: [image],
+					pagination: {
+						totalPages: 1,
+						totalItems: 1,
+						currentPage: 1,
+						itemsPerPage: 20,
+						grandTotalItems: 1
+					}
+				})
+			});
+			return;
+		}
+
+		if (url.pathname === `${ROUTES.apiImages}/counts`) {
+			await route.fulfill({
+				status: 200,
+				contentType: 'application/json',
+				body: JSON.stringify({
+					success: true,
+					data: { imagesInuse: 1, imagesUnused: 0, totalImages: 1, totalImageSize: image.size }
+				})
+			});
+			return;
+		}
+
+		if (decodeURIComponent(url.pathname) === `${ROUTES.apiImages}/${imageId}`) {
+			await route.fulfill({
+				status: 200,
+				contentType: 'application/json',
+				body: JSON.stringify({
+					success: true,
+					data: {
+						...image,
+						created: '2026-09-04T00:00:00Z',
+						comment: '',
+						author: '',
+						config: {},
+						architecture: 'amd64',
+						os: 'linux',
+						graphDriver: { data: null, name: 'overlay2' },
+						rootFs: { type: 'layers', layers: [] },
+						metadata: { lastTagTime: '' },
+						descriptor: { mediaType: '', digest, size: image.size }
+					}
+				})
+			});
+			return;
+		}
+
+		await route.continue();
+	});
+
+	return { imageId, repository, pinnedReference, alternateReference };
+}
+
 let realImages: any[] = [];
 let imageCounts: ImageUsageCounts = {
 	imagesInuse: 0,
@@ -176,6 +267,36 @@ test.describe('Images Page', () => {
 
 		await expect(page.getByRole('table')).toBeVisible();
 		await expect(page.getByRole('button', { name: 'Repository' })).toBeVisible();
+	});
+
+	test('should display full pinned references without enabling tag actions', async ({ page }) => {
+		const { imageId, repository, pinnedReference, alternateReference } =
+			await mockPinnedImageFlow(page);
+		await page.reload();
+
+		const row = page.getByRole('row').filter({
+			has: page.getByRole('link', { name: repository, exact: true })
+		});
+		await expect(row.getByText(pinnedReference, { exact: true })).toBeVisible();
+
+		const overflow = row.getByText('+1', { exact: true });
+		await overflow.hover();
+		await expect(page.getByText(alternateReference, { exact: true })).toBeVisible();
+
+		const menu = await openRowActionsMenu(page, row);
+		await expect(menu.getByRole('menuitem', { name: 'Pull', exact: true })).toBeDisabled();
+		await expect(menu.getByRole('menuitem', { name: 'Patch', exact: true })).toBeDisabled();
+		await page.keyboard.press('Escape');
+
+		await row.getByRole('link', { name: repository, exact: true }).click();
+		await expect
+			.poll(() => decodeURIComponent(new URL(page.url()).pathname))
+			.toBe(`/images/${imageId}`);
+		await expect(page.getByRole('heading', { name: pinnedReference, exact: true })).toBeVisible();
+		await expect(page.getByText('Pinned References', { exact: true })).toBeVisible();
+		await expect(page.getByText(pinnedReference, { exact: true }).last()).toBeVisible();
+		await expect(page.getByText(alternateReference, { exact: true }).last()).toBeVisible();
+		await expect(page.getByRole('button', { name: 'Patch', exact: true })).toHaveCount(0);
 	});
 
 	test('should open the Pull Image dialog', async ({ page }) => {

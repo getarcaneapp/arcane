@@ -12,7 +12,6 @@
 	import { extractApiErrorMessage, handleApiResultWithCallbacks, tryCatch } from '#lib/utils/api';
 	import { m } from '#lib/paraglide/messages';
 	import { gitOpsSyncService } from '#lib/services/gitops-sync-service';
-	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
@@ -21,12 +20,12 @@
 
 	let { data } = $props();
 
-	let syncs = $state(untrack(() => data.syncs));
+	let syncs = $derived(data.syncs);
 	let selectedIds = $state<string[]>([]);
 	let isSyncDialogOpen = $state(false);
 	let isImportDialogOpen = $state(false);
 	let syncToEdit = $state<GitOpsSync | null>(null);
-	let syncRequestOptions = $state(untrack(() => data.syncRequestOptions));
+	let syncRequestOptions = $derived(data.syncRequestOptions);
 	let environmentId = $derived(data.environmentId);
 
 	let isLoading = $state({

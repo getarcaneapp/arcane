@@ -84,3 +84,17 @@ func TestTrimQuotes(t *testing.T) {
 		})
 	}
 }
+
+func TestUniqueNonEmptyStrings(t *testing.T) {
+	for _, tt := range []struct {
+		name        string
+		input, want []string
+	}{
+		{name: "nil"},
+		{name: "empty tokens", input: []string{"", " \t "}},
+		{name: "stable order and case", input: []string{" beta ", "alpha", "beta", "Alpha", ""}, want: []string{"beta", "alpha", "Alpha"}},
+		{name: "does not split values", input: []string{"a,b", "a b"}, want: []string{"a,b", "a b"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) { assert.Equal(t, tt.want, UniqueNonEmptyStrings(tt.input)) })
+	}
+}

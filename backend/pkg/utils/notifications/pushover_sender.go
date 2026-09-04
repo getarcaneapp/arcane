@@ -7,9 +7,6 @@ import (
 	"strings"
 
 	"emperror.dev/errors"
-
-	"github.com/nicholas-fedor/shoutrrr"
-	shoutrrrTypes "github.com/nicholas-fedor/shoutrrr/pkg/types"
 )
 
 // BuildPushoverURL converts PushoverConfig to Shoutrrr URL format.
@@ -73,16 +70,5 @@ func SendPushover(ctx context.Context, config PushoverConfig, message string) er
 		return errors.WrapIf(err, "failed to build shoutrrr Pushover URL")
 	}
 
-	sender, err := shoutrrr.CreateSenderWithOptions(shoutrrrTypes.SenderOptions{}, shoutrrrURL)
-	if err != nil {
-		return errors.WrapIf(err, "failed to create shoutrrr Pushover sender")
-	}
-
-	errs := sender.Send(message, nil)
-	for _, err := range errs {
-		if err != nil {
-			return errors.WrapIf(err, "failed to send Pushover message via shoutrrr")
-		}
-	}
-	return nil
+	return sendShoutrrrInternal("Pushover", shoutrrrURL, message, nil)
 }

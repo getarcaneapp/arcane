@@ -55,7 +55,7 @@ func (s *VolumeService) RenameVolume(ctx context.Context, oldName, newName strin
 		slog.WarnContext(ctx, "could not stop volume browse helper before rename", "volume", oldName, "error", stopErr.Error())
 	}
 
-	migration, err := volumeops.PlanRename(ctx, dockerClient, oldName, newName)
+	migration, err := volumeops.PlanRename(ctx, dockerClient, oldName, newName, s.toolsImageInternal())
 	if err != nil {
 		s.logVolumeRenameErrorInternal(ctx, oldName, newName, user, "plan", err)
 		return nil, err

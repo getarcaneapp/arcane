@@ -7,7 +7,6 @@ import (
 
 	"emperror.dev/errors"
 
-	"github.com/nicholas-fedor/shoutrrr"
 	shoutrrrTypes "github.com/nicholas-fedor/shoutrrr/pkg/types"
 )
 
@@ -63,16 +62,5 @@ func SendGoogleChat(ctx context.Context, config GoogleChatConfig, message string
 		return errors.WrapIf(err, "failed to build shoutrrr Google Chat URL")
 	}
 
-	sender, err := shoutrrr.CreateSenderWithOptions(shoutrrrTypes.SenderOptions{}, shoutrrrURL)
-	if err != nil {
-		return errors.WrapIf(err, "failed to create shoutrrr Google Chat sender")
-	}
-
-	errs := sender.Send(message, &shoutrrrTypes.Params{})
-	for _, err := range errs {
-		if err != nil {
-			return errors.WrapIf(err, "failed to send Google Chat message via shoutrrr")
-		}
-	}
-	return nil
+	return sendShoutrrrInternal("Google Chat", shoutrrrURL, message, &shoutrrrTypes.Params{})
 }

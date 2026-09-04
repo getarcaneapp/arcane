@@ -552,19 +552,7 @@ func (s *DockerClientService) GetAllNetworks(ctx context.Context) ([]network.Sum
 	if err != nil {
 		return nil, 0, 0, 0, err
 	}
-	inUseByID := make(map[string]bool)
-	inUseByName := make(map[string]bool)
-	for _, c := range containers {
-		if c.NetworkSettings == nil || c.NetworkSettings.Networks == nil {
-			continue
-		}
-		for netName, es := range c.NetworkSettings.Networks {
-			if es.NetworkID != "" {
-				inUseByID[es.NetworkID] = true
-			}
-			inUseByName[netName] = true
-		}
-	}
+	inUseByID, inUseByName := docker.BuildNetworkUsageMaps(containers)
 
 	networks, err := s.listNetworksInternal(ctx)
 	if err != nil {

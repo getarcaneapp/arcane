@@ -11,6 +11,7 @@ import (
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/volume"
 	"github.com/moby/moby/client"
@@ -81,7 +82,7 @@ func TestPlanRenamePreservesStandaloneVolumeConfiguration(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	migration, err := PlanRename(t.Context(), newTestDockerClient(t, server), "source-data", "renamed-data")
+	migration, err := PlanRename(t.Context(), newTestDockerClient(t, server), "source-data", "renamed-data", volumehelper.ToolsImage(""))
 	require.NoError(t, err)
 
 	planned, ok := migration.(*dockerProjectVolumeRenameMigrationInternal)

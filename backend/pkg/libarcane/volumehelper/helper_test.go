@@ -42,10 +42,10 @@ func TestResolveHelperImage_UsesLocalToolsImage(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	image, err := ResolveHelperImage(context.Background(), newTestDockerClientInternal(t, server))
+	image, err := ResolveHelperImage(context.Background(), newTestDockerClientInternal(t, server), ToolsImage(""))
 
 	require.NoError(t, err)
-	require.Equal(t, DefaultToolsImage, image)
+	require.Equal(t, ToolsImage(""), image)
 	require.Zero(t, pullCalls.Load())
 }
 
@@ -74,10 +74,10 @@ func TestResolveHelperImage_PullsToolsImageWhenMissing(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	image, err := ResolveHelperImage(context.Background(), newTestDockerClientInternal(t, server))
+	image, err := ResolveHelperImage(context.Background(), newTestDockerClientInternal(t, server), ToolsImage(""))
 
 	require.NoError(t, err)
-	require.Equal(t, DefaultToolsImage, image)
+	require.Equal(t, ToolsImage(""), image)
 	require.EqualValues(t, 1, pullCalls.Load())
 }
 
@@ -111,7 +111,7 @@ func TestResolveHelperImage_FallsBackToArcaneRuntimeWhenToolsPullFails(t *testin
 	}))
 	t.Cleanup(server.Close)
 
-	image, err := ResolveHelperImage(context.Background(), newTestDockerClientInternal(t, server))
+	image, err := ResolveHelperImage(context.Background(), newTestDockerClientInternal(t, server), ToolsImage(""))
 
 	require.NoError(t, err)
 	require.Equal(t, "arcane:local", image)
@@ -135,7 +135,7 @@ func TestResolveHelperImage_ReturnsPullErrorWhenNoFallbackExists(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	image, err := ResolveHelperImage(context.Background(), newTestDockerClientInternal(t, server))
+	image, err := ResolveHelperImage(context.Background(), newTestDockerClientInternal(t, server), ToolsImage(""))
 
 	require.Error(t, err)
 	require.Empty(t, image)

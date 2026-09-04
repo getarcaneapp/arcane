@@ -1012,7 +1012,7 @@ func (s *VolumeService) createVolumeWorkspaceMutationContainerInternal(ctx conte
 	if err != nil {
 		return "", nil, err
 	}
-	helperImage, err := getVolumeHelperImageInternal(ctx, s.dockerService, s.imageService, dockerClient)
+	helperImage, err := s.getVolumeHelperImageInternal(ctx, dockerClient)
 	if err != nil {
 		return "", nil, err
 	}

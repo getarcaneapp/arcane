@@ -81,7 +81,7 @@ func (h *CustomizeHandler) Search(ctx context.Context, input *SearchCustomizeInp
 	}
 
 	ps, _ := middleware.PermissionsFromContext(ctx)
-	results := h.customizeSearchService.Search(input.Body.Query)
+	results := Search(h.customizeSearchService.GetCustomizeCategories(), input.Body.Query, searchtypes.CustomizeProfile)
 	results.Results = filterCustomizeCategoriesInternal(ps, results.Results)
 	results.Count = len(results.Results)
 

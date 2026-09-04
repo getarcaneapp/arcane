@@ -19,12 +19,14 @@
 		class: className,
 		contentClass,
 		showCloseButton = true,
+		dismissible = true,
 		variant = 'dialog'
 	}: ResponsiveDialogProps = $props();
 
 	const isDesktop = new MediaQuery('(min-width: 768px)');
 
 	function handleOpenChange(newOpen: boolean) {
+		if (!newOpen && !dismissible) return;
 		open = newOpen;
 		onOpenChange?.(newOpen);
 	}
@@ -46,7 +48,11 @@
 					{@render trigger()}
 				</Sheet.Trigger>
 			{/if}
-			<Sheet.Content class={cn('flex flex-col overflow-hidden p-0', contentClass)}>
+			<Sheet.Content
+				class={cn('flex flex-col overflow-hidden p-0', contentClass)}
+				interactOutsideBehavior={dismissible ? 'close' : 'ignore'}
+				escapeKeydownBehavior={dismissible ? 'close' : 'ignore'}
+			>
 				{#if title || description}
 					<Sheet.Header class="shrink-0 px-6 pt-6">
 						{#if title}
@@ -81,7 +87,9 @@
 					'max-h-[calc(100vh-2rem)] grid-rows-[auto_minmax(0,1fr)_auto]! overflow-hidden p-0!',
 					contentClass ?? 'sm:max-w-[425px]'
 				)}
-				{showCloseButton}
+				showCloseButton={showCloseButton && dismissible}
+				interactOutsideBehavior={dismissible ? 'close' : 'ignore'}
+				escapeKeydownBehavior={dismissible ? 'close' : 'ignore'}
 			>
 				{#if title || description}
 					<Dialog.Header class="shrink-0 px-6 pt-6">
@@ -105,7 +113,7 @@
 		</Dialog.Root>
 	{/if}
 {:else}
-	<Drawer.Root {open} onOpenChange={handleOpenChange}>
+	<Drawer.Root {open} {dismissible} onOpenChange={handleOpenChange}>
 		{#if trigger}
 			<Drawer.Trigger>
 				{@render trigger()}

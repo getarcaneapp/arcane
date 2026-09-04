@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"emperror.dev/errors"
+	ref "github.com/distribution/reference"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/moby/moby/api/types/container"
@@ -26,9 +27,14 @@ type RuntimeImage struct {
 }
 
 const (
-	DefaultToolsImage = "ghcr.io/getarcaneapp/tools:latest"
-	ContainerLabel    = "com.getarcaneapp.volume-helper"
+	toolsRepoPathInternal = "getarcaneapp/tools"
+	ContainerLabel        = "com.getarcaneapp.volume-helper"
 )
+
+// ToolsImage returns the shared Arcane tools image reference hosted on the given registry setting.
+func ToolsImage(registry string) string {
+	return libarcane.ArcaneRegistryHost(registry) + "/" + toolsRepoPathInternal + ":latest"
+}
 
 // Labels returns the labels used for temporary internal volume helper containers.
 func Labels() map[string]string {
@@ -62,16 +68,16 @@ func HostConfig(helperImage string, binds []string, mounts []mount.Mount) *conta
 
 // ResolveHelperImage returns an image suitable for temporary volume helper
 // containers, pulling the tools image when it is not already present.
-func ResolveHelperImage(ctx context.Context, dockerClient *client.Client) (string, error) {
+func ResolveHelperImage(ctx context.Context, dockerClient *client.Client, toolsImage string) (string, error) {
 	if dockerClient == nil {
 		return "", errors.New("docker service unavailable")
 	}
 
-	if _, err := dockerClient.ImageInspect(ctx, DefaultToolsImage); err == nil {
-		return DefaultToolsImage, nil
+	if _, err := dockerClient.ImageInspect(ctx, toolsImage); err == nil {
+		return toolsImage, nil
 	}
 
-	pullReader, pullErr := dockerClient.ImagePull(ctx, DefaultToolsImage, client.ImagePullOptions{})
+	pullReader, pullErr := dockerClient.ImagePull(ctx, toolsImage, client.ImagePullOptions{})
 	if pullErr == nil {
 		if pullReader == nil {
 			pullErr = errors.New("helper image pull returned no response body")
@@ -80,7 +86,7 @@ func ResolveHelperImage(ctx context.Context, dockerClient *client.Client) (strin
 			if _, err := io.Copy(io.Discard, pullReader); err != nil {
 				pullErr = errors.WrapIf(err, "read helper image pull response")
 			} else {
-				return DefaultToolsImage, nil
+				return toolsImage, nil
 			}
 		}
 	}
@@ -156,5 +162,6 @@ func buildRuntimeImageInternal(image string, entrypoint []string, command []stri
 }
 
 func isArcaneFallbackImageInternal(helperImage string) bool {
-	return !strings.EqualFold(strings.TrimSpace(helperImage), DefaultToolsImage)
+	named, err := ref.ParseNormalizedNamed(strings.TrimSpace(helperImage))
+	return err != nil || ref.Path(named) != toolsRepoPathInternal
 }

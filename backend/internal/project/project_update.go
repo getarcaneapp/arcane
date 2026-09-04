@@ -19,6 +19,7 @@ import (
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumes"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
@@ -401,7 +402,12 @@ func (s *ProjectService) prepareProjectRenameVolumeMigrationInternal(ctx context
 		return nil, errors.WrapIf(err, "failed to connect to Docker for volume rename")
 	}
 
-	return volumes.PlanMigration(ctx, dockerClient, composeProject, oldComposeName, newComposeName)
+	registry := ""
+	if s.settingsService != nil {
+		registry = s.settingsService.GetSettingsConfig().ToolsImageRegistry.Value
+	}
+
+	return volumes.PlanMigration(ctx, dockerClient, composeProject, oldComposeName, newComposeName, volumehelper.ToolsImage(registry))
 }
 
 func projectRenameVolumeMigrationComposeNamesInternal(s *ProjectService, proj *Project, name *string) (string, string, bool) {

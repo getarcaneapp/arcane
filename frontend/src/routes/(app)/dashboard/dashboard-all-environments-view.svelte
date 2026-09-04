@@ -56,7 +56,6 @@
 		formatVolumeOverviewLabel,
 		getCpuMetric,
 		getDiskMetric,
-		getEnvironmentCardSortRank,
 		getMemoryMetric,
 		shouldLoadEnvironment
 	} from './dashboard-overview';
@@ -224,23 +223,16 @@
 	}
 
 	const environmentCards = $derived.by((): DashboardEnvironmentCardState[] => {
-		const refreshNonce = reloadVersion;
-		void refreshNonce;
-
-		return availableEnvironments
-			.map((environment, index) => ({
-				environment,
-				index,
-				sortRank: getEnvironmentCardSortRank(environment)
-			}))
+		return [...availableEnvironments]
 			.sort((a, b) => {
-				if (a.sortRank !== b.sortRank) {
-					return a.sortRank - b.sortRank;
+				const currentOrder = Number(b.id === currentEnvironmentId) - Number(a.id === currentEnvironmentId);
+				if (currentOrder !== 0) {
+					return currentOrder;
 				}
 
-				return a.index - b.index;
+				return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }) || a.id.localeCompare(b.id);
 			})
-			.map(({ environment }) => ({ environment }));
+			.map((environment) => ({ environment }));
 	});
 	const loadableEnvironmentCards = $derived(environmentCards.filter(({ environment }) => shouldLoadEnvironment(environment)));
 	const loadableEnvironmentIds = $derived.by(() => new Set(loadableEnvironmentCards.map(({ environment }) => environment.id)));

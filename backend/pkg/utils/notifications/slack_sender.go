@@ -5,9 +5,7 @@ import (
 
 	"emperror.dev/errors"
 
-	"github.com/nicholas-fedor/shoutrrr"
 	"github.com/nicholas-fedor/shoutrrr/pkg/services/chat/slack"
-	shoutrrrTypes "github.com/nicholas-fedor/shoutrrr/pkg/types"
 )
 
 // BuildSlackURL converts SlackConfig to Shoutrrr URL format using shoutrrr's Config
@@ -47,16 +45,5 @@ func SendSlack(ctx context.Context, config SlackConfig, message string) error {
 		return errors.WrapIf(err, "failed to build shoutrrr Slack URL")
 	}
 
-	sender, err := shoutrrr.CreateSenderWithOptions(shoutrrrTypes.SenderOptions{}, shoutrrrURL)
-	if err != nil {
-		return errors.WrapIf(err, "failed to create shoutrrr Slack sender")
-	}
-
-	errs := sender.Send(message, nil)
-	for _, err := range errs {
-		if err != nil {
-			return errors.WrapIf(err, "failed to send Slack message via shoutrrr")
-		}
-	}
-	return nil
+	return sendShoutrrrInternal("Slack", shoutrrrURL, message, nil)
 }

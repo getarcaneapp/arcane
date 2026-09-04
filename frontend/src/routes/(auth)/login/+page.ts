@@ -1,5 +1,6 @@
 import { redirect } from '@sveltejs/kit';
 import { getEffectiveLandingPage } from '#lib/utils/navigation';
+import { passkeyService } from '#lib/services/passkey-service';
 
 export const load = async ({ parent, url }) => {
 	const data = await parent();
@@ -15,11 +16,14 @@ export const load = async ({ parent, url }) => {
 		throw redirect(302, redirectTo || getEffectiveLandingPage());
 	}
 
+	const passkeyAvailability = await passkeyService.getLoginAvailability().catch(() => null);
+
 	const error = url.searchParams.get('error');
 	const errorMessage =
 		url.searchParams.get('message') || url.searchParams.get('error_message') || url.searchParams.get('errorMessage');
 
 	return {
+		passkeyLoginAvailable: passkeyAvailability?.available === true,
 		settings: data.settings,
 		redirectTo,
 		error,

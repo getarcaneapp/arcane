@@ -12,14 +12,13 @@
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { Snippet } from '#lib/components/ui/snippet/index.js';
 	import * as m from '#lib/paraglide/messages.js';
-	import { untrack } from 'svelte';
 	import { ApiKeyIcon } from '#lib/icons';
 
 	let { data } = $props();
 
-	let apiKeys = $state(untrack(() => data.apiKeys));
+	let apiKeys = $derived(data.apiKeys);
 	let selectedIds = $state<string[]>([]);
-	let requestOptions = $state<SearchPaginationSortRequest>(untrack(() => data.apiKeyRequestOptions));
+	let requestOptions = $derived<SearchPaginationSortRequest>(data.apiKeyRequestOptions);
 
 	let isDialogOpen = $state({
 		create: false,

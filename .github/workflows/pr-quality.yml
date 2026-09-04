@@ -13,8 +13,22 @@ jobs:
     pr-quality:
         runs-on: ubuntu-latest
         steps:
+            - name: Request App Token
+              id: app-token
+              uses: actions/create-github-app-token@v3
+              with:
+                  client-id: ${{ secrets.ARCANE_APP_CLIENT_ID }}
+                  private-key: ${{ secrets.ARCANE_APP_PRIVATE_KEY }}
+                  owner: getarcaneapp
+                  repositories: arcane
+                  permission-contents: read
+                  permission-issues: write
+                  permission-pull-requests: write
+
             - uses: peakoss/anti-slop@v0
               with:
+                  github-token: ${{ steps.app-token.outputs.token }}
+
                   # General Settings
                   max-failures: 4
 
@@ -80,7 +94,7 @@ jobs:
                       dependabot[bot]
                       renovate[bot]
                       github-actions[bot]
-                      getarcaneappbot
+                      arcane-github-automation[bot]
                   exempt-users: ""
                   exempt-author-association: "OWNER,MEMBER,COLLABORATOR"
                   exempt-label: "quality/exempt"

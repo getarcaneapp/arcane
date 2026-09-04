@@ -4194,7 +4194,7 @@ func TestProjectService_MapProjectToDto_SetsRedeployDisabledFromRuntimeServices(
 						Labels: tt.labels,
 					},
 				},
-			}, tt.currentContainerID, tt.currentErr, nil)
+			}, tt.currentContainerID, tt.currentErr, projects.ArcaneComposeMetadata{})
 
 			require.Equal(t, tt.wantProject, details.RedeployDisabled)
 			require.Len(t, details.RuntimeServices, 1)
@@ -7362,7 +7362,23 @@ func TestProjectService_MapProjectToDto_SeedsHasBuildDirectiveFromPersistedRefs(
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p := Project{ID: tt.name, Name: tt.name, Path: t.TempDir(), UpdatedAt: &now, BuildImageRefsJSON: tt.buildImageRefsJSON}
-			assert.Equal(t, tt.want, svc.mapProjectToDto(ctx, metaEnv.projectsDirectory, p, nil, "", nil, metaEnv).HasBuildDirective)
+			assert.Equal(t, tt.want, svc.mapProjectToDto(ctx, metaEnv.projectsDirectory, p, nil, "", nil, svc.ProjectMetadata(ctx, p, metaEnv)).HasBuildDirective)
 		})
+	}
+}
+
+func TestProjectPathMapperUsesCurrentSettingsInternal(t *testing.T) {
+	db := setupProjectTestDB(t)
+	settingsService, err := newSettingsServiceForTestInternal(t, t.Context(), db)
+	require.NoError(t, err)
+	service := &ProjectService{settingsService: settingsService}
+	containerDir := t.TempDir()
+	for _, hostDir := range []string{t.TempDir(), t.TempDir()} {
+		require.NoError(t, settingsService.SetStringSetting(t.Context(), "projectsDirectory", containerDir+":"+hostDir))
+		mapper := service.projectPathMapperInternal(t.Context())
+		require.NotNil(t, mapper)
+		mapped, err := mapper.ContainerToHost(filepath.Join(containerDir, "data"))
+		require.NoError(t, err)
+		require.Equal(t, filepath.Join(hostDir, "data"), mapped)
 	}
 }

@@ -125,7 +125,7 @@
 					)
 				: 'h-full p-3 sm:p-5'}
 		>
-			{#key page.url.pathname}
+			{#key user?.id}
 				{@render children()}
 			{/key}
 		</section>

@@ -136,3 +136,21 @@ func containerAnswersToHostnameInternal(c *container.Summary, host string) bool 
 	}
 	return false
 }
+
+// BuildNetworkUsageMaps indexes container network attachments by ID and name.
+func BuildNetworkUsageMaps(containers []container.Summary) (map[string]bool, map[string]bool) {
+	inUseByID := make(map[string]bool)
+	inUseByName := make(map[string]bool)
+	for _, c := range containers {
+		if c.NetworkSettings == nil || c.NetworkSettings.Networks == nil {
+			continue
+		}
+		for netName, es := range c.NetworkSettings.Networks {
+			if es.NetworkID != "" {
+				inUseByID[es.NetworkID] = true
+			}
+			inUseByName[netName] = true
+		}
+	}
+	return inUseByID, inUseByName
+}

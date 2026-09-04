@@ -84,6 +84,16 @@ jobs:
           echo "node_version=$(node --version)" >> "$GITHUB_OUTPUT"
           echo "sveltekit_version=$(vp -C frontend node -p 'require("@sveltejs/kit/package.json").version')" >> "$GITHUB_OUTPUT"
 
+      - name: Request App Token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.ARCANE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.ARCANE_APP_PRIVATE_KEY }}
+          owner: getarcaneapp
+          repositories: arcane,homebrew-tap
+          permission-contents: write
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v7
         with:
@@ -91,7 +101,7 @@ jobs:
           version: "~> v2"
           args: release --clean --skip=validate
         env:
-          GITHUB_TOKEN: ${{ secrets.ARCANE_BOT_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
           GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}

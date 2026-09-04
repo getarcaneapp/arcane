@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Badge } from '#lib/components/ui/badge';
 	import { Label } from '#lib/components/ui/label';
 	import * as Select from '#lib/components/ui/select/index.js';
 	import { m } from '#lib/paraglide/messages';
@@ -27,7 +28,7 @@
 		error?: string | null;
 		disabled?: boolean;
 		placeholder?: string;
-		options: { label: string; value: string; description?: string }[];
+		options: { label: string; value: string; description?: string; badge?: string }[];
 		groupLabel?: string;
 		hideLabel?: boolean;
 		triggerClass?: string;
@@ -35,14 +36,19 @@
 		onValueChange?: (value: string) => void;
 	} = $props();
 
-	const selectedLabel = $derived(options.find((o) => o.value === value)?.label ?? placeholder);
+	const selected = $derived(options.find((o) => o.value === value));
 </script>
 
 {#snippet optionItems()}
 	{#each options as option (option.value)}
 		<Select.Item value={option.value}>
 			<div class="flex flex-col items-start gap-1">
-				<span class="font-medium">{option.label}</span>
+				<span class="flex items-center gap-2 font-medium">
+					{option.label}
+					{#if option.badge}
+						<Badge variant="purple" size="sm" class="relative -top-px px-1.5 py-0 text-[10px] leading-4">{option.badge}</Badge>
+					{/if}
+				</span>
 				{#if option.description}
 					<span class="text-xs text-muted-foreground">{option.description}</span>
 				{/if}
@@ -69,7 +75,12 @@
 
 	<Select.Root type="single" bind:value {name} {disabled} onValueChange={(v) => onValueChange?.(v)}>
 		<Select.Trigger size={triggerSize} class="{triggerClass} {error ? 'border-destructive' : ''}" {id}>
-			<span>{selectedLabel}</span>
+			<span class="flex items-center gap-2">
+				{selected?.label ?? placeholder}
+				{#if selected?.badge}
+					<Badge variant="purple" size="sm" class="relative -top-px px-1.5 py-0 text-[10px] leading-4">{selected.badge}</Badge>
+				{/if}
+			</span>
 		</Select.Trigger>
 
 		<Select.Content>

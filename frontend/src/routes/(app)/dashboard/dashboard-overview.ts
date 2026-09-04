@@ -20,11 +20,6 @@ export function createBaseEnvironmentOverview(environment: Environment): Dashboa
 	};
 }
 
-export function getEnvironmentCardSortRank(environment: Environment): number {
-	if (shouldLoadEnvironment(environment)) return 0;
-	return environment.enabled ? 1 : 2;
-}
-
 export function buildOverviewSummary(items: DashboardEnvironmentOverview[]): DashboardOverviewSummary {
 	return {
 		totalEnvironments: items.length,

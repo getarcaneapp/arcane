@@ -272,3 +272,23 @@ func TestS3DestinationService_TestS3DestinationRoundTrip(t *testing.T) {
 	require.Equal(t, "production", persisted.Prefix)
 	require.Empty(t, persisted.Region)
 }
+
+func TestListS3DestinationsByIDInternal(t *testing.T) {
+	service, db := setupS3DestinationServiceTestInternal(t)
+	indexed, err := service.ListS3DestinationsByID(t.Context())
+	require.NoError(t, err)
+	require.Empty(t, indexed)
+	destination := S3Destination{Name: "Offsite", Bucket: "backups", SecretAccessKey: "encrypted"}
+	require.NoError(t, db.Create(&destination).Error)
+	indexed, err = service.ListS3DestinationsByID(t.Context())
+	require.NoError(t, err)
+	require.Len(t, indexed, 1)
+	require.Equal(t, "Offsite", indexed[destination.ID].Name)
+	require.Equal(t, "backups", indexed[destination.ID].Bucket)
+	require.True(t, indexed[destination.ID].SecretConfigured)
+	require.Empty(t, indexed["missing"].Name)
+	require.NoError(t, db.Migrator().DropTable(&S3Destination{}))
+	indexed, err = service.ListS3DestinationsByID(t.Context())
+	require.ErrorContains(t, err, "failed to list S3 destinations")
+	require.Nil(t, indexed)
+}

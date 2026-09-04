@@ -10,7 +10,6 @@
 	import TemplateGallery from './components/template-gallery.svelte';
 	import RegistryManager from './components/RegistryManager.svelte';
 	import type { TemplateRegistry } from '#lib/types/swarm';
-	import { untrack } from 'svelte';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared';
 	import { RegistryIcon, TemplateIcon, FolderOpenIcon } from '#lib/icons';
 	import { hasPermission } from '#lib/utils/auth';
@@ -18,9 +17,9 @@
 
 	let { data } = $props();
 
-	let templates = $state(untrack(() => data.templates));
-	let registries = $state<TemplateRegistry[]>(untrack(() => data.registries));
-	let requestOptions = $state<SearchPaginationSortRequest>(untrack(() => data.templateRequestOptions));
+	let templates = $derived(data.templates);
+	let registries = $derived<TemplateRegistry[]>(data.registries);
+	let requestOptions = $derived<SearchPaginationSortRequest>(data.templateRequestOptions);
 	const tabItems: TabItem[] = [
 		{
 			value: 'browse',

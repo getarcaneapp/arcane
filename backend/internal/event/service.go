@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+
 	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
@@ -161,7 +163,7 @@ func (s *EventService) canForwardEventToManagerHTTP() bool {
 	if strings.TrimSpace(s.cfg.AgentToken) == "" {
 		return false
 	}
-	return strings.TrimSpace(s.cfg.GetManagerBaseURL()) != ""
+	return strings.TrimSpace(httpx.ManagerBaseURL(s.cfg.ManagerApiUrl)) != ""
 }
 
 func (s *EventService) forwardEventToManagerHTTP(ctx context.Context, eventModel *Event) error {
@@ -172,7 +174,7 @@ func (s *EventService) forwardEventToManagerHTTP(ctx context.Context, eventModel
 		return errors.New("agent token is required for manager event sync")
 	}
 
-	managerEventsURL, err := managerEventEndpointURL(s.cfg.GetManagerBaseURL())
+	managerEventsURL, err := managerEventEndpointURL(httpx.ManagerBaseURL(s.cfg.ManagerApiUrl))
 	if err != nil {
 		return errors.WrapIf(err, "manager API URL is invalid for manager event sync")
 	}

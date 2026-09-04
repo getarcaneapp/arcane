@@ -78,10 +78,6 @@ func TestGenerate_SettingEnvOverridesMatchModelMetadata(t *testing.T) {
 	assert.Equal(t, "arcane-mobile://oidc-callback", oidcMobileRedirectURIs.DefaultValue)
 	assert.Equal(t, "authentication", oidcMobileRedirectURIs.Category)
 
-	trivyImage, ok := entries["trivyImage"]
-	require.True(t, ok)
-	assert.Contains(t, trivyImage.Requires, "UI_CONFIGURATION_DISABLED=true")
-
 	assert.Empty(t, oidcSecret.DefaultValue)
 
 	_, hasRuntimeDerived := entries["uiConfigDisabled"]
@@ -360,12 +356,13 @@ var expectedSettingOverrideKeys = []string{
 	"scheduledPruneInterval",
 	"swarmStackSourcesDirectory",
 	"templatesDirectory",
+	"toolsImageRegistry",
 	"trivyConcurrentScanContainers",
 	"trivyConfig",
 	"trivyCpuLimit",
+	"trivyDbRegistry",
 	"trivyIgnore",
 	"trivyIgnoreUnfixed",
-	"trivyImage",
 	"trivyMemoryLimitMb",
 	"trivyNetwork",
 	"trivyPrivileged",
@@ -375,6 +372,7 @@ var expectedSettingOverrideKeys = []string{
 	"trivyServerEnabled",
 	"trivyServerToken",
 	"trivyServerUrl",
+	"updateCheckRegistry",
 	"volumeHelperIdleTimeout",
 	"vulnerabilityScanEnabled",
 	"vulnerabilityScanInterval",

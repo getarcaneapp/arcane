@@ -9,7 +9,6 @@ import (
 
 	"emperror.dev/errors"
 
-	"github.com/nicholas-fedor/shoutrrr"
 	shoutrrrTypes "github.com/nicholas-fedor/shoutrrr/pkg/types"
 )
 
@@ -70,18 +69,5 @@ func SendGotify(ctx context.Context, config GotifyConfig, message string) error 
 		return errors.WrapIf(err, "failed to build shoutrrr Gotify URL")
 	}
 
-	sender, err := shoutrrr.CreateSenderWithOptions(shoutrrrTypes.SenderOptions{}, shoutrrrURL)
-	if err != nil {
-		return errors.WrapIf(err, "failed to create shoutrrr Gotify sender")
-	}
-
-	params := &shoutrrrTypes.Params{}
-
-	errs := sender.Send(message, params)
-	for _, err := range errs {
-		if err != nil {
-			return errors.WrapIf(err, "failed to send Gotify message via shoutrrr")
-		}
-	}
-	return nil
+	return sendShoutrrrInternal("Gotify", shoutrrrURL, message, &shoutrrrTypes.Params{})
 }

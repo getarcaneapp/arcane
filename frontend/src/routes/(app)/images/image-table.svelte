@@ -464,6 +464,34 @@
 				<Badge variant="outline" class="text-xs">+{item.repoTags.length - 2}</Badge>
 			{/if}
 		</div>
+	{:else if item.pinnedReferences && item.pinnedReferences.length > 0 && item.pinnedReferences[0]}
+		{@const firstPin = item.pinnedReferences[0]}
+		{@const overflowPins = item.pinnedReferences.slice(1)}
+		<div class="flex max-w-md flex-wrap items-center gap-1.5">
+			<Badge
+				variant="outline"
+				class="h-auto max-w-full font-mono text-xs break-all whitespace-normal select-all"
+				title={m.common_click_to_select()}
+			>
+				{firstPin}
+			</Badge>
+			{#if overflowPins.length > 0}
+				<Tooltip.Provider>
+					<Tooltip.Root>
+						<Tooltip.Trigger>
+							<Badge variant="outline" class="text-xs">+{overflowPins.length}</Badge>
+						</Tooltip.Trigger>
+						<Tooltip.Content class="pointer-events-auto max-w-sm">
+							<div class="flex flex-col gap-1.5">
+								{#each overflowPins as pin (pin)}
+									<span class="font-mono text-xs break-all select-all">{pin}</span>
+								{/each}
+							</div>
+						</Tooltip.Content>
+					</Tooltip.Root>
+				</Tooltip.Provider>
+			{/if}
+		</div>
 	{:else if item.tag && item.tag !== '<none>'}
 		<Badge variant="outline" class="font-mono text-xs">{item.tag}</Badge>
 	{:else}
@@ -580,6 +608,23 @@
 	</div>
 {/snippet}
 
+{#snippet MobileTagsValue(item: ImageSummaryDto)}
+	{#if item.repoTags && item.repoTags.length > 0 && item.repoTags[0] !== '<none>:<none>'}
+		<span class="font-mono text-xs">{item.repoTags.map((rt) => rt.split(':').pop() || rt).join(', ')}</span>
+	{:else if item.pinnedReferences && item.pinnedReferences.length > 0}
+		<span class="font-mono text-xs break-all whitespace-normal select-all">
+			{item.pinnedReferences[0]}
+			{#if item.pinnedReferences.length > 1}
+				<span class="ml-1 font-sans text-muted-foreground">+{item.pinnedReferences.length - 1}</span>
+			{/if}
+		</span>
+	{:else if item.tag && item.tag !== '<none>'}
+		<span class="font-mono text-xs">{item.tag}</span>
+	{:else}
+		<span class="text-muted-foreground italic">{m.images_untagged()}</span>
+	{/if}
+{/snippet}
+
 {#snippet ImageMobileCardSnippet({
 	item,
 	mobileFieldVisibility
@@ -595,6 +640,9 @@
 		})}
 		title={(item) => {
 			if (item.repo && item.repo !== '<none>') return item.repo;
+			if (item.pinnedReferences && item.pinnedReferences.length > 0 && item.pinnedReferences[0]) {
+				return item.pinnedReferences[0];
+			}
 			return m.images_untagged();
 		}}
 		subtitle={(item) => ((mobileFieldVisibility['id'] ?? false) ? item.id : null)}
@@ -622,12 +670,9 @@
 			},
 			{
 				label: m.common_tags(),
-				getValue: (item: ImageSummaryDto) => {
-					if (item.repoTags && item.repoTags.length > 0 && item.repoTags[0] !== '<none>:<none>') {
-						return item.repoTags.map((rt) => rt.split(':').pop() || rt).join(', ');
-					}
-					return item.tag && item.tag !== '<none>' ? item.tag : m.images_untagged();
-				},
+				getValue: (item: ImageSummaryDto) => item,
+				type: 'component',
+				component: MobileTagsValue,
 				icon: ImagesIcon,
 				iconVariant: 'purple' as const,
 				show: mobileFieldVisibility['repoTags'] ?? true

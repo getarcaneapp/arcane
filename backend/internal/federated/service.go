@@ -27,6 +27,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/oidcjwk"
 	federatedtypes "github.com/getarcaneapp/arcane/types/v2/federated"
+	httpxtypes "github.com/getarcaneapp/arcane/types/v2/httpx"
 )
 
 const (
@@ -58,7 +59,7 @@ func NewFederatedCredentialService(
 	keySetManager *oidcjwk.KeySetManager,
 ) *FederatedCredentialService {
 	if httpClient == nil {
-		httpClient = httpx.NewHTTPClientWithTimeout(15 * time.Second)
+		httpClient = httpx.NewHTTPClient(httpxtypes.ClientOptions{Timeout: 15 * time.Second, TLSHandshakeTimeout: 10 * time.Second})
 	}
 
 	return &FederatedCredentialService{

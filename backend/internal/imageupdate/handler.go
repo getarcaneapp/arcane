@@ -202,7 +202,7 @@ func (h *ImageUpdateHandler) CheckAllImages(ctx context.Context, input *CheckAll
 }
 
 func (h *ImageUpdateHandler) GetUpdateInfoByRefs(ctx context.Context, input *GetUpdateInfoByRefsInput) (*handlerutil.Out[map[string]*imagetypes.UpdateInfo], error) {
-	imageRefs := parseImageRefsQueryInternal(input.ImageRefs)
+	imageRefs := utils.UniqueNonEmptyStrings(strings.Split(input.ImageRefs, ","))
 	if len(imageRefs) == 0 {
 		return &handlerutil.Out[map[string]*imagetypes.UpdateInfo]{
 			Body: base.ApiResponse[map[string]*imagetypes.UpdateInfo]{
@@ -237,27 +237,4 @@ func (h *ImageUpdateHandler) GetUpdateSummary(ctx context.Context, input *GetUpd
 			Data:    *summary,
 		},
 	}, nil
-}
-
-func parseImageRefsQueryInternal(raw string) []string {
-	if strings.TrimSpace(raw) == "" {
-		return nil
-	}
-
-	parts := strings.Split(raw, ",")
-	result := make([]string, 0, len(parts))
-	seen := make(map[string]struct{}, len(parts))
-	for _, part := range parts {
-		ref := strings.TrimSpace(part)
-		if ref == "" {
-			continue
-		}
-		if _, exists := seen[ref]; exists {
-			continue
-		}
-		seen[ref] = struct{}{}
-		result = append(result, ref)
-	}
-
-	return result
 }

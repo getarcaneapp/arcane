@@ -98,6 +98,39 @@ func TestPasskeyService_BeginPasskeyLoginStoresAndConsumesCeremony(t *testing.T)
 	require.ErrorIs(t, err, ErrPasskeyCeremony)
 }
 
+func TestPasskeyService_LoginAvailability(t *testing.T) {
+	for _, scenario := range []string{"empty", "registered", "other RP", "missing user", "deleted", "unavailable", "database error"} {
+		t.Run(scenario, func(t *testing.T) {
+			db := newPasskeyServiceTestDB(t)
+			service := newPasskeyServiceForTest(t, db)
+			if scenario != "empty" {
+				user := createPasskeyTestUser(t, db, "availability-user")
+				credential := createPasskeyTestCredential(t, db, service, user.ID, "availability-passkey")
+				switch scenario {
+				case "other RP":
+					require.NoError(t, db.Model(credential).Update("rp_id", "other.example.test").Error)
+				case "missing user":
+					require.NoError(t, db.Model(credential).Update("user_id", "missing-user").Error)
+				case "deleted":
+					require.NoError(t, db.Delete(credential).Error)
+				case "unavailable":
+					service = NewPasskeyService(db, &config.Config{AppUrl: ":invalid"})
+				case "database error":
+					require.NoError(t, db.Migrator().DropTable(&Passkey{}))
+				}
+			}
+
+			available, err := service.LoginAvailable(t.Context())
+			if scenario == "database error" {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+			require.Equal(t, scenario == "registered", available)
+		})
+	}
+}
+
 func TestPasskeyService_FirstEnrollmentUsesActiveSession(t *testing.T) {
 	db := newPasskeyServiceTestDB(t)
 	service := newPasskeyServiceForTest(t, db)

@@ -32,6 +32,7 @@
 	let password = $state('');
 	let mfaChallenge = $state<MFAChallengeData | null>(null);
 	let passkeySupported = $state(false);
+	const showPasskeyLoginButton = $derived(passkeySupported && data.passkeyLoginAvailable === true);
 	const queryClient = useQueryClient();
 
 	const accentColor = $derived($accentColorPreviewStore);
@@ -147,7 +148,7 @@
 		await goto(data.redirectTo || getEffectiveLandingPage(), { replaceState: true });
 	}
 
-	const showProviderRow = $derived(showOidcLoginButton || passkeySupported);
+	const showProviderRow = $derived(showOidcLoginButton || showPasskeyLoginButton);
 	const showDivider = $derived(showProviderRow && showLocalLoginForm);
 </script>
 
@@ -229,7 +230,7 @@
 						}}
 					/>
 				{:else}
-					{#if !showLocalLoginForm && !showOidcLoginButton && !passkeySupported}
+					{#if !showLocalLoginForm && !showOidcLoginButton && !showPasskeyLoginButton}
 						<Alert.Root variant="destructive">
 							<AlertIcon class="size-4" />
 							<Alert.Title>{m.auth_no_login_methods_title()}</Alert.Title>
@@ -311,7 +312,7 @@
 								</ArcaneButton>
 							{/if}
 
-							{#if passkeySupported}
+							{#if showPasskeyLoginButton}
 								<ArcaneButton
 									action="login"
 									icon={ApiKeyIcon}

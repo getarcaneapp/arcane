@@ -3,7 +3,6 @@
 	import { AlertTriangleIcon, UsersIcon } from '#lib/icons';
 	import { m } from '#lib/paraglide/messages';
 	import { swarmService } from '#lib/services/swarm-service';
-	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type StatCardConfig } from '#lib/layouts/index.js';
 	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte';
 	import { simpleRefresh } from '#lib/utils/api';
@@ -14,8 +13,8 @@
 
 	let { data } = $props();
 
-	let nodes = $state(untrack(() => data.nodes));
-	let requestOptions = $state(untrack(() => data.requestOptions));
+	let nodes = $derived(data.nodes);
+	let requestOptions = $derived(data.requestOptions);
 	let isLoading = $state({ refresh: false });
 	let reconciledEnvironmentId = $state<string | null>(null);
 	const currentEnvironmentId = $derived(environmentStore.selected?.id ?? null);

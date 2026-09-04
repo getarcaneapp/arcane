@@ -13,7 +13,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/moby/moby/client"
 	"github.com/samber/mo"
 	"gorm.io/gorm"
 )
@@ -37,7 +36,7 @@ func (s *ProjectService) refreshProjectImageRefsInternal(ctx context.Context, pr
 		return
 	}
 
-	s.parsedCompose.invalidate(proj.ID)
+	s.invalidateProjectCachesInternal(proj.ID)
 	refs, buildRefs, err := s.getProjectImageRefsFromComposeInternal(ctx, *proj, nil)
 	if err != nil {
 		if dbErr := s.db.WithContext(ctx).
@@ -84,7 +83,7 @@ func (s *ProjectService) HandleProjectFilesChanged(ctx context.Context, paths []
 		return
 	}
 	for i := range affected {
-		s.parsedCompose.invalidate(affected[i].ID)
+		s.invalidateProjectCachesInternal(affected[i].ID)
 		s.refreshProjectImageRefsInternal(ctx, &affected[i])
 		if err := s.reconcileComposeTagsForProjectInternal(ctx, &affected[i]); err != nil {
 			slog.WarnContext(ctx, "failed to reconcile Compose project tags after file change", "projectID", affected[i].ID, "error", err)
@@ -472,16 +471,7 @@ func (s *ProjectService) loadComposeMetadataForSyncInternal(ctx context.Context,
 		return meta, pErr
 	}
 
-	var dockerClient *client.Client
-	if s.dockerService != nil {
-		dockerClient, _ = s.dockerService.GetClient(ctx)
-	}
-	pathMapper := projects.NewPathMapperForConfiguredDirectory(
-		ctx,
-		s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects"),
-		"/app/data/projects",
-		dockerClient,
-	)
+	pathMapper := s.projectPathMapperInternal(ctx)
 
 	autoInjectEnv := utils.BoolOrDefault(cfg.AutoInjectEnv.Value, false)
 

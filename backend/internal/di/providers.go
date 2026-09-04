@@ -206,8 +206,8 @@ func provideDockerClientServiceInternal(ctx context.Context, lc fx.Lifecycle, ac
 	return service
 }
 
-func provideVersionServiceInternal(httpClient *http.Client, cfg *config.Config, registry *registry.ContainerRegistryService, docker *docker.DockerClientService, imageUpdate *imageupdate.ImageUpdateService) *version.VersionService {
-	return version.NewVersionService(httpClient, cfg.UpdateCheckDisabled, config.Version, config.Revision, registry, docker, imageUpdate)
+func provideVersionServiceInternal(httpClient *http.Client, cfg *config.Config, registry *registry.ContainerRegistryService, docker *docker.DockerClientService, imageUpdate *imageupdate.ImageUpdateService, settingsService *settings.SettingsService) *version.VersionService {
+	return version.NewVersionService(httpClient, cfg.UpdateCheckDisabled, config.Version, config.Revision, registry, docker, imageUpdate, settingsService)
 }
 
 func provideGitRepositoryModuleInternal(db *database.DB, cfg *config.Config, eventService *event.EventService, settingsService *settings.SettingsService) *gitrepo.Module {

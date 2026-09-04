@@ -27,6 +27,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+
 	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
@@ -341,7 +343,10 @@ func EnsureAgentMTLSAssets(ctx context.Context, cfg *Config) error {
 }
 
 func enrollAgentMTLSAssetsInternal(ctx context.Context, cfg *Config, assetsDir, certPath, keyPath string) error {
-	managerBaseURL := strings.TrimRight(strings.TrimSpace(cfg.GetManagerBaseURL()), "/")
+	if cfg == nil {
+		return errors.New("MANAGER_API_URL is required to enroll edge mTLS assets")
+	}
+	managerBaseURL := strings.TrimRight(strings.TrimSpace(httpx.ManagerBaseURL(cfg.ManagerApiUrl)), "/")
 	if managerBaseURL == "" {
 		return errors.New("MANAGER_API_URL is required to enroll edge mTLS assets")
 	}
@@ -561,7 +566,7 @@ func managerUsesTLSInternal(cfg *Config) bool {
 		return false
 	}
 
-	baseURL := strings.TrimSpace(cfg.GetManagerBaseURL())
+	baseURL := strings.TrimSpace(httpx.ManagerBaseURL(cfg.ManagerApiUrl))
 	return strings.HasPrefix(strings.ToLower(baseURL), "https://")
 }
 
@@ -675,7 +680,7 @@ func edgeMTLSAppURLInternal(cfg *Config) string {
 	if appURL := strings.TrimSpace(cfg.AppURL); appURL != "" {
 		return appURL
 	}
-	return strings.TrimSpace(cfg.GetManagerBaseURL())
+	return strings.TrimSpace(httpx.ManagerBaseURL(cfg.ManagerApiUrl))
 }
 
 func expectedEdgeMTLSURIPathInternal(envID string) string {

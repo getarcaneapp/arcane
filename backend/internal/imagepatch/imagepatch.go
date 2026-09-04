@@ -540,9 +540,29 @@ func (s *ImagePatchService) ListPatchTargets(ctx context.Context, envID string, 
 		return nil, pagination.Response{}, errors.WrapIf(err, "failed to list patch targets")
 	}
 
+	if len(scans) == 0 {
+		return []imagepatch.PatchTarget{}, paginationResp, nil
+	}
+
 	// Best-effort: mark images without a registry source so the UI can explain
 	// why they cannot be patched.
-	dockerClient, dockerErr := s.dockerService.GetClient(ctx)
+	repoDigestsByID := map[string][]string{}
+	if images, err := s.dockerService.ListImages(ctx); err == nil {
+		for i := range images {
+			repoDigestsByID[images[i].ID] = images[i].RepoDigests
+		}
+	} else {
+		slog.WarnContext(ctx, "failed to list images for patch targets", "error", err)
+	}
+
+	imageIDs := make([]string, 0, len(scans))
+	for i := range scans {
+		imageIDs = append(imageIDs, scans[i].ID)
+	}
+	lastPatchByImageID, lastPatchScanByImageID, err := s.latestPatchesByImageInternal(ctx, envID, imageIDs)
+	if err != nil {
+		return nil, pagination.Response{}, err
+	}
 
 	targets := make([]imagepatch.PatchTarget, 0, len(scans))
 	for i := range scans {
@@ -554,20 +574,20 @@ func (s *ImagePatchService) ListPatchTargets(ctx context.Context, envID string, 
 			TotalCount:   scan.TotalCount,
 			ScanTime:     scan.ScanTime,
 		}
-		if dockerErr == nil {
-			if inspect, err := dockerClient.ImageInspect(ctx, scan.ID); err == nil {
-				target.LocalOnly = len(inspect.RepoDigests) == 0
+		if digests, ok := repoDigestsByID[scan.ID]; ok {
+			target.LocalOnly = true
+			for _, digest := range digests {
+				if digest != "<none>@<none>" {
+					target.LocalOnly = false
+					break
+				}
 			}
 		}
 
-		var lastPatch ImagePatchRecord
-		if err := s.db.WithContext(ctx).
-			Where("environment_id = ? AND original_image_id = ?", envID, scan.ID).
-			Order("created_at DESC").
-			First(&lastPatch).Error; err == nil {
+		if lastPatch, ok := lastPatchByImageID[scan.ID]; ok {
 			dto := lastPatch.ToDto()
 			target.LastPatch = &dto
-			target.LastPatchScan = s.patchedImageScanSummaryInternal(ctx, &lastPatch)
+			target.LastPatchScan = lastPatchScanByImageID[scan.ID]
 		}
 
 		targets = append(targets, target)
@@ -576,30 +596,72 @@ func (s *ImagePatchService) ListPatchTargets(ctx context.Context, envID string, 
 	return targets, paginationResp, nil
 }
 
-// patchedImageScanSummaryInternal looks up the scan of a completed patch's
-// output image so the original's row can show whether the patch worked.
-func (s *ImagePatchService) patchedImageScanSummaryInternal(ctx context.Context, lastPatch *ImagePatchRecord) *imagepatch.PatchScanSummary {
-	if lastPatch.Status != string(imagepatch.PatchStatusCompleted) {
-		return nil
+// latestPatchesByImageInternal loads the most recent patch run per original
+// image in two batched queries, plus the scan of each completed patch's output
+// image so the original's row can show whether the patch worked.
+func (s *ImagePatchService) latestPatchesByImageInternal(ctx context.Context, envID string, imageIDs []string) (map[string]*ImagePatchRecord, map[string]*imagepatch.PatchScanSummary, error) {
+	var patchRows []ImagePatchRecord
+	if err := s.db.WithContext(ctx).
+		Where("environment_id = ? AND original_image_id IN ?", envID, imageIDs).
+		Order("original_image_id, created_at DESC, id").
+		Find(&patchRows).Error; err != nil {
+		return nil, nil, errors.WrapIf(err, "failed to load latest image patches")
 	}
-	names := []string{lastPatch.PatchedRef}
-	if named, err := reference.ParseNormalizedNamed(lastPatch.PatchedRef); err == nil {
-		names = append(names, reference.FamiliarString(named))
+	lastPatchByImageID := make(map[string]*ImagePatchRecord, len(imageIDs))
+	patchedNamesByImageID := make(map[string][]string, len(imageIDs))
+	var patchedNames []string
+	for i := range patchRows {
+		row := &patchRows[i]
+		if _, seen := lastPatchByImageID[row.OriginalImageID]; seen {
+			continue
+		}
+		lastPatchByImageID[row.OriginalImageID] = row
+		if row.Status != string(imagepatch.PatchStatusCompleted) {
+			continue
+		}
+		names := []string{row.PatchedRef}
+		if named, err := reference.ParseNormalizedNamed(row.PatchedRef); err == nil {
+			names = append(names, reference.FamiliarString(named))
+		}
+		patchedNamesByImageID[row.OriginalImageID] = names
+		patchedNames = append(patchedNames, names...)
 	}
 
-	var scan vulnerability.VulnerabilityScanRecord
+	lastPatchScanByImageID := make(map[string]*imagepatch.PatchScanSummary, len(patchedNamesByImageID))
+	if len(patchedNames) == 0 {
+		return lastPatchByImageID, lastPatchScanByImageID, nil
+	}
+	var patchScans []vulnerability.VulnerabilityScanRecord
 	if err := s.db.WithContext(ctx).
-		Where("image_name IN ?", names).
+		Select("image_name", "status", "fixable_count", "total_count", "scan_time").
+		Where("image_name IN ?", patchedNames).
 		Order("scan_time DESC").
-		First(&scan).Error; err != nil {
-		return nil
+		Find(&patchScans).Error; err != nil {
+		return nil, nil, errors.WrapIf(err, "failed to load patched image scans")
 	}
-	return &imagepatch.PatchScanSummary{
-		Status:       scan.Status,
-		FixableCount: mo.PointerToOption(scan.FixableCount).OrEmpty(),
-		TotalCount:   scan.TotalCount,
-		ScanTime:     scan.ScanTime,
+	latestScanByName := make(map[string]*vulnerability.VulnerabilityScanRecord, len(patchScans))
+	for i := range patchScans {
+		if _, seen := latestScanByName[patchScans[i].ImageName]; !seen {
+			latestScanByName[patchScans[i].ImageName] = &patchScans[i]
+		}
 	}
+	for imageID, names := range patchedNamesByImageID {
+		var latest *vulnerability.VulnerabilityScanRecord
+		for _, name := range names {
+			if candidate, ok := latestScanByName[name]; ok && (latest == nil || candidate.ScanTime.After(latest.ScanTime)) {
+				latest = candidate
+			}
+		}
+		if latest != nil {
+			lastPatchScanByImageID[imageID] = &imagepatch.PatchScanSummary{
+				Status:       latest.Status,
+				FixableCount: mo.PointerToOption(latest.FixableCount).OrEmpty(),
+				TotalCount:   latest.TotalCount,
+				ScanTime:     latest.ScanTime,
+			}
+		}
+	}
+	return lastPatchByImageID, lastPatchScanByImageID, nil
 }
 
 // PatchFlaggedImages patches every image whose latest completed vulnerability

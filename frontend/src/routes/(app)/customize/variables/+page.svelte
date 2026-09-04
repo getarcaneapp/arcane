@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
-	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type ActionButton } from '#lib/layouts/index.js';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog';
 	import VariableFormSheet from '#lib/components/sheets/variable-form-sheet.svelte';
@@ -22,7 +21,7 @@
 
 	let { data } = $props();
 
-	let variables = $state(untrack(() => data.variables));
+	let variables = $derived(data.variables);
 	let isSheetOpen = $state(false);
 	let variableToEdit = $state<GlobalVariable | null>(null);
 	let isSubmitting = $state(false);

@@ -2,7 +2,9 @@ package registry
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -937,6 +939,71 @@ func TestContainerRegistryService_InspectImageDigest_FallsBackToAnonymousWhenSto
 	assert.False(t, result.UsedCredential)
 }
 
+// A rate-limited credential must not fall back to anonymous: both paths share the per-registry quota.
+func TestContainerRegistryService_InspectImageDigest_DoesNotFallBackToAnonymousOnCredentialRateLimit(t *testing.T) {
+	db := setupContainerRegistryTestDBInternal(t)
+	createTestPullRegistryInternal(t, db, "ghcr.io", "ghcr-user", "ghcr-token")
+
+	var anonymousCalls int
+	svc := NewContainerRegistryService(db, func(context.Context) (RegistryDaemonClient, error) {
+		return &fakeRegistryDaemonClient{
+			distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+				if options.EncodedRegistryAuth == "" {
+					anonymousCalls++
+				}
+				return client.DistributionInspectResult{}, errors.New(
+					"Error response from daemon: toomanyrequests: retry-after: 1.246809ms, allowed: 44000/minute")
+			},
+		}, nil
+	}, nil)
+
+	result, err := svc.InspectImageDigest(context.Background(), "ghcr.io/getarcaneapp/agent:latest", nil)
+	require.Error(t, err)
+	assert.Zero(t, anonymousCalls, "must not burn anonymous quota when the credential itself is rate limited")
+	require.NotNil(t, result)
+	assert.Equal(t, "credential", result.AuthMethod)
+	assert.True(t, result.UsedCredential)
+}
+
+// The direct-HTTP fallback must not spend an anonymous request when a stored credential resolves the digest.
+func TestContainerRegistryService_InspectImageDigest_FallbackUsesStoredCredentialsBeforeAnonymous(t *testing.T) {
+	db := setupContainerRegistryTestDBInternal(t)
+	createTestPullRegistryInternal(t, db, "ghcr.io", "ghcr-user", "ghcr-token")
+	wantDigest := digest.FromString("fallback-stored-credentials").String()
+
+	var anonymousCalls int
+	svc := NewContainerRegistryService(db, func(context.Context) (RegistryDaemonClient, error) {
+		return &fakeRegistryDaemonClient{
+			distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+				return client.DistributionInspectResult{}, errors.New("Error response from daemon: Not Found")
+			},
+		}, nil
+	}, nil)
+	svc.distributionHTTPClient = &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			authorization := req.Header.Get("Authorization")
+			if authorization == "" {
+				anonymousCalls++
+				return nil, errors.New("unexpected anonymous registry request")
+			}
+			assert.Equal(t, "Basic "+base64.StdEncoding.EncodeToString([]byte("ghcr-user:ghcr-token")), authorization)
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Docker-Content-Digest": []string{wantDigest}},
+				Body:       io.NopCloser(strings.NewReader("")),
+			}, nil
+		}),
+	}
+
+	result, err := svc.InspectImageDigest(context.Background(), "ghcr.io/getarcaneapp/agent:latest", nil)
+	require.NoError(t, err)
+	assert.Zero(t, anonymousCalls)
+	assert.Equal(t, wantDigest, result.Digest)
+	assert.Equal(t, "credential", result.AuthMethod)
+	assert.Equal(t, "ghcr-user", result.AuthUsername)
+	assert.True(t, result.UsedCredential)
+}
+
 func TestContainerRegistryService_InspectImageDigest_FallsBackWhenDistributionNotFound(t *testing.T) {
 	wantDigest := digest.FromString("fallback-not-found").String()
 
@@ -1028,6 +1095,9 @@ func TestContainerRegistryService_InspectImageDigest_RetriesStoredCredentialsAft
 			case 2:
 				w.WriteHeader(http.StatusForbidden)
 			case 3:
+				w.Header().Set("WWW-Authenticate", `Bearer realm="`+tokenURL+`",service="registry.example.com"`)
+				w.WriteHeader(http.StatusUnauthorized)
+			case 4:
 				w.Header().Set("Docker-Content-Digest", wantDigest)
 				w.WriteHeader(http.StatusOK)
 			default:
@@ -1083,13 +1153,14 @@ func TestContainerRegistryService_InspectImageDigest_RetriesStoredCredentialsAft
 	result, err := svc.InspectImageDigest(context.Background(), serverURL.Host+"/team/app:1.2.3", nil)
 	require.NoError(t, err)
 	assert.Equal(t, wantDigest, result.Digest)
-	assert.Equal(t, "credential", result.AuthMethod)
-	assert.Equal(t, "stored-user", result.AuthUsername)
-	assert.True(t, result.UsedCredential)
-	require.Len(t, authHeaders, 3)
-	assert.Empty(t, authHeaders[0])
-	assert.Equal(t, "Bearer anonymous-token", authHeaders[1])
-	assert.Equal(t, "Basic c3RvcmVkLXVzZXI6c3RvcmVkLXRva2Vu", authHeaders[2])
+	// Stored credentials go first; only after rejection does the lookup retry anonymously.
+	require.Len(t, authHeaders, 4)
+	assert.Equal(t, "Basic c3RvcmVkLXVzZXI6c3RvcmVkLXRva2Vu", authHeaders[0])
+	assert.Equal(t, "Bearer credential-token", authHeaders[1])
+	assert.Empty(t, authHeaders[2])
+	assert.Equal(t, "Bearer anonymous-token", authHeaders[3])
+	assert.Equal(t, "anonymous", result.AuthMethod)
+	assert.False(t, result.UsedCredential)
 }
 
 func TestContainerRegistryService_InspectImageDigest_DoesNotFallbackOnTLSFailure(t *testing.T) {

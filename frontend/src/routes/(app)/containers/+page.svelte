@@ -20,9 +20,9 @@
 
 	let { data } = $props();
 
-	let requestOptions = $state(untrack(() => data.containerRequestOptions));
+	let requestOptions = $derived(data.containerRequestOptions);
 	let selectedIds = $state<string[]>([]);
-	let containers = $state(untrack(() => data.containers));
+	let containers = $derived(data.containers);
 	const envId = $derived(environmentStore.selected?.id || '0');
 	let displayedEnvId = $state<string | null>(untrack(() => (data.envId === envId ? data.envId : null)));
 	let isRefreshing = $state(false);
