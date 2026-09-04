@@ -807,6 +807,7 @@
   "images_remove_force_label": "강제 제거",
   "images_pull_no_tag": "리포지토리 태그 없이 이미지를 가져올 수 없습니다",
   "images_untagged": "태그 없음(Untagged)",
+  "images_pinned_references": "고정된 참고문헌",
   "images_used_by": "사용 대상",
   "updates": "업데이트",
   "updates_apply_success": "{updated} 에 적용된 업데이트",
