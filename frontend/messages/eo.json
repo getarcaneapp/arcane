@@ -807,6 +807,7 @@
   "images_remove_force_label": "Deviga forigo",
   "images_pull_no_tag": "Ne eblas elŝuti prakopion sen deponeja etikedo",
   "images_untagged": "Neetikeditaj",
+  "images_pinned_references": "Alpinglitaj referencoj",
   "images_used_by": "Uzata de",
   "updates": "Ĝisdatigoj",
   "updates_apply_success": "Aplikitaj ĝisdatigoj de {updated}",
