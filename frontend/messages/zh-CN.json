@@ -807,6 +807,7 @@
   "images_remove_force_label": "强制移除",
   "images_pull_no_tag": "无法拉取没有仓库标签的镜像",
   "images_untagged": "无标签",
+  "images_pinned_references": "置顶参考文献",
   "images_used_by": "使用者",
   "updates": "更新",
   "updates_apply_success": "已应用 {updated} 更新",
