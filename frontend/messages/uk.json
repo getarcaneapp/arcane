@@ -807,6 +807,7 @@
   "images_remove_force_label": "Примусове видалення",
   "images_pull_no_tag": "Cannot pull image without repository tag",
   "images_untagged": "Untagged",
+  "images_pinned_references": "Закріплені посилання",
   "images_used_by": "Використовується",
   "updates": "Updates",
   "updates_apply_success": "Застосовано {updated} оновлення",
