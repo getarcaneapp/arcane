@@ -807,6 +807,7 @@
   "images_remove_force_label": "Buộc gỡ bỏ",
   "images_pull_no_tag": "Không thể pull Image nếu không có repository tag",
   "images_untagged": "Chưa gắn tag",
+  "images_pinned_references": "Tài liệu tham khảo được ghim",
   "images_used_by": "Được sử dụng bởi",
   "updates": "Cập nhật",
   "updates_apply_success": "Đã áp dụng bản cập nhật {updated}",
