@@ -807,6 +807,7 @@
   "images_remove_force_label": "Принудительное удаление",
   "images_pull_no_tag": "Не удается получить изображение без тега репозитория",
   "images_untagged": "Без тега",
+  "images_pinned_references": "Закрепленные ссылки",
   "images_used_by": "Использовано",
   "updates": "Обновления",
   "updates_apply_success": "Установлено {updated} обновлений",
