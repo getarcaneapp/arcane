@@ -807,6 +807,7 @@
   "images_remove_force_label": "Zorla kaldır",
   "images_pull_no_tag": "Depo etiketi olmadan görüntü çekilemiyor",
   "images_untagged": "Etiketsiz",
+  "images_pinned_references": "Sabitlenmiş Kaynaklar",
   "images_used_by": "Tarafından kullanılan",
   "updates": "Güncellemeler",
   "updates_apply_success": "{updated} 'da yapılan güncellemeler(i)",
