@@ -807,6 +807,7 @@
   "images_remove_force_label": "Forcer le retrait",
   "images_pull_no_tag": "Impossible de télécharger l'image sans tag de dépôt",
   "images_untagged": "Sans tag",
+  "images_pinned_references": "Références épinglées",
   "images_used_by": "Utilisé par",
   "updates": "Mises à jour",
   "updates_apply_success": "Mise(s) à jour appliquée(s) de {updated}",
