@@ -20,7 +20,6 @@ headless agent modes, and a Cobra CLI.
 - Keep comments short. If code needs a paragraph to explain its structure, simplify it.
 - Never run state-changing Git commands. Do not stage, commit, push, tag, stash,
   create branches, or create worktrees.
-- Always use the `golang-master` skill when writing Go.
 - Name every unexported Go function with an `Internal` suffix.
 - Put public/shared Go types in the top-level `types/` module.
 - Put reusable helper utilities under `backend/pkg/utils/` in the appropriate package.
