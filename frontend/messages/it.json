@@ -807,6 +807,7 @@
   "images_remove_force_label": "Rimuovere con forza",
   "images_pull_no_tag": "Impossibile scaricare l'immagine senza il tag del repository",
   "images_untagged": "Senza tag",
+  "images_pinned_references": "Riferimenti in evidenza",
   "images_used_by": "Usato Da",
   "updates": "Aggiornamenti",
   "updates_apply_success": "Aggiornamenti applicati a {updated}",
