@@ -807,6 +807,7 @@
   "images_remove_force_label": "Αναγκαστική αφαίρεση",
   "images_pull_no_tag": "Cannot pull image without repository tag",
   "images_untagged": "Χωρίς ετικέτα",
+  "images_pinned_references": "Επιλεγμένες αναφορές",
   "images_used_by": "Χρησιμοποιείται Από",
   "updates": "Ενημερώσεις",
   "updates_apply_success": "Εφαρμοσμένες ενημερώσεις του {updated}",
