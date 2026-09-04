@@ -807,6 +807,7 @@
   "images_remove_force_label": "強制移除",
   "images_pull_no_tag": "無法拉取沒有儲存庫標籤的映像檔",
   "images_untagged": "無標籤",
+  "images_pinned_references": "釘選的參考資料",
   "images_used_by": "被使用於",
   "updates": "更新",
   "updates_apply_success": "已套用 {updated} 更新項目",
