@@ -807,6 +807,7 @@
   "images_remove_force_label": "強制撤去",
   "images_pull_no_tag": "Cannot pull image without repository tag",
   "images_untagged": "Untagged",
+  "images_pinned_references": "固定された参考文献",
   "images_used_by": "使用元",
   "updates": "Updates",
   "updates_apply_success": "{updated} の更新が適用されました",
