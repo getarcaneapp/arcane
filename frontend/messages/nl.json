@@ -807,6 +807,7 @@
   "images_remove_force_label": "Forceer verwijderen",
   "images_pull_no_tag": "Kan geen afbeelding verwijderen zonder repository tag",
   "images_untagged": "Niet-getagd",
+  "images_pinned_references": "Vastgezette bronvermeldingen",
   "images_used_by": "Gebruikt door",
   "updates": "Bijwerken",
   "updates_apply_success": "Toegepaste {updated} update(s)",
