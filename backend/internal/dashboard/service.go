@@ -216,7 +216,7 @@ func (s *DashboardService) buildSnapshotInternal(ctx context.Context, options Da
 			projectIDByName = map[string]string{}
 		}
 		imageUsageMap := image.BuildVolumeUsageMap(filteredContainers, projectIDByName)
-		imageItems := image.MapDockerImagesToDTOs(dockerImages, imageUsageMap, nil, nil)
+		imageItems := image.MapDockerImagesToDTOs(dockerImages, dockerContainers, imageUsageMap, nil, nil)
 		sort.Slice(imageItems, func(i, j int) bool {
 			if imageItems[i].Size == imageItems[j].Size {
 				return imageItems[i].ID < imageItems[j].ID

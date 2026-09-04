@@ -6,6 +6,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"sort"
 	"strings"
 	"time"
 
@@ -72,8 +73,9 @@ func (s *ImageService) GetImageDetail(ctx context.Context, id string) (*imagetyp
 	}
 
 	var (
-		inspect  image.InspectResponse
-		listSize int64
+		inspect    image.InspectResponse
+		listSize   int64
+		containers []container.Summary
 	)
 
 	g, gctx := errgroup.WithContext(ctx)
@@ -106,6 +108,18 @@ func (s *ImageService) GetImageDetail(ctx context.Context, id string) (*imagetyp
 		return nil
 	})
 
+	g.Go(func() (workerErr error) {
+		defer utils.RecoverToError(&workerErr, "image worker")
+
+		containerList, err := s.dockerService.ListContainers(gctx)
+		if err != nil {
+			slog.DebugContext(gctx, "failed to list containers for image detail pinned references", "id", id, "error", err)
+			return nil
+		}
+		containers = containerList
+		return nil
+	})
+
 	if err := g.Wait(); err != nil {
 		return nil, err
 	}
@@ -114,6 +128,10 @@ func (s *ImageService) GetImageDetail(ctx context.Context, id string) (*imagetyp
 	if listSize > 0 {
 		out.Size = listSize
 		out.Descriptor.Size = listSize
+	}
+	if len(containers) > 0 {
+		pinnedRefsMap := collectPinnedReferencesByImageIDInternal(containers)
+		out.PinnedReferences = pinnedRefsMap[inspect.ID]
 	}
 	return &out, nil
 }
@@ -746,7 +764,7 @@ func (s *ImageService) ListImagesPaginated(ctx context.Context, params paginatio
 	usageMap := BuildVolumeUsageMap(containers, projectIDByName)
 	updateMap := buildUpdateMap(updateRecords)
 
-	items := MapDockerImagesToDTOs(dockerImages, usageMap, updateMap, nil)
+	items := MapDockerImagesToDTOs(dockerImages, containers, usageMap, updateMap, nil)
 
 	config := s.getImagePaginationConfig()
 
@@ -1043,24 +1061,72 @@ func buildUpdateInfo(updateRecord *imageupdate.ImageUpdateRecord) *imagetypes.Up
 	}
 }
 
-func MapDockerImagesToDTOs(dockerImages []image.Summary, usageMap map[string][]imagetypes.UsedBy, updateMap map[string]*imageupdate.ImageUpdateRecord, vulnerabilityMap map[string]*vulnerabilitytypes.ScanSummary) []imagetypes.Summary {
+func collectPinnedReferencesByImageIDInternal(containers []container.Summary) map[string][]string {
+	if len(containers) == 0 {
+		return nil
+	}
+
+	seen := make(map[string]map[string]struct{})
+	for _, c := range containers {
+		if c.ImageID == "" || c.Image == "" {
+			continue
+		}
+		trimmed := strings.TrimSpace(c.Image)
+		if trimmed == "" || strings.HasPrefix(trimmed, "sha256:") {
+			continue
+		}
+
+		named, err := ref.ParseNormalizedNamed(trimmed)
+		if err != nil {
+			continue
+		}
+		if _, ok := named.(ref.Digested); !ok {
+			continue
+		}
+
+		if seen[c.ImageID] == nil {
+			seen[c.ImageID] = make(map[string]struct{})
+		}
+		seen[c.ImageID][trimmed] = struct{}{}
+	}
+
+	if len(seen) == 0 {
+		return nil
+	}
+
+	result := make(map[string][]string, len(seen))
+	for imageID, refsMap := range seen {
+		refs := make([]string, 0, len(refsMap))
+		for r := range refsMap {
+			refs = append(refs, r)
+		}
+		sort.Strings(refs)
+		result[imageID] = refs
+	}
+
+	return result
+}
+
+func MapDockerImagesToDTOs(dockerImages []image.Summary, containers []container.Summary, usageMap map[string][]imagetypes.UsedBy, updateMap map[string]*imageupdate.ImageUpdateRecord, vulnerabilityMap map[string]*vulnerabilitytypes.ScanSummary) []imagetypes.Summary {
+	pinnedRefsByImageID := collectPinnedReferencesByImageIDInternal(containers)
 	items := make([]imagetypes.Summary, 0, len(dockerImages))
 	for _, di := range dockerImages {
 		repo, tag := determineRepoAndTag(di)
 
 		usedBy := usageMap[di.ID]
 		imageDto := imagetypes.Summary{
-			ID:          di.ID,
-			Repo:        repo,
-			Tag:         tag,
-			RepoTags:    di.RepoTags,
-			RepoDigests: di.RepoDigests,
-			Created:     di.Created,
-			Size:        di.Size,
-			VirtualSize: di.SharedSize,
-			Labels:      convertLabels(di.Labels),
-			InUse:       len(usedBy) > 0,
-			UsedBy:      usedBy,
+			ID:               di.ID,
+			Repo:             repo,
+			Tag:              tag,
+			RepoTags:         di.RepoTags,
+			RepoDigests:      di.RepoDigests,
+			PinnedReferences: pinnedRefsByImageID[di.ID],
+			Created:          di.Created,
+			Size:             di.Size,
+			VirtualSize:      di.SharedSize,
+			Labels:           convertLabels(di.Labels),
+			InUse:            len(usedBy) > 0,
+			UsedBy:           usedBy,
 		}
 
 		if updateRecord, exists := updateMap[di.ID]; exists {
@@ -1089,6 +1155,9 @@ func (s *ImageService) getImagePaginationConfig() pagination.Config[imagetypes.S
 					return i.RepoTags[0], nil
 				}
 				return "", nil
+			},
+			func(i imagetypes.Summary) (string, error) {
+				return strings.Join(i.PinnedReferences, " "), nil
 			},
 		},
 		SortBindings: []pagination.SortBinding[imagetypes.Summary]{

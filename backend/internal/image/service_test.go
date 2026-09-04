@@ -31,9 +31,11 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 	"github.com/getarcaneapp/arcane/types/v2/vulnerability"
+	dockercontainer "github.com/moby/moby/api/types/container"
 	dockertypesimage "github.com/moby/moby/api/types/image"
 	dockerregistry "github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
@@ -90,6 +92,221 @@ func TestApplyVulnerabilitySummariesToItemsInternal(t *testing.T) {
 
 	assert.Equal(t, summary, items[0].VulnerabilityScan)
 	assert.Nil(t, items[1].VulnerabilityScan)
+}
+
+func TestCollectPinnedReferencesByImageIDInternal(t *testing.T) {
+	containers := []dockercontainer.Summary{
+		{
+			ID:      "c1",
+			ImageID: "sha256:image-pinned-1",
+			Image:   "ghcr.io/syncthing/syncthing:2.1.3@sha256:8c8ff37ab6aa8be23b700648a90fa9412e214852e9fd6ea8477c8334792daec0",
+			State:   "running",
+		},
+		{
+			ID:      "c2",
+			ImageID: "sha256:image-pinned-1",
+			Image:   "ghcr.io/syncthing/syncthing:2.1.3@sha256:8c8ff37ab6aa8be23b700648a90fa9412e214852e9fd6ea8477c8334792daec0",
+			State:   "exited",
+		},
+		{
+			ID:      "c3",
+			ImageID: "sha256:image-pinned-1",
+			Image:   "ghcr.io/syncthing/syncthing:v2@sha256:8c8ff37ab6aa8be23b700648a90fa9412e214852e9fd6ea8477c8334792daec0",
+			State:   "running",
+		},
+		{
+			ID:      "c4",
+			ImageID: "sha256:image-pinned-2",
+			Image:   "docker.io/library/redis@sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+			State:   "running",
+		},
+		{
+			ID:      "c5",
+			ImageID: "sha256:image-regular",
+			Image:   "nginx:latest",
+			State:   "running",
+		},
+		{
+			ID:      "c6",
+			ImageID: "sha256:image-hash",
+			Image:   "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+			State:   "running",
+		},
+		{
+			ID:      "c7",
+			ImageID: "sha256:image-invalid",
+			Image:   "not a valid docker reference ::: 123",
+			State:   "running",
+		},
+	}
+
+	result := collectPinnedReferencesByImageIDInternal(containers)
+	require.NotNil(t, result)
+
+	pins1 := result["sha256:image-pinned-1"]
+	require.Len(t, pins1, 2)
+	assert.Equal(t, []string{
+		"ghcr.io/syncthing/syncthing:2.1.3@sha256:8c8ff37ab6aa8be23b700648a90fa9412e214852e9fd6ea8477c8334792daec0",
+		"ghcr.io/syncthing/syncthing:v2@sha256:8c8ff37ab6aa8be23b700648a90fa9412e214852e9fd6ea8477c8334792daec0",
+	}, pins1)
+
+	pins2 := result["sha256:image-pinned-2"]
+	require.Len(t, pins2, 1)
+	assert.Equal(t, []string{"docker.io/library/redis@sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}, pins2)
+
+	assert.NotContains(t, result, "sha256:image-regular")
+	assert.NotContains(t, result, "sha256:image-hash")
+	assert.NotContains(t, result, "sha256:image-invalid")
+}
+
+func TestMapDockerImagesToDTOs_PopulatesPinnedReferencesInternal(t *testing.T) {
+	pinnedRef := "ghcr.io/syncthing/syncthing:2.1.3@sha256:8c8ff37ab6aa8be23b700648a90fa9412e214852e9fd6ea8477c8334792daec0"
+	dockerImages := []dockertypesimage.Summary{
+		{
+			ID:          "sha256:pinned-image",
+			RepoTags:    []string{},
+			RepoDigests: []string{"ghcr.io/syncthing/syncthing@sha256:8c8ff37ab6aa8be23b700648a90fa9412e214852e9fd6ea8477c8334792daec0"},
+			Size:        12345,
+		},
+		{
+			ID:          "sha256:regular-image",
+			RepoTags:    []string{"nginx:alpine"},
+			RepoDigests: []string{"nginx@sha256:abcdef"},
+			Size:        67890,
+		},
+	}
+	containers := []dockercontainer.Summary{
+		{
+			ID:      "c-pinned",
+			ImageID: "sha256:pinned-image",
+			Image:   pinnedRef,
+			Names:   []string{"/syncthing"},
+		},
+		{
+			ID:      "c-regular",
+			ImageID: "sha256:regular-image",
+			Image:   "nginx:alpine",
+			Names:   []string{"/nginx"},
+		},
+	}
+
+	usageMap := BuildVolumeUsageMap(containers, nil)
+	items := MapDockerImagesToDTOs(dockerImages, containers, usageMap, nil, nil)
+
+	require.Len(t, items, 2)
+
+	assert.Equal(t, "sha256:pinned-image", items[0].ID)
+	assert.Equal(t, "ghcr.io/syncthing/syncthing", items[0].Repo)
+	assert.Equal(t, "<none>", items[0].Tag)
+	assert.Empty(t, items[0].RepoTags)
+	assert.Equal(t, []string{pinnedRef}, items[0].PinnedReferences)
+	assert.True(t, items[0].InUse)
+
+	assert.Equal(t, "sha256:regular-image", items[1].ID)
+	assert.Equal(t, "nginx", items[1].Repo)
+	assert.Equal(t, "alpine", items[1].Tag)
+	assert.Equal(t, []string{"nginx:alpine"}, items[1].RepoTags)
+	assert.Nil(t, items[1].PinnedReferences)
+	assert.True(t, items[1].InUse)
+}
+
+func TestImageService_GetImageDetail_EnrichesPinnedReferencesInternal(t *testing.T) {
+	db := setupImageProjectTestDBInternal(t)
+	const pinnedID = "sha256:test-pinned-detail"
+	pinnedRef := "ghcr.io/syncthing/syncthing:2.1.3@sha256:8c8ff37ab6aa8be23b700648a90fa9412e214852e9fd6ea8477c8334792daec0"
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/images/json"):
+			_ = json.NewEncoder(w).Encode([]dockertypesimage.Summary{
+				{ID: pinnedID, Size: 2048},
+			})
+		case strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json"):
+			_ = json.NewEncoder(w).Encode(dockertypesimage.InspectResponse{
+				ID:          pinnedID,
+				RepoTags:    []string{},
+				RepoDigests: []string{"ghcr.io/syncthing/syncthing@sha256:8c8ff37ab6aa8be23b700648a90fa9412e214852e9fd6ea8477c8334792daec0"},
+				Size:        2048,
+			})
+		case strings.HasSuffix(r.URL.Path, "/containers/json"):
+			_ = json.NewEncoder(w).Encode([]dockercontainer.Summary{
+				{
+					ID:      "c-pinned-detail",
+					ImageID: pinnedID,
+					Image:   pinnedRef,
+				},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	imageSvc := NewImageService(db, &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}, nil, nil, nil, event.NewEventService(db, nil, nil))
+
+	detail, err := imageSvc.GetImageDetail(context.Background(), pinnedID)
+	require.NoError(t, err)
+	require.NotNil(t, detail)
+	assert.Equal(t, pinnedID, detail.ID)
+	assert.Equal(t, []string{pinnedRef}, detail.PinnedReferences)
+}
+
+func TestImageService_GetImageDetail_ContainerFailureDoesNotBreakInspectionInternal(t *testing.T) {
+	db := setupImageProjectTestDBInternal(t)
+	const testID = "sha256:test-detail-resilient"
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/images/json"):
+			_ = json.NewEncoder(w).Encode([]dockertypesimage.Summary{
+				{ID: testID, Size: 1024},
+			})
+		case strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json"):
+			_ = json.NewEncoder(w).Encode(dockertypesimage.InspectResponse{
+				ID:   testID,
+				Size: 1024,
+			})
+		case strings.HasSuffix(r.URL.Path, "/containers/json"):
+			http.Error(w, "docker daemon error listing containers", http.StatusInternalServerError)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	imageSvc := NewImageService(db, &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}, nil, nil, nil, event.NewEventService(db, nil, nil))
+
+	detail, err := imageSvc.GetImageDetail(context.Background(), testID)
+	require.NoError(t, err)
+	require.NotNil(t, detail)
+	assert.Equal(t, testID, detail.ID)
+	assert.Nil(t, detail.PinnedReferences)
+}
+
+func TestImagePaginationConfig_SearchesPinnedReferencesInternal(t *testing.T) {
+	svc := &ImageService{}
+	config := svc.getImagePaginationConfig()
+
+	item := imagetypes.Summary{
+		ID:               "sha256:syncthing",
+		Repo:             "ghcr.io/syncthing/syncthing",
+		Tag:              "<none>",
+		PinnedReferences: []string{"ghcr.io/syncthing/syncthing:2.1.3@sha256:8c8ff37ab6aa8be23b700648a90fa9412e214852e9fd6ea8477c8334792daec0"},
+	}
+
+	res := config.SearchOrderAndPaginate([]imagetypes.Summary{item}, pagination.QueryParams{
+		Search: "8c8ff37",
+		Limit:  10,
+	})
+	require.Len(t, res.Items, 1)
+
+	resTag := config.SearchOrderAndPaginate([]imagetypes.Summary{item}, pagination.QueryParams{
+		Search: "2.1.3",
+		Limit:  10,
+	})
+	require.Len(t, resTag.Items, 1)
 }
 
 func TestImageService_GetUpdateInfoByImageRefs_MatchesCanonicalAndFamiliarRepos(t *testing.T) {

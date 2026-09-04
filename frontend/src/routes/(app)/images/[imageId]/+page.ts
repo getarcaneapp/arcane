@@ -1,6 +1,7 @@
 import { imageService } from '#lib/services/image-service.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte';
 import type { ImageDetailSummaryDto } from '#lib/types/docker.js';
+import { parseImageRef } from '#lib/utils/docker';
 import { queryKeys } from '#lib/query/query-keys';
 import type { PageLoad } from './$types';
 import { error } from '@sveltejs/kit';
@@ -28,14 +29,9 @@ export const load: PageLoad = async ({ params, parent }): Promise<ImageDetailDat
 
 		let repo = '<none>';
 		let tag = '<none>';
-		if (image.RepoTags && image.RepoTags.length > 0) {
-			const repoTag = image.RepoTags[0];
-			if (repoTag.includes(':')) {
-				[repo, tag] = repoTag.split(':');
-			} else {
-				repo = repoTag;
-				tag = 'latest';
-			}
+		const rawTags = image.repoTags ?? image.RepoTags;
+		if (rawTags && rawTags.length > 0 && rawTags[0] !== '<none>:<none>') {
+			({ repo, tag } = parseImageRef(rawTags[0]));
 		}
 
 		return {

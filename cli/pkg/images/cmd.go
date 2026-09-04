@@ -662,10 +662,11 @@ var ImageRef = cmdutil.ResourceRef[image.DetailSummary, image.Summary]{
 	},
 	Promote: func(match image.Summary) *image.DetailSummary {
 		return &image.DetailSummary{
-			ID:          match.ID,
-			RepoTags:    match.RepoTags,
-			RepoDigests: match.RepoDigests,
-			Size:        match.Size,
+			ID:               match.ID,
+			RepoTags:         match.RepoTags,
+			RepoDigests:      match.RepoDigests,
+			PinnedReferences: match.PinnedReferences,
+			Size:             match.Size,
 		}
 	},
 	IDOf: func(match image.Summary) string { return match.ID },

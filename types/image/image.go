@@ -160,6 +160,11 @@ type Summary struct {
 	//
 	// Required: false
 	VulnerabilityScan *vulnerability.ScanSummary `json:"vulnerabilityScan,omitempty"`
+
+	// PinnedReferences contains exact digest-pinned references used by containers.
+	//
+	// Required: false
+	PinnedReferences []string `json:"pinnedReferences,omitempty"`
 }
 
 type AttestationList struct {
@@ -300,6 +305,11 @@ type DetailSummary struct {
 	//
 	// Required: true
 	RepoDigests []string `json:"repoDigests"`
+
+	// PinnedReferences contains exact digest-pinned references used by containers.
+	//
+	// Required: false
+	PinnedReferences []string `json:"pinnedReferences,omitempty"`
 
 	// Comment is a comment associated with the image.
 	//

@@ -478,6 +478,7 @@ export interface ImageSummaryDto {
 	id: string;
 	repoTags: string[];
 	repoDigests: string[];
+	pinnedReferences?: string[];
 	created: number;
 	size: number;
 	virtualSize: number;
@@ -494,6 +495,9 @@ export interface ImageDetailSummaryDto {
 	id: string;
 	repoTags: string[];
 	repoDigests: string[];
+	pinnedReferences?: string[];
+	repo?: string;
+	tag?: string;
 	parent: string;
 	comment: string;
 	created: string;
