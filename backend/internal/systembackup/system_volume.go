@@ -12,6 +12,7 @@ import (
 
 	"emperror.dev/errors"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	s3domain "github.com/getarcaneapp/arcane/backend/v2/internal/s3"
@@ -268,11 +269,23 @@ func (s *SystemBackupService) resolveSystemVolumeRunPolicyInternal(ctx context.C
 	return policy, true, err
 }
 
-func (s *SystemBackupService) RunSystemVolumeBackups(ctx context.Context, request backuptypes.RunSystemVolumeBackupsRequest) (*backuptypes.SystemVolumeBackupRunResult, error) {
-	return s.runSystemVolumeBackupsInternal(ctx, request, volume.VolumeBackupTriggerManual)
+type preparedSystemVolumeBackupInternal struct {
+	policy       backuptypes.SystemVolumeBackupPolicy
+	manualPolicy bool
+	candidates   []backuptypes.SystemVolumeBackupOption
+	lease        *actors.Lease[actors.AdmissionKey]
 }
 
 func (s *SystemBackupService) runSystemVolumeBackupsInternal(ctx context.Context, request backuptypes.RunSystemVolumeBackupsRequest, trigger volume.VolumeBackupTrigger) (*backuptypes.SystemVolumeBackupRunResult, error) {
+	prepared, err := s.prepareSystemVolumeBackupsInternal(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	defer prepared.lease.Release()
+	return s.executeSystemVolumeBackupsInternal(ctx, prepared.policy, prepared.manualPolicy, prepared.candidates, trigger, "")
+}
+
+func (s *SystemBackupService) prepareSystemVolumeBackupsInternal(ctx context.Context, request backuptypes.RunSystemVolumeBackupsRequest) (*preparedSystemVolumeBackupInternal, error) {
 	if s.volumeService == nil {
 		return nil, errors.New("volume service is unavailable")
 	}
@@ -287,21 +300,32 @@ func (s *SystemBackupService) runSystemVolumeBackupsInternal(ctx context.Context
 	if !admitted {
 		return nil, ErrSystemBackupAlreadyRunning
 	}
-	defer lease.Release()
 	options, err := s.volumeService.ListBackupVolumeOptions(ctx)
 	if err != nil {
+		lease.Release()
 		return nil, err
 	}
 	candidates := selectSystemVolumeBackupCandidatesInternal(policyConfig, options)
-	result := &backuptypes.SystemVolumeBackupRunResult{
+	return &preparedSystemVolumeBackupInternal{policy: policyConfig, manualPolicy: manualPolicy, candidates: candidates, lease: lease}, nil
+}
+
+func (s *SystemBackupService) executeSystemVolumeBackupsInternal(ctx context.Context, policyConfig backuptypes.SystemVolumeBackupPolicy, manualPolicy bool, candidates []backuptypes.SystemVolumeBackupOption, trigger volume.VolumeBackupTrigger, activityID string) (result *backuptypes.SystemVolumeBackupRunResult, err error) {
+	result = &backuptypes.SystemVolumeBackupRunResult{
 		Matched: len(candidates), Failures: make([]backuptypes.SystemVolumeBackupFailure, 0),
 	}
+	defer s.updateSystemVolumeProgressInternal(context.WithoutCancel(ctx), activityID, policyConfig.ID, candidates, result)
+	defer utils.RecoverToError(&err, "system-managed volume backup")
+
 	policy := backuptypes.UpdateBackupPolicy{
 		Enabled: true, Schedule: policyConfig.Schedule, RetentionCount: policyConfig.RetentionCount,
 		StopContainers: policyConfig.StopContainers, LocalEnabled: policyConfig.LocalEnabled, S3Enabled: policyConfig.S3Enabled,
 		S3DestinationID: policyConfig.S3DestinationID,
 	}
 	for _, candidate := range candidates {
+		if err := ctx.Err(); err != nil {
+			return result, err
+		}
+		s.updateSystemVolumeProgressInternal(ctx, activityID, policyConfig.ID, candidates, result)
 		overridden, policyErr := s.volumeService.HasEnabledBackupPolicy(ctx, candidate.Name)
 		if policyErr != nil {
 			result.Failed++

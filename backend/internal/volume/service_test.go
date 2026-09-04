@@ -740,10 +740,10 @@ func TestVolumeBackup_ValidationErrors(t *testing.T) {
 	_, err = service.UpdateBackupPolicies(ctx, "app-data", []volumetypes.UpdateBackupPolicy{{Schedule: "0 0 2 * * *", RetentionCount: 7}})
 	require.ErrorContains(t, err, "select at least one volume backup destination")
 
-	_, err = service.CreateBackup(ctx, "app-data", common.User{}, VolumeBackupTriggerManual, volumetypes.CreateBackupRequest{Destination: volumetypes.BackupDestination("invalid")})
+	_, err = service.StartBackup(ctx, "0", "app-data", common.User{}, volumetypes.CreateBackupRequest{Destination: volumetypes.BackupDestination("invalid")})
 	require.EqualError(t, err, "invalid volume backup destination")
 
-	_, err = service.CreateBackup(ctx, "app-data", common.User{}, VolumeBackupTriggerManual, volumetypes.CreateBackupRequest{Destination: volumetypes.BackupDestinationS3})
+	_, err = service.StartBackup(ctx, "0", "app-data", common.User{}, volumetypes.CreateBackupRequest{Destination: volumetypes.BackupDestinationS3})
 	require.EqualError(t, err, "select an S3 destination for the volume backup")
 }
 

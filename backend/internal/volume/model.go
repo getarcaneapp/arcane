@@ -57,6 +57,7 @@ func (*VolumeBackup) TableName() string {
 
 func (b *VolumeBackup) ToDTO() volume.BackupEntry {
 	return volume.BackupEntry{
+		ActivityID:        b.ActivityID,
 		ID:                b.ID,
 		VolumeName:        b.VolumeName,
 		Size:              b.Size,

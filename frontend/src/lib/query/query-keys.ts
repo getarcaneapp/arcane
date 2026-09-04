@@ -13,6 +13,10 @@ function stableSerialize(value: unknown): string {
 }
 
 export const queryKeys = {
+	backupActivities: {
+		active: (environmentId: string, resourceKey: string, discoverFromHistory: boolean) =>
+			['backup-activities', environmentId, resourceKey, discoverFromHistory] as const
+	},
 	auth: {
 		all: ['auth'] as const,
 		logout: () => ['auth', 'logout'] as const,

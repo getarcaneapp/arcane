@@ -58,7 +58,7 @@ type SystemVolumeBackupOptionsOutput struct {
 }
 
 type SystemVolumeBackupRunOutput struct {
-	Body backuptypes.SystemVolumeBackupRunResult
+	Body backuptypes.BackupRunAccepted
 }
 
 type RunSystemVolumeBackupsInput struct {
@@ -124,12 +124,12 @@ func RegisterSystemBackups(api huma.API, service *SystemBackupService, activityS
 	middleware.RegisterWithPermission(api, huma.Operation{OperationID: "get-system-volume-backup-config", Method: http.MethodGet, Path: "/backups/volumes/config", Summary: "Get system-managed volume backup policies", Tags: []string{"System Backups"}, Middlewares: adminOnly}, authz.PermSystemBackupsRead, h.GetSystemVolumeConfig)
 	middleware.RegisterWithPermission(api, huma.Operation{OperationID: "update-system-volume-backup-config", Method: http.MethodPut, Path: "/backups/volumes/config", Summary: "Update system-managed volume backup policies", Tags: []string{"System Backups"}, Middlewares: adminOnly}, authz.PermSystemBackupsManage, h.UpdateSystemVolumeConfig)
 	middleware.RegisterWithPermission(api, huma.Operation{OperationID: "list-system-volume-backup-options", Method: http.MethodGet, Path: "/backups/volumes/options", Summary: "List volumes available to system-managed backups", Tags: []string{"System Backups"}, Middlewares: adminOnly}, authz.PermSystemBackupsRead, h.ListSystemVolumeOptions)
-	middleware.RegisterWithPermission(api, huma.Operation{OperationID: "run-system-volume-backups", Method: http.MethodPost, Path: "/backups/volumes/run", Summary: "Run system-managed volume backups", Tags: []string{"System Backups"}, Middlewares: adminOnly}, authz.PermSystemBackupsManage, h.RunSystemVolumeBackups)
+	middleware.RegisterWithPermission(api, huma.Operation{OperationID: "run-system-volume-backups", DefaultStatus: http.StatusAccepted, Method: http.MethodPost, Path: "/backups/volumes/run", Summary: "Run system-managed volume backups", Tags: []string{"System Backups"}, Middlewares: adminOnly}, authz.PermSystemBackupsManage, h.RunSystemVolumeBackups)
 	middleware.RegisterWithPermission(api, huma.Operation{OperationID: "get-system-backup-policies", Method: http.MethodGet, Path: "/backups/policies", Summary: "Get Arcane system backup policies", Tags: []string{"System Backups"}, Middlewares: adminOnly}, authz.PermSystemBackupsRead, h.GetPolicies)
 	middleware.RegisterWithPermission(api, huma.Operation{OperationID: "update-system-backup-policies", Method: http.MethodPut, Path: "/backups/policies", Summary: "Update Arcane system backup policies", Tags: []string{"System Backups"}, Middlewares: adminOnly}, authz.PermSystemBackupsManage, h.UpdatePolicies)
 	middleware.RegisterWithPermission(api, huma.Operation{OperationID: "generate-system-backup-recovery-key", Method: http.MethodPost, Path: "/backups/recovery-key/generate", Summary: "Generate an Arcane system backup recovery key", Tags: []string{"System Backups"}, Middlewares: adminOnly}, authz.PermSystemBackupsRecoveryKey, h.GenerateRecoveryKey)
 	middleware.RegisterWithPermission(api, huma.Operation{OperationID: "set-system-backup-recovery-key", Method: http.MethodPut, Path: "/backups/recovery-key", Summary: "Configure Arcane system backup recovery key", Tags: []string{"System Backups"}, Middlewares: adminOnly}, authz.PermSystemBackupsRecoveryKey, h.SetRecoveryKey)
-	middleware.RegisterWithPermission(api, huma.Operation{OperationID: "create-system-backup", Method: http.MethodPost, Path: "/backups", Summary: "Create Arcane system backup", Tags: []string{"System Backups"}, Middlewares: adminOnly}, authz.PermSystemBackupsManage, h.Create)
+	middleware.RegisterWithPermission(api, huma.Operation{OperationID: "create-system-backup", DefaultStatus: http.StatusAccepted, Method: http.MethodPost, Path: "/backups", Summary: "Create Arcane system backup", Tags: []string{"System Backups"}, Middlewares: adminOnly}, authz.PermSystemBackupsManage, h.Create)
 	middleware.RegisterWithPermission(api, huma.Operation{OperationID: "discover-system-backups", Method: http.MethodPost, Path: "/backups/discover", Summary: "Discover Arcane system backups in S3", Tags: []string{"System Backups"}, Middlewares: adminOnly}, authz.PermSystemBackupsManage, h.Discover)
 	middleware.RegisterWithPermission(api, huma.Operation{OperationID: "restore-system-backup", Method: http.MethodPost, Path: "/backups/{id}/restore", Summary: "Restore Arcane system backup", Tags: []string{"System Backups"}, Middlewares: adminOnly}, authz.PermSystemBackupsRestore, h.Restore)
 	middleware.RegisterWithPermission(api, huma.Operation{OperationID: "browse-system-backup-files", Method: http.MethodPost, Path: "/backups/{id}/files/browse", Summary: "Browse project files in an Arcane system backup", Tags: []string{"System Backups"}, Middlewares: adminOnly}, authz.PermSystemBackupsRead, h.BrowseFiles)
@@ -183,7 +183,11 @@ func (h *SystemBackupHandler) RunSystemVolumeBackups(ctx context.Context, input 
 	if input.Body != nil {
 		request = *input.Body
 	}
-	result, err := h.service.RunSystemVolumeBackups(ctx, request)
+	user, err := handlerutil.RequireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	result, err := h.service.StartSystemVolumeBackups(utils.ActivityRuntimeContext(ctx, h.appCtx), *user, request)
 	if errors.Is(err, ErrSystemBackupAlreadyRunning) {
 		return nil, huma.Error409Conflict(err.Error())
 	}
@@ -292,24 +296,14 @@ func (h *SystemBackupHandler) Create(ctx context.Context, input *CreateSystemBac
 	if err != nil {
 		return nil, err
 	}
-	var run *SystemBackupRun
-	_, err = activitylib.RunHandlerActivity(utils.ActivityRuntimeContext(ctx, h.appCtx), h.activity, activitylib.HandlerOptions{
-		EnvironmentID: "0", Type: activitytypes.TypeResourceAction, ResourceType: "system_backup", ResourceID: "arcane", ResourceName: "Arcane", User: user,
-		Step: "Creating system backup", Message: "Creating Arcane system backup", SuccessMessage: "Arcane system backup created successfully",
-		Metadata: database.JSON{"action": "create_system_backup", "destination": input.Body.Destination, "s3DestinationId": input.Body.S3DestinationID, "policyId": input.Body.PolicyID},
-	}, func(activityCtx context.Context) error {
-		var e error
-		run, e = h.service.CreateBackup(activityCtx, *user, SystemBackupTriggerManual, input.Body)
-		return e
-	})
+	run, err := h.service.StartBackup(utils.ActivityRuntimeContext(ctx, h.appCtx), *user, input.Body)
 	if errors.Is(err, ErrSystemBackupAlreadyRunning) {
 		return nil, huma.Error409Conflict(err.Error())
 	}
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	dto := run.ToDTO()
-	return &SystemBackupOutput{Body: dto}, nil
+	return &SystemBackupOutput{Body: *run}, nil
 }
 
 func (h *SystemBackupHandler) Restore(ctx context.Context, input *RestoreSystemBackupInput) (*handlerutil.Out[base.MessageResponse], error) {

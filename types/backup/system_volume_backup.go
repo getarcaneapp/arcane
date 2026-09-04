@@ -113,3 +113,9 @@ type HistoryEntry struct {
 	ResourceType      string                  `json:"resourceType"`
 	ResourceName      string                  `json:"resourceName" sortable:"true"`
 }
+
+// BackupRunAccepted identifies a backup operation accepted for background execution.
+type BackupRunAccepted struct {
+	ActivityID string `json:"activityId"`
+	Status     string `json:"status"`
+}

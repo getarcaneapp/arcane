@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '../fixtures/test.fixture';
+import type { Activity } from '../../frontend/src/lib/types/activity.type';
 
 type ManagementType = 'system' | 'volume';
 
@@ -93,6 +94,13 @@ async function mockSystemBackupPage(
 ) {
 	let savedCollection = structuredClone(collection);
 	const runRequests: unknown[] = [];
+	const activities: Activity[] = [];
+	await page.route('**/api/environments/0/activities?**', (route) => {
+		const status = new URL(route.request().url()).searchParams.get('status');
+		return route.fulfill({
+			json: paginated(activities.filter((activity) => !status || activity.status === status))
+		});
+	});
 
 	await page.route('**/api/backups/volumes/config', async (route) => {
 		if (route.request().method() === 'PUT') {
@@ -128,9 +136,18 @@ async function mockSystemBackupPage(
 	await page.route('**/api/backups/volumes/options', (route) => route.fulfill({ json: options }));
 	await page.route('**/api/backups/volumes/run', async (route) => {
 		runRequests.push(await route.request().postDataJSON());
-		return route.fulfill({
-			json: { matched: 2, succeeded: 1, failed: 0, skipped: 1, failures: [] }
-		});
+		const now = new Date().toISOString();
+		const activity: Activity = {
+			id: `system-volume-run-${runRequests.length}`,
+			environmentId: '0',
+			type: 'resource_action',
+			status: 'running',
+			metadata: { action: 'run_system_volume_backups' },
+			startedAt: now,
+			createdAt: now
+		};
+		activities.push(activity);
+		return route.fulfill({ status: 202, json: { activityId: activity.id, status: 'running' } });
 	});
 	await page.route('**/api/backups/history**', (route) => {
 		const type = new URL(route.request().url()).searchParams.get('type');
@@ -139,7 +156,29 @@ async function mockSystemBackupPage(
 		return route.fulfill({ json: paginated(rows) });
 	});
 
-	return { savedCollection: () => savedCollection, runRequests: () => runRequests };
+	return {
+		savedCollection: () => savedCollection,
+		runRequests: () => runRequests,
+		completeRun: () => {
+			const activity = activities.at(-1);
+			if (!activity) throw new Error('No backup run was accepted');
+			activity.status = 'success';
+			activity.endedAt = new Date().toISOString();
+			activity.metadata = {
+				...activity.metadata,
+				matched: 2,
+				succeeded: 1,
+				failed: 0,
+				skipped: 1,
+				failures: []
+			};
+			history.push({
+				...historyEntry('completed-batch-volume', 'system'),
+				id: activity.id,
+				trigger: 'manual'
+			});
+		}
+	};
 }
 
 test.describe('System-managed volume backups', () => {
@@ -200,12 +239,25 @@ test.describe('System-managed volume backups', () => {
 		await page.getByRole('button', { name: 'Create', exact: true }).click();
 		await page.getByRole('menuitem', { name: 'Backup' }).click();
 		const createBackup = page.getByRole('dialog', { name: 'Create Backup' });
+		const runningBackup = page.getByRole('alert').filter({ hasText: 'Backup in progress' });
 		await createBackup.getByLabel('Backup type').click();
 		await page.getByRole('option', { name: 'Volume' }).click();
 		await createBackup.getByLabel('Backup configuration').click();
 		await page.getByRole('option', { name: '0 0 2 * * *' }).click();
 		await createBackup.getByRole('button', { name: 'Create Backup' }).click();
-		await expect(page.getByText('Matched 2; 1 succeeded, 0 failed, and 1 skipped.')).toBeVisible();
+		await expect(createBackup).toBeHidden();
+		await expect(page.getByText('Backup started', { exact: true })).toBeVisible();
+		await expect(runningBackup).toBeVisible();
+		await page.getByRole('button', { name: 'Create', exact: true }).click();
+		await expect(page.getByRole('menuitem', { name: 'Backup', exact: true })).toBeDisabled();
+		await page.keyboard.press('Escape');
+		await page.reload();
+		await expect(runningBackup).toBeVisible();
+		mock.completeRun();
+		await expect(runningBackup).toBeHidden({
+			timeout: 15000
+		});
+		await expect(page.getByRole('table').getByText('completed-batch-volume')).toBeVisible();
 		expect(mock.runRequests()).toContainEqual({ policyId: 'volume-nightly' });
 
 		await page.getByRole('button', { name: 'Create', exact: true }).click();
@@ -217,6 +269,8 @@ test.describe('System-managed volume backups', () => {
 		await page.getByRole('option', { name: 'Allowlist' }).click();
 		await customBackup.locator('label').filter({ hasText: liveName }).getByRole('checkbox').click();
 		await customBackup.getByRole('button', { name: 'Create Backup' }).click();
+		await expect(customBackup).toBeHidden();
+		await expect(runningBackup).toBeVisible();
 		expect(mock.runRequests()).toContainEqual({
 			custom: {
 				destination: 'local',

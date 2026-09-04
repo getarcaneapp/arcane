@@ -11,6 +11,7 @@ const (
 )
 
 type SystemBackupRun struct {
+	ActivityID        string                  `json:"activityId,omitempty"`
 	ID                string                  `json:"id"`
 	Size              int64                   `json:"size"`
 	CreatedAt         time.Time               `json:"createdAt"`

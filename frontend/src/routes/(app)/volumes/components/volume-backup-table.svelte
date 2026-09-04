@@ -6,6 +6,8 @@
 	import type { BackupEntry, CreateVolumeBackupRequest, VolumeBackupPolicy } from '#lib/types/shared';
 	import type { S3Destination } from '#lib/types/s3-destination';
 	import { onMount } from 'svelte';
+	import { useBackupActivity } from '#lib/hooks/use-backup-activity.svelte';
+	import { activityStore } from '#lib/stores/activity.store.svelte';
 	import {
 		TrashIcon,
 		AddIcon,
@@ -73,6 +75,7 @@
 	} = $props();
 
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
+	const canReadActivities = $derived(hasPermission('activities:read', currentEnvId));
 	const canBackupVolume = $derived(hasPermission('volumes:backup', currentEnvId));
 	const canDeleteBackup = $derived(hasPermission('volumes:backup', currentEnvId));
 
@@ -123,12 +126,55 @@
 		}
 	}
 
+	const backupActivity = useBackupActivity(
+		() => currentEnvId,
+		(activity) => {
+			const action = activity.metadata?.['action'];
+			return (
+				((action === 'create_volume_backup' || action === 'scheduled_volume_backup') && activity.resourceName === volumeName) ||
+				(action === 'run_system_volume_backups' &&
+					Array.isArray(activity.metadata?.['volumeNames']) &&
+					activity.metadata['volumeNames'].includes(volumeName))
+			);
+		},
+		() => loadData(requestOptions),
+		() => volumeName,
+		() => {
+			const name = volumeName;
+			if (canReadActivities) return undefined;
+			return async (environmentId) => {
+				const ids: string[] = [];
+				let page = 1;
+				let totalPages = 1;
+				do {
+					const result = await volumeBackupService.listBackups(
+						name,
+						{
+							search: 'running',
+							pagination: { page, limit: 100 }
+						},
+						environmentId
+					);
+					ids.push(...result.data.filter((backup) => backup.status === 'running').map((backup) => backup.id));
+					totalPages = result.pagination.totalPages;
+					page++;
+				} while (page <= totalPages);
+				return ids;
+			};
+		}
+	);
+
 	async function handleCreate(request?: CreateVolumeBackupRequest) {
+		if (creating || backupActivity.activeIds.length) return false;
 		creating = true;
 		try {
 			const result = await volumeBackupService.createBackup(volumeName, request);
-			toast.success(m.common_success(), activityToastOptions(extractActivityId(result)));
-			await loadData(requestOptions);
+			showS3DestinationDialog = false;
+			onDemandS3DestinationId = '';
+			creating = false;
+			backupActivity.accepted(canReadActivities ? extractActivityId(result) : result.id);
+			toast.success(m.backups_started(), canReadActivities ? activityToastOptions(extractActivityId(result), false) : undefined);
+			void loadData(requestOptions);
 			return true;
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : m.common_failed());
@@ -434,7 +480,7 @@
 					action="create"
 					customLabel={m.volumes_backup_create()}
 					loading={creating}
-					disabled={creating}
+					disabled={creating || backupActivity.activeIds.length > 0}
 					onclick={() => handleCreate()}
 					size="sm"
 					icon={AddIcon}
@@ -443,7 +489,7 @@
 					<DropdownMenu.Trigger
 						class={cn(arcaneButtonVariants({ tone: 'outline-primary', size: 'icon' }), 'size-8 rounded-md')}
 						aria-label={m.common_open_menu()}
-						disabled={creating}
+						disabled={creating || backupActivity.activeIds.length > 0}
 					>
 						<ArrowDownIcon class="size-4" />
 					</DropdownMenu.Trigger>
@@ -522,6 +568,21 @@
 {/snippet}
 
 <div class="space-y-4">
+	{#each backupActivity.activeIds as activityId (activityId)}
+		<Alert.Root
+			><Alert.Description>
+				{m.backups_running()}
+				{#if canReadActivities}
+					<ArcaneButton
+						action="inspect"
+						size="sm"
+						customLabel={m.activity_view_activity()}
+						onclick={() => activityStore.openCenter(activityId)}
+					/>
+				{/if}
+			</Alert.Description></Alert.Root
+		>
+	{/each}
 	<div class="flex items-center justify-between">
 		<h2 class="text-lg font-semibold">{m.volumes_backups_title()}</h2>
 	</div>
@@ -665,7 +726,7 @@
 			customLabel={m.volumes_backup_create()}
 			onclick={createS3Backup}
 			loading={creating}
-			disabled={creating || !onDemandS3DestinationId}
+			disabled={creating || backupActivity.activeIds.length > 0 || !onDemandS3DestinationId}
 		/>
 	{/snippet}
 </ResponsiveDialog>

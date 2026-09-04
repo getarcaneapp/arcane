@@ -75,6 +75,8 @@ type Engine struct {
 	admission    *actors.Gate[actors.AdmissionKey]
 	lifecycleCtx context.Context
 	executors    *actors.StateMap[string, *actors.Executor]
+	runs         *actors.StateMap[string, *backupRunInternal]
+	stopping     bool // Accessed inside runs.Apply.
 }
 
 // NewEngine creates the shared backup engine on the actor runtime. ctx is the
@@ -86,6 +88,7 @@ func NewEngine(ctx context.Context, runtime *actors.Runtime, admission *actors.G
 		admission:    admission,
 		lifecycleCtx: ctx,
 		executors:    actors.NewStateMap[string, *actors.Executor](),
+		runs:         actors.NewStateMap[string, *backupRunInternal](),
 	}
 }
 
@@ -98,16 +101,19 @@ func (e *Engine) TryAcquireRun(ctx context.Context, scope, id string) (*actors.L
 	return e.admission.TryAcquire(ctx, actors.AdmissionKey{Scope: scope, ID: id})
 }
 
-// Stop joins every repository executor.
+// Stop cancels and joins backup runs before stopping their repository executors.
 func (e *Engine) Stop(ctx context.Context) error {
 	if e == nil {
 		return nil
+	}
+	stopErr := e.stopRunsInternal(ctx)
+	if stopErr != nil {
+		return stopErr
 	}
 	executors, err := e.executors.Drain(ctx, "stop backup repository executors")
 	if err != nil {
 		return err
 	}
-	var stopErr error
 	for _, executor := range executors {
 		stopErr = errors.Combine(stopErr, executor.Stop(ctx))
 	}
@@ -321,7 +327,7 @@ func (e *Engine) executorForInternal(repositoryID string) (*actors.Executor, err
 		if executor, ok := values[repositoryID]; ok {
 			return executor, false, nil
 		}
-		executor, err := actors.NewExecutor(e.lifecycleCtx, e.runtime, "backup-repository", repositoryID, 3)
+		executor, err := actors.NewExecutor(context.WithoutCancel(e.lifecycleCtx), e.runtime, "backup-repository", repositoryID, 3)
 		if err != nil {
 			return nil, false, err
 		}
@@ -337,13 +343,18 @@ func (e *Engine) runInternal(ctx context.Context, dockerClient *client.Client, r
 	if strings.TrimSpace(repository.ID) == "" {
 		return "", errors.New("backup repository ID is required")
 	}
-	executor, err := e.executorForInternal(repository.ID)
+	executor, err := e.executorForInternal(repository.ID) //nolint:contextcheck // Repository executors outlive requests so shutdown cleanup can finish.
 	if err != nil {
 		return "", err
 	}
-	return executor.Execute(ctx, "rustic "+command[0], func(workCtx context.Context) (string, error) {
+	task, err := executor.Submit(ctx, "rustic "+command[0], func(workCtx context.Context) (string, error) {
 		return e.runContainerInternal(workCtx, dockerClient, repository, password, command, extraMounts...)
 	}, nil)
+	if err != nil {
+		return "", err
+	}
+	// Cancellation must finish helper cleanup before callers release source locks.
+	return task.Wait(context.WithoutCancel(ctx))
 }
 
 func (e *Engine) ensureImageInternal(ctx context.Context, dockerClient *client.Client) error {

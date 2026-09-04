@@ -106,6 +106,9 @@ func registerJobs(params registerJobsParams) error {
 
 	// Bootstrap owns registration, agent-mode gating, and settings callbacks.
 	if params.Activity != nil {
+		if err := params.Activity.FailInterruptedBackups(params.AppCtx); err != nil {
+			return err
+		}
 		failed, err := params.Activity.FailStaleImageUpdateChecks(params.AppCtx)
 		if err != nil {
 			slog.WarnContext(params.AppCtx, "Failed to mark stale image update checks as failed", "count", failed, "error", err)
@@ -212,12 +215,18 @@ func registerDynamicJobs(params dynamicJobsParams) error {
 	// registered on managers and agents; environment proxying persists each policy
 	// in the correct Arcane database.
 	if params.Volume != nil {
+		if err := params.Volume.ReconcileInterruptedBackups(params.AppCtx); err != nil {
+			return err
+		}
 		if err := params.Volume.SetScheduler(params.AppCtx, params.Scheduler, params.Admission); err != nil {
 			return err
 		}
 		params.Volume.RegisterBackupJobsOnStartup(params.AppCtx)
 	}
 	if !params.Config.AgentMode && params.SystemBackup != nil {
+		if err := params.SystemBackup.ReconcileInterruptedBackups(params.AppCtx); err != nil {
+			return err
+		}
 		if err := params.SystemBackup.SetScheduler(params.AppCtx, params.Scheduler, params.Admission); err != nil {
 			return err
 		}

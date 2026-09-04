@@ -380,7 +380,7 @@ var backupsCreateCmd = &cobra.Command{
 			return cmdutil.PrintJSON(result.Data)
 		}
 
-		output.Success("Backup created for volume %s", resolved.Name)
+		output.Success("Backup started for volume %s", resolved.Name)
 		output.KeyValue("ID", result.Data.ID)
 		output.KeyValue("Status", result.Data.Status)
 		output.KeyValue("Destination", string(result.Data.Destination))

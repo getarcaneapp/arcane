@@ -28,6 +28,7 @@ const (
 )
 
 type BackupEntry struct {
+	ActivityID        *string               `json:"activityId,omitempty"`
 	ID                string                `json:"id" doc:"Unique identifier of the backup"`
 	VolumeName        string                `json:"volumeName" doc:"Name of the volume"`
 	Size              int64                 `json:"size" doc:"Total size of the backup contents"`

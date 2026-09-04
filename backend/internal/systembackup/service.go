@@ -369,7 +369,22 @@ func (s *SystemBackupService) createStagedSystemRecoverySnapshotInternal(ctx con
 	return remoteSnapshot, remoteRepository, true, nil
 }
 
-func (s *SystemBackupService) createBackupInternal(ctx context.Context, trigger SystemBackupTrigger, request backuptypes.CreateSystemBackupRequest) (_ *SystemBackupRun, err error) {
+type preparedSystemBackupInternal struct {
+	run          *SystemBackupRun
+	recoveryKey  string
+	localEnabled bool
+	s3Enabled    bool
+}
+
+func (s *SystemBackupService) createBackupInternal(ctx context.Context, trigger SystemBackupTrigger, request backuptypes.CreateSystemBackupRequest) (*SystemBackupRun, error) {
+	prepared, err := s.prepareBackupInternal(ctx, trigger, request)
+	if err != nil {
+		return nil, err
+	}
+	return s.executeBackupInternal(ctx, prepared)
+}
+
+func (s *SystemBackupService) prepareBackupInternal(ctx context.Context, trigger SystemBackupTrigger, request backuptypes.CreateSystemBackupRequest) (*preparedSystemBackupInternal, error) {
 	if !s.SupportedDatabaseProvider() {
 		return nil, errors.New("arcane system recovery currently requires the SQLite database provider")
 	}
@@ -386,7 +401,17 @@ func (s *SystemBackupService) createBackupInternal(ctx context.Context, trigger 
 	if err := s.db.WithContext(ctx).Create(run).Error; err != nil {
 		return nil, err
 	}
+	return &preparedSystemBackupInternal{run: run, recoveryKey: recoveryKey, localEnabled: localEnabled, s3Enabled: s3Enabled}, nil
+}
+
+func (s *SystemBackupService) executeBackupInternal(ctx context.Context, prepared *preparedSystemBackupInternal) (_ *SystemBackupRun, err error) {
+	run, recoveryKey := prepared.run, prepared.recoveryKey
+	localEnabled, s3Enabled, destinationID := prepared.localEnabled, prepared.s3Enabled, run.S3DestinationID
+
 	defer func() {
+		if err == nil {
+			err = ctx.Err()
+		}
 		if err != nil {
 			run.Status, run.Error = SystemBackupStatusFailed, err.Error()
 		} else {
@@ -396,6 +421,7 @@ func (s *SystemBackupService) createBackupInternal(ctx context.Context, trigger 
 			err = errors.Combine(err, fmt.Errorf("failed to save system backup result: %w", saveErr))
 		}
 	}()
+	defer utils.RecoverToError(&err, "system backup")
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return run, err

@@ -35,11 +35,8 @@ export type SystemVolumeBackupOption = {
 };
 
 export type SystemVolumeBackupRunResult = {
-	matched: number;
-	succeeded: number;
-	failed: number;
-	skipped: number;
-	failures: { volumeName: string; error: string }[];
+	activityId: string;
+	status: 'running';
 };
 
 export type SystemVolumeBackupCustomRun = {

@@ -30,8 +30,12 @@ class VolumeBackupService extends BaseAPIService {
 		return res.data.data;
 	}
 
-	async listBackups(volumeName: string, options?: SearchPaginationSortRequest): Promise<VolumeBackupListResponse> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async listBackups(
+		volumeName: string,
+		options?: SearchPaginationSortRequest,
+		environmentId?: string
+	): Promise<VolumeBackupListResponse> {
+		const envId = environmentId ?? (await environmentStore.getCurrentEnvironmentId());
 		const params = transformPaginationParams(options);
 		const res = await this.api.get(`/environments/${envId}/volumes/${volumeName}/backups`, { params });
 		return res.data;

@@ -365,12 +365,13 @@ func RegisterVolumes(api huma.API, dockerService *docker.DockerClientService, vo
 	}, authz.PermVolumesRead, h.ListBackups)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "create-volume-backup",
-		Method:      http.MethodPost,
-		Path:        "/environments/{id}/volumes/{volumeName}/backups",
-		Summary:     "Create volume backup",
-		Tags:        []string{"Volume Backup"},
-		Security:    handlerutil.DefaultOperationSecurity(),
+		OperationID:   "create-volume-backup",
+		DefaultStatus: http.StatusAccepted,
+		Method:        http.MethodPost,
+		Path:          "/environments/{id}/volumes/{volumeName}/backups",
+		Summary:       "Create volume backup",
+		Tags:          []string{"Volume Backup"},
+		Security:      handlerutil.DefaultOperationSecurity(),
 	}, authz.PermVolumesBackup, h.CreateBackup)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
@@ -904,52 +905,24 @@ func (h *VolumeHandler) ListBackups(ctx context.Context, input *ListBackupsInput
 	}, nil
 }
 
-func (h *VolumeHandler) CreateBackup(ctx context.Context, input *CreateBackupInput) (*handlerutil.Out[*VolumeBackup], error) {
+func (h *VolumeHandler) CreateBackup(ctx context.Context, input *CreateBackupInput) (*handlerutil.Out[volumetypes.BackupEntry], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	var backup *VolumeBackup
-	destination := volumetypes.BackupDestination("")
-	policyID := ""
-	s3DestinationID := ""
+	request := volumetypes.CreateBackupRequest{}
 	if input.Body != nil {
-		destination = input.Body.Destination
-		policyID = input.Body.PolicyID
-		s3DestinationID = input.Body.S3DestinationID
+		request = *input.Body
 	}
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
-		EnvironmentID:  input.EnvironmentID,
-		Type:           activitytypes.TypeResourceAction,
-		ResourceType:   "volume",
-		ResourceID:     input.VolumeName,
-		ResourceName:   input.VolumeName,
-		User:           user,
-		Step:           "Creating backup",
-		Message:        "Creating volume backup",
-		SuccessMessage: "Volume backup created successfully",
-		Metadata:       database.JSON{"action": "create_volume_backup", "destination": destination, "policyId": policyID, "s3DestinationId": s3DestinationID},
-	}, func(runtimeCtx context.Context) error {
-		var backupErr error
-		backup, backupErr = h.volumeService.CreateBackup(runtimeCtx, input.VolumeName, *user, VolumeBackupTriggerManual, volumetypes.CreateBackupRequest{
-			Destination: destination, PolicyID: policyID, S3DestinationID: s3DestinationID,
-		})
-		return backupErr
-	})
+	entry, err := h.volumeService.StartBackup(utils.ActivityRuntimeContext(ctx, h.appCtx), input.EnvironmentID, input.VolumeName, *user, request)
 	if errors.Is(err, ErrVolumeBackupAlreadyRunning) {
 		return nil, huma.Error409Conflict(err.Error())
 	}
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	backup.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
-	return &handlerutil.Out[*VolumeBackup]{
-		Body: base.ApiResponse[*VolumeBackup]{
-			Success: true,
-			Data:    backup,
-		},
+	return &handlerutil.Out[volumetypes.BackupEntry]{
+		Body: base.ApiResponse[volumetypes.BackupEntry]{Success: true, Data: entry},
 	}, nil
 }
 

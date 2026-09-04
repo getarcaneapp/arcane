@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { useBackupActivity } from '#lib/hooks/use-backup-activity.svelte';
+	import { activityStore } from '#lib/stores/activity.store.svelte';
 	import { toast } from 'svelte-sonner';
 	import settingsStore from '#lib/stores/config-store';
 	import { SettingsPageLayout, type SettingsActionButton } from '#lib/layouts';
@@ -300,18 +302,28 @@
 		})();
 	});
 
+	const backupActivity = useBackupActivity(
+		() => '0',
+		(activity) =>
+			activity.metadata?.['action'] === 'create_system_backup' ||
+			activity.metadata?.['action'] === 'scheduled_system_backup' ||
+			activity.metadata?.['action'] === 'run_system_volume_backups',
+		refresh
+	);
+
 	async function submitAction() {
-		if (loading || invalid) return;
+		if (loading || invalid || (action === 'create' && backupActivity.activeIds.length)) return;
 		loading = true;
 		try {
 			if (action === 'create') {
 				if (backupType === 'system') {
-					await systemBackupService.create(
+					const result = await systemBackupService.create(
 						backupConfiguration === 'custom'
 							? { destination, s3DestinationId: destination === 'local' ? '' : s3DestinationId, recoveryKey }
 							: { policyId: backupConfiguration, recoveryKey }
 					);
-					toast.success(m.system_backups_created());
+					backupActivity.accepted(extractActivityId(result));
+					toast.success(m.backups_started(), activityToastOptions(extractActivityId(result), false));
 				} else {
 					const result = await systemBackupService.runSystemVolumeBackups(
 						backupConfiguration === 'custom'
@@ -327,16 +339,12 @@
 								}
 							: { policyId: backupConfiguration }
 					);
-					toast.success(
-						m.system_volume_backups_run_result({
-							matched: result.matched,
-							succeeded: result.succeeded,
-							failed: result.failed,
-							skipped: result.skipped
-						})
-					);
+					backupActivity.accepted(result.activityId);
+					toast.success(m.backups_started(), activityToastOptions(result.activityId, false));
 				}
-				await refresh();
+				actionOpen = false;
+				loading = false;
+				void refresh().catch((error) => console.warn('Failed to refresh backup history', error));
 			} else if (action === 'restore' && selected) {
 				await systemBackupService.restore(selected.id, recoveryKey);
 				toast.success(m.system_backups_restore_started());
@@ -412,7 +420,11 @@
 			disabled: isReadOnly,
 			options: [
 				{ label: m.jobs_schedule(), onclick: () => openSchedule() },
-				{ label: m.volumes_workspace_backup(), onclick: () => openAction('create') }
+				{
+					label: m.volumes_workspace_backup(),
+					onclick: () => openAction('create'),
+					disabled: backupActivity.activeIds.length > 0
+				}
 			]
 		}
 	]);
@@ -573,7 +585,7 @@
 				customLabel={dialogTitle()}
 				onclick={submitAction}
 				{loading}
-				disabled={loading || invalid}
+				disabled={loading || invalid || (action === 'create' && backupActivity.activeIds.length > 0)}
 			/>
 		{/snippet}
 	</ResponsiveDialog>
@@ -689,6 +701,20 @@
 					<p class="text-sm text-muted-foreground">{m.system_backups_no_schedules()}</p>
 				{/if}
 			</div>
+
+			{#each backupActivity.activeIds as activityId (activityId)}
+				<Alert.Root
+					><Alert.Description>
+						{m.backups_running()}
+						<ArcaneButton
+							action="inspect"
+							size="sm"
+							customLabel={m.activity_view_activity()}
+							onclick={() => activityStore.openCenter(activityId)}
+						/>
+					</Alert.Description></Alert.Root
+				>
+			{/each}
 
 			<SystemBackupTable
 				bind:backups
