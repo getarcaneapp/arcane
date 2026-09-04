@@ -807,6 +807,7 @@
   "images_remove_force_label": "Wymuś usunięcie",
   "images_pull_no_tag": "Nie można pobrać obrazu bez tagu repozytorium",
   "images_untagged": "Nieotagowany",
+  "images_pinned_references": "Przypięte źródła",
   "images_used_by": "Używany przez",
   "updates": "Aktualizacje",
   "updates_apply_success": "Zastosowano aktualizację ( {updated})",
