@@ -807,6 +807,7 @@
   "images_remove_force_label": "Tvinga bort",
   "images_pull_no_tag": "Cannot pull image without repository tag",
   "images_untagged": "Untagged",
+  "images_pinned_references": "Fästa referenser",
   "images_used_by": "Används av",
   "updates": "Updates",
   "updates_apply_success": "Tillämpade uppdateringar av {updated}",
