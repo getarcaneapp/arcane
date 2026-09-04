@@ -26,7 +26,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/federated"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/webhook"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cookie"
@@ -240,9 +239,9 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 	apiGroup.Use(middleware.PerIPRateLimitForPaths(
 		[]string{"/api/auth/federated/token"}, 10, 10,
 	))
-	// Keyed per token for authentic tokens, per source IP for everything else.
+	// Keyed per token for stored tokens, per source IP for everything else.
 	apiGroup.Use(middleware.PerTokenRateLimitForPaths(
-		[]string{"/api/webhooks/trigger/:token"}, 60, 10, webhook.IsAuthenticToken,
+		[]string{"/api/webhooks/trigger/:token"}, 60, 10, deps.Webhook.Service().IsKnownToken,
 	))
 	// Agent event ingestion authenticates on the agent token alone and sits
 	// outside the auth middleware, so it needs its own brute-force ceiling.

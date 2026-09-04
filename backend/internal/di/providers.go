@@ -451,6 +451,7 @@ func provideWebhookModuleInternal(lc fx.Lifecycle, db *database.DB, containerMod
 		Environment: environment,
 	})
 	lc.Append(fx.Hook{
+		OnStart: module.Service().LoadTokenHashes,
 		OnStop: func(ctx context.Context) error {
 			// Drain fails only when the stop context expires; fx then skips all
 			// remaining teardown regardless of what is returned here, so an
