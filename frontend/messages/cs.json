@@ -807,6 +807,7 @@
   "images_remove_force_label": "Vynutit odebrání",
   "images_pull_no_tag": "Nelze stáhnout obraz bez štítku repozitáře",
   "images_untagged": "Bez štítku",
+  "images_pinned_references": "Připnuté odkazy",
   "images_used_by": "Používáno",
   "updates": "Aktualizace",
   "updates_apply_success": "Použito {updated} aktualizací",
