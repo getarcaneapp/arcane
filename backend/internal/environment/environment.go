@@ -14,14 +14,17 @@ import (
 	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/entityjobs"
 	httputils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
+	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
@@ -480,4 +483,43 @@ func (s *EnvironmentService) GetEnabledRegistryCredentials(ctx context.Context) 
 	}
 
 	return creds, nil
+}
+
+// SyncResourcesToEnvironment tracks a manual sync and attempts every resource group.
+func (s *EnvironmentService) SyncResourcesToEnvironment(ctx context.Context, environmentID string, user *common.User, activityService activitylib.Service) (string, error) {
+	return activitylib.RunHandlerActivity(ctx, activityService, activitylib.HandlerOptions{
+		EnvironmentID:  environmentID,
+		Type:           activitytypes.TypeResourceAction,
+		ResourceType:   "environment",
+		ResourceID:     environmentID,
+		ResourceName:   environmentID,
+		User:           user,
+		Step:           "Syncing environment",
+		Message:        "Syncing container registries, S3 destinations, and git repositories",
+		SuccessMessage: "Environment synced successfully",
+		Metadata:       database.JSON{"action": "sync_environment"},
+	}, func(ctx context.Context) error {
+		var failedGroups []string
+
+		if err := s.SyncRegistriesToEnvironment(ctx, environmentID); err != nil {
+			slog.WarnContext(ctx, "Failed to sync registries", "environmentID", environmentID, "error", err.Error())
+			failedGroups = append(failedGroups, "container registries")
+		}
+
+		if err := s.SyncS3DestinationsToEnvironment(ctx, environmentID); err != nil {
+			slog.WarnContext(ctx, "Failed to sync S3 destinations", "environmentID", environmentID, "error", err.Error())
+			failedGroups = append(failedGroups, "S3 destinations")
+		}
+
+		if err := s.SyncRepositoriesToEnvironment(ctx, environmentID); err != nil {
+			slog.WarnContext(ctx, "Failed to sync git repositories", "environmentID", environmentID, "error", err.Error())
+			failedGroups = append(failedGroups, "git repositories")
+		}
+
+		if len(failedGroups) > 0 {
+			return errors.New("Failed to sync " + strings.Join(failedGroups, ", ") + ". Other resource groups may have synced successfully. Check the manager logs, correct the failed sync, and retry.")
+		}
+
+		return nil
+	})
 }

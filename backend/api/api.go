@@ -418,7 +418,7 @@ func registerHandlersInternal(api huma.API, deps HandlerDeps, handlerAppCtx hand
 	deps.Event.RegisterRoutes(api)
 	deps.Activity.RegisterRoutes(api)
 	oidc.RegisterOidc(api, deps.Auth.Service(), deps.Passkey, deps.Oidc, deps.Role.Service(), deps.User.Service(), cfg)
-	deps.Environment.RegisterRoutes(api)
+	deps.Environment.RegisterRoutes(api, handlerAppCtx)
 	deps.ContainerRegistry.RegisterRoutes(api)
 	deps.Template.RegisterRoutes(api)
 	deps.Variable.RegisterRoutes(api, cfg)

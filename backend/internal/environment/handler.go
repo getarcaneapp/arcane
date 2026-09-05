@@ -27,6 +27,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
+	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
@@ -35,6 +36,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/environment"
 	"github.com/getarcaneapp/arcane/types/v2/version"
+	"github.com/samber/mo"
 	"go.getarcane.app/streams/agg"
 )
 
@@ -56,6 +58,8 @@ type EnvironmentHandler struct {
 	eventService       *event.EventService
 	cfg                *config.Config
 	streamHub          *agg.Hub[[]environment.Environment]
+	activityService    activitylib.Service
+	appCtx             context.Context
 }
 
 // ============================================================================
@@ -146,7 +150,7 @@ type DownloadEnvironmentMTLSFileInput struct {
 // ============================================================================
 
 // NewHandler builds the environment HTTP handler and its stream producer.
-func NewHandler(environmentService *EnvironmentService, settingsService *settings.SettingsService, apiKeyService *apikey.ApiKeyService, eventService *event.EventService, cfg *config.Config) *EnvironmentHandler {
+func NewHandler(environmentService *EnvironmentService, settingsService *settings.SettingsService, apiKeyService *apikey.ApiKeyService, eventService *event.EventService, cfg *config.Config, activityService activitylib.Service) *EnvironmentHandler {
 	return &EnvironmentHandler{
 		environmentService: environmentService,
 		settingsService:    settingsService,
@@ -154,6 +158,7 @@ func NewHandler(environmentService *EnvironmentService, settingsService *setting
 		eventService:       eventService,
 		cfg:                cfg,
 		streamHub:          agg.NewHub[[]environment.Environment](),
+		activityService:    activityService,
 	}
 }
 
@@ -252,7 +257,7 @@ func RegisterEnvironments(api huma.API, h *EnvironmentHandler) {
 		Method:      "POST",
 		Path:        "/environments/{id}/sync",
 		Summary:     "Sync environment",
-		Description: "Sync container registries and git repositories to a remote environment",
+		Description: "Sync container registries, S3 destinations, and git repositories to a remote environment. Returns an error if any resource group fails; other groups may still sync successfully.",
 		Tags:        []string{"Environments"},
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}, authz.PermEnvironmentsSync, h.SyncEnvironment)
@@ -862,25 +867,23 @@ func (h *EnvironmentHandler) PairAgent(ctx context.Context, input *PairAgentInpu
 
 // SyncEnvironment syncs manager-owned resources to an environment.
 func (h *EnvironmentHandler) SyncEnvironment(ctx context.Context, input *SyncEnvironmentInput) (*handlerutil.Out[base.MessageResponse], error) {
-	// Sync registries
-	if err := h.environmentService.SyncRegistriesToEnvironment(ctx, input.ID); err != nil {
-		slog.WarnContext(ctx, "Failed to sync registries", "environmentID", input.ID, "error", err.Error())
+	user, err := handlerutil.RequireUser(ctx)
+	if err != nil {
+		return nil, err
 	}
 
-	if err := h.environmentService.SyncS3DestinationsToEnvironment(ctx, input.ID); err != nil {
-		slog.WarnContext(ctx, "Failed to sync S3 destinations", "environmentID", input.ID, "error", err.Error())
-	}
-
-	// Sync git repositories
-	if err := h.environmentService.SyncRepositoriesToEnvironment(ctx, input.ID); err != nil {
-		slog.WarnContext(ctx, "Failed to sync git repositories", "environmentID", input.ID, "error", err.Error())
+	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	activityID, err := h.environmentService.SyncResourcesToEnvironment(runtimeCtx, input.ID, user, h.activityService)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
 	}
 
 	return &handlerutil.Out[base.MessageResponse]{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data: base.MessageResponse{
-				Message: "Environment synced successfully",
+				Message:    "Environment synced successfully",
+				ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer(),
 			},
 		},
 	}, nil

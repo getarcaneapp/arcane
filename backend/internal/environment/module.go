@@ -9,6 +9,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 )
 
 type Dependencies struct {
@@ -16,6 +18,7 @@ type Dependencies struct {
 	ApiKey   *apikey.ApiKeyService
 	Event    *event.EventService
 	Config   *config.Config
+	Activity activitylib.Service
 }
 
 type Module struct {
@@ -26,7 +29,7 @@ type Module struct {
 func New(service *EnvironmentService, deps Dependencies) *Module {
 	return &Module{
 		service: service,
-		handler: NewHandler(service, deps.Settings, deps.ApiKey, deps.Event, deps.Config),
+		handler: NewHandler(service, deps.Settings, deps.ApiKey, deps.Event, deps.Config, deps.Activity),
 	}
 }
 
@@ -44,10 +47,11 @@ func (m *Module) Handler() *EnvironmentHandler {
 	return m.handler
 }
 
-func (m *Module) RegisterRoutes(api huma.API) {
+func (m *Module) RegisterRoutes(api huma.API, appCtx handlerutil.ActivityAppContext) {
 	if m == nil {
-		RegisterEnvironments(api, NewHandler(nil, nil, nil, nil, nil))
+		RegisterEnvironments(api, NewHandler(nil, nil, nil, nil, nil, nil))
 		return
 	}
+	m.handler.appCtx = appCtx.Context()
 	RegisterEnvironments(api, m.handler)
 }

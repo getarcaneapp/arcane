@@ -6,6 +6,7 @@ import (
 
 	"context"
 	"encoding/json/v2"
+	"fmt"
 	"log/slog"
 	"maps"
 	"net/http"
@@ -336,7 +337,7 @@ func doRemoteEnvironmentTunnelRequestInternal(
 // SyncRegistriesToEnvironment syncs all registries from this manager to a remote environment
 func (s *EnvironmentService) SyncRegistriesToEnvironment(ctx context.Context, environmentID string) error {
 	return s.fanOutSyncToEnvironment(ctx, environmentID, "registries", "/api/container-registries/sync",
-		func(ctx context.Context, reg registry.ContainerRegistry) (containerregistry.Sync, bool, error) {
+		func(reg registry.ContainerRegistry) (containerregistry.Sync, bool, error) {
 			registryType, typeErr := registry.NormalizeRegistryType(reg.RegistryType)
 			if typeErr != nil {
 				return containerregistry.Sync{}, false, errors.WrapIff(typeErr, "normalize registry type for sync %s", reg.ID)
@@ -357,8 +358,7 @@ func (s *EnvironmentService) SyncRegistriesToEnvironment(ctx context.Context, en
 			if registryType == registry.RegistryTypeECR {
 				decryptedSecret, err := crypto.Decrypt(reg.AWSSecretAccessKey)
 				if err != nil {
-					slog.WarnContext(ctx, "Failed to decrypt ECR secret for sync", "registryID", reg.ID, "registryURL", reg.URL, "error", err.Error())
-					return containerregistry.Sync{}, false, nil
+					return containerregistry.Sync{}, false, fmt.Errorf("failed to decrypt ECR secret for registry %s for sync: %w", reg.ID, err)
 				}
 
 				syncItem.AWSAccessKeyID = reg.AWSAccessKeyID
@@ -367,8 +367,7 @@ func (s *EnvironmentService) SyncRegistriesToEnvironment(ctx context.Context, en
 			} else {
 				decryptedToken, err := crypto.Decrypt(reg.Token)
 				if err != nil {
-					slog.WarnContext(ctx, "Failed to decrypt registry token for sync", "registryID", reg.ID, "registryURL", reg.URL, "error", err.Error())
-					return containerregistry.Sync{}, false, nil
+					return containerregistry.Sync{}, false, fmt.Errorf("failed to decrypt token for registry %s for sync: %w", reg.ID, err)
 				}
 
 				syncItem.Username = reg.Username
@@ -386,7 +385,7 @@ func (s *EnvironmentService) SyncRegistriesToEnvironment(ctx context.Context, en
 // SyncS3DestinationsToEnvironment sends manager-owned destinations to one remote environment.
 func (s *EnvironmentService) SyncS3DestinationsToEnvironment(ctx context.Context, environmentID string) error {
 	return s.fanOutSyncToEnvironment(ctx, environmentID, "S3 destinations", "/api/backups/s3/sync",
-		func(_ context.Context, destination s3domain.S3Destination) (backuptypes.S3DestinationSync, bool, error) {
+		func(destination s3domain.S3Destination) (backuptypes.S3DestinationSync, bool, error) {
 			secret, err := crypto.Decrypt(destination.SecretAccessKey)
 			if err != nil {
 				return backuptypes.S3DestinationSync{}, false, errors.WrapIff(err, "failed to decrypt S3 destination %s for sync", destination.ID)
@@ -402,7 +401,7 @@ func (s *EnvironmentService) SyncS3DestinationsToEnvironment(ctx context.Context
 // SyncRepositoriesToEnvironment syncs all git repositories from this manager to a remote environment
 func (s *EnvironmentService) SyncRepositoriesToEnvironment(ctx context.Context, environmentID string) error {
 	return s.fanOutSyncToEnvironment(ctx, environmentID, "git repositories", "/api/git-repositories/sync",
-		func(ctx context.Context, repo gitrepo.GitRepository) (gitops.RepositorySync, bool, error) {
+		func(repo gitrepo.GitRepository) (gitops.RepositorySync, bool, error) {
 			item := gitops.RepositorySync{
 				ID:          repo.ID,
 				Name:        repo.Name,
@@ -420,8 +419,7 @@ func (s *EnvironmentService) SyncRepositoriesToEnvironment(ctx context.Context, 
 			if repo.Token != "" {
 				decryptedToken, err := crypto.Decrypt(repo.Token)
 				if err != nil {
-					slog.WarnContext(ctx, "Failed to decrypt repository token for sync", "repositoryID", repo.ID, "repositoryName", repo.Name, "error", err.Error())
-					return gitops.RepositorySync{}, false, nil
+					return gitops.RepositorySync{}, false, fmt.Errorf("failed to decrypt token for repository %s for sync: %w", repo.ID, err)
 				}
 				item.Token = decryptedToken
 			}
@@ -429,8 +427,7 @@ func (s *EnvironmentService) SyncRepositoriesToEnvironment(ctx context.Context, 
 			if repo.SSHKey != "" {
 				decryptedSSHKey, err := crypto.Decrypt(repo.SSHKey)
 				if err != nil {
-					slog.WarnContext(ctx, "Failed to decrypt repository SSH key for sync", "repositoryID", repo.ID, "repositoryName", repo.Name, "error", err.Error())
-					return gitops.RepositorySync{}, false, nil
+					return gitops.RepositorySync{}, false, fmt.Errorf("failed to decrypt SSH key for repository %s for sync: %w", repo.ID, err)
 				}
 				item.SSHKey = decryptedSSHKey
 			}
@@ -445,15 +442,14 @@ func (s *EnvironmentService) SyncRepositoriesToEnvironment(ctx context.Context, 
 
 // fanOutSyncToEnvironment pushes every row of Model held by this
 // manager to one remote environment. toSyncItem maps a row to its wire form and
-// reports whether to keep it — rows whose credentials fail to decrypt are
-// skipped rather than failing the whole batch — and wrap builds the request
-// envelope the target endpoint expects.
+// reports whether to keep it. Mapping errors abort before sending the snapshot.
+// wrap builds the request envelope the target endpoint expects.
 func (s *EnvironmentService) fanOutSyncToEnvironment[Model any, Item any, Request any](
 	ctx context.Context,
 	environmentID string,
 	kind string,
 	path string,
-	toSyncItem func(context.Context, Model) (Item, bool, error),
+	toSyncItem func(Model) (Item, bool, error),
 	wrap func([]Item) Request,
 ) error {
 	target, err := s.resolveRemoteEnvironmentTargetInternal(ctx, environmentID)
@@ -470,7 +466,7 @@ func (s *EnvironmentService) fanOutSyncToEnvironment[Model any, Item any, Reques
 
 	syncItems := make([]Item, 0, len(records))
 	for _, record := range records {
-		item, keep, err := toSyncItem(ctx, record)
+		item, keep, err := toSyncItem(record)
 		if err != nil {
 			return err
 		}

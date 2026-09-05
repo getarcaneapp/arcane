@@ -84,12 +84,13 @@ func provideActivityServiceInternal(module *activity.Module) *activity.ActivityS
 	return module.Service()
 }
 
-func provideEnvironmentModuleInternal(service *environment.EnvironmentService, settingsService *settings.SettingsService, apiKey *apikey.ApiKeyService, eventService *event.EventService, cfg *config.Config) *environment.Module {
+func provideEnvironmentModuleInternal(service *environment.EnvironmentService, settingsService *settings.SettingsService, apiKey *apikey.ApiKeyService, eventService *event.EventService, cfg *config.Config, activityService *activity.ActivityService) *environment.Module {
 	return environment.New(service, environment.Dependencies{
 		Settings: settingsService,
 		ApiKey:   apiKey,
 		Event:    eventService,
 		Config:   cfg,
+		Activity: activityService,
 	})
 }
 
