@@ -40,22 +40,36 @@
 		isLoading,
 		allowUsernameEdit = false
 	}: UserFormProps = $props();
-	void open;
 
 	let isEditMode = $derived(!!userToEdit);
 	let canEditUsername = $derived(!isEditMode || allowUsernameEdit);
 
 	let isOidcUser = $derived(!!userToEdit?.oidcSubjectId);
 	let oidcAssignments = $derived(userToEdit?.roleAssignments?.filter((a) => a.source === 'oidc') ?? []);
+	const userFieldMaxLength = 255;
+	const passwordMinLength = 8;
 
 	const formSchema = z.object({
 		username: z
 			.string()
-			.min(1, m.common_username_required())
+			.trim()
+			.refine((value) => value === userToEdit?.username.trim() || value.length > 0, m.common_username_required())
+			.refine(
+				(value) => value === userToEdit?.username.trim() || [...value].length <= userFieldMaxLength,
+				m.common_max_length({ field: m.common_username(), maxLength: userFieldMaxLength })
+			)
 			// Legacy usernames may contain @; only new or changed usernames are restricted
-			.refine((value) => value === userToEdit?.username || !value.includes('@'), m.users_username_no_at()),
-		password: z.string().optional(),
-		displayName: z.string().optional(),
+			.refine((value) => value === userToEdit?.username.trim() || !value.includes('@'), m.users_username_no_at()),
+		password: z
+			.string()
+			.refine((value) => (isEditMode && value === '') || [...value].length >= passwordMinLength, m.first_login_error_length()),
+		displayName: z
+			.string()
+			.trim()
+			.refine(
+				(value) => [...value].length <= userFieldMaxLength,
+				m.common_max_length({ field: m.common_display_name(), maxLength: userFieldMaxLength })
+			),
 		email: z
 			.string()
 			.trim()
@@ -82,7 +96,19 @@
 
 	let { inputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, formData));
 
+	// The sheet can be closed through the footer or by its parent after a
+	// successful request. Reset on every close so hidden form state cannot be
+	// submitted when the sheet is opened again.
+	$effect(() => {
+		if (!open) {
+			form.reset();
+		}
+	});
+
 	function handleSubmit() {
+		// createForm trims strings for ordinary text fields. Passwords are opaque,
+		// so preserve exactly what the user entered after validating the raw value.
+		const password = $inputs.password.value;
 		const data = form.validate();
 		if (!data) return;
 
@@ -107,13 +133,13 @@
 
 		// Only include username when creating, or when editing changed it — an
 		// unchanged legacy username with @ would fail the backend pattern check
-		if (!isEditMode || (canEditUsername && data.username !== userToEdit?.username)) {
+		if (!isEditMode || (canEditUsername && data.username !== userToEdit?.username.trim())) {
 			userData.username = data.username;
 		}
 
 		// Only include password if it's provided (for create) or if editing and password is not empty
-		if (!isEditMode || (isEditMode && data.password)) {
-			userData.password = data.password;
+		if (!isEditMode || (isEditMode && password)) {
+			userData.password = password;
 		}
 
 		onSubmit({ user: userData, isEditMode, userId: userToEdit?.id });
@@ -213,6 +239,7 @@
 	{#snippet footer()}
 		<SheetFooterActions
 			bind:open
+			onCancel={() => handleOpenChange(false)}
 			cancelDisabled={isLoading}
 			submitAction={isEditMode ? 'save' : 'create'}
 			submitDisabled={isLoading}

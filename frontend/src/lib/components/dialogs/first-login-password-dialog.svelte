@@ -26,7 +26,7 @@
 	let showNewPassword = $state(false);
 	let showConfirmPassword = $state(false);
 
-	const isValid = $derived(currentPassword.length > 0 && newPassword.length >= 8 && confirmPassword === newPassword);
+	const isValid = $derived(currentPassword.length > 0 && [...newPassword].length >= 8 && confirmPassword === newPassword);
 	const changePasswordMutation = createMutation(() => ({
 		mutationFn: ({ currentPassword, newPassword }: { currentPassword: string; newPassword: string }) =>
 			authService.changePassword(currentPassword, newPassword),
@@ -36,7 +36,7 @@
 			onSuccess?.();
 		},
 		onError: (err) => {
-			error = err instanceof Error ? err.message : m.first_login_error_failed();
+			toast.error(err instanceof Error ? err.message : m.first_login_error_failed());
 		}
 	}));
 
@@ -44,7 +44,7 @@
 
 	function handleSubmit() {
 		if (!isValid) {
-			if (newPassword.length < 8) {
+			if ([...newPassword].length < 8) {
 				error = m.first_login_error_length();
 			} else if (confirmPassword !== newPassword) {
 				error = m.first_login_error_mismatch();

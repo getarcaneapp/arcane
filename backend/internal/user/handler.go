@@ -165,14 +165,21 @@ func (h *UserHandler) ListUsers(ctx context.Context, input *ListUsersInput) (*ha
 
 // CreateUser creates a new usertypes.
 func (h *UserHandler) CreateUser(ctx context.Context, input *CreateUserInput) (*handlerutil.Out[usertypes.User], error) {
+	normalizedUsername, err := normalizeUsernameInternal(input.Body.Username)
+	if err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	input.Body.Username = normalizedUsername
+
 	normalizedEmail, err := NormalizeOptionalEmail(input.Body.Email)
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
 	input.Body.Email = normalizedEmail
 
-	if err := validation.ValidatePasswordPolicy(input.Body.Password, h.passwordPolicyInternal(ctx)); err != nil {
-		return nil, huma.Error400BadRequest(err.Error())
+	passwordPolicy := h.passwordPolicyInternal(ctx)
+	if err := validation.ValidatePasswordPolicy(input.Body.Password, passwordPolicy); err != nil {
+		return nil, handlerutil.Error400BadRequestWithType(err.Error(), validation.PasswordPolicyProblemType(passwordPolicy))
 	}
 
 	hashedPassword, err := h.userService.HashPassword(input.Body.Password)
@@ -195,6 +202,9 @@ func (h *UserHandler) CreateUser(ctx context.Context, input *CreateUserInput) (*
 
 	createdUser, err := h.userService.CreateUser(ctx, userModel)
 	if err != nil {
+		if errors.Is(err, ErrUsernameTaken) {
+			return nil, huma.Error409Conflict(ErrUsernameTaken.Error())
+		}
 		return nil, huma.Error500InternalServerError("Failed to create user")
 	}
 
@@ -245,7 +255,11 @@ func (h *UserHandler) UpdateUser(ctx context.Context, input *UpdateUserInput) (*
 	input.Body.Email = normalizedEmail
 
 	if input.Body.Username != nil {
-		userModel.Username = *input.Body.Username
+		normalizedUsername, err := normalizeUsernameInternal(*input.Body.Username)
+		if err != nil {
+			return nil, huma.Error400BadRequest(err.Error())
+		}
+		userModel.Username = normalizedUsername
 	}
 	if input.Body.DisplayName != nil {
 		userModel.DisplayName = input.Body.DisplayName
@@ -268,8 +282,9 @@ func (h *UserHandler) UpdateUser(ctx context.Context, input *UpdateUserInput) (*
 	}
 
 	if input.Body.Password != nil && *input.Body.Password != "" {
-		if err := validation.ValidatePasswordPolicy(*input.Body.Password, h.passwordPolicyInternal(ctx)); err != nil {
-			return nil, huma.Error400BadRequest(err.Error())
+		passwordPolicy := h.passwordPolicyInternal(ctx)
+		if err := validation.ValidatePasswordPolicy(*input.Body.Password, passwordPolicy); err != nil {
+			return nil, handlerutil.Error400BadRequestWithType(err.Error(), validation.PasswordPolicyProblemType(passwordPolicy))
 		}
 		hashedPassword, err := h.userService.HashPassword(*input.Body.Password)
 		if err != nil {
@@ -286,6 +301,9 @@ func (h *UserHandler) UpdateUser(ctx context.Context, input *UpdateUserInput) (*
 		}
 		if errors.Is(err, ErrCannotRemoveLastAdmin) {
 			return nil, huma.Error409Conflict(ErrCannotRemoveLastAdmin.Error())
+		}
+		if errors.Is(err, ErrUsernameTaken) {
+			return nil, huma.Error409Conflict(ErrUsernameTaken.Error())
 		}
 		if errors.Is(err, common.ErrUserNotFound) {
 			return nil, huma.Error404NotFound("User not found")

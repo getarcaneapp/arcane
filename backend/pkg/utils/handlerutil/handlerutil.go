@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
+	"net/http"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -82,6 +83,16 @@ func RequireUser(ctx context.Context) (*common.User, error) {
 		return nil, huma.Error401Unauthorized("Not authenticated")
 	}
 	return user, nil
+}
+
+// Error400BadRequestWithType returns RFC 9457 problem details with a stable type.
+func Error400BadRequestWithType(detail, problemType string) huma.StatusError {
+	return &huma.ErrorModel{
+		Type:   problemType,
+		Title:  http.StatusText(http.StatusBadRequest),
+		Status: http.StatusBadRequest,
+		Detail: detail,
+	}
 }
 
 // ParseMultipartJSONPart decodes one required JSON-valued multipart field.

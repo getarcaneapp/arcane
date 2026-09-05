@@ -20,7 +20,7 @@
 	let confirmPassword = $state('');
 	let passwordSaving = $state(false);
 	let revokingAll = $state(false);
-	const passwordValid = $derived(currentPassword.length > 0 && newPassword.length >= 8 && newPassword === confirmPassword);
+	const passwordValid = $derived(currentPassword.length > 0 && [...newPassword].length >= 8 && newPassword === confirmPassword);
 
 	async function changePassword() {
 		if (!passwordValid || passwordSaving) return;

@@ -271,7 +271,7 @@
 
 		<UserFormSheet
 			bind:open={isDialogOpen.edit}
-			{userToEdit}
+			bind:userToEdit
 			roles={data.roles}
 			environments={data.environments}
 			availableRoleAssignments={editingAssignments}

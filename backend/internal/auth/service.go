@@ -883,10 +883,7 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID, currentPasswor
 		}
 	}
 
-	policy := validation.PasswordPolicyStrong
-	if s.settingsService != nil {
-		policy = s.settingsService.GetStringSetting(ctx, "authPasswordPolicy", validation.PasswordPolicyStrong)
-	}
+	policy := s.passwordPolicyInternal(ctx)
 	if err := validation.ValidatePasswordPolicy(newPassword, policy); err != nil {
 		return common.Classify(common.ErrValidation, err)
 	}
@@ -903,6 +900,13 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID, currentPasswor
 	})
 	s.tokenCache.DeleteMany(keys)
 	return nil
+}
+
+func (s *AuthService) passwordPolicyInternal(ctx context.Context) string {
+	if s.settingsService == nil {
+		return validation.PasswordPolicyStrong
+	}
+	return s.settingsService.GetStringSetting(ctx, "authPasswordPolicy", validation.PasswordPolicyStrong)
 }
 
 // InvalidateUserTokenCache purges all cached token verifications for a user.

@@ -1,6 +1,6 @@
 import { error as kitError } from '@sveltejs/kit';
 import { toast } from 'svelte-sonner';
-import { APIError } from '#lib/services/api-service';
+import { APIError, extractServerMessage } from '#lib/services/api-service';
 
 // --- Result wrapper ---
 
@@ -27,34 +27,14 @@ export async function tryCatch<T, E = Error>(promise: Promise<T>): Promise<Resul
 
 // --- API error extraction ---
 
-function extractServerMessage(data: any): string | undefined {
-	const inner = data && typeof data === 'object' ? ((data as any).data ?? data) : data;
-	if (typeof inner === 'string') return inner;
-	if (!inner || typeof inner !== 'object') return undefined;
-
-	const msg = (inner as any).error || (inner as any).message || (inner as any).detail || (inner as any).error_description;
-	if (typeof msg === 'string' && msg.trim()) return msg;
-
-	if (Array.isArray((inner as any).errors) && (inner as any).errors.length) {
-		const first = (inner as any).errors[0];
-		if (typeof first === 'string' && first.trim()) return first;
-		if (first && typeof first === 'object') {
-			const em = (first as any).message || (first as any).error;
-			if (typeof em === 'string' && em.trim()) return em;
-		}
-	}
-
-	return undefined;
-}
-
 export function extractApiErrorMessage(error: any): string {
 	if (!error) return 'Unknown error';
 
 	const respData = error?.response?.data;
-	const serverMsg = extractServerMessage(respData);
+	const serverMsg = extractServerMessage(respData, true);
 	if (serverMsg) return serverMsg;
 
-	const bodyMsg = extractServerMessage(error?.body);
+	const bodyMsg = extractServerMessage(error?.body, true);
 	if (bodyMsg) return bodyMsg;
 
 	if (typeof error?.error === 'string' && error.error.trim()) return error.error;

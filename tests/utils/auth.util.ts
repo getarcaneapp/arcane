@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 
 const DEFAULT_PASSWORD = 'arcane-admin';
 const TEST_PASSWORD = 'Test-password-123';
@@ -36,6 +36,24 @@ async function changeDefaultPassword(page: Page, currentPassword: string, newPas
 
 	await dialog.waitFor({ state: 'visible' });
 	await dialog.getByRole('textbox', { name: 'Current Password' }).fill(currentPassword);
+	await dialog.getByRole('textbox', { name: 'New Password', exact: true }).fill('abcdefgh');
+	await dialog.getByRole('textbox', { name: 'Confirm New Password' }).fill('abcdefgh');
+	const policyResponsePromise = page.waitForResponse(
+		(response) =>
+			response.status() === 400 &&
+			response.request().method() === 'POST' &&
+			new URL(response.url()).pathname === '/api/auth/password'
+	);
+	await dialog.getByRole('button', { name: 'Change Password' }).click();
+	const policyResponse = await policyResponsePromise;
+	expect(await policyResponse.json()).toMatchObject({
+		status: 400,
+		type: 'urn:arcane:problem:password-policy:strong'
+	});
+	await expect(
+		page.getByText('12+ chars with upper, lower, number, and symbol.', { exact: true })
+	).toBeVisible();
+
 	await dialog.getByRole('textbox', { name: 'New Password', exact: true }).fill(newPassword);
 	await dialog.getByRole('textbox', { name: 'Confirm New Password' }).fill(newPassword);
 	await dialog.getByRole('button', { name: 'Change Password' }).click();

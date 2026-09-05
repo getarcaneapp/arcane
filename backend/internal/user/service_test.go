@@ -33,6 +33,9 @@ func setupAuthServiceTestDBInternal(t *testing.T) *database.DB {
 		&role.ApiKeyPermission{},
 		&role.OidcRoleMapping{},
 	))
+	// Production migrations define username as UNIQUE. AutoMigrate cannot infer
+	// that SQL-only constraint from the model, so mirror it in the test schema.
+	require.NoError(t, db.Exec("CREATE UNIQUE INDEX idx_users_username_unique ON users(username)").Error)
 	// environments and api_keys live in packages that import this one; the
 	// in-package tests only need the tables to exist.
 	require.NoError(t, db.Exec("CREATE TABLE IF NOT EXISTS environments (id text PRIMARY KEY, created_at datetime, updated_at datetime, name text, api_url text, status text, enabled numeric, is_edge numeric, hidden numeric, last_seen datetime, last_edge_transport text, access_token text, api_key_id text, parent_environment_id text, swarm_node_id text)").Error)
@@ -189,15 +192,22 @@ func TestDeleteUserRejectsDeletingOnlyCustomAllPermissionsAdmin(t *testing.T) {
 	require.True(t, users[0].IsGlobalAdmin)
 }
 
-func TestUpdateUserPersistsFontSizeAndMapsToDto(t *testing.T) {
+func TestUserProfileValidationAndPersistence(t *testing.T) {
 	userSvc, _ := setupUserAndRoleServices(t)
 	ctx := context.Background()
 
-	u := createTestUser(t, userSvc, "user-1", "fontuser")
+	u := createTestUser(t, userSvc, "user-1", "  fontuser  ")
+	require.Equal(t, "fontuser", u.Username)
 	require.Nil(t, u.FontSize, "new users default to no explicit font size")
 
+	_, err := userSvc.CreateUser(ctx, &common.User{ID: "blank-user", Username: "   "})
+	require.ErrorIs(t, err, ErrUsernameRequired)
+
+	_, err = userSvc.CreateUser(ctx, &common.User{ID: "duplicate-user", Username: "fontuser"})
+	require.ErrorIs(t, err, ErrUsernameTaken)
+
 	u.FontSize = new(16)
-	_, err := userSvc.UpdateUser(ctx, u, nil)
+	_, err = userSvc.UpdateUser(ctx, u, nil)
 	require.NoError(t, err)
 
 	reloaded, err := userSvc.GetUserByID(ctx, u.ID)
@@ -209,6 +219,11 @@ func TestUpdateUserPersistsFontSizeAndMapsToDto(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, dto.FontSize)
 	require.Equal(t, 16, *dto.FontSize)
+
+	conflictingUser := createTestUser(t, userSvc, "user-2", "another-user")
+	conflictingUser.Username = u.Username
+	_, err = userSvc.UpdateUser(ctx, conflictingUser, nil)
+	require.ErrorIs(t, err, ErrUsernameTaken)
 }
 
 func TestUserDtoExposesLastLogin(t *testing.T) {

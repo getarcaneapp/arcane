@@ -4,7 +4,8 @@ import {
 	installPageErrorCollector,
 	test,
 	type BrowserContext,
-	type Page
+	type Page,
+	type Request
 } from '../fixtures/test.fixture';
 import { readApiData } from '../utils/fetch.util';
 import { openRowActionsMenu } from '../utils/table-actions.util';
@@ -142,6 +143,61 @@ async function createRestrictedUserThroughUI(
 	await dialog.getByRole('button', { name: 'Add assignment', exact: true }).click();
 	await selectUserAssignment(page, dialog, 1, remoteEnvironmentName, remoteRoleName);
 
+	let createRequests = 0;
+	const countCreateRequests = (request: Request) => {
+		if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/users') {
+			createRequests += 1;
+		}
+	};
+	page.on('request', countCreateRequests);
+
+	await dialog.getByLabel('Username', { exact: true }).fill('   ');
+	await dialog.getByLabel('Password *', { exact: true }).fill('short');
+	await dialog.getByLabel('Display Name', { exact: true }).fill('x'.repeat(256));
+	await dialog.getByRole('button', { name: 'Create User', exact: true }).click();
+	await expect(dialog.getByText('Username is required', { exact: true })).toBeVisible();
+	await expect(
+		dialog.getByText('Password must be at least 8 characters', { exact: true })
+	).toBeVisible();
+	await expect(
+		dialog.getByText('Display Name must be 255 characters or fewer', { exact: true })
+	).toBeVisible();
+	await expect.poll(() => createRequests).toBe(0);
+
+	await dialog.getByLabel('Username', { exact: true }).fill('x'.repeat(256));
+	await dialog.getByLabel('Password *', { exact: true }).fill(password);
+	await dialog.getByLabel('Display Name', { exact: true }).fill('Scoped Browser User');
+	await dialog.getByRole('button', { name: 'Create User', exact: true }).click();
+	await expect(
+		dialog.getByText('Username must be 255 characters or fewer', { exact: true })
+	).toBeVisible();
+	await expect.poll(() => createRequests).toBe(0);
+	page.off('request', countCreateRequests);
+
+	await dialog.getByLabel('Username', { exact: true }).fill(`  ${username}  `);
+	await dialog.getByLabel('Password *', { exact: true }).fill('  abcdefgh  ');
+	const policyResponsePromise = page.waitForResponse(
+		(response) =>
+			response.status() === 400 &&
+			response.request().method() === 'POST' &&
+			new URL(response.url()).pathname === '/api/users'
+	);
+	await dialog.getByRole('button', { name: 'Create User', exact: true }).click();
+	const policyResponse = await policyResponsePromise;
+	expect(policyResponse.request().postDataJSON()).toMatchObject({
+		username,
+		password: '  abcdefgh  '
+	});
+	expect(await policyResponse.json()).toMatchObject({
+		status: 400,
+		type: 'urn:arcane:problem:password-policy:strong'
+	});
+	await expect(
+		page.getByText('12+ chars with upper, lower, number, and symbol.', { exact: true })
+	).toBeVisible();
+
+	await dialog.getByLabel('Password *', { exact: true }).fill(password);
+
 	const createResponsePromise = page.waitForResponse(
 		(response) =>
 			response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/users'
@@ -156,6 +212,7 @@ async function createRestrictedUserThroughUI(
 	const user = await readApiData<TestUser>(await createResponsePromise, `Create user ${username}`);
 	await readApiData<unknown[]>(await assignmentsResponsePromise, `Assign roles to ${username}`);
 	await expect(dialog).toBeHidden();
+	expect(user.username).toBe(username);
 	return user;
 }
 
@@ -168,6 +225,50 @@ async function editUserThroughUI(page: Page, user: TestUser) {
 
 	const dialog = page.getByRole('dialog', { name: 'Edit User' });
 	await expect(dialog).toBeVisible();
+	await dialog.getByLabel('Password', { exact: true }).fill('short');
+
+	let profileUpdateRequests = 0;
+	const countProfileUpdateRequests = (request: Request) => {
+		if (request.method() === 'PUT' && new URL(request.url()).pathname === `/api/users/${user.id}`) {
+			profileUpdateRequests += 1;
+		}
+	};
+	page.on('request', countProfileUpdateRequests);
+	await dialog.getByRole('button', { name: 'Save Changes', exact: true }).click();
+	await expect(
+		dialog.getByText('Password must be at least 8 characters', { exact: true })
+	).toBeVisible();
+	await expect.poll(() => profileUpdateRequests).toBe(0);
+	page.off('request', countProfileUpdateRequests);
+
+	await dialog.getByLabel('Display Name', { exact: true }).fill('Discarded Browser Edit');
+	await dialog.getByLabel('Password', { exact: true }).fill('abcdefgh');
+	const policyResponsePromise = page.waitForResponse(
+		(response) =>
+			response.status() === 400 &&
+			response.request().method() === 'PUT' &&
+			new URL(response.url()).pathname === `/api/users/${user.id}`
+	);
+	await dialog.getByRole('button', { name: 'Save Changes', exact: true }).click();
+	const policyResponse = await policyResponsePromise;
+	expect(await policyResponse.json()).toMatchObject({
+		status: 400,
+		type: 'urn:arcane:problem:password-policy:strong'
+	});
+	await expect(
+		page.getByText('12+ chars with upper, lower, number, and symbol.', { exact: true })
+	).toBeVisible();
+
+	await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+	await expect(dialog).toBeHidden();
+
+	const reopenedMenu = await openRowActionsMenu(page, row);
+	await reopenedMenu.getByRole('menuitem', { name: 'Edit', exact: true }).click();
+	await expect(dialog).toBeVisible();
+	await expect(dialog.getByLabel('Password', { exact: true })).toHaveValue('');
+	await expect(dialog.getByLabel('Display Name', { exact: true })).toHaveValue(
+		'Scoped Browser User'
+	);
 	await dialog.getByLabel('Display Name', { exact: true }).fill('Scoped Browser User Updated');
 
 	const updateResponsePromise = page.waitForResponse(
@@ -182,10 +283,9 @@ async function editUserThroughUI(page: Page, user: TestUser) {
 	);
 	await dialog.getByRole('button', { name: 'Save Changes', exact: true }).click();
 
-	const updated = await readApiData<TestUser>(
-		await updateResponsePromise,
-		`Update user ${user.username}`
-	);
+	const updateResponse = await updateResponsePromise;
+	expect(updateResponse.request().postDataJSON()).not.toHaveProperty('password');
+	const updated = await readApiData<TestUser>(updateResponse, `Update user ${user.username}`);
 	await readApiData<unknown[]>(
 		await assignmentsResponsePromise,
 		`Retain roles for ${user.username}`
@@ -306,6 +406,18 @@ test('administers scoped identities and enforces their browser access immediatel
 			remoteEnvironment.name,
 			remoteRole.name
 		);
+		const duplicateUserResponse = await page.request.post('/api/users', {
+			data: {
+				username: `  ${username}  `,
+				password,
+				displayName: 'Duplicate Browser User'
+			}
+		});
+		expect(duplicateUserResponse.status()).toBe(409);
+		expect(await duplicateUserResponse.json()).toMatchObject({
+			status: 409,
+			detail: 'username already in use'
+		});
 		await editUserThroughUI(page, restrictedUser);
 
 		noAccessUser = await readApiData<TestUser>(
