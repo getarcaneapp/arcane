@@ -3347,6 +3347,8 @@
   "system_backups_recovery_key_saved": "已設定復原金鑰。",
   "system_backups_recovery_key_save_failed": "無法設定還原金鑰。",
   "system_backups_enabled_description": "依照已設定的 cron 排程，執行加密的 Arcane 還原備份。",
+  "backups_started": "備份已開始",
+  "backups_running": "備份中",
   "system_backups_created": "已成功建立 Arcane 系統備份。",
   "system_backups_create_failed": "無法建立 Arcane 系統備份。",
   "system_backups_policy_saved": "系統備份排程已儲存。",
