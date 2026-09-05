@@ -3347,6 +3347,8 @@
   "system_backups_recovery_key_saved": "Ключ відновлення налаштовано.",
   "system_backups_recovery_key_save_failed": "Не вдалося налаштувати ключ відновлення.",
   "system_backups_enabled_description": "Запустіть зашифровану резервну копію для відновлення Arcane згідно з налаштованим розкладом cron.",
+  "backups_started": "Почалося створення резервної копії",
+  "backups_running": "Триває створення резервної копії",
   "system_backups_created": "Резервна копія системи Arcane створена успішно.",
   "system_backups_create_failed": "Не вдалося створити резервну копію системи Arcane.",
   "system_backups_policy_saved": "Розклад резервного копіювання системи збережено.",
