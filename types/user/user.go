@@ -30,10 +30,11 @@ type Preferences struct {
 
 // CreateUser represents the request body for creating a new user.
 // Role assignments are managed separately via PUT /users/{userId}/role-assignments.
+// Fields tagged with unorm and trim are trimmed and normalized to Unicode NFC.
 type CreateUser struct {
 	Username    string      `json:"username" minLength:"1" maxLength:"255" pattern:"^[^@]+$" patternDescription:"username without an @ character" doc:"Username of the user; may not contain @" example:"johndoe"`
 	Password    string      `json:"password" minLength:"8" doc:"Password of the user"`
-	DisplayName *string     `json:"displayName,omitempty" maxLength:"255" doc:"Display name of the user" example:"John Doe"`
+	DisplayName *string     `json:"displayName,omitempty" maxLength:"255" doc:"Display name of the user" example:"John Doe" unorm:"nfc" trim:"true"`
 	Email       *string     `json:"email,omitempty" doc:"Email address of the user" example:"john@example.com"`
 	Locale      *string     `json:"locale,omitempty" doc:"Locale preference of the user" example:"en-US"`
 	TimeFormat  *TimeFormat `json:"timeFormat,omitempty" enum:"auto,12h,24h" doc:"Preferred time display format" example:"auto"`
@@ -43,7 +44,7 @@ type CreateUser struct {
 // Role assignments are managed separately via PUT /users/{userId}/role-assignments.
 type UpdateUser struct {
 	Username    *string     `json:"username,omitzero" minLength:"1" maxLength:"255" pattern:"^[^@]+$" patternDescription:"username without an @ character" doc:"Username of the user; may not contain @"`
-	DisplayName *string     `json:"displayName,omitzero" maxLength:"255" doc:"Display name of the user"`
+	DisplayName *string     `json:"displayName,omitzero" maxLength:"255" doc:"Display name of the user" unorm:"nfc" trim:"true"`
 	Email       *string     `json:"email,omitzero" doc:"Email address of the user"`
 	Locale      *string     `json:"locale,omitzero" doc:"Locale preference of the user"`
 	TimeFormat  *TimeFormat `json:"timeFormat,omitzero" enum:"auto,12h,24h" doc:"Preferred time display format"`

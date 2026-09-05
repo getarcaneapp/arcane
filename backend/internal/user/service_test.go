@@ -425,3 +425,33 @@ func TestCreateDefaultAdminRecoversArcaneUserWhenNoGlobalAdminExists(t *testing.
 	require.Equal(t, authz.BuiltInRoleAdmin, assignments[0].RoleID)
 	require.Nil(t, assignments[0].EnvironmentID)
 }
+
+func TestUserDisplayNameNormalization(t *testing.T) {
+	svc := NewUserService(setupAuthServiceTestDBInternal(t))
+	ctx := context.Background()
+	created, err := svc.CreateUser(ctx, &common.User{ID: "normalized", Username: " Jose\u0301 ", Email: new(" Jose\u0301@example.com "), DisplayName: new(" Jose\u0301 ")})
+	require.NoError(t, err)
+	require.Equal(t, "Jose\u0301", created.Username)
+	require.Equal(t, " Jose\u0301@example.com ", *created.Email)
+	require.Equal(t, "José", *created.DisplayName)
+	created.DisplayName = new(" Andre\u0301 ")
+	profile, err := svc.UpdateUser(ctx, created, nil)
+	require.NoError(t, err)
+	require.Equal(t, "André", *profile.DisplayName)
+	require.Equal(t, "Jose\u0301", profile.Username)
+	require.Equal(t, " Jose\u0301@example.com ", *profile.Email)
+	created.Username = " Andre\u0301 "
+	created.DisplayName = nil
+	updated, err := svc.UpdateUser(ctx, created, nil)
+	require.NoError(t, err)
+	require.Equal(t, " Andre\u0301 ", updated.Username)
+	require.Nil(t, updated.DisplayName)
+	reloaded, err := svc.GetUserByID(ctx, updated.ID)
+	require.NoError(t, err)
+	require.Equal(t, " Andre\u0301 ", reloaded.Username)
+	require.Equal(t, " Jose\u0301@example.com ", *reloaded.Email)
+	_, err = svc.GetUserByUsername(ctx, " Andre\u0301 ")
+	require.NoError(t, err)
+	_, err = svc.CreateUser(ctx, &common.User{ID: "empty", Username: " \t "})
+	require.ErrorIs(t, err, ErrUsernameRequired)
+}

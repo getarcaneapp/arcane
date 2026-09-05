@@ -23,6 +23,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/dbutil"
 	"github.com/getarcaneapp/arcane/types/v2/user"
+	"go.getarcane.app/kit/normalization"
 )
 
 type Argon2Params struct {
@@ -140,6 +141,9 @@ func (s *UserService) ValidatePassword(encodedHash, password string) error {
 }
 
 func (s *UserService) CreateUser(ctx context.Context, user *common.User) (*common.User, error) {
+	if err := normalization.Normalize(user); err != nil {
+		return nil, err
+	}
 	username, err := normalizeUsernameInternal(user.Username)
 	if err != nil {
 		return nil, err
@@ -274,6 +278,9 @@ func (s *UserService) checkTargetPrivilegeInternal(ctx context.Context, tx *gorm
 // performing the change; authenticated global-admin callers must also be
 // present in ctx. Pass nil for internal service-to-service calls.
 func (s *UserService) UpdateUser(ctx context.Context, user *common.User, actorPerms *authz.PermissionSet) (*common.User, error) {
+	if err := normalization.Normalize(user); err != nil {
+		return nil, err
+	}
 	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
 		if err := s.checkTargetPrivilegeInternal(ctx, tx, actorPerms, user.ID); err != nil {
 			return err
@@ -402,6 +409,9 @@ func (s *UserService) AttachOidcSubjectTransactional(ctx context.Context, userID
 			updateFn(&u)
 		}
 
+		if err := normalization.Normalize(&u); err != nil {
+			return err
+		}
 		if err := tx.Save(&u).Error; err != nil {
 			// Bubble up uniqueness violations with a clearer message
 			if strings.Contains(strings.ToLower(err.Error()), "unique") || strings.Contains(strings.ToLower(err.Error()), "duplicate key") {

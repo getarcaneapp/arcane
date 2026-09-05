@@ -68,7 +68,7 @@ require (
 	go.getarcane.app/acfs v0.6.0
 	go.getarcane.app/builds v0.4.1
 	go.getarcane.app/docker/convert v0.3.1
-	go.getarcane.app/kit v0.1.1
+	go.getarcane.app/kit v0.2.0
 	go.getarcane.app/streams v0.4.3
 	go.getarcane.app/sys/cgroup v0.2.3
 	go.getarcane.app/sys/crypto v0.2.1
@@ -88,6 +88,7 @@ require (
 	google.golang.org/protobuf v1.36.12
 	gorm.io/driver/postgres v1.6.2
 	gorm.io/gorm v1.31.2
+	modernc.org/sqlite v1.57.0
 )
 
 require (
@@ -308,6 +309,5 @@ require (
 	modernc.org/libc v1.75.6 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
-	modernc.org/sqlite v1.57.0 // indirect
 	tags.cncf.io/container-device-interface v1.1.0 // indirect
 )

@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"go.getarcane.app/kit/normalization"
+
 	"emperror.dev/errors"
 
 	"gorm.io/gorm"
@@ -202,21 +204,22 @@ func (s *RoleService) GetRole(ctx context.Context, id string) (*Role, error) {
 }
 
 func (s *RoleService) CreateRole(ctx context.Context, name string, description *string, permissions []string) (*Role, error) {
-	if strings.TrimSpace(name) == "" {
-		return nil, errors.New("role name is required")
+	input := roletypes.CreateRole{Name: name, Description: description, Permissions: permissions}
+	if err := normalization.Normalize(&input); err != nil {
+		return nil, err
 	}
 	if err := validatePermissionsInternal(permissions); err != nil {
 		return nil, err
 	}
 	role := &Role{
-		Name:        name,
-		Description: description,
+		Name:        input.Name,
+		Description: input.Description,
 		Permissions: database.StringSlice(permissions),
 		BuiltIn:     false,
 	}
 	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
 		var conflict int64
-		if err := tx.Model(&Role{}).Where("name = ?", name).Count(&conflict).Error; err != nil {
+		if err := tx.Model(&Role{}).Where("name = ?", input.Name).Count(&conflict).Error; err != nil {
 			return errors.WrapIf(err, "failed to check role name uniqueness")
 		}
 		if conflict > 0 {
@@ -259,6 +262,10 @@ func lockAssignedUserRowsInternal(tx *gorm.DB, roleID string) ([]string, error) 
 }
 
 func (s *RoleService) UpdateRole(ctx context.Context, id, name string, description *string, permissions []string) (*Role, error) {
+	input := roletypes.UpdateRole{Name: name, Description: description, Permissions: permissions}
+	if err := normalization.Normalize(&input); err != nil {
+		return nil, err
+	}
 	if err := validatePermissionsInternal(permissions); err != nil {
 		return nil, err
 	}
@@ -274,9 +281,9 @@ func (s *RoleService) UpdateRole(ctx context.Context, id, name string, descripti
 		if existing.BuiltIn {
 			return common.Classify(common.ErrRoleBuiltIn, errors.New("Built-in role cannot be modified"))
 		}
-		if name != existing.Name {
+		if input.Name != existing.Name {
 			var conflict int64
-			if err := tx.Model(&Role{}).Where("name = ? AND id <> ?", name, id).Count(&conflict).Error; err != nil {
+			if err := tx.Model(&Role{}).Where("name = ? AND id <> ?", input.Name, id).Count(&conflict).Error; err != nil {
 				return errors.WrapIf(err, "failed to check role name uniqueness")
 			}
 			if conflict > 0 {
@@ -286,8 +293,8 @@ func (s *RoleService) UpdateRole(ctx context.Context, id, name string, descripti
 		if _, err := lockAssignedUserRowsInternal(tx, id); err != nil {
 			return err
 		}
-		existing.Name = name
-		existing.Description = description
+		existing.Name = input.Name
+		existing.Description = input.Description
 		existing.Permissions = permissions
 		if err := tx.Save(&existing).Error; err != nil {
 			return errors.WrapIf(err, "failed to update role")

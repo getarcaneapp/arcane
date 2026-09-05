@@ -42,8 +42,8 @@ type FederatedCredential struct {
 // CreateFederatedCredential is the request body for creating a federated
 // workload identity credential.
 type CreateFederatedCredential struct {
-	Name            string     `json:"name" minLength:"1" maxLength:"255" doc:"Display name"`
-	Description     *string    `json:"description,omitempty" maxLength:"1000" doc:"Optional description"`
+	Name            string     `json:"name" minLength:"1" maxLength:"255" doc:"Display name" unorm:"nfc" trim:"true"`
+	Description     *string    `json:"description,omitempty" maxLength:"1000" doc:"Optional description" unorm:"nfc" trim:"true"`
 	Enabled         bool       `json:"enabled" doc:"Whether exchanges are allowed"`
 	IssuerURL       string     `json:"issuerUrl" minLength:"1" format:"uri" doc:"Trusted external OIDC issuer URL"`
 	Audiences       []string   `json:"audiences" minItems:"1" doc:"Allowed external token audiences"`
@@ -59,8 +59,8 @@ type CreateFederatedCredential struct {
 // UpdateFederatedCredential is the request body for updating a federated
 // workload identity credential.
 type UpdateFederatedCredential struct {
-	Name            *string    `json:"name,omitzero" maxLength:"255" doc:"Display name"`
-	Description     *string    `json:"description,omitzero" maxLength:"1000" doc:"Optional description"`
+	Name            *string    `json:"name,omitzero" minLength:"1" maxLength:"255" doc:"Display name" unorm:"nfc" trim:"true"`
+	Description     *string    `json:"description,omitzero" maxLength:"1000" doc:"Optional description" unorm:"nfc" trim:"true"`
 	Enabled         *bool      `json:"enabled,omitzero" doc:"Whether exchanges are allowed"`
 	IssuerURL       *string    `json:"issuerUrl,omitzero" format:"uri" doc:"Trusted external OIDC issuer URL"`
 	Audiences       []string   `json:"audiences,omitempty" minItems:"1" doc:"Allowed external token audiences"`

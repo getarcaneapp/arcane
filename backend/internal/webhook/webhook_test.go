@@ -257,12 +257,13 @@ func TestCreateWebhook_PrefixMatchesToken(t *testing.T) {
 	db := setupWebhookServiceTestDB(t)
 	svc := newTestWebhookService(db)
 
-	wh, rawToken, err := svc.CreateWebhook(ctx, "prefix-check", WebhookTargetTypeProject, WebhookActionTypeUpdate, "p1", "env-1", common.User{})
+	wh, rawToken, err := svc.CreateWebhook(ctx, "  cafe\u0301 hook  ", WebhookTargetTypeProject, WebhookActionTypeUpdate, "p1", "env-1", common.User{})
 	require.NoError(t, err)
 
 	hexPart := strings.TrimPrefix(rawToken, webhookTokenPrefix)
 	expectedPrefix := webhookTokenPrefix + hexPart[:webhookTokenPrefixLen]
 	assert.Equal(t, expectedPrefix, wh.TokenPrefix)
+	assert.Equal(t, "café hook", wh.Name)
 
 	stored := fetchWebhook(t, db, wh.ID)
 	assert.Equal(t, expectedPrefix, stored.TokenPrefix)

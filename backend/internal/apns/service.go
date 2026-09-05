@@ -19,6 +19,8 @@ import (
 	"time"
 	"uuid"
 
+	"go.getarcane.app/kit/normalization"
+
 	"emperror.dev/errors"
 	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
@@ -293,6 +295,9 @@ func (s *ApnsService) Status(ctx context.Context, userID string) (apnstypes.Stat
 }
 
 func (s *ApnsService) RegisterDevice(ctx context.Context, userID string, req apnstypes.RegisterDeviceRequest) (apnstypes.Device, error) {
+	if err := normalization.Normalize(&req); err != nil {
+		return apnstypes.Device{}, err
+	}
 	if !s.Enabled(ctx) {
 		return apnstypes.Device{}, common.ErrApnsDisabled
 	}
@@ -314,7 +319,7 @@ func (s *ApnsService) RegisterDevice(ctx context.Context, userID string, req apn
 	case err == nil && existing.UserID != userID:
 		return apnstypes.Device{}, common.ErrApnsDeviceConflict
 	case err == nil:
-		existing.Label = strings.TrimSpace(req.Label)
+		existing.Label = req.Label
 		existing.Events = events
 		existing.EnvironmentIDs = environmentIDs
 		existing.LastSeenAt = &now
@@ -325,7 +330,7 @@ func (s *ApnsService) RegisterDevice(ctx context.Context, userID string, req apn
 	case !errors.Is(err, gorm.ErrRecordNotFound):
 		return apnstypes.Device{}, errors.WrapIf(err, "failed to load push device")
 	}
-	device := Device{UserID: userID, RecipientID: req.RecipientID, Label: strings.TrimSpace(req.Label), Events: events, EnvironmentIDs: environmentIDs, LastSeenAt: &now}
+	device := Device{UserID: userID, RecipientID: req.RecipientID, Label: req.Label, Events: events, EnvironmentIDs: environmentIDs, LastSeenAt: &now}
 	if err := s.db.WithContext(ctx).Create(&device).Error; err != nil {
 		return apnstypes.Device{}, errors.WrapIf(err, "failed to register push device")
 	}
@@ -344,12 +349,15 @@ func (s *ApnsService) deviceInternal(ctx context.Context, userID, id string) (*D
 }
 
 func (s *ApnsService) UpdateDevice(ctx context.Context, userID, id string, req apnstypes.UpdateDeviceRequest) (apnstypes.Device, error) {
+	if err := normalization.Normalize(&req); err != nil {
+		return apnstypes.Device{}, err
+	}
 	device, err := s.deviceInternal(ctx, userID, id)
 	if err != nil {
 		return apnstypes.Device{}, err
 	}
 	if req.Label != nil {
-		device.Label = strings.TrimSpace(*req.Label)
+		device.Label = *req.Label
 	}
 	if req.Events != nil {
 		device.Events = *req.Events

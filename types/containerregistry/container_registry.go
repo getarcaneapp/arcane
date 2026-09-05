@@ -174,7 +174,7 @@ type Sync struct {
 	// Description of the container registry.
 	//
 	// Required: false
-	Description *string `json:"description,omitzero"`
+	Description *string `json:"description,omitzero" unorm:"nfc" trim:"true"`
 
 	// Insecure indicates if the registry uses an insecure connection (HTTP).
 	//
@@ -261,4 +261,33 @@ type SyncRequest struct {
 	//
 	// Required: true
 	Registries []Sync `json:"registries" binding:"required"`
+}
+
+// CreateContainerRegistryRequest configures a registry with a normalized description.
+type CreateContainerRegistryRequest struct {
+	URL                string   `json:"url" binding:"required"`
+	Username           string   `json:"username"`
+	Token              string   `json:"token"`
+	Description        *string  `json:"description" unorm:"nfc" trim:"true"`
+	Insecure           *bool    `json:"insecure"`
+	Enabled            *bool    `json:"enabled"`
+	RegistryType       string   `json:"registryType"`
+	RepositoryNames    []string `json:"repositoryNames"`
+	AWSAccessKeyID     string   `json:"awsAccessKeyId"`
+	AWSSecretAccessKey string   `json:"awsSecretAccessKey"`
+	AWSRegion          string   `json:"awsRegion"`
+}
+
+type UpdateContainerRegistryRequest struct {
+	URL                *string   `json:"url"`
+	Username           *string   `json:"username"`
+	Token              *string   `json:"token"`
+	Description        *string   `json:"description" unorm:"nfc" trim:"true"`
+	Insecure           *bool     `json:"insecure"`
+	Enabled            *bool     `json:"enabled"`
+	RegistryType       *string   `json:"registryType"`
+	RepositoryNames    *[]string `json:"repositoryNames"`
+	AWSAccessKeyID     *string   `json:"awsAccessKeyId"`
+	AWSSecretAccessKey *string   `json:"awsSecretAccessKey"`
+	AWSRegion          *string   `json:"awsRegion"`
 }

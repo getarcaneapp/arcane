@@ -14,7 +14,7 @@ type User struct {
 
 	Username               string           `json:"username" sortable:"true"`
 	PasswordHash           string           `json:"-" gorm:"column:password_hash"`
-	DisplayName            *string          `json:"displayName,omitempty" gorm:"column:display_name" sortable:"true"`
+	DisplayName            *string          `json:"displayName,omitempty" gorm:"column:display_name" sortable:"true" unorm:"nfc" trim:"true"`
 	Email                  *string          `json:"email,omitempty" sortable:"true"`
 	OidcSubjectId          *string          `json:"oidcSubjectId,omitempty" gorm:"column:oidc_subject_id"`
 	LastLogin              *time.Time       `json:"lastLogin,omitempty" gorm:"column:last_login" sortable:"true"`

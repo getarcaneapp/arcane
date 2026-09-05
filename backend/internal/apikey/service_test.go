@@ -366,8 +366,11 @@ func TestCreatePersonalApiKeyHasNoGrantsAndCannotGainAny(t *testing.T) {
 	service, db, userService := setupAPIKeyService(t)
 	user := createTestAPIKeyUser(t, ctx, userService, "user-personal")
 
-	created, err := service.CreatePersonalApiKey(ctx, user.ID, apikey.CreateUserApiKey{Name: "personal"})
+	_, err := service.CreatePersonalApiKey(ctx, user.ID, apikey.CreateUserApiKey{Name: " \t "})
+	require.EqualError(t, err, "name: must contain at least 1 characters after normalization")
+	created, err := service.CreatePersonalApiKey(ctx, user.ID, apikey.CreateUserApiKey{Name: "  cafe\u0301 personal  "})
 	require.NoError(t, err)
+	require.Equal(t, "café personal", created.Name)
 	require.Equal(t, ApiKeyKindPersonal, created.Kind)
 	require.Empty(t, created.Permissions)
 	require.Equal(t, ApiKeyKindPersonal, fetchAPIKey(t, db, created.ID).Kind)

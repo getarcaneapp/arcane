@@ -9,7 +9,7 @@ import (
 type Environment struct {
 	database.BaseModel
 
-	Name                string     `json:"name" sortable:"true"`
+	Name                string     `json:"name" sortable:"true" unorm:"nfc" trim:"true"`
 	ApiUrl              string     `json:"apiUrl" gorm:"column:api_url" sortable:"true"`
 	Status              string     `json:"status" sortable:"true"`
 	Enabled             bool       `json:"enabled" sortable:"true"`

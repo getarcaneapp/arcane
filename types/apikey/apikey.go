@@ -10,9 +10,10 @@ type PermissionGrant struct {
 }
 
 // CreateApiKey represents the request body for creating an API key.
+// Fields tagged with unorm and trim are trimmed and normalized to Unicode NFC.
 type CreateApiKey struct {
-	Name        string            `json:"name" minLength:"1" maxLength:"255" doc:"Name of the API key" example:"My API Key"`
-	Description *string           `json:"description,omitempty" maxLength:"1000" doc:"Optional description of the API key"`
+	Name        string            `json:"name" minLength:"1" maxLength:"255" doc:"Name of the API key" example:"My API Key" unorm:"nfc" trim:"true"`
+	Description *string           `json:"description,omitempty" maxLength:"1000" doc:"Optional description of the API key" unorm:"nfc" trim:"true"`
 	ExpiresAt   *time.Time        `json:"expiresAt,omitempty" doc:"Optional expiration date for the API key"`
 	Permissions []PermissionGrant `json:"permissions" minItems:"1" doc:"Permissions granted to this key. Cannot exceed the creator's own permissions."`
 }
@@ -21,8 +22,8 @@ type CreateApiKey struct {
 // Personal keys carry no grants of their own; they inherit the owner's role
 // permissions at authentication time.
 type CreateUserApiKey struct {
-	Name        string     `json:"name" minLength:"1" maxLength:"255" doc:"Name of the API key" example:"My API Key"`
-	Description *string    `json:"description,omitempty" maxLength:"1000" doc:"Optional description of the API key"`
+	Name        string     `json:"name" minLength:"1" maxLength:"255" doc:"Name of the API key" example:"My API Key" unorm:"nfc" trim:"true"`
+	Description *string    `json:"description,omitempty" maxLength:"1000" doc:"Optional description of the API key" unorm:"nfc" trim:"true"`
 	ExpiresAt   *time.Time `json:"expiresAt,omitempty" doc:"Optional expiration date for the API key"`
 }
 
@@ -52,8 +53,8 @@ type ApiKeyCreatedDto struct {
 
 // UpdateApiKey represents the request body for updating an API key.
 type UpdateApiKey struct {
-	Name        *string           `json:"name,omitzero" maxLength:"255" doc:"New name for the API key"`
-	Description *string           `json:"description,omitzero" maxLength:"1000" doc:"New description for the API key"`
+	Name        *string           `json:"name,omitzero" maxLength:"255" doc:"New name for the API key" unorm:"nfc" trim:"true"`
+	Description *string           `json:"description,omitzero" maxLength:"1000" doc:"New description for the API key" unorm:"nfc" trim:"true"`
 	ExpiresAt   *time.Time        `json:"expiresAt,omitzero" doc:"New expiration date for the API key"`
 	Permissions []PermissionGrant `json:"permissions,omitempty" doc:"Replace the key's permission grants. Omit to leave unchanged. Cannot exceed the updater's own permissions."`
 }

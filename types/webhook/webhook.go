@@ -4,7 +4,7 @@ import "time"
 
 // CreateInput is the request body for creating a webhook.
 type CreateInput struct {
-	Name       string `json:"name" minLength:"1" maxLength:"255" doc:"Human-readable name for this webhook"`
+	Name       string `json:"name" minLength:"1" maxLength:"255" doc:"Human-readable name for this webhook" unorm:"nfc" trim:"true"`
 	TargetType string `json:"targetType" doc:"Resource type this webhook targets: 'container', 'project', 'updater', or 'gitops'" enum:"container,project,updater,gitops"`
 	ActionType string `json:"actionType" doc:"Action to run for the selected target type. Supported values depend on targetType." enum:"update,start,stop,restart,redeploy,up,down,run,sync"`
 	TargetID   string `json:"targetId" doc:"Container ID, project ID, or GitOps sync ID to target. Leave empty for 'updater' webhooks."`

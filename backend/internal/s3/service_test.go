@@ -45,7 +45,7 @@ func TestS3DestinationService_CRUD(t *testing.T) {
 	ctx := context.Background()
 
 	created, err := service.CreateS3Destination(ctx, backuptypes.CreateS3Destination{
-		Name:            "Offsite",
+		Name:            "  Cafe\u0301 offsite  ",
 		Endpoint:        "https://s3.example.com",
 		Bucket:          "arcane-backups",
 		Region:          "eu-central-1",
@@ -57,6 +57,7 @@ func TestS3DestinationService_CRUD(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotEmpty(t, created.ID)
+	require.Equal(t, "Café offsite", created.Name)
 	require.True(t, created.SecretConfigured)
 	require.Equal(t, "production", created.Prefix)
 
@@ -73,7 +74,7 @@ func TestS3DestinationService_CRUD(t *testing.T) {
 	require.Len(t, listed, 1)
 
 	updated, err := service.UpdateS3Destination(ctx, created.ID, backuptypes.UpdateS3Destination{
-		Name:           "Primary offsite",
+		Name:           "  Primary cafe\u0301 offsite  ",
 		Endpoint:       created.Endpoint,
 		Bucket:         created.Bucket,
 		Region:         created.Region,
@@ -83,7 +84,7 @@ func TestS3DestinationService_CRUD(t *testing.T) {
 		ForcePathStyle: created.ForcePathStyle,
 	})
 	require.NoError(t, err)
-	require.Equal(t, "Primary offsite", updated.Name)
+	require.Equal(t, "Primary café offsite", updated.Name)
 
 	var updatedStored S3Destination
 	require.NoError(t, gormDB.First(&updatedStored, "id = ?", created.ID).Error)

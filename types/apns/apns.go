@@ -26,13 +26,13 @@ type PairingToken struct {
 
 type RegisterDeviceRequest struct {
 	RecipientID    string          `json:"recipientId" minLength:"1" maxLength:"128"`
-	Label          string          `json:"label" maxLength:"100"`
+	Label          string          `json:"label" maxLength:"100" unorm:"nfc" trim:"true"`
 	Events         map[string]bool `json:"events,omitzero"`
 	EnvironmentIDs []string        `json:"environmentIds,omitzero"`
 }
 
 type UpdateDeviceRequest struct {
-	Label          *string          `json:"label,omitzero" maxLength:"100"`
+	Label          *string          `json:"label,omitzero" maxLength:"100" unorm:"nfc" trim:"true"`
 	Events         *map[string]bool `json:"events,omitzero"`
 	EnvironmentIDs *[]string        `json:"environmentIds,omitzero"`
 }

@@ -17,8 +17,9 @@ type S3Destination struct {
 	UpdatedAt        *time.Time `json:"updatedAt,omitempty"`
 }
 
+// CreateS3Destination trims and NFC-normalizes tagged display fields.
 type CreateS3Destination struct {
-	Name            string `json:"name"`
+	Name            string `json:"name" unorm:"nfc" trim:"true" minLength:"1"`
 	Endpoint        string `json:"endpoint,omitempty"`
 	Bucket          string `json:"bucket"`
 	Region          string `json:"region"`

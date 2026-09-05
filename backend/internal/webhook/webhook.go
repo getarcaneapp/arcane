@@ -2,6 +2,7 @@ package webhook
 
 import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"go.getarcane.app/kit/normalization"
 
 	"context"
 	"crypto/rand"
@@ -220,6 +221,10 @@ func resolvedWebhookActionTypeInternal(targetType, actionType string) string {
 // CreateWebhook creates a new webhook targeting a stack, the environment-wide updater, or a gitops sync.
 // It returns the webhook record with the raw token populated (only available at creation time).
 func (s *WebhookService) CreateWebhook(ctx context.Context, name, targetType, actionType, targetID, environmentID string, actor common.User) (*Webhook, string, error) {
+	input := webhooktypes.CreateInput{Name: name, TargetType: targetType, ActionType: actionType, TargetID: targetID}
+	if err := normalization.Normalize(&input); err != nil {
+		return nil, "", err
+	}
 	resolvedActionType, err := resolveWebhookActionTypeInternal(targetType, actionType)
 	if err != nil {
 		return nil, "", err
@@ -249,7 +254,7 @@ func (s *WebhookService) CreateWebhook(ctx context.Context, name, targetType, ac
 	}
 
 	wh := &Webhook{
-		Name:          name,
+		Name:          input.Name,
 		TokenHash:     hash,
 		TokenPrefix:   prefix,
 		TargetType:    targetType,

@@ -2,6 +2,7 @@ package gitrepo
 
 import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"go.getarcane.app/kit/normalization"
 
 	"context"
 	"fmt"
@@ -114,7 +115,10 @@ func (s *GitRepositoryService) FindEnabledRepositoryByURL(ctx context.Context, r
 	return nil, nil
 }
 
-func (s *GitRepositoryService) CreateRepository(ctx context.Context, req CreateGitRepositoryRequest, actor common.User) (*GitRepository, error) {
+func (s *GitRepositoryService) CreateRepository(ctx context.Context, req gitops.CreateRepositoryRequest, actor common.User) (*GitRepository, error) {
+	if err := normalization.Normalize(&req); err != nil {
+		return nil, err
+	}
 	repository := GitRepository{
 		Name:                   req.Name,
 		URL:                    req.URL,
@@ -171,7 +175,10 @@ func (s *GitRepositoryService) CreateRepository(ctx context.Context, req CreateG
 	return &repository, nil
 }
 
-func (s *GitRepositoryService) UpdateRepository(ctx context.Context, id string, req UpdateGitRepositoryRequest, actor common.User) (*GitRepository, error) {
+func (s *GitRepositoryService) UpdateRepository(ctx context.Context, id string, req gitops.UpdateRepositoryRequest, actor common.User) (*GitRepository, error) {
+	if err := normalization.Normalize(&req); err != nil {
+		return nil, err
+	}
 	repository, err := s.GetRepositoryByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -448,6 +455,9 @@ func (s *GitRepositoryService) BrowseFiles(ctx context.Context, id, branch, path
 // SyncRepositories syncs repositories from a manager to this agent instance.
 // It creates, updates, or deletes repositories to match the provided list.
 func (s *GitRepositoryService) SyncRepositories(ctx context.Context, syncItems []gitops.RepositorySync) error {
+	if err := normalization.Normalize(&syncItems); err != nil {
+		return err
+	}
 	existingMap, err := s.getExistingRepositoriesMap(ctx)
 	if err != nil {
 		return err

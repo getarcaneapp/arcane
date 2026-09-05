@@ -240,7 +240,13 @@ func TestSettingsServiceUpdateSettingsAllowsOIDCIssuerChangeWithReplacementSecre
 	require.NoError(t, svc.UpdateSetting(ctx, "oidcIssuerUrl", "https://issuer.example.com"))
 	require.NoError(t, svc.UpdateSetting(ctx, "oidcClientSecret", "old-client-secret"))
 
+	require.NoError(t, svc.UpdateSetting(ctx, "oidcProviderName", "  Cafe\u0301 SSO  "))
+	before, loadErr := svc.GetSettings(ctx)
+	require.NoError(t, loadErr)
+	require.Equal(t, "Café SSO", before.OidcProviderName.Value)
+
 	_, err = svc.UpdateSettings(ctx, settingstypes.Update{
+		OidcProviderName: new("  Cafe\u0301 Login  "),
 		OidcIssuerUrl:    new("https://replacement.example.com"),
 		OidcClientSecret: new("new-client-secret"),
 	})
@@ -250,6 +256,7 @@ func TestSettingsServiceUpdateSettingsAllowsOIDCIssuerChangeWithReplacementSecre
 	require.NoError(t, loadErr)
 	require.Equal(t, "https://replacement.example.com", current.OidcIssuerUrl.Value)
 	require.Equal(t, "new-client-secret", current.OidcClientSecret.Value)
+	require.Equal(t, "Café Login", current.OidcProviderName.Value)
 }
 
 func TestSettingsServiceUpdateSettingsRejectsTrivyServerChangeWithStoredTokenInternal(t *testing.T) {

@@ -2,6 +2,7 @@ package environment
 
 import "time"
 
+// Create trims and NFC-normalizes tagged display fields.
 type Create struct {
 	// ApiUrl is the URL of the environment API.
 	//
@@ -11,7 +12,7 @@ type Create struct {
 	// Name of the environment.
 	//
 	// Required: false
-	Name *string `json:"name,omitempty"`
+	Name *string `json:"name,omitempty" unorm:"nfc" trim:"true"`
 
 	// Enabled indicates if the environment is enabled.
 	//
@@ -43,7 +44,7 @@ type Update struct {
 	// Name of the environment.
 	//
 	// Required: false
-	Name *string `json:"name,omitzero"`
+	Name *string `json:"name,omitzero" unorm:"nfc" trim:"true"`
 
 	// Enabled indicates if the environment is enabled.
 	//

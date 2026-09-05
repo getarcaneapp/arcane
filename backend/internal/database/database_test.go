@@ -3,11 +3,17 @@ package database
 import (
 	"context"
 	stdsql "database/sql"
+	"fmt"
 	"io/fs"
+	"net/url"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
+
+	sqliteutil "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/sqlite"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -394,6 +400,7 @@ func downgradeTargetVersionInternal(t *testing.T) int64 {
 
 func newSQLiteSQLDBInternal(t *testing.T, dirPath, fileName string) (*stdsql.DB, string) {
 	t.Helper()
+	require.NoError(t, sqliteutil.RegisterFunctions())
 
 	dsn := "file:" + filepath.Join(dirPath, fileName)
 	db, err := stdsql.Open("sqlite", dsn)
@@ -730,4 +737,124 @@ func sectionHasSQLInternal(section string) bool {
 		return true
 	}
 	return false
+}
+
+func TestIdentityNormalizationMigration(t *testing.T) {
+	for _, tc := range []struct {
+		name                    string
+		first, second           string
+		emailFirst, emailSecond string
+	}{
+		{name: "identity whitespace preserved", first: " Jose\u0301 ", second: "Other", emailFirst: " é@example.com ", emailSecond: "e\u0301@example.com"},
+		{name: "canonically equivalent usernames preserved", first: "Jose\u0301", second: "José"},
+		{name: "whitespace username preserved", first: "\t ", second: "Other"},
+		{name: "existing duplicate emails preserved", first: "one", second: "two", emailFirst: "a@example.com", emailSecond: "a@example.com"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			db, _ := newSQLiteSQLDBInternal(t, t.TempDir(), "identities.db")
+			require.NoError(t, migrateDatabaseToVersionInternal(ctx, db, dbProviderSQLite, MigrationOptions{}, 80))
+			const displayName = "\t\n\v\f\r \u0085\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000Jose\u0301\u3000"
+			_, err := db.Exec("INSERT INTO users (id, username, email, display_name, password_hash) VALUES (?, ?, ?, ?, 'unchanged'), (?, ?, ?, ?, 'unchanged')", "first", tc.first, tc.emailFirst, displayName, "second", tc.second, tc.emailSecond, nil)
+			require.NoError(t, err)
+			require.NoError(t, migrateDatabaseInternal(ctx, db, dbProviderSQLite, MigrationOptions{}))
+			require.NoError(t, migrateDatabaseInternal(ctx, db, dbProviderSQLite, MigrationOptions{}))
+			for _, expected := range []struct {
+				id, username, email string
+				displayName         stdsql.NullString
+			}{
+				{"first", tc.first, tc.emailFirst, stdsql.NullString{String: "José", Valid: true}},
+				{"second", tc.second, tc.emailSecond, stdsql.NullString{}},
+			} {
+				var id, username, email, password string
+				var displayName stdsql.NullString
+				require.NoError(t, db.QueryRow("SELECT id, username, email, display_name, password_hash FROM users WHERE id = ?", expected.id).Scan(&id, &username, &email, &displayName, &password))
+				require.Equal(t, expected.id, id)
+				require.Equal(t, expected.username, username)
+				require.Equal(t, expected.email, email)
+				require.Equal(t, expected.displayName, displayName)
+				require.Equal(t, "unchanged", password)
+			}
+			var version int64
+			require.NoError(t, db.QueryRow("SELECT MAX(version_id) FROM goose_db_version WHERE is_applied = 1").Scan(&version))
+			require.Equal(t, int64(81), version)
+		})
+	}
+}
+
+func TestIdentityNormalizationGooseUpgrade(t *testing.T) {
+	ctx := context.Background()
+	db, dsn := newSQLiteSQLDBInternal(t, t.TempDir(), "upgrade.db")
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, db, dbProviderSQLite, MigrationOptions{}, 80))
+	_, err := db.Exec("INSERT INTO users (id, username, display_name, password_hash) VALUES (?, ?, ?, ?), (?, ?, ?, ?)", "first", " Jose\u0301 ", " Jose\u0301 ", "unchanged", "second", "José", nil, "unchanged")
+	require.NoError(t, err)
+	initialized, err := Initialize(ctx, dsn, MigrationOptions{})
+	require.NoError(t, err)
+	initializedSQL, err := initialized.DB.DB()
+	require.NoError(t, err)
+	require.NoError(t, initializedSQL.Close())
+	require.NoError(t, migrateDatabaseInternal(ctx, db, dbProviderSQLite, MigrationOptions{}))
+	var id, username, password string
+	var email, displayName stdsql.NullString
+	require.NoError(t, db.QueryRow("SELECT id, username, email, display_name, password_hash FROM users WHERE id = 'first'").Scan(&id, &username, &email, &displayName, &password))
+	require.Equal(t, "first", id)
+	require.Equal(t, " Jose\u0301 ", username)
+	require.False(t, email.Valid)
+	require.Equal(t, stdsql.NullString{String: "José", Valid: true}, displayName)
+	require.Equal(t, "unchanged", password)
+	var version int64
+	require.NoError(t, db.QueryRow("SELECT MAX(version_id) FROM goose_db_version WHERE is_applied = 1").Scan(&version))
+	require.Equal(t, int64(81), version)
+}
+
+func TestIdentityNormalizationPostgresUpgrade(t *testing.T) {
+	dsn := os.Getenv("ARCANE_TEST_POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("ARCANE_TEST_POSTGRES_DSN is not set")
+	}
+	ctx := context.Background()
+	admin, err := stdsql.Open("pgx", dsn)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, admin.Close()) })
+	schema := fmt.Sprintf("normalization_test_%d", time.Now().UnixNano())
+	_, err = admin.ExecContext(ctx, "CREATE SCHEMA "+schema)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, err := admin.ExecContext(ctx, "DROP SCHEMA "+schema+" CASCADE")
+		require.NoError(t, err)
+	})
+	parsed, err := url.Parse(dsn)
+	require.NoError(t, err)
+	require.Contains(t, []string{"postgres", "postgresql"}, parsed.Scheme)
+	query := parsed.Query()
+	query.Set("search_path", schema)
+	parsed.RawQuery = query.Encode()
+	db, err := stdsql.Open("pgx", parsed.String())
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, db, dbProviderPostgres, MigrationOptions{}, 80))
+	const whitespace = "\t\n\v\f\r \u0085\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000"
+	_, err = db.ExecContext(ctx, "INSERT INTO users (id, username, email, display_name, password_hash) VALUES ($1, $2, $3, $4, $5), ($6, $7, $8, $9, $10)", "first", " Jose\u0301 ", " a@example.com ", whitespace+"Jose\u0301"+whitespace, "unchanged", "second", "José", nil, nil, "unchanged")
+	require.NoError(t, err)
+	require.NoError(t, migrateDatabaseInternal(ctx, db, dbProviderPostgres, MigrationOptions{}))
+	require.NoError(t, migrateDatabaseInternal(ctx, db, dbProviderPostgres, MigrationOptions{}))
+	for _, expected := range []struct {
+		id, username       string
+		email, displayName stdsql.NullString
+	}{
+		{"first", " Jose\u0301 ", stdsql.NullString{String: " a@example.com ", Valid: true}, stdsql.NullString{String: "José", Valid: true}},
+		{"second", "José", stdsql.NullString{}, stdsql.NullString{}},
+	} {
+		var id, username, password string
+		var email, displayName stdsql.NullString
+		require.NoError(t, db.QueryRowContext(ctx, "SELECT id, username, email, display_name, password_hash FROM users WHERE id = $1", expected.id).Scan(&id, &username, &email, &displayName, &password))
+		require.Equal(t, expected.id, id)
+		require.Equal(t, expected.username, username)
+		require.Equal(t, expected.email, email)
+		require.Equal(t, expected.displayName, displayName)
+		require.Equal(t, "unchanged", password)
+	}
+	var version int64
+	require.NoError(t, db.QueryRowContext(ctx, "SELECT MAX(version_id) FROM goose_db_version WHERE is_applied").Scan(&version))
+	require.Equal(t, int64(81), version)
 }

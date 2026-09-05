@@ -5,17 +5,17 @@ import "github.com/getarcaneapp/arcane/backend/v2/internal/database"
 type TemplateRegistry struct {
 	database.BaseModel
 
-	Name        string `json:"name"`
+	Name        string `json:"name" unorm:"nfc" trim:"true"`
 	URL         string `json:"url"`
 	Enabled     bool   `json:"enabled"`
-	Description string `json:"description"`
+	Description string `json:"description" unorm:"nfc" trim:"true"`
 }
 
 type ComposeTemplate struct {
 	database.BaseModel
 
-	Name        string                   `json:"name"`
-	Description string                   `json:"description"`
+	Name        string                   `json:"name" unorm:"nfc" trim:"true" minLength:"1"`
+	Description string                   `json:"description" unorm:"nfc" trim:"true"`
 	Content     string                   `json:"content" gorm:"type:text"`
 	EnvContent  *string                  `json:"envContent,omitempty" gorm:"type:text"`
 	IsCustom    bool                     `json:"isCustom"`

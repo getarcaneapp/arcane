@@ -32,6 +32,7 @@ import (
 	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/samber/hot"
+	"go.getarcane.app/kit/normalization"
 )
 
 const (
@@ -382,6 +383,9 @@ func (s *AuthService) LogLogout(ctx context.Context, user *common.User) {
 }
 
 func (s *AuthService) findOrCreateOidcUser(ctx context.Context, userInfo auth.OidcUserInfo, tokenResp *auth.OidcTokenResponse) (*common.User, bool, error) {
+	if err := normalization.Normalize(&userInfo); err != nil {
+		return nil, false, err
+	}
 	user, err := s.userService.GetUserByOidcSubjectId(ctx, userInfo.Subject)
 	if err != nil && !errors.Is(err, common.ErrUserNotFound) {
 		return nil, false, err
@@ -527,6 +531,9 @@ func (s *AuthService) resolveOidcUsernameInternal(ctx context.Context, userInfo 
 	} else {
 		username = userInfo.PreferredUsername
 	}
+
+	// CreateUser trims usernames; check availability using the same value.
+	username = strings.TrimSpace(username)
 
 	if _, lookupErr := s.userService.GetUserByUsername(ctx, username); errors.Is(lookupErr, common.ErrUserNotFound) {
 		return username, nil
