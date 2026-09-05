@@ -3347,6 +3347,8 @@
   "system_backups_recovery_key_saved": "Gendannelsesnøglen er konfigureret.",
   "system_backups_recovery_key_save_failed": "Det lykkedes ikke at konfigurere gendannelsesnøglen.",
   "system_backups_enabled_description": "Kør en krypteret Arcane-gendannelsessikkerhedskopi i henhold til den konfigurerede cron-plan.",
+  "backups_started": "Sikkerhedskopiering påbegyndt",
+  "backups_running": "Sikkerhedskopiering i gang",
   "system_backups_created": "Sikkerhedskopien af Arcane-systemet er oprettet.",
   "system_backups_create_failed": "Det lykkedes ikke at oprette en sikkerhedskopi af Arcane-systemet.",
   "system_backups_policy_saved": "Planen for sikkerhedskopiering af systemet er gemt.",
