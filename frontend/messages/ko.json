@@ -3347,6 +3347,8 @@
   "system_backups_recovery_key_saved": "복구 키가 설정되었습니다.",
   "system_backups_recovery_key_save_failed": "복구 키를 구성하지 못했습니다.",
   "system_backups_enabled_description": "구성된 cron 일정에 따라 암호화된 Arcane 복구 백업을 실행합니다.",
+  "backups_started": "백업이 시작되었습니다",
+  "backups_running": "백업 중입니다",
   "system_backups_created": "Arcane 시스템 백업이 성공적으로 생성되었습니다.",
   "system_backups_create_failed": "Arcane 시스템 백업 생성에 실패했습니다.",
   "system_backups_policy_saved": "시스템 백업 일정이 저장되었습니다.",
