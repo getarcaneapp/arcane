@@ -17,7 +17,7 @@
 	class={cn(
 		'bg-primary text-primary-foreground shadow-md hover:bg-primary/90 focus-visible:ring-ring/50',
 		'flex-shrink-0 rounded-full transition-all duration-200 ease-out active:scale-95',
-		'flex items-center justify-center',
+		'flex flex-col items-center justify-center gap-0.5',
 		// Keep a large tap target but allow a slightly smaller footprint on the smallest screens.
 		showLabels ? 'size-[52px] sm:size-14' : 'size-12 sm:size-[52px]'
 	)}
@@ -25,6 +25,6 @@
 	{onclick}
 	data-testid="mobile-nav-open"
 >
-	<MobileNavDrawerIcon class={showLabels ? 'size-8 sm:size-8.5' : 'size-7.5 sm:size-8'} aria-hidden="true" />
-	<span class="sr-only">{m.mobile_navigation()}</span>
+	<MobileNavDrawerIcon class={showLabels ? 'size-6 sm:size-7' : 'size-7.5 sm:size-8'} aria-hidden="true" />
+	{#if showLabels}<span class="text-[9px] leading-none">{m.navigation_title()}</span>{/if}
 </button>

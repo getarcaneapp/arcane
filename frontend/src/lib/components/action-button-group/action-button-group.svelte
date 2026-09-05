@@ -21,12 +21,18 @@
 
 	const DROPDOWN_WIDTH = $derived(size === 'sm' ? 44 : 48);
 	const GAP = 8;
+	const primaryButton = $derived(buttons.find((button) => button.primary));
+	const orderedButtons = $derived(
+		primaryButton ? [primaryButton, ...buttons.filter((button) => button !== primaryButton)] : buttons
+	);
+	const mobileButtons = $derived(orderedButtons.filter((button) => button === primaryButton || button.showOnMobile));
+	const mobileOverflowButtons = $derived(orderedButtons.filter((button) => !mobileButtons.includes(button)));
 
 	let containerWidth = $state(0);
 	let buttonWidths = $state<number[]>([]);
 
 	const visibleCount = $derived.by(() => {
-		const total = buttons.length;
+		const total = orderedButtons.length;
 		if (total === 0 || buttonWidths.length === 0 || containerWidth === 0) {
 			return total;
 		}
@@ -40,15 +46,15 @@
 		for (let i = 0; i < total; i++) {
 			const needed = (buttonWidths[i] ?? 0) + (i > 0 ? GAP : 0);
 			if (usedWidth + needed > containerWidth) {
-				return i;
+				return Math.max(primaryButton ? 1 : 0, i);
 			}
 			usedWidth += needed;
 		}
 		return total;
 	});
 
-	const visibleButtons = $derived(buttons.slice(0, visibleCount));
-	const overflowButtons = $derived(buttons.slice(visibleCount));
+	const visibleButtons = $derived(orderedButtons.slice(0, visibleCount));
+	const overflowButtons = $derived(orderedButtons.slice(visibleCount));
 
 	function handleOverflowAction(button: ActionButton) {
 		if (button.disabled || button.loading) return;
@@ -182,22 +188,26 @@
 	{/if}
 {/snippet}
 
+{#snippet actionButton(button: ActionButton, inert = false)}
+	<ArcaneButton
+		action={button.action}
+		customLabel={button.label}
+		loadingLabel={button.loadingLabel}
+		loading={button.loading}
+		disabled={button.disabled}
+		onclick={inert ? undefined : button.onclick}
+		href={inert ? undefined : button.href}
+		rel={button.rel}
+		{size}
+		icon={button.icon}
+	>
+		{@render buttonContent(button)}
+	</ArcaneButton>
+{/snippet}
+
 {#snippet splitButton(button: ActionButton, inert: boolean)}
 	<ButtonGroup.Root>
-		<ArcaneButton
-			action={button.action}
-			customLabel={button.label}
-			loadingLabel={button.loadingLabel}
-			loading={button.loading}
-			disabled={button.disabled}
-			onclick={inert ? () => {} : button.onclick}
-			href={button.href}
-			rel={button.rel}
-			{size}
-			icon={button.icon}
-		>
-			{@render buttonContent(button)}
-		</ArcaneButton>
+		{@render actionButton(button, inert)}
 
 		{#if inert}
 			<ArcaneButton action="base" tone="outline" size="icon" onclick={() => {}} class={cn(size === 'sm' ? 'size-8' : 'size-9')}>
@@ -224,54 +234,28 @@
 {/snippet}
 
 {#if buttons.length > 0}
-	<div class={cn('relative flex min-w-0 flex-1 items-center justify-end gap-2', className)} {@attach observeWidth}>
+	<div class={cn('relative flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2', className)} {@attach observeWidth}>
 		<div
-			{@attach measureButtons(buttons, size)}
+			{@attach measureButtons(orderedButtons, size)}
 			class="pointer-events-none invisible absolute top-0 left-0 flex items-center gap-2"
 			aria-hidden="true"
 			inert
 		>
-			{#each buttons as button (button.id)}
+			{#each orderedButtons as button (button.id)}
 				{#if button.menuItems && button.menuItems.length > 0}
 					{@render splitButton(button, true)}
 				{:else}
-					<ArcaneButton
-						action={button.action}
-						customLabel={button.label}
-						loadingLabel={button.loadingLabel}
-						loading={button.loading}
-						disabled={button.disabled}
-						onclick={() => {}}
-						href={button.href}
-						rel={button.rel}
-						{size}
-						icon={button.icon}
-					>
-						{@render buttonContent(button)}
-					</ArcaneButton>
+					{@render actionButton(button, true)}
 				{/if}
 			{/each}
 		</div>
 
-		<div class={cn('hidden items-center gap-2 lg:flex', inlineClass)}>
+		<div class={cn('hidden flex-wrap items-center justify-end gap-2 lg:flex', inlineClass)}>
 			{#each visibleButtons as button (button.id)}
 				{#if button.menuItems && button.menuItems.length > 0}
 					{@render splitButton(button, false)}
 				{:else}
-					<ArcaneButton
-						action={button.action}
-						customLabel={button.label}
-						loadingLabel={button.loadingLabel}
-						loading={button.loading}
-						disabled={button.disabled}
-						onclick={button.onclick}
-						href={button.href}
-						rel={button.rel}
-						{size}
-						icon={button.icon}
-					>
-						{@render buttonContent(button)}
-					</ArcaneButton>
+					{@render actionButton(button)}
 				{/if}
 			{/each}
 
@@ -286,14 +270,22 @@
 			{/if}
 		</div>
 
-		<div class={cn('flex items-center gap-2 lg:hidden', menuClass)}>
-			<DropdownMenu.Root>
-				{@render ellipsisTrigger('More actions')}
-
-				<DropdownMenu.Content align="end" class="min-w-[160px]">
-					{@render menuButtons(buttons)}
-				</DropdownMenu.Content>
-			</DropdownMenu.Root>
+		<div class={cn('flex flex-wrap items-center justify-end gap-2 lg:hidden', menuClass)}>
+			{#each mobileButtons as button (button.id)}
+				{#if button.menuItems?.length}
+					{@render splitButton(button, false)}
+				{:else}
+					{@render actionButton(button)}
+				{/if}
+			{/each}
+			{#if mobileOverflowButtons.length}
+				<DropdownMenu.Root>
+					{@render ellipsisTrigger(m.common_more_actions())}
+					<DropdownMenu.Content align="end" class="min-w-[160px]">
+						{@render menuButtons(mobileOverflowButtons)}
+					</DropdownMenu.Content>
+				</DropdownMenu.Root>
+			{/if}
 		</div>
 	</div>
 {/if}

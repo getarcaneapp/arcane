@@ -52,6 +52,10 @@ async function clickProjectsPageUpdateAction(page: Page) {
 		.first();
 	await expect(updateProjectsButton).toBeVisible();
 	await updateProjectsButton.click();
+	await page
+		.getByRole('dialog')
+		.getByRole('button', { name: 'Update Projects', exact: true })
+		.click();
 }
 
 async function clickProjectDetailUpdateAction(page: Page) {

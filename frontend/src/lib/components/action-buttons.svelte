@@ -561,14 +561,14 @@
 	{/if}
 {/snippet}
 
-{#snippet DesktopActions(size: 'default' | 'icon', showLabel: boolean)}
+{#snippet PrimaryAction()}
 	{#if !isRunning && canStart}
 		{#if type === 'container'}
-			<ArcaneButton action="start" {size} {showLabel} onclick={() => handleStart()} loading={uiLoading.start} />
+			<ArcaneButton action="start" size="default" showLabel={true} onclick={() => handleStart()} loading={uiLoading.start} />
 		{:else}
 			<DeploySplitButton
-				{size}
-				{showLabel}
+				size="default"
+				showLabel={true}
 				customLabel={deployButtonLabel}
 				onDeploy={() => handleDeploy()}
 				onDeployWatch={() => handleDeploy(undefined, true)}
@@ -577,17 +577,20 @@
 		{/if}
 	{/if}
 
+	{#if isRunning && canStop}
+		<ArcaneButton
+			action="stop"
+			customLabel={type === 'project' ? m.common_down() : undefined}
+			onclick={() => handleStop()}
+			loading={uiLoading.stop}
+		/>
+	{/if}
+{/snippet}
+
+{#snippet DesktopActions(size: 'default' | 'icon', showLabel: boolean)}
+	{@render PrimaryAction()}
+
 	{#if isRunning}
-		{#if canStop}
-			<ArcaneButton
-				action="stop"
-				{size}
-				{showLabel}
-				customLabel={type === 'project' ? m.common_down() : undefined}
-				onclick={() => handleStop()}
-				loading={uiLoading.stop}
-			/>
-		{/if}
 		{#if canRestart}
 			<ArcaneButton action="restart" {size} {showLabel} onclick={() => handleRestart()} loading={uiLoading.restart} />
 		{/if}
@@ -644,22 +647,7 @@
 			class="z-[var(--arcane-z-surface)] min-w-[180px] rounded-xl border bg-popover/20 p-1 shadow-lg backdrop-blur-md"
 		>
 			<DropdownMenu.Group>
-				{#if !isRunning && canStart}
-					{#if type === 'container'}
-						<DropdownMenu.Item onclick={handleStart} disabled={uiLoading.start}>
-							{m.common_start()}
-						</DropdownMenu.Item>
-					{:else}
-						<DropdownMenu.Item onclick={() => handleDeploy()} disabled={uiLoading.start}>
-							{deployButtonLabel}
-						</DropdownMenu.Item>
-					{/if}
-				{:else if isRunning}
-					{#if canStop}
-						<DropdownMenu.Item onclick={handleStop} disabled={uiLoading.stop}>
-							{type === 'project' ? m.common_down() : m.common_stop()}
-						</DropdownMenu.Item>
-					{/if}
+				{#if isRunning}
 					{#if canRestart}
 						<DropdownMenu.Item onclick={handleRestart} disabled={uiLoading.restart}>
 							{m.common_restart()}
@@ -677,7 +665,8 @@
 					{@render RedeployMenuItem()}
 					{@render beforeRemoveMenuItems?.(isLifecycleActionPending)}
 					{#if canRemove}
-						<DropdownMenu.Item onclick={() => confirmAction('remove')} disabled={uiLoading.remove}>
+						<DropdownMenu.Separator />
+						<DropdownMenu.Item variant="destructive" onclick={() => confirmAction('remove')} disabled={uiLoading.remove}>
 							{m.common_remove()}
 						</DropdownMenu.Item>
 					{/if}
@@ -704,7 +693,8 @@
 					{/if}
 
 					{#if canRemove}
-						<DropdownMenu.Item onclick={() => confirmAction('remove')} disabled={uiLoading.remove}>
+						<DropdownMenu.Separator />
+						<DropdownMenu.Item variant="destructive" onclick={() => confirmAction('remove')} disabled={uiLoading.remove}>
 							{type === 'project' ? m.compose_destroy() : m.common_remove()}
 						</DropdownMenu.Item>
 					{/if}
@@ -722,7 +712,8 @@
 				{@render DesktopActions(adaptiveIconOnly ? 'icon' : 'default', !adaptiveIconOnly)}
 			</div>
 		{:else}
-			<div class="flex items-center">
+			<div class="flex items-center gap-2">
+				{@render PrimaryAction()}
 				{@render ActionsMenu()}
 			</div>
 		{/if}
@@ -733,7 +724,8 @@
 			{@render DesktopActions('default', true)}
 		</div>
 
-		<div class="flex items-center lg:hidden">
+		<div class="flex items-center gap-2 lg:hidden">
+			{@render PrimaryAction()}
 			{@render ActionsMenu()}
 		</div>
 	</div>

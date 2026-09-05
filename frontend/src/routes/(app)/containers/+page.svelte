@@ -8,6 +8,7 @@
 	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index';
 	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog';
 	import { hasPermission } from '#lib/utils/auth';
 	import type { ContainerStatusCounts } from '#lib/types/docker';
 	import { createMutation } from '@tanstack/svelte-query';
@@ -64,14 +65,16 @@
 		}
 	}
 
-	const checkUpdatesMutation = createMutation(() => ({
+	const updateContainersMutation = createMutation(() => ({
 		mutationKey: queryKeys.containers.checkUpdates(envId),
-		mutationFn: async () => {
-			const requestedEnvId = envId;
+		mutationFn: async (requestedEnvId: string) => {
+			if (requestedEnvId !== envId || !canAutoUpdate) return null;
 			const result = await imageService.runAutoUpdate(undefined, requestedEnvId);
 			return { requestedEnvId, result };
 		},
-		onSuccess: async ({ requestedEnvId, result }) => {
+		onSuccess: async (outcome) => {
+			if (!outcome) return;
+			const { requestedEnvId, result } = outcome;
 			toast.success(m.containers_check_updates_success(), activityToastOptions(extractActivityId(result)));
 			if (requestedEnvId === envId) {
 				await refreshContainers(buildRequestOptions(), requestedEnvId);
@@ -109,8 +112,22 @@
 		return refreshContainers(buildRequestOptions(nextOptions), envId);
 	}
 
-	async function handleCheckForUpdates() {
-		await checkUpdatesMutation.mutateAsync();
+	function handleUpdateContainers() {
+		if (!canAutoUpdate || !resourcesReady || updateContainersMutation.isPending) return;
+		const requestedEnvId = envId;
+		const environmentName = environmentStore.selected?.name ?? requestedEnvId;
+		openConfirmDialog({
+			title: `${m.containers_check_updates()} — ${environmentName}`,
+			message: m.updates_update_all_confirm_message(),
+			confirm: {
+				label: m.containers_check_updates(),
+				button: 'update',
+				action: async () => {
+					if (requestedEnvId !== envId || !canAutoUpdate || updateContainersMutation.isPending) return;
+					await updateContainersMutation.mutateAsync(requestedEnvId);
+				}
+			}
+		});
 	}
 
 	async function refresh() {
@@ -120,7 +137,7 @@
 	const containerStatusCounts = $derived(resourcesReady ? (containers.counts ?? countsFallback) : countsFallback);
 
 	const canCreateContainers = $derived(hasPermission('containers:create', envId));
-	const canAutoUpdate = $derived(hasPermission('containers:autoupdate', envId));
+	const canAutoUpdate = $derived(hasPermission('containers:autoupdate', envId) && hasPermission('image-updates:check', envId));
 
 	const actionButtons: ActionButton[] = $derived(
 		[
@@ -128,6 +145,7 @@
 				? {
 						id: 'create',
 						action: 'create',
+						primary: true,
 						label: m.common_create_button({ resource: m.container() }),
 						onclick: () => goto('/containers/new'),
 						disabled: !resourcesReady
@@ -138,9 +156,9 @@
 						id: 'check-updates',
 						action: 'update',
 						label: m.containers_check_updates(),
-						onclick: handleCheckForUpdates,
-						loading: checkUpdatesMutation.isPending,
-						disabled: !resourcesReady || checkUpdatesMutation.isPending
+						onclick: handleUpdateContainers,
+						loading: updateContainersMutation.isPending,
+						disabled: !resourcesReady || updateContainersMutation.isPending
 					}
 				: null,
 			{
@@ -180,7 +198,7 @@
 	<ContainerEnvironmentSync onActivate={handleEnvironmentChange} />
 {/key}
 
-<ResourcePageLayout title={m.containers()} subtitle={m.containers_subtitle()} {actionButtons} {statCards}>
+<ResourcePageLayout environmentScoped title={m.containers()} subtitle={m.containers_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
 		{#if resourcesReady}
 			<ContainerTable

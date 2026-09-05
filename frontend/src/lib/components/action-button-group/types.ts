@@ -20,6 +20,7 @@ export interface ActionButton {
 	href?: string;
 	rel?: string;
 	showOnMobile?: boolean;
+	primary?: boolean;
 	badge?: string | number;
 	icon?: IconType | null;
 	menuItems?: ActionButtonMenuItem[];

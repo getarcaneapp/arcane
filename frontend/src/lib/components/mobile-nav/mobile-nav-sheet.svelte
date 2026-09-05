@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { navigationItems, getManagementItems, filterByPermissions } from '#lib/config/navigation-config';
+	import { navigationItems, getSetupItems, filterByPermissions } from '#lib/config/navigation-config';
 	import type { NavigationItem } from '#lib/config/navigation-config';
 	import { cn } from '#lib/utils';
 	import { page } from '$app/state';
@@ -41,16 +41,16 @@
 	const currentPath = $derived(page.url.pathname);
 	const memoizedUser = $derived.by(() => user ?? storeUser);
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
-	const managementItemsRaw = $derived(getManagementItems(currentEnvId));
+	const setupItemsRaw = $derived(getSetupItems(currentEnvId));
 	const managementItems = $derived(
-		filterByPermissions(managementItemsRaw, memoizedUser ?? null, currentEnvId, permissionsManifest)
+		filterByPermissions(navigationItems.managementItems, memoizedUser ?? null, currentEnvId, permissionsManifest)
 	);
 	const resourceItems = $derived(
 		filterByPermissions(navigationItems.resourceItems, memoizedUser ?? null, currentEnvId, permissionsManifest)
 	);
-	const settingsItems = $derived(
-		filterByPermissions(navigationItems.settingsItems, memoizedUser ?? null, currentEnvId, permissionsManifest)
-	);
+	const settingsItems = $derived(filterByPermissions(setupItemsRaw, memoizedUser ?? null, currentEnvId, permissionsManifest));
+
+	const permittedSwarmItems = $derived(filterByPermissions(swarmItems, memoizedUser ?? null, currentEnvId, permissionsManifest));
 
 	const upgradeCheck = useUpgradeCheck({
 		queryScope: 'mobile-nav',
@@ -123,6 +123,15 @@
 	</div>
 {/snippet}
 
+{#snippet navSection(label: string, items: NavigationItem[])}
+	{#if items.length > 0}
+		<section aria-label={label}>
+			<h4 class="mb-4 px-3 text-[11px] font-semibold tracking-widest text-muted-foreground/70 uppercase">{label}</h4>
+			{@render navItems(items, true)}
+		</section>
+	{/if}
+{/snippet}
+
 <Drawer.Root {open} onOpenChange={(nextOpen) => (open = nextOpen)} shouldScaleBackground direction="bottom" modal={true}>
 	<Drawer.Overlay class="fixed inset-0 z-[var(--arcane-z-overlay)] bg-black/40 backdrop-blur-xl" />
 	<Drawer.Content
@@ -141,41 +150,10 @@
 
 		<div class="scrollbar-hide flex-1 overflow-y-auto px-6">
 			<div class="space-y-8">
-				<section>
-					<h4 class="mb-4 px-3 text-[11px] font-semibold tracking-widest text-muted-foreground/70 uppercase">
-						{m.sidebar_management()}
-					</h4>
-					{@render navItems(managementItems, true)}
-				</section>
-
-				<section>
-					<h4 class="mb-4 px-3 text-[11px] font-semibold tracking-widest text-muted-foreground/70 uppercase">
-						{m.resources()}
-					</h4>
-					{@render navItems(resourceItems, true)}
-				</section>
-
-				{#if swarmItems.length > 0}
-					<section>
-						<h4 class="mb-4 px-3 text-[11px] font-semibold tracking-widest text-muted-foreground/70 uppercase">
-							{m.swarm()}
-						</h4>
-						<div class="space-y-2">
-							{#each swarmItems as item (item.url)}
-								{@render navLink(item, true)}
-							{/each}
-						</div>
-					</section>
-				{/if}
-
-				{#if settingsItems.length > 0}
-					<section>
-						<h4 class="mb-4 px-3 text-[11px] font-semibold tracking-widest text-muted-foreground/70 uppercase">
-							{m.sidebar_administration()}
-						</h4>
-						{@render navItems(settingsItems, false)}
-					</section>
-				{/if}
+				{@render navSection(m.common_overview(), managementItems)}
+				{@render navSection(m.workloads(), resourceItems)}
+				{@render navSection(m.setup(), settingsItems)}
+				{@render navSection(m.swarm(), permittedSwarmItems)}
 			</div>
 		</div>
 

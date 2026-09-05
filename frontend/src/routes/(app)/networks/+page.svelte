@@ -7,6 +7,7 @@
 	import CreateNetworkSheet from '#lib/components/sheets/create-network-sheet.svelte';
 	import NetworkTable from './network-table.svelte';
 	import { m } from '#lib/paraglide/messages';
+	import { hasPermission } from '#lib/utils/auth';
 	import { networkService } from '#lib/services/network-service';
 	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte';
 	import { queryKeys } from '#lib/query/query-keys';
@@ -73,6 +74,7 @@
 	});
 
 	async function handleCreate(name: string, options: NetworkCreateOptions) {
+		if (!canCreateNetwork || !resourcesReady || createNetworkMutation.isPending) return;
 		await createNetworkMutation.mutateAsync({ name, options, requestedEnvId: pageState.envId });
 	}
 
@@ -96,15 +98,22 @@
 	const isRefreshing = $derived(networksQuery.isFetching && !networksQuery.isPending);
 	const networkUsageCounts = $derived(resourcesReady ? (pageState.items.counts ?? countsFallback) : countsFallback);
 
+	const canCreateNetwork = $derived(hasPermission('networks:create', pageState.envId));
+
 	const actionButtons: ActionButton[] = $derived([
-		{
-			id: 'create',
-			action: 'create',
-			label: m.common_create_button({ resource: m.resource_network_cap() }),
-			onclick: () => (pageState.isCreateDialogOpen = true),
-			loading: createNetworkMutation.isPending,
-			disabled: !resourcesReady || createNetworkMutation.isPending
-		},
+		...(canCreateNetwork
+			? [
+					{
+						id: 'create',
+						action: 'create' as const,
+						primary: true,
+						label: m.common_create_button({ resource: m.resource_network_cap() }),
+						onclick: () => (pageState.isCreateDialogOpen = true),
+						loading: createNetworkMutation.isPending,
+						disabled: !resourcesReady || createNetworkMutation.isPending
+					}
+				]
+			: []),
 		{
 			id: 'refresh',
 			action: 'restart',
@@ -139,7 +148,13 @@
 	]);
 </script>
 
-<ResourcePageLayout title={m.resource_networks_cap()} subtitle={m.networks_subtitle()} {actionButtons} {statCards}>
+<ResourcePageLayout
+	environmentScoped
+	title={m.resource_networks_cap()}
+	subtitle={m.networks_subtitle()}
+	{actionButtons}
+	{statCards}
+>
 	{#snippet mainContent()}
 		{#if resourcesReady}
 			<NetworkTable
@@ -152,10 +167,12 @@
 	{/snippet}
 
 	{#snippet additionalContent()}
-		<CreateNetworkSheet
-			bind:open={pageState.isCreateDialogOpen}
-			isLoading={createNetworkMutation.isPending}
-			onSubmit={handleCreate}
-		/>
+		{#if canCreateNetwork}
+			<CreateNetworkSheet
+				bind:open={pageState.isCreateDialogOpen}
+				isLoading={createNetworkMutation.isPending}
+				onSubmit={handleCreate}
+			/>
+		{/if}
 	{/snippet}
 </ResourcePageLayout>

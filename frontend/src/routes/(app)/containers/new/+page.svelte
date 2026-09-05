@@ -7,7 +7,7 @@
 		emptyContainerFormValues,
 		toCreateRequest
 	} from '#lib/components/containers/container-form/container-form-state';
-	import { createForm } from '#lib/utils/settings';
+	import { useUnsavedChanges, createForm } from '#lib/utils/settings';
 	import { containerService } from '#lib/services/container-service';
 	import { queryKeys } from '#lib/query/query-keys';
 	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
@@ -23,12 +23,15 @@
 	const form = createForm<typeof containerFormSchema>(containerFormSchema, emptyContainerFormValues());
 	let rows = $state(emptyContainerFormRows());
 
+	const navigationGuard = useUnsavedChanges({ snapshot: () => ({ values: form.data(), rows }) });
+
 	const createContainerMutation = createMutation(() => ({
 		mutationKey: queryKeys.containers.create(data.envId),
 		mutationFn: (request: ReturnType<typeof toCreateRequest>) => containerService.createContainer(request, data.envId),
 		onSuccess: async (created) => {
 			toast.success(m.common_create_success({ resource: m.resource_container() }));
 			await queryClient.invalidateQueries({ queryKey: queryKeys.containers.all });
+			navigationGuard.allowNavigation();
 			goto(`/containers/${created.id}`);
 		},
 		onError: (error) => {

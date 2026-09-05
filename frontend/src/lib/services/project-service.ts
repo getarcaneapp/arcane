@@ -30,17 +30,29 @@ class ProjectService extends BaseAPIService {
 		return res.data;
 	}
 
-	deployProject(projectId: string, options?: DeployProjectOptions): Promise<Project>;
-	deployProject(projectId: string, onLine: (data: any) => void, options?: DeployProjectOptions): Promise<Project>;
+	deployProject(projectId: string, options?: DeployProjectOptions, environmentId?: string): Promise<Project>;
+	deployProject(
+		projectId: string,
+		onLine: (data: any) => void,
+		options?: DeployProjectOptions,
+		environmentId?: string
+	): Promise<Project>;
 	async deployProject(
 		projectId: string,
 		onLineOrOptions?: ((data: any) => void) | DeployProjectOptions,
-		maybeOptions?: DeployProjectOptions
+		optionsOrEnvironmentId?: DeployProjectOptions | string,
+		environmentId?: string
 	): Promise<Project> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+		const requestedEnvId = typeof optionsOrEnvironmentId === 'string' ? optionsOrEnvironmentId : environmentId;
+		const envId = await this.resolveEnvironmentId(requestedEnvId);
 		const url = `/api/environments/${envId}/projects/${projectId}/up`;
 		const onLine = typeof onLineOrOptions === 'function' ? onLineOrOptions : undefined;
-		const options = typeof onLineOrOptions === 'function' ? maybeOptions : onLineOrOptions;
+		const options =
+			typeof onLineOrOptions === 'function'
+				? typeof optionsOrEnvironmentId === 'string'
+					? undefined
+					: optionsOrEnvironmentId
+				: onLineOrOptions;
 
 		await this.postProjectStream(url, options ?? {}, onLine, {
 			startFailed: (status) => m.progress_deploy_failed_to_start({ status }),
@@ -48,7 +60,7 @@ class ProjectService extends BaseAPIService {
 		});
 
 		// The deploy stream doesn't return the project object; fetch fresh details.
-		return this.getProject(projectId);
+		return this.getProjectForEnvironment(envId, projectId);
 	}
 
 	async downProject(projectName: string): Promise<Project> {

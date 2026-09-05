@@ -32,13 +32,11 @@ test('navigation matches the configured mobile or tablet viewport', async ({ pag
 
 test('resource dialog stays usable in the configured viewport', async ({ page }) => {
 	await page.goto('/networks');
-	const createButton = page.getByRole('button', { name: 'Create Network', exact: true }).first();
-	if (await createButton.isVisible().catch(() => false)) {
-		await createButton.click();
-	} else {
-		await page.getByRole('button', { name: 'More actions', exact: true }).click();
-		await page.getByRole('menuitem', { name: 'Create Network', exact: true }).click();
-	}
+	const createButton = page
+		.getByRole('button', { name: 'Create Network', exact: true })
+		.filter({ visible: true });
+	await expect(createButton).toBeInViewport();
+	await createButton.click();
 
 	const dialog = page.getByRole('dialog');
 	await expect(dialog).toBeVisible();

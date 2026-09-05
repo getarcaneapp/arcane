@@ -21,6 +21,7 @@ export interface SettingsActionButton {
 	// When set, the button renders as a dropdown trigger and onclick is unused.
 	options?: SettingsActionOption[];
 	showOnMobile?: boolean;
+	primary?: boolean;
 }
 
 export interface SettingsStatCard {

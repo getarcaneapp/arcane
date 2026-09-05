@@ -8,6 +8,7 @@
 	import { projectService } from '#lib/services/project-service';
 	import { imageService } from '#lib/services/image-service';
 	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog';
 	import { hasPermission } from '#lib/utils/auth';
 	import { queryKeys } from '#lib/query/query-keys';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared';
@@ -90,14 +91,17 @@
 		isManualRefreshing = false;
 	});
 
-	const checkUpdatesMutation = createMutation(() => ({
+	const updateProjectsMutation = createMutation(() => ({
 		mutationKey: queryKeys.projects.checkUpdates(envId),
 		mutationFn: async (requestedEnvId: string) => {
+			if (requestedEnvId !== envId || !canUpdateProjects) return null;
 			// Refresh update info for all images, then use the image->project usage
 			// map to narrow the redeploy to projects that actually have updates.
 			// This avoids hitting every project (and its registry) when nothing has
 			// changed, which is especially expensive on instances with many projects.
 			const imageCheckResults = await imageService.checkAllImages(requestedEnvId);
+
+			if (requestedEnvId !== envId || !canUpdateProjects) return null;
 
 			const images = await imageService.getImagesForEnvironment(requestedEnvId, {
 				pagination: { page: 1, limit: 10000 }
@@ -121,11 +125,13 @@
 			});
 			const projectsToUpdate = allProjects.data.filter((p) => projectIdsWithUpdates.has(p.id));
 
+			if (requestedEnvId !== envId || !canUpdateProjects) return null;
+
 			const results = await Promise.allSettled(
 				projectsToUpdate.map(async (proj) => {
 					// deployProject with pullPolicy 'always' already pulls fresh images,
 					// so no separate pullProjectImages call is needed.
-					await projectService.deployProject(proj.id, { pullPolicy: 'always' });
+					await projectService.deployProject(proj.id, { pullPolicy: 'always' }, requestedEnvId);
 					return proj.name;
 				})
 			);
@@ -138,6 +144,7 @@
 			return { updated: results.length, activityId: extractActivityId(imageCheckResults) };
 		},
 		onSuccess: async (result, requestedEnvId) => {
+			if (!result) return;
 			const toastOptions = activityToastOptions(result.activityId);
 			if (result && result.updated === 0) {
 				toast.success(m.image_update_up_to_date_title(), toastOptions);
@@ -165,8 +172,22 @@
 	const archivedCompose = $derived(projectStatusCounts.archivedProjects);
 	const isRefreshBlocked = $derived(isManualRefreshing || projectsQuery.isFetching || projectStatusCountsQuery.isFetching);
 
-	async function handleCheckForUpdates() {
-		await checkUpdatesMutation.mutateAsync(envId);
+	function handleUpdateProjects() {
+		if (!canUpdateProjects || !resourcesReady || updateProjectsMutation.isPending) return;
+		const requestedEnvId = envId;
+		const environmentName = environmentStore.selected?.name ?? requestedEnvId;
+		openConfirmDialog({
+			title: `${m.compose_update_projects()} — ${environmentName}`,
+			message: m.projects_update_confirmation(),
+			confirm: {
+				label: m.compose_update_projects(),
+				button: 'update',
+				action: async () => {
+					if (requestedEnvId !== envId || !canUpdateProjects || updateProjectsMutation.isPending) return;
+					await updateProjectsMutation.mutateAsync(requestedEnvId);
+				}
+			}
+		});
 	}
 
 	async function refreshCompose() {
@@ -193,7 +214,11 @@
 	}
 
 	const canCreateProject = $derived(hasPermission('projects:create', envId));
-	const canDeployProject = $derived(hasPermission('projects:deploy', envId));
+	const canUpdateProjects = $derived(
+		['projects:deploy', 'projects:list', 'projects:read', 'images:list', 'image-updates:check'].every((permission) =>
+			hasPermission(permission, envId)
+		)
+	);
 
 	const actionButtons: ActionButton[] = $derived.by(() => {
 		const buttons: ActionButton[] = [];
@@ -201,18 +226,19 @@
 			buttons.push({
 				id: 'create',
 				action: 'create',
+				primary: true,
 				label: m.compose_create_project(),
 				onclick: () => goto('/projects/new')
 			});
 		}
-		if (canDeployProject) {
+		if (canUpdateProjects) {
 			buttons.push({
 				id: 'check-updates',
 				action: 'update',
 				label: m.compose_update_projects(),
-				onclick: handleCheckForUpdates,
-				loading: checkUpdatesMutation.isPending,
-				disabled: !resourcesReady || checkUpdatesMutation.isPending
+				onclick: handleUpdateProjects,
+				loading: updateProjectsMutation.isPending,
+				disabled: !resourcesReady || updateProjectsMutation.isPending
 			});
 		}
 		buttons.push({
@@ -254,7 +280,7 @@
 	]);
 </script>
 
-<ResourcePageLayout title={m.projects_title()} subtitle={m.compose_subtitle()} {actionButtons} {statCards}>
+<ResourcePageLayout environmentScoped title={m.projects_title()} subtitle={m.compose_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
 		{#if projects}
 			<ProjectsTable

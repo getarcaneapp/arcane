@@ -45,20 +45,20 @@
 			description: m.variables_subtitle
 		},
 		'git-repositories': {
-			title: m.git_repositories_title,
+			title: m.repositories,
 			description: m.git_repositories_subtitle
 		}
 	} as const;
 
 	function isAccessibleCategory(category: CustomizeCategory) {
-		if (!permissionsManifest?.accessSurfaces?.length) return true;
+		if (!permissionsManifest?.accessSurfaces?.length) return false;
 		return canReachAccessSurfaceUrl(permissionsManifest, category.url, user, environmentStore.selected?.id);
 	}
 
 	onMount(async () => {
 		try {
 			customizeCategories = orderCategoriesByNav(
-				(await customizeSearchService.getCategories()).filter(isAccessibleCategory),
+				await customizeSearchService.getCategories(),
 				getCustomizeSubpageUrlsInNavOrder()
 			);
 		} catch (error) {
@@ -87,7 +87,7 @@
 		};
 	}
 
-	const normalizedCategories = $derived(customizeCategories.map(normalize));
+	const normalizedCategories = $derived(customizeCategories.filter(isAccessibleCategory).map(normalize));
 	const searchAdapter = {
 		get searchQuery() {
 			return categorySearch.searchQuery;
@@ -99,7 +99,7 @@
 			return categorySearch.showSearchResults;
 		},
 		get searchResults() {
-			return categorySearch.searchResults.map(normalize);
+			return categorySearch.searchResults.filter(isAccessibleCategory).map(normalize);
 		},
 		get isSearching() {
 			return categorySearch.isSearching;
@@ -112,8 +112,8 @@
 
 <CategoryIndexPage
 	headerIcon={CustomizeIcon}
-	title={m.customize_title()}
-	subtitle={m.customize_subtitle()}
+	title={m.deployment()}
+	subtitle={m.deployment_description()}
 	searchPlaceholder={m.customize_search_placeholder()}
 	clearSearchLabel={m.common_clear_search()}
 	searchingLabel={m.searching()}
@@ -126,8 +126,8 @@
 	navigate={navigateToCategory}
 >
 	{#snippet resultsHeading()}
-		{m.customize_search_results({ query: categorySearch.searchQuery })} ({categorySearch.searchResults.length}
-		{categorySearch.searchResults.length === 1 ? m.customize_result() : m.customize_results()})
+		{m.customize_search_results({ query: categorySearch.searchQuery })} ({searchAdapter.searchResults.length}
+		{searchAdapter.searchResults.length === 1 ? m.customize_result() : m.customize_results()})
 	{/snippet}
 	{#snippet moreKeywords(count: number)}
 		+{count}

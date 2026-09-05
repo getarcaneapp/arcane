@@ -142,6 +142,7 @@
 			buttons.push({
 				id: 'create',
 				action: 'create',
+				primary: true,
 				label: m.templates_create_template(),
 				onclick: () => goto('/customize/templates/create')
 			});

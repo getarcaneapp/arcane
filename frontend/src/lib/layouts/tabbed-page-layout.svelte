@@ -3,10 +3,13 @@
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { TabBar, type TabItem } from '#lib/components/tab-bar/index.js';
 	import type { Snippet } from 'svelte';
+	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import { m } from '#lib/paraglide/messages';
 	import { cn } from '#lib/utils';
 	import { ArrowLeftIcon } from '#lib/icons';
 
 	interface Props {
+		environmentScoped?: boolean;
 		backUrl?: string;
 		backLabel?: string;
 		tabItems: TabItem[];
@@ -21,6 +24,7 @@
 	}
 
 	let {
+		environmentScoped = false,
 		backUrl,
 		backLabel,
 		tabItems,
@@ -56,7 +60,7 @@
 			style="opacity: {showFloatingHeader ? 0 : 1}; pointer-events: {showFloatingHeader ? 'none' : 'auto'};"
 		>
 			<div class="max-w-full px-4 py-3">
-				<div class="flex items-start justify-between gap-3">
+				<div class="flex flex-wrap items-start justify-between gap-3">
 					<div class="flex min-w-0 items-start gap-2">
 						{#if backUrl}
 							<ArcaneButton action="base" tone="ghost" size="sm" href={backUrl}>
@@ -66,6 +70,9 @@
 						{/if}
 						<div class="min-w-0">
 							{@render headerInfo()}
+							{#if environmentScoped && environmentStore.selected}
+								<p class="text-xs text-muted-foreground">{m.resource_environment_cap()}: {environmentStore.selected.name}</p>
+							{/if}
 						</div>
 					</div>
 					{#if headerActions}

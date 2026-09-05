@@ -395,6 +395,39 @@ test('administers scoped identities and enforces their browser access immediatel
 				restrictedPage.getByRole('button', { name: 'Create Container', exact: true })
 			).toHaveCount(0);
 
+			await expect(
+				restrictedPage.locator('[data-sidebar="group-label"]', { hasText: 'Workloads' })
+			).toBeVisible();
+			for (const group of ['Overview', 'Setup', 'Swarm']) {
+				await expect(
+					restrictedPage.locator('[data-sidebar="group-label"]', { hasText: group })
+				).toHaveCount(0);
+			}
+
+			const desktopViewport = restrictedPage.viewportSize();
+			await restrictedPage.setViewportSize({ width: 390, height: 844 });
+			await restrictedPage.getByTestId('mobile-nav-open').click();
+			const mobileNavigation = restrictedPage.getByTestId('mobile-nav-sheet');
+			await expect(
+				mobileNavigation.getByRole('heading', { name: 'Workloads', exact: true })
+			).toBeVisible();
+			await expect(
+				mobileNavigation.getByRole('link', { name: 'Containers', exact: true })
+			).toBeVisible();
+			for (const group of ['Overview', 'Setup', 'Swarm']) {
+				await expect(
+					mobileNavigation.getByRole('heading', { name: group, exact: true })
+				).toHaveCount(0);
+			}
+			for (const destination of ['Projects', 'Deployment', 'Settings', 'Cluster']) {
+				await expect(
+					mobileNavigation.getByRole('link', { name: destination, exact: true })
+				).toHaveCount(0);
+			}
+			await mobileNavigation.getByRole('link', { name: 'Containers', exact: true }).click();
+			await expect(mobileNavigation).not.toBeVisible();
+			await restrictedPage.setViewportSize(desktopViewport ?? { width: 1280, height: 720 });
+
 			const containerRow = restrictedPage
 				.getByRole('row')
 				.filter({ has: restrictedPage.getByRole('button', { name: 'Open menu', exact: true }) })

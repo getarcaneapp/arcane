@@ -339,7 +339,7 @@
 		bind:hasInitialStatsLoaded
 	/>
 
-	<TabbedPageLayout {backUrl} backLabel={m.common_back()} {tabItems} selectedTab={activeTab} {onTabChange}>
+	<TabbedPageLayout environmentScoped {backUrl} backLabel={m.common_back()} {tabItems} selectedTab={activeTab} {onTabChange}>
 		{#snippet headerInfo()}
 			<div class="flex items-center gap-2">
 				<IconImage

@@ -44,6 +44,8 @@
 	};
 
 	interface Props {
+		error?: boolean;
+		loading?: boolean;
 		containers: ContainersPaginatedResponse;
 		requestOptions: SearchPaginationSortRequest;
 		/** `autoUpdateExcludedContainers` setting — a CSV of ignored container names. */
@@ -54,6 +56,8 @@
 
 	let {
 		containers = $bindable(),
+		error = false,
+		loading = false,
 		requestOptions = $bindable(),
 		excludedContainers,
 		onRefreshData,
@@ -64,6 +68,7 @@
 	let mobileFieldVisibility = $state<MobileFieldVisibility>({});
 	let updatingContainerIds = $state<Record<string, boolean>>({});
 	let ignoringContainerIds = $state<Record<string, boolean>>({});
+	let ignoredOverrides = $state<Record<string, boolean>>({});
 	let bulkUpdating = $state(false);
 
 	function mapContainerRow(container: ContainerSummaryDto): ContainerUpdateRow {
@@ -76,7 +81,10 @@
 			currentValue: formatImageUpdateValue(container.updateInfo, 'current'),
 			latestValue: formatImageUpdateValue(container.updateInfo, 'latest'),
 			checkedAt: container.updateInfo?.checkTime ?? '',
-			ignored: isAutoUpdateIgnored(name, container.labels, excludedContainers),
+			ignored:
+				!hasPermission('settings:read') && ignoredOverrides[container.id] !== undefined
+					? !!ignoredOverrides[container.id]
+					: isAutoUpdateIgnored(name, container.labels, excludedContainers),
 			labelControlled: isAutoUpdateLabelDisabled(container.labels),
 			updateInfo: container.updateInfo,
 			container
@@ -129,6 +137,9 @@
 		ignoringContainerIds = { ...ignoringContainerIds, [item.containerId]: true };
 		try {
 			await containerService.setAutoUpdate(item.containerId, enable);
+			if (!hasPermission('settings:read')) {
+				ignoredOverrides = { ...ignoredOverrides, [item.containerId]: !enable };
+			}
 			toast.success(enable ? m.auto_update_enabled_toast() : m.auto_update_disabled_toast());
 			await onIgnoreChanged?.();
 		} catch (error) {
@@ -158,7 +169,7 @@
 	}
 
 	const bulkActions = $derived<BulkAction[]>(
-		hasPermission('containers:autoupdate')
+		hasPermission('image-updates:check')
 			? [
 					{
 						id: 'update',
@@ -176,9 +187,16 @@
 
 {#snippet NameCell({ item }: { item: ContainerUpdateRow })}
 	<div class="flex items-center gap-2">
-		<a class="font-medium hover:underline {item.ignored ? 'text-muted-foreground' : ''}" href={`/containers/${item.containerId}`}>
-			{item.name}
-		</a>
+		{#if hasPermission('containers:read')}
+			<a
+				class="font-medium hover:underline {item.ignored ? 'text-muted-foreground' : ''}"
+				href={`/containers/${item.containerId}`}
+			>
+				{item.name}
+			</a>
+		{:else}
+			<span class="font-medium {item.ignored ? 'text-muted-foreground' : ''}">{item.name}</span>
+		{/if}
 		{#if item.ignored}
 			<Badge
 				variant="outline"
@@ -197,34 +215,37 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: ContainerUpdateRow })}
-	<IfPermitted perm="containers:autoupdate">
+	<IfPermitted perm={['image-updates:check', 'containers:autoupdate']}>
 		<RowActionsMenu>
-			<DropdownMenu.Item
-				onclick={() => handleUpdateContainer(item.container)}
-				disabled={!!updatingContainerIds[item.containerId]}
-			>
-				{#if updatingContainerIds[item.containerId]}
-					<Spinner class="size-4" />
-				{:else}
-					<UpdateIcon class="size-4" />
-				{/if}
-				{m.update_container()}
-			</DropdownMenu.Item>
-
-			<DropdownMenu.Item
-				onclick={() => handleToggleIgnore(item)}
-				disabled={item.labelControlled || !!ignoringContainerIds[item.containerId]}
-				title={item.labelControlled ? m.auto_update_controlled_by_label() : m.updates_ignore_description()}
-			>
-				{#if ignoringContainerIds[item.containerId]}
-					<Spinner class="size-4" />
-				{:else if item.ignored}
-					<EyeOnIcon class="size-4" />
-				{:else}
-					<EyeOffIcon class="size-4" />
-				{/if}
-				{item.ignored ? m.common_unignore() : m.common_ignore()}
-			</DropdownMenu.Item>
+			<IfPermitted perm="image-updates:check">
+				<DropdownMenu.Item
+					onclick={() => handleUpdateContainer(item.container)}
+					disabled={!!updatingContainerIds[item.containerId]}
+				>
+					{#if updatingContainerIds[item.containerId]}
+						<Spinner class="size-4" />
+					{:else}
+						<UpdateIcon class="size-4" />
+					{/if}
+					{m.update_container()}
+				</DropdownMenu.Item>
+			</IfPermitted>
+			<IfPermitted perm="containers:autoupdate">
+				<DropdownMenu.Item
+					onclick={() => handleToggleIgnore(item)}
+					disabled={item.labelControlled || !!ignoringContainerIds[item.containerId]}
+					title={item.labelControlled ? m.auto_update_controlled_by_label() : m.updates_ignore_description()}
+				>
+					{#if ignoringContainerIds[item.containerId]}
+						<Spinner class="size-4" />
+					{:else if item.ignored}
+						<EyeOnIcon class="size-4" />
+					{:else}
+						<EyeOffIcon class="size-4" />
+					{/if}
+					{item.ignored ? m.common_unignore() : m.common_ignore()}
+				</DropdownMenu.Item>
+			</IfPermitted>
 		</RowActionsMenu>
 	</IfPermitted>
 {/snippet}
@@ -254,13 +275,18 @@
 			}
 		]}
 		rowActions={RowActions}
-		onclick={(item: ContainerUpdateRow) => {
-			window.location.href = `/containers/${item.containerId}`;
-		}}
+		onclick={hasPermission('containers:read')
+			? (item: ContainerUpdateRow) => {
+					window.location.href = `/containers/${item.containerId}`;
+				}
+			: undefined}
 	/>
 {/snippet}
 
 <ArcaneTable
+	{loading}
+	{error}
+	emptyState={{ title: m.images_no_updates(), description: m.no_updates_description() }}
 	persistKey="arcane-updates-container-table"
 	items={tableItems}
 	bind:requestOptions

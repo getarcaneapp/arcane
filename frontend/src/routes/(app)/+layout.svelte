@@ -13,7 +13,7 @@
 	import { browser } from '$app/env';
 	import { environmentStore } from '#lib/stores/environment.store.svelte';
 	import { environmentStatusStore } from '#lib/stores/environment-status.store.svelte';
-	import { navigationItems, getManagementItems, filterByPermissions, type NavigationItem } from '#lib/config/navigation-config';
+	import { navigationItems, getSetupItems, filterByPermissions, type NavigationItem } from '#lib/config/navigation-config';
 	import { isEditableTarget, matchesShortcutEvent } from '#lib/utils/navigation';
 	import { cn } from '#lib/utils';
 	import userStore, { userHasPermissionInAnyEnvironment } from '#lib/stores/user-store';
@@ -37,13 +37,13 @@
 	});
 	const navigationMode = $derived(navigationSettings.mode);
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
-	const managementItemsRaw = $derived(getManagementItems(currentEnvId));
+	const managementItemsRaw = $derived(navigationItems.managementItems);
 	const managementItems = $derived(filterByPermissions(managementItemsRaw, user ?? null, currentEnvId, permissionsManifest));
 	const resourceItems = $derived(
 		filterByPermissions(navigationItems.resourceItems, user ?? null, currentEnvId, permissionsManifest)
 	);
 	const settingsShortcutItems = $derived(
-		filterByPermissions(navigationItems.settingsItems, user ?? null, currentEnvId, permissionsManifest)
+		filterByPermissions(getSetupItems(currentEnvId), user ?? null, currentEnvId, permissionsManifest)
 	);
 	const shortcutItems = $derived.by(() => {
 		const items: NavigationItem[] = [...managementItems, ...resourceItems, ...settingsShortcutItems];

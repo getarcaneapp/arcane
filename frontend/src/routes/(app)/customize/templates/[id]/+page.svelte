@@ -7,6 +7,7 @@
 	import TemplateEditorWorkspace from '../components/template-editor-workspace.svelte';
 	import { ResourceDetailLayout, type DetailAction } from '#lib/layouts';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
+	import { hasPermission } from '#lib/utils/auth';
 	import { goto, refreshAll } from '$app/navigation';
 	import { m } from '#lib/paraglide/messages.js';
 	import { templateService } from '#lib/services/template-service';
@@ -183,14 +184,15 @@
 	}
 
 	const remoteActions = $derived.by(() => {
-		const actions: DetailAction[] = [
-			{
+		const actions: DetailAction[] = [];
+		if (hasPermission('projects:create')) {
+			actions.push({
 				id: 'create-project',
 				action: 'create',
 				label: m.compose_create_project(),
 				onclick: () => goto(`/projects/new?templateId=${template.id}`)
-			}
-		];
+			});
+		}
 		if (canDownload) {
 			actions.push({
 				id: 'download',

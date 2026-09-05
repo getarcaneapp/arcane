@@ -12,6 +12,7 @@
 </script>
 
 <script lang="ts">
+	import { useId } from 'bits-ui';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
@@ -33,6 +34,8 @@
 
 	const volumeItems = $derived(volumes.map((name) => ({ value: name, label: name })));
 
+	const id = useId();
+
 	function addRow(kind: 'bind' | 'volume') {
 		rows.push({ kind, source: '', target: '', readOnly: false });
 	}
@@ -43,36 +46,57 @@
 </script>
 
 <div class="space-y-3">
+	<p class="text-xs text-muted-foreground">{m.volume_mapping_help()}</p>
 	{#each rows as row, index (index)}
 		<div class="space-y-2 rounded-lg border border-border/50 p-3">
-			<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+			<div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:gap-3">
 				<Badge variant="outline" class="w-fit shrink-0 font-mono text-xs">
 					{row.kind === 'mount' ? (row.mountType ?? 'mount') : row.kind}
 				</Badge>
-				{#if row.kind === 'volume'}
-					<SearchableSelect items={volumeItems} bind:value={row.source} {disabled} class="flex-1" />
-				{:else}
+				<div class="flex-1 space-y-2">
+					<Label for={`${id}-source-${index}`}
+						>{row.kind === 'volume' || row.mountType === 'volume'
+							? m.common_name()
+							: row.mountType && row.mountType !== 'bind'
+								? m.containers_mount_label_source()
+								: m.host_path()}</Label
+					>
+					{#if row.kind === 'volume'}
+						<SearchableSelect
+							triggerId={`${id}-source-${index}`}
+							items={volumeItems}
+							bind:value={row.source}
+							{disabled}
+							class="flex-1"
+						/>
+					{:else}
+						<Input
+							type="text"
+							id={`${id}-source-${index}`}
+							placeholder={m.container_source_path_or_volume()}
+							bind:value={row.source}
+							disabled={disabled || row.kind === 'mount'}
+							class="flex-1 font-mono"
+						/>
+					{/if}
+				</div>
+				<div class="flex-1 space-y-2">
+					<Label for={`${id}-target-${index}`}>{m.container_path()}</Label>
 					<Input
 						type="text"
-						placeholder={m.container_source_path_or_volume()}
-						bind:value={row.source}
+						id={`${id}-target-${index}`}
+						placeholder={m.container_path()}
+						bind:value={row.target}
 						disabled={disabled || row.kind === 'mount'}
 						class="flex-1 font-mono"
 					/>
-				{/if}
-				<span class="hidden text-muted-foreground sm:inline">:</span>
-				<Input
-					type="text"
-					placeholder={m.container_path()}
-					bind:value={row.target}
-					disabled={disabled || row.kind === 'mount'}
-					class="flex-1 font-mono"
-				/>
+				</div>
 				<ArcaneButton
 					action="base"
 					tone="ghost"
 					size="icon"
 					onclick={() => removeRow(index)}
+					aria-label={m.common_remove()}
 					{disabled}
 					class="shrink-0 text-destructive hover:text-destructive"
 					icon={CloseIcon}
@@ -80,8 +104,8 @@
 			</div>
 			<div class="flex items-center gap-4">
 				<div class="flex items-center space-x-2">
-					<Checkbox bind:checked={row.readOnly} {disabled} />
-					<Label class="text-sm font-normal">{m.read_only_label()}</Label>
+					<Checkbox id={`${id}-readonly-${index}`} bind:checked={row.readOnly} {disabled} />
+					<Label for={`${id}-readonly-${index}`} class="text-sm font-normal">{m.read_only_label()}</Label>
 				</div>
 				{#if row.rawOptions}
 					<Badge variant="secondary" class="font-mono text-xs" title={m.mount_options_note()}>
@@ -91,7 +115,7 @@
 			</div>
 		</div>
 	{/each}
-	<div class="flex gap-2">
+	<div class="flex flex-wrap gap-2">
 		<ArcaneButton
 			action="base"
 			tone="outline"

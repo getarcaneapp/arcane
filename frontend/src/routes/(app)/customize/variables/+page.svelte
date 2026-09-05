@@ -119,6 +119,7 @@
 					{
 						id: 'create',
 						action: 'create',
+						primary: true,
 						label: m.common_add_button({ resource: m.variable() }),
 						onclick: openCreateSheet
 					}

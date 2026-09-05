@@ -34,13 +34,22 @@
 	};
 
 	interface Props {
+		error?: boolean;
+		loading?: boolean;
 		projects: Paginated<Project>;
 		requestOptions: SearchPaginationSortRequest;
 		updateInfoByRef?: Record<string, ImageUpdateInfoDto>;
 		onRefreshData: (options: SearchPaginationSortRequest) => Promise<void>;
 	}
 
-	let { projects = $bindable(), requestOptions = $bindable(), updateInfoByRef = {}, onRefreshData }: Props = $props();
+	let {
+		error = false,
+		loading = false,
+		projects = $bindable(),
+		requestOptions = $bindable(),
+		updateInfoByRef = {},
+		onRefreshData
+	}: Props = $props();
 
 	let selectedIds = $state<string[]>([]);
 	let mobileFieldVisibility = $state<MobileFieldVisibility>({});
@@ -165,7 +174,7 @@
 </script>
 
 {#snippet NameCell({ item }: { item: ProjectUpdateRow })}
-	{#if item.project.isDiscovered}
+	{#if item.project.isDiscovered || !hasPermission('projects:read')}
 		<span class="font-medium">{item.name}</span>
 	{:else}
 		<a class="font-medium hover:underline" href={`/projects/${item.projectId}`}>
@@ -222,14 +231,19 @@
 			}
 		]}
 		rowActions={RowActions}
-		onclick={(item: ProjectUpdateRow) => {
-			if (item.project.isDiscovered) return;
-			window.location.href = `/projects/${item.projectId}`;
-		}}
+		onclick={hasPermission('projects:read') && !item.project.isDiscovered
+			? (item: ProjectUpdateRow) => {
+					if (item.project.isDiscovered) return;
+					window.location.href = `/projects/${item.projectId}`;
+				}
+			: undefined}
 	/>
 {/snippet}
 
 <ArcaneTable
+	{loading}
+	{error}
+	emptyState={{ title: m.images_no_updates(), description: m.no_updates_description() }}
 	persistKey="arcane-updates-project-table"
 	items={tableItems}
 	bind:requestOptions

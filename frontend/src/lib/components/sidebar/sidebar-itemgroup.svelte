@@ -9,6 +9,7 @@
 	import SidebarCollapsibleItem from './sidebar-collapsible-item.svelte';
 	import SidebarItemTooltipContent from './sidebar-item-tooltip-content.svelte';
 	import userStore from '#lib/stores/user-store';
+	import { m } from '#lib/paraglide/messages';
 
 	let {
 		items,
@@ -77,7 +78,7 @@
 
 {#snippet itemAnchor(entry: { title: string; url: string; icon?: typeof ArrowRightIcon }, props: Record<string, unknown>)}
 	{@const Icon = entry.icon}
-	<a href={entry.url} {...props}>
+	<a href={entry.url} {...props} aria-label={entry.title}>
 		{#if entry.icon}
 			<Icon />
 		{/if}
@@ -107,14 +108,30 @@
 					{#snippet tooltipContent()}
 						<SidebarItemTooltipContent title={item.title} shortcut={item.shortcut} includeTitle={true} />
 					{/snippet}
-					{@const groupExpanded = hoveredGroup === item.url}
+					{@const groupExpanded = hoveredGroup === item.url || openStates[item.url]}
 					<div
 						class={['rounded-lg transition-colors duration-150', groupExpanded && 'bg-sidebar-accent/40 py-0.5']}
 						role="group"
 						onmouseenter={() => (hoveredGroup = item.url)}
 						onmouseleave={() => (hoveredGroup = null)}
+						onfocusin={() => (hoveredGroup = item.url)}
+						onfocusout={(event) => {
+							if (!event.currentTarget.contains(event.relatedTarget as Node | null)) hoveredGroup = null;
+						}}
 					>
 						{@render menuEntry(item, tooltipContent)}
+						<button
+							type="button"
+							class="flex h-6 w-full items-center justify-center rounded-md text-muted-foreground hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-ring"
+							aria-label={`${item.title}: ${m.sidebar_toggle_submenu()}`}
+							aria-expanded={!!groupExpanded}
+							onclick={() => {
+								openStates[item.url] = !openStates[item.url];
+								hoveredGroup = null;
+							}}
+						>
+							<ArrowRightIcon class={['size-3', groupExpanded && 'rotate-90']} />
+						</button>
 						{#if groupExpanded}
 							{#each item.items ?? [] as subItem (subItem.url)}
 								{#snippet subItemTooltipContent()}

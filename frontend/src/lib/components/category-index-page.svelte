@@ -7,7 +7,7 @@
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import HeaderCard from '#lib/components/header-card.svelte';
 	import { SearchIcon, ArrowRightIcon, CloseIcon } from '#lib/icons';
-	import type { NormalizedCategory } from './category-index-page.types';
+	import type { CategoryGroup, NormalizedCategory } from './category-index-page.types';
 
 	interface CategorySearch {
 		searchQuery: string;
@@ -37,6 +37,7 @@
 		goToPageLabel: string;
 		// Data
 		categories: NormalizedCategory[];
+		groups?: CategoryGroup[];
 		categorySearch: CategorySearch;
 		navigate: (href: string) => void;
 		// Structurally-different regions rendered by the parent page
@@ -56,6 +57,7 @@
 		matchingItemsLabel,
 		goToPageLabel,
 		categories,
+		groups = [],
 		categorySearch,
 		navigate,
 		resultsHeading,
@@ -63,6 +65,13 @@
 	}: Props = $props();
 
 	const HeaderIcon = $derived(headerIcon);
+	const categoryGroups = $derived(
+		groups.length > 0
+			? groups
+					.map((group) => ({ ...group, categories: categories.filter((category) => category.group === group.id) }))
+					.filter((group) => group.categories.length > 0)
+			: [{ id: 'all', title: '', categories }]
+	);
 </script>
 
 <div class="space-y-6 pb-5 md:space-y-8 md:pb-5">
@@ -88,6 +97,7 @@
 			<InputGroup.Root>
 				<InputGroup.Input
 					placeholder={searchPlaceholder}
+					aria-label={searchPlaceholder}
 					value={categorySearch.searchQuery}
 					oninput={(e) => {
 						categorySearch.searchQuery = e.currentTarget.value;
@@ -120,35 +130,40 @@
 	</HeaderCard>
 
 	{#if !categorySearch.showSearchResults}
-		<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-3">
-			{#each categories as category (category.id)}
-				{@const Icon = category.icon}
-				<Card class="hover-lift h-full hover:border-primary/30">
-					<button
-						onclick={() => navigate(category.href)}
-						class="relative flex h-full w-full cursor-pointer items-center gap-3 p-4 text-left focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:outline-none focus-visible:ring-inset sm:gap-4 sm:p-5"
-					>
-						<span
-							class="pointer-events-none absolute inset-0 bg-linear-to-br from-primary/8 to-transparent opacity-0 transition-opacity duration-200 group-hover:opacity-100"
-						></span>
-						<span
-							class="relative flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/20 transition-colors ring-inset group-hover:bg-primary/15 group-hover:ring-primary/30"
-						>
-							<Icon class="size-5" />
-						</span>
-						<span class="relative min-w-0 flex-1">
-							<span class="block truncate text-sm leading-tight font-semibold sm:text-base">{category.title}</span>
-							<span class="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground sm:text-sm">
-								{category.description}
-							</span>
-						</span>
-						<ArrowRightIcon
-							class="relative size-4 shrink-0 text-muted-foreground/60 transition-all duration-200 group-hover:translate-x-0.5 group-hover:text-primary"
-						/>
-					</button>
-				</Card>
-			{/each}
-		</div>
+		{#each categoryGroups as group (group.id)}
+			<section class="space-y-3" aria-label={group.title || title}>
+				{#if group.title}<h2 class="text-lg font-semibold">{group.title}</h2>{/if}
+				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-3">
+					{#each group.categories as category (category.id)}
+						{@const Icon = category.icon}
+						<Card class="hover-lift h-full hover:border-primary/30">
+							<button
+								onclick={() => navigate(category.href)}
+								class="relative flex h-full w-full cursor-pointer items-center gap-3 p-4 text-left focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:outline-none focus-visible:ring-inset sm:gap-4 sm:p-5"
+							>
+								<span
+									class="pointer-events-none absolute inset-0 bg-linear-to-br from-primary/8 to-transparent opacity-0 transition-opacity duration-200 group-hover:opacity-100"
+								></span>
+								<span
+									class="relative flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/20 transition-colors ring-inset group-hover:bg-primary/15 group-hover:ring-primary/30"
+								>
+									<Icon class="size-5" />
+								</span>
+								<span class="relative min-w-0 flex-1">
+									<span class="block truncate text-sm leading-tight font-semibold sm:text-base">{category.title}</span>
+									<span class="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground sm:text-sm">
+										{category.description}
+									</span>
+								</span>
+								<ArrowRightIcon
+									class="relative size-4 shrink-0 text-muted-foreground/60 transition-all duration-200 group-hover:translate-x-0.5 group-hover:text-primary"
+								/>
+							</button>
+						</Card>
+					{/each}
+				</div>
+			</section>
+		{/each}
 	{:else}
 		<div class="space-y-6 sm:space-y-8">
 			<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">

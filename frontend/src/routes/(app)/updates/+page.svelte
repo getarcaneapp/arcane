@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { createMutation, createQuery, keepPreviousData } from '@tanstack/svelte-query';
-	import { untrack } from 'svelte';
+	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
+	import { hasPermission } from '#lib/utils/auth';
 	import { m } from '#lib/paraglide/messages';
 	import { environmentStore } from '#lib/stores/environment.store.svelte';
 	import { queryKeys } from '#lib/query/query-keys';
@@ -24,72 +24,55 @@
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte';
 
 	let { data } = $props();
+	const queryClient = useQueryClient();
 
-	const initialContainers = untrack(() => data.containers as ContainersPaginatedResponse);
-	const initialProjects = untrack(() => data.projects as Paginated<Project>);
-	const emptyContainers = untrack(
-		() =>
-			({
-				...initialContainers,
-				data: [],
-				counts: undefined,
-				groups: [],
-				pagination: {
-					...initialContainers.pagination,
-					totalItems: 0,
-					totalPages: 0,
-					currentPage: 1
-				}
-			}) satisfies ContainersPaginatedResponse
-	);
-	const emptyProjects = untrack(
-		() =>
-			({
-				...initialProjects,
-				data: [],
-				counts: undefined,
-				pagination: {
-					...initialProjects.pagination,
-					totalItems: 0,
-					totalPages: 0,
-					currentPage: 1
-				}
-			}) satisfies Paginated<Project>
-	);
-
-	let containerSnapshot = $state<{ envId: string; value: ContainersPaginatedResponse } | null>(null);
-	let projectSnapshot = $state<{ envId: string; value: Paginated<Project> } | null>(null);
+	const emptyContainers: ContainersPaginatedResponse = {
+		data: [],
+		groups: [],
+		pagination: { totalItems: 0, totalPages: 0, currentPage: 1, itemsPerPage: 100 }
+	};
+	const emptyProjects: Paginated<Project> = {
+		data: [],
+		pagination: { totalItems: 0, totalPages: 0, currentPage: 1, itemsPerPage: 20 }
+	};
 	let containerRequestOptions = $derived(data.containerRequestOptions as ContainerListRequestOptions);
 	let projectRequestOptions = $derived(data.projectRequestOptions as SearchPaginationSortRequest);
 	const envId = $derived(environmentStore.selected?.id || '0');
+	const canReadContainers = $derived(!!environmentStore.selected && hasPermission('containers:list', envId));
+	const canReadProjects = $derived(!!environmentStore.selected && hasPermission('projects:list', envId));
+	const canReadSettings = $derived(!!environmentStore.selected && hasPermission('settings:read', envId));
+	const canReadUpdates = $derived(!!environmentStore.selected && hasPermission('image-updates:read', envId));
+	const canCheckUpdates = $derived(!!environmentStore.selected && hasPermission('image-updates:check', envId));
 
 	const containersQuery = createQuery(() => ({
 		queryKey: queryKeys.containers.list(envId, ensureStandaloneContainerUpdatesFilter(containerRequestOptions)),
 		queryFn: () =>
 			containerService.getContainersForEnvironment(envId, ensureStandaloneContainerUpdatesFilter(containerRequestOptions)),
-		placeholderData: keepPreviousData,
-		initialData: envId === data.envId ? data.containers : undefined,
+		enabled: canReadContainers,
+		initialData:
+			canReadContainers &&
+			envId === data.envId &&
+			JSON.stringify(containerRequestOptions) === JSON.stringify(data.containerRequestOptions)
+				? data.containers
+				: undefined,
 		refetchOnMount: false
 	}));
 
 	const projectsQuery = createQuery(() => ({
 		queryKey: queryKeys.projects.list(envId, ensureUpdatesFilter(projectRequestOptions)),
 		queryFn: () => projectService.getProjectsForEnvironment(envId, ensureUpdatesFilter(projectRequestOptions)),
-		placeholderData: keepPreviousData,
-		initialData: envId === data.envId ? data.projects : undefined,
+		enabled: canReadProjects,
+		initialData:
+			canReadProjects &&
+			envId === data.envId &&
+			JSON.stringify(projectRequestOptions) === JSON.stringify(data.projectRequestOptions)
+				? data.projects
+				: undefined,
 		refetchOnMount: false
 	}));
 
-	const containers = $derived(
-		(containerSnapshot?.envId === envId ? containerSnapshot.value : null) ??
-			containersQuery.data ??
-			(envId === data.envId ? initialContainers : emptyContainers)
-	);
-	const projects = $derived(
-		(projectSnapshot?.envId === envId ? projectSnapshot.value : null) ??
-			projectsQuery.data ??
-			(envId === data.envId ? initialProjects : emptyProjects)
-	);
+	const containers = $derived(canReadContainers ? (containersQuery.data ?? emptyContainers) : emptyContainers);
+	const projects = $derived(canReadProjects ? (projectsQuery.data ?? emptyProjects) : emptyProjects);
 
 	const projectUpdatedImageRefs = $derived.by(() => {
 		const refs = new Set<string>();
@@ -102,28 +85,33 @@
 	});
 
 	const settingsQuery = createQuery(() => ({
-		queryKey: queryKeys.settings.byEnvironment(envId),
-		queryFn: () => settingsService.getSettingsForEnvironmentMerged(envId),
+		queryKey: [...queryKeys.settings.byEnvironment(envId), 'updates'],
+		enabled: canReadSettings,
+		queryFn: () => settingsService.getSettingsForEnvironment(envId),
 		initialData: envId === data.envId ? data.settings : undefined,
 		refetchOnMount: false
 	}));
 
-	const excludedContainers = $derived(settingsQuery.data?.autoUpdateExcludedContainers ?? '');
+	const excludedContainers = $derived((canReadSettings ? settingsQuery.data?.autoUpdateExcludedContainers : undefined) ?? '');
 
 	const projectUpdateDetailsQuery = createQuery<Record<string, ImageUpdateInfoDto>>(() => ({
 		queryKey: ['updates', 'projects', 'details', envId, projectUpdatedImageRefs],
 		queryFn: () =>
-			projectUpdatedImageRefs.length > 0 ? imageService.getUpdateInfoByRefs(projectUpdatedImageRefs) : Promise.resolve({}),
-		enabled: projectUpdatedImageRefs.length > 0
+			projectUpdatedImageRefs.length > 0 ? imageService.getUpdateInfoByRefs(projectUpdatedImageRefs, envId) : Promise.resolve({}),
+		enabled: canReadProjects && canReadUpdates && projectUpdatedImageRefs.length > 0
 	}));
 
 	const checkUpdatesMutation = createMutation(() => ({
 		mutationKey: ['updates', 'check-all', envId],
-		mutationFn: () => imageService.checkAllImages(),
-		onSuccess: async () => {
+		mutationFn: (environmentId: string) => imageService.checkAllImages(environmentId),
+		onSuccess: async (_, environmentId) => {
+			if (environmentId !== envId) return;
 			toast.success(m.images_update_check_completed());
-			await Promise.all([containersQuery.refetch(), projectsQuery.refetch()]);
-			if (projectUpdatedImageRefs.length > 0) {
+			await Promise.all([
+				canReadContainers ? containersQuery.refetch() : undefined,
+				canReadProjects ? projectsQuery.refetch() : undefined
+			]);
+			if (canReadProjects && canReadUpdates && projectUpdatedImageRefs.length > 0) {
 				await projectUpdateDetailsQuery.refetch();
 			}
 		},
@@ -139,34 +127,34 @@
 	const containerCount = $derived(containers.pagination?.totalItems ?? 0);
 	const projectCount = $derived(projects.pagination?.totalItems ?? 0);
 	const totalAffectedResources = $derived(containerCount + projectCount);
-	const tabItems: TabItem[] = $derived([
-		{
-			value: 'containers',
-			label: m.standalone_containers(),
-			icon: ContainersIcon
-		},
-		{
-			value: 'projects',
-			label: m.projects_title(),
-			icon: ProjectsIcon
-		}
-	]);
+	const tabItems: TabItem[] = $derived(
+		[
+			{
+				value: 'containers',
+				label: m.containers(),
+				icon: ContainersIcon
+			},
+			{
+				value: 'projects',
+				label: m.projects_title(),
+				icon: ProjectsIcon
+			}
+		].filter((tab) => (tab.value === 'containers' ? canReadContainers : canReadProjects))
+	);
 	type UpdateTab = 'containers' | 'projects';
 	const urlTab = useUrlTab<UpdateTab>({
-		validTabs: () => {
-			if (containerCount === 0 && projectCount > 0) return ['projects'];
-			if (projectCount === 0 && containerCount > 0) return ['containers'];
-			return ['containers', 'projects'];
-		},
-		defaultTab: () => (containerCount > 0 || projectCount === 0 ? 'containers' : 'projects')
+		validTabs: () => tabItems.map((tab) => tab.value as UpdateTab),
+		defaultTab: () =>
+			canReadContainers && (containerCount > 0 || !canReadProjects || projectCount === 0) ? 'containers' : 'projects'
 	});
 	const effectiveTab = $derived(urlTab.value);
 
 	async function refresh() {
-		containerSnapshot = null;
-		projectSnapshot = null;
-		await Promise.all([containersQuery.refetch(), projectsQuery.refetch()]);
-		if (projectUpdatedImageRefs.length > 0) {
+		await Promise.all([
+			canReadContainers ? containersQuery.refetch() : undefined,
+			canReadProjects ? projectsQuery.refetch() : undefined
+		]);
+		if (canReadProjects && canReadUpdates && projectUpdatedImageRefs.length > 0) {
 			await projectUpdateDetailsQuery.refetch();
 		}
 	}
@@ -176,6 +164,7 @@
 	let isUpdatingAll = $state(false);
 
 	function updateAll() {
+		if (!canCheckUpdates) return;
 		confirmAndApplyAllUpdates({
 			setLoading: (loading) => (isUpdatingAll = loading),
 			onRefresh: refresh
@@ -186,96 +175,119 @@
 		urlTab.select(value);
 	}
 
-	const actionButtons: ActionButton[] = $derived([
-		{
-			id: 'check-updates',
-			action: 'inspect',
-			label: m.images_check_updates(),
-			loadingLabel: m.common_action_checking(),
-			onclick: () => checkUpdatesMutation.mutate(),
-			loading: isChecking,
-			disabled: isChecking
-		},
-		{
-			id: 'update-all',
-			action: 'update',
-			label: m.update_all(),
-			loadingLabel: m.common_action_updating(),
-			onclick: updateAll,
-			loading: isUpdatingAll,
-			disabled: isUpdatingAll || totalAffectedResources === 0
-		},
-		{
-			id: 'refresh',
-			action: 'restart',
-			label: m.common_refresh(),
-			onclick: refresh,
-			loading: isRefreshing,
-			disabled: isRefreshing
-		}
-	]);
+	const actionButtons: ActionButton[] = $derived(
+		(
+			[
+				{
+					id: 'check-updates',
+					action: 'inspect',
+					label: m.images_check_updates(),
+					loadingLabel: m.common_action_checking(),
+					onclick: () => {
+						if (canCheckUpdates) checkUpdatesMutation.mutate(envId);
+					},
+					loading: isChecking,
+					disabled: isChecking
+				},
+				{
+					id: 'update-all',
+					action: 'update',
+					label: m.update_all(),
+					loadingLabel: m.common_action_updating(),
+					onclick: updateAll,
+					loading: isUpdatingAll,
+					disabled: isUpdatingAll || totalAffectedResources === 0
+				},
+				{
+					id: 'refresh',
+					action: 'restart',
+					label: m.common_refresh(),
+					onclick: refresh,
+					loading: isRefreshing,
+					disabled: isRefreshing
+				}
+			] satisfies ActionButton[]
+		).filter((action) => action.id === 'refresh' || canCheckUpdates)
+	);
 
-	const statCards: StatCardConfig[] = $derived([
-		{
-			title: m.common_total(),
-			value: totalAffectedResources,
-			icon: UpdateIcon,
-			iconColor: 'text-blue-500'
-		},
-		{
-			title: m.standalone_containers(),
-			value: containerCount,
-			icon: ContainersIcon,
-			iconColor: 'text-emerald-500'
-		},
-		{
-			title: m.projects_title(),
-			value: projects.pagination?.totalItems ?? 0,
-			icon: ProjectsIcon,
-			iconColor: 'text-amber-500'
-		}
-	]);
+	const statCards: StatCardConfig[] = $derived(
+		[
+			{
+				title: m.common_total(),
+				value: totalAffectedResources,
+				icon: UpdateIcon,
+				iconColor: 'text-blue-500'
+			},
+			{
+				title: m.standalone_containers(),
+				value: containerCount,
+				icon: ContainersIcon,
+				iconColor: 'text-emerald-500'
+			},
+			{
+				title: m.projects_title(),
+				value: projects.pagination?.totalItems ?? 0,
+				icon: ProjectsIcon,
+				iconColor: 'text-amber-500'
+			}
+		].filter((_, index) => index === 0 || (index === 1 ? canReadContainers : canReadProjects))
+	);
 </script>
 
-<ResourcePageLayout title={m.updates()} icon={UpdateIcon} {actionButtons} {statCards}>
+<ResourcePageLayout environmentScoped title={m.updates()} icon={UpdateIcon} {actionButtons} {statCards}>
 	{#snippet mainContent()}
 		<div class="space-y-6">
 			<Tabs.Root value={effectiveTab}>
 				<TabBar items={tabItems} value={effectiveTab} onValueChange={handleTabChange} />
 
-				<Tabs.Content value="containers" class="mt-4">
-					{#key `${envId}-containers`}
-						<ContainerUpdatesTable
-							{containers}
-							{excludedContainers}
-							bind:requestOptions={containerRequestOptions}
-							onIgnoreChanged={() => settingsQuery.refetch()}
-							onRefreshData={async (options) => {
-								containerRequestOptions = ensureStandaloneContainerUpdatesFilter(options);
-								const next = await containerService.getContainersForEnvironment(envId, containerRequestOptions);
-								containerSnapshot = { envId, value: next };
-								return next;
-							}}
-						/>
-					{/key}
-				</Tabs.Content>
+				{#if canReadContainers}
+					<Tabs.Content value="containers" class="mt-4">
+						<p class="mb-4 text-sm text-muted-foreground">{m.updates_containers_description()}</p>
+						{#key `${envId}-containers`}
+							<ContainerUpdatesTable
+								{containers}
+								error={containersQuery.isError}
+								loading={containersQuery.isPending}
+								{excludedContainers}
+								bind:requestOptions={containerRequestOptions}
+								onIgnoreChanged={async () => {
+									if (canReadSettings) await settingsQuery.refetch();
+								}}
+								onRefreshData={async (options) => {
+									const requestEnvId = envId;
+									containerRequestOptions = ensureStandaloneContainerUpdatesFilter(options);
+									const next = await queryClient.fetchQuery({
+										queryKey: queryKeys.containers.list(requestEnvId, containerRequestOptions),
+										queryFn: () => containerService.getContainersForEnvironment(requestEnvId, containerRequestOptions)
+									});
+									return next;
+								}}
+							/>
+						{/key}
+					</Tabs.Content>
+				{/if}
 
-				<Tabs.Content value="projects" class="mt-4">
-					{#key `${envId}-projects`}
-						<ProjectUpdatesTable
-							{projects}
-							bind:requestOptions={projectRequestOptions}
-							updateInfoByRef={projectUpdateDetailsQuery.data}
-							onRefreshData={async (options) => {
-								projectRequestOptions = ensureUpdatesFilter(options);
-								projectSnapshot = {
-									envId,
-									value: await projectService.getProjectsForEnvironment(envId, projectRequestOptions)
-								};
-							}}
-						/>
-					{/key}
-				</Tabs.Content>
+				{#if canReadProjects}
+					<Tabs.Content value="projects" class="mt-4">
+						{#key `${envId}-projects`}
+							<ProjectUpdatesTable
+								{projects}
+								error={projectsQuery.isError}
+								loading={projectsQuery.isPending}
+								bind:requestOptions={projectRequestOptions}
+								updateInfoByRef={projectUpdateDetailsQuery.data}
+								onRefreshData={async (options) => {
+									const requestEnvId = envId;
+									projectRequestOptions = ensureUpdatesFilter(options);
+									await queryClient.fetchQuery({
+										queryKey: queryKeys.projects.list(requestEnvId, projectRequestOptions),
+										queryFn: () => projectService.getProjectsForEnvironment(requestEnvId, projectRequestOptions)
+									});
+								}}
+							/>
+						{/key}
+					</Tabs.Content>
+				{/if}
 			</Tabs.Root>
 		</div>
 	{/snippet}

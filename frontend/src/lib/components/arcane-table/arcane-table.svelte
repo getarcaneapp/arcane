@@ -26,6 +26,8 @@
 	} from './arcane-table.types.svelte';
 	import type { Component } from 'svelte';
 	import { extractPersistedPreferences, filterMapsEqual, fromFilterMap, toFilterMap } from './arcane-table.utils';
+	import TableEmpty from './table-empty.svelte';
+	import type { TableEmptyState } from './arcane-table.types.svelte';
 	import ArcaneTablePagination from './arcane-table-pagination.svelte';
 	import ArcaneTableHeader from './arcane-table-header.svelte';
 	import ArcaneTableCell from './arcane-table-cell.svelte';
@@ -34,6 +36,8 @@
 
 	let {
 		items,
+		emptyState,
+		error = false,
 		requestOptions = $bindable(),
 		withoutSearch = $bindable(),
 		withoutFilters = false,
@@ -68,6 +72,8 @@
 		expandedRowContent
 	}: {
 		items: Paginated<TData>;
+		emptyState?: TableEmptyState;
+		error?: boolean;
 		requestOptions: SearchPaginationSortRequest;
 		withoutSearch?: boolean;
 		withoutFilters?: boolean;
@@ -112,6 +118,17 @@
 		expandedRowContent?: Snippet<[{ row: ArcaneRow<TData>; item: TData }]>;
 	} = $props();
 
+	let refreshFailed = $state(false);
+	async function refresh(options: SearchPaginationSortRequest) {
+		refreshFailed = false;
+		try {
+			return await onRefresh(options);
+		} catch {
+			refreshFailed = true;
+			return items;
+		}
+	}
+
 	// Default page size constant
 	const DEFAULT_LIMIT = 20;
 
@@ -122,6 +139,35 @@
 	const [columnFilters, setColumnFilters] = createTableState<ColumnFiltersState>([]);
 	const [sorting, setSorting] = createTableState<SortingState>([]);
 	const [globalFilter, setGlobalFilter] = createTableState<string>(requestOptions?.search ?? '');
+
+	const hasUserFilters = $derived(!!globalFilter().trim() || (!withoutFilters && columnFilters().length > 0));
+	const errorContent = $derived<TableEmptyState>({
+		title: m.unable_to_load_data(),
+		description: m.unable_to_load_data_description(),
+		action: {
+			label: m.common_retry(),
+			onclick: () => {
+				void refresh(requestOptions);
+			}
+		}
+	});
+	const emptyContent = $derived<TableEmptyState | undefined>(
+		error || refreshFailed
+			? errorContent
+			: hasUserFilters
+				? {
+						title: m.common_no_results_found(),
+						description: m.common_no_results_hint(),
+						action: {
+							label: m.common_clear_filters(),
+							onclick: () => {
+								if (!withoutFilters) table.setColumnFilters([]);
+								table.setGlobalFilter('');
+							}
+						}
+					}
+				: emptyState
+	);
 
 	const enablePersist = $derived(!!persistKey);
 	const getEffectiveLimit = () => requestOptions?.pagination?.limit ?? items?.pagination?.itemsPerPage ?? DEFAULT_LIMIT;
@@ -270,7 +316,7 @@
 				shouldRefresh = true;
 			}
 		}
-		if (shouldRefresh) onRefresh(requestOptions);
+		if (shouldRefresh) refresh(requestOptions);
 
 		if (mobileFields.length && !Object.keys(mobileFieldVisibility).length) {
 			mobileFieldVisibility = buildMobileVisibility(mobileFields, snapshot.mobileVisibility);
@@ -290,7 +336,7 @@
 		};
 		const next = { ...prev, ...patch };
 		requestOptions = { ...requestOptions, pagination: next };
-		onRefresh(requestOptions);
+		refresh(requestOptions);
 	}
 
 	function setPage(page: number) {
@@ -528,7 +574,7 @@
 					}
 				};
 			}
-			onRefresh(requestOptions);
+			refresh(requestOptions);
 		},
 		onColumnFiltersChange: (updater) => {
 			setColumnFilters(updater);
@@ -543,7 +589,7 @@
 					limit: requestOptions?.pagination?.limit ?? items?.pagination?.itemsPerPage ?? 10
 				}
 			};
-			onRefresh(requestOptions);
+			refresh(requestOptions);
 		},
 		onColumnVisibilityChange: (updater) => {
 			const nextVisibility = typeof updater === 'function' ? updater(columnVisibility) : updater;
@@ -567,7 +613,7 @@
 				if (enablePersist && prefs) {
 					prefs.current = { ...prefs.current, s: encodeSort(hiddenSortFallback) };
 				}
-				onRefresh(requestOptions);
+				refresh(requestOptions);
 			}
 		},
 		onGlobalFilterChange: (updater) => {
@@ -583,7 +629,7 @@
 			if (enablePersist && prefs) {
 				prefs.current = { ...prefs.current, g: globalFilter() };
 			}
-			onRefresh(requestOptions);
+			refresh(requestOptions);
 		}
 	});
 
@@ -750,6 +796,7 @@
 {#snippet MobileViewSnippet()}
 	<ArcaneTableMobileView
 		{table}
+		{emptyContent}
 		{mobileCard}
 		{mobileFieldVisibility}
 		groupedRows={effectiveGroupedRows}
@@ -766,6 +813,9 @@
 	{@render customTableView({ table, renderPagination: PaginationSnippet, mobileFieldsForOptions, onToggleMobileField })}
 {:else}
 	<div class={shellClass}>
+		{#if (error || refreshFailed) && items.data.length > 0}
+			<TableEmpty state={errorContent} />
+		{/if}
 		{#if !withoutSearch}
 			<div class={toolbarWrapClass}>
 				<DataTableToolbar
@@ -791,6 +841,7 @@
 		>
 			<ArcaneTableDesktopView
 				{table}
+				{emptyContent}
 				{selectedIds}
 				columnsCount={effectiveColumnsCount}
 				groupedRows={effectiveGroupedRows}
