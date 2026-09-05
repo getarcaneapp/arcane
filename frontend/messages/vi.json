@@ -3347,6 +3347,8 @@
   "system_backups_recovery_key_saved": "Khóa khôi phục đã được cấu hình.",
   "system_backups_recovery_key_save_failed": "Không thể định cấu hình khóa khôi phục.",
   "system_backups_enabled_description": "Chạy bản sao lưu khôi phục Arcane được mã hóa theo lịch trình cron đã định cấu hình.",
+  "backups_started": "Quá trình sao lưu đã bắt đầu",
+  "backups_running": "Đang sao lưu",
   "system_backups_created": "Đã tạo bản sao lưu hệ thống Arcane thành công.",
   "system_backups_create_failed": "Không thể tạo bản sao lưu hệ thống Arcane.",
   "system_backups_policy_saved": "Lịch sao lưu hệ thống đã được lưu.",
