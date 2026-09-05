@@ -3347,6 +3347,8 @@
   "system_backups_recovery_key_saved": "Återställningsnyckeln är konfigurerad.",
   "system_backups_recovery_key_save_failed": "Det gick inte att konfigurera återställningsnyckeln.",
   "system_backups_enabled_description": "Kör en krypterad Arcane-återställningssäkerhetskopia enligt det konfigurerade cron-schemat.",
+  "backups_started": "Säkerhetskopieringen har startat",
+  "backups_running": "Säkerhetskopiering pågår",
   "system_backups_created": "Säkerhetskopian av Arcane-systemet har skapats.",
   "system_backups_create_failed": "Det gick inte att skapa en säkerhetskopia av Arcane-systemet.",
   "system_backups_policy_saved": "Schemat för systemsäkerhetskopiering har sparats.",
