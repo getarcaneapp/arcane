@@ -34,7 +34,6 @@ import (
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	swarmtypes "github.com/getarcaneapp/arcane/types/v2/swarm"
 	"go.getarcane.app/acfs"
-	acfstypes "go.getarcane.app/acfs/types"
 	"gorm.io/gorm"
 )
 
@@ -52,6 +51,7 @@ type GitOpsSyncService struct {
 }
 
 const defaultGitSyncTimeout = 5 * time.Minute
+const gitOpsRecoveryMarker = ".recovery-required"
 
 const (
 	defaultMaxSyncFiles        = 500
@@ -85,11 +85,9 @@ type stagedDirectorySync struct {
 	syncedFiles     []string
 	serviceCount    int
 	contentsChanged bool
-	// copySkipped holds project-relative paths that could not be read when the
-	// live project directory was copied into the stage (e.g. foreign-owned
-	// bind-mount data). They are absent from the stage, so promotion must
-	// preserve rather than prune them.
-	copySkipped []string
+	files           []projects.SyncFile
+	oldSyncedFiles  []string
+	gitEnvContent   *string
 }
 
 func validateSyncLimits(maxFiles *int, maxTotalSize, maxBinarySize *int64) error {
@@ -1365,6 +1363,10 @@ func (s *GitOpsSyncService) CleanupLeakedScratchDirsOnStartup(ctx context.Contex
 			continue
 		}
 		scratchPath := filepath.Join(projectsDir, entry.Name)
+		if preserve, err := acfs.Exists(ctx, scratchPath, "/"+gitOpsRecoveryMarker); err != nil || preserve {
+			slog.WarnContext(ctx, "Preserving GitOps recovery directory", "path", scratchPath, "error", err)
+			continue
+		}
 		if rmErr := acfs.RemoveAll(ctx, projectsDir, entry.Path); rmErr != nil {
 			slog.WarnContext(ctx, "Failed to remove leaked GitOps scratch directory on startup", "path", scratchPath, "error", rmErr)
 			continue
@@ -1805,8 +1807,7 @@ func (s *GitOpsSyncService) walkAndParseSyncDirectory(ctx context.Context, sync 
 	return syncFiles, nil
 }
 
-// syncProjectDirectoryInternal runs the new directory-sync path end to end:
-// stage files, validate the staged tree, then create or update the project.
+// syncProjectDirectoryInternal validates and applies the managed directory contents.
 func (s *GitOpsSyncService) syncProjectDirectoryInternal(ctx context.Context, sync *projectpkg.GitOpsSync, syncFiles []projects.SyncFile, actor common.User) (*projectpkg.Project, []string, bool, bool, error) {
 	stage, err := s.stageDirectorySyncInternal(ctx, sync, syncFiles)
 	if err != nil {
@@ -1815,7 +1816,9 @@ func (s *GitOpsSyncService) syncProjectDirectoryInternal(ctx context.Context, sy
 	}
 	defer func() {
 		if stage != nil && stage.stagePath != "" {
-			_ = acfs.RemoveAll(ctx, stage.projectsDir, stage.stageLogical)
+			cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+			defer cancel()
+			_ = acfs.RemoveAll(cleanupCtx, stage.projectsDir, stage.stageLogical)
 		}
 	}()
 
@@ -1837,122 +1840,79 @@ func (s *GitOpsSyncService) syncProjectDirectoryInternal(ctx context.Context, sy
 	return project, stage.syncedFiles, false, stage.contentsChanged, nil
 }
 
-// stageDirectorySyncInternal builds a temporary project tree that reflects the exact
-// repo layout after sync, including cleanup of files removed from the repo.
+// stageDirectorySyncInternal prepares managed files; only new projects need a scratch tree.
 func (s *GitOpsSyncService) stageDirectorySyncInternal(ctx context.Context, sync *projectpkg.GitOpsSync, syncFiles []projects.SyncFile) (*stagedDirectorySync, error) {
 	projectsDir, err := s.projectService.GetProjectsDirectory(ctx)
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to get projects directory")
 	}
+	project, err := s.getDirectorySyncProjectInternal(ctx, sync)
+	if err != nil {
+		return nil, err
+	}
 
-	// The project-root env files are reserved for the three-file override
-	// merge applied below by the Project domain rather than a raw
-	// overwrite — a raw .env write would silently wipe edits made in Arcane
-	// on every sync.
+	syncFiles = slices.Clone(syncFiles)
+	for i := range syncFiles {
+		rel, err := utils.NormalizeRelativePath(syncFiles[i].RelativePath)
+		if err != nil {
+			return nil, errors.WrapIf(err, "invalid synced file path")
+		}
+		syncFiles[i].RelativePath = rel
+	}
+	oldSyncedFiles := parseSyncedFiles(sync.SyncedFiles)
+	for i := range oldSyncedFiles {
+		rel, err := utils.NormalizeRelativePath(oldSyncedFiles[i])
+		if err != nil {
+			return nil, errors.WrapIf(err, "invalid previous synced file path")
+		}
+		oldSyncedFiles[i] = rel
+	}
 	filteredSyncFiles, gitEnvContent := partitionReservedRootEnvFilesInternal(ctx, syncFiles)
+	stage := &stagedDirectorySync{
+		projectsDir:     projectsDir,
+		composeFileName: filepath.Base(sync.ComposePath),
+		project:         project,
+		files:           filteredSyncFiles,
+		oldSyncedFiles:  filterReservedRootEnvFilesInternal(oldSyncedFiles),
+		gitEnvContent:   gitEnvContent,
+		contentsChanged: true,
+	}
+	for _, file := range filteredSyncFiles {
+		stage.syncedFiles = append(stage.syncedFiles, file.RelativePath)
+	}
+	if project != nil {
+		stage.contentsChanged, err = projects.DirectorySyncContentsChanged(ctx, project.Path, stage.files, stage.oldSyncedFiles, stage.composeFileName)
+		return stage, err
+	}
 
-	stageLogical, err := acfs.MkdirTemp(ctx, projectsDir, "/", ".gitops-sync-stage-*")
+	stage.stageLogical, err = acfs.MkdirTemp(ctx, projectsDir, "/", ".gitops-sync-stage-*")
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to create staging directory")
 	}
-	stagePath := filepath.Join(projectsDir, filepath.FromSlash(strings.TrimPrefix(stageLogical, "/")))
-
-	project, err := s.getDirectorySyncProjectInternal(ctx, sync)
-	if err != nil {
-		_ = acfs.RemoveAll(ctx, projectsDir, stageLogical)
+	stage.stagePath = filepath.Join(projectsDir, filepath.FromSlash(strings.TrimPrefix(stage.stageLogical, "/")))
+	prepared := false
+	defer func() {
+		if !prepared {
+			cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+			defer cancel()
+			_ = acfs.RemoveAll(cleanupCtx, projectsDir, stage.stageLogical)
+		}
+	}()
+	if err := s.seedStageEnvFromCandidateDirInternal(ctx, sync, projectsDir, stage.stagePath); err != nil {
 		return nil, err
 	}
-
-	var copySkipped []string
-	if project != nil {
-		// Tolerate files Arcane cannot read (e.g. foreign-owned files a container
-		// wrote into the project directory through a relative bind mount). Skipping
-		// them keeps an unrelated unreadable file from aborting the whole sync; the
-		// skipped paths are preserved (not pruned) when the staged tree is mirrored
-		// back over the live project during promotion.
-		staged, stageErr := acfs.CopyDir(ctx, project.Path, stagePath, acfstypes.CopyOptions{TolerateUnreadable: true})
-		copySkipped = staged.Skipped
-		if err = stageErr; err != nil {
-			_ = acfs.RemoveAll(ctx, projectsDir, stageLogical)
-			return nil, errors.WrapIf(err, "failed to stage current project files")
-		}
-		if len(copySkipped) > 0 {
-			slog.WarnContext(ctx, "skipped unreadable files while staging project sync; they will be left untouched on promotion", "projectPath", project.Path, "skipped", copySkipped)
-		}
-	} else if err := s.seedStageEnvFromCandidateDirInternal(ctx, sync, projectsDir, stagePath); err != nil {
-		_ = acfs.RemoveAll(ctx, projectsDir, stageLogical)
-		return nil, err
-	}
-
-	syncedFiles := make([]string, len(filteredSyncFiles))
-	for i, file := range filteredSyncFiles {
-		syncedFiles[i] = file.RelativePath
-	}
-
-	// Syncs created before this fix may still have .env recorded as a tracked
-	// file. Drop reserved root env files here too, or CleanupRemovedFiles would
-	// treat .env as removed-by-git and delete the live-copied stage .env before
-	// ApplyGitSyncEnvToDirectory gets a chance to read it for the merge.
-	oldSyncedFiles := filterReservedRootEnvFilesInternal(parseSyncedFiles(sync.SyncedFiles))
-	if len(oldSyncedFiles) > 0 {
-		if err := projects.CleanupRemovedFiles(ctx, projectsDir, stagePath, oldSyncedFiles, syncedFiles); err != nil {
-			_ = acfs.RemoveAll(ctx, projectsDir, stageLogical)
-			return nil, errors.WrapIf(err, "failed to clean removed synced files")
-		}
-	}
-
-	composeFileName := filepath.Base(sync.ComposePath)
-	if err := projects.RemoveStaleComposeFiles(ctx, stagePath, composeFileName, syncedFiles); err != nil {
-		_ = acfs.RemoveAll(ctx, projectsDir, stageLogical)
-		return nil, errors.WrapIf(err, "failed to remove stale compose files")
-	}
-
-	contentsChanged := true
-	if project != nil {
-		contentsChanged, err = projects.DirectorySyncContentsChanged(ctx, project.Path, filteredSyncFiles, oldSyncedFiles, composeFileName)
-		if err != nil {
-			_ = acfs.RemoveAll(ctx, projectsDir, stageLogical)
-			return nil, errors.WrapIf(err, "failed to compare staged directory changes")
-		}
-	}
-
-	// Write the repo files (excluding reserved root env files, handled below)
-	// after cleanup so validation sees the final on-disk tree exactly as it
-	// will exist in the managed project.
-	if _, err := projects.WriteSyncedDirectory(ctx, projectsDir, stagePath, filteredSyncFiles); err != nil {
-		_ = acfs.RemoveAll(ctx, projectsDir, stageLogical)
+	if _, err := projects.WriteSyncedDirectory(ctx, projectsDir, stage.stagePath, stage.files); err != nil {
 		return nil, errors.WrapIf(err, "failed to write staged sync files")
 	}
-
-	// Route the project-root .env through the same three-file override merge
-	// single-file git sync uses: git is source-of-truth, edits made in Arcane
-	// become an override that wins, and new git-introduced keys still flow in.
-	preEnvContent, postEnvContent, err := s.projectService.ApplyGitSyncEnvToDirectory(ctx, stagePath, projectsDir, gitEnvContent)
-	if err != nil {
-		_ = acfs.RemoveAll(ctx, projectsDir, stageLogical)
+	if _, _, err := s.projectService.ApplyGitSyncEnvToDirectory(ctx, stage.stagePath, projectsDir, gitEnvContent); err != nil {
 		return nil, err
 	}
-	if project != nil && envContentChangedInternal(preEnvContent, postEnvContent) {
-		contentsChanged = true
-	}
-
-	serviceCount, err := s.projectService.ValidateComposeDirectory(ctx, sync.ProjectName, stagePath, composeFileName)
+	stage.serviceCount, err = s.projectService.ValidateComposeDirectory(ctx, sync.ProjectName, stage.stagePath, stage.composeFileName)
 	if err != nil {
-		_ = acfs.RemoveAll(ctx, projectsDir, stageLogical)
 		return nil, errors.WrapIf(err, "invalid compose file")
 	}
-
-	return &stagedDirectorySync{
-		stagePath:       stagePath,
-		stageLogical:    stageLogical,
-		projectsDir:     projectsDir,
-		composeFileName: composeFileName,
-		project:         project,
-		syncedFiles:     syncedFiles,
-		serviceCount:    serviceCount,
-		contentsChanged: contentsChanged,
-		copySkipped:     copySkipped,
-	}, nil
+	prepared = true
+	return stage, nil
 }
 
 // isReservedRootEnvFileInternal reports whether relPath is one of the
@@ -2375,83 +2335,90 @@ func (s *GitOpsSyncService) createDirectorySyncProjectInternal(ctx context.Conte
 	return project, nil
 }
 
-// updateDirectorySyncProjectInternal mirrors a validated staged tree into the
-// existing project path in place so running containers keep their bind-mount
-// inodes; a temporary backup copy allows rollback if promotion fails.
-func (s *GitOpsSyncService) updateDirectorySyncProjectInternal(ctx context.Context, sync *projectpkg.GitOpsSync, stage *stagedDirectorySync) (*projectpkg.Project, error) {
+// updateDirectorySyncProjectInternal applies and validates only managed paths in the live project context.
+func (s *GitOpsSyncService) updateDirectorySyncProjectInternal(ctx context.Context, sync *projectpkg.GitOpsSync, stage *stagedDirectorySync) (updated *projectpkg.Project, retErr error) {
 	project := stage.project
 	projectPath := filepath.Clean(project.Path)
-	backupPath := ""
-	existed := true
-
-	// The project directory is the confinement root for the mirror below and may
-	// itself be a symlink, so it is probed and bootstrapped through os.
-	if info, err := os.Stat(projectPath); err == nil {
-		if !info.IsDir() {
-			return nil, errors.Errorf("project path is not a directory: %s", projectPath)
+	// Existing imported roots may themselves be symlinks.
+	if _, err := acfs.Stat(ctx, projectPath, "/", false); err != nil {
+		if !errors.Is(err, fs.ErrNotExist) {
+			return nil, errors.WrapIf(err, "failed to inspect project directory")
 		}
-	} else if errors.Is(err, os.ErrNotExist) {
-		existed = false
-		if err := os.MkdirAll(projectPath, 0o755); err != nil {
-			return nil, errors.WrapIf(err, "failed to recreate project directory")
-		}
-	} else {
-		return nil, errors.WrapIf(err, "failed to inspect current project directory")
-	}
-
-	var backupSkipped []string
-	if existed {
-		projectsDir, err := s.projectService.GetProjectsDirectory(ctx)
+		logicalPath, err := acfs.LogicalPath(stage.projectsDir, projectPath)
 		if err != nil {
-			return nil, errors.WrapIf(err, "failed to get projects directory")
+			return nil, err
 		}
-		backupLogical, tempErr := acfs.MkdirTemp(ctx, projectsDir, "/", ".gitops-backup-*")
-		if tempErr != nil {
-			return nil, errors.WrapIf(tempErr, "failed to create backup directory")
-		}
-		backupPath = filepath.Join(projectsDir, filepath.FromSlash(strings.TrimPrefix(backupLogical, "/")))
-		defer func() { _ = acfs.RemoveAll(ctx, projectsDir, backupLogical) }()
-		// Tolerate unreadable files (e.g. foreign-owned bind-mount data) so an
-		// unrelated file can't block the backup; the skipped paths are absent from
-		// the backup and must be preserved, not pruned, when restoring.
-		backedUp, backupErr := acfs.CopyDir(ctx, projectPath, backupPath, acfstypes.CopyOptions{TolerateUnreadable: true})
-		backupSkipped = backedUp.Skipped
-		if err = backupErr; err != nil {
-			return nil, errors.WrapIf(err, "failed to back up current project directory")
-		}
-		if len(backupSkipped) > 0 {
-			slog.WarnContext(ctx, "skipped unreadable files while backing up project for sync; they will be left untouched on rollback", "projectPath", projectPath, "skipped", backupSkipped)
+		if err := acfs.MkdirAll(ctx, stage.projectsDir, logicalPath, 0o755); err != nil {
+			return nil, errors.WrapIf(err, "failed to prepare project directory")
 		}
 	}
-
-	restore := func() {
-		var restoreErr error
-		if existed {
-			restoreErr = acfs.MirrorDir(ctx, backupPath, projectPath, acfstypes.MirrorOptions{Preserve: backupSkipped})
-		} else {
-			restoreErr = acfs.RemoveAll(ctx, filepath.Dir(projectPath), "/"+filepath.Base(projectPath))
+	staleFiles, err := projects.StaleComposeFiles(ctx, projectPath, stage.composeFileName, stage.syncedFiles)
+	if err != nil {
+		return nil, errors.WrapIf(err, "failed to identify stale compose files")
+	}
+	removedFiles := append(slices.Clone(stage.oldSyncedFiles), staleFiles...)
+	scope := projects.ProjectUpdateBackupScope{
+		Paths: append(slices.Clone(stage.syncedFiles), removedFiles...),
+	}
+	scope.Paths = append(scope.Paths, projects.EffectiveEnvFileName, projects.GitSourceEnvFileName, projects.OverrideEnvFileName)
+	backupLogical, err := acfs.MkdirTemp(ctx, stage.projectsDir, "/", ".gitops-backup-*")
+	if err != nil {
+		return nil, errors.WrapIf(err, "failed to create backup directory")
+	}
+	backupPath := filepath.Join(stage.projectsDir, filepath.FromSlash(strings.TrimPrefix(backupLogical, "/")))
+	var backup *projects.ProjectUpdateBackup
+	mutated := false
+	defer func() {
+		recoveryCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+		defer cancel()
+		if retErr != nil && mutated {
+			if restoreErr := projects.RestoreProjectUpdateBackup(recoveryCtx, projectPath, backup); restoreErr != nil {
+				retErr = errors.Combine(retErr, errors.WrapIff(restoreErr, "failed to restore project; recovery backup retained at %s", backupPath))
+				return
+			}
 		}
-		if restoreErr != nil {
-			slog.ErrorContext(ctx, "Failed to restore project directory after sync promotion failure; directory may be in a mixed state", "projectPath", projectPath, "backupPath", backupPath, "error", restoreErr)
+		if cleanupErr := acfs.RemoveAll(recoveryCtx, stage.projectsDir, backupLogical); cleanupErr != nil {
+			slog.WarnContext(recoveryCtx, "Failed to remove GitOps backup", "path", backupPath, "error", cleanupErr)
+		}
+	}()
+	if err := acfs.Mkdir(ctx, backupPath, "/files", 0o700); err != nil {
+		return nil, errors.WrapIf(err, "failed to prepare backup contents directory")
+	}
+	backup, err = projects.BackupProjectUpdateScope(ctx, projectPath, filepath.Join(backupPath, "files"), scope)
+	if err != nil {
+		return nil, errors.WrapIf(err, "failed to back up managed project files")
+	}
+	for _, skipped := range backup.Skipped {
+		if !isReservedRootEnvFileInternal(filepath.ToSlash(skipped)) {
+			return nil, errors.Errorf("cannot safely replace managed path %s: backup was unreadable", skipped)
 		}
 	}
-
-	// Preserve files skipped while staging: they remain in the live project but are
-	// absent from the stage, so a plain mirror would prune them.
-	if err := acfs.MirrorDir(ctx, stage.stagePath, projectPath, acfstypes.MirrorOptions{Preserve: stage.copySkipped}); err != nil {
-		restore()
-		return nil, errors.WrapIf(err, "failed to promote staged project directory")
+	if err := acfs.Write(ctx, backupPath, "/"+gitOpsRecoveryMarker, []byte(projectPath+"\n"), acfs.WriteOptions{Mode: 0o600}); err != nil {
+		return nil, errors.WrapIf(err, "failed to mark recovery backup")
 	}
-
+	mutated = true
+	if err := projects.CleanupRemovedFiles(ctx, stage.projectsDir, projectPath, removedFiles, stage.syncedFiles); err != nil {
+		return nil, errors.WrapIf(err, "failed to remove old synced files")
+	}
+	if _, err := projects.WriteSyncedDirectory(ctx, stage.projectsDir, projectPath, stage.files); err != nil {
+		return nil, errors.WrapIf(err, "failed to write synced files")
+	}
+	before, after, err := s.projectService.ApplyGitSyncEnvToDirectory(ctx, projectPath, stage.projectsDir, stage.gitEnvContent)
+	if err != nil {
+		return nil, err
+	}
+	stage.contentsChanged = stage.contentsChanged || len(staleFiles) > 0 || envContentChangedInternal(before, after)
+	stage.serviceCount, err = s.projectService.ValidateComposeDirectory(ctx, sync.ProjectName, projectPath, stage.composeFileName)
+	if err != nil {
+		return nil, errors.WrapIf(err, "invalid compose file")
+	}
 	if err := s.db.WithContext(ctx).Model(&projectpkg.Project{}).Where("id = ?", project.ID).Updates(map[string]any{
 		"service_count":     stage.serviceCount,
 		"gitops_managed_by": sync.ID,
 		"updated_at":        time.Now(),
 	}).Error; err != nil {
-		restore()
 		return nil, errors.WrapIf(err, "failed to update project metadata after directory sync")
 	}
-
 	return project, nil
 }
 

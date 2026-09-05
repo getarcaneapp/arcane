@@ -559,7 +559,7 @@ func (s *VariableService) WriteLocalEnvFile(ctx context.Context, vars []env.Vari
 		_, _ = fmt.Fprintf(&builder, "%s=%s\n", key, value)
 	}
 
-	if err := acfs.WriteFile(ctx, projectsDirectory, "/"+projects.GlobalEnvFileName, []byte(builder.String()), utils.FilePerm); err != nil {
+	if err := acfs.Write(ctx, projectsDirectory, "/"+projects.GlobalEnvFileName, []byte(builder.String()), acfs.WriteOptions{Mode: utils.FilePerm}); err != nil {
 		return errors.WrapIf(err, "failed to write global variables file")
 	}
 

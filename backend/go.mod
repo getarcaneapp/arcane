@@ -65,7 +65,7 @@ require (
 	github.com/stretchr/testify v1.12.1
 	github.com/subosito/gotenv v1.6.0
 	github.com/wneessen/go-mail v0.8.1
-	go.getarcane.app/acfs v0.5.1
+	go.getarcane.app/acfs v0.6.0
 	go.getarcane.app/builds v0.4.1
 	go.getarcane.app/docker/convert v0.3.1
 	go.getarcane.app/kit v0.1.1

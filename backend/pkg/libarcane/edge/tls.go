@@ -322,7 +322,7 @@ func EnsureAgentMTLSAssets(ctx context.Context, cfg *Config) error {
 		needsEnrollment, reason := agentMTLSAssetsNeedEnrollmentInternal(certPath, keyPath, time.Now())
 		if !needsEnrollment {
 			if !fileExistsInternal(filepath.Join(assetsDir, generatedMTLSEnrolledName)) {
-				if err := acfs.WriteFile(ctx, assetsDir, "/"+generatedMTLSEnrolledName, []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o600); err != nil {
+				if err := acfs.Write(ctx, assetsDir, "/"+generatedMTLSEnrolledName, []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), acfs.WriteOptions{Mode: 0o600}); err != nil {
 					return errors.WrapIf(err, "failed to write edge mTLS enrollment marker")
 				}
 			}
@@ -396,7 +396,7 @@ func enrollAgentMTLSAssetsInternal(ctx context.Context, cfg *Config, assetsDir, 
 		if strings.TrimSpace(file.Permissions) == "0600" {
 			perm = 0o600
 		}
-		if err := acfs.WriteFile(ctx, assetsDir, "/"+filepath.Base(file.Name), []byte(file.Content), perm); err != nil {
+		if err := acfs.Write(ctx, assetsDir, "/"+filepath.Base(file.Name), []byte(file.Content), acfs.WriteOptions{Mode: perm}); err != nil {
 			return errors.WrapIff(err, "failed to write edge mTLS asset %s", file.Name)
 		}
 	}
@@ -404,7 +404,7 @@ func enrollAgentMTLSAssetsInternal(ctx context.Context, cfg *Config, assetsDir, 
 	if needsEnrollment {
 		return errors.Errorf("edge mTLS enrollment wrote unusable assets: %s", reason)
 	}
-	if err := acfs.WriteFile(ctx, assetsDir, "/"+generatedMTLSEnrolledName, []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o600); err != nil {
+	if err := acfs.Write(ctx, assetsDir, "/"+generatedMTLSEnrolledName, []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), acfs.WriteOptions{Mode: 0o600}); err != nil {
 		return errors.WrapIf(err, "failed to write edge mTLS enrollment marker")
 	}
 

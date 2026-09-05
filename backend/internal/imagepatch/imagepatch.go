@@ -427,7 +427,7 @@ func (s *ImagePatchService) writeRegistryAuthConfigInternal(ctx context.Context)
 	if err != nil {
 		return
 	}
-	if err := acfs.WriteFile(ctx, configDir, "/config.json", payload, 0o600); err != nil {
+	if err := acfs.Write(ctx, configDir, "/config.json", payload, acfs.WriteOptions{Mode: 0o600}); err != nil {
 		slog.WarnContext(ctx, "failed to write docker config for image patching", "path", configDir, "error", err)
 	}
 }

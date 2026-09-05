@@ -734,6 +734,8 @@ github.com/zmb3/spotify/v2 v2.3.1 h1:aEyIPotROM3JJjHMCImFROgnPIUpzVo8wymYSaPSd9w
 github.com/zmb3/spotify/v2 v2.3.1/go.mod h1:+LVh9CafHu7SedyqYmEf12Rd01dIVlEL845yNhksW0E=
 go.getarcane.app/acfs v0.5.1 h1:Rkrzpz8Qh9SVzP2VwpHtLA0clEjBpTA+xmrVuoZ+mMM=
 go.getarcane.app/acfs v0.5.1/go.mod h1:Z+0Gs4LGNjvGMLq+TKv/oGKh29FRbAH6mcVPwY5KhFI=
+go.getarcane.app/acfs v0.6.0 h1:OOoDXmfByGWh9uJcDwtoQdWz1u2huIBhljn4mm1Ifco=
+go.getarcane.app/acfs v0.6.0/go.mod h1:Z+0Gs4LGNjvGMLq+TKv/oGKh29FRbAH6mcVPwY5KhFI=
 go.getarcane.app/builds v0.4.1 h1:R8iEgTf9+NDtI1IEzF2R3Mn+v6AGUqwCMs7CEFpVRZk=
 go.getarcane.app/builds v0.4.1/go.mod h1:vSWYulIelS9m91mPpvaN+orZ4/A20eGGcynP892eMkg=
 go.getarcane.app/docker/convert v0.3.1 h1:VcC2gtTFtGBrHTSBd0RodA0u+aerRAYVJIah7p6BNbE=

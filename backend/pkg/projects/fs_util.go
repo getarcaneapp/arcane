@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 
 	"emperror.dev/errors"
 
@@ -184,12 +185,15 @@ func syncedProjectFileMatchesInternal(ctx context.Context, projectPath string, f
 	logicalPath := "/" + filepath.ToSlash(file.RelativePath)
 	entry, err := acfs.Stat(ctx, projectPath, logicalPath, false)
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
+		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) || errors.Is(err, acfs.ErrNotDirectory) {
 			return false, nil
 		}
 		return false, err
 	}
 	if entry.IsDirectory {
+		return false, nil
+	}
+	if (os.FileMode(entry.UnixMode)&0o111 != 0) != file.Executable {
 		return false, nil
 	}
 
@@ -273,56 +277,37 @@ func DirectorySyncContentsChanged(ctx context.Context, projectPath string, syncF
 	return false, nil
 }
 
-func RemoveStaleComposeFiles(ctx context.Context, projectPath, composeFileName string, syncedFiles []string) error {
+// StaleComposeFiles identifies Compose files a sync replaces before the caller backs them up.
+func StaleComposeFiles(ctx context.Context, projectPath, composeFileName string, syncedFiles []string) ([]string, error) {
 	syncedFileSet := make(map[string]struct{}, len(syncedFiles))
 	for _, file := range syncedFiles {
 		syncedFileSet[file] = struct{}{}
 	}
-
-	for _, candidate := range ComposeFileCandidates() {
-		if candidate == composeFileName {
-			continue
-		}
-		if _, exists := syncedFileSet[candidate]; exists {
-			continue
-		}
-		if err := acfs.Remove(ctx, projectPath, "/"+candidate); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return err
-		}
-	}
-
 	entries, err := acfs.List(ctx, projectPath, "/")
 	if err != nil {
-		return err
+		return nil, err
 	}
-
+	var staleFiles []string
 	for _, entry := range entries {
-		if entry.IsDirectory {
-			continue
-		}
-
 		name := entry.Name
-		if name == composeFileName {
+		if entry.IsDirectory || entry.IsSymlink || name == composeFileName {
 			continue
 		}
 		if _, exists := syncedFileSet[name]; exists {
 			continue
 		}
-		if slices.Contains(ComposeFileCandidates(), name) || !IsProjectFile(name) {
-			continue
+		if !slices.Contains(ComposeFileCandidates(), name) {
+			if !IsProjectFile(name) {
+				continue
+			}
+			hasComposeRootKeys, err := HasComposeRootKeysInFile(filepath.Join(projectPath, name))
+			if err != nil || !hasComposeRootKeys {
+				continue
+			}
 		}
-
-		hasComposeRootKeys, rootKeysErr := HasComposeRootKeysInFile(filepath.Join(projectPath, name))
-		if rootKeysErr != nil || !hasComposeRootKeys {
-			continue
-		}
-
-		if err := acfs.Remove(ctx, projectPath, entry.Path); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return err
-		}
+		staleFiles = append(staleFiles, name)
 	}
-
-	return nil
+	return staleFiles, nil
 }
 
 // CreateUniqueDir creates a unique directory within the allowed projectsRoot,

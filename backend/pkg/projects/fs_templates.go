@@ -104,7 +104,7 @@ func EnsureDefaultTemplates(ctx context.Context, configuredTemplatesDir string) 
 	if exists, err := acfs.Exists(ctx, templatesDir, "/.compose.template"); err != nil {
 		return errors.WrapIf(err, "write default compose template")
 	} else if !exists {
-		if err := acfs.WriteFile(ctx, templatesDir, "/.compose.template", []byte(getDefaultComposeTemplate()), utils.FilePerm); err != nil {
+		if err := acfs.Write(ctx, templatesDir, "/.compose.template", []byte(getDefaultComposeTemplate()), acfs.WriteOptions{Mode: utils.FilePerm}); err != nil {
 			return errors.WrapIf(err, "write default compose template")
 		}
 	}
@@ -113,7 +113,7 @@ func EnsureDefaultTemplates(ctx context.Context, configuredTemplatesDir string) 
 	if exists, err := acfs.Exists(ctx, templatesDir, "/.swarm-stack.template"); err != nil {
 		return errors.WrapIf(err, "write default swarm stack template")
 	} else if !exists {
-		if err := acfs.WriteFile(ctx, templatesDir, "/.swarm-stack.template", []byte(DefaultSwarmStackTemplate()), utils.FilePerm); err != nil {
+		if err := acfs.Write(ctx, templatesDir, "/.swarm-stack.template", []byte(DefaultSwarmStackTemplate()), acfs.WriteOptions{Mode: utils.FilePerm}); err != nil {
 			return errors.WrapIf(err, "write default swarm stack template")
 		}
 	}
@@ -122,7 +122,7 @@ func EnsureDefaultTemplates(ctx context.Context, configuredTemplatesDir string) 
 	if exists, err := acfs.Exists(ctx, templatesDir, "/.swarm-stack.env.template"); err != nil {
 		return errors.WrapIf(err, "write default swarm stack env template")
 	} else if !exists {
-		if err := acfs.WriteFile(ctx, templatesDir, "/.swarm-stack.env.template", []byte(DefaultSwarmStackEnvTemplate()), utils.FilePerm); err != nil {
+		if err := acfs.Write(ctx, templatesDir, "/.swarm-stack.env.template", []byte(DefaultSwarmStackEnvTemplate()), acfs.WriteOptions{Mode: utils.FilePerm}); err != nil {
 			return errors.WrapIf(err, "write default swarm stack env template")
 		}
 	}
@@ -131,7 +131,7 @@ func EnsureDefaultTemplates(ctx context.Context, configuredTemplatesDir string) 
 	if exists, err := acfs.Exists(ctx, templatesDir, "/.env.template"); err != nil {
 		return errors.WrapIf(err, "write default env template")
 	} else if !exists {
-		if err := acfs.WriteFile(ctx, templatesDir, "/.env.template", []byte(getDefaultEnvTemplate()), utils.FilePerm); err != nil {
+		if err := acfs.Write(ctx, templatesDir, "/.env.template", []byte(getDefaultEnvTemplate()), acfs.WriteOptions{Mode: utils.FilePerm}); err != nil {
 			return errors.WrapIf(err, "write default env template")
 		}
 	}

@@ -380,6 +380,9 @@ func TestGitOpsSyncService_CleanupLeakedScratchDirsOnStartup_RemovesOrphans(t *t
 	}
 	realProject := mkdir("app")
 	require.NoError(t, os.WriteFile(filepath.Join(realProject, "compose.yaml"), []byte("services: {}\n"), 0o644))
+	preservedBackup := mkdir(".gitops-backup-preserved")
+	require.NoError(t, os.WriteFile(filepath.Join(preservedBackup, ".recovery-required"), []byte("interrupted update\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(preservedBackup, "compose.yaml"), []byte("services: {}\n"), 0o644))
 
 	require.NoError(t, svc.CleanupLeakedScratchDirsOnStartup(ctx))
 
@@ -389,6 +392,8 @@ func TestGitOpsSyncService_CleanupLeakedScratchDirsOnStartup_RemovesOrphans(t *t
 	}
 	_, err := os.Stat(realProject)
 	assert.NoError(t, err, "real project dir must be kept")
+	assert.FileExists(t, filepath.Join(preservedBackup, ".recovery-required"))
+	assert.FileExists(t, filepath.Join(preservedBackup, "compose.yaml"))
 }
 
 // TestGitOpsSyncService_CleanupLeakedCloneDirsOnStartup_RemovesAll verifies the
@@ -668,6 +673,41 @@ services:
 	featureBytes, err := os.ReadFile(filepath.Join(updatedProject.Path, "nested", "feature.yaml"))
 	require.NoError(t, err)
 	assert.Contains(t, string(featureBytes), "worker:")
+
+	sync.SyncedFiles = marshalSyncedFiles(syncedFiles)
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "keep.txt"), []byte("application wrote new data\n"), 0o644))
+	keepInfo, err := os.Stat(filepath.Join(projectPath, "keep.txt"))
+	require.NoError(t, err)
+	_, repeatedFiles, created, changed, err := svc.syncProjectDirectoryInternal(ctx, sync, syncFiles, common.User{})
+	require.NoError(t, err)
+	require.False(t, created)
+	require.False(t, changed)
+	require.ElementsMatch(t, syncedFiles, repeatedFiles)
+	currentKeepInfo, err := os.Stat(filepath.Join(projectPath, "keep.txt"))
+	require.NoError(t, err)
+	assert.True(t, os.SameFile(keepInfo, currentKeepInfo))
+	assert.Equal(t, keepInfo.ModTime(), currentKeepInfo.ModTime())
+
+	// A rejected replacement must restore both overwritten and removed managed files.
+	_, _, _, _, err = svc.syncProjectDirectoryInternal(ctx, sync, []projects.SyncFile{
+		{RelativePath: "docker-compose.yaml", Content: []byte("services: [\n")},
+		{RelativePath: "new/config.txt", Content: []byte("must be rolled back\n")},
+	}, common.User{})
+	require.Error(t, err)
+	restoredCompose, err := os.ReadFile(filepath.Join(projectPath, "docker-compose.yaml"))
+	require.NoError(t, err)
+	assert.Equal(t, syncFiles[0].Content, restoredCompose)
+	restoredFeature, err := os.ReadFile(filepath.Join(projectPath, "nested", "feature.yaml"))
+	require.NoError(t, err)
+	assert.Equal(t, featureBytes, restoredFeature)
+	assert.NoFileExists(t, filepath.Join(projectPath, "new", "config.txt"))
+	keepBytes, err = os.ReadFile(filepath.Join(projectPath, "keep.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "application wrote new data\n", string(keepBytes))
+	currentKeepInfo, err = os.Stat(filepath.Join(projectPath, "keep.txt"))
+	require.NoError(t, err)
+	assert.True(t, os.SameFile(keepInfo, currentKeepInfo))
+	assert.Equal(t, keepInfo.ModTime(), currentKeepInfo.ModTime())
 }
 
 // TestGitOpsSyncService_SyncProjectDirectory_PreservesEnvOverrideAndAddsNewGitKey
@@ -1105,8 +1145,11 @@ func TestProjectsRemoveStaleComposeFiles_RemovesStaleCustomComposeFiles(t *testi
 	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "sonarr.yaml"), []byte("services:\n  app:\n    image: nginx:alpine\n"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "values.yaml"), []byte("replicaCount: 2\nimage:\n  tag: latest\n"), 0o644))
 
-	err := projects.RemoveStaleComposeFiles(t.Context(), projectPath, "sonarr.yaml", []string{"sonarr.yaml"})
+	stale, err := projects.StaleComposeFiles(t.Context(), projectPath, "sonarr.yaml", []string{"sonarr.yaml"})
 	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"radarr.yaml"}, stale)
+	require.FileExists(t, filepath.Join(projectPath, "radarr.yaml"))
+	require.NoError(t, projects.CleanupRemovedFiles(t.Context(), projectPath, projectPath, stale, []string{"sonarr.yaml"}))
 
 	_, statErr := os.Stat(filepath.Join(projectPath, "radarr.yaml"))
 	require.ErrorIs(t, statErr, os.ErrNotExist)

@@ -44,6 +44,12 @@ func TestGitOpsSyncService_SyncProjectDirectory_PreservesUnreadableBindMountData
 	require.NoError(t, os.WriteFile(secretPath, []byte("supersecret"), 0o644))
 	require.NoError(t, os.Chmod(secretPath, 0o000))
 	t.Cleanup(func() { _ = os.Chmod(secretPath, 0o644) })
+	readablePath := filepath.Join(projectPath, "data", "state.db")
+	require.NoError(t, os.WriteFile(readablePath, []byte("application data"), 0o640))
+	readableInfo, err := os.Stat(readablePath)
+	require.NoError(t, err)
+	linkPath := filepath.Join(projectPath, "data", "state-link")
+	require.NoError(t, os.Symlink("state.db", linkPath))
 
 	project := &projectpkg.Project{
 		ID:      "proj-unreadable-bindmount",
@@ -95,4 +101,15 @@ func TestGitOpsSyncService_SyncProjectDirectory_PreservesUnreadableBindMountData
 	composeBytes, err := os.ReadFile(filepath.Join(updatedProject.Path, "docker-compose.yaml"))
 	require.NoError(t, err)
 	assert.Contains(t, string(composeBytes), "nginx:1.27-alpine")
+	readableBytes, err := os.ReadFile(readablePath)
+	require.NoError(t, err)
+	assert.Equal(t, "application data", string(readableBytes))
+	currentReadableInfo, err := os.Stat(readablePath)
+	require.NoError(t, err)
+	assert.True(t, os.SameFile(readableInfo, currentReadableInfo))
+	assert.Equal(t, readableInfo.ModTime(), currentReadableInfo.ModTime())
+	assert.Equal(t, readableInfo.Mode(), currentReadableInfo.Mode())
+	linkTarget, err := os.Readlink(linkPath)
+	require.NoError(t, err)
+	assert.Equal(t, "state.db", linkTarget)
 }
