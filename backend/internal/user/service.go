@@ -51,6 +51,8 @@ type UserService struct {
 
 const (
 	ErrCannotRemoveLastAdmin = errors.Sentinel("cannot remove the last admin user")
+	ErrUsernameRequired      = errors.Sentinel("username is required")
+	ErrUsernameTaken         = errors.Sentinel("username already in use")
 
 	// ErrInsufficientPrivilege is returned when a caller attempts to modify a
 	// target whose effective privilege is equal to or higher than the caller's
@@ -138,8 +140,17 @@ func (s *UserService) ValidatePassword(encodedHash, password string) error {
 }
 
 func (s *UserService) CreateUser(ctx context.Context, user *common.User) (*common.User, error) {
-	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	username, err := normalizeUsernameInternal(user.Username)
+	if err != nil {
+		return nil, err
+	}
+	user.Username = username
+
+	err = dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
 		if err := tx.Create(user).Error; err != nil {
+			if isDuplicateKeyErrorInternal(tx, err) {
+				return ErrUsernameTaken
+			}
 			return errors.WrapIf(err, "failed to create user")
 		}
 		return nil
@@ -268,6 +279,9 @@ func (s *UserService) UpdateUser(ctx context.Context, user *common.User, actorPe
 			return err
 		}
 		if err := tx.Save(user).Error; err != nil {
+			if isDuplicateKeyErrorInternal(tx, err) {
+				return ErrUsernameTaken
+			}
 			return errors.WrapIf(err, "failed to update user")
 		}
 		return nil
@@ -276,6 +290,22 @@ func (s *UserService) UpdateUser(ctx context.Context, user *common.User, actorPe
 		return nil, err
 	}
 	return user, nil
+}
+
+func normalizeUsernameInternal(username string) (string, error) {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return "", ErrUsernameRequired
+	}
+	return username, nil
+}
+
+func isDuplicateKeyErrorInternal(db *gorm.DB, err error) bool {
+	if errors.Is(err, gorm.ErrDuplicatedKey) {
+		return true
+	}
+	translator, ok := db.Dialector.(gorm.ErrorTranslator)
+	return ok && errors.Is(translator.Translate(err), gorm.ErrDuplicatedKey)
 }
 
 // SetPassword hashes and persists a new password for the given user and clears

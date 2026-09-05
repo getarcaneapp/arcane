@@ -65,18 +65,47 @@ export class APIError extends Error {
 	}
 }
 
-function extractServerMessage(data: any, includeErrors = false): string | undefined {
-	const inner = (data && typeof data === 'object' ? ((data as any).data ?? data) : data) as any;
-	if (typeof inner === 'string') {
-		return inner;
+const problemMessageFactoriesInternal: Record<string, () => string> = {
+	'urn:arcane:problem:password-policy:basic': m.security_password_policy_basic_tooltip,
+	'urn:arcane:problem:password-policy:standard': m.security_password_policy_standard_tooltip,
+	'urn:arcane:problem:password-policy:strong': m.security_password_policy_strong_tooltip
+};
+
+function asRecordInternal(value: unknown): Record<string, unknown> | undefined {
+	return value !== null && typeof value === 'object' ? (value as Record<string, unknown>) : undefined;
+}
+
+function nonEmptyStringInternal(value: unknown): string | undefined {
+	return typeof value === 'string' && value.trim() ? value : undefined;
+}
+
+export function extractServerMessage(data: unknown, includeErrors = false): string | undefined {
+	const outer = asRecordInternal(data);
+	const innerValue = outer?.['data'] ?? data;
+	const stringValue = nonEmptyStringInternal(innerValue);
+	if (stringValue) return stringValue;
+
+	const inner = asRecordInternal(innerValue);
+	if (!inner) return undefined;
+
+	const problemType = nonEmptyStringInternal(inner['type']);
+	const localizedMessage = problemType ? problemMessageFactoriesInternal[problemType] : undefined;
+	if (localizedMessage) return localizedMessage();
+
+	for (const key of ['error', 'message', 'detail', 'error_description']) {
+		const message = nonEmptyStringInternal(inner[key]);
+		if (message) return message;
 	}
-	if (inner) {
-		const msg = inner['error'] || inner['message'] || inner['detail'] || inner['error_description'];
-		if (msg) return msg;
-		if (includeErrors && Array.isArray(inner['errors']) && inner['errors'].length) {
-			return inner['errors'][0]?.message || inner['errors'][0];
-		}
+
+	if (includeErrors && Array.isArray(inner['errors']) && inner['errors'].length > 0) {
+		const first = inner['errors'][0];
+		const firstString = nonEmptyStringInternal(first);
+		if (firstString) return firstString;
+
+		const firstError = asRecordInternal(first);
+		return nonEmptyStringInternal(firstError?.['message']) ?? nonEmptyStringInternal(firstError?.['error']);
 	}
+
 	return undefined;
 }
 

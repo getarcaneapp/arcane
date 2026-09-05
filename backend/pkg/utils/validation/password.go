@@ -10,7 +10,20 @@ const (
 	PasswordPolicyBasic    = "basic"
 	PasswordPolicyStandard = "standard"
 	PasswordPolicyStrong   = "strong"
+
+	passwordPolicyProblemTypePrefix = "urn:arcane:problem:password-policy:" // #nosec G101 -- public problem type, not a credential
 )
+
+// PasswordPolicyProblemType returns the stable problem type for a policy tier.
+// Unknown policy values mirror validation behavior and fall back to strong.
+func PasswordPolicyProblemType(policy string) string {
+	switch policy {
+	case PasswordPolicyBasic, PasswordPolicyStandard:
+	default:
+		policy = PasswordPolicyStrong
+	}
+	return passwordPolicyProblemTypePrefix + policy
+}
 
 // ValidatePasswordPolicy checks a password against the named policy tier.
 // Unknown policy values are treated as strong so a corrupted setting fails closed.

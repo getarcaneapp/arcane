@@ -9,6 +9,11 @@ import (
 func TestValidatePasswordPolicy(t *testing.T) {
 	t.Parallel()
 
+	require.Equal(t, "urn:arcane:problem:password-policy:basic", PasswordPolicyProblemType(PasswordPolicyBasic))
+	require.Equal(t, "urn:arcane:problem:password-policy:standard", PasswordPolicyProblemType(PasswordPolicyStandard))
+	require.Equal(t, "urn:arcane:problem:password-policy:strong", PasswordPolicyProblemType(PasswordPolicyStrong))
+	require.Equal(t, "urn:arcane:problem:password-policy:strong", PasswordPolicyProblemType("bogus-policy"))
+
 	require.NoError(t, ValidatePasswordPolicy("12345678", PasswordPolicyBasic))
 	require.Error(t, ValidatePasswordPolicy("1234567", PasswordPolicyBasic))
 

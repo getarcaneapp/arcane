@@ -18,6 +18,7 @@
 		password?: string;
 		roleAssignments?: RoleAssignmentInput[];
 	};
+	type UserFormSubmission = { user: UserSubmission; isEditMode: boolean; userId?: string };
 
 	type UserFormProps = {
 		open: boolean;
@@ -25,7 +26,7 @@
 		roles: Role[];
 		environments: Environment[];
 		availableRoleAssignments?: RoleAssignmentInput[];
-		onSubmit: (data: { user: UserSubmission; isEditMode: boolean; userId?: string }) => void;
+		onSubmit: (data: UserFormSubmission) => Promise<boolean>;
 		isLoading: boolean;
 		allowUsernameEdit?: boolean;
 	};
@@ -40,22 +41,36 @@
 		isLoading,
 		allowUsernameEdit = false
 	}: UserFormProps = $props();
-	void open;
 
 	let isEditMode = $derived(!!userToEdit);
 	let canEditUsername = $derived(!isEditMode || allowUsernameEdit);
 
 	let isOidcUser = $derived(!!userToEdit?.oidcSubjectId);
 	let oidcAssignments = $derived(userToEdit?.roleAssignments?.filter((a) => a.source === 'oidc') ?? []);
+	const userFieldMaxLength = 255;
+	const passwordMinLength = 8;
 
 	const formSchema = z.object({
 		username: z
 			.string()
-			.min(1, m.common_username_required())
+			.trim()
+			.refine((value) => value === userToEdit?.username.trim() || value.length > 0, m.common_username_required())
+			.refine(
+				(value) => value === userToEdit?.username.trim() || [...value].length <= userFieldMaxLength,
+				m.common_max_length({ field: m.common_username(), maxLength: userFieldMaxLength })
+			)
 			// Legacy usernames may contain @; only new or changed usernames are restricted
-			.refine((value) => value === userToEdit?.username || !value.includes('@'), m.users_username_no_at()),
-		password: z.string().optional(),
-		displayName: z.string().optional(),
+			.refine((value) => value === userToEdit?.username.trim() || !value.includes('@'), m.users_username_no_at()),
+		password: z
+			.string()
+			.refine((value) => (isEditMode && value === '') || [...value].length >= passwordMinLength, m.first_login_error_length()),
+		displayName: z
+			.string()
+			.trim()
+			.refine(
+				(value) => [...value].length <= userFieldMaxLength,
+				m.common_max_length({ field: m.common_display_name(), maxLength: userFieldMaxLength })
+			),
 		email: z
 			.string()
 			.trim()
@@ -82,13 +97,22 @@
 
 	let { inputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, formData));
 
-	function handleSubmit() {
+	async function submitUser(data: UserFormSubmission) {
+		if (await onSubmit(data)) {
+			form.reset();
+		}
+	}
+
+	async function handleSubmit() {
+		// createForm trims strings for ordinary text fields. Passwords are opaque,
+		// so preserve exactly what the user entered after validating the raw value.
+		const password = $inputs.password.value;
 		const data = form.validate();
 		if (!data) return;
 
 		// For OIDC users, only allow role assignment changes
 		if (isOidcUser) {
-			onSubmit({
+			await submitUser({
 				user: { roleAssignments: data.roleAssignments },
 				isEditMode,
 				userId: userToEdit?.id
@@ -107,21 +131,22 @@
 
 		// Only include username when creating, or when editing changed it — an
 		// unchanged legacy username with @ would fail the backend pattern check
-		if (!isEditMode || (canEditUsername && data.username !== userToEdit?.username)) {
+		if (!isEditMode || (canEditUsername && data.username !== userToEdit?.username.trim())) {
 			userData.username = data.username;
 		}
 
 		// Only include password if it's provided (for create) or if editing and password is not empty
-		if (!isEditMode || (isEditMode && data.password)) {
-			userData.password = data.password;
+		if (!isEditMode || (isEditMode && password)) {
+			userData.password = password;
 		}
 
-		onSubmit({ user: userData, isEditMode, userId: userToEdit?.id });
+		await submitUser({ user: userData, isEditMode, userId: userToEdit?.id });
 	}
 
 	function handleOpenChange(newOpenState: boolean) {
 		open = newOpenState;
 		if (!newOpenState) {
+			form.reset();
 			userToEdit = null;
 		}
 	}
@@ -213,6 +238,7 @@
 	{#snippet footer()}
 		<SheetFooterActions
 			bind:open
+			onCancel={() => handleOpenChange(false)}
 			cancelDisabled={isLoading}
 			submitAction={isEditMode ? 'save' : 'create'}
 			submitDisabled={isLoading}

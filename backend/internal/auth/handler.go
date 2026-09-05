@@ -26,6 +26,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cookie"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
 	authtypes "github.com/getarcaneapp/arcane/types/v2/auth"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	settingstypes "github.com/getarcaneapp/arcane/types/v2/settings"
@@ -368,7 +369,8 @@ func (h *AuthHandler) ChangePassword(ctx context.Context, input *ChangePasswordI
 		case errors.Is(err, ErrInvalidCredentials):
 			return nil, huma.Error401Unauthorized("Current password is incorrect")
 		case errors.Is(err, common.ErrValidation):
-			return nil, huma.Error400BadRequest(err.Error())
+			passwordPolicy := h.authService.passwordPolicyInternal(ctx)
+			return nil, handlerutil.Error400BadRequestWithType(err.Error(), validation.PasswordPolicyProblemType(passwordPolicy))
 		default:
 			return nil, huma.Error500InternalServerError("Failed to change password")
 		}
