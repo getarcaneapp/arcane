@@ -3347,6 +3347,8 @@
   "system_backups_recovery_key_saved": "A helyreállítási kulcs beállítása megtörtént.",
   "system_backups_recovery_key_save_failed": "A helyreállítási kulcs konfigurálása nem sikerült.",
   "system_backups_enabled_description": "Futtasson egy titkosított Arcane helyreállítási biztonsági másolatot a beállított cron-ütemterv szerint.",
+  "backups_started": "A biztonsági mentés elindult",
+  "backups_running": "A biztonsági mentés folyamatban van",
   "system_backups_created": "Az Arcane rendszer biztonsági mentése sikeresen elkészült.",
   "system_backups_create_failed": "Az Arcane rendszerbiztonsági mentésének létrehozása nem sikerült.",
   "system_backups_policy_saved": "A rendszermentés ütemezése elmentve.",
