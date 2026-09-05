@@ -3347,6 +3347,8 @@
   "system_backups_recovery_key_saved": "Clave de recuperación configurada.",
   "system_backups_recovery_key_save_failed": "No se ha podido configurar la clave de recuperación.",
   "system_backups_enabled_description": "Ejecuta una copia de seguridad cifrada de Arcane Recovery según la programación de cron configurada.",
+  "backups_started": "Se ha iniciado la copia de seguridad",
+  "backups_running": "Copia de seguridad en curso",
   "system_backups_created": "Se ha creado correctamente una copia de seguridad del sistema Arcane.",
   "system_backups_create_failed": "No se ha podido crear la copia de seguridad del sistema Arcane.",
   "system_backups_policy_saved": "Se ha guardado la programación de copias de seguridad del sistema.",
