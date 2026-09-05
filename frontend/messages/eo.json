@@ -3347,6 +3347,8 @@
   "system_backups_recovery_key_saved": "Rezerva ŝlosilo agordita.",
   "system_backups_recovery_key_save_failed": "Malsukcesis agordi la restarigan ŝlosilon.",
   "system_backups_enabled_description": "Ekskursigu kriptitan Arcane-restarigan sekurkopion laŭ la agordita cron-horaro.",
+  "backups_started": "Rezervo komenciĝis",
+  "backups_running": "Sekurkopio en progreso",
   "system_backups_created": "Magieca sistemrezervo sukcese kreita.",
   "system_backups_create_failed": "Malsukcesis krei rezervkopion de la Arcane-sistemo.",
   "system_backups_policy_saved": "Horaro de sistemrezervo konservita.",
