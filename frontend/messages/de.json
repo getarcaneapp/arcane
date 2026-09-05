@@ -3347,6 +3347,8 @@
   "system_backups_recovery_key_saved": "Wiederherstellungsschlüssel konfiguriert.",
   "system_backups_recovery_key_save_failed": "Die Konfiguration des Wiederherstellungsschlüssels ist fehlgeschlagen.",
   "system_backups_enabled_description": "Führen Sie eine verschlüsselte Arcane-Wiederherstellungssicherung gemäß dem konfigurierten Cron-Zeitplan durch.",
+  "backups_started": "Sicherung gestartet",
+  "backups_running": "Sicherung läuft",
   "system_backups_created": "Arcane-System-Backup erfolgreich erstellt.",
   "system_backups_create_failed": "Die Erstellung der Arcane-Systemsicherung ist fehlgeschlagen.",
   "system_backups_policy_saved": "Der Zeitplan für die Systemsicherung wurde gespeichert.",
