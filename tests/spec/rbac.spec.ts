@@ -213,6 +213,15 @@ async function createRestrictedUserThroughUI(
 	await readApiData<unknown[]>(await assignmentsResponsePromise, `Assign roles to ${username}`);
 	await expect(dialog).toBeHidden();
 	expect(user.username).toBe(username);
+
+	await page.getByRole('button', { name: 'Create User', exact: true }).click();
+	await expect(dialog).toBeVisible();
+	await expect(dialog.getByLabel('Username', { exact: true })).toHaveValue('');
+	await expect(dialog.getByLabel('Password *', { exact: true })).toHaveValue('');
+	await expect(dialog.getByLabel('Display Name', { exact: true })).toHaveValue('');
+	await expect(dialog.getByLabel('Email', { exact: true })).toHaveValue('');
+	await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+	await expect(dialog).toBeHidden();
 	return user;
 }
 

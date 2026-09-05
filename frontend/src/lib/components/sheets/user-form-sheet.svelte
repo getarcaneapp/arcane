@@ -18,6 +18,7 @@
 		password?: string;
 		roleAssignments?: RoleAssignmentInput[];
 	};
+	type UserFormSubmission = { user: UserSubmission; isEditMode: boolean; userId?: string };
 
 	type UserFormProps = {
 		open: boolean;
@@ -25,7 +26,7 @@
 		roles: Role[];
 		environments: Environment[];
 		availableRoleAssignments?: RoleAssignmentInput[];
-		onSubmit: (data: { user: UserSubmission; isEditMode: boolean; userId?: string }) => void;
+		onSubmit: (data: UserFormSubmission) => Promise<boolean>;
 		isLoading: boolean;
 		allowUsernameEdit?: boolean;
 	};
@@ -96,16 +97,13 @@
 
 	let { inputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, formData));
 
-	// The sheet can be closed through the footer or by its parent after a
-	// successful request. Reset on every close so hidden form state cannot be
-	// submitted when the sheet is opened again.
-	$effect(() => {
-		if (!open) {
+	async function submitUser(data: UserFormSubmission) {
+		if (await onSubmit(data)) {
 			form.reset();
 		}
-	});
+	}
 
-	function handleSubmit() {
+	async function handleSubmit() {
 		// createForm trims strings for ordinary text fields. Passwords are opaque,
 		// so preserve exactly what the user entered after validating the raw value.
 		const password = $inputs.password.value;
@@ -114,7 +112,7 @@
 
 		// For OIDC users, only allow role assignment changes
 		if (isOidcUser) {
-			onSubmit({
+			await submitUser({
 				user: { roleAssignments: data.roleAssignments },
 				isEditMode,
 				userId: userToEdit?.id
@@ -142,12 +140,13 @@
 			userData.password = password;
 		}
 
-		onSubmit({ user: userData, isEditMode, userId: userToEdit?.id });
+		await submitUser({ user: userData, isEditMode, userId: userToEdit?.id });
 	}
 
 	function handleOpenChange(newOpenState: boolean) {
 		open = newOpenState;
 		if (!newOpenState) {
+			form.reset();
 			userToEdit = null;
 		}
 	}

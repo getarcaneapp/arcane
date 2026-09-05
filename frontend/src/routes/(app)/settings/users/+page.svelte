@@ -74,7 +74,7 @@
 		};
 		isEditMode: boolean;
 		userId?: string;
-	}) {
+	}): Promise<boolean> {
 		const loading = isEditMode ? 'editing' : 'creating';
 		isLoading[loading] = true;
 
@@ -88,7 +88,7 @@
 				// OIDC users submit role assignments only — skip the empty profile PUT.
 				if (Object.keys(profile).length === 0 && isAdmin && roleAssignments) {
 					const assignmentsResult = await tryCatch(roleService.setUserAssignments(userId, { assignments: roleAssignments }));
-					handleApiResultWithCallbacks({
+					await handleApiResultWithCallbacks({
 						result: assignmentsResult,
 						message: m.common_update_failed({ resource: `${m.resource_user()} "${safeUsername}"` }),
 						setLoadingState: (value) => (isLoading[loading] = value),
@@ -99,11 +99,11 @@
 							userToEdit = null;
 						}
 					});
-					return;
+					return !assignmentsResult.error;
 				}
 
 				const result = await tryCatch(userService.update(userId, profile));
-				handleApiResultWithCallbacks({
+				await handleApiResultWithCallbacks({
 					result,
 					message: m.common_update_failed({ resource: `${m.resource_user()} "${safeUsername}"` }),
 					setLoadingState: (value) => (isLoading[loading] = value),
@@ -117,11 +117,12 @@
 						userToEdit = null;
 					}
 				});
+				return !result.error;
 			} else {
 				if (!user.username) {
 					toast.error(m.common_username_required());
 					isLoading[loading] = false;
-					return;
+					return false;
 				}
 
 				const safeUsername = user.username!.trim() || m.common_unknown();
@@ -134,7 +135,7 @@
 				};
 
 				const result = await tryCatch(userService.create(createUser));
-				handleApiResultWithCallbacks({
+				await handleApiResultWithCallbacks({
 					result,
 					message: m.common_create_failed({ resource: `${m.resource_user()} "${safeUsername}"` }),
 					setLoadingState: (value) => (isLoading[loading] = value),
@@ -147,9 +148,11 @@
 						isDialogOpen.create = false;
 					}
 				});
+				return !result.error;
 			}
 		} catch (error) {
 			console.error('Failed to submit user:', error);
+			return false;
 		}
 	}
 
