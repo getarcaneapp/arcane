@@ -18,7 +18,7 @@ function getResourceListPage(): string | null {
 		// Match routes like /containers/[containerId] or /(app)/containers/[containerId]
 		// but not /containers or /containers/components/...
 		const pattern = prefix + '/[';
-		if (routeId.includes(pattern) && !routeId.includes('/components/')) {
+		if ((routeId.includes(pattern) || routeId.endsWith(prefix + '/new')) && !routeId.includes('/components/')) {
 			return prefix;
 		}
 	}
@@ -33,6 +33,7 @@ function createEnvironmentManagementStore() {
 	let _availableEnvironments = $state<Environment[]>([]);
 	let _initialized = false;
 	let _initializedWithData = false;
+	const _changeGuards = new Set<() => boolean>();
 	const _selectedSubscribers = new Set<(environment: Environment | null) => void>();
 
 	let _resolveReadyPromiseFunction: () => void;
@@ -170,6 +171,9 @@ function createEnvironmentManagementStore() {
 		setEnvironment: async (environment: Environment) => {
 			if (!environment.enabled) return;
 			if (_selectedEnvironment?.id !== environment.id) {
+				for (const guard of _changeGuards) {
+					if (!guard()) return;
+				}
 				_assignSelectedEnvironment(environment);
 
 				// Check if we're on a resource detail page (e.g., /containers/abc123)
@@ -182,6 +186,12 @@ function createEnvironmentManagementStore() {
 					await refreshAll();
 				}
 			}
+		},
+		registerChangeGuard: (guard: () => boolean) => {
+			_changeGuards.add(guard);
+			return () => {
+				_changeGuards.delete(guard);
+			};
 		},
 		subscribeSelected: (subscriber: (environment: Environment | null) => void) => {
 			_selectedSubscribers.add(subscriber);

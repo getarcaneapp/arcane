@@ -82,6 +82,7 @@
 			buttons.push({
 				id: 'create',
 				action: 'create',
+				primary: true,
 				label: m.common_add_button({ resource: m.resource_repository_cap() }),
 				onclick: openCreateRepositoryDialog
 			});

@@ -4,6 +4,7 @@ import { m } from '#lib/paraglide/messages';
 import BaseAPIService from '#lib/services/api-service';
 import { imageService } from '#lib/services/image-service';
 import { userService } from '#lib/services/user-service';
+import { hasPermission } from '#lib/utils/auth';
 import { environmentStore } from '#lib/stores/environment.store.svelte';
 import { activityToastOptions } from '#lib/utils/activity-toast';
 import type { AutoUpdateResourceType, AutoUpdateResult } from '#lib/types/automation';
@@ -97,23 +98,26 @@ async function disarmWhenBackendResponds() {
  * updater run — the same path the nightly auto-update job takes).
  */
 export function confirmAndApplyAllUpdates({ setLoading, onRefresh }: ConfirmAndApplyAllUpdatesOptions) {
+	const environment = environmentStore.selected;
+	if (!environment || !hasPermission('image-updates:check', environment.id)) return;
 	openConfirmDialog({
-		title: m.update_all(),
+		title: `${m.update_all()} · ${environment.name}`,
 		message: m.updates_update_all_confirm_message(),
 		confirm: {
 			label: m.update_all(),
 			destructive: false,
 			action: async () => {
+				if (environmentStore.selected?.id !== environment.id || !hasPermission('image-updates:check', environment.id)) return;
 				setLoading?.(true);
 				// An unscoped run can pick up Arcane's own container and route it
 				// through self-upgrade, restarting this backend. Only the local
 				// manager hosts this frontend's API, so only it needs the flag that
 				// makes the restart a recoverable reconnect instead of a logout.
-				const envId = await environmentStore.getCurrentEnvironmentId();
+				const envId = environment.id;
 				const restartsThisBackend = envId === MANAGER_ENVIRONMENT_ID;
 				if (restartsThisBackend) BaseAPIService.setUpgradeInProgress(true);
 				try {
-					summarizeUpdateResult(await imageService.runAutoUpdate());
+					summarizeUpdateResult(await imageService.runAutoUpdate(undefined, envId));
 					await onRefresh?.();
 				} catch (error) {
 					console.error('Update all failed:', error);

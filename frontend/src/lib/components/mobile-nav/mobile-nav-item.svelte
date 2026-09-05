@@ -21,7 +21,7 @@
 	tone="ghost"
 	size={showLabels ? 'sm' : 'icon'}
 	href={item.url}
-	aria-label={`${item.title}${active ? ' (current page)' : ''}`}
+	aria-label={item.title}
 	aria-current={active ? 'page' : undefined}
 	class={cn(
 		'min-w-0 flex-1 transition-all duration-200 ease-out',

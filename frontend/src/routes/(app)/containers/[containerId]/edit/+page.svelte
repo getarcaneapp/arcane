@@ -7,7 +7,7 @@
 		rowsFromEditConfig,
 		toEditRequest
 	} from '#lib/components/containers/container-form/container-form-state';
-	import { createForm } from '#lib/utils/settings';
+	import { useUnsavedChanges, createForm } from '#lib/utils/settings';
 	import { containerService } from '#lib/services/container-service';
 	import { queryKeys } from '#lib/query/query-keys';
 	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
@@ -29,6 +29,8 @@
 	const form = createForm<typeof containerFormSchema>(containerFormSchema, formValuesFromEditConfig(data.editConfig));
 	let rows = $state(untrack(() => rowsFromEditConfig(data.editConfig)));
 
+	const navigationGuard = useUnsavedChanges({ snapshot: () => ({ values: form.data(), rows }) });
+
 	const editContainerMutation = createMutation(() => ({
 		mutationFn: (request: ContainerEditRequest) => containerService.editContainer(data.containerId, request),
 		onSuccess: async (details) => {
@@ -36,6 +38,7 @@
 			await queryClient.invalidateQueries({ queryKey: queryKeys.containers.all });
 			queryClient.removeQueries({ queryKey: queryKeys.containers.detail(data.envId, data.containerId) });
 			queryClient.removeQueries({ queryKey: queryKeys.containers.editConfig(data.envId, data.containerId) });
+			navigationGuard.allowNavigation();
 			goto(`/containers/${details.id}`);
 		},
 		onError: (error) => {

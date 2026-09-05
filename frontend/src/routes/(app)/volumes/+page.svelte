@@ -106,6 +106,7 @@
 			buttons.push({
 				id: 'create',
 				action: 'create',
+				primary: true,
 				label: m.common_create_button({ resource: m.resource_volume_cap() }),
 				onclick: () => (pageState.isCreateDialogOpen = true),
 				loading: createVolumeMutation.isPending,
@@ -139,7 +140,13 @@
 	]);
 </script>
 
-<ResourcePageLayout title={m.resource_volumes_cap()} subtitle={m.volumes_subtitle()} {actionButtons} {statCards}>
+<ResourcePageLayout
+	environmentScoped
+	title={m.resource_volumes_cap()}
+	subtitle={m.volumes_subtitle()}
+	{actionButtons}
+	{statCards}
+>
 	{#snippet mainContent()}
 		{#if resourcesReady}
 			<VolumeTable

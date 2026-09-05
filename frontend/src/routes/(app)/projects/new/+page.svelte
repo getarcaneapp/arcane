@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import { ArrowLeftIcon } from '#lib/icons';
+	import { ArrowLeftIcon, TemplateIcon, TerminalIcon, GitBranchIcon } from '#lib/icons';
 	import { goto, refreshAll } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
-	import { preventDefault, createForm } from '#lib/utils/settings';
+	import { useUnsavedChanges, preventDefault, createForm } from '#lib/utils/settings';
 	import TemplateSelectionDialog from '#lib/components/dialogs/template-selection-dialog.svelte';
 	import { m } from '#lib/paraglide/messages';
 	import { projectService } from '#lib/services/project-service.js';
@@ -15,6 +15,8 @@
 	import EditorTabStrip from '#lib/components/editor-tab-strip.svelte';
 	import { environmentStore } from '#lib/stores/environment.store.svelte';
 	import { hasPermission } from '#lib/utils/auth';
+	import { canReachAccessSurface } from '#lib/utils/access-policy';
+	import userStore from '#lib/stores/user-store';
 	import { containerService } from '#lib/services/container-service';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog';
 	import { extractApiErrorMessage, tryCatch } from '#lib/utils/api';
@@ -54,6 +56,12 @@
 
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
 	const canCreateProject = $derived(hasPermission('projects:create', currentEnvId));
+	const canUseTemplates = $derived(hasPermission('templates:list') && hasPermission('templates:read'));
+	const canConvert = $derived(hasPermission('containers:create', currentEnvId));
+	const canCreateFromGit = $derived(
+		hasPermission('gitops:create', currentEnvId) &&
+			canReachAccessSurface(data.permissionsManifest, 'route.environments.gitops', $userStore, currentEnvId)
+	);
 	const canDeleteContainers = $derived(hasPermission('containers:delete', currentEnvId));
 	const sourceContainerIds = $derived(data.sourceContainerIds ?? []);
 	const projectWorkspaceMaxFileSizeMb = $derived($settingsStore?.projectWorkspaceMaxFileSizeMb ?? 10);
@@ -99,8 +107,17 @@
 	let newProjectTags = $state<ProjectTag[]>([]);
 	const projectTagsQuery = createQuery(() => ({
 		queryKey: queryKeys.projects.tags(currentEnvId),
-		queryFn: () => projectService.getProjectTagsForEnvironment(currentEnvId)
+		queryFn: () => projectService.getProjectTagsForEnvironment(currentEnvId),
+		enabled: hasPermission('projects:list', currentEnvId)
 	}));
+	const navigationGuard = useUnsavedChanges({
+		hasChanges: () =>
+			$inputs.name.value !== formData.name ||
+			$inputs.composeContent.value !== formData.composeContent ||
+			$inputs.envContent.value !== formData.envContent ||
+			workspaceDraft.entries.length > 0 ||
+			newProjectTags.length > 0
+	});
 	const availableProjectTags = $derived(projectTagsQuery.data ?? []);
 	let validation = $state({
 		composeHasErrors: false,
@@ -153,6 +170,7 @@
 	const effectiveName = $derived(composeYamlName ?? $inputs.name.value);
 
 	async function handleSubmit() {
+		if (!canCreateProject || ui.saving) return;
 		if (sourceContainerIds.length > 0 && canDeleteContainers) {
 			openConfirmDialog({
 				title: m.compose_create_project(),
@@ -196,7 +214,8 @@
 					}
 				}
 				// fallow-ignore-next-line code-duplication -- create-success handler; navigation target diverges per page
-				goto(`/projects/${project.id}`, { refreshAll: true });
+				navigationGuard.allowNavigation();
+				goto(`/projects/${project.id}?tab=services&created=true`, { refreshAll: true });
 			}
 		});
 	}
@@ -209,6 +228,12 @@
 		setLoading: (value) => (ui.creatingTemplate = value),
 		hasEditorErrors: () => hasEditorErrors
 	});
+
+	function confirmConfigurationReplacement() {
+		const hasConfigurationChanges =
+			$inputs.composeContent.value !== formData.composeContent || $inputs.envContent.value !== formData.envContent;
+		return !hasConfigurationChanges || window.confirm(m.project_replace_configuration_confirmation());
+	}
 
 	function composePanelProps() {
 		return {
@@ -233,6 +258,21 @@
 	}
 </script>
 
+{#snippet projectName(variant: 'inline' | 'block')}
+	<EditableName
+		bind:value={$inputs.name.value}
+		displayValue={effectiveName}
+		bind:ref={nameInputRef}
+		{variant}
+		error={$inputs.name.error ?? undefined}
+		originalValue=""
+		placeholder={m.compose_project_name_placeholder()}
+		canEdit={!ui.saving && !ui.isLoadingTemplateContent && !composeYamlName}
+		disabledMessage={composeYamlName ? m.compose_project_name_defined_in_yaml() : undefined}
+		class={variant === 'inline' ? 'hidden sm:block' : ''}
+	/>
+{/snippet}
+
 <div class="flex h-full min-h-0 flex-col bg-background">
 	<div class="sticky top-0 mb-2 border-b">
 		<div class="mx-auto flex h-16 max-w-full items-center justify-between gap-4 px-6">
@@ -248,30 +288,23 @@
 				/>
 				<div class="hidden h-4 w-px bg-border sm:block"></div>
 				<div class="hidden items-center gap-3 sm:flex">
-					<EditableName
-						bind:value={$inputs.name.value}
-						displayValue={effectiveName}
-						bind:ref={nameInputRef}
-						variant="inline"
-						error={$inputs.name.error ?? undefined}
-						originalValue=""
-						placeholder={m.compose_project_name_placeholder()}
-						canEdit={!ui.saving && !ui.isLoadingTemplateContent && !composeYamlName}
-						disabledMessage={composeYamlName ? m.compose_project_name_defined_in_yaml() : undefined}
-						class="hidden sm:block"
-					/>
+					<div role="group" aria-labelledby="project-name-label" class="min-w-0">
+						<p id="project-name-label" class="text-xs text-muted-foreground">{m.common_name()}</p>
+						{@render projectName('inline')}
+					</div>
 					<ProjectTagEditor bind:tags={newProjectTags} availableTags={availableProjectTags} canEdit={!ui.saving} />
 				</div>
 			</div>
 
 			<div class="flex items-center gap-2">
 				<ComposeCreateMenu
+					hideStartingOptions
 					tooltipOpen={!effectiveName && !ui.saving && !ui.converting && !ui.isLoadingTemplateContent ? undefined : false}
 					tooltipVisible={effectiveName === ''}
 					tooltipTitle={m.compose_project_name_tooltip_title()}
 					tooltipDescription={m.compose_project_name_tooltip_description()}
 					tooltipExample={m.compose_project_name_tooltip_example()}
-					showCreateButton={!hasEditorErrors && canCreateProject}
+					showCreateButton={canCreateProject}
 					createDisabled={!effectiveName ||
 						!$inputs.composeContent.value ||
 						hasEditorErrors ||
@@ -312,37 +345,76 @@
 		<div class="mx-auto h-full w-full max-w-full min-w-0">
 			<div class="flex h-full min-h-0 flex-col gap-4">
 				<div class="block flex-shrink-0 py-4 sm:hidden">
-					<EditableName
-						bind:value={$inputs.name.value}
-						displayValue={effectiveName}
-						bind:ref={nameInputRef}
-						variant="block"
-						error={$inputs.name.error ?? undefined}
-						originalValue=""
-						placeholder={m.compose_project_name_placeholder()}
-						canEdit={!ui.saving && !ui.isLoadingTemplateContent && !composeYamlName}
-						disabledMessage={composeYamlName ? m.compose_project_name_defined_in_yaml() : undefined}
-					/>
+					<div role="group" aria-labelledby="project-name-mobile-label">
+						<p id="project-name-mobile-label" class="text-center text-xs text-muted-foreground">{m.common_name()}</p>
+						{@render projectName('block')}
+					</div>
 					<ProjectTagEditor bind:tags={newProjectTags} availableTags={availableProjectTags} canEdit={!ui.saving} class="mt-2" />
 				</div>
 
-				<div class="flex shrink-0 items-center justify-end gap-2">
-					<label
-						for="new-project-layout-mode-toggle"
-						class="cursor-pointer text-xs text-muted-foreground"
-						title={m.project_view_description()}
-					>
-						{m.workspace()}
-					</label>
-					<Switch
-						id="new-project-layout-mode-toggle"
-						checked={layoutMode === 'tree'}
-						aria-label={m.project_view_description()}
-						onCheckedChange={(checked) => {
-							layoutMode = checked ? 'tree' : 'classic';
-							workspaceDraft.openTab('compose');
-						}}
-					/>
+				<div class="flex shrink-0 flex-wrap items-center justify-between gap-3 px-2">
+					<div class="space-y-2">
+						<p class="text-xs text-muted-foreground">{m.project_create_description()}</p>
+						<p class="text-xs text-muted-foreground">{m.resource_environment_cap()}: {environmentStore.selected?.name ?? ''}</p>
+						<div class="flex flex-wrap gap-2">
+							{#if canUseTemplates}
+								<ArcaneButton
+									action="base"
+									tone="outline"
+									size="sm"
+									icon={TemplateIcon}
+									customLabel={m.common_use_template()}
+									disabled={ui.saving || ui.converting || ui.isLoadingTemplateContent}
+									onclick={() => {
+										if (confirmConfigurationReplacement()) ui.showTemplateDialog = true;
+									}}
+								/>
+							{/if}
+							{#if canConvert}
+								<ArcaneButton
+									action="base"
+									tone="outline"
+									size="sm"
+									icon={TerminalIcon}
+									customLabel={m.compose_convert_from_docker_run()}
+									disabled={ui.saving || ui.converting}
+									onclick={() => {
+										if (confirmConfigurationReplacement()) ui.showConverterDialog = true;
+									}}
+								/>
+							{/if}
+							{#if canCreateFromGit}
+								<ArcaneButton
+									action="base"
+									tone="outline"
+									size="sm"
+									icon={GitBranchIcon}
+									customLabel={m.git_from_git_repo()}
+									disabled={ui.saving || ui.converting}
+									onclick={async () =>
+										goto(`/environments/${await environmentStore.getCurrentEnvironmentId()}/gitops?action=create`)}
+								/>
+							{/if}
+						</div>
+					</div>
+					<div class="flex items-center gap-2">
+						<label
+							for="new-project-layout-mode-toggle"
+							class="cursor-pointer text-xs text-muted-foreground"
+							title={m.project_view_description()}
+						>
+							{m.workspace()}
+						</label>
+						<Switch
+							id="new-project-layout-mode-toggle"
+							checked={layoutMode === 'tree'}
+							aria-label={m.project_view_description()}
+							onCheckedChange={(checked) => {
+								layoutMode = checked ? 'tree' : 'classic';
+								workspaceDraft.openTab('compose');
+							}}
+						/>
+					</div>
 				</div>
 
 				{#if layoutMode === 'tree'}

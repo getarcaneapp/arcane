@@ -7,6 +7,9 @@
 	import { getContext } from 'svelte';
 	import { m } from '#lib/paraglide/messages';
 	import { EllipsisIcon, ResetIcon, type IconType, ArrowDownIcon } from '#lib/icons';
+	import { page } from '$app/state';
+	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import { getRouteAccessSurfaces, pathMatchesAccessSurface } from '#lib/utils/access-policy';
 	import { cn } from '#lib/utils';
 	import type { SettingsActionButton, SettingsPageType, SettingsStatCard } from './types.js';
 
@@ -36,8 +39,14 @@
 		class: className = ''
 	}: Props = $props();
 
-	const mobileVisibleButtons = $derived(actionButtons.filter((btn) => btn.showOnMobile));
-	const mobileDropdownButtons = $derived(actionButtons.filter((btn) => !btn.showOnMobile));
+	const scopeMode = $derived(
+		getRouteAccessSurfaces(page.data['permissionsManifest']).find((surface) =>
+			pathMatchesAccessSurface(page.url.pathname, surface)
+		)?.scopeMode
+	);
+
+	const mobileVisibleButtons = $derived(actionButtons.filter((btn) => btn.primary || btn.showOnMobile));
+	const mobileDropdownButtons = $derived(actionButtons.filter((btn) => !(btn.primary || btn.showOnMobile)));
 
 	const formState = getContext<{
 		hasChanges: boolean;
@@ -48,7 +57,7 @@
 </script>
 
 {#snippet ActionButtonList(buttons: SettingsActionButton[])}
-	{#each buttons as button}
+	{#each buttons as button (button.id)}
 		{#if button.options?.length}
 			<DropdownMenu.Root>
 				<DropdownMenu.Trigger>
@@ -70,7 +79,7 @@
 					class="z-[var(--arcane-z-surface)] min-w-[160px] rounded-xl border bg-popover/90 p-1 shadow-lg backdrop-blur-md"
 				>
 					<DropdownMenu.Group>
-						{#each button.options as option}
+						{#each button.options as option (option.label)}
 							<DropdownMenu.Item onclick={option.onclick} disabled={option.disabled}>
 								{#if option.icon}
 									{@const OptionIcon = option.icon}
@@ -110,12 +119,17 @@
 				{/if}
 				<div class="min-w-0">
 					<h1 class="text-xl font-semibold tracking-tight sm:text-2xl">{title}</h1>
+					{#if scopeMode === 'global-only'}
+						<p class="text-xs text-muted-foreground">{m.global()}</p>
+					{:else if scopeMode === 'selected-env-plus-global' && environmentStore.selected}
+						<p class="text-xs text-muted-foreground">{m.resource_environment_cap()}: {environmentStore.selected.name}</p>
+					{/if}
 					{#if description}
 						<p class="mt-1 hidden text-sm text-muted-foreground sm:block sm:text-base">{@html description}</p>
 					{/if}
 					{#if pageType === 'management' && statCards && statCards.length > 0}
 						<div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
-							{#each statCards as card, i}
+							{#each statCards as card, i (card.title)}
 								{#if i > 0}
 									<div class="h-4 w-px bg-border/50"></div>
 								{/if}
@@ -198,10 +212,10 @@
 									class="z-[var(--arcane-z-surface)] min-w-[160px] rounded-xl border bg-popover/90 p-1 shadow-lg backdrop-blur-md"
 								>
 									<DropdownMenu.Group>
-										{#each mobileDropdownButtons as button}
+										{#each mobileDropdownButtons as button (button.id)}
 											{#if button.options?.length}
 												<DropdownMenu.Label>{button.label}</DropdownMenu.Label>
-												{#each button.options as option}
+												{#each button.options as option (option.label)}
 													<DropdownMenu.Item onclick={option.onclick} disabled={button.disabled || option.disabled}>
 														{option.label}
 													</DropdownMenu.Item>

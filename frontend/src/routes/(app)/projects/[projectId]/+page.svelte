@@ -33,7 +33,7 @@
 	import { tryCatch } from '#lib/utils/api';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api';
 	import { z } from 'zod/v4';
-	import { createForm } from '#lib/utils/settings';
+	import { useUnsavedChanges, createForm } from '#lib/utils/settings';
 	import { m } from '#lib/paraglide/messages';
 	import { toGitCommitUrl } from '#lib/utils/navigation';
 	import { toSafeHref } from '#lib/utils/navigation';
@@ -322,7 +322,7 @@
 	let autoScrollStackLogs = $state(true);
 
 	type ProjectTab = 'services' | 'compose' | 'logs';
-	let selectedTab = $state<ProjectTab>('compose');
+	let selectedTab = $state<ProjectTab>('services');
 	let userSelectedTabProjectId: string | null = null;
 	let composeOpen = $state(true);
 	let envOpen = $state(true);
@@ -435,6 +435,8 @@
 			)
 	);
 
+	useUnsavedChanges({ hasChanges: () => hasChanges });
+
 	let canSave = $derived(canUpdateProject && !project?.isArchived && hasChanges && !hasAnyErrors);
 
 	const tabItems = $derived<TabItem[]>([
@@ -475,7 +477,7 @@
 	};
 
 	const defaultComposeUIPrefs: ComposeUIPrefs = {
-		tab: 'compose',
+		tab: 'services',
 		composeOpen: true,
 		overrideOpen: false,
 		envOpen: true,
@@ -1367,6 +1369,7 @@
 
 {#if project}
 	<TabbedPageLayout
+		environmentScoped
 		{backUrl}
 		backLabel={m.common_back()}
 		{tabItems}
@@ -1482,7 +1485,7 @@
 		{/snippet}
 
 		{#snippet headerActions()}
-			<div class="flex items-center gap-2">
+			<div class="flex flex-wrap items-center gap-2">
 				{#if hasChanges && canUpdateProject}
 					<ArcaneButton
 						action="save"
@@ -1525,7 +1528,12 @@
 		{/snippet}
 
 		{#snippet tabContent()}
-			<Tabs.Content value="services" class="h-full min-h-0">
+			<Tabs.Content value="services" class="flex h-full min-h-0 flex-col">
+				{#if page.url.searchParams.get('created') === 'true' && project.status !== 'running' && hasPermission('projects:deploy', envId)}
+					<p class="mb-3 rounded-lg border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+						{m.project_created_next_step()}
+					</p>
+				{/if}
 				{#if canViewProjectLogs}
 					<div class="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-card">
 						<ResizableSplit

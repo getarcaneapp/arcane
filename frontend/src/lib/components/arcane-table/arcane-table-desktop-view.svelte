@@ -17,6 +17,7 @@
 	} from './arcane-table.types.svelte';
 	import TableCheckbox from './arcane-table-checkbox.svelte';
 	import TableEmpty from './table-empty.svelte';
+	import type { TableEmptyState } from './arcane-table.types.svelte';
 	import type { Component, Snippet } from 'svelte';
 	import type { Attachment } from 'svelte/attachments';
 	import { slide } from 'svelte/transition';
@@ -25,6 +26,7 @@
 
 	let {
 		table,
+		emptyContent,
 		selectedIds,
 		columnsCount,
 		groupedRows = null,
@@ -44,6 +46,7 @@
 		wrapText = false
 	}: {
 		table: ArcaneSvelteTable<TData>;
+		emptyContent?: TableEmptyState;
 		selectedIds: string[];
 		columnsCount: number;
 		groupedRows?: GroupedData<TData>[] | null;
@@ -243,7 +246,7 @@
 {#snippet emptyState()}
 	<Table.Row>
 		<Table.Cell colspan={columnsCount} class="h-48">
-			<TableEmpty class={cn('rounded-lg py-12', unstyled ? 'bg-transparent' : 'bg-card/30')} />
+			<TableEmpty state={emptyContent} class={cn('rounded-lg py-12', unstyled ? 'bg-transparent' : 'bg-card/30')} />
 		</Table.Cell>
 	</Table.Row>
 {/snippet}

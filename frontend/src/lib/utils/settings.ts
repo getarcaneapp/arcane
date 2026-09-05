@@ -1,3 +1,8 @@
+import { beforeNavigate } from '$app/navigation';
+import { onMount } from 'svelte';
+import { environmentStore } from '#lib/stores/environment.store.svelte';
+import { m } from '#lib/paraglide/messages';
+
 import { get, writable } from 'svelte/store';
 import { z } from 'zod/v4';
 
@@ -177,5 +182,39 @@ export function createForm<T extends z.ZodType<any, any>>(schema: T, initialValu
 		validate,
 		setValue,
 		reset
+	};
+}
+
+export function useUnsavedChanges(options: { hasChanges: () => boolean } | { snapshot: () => unknown }) {
+	const initialSnapshot = 'snapshot' in options ? JSON.stringify(options.snapshot()) : undefined;
+	const hasChanges = () =>
+		'snapshot' in options ? JSON.stringify(options.snapshot()) !== initialSnapshot : options.hasChanges();
+	let allowed = false;
+
+	function confirmDiscard() {
+		return allowed || !hasChanges() || window.confirm(m.form_discard_changes_confirmation());
+	}
+
+	beforeNavigate((navigation) => {
+		if (navigation.from?.url.pathname === navigation.to?.url.pathname) return;
+		if (navigation.willUnload) {
+			if (!allowed && hasChanges()) navigation.cancel();
+			return;
+		}
+		if (!confirmDiscard()) navigation.cancel();
+	});
+
+	onMount(() =>
+		environmentStore.registerChangeGuard(() => {
+			if (!confirmDiscard()) return false;
+			allowed = true;
+			return true;
+		})
+	);
+
+	return {
+		allowNavigation: () => {
+			allowed = true;
+		}
 	};
 }

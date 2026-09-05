@@ -816,6 +816,13 @@
 {/snippet}
 
 <ArcaneTable
+	emptyState={{
+		title: m.dashboard_all_no_containers(),
+		description: m.empty_environment_description(),
+		action: hasPermission('containers:create', currentEnvId)
+			? { label: m.common_create_button({ resource: m.resource_container() }), href: '/containers/new' }
+			: undefined
+	}}
 	persistKey="arcane-container-table"
 	items={containers}
 	bind:requestOptions

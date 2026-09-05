@@ -13,6 +13,7 @@
 	import * as ArcaneTooltip from '#lib/components/arcane-tooltip';
 	import * as ButtonGroup from '#lib/components/ui/button-group/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import { hasPermission } from '#lib/utils/auth';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import { TerminalIcon, TemplateIcon, AddIcon, ArrowDownIcon as ChevronDown, GitBranchIcon } from '#lib/icons';
 	import { dropdownContentClass, dropdownItemClass, templateBtnClass } from '#lib/utils/compose-flow';
@@ -37,6 +38,7 @@
 		onCreate: () => void;
 
 		// Dropdown items.
+		hideStartingOptions?: boolean;
 		itemsDisabled: boolean;
 		useTemplateLabel: string;
 		onUseTemplate: () => void;
@@ -68,6 +70,7 @@
 		createLabel,
 		createLoadingLabel,
 		onCreate,
+		hideStartingOptions = false,
 		itemsDisabled,
 		useTemplateLabel,
 		onUseTemplate,
@@ -81,6 +84,7 @@
 		onCreateTemplate,
 		createTemplatePermission
 	}: Props = $props();
+	const showDropdown = $derived(!hideStartingOptions || !createTemplatePermission || hasPermission(createTemplatePermission));
 </script>
 
 {#snippet createTemplateItem()}
@@ -105,7 +109,7 @@
 						action="create"
 						tone="ghost"
 						disabled={createDisabled}
-						class={`${templateBtnClass} gap-2 rounded-r-none`}
+						class={`${templateBtnClass} gap-2 ${showDropdown ? 'rounded-r-none' : ''}`}
 						loading={createLoading}
 						customLabel={createLabel}
 						loadingLabel={createLoadingLabel}
@@ -124,42 +128,47 @@
 		</ArcaneTooltip.Root>
 	{/if}
 
-	<DropdownMenu.Root>
-		<DropdownMenu.Trigger>
-			{#snippet child({ props })}
-				<ArcaneButton
-					{...props}
-					action="base"
-					tone="ghost"
-					class={`${templateBtnClass} -ml-px rounded-l-none px-2`}
-					icon={ChevronDown}
-				/>
-			{/snippet}
-		</DropdownMenu.Trigger>
-		<DropdownMenu.Content align="end" class={dropdownContentClass}>
-			<DropdownMenu.Group>
-				<DropdownMenu.Item class={dropdownItemClass} disabled={itemsDisabled} onclick={onUseTemplate}>
-					<TemplateIcon class="size-4" />
-					{useTemplateLabel}
-				</DropdownMenu.Item>
-				<DropdownMenu.Item class={dropdownItemClass} onclick={onConvert}>
-					<TerminalIcon class="size-4" />
-					{convertLabel}
-				</DropdownMenu.Item>
-				<DropdownMenu.Item class={dropdownItemClass} onclick={onFromGit}>
-					<GitBranchIcon class="size-4" />
-					{fromGitLabel}
-				</DropdownMenu.Item>
-				{#if createTemplatePermission}
-					<IfPermitted perm={createTemplatePermission}>
-						<DropdownMenu.Separator />
+	{#if showDropdown}
+		<DropdownMenu.Root>
+			<DropdownMenu.Trigger>
+				{#snippet child({ props })}
+					<ArcaneButton
+						{...props}
+						action="base"
+						tone="ghost"
+						class={`${templateBtnClass} -ml-px rounded-l-none px-2`}
+						icon={ChevronDown}
+						aria-label={createTemplateLabel}
+					/>
+				{/snippet}
+			</DropdownMenu.Trigger>
+			<DropdownMenu.Content align="end" class={dropdownContentClass}>
+				<DropdownMenu.Group>
+					{#if !hideStartingOptions}
+						<DropdownMenu.Item class={dropdownItemClass} disabled={itemsDisabled} onclick={onUseTemplate}>
+							<TemplateIcon class="size-4" />
+							{useTemplateLabel}
+						</DropdownMenu.Item>
+						<DropdownMenu.Item class={dropdownItemClass} onclick={onConvert}>
+							<TerminalIcon class="size-4" />
+							{convertLabel}
+						</DropdownMenu.Item>
+						<DropdownMenu.Item class={dropdownItemClass} onclick={onFromGit}>
+							<GitBranchIcon class="size-4" />
+							{fromGitLabel}
+						</DropdownMenu.Item>
+					{/if}
+					{#if createTemplatePermission}
+						<IfPermitted perm={createTemplatePermission}>
+							{#if !hideStartingOptions}<DropdownMenu.Separator />{/if}
+							{@render createTemplateItem()}
+						</IfPermitted>
+					{:else}
+						{#if !hideStartingOptions}<DropdownMenu.Separator />{/if}
 						{@render createTemplateItem()}
-					</IfPermitted>
-				{:else}
-					<DropdownMenu.Separator />
-					{@render createTemplateItem()}
-				{/if}
-			</DropdownMenu.Group>
-		</DropdownMenu.Content>
-	</DropdownMenu.Root>
+					{/if}
+				</DropdownMenu.Group>
+			</DropdownMenu.Content>
+		</DropdownMenu.Root>
+	{/if}
 </ButtonGroup.Root>

@@ -104,6 +104,7 @@
 			buttons.push({
 				id: 'create',
 				action: 'create',
+				primary: true,
 				label: m.common_add_button({ resource: m.common_registry() }),
 				onclick: openCreateRegistryDialog
 			});

@@ -634,6 +634,20 @@
 		</div>
 	</header>
 
+	{#if !boardSummaryLoading && boardState.summary.totalContainers === 0 && currentEnvironmentId}
+		<div class="flex flex-wrap items-center gap-2">
+			{#if hasPermission('projects:list', currentEnvironmentId)}
+				<ArcaneButton action="base" tone="outline" href="/projects" customLabel={m.projects_title()} />
+			{/if}
+			{#if hasPermission('projects:create', currentEnvironmentId)}
+				<ArcaneButton action="create" href="/projects/new" customLabel={m.compose_create_project()} />
+			{/if}
+			{#if hasPermission('containers:create', currentEnvironmentId)}
+				<ArcaneButton action="create" href="/containers/new" customLabel={m.create_container_title()} />
+			{/if}
+		</div>
+	{/if}
+
 	<section class="shrink-0">
 		{#if boardSummaryLoading}
 			<div class="grid grid-cols-2 gap-x-6 gap-y-4 lg:grid-cols-4">

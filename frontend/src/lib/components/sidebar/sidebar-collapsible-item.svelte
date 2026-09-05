@@ -43,7 +43,7 @@
 			class="group-data-[collapsible=icon]:mx-auto"
 		>
 			{#snippet child({ props })}
-				<a href={item.url} {...props}>
+				<a href={item.url} {...props} aria-label={item.title}>
 					{#if item.icon}
 						<Icon />
 					{/if}
@@ -53,7 +53,11 @@
 		</Sidebar.MenuButton>
 		<Collapsible.Trigger>
 			{#snippet child({ props })}
-				<Sidebar.MenuAction {...props} aria-label={m.sidebar_toggle_submenu()} class="data-[state=open]:bg-sidebar-accent">
+				<Sidebar.MenuAction
+					{...props}
+					aria-label={`${item.title}: ${m.sidebar_toggle_submenu()}`}
+					class="data-[state=open]:bg-sidebar-accent"
+				>
 					<ArrowRightIcon class="transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
 				</Sidebar.MenuAction>
 			{/snippet}

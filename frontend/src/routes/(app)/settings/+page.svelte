@@ -25,7 +25,7 @@
 	import { useCategorySearch } from '#lib/hooks/use-category-search.svelte';
 	import { getCategoryIcon, orderCategoriesByNav } from '#lib/utils/category-page';
 	import CategoryIndexPage from '#lib/components/category-index-page.svelte';
-	import type { NormalizedCategory } from '#lib/components/category-index-page.types';
+	import type { CategoryGroup, NormalizedCategory } from '#lib/components/category-index-page.types';
 
 	let { data }: PageProps = $props();
 
@@ -54,7 +54,25 @@
 		backup: BackupIcon
 	};
 
+	const categoryGroups: CategoryGroup[] = [
+		{ id: 'access', title: m.access() },
+		{ id: 'operations', title: m.operations() },
+		{ id: 'backups', title: m.volumes_nav_backups() },
+		{ id: 'preferences', title: m.account_preferences() }
+	];
+	const categoryGroupIds: Record<string, string> = {
+		authentication: 'access',
+		users: 'access',
+		roles: 'access',
+		apikeys: 'access',
+		security: 'access',
+		systembackups: 'backups',
+		s3destinations: 'backups'
+	};
+
 	const categoryMessages = {
+		systembackups: { title: m.system_backups_title, description: m.settings_arcane_backups_description },
+		s3destinations: { title: m.s3_destinations_title, description: m.settings_destinations_description },
 		timeouts: {
 			title: m.timeouts_settings,
 			description: m.timeouts_settings_description
@@ -99,10 +117,7 @@
 
 	onMount(async () => {
 		try {
-			settingsCategories = orderCategoriesByNav(
-				(await settingsSearchService.getCategories()).filter(isAccessibleCategory),
-				getSettingsSubpageUrlsInNavOrder()
-			);
+			settingsCategories = orderCategoriesByNav(await settingsSearchService.getCategories(), getSettingsSubpageUrlsInNavOrder());
 		} catch (error) {
 			console.error('Failed to load categories:', error);
 		}
@@ -114,7 +129,7 @@
 
 	function isAccessibleCategory(category: SettingsCategory) {
 		if (category.id === 'systembackups' && !user?.isGlobalAdmin) return false;
-		if (!permissionsManifest?.accessSurfaces?.length) return true;
+		if (!permissionsManifest?.accessSurfaces?.length) return false;
 		return canReachAccessSurfaceUrl(permissionsManifest, category.url, user, environmentStore.selected?.id);
 	}
 
@@ -127,6 +142,7 @@
 		const messages = categoryMessages[category.id as keyof typeof categoryMessages];
 		return {
 			id: category.id,
+			group: categoryGroupIds[category.id] ?? 'operations',
 			title: messages?.title() ?? category.title,
 			description: messages?.description() ?? category.description,
 			icon: getIconComponent(category.icon),
@@ -139,13 +155,17 @@
 	// /account but users look for them here; surface a card for every user.
 	const accountPreferencesCategory: NormalizedCategory = {
 		id: 'account-preferences',
+		group: 'preferences',
 		title: m.account_preferences(),
 		description: m.account_preferences_desc(),
 		icon: UserIcon,
 		href: '/account?tab=preferences'
 	};
 
-	const normalizedCategories = $derived([...settingsCategories.map(normalize), accountPreferencesCategory]);
+	const normalizedCategories = $derived([
+		...settingsCategories.filter(isAccessibleCategory).map(normalize),
+		accountPreferencesCategory
+	]);
 	const searchAdapter = {
 		get searchQuery() {
 			return categorySearch.searchQuery;
@@ -157,7 +177,7 @@
 			return categorySearch.showSearchResults;
 		},
 		get searchResults() {
-			return categorySearch.searchResults.map(normalize);
+			return categorySearch.searchResults.filter(isAccessibleCategory).map(normalize);
 		},
 		get isSearching() {
 			return categorySearch.isSearching;
@@ -180,11 +200,12 @@
 	matchingItemsLabel={m.settings_matching_settings()}
 	goToPageLabel={m.settings_go_to_page()}
 	categories={normalizedCategories}
+	groups={categoryGroups}
 	categorySearch={searchAdapter}
 	navigate={navigateToCategory}
 >
 	{#snippet resultsHeading()}
-		{m.settings_search_results({ query: categorySearch.searchQuery, count: categorySearch.searchResults.length })}
+		{m.settings_search_results({ query: categorySearch.searchQuery, count: searchAdapter.searchResults.length })}
 	{/snippet}
 	{#snippet moreKeywords(count: number)}
 		{m.count_more({ count })}

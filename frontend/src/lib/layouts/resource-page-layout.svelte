@@ -22,9 +22,12 @@
 	import StatCard from '#lib/components/stat-card.svelte';
 	import type { Snippet } from 'svelte';
 	import type { IconType } from '#lib/icons';
+	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import { m } from '#lib/paraglide/messages';
 	import { cn } from '#lib/utils';
 
 	interface Props {
+		environmentScoped?: boolean;
 		title: string;
 		subtitle?: string;
 		icon?: IconType;
@@ -36,6 +39,7 @@
 	}
 
 	let {
+		environmentScoped = false,
 		title,
 		subtitle,
 		icon: Icon,
@@ -48,8 +52,8 @@
 </script>
 
 <div class={cn('space-y-5 pt-3 md:space-y-7 md:pt-5', className)}>
-	<header class="flex items-start justify-between gap-4">
-		<div class="flex min-w-0 flex-1 items-start gap-3 sm:gap-4">
+	<header class="flex flex-wrap items-start justify-between gap-4">
+		<div class="flex min-w-48 flex-1 items-start gap-3 sm:gap-4">
 			{#if Icon}
 				<div
 					class="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary shadow-xs ring-1 ring-primary/15 ring-inset sm:size-10"
@@ -59,6 +63,9 @@
 			{/if}
 			<div class="min-w-0">
 				<h1 class="text-xl font-semibold tracking-tight sm:text-2xl">{title}</h1>
+				{#if environmentScoped && environmentStore.selected}
+					<p class="mt-1 text-xs text-muted-foreground">{m.resource_environment_cap()}: {environmentStore.selected.name}</p>
+				{/if}
 				{#if subtitle}
 					<p class="mt-1 text-sm text-muted-foreground">{subtitle}</p>
 				{/if}

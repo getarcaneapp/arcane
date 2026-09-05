@@ -256,6 +256,7 @@
 			buttons.push({
 				id: 'upload',
 				action: 'create',
+				primary: true,
 				label: m.images_upload_image(),
 				onclick: () => (isUploadDialogOpen = true),
 				disabled: !resourcesReady
@@ -310,7 +311,7 @@
 	]);
 </script>
 
-<ResourcePageLayout title={m.images()} subtitle={m.images_subtitle()} {actionButtons} {statCards}>
+<ResourcePageLayout environmentScoped title={m.images()} subtitle={m.images_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
 		{#if resourcesReady}
 			<ImageTable

@@ -178,3 +178,13 @@ export function getTableRowsForItems<T extends RowData & { id?: string }>(
 	const groupIds = new Set(groupItems.map((item) => item.id));
 	return table.getRowModel().rows.filter((row) => groupIds.has(row.original.id ?? ''));
 }
+
+export type TableEmptyState = {
+	title: string;
+	description: string;
+	action?: {
+		label: string;
+		href?: string;
+		onclick?: () => void;
+	};
+};

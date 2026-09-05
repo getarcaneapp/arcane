@@ -658,7 +658,14 @@
 </script>
 
 {#if volume}
-	<TabbedPageLayout backUrl="/volumes" backLabel={m.resource_volumes_cap()} {tabItems} {selectedTab} {onTabChange}>
+	<TabbedPageLayout
+		environmentScoped
+		backUrl="/volumes"
+		backLabel={m.resource_volumes_cap()}
+		{tabItems}
+		{selectedTab}
+		{onTabChange}
+	>
 		{#snippet headerInfo()}
 			<div class="flex flex-col gap-1">
 				<h1 class="text-2xl font-semibold tracking-tight break-all sm:text-3xl">{volume.name}</h1>

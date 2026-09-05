@@ -1,5 +1,6 @@
 <!-- Originally From  https://github.com/pocket-id/pocket-id/blob/main/frontend/src/lib/components/form/form-input.svelte -->
 <script lang="ts">
+	import { useId } from 'bits-ui';
 	import { Input } from '#lib/components/ui/input';
 	import DatePicker from '#lib/components/form/date-picker.svelte';
 	import { Textarea } from '#lib/components/ui/textarea';
@@ -38,6 +39,7 @@
 	} = $props();
 
 	const id = $derived(label?.toLowerCase().replace(/ /g, '-'));
+	const errorId = useId();
 </script>
 
 <div {...restProps}>
@@ -52,17 +54,40 @@
 			{@render children()}
 		{:else if input}
 			{#if type === 'switch'}
-				<Switch {id} bind:checked={input.value as boolean} {disabled} />
+				<Switch
+					aria-invalid={!!input.error}
+					aria-describedby={input.error ? errorId : undefined}
+					{id}
+					bind:checked={input.value as boolean}
+					{disabled}
+				/>
 			{:else if type === 'textarea'}
-				<Textarea {id} {placeholder} {rows} bind:value={input.value as string} {disabled} />
+				<Textarea
+					aria-invalid={!!input.error}
+					aria-describedby={input.error ? errorId : undefined}
+					{id}
+					{placeholder}
+					{rows}
+					bind:value={input.value as string}
+					{disabled}
+				/>
 			{:else if type === 'date'}
 				<DatePicker {id} bind:value={input.value as Temporal.PlainDate} {disabled} />
 			{:else}
-				<Input {id} {placeholder} {type} bind:value={input.value} {disabled} {autocomplete} />
+				<Input
+					aria-invalid={!!input.error}
+					aria-describedby={input.error ? errorId : undefined}
+					{id}
+					{placeholder}
+					{type}
+					bind:value={input.value}
+					{disabled}
+					{autocomplete}
+				/>
 			{/if}
 		{/if}
 		{#if input?.error}
-			<p class="mt-1 text-sm text-red-500">{input.error}</p>
+			<p id={errorId} class="mt-1 text-sm text-red-500">{input.error}</p>
 		{/if}
 		{#if helpText}
 			<p class="mt-1 text-xs text-muted-foreground">{helpText}</p>

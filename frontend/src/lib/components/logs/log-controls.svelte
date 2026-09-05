@@ -273,9 +273,24 @@
 
 		<div class="flex items-center gap-3">
 			{#if isStreaming}
-				<ArcaneButton action="stop" tone="outline" size="sm" class="text-xs font-medium" onclick={onStop} />
+				<ArcaneButton
+					action="stop"
+					customLabel={m.common_stop()}
+					tone="outline"
+					size="sm"
+					class="text-xs font-medium"
+					onclick={onStop}
+				/>
 			{:else}
-				<ArcaneButton action="start" tone="outline" size="sm" class="text-xs font-medium" onclick={onStart} {disabled} />
+				<ArcaneButton
+					action="start"
+					customLabel={m.common_start()}
+					tone="outline"
+					size="sm"
+					class="text-xs font-medium"
+					onclick={onStart}
+					{disabled}
+				/>
 			{/if}
 			<ArcaneButton
 				action="refresh"

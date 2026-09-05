@@ -1,3 +1,4 @@
+import { userHasPermission } from '#lib/utils/auth';
 import { containerService, type ContainerListRequestOptions } from '#lib/services/container-service';
 import { projectService } from '#lib/services/project-service';
 import { settingsService } from '#lib/services/settings-service';
@@ -10,7 +11,7 @@ import type { PageLoad } from './$types';
 import { environmentStore } from '#lib/stores/environment.store.svelte';
 
 export const load: PageLoad = async ({ parent }) => {
-	const { queryClient } = await parent();
+	const { queryClient, user } = await parent();
 	const envId = await environmentStore.getCurrentEnvironmentId();
 
 	const containerRequestOptions = ensureStandaloneContainerUpdatesFilter(
@@ -32,19 +33,25 @@ export const load: PageLoad = async ({ parent }) => {
 	let settings;
 	try {
 		[containers, projects, settings] = await Promise.all([
-			queryClient.fetchQuery({
-				queryKey: queryKeys.containers.list(envId, containerRequestOptions),
-				queryFn: () => containerService.getContainersForEnvironment(envId, containerRequestOptions)
-			}),
-			queryClient.fetchQuery({
-				queryKey: queryKeys.projects.list(envId, projectRequestOptions),
-				queryFn: () => projectService.getProjectsForEnvironment(envId, projectRequestOptions)
-			}),
+			userHasPermission(user, 'containers:list', envId)
+				? queryClient.fetchQuery({
+						queryKey: queryKeys.containers.list(envId, containerRequestOptions),
+						queryFn: () => containerService.getContainersForEnvironment(envId, containerRequestOptions)
+					})
+				: undefined,
+			userHasPermission(user, 'projects:list', envId)
+				? queryClient.fetchQuery({
+						queryKey: queryKeys.projects.list(envId, projectRequestOptions),
+						queryFn: () => projectService.getProjectsForEnvironment(envId, projectRequestOptions)
+					})
+				: undefined,
 			// `autoUpdateExcludedContainers` drives the ignored state on container rows.
-			queryClient.fetchQuery({
-				queryKey: queryKeys.settings.byEnvironment(envId),
-				queryFn: () => settingsService.getSettingsForEnvironmentMerged(envId)
-			})
+			userHasPermission(user, 'settings:read', envId)
+				? queryClient.fetchQuery({
+						queryKey: [...queryKeys.settings.byEnvironment(envId), 'updates'],
+						queryFn: () => settingsService.getSettingsForEnvironment(envId)
+					})
+				: undefined
 		]);
 	} catch (err) {
 		throwPageLoadError(err, 'Failed to load updates');

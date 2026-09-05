@@ -12,6 +12,7 @@ export interface CategoryMatchingItem {
 // Normalized category / search-result shape shared by both index pages.
 export interface NormalizedCategory {
 	id: string;
+	group?: string;
 	title: string;
 	description: string;
 	icon: Component;
@@ -19,4 +20,9 @@ export interface NormalizedCategory {
 	// settings resolves some ids to a different url — both flatten to this).
 	href: string;
 	matchingItems?: CategoryMatchingItem[];
+}
+
+export interface CategoryGroup {
+	id: string;
+	title: string;
 }

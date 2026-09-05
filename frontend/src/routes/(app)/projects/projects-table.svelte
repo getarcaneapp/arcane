@@ -179,7 +179,7 @@
 					cell: TagsCell,
 					filterOptions: tagCatalog.map((tag) => ({ label: tag.name, value: tag.name }))
 				},
-				{ accessorKey: 'path', title: m.common_working_directory(), sortable: true, cell: DirectoryCell },
+				{ accessorKey: 'path', title: m.common_working_directory(), sortable: true, cell: DirectoryCell, hidden: true },
 				{ accessorKey: 'gitOpsManagedBy', title: m.projects_col_provider(), cell: ProviderCell },
 				{ accessorKey: 'status', title: m.common_status(), sortable: true, cell: StatusCell },
 				{
@@ -189,20 +189,20 @@
 					sortable: false,
 					cell: UpdatesCell
 				},
-				{ accessorKey: 'createdAt', title: m.common_created(), sortable: true, cell: CreatedCell },
+				{ accessorKey: 'createdAt', title: m.common_created(), sortable: true, cell: CreatedCell, hidden: true },
 				{ accessorKey: 'serviceCount', title: m.services(), sortable: true }
 			] satisfies ColumnSpec<Project>[]
 	);
 
 	const mobileFields = [
 		{ id: 'id', label: m.common_id(), defaultVisible: false },
-		{ id: 'directory', label: m.common_working_directory(), defaultVisible: true },
+		{ id: 'directory', label: m.common_working_directory(), defaultVisible: false },
 		{ id: 'provider', label: m.projects_col_provider(), defaultVisible: true },
 		{ id: 'status', label: m.common_status(), defaultVisible: true },
 		{ id: 'tags', label: m.common_tags(), defaultVisible: true },
 		{ id: 'updates', label: m.updates(), defaultVisible: true },
 		{ id: 'serviceCount', label: m.services(), defaultVisible: true },
-		{ id: 'createdAt', label: m.common_created(), defaultVisible: true }
+		{ id: 'createdAt', label: m.common_created(), defaultVisible: false }
 	];
 
 	const bulkActions = $derived.by<BulkAction[]>(() => [
@@ -595,6 +595,13 @@
 {/snippet}
 
 <ArcaneTable
+	emptyState={{
+		title: m.common_no_results_found(),
+		description: m.empty_environment_description(),
+		action: hasPermission('projects:create', environmentStore.selected?.id)
+			? { label: m.common_create_button({ resource: m.resource_project() }), href: '/projects/new' }
+			: undefined
+	}}
 	persistKey="arcane-project-table"
 	items={projects}
 	bind:requestOptions

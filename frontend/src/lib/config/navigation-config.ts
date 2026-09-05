@@ -77,21 +77,21 @@ export const navigationItems: NavigationSections = {
 			accessSurfaceId: 'route.images.vulnerabilities'
 		},
 		{
+			title: m.events_title(),
+			url: '/events',
+			icon: EventsIcon,
+			shortcut: ['mod', '9'],
+			accessSurfaceId: 'route.events'
+		}
+	],
+	resourceItems: [
+		{
 			title: m.projects_title(),
 			url: '/projects',
 			icon: ProjectsIcon,
 			shortcut: ['mod', '2'],
 			accessSurfaceId: 'route.projects'
 		},
-		{
-			title: m.environments_title(),
-			url: '/environments',
-			icon: EnvironmentsIcon,
-			shortcut: ['mod', '3'],
-			accessSurfaceId: 'route.environments'
-		}
-	],
-	resourceItems: [
 		{
 			title: m.containers(),
 			url: '/containers',
@@ -132,24 +132,24 @@ export const navigationItems: NavigationSections = {
 		}
 	],
 	swarmItems: [
-		{ title: 'Services', url: '/swarm/services', icon: DockIcon, accessSurfaceId: 'route.swarm.services' },
-		{ title: 'Nodes', url: '/swarm/nodes', icon: UsersIcon, accessSurfaceId: 'route.swarm.nodes' },
-		{ title: 'Tasks', url: '/swarm/tasks', icon: JobsIcon, accessSurfaceId: 'route.swarm.tasks' },
-		{ title: 'Stacks', url: '/swarm/stacks', icon: LayersIcon, accessSurfaceId: 'route.swarm.stacks' },
-		{ title: 'Cluster', url: '/swarm/cluster', icon: SettingsIcon, accessSurfaceId: 'route.swarm.cluster' },
-		{ title: 'Configs', url: '/swarm/configs', icon: TemplateIcon, accessSurfaceId: 'route.swarm.configs' },
-		{ title: 'Secrets', url: '/swarm/secrets', icon: LockIcon, accessSurfaceId: 'route.swarm.secrets' }
+		{ title: m.services(), url: '/swarm/services', icon: DockIcon, accessSurfaceId: 'route.swarm.services' },
+		{ title: m.nodes(), url: '/swarm/nodes', icon: UsersIcon, accessSurfaceId: 'route.swarm.nodes' },
+		{ title: m.tasks(), url: '/swarm/tasks', icon: JobsIcon, accessSurfaceId: 'route.swarm.tasks' },
+		{ title: m.swarm_stacks_title(), url: '/swarm/stacks', icon: LayersIcon, accessSurfaceId: 'route.swarm.stacks' },
+		{ title: m.cluster(), url: '/swarm/cluster', icon: SettingsIcon, accessSurfaceId: 'route.swarm.cluster' },
+		{ title: m.swarm_configs_title(), url: '/swarm/configs', icon: TemplateIcon, accessSurfaceId: 'route.swarm.configs' },
+		{ title: m.swarm_secrets_title(), url: '/swarm/secrets', icon: LockIcon, accessSurfaceId: 'route.swarm.secrets' }
 	],
 	settingsItems: [
 		{
-			title: m.events_title(),
-			url: '/events',
-			icon: EventsIcon,
-			shortcut: ['mod', '9'],
-			accessSurfaceId: 'route.events'
+			title: m.environments_title(),
+			url: '/environments',
+			icon: EnvironmentsIcon,
+			shortcut: ['mod', '3'],
+			accessSurfaceId: 'route.environments'
 		},
 		{
-			title: m.customize_title(),
+			title: m.deployment(),
 			url: '/customize',
 			icon: CustomizeIcon,
 			shortcut: ['mod', '4'],
@@ -174,7 +174,7 @@ export const navigationItems: NavigationSections = {
 					accessSurfaceId: 'customize.category.variables'
 				},
 				{
-					title: m.git_repositories_title(),
+					title: m.repositories(),
 					url: '/customize/git-repositories',
 					icon: GitBranchIcon,
 					accessSurfaceId: 'customize.category.git-repositories'
@@ -280,10 +280,8 @@ export const navigationItems: NavigationSections = {
 // ---------- Permission-based filtering ----------
 
 /**
- * Filter a navigation tree to entries the user can reach. Empty parent groups
- * (i.e. those whose children were all filtered out and which themselves have
- * no access surface) are preserved; empty parent groups whose own access
- * surface check fails are removed.
+ * Filter navigation and children independently using backend-owned access surfaces.
+ * Category landing pages disappear when no children remain; resource links stay reachable.
  *
  * @param items navigation items to filter
  * @param user the current user (or null when unauthenticated)
@@ -302,10 +300,8 @@ export function filterByPermissions(
 		if (!canSeeItem(item, user, currentEnvId, accessManifest)) continue;
 		if (item.items && item.items.length > 0) {
 			const filteredChildren = filterByPermissions(item.items, user, currentEnvId, accessManifest);
-			// Drop a parent group only when it has children declared but none
-			// survived the filter. A parent with NO children declared (a leaf
-			// link that happens to have an empty items array) stays.
-			if (filteredChildren.length === 0 && item.items.length > 0) continue;
+			// Resource pages remain useful even when none of their optional tools are permitted.
+			if (filteredChildren.length === 0 && item.accessSurfaceId?.startsWith('landing.')) continue;
 			out.push({ ...item, items: filteredChildren });
 		} else {
 			out.push(item);
@@ -322,7 +318,7 @@ function canSeeItem(
 ): boolean {
 	if (item.adminOnly && !user.isGlobalAdmin) return false;
 	if (!item.accessSurfaceId) return true;
-	if (!accessManifest?.accessSurfaces?.length) return true;
+	if (!accessManifest?.accessSurfaces?.length) return false;
 	return canReachAccessSurface(accessManifest, item.accessSurfaceId, user, currentEnvId);
 }
 
@@ -357,7 +353,11 @@ export const DEFAULT_LANDING_PAGE = '/dashboard';
  * resource page).
  */
 export function getLandingPageNavItems(): NavigationItem[] {
-	return [...navigationItems.managementItems, ...navigationItems.resourceItems];
+	return [
+		...navigationItems.managementItems.filter((item) => item.url !== '/events'),
+		...navigationItems.resourceItems,
+		...navigationItems.settingsItems.filter((item) => item.url === '/environments')
+	];
 }
 
 export type MobileNavigationSettings = {
@@ -395,8 +395,7 @@ export function getAvailableMobileNavItems(options?: {
 		flatItems.push(...settingsParents);
 	}
 
-	if (options?.user === null) return [];
-	if (!options?.user) return flatItems;
+	if (!options?.user) return [];
 	return filterByPermissions(flatItems, options.user, options.currentEnvId, options.accessManifest);
 }
 
@@ -407,7 +406,7 @@ export const defaultMobileNavigationSettings: MobileNavigationSettings = {
 	scrollToHide: true
 };
 
-export function getManagementItems(environmentId: string): NavigationItem[] {
+export function getSetupItems(environmentId: string): NavigationItem[] {
 	const gitSyncsItem: NavigationItem = {
 		title: m.git_syncs_title(),
 		url: `/environments/${environmentId}/gitops`,
@@ -416,7 +415,7 @@ export function getManagementItems(environmentId: string): NavigationItem[] {
 		accessSurfaceId: 'route.environments.gitops'
 	};
 
-	return navigationItems.managementItems.map((item) => {
+	return navigationItems.settingsItems.map((item) => {
 		if (item.url !== '/environments') return item;
 		return { ...item, items: [...(item.items ?? []), gitSyncsItem] };
 	});

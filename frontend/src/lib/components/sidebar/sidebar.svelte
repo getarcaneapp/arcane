@@ -1,10 +1,5 @@
 <script lang="ts" module>
-	import {
-		navigationItems,
-		getManagementItems,
-		getSwarmNavigationItems,
-		filterByPermissions
-	} from '#lib/config/navigation-config';
+	import { navigationItems, getSetupItems, getSwarmNavigationItems, filterByPermissions } from '#lib/config/navigation-config';
 </script>
 
 <script lang="ts">
@@ -60,19 +55,17 @@
 	let envSwitcherOpen = $state(false);
 
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
-	const managementItemsRaw = $derived(getManagementItems(currentEnvId));
+	const setupItemsRaw = $derived(getSetupItems(currentEnvId));
 	const swarmItemsRaw = $derived(getSwarmNavigationItems(swarmEnabled));
 
 	const managementItems = $derived(
-		filterByPermissions(managementItemsRaw, effectiveUser ?? null, currentEnvId, permissionsManifest)
+		filterByPermissions(navigationItems.managementItems, effectiveUser ?? null, currentEnvId, permissionsManifest)
 	);
 	const resourceItems = $derived(
 		filterByPermissions(navigationItems.resourceItems, effectiveUser ?? null, currentEnvId, permissionsManifest)
 	);
 	const swarmItems = $derived(filterByPermissions(swarmItemsRaw, effectiveUser ?? null, currentEnvId, permissionsManifest));
-	const settingsItems = $derived(
-		filterByPermissions(navigationItems.settingsItems, effectiveUser ?? null, currentEnvId, permissionsManifest)
-	);
+	const settingsItems = $derived(filterByPermissions(setupItemsRaw, effectiveUser ?? null, currentEnvId, permissionsManifest));
 </script>
 
 <VersionInfoDialog
@@ -120,16 +113,16 @@
 	</Sidebar.Header>
 	<Sidebar.Content class={!isCollapsed ? '-mt-2' : ''}>
 		{#if managementItems.length > 0}
-			<SidebarItemGroup label={m.sidebar_management()} items={managementItems} />
+			<SidebarItemGroup label={m.common_overview()} items={managementItems} />
 		{/if}
 		{#if resourceItems.length > 0}
-			<SidebarItemGroup label={m.resources()} items={resourceItems} />
+			<SidebarItemGroup label={m.workloads()} items={resourceItems} />
+		{/if}
+		{#if settingsItems.length > 0}
+			<SidebarItemGroup label={m.setup()} items={settingsItems} />
 		{/if}
 		{#if swarmItems.length > 0}
 			<SidebarItemGroup label={m.swarm()} items={swarmItems} />
-		{/if}
-		{#if settingsItems.length > 0}
-			<SidebarItemGroup label={m.sidebar_administration()} items={settingsItems} />
 		{/if}
 	</Sidebar.Content>
 	<Sidebar.Footer>
