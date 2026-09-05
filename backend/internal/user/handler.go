@@ -2,8 +2,9 @@ package user
 
 import (
 	"context"
-	"strings"
 	"time"
+
+	"go.getarcane.app/kit/normalization"
 
 	"emperror.dev/errors"
 
@@ -381,7 +382,7 @@ func NormalizeOptionalEmail(email *string) (*string, error) {
 		return nil, nil
 	}
 
-	trimmedEmail := strings.TrimSpace(*email)
+	trimmedEmail := normalization.Text(*email, true, true)
 	if trimmedEmail == "" {
 		return nil, nil
 	}

@@ -7,8 +7,9 @@ import (
 )
 
 // Login represents the login request body.
+// Fields tagged with unorm and trim are trimmed and normalized to Unicode NFC.
 type Login struct {
-	Username string `json:"username" minLength:"1" maxLength:"255" doc:"Username of the user" example:"admin"`
+	Username string `json:"username" minLength:"1" maxLength:"255" doc:"Username of the user" example:"admin" unorm:"nfc" trim:"true"`
 	Password string `json:"password" minLength:"1" doc:"Password of the user"`
 }
 

@@ -18,6 +18,8 @@ import (
 	"time"
 	"uuid"
 
+	"go.getarcane.app/kit/normalization"
+
 	"emperror.dev/errors"
 
 	"github.com/samber/mo"
@@ -524,6 +526,9 @@ func (s *SettingsService) UpdateSettingValues(ctx context.Context, updates []lib
 }
 
 func (s *SettingsService) updateSettingValueNoRefreshInternal(ctx context.Context, key, value string) error {
+	if key == "oidcProviderName" {
+		value = normalization.Text(value, true, true)
+	}
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		settingVar := &SettingVariable{
 			Key:   key,
@@ -536,6 +541,9 @@ func (s *SettingsService) updateSettingValueNoRefreshInternal(ctx context.Contex
 // UpdateSettings publishes the refreshed snapshot before returning. Each
 // subscriber's effects remain ordered and may finish after this method returns.
 func (s *SettingsService) UpdateSettings(ctx context.Context, updates settingstypes.Update) ([]SettingVariable, error) {
+	if err := normalization.Normalize(&updates); err != nil {
+		return nil, err
+	}
 	result, err := s.writes.Execute(ctx, "update settings", func(writeCtx context.Context) (settingsUpdateResultInternal, error) {
 		return s.updateSettingsInternal(writeCtx, updates)
 	}, func(result settingsUpdateResultInternal, err error) {
@@ -707,6 +715,9 @@ func extractUpdateValue(field reflect.StructField, fieldValue reflect.Value) (st
 func (s *SettingsService) persistSettings(ctx context.Context, values []SettingVariable) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for _, setting := range values {
+			if setting.Key == "oidcProviderName" {
+				setting.Value = normalization.Text(setting.Value, true, true)
+			}
 			if err := tx.Save(&setting).Error; err != nil {
 				return errors.WrapIff(err, "failed to update setting %s", setting.Key)
 			}

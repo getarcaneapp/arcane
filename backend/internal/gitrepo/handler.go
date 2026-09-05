@@ -31,7 +31,7 @@ type ListGitRepositoriesInput struct {
 }
 
 type CreateGitRepositoryInput struct {
-	Body CreateGitRepositoryRequest
+	Body gitops.CreateRepositoryRequest
 }
 
 type GetGitRepositoryInput struct {
@@ -40,7 +40,7 @@ type GetGitRepositoryInput struct {
 
 type UpdateGitRepositoryInput struct {
 	ID   string `path:"id" doc:"Repository ID"`
-	Body UpdateGitRepositoryRequest
+	Body gitops.UpdateRepositoryRequest
 }
 
 type DeleteGitRepositoryInput struct {

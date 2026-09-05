@@ -16,27 +16,27 @@ type OidcUserInfo struct {
 	// Name is the full name of the user.
 	//
 	// Required: false
-	Name string `json:"name,omitempty"`
+	Name string `json:"name,omitempty" unorm:"nfc" trim:"true"`
 
 	// Email is the email address of the user.
 	//
 	// Required: false
-	Email string `json:"email,omitempty"`
+	Email string `json:"email,omitempty" unorm:"nfc" trim:"true"`
 
 	// PreferredUsername is the user's preferred username.
 	//
 	// Required: false
-	PreferredUsername string `json:"preferred_username,omitempty"`
+	PreferredUsername string `json:"preferred_username,omitempty" unorm:"nfc" trim:"true"`
 
 	// GivenName is the user's given name (first name).
 	//
 	// Required: false
-	GivenName string `json:"given_name,omitempty"`
+	GivenName string `json:"given_name,omitempty" unorm:"nfc" trim:"true"`
 
 	// FamilyName is the user's family name (last name).
 	//
 	// Required: false
-	FamilyName string `json:"family_name,omitempty"`
+	FamilyName string `json:"family_name,omitempty" unorm:"nfc" trim:"true"`
 
 	// Roles is a list of roles assigned to the user.
 	//

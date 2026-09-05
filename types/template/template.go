@@ -190,16 +190,17 @@ type Template struct {
 }
 
 // CreateRequest represents the request to create a template.
+// Fields tagged with unorm and trim are trimmed and normalized to Unicode NFC.
 type CreateRequest struct {
 	// Name of the template.
 	//
 	// Required: true
-	Name string `json:"name"`
+	Name string `json:"name" unorm:"nfc" trim:"true" minLength:"1"`
 
 	// Description of the template.
 	//
 	// Required: false
-	Description string `json:"description"`
+	Description string `json:"description" unorm:"nfc" trim:"true"`
 
 	// Content is the Docker Compose file content.
 	//
@@ -217,12 +218,12 @@ type UpdateRequest struct {
 	// Name of the template.
 	//
 	// Required: true
-	Name string `json:"name"`
+	Name string `json:"name" unorm:"nfc" trim:"true" minLength:"1"`
 
 	// Description of the template.
 	//
 	// Required: false
-	Description string `json:"description"`
+	Description string `json:"description" unorm:"nfc" trim:"true"`
 
 	// Content is the Docker Compose file content.
 	//
@@ -276,7 +277,7 @@ type CreateRegistryRequest struct {
 	// Name of the registry.
 	//
 	// Required: true
-	Name string `json:"name"`
+	Name string `json:"name" unorm:"nfc" trim:"true"`
 
 	// URL of the registry.
 	//
@@ -286,7 +287,7 @@ type CreateRegistryRequest struct {
 	// Description of the registry.
 	//
 	// Required: false
-	Description string `json:"description"`
+	Description string `json:"description" unorm:"nfc" trim:"true"`
 
 	// Enabled indicates if the registry is enabled.
 	//
@@ -299,7 +300,7 @@ type UpdateRegistryRequest struct {
 	// Name of the registry.
 	//
 	// Required: true
-	Name string `json:"name"`
+	Name string `json:"name" unorm:"nfc" trim:"true"`
 
 	// URL of the registry.
 	//
@@ -309,7 +310,7 @@ type UpdateRegistryRequest struct {
 	// Description of the registry.
 	//
 	// Required: false
-	Description string `json:"description"`
+	Description string `json:"description" unorm:"nfc" trim:"true"`
 
 	// Enabled indicates if the registry is enabled.
 	//

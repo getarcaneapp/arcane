@@ -5,6 +5,8 @@ import (
 	"net/url"
 	"strings"
 
+	"go.getarcane.app/kit/normalization"
+
 	"emperror.dev/errors"
 	"github.com/samber/mo"
 
@@ -15,7 +17,9 @@ import (
 )
 
 func normalizeCreateFederatedCredentialInternal(req federatedtypes.CreateFederatedCredential) (federatedtypes.CreateFederatedCredential, error) {
-	req.Name = strings.TrimSpace(req.Name)
+	if err := normalization.Normalize(&req); err != nil {
+		return req, common.Classify(common.ErrFederatedCredentialInvalid, err)
+	}
 	req.IssuerURL = strings.TrimRight(strings.TrimSpace(req.IssuerURL), "/")
 	req.SubjectClaim = strings.TrimSpace(req.SubjectClaim)
 	req.SubjectMatch = strings.TrimSpace(req.SubjectMatch)
@@ -27,7 +31,7 @@ func normalizeCreateFederatedCredentialInternal(req federatedtypes.CreateFederat
 	if req.SubjectClaim == "" {
 		req.SubjectClaim = defaultFederatedSubjectClaim
 	}
-	if req.Name == "" || req.SubjectMatch == "" || req.RoleID == "" || len(req.Audiences) == 0 {
+	if req.SubjectMatch == "" || req.RoleID == "" || len(req.Audiences) == 0 {
 		return req, common.Classify(common.ErrFederatedCredentialInvalid, errors.New("invalid federated credential"))
 	}
 	if err := validateIssuerURLInternal(req.IssuerURL); err != nil {
@@ -40,13 +44,10 @@ func normalizeCreateFederatedCredentialInternal(req federatedtypes.CreateFederat
 }
 
 func applyFederatedCredentialUpdateInternal(existing FederatedCredential, req federatedtypes.UpdateFederatedCredential) (FederatedCredential, bool, error) {
-	if req.Name != nil {
-		name := strings.TrimSpace(*req.Name)
-		if name == "" {
-			return existing, false, common.Classify(common.ErrFederatedCredentialInvalid, errors.New("invalid federated credential"))
-		}
-		existing.Name = name
+	if err := normalization.Normalize(&req); err != nil {
+		return existing, false, common.Classify(common.ErrFederatedCredentialInvalid, err)
 	}
+	utils.ApplyChanged(&existing.Name, mo.PointerToOption(req.Name))
 	if req.Description != nil {
 		existing.Description = req.Description
 	}

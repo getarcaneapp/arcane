@@ -274,7 +274,7 @@ type CreateRepositoryRequest struct {
 	// Name of the git repository.
 	//
 	// Required: true
-	Name string `json:"name" binding:"required"`
+	Name string `json:"name" binding:"required" unorm:"nfc" trim:"true"`
 
 	// URL of the git repository.
 	//
@@ -284,7 +284,7 @@ type CreateRepositoryRequest struct {
 	// AuthType specifies the authentication method (none, http, ssh).
 	//
 	// Required: true
-	AuthType string `json:"authType" binding:"required"`
+	AuthType string `json:"authType" binding:"required,oneof=none http ssh"`
 
 	// Username for HTTP authentication.
 	//
@@ -306,12 +306,12 @@ type CreateRepositoryRequest struct {
 	// Default: accept_new
 	//
 	// Required: false
-	SSHHostKeyVerification string `json:"sshHostKeyVerification,omitempty"`
+	SSHHostKeyVerification string `json:"sshHostKeyVerification,omitempty" binding:"omitempty,oneof=strict accept_new skip"`
 
 	// Description of the git repository.
 	//
 	// Required: false
-	Description *string `json:"description,omitempty"`
+	Description *string `json:"description,omitempty" unorm:"nfc" trim:"true"`
 
 	// Enabled indicates if the repository is enabled.
 	//
@@ -324,7 +324,7 @@ type UpdateRepositoryRequest struct {
 	// Name of the git repository.
 	//
 	// Required: false
-	Name *string `json:"name,omitzero"`
+	Name *string `json:"name,omitzero" unorm:"nfc" trim:"true"`
 
 	// URL of the git repository.
 	//
@@ -334,7 +334,7 @@ type UpdateRepositoryRequest struct {
 	// AuthType specifies the authentication method (none, http, ssh).
 	//
 	// Required: false
-	AuthType *string `json:"authType,omitzero"`
+	AuthType *string `json:"authType,omitzero" binding:"omitempty,oneof=none http ssh"`
 
 	// Username for HTTP authentication.
 	//
@@ -355,12 +355,12 @@ type UpdateRepositoryRequest struct {
 	// Options: strict (require known_hosts), accept_new (auto-add new hosts), skip (disable verification).
 	//
 	// Required: false
-	SSHHostKeyVerification *string `json:"sshHostKeyVerification,omitzero"`
+	SSHHostKeyVerification *string `json:"sshHostKeyVerification,omitzero" binding:"omitempty,oneof=strict accept_new skip"`
 
 	// Description of the git repository.
 	//
 	// Required: false
-	Description *string `json:"description,omitzero"`
+	Description *string `json:"description,omitzero" unorm:"nfc" trim:"true"`
 
 	// Enabled indicates if the repository is enabled.
 	//
@@ -757,7 +757,7 @@ type RepositorySync struct {
 	// Name of the git repository.
 	//
 	// Required: true
-	Name string `json:"name" binding:"required"`
+	Name string `json:"name" binding:"required" unorm:"nfc" trim:"true"`
 
 	// URL of the git repository.
 	//
@@ -792,7 +792,7 @@ type RepositorySync struct {
 	// Description of the git repository.
 	//
 	// Required: false
-	Description *string `json:"description,omitempty"`
+	Description *string `json:"description,omitempty" unorm:"nfc" trim:"true"`
 
 	// Enabled indicates if the repository is enabled.
 	//

@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	sqliteutil "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/sqlite"
+
 	"emperror.dev/errors"
 
 	"github.com/libtnb/sqlite"
@@ -121,6 +123,9 @@ func connectDatabaseInternal(ctx context.Context, databaseURL string) (*DB, erro
 
 	switch {
 	case strings.HasPrefix(databaseURL, "file:"):
+		if err := sqliteutil.RegisterFunctions(); err != nil {
+			return nil, errors.WrapIf(err, "failed to register SQLite functions")
+		}
 		connString, err := ParseSQLiteConnectionString(databaseURL)
 		if err != nil {
 			return nil, errors.WrapIf(err, "failed to parse SQLite connection string")

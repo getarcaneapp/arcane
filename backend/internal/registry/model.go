@@ -29,31 +29,3 @@ type ContainerRegistry struct {
 func (ContainerRegistry) TableName() string {
 	return "container_registries"
 }
-
-type CreateContainerRegistryRequest struct {
-	URL                string   `json:"url" binding:"required"`
-	Username           string   `json:"username"`
-	Token              string   `json:"token"`
-	Description        *string  `json:"description"`
-	Insecure           *bool    `json:"insecure"`
-	Enabled            *bool    `json:"enabled"`
-	RegistryType       string   `json:"registryType"`
-	RepositoryNames    []string `json:"repositoryNames"`
-	AWSAccessKeyID     string   `json:"awsAccessKeyId"`
-	AWSSecretAccessKey string   `json:"awsSecretAccessKey"`
-	AWSRegion          string   `json:"awsRegion"`
-}
-
-type UpdateContainerRegistryRequest struct {
-	URL                *string   `json:"url"`
-	Username           *string   `json:"username"`
-	Token              *string   `json:"token"`
-	Description        *string   `json:"description"`
-	Insecure           *bool     `json:"insecure"`
-	Enabled            *bool     `json:"enabled"`
-	RegistryType       *string   `json:"registryType"`
-	RepositoryNames    *[]string `json:"repositoryNames"`
-	AWSAccessKeyID     *string   `json:"awsAccessKeyId"`
-	AWSSecretAccessKey *string   `json:"awsSecretAccessKey"`
-	AWSRegion          *string   `json:"awsRegion"`
-}

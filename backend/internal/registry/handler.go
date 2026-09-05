@@ -38,7 +38,7 @@ type ListContainerRegistriesInput struct {
 }
 
 type CreateContainerRegistryInput struct {
-	Body CreateContainerRegistryRequest
+	Body containerregistry.CreateContainerRegistryRequest
 }
 
 type GetContainerRegistryInput struct {
@@ -47,7 +47,7 @@ type GetContainerRegistryInput struct {
 
 type UpdateContainerRegistryInput struct {
 	ID   string `path:"id" doc:"Registry ID"`
-	Body UpdateContainerRegistryRequest
+	Body containerregistry.UpdateContainerRegistryRequest
 }
 
 type DeleteContainerRegistryInput struct {

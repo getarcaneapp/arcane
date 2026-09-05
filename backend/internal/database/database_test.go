@@ -3,11 +3,17 @@ package database
 import (
 	"context"
 	stdsql "database/sql"
+	"fmt"
 	"io/fs"
+	"net/url"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
+
+	sqliteutil "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/sqlite"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -394,6 +400,7 @@ func downgradeTargetVersionInternal(t *testing.T) int64 {
 
 func newSQLiteSQLDBInternal(t *testing.T, dirPath, fileName string) (*stdsql.DB, string) {
 	t.Helper()
+	require.NoError(t, sqliteutil.RegisterFunctions())
 
 	dsn := "file:" + filepath.Join(dirPath, fileName)
 	db, err := stdsql.Open("sqlite", dsn)
@@ -730,4 +737,108 @@ func sectionHasSQLInternal(section string) bool {
 		return true
 	}
 	return false
+}
+
+func TestIdentityNormalizationMigration(t *testing.T) {
+	for _, tc := range []struct {
+		name                    string
+		first, second           string
+		emailFirst, emailSecond string
+		wantError               string
+	}{
+		{name: "normalizes", first: "\t\n\v\f\r \u0085\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000Jose\u0301\u3000", second: "Other"},
+		{name: "username collision", first: "Jose\u0301", second: "José", wantError: "UNIQUE constraint failed"},
+		{name: "empty username follows existing constraints", first: "\t ", second: "Other"},
+		{name: "email normalization follows existing constraints", first: "one", second: "two", emailFirst: " é@example.com", emailSecond: "e\u0301@example.com"},
+		{name: "login ambiguity follows existing constraints", first: " é@example.com", second: "two", emailSecond: "e\u0301@example.com"},
+		{name: "existing duplicate emails", first: "one", second: "two", emailFirst: "a@example.com", emailSecond: "a@example.com"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db, _ := newSQLiteSQLDBInternal(t, t.TempDir(), "identities.db")
+			err := migrateDatabaseToVersionInternal(context.Background(), db, dbProviderSQLite, MigrationOptions{}, 80)
+			require.NoError(t, err)
+			_, err = db.Exec("INSERT INTO users (id, username, email, display_name, password_hash) VALUES (?, ?, ?, ?, 'unchanged'), (?, ?, ?, ?, 'unchanged')", "first", tc.first, tc.emailFirst, "\t\n\v\f\r \u0085\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000Jose\u0301\u3000", "second", tc.second, tc.emailSecond, nil)
+			require.NoError(t, err)
+			err = migrateDatabaseInternal(context.Background(), db, dbProviderSQLite, MigrationOptions{})
+			if tc.wantError != "" {
+				require.ErrorContains(t, err, tc.wantError)
+				var original string
+				require.NoError(t, db.QueryRow("SELECT username FROM users WHERE id = 'first'").Scan(&original))
+				require.Equal(t, tc.first, original)
+				return
+			}
+			require.NoError(t, err)
+			var displayName stdsql.NullString
+			require.NoError(t, db.QueryRow("SELECT display_name FROM users WHERE id = 'first'").Scan(&displayName))
+			require.Equal(t, "José", displayName.String)
+			require.NoError(t, migrateDatabaseInternal(context.Background(), db, dbProviderSQLite, MigrationOptions{}))
+		})
+	}
+}
+
+func TestIdentityNormalizationGooseUpgrade(t *testing.T) {
+	ctx := context.Background()
+	db, _ := newSQLiteSQLDBInternal(t, t.TempDir(), "upgrade.db")
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, db, dbProviderSQLite, MigrationOptions{}, 80))
+	_, err := db.Exec("INSERT INTO users (id, username, password_hash) VALUES (?, ?, ?), (?, ?, ?)", "first", "\t\n\v\f\r \u0085\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000Jose\u0301\u3000", "unchanged", "second", "José", "unchanged")
+	require.NoError(t, err)
+	require.ErrorContains(t, migrateDatabaseInternal(ctx, db, dbProviderSQLite, MigrationOptions{}), "UNIQUE constraint failed")
+	var version int64
+	require.NoError(t, db.QueryRow("SELECT MAX(version_id) FROM goose_db_version WHERE is_applied = 1").Scan(&version))
+	require.Equal(t, int64(80), version)
+	_, err = db.Exec("UPDATE users SET username = 'Other' WHERE id = 'second'")
+	require.NoError(t, err)
+	require.NoError(t, migrateDatabaseInternal(ctx, db, dbProviderSQLite, MigrationOptions{}))
+	require.NoError(t, migrateDatabaseInternal(ctx, db, dbProviderSQLite, MigrationOptions{}))
+	var username, password string
+	require.NoError(t, db.QueryRow("SELECT username, password_hash FROM users WHERE id = 'first'").Scan(&username, &password))
+	require.Equal(t, "José", username)
+	require.Equal(t, "unchanged", password)
+	require.NoError(t, db.QueryRow("SELECT MAX(version_id) FROM goose_db_version WHERE is_applied = 1").Scan(&version))
+	require.Equal(t, int64(81), version)
+}
+
+func TestIdentityNormalizationPostgresUpgrade(t *testing.T) {
+	dsn := os.Getenv("ARCANE_TEST_POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("ARCANE_TEST_POSTGRES_DSN is not set")
+	}
+	ctx := context.Background()
+	admin, err := stdsql.Open("pgx", dsn)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, admin.Close()) })
+	schema := fmt.Sprintf("normalization_test_%d", time.Now().UnixNano())
+	_, err = admin.ExecContext(ctx, "CREATE SCHEMA "+schema)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, err := admin.ExecContext(ctx, "DROP SCHEMA "+schema+" CASCADE")
+		require.NoError(t, err)
+	})
+	parsed, err := url.Parse(dsn)
+	require.NoError(t, err)
+	require.Contains(t, []string{"postgres", "postgresql"}, parsed.Scheme)
+	query := parsed.Query()
+	query.Set("search_path", schema)
+	parsed.RawQuery = query.Encode()
+	db, err := stdsql.Open("pgx", parsed.String())
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, db, dbProviderPostgres, MigrationOptions{}, 80))
+	_, err = db.ExecContext(ctx, "INSERT INTO users (id, username, email, password_hash) VALUES ($1, $2, $3, $4), ($5, $6, $7, $8)", "first", "\t\n\v\f\r \u0085\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000Jose\u0301\u3000", "a@example.com", "unchanged", "second", "José", " a@example.com ", "unchanged")
+	require.NoError(t, err)
+	require.ErrorContains(t, migrateDatabaseInternal(ctx, db, dbProviderPostgres, MigrationOptions{}), "duplicate key value violates unique constraint")
+	_, err = db.ExecContext(ctx, "UPDATE users SET username = 'Other' WHERE id = 'second'")
+	require.NoError(t, err)
+	var version int64
+	require.NoError(t, db.QueryRowContext(ctx, "SELECT MAX(version_id) FROM goose_db_version WHERE is_applied").Scan(&version))
+	require.Equal(t, int64(80), version)
+	// Email duplicates are allowed by the existing schema.
+	require.NoError(t, migrateDatabaseInternal(ctx, db, dbProviderPostgres, MigrationOptions{}))
+	require.NoError(t, migrateDatabaseInternal(ctx, db, dbProviderPostgres, MigrationOptions{}))
+	var username, password string
+	require.NoError(t, db.QueryRowContext(ctx, "SELECT username, password_hash FROM users WHERE id = 'first'").Scan(&username, &password))
+	require.Equal(t, "José", username)
+	require.Equal(t, "unchanged", password)
+	require.NoError(t, db.QueryRowContext(ctx, "SELECT MAX(version_id) FROM goose_db_version WHERE is_applied").Scan(&version))
+	require.Equal(t, int64(81), version)
 }

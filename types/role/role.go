@@ -18,17 +18,18 @@ type Role struct {
 }
 
 // CreateRole is the request body for creating a custom role.
+// Fields tagged with unorm and trim are trimmed and normalized to Unicode NFC.
 type CreateRole struct {
-	Name        string   `json:"name" minLength:"1" maxLength:"100" doc:"Display name of the role" example:"Deploy Bot"`
-	Description *string  `json:"description,omitempty" maxLength:"500" doc:"Optional human description"`
+	Name        string   `json:"name" minLength:"1" maxLength:"100" doc:"Display name of the role" example:"Deploy Bot" unorm:"nfc" trim:"true"`
+	Description *string  `json:"description,omitempty" maxLength:"500" doc:"Optional human description" unorm:"nfc" trim:"true"`
 	Permissions []string `json:"permissions" minItems:"1" doc:"Permission strings granted by this role"`
 }
 
 // UpdateRole is the request body for editing a custom role. Built-in roles
 // cannot be updated and will return 403.
 type UpdateRole struct {
-	Name        string   `json:"name" minLength:"1" maxLength:"100" doc:"Display name of the role"`
-	Description *string  `json:"description,omitzero" maxLength:"500" doc:"Optional human description"`
+	Name        string   `json:"name" minLength:"1" maxLength:"100" doc:"Display name of the role" unorm:"nfc" trim:"true"`
+	Description *string  `json:"description,omitzero" maxLength:"500" doc:"Optional human description" unorm:"nfc" trim:"true"`
 	Permissions []string `json:"permissions" minItems:"1" doc:"Permission strings granted by this role"`
 }
 
