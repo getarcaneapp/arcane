@@ -3347,6 +3347,8 @@
   "system_backups_recovery_key_saved": "Obnovovací klíč byl nakonfigurován.",
   "system_backups_recovery_key_save_failed": "Nepodařilo se nakonfigurovat obnovovací klíč.",
   "system_backups_enabled_description": "Spouštět šifrovanou zálohu pro obnovu Arcane podle nakonfigurovaného plánu cron.",
+  "backups_started": "Zálohování bylo zahájeno",
+  "backups_running": "Probíhá zálohování",
   "system_backups_created": "Systémová záloha Arcane byla úspěšně vytvořena.",
   "system_backups_create_failed": "Nepodařilo se vytvořit systémovou zálohu Arcane.",
   "system_backups_policy_saved": "Plán systémové zálohy byl uložen.",
