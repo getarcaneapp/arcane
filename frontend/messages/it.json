@@ -3347,6 +3347,8 @@
   "system_backups_recovery_key_saved": "Chiave di ripristino configurata.",
   "system_backups_recovery_key_save_failed": "Impossibile configurare la chiave di ripristino.",
   "system_backups_enabled_description": "Esegui un backup di ripristino Arcane crittografato secondo la pianificazione cron configurata.",
+  "backups_started": "Avvio del backup",
+  "backups_running": "Backup in corso",
   "system_backups_created": "Il backup del sistema Arcane è stato creato con successo.",
   "system_backups_create_failed": "Impossibile creare il backup del sistema Arcane.",
   "system_backups_policy_saved": "Pianificazione del backup del sistema salvata.",
