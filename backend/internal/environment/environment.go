@@ -2,6 +2,7 @@ package environment
 
 import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
+	"go.getarcane.app/kit/normalization"
 
 	"context"
 	"fmt"
@@ -212,6 +213,9 @@ func (s *EnvironmentService) EnsureLocalEnvironment(ctx context.Context, appUrl 
 }
 
 func (s *EnvironmentService) CreateEnvironment(ctx context.Context, environment *Environment, userID, username *string) (*Environment, error) {
+	if err := normalization.Normalize(environment); err != nil {
+		return nil, err
+	}
 	environment.ID = uuid.New().String()
 
 	// Only set status to offline if not already set (e.g., API key flow sets it to pending)
@@ -250,6 +254,9 @@ func (s *EnvironmentService) GetEnvironmentByID(ctx context.Context, id string) 
 }
 
 func (s *EnvironmentService) UpdateEnvironment(ctx context.Context, id string, updates map[string]any, userID, username *string) (*Environment, error) {
+	if name, ok := updates["name"].(string); ok {
+		updates["name"] = normalization.Text(name, true, true)
+	}
 	current, err := s.GetEnvironmentByID(ctx, id)
 	if err != nil {
 		return nil, err

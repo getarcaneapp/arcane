@@ -12,10 +12,10 @@ import (
 type User struct {
 	database.BaseModel
 
-	Username               string           `json:"username" sortable:"true"`
+	Username               string           `json:"username" sortable:"true" unorm:"nfc" trim:"true" minLength:"1"`
 	PasswordHash           string           `json:"-" gorm:"column:password_hash"`
-	DisplayName            *string          `json:"displayName,omitempty" gorm:"column:display_name" sortable:"true"`
-	Email                  *string          `json:"email,omitempty" sortable:"true"`
+	DisplayName            *string          `json:"displayName,omitempty" gorm:"column:display_name" sortable:"true" unorm:"nfc" trim:"true"`
+	Email                  *string          `json:"email,omitempty" sortable:"true" unorm:"nfc" trim:"true"`
 	OidcSubjectId          *string          `json:"oidcSubjectId,omitempty" gorm:"column:oidc_subject_id"`
 	LastLogin              *time.Time       `json:"lastLogin,omitempty" gorm:"column:last_login" sortable:"true"`
 	Locale                 *string          `json:"locale,omitempty" gorm:"column:locale"`

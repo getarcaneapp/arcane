@@ -807,9 +807,11 @@ func TestFindOrCreateOidcUser_MergeEnabled_EmailNotVerified_NoExistingUser_Creat
 	authSvc.settingsService = settingsSvc
 
 	userInfo := auth.OidcUserInfo{
-		Subject:       "sub-123",
-		Email:         "new@example.com",
-		EmailVerified: false, // provider omitted/false
+		Subject:           "sub-123",
+		Email:             " ne\u0301w@example.com ",
+		PreferredUsername: " Jose\u0301 ",
+		Name:              " Jose\u0301 ",
+		EmailVerified:     false, // provider omitted/false
 	}
 
 	created, isNew, err := authSvc.findOrCreateOidcUser(ctx, userInfo, &auth.OidcTokenResponse{AccessToken: "at"})
@@ -819,7 +821,9 @@ func TestFindOrCreateOidcUser_MergeEnabled_EmailNotVerified_NoExistingUser_Creat
 	require.NotNil(t, created.OidcSubjectId)
 	require.Equal(t, userInfo.Subject, *created.OidcSubjectId)
 	require.NotNil(t, created.Email)
-	require.Equal(t, userInfo.Email, *created.Email)
+	require.Equal(t, "néw@example.com", *created.Email)
+	require.Equal(t, "José", created.Username)
+	require.Equal(t, "José", *created.DisplayName)
 	require.NotEmpty(t, created.Username)
 
 	// Ensure the user actually persisted
@@ -929,6 +933,7 @@ func TestAuthenticateLocalPrimary_EmailFallback(t *testing.T) {
 	require.NoError(t, err)
 	for _, u := range []*common.User{
 		{ID: "u-email-login", Username: "bob", Email: new("bob@example.com"), PasswordHash: hash},
+		{ID: "u-unicode", Username: " José ", Email: new(" josé@example.com "), PasswordHash: hash},
 		{ID: "u-dup-1", Username: "dup1", Email: new("dup@example.com"), PasswordHash: hash},
 		{ID: "u-dup-2", Username: "dup2", Email: new("dup@example.com"), PasswordHash: dupHash},
 		{ID: "u-carol", Username: "carol@example.com", Email: new("carol@example.com"), PasswordHash: hash},
@@ -946,6 +951,9 @@ func TestAuthenticateLocalPrimary_EmailFallback(t *testing.T) {
 		wantID   string
 		wantErr  error
 	}{
+		{name: "normalized username", login: " Jose\u0301 ", password: "hunter22!", wantID: "u-unicode"},
+		{name: "normalized email", login: " jose\u0301@example.com ", password: "hunter22!", wantID: "u-unicode"},
+		{name: "password not trimmed", login: "José", password: " hunter22! ", wantErr: ErrInvalidCredentials},
 		{name: "email resolves user", login: "bob@example.com", password: "hunter22!", wantID: "u-email-login"},
 		{name: "unknown email", login: "nobody@example.com", password: "hunter22!", wantErr: ErrInvalidCredentials},
 		{name: "duplicate email rejected", login: "dup@example.com", password: "dup-two-pass!", wantErr: ErrInvalidCredentials},

@@ -421,7 +421,7 @@ type Update struct {
 	// OidcProviderName is the custom display name for the OIDC provider.
 	//
 	// Required: false
-	OidcProviderName *string `json:"oidcProviderName,omitzero"`
+	OidcProviderName *string `json:"oidcProviderName,omitzero" unorm:"nfc" trim:"true"`
 
 	// OidcProviderLogoUrl is the custom logo URL for the OIDC provider.
 	//

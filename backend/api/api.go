@@ -35,7 +35,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
-	s3domain "github.com/getarcaneapp/arcane/backend/v2/internal/s3"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/s3"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/search"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/swarm"
@@ -231,7 +231,7 @@ type HandlerDeps struct {
 	Build             *build.BuildService
 	BuildWorkspace    *build.BuildWorkspaceService
 	Volume            *volume.Module
-	S3Destination     *s3domain.Module
+	S3Destination     *s3.Module
 	SystemBackup      *systembackup.Module
 	Network           *network.NetworkService
 	Port              *port.PortService
@@ -319,6 +319,7 @@ func SetupAPI(e *echo.Echo, apiGroup *echo.Group, appCtx handlerutil.ActivityApp
 	// Add authentication middleware
 	api.UseMiddleware(auth.NewHumaMiddleware(api, deps.Auth.Service(), deps.ApiKey.Service(), deps.Role.Service(), deps.Environment.Service(), cfg))
 	api.UseMiddleware(middleware.NewActivityBatchID())
+	registerNormalizationInternal(api)
 
 	// Register all Huma handlers
 	registerHandlersInternal(api, deps, appCtx, cfg)
@@ -398,6 +399,7 @@ func SetupAPIForSpec() huma.API {
 	api := humaecho.NewWithGroup(e, apiGroup, humaConfig)
 
 	// Register handlers with zero-value dependencies for schema discovery only.
+	registerNormalizationInternal(api)
 	registerHandlersInternal(api, HandlerDeps{}, handlerutil.NewActivityAppContext(context.Background()), nil)
 
 	return api

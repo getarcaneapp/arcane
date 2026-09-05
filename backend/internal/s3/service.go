@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 
+	"go.getarcane.app/kit/normalization"
+
 	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -126,6 +128,9 @@ func applyS3ConfigurationInternal(destination *S3Destination, configuration s3co
 }
 
 func (s *S3DestinationService) CreateS3Destination(ctx context.Context, input backuptypes.CreateS3Destination) (*backuptypes.S3Destination, error) {
+	if err := normalization.Normalize(&input); err != nil {
+		return nil, err
+	}
 	configuration := destinationConfigurationInternal("", input)
 	if err := configuration.Validate(true); err != nil {
 		return nil, err
@@ -160,6 +165,9 @@ func storedConfigurationInternal(destination *S3Destination) s3config.Configurat
 }
 
 func (s *S3DestinationService) UpdateS3Destination(ctx context.Context, id string, input backuptypes.UpdateS3Destination) (*backuptypes.S3Destination, error) {
+	if err := normalization.Normalize(&input); err != nil {
+		return nil, err
+	}
 	configuration := destinationConfigurationInternal("", input)
 	if err := configuration.Validate(false); err != nil {
 		return nil, err
@@ -241,6 +249,9 @@ func (s *S3DestinationService) S3DestinationExists(ctx context.Context, id strin
 
 // SyncS3Destinations replaces an agent's destination cache with the manager-owned destinations.
 func (s *S3DestinationService) SyncS3Destinations(ctx context.Context, destinations []backuptypes.S3DestinationSync) error {
+	if err := normalization.Normalize(&destinations); err != nil {
+		return err
+	}
 	var existing []S3Destination
 	if err := s.db.WithContext(ctx).Find(&existing).Error; err != nil {
 		return fmt.Errorf("failed to load existing S3 destinations: %w", err)
@@ -324,6 +335,9 @@ func (s *S3DestinationService) TestS3Destination(ctx context.Context, id string,
 		return err
 	}
 	if input != nil {
+		if err := normalization.Normalize(input); err != nil {
+			return err
+		}
 		updated := destinationConfigurationInternal("", *input)
 		updated.ID = configuration.ID
 		if updated.SecretAccessKey == "" {
@@ -340,5 +354,8 @@ func (s *S3DestinationService) TestS3Destination(ctx context.Context, id string,
 }
 
 func (s *S3DestinationService) TestS3DestinationConfiguration(ctx context.Context, input backuptypes.CreateS3Destination) error {
+	if err := normalization.Normalize(&input); err != nil {
+		return err
+	}
 	return s3config.TestConnection(ctx, destinationConfigurationInternal("", input))
 }

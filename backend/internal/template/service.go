@@ -15,6 +15,8 @@ import (
 	"time"
 	"uuid"
 
+	"go.getarcane.app/kit/normalization"
+
 	"emperror.dev/errors"
 
 	composeloader "github.com/compose-spec/compose-go/v2/loader"
@@ -301,6 +303,9 @@ func (s *TemplateService) remoteCacheSizeInternal() int {
 }
 
 func (s *TemplateService) CreateTemplate(ctx context.Context, template *ComposeTemplate) error {
+	if err := normalization.Normalize(template); err != nil {
+		return err
+	}
 	if template.ID == "" {
 		template.ID = uuid.New().String()
 	}
@@ -316,6 +321,9 @@ func (s *TemplateService) CreateTemplate(ctx context.Context, template *ComposeT
 }
 
 func (s *TemplateService) UpdateTemplate(ctx context.Context, id string, updates *ComposeTemplate) error {
+	if err := normalization.Normalize(updates); err != nil {
+		return err
+	}
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var existing ComposeTemplate
 		if err := tx.Where("id = ?", id).First(&existing).Error; err != nil {
@@ -466,6 +474,9 @@ func (s *TemplateService) GetRegistryFetchErrors() map[string]string {
 }
 
 func (s *TemplateService) CreateRegistry(ctx context.Context, registry *TemplateRegistry) error {
+	if err := normalization.Normalize(registry); err != nil {
+		return err
+	}
 	// Hydrate metadata if needed
 	if registry.Name == "" || registry.Description == "" {
 		if registry.URL == "" {
@@ -483,6 +494,9 @@ func (s *TemplateService) CreateRegistry(ctx context.Context, registry *Template
 		}
 	}
 
+	if err := normalization.Normalize(registry); err != nil {
+		return err
+	}
 	if registry.ID == "" {
 		registry.ID = uuid.New().String()
 	}
@@ -502,6 +516,9 @@ func (s *TemplateService) CreateRegistry(ctx context.Context, registry *Template
 }
 
 func (s *TemplateService) UpdateRegistry(ctx context.Context, id string, updates *TemplateRegistry) error {
+	if err := normalization.Normalize(updates); err != nil {
+		return err
+	}
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var existing TemplateRegistry
 		if err := tx.Where("id = ?", id).First(&existing).Error; err != nil {
@@ -515,6 +532,9 @@ func (s *TemplateService) UpdateRegistry(ctx context.Context, id string, updates
 			return err
 		}
 
+		if err := normalization.Normalize(updates); err != nil {
+			return err
+		}
 		if err := tx.Model(&TemplateRegistry{}).Where("id = ?", id).
 			Select("Name", "URL", "Description", "Enabled").
 			Updates(updates).Error; err != nil {

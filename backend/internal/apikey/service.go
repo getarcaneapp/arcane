@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"go.getarcane.app/kit/normalization"
+
 	"emperror.dev/errors"
 
 	"github.com/samber/hot"
@@ -332,6 +334,9 @@ func (s *ApiKeyService) invalidateValidatedKeysInternal(ids ...string) {
 }
 
 func (s *ApiKeyService) CreateApiKey(ctx context.Context, userID string, callerPerms *authz.PermissionSet, req apikey.CreateApiKey) (*apikey.ApiKeyCreatedDto, error) {
+	if err := normalization.Normalize(&req); err != nil {
+		return nil, err
+	}
 	if err := validateGrantsAgainstPermissionSetInternal(callerPerms, req.Permissions); err != nil {
 		return nil, err
 	}
@@ -425,6 +430,9 @@ func toApiKeyPermissionRowsInternal(apiKeyID string, grants []apikey.PermissionG
 // no permission grants of their own; the auth middleware resolves them to the
 // owner's role permissions, so there is nothing to validate or escalate here.
 func (s *ApiKeyService) CreatePersonalApiKey(ctx context.Context, userID string, req apikey.CreateUserApiKey) (*apikey.ApiKeyCreatedDto, error) {
+	if err := normalization.Normalize(&req); err != nil {
+		return nil, err
+	}
 	rawKey, err := s.generateApiKey()
 	if err != nil {
 		return nil, err
@@ -856,6 +864,9 @@ func (s *ApiKeyService) ListApiKeysByUser(ctx context.Context, userID string) ([
 }
 
 func (s *ApiKeyService) UpdateApiKey(ctx context.Context, callerPerms *authz.PermissionSet, id string, req apikey.UpdateApiKey) (*apikey.ApiKey, error) {
+	if err := normalization.Normalize(&req); err != nil {
+		return nil, err
+	}
 	var ak ApiKey
 	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&ak).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {

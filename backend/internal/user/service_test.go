@@ -410,3 +410,23 @@ func TestCreateDefaultAdminRecoversArcaneUserWhenNoGlobalAdminExists(t *testing.
 	require.Equal(t, authz.BuiltInRoleAdmin, assignments[0].RoleID)
 	require.Nil(t, assignments[0].EnvironmentID)
 }
+
+func TestUserIdentityNormalization(t *testing.T) {
+	svc := NewUserService(setupAuthServiceTestDBInternal(t))
+	ctx := context.Background()
+	created, err := svc.CreateUser(ctx, &common.User{ID: "normalized", Username: " Jose\u0301 ", Email: new(" Jose\u0301@example.com "), DisplayName: new(" Jose\u0301 ")})
+	require.NoError(t, err)
+	require.Equal(t, "José", created.Username)
+	require.Equal(t, "José@example.com", *created.Email)
+	require.Equal(t, "José", *created.DisplayName)
+	created.Username = " Andre\u0301 "
+	created.DisplayName = nil
+	updated, err := svc.UpdateUser(ctx, created, nil)
+	require.NoError(t, err)
+	require.Equal(t, "André", updated.Username)
+	require.Nil(t, updated.DisplayName)
+	_, err = svc.GetUserByUsername(ctx, " Andre\u0301 ")
+	require.NoError(t, err)
+	_, err = svc.CreateUser(ctx, &common.User{ID: "empty", Username: " \t "})
+	require.ErrorContains(t, err, "username: must contain at least 1 characters after normalization")
+}

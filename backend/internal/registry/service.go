@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"go.getarcane.app/kit/normalization"
+
 	"github.com/cenkalti/backoff/v5"
 	ref "github.com/distribution/reference"
 	"github.com/samber/hot"
@@ -172,7 +174,10 @@ func (s *ContainerRegistryService) GetRegistryByID(ctx context.Context, id strin
 	return &registryRecord, nil
 }
 
-func (s *ContainerRegistryService) CreateRegistry(ctx context.Context, req CreateContainerRegistryRequest) (*ContainerRegistry, error) {
+func (s *ContainerRegistryService) CreateRegistry(ctx context.Context, req containerregistry.CreateContainerRegistryRequest) (*ContainerRegistry, error) {
+	if err := normalization.Normalize(&req); err != nil {
+		return nil, err
+	}
 	registryType, err := NormalizeRegistryType(req.RegistryType)
 	if err != nil {
 		return nil, err
@@ -232,7 +237,10 @@ func (s *ContainerRegistryService) CreateRegistry(ctx context.Context, req Creat
 	return registryRecord, nil
 }
 
-func (s *ContainerRegistryService) UpdateRegistry(ctx context.Context, id string, req UpdateContainerRegistryRequest) (*ContainerRegistry, error) {
+func (s *ContainerRegistryService) UpdateRegistry(ctx context.Context, id string, req containerregistry.UpdateContainerRegistryRequest) (*ContainerRegistry, error) {
+	if err := normalization.Normalize(&req); err != nil {
+		return nil, err
+	}
 	registryRecord, err := s.GetRegistryByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -314,7 +322,7 @@ func (s *ContainerRegistryService) applyRegistryTypeUpdateInternal(registry *Con
 	return nil
 }
 
-func (s *ContainerRegistryService) updateECRRegistryFieldsInternal(registry *ContainerRegistry, req UpdateContainerRegistryRequest) error {
+func (s *ContainerRegistryService) updateECRRegistryFieldsInternal(registry *ContainerRegistry, req containerregistry.UpdateContainerRegistryRequest) error {
 	utils.ApplyChanged(&registry.AWSAccessKeyID, mo.PointerToOption(req.AWSAccessKeyID))
 	utils.ApplyChanged(&registry.AWSRegion, mo.PointerToOption(req.AWSRegion))
 
@@ -344,7 +352,7 @@ func (s *ContainerRegistryService) updateECRRegistryFieldsInternal(registry *Con
 	return nil
 }
 
-func (s *ContainerRegistryService) updateGenericRegistryFieldsInternal(registry *ContainerRegistry, req UpdateContainerRegistryRequest) error {
+func (s *ContainerRegistryService) updateGenericRegistryFieldsInternal(registry *ContainerRegistry, req containerregistry.UpdateContainerRegistryRequest) error {
 	utils.ApplyChanged(&registry.Username, mo.PointerToOption(req.Username))
 
 	if req.Token != nil && *req.Token != "" {
@@ -1069,6 +1077,9 @@ func (s *ContainerRegistryService) getMatchingRegistryCredentialsInternal(ctx co
 // SyncRegistries syncs registries from a manager to this agent instance
 // It creates, updates, or deletes registries to match the provided list
 func (s *ContainerRegistryService) SyncRegistries(ctx context.Context, syncItems []containerregistry.Sync) error {
+	if err := normalization.Normalize(&syncItems); err != nil {
+		return err
+	}
 	existingMap, err := s.getExistingRegistriesMapInternal(ctx)
 	if err != nil {
 		return err

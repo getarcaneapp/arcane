@@ -32,6 +32,7 @@ import (
 	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/samber/hot"
+	"go.getarcane.app/kit/normalization"
 )
 
 const (
@@ -229,6 +230,7 @@ func (s *AuthService) GetOidcConfig(ctx context.Context) (*settings.OidcConfig, 
 // creating a session. Callers must complete passkey MFA, when enabled, before
 // issuing a bearer or refresh token.
 func (s *AuthService) AuthenticateLocalPrimary(ctx context.Context, username, password string) (*common.User, error) {
+	username = normalization.Text(username, true, true)
 	localEnabled, err := s.IsLocalAuthEnabled(ctx)
 	if err != nil {
 		return nil, err
@@ -382,6 +384,9 @@ func (s *AuthService) LogLogout(ctx context.Context, user *common.User) {
 }
 
 func (s *AuthService) findOrCreateOidcUser(ctx context.Context, userInfo auth.OidcUserInfo, tokenResp *auth.OidcTokenResponse) (*common.User, bool, error) {
+	if err := normalization.Normalize(&userInfo); err != nil {
+		return nil, false, err
+	}
 	user, err := s.userService.GetUserByOidcSubjectId(ctx, userInfo.Subject)
 	if err != nil && !errors.Is(err, common.ErrUserNotFound) {
 		return nil, false, err
