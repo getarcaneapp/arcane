@@ -3347,6 +3347,8 @@
   "system_backups_recovery_key_saved": "Clé de récupération configurée.",
   "system_backups_recovery_key_save_failed": "Échec de la configuration de la clé de récupération.",
   "system_backups_enabled_description": "Exécutez une sauvegarde de récupération Arcane chiffrée selon la planification cron configurée.",
+  "backups_started": "La sauvegarde a commencé",
+  "backups_running": "Sauvegarde en cours",
   "system_backups_created": "La sauvegarde du système Arcane a été créée avec succès.",
   "system_backups_create_failed": "Échec de la création d'une sauvegarde du système Arcane.",
   "system_backups_policy_saved": "Le calendrier de sauvegarde du système a été enregistré.",
