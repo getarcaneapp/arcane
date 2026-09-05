@@ -3347,6 +3347,8 @@
   "system_backups_recovery_key_saved": "Herstelsleutel geconfigureerd.",
   "system_backups_recovery_key_save_failed": "De herstelsleutel kon niet worden geconfigureerd.",
   "system_backups_enabled_description": "Voer een versleutelde Arcane-herstelback-up uit volgens het geconfigureerde cron-schema.",
+  "backups_started": "Back-up gestart",
+  "backups_running": "Back-up wordt uitgevoerd",
   "system_backups_created": "De back-up van het Arcane-systeem is succesvol gemaakt.",
   "system_backups_create_failed": "Het maken van een Arcane-systeemback-up is mislukt.",
   "system_backups_policy_saved": "Het back-upschema voor het systeem is opgeslagen.",
