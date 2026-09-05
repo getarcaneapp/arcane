@@ -27,7 +27,7 @@ func TestGetProjectVolumeCopyRuntimeInternal_UsesToolsImageWhenAvailable(t *test
 	}))
 	t.Cleanup(server.Close)
 
-	copyRuntime, err := getProjectVolumeCopyRuntimeInternal(context.Background(), newTestDockerClient(t, server), volumehelper.ToolsImage(""))
+	copyRuntime, err := getProjectVolumeCopyRuntimeInternal(context.Background(), newTestDockerClientInternal(t, server), volumehelper.ToolsImage(""))
 
 	require.NoError(t, err)
 	require.Equal(t, volumehelper.ToolsImage(""), copyRuntime.Image)
@@ -58,7 +58,7 @@ func TestCreateProjectVolumeCopyHolderContainerInternal_UsesPassiveHolderCommand
 
 	_, cleanup, err := createProjectVolumeCopyHolderContainerInternal(
 		context.Background(),
-		newTestDockerClient(t, server),
+		newTestDockerClientInternal(t, server),
 		projectVolumeCopyRuntimeInternal{Image: "arcane:local"},
 		"nginx_data",
 		true,

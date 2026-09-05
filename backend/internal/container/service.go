@@ -19,7 +19,6 @@ import (
 
 	"emperror.dev/errors"
 
-	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/network"
@@ -556,7 +555,10 @@ func (s *ContainerService) tryRedeployViaComposeProjectInternal(ctx context.Cont
 		return "", true, errors.WrapIff(err, "compose redeploy failed for %s/%s", projectName, serviceName)
 	}
 
-	newID := s.findComposeServiceContainerIDInternal(ctx, projectName, serviceName)
+	newID, lookupErr := projects.FindComposeServiceContainerID(ctx, s.dockerService.DockerHost(), projectName, serviceName)
+	if lookupErr != nil {
+		slog.WarnContext(ctx, "failed to resolve container via compose ps after redeploy", "project", projectName, "service", serviceName, "err", lookupErr)
+	}
 	if newID == "" {
 		// Recreated successfully but couldn't locate the new container; return the
 		// original ID so the handler can degrade gracefully.
@@ -576,50 +578,6 @@ func (s *ContainerService) tryRedeployViaComposeProjectInternal(ctx context.Cont
 	}
 
 	return newID, true, nil
-}
-
-// findComposeServiceContainerIDInternal locates the (presumably newly recreated)
-// container for a given compose project+service pair using the compose SDK's Ps
-// command. When multiple containers match (a stopped predecessor can briefly
-// linger during recreation), the first running one is preferred; otherwise the
-// first match is returned. Returns "" when none found.
-func (s *ContainerService) findComposeServiceContainerIDInternal(ctx context.Context, projectName, serviceName string) string {
-	containers, err := projects.ComposePs(ctx, s.dockerService.DockerHost(), &composetypes.Project{Name: projectName}, []string{serviceName}, true)
-	if err != nil {
-		slog.WarnContext(ctx, "failed to resolve container via compose ps after redeploy",
-			"project", projectName,
-			"service", serviceName,
-			"err", err,
-		)
-		return ""
-	}
-
-	var firstMatch string
-	for _, c := range containers {
-		if c.Service != serviceName {
-			continue
-		}
-		if firstMatch == "" {
-			firstMatch = c.ID
-		}
-		if c.State == "running" {
-			return c.ID
-		}
-	}
-	return firstMatch
-}
-
-func (s *ContainerService) GenerateCompose(ctx context.Context, containerIDs []string) (string, error) {
-	proj, err := projects.ComposeGenerate(ctx, s.dockerService.DockerHost(), "", containerIDs)
-	if err != nil {
-		return "", err
-	}
-
-	content, err := proj.MarshalYAML()
-	if err != nil {
-		return "", errors.WithMessage(err, "failed to marshal generated compose project")
-	}
-	return string(content), nil
 }
 
 func (s *ContainerService) RedeployContainer(ctx context.Context, containerID string, user common.User) (string, error) {

@@ -11,15 +11,14 @@ import (
 
 	"emperror.dev/errors"
 
-	"github.com/containerd/platforms"
 	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 	"github.com/spf13/cobra"
 
 	docker "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"go.getarcane.app/sys/cgroup"
 	"go.getarcane.app/updater/labels"
 )
@@ -245,40 +244,9 @@ func refreshRecreatedImageLabelsInternal(containerLabels, previousImageLabels, i
 		refreshed[key] = value
 	}
 
-	if refreshed != nil && imageDigest != "" {
-		for key := range refreshed {
-			if strings.EqualFold(key, "com.docker.compose.image") {
-				refreshed[key] = imageDigest
-			}
-		}
-	}
+	projects.RefreshComposeImageLabel(refreshed, imageDigest)
 
 	return refreshed
-}
-
-// composeImageDigestInternal selects the digest compose v5.5.0 records in the
-// com.docker.compose.image label: the host platform's image-manifest digest,
-// which stays stable across attested rebuilds, falling back to the top-level
-// image ID when the engine reports no manifest data (mirrors compose's
-// localContentDigest). Writing any other value would make compose flag the
-// container as diverged and recreate it on the next up.
-func composeImageDigestInternal(inspect client.ImageInspectResult) string {
-	matcher := platforms.Default()
-	var available []image.ManifestSummary
-	for _, m := range inspect.Manifests {
-		if m.Kind == image.ManifestKindImage && m.Available {
-			available = append(available, m)
-		}
-	}
-	for _, m := range available {
-		if m.ImageData != nil && matcher.Match(m.ImageData.Platform) {
-			return m.ID
-		}
-	}
-	if len(available) == 1 {
-		return available[0].ID
-	}
-	return inspect.ID
 }
 
 func refreshRecreatedContainerLabelsInternal(ctx context.Context, dockerClient *client.Client, containerLabels map[string]string, previousImage, targetImage string) map[string]string {
@@ -313,7 +281,7 @@ func refreshRecreatedContainerLabelsInternal(ctx context.Context, dockerClient *
 			}
 		}
 	}
-	return refreshRecreatedImageLabelsInternal(containerLabels, previousImageLabels, imageLabels, composeImageDigestInternal(imageInspect))
+	return refreshRecreatedImageLabelsInternal(containerLabels, previousImageLabels, imageLabels, projects.ComposeImageDigest(imageInspect))
 }
 
 func hasOCIImageLabelInternal(containerLabels map[string]string) bool {

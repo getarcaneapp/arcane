@@ -1,28 +1,25 @@
 package project
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-
 	"context"
+	"encoding/json/v2"
 	stderrors "errors"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
-	"emperror.dev/emperror"
 	"emperror.dev/errors"
-
-	"github.com/compose-spec/compose-go/v2/loader"
-	composetypes "github.com/compose-spec/compose-go/v2/types"
-	"github.com/docker/compose/v5/pkg/api"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumes"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
+	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
+	"github.com/moby/moby/client"
 	"go.getarcane.app/acfs"
 	acfstypes "go.getarcane.app/acfs/types"
 	"gorm.io/gorm"
@@ -75,7 +72,7 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 	}
 
 	projectStateCommitted := false
-	if err := withProjectRenameRollback(ctx, &proj, &projectStateCommitted, func() error {
+	if err := withProjectRenameRollbackInternal(ctx, &proj, &projectStateCommitted, func() error {
 		return s.applyProjectUpdateWithRenameJournalInternal(ctx, &proj, name, projectsDirectory, composeContent, envContent, overrideContent, volumeMigration, renameJournal, &journalActive, &projectStateCommitted)
 	}); err != nil {
 		err = s.handleProjectUpdateFailureInternal(ctx, projectID, projectsDirectory, &proj, backup, &journalActive, projectStateCommitted, err)
@@ -135,7 +132,7 @@ func (s *ProjectService) prepareProjectUpdateBackupInternal(ctx context.Context,
 	return backup, func() { _ = acfs.RemoveAll(cleanupCtx, projectsDirectory, backupLogical) }, nil
 }
 
-func (s *ProjectService) applyProjectUpdateWithRenameJournalInternal(ctx context.Context, proj *Project, name *string, projectsDirectory string, composeContent, envContent, overrideContent *string, volumeMigration volumes.Migration, renameJournal *projectRenameJournalInternal, journalActive *bool, projectStateCommitted *bool) (err error) {
+func (s *ProjectService) applyProjectUpdateWithRenameJournalInternal(ctx context.Context, proj *Project, name *string, projectsDirectory string, composeContent, envContent, overrideContent *string, volumeMigration volumetypes.Migration, renameJournal *projecttypes.RenameJournal, journalActive *bool, projectStateCommitted *bool) (err error) {
 	volumeMigrationApplied := false
 	defer func() {
 		stateCommitted := projectStateCommitted != nil && *projectStateCommitted
@@ -152,7 +149,7 @@ func (s *ProjectService) applyProjectUpdateWithRenameJournalInternal(ctx context
 	if err = s.persistUpdatedProjectFiles(ctx, proj, projectsDirectory, composeContent, envContent, overrideContent); err != nil {
 		return err
 	}
-	if err = s.applyProjectVolumeMigrationForUpdateInternal(ctx, volumeMigration, renameJournal, &volumeMigrationApplied); err != nil {
+	if err = projects.ApplyRenameVolumeMigration(ctx, s.renameRecoveryOperationsInternal(), volumeMigration, renameJournal, &volumeMigrationApplied); err != nil {
 		return err
 	}
 	if err = s.saveProjectUpdateInternal(ctx, proj); err != nil {
@@ -161,7 +158,7 @@ func (s *ProjectService) applyProjectUpdateWithRenameJournalInternal(ctx context
 	if projectStateCommitted != nil {
 		*projectStateCommitted = true
 	}
-	s.finalizeProjectRenameAfterCommitInternal(ctx, proj.ID, volumeMigration, renameJournal, journalActive)
+	projects.FinalizeRenameAfterCommit(ctx, s.renameRecoveryOperationsInternal(), proj.ID, volumeMigration, renameJournal, journalActive)
 	return nil
 }
 
@@ -255,7 +252,7 @@ func (s *ProjectService) ApplyGitSyncProjectFiles(ctx context.Context, projectID
 		return nil, errors.WrapIf(err, "failed to resolve git env state")
 	}
 
-	if err := validateComposeContentForUpdate(ctx, projectsDirectory, proj.Path, proj.Name, composeContent, envUpdate.effectiveContent, gitOverrideContent, gitOverrideFileName, true); err != nil {
+	if err := projects.ValidateComposeContentForUpdate(ctx, projectsDirectory, proj.Path, proj.Name, composeContent, envUpdate.effectiveContent, gitOverrideContent, gitOverrideFileName, true); err != nil {
 		return nil, errors.WrapIf(err, "invalid compose file")
 	}
 
@@ -346,7 +343,7 @@ func (s *ProjectService) getProjectForUpdate(ctx context.Context, projectID stri
 	return proj, projectsDirectory, nil
 }
 
-func (s *ProjectService) prepareProjectRenameVolumeMigrationForUpdateInternal(ctx context.Context, proj *Project, name *string, projectsDirectory string, composeContent, envContent, overrideContent *string) (volumes.Migration, error) {
+func (s *ProjectService) prepareProjectRenameVolumeMigrationForUpdateInternal(ctx context.Context, proj *Project, name *string, projectsDirectory string, composeContent, envContent, overrideContent *string) (volumetypes.Migration, error) {
 	if !isProjectRenameRequestedInternal(proj, name) {
 		return nil, nil
 	}
@@ -383,13 +380,13 @@ func (s *ProjectService) prepareProjectRenameVolumeMigrationForUpdateInternal(ct
 	return s.prepareProjectRenameVolumeMigrationInternal(ctx, &previewProject, name)
 }
 
-func (s *ProjectService) prepareProjectRenameVolumeMigrationInternal(ctx context.Context, proj *Project, name *string) (volumes.Migration, error) {
+func (s *ProjectService) prepareProjectRenameVolumeMigrationInternal(ctx context.Context, proj *Project, name *string) (volumetypes.Migration, error) {
 	oldComposeName, newComposeName, ok := projectRenameVolumeMigrationComposeNamesInternal(s, proj, name)
 	if !ok {
 		return nil, nil
 	}
 
-	composeProject, _, err := s.loadComposeProjectForProjectInternal(ctx, proj, nil)
+	composeProject, _, err := s.loadComposeProjectForProjectInternal(ctx, proj)
 	if err != nil {
 		if errors.Is(err, common.ErrProjectComposeFileNotFound) {
 			return nil, nil
@@ -407,7 +404,7 @@ func (s *ProjectService) prepareProjectRenameVolumeMigrationInternal(ctx context
 		registry = s.settingsService.GetSettingsConfig().ToolsImageRegistry.Value
 	}
 
-	return volumes.PlanMigration(ctx, dockerClient, composeProject, oldComposeName, newComposeName, volumehelper.ToolsImage(registry))
+	return projects.PlanVolumeMigration(ctx, dockerClient, composeProject, oldComposeName, newComposeName, volumehelper.ToolsImage(registry))
 }
 
 func projectRenameVolumeMigrationComposeNamesInternal(s *ProjectService, proj *Project, name *string) (string, string, bool) {
@@ -516,7 +513,7 @@ func (s *ProjectService) persistUpdatedProjectFiles(ctx context.Context, proj *P
 			return errors.WrapIf(err, "invalid compose file")
 		}
 		valOverride, valOverrideName := projects.ResolveEffectiveOverrideForValidation(proj.Path, overrideContent)
-		if err := validateComposeContentForUpdate(ctx, projectsDirectory, proj.Path, proj.Name, *composeContent, effectiveEnvContent, valOverride, valOverrideName, false); err != nil {
+		if err := projects.ValidateComposeContentForUpdate(ctx, projectsDirectory, proj.Path, proj.Name, *composeContent, effectiveEnvContent, valOverride, valOverrideName, false); err != nil {
 			return errors.WrapIf(err, "invalid compose file")
 		}
 		// The env is persisted first so WriteComposeFile targets the COMPOSE_FILE
@@ -564,7 +561,7 @@ func (s *ProjectService) persistOverrideOnlyUpdateInternal(ctx context.Context, 
 		return errors.WrapIf(err, "invalid compose file")
 	}
 	valOverride, valOverrideName := projects.ResolveEffectiveOverrideForValidation(proj.Path, overrideContent)
-	if err := validateComposeContentForUpdate(ctx, projectsDirectory, proj.Path, proj.Name, baseContent, effectiveEnvContent, valOverride, valOverrideName, false); err != nil {
+	if err := projects.ValidateComposeContentForUpdate(ctx, projectsDirectory, proj.Path, proj.Name, baseContent, effectiveEnvContent, valOverride, valOverrideName, false); err != nil {
 		return errors.WrapIf(err, "invalid compose file")
 	}
 	if envContent != nil {
@@ -576,98 +573,6 @@ func (s *ProjectService) persistOverrideOnlyUpdateInternal(ctx context.Context, 
 		return errors.WrapIf(err, "failed to save project files")
 	}
 	return nil
-}
-
-func validateComposeContentForUpdate(ctx context.Context, projectsDirectory, projectPath, projectName, composeContent string, effectiveEnvContent *string, overrideContent *string, overrideFileName string, lenient bool) (err error) {
-	defer func() {
-		if panicErr := emperror.Recover(recover()); panicErr != nil {
-			err = errors.WrapIf(panicErr, "compose file contains invalid syntax")
-		}
-	}()
-
-	fullEnvMap, envErr := projects.BuildValidationEnvironment(ctx, projectsDirectory, projectPath, effectiveEnvContent)
-	if envErr != nil {
-		return envErr
-	}
-
-	// COMPOSE_FILE in the (edited) env selects the exact file set, so validate
-	// against it — a save that introduces a broken selection fails fast.
-	envOpts, envOptsErr := projects.ParseComposeEnvOptions(projectPath, fullEnvMap)
-	if envOptsErr != nil {
-		return envOptsErr
-	}
-
-	validationProjectName := projects.NormalizeProjectName(projectName)
-	var configFiles []composetypes.ConfigFile
-	switch {
-	case len(envOpts.ConfigFiles) > 0:
-		// The compose tab edits the base (first) file. Later entries are read
-		// from disk; existence was already checked while parsing COMPOSE_FILE. An
-		// Arcane-managed override lives in the project root and only applies when
-		// that exact path is listed in the selection (docker skips auto-overrides
-		// for an explicit file set); a same-named file in a subdirectory is not
-		// the managed override.
-		overrideName := strings.TrimSpace(overrideFileName)
-		if overrideName == "" {
-			overrideName = projects.DefaultComposeOverrideFileName
-		}
-		overridePath := ""
-		if absProjectPath, absErr := filepath.Abs(filepath.Clean(projectPath)); absErr == nil {
-			overridePath = filepath.Join(absProjectPath, overrideName)
-		}
-		for i, f := range envOpts.ConfigFiles {
-			switch {
-			case i == 0:
-				configFiles = append(configFiles, composetypes.ConfigFile{Filename: f, Content: []byte(composeContent)})
-			case overrideContent != nil && overridePath != "" && f == overridePath:
-				configFiles = append(configFiles, composetypes.ConfigFile{Filename: f, Content: []byte(*overrideContent)})
-			default:
-				configFiles = append(configFiles, composetypes.ConfigFile{Filename: f})
-			}
-		}
-	default:
-		configFiles = []composetypes.ConfigFile{
-			{Filename: filepath.Join(projectPath, "compose.yaml"), Content: []byte(composeContent)},
-		}
-		// When an override is supplied, validate the *merged* config as `docker
-		// compose` would deploy it. Overrides can add services and are layered on
-		// top (listed after the base so the override wins).
-		if overrideContent != nil {
-			overrideName := strings.TrimSpace(overrideFileName)
-			if overrideName == "" {
-				overrideName = projects.DefaultComposeOverrideFileName
-			}
-			configFiles = append(configFiles, composetypes.ConfigFile{
-				Filename: filepath.Join(projectPath, overrideName),
-				Content:  []byte(*overrideContent),
-			})
-		}
-	}
-
-	cfg := composetypes.ConfigDetails{
-		Version:     api.ComposeVersion,
-		WorkingDir:  projectPath,
-		ConfigFiles: configFiles,
-		Environment: composetypes.Mapping(fullEnvMap),
-	}
-
-	missingIncludeLoader := projects.NewMissingIncludeStubLoader(projectPath)
-	defer missingIncludeLoader.Cleanup()
-
-	err = projects.WithTransientValidationEnvFile(ctx, projectPath, effectiveEnvContent, func() error {
-		_, loadErr := loader.LoadWithContext(ctx, cfg, func(opts *loader.Options) {
-			opts.ResourceLoaders = append([]loader.ResourceLoader{missingIncludeLoader}, opts.ResourceLoaders...)
-			if validationProjectName != "" {
-				opts.SetProjectName(validationProjectName, false)
-			}
-			if lenient {
-				projects.ApplyLenientLoaderOptions(ctx, opts, cfg.ConfigFiles[0].Filename)
-			}
-		})
-		return loadErr
-	})
-
-	return err
 }
 
 func (s *ProjectService) ensureProjectStoppedForRenameInternal(ctx context.Context, proj *Project, name *string) error {
@@ -754,4 +659,337 @@ func (s *ProjectService) applyProjectRenameIfNeeded(ctx context.Context, proj *P
 	proj.DirName = &newDirName
 	proj.Name = newName
 	return nil
+}
+
+type activeProjectRenameSyncStateInternal struct {
+	skipDiscoveredPaths map[string]struct{}
+	protectSeenPaths    map[string]struct{}
+}
+
+func (s *ProjectService) activeProjectRenameSyncStateInternal(ctx context.Context) activeProjectRenameSyncStateInternal {
+	state := activeProjectRenameSyncStateInternal{
+		skipDiscoveredPaths: make(map[string]struct{}),
+		protectSeenPaths:    make(map[string]struct{}),
+	}
+	if s == nil || s.kvService == nil {
+		return state
+	}
+
+	entries, err := s.kvService.ListByPrefix(ctx, projecttypes.RenameJournalKeyPrefix)
+	if err != nil {
+		slog.WarnContext(ctx, "failed to list project rename journals during filesystem sync", "error", err)
+		return state
+	}
+
+	for _, entry := range entries {
+		var journal projecttypes.RenameJournal
+		if err := json.Unmarshal([]byte(entry.Value), &journal); err != nil {
+			slog.WarnContext(ctx, "failed to decode project rename journal during filesystem sync", "key", entry.Key, "error", err)
+			continue
+		}
+		if !projects.RenameJournalFilesystemSyncPending(journal.Phase) {
+			continue
+		}
+		if oldPath := strings.TrimSpace(journal.OldPath); oldPath != "" {
+			state.protectSeenPaths[filepath.Clean(oldPath)] = struct{}{}
+		}
+		if newPath := strings.TrimSpace(journal.NewPath); newPath != "" {
+			state.skipDiscoveredPaths[filepath.Clean(newPath)] = struct{}{}
+		}
+	}
+
+	return state
+}
+
+func (s activeProjectRenameSyncStateInternal) skipDiscoveredPathInternal(path string) bool {
+	_, ok := s.skipDiscoveredPaths[filepath.Clean(path)]
+	return ok
+}
+
+func (s activeProjectRenameSyncStateInternal) markProtectedPathsSeenInternal(seen map[string]struct{}) {
+	for seenPath := range s.protectSeenPaths {
+		seen[seenPath] = struct{}{}
+	}
+}
+
+func (s *ProjectService) startProjectRenameJournalInternal(ctx context.Context, journal *projecttypes.RenameJournal) (bool, error) {
+	if journal == nil {
+		return false, nil
+	}
+	if err := s.writeProjectRenameJournalInternal(ctx, journal, projecttypes.RenameJournalPhaseStarted); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func withProjectRenameRollbackInternal(ctx context.Context, proj *Project, projectStateCommitted *bool, run func() error) error {
+	originalPath := proj.Path
+	originalDirName := proj.DirName
+
+	if err := run(); err != nil {
+		if projectStateCommitted != nil && *projectStateCommitted {
+			return err
+		}
+		if proj.Path != originalPath {
+			// The rollback has to run even when the caller's context is already
+			// cancelled, or a cancelled update leaves the directory renamed
+			// with the database still pointing at the original path.
+			rollbackCtx := context.WithoutCancel(ctx)
+
+			// Both paths share a parent whenever the rename stayed inside the
+			// projects directory; an imported project can sit elsewhere, in
+			// which case the move crosses roots and cannot be confined.
+			var renameErr error
+			if parent := filepath.Dir(originalPath); parent == filepath.Dir(proj.Path) {
+				renameErr = acfs.Rename(rollbackCtx, parent, "/"+filepath.Base(proj.Path), "/"+filepath.Base(originalPath))
+			} else {
+				renameErr = os.Rename(proj.Path, originalPath)
+			}
+			if renameErr != nil {
+				slog.WarnContext(ctx, "failed to rollback project directory rename", "from", proj.Path, "to", originalPath, "error", renameErr)
+				return err
+			}
+			proj.Path = originalPath
+			proj.DirName = originalDirName
+		}
+		return err
+	}
+
+	return nil
+}
+
+func (s *ProjectService) prepareProjectRenameJournalInternal(proj *Project, name *string, projectsDirectory string, migration volumetypes.Migration) *projecttypes.RenameJournal {
+	if s == nil || s.kvService == nil || proj == nil || name == nil {
+		return nil
+	}
+
+	newName := strings.TrimSpace(*name)
+	if newName == "" || proj.Name == newName {
+		return nil
+	}
+
+	newDirName := strings.TrimSpace(projects.SanitizeProjectName(newName))
+	if newDirName == "" || strings.Trim(newDirName, "_") == "" {
+		return nil
+	}
+
+	journal := &projecttypes.RenameJournal{
+		ProjectID:  proj.ID,
+		OldName:    proj.Name,
+		NewName:    newName,
+		OldPath:    filepath.Clean(proj.Path),
+		NewPath:    filepath.Clean(filepath.Join(projectsDirectory, newDirName)),
+		OldDirName: cloneStringPtrInternal(proj.DirName),
+		NewDirName: newDirName,
+		Phase:      projecttypes.RenameJournalPhaseStarted,
+	}
+
+	if source, ok := migration.(volumetypes.JournalSource); ok {
+		journal.Volumes = source.JournalVolumes()
+	}
+
+	return journal
+}
+
+func (s *ProjectService) writeProjectRenameJournalInternal(ctx context.Context, journal *projecttypes.RenameJournal, phase string) error {
+	if s == nil || s.kvService == nil || journal == nil {
+		return nil
+	}
+	journal.Phase = phase
+	journal.UpdatedAt = time.Now().UTC()
+
+	payload, err := json.Marshal(journal)
+	if err != nil {
+		return errors.WrapIf(err, "marshal project rename journal")
+	}
+
+	if err := s.kvService.Set(ctx, projecttypes.RenameJournalKeyPrefix+journal.ProjectID, string(payload)); err != nil {
+		return errors.WrapIf(err, "write project rename journal")
+	}
+	return nil
+}
+
+func (s *ProjectService) clearProjectRenameJournalInternal(ctx context.Context, projectID string) error {
+	if s == nil || s.kvService == nil || strings.TrimSpace(projectID) == "" {
+		return nil
+	}
+	return s.kvService.Delete(ctx, projecttypes.RenameJournalKeyPrefix+projectID)
+}
+
+func (s *ProjectService) writeProjectRenameRollbackCleanupInternal(ctx context.Context, journal *projecttypes.RenameJournal) error {
+	if s == nil || s.kvService == nil || journal == nil || strings.TrimSpace(journal.ProjectID) == "" || len(journal.Volumes) == 0 {
+		return nil
+	}
+
+	cleanup := projecttypes.RenameRollbackCleanup{
+		ProjectID: journal.ProjectID,
+		OldName:   journal.OldName,
+		OldPath:   filepath.Clean(journal.OldPath),
+		NewName:   journal.NewName,
+		NewPath:   filepath.Clean(journal.NewPath),
+		Volumes:   journal.Volumes,
+		UpdatedAt: time.Now().UTC(),
+	}
+	payload, err := json.Marshal(cleanup)
+	if err != nil {
+		return errors.WrapIf(err, "marshal project rename rollback cleanup")
+	}
+	if err := s.kvService.Set(ctx, projecttypes.RenameRollbackCleanupKeyPrefix+journal.ProjectID, string(payload)); err != nil {
+		return errors.WrapIf(err, "write project rename rollback cleanup")
+	}
+	return nil
+}
+
+func (s *ProjectService) clearProjectRenameRollbackCleanupInternal(ctx context.Context, projectID string) error {
+	if s == nil || s.kvService == nil || strings.TrimSpace(projectID) == "" {
+		return nil
+	}
+	return s.kvService.Delete(ctx, projecttypes.RenameRollbackCleanupKeyPrefix+projectID)
+}
+
+func (s *ProjectService) RecoverProjectRenameJournals(ctx context.Context) error {
+	if s == nil || s.kvService == nil {
+		return nil
+	}
+
+	entries, err := s.kvService.ListByPrefix(ctx, projecttypes.RenameJournalKeyPrefix)
+	if err != nil {
+		return err
+	}
+
+	var recoverErr error
+	for _, entry := range entries {
+		var journal projecttypes.RenameJournal
+		if err := json.Unmarshal([]byte(entry.Value), &journal); err != nil {
+			recoverErr = stderrors.Join(recoverErr, errors.WrapIff(err, "decode project rename journal %s", entry.Key))
+			continue
+		}
+		if err := s.recoverProjectRenameJournalInternal(ctx, &journal); err != nil {
+			recoverErr = stderrors.Join(recoverErr, errors.WrapIff(err, "recover project rename journal %s", entry.Key))
+			continue
+		}
+	}
+	return stderrors.Join(recoverErr, s.recoverProjectRenameRollbackCleanupsInternal(ctx))
+}
+
+func (s *ProjectService) recoverProjectRenameJournalForProjectInternal(ctx context.Context, projectID string) error {
+	if s == nil || s.kvService == nil || strings.TrimSpace(projectID) == "" {
+		return nil
+	}
+
+	raw, ok, err := s.kvService.Get(ctx, projecttypes.RenameJournalKeyPrefix+projectID)
+	if err != nil || !ok {
+		return err
+	}
+
+	var journal projecttypes.RenameJournal
+	if err := json.Unmarshal([]byte(raw), &journal); err != nil {
+		return errors.WrapIf(err, "decode project rename journal")
+	}
+	return s.recoverProjectRenameJournalInternal(ctx, &journal)
+}
+
+func (s *ProjectService) recoverProjectRenameJournalInternal(ctx context.Context, journal *projecttypes.RenameJournal) error {
+	if s == nil || journal == nil || strings.TrimSpace(journal.ProjectID) == "" {
+		return nil
+	}
+
+	var proj Project
+	dbErr := s.db.WithContext(ctx).First(&proj, "id = ?", journal.ProjectID).Error
+	if dbErr != nil && !errors.Is(dbErr, gorm.ErrRecordNotFound) {
+		return errors.WrapIf(dbErr, "load project for rename recovery")
+	}
+
+	projectCommitted := dbErr == nil && (proj.Name == journal.NewName || filepath.Clean(proj.Path) == filepath.Clean(journal.NewPath))
+	return projects.RecoverRenameJournal(ctx, journal, projectCommitted, s.renameRecoveryOperationsInternal())
+}
+
+func (s *ProjectService) recoverProjectRenameRollbackCleanupsInternal(ctx context.Context) error {
+	if s == nil || s.kvService == nil {
+		return nil
+	}
+
+	entries, err := s.kvService.ListByPrefix(ctx, projecttypes.RenameRollbackCleanupKeyPrefix)
+	if err != nil {
+		return err
+	}
+
+	var recoverErr error
+	for _, entry := range entries {
+		var cleanup projecttypes.RenameRollbackCleanup
+		if err := json.Unmarshal([]byte(entry.Value), &cleanup); err != nil {
+			recoverErr = stderrors.Join(recoverErr, errors.WrapIff(err, "decode project rename rollback cleanup %s", entry.Key))
+			continue
+		}
+		if err := s.recoverProjectRenameRollbackCleanupInternal(ctx, &cleanup); err != nil {
+			recoverErr = stderrors.Join(recoverErr, errors.WrapIff(err, "recover project rename rollback cleanup %s", entry.Key))
+			continue
+		}
+	}
+	return recoverErr
+}
+
+func (s *ProjectService) recoverProjectRenameRollbackCleanupInternal(ctx context.Context, cleanup *projecttypes.RenameRollbackCleanup) error {
+	if s == nil || cleanup == nil || strings.TrimSpace(cleanup.ProjectID) == "" {
+		return nil
+	}
+	if len(cleanup.Volumes) == 0 {
+		return s.clearProjectRenameRollbackCleanupInternal(ctx, cleanup.ProjectID)
+	}
+
+	var proj Project
+	dbErr := s.db.WithContext(ctx).First(&proj, "id = ?", cleanup.ProjectID).Error
+	if dbErr != nil {
+		if errors.Is(dbErr, gorm.ErrRecordNotFound) {
+			slog.WarnContext(ctx, "clearing project rename rollback cleanup because project no longer exists", "projectID", cleanup.ProjectID)
+			return s.clearProjectRenameRollbackCleanupInternal(ctx, cleanup.ProjectID)
+		}
+		return errors.WrapIf(dbErr, "load project for rename rollback cleanup")
+	}
+
+	if proj.Name != cleanup.OldName || filepath.Clean(proj.Path) != filepath.Clean(cleanup.OldPath) {
+		slog.WarnContext(ctx, "clearing project rename rollback cleanup because project state changed", "projectID", cleanup.ProjectID, "projectName", proj.Name, "projectPath", proj.Path)
+		return s.clearProjectRenameRollbackCleanupInternal(ctx, cleanup.ProjectID)
+	}
+
+	return projects.CleanupRenameRollbackTargets(ctx, cleanup, s.renameRecoveryOperationsInternal())
+}
+
+func (s *ProjectService) projectRenameRecoveryDockerInternal(ctx context.Context, dockerRequired bool) (*client.Client, error) {
+	if !dockerRequired {
+		return nil, nil
+	}
+	if s.dockerService == nil {
+		return nil, errors.New("docker service unavailable")
+	}
+
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		return nil, errors.WrapIf(err, "failed to connect to Docker")
+	}
+
+	return dockerClient, nil
+}
+
+func cloneStringPtrInternal(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
+}
+
+func (s *ProjectService) renameRecoveryOperationsInternal() projecttypes.RenameRecoveryOperations {
+	return projecttypes.RenameRecoveryOperations{
+		Docker:               s.projectRenameRecoveryDockerInternal,
+		WriteJournal:         s.writeProjectRenameJournalInternal,
+		ClearJournal:         s.clearProjectRenameJournalInternal,
+		ClearRollbackCleanup: s.clearProjectRenameRollbackCleanupInternal,
+		WriteRollbackCleanup: s.writeProjectRenameRollbackCleanupInternal,
+		RestoreState: func(ctx context.Context, journal *projecttypes.RenameJournal) error {
+			return s.db.WithContext(ctx).Model(&Project{}).Where("id = ?", journal.ProjectID).Updates(map[string]any{
+				"name": journal.OldName, "path": journal.OldPath, "dir_name": journal.OldDirName,
+			}).Error
+		},
+	}
 }

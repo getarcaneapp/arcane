@@ -22,7 +22,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/upload"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
-	volumeops "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumes"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
@@ -709,9 +708,9 @@ func (h *VolumeHandler) RenameVolume(ctx context.Context, input *RenameVolumeInp
 		return renameErr
 	})
 	if err != nil {
-		var conflictErr *volumeops.ProjectVolumeRenameConflictError
-		var inUseErr *volumeops.ProjectVolumeRenameInUseError
-		var spaceErr *volumeops.ProjectVolumeRenameInsufficientSpaceError
+		var conflictErr *volumetypes.ProjectVolumeRenameConflictError
+		var inUseErr *volumetypes.ProjectVolumeRenameInUseError
+		var spaceErr *volumetypes.ProjectVolumeRenameInsufficientSpaceError
 		switch {
 		case errors.Is(err, common.ErrBadRequest):
 			return nil, huma.Error400BadRequest(err.Error())

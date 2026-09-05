@@ -2,14 +2,18 @@ package projects
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 
 	"emperror.dev/errors"
+	composeloader "github.com/compose-spec/compose-go/v2/loader"
+	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/samber/mo"
 	"go.getarcane.app/acfs"
 )
 
@@ -244,4 +248,103 @@ POSTGRES_PORT=5432
 # SECRET_KEY=your_secret_key_here
 # DEBUG=false
 `
+}
+
+// ParseComposeServices extracts service names from a compose file content using compose-go
+func ParseComposeServices(ctx context.Context, composeContent string) []string {
+	if composeContent == "" {
+		return []string{}
+	}
+
+	// Create a temp directory with dummy .env file to satisfy env_file references
+	// System temp scratch: no acfs root exists for it.
+	tmpDir, err := os.MkdirTemp("", "arcane-compose-parse-*")
+	if err != nil {
+		slog.WarnContext(ctx, "Failed to create temp dir for compose parsing", "error", err)
+		return []string{}
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	// Create a dummy .env file to prevent env file errors
+	envPath := filepath.Join(tmpDir, ".env")
+	if err := WriteFileWithPerm(envPath, "", utils.FilePerm); err != nil {
+		slog.WarnContext(ctx, "Failed to create dummy env file", "error", err)
+	}
+
+	// Parse using compose-go
+	configDetails := composetypes.ConfigDetails{
+		ConfigFiles: []composetypes.ConfigFile{
+			{
+				Content: []byte(composeContent),
+			},
+		},
+		WorkingDir:  tmpDir,
+		Environment: composetypes.Mapping{},
+	}
+
+	project, err := composeloader.LoadWithContext(ctx, configDetails, composeloader.WithSkipValidation)
+	if err != nil {
+		slog.WarnContext(ctx, "Failed to parse compose services", "error", err)
+		return []string{}
+	}
+
+	serviceNames := make([]string, 0, len(project.Services))
+	for _, service := range project.Services {
+		serviceNames = append(serviceNames, service.Name)
+	}
+
+	return serviceNames
+}
+
+// ResolveTemplateIconURL reads Arcane icon metadata from template Compose content.
+func ResolveTemplateIconURL(ctx context.Context, composeContent, envContent string) *string {
+	if strings.TrimSpace(composeContent) == "" {
+		return nil
+	}
+
+	// System temp scratch: no acfs root exists for it.
+	tmpDir, err := os.MkdirTemp("", "arcane-template-icon-*")
+	if err != nil {
+		slog.WarnContext(ctx, "failed to create temp dir for template icon parsing", "error", err)
+		return nil
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	envPath := filepath.Join(tmpDir, ".env")
+	if err := WriteFileWithPerm(envPath, envContent, utils.FilePerm); err != nil {
+		slog.WarnContext(ctx, "failed to create temp env file for template icon parsing", "error", err)
+	}
+
+	envMap := make(composetypes.Mapping)
+	for _, variable := range ParseEnvContent(envContent) {
+		if key := strings.TrimSpace(variable.Key); key != "" {
+			envMap[key] = variable.Value
+		}
+	}
+	envMap["PWD"] = tmpDir
+
+	configDetails := composetypes.ConfigDetails{
+		ConfigFiles: []composetypes.ConfigFile{
+			{
+				Content: []byte(composeContent),
+			},
+		},
+		WorkingDir:  tmpDir,
+		Environment: envMap,
+	}
+
+	project, err := composeloader.LoadWithContext(ctx, configDetails, composeloader.WithSkipValidation, func(opts *composeloader.Options) {
+		opts.SkipConsistencyCheck = true
+	})
+	if err != nil {
+		slog.WarnContext(ctx, "failed to parse compose for template icon metadata", "error", err)
+		return nil
+	}
+
+	if project == nil {
+		return nil
+	}
+
+	icon, _, _, _ := parseArcaneBlockInternal(project.Extensions[arcaneBlockKey])
+	return mo.EmptyableToOption(strings.TrimSpace(icon.Icon)).ToPointer()
 }

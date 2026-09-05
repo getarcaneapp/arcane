@@ -4,6 +4,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 
 	"context"
+	"fmt"
 	"log/slog"
 	"maps"
 	"os"
@@ -983,15 +984,6 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, projectsDir string
 // are resolved here; callers iterating over many projects should resolve them
 // once and pass them in.
 func (s *ProjectService) ProjectMetadata(ctx context.Context, p Project, env *projectMetadataEnvInternal) projects.ArcaneComposeMetadata {
-	if s.metaCache != nil && p.ID != "" {
-		if entry, ok, _ := s.metaCache.Get(p.ID); ok {
-			if validComposeCacheEntryInternal(entry.composeCacheEntry) {
-				return entry.meta
-			}
-			s.metaCache.Delete(p.ID)
-		}
-	}
-
 	empty := projects.ArcaneComposeMetadata{ServiceIconSets: map[string]projects.IconSet{}}
 
 	composeFile, err := s.ResolveProjectComposeFile(ctx, &p)
@@ -1010,6 +1002,13 @@ func (s *ProjectService) ProjectMetadata(ctx context.Context, p Project, env *pr
 		}
 	}
 
+	fingerprint := fmt.Sprintf("%q|%q|%t", composeFile, env.projectsDirectory, env.autoInjectEnv)
+	if s.metaCache != nil && p.ID != "" {
+		if cached, ok := s.metaCache.Get(p.ID, fingerprint); ok {
+			return cached
+		}
+	}
+
 	meta, err := projects.ParseArcaneComposeMetadata(ctx, composeFile, env.projectsDirectory, env.autoInjectEnv)
 	if err != nil {
 		slog.WarnContext(ctx, "failed to parse Arcane compose metadata", "path", composeFile, "error", err)
@@ -1019,11 +1018,9 @@ func (s *ProjectService) ProjectMetadata(ctx context.Context, p Project, env *pr
 	if s.metaCache == nil || p.ID == "" {
 		return meta
 	}
-	entry, err := newComposeCacheEntryInternal(&p, env.projectsDirectory, composeFile, meta.ComposeFiles, meta.EnvFiles)
-	if err != nil {
-		return meta
+	if err := s.metaCache.Set(p.ID, fingerprint, p.Path, env.projectsDirectory, composeFile, meta.ComposeFiles, meta.EnvFiles, meta); err != nil {
+		slog.DebugContext(ctx, "failed to cache Compose metadata", "projectID", p.ID, "error", err)
 	}
-	s.metaCache.Set(p.ID, projectMetadataEntryInternal{composeCacheEntry: entry, meta: meta})
 
 	return meta
 }

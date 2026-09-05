@@ -2,18 +2,21 @@ package projects
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"strings"
 	"time"
 
-	"github.com/compose-spec/compose-go/v2/types"
+	composetypes "github.com/compose-spec/compose-go/v2/types"
+
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/docker/compose/v5/pkg/compose"
+	docker "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
-
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 )
 
 // defaultComposeTimeout is applied to compose operations that have been
@@ -35,7 +38,7 @@ func detachFromHTTPContextInternal(parent context.Context, timeout time.Duration
 	return context.WithTimeout(ctx, timeout)
 }
 
-func ComposeRestart(ctx context.Context, proj *types.Project, services []string) error {
+func ComposeRestart(ctx context.Context, proj *composetypes.Project, services []string) error {
 	restartCtx, cancel := detachFromHTTPContextInternal(ctx, defaultComposeTimeout)
 	defer cancel()
 
@@ -48,7 +51,7 @@ func ComposeRestart(ctx context.Context, proj *types.Project, services []string)
 	return c.svc.Restart(restartCtx, proj.Name, api.RestartOptions{Project: proj, Services: services})
 }
 
-func ComposeStop(ctx context.Context, proj *types.Project, services []string) error {
+func ComposeStop(ctx context.Context, proj *composetypes.Project, services []string) error {
 	if len(services) == 0 {
 		return nil
 	}
@@ -64,7 +67,12 @@ func ComposeStop(ctx context.Context, proj *types.Project, services []string) er
 	return c.svc.Stop(stopCtx, proj.Name, api.StopOptions{Services: services})
 }
 
-func ComposeUp(ctx context.Context, proj *types.Project, services []string, removeOrphans bool, forceRecreate bool, recreateVolumes bool, authConfigs map[string]registry.AuthConfig, waitTimeout time.Duration) error {
+func ComposeUp(ctx context.Context, proj *composetypes.Project, services []string, removeOrphans bool, forceRecreate bool, recreateVolumes bool, authConfigs map[string]registry.AuthConfig, waitTimeout time.Duration) error {
+	selected, err := SelectServices(proj, services)
+	if err != nil {
+		return err
+	}
+	proj = selected
 	if waitTimeout <= 0 {
 		waitTimeout = timeouts.DefaultDeployWait
 	}
@@ -101,12 +109,12 @@ func ComposeUp(ctx context.Context, proj *types.Project, services []string, remo
 	}
 	defer func() { _ = c.Close() }()
 
-	upOptions, startOptions := composeUpOptions(proj, services, removeOrphans, forceRecreate, waitTimeout, envOpts)
+	upOptions, startOptions := composeUpOptionsInternal(proj, services, removeOrphans, forceRecreate, waitTimeout, envOpts)
 
 	return c.svc.Up(composeCtx, proj, api.UpOptions{Create: upOptions, Start: startOptions})
 }
 
-func composeUpOptions(proj *types.Project, services []string, removeOrphans bool, forceRecreate bool, waitTimeout time.Duration, envOpts ComposeEnvOptions) (api.CreateOptions, api.StartOptions) {
+func composeUpOptionsInternal(proj *composetypes.Project, services []string, removeOrphans bool, forceRecreate bool, waitTimeout time.Duration, envOpts ComposeEnvOptions) (api.CreateOptions, api.StartOptions) {
 	recreatePolicy := api.RecreateDiverged
 	if forceRecreate {
 		recreatePolicy = api.RecreateForce
@@ -137,7 +145,7 @@ func composeUpOptions(proj *types.Project, services []string, removeOrphans bool
 // ComposePs lists a project's compose containers. dockerHost is the
 // config-resolved docker host used to reuse the shared read-only compose
 // client; empty falls back to a one-shot environment-resolved client.
-func ComposePs(ctx context.Context, dockerHost string, proj *types.Project, services []string, all bool) ([]api.ContainerSummary, error) {
+func ComposePs(ctx context.Context, dockerHost string, proj *composetypes.Project, services []string, all bool) ([]api.ContainerSummary, error) {
 	c, shared, err := plainComposeClientInternal(ctx, dockerHost)
 	if err != nil {
 		return nil, err
@@ -149,19 +157,24 @@ func ComposePs(ctx context.Context, dockerHost string, proj *types.Project, serv
 	return c.svc.Ps(ctx, proj.Name, api.PsOptions{All: all, Services: services})
 }
 
-func ComposeGenerate(ctx context.Context, dockerHost, projectName string, containerIDs []string) (*types.Project, error) {
+func ComposeGenerate(ctx context.Context, dockerHost, projectName string, containerIDs []string) (string, error) {
 	c, shared, err := plainComposeClientInternal(ctx, dockerHost)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	if !shared {
 		defer func() { _ = c.Close() }()
 	}
 
-	return c.svc.Generate(ctx, api.GenerateOptions{ProjectName: projectName, Containers: containerIDs})
+	model, err := c.svc.Generate(ctx, api.GenerateOptions{ProjectName: projectName, Containers: containerIDs})
+	if err != nil {
+		return "", err
+	}
+	content, err := model.MarshalYAML()
+	return string(content), err
 }
 
-func ComposeDown(ctx context.Context, proj *types.Project, removeVolumes bool) error {
+func ComposeDown(ctx context.Context, proj *composetypes.Project, removeVolumes bool) error {
 	downCtx, cancel := detachFromHTTPContextInternal(ctx, defaultComposeTimeout)
 	defer cancel()
 
@@ -218,4 +231,73 @@ func ListGlobalComposeContainers(ctx context.Context, dockerClient client.APICli
 	}
 
 	return listResult.Items, nil
+}
+
+// FindComposeServiceContainerID prefers a running service container over a stopped predecessor.
+func FindComposeServiceContainerID(ctx context.Context, dockerHost, projectName, serviceName string) (string, error) {
+	containers, err := ComposePs(ctx, dockerHost, &composetypes.Project{Name: projectName}, []string{serviceName}, true)
+	if err != nil {
+		return "", err
+	}
+	var firstMatch string
+	for _, c := range containers {
+		if c.Service != serviceName {
+			continue
+		}
+		if firstMatch == "" {
+			firstMatch = c.ID
+		}
+		if c.State == "running" {
+			return c.ID, nil
+		}
+	}
+	return firstMatch, nil
+}
+
+// FindComposeReplica matches a replacement by project, service, and its recorded replica number.
+func FindComposeReplica(containers []container.Summary, labels map[string]string) (container.Summary, bool) {
+	projectName := docker.ComposeProjectLabel(labels)
+	serviceName := docker.ComposeServiceLabel(labels)
+	if projectName == "" || serviceName == "" {
+		return container.Summary{}, false
+	}
+	number := strings.TrimSpace(labels[api.ContainerNumberLabel])
+	for _, candidate := range containers {
+		if docker.ComposeProjectLabel(candidate.Labels) != projectName || docker.ComposeServiceLabel(candidate.Labels) != serviceName {
+			continue
+		}
+		if number != "" && strings.TrimSpace(candidate.Labels[api.ContainerNumberLabel]) != number {
+			continue
+		}
+		return candidate, true
+	}
+	return container.Summary{}, false
+}
+
+// FormatPorts renders compose port publishers as "published:target/proto"
+// (or "target/proto" when the port is not published).
+func FormatPorts(publishers []api.PortPublisher) []string {
+	var ports []string
+	for _, pub := range publishers {
+		if pub.PublishedPort > 0 {
+			ports = append(ports, fmt.Sprintf("%d:%d/%s", pub.PublishedPort, pub.TargetPort, pub.Protocol))
+		} else {
+			ports = append(ports, fmt.Sprintf("%d/%s", pub.TargetPort, pub.Protocol))
+		}
+	}
+	return ports
+}
+
+// FormatDockerPorts renders container port summaries in the same shape as
+// FormatPorts, for containers Arcane sees outside a compose project.
+func FormatDockerPorts(ports []container.PortSummary) []string {
+	var res []string
+	for _, p := range ports {
+		if p.PublicPort == 0 {
+			res = append(res, fmt.Sprintf("%d/%s", p.PrivatePort, p.Type))
+		} else {
+			res = append(res, fmt.Sprintf("%d:%d/%s", p.PublicPort, p.PrivatePort, p.Type))
+		}
+	}
+	return res
 }

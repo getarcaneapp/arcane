@@ -16,7 +16,6 @@ import (
 
 	"emperror.dev/errors"
 
-	"github.com/compose-spec/compose-go/v2/loader"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -1323,7 +1322,7 @@ func activeComposeProjectNameSetInternal(projects []projectpkg.Project) map[stri
 			continue
 		}
 		active[name] = struct{}{}
-		if normalized := loader.NormalizeProjectName(name); normalized != "" {
+		if normalized := projectspkg.NormalizeProjectName(name); normalized != "" {
 			active[normalized] = struct{}{}
 		}
 	}

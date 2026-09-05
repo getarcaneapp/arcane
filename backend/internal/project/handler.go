@@ -1,8 +1,6 @@
 package project
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-
 	"context"
 	stderrors "errors"
 	"fmt"
@@ -13,24 +11,26 @@ import (
 	"strings"
 	"time"
 
-	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
-
 	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumes"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
 	workspacepkg "github.com/getarcaneapp/arcane/backend/v2/pkg/workspace"
+	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/project"
+	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
+
+	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
+	workspacetypes "github.com/getarcaneapp/arcane/types/v2/workspace"
 	"github.com/samber/mo"
 	"gorm.io/gorm"
 )
@@ -70,13 +70,13 @@ type ListProjectTagsInput struct {
 type UpdateProjectTagInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ProjectID     string `path:"projectId" doc:"Project ID"`
-	Body          project.UpdateTag
+	Body          projecttypes.UpdateTag
 }
 
 type DeployProjectInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ProjectID     string `path:"projectId" doc:"Project ID"`
-	Body          *project.DeployOptions
+	Body          *projecttypes.DeployOptions
 }
 
 type DownProjectInput struct {
@@ -97,19 +97,19 @@ type GetProjectInput struct {
 type RedeployProjectInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ProjectID     string `path:"projectId" doc:"Project ID"`
-	Body          *project.DeployOptions
+	Body          *projecttypes.DeployOptions
 }
 
 type DestroyProjectInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ProjectID     string `path:"projectId" doc:"Project ID"`
-	Body          *project.Destroy
+	Body          *projecttypes.Destroy
 }
 
 type UpdateProjectInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ProjectID     string `path:"projectId" doc:"Project ID"`
-	Body          project.UpdateProject
+	Body          projecttypes.UpdateProject
 }
 
 type RestartProjectInput struct {
@@ -379,7 +379,7 @@ func RegisterProjects(api huma.API, projectService *ProjectService, activityServ
 }
 
 // ListProjects returns a paginated list of projects.
-func (h *ProjectHandler) ListProjects(ctx context.Context, input *ListProjectsInput) (*handlerutil.Page[project.Details], error) {
+func (h *ProjectHandler) ListProjects(ctx context.Context, input *ListProjectsInput) (*handlerutil.Page[projecttypes.Details], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	if input.Status != "" {
 		params.Filters["status"] = input.Status
@@ -403,11 +403,11 @@ func (h *ProjectHandler) ListProjects(ctx context.Context, input *ListProjectsIn
 	}
 
 	if projects == nil {
-		projects = []project.Details{}
+		projects = []projecttypes.Details{}
 	}
 
-	return &handlerutil.Page[project.Details]{
-		Body: base.Paginated[project.Details]{
+	return &handlerutil.Page[projecttypes.Details]{
+		Body: base.Paginated[projecttypes.Details]{
 			Success:    true,
 			Data:       projects,
 			Pagination: handlerutil.PaginationResponse(paginationResp),
@@ -416,16 +416,16 @@ func (h *ProjectHandler) ListProjects(ctx context.Context, input *ListProjectsIn
 }
 
 // GetProjectStatusCounts returns counts of projects by status.
-func (h *ProjectHandler) GetProjectStatusCounts(ctx context.Context, input *GetProjectStatusCountsInput) (*handlerutil.Out[project.StatusCounts], error) {
+func (h *ProjectHandler) GetProjectStatusCounts(ctx context.Context, input *GetProjectStatusCountsInput) (*handlerutil.Out[projecttypes.StatusCounts], error) {
 	_, running, stopped, total, archived, err := h.projectService.GetProjectStatusCounts(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to get project status counts").Error())
 	}
 
-	return &handlerutil.Out[project.StatusCounts]{
-		Body: base.ApiResponse[project.StatusCounts]{
+	return &handlerutil.Out[projecttypes.StatusCounts]{
+		Body: base.ApiResponse[projecttypes.StatusCounts]{
 			Success: true,
-			Data: project.StatusCounts{
+			Data: projecttypes.StatusCounts{
 				RunningProjects:  running,
 				StoppedProjects:  stopped,
 				TotalProjects:    total,
@@ -436,25 +436,25 @@ func (h *ProjectHandler) GetProjectStatusCounts(ctx context.Context, input *GetP
 }
 
 // ListProjectTags returns the reusable project tag catalog for an environment.
-func (h *ProjectHandler) ListProjectTags(ctx context.Context, _ *ListProjectTagsInput) (*handlerutil.Out[[]project.TagOption], error) {
+func (h *ProjectHandler) ListProjectTags(ctx context.Context, _ *ListProjectTagsInput) (*handlerutil.Out[[]projecttypes.TagOption], error) {
 	options, err := h.projectService.ListProjectTagOptions(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to list project tags").Error())
 	}
 	if options == nil {
-		options = []project.TagOption{}
+		options = []projecttypes.TagOption{}
 	}
-	return &handlerutil.Out[[]project.TagOption]{Body: base.ApiResponse[[]project.TagOption]{Success: true, Data: options}}, nil
+	return &handlerutil.Out[[]projecttypes.TagOption]{Body: base.ApiResponse[[]projecttypes.TagOption]{Success: true, Data: options}}, nil
 }
 
 // UpdateProjectTag applies one UI-managed project tag association change.
-func (h *ProjectHandler) UpdateProjectTag(ctx context.Context, input *UpdateProjectTagInput) (*handlerutil.Out[project.UpdateTagResponse], error) {
+func (h *ProjectHandler) UpdateProjectTag(ctx context.Context, input *UpdateProjectTagInput) (*handlerutil.Out[projecttypes.UpdateTagResponse], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	var tags []project.Tag
+	var tags []projecttypes.Tag
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
@@ -483,9 +483,9 @@ func (h *ProjectHandler) UpdateProjectTag(ctx context.Context, input *UpdateProj
 		}
 	}
 
-	return &handlerutil.Out[project.UpdateTagResponse]{Body: base.ApiResponse[project.UpdateTagResponse]{
+	return &handlerutil.Out[projecttypes.UpdateTagResponse]{Body: base.ApiResponse[projecttypes.UpdateTagResponse]{
 		Success: true,
-		Data: project.UpdateTagResponse{
+		Data: projecttypes.UpdateTagResponse{
 			Tags:       tags,
 			ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer(),
 		},
@@ -622,13 +622,13 @@ func (h *ProjectHandler) DownProject(ctx context.Context, input *DownProjectInpu
 }
 
 func projectUpdateHTTPErrorInternal(err error) error {
-	if conflictErr, ok := stderrors.AsType[*volumes.ProjectVolumeRenameConflictError](err); ok {
+	if conflictErr, ok := stderrors.AsType[*volumetypes.ProjectVolumeRenameConflictError](err); ok {
 		return huma.Error409Conflict(conflictErr.Error())
 	}
-	if inUseErr, ok := stderrors.AsType[*volumes.ProjectVolumeRenameInUseError](err); ok {
+	if inUseErr, ok := stderrors.AsType[*volumetypes.ProjectVolumeRenameInUseError](err); ok {
 		return huma.Error409Conflict(inUseErr.Error())
 	}
-	if spaceErr, ok := stderrors.AsType[*volumes.ProjectVolumeRenameInsufficientSpaceError](err); ok {
+	if spaceErr, ok := stderrors.AsType[*volumetypes.ProjectVolumeRenameInsufficientSpaceError](err); ok {
 		return huma.NewError(http.StatusInsufficientStorage, spaceErr.Error())
 	}
 	return projectWorkspaceRequestHTTPErrorInternal(err)
@@ -650,12 +650,12 @@ func projectWorkspaceRequestHTTPErrorInternal(err error) error {
 }
 
 // CreateProject creates a new Docker Compose project.
-func (h *ProjectHandler) CreateProject(ctx context.Context, input *CreateProjectInput) (*handlerutil.Out[project.CreateReponse], error) {
-	projectInput, err := handlerutil.ParseMultipartJSONPart[project.CreateProject](input.RawBody, "project")
+func (h *ProjectHandler) CreateProject(ctx context.Context, input *CreateProjectInput) (*handlerutil.Out[projecttypes.CreateReponse], error) {
+	projectInput, err := handlerutil.ParseMultipartJSONPart[projecttypes.CreateProject](input.RawBody, "project")
 	if err != nil {
 		return nil, err
 	}
-	manifest, err := handlerutil.ParseMultipartJSONPart[project.CreateProjectWorkspaceManifest](input.RawBody, "manifest")
+	manifest, err := handlerutil.ParseMultipartJSONPart[projecttypes.CreateProjectWorkspaceManifest](input.RawBody, "manifest")
 	if err != nil {
 		return nil, err
 	}
@@ -697,7 +697,7 @@ func (h *ProjectHandler) CreateProject(ctx context.Context, input *CreateProject
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to create project").Error())
 	}
 
-	var response project.CreateReponse
+	var response projecttypes.CreateReponse
 	if err := mapper.MapStruct(proj, &response); err != nil {
 		return nil, huma.Error500InternalServerError("failed to map response")
 	}
@@ -716,8 +716,8 @@ func (h *ProjectHandler) CreateProject(ctx context.Context, input *CreateProject
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to load project tags").Error())
 	}
 
-	return &handlerutil.Out[project.CreateReponse]{
-		Body: base.ApiResponse[project.CreateReponse]{
+	return &handlerutil.Out[projecttypes.CreateReponse]{
+		Body: base.ApiResponse[projecttypes.CreateReponse]{
 			Success: true,
 			Data:    response,
 		},
@@ -725,25 +725,25 @@ func (h *ProjectHandler) CreateProject(ctx context.Context, input *CreateProject
 }
 
 // GetProject returns a project by ID.
-func (h *ProjectHandler) GetProject(ctx context.Context, input *GetProjectInput) (*handlerutil.Out[project.Details], error) {
+func (h *ProjectHandler) GetProject(ctx context.Context, input *GetProjectInput) (*handlerutil.Out[projecttypes.Details], error) {
 	if input.ProjectID == "" {
 		return nil, huma.Error400BadRequest("Project ID is required")
 	}
 
-	details, err := h.projectService.GetProjectDetails(ctx, input.ProjectID, project.DetailsOptions{})
+	details, err := h.projectService.GetProjectDetails(ctx, input.ProjectID, projecttypes.DetailsOptions{})
 	if err != nil {
 		return nil, huma.Error404NotFound(errors.WithMessage(err, "Failed to get project details").Error())
 	}
 
-	return &handlerutil.Out[project.Details]{
-		Body: base.ApiResponse[project.Details]{
+	return &handlerutil.Out[projecttypes.Details]{
+		Body: base.ApiResponse[projecttypes.Details]{
 			Success: true,
 			Data:    details,
 		},
 	}, nil
 }
 
-func (h *ProjectHandler) getProjectDetailsWithOptionsInternal(ctx context.Context, input *GetProjectInput, opts project.DetailsOptions) (*handlerutil.Out[project.Details], error) {
+func (h *ProjectHandler) getProjectDetailsWithOptionsInternal(ctx context.Context, input *GetProjectInput, opts projecttypes.DetailsOptions) (*handlerutil.Out[projecttypes.Details], error) {
 	if input.ProjectID == "" {
 		return nil, huma.Error400BadRequest("Project ID is required")
 	}
@@ -753,16 +753,16 @@ func (h *ProjectHandler) getProjectDetailsWithOptionsInternal(ctx context.Contex
 		return nil, huma.Error404NotFound(errors.WithMessage(err, "Failed to get project details").Error())
 	}
 
-	return &handlerutil.Out[project.Details]{
-		Body: base.ApiResponse[project.Details]{
+	return &handlerutil.Out[projecttypes.Details]{
+		Body: base.ApiResponse[projecttypes.Details]{
 			Success: true,
 			Data:    details,
 		},
 	}, nil
 }
 
-func (h *ProjectHandler) GetProjectCompose(ctx context.Context, input *GetProjectInput) (*handlerutil.Out[project.Details], error) {
-	return h.getProjectDetailsWithOptionsInternal(ctx, input, project.DetailsOptions{
+func (h *ProjectHandler) GetProjectCompose(ctx context.Context, input *GetProjectInput) (*handlerutil.Out[projecttypes.Details], error) {
+	return h.getProjectDetailsWithOptionsInternal(ctx, input, projecttypes.DetailsOptions{
 		IncludeComposeContent: true,
 		IncludeEnvState:       true,
 		IncludeIncludeFiles:   true,
@@ -770,14 +770,14 @@ func (h *ProjectHandler) GetProjectCompose(ctx context.Context, input *GetProjec
 	})
 }
 
-func (h *ProjectHandler) GetProjectRuntime(ctx context.Context, input *GetProjectInput) (*handlerutil.Out[project.Details], error) {
-	return h.getProjectDetailsWithOptionsInternal(ctx, input, project.DetailsOptions{
+func (h *ProjectHandler) GetProjectRuntime(ctx context.Context, input *GetProjectInput) (*handlerutil.Out[projecttypes.Details], error) {
+	return h.getProjectDetailsWithOptionsInternal(ctx, input, projecttypes.DetailsOptions{
 		IncludeRuntimeServices: true,
 	})
 }
 
-func (h *ProjectHandler) GetProjectUpdates(ctx context.Context, input *GetProjectInput) (*handlerutil.Out[project.Details], error) {
-	return h.getProjectDetailsWithOptionsInternal(ctx, input, project.DetailsOptions{
+func (h *ProjectHandler) GetProjectUpdates(ctx context.Context, input *GetProjectInput) (*handlerutil.Out[projecttypes.Details], error) {
+	return h.getProjectDetailsWithOptionsInternal(ctx, input, projecttypes.DetailsOptions{
 		IncludeServiceConfigs: true,
 		IncludeUpdateInfo:     true,
 	})
@@ -856,7 +856,7 @@ func (h *ProjectHandler) DestroyProject(ctx context.Context, input *DestroyProje
 }
 
 // UpdateProject updates a Docker Compose project.
-func (h *ProjectHandler) UpdateProject(ctx context.Context, input *UpdateProjectInput) (*handlerutil.Out[project.Details], error) {
+func (h *ProjectHandler) UpdateProject(ctx context.Context, input *UpdateProjectInput) (*handlerutil.Out[projecttypes.Details], error) {
 	if input.ProjectID == "" {
 		return nil, huma.Error400BadRequest("Project ID is required")
 	}
@@ -889,7 +889,7 @@ func (h *ProjectHandler) UpdateProject(ctx context.Context, input *UpdateProject
 		return nil, huma.Error400BadRequest(errors.WithMessage(err, "Failed to update project").Error())
 	}
 
-	details, err := h.projectService.GetProjectDetails(runtimeCtx, input.ProjectID, project.DetailsOptions{
+	details, err := h.projectService.GetProjectDetails(runtimeCtx, input.ProjectID, projecttypes.DetailsOptions{
 		IncludeComposeContent:  true,
 		IncludeEnvState:        true,
 		IncludeIncludeFiles:    true,
@@ -902,8 +902,8 @@ func (h *ProjectHandler) UpdateProject(ctx context.Context, input *UpdateProject
 	}
 	details.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
 
-	return &handlerutil.Out[project.Details]{
-		Body: base.ApiResponse[project.Details]{
+	return &handlerutil.Out[projecttypes.Details]{
+		Body: base.ApiResponse[projecttypes.Details]{
 			Success: true,
 			Data:    details,
 		},
@@ -1134,7 +1134,7 @@ func (h *ProjectHandler) BuildProjectImages(ctx context.Context, input *BuildPro
 		return nil, err
 	}
 
-	options := ProjectBuildOptions{}
+	options := projecttypes.BuildOptions{}
 	if input.Body != nil {
 		options.Services = input.Body.Services
 		options.Provider = input.Body.Provider
@@ -1154,4 +1154,108 @@ func (h *ProjectHandler) BuildProjectImages(ctx context.Context, input *BuildPro
 			return h.projectService.BuildProjectServices(opCtx, input.ProjectID, options, writer, user)
 		},
 	}), nil
+}
+
+type GetProjectWorkspaceInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	ProjectID     string `path:"projectId" doc:"Project ID"`
+}
+
+type GetProjectWorkspaceFileInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	ProjectID     string `path:"projectId" doc:"Project ID"`
+	RelativePath  string `query:"relativePath" doc:"Path relative to the project workspace root"`
+}
+
+type UpdateProjectWorkspaceInput struct {
+	EnvironmentID string         `path:"id" doc:"Environment ID"`
+	ProjectID     string         `path:"projectId" doc:"Project ID"`
+	RawBody       multipart.Form `contentType:"multipart/form-data"`
+}
+
+func registerProjectWorkspaceRoutesInternal(api huma.API, h *ProjectHandler) {
+	basePath := "/environments/{id}/projects/{projectId}/workspace"
+	tag := "Project Workspace"
+	handlerutil.RegisterSecured(api, handlerutil.Operation("get-project-workspace", http.MethodGet, basePath, "Get project workspace", "", tag), authz.PermProjectsRead, h.GetProjectWorkspace)
+	handlerutil.RegisterSecured(api, handlerutil.Operation("get-project-workspace-file", http.MethodGet, basePath+"/file", "Get project workspace file", "", tag), authz.PermProjectsRead, h.GetProjectWorkspaceFile)
+	handlerutil.RegisterSecured(api, handlerutil.Operation("download-project-workspace-file", http.MethodGet, basePath+"/file/download", "Download project workspace file", "", tag), authz.PermProjectsRead, h.DownloadProjectWorkspaceFile)
+	updateOperation := handlerutil.Operation("update-project-workspace", http.MethodPut, basePath, "Update project workspace", "", tag)
+	updateOperation.RequestBody = handlerutil.WorkspaceMultipartRequestBody("JSON encoded project workspace manifest")
+	handlerutil.RegisterSecured(api, updateOperation, authz.PermProjectsUpdate, h.UpdateProjectWorkspace)
+}
+
+func projectWorkspaceHTTPErrorInternal(err error) error {
+	switch {
+	case errors.Is(err, common.ErrProjectWorkspaceConflict):
+		return huma.Error409Conflict(err.Error())
+	case errors.Is(err, common.ErrProjectArchived):
+		return huma.Error409Conflict(err.Error())
+	case errors.Is(err, common.ErrProjectWorkspaceForbidden):
+		return huma.Error403Forbidden(err.Error())
+	case errors.Is(err, common.ErrProjectWorkspaceNotFound), errors.Is(err, common.ErrProjectNotFound):
+		return huma.Error404NotFound(err.Error())
+	case errors.Is(err, common.ErrProjectWorkspaceBadRequest):
+		return huma.Error400BadRequest(err.Error())
+	default:
+		return huma.Error500InternalServerError("internal error")
+	}
+}
+
+func (h *ProjectHandler) GetProjectWorkspace(ctx context.Context, input *GetProjectWorkspaceInput) (*handlerutil.Out[workspacetypes.Workspace], error) {
+	result, err := h.projectService.GetProjectWorkspace(ctx, input.ProjectID)
+	if err != nil {
+		return nil, projectWorkspaceHTTPErrorInternal(err)
+	}
+	return &handlerutil.Out[workspacetypes.Workspace]{Body: base.ApiResponse[workspacetypes.Workspace]{Success: true, Data: *result}}, nil
+}
+
+func (h *ProjectHandler) GetProjectWorkspaceFile(ctx context.Context, input *GetProjectWorkspaceFileInput) (*handlerutil.Out[workspacetypes.FileContent], error) {
+	result, err := h.projectService.GetProjectWorkspaceFile(ctx, input.ProjectID, input.RelativePath)
+	if err != nil {
+		return nil, projectWorkspaceHTTPErrorInternal(err)
+	}
+	return &handlerutil.Out[workspacetypes.FileContent]{Body: base.ApiResponse[workspacetypes.FileContent]{Success: true, Data: *result}}, nil
+}
+
+func (h *ProjectHandler) DownloadProjectWorkspaceFile(ctx context.Context, input *GetProjectWorkspaceFileInput) (*huma.StreamResponse, error) {
+	reader, size, name, err := h.projectService.DownloadProjectWorkspaceFile(ctx, input.ProjectID, input.RelativePath)
+	if err != nil {
+		return nil, projectWorkspaceHTTPErrorInternal(err)
+	}
+	return handlerutil.DownloadResponse(reader, size, name), nil
+}
+
+func (h *ProjectHandler) UpdateProjectWorkspace(ctx context.Context, input *UpdateProjectWorkspaceInput) (*handlerutil.Out[workspacetypes.Workspace], error) {
+	manifest, err := handlerutil.ParseMultipartJSONPart[projecttypes.WorkspaceUpdateManifest](input.RawBody, "manifest")
+	if err != nil {
+		return nil, err
+	}
+	maxFileSizeMB := workspacepkg.DefaultMaxFileSizeMB
+	if h.projectService != nil && h.projectService.config != nil {
+		maxFileSizeMB = h.projectService.config.ProjectWorkspaceMaxFileSizeMB
+	}
+	uploads, err := handlerutil.ReadWorkspaceUploads(input.RawBody, workspacepkg.MaxFileSizeBytes(maxFileSizeMB))
+	if err != nil {
+		return nil, err
+	}
+	user, err := handlerutil.RequireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var result *workspacetypes.Workspace
+	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
+		EnvironmentID: input.EnvironmentID, Type: activitytypes.TypeResourceAction, ResourceType: "project", ResourceID: input.ProjectID, ResourceName: input.ProjectID, User: user,
+		Step: "Updating project workspace", Message: "Updating project workspace", SuccessMessage: "Project workspace updated successfully",
+		Metadata: database.JSON{"action": "update_project_workspace", "fileChangeCount": len(manifest.FileChanges)},
+	}, func(runtimeCtx context.Context) error {
+		var updateErr error
+		result, updateErr = h.projectService.UpdateProjectWorkspace(runtimeCtx, input.ProjectID, manifest, uploads, *user)
+		return updateErr
+	})
+	if err != nil {
+		return nil, projectWorkspaceHTTPErrorInternal(err)
+	}
+	result.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
+	return &handlerutil.Out[workspacetypes.Workspace]{Body: base.ApiResponse[workspacetypes.Workspace]{Success: true, Data: *result}}, nil
 }

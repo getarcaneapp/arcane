@@ -1,6 +1,7 @@
 package projects
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -58,4 +59,67 @@ func TestReadFolderComposeTemplate_ReadsEnvExample(t *testing.T) {
 	require.True(t, found)
 	require.NotNil(t, env)
 	assert.Equal(t, "KEY=value\n", *env)
+}
+
+func TestResolveTemplateIconURL(t *testing.T) {
+	tests := []struct {
+		name       string
+		compose    string
+		envContent string
+		want       string
+	}{
+		{
+			name: "top level icon",
+			compose: `x-arcane:
+  icon: https://cdn.example/icon.png
+services:
+  app:
+    image: nginx:alpine
+`,
+			want: "https://cdn.example/icon.png",
+		},
+		{
+			name: "icons alias",
+			compose: `x-arcane:
+  icons: https://cdn.example/alias.png
+services:
+  app:
+    image: nginx:alpine
+`,
+			want: "https://cdn.example/alias.png",
+		},
+		{
+			name: "env interpolation",
+			compose: `x-arcane:
+  icon: ${TEMPLATE_ICON}
+services:
+  app:
+    image: nginx:alpine
+`,
+			envContent: "TEMPLATE_ICON=https://cdn.example/from-env.png\n",
+			want:       "https://cdn.example/from-env.png",
+		},
+		{
+			name: "invalid x arcane block",
+			compose: `x-arcane: plain-text
+services:
+  app:
+    image: nginx:alpine
+`,
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			iconURL := ResolveTemplateIconURL(context.Background(), tt.compose, tt.envContent)
+			if tt.want == "" {
+				require.Nil(t, iconURL)
+				return
+			}
+
+			require.NotNil(t, iconURL)
+			require.Equal(t, tt.want, *iconURL)
+		})
+	}
 }

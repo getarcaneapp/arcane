@@ -12,7 +12,9 @@ import (
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -101,28 +103,28 @@ func TestComposeUpOptions_RemoveOrphans(t *testing.T) {
 	proj := &composetypes.Project{Name: "test"}
 
 	t.Run("removeOrphans true propagates to CreateOptions", func(t *testing.T) {
-		upOptions, _ := composeUpOptions(proj, nil, true, false, 0, ComposeEnvOptions{})
+		upOptions, _ := composeUpOptionsInternal(proj, nil, true, false, 0, ComposeEnvOptions{})
 		require.True(t, upOptions.RemoveOrphans)
 	})
 
 	t.Run("removeOrphans false leaves CreateOptions disabled", func(t *testing.T) {
-		upOptions, _ := composeUpOptions(proj, nil, false, false, 0, ComposeEnvOptions{})
+		upOptions, _ := composeUpOptionsInternal(proj, nil, false, false, 0, ComposeEnvOptions{})
 		require.False(t, upOptions.RemoveOrphans)
 	})
 
 	t.Run("removeOrphans is independent of forceRecreate", func(t *testing.T) {
 		// forceRecreate drives the Recreate policy, not RemoveOrphans.
-		upOptions, _ := composeUpOptions(proj, nil, true, true, 0, ComposeEnvOptions{})
+		upOptions, _ := composeUpOptionsInternal(proj, nil, true, true, 0, ComposeEnvOptions{})
 		require.True(t, upOptions.RemoveOrphans)
 		require.Equal(t, api.RecreateForce, upOptions.Recreate)
 
-		upOptions, _ = composeUpOptions(proj, nil, false, true, 0, ComposeEnvOptions{})
+		upOptions, _ = composeUpOptionsInternal(proj, nil, false, true, 0, ComposeEnvOptions{})
 		require.False(t, upOptions.RemoveOrphans)
 		require.Equal(t, api.RecreateForce, upOptions.Recreate)
 	})
 
 	t.Run("COMPOSE_REMOVE_ORPHANS / COMPOSE_IGNORE_ORPHANS propagate", func(t *testing.T) {
-		upOptions, _ := composeUpOptions(proj, nil, false, false, 0, ComposeEnvOptions{RemoveOrphans: true, IgnoreOrphans: true})
+		upOptions, _ := composeUpOptionsInternal(proj, nil, false, false, 0, ComposeEnvOptions{RemoveOrphans: true, IgnoreOrphans: true})
 		require.True(t, upOptions.RemoveOrphans)
 		require.True(t, upOptions.IgnoreOrphans)
 	})
@@ -153,4 +155,39 @@ func TestListGlobalComposeContainersUsesProvidedClient(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, containers, 1)
 	require.Equal(t, "abc123", containers[0].ID)
+}
+
+func TestFormatDockerPorts(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    []container.PortSummary
+		expected []string
+	}{
+		{
+			name: "public port",
+			input: []container.PortSummary{
+				{PublicPort: 8080, PrivatePort: 80, Type: "tcp"},
+			},
+			expected: []string{"8080:80/tcp"},
+		},
+		{
+			name: "private only",
+			input: []container.PortSummary{
+				{PrivatePort: 80, Type: "tcp"},
+			},
+			expected: []string{"80/tcp"},
+		},
+		{
+			name:     "empty",
+			input:    []container.PortSummary{},
+			expected: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := FormatDockerPorts(tt.input)
+			assert.Equal(t, tt.expected, got)
+		})
+	}
 }

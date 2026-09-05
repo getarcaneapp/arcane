@@ -1,8 +1,6 @@
 package project
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-
 	"context"
 	"io"
 	"log/slog"
@@ -10,23 +8,25 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
+	"time"
 
 	"emperror.dev/errors"
-
+	composetypes "github.com/compose-spec/compose-go/v2/types"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
+	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
 	dockerregistry "github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
-	"github.com/samber/hot"
 	"github.com/samber/mo"
 	buildtypes "go.getarcane.app/builds/types"
 	"gorm.io/gorm"
@@ -38,6 +38,7 @@ type buildServiceInternal interface {
 }
 
 type ProjectService struct {
+	composeCoordinator          projecttypes.ComposeCoordinator
 	db                          *database.DB
 	settingsService             *settings.SettingsService
 	eventService                *event.EventService
@@ -55,12 +56,12 @@ type ProjectService struct {
 	syncMu sync.Mutex
 
 	composeNames  composeNameCacheInternal
-	parsedCompose *parsedComposeCacheInternal
+	parsedCompose projecttypes.ComposeCache[*composetypes.Project]
 	// metaCache holds per-project icon/URL metadata, keyed by project ID. Deriving
 	// it costs a full compose load (interpolation plus .env reads) and, for GitOps
 	// projects, a gitops_syncs lookup — per project, on every list request.
 	// Entries are validated by compose/include/env file mtimes rather than a TTL.
-	metaCache *hot.HotCache[string, projectMetadataEntryInternal]
+	metaCache projecttypes.ComposeCache[projects.ArcaneComposeMetadata]
 }
 
 // EnsureGitOpsProjectLinked persists the bidirectional GitOps/project binding
@@ -74,7 +75,7 @@ func (s *ProjectService) EnsureGitOpsProjectLinked(ctx context.Context, sync *Gi
 	}
 
 	cacheBinding := func() {
-		s.composeNames.put(projects.NormalizeProjectName(project.Name), project.ID)
+		s.composeNames.putInternal(projects.NormalizeProjectName(project.Name), project.ID)
 	}
 	if sync.ProjectID != nil && *sync.ProjectID == project.ID && project.GitOpsManagedBy != nil && *project.GitOpsManagedBy == sync.ID {
 		cacheBinding()
@@ -133,7 +134,7 @@ func (s *ProjectService) ValidateComposeDirectory(ctx context.Context, projectNa
 		pathMapper,
 		nil,
 		nil,
-		true,
+		true, nil, nil,
 	)
 	if err != nil {
 		return 0, err
@@ -164,7 +165,7 @@ func (s *ProjectService) CreateGitOpsManagedProject(ctx context.Context, sync *G
 
 	sync.ProjectID = &project.ID
 	project.GitOpsManagedBy = &sync.ID
-	s.composeNames.put(projects.NormalizeProjectName(project.Name), project.ID)
+	s.composeNames.putInternal(projects.NormalizeProjectName(project.Name), project.ID)
 	if err := s.reconcileComposeTagsForProjectInternal(ctx, project); err != nil {
 		slog.WarnContext(ctx, "failed to reconcile Compose project tags during GitOps project creation", "projectID", project.ID, "error", err)
 	}
@@ -195,6 +196,7 @@ type registryCredentialsProviderInternal func(context.Context) ([]containerregis
 
 func NewProjectService(db *database.DB, settingsService *settings.SettingsService, eventService *event.EventService, imageService *image.ImageService, dockerService *docker.DockerClientService, buildService buildServiceInternal, lifecycleService *LifecycleService, containerRegistryService *registry.ContainerRegistryService, cfg *config.Config) *ProjectService {
 	return &ProjectService{
+		composeCoordinator:       projects.NewCoordinator(projecttypes.ComposeCommands{Stop: composeStopProjectServicesInternal, Up: composeUpProjectServicesInternal}),
 		db:                       db,
 		settingsService:          settingsService,
 		eventService:             eventService,
@@ -204,8 +206,8 @@ func NewProjectService(db *database.DB, settingsService *settings.SettingsServic
 		lifecycleService:         lifecycleService,
 		containerRegistryService: containerRegistryService,
 		config:                   cfg,
-		parsedCompose:            newParsedComposeCacheInternal(),
-		metaCache:                hot.NewHotCache[string, projectMetadataEntryInternal](hot.LRU, 1024).Build(),
+		parsedCompose:            projects.NewParsedComposeCache(),
+		metaCache:                projects.NewComposeCache[projects.ArcaneComposeMetadata](1024, nil),
 	}
 }
 
@@ -342,7 +344,7 @@ func (s *ProjectService) GetProjectByComposeName(ctx context.Context, name strin
 	var proj Project
 	err := s.db.WithContext(ctx).Where("name = ? OR name = ?", name, normalized).First(&proj).Error
 	if err == nil {
-		s.composeNames.put(normalized, proj.ID)
+		s.composeNames.putInternal(normalized, proj.ID)
 		return &proj, nil
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -418,4 +420,250 @@ func (s *ProjectService) projectPathMapperInternal(ctx context.Context) *project
 		"/app/data/projects",
 		dockerClient,
 	)
+}
+
+// composeNameCacheInternal maps normalized compose project names to project
+// IDs so a name lookup skips the projects table scan.
+type composeNameCacheInternal struct {
+	mu     sync.RWMutex
+	byName map[string]string
+}
+
+func (c *composeNameCacheInternal) projectIDInternal(normalizedName string) mo.Option[string] {
+	if normalizedName == "" {
+		return mo.None[string]()
+	}
+
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	if c.byName == nil {
+		return mo.None[string]()
+	}
+
+	projectID, ok := c.byName[normalizedName]
+	return mo.TupleToOption(projectID, ok)
+}
+
+func (c *composeNameCacheInternal) putInternal(normalizedName, projectID string) {
+	if normalizedName == "" || projectID == "" {
+		return
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.byName == nil {
+		c.byName = make(map[string]string)
+	}
+	c.byName[normalizedName] = projectID
+}
+
+func (c *composeNameCacheInternal) invalidateInternal(normalizedName string) {
+	if normalizedName == "" {
+		return
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	delete(c.byName, normalizedName)
+}
+
+func (c *composeNameCacheInternal) replaceInternal(byName map[string]string) {
+	c.mu.Lock()
+	c.byName = byName
+	c.mu.Unlock()
+}
+
+func (s *ProjectService) invalidateProjectCachesInternal(projectID string) {
+	if s.parsedCompose != nil {
+		s.parsedCompose.Invalidate(projectID)
+	}
+	if s.metaCache != nil {
+		s.metaCache.Invalidate(projectID)
+	}
+}
+
+func (s *ProjectService) lookupProjectByCachedComposeNameInternal(ctx context.Context, normalizedName string) (*Project, bool, error) {
+	projectID, ok := s.composeNames.projectIDInternal(normalizedName).Get()
+	if !ok {
+		return nil, false, nil
+	}
+
+	var projectModel Project
+	if err := s.db.WithContext(ctx).Where("id = ?", projectID).First(&projectModel).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			s.composeNames.invalidateInternal(normalizedName)
+			return nil, false, nil
+		}
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, false, errors.WrapIf(err, "request canceled or timed out")
+		}
+		return nil, false, errors.WrapIf(err, "failed to get project by cached compose name")
+	}
+	if projects.NormalizeProjectName(projectModel.Name) != normalizedName {
+		s.composeNames.invalidateInternal(normalizedName)
+		return nil, false, nil
+	}
+
+	return &projectModel, true, nil
+}
+
+func (s *ProjectService) rebuildComposeNameCacheInternal(ctx context.Context) error {
+	var projectModels []Project
+	if err := s.db.WithContext(ctx).Select("id", "name").Find(&projectModels).Error; err != nil {
+		return err
+	}
+
+	byName := make(map[string]string, len(projectModels))
+	for i := range projectModels {
+		normalizedName := projects.NormalizeProjectName(projectModels[i].Name)
+		if normalizedName == "" {
+			continue
+		}
+		if _, exists := byName[normalizedName]; !exists {
+			byName[normalizedName] = projectModels[i].ID
+		}
+	}
+
+	s.composeNames.replaceInternal(byName)
+
+	return nil
+}
+
+// ResolveProjectComposeFile returns the base compose file for a project. The
+// precedence mirrors `docker compose`: COMPOSE_FILE in the merged environment
+// (.env.global first, the project's .env on top) wins, then a GitOps sync's
+// configured compose path, then standard detection.
+func (s *ProjectService) ResolveProjectComposeFile(ctx context.Context, proj *Project) (string, error) {
+	if proj == nil {
+		return "", errors.New("project is nil")
+	}
+
+	projectsDirectory := ""
+	if s.settingsService != nil {
+		var dirErr error
+		projectsDirectory, dirErr = s.GetProjectsDirectory(ctx)
+		if dirErr != nil {
+			// The .env.global layer is skipped for an empty projects directory;
+			// keep resolution working but surface the misconfiguration.
+			slog.WarnContext(ctx, "failed to resolve projects directory for compose selection", "projectID", proj.ID, "error", dirErr)
+		}
+	}
+	if files, selErr := projects.ComposeFileEnvSelection(ctx, projectsDirectory, proj.Path); selErr != nil {
+		return "", selErr
+	} else if len(files) > 0 {
+		return files[0], nil
+	}
+
+	if proj.GitOpsManagedBy != nil && strings.TrimSpace(*proj.GitOpsManagedBy) != "" {
+		var syncRecord GitOpsSync
+		if err := s.db.WithContext(ctx).
+			Select("compose_path").
+			Where("id = ?", *proj.GitOpsManagedBy).
+			First(&syncRecord).Error; err == nil {
+			composeFileName := strings.TrimSpace(filepath.Base(syncRecord.ComposePath))
+			if composeFileName != "" && composeFileName != "." {
+				candidate := filepath.Join(proj.Path, composeFileName)
+				// os.Stat rather than acfs: proj.Path may be an imported project
+				// outside the projects directory, and the compose file may be a
+				// symlink resolving outside it.
+				if info, statErr := os.Stat(candidate); statErr == nil {
+					if !info.IsDir() {
+						return candidate, nil
+					}
+				} else if !os.IsNotExist(statErr) {
+					return "", errors.WrapIff(statErr, "failed to inspect GitOps compose file %s", candidate)
+				}
+			}
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", errors.WrapIff(err, "failed to resolve GitOps compose path for project %s", proj.ID)
+		}
+	}
+
+	composeFile, err := projects.DetectComposeFile(ctx, projectsDirectory, proj.Path)
+	if err != nil {
+		return "", common.Classify(common.ErrProjectComposeFileNotFound, errors.WrapIf(err, "Project compose file not found"))
+	}
+
+	return composeFile, nil
+}
+
+func (s *ProjectService) loadComposeProjectForProjectInternal(ctx context.Context, proj *Project, services ...string) (*composetypes.Project, string, error) {
+	composeFileFullPath, err := s.ResolveProjectComposeFile(ctx, proj)
+	if err != nil {
+		return nil, "", err
+	}
+
+	cfg := s.settingsService.GetSettingsOrDefaults(ctx)
+	projectsDirectory := getProjectsDirectoryOrDefaultInternal(ctx, cfg)
+
+	pathMapper := s.projectPathMapperInternal(ctx)
+
+	composeProject, loadErr := projects.LoadComposeProject(ctx, composeFileFullPath, projects.NormalizeProjectName(proj.Name), projectsDirectory, utils.BoolOrDefault(cfg.AutoInjectEnv.Value, false), pathMapper, nil, nil, false, nil, services)
+	if loadErr != nil {
+		return nil, "", loadErr
+	}
+
+	return composeProject, composeFileFullPath, nil
+}
+
+func (s *ProjectService) getCachedComposeProjectInternal(ctx context.Context, proj *Project, cfg *settings.Settings) (*composetypes.Project, error) {
+	if proj == nil {
+		return nil, errors.New("project is nil")
+	}
+	if cfg == nil {
+		cfg = s.settingsService.GetSettingsOrDefaults(ctx)
+	}
+	composePath, err := s.ResolveProjectComposeFile(ctx, proj)
+	if err != nil {
+		return nil, err
+	}
+	return projects.LoadCachedComposeProject(ctx, s.parsedCompose, proj.ID, proj.Path, composePath, projects.NormalizeProjectName(proj.Name), getProjectsDirectoryOrDefaultInternal(ctx, cfg), utils.BoolOrDefault(cfg.AutoInjectEnv.Value, false), s.projectPathMapperInternal(ctx))
+}
+
+func (s *ProjectService) refreshComposeProjectNameInternal(ctx context.Context, proj *Project) {
+	if proj == nil {
+		return
+	}
+
+	dirName := proj.Name
+	if proj.DirName != nil && *proj.DirName != "" {
+		dirName = *proj.DirName
+	}
+
+	meta, err := s.loadComposeMetadataForSyncInternal(ctx, proj.Path, dirName)
+	if err != nil {
+		slog.WarnContext(ctx, "failed to refresh compose project name", "projectID", proj.ID, "path", proj.Path, "error", err)
+		return
+	}
+
+	updates := map[string]any{}
+	shouldUpdateName := meta.explicitProjectName || projects.NormalizeProjectName(proj.Name) != proj.Name
+	if shouldUpdateName && meta.resolvedProjectName != "" && proj.Name != meta.resolvedProjectName {
+		updates["name"] = meta.resolvedProjectName
+	}
+	if mo.PointerToOption(proj.ComposeProjectName) != mo.PointerToOption(meta.composeProjectName) {
+		updates["compose_project_name"] = meta.composeProjectName
+	}
+	if len(updates) == 0 {
+		return
+	}
+
+	updates["updated_at"] = time.Now()
+	if err := s.db.WithContext(ctx).
+		Model(&Project{}).
+		Where("id = ?", proj.ID).
+		Updates(updates).Error; err != nil {
+		slog.WarnContext(ctx, "failed to persist refreshed compose project name", "projectID", proj.ID, "error", err)
+		return
+	}
+
+	if name, ok := updates["name"].(string); ok {
+		proj.Name = name
+	}
+	if _, ok := updates["compose_project_name"]; ok {
+		proj.ComposeProjectName = meta.composeProjectName
+	}
 }

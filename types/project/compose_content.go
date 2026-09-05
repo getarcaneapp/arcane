@@ -1,4 +1,4 @@
-package types
+package project
 
 import (
 	composetypes "github.com/compose-spec/compose-go/v2/types"

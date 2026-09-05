@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	"emperror.dev/errors"
+	"github.com/compose-spec/compose-go/v2/loader"
+	"go.yaml.in/yaml/v4"
 )
 
 type DiscoveredProjectDir struct {
@@ -245,4 +247,94 @@ func IsInternalScratchDirName(name string) bool {
 		return true
 	}
 	return IsGitOpsScratchDirName(name)
+}
+
+// ComposeContentProjectName returns the normalized top-level `name:` from
+// compose YAML content, or "" when the key is absent or unusable. Interpolated
+// names (containing `${`) are treated as absent so the backend and the
+// frontend name lock behave identically; parse errors are ignored here because
+// the full compose validation reports them with proper context.
+func ComposeContentProjectName(composeContent string) string {
+	var doc struct {
+		Name string `yaml:"name"`
+	}
+	if err := yaml.Unmarshal([]byte(composeContent), &doc); err != nil {
+		return ""
+	}
+	raw := strings.TrimSpace(doc.Name)
+	if raw == "" || strings.Contains(raw, "${") {
+		return ""
+	}
+	return loader.NormalizeProjectName(raw)
+}
+
+// NormalizeProjectName returns compose-go's normalized project name. If
+// compose-go returns empty, the input is returned unchanged.
+func NormalizeProjectName(name string) string {
+	if name == "" {
+		return ""
+	}
+	normalized := loader.NormalizeProjectName(name)
+	if normalized == "" {
+		return name
+	}
+	return normalized
+}
+
+// ResolveDirectoryIdentityInternal stays on os.*: it resolves symlinks that
+// may point anywhere on the host to establish directory identity, which the
+// root-confined acfs API cannot do.
+func ResolveDirectoryIdentityInternal(path string) (string, error) {
+	resolvedPath, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", err
+		}
+		resolvedPath = path
+	}
+
+	absPath, err := filepath.Abs(resolvedPath)
+	if err != nil {
+		return "", err
+	}
+
+	return filepath.Clean(absPath), nil
+}
+
+// ComposeEnvRequiresDirectorySync reports whether environment file selections require
+// files beyond the Compose file, its sibling override, and the effective .env file.
+func ComposeEnvRequiresDirectorySync(composePath, overrideFileName string, envContent *string) bool {
+	if envContent == nil {
+		return false
+	}
+	envMap, err := ParseProjectEnvContent(*envContent, nil)
+	if err != nil || len(envMap) == 0 {
+		return false
+	}
+
+	allowedComposeFiles := map[string]struct{}{filepath.Base(composePath): {}}
+	if overrideFileName != "" {
+		allowedComposeFiles[overrideFileName] = struct{}{}
+	}
+	if entriesNeedDirectorySyncInternal(ComposeFileEntriesFromEnv(envMap), allowedComposeFiles) {
+		return true
+	}
+
+	// Single-file sync writes the synced env content to .env, so a
+	// self-reference is satisfiable; anything else never reaches the project.
+	return entriesNeedDirectorySyncInternal(ComposeEnvFileEntriesFromEnv(envMap), map[string]struct{}{EffectiveEnvFileName: {}})
+}
+
+func entriesNeedDirectorySyncInternal(entries []string, allowed map[string]struct{}) bool {
+	for _, entry := range entries {
+		// Normalize so relative prefixes like "./compose.yaml" match allowed.
+		cleaned := filepath.Clean(entry)
+		if cleaned != filepath.Base(cleaned) {
+			return true // nested path can't be single-file synced
+		}
+		if _, ok := allowed[cleaned]; !ok {
+			return true
+		}
+	}
+	return false
 }

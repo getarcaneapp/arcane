@@ -28,6 +28,7 @@ import (
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/backupbrowser"
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
@@ -257,22 +258,7 @@ func (s *VolumeService) startContainersAfterBackupInternal(ctx context.Context, 
 					current, found = currentByName[name]
 				}
 				if !found {
-					projectName := docker.ComposeProjectLabel(stopped.Labels)
-					serviceName := docker.ComposeServiceLabel(stopped.Labels)
-					containerNumber := strings.TrimSpace(stopped.Labels["com.docker.compose.container-number"])
-					if projectName != "" && serviceName != "" {
-						for _, candidate := range currentContainers.Items {
-							if docker.ComposeProjectLabel(candidate.Labels) != projectName || docker.ComposeServiceLabel(candidate.Labels) != serviceName {
-								continue
-							}
-							if containerNumber != "" && strings.TrimSpace(candidate.Labels["com.docker.compose.container-number"]) != containerNumber {
-								continue
-							}
-							current = candidate
-							found = true
-							break
-						}
-					}
+					current, found = projects.FindComposeReplica(currentContainers.Items, stopped.Labels)
 				}
 				if !found {
 					nextRemaining = append(nextRemaining, stopped)

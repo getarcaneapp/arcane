@@ -17,8 +17,6 @@ import (
 
 	"emperror.dev/errors"
 
-	composeloader "github.com/compose-spec/compose-go/v2/loader"
-	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
@@ -59,12 +57,9 @@ type TemplateService struct {
 }
 
 const (
-	remoteCacheDuration         = 5 * time.Minute
-	fsSyncInterval              = 1 * time.Minute
-	remoteIconResolveLimit      = 4
-	templateArcaneBlockKey      = "x-arcane"
-	templateArcaneIconKey       = "icon"
-	templateArcaneIconsAliasKey = "icons"
+	remoteCacheDuration    = 5 * time.Minute
+	fsSyncInterval         = 1 * time.Minute
+	remoteIconResolveLimit = 4
 )
 
 const remoteIDPrefix = "remote"
@@ -306,7 +301,7 @@ func (s *TemplateService) CreateTemplate(ctx context.Context, template *ComposeT
 	}
 	template.IsCustom = true
 	template.IsRemote = false
-	setTemplateIconURL(template, s.resolveTemplateIconURL(ctx, template.Content, mo.PointerToOption(template.EnvContent).OrEmpty()))
+	setTemplateIconURL(template, projects.ResolveTemplateIconURL(ctx, template.Content, mo.PointerToOption(template.EnvContent).OrEmpty()))
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(template).Error; err != nil {
 			return errors.WrapIf(err, "failed to create template")
@@ -333,7 +328,7 @@ func (s *TemplateService) UpdateTemplate(ctx context.Context, id string, updates
 		existing.Description = updates.Description
 		existing.Content = updates.Content
 		existing.EnvContent = updates.EnvContent
-		setTemplateIconURL(&existing, s.resolveTemplateIconURL(ctx, existing.Content, mo.PointerToOption(existing.EnvContent).OrEmpty()))
+		setTemplateIconURL(&existing, projects.ResolveTemplateIconURL(ctx, existing.Content, mo.PointerToOption(existing.EnvContent).OrEmpty()))
 
 		if err := tx.Save(&existing).Error; err != nil {
 			return errors.WrapIf(err, "failed to update template")
@@ -806,7 +801,7 @@ func (s *TemplateService) enrichRemoteTemplateIcons(ctx context.Context, templat
 				return nil
 			}
 
-			setTemplateIconURL(&templates[idx], s.resolveTemplateIconURL(groupCtx, composeContent, envContent))
+			setTemplateIconURL(&templates[idx], projects.ResolveTemplateIconURL(groupCtx, composeContent, envContent))
 			return nil
 		})
 	}
@@ -1017,7 +1012,7 @@ func (s *TemplateService) SyncLocalTemplatesFromFilesystem(ctx context.Context) 
 }
 
 func (s *TemplateService) upsertFilesystemTemplate(ctx context.Context, name, desc, compose string, envPtr *string) error {
-	iconURL := s.resolveTemplateIconURL(ctx, compose, mo.PointerToOption(envPtr).OrEmpty())
+	iconURL := projects.ResolveTemplateIconURL(ctx, compose, mo.PointerToOption(envPtr).OrEmpty())
 
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var existing ComposeTemplate
@@ -1109,118 +1104,6 @@ func (s *TemplateService) syncFilesystemTemplatesInternal(ctx context.Context) e
 	return nil
 }
 
-// ParseComposeServices extracts service names from a compose file content using compose-go
-func (s *TemplateService) ParseComposeServices(ctx context.Context, composeContent string) []string {
-	if composeContent == "" {
-		return []string{}
-	}
-
-	// Create a temp directory with dummy .env file to satisfy env_file references
-	// System temp scratch: no acfs root exists for it.
-	tmpDir, err := os.MkdirTemp("", "arcane-compose-parse-*")
-	if err != nil {
-		slog.WarnContext(ctx, "Failed to create temp dir for compose parsing", "error", err)
-		return []string{}
-	}
-	defer func() { _ = os.RemoveAll(tmpDir) }()
-
-	// Create a dummy .env file to prevent env file errors
-	envPath := filepath.Join(tmpDir, ".env")
-	if err := projects.WriteFileWithPerm(envPath, "", utils.FilePerm); err != nil {
-		slog.WarnContext(ctx, "Failed to create dummy env file", "error", err)
-	}
-
-	// Parse using compose-go
-	configDetails := composetypes.ConfigDetails{
-		ConfigFiles: []composetypes.ConfigFile{
-			{
-				Content: []byte(composeContent),
-			},
-		},
-		WorkingDir:  tmpDir,
-		Environment: composetypes.Mapping{},
-	}
-
-	project, err := composeloader.LoadWithContext(ctx, configDetails, composeloader.WithSkipValidation)
-	if err != nil {
-		slog.WarnContext(ctx, "Failed to parse compose services", "error", err)
-		return []string{}
-	}
-
-	serviceNames := make([]string, 0, len(project.Services))
-	for _, service := range project.Services {
-		serviceNames = append(serviceNames, service.Name)
-	}
-
-	return serviceNames
-}
-
-func (s *TemplateService) resolveTemplateIconURL(ctx context.Context, composeContent, envContent string) *string {
-	if strings.TrimSpace(composeContent) == "" {
-		return nil
-	}
-
-	// System temp scratch: no acfs root exists for it.
-	tmpDir, err := os.MkdirTemp("", "arcane-template-icon-*")
-	if err != nil {
-		slog.WarnContext(ctx, "failed to create temp dir for template icon parsing", "error", err)
-		return nil
-	}
-	defer func() { _ = os.RemoveAll(tmpDir) }()
-
-	envPath := filepath.Join(tmpDir, ".env")
-	if err := projects.WriteFileWithPerm(envPath, envContent, utils.FilePerm); err != nil {
-		slog.WarnContext(ctx, "failed to create temp env file for template icon parsing", "error", err)
-	}
-
-	envMap := make(composetypes.Mapping)
-	for _, variable := range projects.ParseEnvContent(envContent) {
-		if key := strings.TrimSpace(variable.Key); key != "" {
-			envMap[key] = variable.Value
-		}
-	}
-	envMap["PWD"] = tmpDir
-
-	configDetails := composetypes.ConfigDetails{
-		ConfigFiles: []composetypes.ConfigFile{
-			{
-				Content: []byte(composeContent),
-			},
-		},
-		WorkingDir:  tmpDir,
-		Environment: envMap,
-	}
-
-	project, err := composeloader.LoadWithContext(ctx, configDetails, composeloader.WithSkipValidation, func(opts *composeloader.Options) {
-		opts.SkipConsistencyCheck = true
-	})
-	if err != nil {
-		slog.WarnContext(ctx, "failed to parse compose for template icon metadata", "error", err)
-		return nil
-	}
-
-	if project == nil {
-		return nil
-	}
-
-	arcaneBlock, ok := project.Extensions[templateArcaneBlockKey]
-	if !ok {
-		return nil
-	}
-
-	arcaneBlockMap, ok := utils.AsStringMap(arcaneBlock).Get()
-	if !ok {
-		return nil
-	}
-
-	icon := utils.FirstNonEmpty(
-		utils.FirstNonEmpty(utils.Collect(arcaneBlockMap[templateArcaneIconKey], utils.ToString)...),
-		utils.FirstNonEmpty(utils.Collect(arcaneBlockMap[templateArcaneIconsAliasKey], utils.ToString)...),
-	)
-
-	return mo.EmptyableToOption(strings.TrimSpace(icon)).ToPointer()
-}
-
 func setTemplateIconURL(template *ComposeTemplate, iconURL *string) {
 	if template == nil {
 		return
@@ -1265,7 +1148,7 @@ func (s *TemplateService) GetTemplateContentWithParsedData(ctx context.Context, 
 		}
 	}
 
-	setTemplateIconURL(composeTemplate, s.resolveTemplateIconURL(ctx, composeContent, envContent))
+	setTemplateIconURL(composeTemplate, projects.ResolveTemplateIconURL(ctx, composeContent, envContent))
 
 	var outTemplate tmpl.Template
 	if mapErr := mapper.MapStruct(composeTemplate, &outTemplate); mapErr != nil {
@@ -1273,7 +1156,7 @@ func (s *TemplateService) GetTemplateContentWithParsedData(ctx context.Context, 
 	}
 
 	// Parse services from compose content using compose-go library
-	services := s.ParseComposeServices(ctx, composeContent)
+	services := projects.ParseComposeServices(ctx, composeContent)
 
 	// Parse environment variables
 	parsedEnvVars := projects.ParseEnvContent(envContent)

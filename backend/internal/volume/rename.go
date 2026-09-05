@@ -75,9 +75,9 @@ func (s *VolumeService) RenameVolume(ctx context.Context, oldName, newName strin
 		return nil, combinedErr
 	}
 
-	if committer, ok := migration.(volumeops.Committer); ok {
+	if committer, ok := migration.(volumetypes.Committer); ok {
 		if err := committer.Commit(ctx); err != nil {
-			var cleanupErr *volumeops.SourceCleanupError
+			var cleanupErr *volumetypes.SourceCleanupError
 			if errors.As(err, &cleanupErr) {
 				// The copy and metadata are committed; only removing the source
 				// failed, so the rename itself succeeded.

@@ -97,7 +97,7 @@ func (s *ProjectService) GetProjectServices(ctx context.Context, projectID strin
 		return nil, err
 	}
 
-	composeProject, composeFileFullPath, derr := s.loadComposeProjectForProjectInternal(ctx, projectFromDb, nil)
+	composeProject, composeFileFullPath, derr := s.loadComposeProjectForProjectInternal(ctx, projectFromDb)
 	if derr != nil {
 		return []ProjectServiceInfo{}, errors.WrapIff(derr, "failed to load compose project in %s", projectFromDb.Path)
 	}
@@ -682,7 +682,7 @@ func (s *ProjectService) StreamProjectLogs(ctx context.Context, projectID string
 }
 
 func (s *ProjectService) CountServicesFromCompose(ctx context.Context, p Project) (int, error) {
-	proj, _, err := s.loadComposeProjectForProjectInternal(ctx, &p, nil)
+	proj, _, err := s.loadComposeProjectForProjectInternal(ctx, &p)
 	if err != nil {
 		return 0, err
 	}

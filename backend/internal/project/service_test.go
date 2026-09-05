@@ -18,6 +18,8 @@ import (
 	"testing"
 	"time"
 
+	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
+
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	composeapi "github.com/docker/compose/v5/pkg/api"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
@@ -584,7 +586,7 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, original.ID, found.ID)
 
-		cachedProjectID, cached := svc.composeNames.projectID("myproject").Get()
+		cachedProjectID, cached := svc.composeNames.projectIDInternal("myproject").Get()
 		require.True(t, cached)
 		assert.Equal(t, original.ID, cachedProjectID)
 
@@ -601,7 +603,7 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, replacement.ID, found.ID)
 
-		cachedProjectID, cached = svc.composeNames.projectID("myproject").Get()
+		cachedProjectID, cached = svc.composeNames.projectIDInternal("myproject").Get()
 		require.True(t, cached)
 		assert.Equal(t, replacement.ID, cachedProjectID)
 	})
@@ -621,7 +623,7 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, original.ID, found.ID)
 
-		cachedProjectID, cached := svc.composeNames.projectID("myapp").Get()
+		cachedProjectID, cached := svc.composeNames.projectIDInternal("myapp").Get()
 		require.True(t, cached)
 		assert.Equal(t, original.ID, cachedProjectID)
 
@@ -634,7 +636,7 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "project not found")
 
-		_, cached = svc.composeNames.projectID("myapp").Get()
+		_, cached = svc.composeNames.projectIDInternal("myapp").Get()
 		assert.False(t, cached)
 	})
 }
@@ -776,9 +778,7 @@ func TestProjectService_EnsureImagesPresent_UpdatesCurrentImageRecordAfterPull(t
 		CheckTime:      time.Now().UTC().Add(-time.Hour),
 	}).Error)
 
-	require.NoError(t, svc.ensureImagesPresent(ctx, map[string]projects.ImagePullStep{
-		imageRef: {Mode: projects.ImagePullModeAlways},
-	}, io.Discard, nil, common.SystemUser))
+	require.NoError(t, svc.composeCoordinator.EnsureImagesPresent(ctx, &composetypes.Project{Services: composetypes.Services{"api": {Image: imageRef, PullPolicy: composetypes.PullPolicyAlways}}}, io.Discard, svc.composeImageOperationsInternal(nil, nil)))
 
 	// sha256:old-api may still be in use by another container — pulling for one container
 	// must not clear it (fixes #2453).
@@ -930,7 +930,7 @@ func TestProjectService_ComposePullSelectedServicesInternal_ReconcilesOnlyOnSucc
 		Enabled:  true,
 	}}
 
-	require.NoError(t, svc.composePullSelectedServicesInternal(ctx, projectDef, []string{"app", "app-copy", "sidecar", "builder"}, common.SystemUser, credentials))
+	require.NoError(t, svc.composeCoordinator.PullServices(ctx, projectDef, []string{"app", "app-copy", "sidecar", "builder"}, svc.composeImageOperationsInternal(nil, credentials), nil))
 	assert.Equal(t, 1, pullsByRef[privateImageRef], "duplicate service refs should only be pulled once")
 	assert.Equal(t, 1, pullsByRef[publicImageRef], "selected public image should still be pulled")
 	assert.Len(t, pullsByRef, 2, "build-backed services should not trigger image pulls")
@@ -1005,7 +1005,7 @@ func TestProjectService_ComposePullSelectedServicesInternal_LeavesRecordsWhenPul
 		CheckTime:      time.Now().UTC().Add(-time.Hour),
 	}).Error)
 
-	err = svc.composePullSelectedServicesInternal(ctx, projectDef, []string{"app"}, common.SystemUser, nil)
+	err = svc.composeCoordinator.PullServices(ctx, projectDef, []string{"app"}, svc.composeImageOperationsInternal(nil, nil), nil)
 	require.Error(t, err)
 	require.ErrorContains(t, err, "failed to pull image")
 
@@ -1116,7 +1116,7 @@ func TestProjectService_UpdateProjectServicesForcesRecreateInternal(t *testing.T
 	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, event.NewEventService(db, nil, nil))
 
 	projectPath := createComposeProjectDir(t, projectsDir, "compose-update-force")
-	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services:\n  app:\n    image: "+imageRef+"\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services:\n  app:\n    image: "+imageRef+"\n  unrelated:\n    image: busybox:latest\n"), 0o644))
 
 	projectRecord := &Project{
 		ID:      "project-update-force",
@@ -1138,8 +1138,9 @@ func TestProjectService_UpdateProjectServicesForcesRecreateInternal(t *testing.T
 	}
 	upCalled := false
 	forceRecreate := false
-	composeUpProjectServicesInternal = func(_ context.Context, _ *composetypes.Project, services []string, removeOrphans bool, force bool, _ bool, _ map[string]dockerregistry.AuthConfig, _ time.Duration) error {
+	composeUpProjectServicesInternal = func(_ context.Context, selected *composetypes.Project, services []string, removeOrphans bool, force bool, _ bool, _ map[string]dockerregistry.AuthConfig, _ time.Duration) error {
 		upCalled = true
+		assert.Equal(t, []string{"app"}, selected.ServiceNames())
 		forceRecreate = force
 		assert.Equal(t, []string{"app"}, services)
 		assert.False(t, removeOrphans)
@@ -1374,7 +1375,7 @@ func TestProjectService_PrepareProjectRenameVolumeMigrationForUpdate_UsesCompose
 
 		require.NoError(t, err)
 		require.NotNil(t, migration)
-		journalSource, ok := migration.(volumes.JournalSource)
+		journalSource, ok := migration.(volumetypes.JournalSource)
 		require.True(t, ok)
 		journalVolumes := journalSource.JournalVolumes()
 		require.Len(t, journalVolumes, 1)
@@ -1391,7 +1392,7 @@ func TestProjectService_PrepareProjectRenameVolumeMigrationForUpdate_UsesCompose
 
 		require.NoError(t, err)
 		require.NotNil(t, migration)
-		journalSource, ok := migration.(volumes.JournalSource)
+		journalSource, ok := migration.(volumetypes.JournalSource)
 		require.True(t, ok)
 		journalVolumes := journalSource.JournalVolumes()
 		require.Len(t, journalVolumes, 1)
@@ -1408,7 +1409,7 @@ func TestProjectService_PrepareProjectRenameVolumeMigrationForUpdate_UsesCompose
 
 		require.NoError(t, err)
 		require.NotNil(t, migration)
-		journalSource, ok := migration.(volumes.JournalSource)
+		journalSource, ok := migration.(volumetypes.JournalSource)
 		require.True(t, ok)
 		journalVolumes := journalSource.JournalVolumes()
 		require.Len(t, journalVolumes, 1)
@@ -1455,7 +1456,7 @@ func TestProjectService_ApplyProjectUpdateWithRenameJournal_RollsBackVolumeMigra
 	projectForUpdate := *project
 	journalActive := false
 	projectStateCommitted := false
-	err = withProjectRenameRollback(ctx, &projectForUpdate, &projectStateCommitted, func() error {
+	err = withProjectRenameRollbackInternal(ctx, &projectForUpdate, &projectStateCommitted, func() error {
 		return svc.applyProjectUpdateWithRenameJournalInternal(ctx, &projectForUpdate, new("bar"), projectsDir, nil, nil, nil, migration, nil, &journalActive, &projectStateCommitted)
 	})
 	require.Error(t, err)
@@ -1500,7 +1501,7 @@ func TestProjectService_ApplyProjectUpdateWithRenameJournal_SucceedsCommittedRen
 	projectForUpdate := *project
 	journalActive := false
 	projectStateCommitted := false
-	err = withProjectRenameRollback(ctx, &projectForUpdate, &projectStateCommitted, func() error {
+	err = withProjectRenameRollbackInternal(ctx, &projectForUpdate, &projectStateCommitted, func() error {
 		return svc.applyProjectUpdateWithRenameJournalInternal(ctx, &projectForUpdate, new("bar"), projectsDir, nil, nil, nil, migration, nil, &journalActive, &projectStateCommitted)
 	})
 	require.NoError(t, err)
@@ -1544,7 +1545,7 @@ func TestProjectService_UpdateProject_ClearsJournalForNonRenameWhenRecoveryDocke
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	journal := projectRenameJournalInternal{
+	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
 		OldName:    "nginx",
 		NewName:    "web",
@@ -1552,8 +1553,8 @@ func TestProjectService_UpdateProject_ClearsJournalForNonRenameWhenRecoveryDocke
 		NewPath:    filepath.Join(projectsDir, "web"),
 		OldDirName: &oldDir,
 		NewDirName: "web",
-		Phase:      projectRenameJournalPhaseTargetsCopiedInternal,
-		Volumes: []volumes.JournalVolume{
+		Phase:      projecttypes.RenameJournalPhaseTargetsCopied,
+		Volumes: []volumetypes.JournalVolume{
 			{
 				Key:     "data",
 				OldName: "nginx_data",
@@ -1563,7 +1564,7 @@ func TestProjectService_UpdateProject_ClearsJournalForNonRenameWhenRecoveryDocke
 	}
 	payload, err := json.Marshal(journal)
 	require.NoError(t, err)
-	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyPrefixInternal+project.ID, string(payload)))
+	require.NoError(t, kvService.Set(ctx, projecttypes.RenameJournalKeyPrefix+project.ID, string(payload)))
 
 	envContent := "FOO=bar\n"
 	updated, err := svc.UpdateProject(ctx, project.ID, nil, nil, &envContent, nil, common.User{
@@ -1578,7 +1579,7 @@ func TestProjectService_UpdateProject_ClearsJournalForNonRenameWhenRecoveryDocke
 	require.NoError(t, err)
 	require.Equal(t, envContent, string(envBytes))
 
-	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyPrefixInternal+project.ID)
+	_, ok, err := kvService.Get(ctx, projecttypes.RenameJournalKeyPrefix+project.ID)
 	require.NoError(t, err)
 	require.False(t, ok)
 }
@@ -1610,7 +1611,7 @@ func TestProjectService_UpdateProject_AllowsRenameAfterJournalRecoveryDockerUnav
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	journal := projectRenameJournalInternal{
+	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
 		OldName:    "nginx",
 		NewName:    "web",
@@ -1618,8 +1619,8 @@ func TestProjectService_UpdateProject_AllowsRenameAfterJournalRecoveryDockerUnav
 		NewPath:    filepath.Join(projectsDir, "web"),
 		OldDirName: &oldDir,
 		NewDirName: "web",
-		Phase:      projectRenameJournalPhaseTargetsCopiedInternal,
-		Volumes: []volumes.JournalVolume{
+		Phase:      projecttypes.RenameJournalPhaseTargetsCopied,
+		Volumes: []volumetypes.JournalVolume{
 			{
 				Key:     "data",
 				OldName: "nginx_data",
@@ -1629,7 +1630,7 @@ func TestProjectService_UpdateProject_AllowsRenameAfterJournalRecoveryDockerUnav
 	}
 	payload, err := json.Marshal(journal)
 	require.NoError(t, err)
-	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyPrefixInternal+project.ID, string(payload)))
+	require.NoError(t, kvService.Set(ctx, projecttypes.RenameJournalKeyPrefix+project.ID, string(payload)))
 
 	updated, err := svc.UpdateProject(ctx, project.ID, new("web"), nil, nil, nil, common.User{
 		ID:       "u1",
@@ -1642,7 +1643,7 @@ func TestProjectService_UpdateProject_AllowsRenameAfterJournalRecoveryDockerUnav
 	require.NoDirExists(t, projectPath)
 	require.DirExists(t, filepath.Join(projectsDir, "web"))
 
-	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyPrefixInternal+project.ID)
+	_, ok, err := kvService.Get(ctx, projecttypes.RenameJournalKeyPrefix+project.ID)
 	require.NoError(t, err)
 	require.False(t, ok)
 }
@@ -4240,202 +4241,6 @@ func TestProjectService_ListProjects_WithDerivedStatusFilter_AllowsAllPageSizeSe
 	assert.Equal(t, "stopped-24", items[len(items)-1].Name)
 }
 
-func TestProjectService_PrepareServiceBuildRequest_MapsComposeFields(t *testing.T) {
-	svc := &ProjectService{}
-	proj := &composetypes.Project{WorkingDir: "/tmp/project", Name: "demo"}
-
-	serviceCfg := composetypes.ServiceConfig{
-		Name:     "web",
-		Image:    "example/web:latest",
-		Platform: "linux/amd64",
-		Build: &composetypes.BuildConfig{
-			Context:    ".",
-			Dockerfile: "Dockerfile.custom",
-			Target:     "prod",
-			Args: composetypes.MappingWithEquals{
-				"FOO": new("bar"),
-			},
-			Tags:      []string{"example/web:sha", "example/web:latest"},
-			CacheFrom: []string{"example/cache:latest"},
-			CacheTo:   []string{"type=local,dest=/tmp/cache"},
-			NoCache:   true,
-			Pull:      true,
-			Network:   "host",
-			Isolation: "default",
-			ShmSize:   composetypes.UnitBytes(64 * 1024 * 1024),
-			Ulimits: map[string]*composetypes.UlimitsConfig{
-				"nofile": {Soft: 1024, Hard: 2048},
-			},
-			Entitlements: []string{"network.host"},
-			Privileged:   true,
-			ExtraHosts: composetypes.HostsList{
-				"registry.local": {"10.0.0.5"},
-			},
-			Labels: composetypes.Labels{
-				"com.example.team": "platform",
-			},
-		},
-	}
-
-	req, _, _, err := svc.prepareServiceBuildRequest(
-		context.Background(),
-		"project-id",
-		proj,
-		"web",
-		serviceCfg,
-		ProjectBuildOptions{},
-	)
-	require.NoError(t, err)
-
-	assert.Equal(t, "/tmp/project", req.ContextDir)
-	assert.Equal(t, "Dockerfile.custom", req.Dockerfile)
-	assert.Equal(t, "prod", req.Target)
-	assert.Equal(t, map[string]string{"FOO": "bar"}, req.BuildArgs)
-	assert.Equal(t, []string{"example/web:latest", "example/web:sha"}, req.Tags)
-	assert.Equal(t, []string{"linux/amd64"}, req.Platforms)
-	assert.Equal(t, []string{"example/cache:latest"}, req.CacheFrom)
-	assert.Equal(t, []string{"type=local,dest=/tmp/cache"}, req.CacheTo)
-	assert.True(t, req.NoCache)
-	assert.True(t, req.Pull)
-	assert.Equal(t, "host", req.Network)
-	assert.Equal(t, "default", req.Isolation)
-	assert.Equal(t, int64(64*1024*1024), req.ShmSize)
-	assert.Equal(t, map[string]string{"nofile": "1024:2048"}, req.Ulimits)
-	assert.Equal(t, []string{"network.host"}, req.Entitlements)
-	assert.True(t, req.Privileged)
-	assert.Equal(t, map[string]string{"com.example.team": "platform"}, req.Labels)
-	require.Len(t, req.ExtraHosts, 1)
-	assert.Contains(t, req.ExtraHosts[0], "registry.local")
-	assert.Contains(t, req.ExtraHosts[0], "10.0.0.5")
-}
-
-// TestProjectService_PrepareServiceBuildRequest_KeepsContainerPaths is a
-// regression test for #2314: Arcane's local build pipeline (the docker and
-// buildkit providers both read the build context via the Arcane process's own
-// filesystem) cannot use host paths, so prepareServiceBuildRequest must leave
-// the build context and any absolute Dockerfile path as container paths even
-// when the projects mount has a non-matching host prefix.
-func TestProjectService_PrepareServiceBuildRequest_KeepsContainerPaths(t *testing.T) {
-	svc := &ProjectService{}
-	proj := &composetypes.Project{WorkingDir: "/app/data/projects/demo", Name: "demo"}
-
-	serviceCfg := composetypes.ServiceConfig{
-		Name:  "web",
-		Image: "example/web:latest",
-		Build: &composetypes.BuildConfig{
-			Context:    ".",
-			Dockerfile: "/app/data/projects/demo/Dockerfile.custom",
-		},
-	}
-
-	req, _, _, err := svc.prepareServiceBuildRequest(
-		context.Background(),
-		"project-id",
-		proj,
-		"web",
-		serviceCfg,
-		ProjectBuildOptions{},
-	)
-	require.NoError(t, err)
-
-	assert.Equal(t, "/app/data/projects/demo", req.ContextDir)
-	assert.Equal(t, "/app/data/projects/demo/Dockerfile.custom", req.Dockerfile)
-}
-
-// TestProjectService_PrepareServiceBuildRequest_BuildDotKeepsContainerPath
-// reproduces the exact configuration from #2314: a compose file with
-// `build: .` next to its Dockerfile, on an installation where the projects
-// directory is bind-mounted from a different host path than the container
-// path. The resulting BuildRequest must point at the container path so the
-// local builder can stat / tar the directory.
-func TestProjectService_PrepareServiceBuildRequest_BuildDotKeepsContainerPath(t *testing.T) {
-	svc := &ProjectService{}
-	proj := &composetypes.Project{WorkingDir: "/app/data/projects/caddy", Name: "caddy"}
-
-	serviceCfg := composetypes.ServiceConfig{
-		Name:  "caddy",
-		Image: "caddy",
-		Build: &composetypes.BuildConfig{
-			Context: ".",
-		},
-	}
-
-	req, _, _, err := svc.prepareServiceBuildRequest(
-		context.Background(),
-		"project-id",
-		proj,
-		"caddy",
-		serviceCfg,
-		ProjectBuildOptions{},
-	)
-	require.NoError(t, err)
-
-	assert.Equal(t, "/app/data/projects/caddy", req.ContextDir)
-	assert.Equal(t, "Dockerfile", req.Dockerfile)
-}
-
-func TestProjectService_PrepareServiceBuildRequest_UsesInlineDockerfile(t *testing.T) {
-	svc := &ProjectService{}
-	proj := &composetypes.Project{WorkingDir: "/tmp/project", Name: "demo"}
-
-	serviceCfg := composetypes.ServiceConfig{
-		Name:  "web",
-		Image: "example/web:latest",
-		Build: &composetypes.BuildConfig{
-			Context:          ".",
-			DockerfileInline: "FROM alpine:3.20\nRUN echo inline\n",
-		},
-	}
-
-	req, _, _, err := svc.prepareServiceBuildRequest(
-		context.Background(),
-		"project-id",
-		proj,
-		"web",
-		serviceCfg,
-		ProjectBuildOptions{},
-	)
-	require.NoError(t, err)
-
-	assert.Equal(t, "/tmp/project", req.ContextDir)
-	assert.Empty(t, req.Dockerfile)
-	assert.Equal(t, "FROM alpine:3.20\nRUN echo inline\n", req.DockerfileInline)
-}
-
-func TestProjectService_PrepareServiceBuildRequest_GeneratedImageProviderGuardrails(t *testing.T) {
-	svc := &ProjectService{}
-	proj := &composetypes.Project{WorkingDir: "/tmp/project", Name: "demo"}
-
-	serviceCfg := composetypes.ServiceConfig{
-		Name: "web",
-		Build: &composetypes.BuildConfig{
-			Context: ".",
-		},
-	}
-
-	_, _, _, err := svc.prepareServiceBuildRequest(
-		context.Background(),
-		"project-id",
-		proj,
-		"web",
-		serviceCfg,
-		ProjectBuildOptions{Provider: "depot"},
-	)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "must define an image when using depot")
-
-	_, _, _, err = svc.prepareServiceBuildRequest(
-		context.Background(),
-		"project-id",
-		proj,
-		"web",
-		serviceCfg,
-		ProjectBuildOptions{Provider: "local", Push: new(true)},
-	)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "must define an image when push is enabled")
-}
-
 func TestProjectService_DeployProject_StopsOnBuildPreparationError(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
@@ -5571,7 +5376,7 @@ func TestResolveRemoveOrphans(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, resolveRemoveOrphansInternal(tt.gitOpsManaged, tt.options))
+			require.Equal(t, tt.want, projects.ResolveRemoveOrphans(tt.gitOpsManaged, tt.options))
 		})
 	}
 }
@@ -5600,7 +5405,7 @@ func TestProjectService_RecoverProjectRenameJournals_RollsBackUncommittedDirecto
 
 	kvService := kv.NewKVService(db)
 	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load()).WithKVService(kvService)
-	journal := projectRenameJournalInternal{
+	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
 		OldName:    "nginx",
 		NewName:    "web",
@@ -5608,17 +5413,17 @@ func TestProjectService_RecoverProjectRenameJournals_RollsBackUncommittedDirecto
 		NewPath:    newPath,
 		OldDirName: &oldDir,
 		NewDirName: newDir,
-		Phase:      projectRenameJournalPhaseTargetsCopiedInternal,
+		Phase:      projecttypes.RenameJournalPhaseTargetsCopied,
 	}
 	payload, err := json.Marshal(journal)
 	require.NoError(t, err)
-	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyPrefixInternal+project.ID, string(payload)))
+	require.NoError(t, kvService.Set(ctx, projecttypes.RenameJournalKeyPrefix+project.ID, string(payload)))
 
 	require.NoError(t, svc.RecoverProjectRenameJournals(ctx))
 
 	require.FileExists(t, filepath.Join(oldPath, "compose.yaml"))
 	require.NoDirExists(t, newPath)
-	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyPrefixInternal+project.ID)
+	_, ok, err := kvService.Get(ctx, projecttypes.RenameJournalKeyPrefix+project.ID)
 	require.NoError(t, err)
 	require.False(t, ok)
 
@@ -5654,7 +5459,7 @@ func TestProjectService_RecoverProjectRenameJournals_StartedPhaseSkipsVolumeRoll
 
 	kvService := kv.NewKVService(db)
 	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load()).WithKVService(kvService)
-	journal := projectRenameJournalInternal{
+	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
 		OldName:    "nginx",
 		NewName:    "web",
@@ -5662,8 +5467,8 @@ func TestProjectService_RecoverProjectRenameJournals_StartedPhaseSkipsVolumeRoll
 		NewPath:    newPath,
 		OldDirName: &oldDir,
 		NewDirName: newDir,
-		Phase:      projectRenameJournalPhaseStartedInternal,
-		Volumes: []volumes.JournalVolume{
+		Phase:      projecttypes.RenameJournalPhaseStarted,
+		Volumes: []volumetypes.JournalVolume{
 			{
 				Key:     "data",
 				OldName: "nginx_data",
@@ -5673,13 +5478,13 @@ func TestProjectService_RecoverProjectRenameJournals_StartedPhaseSkipsVolumeRoll
 	}
 	payload, err := json.Marshal(journal)
 	require.NoError(t, err)
-	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyPrefixInternal+project.ID, string(payload)))
+	require.NoError(t, kvService.Set(ctx, projecttypes.RenameJournalKeyPrefix+project.ID, string(payload)))
 
 	require.NoError(t, svc.RecoverProjectRenameJournals(ctx))
 
 	require.FileExists(t, filepath.Join(oldPath, "compose.yaml"))
 	require.NoDirExists(t, newPath)
-	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyPrefixInternal+project.ID)
+	_, ok, err := kvService.Get(ctx, projecttypes.RenameJournalKeyPrefix+project.ID)
 	require.NoError(t, err)
 	require.False(t, ok)
 
@@ -5717,7 +5522,7 @@ func TestProjectService_RecoverProjectRenameJournals_RelocatesTargetWhenBothPath
 
 	kvService := kv.NewKVService(db)
 	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load()).WithKVService(kvService)
-	journal := projectRenameJournalInternal{
+	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
 		OldName:    "nginx",
 		NewName:    "web",
@@ -5725,15 +5530,15 @@ func TestProjectService_RecoverProjectRenameJournals_RelocatesTargetWhenBothPath
 		NewPath:    newPath,
 		OldDirName: &oldDir,
 		NewDirName: newDir,
-		Phase:      projectRenameJournalPhaseStartedInternal,
+		Phase:      projecttypes.RenameJournalPhaseStarted,
 	}
 	payload, err := json.Marshal(journal)
 	require.NoError(t, err)
-	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyPrefixInternal+project.ID, string(payload)))
+	require.NoError(t, kvService.Set(ctx, projecttypes.RenameJournalKeyPrefix+project.ID, string(payload)))
 
 	require.NoError(t, svc.RecoverProjectRenameJournals(ctx))
 
-	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyPrefixInternal+project.ID)
+	_, ok, err := kvService.Get(ctx, projecttypes.RenameJournalKeyPrefix+project.ID)
 	require.NoError(t, err)
 	require.False(t, ok)
 	require.FileExists(t, filepath.Join(oldPath, "compose.yaml"))
@@ -5780,7 +5585,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsStartedJournalWhenDir
 
 	kvService := kv.NewKVService(db)
 	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load()).WithKVService(kvService)
-	journal := projectRenameJournalInternal{
+	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
 		OldName:    "nginx",
 		NewName:    "web",
@@ -5788,15 +5593,15 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsStartedJournalWhenDir
 		NewPath:    newPath,
 		OldDirName: &oldDir,
 		NewDirName: newDir,
-		Phase:      projectRenameJournalPhaseStartedInternal,
+		Phase:      projecttypes.RenameJournalPhaseStarted,
 	}
 	payload, err := json.Marshal(journal)
 	require.NoError(t, err)
-	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyPrefixInternal+project.ID, string(payload)))
+	require.NoError(t, kvService.Set(ctx, projecttypes.RenameJournalKeyPrefix+project.ID, string(payload)))
 
 	require.NoError(t, svc.RecoverProjectRenameJournals(ctx))
 
-	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyPrefixInternal+project.ID)
+	_, ok, err := kvService.Get(ctx, projecttypes.RenameJournalKeyPrefix+project.ID)
 	require.NoError(t, err)
 	require.False(t, ok)
 	require.NoDirExists(t, oldPath)
@@ -5845,7 +5650,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsPreservedTargetJourna
 
 	kvService := kv.NewKVService(db)
 	svc := NewProjectService(db, nil, nil, nil, &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}, nil, nil, nil, config.Load()).WithKVService(kvService)
-	journal := projectRenameJournalInternal{
+	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
 		OldName:    "nginx",
 		NewName:    "web",
@@ -5853,8 +5658,8 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsPreservedTargetJourna
 		NewPath:    newPath,
 		OldDirName: &oldDir,
 		NewDirName: newDir,
-		Phase:      projectRenameJournalPhaseTargetsCopiedInternal,
-		Volumes: []volumes.JournalVolume{
+		Phase:      projecttypes.RenameJournalPhaseTargetsCopied,
+		Volumes: []volumetypes.JournalVolume{
 			{
 				Key:     "data",
 				OldName: "nginx_data",
@@ -5864,24 +5669,15 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsPreservedTargetJourna
 	}
 	payload, err := json.Marshal(journal)
 	require.NoError(t, err)
-	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyPrefixInternal+project.ID, string(payload)))
+	require.NoError(t, kvService.Set(ctx, projecttypes.RenameJournalKeyPrefix+project.ID, string(payload)))
 
 	require.NoError(t, svc.RecoverProjectRenameJournals(ctx))
 
-	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyPrefixInternal+project.ID)
+	_, ok, err := kvService.Get(ctx, projecttypes.RenameJournalKeyPrefix+project.ID)
 	require.NoError(t, err)
 	require.False(t, ok)
 	require.False(t, targetRemoved, "preserved target volume should remain for manual inspection")
 	require.DirExists(t, oldPath)
-}
-
-func TestProjectRenameJournalTargetsCopiedInternal(t *testing.T) {
-	require.False(t, projectRenameJournalTargetsCopiedInternal(projectRenameJournalPhaseStartedInternal))
-	require.False(t, projectRenameJournalTargetsCopiedInternal(projectRenameJournalPhaseProjectStateRolledBackInternal))
-	require.True(t, projectRenameJournalTargetsCopiedInternal(projectRenameJournalPhaseSourceCleanupPendingInternal))
-	require.True(t, projectRenameJournalTargetsCopiedInternal(projectRenameJournalPhaseTargetsCopiedInternal))
-	require.True(t, projectRenameJournalTargetsCopiedInternal(projectRenameJournalPhaseOldVolumesRemovedInternal))
-	require.True(t, projectRenameJournalTargetsCopiedInternal(projectRenameJournalPhaseProjectStateCommittedInternal))
 }
 
 func TestProjectService_RecoverProjectRenameJournals_ClearsCommittedJournal(t *testing.T) {
@@ -5907,7 +5703,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsCommittedJournal(t *t
 
 	kvService := kv.NewKVService(db)
 	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load()).WithKVService(kvService)
-	journal := projectRenameJournalInternal{
+	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
 		OldName:    "nginx",
 		NewName:    "web",
@@ -5915,15 +5711,15 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsCommittedJournal(t *t
 		NewPath:    newPath,
 		OldDirName: &oldDir,
 		NewDirName: newDir,
-		Phase:      projectRenameJournalPhaseOldVolumesRemovedInternal,
+		Phase:      projecttypes.RenameJournalPhaseOldVolumesRemoved,
 	}
 	payload, err := json.Marshal(journal)
 	require.NoError(t, err)
-	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyPrefixInternal+project.ID, string(payload)))
+	require.NoError(t, kvService.Set(ctx, projecttypes.RenameJournalKeyPrefix+project.ID, string(payload)))
 
 	require.NoError(t, svc.RecoverProjectRenameJournals(ctx))
 
-	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyPrefixInternal+project.ID)
+	_, ok, err := kvService.Get(ctx, projecttypes.RenameJournalKeyPrefix+project.ID)
 	require.NoError(t, err)
 	require.False(t, ok)
 	require.DirExists(t, newPath)
@@ -5947,7 +5743,7 @@ func TestProjectService_FinalizeProjectRenameAfterCommit_ClearsJournalAfterSourc
 
 	kvService := kv.NewKVService(db)
 	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load()).WithKVService(kvService)
-	journal := &projectRenameJournalInternal{
+	journal := &projecttypes.RenameJournal{
 		ProjectID:  project.ID,
 		OldName:    "nginx",
 		NewName:    "web",
@@ -5955,17 +5751,17 @@ func TestProjectService_FinalizeProjectRenameAfterCommit_ClearsJournalAfterSourc
 		NewPath:    project.Path,
 		OldDirName: &oldDir,
 		NewDirName: newDir,
-		Phase:      projectRenameJournalPhaseTargetsCopiedInternal,
+		Phase:      projecttypes.RenameJournalPhaseTargetsCopied,
 	}
-	require.NoError(t, svc.writeProjectRenameJournalInternal(ctx, journal, projectRenameJournalPhaseTargetsCopiedInternal))
+	require.NoError(t, svc.writeProjectRenameJournalInternal(ctx, journal, projecttypes.RenameJournalPhaseTargetsCopied))
 
 	migration := &fakeProjectVolumeRenameMigrationInternal{}
 	journalActive := true
-	svc.finalizeProjectRenameAfterCommitInternal(ctx, project.ID, migration, journal, &journalActive)
+	projects.FinalizeRenameAfterCommit(ctx, svc.renameRecoveryOperationsInternal(), project.ID, migration, journal, &journalActive)
 	require.True(t, migration.commitCalled)
 	require.False(t, journalActive)
 
-	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyPrefixInternal+project.ID)
+	_, ok, err := kvService.Get(ctx, projecttypes.RenameJournalKeyPrefix+project.ID)
 	require.NoError(t, err)
 	require.False(t, ok)
 }
@@ -5988,7 +5784,7 @@ func TestProjectService_FinalizeProjectRenameAfterCommit_KeepsJournalWhenSourceC
 
 	kvService := kv.NewKVService(db)
 	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load()).WithKVService(kvService)
-	journal := &projectRenameJournalInternal{
+	journal := &projecttypes.RenameJournal{
 		ProjectID:  project.ID,
 		OldName:    "nginx",
 		NewName:    "web",
@@ -5996,25 +5792,25 @@ func TestProjectService_FinalizeProjectRenameAfterCommit_KeepsJournalWhenSourceC
 		NewPath:    project.Path,
 		OldDirName: &oldDir,
 		NewDirName: newDir,
-		Phase:      projectRenameJournalPhaseTargetsCopiedInternal,
+		Phase:      projecttypes.RenameJournalPhaseTargetsCopied,
 	}
-	require.NoError(t, svc.writeProjectRenameJournalInternal(ctx, journal, projectRenameJournalPhaseTargetsCopiedInternal))
+	require.NoError(t, svc.writeProjectRenameJournalInternal(ctx, journal, projecttypes.RenameJournalPhaseTargetsCopied))
 
 	migration := &fakeProjectVolumeRenameMigrationInternal{
 		commitErr: volumes.NewSourceCleanupError("nginx_data", errors.New("source cleanup failed")),
 	}
 	journalActive := true
-	svc.finalizeProjectRenameAfterCommitInternal(ctx, project.ID, migration, journal, &journalActive)
+	projects.FinalizeRenameAfterCommit(ctx, svc.renameRecoveryOperationsInternal(), project.ID, migration, journal, &journalActive)
 	require.True(t, migration.commitCalled)
 	require.True(t, journalActive)
 
-	raw, ok, err := kvService.Get(ctx, projectRenameJournalKeyPrefixInternal+project.ID)
+	raw, ok, err := kvService.Get(ctx, projecttypes.RenameJournalKeyPrefix+project.ID)
 	require.NoError(t, err)
 	require.True(t, ok)
 
-	var updatedJournal projectRenameJournalInternal
+	var updatedJournal projecttypes.RenameJournal
 	require.NoError(t, json.Unmarshal([]byte(raw), &updatedJournal))
-	require.Equal(t, projectRenameJournalPhaseSourceCleanupPendingInternal, updatedJournal.Phase)
+	require.Equal(t, projecttypes.RenameJournalPhaseSourceCleanupPending, updatedJournal.Phase)
 }
 
 func TestProjectService_RecoverProjectRenameJournals_KeepsJournalWhenDirectoryRollbackFails(t *testing.T) {
@@ -6073,7 +5869,7 @@ func TestProjectService_RecoverProjectRenameJournals_KeepsJournalWhenDirectoryRo
 	kvService := kv.NewKVService(db)
 	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
 	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load()).WithKVService(kvService)
-	journal := projectRenameJournalInternal{
+	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
 		OldName:    "nginx",
 		NewName:    "web",
@@ -6081,8 +5877,8 @@ func TestProjectService_RecoverProjectRenameJournals_KeepsJournalWhenDirectoryRo
 		NewPath:    newPath,
 		OldDirName: &oldDir,
 		NewDirName: newDir,
-		Phase:      projectRenameJournalPhaseTargetsCopiedInternal,
-		Volumes: []volumes.JournalVolume{
+		Phase:      projecttypes.RenameJournalPhaseTargetsCopied,
+		Volumes: []volumetypes.JournalVolume{
 			{
 				Key:     "data",
 				OldName: "nginx_data",
@@ -6092,13 +5888,13 @@ func TestProjectService_RecoverProjectRenameJournals_KeepsJournalWhenDirectoryRo
 	}
 	payload, err := json.Marshal(journal)
 	require.NoError(t, err)
-	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyPrefixInternal+project.ID, string(payload)))
+	require.NoError(t, kvService.Set(ctx, projecttypes.RenameJournalKeyPrefix+project.ID, string(payload)))
 
 	err = svc.RecoverProjectRenameJournals(ctx)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "rollback project directory rename")
 
-	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyPrefixInternal+project.ID)
+	_, ok, err := kvService.Get(ctx, projecttypes.RenameJournalKeyPrefix+project.ID)
 	require.NoError(t, err)
 	require.True(t, ok)
 	require.True(t, targetRemoved.Load(), "target volume rollback should still run after directory rollback fails")
@@ -6115,7 +5911,7 @@ func TestProjectService_RecoverProjectRenameJournals_KeepsJournalWhenDirectoryRo
 	require.NoError(t, os.MkdirAll(filepath.Dir(oldPath), 0o755))
 	require.NoError(t, svc.RecoverProjectRenameJournals(ctx))
 
-	_, ok, err = kvService.Get(ctx, projectRenameJournalKeyPrefixInternal+project.ID)
+	_, ok, err = kvService.Get(ctx, projecttypes.RenameJournalKeyPrefix+project.ID)
 	require.NoError(t, err)
 	require.False(t, ok)
 	require.FileExists(t, filepath.Join(oldPath, "compose.yaml"))
@@ -6167,7 +5963,7 @@ func TestProjectService_RecoverProjectRenameJournals_CompletesCommittedVolumeJou
 	kvService := kv.NewKVService(db)
 	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
 	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load()).WithKVService(kvService)
-	journal := projectRenameJournalInternal{
+	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
 		OldName:    "nginx",
 		NewName:    "web",
@@ -6175,8 +5971,8 @@ func TestProjectService_RecoverProjectRenameJournals_CompletesCommittedVolumeJou
 		NewPath:    newPath,
 		OldDirName: &oldDir,
 		NewDirName: newDir,
-		Phase:      projectRenameJournalPhaseOldVolumesRemovedInternal,
-		Volumes: []volumes.JournalVolume{
+		Phase:      projecttypes.RenameJournalPhaseOldVolumesRemoved,
+		Volumes: []volumetypes.JournalVolume{
 			{
 				Key:     "data",
 				OldName: "nginx_data",
@@ -6186,11 +5982,11 @@ func TestProjectService_RecoverProjectRenameJournals_CompletesCommittedVolumeJou
 	}
 	payload, err := json.Marshal(journal)
 	require.NoError(t, err)
-	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyPrefixInternal+project.ID, string(payload)))
+	require.NoError(t, kvService.Set(ctx, projecttypes.RenameJournalKeyPrefix+project.ID, string(payload)))
 
 	require.NoError(t, svc.RecoverProjectRenameJournals(ctx))
 
-	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyPrefixInternal+project.ID)
+	_, ok, err := kvService.Get(ctx, projecttypes.RenameJournalKeyPrefix+project.ID)
 	require.NoError(t, err)
 	require.False(t, ok)
 	require.True(t, oldVolumeRemoved.Load(), "expected committed recovery to remove source volume")
@@ -6240,7 +6036,7 @@ func TestProjectService_RecoverProjectRenameJournals_RollsBackCommittedJournalWh
 	kvService := kv.NewKVService(db)
 	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
 	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load()).WithKVService(kvService)
-	journal := projectRenameJournalInternal{
+	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
 		OldName:    "nginx",
 		NewName:    "web",
@@ -6248,8 +6044,8 @@ func TestProjectService_RecoverProjectRenameJournals_RollsBackCommittedJournalWh
 		NewPath:    newPath,
 		OldDirName: &oldDir,
 		NewDirName: newDir,
-		Phase:      projectRenameJournalPhaseOldVolumesRemovedInternal,
-		Volumes: []volumes.JournalVolume{
+		Phase:      projecttypes.RenameJournalPhaseOldVolumesRemoved,
+		Volumes: []volumetypes.JournalVolume{
 			{
 				Key:     "data",
 				OldName: "nginx_data",
@@ -6259,13 +6055,13 @@ func TestProjectService_RecoverProjectRenameJournals_RollsBackCommittedJournalWh
 	}
 	payload, err := json.Marshal(journal)
 	require.NoError(t, err)
-	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyPrefixInternal+project.ID, string(payload)))
+	require.NoError(t, kvService.Set(ctx, projecttypes.RenameJournalKeyPrefix+project.ID, string(payload)))
 
 	err = svc.RecoverProjectRenameJournals(ctx)
 	require.NoError(t, err)
 	require.False(t, oldVolumeRemoved.Load(), "source volume is the only remaining copy and must not be deleted")
 
-	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyPrefixInternal+project.ID)
+	_, ok, err := kvService.Get(ctx, projecttypes.RenameJournalKeyPrefix+project.ID)
 	require.NoError(t, err)
 	require.False(t, ok)
 	require.DirExists(t, oldPath)
@@ -6350,7 +6146,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalAfterDBRestore
 	kvService := kv.NewKVService(db)
 	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
 	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load()).WithKVService(kvService)
-	journal := projectRenameJournalInternal{
+	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
 		OldName:    "nginx",
 		NewName:    "web",
@@ -6358,8 +6154,8 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalAfterDBRestore
 		NewPath:    newPath,
 		OldDirName: &oldDir,
 		NewDirName: newDir,
-		Phase:      projectRenameJournalPhaseProjectStateCommittedInternal,
-		Volumes: []volumes.JournalVolume{
+		Phase:      projecttypes.RenameJournalPhaseProjectStateCommitted,
+		Volumes: []volumetypes.JournalVolume{
 			{
 				Key:     "data",
 				OldName: "nginx_data",
@@ -6374,17 +6170,17 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalAfterDBRestore
 	}
 	payload, err := json.Marshal(journal)
 	require.NoError(t, err)
-	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyPrefixInternal+project.ID, string(payload)))
+	require.NoError(t, kvService.Set(ctx, projecttypes.RenameJournalKeyPrefix+project.ID, string(payload)))
 
 	err = svc.RecoverProjectRenameJournals(ctx)
 	require.Error(t, err)
 	require.ErrorContains(t, err, "remove rollback target volume web_cache")
 
 	require.Positive(t, targetRemoveAttempts.Load())
-	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyPrefixInternal+project.ID)
+	_, ok, err := kvService.Get(ctx, projecttypes.RenameJournalKeyPrefix+project.ID)
 	require.NoError(t, err)
 	require.False(t, ok, "project-state journal should clear after database rollback succeeds")
-	_, ok, err = kvService.Get(ctx, projectRenameRollbackCleanupKeyPrefixInternal+project.ID)
+	_, ok, err = kvService.Get(ctx, projecttypes.RenameRollbackCleanupKeyPrefix+project.ID)
 	require.NoError(t, err)
 	require.True(t, ok, "target cleanup should keep retry state when removal fails")
 	require.FileExists(t, filepath.Join(oldPath, "compose.yaml"))
@@ -6400,7 +6196,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalAfterDBRestore
 	allowTargetRemove.Store(true)
 	require.NoError(t, svc.RecoverProjectRenameJournals(ctx))
 
-	_, ok, err = kvService.Get(ctx, projectRenameRollbackCleanupKeyPrefixInternal+project.ID)
+	_, ok, err = kvService.Get(ctx, projecttypes.RenameRollbackCleanupKeyPrefix+project.ID)
 	require.NoError(t, err)
 	require.False(t, ok)
 	require.False(t, targetExists.Load())
@@ -6427,13 +6223,13 @@ func TestProjectService_RecoverProjectRenameJournals_KeepsRollbackCleanupWhenDoc
 
 	kvService := kv.NewKVService(db)
 	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load()).WithKVService(kvService)
-	cleanup := projectRenameRollbackCleanupInternal{
+	cleanup := projecttypes.RenameRollbackCleanup{
 		ProjectID: project.ID,
 		OldName:   "nginx",
 		OldPath:   oldPath,
 		NewName:   "web",
 		NewPath:   filepath.Join(projectsDir, "web"),
-		Volumes: []volumes.JournalVolume{
+		Volumes: []volumetypes.JournalVolume{
 			{
 				Key:     "data",
 				OldName: "nginx_data",
@@ -6443,13 +6239,13 @@ func TestProjectService_RecoverProjectRenameJournals_KeepsRollbackCleanupWhenDoc
 	}
 	payload, err := json.Marshal(cleanup)
 	require.NoError(t, err)
-	require.NoError(t, kvService.Set(ctx, projectRenameRollbackCleanupKeyPrefixInternal+project.ID, string(payload)))
+	require.NoError(t, kvService.Set(ctx, projecttypes.RenameRollbackCleanupKeyPrefix+project.ID, string(payload)))
 
 	err = svc.RecoverProjectRenameJournals(ctx)
 	require.Error(t, err)
 	require.ErrorContains(t, err, "docker service unavailable")
 
-	_, ok, err := kvService.Get(ctx, projectRenameRollbackCleanupKeyPrefixInternal+project.ID)
+	_, ok, err := kvService.Get(ctx, projecttypes.RenameRollbackCleanupKeyPrefix+project.ID)
 	require.NoError(t, err)
 	require.True(t, ok)
 }
@@ -6490,7 +6286,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsCommittedJournalWhenS
 	kvService := kv.NewKVService(db)
 	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
 	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load()).WithKVService(kvService)
-	journal := projectRenameJournalInternal{
+	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
 		OldName:    "nginx",
 		NewName:    "web",
@@ -6498,8 +6294,8 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsCommittedJournalWhenS
 		NewPath:    newPath,
 		OldDirName: &oldDir,
 		NewDirName: newDir,
-		Phase:      projectRenameJournalPhaseProjectStateCommittedInternal,
-		Volumes: []volumes.JournalVolume{
+		Phase:      projecttypes.RenameJournalPhaseProjectStateCommitted,
+		Volumes: []volumetypes.JournalVolume{
 			{
 				Key:     "data",
 				OldName: "nginx_data",
@@ -6509,12 +6305,12 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsCommittedJournalWhenS
 	}
 	payload, err := json.Marshal(journal)
 	require.NoError(t, err)
-	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyPrefixInternal+project.ID, string(payload)))
+	require.NoError(t, kvService.Set(ctx, projecttypes.RenameJournalKeyPrefix+project.ID, string(payload)))
 
 	err = svc.RecoverProjectRenameJournals(ctx)
 	require.NoError(t, err)
 
-	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyPrefixInternal+project.ID)
+	_, ok, err := kvService.Get(ctx, projecttypes.RenameJournalKeyPrefix+project.ID)
 	require.NoError(t, err)
 	require.False(t, ok)
 	require.DirExists(t, newPath)
@@ -6576,7 +6372,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsCommittedJournalAndCl
 	kvService := kv.NewKVService(db)
 	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
 	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load()).WithKVService(kvService)
-	journal := projectRenameJournalInternal{
+	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
 		OldName:    "nginx",
 		NewName:    "web",
@@ -6584,8 +6380,8 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsCommittedJournalAndCl
 		NewPath:    newPath,
 		OldDirName: &oldDir,
 		NewDirName: newDir,
-		Phase:      projectRenameJournalPhaseProjectStateCommittedInternal,
-		Volumes: []volumes.JournalVolume{
+		Phase:      projecttypes.RenameJournalPhaseProjectStateCommitted,
+		Volumes: []volumetypes.JournalVolume{
 			{
 				Key:     "data",
 				OldName: "nginx_data",
@@ -6600,12 +6396,12 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsCommittedJournalAndCl
 	}
 	payload, err := json.Marshal(journal)
 	require.NoError(t, err)
-	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyPrefixInternal+project.ID, string(payload)))
+	require.NoError(t, kvService.Set(ctx, projecttypes.RenameJournalKeyPrefix+project.ID, string(payload)))
 
 	err = svc.RecoverProjectRenameJournals(ctx)
 	require.NoError(t, err)
 
-	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyPrefixInternal+project.ID)
+	_, ok, err := kvService.Get(ctx, projecttypes.RenameJournalKeyPrefix+project.ID)
 	require.NoError(t, err)
 	require.False(t, ok)
 	require.True(t, cacheSourceRemoved.Load(), "source volume should still be cleaned up when the target exists")
@@ -6659,7 +6455,7 @@ func TestProjectService_RecoverProjectRenameJournals_MarksSourceCleanupPendingWh
 	kvService := kv.NewKVService(db)
 	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
 	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load()).WithKVService(kvService)
-	journal := projectRenameJournalInternal{
+	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
 		OldName:    "nginx",
 		NewName:    "web",
@@ -6667,8 +6463,8 @@ func TestProjectService_RecoverProjectRenameJournals_MarksSourceCleanupPendingWh
 		NewPath:    newPath,
 		OldDirName: &oldDir,
 		NewDirName: newDir,
-		Phase:      projectRenameJournalPhaseProjectStateCommittedInternal,
-		Volumes: []volumes.JournalVolume{
+		Phase:      projecttypes.RenameJournalPhaseProjectStateCommitted,
+		Volumes: []volumetypes.JournalVolume{
 			{
 				Key:     "data",
 				OldName: "nginx_data",
@@ -6678,22 +6474,22 @@ func TestProjectService_RecoverProjectRenameJournals_MarksSourceCleanupPendingWh
 	}
 	payload, err := json.Marshal(journal)
 	require.NoError(t, err)
-	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyPrefixInternal+project.ID, string(payload)))
+	require.NoError(t, kvService.Set(ctx, projecttypes.RenameJournalKeyPrefix+project.ID, string(payload)))
 
 	err = svc.RecoverProjectRenameJournals(ctx)
 	require.Error(t, err)
-	var cleanupErr *volumes.SourceCleanupError
+	var cleanupErr *volumetypes.SourceCleanupError
 	require.ErrorAs(t, err, &cleanupErr)
 	require.Equal(t, "nginx_data", cleanupErr.SourceVolume)
 	require.Positive(t, sourceRemoveAttempts.Load())
 
-	raw, ok, err := kvService.Get(ctx, projectRenameJournalKeyPrefixInternal+project.ID)
+	raw, ok, err := kvService.Get(ctx, projecttypes.RenameJournalKeyPrefix+project.ID)
 	require.NoError(t, err)
 	require.True(t, ok)
 
-	var updatedJournal projectRenameJournalInternal
+	var updatedJournal projecttypes.RenameJournal
 	require.NoError(t, json.Unmarshal([]byte(raw), &updatedJournal))
-	require.Equal(t, projectRenameJournalPhaseSourceCleanupPendingInternal, updatedJournal.Phase)
+	require.Equal(t, projecttypes.RenameJournalPhaseSourceCleanupPending, updatedJournal.Phase)
 	require.DirExists(t, newPath)
 	require.NoDirExists(t, oldPath)
 
@@ -6744,7 +6540,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsSourceCleanupPendingJ
 	kvService := kv.NewKVService(db)
 	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
 	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load()).WithKVService(kvService)
-	journal := projectRenameJournalInternal{
+	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
 		OldName:    "nginx",
 		NewName:    "web",
@@ -6752,8 +6548,8 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsSourceCleanupPendingJ
 		NewPath:    newPath,
 		OldDirName: &oldDir,
 		NewDirName: newDir,
-		Phase:      projectRenameJournalPhaseSourceCleanupPendingInternal,
-		Volumes: []volumes.JournalVolume{
+		Phase:      projecttypes.RenameJournalPhaseSourceCleanupPending,
+		Volumes: []volumetypes.JournalVolume{
 			{
 				Key:     "data",
 				OldName: "nginx_data",
@@ -6763,12 +6559,12 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsSourceCleanupPendingJ
 	}
 	payload, err := json.Marshal(journal)
 	require.NoError(t, err)
-	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyPrefixInternal+project.ID, string(payload)))
+	require.NoError(t, kvService.Set(ctx, projecttypes.RenameJournalKeyPrefix+project.ID, string(payload)))
 
 	err = svc.RecoverProjectRenameJournals(ctx)
 	require.NoError(t, err)
 
-	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyPrefixInternal+project.ID)
+	_, ok, err := kvService.Get(ctx, projecttypes.RenameJournalKeyPrefix+project.ID)
 	require.NoError(t, err)
 	require.False(t, ok)
 	require.True(t, sourceRemoved.Load())
@@ -6843,7 +6639,7 @@ func TestProjectService_RecoverProjectRenameJournals_RollsBackSourceCleanupPendi
 	kvService := kv.NewKVService(db)
 	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
 	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load()).WithKVService(kvService)
-	journal := projectRenameJournalInternal{
+	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
 		OldName:    "nginx",
 		NewName:    "web",
@@ -6851,8 +6647,8 @@ func TestProjectService_RecoverProjectRenameJournals_RollsBackSourceCleanupPendi
 		NewPath:    newPath,
 		OldDirName: &oldDir,
 		NewDirName: newDir,
-		Phase:      projectRenameJournalPhaseSourceCleanupPendingInternal,
-		Volumes: []volumes.JournalVolume{
+		Phase:      projecttypes.RenameJournalPhaseSourceCleanupPending,
+		Volumes: []volumetypes.JournalVolume{
 			{
 				Key:     "data",
 				OldName: "nginx_data",
@@ -6867,15 +6663,15 @@ func TestProjectService_RecoverProjectRenameJournals_RollsBackSourceCleanupPendi
 	}
 	payload, err := json.Marshal(journal)
 	require.NoError(t, err)
-	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyPrefixInternal+project.ID, string(payload)))
+	require.NoError(t, kvService.Set(ctx, projecttypes.RenameJournalKeyPrefix+project.ID, string(payload)))
 
 	err = svc.RecoverProjectRenameJournals(ctx)
 	require.NoError(t, err)
 
-	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyPrefixInternal+project.ID)
+	_, ok, err := kvService.Get(ctx, projecttypes.RenameJournalKeyPrefix+project.ID)
 	require.NoError(t, err)
 	require.False(t, ok)
-	_, ok, err = kvService.Get(ctx, projectRenameRollbackCleanupKeyPrefixInternal+project.ID)
+	_, ok, err = kvService.Get(ctx, projecttypes.RenameRollbackCleanupKeyPrefix+project.ID)
 	require.NoError(t, err)
 	require.False(t, ok)
 	require.False(t, dataSourceRemoved.Load(), "source volume is the remaining data copy and must not be removed")
@@ -6933,7 +6729,7 @@ func TestProjectService_RecoverProjectRenameJournals_KeepsSourceCleanupPendingJo
 	kvService := kv.NewKVService(db)
 	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
 	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load()).WithKVService(kvService)
-	journal := projectRenameJournalInternal{
+	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
 		OldName:    "nginx",
 		NewName:    "web",
@@ -6941,8 +6737,8 @@ func TestProjectService_RecoverProjectRenameJournals_KeepsSourceCleanupPendingJo
 		NewPath:    newPath,
 		OldDirName: &oldDir,
 		NewDirName: newDir,
-		Phase:      projectRenameJournalPhaseSourceCleanupPendingInternal,
-		Volumes: []volumes.JournalVolume{
+		Phase:      projecttypes.RenameJournalPhaseSourceCleanupPending,
+		Volumes: []volumetypes.JournalVolume{
 			{
 				Key:     "data",
 				OldName: "nginx_data",
@@ -6952,22 +6748,22 @@ func TestProjectService_RecoverProjectRenameJournals_KeepsSourceCleanupPendingJo
 	}
 	payload, err := json.Marshal(journal)
 	require.NoError(t, err)
-	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyPrefixInternal+project.ID, string(payload)))
+	require.NoError(t, kvService.Set(ctx, projecttypes.RenameJournalKeyPrefix+project.ID, string(payload)))
 
 	err = svc.RecoverProjectRenameJournals(ctx)
 	require.Error(t, err)
-	var cleanupErr *volumes.SourceCleanupError
+	var cleanupErr *volumetypes.SourceCleanupError
 	require.ErrorAs(t, err, &cleanupErr)
 	require.Equal(t, "nginx_data", cleanupErr.SourceVolume)
 	require.Positive(t, sourceRemoveAttempts.Load())
 
-	raw, ok, err := kvService.Get(ctx, projectRenameJournalKeyPrefixInternal+project.ID)
+	raw, ok, err := kvService.Get(ctx, projecttypes.RenameJournalKeyPrefix+project.ID)
 	require.NoError(t, err)
 	require.True(t, ok)
 
-	var updatedJournal projectRenameJournalInternal
+	var updatedJournal projecttypes.RenameJournal
 	require.NoError(t, json.Unmarshal([]byte(raw), &updatedJournal))
-	require.Equal(t, projectRenameJournalPhaseSourceCleanupPendingInternal, updatedJournal.Phase)
+	require.Equal(t, projecttypes.RenameJournalPhaseSourceCleanupPending, updatedJournal.Phase)
 	require.DirExists(t, newPath)
 	require.NoDirExists(t, oldPath)
 
@@ -6999,7 +6795,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsStartedJournalWhenDir
 
 	kvService := kv.NewKVService(db)
 	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load()).WithKVService(kvService)
-	journal := projectRenameJournalInternal{
+	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
 		OldName:    "nginx",
 		NewName:    "web",
@@ -7007,17 +6803,17 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsStartedJournalWhenDir
 		NewPath:    newPath,
 		OldDirName: &oldDir,
 		NewDirName: newDir,
-		Phase:      projectRenameJournalPhaseStartedInternal,
+		Phase:      projecttypes.RenameJournalPhaseStarted,
 	}
 	payload, err := json.Marshal(journal)
 	require.NoError(t, err)
-	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyPrefixInternal+project.ID, string(payload)))
+	require.NoError(t, kvService.Set(ctx, projecttypes.RenameJournalKeyPrefix+project.ID, string(payload)))
 
 	require.NoError(t, svc.RecoverProjectRenameJournals(ctx))
 
 	require.NoDirExists(t, oldPath)
 	require.NoDirExists(t, newPath)
-	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyPrefixInternal+project.ID)
+	_, ok, err := kvService.Get(ctx, projecttypes.RenameJournalKeyPrefix+project.ID)
 	require.NoError(t, err)
 	require.False(t, ok)
 }
@@ -7069,7 +6865,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsMissingPathJournalWhe
 	kvService := kv.NewKVService(db)
 	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
 	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load()).WithKVService(kvService)
-	journal := projectRenameJournalInternal{
+	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
 		OldName:    "nginx",
 		NewName:    "web",
@@ -7077,8 +6873,8 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsMissingPathJournalWhe
 		NewPath:    newPath,
 		OldDirName: &oldDir,
 		NewDirName: newDir,
-		Phase:      projectRenameJournalPhaseTargetsCopiedInternal,
-		Volumes: []volumes.JournalVolume{
+		Phase:      projecttypes.RenameJournalPhaseTargetsCopied,
+		Volumes: []volumetypes.JournalVolume{
 			{
 				Key:     "data",
 				OldName: "nginx_data",
@@ -7088,11 +6884,11 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsMissingPathJournalWhe
 	}
 	payload, err := json.Marshal(journal)
 	require.NoError(t, err)
-	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyPrefixInternal+project.ID, string(payload)))
+	require.NoError(t, kvService.Set(ctx, projecttypes.RenameJournalKeyPrefix+project.ID, string(payload)))
 
 	require.NoError(t, svc.RecoverProjectRenameJournals(ctx))
 
-	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyPrefixInternal+project.ID)
+	_, ok, err := kvService.Get(ctx, projecttypes.RenameJournalKeyPrefix+project.ID)
 	require.NoError(t, err)
 	require.False(t, ok)
 	require.False(t, targetRemoved.Load(), "target volume may be the only complete copy and must stay when source restore fails")
@@ -7143,7 +6939,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenRollbackSo
 	kvService := kv.NewKVService(db)
 	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
 	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load()).WithKVService(kvService)
-	journal := projectRenameJournalInternal{
+	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
 		OldName:    "nginx",
 		NewName:    "web",
@@ -7151,8 +6947,8 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenRollbackSo
 		NewPath:    newPath,
 		OldDirName: &oldDir,
 		NewDirName: newDir,
-		Phase:      projectRenameJournalPhaseTargetsCopiedInternal,
-		Volumes: []volumes.JournalVolume{
+		Phase:      projecttypes.RenameJournalPhaseTargetsCopied,
+		Volumes: []volumetypes.JournalVolume{
 			{
 				Key:     "data",
 				OldName: "nginx_data",
@@ -7162,11 +6958,11 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenRollbackSo
 	}
 	payload, err := json.Marshal(journal)
 	require.NoError(t, err)
-	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyPrefixInternal+project.ID, string(payload)))
+	require.NoError(t, kvService.Set(ctx, projecttypes.RenameJournalKeyPrefix+project.ID, string(payload)))
 
 	require.NoError(t, svc.RecoverProjectRenameJournals(ctx))
 
-	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyPrefixInternal+project.ID)
+	_, ok, err := kvService.Get(ctx, projecttypes.RenameJournalKeyPrefix+project.ID)
 	require.NoError(t, err)
 	require.False(t, ok, "inspect uncertainty should not permanently block future renames")
 	require.False(t, targetRemoved.Load(), "target volume must not be deleted when source inspection is uncertain")
@@ -7222,7 +7018,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenRollbackTa
 	kvService := kv.NewKVService(db)
 	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
 	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load()).WithKVService(kvService)
-	journal := projectRenameJournalInternal{
+	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
 		OldName:    "nginx",
 		NewName:    "web",
@@ -7230,8 +7026,8 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenRollbackTa
 		NewPath:    newPath,
 		OldDirName: &oldDir,
 		NewDirName: newDir,
-		Phase:      projectRenameJournalPhaseTargetsCopiedInternal,
-		Volumes: []volumes.JournalVolume{
+		Phase:      projecttypes.RenameJournalPhaseTargetsCopied,
+		Volumes: []volumetypes.JournalVolume{
 			{
 				Key:     "data",
 				OldName: "nginx_data",
@@ -7241,11 +7037,11 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenRollbackTa
 	}
 	payload, err := json.Marshal(journal)
 	require.NoError(t, err)
-	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyPrefixInternal+project.ID, string(payload)))
+	require.NoError(t, kvService.Set(ctx, projecttypes.RenameJournalKeyPrefix+project.ID, string(payload)))
 
 	require.NoError(t, svc.RecoverProjectRenameJournals(ctx))
 
-	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyPrefixInternal+project.ID)
+	_, ok, err := kvService.Get(ctx, projecttypes.RenameJournalKeyPrefix+project.ID)
 	require.NoError(t, err)
 	require.False(t, ok, "inspect uncertainty should not permanently block future renames")
 	require.False(t, targetRemoved.Load(), "target volume must not be deleted when target inspection is uncertain")
@@ -7307,7 +7103,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenTargetPres
 	kvService := kv.NewKVService(db)
 	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
 	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load()).WithKVService(kvService)
-	journal := projectRenameJournalInternal{
+	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
 		OldName:    "nginx",
 		NewName:    "web",
@@ -7315,8 +7111,8 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenTargetPres
 		NewPath:    newPath,
 		OldDirName: &oldDir,
 		NewDirName: newDir,
-		Phase:      projectRenameJournalPhaseTargetsCopiedInternal,
-		Volumes: []volumes.JournalVolume{
+		Phase:      projecttypes.RenameJournalPhaseTargetsCopied,
+		Volumes: []volumetypes.JournalVolume{
 			{
 				Key:     "data",
 				OldName: "nginx_data",
@@ -7326,12 +7122,12 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenTargetPres
 	}
 	payload, err := json.Marshal(journal)
 	require.NoError(t, err)
-	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyPrefixInternal+project.ID, string(payload)))
+	require.NoError(t, kvService.Set(ctx, projecttypes.RenameJournalKeyPrefix+project.ID, string(payload)))
 
 	err = svc.RecoverProjectRenameJournals(ctx)
 	require.NoError(t, err)
 
-	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyPrefixInternal+project.ID)
+	_, ok, err := kvService.Get(ctx, projecttypes.RenameJournalKeyPrefix+project.ID)
 	require.NoError(t, err)
 	require.False(t, ok, "preserved target data should not leave the project permanently blocked")
 	require.False(t, targetRemoved.Load(), "target volume may be the only complete copy and must stay when source restore fails")

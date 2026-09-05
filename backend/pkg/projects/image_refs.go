@@ -6,8 +6,12 @@ import (
 	"strings"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
+	"github.com/containerd/platforms"
 	composeapi "github.com/docker/compose/v5/pkg/api"
+
 	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
+	"github.com/moby/moby/api/types/image"
+	"github.com/moby/moby/client"
 )
 
 // ParseImageRefsJSON parses a JSON array of image references, returning nil
@@ -119,4 +123,63 @@ func uniqueImageRefsInternal(size int, collect func(yield func(string))) []strin
 	})
 
 	return refs
+}
+
+// PullableImageRefs includes service images and registry-only hook and volume images.
+func PullableImageRefs(project *composetypes.Project) []string {
+	if project == nil {
+		return nil
+	}
+	return uniqueImageRefsInternal(len(project.Services), func(yield func(string)) {
+		for _, service := range project.Services {
+			if service.Build == nil {
+				yield(service.Image)
+			}
+			for _, image := range composeapi.GetDependentImages(service, project.Name) {
+				yield(image)
+			}
+			for _, volume := range service.Volumes {
+				if volume.Type == composetypes.VolumeTypeImage {
+					yield(volume.Source)
+				}
+			}
+		}
+	})
+}
+
+// RefreshComposeImageLabel updates an existing Compose digest label in place.
+func RefreshComposeImageLabel(labels map[string]string, imageDigest string) {
+	if imageDigest == "" {
+		return
+	}
+	for key := range labels {
+		if strings.EqualFold(key, composeapi.ImageDigestLabel) {
+			labels[key] = imageDigest
+		}
+	}
+}
+
+// ComposeImageDigest selects the digest compose v5.5.0 records in the
+// com.docker.compose.image label: the host platform's image-manifest digest,
+// which stays stable across attested rebuilds, falling back to the top-level
+// image ID when the engine reports no manifest data (mirrors compose's
+// localContentDigest). Writing any other value would make compose flag the
+// container as diverged and recreate it on the next up.
+func ComposeImageDigest(inspect client.ImageInspectResult) string {
+	matcher := platforms.Default()
+	var available []image.ManifestSummary
+	for _, m := range inspect.Manifests {
+		if m.Kind == image.ManifestKindImage && m.Available {
+			available = append(available, m)
+		}
+	}
+	for _, m := range available {
+		if m.ImageData != nil && matcher.Match(m.ImageData.Platform) {
+			return m.ID
+		}
+	}
+	if len(available) == 1 {
+		return available[0].ID
+	}
+	return inspect.ID
 }
