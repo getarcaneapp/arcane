@@ -3347,6 +3347,8 @@
   "system_backups_recovery_key_saved": "Kurtarma anahtarı yapılandırıldı.",
   "system_backups_recovery_key_save_failed": "Kurtarma anahtarı yapılandırılamadı.",
   "system_backups_enabled_description": "Yapılandırılan cron zamanlamasına göre şifrelenmiş bir Arcane kurtarma yedeği çalıştırın.",
+  "backups_started": "Yedekleme başlatıldı",
+  "backups_running": "Yedekleme devam ediyor",
   "system_backups_created": "Arcane sistem yedeği başarıyla oluşturuldu.",
   "system_backups_create_failed": "Arcane sistem yedeklemesi oluşturulamadı.",
   "system_backups_policy_saved": "Sistem yedekleme programı kaydedildi.",
