@@ -3347,6 +3347,8 @@
   "system_backups_recovery_key_saved": "Klucz odzyskiwania został skonfigurowany.",
   "system_backups_recovery_key_save_failed": "Nie udało się skonfigurować klucza odzyskiwania.",
   "system_backups_enabled_description": "Uruchom zaszyfrowaną kopię zapasową Arcane do odzyskiwania danych zgodnie ze skonfigurowanym harmonogramem crona.",
+  "backups_started": "Rozpoczęto tworzenie kopii zapasowej",
+  "backups_running": "Trwa tworzenie kopii zapasowej",
   "system_backups_created": "Kopia zapasowa systemu Arcane została pomyślnie utworzona.",
   "system_backups_create_failed": "Nie udało się utworzyć kopii zapasowej systemu Arcane.",
   "system_backups_policy_saved": "Harmonogram tworzenia kopii zapasowych systemu został zapisany.",
