@@ -110,7 +110,7 @@ func (s *UploadService) CreateSession(ctx context.Context, kind string, request 
 		ReceivedChunks: []int{},
 		CreatedAt:      time.Now().UTC(),
 	}
-	if err := acfs.WriteFile(ctx, s.root, path.Join(sessionDir, sessionDataFilename), nil, 0o600); err != nil {
+	if err := acfs.Write(ctx, s.root, path.Join(sessionDir, sessionDataFilename), nil, acfs.WriteOptions{Mode: 0o600}); err != nil {
 		_ = acfs.RemoveAll(ctx, s.root, sessionDir)
 		return nil, fmt.Errorf("create upload session data file: %w", err)
 	}
@@ -154,7 +154,7 @@ func (s *UploadService) writeMetaInternal(ctx context.Context, session *uploadty
 	if err != nil {
 		return fmt.Errorf("encode upload session metadata: %w", err)
 	}
-	if err := acfs.WriteFile(ctx, s.root, path.Join("/", session.ID, sessionMetaFilename), payload, 0o600); err != nil {
+	if err := acfs.Write(ctx, s.root, path.Join("/", session.ID, sessionMetaFilename), payload, acfs.WriteOptions{Mode: 0o600}); err != nil {
 		return fmt.Errorf("write upload session metadata: %w", err)
 	}
 	return nil

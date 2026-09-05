@@ -40,7 +40,7 @@ func TestValidateMobileRedirectURI(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			err := s.ValidateMobileRedirectURI(ctx, tc.uri)
 
-			require.Equal(t, tc.wantErr, (err != nil),
+			require.Equal(t, tc.wantErr, err != nil,
 				"ValidateMobileRedirectURI(%q): wantErr=%v got err=%v", tc.uri, tc.wantErr, err)
 
 		})

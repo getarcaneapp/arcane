@@ -426,7 +426,7 @@ func (s *TemplateService) SaveComposeTemplate(ctx context.Context, content strin
 	if err != nil {
 		return errors.WrapIf(err, "failed to get templates directory")
 	}
-	return acfs.WriteFile(ctx, baseDir, "/.compose.template", []byte(content), utils.FilePerm)
+	return acfs.Write(ctx, baseDir, "/.compose.template", []byte(content), acfs.WriteOptions{Mode: utils.FilePerm})
 }
 
 func (s *TemplateService) GetEnvTemplate(ctx context.Context) string {
@@ -443,7 +443,7 @@ func (s *TemplateService) SaveEnvTemplate(ctx context.Context, content string) e
 	if err != nil {
 		return errors.WrapIf(err, "failed to get templates directory")
 	}
-	return acfs.WriteFile(ctx, baseDir, "/.env.template", []byte(content), utils.FilePerm)
+	return acfs.Write(ctx, baseDir, "/.env.template", []byte(content), acfs.WriteOptions{Mode: utils.FilePerm})
 }
 
 func (s *TemplateService) GetRegistries(ctx context.Context) ([]TemplateRegistry, error) {

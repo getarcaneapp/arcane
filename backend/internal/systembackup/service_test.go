@@ -14,7 +14,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/entityjobs"
 	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
-	sqlite "github.com/libtnb/sqlite"
+	"github.com/libtnb/sqlite"
 	containertypes "github.com/moby/moby/api/types/container"
 	mounttypes "github.com/moby/moby/api/types/mount"
 	"github.com/stretchr/testify/require"

@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	ref "github.com/distribution/reference"
-	registryauth "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/registryauth"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/registryauth"
 )
 
 // LocalBuildRegistry is Arcane's reserved registry host for locally built image tags.

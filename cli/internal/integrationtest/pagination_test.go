@@ -50,7 +50,7 @@ func TestContainersListSendsLimitAndStart(t *testing.T) {
 	require.Equal(t, "/api/environments/0/containers", gotPath,
 		"path = %q, want %q", gotPath, "/api/environments/0/containers")
 
-	require.True(t, (strings.Contains(gotQuery, "limit=5") && strings.Contains(gotQuery, "start=10")),
+	require.True(t, strings.Contains(gotQuery, "limit=5") && strings.Contains(gotQuery, "start=10"),
 		"query = %q, want limit=5 and start=10", gotQuery)
 
 	var got map[string]any
@@ -105,7 +105,7 @@ func TestContainersListExplicitStartZeroSendsStartZero(t *testing.T) {
 	require.Equal(t, "/api/environments/0/containers", gotPath,
 		"path = %q, want %q", gotPath, "/api/environments/0/containers")
 
-	require.True(t, (strings.Contains(gotQuery, "start=0") && strings.Contains(gotQuery, "limit=20")),
+	require.True(t, strings.Contains(gotQuery, "start=0") && strings.Contains(gotQuery, "limit=20"),
 		"query = %q, want start=0 and limit=20", gotQuery)
 
 }
@@ -269,7 +269,7 @@ func TestAdminEventsListEnvSendsLimitAndStart(t *testing.T) {
 	require.Equal(t, "/api/events/environment/0", gotPath,
 		"path = %q, want %q", gotPath, "/api/events/environment/0")
 
-	require.True(t, (strings.Contains(gotQuery, "limit=3") && strings.Contains(gotQuery, "start=6")),
+	require.True(t, strings.Contains(gotQuery, "limit=3") && strings.Contains(gotQuery, "start=6"),
 		"query = %q, want limit=3 and start=6", gotQuery)
 
 }

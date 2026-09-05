@@ -14,7 +14,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
-	sqlite "github.com/libtnb/sqlite"
+	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"

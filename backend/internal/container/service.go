@@ -917,13 +917,13 @@ func applyEditToContainerConfigInternal(cfg *container.Config, previousBindings 
 		cfg.User = *req.User
 	}
 	if req.Command != nil {
-		cfg.Cmd = append([]string{}, (*req.Command)...)
+		cfg.Cmd = append([]string{}, *req.Command...)
 	}
 	if req.Entrypoint != nil {
-		cfg.Entrypoint = append([]string{}, (*req.Entrypoint)...)
+		cfg.Entrypoint = append([]string{}, *req.Entrypoint...)
 	}
 	if req.Environment != nil {
-		cfg.Env = append([]string{}, (*req.Environment)...)
+		cfg.Env = append([]string{}, *req.Environment...)
 	}
 	if req.Labels != nil {
 		cfg.Labels = maps.Clone(*req.Labels)
@@ -966,7 +966,7 @@ func applyEditToHostConfigInternal(hc *container.HostConfig, req containertypes.
 	}
 
 	if edit.Binds != nil {
-		hc.Binds = append([]string{}, (*edit.Binds)...)
+		hc.Binds = append([]string{}, *edit.Binds...)
 	}
 	if edit.Mounts != nil {
 		hc.Mounts = mergeEditMountsInternal(hc.Mounts, *edit.Mounts)
@@ -988,10 +988,10 @@ func applyEditToHostConfigInternal(hc *container.HostConfig, req containertypes.
 		hc.Privileged = *edit.Privileged
 	}
 	if edit.CapAdd != nil {
-		hc.CapAdd = append([]string{}, (*edit.CapAdd)...)
+		hc.CapAdd = append([]string{}, *edit.CapAdd...)
 	}
 	if edit.CapDrop != nil {
-		hc.CapDrop = append([]string{}, (*edit.CapDrop)...)
+		hc.CapDrop = append([]string{}, *edit.CapDrop...)
 	}
 	if edit.AutoRemove != nil {
 		hc.AutoRemove = *edit.AutoRemove

@@ -72,7 +72,7 @@ func WriteComposeFile(ctx context.Context, projectsRoot, dirPath, content string
 		composeFileName = filepath.Base(existingFile)
 	}
 
-	if err := acfs.WriteFile(ctx, dirPath, "/"+composeFileName, []byte(content), utils.FilePerm); err != nil {
+	if err := acfs.Write(ctx, dirPath, "/"+composeFileName, []byte(content), acfs.WriteOptions{Mode: utils.FilePerm, InPlace: true}); err != nil {
 		return errors.WrapIf(err, "failed to write compose file")
 	}
 
@@ -123,7 +123,7 @@ func WriteProjectFile(ctx context.Context, projectsRoot, dirPath, fileName, cont
 		}
 	}
 
-	if err := acfs.WriteFile(ctx, dirPath, logicalPath, []byte(content), utils.FilePerm); err != nil {
+	if err := acfs.Write(ctx, dirPath, logicalPath, []byte(content), acfs.WriteOptions{Mode: utils.FilePerm, InPlace: true}); err != nil {
 		return errors.WrapIff(err, "failed to write project file %s", fileName)
 	}
 
@@ -376,7 +376,7 @@ func WriteSyncedDirectory(ctx context.Context, projectsRoot, projectPath string,
 		if file.Executable {
 			perm = 0o755
 		}
-		if err := acfs.WriteFile(ctx, projectPath, logicalPath, file.Content, perm); err != nil {
+		if err := acfs.Write(ctx, projectPath, logicalPath, file.Content, acfs.WriteOptions{Mode: perm, InPlace: true}); err != nil {
 			return nil, errors.WrapIff(err, "failed to write file %s", file.RelativePath)
 		}
 

@@ -31,7 +31,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ratelimit"
-	registryauth "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/registryauth"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/registryauth"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	projectspkg "github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"

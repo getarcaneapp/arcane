@@ -10,6 +10,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.getarcane.app/acfs"
 )
 
 func TestWriteFilesPermissions(t *testing.T) {
@@ -73,12 +74,24 @@ func TestWriteProjectFile_DoesNotReplaceIdenticalContent(t *testing.T) {
 
 	fixedTime := time.Unix(1_700_000_000, 0)
 	require.NoError(t, os.Chtimes(filePath, fixedTime, fixedTime))
+	original, err := os.Stat(filePath)
+	require.NoError(t, err)
 
 	require.NoError(t, WriteProjectFile(t.Context(), projectsRoot, projectDir, EffectiveEnvFileName, content))
 
 	info, err := os.Stat(filePath)
 	require.NoError(t, err)
 	assert.True(t, info.ModTime().Equal(fixedTime), "identical content should not replace the file")
+	assert.True(t, os.SameFile(original, info))
+	assert.Equal(t, original.Mode().Perm(), info.Mode().Perm())
+
+	require.NoError(t, WriteProjectFile(t.Context(), projectsRoot, projectDir, EffectiveEnvFileName, "VALUE=new\n"))
+	updated, err := os.Stat(filePath)
+	require.NoError(t, err)
+	assert.True(t, os.SameFile(original, updated), "changed content should preserve the inode")
+	actual, err := os.ReadFile(filePath)
+	require.NoError(t, err)
+	assert.Equal(t, "VALUE=new\n", string(actual))
 }
 
 func TestWriteEnvFile_WritesThroughExternalSymlink(t *testing.T) {
@@ -164,26 +177,49 @@ func TestWriteEnvFile_RejectsNonRegularSymlinkTarget(t *testing.T) {
 }
 
 func TestWriteProjectFile_StillRejectsNonEnvSymlink(t *testing.T) {
-	projectsRoot := t.TempDir()
-	projectDir := filepath.Join(projectsRoot, "test-project")
-	require.NoError(t, os.MkdirAll(projectDir, 0o755))
+	for _, writer := range []string{"project", "compose", "sync"} {
+		t.Run(writer, func(t *testing.T) {
+			projectsRoot := t.TempDir()
+			projectDir := filepath.Join(projectsRoot, "test-project")
+			require.NoError(t, os.MkdirAll(projectDir, 0o755))
 
-	targetPath := filepath.Join(t.TempDir(), "project.env")
-	require.NoError(t, os.WriteFile(targetPath, []byte("VALUE=old\n"), 0o600))
-	linkPath := filepath.Join(projectDir, OverrideEnvFileName)
-	if err := os.Symlink(targetPath, linkPath); err != nil {
-		t.Skipf("symlink creation is unavailable: %v", err)
+			targetPath := filepath.Join(t.TempDir(), "compose.yaml")
+			require.NoError(t, os.WriteFile(targetPath, []byte("services: {}\n"), 0o600))
+			fileName := DefaultComposeFileName
+			if writer == "project" {
+				fileName = OverrideEnvFileName
+			}
+			linkPath := filepath.Join(projectDir, fileName)
+			if err := os.Symlink(targetPath, linkPath); err != nil {
+				t.Skipf("symlink creation is unavailable: %v", err)
+			}
+
+			var err error
+			switch writer {
+			case "project":
+				err = WriteProjectFile(t.Context(), projectsRoot, projectDir, fileName, "services: { updated: true }")
+			case "compose":
+				err = WriteComposeFile(t.Context(), projectsRoot, projectDir, "services: { updated: true }")
+			case "sync":
+				_, err = WriteSyncedDirectory(t.Context(), projectsRoot, projectDir, []SyncFile{
+					{RelativePath: DefaultComposeFileName, Content: []byte("services: { updated: true }")},
+				})
+			}
+			require.Error(t, err)
+			if writer == "project" {
+				assert.Contains(t, err.Error(), "destination is a symlink")
+			} else {
+				assert.ErrorIs(t, err, acfs.ErrSymlink)
+			}
+
+			targetContent, readErr := os.ReadFile(targetPath)
+			require.NoError(t, readErr)
+			assert.Equal(t, "services: {}\n", string(targetContent))
+			linkInfo, statErr := os.Lstat(linkPath)
+			require.NoError(t, statErr)
+			require.NotZero(t, linkInfo.Mode()&os.ModeSymlink)
+		})
 	}
-
-	err := WriteProjectFile(t.Context(), projectsRoot, projectDir, OverrideEnvFileName, "VALUE=new\n")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "destination is a symlink")
-	targetContent, readErr := os.ReadFile(targetPath)
-	require.NoError(t, readErr)
-	assert.Equal(t, "VALUE=old\n", string(targetContent))
-	linkInfo, statErr := os.Lstat(linkPath)
-	require.NoError(t, statErr)
-	require.NotZero(t, linkInfo.Mode()&os.ModeSymlink)
 }
 
 func TestWriteProjectFiles(t *testing.T) {
@@ -247,14 +283,19 @@ func TestWriteComposeFile_PreservesExistingPodmanComposeNames(t *testing.T) {
 
 			existingComposePath := filepath.Join(projectDir, tc.fileName)
 			require.NoError(t, os.WriteFile(existingComposePath, []byte("services: {}"), 0o600))
+			original, err := os.Stat(existingComposePath)
+			require.NoError(t, err)
 
 			expectedContent := "services:\n  app:\n    image: nginx:alpine\n"
-			err := WriteComposeFile(t.Context(), projectsRoot, projectDir, expectedContent)
+			err = WriteComposeFile(t.Context(), projectsRoot, projectDir, expectedContent)
 			require.NoError(t, err)
 
 			actualContent, err := os.ReadFile(existingComposePath)
 			require.NoError(t, err)
 			assert.Equal(t, expectedContent, string(actualContent))
+			updated, err := os.Stat(existingComposePath)
+			require.NoError(t, err)
+			assert.True(t, os.SameFile(original, updated), "compose updates should preserve the inode")
 
 			_, err = os.Stat(filepath.Join(projectDir, "compose.yaml"))
 			assert.True(t, os.IsNotExist(err), "compose.yaml should not be created when existing podman-compose file is present")
@@ -312,6 +353,7 @@ func TestWriteSyncedDirectory_DowngradesExecutableBit(t *testing.T) {
 	require.NoError(t, err)
 	second, err := os.Stat(filepath.Join(project, "scripts/hook.sh"))
 	require.NoError(t, err)
+	assert.True(t, os.SameFile(first, second), "sync updates should preserve the inode")
 	assert.Equal(t, os.FileMode(0), second.Mode().Perm()&0o111, "executable bit should clear on update when repo no longer marks +x")
 }
 
@@ -335,11 +377,12 @@ func TestWriteSyncedDirectory_UpgradesExecutableBitOnUpdate(t *testing.T) {
 	// Second write: same file, now with +x (e.g. the repo added the bit).
 	// The write path must apply the new mode on an update, not just on create.
 	_, err = WriteSyncedDirectory(t.Context(), root, project, []SyncFile{
-		{RelativePath: "scripts/hook.sh", Content: []byte("#!/bin/sh\necho updated\n"), Executable: true},
+		{RelativePath: "scripts/hook.sh", Content: []byte("#!/bin/sh\n"), Executable: true},
 	})
 	require.NoError(t, err)
 	second, err := os.Stat(filepath.Join(project, "scripts/hook.sh"))
 	require.NoError(t, err)
+	assert.True(t, os.SameFile(first, second), "permission updates should preserve the inode")
 	assert.NotEqual(t, os.FileMode(0), second.Mode().Perm()&0o111, "executable bit should set on update when repo marks +x")
 }
 
