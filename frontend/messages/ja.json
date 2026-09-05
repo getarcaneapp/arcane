@@ -3347,6 +3347,8 @@
   "system_backups_recovery_key_saved": "復旧キーの設定が完了しました。",
   "system_backups_recovery_key_save_failed": "リカバリキーの設定に失敗しました。",
   "system_backups_enabled_description": "設定されたcronスケジュールに従って、暗号化されたArcaneリカバリバックアップを実行します。",
+  "backups_started": "バックアップが開始されました",
+  "backups_running": "バックアップ実行中",
   "system_backups_created": "Arcaneシステムのバックアップが正常に作成されました。",
   "system_backups_create_failed": "Arcaneシステムのバックアップの作成に失敗しました。",
   "system_backups_policy_saved": "システムのバックアップスケジュールが保存されました。",
