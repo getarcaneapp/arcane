@@ -3347,6 +3347,8 @@
   "system_backups_recovery_key_saved": "已配置恢复密钥。",
   "system_backups_recovery_key_save_failed": "无法配置恢复密钥。",
   "system_backups_enabled_description": "按照配置的cron计划运行加密的Arcane恢复备份。",
+  "backups_started": "备份已开始",
+  "backups_running": "正在备份",
   "system_backups_created": "Arcane 系统备份已成功创建。",
   "system_backups_create_failed": "无法创建 Arcane 系统备份。",
   "system_backups_policy_saved": "系统备份计划已保存。",
