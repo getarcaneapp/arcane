@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { FileEntry } from '#lib/types/shared';
+	import type { FileEntry } from '#lib/types/shared.js';
 	import {
 		FolderOpenIcon,
 		FileTextIcon,
@@ -9,18 +9,18 @@
 		ClockIcon,
 		RestartIcon,
 		ExternalLinkIcon
-	} from '#lib/icons';
+	} from '#lib/icons/index.js';
 	import { toast } from 'svelte-sonner';
 	import * as m from '#lib/paraglide/messages.js';
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
-	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
-	import { UniversalMobileCard, type ColumnSpec, type MobileFieldVisibility } from '#lib/components/arcane-table';
-	import * as DropdownMenu from '#lib/components/ui/dropdown-menu';
-	import * as Tooltip from '#lib/components/ui/tooltip';
-	import { openConfirmDialog } from '#lib/components/confirm-dialog';
+	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import { UniversalMobileCard, type ColumnSpec, type MobileFieldVisibility } from '#lib/components/arcane-table/index.js';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import * as Tooltip from '#lib/components/ui/tooltip/index.js';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import RowActionsMenu from './row-actions-menu.svelte';
-	import { bytes, formatDateTimeShort, instantEpochMilliseconds } from '#lib/utils/formatting';
-	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
+	import { bytes, formatDateTimeShort, instantEpochMilliseconds } from '#lib/utils/formatting.js';
+	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 
 	let {
 		files,

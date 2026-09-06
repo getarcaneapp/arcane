@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { m } from '#lib/paraglide/messages';
-	import { bytes } from '#lib/utils/formatting';
+	import { m } from '#lib/paraglide/messages.js';
+	import { bytes } from '#lib/utils/formatting.js';
 	import MetricRing from '#lib/components/metric-ring.svelte';
 
 	interface Props {

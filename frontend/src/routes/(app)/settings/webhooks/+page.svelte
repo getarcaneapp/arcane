@@ -1,16 +1,16 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
-	import { handleApiResultWithCallbacks } from '#lib/utils/api';
-	import { tryCatch } from '#lib/utils/api';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { tryCatch } from '#lib/utils/api.js';
 	import WebhookTable from './webhook-table.svelte';
 	import WebhookFormSheet from '#lib/components/sheets/webhook-form-sheet.svelte';
-	import type { Webhook, WebhookCreated, CreateWebhook } from '#lib/types/environment';
-	import { webhookService } from '#lib/services/webhook-service';
+	import type { Webhook, WebhookCreated, CreateWebhook } from '#lib/types/environment.js';
+	import { webhookService } from '#lib/services/webhook-service.js';
 	import { SettingsPageLayout, type SettingsActionButton } from '#lib/layouts/index.js';
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { Snippet } from '#lib/components/ui/snippet/index.js';
-	import { GlobeIcon } from '#lib/icons';
+	import { GlobeIcon } from '#lib/icons/index.js';
 	import * as m from '#lib/paraglide/messages.js';
 
 	let { data } = $props();

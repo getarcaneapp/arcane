@@ -42,9 +42,6 @@ export default defineConfig(({ command }) => ({
 		tailwindcss(),
 		sveltekit({
 			preprocess: vitePreprocess(),
-			alias: {
-				'#lib': './src/lib'
-			},
 			adapter: adapter({
 				pages: process.env['BUILD_PATH'] ?? '../backend/frontend/dist',
 				fallback: 'index.html'

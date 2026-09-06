@@ -1,11 +1,11 @@
 <script lang="ts">
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import { UpdateIcon } from '#lib/icons';
-	import { m } from '#lib/paraglide/messages';
-	import { queryKeys } from '#lib/query/query-keys';
-	import systemUpgradeService from '#lib/services/api/system-upgrade-service';
-	import type { AppVersionInformation } from '#lib/types/settings';
-	import type { Environment } from '#lib/types/environment';
+	import { UpdateIcon } from '#lib/icons/index.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
+	import systemUpgradeService from '#lib/services/api/system-upgrade-service.js';
+	import type { AppVersionInformation } from '#lib/types/settings.js';
+	import type { Environment } from '#lib/types/environment.js';
 	import { createQuery } from '@tanstack/svelte-query';
 
 	let {

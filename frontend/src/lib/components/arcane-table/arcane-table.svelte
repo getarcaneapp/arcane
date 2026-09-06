@@ -4,12 +4,12 @@
 	import { arcaneTableFeatures, type ArcaneColumnDef, type ArcaneRow, type ArcaneTable } from './table-features';
 	import DataTableToolbar from './arcane-table-toolbar.svelte';
 	import { onMount, untrack } from 'svelte';
-	import { IsMobile } from '#lib/hooks/is-mobile.svelte';
-	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
+	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
+	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import type { Snippet } from 'svelte';
 	import type { ColumnSpec } from './arcane-table.types.svelte';
 	import TableCheckbox from './arcane-table-checkbox.svelte';
-	import { m } from '#lib/paraglide/messages';
+	import { m } from '#lib/paraglide/messages.js';
 	import { PersistedState } from 'runed';
 	import {
 		type CompactTablePrefs,
@@ -26,7 +26,13 @@
 		type BulkAction
 	} from './arcane-table.types.svelte';
 	import type { Component } from 'svelte';
-	import { extractPersistedPreferences, filterMapsEqual, fromFilterMap, toFilterMap } from './arcane-table.utils';
+	import {
+		extractPersistedPreferences,
+		filterMapsEqual,
+		fromFilterMap,
+		restoreTableRequestOptions,
+		toFilterMap
+	} from './arcane-table.utils';
 	import ArcaneTablePagination from './arcane-table-pagination.svelte';
 	import ArcaneTableHeader from './arcane-table-header.svelte';
 	import ArcaneTableCell from './arcane-table-cell.svelte';
@@ -228,70 +234,20 @@
 		applyHiddenPatch(patchedVisibility, snapshot.hiddenColumns);
 		columnVisibility = patchedVisibility;
 
-		let shouldRefresh = false;
-		const { restoredFilters, filtersMap } = snapshot;
-		if (restoredFilters.length) {
-			setColumnFilters(restoredFilters);
-		}
-		if (Object.keys(filtersMap).length > 0) {
-			if (!filterMapsEqual(filtersMap, requestOptions?.filters)) {
-				requestOptions = {
-					...requestOptions,
-					filters: filtersMap,
-					pagination: { page: 1, limit: requestOptions?.pagination?.limit ?? getEffectiveLimit() }
-				};
-				shouldRefresh = true;
-			}
-		} else if (requestOptions?.filters && Object.keys(requestOptions.filters).length > 0) {
-			requestOptions = {
-				...requestOptions,
-				filters: undefined,
-				pagination: { page: 1, limit: requestOptions?.pagination?.limit ?? getEffectiveLimit() }
-			};
-			shouldRefresh = true;
-		}
-
-		const persistedSearch = snapshot.search;
-		const currentSearch = (requestOptions?.search ?? '').trim();
-		// Incoming requestOptions.search (e.g. from URL param) takes priority over persisted state
-		const effectiveSearch = currentSearch || persistedSearch;
-		if (effectiveSearch !== globalFilter()) {
-			setGlobalFilter(effectiveSearch);
-		}
-		if (effectiveSearch !== currentSearch) {
-			requestOptions = {
-				...requestOptions,
-				search: effectiveSearch || undefined,
-				pagination: { page: 1, limit: requestOptions?.pagination?.limit ?? getEffectiveLimit() }
-			};
-			shouldRefresh = true;
-		}
-
-		const persistedLimit = snapshot.limit ?? getEffectiveLimit();
-		const currentLimit = requestOptions?.pagination?.limit ?? getEffectiveLimit();
-		if (persistedLimit !== currentLimit) {
-			requestOptions = { ...requestOptions, pagination: { page: 1, limit: persistedLimit } };
-			shouldRefresh = true;
-		}
+		if (snapshot.restoredFilters.length) setColumnFilters(snapshot.restoredFilters);
+		const effectiveSearch = (requestOptions?.search ?? '').trim() || snapshot.search;
+		if (effectiveSearch !== globalFilter()) setGlobalFilter(effectiveSearch);
 
 		const persistedSort = snapshot.sort;
-		const currentSort = requestOptions?.sort;
-		if (persistedSort) {
-			const restoredSort =
-				patchedVisibility[persistedSort.column] === false && hiddenSortFallback ? hiddenSortFallback : persistedSort;
-			if (restoredSort !== persistedSort && prefs) {
-				prefs.current = { ...prefs.current, s: encodeSort(restoredSort) };
-			}
-			if (currentSort?.column !== restoredSort.column || currentSort?.direction !== restoredSort.direction) {
-				requestOptions = {
-					...requestOptions,
-					sort: restoredSort,
-					pagination: { page: 1, limit: requestOptions?.pagination?.limit ?? getEffectiveLimit() }
-				};
-				shouldRefresh = true;
-			}
+		if (persistedSort && patchedVisibility[persistedSort.column] === false && hiddenSortFallback) {
+			snapshot.sort = hiddenSortFallback;
+			if (snapshot.sort !== persistedSort && prefs) prefs.current = { ...prefs.current, s: encodeSort(snapshot.sort) };
 		}
-		if (shouldRefresh) onRefresh(requestOptions);
+		const restoredOptions = restoreTableRequestOptions(requestOptions, snapshot, getEffectiveLimit());
+		if (restoredOptions !== requestOptions) {
+			requestOptions = restoredOptions;
+			onRefresh(requestOptions);
+		}
 
 		if (mobileFields.length && !Object.keys(mobileFieldVisibility).length) {
 			mobileFieldVisibility = buildMobileVisibility(mobileFields, snapshot.mobileVisibility);
@@ -530,25 +486,14 @@
 					s: encodeSort(sortState)
 				};
 			}
-			if (sortState) {
-				requestOptions = {
-					...requestOptions,
-					sort: sortState,
-					pagination: {
-						page: 1,
-						limit: requestOptions?.pagination?.limit ?? items?.pagination?.itemsPerPage ?? 10
-					}
-				};
-			} else {
-				requestOptions = {
-					...requestOptions,
-					sort: undefined,
-					pagination: {
-						page: 1,
-						limit: requestOptions?.pagination?.limit ?? items?.pagination?.itemsPerPage ?? 10
-					}
-				};
-			}
+			requestOptions = {
+				...requestOptions,
+				sort: sortState,
+				pagination: {
+					page: 1,
+					limit: requestOptions?.pagination?.limit ?? items?.pagination?.itemsPerPage ?? 10
+				}
+			};
 			onRefresh(requestOptions);
 		},
 		onColumnFiltersChange: (updater) => {

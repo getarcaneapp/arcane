@@ -1,12 +1,12 @@
 import { toast } from 'svelte-sonner';
-import { openConfirmDialog } from '#lib/components/confirm-dialog';
-import { m } from '#lib/paraglide/messages';
-import BaseAPIService from '#lib/services/api-service';
-import { imageService } from '#lib/services/image-service';
-import { userService } from '#lib/services/user-service';
-import { environmentStore } from '#lib/stores/environment.store.svelte';
-import { activityToastOptions } from '#lib/utils/activity-toast';
-import type { AutoUpdateResourceType, AutoUpdateResult } from '#lib/types/automation';
+import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
+import { m } from '#lib/paraglide/messages.js';
+import BaseAPIService from '#lib/services/api-service.js';
+import { imageService } from '#lib/services/image-service.js';
+import { userService } from '#lib/services/user-service.js';
+import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+import { activityToastOptions } from '#lib/utils/activity-toast.js';
+import type { AutoUpdateResourceType, AutoUpdateResult } from '#lib/types/automation.js';
 
 /**
  * Helpers around the updater run endpoint (`POST /environments/{id}/updater/run`),

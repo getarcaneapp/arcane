@@ -7,7 +7,7 @@
 	import { IsTablet } from '#lib/hooks/is-tablet.svelte.js';
 	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
 	import { PersistedState } from 'runed';
-	import userStore from '#lib/stores/user-store';
+	import userStore from '#lib/stores/user-store.js';
 
 	const persistedPinned = new PersistedState('sidebar-pinned', true);
 

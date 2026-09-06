@@ -1,16 +1,16 @@
 <script lang="ts">
 	import EventTable from './event-table.svelte';
-	import { m } from '#lib/paraglide/messages';
-	import { eventService } from '#lib/services/event-service';
-	import { queryKeys } from '#lib/query/query-keys';
+	import { m } from '#lib/paraglide/messages.js';
+	import { eventService } from '#lib/services/event-service.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { createQuery, keepPreviousData } from '@tanstack/svelte-query';
-	import { AlertIcon, CheckIcon, CloseIcon, EventsIcon, InfoIcon } from '#lib/icons';
-	import { hasPermission } from '#lib/utils/auth';
-	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions';
+	import { AlertIcon, CheckIcon, CloseIcon, EventsIcon, InfoIcon } from '#lib/icons/index.js';
+	import { hasPermission } from '#lib/utils/auth.js';
+	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions.js';
 	import { onMount } from 'svelte';
-	import { clientStream } from '#lib/stores/client-stream.svelte';
-	import { STREAM_CHANNEL_EVENTS } from '#lib/services/stream-service';
+	import { clientStream } from '#lib/stores/client-stream.svelte.js';
+	import { STREAM_CHANNEL_EVENTS } from '#lib/services/stream-service.js';
 
 	let { data } = $props();
 

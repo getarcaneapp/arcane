@@ -1,26 +1,8 @@
 import { writable } from 'svelte/store';
-import { m } from '#lib/paraglide/messages';
-import type { Action } from '#lib/components/arcane-button/index.js';
+import { m } from '#lib/paraglide/messages.js';
+import type { ConfirmDialogOptions } from '#lib/types/confirm-dialog.js';
 
-interface ConfirmDialogStore {
-	open: boolean;
-	title: string;
-	message: string;
-	confirm: {
-		label?: string;
-		destructive?: boolean;
-		/** ArcaneButton action variant for the confirm button; overrides the destructive/remove default. */
-		button?: Action;
-		action: (checkboxStates: Record<string, boolean>) => void | Promise<void>;
-	};
-	checkboxes?: Array<{
-		id: string;
-		label: string;
-		initialState?: boolean;
-	}>;
-}
-
-export const confirmDialogStore = writable<ConfirmDialogStore>({
+export const confirmDialogStore = writable<ConfirmDialogOptions & { open: boolean }>({
 	open: false,
 	title: '',
 	message: '',
@@ -31,26 +13,7 @@ export const confirmDialogStore = writable<ConfirmDialogStore>({
 	}
 });
 
-export function openConfirmDialog({
-	title,
-	message,
-	confirm,
-	checkboxes
-}: {
-	title: string;
-	message: string;
-	confirm: {
-		label?: string;
-		destructive?: boolean;
-		button?: Action;
-		action: (checkboxStates: Record<string, boolean>) => void | Promise<void>;
-	};
-	checkboxes?: Array<{
-		id: string;
-		label: string;
-		initialState?: boolean;
-	}>;
-}) {
+export function openConfirmDialog({ title, message, confirm, checkboxes }: ConfirmDialogOptions) {
 	confirmDialogStore.update(() => ({
 		open: true,
 		title,

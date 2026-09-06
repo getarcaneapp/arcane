@@ -1,6 +1,6 @@
 <script lang="ts">
-	import type { IncludeFile, Project, ProjectTagColor, ProjectTagOption } from '#lib/types/swarm';
-	import type { ProjectWorkspaceFileChange, ProjectWorkspaceFileContent } from '#lib/types/project-workspace';
+	import type { IncludeFile, Project, ProjectTagColor, ProjectTagOption } from '#lib/types/swarm.js';
+	import type { ProjectWorkspaceFileChange, ProjectWorkspaceFileContent } from '#lib/types/project-workspace.js';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
@@ -19,26 +19,26 @@
 		CodeIcon,
 		ArrowsUpDownIcon,
 		SearchIcon
-	} from '#lib/icons';
+	} from '#lib/icons/index.js';
 	import { type TabItem } from '#lib/components/tab-bar/index.js';
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
 	import ActionButtons from '#lib/components/action-buttons.svelte';
-	import { Badge } from '#lib/components/ui/badge';
-	import * as ArcaneTooltip from '#lib/components/arcane-tooltip';
-	import { getStatusVariant, getThemedIconUrl } from '#lib/utils/docker';
-	import { capitalizeFirstLetter } from '#lib/utils/formatting';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
+	import { getStatusVariant, getThemedIconUrl } from '#lib/utils/docker.js';
+	import { capitalizeFirstLetter } from '#lib/utils/formatting.js';
 	import { page } from '$app/state';
 	import { mode } from 'mode-watcher';
 	import { toast } from 'svelte-sonner';
-	import { tryCatch } from '#lib/utils/api';
-	import { handleApiResultWithCallbacks } from '#lib/utils/api';
+	import { tryCatch } from '#lib/utils/api.js';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { z } from 'zod/v4';
-	import { createForm } from '#lib/utils/settings';
-	import { m } from '#lib/paraglide/messages';
-	import { toGitCommitUrl } from '#lib/utils/navigation';
-	import { toSafeHref } from '#lib/utils/navigation';
+	import { createForm } from '#lib/utils/settings.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { toGitCommitUrl } from '#lib/utils/navigation.js';
+	import { toSafeHref } from '#lib/utils/navigation.js';
 	import { PersistedState } from 'runed';
-	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte';
+	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
 	import ComposeFileEditorPanel from '#lib/components/compose-file-editor-panel.svelte';
 	import EditableName from '../components/EditableName.svelte';
 	import WorkspaceFileTreePanel from '#lib/components/workspace-file-tree-panel.svelte';
@@ -47,24 +47,24 @@
 	import CodePanel from '#lib/components/code-panel.svelte';
 	import ProjectsLogsPanel from '../components/ProjectLogsPanel.svelte';
 	import ResizableSplit from '#lib/components/resizable-split.svelte';
-	import { Switch } from '#lib/components/ui/switch';
+	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { untrack } from 'svelte';
-	import { projectService } from '#lib/services/project-service';
-	import { projectWorkspaceService } from '#lib/services/project-workspace-service';
-	import settingsStore from '#lib/stores/config-store';
-	import { imageService } from '#lib/services/image-service';
-	import { gitOpsSyncService } from '#lib/services/gitops-sync-service';
-	import { environmentStore } from '#lib/stores/environment.store.svelte';
-	import { hasPermission } from '#lib/utils/auth';
-	import { queryKeys } from '#lib/query/query-keys';
-	import { RefreshIcon } from '#lib/icons';
+	import { projectService } from '#lib/services/project-service.js';
+	import { projectWorkspaceService } from '#lib/services/project-workspace-service.js';
+	import settingsStore from '#lib/stores/config-store.js';
+	import { imageService } from '#lib/services/image-service.js';
+	import { gitOpsSyncService } from '#lib/services/gitops-sync-service.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import { hasPermission } from '#lib/utils/auth.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
+	import { RefreshIcon } from '#lib/icons/index.js';
 	import IconImage from '#lib/components/icon-image.svelte';
 	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import ProjectUpdateItem from '#lib/components/project-update-item.svelte';
 	import ProjectTagEditor from '#lib/components/project-tag-editor.svelte';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
-	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
-	import { globalVariablesToMap } from '#lib/utils/template-load';
+	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
+	import { globalVariablesToMap } from '#lib/utils/template-load.js';
 	import {
 		planProjectWorkspaceFileCreate,
 		planProjectWorkspaceFileRename,
@@ -83,8 +83,8 @@
 		readWorkspaceUpload,
 		workspaceReadOnlyMessage,
 		type WorkspaceDisplayEntry
-	} from '#lib/utils/workspace-files';
-	import { composeTreeSplitProps, extractComposeYamlName } from '#lib/utils/compose-flow';
+	} from '#lib/utils/workspace-files.js';
+	import { composeTreeSplitProps, extractComposeYamlName } from '#lib/utils/compose-flow.js';
 
 	let { data } = $props();
 	let projectId = $derived(data.projectId);
@@ -359,6 +359,11 @@
 	let projectWorkspaceValidationReady = $state<Record<string, boolean>>({});
 	const includeFilePaths = $derived.by(() => new Set((project?.includeFiles ?? []).map((file) => file.relativePath)));
 	const directoryFilePaths = $derived.by(() => new Set(projectWorkspaceEntries.map((file) => file.relativePath)));
+	const lifecycleFilePath = $derived(
+		hasLifecycleHook && lifecycleSync?.preDeployScriptPath && directoryFilePaths.has(lifecycleSync.preDeployScriptPath)
+			? lifecycleSync.preDeployScriptPath
+			: undefined
+	);
 	const selectedFile = $derived.by(() => {
 		const current = selectedFilePreference;
 		if (current === 'override') return overrideActive ? 'override' : 'compose';
@@ -1400,6 +1405,651 @@
 	}
 </script>
 
+{#snippet projectComposeTab(project: Project)}
+	<Tabs.Content value="compose" class="h-full min-h-0">
+		<div class="flex h-full min-h-0 flex-col">
+			{@render gitSourceNotice()}
+			{@render composeFilesNotice()}
+			<div class="mb-2 flex shrink-0 items-center justify-end gap-2">
+				<label for="layout-mode-toggle" class="cursor-pointer text-xs text-muted-foreground" title={m.project_view_description()}>
+					{m.workspace()}
+				</label>
+				<Switch
+					id="layout-mode-toggle"
+					checked={layoutMode === 'tree'}
+					aria-label={m.project_view_description()}
+					onCheckedChange={(checked) => {
+						layoutMode = checked ? 'tree' : 'classic';
+						if (checked) {
+							openFileTab('compose');
+							selectedIncludeTabPreference = null;
+						}
+						persistPrefs();
+					}}
+				/>
+			</div>
+
+			<div class="min-h-0 flex-1">
+				{#if layoutMode === 'tree'}
+					<div class="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-card">
+						<ResizableSplit
+							class="h-full min-h-0 flex-1"
+							{...composeTreeSplitProps}
+							bind:size={treePaneWidth}
+							ariaLabel={m.compose_editor_resize_files_panel()}
+							persistKey="arcane.compose.split:tree"
+							persistStorage="local"
+							onResizeEnd={persistPrefs}
+						>
+							{#snippet first()}
+								<WorkspaceFileTreePanel
+									leadingRows={projectWorkspaceLeadingRows}
+									entries={projectWorkspaceEntries}
+									{selectedFile}
+									disabled={!canEditProjectWorkspace}
+									readOnlyMessage={isGitOpsManaged ? m.projects_workspace_readonly_git() : undefined}
+									onSelect={selectProjectWorkspaceFile}
+									onCreateFile={createProjectWorkspaceFile}
+									onCreateFolder={createProjectWorkspaceFolder}
+									onUpload={uploadProjectWorkspaceFiles}
+									onDownload={downloadProjectWorkspaceFile}
+									validateName={(name, parentPath) => validateProjectWorkspaceFileName(name, parentPath, composeFileName)}
+									onRename={renameProjectWorkspaceFile}
+									onMove={moveProjectWorkspaceFile}
+									onDelete={deleteProjectWorkspaceFile}
+								/>
+							{/snippet}
+
+							{#snippet second()}
+								<div class="flex h-full min-h-0 flex-1 flex-col">
+									<!-- fallow-ignore-next-line code-duplication -- compose editor tree panel; per-page bindings/persistKey/file-rendering diverge -->
+									<EditorTabStrip tabs={treeTabs} activeKey={activeTreeTab} onSelect={openFileTab} onClose={closeFileTab}>
+										{#snippet actions()}
+											<ComposeFileEditorPanel
+												outlineOpen={treeOutlineOpen}
+												outlineLabel={m.compose_editor_toggle_outline()}
+												onToggleOutline={() => (treeOutlineOpen = !treeOutlineOpen)}
+												diffOpen={treeDiffOpen}
+												diffLabel={m.compose_editor_toggle_diff()}
+												onToggleDiff={() => (treeDiffOpen = !treeDiffOpen)}
+												commandPaletteLabel={m.compose_editor_command_palette()}
+												onOpenCommandPalette={() => (treeCommandPaletteOpen = true)}
+											/>
+										{/snippet}
+									</EditorTabStrip>
+									<div class="flex min-h-0 flex-1 flex-col">
+										{@render activeWorkspaceEditor()}
+									</div>
+								</div>
+							{/snippet}
+						</ResizableSplit>
+					</div>
+				{:else}
+					<div class="flex h-full min-h-0 flex-col gap-4">
+						{@render includeFileNavigation(project)}
+
+						{#if selectedIncludeTab}
+							{@render selectedIncludeEditor(project, selectedIncludeTab)}
+						{:else}
+							<ResizableSplit
+								class="min-h-0 flex-1 lg:gap-2"
+								firstClass="flex min-h-0 flex-col"
+								secondClass="flex min-h-0 flex-col"
+								bind:size={composeSplitWidth}
+								minSize={minComposePaneWidth}
+								minSecondSize={minEnvPaneWidth}
+								defaultRatio={0.6}
+								stackBelow={1024}
+								ariaLabel={m.compose_editor_resize_compose_env()}
+								persistKey={`arcane.compose.split:${project.id}:classic`}
+								onResizeEnd={persistPrefs}
+							>
+								{#snippet first()}
+									{@render composeOverrideEditor()}
+								{/snippet}
+
+								{#snippet second()}
+									<div class="flex min-h-0 flex-1 flex-col">
+										<CodePanel
+											{...envPanelProps()}
+											bind:open={envOpen}
+											bind:value={$inputs.envContent.value}
+											bind:hasErrors={envHasErrors}
+											bind:validationReady={envValidationReady}
+										/>
+									</div>
+								{/snippet}
+							</ResizableSplit>
+						{/if}
+					</div>
+				{/if}
+			</div>
+		</div>
+	</Tabs.Content>
+{/snippet}
+
+{#snippet workspaceFileEditor(relativePath: string)}
+	{#if projectWorkspaceLoadErrors[relativePath]}
+		<div class="flex h-full min-h-0 items-center justify-center px-4 text-sm text-destructive">
+			{projectWorkspaceLoadErrors[relativePath]}
+		</div>
+	{:else if selectedProjectWorkspaceMetadata?.editable === false && selectedProjectWorkspaceMetadata.content === undefined}
+		<div class="flex h-full min-h-0 items-center justify-center px-4 text-center text-sm text-muted-foreground">
+			{workspaceReadOnlyMessage(selectedProjectWorkspaceMetadata.readOnlyReason, projectWorkspaceMaxFileSizeMb)}
+		</div>
+	{:else if selectedProjectWorkspaceMetadata?.editable === false}
+		<CodePanel
+			variant="plain"
+			open={true}
+			title={relativePath}
+			language={workspaceFileLanguage(relativePath)}
+			validationMode="none"
+			value={selectedProjectWorkspaceMetadata.content ?? ''}
+			readOnly={true}
+			editorContext={codeEditorContext}
+		/>
+	{:else if projectWorkspaceContents[relativePath] === undefined}
+		<div class="flex h-full min-h-0 items-center justify-center text-muted-foreground">
+			{m.common_loading()}
+		</div>
+	{:else}
+		<CodePanel
+			variant="plain"
+			open={true}
+			title={relativePath}
+			language={workspaceFileLanguage(relativePath)}
+			validationMode="none"
+			bind:value={projectWorkspaceContents[relativePath]}
+			readOnly={!canEditProjectWorkspace}
+			bind:hasErrors={projectWorkspaceHasErrors[relativePath]}
+			bind:validationReady={projectWorkspaceValidationReady[relativePath]}
+			fileId={`project:${projectId}:file:${relativePath}`}
+			originalValue={loadedProjectWorkspaceContents[relativePath] ?? ''}
+			enableDiff={true}
+			editorContext={codeEditorContext}
+			bind:outlineOpen={treeOutlineOpen}
+			bind:diffOpen={treeDiffOpen}
+			bind:commandPaletteOpen={treeCommandPaletteOpen}
+		/>
+	{/if}
+{/snippet}
+
+{#snippet projectStatus(project: Project)}
+	{#if project.status}
+		{@const showTooltip = project.status.toLowerCase() === 'unknown' && project.statusReason}
+		{#if showTooltip}
+			<ArcaneTooltip.Root>
+				<ArcaneTooltip.Trigger>
+					<Badge variant={getStatusVariant(project.status)} minWidth="20">
+						{capitalizeFirstLetter(project.status)}
+					</Badge>
+				</ArcaneTooltip.Trigger>
+				<ArcaneTooltip.Content>
+					<p class="max-w-xs text-xs">{project.statusReason}</p>
+				</ArcaneTooltip.Content>
+			</ArcaneTooltip.Root>
+		{:else}
+			<Badge variant={getStatusVariant(project.status)} minWidth="20">
+				{capitalizeFirstLetter(project.status)}
+			</Badge>
+		{/if}
+	{/if}
+{/snippet}
+
+{#snippet overrideEditorToolbar(overrideExpanded: boolean)}
+	<div class="flex shrink-0 items-center gap-1 px-2 py-1 {overrideExpanded ? 'border-b border-border' : ''}">
+		<button
+			type="button"
+			class="flex min-w-0 flex-1 items-center gap-2 py-1 text-sm font-medium hover:text-foreground"
+			aria-expanded={overrideOpen}
+			onclick={() => (overrideOpen = !overrideOpen)}
+		>
+			{#if overrideOpen}
+				<ArrowDownIcon class="size-4 shrink-0 text-muted-foreground" />
+			{:else}
+				<ArrowRightIcon class="size-4 shrink-0 text-muted-foreground" />
+			{/if}
+			<FileTextIcon class="size-4 shrink-0 text-muted-foreground" />
+			<span class="truncate">{overrideFileName}</span>
+			{#if overrideHasChanges}
+				<span class="size-1.5 shrink-0 rounded-full bg-primary" role="img" aria-label={m.common_unsaved_changes()}></span>
+			{/if}
+			{#if !overrideOpen}
+				<span class="hidden truncate text-xs font-normal text-muted-foreground sm:inline">{m.compose_override_hint()}</span>
+			{/if}
+		</button>
+		{#if overrideExpanded}
+			<ArcaneButton
+				action="base"
+				tone={overrideOutlineOpen ? 'outline-primary' : 'ghost'}
+				size="icon"
+				showLabel={false}
+				icon={FileTextIcon}
+				customLabel={m.compose_editor_toggle_outline()}
+				onclick={() => (overrideOutlineOpen = !overrideOutlineOpen)}
+			/>
+			<ArcaneButton
+				action="base"
+				tone={overrideDiffOpen ? 'outline-primary' : 'ghost'}
+				size="icon"
+				showLabel={false}
+				icon={ArrowsUpDownIcon}
+				customLabel={m.compose_editor_toggle_diff()}
+				onclick={() => (overrideDiffOpen = !overrideDiffOpen)}
+			/>
+			<ArcaneButton
+				action="base"
+				tone="ghost"
+				size="icon"
+				showLabel={false}
+				icon={SearchIcon}
+				customLabel={m.compose_editor_command_palette()}
+				onclick={() => (overrideCommandPaletteOpen = true)}
+			/>
+		{/if}
+		{#if canEditOverride}
+			<button
+				type="button"
+				class="flex shrink-0 items-center p-1.5 text-muted-foreground hover:text-destructive"
+				onclick={handleRemoveOverride}
+				aria-label={m.compose_override_remove()}
+			>
+				<TrashIcon class="size-4 shrink-0" />
+			</button>
+		{/if}
+	</div>
+{/snippet}
+
+{#snippet projectServicesTab(project: Project)}
+	<Tabs.Content value="services" class="h-full min-h-0">
+		{#if canViewProjectLogs}
+			<div class="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-card">
+				<ResizableSplit
+					class="h-full min-h-0 flex-1"
+					variant="flush"
+					firstClass="bg-muted/20 border-border flex min-h-0 flex-col border-b lg:border-r lg:border-b-0"
+					secondClass="flex min-h-0 flex-col"
+					minSize={200}
+					maxSize={480}
+					minSecondSize={360}
+					defaultRatio={0.22}
+					stackBelow={1024}
+					ariaLabel={m.common_logs()}
+					persistKey="arcane.project.services-split"
+					persistStorage="local"
+				>
+					{#snippet first()}
+						<ProjectServicesPanel
+							services={project.runtimeServices}
+							{projectId}
+							updateInfoByRef={project.updateInfo?.updateInfoByRef}
+							onRefresh={() => refreshProjectDetails()}
+						/>
+					{/snippet}
+					{#snippet second()}
+						<div class="flex h-full min-h-0 flex-col overflow-hidden">
+							<ProjectsLogsPanel
+								projectId={project.id}
+								bind:autoScroll={autoScrollStackLogs}
+								isRunning={project.status?.toLowerCase().includes('running')}
+							/>
+						</div>
+					{/snippet}
+				</ResizableSplit>
+			</div>
+		{:else}
+			<div class="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-card">
+				<ProjectServicesPanel
+					services={project.runtimeServices}
+					{projectId}
+					updateInfoByRef={project.updateInfo?.updateInfoByRef}
+					onRefresh={() => refreshProjectDetails()}
+				/>
+			</div>
+		{/if}
+	</Tabs.Content>
+{/snippet}
+
+{#snippet selectedIncludeEditor(project: Project, selectedIncludeTab: string)}
+	{@const includeFile = project?.includeFiles?.find((f) => f.relativePath === selectedIncludeTab)}
+	{@const workspaceEntry = projectWorkspaceEntries.find((f) => f.relativePath === selectedIncludeTab)}
+	{@const dirFile = !includeFile ? workspaceEntry : undefined}
+	{@const sourceLocked = workspaceEntry?.locked === true}
+	{#if projectWorkspaceLoadErrors[selectedIncludeTab]}
+		<div class="flex h-full min-h-0 items-center justify-center rounded-lg border px-4 text-sm text-destructive">
+			{projectWorkspaceLoadErrors[selectedIncludeTab]}
+		</div>
+	{:else if includeFile && includeFilesState[includeFile.relativePath] !== undefined}
+		<CodePanel
+			bind:open={includeFilesPanelStates[includeFile.relativePath]}
+			title={includeFile.relativePath}
+			language="yaml"
+			validationMode="compose"
+			bind:value={includeFilesState[includeFile.relativePath]}
+			readOnly={sourceLocked}
+			bind:hasErrors={includeFilesHasErrors[includeFile.relativePath]}
+			bind:validationReady={includeFilesValidationReady[includeFile.relativePath]}
+			fileId={`project:${projectId}:include:${includeFile.relativePath}`}
+			originalValue={serverIncludeFiles[includeFile.relativePath] ?? ''}
+			enableDiff={true}
+			editorContext={codeEditorContext}
+		/>
+	{:else if dirFile && loadedDirectoryFileContents[dirFile.relativePath] !== undefined}
+		<CodePanel
+			open={true}
+			title={dirFile.relativePath}
+			language="env"
+			value={loadedDirectoryFileContents[dirFile.relativePath]}
+			readOnly={true}
+		/>
+	{:else}
+		<div class="flex h-full min-h-0 items-center justify-center rounded-lg border text-muted-foreground">
+			{m.common_loading()}
+		</div>
+	{/if}
+{/snippet}
+
+{#snippet gitSourceNotice()}
+	{#if isGitOpsManaged}
+		<Alert.Root variant="default" class="mb-4">
+			<AlertIcon class="size-4" />
+			<div class="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
+				<div class="flex-1">
+					<Alert.Title>{m.git()} {m.read_only_label()}</Alert.Title>
+					<Alert.Description>
+						{m.git_managed_readonly_alert()}
+						<br />
+						<div class="mt-2 flex flex-col gap-1">
+							{#if hasLifecycleHook && lifecycleSync?.preDeployScriptPath}
+								<div class="flex items-center gap-1.5 font-mono text-xs">
+									<span class="text-muted-foreground">{m.git_sync_pre_deploy_title()}:</span>
+									<span class="rounded bg-muted px-1.5 py-0.5">{lifecycleSync.preDeployScriptPath}</span>
+									<span class="text-muted-foreground">
+										{m.lifecycle_inline_runner_summary({
+											image: lifecycleSync.preDeployRunnerImage || 'alpine:latest',
+											network: lifecycleSync.preDeployNetworkMode || 'none'
+										})}
+									</span>
+								</div>
+							{/if}
+							<span class="text-xs text-muted-foreground">
+								{m.git_managed_env_note()}
+							</span>
+						</div>
+					</Alert.Description>
+				</div>
+				{#if canUpdateProject}
+					<ArcaneButton
+						action="base"
+						tone="outline-primary"
+						loading={isLoading.syncing}
+						onclick={handleSyncFromGit}
+						icon={RefreshIcon}
+						customLabel={m.git_sync_from_git()}
+						loadingLabel={m.common_syncing()}
+						class="shrink-0"
+					/>
+				{/if}
+			</div>
+		</Alert.Root>
+	{/if}
+{/snippet}
+
+{#snippet composeFilesNotice()}
+	{#if composeFiles.length > 1}
+		<Alert.Root variant="default" class="mb-4">
+			<AlertIcon class="size-4" />
+			<Alert.Title>{m.compose_multiple_files_title()}</Alert.Title>
+			<Alert.Description>
+				{m.compose_multiple_files_description()}
+				<div class="mt-2 flex flex-wrap gap-1.5">
+					{#each composeFiles as file, i (i)}
+						<span class="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{file}</span>
+					{/each}
+				</div>
+			</Alert.Description>
+		</Alert.Root>
+	{/if}
+{/snippet}
+
+{#snippet activeWorkspaceEditor()}
+	{#key activeTreeTab}
+		{#if activeTreeTab === 'compose'}
+			<CodePanel
+				variant="plain"
+				{...composePanelProps()}
+				bind:open={composeOpen}
+				bind:value={$inputs.composeContent.value}
+				bind:hasErrors={composeHasErrors}
+				bind:validationReady={composeValidationReady}
+				bind:outlineOpen={treeOutlineOpen}
+				bind:diffOpen={treeDiffOpen}
+				bind:commandPaletteOpen={treeCommandPaletteOpen}
+			/>
+		{:else if activeTreeTab === 'override'}
+			<div class="flex min-h-0 flex-1 flex-col">
+				<div class="flex shrink-0 items-center justify-between gap-2 border-b border-border px-3 py-2">
+					<p class="text-xs text-muted-foreground">{m.compose_override_hint()}</p>
+					{#if canEditOverride}
+						<button
+							type="button"
+							class="flex shrink-0 items-center gap-1 text-xs font-medium text-muted-foreground hover:text-destructive"
+							onclick={handleRemoveOverride}
+						>
+							<TrashIcon class="size-3.5 shrink-0" />
+							<span>{m.compose_override_remove()}</span>
+						</button>
+					{/if}
+				</div>
+				<CodePanel
+					variant="plain"
+					open={true}
+					{...overridePanelProps()}
+					bind:value={$inputs.overrideContent.value}
+					bind:hasErrors={overrideHasErrors}
+					bind:validationReady={overrideValidationReady}
+					bind:outlineOpen={treeOutlineOpen}
+					bind:diffOpen={treeDiffOpen}
+					bind:commandPaletteOpen={treeCommandPaletteOpen}
+				/>
+			</div>
+		{:else if activeTreeTab === 'env'}
+			<CodePanel
+				variant="plain"
+				{...envPanelProps()}
+				bind:open={envOpen}
+				bind:value={$inputs.envContent.value}
+				bind:hasErrors={envHasErrors}
+				bind:validationReady={envValidationReady}
+				bind:outlineOpen={treeOutlineOpen}
+				bind:diffOpen={treeDiffOpen}
+				bind:commandPaletteOpen={treeCommandPaletteOpen}
+			/>
+		{:else if activeTreeTab.startsWith('file:')}
+			{@const relativePath = activeTreeTab.slice(5)}
+			{@render workspaceFileEditor(relativePath)}
+		{/if}
+	{/key}
+{/snippet}
+
+{#snippet includeFileNavigation(project: Project)}
+	{#if project.includeFiles?.length || lifecycleFilePath}
+		<div class="rounded-lg border border-border bg-card">
+			<div class="scrollbar-hide flex gap-2 overflow-x-auto border-b border-border p-2">
+				{#each project?.includeFiles ?? [] as includeFile (includeFile.relativePath)}
+					<ArcaneButton
+						action="base"
+						tone={selectedIncludeTab === includeFile.relativePath ? 'outline-primary' : 'ghost'}
+						size="sm"
+						class="shrink-0"
+						onclick={() => toggleIncludeFileTab(includeFile.relativePath)}
+						icon={FileTextIcon}
+						customLabel={includeFile.relativePath}
+					/>
+				{/each}
+				{#if lifecycleFilePath}
+					{@const scriptPath = lifecycleFilePath}
+					<ArcaneButton
+						action="base"
+						tone={selectedIncludeTab === scriptPath ? 'outline-primary' : 'ghost'}
+						size="sm"
+						class="shrink-0"
+						onclick={() => toggleIncludeFileTab(scriptPath)}
+						icon={CodeIcon}
+						customLabel={scriptPath}
+					/>
+				{/if}
+			</div>
+		</div>
+	{/if}
+{/snippet}
+
+{#snippet composeOverrideEditor()}
+	{@const overrideExpanded = overrideActive && overrideOpen}
+	<div class="flex min-h-0 flex-1 flex-col gap-2">
+		{#if overrideExpanded}
+			<button
+				type="button"
+				class="flex shrink-0 items-center gap-2 rounded-lg border border-border bg-card px-2 py-2 text-sm font-medium hover:text-foreground"
+				aria-expanded="false"
+				onclick={() => (overrideOpen = false)}
+			>
+				<ArrowRightIcon class="size-4 shrink-0 text-muted-foreground" />
+				<CodeIcon class="size-4 shrink-0 text-muted-foreground" />
+				<span class="truncate">{composeFileName}</span>
+				{#if composeHasChanges}
+					<span class="size-1.5 shrink-0 rounded-full bg-primary" role="img" aria-label={m.common_unsaved_changes()}></span>
+				{/if}
+			</button>
+		{:else}
+			<div class="flex min-h-0 flex-1 flex-col">
+				<CodePanel
+					{...composePanelProps()}
+					bind:open={composeOpen}
+					bind:value={$inputs.composeContent.value}
+					bind:hasErrors={composeHasErrors}
+					bind:validationReady={composeValidationReady}
+				/>
+			</div>
+		{/if}
+		{#if overrideActive}
+			<div
+				class="flex min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-card {overrideExpanded
+					? 'flex-1'
+					: 'shrink-0'}"
+			>
+				{@render overrideEditorToolbar(overrideExpanded)}
+				{#if overrideExpanded}
+					<div class="flex min-h-0 flex-1 flex-col">
+						<CodePanel
+							{...overridePanelProps()}
+							variant="plain"
+							bind:value={$inputs.overrideContent.value}
+							bind:hasErrors={overrideHasErrors}
+							bind:validationReady={overrideValidationReady}
+							bind:outlineOpen={overrideOutlineOpen}
+							bind:diffOpen={overrideDiffOpen}
+							bind:commandPaletteOpen={overrideCommandPaletteOpen}
+						/>
+					</div>
+				{/if}
+			</div>
+		{:else if canEditOverride}
+			<button
+				type="button"
+				class="flex shrink-0 items-center gap-2 rounded-lg border border-dashed border-border px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
+				onclick={handleAddOverride}
+			>
+				<CreateFileIcon class="size-4 shrink-0" />
+				<span>{m.compose_override_add()}</span>
+			</button>
+		{/if}
+	</div>
+{/snippet}
+
+{#snippet projectHeader(project: Project)}
+	<div class="flex min-w-0 items-start gap-2.5">
+		<IconImage
+			src={getThemedIconUrl(project, mode.current)}
+			alt={project.name}
+			fallback={ProjectsIcon}
+			class="size-6"
+			containerClass="size-9 bg-transparent ring-0"
+		/>
+		<div class="min-w-0 flex-1">
+			<div class="flex min-h-9 min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+				<EditableName
+					bind:value={$inputs.name.value}
+					displayValue={effectiveName}
+					bind:ref={nameInputRef}
+					variant="inline"
+					error={$inputs.name.error ?? undefined}
+					originalValue={serverName}
+					canEdit={canEditName}
+					disabledMessage={composeYamlName ? m.compose_project_name_defined_in_yaml() : undefined}
+					onCommit={saveNameIfChanged}
+					class="max-w-[10rem] min-w-0 sm:max-w-[14rem] md:max-w-[18rem] lg:max-w-[22rem]"
+				/>
+				{@render projectStatus(project)}
+				{#if project.isArchived}
+					<Badge variant="gray" minWidth="20">{m.projects_archived_badge()}</Badge>
+				{/if}
+				<ProjectTagEditor
+					tags={project.tags ?? []}
+					availableTags={availableProjectTags}
+					canEdit={canUpdateProject}
+					onToggle={handleProjectTagToggle}
+				/>
+				<ProjectUpdateItem
+					updateInfo={project.updateInfo}
+					onCheck={handleCheckProjectUpdates}
+					checking={checkProjectUpdatesMutation.isPending}
+					disabled={!!project.isArchived}
+				/>
+			</div>
+
+			{#if project.urls && project.urls.length > 0}
+				<div class="mt-1 flex min-w-0 flex-wrap items-center gap-1.5">
+					{#each project.urls as url, i (i)}
+						<a
+							class="inline-flex h-6 max-w-[10rem] min-w-0 items-center gap-1.5 rounded-[var(--radius)] border border-sky-700/20 bg-background/70 px-2.5 text-[12px] font-semibold ring-offset-background transition-colors hover:border-sky-700/40 hover:bg-sky-500/10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none sm:max-w-[14rem] md:max-w-[18rem] dark:border-sky-400/40 dark:bg-sky-500/20 dark:text-sky-100 dark:hover:border-sky-300/60 dark:hover:bg-sky-500/30"
+							href={toSafeHref(url)}
+							target="_blank"
+							rel="noopener noreferrer"
+							title={url}
+						>
+							<GlobeIcon class="size-3 text-sky-500" />
+							<span class="truncate">{formatUrlLabel(url)}</span>
+						</a>
+					{/each}
+				</div>
+			{/if}
+
+			{#if project.lastSyncCommit}
+				{@const commitUrl = project.gitRepositoryURL ? toGitCommitUrl(project.gitRepositoryURL, project.lastSyncCommit) : null}
+				<div class="mt-1 flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
+					<div class="flex items-center gap-1.5">
+						<span class="hidden sm:inline">{m.commit()}:</span>
+						{#if commitUrl}
+							<a
+								href={commitUrl}
+								target="_blank"
+								class="font-mono transition-colors hover:text-primary sm:rounded sm:bg-muted sm:px-1.5 sm:py-0.5"
+							>
+								{project.lastSyncCommit}
+							</a>
+						{:else}
+							<span class="font-mono sm:rounded sm:bg-muted sm:px-1.5 sm:py-0.5">
+								{project.lastSyncCommit}
+							</span>
+						{/if}
+					</div>
+				</div>
+			{/if}
+		</div>
+	</div>
+{/snippet}
+
 {#if project}
 	<TabbedPageLayout
 		{backUrl}
@@ -1414,106 +2064,7 @@
 		}}
 	>
 		{#snippet headerInfo()}
-			<div class="flex min-w-0 items-start gap-2.5">
-				<IconImage
-					src={getThemedIconUrl(project, mode.current)}
-					alt={project.name}
-					fallback={ProjectsIcon}
-					class="size-6"
-					containerClass="size-9 bg-transparent ring-0"
-				/>
-				<div class="min-w-0 flex-1">
-					<div class="flex min-h-9 min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-						<EditableName
-							bind:value={$inputs.name.value}
-							displayValue={effectiveName}
-							bind:ref={nameInputRef}
-							variant="inline"
-							error={$inputs.name.error ?? undefined}
-							originalValue={serverName}
-							canEdit={canEditName}
-							disabledMessage={composeYamlName ? m.compose_project_name_defined_in_yaml() : undefined}
-							onCommit={saveNameIfChanged}
-							class="max-w-[10rem] min-w-0 sm:max-w-[14rem] md:max-w-[18rem] lg:max-w-[22rem]"
-						/>
-						{#if project.status}
-							{@const showTooltip = project.status.toLowerCase() === 'unknown' && project.statusReason}
-							{#if showTooltip}
-								<ArcaneTooltip.Root>
-									<ArcaneTooltip.Trigger>
-										<Badge variant={getStatusVariant(project.status)} minWidth="20">
-											{capitalizeFirstLetter(project.status)}
-										</Badge>
-									</ArcaneTooltip.Trigger>
-									<ArcaneTooltip.Content>
-										<p class="max-w-xs text-xs">{project.statusReason}</p>
-									</ArcaneTooltip.Content>
-								</ArcaneTooltip.Root>
-							{:else}
-								<Badge variant={getStatusVariant(project.status)} minWidth="20">
-									{capitalizeFirstLetter(project.status)}
-								</Badge>
-							{/if}
-						{/if}
-						{#if project.isArchived}
-							<Badge variant="gray" minWidth="20">{m.projects_archived_badge()}</Badge>
-						{/if}
-						<ProjectTagEditor
-							tags={project.tags ?? []}
-							availableTags={availableProjectTags}
-							canEdit={canUpdateProject}
-							onToggle={handleProjectTagToggle}
-						/>
-						<ProjectUpdateItem
-							updateInfo={project.updateInfo}
-							onCheck={handleCheckProjectUpdates}
-							checking={checkProjectUpdatesMutation.isPending}
-							disabled={!!project.isArchived}
-						/>
-					</div>
-
-					{#if project.urls && project.urls.length > 0}
-						<div class="mt-1 flex min-w-0 flex-wrap items-center gap-1.5">
-							{#each project.urls as url, i (i)}
-								<a
-									class="inline-flex h-6 max-w-[10rem] min-w-0 items-center gap-1.5 rounded-[var(--radius)] border border-sky-700/20 bg-background/70 px-2.5 text-[12px] font-semibold ring-offset-background transition-colors hover:border-sky-700/40 hover:bg-sky-500/10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none sm:max-w-[14rem] md:max-w-[18rem] dark:border-sky-400/40 dark:bg-sky-500/20 dark:text-sky-100 dark:hover:border-sky-300/60 dark:hover:bg-sky-500/30"
-									href={toSafeHref(url)}
-									target="_blank"
-									rel="noopener noreferrer"
-									title={url}
-								>
-									<GlobeIcon class="size-3 text-sky-500" />
-									<span class="truncate">{formatUrlLabel(url)}</span>
-								</a>
-							{/each}
-						</div>
-					{/if}
-
-					{#if project.lastSyncCommit}
-						{@const commitUrl = project.gitRepositoryURL
-							? toGitCommitUrl(project.gitRepositoryURL, project.lastSyncCommit)
-							: null}
-						<div class="mt-1 flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
-							<div class="flex items-center gap-1.5">
-								<span class="hidden sm:inline">{m.commit()}:</span>
-								{#if commitUrl}
-									<a
-										href={commitUrl}
-										target="_blank"
-										class="font-mono transition-colors hover:text-primary sm:rounded sm:bg-muted sm:px-1.5 sm:py-0.5"
-									>
-										{project.lastSyncCommit}
-									</a>
-								{:else}
-									<span class="font-mono sm:rounded sm:bg-muted sm:px-1.5 sm:py-0.5">
-										{project.lastSyncCommit}
-									</span>
-								{/if}
-							</div>
-						</div>
-					{/if}
-				</div>
-			</div>
+			{@render projectHeader(project)}
 		{/snippet}
 
 		{#snippet headerActions()}
@@ -1560,532 +2111,9 @@
 		{/snippet}
 
 		{#snippet tabContent()}
-			<Tabs.Content value="services" class="h-full min-h-0">
-				{#if canViewProjectLogs}
-					<div class="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-card">
-						<ResizableSplit
-							class="h-full min-h-0 flex-1"
-							variant="flush"
-							firstClass="bg-muted/20 border-border flex min-h-0 flex-col border-b lg:border-r lg:border-b-0"
-							secondClass="flex min-h-0 flex-col"
-							minSize={200}
-							maxSize={480}
-							minSecondSize={360}
-							defaultRatio={0.22}
-							stackBelow={1024}
-							ariaLabel={m.common_logs()}
-							persistKey="arcane.project.services-split"
-							persistStorage="local"
-						>
-							{#snippet first()}
-								<ProjectServicesPanel
-									services={project.runtimeServices}
-									{projectId}
-									updateInfoByRef={project.updateInfo?.updateInfoByRef}
-									onRefresh={() => refreshProjectDetails()}
-								/>
-							{/snippet}
-							{#snippet second()}
-								<div class="flex h-full min-h-0 flex-col overflow-hidden">
-									<ProjectsLogsPanel
-										projectId={project.id}
-										bind:autoScroll={autoScrollStackLogs}
-										isRunning={project.status?.toLowerCase().includes('running')}
-									/>
-								</div>
-							{/snippet}
-						</ResizableSplit>
-					</div>
-				{:else}
-					<div class="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-card">
-						<ProjectServicesPanel
-							services={project.runtimeServices}
-							{projectId}
-							updateInfoByRef={project.updateInfo?.updateInfoByRef}
-							onRefresh={() => refreshProjectDetails()}
-						/>
-					</div>
-				{/if}
-			</Tabs.Content>
+			{@render projectServicesTab(project)}
 
-			<Tabs.Content value="compose" class="h-full min-h-0">
-				<div class="flex h-full min-h-0 flex-col">
-					{#if isGitOpsManaged}
-						<Alert.Root variant="default" class="mb-4">
-							<AlertIcon class="size-4" />
-							<div class="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
-								<div class="flex-1">
-									<Alert.Title>{m.git()} {m.read_only_label()}</Alert.Title>
-									<Alert.Description>
-										{m.git_managed_readonly_alert()}
-										<br />
-										<div class="mt-2 flex flex-col gap-1">
-											{#if hasLifecycleHook && lifecycleSync?.preDeployScriptPath}
-												<div class="flex items-center gap-1.5 font-mono text-xs">
-													<span class="text-muted-foreground">{m.git_sync_pre_deploy_title()}:</span>
-													<span class="rounded bg-muted px-1.5 py-0.5">{lifecycleSync.preDeployScriptPath}</span>
-													<span class="text-muted-foreground">
-														{m.lifecycle_inline_runner_summary({
-															image: lifecycleSync.preDeployRunnerImage || 'alpine:latest',
-															network: lifecycleSync.preDeployNetworkMode || 'none'
-														})}
-													</span>
-												</div>
-											{/if}
-											<span class="text-xs text-muted-foreground">
-												{m.git_managed_env_note()}
-											</span>
-										</div>
-									</Alert.Description>
-								</div>
-								{#if canUpdateProject}
-									<ArcaneButton
-										action="base"
-										tone="outline-primary"
-										loading={isLoading.syncing}
-										onclick={handleSyncFromGit}
-										icon={RefreshIcon}
-										customLabel={m.git_sync_from_git()}
-										loadingLabel={m.common_syncing()}
-										class="shrink-0"
-									/>
-								{/if}
-							</div>
-						</Alert.Root>
-					{/if}
-					{#if composeFiles.length > 1}
-						<Alert.Root variant="default" class="mb-4">
-							<AlertIcon class="size-4" />
-							<Alert.Title>{m.compose_multiple_files_title()}</Alert.Title>
-							<Alert.Description>
-								{m.compose_multiple_files_description()}
-								<div class="mt-2 flex flex-wrap gap-1.5">
-									{#each composeFiles as file, i (i)}
-										<span class="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{file}</span>
-									{/each}
-								</div>
-							</Alert.Description>
-						</Alert.Root>
-					{/if}
-					<div class="mb-2 flex shrink-0 items-center justify-end gap-2">
-						<label
-							for="layout-mode-toggle"
-							class="cursor-pointer text-xs text-muted-foreground"
-							title={m.project_view_description()}
-						>
-							{m.workspace()}
-						</label>
-						<Switch
-							id="layout-mode-toggle"
-							checked={layoutMode === 'tree'}
-							aria-label={m.project_view_description()}
-							onCheckedChange={(checked) => {
-								layoutMode = checked ? 'tree' : 'classic';
-								if (checked) {
-									openFileTab('compose');
-									selectedIncludeTabPreference = null;
-								}
-								persistPrefs();
-							}}
-						/>
-					</div>
-
-					<div class="min-h-0 flex-1">
-						{#if layoutMode === 'tree'}
-							<div class="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-card">
-								<ResizableSplit
-									class="h-full min-h-0 flex-1"
-									{...composeTreeSplitProps}
-									bind:size={treePaneWidth}
-									ariaLabel={m.compose_editor_resize_files_panel()}
-									persistKey="arcane.compose.split:tree"
-									persistStorage="local"
-									onResizeEnd={persistPrefs}
-								>
-									{#snippet first()}
-										<WorkspaceFileTreePanel
-											leadingRows={projectWorkspaceLeadingRows}
-											entries={projectWorkspaceEntries}
-											{selectedFile}
-											disabled={!canEditProjectWorkspace}
-											readOnlyMessage={isGitOpsManaged ? m.projects_workspace_readonly_git() : undefined}
-											onSelect={selectProjectWorkspaceFile}
-											onCreateFile={createProjectWorkspaceFile}
-											onCreateFolder={createProjectWorkspaceFolder}
-											onUpload={uploadProjectWorkspaceFiles}
-											onDownload={downloadProjectWorkspaceFile}
-											validateName={(name, parentPath) => validateProjectWorkspaceFileName(name, parentPath, composeFileName)}
-											onRename={renameProjectWorkspaceFile}
-											onMove={moveProjectWorkspaceFile}
-											onDelete={deleteProjectWorkspaceFile}
-										/>
-									{/snippet}
-
-									{#snippet second()}
-										<div class="flex h-full min-h-0 flex-1 flex-col">
-											<!-- fallow-ignore-next-line code-duplication -- compose editor tree panel; per-page bindings/persistKey/file-rendering diverge -->
-											<EditorTabStrip tabs={treeTabs} activeKey={activeTreeTab} onSelect={openFileTab} onClose={closeFileTab}>
-												{#snippet actions()}
-													<ComposeFileEditorPanel
-														outlineOpen={treeOutlineOpen}
-														outlineLabel={m.compose_editor_toggle_outline()}
-														onToggleOutline={() => (treeOutlineOpen = !treeOutlineOpen)}
-														diffOpen={treeDiffOpen}
-														diffLabel={m.compose_editor_toggle_diff()}
-														onToggleDiff={() => (treeDiffOpen = !treeDiffOpen)}
-														commandPaletteLabel={m.compose_editor_command_palette()}
-														onOpenCommandPalette={() => (treeCommandPaletteOpen = true)}
-													/>
-												{/snippet}
-											</EditorTabStrip>
-											<div class="flex min-h-0 flex-1 flex-col">
-												{#key activeTreeTab}
-													{#if activeTreeTab === 'compose'}
-														<CodePanel
-															variant="plain"
-															{...composePanelProps()}
-															bind:open={composeOpen}
-															bind:value={$inputs.composeContent.value}
-															bind:hasErrors={composeHasErrors}
-															bind:validationReady={composeValidationReady}
-															bind:outlineOpen={treeOutlineOpen}
-															bind:diffOpen={treeDiffOpen}
-															bind:commandPaletteOpen={treeCommandPaletteOpen}
-														/>
-													{:else if activeTreeTab === 'override'}
-														<div class="flex min-h-0 flex-1 flex-col">
-															<div class="flex shrink-0 items-center justify-between gap-2 border-b border-border px-3 py-2">
-																<p class="text-xs text-muted-foreground">{m.compose_override_hint()}</p>
-																{#if canEditOverride}
-																	<button
-																		type="button"
-																		class="flex shrink-0 items-center gap-1 text-xs font-medium text-muted-foreground hover:text-destructive"
-																		onclick={handleRemoveOverride}
-																	>
-																		<TrashIcon class="size-3.5 shrink-0" />
-																		<span>{m.compose_override_remove()}</span>
-																	</button>
-																{/if}
-															</div>
-															<CodePanel
-																variant="plain"
-																open={true}
-																{...overridePanelProps()}
-																bind:value={$inputs.overrideContent.value}
-																bind:hasErrors={overrideHasErrors}
-																bind:validationReady={overrideValidationReady}
-																bind:outlineOpen={treeOutlineOpen}
-																bind:diffOpen={treeDiffOpen}
-																bind:commandPaletteOpen={treeCommandPaletteOpen}
-															/>
-														</div>
-													{:else if activeTreeTab === 'env'}
-														<CodePanel
-															variant="plain"
-															{...envPanelProps()}
-															bind:open={envOpen}
-															bind:value={$inputs.envContent.value}
-															bind:hasErrors={envHasErrors}
-															bind:validationReady={envValidationReady}
-															bind:outlineOpen={treeOutlineOpen}
-															bind:diffOpen={treeDiffOpen}
-															bind:commandPaletteOpen={treeCommandPaletteOpen}
-														/>
-													{:else if activeTreeTab.startsWith('file:')}
-														{@const relativePath = activeTreeTab.slice(5)}
-														{#if projectWorkspaceLoadErrors[relativePath]}
-															<div class="flex h-full min-h-0 items-center justify-center px-4 text-sm text-destructive">
-																{projectWorkspaceLoadErrors[relativePath]}
-															</div>
-														{:else if selectedProjectWorkspaceMetadata?.editable === false && selectedProjectWorkspaceMetadata.content === undefined}
-															<div
-																class="flex h-full min-h-0 items-center justify-center px-4 text-center text-sm text-muted-foreground"
-															>
-																{workspaceReadOnlyMessage(
-																	selectedProjectWorkspaceMetadata.readOnlyReason,
-																	projectWorkspaceMaxFileSizeMb
-																)}
-															</div>
-														{:else if selectedProjectWorkspaceMetadata?.editable === false}
-															<CodePanel
-																variant="plain"
-																open={true}
-																title={relativePath}
-																language={workspaceFileLanguage(relativePath)}
-																validationMode="none"
-																value={selectedProjectWorkspaceMetadata.content ?? ''}
-																readOnly={true}
-																editorContext={codeEditorContext}
-															/>
-														{:else if projectWorkspaceContents[relativePath] === undefined}
-															<div class="flex h-full min-h-0 items-center justify-center text-muted-foreground">
-																{m.common_loading()}
-															</div>
-														{:else}
-															<CodePanel
-																variant="plain"
-																open={true}
-																title={relativePath}
-																language={workspaceFileLanguage(relativePath)}
-																validationMode="none"
-																bind:value={projectWorkspaceContents[relativePath]}
-																readOnly={!canEditProjectWorkspace}
-																bind:hasErrors={projectWorkspaceHasErrors[relativePath]}
-																bind:validationReady={projectWorkspaceValidationReady[relativePath]}
-																fileId={`project:${projectId}:file:${relativePath}`}
-																originalValue={loadedProjectWorkspaceContents[relativePath] ?? ''}
-																enableDiff={true}
-																editorContext={codeEditorContext}
-																bind:outlineOpen={treeOutlineOpen}
-																bind:diffOpen={treeDiffOpen}
-																bind:commandPaletteOpen={treeCommandPaletteOpen}
-															/>
-														{/if}
-													{/if}
-												{/key}
-											</div>
-										</div>
-									{/snippet}
-								</ResizableSplit>
-							</div>
-						{:else}
-							<div class="flex h-full min-h-0 flex-col gap-4">
-								{#if (project?.includeFiles && project.includeFiles.length > 0) || (hasLifecycleHook && lifecycleSync?.preDeployScriptPath && directoryFilePaths.has(lifecycleSync.preDeployScriptPath))}
-									<div class="rounded-lg border border-border bg-card">
-										<div class="scrollbar-hide flex gap-2 overflow-x-auto border-b border-border p-2">
-											{#each project?.includeFiles ?? [] as includeFile (includeFile.relativePath)}
-												<ArcaneButton
-													action="base"
-													tone={selectedIncludeTab === includeFile.relativePath ? 'outline-primary' : 'ghost'}
-													size="sm"
-													class="shrink-0"
-													onclick={() => toggleIncludeFileTab(includeFile.relativePath)}
-													icon={FileTextIcon}
-													customLabel={includeFile.relativePath}
-												/>
-											{/each}
-											{#if hasLifecycleHook && lifecycleSync?.preDeployScriptPath && directoryFilePaths.has(lifecycleSync.preDeployScriptPath)}
-												{@const scriptPath = lifecycleSync.preDeployScriptPath}
-												<ArcaneButton
-													action="base"
-													tone={selectedIncludeTab === scriptPath ? 'outline-primary' : 'ghost'}
-													size="sm"
-													class="shrink-0"
-													onclick={() => toggleIncludeFileTab(scriptPath)}
-													icon={CodeIcon}
-													customLabel={scriptPath}
-												/>
-											{/if}
-										</div>
-									</div>
-								{/if}
-
-								{#if selectedIncludeTab}
-									{@const includeFile = project?.includeFiles?.find((f) => f.relativePath === selectedIncludeTab)}
-									{@const workspaceEntry = projectWorkspaceEntries.find((f) => f.relativePath === selectedIncludeTab)}
-									{@const dirFile = !includeFile ? workspaceEntry : undefined}
-									{@const sourceLocked = workspaceEntry?.locked === true}
-									{#if projectWorkspaceLoadErrors[selectedIncludeTab]}
-										<div class="flex h-full min-h-0 items-center justify-center rounded-lg border px-4 text-sm text-destructive">
-											{projectWorkspaceLoadErrors[selectedIncludeTab]}
-										</div>
-									{:else if includeFile && includeFilesState[includeFile.relativePath] !== undefined}
-										<CodePanel
-											bind:open={includeFilesPanelStates[includeFile.relativePath]}
-											title={includeFile.relativePath}
-											language="yaml"
-											validationMode="compose"
-											bind:value={includeFilesState[includeFile.relativePath]}
-											readOnly={sourceLocked}
-											bind:hasErrors={includeFilesHasErrors[includeFile.relativePath]}
-											bind:validationReady={includeFilesValidationReady[includeFile.relativePath]}
-											fileId={`project:${projectId}:include:${includeFile.relativePath}`}
-											originalValue={serverIncludeFiles[includeFile.relativePath] ?? ''}
-											enableDiff={true}
-											editorContext={codeEditorContext}
-										/>
-									{:else if dirFile && loadedDirectoryFileContents[dirFile.relativePath] !== undefined}
-										<CodePanel
-											open={true}
-											title={dirFile.relativePath}
-											language="env"
-											value={loadedDirectoryFileContents[dirFile.relativePath]}
-											readOnly={true}
-										/>
-									{:else}
-										<div class="flex h-full min-h-0 items-center justify-center rounded-lg border text-muted-foreground">
-											{m.common_loading()}
-										</div>
-									{/if}
-								{:else}
-									<ResizableSplit
-										class="min-h-0 flex-1 lg:gap-2"
-										firstClass="flex min-h-0 flex-col"
-										secondClass="flex min-h-0 flex-col"
-										bind:size={composeSplitWidth}
-										minSize={minComposePaneWidth}
-										minSecondSize={minEnvPaneWidth}
-										defaultRatio={0.6}
-										stackBelow={1024}
-										ariaLabel={m.compose_editor_resize_compose_env()}
-										persistKey={`arcane.compose.split:${project.id}:classic`}
-										onResizeEnd={persistPrefs}
-									>
-										{#snippet first()}
-											{@const overrideExpanded = overrideActive && overrideOpen}
-											<div class="flex min-h-0 flex-1 flex-col gap-2">
-												{#if overrideExpanded}
-													<button
-														type="button"
-														class="flex shrink-0 items-center gap-2 rounded-lg border border-border bg-card px-2 py-2 text-sm font-medium hover:text-foreground"
-														aria-expanded="false"
-														onclick={() => (overrideOpen = false)}
-													>
-														<ArrowRightIcon class="size-4 shrink-0 text-muted-foreground" />
-														<CodeIcon class="size-4 shrink-0 text-muted-foreground" />
-														<span class="truncate">{composeFileName}</span>
-														{#if composeHasChanges}
-															<span
-																class="size-1.5 shrink-0 rounded-full bg-primary"
-																role="img"
-																aria-label={m.common_unsaved_changes()}
-															></span>
-														{/if}
-													</button>
-												{:else}
-													<div class="flex min-h-0 flex-1 flex-col">
-														<CodePanel
-															{...composePanelProps()}
-															bind:open={composeOpen}
-															bind:value={$inputs.composeContent.value}
-															bind:hasErrors={composeHasErrors}
-															bind:validationReady={composeValidationReady}
-														/>
-													</div>
-												{/if}
-												{#if overrideActive}
-													<div
-														class="flex min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-card {overrideExpanded
-															? 'flex-1'
-															: 'shrink-0'}"
-													>
-														<div
-															class="flex shrink-0 items-center gap-1 px-2 py-1 {overrideExpanded
-																? 'border-b border-border'
-																: ''}"
-														>
-															<button
-																type="button"
-																class="flex min-w-0 flex-1 items-center gap-2 py-1 text-sm font-medium hover:text-foreground"
-																aria-expanded={overrideOpen}
-																onclick={() => (overrideOpen = !overrideOpen)}
-															>
-																{#if overrideOpen}
-																	<ArrowDownIcon class="size-4 shrink-0 text-muted-foreground" />
-																{:else}
-																	<ArrowRightIcon class="size-4 shrink-0 text-muted-foreground" />
-																{/if}
-																<FileTextIcon class="size-4 shrink-0 text-muted-foreground" />
-																<span class="truncate">{overrideFileName}</span>
-																{#if overrideHasChanges}
-																	<span
-																		class="size-1.5 shrink-0 rounded-full bg-primary"
-																		role="img"
-																		aria-label={m.common_unsaved_changes()}
-																	></span>
-																{/if}
-																{#if !overrideOpen}
-																	<span class="hidden truncate text-xs font-normal text-muted-foreground sm:inline"
-																		>{m.compose_override_hint()}</span
-																	>
-																{/if}
-															</button>
-															{#if overrideExpanded}
-																<ArcaneButton
-																	action="base"
-																	tone={overrideOutlineOpen ? 'outline-primary' : 'ghost'}
-																	size="icon"
-																	showLabel={false}
-																	icon={FileTextIcon}
-																	customLabel={m.compose_editor_toggle_outline()}
-																	onclick={() => (overrideOutlineOpen = !overrideOutlineOpen)}
-																/>
-																<ArcaneButton
-																	action="base"
-																	tone={overrideDiffOpen ? 'outline-primary' : 'ghost'}
-																	size="icon"
-																	showLabel={false}
-																	icon={ArrowsUpDownIcon}
-																	customLabel={m.compose_editor_toggle_diff()}
-																	onclick={() => (overrideDiffOpen = !overrideDiffOpen)}
-																/>
-																<ArcaneButton
-																	action="base"
-																	tone="ghost"
-																	size="icon"
-																	showLabel={false}
-																	icon={SearchIcon}
-																	customLabel={m.compose_editor_command_palette()}
-																	onclick={() => (overrideCommandPaletteOpen = true)}
-																/>
-															{/if}
-															{#if canEditOverride}
-																<button
-																	type="button"
-																	class="flex shrink-0 items-center p-1.5 text-muted-foreground hover:text-destructive"
-																	onclick={handleRemoveOverride}
-																	aria-label={m.compose_override_remove()}
-																>
-																	<TrashIcon class="size-4 shrink-0" />
-																</button>
-															{/if}
-														</div>
-														{#if overrideExpanded}
-															<div class="flex min-h-0 flex-1 flex-col">
-																<CodePanel
-																	{...overridePanelProps()}
-																	variant="plain"
-																	bind:value={$inputs.overrideContent.value}
-																	bind:hasErrors={overrideHasErrors}
-																	bind:validationReady={overrideValidationReady}
-																	bind:outlineOpen={overrideOutlineOpen}
-																	bind:diffOpen={overrideDiffOpen}
-																	bind:commandPaletteOpen={overrideCommandPaletteOpen}
-																/>
-															</div>
-														{/if}
-													</div>
-												{:else if canEditOverride}
-													<button
-														type="button"
-														class="flex shrink-0 items-center gap-2 rounded-lg border border-dashed border-border px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
-														onclick={handleAddOverride}
-													>
-														<CreateFileIcon class="size-4 shrink-0" />
-														<span>{m.compose_override_add()}</span>
-													</button>
-												{/if}
-											</div>
-										{/snippet}
-
-										{#snippet second()}
-											<div class="flex min-h-0 flex-1 flex-col">
-												<CodePanel
-													{...envPanelProps()}
-													bind:open={envOpen}
-													bind:value={$inputs.envContent.value}
-													bind:hasErrors={envHasErrors}
-													bind:validationReady={envValidationReady}
-												/>
-											</div>
-										{/snippet}
-									</ResizableSplit>
-								{/if}
-							</div>
-						{/if}
-					</div>
-				</div>
-			</Tabs.Content>
+			{@render projectComposeTab(project)}
 		{/snippet}
 	</TabbedPageLayout>
 {:else}

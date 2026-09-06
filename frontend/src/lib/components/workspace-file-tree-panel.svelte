@@ -1,13 +1,13 @@
 <script lang="ts">
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import FileTreeRow from '#lib/components/file-tree-row.svelte';
-	import { openConfirmDialog } from '#lib/components/confirm-dialog';
-	import * as Dialog from '#lib/components/ui/dialog';
-	import { Input } from '#lib/components/ui/input';
-	import { Label } from '#lib/components/ui/label';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
 	import * as Tooltip from '#lib/components/ui/tooltip/index.js';
 	import * as TreeView from '#lib/components/ui/tree-view/index.js';
-	import { createVirtualizer } from '#lib/components/ui/virtualizer.svelte';
+	import { createVirtualizer } from '#lib/components/ui/virtualizer.svelte.js';
 	import {
 		ArrowDownIcon,
 		ArrowRightIcon,
@@ -22,9 +22,9 @@
 		RefreshIcon,
 		TrashIcon,
 		UploadIcon
-	} from '#lib/icons';
-	import { m } from '#lib/paraglide/messages';
-	import { cn } from '#lib/utils';
+	} from '#lib/icons/index.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { cn } from '#lib/utils.js';
 	import {
 		compareWorkspaceFileEntries,
 		joinWorkspaceFilePath,
@@ -33,7 +33,7 @@
 		workspaceFilePathMatches,
 		validateWorkspaceFileName,
 		type WorkspaceDisplayEntry
-	} from '#lib/utils/workspace-files';
+	} from '#lib/utils/workspace-files.js';
 
 	type DialogMode = 'create_file' | 'create_folder' | 'rename' | 'move' | 'upload';
 	type TreeRow = WorkspaceDisplayEntry & {
@@ -386,87 +386,91 @@
 		return validateName ? validateName(name, parentPath) : validateWorkspaceFileName(name);
 	}
 
-	async function handleDialogSubmit() {
-		if (dialogMode === 'move') {
-			const destination = allDestinationOptions.find((option) => option.relativePath === dialogDestinationPath);
-			if (!destination || destination.disabled) {
-				dialogError = destination?.reason ?? m.workspace_file_invalid_move_destination();
+	function submitMove() {
+		const destination = allDestinationOptions.find((option) => option.relativePath === dialogDestinationPath);
+		if (!destination || destination.disabled) {
+			dialogError = destination?.reason ?? m.workspace_file_invalid_move_destination();
+			return;
+		}
+
+		onMove?.(dialogTargetPath, dialogDestinationPath);
+		if (dialogDestinationPath) {
+			openFolders = {
+				...openFolders,
+				[dialogDestinationPath]: true
+			};
+		}
+		dialogOpen = false;
+		return;
+	}
+
+	function submitRename() {
+		const name = normalizeDialogName(dialogName, dialogParentPath);
+		if (!name) {
+			dialogError = m.workspace_file_invalid_name();
+			return;
+		}
+
+		const targetPath = joinWorkspaceFilePath(dialogParentPath, name);
+		if (targetPath !== dialogTargetPath && entryByPath.has(targetPath)) {
+			dialogError = m.workspace_file_duplicate_name();
+			return;
+		}
+
+		onRename?.(dialogTargetPath, name);
+		dialogOpen = false;
+		return;
+	}
+
+	async function submitUpload() {
+		if (uploadFiles.length === 0) {
+			dialogError = m.workspace_upload_file_required();
+			return;
+		}
+		const normalizedNames = multipleUploads
+			? uploadFiles.map((file) => normalizeDialogName(file.name, dialogDestinationPath))
+			: [normalizeDialogName(dialogName, dialogDestinationPath)];
+		if (normalizedNames.some((name) => !name)) {
+			dialogError = m.workspace_file_invalid_name();
+			return;
+		}
+		if (
+			!allowUploadOverwrite &&
+			normalizedNames.some((name) => name && entryByPath.has(joinWorkspaceFilePath(dialogDestinationPath, name)))
+		) {
+			dialogError = m.workspace_file_duplicate_name();
+			return;
+		}
+
+		dialogSubmitting = true;
+		try {
+			const selectedFiles = multipleUploads
+				? uploadFiles
+				: [
+						new File([uploadFiles[0]!], normalizedNames[0]!, {
+							type: uploadFiles[0]!.type,
+							lastModified: uploadFiles[0]!.lastModified
+						})
+					];
+			const error = await onUpload?.(dialogDestinationPath, selectedFiles);
+			if (typeof error === 'string' && error) {
+				dialogError = error;
 				return;
 			}
-
-			onMove?.(dialogTargetPath, dialogDestinationPath);
 			if (dialogDestinationPath) {
-				openFolders = {
-					...openFolders,
-					[dialogDestinationPath]: true
-				};
+				openFolders = { ...openFolders, [dialogDestinationPath]: true };
 			}
 			dialogOpen = false;
-			return;
+		} finally {
+			dialogSubmitting = false;
 		}
+		return;
+	}
 
-		if (dialogMode === 'rename') {
-			const name = normalizeDialogName(dialogName, dialogParentPath);
-			if (!name) {
-				dialogError = m.workspace_file_invalid_name();
-				return;
-			}
-
-			const targetPath = joinWorkspaceFilePath(dialogParentPath, name);
-			if (targetPath !== dialogTargetPath && entryByPath.has(targetPath)) {
-				dialogError = m.workspace_file_duplicate_name();
-				return;
-			}
-
-			onRename?.(dialogTargetPath, name);
-			dialogOpen = false;
-			return;
-		}
-
-		if (dialogMode === 'upload') {
-			if (uploadFiles.length === 0) {
-				dialogError = m.workspace_upload_file_required();
-				return;
-			}
-			const normalizedNames = multipleUploads
-				? uploadFiles.map((file) => normalizeDialogName(file.name, dialogDestinationPath))
-				: [normalizeDialogName(dialogName, dialogDestinationPath)];
-			if (normalizedNames.some((name) => !name)) {
-				dialogError = m.workspace_file_invalid_name();
-				return;
-			}
-			if (
-				!allowUploadOverwrite &&
-				normalizedNames.some((name) => name && entryByPath.has(joinWorkspaceFilePath(dialogDestinationPath, name)))
-			) {
-				dialogError = m.workspace_file_duplicate_name();
-				return;
-			}
-
-			dialogSubmitting = true;
-			try {
-				const selectedFiles = multipleUploads
-					? uploadFiles
-					: [
-							new File([uploadFiles[0]!], normalizedNames[0]!, {
-								type: uploadFiles[0]!.type,
-								lastModified: uploadFiles[0]!.lastModified
-							})
-						];
-				const error = await onUpload?.(dialogDestinationPath, selectedFiles);
-				if (typeof error === 'string' && error) {
-					dialogError = error;
-					return;
-				}
-				if (dialogDestinationPath) {
-					openFolders = { ...openFolders, [dialogDestinationPath]: true };
-				}
-				dialogOpen = false;
-			} finally {
-				dialogSubmitting = false;
-			}
-			return;
-		}
+	async function handleDialogSubmit() {
+		if (dialogMode === 'move') return submitMove();
+		if (dialogMode === 'rename') return submitRename();
+		if (dialogMode === 'upload') return submitUpload();
 
 		const name = normalizeDialogName(dialogName, dialogDestinationPath);
 		if (!name) {
@@ -497,6 +501,63 @@
 		dialogOpen = false;
 	}
 
+	function workspaceRowActions(row: TreeRow) {
+		const actions = [
+			{
+				visible: onDownload && !row.isDirectory && !row.pending,
+				id: 'download',
+				icon: DownloadIcon,
+				label: m.templates_download(),
+				tooltip: m.templates_download(),
+				disabled: false,
+				destructive: false,
+				onclick: () => onDownload?.(row.relativePath)
+			},
+			{
+				visible: onRestore && !row.isDirectory && !row.pending,
+				id: 'restore',
+				icon: RefreshIcon,
+				label: m.workspace_restore(),
+				tooltip: m.workspace_restore(),
+				disabled: false,
+				destructive: false,
+				onclick: () => onRestore?.(row.relativePath)
+			},
+			{
+				visible: onRename,
+				id: 'rename',
+				icon: EditIcon,
+				label: m.workspace_file_rename_label({ name: row.relativePath }),
+				tooltip: m.rename(),
+				disabled,
+				destructive: false,
+				onclick: () => openRenameDialog(row.relativePath)
+			},
+			{
+				visible: onMove,
+				id: 'move',
+				icon: FolderMoveIcon,
+				label: m.workspace_file_move_label({ name: row.relativePath }),
+				tooltip: m.move(),
+				disabled,
+				destructive: false,
+				onclick: () => openMoveDialog(row.relativePath)
+			},
+			{
+				visible: onDelete,
+				id: 'delete',
+				icon: TrashIcon,
+				label: m.delete_name({ name: row.relativePath }),
+				tooltip: m.common_delete(),
+				disabled,
+				destructive: true,
+				onclick: () => handleDelete(row)
+			}
+		];
+		const available = row.locked || row.isSymlink ? actions.slice(0, 1) : actions;
+		return available.filter((action) => action.visible);
+	}
+
 	function handleDelete(entry: WorkspaceDisplayEntry) {
 		if (disabled) return;
 		openConfirmDialog({
@@ -511,7 +572,7 @@
 	}
 </script>
 
-<div class="flex min-h-0 flex-1 flex-col">
+{#snippet workspaceToolbar()}
 	<div class="flex h-9 shrink-0 items-center border-b border-border px-2">
 		<span class="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">{title}</span>
 		{#if hasHeaderActions}
@@ -573,39 +634,87 @@
 			</div>
 		{/if}
 	</div>
+{/snippet}
 
-	{#if readOnlyMessage}
-		<div class="border-b border-border px-3 py-2 text-xs text-muted-foreground">{readOnlyMessage}</div>
-	{/if}
+{#snippet workspaceRow(row: TreeRow)}
+	<FileTreeRow
+		name={row.name}
+		path={row.relativePath}
+		depth={row.depth}
+		isDirectory={row.isDirectory}
+		expanded={openFolders[row.relativePath] === true}
+		showDisclosure={hasDirectories}
+		selected={selectedFile === `file:${row.relativePath}`}
+		pending={row.pending}
+		pendingLabel={m.common_unsaved_changes()}
+		expandLabel={m.workspace_file_expand_folder({ name: row.name })}
+		collapseLabel={m.workspace_file_collapse_folder({ name: row.name })}
+		onToggle={() => toggleFolder(row.relativePath)}
+		onActivate={() => (row.isDirectory ? toggleFolder(row.relativePath) : onSelect(`file:${row.relativePath}`))}
+	>
+		{#snippet trailing()}
+			{#if row.locked || row.isSymlink || onRename || onMove || onDelete || onDownload || onRestore}
+				<div class="flex shrink-0 items-center gap-0.5">
+					{#each workspaceRowActions(row) as action (action.id)}
+						<Tooltip.Root>
+							<Tooltip.Trigger>
+								<button
+									type="button"
+									class={action.destructive
+										? 'inline-flex size-6 items-center justify-center rounded text-destructive hover:bg-destructive/10'
+										: 'inline-flex size-6 items-center justify-center rounded text-foreground hover:bg-foreground/10'}
+									aria-label={action.label}
+									disabled={action.disabled}
+									onclick={action.onclick}
+								>
+									<action.icon class="size-3.5" />
+								</button>
+							</Tooltip.Trigger>
+							<Tooltip.Content>{action.tooltip}</Tooltip.Content>
+						</Tooltip.Root>
+					{/each}
+					{#if row.locked || row.isSymlink}
+						<LockIcon class="mx-1 size-3.5 shrink-0 text-muted-foreground" aria-label={lockedLabel} />
+					{/if}
+				</div>
+			{/if}
+		{/snippet}
+	</FileTreeRow>
+{/snippet}
 
+{#snippet workspaceLeadingRows()}
+	{#each leadingRows as leadingRow (leadingRow.key)}
+		<button
+			type="button"
+			class={cn(
+				'flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-[13px] hover:bg-accent',
+				selectedFile === leadingRow.key && 'bg-accent',
+				leadingRow.action && 'text-muted-foreground hover:text-foreground'
+			)}
+			onclick={() => (leadingRow.onSelect ? leadingRow.onSelect() : onSelect(leadingRow.key))}
+		>
+			{#if hasDirectories}
+				<span class="inline-flex size-4 shrink-0 items-center justify-center"></span>
+			{/if}
+			{#if leadingRow.action}
+				<CreateFileIcon class="size-4 shrink-0" />
+			{:else}
+				<FileTextIcon class={cn('size-4 shrink-0', leadingRow.iconClass ?? 'text-muted-foreground')} />
+			{/if}
+			<span class="min-w-0 flex-1 truncate">{leadingRow.label}</span>
+			{#if leadingRow.locked}
+				<span class="inline-flex size-6 shrink-0 items-center justify-center">
+					<LockIcon class="size-3.5 shrink-0 text-muted-foreground" aria-label={lockedLabel} />
+				</span>
+			{/if}
+		</button>
+	{/each}
+{/snippet}
+
+{#snippet workspaceTree()}
 	<div bind:this={treeScrollElement} class="min-h-0 flex-1 overflow-auto">
 		<TreeView.Root class="min-w-max p-2 whitespace-nowrap">
-			{#each leadingRows as leadingRow (leadingRow.key)}
-				<button
-					type="button"
-					class={cn(
-						'flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-[13px] hover:bg-accent',
-						selectedFile === leadingRow.key && 'bg-accent',
-						leadingRow.action && 'text-muted-foreground hover:text-foreground'
-					)}
-					onclick={() => (leadingRow.onSelect ? leadingRow.onSelect() : onSelect(leadingRow.key))}
-				>
-					{#if hasDirectories}
-						<span class="inline-flex size-4 shrink-0 items-center justify-center"></span>
-					{/if}
-					{#if leadingRow.action}
-						<CreateFileIcon class="size-4 shrink-0" />
-					{:else}
-						<FileTextIcon class={cn('size-4 shrink-0', leadingRow.iconClass ?? 'text-muted-foreground')} />
-					{/if}
-					<span class="min-w-0 flex-1 truncate">{leadingRow.label}</span>
-					{#if leadingRow.locked}
-						<span class="inline-flex size-6 shrink-0 items-center justify-center">
-							<LockIcon class="size-3.5 shrink-0 text-muted-foreground" aria-label={lockedLabel} />
-						</span>
-					{/if}
-				</button>
-			{/each}
+			{@render workspaceLeadingRows()}
 
 			{#if rows.length === 0}
 				<div class="px-7 py-3 text-xs text-muted-foreground">{emptyMessage}</div>
@@ -620,110 +729,7 @@
 								data-index={virtualItem.index}
 								use:rowVirtualizer.measureElement
 							>
-								<FileTreeRow
-									name={row.name}
-									path={row.relativePath}
-									depth={row.depth}
-									isDirectory={row.isDirectory}
-									expanded={openFolders[row.relativePath] === true}
-									showDisclosure={hasDirectories}
-									selected={selectedFile === `file:${row.relativePath}`}
-									pending={row.pending}
-									pendingLabel={m.common_unsaved_changes()}
-									expandLabel={m.workspace_file_expand_folder({ name: row.name })}
-									collapseLabel={m.workspace_file_collapse_folder({ name: row.name })}
-									onToggle={() => toggleFolder(row.relativePath)}
-									onActivate={() => (row.isDirectory ? toggleFolder(row.relativePath) : onSelect(`file:${row.relativePath}`))}
-								>
-									{#snippet trailing()}
-										{#if row.locked || row.isSymlink || onRename || onMove || onDelete || onDownload || onRestore}
-											<div class="flex shrink-0 items-center gap-0.5">
-												{#if onDownload && !row.isDirectory && !row.pending}
-													<Tooltip.Root>
-														<Tooltip.Trigger>
-															<button
-																type="button"
-																class="inline-flex size-6 items-center justify-center rounded text-foreground hover:bg-foreground/10"
-																aria-label={m.templates_download()}
-																onclick={() => onDownload?.(row.relativePath)}
-															>
-																<DownloadIcon class="size-3.5" />
-															</button>
-														</Tooltip.Trigger>
-														<Tooltip.Content>{m.templates_download()}</Tooltip.Content>
-													</Tooltip.Root>
-												{/if}
-												{#if row.locked || row.isSymlink}
-													<LockIcon class="mx-1 size-3.5 shrink-0 text-muted-foreground" aria-label={lockedLabel} />
-												{:else}
-													{#if onRestore && !row.isDirectory && !row.pending}
-														<Tooltip.Root>
-															<Tooltip.Trigger>
-																<button
-																	type="button"
-																	class="inline-flex size-6 items-center justify-center rounded text-foreground hover:bg-foreground/10"
-																	aria-label={m.workspace_restore()}
-																	onclick={() => onRestore?.(row.relativePath)}
-																>
-																	<RefreshIcon class="size-3.5" />
-																</button>
-															</Tooltip.Trigger>
-															<Tooltip.Content>{m.workspace_restore()}</Tooltip.Content>
-														</Tooltip.Root>
-													{/if}
-													{#if onRename}
-														<Tooltip.Root>
-															<Tooltip.Trigger>
-																<button
-																	type="button"
-																	class="inline-flex size-6 items-center justify-center rounded text-foreground hover:bg-foreground/10"
-																	aria-label={m.workspace_file_rename_label({ name: row.relativePath })}
-																	{disabled}
-																	onclick={() => openRenameDialog(row.relativePath)}
-																>
-																	<EditIcon class="size-3.5" />
-																</button>
-															</Tooltip.Trigger>
-															<Tooltip.Content>{m.rename()}</Tooltip.Content>
-														</Tooltip.Root>
-													{/if}
-													{#if onMove}
-														<Tooltip.Root>
-															<Tooltip.Trigger>
-																<button
-																	type="button"
-																	class="inline-flex size-6 items-center justify-center rounded text-foreground hover:bg-foreground/10"
-																	aria-label={m.workspace_file_move_label({ name: row.relativePath })}
-																	{disabled}
-																	onclick={() => openMoveDialog(row.relativePath)}
-																>
-																	<FolderMoveIcon class="size-3.5" />
-																</button>
-															</Tooltip.Trigger>
-															<Tooltip.Content>{m.move()}</Tooltip.Content>
-														</Tooltip.Root>
-													{/if}
-													{#if onDelete}
-														<Tooltip.Root>
-															<Tooltip.Trigger>
-																<button
-																	type="button"
-																	class="inline-flex size-6 items-center justify-center rounded text-destructive hover:bg-destructive/10"
-																	aria-label={m.delete_name({ name: row.relativePath })}
-																	{disabled}
-																	onclick={() => handleDelete(row)}
-																>
-																	<TrashIcon class="size-3.5" />
-																</button>
-															</Tooltip.Trigger>
-															<Tooltip.Content>{m.common_delete()}</Tooltip.Content>
-														</Tooltip.Root>
-													{/if}
-												{/if}
-											</div>
-										{/if}
-									{/snippet}
-								</FileTreeRow>
+								{@render workspaceRow(row)}
 							</div>
 						{/if}
 					{/each}
@@ -731,130 +737,152 @@
 			{/if}
 		</TreeView.Root>
 	</div>
-</div>
+{/snippet}
 
-<Dialog.Root bind:open={dialogOpen}>
-	<Dialog.Content class="max-h-[calc(100vh-2rem)] max-w-2xl overflow-hidden">
-		<form
-			class="flex max-h-[calc(100vh-5rem)] min-h-0 flex-col gap-4"
-			onsubmit={(event) => {
-				event.preventDefault();
-				void handleDialogSubmit();
+{#snippet workspaceDestination(option: FolderDestinationOption)}
+	<div
+		class={cn(
+			'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm',
+			dialogDestinationPath === option.relativePath && !option.disabled && 'bg-accent',
+			option.disabled ? 'opacity-45' : 'hover:bg-accent'
+		)}
+		style={`padding-left: ${0.5 + option.depth * 1.25}rem`}
+	>
+		{#if option.relativePath && option.hasChildren}
+			<button
+				type="button"
+				class="inline-flex size-4 shrink-0 items-center justify-center rounded hover:bg-muted"
+				aria-label={destinationOpenFolders[option.relativePath]
+					? m.workspace_file_collapse_folder({ name: option.label })
+					: m.workspace_file_expand_folder({ name: option.label })}
+				onclick={() => toggleDestinationFolder(option.relativePath)}
+			>
+				{#if destinationOpenFolders[option.relativePath] === true}
+					<ArrowDownIcon class="size-4" />
+				{:else}
+					<ArrowRightIcon class="size-4" />
+				{/if}
+			</button>
+		{:else}
+			<span class="inline-flex size-4 shrink-0 items-center justify-center"></span>
+		{/if}
+		<button
+			type="button"
+			class={cn('flex min-w-0 flex-1 items-center gap-2 text-left', option.disabled && 'cursor-not-allowed')}
+			disabled={option.disabled}
+			title={option.relativePath || option.label}
+			onclick={() => {
+				dialogDestinationPath = option.relativePath;
+				dialogError = null;
 			}}
 		>
-			<Dialog.Header>
-				<Dialog.Title>{dialogTitle}</Dialog.Title>
-				<Dialog.Description>
-					{#if dialogMode === 'move'}
-						{m.workspace_file_move_description({ name: dialogTargetPath })}
-					{:else if dialogMode === 'upload'}
-						{uploadDescription}
-					{:else if dialogMode === 'create_file' || dialogMode === 'create_folder'}
-						{dialogDestinationPath ? m.workspace_file_parent_path({ path: dialogDestinationPath }) : rootPathMessage}
-					{:else}
-						{dialogParentPath ? m.workspace_file_parent_path({ path: dialogParentPath }) : rootPathMessage}
-					{/if}
-				</Dialog.Description>
-			</Dialog.Header>
+			<FolderOpenIcon class="size-4 shrink-0 text-amber-500" />
+			<span class="min-w-0 flex-1 truncate">{option.label}</span>
+		</button>
+		{#if option.reason}
+			<span class="shrink-0 text-xs text-muted-foreground">{option.reason}</span>
+		{/if}
+	</div>
+{/snippet}
 
-			{#if dialogMode === 'upload'}
-				<div class="space-y-2">
-					<Label for="workspace-file-upload">{m.workspace_upload_file_label()}</Label>
-					{#key uploadInputKey}
-						<Input
-							id="workspace-file-upload"
-							type="file"
-							multiple={multipleUploads}
-							onchange={handleUploadFileChange}
-							aria-invalid={!!dialogError}
-						/>
-					{/key}
-				</div>
-			{/if}
+{#snippet workspaceDestinations()}
+	{#if hasDestinationPicker}
+		<div class="min-h-0 space-y-2">
+			<Label>{m.workspace_file_move_destination_label()}</Label>
+			<div class="max-h-[56vh] min-h-80 space-y-1 overflow-auto rounded-md border p-1">
+				{#each visibleDestinationOptions as option (option.relativePath)}
+					{@render workspaceDestination(option)}
+				{/each}
+			</div>
+		</div>
+	{/if}
+{/snippet}
 
-			{#if dialogMode !== 'move' && (dialogMode !== 'upload' || !multipleUploads)}
-				<div class="space-y-2">
-					<Label for="workspace-file-name">{m.common_name()}</Label>
-					<Input
-						id="workspace-file-name"
-						bind:value={dialogName}
-						placeholder={dialogMode === 'create_folder'
-							? m.workspace_folder_name_placeholder()
-							: m.workspace_file_name_placeholder()}
-						aria-invalid={!!dialogError}
-					/>
-				</div>
-			{/if}
-
-			{#if hasDestinationPicker}
-				<div class="min-h-0 space-y-2">
-					<Label>{m.workspace_file_move_destination_label()}</Label>
-					<div class="max-h-[56vh] min-h-80 space-y-1 overflow-auto rounded-md border p-1">
-						{#each visibleDestinationOptions as option (option.relativePath)}
-							<div
-								class={cn(
-									'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm',
-									dialogDestinationPath === option.relativePath && !option.disabled && 'bg-accent',
-									option.disabled ? 'opacity-45' : 'hover:bg-accent'
-								)}
-								style={`padding-left: ${0.5 + option.depth * 1.25}rem`}
-							>
-								{#if option.relativePath && option.hasChildren}
-									<button
-										type="button"
-										class="inline-flex size-4 shrink-0 items-center justify-center rounded hover:bg-muted"
-										aria-label={destinationOpenFolders[option.relativePath]
-											? m.workspace_file_collapse_folder({ name: option.label })
-											: m.workspace_file_expand_folder({ name: option.label })}
-										onclick={() => toggleDestinationFolder(option.relativePath)}
-									>
-										{#if destinationOpenFolders[option.relativePath] === true}
-											<ArrowDownIcon class="size-4" />
-										{:else}
-											<ArrowRightIcon class="size-4" />
-										{/if}
-									</button>
-								{:else}
-									<span class="inline-flex size-4 shrink-0 items-center justify-center"></span>
-								{/if}
-								<button
-									type="button"
-									class={cn('flex min-w-0 flex-1 items-center gap-2 text-left', option.disabled && 'cursor-not-allowed')}
-									disabled={option.disabled}
-									title={option.relativePath || option.label}
-									onclick={() => {
-										dialogDestinationPath = option.relativePath;
-										dialogError = null;
-									}}
-								>
-									<FolderOpenIcon class="size-4 shrink-0 text-amber-500" />
-									<span class="min-w-0 flex-1 truncate">{option.label}</span>
-								</button>
-								{#if option.reason}
-									<span class="shrink-0 text-xs text-muted-foreground">{option.reason}</span>
-								{/if}
-							</div>
-						{/each}
-					</div>
-				</div>
-			{/if}
-
-			{#if dialogError}
-				<p class="text-sm text-destructive">{dialogError}</p>
-			{/if}
-
-			<Dialog.Footer>
-				<ArcaneButton action="cancel" onclick={() => (dialogOpen = false)} />
-				<ArcaneButton
-					action="confirm"
-					type="submit"
-					customLabel={dialogActionLabel}
-					loading={dialogSubmitting}
-					disabled={dialogSubmitting ||
-						(dialogMode === 'move' && !hasValidDestination) ||
-						(dialogMode === 'upload' && uploadFiles.length === 0)}
+{#snippet workspaceDialogFields()}
+	{#if dialogMode === 'upload'}
+		<div class="space-y-2">
+			<Label for="workspace-file-upload">{m.workspace_upload_file_label()}</Label>
+			{#key uploadInputKey}
+				<Input
+					id="workspace-file-upload"
+					type="file"
+					multiple={multipleUploads}
+					onchange={handleUploadFileChange}
+					aria-invalid={!!dialogError}
 				/>
-			</Dialog.Footer>
-		</form>
-	</Dialog.Content>
-</Dialog.Root>
+			{/key}
+		</div>
+	{/if}
+
+	{#if dialogMode !== 'move' && (dialogMode !== 'upload' || !multipleUploads)}
+		<div class="space-y-2">
+			<Label for="workspace-file-name">{m.common_name()}</Label>
+			<Input
+				id="workspace-file-name"
+				bind:value={dialogName}
+				placeholder={dialogMode === 'create_folder' ? m.workspace_folder_name_placeholder() : m.workspace_file_name_placeholder()}
+				aria-invalid={!!dialogError}
+			/>
+		</div>
+	{/if}
+{/snippet}
+
+{#snippet workspaceDialog()}
+	<Dialog.Root bind:open={dialogOpen}>
+		<Dialog.Content class="max-h-[calc(100vh-2rem)] max-w-2xl overflow-hidden">
+			<form
+				class="flex max-h-[calc(100vh-5rem)] min-h-0 flex-col gap-4"
+				onsubmit={(event) => {
+					event.preventDefault();
+					void handleDialogSubmit();
+				}}
+			>
+				<Dialog.Header>
+					<Dialog.Title>{dialogTitle}</Dialog.Title>
+					<Dialog.Description>
+						{#if dialogMode === 'move'}
+							{m.workspace_file_move_description({ name: dialogTargetPath })}
+						{:else if dialogMode === 'upload'}
+							{uploadDescription}
+						{:else if dialogMode === 'create_file' || dialogMode === 'create_folder'}
+							{dialogDestinationPath ? m.workspace_file_parent_path({ path: dialogDestinationPath }) : rootPathMessage}
+						{:else}
+							{dialogParentPath ? m.workspace_file_parent_path({ path: dialogParentPath }) : rootPathMessage}
+						{/if}
+					</Dialog.Description>
+				</Dialog.Header>
+
+				{@render workspaceDialogFields()}
+
+				{@render workspaceDestinations()}
+
+				{#if dialogError}
+					<p class="text-sm text-destructive">{dialogError}</p>
+				{/if}
+
+				<Dialog.Footer>
+					<ArcaneButton action="cancel" onclick={() => (dialogOpen = false)} />
+					<ArcaneButton
+						action="confirm"
+						type="submit"
+						customLabel={dialogActionLabel}
+						loading={dialogSubmitting}
+						disabled={dialogSubmitting ||
+							(dialogMode === 'move' && !hasValidDestination) ||
+							(dialogMode === 'upload' && uploadFiles.length === 0)}
+					/>
+				</Dialog.Footer>
+			</form>
+		</Dialog.Content>
+	</Dialog.Root>
+{/snippet}
+
+<div class="flex min-h-0 flex-1 flex-col">
+	{@render workspaceToolbar()}
+	{#if readOnlyMessage}
+		<div class="border-b border-border px-3 py-2 text-xs text-muted-foreground">{readOnlyMessage}</div>
+	{/if}
+	{@render workspaceTree()}
+</div>
+
+{@render workspaceDialog()}

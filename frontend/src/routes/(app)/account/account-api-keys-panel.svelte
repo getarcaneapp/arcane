@@ -2,13 +2,13 @@
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import ApiKeyFormSheet from '#lib/components/sheets/api-key-form-sheet.svelte';
-	import { ArcaneButton } from '#lib/components/arcane-button';
-	import { apiKeyService } from '#lib/services/api-key-service';
-	import type { ApiKey, ApiKeyCreated, ApiKeyPermissionGrant, CreateUserApiKey } from '#lib/types/auth';
-	import { AddIcon, ApiKeyIcon, CopyIcon, TrashIcon } from '#lib/icons';
-	import { formatDate, formatRelativeTime } from '#lib/utils/formatting';
-	import { m } from '#lib/paraglide/messages';
-	import { confirmAndRun } from '#lib/utils/bulk-actions';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import { apiKeyService } from '#lib/services/api-key-service.js';
+	import type { ApiKey, ApiKeyCreated, ApiKeyPermissionGrant, CreateUserApiKey } from '#lib/types/auth.js';
+	import { AddIcon, ApiKeyIcon, CopyIcon, TrashIcon } from '#lib/icons/index.js';
+	import { formatDate, formatRelativeTime } from '#lib/utils/formatting.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { confirmAndRun } from '#lib/utils/bulk-actions.js';
 
 	let apiKeys = $state<ApiKey[]>([]);
 	let apiKeysLoading = $state(false);

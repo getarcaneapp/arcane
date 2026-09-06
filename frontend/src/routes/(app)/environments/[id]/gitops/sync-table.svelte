@@ -1,21 +1,21 @@
 <script lang="ts">
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
-	import { Badge } from '#lib/components/ui/badge';
-	import { LifecycleIndicator } from '#lib/components/lifecycle-indicator';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { LifecycleIndicator } from '#lib/components/lifecycle-indicator/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
 	import RemoveMenuItem from '#lib/components/arcane-table/cells/remove-menu-item.svelte';
 	import { toast } from 'svelte-sonner';
-	import { handleApiResultWithCallbacks } from '#lib/utils/api';
-	import { tryCatch } from '#lib/utils/api';
-	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
-	import type { GitOpsSync } from '#lib/types/automation';
-	import type { ColumnSpec, BulkAction, ArcaneRow } from '#lib/components/arcane-table';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { tryCatch } from '#lib/utils/api.js';
+	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import type { GitOpsSync } from '#lib/types/automation.js';
+	import type { ColumnSpec, BulkAction, ArcaneRow } from '#lib/components/arcane-table/index.js';
 	import { UniversalMobileCard } from '#lib/components/arcane-table/index.js';
-	import { formatDateTimeShort } from '#lib/utils/formatting';
-	import { m } from '#lib/paraglide/messages';
-	import { gitOpsSyncService } from '#lib/services/gitops-sync-service';
-	import { toGitCommitUrl } from '#lib/utils/navigation';
+	import { formatDateTimeShort } from '#lib/utils/formatting.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { gitOpsSyncService } from '#lib/services/gitops-sync-service.js';
+	import { toGitCommitUrl } from '#lib/utils/navigation.js';
 	import {
 		EditIcon as PencilIcon,
 		StartIcon as PlayIcon,
@@ -24,8 +24,8 @@
 		GitBranchIcon,
 		ProjectsIcon as FolderIcon,
 		HashIcon
-	} from '#lib/icons';
-	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions';
+	} from '#lib/icons/index.js';
+	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions.js';
 
 	type FieldVisibility = Record<string, boolean>;
 

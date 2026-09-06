@@ -1,28 +1,28 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { TabBar, type TabItem } from '#lib/components/tab-bar';
+	import { TabBar, type TabItem } from '#lib/components/tab-bar/index.js';
 	import CodeEditor from '#lib/components/code-editor/editor.svelte';
-	import * as Card from '#lib/components/ui/card';
-	import * as Tabs from '#lib/components/ui/tabs';
-	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte';
-	import { LayersIcon, DockIcon, JobsIcon, TrashIcon, EditIcon, FileTextIcon } from '#lib/icons';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import * as Tabs from '#lib/components/ui/tabs/index.js';
+	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte.js';
+	import { LayersIcon, DockIcon, JobsIcon, TrashIcon, EditIcon, FileTextIcon } from '#lib/icons/index.js';
 	import EditorTabStrip from '#lib/components/editor-tab-strip.svelte';
 	import WorkspaceFileTreePanel from '#lib/components/workspace-file-tree-panel.svelte';
 	import ResizableSplit from '#lib/components/resizable-split.svelte';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
-	import { m } from '#lib/paraglide/messages';
-	import { swarmService } from '#lib/services/swarm-service';
-	import { handleApiResultWithCallbacks } from '#lib/utils/api';
-	import { tryCatch } from '#lib/utils/api';
+	import { m } from '#lib/paraglide/messages.js';
+	import { swarmService } from '#lib/services/swarm-service.js';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { tryCatch } from '#lib/utils/api.js';
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import { openConfirmDialog } from '#lib/components/confirm-dialog';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import SwarmServicesTable from '../../services/services-table.svelte';
 	import SwarmTasksTable from '../../tasks/tasks-table.svelte';
-	import type { SwarmStackSource } from '#lib/types/swarm';
-	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte';
-	import { hasPermission } from '#lib/utils/auth';
-	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import type { SwarmStackSource } from '#lib/types/swarm.js';
+	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
+	import { hasPermission } from '#lib/utils/auth.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 
 	let { data } = $props();
 

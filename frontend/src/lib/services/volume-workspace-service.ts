@@ -1,6 +1,6 @@
-import { environmentStore } from '#lib/stores/environment.store.svelte';
-import type { VolumeWorkspace, VolumeWorkspaceFileContent, VolumeWorkspaceUpdateManifest } from '#lib/types/volume-workspace';
-import { downloadBlob, filenameFromPath } from '#lib/utils/browser-download';
+import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+import type { VolumeWorkspace, VolumeWorkspaceFileContent, VolumeWorkspaceUpdateManifest } from '#lib/types/volume-workspace.js';
+import { downloadBlob, filenameFromPath } from '#lib/utils/browser-download.js';
 import BaseAPIService from './api-service';
 
 class VolumeWorkspaceService extends BaseAPIService {

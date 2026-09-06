@@ -1,12 +1,12 @@
-import { activityService } from '#lib/services/activity-service';
-import { STREAM_CHANNEL_ACTIVITIES } from '#lib/services/stream-service';
-import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte';
+import { activityService } from '#lib/services/activity-service.js';
+import { STREAM_CHANNEL_ACTIVITIES } from '#lib/services/stream-service.js';
+import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
 import {
 	createEnvironmentStreamStore,
 	environmentDisplayName,
 	streamErrorMessage,
 	type StreamEnvStateBase
-} from '#lib/stores/environment-stream.svelte';
+} from '#lib/stores/environment-stream.svelte.js';
 import type {
 	Activity,
 	ActivityBatchGroup,
@@ -18,12 +18,15 @@ import type {
 	ActivityStatus,
 	ActivityStreamEvent,
 	ActivityType
-} from '#lib/types/activity.type';
-import type { Environment } from '#lib/types/environment';
-import userStore from '#lib/stores/user-store';
+} from '#lib/types/activity.type.js';
+import type { Environment } from '#lib/types/environment.js';
+import userStore from '#lib/stores/user-store.js';
 import { get } from 'svelte/store';
-import { discardPendingActivityToasts, queueActivityCompletionToast } from '#lib/components/activity/activity-completion-toasts';
-import { instantEpochMilliseconds } from '#lib/utils/formatting';
+import {
+	discardPendingActivityToasts,
+	queueActivityCompletionToast
+} from '#lib/components/activity/activity-completion-toasts.js';
+import { instantEpochMilliseconds } from '#lib/utils/formatting.js';
 
 const ACTIVITY_LIST_LIMIT = 50;
 const ACTIVITY_DETAIL_LIMIT = 500;

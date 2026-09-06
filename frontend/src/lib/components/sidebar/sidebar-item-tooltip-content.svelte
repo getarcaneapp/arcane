@@ -1,7 +1,7 @@
 <script lang="ts">
 	import * as Kbd from '#lib/components/ui/kbd/index.js';
-	import { formatShortcutKeys, type ShortcutKey } from '#lib/utils/navigation';
-	import userStore from '#lib/stores/user-store';
+	import { formatShortcutKeys, type ShortcutKey } from '#lib/utils/navigation.js';
+	import userStore from '#lib/stores/user-store.js';
 
 	let {
 		title,

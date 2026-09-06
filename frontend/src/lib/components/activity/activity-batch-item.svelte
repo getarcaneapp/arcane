@@ -1,11 +1,17 @@
 <script lang="ts">
 	import { Progress } from '#lib/components/ui/progress/index.js';
-	import { Badge } from '#lib/components/ui/badge';
-	import { ArrowDownIcon } from '#lib/icons';
-	import { m } from '#lib/paraglide/messages';
-	import { cn } from '#lib/utils';
-	import type { ActivityBatchGroup, ActivityStatus } from '#lib/types/activity.type';
-	import { activityStatusLabel, activityStatusVariant, activityTypeIcon, activityTypeLabel } from './activity-labels';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { ArrowDownIcon } from '#lib/icons/index.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { cn } from '#lib/utils.js';
+	import type { ActivityBatchGroup } from '#lib/types/activity.type.js';
+	import {
+		activityStatusAccentClass,
+		activityStatusLabel,
+		activityStatusVariant,
+		activityTypeIcon,
+		activityTypeLabel
+	} from './activity-labels';
 
 	let {
 		group,
@@ -19,21 +25,6 @@
 	const leadActivity = $derived(group.items[0]!);
 	const IconComponent = $derived(activityTypeIcon(leadActivity.type));
 	const isActive = $derived(group.status === 'running' || group.status === 'queued');
-
-	function statusAccentClass(status: ActivityStatus): string {
-		switch (status) {
-			case 'failed':
-				return 'bg-red-500';
-			case 'running':
-				return 'bg-blue-500';
-			case 'queued':
-				return 'bg-amber-500';
-			case 'success':
-				return 'bg-emerald-500';
-			case 'cancelled':
-				return 'bg-muted-foreground/40';
-		}
-	}
 </script>
 
 <div
@@ -46,7 +37,7 @@
 		aria-hidden="true"
 		class={cn(
 			'absolute top-2 bottom-2 left-0 rounded-r-full transition-all',
-			statusAccentClass(group.status),
+			activityStatusAccentClass(group.status),
 			expanded ? 'w-1' : 'w-0.5'
 		)}
 	></span>

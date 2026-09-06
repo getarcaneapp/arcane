@@ -1,18 +1,12 @@
-import { m } from '#lib/paraglide/messages';
-import { environmentStore } from '#lib/stores/environment.store.svelte';
-import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
-import type { Project, ProjectStatusCounts, ProjectTag, ProjectTagColor, ProjectTagOption } from '#lib/types/swarm';
-import type { ProjectWorkspaceFileDraft } from '#lib/types/project-workspace';
-import { readNdjsonStream } from '#lib/utils/streaming';
-import { transformPaginationParams } from '#lib/utils/tables';
+import { m } from '#lib/paraglide/messages.js';
+import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+import type { Project, ProjectStatusCounts, ProjectTag, ProjectTagColor, ProjectTagOption } from '#lib/types/swarm.js';
+import type { ProjectWorkspaceFileDraft } from '#lib/types/project-workspace.js';
+import { readNdjsonStream } from '#lib/utils/streaming.js';
+import { transformPaginationParams } from '#lib/utils/tables.js';
+import type { DeployProjectOptions } from '#lib/types/project-deployment.js';
 import BaseAPIService from './api-service';
-
-export type DeployProjectOptions = {
-	pullPolicy?: 'missing' | 'always' | 'never';
-	forceRecreate?: boolean;
-	removeOrphans?: boolean;
-	recreateVolumes?: boolean;
-};
 
 class ProjectService extends BaseAPIService {
 	private async resolveEnvironmentId(environmentId?: string): Promise<string> {
@@ -30,15 +24,21 @@ class ProjectService extends BaseAPIService {
 		return res.data;
 	}
 
-	deployProject(projectId: string, options?: DeployProjectOptions): Promise<Project>;
-	deployProject(projectId: string, onLine: (data: any) => void, options?: DeployProjectOptions): Promise<Project>;
+	deployProject(projectId: string, mode: 'up' | 'redeploy', options?: DeployProjectOptions): Promise<Project>;
+	deployProject(
+		projectId: string,
+		mode: 'up' | 'redeploy',
+		onLine: (data: unknown) => void,
+		options?: DeployProjectOptions
+	): Promise<Project>;
 	async deployProject(
 		projectId: string,
-		onLineOrOptions?: ((data: any) => void) | DeployProjectOptions,
+		mode: 'up' | 'redeploy',
+		onLineOrOptions?: ((data: unknown) => void) | DeployProjectOptions,
 		maybeOptions?: DeployProjectOptions
 	): Promise<Project> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
-		const url = `/api/environments/${envId}/projects/${projectId}/up`;
+		const url = `/api/environments/${envId}/projects/${projectId}/${mode}`;
 		const onLine = typeof onLineOrOptions === 'function' ? onLineOrOptions : undefined;
 		const options = typeof onLineOrOptions === 'function' ? maybeOptions : onLineOrOptions;
 
@@ -223,28 +223,6 @@ class ProjectService extends BaseAPIService {
 	async unarchiveProject(projectId: string): Promise<void> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		await this.handleResponse(this.api.post(`/environments/${envId}/projects/${projectId}/unarchive`));
-	}
-
-	redeployProject(projectId: string, options?: DeployProjectOptions): Promise<Project>;
-	redeployProject(projectId: string, onLine: (data: any) => void, options?: DeployProjectOptions): Promise<Project>;
-	async redeployProject(
-		projectId: string,
-		onLineOrOptions?: ((data: any) => void) | DeployProjectOptions,
-		maybeOptions?: DeployProjectOptions
-	): Promise<Project> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		const url = `/api/environments/${envId}/projects/${projectId}/redeploy`;
-		const onLine = typeof onLineOrOptions === 'function' ? onLineOrOptions : undefined;
-		const options = typeof onLineOrOptions === 'function' ? maybeOptions : onLineOrOptions;
-
-		// Redeploy always pre-pulls server-side; pullPolicy only governs the up phase.
-		await this.postProjectStream(url, options ?? {}, onLine, {
-			startFailed: (status) => m.progress_deploy_failed_to_start({ status }),
-			streamFailed: () => m.progress_deploy_failed()
-		});
-
-		// The redeploy stream doesn't return the project object; fetch fresh details.
-		return this.getProject(projectId);
 	}
 
 	private async streamProjectPull(projectId: string, onLine?: (data: any) => void): Promise<void> {

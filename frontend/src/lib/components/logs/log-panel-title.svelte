@@ -1,6 +1,6 @@
 <script lang="ts">
-	import * as Card from '#lib/components/ui/card';
-	import { m } from '#lib/paraglide/messages';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import { m } from '#lib/paraglide/messages.js';
 
 	interface Props {
 		title: string;

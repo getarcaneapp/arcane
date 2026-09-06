@@ -1,14 +1,14 @@
 <!-- Originally From  https://github.com/pocket-id/pocket-id/blob/main/frontend/src/lib/components/form/form-input.svelte -->
 <script lang="ts">
-	import { Input } from '#lib/components/ui/input';
+	import { Input } from '#lib/components/ui/input/index.js';
 	import DatePicker from '#lib/components/form/date-picker.svelte';
-	import { Textarea } from '#lib/components/ui/textarea';
-	import { Switch } from '#lib/components/ui/switch';
-	import { Label } from '#lib/components/ui/label';
+	import { Textarea } from '#lib/components/ui/textarea/index.js';
+	import { Switch } from '#lib/components/ui/switch/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
 	import type { Temporal } from 'temporal-polyfill';
 	import type { Snippet } from 'svelte';
 	import type { HTMLAttributes } from 'svelte/elements';
-	import type { FormInput } from '#lib/utils/settings';
+	import type { FormInput } from '#lib/utils/settings.js';
 
 	let {
 		input = $bindable(),

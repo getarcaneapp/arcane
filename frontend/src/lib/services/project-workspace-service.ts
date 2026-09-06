@@ -1,6 +1,10 @@
-import { environmentStore } from '#lib/stores/environment.store.svelte';
-import type { ProjectWorkspace, ProjectWorkspaceFileContent, ProjectWorkspaceUpdateManifest } from '#lib/types/project-workspace';
-import { downloadBlob, filenameFromPath } from '#lib/utils/browser-download';
+import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+import type {
+	ProjectWorkspace,
+	ProjectWorkspaceFileContent,
+	ProjectWorkspaceUpdateManifest
+} from '#lib/types/project-workspace.js';
+import { downloadBlob, filenameFromPath } from '#lib/utils/browser-download.js';
 import BaseAPIService from './api-service';
 
 class ProjectWorkspaceService extends BaseAPIService {

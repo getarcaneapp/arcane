@@ -5,8 +5,8 @@
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import GitopsDialogFooter from '#lib/components/dialogs/gitops-dialog-footer.svelte';
-	import type { ImportGitOpsSyncRequest } from '#lib/types/automation';
-	import { m } from '#lib/paraglide/messages';
+	import type { ImportGitOpsSyncRequest } from '#lib/types/automation.js';
+	import { m } from '#lib/paraglide/messages.js';
 
 	type GitOpsImportFormProps = {
 		open: boolean;

@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { m } from '#lib/paraglide/messages';
+	import { m } from '#lib/paraglide/messages.js';
 	import type { WithoutChildren } from 'bits-ui';
-	import { ArrowLeftIcon } from '#lib/icons';
+	import { ArrowLeftIcon } from '#lib/icons/index.js';
 	import type { Props } from '#lib/components/ui/button/index.js';
 	import CarouselControl from './carousel-control.svelte';
 

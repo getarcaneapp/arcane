@@ -1,6 +1,6 @@
-import { environmentStore } from '#lib/stores/environment.store.svelte';
-import { operationWatchStore } from '#lib/stores/operation-watch.store.svelte';
-import { ReconnectingWebSocket } from '#lib/utils/ws';
+import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+import { operationWatchStore } from '#lib/stores/operation-watch.store.svelte.js';
+import { ReconnectingWebSocket } from '#lib/utils/ws.js';
 
 /**
  * Attaches the operation watch dialog to a project's live log stream, mirroring

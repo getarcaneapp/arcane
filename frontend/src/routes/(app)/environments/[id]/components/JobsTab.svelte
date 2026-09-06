@@ -1,24 +1,28 @@
 <script lang="ts">
-	import { queryKeys } from '#lib/query/query-keys';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { SvelteSet } from 'svelte/reactivity';
-	import { jobScheduleService } from '#lib/services/job-schedule-service';
-	import { containerService } from '#lib/services/container-service';
-	import { tryCatch } from '#lib/utils/api';
+	import { jobScheduleService } from '#lib/services/job-schedule-service.js';
+	import { containerService } from '#lib/services/container-service.js';
+	import { tryCatch } from '#lib/utils/api.js';
 	import JobCard from '#lib/components/job-card/job-card.svelte';
-	import { Spinner } from '#lib/components/ui/spinner';
-	import { m } from '#lib/paraglide/messages';
-	import * as Alert from '#lib/components/ui/alert';
-	import { Label } from '#lib/components/ui/label';
-	import { Switch } from '#lib/components/ui/switch';
-	import { Input } from '#lib/components/ui/input';
-	import { Checkbox } from '#lib/components/ui/checkbox';
-	import * as ScrollArea from '#lib/components/ui/scroll-area';
-	import { AlertTriangleIcon, JobsIcon } from '#lib/icons';
-	import type { JobStatus, JobPrerequisite } from '#lib/types/settings';
-	import type { ContainerSummaryDto } from '#lib/types/docker';
+	import { Spinner } from '#lib/components/ui/spinner/index.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import * as Alert from '#lib/components/ui/alert/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import { Switch } from '#lib/components/ui/switch/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
+	import * as ScrollArea from '#lib/components/ui/scroll-area/index.js';
+	import { AlertTriangleIcon, JobsIcon } from '#lib/icons/index.js';
+	import type { JobStatus, JobPrerequisite } from '#lib/types/settings.js';
+	import type { ContainerSummaryDto } from '#lib/types/docker.js';
 	import type { JobsTabProps } from './tab-props';
-	import { isAutoUpdateLabelDisabled, normalizeContainerName, parseExcludedContainerSet } from '#lib/utils/container-auto-update';
+	import {
+		isAutoUpdateLabelDisabled,
+		normalizeContainerName,
+		parseExcludedContainerSet
+	} from '#lib/utils/container-auto-update.js';
 
 	let { formInputs, environmentId }: JobsTabProps = $props();
 
@@ -173,6 +177,179 @@
 	}
 </script>
 
+{#snippet jobCategory(label: string, categoryJobs: JobStatus[], isAgent: boolean, durableRuns: boolean)}
+	{#if categoryJobs.length > 0}
+		<div
+			class="grid min-w-0 gap-x-6 gap-y-2 rounded-xl border border-border bg-transparent px-4 py-2 sm:px-5 lg:grid-cols-[7rem_minmax(0,1fr)]"
+		>
+			<h3 class="flex min-h-9 items-center text-sm font-semibold text-foreground lg:mt-5 lg:self-start">
+				{label}
+			</h3>
+			<div class="min-w-0 divide-y divide-border/50">
+				{#each categoryJobs as job (job.id)}
+					{@render environmentJob(job, isAgent, durableRuns)}
+				{/each}
+			</div>
+		</div>
+	{/if}
+{/snippet}
+
+{#snippet autoUpdateSettings(job: JobStatus)}
+	{#if job.id === 'auto-update' && $formInputs.autoUpdate.value}
+		<div class="space-y-3 border-t border-border/20 pt-3">
+			<div class="space-y-1">
+				<Label class="text-sm font-medium">
+					{m.excluded_containers()}
+					{#await containersPromise then containers}
+						<span class="ml-1 font-normal text-muted-foreground">
+							({containers.filter((c) => excludedContainers.has(getContainerName(c))).length})
+						</span>
+					{/await}
+				</Label>
+				<p class="text-xs text-muted-foreground">{m.auto_update_exclude_description()}</p>
+			</div>
+
+			<div class="space-y-2">
+				<Input type="search" placeholder={m.jobs_search_containers()} class="h-8" bind:value={searchTerm} />
+				{@render ContainerExclusionList({
+					term: searchTerm,
+					mapItem: mapContainerToItem,
+					idPrefix: 'container-',
+					onToggle: toggleContainerExclusion
+				})}
+			</div>
+		</div>
+	{/if}
+{/snippet}
+
+{#snippet imagePollingSettings(job: JobStatus)}
+	{#if job.id === 'image-polling'}
+		<div class="space-y-3 border-t border-border/20 pt-3">
+			<div class="flex items-center justify-between gap-3">
+				<div class="space-y-1">
+					<Label class="text-sm font-medium">{m.jobs_image_event_watcher_label()}</Label>
+					<p class="text-xs text-muted-foreground">{m.jobs_image_event_watcher_description()}</p>
+				</div>
+				<Switch id="image-event-watcher-enabled" bind:checked={$formInputs.imageEventWatcherEnabled.value} />
+			</div>
+			<Alert.Root variant="warning" class="py-2 [&>svg]:top-2">
+				<AlertTriangleIcon class="size-4" />
+				<Alert.Description class="text-xs">{m.jobs_image_event_watcher_warning()}</Alert.Description>
+			</Alert.Root>
+		</div>
+	{/if}
+{/snippet}
+
+{#snippet autoHealSettings(job: JobStatus)}
+	{#if job.id === 'auto-heal' && $formInputs.autoHealEnabled.value}
+		<div class="space-y-3 border-t border-border/20 pt-3">
+			<div class="grid gap-3 sm:grid-cols-2">
+				<div class="space-y-1">
+					<Label for="auto-heal-max-restarts" class="text-sm font-medium">{m.auto_heal_max_restarts_label()}</Label>
+					<p class="text-xs text-muted-foreground">{m.auto_heal_max_restarts_description()}</p>
+					<Input
+						id="auto-heal-max-restarts"
+						type="number"
+						min="1"
+						class="h-8 w-full"
+						bind:value={$formInputs.autoHealMaxRestarts.value}
+					/>
+				</div>
+				<div class="space-y-1">
+					<Label for="auto-heal-restart-window" class="text-sm font-medium">{m.auto_heal_restart_window_label()}</Label>
+					<p class="text-xs text-muted-foreground">{m.auto_heal_restart_window_description()}</p>
+					<Input
+						id="auto-heal-restart-window"
+						type="number"
+						min="1"
+						class="h-8 w-full"
+						bind:value={$formInputs.autoHealRestartWindow.value}
+					/>
+				</div>
+			</div>
+
+			<div class="space-y-1">
+				<Label class="text-sm font-medium">
+					{m.excluded_containers()}
+					{#await containersPromise then containers}
+						<span class="ml-1 font-normal text-muted-foreground">
+							({containers.filter((c) => autoHealExcludedContainers.has(getContainerName(c))).length})
+						</span>
+					{/await}
+				</Label>
+				<p class="text-xs text-muted-foreground">{m.auto_heal_exclude_description()}</p>
+			</div>
+
+			<div class="space-y-2">
+				<Input type="search" placeholder={m.jobs_search_containers()} class="h-8" bind:value={autoHealSearchTerm} />
+				{@render ContainerExclusionList({
+					term: autoHealSearchTerm,
+					mapItem: mapContainerToAutoHealItem,
+					idPrefix: 'auto-heal-container-',
+					onToggle: toggleAutoHealContainerExclusion
+				})}
+			</div>
+		</div>
+	{/if}
+{/snippet}
+
+{#snippet jobEnableControl(job: JobStatus)}
+	{#if job.id === 'image-polling'}
+		<Switch aria-label={job.name} bind:checked={$formInputs.pollingEnabled.value} />
+	{:else if job.id === 'auto-update'}
+		<Switch aria-label={job.name} bind:checked={$formInputs.autoUpdate.value} disabled={!$formInputs.pollingEnabled.value} />
+	{:else if job.id === 'scheduled-prune'}
+		<Switch aria-label={job.name} bind:checked={$formInputs.scheduledPruneEnabled.value} />
+	{:else if job.id === 'vulnerability-scan'}
+		<Switch aria-label={job.name} bind:checked={$formInputs.vulnerabilityScanEnabled.value} />
+	{:else if job.id === 'auto-heal'}
+		<Switch aria-label={job.name} bind:checked={$formInputs.autoHealEnabled.value} />
+	{/if}
+{/snippet}
+
+{#snippet environmentJob(job: JobStatus, isAgent: boolean, durableRuns: boolean)}
+	<JobCard
+		{job}
+		{environmentId}
+		{isAgent}
+		durableRuns={durableRuns || capabilityUnknown}
+		onScheduleUpdate={loadJobs}
+		enabledOverride={capabilityUnknown ? undefined : getEnabledOverride(job)}
+		collapsibleSettings={job.id === 'image-polling' ||
+			(job.id === 'auto-update' && $formInputs.autoUpdate.value) ||
+			(job.id === 'auto-heal' && $formInputs.autoHealEnabled.value)}
+	>
+		{#snippet headerAccessory()}
+			{@render jobEnableControl(job)}
+		{/snippet}
+
+		{@render autoUpdateSettings(job)}
+
+		{@render imagePollingSettings(job)}
+
+		{@render autoHealSettings(job)}
+		{#if job.children?.length}
+			<details class="mt-1">
+				<summary
+					class="w-fit cursor-pointer rounded-sm text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+					>{m.jobs_target_runs({ count: job.children.length })}</summary
+				>
+				<div class="mt-3 divide-y divide-border border-l border-border pl-4 sm:pl-6">
+					{#each job.children ?? [] as child (child.id)}
+						<JobCard
+							job={child}
+							{environmentId}
+							{isAgent}
+							durableRuns={durableRuns || capabilityUnknown}
+							onScheduleUpdate={loadJobs}
+						/>
+					{/each}
+				</div>
+			</details>
+		{/if}
+	</JobCard>
+{/snippet}
+
 {#snippet ContainerExclusionList(config: {
 	term: string;
 	mapItem: (container: ContainerSummaryDto) => {
@@ -255,169 +432,7 @@
 				<div class="grid items-start gap-x-12 gap-y-10 2xl:grid-cols-2">
 					{#each categories as category (category.id)}
 						{@const categoryJobs = getJobsByCategory(category.id, jobsResponse.jobs)}
-						{#if categoryJobs.length > 0}
-							<div
-								class="grid min-w-0 gap-x-6 gap-y-2 rounded-xl border border-border bg-transparent px-4 py-2 sm:px-5 lg:grid-cols-[7rem_minmax(0,1fr)]"
-							>
-								<h3 class="flex min-h-9 items-center text-sm font-semibold text-foreground lg:mt-5 lg:self-start">
-									{category.label}
-								</h3>
-								<div class="min-w-0 divide-y divide-border/50">
-									{#each categoryJobs as job (job.id)}
-										<JobCard
-											{job}
-											{environmentId}
-											isAgent={jobsResponse.isAgent}
-											durableRuns={jobsResponse.durableRuns || capabilityUnknown}
-											onScheduleUpdate={loadJobs}
-											enabledOverride={capabilityUnknown ? undefined : getEnabledOverride(job)}
-											collapsibleSettings={job.id === 'image-polling' ||
-												(job.id === 'auto-update' && $formInputs.autoUpdate.value) ||
-												(job.id === 'auto-heal' && $formInputs.autoHealEnabled.value)}
-										>
-											{#snippet headerAccessory()}
-												{#if job.id === 'image-polling'}
-													<Switch aria-label={job.name} bind:checked={$formInputs.pollingEnabled.value} />
-												{:else if job.id === 'auto-update'}
-													<Switch
-														aria-label={job.name}
-														bind:checked={$formInputs.autoUpdate.value}
-														disabled={!$formInputs.pollingEnabled.value}
-													/>
-												{:else if job.id === 'scheduled-prune'}
-													<Switch aria-label={job.name} bind:checked={$formInputs.scheduledPruneEnabled.value} />
-												{:else if job.id === 'vulnerability-scan'}
-													<Switch aria-label={job.name} bind:checked={$formInputs.vulnerabilityScanEnabled.value} />
-												{:else if job.id === 'auto-heal'}
-													<Switch aria-label={job.name} bind:checked={$formInputs.autoHealEnabled.value} />
-												{/if}
-											{/snippet}
-
-											{#if job.id === 'auto-update' && $formInputs.autoUpdate.value}
-												<div class="space-y-3 border-t border-border/20 pt-3">
-													<div class="space-y-1">
-														<Label class="text-sm font-medium">
-															{m.excluded_containers()}
-															{#await containersPromise then containers}
-																<span class="ml-1 font-normal text-muted-foreground">
-																	({containers.filter((c) => excludedContainers.has(getContainerName(c))).length})
-																</span>
-															{/await}
-														</Label>
-														<p class="text-xs text-muted-foreground">{m.auto_update_exclude_description()}</p>
-													</div>
-
-													<div class="space-y-2">
-														<Input type="search" placeholder={m.jobs_search_containers()} class="h-8" bind:value={searchTerm} />
-														{@render ContainerExclusionList({
-															term: searchTerm,
-															mapItem: mapContainerToItem,
-															idPrefix: 'container-',
-															onToggle: toggleContainerExclusion
-														})}
-													</div>
-												</div>
-											{/if}
-
-											{#if job.id === 'image-polling'}
-												<div class="space-y-3 border-t border-border/20 pt-3">
-													<div class="flex items-center justify-between gap-3">
-														<div class="space-y-1">
-															<Label class="text-sm font-medium">{m.jobs_image_event_watcher_label()}</Label>
-															<p class="text-xs text-muted-foreground">{m.jobs_image_event_watcher_description()}</p>
-														</div>
-														<Switch id="image-event-watcher-enabled" bind:checked={$formInputs.imageEventWatcherEnabled.value} />
-													</div>
-													<Alert.Root variant="warning" class="py-2 [&>svg]:top-2">
-														<AlertTriangleIcon class="size-4" />
-														<Alert.Description class="text-xs">{m.jobs_image_event_watcher_warning()}</Alert.Description>
-													</Alert.Root>
-												</div>
-											{/if}
-
-											{#if job.id === 'auto-heal' && $formInputs.autoHealEnabled.value}
-												<div class="space-y-3 border-t border-border/20 pt-3">
-													<div class="grid gap-3 sm:grid-cols-2">
-														<div class="space-y-1">
-															<Label for="auto-heal-max-restarts" class="text-sm font-medium"
-																>{m.auto_heal_max_restarts_label()}</Label
-															>
-															<p class="text-xs text-muted-foreground">{m.auto_heal_max_restarts_description()}</p>
-															<Input
-																id="auto-heal-max-restarts"
-																type="number"
-																min="1"
-																class="h-8 w-full"
-																bind:value={$formInputs.autoHealMaxRestarts.value}
-															/>
-														</div>
-														<div class="space-y-1">
-															<Label for="auto-heal-restart-window" class="text-sm font-medium"
-																>{m.auto_heal_restart_window_label()}</Label
-															>
-															<p class="text-xs text-muted-foreground">{m.auto_heal_restart_window_description()}</p>
-															<Input
-																id="auto-heal-restart-window"
-																type="number"
-																min="1"
-																class="h-8 w-full"
-																bind:value={$formInputs.autoHealRestartWindow.value}
-															/>
-														</div>
-													</div>
-
-													<div class="space-y-1">
-														<Label class="text-sm font-medium">
-															{m.excluded_containers()}
-															{#await containersPromise then containers}
-																<span class="ml-1 font-normal text-muted-foreground">
-																	({containers.filter((c) => autoHealExcludedContainers.has(getContainerName(c))).length})
-																</span>
-															{/await}
-														</Label>
-														<p class="text-xs text-muted-foreground">{m.auto_heal_exclude_description()}</p>
-													</div>
-
-													<div class="space-y-2">
-														<Input
-															type="search"
-															placeholder={m.jobs_search_containers()}
-															class="h-8"
-															bind:value={autoHealSearchTerm}
-														/>
-														{@render ContainerExclusionList({
-															term: autoHealSearchTerm,
-															mapItem: mapContainerToAutoHealItem,
-															idPrefix: 'auto-heal-container-',
-															onToggle: toggleAutoHealContainerExclusion
-														})}
-													</div>
-												</div>
-											{/if}
-											{#if job.children?.length}
-												<details class="mt-1">
-													<summary
-														class="w-fit cursor-pointer rounded-sm text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-														>{m.jobs_target_runs({ count: job.children.length })}</summary
-													>
-													<div class="mt-3 divide-y divide-border border-l border-border pl-4 sm:pl-6">
-														{#each job.children ?? [] as child (child.id)}
-															<JobCard
-																job={child}
-																{environmentId}
-																isAgent={jobsResponse.isAgent}
-																durableRuns={jobsResponse.durableRuns || capabilityUnknown}
-																onScheduleUpdate={loadJobs}
-															/>
-														{/each}
-													</div>
-												</details>
-											{/if}
-										</JobCard>
-									{/each}
-								</div>
-							</div>
-						{/if}
+						{@render jobCategory(category.label, categoryJobs, jobsResponse.isAgent, jobsResponse.durableRuns)}
 					{/each}
 				</div>
 			{/if}

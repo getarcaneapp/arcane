@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { m } from '#lib/paraglide/messages';
-	import * as Dialog from '#lib/components/ui/dialog';
-	import { Button } from '#lib/components/ui/button';
-	import { ShieldCheckIcon } from '#lib/icons';
+	import { m } from '#lib/paraglide/messages.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { ShieldCheckIcon } from '#lib/icons/index.js';
 
 	let {
 		open = $bindable(false),

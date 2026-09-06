@@ -2,16 +2,16 @@
 	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { Switch } from '#lib/components/ui/switch/index.js';
-	import type { AppVersionInformation, Settings } from '#lib/types/settings';
-	import { m } from '#lib/paraglide/messages';
-	import { CopyButton } from '#lib/components/ui/copy-button';
-	import { getApplicationLogo } from '#lib/utils/docker';
-	import { accentColorPreviewStore } from '#lib/utils/theme';
-	import { ExternalLinkIcon, GithubIcon, BookOpenIcon } from '#lib/icons';
-	import { hasPermission } from '#lib/utils/auth';
-	import settingsStore from '#lib/stores/config-store';
-	import { settingsService } from '#lib/services/settings-service';
-	import { handleApiResultWithCallbacks, tryCatch } from '#lib/utils/api';
+	import type { AppVersionInformation, Settings } from '#lib/types/settings.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
+	import { getApplicationLogo } from '#lib/utils/docker.js';
+	import { accentColorPreviewStore } from '#lib/utils/theme.js';
+	import { ExternalLinkIcon, GithubIcon, BookOpenIcon } from '#lib/icons/index.js';
+	import { hasPermission } from '#lib/utils/auth.js';
+	import settingsStore from '#lib/stores/config-store.js';
+	import { settingsService } from '#lib/services/settings-service.js';
+	import { handleApiResultWithCallbacks, tryCatch } from '#lib/utils/api.js';
 	import { toast } from 'svelte-sonner';
 
 	interface Props {

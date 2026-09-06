@@ -1,5 +1,5 @@
 import { writable } from 'svelte/store';
-import type { ApplicationTheme } from '#lib/types/settings';
+import type { ApplicationTheme } from '#lib/types/settings.js';
 
 const APPLICATION_THEME_VALUES = [
 	'default',

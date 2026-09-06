@@ -1,15 +1,15 @@
 import { goto, refreshAll } from '$app/navigation';
 import BaseAPIService, { APIError } from './api-service';
-import userStore from '#lib/stores/user-store';
-import type { User, MFAChallenge, AuthenticationResponse } from '#lib/types/auth';
-import type { OidcStatusInfo } from '#lib/types/settings';
-import type { LoginCredentials, AutoLoginConfig } from '#lib/types/auth';
+import userStore from '#lib/stores/user-store.js';
+import type { User, MFAChallenge, AuthenticationResponse } from '#lib/types/auth.js';
+import type { OidcStatusInfo } from '#lib/types/settings.js';
+import type { LoginCredentials, AutoLoginConfig } from '#lib/types/auth.js';
 import type { QueryClient } from '@tanstack/svelte-query';
-import { activityStore } from '#lib/stores/activity.store.svelte';
-import { dashboardStore } from '#lib/stores/dashboard.store.svelte';
-import { environmentStatusStore } from '#lib/stores/environment-status.store.svelte';
-import { getEffectiveLandingPage } from '#lib/utils/navigation';
-import { parseInstant } from '#lib/utils/formatting';
+import { activityStore } from '#lib/stores/activity.store.svelte.js';
+import { dashboardStore } from '#lib/stores/dashboard.store.svelte.js';
+import { environmentStatusStore } from '#lib/stores/environment-status.store.svelte.js';
+import { getEffectiveLandingPage } from '#lib/utils/navigation.js';
+import { parseInstant } from '#lib/utils/formatting.js';
 import { Temporal } from 'temporal-polyfill';
 
 const REFRESH_TOKEN_KEY = 'arcane_refresh_token';

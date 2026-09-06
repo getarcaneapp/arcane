@@ -1,13 +1,19 @@
 <script lang="ts">
 	import { Temporal } from 'temporal-polyfill';
 	import { Progress } from '#lib/components/ui/progress/index.js';
-	import { Badge } from '#lib/components/ui/badge';
-	import { ArrowDownIcon } from '#lib/icons';
-	import { m } from '#lib/paraglide/messages';
-	import { cn } from '#lib/utils';
-	import { formatRelativeTime, formatDateTime, parseInstant } from '#lib/utils/formatting';
-	import type { Activity, ActivityStatus } from '#lib/types/activity.type';
-	import { activityStatusLabel, activityStatusVariant, activityTypeIcon, activityTypeLabel } from './activity-labels';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { ArrowDownIcon } from '#lib/icons/index.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { cn } from '#lib/utils.js';
+	import { formatRelativeTime, formatDateTime, parseInstant } from '#lib/utils/formatting.js';
+	import type { Activity } from '#lib/types/activity.type.js';
+	import {
+		activityStatusAccentClass,
+		activityStatusLabel,
+		activityStatusVariant,
+		activityTypeIcon,
+		activityTypeLabel
+	} from './activity-labels';
 
 	let {
 		activity,
@@ -32,20 +38,6 @@
 	const referenceDate = $derived(activity.endedAt || activity.startedAt);
 	const relativeTime = $derived(formatRelativeTime(referenceDate));
 
-	function statusAccentClass(status: ActivityStatus): string {
-		switch (status) {
-			case 'failed':
-				return 'bg-red-500';
-			case 'running':
-				return 'bg-blue-500';
-			case 'queued':
-				return 'bg-amber-500';
-			case 'success':
-				return 'bg-emerald-500';
-			case 'cancelled':
-				return 'bg-muted-foreground/40';
-		}
-	}
 	function formatDateTimeInternal(value?: string): string {
 		if (!value) {
 			return m.common_na();
@@ -88,7 +80,7 @@
 		aria-hidden="true"
 		class={cn(
 			'absolute top-2 bottom-2 left-0 rounded-r-full transition-all',
-			statusAccentClass(activity.status),
+			activityStatusAccentClass(activity.status),
 			expanded ? 'w-1' : 'w-0.5'
 		)}
 	></span>

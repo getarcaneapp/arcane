@@ -2,18 +2,18 @@
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
-	import { Badge } from '#lib/components/ui/badge';
+	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { toast } from 'svelte-sonner';
-	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
-	import type { FederatedCredential } from '#lib/types/auth';
-	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '#lib/components/arcane-table';
-	import { UniversalMobileCard } from '#lib/components/arcane-table';
-	import { federatedCredentialService } from '#lib/services/federated-credential-service';
-	import { formatOptionalDateTime, isPastDate } from '#lib/utils/formatting';
+	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import type { FederatedCredential } from '#lib/types/auth.js';
+	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '#lib/components/arcane-table/index.js';
+	import { UniversalMobileCard } from '#lib/components/arcane-table/index.js';
+	import { federatedCredentialService } from '#lib/services/federated-credential-service.js';
+	import { formatOptionalDateTime, isPastDate } from '#lib/utils/formatting.js';
 	import * as m from '#lib/paraglide/messages.js';
-	import { LockIcon, TrashIcon, EditIcon } from '#lib/icons';
-	import { isGlobalAdmin } from '#lib/utils/auth';
-	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions';
+	import { LockIcon, TrashIcon, EditIcon } from '#lib/icons/index.js';
+	import { isGlobalAdmin } from '#lib/utils/auth.js';
+	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions.js';
 
 	let {
 		federatedCredentials = $bindable(),

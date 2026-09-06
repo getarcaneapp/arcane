@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { CopyButton } from '#lib/components/ui/copy-button';
-	import { activityStore } from '#lib/stores/activity.store.svelte';
-	import type { Activity } from '#lib/types/activity.type';
-	import { ActivityIcon, TerminalIcon } from '#lib/icons';
-	import { m } from '#lib/paraglide/messages';
+	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
+	import { activityStore } from '#lib/stores/activity.store.svelte.js';
+	import type { Activity } from '#lib/types/activity.type.js';
+	import { ActivityIcon, TerminalIcon } from '#lib/icons/index.js';
+	import { m } from '#lib/paraglide/messages.js';
 	import ActivityOutput from './activity-output.svelte';
 
 	let { activity }: { activity: Activity } = $props();

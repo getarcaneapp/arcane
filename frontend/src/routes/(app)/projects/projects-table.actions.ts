@@ -1,16 +1,16 @@
-import { openConfirmDialog } from '#lib/components/confirm-dialog';
-import { m } from '#lib/paraglide/messages';
-import { deployOptionsStore } from '#lib/stores/deploy-options.store.svelte';
-import { gitOpsSyncService } from '#lib/services/gitops-sync-service';
-import { projectService } from '#lib/services/project-service';
-import type { SearchPaginationSortRequest } from '#lib/types/shared';
-import { handleApiResultWithCallbacks } from '#lib/utils/api';
-import { tryCatch } from '#lib/utils/api';
-import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
-import type { TableActionConfig, TableBulkActionConfig } from '#lib/utils/table-action-types';
+import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
+import { m } from '#lib/paraglide/messages.js';
+import { deployOptionsStore } from '#lib/stores/deploy-options.store.svelte.js';
+import { gitOpsSyncService } from '#lib/services/gitops-sync-service.js';
+import { projectService } from '#lib/services/project-service.js';
+import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+import { tryCatch } from '#lib/utils/api.js';
+import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
+import type { TableActionConfig, TableBulkActionConfig } from '#lib/utils/table-action-types.js';
 import { toast } from 'svelte-sonner';
 import type { ActionStatus } from './projects-table.helpers';
-import { bulkConfirmAndRun } from '#lib/utils/bulk-actions';
+import { bulkConfirmAndRun } from '#lib/utils/bulk-actions.js';
 
 type BulkLoadingState = {
 	up: boolean;
@@ -55,7 +55,7 @@ type ProjectActions = {
 const projectActionConfigs: Record<ProjectActionKind, ProjectActionConfig> = {
 	start: {
 		status: 'starting',
-		run: (id) => projectService.deployProject(id, deployOptionsStore.takeRequestOptions()),
+		run: (id) => projectService.deployProject(id, 'up', deployOptionsStore.takeRequestOptions()),
 		success: () => m.compose_start_success(),
 		failure: () => m.compose_start_failed()
 	},
@@ -73,7 +73,7 @@ const projectActionConfigs: Record<ProjectActionKind, ProjectActionConfig> = {
 	},
 	redeploy: {
 		status: 'redeploying',
-		run: (id) => projectService.redeployProject(id, deployOptionsStore.takeRequestOptions()),
+		run: (id) => projectService.deployProject(id, 'redeploy', deployOptionsStore.takeRequestOptions()),
 		success: () => m.compose_pull_success(),
 		failure: () => m.compose_pull_failed()
 	},
@@ -208,7 +208,7 @@ export function createProjectActions({
 			message: (count) => m.projects_bulk_up_confirm_message({ count }),
 			label: m.common_up(),
 			loadingKey: 'up',
-			run: (id) => projectService.deployProject(id, (deployOptions ??= deployOptionsStore.takeRequestOptions())),
+			run: (id) => projectService.deployProject(id, 'up', (deployOptions ??= deployOptionsStore.takeRequestOptions())),
 			success: (count) => m.projects_bulk_up_success({ count }),
 			partial: (success, total, failed) => m.projects_bulk_up_partial({ success, total, failed }),
 			failure: () => m.compose_start_failed()
@@ -236,7 +236,7 @@ export function createProjectActions({
 			message: (count) => m.projects_bulk_redeploy_confirm_message({ count }),
 			label: m.compose_pull_redeploy(),
 			loadingKey: 'redeploy',
-			run: (id) => projectService.redeployProject(id, (deployOptions ??= deployOptionsStore.takeRequestOptions())),
+			run: (id) => projectService.deployProject(id, 'redeploy', (deployOptions ??= deployOptionsStore.takeRequestOptions())),
 			success: (count) => m.projects_bulk_redeploy_success({ count }),
 			partial: (success, total, failed) => m.projects_bulk_redeploy_partial({ success, total, failed }),
 			failure: () => m.compose_pull_failed()

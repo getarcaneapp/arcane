@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
-	import { Badge, type BadgeVariant } from '#lib/components/ui/badge';
+	import { Badge, type BadgeVariant } from '#lib/components/ui/badge/index.js';
 	import { toast } from 'svelte-sonner';
-	import type { ImageUpdateData } from '#lib/types/docker';
-	import { m } from '#lib/paraglide/messages';
-	import { imageService } from '#lib/services/image-service';
-	import { queryKeys } from '#lib/query/query-keys';
-	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import type { ImageUpdateData } from '#lib/types/docker.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { imageService } from '#lib/services/image-service.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { Component } from 'svelte';
 	import {
 		ArrowRightIcon,
@@ -17,14 +17,14 @@
 		CircleArrowUpIcon,
 		BoxIcon,
 		DownloadIcon
-	} from '#lib/icons';
+	} from '#lib/icons/index.js';
 	import { createQuery } from '@tanstack/svelte-query';
 	import UpdateStatusPopover from '#lib/components/update-status-popover.svelte';
 	import UpdateStatusBanner from '#lib/components/update-status-banner.svelte';
-	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
+	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import UncheckedRingIcon from '#lib/components/unchecked-ring-icon.svelte';
 	import { mergeProps } from 'bits-ui';
-	import { instantEpochMilliseconds, nowInstantString } from '#lib/utils/formatting';
+	import { instantEpochMilliseconds, nowInstantString } from '#lib/utils/formatting.js';
 
 	interface Props {
 		updateInfo?: ImageUpdateData;
@@ -391,34 +391,13 @@
 	</div>
 {/snippet}
 
-{#snippet digestUpdateState()}
+{#snippet digestState(title: string, description: string, icon: Component)}
 	<div class="bg-linear-to-br from-blue-50 to-cyan-50/30 p-4 dark:from-blue-950/20 dark:to-cyan-950/10">
 		<div class="flex items-start gap-3">
-			{@render iconCircle(CircleArrowUpIcon, 'from-blue-500', 'to-cyan-500', 'shadow-blue-500/25')}
+			{@render iconCircle(icon, 'from-blue-500', 'to-cyan-500', 'shadow-blue-500/25')}
 			<div class="flex-1">
-				<div class="text-sm font-semibold text-blue-950 dark:text-blue-100">{m.image_update_digest_title()}</div>
-				<div class="text-xs text-blue-900/80 dark:text-blue-300/80">{m.image_update_digest_desc()}</div>
-				{@render authBadgeDisplay()}
-			</div>
-		</div>
-	</div>
-	{@render updateDetails(
-		m.image_update_latest_digest_label(),
-		'bg-blue-100 dark:bg-blue-900/30',
-		'text-blue-800 dark:text-blue-300',
-		'bg-blue-50 dark:bg-blue-950/30',
-		'text-blue-800 dark:text-blue-300'
-	)}
-	{@render recheckButton()}
-{/snippet}
-
-{#snippet notPulledState()}
-	<div class="bg-linear-to-br from-blue-50 to-cyan-50/30 p-4 dark:from-blue-950/20 dark:to-cyan-950/10">
-		<div class="flex items-start gap-3">
-			{@render iconCircle(DownloadIcon, 'from-blue-500', 'to-cyan-500', 'shadow-blue-500/25')}
-			<div class="flex-1">
-				<div class="text-sm font-semibold text-blue-950 dark:text-blue-100">{m.image_update_not_pulled_title()}</div>
-				<div class="text-xs text-blue-900/80 dark:text-blue-300/80">{m.image_update_not_pulled_desc()}</div>
+				<div class="text-sm font-semibold text-blue-950 dark:text-blue-100">{title}</div>
+				<div class="text-xs text-blue-900/80 dark:text-blue-300/80">{description}</div>
 				{@render authBadgeDisplay()}
 			</div>
 		</div>
@@ -543,11 +522,11 @@
 				{#if hasError}
 					{@render errorState()}
 				{:else if effectiveUpdateInfo?.updateType === 'not_pulled'}
-					{@render notPulledState()}
+					{@render digestState(m.image_update_not_pulled_title(), m.image_update_not_pulled_desc(), DownloadIcon)}
 				{:else if !effectiveUpdateInfo?.hasUpdate}
 					{@render successState()}
 				{:else if effectiveUpdateInfo?.updateType === 'digest'}
-					{@render digestUpdateState()}
+					{@render digestState(m.image_update_digest_title(), m.image_update_digest_desc(), CircleArrowUpIcon)}
 				{:else}
 					{@render versionUpdateState()}
 				{/if}

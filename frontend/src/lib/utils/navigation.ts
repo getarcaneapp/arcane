@@ -6,8 +6,8 @@ import {
 	defaultMobileNavigationSettings,
 	getLandingPageNavItems,
 	type MobileNavigationSettings
-} from '#lib/config/navigation-config';
-import userStore from '#lib/stores/user-store';
+} from '#lib/config/navigation-config.js';
+import userStore from '#lib/stores/user-store.js';
 
 // --- Mobile nav state ---
 
@@ -112,21 +112,18 @@ export function isEditableTarget(target: EventTarget | null): boolean {
 	return !!target.closest('[contenteditable="true"]');
 }
 
+const shortcutLabels = new Map<string, readonly [string, string]>([
+	['mod', ['Ctrl', '⌘']],
+	['shift', ['Shift', '⇧']],
+	['alt', ['Alt', '⌥']],
+	['ctrl', ['Ctrl', '⌃']],
+	['meta', ['Win', '⌘']]
+]);
+
 function formatShortcutKey(key: ShortcutKey, isMac: boolean): string {
-	switch (key) {
-		case 'mod':
-			return isMac ? '⌘' : 'Ctrl';
-		case 'shift':
-			return isMac ? '⇧' : 'Shift';
-		case 'alt':
-			return isMac ? '⌥' : 'Alt';
-		case 'ctrl':
-			return isMac ? '⌃' : 'Ctrl';
-		case 'meta':
-			return isMac ? '⌘' : 'Win';
-		default:
-			return key.length === 1 ? key.toUpperCase() : key;
-	}
+	const labels = shortcutLabels.get(key);
+	if (labels) return labels[isMac ? 1 : 0];
+	return key.length === 1 ? key.toUpperCase() : key;
 }
 
 function getExpectedCode(key: string): string | null {
@@ -202,29 +199,13 @@ function toGitWebUrl(raw: string): string | null {
 		}
 	}
 
-	const scpMatch = /^(?:.+@)?([^:\/]+):(.+)$/.exec(trimmed);
-	if (scpMatch) {
-		const host = scpMatch[1];
-		const matchedPath = scpMatch[2];
-		if (!host || !matchedPath) return null;
-
-		const path = stripGitSuffix(matchedPath.replace(/^\/+/, ''));
-		if (!host || !path) return null;
-		return `https://${host}/${path}`;
-	}
-
-	const hostPathMatch = /^([^\/]+)\/(.+)$/.exec(trimmed);
-	if (hostPathMatch) {
-		const host = hostPathMatch[1];
-		const matchedPath = hostPathMatch[2];
-		if (!host || !matchedPath) return null;
-
-		const path = stripGitSuffix(matchedPath.replace(/^\/+/, ''));
-		if (!host || !path) return null;
-		return `https://${host}/${path}`;
-	}
-
-	return null;
+	const match = /^(?:.+@)?([^:\/]+):(.+)$/.exec(trimmed) ?? /^([^\/]+)\/(.+)$/.exec(trimmed);
+	if (!match) return null;
+	const host = match[1];
+	const matchedPath = match[2];
+	if (!host || !matchedPath) return null;
+	const path = stripGitSuffix(matchedPath.replace(/^\/+/, ''));
+	return path ? `https://${host}/${path}` : null;
 }
 
 export function toGitCommitUrl(repositoryUrl: string, commit: string): string | null {

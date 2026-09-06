@@ -1,23 +1,23 @@
 <script lang="ts">
-	import * as Tabs from '#lib/components/ui/tabs';
-	import * as Dialog from '#lib/components/ui/dialog';
-	import * as Alert from '#lib/components/ui/alert';
+	import * as Tabs from '#lib/components/ui/tabs/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { toast } from 'svelte-sonner';
 	import { getContext, onMount } from 'svelte';
-	import { SettingsPageLayout } from '#lib/layouts';
-	import settingsStore from '#lib/stores/config-store';
-	import { m } from '#lib/paraglide/messages';
-	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte';
-	import { notificationService } from '#lib/services/notification-service';
-	import { type NotificationProviderKey, NOTIFICATION_PROVIDER_KEYS } from '#lib/types/notifications';
-	import { AlertIcon, NotificationsIcon } from '#lib/icons';
-	import { settingsService } from '#lib/services/settings-service';
-	import type { Settings } from '#lib/types/settings';
-	import { hasPermission } from '#lib/utils/auth';
-	import { TabBar, type TabItem } from '#lib/components/tab-bar';
+	import { SettingsPageLayout } from '#lib/layouts/index.js';
+	import settingsStore from '#lib/stores/config-store.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
+	import { notificationService } from '#lib/services/notification-service.js';
+	import { type NotificationProviderKey, NOTIFICATION_PROVIDER_KEYS } from '#lib/types/notifications.js';
+	import { AlertIcon, NotificationsIcon } from '#lib/icons/index.js';
+	import { settingsService } from '#lib/services/settings-service.js';
+	import type { Settings } from '#lib/types/settings.js';
+	import { hasPermission } from '#lib/utils/auth.js';
+	import { TabBar, type TabItem } from '#lib/components/tab-bar/index.js';
 	import { BuiltInProviderForm } from './providers';
 	import {
 		cloneNotificationProviderFormState,
@@ -28,11 +28,11 @@
 		type NotificationProviderFormState,
 		type NotificationSettingsByProvider,
 		updateNotificationProviderFormState
-	} from '#lib/utils/notification-providers';
-	import { extractApiErrorMessage, handleApiResultWithCallbacks, tryCatch } from '#lib/utils/api';
-	import { apnsService } from '#lib/services/apns-service';
-	import type { ApnsDevice } from '#lib/types/apns';
-	import { formatRelativeTime } from '#lib/utils/formatting';
+	} from '#lib/utils/notification-providers.js';
+	import { extractApiErrorMessage, handleApiResultWithCallbacks, tryCatch } from '#lib/utils/api.js';
+	import { apnsService } from '#lib/services/apns-service.js';
+	import type { ApnsDevice } from '#lib/types/apns.js';
+	import { formatRelativeTime } from '#lib/utils/formatting.js';
 
 	let { data } = $props();
 

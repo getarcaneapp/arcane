@@ -1,13 +1,13 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
 	import { untrack } from 'svelte';
-	import { handleApiResultWithCallbacks, tryCatch } from '#lib/utils/api';
+	import { handleApiResultWithCallbacks, tryCatch } from '#lib/utils/api.js';
 	import FederatedCredentialTable from './federated-credential-table.svelte';
 	import FederatedCredentialFormSheet from '#lib/components/sheets/federated-credential-form-sheet.svelte';
-	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
-	import type { CreateFederatedCredential, FederatedCredential, Role } from '#lib/types/auth';
-	import type { Environment } from '#lib/types/environment';
-	import { federatedCredentialService } from '#lib/services/federated-credential-service';
+	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import type { CreateFederatedCredential, FederatedCredential, Role } from '#lib/types/auth.js';
+	import type { Environment } from '#lib/types/environment.js';
+	import { federatedCredentialService } from '#lib/services/federated-credential-service.js';
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { Snippet } from '#lib/components/ui/snippet/index.js';

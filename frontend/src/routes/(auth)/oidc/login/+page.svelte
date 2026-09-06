@@ -2,8 +2,8 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { m } from '#lib/paraglide/messages';
-	import { authService } from '#lib/services/auth-service';
+	import { m } from '#lib/paraglide/messages.js';
+	import { authService } from '#lib/services/auth-service.js';
 	import OidcStatusPanel from '#lib/components/oidc-status-panel.svelte';
 	import { createMutation } from '@tanstack/svelte-query';
 

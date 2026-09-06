@@ -4,12 +4,12 @@
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import FormInput from '#lib/components/form/form-input.svelte';
 	import RepoTagFields from '#lib/components/form/repo-tag-fields.svelte';
-	import { createForm, preventDefault } from '#lib/utils/settings';
-	import { containerService } from '#lib/services/container-service';
-	import { m } from '#lib/paraglide/messages';
+	import { createForm, preventDefault } from '#lib/utils/settings.js';
+	import { containerService } from '#lib/services/container-service.js';
+	import { m } from '#lib/paraglide/messages.js';
 	import { toast } from 'svelte-sonner';
 	import { z } from 'zod/v4';
-	import { InfoIcon } from '#lib/icons';
+	import { InfoIcon } from '#lib/icons/index.js';
 
 	type Props = {
 		open: boolean;

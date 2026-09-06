@@ -1,11 +1,11 @@
 <script lang="ts">
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import { ArrowLeftIcon } from '#lib/icons';
+	import { ArrowLeftIcon } from '#lib/icons/index.js';
 	import { goto, refreshAll } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
-	import { preventDefault, createForm } from '#lib/utils/settings';
+	import { preventDefault, createForm } from '#lib/utils/settings.js';
 	import TemplateSelectionDialog from '#lib/components/dialogs/template-selection-dialog.svelte';
-	import { m } from '#lib/paraglide/messages';
+	import { m } from '#lib/paraglide/messages.js';
 	import { projectService } from '#lib/services/project-service.js';
 	import ComposeCreateMenu from '#lib/components/compose-create-menu.svelte';
 	import ComposeFileEditorPanel from '#lib/components/compose-file-editor-panel.svelte';
@@ -13,22 +13,22 @@
 	import EditableName from '../components/EditableName.svelte';
 	import WorkspaceFileTreePanel from '#lib/components/workspace-file-tree-panel.svelte';
 	import EditorTabStrip from '#lib/components/editor-tab-strip.svelte';
-	import { environmentStore } from '#lib/stores/environment.store.svelte';
-	import { hasPermission } from '#lib/utils/auth';
-	import { containerService } from '#lib/services/container-service';
-	import { openConfirmDialog } from '#lib/components/confirm-dialog';
-	import { extractApiErrorMessage, tryCatch } from '#lib/utils/api';
-	import { ComposeEditorSplit } from '#lib/components/compose';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import { hasPermission } from '#lib/utils/auth.js';
+	import { containerService } from '#lib/services/container-service.js';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
+	import { extractApiErrorMessage, tryCatch } from '#lib/utils/api.js';
+	import { ComposeEditorSplit } from '#lib/components/compose/index.js';
 	import ResizableSplit from '#lib/components/resizable-split.svelte';
-	import { Switch } from '#lib/components/ui/switch';
+	import { Switch } from '#lib/components/ui/switch/index.js';
 	import DockerRunConverterDialog from '#lib/components/compose/docker-run-converter-dialog.svelte';
-	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
-	import { globalVariablesToMap } from '#lib/utils/template-load';
-	import type { ProjectTag } from '#lib/types/swarm';
+	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
+	import { globalVariablesToMap } from '#lib/utils/template-load.js';
+	import type { ProjectTag } from '#lib/types/swarm.js';
 	import ProjectTagEditor from '#lib/components/project-tag-editor.svelte';
 	import { createQuery } from '@tanstack/svelte-query';
-	import { queryKeys } from '#lib/query/query-keys';
-	import settingsStore from '#lib/stores/config-store';
+	import { queryKeys } from '#lib/query/query-keys.js';
+	import settingsStore from '#lib/stores/config-store.js';
 	import {
 		planProjectWorkspaceFileCreate,
 		planProjectWorkspaceFileRename,
@@ -39,8 +39,8 @@
 		workspaceFileBasename,
 		workspaceFileLanguage,
 		workspaceReadOnlyMessage
-	} from '#lib/utils/workspace-files';
-	import { WorkspaceDraftState } from '#lib/components/workspace-editor/workspace-draft-state.svelte';
+	} from '#lib/utils/workspace-files.js';
+	import { WorkspaceDraftState } from '#lib/components/workspace-editor/workspace-draft-state.svelte.js';
 	import {
 		composeTreeSplitProps,
 		createComposeEditorSchema,
@@ -48,12 +48,12 @@
 		extractComposeYamlName,
 		submitComposeResourceForm,
 		templateNameSlug
-	} from '#lib/utils/compose-flow';
+	} from '#lib/utils/compose-flow.js';
 	import {
 		getTemplateEditorValidationState,
 		hasTemplateEditorErrors,
 		validateTemplateEditorForm
-	} from '#lib/utils/template-editor';
+	} from '#lib/utils/template-editor.js';
 
 	let { data } = $props();
 
@@ -156,6 +156,7 @@
 	// The compose file's top-level `name:` is authoritative; surface it as the
 	// effective name without writing to form state reactively.
 	const effectiveName = $derived(composeYamlName ?? $inputs.name.value);
+	const createMenuBusy = $derived(ui.saving || ui.converting || ui.isLoadingTemplateContent);
 
 	async function handleSubmit() {
 		if (sourceContainerIds.length > 0 && canDeleteContainers) {
@@ -238,6 +239,76 @@
 	}
 </script>
 
+{#snippet newProjectWorkspaceEditor()}
+	{#key activeProjectTab}
+		{#if activeProjectTab === 'compose'}
+			<CodePanel
+				variant="plain"
+				{...composePanelProps()}
+				bind:open={composeOpen}
+				bind:value={$inputs.composeContent.value}
+				bind:hasErrors={validation.composeHasErrors}
+				bind:validationReady={validation.composeValidationReady}
+				bind:outlineOpen={treeOutlineOpen}
+				bind:diffOpen={treeDiffOpen}
+				bind:commandPaletteOpen={treeCommandPaletteOpen}
+			/>
+		{:else if activeProjectTab === 'env'}
+			<CodePanel
+				variant="plain"
+				{...envPanelProps()}
+				bind:open={envOpen}
+				bind:value={$inputs.envContent.value}
+				bind:hasErrors={validation.envHasErrors}
+				bind:validationReady={validation.envValidationReady}
+				bind:outlineOpen={treeOutlineOpen}
+				bind:diffOpen={treeDiffOpen}
+				bind:commandPaletteOpen={treeCommandPaletteOpen}
+			/>
+		{:else if activeProjectTab.startsWith('file:')}
+			{@const relativePath = activeProjectTab.slice(5)}
+			{#if workspaceDraft.binaryFiles[relativePath]}
+				<div class="flex h-full min-h-0 items-center justify-center px-4 text-center text-sm text-muted-foreground">
+					{workspaceReadOnlyMessage('binary', projectWorkspaceMaxFileSizeMb)}
+				</div>
+			{:else}
+				<CodePanel
+					variant="plain"
+					open={true}
+					title={relativePath}
+					language={workspaceFileLanguage(relativePath)}
+					validationMode="none"
+					bind:value={workspaceDraft.contents[relativePath]}
+					bind:hasErrors={workspaceDraft.hasErrors[relativePath]}
+					bind:validationReady={workspaceDraft.validationReady[relativePath]}
+					fileId={`projects:new:file:${relativePath}`}
+					originalValue=""
+					enableDiff={true}
+					editorContext={codeEditorContext}
+					bind:outlineOpen={treeOutlineOpen}
+					bind:diffOpen={treeDiffOpen}
+					bind:commandPaletteOpen={treeCommandPaletteOpen}
+				/>
+			{/if}
+		{/if}
+	{/key}
+{/snippet}
+
+{#snippet projectNameField(variant: 'inline' | 'block')}
+	<EditableName
+		bind:value={$inputs.name.value}
+		displayValue={effectiveName}
+		bind:ref={nameInputRef}
+		{variant}
+		error={$inputs.name.error ?? undefined}
+		originalValue=""
+		placeholder={m.compose_project_name_placeholder()}
+		canEdit={!ui.saving && !ui.isLoadingTemplateContent && !composeYamlName}
+		disabledMessage={composeYamlName ? m.compose_project_name_defined_in_yaml() : undefined}
+		class={variant === 'inline' ? 'hidden sm:block' : undefined}
+	/>
+{/snippet}
+
 <div class="flex h-full min-h-0 flex-col bg-background">
 	<div class="sticky top-0 mb-2 border-b">
 		<div class="mx-auto flex h-16 max-w-full items-center justify-between gap-4 px-6">
@@ -253,41 +324,25 @@
 				/>
 				<div class="hidden h-4 w-px bg-border sm:block"></div>
 				<div class="hidden items-center gap-3 sm:flex">
-					<EditableName
-						bind:value={$inputs.name.value}
-						displayValue={effectiveName}
-						bind:ref={nameInputRef}
-						variant="inline"
-						error={$inputs.name.error ?? undefined}
-						originalValue=""
-						placeholder={m.compose_project_name_placeholder()}
-						canEdit={!ui.saving && !ui.isLoadingTemplateContent && !composeYamlName}
-						disabledMessage={composeYamlName ? m.compose_project_name_defined_in_yaml() : undefined}
-						class="hidden sm:block"
-					/>
+					{@render projectNameField('inline')}
 					<ProjectTagEditor bind:tags={newProjectTags} availableTags={availableProjectTags} canEdit={!ui.saving} />
 				</div>
 			</div>
 
 			<div class="flex items-center gap-2">
 				<ComposeCreateMenu
-					tooltipOpen={!effectiveName && !ui.saving && !ui.converting && !ui.isLoadingTemplateContent ? undefined : false}
+					tooltipOpen={!effectiveName && !createMenuBusy ? undefined : false}
 					tooltipVisible={effectiveName === ''}
 					tooltipTitle={m.compose_project_name_tooltip_title()}
 					tooltipDescription={m.compose_project_name_tooltip_description()}
 					tooltipExample={m.compose_project_name_tooltip_example()}
 					showCreateButton={!hasEditorErrors && canCreateProject}
-					createDisabled={!effectiveName ||
-						!$inputs.composeContent.value ||
-						hasEditorErrors ||
-						ui.saving ||
-						ui.converting ||
-						ui.isLoadingTemplateContent}
+					createDisabled={!effectiveName || !$inputs.composeContent.value || hasEditorErrors || createMenuBusy}
 					createLoading={ui.saving}
 					createLabel={m.compose_create_project()}
 					createLoadingLabel={m.common_action_creating()}
 					onCreate={() => handleSubmit()}
-					itemsDisabled={ui.saving || ui.converting || ui.isLoadingTemplateContent}
+					itemsDisabled={createMenuBusy}
 					useTemplateLabel={m.common_use_template()}
 					onUseTemplate={() => {
 						// fallow-ignore-next-line code-duplication -- shared ComposeCreateMenu wiring with swarm stack create; labels/handlers are page-specific
@@ -301,10 +356,8 @@
 					createTemplateDisabled={!$inputs.name.value ||
 						!$inputs.composeContent.value ||
 						hasEditorErrors ||
-						ui.saving ||
-						ui.converting ||
-						ui.creatingTemplate ||
-						ui.isLoadingTemplateContent}
+						createMenuBusy ||
+						ui.creatingTemplate}
 					createTemplateLoading={ui.creatingTemplate}
 					onCreateTemplate={handleCreateTemplate}
 					createTemplatePermission="templates:create"
@@ -317,17 +370,7 @@
 		<div class="mx-auto h-full w-full max-w-full min-w-0">
 			<div class="flex h-full min-h-0 flex-col gap-4">
 				<div class="block flex-shrink-0 py-4 sm:hidden">
-					<EditableName
-						bind:value={$inputs.name.value}
-						displayValue={effectiveName}
-						bind:ref={nameInputRef}
-						variant="block"
-						error={$inputs.name.error ?? undefined}
-						originalValue=""
-						placeholder={m.compose_project_name_placeholder()}
-						canEdit={!ui.saving && !ui.isLoadingTemplateContent && !composeYamlName}
-						disabledMessage={composeYamlName ? m.compose_project_name_defined_in_yaml() : undefined}
-					/>
+					{@render projectNameField('block')}
 					<ProjectTagEditor bind:tags={newProjectTags} availableTags={availableProjectTags} canEdit={!ui.saving} class="mt-2" />
 				</div>
 
@@ -399,60 +442,7 @@
 										{/snippet}
 									</EditorTabStrip>
 									<div class="flex min-h-0 flex-1 flex-col">
-										{#key activeProjectTab}
-											{#if activeProjectTab === 'compose'}
-												<CodePanel
-													variant="plain"
-													{...composePanelProps()}
-													bind:open={composeOpen}
-													bind:value={$inputs.composeContent.value}
-													bind:hasErrors={validation.composeHasErrors}
-													bind:validationReady={validation.composeValidationReady}
-													bind:outlineOpen={treeOutlineOpen}
-													bind:diffOpen={treeDiffOpen}
-													bind:commandPaletteOpen={treeCommandPaletteOpen}
-												/>
-											{:else if activeProjectTab === 'env'}
-												<CodePanel
-													variant="plain"
-													{...envPanelProps()}
-													bind:open={envOpen}
-													bind:value={$inputs.envContent.value}
-													bind:hasErrors={validation.envHasErrors}
-													bind:validationReady={validation.envValidationReady}
-													bind:outlineOpen={treeOutlineOpen}
-													bind:diffOpen={treeDiffOpen}
-													bind:commandPaletteOpen={treeCommandPaletteOpen}
-												/>
-											{:else if activeProjectTab.startsWith('file:')}
-												{@const relativePath = activeProjectTab.slice(5)}
-												{#if workspaceDraft.binaryFiles[relativePath]}
-													<div
-														class="flex h-full min-h-0 items-center justify-center px-4 text-center text-sm text-muted-foreground"
-													>
-														{workspaceReadOnlyMessage('binary', projectWorkspaceMaxFileSizeMb)}
-													</div>
-												{:else}
-													<CodePanel
-														variant="plain"
-														open={true}
-														title={relativePath}
-														language={workspaceFileLanguage(relativePath)}
-														validationMode="none"
-														bind:value={workspaceDraft.contents[relativePath]}
-														bind:hasErrors={workspaceDraft.hasErrors[relativePath]}
-														bind:validationReady={workspaceDraft.validationReady[relativePath]}
-														fileId={`projects:new:file:${relativePath}`}
-														originalValue=""
-														enableDiff={true}
-														editorContext={codeEditorContext}
-														bind:outlineOpen={treeOutlineOpen}
-														bind:diffOpen={treeDiffOpen}
-														bind:commandPaletteOpen={treeCommandPaletteOpen}
-													/>
-												{/if}
-											{/if}
-										{/key}
+										{@render newProjectWorkspaceEditor()}
 									</div>
 								</div>
 							{/snippet}

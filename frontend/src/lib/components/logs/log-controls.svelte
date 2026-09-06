@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import * as ArcaneTooltip from '#lib/components/arcane-tooltip';
+	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
 	import SwitchWithLabel from '#lib/components/form/labeled-switch.svelte';
-	import { EllipsisIcon } from '#lib/icons';
+	import { EllipsisIcon } from '#lib/icons/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import * as Select from '#lib/components/ui/select';
+	import * as Select from '#lib/components/ui/select/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
-	import { m } from '#lib/paraglide/messages';
+	import { m } from '#lib/paraglide/messages.js';
 	import { PersistedState } from 'runed';
 
 	let {

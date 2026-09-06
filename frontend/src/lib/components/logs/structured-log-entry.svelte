@@ -1,8 +1,8 @@
 <script lang="ts">
 	// Dozzle reference: the compact structured-log summary and expandable details pattern
 	// here were informed by amir20/dozzle's ComplexLogItem.vue and LogDetails.vue.
-	import * as Collapsible from '#lib/components/ui/collapsible';
-	import { ArrowDownIcon, ArrowRightIcon, CheckIcon, CopyIcon } from '#lib/icons';
+	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
+	import { ArrowDownIcon, ArrowRightIcon, CheckIcon, CopyIcon } from '#lib/icons/index.js';
 
 	interface Props {
 		data: Record<string, unknown>;

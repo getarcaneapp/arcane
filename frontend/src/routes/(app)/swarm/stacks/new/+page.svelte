@@ -3,25 +3,25 @@
 	import { goto, refreshAll } from '$app/navigation';
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import { preventDefault, createForm } from '#lib/utils/settings';
+	import { preventDefault, createForm } from '#lib/utils/settings.js';
 	import TemplateSelectionDialog from '#lib/components/dialogs/template-selection-dialog.svelte';
-	import { m } from '#lib/paraglide/messages';
+	import { m } from '#lib/paraglide/messages.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
 	import ComposeCreateMenu from '#lib/components/compose-create-menu.svelte';
 	import ComposeFileEditorPanel from '#lib/components/compose-file-editor-panel.svelte';
-	import { ArrowLeftIcon, TrashIcon } from '#lib/icons';
+	import { ArrowLeftIcon, TrashIcon } from '#lib/icons/index.js';
 	import CodePanel from '#lib/components/code-panel.svelte';
 	import EditableName from '../../../projects/components/EditableName.svelte';
 	import EditorTabStrip from '#lib/components/editor-tab-strip.svelte';
 	import WorkspaceFileTreePanel from '#lib/components/workspace-file-tree-panel.svelte';
 	import ResizableSplit from '#lib/components/resizable-split.svelte';
-	import { Checkbox } from '#lib/components/ui/checkbox';
-	import { Label } from '#lib/components/ui/label';
-	import * as Select from '#lib/components/ui/select';
-	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import DockerRunConverterDialog from '#lib/components/compose/docker-run-converter-dialog.svelte';
-	import { globalVariablesToMap } from '#lib/utils/template-load';
-	import type { SwarmSyncFile } from '#lib/types/swarm';
+	import { globalVariablesToMap } from '#lib/utils/template-load.js';
+	import type { SwarmSyncFile } from '#lib/types/swarm.js';
 	import {
 		planWorkspaceFileCreate,
 		planWorkspaceFileMove,
@@ -29,15 +29,15 @@
 		validateWorkspaceFileName,
 		workspaceFileBasename,
 		workspaceFileLanguage
-	} from '#lib/utils/workspace-files';
-	import { WorkspaceDraftState } from '#lib/components/workspace-editor/workspace-draft-state.svelte';
-	import settingsStore from '#lib/stores/config-store';
+	} from '#lib/utils/workspace-files.js';
+	import { WorkspaceDraftState } from '#lib/components/workspace-editor/workspace-draft-state.svelte.js';
+	import settingsStore from '#lib/stores/config-store.js';
 	import {
 		createComposeEditorSchema,
 		createComposeTemplateDialogFlow,
 		submitComposeResourceForm,
 		templateNameSlug
-	} from '#lib/utils/compose-flow';
+	} from '#lib/utils/compose-flow.js';
 
 	let { data } = $props();
 	const workspaceMaxFileSizeMb = $derived($settingsStore?.projectWorkspaceMaxFileSizeMb ?? 10);

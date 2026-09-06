@@ -1,9 +1,9 @@
 import { browser } from '$app/env';
 import { PersistedState } from 'runed';
-import { decodeSort, type CompactTablePrefs } from '#lib/components/arcane-table/arcane-table.types.svelte';
-import { TABLE_PAGE_SIZE_ALL, TABLE_PAGE_SIZE_OPTIONS } from '#lib/constants/table-pagination';
-import { environmentStore } from '#lib/stores/environment.store.svelte';
-import type { FilterMap, FilterValue, SearchPaginationSortRequest } from '#lib/types/shared';
+import { decodeSort, type CompactTablePrefs } from '#lib/components/arcane-table/arcane-table.types.svelte.js';
+import { TABLE_PAGE_SIZE_ALL, TABLE_PAGE_SIZE_OPTIONS } from '#lib/constants/table-pagination.js';
+import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+import type { FilterMap, FilterValue, SearchPaginationSortRequest } from '#lib/types/shared.js';
 
 const DEFAULT_LIMIT = 20;
 

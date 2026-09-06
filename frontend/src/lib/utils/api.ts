@@ -1,6 +1,6 @@
 import { error as kitError } from '@sveltejs/kit';
 import { toast } from 'svelte-sonner';
-import { APIError, extractServerMessage } from '#lib/services/api-service';
+import { APIError, extractServerMessage } from '#lib/services/api-service.js';
 
 // --- Result wrapper ---
 
@@ -37,11 +37,10 @@ export function extractApiErrorMessage(error: any): string {
 	const bodyMsg = extractServerMessage(error?.body, true);
 	if (bodyMsg) return bodyMsg;
 
-	if (typeof error?.error === 'string' && error.error.trim()) return error.error;
-	if (typeof error?.reason === 'string' && error.reason.trim()) return error.reason;
-	if (typeof error?.stderr === 'string' && error.stderr.trim()) return error.stderr;
-	if (typeof error?.data === 'string' && error.data.trim()) return error.data;
-	if (typeof error?.message === 'string' && error.message.trim()) return error.message;
+	for (const key of ['error', 'reason', 'stderr', 'data', 'message']) {
+		const value = error?.[key];
+		if (typeof value === 'string' && value.trim()) return value;
+	}
 
 	try {
 		return JSON.stringify(error);

@@ -8,19 +8,19 @@
 		type BulkAction,
 		type ColumnSpec,
 		type MobileFieldVisibility
-	} from '#lib/components/arcane-table';
+	} from '#lib/components/arcane-table/index.js';
 	import DigestCell from '#lib/components/arcane-table/cells/digest-cell.svelte';
 	import CheckedAtCell from '#lib/components/arcane-table/cells/checked-at-cell.svelte';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
-	import { m } from '#lib/paraglide/messages';
-	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
-	import type { Project } from '#lib/types/swarm';
-	import type { ImageUpdateInfoDto } from '#lib/types/docker';
-	import { ProjectsIcon, ImagesIcon, UpdateIcon } from '#lib/icons';
-	import { hasPermission } from '#lib/utils/auth';
-	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions';
-	import { applyScopedUpdate, summarizeUpdateResult, throwOnUpdateFailure } from '#lib/utils/update-actions';
-	import { formatImageUpdateCheckedAt, formatImageUpdateValue } from '#lib/utils/image-updates';
+	import { m } from '#lib/paraglide/messages.js';
+	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import type { Project } from '#lib/types/swarm.js';
+	import type { ImageUpdateInfoDto } from '#lib/types/docker.js';
+	import { ProjectsIcon, ImagesIcon, UpdateIcon } from '#lib/icons/index.js';
+	import { hasPermission } from '#lib/utils/auth.js';
+	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions.js';
+	import { applyScopedUpdate, summarizeUpdateResult, throwOnUpdateFailure } from '#lib/utils/update-actions.js';
+	import { formatImageUpdateCheckedAt, formatImageUpdateValue } from '#lib/utils/image-updates.js';
 
 	type ProjectUpdateRow = {
 		id: string;

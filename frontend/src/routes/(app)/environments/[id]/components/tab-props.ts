@@ -1,6 +1,6 @@
 import type { Writable } from 'svelte/store';
-import type { FormInputs } from '#lib/utils/settings';
-import type { Environment, EnvironmentStatus } from '#lib/types/environment';
+import type { FormInputs } from '#lib/utils/settings.js';
+import type { Environment, EnvironmentStatus } from '#lib/types/environment.js';
 import type { EnvironmentFormValues } from './environment-form-schema';
 
 export type EnvironmentFormInputs = Writable<FormInputs<EnvironmentFormValues>>;

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { CopyButton } from '#lib/components/ui/copy-button';
+	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
 
 	interface Props {
 		dockerRunLabel: string;

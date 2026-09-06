@@ -4,11 +4,11 @@
 	import { goto, beforeNavigate } from '$app/navigation';
 	import { setContext } from 'svelte';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import { SettingsIcon, ArrowRightIcon, ArrowLeftIcon } from '#lib/icons';
-	import { m } from '#lib/paraglide/messages';
-	import settingsStore from '#lib/stores/config-store';
+	import { SettingsIcon, ArrowRightIcon, ArrowLeftIcon } from '#lib/icons/index.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import settingsStore from '#lib/stores/config-store.js';
 	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
-	import { cn } from '#lib/utils';
+	import { cn } from '#lib/utils.js';
 	import MobileFloatingFormActions from '#lib/components/form/mobile-floating-form-actions.svelte';
 
 	let { children }: LayoutProps = $props();

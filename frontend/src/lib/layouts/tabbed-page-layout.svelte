@@ -3,8 +3,8 @@
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { TabBar, type TabItem } from '#lib/components/tab-bar/index.js';
 	import type { Snippet } from 'svelte';
-	import { cn } from '#lib/utils';
-	import { ArrowLeftIcon } from '#lib/icons';
+	import { cn } from '#lib/utils.js';
+	import { ArrowLeftIcon } from '#lib/icons/index.js';
 
 	interface Props {
 		backUrl?: string;

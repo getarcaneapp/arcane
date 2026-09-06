@@ -3,34 +3,34 @@
 	import { onDestroy, onMount, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { type ActionButton } from '#lib/components/action-button-group/index.js';
-	import { cn } from '#lib/utils';
+	import { cn } from '#lib/utils.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import PruneConfirmationDialog from '#lib/components/dialogs/prune-confirmation-dialog.svelte';
 	import DockerInfoDialog from '#lib/components/dialogs/docker-info-dialog.svelte';
-	import { Skeleton } from '#lib/components/ui/skeleton';
-	import { m } from '#lib/paraglide/messages';
-	import { settingsService } from '#lib/services/settings-service';
-	import { systemService } from '#lib/services/system-service';
-	import { activityStore } from '#lib/stores/activity.store.svelte';
-	import { dashboardStore } from '#lib/stores/dashboard.store.svelte';
-	import { environmentStore } from '#lib/stores/environment.store.svelte';
-	import userStore from '#lib/stores/user-store';
-	import { hasAnyPermission, hasPermission } from '#lib/utils/auth';
+	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { settingsService } from '#lib/services/settings-service.js';
+	import { systemService } from '#lib/services/system-service.js';
+	import { activityStore } from '#lib/stores/activity.store.svelte.js';
+	import { dashboardStore } from '#lib/stores/dashboard.store.svelte.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import userStore from '#lib/stores/user-store.js';
+	import { hasAnyPermission, hasPermission } from '#lib/utils/auth.js';
 	import type {
 		DashboardActionItemKind,
 		DashboardEnvironmentCardState,
 		DashboardEnvironmentOverview,
 		SystemStats
-	} from '#lib/types/shared';
-	import type { Environment } from '#lib/types/environment';
-	import type { DockerInfo } from '#lib/types/docker';
-	import type { PruneType, SystemPruneRequest } from '#lib/types/automation';
-	import type { AppVersionInformation, Settings } from '#lib/types/settings';
-	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api';
-	import { tryCatch } from '#lib/utils/api';
-	import { isEnvironmentOnline } from '#lib/utils/docker';
-	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
-	import { createStatsWebSocket, type ReconnectingWebSocket } from '#lib/utils/ws';
+	} from '#lib/types/shared.js';
+	import type { Environment } from '#lib/types/environment.js';
+	import type { DockerInfo } from '#lib/types/docker.js';
+	import type { PruneType, SystemPruneRequest } from '#lib/types/automation.js';
+	import type { AppVersionInformation, Settings } from '#lib/types/settings.js';
+	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { tryCatch } from '#lib/utils/api.js';
+	import { isEnvironmentOnline } from '#lib/utils/docker.js';
+	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
+	import { createStatsWebSocket, type ReconnectingWebSocket } from '#lib/utils/ws.js';
 	import {
 		ContainersIcon,
 		EnvironmentsIcon,
@@ -44,7 +44,7 @@
 		VerifiedCheckIcon,
 		LayoutGridIcon,
 		LayoutListIcon
-	} from '#lib/icons';
+	} from '#lib/icons/index.js';
 	import DashboardEnvironmentsTable, { type EnvironmentTableRow } from './dashboard-environments-table.svelte';
 	import DashboardEnvironmentCard from './dashboard-environment-card.svelte';
 	import { PersistedState } from 'runed';

@@ -1,5 +1,5 @@
 import BaseAPIService from './api-service';
-import type { DashboardSnapshot } from '#lib/types/shared';
+import type { DashboardSnapshot } from '#lib/types/shared.js';
 
 interface GetDashboardOptions {
 	debugAllGood?: boolean;

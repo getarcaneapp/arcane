@@ -1,5 +1,5 @@
 import { z } from 'zod/v4';
-import { m } from '#lib/paraglide/messages';
+import { m } from '#lib/paraglide/messages.js';
 import type {
 	ContainerCreateRequest,
 	ContainerEditConfigDto,
@@ -10,7 +10,7 @@ import type {
 	HostConfigCreate,
 	MountDto,
 	PortBinding
-} from '#lib/types/docker';
+} from '#lib/types/docker.js';
 import type { KeyValueRow } from '#lib/components/form/key-value-editor.svelte';
 import type { PortMappingRow } from '#lib/components/form/port-mapping-editor.svelte';
 import type { VolumeMountRow } from '#lib/components/form/volume-mount-editor.svelte';
@@ -203,6 +203,42 @@ function serializeBindRow(row: VolumeMountRow): string {
 	return `${row.source.trim()}:${row.target.trim()}${suffix}`;
 }
 
+function portRowsFromEditConfig(cfg: ContainerEditConfigDto): PortMappingRow[] {
+	const ports: PortMappingRow[] = [];
+	for (const [portSpec, bindings] of Object.entries(cfg.hostConfig.portBindings ?? {})) {
+		const [portPart, protocolPart] = portSpec.split('/');
+		for (const binding of bindings) {
+			ports.push({
+				hostIp: binding.hostIp ?? '',
+				hostPort: binding.hostPort ?? '',
+				containerPort: portPart ?? '',
+				protocol: protocolPart === 'udp' ? 'udp' : 'tcp'
+			});
+		}
+	}
+
+	return ports;
+}
+
+function volumeRowsFromEditConfig(cfg: ContainerEditConfigDto): VolumeMountRow[] {
+	const volumes: VolumeMountRow[] = [];
+
+	for (const bind of cfg.hostConfig.binds ?? []) {
+		volumes.push(parseBindString(bind));
+	}
+	for (const mount of cfg.hostConfig.mounts ?? []) {
+		volumes.push({
+			kind: 'mount',
+			mountType: mount.type,
+			source: mount.source,
+			target: mount.target,
+			readOnly: !!mount.readOnly
+		});
+	}
+
+	return volumes;
+}
+
 export function rowsFromEditConfig(cfg: ContainerEditConfigDto): ContainerFormRows {
 	const rows = emptyContainerFormRows();
 
@@ -215,30 +251,8 @@ export function rowsFromEditConfig(cfg: ContainerEditConfigDto): ContainerFormRo
 		rows.labels.push({ key, value });
 	}
 
-	for (const [portSpec, bindings] of Object.entries(cfg.hostConfig.portBindings ?? {})) {
-		const [portPart, protocolPart] = portSpec.split('/');
-		for (const binding of bindings) {
-			rows.ports.push({
-				hostIp: binding.hostIp ?? '',
-				hostPort: binding.hostPort ?? '',
-				containerPort: portPart ?? '',
-				protocol: protocolPart === 'udp' ? 'udp' : 'tcp'
-			});
-		}
-	}
-
-	for (const bind of cfg.hostConfig.binds ?? []) {
-		rows.volumes.push(parseBindString(bind));
-	}
-	for (const mount of cfg.hostConfig.mounts ?? []) {
-		rows.volumes.push({
-			kind: 'mount',
-			mountType: mount.type,
-			source: mount.source,
-			target: mount.target,
-			readOnly: !!mount.readOnly
-		});
-	}
+	rows.ports = portRowsFromEditConfig(cfg);
+	rows.volumes = volumeRowsFromEditConfig(cfg);
 
 	for (const [network, endpoint] of Object.entries(cfg.networks ?? {})) {
 		rows.networks.push({

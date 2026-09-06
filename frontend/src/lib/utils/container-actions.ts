@@ -1,8 +1,8 @@
-import { openConfirmDialog } from '#lib/components/confirm-dialog';
-import { m } from '#lib/paraglide/messages';
-import { containerService } from '#lib/services/container-service';
-import { handleApiResultWithCallbacks, tryCatch } from '#lib/utils/api';
-import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
+import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
+import { m } from '#lib/paraglide/messages.js';
+import { containerService } from '#lib/services/container-service.js';
+import { handleApiResultWithCallbacks, tryCatch } from '#lib/utils/api.js';
+import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 import { toast } from 'svelte-sonner';
 
 type ContainerLifecycleAction = 'start' | 'stop' | 'restart' | 'pause' | 'unpause';

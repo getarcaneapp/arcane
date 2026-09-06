@@ -5,19 +5,19 @@
 	import EmptyState from '#lib/components/states/empty-state.svelte';
 	import TemplateCard from './template-card.svelte';
 	import { toast } from 'svelte-sonner';
-	import { openConfirmDialog } from '#lib/components/confirm-dialog';
-	import { handleApiResultWithCallbacks, tryCatch } from '#lib/utils/api';
-	import { templateService } from '#lib/services/template-service';
-	import { templateTypeFilters } from '#lib/components/arcane-table/data';
-	import { debounced } from '#lib/utils/ws';
-	import { hasPermission } from '#lib/utils/auth';
-	import { m } from '#lib/paraglide/messages';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
+	import { handleApiResultWithCallbacks, tryCatch } from '#lib/utils/api.js';
+	import { templateService } from '#lib/services/template-service.js';
+	import { templateTypeFilters } from '#lib/components/arcane-table/data.js';
+	import { debounced } from '#lib/utils/ws.js';
+	import { hasPermission } from '#lib/utils/auth.js';
+	import { m } from '#lib/paraglide/messages.js';
 	import { PersistedState } from 'runed';
 	import { onMount, untrack } from 'svelte';
-	import type { CompactTablePrefs } from '#lib/components/arcane-table/arcane-table.types.svelte';
-	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
-	import type { Template } from '#lib/types/swarm';
-	import { SearchIcon, TemplateIcon } from '#lib/icons';
+	import type { CompactTablePrefs } from '#lib/components/arcane-table/arcane-table.types.svelte.js';
+	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import type { Template } from '#lib/types/swarm.js';
+	import { SearchIcon, TemplateIcon } from '#lib/icons/index.js';
 
 	let {
 		templates = $bindable(),

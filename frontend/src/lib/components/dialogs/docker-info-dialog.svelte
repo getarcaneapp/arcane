@@ -1,14 +1,14 @@
 <script lang="ts">
 	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import { Badge } from '#lib/components/ui/badge';
-	import { CopyButton } from '#lib/components/ui/copy-button';
-	import { Spinner } from '#lib/components/ui/spinner';
-	import { CheckIcon, CloseIcon } from '#lib/icons';
-	import type { DockerInfo } from '#lib/types/docker';
-	import { m } from '#lib/paraglide/messages';
-	import { bytes } from '#lib/utils/formatting';
-	import { formatDateTimeShort } from '#lib/utils/formatting';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
+	import { Spinner } from '#lib/components/ui/spinner/index.js';
+	import { CheckIcon, CloseIcon } from '#lib/icons/index.js';
+	import type { DockerInfo } from '#lib/types/docker.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { bytes } from '#lib/utils/formatting.js';
+	import { formatDateTimeShort } from '#lib/utils/formatting.js';
 
 	interface Props {
 		open: boolean;

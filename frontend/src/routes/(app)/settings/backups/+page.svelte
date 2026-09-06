@@ -1,39 +1,39 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { useBackupActivity } from '#lib/hooks/use-backup-activity.svelte';
-	import { activityStore } from '#lib/stores/activity.store.svelte';
+	import { useBackupActivity } from '#lib/hooks/use-backup-activity.svelte.js';
+	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import { toast } from 'svelte-sonner';
-	import settingsStore from '#lib/stores/config-store';
-	import { SettingsPageLayout, type SettingsActionButton } from '#lib/layouts';
-	import { AlertIcon, BackupIcon, CloudStorageIcon, InfoIcon, LockIcon, ResetIcon } from '#lib/icons';
-	import * as Alert from '#lib/components/ui/alert';
-	import { CopyButton } from '#lib/components/ui/copy-button';
-	import { Input } from '#lib/components/ui/input';
-	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog';
-	import { ArcaneButton } from '#lib/components/arcane-button';
+	import settingsStore from '#lib/stores/config-store.js';
+	import { SettingsPageLayout, type SettingsActionButton } from '#lib/layouts/index.js';
+	import { AlertIcon, BackupIcon, CloudStorageIcon, InfoIcon, LockIcon, ResetIcon } from '#lib/icons/index.js';
+	import * as Alert from '#lib/components/ui/alert/index.js';
+	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import LabeledSwitch from '#lib/components/form/labeled-switch.svelte';
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
 	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
-	import { systemBackupService } from '#lib/services/system-backup-service';
-	import { hasPermission } from '#lib/utils/auth';
-	import { backupDestinationOptions, backupPolicyDestinationDisplay, s3DestinationOptions } from '#lib/utils/backups';
-	import type { SearchPaginationSortRequest } from '#lib/types/shared';
+	import { systemBackupService } from '#lib/services/system-backup-service.js';
+	import { hasPermission } from '#lib/utils/auth.js';
+	import { backupDestinationOptions, backupPolicyDestinationDisplay, s3DestinationOptions } from '#lib/utils/backups.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import type {
 		BackupHistoryEntry,
 		SystemBackupDestination,
 		SystemVolumeBackupOption,
 		SystemVolumeBackupSelectionMode
-	} from '#lib/types/system-backup';
-	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	} from '#lib/types/system-backup.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import * as m from '#lib/paraglide/messages.js';
 	import SystemBackupTable from './system-backup-table.svelte';
 	import BackupPolicyCard from '#lib/components/backup-policy-card.svelte';
 	import SystemBackupScheduleDialog from './system-backup-schedule-dialog.svelte';
 	import SystemVolumeScopeFields from './system-volume-scope-fields.svelte';
 	import BackupFilePicker from '#lib/components/backup-file-picker.svelte';
-	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
-	import type { BackupFileProvider } from '#lib/types/backup';
-	import { queryKeys } from '#lib/query/query-keys';
+	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
+	import type { BackupFileProvider } from '#lib/types/backup.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { useQueryClient } from '@tanstack/svelte-query';
 
 	let { data } = $props();

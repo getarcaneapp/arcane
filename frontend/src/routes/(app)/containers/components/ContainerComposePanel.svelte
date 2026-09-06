@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { ComposeEditorWrapper } from '#lib/components/compose';
+	import { ComposeEditorWrapper } from '#lib/components/compose/index.js';
 	import CodePanel from '#lib/components/code-panel.svelte';
-	import { projectService } from '#lib/services/project-service';
-	import { projectWorkspaceService } from '#lib/services/project-workspace-service';
-	import type { Project, IncludeFile } from '#lib/types/swarm';
+	import { projectService } from '#lib/services/project-service.js';
+	import { projectWorkspaceService } from '#lib/services/project-workspace-service.js';
+	import type { Project, IncludeFile } from '#lib/types/swarm.js';
 
 	let {
 		project,

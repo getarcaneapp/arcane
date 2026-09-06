@@ -1,7 +1,7 @@
 <script lang="ts">
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import { m } from '#lib/paraglide/messages';
-	import { deployOptionsStore, type DeployPullPolicy } from '#lib/stores/deploy-options.store.svelte';
+	import { m } from '#lib/paraglide/messages.js';
+	import { deployOptionsStore, type DeployPullPolicy } from '#lib/stores/deploy-options.store.svelte.js';
 
 	function setPullPolicy(value: string) {
 		deployOptionsStore.setPullPolicy(value as DeployPullPolicy);

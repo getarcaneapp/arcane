@@ -1,10 +1,10 @@
 <script lang="ts">
-	import * as Card from '#lib/components/ui/card';
-	import { Badge } from '#lib/components/ui/badge';
-	import { m } from '#lib/paraglide/messages';
-	import type { ContainerDetailsDto, ContainerHealthLogEntry, ContainerHealthcheckDto } from '#lib/types/docker';
-	import { HealthIcon, SettingsIcon, FileTextIcon } from '#lib/icons';
-	import { formatDateTime, formatRelativeTime, parseInstant } from '#lib/utils/formatting';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import type { ContainerDetailsDto, ContainerHealthLogEntry, ContainerHealthcheckDto } from '#lib/types/docker.js';
+	import { HealthIcon, SettingsIcon, FileTextIcon } from '#lib/icons/index.js';
+	import { formatDateTime, formatRelativeTime, parseInstant } from '#lib/utils/formatting.js';
 	import { Temporal } from 'temporal-polyfill';
 
 	interface Props {

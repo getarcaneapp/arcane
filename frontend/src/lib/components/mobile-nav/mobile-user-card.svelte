@@ -1,16 +1,23 @@
 <script lang="ts">
-	import { cn } from '#lib/utils';
-	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import { cn } from '#lib/utils.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import ThemeModeSelector from '#lib/components/theme-mode/theme-mode-selector.svelte';
-	import { m } from '#lib/paraglide/messages';
-	import type { User } from '#lib/types/auth';
+	import { m } from '#lib/paraglide/messages.js';
+	import type { User } from '#lib/types/auth.js';
 	import LocalePicker from '#lib/components/locale-picker.svelte';
 	import EnvironmentSwitcherDialog from '#lib/components/dialogs/environment-switcher-dialog.svelte';
-	import settingsStore from '#lib/stores/config-store';
-	import userStore from '#lib/stores/user-store';
+	import settingsStore from '#lib/stores/config-store.js';
+	import userStore from '#lib/stores/user-store.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
-	import { ArrowDownIcon, LogoutIcon, EnvironmentsIcon, RemoteEnvironmentIcon, LanguageIcon, ArrowRightIcon } from '#lib/icons';
+	import {
+		ArrowDownIcon,
+		LogoutIcon,
+		EnvironmentsIcon,
+		RemoteEnvironmentIcon,
+		LanguageIcon,
+		ArrowRightIcon
+	} from '#lib/icons/index.js';
 
 	type Props = {
 		user: User;

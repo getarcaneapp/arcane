@@ -2,12 +2,12 @@
 	import { createQuery } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
-	import type { ColumnSpec, MobileFieldVisibility } from '#lib/components/arcane-table';
-	import { UniversalMobileCard } from '#lib/components/arcane-table';
+	import type { ColumnSpec, MobileFieldVisibility } from '#lib/components/arcane-table/index.js';
+	import { UniversalMobileCard } from '#lib/components/arcane-table/index.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
-	import { KeyValueCard } from '#lib/components/resource-detail';
-	import { Badge } from '#lib/components/ui/badge';
+	import { KeyValueCard } from '#lib/components/resource-detail/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
@@ -20,12 +20,12 @@
 		SettingsIcon,
 		TagIcon,
 		TerminalIcon
-	} from '#lib/icons';
-	import { m } from '#lib/paraglide/messages';
-	import { queryKeys } from '#lib/query/query-keys';
-	import { imageService } from '#lib/services/image-service';
-	import type { ImageBuildRecord, ImageBuildStatus } from '#lib/types/docker';
-	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
+	} from '#lib/icons/index.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
+	import { imageService } from '#lib/services/image-service.js';
+	import type { ImageBuildRecord, ImageBuildStatus } from '#lib/types/docker.js';
+	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import {
 		buildHistoryStatusLabel,
 		formatBuildDuration,

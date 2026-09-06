@@ -1,5 +1,5 @@
 import BaseAPIService from './api-service';
-import { environmentStore } from '#lib/stores/environment.store.svelte';
+import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import type {
 	ContainerStatusCounts,
 	ContainerSummaryDto,
@@ -10,9 +10,9 @@ import type {
 	ContainerCommitResult,
 	ContainerEditConfigDto,
 	ContainerEditRequest
-} from '#lib/types/docker';
-import type { SearchPaginationSortRequest, Paginated } from '#lib/types/shared';
-import { transformPaginationParams } from '#lib/utils/tables';
+} from '#lib/types/docker.js';
+import type { SearchPaginationSortRequest, Paginated } from '#lib/types/shared.js';
+import { transformPaginationParams } from '#lib/utils/tables.js';
 
 export type ContainersPaginatedResponse = Paginated<ContainerSummaryDto, ContainerStatusCounts> & {
 	groups?: ContainerSummaryGroupDto[];

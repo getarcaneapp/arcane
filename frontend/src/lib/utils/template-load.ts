@@ -1,7 +1,7 @@
-import { queryKeys } from '#lib/query/query-keys';
-import { templateService } from '#lib/services/template-service';
-import { variableService } from '#lib/services/variable-service';
-import type { GlobalVariable } from '#lib/types/variable';
+import { queryKeys } from '#lib/query/query-keys.js';
+import { templateService } from '#lib/services/template-service.js';
+import { variableService } from '#lib/services/variable-service.js';
+import type { GlobalVariable } from '#lib/types/variable.js';
 
 type QueryClientLike = {
 	fetchQuery: <T>(options: { queryKey: unknown; queryFn: () => Promise<T> }) => Promise<T>;

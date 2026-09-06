@@ -8,3 +8,8 @@ export function isOpenQuote(value: string): string | null {
 	if (value.length >= 2 && value[value.length - 1] === quote) return null;
 	return quote;
 }
+
+export function hasClosingQuote(line: string, quote: string): boolean {
+	const end = line.trimEnd();
+	return end.endsWith(quote) && !(end.length >= 2 && end[end.length - 2] === '\\');
+}

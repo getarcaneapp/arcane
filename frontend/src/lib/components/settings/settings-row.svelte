@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { Label } from '#lib/components/ui/label';
-	import { cn } from '#lib/utils';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import { cn } from '#lib/utils.js';
 	import type { Snippet } from 'svelte';
 
 	interface Props {

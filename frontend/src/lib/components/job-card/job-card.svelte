@@ -1,13 +1,13 @@
 <script lang="ts">
-	import { StartIcon, EditIcon, ClockIcon } from '#lib/icons';
-	import { m } from '#lib/paraglide/messages';
-	import { Badge } from '#lib/components/ui/badge';
-	import { Button } from '#lib/components/ui/button';
-	import { Spinner } from '#lib/components/ui/spinner';
-	import { jobScheduleService } from '#lib/services/job-schedule-service';
-	import { formatDateTimeShort, formatRelativeTime, parseInstant } from '#lib/utils/formatting';
+	import { StartIcon, EditIcon, ClockIcon } from '#lib/icons/index.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Spinner } from '#lib/components/ui/spinner/index.js';
+	import { jobScheduleService } from '#lib/services/job-schedule-service.js';
+	import { formatDateTimeShort, formatRelativeTime, parseInstant } from '#lib/utils/formatting.js';
 	import type { Snippet } from 'svelte';
-	import type { JobStatus } from '#lib/types/settings';
+	import type { JobStatus } from '#lib/types/settings.js';
 	import JobScheduleDialog from './job-schedule-dialog.svelte';
 	import JobRunHistory from './job-run-history.svelte';
 	import { jobStatusLabel, jobNameLabel } from './job-status';
@@ -72,6 +72,57 @@
 
 	const canRun = $derived(durableRuns && isEnabled && job.canRunManually && !isRunning && !(isAgent && job.managerOnly));
 
+	const statusBadge = $derived(
+		!isEnabled
+			? { variant: 'secondary' as const, label: m.common_disabled() }
+			: run
+				? {
+						variant: ['failed', 'needs_attention'].includes(run.status) ? ('destructive' as const) : ('outline' as const),
+						label: jobStatusLabel(run.status)
+					}
+				: job.isContinuous
+					? { variant: 'outline' as const, label: m.jobs_continuous() }
+					: null
+	);
+	const description = $derived(job.id.startsWith('environment-health:') ? m.jobs_health_scope_description() : job.description);
+	const showSchedule = $derived(isEnabled && job.schedule && (!job.isContinuous || job.settingsKey));
+	const scheduleMetadata = $derived(
+		[
+			{ id: 'next-run', visible: showSchedule && nextRunText, label: m.jobs_next_run(), value: nextRunText },
+			{ id: 'continuous', visible: isEnabled && !showSchedule && job.isContinuous, label: '', value: m.jobs_continuous() },
+			{
+				id: 'next-attempt',
+				visible: isEnabled && run?.nextAttempt,
+				label: m.jobs_next_retry(),
+				value: formatDateTimeShort(run?.nextAttempt)
+			},
+			{
+				id: 'worker-health',
+				visible: job.workerHealth,
+				label: m.jobs_worker_health(),
+				value: jobStatusLabel(job.workerHealth?.status ?? '')
+			}
+		].filter((item) => item.visible)
+	);
+	const errors = $derived(
+		[
+			{ id: 'run', visible: runJobMutation.error, text: runJobMutation.error?.message, class: 'text-xs text-destructive' },
+			{ id: 'restart', visible: restartMutation.error, text: restartMutation.error?.message, class: 'text-xs text-destructive' },
+			{
+				id: 'last',
+				visible: job.lastError,
+				text: `${m.jobs_last_error()}: ${job.lastError}`,
+				class: 'text-xs break-words text-destructive'
+			},
+			{
+				id: 'worker',
+				visible: job.workerHealth?.lastError,
+				text: job.workerHealth?.lastError,
+				class: 'text-xs break-words text-destructive'
+			}
+		].filter((error) => error.visible)
+	);
+
 	function runJobNow() {
 		if (!canRun) return;
 		runJobMutation.mutate();
@@ -93,36 +144,24 @@
 			<div class="flex min-h-9 flex-wrap items-center gap-2">
 				{@render headerAccessory?.()}
 				<h4 class="text-base font-semibold">{jobNameLabel(job)}</h4>
-				{#if !isEnabled}
-					<Badge variant="secondary" size="sm">{m.common_disabled()}</Badge>
-				{:else if run}
-					<Badge variant={run.status === 'failed' || run.status === 'needs_attention' ? 'destructive' : 'outline'} size="sm"
-						>{jobStatusLabel(run.status)}</Badge
-					>
-				{:else if job.isContinuous}
-					<Badge variant="outline" size="sm">{m.jobs_continuous()}</Badge>
-				{/if}
+				{#if statusBadge}<Badge variant={statusBadge.variant} size="sm">{statusBadge.label}</Badge>{/if}
 			</div>
-			{#if job.id.startsWith('environment-health:')}
-				<p class="text-sm leading-relaxed text-muted-foreground">{m.jobs_health_scope_description()}</p>
-			{:else if job.description}<p class="text-sm leading-relaxed text-muted-foreground">{job.description}</p>{/if}
+			{#if description}<p class="text-sm leading-relaxed text-muted-foreground">{description}</p>{/if}
 			{#if job.lastSuccess}<p class="text-xs text-muted-foreground">
 					{m.jobs_last_success()}: {formatDateTimeShort(job.lastSuccess)}
 				</p>{/if}
 
 			<div class="mt-1 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-				{#if isEnabled}
-					{#if job.schedule && (!job.isContinuous || job.settingsKey)}
-						<div class="flex items-center gap-2">
-							<ClockIcon class="size-3.5 shrink-0" />
-							<span class="font-medium">{m.jobs_schedule()}</span>
-							<code class="break-all text-foreground">{job.schedule}</code>
-						</div>
-						{#if nextRunText}<p>{m.jobs_next_run()}: {nextRunText}</p>{/if}
-					{:else if job.isContinuous}<p>{m.jobs_continuous()}</p>{/if}
-					{#if run?.nextAttempt}<p>{m.jobs_next_retry()}: {formatDateTimeShort(run.nextAttempt)}</p>{/if}
+				{#if showSchedule}
+					<div class="flex items-center gap-2">
+						<ClockIcon class="size-3.5 shrink-0" />
+						<span class="font-medium">{m.jobs_schedule()}</span>
+						<code class="break-all text-foreground">{job.schedule}</code>
+					</div>
 				{/if}
-				{#if job.workerHealth}<p>{m.jobs_worker_health()}: {jobStatusLabel(job.workerHealth.status)}</p>{/if}
+				{#each scheduleMetadata as item (item.id)}
+					<p>{item.label ? `${item.label}: ` : ''}{item.value}</p>
+				{/each}
 			</div>
 		</div>
 		<div class="flex min-h-9 max-w-full flex-wrap items-center gap-1">
@@ -153,10 +192,7 @@
 		</div>
 	</div>
 
-	{#if runJobMutation.error}<p class="text-xs text-destructive">{runJobMutation.error.message}</p>{/if}
-	{#if restartMutation.error}<p class="text-xs text-destructive">{restartMutation.error.message}</p>{/if}
-	{#if job.lastError}<p class="text-xs break-words text-destructive">{m.jobs_last_error()}: {job.lastError}</p>{/if}
-	{#if job.workerHealth?.lastError}<p class="text-xs break-words text-destructive">{job.workerHealth.lastError}</p>{/if}
+	{#each errors as error (error.id)}<p class={error.class}>{error.text}</p>{/each}
 	{#if job.workerHealth?.nextRetry}<p class="text-xs text-muted-foreground">
 			{m.jobs_next_retry()}: {formatDateTimeShort(job.workerHealth.nextRetry)}
 		</p>{/if}
@@ -167,18 +203,16 @@
 				>{/if}
 		</p>
 	{/if}
-	{#if children}
-		{#if collapsibleSettings}
-			<details class="group">
-				<summary
-					class="w-fit cursor-pointer rounded-sm text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-					>{m.jobs_settings_details()}</summary
-				>
-				<div class="mt-4 max-w-3xl">{@render children()}</div>
-			</details>
-		{:else}
-			{@render children()}
-		{/if}
+	{#if children && collapsibleSettings}
+		<details class="group">
+			<summary
+				class="w-fit cursor-pointer rounded-sm text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+				>{m.jobs_settings_details()}</summary
+			>
+			<div class="mt-4 max-w-3xl">{@render children()}</div>
+		</details>
+	{:else}
+		{@render children?.()}
 	{/if}
 </article>
 

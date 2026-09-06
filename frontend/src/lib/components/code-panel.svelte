@@ -1,16 +1,16 @@
 <script lang="ts">
-	import * as Card from '#lib/components/ui/card';
-	import { ArcaneButton } from '#lib/components/arcane-button';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import CodeEditor from '#lib/components/code-editor/editor.svelte';
-	import { CodeIcon, FileTextIcon, SearchIcon, ArrowsUpDownIcon } from '#lib/icons';
+	import { CodeIcon, FileTextIcon, SearchIcon, ArrowsUpDownIcon } from '#lib/icons/index.js';
 	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
-	import { m } from '#lib/paraglide/messages';
+	import { m } from '#lib/paraglide/messages.js';
 	import type {
 		CodeLanguage,
 		CodeValidationMode,
 		DiagnosticSummary,
 		EditorContext
-	} from '#lib/components/code-editor/analysis/types';
+	} from '#lib/components/code-editor/analysis/types.js';
 
 	let {
 		title,

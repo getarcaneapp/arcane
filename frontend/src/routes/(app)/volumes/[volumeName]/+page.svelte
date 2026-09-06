@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { VolumeDetailDto } from '#lib/types/docker.js';
 	// fallow-ignore-file code-duplication -- useUrlTab initialization is the hook's intended per-page integration surface
 	import * as Card from '#lib/components/ui/card/index.js';
 	import {
@@ -12,36 +13,36 @@
 		BoxIcon,
 		FileTextIcon,
 		AlertIcon
-	} from '#lib/icons';
+	} from '#lib/icons/index.js';
 	import { goto } from '$app/navigation';
-	import { Badge } from '#lib/components/ui/badge';
-	import { formatDateTimeShort, truncateString } from '#lib/utils/formatting';
-	import { openConfirmDialog } from '#lib/components/confirm-dialog/';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { formatDateTimeShort, truncateString } from '#lib/utils/formatting.js';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog//index.js';
 	import { toast } from 'svelte-sonner';
-	import { tryCatch } from '#lib/utils/api';
-	import { handleApiResultWithCallbacks } from '#lib/utils/api';
+	import { tryCatch } from '#lib/utils/api.js';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import { m } from '#lib/paraglide/messages';
+	import { m } from '#lib/paraglide/messages.js';
 	import { volumeService } from '#lib/services/volume-service.js';
-	import { volumeWorkspaceService } from '#lib/services/volume-workspace-service';
-	import { type DetailAction } from '#lib/layouts';
+	import { volumeWorkspaceService } from '#lib/services/volume-workspace-service.js';
+	import { type DetailAction } from '#lib/layouts/index.js';
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
 	import BackupList from '../components/volume-backup-table.svelte';
-	import settingsStore from '#lib/stores/config-store';
-	import { environmentStore } from '#lib/stores/environment.store.svelte';
-	import { hasPermission } from '#lib/utils/auth';
-	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
-	import { DetailMetaStrip, DetailSection, KeyValueCard, KeyValueGrid } from '#lib/components/resource-detail';
+	import settingsStore from '#lib/stores/config-store.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import { hasPermission } from '#lib/utils/auth.js';
+	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
+	import { DetailMetaStrip, DetailSection, KeyValueCard, KeyValueGrid } from '#lib/components/resource-detail/index.js';
 	import InUseStatus from '#lib/components/arcane-table/cells/in-use-status.svelte';
-	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte';
+	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
-	import { queryKeys } from '#lib/query/query-keys';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import WorkspaceFileTreePanel from '#lib/components/workspace-file-tree-panel.svelte';
 	import EditorTabStrip from '#lib/components/editor-tab-strip.svelte';
 	import CodePanel from '#lib/components/code-panel.svelte';
 	import ResizableSplit from '#lib/components/resizable-split.svelte';
-	import { composeTreeSplitProps } from '#lib/utils/compose-flow';
-	import type { VolumeWorkspaceFileChange, VolumeWorkspaceFileContent } from '#lib/types/volume-workspace';
+	import { composeTreeSplitProps } from '#lib/utils/compose-flow.js';
+	import type { VolumeWorkspaceFileChange, VolumeWorkspaceFileContent } from '#lib/types/volume-workspace.js';
 	import {
 		applyWorkspaceFileChangesForDisplay,
 		buildWorkspaceMultipartUpdate,
@@ -56,15 +57,15 @@
 		workspaceFileLanguage,
 		workspaceFileParentPath,
 		workspaceFilePathMatches
-	} from '#lib/utils/workspace-files';
-	import { volumeBackupService } from '#lib/services/volume-backup-service';
-	import type { BackupEntry } from '#lib/types/shared';
-	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog';
-	import * as Select from '#lib/components/ui/select';
-	import { Label } from '#lib/components/ui/label';
-	import * as Alert from '#lib/components/ui/alert';
-	import { Spinner } from '#lib/components/ui/spinner';
-	import { bytes } from '#lib/utils/formatting';
+	} from '#lib/utils/workspace-files.js';
+	import { volumeBackupService } from '#lib/services/volume-backup-service.js';
+	import type { BackupEntry } from '#lib/types/shared.js';
+	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Alert from '#lib/components/ui/alert/index.js';
+	import { Spinner } from '#lib/components/ui/spinner/index.js';
+	import { bytes } from '#lib/utils/formatting.js';
 	import { PersistedState } from 'runed';
 	import { volumeWorkspaceReadOnlyMessage } from '../components/volume-workspace-utils';
 
@@ -690,6 +691,270 @@
 	}
 </script>
 
+{#snippet volumeContainers(volume: VolumeDetailDto)}
+	<DetailSection title={m.volumes_containers_using_title()} icon={ContainersIcon}>
+		{#if containersDetailed.length > 0}
+			<div class="divide-y rounded-lg border">
+				{#each containersDetailed as c (c.id)}
+					<div class="flex flex-col p-3 sm:flex-row sm:items-center">
+						<div class="mb-2 w-full font-medium break-all sm:mb-0 sm:w-1/3">
+							<a href="/containers/{c.id}" class="flex items-center text-primary hover:underline">
+								<ContainersIcon class="mr-1.5 size-3.5 text-muted-foreground" />
+								{c.name}
+							</a>
+						</div>
+						<div class="w-full pl-0 sm:w-2/3 sm:pl-4">
+							<code
+								class="cursor-pointer rounded bg-muted px-1.5 py-0.5 font-mono text-xs break-all text-muted-foreground select-all sm:text-sm"
+								title={m.common_click_to_select()}
+							>
+								{truncateString(c.id, 48)}
+							</code>
+						</div>
+					</div>
+				{/each}
+			</div>
+		{:else if volume.containers && volume.containers.length > 0}
+			<!-- Fallback to IDs if names not resolved -->
+			<div class="divide-y rounded-lg border">
+				{#each volume.containers as id (id)}
+					<div class="flex items-center justify-between gap-3 p-3">
+						<code class="font-mono text-sm break-all">{truncateString(id, 48)}</code>
+						<a href={`/containers/${id}`} class="text-sm text-primary hover:underline">{m.common_view()}</a>
+					</div>
+				{/each}
+			</div>
+		{:else}
+			<div class="text-muted-foreground">{m.volumes_no_containers_using()}</div>
+		{/if}
+	</DetailSection>
+{/snippet}
+
+{#snippet volumeWorkspaceFileEditor(volume: VolumeDetailDto, relativePath: string)}
+	{#if workspaceFileLoadErrors[relativePath]}
+		<div class="flex h-full items-center justify-center px-4 text-sm text-destructive">
+			{workspaceFileLoadErrors[relativePath]}
+		</div>
+	{:else if workspaceFileLoading[relativePath] || !selectedWorkspaceMetadata}
+		<div class="flex h-full items-center justify-center text-muted-foreground">
+			<Spinner class="size-5" />
+		</div>
+	{:else if selectedWorkspaceMetadata.editable && workspaceFileContents[relativePath] !== undefined}
+		<CodePanel
+			variant="plain"
+			open={true}
+			title={relativePath}
+			language={workspaceFileLanguage(relativePath)}
+			validationMode="none"
+			bind:value={workspaceFileContents[relativePath]}
+			readOnly={!canUploadVolume}
+			fileId={`volume:${currentEnvId}:${volume.name}:${relativePath}`}
+			originalValue={loadedWorkspaceFileContents[relativePath] ?? ''}
+			enableDiff={true}
+		/>
+	{:else}
+		<div class="flex h-full items-center justify-center p-6">
+			<Card.Root class="w-full max-w-xl">
+				<Card.Header icon={FileTextIcon}>
+					<div class="min-w-0">
+						<Card.Title>{workspaceFileBasename(relativePath)}</Card.Title>
+						<Card.Description>{workspaceReadOnlyMessage(selectedWorkspaceMetadata.readOnlyReason)}</Card.Description>
+					</div>
+				</Card.Header>
+				<Card.Content class="space-y-2 text-sm text-muted-foreground">
+					<p>{m.common_size()}: {bytes.format(selectedWorkspaceMetadata.size, { unitSeparator: ' ' })}</p>
+					{#if selectedWorkspaceMetadata.mimeType}<p>
+							{m.common_type()}: {selectedWorkspaceMetadata.mimeType}
+						</p>{/if}
+					{#if selectedWorkspaceEntry?.linkTarget}<p>
+							{m.volumes_symlink_target_tooltip({ target: selectedWorkspaceEntry.linkTarget })}
+						</p>{/if}
+				</Card.Content>
+			</Card.Root>
+		</div>
+	{/if}
+{/snippet}
+
+{#snippet volumeWorkspaceTree()}
+	<WorkspaceFileTreePanel
+		title={m.volumes_workspace_files()}
+		leadingRows={[]}
+		entries={visibleWorkspaceFiles}
+		selectedFile={selectedWorkspaceFile}
+		disabled={isLoading.save}
+		emptyMessage={m.volumes_workspace_files_empty()}
+		uploadDescription={m.volumes_workspace_upload_description()}
+		rootDestinationLabel={m.volumes_workspace_root_destination()}
+		rootPathMessage={m.volumes_workspace_root_path()}
+		deleteConfirmMessage={(name) => m.volumes_workspace_delete_confirm({ name })}
+		lockedLabel={m.volumes_workspace_locked_file()}
+		onSelect={openWorkspaceFile}
+		onCreateFile={canUploadVolume ? createVolumeWorkspaceFile : undefined}
+		onCreateFolder={canUploadVolume ? createVolumeWorkspaceFolder : undefined}
+		onUpload={canUploadVolume ? uploadVolumeWorkspaceFiles : undefined}
+		multipleUploads={true}
+		allowUploadOverwrite={true}
+		validateName={validateWorkspaceFileName}
+		onRename={canUploadVolume && canDeleteVolume ? renameVolumeWorkspaceFile : undefined}
+		onMove={canUploadVolume && canDeleteVolume ? moveVolumeWorkspaceFile : undefined}
+		onDelete={canDeleteVolume ? deleteVolumeWorkspaceFile : undefined}
+		onDownload={downloadVolumeWorkspaceFile}
+		onRestore={canBackupVolume ? openWorkspaceRestoreDialog : undefined}
+	/>
+{/snippet}
+
+{#snippet workspaceRestoreForm()}
+	<div class="space-y-4 py-2">
+		<Alert.Root class="py-2 [&>svg]:top-2">
+			<InfoIcon class="size-4" />
+			<Alert.Description class="text-xs">{m.volumes_backup_safety_info()}</Alert.Description>
+		</Alert.Root>
+		{#if workspaceRestorePath}
+			<code class="block rounded bg-muted/40 px-2 py-1 font-mono text-xs break-all">/{workspaceRestorePath}</code>
+		{/if}
+		{#if loadingWorkspaceBackups}
+			<div class="flex items-center gap-2 text-sm text-muted-foreground">
+				<Spinner class="size-4" />
+				{m.common_loading()}
+			</div>
+		{:else if workspaceBackups.length === 0}
+			<div class="text-sm text-muted-foreground">{m.volumes_workspace_no_backups()}</div>
+		{:else}
+			<div class="space-y-2">
+				<Label for="workspace-restore-backup">{m.volumes_workspace_backup()}</Label>
+				<Select.Root
+					type="single"
+					value={selectedWorkspaceBackupId}
+					onValueChange={(value) => {
+						selectedWorkspaceBackupId = value;
+						workspaceBackupHasPath = null;
+						lastWorkspaceBackupCheck = '';
+					}}
+				>
+					<Select.Trigger id="workspace-restore-backup" class="h-10 w-full overflow-hidden">
+						<span class="min-w-0 flex-1 truncate">
+							{workspaceBackups.find((backup) => backup.id === selectedWorkspaceBackupId)
+								? formatWorkspaceBackupLabel(workspaceBackups.find((backup) => backup.id === selectedWorkspaceBackupId)!)
+								: m.volumes_workspace_backup()}
+						</span>
+					</Select.Trigger>
+					<Select.Content>
+						{#each workspaceBackups as backup (backup.id)}
+							<Select.Item value={backup.id}>{formatWorkspaceBackupLabel(backup)}</Select.Item>
+						{/each}
+					</Select.Content>
+				</Select.Root>
+			</div>
+			{#if checkingWorkspaceBackup}
+				<div class="flex items-center gap-2 text-xs text-muted-foreground">
+					<Spinner class="size-3" />
+					{m.common_loading()}
+				</div>
+			{:else if workspaceBackupHasPath === false}
+				<div class="text-xs text-destructive">{m.volumes_workspace_backup_missing_file()}</div>
+			{/if}
+		{/if}
+	</div>
+{/snippet}
+
+{#snippet volumeWorkspace(volume: VolumeDetailDto)}
+	{#if !canReadVolume}
+		<div class="flex min-h-96 items-center justify-center rounded-lg border text-sm text-muted-foreground">
+			{m.common_access_denied()}
+		</div>
+	{:else if workspaceQuery.isPending}
+		<div class="flex min-h-96 items-center justify-center rounded-lg border text-muted-foreground">
+			<Spinner class="size-6" />
+		</div>
+	{:else if workspaceQuery.error}
+		<div class="flex min-h-96 items-center justify-center rounded-lg border px-4 text-sm text-destructive">
+			{workspaceQuery.error instanceof Error ? workspaceQuery.error.message : m.common_failed()}
+		</div>
+	{:else}
+		<div class="space-y-3">
+			{#if workspaceQuery.data?.fileTreeTruncated}
+				<Alert.Root>
+					<AlertIcon class="size-4" />
+					<Alert.Description>{m.volumes_workspace_truncated()}</Alert.Description>
+				</Alert.Root>
+			{/if}
+			<div class="flex h-[calc(100vh-15rem)] min-h-[32rem] flex-col overflow-hidden rounded-lg border border-border bg-card">
+				<ResizableSplit
+					class="h-full min-h-0 flex-1"
+					{...composeTreeSplitProps}
+					bind:size={workspaceTreePaneWidth}
+					ariaLabel={m.compose_editor_resize_files_panel()}
+					persistKey={`arcane.volume.workspace.split:${currentEnvId}:${volume.name}`}
+				>
+					{#snippet first()}
+						{@render volumeWorkspaceTree()}
+					{/snippet}
+
+					{#snippet second()}
+						<div class="flex h-full min-h-0 flex-1 flex-col">
+							{#if workspaceTabs.length > 0}
+								<EditorTabStrip
+									tabs={workspaceTabs}
+									activeKey={activeWorkspaceTab}
+									onSelect={openWorkspaceFile}
+									onClose={closeWorkspaceTab}
+								/>
+							{/if}
+							<div class="flex min-h-0 flex-1 flex-col">
+								{#if !activeWorkspaceTab}
+									<div class="flex h-full items-center justify-center px-4 text-sm text-muted-foreground">
+										{m.volumes_workspace_select_file()}
+									</div>
+								{:else}
+									{@const relativePath = activeWorkspaceTab.slice(5)}
+									{@render volumeWorkspaceFileEditor(volume, relativePath)}
+								{/if}
+							</div>
+						</div>
+					{/snippet}
+				</ResizableSplit>
+			</div>
+		</div>
+	{/if}
+{/snippet}
+
+{#snippet volumeOverview(volume: VolumeDetailDto)}
+	<DetailMetaStrip
+		items={[
+			{ icon: VolumesIcon, label: m.common_driver(), value: volume.driver ?? m.common_unknown() },
+			{ icon: GlobeIcon, label: m.common_scope(), value: volume.scope ?? m.common_unknown() },
+			{ icon: ClockIcon, value: createdDate },
+			{ icon: LayersIcon, label: m.common_mountpoint(), value: volume.mountpoint ?? m.common_unknown(), mono: true }
+		]}
+	/>
+
+	{@render volumeContainers(volume)}
+
+	{#if volume.labels && Object.keys(volume.labels).length > 0}
+		<DetailSection title={m.common_labels()} icon={TagIcon}>
+			<KeyValueGrid>
+				{#each Object.entries(volume.labels) as [key, value] (key)}
+					<KeyValueCard label={key} valueTitle={m.common_click_to_select()}>{value}</KeyValueCard>
+				{/each}
+			</KeyValueGrid>
+		</DetailSection>
+	{/if}
+
+	{#if volume.options && Object.keys(volume.options).length > 0}
+		<DetailSection title={m.common_driver_options()} icon={VolumesIcon}>
+			<KeyValueGrid>
+				{#each Object.entries(volume.options) as [key, value] (key)}
+					<KeyValueCard label={key} valueTitle={m.common_click_to_select()}>{value}</KeyValueCard>
+				{/each}
+			</KeyValueGrid>
+		</DetailSection>
+	{/if}
+
+	{#if (!volume.labels || Object.keys(volume.labels).length === 0) && (!volume.options || Object.keys(volume.options).length === 0)}
+		<p class="border-t pt-6 text-center text-muted-foreground">{m.volumes_no_labels_or_options()}</p>
+	{/if}
+{/snippet}
+
 {#if volume}
 	<TabbedPageLayout backUrl="/volumes" backLabel={m.resource_volumes_cap()} {tabItems} {selectedTab} {onTabChange}>
 		{#snippet headerInfo()}
@@ -724,203 +989,9 @@
 		{#snippet tabContent(tab)}
 			<div class="space-y-6">
 				{#if tab === 'overview'}
-					<DetailMetaStrip
-						items={[
-							{ icon: VolumesIcon, label: m.common_driver(), value: volume.driver ?? m.common_unknown() },
-							{ icon: GlobeIcon, label: m.common_scope(), value: volume.scope ?? m.common_unknown() },
-							{ icon: ClockIcon, value: createdDate },
-							{ icon: LayersIcon, label: m.common_mountpoint(), value: volume.mountpoint ?? m.common_unknown(), mono: true }
-						]}
-					/>
-
-					<DetailSection title={m.volumes_containers_using_title()} icon={ContainersIcon}>
-						{#if containersDetailed.length > 0}
-							<div class="divide-y rounded-lg border">
-								{#each containersDetailed as c (c.id)}
-									<div class="flex flex-col p-3 sm:flex-row sm:items-center">
-										<div class="mb-2 w-full font-medium break-all sm:mb-0 sm:w-1/3">
-											<a href="/containers/{c.id}" class="flex items-center text-primary hover:underline">
-												<ContainersIcon class="mr-1.5 size-3.5 text-muted-foreground" />
-												{c.name}
-											</a>
-										</div>
-										<div class="w-full pl-0 sm:w-2/3 sm:pl-4">
-											<code
-												class="cursor-pointer rounded bg-muted px-1.5 py-0.5 font-mono text-xs break-all text-muted-foreground select-all sm:text-sm"
-												title={m.common_click_to_select()}
-											>
-												{truncateString(c.id, 48)}
-											</code>
-										</div>
-									</div>
-								{/each}
-							</div>
-						{:else if volume.containers && volume.containers.length > 0}
-							<!-- Fallback to IDs if names not resolved -->
-							<div class="divide-y rounded-lg border">
-								{#each volume.containers as id (id)}
-									<div class="flex items-center justify-between gap-3 p-3">
-										<code class="font-mono text-sm break-all">{truncateString(id, 48)}</code>
-										<a href={`/containers/${id}`} class="text-sm text-primary hover:underline">{m.common_view()}</a>
-									</div>
-								{/each}
-							</div>
-						{:else}
-							<div class="text-muted-foreground">{m.volumes_no_containers_using()}</div>
-						{/if}
-					</DetailSection>
-
-					{#if volume.labels && Object.keys(volume.labels).length > 0}
-						<DetailSection title={m.common_labels()} icon={TagIcon}>
-							<KeyValueGrid>
-								{#each Object.entries(volume.labels) as [key, value] (key)}
-									<KeyValueCard label={key} valueTitle={m.common_click_to_select()}>{value}</KeyValueCard>
-								{/each}
-							</KeyValueGrid>
-						</DetailSection>
-					{/if}
-
-					{#if volume.options && Object.keys(volume.options).length > 0}
-						<DetailSection title={m.common_driver_options()} icon={VolumesIcon}>
-							<KeyValueGrid>
-								{#each Object.entries(volume.options) as [key, value] (key)}
-									<KeyValueCard label={key} valueTitle={m.common_click_to_select()}>{value}</KeyValueCard>
-								{/each}
-							</KeyValueGrid>
-						</DetailSection>
-					{/if}
-
-					{#if (!volume.labels || Object.keys(volume.labels).length === 0) && (!volume.options || Object.keys(volume.options).length === 0)}
-						<p class="border-t pt-6 text-center text-muted-foreground">{m.volumes_no_labels_or_options()}</p>
-					{/if}
+					{@render volumeOverview(volume)}
 				{:else if tab === 'workspace'}
-					{#if !canReadVolume}
-						<div class="flex min-h-96 items-center justify-center rounded-lg border text-sm text-muted-foreground">
-							{m.common_access_denied()}
-						</div>
-					{:else if workspaceQuery.isPending}
-						<div class="flex min-h-96 items-center justify-center rounded-lg border text-muted-foreground">
-							<Spinner class="size-6" />
-						</div>
-					{:else if workspaceQuery.error}
-						<div class="flex min-h-96 items-center justify-center rounded-lg border px-4 text-sm text-destructive">
-							{workspaceQuery.error instanceof Error ? workspaceQuery.error.message : m.common_failed()}
-						</div>
-					{:else}
-						<div class="space-y-3">
-							{#if workspaceQuery.data?.fileTreeTruncated}
-								<Alert.Root>
-									<AlertIcon class="size-4" />
-									<Alert.Description>{m.volumes_workspace_truncated()}</Alert.Description>
-								</Alert.Root>
-							{/if}
-							<div
-								class="flex h-[calc(100vh-15rem)] min-h-[32rem] flex-col overflow-hidden rounded-lg border border-border bg-card"
-							>
-								<ResizableSplit
-									class="h-full min-h-0 flex-1"
-									{...composeTreeSplitProps}
-									bind:size={workspaceTreePaneWidth}
-									ariaLabel={m.compose_editor_resize_files_panel()}
-									persistKey={`arcane.volume.workspace.split:${currentEnvId}:${volume.name}`}
-								>
-									{#snippet first()}
-										<WorkspaceFileTreePanel
-											title={m.volumes_workspace_files()}
-											leadingRows={[]}
-											entries={visibleWorkspaceFiles}
-											selectedFile={selectedWorkspaceFile}
-											disabled={isLoading.save}
-											emptyMessage={m.volumes_workspace_files_empty()}
-											uploadDescription={m.volumes_workspace_upload_description()}
-											rootDestinationLabel={m.volumes_workspace_root_destination()}
-											rootPathMessage={m.volumes_workspace_root_path()}
-											deleteConfirmMessage={(name) => m.volumes_workspace_delete_confirm({ name })}
-											lockedLabel={m.volumes_workspace_locked_file()}
-											onSelect={openWorkspaceFile}
-											onCreateFile={canUploadVolume ? createVolumeWorkspaceFile : undefined}
-											onCreateFolder={canUploadVolume ? createVolumeWorkspaceFolder : undefined}
-											onUpload={canUploadVolume ? uploadVolumeWorkspaceFiles : undefined}
-											multipleUploads={true}
-											allowUploadOverwrite={true}
-											validateName={validateWorkspaceFileName}
-											onRename={canUploadVolume && canDeleteVolume ? renameVolumeWorkspaceFile : undefined}
-											onMove={canUploadVolume && canDeleteVolume ? moveVolumeWorkspaceFile : undefined}
-											onDelete={canDeleteVolume ? deleteVolumeWorkspaceFile : undefined}
-											onDownload={downloadVolumeWorkspaceFile}
-											onRestore={canBackupVolume ? openWorkspaceRestoreDialog : undefined}
-										/>
-									{/snippet}
-
-									{#snippet second()}
-										<div class="flex h-full min-h-0 flex-1 flex-col">
-											{#if workspaceTabs.length > 0}
-												<EditorTabStrip
-													tabs={workspaceTabs}
-													activeKey={activeWorkspaceTab}
-													onSelect={openWorkspaceFile}
-													onClose={closeWorkspaceTab}
-												/>
-											{/if}
-											<div class="flex min-h-0 flex-1 flex-col">
-												{#if !activeWorkspaceTab}
-													<div class="flex h-full items-center justify-center px-4 text-sm text-muted-foreground">
-														{m.volumes_workspace_select_file()}
-													</div>
-												{:else}
-													{@const relativePath = activeWorkspaceTab.slice(5)}
-													{#if workspaceFileLoadErrors[relativePath]}
-														<div class="flex h-full items-center justify-center px-4 text-sm text-destructive">
-															{workspaceFileLoadErrors[relativePath]}
-														</div>
-													{:else if workspaceFileLoading[relativePath] || !selectedWorkspaceMetadata}
-														<div class="flex h-full items-center justify-center text-muted-foreground">
-															<Spinner class="size-5" />
-														</div>
-													{:else if selectedWorkspaceMetadata.editable && workspaceFileContents[relativePath] !== undefined}
-														<CodePanel
-															variant="plain"
-															open={true}
-															title={relativePath}
-															language={workspaceFileLanguage(relativePath)}
-															validationMode="none"
-															bind:value={workspaceFileContents[relativePath]}
-															readOnly={!canUploadVolume}
-															fileId={`volume:${currentEnvId}:${volume.name}:${relativePath}`}
-															originalValue={loadedWorkspaceFileContents[relativePath] ?? ''}
-															enableDiff={true}
-														/>
-													{:else}
-														<div class="flex h-full items-center justify-center p-6">
-															<Card.Root class="w-full max-w-xl">
-																<Card.Header icon={FileTextIcon}>
-																	<div class="min-w-0">
-																		<Card.Title>{workspaceFileBasename(relativePath)}</Card.Title>
-																		<Card.Description
-																			>{workspaceReadOnlyMessage(selectedWorkspaceMetadata.readOnlyReason)}</Card.Description
-																		>
-																	</div>
-																</Card.Header>
-																<Card.Content class="space-y-2 text-sm text-muted-foreground">
-																	<p>{m.common_size()}: {bytes.format(selectedWorkspaceMetadata.size, { unitSeparator: ' ' })}</p>
-																	{#if selectedWorkspaceMetadata.mimeType}<p>
-																			{m.common_type()}: {selectedWorkspaceMetadata.mimeType}
-																		</p>{/if}
-																	{#if selectedWorkspaceEntry?.linkTarget}<p>
-																			{m.volumes_symlink_target_tooltip({ target: selectedWorkspaceEntry.linkTarget })}
-																		</p>{/if}
-																</Card.Content>
-															</Card.Root>
-														</div>
-													{/if}
-												{/if}
-											</div>
-										</div>
-									{/snippet}
-								</ResizableSplit>
-							</div>
-						</div>
-					{/if}
+					{@render volumeWorkspace(volume)}
 				{:else if tab === 'backups'}
 					<BackupList volumeName={volume.name} {hasWorkspaceChanges} onWorkspaceRestored={refreshRestoredVolumeWorkspace} />
 				{/if}
@@ -954,57 +1025,7 @@
 	contentClass="sm:max-w-[520px]"
 >
 	{#snippet children()}
-		<div class="space-y-4 py-2">
-			<Alert.Root class="py-2 [&>svg]:top-2">
-				<InfoIcon class="size-4" />
-				<Alert.Description class="text-xs">{m.volumes_backup_safety_info()}</Alert.Description>
-			</Alert.Root>
-			{#if workspaceRestorePath}
-				<code class="block rounded bg-muted/40 px-2 py-1 font-mono text-xs break-all">/{workspaceRestorePath}</code>
-			{/if}
-			{#if loadingWorkspaceBackups}
-				<div class="flex items-center gap-2 text-sm text-muted-foreground">
-					<Spinner class="size-4" />
-					{m.common_loading()}
-				</div>
-			{:else if workspaceBackups.length === 0}
-				<div class="text-sm text-muted-foreground">{m.volumes_workspace_no_backups()}</div>
-			{:else}
-				<div class="space-y-2">
-					<Label for="workspace-restore-backup">{m.volumes_workspace_backup()}</Label>
-					<Select.Root
-						type="single"
-						value={selectedWorkspaceBackupId}
-						onValueChange={(value) => {
-							selectedWorkspaceBackupId = value;
-							workspaceBackupHasPath = null;
-							lastWorkspaceBackupCheck = '';
-						}}
-					>
-						<Select.Trigger id="workspace-restore-backup" class="h-10 w-full overflow-hidden">
-							<span class="min-w-0 flex-1 truncate">
-								{workspaceBackups.find((backup) => backup.id === selectedWorkspaceBackupId)
-									? formatWorkspaceBackupLabel(workspaceBackups.find((backup) => backup.id === selectedWorkspaceBackupId)!)
-									: m.volumes_workspace_backup()}
-							</span>
-						</Select.Trigger>
-						<Select.Content>
-							{#each workspaceBackups as backup (backup.id)}
-								<Select.Item value={backup.id}>{formatWorkspaceBackupLabel(backup)}</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-				</div>
-				{#if checkingWorkspaceBackup}
-					<div class="flex items-center gap-2 text-xs text-muted-foreground">
-						<Spinner class="size-3" />
-						{m.common_loading()}
-					</div>
-				{:else if workspaceBackupHasPath === false}
-					<div class="text-xs text-destructive">{m.volumes_workspace_backup_missing_file()}</div>
-				{/if}
-			{/if}
-		</div>
+		{@render workspaceRestoreForm()}
 	{/snippet}
 
 	{#snippet footer()}

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Command as CommandPrimitive } from 'bits-ui';
-	import { SearchIcon } from '#lib/icons';
+	import { SearchIcon } from '#lib/icons/index.js';
 	import { cn } from '#lib/utils.js';
 
 	let { ref = $bindable(null), class: className, value = $bindable(''), ...restProps }: CommandPrimitive.InputProps = $props();

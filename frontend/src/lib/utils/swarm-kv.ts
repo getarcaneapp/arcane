@@ -1,5 +1,5 @@
-import { m } from '#lib/paraglide/messages';
-import { formatRelativeTime } from '#lib/utils/formatting';
+import { m } from '#lib/paraglide/messages.js';
+import { formatRelativeTime } from '#lib/utils/formatting.js';
 
 export function getSwarmSpecName(spec: Record<string, unknown> | null | undefined, fallback: string): string {
 	const name = spec && typeof spec === 'object' ? spec['Name'] : undefined;

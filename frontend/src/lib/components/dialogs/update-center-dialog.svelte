@@ -1,18 +1,18 @@
 <script lang="ts">
-	import * as Dialog from '#lib/components/ui/dialog';
-	import * as ScrollArea from '#lib/components/ui/scroll-area';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import * as ScrollArea from '#lib/components/ui/scroll-area/index.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import Spinner from '#lib/components/ui/spinner/spinner.svelte';
-	import { m } from '#lib/paraglide/messages';
-	import { queryKeys } from '#lib/query/query-keys';
+	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { onDestroy } from 'svelte';
-	import systemUpgradeService from '#lib/services/api/system-upgrade-service';
-	import BaseAPIService from '#lib/services/api-service';
-	import { cn } from '#lib/utils';
-	import { ExternalLinkIcon, SuccessIcon } from '#lib/icons';
-	import type { AppVersionInformation } from '#lib/types/settings';
+	import systemUpgradeService from '#lib/services/api/system-upgrade-service.js';
+	import BaseAPIService from '#lib/services/api-service.js';
+	import { cn } from '#lib/utils.js';
+	import { ExternalLinkIcon, SuccessIcon } from '#lib/icons/index.js';
+	import type { AppVersionInformation } from '#lib/types/settings.js';
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
-	import { formatRelativeTime } from '#lib/utils/formatting';
+	import { formatRelativeTime } from '#lib/utils/formatting.js';
 	import ReleaseNotes from '#lib/components/release-notes.svelte';
 	import VersionUpdateSummary from './version-update-summary.svelte';
 

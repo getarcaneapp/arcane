@@ -8,14 +8,22 @@
 	import ActivityBatchItem from './activity-batch-item.svelte';
 	import ActivityDetailPanel from './activity-detail-panel.svelte';
 	import ActivityFilterPopover from './activity-filter-popover.svelte';
-	import { activityStore } from '#lib/stores/activity.store.svelte';
-	import type { Activity, ActivityGroup } from '#lib/types/activity.type';
-	import { ActivityIcon, AlertTriangleIcon, CloseIcon, EllipsisIcon, RefreshIcon, SearchIcon, TrashIcon } from '#lib/icons';
-	import { m } from '#lib/paraglide/messages';
-	import { cn } from '#lib/utils';
+	import { activityStore } from '#lib/stores/activity.store.svelte.js';
+	import type { Activity, ActivityGroup } from '#lib/types/activity.type.js';
+	import {
+		ActivityIcon,
+		AlertTriangleIcon,
+		CloseIcon,
+		EllipsisIcon,
+		RefreshIcon,
+		SearchIcon,
+		TrashIcon
+	} from '#lib/icons/index.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { cn } from '#lib/utils.js';
 	import { confirmCancelActivity } from './activity-cancel';
 	import { activityCompletionToastsEnabled } from './activity-completion-toasts';
-	import { openConfirmDialog } from '#lib/components/confirm-dialog';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import { toast } from 'svelte-sonner';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
 

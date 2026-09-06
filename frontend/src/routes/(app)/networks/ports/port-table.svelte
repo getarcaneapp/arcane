@@ -1,14 +1,14 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
-	import { Badge } from '#lib/components/ui/badge';
-	import { UniversalMobileCard } from '#lib/components/arcane-table';
-	import type { ColumnSpec, MobileFieldVisibility } from '#lib/components/arcane-table';
-	import { ContainersIcon, ConnectionIcon, GlobeIcon, HashIcon } from '#lib/icons';
-	import { m } from '#lib/paraglide/messages';
-	import { portService } from '#lib/services/port-service';
-	import type { SearchPaginationSortRequest, Paginated } from '#lib/types/shared';
-	import type { PortMappingDto } from '#lib/types/docker';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { UniversalMobileCard } from '#lib/components/arcane-table/index.js';
+	import type { ColumnSpec, MobileFieldVisibility } from '#lib/components/arcane-table/index.js';
+	import { ContainersIcon, ConnectionIcon, GlobeIcon, HashIcon } from '#lib/icons/index.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { portService } from '#lib/services/port-service.js';
+	import type { SearchPaginationSortRequest, Paginated } from '#lib/types/shared.js';
+	import type { PortMappingDto } from '#lib/types/docker.js';
 
 	let {
 		ports,

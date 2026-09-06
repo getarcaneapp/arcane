@@ -1,13 +1,14 @@
 <script lang="ts">
-	import { m } from '#lib/paraglide/messages';
-	import { volumeBackupService, type VolumeBackupListResponse } from '#lib/services/volume-backup-service';
-	import { s3DestinationService } from '#lib/services/s3-destination-service';
-	import { volumeService } from '#lib/services/volume-service';
-	import type { BackupEntry, CreateVolumeBackupRequest, VolumeBackupPolicy } from '#lib/types/shared';
-	import type { S3Destination } from '#lib/types/s3-destination';
+	import { backupRunColumns, backupRunMobileFields } from '#lib/components/arcane-table/backup-columns.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { volumeBackupService, type VolumeBackupListResponse } from '#lib/services/volume-backup-service.js';
+	import { s3DestinationService } from '#lib/services/s3-destination-service.js';
+	import { volumeService } from '#lib/services/volume-service.js';
+	import type { BackupEntry, CreateVolumeBackupRequest, VolumeBackupPolicy } from '#lib/types/shared.js';
+	import type { S3Destination } from '#lib/types/s3-destination.js';
 	import { onMount } from 'svelte';
-	import { useBackupActivity } from '#lib/hooks/use-backup-activity.svelte';
-	import { activityStore } from '#lib/stores/activity.store.svelte';
+	import { useBackupActivity } from '#lib/hooks/use-backup-activity.svelte.js';
+	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import {
 		TrashIcon,
 		AddIcon,
@@ -20,29 +21,29 @@
 		AlertIcon,
 		UploadIcon,
 		ArrowDownIcon
-	} from '#lib/icons';
-	import { ArcaneButton, arcaneButtonVariants } from '#lib/components/arcane-button';
-	import * as ButtonGroup from '#lib/components/ui/button-group';
+	} from '#lib/icons/index.js';
+	import { ArcaneButton, arcaneButtonVariants } from '#lib/components/arcane-button/index.js';
+	import * as ButtonGroup from '#lib/components/ui/button-group/index.js';
 	import { toast } from 'svelte-sonner';
-	import { bytes, formatDateTimeShort } from '#lib/utils/formatting';
+	import { bytes, formatDateTimeShort } from '#lib/utils/formatting.js';
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
-	import type { SearchPaginationSortRequest } from '#lib/types/shared';
+	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import {
 		UniversalMobileCard,
 		type BulkAction,
 		type ColumnSpec,
 		type MobileFieldVisibility
-	} from '#lib/components/arcane-table';
-	import * as DropdownMenu from '#lib/components/ui/dropdown-menu';
+	} from '#lib/components/arcane-table/index.js';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import RowActionsMenu from '#lib/components/file-browser/row-actions-menu.svelte';
-	import { openConfirmDialog } from '#lib/components/confirm-dialog';
-	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog';
-	import * as Alert from '#lib/components/ui/alert';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
+	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
+	import * as Alert from '#lib/components/ui/alert/index.js';
 	import BackupFilePicker from '#lib/components/backup-file-picker.svelte';
-	import { environmentStore } from '#lib/stores/environment.store.svelte';
-	import { hasPermission } from '#lib/utils/auth';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import { hasPermission } from '#lib/utils/auth.js';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
-	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
+	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import BackupPolicyDialog from '#lib/components/backup-policy-dialog.svelte';
 	import BackupPolicyCard from '#lib/components/backup-policy-card.svelte';
 	import BackupStatusCell from '#lib/components/arcane-table/cells/backup-status-cell.svelte';
@@ -51,18 +52,18 @@
 	import BackupSizeCell from '#lib/components/arcane-table/cells/backup-size-cell.svelte';
 	import CreatedAtCell from '#lib/components/arcane-table/cells/created-at-cell.svelte';
 	import BackupManagementCell from '#lib/components/arcane-table/cells/backup-management-cell.svelte';
-	import { cn } from '#lib/utils';
-	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions';
-	import { extractApiErrorMessage } from '#lib/utils/api';
+	import { cn } from '#lib/utils.js';
+	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions.js';
+	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import {
 		backupDestinationDisplay,
 		backupManagementFilterOptions,
 		backupManagementLabel,
 		backupTriggerLabel,
 		s3DestinationOptions as buildS3DestinationOptions
-	} from '#lib/utils/backups';
+	} from '#lib/utils/backups.js';
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
-	import type { BackupFileProvider } from '#lib/types/backup';
+	import type { BackupFileProvider } from '#lib/types/backup.js';
 
 	let {
 		volumeName,
@@ -348,10 +349,7 @@
 			cell: TypeCell,
 			filterOptions: backupManagementFilterOptions()
 		},
-		{ accessorKey: 'status', title: m.common_status(), sortable: true, cell: StatusCell },
-		{ accessorKey: 'trigger', title: m.volume_backup_trigger(), sortable: true, cell: TriggerCell },
-		{ accessorKey: 'destination', title: m.backups_destination_label(), sortable: true, cell: DestinationCell },
-		{ accessorKey: 'size', title: m.common_size(), sortable: true, cell: SizeCell },
+		...backupRunColumns({ status: StatusCell, trigger: TriggerCell, destination: DestinationCell, size: SizeCell }),
 		{ accessorKey: 'createdAt', title: m.common_created(), sortable: true, cell: CreatedCell },
 		{
 			accessorKey: 'remoteSnapshotId',
@@ -364,11 +362,7 @@
 	] satisfies ColumnSpec<BackupEntry>[];
 
 	const mobileFields = [
-		{ id: 'type', label: m.common_type(), defaultVisible: true },
-		{ id: 'status', label: m.common_status(), defaultVisible: true },
-		{ id: 'trigger', label: m.volume_backup_trigger(), defaultVisible: true },
-		{ id: 'destination', label: m.backups_destination_label(), defaultVisible: true },
-		{ id: 'size', label: m.common_size(), defaultVisible: true },
+		...backupRunMobileFields(),
 		{ id: 'remoteSnapshotId', label: m.volume_backup_remote_snapshot(), defaultVisible: false }
 	];
 

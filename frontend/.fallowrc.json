@@ -16,6 +16,7 @@
 		"tests/**"
 	],
 	"ignoreDependencies": [
+		"@typescript/native",
 		"@iconify/json",
 		"@tanstack/svelte-query-devtools",
 		"paneforge",

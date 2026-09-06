@@ -1,9 +1,9 @@
 <script lang="ts">
-	import * as Card from '#lib/components/ui/card';
-	import { Badge } from '#lib/components/ui/badge';
-	import { m } from '#lib/paraglide/messages';
-	import type { ContainerDetailsDto } from '#lib/types/docker';
-	import { VolumesIcon, TerminalIcon } from '#lib/icons';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import type { ContainerDetailsDto } from '#lib/types/docker.js';
+	import { VolumesIcon, TerminalIcon } from '#lib/icons/index.js';
 
 	interface Props {
 		container: ContainerDetailsDto;

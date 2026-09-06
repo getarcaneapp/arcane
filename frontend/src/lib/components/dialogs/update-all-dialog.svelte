@@ -1,10 +1,10 @@
 <script lang="ts">
-	import * as Dialog from '#lib/components/ui/dialog';
-	import * as ScrollArea from '#lib/components/ui/scroll-area';
-	import { Button } from '#lib/components/ui/button';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import * as ScrollArea from '#lib/components/ui/scroll-area/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
 	import Spinner from '#lib/components/ui/spinner/spinner.svelte';
-	import { cn } from '#lib/utils';
-	import { m } from '#lib/paraglide/messages';
+	import { cn } from '#lib/utils.js';
+	import { m } from '#lib/paraglide/messages.js';
 	import { toast } from 'svelte-sonner';
 	import { onDestroy } from 'svelte';
 	import { refreshAll } from '$app/navigation';
@@ -12,12 +12,12 @@
 		type UpdateAllJob,
 		type UpdateAllEnvironmentResult,
 		type UpdateAllEnvironmentStatus
-	} from '#lib/services/api/system-upgrade-service';
-	import { SuccessIcon, ClockIcon, AlertIcon, AlertTriangleIcon, ExternalLinkIcon } from '#lib/icons';
-	import BaseAPIService from '#lib/services/api-service';
+	} from '#lib/services/api/system-upgrade-service.js';
+	import { SuccessIcon, ClockIcon, AlertIcon, AlertTriangleIcon, ExternalLinkIcon } from '#lib/icons/index.js';
+	import BaseAPIService from '#lib/services/api-service.js';
 	import ReleaseNotes from '#lib/components/release-notes.svelte';
-	import type { AppVersionInformation } from '#lib/types/settings';
-	import { formatRelativeTime, nowInstantString } from '#lib/utils/formatting';
+	import type { AppVersionInformation } from '#lib/types/settings.js';
+	import { formatRelativeTime, nowInstantString } from '#lib/utils/formatting.js';
 	import VersionUpdateSummary from './version-update-summary.svelte';
 
 	// open has no $bindable fallback: upstream binds can start out undefined, and
@@ -179,73 +179,46 @@
 	const doneCount = $derived(results.filter((r) => r.status !== 'pending' && r.status !== 'updating').length);
 	const failed = $derived(job?.status === 'failed');
 
-	function statusLabel(status: UpdateAllEnvironmentStatus): string {
-		switch (status) {
-			case 'updating':
-				return m.common_action_updating();
-			case 'updated':
-				return m.common_updated();
-			case 'up_to_date':
-				return m.image_update_up_to_date_title();
-			case 'triggered':
-				return m.environments_update_all_status_triggered();
-			case 'skipped_offline':
-				return m.environments_update_all_status_skipped_offline();
-			case 'failed':
-				return m.common_failed();
-			default:
-				return m.common_pending();
-		}
-	}
+	const completedColors = {
+		segment: 'bg-green-500',
+		badge: 'border-green-500/40 bg-green-500/10 text-green-600 dark:text-green-400',
+		text: 'text-muted-foreground'
+	};
+	const pendingDisplay = {
+		label: m.common_pending,
+		segment: 'bg-muted',
+		badge: 'border-border bg-muted/40 text-muted-foreground/60',
+		text: 'text-muted-foreground'
+	};
+	const environmentStatusDisplay = new Map(
+		Object.entries({
+			pending: pendingDisplay,
+			updating: {
+				label: m.common_action_updating,
+				segment: 'bg-primary animate-pulse',
+				badge: 'border-primary/40 bg-primary/10 text-primary',
+				text: 'text-primary'
+			},
+			updated: { label: m.common_updated, ...completedColors },
+			up_to_date: { label: m.image_update_up_to_date_title, ...completedColors },
+			triggered: { label: m.environments_update_all_status_triggered, ...completedColors },
+			skipped_offline: {
+				label: m.environments_update_all_status_skipped_offline,
+				segment: 'bg-amber-500',
+				badge: 'border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400',
+				text: 'text-amber-600 dark:text-amber-400'
+			},
+			failed: {
+				label: m.common_failed,
+				segment: 'bg-destructive',
+				badge: 'border-destructive/40 bg-destructive/10 text-destructive',
+				text: 'text-destructive'
+			}
+		} satisfies Record<UpdateAllEnvironmentStatus, { label: () => string; segment: string; badge: string; text: string }>)
+	);
 
-	// One segment per environment, colored by outcome: the whole fleet's state reads
-	// at a glance, and an in-flight environment stays indeterminate because the
-	// backend reports status transitions, never a percentage.
-	function segmentClass(status: UpdateAllEnvironmentStatus): string {
-		switch (status) {
-			case 'updating':
-				return 'bg-primary animate-pulse';
-			case 'updated':
-			case 'triggered':
-			case 'up_to_date':
-				return 'bg-green-500';
-			case 'skipped_offline':
-				return 'bg-amber-500';
-			case 'failed':
-				return 'bg-destructive';
-			default:
-				return 'bg-muted';
-		}
-	}
-
-	function badgeClass(status: UpdateAllEnvironmentStatus): string {
-		switch (status) {
-			case 'updated':
-			case 'triggered':
-			case 'up_to_date':
-				return 'border-green-500/40 bg-green-500/10 text-green-600 dark:text-green-400';
-			case 'updating':
-				return 'border-primary/40 bg-primary/10 text-primary';
-			case 'skipped_offline':
-				return 'border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400';
-			case 'failed':
-				return 'border-destructive/40 bg-destructive/10 text-destructive';
-			default:
-				return 'border-border bg-muted/40 text-muted-foreground/60';
-		}
-	}
-
-	function labelClass(status: UpdateAllEnvironmentStatus): string {
-		switch (status) {
-			case 'updating':
-				return 'text-primary';
-			case 'skipped_offline':
-				return 'text-amber-600 dark:text-amber-400';
-			case 'failed':
-				return 'text-destructive';
-			default:
-				return 'text-muted-foreground';
-		}
+	function statusPresentation(status: UpdateAllEnvironmentStatus) {
+		return environmentStatusDisplay.get(status) ?? pendingDisplay;
 	}
 
 	// An environment that was already current reports the same version twice; show it
@@ -393,7 +366,7 @@
 				{#if totalCount > 0}
 					<div class="mt-3 flex gap-1">
 						{#each results as result (result.environmentId)}
-							<div class={cn('h-1.5 flex-1 rounded-full transition-colors', segmentClass(result.status))}></div>
+							<div class={cn('h-1.5 flex-1 rounded-full transition-colors', statusPresentation(result.status).segment)}></div>
 						{/each}
 					</div>
 				{/if}
@@ -418,7 +391,10 @@
 								{@const versions = versionLine(result)}
 								<li class="flex items-center gap-3 px-6 py-2.5 text-sm">
 									<span
-										class={cn('flex size-7 shrink-0 items-center justify-center rounded-full border', badgeClass(result.status))}
+										class={cn(
+											'flex size-7 shrink-0 items-center justify-center rounded-full border',
+											statusPresentation(result.status).badge
+										)}
 									>
 										{#if result.status === 'updated' || result.status === 'triggered' || result.status === 'up_to_date'}
 											<SuccessIcon class="size-3.5" />
@@ -447,8 +423,8 @@
 										{/if}
 									</div>
 
-									<span class={cn('shrink-0 text-xs', labelClass(result.status))}>
-										{statusLabel(result.status)}
+									<span class={cn('shrink-0 text-xs', statusPresentation(result.status).text)}>
+										{statusPresentation(result.status).label()}
 									</span>
 								</li>
 							{/each}

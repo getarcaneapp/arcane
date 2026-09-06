@@ -1,5 +1,5 @@
 <script module lang="ts">
-	import { m } from '#lib/paraglide/messages';
+	import { m } from '#lib/paraglide/messages.js';
 
 	export interface NotificationProviderTestOption {
 		label: string;
@@ -19,9 +19,9 @@
 </script>
 
 <script lang="ts">
-	import * as DropdownMenu from '#lib/components/ui/dropdown-menu';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import { ArrowDownIcon, SendEmailIcon } from '#lib/icons';
+	import { ArrowDownIcon, SendEmailIcon } from '#lib/icons/index.js';
 
 	interface Props {
 		disabled?: boolean;

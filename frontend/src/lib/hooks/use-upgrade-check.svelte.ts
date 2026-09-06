@@ -1,7 +1,7 @@
-import { queryKeys } from '#lib/query/query-keys';
-import systemUpgradeService from '#lib/services/api/system-upgrade-service';
-import type { AppVersionInformation } from '#lib/types/settings';
-import { hasPermission } from '#lib/utils/auth';
+import { queryKeys } from '#lib/query/query-keys.js';
+import systemUpgradeService from '#lib/services/api/system-upgrade-service.js';
+import type { AppVersionInformation } from '#lib/types/settings.js';
+import { hasPermission } from '#lib/utils/auth.js';
 import { createQuery } from '@tanstack/svelte-query';
 
 type UseUpgradeCheckOptions = {

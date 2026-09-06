@@ -1,12 +1,12 @@
 <script lang="ts">
 	import * as Empty from '#lib/components/ui/empty/index.js';
-	import { m } from '#lib/paraglide/messages';
-	import { ErrorNotFoundIcon } from '#lib/icons';
+	import { m } from '#lib/paraglide/messages.js';
+	import { ErrorNotFoundIcon } from '#lib/icons/index.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { goto } from '$app/navigation';
 	import EnvironmentSwitcherDialog from '#lib/components/dialogs/environment-switcher-dialog.svelte';
-	import { environmentStore } from '#lib/stores/environment.store.svelte';
-	import settingsStore from '#lib/stores/config-store';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import settingsStore from '#lib/stores/config-store.js';
 
 	let {
 		message,
@@ -29,24 +29,20 @@
 	// Check if this is a connection error
 	const isConnectionError = $derived.by(() => {
 		const lowerMessage = message.toLowerCase();
-		return (
-			lowerMessage.includes('connection') ||
-			lowerMessage.includes('proxy') ||
-			lowerMessage.includes('reset') ||
-			lowerMessage.includes('timeout') ||
-			lowerMessage.includes('network') ||
-			lowerMessage.includes('tcp') ||
-			lowerMessage.includes('dial') ||
-			lowerMessage.includes('lookup') ||
-			lowerMessage.includes('host') ||
-			lowerMessage.includes('refused') ||
-			lowerMessage.includes('internal error') ||
-			!status ||
-			status === 500 ||
-			status === 502 ||
-			status === 503 ||
-			status === 504
-		);
+		const connectionTerms = [
+			'connection',
+			'proxy',
+			'reset',
+			'timeout',
+			'network',
+			'tcp',
+			'dial',
+			'lookup',
+			'host',
+			'refused',
+			'internal error'
+		];
+		return connectionTerms.some((term) => lowerMessage.includes(term)) || !status || [500, 502, 503, 504].includes(status);
 	});
 
 	const connectionErrorTitle = $derived.by(() => {

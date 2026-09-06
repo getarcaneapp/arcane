@@ -1,20 +1,20 @@
 <script lang="ts">
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
-	import * as Alert from '#lib/components/ui/alert';
+	import * as Alert from '#lib/components/ui/alert/index.js';
 	import SearchableSelect from '#lib/components/form/searchable-select.svelte';
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
 	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
-	import { SecurityIcon, InfoIcon } from '#lib/icons';
-	import { m } from '#lib/paraglide/messages';
+	import { SecurityIcon, InfoIcon } from '#lib/icons/index.js';
+	import { m } from '#lib/paraglide/messages.js';
 	import { toast } from 'svelte-sonner';
-	import { networkService } from '#lib/services/network-service';
-	import type { SearchPaginationSortRequest } from '#lib/types/shared';
-	import type { Settings } from '#lib/types/settings';
+	import { networkService } from '#lib/services/network-service.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import type { Settings } from '#lib/types/settings.js';
 	import type { Readable } from 'svelte/store';
 	import SectionCard from '#lib/components/section-card.svelte';
-	import { arcaneImageRegistryOptions, arcaneTrivyDbImages } from '#lib/utils/registry';
+	import { arcaneImageRegistryOptions, arcaneTrivyDbImages } from '#lib/utils/registry.js';
 
 	type TrivySecurityFormValues = Pick<
 		Settings,

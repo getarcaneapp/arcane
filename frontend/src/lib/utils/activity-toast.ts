@@ -1,6 +1,6 @@
-import { activityStore } from '#lib/stores/activity.store.svelte';
-import { markActivityToastShown } from '#lib/components/activity/activity-completion-toasts';
-import { m } from '#lib/paraglide/messages';
+import { activityStore } from '#lib/stores/activity.store.svelte.js';
+import { markActivityToastShown } from '#lib/components/activity/activity-completion-toasts.js';
+import { m } from '#lib/paraglide/messages.js';
 
 export function activityToastOptions(activityId?: string, suppressCompletion = true) {
 	if (!activityId) {

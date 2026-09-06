@@ -1,5 +1,5 @@
-import type { WorkspaceFileDraft } from '#lib/types/workspace';
-import { m } from '#lib/paraglide/messages';
+import type { WorkspaceFileDraft } from '#lib/types/workspace.js';
+import { m } from '#lib/paraglide/messages.js';
 import {
 	isWorkspaceFileSelectionUnder,
 	readWorkspaceUpload,
@@ -10,7 +10,7 @@ import {
 	workspaceFileBasename,
 	workspaceFilePathMatches,
 	type WorkspaceDisplayEntry
-} from '#lib/utils/workspace-files';
+} from '#lib/utils/workspace-files.js';
 
 type RenamePlan = { newPath: string };
 

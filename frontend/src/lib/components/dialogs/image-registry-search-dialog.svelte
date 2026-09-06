@@ -3,10 +3,10 @@
 	import * as InputGroup from '#lib/components/ui/input-group/index.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
-	import { imageService } from '#lib/services/image-service';
-	import { m } from '#lib/paraglide/messages';
-	import type { ImageSearchResultDto } from '#lib/types/docker';
-	import { SearchIcon, DownloadIcon, VerifiedCheckIcon } from '#lib/icons';
+	import { imageService } from '#lib/services/image-service.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import type { ImageSearchResultDto } from '#lib/types/docker.js';
+	import { SearchIcon, DownloadIcon, VerifiedCheckIcon } from '#lib/icons/index.js';
 	import { toast } from 'svelte-sonner';
 
 	type Props = {

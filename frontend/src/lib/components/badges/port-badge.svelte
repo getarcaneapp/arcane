@@ -1,12 +1,12 @@
 <script lang="ts">
-	import type { ContainerPorts } from '#lib/types/docker';
-	import type { ServicePort } from '#lib/types/swarm';
-	import { m } from '#lib/paraglide/messages';
-	import * as ArcaneTooltip from '#lib/components/arcane-tooltip';
-	import { badgeVariants } from '#lib/components/ui/badge';
-	import { cn } from '#lib/utils';
-	import settingsStore from '#lib/stores/config-store';
-	import { toPortHref } from '#lib/utils/navigation';
+	import type { ContainerPorts } from '#lib/types/docker.js';
+	import type { ServicePort } from '#lib/types/swarm.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
+	import { badgeVariants } from '#lib/components/ui/badge/index.js';
+	import { cn } from '#lib/utils.js';
+	import settingsStore from '#lib/stores/config-store.js';
+	import { toPortHref } from '#lib/utils/navigation.js';
 	import { mergeProps } from 'bits-ui';
 
 	let {

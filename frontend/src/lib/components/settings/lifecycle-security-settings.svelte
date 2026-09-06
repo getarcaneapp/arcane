@@ -1,10 +1,10 @@
 <script lang="ts">
-	import * as Alert from '#lib/components/ui/alert';
+	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
-	import { AlertIcon, CodeIcon } from '#lib/icons';
-	import { m } from '#lib/paraglide/messages';
+	import { AlertIcon, CodeIcon } from '#lib/icons/index.js';
+	import { m } from '#lib/paraglide/messages.js';
 	import type { Readable } from 'svelte/store';
 	import SectionCard from '#lib/components/section-card.svelte';
 

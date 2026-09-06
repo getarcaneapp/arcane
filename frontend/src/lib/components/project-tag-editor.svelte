@@ -1,11 +1,11 @@
 <script lang="ts">
-	import type { ProjectTag, ProjectTagColor, ProjectTagOption } from '#lib/types/swarm';
-	import * as Command from '#lib/components/ui/command';
-	import * as Popover from '#lib/components/ui/popover';
-	import * as Select from '#lib/components/ui/select';
-	import { Badge } from '#lib/components/ui/badge';
-	import { AddIcon, CheckIcon, LockIcon } from '#lib/icons';
-	import { m } from '#lib/paraglide/messages';
+	import type { ProjectTag, ProjectTagColor, ProjectTagOption } from '#lib/types/swarm.js';
+	import * as Command from '#lib/components/ui/command/index.js';
+	import * as Popover from '#lib/components/ui/popover/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { AddIcon, CheckIcon, LockIcon } from '#lib/icons/index.js';
+	import { m } from '#lib/paraglide/messages.js';
 	import { toast } from 'svelte-sonner';
 	import { mergeProps } from 'bits-ui';
 

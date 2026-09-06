@@ -2,9 +2,9 @@
 	import { Progress } from '#lib/components/ui/progress/index.js';
 	import SwitchWithLabel from '#lib/components/form/labeled-switch.svelte';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import { TerminalIcon } from '#lib/icons';
-	import { m } from '#lib/paraglide/messages';
-	import { ansiToHtml } from '#lib/utils/formatting';
+	import { TerminalIcon } from '#lib/icons/index.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { ansiToHtml } from '#lib/utils/formatting.js';
 
 	type AutoScrollParams = {
 		enabled: boolean;

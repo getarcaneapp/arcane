@@ -13,16 +13,16 @@
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
-	import { m } from '#lib/paraglide/messages';
-	import { CloseIcon, ContainersIcon, NetworksIcon, SettingsIcon, VariableIcon, VolumesIcon } from '#lib/icons';
-	import { preventDefault, createForm } from '#lib/utils/settings';
+	import { m } from '#lib/paraglide/messages.js';
+	import { CloseIcon, ContainersIcon, NetworksIcon, SettingsIcon, VariableIcon, VolumesIcon } from '#lib/icons/index.js';
+	import { preventDefault, createForm } from '#lib/utils/settings.js';
 	import { createQuery } from '@tanstack/svelte-query';
-	import { queryKeys } from '#lib/query/query-keys';
-	import { volumeService } from '#lib/services/volume-service';
-	import { networkService } from '#lib/services/network-service';
-	import { imageService } from '#lib/services/image-service';
-	import { environmentStore } from '#lib/stores/environment.store.svelte';
-	import type { ImageSearchResultDto } from '#lib/types/docker';
+	import { queryKeys } from '#lib/query/query-keys.js';
+	import { volumeService } from '#lib/services/volume-service.js';
+	import { networkService } from '#lib/services/network-service.js';
+	import { imageService } from '#lib/services/image-service.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import type { ImageSearchResultDto } from '#lib/types/docker.js';
 	import { LINUX_CAPABILITIES, containerFormSchema, type ContainerFormRows } from './container-form-state';
 
 	let {
@@ -126,6 +126,30 @@
 		)
 	);
 </script>
+
+{#snippet capabilitySelector(label: string, field: 'capAdd' | 'capDrop', available: { label: string; value: string }[])}
+	<div class="space-y-2">
+		<Label class="text-sm font-medium">{label}</Label>
+		<div class="flex flex-wrap gap-1.5">
+			{#each rows[field] as cap (cap)}
+				<Badge variant="secondary" class="gap-1 font-mono text-xs">
+					{cap}
+					<button type="button" onclick={() => (rows[field] = rows[field].filter((c) => c !== cap))} disabled={submitting}>
+						<CloseIcon class="size-3" />
+					</button>
+				</Badge>
+			{/each}
+		</div>
+		<SearchableSelect
+			items={available}
+			showCheckboxes={false}
+			disabled={submitting}
+			onSelect={(cap) => {
+				if (cap) rows[field] = [...rows[field], cap];
+			}}
+		/>
+	</div>
+{/snippet}
 
 {#snippet groupTitle(title: string, description?: string)}
 	<div>
@@ -331,56 +355,8 @@
 						</div>
 					</div>
 					<div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
-						<div class="space-y-2">
-							<Label class="text-sm font-medium">{m.cap_add()}</Label>
-							<div class="flex flex-wrap gap-1.5">
-								{#each rows.capAdd as cap (cap)}
-									<Badge variant="secondary" class="gap-1 font-mono text-xs">
-										{cap}
-										<button
-											type="button"
-											onclick={() => (rows.capAdd = rows.capAdd.filter((c) => c !== cap))}
-											disabled={submitting}
-										>
-											<CloseIcon class="size-3" />
-										</button>
-									</Badge>
-								{/each}
-							</div>
-							<SearchableSelect
-								items={availableCapAdd}
-								showCheckboxes={false}
-								disabled={submitting}
-								onSelect={(cap) => {
-									if (cap) rows.capAdd = [...rows.capAdd, cap];
-								}}
-							/>
-						</div>
-						<div class="space-y-2">
-							<Label class="text-sm font-medium">{m.cap_drop()}</Label>
-							<div class="flex flex-wrap gap-1.5">
-								{#each rows.capDrop as cap (cap)}
-									<Badge variant="secondary" class="gap-1 font-mono text-xs">
-										{cap}
-										<button
-											type="button"
-											onclick={() => (rows.capDrop = rows.capDrop.filter((c) => c !== cap))}
-											disabled={submitting}
-										>
-											<CloseIcon class="size-3" />
-										</button>
-									</Badge>
-								{/each}
-							</div>
-							<SearchableSelect
-								items={availableCapDrop}
-								showCheckboxes={false}
-								disabled={submitting}
-								onSelect={(cap) => {
-									if (cap) rows.capDrop = [...rows.capDrop, cap];
-								}}
-							/>
-						</div>
+						{@render capabilitySelector(m.cap_add(), 'capAdd', availableCapAdd)}
+						{@render capabilitySelector(m.cap_drop(), 'capDrop', availableCapDrop)}
 					</div>
 				</div>
 

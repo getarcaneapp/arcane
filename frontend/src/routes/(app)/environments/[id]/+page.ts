@@ -1,6 +1,6 @@
-import { environmentManagementService } from '#lib/services/env-mgmt-service';
-import { settingsService } from '#lib/services/settings-service';
-import { queryKeys } from '#lib/query/query-keys';
+import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
+import { settingsService } from '#lib/services/settings-service.js';
+import { queryKeys } from '#lib/query/query-keys.js';
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({ params, parent }) => {

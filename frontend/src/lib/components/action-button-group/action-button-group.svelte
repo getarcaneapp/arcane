@@ -3,10 +3,10 @@
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import type { ArcaneButtonSize } from '#lib/components/arcane-button/index.js';
-	import { EllipsisIcon } from '#lib/icons';
-	import { cn } from '#lib/utils';
-	import { m } from '#lib/paraglide/messages';
-	import { ArrowDownIcon } from '#lib/icons';
+	import { EllipsisIcon } from '#lib/icons/index.js';
+	import { cn } from '#lib/utils.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { ArrowDownIcon } from '#lib/icons/index.js';
 	import type { ActionButton, ActionButtonMenuItem } from './types.js';
 
 	interface Props {

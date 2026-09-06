@@ -1,12 +1,12 @@
 <script lang="ts">
 	import * as Select from '#lib/components/ui/select/index.js';
-	import { getLocale, type Locale } from '#lib/paraglide/runtime';
-	import { m } from '#lib/paraglide/messages';
-	import userStore from '#lib/stores/user-store';
-	import { setLocale } from '#lib/utils/formatting';
+	import { getLocale, type Locale } from '#lib/paraglide/runtime.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import userStore from '#lib/stores/user-store.js';
+	import { setLocale } from '#lib/utils/formatting.js';
 	import { Label } from '#lib/components/ui/label/index.js';
-	import { queryKeys } from '#lib/query/query-keys';
-	import { userService } from '#lib/services/user-service';
+	import { queryKeys } from '#lib/query/query-keys.js';
+	import { userService } from '#lib/services/user-service.js';
 	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
 
 	let {

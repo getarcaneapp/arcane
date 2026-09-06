@@ -4,7 +4,7 @@
 	import { Card } from '#lib/components/ui/card/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { ScrollArea } from '#lib/components/ui/scroll-area/index.js';
-	import type { Template } from '#lib/types/swarm';
+	import type { Template } from '#lib/types/swarm.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
 	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
@@ -18,11 +18,11 @@
 		DownloadIcon,
 		SettingsIcon,
 		FileTextIcon
-	} from '#lib/icons';
+	} from '#lib/icons/index.js';
 
 	import { toast } from 'svelte-sonner';
-	import { m } from '#lib/paraglide/messages';
-	import { templateService } from '#lib/services/template-service';
+	import { m } from '#lib/paraglide/messages.js';
+	import { templateService } from '#lib/services/template-service.js';
 	import { createMutation } from '@tanstack/svelte-query';
 
 	interface Props {

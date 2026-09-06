@@ -1,5 +1,5 @@
-import { m } from '#lib/paraglide/messages';
-import type { ContainerRegistry } from '#lib/types/docker';
+import { m } from '#lib/paraglide/messages.js';
+import type { ContainerRegistry } from '#lib/types/docker.js';
 
 type RegistryIdentity = Pick<ContainerRegistry, 'url' | 'registryType'>;
 

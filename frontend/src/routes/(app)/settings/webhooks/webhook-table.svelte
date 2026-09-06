@@ -1,22 +1,22 @@
 <script lang="ts">
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
-	import { UniversalMobileCard } from '#lib/components/arcane-table';
-	import type { ColumnSpec, MobileFieldVisibility } from '#lib/components/arcane-table';
-	import { Badge } from '#lib/components/ui/badge';
+	import { UniversalMobileCard } from '#lib/components/arcane-table/index.js';
+	import type { ColumnSpec, MobileFieldVisibility } from '#lib/components/arcane-table/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
-	import { CopyButton } from '#lib/components/ui/copy-button';
+	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
 	import { toast } from 'svelte-sonner';
-	import { openConfirmDialog } from '#lib/components/confirm-dialog';
-	import { handleApiResultWithCallbacks } from '#lib/utils/api';
-	import { tryCatch } from '#lib/utils/api';
-	import type { Webhook } from '#lib/types/environment';
-	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
-	import { webhookService } from '#lib/services/webhook-service';
-	import { TrashIcon, GlobeIcon } from '#lib/icons';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { tryCatch } from '#lib/utils/api.js';
+	import type { Webhook } from '#lib/types/environment.js';
+	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import { webhookService } from '#lib/services/webhook-service.js';
+	import { TrashIcon, GlobeIcon } from '#lib/icons/index.js';
 	import * as m from '#lib/paraglide/messages.js';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
-	import { formatDateTime } from '#lib/utils/formatting';
+	import { formatDateTime } from '#lib/utils/formatting.js';
 
 	let {
 		webhooks = $bindable(),

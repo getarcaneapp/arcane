@@ -1,13 +1,13 @@
 <script lang="ts">
-	import { cn } from '#lib/utils';
+	import { cn } from '#lib/utils.js';
 	import * as Separator from '#lib/components/ui/separator/index.js';
 	import * as Tooltip from '#lib/components/ui/tooltip/index.js';
 	import { useSidebar } from '#lib/components/ui/sidebar/index.js';
-	import type { AppVersionInformation } from '#lib/types/settings';
-	import { m } from '#lib/paraglide/messages';
+	import type { AppVersionInformation } from '#lib/types/settings.js';
+	import { m } from '#lib/paraglide/messages.js';
 	import UpdateAllDialog from '#lib/components/dialogs/update-all-dialog.svelte';
-	import { DownloadIcon } from '#lib/icons';
-	import { useUpgradeCheck } from '#lib/hooks/use-upgrade-check.svelte';
+	import { DownloadIcon } from '#lib/icons/index.js';
+	import { useUpgradeCheck } from '#lib/hooks/use-upgrade-check.svelte.js';
 	import UpdateAvailableBanner from './update-available-banner.svelte';
 
 	let {

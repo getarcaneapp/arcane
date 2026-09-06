@@ -11,10 +11,10 @@
 	import AuthAmbient from '#lib/components/auth/auth-ambient.svelte';
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
-	import { AlertIcon, ApiKeyIcon, ShieldCheckIcon, SuccessIcon } from '#lib/icons';
-	import { m } from '#lib/paraglide/messages';
-	import { passkeyService } from '#lib/services/passkey-service';
-	import { getApplicationLogo } from '#lib/utils/docker';
+	import { AlertIcon, ApiKeyIcon, ShieldCheckIcon, SuccessIcon } from '#lib/icons/index.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { passkeyService } from '#lib/services/passkey-service.js';
+	import { getApplicationLogo } from '#lib/utils/docker.js';
 	import {
 		MobilePasskeyBridgeRequestError,
 		classifyMobilePasskeyError,

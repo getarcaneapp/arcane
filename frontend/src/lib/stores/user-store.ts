@@ -1,7 +1,7 @@
-import type { User } from '#lib/types/auth';
-import { GLOBAL_SCOPE, SUDO_PERMISSION } from '#lib/types/auth';
+import type { User } from '#lib/types/auth.js';
+import { GLOBAL_SCOPE, SUDO_PERMISSION } from '#lib/types/auth.js';
 import { writable, get } from 'svelte/store';
-import { setLocale } from '#lib/utils/formatting';
+import { setLocale } from '#lib/utils/formatting.js';
 import {
 	applyAccentColor,
 	applyApplicationTheme,
@@ -10,9 +10,9 @@ import {
 	applyInterfaceAnimations,
 	applyOledMode,
 	FONT_SIZE_DEFAULT
-} from '#lib/utils/theme';
+} from '#lib/utils/theme.js';
 import { setMode } from 'mode-watcher';
-import { timeFormatStore } from '#lib/stores/time-format.store.svelte';
+import { timeFormatStore } from '#lib/stores/time-format.store.svelte.js';
 
 const userStore = writable<User | null>(null);
 

@@ -5,21 +5,22 @@
 	import { goto } from '$app/navigation';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
+	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import ContainerActionMenuItem from '#lib/components/arcane-table/cells/container-action-menu-item.svelte';
-	import type { SearchPaginationSortRequest } from '#lib/types/shared';
-	import { Badge } from '#lib/components/ui/badge';
-	import { formatDateTimeShort, truncateImageDigest } from '#lib/utils/formatting';
-	import type { ContainerSummaryDto } from '#lib/types/docker';
-	import type { ColumnSpec, BulkAction } from '#lib/components/arcane-table';
-	import { m } from '#lib/paraglide/messages';
+	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { formatDateTimeShort, truncateImageDigest } from '#lib/utils/formatting.js';
+	import type { ContainerSummaryDto } from '#lib/types/docker.js';
+	import type { ColumnSpec, BulkAction } from '#lib/components/arcane-table/index.js';
+	import { m } from '#lib/paraglide/messages.js';
 	import { PortBadge } from '#lib/components/badges/index.js';
 	import { UniversalMobileCard } from '#lib/components/arcane-table/index.js';
 	import {
 		containerService,
 		type ContainerListRequestOptions,
 		type ContainersPaginatedResponse
-	} from '#lib/services/container-service';
-	import * as ArcaneTooltip from '#lib/components/arcane-tooltip';
+	} from '#lib/services/container-service.js';
+	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
 	import ImageUpdateItem from '#lib/components/image-update-item.svelte';
 	import { PersistedState } from 'runed';
 	import { onMount } from 'svelte';
@@ -27,14 +28,14 @@
 	import { ContainerStatsManager } from './components/container-stats-manager.svelte';
 	import ContainerStatsSync from './components/container-stats-sync.svelte';
 	import ContainerStatsCell from './components/container-stats-cell.svelte';
-	import { environmentStore } from '#lib/stores/environment.store.svelte';
-	import { hasPermission } from '#lib/utils/auth';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import { hasPermission } from '#lib/utils/auth.js';
 	import IconImage from '#lib/components/icon-image.svelte';
-	import { COMPOSE_PROJECT_LABEL, getContainerIpAddresses, getThemedIconUrl, parseImageRef } from '#lib/utils/docker';
-	import { hasAnyLoadingState } from '#lib/utils/bulk-actions';
+	import { COMPOSE_PROJECT_LABEL, getContainerIpAddresses, getThemedIconUrl, parseImageRef } from '#lib/utils/docker.js';
+	import { hasAnyLoadingState } from '#lib/utils/bulk-actions.js';
 	import { Temporal } from 'temporal-polyfill';
 	import { createContainerActions } from './container-table.actions';
-	import settingsStore from '#lib/stores/config-store';
+	import settingsStore from '#lib/stores/config-store.js';
 	import {
 		getActionStatusMessage,
 		getContainerDisplayName,
@@ -60,7 +61,7 @@
 		PauseIcon,
 		PlayIcon,
 		ZapIcon
-	} from '#lib/icons';
+	} from '#lib/icons/index.js';
 	import KillContainerDialog from './components/kill-container-dialog.svelte';
 
 	type FieldVisibility = Record<string, boolean>;
@@ -197,10 +198,8 @@
 	const canStartContainers = $derived(hasPermission('containers:start', currentEnvId));
 	const canStopContainers = $derived(hasPermission('containers:stop', currentEnvId));
 	const canRestartContainers = $derived(hasPermission('containers:restart', currentEnvId));
-	const canRedeployContainers = $derived(hasPermission('containers:redeploy', currentEnvId));
 	const canDeleteContainers = $derived(hasPermission('containers:delete', currentEnvId));
 	const canKillContainers = $derived(hasPermission('containers:kill', currentEnvId));
-	const canPauseContainers = $derived(hasPermission('containers:pause', currentEnvId));
 	const canConvertToCompose = $derived(
 		hasPermission('projects:create', currentEnvId) && $settingsStore?.experimentalFeaturesEnabled === true
 	);
@@ -703,75 +702,62 @@
 			<DropdownMenu.Separator />
 
 			{#if item.updateInfo?.hasUpdate && canUpdateContainers}
-				<DropdownMenu.Item onclick={() => handleUpdateContainer(item)} disabled={status === 'updating' || isAnyLoading}>
-					{#if status === 'updating'}
-						<Spinner class="size-4" />
-					{:else}
-						<UpdateIcon class="size-4" />
-						{m.common_update()}
-					{/if}
-				</DropdownMenu.Item>
+				<ContainerActionMenuItem
+					onclick={() => handleUpdateContainer(item)}
+					disabled={isAnyLoading}
+					icon={UpdateIcon}
+					label={status === 'updating' ? '' : m.common_update()}
+					loading={status === 'updating'}
+				/>
 			{/if}
 			{#if item.state === 'paused'}
-				{#if canPauseContainers}
-					<DropdownMenu.Item
+				<IfPermitted perm="containers:pause" envId={currentEnvId}>
+					<ContainerActionMenuItem
 						onclick={() => performContainerAction('unpause', item.id)}
-						disabled={status === 'unpausing' || isAnyLoading}
-					>
-						{#if status === 'unpausing'}
-							<Spinner class="size-4" />
-						{:else}
-							<PlayIcon class="size-4" />
-						{/if}
-						{m.common_unpause()}
-					</DropdownMenu.Item>
-				{/if}
+						disabled={isAnyLoading}
+						icon={PlayIcon}
+						label={m.common_unpause()}
+						loading={status === 'unpausing'}
+					/>
+				</IfPermitted>
 			{:else if item.state !== 'running' && canStartContainers}
-				<DropdownMenu.Item
+				<ContainerActionMenuItem
 					onclick={() => performContainerAction('start', item.id)}
-					disabled={status === 'starting' || isAnyLoading}
-				>
-					{#if status === 'starting'}
-						<Spinner class="size-4" />
-					{:else}
-						<StartIcon class="size-4" />
-					{/if}
-					{m.common_start()}
-				</DropdownMenu.Item>
+					disabled={isAnyLoading}
+					icon={StartIcon}
+					label={m.common_start()}
+					loading={status === 'starting'}
+				/>
 			{:else if item.state === 'running'}
-				{#if canStopContainers}
+				<IfPermitted perm="containers:stop" envId={currentEnvId}>
 					<ContainerActionMenuItem
 						icon={StopIcon}
 						label={m.common_stop()}
 						onclick={() => performContainerAction('stop', item.id)}
 						loading={status === 'stopping'}
-						disabled={status === 'stopping' || isAnyLoading}
+						disabled={isAnyLoading}
 					/>
-				{/if}
+				</IfPermitted>
 
-				{#if canRestartContainers}
+				<IfPermitted perm="containers:restart" envId={currentEnvId}>
 					<ContainerActionMenuItem
 						icon={RefreshIcon}
 						label={m.common_restart()}
 						onclick={() => performContainerAction('restart', item.id)}
 						loading={status === 'restarting'}
-						disabled={status === 'restarting' || isAnyLoading}
+						disabled={isAnyLoading}
 					/>
-				{/if}
+				</IfPermitted>
 
-				{#if canPauseContainers}
-					<DropdownMenu.Item
+				<IfPermitted perm="containers:pause" envId={currentEnvId}>
+					<ContainerActionMenuItem
 						onclick={() => performContainerAction('pause', item.id)}
-						disabled={status === 'pausing' || isAnyLoading}
-					>
-						{#if status === 'pausing'}
-							<Spinner class="size-4" />
-						{:else}
-							<PauseIcon class="size-4" />
-						{/if}
-						{m.common_pause()}
-					</DropdownMenu.Item>
-				{/if}
+						disabled={isAnyLoading}
+						icon={PauseIcon}
+						label={m.common_pause()}
+						loading={status === 'pausing'}
+					/>
+				</IfPermitted>
 			{/if}
 
 			{#if (item.state === 'running' || item.state === 'paused') && canKillContainers}
@@ -781,36 +767,35 @@
 				</DropdownMenu.Item>
 			{/if}
 
-			{#if canRedeployContainers}
+			<IfPermitted perm="containers:redeploy" envId={currentEnvId}>
 				{#if item.redeployDisabled}
 					<DropdownMenu.Item disabled title={m.common_redeploy_disabled_arcane_self()}>
 						<RedeployIcon class="size-4 opacity-50" />
 						{m.common_redeploy()}
 					</DropdownMenu.Item>
 				{:else}
-					<DropdownMenu.Item onclick={() => handleRedeployContainer(item)} disabled={status === 'redeploying' || isAnyLoading}>
-						{#if status === 'redeploying'}
-							<Spinner class="size-4" />
-						{:else}
-							<RedeployIcon class="size-4" />
-						{/if}
-						{m.common_redeploy()}
-					</DropdownMenu.Item>
+					<ContainerActionMenuItem
+						onclick={() => handleRedeployContainer(item)}
+						disabled={isAnyLoading}
+						icon={RedeployIcon}
+						label={m.common_redeploy()}
+						loading={status === 'redeploying'}
+					/>
 				{/if}
-			{/if}
+			</IfPermitted>
 
 			<DropdownMenu.Separator />
 
-			{#if canDeleteContainers}
+			<IfPermitted perm="containers:delete" envId={currentEnvId}>
 				<ContainerActionMenuItem
 					icon={TrashIcon}
 					label={m.common_remove()}
 					onclick={() => handleRemoveContainer(item.id, getContainerDisplayName(item))}
 					loading={status === 'removing'}
-					disabled={status === 'removing' || isAnyLoading}
+					disabled={isAnyLoading}
 					destructive
 				/>
-			{/if}
+			</IfPermitted>
 		</RowActionsMenu>
 	{/if}
 {/snippet}

@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import { cn } from '#lib/utils';
-	import { ArrowLeftIcon, EllipsisIcon } from '#lib/icons';
+	import { cn } from '#lib/utils.js';
+	import { ArrowLeftIcon, EllipsisIcon } from '#lib/icons/index.js';
 	import type { Snippet } from 'svelte';
 	import type { DetailAction } from './types.js';
 
@@ -43,14 +43,25 @@
 	const secondaryActions = $derived(actions.slice(1));
 </script>
 
-{#snippet ActionMenuContent(items: DetailAction[], minWidthClass: string)}
-	<DropdownMenu.Content align="end" class={minWidthClass}>
-		{#each items as act (act.id)}
-			<DropdownMenu.Item onclick={act.onclick} disabled={act.disabled || act.loading}>
-				{act.loading ? act.loadingLabel || act.label : act.label}
-			</DropdownMenu.Item>
-		{/each}
-	</DropdownMenu.Content>
+{#snippet ActionMenu(items: DetailAction[], tone: 'ghost' | 'outline', sizeClass: string, minWidthClass: string)}
+	{#if items.length > 0}
+		<DropdownMenu.Root>
+			<DropdownMenu.Trigger>
+				{#snippet child({ props })}
+					<ArcaneButton {...props} action="base" {tone} size="icon" class={sizeClass}>
+						<EllipsisIcon class="size-4" />
+					</ArcaneButton>
+				{/snippet}
+			</DropdownMenu.Trigger>
+			<DropdownMenu.Content align="end" class={minWidthClass}>
+				{#each items as act (act.id)}
+					<DropdownMenu.Item onclick={act.onclick} disabled={act.disabled || act.loading}>
+						{act.loading ? act.loadingLabel || act.label : act.label}
+					</DropdownMenu.Item>
+				{/each}
+			</DropdownMenu.Content>
+		</DropdownMenu.Root>
+	{/if}
 {/snippet}
 
 {#if showFloatingHeader}
@@ -70,30 +81,17 @@
 
 			<span class="max-w-[200px] truncate text-sm font-semibold">{title}</span>
 
-			{#if actions.length > 0}
+			{#if primaryAction}
 				<div class="h-4 w-px bg-border/60"></div>
 				<div class="flex items-center gap-1.5">
-					{#if primaryAction}
-						<ArcaneButton
-							action={primaryAction.action}
-							customLabel={primaryAction.label}
-							loading={primaryAction.loading}
-							disabled={primaryAction.disabled}
-							onclick={primaryAction.onclick}
-						/>
-					{/if}
-					{#if secondaryActions.length > 0}
-						<DropdownMenu.Root>
-							<DropdownMenu.Trigger>
-								{#snippet child({ props })}
-									<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="size-8">
-										<EllipsisIcon class="size-4" />
-									</ArcaneButton>
-								{/snippet}
-							</DropdownMenu.Trigger>
-							{@render ActionMenuContent(secondaryActions, 'min-w-[140px]')}
-						</DropdownMenu.Root>
-					{/if}
+					<ArcaneButton
+						action={primaryAction.action}
+						customLabel={primaryAction.label}
+						loading={primaryAction.loading}
+						disabled={primaryAction.disabled}
+						onclick={primaryAction.onclick}
+					/>
+					{@render ActionMenu(secondaryActions, 'ghost', 'size-8', 'min-w-[140px]')}
 				</div>
 			{/if}
 		</div>
@@ -106,7 +104,7 @@
 			{#if backUrl}
 				<ArcaneButton action="base" tone="ghost" href={backUrl} class="-ml-2">
 					<ArrowLeftIcon class="size-4" />
-					{backLabel ?? ''}
+					{backLabel}
 				</ArcaneButton>
 			{:else}
 				<span></span>
@@ -121,17 +119,8 @@
 						disabled={primaryAction.disabled}
 						onclick={primaryAction.onclick}
 					/>
-				{:else if actions.length > 1}
-					<DropdownMenu.Root>
-						<DropdownMenu.Trigger>
-							{#snippet child({ props })}
-								<ArcaneButton {...props} action="base" tone="outline" size="icon" class="size-9">
-									<EllipsisIcon class="size-4" />
-								</ArcaneButton>
-							{/snippet}
-						</DropdownMenu.Trigger>
-						{@render ActionMenuContent(actions, 'min-w-[160px]')}
-					</DropdownMenu.Root>
+				{:else}
+					{@render ActionMenu(actions, 'outline', 'size-9', 'min-w-[160px]')}
 				{/if}
 			</div>
 		</div>
@@ -163,9 +152,7 @@
 			</div>
 		</div>
 
-		{#if headerExtra}
-			{@render headerExtra()}
-		{/if}
+		{@render headerExtra?.()}
 	</div>
 
 	{@render children()}

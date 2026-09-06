@@ -6,10 +6,10 @@
 	import * as Select from '#lib/components/ui/select/index.js';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
-	import type { GitRepository, GitRepositoryCreateDto, GitRepositoryUpdateDto } from '#lib/types/automation';
+	import type { GitRepository, GitRepositoryCreateDto, GitRepositoryUpdateDto } from '#lib/types/automation.js';
 	import { z } from 'zod/v4';
-	import { createForm, preventDefault } from '#lib/utils/settings';
-	import { m } from '#lib/paraglide/messages';
+	import { createForm, preventDefault } from '#lib/utils/settings.js';
+	import { m } from '#lib/paraglide/messages.js';
 
 	type GitRepositoryFormProps = {
 		open: boolean;

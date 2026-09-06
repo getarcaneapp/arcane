@@ -1,13 +1,13 @@
-import { containerService, type ContainerListRequestOptions } from '#lib/services/container-service';
-import { projectService } from '#lib/services/project-service';
-import { settingsService } from '#lib/services/settings-service';
-import { queryKeys } from '#lib/query/query-keys';
-import type { SearchPaginationSortRequest } from '#lib/types/shared';
-import { resolveInitialTableRequest } from '#lib/utils/tables';
-import { throwPageLoadError } from '#lib/utils/api';
-import { ensureStandaloneContainerUpdatesFilter, ensureUpdatesFilter } from '#lib/utils/docker';
+import { containerService, type ContainerListRequestOptions } from '#lib/services/container-service.js';
+import { projectService } from '#lib/services/project-service.js';
+import { settingsService } from '#lib/services/settings-service.js';
+import { queryKeys } from '#lib/query/query-keys.js';
+import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+import { resolveInitialTableRequest } from '#lib/utils/tables.js';
+import { throwPageLoadError } from '#lib/utils/api.js';
+import { ensureStandaloneContainerUpdatesFilter, ensureUpdatesFilter } from '#lib/utils/docker.js';
 import type { PageLoad } from './$types';
-import { environmentStore } from '#lib/stores/environment.store.svelte';
+import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 
 export const load: PageLoad = async ({ parent }) => {
 	const { queryClient } = await parent();

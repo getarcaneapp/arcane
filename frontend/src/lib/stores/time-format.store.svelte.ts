@@ -1,4 +1,4 @@
-import type { TimeFormat } from '#lib/types/auth';
+import type { TimeFormat } from '#lib/types/auth.js';
 
 let currentTimeFormat = $state<TimeFormat>('auto');
 

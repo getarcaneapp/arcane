@@ -4,14 +4,14 @@
 
 <script lang="ts">
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import { UseClipboard } from '#lib/hooks/use-clipboard.svelte';
-	import { cn } from '#lib/utils';
+	import { UseClipboard } from '#lib/hooks/use-clipboard.svelte.js';
+	import { cn } from '#lib/utils.js';
 	import { scale } from 'svelte/transition';
 	import type { CopyButtonProps } from './types';
-	import { CopyIcon, CloseIcon, CheckIcon } from '#lib/icons';
-	import * as Tooltip from '#lib/components/ui/tooltip';
+	import { CopyIcon, CloseIcon, CheckIcon } from '#lib/icons/index.js';
+	import * as Tooltip from '#lib/components/ui/tooltip/index.js';
 	import { onMount } from 'svelte';
-	import { m } from '#lib/paraglide/messages';
+	import { m } from '#lib/paraglide/messages.js';
 
 	let {
 		ref = $bindable(null),

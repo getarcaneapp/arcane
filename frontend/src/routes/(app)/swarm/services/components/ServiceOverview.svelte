@@ -1,17 +1,17 @@
 <script lang="ts">
-	import * as Card from '#lib/components/ui/card';
-	import { Badge } from '#lib/components/ui/badge';
-	import { m } from '#lib/paraglide/messages';
-	import type { SwarmServiceInspect } from '#lib/types/swarm';
-	import { InfoIcon, ConnectionIcon } from '#lib/icons';
-	import { formatDateTimeShort, formatRelativeTime, truncateImageDigest } from '#lib/utils/formatting';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import type { SwarmServiceInspect } from '#lib/types/swarm.js';
+	import { InfoIcon, ConnectionIcon } from '#lib/icons/index.js';
+	import { formatDateTimeShort, formatRelativeTime, truncateImageDigest } from '#lib/utils/formatting.js';
 	import {
 		SWARM_STACK_LABEL,
 		getSwarmServiceModeLabel,
 		getSwarmServiceModeVariant,
 		isSwarmServiceModeScalable
-	} from '#lib/utils/docker';
-	import { KeyValueCard } from '#lib/components/resource-detail';
+	} from '#lib/utils/docker.js';
+	import { KeyValueCard } from '#lib/components/resource-detail/index.js';
 
 	interface Props {
 		service: SwarmServiceInspect;

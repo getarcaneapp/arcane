@@ -1,19 +1,19 @@
 <script lang="ts">
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
-	import type { ColumnSpec, MobileFieldVisibility } from '#lib/components/arcane-table';
-	import { UniversalMobileCard } from '#lib/components/arcane-table';
-	import { LayersIcon, InspectIcon, TrashIcon } from '#lib/icons';
-	import { m } from '#lib/paraglide/messages';
-	import { swarmService } from '#lib/services/swarm-service';
-	import type { SwarmStackSummary } from '#lib/types/swarm';
-	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
-	import { formatRelativeTime } from '#lib/utils/formatting';
+	import type { ColumnSpec, MobileFieldVisibility } from '#lib/components/arcane-table/index.js';
+	import { UniversalMobileCard } from '#lib/components/arcane-table/index.js';
+	import { LayersIcon, InspectIcon, TrashIcon } from '#lib/icons/index.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { swarmService } from '#lib/services/swarm-service.js';
+	import type { SwarmStackSummary } from '#lib/types/swarm.js';
+	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import { formatRelativeTime } from '#lib/utils/formatting.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
-	import { openConfirmDialog } from '#lib/components/confirm-dialog';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import { toast } from 'svelte-sonner';
-	import { tryCatch } from '#lib/utils/api';
-	import { handleApiResultWithCallbacks } from '#lib/utils/api';
+	import { tryCatch } from '#lib/utils/api.js';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { goto } from '$app/navigation';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
 

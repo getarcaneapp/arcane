@@ -21,9 +21,9 @@
 </script>
 
 <script lang="ts">
-	import { m } from '#lib/paraglide/messages';
+	import { m } from '#lib/paraglide/messages.js';
 	import { Dialog as SheetPrimitive } from 'bits-ui';
-	import { CloseIcon } from '#lib/icons';
+	import { CloseIcon } from '#lib/icons/index.js';
 	import type { Snippet } from 'svelte';
 	import SheetOverlay from './sheet-overlay.svelte';
 	import { cn, type WithoutChildrenOrChild } from '#lib/utils.js';

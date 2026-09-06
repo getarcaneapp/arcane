@@ -1,9 +1,9 @@
 <script lang="ts">
 	import RoleEditor from '#lib/components/role-editor/role-editor.svelte';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
-	import { ShieldAlertIcon } from '#lib/icons';
-	import { m } from '#lib/paraglide/messages';
-	import type { CreateRole, PermissionsManifest, Role, UpdateRole } from '#lib/types/auth';
+	import { ShieldAlertIcon } from '#lib/icons/index.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import type { CreateRole, PermissionsManifest, Role, UpdateRole } from '#lib/types/auth.js';
 
 	type Props = {
 		title: string;

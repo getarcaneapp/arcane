@@ -1,7 +1,7 @@
 <script lang="ts">
-	import type { ActivityMessage } from '#lib/types/activity.type';
-	import { ansiToHtml } from '#lib/utils/formatting';
-	import { cn } from '#lib/utils';
+	import type { ActivityMessage } from '#lib/types/activity.type.js';
+	import { ansiToHtml } from '#lib/utils/formatting.js';
+	import { cn } from '#lib/utils.js';
 	import PinnedScrollRegion from '#lib/components/pinned-scroll-region.svelte';
 
 	let { messages }: { messages: ActivityMessage[] } = $props();

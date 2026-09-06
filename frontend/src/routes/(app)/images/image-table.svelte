@@ -6,30 +6,30 @@
 	import { goto } from '$app/navigation';
 	import { onDestroy } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import { bytes, formatDateTimeShort, nowInstantString } from '#lib/utils/formatting';
-	import { inUseBadge } from '#lib/utils/mobile-card-badges';
-	import { openConfirmDialog } from '#lib/components/confirm-dialog';
+	import { bytes, formatDateTimeShort, nowInstantString } from '#lib/utils/formatting.js';
+	import { inUseBadge } from '#lib/utils/mobile-card-badges.js';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
-	import { handleApiResultWithCallbacks } from '#lib/utils/api';
-	import { tryCatch } from '#lib/utils/api';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { tryCatch } from '#lib/utils/api.js';
 	import ImageUpdateItem from '#lib/components/image-update-item.svelte';
 	import VulnerabilityScanItem from '#lib/components/vulnerability/vulnerability-scan-item.svelte';
 	import UniversalMobileCard from '#lib/components/arcane-table/cards/universal-mobile-card.svelte';
 	import ImageTagDialog from './components/image-tag-dialog.svelte';
-	import * as Tooltip from '#lib/components/ui/tooltip';
-	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
-	import type { ImageSummaryDto, ImageUpdateInfoDto } from '#lib/types/docker';
-	import type { VulnerabilityScanSummary } from '#lib/types/environment';
-	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '#lib/components/arcane-table';
-	import { m } from '#lib/paraglide/messages';
-	import { imageService } from '#lib/services/image-service';
-	import { vulnerabilityService } from '#lib/services/vulnerability-service';
-	import { isLikelyStaleFailedSummary, isVulnerabilityScanInProgress } from '#lib/utils/docker';
-	import { environmentStore } from '#lib/stores/environment.store.svelte';
-	import { hasPermission } from '#lib/utils/auth';
-	import userStore from '#lib/stores/user-store';
-	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
-	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions';
+	import * as Tooltip from '#lib/components/ui/tooltip/index.js';
+	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import type { ImageSummaryDto, ImageUpdateInfoDto } from '#lib/types/docker.js';
+	import type { VulnerabilityScanSummary } from '#lib/types/environment.js';
+	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '#lib/components/arcane-table/index.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { imageService } from '#lib/services/image-service.js';
+	import { vulnerabilityService } from '#lib/services/vulnerability-service.js';
+	import { isLikelyStaleFailedSummary, isVulnerabilityScanInProgress } from '#lib/utils/docker.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import { hasPermission } from '#lib/utils/auth.js';
+	import userStore from '#lib/stores/user-store.js';
+	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
+	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions.js';
 	import InUseStatus from '#lib/components/arcane-table/cells/in-use-status.svelte';
 	import UnixCreatedCell from '#lib/components/arcane-table/cells/unix-created-cell.svelte';
 	import { Temporal } from 'temporal-polyfill';
@@ -46,7 +46,7 @@
 		ProjectsIcon,
 		ContainersIcon,
 		TagIcon
-	} from '#lib/icons';
+	} from '#lib/icons/index.js';
 
 	let {
 		images = $bindable(),

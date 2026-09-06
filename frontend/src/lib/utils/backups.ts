@@ -1,4 +1,4 @@
-import { m } from '#lib/paraglide/messages';
+import { m } from '#lib/paraglide/messages.js';
 import type {
 	BackupDestination,
 	BackupManagementType,
@@ -7,8 +7,8 @@ import type {
 	BackupRun,
 	BackupStatus,
 	BackupTrigger
-} from '#lib/types/backup';
-import type { S3Destination } from '#lib/types/s3-destination';
+} from '#lib/types/backup.js';
+import type { S3Destination } from '#lib/types/s3-destination.js';
 
 export function backupStatusLabel(status: BackupStatus): string {
 	if (status === 'succeeded') return m.volume_backup_status_succeeded();

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import * as Empty from '#lib/components/ui/empty/index.js';
-	import { FolderXIcon } from '#lib/icons';
-	import { m } from '#lib/paraglide/messages';
+	import { FolderXIcon } from '#lib/icons/index.js';
+	import { m } from '#lib/paraglide/messages.js';
 
 	let { class: className }: { class?: string } = $props();
 </script>

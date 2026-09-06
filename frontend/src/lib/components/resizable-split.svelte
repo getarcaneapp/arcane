@@ -2,8 +2,8 @@
 	import type { Snippet } from 'svelte';
 	import { onDestroy, onMount } from 'svelte';
 	import { PersistedState } from 'runed';
-	import { DoubleArrowLeftIcon, DoubleArrowRightIcon } from '#lib/icons';
-	import { m } from '#lib/paraglide/messages';
+	import { DoubleArrowLeftIcon, DoubleArrowRightIcon } from '#lib/icons/index.js';
+	import { m } from '#lib/paraglide/messages.js';
 
 	interface Props {
 		first: Snippet;

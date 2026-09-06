@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { Badge } from '#lib/components/ui/badge';
-	import { m } from '#lib/paraglide/messages';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { m } from '#lib/paraglide/messages.js';
 
 	let { inUse }: { inUse: boolean } = $props();
 </script>

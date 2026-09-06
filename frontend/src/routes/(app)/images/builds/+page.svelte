@@ -2,18 +2,18 @@
 	import { onMount } from 'svelte';
 	import { z } from 'zod/v4';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
-	import { m } from '#lib/paraglide/messages';
-	import settingsStore from '#lib/stores/config-store';
-	import { createForm } from '#lib/utils/settings';
-	import { isDepotBuildAvailable } from '#lib/utils/build-provider';
+	import { m } from '#lib/paraglide/messages.js';
+	import settingsStore from '#lib/stores/config-store.js';
+	import { createForm } from '#lib/utils/settings.js';
+	import { isDepotBuildAvailable } from '#lib/utils/build-provider.js';
 	import { toast } from 'svelte-sonner';
-	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { ResourceDetailLayout } from '#lib/layouts/index.js';
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
-	import { sanitizeLogText } from '#lib/utils/formatting';
-	import { CodeIcon, TerminalIcon } from '#lib/icons';
-	import * as Card from '#lib/components/ui/card';
-	import { extractErrorMessage } from '#lib/utils/docker';
+	import { sanitizeLogText } from '#lib/utils/formatting.js';
+	import { CodeIcon, TerminalIcon } from '#lib/icons/index.js';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import { extractErrorMessage } from '#lib/utils/docker.js';
 	import ResizableSplit from '#lib/components/resizable-split.svelte';
 	import BuildControls from './components/build-controls.svelte';
 	import BuildWorkspacePanel from './components/build-workspace-panel.svelte';
@@ -21,14 +21,14 @@
 	import BuildOutputPanel from './components/build-output-panel.svelte';
 	import ImageBuildHistoryPanel from './components/image-build-history-panel.svelte';
 	import type { BuildProviderOption, SelectOption } from './components/build-form.types';
-	import { containerRegistryService } from '#lib/services/container-registry-service';
-	import { buildImageReference, getRegistryDisplayName } from '#lib/utils/registry';
-	import { parseList } from '#lib/utils/form-parsers';
-	import type { ImageBuildRecord } from '#lib/types/docker';
-	import type { SearchPaginationSortRequest } from '#lib/types/shared';
-	import { queryKeys } from '#lib/query/query-keys';
+	import { containerRegistryService } from '#lib/services/container-registry-service.js';
+	import { buildImageReference, getRegistryDisplayName } from '#lib/utils/registry.js';
+	import { parseList } from '#lib/utils/form-parsers.js';
+	import type { ImageBuildRecord } from '#lib/types/docker.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
-	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte';
+	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
 	import {
 		formatBuildArgs,
 		formatKeyValueMap,
@@ -223,6 +223,37 @@
 		| 'load'
 	>;
 
+	function handleBuildLine(line: string): boolean {
+		if (line.trim() === '') return false;
+		try {
+			const event = JSON.parse(line) as Record<string, unknown>;
+			const errorMsg = extractErrorMessage(event, m.build_failed());
+			if (errorMsg) {
+				const cleanErrorMsg = sanitizeLogText(errorMsg);
+				buildError = cleanErrorMsg;
+				buildStatusText = cleanErrorMsg.toLowerCase().startsWith(m.build_failed().toLowerCase())
+					? cleanErrorMsg
+					: m.build_failed_with_error({ error: cleanErrorMsg });
+				appendLog(m.build_error_log({ error: cleanErrorMsg }));
+				return false;
+			}
+
+			// The terminal frame marks success; don't wait on the network EOF.
+			if (event['done'] === true) {
+				return true;
+			}
+
+			// Raw docker CLI output arrives framed as {"log":"<line>"}.
+			if (typeof event['log'] === 'string') {
+				appendLog(event['log']);
+				buildStatusText = sanitizeLogText(event['log']);
+			}
+		} catch {
+			appendLog(line);
+		}
+		return false;
+	}
+
 	const buildMutation = createMutation(() => ({
 		mutationKey: queryKeys.images.buildRun(selectedEnvId),
 		mutationFn: async (request: ImageBuildRequest) => {
@@ -263,36 +294,7 @@
 				const lines = buffer.split('\n');
 				buffer = lines.pop() || '';
 
-				for (const line of lines) {
-					if (line.trim() === '') continue;
-					try {
-						const event = JSON.parse(line);
-						const errorMsg = extractErrorMessage(event, m.build_failed());
-						if (errorMsg) {
-							const cleanErrorMsg = sanitizeLogText(errorMsg);
-							buildError = cleanErrorMsg;
-							buildStatusText = cleanErrorMsg.toLowerCase().startsWith(m.build_failed().toLowerCase())
-								? cleanErrorMsg
-								: m.build_failed_with_error({ error: cleanErrorMsg });
-							appendLog(m.build_error_log({ error: cleanErrorMsg }));
-							continue;
-						}
-
-						// The terminal frame marks success; don't wait on the network EOF.
-						if (event.done === true) {
-							streamComplete = true;
-							break;
-						}
-
-						// Raw docker CLI output arrives framed as {"log":"<line>"}.
-						if (typeof event.log === 'string') {
-							appendLog(event.log);
-							buildStatusText = sanitizeLogText(event.log);
-						}
-					} catch {
-						appendLog(line);
-					}
-				}
+				streamComplete = lines.some(handleBuildLine);
 			}
 			if (streamComplete) {
 				await reader.cancel().catch(() => {});
@@ -427,70 +429,55 @@
 			extraHosts: string[];
 		}
 	): string | null {
-		if (provider === 'local') {
-			const unsupported: string[] = [];
-			if (values.cacheTo.length > 0) unsupported.push('cacheTo');
-			if (values.entitlements.length > 0) unsupported.push('entitlements');
-			if (values.privileged) unsupported.push('privileged');
-			if (values.platforms.length > 1) unsupported.push('platforms');
-			if (unsupported.length > 0) {
-				return m.build_provider_unsupported_local({ fields: unsupported.sort().join(', ') });
-			}
-			return null;
-		}
-
-		const unsupported: string[] = [];
-		if (values.network) unsupported.push('network');
-		if (values.isolation) unsupported.push('isolation');
-		if (values.shmSize) unsupported.push('shmSize');
-		if (Object.keys(values.ulimits).length > 0) unsupported.push('ulimits');
-		if (values.extraHosts.length > 0) unsupported.push('extraHosts');
-		if (unsupported.length > 0) {
-			return m.build_provider_unsupported_depot({ fields: unsupported.sort().join(', ') });
-		}
-		return null;
+		const unsupportedFields =
+			provider === 'local'
+				? {
+						cacheTo: values.cacheTo.length > 0,
+						entitlements: values.entitlements.length > 0,
+						privileged: values.privileged,
+						platforms: values.platforms.length > 1
+					}
+				: {
+						network: Boolean(values.network),
+						isolation: Boolean(values.isolation),
+						shmSize: Boolean(values.shmSize),
+						ulimits: Object.keys(values.ulimits).length > 0,
+						extraHosts: values.extraHosts.length > 0
+					};
+		const unsupported = Object.entries(unsupportedFields)
+			.filter(([, present]) => present)
+			.map(([field]) => field);
+		if (unsupported.length === 0) return null;
+		const fields = unsupported.sort().join(', ');
+		return provider === 'local' ? m.build_provider_unsupported_local({ fields }) : m.build_provider_unsupported_depot({ fields });
 	}
 
 	function applyBuildConfig(build: ImageBuildRecord) {
+		for (const key of ['dockerfile', 'target', 'network', 'isolation'] as const) form.setValue(key, build[key] ?? '');
+		for (const key of ['privileged', 'noCache', 'pull', 'push'] as const) form.setValue(key, build[key] ?? false);
 		form.setValue('tags', build.tags?.join(', ') ?? '');
-		form.setValue('dockerfile', build.dockerfile ?? '');
-		form.setValue('target', build.target ?? '');
 		form.setValue('platforms', build.platforms?.join(', ') ?? '');
 		form.setValue('buildArgs', formatBuildArgs(build.buildArgs));
 		form.setValue('labels', formatKeyValueMap(build.labels));
 		form.setValue('cacheFrom', formatStringList(build.cacheFrom));
 		form.setValue('cacheTo', formatStringList(build.cacheTo));
-		form.setValue('network', build.network ?? '');
-		form.setValue('isolation', build.isolation ?? '');
 		form.setValue('shmSize', build.shmSize ? String(build.shmSize) : '');
 		form.setValue('ulimits', formatKeyValueMap(build.ulimits));
 		form.setValue('entitlements', formatStringList(build.entitlements));
-		form.setValue('privileged', build.privileged ?? false);
 		form.setValue('extraHosts', formatStringList(build.extraHosts));
-		form.setValue('noCache', build.noCache ?? false);
-		form.setValue('pull', build.pull ?? false);
 		form.setValue('provider', (build.provider as 'local' | 'depot') ?? 'local');
-		form.setValue('push', build.push ?? false);
 		form.setValue('load', build.load ?? true);
 
-		showAdvanced = Boolean(
-			build.dockerfile ||
-			build.target ||
-			(build.platforms && build.platforms.length > 0) ||
-			(build.buildArgs && Object.keys(build.buildArgs).length > 0) ||
-			(build.labels && Object.keys(build.labels).length > 0) ||
-			(build.cacheFrom && build.cacheFrom.length > 0) ||
-			(build.cacheTo && build.cacheTo.length > 0) ||
-			build.network ||
-			build.isolation ||
-			(build.shmSize && build.shmSize > 0) ||
-			(build.ulimits && Object.keys(build.ulimits).length > 0) ||
-			(build.entitlements && build.entitlements.length > 0) ||
-			build.privileged ||
-			(build.extraHosts && build.extraHosts.length > 0) ||
-			build.noCache ||
-			build.pull
-		);
+		showAdvanced =
+			[build.dockerfile, build.target, build.network, build.isolation, build.privileged, build.noCache, build.pull].some(
+				Boolean
+			) ||
+			[build.platforms, build.cacheFrom, build.cacheTo, build.entitlements, build.extraHosts].some(
+				(values) => (values?.length ?? 0) > 0
+			) ||
+			[build.buildArgs, build.labels, build.ulimits].some((values) => Object.keys(values ?? {}).length > 0) ||
+			(build.shmSize ?? 0) > 0;
+
 		if (isGitBuildContextSource(build.contextDir)) {
 			contextMode = 'remote';
 			remoteContextSource = build.contextDir;
@@ -533,15 +520,15 @@
 		}
 		const tags = resolvedTags.tags;
 
-		const parsedCacheTo = parseList(data.cacheTo || '');
-		const parsedEntitlements = parseList(data.entitlements || '');
-		const parsedPlatforms = parseList(data.platforms || '');
-		const parsedExtraHosts = parseList(data.extraHosts || '');
-		const parsedUlimits = parseBuildArgs(data.ulimits || '');
-		const parsedShmSize = parseOptionalBytes(data.shmSize || '');
+		const parsedCacheTo = parseList(data.cacheTo);
+		const parsedEntitlements = parseList(data.entitlements);
+		const parsedPlatforms = parseList(data.platforms);
+		const parsedExtraHosts = parseList(data.extraHosts);
+		const parsedUlimits = parseBuildArgs(data.ulimits);
+		const parsedShmSize = parseOptionalBytes(data.shmSize);
 
-		const network = data.network?.trim() || undefined;
-		const isolation = data.isolation?.trim() || undefined;
+		const network = data.network.trim() || undefined;
+		const isolation = data.isolation.trim() || undefined;
 
 		const providerValidationError = validateProviderCompatibility(resolvedProvider, {
 			cacheTo: parsedCacheTo,
@@ -562,12 +549,12 @@
 
 		const payload = {
 			contextDir: contextDir.trim(),
-			dockerfile: data.dockerfile?.trim() || undefined,
+			dockerfile: data.dockerfile.trim() || undefined,
 			tags,
-			target: data.target?.trim() || undefined,
-			buildArgs: parseBuildArgs(data.buildArgs || ''),
-			labels: parseBuildArgs(data.labels || ''),
-			cacheFrom: parseList(data.cacheFrom || ''),
+			target: data.target.trim() || undefined,
+			buildArgs: parseBuildArgs(data.buildArgs),
+			labels: parseBuildArgs(data.labels),
+			cacheFrom: parseList(data.cacheFrom),
 			cacheTo: parsedCacheTo,
 			noCache: data.noCache,
 			pull: data.pull,

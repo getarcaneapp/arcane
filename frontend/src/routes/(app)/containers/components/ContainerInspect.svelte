@@ -1,9 +1,9 @@
 <script lang="ts">
-	import * as Card from '#lib/components/ui/card';
-	import { CopyButton } from '#lib/components/ui/copy-button';
-	import { m } from '#lib/paraglide/messages';
-	import type { ContainerDetailsDto } from '#lib/types/docker';
-	import { CodeIcon } from '#lib/icons';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import type { ContainerDetailsDto } from '#lib/types/docker.js';
+	import { CodeIcon } from '#lib/icons/index.js';
 
 	interface Props {
 		container: ContainerDetailsDto;

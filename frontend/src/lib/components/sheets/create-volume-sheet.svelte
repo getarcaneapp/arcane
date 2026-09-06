@@ -3,12 +3,12 @@
 	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
 	import FormInput from '#lib/components/form/form-input.svelte';
 	import * as Accordion from '#lib/components/ui/accordion/index.js';
-	import type { VolumeCreateRequest } from '#lib/types/docker';
+	import type { VolumeCreateRequest } from '#lib/types/docker.js';
 	import { z } from 'zod/v4';
-	import { createForm, preventDefault } from '#lib/utils/settings';
-	import { parseKeyValuePairs } from '#lib/utils/form-parsers';
+	import { createForm, preventDefault } from '#lib/utils/settings.js';
+	import { parseKeyValuePairs } from '#lib/utils/form-parsers.js';
 	import SelectWithLabel from '../form/select-with-label.svelte';
-	import { m } from '#lib/paraglide/messages';
+	import { m } from '#lib/paraglide/messages.js';
 
 	type CreateVolumeFormProps = {
 		open: boolean;

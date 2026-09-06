@@ -1,21 +1,21 @@
 <script lang="ts">
-	import * as Card from '#lib/components/ui/card';
-	import { PortBadge } from '#lib/components/badges';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import { PortBadge } from '#lib/components/badges/index.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import SearchableSelect from '#lib/components/form/searchable-select.svelte';
-	import { openConfirmDialog } from '#lib/components/confirm-dialog';
-	import { m } from '#lib/paraglide/messages';
-	import type { ContainerDetailsDto } from '#lib/types/docker';
-	import { NetworksIcon } from '#lib/icons';
-	import { networkService } from '#lib/services/network-service';
-	import { environmentStore } from '#lib/stores/environment.store.svelte';
-	import { hasPermission } from '#lib/utils/auth';
-	import { queryKeys } from '#lib/query/query-keys';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import type { ContainerDetailsDto } from '#lib/types/docker.js';
+	import { NetworksIcon } from '#lib/icons/index.js';
+	import { networkService } from '#lib/services/network-service.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import { hasPermission } from '#lib/utils/auth.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { refreshAll } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
-	import { extractApiErrorMessage } from '#lib/utils/api';
+	import { extractApiErrorMessage } from '#lib/utils/api.js';
 
 	interface Props {
 		container: ContainerDetailsDto;

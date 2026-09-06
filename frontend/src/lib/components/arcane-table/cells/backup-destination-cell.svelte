@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { Badge } from '#lib/components/ui/badge';
-	import type { BackupRun } from '#lib/types/backup';
-	import { backupDestinationLabel, backupDestinationName } from '#lib/utils/backups';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import type { BackupRun } from '#lib/types/backup.js';
+	import { backupDestinationLabel, backupDestinationName } from '#lib/utils/backups.js';
 
 	let { item }: { item: Pick<BackupRun, 'destination' | 's3DestinationId' | 's3DestinationName'> } = $props();
 </script>

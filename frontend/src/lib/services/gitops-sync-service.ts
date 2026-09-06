@@ -9,9 +9,9 @@ import type {
 	BrowseResponse,
 	ImportGitOpsSyncRequest,
 	ImportGitOpsSyncResponse
-} from '#lib/types/automation';
-import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
-import { transformPaginationParams } from '#lib/utils/tables';
+} from '#lib/types/automation.js';
+import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+import { transformPaginationParams } from '#lib/utils/tables.js';
 
 class GitOpsSyncService extends BaseAPIService {
 	async getSyncs(environmentId: string, options?: SearchPaginationSortRequest): Promise<Paginated<GitOpsSync, GitOpsSyncCounts>> {

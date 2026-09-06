@@ -7,17 +7,17 @@
 	import LabeledSwitch from '#lib/components/form/labeled-switch.svelte';
 	import UrlInput from '#lib/components/form/url-input.svelte';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
-	import { CopyButton } from '#lib/components/ui/copy-button';
+	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
 	import AgentCommandBlock from '#lib/components/agent-command-block.svelte';
-	import type { CreateEnvironmentDTO, DeploymentSnippetFile } from '#lib/types/environment';
+	import type { CreateEnvironmentDTO, DeploymentSnippetFile } from '#lib/types/environment.js';
 	import { z } from 'zod/v4';
-	import { createForm, preventDefault } from '#lib/utils/settings';
-	import { m } from '#lib/paraglide/messages';
-	import { environmentManagementService } from '#lib/services/env-mgmt-service';
-	import { queryKeys } from '#lib/query/query-keys';
-	import { RemoteEnvironmentIcon, EdgeConnectionIcon, DownloadIcon } from '#lib/icons';
+	import { createForm, preventDefault } from '#lib/utils/settings.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
+	import { RemoteEnvironmentIcon, EdgeConnectionIcon, DownloadIcon } from '#lib/icons/index.js';
 	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
-	import { downloadTextFile } from '#lib/utils/formatting';
+	import { downloadTextFile } from '#lib/utils/formatting.js';
 
 	type NewEnvironmentSheetProps = {
 		open: boolean;

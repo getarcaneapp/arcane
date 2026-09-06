@@ -1,9 +1,9 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import * as Checkbox from '#lib/components/ui/checkbox';
-	import { Spinner } from '#lib/components/ui/spinner';
-	import { ArrowDownIcon, ArrowRightIcon, FileTextIcon, FolderOpenIcon, LockIcon } from '#lib/icons';
-	import { cn } from '#lib/utils';
+	import * as Checkbox from '#lib/components/ui/checkbox/index.js';
+	import { Spinner } from '#lib/components/ui/spinner/index.js';
+	import { ArrowDownIcon, ArrowRightIcon, FileTextIcon, FolderOpenIcon, LockIcon } from '#lib/icons/index.js';
+	import { cn } from '#lib/utils.js';
 
 	let {
 		name,

@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { cn } from '#lib/utils';
+	import { cn } from '#lib/utils.js';
 	import { onMount, type Snippet } from 'svelte';
 	import { slide } from 'svelte/transition';
 	import * as Card from './ui/card';
-	import { ArrowDownIcon } from '#lib/icons';
+	import { ArrowDownIcon } from '#lib/icons/index.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 
 	let {

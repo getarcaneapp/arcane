@@ -1,5 +1,5 @@
-import { streamService } from '#lib/services/stream-service';
-import { createJSONLineStream } from '#lib/stores/json-line-stream.svelte';
+import { streamService } from '#lib/services/stream-service.js';
+import { createJSONLineStream } from '#lib/stores/json-line-stream.svelte.js';
 
 type StreamEnvelope = {
 	type: string;

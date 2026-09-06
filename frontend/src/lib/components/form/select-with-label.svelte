@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { Badge } from '#lib/components/ui/badge';
-	import { Label } from '#lib/components/ui/label';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
-	import { m } from '#lib/paraglide/messages';
+	import { m } from '#lib/paraglide/messages.js';
 
 	let {
 		id,

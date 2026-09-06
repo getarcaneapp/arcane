@@ -12,7 +12,7 @@
 -->
 <script lang="ts">
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import { ArrowsUpDownIcon, FileTextIcon, SearchIcon } from '#lib/icons';
+	import { ArrowsUpDownIcon, FileTextIcon, SearchIcon } from '#lib/icons/index.js';
 
 	interface Props {
 		outlineOpen: boolean;

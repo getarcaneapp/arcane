@@ -3,8 +3,8 @@
 	import { goto } from '$app/navigation';
 	import * as Empty from '#lib/components/ui/empty/index.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import { AlertIcon } from '#lib/icons';
-	import { m } from '#lib/paraglide/messages';
+	import { AlertIcon } from '#lib/icons/index.js';
+	import { m } from '#lib/paraglide/messages.js';
 
 	interface Props {
 		fallbackTitle: string;

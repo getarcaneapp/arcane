@@ -1,7 +1,7 @@
 import BaseAPIService from './api-service';
-import type { CreateS3Destination, S3Destination, UpdateS3Destination } from '#lib/types/s3-destination';
-import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
-import { transformPaginationParams } from '#lib/utils/tables';
+import type { CreateS3Destination, S3Destination, UpdateS3Destination } from '#lib/types/s3-destination.js';
+import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+import { transformPaginationParams } from '#lib/utils/tables.js';
 
 class S3DestinationService extends BaseAPIService {
 	async list(options?: SearchPaginationSortRequest): Promise<Paginated<S3Destination>> {

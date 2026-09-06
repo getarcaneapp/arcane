@@ -1,6 +1,6 @@
-import { m } from '#lib/paraglide/messages';
-import type { VolumeWorkspaceFileContent } from '#lib/types/volume-workspace';
-import { workspaceReadOnlyMessage } from '#lib/utils/workspace-files';
+import { m } from '#lib/paraglide/messages.js';
+import type { VolumeWorkspaceFileContent } from '#lib/types/volume-workspace.js';
+import { workspaceReadOnlyMessage } from '#lib/utils/workspace-files.js';
 
 export function volumeWorkspaceReadOnlyMessage(
 	reason: VolumeWorkspaceFileContent['readOnlyReason'],

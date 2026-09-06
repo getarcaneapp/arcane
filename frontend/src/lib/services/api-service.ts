@@ -1,4 +1,4 @@
-import { m } from '#lib/paraglide/messages';
+import { m } from '#lib/paraglide/messages.js';
 import ky, { HTTPError as KyHTTPError, NetworkError, TimeoutError, type Options as KyOptions, type SearchParamsOption } from 'ky';
 import { toast } from 'svelte-sonner';
 
@@ -231,13 +231,7 @@ const skipAuthPathsInternal = [
 type UnauthorizedActionInternal = 'none' | 'redirect' | 'reload' | 'retry';
 
 function isAuthPagePathInternal(pathname: string): boolean {
-	return (
-		pathname.startsWith('/login') ||
-		pathname.startsWith('/logout') ||
-		pathname.startsWith('/oidc') ||
-		pathname.startsWith('/auth/oidc') ||
-		pathname.startsWith('/mobile/passkey')
-	);
+	return ['/login', '/logout', '/oidc', '/auth/oidc', '/mobile/passkey'].some((prefix) => pathname.startsWith(prefix));
 }
 
 export async function handleUnauthorizedResponseInternal(
@@ -264,30 +258,49 @@ export async function handleUnauthorizedResponseInternal(
 	// noise; a rejected or missing refresh token is a terminal authentication failure.
 	const recoverable = isVersionMismatch || upgradeInProgressInternal;
 
-	if (tokenRefreshHandler) {
-		try {
-			await tokenRefreshHandler();
-			if (isVersionMismatch && upgradeInProgressInternal) {
-				if (!upgradeReloadStartedInternal) {
-					upgradeReloadStartedInternal = true;
-					window.location.reload();
-				}
-				return 'reload';
-			}
-			return 'retry';
-		} catch (error) {
-			const isTransientRefreshFailure =
-				error instanceof APIError && (error.name === 'NetworkError' || error.name === 'TimeoutError');
-			if (recoverable && isTransientRefreshFailure) {
-				return 'none';
-			}
-			const redirectTo = encodeURIComponent(pathname);
-			window.location.replace(`/login?redirect=${redirectTo}`);
-			return 'redirect';
+	if (!tokenRefreshHandler) return 'none';
+	try {
+		await tokenRefreshHandler();
+		if (!isVersionMismatch || !upgradeInProgressInternal) return 'retry';
+		if (!upgradeReloadStartedInternal) {
+			upgradeReloadStartedInternal = true;
+			window.location.reload();
+		}
+		return 'reload';
+	} catch (error) {
+		const isTransientRefreshFailure =
+			error instanceof APIError && (error.name === 'NetworkError' || error.name === 'TimeoutError');
+		if (recoverable && isTransientRefreshFailure) return 'none';
+		window.location.replace(`/login?redirect=${encodeURIComponent(pathname)}`);
+		return 'redirect';
+	}
+}
+
+function buildRequestOptionsInternal(method: string, data: unknown, config: InternalRequestConfig): KyOptions {
+	const headers = new Headers(config.headers);
+	const isMutation = !['GET', 'HEAD'].includes(method.toUpperCase());
+	if (activeActivityBatchIdInternal && isMutation && !headers.has('X-Arcane-Batch-Id')) {
+		headers.set('X-Arcane-Batch-Id', activeActivityBatchIdInternal);
+	}
+	const options: KyOptions = {
+		cache: config.cache,
+		method,
+		headers,
+		retry: config.retry ?? 0,
+		searchParams: config.params,
+		timeout: config.timeout ?? false
+	};
+
+	const bodyData = data !== undefined ? data : config.data;
+	if (bodyData !== undefined && bodyData !== null) {
+		if (isBodyInit(bodyData)) {
+			options.body = bodyData;
+		} else {
+			options.json = bodyData;
 		}
 	}
 
-	return 'none';
+	return options;
 }
 
 class APIClient {
@@ -323,28 +336,7 @@ class APIClient {
 		};
 
 		try {
-			const headers = new Headers(config.headers);
-			const isMutation = !['GET', 'HEAD'].includes(method.toUpperCase());
-			if (activeActivityBatchIdInternal && isMutation && !headers.has('X-Arcane-Batch-Id')) {
-				headers.set('X-Arcane-Batch-Id', activeActivityBatchIdInternal);
-			}
-			const options: KyOptions = {
-				cache: config.cache,
-				method,
-				headers,
-				retry: config.retry ?? 0,
-				searchParams: config.params,
-				timeout: config.timeout ?? false
-			};
-
-			const bodyData = data !== undefined ? data : config.data;
-			if (bodyData !== undefined && bodyData !== null) {
-				if (isBodyInit(bodyData)) {
-					options.body = bodyData;
-				} else {
-					options.json = bodyData;
-				}
-			}
+			const options = buildRequestOptionsInternal(method, data, config);
 
 			const response = await this.client(requestUrl, options);
 			const parsed = method.toUpperCase() === 'HEAD' ? undefined : await parseResponseBody(response.clone(), config.responseType);
@@ -356,47 +348,7 @@ class APIClient {
 			};
 		} catch (error) {
 			if (error instanceof KyHTTPError) {
-				const errorResponse = error.response;
-				const parsed = await parseErrorResponseBody(error, config.responseType);
-				const response: APIResponse = {
-					data: parsed,
-					headers: errorResponse.headers,
-					raw: errorResponse,
-					status: errorResponse.status
-				};
-
-				if (errorResponse.status === 401 && typeof window !== 'undefined' && !config._retry) {
-					const action = await handleUnauthorizedResponseInternal(
-						getRequestPath(url, baseURL),
-						!!config._retry,
-						extractServerMessage(parsed)
-					);
-					if (action === 'retry') {
-						return this.performRequest<T>(method, url, data, {
-							...config,
-							_retry: true
-						});
-					}
-					if (action === 'redirect') {
-						return new Promise(() => {});
-					}
-					if (action === 'reload') {
-						return new Promise(() => {});
-					}
-				}
-
-				if (errorResponse.status === 403 && typeof window !== 'undefined' && !config.suppressAccessDeniedToast) {
-					const reason = extractServerMessage(parsed) ?? 'You do not have permission to perform this action.';
-					toast.error(m.common_access_denied(), { description: reason });
-				}
-
-				throw new APIError(extractServerMessage(parsed, true) ?? error.message, {
-					cause: error,
-					config: requestConfig,
-					name: 'HTTPError',
-					requestUrl,
-					response
-				});
+				return this.handleHttpError<T>(error, method, url, data, config, requestConfig, requestUrl);
 			}
 
 			if (error instanceof TimeoutError) {
@@ -432,6 +384,55 @@ class APIClient {
 				requestUrl
 			});
 		}
+	}
+
+	private async handleHttpError<T>(
+		error: KyHTTPError,
+		method: string,
+		url: string,
+		data: unknown,
+		config: InternalRequestConfig,
+		requestConfig: InternalRequestConfig & { baseURL: string; method: string; url: string },
+		requestUrl: string
+	): Promise<APIResponse<T>> {
+		const errorResponse = error.response;
+		const parsed = await parseErrorResponseBody(error, config.responseType);
+		const response: APIResponse = {
+			data: parsed,
+			headers: errorResponse.headers,
+			raw: errorResponse,
+			status: errorResponse.status
+		};
+
+		if (errorResponse.status === 401 && typeof window !== 'undefined' && !config._retry) {
+			const action = await handleUnauthorizedResponseInternal(
+				getRequestPath(url, requestConfig.baseURL),
+				!!config._retry,
+				extractServerMessage(parsed)
+			);
+			if (action === 'retry') {
+				return this.performRequest<T>(method, url, data, {
+					...config,
+					_retry: true
+				});
+			}
+			if (action === 'redirect' || action === 'reload') {
+				return new Promise(() => {});
+			}
+		}
+
+		if (errorResponse.status === 403 && typeof window !== 'undefined' && !config.suppressAccessDeniedToast) {
+			const reason = extractServerMessage(parsed) ?? 'You do not have permission to perform this action.';
+			toast.error(m.common_access_denied(), { description: reason });
+		}
+
+		throw new APIError(extractServerMessage(parsed, true) ?? error.message, {
+			cause: error,
+			config: requestConfig,
+			name: 'HTTPError',
+			requestUrl,
+			response
+		});
 	}
 
 	get<T = any>(url: string, config?: APIRequestConfig) {

@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { Progress } from '#lib/components/ui/progress';
-	import { Skeleton } from '#lib/components/ui/skeleton';
-	import { m } from '#lib/paraglide/messages';
-	import { bytes } from '#lib/utils/formatting';
-	import type { ContainerDetailsDto, ContainerStats as ContainerStatsType } from '#lib/types/docker';
-	import { DetailMetaStrip, DetailSection, type DetailMetaItem } from '#lib/components/resource-detail';
+	import { Progress } from '#lib/components/ui/progress/index.js';
+	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { bytes } from '#lib/utils/formatting.js';
+	import type { ContainerDetailsDto, ContainerStats as ContainerStatsType } from '#lib/types/docker.js';
+	import { DetailMetaStrip, DetailSection, type DetailMetaItem } from '#lib/components/resource-detail/index.js';
 
 	interface Props {
 		container: ContainerDetailsDto;

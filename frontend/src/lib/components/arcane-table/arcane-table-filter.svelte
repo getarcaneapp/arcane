@@ -6,8 +6,8 @@
 	import { cn } from '#lib/utils.js';
 	import { Separator } from '#lib/components/ui/separator/index.js';
 	import type { Component } from 'svelte';
-	import { m } from '#lib/paraglide/messages';
-	import { CheckIcon, FilterIcon } from '#lib/icons';
+	import { m } from '#lib/paraglide/messages.js';
+	import { CheckIcon, FilterIcon } from '#lib/icons/index.js';
 
 	// Structural shape of the faceted-filter column controls — see the note in
 	// arcane-table-header.svelte for why v9's invariant `Column` generic (even with `any`

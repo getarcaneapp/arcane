@@ -2,13 +2,13 @@
 	// Dozzle reference: the grouped row shell and left-side timestamp treatment here were
 	// informed by amir20/dozzle's LogItem.vue and GroupedLogItem.vue.
 	import { dev } from '$app/env';
-	import * as Collapsible from '#lib/components/ui/collapsible';
-	import { ArrowDownIcon, ArrowRightIcon } from '#lib/icons';
-	import { environmentStore } from '#lib/stores/environment.store.svelte';
-	import { m } from '#lib/paraglide/messages';
-	import { ReconnectingWebSocket } from '#lib/utils/ws';
-	import { cn } from '#lib/utils';
-	import { ansiToHtml, formatDateTime, nowInstantString } from '#lib/utils/formatting';
+	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
+	import { ArrowDownIcon, ArrowRightIcon } from '#lib/icons/index.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { ReconnectingWebSocket } from '#lib/utils/ws.js';
+	import { cn } from '#lib/utils.js';
+	import { ansiToHtml, formatDateTime, nowInstantString } from '#lib/utils/formatting.js';
 	import { onDestroy } from 'svelte';
 	import {
 		buildLogDisplayEntries,

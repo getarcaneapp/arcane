@@ -4,29 +4,30 @@
 	import { openConfirmDialog } from './confirm-dialog';
 	import { goto, refreshAll } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
-	import { tryCatch } from '#lib/utils/api';
-	import { handleApiResultWithCallbacks } from '#lib/utils/api';
+	import { tryCatch } from '#lib/utils/api.js';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { ArcaneButton, arcaneButtonVariants, type ArcaneButtonSize } from '#lib/components/arcane-button/index.js';
 	import DeploySplitButton from '#lib/components/deploy-split-button/deploy-split-button.svelte';
 	import DeployOptionsMenuItems from '#lib/components/deploy-split-button/deploy-options-menu-items.svelte';
 	import * as ButtonGroup from '#lib/components/ui/button-group/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import { cn } from '#lib/utils';
-	import { m } from '#lib/paraglide/messages';
-	import settingsStore from '#lib/stores/config-store';
-	import { deployOptionsStore } from '#lib/stores/deploy-options.store.svelte';
-	import { containerService } from '#lib/services/container-service';
-	import { projectService, type DeployProjectOptions } from '#lib/services/project-service';
-	import { activityToastOptions, activityIdFromStreamFrame, extractActivityId } from '#lib/utils/activity-toast';
-	import { operationWatchStore } from '#lib/stores/operation-watch.store.svelte';
-	import { attachProjectLogsToWatch } from '#lib/utils/watch-logs';
-	import type { Project } from '#lib/types/swarm';
-	import type { ContainerDetailsDto } from '#lib/types/docker';
-	import { ArrowDownIcon, EllipsisIcon, TerminalIcon } from '#lib/icons';
+	import { cn } from '#lib/utils.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import settingsStore from '#lib/stores/config-store.js';
+	import { deployOptionsStore } from '#lib/stores/deploy-options.store.svelte.js';
+	import { containerService } from '#lib/services/container-service.js';
+	import { projectService } from '#lib/services/project-service.js';
+	import type { DeployProjectOptions } from '#lib/types/project-deployment.js';
+	import { activityToastOptions, activityIdFromStreamFrame, extractActivityId } from '#lib/utils/activity-toast.js';
+	import { operationWatchStore } from '#lib/stores/operation-watch.store.svelte.js';
+	import { attachProjectLogsToWatch } from '#lib/utils/watch-logs.js';
+	import type { Project } from '#lib/types/swarm.js';
+	import type { ContainerDetailsDto } from '#lib/types/docker.js';
+	import { ArrowDownIcon, EllipsisIcon, TerminalIcon } from '#lib/icons/index.js';
 	import { createMutation } from '@tanstack/svelte-query';
-	import { hasPermission } from '#lib/utils/auth';
-	import { isDepotBuildAvailable } from '#lib/utils/build-provider';
-	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import { hasPermission } from '#lib/utils/auth.js';
+	import { isDepotBuildAvailable } from '#lib/utils/build-provider.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { Temporal } from 'temporal-polyfill';
 
 	type TargetType = 'container' | 'project';
@@ -128,7 +129,7 @@
 			tryCatch(
 				type === 'container'
 					? containerService.startContainer(id)
-					: projectService.deployProject(id, deployOptionsStore.takeRequestOptions())
+					: projectService.deployProject(id, 'up', deployOptionsStore.takeRequestOptions())
 			),
 		onMutate: () => setLoading('start', true),
 		onSettled: () => setLoading('start', false)
@@ -158,8 +159,9 @@
 			tryCatch(
 				(type === 'container'
 					? containerService.redeployContainer(id)
-					: projectService.redeployProject(
+					: projectService.deployProject(
 							id,
+							'redeploy',
 							(frame) => {
 								redeployActivityId = activityIdFromStreamFrame(frame) ?? redeployActivityId;
 								if (watch) {
@@ -380,6 +382,7 @@
 		try {
 			await projectService.deployProject(
 				id,
+				'up',
 				watch ? (frame: unknown) => operationWatchStore.onLine(frame) : () => {},
 				options ?? deployOptionsStore.takeRequestOptions()
 			);

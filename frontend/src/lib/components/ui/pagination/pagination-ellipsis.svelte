@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { EllipsisIcon } from '#lib/icons';
-	import { m } from '#lib/paraglide/messages';
+	import { EllipsisIcon } from '#lib/icons/index.js';
+	import { m } from '#lib/paraglide/messages.js';
 	import type { WithElementRef, WithoutChildren } from 'bits-ui';
 	import type { HTMLAttributes } from 'svelte/elements';
 	import { cn } from '#lib/utils.js';

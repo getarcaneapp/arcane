@@ -1,5 +1,5 @@
-import type { Locale } from '#lib/paraglide/runtime';
-import type { ApplicationTheme, IconCatalog } from '#lib/types/settings';
+import type { Locale } from '#lib/paraglide/runtime.js';
+import type { ApplicationTheme, IconCatalog } from '#lib/types/settings.js';
 
 // --- RBAC: roles, permissions, assignments ---
 

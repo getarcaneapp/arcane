@@ -1,20 +1,20 @@
 <script lang="ts">
-	import type { ActionButton } from '#lib/components/action-button-group';
-	import { ArcaneButton } from '#lib/components/arcane-button';
+	import type { ActionButton } from '#lib/components/action-button-group/index.js';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
 	import DashboardEnvironmentUpgradeAction from './dashboard-environment-upgrade-action.svelte';
 	import DashboardMetricTile from './dash-metric-tile.svelte';
-	import * as ArcaneTooltip from '#lib/components/arcane-tooltip';
-	import { Badge, badgeVariants } from '#lib/components/ui/badge';
-	import * as Card from '#lib/components/ui/card';
-	import * as DropdownMenu from '#lib/components/ui/dropdown-menu';
-	import { Skeleton } from '#lib/components/ui/skeleton';
-	import { CpuIcon, EnvironmentsIcon, GpuIcon, MemoryStickIcon, VolumesIcon } from '#lib/icons';
-	import { m } from '#lib/paraglide/messages';
-	import type { AppVersionInformation } from '#lib/types/settings';
-	import type { DashboardEnvironmentOverview, SystemStats } from '#lib/types/shared';
-	import { cn } from '#lib/utils';
-	import { isEnvironmentOnline } from '#lib/utils/docker';
+	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
+	import { Badge, badgeVariants } from '#lib/components/ui/badge/index.js';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
+	import { CpuIcon, EnvironmentsIcon, GpuIcon, MemoryStickIcon, VolumesIcon } from '#lib/icons/index.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import type { AppVersionInformation } from '#lib/types/settings.js';
+	import type { DashboardEnvironmentOverview, SystemStats } from '#lib/types/shared.js';
+	import { cn } from '#lib/utils.js';
+	import { isEnvironmentOnline } from '#lib/utils/docker.js';
 	import {
 		formatPercent,
 		getActivityMeta,

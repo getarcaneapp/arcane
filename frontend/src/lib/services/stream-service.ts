@@ -1,5 +1,5 @@
 import BaseAPIService, { handleUnauthorizedResponseInternal } from './api-service';
-import { streamCacheBuster } from '#lib/utils/streaming';
+import { streamCacheBuster } from '#lib/utils/streaming.js';
 
 /** Channels the multiplexed client stream can carry. Must match types/stream. */
 export const STREAM_CHANNEL_ENVIRONMENTS = 'environments';

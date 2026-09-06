@@ -1,6 +1,6 @@
 <script lang="ts">
 	import CodeMirror from 'svelte-codemirror-editor';
-	import * as Command from '#lib/components/ui/command';
+	import * as Command from '#lib/components/ui/command/index.js';
 	import { autocompletion, type Completion, type CompletionContext } from '@codemirror/autocomplete';
 	import { javascript } from '@codemirror/lang-javascript';
 	import { json } from '@codemirror/lang-json';
@@ -23,8 +23,8 @@
 	import { keymap, hoverTooltip, EditorView, ViewPlugin, closeHoverTooltips, hasHoverTooltips } from '@codemirror/view';
 	import { type Extension } from '@codemirror/state';
 	import { browser } from '$app/env';
-	import { m } from '#lib/paraglide/messages';
-	import userStore from '#lib/stores/user-store';
+	import { m } from '#lib/paraglide/messages.js';
+	import userStore from '#lib/stores/user-store.js';
 	import { mode } from 'mode-watcher';
 	import { arcaneDarkInit, arcaneLightInit } from './theme';
 	import { createDefaultSummary, ENV_SNIPPETS, YAML_SNIPPETS } from './editor-constants';
@@ -34,6 +34,21 @@
 	import type { YamlPositionContext } from './analysis/compose-analysis';
 	import type { ComposeSchemaContext } from './analysis/compose-schema';
 	import type { CodeLanguage, CodeValidationMode, DiagnosticSummary, EditorContext, OutlineItem } from './analysis/types';
+
+	const languageSupport = new Map(
+		Object.entries({
+			yaml: { validation: 'compose', extensions: () => [yaml()] },
+			env: { validation: 'env', extensions: () => [StreamLanguage.define(properties)] },
+			json: { validation: 'none', extensions: () => [json()] },
+			toml: { validation: 'none', extensions: () => [StreamLanguage.define(toml)] },
+			dockerfile: { validation: 'none', extensions: () => [StreamLanguage.define(dockerFile)] },
+			shell: { validation: 'none', extensions: () => [StreamLanguage.define(shell)] },
+			javascript: { validation: 'none', extensions: () => [javascript({ jsx: true })] },
+			typescript: { validation: 'none', extensions: () => [javascript({ typescript: true, jsx: true })] },
+			markdown: { validation: 'none', extensions: () => [markdown()] },
+			plaintext: { validation: 'none', extensions: () => [] }
+		} satisfies Record<CodeLanguage, { validation: CodeValidationMode; extensions: () => Extension[] }>)
+	);
 
 	type ComposeAnalysisModule = typeof import('./analysis/compose-analysis');
 	type ComposeSchemaModule = typeof import('./analysis/compose-schema');
@@ -100,30 +115,12 @@
 
 	const storageKey = $derived(fileId ? `arcane.editor.state:${fileId}` : null);
 	const isDiffActive = $derived(Boolean(enableDiff && diffOpen && originalValue !== undefined));
-	const effectiveValidationMode = $derived(validationMode ?? defaultValidationModeForLanguage(language));
+	const effectiveValidationMode = $derived(validationMode ?? languageSupport.get(language)?.validation);
 	const effectiveEditorContext = $derived({
 		envContent: editorContext?.envContent ?? '',
 		composeContents: editorContext?.composeContents ?? [],
 		globalVariables: editorContext?.globalVariables ?? {}
 	});
-
-	function defaultValidationModeForLanguage(lang: CodeLanguage): CodeValidationMode {
-		switch (lang) {
-			case 'yaml':
-				return 'compose';
-			case 'env':
-				return 'env';
-			case 'json':
-			case 'toml':
-			case 'dockerfile':
-			case 'shell':
-			case 'javascript':
-			case 'typescript':
-			case 'markdown':
-			case 'plaintext':
-				return 'none';
-		}
-	}
 
 	const mergeActionParams = $derived({
 		diffActive: isDiffActive,
@@ -671,28 +668,7 @@
 	};
 
 	function getBasicLanguageExtension(lang: CodeLanguage): Extension[] {
-		switch (lang) {
-			case 'yaml':
-				return [yaml()];
-			case 'env':
-				return [StreamLanguage.define(properties)];
-			case 'json':
-				return [json()];
-			case 'toml':
-				return [StreamLanguage.define(toml)];
-			case 'dockerfile':
-				return [StreamLanguage.define(dockerFile)];
-			case 'shell':
-				return [StreamLanguage.define(shell)];
-			case 'javascript':
-				return [javascript({ jsx: true })];
-			case 'typescript':
-				return [javascript({ typescript: true, jsx: true })];
-			case 'markdown':
-				return [markdown()];
-			case 'plaintext':
-				return [];
-		}
+		return languageSupport.get(lang)?.extensions() as Extension[];
 	}
 
 	function getLanguageExtension(lang: CodeLanguage, options: { lightweight?: boolean } = {}): Extension[] {
@@ -703,9 +679,9 @@
 			extensions.push(enterIndentKeymaps[lang]);
 		}
 
+		extensions.push(...(getBasicLanguageExtension(lang) ?? []));
 		switch (lang) {
 			case 'yaml':
-				extensions.push(...getBasicLanguageExtension(lang));
 				if (!readOnly && !lightweight && effectiveValidationMode === 'compose') {
 					extensions.push(
 						lintGutter(),
@@ -719,7 +695,6 @@
 				}
 				break;
 			case 'env':
-				extensions.push(...getBasicLanguageExtension(lang));
 				if (!readOnly && !lightweight && effectiveValidationMode === 'env') {
 					extensions.push(
 						lintGutter(),
@@ -731,24 +706,9 @@
 					);
 				}
 				break;
-			case 'json':
-			case 'toml':
-			case 'dockerfile':
-			case 'shell':
-			case 'javascript':
-			case 'typescript':
-			case 'markdown':
-				extensions.push(...getBasicLanguageExtension(lang));
-				break;
-			case 'plaintext':
-				break;
 		}
 
 		return extensions;
-	}
-
-	function getReadonlyLanguageExtension(lang: CodeLanguage): Extension[] {
-		return getBasicLanguageExtension(lang);
 	}
 
 	const theme = $derived.by(() => {
@@ -760,7 +720,7 @@
 	const mergeHostAction = createMergeHostAction({
 		getTheme: () => theme,
 		getLanguageExtension,
-		getReadonlyLanguageExtension,
+		getReadonlyLanguageExtension: getBasicLanguageExtension,
 		onValueChange: (nextValue) => {
 			value = nextValue;
 		},

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { Badge } from '#lib/components/ui/badge';
+	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
 	import ContainerActionMenuItem from '#lib/components/arcane-table/cells/container-action-menu-item.svelte';
@@ -8,19 +8,19 @@
 	import ImageUpdateItem from '#lib/components/image-update-item.svelte';
 	import { PortBadge } from '#lib/components/badges/index.js';
 	import { mode } from 'mode-watcher';
-	import { getThemedIconUrl, parseImageRef } from '#lib/utils/docker';
-	import type { RuntimeService } from '#lib/types/swarm';
-	import type { ImageUpdateData } from '#lib/types/docker';
-	import { m } from '#lib/paraglide/messages';
-	import { projectService } from '#lib/services/project-service';
-	import { environmentStore } from '#lib/stores/environment.store.svelte';
-	import { hasPermission } from '#lib/utils/auth';
+	import { getThemedIconUrl, parseImageRef } from '#lib/utils/docker.js';
+	import type { RuntimeService } from '#lib/types/swarm.js';
+	import type { ImageUpdateData } from '#lib/types/docker.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { projectService } from '#lib/services/project-service.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import { hasPermission } from '#lib/utils/auth.js';
 	import { toast } from 'svelte-sonner';
-	import { handleApiResultWithCallbacks, tryCatch } from '#lib/utils/api';
-	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
-	import { confirmAndRemoveContainer, runContainerLifecycleAction } from '#lib/utils/container-actions';
-	import { cn } from '#lib/utils';
-	import { StartIcon, StopIcon, RefreshIcon, TrashIcon, InspectIcon, LayersIcon, BoxIcon, HealthIcon } from '#lib/icons';
+	import { handleApiResultWithCallbacks, tryCatch } from '#lib/utils/api.js';
+	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
+	import { confirmAndRemoveContainer, runContainerLifecycleAction } from '#lib/utils/container-actions.js';
+	import { cn } from '#lib/utils.js';
+	import { StartIcon, StopIcon, RefreshIcon, TrashIcon, InspectIcon, LayersIcon, BoxIcon, HealthIcon } from '#lib/icons/index.js';
 
 	interface Props {
 		services?: RuntimeService[];

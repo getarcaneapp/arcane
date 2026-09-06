@@ -1,9 +1,9 @@
-import { userService } from '#lib/services/user-service';
-import { roleService } from '#lib/services/role-service';
-import { environmentManagementService } from '#lib/services/env-mgmt-service';
-import { queryKeys } from '#lib/query/query-keys';
-import type { SearchPaginationSortRequest } from '#lib/types/shared';
-import { resolveInitialTableRequest } from '#lib/utils/tables';
+import { userService } from '#lib/services/user-service.js';
+import { roleService } from '#lib/services/role-service.js';
+import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
+import { queryKeys } from '#lib/query/query-keys.js';
+import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+import { resolveInitialTableRequest } from '#lib/utils/tables.js';
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({ parent }) => {

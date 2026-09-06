@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { z } from 'zod/v4';
-	import settingsStore from '#lib/stores/config-store';
-	import { m } from '#lib/paraglide/messages';
-	import { SettingsPageLayout } from '#lib/layouts';
-	import { ClockIcon } from '#lib/icons';
+	import settingsStore from '#lib/stores/config-store.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { SettingsPageLayout } from '#lib/layouts/index.js';
+	import { ClockIcon } from '#lib/icons/index.js';
 	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
-	import { createSettingsForm } from '#lib/utils/settings-form';
+	import { createSettingsForm } from '#lib/utils/settings-form.js';
 
 	let { data } = $props();
 

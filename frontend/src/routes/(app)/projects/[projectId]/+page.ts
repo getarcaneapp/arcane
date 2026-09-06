@@ -1,9 +1,9 @@
-import { projectService } from '#lib/services/project-service';
-import { projectWorkspaceService } from '#lib/services/project-workspace-service';
-import { variableService } from '#lib/services/variable-service';
-import { environmentStore } from '#lib/stores/environment.store.svelte';
-import { queryKeys } from '#lib/query/query-keys';
-import { throwPageLoadError } from '#lib/utils/api';
+import { projectService } from '#lib/services/project-service.js';
+import { projectWorkspaceService } from '#lib/services/project-workspace-service.js';
+import { variableService } from '#lib/services/variable-service.js';
+import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+import { queryKeys } from '#lib/query/query-keys.js';
+import { throwPageLoadError } from '#lib/utils/api.js';
 import type { QueryClient } from '@tanstack/svelte-query';
 import type { PageLoad } from './$types';
 

@@ -7,13 +7,13 @@
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
-	import type { NetworkCreateOptions } from '#lib/types/docker';
+	import type { NetworkCreateOptions } from '#lib/types/docker.js';
 	import { z } from 'zod/v4';
-	import { createForm, preventDefault } from '#lib/utils/settings';
-	import { parseKeyValuePairs } from '#lib/utils/form-parsers';
+	import { createForm, preventDefault } from '#lib/utils/settings.js';
+	import { parseKeyValuePairs } from '#lib/utils/form-parsers.js';
 	import SelectWithLabel from '../form/select-with-label.svelte';
-	import { m } from '#lib/paraglide/messages';
-	import { CloseIcon } from '#lib/icons';
+	import { m } from '#lib/paraglide/messages.js';
+	import { CloseIcon } from '#lib/icons/index.js';
 
 	type CreateNetworkFormProps = {
 		open: boolean;

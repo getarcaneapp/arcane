@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { m } from '#lib/paraglide/messages';
-	import type { AppVersionInformation } from '#lib/types/settings';
+	import { m } from '#lib/paraglide/messages.js';
+	import type { AppVersionInformation } from '#lib/types/settings.js';
 
 	let {
 		versionInformation,

@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { m } from '#lib/paraglide/messages';
-	import { queryKeys } from '#lib/query/query-keys';
-	import systemUpgradeService from '#lib/services/api/system-upgrade-service';
-	import type { Environment } from '#lib/types/environment';
-	import { UpdateIcon } from '#lib/icons';
+	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
+	import systemUpgradeService from '#lib/services/api/system-upgrade-service.js';
+	import type { Environment } from '#lib/types/environment.js';
+	import { UpdateIcon } from '#lib/icons/index.js';
 	import { createQuery } from '@tanstack/svelte-query';
 
 	let { environment, isOnline }: { environment: Environment; isOnline: boolean } = $props();

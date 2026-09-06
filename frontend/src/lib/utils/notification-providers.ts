@@ -26,7 +26,7 @@ import {
 	matrixFormValuesToSettings,
 	googleChatFormValuesToSettings,
 	genericFormValuesToSettings
-} from '#lib/types/notifications';
+} from '#lib/types/notifications.js';
 
 export type NotificationSettingsByProvider = Record<NotificationProviderKey, NotificationSettings | null>;
 export type NotificationProviderFormState = { [K in NotificationProviderKey]: ProviderFormValuesMap[K] };

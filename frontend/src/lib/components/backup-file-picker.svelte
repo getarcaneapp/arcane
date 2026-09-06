@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { ArcaneButton } from '#lib/components/arcane-button';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import FileTreeRow from '#lib/components/file-tree-row.svelte';
-	import { Input } from '#lib/components/ui/input';
-	import { Spinner } from '#lib/components/ui/spinner';
-	import { createVirtualizer } from '#lib/components/ui/virtualizer.svelte';
-	import type { BackupFileEntry, BackupFileProvider } from '#lib/types/backup';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Spinner } from '#lib/components/ui/spinner/index.js';
+	import { createVirtualizer } from '#lib/components/ui/virtualizer.svelte.js';
+	import type { BackupFileEntry, BackupFileProvider } from '#lib/types/backup.js';
 	import * as m from '#lib/paraglide/messages.js';
 
 	type FolderPageState = {

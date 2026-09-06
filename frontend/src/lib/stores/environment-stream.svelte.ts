@@ -1,7 +1,7 @@
 import { browser } from '$app/env';
-import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte';
-import { clientStream } from '#lib/stores/client-stream.svelte';
-import type { Environment } from '#lib/types/environment';
+import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
+import { clientStream } from '#lib/stores/client-stream.svelte.js';
+import type { Environment } from '#lib/types/environment.js';
 
 export type StreamEnvStateBase = {
 	id: string;
@@ -161,32 +161,34 @@ export function createEnvironmentStreamStore<TState extends StreamEnvStateBase, 
 			}
 		}
 
-		for (const environment of environments) {
-			const environmentId = environment.id || LOCAL_DOCKER_ENVIRONMENT_ID;
-			const existing = environmentState(environmentId);
-			if (!existing) {
-				_environmentStates = {
-					..._environmentStates,
-					[environmentId]: config.createEnvironmentState(environment)
-				};
-				// An already-open aggregated stream only picks new environments
-				// up on its server-side reconcile tick; fetch once so the first
-				// snapshot doesn't take up to that interval to appear.
-				if (clientStream.hasActiveStream) {
-					void config.fetchSnapshot(environmentId, lifecycleGeneration);
-				}
-				continue;
-			}
+		for (const environment of environments) reconcileEnvironment(environment);
+	}
 
-			if (existing.name !== environmentDisplayName(environment)) {
-				if (config.onEnvironmentRenamed) {
-					config.onEnvironmentRenamed(environmentId, environmentDisplayName(environment));
-				} else {
-					updateEnvironmentState(environmentId, (state) => ({
-						...state,
-						name: environmentDisplayName(environment)
-					}));
-				}
+	function reconcileEnvironment(environment: Pick<Environment, 'id' | 'name'>) {
+		const environmentId = environment.id || LOCAL_DOCKER_ENVIRONMENT_ID;
+		const existing = environmentState(environmentId);
+		if (!existing) {
+			_environmentStates = {
+				..._environmentStates,
+				[environmentId]: config.createEnvironmentState(environment)
+			};
+			// An already-open aggregated stream only picks new environments
+			// up on its server-side reconcile tick; fetch once so the first
+			// snapshot doesn't take up to that interval to appear.
+			if (clientStream.hasActiveStream) {
+				void config.fetchSnapshot(environmentId, lifecycleGeneration);
+			}
+			return;
+		}
+
+		if (existing.name !== environmentDisplayName(environment)) {
+			if (config.onEnvironmentRenamed) {
+				config.onEnvironmentRenamed(environmentId, environmentDisplayName(environment));
+			} else {
+				updateEnvironmentState(environmentId, (state) => ({
+					...state,
+					name: environmentDisplayName(environment)
+				}));
 			}
 		}
 	}

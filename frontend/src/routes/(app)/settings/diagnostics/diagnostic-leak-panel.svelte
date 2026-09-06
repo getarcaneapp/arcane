@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { m } from '#lib/paraglide/messages';
+	import { m } from '#lib/paraglide/messages.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import { AlertTriangleIcon, DownloadIcon } from '#lib/icons';
-	import { diagnosticsService } from '#lib/services/diagnostics-service';
-	import type { GoroutineLeakReport } from '#lib/types/diagnostics';
-	import { formatTime } from '#lib/utils/formatting';
-	import { cn } from '#lib/utils';
+	import { AlertTriangleIcon, DownloadIcon } from '#lib/icons/index.js';
+	import { diagnosticsService } from '#lib/services/diagnostics-service.js';
+	import type { GoroutineLeakReport } from '#lib/types/diagnostics.js';
+	import { formatTime } from '#lib/utils/formatting.js';
+	import { cn } from '#lib/utils.js';
 
 	interface Props {
 		leakedGoroutines: number;

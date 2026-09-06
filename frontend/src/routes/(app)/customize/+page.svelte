@@ -2,17 +2,17 @@
 	import type { PageProps } from './$types';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { m } from '#lib/paraglide/messages';
-	import { customizeSearchService } from '#lib/services/customize-search';
-	import { environmentStore } from '#lib/stores/environment.store.svelte';
-	import type { CustomizeCategory } from '#lib/types/shared';
-	import { canReachAccessSurfaceUrl } from '#lib/utils/access-policy';
-	import { getCustomizeSubpageUrlsInNavOrder } from '#lib/config/navigation-config';
-	import { useCategorySearch } from '#lib/hooks/use-category-search.svelte';
-	import { getCategoryIcon, orderCategoriesByNav } from '#lib/utils/category-page';
-	import { TemplateIcon, FileTextIcon, RegistryIcon, VariableIcon, CustomizeIcon, GitBranchIcon } from '#lib/icons';
+	import { m } from '#lib/paraglide/messages.js';
+	import { customizeSearchService } from '#lib/services/customize-search.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import type { CustomizeCategory } from '#lib/types/shared.js';
+	import { canReachAccessSurfaceUrl } from '#lib/utils/access-policy.js';
+	import { getCustomizeSubpageUrlsInNavOrder } from '#lib/config/navigation-config.js';
+	import { useCategorySearch } from '#lib/hooks/use-category-search.svelte.js';
+	import { getCategoryIcon, orderCategoriesByNav } from '#lib/utils/category-page.js';
+	import { TemplateIcon, FileTextIcon, RegistryIcon, VariableIcon, CustomizeIcon, GitBranchIcon } from '#lib/icons/index.js';
 	import CategoryIndexPage from '#lib/components/category-index-page.svelte';
-	import type { NormalizedCategory } from '#lib/components/category-index-page.types';
+	import type { NormalizedCategory } from '#lib/components/category-index-page.types.js';
 
 	let { data }: PageProps = $props();
 	let customizeCategories = $state<CustomizeCategory[]>([]);

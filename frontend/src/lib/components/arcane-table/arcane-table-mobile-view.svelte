@@ -3,8 +3,8 @@
 	import Skeleton from '#lib/components/ui/skeleton/skeleton.svelte';
 	import DropdownCard from '#lib/components/dropdown-card.svelte';
 	import TableEmpty from './table-empty.svelte';
-	import { m } from '#lib/paraglide/messages';
-	import { cn } from '#lib/utils';
+	import { m } from '#lib/paraglide/messages.js';
+	import { cn } from '#lib/utils.js';
 	import type { Snippet, Component } from 'svelte';
 	import { shouldIgnoreTableRowClick, type GroupedData } from './arcane-table.types.svelte';
 	import { slide } from 'svelte/transition';
@@ -110,10 +110,6 @@
 				</DropdownCard>
 			{/each}
 		</div>
-
-		{#if groupedRows.length === 0}
-			{@render emptyState()}
-		{/if}
 	{:else if loading && table.getRowModel().rows.length === 0}
 		{@render mobileSkeleton()}
 	{:else}

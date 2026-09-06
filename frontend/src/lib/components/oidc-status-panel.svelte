@@ -1,9 +1,9 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import { getApplicationLogo } from '#lib/utils/docker';
-	import { accentColorPreviewStore } from '#lib/utils/theme';
-	import userStore from '#lib/stores/user-store';
-	import { m } from '#lib/paraglide/messages';
+	import { getApplicationLogo } from '#lib/utils/docker.js';
+	import { accentColorPreviewStore } from '#lib/utils/theme.js';
+	import userStore from '#lib/stores/user-store.js';
+	import { m } from '#lib/paraglide/messages.js';
 
 	interface Props {
 		busy: boolean;

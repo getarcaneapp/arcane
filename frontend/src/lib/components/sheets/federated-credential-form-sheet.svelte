@@ -1,19 +1,19 @@
 <script lang="ts">
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
-	import * as Select from '#lib/components/ui/select';
-	import * as Alert from '#lib/components/ui/alert';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import * as Alert from '#lib/components/ui/alert/index.js';
 	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
 	import RoleScopeSelects from '#lib/components/sheets/role-scope-selects.svelte';
 	import FormInput from '#lib/components/form/form-input.svelte';
-	import { Label } from '#lib/components/ui/label';
+	import { Label } from '#lib/components/ui/label/index.js';
 	import { Switch } from '#lib/components/ui/switch/index.js';
-	import type { CreateFederatedCredential, FederatedCredential, FederatedCredentialMatchType, Role } from '#lib/types/auth';
-	import type { Environment } from '#lib/types/environment';
+	import type { CreateFederatedCredential, FederatedCredential, FederatedCredentialMatchType, Role } from '#lib/types/auth.js';
+	import type { Environment } from '#lib/types/environment.js';
 	import { z } from 'zod/v4';
-	import { createForm, preventDefault } from '#lib/utils/settings';
-	import { plainDateFromInstant, plainDateToInstantString } from '#lib/utils/formatting';
+	import { createForm, preventDefault } from '#lib/utils/settings.js';
+	import { plainDateFromInstant, plainDateToInstantString } from '#lib/utils/formatting.js';
 	import * as m from '#lib/paraglide/messages.js';
-	import { InfoIcon } from '#lib/icons';
+	import { InfoIcon } from '#lib/icons/index.js';
 	import { Temporal } from 'temporal-polyfill';
 
 	type Props = {

@@ -1,7 +1,7 @@
-import { openConfirmDialog } from '#lib/components/confirm-dialog';
+import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 import { toast } from 'svelte-sonner';
-import { m } from '#lib/paraglide/messages';
-import { activityStore } from '#lib/stores/activity.store.svelte';
+import { m } from '#lib/paraglide/messages.js';
+import { activityStore } from '#lib/stores/activity.store.svelte.js';
 
 /**
  * Opens a confirmation dialog and, on confirm, requests cancellation of the

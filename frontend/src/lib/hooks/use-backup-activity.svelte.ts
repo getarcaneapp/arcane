@@ -1,10 +1,10 @@
 import { untrack } from 'svelte';
 import { createQuery, useQueryClient } from '@tanstack/svelte-query';
-import { queryKeys } from '#lib/query/query-keys';
-import { activityService } from '#lib/services/activity-service';
-import { activityStore } from '#lib/stores/activity.store.svelte';
-import { environmentStore } from '#lib/stores/environment.store.svelte';
-import type { Activity } from '#lib/types/activity.type';
+import { queryKeys } from '#lib/query/query-keys.js';
+import { activityService } from '#lib/services/activity-service.js';
+import { activityStore } from '#lib/stores/activity.store.svelte.js';
+import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+import type { Activity } from '#lib/types/activity.type.js';
 
 export function useBackupActivity(
 	getEnvironmentId: () => string,

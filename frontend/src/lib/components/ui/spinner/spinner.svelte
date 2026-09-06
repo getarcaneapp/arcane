@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { cn } from '#lib/utils.js';
-	import { LoadingSpinnerIcon } from '#lib/icons';
-	import { m } from '#lib/paraglide/messages';
+	import { LoadingSpinnerIcon } from '#lib/icons/index.js';
+	import { m } from '#lib/paraglide/messages.js';
 	import type { ComponentProps } from 'svelte';
 
 	type Props = ComponentProps<typeof LoadingSpinnerIcon>;

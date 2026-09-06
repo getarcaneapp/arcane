@@ -3,12 +3,12 @@
 	import * as Sidebar from '#lib/components/ui/sidebar/index.js';
 	import { page } from '$app/state';
 	import { useSidebar } from '#lib/components/ui/sidebar/context.svelte.js';
-	import type { ShortcutKey } from '#lib/utils/navigation';
+	import type { ShortcutKey } from '#lib/utils/navigation.js';
 	import type { Snippet } from 'svelte';
-	import { ArrowRightIcon } from '#lib/icons';
+	import { ArrowRightIcon } from '#lib/icons/index.js';
 	import SidebarCollapsibleItem from './sidebar-collapsible-item.svelte';
 	import SidebarItemTooltipContent from './sidebar-item-tooltip-content.svelte';
-	import userStore from '#lib/stores/user-store';
+	import userStore from '#lib/stores/user-store.js';
 
 	let {
 		items,

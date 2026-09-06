@@ -3,13 +3,13 @@
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
-	import { preventDefault } from '#lib/utils/settings';
-	import { m } from '#lib/paraglide/messages';
-	import { AddIcon, TrashIcon } from '#lib/icons';
+	import { preventDefault } from '#lib/utils/settings.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { AddIcon, TrashIcon } from '#lib/icons/index.js';
 	import * as Accordion from '#lib/components/ui/accordion/index.js';
 	import FormInput from '#lib/components/form/form-input.svelte';
 	import { untrack } from 'svelte';
-	import { getSwarmServiceModeLabel } from '#lib/utils/docker';
+	import { getSwarmServiceModeLabel } from '#lib/utils/docker.js';
 
 	type ServiceEditorPayload = {
 		spec: Record<string, unknown>;
@@ -132,8 +132,8 @@
 		return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
 	}
 
-	function createTextField(value = ''): TextFieldState {
-		return { value, error: '' };
+	function createTextField(value?: string | null): TextFieldState {
+		return { value: value ?? '', error: '' };
 	}
 
 	function createEmptyFormState(): ServiceEditorFormState {
@@ -182,39 +182,38 @@
 	function createFormState(spec: SwarmServiceSpecRaw | null): ServiceEditorFormState {
 		if (!spec) return createEmptyFormState();
 
-		const containerSpec = spec.TaskTemplate?.ContainerSpec;
+		const containerSpec = spec.TaskTemplate?.ContainerSpec ?? {};
+		const serviceMode = spec.Mode ?? {};
 		let mode: ServiceEditorMode = 'replicated';
-		if (spec.Mode?.Global) mode = 'global';
-		if (spec.Mode?.ReplicatedJob) mode = 'replicated-job';
-		if (spec.Mode?.GlobalJob) mode = 'global-job';
+		if (serviceMode.Global) mode = 'global';
+		if (serviceMode.ReplicatedJob) mode = 'replicated-job';
+		if (serviceMode.GlobalJob) mode = 'global-job';
 
 		return {
-			name: createTextField(spec.Name ?? ''),
-			image: createTextField(containerSpec?.Image ?? ''),
+			name: createTextField(spec.Name),
+			image: createTextField(containerSpec.Image),
 			mode,
-			replicas: createTextField(String(spec.Mode?.Replicated?.Replicas ?? 1)),
-			command: createTextField(containerSpec?.Command?.join(' ') ?? ''),
-			args: createTextField(containerSpec?.Args?.join(' ') ?? ''),
-			workingDir: createTextField(containerSpec?.Dir ?? ''),
-			user: createTextField(containerSpec?.User ?? ''),
-			hostname: createTextField(containerSpec?.Hostname ?? ''),
+			replicas: createTextField(String(serviceMode.Replicated?.Replicas ?? 1)),
+			command: createTextField(containerSpec.Command?.join(' ')),
+			args: createTextField(containerSpec.Args?.join(' ')),
+			workingDir: createTextField(containerSpec.Dir),
+			user: createTextField(containerSpec.User),
+			hostname: createTextField(containerSpec.Hostname),
 			ports:
 				spec.EndpointSpec?.Ports?.map((port) => ({
 					target: String(port.TargetPort ?? ''),
 					published: port.PublishedPort ? String(port.PublishedPort) : '',
 					protocol: normalizePortProtocol(port.Protocol)
 				})) ?? [],
-			envVars:
-				containerSpec?.Env?.map((envEntry) => {
-					const [key, ...valueParts] = envEntry.split('=');
-					return { key: key ?? '', value: valueParts.join('=') };
-				}) ?? [],
-			mounts:
-				containerSpec?.Mounts?.map((mount) => ({
-					type: normalizeMountType(mount.Type),
-					source: mount.Source ?? '',
-					target: mount.Target ?? ''
-				})) ?? [],
+			envVars: (containerSpec.Env ?? []).map((envEntry) => {
+				const [key, ...valueParts] = envEntry.split('=');
+				return { key: key ?? '', value: valueParts.join('=') };
+			}),
+			mounts: (containerSpec.Mounts ?? []).map((mount) => ({
+				type: normalizeMountType(mount.Type),
+				source: mount.Source ?? '',
+				target: mount.Target ?? ''
+			})),
 			labels: spec.Labels ? Object.entries(spec.Labels).map(([key, value]) => ({ key, value: String(value) })) : [],
 			baseSpec: structuredClone(spec as Record<string, unknown>)
 		};

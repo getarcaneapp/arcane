@@ -1,5 +1,5 @@
 <script lang="ts" module>
-	import type { IconType } from '#lib/icons';
+	import type { IconType } from '#lib/icons/index.js';
 
 	export interface DetailMetaItem {
 		icon?: IconType;
@@ -11,7 +11,7 @@
 
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import { cn } from '#lib/utils';
+	import { cn } from '#lib/utils.js';
 
 	interface Props {
 		items?: DetailMetaItem[];

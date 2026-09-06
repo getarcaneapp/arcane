@@ -2,9 +2,9 @@
 	import { ArcaneButton, arcaneButtonVariants, type ArcaneButtonSize } from '#lib/components/arcane-button/index.js';
 	import * as ButtonGroup from '#lib/components/ui/button-group/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import { ArrowDownIcon, TerminalIcon } from '#lib/icons';
-	import { m } from '#lib/paraglide/messages';
-	import { cn } from '#lib/utils';
+	import { ArrowDownIcon, TerminalIcon } from '#lib/icons/index.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { cn } from '#lib/utils.js';
 	import DeployOptionsMenuItems from './deploy-options-menu-items.svelte';
 
 	let {

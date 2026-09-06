@@ -1,6 +1,6 @@
 import { redirect } from '@sveltejs/kit';
-import { getEffectiveLandingPage } from '#lib/utils/navigation';
-import { passkeyService } from '#lib/services/passkey-service';
+import { getEffectiveLandingPage } from '#lib/utils/navigation.js';
+import { passkeyService } from '#lib/services/passkey-service.js';
 
 export const load = async ({ parent, url }) => {
 	const data = await parent();

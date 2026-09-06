@@ -1,38 +1,47 @@
 <script lang="ts">
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { goto } from '$app/navigation';
-	import { Badge } from '#lib/components/ui/badge';
-	import { bytes, formatDateTimeShort, nowInstantString } from '#lib/utils/formatting';
-	import { openConfirmDialog } from '#lib/components/confirm-dialog';
-	import { handleApiResultWithCallbacks } from '#lib/utils/api';
-	import { tryCatch } from '#lib/utils/api';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { bytes, formatDateTimeShort, nowInstantString } from '#lib/utils/formatting.js';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { tryCatch } from '#lib/utils/api.js';
 	import { toast } from 'svelte-sonner';
 	import { onDestroy } from 'svelte';
-	import { ArcaneButton } from '#lib/components/arcane-button';
-	import { m } from '#lib/paraglide/messages';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import { m } from '#lib/paraglide/messages.js';
 	import { imageService } from '#lib/services/image-service.js';
 	import { vulnerabilityService } from '#lib/services/vulnerability-service.js';
-	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
+	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import {
 		startVulnerabilityScanPolling,
 		stabilizeFailedVulnerabilitySummary,
 		isVulnerabilityScanInProgress
-	} from '#lib/utils/docker';
-	import { ResourceDetailLayout, type DetailAction } from '#lib/layouts';
-	import { TabBar, type TabItem } from '#lib/components/tab-bar';
-	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte';
-	import { DetailMetaStrip, DetailSection, KeyValueCard } from '#lib/components/resource-detail';
+	} from '#lib/utils/docker.js';
+	import { ResourceDetailLayout, type DetailAction } from '#lib/layouts/index.js';
+	import { TabBar, type TabItem } from '#lib/components/tab-bar/index.js';
+	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
+	import { DetailMetaStrip, DetailSection, KeyValueCard } from '#lib/components/resource-detail/index.js';
 	import ImageAttestationsPanel from './image-attestations-panel.svelte';
 	import ImageHistoryPanel from './image-history-panel.svelte';
 	import ImageTagDialog from '../components/image-tag-dialog.svelte';
 	import VulnerabilityScanPanel from '#lib/components/vulnerability/vulnerability-scan-panel.svelte';
-	import { CopyButton } from '#lib/components/ui/copy-button';
-	import type { VulnerabilityScanResult } from '#lib/types/environment';
-	import { environmentStore } from '#lib/stores/environment.store.svelte';
-	import { hasPermission } from '#lib/utils/auth';
-	import { parseImageRef } from '#lib/utils/docker';
-	import { toastVulnerabilityScanStatus } from '#lib/utils/vulnerability';
-	import { VolumesIcon, ClockIcon, TagIcon, CpuIcon, ImagesIcon, LayersIcon, ShieldCheckIcon, InspectIcon } from '#lib/icons';
+	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
+	import type { VulnerabilityScanResult } from '#lib/types/environment.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import { hasPermission } from '#lib/utils/auth.js';
+	import { parseImageRef } from '#lib/utils/docker.js';
+	import { toastVulnerabilityScanStatus } from '#lib/utils/vulnerability.js';
+	import {
+		VolumesIcon,
+		ClockIcon,
+		TagIcon,
+		CpuIcon,
+		ImagesIcon,
+		LayersIcon,
+		ShieldCheckIcon,
+		InspectIcon
+	} from '#lib/icons/index.js';
 
 	let { data } = $props();
 	let { image } = $derived(data);

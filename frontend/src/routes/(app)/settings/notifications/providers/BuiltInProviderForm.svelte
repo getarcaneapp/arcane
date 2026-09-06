@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { m } from '#lib/paraglide/messages';
+	import { m } from '#lib/paraglide/messages.js';
 	import { z } from 'zod/v4';
-	import type { NotificationProviderKey, ProviderFormValuesMap } from '#lib/types/notifications';
+	import type { NotificationProviderKey, ProviderFormValuesMap } from '#lib/types/notifications.js';
 	import ProviderFormWrapper from './ProviderFormWrapper.svelte';
 	import EventSubscriptions from './EventSubscriptions.svelte';
 	import DynamicProviderFormBuilder from './DynamicProviderFormBuilder.svelte';
@@ -11,7 +11,7 @@
 	} from './NotificationProviderTestMenu.svelte';
 	import { mapZodFieldErrors } from './provider-form-validation';
 	import type { ProviderFormSchema } from './provider-form-schema';
-	import { getNotificationProviderDefinition } from '#lib/utils/notification-providers';
+	import { getNotificationProviderDefinition } from '#lib/utils/notification-providers.js';
 
 	type AnyBuiltInValues = ProviderFormValuesMap[NotificationProviderKey];
 
@@ -326,10 +326,7 @@
 				webhookUrl: z.string(),
 				...eventSubscriptionSchemaFields
 			})
-			.superRefine((d, ctx) => {
-				if (!d.enabled) return;
-				addRequiredTrimmedFieldIssue(ctx, d.webhookUrl, 'webhookUrl', m.common_required());
-			}),
+			.superRefine(validateWebhookProvider),
 		generic: z
 			.object({
 				enabled: z.boolean(),
@@ -343,11 +340,13 @@
 				successBodyContains: z.string(),
 				...eventSubscriptionSchemaFields
 			})
-			.superRefine((d, ctx) => {
-				if (!d.enabled) return;
-				addRequiredTrimmedFieldIssue(ctx, d.webhookUrl, 'webhookUrl', m.common_required());
-			})
+			.superRefine(validateWebhookProvider)
 	};
+
+	function validateWebhookProvider(data: { enabled: boolean; webhookUrl: string }, context: z.RefinementCtx) {
+		if (!data.enabled) return;
+		addRequiredTrimmedFieldIssue(context, data.webhookUrl, 'webhookUrl', m.common_required());
+	}
 
 	const providerFormSchemas: { [K in NotificationProviderKey]: ProviderFormSchema<ProviderFormValuesMap[K]> } = {
 		discord: [

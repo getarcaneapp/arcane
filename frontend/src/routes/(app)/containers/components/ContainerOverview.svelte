@@ -1,12 +1,12 @@
 <script lang="ts">
-	import { Badge } from '#lib/components/ui/badge';
-	import { Switch } from '#lib/components/ui/switch';
-	import { m } from '#lib/paraglide/messages';
-	import type { ContainerDetailsDto } from '#lib/types/docker';
-	import { formatDateTimeShort, formatElapsedTime, formatRelativeTime, parseInstant } from '#lib/utils/formatting';
-	import { StartIcon, StopIcon, NetworksIcon, VolumesIcon, HealthIcon } from '#lib/icons';
-	import { containerService } from '#lib/services/container-service';
-	import { DetailMetaStrip, DetailSection, KeyValueCard, type DetailMetaItem } from '#lib/components/resource-detail';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Switch } from '#lib/components/ui/switch/index.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import type { ContainerDetailsDto } from '#lib/types/docker.js';
+	import { formatDateTimeShort, formatElapsedTime, formatRelativeTime, parseInstant } from '#lib/utils/formatting.js';
+	import { StartIcon, StopIcon, NetworksIcon, VolumesIcon, HealthIcon } from '#lib/icons/index.js';
+	import { containerService } from '#lib/services/container-service.js';
+	import { DetailMetaStrip, DetailSection, KeyValueCard, type DetailMetaItem } from '#lib/components/resource-detail/index.js';
 	import { toast } from 'svelte-sonner';
 
 	interface Props {

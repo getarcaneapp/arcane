@@ -1,5 +1,5 @@
 import BaseAPIService from './api-service';
-import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
+import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 import type {
 	CreateSystemBackup,
 	BackupHistoryEntry,
@@ -12,9 +12,9 @@ import type {
 	SystemVolumeBackupOption,
 	SystemVolumeBackupRunResult,
 	RunSystemVolumeBackups
-} from '#lib/types/system-backup';
-import { transformPaginationParams } from '#lib/utils/tables';
-import type { BackupFileBrowseRequest, BackupFileEntry, BackupRestoreSelection } from '#lib/types/backup';
+} from '#lib/types/system-backup.js';
+import { transformPaginationParams } from '#lib/utils/tables.js';
+import type { BackupFileBrowseRequest, BackupFileEntry, BackupRestoreSelection } from '#lib/types/backup.js';
 
 class SystemBackupService extends BaseAPIService {
 	async list(options?: SearchPaginationSortRequest): Promise<Paginated<SystemBackupRun>> {

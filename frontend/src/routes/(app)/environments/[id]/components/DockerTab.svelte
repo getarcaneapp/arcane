@@ -5,10 +5,10 @@
 	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
 	import PruneModeCard from '#lib/components/prune/prune-mode-card.svelte';
-	import { m } from '#lib/paraglide/messages';
-	import { DockerBrandIcon } from '#lib/icons';
+	import { m } from '#lib/paraglide/messages.js';
+	import { DockerBrandIcon } from '#lib/icons/index.js';
 	import type { DockerTabProps } from './tab-props';
-	import { arcaneImageRegistryOptions, arcaneToolsImage, arcaneUpdateCheckImage } from '#lib/utils/registry';
+	import { arcaneImageRegistryOptions, arcaneToolsImage, arcaneUpdateCheckImage } from '#lib/utils/registry.js';
 
 	let { formInputs, environmentId, shellSelectValue, handleShellSelectChange, shellOptions }: DockerTabProps = $props();
 

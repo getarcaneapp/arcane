@@ -2,13 +2,13 @@
 	import { fromStore } from 'svelte/store';
 	import { toast } from 'svelte-sonner';
 	import PasskeySettings from '#lib/components/auth/passkey-settings.svelte';
-	import { ArcaneButton } from '#lib/components/arcane-button';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
-	import { LogoutIcon, ShieldAlertIcon } from '#lib/icons';
-	import { m } from '#lib/paraglide/messages';
-	import { userService } from '#lib/services/user-service';
-	import settingsStore from '#lib/stores/config-store';
-	import userStore from '#lib/stores/user-store';
+	import { LogoutIcon, ShieldAlertIcon } from '#lib/icons/index.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { userService } from '#lib/services/user-service.js';
+	import settingsStore from '#lib/stores/config-store.js';
+	import userStore from '#lib/stores/user-store.js';
 
 	const currentUser = $derived($userStore);
 	const isOidcUser = $derived(Boolean(currentUser?.oidcSubjectId));

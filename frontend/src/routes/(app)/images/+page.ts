@@ -1,8 +1,8 @@
-import { imageService } from '#lib/services/image-service';
-import { settingsService } from '#lib/services/settings-service';
-import { queryKeys } from '#lib/query/query-keys';
-import { resolveListPageLoadContext } from '#lib/utils/tables';
-import { throwPageLoadError } from '#lib/utils/api';
+import { imageService } from '#lib/services/image-service.js';
+import { settingsService } from '#lib/services/settings-service.js';
+import { queryKeys } from '#lib/query/query-keys.js';
+import { resolveListPageLoadContext } from '#lib/utils/tables.js';
+import { throwPageLoadError } from '#lib/utils/api.js';
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({ parent }) => {

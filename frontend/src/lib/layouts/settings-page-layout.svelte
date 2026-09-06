@@ -5,10 +5,10 @@
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { getContext } from 'svelte';
-	import { m } from '#lib/paraglide/messages';
-	import { EllipsisIcon, ResetIcon, type IconType, ArrowDownIcon } from '#lib/icons';
-	import { cn } from '#lib/utils';
-	import type { SettingsActionButton, SettingsPageType, SettingsStatCard } from './types.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { EllipsisIcon, ResetIcon, type IconType, ArrowDownIcon } from '#lib/icons/index.js';
+	import { cn } from '#lib/utils.js';
+	import type { SettingsActionButton, SettingsActionOption, SettingsPageType, SettingsStatCard } from './types.js';
 
 	interface Props {
 		title: string;
@@ -47,6 +47,18 @@
 	}>('settingsFormState');
 </script>
 
+{#snippet ActionOptions(options: SettingsActionOption[], disabled = false, showIcons = true)}
+	{#each options as option}
+		<DropdownMenu.Item onclick={option.onclick} disabled={disabled || option.disabled}>
+			{#if showIcons && option.icon}
+				{@const OptionIcon = option.icon}
+				<OptionIcon class="size-4" />
+			{/if}
+			{option.label}
+		</DropdownMenu.Item>
+	{/each}
+{/snippet}
+
 {#snippet ActionButtonList(buttons: SettingsActionButton[])}
 	{#each buttons as button}
 		{#if button.options?.length}
@@ -70,15 +82,7 @@
 					class="z-[var(--arcane-z-surface)] min-w-[160px] rounded-xl border bg-popover/90 p-1 shadow-lg backdrop-blur-md"
 				>
 					<DropdownMenu.Group>
-						{#each button.options as option}
-							<DropdownMenu.Item onclick={option.onclick} disabled={option.disabled}>
-								{#if option.icon}
-									{@const OptionIcon = option.icon}
-									<OptionIcon class="size-4" />
-								{/if}
-								{option.label}
-							</DropdownMenu.Item>
-						{/each}
+						{@render ActionOptions(button.options)}
 					</DropdownMenu.Group>
 				</DropdownMenu.Content>
 			</DropdownMenu.Root>
@@ -113,7 +117,7 @@
 					{#if description}
 						<p class="mt-1 hidden text-sm text-muted-foreground sm:block sm:text-base">{@html description}</p>
 					{/if}
-					{#if pageType === 'management' && statCards && statCards.length > 0}
+					{#if pageType === 'management' && statCards.length > 0}
 						<div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
 							{#each statCards as card, i}
 								{#if i > 0}
@@ -142,7 +146,7 @@
 					<div class="hidden items-center gap-2 sm:flex">
 						{#if formState.hasChanges}
 							<span class="mr-2 text-xs text-orange-600 dark:text-orange-400">{m.common_unsaved_changes()}</span>
-						{:else if !formState.hasChanges}
+						{:else}
 							<span class="mr-2 text-xs text-green-600 dark:text-green-400">{m.common_all_changes_saved()}</span>
 						{/if}
 
@@ -151,7 +155,7 @@
 								action="base"
 								tone="outline"
 								size="sm"
-								onclick={() => formState.resetFunction && formState.resetFunction()}
+								onclick={() => formState.resetFunction?.()}
 								disabled={formState.isLoading}
 								class="gap-2"
 								icon={ResetIcon}
@@ -161,12 +165,8 @@
 
 						<ArcaneButton
 							action="save"
-							onclick={async () => {
-								if (formState.saveFunction) {
-									await formState.saveFunction();
-								}
-							}}
-							disabled={!formState.hasChanges || !formState.saveFunction}
+							onclick={() => formState.saveFunction?.()}
+							disabled={!formState.hasChanges}
 							loading={formState.isLoading}
 							size="sm"
 							class="min-w-[80px] gap-2"
@@ -201,11 +201,7 @@
 										{#each mobileDropdownButtons as button}
 											{#if button.options?.length}
 												<DropdownMenu.Label>{button.label}</DropdownMenu.Label>
-												{#each button.options as option}
-													<DropdownMenu.Item onclick={option.onclick} disabled={button.disabled || option.disabled}>
-														{option.label}
-													</DropdownMenu.Item>
-												{/each}
+												{@render ActionOptions(button.options, button.disabled, false)}
 											{:else}
 												<DropdownMenu.Item onclick={button.onclick} disabled={button.disabled || button.loading}>
 													{button.loading ? button.loadingLabel || button.label : button.label}

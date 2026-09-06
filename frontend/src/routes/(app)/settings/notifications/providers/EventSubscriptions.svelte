@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { Label } from '#lib/components/ui/label';
+	import { Label } from '#lib/components/ui/label/index.js';
 	import SwitchWithLabel from '#lib/components/form/labeled-switch.svelte';
-	import { m } from '#lib/paraglide/messages';
+	import { m } from '#lib/paraglide/messages.js';
 
 	interface Props {
 		providerId: string;

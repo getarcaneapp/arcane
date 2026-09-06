@@ -2,6 +2,9 @@
 	"extends": "$app/tsconfig",
 	"include": ["src"],
 	"compilerOptions": {
+		"paths": {
+			"#lib/*.svelte": ["./src/lib/*.svelte"]
+		},
 		"target": "ES2025",
 		"verbatimModuleSyntax": true,
 		"allowJs": true,

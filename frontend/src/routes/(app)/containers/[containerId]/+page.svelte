@@ -1,14 +1,14 @@
 <script lang="ts">
-	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import { ArcaneButton, type ArcaneButtonSize } from '#lib/components/arcane-button/index.js';
 	import { goto, refreshAll } from '$app/navigation';
-	import settingsStore from '#lib/stores/config-store';
+	import settingsStore from '#lib/stores/config-store.js';
 	import ActionButtons from '#lib/components/action-buttons.svelte';
-	import { Badge } from '#lib/components/ui/badge';
-	import { bytes } from '#lib/utils/formatting';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { bytes } from '#lib/utils/formatting.js';
 	import { tick } from 'svelte';
 	import { page } from '$app/state';
-	import type { ContainerDetailsDto, ContainerNetworkSettings, ContainerStats as ContainerStatsType } from '#lib/types/docker';
-	import { m } from '#lib/paraglide/messages';
+	import type { ContainerDetailsDto, ContainerNetworkSettings, ContainerStats as ContainerStatsType } from '#lib/types/docker.js';
+	import { m } from '#lib/paraglide/messages.js';
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
 	import { type TabItem } from '#lib/components/tab-bar/index.js';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
@@ -27,7 +27,7 @@
 	import ContainerCommitDialog from '../components/container-commit-dialog.svelte';
 	import IconImage from '#lib/components/icon-image.svelte';
 	import ResourceNotFound from '#lib/components/resource-not-found.svelte';
-	import { calculateMemoryUsage, getThemedIconUrl } from '#lib/utils/docker';
+	import { calculateMemoryUsage, getThemedIconUrl } from '#lib/utils/docker.js';
 	import { mode } from 'mode-watcher';
 	import {
 		VolumesIcon,
@@ -40,20 +40,20 @@
 		CodeIcon,
 		InspectIcon,
 		HealthIcon
-	} from '#lib/icons';
+	} from '#lib/icons/index.js';
 	import { parse as parseYaml } from 'yaml';
-	import type { IncludeFile } from '#lib/types/swarm';
-	import { projectWorkspaceService } from '#lib/services/project-workspace-service';
-	import { environmentStore } from '#lib/stores/environment.store.svelte';
-	import { hasPermission } from '#lib/utils/auth';
+	import type { IncludeFile } from '#lib/types/swarm.js';
+	import { projectWorkspaceService } from '#lib/services/project-workspace-service.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import { hasPermission } from '#lib/utils/auth.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import { EditIcon, ImagesIcon, PauseIcon, PlayIcon, ProjectsIcon, UpdateIcon, ZapIcon } from '#lib/icons';
-	import { runContainerLifecycleAction, confirmAndUpdateContainer } from '#lib/utils/container-actions';
-	import { imageService } from '#lib/services/image-service';
-	import type { ImageUpdateInfoDto } from '#lib/types/docker';
-	import { isAutoUpdateIgnored, isAutoUpdateLabelDisabled } from '#lib/utils/container-auto-update';
+	import { EditIcon, ImagesIcon, PauseIcon, PlayIcon, ProjectsIcon, UpdateIcon, ZapIcon } from '#lib/icons/index.js';
+	import { runContainerLifecycleAction, confirmAndUpdateContainer } from '#lib/utils/container-actions.js';
+	import { imageService } from '#lib/services/image-service.js';
+	import type { ImageUpdateInfoDto } from '#lib/types/docker.js';
+	import { isAutoUpdateIgnored, isAutoUpdateLabelDisabled } from '#lib/utils/container-auto-update.js';
 	import KillContainerDialog from '../components/kill-container-dialog.svelte';
-	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte';
+	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
 	let { data } = $props();
 	let container = $derived(data?.container as ContainerDetailsDto);
 	let stats = $state(null as ContainerStatsType | null);
@@ -331,6 +331,251 @@
 	});
 </script>
 
+{#snippet containerHeader(container: ContainerDetailsDto)}
+	<div class="flex items-center gap-2">
+		<IconImage
+			src={containerIconUrl}
+			alt={containerDisplayName}
+			fallback={ContainersIcon}
+			class="size-5"
+			containerClass="size-9"
+		/>
+		<h1 class="max-w-75 truncate text-lg font-semibold" title={containerDisplayName}>
+			{containerDisplayName}
+		</h1>
+		{#if container?.state}
+			<Badge
+				variant={container.state.status === 'running' ? 'green' : container.state.status === 'exited' ? 'red' : 'amber'}
+				minWidth="20">{getContainerStatusLabel(container.state.status)}</Badge
+			>
+		{/if}
+		{#if updateInfo?.hasUpdate}
+			<Badge variant="amber" minWidth="20">{m.sidebar_update_available()}</Badge>
+		{/if}
+		{#if project && composeInfo}
+			<a href="/projects/{project.id}" title={m.projects_title()}>
+				<Badge variant="gray" size="sm" class="max-w-40 truncate font-normal hover:text-foreground">
+					{composeInfo.projectName}
+				</Badge>
+			</a>
+		{/if}
+	</div>
+{/snippet}
+
+{#snippet containerComposeTab()}
+	{#await serviceComposeSourcePromise then serviceComposeSource}
+		{#if project && serviceComposeSource}
+			<Tabs.Content value="compose" class="h-full min-h-0">
+				{#key `${project?.id}-${serviceComposeSource?.includeFile?.relativePath ?? 'root'}`}
+					<ContainerComposePanel
+						{project}
+						serviceName={composeServiceName}
+						includeFile={serviceComposeSource.includeFile}
+						rootFilename={rootComposeFilename}
+					/>
+				{/key}
+			</Tabs.Content>
+		{/if}
+	{/await}
+{/snippet}
+
+{#snippet containerLifecycleButtons(
+	container: ContainerDetailsDto,
+	size: ArcaneButtonSize,
+	showLabel: boolean,
+	actionButtonsLifecyclePending: boolean
+)}
+	{#if canEditContainer}
+		<ArcaneButton
+			action="base"
+			{size}
+			{showLabel}
+			customLabel={m.common_edit()}
+			icon={EditIcon}
+			disabled={actionButtonsLifecyclePending}
+			href={`/containers/${container.id}/edit`}
+		/>
+	{/if}
+	{#if canConvertToCompose}
+		<ArcaneButton
+			action="base"
+			{size}
+			{showLabel}
+			customLabel={m.compose_convert_action()}
+			icon={ProjectsIcon}
+			disabled={actionButtonsLifecyclePending}
+			href={`/projects/new?fromContainers=${container.id}&fromEnv=${encodeURIComponent(currentEnvId)}`}
+		/>
+	{/if}
+	{#if canUpdateContainer && updateInfo?.hasUpdate}
+		<ArcaneButton
+			action="base"
+			{size}
+			{showLabel}
+			customLabel={m.update_container()}
+			icon={UpdateIcon}
+			loading={updateLoading}
+			disabled={updateLoading || actionButtonsLifecyclePending}
+			onclick={handleUpdateContainer}
+		/>
+	{/if}
+	{#if canPauseContainer && (isContainerPaused || isContainerRunning)}
+		<ArcaneButton
+			action={isContainerPaused ? 'unpause' : 'pause'}
+			{size}
+			{showLabel}
+			loading={lifecycleStatus === (isContainerPaused ? 'unpausing' : 'pausing')}
+			disabled={isLifecycleActionPending || actionButtonsLifecyclePending}
+			onclick={isContainerPaused ? handleUnpauseContainer : handlePauseContainer}
+		/>
+	{/if}
+	{#if canCommitImage}
+		<ArcaneButton
+			action="commit"
+			{size}
+			{showLabel}
+			disabled={actionButtonsLifecyclePending}
+			onclick={() => (commitDialogOpen = true)}
+		/>
+	{/if}
+	{#if canKillContainer && (isContainerRunning || isContainerPaused)}
+		<ArcaneButton
+			action="kill"
+			{size}
+			{showLabel}
+			disabled={isLifecycleActionPending || actionButtonsLifecyclePending}
+			onclick={() => (killDialogOpen = true)}
+		/>
+	{/if}
+{/snippet}
+
+{#snippet containerLifecycleMenu(container: ContainerDetailsDto, actionButtonsLifecyclePending: boolean)}
+	{#if canConvertToCompose}
+		<DropdownMenu.Item
+			disabled={actionButtonsLifecyclePending}
+			onclick={() => goto(`/projects/new?fromContainers=${container.id}&fromEnv=${encodeURIComponent(currentEnvId)}`)}
+		>
+			<ProjectsIcon class="size-4" />
+			{m.compose_convert_action()}
+		</DropdownMenu.Item>
+	{/if}
+	{#if canUpdateContainer && updateInfo?.hasUpdate}
+		<DropdownMenu.Item disabled={updateLoading || actionButtonsLifecyclePending} onclick={handleUpdateContainer}>
+			<UpdateIcon class="size-4" />
+			{m.update_container()}
+		</DropdownMenu.Item>
+	{/if}
+	{#if canPauseContainer && isContainerPaused}
+		<DropdownMenu.Item disabled={isLifecycleActionPending || actionButtonsLifecyclePending} onclick={handleUnpauseContainer}>
+			<PlayIcon class="size-4" />
+			{m.common_unpause()}
+		</DropdownMenu.Item>
+	{:else if canPauseContainer && isContainerRunning}
+		<DropdownMenu.Item disabled={isLifecycleActionPending || actionButtonsLifecyclePending} onclick={handlePauseContainer}>
+			<PauseIcon class="size-4" />
+			{m.common_pause()}
+		</DropdownMenu.Item>
+	{/if}
+	{#if canCommitImage}
+		<DropdownMenu.Item disabled={actionButtonsLifecyclePending} onclick={() => (commitDialogOpen = true)}>
+			<ImagesIcon class="size-4" />
+			{m.commit()}
+		</DropdownMenu.Item>
+	{/if}
+	{#if canKillContainer && (isContainerRunning || isContainerPaused)}
+		<DropdownMenu.Item
+			disabled={isLifecycleActionPending || actionButtonsLifecyclePending}
+			onclick={() => (killDialogOpen = true)}
+		>
+			<ZapIcon class="size-4" />
+			{m.common_kill()}
+		</DropdownMenu.Item>
+	{/if}
+{/snippet}
+
+{#snippet containerTabs(container: ContainerDetailsDto, activeTab: string)}
+	<Tabs.Content value="overview" class="h-full">
+		<ContainerOverview
+			{container}
+			{primaryIpAddress}
+			{autoUpdateEnabled}
+			{autoUpdateLabelControlled}
+			onAutoUpdateChange={(enabled) => {
+				autoUpdateOverride = enabled;
+			}}
+			onViewPortMappings={showNetworkTab ? navigateToNetworkPortMappings : undefined}
+		/>
+	</Tabs.Content>
+
+	{#if showStats}
+		<Tabs.Content value="stats" class="h-full">
+			{#if activeTab === 'stats'}
+				<ContainerStats
+					{container}
+					{stats}
+					{cpuUsagePercent}
+					{cpuLimit}
+					{memoryUsageFormatted}
+					{memoryLimitFormatted}
+					{memoryUsagePercent}
+					loading={!hasInitialStatsLoaded}
+				/>
+			{/if}
+		</Tabs.Content>
+	{/if}
+
+	<Tabs.Content value="logs" class="h-full">
+		{#if activeTab === 'logs'}
+			<ContainerLogsPanel
+				containerId={container?.id}
+				{stats}
+				{hasInitialStatsLoaded}
+				isRunning={!!container.state?.running}
+				{cpuLimit}
+				bind:autoScroll={autoScrollLogs}
+			/>
+		{/if}
+	</Tabs.Content>
+
+	{#if showShell}
+		<Tabs.Content value="shell" class="h-full">
+			{#if activeTab === 'shell'}
+				<ContainerShell containerId={container?.id} />
+			{/if}
+		</Tabs.Content>
+	{/if}
+
+	{#if hasHealthcheck}
+		<Tabs.Content value="healthcheck" class="h-full">
+			<ContainerHealthcheck {container} />
+		</Tabs.Content>
+	{/if}
+
+	{#if showConfiguration}
+		<Tabs.Content value="config" class="h-full">
+			<ContainerConfiguration {container} {hasEnvVars} {hasLabels} />
+		</Tabs.Content>
+	{/if}
+
+	{#if showNetworkTab}
+		<Tabs.Content value="network" class="h-full">
+			<ContainerNetwork {container} />
+		</Tabs.Content>
+	{/if}
+
+	{#if hasMounts}
+		<Tabs.Content value="storage" class="h-full">
+			<ContainerStorage {container} />
+		</Tabs.Content>
+	{/if}
+
+	{@render containerComposeTab()}
+
+	<Tabs.Content value="inspect" class="h-full">
+		<ContainerInspect {container} />
+	</Tabs.Content>
+{/snippet}
+
 {#if container}
 	<ContainerDetailStatsSync
 		containerId={container.id}
@@ -341,34 +586,7 @@
 
 	<TabbedPageLayout {backUrl} backLabel={m.common_back()} {tabItems} selectedTab={activeTab} {onTabChange}>
 		{#snippet headerInfo()}
-			<div class="flex items-center gap-2">
-				<IconImage
-					src={containerIconUrl}
-					alt={containerDisplayName}
-					fallback={ContainersIcon}
-					class="size-5"
-					containerClass="size-9"
-				/>
-				<h1 class="max-w-75 truncate text-lg font-semibold" title={containerDisplayName}>
-					{containerDisplayName}
-				</h1>
-				{#if container?.state}
-					<Badge
-						variant={container.state.status === 'running' ? 'green' : container.state.status === 'exited' ? 'red' : 'amber'}
-						minWidth="20">{getContainerStatusLabel(container.state.status)}</Badge
-					>
-				{/if}
-				{#if updateInfo?.hasUpdate}
-					<Badge variant="amber" minWidth="20">{m.sidebar_update_available()}</Badge>
-				{/if}
-				{#if project && composeInfo}
-					<a href="/projects/{project.id}" title={m.projects_title()}>
-						<Badge variant="gray" size="sm" class="max-w-40 truncate font-normal hover:text-foreground">
-							{composeInfo.projectName}
-						</Badge>
-					</a>
-				{/if}
-			</div>
+			{@render containerHeader(container)}
 		{/snippet}
 
 		{#snippet headerActions()}
@@ -382,226 +600,18 @@
 					disableRedeploy={!!container.redeployDisabled}
 				>
 					{#snippet beforeRemoveActions(size, showLabel, actionButtonsLifecyclePending)}
-						{#if canEditContainer}
-							<ArcaneButton
-								action="base"
-								{size}
-								{showLabel}
-								customLabel={m.common_edit()}
-								icon={EditIcon}
-								disabled={actionButtonsLifecyclePending}
-								href={`/containers/${container.id}/edit`}
-							/>
-						{/if}
-						{#if canConvertToCompose}
-							<ArcaneButton
-								action="base"
-								{size}
-								{showLabel}
-								customLabel={m.compose_convert_action()}
-								icon={ProjectsIcon}
-								disabled={actionButtonsLifecyclePending}
-								href={`/projects/new?fromContainers=${container.id}&fromEnv=${encodeURIComponent(currentEnvId)}`}
-							/>
-						{/if}
-						{#if canUpdateContainer && updateInfo?.hasUpdate}
-							<ArcaneButton
-								action="base"
-								{size}
-								{showLabel}
-								customLabel={m.update_container()}
-								icon={UpdateIcon}
-								loading={updateLoading}
-								disabled={updateLoading || actionButtonsLifecyclePending}
-								onclick={handleUpdateContainer}
-							/>
-						{/if}
-						{#if canPauseContainer && isContainerPaused}
-							<ArcaneButton
-								action="unpause"
-								{size}
-								{showLabel}
-								loading={lifecycleStatus === 'unpausing'}
-								disabled={isLifecycleActionPending || actionButtonsLifecyclePending}
-								onclick={handleUnpauseContainer}
-							/>
-						{:else if canPauseContainer && isContainerRunning}
-							<ArcaneButton
-								action="pause"
-								{size}
-								{showLabel}
-								loading={lifecycleStatus === 'pausing'}
-								disabled={isLifecycleActionPending || actionButtonsLifecyclePending}
-								onclick={handlePauseContainer}
-							/>
-						{/if}
-						{#if canCommitImage}
-							<ArcaneButton
-								action="commit"
-								{size}
-								{showLabel}
-								disabled={actionButtonsLifecyclePending}
-								onclick={() => (commitDialogOpen = true)}
-							/>
-						{/if}
-						{#if canKillContainer && (isContainerRunning || isContainerPaused)}
-							<ArcaneButton
-								action="kill"
-								{size}
-								{showLabel}
-								disabled={isLifecycleActionPending || actionButtonsLifecyclePending}
-								onclick={() => (killDialogOpen = true)}
-							/>
-						{/if}
+						{@render containerLifecycleButtons(container, size, showLabel, actionButtonsLifecyclePending)}
 					{/snippet}
 
 					{#snippet beforeRemoveMenuItems(actionButtonsLifecyclePending)}
-						{#if canConvertToCompose}
-							<DropdownMenu.Item
-								disabled={actionButtonsLifecyclePending}
-								onclick={() => goto(`/projects/new?fromContainers=${container.id}&fromEnv=${encodeURIComponent(currentEnvId)}`)}
-							>
-								<ProjectsIcon class="size-4" />
-								{m.compose_convert_action()}
-							</DropdownMenu.Item>
-						{/if}
-						{#if canUpdateContainer && updateInfo?.hasUpdate}
-							<DropdownMenu.Item disabled={updateLoading || actionButtonsLifecyclePending} onclick={handleUpdateContainer}>
-								<UpdateIcon class="size-4" />
-								{m.update_container()}
-							</DropdownMenu.Item>
-						{/if}
-						{#if canPauseContainer && isContainerPaused}
-							<DropdownMenu.Item
-								disabled={isLifecycleActionPending || actionButtonsLifecyclePending}
-								onclick={handleUnpauseContainer}
-							>
-								<PlayIcon class="size-4" />
-								{m.common_unpause()}
-							</DropdownMenu.Item>
-						{:else if canPauseContainer && isContainerRunning}
-							<DropdownMenu.Item
-								disabled={isLifecycleActionPending || actionButtonsLifecyclePending}
-								onclick={handlePauseContainer}
-							>
-								<PauseIcon class="size-4" />
-								{m.common_pause()}
-							</DropdownMenu.Item>
-						{/if}
-						{#if canCommitImage}
-							<DropdownMenu.Item disabled={actionButtonsLifecyclePending} onclick={() => (commitDialogOpen = true)}>
-								<ImagesIcon class="size-4" />
-								{m.commit()}
-							</DropdownMenu.Item>
-						{/if}
-						{#if canKillContainer && (isContainerRunning || isContainerPaused)}
-							<DropdownMenu.Item
-								disabled={isLifecycleActionPending || actionButtonsLifecyclePending}
-								onclick={() => (killDialogOpen = true)}
-							>
-								<ZapIcon class="size-4" />
-								{m.common_kill()}
-							</DropdownMenu.Item>
-						{/if}
+						{@render containerLifecycleMenu(container, actionButtonsLifecyclePending)}
 					{/snippet}
 				</ActionButtons>
 			</div>
 		{/snippet}
 
 		{#snippet tabContent(activeTab)}
-			<Tabs.Content value="overview" class="h-full">
-				<ContainerOverview
-					{container}
-					{primaryIpAddress}
-					{autoUpdateEnabled}
-					{autoUpdateLabelControlled}
-					onAutoUpdateChange={(enabled) => {
-						autoUpdateOverride = enabled;
-					}}
-					onViewPortMappings={showNetworkTab ? navigateToNetworkPortMappings : undefined}
-				/>
-			</Tabs.Content>
-
-			{#if showStats}
-				<Tabs.Content value="stats" class="h-full">
-					{#if activeTab === 'stats'}
-						<ContainerStats
-							{container}
-							{stats}
-							{cpuUsagePercent}
-							{cpuLimit}
-							{memoryUsageFormatted}
-							{memoryLimitFormatted}
-							{memoryUsagePercent}
-							loading={!hasInitialStatsLoaded}
-						/>
-					{/if}
-				</Tabs.Content>
-			{/if}
-
-			<Tabs.Content value="logs" class="h-full">
-				{#if activeTab === 'logs'}
-					<ContainerLogsPanel
-						containerId={container?.id}
-						{stats}
-						{hasInitialStatsLoaded}
-						isRunning={!!container.state?.running}
-						{cpuLimit}
-						bind:autoScroll={autoScrollLogs}
-					/>
-				{/if}
-			</Tabs.Content>
-
-			{#if showShell}
-				<Tabs.Content value="shell" class="h-full">
-					{#if activeTab === 'shell'}
-						<ContainerShell containerId={container?.id} />
-					{/if}
-				</Tabs.Content>
-			{/if}
-
-			{#if hasHealthcheck}
-				<Tabs.Content value="healthcheck" class="h-full">
-					<ContainerHealthcheck {container} />
-				</Tabs.Content>
-			{/if}
-
-			{#if showConfiguration}
-				<Tabs.Content value="config" class="h-full">
-					<ContainerConfiguration {container} {hasEnvVars} {hasLabels} />
-				</Tabs.Content>
-			{/if}
-
-			{#if showNetworkTab}
-				<Tabs.Content value="network" class="h-full">
-					<ContainerNetwork {container} />
-				</Tabs.Content>
-			{/if}
-
-			{#if hasMounts}
-				<Tabs.Content value="storage" class="h-full">
-					<ContainerStorage {container} />
-				</Tabs.Content>
-			{/if}
-
-			{#await serviceComposeSourcePromise then serviceComposeSource}
-				{#if project && serviceComposeSource}
-					<Tabs.Content value="compose" class="h-full min-h-0">
-						{#key `${project?.id}-${serviceComposeSource?.includeFile?.relativePath ?? 'root'}`}
-							<ContainerComposePanel
-								{project}
-								serviceName={composeServiceName}
-								includeFile={serviceComposeSource.includeFile}
-								rootFilename={rootComposeFilename}
-							/>
-						{/key}
-					</Tabs.Content>
-				{/if}
-			{/await}
-
-			<Tabs.Content value="inspect" class="h-full">
-				<ContainerInspect {container} />
-			</Tabs.Content>
+			{@render containerTabs(container, activeTab)}
 		{/snippet}
 	</TabbedPageLayout>
 

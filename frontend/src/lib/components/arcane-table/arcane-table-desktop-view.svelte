@@ -4,9 +4,9 @@
 	import { createVirtualizer } from '../ui/virtualizer.svelte';
 	import Skeleton from '#lib/components/ui/skeleton/skeleton.svelte';
 	import * as Table from '#lib/components/ui/table/index.js';
-	import { ArrowRightIcon, ArrowDownIcon } from '#lib/icons';
-	import { m } from '#lib/paraglide/messages';
-	import { cn } from '#lib/utils';
+	import { ArrowRightIcon, ArrowDownIcon } from '#lib/icons/index.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { cn } from '#lib/utils.js';
 	import {
 		shouldIgnoreTableRowClick,
 		type ColumnWidth,
@@ -315,6 +315,104 @@
 	{/each}
 {/snippet}
 
+{#snippet tableHeader()}
+	<Table.Header>
+		{#each table.getHeaderGroups() as headerGroup (headerGroup.id)}
+			<Table.Row>
+				{#if hasExpand}
+					<Table.Head class="w-8 px-2"></Table.Head>
+				{/if}
+				{#each headerGroup.headers as header (header.id)}
+					<Table.Head
+						colspan={header.colSpan}
+						style={typeof header.column.columnDef.meta?.width === 'number'
+							? `width: ${header.column.columnDef.meta.width}px`
+							: undefined}
+						class={cn(
+							getWidthClass(header.column.columnDef.meta?.width),
+							header.column.id === 'select' && selectCellClasses,
+							header.column.id === 'actions' && cn(actionsCellClasses, 'z-[var(--arcane-z-page-floating)] bg-background')
+						)}
+					>
+						{#if !header.isPlaceholder}
+							<FlexRender {header} />
+						{/if}
+					</Table.Head>
+				{/each}
+			</Table.Row>
+		{/each}
+	</Table.Header>
+{/snippet}
+
+{#snippet tableGroup(group: GroupedData<TData>)}
+	{@const isCollapsed = groupCollapsedState[group.groupName] ?? true}
+	{@const selectionState = getGroupSelectionState?.(group.items) ?? 'none'}
+	{@const hasSelection = selectionState !== 'none'}
+	{@const IconComponent = groupIcon?.(group.groupName)}
+
+	<Table.Row
+		class={cn(
+			'cursor-pointer transition-colors',
+			!unstyled && (hasSelection ? 'bg-primary/10 hover:bg-primary/15' : 'bg-background hover:bg-primary/15')
+		)}
+		onclick={() => onGroupToggle?.(group.groupName)}
+	>
+		{#if !selectionDisabled}
+			<Table.Cell class={selectCellClasses}>
+				<TableCheckbox
+					checked={selectionState === 'all'}
+					indeterminate={selectionState === 'some'}
+					onCheckedChange={() => onToggleGroupSelection?.(group.items)}
+					onclick={(e: MouseEvent) => e.stopPropagation()}
+					aria-label={m.common_select_all()}
+				/>
+			</Table.Cell>
+		{/if}
+		<Table.Cell colspan={columnsCount - (selectionDisabled ? 0 : 1)} class="py-3 font-medium">
+			<div class="flex items-center gap-2">
+				{#if isCollapsed}
+					<ArrowRightIcon class="size-4 text-muted-foreground" />
+				{:else}
+					<ArrowDownIcon class="size-4 text-muted-foreground" />
+				{/if}
+				{#if IconComponent}
+					<IconComponent class="size-4 text-muted-foreground" />
+				{/if}
+				<span>{group.groupName}</span>
+				<span class="text-xs font-normal text-muted-foreground">({group.items.length})</span>
+			</div>
+		</Table.Cell>
+	</Table.Row>
+
+	<!-- Group Items (if not collapsed) -->
+	{#if !isCollapsed}
+		{@const groupRows = getTableRowsForItems(rowIndex, group.items)}
+		{#each groupRows as row (row.id)}
+			{@render dataRow(row, true)}
+		{/each}
+	{/if}
+{/snippet}
+
+{#snippet virtualRows()}
+	{@const vItems = rowVirtualizer.virtualItems}
+	{@const first = vItems[0]}
+	{@const last = vItems[vItems.length - 1]}
+	{@const padTop = first ? Math.max(0, first.start - scrollMargin) : 0}
+	{@const padBottom = last ? Math.max(0, rowVirtualizer.totalSize - (last.end - scrollMargin)) : 0}
+	{#if padTop > 0}
+		<tr aria-hidden="true"><td colspan={columnsCount} class="border-0 p-0" style="height: {padTop}px"></td></tr>
+	{/if}
+	{#each vItems as vItem (vItem.key)}
+		{@const row = flatRows[vItem.index]}
+		{#if row}
+			{@render dataRow(row, false, measureRow, vItem.index)}
+		{/if}
+	{/each}
+	{#if padBottom > 0}
+		<tr aria-hidden="true"><td colspan={columnsCount} class="border-0 p-0" style="height: {padBottom}px"></td></tr>
+	{/if}
+{/snippet}
+
 <div
 	class={cn(
 		'h-full w-full',
@@ -326,114 +424,22 @@
 		<div aria-hidden="true" class="sticky top-0 z-[var(--arcane-z-sticky)] -mb-10 h-10 backdrop-blur-sm"></div>
 	{/if}
 	<Table.Root bind:ref={tableElement} class={shouldVirtualize ? 'table-fixed' : undefined}>
-		<Table.Header>
-			{#each table.getHeaderGroups() as headerGroup (headerGroup.id)}
-				<Table.Row>
-					{#if hasExpand}
-						<Table.Head class="w-8 px-2"></Table.Head>
-					{/if}
-					{#each headerGroup.headers as header (header.id)}
-						<Table.Head
-							colspan={header.colSpan}
-							style={typeof header.column.columnDef.meta?.width === 'number'
-								? `width: ${header.column.columnDef.meta.width}px`
-								: undefined}
-							class={cn(
-								getWidthClass(header.column.columnDef.meta?.width),
-								header.column.id === 'select' && selectCellClasses,
-								header.column.id === 'actions' && cn(actionsCellClasses, 'z-[var(--arcane-z-page-floating)] bg-background')
-							)}
-						>
-							{#if !header.isPlaceholder}
-								<FlexRender {header} />
-							{/if}
-						</Table.Head>
-					{/each}
-				</Table.Row>
-			{/each}
-		</Table.Header>
+		{@render tableHeader()}
 		<Table.Body bind:ref={bodyElement}>
 			{#if isGrouped && groupedRows}
 				{#each groupedRows as group (group.groupName)}
-					{@const isCollapsed = groupCollapsedState[group.groupName] ?? true}
-					{@const selectionState = getGroupSelectionState?.(group.items) ?? 'none'}
-					{@const hasSelection = selectionState !== 'none'}
-					{@const IconComponent = groupIcon?.(group.groupName)}
-
-					<Table.Row
-						class={cn(
-							'cursor-pointer transition-colors',
-							!unstyled && (hasSelection ? 'bg-primary/10 hover:bg-primary/15' : 'bg-background hover:bg-primary/15')
-						)}
-						onclick={() => onGroupToggle?.(group.groupName)}
-					>
-						{#if !selectionDisabled}
-							<Table.Cell class={selectCellClasses}>
-								<TableCheckbox
-									checked={selectionState === 'all'}
-									indeterminate={selectionState === 'some'}
-									onCheckedChange={() => onToggleGroupSelection?.(group.items)}
-									onclick={(e: MouseEvent) => e.stopPropagation()}
-									aria-label={m.common_select_all()}
-								/>
-							</Table.Cell>
-						{/if}
-						<Table.Cell colspan={columnsCount - (selectionDisabled ? 0 : 1)} class="py-3 font-medium">
-							<div class="flex items-center gap-2">
-								{#if isCollapsed}
-									<ArrowRightIcon class="size-4 text-muted-foreground" />
-								{:else}
-									<ArrowDownIcon class="size-4 text-muted-foreground" />
-								{/if}
-								{#if IconComponent}
-									<IconComponent class="size-4 text-muted-foreground" />
-								{/if}
-								<span>{group.groupName}</span>
-								<span class="text-xs font-normal text-muted-foreground">({group.items.length})</span>
-							</div>
-						</Table.Cell>
-					</Table.Row>
-
-					<!-- Group Items (if not collapsed) -->
-					{#if !isCollapsed}
-						{@const groupRows = getTableRowsForItems(rowIndex, group.items)}
-						{#each groupRows as row (row.id)}
-							{@render dataRow(row, true)}
-						{/each}
-					{/if}
+					{@render tableGroup(group)}
 				{/each}
-
-				{#if groupedRows.length === 0}
-					{@render emptyState()}
-				{/if}
+			{:else if loading && flatRows.length === 0}
+				{@render skeletonRows()}
+			{:else if flatRows.length === 0}
+				{@render emptyState()}
+			{:else if shouldVirtualize}
+				{@render virtualRows()}
 			{:else}
-				{#if loading && flatRows.length === 0}
-					{@render skeletonRows()}
-				{:else if flatRows.length === 0}
-					{@render emptyState()}
-				{:else if shouldVirtualize}
-					{@const vItems = rowVirtualizer.virtualItems}
-					{@const first = vItems[0]}
-					{@const last = vItems[vItems.length - 1]}
-					{@const padTop = first ? Math.max(0, first.start - scrollMargin) : 0}
-					{@const padBottom = last ? Math.max(0, rowVirtualizer.totalSize - (last.end - scrollMargin)) : 0}
-					{#if padTop > 0}
-						<tr aria-hidden="true"><td colspan={columnsCount} class="border-0 p-0" style="height: {padTop}px"></td></tr>
-					{/if}
-					{#each vItems as vItem (vItem.key)}
-						{@const row = flatRows[vItem.index]}
-						{#if row}
-							{@render dataRow(row, false, measureRow, vItem.index)}
-						{/if}
-					{/each}
-					{#if padBottom > 0}
-						<tr aria-hidden="true"><td colspan={columnsCount} class="border-0 p-0" style="height: {padBottom}px"></td></tr>
-					{/if}
-				{:else}
-					{#each flatRows as row (row.id)}
-						{@render dataRow(row, false)}
-					{/each}
-				{/if}
+				{#each flatRows as row (row.id)}
+					{@render dataRow(row, false)}
+				{/each}
 			{/if}
 		</Table.Body>
 	</Table.Root>

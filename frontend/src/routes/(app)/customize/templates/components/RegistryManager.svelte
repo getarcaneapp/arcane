@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import { Badge } from '#lib/components/ui/badge';
-	import * as Alert from '#lib/components/ui/alert';
-	import { Switch } from '#lib/components/ui/switch';
-	import { Snippet } from '#lib/components/ui/snippet';
-	import { m } from '#lib/paraglide/messages';
-	import type { TemplateRegistry } from '#lib/types/swarm';
-	import { RegistryIcon, CommunityIcon, ExternalLinkIcon, AlertTriangleIcon } from '#lib/icons';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import * as Alert from '#lib/components/ui/alert/index.js';
+	import { Switch } from '#lib/components/ui/switch/index.js';
+	import { Snippet } from '#lib/components/ui/snippet/index.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import type { TemplateRegistry } from '#lib/types/swarm.js';
+	import { RegistryIcon, CommunityIcon, ExternalLinkIcon, AlertTriangleIcon } from '#lib/icons/index.js';
 
 	let {
 		registries,

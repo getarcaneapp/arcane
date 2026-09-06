@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import * as Dialog from '#lib/components/ui/dialog';
-	import { Input } from '#lib/components/ui/input';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
-	import { m } from '#lib/paraglide/messages';
-	import { preventDefault } from '#lib/utils/settings';
+	import { m } from '#lib/paraglide/messages.js';
+	import { preventDefault } from '#lib/utils/settings.js';
 
 	let {
 		open = $bindable(false),

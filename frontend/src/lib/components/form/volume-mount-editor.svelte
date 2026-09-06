@@ -18,8 +18,8 @@
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import SearchableSelect from '#lib/components/form/searchable-select.svelte';
-	import { m } from '#lib/paraglide/messages';
-	import { AddIcon, CloseIcon } from '#lib/icons';
+	import { m } from '#lib/paraglide/messages.js';
+	import { AddIcon, CloseIcon } from '#lib/icons/index.js';
 
 	let {
 		rows = $bindable([]),

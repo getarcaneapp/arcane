@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { bytes } from '#lib/utils/formatting';
+	import { bytes } from '#lib/utils/formatting.js';
 
 	let { size }: { size: number } = $props();
 </script>

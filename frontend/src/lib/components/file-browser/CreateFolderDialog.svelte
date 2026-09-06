@@ -1,11 +1,11 @@
 <script lang="ts">
-	import * as Dialog from '#lib/components/ui/dialog';
-	import { Button } from '#lib/components/ui/button';
-	import { Input } from '#lib/components/ui/input';
-	import { Label } from '#lib/components/ui/label';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
 	import { toast } from 'svelte-sonner';
 	import * as m from '#lib/paraglide/messages.js';
-	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
+	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 
 	let {
 		open = $bindable(false),

@@ -1,7 +1,18 @@
 import type { ErrorObject } from 'ajv';
 import type { Diagnostic } from '@codemirror/lint';
 import type { EditorView } from '@codemirror/view';
-import { LineCounter, isMap, isPair, isScalar, isSeq, parseDocument, type ParsedNode, type Scalar } from 'yaml';
+import {
+	LineCounter,
+	isMap,
+	isPair,
+	isScalar,
+	isSeq,
+	parseDocument,
+	type ParsedNode,
+	type Scalar,
+	type Pair,
+	type YAMLMap
+} from 'yaml';
 import type { AnalysisResult, EditorContext, OutlineItem } from './types';
 import type { ComposeSchemaContext } from './compose-schema';
 import { resolveVariableSource } from './vars-analysis';
@@ -70,6 +81,35 @@ function scalarToKey(value: unknown): string | null {
 	return null;
 }
 
+function findContextInPair(pair: Pair, position: number, path: Array<string | number>): YamlPositionContext | null {
+	const key = scalarToKey(pair.key);
+	const keyRange = getRange(pair.key);
+	if (key && keyRange && position >= keyRange[0] && position <= keyRange[1]) {
+		return {
+			path: [...path, key],
+			parentPath: [...path],
+			currentKey: key,
+			atKey: true,
+			keyFrom: keyRange[0],
+			keyTo: keyRange[1]
+		};
+	}
+
+	if (key && pair.value && containsPosition(pair.value, position)) {
+		const nested = findContextInNode(pair.value as ParsedNode, position, [...path, key]);
+		if (nested) return nested;
+		return {
+			path: [...path, key],
+			parentPath: [...path],
+			currentKey: key,
+			atKey: false,
+			keyFrom: keyRange?.[0],
+			keyTo: keyRange?.[1]
+		};
+	}
+	return null;
+}
+
 function findContextInNode(
 	node: ParsedNode | null | undefined,
 	position: number,
@@ -81,53 +121,22 @@ function findContextInNode(
 	if (isMap(node)) {
 		for (const pair of node.items) {
 			if (!isPair(pair)) continue;
-
-			const key = scalarToKey(pair.key);
-			const keyRange = getRange(pair.key);
-			if (key && keyRange && position >= keyRange[0] && position <= keyRange[1]) {
-				return {
-					path: [...path, key],
-					parentPath: [...path],
-					currentKey: key,
-					atKey: true,
-					keyFrom: keyRange[0],
-					keyTo: keyRange[1]
-				};
-			}
-
-			if (key && pair.value && containsPosition(pair.value, position)) {
-				const nested = findContextInNode(pair.value as ParsedNode, position, [...path, key]);
-				if (nested) return nested;
-				return {
-					path: [...path, key],
-					parentPath: [...path],
-					currentKey: key,
-					atKey: false,
-					keyFrom: keyRange?.[0],
-					keyTo: keyRange?.[1]
-				};
-			}
+			const context = findContextInPair(pair, position, path);
+			if (context) return context;
 		}
-
-		return {
-			path: [...path],
-			parentPath: [...path],
-			atKey: false
-		};
+		return { path: [...path], parentPath: [...path], atKey: false };
 	}
 
 	if (isSeq(node)) {
-		for (let index = 0; index < node.items.length; index += 1) {
-			const item = node.items[index] as ParsedNode | null;
-			if (!item) continue;
-			if (!containsPosition(item, position)) continue;
-			const nested = findContextInNode(item, position, [...path, index]);
-			if (nested) return nested;
-			return {
-				path: [...path, index],
-				parentPath: [...path],
-				atKey: false
-			};
+		const index = node.items.findIndex((item) => containsPosition(item, position));
+		if (index >= 0) {
+			return (
+				findContextInNode(node.items[index] as ParsedNode, position, [...path, index]) ?? {
+					path: [...path, index],
+					parentPath: [...path],
+					atKey: false
+				}
+			);
 		}
 	}
 
@@ -197,32 +206,36 @@ function toSchemaDiagnostic(error: ErrorObject, doc: YamlDocLike, source: string
 	};
 }
 
+function collectMapDuplicateDiagnostics(node: YAMLMap, diagnostics: Diagnostic[]): number {
+	let duplicateCount = 0;
+	const seen = new Set<string>();
+	for (const item of node.items) {
+		if (!isPair(item)) continue;
+		const key = scalarToKey(item.key);
+		if (key) {
+			const keyRange = getRange(item.key);
+			if (seen.has(key) && key !== '<<') {
+				duplicateCount += 1;
+				diagnostics.push({
+					from: keyRange?.[0] ?? 0,
+					to: Math.max((keyRange?.[0] ?? 0) + 1, keyRange?.[1] ?? 1),
+					severity: 'error',
+					message: `Duplicate YAML key "${key}"`
+				});
+			}
+			seen.add(key);
+		}
+
+		duplicateCount += collectDuplicateKeyDiagnostics(item.value as ParsedNode | null, diagnostics);
+	}
+	return duplicateCount;
+}
+
 function collectDuplicateKeyDiagnostics(node: ParsedNode | null | undefined, diagnostics: Diagnostic[]): number {
 	if (!node) return 0;
 	let duplicateCount = 0;
 
-	if (isMap(node)) {
-		const seen = new Set<string>();
-		for (const item of node.items) {
-			if (!isPair(item)) continue;
-			const key = scalarToKey(item.key);
-			if (key) {
-				const keyRange = getRange(item.key);
-				if (seen.has(key) && key !== '<<') {
-					duplicateCount += 1;
-					diagnostics.push({
-						from: keyRange?.[0] ?? 0,
-						to: Math.max((keyRange?.[0] ?? 0) + 1, keyRange?.[1] ?? 1),
-						severity: 'error',
-						message: `Duplicate YAML key "${key}"`
-					});
-				}
-				seen.add(key);
-			}
-
-			duplicateCount += collectDuplicateKeyDiagnostics(item.value as ParsedNode | null, diagnostics);
-		}
-	}
+	if (isMap(node)) return collectMapDuplicateDiagnostics(node, diagnostics);
 
 	if (isSeq(node)) {
 		for (const item of node.items) {
@@ -375,6 +388,20 @@ function findVariableReferenceAtPosition(
 	return null;
 }
 
+function collectSchemaDiagnostics(
+	schemaContext: ComposeSchemaContext,
+	parsedValue: unknown,
+	doc: YamlDocLike,
+	source: string,
+	limit: number
+): Diagnostic[] {
+	if (!schemaContext.validate || schemaContext.validate(parsedValue)) return [];
+	return (schemaContext.validate.errors ?? [])
+		.slice(0, limit)
+		.map((error) => toSchemaDiagnostic(error, doc, source))
+		.filter((diagnostic): diagnostic is Diagnostic => diagnostic !== null);
+}
+
 export async function analyzeComposeContent(
 	view: EditorView,
 	schemaContext: ComposeSchemaContext,
@@ -413,15 +440,7 @@ export async function analyzeComposeContent(
 			const parsedValue = doc.toJS();
 			outlineItems = buildOutline(doc);
 
-			if (schemaContext.validate) {
-				const isValid = schemaContext.validate(parsedValue);
-				if (!isValid) {
-					for (const error of (schemaContext.validate.errors || []).slice(0, maxSchemaDiagnostics)) {
-						const diag = toSchemaDiagnostic(error, doc, source);
-						if (diag) diagnostics.push(diag);
-					}
-				}
-			}
+			diagnostics.push(...collectSchemaDiagnostics(schemaContext, parsedValue, doc, source, maxSchemaDiagnostics));
 
 			diagnostics.push(...buildComposeSemanticDiagnostics(parsedValue, doc));
 		} catch {

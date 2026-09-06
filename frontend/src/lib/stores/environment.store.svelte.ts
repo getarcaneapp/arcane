@@ -1,8 +1,8 @@
 import { PersistedState } from 'runed';
 import { goto, refreshAll } from '$app/navigation';
 import { page } from '$app/state';
-import type { Environment } from '#lib/types/environment';
-import { isEnvironmentOnline } from '#lib/utils/docker';
+import type { Environment } from '#lib/types/environment.js';
+import { isEnvironmentOnline } from '#lib/utils/docker.js';
 
 export const LOCAL_DOCKER_ENVIRONMENT_ID = '0';
 
@@ -122,31 +122,22 @@ function createEnvironmentManagementStore() {
 			if (!_initialized) {
 				_selectInitialEnvironment(available);
 				_initialized = true;
-				if (hasRealEnvironments) {
-					_initializedWithData = true;
-				}
+				if (hasRealEnvironments) _initializedWithData = true;
 				_resolveReadyPromiseFunction();
-			} else if (hasRealEnvironments && !_initializedWithData) {
+				return;
+			}
+			if (hasRealEnvironments && !_initializedWithData) {
 				_selectInitialEnvironment(available);
 				_initializedWithData = true;
-			} else {
-				// Update the selected environment's data if it exists
-				if (_selectedEnvironment) {
-					const updated = available.find((env) => env.id === _selectedEnvironment!.id);
-					if (updated) {
-						_assignSelectedEnvironment(updated);
-						// If the current environment was disabled, switch to an enabled one
-						if (!updated.enabled) {
-							_selectInitialEnvironment(available);
-						}
-					} else {
-						// Environment no longer exists, select a new one
-						_selectInitialEnvironment(available);
-					}
-				} else if (available.length > 0) {
-					_selectInitialEnvironment(available);
-				}
+				return;
 			}
+			if (!_selectedEnvironment) {
+				if (available.length > 0) _selectInitialEnvironment(available);
+				return;
+			}
+			const updated = available.find((env) => env.id === _selectedEnvironment!.id);
+			if (updated) _assignSelectedEnvironment(updated);
+			if (!updated?.enabled) _selectInitialEnvironment(available);
 		},
 		// Applies a live environment list pushed by the backend stream.
 		//

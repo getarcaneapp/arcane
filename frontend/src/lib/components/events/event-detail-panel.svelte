@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { CopyButton } from '#lib/components/ui/copy-button';
+	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import type { Event } from '#lib/types/shared';
-	import { m } from '#lib/paraglide/messages';
+	import type { Event } from '#lib/types/shared.js';
+	import { m } from '#lib/paraglide/messages.js';
 	import { flattenMetadata, stringifyForDisplay } from './event-metadata';
 
 	let { event }: { event: Event } = $props();

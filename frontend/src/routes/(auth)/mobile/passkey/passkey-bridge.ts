@@ -72,7 +72,19 @@ function encodeBase64URL(value: Uint8Array): string {
 	return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
 }
 
-export function decodeMobilePasskeyBridgeRequest(fragment: string): MobilePasskeyBridgeRequest {
+function isValidMobileLogin(value: unknown): value is NonNullable<MobilePasskeyBridgeRequest['mobileLogin']> {
+	return (
+		isRecord(value) &&
+		Object.keys(value).length === 2 &&
+		typeof value['ceremonyId'] === 'string' &&
+		value['ceremonyId'].length > 0 &&
+		value['ceremonyId'].length <= 128 &&
+		typeof value['codeChallenge'] === 'string' &&
+		/^[A-Za-z0-9_-]{43}$/.test(value['codeChallenge'])
+	);
+}
+
+function decodeMobilePasskeyCandidate(fragment: string): Record<string, unknown> {
 	const params = new URLSearchParams(fragment.startsWith('#') ? fragment.slice(1) : fragment);
 	const requestValues = params.getAll(REQUEST_FRAGMENT_PARAMETER);
 	if (requestValues.length !== 1 || [...params.keys()].some((key) => key !== REQUEST_FRAGMENT_PARAMETER)) {
@@ -98,27 +110,21 @@ export function decodeMobilePasskeyBridgeRequest(fragment: string): MobilePasske
 		throw new MobilePasskeyBridgeRequestError('invalid_request');
 	}
 
+	return candidate;
+}
+
+export function decodeMobilePasskeyBridgeRequest(fragment: string): MobilePasskeyBridgeRequest {
+	const candidate = decodeMobilePasskeyCandidate(fragment);
+
 	const state = isValidState(candidate['state']) ? candidate['state'] : undefined;
 	const keys = Object.keys(candidate).sort();
 	const mobileLogin = candidate['mobileLogin'];
-	const hasExactShape =
-		(keys.length === 4 && keys[0] === 'operation' && keys[1] === 'options' && keys[2] === 'state' && keys[3] === 'version') ||
-		(keys.length === 5 &&
-			keys[0] === 'mobileLogin' &&
-			keys[1] === 'operation' &&
-			keys[2] === 'options' &&
-			keys[3] === 'state' &&
-			keys[4] === 'version');
+	const expectedKeys =
+		keys.length === 5
+			? ['mobileLogin', 'operation', 'options', 'state', 'version']
+			: ['operation', 'options', 'state', 'version'];
+	const hasExactShape = keys.length === expectedKeys.length && keys.every((key, index) => key === expectedKeys[index]);
 	const operation = candidate['operation'];
-	const hasValidMobileLogin =
-		mobileLogin === undefined ||
-		(isRecord(mobileLogin) &&
-			Object.keys(mobileLogin).length === 2 &&
-			typeof mobileLogin['ceremonyId'] === 'string' &&
-			mobileLogin['ceremonyId'].length > 0 &&
-			mobileLogin['ceremonyId'].length <= 128 &&
-			typeof mobileLogin['codeChallenge'] === 'string' &&
-			/^[A-Za-z0-9_-]{43}$/.test(mobileLogin['codeChallenge']));
 
 	if (
 		!hasExactShape ||
@@ -126,7 +132,7 @@ export function decodeMobilePasskeyBridgeRequest(fragment: string): MobilePasske
 		!state ||
 		(operation !== 'authenticate' && operation !== 'register') ||
 		!isRecord(candidate['options']) ||
-		!hasValidMobileLogin ||
+		(mobileLogin !== undefined && !isValidMobileLogin(mobileLogin)) ||
 		(mobileLogin !== undefined && operation !== 'authenticate')
 	) {
 		throw new MobilePasskeyBridgeRequestError('invalid_request', state);
@@ -141,8 +147,8 @@ export function decodeMobilePasskeyBridgeRequest(fragment: string): MobilePasske
 			? {}
 			: {
 					mobileLogin: {
-						ceremonyId: mobileLogin['ceremonyId'] as string,
-						codeChallenge: mobileLogin['codeChallenge'] as string
+						ceremonyId: mobileLogin['ceremonyId'],
+						codeChallenge: mobileLogin['codeChallenge']
 					}
 				})
 	};

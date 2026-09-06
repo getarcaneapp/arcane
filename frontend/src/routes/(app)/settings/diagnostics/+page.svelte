@@ -1,19 +1,19 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { cn } from '#lib/utils';
-	import { m } from '#lib/paraglide/messages';
+	import { cn } from '#lib/utils.js';
+	import { m } from '#lib/paraglide/messages.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import * as Collapsible from '#lib/components/ui/collapsible';
-	import * as Alert from '#lib/components/ui/alert';
-	import * as Table from '#lib/components/ui/table';
-	import * as Tabs from '#lib/components/ui/tabs';
+	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
+	import * as Alert from '#lib/components/ui/alert/index.js';
+	import * as Table from '#lib/components/ui/table/index.js';
+	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { TabBar, type TabItem } from '#lib/components/tab-bar/index.js';
-	import { SettingsPageLayout } from '#lib/layouts';
+	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import type { SettingsActionButton, SettingsStatCard } from '#lib/layouts/types.js';
-	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte';
-	import { createDiagnosticsWebSocket, ReconnectingWebSocket } from '#lib/utils/ws';
-	import { diagnosticsService } from '#lib/services/diagnostics-service';
-	import type { Diagnostics, GoroutineLeakReport, PprofProfile } from '#lib/types/diagnostics';
+	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
+	import { createDiagnosticsWebSocket, ReconnectingWebSocket } from '#lib/utils/ws.js';
+	import { diagnosticsService } from '#lib/services/diagnostics-service.js';
+	import type { Diagnostics, GoroutineLeakReport, PprofProfile } from '#lib/types/diagnostics.js';
 	import {
 		ActivityIcon,
 		AlertTriangleIcon,
@@ -23,10 +23,10 @@
 		ConnectionIcon,
 		DownloadIcon,
 		ArrowDownIcon
-	} from '#lib/icons';
+	} from '#lib/icons/index.js';
 	import DiagnosticLogPanel from './diagnostic-log-panel.svelte';
 	import DiagnosticLeakPanel from './diagnostic-leak-panel.svelte';
-	import { formatTime } from '#lib/utils/formatting';
+	import { formatTime } from '#lib/utils/formatting.js';
 
 	type DiagnosticsTab = 'overview' | 'connections' | 'logs' | 'profiling';
 

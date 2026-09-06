@@ -1,20 +1,20 @@
 <script lang="ts">
-	import { UsersIcon } from '#lib/icons';
+	import { UsersIcon } from '#lib/icons/index.js';
 	import { toast } from 'svelte-sonner';
-	import { handleApiResultWithCallbacks } from '#lib/utils/api';
-	import { tryCatch } from '#lib/utils/api';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { tryCatch } from '#lib/utils/api.js';
 	import UserTable from './user-table.svelte';
 	import UserFormSheet from '#lib/components/sheets/user-form-sheet.svelte';
-	import type { SearchPaginationSortRequest } from '#lib/types/shared';
-	import type { Settings } from '#lib/types/settings';
-	import type { User } from '#lib/types/auth';
-	import type { CreateUser } from '#lib/types/auth';
-	import { m } from '#lib/paraglide/messages';
-	import { userService } from '#lib/services/user-service';
-	import { roleService } from '#lib/services/role-service';
-	import { settingsService } from '#lib/services/settings-service';
-	import userStore from '#lib/stores/user-store';
-	import settingsStore from '#lib/stores/config-store';
+	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import type { Settings } from '#lib/types/settings.js';
+	import type { User } from '#lib/types/auth.js';
+	import type { CreateUser } from '#lib/types/auth.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { userService } from '#lib/services/user-service.js';
+	import { roleService } from '#lib/services/role-service.js';
+	import { settingsService } from '#lib/services/settings-service.js';
+	import userStore from '#lib/stores/user-store.js';
+	import settingsStore from '#lib/stores/config-store.js';
 	import { SettingsPageLayout, type SettingsActionButton } from '#lib/layouts/index.js';
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
 	import { Switch } from '#lib/components/ui/switch/index.js';
@@ -63,6 +63,13 @@
 		isDialogOpen.edit = true;
 	}
 
+	async function completeUserEdit(username: string) {
+		toast.success(m.common_update_success({ resource: `${m.resource_user()} "${username}"` }));
+		users = await userService.getUsers(requestOptions);
+		isDialogOpen.edit = false;
+		userToEdit = null;
+	}
+
 	async function handleUserSubmit({
 		user,
 		isEditMode,
@@ -93,10 +100,7 @@
 						message: m.common_update_failed({ resource: `${m.resource_user()} "${safeUsername}"` }),
 						setLoadingState: (value) => (isLoading[loading] = value),
 						onSuccess: async () => {
-							toast.success(m.common_update_success({ resource: `${m.resource_user()} "${safeUsername}"` }));
-							users = await userService.getUsers(requestOptions);
-							isDialogOpen.edit = false;
-							userToEdit = null;
+							await completeUserEdit(safeUsername);
 						}
 					});
 					return !assignmentsResult.error;
@@ -111,10 +115,7 @@
 						if (isAdmin && roleAssignments) {
 							await roleService.setUserAssignments(userId, { assignments: roleAssignments });
 						}
-						toast.success(m.common_update_success({ resource: `${m.resource_user()} "${safeUsername}"` }));
-						users = await userService.getUsers(requestOptions);
-						isDialogOpen.edit = false;
-						userToEdit = null;
+						await completeUserEdit(safeUsername);
 					}
 				});
 				return !result.error;

@@ -1,17 +1,17 @@
 <script lang="ts">
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import { openConfirmDialog } from '#lib/components/confirm-dialog';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
-	import { CopyButton } from '#lib/components/ui/copy-button';
-	import * as Card from '#lib/components/ui/card';
+	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
+	import * as Card from '#lib/components/ui/card/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
-	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte';
-	import { TrashIcon } from '#lib/icons';
+	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte.js';
+	import { TrashIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
-	import { m } from '#lib/paraglide/messages';
-	import { handleApiResultWithCallbacks, tryCatch } from '#lib/utils/api';
-	import { decodeBase64ToText, encodeTextToBase64, formatSwarmTimestamp, getSwarmSpecName } from '#lib/utils/swarm-kv';
+	import { m } from '#lib/paraglide/messages.js';
+	import { handleApiResultWithCallbacks, tryCatch } from '#lib/utils/api.js';
+	import { decodeBase64ToText, encodeTextToBase64, formatSwarmTimestamp, getSwarmSpecName } from '#lib/utils/swarm-kv.js';
 	import { onMount, type Component } from 'svelte';
 	import { toast } from 'svelte-sonner';
 

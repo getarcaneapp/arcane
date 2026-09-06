@@ -1,11 +1,11 @@
 <script lang="ts">
-	import * as Card from '#lib/components/ui/card';
-	import { Badge } from '#lib/components/ui/badge';
-	import { Spinner } from '#lib/components/ui/spinner';
-	import { bytes, formatDateTimeShort } from '#lib/utils/formatting';
-	import { imageService } from '#lib/services/image-service';
-	import type { ImageHistoryItemDto } from '#lib/types/docker';
-	import { m } from '#lib/paraglide/messages';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Spinner } from '#lib/components/ui/spinner/index.js';
+	import { bytes, formatDateTimeShort } from '#lib/utils/formatting.js';
+	import { imageService } from '#lib/services/image-service.js';
+	import type { ImageHistoryItemDto } from '#lib/types/docker.js';
+	import { m } from '#lib/paraglide/messages.js';
 	import { Temporal } from 'temporal-polyfill';
 
 	let { imageId }: { imageId: string } = $props();

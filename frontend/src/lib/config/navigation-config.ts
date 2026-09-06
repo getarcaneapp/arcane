@@ -27,11 +27,11 @@ import {
 	VariableIcon,
 	ActivityIcon,
 	BackupIcon
-} from '#lib/icons';
-import { m } from '#lib/paraglide/messages';
-import type { ShortcutKey } from '#lib/utils/navigation';
-import type { PermissionsManifest, User } from '#lib/types/auth';
-import { canReachAccessSurface } from '#lib/utils/access-policy';
+} from '#lib/icons/index.js';
+import { m } from '#lib/paraglide/messages.js';
+import type { ShortcutKey } from '#lib/utils/navigation.js';
+import type { PermissionsManifest, User } from '#lib/types/auth.js';
+import { canReachAccessSurface } from '#lib/utils/access-policy.js';
 
 export type NavigationItem = {
 	title: string;

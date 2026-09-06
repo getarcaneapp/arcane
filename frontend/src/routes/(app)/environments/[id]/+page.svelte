@@ -1,28 +1,28 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
-	import { TabBar, type TabItem } from '#lib/components/tab-bar';
+	import { TabBar, type TabItem } from '#lib/components/tab-bar/index.js';
 	import { ActionButtonGroup, type ActionButton } from '#lib/components/action-button-group/index.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import * as AlertDialog from '#lib/components/ui/alert-dialog';
-	import * as ArcaneTooltip from '#lib/components/arcane-tooltip';
+	import * as AlertDialog from '#lib/components/ui/alert-dialog/index.js';
+	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
-	import { CopyButton } from '#lib/components/ui/copy-button';
-	import { cn } from '#lib/utils';
+	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
+	import { cn } from '#lib/utils.js';
 	import { goto, refreshAll } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
-	import { m } from '#lib/paraglide/messages';
+	import { m } from '#lib/paraglide/messages.js';
 	import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
-	import { settingsService } from '#lib/services/settings-service';
-	import { environmentStore } from '#lib/stores/environment.store.svelte';
-	import type { AppVersionInformation } from '#lib/types/settings';
-	import type { Environment, EnvironmentStatus } from '#lib/types/environment';
-	import { hasPermission } from '#lib/utils/auth';
-	import { isEnvironmentOnline, resolveEnvironmentStatus } from '#lib/utils/docker';
+	import { settingsService } from '#lib/services/settings-service.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import type { AppVersionInformation } from '#lib/types/settings.js';
+	import type { Environment, EnvironmentStatus } from '#lib/types/environment.js';
+	import { hasPermission } from '#lib/utils/auth.js';
+	import { isEnvironmentOnline, resolveEnvironmentStatus } from '#lib/utils/docker.js';
 	import MobileFloatingFormActions from '#lib/components/form/mobile-floating-form-actions.svelte';
-	import { createSettingsForm } from '#lib/utils/settings-form';
-	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte';
+	import { createSettingsForm } from '#lib/utils/settings-form.js';
+	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
 	import EnvironmentStatusSummary from './components/EnvironmentStatusSummary.svelte';
 	import EditableName from '../../projects/components/EditableName.svelte';
 	import ConnectionEdgeTab from './components/ConnectionEdgeTab.svelte';
@@ -33,7 +33,7 @@
 	import TrivySecuritySettings from '#lib/components/settings/trivy-security-settings.svelte';
 	import ImagePatchSettings from '#lib/components/settings/image-patch-settings.svelte';
 	import LifecycleSecuritySettings from '#lib/components/settings/lifecycle-security-settings.svelte';
-	import { useEasyJoinCandidates } from '#lib/hooks/use-easy-join-candidates.svelte';
+	import { useEasyJoinCandidates } from '#lib/hooks/use-easy-join-candidates.svelte.js';
 	import EasyJoinDialog from '../../swarm/cluster/easy-join-dialog.svelte';
 	import {
 		ArrowLeftIcon,
@@ -48,7 +48,7 @@
 		ScanIcon,
 		ShieldCheckIcon,
 		CodeIcon
-	} from '#lib/icons';
+	} from '#lib/icons/index.js';
 
 	let { data } = $props();
 	let { environment, settings, versionInformation } = $derived(data);

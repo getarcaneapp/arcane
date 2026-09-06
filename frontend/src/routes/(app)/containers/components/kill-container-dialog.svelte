@@ -1,13 +1,13 @@
 <script lang="ts">
-	import { ArcaneButton } from '#lib/components/arcane-button';
-	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog';
-	import * as Select from '#lib/components/ui/select';
-	import { Label } from '#lib/components/ui/label';
-	import { m } from '#lib/paraglide/messages';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import { m } from '#lib/paraglide/messages.js';
 	import { toast } from 'svelte-sonner';
-	import { containerService } from '#lib/services/container-service';
-	import { handleApiResultWithCallbacks, tryCatch } from '#lib/utils/api';
-	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
+	import { containerService } from '#lib/services/container-service.js';
+	import { handleApiResultWithCallbacks, tryCatch } from '#lib/utils/api.js';
+	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 
 	type Props = {
 		containerId: string;

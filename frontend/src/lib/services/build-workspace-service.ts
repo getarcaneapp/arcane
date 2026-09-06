@@ -1,8 +1,8 @@
 import BaseAPIService from './api-service';
 import { uploadService, type UploadProgressCallback } from './upload-service';
-import { environmentStore } from '#lib/stores/environment.store.svelte';
-import type { FileEntry, FileContentResponse } from '#lib/types/shared';
-import { downloadBlob, filenameFromPath } from '#lib/utils/browser-download';
+import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+import type { FileEntry, FileContentResponse } from '#lib/types/shared.js';
+import { downloadBlob, filenameFromPath } from '#lib/utils/browser-download.js';
 
 class BuildWorkspaceService extends BaseAPIService {
 	async listDirectory(path: string = '/'): Promise<FileEntry[]> {

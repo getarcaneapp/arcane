@@ -1,11 +1,11 @@
 <script lang="ts">
-	import * as Dialog from '#lib/components/ui/dialog';
-	import { AlertIcon } from '#lib/icons';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import { AlertIcon } from '#lib/icons/index.js';
 	import { confirmDialogStore } from './store';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import { Label } from '#lib/components/ui/label';
+	import { Label } from '#lib/components/ui/label/index.js';
 	import Checkbox from '../ui/checkbox/checkbox.svelte';
-	import { m } from '#lib/paraglide/messages';
+	import { m } from '#lib/paraglide/messages.js';
 	import { toast } from 'svelte-sonner';
 
 	let checkboxStates = $state<Record<string, boolean>>({});

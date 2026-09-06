@@ -1,25 +1,27 @@
 <script lang="ts">
+	import RemoveMenuItem from '#lib/components/arcane-table/cells/remove-menu-item.svelte';
+	import { backupRunColumns, backupRunMobileFields } from '#lib/components/arcane-table/backup-columns.js';
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
-	import { UniversalMobileCard, type ColumnSpec, type MobileFieldVisibility } from '#lib/components/arcane-table';
-	import * as DropdownMenu from '#lib/components/ui/dropdown-menu';
+	import { UniversalMobileCard, type ColumnSpec, type MobileFieldVisibility } from '#lib/components/arcane-table/index.js';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import BackupStatusCell from '#lib/components/arcane-table/cells/backup-status-cell.svelte';
 	import BackupTriggerCell from '#lib/components/arcane-table/cells/backup-trigger-cell.svelte';
 	import BackupDestinationCell from '#lib/components/arcane-table/cells/backup-destination-cell.svelte';
 	import BackupSizeCell from '#lib/components/arcane-table/cells/backup-size-cell.svelte';
 	import CreatedAtCell from '#lib/components/arcane-table/cells/created-at-cell.svelte';
 	import BackupManagementCell from '#lib/components/arcane-table/cells/backup-management-cell.svelte';
-	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
-	import type { BackupHistoryEntry } from '#lib/types/system-backup';
-	import { BackupIcon, RestartIcon, TrashIcon, UploadIcon, ClockIcon, VolumesIcon, FileTextIcon } from '#lib/icons';
-	import { bytes, formatDateTimeShort } from '#lib/utils/formatting';
+	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import type { BackupHistoryEntry } from '#lib/types/system-backup.js';
+	import { BackupIcon, RestartIcon, UploadIcon, ClockIcon, VolumesIcon, FileTextIcon } from '#lib/icons/index.js';
+	import { bytes, formatDateTimeShort } from '#lib/utils/formatting.js';
 	import {
 		backupManagementFilterOptions,
 		backupManagementLabel,
 		backupStatusLabel,
 		backupStatusVariant,
 		backupTriggerLabel
-	} from '#lib/utils/backups';
+	} from '#lib/utils/backups.js';
 	import * as m from '#lib/paraglide/messages.js';
 
 	let {
@@ -53,21 +55,11 @@
 			cell: TypeCell,
 			filterOptions: backupManagementFilterOptions()
 		},
-		{ accessorKey: 'status', title: m.common_status(), sortable: true, cell: StatusCell },
-		{ accessorKey: 'trigger', title: m.volume_backup_trigger(), sortable: true, cell: TriggerCell },
-		{ accessorKey: 'destination', title: m.backups_destination_label(), sortable: true, cell: DestinationCell },
-		{ accessorKey: 'size', title: m.common_size(), sortable: true, cell: SizeCell },
+		...backupRunColumns({ status: StatusCell, trigger: TriggerCell, destination: DestinationCell, size: SizeCell }),
 		{ accessorKey: 'createdAt', title: m.common_created(), sortable: true, cellComponent: CreatedAtCell },
 		{ accessorKey: 'error', title: m.common_error(), sortable: false, cell: ErrorCell }
 	] satisfies ColumnSpec<BackupHistoryEntry>[];
-	const mobileFields = [
-		{ id: 'resourceName', label: m.backups_resource(), defaultVisible: true },
-		{ id: 'type', label: m.common_type(), defaultVisible: true },
-		{ id: 'status', label: m.common_status(), defaultVisible: true },
-		{ id: 'trigger', label: m.volume_backup_trigger(), defaultVisible: true },
-		{ id: 'destination', label: m.backups_destination_label(), defaultVisible: true },
-		{ id: 'size', label: m.common_size(), defaultVisible: true }
-	];
+	const mobileFields = [{ id: 'resourceName', label: m.backups_resource(), defaultVisible: true }, ...backupRunMobileFields()];
 </script>
 
 {#snippet IdCell({ item }: { item: BackupHistoryEntry })}<code class="text-xs">{item.id.slice(0, 18)}…</code>{/snippet}
@@ -94,10 +86,7 @@
 			{#if item.localSnapshotId && !item.remoteSnapshotId}
 				<DropdownMenu.Item onclick={() => onUpload(item)}><UploadIcon class="size-4" />{m.backups_upload_s3()}</DropdownMenu.Item>
 			{/if}
-			<DropdownMenu.Separator />
-			<DropdownMenu.Item variant="destructive" onclick={() => onDelete(item)}
-				><TrashIcon class="size-4" />{m.common_delete()}</DropdownMenu.Item
-			>
+			<RemoveMenuItem onclick={() => onDelete(item)} label={m.common_delete()} />
 		{:else}
 			<DropdownMenu.Item onclick={() => onOpenVolume(item)}
 				><VolumesIcon class="size-4" />{m.backups_open_volume()}</DropdownMenu.Item

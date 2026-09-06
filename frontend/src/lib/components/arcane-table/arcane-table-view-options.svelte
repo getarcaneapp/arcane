@@ -2,9 +2,9 @@
 	import type { ArcaneSvelteTable } from './table-features';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import { m } from '#lib/paraglide/messages';
+	import { m } from '#lib/paraglide/messages.js';
 	import type { Snippet } from 'svelte';
-	import { EyeOnIcon } from '#lib/icons';
+	import { EyeOnIcon } from '#lib/icons/index.js';
 
 	let {
 		table,

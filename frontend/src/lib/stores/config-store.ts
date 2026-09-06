@@ -1,5 +1,5 @@
-import { settingsService } from '#lib/services/settings-service';
-import type { Settings } from '#lib/types/settings';
+import { settingsService } from '#lib/services/settings-service.js';
+import type { Settings } from '#lib/types/settings.js';
 import { get, writable } from 'svelte/store';
 
 const settingsStore = writable<Settings>();

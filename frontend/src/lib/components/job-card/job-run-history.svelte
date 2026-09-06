@@ -1,12 +1,12 @@
 <script lang="ts">
-	import { queryKeys } from '#lib/query/query-keys';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { createQuery, createMutation } from '@tanstack/svelte-query';
-	import { m } from '#lib/paraglide/messages';
-	import { Button } from '#lib/components/ui/button';
-	import * as Dialog from '#lib/components/ui/dialog';
-	import { jobScheduleService } from '#lib/services/job-schedule-service';
-	import { activityStore } from '#lib/stores/activity.store.svelte';
-	import { formatDateTimeShort } from '#lib/utils/formatting';
+	import { m } from '#lib/paraglide/messages.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import { jobScheduleService } from '#lib/services/job-schedule-service.js';
+	import { activityStore } from '#lib/stores/activity.store.svelte.js';
+	import { formatDateTimeShort } from '#lib/utils/formatting.js';
 	import { jobStatusLabel } from './job-status';
 	let { jobId, environmentId, onUpdate }: { jobId: string; environmentId: string; onUpdate?: () => void } = $props();
 	let open = $state(false);
@@ -33,7 +33,61 @@
 			onUpdate?.();
 		}
 	}));
+	const selectedRun = $derived(selected ? detail.data : undefined);
+	const metadata = $derived(
+		[
+			{
+				id: 'remote',
+				visible: selectedRun?.status === 'waiting' && selectedRun.remoteOutcome,
+				label: m.jobs_remote_status(),
+				value: jobStatusLabel(selectedRun?.remoteOutcome?.status ?? '')
+			},
+			{
+				id: 'message',
+				visible: selectedRun?.outcome.message,
+				label: '',
+				value: selectedRun?.outcome.message,
+				class: 'break-words whitespace-pre-wrap'
+			},
+			{
+				id: 'confirmed',
+				visible: selectedRun?.lastConfirmedAt,
+				label: m.jobs_last_confirmed(),
+				value: formatDateTimeShort(selectedRun?.lastConfirmedAt)
+			},
+			{
+				id: 'retry',
+				visible: selectedRun?.nextAttempt,
+				label: m.jobs_next_retry(),
+				value: formatDateTimeShort(selectedRun?.nextAttempt)
+			}
+		].filter((item) => item.visible)
+	);
+	const availableActions = $derived(
+		[
+			{
+				id: 'retry' as const,
+				visible: ['failed', 'partial', 'needs_attention'].includes(selectedRun?.status ?? ''),
+				variant: 'default' as const,
+				label: m.jobs_retry_run()
+			},
+			{
+				id: 'cancel' as const,
+				visible: selectedRun?.status === 'queued' && selectedRun.attemptCount === 0 && !selectedRun.remoteDeliveryAttempted,
+				variant: 'outline' as const,
+				label: m.jobs_cancel_run()
+			}
+		].filter((item) => item.visible)
+	);
 </script>
+
+{#snippet outcomeMessage(message: string | undefined)}
+	{#if message}<p class="break-words whitespace-pre-wrap">{message}</p>{/if}
+{/snippet}
+
+{#snippet outcomeActivity(activityId: string | undefined)}
+	{#if activityId}<Button variant="link" onclick={() => activityStore.openCenter(activityId)}>{m.activity()}</Button>{/if}
+{/snippet}
 
 <Button
 	variant="ghost"
@@ -84,25 +138,18 @@
 			>
 		</div>
 		{#if detail.error}<p class="text-sm text-destructive">{detail.error.message}</p>{/if}
-		{#if selected && detail.data}
-			{@const run = detail.data}
+		{#if selectedRun}
+			{@const run = selectedRun}
 			<div class="space-y-3 border-t pt-4 text-sm">
 				<p class="break-all"><strong>{m.jobs_run_id()}:</strong> {run.id}</p>
 				<p>{jobStatusLabel(run.status)}</p>
-				{#if run.status === 'waiting' && run.remoteOutcome}<p>
-						{m.jobs_remote_status()}: {jobStatusLabel(run.remoteOutcome.status)}
-					</p>{/if}
-				{#if run.outcome.message}<p class="break-words whitespace-pre-wrap">{run.outcome.message}</p>{/if}
-				{#if run.lastConfirmedAt}<p>{m.jobs_last_confirmed()}: {formatDateTimeShort(run.lastConfirmedAt)}</p>{/if}
-				{#if run.nextAttempt}<p>{m.jobs_next_retry()}: {formatDateTimeShort(run.nextAttempt)}</p>{/if}
-				{#if run.outcome.activityId}<Button variant="link" onclick={() => activityStore.openCenter(run.outcome.activityId)}
-						>{m.activity()}</Button
-					>{/if}
+				{#each metadata as item (item.id)}<p class={item.class}>{item.label ? `${item.label}: ` : ''}{item.value}</p>{/each}
+				{@render outcomeActivity(run.outcome.activityId)}
 				<h4 class="font-medium">{m.jobs_run_attempts()}: {run.attemptCount}</h4>
 				{#each run.attempts ?? [] as attempt (attempt.number)}
 					<div class="space-y-1 rounded border p-2">
 						<p>{attempt.number} · {formatDateTimeShort(attempt.startedAt)} · {jobStatusLabel(attempt.outcome.status)}</p>
-						{#if attempt.outcome.message}<p class="break-words whitespace-pre-wrap">{attempt.outcome.message}</p>{/if}
+						{@render outcomeMessage(attempt.outcome.message)}
 					</div>
 				{/each}
 				{#if run.outcome.targets?.length}
@@ -110,24 +157,19 @@
 					{#each run.outcome.targets as target (target.id)}
 						<div class="space-y-1 rounded border p-2">
 							<p class="break-all">{target.id} · {jobStatusLabel(target.status)}</p>
-							{#if target.message}<p class="break-words whitespace-pre-wrap">{target.message}</p>{/if}
-							{#if target.activityId}<Button variant="link" onclick={() => activityStore.openCenter(target.activityId)}
-									>{m.activity()}</Button
-								>{/if}
+							{@render outcomeMessage(target.message)}
+							{@render outcomeActivity(target.activityId)}
 						</div>
 					{/each}
 				{/if}
 				{#if action.error}<p class="text-destructive">{action.error.message}</p>{/if}
-				{#if ['failed', 'partial', 'needs_attention'].includes(run.status)}
-					<Button disabled={action.isPending} onclick={() => action.mutate({ runId: run.id, action: 'retry' })}
-						>{m.jobs_retry_run()}</Button
+				{#each availableActions as item (item.id)}
+					<Button
+						variant={item.variant}
+						disabled={action.isPending}
+						onclick={() => action.mutate({ runId: run.id, action: item.id })}>{item.label}</Button
 					>
-				{/if}
-				{#if run.status === 'queued' && run.attemptCount === 0 && !run.remoteDeliveryAttempted}
-					<Button variant="outline" disabled={action.isPending} onclick={() => action.mutate({ runId: run.id, action: 'cancel' })}
-						>{m.jobs_cancel_run()}</Button
-					>
-				{/if}
+				{/each}
 			</div>
 		{/if}
 	</Dialog.Content>

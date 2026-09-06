@@ -1,11 +1,11 @@
 <script lang="ts">
-	import * as Card from '#lib/components/ui/card';
+	import * as Card from '#lib/components/ui/card/index.js';
 	import LogViewer from '#lib/components/logs/log-viewer.svelte';
 	import LogControls from '#lib/components/logs/log-controls.svelte';
 	import LogPanelTitle from '#lib/components/logs/log-panel-title.svelte';
-	import { m } from '#lib/paraglide/messages';
-	import { refreshLogViewerStream, startLogViewerStream, stopLogViewerStream } from '#lib/utils/log-viewer';
-	import { FileTextIcon } from '#lib/icons';
+	import { m } from '#lib/paraglide/messages.js';
+	import { refreshLogViewerStream, startLogViewerStream, stopLogViewerStream } from '#lib/utils/log-viewer.js';
+	import { FileTextIcon } from '#lib/icons/index.js';
 
 	let {
 		serviceId

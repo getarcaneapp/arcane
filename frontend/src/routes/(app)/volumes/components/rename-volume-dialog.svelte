@@ -3,10 +3,10 @@
 	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
 	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
-	import { AlertTriangleIcon } from '#lib/icons';
-	import { m } from '#lib/paraglide/messages';
-	import type { VolumeSummaryDto } from '#lib/types/docker';
-	import { getManagedByLabel } from '#lib/utils/docker';
+	import { AlertTriangleIcon } from '#lib/icons/index.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import type { VolumeSummaryDto } from '#lib/types/docker.js';
+	import { getManagedByLabel } from '#lib/utils/docker.js';
 
 	let {
 		open = $bindable(false),

@@ -11,8 +11,8 @@
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import SearchableSelect from '#lib/components/form/searchable-select.svelte';
-	import { m } from '#lib/paraglide/messages';
-	import { AddIcon, CloseIcon } from '#lib/icons';
+	import { m } from '#lib/paraglide/messages.js';
+	import { AddIcon, CloseIcon } from '#lib/icons/index.js';
 
 	let {
 		rows = $bindable([]),

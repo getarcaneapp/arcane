@@ -4,21 +4,21 @@
 	import CreateFolderDialog from '#lib/components/file-browser/CreateFolderDialog.svelte';
 	import FileUploadDialog from '#lib/components/file-browser/FileUploadDialog.svelte';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import { UploadIcon, MoveToFolderIcon, EllipsisIcon, CopyIcon } from '#lib/icons';
+	import { UploadIcon, MoveToFolderIcon, EllipsisIcon, CopyIcon } from '#lib/icons/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
-	import { Textarea } from '#lib/components/ui/textarea';
-	import { Label } from '#lib/components/ui/label';
-	import { m } from '#lib/paraglide/messages';
+	import { Textarea } from '#lib/components/ui/textarea/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import { m } from '#lib/paraglide/messages.js';
 	import { toast } from 'svelte-sonner';
-	import { UseClipboard } from '#lib/hooks/use-clipboard.svelte';
-	import { environmentStore } from '#lib/stores/environment.store.svelte';
-	import { hasPermission } from '#lib/utils/auth';
-	import { queryKeys } from '#lib/query/query-keys';
-	import type { FileEntry } from '#lib/types/shared';
-	import { sortFileEntries, type FileProvider } from '#lib/components/file-browser';
-	import type { UploadProgressCallback } from '#lib/services/upload-service';
+	import { UseClipboard } from '#lib/hooks/use-clipboard.svelte.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import { hasPermission } from '#lib/utils/auth.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
+	import type { FileEntry } from '#lib/types/shared.js';
+	import { sortFileEntries, type FileProvider } from '#lib/components/file-browser/index.js';
+	import type { UploadProgressCallback } from '#lib/services/upload-service.js';
 	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
 
 	let {

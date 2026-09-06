@@ -1,8 +1,8 @@
 import Convert from 'ansi-to-html';
 import { Temporal } from 'temporal-polyfill';
 import { z } from 'zod/v4';
-import { getLocale, setLocale as setParaglideLocale, type Locale } from '#lib/paraglide/runtime';
-import { timeFormatStore } from '#lib/stores/time-format.store.svelte';
+import { getLocale, setLocale as setParaglideLocale, type Locale } from '#lib/paraglide/runtime.js';
+import { timeFormatStore } from '#lib/stores/time-format.store.svelte.js';
 
 // --- String helpers ---
 
@@ -85,19 +85,10 @@ function formatBytes(value: number, options?: BytesFormatOptions): string | null
 
 	const normalizedUnit = unit.toLowerCase() as keyof typeof bytesUnitMap;
 	if (!unit || !bytesUnitMap[normalizedUnit]) {
-		if (magnitude >= bytesUnitMap.pb) {
-			unit = 'PB';
-		} else if (magnitude >= bytesUnitMap.tb) {
-			unit = 'TB';
-		} else if (magnitude >= bytesUnitMap.gb) {
-			unit = 'GB';
-		} else if (magnitude >= bytesUnitMap.mb) {
-			unit = 'MB';
-		} else if (magnitude >= bytesUnitMap.kb) {
-			unit = 'KB';
-		} else {
-			unit = 'B';
-		}
+		unit =
+			(Object.keys(bytesUnitMap) as (keyof typeof bytesUnitMap)[])
+				.findLast((candidate) => magnitude >= bytesUnitMap[candidate])
+				?.toUpperCase() ?? 'B';
 	}
 
 	const divisor = bytesUnitMap[unit.toLowerCase() as keyof typeof bytesUnitMap];
@@ -340,12 +331,17 @@ function relativeTimeFormatterInternal(numeric: 'always' | 'auto'): Intl.Relativ
 	return formatter;
 }
 
-export function formatRelativeTime(value: InstantInput, options: RelativeTimeFormatOptions = {}): string {
+function relativeTimeContextInternal(value: InstantInput, options: RelativeTimeFormatOptions) {
 	const target = parseInstant(value);
 	const base = options.base ? parseInstant(options.base) : Temporal.Now.instant();
-	if (!target || !base) return '';
+	if (!target || !base) return null;
+	return { target, base, relative: relativeTimeValueInternal(target, base) };
+}
 
-	const relative = relativeTimeValueInternal(target, base);
+export function formatRelativeTime(value: InstantInput, options: RelativeTimeFormatOptions = {}): string {
+	const context = relativeTimeContextInternal(value, options);
+	if (!context) return '';
+	const { relative } = context;
 	const numeric = relative.value === 0 ? 'auto' : 'always';
 	return relativeTimeFormatterInternal(numeric).format(relative.value, relative.unit);
 }
@@ -366,11 +362,9 @@ function elapsedTimeFormatterInternal(unit: RelativeTimeUnit): Intl.NumberFormat
 }
 
 export function formatElapsedTime(value: InstantInput, options: RelativeTimeFormatOptions = {}): string {
-	const target = parseInstant(value);
-	const base = options.base ? parseInstant(options.base) : Temporal.Now.instant();
-	if (!target || !base) return '';
-
-	const relative = relativeTimeValueInternal(target, base);
+	const context = relativeTimeContextInternal(value, options);
+	if (!context) return '';
+	const { target, base, relative } = context;
 	const elapsedValue =
 		relative.value === 0
 			? Math.round(Math.abs(target.epochMilliseconds - base.epochMilliseconds) / 1000)

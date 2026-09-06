@@ -1,8 +1,8 @@
-import { templateService } from '#lib/services/template-service';
-import { queryKeys } from '#lib/query/query-keys';
-import type { Template, TemplateRegistry } from '#lib/types/swarm';
-import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
-import { resolveInitialTableRequest } from '#lib/utils/tables';
+import { templateService } from '#lib/services/template-service.js';
+import { queryKeys } from '#lib/query/query-keys.js';
+import type { Template, TemplateRegistry } from '#lib/types/swarm.js';
+import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+import { resolveInitialTableRequest } from '#lib/utils/tables.js';
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({

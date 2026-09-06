@@ -1,38 +1,23 @@
-import { m } from '#lib/paraglide/messages';
-import type { SwarmNodeAgentState } from '#lib/types/swarm';
+import { m } from '#lib/paraglide/messages.js';
+import type { SwarmNodeAgentState } from '#lib/types/swarm.js';
+
+const agentStateDisplay = new Map(
+	Object.entries({
+		pending: { label: m.common_pending, variant: 'amber' },
+		offline: { label: m.common_offline, variant: 'red' },
+		connected: { label: m.swarm_node_agent_status_connected, variant: 'green' },
+		mismatched: { label: m.swarm_node_agent_status_mismatched, variant: 'amber' },
+		ambiguous: { label: m.swarm_node_agent_status_ambiguous, variant: 'amber' },
+		none: { label: m.swarm_node_agent_status_none, variant: 'gray' }
+	} satisfies Record<SwarmNodeAgentState, { label: () => string; variant: 'green' | 'red' | 'amber' | 'gray' }>)
+);
 
 export function getSwarmNodeAgentLabel(state: SwarmNodeAgentState | null | undefined): string {
-	switch (state) {
-		case 'pending':
-			return m.common_pending();
-		case 'offline':
-			return m.common_offline();
-		case 'connected':
-			return m.swarm_node_agent_status_connected();
-		case 'mismatched':
-			return m.swarm_node_agent_status_mismatched();
-		case 'ambiguous':
-			return m.swarm_node_agent_status_ambiguous();
-		case 'none':
-		default:
-			return m.swarm_node_agent_status_none();
-	}
+	return (agentStateDisplay.get(state ?? 'none')?.label ?? m.swarm_node_agent_status_none)();
 }
 
 export function getSwarmNodeAgentVariant(state: SwarmNodeAgentState | null | undefined): 'green' | 'red' | 'amber' | 'gray' {
-	switch (state) {
-		case 'connected':
-			return 'green';
-		case 'offline':
-			return 'red';
-		case 'pending':
-		case 'mismatched':
-		case 'ambiguous':
-			return 'amber';
-		case 'none':
-		default:
-			return 'gray';
-	}
+	return agentStateDisplay.get(state ?? 'none')?.variant ?? 'gray';
 }
 
 export function getSwarmNodeAgentActionLabel(state: SwarmNodeAgentState | null | undefined): string {

@@ -3,11 +3,11 @@
 	import FormInput from '#lib/components/form/form-input.svelte';
 	import CodePanel from '#lib/components/code-panel.svelte';
 	import EditableName from '../../../projects/components/EditableName.svelte';
-	import { ComposeEditorSplit } from '#lib/components/compose';
+	import { ComposeEditorSplit } from '#lib/components/compose/index.js';
 	import { goto } from '$app/navigation';
-	import { m } from '#lib/paraglide/messages';
-	import { preventDefault, type FormInputs } from '#lib/utils/settings';
-	import { ArrowLeftIcon } from '#lib/icons';
+	import { m } from '#lib/paraglide/messages.js';
+	import { preventDefault, type FormInputs } from '#lib/utils/settings.js';
+	import { ArrowLeftIcon } from '#lib/icons/index.js';
 	import type { Writable } from 'svelte/store';
 	import type { Snippet } from 'svelte';
 

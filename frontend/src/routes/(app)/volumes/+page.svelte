@@ -1,19 +1,19 @@
 <script lang="ts">
 	// fallow-ignore-file code-duplication -- volume and network pages share ResourceListPageState lifecycle wiring but retain domain-specific queries and mutations
-	import { VolumesIcon, VolumeUnusedIcon } from '#lib/icons';
+	import { VolumesIcon, VolumeUnusedIcon } from '#lib/icons/index.js';
 	import { toast } from 'svelte-sonner';
 	import CreateVolumeSheet from '#lib/components/sheets/create-volume-sheet.svelte';
-	import type { VolumeCreateRequest, VolumeUsageCounts } from '#lib/types/docker';
+	import type { VolumeCreateRequest, VolumeUsageCounts } from '#lib/types/docker.js';
 	import VolumeTable from './volume-table.svelte';
-	import { m } from '#lib/paraglide/messages';
-	import { volumeService } from '#lib/services/volume-service';
-	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte';
-	import { hasPermission } from '#lib/utils/auth';
-	import { queryKeys } from '#lib/query/query-keys';
+	import { m } from '#lib/paraglide/messages.js';
+	import { volumeService } from '#lib/services/volume-service.js';
+	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
+	import { hasPermission } from '#lib/utils/auth.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { createMutation, createQuery, useQueryClient, keepPreviousData } from '@tanstack/svelte-query';
-	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
+	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 
 	let { data } = $props();
 	const queryClient = useQueryClient();

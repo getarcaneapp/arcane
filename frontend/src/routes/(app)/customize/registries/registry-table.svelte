@@ -4,20 +4,20 @@
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { toast } from 'svelte-sonner';
-	import { handleApiResultWithCallbacks, tryCatch } from '#lib/utils/api';
-	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
-	import type { ContainerRegistry, ContainerRegistryPullUsage } from '#lib/types/docker';
-	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '#lib/components/arcane-table';
+	import { handleApiResultWithCallbacks, tryCatch } from '#lib/utils/api.js';
+	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import type { ContainerRegistry, ContainerRegistryPullUsage } from '#lib/types/docker.js';
+	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '#lib/components/arcane-table/index.js';
 	import { UniversalMobileCard } from '#lib/components/arcane-table/index.js';
 	import EnabledStatusCell from '#lib/components/arcane-table/cells/enabled-status-cell.svelte';
 	import CreatedAtCell from '#lib/components/arcane-table/cells/created-at-cell.svelte';
-	import { m } from '#lib/paraglide/messages';
-	import { containerRegistryService } from '#lib/services/container-registry-service';
-	import { RegistryIcon, UserIcon, ExternalLinkIcon, EditIcon, TrashIcon, TestIcon } from '#lib/icons';
-	import { hasPermission } from '#lib/utils/auth';
-	import { getRegistryDisplayName } from '#lib/utils/registry';
+	import { m } from '#lib/paraglide/messages.js';
+	import { containerRegistryService } from '#lib/services/container-registry-service.js';
+	import { RegistryIcon, UserIcon, ExternalLinkIcon, EditIcon, TrashIcon, TestIcon } from '#lib/icons/index.js';
+	import { hasPermission } from '#lib/utils/auth.js';
+	import { getRegistryDisplayName } from '#lib/utils/registry.js';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
-	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions';
+	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions.js';
 
 	let {
 		registries = $bindable(),

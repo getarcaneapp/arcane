@@ -2,8 +2,8 @@
 	import type { Snippet } from 'svelte';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import { EllipsisIcon } from '#lib/icons';
-	import { m } from '#lib/paraglide/messages';
+	import { EllipsisIcon } from '#lib/icons/index.js';
+	import { m } from '#lib/paraglide/messages.js';
 
 	let {
 		children,

@@ -1,16 +1,16 @@
 <script lang="ts">
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { goto, refreshAll } from '$app/navigation';
-	import { Badge } from '#lib/components/ui/badge';
-	import { m } from '#lib/paraglide/messages';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { m } from '#lib/paraglide/messages.js';
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
 	import { type TabItem } from '#lib/components/tab-bar/index.js';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
-	import { openConfirmDialog } from '#lib/components/confirm-dialog';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import { toast } from 'svelte-sonner';
-	import { tryCatch } from '#lib/utils/api';
-	import { handleApiResultWithCallbacks } from '#lib/utils/api';
-	import { swarmService } from '#lib/services/swarm-service';
+	import { tryCatch } from '#lib/utils/api.js';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { swarmService } from '#lib/services/swarm-service.js';
 	import type {
 		RawServiceNetworkAttachment,
 		RawServiceVirtualIP,
@@ -23,7 +23,7 @@
 		SwarmServiceMount,
 		SwarmServicePort,
 		SwarmServiceModeSpec
-	} from '#lib/types/swarm';
+	} from '#lib/types/swarm.js';
 	import ServiceEditorDialog from '#lib/components/dialogs/service-editor-dialog.svelte';
 	import ServiceOverview from '../components/ServiceOverview.svelte';
 	import ServiceLogsPanel from '../components/ServiceLogsPanel.svelte';
@@ -43,16 +43,16 @@
 		EditIcon,
 		RedeployIcon,
 		TrashIcon
-	} from '#lib/icons';
+	} from '#lib/icons/index.js';
 	import {
 		getSwarmServiceModeFromSpec,
 		getSwarmServiceModeLabel,
 		getSwarmServiceModeVariant,
 		isSwarmServiceModeScalable
-	} from '#lib/utils/docker';
-	import { hasPermission } from '#lib/utils/auth';
-	import { environmentStore } from '#lib/stores/environment.store.svelte';
-	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte';
+	} from '#lib/utils/docker.js';
+	import { hasPermission } from '#lib/utils/auth.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
 
 	let { data } = $props();
 	let service = $derived(data?.service as SwarmServiceInspect);

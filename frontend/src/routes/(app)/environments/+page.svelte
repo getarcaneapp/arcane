@@ -4,15 +4,15 @@
 	import { page } from '$app/state';
 	import NewEnvironmentSheet from '#lib/components/sheets/new-environment-sheet.svelte';
 	import EnvironmentTable from './environment-table.svelte';
-	import { m } from '#lib/paraglide/messages';
-	import { environmentManagementService } from '#lib/services/env-mgmt-service';
+	import { m } from '#lib/paraglide/messages.js';
+	import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
 	import { ResourcePageLayout, type ActionButton } from '#lib/layouts/index.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte';
-	import { simpleRefresh } from '#lib/utils/api';
-	import { hasPermission } from '#lib/utils/auth';
-	import { DownloadIcon, UpdateIcon } from '#lib/icons';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import { simpleRefresh } from '#lib/utils/api.js';
+	import { hasPermission } from '#lib/utils/auth.js';
+	import { DownloadIcon, UpdateIcon } from '#lib/icons/index.js';
 	import UpdateAllDialog from '#lib/components/dialogs/update-all-dialog.svelte';
-	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions';
+	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions.js';
 
 	let { data } = $props();
 

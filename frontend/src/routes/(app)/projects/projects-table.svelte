@@ -1,41 +1,41 @@
 <script lang="ts">
-	import type { Project, ProjectTagColor, ProjectTagOption } from '#lib/types/swarm';
+	import type { Project, ProjectTagColor, ProjectTagOption } from '#lib/types/swarm.js';
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
-	import { BoxIcon, EditIcon, StartIcon, RestartIcon, StopIcon, TrashIcon, RedeployIcon } from '#lib/icons';
-	import { Spinner } from '#lib/components/ui/spinner/index.js';
+	import ContainerActionMenuItem from '#lib/components/arcane-table/cells/container-action-menu-item.svelte';
+	import { BoxIcon, EditIcon, StartIcon, RestartIcon, StopIcon, TrashIcon, RedeployIcon } from '#lib/icons/index.js';
 	import { goto } from '$app/navigation';
 	import { mode } from 'mode-watcher';
 	import { toast } from 'svelte-sonner';
-	import { Badge } from '#lib/components/ui/badge';
-	import * as ArcaneTooltip from '#lib/components/arcane-tooltip';
-	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
-	import { getStatusVariant, getThemedIconUrl } from '#lib/utils/docker';
-	import { capitalizeFirstLetter, formatDateTimeShort } from '#lib/utils/formatting';
-	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '#lib/components/arcane-table';
-	import { UniversalMobileCard } from '#lib/components/arcane-table';
-	import { m } from '#lib/paraglide/messages';
-	import { imageService } from '#lib/services/image-service';
-	import { projectService } from '#lib/services/project-service';
-	import { FolderOpenIcon, LayersIcon, CalendarIcon, ProjectsIcon, GitBranchIcon, RefreshIcon } from '#lib/icons';
-	import { environmentStore } from '#lib/stores/environment.store.svelte';
-	import { hasPermission } from '#lib/utils/auth';
-	import { hasAnyLoadingState } from '#lib/utils/bulk-actions';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
+	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import { getStatusVariant, getThemedIconUrl } from '#lib/utils/docker.js';
+	import { capitalizeFirstLetter, formatDateTimeShort } from '#lib/utils/formatting.js';
+	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '#lib/components/arcane-table/index.js';
+	import { UniversalMobileCard } from '#lib/components/arcane-table/index.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { imageService } from '#lib/services/image-service.js';
+	import { projectService } from '#lib/services/project-service.js';
+	import { FolderOpenIcon, LayersIcon, CalendarIcon, ProjectsIcon, GitBranchIcon, RefreshIcon } from '#lib/icons/index.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import { hasPermission } from '#lib/utils/auth.js';
+	import { hasAnyLoadingState } from '#lib/utils/bulk-actions.js';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import IconImage from '#lib/components/icon-image.svelte';
 	import type { ActionStatus } from './projects-table.helpers';
 	import { createProjectActions } from './projects-table.actions';
 	import ProjectUpdateItem from '#lib/components/project-update-item.svelte';
 	import ProjectTagEditor from '#lib/components/project-tag-editor.svelte';
-	import { Label } from '#lib/components/ui/label';
+	import { Label } from '#lib/components/ui/label/index.js';
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import {
 		getProjectUpdateStatus,
 		getProjectUpdateText,
 		getProjectUpdateTooltip,
 		getProjectUpdateVariant
-	} from '#lib/utils/docker';
+	} from '#lib/utils/docker.js';
 
 	let {
 		projects = $bindable(),
@@ -307,15 +307,6 @@
 	</span>
 {/snippet}
 
-{#snippet TagsField(item: Project)}
-	<ProjectTagEditor
-		tags={item.tags ?? []}
-		availableTags={tagCatalog}
-		canEdit={canUpdateProject && !item.isDiscovered}
-		onToggle={(name, attached, color) => handleTagToggle(item, name, attached, color)}
-	/>
-{/snippet}
-
 {#snippet StatusCell({ item }: { item: Project })}
 	{@const statusTooltip = getStatusTooltip(item)}
 	{#if statusTooltip}
@@ -392,8 +383,8 @@
 			{
 				label: m.common_tags(),
 				type: 'component',
-				getValue: (item: Project) => item,
-				component: TagsField,
+				getValue: (item: Project) => ({ item }),
+				component: TagsCell,
 				show: mobileFieldVisibility['tags'] ?? true
 			},
 			{
@@ -438,6 +429,8 @@
 
 {#snippet RowActions({ item }: { item: Project })}
 	{@const status = actionStatus[item.id]}
+	{@const lifecycleDisabled = item.isArchived || isAnyLoading}
+	{@const archivedTitle = item.isArchived ? m.projects_archived_badge() : undefined}
 	<RowActionsMenu>
 		<DropdownMenu.Item onclick={() => goto(`/projects/${item.id}`)} disabled={isAnyLoading}>
 			<EditIcon class="size-4" />
@@ -445,134 +438,102 @@
 		</DropdownMenu.Item>
 
 		{#if item.gitOpsManagedBy && canUpdateProject}
-			<DropdownMenu.Item
+			<ContainerActionMenuItem
 				onclick={() => handleSyncFromGit(item.id, item.gitOpsManagedBy!)}
-				disabled={status === 'syncing' || isAnyLoading}
-			>
-				{#if status === 'syncing'}
-					<Spinner class="size-4" />
-				{:else}
-					<RefreshIcon class="size-4" />
-				{/if}
-				{m.git_sync_from_git()}
-			</DropdownMenu.Item>
+				disabled={isAnyLoading}
+				icon={RefreshIcon}
+				label={m.git_sync_from_git()}
+				loading={status === 'syncing'}
+			/>
 		{/if}
 
 		<DropdownMenu.Separator />
 
 		{#if item.status !== 'running'}
-			{#if canDeployProject}
-				<DropdownMenu.Item
+			<IfPermitted perm="projects:deploy" envId={currentEnvId}>
+				<ContainerActionMenuItem
 					onclick={() => performProjectAction('start', item.id)}
-					disabled={item.isArchived || status === 'starting' || isAnyLoading}
-					title={item.isArchived ? m.projects_archived_badge() : undefined}
-				>
-					{#if status === 'starting'}
-						<Spinner class="size-4" />
-					{:else}
-						<StartIcon class="size-4" />
-					{/if}
-					{m.common_up()}
-				</DropdownMenu.Item>
-			{/if}
+					disabled={lifecycleDisabled}
+					title={archivedTitle}
+					icon={StartIcon}
+					label={m.common_up()}
+					loading={status === 'starting'}
+				/>
+			</IfPermitted>
 		{:else}
-			{#if canDownProject}
-				<DropdownMenu.Item
+			<IfPermitted perm="projects:down" envId={currentEnvId}>
+				<ContainerActionMenuItem
 					onclick={() => performProjectAction('stop', item.id)}
-					disabled={item.isArchived || status === 'stopping' || isAnyLoading}
-					title={item.isArchived ? m.projects_archived_badge() : undefined}
-				>
-					{#if status === 'stopping'}
-						<Spinner class="size-4" />
-					{:else}
-						<StopIcon class="size-4" />
-					{/if}
-					{m.common_down()}
-				</DropdownMenu.Item>
-			{/if}
+					disabled={lifecycleDisabled}
+					title={archivedTitle}
+					icon={StopIcon}
+					label={m.common_down()}
+					loading={status === 'stopping'}
+				/>
+			</IfPermitted>
 
 			<IfPermitted perm="projects:restart">
-				<DropdownMenu.Item
+				<ContainerActionMenuItem
 					onclick={() => performProjectAction('restart', item.id)}
-					disabled={item.isArchived || status === 'restarting' || isAnyLoading}
-					title={item.isArchived ? m.projects_archived_badge() : undefined}
-				>
-					{#if status === 'restarting'}
-						<Spinner class="size-4" />
-					{:else}
-						<RestartIcon class="size-4" />
-					{/if}
-					{m.common_restart()}
-				</DropdownMenu.Item>
+					disabled={lifecycleDisabled}
+					title={archivedTitle}
+					icon={RestartIcon}
+					label={m.common_restart()}
+					loading={status === 'restarting'}
+				/>
 			</IfPermitted>
 		{/if}
 
-		{#if canDeployProject}
+		<IfPermitted perm="projects:deploy" envId={currentEnvId}>
 			{#if item.redeployDisabled}
 				<DropdownMenu.Item disabled title={m.common_redeploy_disabled_arcane_self()}>
 					<RedeployIcon class="size-4 opacity-50" />
 					{m.compose_pull_redeploy()}
 				</DropdownMenu.Item>
 			{:else}
-				<DropdownMenu.Item
+				<ContainerActionMenuItem
 					onclick={() => performProjectAction('redeploy', item.id)}
-					disabled={item.isArchived || status === 'redeploying' || isAnyLoading}
-					title={item.isArchived ? m.projects_archived_badge() : undefined}
-				>
-					{#if status === 'redeploying'}
-						<Spinner class="size-4" />
-					{:else}
-						<RedeployIcon class="size-4" />
-					{/if}
-					{m.compose_pull_redeploy()}
-				</DropdownMenu.Item>
+					disabled={lifecycleDisabled}
+					title={archivedTitle}
+					icon={RedeployIcon}
+					label={m.compose_pull_redeploy()}
+					loading={status === 'redeploying'}
+				/>
 			{/if}
-		{/if}
+		</IfPermitted>
 
 		<DropdownMenu.Separator />
 
-		{#if canArchiveProject}
+		<IfPermitted perm="projects:archive" envId={currentEnvId}>
 			{#if item.isArchived}
-				<DropdownMenu.Item
+				<ContainerActionMenuItem
 					onclick={() => performProjectAction('unarchive', item.id)}
-					disabled={status === 'unarchiving' || isAnyLoading}
-				>
-					{#if status === 'unarchiving'}
-						<Spinner class="size-4" />
-					{:else}
-						<BoxIcon class="size-4" />
-					{/if}
-					{m.projects_unarchive()}
-				</DropdownMenu.Item>
+					disabled={isAnyLoading}
+					icon={BoxIcon}
+					label={m.projects_unarchive()}
+					loading={status === 'unarchiving'}
+				/>
 			{:else}
-				<DropdownMenu.Item
+				<ContainerActionMenuItem
 					onclick={() => performProjectAction('archive', item.id)}
-					disabled={isProjectArchiveBlocked(item) || status === 'archiving' || isAnyLoading}
+					disabled={isProjectArchiveBlocked(item) || isAnyLoading}
 					title={isProjectArchiveBlocked(item) ? m.projects_archive_requires_stopped() : undefined}
-				>
-					{#if status === 'archiving'}
-						<Spinner class="size-4" />
-					{:else}
-						<BoxIcon class="size-4" />
-					{/if}
-					{m.projects_archive()}
-				</DropdownMenu.Item>
+					icon={BoxIcon}
+					label={m.projects_archive()}
+					loading={status === 'archiving'}
+				/>
 			{/if}
-		{/if}
+		</IfPermitted>
 
 		<IfPermitted perm="projects:delete">
-			<DropdownMenu.Item
-				variant="destructive"
+			<ContainerActionMenuItem
+				destructive
 				onclick={() => handleDestroyProject(item.id)}
-				disabled={status === 'destroying' || isAnyLoading}
-			>
-				{#if status === 'destroying'}
-					<Spinner class="size-4" />
-				{:else}
-					<TrashIcon class="size-4" />
-				{/if}
-				{m.compose_destroy()}
-			</DropdownMenu.Item>
+				disabled={isAnyLoading}
+				icon={TrashIcon}
+				label={m.compose_destroy()}
+				loading={status === 'destroying'}
+			/>
 		</IfPermitted>
 	</RowActionsMenu>
 {/snippet}

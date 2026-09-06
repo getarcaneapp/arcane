@@ -2,13 +2,13 @@
 	import { Temporal } from 'temporal-polyfill';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
-	import { cn } from '#lib/utils';
-	import { m } from '#lib/paraglide/messages';
-	import { HashIcon, HealthIcon, TagIcon } from '#lib/icons';
-	import { DetailMetaStrip } from '#lib/components/resource-detail';
-	import type { Environment, EnvironmentStatus } from '#lib/types/environment';
-	import type { AppVersionInformation } from '#lib/types/settings';
-	import { formatRelativeTime } from '#lib/utils/formatting';
+	import { cn } from '#lib/utils.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { HashIcon, HealthIcon, TagIcon } from '#lib/icons/index.js';
+	import { DetailMetaStrip } from '#lib/components/resource-detail/index.js';
+	import type { Environment, EnvironmentStatus } from '#lib/types/environment.js';
+	import type { AppVersionInformation } from '#lib/types/settings.js';
+	import { formatRelativeTime } from '#lib/utils/formatting.js';
 	import { createSubscriber } from 'svelte/reactivity';
 
 	let {

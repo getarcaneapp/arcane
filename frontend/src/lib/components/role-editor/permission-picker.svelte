@@ -1,11 +1,11 @@
 <script lang="ts">
-	import * as Accordion from '#lib/components/ui/accordion';
-	import { Checkbox } from '#lib/components/ui/checkbox';
-	import { Input } from '#lib/components/ui/input';
-	import { Badge } from '#lib/components/ui/badge';
-	import type { PermissionsManifest, PermissionResource, PermissionAction, PermissionPreset } from '#lib/types/auth';
-	import { normalizePermissionSelection } from '#lib/utils/permissions';
-	import { m } from '#lib/paraglide/messages';
+	import * as Accordion from '#lib/components/ui/accordion/index.js';
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import type { PermissionsManifest, PermissionResource, PermissionAction, PermissionPreset } from '#lib/types/auth.js';
+	import { normalizePermissionSelection } from '#lib/utils/permissions.js';
+	import { m } from '#lib/paraglide/messages.js';
 
 	type Props = {
 		manifest: PermissionsManifest;

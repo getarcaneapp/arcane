@@ -1,5 +1,5 @@
-import type { JobStatus } from '#lib/types/settings';
-import { m } from '#lib/paraglide/messages';
+import type { JobStatus } from '#lib/types/settings.js';
+import { m } from '#lib/paraglide/messages.js';
 export function jobStatusLabel(status: string): string {
 	const labels: Record<string, () => string> = {
 		queued: m.jobs_status_queued,

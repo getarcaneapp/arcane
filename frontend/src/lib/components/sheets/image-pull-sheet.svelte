@@ -3,10 +3,10 @@
 	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
 	import FormInput from '#lib/components/form/form-input.svelte';
 	import { z } from 'zod/v4';
-	import { createForm, preventDefault } from '#lib/utils/settings';
+	import { createForm, preventDefault } from '#lib/utils/settings.js';
 	import { toast } from 'svelte-sonner';
-	import { m } from '#lib/paraglide/messages';
-	import { imageService } from '#lib/services/image-service';
+	import { m } from '#lib/paraglide/messages.js';
+	import { imageService } from '#lib/services/image-service.js';
 
 	type ImagePullFormProps = {
 		open: boolean;

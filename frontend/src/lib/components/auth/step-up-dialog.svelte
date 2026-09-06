@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { startAuthentication, type PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/browser';
-	import { AlertIcon, ApiKeyIcon } from '#lib/icons';
-	import { m } from '#lib/paraglide/messages';
-	import { passkeyService } from '#lib/services/passkey-service';
-	import type { PasskeyChallenge, StepUpGrant } from '#lib/types/auth';
+	import { AlertIcon, ApiKeyIcon } from '#lib/icons/index.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { passkeyService } from '#lib/services/passkey-service.js';
+	import type { PasskeyChallenge, StepUpGrant } from '#lib/types/auth.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
-	import * as Dialog from '#lib/components/ui/dialog';
-	import { Button } from '#lib/components/ui/button';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
 	import * as InputGroup from '#lib/components/ui/input-group/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 

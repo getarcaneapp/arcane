@@ -6,17 +6,17 @@
 		GitOpsSyncCreateDto,
 		GitOpsSyncUpdateDto,
 		ImportGitOpsSyncRequest
-	} from '#lib/types/automation';
+	} from '#lib/types/automation.js';
 	import GitOpsSyncFormSheet from '#lib/components/dialogs/gitops-sync-dialog.svelte';
 	import GitOpsImportDialog from '#lib/components/dialogs/gitops-import-dialog.svelte';
-	import { extractApiErrorMessage, handleApiResultWithCallbacks, tryCatch } from '#lib/utils/api';
-	import { m } from '#lib/paraglide/messages';
-	import { gitOpsSyncService } from '#lib/services/gitops-sync-service';
+	import { extractApiErrorMessage, handleApiResultWithCallbacks, tryCatch } from '#lib/utils/api.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { gitOpsSyncService } from '#lib/services/gitops-sync-service.js';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import SyncTable from './sync-table.svelte';
-	import { RefreshIcon, ClockIcon, SuccessIcon, GitBranchIcon, UploadIcon } from '#lib/icons';
+	import { RefreshIcon, ClockIcon, SuccessIcon, GitBranchIcon, UploadIcon } from '#lib/icons/index.js';
 
 	let { data } = $props();
 

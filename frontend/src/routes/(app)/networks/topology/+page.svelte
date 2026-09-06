@@ -1,11 +1,11 @@
 <script lang="ts">
 	import { createQuery } from '@tanstack/svelte-query';
 	import NetworkDiagram from '#lib/components/network-diagram/network-diagram.svelte';
-	import { queryKeys } from '#lib/query/query-keys';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { ResourcePageLayout, type ActionButton } from '#lib/layouts/index.js';
-	import { m } from '#lib/paraglide/messages';
-	import { networkService } from '#lib/services/network-service';
-	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import { m } from '#lib/paraglide/messages.js';
+	import { networkService } from '#lib/services/network-service.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 
 	let { data } = $props();
 

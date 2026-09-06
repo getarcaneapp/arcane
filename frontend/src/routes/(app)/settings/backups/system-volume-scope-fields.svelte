@@ -1,13 +1,13 @@
 <script lang="ts">
 	import LabeledSwitch from '#lib/components/form/labeled-switch.svelte';
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
-	import { Input } from '#lib/components/ui/input';
-	import { ScrollArea } from '#lib/components/ui/scroll-area';
-	import * as Checkbox from '#lib/components/ui/checkbox';
-	import { Label } from '#lib/components/ui/label';
-	import { Badge } from '#lib/components/ui/badge';
-	import { LoadingSpinnerIcon } from '#lib/icons';
-	import type { SystemVolumeBackupOption, SystemVolumeBackupSelectionMode } from '#lib/types/system-backup';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { ScrollArea } from '#lib/components/ui/scroll-area/index.js';
+	import * as Checkbox from '#lib/components/ui/checkbox/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { LoadingSpinnerIcon } from '#lib/icons/index.js';
+	import type { SystemVolumeBackupOption, SystemVolumeBackupSelectionMode } from '#lib/types/system-backup.js';
 	import * as m from '#lib/paraglide/messages.js';
 
 	let {

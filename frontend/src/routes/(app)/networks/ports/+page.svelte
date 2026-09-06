@@ -2,10 +2,10 @@
 	import { untrack } from 'svelte';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { ResourcePageLayout, type ActionButton } from '#lib/layouts/index.js';
-	import { m } from '#lib/paraglide/messages';
-	import { portService } from '#lib/services/port-service';
-	import { environmentStore } from '#lib/stores/environment.store.svelte';
-	import { queryKeys } from '#lib/query/query-keys';
+	import { m } from '#lib/paraglide/messages.js';
+	import { portService } from '#lib/services/port-service.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import PortTable from './port-table.svelte';
 
 	let { data } = $props();

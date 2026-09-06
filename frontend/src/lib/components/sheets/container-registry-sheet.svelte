@@ -9,11 +9,11 @@
 		ContainerRegistryCreateDto,
 		ContainerRegistryUpdateDto,
 		RegistryType
-	} from '#lib/types/docker';
+	} from '#lib/types/docker.js';
 	import { z } from 'zod/v4';
-	import { createForm, preventDefault } from '#lib/utils/settings';
-	import { parseLines } from '#lib/utils/form-parsers';
-	import { m } from '#lib/paraglide/messages';
+	import { createForm, preventDefault } from '#lib/utils/settings.js';
+	import { parseLines } from '#lib/utils/form-parsers.js';
+	import { m } from '#lib/paraglide/messages.js';
 
 	type ContainerRegistryFormProps = {
 		open: boolean;

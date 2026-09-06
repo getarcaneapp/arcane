@@ -2,8 +2,8 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { cn } from '#lib/utils.js';
-	import { m } from '#lib/paraglide/messages';
-	import { ArrowUpIcon, ArrowDownIcon, ArrowsUpDownIcon, EyeOffIcon } from '#lib/icons';
+	import { m } from '#lib/paraglide/messages.js';
+	import { ArrowUpIcon, ArrowDownIcon, ArrowsUpDownIcon, EyeOffIcon } from '#lib/icons/index.js';
 	import type { SvelteHTMLElements } from 'svelte/elements';
 
 	type DivAttributes = SvelteHTMLElements['div'];

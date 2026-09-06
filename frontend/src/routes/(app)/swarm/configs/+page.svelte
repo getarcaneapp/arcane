@@ -1,10 +1,10 @@
 <script lang="ts">
 	import SwarmKvPage from '#lib/components/swarm/swarm-kv-page.svelte';
-	import { TemplateIcon } from '#lib/icons';
-	import { m } from '#lib/paraglide/messages';
-	import { swarmService } from '#lib/services/swarm-service';
-	import { environmentStore } from '#lib/stores/environment.store.svelte';
-	import { hasPermission } from '#lib/utils/auth';
+	import { TemplateIcon } from '#lib/icons/index.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { swarmService } from '#lib/services/swarm-service.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import { hasPermission } from '#lib/utils/auth.js';
 
 	const currentEnvId = $derived(environmentStore.selected?.id);
 	const canManageConfigs = $derived(hasPermission('swarm:configs', currentEnvId));

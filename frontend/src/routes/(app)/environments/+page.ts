@@ -1,9 +1,9 @@
 import type { PageLoad } from './$types';
-import type { SearchPaginationSortRequest } from '#lib/types/shared';
-import { environmentManagementService } from '#lib/services/env-mgmt-service';
-import { resolveInitialTableRequest } from '#lib/utils/tables';
-import { queryKeys } from '#lib/query/query-keys';
-import { throwPageLoadError } from '#lib/utils/api';
+import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
+import { resolveInitialTableRequest } from '#lib/utils/tables.js';
+import { queryKeys } from '#lib/query/query-keys.js';
+import { throwPageLoadError } from '#lib/utils/api.js';
 
 export const load: PageLoad = async ({ parent }) => {
 	const { queryClient } = await parent();

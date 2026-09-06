@@ -1,11 +1,11 @@
 import { toast } from 'svelte-sonner';
-import { m } from '#lib/paraglide/messages';
+import { m } from '#lib/paraglide/messages.js';
 import {
 	joinWorkspaceFilePath,
 	validateWorkspaceFileName,
 	workspaceFileParentPath,
 	type WorkspaceDisplayEntry
-} from '#lib/utils/workspace-files';
+} from '#lib/utils/workspace-files.js';
 
 export type ProjectWorkspaceEntry = WorkspaceDisplayEntry;
 

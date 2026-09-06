@@ -184,68 +184,37 @@ function expandCandidates(root: SchemaObject, candidate: SchemaObject, visited: 
 
 	expanded.push(candidate);
 
-	const unique = new Set<SchemaObject>();
-	const normalized: SchemaObject[] = [];
-	for (const item of expanded) {
-		if (unique.has(item)) continue;
-		unique.add(item);
-		normalized.push(item);
-	}
+	return [...new Set(expanded)];
+}
 
-	return normalized;
+function getSegmentCandidates(node: SchemaObject, segment: string | number): SchemaObject[] {
+	const candidates: unknown[] = [];
+	if (typeof segment === 'number') {
+		const prefixItems = node['prefixItems'];
+		if (Array.isArray(prefixItems) && segment < prefixItems.length) candidates.push(prefixItems[segment]);
+		candidates.push(node['items']);
+	} else {
+		const properties = asSchemaObject(node['properties']);
+		candidates.push(properties?.[segment]);
+		const patterns = asSchemaObject(node['patternProperties']);
+		if (patterns) candidates.push(...Object.values(patterns));
+		candidates.push(node['additionalProperties']);
+	}
+	return candidates.map(asSchemaObject).filter((candidate): candidate is SchemaObject => candidate !== null);
 }
 
 function getPathCandidates(root: SchemaObject, path: Array<string | number>): SchemaObject[] {
 	let candidates: SchemaObject[] = [root];
-
 	for (const segment of path) {
-		const nextCandidates: SchemaObject[] = [];
-
-		for (const candidate of candidates) {
-			const expanded = expandCandidates(root, candidate, new Set<string>());
-			for (const node of expanded) {
-				if (typeof segment === 'number') {
-					const prefixItems = node['prefixItems'];
-					if (Array.isArray(prefixItems) && segment < prefixItems.length) {
-						const fromPrefix = asSchemaObject(prefixItems[segment]);
-						if (fromPrefix) nextCandidates.push(fromPrefix);
-					}
-
-					const items = asSchemaObject(node['items']);
-					if (items) nextCandidates.push(items);
-					continue;
-				}
-
-				const properties = asSchemaObject(node['properties']);
-				if (properties) {
-					const fromProperty = asSchemaObject(properties[segment]);
-					if (fromProperty) nextCandidates.push(fromProperty);
-				}
-
-				const patternProperties = asSchemaObject(node['patternProperties']);
-				if (patternProperties) {
-					for (const patternValue of Object.values(patternProperties)) {
-						const fromPattern = asSchemaObject(patternValue);
-						if (fromPattern) nextCandidates.push(fromPattern);
-					}
-				}
-
-				const additionalProperties = asSchemaObject(node['additionalProperties']);
-				if (additionalProperties) nextCandidates.push(additionalProperties);
-			}
-		}
-
-		const unique = new Set<SchemaObject>();
-		candidates = [];
-		for (const candidate of nextCandidates) {
-			if (unique.has(candidate)) continue;
-			unique.add(candidate);
-			candidates.push(candidate);
-		}
-
+		candidates = [
+			...new Set(
+				candidates.flatMap((candidate) =>
+					expandCandidates(root, candidate, new Set<string>()).flatMap((node) => getSegmentCandidates(node, segment))
+				)
+			)
+		];
 		if (candidates.length === 0) break;
 	}
-
 	return candidates;
 }
 
@@ -336,88 +305,68 @@ function getArcaneCompletionOptionsForPath(path: Array<string | number>, prefix 
 		.map(toArcaneCompletion);
 }
 
+const ARCANE_SCHEMA_DOCS: Record<string, SchemaDoc> = {
+	'x-arcane': {
+		title: 'x-arcane',
+		description: 'Arcane extension block for project-level metadata such as theme icons, custom URLs, and tags.'
+	},
+	'x-arcane.icon-light': {
+		title: 'x-arcane.icon-light',
+		description: 'Light project icon URL or catalog slug used in dark theme.'
+	},
+	'x-arcane.icon-dark': {
+		title: 'x-arcane.icon-dark',
+		description: 'Dark project icon URL or catalog slug used in light theme.'
+	},
+	'x-arcane.icon': {
+		title: 'x-arcane.icon',
+		description: 'Fallback project icon URL or catalog slug used only when icon-light and icon-dark are not set.'
+	},
+	'x-arcane.urls': {
+		title: 'x-arcane.urls',
+		description: 'Additional project URLs (for example docs, homepage, or dashboards).'
+	},
+	'x-arcane.tags': {
+		title: 'x-arcane.tags',
+		description:
+			'A list of project tag objects. Each tag requires a name and color and is read-only in Arcane while defined here.',
+		examples: ['[{ name: database, color: purple }]']
+	},
+	'x-arcane.tags[].name': {
+		title: 'x-arcane.tags[].name',
+		description: 'Required tag name. Names are trimmed, normalized to lowercase, and limited to 64 characters.'
+	},
+	'x-arcane.tags[].color': {
+		title: 'x-arcane.tags[].color',
+		description: 'Required tag color: gray, purple, blue, green, yellow, orange, red, or pink.'
+	},
+	'services.<name>.x-arcane': {
+		title: 'services.<name>.x-arcane',
+		description: 'Arcane extension block for service-level metadata.'
+	}
+};
+
+function getServiceArcaneSchemaDoc(path: Array<string | number>): SchemaDoc | null {
+	if (path.length === 3) return ARCANE_SCHEMA_DOCS['services.<name>.x-arcane'] ?? null;
+	if (path.length !== 4 || !['icon', 'icon-light', 'icon-dark'].includes(String(path[3]))) return null;
+	return {
+		title: `services.<name>.x-arcane.${String(path[3])}`,
+		description:
+			path[3] === 'icon'
+				? 'Fallback service icon URL or catalog slug used only when icon-light and icon-dark are not set.'
+				: 'Service theme icon URL or catalog slug override.'
+	};
+}
+
 function getArcaneSchemaDocForPath(path: Array<string | number>): SchemaDoc | null {
-	if (path.length === 1 && path[0] === 'x-arcane') {
-		return {
-			title: 'x-arcane',
-			description: 'Arcane extension block for project-level metadata such as theme icons, custom URLs, and tags.'
-		};
+	if (isServiceArcanePath(path.slice(0, 3))) return getServiceArcaneSchemaDoc(path);
+	if (path[0] !== 'x-arcane') return null;
+	if (path.length === 1) return ARCANE_SCHEMA_DOCS['x-arcane'] ?? null;
+	if (path.length === 2 && ['icon', 'icon-light', 'icon-dark', 'urls', 'tags'].includes(String(path[1])))
+		return ARCANE_SCHEMA_DOCS[`x-arcane.${path[1]}`] ?? null;
+	if (path.length === 4 && path[1] === 'tags' && typeof path[2] === 'number') {
+		return ARCANE_SCHEMA_DOCS[`x-arcane.tags[].${String(path[3])}`] ?? null;
 	}
-
-	if (path.length === 2 && path[0] === 'x-arcane' && path[1] === 'icon-light') {
-		return {
-			title: 'x-arcane.icon-light',
-			description: 'Light project icon URL or catalog slug used in dark theme.'
-		};
-	}
-
-	if (path.length === 2 && path[0] === 'x-arcane' && path[1] === 'icon-dark') {
-		return {
-			title: 'x-arcane.icon-dark',
-			description: 'Dark project icon URL or catalog slug used in light theme.'
-		};
-	}
-
-	if (path.length === 2 && path[0] === 'x-arcane' && path[1] === 'icon') {
-		return {
-			title: 'x-arcane.icon',
-			description: 'Fallback project icon URL or catalog slug used only when icon-light and icon-dark are not set.'
-		};
-	}
-
-	if (path.length === 2 && path[0] === 'x-arcane' && path[1] === 'urls') {
-		return {
-			title: 'x-arcane.urls',
-			description: 'Additional project URLs (for example docs, homepage, or dashboards).'
-		};
-	}
-
-	if (path.length === 2 && path[0] === 'x-arcane' && path[1] === 'tags') {
-		return {
-			title: 'x-arcane.tags',
-			description:
-				'A list of project tag objects. Each tag requires a name and color and is read-only in Arcane while defined here.',
-			examples: ['[{ name: database, color: purple }]']
-		};
-	}
-
-	if (path.length === 4 && path[0] === 'x-arcane' && path[1] === 'tags' && typeof path[2] === 'number' && path[3] === 'name') {
-		return {
-			title: 'x-arcane.tags[].name',
-			description: 'Required tag name. Names are trimmed, normalized to lowercase, and limited to 64 characters.'
-		};
-	}
-
-	if (path.length === 4 && path[0] === 'x-arcane' && path[1] === 'tags' && typeof path[2] === 'number' && path[3] === 'color') {
-		return {
-			title: 'x-arcane.tags[].color',
-			description: 'Required tag color: gray, purple, blue, green, yellow, orange, red, or pink.'
-		};
-	}
-
-	if (path.length === 3 && path[0] === 'services' && typeof path[1] === 'string' && path[2] === 'x-arcane') {
-		return {
-			title: 'services.<name>.x-arcane',
-			description: 'Arcane extension block for service-level metadata.'
-		};
-	}
-
-	if (
-		path.length === 4 &&
-		path[0] === 'services' &&
-		typeof path[1] === 'string' &&
-		path[2] === 'x-arcane' &&
-		(path[3] === 'icon' || path[3] === 'icon-light' || path[3] === 'icon-dark')
-	) {
-		return {
-			title: `services.<name>.x-arcane.${String(path[3])}`,
-			description:
-				path[3] === 'icon'
-					? 'Fallback service icon URL or catalog slug used only when icon-light and icon-dark are not set.'
-					: 'Service theme icon URL or catalog slug override.'
-		};
-	}
-
 	return null;
 }
 
@@ -509,21 +458,16 @@ export function getCompletionOptionsForPath(
 
 export function getEnumValueCompletions(schema: SchemaObject | null, path: Array<string | number>): Completion[] {
 	const values = new Set<string>();
-	if (path.length === 4 && path[0] === 'x-arcane' && path[1] === 'tags' && typeof path[2] === 'number' && path[3] === 'color') {
+	if (getArcaneSchemaDocForPath(path)?.title === 'x-arcane.tags[].color') {
 		for (const color of ARCANE_TAG_COLORS) values.add(color);
 	}
 
 	if (schema) {
-		const candidates = getPathCandidates(schema, path);
-		for (const candidate of candidates) {
-			const expanded = expandCandidates(schema, candidate, new Set<string>());
-			for (const node of expanded) {
-				if (!Array.isArray(node['enum'])) continue;
-				for (const value of node['enum']) {
-					if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-						values.add(String(value));
-					}
-				}
+		const nodes = getPathCandidates(schema, path).flatMap((candidate) => expandCandidates(schema, candidate, new Set<string>()));
+		for (const node of nodes) {
+			if (!Array.isArray(node['enum'])) continue;
+			for (const value of node['enum'].filter((value) => ['string', 'number', 'boolean'].includes(typeof value))) {
+				values.add(String(value));
 			}
 		}
 	}

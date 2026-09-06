@@ -18,16 +18,16 @@
 		GitOpsSyncUpdateDto,
 		GitRepository,
 		BranchInfo
-	} from '#lib/types/automation';
-	import { gitRepositoryService } from '#lib/services/git-repository-service';
-	import { settingsService } from '#lib/services/settings-service';
-	import { hasPermission } from '#lib/utils/auth';
+	} from '#lib/types/automation.js';
+	import { gitRepositoryService } from '#lib/services/git-repository-service.js';
+	import { settingsService } from '#lib/services/settings-service.js';
+	import { hasPermission } from '#lib/utils/auth.js';
 	import { z } from 'zod/v4';
-	import { createForm, preventDefault } from '#lib/utils/settings';
-	import { queryKeys } from '#lib/query/query-keys';
-	import { m } from '#lib/paraglide/messages';
-	import { ArrowRightIcon, CodeIcon, FolderOpenIcon, InfoIcon } from '#lib/icons';
-	import * as Alert from '#lib/components/ui/alert';
+	import { createForm, preventDefault } from '#lib/utils/settings.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { ArrowRightIcon, CodeIcon, FolderOpenIcon, InfoIcon } from '#lib/icons/index.js';
+	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { createQuery } from '@tanstack/svelte-query';
 
 	type GitOpsSyncFormProps = {

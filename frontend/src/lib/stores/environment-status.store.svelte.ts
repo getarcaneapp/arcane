@@ -1,8 +1,8 @@
 import { browser } from '$app/env';
-import { STREAM_CHANNEL_ENVIRONMENTS } from '#lib/services/stream-service';
-import { clientStream } from '#lib/stores/client-stream.svelte';
-import { environmentStore } from '#lib/stores/environment.store.svelte';
-import type { Environment } from '#lib/types/environment';
+import { STREAM_CHANNEL_ENVIRONMENTS } from '#lib/services/stream-service.js';
+import { clientStream } from '#lib/stores/client-stream.svelte.js';
+import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+import type { Environment } from '#lib/types/environment.js';
 
 type EnvironmentStreamEvent = {
 	type: string;

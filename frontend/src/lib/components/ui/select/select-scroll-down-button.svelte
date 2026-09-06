@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { ArrowDownIcon } from '#lib/icons';
+	import { ArrowDownIcon } from '#lib/icons/index.js';
 	import { Select as SelectPrimitive } from 'bits-ui';
 	import { cn, type WithoutChildrenOrChild } from '#lib/utils.js';
 

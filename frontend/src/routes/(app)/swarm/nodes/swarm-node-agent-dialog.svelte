@@ -1,16 +1,16 @@
 <script lang="ts">
-	import * as Alert from '#lib/components/ui/alert';
-	import { ArcaneButton } from '#lib/components/arcane-button';
+	import * as Alert from '#lib/components/ui/alert/index.js';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import AgentCommandBlock from '#lib/components/agent-command-block.svelte';
-	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog';
-	import { Spinner } from '#lib/components/ui/spinner';
-	import { Badge } from '#lib/components/ui/badge';
-	import { AlertTriangleIcon, EdgeConnectionIcon } from '#lib/icons';
-	import { m } from '#lib/paraglide/messages';
-	import type { SwarmNodeAgentDeployment, SwarmNodeSummary } from '#lib/types/swarm';
+	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
+	import { Spinner } from '#lib/components/ui/spinner/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { AlertTriangleIcon, EdgeConnectionIcon } from '#lib/icons/index.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import type { SwarmNodeAgentDeployment, SwarmNodeSummary } from '#lib/types/swarm.js';
 	import { getSwarmNodeAgentLabel, getSwarmNodeAgentVariant } from './agent-status';
-	import { environmentStore } from '#lib/stores/environment.store.svelte';
-	import { hasAnyPermission } from '#lib/utils/auth';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import { hasAnyPermission } from '#lib/utils/auth.js';
 	import { goto } from '$app/navigation';
 
 	type SwarmNodeAgentDialogProps = {

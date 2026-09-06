@@ -1,8 +1,8 @@
 import { getContext } from 'svelte';
-import settingsStore from '#lib/stores/config-store';
-import { settingsService } from '#lib/services/settings-service';
-import type { Settings } from '#lib/types/settings';
-import { tryCatch } from '#lib/utils/api';
+import settingsStore from '#lib/stores/config-store.js';
+import { settingsService } from '#lib/services/settings-service.js';
+import type { Settings } from '#lib/types/settings.js';
+import { tryCatch } from '#lib/utils/api.js';
 import type { Readable } from 'svelte/store';
 
 type SettingsFormState = {

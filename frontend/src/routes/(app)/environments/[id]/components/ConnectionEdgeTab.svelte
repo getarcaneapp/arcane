@@ -1,11 +1,11 @@
 <script lang="ts">
 	import * as Card from '#lib/components/ui/card/index.js';
-	import { Badge, type BadgeVariant } from '#lib/components/ui/badge';
+	import { Badge, type BadgeVariant } from '#lib/components/ui/badge/index.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import EnvironmentConnectionDetails from './EnvironmentConnectionDetails.svelte';
-	import { m } from '#lib/paraglide/messages';
-	import { ConnectionIcon, DownloadIcon, ResetIcon, SecurityIcon } from '#lib/icons';
-	import { formatDateTimeShort } from '#lib/utils/formatting';
+	import { m } from '#lib/paraglide/messages.js';
+	import { ConnectionIcon, DownloadIcon, ResetIcon, SecurityIcon } from '#lib/icons/index.js';
+	import { formatDateTimeShort } from '#lib/utils/formatting.js';
 	import type { ConnectionEdgeTabProps } from './tab-props';
 
 	let { environment, currentStatus, showMTLSDownloads, isRegeneratingKey, onRegenerateApiKey }: ConnectionEdgeTabProps = $props();

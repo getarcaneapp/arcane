@@ -1,15 +1,15 @@
 <script lang="ts">
-	import { LayersIcon } from '#lib/icons';
-	import { m } from '#lib/paraglide/messages';
-	import { swarmService } from '#lib/services/swarm-service';
+	import { LayersIcon } from '#lib/icons/index.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { swarmService } from '#lib/services/swarm-service.js';
 	import { ResourcePageLayout, type StatCardConfig } from '#lib/layouts/index.js';
-	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte';
-	import { simpleRefresh } from '#lib/utils/api';
-	import { createRefreshActionButtons } from '#lib/utils/resource-actions';
+	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte.js';
+	import { simpleRefresh } from '#lib/utils/api.js';
+	import { createRefreshActionButtons } from '#lib/utils/resource-actions.js';
 	import SwarmStacksTable from './stacks-table.svelte';
 	import { goto } from '$app/navigation';
-	import { hasPermission } from '#lib/utils/auth';
-	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import { hasPermission } from '#lib/utils/auth.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 
 	let { data } = $props();
 

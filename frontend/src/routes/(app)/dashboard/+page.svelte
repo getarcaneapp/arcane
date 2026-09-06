@@ -3,8 +3,8 @@
 	import { createSubscriber } from 'svelte/reactivity';
 	import { get } from 'svelte/store';
 	import DashboardAllEnvironmentsView from './dashboard-all-environments-view.svelte';
-	import userStore from '#lib/stores/user-store';
-	import { m } from '#lib/paraglide/messages';
+	import userStore from '#lib/stores/user-store.js';
+	import { m } from '#lib/paraglide/messages.js';
 	import { Temporal } from 'temporal-polyfill';
 
 	let { data }: PageProps = $props();

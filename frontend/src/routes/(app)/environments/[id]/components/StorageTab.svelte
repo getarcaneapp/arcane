@@ -3,8 +3,8 @@
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
-	import { m } from '#lib/paraglide/messages';
-	import { FolderOpenIcon, UploadIcon } from '#lib/icons';
+	import { m } from '#lib/paraglide/messages.js';
+	import { FolderOpenIcon, UploadIcon } from '#lib/icons/index.js';
 	import type { StorageTabProps } from './tab-props';
 
 	let { formInputs }: StorageTabProps = $props();

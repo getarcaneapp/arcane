@@ -1,19 +1,20 @@
 <script lang="ts">
+	import RemoveMenuItem from '#lib/components/arcane-table/cells/remove-menu-item.svelte';
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
-	import { UniversalMobileCard } from '#lib/components/arcane-table';
-	import type { ColumnSpec, MobileFieldVisibility } from '#lib/components/arcane-table';
+	import { UniversalMobileCard } from '#lib/components/arcane-table/index.js';
+	import type { ColumnSpec, MobileFieldVisibility } from '#lib/components/arcane-table/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
 	import CreatedAtCell from '#lib/components/arcane-table/cells/created-at-cell.svelte';
-	import { Badge } from '#lib/components/ui/badge';
-	import { CopyButton } from '#lib/components/ui/copy-button';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
-	import type { GlobalVariable } from '#lib/types/variable';
-	import type { Environment } from '#lib/types/environment';
-	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
-	import { VariableIcon, LockIcon, EditIcon, TrashIcon, ClockIcon, GlobeIcon } from '#lib/icons';
-	import { m } from '#lib/paraglide/messages';
-	import { formatDateTime, instantEpochMilliseconds } from '#lib/utils/formatting';
+	import type { GlobalVariable } from '#lib/types/variable.js';
+	import type { Environment } from '#lib/types/environment.js';
+	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import { VariableIcon, LockIcon, EditIcon, ClockIcon, GlobeIcon } from '#lib/icons/index.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { formatDateTime, instantEpochMilliseconds } from '#lib/utils/formatting.js';
 
 	let {
 		variables = $bindable(),
@@ -205,11 +206,7 @@
 				<EditIcon class="size-4" />
 				{m.common_edit()}
 			</DropdownMenu.Item>
-			<DropdownMenu.Separator />
-			<DropdownMenu.Item variant="destructive" onclick={() => onDelete(item)}>
-				<TrashIcon class="size-4" />
-				{m.common_delete()}
-			</DropdownMenu.Item>
+			<RemoveMenuItem onclick={() => onDelete(item)} label={m.common_delete()} />
 		</IfPermitted>
 	</RowActionsMenu>
 {/snippet}

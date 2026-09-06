@@ -8,25 +8,25 @@
 		type BulkAction,
 		type ColumnSpec,
 		type MobileFieldVisibility
-	} from '#lib/components/arcane-table';
+	} from '#lib/components/arcane-table/index.js';
 	import DigestCell from '#lib/components/arcane-table/cells/digest-cell.svelte';
 	import CheckedAtCell from '#lib/components/arcane-table/cells/checked-at-cell.svelte';
-	import { Badge } from '#lib/components/ui/badge';
-	import { m } from '#lib/paraglide/messages';
-	import type { SearchPaginationSortRequest, Paginated } from '#lib/types/shared';
-	import type { ContainerSummaryDto } from '#lib/types/docker';
-	import type { ImageUpdateInfoDto } from '#lib/types/docker';
-	import { containerService } from '#lib/services/container-service';
-	import type { ContainersPaginatedResponse, ContainerListRequestOptions } from '#lib/services/container-service';
-	import { ContainersIcon, UpdateIcon, EyeOffIcon, EyeOnIcon } from '#lib/icons';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import type { SearchPaginationSortRequest, Paginated } from '#lib/types/shared.js';
+	import type { ContainerSummaryDto } from '#lib/types/docker.js';
+	import type { ImageUpdateInfoDto } from '#lib/types/docker.js';
+	import { containerService } from '#lib/services/container-service.js';
+	import type { ContainersPaginatedResponse, ContainerListRequestOptions } from '#lib/services/container-service.js';
+	import { ContainersIcon, UpdateIcon, EyeOffIcon, EyeOnIcon } from '#lib/icons/index.js';
 	import { getContainerDisplayName } from '../containers/container-table.helpers';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
-	import { hasPermission } from '#lib/utils/auth';
-	import { confirmAndUpdateContainer } from '#lib/utils/container-actions';
-	import { isAutoUpdateIgnored, isAutoUpdateLabelDisabled } from '#lib/utils/container-auto-update';
-	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions';
-	import { throwOnUpdateFailure } from '#lib/utils/update-actions';
-	import { formatImageUpdateCheckedAt, formatImageUpdateValue } from '#lib/utils/image-updates';
+	import { hasPermission } from '#lib/utils/auth.js';
+	import { confirmAndUpdateContainer } from '#lib/utils/container-actions.js';
+	import { isAutoUpdateIgnored, isAutoUpdateLabelDisabled } from '#lib/utils/container-auto-update.js';
+	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions.js';
+	import { throwOnUpdateFailure } from '#lib/utils/update-actions.js';
+	import { formatImageUpdateCheckedAt, formatImageUpdateValue } from '#lib/utils/image-updates.js';
 	import { toast } from 'svelte-sonner';
 
 	type ContainerUpdateRow = {

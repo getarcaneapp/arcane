@@ -1,21 +1,21 @@
 <script lang="ts">
-	import { BoxIcon, ProjectsIcon, StartIcon, StopIcon } from '#lib/icons';
+	import { BoxIcon, ProjectsIcon, StartIcon, StopIcon } from '#lib/icons/index.js';
 	import { toast } from 'svelte-sonner';
 	import ProjectsTable from './projects-table.svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { m } from '#lib/paraglide/messages';
-	import { projectService } from '#lib/services/project-service';
-	import { imageService } from '#lib/services/image-service';
-	import { environmentStore } from '#lib/stores/environment.store.svelte';
-	import { hasPermission } from '#lib/utils/auth';
-	import { queryKeys } from '#lib/query/query-keys';
-	import type { SearchPaginationSortRequest } from '#lib/types/shared';
-	import type { ProjectStatusCounts } from '#lib/types/swarm';
+	import { m } from '#lib/paraglide/messages.js';
+	import { projectService } from '#lib/services/project-service.js';
+	import { imageService } from '#lib/services/image-service.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import { hasPermission } from '#lib/utils/auth.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import type { ProjectStatusCounts } from '#lib/types/swarm.js';
 	import { untrack } from 'svelte';
 	import { createMutation, createQuery, keepPreviousData } from '@tanstack/svelte-query';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
-	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
+	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 
 	let { data } = $props();
 
@@ -125,7 +125,7 @@
 				projectsToUpdate.map(async (proj) => {
 					// deployProject with pullPolicy 'always' already pulls fresh images,
 					// so no separate pullProjectImages call is needed.
-					await projectService.deployProject(proj.id, { pullPolicy: 'always' });
+					await projectService.deployProject(proj.id, 'up', { pullPolicy: 'always' });
 					return proj.name;
 				})
 			);

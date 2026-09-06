@@ -1,22 +1,22 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
 	import { goto } from '$app/navigation';
-	import { containerService } from '#lib/services/container-service';
+	import { containerService } from '#lib/services/container-service.js';
 	import ContainerTable from './container-table.svelte';
-	import { m } from '#lib/paraglide/messages';
-	import { imageService } from '#lib/services/image-service';
+	import { m } from '#lib/paraglide/messages.js';
+	import { imageService } from '#lib/services/image-service.js';
 	import { untrack } from 'svelte';
-	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index';
-	import { environmentStore } from '#lib/stores/environment.store.svelte';
-	import { hasPermission } from '#lib/utils/auth';
-	import type { ContainerStatusCounts } from '#lib/types/docker';
+	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import { hasPermission } from '#lib/utils/auth.js';
+	import type { ContainerStatusCounts } from '#lib/types/docker.js';
 	import { createMutation } from '@tanstack/svelte-query';
-	import { BoxIcon } from '#lib/icons';
-	import { queryKeys } from '#lib/query/query-keys';
-	import type { SearchPaginationSortRequest } from '#lib/types/shared';
-	import type { ContainerListRequestOptions } from '#lib/services/container-service';
+	import { BoxIcon } from '#lib/icons/index.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import type { ContainerListRequestOptions } from '#lib/services/container-service.js';
 	import ContainerEnvironmentSync from './components/container-environment-sync.svelte';
-	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
+	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 
 	let { data } = $props();
 

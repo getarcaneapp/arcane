@@ -1,9 +1,24 @@
 import type { EditorContext } from './types';
-import { isOpenQuote } from './parse-env-utils';
+import { hasClosingQuote, isOpenQuote } from './parse-env-utils';
 
 const ENV_KEY_REGEX = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 export type VariableSource = 'env' | 'global';
+
+function parseVariableAssignment(rawLine: string): { key: string; value: string } | null {
+	const trimmed = rawLine.trim();
+	if (!trimmed || trimmed.startsWith('#')) return null;
+
+	const line = trimmed.startsWith('export ') ? trimmed.slice(7).trim() : trimmed;
+	const separator = line.indexOf('=');
+	if (separator < 0) return null;
+
+	const key = line.slice(0, separator).trim();
+	if (!ENV_KEY_REGEX.test(key)) return null;
+
+	const value = line.slice(separator + 1).trim();
+	return { key, value };
+}
 
 function parseEnvVariables(envContent: string): Map<string, string> {
 	const values = new Map<string, string>();
@@ -17,9 +32,7 @@ function parseEnvVariables(envContent: string): Map<string, string> {
 		// Inside a multi-line quoted value — accumulate until closing quote
 		if (multiLineQuote !== null && multiLineKey !== null) {
 			multiLineParts.push(rawLine);
-			const trimmedEnd = rawLine.trimEnd();
-			const isEscaped = trimmedEnd.length >= 2 && trimmedEnd[trimmedEnd.length - 2] === '\\';
-			if (trimmedEnd.endsWith(multiLineQuote) && !isEscaped) {
+			if (hasClosingQuote(rawLine, multiLineQuote)) {
 				values.set(multiLineKey, multiLineParts.join('\n'));
 				multiLineKey = null;
 				multiLineQuote = null;
@@ -28,17 +41,9 @@ function parseEnvVariables(envContent: string): Map<string, string> {
 			continue;
 		}
 
-		const trimmed = rawLine.trim();
-		if (!trimmed || trimmed.startsWith('#')) continue;
-
-		const line = trimmed.startsWith('export ') ? trimmed.slice(7).trim() : trimmed;
-		const separator = line.indexOf('=');
-		if (separator < 0) continue;
-
-		const key = line.slice(0, separator).trim();
-		if (!ENV_KEY_REGEX.test(key)) continue;
-
-		const value = line.slice(separator + 1).trim();
+		const assignment = parseVariableAssignment(rawLine);
+		if (!assignment) continue;
+		const { key, value } = assignment;
 
 		const openQuote = isOpenQuote(value);
 		if (openQuote) {

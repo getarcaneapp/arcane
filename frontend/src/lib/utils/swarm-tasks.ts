@@ -1,5 +1,5 @@
-import type { SwarmTaskSummary } from '#lib/types/swarm';
-import { instantEpochMilliseconds } from '#lib/utils/formatting';
+import type { SwarmTaskSummary } from '#lib/types/swarm.js';
+import { instantEpochMilliseconds } from '#lib/utils/formatting.js';
 
 const SWARM_TASK_STATE_ORDER: Record<string, number> = {
 	running: 0,
@@ -14,18 +14,22 @@ const SWARM_TASK_STATE_ORDER: Record<string, number> = {
 	remove: 9
 };
 
+const taskStateVariants = new Map<string, 'green' | 'amber' | 'red'>([
+	['running', 'green'],
+	['pending', 'amber'],
+	['starting', 'amber'],
+	['failed', 'red'],
+	['rejected', 'red'],
+	['shutdown', 'red']
+]);
+
 export function getSwarmTaskStateVariant(state: string): 'green' | 'amber' | 'red' | 'gray' {
-	if (state === 'running') return 'green';
-	if (state === 'pending' || state === 'starting') return 'amber';
-	if (state === 'failed' || state === 'rejected' || state === 'shutdown') return 'red';
-	return 'gray';
+	return taskStateVariants.get(state) ?? 'gray';
 }
 
 export function getSwarmTaskIconVariant(state: string): 'emerald' | 'amber' | 'red' | 'gray' {
-	if (state === 'running') return 'emerald';
-	if (state === 'pending' || state === 'starting') return 'amber';
-	if (state === 'failed' || state === 'rejected' || state === 'shutdown') return 'red';
-	return 'gray';
+	const variant = getSwarmTaskStateVariant(state);
+	return variant === 'green' ? 'emerald' : variant;
 }
 
 export function sortSwarmTasks(raw: SwarmTaskSummary[]): SwarmTaskSummary[] {

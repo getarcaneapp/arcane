@@ -1,13 +1,13 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { m } from '#lib/paraglide/messages';
-	import { createBackendLogsWebSocket, ReconnectingWebSocket } from '#lib/utils/ws';
-	import type { LogEntry } from '#lib/types/diagnostics';
-	import { cn } from '#lib/utils';
+	import { m } from '#lib/paraglide/messages.js';
+	import { createBackendLogsWebSocket, ReconnectingWebSocket } from '#lib/utils/ws.js';
+	import type { LogEntry } from '#lib/types/diagnostics.js';
+	import { cn } from '#lib/utils.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import { TrashIcon } from '#lib/icons';
+	import { TrashIcon } from '#lib/icons/index.js';
 	import { attrsText } from './diagnostic-log-formatting';
-	import { formatTime } from '#lib/utils/formatting';
+	import { formatTime } from '#lib/utils/formatting.js';
 
 	interface Props {
 		height?: string;

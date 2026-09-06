@@ -1,12 +1,12 @@
 <script lang="ts">
-	import * as Card from '#lib/components/ui/card';
-	import { Badge } from '#lib/components/ui/badge';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import { m } from '#lib/paraglide/messages';
-	import { swarmService } from '#lib/services/swarm-service';
-	import type { SwarmTaskSummary } from '#lib/types/swarm';
-	import { getSwarmTaskStateVariant, sortSwarmTasks } from '#lib/utils/swarm-tasks';
-	import { JobsIcon, ConnectionIcon } from '#lib/icons';
+	import { m } from '#lib/paraglide/messages.js';
+	import { swarmService } from '#lib/services/swarm-service.js';
+	import type { SwarmTaskSummary } from '#lib/types/swarm.js';
+	import { getSwarmTaskStateVariant, sortSwarmTasks } from '#lib/utils/swarm-tasks.js';
+	import { JobsIcon, ConnectionIcon } from '#lib/icons/index.js';
 
 	let {
 		serviceName,

@@ -1,4 +1,4 @@
-import { sanitizeLogText } from '#lib/utils/formatting';
+import { sanitizeLogText } from '#lib/utils/formatting.js';
 
 export interface LogViewerEntry {
 	id: number;

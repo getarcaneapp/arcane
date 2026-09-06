@@ -1,6 +1,6 @@
-import type { JobRun, JobRunList } from '#lib/types/job';
+import type { JobRun, JobRunList } from '#lib/types/job.js';
 import BaseAPIService from './api-service';
-import type { JobSchedules, JobSchedulesUpdate, JobListResponse, JobRunResponse } from '#lib/types/settings';
+import type { JobSchedules, JobSchedulesUpdate, JobListResponse, JobRunResponse } from '#lib/types/settings.js';
 
 class JobScheduleService extends BaseAPIService {
 	async getJobSchedules(environmentId: string = '0'): Promise<JobSchedules> {

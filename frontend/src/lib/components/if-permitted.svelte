@@ -12,8 +12,8 @@
 	and `isGlobalAdmin`.
 -->
 <script lang="ts">
-	import { hasPermission, hasAnyPermission, isGlobalAdmin } from '#lib/utils/auth';
-	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import { hasPermission, hasAnyPermission, isGlobalAdmin } from '#lib/utils/auth.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { Snippet } from 'svelte';
 
 	let {

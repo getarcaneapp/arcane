@@ -1,7 +1,7 @@
 <script lang="ts">
-	import * as Card from '#lib/components/ui/card';
-	import type { IconType } from '#lib/icons';
-	import { cn } from '#lib/utils';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import type { IconType } from '#lib/icons/index.js';
+	import { cn } from '#lib/utils.js';
 	import type { ComponentProps, Snippet } from 'svelte';
 
 	interface Props {

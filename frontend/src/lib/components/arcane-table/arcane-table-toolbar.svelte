@@ -10,15 +10,15 @@
 		vulnerabilitySeverityFilters,
 		projectStatusFilters
 	} from './data.js';
-	import { debounced } from '#lib/utils/ws';
-	import { ArcaneButton } from '#lib/components/arcane-button';
-	import { m } from '#lib/paraglide/messages';
+	import { debounced } from '#lib/utils/ws.js';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import { m } from '#lib/paraglide/messages.js';
 	import type { Snippet } from 'svelte';
-	import { cn } from '#lib/utils';
-	import { ResetIcon, SearchIcon, FilterIcon } from '#lib/icons';
+	import { cn } from '#lib/utils.js';
+	import { ResetIcon, SearchIcon, FilterIcon } from '#lib/icons/index.js';
 	import type { BulkAction } from './arcane-table.types.svelte';
 	import * as Popover from '#lib/components/ui/popover/index.js';
-	import * as ArcaneTooltip from '#lib/components/arcane-tooltip';
+	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
 
 	let {
 		table,
@@ -49,6 +49,12 @@
 		wrapText?: boolean;
 		onToggleWrapText?: () => void;
 	} = $props();
+	const buttonActions = $derived(
+		bulkActions.map((item) => ({
+			...item,
+			action: item.action === 'up' ? ('start' as const) : item.action === 'down' ? ('stop' as const) : item.action
+		}))
+	);
 
 	// With `withoutFilters` the column filters aren't user-controlled — the page bakes
 	// in its own scoping filter (e.g. /updates pins `updates`), which would otherwise
@@ -124,6 +130,35 @@
 	{/if}
 {/snippet}
 
+{#snippet selectionActions()}
+	{#if hasSelection && hasBulkActions}
+		<div class="order-2 flex shrink-0 items-center gap-1.5">
+			{#each buttonActions as bulkAction (bulkAction.id)}
+				<ArcaneTooltip.Root>
+					<ArcaneTooltip.Trigger>
+						{#snippet child({ props })}
+							<ArcaneButton
+								{...props}
+								action={bulkAction.action}
+								size="icon"
+								icon={bulkAction.icon}
+								customLabel={bulkAction.label}
+								onclick={() => bulkAction.onClick(selectedIds!)}
+								disabled={bulkAction.disabled || bulkAction.loading}
+								loading={bulkAction.loading}
+								title={bulkAction.disabled ? bulkAction.disabledReason : undefined}
+							/>
+						{/snippet}
+					</ArcaneTooltip.Trigger>
+					<ArcaneTooltip.Content side="bottom">
+						{bulkAction.label}
+					</ArcaneTooltip.Content>
+				</ArcaneTooltip.Root>
+			{/each}
+		</div>
+	{/if}
+{/snippet}
+
 <div class={cn('flex flex-wrap items-center gap-2 px-4 py-3', className)}>
 	<div class="order-1 flex min-w-0 flex-1 items-center gap-2 md:flex-none">
 		<div class="relative min-w-0 flex-1 md:w-64 md:flex-none">
@@ -187,33 +222,7 @@
 	</div>
 
 	<div class="contents md:order-2 md:ml-auto md:flex md:shrink-0 md:items-center md:gap-2">
-		{#if hasSelection && hasBulkActions}
-			<div class="order-2 flex shrink-0 items-center gap-1.5">
-				{#each bulkActions as bulkAction (bulkAction.id)}
-					{@const actionType = bulkAction.action === 'up' ? 'start' : bulkAction.action === 'down' ? 'stop' : bulkAction.action}
-					<ArcaneTooltip.Root>
-						<ArcaneTooltip.Trigger>
-							{#snippet child({ props })}
-								<ArcaneButton
-									{...props}
-									action={actionType}
-									size="icon"
-									icon={bulkAction.icon}
-									customLabel={bulkAction.label}
-									onclick={() => bulkAction.onClick(selectedIds!)}
-									disabled={bulkAction.disabled || bulkAction.loading}
-									loading={bulkAction.loading}
-									title={bulkAction.disabled ? bulkAction.disabledReason : undefined}
-								/>
-							{/snippet}
-						</ArcaneTooltip.Trigger>
-						<ArcaneTooltip.Content side="bottom">
-							{bulkAction.label}
-						</ArcaneTooltip.Content>
-					</ArcaneTooltip.Root>
-				{/each}
-			</div>
-		{/if}
+		{@render selectionActions()}
 
 		{#if customToolbarActions}
 			<div class="order-4 flex w-full items-center justify-end md:order-none md:w-auto md:shrink-0">

@@ -1,6 +1,6 @@
 import BaseAPIService from './api-service';
 import { uploadService, type UploadProgressCallback } from './upload-service';
-import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte';
+import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
 import type {
 	ImageSummaryDto,
 	ImageUsageCounts,
@@ -14,13 +14,13 @@ import type {
 	ImagePatchOptions,
 	ImagePatchRecordDto,
 	ImagePatchTargetDto
-} from '#lib/types/docker';
-import type { SearchPaginationSortRequest, Paginated } from '#lib/types/shared';
-import type { AutoUpdateCheck, AutoUpdateResult } from '#lib/types/automation';
-import type { PruneImagesOptions } from '#lib/types/automation';
-import { transformPaginationParams } from '#lib/utils/tables';
-import { readNdjsonStream } from '#lib/utils/streaming';
-import { m } from '#lib/paraglide/messages';
+} from '#lib/types/docker.js';
+import type { SearchPaginationSortRequest, Paginated } from '#lib/types/shared.js';
+import type { AutoUpdateCheck, AutoUpdateResult } from '#lib/types/automation.js';
+import type { PruneImagesOptions } from '#lib/types/automation.js';
+import { transformPaginationParams } from '#lib/utils/tables.js';
+import { readNdjsonStream } from '#lib/utils/streaming.js';
+import { m } from '#lib/paraglide/messages.js';
 
 export type ImagePullResult = {
 	success: boolean;

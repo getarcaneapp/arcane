@@ -1,12 +1,12 @@
 <script lang="ts" generics="TPolicy extends BackupPolicy, TUpdate extends { id: string } = BackupPolicyUpdate">
 	import { untrack, type Snippet } from 'svelte';
-	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog';
-	import { ArcaneButton } from '#lib/components/arcane-button';
+	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import BackupPolicyFields from '#lib/components/backup-policy-fields.svelte';
-	import type { BackupPolicy, BackupPolicyForm, BackupPolicyUpdate } from '#lib/types/backup';
-	import type { S3Destination } from '#lib/types/s3-destination';
-	import { s3DestinationService } from '#lib/services/s3-destination-service';
-	import { backupDestinationFromFlags, backupPolicyDestinationValues, backupPolicyUpdateFromPolicy } from '#lib/utils/backups';
+	import type { BackupPolicy, BackupPolicyForm, BackupPolicyUpdate } from '#lib/types/backup.js';
+	import type { S3Destination } from '#lib/types/s3-destination.js';
+	import { s3DestinationService } from '#lib/services/s3-destination-service.js';
+	import { backupDestinationFromFlags, backupPolicyDestinationValues, backupPolicyUpdateFromPolicy } from '#lib/utils/backups.js';
 	import { toast } from 'svelte-sonner';
 	import * as m from '#lib/paraglide/messages.js';
 

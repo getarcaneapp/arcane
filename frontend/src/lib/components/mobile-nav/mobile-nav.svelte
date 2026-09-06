@@ -1,18 +1,18 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import type { MobileNavigationSettings } from '#lib/config/navigation-config';
-	import { getAvailableMobileNavItems, getSwarmNavigationItems } from '#lib/config/navigation-config';
+	import type { MobileNavigationSettings } from '#lib/config/navigation-config.js';
+	import { getAvailableMobileNavItems, getSwarmNavigationItems } from '#lib/config/navigation-config.js';
 	import MobileNavItem from './mobile-nav-item.svelte';
 	import MobileNavMenuButton from './mobile-nav-menu-button.svelte';
-	import { cn } from '#lib/utils';
+	import { cn } from '#lib/utils.js';
 	import MobileNavSheet from './mobile-nav-sheet.svelte';
-	import { m } from '#lib/paraglide/messages';
+	import { m } from '#lib/paraglide/messages.js';
 	import { MobileNavGestures } from './gestures.svelte';
 	import './styles.css';
-	import type { AppVersionInformation } from '#lib/types/settings';
-	import type { PermissionsManifest, User } from '#lib/types/auth';
-	import { environmentStore } from '#lib/stores/environment.store.svelte';
-	import { registerNavigationVisibilityController } from '#lib/utils/navigation';
+	import type { AppVersionInformation } from '#lib/types/settings.js';
+	import type { PermissionsManifest, User } from '#lib/types/auth.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import { registerNavigationVisibilityController } from '#lib/utils/navigation.js';
 
 	let {
 		navigationSettings,

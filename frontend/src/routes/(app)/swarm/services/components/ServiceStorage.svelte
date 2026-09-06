@@ -1,9 +1,9 @@
 <script lang="ts">
-	import * as Card from '#lib/components/ui/card';
-	import { Badge } from '#lib/components/ui/badge';
-	import { m } from '#lib/paraglide/messages';
-	import { VolumesIcon, TerminalIcon, FolderOpenIcon } from '#lib/icons';
-	import type { SwarmServiceMount } from '#lib/types/swarm';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { VolumesIcon, TerminalIcon, FolderOpenIcon } from '#lib/icons/index.js';
+	import type { SwarmServiceMount } from '#lib/types/swarm.js';
 
 	interface Props {
 		mounts: SwarmServiceMount[];

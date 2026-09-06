@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { DropdownMenu as DropdownMenuPrimitive } from 'bits-ui';
-	import { ArrowRightIcon } from '#lib/icons';
+	import { ArrowRightIcon } from '#lib/icons/index.js';
 	import { cn } from '#lib/utils.js';
 
 	let {

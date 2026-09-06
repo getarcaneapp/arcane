@@ -6,7 +6,7 @@
 		title: string;
 		value: string | number;
 		subtitle?: string;
-		icon: import('#lib/icons').IconType;
+		icon: import('#lib/icons/index.js').IconType;
 		iconColor?: string;
 		bgColor?: string;
 		class?: string;
@@ -21,8 +21,8 @@
 	import { ActionButtonGroup } from '#lib/components/action-button-group/index.js';
 	import StatCard from '#lib/components/stat-card.svelte';
 	import type { Snippet } from 'svelte';
-	import type { IconType } from '#lib/icons';
-	import { cn } from '#lib/utils';
+	import type { IconType } from '#lib/icons/index.js';
+	import { cn } from '#lib/utils.js';
 
 	interface Props {
 		title: string;

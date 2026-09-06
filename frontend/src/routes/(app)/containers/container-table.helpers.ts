@@ -1,6 +1,6 @@
-import { m } from '#lib/paraglide/messages';
-import type { ContainerSummaryDto } from '#lib/types/docker';
-import { COMPOSE_PROJECT_LABEL } from '#lib/utils/docker';
+import { m } from '#lib/paraglide/messages.js';
+import type { ContainerSummaryDto } from '#lib/types/docker.js';
+import { COMPOSE_PROJECT_LABEL } from '#lib/utils/docker.js';
 
 export type ActionStatus =
 	| 'starting'

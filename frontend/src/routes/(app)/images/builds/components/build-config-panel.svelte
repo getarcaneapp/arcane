@@ -1,10 +1,10 @@
 <script lang="ts">
 	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
-	import { ArrowDownIcon } from '#lib/icons';
+	import { ArrowDownIcon } from '#lib/icons/index.js';
 	import FormInput from '#lib/components/form/form-input.svelte';
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
-	import { preventDefault } from '#lib/utils/settings';
-	import { m } from '#lib/paraglide/messages';
+	import { preventDefault } from '#lib/utils/settings.js';
+	import { m } from '#lib/paraglide/messages.js';
 	import type { BuildFormInputsStore, SelectOption } from './build-form.types';
 
 	let {

@@ -1,7 +1,7 @@
 <script lang="ts" generics="T">
-	import * as Card from '#lib/components/ui/card';
-	import { Badge } from '#lib/components/ui/badge';
-	import { cn } from '#lib/utils';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { cn } from '#lib/utils.js';
 	import type { Snippet, Component } from 'svelte';
 
 	type IconVariant = 'emerald' | 'red' | 'amber' | 'blue' | 'purple' | 'gray' | 'sky' | 'orange';
@@ -65,6 +65,12 @@
 		class?: string;
 		onclick?: (item: T) => void;
 	} = $props();
+
+	const sizeClasses = $derived(
+		compact
+			? { iconContainer: 'size-10', image: 'size-5', icon: 'size-4', title: 'text-sm', subtitle: 'text-[10px]' }
+			: { iconContainer: 'size-11', image: 'size-6', icon: 'size-5', title: 'text-base', subtitle: 'text-xs' }
+	);
 
 	const resolvedIcon = $derived(typeof icon === 'function' ? icon(item) : icon);
 	const resolvedBadges = $derived(
@@ -132,6 +138,99 @@
 	{/if}
 {/snippet}
 
+{#snippet cardHeader()}
+	<div class={cn('flex gap-3', hasSubtitle ? 'items-start' : 'items-center')}>
+		{#if resolvedIcon}
+			{@const IconComponent = resolvedIcon.component}
+			<div
+				class={cn(
+					'flex shrink-0 items-center justify-center rounded-xl ring-1 transition-transform duration-200 ring-inset group-hover:scale-105',
+					sizeClasses.iconContainer,
+					getIconBgClass(resolvedIcon.variant),
+					'ring-white/5'
+				)}
+			>
+				{#if validImageUrl}
+					<img
+						src={validImageUrl}
+						alt={resolvedIcon.alt ?? ''}
+						loading="lazy"
+						decoding="async"
+						referrerpolicy="no-referrer"
+						class={cn('object-contain', sizeClasses.image)}
+						onerror={() => (errorImageUrl = resolvedIcon?.imageUrl)}
+					/>
+				{:else}
+					<IconComponent class={cn(getIconTextClass(resolvedIcon.variant), sizeClasses.icon)} />
+				{/if}
+			</div>
+		{/if}
+		<div class="min-w-0 flex-1">
+			<h3 class={cn('line-clamp-2 leading-tight font-semibold wrap-break-word', sizeClasses.title)} title={title(item)}>
+				{title(item)}
+			</h3>
+			{#if hasSubtitle}
+				<p class={cn('mt-0.5 truncate font-mono text-muted-foreground', sizeClasses.subtitle)}>
+					{subtitleValue}
+				</p>
+			{/if}
+		</div>
+		{#if rowActions}
+			{@render rowActions({ item })}
+		{/if}
+	</div>
+{/snippet}
+
+{#snippet expandedField(field: FieldDefinition<T>)}
+	{@const value = field.getValue(item)}
+	{#if value !== null && value !== undefined}
+		<div class="flex min-w-0 flex-1 basis-[140px] items-center gap-2.5">
+			{#if field.icon}
+				{@const FieldIcon = field.icon}
+				<div
+					class={cn(
+						'flex size-7 shrink-0 items-center justify-center rounded-lg ring-1 ring-white/5 ring-inset',
+						field.iconVariant ? getIconBgClass(field.iconVariant) : 'bg-muted/40'
+					)}
+				>
+					<FieldIcon class={cn(field.iconVariant ? getIconTextClass(field.iconVariant) : 'text-muted-foreground', 'size-3.5')} />
+				</div>
+			{/if}
+			<div class="min-w-0 flex-1">
+				<div class="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+					{field.label}
+				</div>
+				<div class="truncate text-sm leading-snug font-medium">
+					{@render FieldValue(field, value, false)}
+				</div>
+			</div>
+		</div>
+	{/if}
+{/snippet}
+
+{#snippet additionalFields()}
+	<!-- Additional Fields -->
+	{#if visibleFields.length > 0}
+		{#if !compact}
+			<div class="flex flex-wrap gap-x-4 gap-y-2.5">
+				{#each visibleFields as field (field.label)}
+					{@render expandedField(field)}
+				{/each}
+			</div>
+		{:else}
+			{#each visibleFields as field (field.label)}
+				{@const value = field.getValue(item)}
+				{#if value !== null && value !== undefined}
+					<div class="flex items-baseline gap-2">
+						<span class="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">{field.label}:</span>
+						{@render FieldValue(field, value, true)}
+					</div>
+				{/if}
+			{/each}
+		{/if}
+	{/if}
+{/snippet}
+
 <div class={cn('group relative w-full px-3 py-2', className)}>
 	<Card.Root
 		variant="subtle"
@@ -142,49 +241,7 @@
 		onclick={onclick ? () => onclick(item) : undefined}
 	>
 		<Card.Content class={cn('flex flex-col text-left', compact ? 'gap-2.5 p-3' : 'gap-3 p-3.5')}>
-			<div class={cn('flex gap-3', hasSubtitle ? 'items-start' : 'items-center')}>
-				{#if resolvedIcon}
-					{@const IconComponent = resolvedIcon.component}
-					<div
-						class={cn(
-							'flex shrink-0 items-center justify-center rounded-xl ring-1 transition-transform duration-200 ring-inset group-hover:scale-105',
-							compact ? 'size-10' : 'size-11',
-							getIconBgClass(resolvedIcon.variant),
-							'ring-white/5'
-						)}
-					>
-						{#if validImageUrl}
-							<img
-								src={validImageUrl}
-								alt={resolvedIcon.alt ?? ''}
-								loading="lazy"
-								decoding="async"
-								referrerpolicy="no-referrer"
-								class={cn('object-contain', compact ? 'size-5' : 'size-6')}
-								onerror={() => (errorImageUrl = resolvedIcon?.imageUrl)}
-							/>
-						{:else}
-							<IconComponent class={cn(getIconTextClass(resolvedIcon.variant), compact ? 'size-4' : 'size-5')} />
-						{/if}
-					</div>
-				{/if}
-				<div class="min-w-0 flex-1">
-					<h3
-						class={cn('line-clamp-2 leading-tight font-semibold wrap-break-word', compact ? 'text-sm' : 'text-base')}
-						title={title(item)}
-					>
-						{title(item)}
-					</h3>
-					{#if hasSubtitle}
-						<p class={cn('mt-0.5 truncate font-mono text-muted-foreground', compact ? 'text-[10px]' : 'text-xs')}>
-							{subtitleValue}
-						</p>
-					{/if}
-				</div>
-				{#if rowActions}
-					{@render rowActions({ item })}
-				{/if}
-			</div>
+			{@render cardHeader()}
 
 			{#if resolvedBadges.length > 0}
 				<div class="flex flex-wrap items-center gap-1">
@@ -194,51 +251,7 @@
 				</div>
 			{/if}
 
-			<!-- Additional Fields -->
-			{#if visibleFields.length > 0}
-				{#if !compact}
-					<div class="flex flex-wrap gap-x-4 gap-y-2.5">
-						{#each visibleFields as field (field.label)}
-							{@const value = field.getValue(item)}
-							{#if value !== null && value !== undefined}
-								<div class="flex min-w-0 flex-1 basis-[140px] items-center gap-2.5">
-									{#if field.icon}
-										{@const FieldIcon = field.icon}
-										<div
-											class={cn(
-												'flex size-7 shrink-0 items-center justify-center rounded-lg ring-1 ring-white/5 ring-inset',
-												field.iconVariant ? getIconBgClass(field.iconVariant) : 'bg-muted/40'
-											)}
-										>
-											<FieldIcon
-												class={cn(field.iconVariant ? getIconTextClass(field.iconVariant) : 'text-muted-foreground', 'size-3.5')}
-											/>
-										</div>
-									{/if}
-									<div class="min-w-0 flex-1">
-										<div class="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-											{field.label}
-										</div>
-										<div class="truncate text-sm leading-snug font-medium">
-											{@render FieldValue(field, value, false)}
-										</div>
-									</div>
-								</div>
-							{/if}
-						{/each}
-					</div>
-				{:else}
-					{#each visibleFields as field (field.label)}
-						{@const value = field.getValue(item)}
-						{#if value !== null && value !== undefined}
-							<div class="flex items-baseline gap-2">
-								<span class="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">{field.label}:</span>
-								{@render FieldValue(field, value, true)}
-							</div>
-						{/if}
-					{/each}
-				{/if}
-			{/if}
+			{@render additionalFields()}
 
 			<!-- Custom children content -->
 			{#if children}

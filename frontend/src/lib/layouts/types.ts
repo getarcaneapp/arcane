@@ -1,5 +1,5 @@
 import type { Action, ArcaneButtonSize } from '#lib/components/arcane-button/index.js';
-import type { IconType } from '#lib/icons';
+import type { IconType } from '#lib/icons/index.js';
 
 export interface SettingsActionOption {
 	label: string;

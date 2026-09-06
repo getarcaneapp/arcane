@@ -1,12 +1,12 @@
-import type { CodeLanguage } from '#lib/components/code-editor/analysis/types';
-import { m } from '#lib/paraglide/messages';
+import type { CodeLanguage } from '#lib/components/code-editor/analysis/types.js';
+import { m } from '#lib/paraglide/messages.js';
 import { toast } from 'svelte-sonner';
 import type {
 	WorkspaceFileChange as WorkspaceFileChangeDto,
 	WorkspaceFileChangeOperation,
 	WorkspaceFileEntry as WorkspaceFileDto,
 	WorkspaceReadOnlyReason
-} from '#lib/types/workspace';
+} from '#lib/types/workspace.js';
 
 export interface WorkspaceDisplayEntry extends Omit<WorkspaceFileDto, 'editable' | 'isSymlink' | 'readOnlyReason'> {
 	editable?: boolean;
@@ -97,6 +97,16 @@ export function buildWorkspaceMultipartUpdate<T extends WorkspaceDisplayFileChan
 	// Every update also carries the content the draft was based on, so the
 	// backend can reject a save that would overwrite a concurrent external
 	// edit to the same file.
+	appendWorkspaceBaselines(fileChanges, loadedFileContents, files);
+
+	return { fileChanges, files };
+}
+
+function appendWorkspaceBaselines<T extends WorkspaceDisplayFileChange>(
+	fileChanges: T[],
+	loadedFileContents: Record<string, string>,
+	files: File[]
+) {
 	for (const change of fileChanges) {
 		if (change.operation !== 'update_file') continue;
 		const baseline = loadedFileContents[change.relativePath];
@@ -104,8 +114,6 @@ export function buildWorkspaceMultipartUpdate<T extends WorkspaceDisplayFileChan
 		change.baselineIndex = files.length;
 		files.push(new File([baseline], workspaceFileBasename(change.relativePath), { type: 'text/plain' }));
 	}
-
-	return { fileChanges, files };
 }
 
 function normalizeWorkspaceRelativePath(relativePath: string): string {
@@ -239,19 +247,42 @@ export function removeWorkspaceFileRecord<T>(record: Record<string, T>, rootPath
 	return Object.fromEntries(Object.entries(record).filter(([relativePath]) => !workspaceFilePathMatches(relativePath, rootPath)));
 }
 
+const WORKSPACE_LANGUAGE_EXTENSIONS: Partial<Record<string, CodeLanguage>> = {
+	yaml: 'yaml',
+	yml: 'yaml',
+	json: 'json',
+	toml: 'toml',
+	dockerfile: 'dockerfile',
+	sh: 'shell',
+	bash: 'shell',
+	zsh: 'shell',
+	fish: 'shell',
+	ts: 'typescript',
+	tsx: 'typescript',
+	mts: 'typescript',
+	cts: 'typescript',
+	js: 'javascript',
+	jsx: 'javascript',
+	mjs: 'javascript',
+	cjs: 'javascript',
+	md: 'markdown',
+	markdown: 'markdown',
+	mdx: 'markdown'
+};
+
 export function workspaceFileLanguage(relativePath: string): CodeLanguage {
 	const lower = relativePath.toLowerCase();
 	const basename = workspaceFileBasename(lower);
 	if (lower.endsWith('.env') || basename.startsWith('.env')) return 'env';
-	if (lower.endsWith('.yaml') || lower.endsWith('.yml')) return 'yaml';
-	if (lower.endsWith('.json')) return 'json';
-	if (lower.endsWith('.toml')) return 'toml';
-	if (basename === 'dockerfile' || basename.startsWith('dockerfile.') || lower.endsWith('.dockerfile')) return 'dockerfile';
-	if (lower.endsWith('.sh') || lower.endsWith('.bash') || lower.endsWith('.zsh') || lower.endsWith('.fish')) return 'shell';
-	if (lower.endsWith('.ts') || lower.endsWith('.tsx') || lower.endsWith('.mts') || lower.endsWith('.cts')) return 'typescript';
-	if (lower.endsWith('.js') || lower.endsWith('.jsx') || lower.endsWith('.mjs') || lower.endsWith('.cjs')) return 'javascript';
-	if (lower.endsWith('.md') || lower.endsWith('.markdown') || lower.endsWith('.mdx')) return 'markdown';
-	return 'plaintext';
+	const extension = lower.slice(lower.lastIndexOf('.') + 1);
+	// These formats take precedence over the Dockerfile basename convention.
+	if (['yaml', 'yml', 'json', 'toml'].includes(extension) && lower.includes('.')) {
+		return WORKSPACE_LANGUAGE_EXTENSIONS[extension] ?? 'plaintext';
+	}
+	if (basename === 'dockerfile' || basename.startsWith('dockerfile.')) return 'dockerfile';
+	return lower.includes('.') && Object.hasOwn(WORKSPACE_LANGUAGE_EXTENSIONS, extension)
+		? (WORKSPACE_LANGUAGE_EXTENSIONS[extension] ?? 'plaintext')
+		: 'plaintext';
 }
 
 export function compareWorkspaceFileEntries(a: WorkspaceDisplayEntry, b: WorkspaceDisplayEntry): number {
@@ -260,47 +291,60 @@ export function compareWorkspaceFileEntries(a: WorkspaceDisplayEntry, b: Workspa
 	return baseComparison || a.name.localeCompare(b.name);
 }
 
+function remapWorkspaceDisplayEntries(entries: Map<string, WorkspaceDisplayEntry>, relativePath: string, newPath: string) {
+	const remapped = new Map<string, WorkspaceDisplayEntry>();
+	for (const [entryPath, current] of entries.entries()) {
+		if (!workspaceFilePathMatches(entryPath, relativePath)) {
+			remapped.set(entryPath, current);
+			continue;
+		}
+		const movedPath = remapWorkspaceFilePath(entryPath, relativePath, newPath);
+		remapped.set(movedPath, {
+			...current,
+			path: movedPath,
+			relativePath: movedPath,
+			name: workspaceFileBasename(movedPath),
+			pending: true
+		});
+	}
+	entries.clear();
+	for (const [entryPath, current] of remapped.entries()) entries.set(entryPath, current);
+}
+
 export function applyWorkspaceFileChangesForDisplay(
 	files: WorkspaceDisplayEntry[],
 	changes: WorkspaceDisplayFileChange[]
 ): WorkspaceDisplayEntry[] {
-	const entries = new Map<string, WorkspaceDisplayEntry>();
-
-	for (const file of files) {
-		const modeType = file.mode?.[0];
-		const isDirectory = modeType ? modeType === 'd' : file.isDirectory;
-		const isSymlink = modeType ? modeType === 'l' : file.isSymlink;
-		entries.set(file.relativePath, {
-			...file,
-			name: file.name || workspaceFileBasename(file.relativePath),
-			isDirectory,
-			isSymlink
-		});
-	}
+	const entries = new Map<string, WorkspaceDisplayEntry>(
+		files.map((file) => {
+			const modeType = file.mode?.[0];
+			return [
+				file.relativePath,
+				{
+					...file,
+					name: file.name || workspaceFileBasename(file.relativePath),
+					isDirectory: modeType ? modeType === 'd' : file.isDirectory,
+					isSymlink: modeType ? modeType === 'l' : file.isSymlink
+				}
+			] as const;
+		})
+	);
 
 	for (const change of changes) {
 		const relativePath = normalizeWorkspaceRelativePath(change.relativePath);
 		switch (change.operation) {
 			case 'create_file':
-				entries.set(relativePath, {
-					path: relativePath,
-					relativePath,
-					name: workspaceFileBasename(relativePath),
-					isDirectory: false,
-					size: 0,
-					pending: true
-				});
-				break;
 			case 'create_folder':
 				entries.set(relativePath, {
 					path: relativePath,
 					relativePath,
 					name: workspaceFileBasename(relativePath),
-					isDirectory: true,
+					isDirectory: change.operation === 'create_folder',
 					size: 0,
 					pending: true
 				});
 				break;
+			case 'restore_file':
 			case 'update_file': {
 				const entry = entries.get(relativePath);
 				if (entry) entries.set(relativePath, { ...entry, pending: true });
@@ -314,23 +358,7 @@ export function applyWorkspaceFileChangesForDisplay(
 					change.operation === 'rename' && change.newName
 						? joinWorkspaceFilePath(workspaceFileParentPath(relativePath), change.newName)
 						: joinWorkspaceFilePath(change.newParentPath ?? '', workspaceFileBasename(relativePath));
-				const remapped = new Map<string, WorkspaceDisplayEntry>();
-				for (const [entryPath, current] of entries.entries()) {
-					if (!workspaceFilePathMatches(entryPath, relativePath)) {
-						remapped.set(entryPath, current);
-						continue;
-					}
-					const movedPath = `${newPath}${entryPath.slice(relativePath.length)}`;
-					remapped.set(movedPath, {
-						...current,
-						path: movedPath,
-						relativePath: movedPath,
-						name: workspaceFileBasename(movedPath),
-						pending: true
-					});
-				}
-				entries.clear();
-				for (const [entryPath, current] of remapped.entries()) entries.set(entryPath, current);
+				remapWorkspaceDisplayEntries(entries, relativePath, newPath);
 				break;
 			}
 			case 'delete':
@@ -338,11 +366,6 @@ export function applyWorkspaceFileChangesForDisplay(
 					if (workspaceFilePathMatches(entryPath, relativePath)) entries.delete(entryPath);
 				}
 				break;
-			case 'restore_file': {
-				const entry = entries.get(relativePath);
-				if (entry) entries.set(relativePath, { ...entry, pending: true });
-				break;
-			}
 		}
 	}
 

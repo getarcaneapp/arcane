@@ -11,10 +11,10 @@
 	import * as Tooltip from '#lib/components/ui/tooltip/index.js';
 	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
 	import { IsTablet } from '#lib/hooks/is-tablet.svelte.js';
-	import { m } from '#lib/paraglide/messages';
-	import { environmentStore } from '#lib/stores/environment.store.svelte';
-	import settingsStore from '#lib/stores/config-store';
-	import { cn } from '#lib/utils';
+	import { m } from '#lib/paraglide/messages.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import settingsStore from '#lib/stores/config-store.js';
+	import { cn } from '#lib/utils.js';
 	import { QueryClientProvider } from '@tanstack/svelte-query';
 	import { SvelteQueryDevtools } from '@tanstack/svelte-query-devtools';
 	import { ModeWatcher } from 'mode-watcher';

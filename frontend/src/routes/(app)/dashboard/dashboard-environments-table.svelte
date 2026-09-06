@@ -1,6 +1,6 @@
 <script lang="ts" module>
 	import type { ActionButton } from '#lib/components/action-button-group/index.js';
-	import type { Environment } from '#lib/types/environment';
+	import type { Environment } from '#lib/types/environment.js';
 
 	export interface EnvironmentTableRow {
 		environment: Environment;
@@ -24,15 +24,15 @@
 
 <script lang="ts">
 	import * as Table from '#lib/components/ui/table/index.js';
-	import { Badge } from '#lib/components/ui/badge';
-	import { Skeleton } from '#lib/components/ui/skeleton';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import { EnvironmentsIcon, ShieldAlertIcon, UpdateIcon, VerifiedCheckIcon, type IconType } from '#lib/icons';
+	import { EnvironmentsIcon, ShieldAlertIcon, UpdateIcon, VerifiedCheckIcon, type IconType } from '#lib/icons/index.js';
 	import MetricRing, { type MetricRingVariant } from '#lib/components/metric-ring.svelte';
-	import { m } from '#lib/paraglide/messages';
-	import { cn } from '#lib/utils';
+	import { m } from '#lib/paraglide/messages.js';
+	import { cn } from '#lib/utils.js';
 
 	let { rows }: { rows: EnvironmentTableRow[] } = $props();
 </script>

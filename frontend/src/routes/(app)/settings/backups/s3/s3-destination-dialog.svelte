@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog';
+	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
 	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
 	import FormInput from '#lib/components/form/form-input.svelte';
 	import LabeledSwitch from '#lib/components/form/labeled-switch.svelte';
-	import type { CreateS3Destination, S3Destination } from '#lib/types/s3-destination';
-	import { createForm, preventDefault } from '#lib/utils/settings';
-	import { s3DestinationService } from '#lib/services/s3-destination-service';
+	import type { CreateS3Destination, S3Destination } from '#lib/types/s3-destination.js';
+	import { createForm, preventDefault } from '#lib/utils/settings.js';
+	import { s3DestinationService } from '#lib/services/s3-destination-service.js';
 	import { toast } from 'svelte-sonner';
 	import { z } from 'zod/v4';
 	import * as m from '#lib/paraglide/messages.js';

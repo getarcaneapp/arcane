@@ -1,11 +1,11 @@
-import { m } from '#lib/paraglide/messages';
-import type { ContainerStats, ContainerSummaryDto } from '#lib/types/docker';
-import type { Environment, EnvironmentStatus } from '#lib/types/environment';
-import type { SearchPaginationSortRequest } from '#lib/types/shared';
-import type { ProjectUpdateInfo } from '#lib/types/swarm';
-import type { SwarmServiceModeName, SwarmServiceModeSpec } from '#lib/types/swarm';
-import type { VulnerabilityScanSummary } from '#lib/types/environment';
-import { instantEpochMilliseconds } from '#lib/utils/formatting';
+import { m } from '#lib/paraglide/messages.js';
+import type { ContainerStats, ContainerSummaryDto } from '#lib/types/docker.js';
+import type { Environment, EnvironmentStatus } from '#lib/types/environment.js';
+import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+import type { ProjectUpdateInfo } from '#lib/types/swarm.js';
+import type { SwarmServiceModeName, SwarmServiceModeSpec } from '#lib/types/swarm.js';
+import type { VulnerabilityScanSummary } from '#lib/types/environment.js';
+import { instantEpochMilliseconds } from '#lib/utils/formatting.js';
 import type { Temporal } from 'temporal-polyfill';
 
 // --- Compose / Swarm management labels ---
@@ -89,34 +89,19 @@ export function getSwarmServiceModeFromSpec(mode: SwarmServiceModeSpec | undefin
 	return 'unknown';
 }
 
+const swarmModeDisplay = new Map<string, { label: () => string; variant: SwarmServiceModeBadgeVariant }>([
+	['replicated', { label: m.swarm_service_mode_replicated, variant: 'blue' }],
+	['global', { label: m.global, variant: 'green' }],
+	['replicated-job', { label: m.swarm_service_mode_replicated_job, variant: 'amber' }],
+	['global-job', { label: m.swarm_service_mode_global_job, variant: 'purple' }]
+]);
+
 export function getSwarmServiceModeLabel(mode: string): string {
-	switch (mode) {
-		case 'replicated':
-			return m.swarm_service_mode_replicated();
-		case 'global':
-			return m.global();
-		case 'replicated-job':
-			return m.swarm_service_mode_replicated_job();
-		case 'global-job':
-			return m.swarm_service_mode_global_job();
-		default:
-			return m.common_unknown();
-	}
+	return (swarmModeDisplay.get(mode)?.label ?? m.common_unknown)();
 }
 
 export function getSwarmServiceModeVariant(mode: string): SwarmServiceModeBadgeVariant {
-	switch (mode) {
-		case 'replicated':
-			return 'blue';
-		case 'global':
-			return 'green';
-		case 'replicated-job':
-			return 'amber';
-		case 'global-job':
-			return 'purple';
-		default:
-			return 'gray';
-	}
+	return swarmModeDisplay.get(mode)?.variant ?? 'gray';
 }
 
 export function isSwarmServiceModeScalable(mode: string): boolean {
@@ -147,34 +132,19 @@ export function getProjectUpdateStatus(updateInfo?: ProjectUpdateInfo): ProjectU
 	return updateInfo?.status ?? 'unknown';
 }
 
+const projectUpdateDisplay = new Map<ProjectUpdateStatus, { label: () => string; variant: ProjectUpdateBadgeVariant }>([
+	['has_update', { label: m.images_has_updates, variant: 'blue' }],
+	['up_to_date', { label: m.image_update_up_to_date_title, variant: 'green' }],
+	['not_pulled', { label: m.image_update_not_pulled_title, variant: 'blue' }],
+	['error', { label: m.common_error, variant: 'red' }]
+]);
+
 export function getProjectUpdateText(updateInfo?: ProjectUpdateInfo): string {
-	switch (getProjectUpdateStatus(updateInfo)) {
-		case 'has_update':
-			return m.images_has_updates();
-		case 'up_to_date':
-			return m.image_update_up_to_date_title();
-		case 'not_pulled':
-			return m.image_update_not_pulled_title();
-		case 'error':
-			return m.common_error();
-		default:
-			return m.image_update_status_unknown();
-	}
+	return (projectUpdateDisplay.get(getProjectUpdateStatus(updateInfo))?.label ?? m.image_update_status_unknown)();
 }
 
 export function getProjectUpdateVariant(updateInfo?: ProjectUpdateInfo): ProjectUpdateBadgeVariant {
-	switch (getProjectUpdateStatus(updateInfo)) {
-		case 'has_update':
-			return 'blue';
-		case 'up_to_date':
-			return 'green';
-		case 'not_pulled':
-			return 'blue';
-		case 'error':
-			return 'red';
-		default:
-			return 'gray';
-	}
+	return projectUpdateDisplay.get(getProjectUpdateStatus(updateInfo))?.variant ?? 'gray';
 }
 
 export function getProjectUpdateTooltip(updateInfo?: ProjectUpdateInfo): string | undefined {

@@ -3,15 +3,15 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
 	import { toast } from 'svelte-sonner';
-	import { openConfirmDialog } from '#lib/components/confirm-dialog';
-	import { Badge } from '#lib/components/ui/badge';
-	import { tryCatch } from '#lib/utils/api';
-	import { handleApiResultWithCallbacks } from '#lib/utils/api';
-	import { formatRelativeTime } from '#lib/utils/formatting';
-	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
-	import type { Event } from '#lib/types/shared';
-	import type { ColumnSpec, MobileFieldVisibility } from '#lib/components/arcane-table';
-	import { UniversalMobileCard } from '#lib/components/arcane-table';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { tryCatch } from '#lib/utils/api.js';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { formatRelativeTime } from '#lib/utils/formatting.js';
+	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import type { Event } from '#lib/types/shared.js';
+	import type { ColumnSpec, MobileFieldVisibility } from '#lib/components/arcane-table/index.js';
+	import { UniversalMobileCard } from '#lib/components/arcane-table/index.js';
 	import RelativeTimeCell from '#lib/components/arcane-table/cells/relative-time-cell.svelte';
 	import EventDetailPanel from '#lib/components/events/event-detail-panel.svelte';
 	import {
@@ -21,12 +21,12 @@
 		eventTypeFilters,
 		eventTypeIcon,
 		eventTypeLabel
-	} from '#lib/components/events/events-labels';
-	import { m } from '#lib/paraglide/messages';
-	import { eventService } from '#lib/services/event-service';
-	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	} from '#lib/components/events/events-labels.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { eventService } from '#lib/services/event-service.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
-	import { TrashIcon, NotificationsIcon, TagIcon, EnvironmentsIcon, UserIcon } from '#lib/icons';
+	import { TrashIcon, NotificationsIcon, TagIcon, EnvironmentsIcon, UserIcon } from '#lib/icons/index.js';
 
 	let {
 		events = $bindable(),

@@ -1,20 +1,12 @@
 import type { ArcaneRow } from './table-features';
 import type { RowData } from '@tanstack/table-core';
 import type { ColumnFiltersState } from '@tanstack/table-core';
-import type { FilterMap, FilterValue } from '#lib/types/shared';
+import type { FilterMap, FilterValue } from '#lib/types/shared.js';
 import type { CompactTablePrefs } from './arcane-table.types.svelte';
 import { decodeFilters, decodeSort } from './arcane-table.types.svelte';
 
-export type PersistedPreferencesSnapshot = {
-	hiddenColumns: string[];
-	restoredFilters: ColumnFiltersState;
-	filtersMap: FilterMap;
-	search: string;
-	sort?: { column: string; direction: 'asc' | 'desc' };
-	limit: number;
-	mobileVisibility?: string[];
-	customSettings?: Record<string, unknown>;
-};
+import type { PersistedPreferencesSnapshot } from '#lib/types/table-preferences.js';
+import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 
 export function toFilterMap(filters: ColumnFiltersState): FilterMap {
 	const out: FilterMap = {};
@@ -55,28 +47,48 @@ export function fromFilterMap(map?: FilterMap): ColumnFiltersState {
 	return out;
 }
 
-export function filterMapsEqual(a?: FilterMap, b?: FilterMap): boolean {
-	const keysA = Object.keys(a ?? {});
-	const keysB = Object.keys(b ?? {});
-	if (keysA.length !== keysB.length) return false;
-	const mapB = b ?? {};
-	for (const key of keysA) {
-		const valueA = (a ?? {})[key];
-		const valueB = mapB[key];
-		if (Array.isArray(valueA) || Array.isArray(valueB)) {
-			if (!Array.isArray(valueA) || !Array.isArray(valueB)) return false;
-			if (valueA.length !== valueB.length) return false;
-			for (let i = 0; i < valueA.length; i += 1) {
-				if (`${valueA[i]}` !== `${valueB[i]}`) return false;
-			}
-			continue;
-		}
-		if (valueA !== valueB) {
-			if (valueA == null || valueB == null) return false;
-			if (`${valueA}` !== `${valueB}`) return false;
-		}
+function filterValuesEqual(a: unknown, b: unknown): boolean {
+	if (Array.isArray(a) || Array.isArray(b)) {
+		return (
+			Array.isArray(a) &&
+			Array.isArray(b) &&
+			a.length === b.length &&
+			Array.from(a).every((value, index) => `${value}` === `${b[index]}`)
+		);
 	}
-	return true;
+	if (a === b) return true;
+	return a != null && b != null && `${a}` === `${b}`;
+}
+
+export function filterMapsEqual(a?: FilterMap, b?: FilterMap): boolean {
+	const keys = Object.keys(a ?? {});
+	return keys.length === Object.keys(b ?? {}).length && keys.every((key) => filterValuesEqual(a?.[key], b?.[key]));
+}
+
+export function restoreTableRequestOptions(
+	current: SearchPaginationSortRequest,
+	snapshot: PersistedPreferencesSnapshot,
+	fallbackLimit: number
+): SearchPaginationSortRequest {
+	let next = current;
+	function apply(patch: Partial<SearchPaginationSortRequest>) {
+		next = { ...next, pagination: { page: 1, limit: next?.pagination?.limit ?? fallbackLimit }, ...patch };
+	}
+
+	const filters = Object.keys(snapshot.filtersMap).length ? snapshot.filtersMap : undefined;
+	if (!filterMapsEqual(filters, current?.filters)) apply({ filters });
+
+	const currentSearch = (current?.search ?? '').trim();
+	const search = currentSearch || snapshot.search;
+	if (search !== currentSearch) apply({ search: search || undefined });
+
+	if (snapshot.limit !== (next?.pagination?.limit ?? fallbackLimit)) {
+		apply({ pagination: { page: 1, limit: snapshot.limit } });
+	}
+
+	const sort = snapshot.sort;
+	if (sort && (next?.sort?.column !== sort.column || next?.sort?.direction !== sort.direction)) apply({ sort });
+	return next;
 }
 
 export function extractPersistedPreferences(

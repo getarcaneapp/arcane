@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { Badge, type BadgeVariant } from '#lib/components/ui/badge';
-	import { cn } from '#lib/utils';
-	import { m } from '#lib/paraglide/messages';
-	import type { Environment, EnvironmentStatus } from '#lib/types/environment';
-	import { formatDateTimeShort } from '#lib/utils/formatting';
+	import { Badge, type BadgeVariant } from '#lib/components/ui/badge/index.js';
+	import { cn } from '#lib/utils.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import type { Environment, EnvironmentStatus } from '#lib/types/environment.js';
+	import { formatDateTimeShort } from '#lib/utils/formatting.js';
 
 	let {
 		environment,

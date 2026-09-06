@@ -1,9 +1,9 @@
-import { volumeService } from '#lib/services/volume-service';
-import { queryKeys } from '#lib/query/query-keys';
-import type { SearchPaginationSortRequest } from '#lib/types/shared';
-import { resolveInitialTableRequest } from '#lib/utils/tables';
+import { volumeService } from '#lib/services/volume-service.js';
+import { queryKeys } from '#lib/query/query-keys.js';
+import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+import { resolveInitialTableRequest } from '#lib/utils/tables.js';
 import type { PageLoad } from './$types';
-import { environmentStore } from '#lib/stores/environment.store.svelte';
+import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 
 export const load: PageLoad = async ({ parent }) => {
 	const { queryClient } = await parent();

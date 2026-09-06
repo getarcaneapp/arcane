@@ -1,22 +1,22 @@
 <script lang="ts">
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { toast } from 'svelte-sonner';
-	import { createForm } from '#lib/utils/settings';
-	import { m } from '#lib/paraglide/messages';
-	import { templateService } from '#lib/services/template-service';
+	import { createForm } from '#lib/utils/settings.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { templateService } from '#lib/services/template-service.js';
 	import { goto } from '$app/navigation';
 	import TemplateSelectionDialog from '#lib/components/dialogs/template-selection-dialog.svelte';
 	import ComposeTemplateEditor from '#lib/components/ComposeTemplateEditor.svelte';
 	import { untrack } from 'svelte';
-	import type { Template } from '#lib/types/swarm';
-	import { globalVariablesToMap } from '#lib/utils/template-load';
-	import { ArrowLeftIcon } from '#lib/icons';
+	import type { Template } from '#lib/types/swarm.js';
+	import { globalVariablesToMap } from '#lib/utils/template-load.js';
+	import { ArrowLeftIcon } from '#lib/icons/index.js';
 	import {
 		createTemplateContentSchema,
 		getTemplateEditorSaveState,
 		resetTemplateEditorFields,
 		runTemplateEditorSave
-	} from '#lib/utils/template-editor';
+	} from '#lib/utils/template-editor.js';
 
 	let { data } = $props();
 

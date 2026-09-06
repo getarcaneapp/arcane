@@ -1,5 +1,5 @@
-import { m } from '#lib/paraglide/messages';
-import { handleApiResultWithCallbacks, tryCatch } from '#lib/utils/api';
+import { m } from '#lib/paraglide/messages.js';
+import { handleApiResultWithCallbacks, tryCatch } from '#lib/utils/api.js';
 import { toast } from 'svelte-sonner';
 import { z } from 'zod/v4';
 

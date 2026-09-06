@@ -11,7 +11,7 @@ import type {
 	PasskeyChallenge,
 	RecoveryCodesResponse,
 	StepUpGrant
-} from '#lib/types/auth';
+} from '#lib/types/auth.js';
 
 class PasskeyService extends BaseAPIService {
 	async getLoginAvailability(): Promise<PasskeyLoginAvailability> {

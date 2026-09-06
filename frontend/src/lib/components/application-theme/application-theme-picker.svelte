@@ -4,10 +4,10 @@
 	import { Label } from '#lib/components/ui/label/index.js';
 	import * as RadioGroup from '#lib/components/ui/radio-group/index.js';
 	import { mode } from 'mode-watcher';
-	import { m } from '#lib/paraglide/messages';
-	import { APPLICATION_THEME_OPTIONS, applyApplicationTheme, resolveApplicationTheme } from '#lib/utils/theme';
+	import { m } from '#lib/paraglide/messages.js';
+	import { APPLICATION_THEME_OPTIONS, applyApplicationTheme, resolveApplicationTheme } from '#lib/utils/theme.js';
 	import type { CarouselAPI } from '#lib/components/ui/carousel/context.js';
-	import type { ApplicationTheme } from '#lib/types/settings';
+	import type { ApplicationTheme } from '#lib/types/settings.js';
 
 	let {
 		selectedTheme = $bindable(),

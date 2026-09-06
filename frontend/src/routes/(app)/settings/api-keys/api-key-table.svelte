@@ -1,21 +1,21 @@
 <script lang="ts">
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import * as ArcaneTooltip from '#lib/components/arcane-tooltip';
+	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
-	import { CopyButton } from '#lib/components/ui/copy-button';
+	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
 	import { toast } from 'svelte-sonner';
-	import { Badge } from '#lib/components/ui/badge';
-	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
-	import type { ApiKey } from '#lib/types/auth';
-	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '#lib/components/arcane-table';
-	import { UniversalMobileCard } from '#lib/components/arcane-table';
-	import { apiKeyService } from '#lib/services/api-key-service';
-	import { formatOptionalDateTime, isPastDate } from '#lib/utils/formatting';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import type { ApiKey } from '#lib/types/auth.js';
+	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '#lib/components/arcane-table/index.js';
+	import { UniversalMobileCard } from '#lib/components/arcane-table/index.js';
+	import { apiKeyService } from '#lib/services/api-key-service.js';
+	import { formatOptionalDateTime, isPastDate } from '#lib/utils/formatting.js';
 	import * as m from '#lib/paraglide/messages.js';
-	import { ApiKeyIcon, TrashIcon, EditIcon } from '#lib/icons';
+	import { ApiKeyIcon, TrashIcon, EditIcon } from '#lib/icons/index.js';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
-	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions';
+	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions.js';
 
 	let {
 		apiKeys = $bindable(),
@@ -219,6 +219,12 @@
 	/>
 {/snippet}
 
+{#snippet lockedExplanation(reason: string)}
+	<ArcaneTooltip.Content>
+		<p class="max-w-xs text-xs break-words">{reason}</p>
+	</ArcaneTooltip.Content>
+{/snippet}
+
 {#snippet RowActions({ item }: { item: ApiKey })}
 	{@const lockedReason = isStaticApiKey(item)
 		? m.api_key_static_description()
@@ -235,9 +241,7 @@
 							{m.common_edit()}
 						</DropdownMenu.Item>
 					</ArcaneTooltip.Trigger>
-					<ArcaneTooltip.Content>
-						<p class="max-w-xs text-xs break-words">{lockedReason}</p>
-					</ArcaneTooltip.Content>
+					{@render lockedExplanation(lockedReason)}
 				</ArcaneTooltip.Root>
 			{:else}
 				<DropdownMenu.Item onclick={() => onEditApiKey(item)}>
@@ -257,9 +261,7 @@
 							{m.common_delete()}
 						</DropdownMenu.Item>
 					</ArcaneTooltip.Trigger>
-					<ArcaneTooltip.Content>
-						<p class="max-w-xs text-xs break-words">{lockedReason}</p>
-					</ArcaneTooltip.Content>
+					{@render lockedExplanation(lockedReason)}
 				</ArcaneTooltip.Root>
 			{:else}
 				<DropdownMenu.Item variant="destructive" onclick={() => handleDeleteApiKey(item.id, item.name)}>

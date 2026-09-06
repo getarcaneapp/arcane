@@ -4,7 +4,7 @@
 	import * as InputGroup from '#lib/components/ui/input-group/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import { ArrowDownIcon } from '#lib/icons';
+	import { ArrowDownIcon } from '#lib/icons/index.js';
 
 	type Props = {
 		id?: string;

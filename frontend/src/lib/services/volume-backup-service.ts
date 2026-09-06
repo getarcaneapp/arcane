@@ -1,15 +1,15 @@
 import BaseAPIService from './api-service';
 import { uploadService, type UploadProgressCallback } from './upload-service';
-import { environmentStore } from '#lib/stores/environment.store.svelte';
+import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import type {
 	BackupEntry,
 	CreateVolumeBackupRequest,
 	UpdateVolumeBackupPolicy,
 	VolumeBackupPolicyCollection
-} from '#lib/types/shared';
-import type { SearchPaginationSortRequest, Paginated } from '#lib/types/shared';
-import { transformPaginationParams } from '#lib/utils/tables';
-import type { BackupFileBrowseRequest, BackupFileEntry, BackupRestoreSelection } from '#lib/types/backup';
+} from '#lib/types/shared.js';
+import type { SearchPaginationSortRequest, Paginated } from '#lib/types/shared.js';
+import { transformPaginationParams } from '#lib/utils/tables.js';
+import type { BackupFileBrowseRequest, BackupFileEntry, BackupRestoreSelection } from '#lib/types/backup.js';
 
 export type VolumeBackupListResponse = Paginated<BackupEntry> & { warnings?: string[] };
 

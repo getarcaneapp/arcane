@@ -513,37 +513,39 @@ func TestImageUpdateWatcher_BackfillRetriesContainedPanicInternal(t *testing.T) 
 }
 
 func TestImageUpdateWatcher_BackfillFailureRetriesBeforeScanning(t *testing.T) {
-	secondAttemptStarted := make(chan struct{})
-	releaseSecondAttempt := make(chan struct{})
-	backfiller := &projectImageRefsBackfillerFakeInternal{
-		run: func(ctx context.Context, call int) (int, error) {
-			if call == 1 {
-				return 0, fmt.Errorf("database statement timeout: %w", context.DeadlineExceeded)
-			}
-			close(secondAttemptStarted)
-			select {
-			case <-ctx.Done():
-				return 0, ctx.Err()
-			case <-releaseSecondAttempt:
-				return 42, nil
-			}
-		},
-	}
-	scanner := &imageUpdateScannerFakeInternal{}
-	settings := &pollingSettingReaderFakeInternal{enabled: true}
-	watcher := newImageUpdateWatcherForTestInternal(t, scanner, settings, bus.NewDockerEventBus(), backfiller)
-	startImageUpdateWatcherForTestInternal(t, watcher)
+	synctest.Test(t, func(t *testing.T) {
+		secondAttemptStarted := make(chan struct{})
+		releaseSecondAttempt := make(chan struct{})
+		backfiller := &projectImageRefsBackfillerFakeInternal{
+			run: func(ctx context.Context, call int) (int, error) {
+				if call == 1 {
+					return 0, fmt.Errorf("database statement timeout: %w", context.DeadlineExceeded)
+				}
+				close(secondAttemptStarted)
+				select {
+				case <-ctx.Done():
+					return 0, ctx.Err()
+				case <-releaseSecondAttempt:
+					return 42, nil
+				}
+			},
+		}
+		scanner := &imageUpdateScannerFakeInternal{}
+		settings := &pollingSettingReaderFakeInternal{enabled: true}
+		watcher := newImageUpdateWatcherForTestInternal(t, scanner, settings, bus.NewDockerEventBus(), backfiller)
+		startImageUpdateWatcherForTestInternal(t, watcher)
 
-	select {
-	case <-secondAttemptStarted:
-	case <-time.After(time.Second):
-		require.FailNow(t, "backfill was not retried")
-	}
-	require.Zero(t, scanner.countInternal())
-	close(releaseSecondAttempt)
+		select {
+		case <-secondAttemptStarted:
+		case <-time.After(time.Second):
+			require.FailNow(t, "backfill was not retried")
+		}
+		require.Zero(t, scanner.countInternal())
+		close(releaseSecondAttempt)
 
-	require.Eventually(t, func() bool { return scanner.countInternal() == 1 }, time.Second, 5*time.Millisecond)
-	require.Equal(t, 2, backfiller.countInternal())
+		require.Eventually(t, func() bool { return scanner.countInternal() == 1 }, time.Second, 5*time.Millisecond)
+		require.Equal(t, 2, backfiller.countInternal())
+	})
 }
 
 func TestImageUpdateWatcher_CancellationStopsBackfillWithoutScanning(t *testing.T) {

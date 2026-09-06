@@ -1,15 +1,15 @@
 <script lang="ts">
 	import { startAuthentication, type PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/browser';
-	import { ApiKeyIcon, AlertIcon } from '#lib/icons';
-	import { m } from '#lib/paraglide/messages';
-	import { passkeyService } from '#lib/services/passkey-service';
-	import type { AuthenticationResponse, MFAChallenge } from '#lib/types/auth';
+	import { ApiKeyIcon, AlertIcon } from '#lib/icons/index.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { passkeyService } from '#lib/services/passkey-service.js';
+	import type { AuthenticationResponse, MFAChallenge } from '#lib/types/auth.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import { Button } from '#lib/components/ui/button';
+	import { Button } from '#lib/components/ui/button/index.js';
 	import * as InputGroup from '#lib/components/ui/input-group/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
-	import { normalizeAuthenticationError } from '#lib/utils/auth';
+	import { normalizeAuthenticationError } from '#lib/utils/auth.js';
 
 	let {
 		challenge,
