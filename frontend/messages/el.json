@@ -321,6 +321,7 @@
   "common_details_description": "Βασικές πληροφορίες σχετικά με αυτό το {resource}",
   "common_url_required": "Απαιτείται διεύθυνση URL",
   "common_username_required": "Όνομα χρήστη είναι απαραίτητο",
+  "common_max_length": "{field} πρέπει να αποτελείται από {maxLength} χαρακτήρες ή λιγότερους",
   "common_name_required": "Απαιτείται όνομα",
   "common_name_placeholder": "Πληκτρολογήστε ένα όνομα",
   "common_description_placeholder": "Εισάγετε μια περιγραφή",
