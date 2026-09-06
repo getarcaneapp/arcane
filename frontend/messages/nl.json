@@ -321,6 +321,7 @@
   "common_details_description": "Basisinformatie over deze {resource}",
   "common_url_required": "URL is verplicht",
   "common_username_required": "Gebruikersnaam is verplicht",
+  "common_max_length": "{field} moet uit maximaal {maxLength} tekens bestaan",
   "common_name_required": "Naam is verplicht",
   "common_name_placeholder": "Voer een naam in",
   "common_description_placeholder": "Voer een beschrijving in",
