@@ -321,6 +321,7 @@
   "common_details_description": "Thông tin cơ bản về {resource} này",
   "common_url_required": "URL là bắt buộc",
   "common_username_required": "Yêu cầu tên người dùng",
+  "common_max_length": "{field} phải có độ dài tối đa là {maxLength} ký tự",
   "common_name_required": "Tên là bắt buộc",
   "common_name_placeholder": "Nhập tên",
   "common_description_placeholder": "Nhập mô tả",
