@@ -321,6 +321,7 @@
   "common_details_description": "{resource} 的基本資訊",
   "common_url_required": "網址為必填欄位",
   "common_username_required": "使用者名稱為必填欄位",
+  "common_max_length": "{field} 必須為 {maxLength} 個字元或更少",
   "common_name_required": "名稱為必填欄位",
   "common_name_placeholder": "請輸入名稱",
   "common_description_placeholder": "請輸入說明",
