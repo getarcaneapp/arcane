@@ -321,6 +321,7 @@
   "common_details_description": "Bu konuyla ilgili temel bilgiler {resource}",
   "common_url_required": "URL girilmesi zorunludur",
   "common_username_required": "Kullanıcı adı gerekli",
+  "common_max_length": "{field} {maxLength} karakterden fazla olmamalıdır",
   "common_name_required": "Ad gerekli",
   "common_name_placeholder": "Bir ad yazın",
   "common_description_placeholder": "Bir açıklama giriniz",
