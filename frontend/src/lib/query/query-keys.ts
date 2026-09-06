@@ -13,6 +13,11 @@ function stableSerialize(value: unknown): string {
 }
 
 export const queryKeys = {
+	jobs: {
+		list: (environmentId: string) => ['environment-jobs', environmentId] as const,
+		runs: (environmentId: string, jobId: string, page: number) => ['job-runs', environmentId, jobId, page] as const,
+		run: (environmentId: string, jobId: string, runId: string | undefined) => ['job-run', environmentId, jobId, runId] as const
+	},
 	backupActivities: {
 		active: (environmentId: string, resourceKey: string, discoverFromHistory: boolean) =>
 			['backup-activities', environmentId, resourceKey, discoverFromHistory] as const

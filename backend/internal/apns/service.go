@@ -487,7 +487,12 @@ func (s *ApnsService) Enqueue(ctx context.Context, environmentID, environmentNam
 	if err := s.db.WithContext(ctx).Create(&entry).Error; err != nil {
 		return errors.WrapIf(err, "failed to enqueue push notification")
 	}
-	go s.DrainOutbox(context.WithoutCancel(ctx))
+	go func() {
+		drainCtx := context.WithoutCancel(ctx)
+		if err := s.DrainOutbox(drainCtx); err != nil {
+			slog.WarnContext(drainCtx, "Push outbox drain failed", "error", err)
+		}
+	}()
 	return nil
 }
 
@@ -523,44 +528,48 @@ func (s *ApnsService) recipientsInternal(ctx context.Context, environmentID stri
 	return recipients, nil
 }
 
-func (s *ApnsService) DrainOutbox(ctx context.Context) {
+func (s *ApnsService) DrainOutbox(ctx context.Context) error {
 	s.drainPending.Store(true)
 	if !s.drainMu.TryLock() {
-		return
+		return nil
 	}
 	defer s.drainMu.Unlock()
 	for s.drainPending.Swap(false) {
-		s.drainOutboxInternal(ctx)
+		if err := s.drainOutboxInternal(ctx); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
-func (s *ApnsService) drainOutboxInternal(ctx context.Context) {
+func (s *ApnsService) drainOutboxInternal(ctx context.Context) error {
 	if !s.Enabled(ctx) {
-		return
+		return nil
 	}
 	var entries []OutboxEntry
 	if err := s.db.WithContext(ctx).Where("next_attempt_at <= ?", time.Now()).Order("next_attempt_at ASC").Limit(outboxBatchSize).Find(&entries).Error; err != nil {
 		slog.ErrorContext(ctx, "Failed to load push outbox", "error", err)
-		return
+		return err
 	}
 	if len(entries) == 0 {
-		return
+		return nil
 	}
 	channelID, err := s.EnsureChannel(ctx)
 	if err != nil {
 		slog.WarnContext(ctx, "Push outbox drain skipped", "error", err)
-		return
+		return err
 	}
 	signer, err := s.signerInternal(ctx)
 	if err != nil {
 		slog.WarnContext(ctx, "Push outbox drain skipped", "error", err)
-		return
+		return err
 	}
 	for _, entry := range entries {
 		if channelRevoked := s.sendOutboxEntryInternal(ctx, entry, channelID, signer); channelRevoked {
-			return
+			return errors.New("push channel revoked")
 		}
 	}
+	return nil
 }
 
 func (s *ApnsService) sendOutboxEntryInternal(ctx context.Context, entry OutboxEntry, channelID string, signer *signerInternal) bool {

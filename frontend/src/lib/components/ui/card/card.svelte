@@ -10,7 +10,10 @@
 		children,
 		...restProps
 	}: WithElementRef<
-		HTMLAttributes<HTMLDivElement> & { variant?: 'default' | 'subtle' | 'outlined'; onclick?: (e: MouseEvent) => void }
+		HTMLAttributes<HTMLDivElement> & {
+			variant?: 'default' | 'subtle' | 'outlined' | 'transparent';
+			onclick?: (e: MouseEvent) => void;
+		}
 	> = $props();
 
 	function handleClick(e: MouseEvent) {
@@ -25,12 +28,14 @@
 		}
 	}
 
-	function getVariantClasses(variant: 'default' | 'subtle' | 'outlined') {
+	function getVariantClasses(variant: 'default' | 'subtle' | 'outlined' | 'transparent') {
 		switch (variant) {
 			case 'default':
 				return 'backdrop-blur-md bg-card/60 shadow-xs dark:bg-surface/40';
 			case 'subtle':
 				return 'bg-muted/40 dark:bg-surface/30';
+			case 'transparent':
+				return 'border-border bg-transparent shadow-none';
 			case 'outlined':
 				return 'bg-card/50 backdrop-blur-md border-border/70';
 			default:

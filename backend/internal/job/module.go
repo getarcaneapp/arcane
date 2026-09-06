@@ -7,10 +7,12 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 )
 
 type Dependencies struct {
+	Roles       *role.RoleService
 	DB          *database.DB
 	Settings    *settings.SettingsService
 	Config      *config.Config
@@ -23,8 +25,11 @@ type Module struct {
 }
 
 func New(deps Dependencies) *Module {
+	service := NewJobService(deps.DB, deps.Settings, deps.Config)
+	service.environment = deps.Environment
+	service.roles = deps.Roles
 	return &Module{
-		service:     NewJobService(deps.DB, deps.Settings, deps.Config),
+		service:     service,
 		environment: deps.Environment,
 	}
 }

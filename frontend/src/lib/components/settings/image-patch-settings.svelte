@@ -29,6 +29,7 @@
 </script>
 
 <SectionCard
+	variant="transparent"
 	title={m.security_image_patching_heading()}
 	icon={SecurityIcon}
 	class="flex flex-col"

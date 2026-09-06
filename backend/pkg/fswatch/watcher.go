@@ -143,6 +143,9 @@ func (fw *Watcher) watchLoop(ctx context.Context) {
 
 	debounceTimer := time.NewTimer(fw.debounce)
 	debounceTimer.Stop()
+	defer debounceTimer.Stop()
+	healthTicker := time.NewTicker(5 * time.Second)
+	defer healthTicker.Stop()
 	debouncePending := false
 	lastGoroutineLog := time.Time{}
 
@@ -154,15 +157,24 @@ func (fw *Watcher) watchLoop(ctx context.Context) {
 			return
 		case event, ok := <-fw.watcher.Events:
 			if fw.processEventInternal(ctx, event, ok, debounceTimer, &debouncePending) {
-				return
+				if !fw.reconnectInternal(ctx) {
+					return
+				}
 			}
 		case <-debounceTimer.C:
 			if fw.fireDebounceInternal(ctx, &debouncePending, &lastGoroutineLog) {
 				continue
 			}
+		case <-healthTicker.C:
+			if len(fw.watcher.WatchList()) == 0 && !fw.reconnectInternal(ctx) {
+				return
+			}
 		case err, ok := <-fw.watcher.Errors:
 			if !ok {
-				return
+				if !fw.reconnectInternal(ctx) {
+					return
+				}
+				continue
 			}
 			slog.ErrorContext(ctx, "Filesystem watcher error", "error", err)
 		}
@@ -429,4 +441,48 @@ func (fw *Watcher) isWatchableDirectory(path string) bool {
 	}
 
 	return resolvedInfo.IsDir()
+}
+
+// reconnectInternal replaces a lost filesystem subscription without abandoning its owner.
+func (fw *Watcher) reconnectInternal(ctx context.Context) bool {
+	if err := fw.watcher.Close(); err != nil {
+		slog.DebugContext(ctx, "Closing lost filesystem subscription", "error", err)
+	}
+	delay := 5 * time.Second
+	for {
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return false
+		case <-fw.stopCh:
+			timer.Stop()
+			return false
+		case <-timer.C:
+		}
+		watcher, err := fsnotify.NewWatcher()
+		if err == nil {
+			err = watcher.Add(fw.watchedPath)
+			if err == nil {
+				fw.watcher = watcher
+				fw.watchAliases = make(map[string]string)
+				if err := fw.addExistingDirectories(fw.watchedPath); err != nil {
+					slog.WarnContext(ctx, "Some filesystem subscriptions could not be restored", "error", err)
+				}
+				// Changes while disconnected need a full reconciliation.
+				if fw.onChange != nil {
+					fw.onChange(ctx)
+				}
+				if fw.onChangePaths != nil {
+					fw.onChangePaths(ctx, []string{fw.watchedPath})
+				}
+				return true
+			}
+			if closeErr := watcher.Close(); closeErr != nil {
+				slog.DebugContext(ctx, "Closing failed filesystem subscription", "error", closeErr)
+			}
+		}
+		slog.WarnContext(ctx, "Filesystem subscription unavailable; retrying", "path", fw.watchedPath, "error", err)
+		delay = min(delay*2, 5*time.Minute)
+	}
 }

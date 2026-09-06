@@ -4,6 +4,7 @@ import (
 	"context"
 	"strconv"
 	"strings"
+	"time"
 
 	"emperror.dev/errors"
 
@@ -125,4 +126,16 @@ func (s *KVService) IncrementInt64(ctx context.Context, key string, delta int64)
 	}
 
 	return nextValue, nil
+}
+
+// CreateIfAbsent atomically creates an entry without replacing an existing value.
+func (s *KVService) CreateIfAbsent(ctx context.Context, key, value string) (bool, error) {
+	result := s.db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&KVEntry{Key: key, Value: value})
+	return result.RowsAffected == 1, errors.WrapIf(result.Error, "create kv entry")
+}
+
+// CompareAndSwap updates only the exact value read by the caller.
+func (s *KVService) CompareAndSwap(ctx context.Context, key, previous, next string) (bool, error) {
+	result := s.db.WithContext(ctx).Model(&KVEntry{}).Where("key = ? AND value = ?", key, previous).Updates(map[string]any{"value": next, "updated_at": time.Now()})
+	return result.RowsAffected == 1, errors.WrapIf(result.Error, "compare and swap kv entry")
 }

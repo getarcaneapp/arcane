@@ -15,6 +15,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
+
 	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -375,23 +377,41 @@ func (s *GitOpsSyncService) SetScheduler(ctx context.Context, scheduler schedule
 // sync each run so a row toggled to AutoSync=false self-cancels. If the row is gone
 // (e.g. deleted out-of-band via raw SQL), the job unregisters itself instead of
 // firing forever; transient load errors are skipped and retried next tick.
-func (s *GitOpsSyncService) runScheduledSyncInternal(ctx context.Context, environmentID, syncID string) {
+func (s *GitOpsSyncService) runScheduledSyncInternal(ctx context.Context, environmentID, syncID string) (schedulertypes.Outcome, error) {
 	syncRecord, err := s.getSyncRecordByIDInternal(ctx, environmentID, syncID)
 	if err != nil {
 		if errors.Is(err, common.ErrNotFound) {
 			slog.InfoContext(ctx, "gitops auto-sync job unregistering; sync no longer exists", "syncId", syncID)
 			s.unregisterSyncJobInternal(ctx, syncID)
-			return
+			return schedulertypes.Outcome{Status: schedulertypes.Skipped}, nil
 		}
 		slog.DebugContext(ctx, "gitops auto-sync skipped; failed to load sync", "syncId", syncID, "error", err)
-		return
+		return schedulertypes.Outcome{}, err
 	}
 	if !syncRecord.AutoSync {
-		return
+		return schedulertypes.Outcome{Status: schedulertypes.Skipped}, nil
 	}
-	if _, err := s.PerformSync(ctx, environmentID, syncID, common.SystemUser); err != nil {
+	if previous, ok := jobcontext.Run(ctx); ok {
+		outcome := jobcontext.ConfirmedTarget(previous, syncID)
+		if outcome.Status == schedulertypes.Succeeded {
+			return outcome, nil
+		}
+	}
+	if err := jobcontext.Progress(ctx, schedulertypes.TargetOutcome{ID: syncID, Status: schedulertypes.Running}); err != nil {
+		return schedulertypes.Outcome{}, err
+	}
+	result, err := s.PerformSync(ctx, environmentID, syncID, common.SystemUser)
+	if err != nil {
 		slog.ErrorContext(ctx, "gitops auto-sync run failed", "syncId", syncID, "error", err)
+		return schedulertypes.Outcome{}, err
 	}
+	if !result.Success {
+		return schedulertypes.Outcome{Status: schedulertypes.Skipped, Message: result.Message}, nil
+	}
+	if err := jobcontext.Progress(ctx, schedulertypes.TargetOutcome{ID: syncID, Status: schedulertypes.Succeeded}); err != nil {
+		return schedulertypes.Outcome{}, err
+	}
+	return schedulertypes.Outcome{Status: schedulertypes.Succeeded, Message: result.Message}, nil
 }
 
 // registerSyncJobInternal schedules a single sync on a fixed "@every Nm"
@@ -402,7 +422,12 @@ func (s *GitOpsSyncService) registerSyncJobInternal(ctx context.Context, syncID,
 	schedule := fmt.Sprintf("@every %dm", max(intervalMinutes, 1))
 	s.jobs.Register(ctx, syncID,
 		func(_ context.Context) string { return schedule },
-		func(ctx context.Context) { s.runScheduledSyncInternal(ctx, environmentID, syncID) },
+		func(ctx context.Context) (schedulertypes.Outcome, error) {
+			return s.runScheduledSyncInternal(ctx, environmentID, syncID)
+		},
+		func(_ context.Context, previous schedulertypes.Run) (schedulertypes.Outcome, error) {
+			return jobcontext.ConfirmedTarget(previous, syncID), nil
+		},
 	)
 }
 
@@ -413,13 +438,13 @@ func (s *GitOpsSyncService) unregisterSyncJobInternal(ctx context.Context, syncI
 // kickSyncInternal runs a sync once in the background on the app lifecycle context.
 // Used when auto-sync is freshly enabled or when a sync is overdue at startup, so
 // the first run does not wait a full interval.
-func (s *GitOpsSyncService) kickSyncInternal(ctx context.Context, syncID, environmentID string) {
-	ctx = s.jobs.Context(ctx)
-	go func() {
-		if _, err := s.PerformSync(ctx, environmentID, syncID, common.SystemUser); err != nil {
-			slog.ErrorContext(ctx, "gitops immediate sync kick failed", "syncId", syncID, "error", err)
-		}
-	}()
+func (s *GitOpsSyncService) kickSyncInternal(ctx context.Context, syncID string) {
+	if !s.jobs.Enabled() {
+		return
+	}
+	if _, err := s.jobs.Scheduler().Submit(ctx, schedulertypes.Request{JobID: s.jobs.JobName(syncID), EnvironmentID: "0", Trigger: "startup"}); err != nil {
+		slog.ErrorContext(ctx, "gitops immediate sync admission failed", "syncId", syncID, "error", err)
+	}
 }
 
 // RegisterAutoSyncJobsOnStartup registers a dynamic job for every auto-sync-enabled
@@ -440,7 +465,7 @@ func (s *GitOpsSyncService) RegisterAutoSyncJobsOnStartup(ctx context.Context) {
 		syncRecord := syncs[i]
 		s.registerSyncJobInternal(ctx, syncRecord.ID, syncRecord.EnvironmentID, syncRecord.SyncInterval)
 		if isGitOpsSyncOverdueInternal(&syncRecord) {
-			s.kickSyncInternal(ctx, syncRecord.ID, syncRecord.EnvironmentID)
+			s.kickSyncInternal(ctx, syncRecord.ID)
 		}
 	}
 	slog.InfoContext(ctx, "Registered gitops auto-sync jobs on startup", "count", len(syncs))
@@ -814,7 +839,7 @@ func (s *GitOpsSyncService) UpdateSync(ctx context.Context, environmentID, id st
 		s.registerSyncJobInternal(ctx, syncRecord.ID, syncRecord.EnvironmentID, newInterval)
 		if !oldAutoSync {
 			// Freshly enabled — kick a run now so it doesn't wait a full interval.
-			s.kickSyncInternal(ctx, syncRecord.ID, syncRecord.EnvironmentID)
+			s.kickSyncInternal(ctx, syncRecord.ID)
 		}
 	default:
 		s.unregisterSyncJobInternal(ctx, syncRecord.ID)

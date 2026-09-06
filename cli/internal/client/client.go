@@ -29,6 +29,7 @@ import (
 	"encoding/json/v2"
 	stderrors "errors"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"net/url"
@@ -244,7 +245,7 @@ type APIResponse[T any] struct {
 // It constructs the full URL from the base URL and path, serializes the body
 // as JSON (if provided), and includes authentication headers. The caller is
 // responsible for closing the response body.
-func (c *Client) Request(ctx context.Context, method, path string, body any) (*http.Response, error) {
+func (c *Client) Request(ctx context.Context, method, path string, body any, headers ...http.Header) (*http.Response, error) {
 	fullURL, err := c.resolveURL(path)
 	if err != nil {
 		return nil, err
@@ -266,6 +267,10 @@ func (c *Client) Request(ctx context.Context, method, path string, body any) (*h
 			c.applyAuth(req)
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("Accept", "application/json")
+			for _, values := range headers {
+				maps.Copy(req.Header, values.Clone())
+			}
+
 			start := time.Now()
 			logger.GetLogger().Debug("Sending request", "method", method, "url", fullURL, "env_id", c.envID, "streaming_body", true)
 			resp, err := c.httpClient.Do(req)
@@ -284,7 +289,7 @@ func (c *Client) Request(ctx context.Context, method, path string, body any) (*h
 		}
 	}
 
-	return c.doRequest(ctx, method, fullURL, bodyBytes, true)
+	return c.doRequestInternal(ctx, method, fullURL, bodyBytes, true, headers...)
 }
 
 // RequestRaw makes an HTTP request with a raw body and custom headers.
@@ -341,7 +346,7 @@ func (c *Client) resolveURL(path string) (string, error) {
 	return c.baseURLParsed.ResolveReference(rel).String(), nil
 }
 
-func (c *Client) doRequest(ctx context.Context, method, fullURL string, bodyBytes []byte, allowRefresh bool) (*http.Response, error) {
+func (c *Client) doRequestInternal(ctx context.Context, method, fullURL string, bodyBytes []byte, allowRefresh bool, headers ...http.Header) (*http.Response, error) {
 	attempts := max(c.maxAttempts, 1)
 
 	for attempt := 1; attempt <= attempts; attempt++ {
@@ -358,6 +363,9 @@ func (c *Client) doRequest(ctx context.Context, method, fullURL string, bodyByte
 		c.applyAuth(req)
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Accept", "application/json")
+		for _, values := range headers {
+			maps.Copy(req.Header, values.Clone())
+		}
 
 		start := time.Now()
 		logger.GetLogger().Debug("Sending request", "method", method, "url", fullURL, "env_id", c.envID, "attempt", attempt, "max_attempts", attempts, "body_bytes", len(bodyBytes))
@@ -570,9 +578,9 @@ func (c *Client) DeleteWithBody(ctx context.Context, path string, body any) (*ht
 // DoJSON performs a request and decodes the response JSON, enforcing a
 // successful HTTP status. Unlike GetJSON/PostJSON it does not require the
 // standard API envelope or its Success flag.
-func (c *Client) DoJSON[T any](ctx context.Context, method, path string, body any) (T, error) {
+func (c *Client) DoJSON[T any](ctx context.Context, method, path string, body any, headers ...http.Header) (T, error) {
 	var out T
-	resp, err := c.Request(ctx, method, path, body)
+	resp, err := c.Request(ctx, method, path, body, headers...)
 	if err != nil {
 		return out, err
 	}

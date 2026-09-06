@@ -1,6 +1,7 @@
 package jobs
 
 import (
+	"crypto/rand"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -16,7 +17,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var jsonOutput bool
+var (
+	jsonOutput bool
+	requestID  string
+)
 
 // JobsCmd is the parent command for job schedule operations.
 var JobsCmd = &cobra.Command{
@@ -145,7 +149,7 @@ var listCmd = &cobra.Command{
 
 var runCmd = &cobra.Command{
 	Use:          "run <job-id>",
-	Short:        "Run a background job now",
+	Short:        "Queue a background job now",
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -154,9 +158,17 @@ var runCmd = &cobra.Command{
 			return err
 		}
 
-		result, err := c.DoJSON[jobschedule.JobRunResponse](cmd.Context(), http.MethodPost, types.JobRun(c.EnvID(), args[0]), nil)
+		id := requestID
+		if id == "" {
+			var value [16]byte
+			_, _ = rand.Read(value[:])
+			value[6] = (value[6] & 0x0f) | 0x40
+			value[8] = (value[8] & 0x3f) | 0x80
+			id = fmt.Sprintf("%x-%x-%x-%x-%x", value[0:4], value[4:6], value[6:8], value[8:10], value[10:16])
+		}
+		result, err := c.DoJSON[jobschedule.JobRunResponse](cmd.Context(), http.MethodPost, types.JobRun(c.EnvID(), args[0]), nil, http.Header{"Idempotency-Key": []string{id}})
 		if err != nil {
-			return errors.WrapIf(err, "failed to run job")
+			return errors.WrapIff(err, "failed to queue job (reuse --request-id %s if delivery is uncertain)", id)
 		}
 
 		if jsonOutput {
@@ -167,6 +179,8 @@ var runCmd = &cobra.Command{
 			return errors.Errorf("job %s failed: %s", args[0], result.Message)
 		}
 		output.Success("%s", result.Message)
+		output.KeyValue("Run ID", result.RunID)
+		output.KeyValue("Status", string(result.Status))
 		return nil
 	},
 }
@@ -180,6 +194,7 @@ func init() {
 	getCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	updateCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	listCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
+	runCmd.Flags().StringVar(&requestID, "request-id", "", "Stable request ID to reuse when retrying an uncertain submission")
 	runCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 
 	updateCmd.Flags().StringVar(&environmentHealthInterval, "environment-health-interval", "", "Environment health job interval (cron expression)")

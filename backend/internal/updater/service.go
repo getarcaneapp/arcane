@@ -2,7 +2,6 @@ package updater
 
 import (
 	"context"
-	stderrors "errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -11,6 +10,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
+	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 
@@ -190,6 +192,10 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, options arcaneupdater
 		s.completeAutoUpdateActivityInternal(ctx, activityID, out, err)
 	}()
 
+	if err = jobcontext.Progress(ctx, schedulertypes.TargetOutcome{ID: "auto-update", Status: schedulertypes.Running, ActivityID: activityID}); err != nil {
+		return out, err
+	}
+
 	if activityID != "" && s.deps.Activity != nil {
 		// Bounded slot wait: an unbounded wait behind other long-running runs
 		// would strand the queued activity row (the completion defer above
@@ -267,7 +273,12 @@ func (s *UpdaterService) applyScopedUpdatesInternal(ctx context.Context, options
 	engineOpts := updater.Options{Force: options.ForceUpdate, DryRun: options.DryRun}
 	var engineErrs []error
 	for _, containerID := range containerIDs {
+		target := schedulertypes.TargetOutcome{ID: containerID, ResourceType: "container", Status: schedulertypes.Running}
+		if err := jobcontext.Progress(ctx, target); err != nil {
+			return err
+		}
 		moduleResult, engineErr := s.engineInternal().UpdateContainer(ctx, containerID, engineOpts)
+		target.Status = schedulertypes.NeedsAttention
 		if moduleResult != nil {
 			partial := resultFromModuleInternal(moduleResult)
 			out.Checked += partial.Checked
@@ -276,6 +287,12 @@ func (s *UpdaterService) applyScopedUpdatesInternal(ctx context.Context, options
 			out.Skipped += partial.Skipped
 			out.Failed += partial.Failed
 			out.Items = append(out.Items, partial.Items...)
+			target.Status = schedulertypes.Succeeded
+			if partial.Failed > 0 {
+				target.Status = schedulertypes.Failed
+			} else if partial.Skipped > 0 {
+				target.Status = schedulertypes.Skipped
+			}
 		}
 		if engineErr != nil {
 			out.Failed++
@@ -286,13 +303,18 @@ func (s *UpdaterService) applyScopedUpdatesInternal(ctx context.Context, options
 				Error:        engineErr.Error(),
 			})
 			engineErrs = append(engineErrs, errors.WrapIff(engineErr, "%s", containerID))
+			target.Status = schedulertypes.Failed
+			target.Message = engineErr.Error()
+		}
+		if err := jobcontext.Progress(ctx, target); err != nil {
+			return errors.Combine(err, errors.Combine(engineErrs...))
 		}
 	}
 	s.logResultItemsInternal(ctx, out)
 	out.Success = out.Failed == 0
 	// Engine errors propagate like the unscoped path's engine error does —
 	// the remaining containers were still attempted and recorded above.
-	return stderrors.Join(engineErrs...)
+	return errors.Combine(engineErrs...)
 }
 
 // resolveScopedContainerIDsInternal maps a scoped options payload to the
@@ -1163,7 +1185,7 @@ func (s *UpdaterService) CollectUsedImages(ctx context.Context) (map[string]stru
 	}
 
 	if successfulSources == 0 {
-		return nil, stderrors.Join(errs...)
+		return nil, errors.Combine(errs...)
 	}
 
 	s.loggerInternal().DebugContext(ctx, "collectUsedImages: collected used images", "count", len(out))

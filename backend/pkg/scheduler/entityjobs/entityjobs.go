@@ -77,7 +77,7 @@ func (r *Registry) Context(ctx context.Context) context.Context {
 func (r *Registry) JobName(entityID string) string { return r.jobPrefix + entityID }
 
 // Register adds (or replaces) the dynamic job for entityID.
-func (r *Registry) Register(ctx context.Context, entityID string, schedule func(context.Context) string, run func(context.Context)) {
+func (r *Registry) Register(ctx context.Context, entityID string, schedule func(context.Context) string, run func(context.Context) (schedulertypes.Outcome, error), reconcile ...func(context.Context, schedulertypes.Run) (schedulertypes.Outcome, error)) {
 	if r.scheduler == nil {
 		return
 	}
@@ -86,6 +86,9 @@ func (r *Registry) Register(ctx context.Context, entityID string, schedule func(
 		JobName:    r.JobName(entityID),
 		ScheduleFn: schedule,
 		RunFn:      run,
+	}
+	if len(reconcile) > 0 {
+		job.ReconcileFn = reconcile[0]
 	}
 	if err := r.scheduler.AddJob(schedulerCtx, job); err != nil {
 		slog.ErrorContext(schedulerCtx, "failed to register scheduled job", "job", job.JobName, "error", err)

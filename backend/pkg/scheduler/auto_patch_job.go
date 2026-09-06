@@ -4,11 +4,13 @@ import (
 	"context"
 	"log/slog"
 
+	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
+
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/imagepatch"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+	scheduleutil "github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/schedule"
 	"github.com/getarcaneapp/arcane/types/v2"
-	"github.com/robfig/cron/v3"
 )
 
 const AutoPatchJobName = "auto-patch"
@@ -48,7 +50,7 @@ func (j *AutoPatchJob) Schedule(ctx context.Context) string {
 		schedule = "0 0 3 * * *"
 	}
 
-	parser := cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+	parser := scheduleutil.Parser()
 	if _, err := parser.Parse(schedule); err != nil {
 		slog.WarnContext(ctx, "Invalid cron expression for auto-patch, using default", "invalid_schedule", schedule, "error", err)
 		return "0 0 3 * * *"
@@ -57,10 +59,10 @@ func (j *AutoPatchJob) Schedule(ctx context.Context) string {
 	return schedule
 }
 
-func (j *AutoPatchJob) Run(ctx context.Context) {
+func (j *AutoPatchJob) Run(ctx context.Context) (schedulertypes.Outcome, error) {
 	if !j.settingsService.GetBoolSetting(ctx, "imageAutoPatchEnabled", false) {
 		slog.DebugContext(ctx, "scheduled image patching disabled; skipping run")
-		return
+		return schedulertypes.Outcome{Status: schedulertypes.Skipped}, nil
 	}
 
 	slog.InfoContext(ctx, "scheduled image patching started")
@@ -68,11 +70,15 @@ func (j *AutoPatchJob) Run(ctx context.Context) {
 	patched, skipped, err := j.imagePatchService.PatchFlaggedImages(ctx, types.LocalDockerEnvironmentID, autoPatchSystemUser)
 	if err != nil {
 		slog.ErrorContext(ctx, "scheduled image patching failed", "error", err)
-		return
+		if patched > 0 {
+			return schedulertypes.Outcome{Status: schedulertypes.Partial}, err
+		}
+		return schedulertypes.Outcome{}, err
 	}
 
 	slog.InfoContext(ctx, "scheduled image patching completed",
 		"patched", patched,
 		"skipped", skipped,
 	)
+	return schedulertypes.Outcome{Status: schedulertypes.Succeeded}, nil
 }

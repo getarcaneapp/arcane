@@ -2,6 +2,8 @@ package scheduler
 
 import (
 	"context"
+	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
+	"sync"
 	"testing"
 	"time"
 
@@ -36,6 +38,14 @@ func newJobSchedulerForTestInternal(t testing.TB, ctx context.Context, location 
 	created, err := NewJobScheduler(ctx, runtime, location)
 	require.NoError(t, err)
 	scheduler := created.(*jobSchedulerInternal)
+	scheduler.SetDispatcher(&testDispatcherInternal{run: func(ctx context.Context, request schedulertypes.Request) error {
+		job, ok := scheduler.GetJob(request.JobID)
+		if !ok {
+			return nil
+		}
+		_, err := job.Run(ctx)
+		return err
+	}})
 	t.Cleanup(func() {
 		stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
@@ -62,4 +72,22 @@ func newSettingsServiceForTestInternal(t testing.TB, ctx context.Context, db *da
 		require.NoError(t, lifecycle.Stop(stopCtx))
 	})
 	return settings.NewSettingsService(ctx, db, executor, effects)
+}
+
+type testDispatcherInternal struct {
+	run   func(context.Context, schedulertypes.Request) error
+	locks sync.Map
+}
+
+func (d *testDispatcherInternal) Submit(ctx context.Context, request schedulertypes.Request) (schedulertypes.Run, error) {
+	value, _ := d.locks.LoadOrStore(request.JobID, &sync.Mutex{})
+	lock := value.(*sync.Mutex)
+	if !lock.TryLock() {
+		return schedulertypes.Run{}, nil
+	}
+	defer lock.Unlock()
+	return schedulertypes.Run{JobID: request.JobID}, d.run(ctx, request)
+}
+func (*testDispatcherInternal) Checkpoint(context.Context, string, string, time.Time) error {
+	return nil
 }

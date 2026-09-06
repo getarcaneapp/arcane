@@ -67,8 +67,9 @@ func TestEnvironmentService_OverlappingHealthCheckIsSkippedInternal(t *testing.T
 }
 
 type environmentTestSchedulerInternal struct {
-	added   []string
-	removed []string
+	submitted []schedulertypes.Request
+	added     []string
+	removed   []string
 }
 
 func (s *environmentTestSchedulerInternal) AddJob(_ context.Context, job schedulertypes.Job) error {
@@ -1428,4 +1429,9 @@ func TestEnvironmentService_ExecuteRemoteRequest_RejectsInvalidEnvironmentURL(t 
 	_, err := svc.ExecuteRemoteRequest(ctx, "env-invalid-url", http.MethodGet, "/api/health", nil)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "invalid environment API URL")
+}
+
+func (s *environmentTestSchedulerInternal) Submit(_ context.Context, request schedulertypes.Request) (schedulertypes.Run, error) {
+	s.submitted = append(s.submitted, request)
+	return schedulertypes.Run{ID: request.RunID, JobID: request.JobID, EnvironmentID: request.EnvironmentID, Status: schedulertypes.Queued}, nil
 }

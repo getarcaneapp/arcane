@@ -16,16 +16,20 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/job"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
 	"github.com/labstack/echo/v5"
+	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	libcrypto "go.getarcane.app/sys/crypto"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
 	"golang.org/x/net/http2"
+	"gorm.io/gorm"
 )
 
 type blockingBusWatcherInternal struct {
@@ -381,7 +385,15 @@ func TestJobSchedulerStopCancelsItsPrivateContextInternal(t *testing.T) {
 	lifecycle := fxtest.NewLifecycle(t)
 	runtime, err := actors.NewRuntime(appCtx, lifecycle)
 	require.NoError(t, err)
-	jobScheduler, err := newJobScheduler(appCtx, lifecycle, &config.Config{}, runtime, nil, nil, nil, nil)
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&kv.KVEntry{}))
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(1)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	jobService := job.NewJobService(&database.DB{DB: db}, nil, &config.Config{})
+	jobScheduler, err := newJobScheduler(appCtx, lifecycle, &config.Config{}, runtime, nil, nil, nil, nil, jobService)
 	require.NoError(t, err)
 	watcher := &blockingBusWatcherInternal{
 		started: make(chan struct{}),

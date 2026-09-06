@@ -2,6 +2,8 @@ package activity
 
 import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
+	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 
@@ -190,8 +192,19 @@ func RunHandlerActivity(ctx context.Context, activityService Service, opts Handl
 		AwaitHandlerActivitySlot(workCtx, activityService, activityID, opts.EnvironmentID)
 	}
 
-	err := action(workCtx)
+	err := jobcontext.Progress(workCtx, schedulertypes.TargetOutcome{ID: opts.ResourceID, Status: schedulertypes.Running, ActivityID: activityID})
+	if err == nil {
+		err = action(workCtx)
+	}
 	CompleteHandlerActivity(workCtx, activityService, activityID, opts.SuccessMessage, err)
+	target := schedulertypes.TargetOutcome{ID: opts.ResourceID, Status: schedulertypes.Succeeded, ActivityID: activityID}
+	if err != nil {
+		target.Status = schedulertypes.Failed
+		target.Message = err.Error()
+	}
+	if progressErr := jobcontext.Progress(workCtx, target); progressErr != nil && err == nil {
+		err = progressErr
+	}
 	return activityID, err
 }
 

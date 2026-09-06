@@ -40,7 +40,8 @@ func newSystemBackupAdmissionGateForTestInternal(t testing.TB) *actors.Gate[acto
 }
 
 type systemBackupPolicySchedulerInternal struct {
-	jobs map[string]schedulertypes.Job
+	submitted []schedulertypes.Request
+	jobs      map[string]schedulertypes.Job
 }
 
 func (s *systemBackupPolicySchedulerInternal) AddJob(_ context.Context, job schedulertypes.Job) error {
@@ -292,4 +293,9 @@ func TestNormalizeSystemBackupSelectionInternal(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Equal(t, []backuptypes.BackupFileEntry{{Path: "demo", Name: "demo", IsDirectory: true}}, selected)
+}
+
+func (s *systemBackupPolicySchedulerInternal) Submit(_ context.Context, request schedulertypes.Request) (schedulertypes.Run, error) {
+	s.submitted = append(s.submitted, request)
+	return schedulertypes.Run{ID: request.RunID, JobID: request.JobID, EnvironmentID: request.EnvironmentID, Status: schedulertypes.Queued}, nil
 }

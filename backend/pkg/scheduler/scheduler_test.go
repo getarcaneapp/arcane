@@ -21,10 +21,11 @@ func (j *testSchedulerJob) Name() string { return j.name }
 
 func (j *testSchedulerJob) Schedule(context.Context) string { return j.schedule }
 
-func (j *testSchedulerJob) Run(ctx context.Context) {
+func (j *testSchedulerJob) Run(ctx context.Context) (schedulertypes.Outcome, error) {
 	if j.run != nil {
 		j.run(ctx)
 	}
+	return schedulertypes.Outcome{Status: schedulertypes.Succeeded}, nil
 }
 
 type conditionalTestSchedulerJob struct {
@@ -415,7 +416,7 @@ func TestJobScheduler_AddJob_GenericJobWithoutShouldRunIsScheduled(t *testing.T)
 	job := &schedulertypes.GenericJob{
 		JobName:    "generic-dyn",
 		ScheduleFn: func(context.Context) string { return "@every 1m" },
-		RunFn:      func(context.Context) {},
+		RunFn:      func(context.Context) (schedulertypes.Outcome, error) { return schedulertypes.Outcome{}, nil },
 	}
 	require.NoError(t, js.AddJob(context.Background(), job))
 	require.True(t, js.HasJob(job.Name()))

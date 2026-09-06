@@ -427,6 +427,9 @@ func (m *EnvironmentMiddleware) hasResourcePath(c *echo.Context, envID string) b
 }
 
 func isManagementPathInternal(method, suffix string) bool {
+	if suffix == "/jobs" || strings.HasPrefix(suffix, "/jobs/") {
+		return true
+	}
 	if isCentralSwarmManagementPathInternal(method, suffix) {
 		return true
 	}

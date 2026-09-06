@@ -67,7 +67,11 @@ func TestAnalyticsJob_Run_ManagerPayload(t *testing.T) {
 	job := NewAnalyticsJob(settingsService, kvService, server.Client(), cfg)
 	job.heartbeatURL = server.URL
 
-	job.Run(ctx)
+	if _, err := job.Run(ctx); !assert.NoError(t, err) {
+
+		return
+
+	}
 
 	var body []byte
 	select {
@@ -93,7 +97,11 @@ func TestAnalyticsJob_Run_AgentPayload(t *testing.T) {
 	job := NewAnalyticsJob(settingsService, kvService, server.Client(), cfg)
 	job.heartbeatURL = server.URL
 
-	job.Run(ctx)
+	if _, err := job.Run(ctx); !assert.NoError(t, err) {
+
+		return
+
+	}
 
 	var body []byte
 	select {
@@ -117,7 +125,11 @@ func TestAnalyticsJob_Run_SkipsWhenDisabled(t *testing.T) {
 	job := NewAnalyticsJob(settingsService, kvService, server.Client(), cfg)
 	job.heartbeatURL = server.URL
 
-	job.Run(ctx)
+	if _, err := job.Run(ctx); !assert.NoError(t, err) {
+
+		return
+
+	}
 
 	select {
 	case <-bodyCh:
@@ -136,7 +148,11 @@ func TestAnalyticsJob_Run_SkipsWhenTestEnv(t *testing.T) {
 	job := NewAnalyticsJob(settingsService, kvService, server.Client(), cfg)
 	job.heartbeatURL = server.URL
 
-	job.Run(ctx)
+	if _, err := job.Run(ctx); !assert.NoError(t, err) {
+
+		return
+
+	}
 
 	select {
 	case <-bodyCh:
@@ -157,14 +173,18 @@ func TestAnalyticsJob_Run_SkipsWithinHeartbeatWindowAfterRestart(t *testing.T) {
 	job := NewAnalyticsJob(settingsService, kvService, server.Client(), cfg)
 	job.heartbeatURL = server.URL
 	job.now = func() time.Time { return firstAttemptAt }
-	job.Run(ctx)
+	if _, err := job.Run(ctx); !assert.NoError(t, err) {
+		return
+	}
 
 	reloadedSettingsService, err := newSettingsServiceForTestInternal(t, ctx, wrappedDB)
 	require.NoError(t, err)
 	restartedJob := NewAnalyticsJob(reloadedSettingsService, kv.NewKVService(wrappedDB), server.Client(), cfg)
 	restartedJob.heartbeatURL = server.URL
 	restartedJob.now = func() time.Time { return firstAttemptAt.Add(19 * time.Minute) }
-	restartedJob.Run(ctx)
+	if _, err := restartedJob.Run(ctx); !assert.NoError(t, err) {
+		return
+	}
 
 	require.Equal(t, int32(1), requestCount.Load())
 }
@@ -181,12 +201,16 @@ func TestAnalyticsJob_Run_AllowsSendAfterHeartbeatWindow(t *testing.T) {
 	firstJob := NewAnalyticsJob(settingsService, kvService, server.Client(), cfg)
 	firstJob.heartbeatURL = server.URL
 	firstJob.now = func() time.Time { return firstAttemptAt }
-	firstJob.Run(ctx)
+	if _, err := firstJob.Run(ctx); !assert.NoError(t, err) {
+		return
+	}
 
 	secondJob := NewAnalyticsJob(settingsService, kvService, server.Client(), cfg)
 	secondJob.heartbeatURL = server.URL
 	secondJob.now = func() time.Time { return firstAttemptAt.Add(25 * time.Hour) }
-	secondJob.Run(ctx)
+	if _, err := secondJob.Run(ctx); !assert.NoError(t, err) {
+		return
+	}
 
 	require.Equal(t, int32(2), requestCount.Load())
 }
@@ -209,7 +233,9 @@ func TestAnalyticsJob_Run_ConcurrentRunsSendOnce(t *testing.T) {
 	for range 2 {
 		wg.Go(func() {
 			<-start
-			job.Run(ctx)
+			if _, err := job.Run(ctx); !assert.NoError(t, err) {
+				return
+			}
 		})
 	}
 

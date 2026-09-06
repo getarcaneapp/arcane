@@ -123,8 +123,9 @@ func TestGitOpsSyncService_OverlappingSyncPreservesSuccessShapedSkipInternal(t *
 }
 
 type gitOpsSyncTestSchedulerInternal struct {
-	added   []string
-	removed []string
+	submitted []schedulertypes.Request
+	added     []string
+	removed   []string
 }
 
 func (s *gitOpsSyncTestSchedulerInternal) AddJob(_ context.Context, job schedulertypes.Job) error {
@@ -1876,4 +1877,9 @@ func TestMarkSyncRedeployFailedInternal_PersistsErrorOnSyncRow(t *testing.T) {
 	require.NotNil(t, stored.SyncedFiles)
 	require.Contains(t, *stored.SyncedFiles, "compose.yml")
 	require.Contains(t, *stored.SyncedFiles, "scripts/pre-deploy.sh")
+}
+
+func (s *gitOpsSyncTestSchedulerInternal) Submit(_ context.Context, request schedulertypes.Request) (schedulertypes.Run, error) {
+	s.submitted = append(s.submitted, request)
+	return schedulertypes.Run{ID: request.RunID, JobID: request.JobID, EnvironmentID: request.EnvironmentID, Status: schedulertypes.Queued}, nil
 }

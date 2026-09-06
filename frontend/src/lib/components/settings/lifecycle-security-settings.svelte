@@ -29,6 +29,7 @@
 </script>
 
 <SectionCard
+	variant="transparent"
 	title={m.security_lifecycle_hooks_heading()}
 	icon={CodeIcon}
 	class="flex flex-col"

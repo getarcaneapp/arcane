@@ -50,7 +50,7 @@
 	];
 </script>
 
-<Card.Root class="flex flex-col">
+<Card.Root variant="transparent" class="flex flex-col">
 	<Card.Header icon={DockerBrandIcon}>
 		<div class="flex flex-col space-y-1.5">
 			<Card.Title>

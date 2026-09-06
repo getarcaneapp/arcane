@@ -777,7 +777,9 @@ func TestIdentityNormalizationMigration(t *testing.T) {
 			}
 			var version int64
 			require.NoError(t, db.QueryRow("SELECT MAX(version_id) FROM goose_db_version WHERE is_applied = 1").Scan(&version))
-			require.Equal(t, int64(81), version)
+			highest, err := getHighestEmbeddedMigrationVersionInternal("sqlite")
+			require.NoError(t, err)
+			require.Equal(t, highest, version)
 		})
 	}
 }
@@ -804,7 +806,9 @@ func TestIdentityNormalizationGooseUpgrade(t *testing.T) {
 	require.Equal(t, "unchanged", password)
 	var version int64
 	require.NoError(t, db.QueryRow("SELECT MAX(version_id) FROM goose_db_version WHERE is_applied = 1").Scan(&version))
-	require.Equal(t, int64(81), version)
+	highest, err := getHighestEmbeddedMigrationVersionInternal("sqlite")
+	require.NoError(t, err)
+	require.Equal(t, highest, version)
 }
 
 func TestIdentityNormalizationPostgresUpgrade(t *testing.T) {
@@ -856,5 +860,7 @@ func TestIdentityNormalizationPostgresUpgrade(t *testing.T) {
 	}
 	var version int64
 	require.NoError(t, db.QueryRowContext(ctx, "SELECT MAX(version_id) FROM goose_db_version WHERE is_applied").Scan(&version))
-	require.Equal(t, int64(81), version)
+	highest, err := getHighestEmbeddedMigrationVersionInternal("postgres")
+	require.NoError(t, err)
+	require.Equal(t, highest, version)
 }

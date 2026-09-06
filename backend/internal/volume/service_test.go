@@ -624,7 +624,8 @@ func TestTouchHelperInternal(t *testing.T) {
 }
 
 type volumeBackupPolicySchedulerInternal struct {
-	jobs map[string]schedulertypes.Job
+	submitted []schedulertypes.Request
+	jobs      map[string]schedulertypes.Job
 }
 
 func (s *volumeBackupPolicySchedulerInternal) AddJob(_ context.Context, job schedulertypes.Job) error {
@@ -1041,4 +1042,9 @@ func TestBackupPolicyDestinationLookupFailureInternal(t *testing.T) {
 		require.Empty(t, collection.Policies[0].S3DestinationName)
 		require.Empty(t, collection.Policies[0].S3Bucket)
 	}
+}
+
+func (s *volumeBackupPolicySchedulerInternal) Submit(_ context.Context, request schedulertypes.Request) (schedulertypes.Run, error) {
+	s.submitted = append(s.submitted, request)
+	return schedulertypes.Run{ID: request.RunID, JobID: request.JobID, EnvironmentID: request.EnvironmentID, Status: schedulertypes.Queued}, nil
 }

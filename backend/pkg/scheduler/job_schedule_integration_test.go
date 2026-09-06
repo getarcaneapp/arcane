@@ -8,6 +8,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/job"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/types/v2/jobschedule"
 	"github.com/libtnb/sqlite"
@@ -103,7 +104,7 @@ func openJobScheduleTestDatabaseInternal(t *testing.T, ctx context.Context, data
 
 	gormDB, err := gorm.Open(sqlite.Open(databasePath), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	require.NoError(t, err)
-	require.NoError(t, gormDB.AutoMigrate(&settings.SettingVariable{}))
+	require.NoError(t, gormDB.AutoMigrate(&settings.SettingVariable{}, &kv.KVEntry{}))
 
 	db := &database.DB{DB: gormDB}
 	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)

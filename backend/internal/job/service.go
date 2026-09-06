@@ -9,8 +9,13 @@ import (
 	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/queue"
+	scheduleutil "github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/schedule"
 	"github.com/getarcaneapp/arcane/types/v2/jobschedule"
 	"github.com/getarcaneapp/arcane/types/v2/meta"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
@@ -26,6 +31,10 @@ import (
 // NOTE: This is intentionally separate from settings.SettingsService to keep the API
 // surface job-focused and to centralize schedule validation/rescheduling.
 type JobService struct {
+	Queue        *queue.Queue
+	store        *kv.KVService
+	environment  *environment.EnvironmentService
+	roles        *role.RoleService
 	db           *database.DB
 	settings     *settings.SettingsService
 	cfg          *config.Config
@@ -42,12 +51,15 @@ type JobService struct {
 }
 
 func NewJobService(db *database.DB, settings *settings.SettingsService, cfg *config.Config) *JobService {
-	return &JobService{
+	service := &JobService{
+		store:    kv.NewKVService(db),
 		db:       db,
 		settings: settings,
 		cfg:      cfg,
 		location: cfg.GetLocation(),
 	}
+	service.Queue = queue.New(service.store, service.executeRunInternal, service.reconcileRunInternal)
+	return service
 }
 
 func (s *JobService) SetScheduler(ctx context.Context, scheduler schedulertypes.JobController) { //nolint:contextcheck // scheduler jobs must capture the app lifecycle context, not request contexts
@@ -56,6 +68,9 @@ func (s *JobService) SetScheduler(ctx context.Context, scheduler schedulertypes.
 	}
 	s.lifecycleCtx = ctx
 	s.scheduler = scheduler
+	if runtime, ok := scheduler.(schedulertypes.JobScheduler); ok {
+		runtime.SetDispatcher(s.Queue)
+	}
 }
 
 func (s *JobService) GetJobSchedules(ctx context.Context) jobschedule.Config {
@@ -104,7 +119,7 @@ func (s *JobService) UpdateJobSchedules(ctx context.Context, updates jobschedule
 	}
 
 	// Validate inputs (cron expressions)
-	parser := cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+	parser := scheduleutil.Parser()
 	for _, field := range fields {
 		if field.update == nil || *field.update == "" {
 			continue
@@ -280,14 +295,20 @@ func (s *JobService) ListJobs(ctx context.Context) (*jobschedule.JobListResponse
 		prerequisites := s.evaluatePrerequisitesInternal(ctx, jobMeta)
 
 		if s.scheduler != nil && jobMeta.SettingsKey != "" && jobMeta.ID != "environment-health" {
-			if runtimeState, ok := s.scheduler.GetJobRuntimeState(jobMeta.ID); ok && runtimeState.Schedule != "" {
-				schedule = runtimeState.Schedule
+			if runtimeState, ok := s.scheduler.GetJobRuntimeState(jobMeta.ID); ok {
+				if runtimeState.Schedule != "" {
+					schedule = runtimeState.Schedule
+				}
 				nextRun = runtimeState.NextRun
 			}
 		}
 
 		jobStatus := jobMeta.ToJobStatus(schedule, nextRun, enabled, prerequisites)
 		jobs = append(jobs, jobStatus)
+	}
+
+	if err := s.addRuntimeStatusInternal(ctx, "0", &jobs); err != nil {
+		return nil, err
 	}
 
 	// Sort jobs by ID to ensure stable UI order
@@ -298,60 +319,10 @@ func (s *JobService) ListJobs(ctx context.Context) (*jobschedule.JobListResponse
 	isAgent := s.cfg != nil && s.cfg.AgentMode
 
 	return &jobschedule.JobListResponse{
-		Jobs:    jobs,
-		IsAgent: isAgent,
+		Jobs:        jobs,
+		IsAgent:     isAgent,
+		DurableRuns: true, ObservedAt: time.Now().UTC(),
 	}, nil
-}
-
-func (s *JobService) RunJobNowInline(ctx context.Context, jobID string) error {
-	// environment-health runs as per-environment dynamic jobs; "run now" fans out
-	// through environment.EnvironmentService rather than a single registered job.
-	if jobID == "environment-health" && s.RunEnvironmentHealthNow != nil {
-		return s.RunEnvironmentHealthNow(context.WithoutCancel(ctx))
-	}
-	jobMeta, ok := meta.GetJobMetadata(jobID)
-	if ok && jobMeta.IsContinuous && jobMeta.CanRunManually {
-		if s == nil || s.scheduler == nil {
-			return errors.New("job service or scheduler not initialized")
-		}
-		return s.scheduler.RunBusWatcherNow(context.WithoutCancel(ctx), jobID)
-	}
-
-	job, err := s.getRunnableJobInternal(jobID)
-	if err != nil {
-		return err
-	}
-
-	runCtx := context.WithoutCancel(ctx)
-	job.Run(runCtx)
-
-	return nil
-}
-
-func (s *JobService) getRunnableJobInternal(jobID string) (schedulertypes.Job, error) {
-	if s == nil || s.scheduler == nil {
-		return nil, errors.New("job service or scheduler not initialized")
-	}
-
-	jobMeta, ok := meta.GetJobMetadata(jobID)
-	if !ok {
-		return nil, errors.Errorf("unknown job: %s", jobID)
-	}
-
-	if !jobMeta.CanRunManually {
-		return nil, errors.Errorf("job %s cannot be run manually", jobID)
-	}
-
-	if s.cfg != nil && s.cfg.AgentMode && jobMeta.ManagerOnly {
-		return nil, errors.Errorf("job %s is manager-only and cannot run in agent mode", jobID)
-	}
-
-	job, ok := s.scheduler.GetJob(jobID)
-	if !ok {
-		return nil, errors.Errorf("job %s not found in scheduler", jobID)
-	}
-
-	return job, nil
 }
 
 func (s *JobService) getJobScheduleInternal(ctx context.Context, meta meta.JobMetadata) string {
@@ -411,7 +382,7 @@ func (s *JobService) calculateNextRunInternal(schedule string) *time.Time {
 	}
 
 	// Parse schedule and force it to use the same timezone as the scheduler.
-	parser := cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+	parser := scheduleutil.Parser()
 	sched, err := parser.Parse(schedule)
 	if err != nil {
 		return nil

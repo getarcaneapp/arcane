@@ -11,19 +11,18 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
 	"github.com/getarcaneapp/arcane/types/v2/environment"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/moby/moby/client"
 )
 
 const (
-	defaultEnvironmentHealthInterval = "0 */2 * * * *"
-	environmentHealthCheckTimeout    = 90 * time.Second
+	defaultEnvironmentHealthInterval        = "0 */2 * * * *"
+	environmentHealthCheckTimeout           = 90 * time.Second
+	environmentHealthJobPrefix              = "environment-health:"
+	environmentHealthAdmissionScopeInternal = "environment-health"
 )
-
-const environmentHealthJobPrefix = "environment-health:"
-
-const environmentHealthAdmissionScopeInternal = "environment-health"
 
 // SetScheduler injects the job scheduler and app lifecycle context. Called during
 // bootstrap on the manager only (agent mode leaves scheduler nil, so all health-job
@@ -44,7 +43,10 @@ func (s *EnvironmentService) registerHealthJobInternal(ctx context.Context, envI
 			}
 			return sched
 		},
-		func(ctx context.Context) { s.runHealthCheckInternal(ctx, envID) },
+		func(ctx context.Context) (schedulertypes.Outcome, error) { return s.runHealthCheckInternal(ctx, envID) },
+		func(context.Context, schedulertypes.Run) (schedulertypes.Outcome, error) {
+			return schedulertypes.Outcome{Status: schedulertypes.Retrying, Message: "Connection checks can safely resume"}, nil
+		},
 	)
 }
 
@@ -94,63 +96,92 @@ func (s *EnvironmentService) RescheduleHealthJobs(ctx context.Context) {
 	s.registerAllEnabledHealthJobsInternal(ctx)
 }
 
-// RunHealthChecksNow runs every enabled environment's health check synchronously.
-// Backs the "run now" button for the environment-health job in the Jobs UI.
+// RunHealthChecksNow queues each enabled environment's health check.
+// Child runs retain the parent identity so authorization is checked at execution.
 func (s *EnvironmentService) RunHealthChecksNow(ctx context.Context) error {
+	if !s.jobs.Enabled() {
+		return errors.New("environment health scheduler unavailable")
+	}
 	ids, err := s.ListEnabledEnvironmentIDs(ctx)
 	if err != nil {
 		return err
 	}
+	parent, hasParent := jobcontext.Run(ctx)
+	request := schedulertypes.Request{EnvironmentID: "0", Trigger: "internal"}
+	if hasParent {
+		request.Trigger = parent.Trigger
+		request.RequestedBy = parent.RequestedBy
+		request.RequestedWithKey = parent.RequestedWithKey
+	}
 	for _, id := range ids {
-		s.runHealthCheckInternal(ctx, id)
+		request.JobID = s.jobs.JobName(id)
+		if _, err := s.jobs.Scheduler().Submit(ctx, request); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
 // runHealthCheckInternal tests one environment's connection (updating its DB status)
 // and, for online remotes, syncs registries and repositories to it.
-func (s *EnvironmentService) runHealthCheckInternal(ctx context.Context, envID string) {
+func (s *EnvironmentService) runHealthCheckInternal(ctx context.Context, envID string) (schedulertypes.Outcome, error) {
 	lease, admitted, err := s.jobs.TryAcquire(ctx, envID)
 	if err != nil {
 		slog.ErrorContext(ctx, "environment health check admission failed", "environment_id", envID, "error", err)
-		return
+		return schedulertypes.Outcome{}, err
 	}
 	if !admitted {
 		slog.WarnContext(ctx, "environment health check skipped; previous run still in progress", "environment_id", envID)
-		return
+		return schedulertypes.Outcome{Status: schedulertypes.Skipped}, nil
 	}
 	defer lease.Release()
 
+	environment, err := s.GetEnvironmentByID(ctx, envID)
+	if err != nil {
+		return schedulertypes.Outcome{}, err
+	}
+	if !environment.Enabled {
+		return schedulertypes.Outcome{Status: schedulertypes.Canceled, Message: "Environment disabled"}, nil
+	}
 	status, err := s.TestConnection(ctx, envID, nil)
 	switch {
 	case err != nil:
 		slog.WarnContext(ctx, "environment health check failed", "environment_id", envID, "status", status, "error", err)
-		return
+		return schedulertypes.Outcome{Status: schedulertypes.Retrying}, err
 	case status != "online":
-		return
+		return schedulertypes.Outcome{Status: schedulertypes.Retrying, Message: "Environment is offline"}, errors.New("environment is offline")
 	}
 
 	// Local environment (ID "0") has no registries/repositories to push.
 	if envID == "0" {
-		return
+		return schedulertypes.Outcome{Status: schedulertypes.Succeeded}, nil
 	}
 
+	var syncErrors []error
 	syncCtx, cancel := context.WithTimeout(ctx, environmentHealthCheckTimeout)
 	defer cancel()
 	if err := s.SyncRegistriesToEnvironment(syncCtx, envID); err != nil {
 		slog.WarnContext(syncCtx, "failed to sync registries during health check", "environment_id", envID, "error", err)
+		syncErrors = append(syncErrors, err)
 	}
 	if err := s.SyncS3DestinationsToEnvironment(syncCtx, envID); err != nil {
 		slog.WarnContext(syncCtx, "failed to sync S3 destinations during health check", "environment_id", envID, "error", err)
+		syncErrors = append(syncErrors, err)
 	}
 	if err := s.SyncRepositoriesToEnvironment(syncCtx, envID); err != nil {
 		slog.WarnContext(syncCtx, "failed to sync git repositories during health check", "environment_id", envID, "error", err)
+		syncErrors = append(syncErrors, err)
 	}
 	if s.variableSyncer != nil {
 		if err := s.variableSyncer.SyncEnvironment(syncCtx, envID); err != nil {
 			slog.WarnContext(syncCtx, "failed to sync global variables during health check", "environment_id", envID, "error", err)
+			syncErrors = append(syncErrors, err)
 		}
 	}
+	if err := errors.Combine(syncErrors...); err != nil {
+		return schedulertypes.Outcome{Status: schedulertypes.Partial}, err
+	}
+	return schedulertypes.Outcome{Status: schedulertypes.Succeeded}, nil
 }
 
 func (s *EnvironmentService) TestConnection(ctx context.Context, id string, customApiUrl *string) (string, error) {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"log/slog"
 	"sync"
 	"testing"
@@ -196,7 +197,7 @@ func newImageUpdateWatcherForTestInternal(t *testing.T, scanner imageUpdateScann
 		defer cancel()
 		require.NoError(t, lifecycle.Stop(stopCtx))
 	})
-	return &ImageUpdateWatcher{
+	watcher := &ImageUpdateWatcher{
 		imageUpdateService: scanner,
 		settingsService:    settings,
 		environmentService: registryCredentialLoaderFakeInternal{},
@@ -212,6 +213,8 @@ func newImageUpdateWatcherForTestInternal(t *testing.T, scanner imageUpdateScann
 		started:            make(chan struct{}),
 		stopped:            make(chan struct{}),
 	}
+	watcher.SetDispatcher(&testDispatcherInternal{run: func(ctx context.Context, _ schedulertypes.Request) error { return watcher.RunNow(ctx) }})
+	return watcher
 }
 
 func startImageUpdateWatcherForTestInternal(t *testing.T, watcher *ImageUpdateWatcher) (context.CancelFunc, <-chan error) {

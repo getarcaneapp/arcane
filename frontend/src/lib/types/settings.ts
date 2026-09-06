@@ -1,3 +1,4 @@
+import type { JobRun, JobRunStatus, WorkerHealth } from './job';
 import type { TemplateRegistryConfig } from './swarm';
 
 // --- Application settings ---
@@ -182,6 +183,12 @@ export type JobPrerequisite = {
 };
 
 export type JobStatus = {
+	currentRun?: JobRun;
+	lastRun?: JobRun;
+	lastSuccess?: string;
+	lastError?: string;
+	workerHealth?: WorkerHealth;
+	children?: JobStatus[];
 	id: string;
 	name: string;
 	description: string;
@@ -197,11 +204,16 @@ export type JobStatus = {
 };
 
 export type JobListResponse = {
+	durableRuns: boolean;
+	observedAt: string;
+	offline?: boolean;
 	jobs: JobStatus[];
 	isAgent: boolean;
 };
 
 export type JobRunResponse = {
+	runId: string;
+	status: JobRunStatus;
 	success: boolean;
 	message: string;
 };

@@ -10,6 +10,7 @@ import (
 
 	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
+	scheduleutil "github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/schedule"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/robfig/cron/v3"
@@ -18,7 +19,7 @@ import (
 // cronScheduleParser is the shared parser for all cron settings: six fields
 // with seconds, plus @-descriptors. The image update watcher parses its poll
 // schedule with the same spec so Jobs-UI cron values behave identically.
-var cronScheduleParser = cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
+var cronScheduleParser = scheduleutil.Parser()
 
 var errJobSchedulerStoppedInternal = errors.Sentinel("job scheduler stopped")
 
@@ -30,7 +31,7 @@ type schedulerStateInternal struct {
 	runners     map[string]*actors.Runner
 	entryIDs    map[string]cron.EntryID
 	schedules   map[string]string
-	runLocks    map[string]*sync.Mutex
+	supervisors map[string]*watcherSupervisorInternal
 	stopping    bool
 }
 
@@ -47,12 +48,15 @@ type schedulerShutdownInternal struct {
 // jobSchedulerInternal serializes its control plane through one shared actor executor.
 // robfig/cron remains the timing engine and invokes job bodies outside the actor.
 type jobSchedulerInternal struct {
-	cron     *cron.Cron
-	parser   cron.Parser
-	context  context.Context
-	location *time.Location
-	runtime  *actors.Runtime
-	state    *actors.State[schedulerStateInternal]
+	cron       *cron.Cron
+	parser     cron.Parser
+	context    context.Context
+	location   *time.Location
+	runtime    *actors.Runtime
+	state      *actors.State[schedulerStateInternal]
+	cancel     context.CancelFunc
+	dispatchMu sync.RWMutex
+	dispatcher schedulertypes.Dispatcher
 }
 
 // NewJobScheduler creates an actor-owned scheduler control plane.
@@ -74,7 +78,7 @@ func NewJobScheduler(ctx context.Context, runtime *actors.Runtime, location *tim
 		runners:     make(map[string]*actors.Runner),
 		entryIDs:    make(map[string]cron.EntryID),
 		schedules:   make(map[string]string),
-		runLocks:    make(map[string]*sync.Mutex),
+		supervisors: make(map[string]*watcherSupervisorInternal),
 	}
 	state, err := actors.NewState(ctx, runtime, "scheduler", "control-plane", 3, initial, func(value schedulerStateInternal) schedulerStateInternal {
 		value.jobs = slices.Clone(value.jobs)
@@ -84,17 +88,19 @@ func NewJobScheduler(ctx context.Context, runtime *actors.Runtime, location *tim
 		value.runners = maps.Clone(value.runners)
 		value.entryIDs = maps.Clone(value.entryIDs)
 		value.schedules = maps.Clone(value.schedules)
-		value.runLocks = maps.Clone(value.runLocks)
+		value.supervisors = maps.Clone(value.supervisors)
 		return value
 	})
 	if err != nil {
 		return nil, err
 	}
+	lifetime, cancel := context.WithCancel(ctx)
 	parser := cronScheduleParser
 	scheduler := &jobSchedulerInternal{
 		cron:     cron.New(cron.WithParser(parser), cron.WithLocation(location)),
 		parser:   parser,
-		context:  ctx,
+		context:  lifetime,
+		cancel:   cancel,
 		location: location,
 		runtime:  runtime,
 		state:    state,
@@ -127,11 +133,16 @@ func (js *jobSchedulerInternal) RegisterBusWatcher(watcher schedulertypes.BusWat
 		if state.stopping {
 			return errJobSchedulerStoppedInternal
 		}
-		runner, err := actors.NewRunner(js.context, js.runtime, "scheduler-watchers", watcher.Name(), "bus watcher "+watcher.Name(), 3, watcher.Start) //nolint:contextcheck // watcher lifetime belongs to the scheduler, not one state-actor receiver incarnation.
+		if _, exists := state.allWatchers[watcher.Name()]; exists {
+			return errors.New("watcher already registered")
+		}
+		supervisor := newWatcherSupervisorInternal(watcher)
+		runner, err := actors.NewRunner(js.context, js.runtime, "scheduler-watchers", watcher.Name(), "bus watcher "+watcher.Name(), 3, supervisor.runInternal) //nolint:contextcheck // watcher lifetime belongs to the scheduler, not one state-actor receiver incarnation.
 		if err != nil {
 			return err
 		}
 		state.runners[watcher.Name()] = runner
+		state.supervisors[watcher.Name()] = supervisor
 		state.allWatchers[watcher.Name()] = watcher
 		if canRunManually {
 			state.watchers[watcher.Name()] = watcher
@@ -301,6 +312,7 @@ func (js *jobSchedulerInternal) Stop(ctx context.Context) error {
 		}
 	}
 
+	js.cancel()
 	for _, registration := range shutdown.watchers {
 		stopErr = errors.Combine(stopErr, registration.runner.Stop(ctx))
 		if stopper, ok := registration.watcher.(schedulertypes.StoppableBusWatcher); ok {
@@ -344,17 +356,17 @@ func (js *jobSchedulerInternal) upsertJobInternal(ctx context.Context, state *sc
 		slog.DebugContext(ctx, "Job disabled; not scheduling", "name", jobName)
 	}
 
+	if shouldSchedule {
+		if err := js.checkpointInternal(ctx, jobName, schedule, parsedSchedule.Next(time.Now().In(js.location))); err != nil {
+			return err
+		}
+	}
 	if hadPreviousEntry {
 		js.cron.Remove(previousEntryID)
 		delete(state.entryIDs, jobName)
 	}
 	if shouldSchedule {
-		runLock, ok := state.runLocks[jobName]
-		if !ok {
-			runLock = &sync.Mutex{}
-			state.runLocks[jobName] = runLock
-		}
-		entryID, nextRun = js.addCronEntryInternal(job, schedule, parsedSchedule, runLock)
+		entryID, nextRun = js.addCronEntryInternal(job, schedule, parsedSchedule)
 		state.entryIDs[jobName] = entryID
 	}
 	state.jobsByID[jobName] = job
@@ -369,17 +381,16 @@ func (js *jobSchedulerInternal) upsertJobInternal(ctx context.Context, state *sc
 	return nil
 }
 
-func (js *jobSchedulerInternal) addCronEntryInternal(job schedulertypes.Job, schedule string, parsedSchedule cron.Schedule, runLock *sync.Mutex) (cron.EntryID, *time.Time) {
+func (js *jobSchedulerInternal) addCronEntryInternal(job schedulertypes.Job, schedule string, parsedSchedule cron.Schedule) (cron.EntryID, *time.Time) {
 	entryID := js.cron.Schedule(parsedSchedule, cron.FuncJob(func() {
-		if !runLock.TryLock() {
-			slog.WarnContext(js.context, "Job skipped; previous run still in progress", "name", job.Name(), "schedule", schedule)
+		defer utils.RecoverToError(nil, "scheduled job admission", "name", job.Name())
+		if _, err := js.Submit(js.context, schedulertypes.Request{JobID: job.Name(), EnvironmentID: "0", Trigger: "scheduled"}); err != nil {
+			slog.ErrorContext(js.context, "Failed to queue scheduled job", "name", job.Name(), "error", err)
 			return
 		}
-		defer runLock.Unlock()
-		defer utils.RecoverToError(nil, "scheduled job", "name", job.Name(), "schedule", schedule)
-		slog.InfoContext(js.context, "Job starting", "name", job.Name(), "schedule", schedule)
-		job.Run(js.context)
-		slog.InfoContext(js.context, "Job finished", "name", job.Name())
+		if err := js.checkpointInternal(js.context, job.Name(), schedule, parsedSchedule.Next(time.Now().In(js.location))); err != nil {
+			slog.ErrorContext(js.context, "Failed to checkpoint scheduled job", "name", job.Name(), "error", err)
+		}
 	}))
 
 	entry := js.cron.Entry(entryID)

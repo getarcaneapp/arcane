@@ -276,6 +276,7 @@ func handleApiKeyAuthInternal(api huma.API, ctx huma.Context, authService *AuthS
 			ps = resolveApiKeyPermissionsInternal(ctx.Context(), permResolver, key.ID)
 		}
 		newCtx := setUserInContextInternal(ctx.Context(), user, ps)
+		newCtx = context.WithValue(newCtx, middleware.ContextKeyApiKeyID, key.ID)
 		next(huma.WithContext(ctx, newCtx))
 		return
 	}

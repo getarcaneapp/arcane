@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
+
 	"emperror.dev/errors"
 
 	"github.com/cenkalti/backoff/v5"
@@ -69,23 +71,23 @@ func (j *AnalyticsJob) Schedule(_ context.Context) string {
 	return analyticsHeartbeatCheckSchedule
 }
 
-func (j *AnalyticsJob) Run(ctx context.Context) {
+func (j *AnalyticsJob) Run(ctx context.Context) (schedulertypes.Outcome, error) {
 	if j.cfg.AnalyticsDisabled {
 		slog.DebugContext(ctx, "analytics disabled; skipping heartbeat", "analyticsDisabled", j.cfg.AnalyticsDisabled)
-		return
+		return schedulertypes.Outcome{Status: schedulertypes.Skipped}, nil
 	}
 	if j.cfg.Environment.IsTestEnvironment() {
 		slog.DebugContext(ctx, "test environment; skipping heartbeat", "env", j.cfg.Environment)
-		return
+		return schedulertypes.Outcome{Status: schedulertypes.Skipped}, nil
 	}
 
 	allowed, err := j.claimHeartbeatAttemptWindowInternal(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to acquire analytics heartbeat send window", "error", err)
-		return
+		return schedulertypes.Outcome{}, err
 	}
 	if !allowed {
-		return
+		return schedulertypes.Outcome{Status: schedulertypes.Skipped}, nil
 	}
 
 	instanceID := j.settingsService.GetStringSetting(ctx, "instanceId", "")
@@ -103,7 +105,7 @@ func (j *AnalyticsJob) Run(ctx context.Context) {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to marshal analytics heartbeat body", "error", err)
-		return
+		return schedulertypes.Outcome{}, err
 	}
 
 	slog.InfoContext(
@@ -167,7 +169,7 @@ func (j *AnalyticsJob) Run(ctx context.Context) {
 	)
 	if err != nil {
 		slog.ErrorContext(ctx, "analytics heartbeat failed", "error", err)
-		return
+		return schedulertypes.Outcome{}, err
 	}
 
 	slog.InfoContext(
@@ -186,6 +188,7 @@ func (j *AnalyticsJob) Run(ctx context.Context) {
 		"env",
 		j.cfg.Environment,
 	)
+	return schedulertypes.Outcome{Status: schedulertypes.Succeeded}, nil
 }
 
 func (j *AnalyticsJob) Reschedule(ctx context.Context) error {

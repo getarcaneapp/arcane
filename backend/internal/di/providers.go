@@ -5,6 +5,7 @@ import (
 	"embed"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
@@ -361,8 +362,8 @@ func provideUserModuleInternal(service *user.UserService, auth *auth.AuthService
 	return user.New(user.Dependencies{Service: service, InvalidateUserTokenCache: auth.InvalidateUserTokenCache, Settings: settingsService})
 }
 
-func provideJobModuleInternal(db *database.DB, settingsService *settings.SettingsService, cfg *config.Config, environment *environment.EnvironmentService) *job.Module {
-	return job.New(job.Dependencies{DB: db, Settings: settingsService, Config: cfg, Environment: environment})
+func provideJobModuleInternal(db *database.DB, settingsService *settings.SettingsService, cfg *config.Config, environment *environment.EnvironmentService, roles *role.RoleService) *job.Module {
+	return job.New(job.Dependencies{DB: db, Settings: settingsService, Config: cfg, Environment: environment, Roles: roles})
 }
 
 func provideJobServiceInternal(module *job.Module) *job.JobService {
@@ -411,8 +412,22 @@ func provideFilesystemWatcherJobInternal(ctx context.Context, lc fx.Lifecycle, a
 	lc.Append(fx.Hook{
 		OnStart: func(context.Context) error {
 			runner, err = actors.NewRunner(ctx, actorRuntime, "filesystem-watcher", "lifecycle", "filesystem watcher", 3, func(runCtx context.Context) error {
-				if startErr := job.Start(runCtx); startErr != nil {
-					return startErr
+				delay := 5 * time.Second
+				for runCtx.Err() == nil {
+					startErr := job.Start(runCtx)
+					if startErr == nil {
+						break
+					}
+					slog.WarnContext(runCtx, "Filesystem watcher startup failed; retrying", "error", startErr)
+
+					timer := time.NewTimer(delay)
+					select {
+					case <-runCtx.Done():
+						timer.Stop()
+						return nil
+					case <-timer.C:
+					}
+					delay = min(delay*2, 5*time.Minute)
 				}
 				<-runCtx.Done()
 				return nil

@@ -11,6 +11,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/jobschedule"
+	st "github.com/getarcaneapp/arcane/types/v2/scheduler"
 )
 
 type GetJobSchedulesInput struct {
@@ -35,8 +36,10 @@ type GetJobsOutput struct {
 }
 
 type RunJobInput struct {
-	ID    string `path:"id" doc:"Environment ID"`
-	JobID string `path:"jobId" minLength:"1" doc:"Job ID to run"`
+	ID        string                      `path:"id" doc:"Environment ID"`
+	JobID     string                      `path:"jobId" minLength:"1" doc:"Job ID to run"`
+	RequestID string                      `header:"Idempotency-Key"`
+	Body      *jobschedule.SubmitRunInput `required:"false"`
 }
 
 type RunJobOutput struct {
@@ -80,14 +83,16 @@ func RegisterJobSchedules(api huma.API, jobSvc *JobService, envSvc *environment.
 	}, authz.PermJobsManage, h.ListJobs)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "run-job",
-		Method:      http.MethodPost,
-		Path:        "/environments/{id}/jobs/{jobId}/run",
-		Summary:     "Run a job now",
-		Description: "Manually trigger a background job to run immediately",
-		Tags:        []string{"JobSchedules"},
-		Security:    handlerutil.DefaultOperationSecurity(),
+		OperationID:   "run-job",
+		DefaultStatus: http.StatusAccepted,
+		Method:        http.MethodPost,
+		Path:          "/environments/{id}/jobs/{jobId}/run",
+		Summary:       "Run a job now",
+		Description:   "Manually trigger a background job to run immediately",
+		Tags:          []string{"JobSchedules"},
+		Security:      handlerutil.DefaultOperationSecurity(),
 	}, authz.PermJobsManage, h.RunJob)
+	h.registerRunRoutesInternal(api)
 }
 
 type JobSchedulesHandler struct {
@@ -96,42 +101,39 @@ type JobSchedulesHandler struct {
 }
 
 func (h *JobSchedulesHandler) ListJobs(ctx context.Context, input *ListJobsInput) (*GetJobsOutput, error) {
+	var jobs *jobschedule.JobListResponse
+	var err error
 	if input.ID != "0" {
-		jobs, err := h.proxyRemoteJSON.JSON[jobschedule.JobListResponse](ctx, input.ID, http.MethodGet, "/api/environments/0/jobs", nil)
-		if err != nil {
-			return nil, err
-		}
-		return &GetJobsOutput{Body: *jobs}, nil
+		jobs, err = h.jobService.ListRemoteJobs(ctx, input.ID)
+	} else {
+		jobs, err = h.jobService.ListJobs(ctx)
 	}
-
-	jobs, err := h.jobService.ListJobs(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, jobHTTPErrorInternal(err)
 	}
-
 	return &GetJobsOutput{Body: *jobs}, nil
 }
 
 func (h *JobSchedulesHandler) RunJob(ctx context.Context, input *RunJobInput) (*RunJobOutput, error) {
-	if input.ID != "0" {
-		runResp, err := h.proxyRemoteJSON.JSON[jobschedule.JobRunResponse](ctx, input.ID, http.MethodPost, "/api/environments/0/jobs/"+input.JobID+"/run", nil)
-		if err != nil {
-			return nil, err
+	runID := input.RequestID
+	if input.Body != nil && input.Body.RunID != "" {
+		if runID != "" && runID != input.Body.RunID {
+			return nil, huma.Error400BadRequest("Conflicting run IDs")
 		}
-		return &RunJobOutput{Body: *runResp}, nil
+		runID = input.Body.RunID
 	}
-
-	err := h.jobService.RunJobNowInline(ctx, input.JobID)
+	userID, _ := middleware.GetUserIDFromContext(ctx)
+	keyID, _ := ctx.Value(middleware.ContextKeyApiKeyID).(string)
+	trigger := "manual"
+	if h.jobService.cfg.AgentMode && userID == "agent" {
+		userID = ""
+		trigger = "remote"
+	}
+	run, err := h.jobService.Submit(ctx, st.Request{RunID: runID, JobID: input.JobID, EnvironmentID: input.ID, Trigger: trigger, RequestedBy: userID, RequestedWithKey: keyID})
 	if err != nil {
-		return nil, huma.Error400BadRequest(err.Error())
+		return nil, jobHTTPErrorInternal(err)
 	}
-
-	return &RunJobOutput{
-		Body: jobschedule.JobRunResponse{
-			Success: true,
-			Message: "Job completed successfully",
-		},
-	}, nil
+	return &RunJobOutput{Body: jobschedule.JobRunResponse{Success: true, Message: "Job accepted", RunID: run.ID, Status: run.Status}}, nil
 }
 
 func (h *JobSchedulesHandler) Get(ctx context.Context, input *GetJobSchedulesInput) (*GetJobSchedulesOutput, error) {

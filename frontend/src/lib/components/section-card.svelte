@@ -2,10 +2,11 @@
 	import * as Card from '#lib/components/ui/card';
 	import type { IconType } from '#lib/icons';
 	import { cn } from '#lib/utils';
-	import type { Snippet } from 'svelte';
+	import type { ComponentProps, Snippet } from 'svelte';
 
 	interface Props {
 		title: string;
+		variant?: ComponentProps<typeof Card.Root>['variant'];
 		description?: string;
 		icon?: IconType;
 		iconVariant?: 'primary' | 'emerald' | 'red' | 'amber' | 'blue' | 'purple' | 'cyan' | 'orange' | 'indigo' | 'pink';
@@ -18,6 +19,7 @@
 
 	let {
 		title,
+		variant = 'default',
 		description,
 		icon,
 		iconVariant = 'primary',
@@ -29,7 +31,7 @@
 	}: Props = $props();
 </script>
 
-<Card.Root class={className}>
+<Card.Root {variant} class={className}>
 	<Card.Header {icon} {iconVariant} class={headerClass}>
 		<div class="flex min-w-0 flex-1 flex-col space-y-1.5">
 			<Card.Title>

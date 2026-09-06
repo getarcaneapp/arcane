@@ -18,6 +18,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
+
 	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
@@ -1565,13 +1567,28 @@ func (s *SystemBackupService) SetScheduler(ctx context.Context, scheduler schedu
 	return s.jobs.SetScheduler(ctx, scheduler, admissionGate)
 }
 
-func (s *SystemBackupService) runScheduledBackupInternal(ctx context.Context, policyID string) {
+func (s *SystemBackupService) runScheduledBackupInternal(ctx context.Context, policyID string) (schedulertypes.Outcome, error) {
 	policy, loadErr := s.loadPolicyInternal(ctx, policyID)
-	if loadErr != nil || policy == nil || !policy.Enabled {
-		return
+	if loadErr != nil {
+		return schedulertypes.Outcome{}, loadErr
+	}
+	if policy == nil || !policy.Enabled {
+		return schedulertypes.Outcome{Status: schedulertypes.Skipped}, nil
+	}
+	if previous, ok := jobcontext.Run(ctx); ok {
+		outcome := jobcontext.ConfirmedTarget(previous, policy.ID)
+		if outcome.Status == schedulertypes.Succeeded {
+			if policy.RetentionCount > 0 {
+				if err := s.applyRetentionInternal(ctx, policy.ID, policy.RetentionCount); err != nil {
+					outcome.Status = schedulertypes.Partial
+					return outcome, err
+				}
+			}
+			return outcome, nil
+		}
 	}
 	var run *SystemBackupRun
-	_, runErr := activitylib.RunHandlerActivity(ctx, s.activityService, activitylib.HandlerOptions{
+	activityID, runErr := activitylib.RunHandlerActivity(ctx, s.activityService, activitylib.HandlerOptions{
 		EnvironmentID: "0", Type: activitytypes.TypeResourceAction, ResourceType: "system_backup",
 		ResourceID: policy.ID, ResourceName: "Arcane", User: &common.SystemUser,
 		Step: "Creating scheduled system backup", Message: "Creating scheduled Arcane system backup",
@@ -1587,18 +1604,20 @@ func (s *SystemBackupService) runScheduledBackupInternal(ctx context.Context, po
 	})
 	if errors.Is(runErr, ErrSystemBackupAlreadyRunning) {
 		slog.InfoContext(ctx, "Scheduled Arcane system backup skipped; another backup is running", "policyId", policy.ID)
-		return
+		return schedulertypes.Outcome{Status: schedulertypes.Skipped}, nil
 	}
 	if runErr != nil {
 		slog.ErrorContext(ctx, "Scheduled Arcane system backup failed", "policyId", policy.ID, "error", runErr)
-		return
+		return schedulertypes.Outcome{ActivityID: activityID}, runErr
 	}
 	if policy.RetentionCount > 0 {
 		if retentionErr := s.applyRetentionInternal(ctx, policy.ID, policy.RetentionCount); retentionErr != nil {
 			slog.ErrorContext(ctx, "System backup retention failed", "policyId", policy.ID, "error", retentionErr)
+			return schedulertypes.Outcome{Status: schedulertypes.Partial, ActivityID: activityID, Message: "Backup completed but retention failed"}, retentionErr
 		}
 	}
 	slog.InfoContext(ctx, "Scheduled Arcane system backup completed", "backupId", run.ID, "policyId", policy.ID)
+	return schedulertypes.Outcome{Status: schedulertypes.Succeeded, ActivityID: activityID}, nil
 }
 
 func (s *SystemBackupService) rescheduleSystemBackupPolicyInternal(ctx context.Context, policy *SystemBackupPolicy) {
@@ -1618,8 +1637,25 @@ func (s *SystemBackupService) rescheduleSystemBackupPolicyInternal(ctx context.C
 			}
 			return current.Schedule
 		},
-		func(ctx context.Context) {
-			s.runScheduledBackupInternal(ctx, policyID)
+		func(ctx context.Context) (schedulertypes.Outcome, error) {
+			return s.runScheduledBackupInternal(ctx, policyID)
+		},
+		func(ctx context.Context, previous schedulertypes.Run) (schedulertypes.Outcome, error) {
+			outcome := jobcontext.ConfirmedTarget(previous, policy.ID)
+			if outcome.Status == schedulertypes.Succeeded {
+				current, err := s.loadPolicyInternal(ctx, policyID)
+				if err != nil {
+					return outcome, err
+				}
+				if current != nil && current.RetentionCount > 0 {
+					if err := s.applyRetentionInternal(ctx, policyID, current.RetentionCount); err != nil {
+						outcome.Status = schedulertypes.Partial
+						outcome.Message = "Backup completed but retention failed"
+						return outcome, err
+					}
+				}
+			}
+			return outcome, nil
 		},
 	)
 }

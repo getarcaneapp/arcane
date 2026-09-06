@@ -4,10 +4,12 @@ import (
 	"context"
 	"log/slog"
 
+	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
+
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/robfig/cron/v3"
+	scheduleutil "github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/schedule"
 )
 
 const DockerClientRefreshJobName = "docker-client-refresh"
@@ -38,7 +40,7 @@ func (j *DockerClientRefreshJob) Schedule(ctx context.Context) string {
 		schedule = dockerClientRefreshDefaultSchedule
 	}
 
-	parser := cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+	parser := scheduleutil.Parser()
 	if _, err := parser.Parse(schedule); err != nil {
 		slog.WarnContext(ctx, "Invalid cron expression for Docker client refresh, using default", "invalid_schedule", schedule, "error", err)
 		return dockerClientRefreshDefaultSchedule
@@ -47,11 +49,12 @@ func (j *DockerClientRefreshJob) Schedule(ctx context.Context) string {
 	return schedule
 }
 
-func (j *DockerClientRefreshJob) Run(ctx context.Context) {
+func (j *DockerClientRefreshJob) Run(ctx context.Context) (schedulertypes.Outcome, error) {
 	if err := j.dockerClientService.RefreshClient(ctx); err != nil {
 		slog.WarnContext(ctx, "Docker client refresh failed", "error", err)
-		return
+		return schedulertypes.Outcome{}, err
 	}
 
 	slog.DebugContext(ctx, "Docker client refresh completed")
+	return schedulertypes.Outcome{Status: schedulertypes.Succeeded}, nil
 }

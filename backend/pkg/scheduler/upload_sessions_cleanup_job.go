@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"time"
 
+	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
+
 	"github.com/getarcaneapp/arcane/backend/v2/internal/upload"
 )
 
@@ -34,15 +36,16 @@ func (j *UploadSessionsCleanupJob) Schedule(ctx context.Context) string {
 	return "0 0 * * * *"
 }
 
-func (j *UploadSessionsCleanupJob) Run(ctx context.Context) {
+func (j *UploadSessionsCleanupJob) Run(ctx context.Context) (schedulertypes.Outcome, error) {
 	removed, err := j.uploadService.PurgeExpiredSessions(ctx, uploadSessionMaxAge)
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to purge expired upload sessions", "jobName", UploadSessionsCleanupJobName, "removed", removed, "error", err)
-		return
+		return schedulertypes.Outcome{}, err
 	}
 	if removed > 0 {
 		slog.InfoContext(ctx, "Purged expired upload sessions", "jobName", UploadSessionsCleanupJobName, "removed", removed)
 	}
+	return schedulertypes.Outcome{Status: schedulertypes.Succeeded}, nil
 }
 
 func (j *UploadSessionsCleanupJob) Reschedule(ctx context.Context) error {

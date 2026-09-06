@@ -2,13 +2,14 @@ package job
 
 import (
 	"context"
-	"errors"
+	"emperror.dev/errors"
 	"testing"
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/types/v2/jobschedule"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
@@ -22,7 +23,7 @@ func setupSettingsTestDBInternal(t *testing.T) *database.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&settings.SettingVariable{}))
+	require.NoError(t, db.AutoMigrate(&settings.SettingVariable{}, &kv.KVEntry{}))
 	return &database.DB{DB: db}
 }
 
@@ -330,17 +331,21 @@ func TestJobService_UpdateJobSchedules_DelegatesEnvironmentHealthReschedule(t *t
 	require.Empty(t, scheduler.rescheduled)
 }
 
-func TestJobService_RunJobNowInline_DelegatesImageUpdateWatcherWithDetachedContext(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
+func TestJobService_Submit_PersistsImageUpdateWatcherRun(t *testing.T) {
+	ctx := t.Context()
+	db := setupSettingsTestDBInternal(t)
+	settingsSvc, err := newSettingsServiceForTestInternal(t, ctx, db)
+	require.NoError(t, err)
 	scheduler := newFakeJobSchedulerInternal()
-	jobSvc := &JobService{scheduler: scheduler}
-
-	require.NoError(t, jobSvc.RunJobNowInline(ctx, "image-polling"))
-	require.Equal(t, []string{"image-polling"}, scheduler.busWatcherRuns)
-	require.Len(t, scheduler.busWatcherContexts, 1)
-	require.NoError(t, scheduler.busWatcherContexts[0].Err())
+	jobSvc := NewJobService(db, settingsSvc, &config.Config{})
+	jobSvc.SetScheduler(ctx, scheduler)
+	run, err := jobSvc.Submit(ctx, schedulertypes.Request{JobID: "image-polling", EnvironmentID: "0", Trigger: "manual"})
+	require.NoError(t, err)
+	require.Equal(t, schedulertypes.Queued, run.Status)
+	persisted, err := jobSvc.Queue.Get(ctx, "0", "image-polling", run.ID)
+	require.NoError(t, err)
+	require.Equal(t, run.ID, persisted.ID)
+	require.Empty(t, scheduler.busWatcherRuns)
 }
 
 func findJobStatusByIDInternal(t *testing.T, jobs []jobschedule.JobStatus, id string) jobschedule.JobStatus {
@@ -419,4 +424,6 @@ func (j fakeJobInternal) Schedule(context.Context) string {
 	return "0 0 0 * * *"
 }
 
-func (j fakeJobInternal) Run(context.Context) {}
+func (j fakeJobInternal) Run(context.Context) (schedulertypes.Outcome, error) {
+	return schedulertypes.Outcome{Status: schedulertypes.Succeeded}, nil
+}

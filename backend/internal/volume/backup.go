@@ -15,6 +15,9 @@ import (
 	"time"
 	"uuid"
 
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
+	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
+
 	"emperror.dev/errors"
 	"gorm.io/gorm"
 
@@ -1775,13 +1778,22 @@ func (s *VolumeService) applyVolumeBackupRetentionInternal(ctx context.Context, 
 	return s.deleteRusticBackupsInternal(ctx, entries, nil)
 }
 
-func (s *VolumeService) runScheduledBackupInternal(ctx context.Context, policyID string) {
+func (s *VolumeService) runScheduledBackupInternal(ctx context.Context, policyID string) (schedulertypes.Outcome, error) {
 	var policy VolumeBackupPolicy
 	if err := s.db.WithContext(ctx).Where("id = ? AND enabled = ?", policyID, true).First(&policy).Error; err != nil {
-		return
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return schedulertypes.Outcome{Status: schedulertypes.Canceled, Message: "Backup policy disabled or deleted"}, nil
+		}
+		return schedulertypes.Outcome{}, err
+	}
+	if previous, ok := jobcontext.Run(ctx); ok {
+		outcome := jobcontext.ConfirmedTarget(previous, policy.VolumeName)
+		if outcome.Status == schedulertypes.Succeeded {
+			return outcome, nil
+		}
 	}
 	var entry *VolumeBackup
-	_, err := activitylib.RunHandlerActivity(ctx, s.activityService, activitylib.HandlerOptions{
+	activityID, err := activitylib.RunHandlerActivity(ctx, s.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  "0",
 		Type:           activitytypes.TypeResourceAction,
 		ResourceType:   "volume_backup",
@@ -1809,13 +1821,14 @@ func (s *VolumeService) runScheduledBackupInternal(ctx context.Context, policyID
 	})
 	if errors.Is(err, ErrVolumeBackupAlreadyRunning) {
 		slog.InfoContext(ctx, "Scheduled volume backup skipped; another backup is running", "volume", policy.VolumeName)
-		return
+		return schedulertypes.Outcome{Status: schedulertypes.Skipped}, nil
 	}
 	if err != nil {
 		slog.ErrorContext(ctx, "Scheduled volume backup failed", "volume", policy.VolumeName, "error", err)
-		return
+		return schedulertypes.Outcome{}, err
 	}
 	slog.InfoContext(ctx, "Scheduled volume backup completed", "volume", policy.VolumeName, "backup_id", entry.ID, "remote_snapshot_id", entry.RemoteSnapshotID)
+	return schedulertypes.Outcome{Status: schedulertypes.Succeeded, ActivityID: activityID}, nil
 }
 
 func (s *VolumeService) rescheduleVolumeBackupPolicyInternal(ctx context.Context, policy *VolumeBackupPolicy) {
@@ -1835,8 +1848,11 @@ func (s *VolumeService) rescheduleVolumeBackupPolicyInternal(ctx context.Context
 			}
 			return current.Schedule
 		},
-		func(ctx context.Context) {
-			s.runScheduledBackupInternal(ctx, policyID)
+		func(ctx context.Context) (schedulertypes.Outcome, error) {
+			return s.runScheduledBackupInternal(ctx, policyID)
+		},
+		func(_ context.Context, previous schedulertypes.Run) (schedulertypes.Outcome, error) {
+			return jobcontext.ConfirmedTarget(previous, policy.VolumeName), nil
 		},
 	)
 }

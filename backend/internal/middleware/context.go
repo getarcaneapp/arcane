@@ -10,6 +10,7 @@ import (
 type ContextKey string
 
 const (
+	ContextKeyApiKeyID ContextKey = "apiKeyID"
 	// ContextKeyUserID is the context key for the authenticated user's ID.
 	ContextKeyUserID ContextKey = "userID"
 	// ContextKeyCurrentSessionID is the context key for the authenticated session ID.

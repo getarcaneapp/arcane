@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"time"
 
+	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
+
 	"github.com/getarcaneapp/arcane/backend/v2/internal/gitrepo"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 )
@@ -40,9 +42,9 @@ func (j *GitCloneCleanupJob) Schedule(_ context.Context) string {
 	return "0 30 * * * *"
 }
 
-func (j *GitCloneCleanupJob) Run(ctx context.Context) {
+func (j *GitCloneCleanupJob) Run(ctx context.Context) (schedulertypes.Outcome, error) {
 	if j.repoService == nil || j.repoService.Client == nil {
-		return
+		return schedulertypes.Outcome{Status: schedulertypes.Skipped}, nil
 	}
 
 	maxAge := gitCloneScratchMinAge
@@ -54,11 +56,12 @@ func (j *GitCloneCleanupJob) Run(ctx context.Context) {
 	removed, err := j.repoService.PurgeScratchDirs(ctx, maxAge)
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to purge leaked git clone scratch dirs", "jobName", GitCloneCleanupJobName, "removed", removed, "error", err)
-		return
+		return schedulertypes.Outcome{}, err
 	}
 	if removed > 0 {
 		slog.InfoContext(ctx, "Purged leaked git clone scratch dirs", "jobName", GitCloneCleanupJobName, "removed", removed)
 	}
+	return schedulertypes.Outcome{Status: schedulertypes.Succeeded}, nil
 }
 
 func (j *GitCloneCleanupJob) Reschedule(_ context.Context) error {

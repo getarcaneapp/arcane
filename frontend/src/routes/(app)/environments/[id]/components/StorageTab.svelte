@@ -11,7 +11,7 @@
 </script>
 
 <div class="space-y-6">
-	<Card.Root class="flex flex-col">
+	<Card.Root variant="transparent" class="flex flex-col">
 		<Card.Header icon={FolderOpenIcon}>
 			<div class="flex flex-col space-y-1.5">
 				<Card.Title>
@@ -64,7 +64,7 @@
 		</Card.Content>
 	</Card.Root>
 
-	<Card.Root class="flex flex-col">
+	<Card.Root variant="transparent" class="flex flex-col">
 		<Card.Header icon={UploadIcon}>
 			<div class="flex flex-col space-y-1.5">
 				<Card.Title>

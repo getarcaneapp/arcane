@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"slices"
 
+	"emperror.dev/errors"
+
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apns"
@@ -24,17 +26,19 @@ import (
 	"go.uber.org/fx"
 )
 
-func newJobScheduler(appCtx context.Context, lc fx.Lifecycle, cfg *config.Config, runtime *actors.Runtime, _ *actors.Gate[actors.AdmissionKey], imageUpdateWatcher *scheduler.ImageUpdateWatcher, analytics *scheduler.AnalyticsJob, systemUpgrade *system.SystemUpgradeService) (schedulertypes.JobScheduler, error) {
+func newJobScheduler(appCtx context.Context, lc fx.Lifecycle, cfg *config.Config, runtime *actors.Runtime, _ *actors.Gate[actors.AdmissionKey], imageUpdateWatcher *scheduler.ImageUpdateWatcher, analytics *scheduler.AnalyticsJob, systemUpgrade *system.SystemUpgradeService, jobService *job.JobService) (schedulertypes.JobScheduler, error) {
 	schedulerCtx, cancelScheduler := context.WithCancel(appCtx)
 	jobScheduler, err := scheduler.NewJobScheduler(schedulerCtx, runtime, cfg.GetLocation())
 	if err != nil {
 		cancelScheduler()
 		return nil, err
 	}
+	jobService.SetScheduler(schedulerCtx, jobScheduler)
 	lc.Append(fx.Hook{
 		OnStart: func(context.Context) error {
 			slog.InfoContext(appCtx, "Starting scheduler")
 			if imageUpdateWatcher != nil {
+				imageUpdateWatcher.SetDispatcher(jobService.Queue)
 				if err := jobScheduler.RegisterBusWatcher(imageUpdateWatcher, true); err != nil {
 					return err
 				}
@@ -42,8 +46,13 @@ func newJobScheduler(appCtx context.Context, lc fx.Lifecycle, cfg *config.Config
 			if err := jobScheduler.StartScheduler(); err != nil {
 				return err
 			}
+			if err := jobService.Queue.Start(schedulerCtx); err != nil {
+				return err
+			}
 			if analytics != nil {
-				go analytics.Run(schedulerCtx)
+				if _, err := jobService.Queue.Submit(schedulerCtx, schedulertypes.Request{JobID: analytics.Name(), EnvironmentID: "0", Trigger: "startup"}); err != nil {
+					return err
+				}
 			}
 			if !cfg.AgentMode && systemUpgrade != nil {
 				go systemUpgrade.ResumeUpdateAllOnStartup(schedulerCtx)
@@ -51,8 +60,8 @@ func newJobScheduler(appCtx context.Context, lc fx.Lifecycle, cfg *config.Config
 			return nil
 		},
 		OnStop: func(ctx context.Context) error {
-			err := jobScheduler.Stop(ctx)
 			cancelScheduler()
+			err := errors.Combine(jobService.Queue.Stop(ctx), jobScheduler.Stop(ctx))
 			if err != nil {
 				slog.ErrorContext(ctx, "Job scheduler exited with error", "error", err)
 				return err

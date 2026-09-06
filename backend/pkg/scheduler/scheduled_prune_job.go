@@ -4,12 +4,15 @@ import (
 	"context"
 	"log/slog"
 
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
+	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
+
 	"github.com/getarcaneapp/arcane/backend/v2/internal/notification"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	systemtypes "github.com/getarcaneapp/arcane/types/v2/system"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/system"
-	"github.com/robfig/cron/v3"
+	scheduleutil "github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/schedule"
 )
 
 const ScheduledPruneJobName = "scheduled-prune"
@@ -42,7 +45,7 @@ func (j *ScheduledPruneJob) Schedule(ctx context.Context) string {
 		schedule = "0 0 0 * * *"
 	}
 
-	parser := cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+	parser := scheduleutil.Parser()
 	if _, err := parser.Parse(schedule); err != nil {
 		slog.WarnContext(ctx, "Invalid cron expression for scheduled-prune, using default", "invalid_schedule", schedule, "error", err)
 		return "0 0 0 * * *"
@@ -51,18 +54,18 @@ func (j *ScheduledPruneJob) Schedule(ctx context.Context) string {
 	return schedule
 }
 
-func (j *ScheduledPruneJob) Run(ctx context.Context) {
+func (j *ScheduledPruneJob) Run(ctx context.Context) (schedulertypes.Outcome, error) {
 	enabled := j.settingsService.GetBoolSetting(ctx, "scheduledPruneEnabled", false)
 	if !enabled {
 		slog.DebugContext(ctx, "scheduled prune disabled; skipping run")
-		return
+		return schedulertypes.Outcome{Status: schedulertypes.Skipped}, nil
 	}
 
 	req := buildScheduledPruneRequestInternal(ctx, j.settingsService)
 
 	if !hasScheduledPruneTargetsInternal(req) {
 		slog.InfoContext(ctx, "scheduled prune run skipped; no resource types selected")
-		return
+		return schedulertypes.Outcome{Status: schedulertypes.Skipped}, nil
 	}
 
 	slog.InfoContext(ctx, "scheduled prune run started",
@@ -76,11 +79,11 @@ func (j *ScheduledPruneJob) Run(ctx context.Context) {
 	result, started, err := j.systemService.PruneAll(ctx, "0", req)
 	if err != nil {
 		slog.ErrorContext(ctx, "scheduled prune run failed", "error", err)
-		return
+		return schedulertypes.Outcome{}, err
 	}
 	if !started {
 		slog.InfoContext(ctx, "scheduled prune run skipped; prune already in progress", "activityId", result.ActivityID)
-		return
+		return schedulertypes.Outcome{Status: schedulertypes.Skipped}, nil
 	}
 
 	slog.InfoContext(ctx, "scheduled prune run completed",
@@ -100,6 +103,15 @@ func (j *ScheduledPruneJob) Run(ctx context.Context) {
 	if err := j.notificationService.SendPruneReportNotification(ctx, result); err != nil {
 		slog.WarnContext(ctx, "failed to send prune report notification", "error", err)
 	}
+	outcome := schedulertypes.Outcome{Status: schedulertypes.Succeeded}
+	if result.ActivityID != nil {
+		outcome.ActivityID = *result.ActivityID
+	}
+	if len(result.Errors) > 0 {
+		outcome.Status = schedulertypes.Partial
+		outcome.Message = "Some resources could not be pruned; see activity details"
+	}
+	return outcome, nil
 }
 
 func (j *ScheduledPruneJob) Reschedule(ctx context.Context) error {
@@ -176,4 +188,8 @@ func buildScheduledBuildCachePruneOptionsInternal(ctx context.Context, settingsS
 		Mode:  systemtypes.PruneBuildCacheMode(mode),
 		Until: settingsService.GetStringSetting(ctx, "pruneBuildCacheUntil", ""),
 	}
+}
+
+func (j *ScheduledPruneJob) Reconcile(_ context.Context, previous schedulertypes.Run) (schedulertypes.Outcome, error) {
+	return jobcontext.ConfirmedTarget(previous, "scheduled-prune"), nil
 }

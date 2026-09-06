@@ -2,6 +2,8 @@ package system
 
 import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
+	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 
@@ -97,6 +99,12 @@ func (s *SystemService) PruneAll(ctx context.Context, environmentID string, req 
 	defer s.finishSystemPruneInternal(environmentID)
 
 	ctx = s.activityService.Track(ctx, activityID)
+	if err := jobcontext.Progress(ctx, schedulertypes.TargetOutcome{ID: "scheduled-prune", Status: schedulertypes.Running, ActivityID: activityID}); err != nil {
+		result.Success = false
+		result.Errors = append(result.Errors, err.Error())
+		s.completeSystemPruneActivityInternal(ctx, activityID, result)
+		return result, true, err
+	}
 	s.runSystemPruneInternal(ctx, req, activityID, result)
 
 	return result, true, nil

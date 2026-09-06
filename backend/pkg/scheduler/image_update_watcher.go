@@ -20,6 +20,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	imageupdatetypes "github.com/getarcaneapp/arcane/types/v2/imageupdate"
+	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/moby/moby/api/types/events"
 	"go.getarcane.app/streams/bus"
 )
@@ -79,6 +80,9 @@ type ImageUpdateWatcher struct {
 	environmentService registryCredentialLoaderInternal
 	dockerService      dockerEventBusProviderInternal
 	projectService     projectImageRefsBackfillerInternal
+	dispatchMu         sync.RWMutex
+	dispatcher         schedulertypes.Dispatcher
+	eventDegraded      atomic.Bool
 	actorRuntime       *actors.Runtime
 	actorProcess       atomic.Pointer[actors.Actor]
 	stopping           atomic.Bool
@@ -147,7 +151,9 @@ func (w *ImageUpdateWatcher) Start(ctx context.Context) error {
 		return errors.New("docker event bus unavailable")
 	}
 	eventCh, unsubscribe := eventBus.Subscribe(events.ImageEventType, bus.WithSubscriberBuffer(16))
-	defer unsubscribe()
+	defer func() { unsubscribe() }()
+	reconnect := time.NewTicker(5 * time.Second)
+	defer reconnect.Stop()
 
 	process, err := actors.NewActor(
 		ctx,
@@ -174,11 +180,12 @@ func (w *ImageUpdateWatcher) Start(ctx context.Context) error {
 
 	slog.InfoContext(ctx, "image update watcher started")
 	defer func() {
-		w.actorProcess.CompareAndSwap(process, nil)
 		stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), imageUpdateWatcherStopTimeout)
 		defer cancel()
 		if err := process.Stop(stopCtx); err != nil {
 			slog.ErrorContext(context.WithoutCancel(ctx), "failed to stop image update watcher actor", "error", err)
+		} else {
+			w.actorProcess.CompareAndSwap(process, nil)
 		}
 		slog.InfoContext(context.WithoutCancel(ctx), "image update watcher stopped")
 	}()
@@ -192,10 +199,19 @@ func (w *ImageUpdateWatcher) Start(ctx context.Context) error {
 				return nil
 			}
 			return errors.New("image update watcher actor stopped unexpectedly")
+		case <-reconnect.C:
+			if eventCh == nil {
+				if currentBus := w.dockerService.EventBus(); currentBus != nil {
+					unsubscribe()
+					eventCh, unsubscribe = currentBus.Subscribe(events.ImageEventType, bus.WithSubscriberBuffer(16))
+					w.eventDegraded.Store(false)
+				}
+			}
 		case _, ok := <-eventCh:
 			if !ok {
 				slog.WarnContext(ctx, "docker image event subscription closed; scheduled image polling remains active")
 				eventCh = nil
+				w.eventDegraded.Store(true)
 				continue
 			}
 			if !w.settingsService.GetBoolSetting(ctx, "imageEventWatcherEnabled", false) {
@@ -267,12 +283,8 @@ func (w *ImageUpdateWatcher) RunNow(ctx context.Context) error {
 		return admission.Err
 	}
 
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case err := <-admission.Value.Done():
-		return err
-	}
+	// Cancellation reaches the scan context; retain the execution guard until its worker exits.
+	return <-admission.Value.Done()
 }
 
 func (w *ImageUpdateWatcher) executeScanInternal(ctx context.Context) error {
@@ -298,12 +310,14 @@ func (w *ImageUpdateWatcher) executeScanInternal(ctx context.Context) error {
 
 	updates := 0
 	scanErrors := 0
-	for _, result := range results {
+	targets := make([]schedulertypes.TargetOutcome, 0, len(results))
+	for imageID, result := range results {
 		if result == nil {
 			continue
 		}
 		if result.Error != "" {
 			scanErrors++
+			targets = append(targets, schedulertypes.TargetOutcome{ID: imageID, Status: schedulertypes.Failed, Message: result.Error})
 			continue
 		}
 		if result.HasUpdate {
@@ -311,6 +325,9 @@ func (w *ImageUpdateWatcher) executeScanInternal(ctx context.Context) error {
 		}
 	}
 	slog.InfoContext(ctx, "image scan run completed", "checked", len(results), "updates", updates, "errors", scanErrors)
+	if scanErrors > 0 {
+		return &schedulertypes.OutcomeError{Outcome: schedulertypes.Outcome{Status: schedulertypes.Partial, Message: "Some image update checks failed", Targets: targets}}
+	}
 	return nil
 }
 
@@ -331,6 +348,7 @@ func (w *ImageUpdateWatcher) backfillProjectImageRefsInternal(ctx context.Contex
 type imageUpdateWatcherActorInternal struct {
 	watcher           *ImageUpdateWatcher
 	scanRunning       bool
+	scanSubmitting    bool
 	automaticPending  bool
 	triggerGeneration uint64
 	metadataReady     bool
@@ -378,10 +396,14 @@ func (a *imageUpdateWatcherActorInternal) receiveInternal(ctx *actors.Context, r
 		if message.Kind != imageUpdateScanCompletedMessageInternal {
 			return
 		}
-		a.scanRunning = false
 		if message.Value.automatic {
-			a.watcher.triggerIngress.Acknowledge(message.Value.triggerGeneration)
+			a.scanSubmitting = false
+			if message.Err == nil {
+				a.watcher.triggerIngress.Acknowledge(message.Value.triggerGeneration)
+			}
 			a.automaticPending = a.watcher.triggerIngress.Pending()
+		} else {
+			a.scanRunning = false
 		}
 		if message.Value.automatic && message.Err != nil && !errors.Is(message.Err, context.Canceled) {
 			slog.ErrorContext(ctx.Context(), "image update watcher scan failed", "error", message.Err)
@@ -400,7 +422,7 @@ func (a *imageUpdateWatcherActorInternal) receiveSignalInternal(ctx *actors.Cont
 		triggeredAt, generation := a.watcher.triggerIngress.Begin()
 		a.automaticPending = true
 		a.triggerGeneration = generation
-		if a.metadataReady && !a.scanRunning {
+		if a.metadataReady && !a.scanRunning && !a.scanSubmitting {
 			a.debounceTimer.Reset(ctx, imageUpdateDebounceElapsedMessageInternal, max(time.Until(triggeredAt.Add(a.watcher.debounce)), 0))
 		}
 		return
@@ -425,7 +447,7 @@ func (a *imageUpdateWatcherActorInternal) receiveSignalInternal(ctx *actors.Cont
 
 func (a *imageUpdateWatcherActorInternal) receiveTimerInternal(ctx *actors.Context, message actors.Message[imageUpdateMessageKindInternal, uint64]) {
 	if message.Kind == imageUpdateDebounceElapsedMessageInternal {
-		if !a.debounceTimer.Current(message.Value) || !a.automaticPending || a.scanRunning {
+		if !a.debounceTimer.Current(message.Value) || !a.automaticPending || a.scanRunning || a.scanSubmitting {
 			return
 		}
 		if remaining := time.Until(a.watcher.triggerIngress.Latest().Add(a.watcher.debounce)); remaining > 0 {
@@ -461,7 +483,11 @@ func (a *imageUpdateWatcherActorInternal) startBackfillInternal(ctx *actors.Cont
 }
 
 func (a *imageUpdateWatcherActorInternal) startScanInternal(scanCtx context.Context, ctx *actors.Context, automatic bool, triggerGeneration uint64, done *actors.Promise[error]) {
-	a.scanRunning = true
+	if automatic {
+		a.scanSubmitting = true
+	} else {
+		a.scanRunning = true
+	}
 	worker := actors.Worker[imageUpdateMessageKindInternal, imageUpdateScanCompletionInternal]{
 		Actor:          ctx,
 		WorkContext:    scanCtx,
@@ -469,11 +495,24 @@ func (a *imageUpdateWatcherActorInternal) startScanInternal(scanCtx context.Cont
 		CompletionKind: imageUpdateScanCompletedMessageInternal,
 		PanicValue:     imageUpdateScanCompletionInternal{automatic: automatic, triggerGeneration: triggerGeneration, done: done},
 		ActorStopped: func(_ imageUpdateScanCompletionInternal, err error) {
-			done.Resolve(err)
+			if done != nil {
+				done.Resolve(err)
+			}
 		},
 	}
 	worker.Start(func(workerCtx context.Context) (imageUpdateScanCompletionInternal, error) {
-		return imageUpdateScanCompletionInternal{automatic: automatic, triggerGeneration: triggerGeneration, done: done}, a.watcher.executeScanInternal(workerCtx)
+		completion := imageUpdateScanCompletionInternal{automatic: automatic, triggerGeneration: triggerGeneration, done: done}
+		if automatic {
+			a.watcher.dispatchMu.RLock()
+			dispatcher := a.watcher.dispatcher
+			a.watcher.dispatchMu.RUnlock()
+			if dispatcher == nil {
+				return completion, errors.New("durable job dispatcher unavailable")
+			}
+			_, err := dispatcher.Submit(workerCtx, schedulertypes.Request{JobID: a.watcher.Name(), EnvironmentID: "0", Trigger: "watcher"})
+			return completion, err
+		}
+		return completion, a.watcher.executeScanInternal(workerCtx)
 	})
 }
 
@@ -489,6 +528,21 @@ func (a *imageUpdateWatcherActorInternal) resetScheduleInternal(ctx *actors.Cont
 		}
 	}
 
-	delay := time.Until(schedule.Next(time.Now().In(a.watcher.location)))
-	a.scheduleTimer.Reset(ctx, imageUpdateScheduledPollMessageInternal, delay)
+	next := schedule.Next(time.Now().In(a.watcher.location))
+	a.watcher.dispatchMu.RLock()
+	dispatcher := a.watcher.dispatcher
+	a.watcher.dispatchMu.RUnlock()
+	if dispatcher != nil {
+		if err := dispatcher.Checkpoint(ctx.Context(), a.watcher.Name(), spec, next); err != nil {
+			slog.ErrorContext(ctx.Context(), "Failed to checkpoint image polling schedule", "error", err)
+		}
+	}
+	a.scheduleTimer.Reset(ctx, imageUpdateScheduledPollMessageInternal, time.Until(next))
+}
+
+// SetDispatcher connects automatic image scans to durable admission.
+func (w *ImageUpdateWatcher) SetDispatcher(dispatcher schedulertypes.Dispatcher) {
+	w.dispatchMu.Lock()
+	defer w.dispatchMu.Unlock()
+	w.dispatcher = dispatcher
 }

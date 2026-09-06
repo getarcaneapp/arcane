@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"time"
 
+	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
+
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
@@ -38,14 +40,14 @@ func (j *EventCleanupJob) Schedule(ctx context.Context) string {
 	return s
 }
 
-func (j *EventCleanupJob) Run(ctx context.Context) {
+func (j *EventCleanupJob) Run(ctx context.Context) (schedulertypes.Outcome, error) {
 	slog.InfoContext(ctx, "Running event cleanup job", "jobName", EventCleanupJobName)
 
 	// Delete events older than 36 hours
 	olderThan := 36 * time.Hour
 	if err := j.eventService.DeleteOldEvents(ctx, olderThan); err != nil {
 		slog.ErrorContext(ctx, "Failed to delete old events", "jobName", EventCleanupJobName, "olderThan", olderThan.String(), "error", err)
-		return
+		return schedulertypes.Outcome{}, err
 	}
 
 	slog.InfoContext(ctx, "Event cleanup job completed successfully",
@@ -58,7 +60,7 @@ func (j *EventCleanupJob) Run(ctx context.Context) {
 		deleted, err := j.activityService.PruneHistory(ctx, retentionDays, maxEntries)
 		if err != nil {
 			slog.ErrorContext(ctx, "Failed to prune activity history", "jobName", EventCleanupJobName, "error", err)
-			return
+			return schedulertypes.Outcome{}, err
 		}
 
 		slog.InfoContext(ctx, "Activity history cleanup completed successfully",
@@ -67,6 +69,7 @@ func (j *EventCleanupJob) Run(ctx context.Context) {
 			"maxEntries", maxEntries,
 			"deleted", deleted)
 	}
+	return schedulertypes.Outcome{Status: schedulertypes.Succeeded}, nil
 }
 
 func (j *EventCleanupJob) Reschedule(ctx context.Context) error {

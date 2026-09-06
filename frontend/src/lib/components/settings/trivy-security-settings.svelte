@@ -152,6 +152,7 @@
 </script>
 
 <SectionCard
+	variant="transparent"
 	title={m.security_vulnerability_scanning_heading()}
 	icon={SecurityIcon}
 	class="flex flex-col"

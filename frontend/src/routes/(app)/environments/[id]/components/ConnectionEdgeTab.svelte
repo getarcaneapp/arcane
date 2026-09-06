@@ -48,7 +48,7 @@
 {/snippet}
 
 <div class="space-y-6">
-	<Card.Root class="flex flex-col">
+	<Card.Root variant="transparent" class="flex flex-col">
 		<Card.Header icon={ConnectionIcon}>
 			<div class="flex flex-col space-y-1.5">
 				<Card.Title>
@@ -63,7 +63,7 @@
 	</Card.Root>
 
 	{#if showAgentSecurity}
-		<Card.Root class="flex flex-col">
+		<Card.Root variant="transparent" class="flex flex-col">
 			<Card.Header icon={SecurityIcon}>
 				<div class="flex flex-col space-y-1.5">
 					<Card.Title>
