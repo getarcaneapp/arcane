@@ -321,6 +321,7 @@
   "common_details_description": "Basic information about this {resource}",
   "common_url_required": "URL krävs",
   "common_username_required": "Username is required",
+  "common_max_length": "{field} måste bestå av högst {maxLength} tecken",
   "common_name_required": "Namn måste fyllas i.",
   "common_name_placeholder": "Ange ett namn",
   "common_description_placeholder": "Ange en beskrivning",
