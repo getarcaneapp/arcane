@@ -148,6 +148,7 @@ func (s *ContainerService) pullRedeployImageInternal(ctx context.Context, docker
 		pullOptions = client.ImagePullOptions{}
 	}
 
+	defer s.eventService.BeginDockerResourceSuppressionWindow("image", "", imageName)()
 	reader, pullErr := dockerClient.ImagePull(pullCtx, imageName, pullOptions)
 	if pullErr != nil && image.ShouldRetryAnonymousPull(pullOptions, pullErr) {
 		slog.WarnContext(ctx, "container recreate image pull failed with registry auth; retrying anonymously",
@@ -194,6 +195,7 @@ func (s *ContainerService) pullRedeployImageInternal(ctx context.Context, docker
 }
 
 func (s *ContainerService) prepareContainerForRedeployInternal(ctx context.Context, dockerClient *client.Client, containerID, containerName, backupName string, wasRunning bool, user common.User) error {
+	s.eventService.MarkDockerExpectation("container", containerID, containerName)
 	if containerName != "" {
 		if _, err := dockerClient.ContainerRename(ctx, containerID, client.ContainerRenameOptions{NewName: backupName}); err != nil {
 			s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", err, database.JSON{
@@ -231,6 +233,7 @@ func (s *ContainerService) prepareContainerForRedeployInternal(ctx context.Conte
 }
 
 func (s *ContainerService) restoreContainerAfterRedeployFailureInternal(ctx context.Context, dockerClient *client.Client, containerID, containerName, backupName, failedStep string, wasRunning bool, user common.User) {
+	s.eventService.MarkDockerExpectation("container", containerID, containerName)
 	if wasRunning {
 		if _, startErr := dockerClient.ContainerStart(ctx, containerID, client.ContainerStartOptions{}); startErr != nil {
 			s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", startErr, database.JSON{
@@ -270,6 +273,7 @@ func (s *ContainerService) restoreAutoRemoveContainerAfterStartFailureInternal(c
 		originalConfig.Hostname = ""
 	}
 
+	defer s.eventService.BeginDockerResourceSuppressionWindow("container", "", containerName)()
 	createResp, err := libarcane.ContainerCreateWithCompatibilityForAPIVersion(ctx, dockerClient, client.ContainerCreateOptions{
 		Config:           &originalConfig,
 		HostConfig:       containerInfo.HostConfig,
@@ -284,6 +288,7 @@ func (s *ContainerService) restoreAutoRemoveContainerAfterStartFailureInternal(c
 		return errors.WrapIf(err, "failed to recreate original auto-remove container")
 	}
 
+	defer s.eventService.BeginDockerResourceSuppressionWindow("container", createResp.ID, containerName)()
 	if _, err := dockerClient.ContainerStart(ctx, createResp.ID, client.ContainerStartOptions{}); err != nil {
 		s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", createResp.ID, containerName, user.ID, user.Username, "0", err, database.JSON{
 			"action": "redeploy",
@@ -308,6 +313,7 @@ func (s *ContainerService) restoreAutoRemoveContainerAfterStartFailureInternal(c
 func (s *ContainerService) rollbackFailedReplacementStartInternal(ctx context.Context, dockerClient *client.Client, containerInfo container.InspectResponse, replacementID, action, backupName string, stopAfterCreate, wasRunning bool, apiVersion string, startErr error, user common.User) error {
 	containerName := strings.TrimPrefix(containerInfo.Name, "/")
 
+	s.eventService.MarkDockerExpectation("container", replacementID, containerName)
 	var cleanupErr error
 	if _, removeErr := dockerClient.ContainerRemove(ctx, replacementID, client.ContainerRemoveOptions{Force: true}); removeErr != nil {
 		cleanupErr = errors.WrapIf(removeErr, "failed to remove replacement container")
@@ -357,6 +363,7 @@ func (s *ContainerService) runContainerLifecycleActionInternal(ctx context.Conte
 		slog.WarnContext(ctx, "could not log container action", "action", cfg.action, "error", err)
 	}
 
+	defer s.eventService.BeginDockerResourceSuppressionWindow("container", containerID, "")()
 	err = cfg.runContainerAction(dockerClient)
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, database.JSON{"action": cfg.action})
@@ -663,6 +670,7 @@ func (s *ContainerService) recreateContainerInternal(ctx context.Context, docker
 	// original. Only a start failure can still lose the original.
 	stopAfterCreate := wasRunning && containerInfo.HostConfig != nil && containerInfo.HostConfig.AutoRemove
 
+	defer s.eventService.BeginDockerResourceSuppressionWindow("container", containerID, containerName)()
 	backupName := buildRedeployBackupNameInternal(containerName, containerID)
 	if err := s.prepareContainerForRedeployInternal(ctx, dockerClient, containerID, containerName, backupName, wasRunning && !stopAfterCreate, user); err != nil {
 		return "", err
@@ -672,6 +680,7 @@ func (s *ContainerService) recreateContainerInternal(ctx context.Context, docker
 		newConfig.Hostname = ""
 	}
 
+	defer s.eventService.BeginDockerResourceSuppressionWindow("container", "", newName)()
 	createResp, err := libarcane.ContainerCreateWithCompatibilityForAPIVersion(ctx, dockerClient, client.ContainerCreateOptions{
 		Config:           newConfig,
 		HostConfig:       newHostConfig,
@@ -687,6 +696,8 @@ func (s *ContainerService) recreateContainerInternal(ctx context.Context, docker
 		})
 		return "", errors.WrapIf(err, "failed to recreate container")
 	}
+
+	defer s.eventService.BeginDockerResourceSuppressionWindow("container", createResp.ID, newName)()
 
 	if stopAfterCreate {
 		if _, err := dockerClient.ContainerStop(ctx, containerID, client.ContainerStopOptions{Timeout: new(30)}); err != nil {
@@ -1200,6 +1211,10 @@ func (s *ContainerService) DeleteContainer(ctx context.Context, containerID stri
 		}
 	}
 
+	defer s.eventService.BeginDockerResourceSuppressionWindow("container", containerID, "")()
+	for _, volumeName := range volumesToRemove {
+		defer s.eventService.BeginDockerResourceSuppressionWindow("volume", volumeName, volumeName)()
+	}
 	_, err = dockerClient.ContainerRemove(ctx, containerID, client.ContainerRemoveOptions{
 		Force:         force,
 		RemoveVolumes: removeVolumes,
@@ -1255,6 +1270,7 @@ func (s *ContainerService) CreateContainer(ctx context.Context, config *containe
 		pullCtx, pullCancel := context.WithTimeout(ctx, timeouts.GetDuration(settings.DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull))
 		defer pullCancel()
 
+		defer s.eventService.BeginDockerResourceSuppressionWindow("image", "", config.Image)()
 		reader, pullErr := dockerClient.ImagePull(pullCtx, config.Image, pullOptions)
 		if pullErr != nil {
 			if errors.Is(pullCtx.Err(), context.DeadlineExceeded) {
@@ -1276,6 +1292,7 @@ func (s *ContainerService) CreateContainer(ctx context.Context, config *containe
 		}
 	}
 
+	defer s.eventService.BeginDockerResourceSuppressionWindow("container", "", containerName)()
 	resp, err := libarcane.ContainerCreateWithCompatibility(ctx, dockerClient, client.ContainerCreateOptions{
 		Config:           config,
 		HostConfig:       hostConfig,
@@ -1287,6 +1304,7 @@ func (s *ContainerService) CreateContainer(ctx context.Context, config *containe
 		return nil, errors.WrapIf(err, "failed to create container")
 	}
 
+	defer s.eventService.BeginDockerResourceSuppressionWindow("container", resp.ID, containerName)()
 	metadata := database.JSON{
 		"action":      "create",
 		"containerId": resp.ID,

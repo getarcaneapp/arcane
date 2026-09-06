@@ -1,10 +1,11 @@
 <script lang="ts">
+	import { Temporal } from 'temporal-polyfill';
 	import { Progress } from '#lib/components/ui/progress/index.js';
 	import { Badge } from '#lib/components/ui/badge';
 	import { ArrowDownIcon } from '#lib/icons';
 	import { m } from '#lib/paraglide/messages';
 	import { cn } from '#lib/utils';
-	import { formatRelativeTime } from '#lib/utils/formatting';
+	import { formatRelativeTime, formatDateTime, parseInstant } from '#lib/utils/formatting';
 	import type { Activity, ActivityStatus } from '#lib/types/activity.type';
 	import { activityStatusLabel, activityStatusVariant, activityTypeIcon, activityTypeLabel } from './activity-labels';
 
@@ -21,9 +22,7 @@
 
 	const IconComponent = $derived(activityTypeIcon(activity.type));
 	const isActive = $derived(activity.status === 'running' || activity.status === 'queued');
-	// Resource-less activities (e.g. prunes) promote the type label instead.
 	const resourceLabel = $derived(activity.resourceName || activity.resourceId || '');
-	const targetName = $derived(resourceLabel || activityTypeLabel(activity.type));
 	const subtitle = $derived(activity.latestMessage || m.activity_no_message());
 	const sourceEnvironmentName = $derived(
 		activity.sourceEnvironmentName || activity.sourceEnvironmentId || activity.environmentId
@@ -46,6 +45,35 @@
 			case 'cancelled':
 				return 'bg-muted-foreground/40';
 		}
+	}
+	function formatDateTimeInternal(value?: string): string {
+		if (!value) {
+			return m.common_na();
+		}
+		return formatDateTime(value, {
+			dateStyle: 'month-day',
+			includeSeconds: true
+		});
+	}
+
+	function formatDurationInternal(value: Activity | null): string {
+		const startedAt = parseInstant(value?.startedAt);
+		const durationMs = value?.durationMs ?? (startedAt ? startedAt.until(Temporal.Now.instant()).total('milliseconds') : 0);
+		if (!durationMs || Number.isNaN(durationMs)) {
+			return m.common_na();
+		}
+		if (durationMs < 1000) {
+			return m.activity_duration_ms({ ms: Math.max(0, Math.round(durationMs)) });
+		}
+
+		const totalSeconds = Math.round(durationMs / 1000);
+		if (totalSeconds < 60) {
+			return m.activity_duration_seconds({ seconds: totalSeconds });
+		}
+
+		const minutes = Math.floor(totalSeconds / 60);
+		const seconds = totalSeconds % 60;
+		return m.activity_duration_minutes({ minutes, seconds });
 	}
 </script>
 
@@ -75,19 +103,19 @@
 	>
 		<IconComponent class={cn(child ? 'size-3.5' : 'size-4')} aria-hidden="true" />
 	</div>
-	<div class="min-w-0 space-y-1.5">
+	<div class={cn('flex min-w-0 flex-col gap-1.5', isActive && 'pr-8')}>
 		<div class="flex min-w-0 items-start justify-between gap-3">
 			<div class="min-w-0 flex-1">
 				<div class="flex min-w-0 items-center gap-2">
-					<span class="truncate text-sm font-semibold text-foreground">{targetName}</span>
+					<span class="truncate text-sm font-semibold text-foreground">{activityTypeLabel(activity.type)}</span>
 					{#if relativeTime}
 						<span class="shrink-0 text-[11px] text-muted-foreground/70">· {relativeTime}</span>
 					{/if}
 				</div>
 				{#if resourceLabel}
-					<div class="truncate text-xs text-muted-foreground">{activityTypeLabel(activity.type)}</div>
+					<div class="truncate text-xs text-muted-foreground">{resourceLabel}</div>
 				{/if}
-				{#if !child}
+				{#if !child || expanded}
 					<div class="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-muted-foreground/80">
 						{#if sourceEnvironmentName}
 							<span class="truncate">{sourceEnvironmentName}</span>
@@ -102,12 +130,28 @@
 			<Badge variant={activityStatusVariant(activity.status)} size="sm">{activityStatusLabel(activity.status)}</Badge>
 		</div>
 
-		<div class="space-y-1.5">
-			<div class="line-clamp-2 text-xs leading-relaxed text-muted-foreground">{subtitle}</div>
-			{#if isActive && !expanded}
-				<Progress value={100} indeterminate class="h-1.5 rounded-full" />
-			{/if}
-		</div>
+		{#if expanded}
+			<div class="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+				<span
+					>{m.common_started()}
+					<span class="text-foreground tabular-nums">{formatDateTimeInternal(activity.startedAt)}</span></span
+				>
+				<span
+					>{m.common_finished()}
+					<span class="text-foreground tabular-nums">{formatDateTimeInternal(activity.endedAt)}</span></span
+				>
+				<span>{m.duration()} <span class="text-foreground tabular-nums">{formatDurationInternal(activity)}</span></span>
+			</div>
+		{/if}
+
+		{#if !expanded}
+			<div class="flex flex-col gap-1.5">
+				<div class="line-clamp-2 text-xs leading-relaxed text-muted-foreground">{subtitle}</div>
+				{#if isActive}
+					<Progress value={100} indeterminate class="h-1.5 rounded-full" />
+				{/if}
+			</div>
+		{/if}
 	</div>
 
 	<div class="mt-1 flex size-6 shrink-0 items-center justify-center text-muted-foreground">

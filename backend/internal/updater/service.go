@@ -112,6 +112,7 @@ func NewUpdaterService(
 		return nil, errors.WrapIf(err, "configure updater engine")
 	}
 	service.engine = engine
+	events.SetDockerUpdatingContainers(func() []string { return engine.Status().ContainerIDs })
 	return service, nil
 }
 

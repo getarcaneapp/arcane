@@ -2,6 +2,7 @@
 package event
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -20,14 +21,12 @@ type Dependencies struct {
 // Module owns event persistence and both of the domain's HTTP surfaces.
 type Module struct {
 	service *EventService
-	config  *config.Config
 }
 
 // New builds the event domain from its dependencies.
 func New(deps Dependencies) *Module {
 	return &Module{
 		service: NewEventService(deps.DB, deps.Config, deps.HTTPClient),
-		config:  deps.Config,
 	}
 }
 
@@ -49,10 +48,10 @@ func (m *Module) RegisterRoutes(api huma.API) {
 }
 
 // RegisterAgentRoutes mounts the token-authenticated direct-agent ingestion endpoint.
-func (m *Module) RegisterAgentRoutes(group *echo.Group) {
+func (m *Module) RegisterAgentRoutes(group *echo.Group, resolveEnvironment func(context.Context, string) (string, error)) {
 	if m == nil {
 		RegisterAgentEventIngestion(group, nil, nil)
 		return
 	}
-	RegisterAgentEventIngestion(group, m.service, m.config)
+	RegisterAgentEventIngestion(group, m.service, resolveEnvironment)
 }

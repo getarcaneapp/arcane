@@ -204,7 +204,7 @@
 			'bg-background',
 			'group-hover/row:bg-[color-mix(in_oklab,var(--color-primary)_6%,var(--color-background))]',
 			'group-data-[state=selected]/row:bg-[color-mix(in_oklab,var(--color-primary)_12%,var(--color-background))]',
-			'group-data-[expanded]/row:bg-[color-mix(in_oklab,var(--color-primary)_15%,var(--color-background))]'
+			'group-data-[expanded]/row:bg-[color-mix(in_oklab,var(--color-muted)_30%,var(--color-background))]'
 		)
 	);
 
@@ -254,7 +254,7 @@
 		data-state={selectedIdSet.has(rowId) && 'selected'}
 		data-expanded={isExpanded ? true : undefined}
 		onclick={(event) => handleRowClick(event, rowId)}
-		class={cn('isolate', hasExpand && 'cursor-pointer', isExpanded && 'bg-primary/15')}
+		class={cn('isolate', hasExpand && 'cursor-pointer', isExpanded && 'bg-muted/30')}
 	>
 		{#if hasExpand}
 			<Table.Cell class="w-8 px-2" data-row-select-ignore>
@@ -283,7 +283,7 @@
 	</Table.Row>
 
 	{#if hasExpand && isExpanded && expandedRowContent}
-		<Table.Row class="bg-primary/10 hover:bg-primary/10">
+		<Table.Row class="bg-muted/10 hover:bg-muted/10">
 			<Table.Cell colspan={columnsCount} class="p-0">
 				<div transition:slide={{ duration: 200 }}>
 					<div class="px-6 py-4">

@@ -13,6 +13,7 @@ import (
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 	dashboardtypes "github.com/getarcaneapp/arcane/types/v2/dashboard"
 	environmenttypes "github.com/getarcaneapp/arcane/types/v2/environment"
+	eventtypes "github.com/getarcaneapp/arcane/types/v2/event"
 )
 
 // Channel names a subscribable feed. Callers request channels explicitly
@@ -22,6 +23,7 @@ const (
 	ChannelEnvironments = "environments"
 	ChannelDashboard    = "dashboard"
 	ChannelActivities   = "activities"
+	ChannelEvents       = "events"
 )
 
 // Event is one line of the multiplexed stream. Exactly one payload is set, and
@@ -53,6 +55,11 @@ type Event struct {
 	//
 	// Required: false
 	Environment *environmenttypes.StreamEvent `json:"environment,omitempty"`
+
+	// EventLog carries a ChannelEvents invalidation.
+	//
+	// Required: false
+	EventLog *eventtypes.StreamEvent `json:"eventLog,omitempty"`
 
 	// Timestamp is when the envelope was produced.
 	//

@@ -262,7 +262,16 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 	// Register public webhook trigger endpoint before auth middleware (token in URL is the sole auth)
 	api.RegisterWebhookTrigger(apiGroup, deps.Webhook.Service(), handlerAppCtx)
 	federated.RegisterFederatedTokenExchange(apiGroup, deps.Federated)
-	deps.Event.RegisterAgentRoutes(apiGroup)
+	deps.Event.RegisterAgentRoutes(apiGroup, func(ctx context.Context, token string) (string, error) {
+		env, err := deps.Environment.Service().ResolveEnvironmentByAccessToken(ctx, token)
+		if err != nil {
+			return "", err
+		}
+		if env == nil || !env.Enabled || env.ID == "0" {
+			return "", nil
+		}
+		return env.ID, nil
+	})
 
 	permissionMatcher := authz.NewPermissionMatcher()
 

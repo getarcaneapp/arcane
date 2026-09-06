@@ -51,6 +51,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/oidcjwk"
 	"github.com/getarcaneapp/arcane/backend/v2/resources"
+	"github.com/moby/moby/api/types/events"
+	"go.getarcane.app/streams/bus"
 	"go.uber.org/fx"
 )
 
@@ -186,20 +188,38 @@ func provideTunnelRegistryInternal(ctx context.Context, lc fx.Lifecycle, runtime
 	return registry, nil
 }
 
-func provideDockerClientServiceInternal(ctx context.Context, lc fx.Lifecycle, actorRuntime *actors.Runtime, db *database.DB, cfg *config.Config, settings *settings.SettingsService) *docker.DockerClientService {
-	service := docker.NewDockerClientService(ctx, db, cfg, settings)
-	var runner *actors.Runner
+func provideDockerClientServiceInternal(ctx context.Context, lc fx.Lifecycle, actorRuntime *actors.Runtime, db *database.DB, cfg *config.Config, settings *settings.SettingsService, eventService *event.EventService) *docker.DockerClientService {
+	service := docker.NewDockerClientService(ctx, db, cfg, settings, bus.WithDroppedEventCallback(func(message events.Message) {
+		// Overflow is recovered synchronously, applying backpressure instead of losing log entries.
+		eventService.RecordDockerEvent(ctx, message)
+	}))
+	var runner, logRunner *actors.Runner
+	var unsubscribe func()
 	lc.Append(fx.Hook{
-		OnStart: func(context.Context) error {
+		OnStart: func(startCtx context.Context) error {
+			run, cleanup := eventService.SubscribeDockerEvents(service.EventBus())
+			unsubscribe = cleanup
 			var err error
+			logRunner, err = actors.NewRunner(ctx, actorRuntime, "docker-events", "log", "Docker event log", 3, run)
+			if err != nil {
+				cleanup()
+				return err
+			}
 			runner, err = actors.NewRunner(ctx, actorRuntime, "docker-events", "stream", "Docker event watcher", 3, func(runCtx context.Context) error {
 				service.WatchEvents(runCtx)
 				return nil
 			})
+			if err != nil {
+				err = errors.Combine(err, logRunner.Stop(startCtx))
+				cleanup()
+			}
 			return err
 		},
 		OnStop: func(stopCtx context.Context) error {
-			err := runner.Stop(stopCtx)
+			err := errors.Combine(runner.Stop(stopCtx), logRunner.Stop(stopCtx))
+			if unsubscribe != nil {
+				unsubscribe()
+			}
 			service.Close()
 			return err
 		},

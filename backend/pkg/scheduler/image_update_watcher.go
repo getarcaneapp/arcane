@@ -18,7 +18,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	imageupdatetypes "github.com/getarcaneapp/arcane/types/v2/imageupdate"
 	"github.com/moby/moby/api/types/events"
@@ -193,13 +192,13 @@ func (w *ImageUpdateWatcher) Start(ctx context.Context) error {
 				return nil
 			}
 			return errors.New("image update watcher actor stopped unexpectedly")
-		case message, ok := <-eventCh:
+		case _, ok := <-eventCh:
 			if !ok {
 				slog.WarnContext(ctx, "docker image event subscription closed; scheduled image polling remains active")
 				eventCh = nil
 				continue
 			}
-			if message.Action == dockerutil.ImageStateResyncAction || !w.settingsService.GetBoolSetting(ctx, "imageEventWatcherEnabled", false) {
+			if !w.settingsService.GetBoolSetting(ctx, "imageEventWatcherEnabled", false) {
 				continue
 			}
 			w.Trigger()

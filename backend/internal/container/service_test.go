@@ -511,3 +511,46 @@ func TestBuildEditNetworkingConfigInternal(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, out)
 }
+
+func TestRecreateContainerDaemonCorrelationInternal(t *testing.T) {
+	db := setupProjectTestDBInternal(t)
+	events := event.NewEventService(db, nil, nil)
+	observed := make(chan string, 8)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := dockerTestPathInternal(r.URL.Path)
+		id, name := "old-id", "web"
+		if path == "/containers/create" {
+			id = ""
+		}
+		if path == "/containers/new-id/start" {
+			id = "new-id"
+		}
+		if !events.ShouldSuppressDaemonEvent("container", id, name, "") {
+			t.Errorf("missing correlation before Docker mutation %s", path)
+		}
+		if events.ShouldSuppressDaemonEvent("container", "unrelated", "other", "") {
+			t.Errorf("unrelated container suppressed during %s", path)
+		}
+		observed <- path
+		if path == "/containers/create" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			if err := json.NewEncoder(w).Encode(map[string]any{"Id": "new-id", "Warnings": []string{}}); err != nil {
+				t.Errorf("encode container creation response: %v", err)
+			}
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(server.Close)
+	dockerClient := newTestDockerClientInternal(t, server)
+	svc := NewContainerService(events, nil, nil, nil, nil)
+	info := container.InspectResponse{ID: "old-id", Name: "/web", State: &container.State{Running: true}, Config: &container.Config{Image: "app:latest"}, HostConfig: &container.HostConfig{}}
+	id, err := svc.recreateContainerInternal(t.Context(), dockerClient, info, "redeploy", "web", info.Config, info.HostConfig, nil, "1.41", event.EventTypeContainerDeploy, common.SystemUser)
+	require.NoError(t, err)
+	require.Equal(t, "new-id", id)
+	require.Len(t, observed, 5)
+	require.Equal(t, []string{"/containers/old-id/rename", "/containers/old-id/stop", "/containers/create", "/containers/new-id/start", "/containers/old-id"}, []string{<-observed, <-observed, <-observed, <-observed, <-observed})
+	require.True(t, events.ShouldSuppressDaemonEvent("container", "old-id", "", ""))
+	require.True(t, events.ShouldSuppressDaemonEvent("container", "new-id", "", ""))
+}

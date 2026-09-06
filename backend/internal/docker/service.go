@@ -53,12 +53,12 @@ type DockerClientService struct {
 	containerListFlight singleflight.Group
 }
 
-func NewDockerClientService(_ context.Context, db *database.DB, cfg *config.Config, settingsService *settings.SettingsService) *DockerClientService {
+func NewDockerClientService(_ context.Context, db *database.DB, cfg *config.Config, settingsService *settings.SettingsService, eventBusOptions ...bus.Option) *DockerClientService {
 	return &DockerClientService{
 		db:              db,
 		config:          cfg,
 		settingsService: settingsService,
-		eventBus:        bus.NewDockerEventBus(),
+		eventBus:        bus.NewDockerEventBus(eventBusOptions...),
 	}
 }
 
@@ -255,7 +255,6 @@ func (s *DockerClientService) WatchEvents(ctx context.Context) {
 		}
 
 		result := dockerClient.Events(ctx, client.EventsListOptions{})
-		s.publishImageStateResyncInternal()
 		streamStart := time.Now()
 		err = s.consumeEventsInternal(ctx, result.Messages, result.Err)
 		if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, io.EOF) {
@@ -265,7 +264,7 @@ func (s *DockerClientService) WatchEvents(ctx context.Context) {
 		// Only a stream that actually stayed up counts as recovery. Resetting
 		// unconditionally before Events() meant a daemon that accepts the
 		// connection and drops it immediately was reconnected at the floor
-		// interval forever, purging the container update-info cache each time.
+		// interval forever.
 		if time.Since(streamStart) >= dockerEventStreamHealthyAfter {
 			eventBackoff.Reset()
 		}
@@ -276,13 +275,6 @@ func (s *DockerClientService) WatchEvents(ctx context.Context) {
 	}
 }
 
-func (s *DockerClientService) publishImageStateResyncInternal() {
-	s.EventBus().Publish(events.Message{
-		Type:   events.ImageEventType,
-		Action: docker.ImageStateResyncAction,
-	})
-}
-
 func (s *DockerClientService) consumeEventsInternal(ctx context.Context, messages <-chan events.Message, errs <-chan error) error {
 	for {
 		select {
@@ -291,6 +283,10 @@ func (s *DockerClientService) consumeEventsInternal(ctx context.Context, message
 		case msg, ok := <-messages:
 			if !ok {
 				return nil
+			}
+			// Stamp missing daemon timestamps once, before normal and overflow delivery diverge.
+			if msg.TimeNano == 0 {
+				msg.TimeNano = time.Now().UnixNano()
 			}
 			s.EventBus().Publish(msg)
 		case err, ok := <-errs:

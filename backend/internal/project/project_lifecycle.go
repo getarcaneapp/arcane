@@ -87,6 +87,8 @@ func (s *ProjectService) UpdateProjectServices(ctx context.Context, projectID st
 		return errors.WrapIf(err, "failed to load compose project")
 	}
 
+	defer s.eventService.BeginComposeSuppressionWindow(compProj.Name)()
+
 	// 2. Set status to deploying/restarting
 	if err := s.updateProjectStatusInternal(ctx, projectID, ProjectStatusDeploying); err != nil {
 		return err
@@ -215,6 +217,13 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 	if err := s.updateProjectStatusInternal(ctx, projectID, ProjectStatusDeploying); err != nil {
 		return errors.WrapIf(err, "failed to update project status to deploying")
 	}
+	var closeSuppression func()
+	defer func() {
+		if closeSuppression != nil {
+			closeSuppression()
+		}
+	}()
+
 	progressWriter, _ := ctx.Value(dockerutil.ProgressWriterKey{}).(io.Writer)
 	projectModel, err := s.composeCoordinator.Deploy(ctx, projecttypes.ComposeDeployment{
 		ProjectID: projectID, ProjectPath: projectFromDb.Path, Options: options,
@@ -229,6 +238,9 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 		},
 		Load: func(ctx context.Context) (*composetypes.Project, error) {
 			model, _, err := s.loadComposeProjectForProjectInternal(ctx, projectFromDb)
+			if err == nil {
+				closeSuppression = s.eventService.BeginComposeSuppressionWindow(model.Name)
+			}
 			return model, err
 		},
 		ResolveImages: func(ctx context.Context) (projecttypes.ComposeImageOperations, error) {
@@ -269,6 +281,8 @@ func (s *ProjectService) DownProject(ctx context.Context, projectID string, user
 	if err := s.updateProjectStatusInternal(ctx, projectID, ProjectStatusStopped); err != nil {
 		return errors.WrapIf(err, "failed to update project status to stopping")
 	}
+
+	defer s.eventService.BeginComposeSuppressionWindow(proj.Name)()
 
 	if err := projects.ComposeDown(ctx, proj, false); err != nil {
 		_ = s.updateProjectStatusInternal(ctx, projectID, ProjectStatusRunning)
@@ -428,6 +442,7 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, r
 
 	if removeVolumes {
 		if compProj, _, lerr := s.loadComposeProjectForProjectInternal(ctx, proj); lerr == nil {
+			defer s.eventService.BeginComposeSuppressionWindow(compProj.Name)()
 			if derr := projects.ComposeDown(ctx, compProj, true); derr != nil {
 				slog.WarnContext(ctx, "failed to remove volumes", "error", derr)
 			}
@@ -534,6 +549,8 @@ func (s *ProjectService) PullProjectImages(ctx context.Context, projectID string
 		return errors.WrapIf(lerr, "failed to load compose project")
 	}
 
+	defer s.eventService.BeginComposeSuppressionWindow(compProj.Name)()
+
 	for _, img := range projects.PullableImageRefs(compProj) {
 		if err := s.pullAndReconcileImageInternal(ctx, img, progressWriter, user, credentials); err != nil {
 			return err
@@ -554,6 +571,8 @@ func (s *ProjectService) BuildProjectServices(ctx context.Context, projectID str
 		return errors.WrapIff(derr, "failed to load compose project in %s", projectFromDb.Path)
 	}
 
+	defer s.eventService.BeginComposeSuppressionWindow(projectModel.Name)()
+
 	return s.composeCoordinator.BuildServices(ctx, projectID, projectModel, options, progressWriter, s.composeImageOperationsInternal(user, nil))
 }
 
@@ -572,6 +591,8 @@ func (s *ProjectService) EnsureProjectImagesPresent(ctx context.Context, project
 	if lerr != nil {
 		return errors.WrapIf(lerr, "failed to load compose project")
 	}
+
+	defer s.eventService.BeginComposeSuppressionWindow(compProj.Name)()
 
 	return s.composeCoordinator.EnsureImagesPresent(ctx, compProj, progressWriter, s.composeImageOperationsInternal(&user, credentials))
 }
@@ -615,6 +636,8 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, s
 		_ = s.updateProjectStatusInternal(ctx, projectID, ProjectStatusRunning)
 		return errors.WrapIf(lerr, "failed to load compose project")
 	}
+
+	defer s.eventService.BeginComposeSuppressionWindow(compProj.Name)()
 
 	if err := projects.ComposeRestart(ctx, compProj, services); err != nil {
 		_ = s.updateProjectStatusInternal(ctx, projectID, ProjectStatusRunning)

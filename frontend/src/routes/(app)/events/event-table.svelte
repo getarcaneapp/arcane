@@ -80,6 +80,11 @@
 
 	const columns = [
 		{
+			accessorKey: 'title',
+			title: m.events_col_event(),
+			cell: SummaryCell
+		},
+		{
 			accessorKey: 'severity',
 			title: m.events_col_severity(),
 			sortable: true,
@@ -127,6 +132,15 @@
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 </script>
+
+{#snippet SummaryCell({ item }: { item: Event })}
+	<div class="max-w-xl min-w-48 py-1 whitespace-normal">
+		<p class="text-sm font-semibold break-words">{item.title}</p>
+		{#if item.description}
+			<p class="mt-0.5 line-clamp-2 text-xs text-muted-foreground" title={item.description}>{item.description}</p>
+		{/if}
+	</div>
+{/snippet}
 
 {#snippet SeverityCell({ value }: { value: unknown })}
 	{@const severity = String(value ?? 'info')}
@@ -229,7 +243,11 @@
 			}
 		]}
 		rowActions={RowActions}
-	/>
+	>
+		{#if item.description}
+			<p class="text-xs leading-relaxed break-words text-muted-foreground">{item.description}</p>
+		{/if}
+	</UniversalMobileCard>
 {/snippet}
 
 {#snippet RowActions({ item }: { item: Event })}

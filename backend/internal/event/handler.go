@@ -2,15 +2,12 @@ package event
 
 import (
 	"context"
-	"crypto/subtle"
 	"encoding/json/v2"
-	"log/slog"
 	"net/http"
 	"strings"
 
 	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
@@ -62,8 +59,8 @@ type DeleteEventInput struct {
 
 // RegisterAgentEventIngestion registers the manager ingestion endpoint used by
 // direct agents when no edge tunnel is active. This route is not part of the
-// Huma/OpenAPI surface and authenticates only with the configured agent token.
-func RegisterAgentEventIngestion(g *echo.Group, eventService *EventService, cfg *config.Config) {
+// Huma/OpenAPI surface and authenticates with the originating environment token.
+func RegisterAgentEventIngestion(g *echo.Group, eventService *EventService, resolveEnvironment func(context.Context, string) (string, error)) {
 	g.POST("/events", func(c *echo.Context) error {
 		if eventService == nil {
 			return c.JSON(http.StatusInternalServerError, base.ApiResponse[base.MessageResponse]{
@@ -71,14 +68,15 @@ func RegisterAgentEventIngestion(g *echo.Group, eventService *EventService, cfg 
 				Data:    base.MessageResponse{Message: "service not available"},
 			})
 		}
-		if cfg == nil || strings.TrimSpace(cfg.AgentToken) == "" {
-			slog.Warn("agent event ingestion is disabled because agent token is not configured")
+
+		if resolveEnvironment == nil {
 			return c.JSON(http.StatusServiceUnavailable, base.ApiResponse[base.MessageResponse]{
 				Success: false,
 				Data:    base.MessageResponse{Message: "agent event ingestion is not configured"},
 			})
 		}
-		if !validAgentEventIngestionTokenInternal(c.Request(), cfg) {
+		environmentID, err := resolveEnvironment(c.Request().Context(), c.Request().Header.Get(utils.HeaderAgentToken))
+		if err != nil || environmentID == "" || environmentID == "0" {
 			return c.JSON(http.StatusUnauthorized, base.ApiResponse[base.MessageResponse]{
 				Success: false,
 				Data:    base.MessageResponse{Message: "invalid agent token"},
@@ -99,7 +97,7 @@ func RegisterAgentEventIngestion(g *echo.Group, eventService *EventService, cfg 
 			})
 		}
 
-		if _, err := eventService.CreateEvent(c.Request().Context(), input); err != nil {
+		if _, err := eventService.IngestAgentEvent(c.Request().Context(), environmentID, input); err != nil {
 			return c.JSON(http.StatusInternalServerError, base.ApiResponse[base.MessageResponse]{
 				Success: false,
 				Data:    base.MessageResponse{Message: errors.WithMessage(err, "Failed to create event").Error()},
@@ -111,20 +109,6 @@ func RegisterAgentEventIngestion(g *echo.Group, eventService *EventService, cfg 
 			Data:    base.MessageResponse{Message: "event ingested"},
 		})
 	})
-}
-
-func validAgentEventIngestionTokenInternal(r *http.Request, cfg *config.Config) bool {
-	if cfg == nil {
-		return false
-	}
-	token := r.Header.Get(utils.HeaderAgentToken)
-	if token == "" || cfg.AgentToken == "" {
-		return false
-	}
-	// Constant time, matching auth.AgentTokenMatches in the auth middleware:
-	// this endpoint is unauthenticated apart from the token, so a byte-by-byte
-	// comparison is directly probeable.
-	return subtle.ConstantTimeCompare([]byte(token), []byte(cfg.AgentToken)) == 1
 }
 
 // RegisterEvents registers all event management endpoints.

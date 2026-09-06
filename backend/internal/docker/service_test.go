@@ -12,7 +12,6 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	docker "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/events"
@@ -173,23 +172,21 @@ func TestDockerClientService_RefreshClientProbeFailureKeepsCachedClient(t *testi
 	assert.False(t, svc.clientLastProbe.IsZero())
 }
 
-func TestDockerClientService_PublishImageStateResyncNotifiesSubscribers(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	svc := NewDockerClientService(ctx, nil, &config.Config{}, nil)
+func TestDockerClientService_PublishesDaemonImageEventsInternal(t *testing.T) {
+	svc := NewDockerClientService(t.Context(), nil, &config.Config{}, nil)
 	t.Cleanup(svc.Close)
-
 	eventCh, unsubscribe := svc.EventBus().Subscribe(events.ImageEventType)
 	t.Cleanup(unsubscribe)
-
-	svc.publishImageStateResyncInternal()
-
+	messages := make(chan events.Message, 1)
+	expected := events.Message{Type: events.ImageEventType, Action: events.ActionPull, TimeNano: 123, Actor: events.Actor{ID: "nginx:latest"}}
+	messages <- expected
+	close(messages)
+	require.NoError(t, svc.consumeEventsInternal(t.Context(), messages, nil))
 	select {
 	case message := <-eventCh:
-		require.Equal(t, events.ImageEventType, message.Type)
-		require.Equal(t, docker.ImageStateResyncAction, message.Action)
-	case <-time.After(time.Second):
-		require.FailNow(t, "timed out waiting for image state resync event")
+		require.Equal(t, expected, message)
+	default:
+		t.Fatal("daemon image event was not published")
 	}
 }
 
@@ -236,9 +233,8 @@ func TestDockerClientService_EventActorStopCancelsAndJoinsStreamInternal(t *test
 	}
 	select {
 	case message := <-eventsCh:
-		require.Equal(t, docker.ImageStateResyncAction, message.Action)
-	case <-time.After(time.Second):
-		require.FailNow(t, "Docker event stream did not publish reconnect resync")
+		t.Fatalf("connecting without daemon events published an unexpected event: %v", message)
+	default:
 	}
 
 	stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)

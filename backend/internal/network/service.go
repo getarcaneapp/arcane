@@ -185,6 +185,7 @@ func (s *NetworkService) CreateNetwork(ctx context.Context, name string, options
 		return nil, errors.WrapIf(err, "failed to connect to Docker")
 	}
 
+	defer s.eventService.BeginDockerResourceSuppressionWindow("network", "", name)()
 	response, err := dockerClient.NetworkCreate(ctx, name, options)
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, event.EventTypeNetworkError, "network", "", name, user.ID, user.Username, "0", err, database.JSON{"action": "create", "driver": options.Driver})
@@ -228,6 +229,7 @@ func (s *NetworkService) RemoveNetwork(ctx context.Context, id string, user comm
 		networkName = id
 	}
 
+	defer s.eventService.BeginDockerResourceSuppressionWindow("network", id, networkName)()
 	if _, err := dockerClient.NetworkRemove(ctx, id, client.NetworkRemoveOptions{}); err != nil {
 		s.eventService.LogErrorEvent(ctx, event.EventTypeNetworkError, "network", id, networkName, user.ID, user.Username, "0", err, database.JSON{"action": "delete"})
 		return errors.WrapIf(err, "failed to remove network")

@@ -14,6 +14,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/libtnb/sqlite"
+	"github.com/moby/moby/api/types/events"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -342,4 +343,84 @@ func TestEventService_ListEventsPaginated_TypeCategoryFilter(t *testing.T) {
 	require.ElementsMatch(t, []string{"container.start", "container.stop"}, listWithTypeFilter("container"))
 	require.ElementsMatch(t, []string{"image.pull"}, listWithTypeFilter("image.pull"))
 	require.ElementsMatch(t, []string{"container.start", "container.stop", "image.pull"}, listWithTypeFilter("container,image.pull"))
+}
+
+func TestIngestAgentEventAuthenticatedEnvironment(t *testing.T) {
+	for _, supplied := range []string{"0", "unrelated-environment", ""} {
+		t.Run("payload environment "+supplied, func(t *testing.T) {
+			db := setupEventServiceTestDB(t)
+			svc := NewEventService(db, nil, nil)
+			req, ok := mapDaemonEventInternal(events.Message{Type: events.ContainerEventType, Action: events.ActionStart, Actor: events.Actor{ID: "container-id", Attributes: map[string]string{"name": "web", "com.docker.compose.project": "demo"}}})
+			require.True(t, ok)
+			req.EnvironmentID = &supplied
+			recorded, err := svc.IngestAgentEvent(t.Context(), " remote-environment ", req)
+			require.NoError(t, err)
+			require.Equal(t, "remote-environment", *recorded.EnvironmentID)
+			require.Equal(t, "System", *recorded.Username)
+			require.Equal(t, req.Metadata, recorded.Metadata)
+			require.False(t, svc.ShouldSuppressDaemonEvent("container", "container-id", "web", "demo"))
+			var persisted Event
+			require.NoError(t, db.First(&persisted).Error)
+			require.Equal(t, "remote-environment", *persisted.EnvironmentID)
+			require.Equal(t, database.JSON{"source": "docker", "action": "start", "scope": "", "name": "web", "composeProject": "demo"}, persisted.Metadata)
+
+			// Attributed Arcane records must not seed expectations for the manager's daemon either.
+			req.Metadata = nil
+			req.UserID = new("operator-id")
+			req.Username = new("operator")
+			recorded, err = svc.IngestAgentEvent(t.Context(), "remote-environment", req)
+			require.NoError(t, err)
+			require.Equal(t, "operator", *recorded.Username)
+			require.False(t, svc.ShouldSuppressDaemonEvent("container", "container-id", "web", "demo"))
+		})
+	}
+}
+
+func TestIngestAgentEventRejectsLocalEnvironment(t *testing.T) {
+	for _, environmentID := range []string{"", " ", "0", " 0 "} {
+		t.Run("environment "+environmentID, func(t *testing.T) {
+			db := setupEventServiceTestDB(t)
+			svc := NewEventService(db, nil, nil)
+			recorded, err := svc.IngestAgentEvent(t.Context(), environmentID, CreateEventRequest{Type: EventTypeContainerStart, Title: "start", EnvironmentID: new("remote-environment")})
+			require.Error(t, err)
+			require.Nil(t, recorded)
+			requireDaemonCountInternal(t, db, 0)
+		})
+	}
+}
+
+func TestDaemonEventForwardingPreservesMetadata(t *testing.T) {
+	requests := make(chan CreateEventRequest, 4)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req CreateEventRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("decode forwarded event: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		requests <- req
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer server.Close()
+	db := setupEventServiceTestDB(t)
+	svc := NewEventService(db, &config.Config{AgentMode: true, AgentToken: "agent-token", ManagerApiUrl: server.URL}, server.Client())
+	message := events.Message{Type: events.ContainerEventType, Action: events.ActionDie, TimeNano: 123, Actor: events.Actor{ID: "container-id", Attributes: map[string]string{"name": "web", "exitCode": "137", "signal": "9"}}}
+	req, ok := mapDaemonEventInternal(message)
+	require.True(t, ok)
+	svc.RecordDockerEvent(t.Context(), message)
+	svc.RecordDockerEvent(t.Context(), message)
+	select {
+	case payload := <-requests:
+		require.Equal(t, req.Metadata, payload.Metadata)
+		require.Equal(t, EventSeverityWarning, payload.Severity)
+		require.Equal(t, EventTypeContainerDie, payload.Type)
+		require.Equal(t, "System", *payload.Username)
+		require.Equal(t, "0", *payload.EnvironmentID)
+		require.Equal(t, "container-id", *payload.ResourceID)
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for daemon event forwarding")
+	}
+	require.Never(t, func() bool { return len(requests) != 0 }, 50*time.Millisecond, time.Millisecond)
+	requireDaemonCountInternal(t, db, 1)
+
 }

@@ -365,6 +365,17 @@ func TestUpdaterService_StatusTrackingInternal(t *testing.T) {
 
 func TestUpdaterService_DockerClientAdapterInternal(t *testing.T) {
 	ctx := context.Background()
+	t.Run("active engine updates correlate before the stop event is recorded", func(t *testing.T) {
+		events := event.NewEventService(nil, nil, nil)
+		svc, err := NewUpdaterService(nil, nil, nil, nil, nil, nil, events, nil, nil, nil, nil)
+		require.NoError(t, err)
+		end := svc.engineInternal().BeginContainerUpdate("updating-container")
+		require.True(t, events.ShouldSuppressDaemonEvent("container", "updating-container", "", ""))
+		require.False(t, events.ShouldSuppressDaemonEvent("container", "unrelated-container", "", ""))
+		require.False(t, events.ShouldSuppressDaemonEvent("image", "updating-container", "", ""))
+		end()
+		require.False(t, events.ShouldSuppressDaemonEvent("container", "updating-container", "", ""))
+	})
 
 	t.Run("missing docker service returns unavailable error", func(t *testing.T) {
 		svc, svcErr := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)

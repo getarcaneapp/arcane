@@ -7,12 +7,12 @@ import (
 	"log/slog"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	docker "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	"github.com/getarcaneapp/arcane/types/v2/imageupdate"
 	"github.com/moby/moby/api/types/events"
@@ -272,32 +272,26 @@ func TestImageUpdateWatcher_EventTriggersAreOptIn(t *testing.T) {
 	require.Never(t, func() bool { return scanner.countInternal() > 1 }, 50*time.Millisecond, 5*time.Millisecond)
 }
 
-func TestImageUpdateWatcher_ImageStateResyncDoesNotTriggerScan(t *testing.T) {
-	scanner := &imageUpdateScannerFakeInternal{}
-	settings := &pollingSettingReaderFakeInternal{enabled: true, eventWatcherEnabled: true}
-	eventBus := bus.NewDockerEventBus()
-	watcher := newImageUpdateWatcherForTestInternal(t, scanner, settings, eventBus, nil)
-	startImageUpdateWatcherForTestInternal(t, watcher)
-
-	require.Eventually(t, func() bool { return scanner.countInternal() == 1 }, time.Second, 5*time.Millisecond)
-	eventBus.Publish(events.Message{Type: events.ImageEventType, Action: docker.ImageStateResyncAction})
-	require.Never(t, func() bool { return scanner.countInternal() > 1 }, 50*time.Millisecond, 5*time.Millisecond)
-}
-
 func TestImageUpdateWatcher_TrailingEdgeDebounceExtendsWithNewTriggers(t *testing.T) {
-	scanner := &imageUpdateScannerFakeInternal{}
-	settings := &pollingSettingReaderFakeInternal{enabled: true}
-	watcher := newImageUpdateWatcherForTestInternal(t, scanner, settings, bus.NewDockerEventBus(), nil)
-	watcher.debounce = 50 * time.Millisecond
-	startImageUpdateWatcherForTestInternal(t, watcher)
+	synctest.Test(t, func(t *testing.T) {
+		scanner := &imageUpdateScannerFakeInternal{}
+		settings := &pollingSettingReaderFakeInternal{enabled: true}
+		watcher := newImageUpdateWatcherForTestInternal(t, scanner, settings, bus.NewDockerEventBus(), nil)
+		watcher.debounce = 50 * time.Millisecond
+		startImageUpdateWatcherForTestInternal(t, watcher)
 
-	require.Eventually(t, func() bool { return scanner.countInternal() == 1 }, time.Second, time.Millisecond)
-	watcher.Trigger()
-	time.Sleep(30 * time.Millisecond)
-	watcher.Trigger()
-	time.Sleep(30 * time.Millisecond)
-	require.Equal(t, 1, scanner.countInternal())
-	require.Eventually(t, func() bool { return scanner.countInternal() == 2 }, time.Second, time.Millisecond)
+		require.Eventually(t, func() bool { return scanner.countInternal() == 1 }, time.Second, time.Millisecond)
+		watcher.Trigger()
+		synctest.Wait()
+		time.Sleep(30 * time.Millisecond)
+		synctest.Wait()
+		watcher.Trigger()
+		synctest.Wait()
+		time.Sleep(30 * time.Millisecond)
+		synctest.Wait()
+		require.Equal(t, 1, scanner.countInternal())
+		require.Eventually(t, func() bool { return scanner.countInternal() == 2 }, time.Second, time.Millisecond)
+	})
 }
 
 func TestImageUpdateWatcher_EventDuringScanQueuesOneSerializedFollowUp(t *testing.T) {
@@ -396,7 +390,10 @@ func TestImageUpdateWatcher_RunNowReturnsContainedScanPanicInternal(t *testing.T
 	settings := &pollingSettingReaderFakeInternal{enabled: true}
 	watcher := newImageUpdateWatcherForTestInternal(t, scanner, settings, bus.NewDockerEventBus(), nil)
 	startImageUpdateWatcherForTestInternal(t, watcher)
-	require.Eventually(t, func() bool { return scanner.countInternal() == 1 }, time.Second, time.Millisecond)
+	// Wait for the actor to release startup admission, not just for the scanner to start.
+	require.Eventually(t, func() bool {
+		return scanner.countInternal() == 1 && !watcher.triggerIngress.Pending()
+	}, time.Second, time.Millisecond)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()

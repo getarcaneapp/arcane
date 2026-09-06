@@ -12,6 +12,16 @@ type (
 )
 
 const (
+	EventTypeContainerDie       EventType = "container.die"
+	EventTypeContainerOOM       EventType = "container.oom"
+	EventTypeContainerRename    EventType = "container.rename"
+	EventTypeContainerUnhealthy EventType = "container.unhealthy"
+	EventTypeImageUntag         EventType = "image.untag"
+	EventTypeImageImport        EventType = "image.import"
+	EventTypeImagePrune         EventType = "image.prune"
+	EventTypeVolumePrune        EventType = "volume.prune"
+	EventTypeNetworkPrune       EventType = "network.prune"
+
 	// EventTypeContainerStart and the constants below enumerate Arcane event types.
 	EventTypeContainerStart   EventType = "container.start"
 	EventTypeContainerStop    EventType = "container.stop"

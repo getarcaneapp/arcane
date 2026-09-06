@@ -16,6 +16,7 @@ import (
 
 	"emperror.dev/errors"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
@@ -28,12 +29,15 @@ import (
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type EventService struct {
-	db         *database.DB
-	cfg        *config.Config
-	httpClient *http.Client
+	changes           *actors.Signal[struct{}]
+	dockerCorrelation dockerCorrelationInternal
+	db                *database.DB
+	cfg               *config.Config
+	httpClient        *http.Client
 }
 
 func NewEventService(db *database.DB, cfg *config.Config, httpClient *http.Client) *EventService {
@@ -43,24 +47,28 @@ func NewEventService(db *database.DB, cfg *config.Config, httpClient *http.Clien
 		}
 	}
 	return &EventService{
-		db:         db,
-		cfg:        cfg,
-		httpClient: httpClient,
+		changes:           actors.NewSignal[struct{}](),
+		dockerCorrelation: dockerCorrelationInternal{now: time.Now},
+		db:                db,
+		cfg:               cfg,
+		httpClient:        httpClient,
 	}
 }
 
 type CreateEventRequest struct {
-	Type          EventType     `json:"type"`
-	Severity      EventSeverity `json:"severity,omitempty"`
-	Title         string        `json:"title"`
-	Description   string        `json:"description,omitempty"`
-	ResourceType  *string       `json:"resourceType,omitempty"`
-	ResourceID    *string       `json:"resourceId,omitempty"`
-	ResourceName  *string       `json:"resourceName,omitempty"`
-	UserID        *string       `json:"userId,omitempty"`
-	Username      *string       `json:"username,omitempty"`
-	EnvironmentID *string       `json:"environmentId,omitempty"`
-	Metadata      database.JSON `json:"metadata,omitempty"`
+	// Internal identity for replay-safe daemon delivery; never accepted from API payloads.
+	deduplicationID string
+	Type            EventType     `json:"type"`
+	Severity        EventSeverity `json:"severity,omitempty"`
+	Title           string        `json:"title"`
+	Description     string        `json:"description,omitempty"`
+	ResourceType    *string       `json:"resourceType,omitempty"`
+	ResourceID      *string       `json:"resourceId,omitempty"`
+	ResourceName    *string       `json:"resourceName,omitempty"`
+	UserID          *string       `json:"userId,omitempty"`
+	Username        *string       `json:"username,omitempty"`
+	EnvironmentID   *string       `json:"environmentId,omitempty"`
+	Metadata        database.JSON `json:"metadata,omitempty"`
 }
 
 func (s *EventService) CreateEvent(ctx context.Context, req CreateEventRequest) (*Event, error) {
@@ -71,6 +79,8 @@ func (s *EventService) CreateEvent(ctx context.Context, req CreateEventRequest) 
 	userID, username := normalizeEventActor(req.UserID, req.Username)
 
 	eventRecord := &Event{
+		ID:            req.deduplicationID,
+		CreatedAt:     time.Now(),
 		Type:          req.Type,
 		Severity:      severity,
 		Title:         req.Title,
@@ -83,22 +93,42 @@ func (s *EventService) CreateEvent(ctx context.Context, req CreateEventRequest) 
 		EnvironmentID: req.EnvironmentID,
 		Metadata:      req.Metadata,
 		Timestamp:     time.Now(),
-		CreatedAt:     time.Now(),
 	}
 
+	var inserted bool
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(eventRecord).Error; err != nil {
-			return errors.WrapIf(err, "failed to create event")
+		if req.deduplicationID != "" {
+			tx = tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "id"}}, DoNothing: true})
 		}
+		result := tx.Create(eventRecord)
+		if result.Error != nil {
+			return errors.WrapIf(result.Error, "failed to create event")
+		}
+		inserted = result.RowsAffected > 0
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
 
+	if !inserted {
+		return eventRecord, nil
+	}
+	s.correlateCreatedEventInternal(req)
+	s.changes.Publish(struct{}{})
 	s.forwardEventToManager(ctx, eventRecord)
 
 	return eventRecord, nil
+}
+
+// IngestAgentEvent assigns the authenticated environment instead of trusting the agent's local ID.
+func (s *EventService) IngestAgentEvent(ctx context.Context, environmentID string, req CreateEventRequest) (*Event, error) {
+	environmentID = strings.TrimSpace(environmentID)
+	if environmentID == "" || environmentID == "0" {
+		return nil, errors.New("remote environment is required for agent event ingestion")
+	}
+	req.EnvironmentID = &environmentID
+	return s.CreateEvent(ctx, req)
 }
 
 func (s *EventService) forwardEventToManager(ctx context.Context, eventModel *Event) {
@@ -422,7 +452,7 @@ func (s *EventService) GetEventSeverityCounts(ctx context.Context) (EventSeverit
 }
 
 func (s *EventService) DeleteEvent(ctx context.Context, eventID string) error {
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		result := tx.Delete(&Event{}, "id = ?", eventID)
 		if result.Error != nil {
 			return errors.WrapIf(result.Error, "failed to delete event")
@@ -432,17 +462,27 @@ func (s *EventService) DeleteEvent(ctx context.Context, eventID string) error {
 		}
 		return nil
 	})
+	if err == nil {
+		s.changes.Publish(struct{}{})
+	}
+	return err
 }
 
 func (s *EventService) DeleteOldEvents(ctx context.Context, olderThan time.Duration) error {
 	cutoff := time.Now().Add(-olderThan)
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	var deleted int64
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		result := tx.Where("timestamp < ?", cutoff).Delete(&Event{})
 		if result.Error != nil {
 			return errors.WrapIf(result.Error, "failed to delete old events")
 		}
+		deleted = result.RowsAffected
 		return nil
 	})
+	if err == nil && deleted > 0 {
+		s.changes.Publish(struct{}{})
+	}
+	return err
 }
 
 func (s *EventService) LogContainerEvent(ctx context.Context, eventType EventType, containerID, containerName, userID, username, environmentID string, metadata database.JSON) error {

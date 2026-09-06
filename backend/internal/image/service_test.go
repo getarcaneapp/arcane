@@ -443,12 +443,15 @@ func TestGetPullOptionsWithAuth_ExternalCredentialsOverrideDBRegistryInternal(t 
 
 func TestImageServicePullImageRetriesAnonymouslyAfterAuthRejectedInternal(t *testing.T) {
 	db := setupImageProjectTestDBInternal(t)
+	eventService := event.NewEventService(db, nil, nil)
 	var authHeaders []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasSuffix(r.URL.Path, "/images/create") {
 			http.NotFound(w, r)
 			return
 		}
+		assert.True(t, eventService.ShouldSuppressDaemonEvent("image", "", "registry.example.com/team/app:latest", ""))
+		assert.False(t, eventService.ShouldSuppressDaemonEvent("image", "", "registry.example.com/team/other:latest", ""))
 		authHeaders = append(authHeaders, r.Header.Get(dockerregistry.AuthHeader))
 		if len(authHeaders) == 1 {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -459,7 +462,7 @@ func TestImageServicePullImageRetriesAnonymouslyAfterAuthRejectedInternal(t *tes
 	t.Cleanup(server.Close)
 
 	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
-	imageSvc := NewImageService(db, dockerService, nil, nil, nil, event.NewEventService(db, nil, nil))
+	imageSvc := NewImageService(db, dockerService, nil, nil, nil, eventService)
 
 	err := imageSvc.PullImage(context.Background(), "registry.example.com/team/app:latest", io.Discard, common.SystemUser, []containerregistry.Credential{
 		{URL: "https://registry.example.com", Username: "external-user", Token: "external-token", Enabled: true},
@@ -472,19 +475,21 @@ func TestImageServicePullImageRetriesAnonymouslyAfterAuthRejectedInternal(t *tes
 
 func TestImageServiceTagImageCallsDockerAPIInternal(t *testing.T) {
 	db := setupImageProjectTestDBInternal(t)
+	eventService := event.NewEventService(db, nil, nil)
 	var gotRepo, gotTag string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || imageDockerTestPathInternal(r.URL.Path) != "/images/source:latest/tag" {
 			http.NotFound(w, r)
 			return
 		}
+		assert.True(t, eventService.ShouldSuppressDaemonEvent("image", "new-image-id", "registry.example.com/team/app:v2", ""))
 		gotRepo = r.URL.Query().Get("repo")
 		gotTag = r.URL.Query().Get("tag")
 		w.WriteHeader(http.StatusCreated)
 	}))
 	t.Cleanup(server.Close)
 
-	imageSvc := NewImageService(db, &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}, nil, nil, nil, event.NewEventService(db, nil, nil))
+	imageSvc := NewImageService(db, &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}, nil, nil, nil, eventService)
 
 	err := imageSvc.TagImage(context.Background(), "source:latest", imagetypes.TagRequest{Repository: "registry.example.com/team/app", Tag: "v2"}, common.SystemUser)
 	require.NoError(t, err)

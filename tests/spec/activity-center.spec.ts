@@ -618,36 +618,55 @@ test.describe('Activity Center', () => {
 		const networkName = `e2e-activity-network-${Date.now()}`;
 		let networkId: string | undefined;
 
+		await preserveLocalEnvironmentSelection(page);
+
 		try {
 			const created = await createNetworkViaUI(page, networkName);
 			networkId = created.networkId;
 			expect(created.activityId).toBeTruthy();
+
+			const [environmentResponse, userResponse] = await Promise.all([
+				page.request.get('/api/environments/0'),
+				page.request.get('/api/auth/me')
+			]);
+			expect(environmentResponse.ok()).toBeTruthy();
+			expect(userResponse.ok()).toBeTruthy();
+			const { data: environment }: { data: { name: string } } = await environmentResponse.json();
+			const { data: currentUser }: { data: { username: string; displayName?: string } } =
+				await userResponse.json();
+			const startedBy = currentUser.displayName?.trim() || currentUser.username;
+			expect(environment.name).toBeTruthy();
+			expect(startedBy).toBeTruthy();
 
 			const activityCenter = await openActivityCenter(page);
 			await expect(activityCenter.getByPlaceholder('Search activity…')).toBeVisible();
 			await expect(activityCenter.getByRole('button', { name: 'Filter' })).toBeVisible();
 			await expect(activityCenter.getByText('History', { exact: true })).toBeVisible();
 
-			const activityItem = activityCenter
-				.locator('button[aria-label="Activity Center"]')
-				.filter({ hasText: networkName })
-				.first();
+			const activityItem = activityRow(activityCenter, networkName);
 			await expect(activityItem).toBeVisible();
 			await expect(activityItem).toContainText('Resource Action');
 			await expect(activityItem).toContainText('Success');
-			await expect(activityItem).toContainText('Local');
-			await expect(activityItem).toContainText('Started by');
+			await expect(activityItem.getByText(environment.name, { exact: true })).toBeVisible();
+			await expect(
+				activityItem.getByText(`Started by ${startedBy}`, { exact: true })
+			).toBeVisible();
 
 			await activityItem.click();
-			// Collapsed rows keep their (hidden) detail panels mounted, so scope
-			// the assertions to the expanded panel.
-			const detailPanel = activityCenter.locator('[data-collapsible-content][data-state="open"]');
+			await expect(activityItem).toHaveAttribute('aria-expanded', 'true');
+			// Attribution stays in the row header when its output is expanded.
+			await expect(activityItem.getByText(environment.name, { exact: true })).toBeVisible();
+			await expect(
+				activityItem.getByText(`Started by ${startedBy}`, { exact: true })
+			).toBeVisible();
+			const detailPanelId = await activityItem.getAttribute('aria-controls');
+			expect(detailPanelId).toBeTruthy();
+			const detailPanel = activityCenter.locator(`[id=${JSON.stringify(detailPanelId)}]`);
+			await expect(detailPanel).toHaveAttribute('data-state', 'open');
 			await expect(detailPanel.getByText('Output', { exact: true })).toBeVisible();
 			// The output pane shows the activity's messages verbatim; step labels
 			// (e.g. "Creating network") are no longer rendered in the detail panel.
 			await expect(detailPanel.getByText('Network created successfully').first()).toBeVisible();
-			await expect(detailPanel.getByText('Source environment')).toBeVisible();
-			await expect(detailPanel.getByText('Started by', { exact: true })).toBeVisible();
 		} finally {
 			await removeNetworkViaApi(page, networkId);
 		}

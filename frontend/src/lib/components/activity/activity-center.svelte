@@ -74,32 +74,34 @@
 	{@const cancelable = activity.status === 'running' || activity.status === 'queued'}
 	<div class="group/activity relative">
 		<Collapsible.Root open={expanded} onOpenChange={(open) => activityStore.setActivityExpanded(activity.id, open)}>
-			<Collapsible.Trigger
-				class="block w-full cursor-pointer appearance-none border-0 bg-transparent p-0 text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden focus-visible:ring-inset"
-				aria-label={m.activity_center_title()}
-			>
-				<ActivityListItem {activity} {expanded} {child} />
-			</Collapsible.Trigger>
+			<div class="relative">
+				<Collapsible.Trigger
+					class="block w-full cursor-pointer appearance-none border-0 bg-transparent p-0 text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden focus-visible:ring-inset"
+					aria-label={m.activity_center_title()}
+				>
+					<ActivityListItem {activity} {expanded} {child} />
+				</Collapsible.Trigger>
+				{#if cancelable}
+					<IfPermitted perm="activities:cancel">
+						<button
+							type="button"
+							onclick={() => confirmCancelActivity(activity.id)}
+							disabled={activityStore.isCancelling(activity.id)}
+							title={m.activity_cancel()}
+							aria-label={m.activity_cancel()}
+							class="absolute top-1/2 right-11 z-[var(--arcane-z-raised)] flex size-7 -translate-y-1/2 items-center justify-center rounded-md bg-background/70 text-muted-foreground opacity-0 backdrop-blur-sm transition-[opacity,color,background-color] group-hover/activity:opacity-100 hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden disabled:pointer-events-none disabled:opacity-40"
+						>
+							<CloseIcon class="size-4" aria-hidden="true" />
+						</button>
+					</IfPermitted>
+				{/if}
+			</div>
 			<Collapsible.Content
 				class="overflow-hidden data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-1 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-top-1"
 			>
 				<ActivityDetailPanel {activity} />
 			</Collapsible.Content>
 		</Collapsible.Root>
-		{#if cancelable}
-			<IfPermitted perm="activities:cancel">
-				<button
-					type="button"
-					onclick={() => confirmCancelActivity(activity.id)}
-					disabled={activityStore.isCancelling(activity.id)}
-					title={m.activity_cancel()}
-					aria-label={m.activity_cancel()}
-					class="absolute top-1/2 right-11 z-[var(--arcane-z-raised)] flex size-7 -translate-y-1/2 items-center justify-center rounded-md bg-background/70 text-muted-foreground opacity-0 backdrop-blur-sm transition-[opacity,color,background-color] group-hover/activity:opacity-100 hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden disabled:pointer-events-none disabled:opacity-40"
-				>
-					<CloseIcon class="size-4" aria-hidden="true" />
-				</button>
-			</IfPermitted>
-		{/if}
 	</div>
 {/snippet}
 

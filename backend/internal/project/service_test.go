@@ -1113,7 +1113,8 @@ func TestProjectService_UpdateProjectServicesForcesRecreateInternal(t *testing.T
 
 	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
 	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
-	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, event.NewEventService(db, nil, nil))
+	eventService := event.NewEventService(db, nil, nil)
+	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, eventService)
 
 	projectPath := createComposeProjectDir(t, projectsDir, "compose-update-force")
 	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services:\n  app:\n    image: "+imageRef+"\n  unrelated:\n    image: busybox:latest\n"), 0o644))
@@ -1139,6 +1140,8 @@ func TestProjectService_UpdateProjectServicesForcesRecreateInternal(t *testing.T
 	upCalled := false
 	forceRecreate := false
 	composeUpProjectServicesInternal = func(_ context.Context, selected *composetypes.Project, services []string, removeOrphans bool, force bool, _ bool, _ map[string]dockerregistry.AuthConfig, _ time.Duration) error {
+		assert.True(t, eventService.ShouldSuppressDaemonEvent("container", "replacement", "app", selected.Name))
+		assert.False(t, eventService.ShouldSuppressDaemonEvent("image", "pulled-image", "", ""))
 		upCalled = true
 		assert.Equal(t, []string{"app"}, selected.ServiceNames())
 		forceRecreate = force
@@ -1147,9 +1150,11 @@ func TestProjectService_UpdateProjectServicesForcesRecreateInternal(t *testing.T
 		return errors.New("compose up failed after assertion")
 	}
 
-	svc := NewProjectService(db, settingsService, nil, imageService, dockerService, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, eventService, imageService, dockerService, nil, nil, nil, config.Load())
 	err = svc.UpdateProjectServices(ctx, projectRecord.ID, []string{"app"}, common.SystemUser)
 	require.Error(t, err)
+	assert.True(t, eventService.ShouldSuppressDaemonEvent("container", "replacement", "app", "compose-update-force"), "failed updates retain correlation through rollback grace")
+	assert.False(t, eventService.ShouldSuppressDaemonEvent("container", "unrelated", "unrelated", "other-project"))
 	assert.True(t, upCalled)
 	assert.True(t, forceRecreate, "service updates must force recreate after pulling the updated image")
 }

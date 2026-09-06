@@ -161,12 +161,14 @@ func (s *VolumeService) CreateVolume(ctx context.Context, options client.VolumeC
 		return nil, errors.WrapIf(err, "failed to connect to Docker")
 	}
 
+	defer s.eventService.BeginDockerResourceSuppressionWindow("volume", options.Name, options.Name)()
 	created, err := dockerClient.VolumeCreate(ctx, options)
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, event.EventTypeVolumeError, "volume", "", options.Name, user.ID, user.Username, "0", err, database.JSON{"action": "create", "driver": options.Driver})
 		return nil, errors.WrapIf(err, "failed to create volume")
 	}
 
+	defer s.eventService.BeginDockerResourceSuppressionWindow("volume", created.Volume.Name, created.Volume.Name)()
 	vol, err := dockerClient.VolumeInspect(ctx, created.Volume.Name, client.VolumeInspectOptions{})
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, event.EventTypeVolumeError, "volume", created.Volume.Name, created.Volume.Name, user.ID, user.Username, "0", err, database.JSON{"action": "create", "driver": options.Driver, "step": "inspect"})
@@ -201,6 +203,7 @@ func (s *VolumeService) DeleteVolume(ctx context.Context, name string, force boo
 		slog.WarnContext(ctx, "could not stop volume browse helper before delete", "volume", name, "error", stopErr.Error())
 	}
 
+	defer s.eventService.BeginDockerResourceSuppressionWindow("volume", name, name)()
 	if _, err := dockerClient.VolumeRemove(ctx, name, client.VolumeRemoveOptions{
 		Force: force,
 	}); err != nil {

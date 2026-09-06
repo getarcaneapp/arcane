@@ -168,6 +168,8 @@ github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e h1:JVG44RsyaB9T2KIHavM
 github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e/go.mod h1:RbqR21r5mrJuqunuUZ/Dhy/avygyECGrLceyNeo4LiM=
 go.getarcane.app/acfs v0.6.0 h1:OOoDXmfByGWh9uJcDwtoQdWz1u2huIBhljn4mm1Ifco=
 go.getarcane.app/acfs v0.6.0/go.mod h1:Z+0Gs4LGNjvGMLq+TKv/oGKh29FRbAH6mcVPwY5KhFI=
+go.getarcane.app/builds v0.4.1 h1:R8iEgTf9+NDtI1IEzF2R3Mn+v6AGUqwCMs7CEFpVRZk=
+go.getarcane.app/builds v0.4.1/go.mod h1:vSWYulIelS9m91mPpvaN+orZ4/A20eGGcynP892eMkg=
 go.getarcane.app/sys/bytes v0.2.1 h1:Mm/VV1FAde3bVvzmSBxB7HVGkj7ZUw2Gbl1DPcUhlEo=
 go.getarcane.app/sys/bytes v0.2.1/go.mod h1:fcMYM7dknLk+KDXYAg6XOfRF22POYxcTnQeypFEjDbE=
 go.opentelemetry.io/auto/sdk v1.2.1 h1:jXsnJ4Lmnqd11kwkBV2LgLoFMZKizbCi5fNZ/ipaZ64=

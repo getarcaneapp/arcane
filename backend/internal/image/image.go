@@ -156,6 +156,13 @@ func (s *ImageService) RemoveImage(ctx context.Context, id string, force bool, u
 		PruneChildren: true,
 	}
 
+	defer s.eventService.BeginDockerResourceSuppressionWindow("image", id, imageName)()
+	if inspectErr == nil {
+		defer s.eventService.BeginDockerResourceSuppressionWindow("image", imageDetails.ID, "")()
+		for _, tag := range imageDetails.RepoTags {
+			defer s.eventService.BeginDockerResourceSuppressionWindow("image", "", tag)()
+		}
+	}
 	_, err = dockerClient.ImageRemove(ctx, id, options)
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", id, imageName, user.ID, user.Username, "0", err, database.JSON{"action": "delete", "force": force})
@@ -213,6 +220,7 @@ func (s *ImageService) PullImage(ctx context.Context, imageName string, progress
 	initialHasAuth := pullOptions.RegistryAuth != ""
 	retriedWithoutAuth := false
 
+	defer s.eventService.BeginDockerResourceSuppressionWindow("image", "", imageName)()
 	reader, err := dockerClient.ImagePull(ctx, imageName, pullOptions)
 	if err != nil && ShouldRetryAnonymousPull(pullOptions, err) {
 		retriedWithoutAuth = true
@@ -305,6 +313,7 @@ func (s *ImageService) TagImage(ctx context.Context, source string, req imagetyp
 		return errors.WrapIf(err, "failed to connect to Docker")
 	}
 
+	defer s.eventService.BeginDockerResourceSuppressionWindow("image", "", target)()
 	_, err = dockerClient.ImageTag(ctx, client.ImageTagOptions{Source: source, Target: target})
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", "", source, user.ID, user.Username, "0", err, database.JSON{"action": "tag", "target": target})
