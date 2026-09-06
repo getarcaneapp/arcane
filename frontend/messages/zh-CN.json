@@ -321,6 +321,7 @@
   "common_details_description": "此{resource}的基本信息",
   "common_url_required": "URL 是必需的",
   "common_username_required": "必须输入用户名",
+  "common_max_length": "{field} 必须为 {maxLength} 个字符或更少",
   "common_name_required": "名称是必需的",
   "common_name_placeholder": "输入名称",
   "common_description_placeholder": "输入描述",
