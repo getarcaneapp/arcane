@@ -321,6 +321,7 @@
   "common_details_description": "Основна інформація про цей {resource}",
   "common_url_required": "URL обов'язковий",
   "common_username_required": "Ім'я користувача обов'язкове",
+  "common_max_length": "{field} повинно складатися з {maxLength} символів або менше",
   "common_name_required": "Ім'я обов'язкове",
   "common_name_placeholder": "Введіть ім'я",
   "common_description_placeholder": "Введіть опис",
