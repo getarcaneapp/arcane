@@ -321,6 +321,7 @@
   "common_details_description": "Basic information about this {resource}",
   "common_url_required": "URL が必要です",
   "common_username_required": "Username is required",
+  "common_max_length": "{field} {maxLength} 文字以下でなければなりません",
   "common_name_required": "名前が必要です",
   "common_name_placeholder": "名前を入力",
   "common_description_placeholder": "説明を入力してください",
