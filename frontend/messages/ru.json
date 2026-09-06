@@ -321,6 +321,7 @@
   "common_details_description": "Основная информация об этом {resource}",
   "common_url_required": "Требуется URL",
   "common_username_required": "Имя пользователя обязательно",
+  "common_max_length": "{field} должно содержать не более {maxLength} символов",
   "common_name_required": "Требуется имя",
   "common_name_placeholder": "Введите имя",
   "common_description_placeholder": "Введите описание",
