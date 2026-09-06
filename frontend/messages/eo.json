@@ -321,6 +321,7 @@
   "common_details_description": "Bazaj informoj pri tiu {resource}",
   "common_url_required": "URL petata",
   "common_username_required": "Uzantnomo petata",
+  "common_max_length": "{field} Devas esti {maxLength} aŭ malpli da signoj.",
   "common_name_required": "Nomo petata",
   "common_name_placeholder": "Enigu nomon",
   "common_description_placeholder": "Enigu priskribon",
