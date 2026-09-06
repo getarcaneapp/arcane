@@ -321,6 +321,7 @@
   "common_details_description": "Základní informace o tomto {resource}",
   "common_url_required": "Je vyžadována adresa URL",
   "common_username_required": "Uživatelské jméno je vyžadováno",
+  "common_max_length": "{field} musí mít maximálně {maxLength} znaků",
   "common_name_required": "Jméno je vyžadováno",
   "common_name_placeholder": "Zadejte jméno",
   "common_description_placeholder": "Zadejte popis",
