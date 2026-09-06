@@ -321,6 +321,7 @@
   "common_details_description": "이 {resource}에 대한 기본 정보입니다.",
   "common_url_required": "URL은 필수 입력 항목입니다.",
   "common_username_required": "사용자명은 필수 입력 항목입니다.",
+  "common_max_length": "{field} {maxLength} 자 이내여야 합니다.",
   "common_name_required": "이름은 필수 입력 항목입니다.",
   "common_name_placeholder": "이름 입력",
   "common_description_placeholder": "설명 입력",
