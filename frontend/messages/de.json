@@ -321,6 +321,7 @@
   "common_details_description": "Basisinformationen zu dieser Ressource: {resource}",
   "common_url_required": "URL ist erforderlich",
   "common_username_required": "Benutzername ist erforderlich",
+  "common_max_length": "{field} muss aus maximal {maxLength} Zeichen bestehen",
   "common_name_required": "Name ist erforderlich",
   "common_name_placeholder": "Name eingeben",
   "common_description_placeholder": "Beschreibung eingeben",
