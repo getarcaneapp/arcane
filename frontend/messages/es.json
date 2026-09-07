@@ -3509,6 +3509,6 @@
   "editor_compose_updater_strategy_info": "El valor por defecto es «auto»: las etiquetas de versión semántica estables completas siguen a las etiquetas más recientes que cumplen los requisitos; las etiquetas dinámicas, como «latest» y «alpine», siguen los cambios del resumen. Establece «digest» para mantener la etiqueta actual, o «tag» para exigir una selección basada en la versión.",
   "editor_compose_updater_constraint_detail": "Restricción de versión",
   "editor_compose_updater_constraint_info": "Restricción de versión semántica para las actualizaciones de etiquetas, como 3.x o >=3.1.0 <4.0.0. Sin una restricción, las actualizaciones se mantienen dentro de la versión principal actual o, en el caso de 0.x, dentro de la versión secundaria actual.",
-  "editor_compose_updater_tag_pattern_detail": "Tag pattern",
-  "editor_compose_updater_tag_pattern_info": "Regular expression matched against the whole tag. Use a named version capture to select a variant, such as (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
+  "editor_compose_updater_tag_pattern_detail": "Patrón de etiquetas",
+  "editor_compose_updater_tag_pattern_info": "La expresión regular se ha aplicado a toda la etiqueta. Utiliza una captura con nombre para seleccionar una variante, como (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
 }
