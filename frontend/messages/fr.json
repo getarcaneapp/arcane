@@ -3509,6 +3509,6 @@
   "editor_compose_updater_strategy_info": "La valeur par défaut est « auto » : les balises de version sémantique stables complètes suivent les balises éligibles les plus récentes ; les balises mobiles telles que « latest » et « alpine » suivent les modifications du résumé. Définissez « digest » pour conserver la balise actuelle, ou « tag » pour exiger une sélection basée sur la version.",
   "editor_compose_updater_constraint_detail": "Contrainte de version",
   "editor_compose_updater_constraint_info": "Contrainte de version sémantique pour les mises à jour des balises, par exemple 3.x ou >=3.1.0 <4.0.0. En l'absence de contrainte, les mises à jour restent dans la même version majeure, ou dans la même version mineure pour les versions 0.x.",
-  "editor_compose_updater_tag_pattern_detail": "Tag pattern",
-  "editor_compose_updater_tag_pattern_info": "Regular expression matched against the whole tag. Use a named version capture to select a variant, such as (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
+  "editor_compose_updater_tag_pattern_detail": "Modèle de balise",
+  "editor_compose_updater_tag_pattern_info": "L'expression régulière a été appliquée à l'ensemble de la balise. Utilisez une capture nommée pour sélectionner une variante, par exemple : (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
 }
