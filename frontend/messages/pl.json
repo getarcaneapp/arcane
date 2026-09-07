@@ -3500,5 +3500,15 @@
   "jobs_local_health_check": "Warunki sanitarne w okolicy",
   "jobs_health_check": "Zdrowie środowiskowe",
   "jobs_settings_details": "Ustawienia i szczegóły",
-  "jobs_health_scope_description": "Sprawdza stan i łączność tego środowiska."
+  "jobs_health_scope_description": "Sprawdza stan i łączność tego środowiska.",
+  "editor_compose_updater_detail": "Zasady aktualizacji obrazów",
+  "editor_compose_updater_info": "Ustawienia domyślne projektu mają zastosowanie do wszystkich usług. Pola narzędzia do aktualizacji usług zastępują ustawienia domyślne projektu. W przypadku każdego pola pierwszeństwo mają jawnie określone etykiety narzędzia do aktualizacji.",
+  "editor_compose_updater_enabled_detail": "Włącz aktualizacje obrazów",
+  "editor_compose_updater_enabled_info": "Wartość logiczna. Ustaw wartość „false”, aby wyłączyć aktualizacje obrazów dla odpowiednich usług.",
+  "editor_compose_updater_strategy_detail": "Strategia aktualizacji",
+  "editor_compose_updater_strategy_info": "Domyślnie ustawione jest opcja „auto”: pełne, stabilne tagi wersji semantycznej podążają za nowszymi, kwalifikującymi się tagami; tagi dynamiczne, takie jak „latest” i „alpine”, podążają za zmianami w skrócie. Ustaw opcję „digest”, aby zachować bieżący tag, lub opcję „tag”, aby wymusić wybór oparty na wersji.",
+  "editor_compose_updater_constraint_detail": "Ograniczenie dotyczące wersji",
+  "editor_compose_updater_constraint_info": "Ograniczenie wersji semantycznej dla aktualizacji tagów, np. 3.x lub >=3.1.0 <4.0.0. Bez takiego ograniczenia aktualizacje pozostają w ramach bieżącej wersji głównej lub bieżącej wersji podrzędnej w przypadku wersji 0.x.",
+  "editor_compose_updater_tag_pattern_detail": "Tag pattern",
+  "editor_compose_updater_tag_pattern_info": "Regular expression matched against the whole tag. Use a named version capture to select a variant, such as (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
 }
