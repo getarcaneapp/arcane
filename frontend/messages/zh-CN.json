@@ -3500,5 +3500,15 @@
   "jobs_local_health_check": "当地环境卫生",
   "jobs_health_check": "环境卫生",
   "jobs_settings_details": "设置与详情",
-  "jobs_health_scope_description": "检查此环境的状态和连通性。"
+  "jobs_health_scope_description": "检查此环境的状态和连通性。",
+  "editor_compose_updater_detail": "图片更新政策",
+  "editor_compose_updater_info": "项目默认值适用于所有服务。服务更新程序的字段会覆盖项目默认值。对于每个字段，显式更新程序标签具有优先级。",
+  "editor_compose_updater_enabled_detail": "启用图片更新",
+  "editor_compose_updater_enabled_info": "布尔值。将其设置为 false 可禁用受影响服务的图像更新。",
+  "editor_compose_updater_strategy_detail": "更新策略",
+  "editor_compose_updater_strategy_info": "默认值为“auto”：完整的稳定语义版本标签遵循较新的符合条件的标签；而“latest”和“alpine”等移动标签则遵循摘要变更。将 digest 设为“keep”可保留当前标签，或将 tag 设为“tag”以要求基于版本的选择。",
+  "editor_compose_updater_constraint_detail": "版本限制",
+  "editor_compose_updater_constraint_info": "标签更新的语义版本约束，例如 3.x 或 >=3.1.0 <4.0.0。如果没有约束，更新将保持在当前主版本范围内，对于 0.x 版本则保持在当前次版本范围内。",
+  "editor_compose_updater_tag_pattern_detail": "Tag pattern",
+  "editor_compose_updater_tag_pattern_info": "Regular expression matched against the whole tag. Use a named version capture to select a variant, such as (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
 }
