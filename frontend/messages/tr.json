@@ -3509,6 +3509,6 @@
   "editor_compose_updater_strategy_info": "Varsayılan ayar “auto”dur: Tam ve kararlı semantik sürüm etiketleri, daha yeni ve uygun etiketleri takip eder; “latest” ve “alpine” gibi hareketli etiketler ise özet değişikliklerini takip eder. Mevcut etiketi korumak için “digest” seçeneğini, sürüm tabanlı seçim gerektirmek için ise “tag” seçeneğini ayarlayın.",
   "editor_compose_updater_constraint_detail": "Sürüm kısıtlaması",
   "editor_compose_updater_constraint_info": "Etiket güncellemeleri için anlamsal sürüm kısıtlaması; örneğin 3.x veya >=3.1.0 <4.0.0. Kısıtlama olmadığında, güncellemeler mevcut ana sürüm kapsamında kalır; 0.x sürümlerinde ise mevcut alt sürüm kapsamında kalır.",
-  "editor_compose_updater_tag_pattern_detail": "Tag pattern",
-  "editor_compose_updater_tag_pattern_info": "Regular expression matched against the whole tag. Use a named version capture to select a variant, such as (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
+  "editor_compose_updater_tag_pattern_detail": "Etiket şablonu",
+  "editor_compose_updater_tag_pattern_info": "Düzenli ifade, etiketin tamamıyla eşleştirildi. Bir varyantı seçmek için adlandırılmış bir yakalama kullanın; örneğin: (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
 }
