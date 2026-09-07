@@ -3510,5 +3510,13 @@
   "editor_compose_updater_constraint_detail": "Versionsbeschränkung",
   "editor_compose_updater_constraint_info": "Semantische Versionsbeschränkung für Tag-Updates, z. B. 3.x oder >=3.1.0 <4.0.0. Ohne eine solche Beschränkung bleiben Updates innerhalb der aktuellen Hauptversion bzw. – bei 0.x – innerhalb der aktuellen Nebenversion.",
   "editor_compose_updater_tag_pattern_detail": "Tag-Muster",
-  "editor_compose_updater_tag_pattern_info": "Der reguläre Ausdruck wurde mit dem gesamten Tag abgeglichen. Verwenden Sie eine benannte Erfassung, um eine Variante auszuwählen, z. B. (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
+  "editor_compose_updater_tag_pattern_info": "Der reguläre Ausdruck wurde mit dem gesamten Tag abgeglichen. Verwenden Sie eine benannte Erfassung, um eine Variante auszuwählen, z. B. (?P<version>\\d+\\.\\d+\\.\\d+)-alpine.",
+  "activity_type_job_run": "Automatisierungslauf",
+  "jobs_resolve_run": "Entscheidung nach Prüfung",
+  "jobs_resolve_description": "Bestätigen Sie, dass Sie diesen unterbrochenen Lauf überprüft und dessen Ergebnisse kontrolliert haben. Durch die Behebung des Problems bleibt der Verlauf erhalten, und später geplante Aufgaben können fortgesetzt werden. Es werden keine Aktualisierungen durchgeführt, und dieser Lauf wird nicht als erfolgreich markiert.",
+  "jobs_resolution_details": "Gelöst von {user} am {date}",
+  "jobs_activity_summary": "Aktivität ausführen",
+  "jobs_activity_output": "Betriebsleistung",
+  "jobs_attention_schedule_blocked": "Dieser Lauf muss überprüft werden und blockiert spätere Läufe dieses Jobs.",
+  "jobs_resolution_reason": "Grund für die Beschlussfassung"
 }
