@@ -3509,6 +3509,6 @@
   "editor_compose_updater_strategy_info": "За замовчуванням встановлено значення «auto»: повні стабільні семантичні версії тегів слідують за новими відповідними тегами; рухомі теги, такі як «latest» та «alpine», слідують за змінами дайджесту. Встановіть параметр «digest», щоб зберегти поточний тег, або «tag», щоб вимагати вибір на основі версії.",
   "editor_compose_updater_constraint_detail": "Обмеження щодо версії",
   "editor_compose_updater_constraint_info": "Семантичне обмеження версії для оновлень тегів, наприклад 3.x або >=3.1.0 <4.0.0. Без такого обмеження оновлення залишаються в межах поточної головної версії або поточної другорядної версії для 0.x.",
-  "editor_compose_updater_tag_pattern_detail": "Tag pattern",
-  "editor_compose_updater_tag_pattern_info": "Regular expression matched against the whole tag. Use a named version capture to select a variant, such as (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
+  "editor_compose_updater_tag_pattern_detail": "Шаблон тегів",
+  "editor_compose_updater_tag_pattern_info": "Регулярний вираз, що зіставляється з усім тегом. Для вибору варіанта використовуйте іменований запис, наприклад: (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
 }
