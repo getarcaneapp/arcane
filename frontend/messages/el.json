@@ -3509,6 +3509,6 @@
   "editor_compose_updater_strategy_info": "Η προεπιλεγμένη ρύθμιση είναι η αυτόματη: οι πλήρεις σταθερές ετικέτες σημασιολογικής έκδοσης ακολουθούν τις νεότερες επιλέξιμες ετικέτες· οι μεταβατικές ετικέτες, όπως «latest» και «alpine», ακολουθούν τις αλλαγές του digest. Ορίστε την επιλογή «digest» για να διατηρήσετε την τρέχουσα ετικέτα ή την επιλογή «tag» για να απαιτήσετε επιλογή βάσει έκδοσης.",
   "editor_compose_updater_constraint_detail": "Περιορισμός έκδοσης",
   "editor_compose_updater_constraint_info": "Σημασιολογικός περιορισμός έκδοσης για ενημερώσεις ετικετών, όπως 3.x ή >=3.1.0 <4.0.0. Χωρίς τέτοιο περιορισμό, οι ενημερώσεις παραμένουν εντός της τρέχουσας κύριας έκδοσης ή της τρέχουσας δευτερεύουσας έκδοσης για τις εκδόσεις 0.x.",
-  "editor_compose_updater_tag_pattern_detail": "Tag pattern",
-  "editor_compose_updater_tag_pattern_info": "Regular expression matched against the whole tag. Use a named version capture to select a variant, such as (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
+  "editor_compose_updater_tag_pattern_detail": "Μοτίβο ετικετών",
+  "editor_compose_updater_tag_pattern_info": "Η κανονική έκφραση αντιστοιχεί σε ολόκληρη την ετικέτα. Χρησιμοποιήστε μια ονομασμένη καταγραφή για να επιλέξετε μια παραλλαγή, όπως (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
 }
