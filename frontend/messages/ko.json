@@ -3509,6 +3509,6 @@
   "editor_compose_updater_strategy_info": "기본값은 'auto'입니다. 완전한 안정판 시맨틱 버전 태그는 최신 적격 태그를 따르며, 'latest'나 'alpine'과 같은 이동형 태그는 다이제스트 변경 사항을 따릅니다. 현재 태그를 유지하려면 'digest'를 설정하고, 버전 기반 선택을 요구하려면 'tag'를 설정하십시오.",
   "editor_compose_updater_constraint_detail": "버전 제약 조건",
   "editor_compose_updater_constraint_info": "태그 업데이트에 대한 시맨틱 버전 제약 조건(예: 3.x 또는 >=3.1.0 <4.0.0). 제약 조건이 없으면 업데이트는 현재 메이저 버전 범위 내에서 이루어지며, 0.x 버전의 경우 현재 마이너 버전 범위 내에서 이루어집니다.",
-  "editor_compose_updater_tag_pattern_detail": "Tag pattern",
-  "editor_compose_updater_tag_pattern_info": "Regular expression matched against the whole tag. Use a named version capture to select a variant, such as (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
+  "editor_compose_updater_tag_pattern_detail": "태그 패턴",
+  "editor_compose_updater_tag_pattern_info": "정규 표현식이 태그 전체와 일치했습니다. (?P<version>\\d+\\.\\d+\\.\\d+)-alpine과 같이 명명된 캡처를 사용하여 변형을 선택하십시오."
 }
