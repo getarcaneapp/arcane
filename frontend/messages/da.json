@@ -3500,5 +3500,15 @@
   "jobs_local_health_check": "Miljø- og sundhedsforhold i lokalområdet",
   "jobs_health_check": "Miljø og sundhed",
   "jobs_settings_details": "Indstillinger og detaljer",
-  "jobs_health_scope_description": "Kontrollerer, om dette miljø fungerer korrekt, og om der er forbindelse."
+  "jobs_health_scope_description": "Kontrollerer, om dette miljø fungerer korrekt, og om der er forbindelse.",
+  "editor_compose_updater_detail": "Retningslinjer for opdatering af billeder",
+  "editor_compose_updater_info": "Projektstandardindstillingerne gælder for alle tjenester. Felter i tjenesteopdateringen tilsidesætter projektstandardindstillingerne. Eksplicitte opdateringsbetegnelser har forrang for hvert enkelt felt.",
+  "editor_compose_updater_enabled_detail": "Aktivér billedopdateringer",
+  "editor_compose_updater_enabled_info": "Boolean. Indstil til false for at deaktivere billedopdateringer for de berørte tjenester.",
+  "editor_compose_updater_strategy_detail": "Opdateringsstrategi",
+  "editor_compose_updater_strategy_info": "Standardindstillingen er »auto«: Komplette stabile semantiske versionsmærker følger nyere kvalificerede mærker; flytbare mærker såsom »latest« og »alpine« følger ændringer i digest-versionen. Indstil »digest« for at beholde det aktuelle mærke, eller »tag« for at kræve versionsbaseret valg.",
+  "editor_compose_updater_constraint_detail": "Versionsbegrænsning",
+  "editor_compose_updater_constraint_info": "Semantisk versionsbegrænsning for tag-opdateringer, f.eks. 3.x eller >=3.1.0 <4.0.0. Uden en sådan begrænsning forbliver opdateringerne inden for den aktuelle hovedversion eller den aktuelle underversion for 0.x.",
+  "editor_compose_updater_tag_pattern_detail": "Tag pattern",
+  "editor_compose_updater_tag_pattern_info": "Regular expression matched against the whole tag. Use a named version capture to select a variant, such as (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
 }
