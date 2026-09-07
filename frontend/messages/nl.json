@@ -3509,6 +3509,6 @@
   "editor_compose_updater_strategy_info": "Standaard is dit ingesteld op 'auto': volledige stabiele semantische versietags volgen de nieuwste in aanmerking komende tags; bewegende tags zoals 'latest' en 'alpine' volgen de wijzigingen in de digest. Stel 'digest' in om de huidige tag te behouden, of 'tag' om selectie op basis van de versie te vereisen.",
   "editor_compose_updater_constraint_detail": "Versiebeperking",
   "editor_compose_updater_constraint_info": "Semantische versiebeperking voor tag-updates, zoals 3.x of >=3.1.0 <4.0.0. Zonder een beperking blijven updates binnen de huidige hoofdversie, of binnen de huidige subversie voor 0.x.",
-  "editor_compose_updater_tag_pattern_detail": "Tag pattern",
-  "editor_compose_updater_tag_pattern_info": "Regular expression matched against the whole tag. Use a named version capture to select a variant, such as (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
+  "editor_compose_updater_tag_pattern_detail": "Tagpatroon",
+  "editor_compose_updater_tag_pattern_info": "De reguliere expressie is vergeleken met de volledige tag. Gebruik een benoemde variabele om een variant te selecteren, bijvoorbeeld (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
 }
