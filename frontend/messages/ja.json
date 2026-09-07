@@ -3509,6 +3509,6 @@
   "editor_compose_updater_strategy_info": "デフォルトは「auto」です。完全な安定版セマンティックバージョンのタグは、対象となる新しいタグに従います。一方、「latest」や「alpine」などの移動タグは、ダイジェストの変更に従います。現在のタグを維持するには「digest」を指定し、バージョンに基づく選択を必須にするには「tag」を指定してください。",
   "editor_compose_updater_constraint_detail": "バージョンの制約",
   "editor_compose_updater_constraint_info": "タグの更新に対するセマンティックバージョンの制約。例：3.x や >=3.1.0 <4.0.0 など。制約がない場合、更新は現在のメジャーバージョン内、または 0.x の場合は現在のマイナーバージョン内に留まります。",
-  "editor_compose_updater_tag_pattern_detail": "Tag pattern",
-  "editor_compose_updater_tag_pattern_info": "Regular expression matched against the whole tag. Use a named version capture to select a variant, such as (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
+  "editor_compose_updater_tag_pattern_detail": "タグのパターン",
+  "editor_compose_updater_tag_pattern_info": "正規表現はタグ全体に対して照合されます。バリアントを選択するには、名前付きキャプチャを使用してください。例：(?P<version>\\d+\\.\\d+\\.\\d+)-alpine。"
 }
