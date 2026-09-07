@@ -3510,5 +3510,13 @@
   "editor_compose_updater_constraint_detail": "Versionsbegränsning",
   "editor_compose_updater_constraint_info": "Semantisk versionsbegränsning för tagguppdateringar, till exempel 3.x eller >=3.1.0 <4.0.0. Utan en sådan begränsning sker uppdateringarna inom den aktuella huvudversionen, eller den aktuella underversionen för 0.x.",
   "editor_compose_updater_tag_pattern_detail": "Taggmönster",
-  "editor_compose_updater_tag_pattern_info": "Det reguljära uttrycket matchade hela taggen. Använd en namngiven version av en fångst för att välja en variant, till exempel (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
+  "editor_compose_updater_tag_pattern_info": "Det reguljära uttrycket matchade hela taggen. Använd en namngiven version av en fångst för att välja en variant, till exempel (?P<version>\\d+\\.\\d+\\.\\d+)-alpine.",
+  "activity_type_job_run": "Automatiseringskörning",
+  "jobs_resolve_run": "Beslut efter granskning",
+  "jobs_resolve_description": "Bekräfta att du har granskat den här avbrutna körningen och kontrollerat resultaten. När du löser problemet bevaras historiken, vilket gör att senare schemalagda uppgifter kan fortsätta. Uppdateringar körs inte och körningen markeras inte som lyckad.",
+  "jobs_resolution_details": "Beslutat av {user} den {date}",
+  "jobs_activity_summary": "Kör aktivitet",
+  "jobs_activity_output": "Driftsutgång",
+  "jobs_attention_schedule_blocked": "Denna körning måste granskas och blockerar senare körningar av detta jobb.",
+  "jobs_resolution_reason": "Orsak till beslutet"
 }
