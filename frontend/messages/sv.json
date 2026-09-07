@@ -3509,6 +3509,6 @@
   "editor_compose_updater_strategy_info": "Standardinställningen är ”auto”: kompletta stabila semantiska versionstaggar följer nyare taggar som uppfyller kraven; rörliga taggar som ”latest” och ”alpine” följer ändringar i sammanfattningen. Ställ in ”digest” för att behålla den aktuella taggen, eller ”tag” för att kräva versionsbaserat val.",
   "editor_compose_updater_constraint_detail": "Versionsbegränsning",
   "editor_compose_updater_constraint_info": "Semantisk versionsbegränsning för tagguppdateringar, till exempel 3.x eller >=3.1.0 <4.0.0. Utan en sådan begränsning sker uppdateringarna inom den aktuella huvudversionen, eller den aktuella underversionen för 0.x.",
-  "editor_compose_updater_tag_pattern_detail": "Tag pattern",
-  "editor_compose_updater_tag_pattern_info": "Regular expression matched against the whole tag. Use a named version capture to select a variant, such as (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
+  "editor_compose_updater_tag_pattern_detail": "Taggmönster",
+  "editor_compose_updater_tag_pattern_info": "Det reguljära uttrycket matchade hela taggen. Använd en namngiven version av en fångst för att välja en variant, till exempel (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
 }
