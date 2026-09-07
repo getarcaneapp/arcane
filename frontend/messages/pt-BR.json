@@ -3500,5 +3500,15 @@
   "jobs_local_health_check": "Saúde ambiental local",
   "jobs_health_check": "Saúde ambiental",
   "jobs_settings_details": "Configurações e detalhes",
-  "jobs_health_scope_description": "Verifica o estado de funcionamento e a conectividade deste ambiente."
+  "jobs_health_scope_description": "Verifica o estado de funcionamento e a conectividade deste ambiente.",
+  "editor_compose_updater_detail": "Política de atualização de imagens",
+  "editor_compose_updater_info": "Os valores padrão do projeto se aplicam a todos os serviços. Os campos do atualizador de serviços substituem os valores padrão do projeto. Os rótulos explícitos do atualizador têm precedência para cada campo.",
+  "editor_compose_updater_enabled_detail": "Ativar atualizações de imagens",
+  "editor_compose_updater_enabled_info": "Booleano. Defina como “false” para desativar as atualizações de imagem para os serviços afetados.",
+  "editor_compose_updater_strategy_detail": "Estratégia de atualização",
+  "editor_compose_updater_strategy_info": "O padrão é “auto”: as tags de versão semântica estáveis completas seguem as tags elegíveis mais recentes; tags dinâmicas, como “latest” e “alpine”, seguem as alterações do resumo. Defina “digest” para manter a tag atual ou “tag” para exigir a seleção com base na versão.",
+  "editor_compose_updater_constraint_detail": "Restrição de versão",
+  "editor_compose_updater_constraint_info": "Restrição de versão semântica para atualizações de tags, como 3.x ou >=3.1.0 <4.0.0. Sem essa restrição, as atualizações permanecem dentro da versão principal atual ou, no caso de 0.x, da versão secundária atual.",
+  "editor_compose_updater_tag_pattern_detail": "Tag pattern",
+  "editor_compose_updater_tag_pattern_info": "Regular expression matched against the whole tag. Use a named version capture to select a variant, such as (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
 }
