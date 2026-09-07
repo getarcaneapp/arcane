@@ -3510,5 +3510,13 @@
   "editor_compose_updater_constraint_detail": "Restrição de versão",
   "editor_compose_updater_constraint_info": "Restrição de versão semântica para atualizações de tags, como 3.x ou >=3.1.0 <4.0.0. Sem essa restrição, as atualizações permanecem dentro da versão principal atual ou, no caso de 0.x, da versão secundária atual.",
   "editor_compose_updater_tag_pattern_detail": "Padrão de tags",
-  "editor_compose_updater_tag_pattern_info": "A expressão regular foi comparada com a tag inteira. Use uma captura de variável nomeada para selecionar uma variante, como (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
+  "editor_compose_updater_tag_pattern_info": "A expressão regular foi comparada com a tag inteira. Use uma captura de variável nomeada para selecionar uma variante, como (?P<version>\\d+\\.\\d+\\.\\d+)-alpine.",
+  "activity_type_job_run": "Execução da automação",
+  "jobs_resolve_run": "Decisão após análise",
+  "jobs_resolve_description": "Confirme se você já analisou essa execução interrompida e verificou seus resultados. Ao resolvê-la, seu histórico é preservado e permite que os trabalhos agendados posteriormente sejam executados. Isso não executa atualizações nem marca essa execução como bem-sucedida.",
+  "jobs_resolution_details": "Resolvido por {user} em {date}",
+  "jobs_activity_summary": "Atividade de corrida",
+  "jobs_activity_output": "Saída operacional",
+  "jobs_attention_schedule_blocked": "Essa execução precisa ser revisada e bloqueia as execuções posteriores dessa tarefa.",
+  "jobs_resolution_reason": "Motivo da resolução"
 }
