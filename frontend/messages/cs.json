@@ -3500,5 +3500,15 @@
   "jobs_local_health_check": "Zdraví v místním prostředí",
   "jobs_health_check": "Zdraví a životní prostředí",
   "jobs_settings_details": "Nastavení a podrobnosti",
-  "jobs_health_scope_description": "Zkontroluje stav a připojení tohoto prostředí."
+  "jobs_health_scope_description": "Zkontroluje stav a připojení tohoto prostředí.",
+  "editor_compose_updater_detail": "Zásady aktualizace obrázků",
+  "editor_compose_updater_info": "Výchozí nastavení projektu se vztahuje na všechny služby. Pole nástroje pro aktualizaci služeb mají přednost před výchozím nastavením projektu. U každého pole mají přednost explicitně zadané popisky v nástroji pro aktualizaci.",
+  "editor_compose_updater_enabled_detail": "Povolit aktualizace obrázků",
+  "editor_compose_updater_enabled_info": "Logická hodnota. Nastavte na „false“, chcete-li deaktivovat aktualizace obrázků u dotčených služeb.",
+  "editor_compose_updater_strategy_detail": "Strategie aktualizace",
+  "editor_compose_updater_strategy_info": "Výchozí nastavení je „auto“: kompletní stabilní sémantické verzní značky se řídí novějšími způsobilými značkami; pohyblivé značky, jako jsou „latest“ a „alpine“, se řídí změnami v souhrnu. Nastavte „digest“, chcete-li zachovat aktuální značku, nebo „tag“, chcete-li vyžadovat výběr na základě verze.",
+  "editor_compose_updater_constraint_detail": "Omezení verze",
+  "editor_compose_updater_constraint_info": "Sémantické omezení verze pro aktualizace značek, například 3.x nebo >=3.1.0 <4.0.0. Bez tohoto omezení zůstávají aktualizace v rámci aktuální hlavní verze, resp. v rámci aktuální vedlejší verze u verzí 0.x.",
+  "editor_compose_updater_tag_pattern_detail": "Tag pattern",
+  "editor_compose_updater_tag_pattern_info": "Regular expression matched against the whole tag. Use a named version capture to select a variant, such as (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
 }
