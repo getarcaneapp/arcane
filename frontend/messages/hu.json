@@ -3500,5 +3500,15 @@
   "jobs_local_health_check": "Helyi környezet-egészségügy",
   "jobs_health_check": "Környezet-egészségügy",
   "jobs_settings_details": "Beállítások és részletek",
-  "jobs_health_scope_description": "Ellenőrzi a környezet állapotát és a kapcsolatot."
+  "jobs_health_scope_description": "Ellenőrzi a környezet állapotát és a kapcsolatot.",
+  "editor_compose_updater_detail": "Képfrissítési szabályzat",
+  "editor_compose_updater_info": "A projekt alapértelmezett beállításai minden szolgáltatásra vonatkoznak. A szolgáltatásfrissítő mezői felülírják a projekt alapértelmezett beállításait. Az egyes mezők esetében a kifejezetten megadott frissítő címkék élveznek elsőbbséget.",
+  "editor_compose_updater_enabled_detail": "Képfrissítések engedélyezése",
+  "editor_compose_updater_enabled_info": "Boolean. Állítsa false értékre, ha le szeretné tiltani a képfrissítéseket az érintett szolgáltatások esetében.",
+  "editor_compose_updater_strategy_detail": "Frissítési stratégia",
+  "editor_compose_updater_strategy_info": "Alapértelmezés szerint „auto”: a teljes stabil szemantikai verziócímkék az újabb, megfelelő címkéket követik; az olyan mozgó címkék, mint a „latest” és az „alpine”, az összefoglaló változásokat követik. Állítsa be az „digest” értéket az aktuális címke megtartásához, vagy a „tag” értéket a verzióalapú kiválasztáshoz.",
+  "editor_compose_updater_constraint_detail": "Verziókorlátozás",
+  "editor_compose_updater_constraint_info": "Szemantikus verziókorlátozás a címkék frissítéseihez, például 3.x vagy >=3.1.0 <4.0.0. Korlátozás hiányában a frissítések az aktuális főverzión belül maradnak, illetve 0.x esetén az aktuális alverzión belül.",
+  "editor_compose_updater_tag_pattern_detail": "Tag pattern",
+  "editor_compose_updater_tag_pattern_info": "Regular expression matched against the whole tag. Use a named version capture to select a variant, such as (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
 }
