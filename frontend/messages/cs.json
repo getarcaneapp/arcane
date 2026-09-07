@@ -3510,5 +3510,13 @@
   "editor_compose_updater_constraint_detail": "Omezení verze",
   "editor_compose_updater_constraint_info": "Sémantické omezení verze pro aktualizace značek, například 3.x nebo >=3.1.0 <4.0.0. Bez tohoto omezení zůstávají aktualizace v rámci aktuální hlavní verze, resp. v rámci aktuální vedlejší verze u verzí 0.x.",
   "editor_compose_updater_tag_pattern_detail": "Vzor štítku",
-  "editor_compose_updater_tag_pattern_info": "Regulární výraz se porovnává s celým tagem. K výběru konkrétní varianty použijte pojmenovanou verzi zachycení, například (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
+  "editor_compose_updater_tag_pattern_info": "Regulární výraz se porovnává s celým tagem. K výběru konkrétní varianty použijte pojmenovanou verzi zachycení, například (?P<version>\\d+\\.\\d+\\.\\d+)-alpine.",
+  "activity_type_job_run": "Spuštění automatizace",
+  "jobs_resolve_run": "Rozhodnutí po posouzení",
+  "jobs_resolve_description": "Potvrďte, že jste si tento přerušený běh prohlédli a zkontrolovali jeho výsledky. Jeho vyřešením se zachová jeho historie a umožní se pokračování v pozdějších naplánovaných úkolech. Nedojde k provedení aktualizací ani k označení tohoto běhu za úspěšný.",
+  "jobs_resolution_details": "Vyřešeno uživatelem {user} dne {date}",
+  "jobs_activity_summary": "Spustit aktivitu",
+  "jobs_activity_output": "Provozní výkon",
+  "jobs_attention_schedule_blocked": "Tento běh vyžaduje kontrolu a blokuje další běhy této úlohy.",
+  "jobs_resolution_reason": "Důvod usnesení"
 }
