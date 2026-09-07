@@ -13,6 +13,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	s3config "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/s3"
 	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
@@ -272,6 +273,69 @@ func TestS3DestinationService_TestS3DestinationRoundTrip(t *testing.T) {
 	require.Equal(t, "arcane-backups", persisted.Bucket)
 	require.Equal(t, "production", persisted.Prefix)
 	require.Empty(t, persisted.Region)
+
+	for _, scenario := range []struct {
+		name          string
+		code          string
+		status        int
+		reason        string
+		wantError     bool
+		snapshotError bool
+		configOnly    bool
+	}{
+		{name: "only the requested snapshot is read"},
+		{name: "repository check reads only config", configOnly: true},
+		{name: "confirmed bucket loss", code: "NoSuchBucket", status: http.StatusNotFound, reason: "missing_bucket"},
+		{name: "confirmed repository loss", code: "NoSuchKey", status: http.StatusNotFound, reason: "missing_repository"},
+		{name: "access denied is not deletion", code: "AccessDenied", status: http.StatusForbidden, wantError: true},
+		{name: "generic not found is inconclusive", code: "NotFound", status: http.StatusNotFound, wantError: true},
+		{name: "missing snapshot leaves repository available", code: "NoSuchKey", status: http.StatusNotFound, snapshotError: true},
+		{name: "snapshot access denied is inconclusive", code: "AccessDenied", status: http.StatusForbidden, snapshotError: true, wantError: true},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			snapshotID := strings.Repeat("a", 64)
+			metadataServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				isConfig := r.URL.Path == "/arcane-backups/production/repository/config"
+				isSnapshot := !scenario.configOnly && r.URL.Path == "/arcane-backups/production/repository/snapshots/"+snapshotID
+				if r.Method != http.MethodGet || (!isConfig && !isSnapshot) || r.URL.Query().Get("list-type") != "" {
+					t.Errorf("unexpected metadata request: %s %s", r.Method, r.URL)
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				if r.Header.Get("Range") != "bytes=0-0" {
+					t.Errorf("metadata request must be limited to one byte")
+				}
+				if scenario.code != "" && (!scenario.snapshotError || !isConfig) {
+					w.Header().Set("Content-Type", "application/xml")
+					w.WriteHeader(scenario.status)
+					_, _ = io.WriteString(w, "<Error><Code>"+scenario.code+"</Code><Message>test response</Message></Error>")
+					return
+				}
+				w.Header().Set("Content-Range", "bytes 0-0/100")
+				w.WriteHeader(http.StatusPartialContent)
+				_, _ = io.WriteString(w, "x")
+			}))
+			defer metadataServer.Close()
+			configuration := s3config.Configuration{
+				Name: "Metadata destination", Endpoint: metadataServer.URL, Bucket: "arcane-backups",
+				AccessKeyID: "test-access", SecretAccessKey: "test-secret", Prefix: "production", ForcePathStyle: true,
+			}
+			requestedID := snapshotID
+			if scenario.configOnly {
+				requestedID = ""
+			}
+			observation, checkErr := s3config.CheckRepository(t.Context(), configuration, "repository", requestedID)
+			if scenario.wantError {
+				require.Error(t, checkErr)
+				require.Empty(t, observation.Reason)
+				return
+			}
+			require.NoError(t, checkErr)
+			require.Equal(t, scenario.reason, observation.Reason)
+			require.Equal(t, scenario.reason == "", observation.Available)
+			require.Equal(t, scenario.reason == "" && !scenario.configOnly && !scenario.snapshotError, observation.SnapshotAvailable)
+		})
+	}
 }
 
 func TestListS3DestinationsByIDInternal(t *testing.T) {

@@ -6,6 +6,7 @@ export type BackupTrigger = 'manual' | 'scheduled' | 'safety';
 export type BackupManagementType = 'system' | 'volume';
 
 export type BackupRun = {
+	remoteAvailable?: boolean;
 	activityId?: string;
 	id: string;
 	size: number;

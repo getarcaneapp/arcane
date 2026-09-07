@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/url"
 	"path"
+	"slices"
 	"strings"
 
 	"emperror.dev/errors"
@@ -18,7 +19,14 @@ import (
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	awss3 "github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/smithy-go"
+	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
 	"github.com/google/uuid"
+)
+
+const (
+	RepositoryReasonMissingBucket     = "missing_bucket"
+	RepositoryReasonMissingRepository = "missing_repository"
 )
 
 const connectionTestPayload = "arcane-s3-connection-test"
@@ -198,6 +206,61 @@ func TestConnection(ctx context.Context, configuration Configuration) (err error
 	}
 	deleted = true
 	return nil
+}
+
+// CheckRepository reads only the config and, when supplied, one snapshot object.
+func CheckRepository(ctx context.Context, configuration Configuration, root, snapshotID string) (backuptypes.RepositoryObservation, error) {
+	configuration = configuration.Normalized()
+	if err := configuration.Validate(true); err != nil {
+		return backuptypes.RepositoryObservation{}, err
+	}
+	client, err := newClientInternal(ctx, configuration)
+	if err != nil {
+		return backuptypes.RepositoryObservation{}, fmt.Errorf("failed to configure S3 repository check: %w", err)
+	}
+	configKey := path.Join(configuration.Prefix, root, "config")
+	if err := checkBackupObjectInternal(ctx, client, configuration.Bucket, configKey); err != nil {
+		if isMissingResourceInternal(err, "NoSuchBucket") {
+			return backuptypes.RepositoryObservation{Reason: RepositoryReasonMissingBucket}, nil
+		}
+		if isMissingResourceInternal(err, "NoSuchKey") {
+			return backuptypes.RepositoryObservation{Reason: RepositoryReasonMissingRepository}, nil
+		}
+		return backuptypes.RepositoryObservation{}, err
+	}
+	result := backuptypes.RepositoryObservation{Available: true}
+	if snapshotID == "" {
+		return result, nil
+	}
+	snapshotKey := path.Join(configuration.Prefix, root, "snapshots", snapshotID)
+	if err := checkBackupObjectInternal(ctx, client, configuration.Bucket, snapshotKey); err != nil {
+		if isMissingResourceInternal(err, "NoSuchKey") {
+			return result, nil
+		}
+		if isMissingResourceInternal(err, "NoSuchBucket") {
+			return backuptypes.RepositoryObservation{Reason: RepositoryReasonMissingBucket}, nil
+		}
+		return backuptypes.RepositoryObservation{}, err
+	}
+	result.SnapshotAvailable = true
+	return result, nil
+}
+
+// A one-byte GET preserves the named S3 errors that generic HEAD responses omit.
+func checkBackupObjectInternal(ctx context.Context, client *awss3.Client, bucket, key string) error {
+	object, err := client.GetObject(ctx, &awss3.GetObjectInput{Bucket: aws.String(bucket), Key: aws.String(key), Range: aws.String("bytes=0-0")})
+	if err != nil {
+		return err
+	}
+	return object.Body.Close()
+}
+
+func isMissingResourceInternal(err error, codes ...string) bool {
+	var apiErr smithy.APIError
+	if !errors.As(err, &apiErr) {
+		return false
+	}
+	return slices.Contains(codes, apiErr.ErrorCode())
 }
 
 func newClientInternal(ctx context.Context, configuration Configuration) (*awss3.Client, error) {

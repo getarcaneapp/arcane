@@ -719,7 +719,7 @@ func TestVolumeBackupPolicy_RetentionIgnoresFailedRuns(t *testing.T) {
 	}).Error)
 
 	service := &VolumeService{db: &database.DB{DB: gormDB}}
-	require.NoError(t, service.applyVolumeBackupRetentionInternal(context.Background(), policyID, 1))
+	require.NoError(t, service.applyVolumeBackupRetentionInternal(context.Background(), policyID, 1, true))
 
 	var backups []VolumeBackup
 	require.NoError(t, gormDB.Order("created_at ASC").Find(&backups).Error)

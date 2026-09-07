@@ -3272,6 +3272,7 @@
   "backups_trigger_scheduled": "Scheduled",
   "backups_trigger_safety": "Pre-restore safety",
   "backups_destination_s3": "S3",
+  "backups_remote_unavailable": "Remote copy unavailable",
   "backups_destination_local_s3": "Local + S3",
   "s3_destinations_title": "S3 Destinations",
   "s3_destinations_description": "Create and manage reusable S3-compatible storage destinations for Arcane and volume backups.",

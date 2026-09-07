@@ -2,6 +2,8 @@ package systembackup
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"slices"
 	"testing"
 	"time"
@@ -11,6 +13,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	recoverytypes "github.com/getarcaneapp/arcane/backend/v2/internal/recovery"
+	s3domain "github.com/getarcaneapp/arcane/backend/v2/internal/s3"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/entityjobs"
 	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
@@ -113,6 +116,33 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 	require.Equal(t, firstID, collection.Policies[0].ID)
 	require.Equal(t, 9, collection.Policies[0].RetentionCount)
 	require.Len(t, scheduler.jobs, 1)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/xml")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte("<Error><Code>NoSuchBucket</Code></Error>"))
+	}))
+	defer server.Close()
+	require.NoError(t, gormDB.AutoMigrate(&s3domain.S3Destination{}))
+	service.s3Destinations = s3domain.NewS3DestinationService(service.db)
+	destination, err := service.s3Destinations.CreateS3Destination(t.Context(), backuptypes.CreateS3Destination{
+		Name: "Missing storage", Endpoint: server.URL, Bucket: "backups", AccessKeyID: "test", SecretAccessKey: "test", ForcePathStyle: true,
+	})
+	require.NoError(t, err)
+	for _, local := range []bool{false, true} {
+		policy := &SystemBackupPolicy{Enabled: true, LocalEnabled: local, S3Enabled: true, S3DestinationID: destination.ID, Schedule: "0 0 2 * * *"}
+		require.NoError(t, gormDB.Create(policy).Error)
+		require.NoError(t, gormDB.Model(policy).Update("local_enabled", local).Error)
+		service.rescheduleSystemBackupPolicyInternal(t.Context(), policy)
+		disabled, err := service.disableMissingS3Internal(t.Context(), policy)
+		require.NoError(t, err)
+		require.True(t, disabled)
+		require.NoError(t, gormDB.First(policy, "id = ?", policy.ID).Error)
+		require.Equal(t, local, policy.Enabled)
+		require.Equal(t, !local, policy.S3Enabled)
+		require.Equal(t, local, scheduler.HasJob(service.jobs.JobName(policy.ID)))
+	}
+
 }
 
 func TestSystemBackupPolicyRequiresConfiguredRecoveryKeyWhenEnabled(t *testing.T) {

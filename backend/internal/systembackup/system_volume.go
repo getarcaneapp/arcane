@@ -154,13 +154,7 @@ func (s *SystemBackupService) UpdateSystemVolumeBackupConfig(ctx context.Context
 			*policy = normalized
 			return nil
 		},
-		Persist: func(ctx context.Context, policies []backuptypes.SystemVolumeBackupPolicy) error {
-			encoded, encodeErr := json.Marshal(backuptypes.SystemVolumeBackupPolicyCollection{Policies: policies})
-			if encodeErr != nil {
-				return fmt.Errorf("encode policies: %w", encodeErr)
-			}
-			return s.settingsService.UpdateSetting(ctx, systemVolumeBackupConfigKey, string(encoded))
-		},
+		Persist: s.saveSystemVolumeBackupPoliciesInternal,
 		Unregister: func(ctx context.Context, policyID string) {
 			s.jobs.Unregister(ctx, systemVolumeBackupJobPrefix+policyID)
 		},
@@ -385,6 +379,13 @@ func (s *SystemBackupService) runScheduledSystemVolumeBackupInternal(ctx context
 	if policy == nil || !policy.Enabled {
 		return schedulertypes.Outcome{Status: schedulertypes.Skipped}, nil
 	}
+	remoteDisabled, checkErr := s.disableMissingVolumeS3Internal(ctx, policy)
+	if checkErr != nil {
+		return schedulertypes.Outcome{}, checkErr
+	}
+	if remoteDisabled && !policy.LocalEnabled {
+		return schedulertypes.Outcome{Status: schedulertypes.NeedsAttention, Message: backup.RemoteDisabledMessage}, nil
+	}
 	result, err := s.runSystemVolumeBackupsInternal(ctx, backuptypes.RunSystemVolumeBackupsRequest{PolicyID: policyID}, volume.VolumeBackupTriggerScheduled)
 	if errors.Is(err, ErrSystemBackupAlreadyRunning) {
 		slog.InfoContext(ctx, "Scheduled system-managed volume backups skipped; a system backup is running", "policyId", policyID)
@@ -396,7 +397,10 @@ func (s *SystemBackupService) runScheduledSystemVolumeBackupInternal(ctx context
 	}
 	slog.InfoContext(ctx, "Scheduled system-managed volume backups completed", "policyId", policyID, "matched", result.Matched, "succeeded", result.Succeeded, "failed", result.Failed, "skipped", result.Skipped)
 	outcome := schedulertypes.Outcome{Status: schedulertypes.Succeeded}
-	if result.Failed > 0 {
+	if remoteDisabled {
+		outcome.Message = backup.RemoteDisabledMessage
+	}
+	if result.Failed > 0 || remoteDisabled {
 		outcome.Status = schedulertypes.Partial
 	}
 	for _, failure := range result.Failures {
@@ -453,6 +457,20 @@ func (s *SystemBackupService) ListBackupHistory(ctx context.Context, params pagi
 		return nil, pagination.Response{}, fmt.Errorf("list backup history: %w", err)
 	}
 	decorateHistoryDestinationsInternal(ctx, s.s3Destinations, history)
+	systemAvailable := backup.RemoteSnapshotChecker(ctx, s.s3Destinations, "arcane-system-recovery")
+	volumeRoot := ""
+	if s.settingsService != nil {
+		volumeRoot = "arcane-volume-backups/" + s.settingsService.GetSettingsConfig().InstanceID.Value
+	}
+	volumeAvailable := backup.RemoteSnapshotChecker(ctx, s.s3Destinations, volumeRoot)
+	for i := range history {
+		check := systemAvailable
+		if history[i].ResourceType == "volume" {
+			check = volumeAvailable
+		}
+		history[i].RemoteAvailable = check(history[i].S3DestinationID, history[i].RemoteSnapshotID)
+	}
+
 	page.GrandTotalItems = page.TotalItems
 	return history, page, nil
 }
@@ -468,4 +486,48 @@ func decorateHistoryDestinationsInternal(ctx context.Context, service *s3domain.
 	for i := range history {
 		history[i].S3DestinationName = destinations[history[i].S3DestinationID].Name
 	}
+}
+
+func (s *SystemBackupService) saveSystemVolumeBackupPoliciesInternal(ctx context.Context, policies []backuptypes.SystemVolumeBackupPolicy) error {
+	encoded, err := json.Marshal(backuptypes.SystemVolumeBackupPolicyCollection{Policies: policies})
+	if err != nil {
+		return fmt.Errorf("encode policies: %w", err)
+	}
+	return s.settingsService.UpdateSetting(ctx, systemVolumeBackupConfigKey, string(encoded))
+}
+
+func (s *SystemBackupService) disableMissingVolumeS3Internal(ctx context.Context, policy *backuptypes.SystemVolumeBackupPolicy) (bool, error) {
+	if !policy.S3Enabled {
+		return false, nil
+	}
+	root := "arcane-volume-backups/" + s.settingsService.GetSettingsConfig().InstanceID.Value
+	err := backup.CheckScheduledRemote(ctx, s.db, s.s3Destinations, "volume_backups", policy.S3DestinationID, root)
+	if !errors.Is(err, backup.ErrRemoteRepositoryMissing) {
+		return false, nil
+	}
+	collection, err := s.loadSystemVolumeBackupPoliciesInternal()
+	if err != nil {
+		return false, err
+	}
+	for i := range collection.Policies {
+		current := &collection.Policies[i]
+		if current.ID != policy.ID {
+			continue
+		}
+		if current.S3DestinationID != policy.S3DestinationID || current.S3Enabled != policy.S3Enabled || current.Enabled != policy.Enabled || current.LocalEnabled != policy.LocalEnabled {
+			return false, nil
+		}
+		if current.LocalEnabled {
+			current.S3Enabled = false
+		} else {
+			current.Enabled = false
+		}
+		if err := s.saveSystemVolumeBackupPoliciesInternal(ctx, collection.Policies); err != nil {
+			return false, err
+		}
+		*policy = *current
+		s.rescheduleSystemVolumeBackupInternal(ctx, policy)
+		return true, nil
+	}
+	return false, nil
 }

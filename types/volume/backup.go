@@ -28,6 +28,7 @@ const (
 )
 
 type BackupEntry struct {
+	RemoteAvailable   *bool                 `json:"remoteAvailable,omitempty"`
 	ActivityID        *string               `json:"activityId,omitempty"`
 	ID                string                `json:"id" doc:"Unique identifier of the backup"`
 	VolumeName        string                `json:"volumeName" doc:"Name of the volume"`

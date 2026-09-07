@@ -49,6 +49,7 @@ type VolumeBackup struct {
 	Error             string                     `json:"error,omitempty" gorm:"column:error;type:text"`
 	ActivityID        *string                    `json:"activityId,omitempty" gorm:"-"`
 	Type              backuptypes.ManagementType `json:"type" gorm:"-"`
+	RemoteAvailable   *bool                      `json:"remoteAvailable,omitempty" gorm:"-"`
 }
 
 func (*VolumeBackup) TableName() string {
@@ -57,6 +58,7 @@ func (*VolumeBackup) TableName() string {
 
 func (b *VolumeBackup) ToDTO() volume.BackupEntry {
 	return volume.BackupEntry{
+		RemoteAvailable:   b.RemoteAvailable,
 		ActivityID:        b.ActivityID,
 		ID:                b.ID,
 		VolumeName:        b.VolumeName,

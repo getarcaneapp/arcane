@@ -525,10 +525,12 @@ func (s *SystemBackupService) ListBackups(ctx context.Context, params pagination
 			names = available
 		}
 	}
+	remoteAvailable := backup.RemoteSnapshotChecker(ctx, s.s3Destinations, "arcane-system-recovery")
 	result := make([]backuptypes.SystemBackupRun, len(runs))
 	for i := range runs {
 		runs[i].S3DestinationName = names[runs[i].S3DestinationID].Name
 		result[i] = runs[i].ToDTO()
+		result[i].RemoteAvailable = remoteAvailable(runs[i].S3DestinationID, runs[i].RemoteSnapshotID)
 	}
 	return result, response, nil
 }
@@ -1084,18 +1086,18 @@ func (s *SystemBackupService) DeleteBackup(ctx context.Context, id, recoveryKey 
 	if err != nil {
 		return err
 	}
-	return s.deleteRunsInternal(ctx, []*SystemBackupRun{run}, recoveryKey)
+	return s.deleteRunsInternal(ctx, []*SystemBackupRun{run}, recoveryKey, true)
 }
 
 // deleteRunsInternal forgets snapshots grouped by repository under the caller's run lease.
-func (s *SystemBackupService) deleteRunsInternal(ctx context.Context, runs []*SystemBackupRun, recoveryKey string) error {
+func (s *SystemBackupService) deleteRunsInternal(ctx context.Context, runs []*SystemBackupRun, recoveryKey string, includeRemote bool) error {
 	var localRuns []*SystemBackupRun
 	remoteGroups := make(map[string][]*SystemBackupRun)
 	for _, run := range runs {
 		if run.LocalSnapshotID != "" {
 			localRuns = append(localRuns, run)
 		}
-		if run.RemoteSnapshotID != "" {
+		if includeRemote && run.RemoteSnapshotID != "" {
 			remoteGroups[run.S3DestinationID] = append(remoteGroups[run.S3DestinationID], run)
 		}
 	}
@@ -1123,7 +1125,6 @@ func (s *SystemBackupService) deleteRunsInternal(ctx context.Context, runs []*Sy
 			}
 			continue
 		}
-		run.Error = deleteErr.Error()
 		if saveErr := s.db.WithContext(ctx).Save(run).Error; saveErr != nil {
 			deleteErr = errors.Combine(deleteErr, saveErr)
 		}
@@ -1579,13 +1580,20 @@ func (s *SystemBackupService) runScheduledBackupInternal(ctx context.Context, po
 		outcome := jobcontext.ConfirmedTarget(previous, policy.ID)
 		if outcome.Status == schedulertypes.Succeeded {
 			if policy.RetentionCount > 0 {
-				if err := s.applyRetentionInternal(ctx, policy.ID, policy.RetentionCount); err != nil {
+				if err := s.applyRetentionInternal(ctx, policy.ID, policy.RetentionCount, policy.S3Enabled); err != nil {
 					outcome.Status = schedulertypes.Partial
 					return outcome, err
 				}
 			}
 			return outcome, nil
 		}
+	}
+	remoteDisabled, checkErr := s.disableMissingS3Internal(ctx, policy)
+	if checkErr != nil {
+		return schedulertypes.Outcome{}, checkErr
+	}
+	if remoteDisabled && !policy.LocalEnabled {
+		return schedulertypes.Outcome{Status: schedulertypes.NeedsAttention, Message: backup.RemoteDisabledMessage}, nil
 	}
 	var run *SystemBackupRun
 	activityID, runErr := activitylib.RunHandlerActivity(ctx, s.activityService, activitylib.HandlerOptions{
@@ -1611,12 +1619,15 @@ func (s *SystemBackupService) runScheduledBackupInternal(ctx context.Context, po
 		return schedulertypes.Outcome{ActivityID: activityID}, runErr
 	}
 	if policy.RetentionCount > 0 {
-		if retentionErr := s.applyRetentionInternal(ctx, policy.ID, policy.RetentionCount); retentionErr != nil {
+		if retentionErr := s.applyRetentionInternal(ctx, policy.ID, policy.RetentionCount, policy.S3Enabled); retentionErr != nil {
 			slog.ErrorContext(ctx, "System backup retention failed", "policyId", policy.ID, "error", retentionErr)
 			return schedulertypes.Outcome{Status: schedulertypes.Partial, ActivityID: activityID, Message: "Backup completed but retention failed"}, retentionErr
 		}
 	}
 	slog.InfoContext(ctx, "Scheduled Arcane system backup completed", "backupId", run.ID, "policyId", policy.ID)
+	if remoteDisabled {
+		return schedulertypes.Outcome{Status: schedulertypes.Partial, ActivityID: activityID, Message: backup.RemoteDisabledMessage}, nil
+	}
 	return schedulertypes.Outcome{Status: schedulertypes.Succeeded, ActivityID: activityID}, nil
 }
 
@@ -1648,7 +1659,7 @@ func (s *SystemBackupService) rescheduleSystemBackupPolicyInternal(ctx context.C
 					return outcome, err
 				}
 				if current != nil && current.RetentionCount > 0 {
-					if err := s.applyRetentionInternal(ctx, policyID, current.RetentionCount); err != nil {
+					if err := s.applyRetentionInternal(ctx, policyID, current.RetentionCount, current.S3Enabled); err != nil {
 						outcome.Status = schedulertypes.Partial
 						outcome.Message = "Backup completed but retention failed"
 						return outcome, err
@@ -1682,7 +1693,7 @@ func (s *SystemBackupService) RegisterBackupJobOnStartup(ctx context.Context) {
 	slog.InfoContext(ctx, "Registered backup schedules", "systemPolicies", len(policies), "volumePolicies", volumePolicyCount)
 }
 
-func (s *SystemBackupService) applyRetentionInternal(ctx context.Context, policyID string, keep int) error {
+func (s *SystemBackupService) applyRetentionInternal(ctx context.Context, policyID string, keep int, includeRemote bool) error {
 	expired, err := backup.ExpiredRunIDs(ctx, s.db, "system_backup_runs", policyID, keep)
 	if err != nil || len(expired) == 0 {
 		return err
@@ -1699,5 +1710,32 @@ func (s *SystemBackupService) applyRetentionInternal(ctx context.Context, policy
 	if err := s.db.WithContext(ctx).Where("id IN ?", expired).Find(&runs).Error; err != nil {
 		return err
 	}
-	return s.deleteRunsInternal(ctx, runs, "")
+	return s.deleteRunsInternal(ctx, runs, "", includeRemote)
+}
+
+func (s *SystemBackupService) disableMissingS3Internal(ctx context.Context, policy *SystemBackupPolicy) (bool, error) {
+	if !policy.S3Enabled {
+		return false, nil
+	}
+	err := backup.CheckScheduledRemote(ctx, s.db, s.s3Destinations, "system_backup_runs", policy.S3DestinationID, "arcane-system-recovery")
+	if !errors.Is(err, backup.ErrRemoteRepositoryMissing) {
+		return false, nil
+	}
+	column := "enabled"
+	if policy.LocalEnabled {
+		column = "s3_enabled"
+	}
+	result := s.db.WithContext(ctx).Model(&SystemBackupPolicy{}).
+		Where("id = ? AND s3_destination_id = ? AND enabled = ? AND s3_enabled = ? AND local_enabled = ?", policy.ID, policy.S3DestinationID, true, true, policy.LocalEnabled).
+		Update(column, false)
+	if result.Error != nil || result.RowsAffected == 0 {
+		return false, result.Error
+	}
+	if policy.LocalEnabled {
+		policy.S3Enabled = false
+	} else {
+		policy.Enabled = false
+	}
+	s.rescheduleSystemBackupPolicyInternal(ctx, policy)
+	return true, nil
 }

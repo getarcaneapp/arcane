@@ -382,8 +382,14 @@ func (s *VolumeService) ListBackupsPaginated(ctx context.Context, volumeName str
 			}
 		}
 	}
+	root := ""
+	if s.settingsService != nil {
+		root = "arcane-volume-backups/" + s.settingsService.GetSettingsConfig().InstanceID.Value
+	}
+	remoteAvailable := backup.RemoteSnapshotChecker(ctx, s.s3Destinations, root)
 	for i := range backups {
 		backups[i].Type = volumeBackupManagementTypeInternal(backups[i].PolicyID)
+		backups[i].RemoteAvailable = remoteAvailable(backups[i].S3DestinationID, backups[i].RemoteSnapshotID)
 	}
 
 	return backups, pagination.BuildResponse(totalItems, totalItems, params), nil
@@ -738,7 +744,7 @@ func (s *VolumeService) executeBackupInternal(ctx context.Context, entry *Volume
 	// and the deferred status-save would otherwise mark it failed and hide it
 	// from ExpiredRunIDs forever.
 	if trigger != VolumeBackupTriggerSafety && plan.policy != nil && plan.policy.RetentionCount > 0 {
-		if retentionErr := s.applyVolumeBackupRetentionInternal(ctx, plan.policy.ID, plan.policy.RetentionCount); retentionErr != nil {
+		if retentionErr := s.applyVolumeBackupRetentionInternal(ctx, plan.policy.ID, plan.policy.RetentionCount, plan.s3Enabled); retentionErr != nil {
 			slog.ErrorContext(ctx, "Volume backup retention failed", "volume", volumeName, "policy", plan.policy.ID, "error", retentionErr)
 		}
 	}
@@ -843,11 +849,11 @@ func (s *VolumeService) deleteBackupInternal(ctx context.Context, backupID strin
 	if entry.Format == VolumeBackupFormatArchive {
 		return s.deleteArchiveBackupInternal(ctx, &entry, user)
 	}
-	return s.deleteRusticBackupsInternal(ctx, []*VolumeBackup{&entry}, user)
+	return s.deleteRusticBackupsInternal(ctx, []*VolumeBackup{&entry}, user, true)
 }
 
 // deleteRusticBackupsInternal forgets snapshots grouped by repository so each repository is pruned once.
-func (s *VolumeService) deleteRusticBackupsInternal(ctx context.Context, entries []*VolumeBackup, user *common.User) error {
+func (s *VolumeService) deleteRusticBackupsInternal(ctx context.Context, entries []*VolumeBackup, user *common.User, includeRemote bool) error {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return err
@@ -858,7 +864,7 @@ func (s *VolumeService) deleteRusticBackupsInternal(ctx context.Context, entries
 		if entry.LocalSnapshotID != "" {
 			localEntries = append(localEntries, entry)
 		}
-		if entry.RemoteSnapshotID != "" {
+		if includeRemote && entry.RemoteSnapshotID != "" {
 			remoteGroups[entry.S3DestinationID] = append(remoteGroups[entry.S3DestinationID], entry)
 		}
 	}
@@ -883,7 +889,6 @@ func (s *VolumeService) deleteRusticBackupsInternal(ctx context.Context, entries
 		default:
 			entry.Destination = volumetypes.BackupDestinationS3
 		}
-		entry.Error = deleteErr.Error()
 		if saveErr := s.db.WithContext(ctx).Save(entry).Error; saveErr != nil {
 			deleteErr = errors.Combine(deleteErr, saveErr)
 		}
@@ -1766,7 +1771,7 @@ func (s *VolumeService) UpdateBackupPolicies(ctx context.Context, volumeName str
 	return s.GetBackupPolicies(ctx, volumeName)
 }
 
-func (s *VolumeService) applyVolumeBackupRetentionInternal(ctx context.Context, policyID string, retentionCount int) error {
+func (s *VolumeService) applyVolumeBackupRetentionInternal(ctx context.Context, policyID string, retentionCount int, includeRemote bool) error {
 	expired, err := backup.ExpiredRunIDs(ctx, s.db, "volume_backups", policyID, retentionCount)
 	if err != nil || len(expired) == 0 {
 		return err
@@ -1775,7 +1780,7 @@ func (s *VolumeService) applyVolumeBackupRetentionInternal(ctx context.Context, 
 	if err := s.db.WithContext(ctx).Where("id IN ?", expired).Find(&entries).Error; err != nil {
 		return err
 	}
-	return s.deleteRusticBackupsInternal(ctx, entries, nil)
+	return s.deleteRusticBackupsInternal(ctx, entries, nil, includeRemote)
 }
 
 func (s *VolumeService) runScheduledBackupInternal(ctx context.Context, policyID string) (schedulertypes.Outcome, error) {
@@ -1791,6 +1796,13 @@ func (s *VolumeService) runScheduledBackupInternal(ctx context.Context, policyID
 		if outcome.Status == schedulertypes.Succeeded {
 			return outcome, nil
 		}
+	}
+	remoteDisabled, checkErr := s.disableMissingS3Internal(ctx, &policy)
+	if checkErr != nil {
+		return schedulertypes.Outcome{}, checkErr
+	}
+	if remoteDisabled && !policy.LocalEnabled {
+		return schedulertypes.Outcome{Status: schedulertypes.NeedsAttention, Message: backup.RemoteDisabledMessage}, nil
 	}
 	var entry *VolumeBackup
 	activityID, err := activitylib.RunHandlerActivity(ctx, s.activityService, activitylib.HandlerOptions{
@@ -1828,6 +1840,9 @@ func (s *VolumeService) runScheduledBackupInternal(ctx context.Context, policyID
 		return schedulertypes.Outcome{}, err
 	}
 	slog.InfoContext(ctx, "Scheduled volume backup completed", "volume", policy.VolumeName, "backup_id", entry.ID, "remote_snapshot_id", entry.RemoteSnapshotID)
+	if remoteDisabled {
+		return schedulertypes.Outcome{Status: schedulertypes.Partial, ActivityID: activityID, Message: backup.RemoteDisabledMessage}, nil
+	}
 	return schedulertypes.Outcome{Status: schedulertypes.Succeeded, ActivityID: activityID}, nil
 }
 
@@ -1883,4 +1898,31 @@ func (s *VolumeService) removeVolumeBackupPolicyInternal(ctx context.Context, vo
 	if err := s.db.WithContext(ctx).Where("volume_name = ?", volumeName).Delete(&VolumeBackupPolicy{}).Error; err != nil {
 		slog.WarnContext(ctx, "Failed to delete volume backup policy", "volume", volumeName, "error", err)
 	}
+}
+
+func (s *VolumeService) disableMissingS3Internal(ctx context.Context, policy *VolumeBackupPolicy) (bool, error) {
+	if !policy.S3Enabled {
+		return false, nil
+	}
+	err := backup.CheckScheduledRemote(ctx, s.db, s.s3Destinations, "volume_backups", policy.S3DestinationID, "arcane-volume-backups/"+s.settingsService.GetSettingsConfig().InstanceID.Value)
+	if !errors.Is(err, backup.ErrRemoteRepositoryMissing) {
+		return false, nil
+	}
+	column := "enabled"
+	if policy.LocalEnabled {
+		column = "s3_enabled"
+	}
+	result := s.db.WithContext(ctx).Model(&VolumeBackupPolicy{}).
+		Where("id = ? AND s3_destination_id = ? AND enabled = ? AND s3_enabled = ? AND local_enabled = ?", policy.ID, policy.S3DestinationID, true, true, policy.LocalEnabled).
+		Update(column, false)
+	if result.Error != nil || result.RowsAffected == 0 {
+		return false, result.Error
+	}
+	if policy.LocalEnabled {
+		policy.S3Enabled = false
+	} else {
+		policy.Enabled = false
+	}
+	s.rescheduleVolumeBackupPolicyInternal(ctx, policy)
+	return true, nil
 }

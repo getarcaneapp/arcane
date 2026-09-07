@@ -96,6 +96,7 @@ type SystemVolumeBackupRunResult struct {
 
 // HistoryEntry is a common view over Arcane recovery and volume backup records.
 type HistoryEntry struct {
+	RemoteAvailable   *bool                   `json:"remoteAvailable,omitempty" gorm:"-"`
 	ID                string                  `json:"id" sortable:"true"`
 	Size              int64                   `json:"size" sortable:"true"`
 	CreatedAt         time.Time               `json:"createdAt" sortable:"true"`
