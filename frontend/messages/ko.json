@@ -3510,5 +3510,13 @@
   "editor_compose_updater_constraint_detail": "버전 제약 조건",
   "editor_compose_updater_constraint_info": "태그 업데이트에 대한 시맨틱 버전 제약 조건(예: 3.x 또는 >=3.1.0 <4.0.0). 제약 조건이 없으면 업데이트는 현재 메이저 버전 범위 내에서 이루어지며, 0.x 버전의 경우 현재 마이너 버전 범위 내에서 이루어집니다.",
   "editor_compose_updater_tag_pattern_detail": "태그 패턴",
-  "editor_compose_updater_tag_pattern_info": "정규 표현식이 태그 전체와 일치했습니다. (?P<version>\\d+\\.\\d+\\.\\d+)-alpine과 같이 명명된 캡처를 사용하여 변형을 선택하십시오."
+  "editor_compose_updater_tag_pattern_info": "정규 표현식이 태그 전체와 일치했습니다. (?P<version>\\d+\\.\\d+\\.\\d+)-alpine과 같이 명명된 캡처를 사용하여 변형을 선택하십시오.",
+  "activity_type_job_run": "자동화 실행",
+  "jobs_resolve_run": "검토 후 조치",
+  "jobs_resolve_description": "이 중단된 실행을 검토하고 그 결과를 확인했는지 확인해 주십시오. 이 문제를 해결하면 실행 내역이 유지되며, 이후 예약된 작업이 진행될 수 있습니다. 이 경우 업데이트가 실행되거나 해당 실행이 성공으로 표시되지는 않습니다.",
+  "jobs_resolution_details": "{user} 에 의해 해결됨 {date}",
+  "jobs_activity_summary": "활동 실행",
+  "jobs_activity_output": "작동 출력",
+  "jobs_attention_schedule_blocked": "이 실행은 검토가 필요하며, 이 작업의 후속 실행을 차단합니다.",
+  "jobs_resolution_reason": "결의 사유"
 }
