@@ -2183,7 +2183,7 @@
   "version_info_tag": "Image Tag",
   "version_info_full_commit": "Full Commit Hash",
   "go_version": "Phiên bản Go",
-  "version_info_node_version": "Phiên bản nút",
+  "version_info_node_version": "Phiên bản Node",
   "version_info_sveltekit_version": "Phiên bản SvelteKit",
   "build_time": "Thời gian Build",
   "version_info_digest": "Image Digest",
@@ -3509,6 +3509,6 @@
   "editor_compose_updater_strategy_info": "Mặc định là \"auto\": các thẻ phiên bản ngữ nghĩa ổn định sẽ tuân theo các thẻ mới hơn đủ điều kiện; các thẻ động như \"latest\" và \"alpine\" sẽ tuân theo các thay đổi trong bản tóm tắt. Đặt thành \"digest\" để giữ nguyên thẻ hiện tại, hoặc đặt thành \"tag\" để yêu cầu lựa chọn dựa trên phiên bản.",
   "editor_compose_updater_constraint_detail": "Hạn chế về phiên bản",
   "editor_compose_updater_constraint_info": "Hạn chế phiên bản theo ngữ nghĩa đối với các bản cập nhật thẻ, chẳng hạn như 3.x hoặc >=3.1.0 <4.0.0. Nếu không có hạn chế này, các bản cập nhật sẽ vẫn nằm trong phạm vi phiên bản chính hiện tại, hoặc phiên bản phụ hiện tại đối với các phiên bản 0.x.",
-  "editor_compose_updater_tag_pattern_detail": "Tag pattern",
-  "editor_compose_updater_tag_pattern_info": "Regular expression matched against the whole tag. Use a named version capture to select a variant, such as (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
+  "editor_compose_updater_tag_pattern_detail": "Mẫu thẻ",
+  "editor_compose_updater_tag_pattern_info": "Biểu thức chính quy được so khớp với toàn bộ thẻ. Sử dụng biến bắt giữ có tên để chọn một biến thể, chẳng hạn như (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
 }
