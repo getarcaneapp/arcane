@@ -3500,5 +3500,15 @@
   "jobs_local_health_check": "Yerel çevre sağlığı",
   "jobs_health_check": "Çevre sağlığı",
   "jobs_settings_details": "Ayarlar ve ayrıntılar",
-  "jobs_health_scope_description": "Bu ortamın durumunu ve bağlantı durumunu kontrol eder."
+  "jobs_health_scope_description": "Bu ortamın durumunu ve bağlantı durumunu kontrol eder.",
+  "editor_compose_updater_detail": "Görsel güncelleme politikası",
+  "editor_compose_updater_info": "Proje varsayılanları tüm hizmetler için geçerlidir. Hizmet güncelleyici alanları, proje varsayılanlarını geçersiz kılar. Her alan için açıkça belirtilen güncelleyici etiketleri önceliklidir.",
+  "editor_compose_updater_enabled_detail": "Görüntü güncellemelerini etkinleştir",
+  "editor_compose_updater_enabled_info": "Boolean. Etkilenen hizmetlerdeki resim güncellemelerini devre dışı bırakmak için false olarak ayarlayın.",
+  "editor_compose_updater_strategy_detail": "Güncelleme stratejisi",
+  "editor_compose_updater_strategy_info": "Varsayılan ayar “auto”dur: Tam ve kararlı semantik sürüm etiketleri, daha yeni ve uygun etiketleri takip eder; “latest” ve “alpine” gibi hareketli etiketler ise özet değişikliklerini takip eder. Mevcut etiketi korumak için “digest” seçeneğini, sürüm tabanlı seçim gerektirmek için ise “tag” seçeneğini ayarlayın.",
+  "editor_compose_updater_constraint_detail": "Sürüm kısıtlaması",
+  "editor_compose_updater_constraint_info": "Etiket güncellemeleri için anlamsal sürüm kısıtlaması; örneğin 3.x veya >=3.1.0 <4.0.0. Kısıtlama olmadığında, güncellemeler mevcut ana sürüm kapsamında kalır; 0.x sürümlerinde ise mevcut alt sürüm kapsamında kalır.",
+  "editor_compose_updater_tag_pattern_detail": "Tag pattern",
+  "editor_compose_updater_tag_pattern_info": "Regular expression matched against the whole tag. Use a named version capture to select a variant, such as (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
 }
