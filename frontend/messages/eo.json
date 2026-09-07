@@ -3509,6 +3509,6 @@
   "editor_compose_updater_strategy_info": "Defaŭlte estas agordita al aŭtomata reĝimo: stabilaj semantikaj versioetikedoj sekvas pli novajn elekteblajn etikedojn; moviĝemaj etikedoj kiel latest kaj alpine sekvas digestŝanĝojn. Agordu digeston por konservi la aktualan etikedon, aŭ por etikedi tiel, ke necesas elekto bazita sur versio.",
   "editor_compose_updater_constraint_detail": "Versia limigo",
   "editor_compose_updater_constraint_info": "Semantika versio-kondiĉo por etikedaj ĝisdatigoj, ekzemple 3.x aŭ >=3.1.0 <4.0.0. Sen kondiĉo, ĝisdatigoj restas ene de la nuna ĉefa versio, aŭ ene de la nuna malgranda versio por 0.x.",
-  "editor_compose_updater_tag_pattern_detail": "Tag pattern",
-  "editor_compose_updater_tag_pattern_info": "Regular expression matched against the whole tag. Use a named version capture to select a variant, such as (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
+  "editor_compose_updater_tag_pattern_detail": "Etikedpatrono",
+  "editor_compose_updater_tag_pattern_info": "Regula esprimo kongruas kun la tuta etikedo. Uzu nomitan kaptilon por elekti varianton, ekzemple (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
 }
