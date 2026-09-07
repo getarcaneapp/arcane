@@ -3510,5 +3510,13 @@
   "editor_compose_updater_constraint_detail": "Versionsbegrænsning",
   "editor_compose_updater_constraint_info": "Semantisk versionsbegrænsning for tag-opdateringer, f.eks. 3.x eller >=3.1.0 <4.0.0. Uden en sådan begrænsning forbliver opdateringerne inden for den aktuelle hovedversion eller den aktuelle underversion for 0.x.",
   "editor_compose_updater_tag_pattern_detail": "Tag-mønster",
-  "editor_compose_updater_tag_pattern_info": "Det regulære udtryk blev matchet mod hele tagget. Brug en navngivet version af en capture for at vælge en variant, f.eks. (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
+  "editor_compose_updater_tag_pattern_info": "Det regulære udtryk blev matchet mod hele tagget. Brug en navngivet version af en capture for at vælge en variant, f.eks. (?P<version>\\d+\\.\\d+\\.\\d+)-alpine.",
+  "activity_type_job_run": "Automatiseringskørsel",
+  "jobs_resolve_run": "Beslutning efter gennemgang",
+  "jobs_resolve_description": "Bekræft, at du har gennemgået denne afbrudte kørsel og kontrolleret resultaterne. Når du løser problemet, bevares historikken, og det senere planlagte arbejde kan fortsætte. Der udføres ikke opdateringer, og kørslen markeres ikke som vellykket.",
+  "jobs_resolution_details": "Besluttet af {user} den {date}",
+  "jobs_activity_summary": "Løbeaktivitet",
+  "jobs_activity_output": "Driftsydelse",
+  "jobs_attention_schedule_blocked": "Dette kørsel skal gennemgås og blokerer senere kørsler af denne opgave.",
+  "jobs_resolution_reason": "Årsag til beslutningen"
 }
