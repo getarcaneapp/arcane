@@ -3510,5 +3510,13 @@
   "editor_compose_updater_constraint_detail": "Hạn chế về phiên bản",
   "editor_compose_updater_constraint_info": "Hạn chế phiên bản theo ngữ nghĩa đối với các bản cập nhật thẻ, chẳng hạn như 3.x hoặc >=3.1.0 <4.0.0. Nếu không có hạn chế này, các bản cập nhật sẽ vẫn nằm trong phạm vi phiên bản chính hiện tại, hoặc phiên bản phụ hiện tại đối với các phiên bản 0.x.",
   "editor_compose_updater_tag_pattern_detail": "Mẫu thẻ",
-  "editor_compose_updater_tag_pattern_info": "Biểu thức chính quy được so khớp với toàn bộ thẻ. Sử dụng biến bắt giữ có tên để chọn một biến thể, chẳng hạn như (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
+  "editor_compose_updater_tag_pattern_info": "Biểu thức chính quy được so khớp với toàn bộ thẻ. Sử dụng biến bắt giữ có tên để chọn một biến thể, chẳng hạn như (?P<version>\\d+\\.\\d+\\.\\d+)-alpine.",
+  "activity_type_job_run": "Chạy tự động hóa",
+  "jobs_resolve_run": "Quyết định sau khi xem xét",
+  "jobs_resolve_description": "Hãy xác nhận rằng bạn đã xem xét quá trình chạy bị gián đoạn này và kiểm tra kết quả của nó. Việc giải quyết vấn đề này sẽ giữ nguyên lịch sử của quá trình và cho phép các tác vụ được lên lịch sau đó tiếp tục diễn ra. Việc này sẽ không thực hiện các bản cập nhật cũng như không đánh dấu quá trình chạy này là thành công.",
+  "jobs_resolution_details": "Được giải quyết bởi {user} vào ngày {date}",
+  "jobs_activity_summary": "Hoạt động chạy bộ",
+  "jobs_activity_output": "Kết quả hoạt động",
+  "jobs_attention_schedule_blocked": "Quá trình chạy này cần được rà soát và sẽ ngăn cản các lần chạy tiếp theo của công việc này.",
+  "jobs_resolution_reason": "Lý do ra quyết định"
 }
