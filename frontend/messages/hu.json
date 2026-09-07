@@ -3510,5 +3510,13 @@
   "editor_compose_updater_constraint_detail": "Verziókorlátozás",
   "editor_compose_updater_constraint_info": "Szemantikus verziókorlátozás a címkék frissítéseihez, például 3.x vagy >=3.1.0 <4.0.0. Korlátozás hiányában a frissítések az aktuális főverzión belül maradnak, illetve 0.x esetén az aktuális alverzión belül.",
   "editor_compose_updater_tag_pattern_detail": "Címke-séma",
-  "editor_compose_updater_tag_pattern_info": "A reguláris kifejezés a teljes címkére vonatkozott. Változat kiválasztásához használjon névvel ellátott változat-rögzítést, például: (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
+  "editor_compose_updater_tag_pattern_info": "A reguláris kifejezés a teljes címkére vonatkozott. Változat kiválasztásához használjon névvel ellátott változat-rögzítést, például: (?P<version>\\d+\\.\\d+\\.\\d+)-alpine.",
+  "activity_type_job_run": "Automatizálási futtatás",
+  "jobs_resolve_run": "A felülvizsgálat utáni döntés",
+  "jobs_resolve_description": "Kérjük, erősítse meg, hogy áttekintette ezt a megszakított futtatást, és ellenőrizte annak eredményeit. A hiba kijavításával a futtatás előzményei megmaradnak, és a később ütemezett feladatok folytatódhatnak. A rendszer nem hajt végre frissítéseket, és nem jelöli ezt a futtatást sikeresnek.",
+  "jobs_resolution_details": "{user} által elfogadva  dátum: {date}",
+  "jobs_activity_summary": "Futás tevékenység",
+  "jobs_activity_output": "Működési kimenet",
+  "jobs_attention_schedule_blocked": "Ezt a futtatást felül kell vizsgálni, és ez megakadályozza a feladat későbbi futtatásait.",
+  "jobs_resolution_reason": "A határozat indoka"
 }
