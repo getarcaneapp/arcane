@@ -3500,5 +3500,15 @@
   "jobs_local_health_check": "Gezondheid en milieu op lokaal niveau",
   "jobs_health_check": "Milieu en gezondheid",
   "jobs_settings_details": "Instellingen en details",
-  "jobs_health_scope_description": "Controleert de status en de connectiviteit van deze omgeving."
+  "jobs_health_scope_description": "Controleert de status en de connectiviteit van deze omgeving.",
+  "editor_compose_updater_detail": "Beleid inzake het bijwerken van afbeeldingen",
+  "editor_compose_updater_info": "De standaardinstellingen van het project gelden voor alle services. De velden van de service-updater hebben voorrang op de standaardinstellingen van het project. Expliciete labels van de updater hebben voor elk veld voorrang.",
+  "editor_compose_updater_enabled_detail": "Afbeeldingsupdates inschakelen",
+  "editor_compose_updater_enabled_info": "Booleaanse waarde. Stel deze in op ‘false’ om het bijwerken van afbeeldingen voor de betreffende diensten uit te schakelen.",
+  "editor_compose_updater_strategy_detail": "Strategie bijwerken",
+  "editor_compose_updater_strategy_info": "Standaard is dit ingesteld op 'auto': volledige stabiele semantische versietags volgen de nieuwste in aanmerking komende tags; bewegende tags zoals 'latest' en 'alpine' volgen de wijzigingen in de digest. Stel 'digest' in om de huidige tag te behouden, of 'tag' om selectie op basis van de versie te vereisen.",
+  "editor_compose_updater_constraint_detail": "Versiebeperking",
+  "editor_compose_updater_constraint_info": "Semantische versiebeperking voor tag-updates, zoals 3.x of >=3.1.0 <4.0.0. Zonder een beperking blijven updates binnen de huidige hoofdversie, of binnen de huidige subversie voor 0.x.",
+  "editor_compose_updater_tag_pattern_detail": "Tag pattern",
+  "editor_compose_updater_tag_pattern_info": "Regular expression matched against the whole tag. Use a named version capture to select a variant, such as (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
 }
