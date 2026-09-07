@@ -3510,5 +3510,13 @@
   "editor_compose_updater_constraint_detail": "Restricción de versión",
   "editor_compose_updater_constraint_info": "Restricción de versión semántica para las actualizaciones de etiquetas, como 3.x o >=3.1.0 <4.0.0. Sin una restricción, las actualizaciones se mantienen dentro de la versión principal actual o, en el caso de 0.x, dentro de la versión secundaria actual.",
   "editor_compose_updater_tag_pattern_detail": "Patrón de etiquetas",
-  "editor_compose_updater_tag_pattern_info": "La expresión regular se ha aplicado a toda la etiqueta. Utiliza una captura con nombre para seleccionar una variante, como (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
+  "editor_compose_updater_tag_pattern_info": "La expresión regular se ha aplicado a toda la etiqueta. Utiliza una captura con nombre para seleccionar una variante, como (?P<version>\\d+\\.\\d+\\.\\d+)-alpine.",
+  "activity_type_job_run": "Ejecución de la automatización",
+  "jobs_resolve_run": "Decisión tras la revisión",
+  "jobs_resolve_description": "Confirma que has revisado esta ejecución interrumpida y comprobado sus resultados. Al resolverla, se conserva su historial y se permite que continúen las tareas programadas posteriores. No se ejecutan actualizaciones ni se marca esta ejecución como satisfactoria.",
+  "jobs_resolution_details": "Resuelto por {user} el {date}",
+  "jobs_activity_summary": "Actividad de carrera",
+  "jobs_activity_output": "Salida de funcionamiento",
+  "jobs_attention_schedule_blocked": "Esta ejecución debe revisarse y bloquea las ejecuciones posteriores de este trabajo.",
+  "jobs_resolution_reason": "Motivo de la resolución"
 }
