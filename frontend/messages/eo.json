@@ -3510,5 +3510,13 @@
   "editor_compose_updater_constraint_detail": "Versia limigo",
   "editor_compose_updater_constraint_info": "Semantika versio-kondiĉo por etikedaj ĝisdatigoj, ekzemple 3.x aŭ >=3.1.0 <4.0.0. Sen kondiĉo, ĝisdatigoj restas ene de la nuna ĉefa versio, aŭ ene de la nuna malgranda versio por 0.x.",
   "editor_compose_updater_tag_pattern_detail": "Etikedpatrono",
-  "editor_compose_updater_tag_pattern_info": "Regula esprimo kongruas kun la tuta etikedo. Uzu nomitan kaptilon por elekti varianton, ekzemple (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
+  "editor_compose_updater_tag_pattern_info": "Regula esprimo kongruas kun la tuta etikedo. Uzu nomitan kaptilon por elekti varianton, ekzemple (?P<version>\\d+\\.\\d+\\.\\d+)-alpine.",
+  "activity_type_job_run": "Aŭtomatigo ruliĝas",
+  "jobs_resolve_run": "Decido post revizio",
+  "jobs_resolve_description": "Konfirmu, ke vi reviziis ĉi tiun interrompitan kuron kaj kontrolis ĝiajn rezultojn. Solvi ĝin konservas ĝian historion kaj permesas al posta planita laboro daŭri. Ĝi ne efektivigas ĝisdatigojn nek markas ĉi tiun kuron kiel sukcesan.",
+  "jobs_resolution_details": "Solvis {user} je {date}",
+  "jobs_activity_summary": "Kuru aktivecon",
+  "jobs_activity_output": "Operacia eligo",
+  "jobs_attention_schedule_blocked": "Ĉi tiu rundo bezonas revizion kaj blokas la postajn rundojn de ĉi tiu tasko.",
+  "jobs_resolution_reason": "Kialo de rezolucio"
 }
