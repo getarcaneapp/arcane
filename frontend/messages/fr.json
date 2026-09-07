@@ -3510,5 +3510,13 @@
   "editor_compose_updater_constraint_detail": "Contrainte de version",
   "editor_compose_updater_constraint_info": "Contrainte de version sémantique pour les mises à jour des balises, par exemple 3.x ou >=3.1.0 <4.0.0. En l'absence de contrainte, les mises à jour restent dans la même version majeure, ou dans la même version mineure pour les versions 0.x.",
   "editor_compose_updater_tag_pattern_detail": "Modèle de balise",
-  "editor_compose_updater_tag_pattern_info": "L'expression régulière a été appliquée à l'ensemble de la balise. Utilisez une capture nommée pour sélectionner une variante, par exemple : (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
+  "editor_compose_updater_tag_pattern_info": "L'expression régulière a été appliquée à l'ensemble de la balise. Utilisez une capture nommée pour sélectionner une variante, par exemple : (?P<version>\\d+\\.\\d+\\.\\d+)-alpine.",
+  "activity_type_job_run": "Exécution de l'automatisation",
+  "jobs_resolve_run": "Décision prise après examen",
+  "jobs_resolve_description": "Vérifiez que vous avez bien examiné cette exécution interrompue et que vous en avez vérifié les résultats. Le fait de la résoudre permet de conserver son historique et de poursuivre les tâches prévues ultérieurement. Cela n'entraîne pas l'exécution de mises à jour ni ne marque cette exécution comme réussie.",
+  "jobs_resolution_details": "Problème résolu par {user} le {date}",
+  "jobs_activity_summary": "Activité de course à pied",
+  "jobs_activity_output": "Résultat de l'opération",
+  "jobs_attention_schedule_blocked": "Cette exécution doit être vérifiée et bloque les exécutions suivantes de cette tâche.",
+  "jobs_resolution_reason": "Motif de la résolution"
 }
