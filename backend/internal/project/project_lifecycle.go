@@ -74,7 +74,30 @@ func (s *ProjectService) pullAndReconcileImageInternal(
 	return nil
 }
 
-func (s *ProjectService) UpdateProjectServices(ctx context.Context, projectID string, servicesToUpdate []string, user common.User) error {
+func (s *ProjectService) UpdateProjectServices(ctx context.Context, projectID string, servicesToUpdate []string, user common.User, discoverTags bool) error {
+	proj, err := s.getMutableProjectInternal(ctx, projectID)
+	if err != nil {
+		return err
+	}
+	if discoverTags {
+		effective, _, err := s.loadComposeProjectForProjectInternal(ctx, proj, servicesToUpdate...)
+		if err != nil {
+			return errors.WrapIf(err, "load project for service image checks")
+		}
+		changes, err := s.projectServiceImageChangesInternal(ctx, proj, effective)
+		if err != nil {
+			return err
+		}
+		if len(changes) > 0 {
+			if _, err := s.persistProjectImageChangesInternal(ctx, projectID, changes); err != nil {
+				return err
+			}
+		}
+	}
+	return s.updateProjectServicesInternal(ctx, projectID, servicesToUpdate, user)
+}
+
+func (s *ProjectService) updateProjectServicesInternal(ctx context.Context, projectID string, servicesToUpdate []string, user common.User) error {
 	projectFromDb, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
 		return err

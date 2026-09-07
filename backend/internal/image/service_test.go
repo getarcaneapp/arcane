@@ -2,6 +2,7 @@ package image
 
 import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/imageref"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 
@@ -35,6 +36,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 	"github.com/getarcaneapp/arcane/types/v2/vulnerability"
+	"github.com/moby/moby/api/types/container"
 	dockercontainer "github.com/moby/moby/api/types/container"
 	dockertypesimage "github.com/moby/moby/api/types/image"
 	dockerregistry "github.com/moby/moby/api/types/registry"
@@ -687,3 +689,55 @@ type testProjectRow struct {
 }
 
 func (testProjectRow) TableName() string { return "projects" }
+
+func TestImageServiceContainerTagUpdatesStayScoped(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&imageupdate.ImageUpdateRecord{}))
+	svc := &ImageService{db: &database.DB{DB: db}}
+	now := time.Now().UTC()
+	firstLabels := map[string]string{"com.getarcaneapp.arcane.updater.strategy": "tag", "com.getarcaneapp.arcane.updater.constraint": "3.x"}
+	secondLabels := map[string]string{"com.getarcaneapp.arcane.updater.strategy": "tag", "com.getarcaneapp.arcane.updater.constraint": "4.x"}
+	firstTarget, secondTarget := "3.2.0", "4.0.0"
+	records := []imageupdate.ImageUpdateRecord{
+		{ID: "shared-image", Repository: "docker.io/library/example", Tag: "3.1.0", CurrentVersion: "3.1.0", UpdateType: "digest", CheckTime: now},
+		{ID: "container::first", PolicyKey: imageref.UpdatePolicyKey("example:3.1.0", firstLabels), ContainerID: "first", ImageID: "shared-image", Repository: "docker.io/library/example", Tag: "3.1.0", CurrentVersion: "3.1.0", LatestVersion: &firstTarget, HasUpdate: true, UpdateType: "tag", CheckTime: now.Add(time.Second)},
+		{ID: "container::second", PolicyKey: imageref.UpdatePolicyKey("example:3.1.0", secondLabels), ContainerID: "second", ImageID: "shared-image", Repository: "docker.io/library/example", Tag: "3.1.0", CurrentVersion: "3.1.0", LatestVersion: &secondTarget, HasUpdate: true, UpdateType: "tag", CheckTime: now.Add(2 * time.Second)},
+	}
+	require.NoError(t, db.Create(&records).Error)
+	scoped, err := svc.GetUpdateInfoByContainers(t.Context(), []container.Summary{{ID: "first", Image: "example:3.1.0", Labels: firstLabels}, {ID: "second", Image: "example:3.1.0", Labels: secondLabels}, {ID: "unseen"}})
+	require.NoError(t, err)
+	require.Len(t, scoped, 2)
+	require.Equal(t, firstTarget, scoped["first"].LatestVersion)
+	require.Equal(t, secondTarget, scoped["second"].LatestVersion)
+	byImage, err := svc.GetUpdateInfoByImageIDs(t.Context(), []string{"shared-image"})
+	require.NoError(t, err)
+	require.False(t, byImage["shared-image"].HasUpdate)
+	require.Equal(t, "digest", byImage["shared-image"].UpdateType)
+	byRef, err := svc.GetUpdateInfoByImageRefs(t.Context(), []string{"example:3.1.0"})
+	require.NoError(t, err)
+	require.False(t, byRef["example:3.1.0"].HasUpdate)
+	require.Empty(t, byRef["example:3.1.0"].LatestVersion)
+	for _, ordered := range [][]imageupdate.ImageUpdateRecord{records, {records[2], records[1], records[0]}} {
+		aggregate := buildUpdateMapInternal(ordered)["shared-image"]
+		require.True(t, aggregate.HasUpdate)
+		require.Empty(t, aggregate.CurrentVersion)
+		require.Nil(t, aggregate.LatestVersion)
+		require.Nil(t, aggregate.LatestDigest)
+		require.Empty(t, aggregate.UpdateType)
+		require.Equal(t, records[2].CheckTime, aggregate.CheckTime)
+	}
+	for _, currentLabels := range []map[string]string{
+		{},
+		{"com.getarcaneapp.arcane.updater.strategy": "digest"},
+		{"com.getarcaneapp.arcane.updater.strategy": "tag", "com.getarcaneapp.arcane.updater.constraint": "3.1.x"},
+		{"com.getarcaneapp.arcane.updater.strategy": "tag", "com.getarcaneapp.arcane.updater.constraint": "3.x", "com.getarcaneapp.arcane.updater.tag-pattern": ".*"},
+		{"com.getarcaneapp.arcane.updater.strategy": "tag", "com.getarcaneapp.arcane.updater.constraint": "3.x", "com.getarcaneapp.arcane.updater": "false"},
+	} {
+		checks, err := svc.GetUpdateInfoByContainers(t.Context(), []container.Summary{{ID: "first", Image: "example:3.1.0", Labels: currentLabels}, {ID: "second", Image: "example:3.1.0", Labels: secondLabels}})
+		require.NoError(t, err)
+		require.NotContains(t, checks, "first")
+		require.Contains(t, checks, "second")
+	}
+
+}

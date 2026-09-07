@@ -1,7 +1,14 @@
 import { m } from '#lib/paraglide/messages.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
-import type { Project, ProjectStatusCounts, ProjectTag, ProjectTagColor, ProjectTagOption } from '#lib/types/swarm.js';
+import type {
+	Project,
+	ProjectStatusCounts,
+	ProjectUpdateInfo,
+	ProjectTag,
+	ProjectTagColor,
+	ProjectTagOption
+} from '#lib/types/swarm.js';
 import type { ProjectWorkspaceFileDraft } from '#lib/types/project-workspace.js';
 import { readNdjsonStream } from '#lib/utils/streaming.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
@@ -85,6 +92,13 @@ class ProjectService extends BaseAPIService {
 		form.append('manifest', JSON.stringify({ fileChanges }));
 		for (const file of uploads) form.append('files', file, file.name);
 		return this.handleResponse(this.api.post(`/environments/${envId}/projects`, form));
+	}
+
+	async checkUpdates(projectId: string): Promise<ProjectUpdateInfo> {
+		const envId = await this.resolveEnvironmentId();
+		return this.handleResponse(
+			this.api.post(`/environments/${envId}/updater/projects/${encodeURIComponent(projectId)}/check`, {})
+		);
 	}
 
 	async getProject(projectId: string): Promise<Project> {

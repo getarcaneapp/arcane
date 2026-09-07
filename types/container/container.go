@@ -867,6 +867,9 @@ type Summary struct {
 	// Required: false
 	IconDarkURL string `json:"iconDarkUrl,omitempty"`
 
+	// UpdateStrategy is the strategy resolved by the updater for this image and policy.
+	UpdateStrategy string `json:"updateStrategy,omitempty"`
+
 	// UpdateInfo contains image update information for this container.
 	//
 	// Required: false

@@ -34,6 +34,9 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/samber/hot"
 	"github.com/samber/mo"
+	"go.getarcane.app/updater"
+	"go.getarcane.app/updater/labels"
+	"go.getarcane.app/updater/pkg/utils/tagpolicy"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 )
@@ -171,7 +174,7 @@ func (s *ImageService) RemoveImage(ctx context.Context, id string, force bool, u
 
 	if s.db != nil {
 		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			return tx.Delete(&imageupdate.ImageUpdateRecord{}, "id = ?", id).Error
+			return tx.Delete(&imageupdate.ImageUpdateRecord{}, "id = ? OR image_id = ?", id, id).Error
 		}); err != nil {
 			slog.WarnContext(ctx, "failed to delete image update record", "id", id, "error", err)
 		}
@@ -614,7 +617,7 @@ func (s *ImageService) cleanupImageUpdateRecordsAfterPruneInternal(ctx context.C
 	}
 
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return tx.Where("id IN ?", idsToDelete).Delete(&imageupdate.ImageUpdateRecord{}).Error
+		return tx.Where("id IN ? OR image_id IN ?", idsToDelete, idsToDelete).Delete(&imageupdate.ImageUpdateRecord{}).Error
 	}); err != nil {
 		slog.WarnContext(ctx, "failed to clean up image update records after prune", "error", err)
 	}
@@ -648,15 +651,46 @@ func (s *ImageService) GetUpdateInfoByImageIDs(ctx context.Context, imageIDs []s
 	}
 
 	var updateRecords []imageupdate.ImageUpdateRecord
-	if err := s.db.WithContext(ctx).Where("id IN ?", imageIDs).Find(&updateRecords).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("container_id = ? AND project_id = ? AND id IN ?", "", "", imageIDs).Find(&updateRecords).Error; err != nil {
 		return nil, errors.WrapIf(err, "failed to fetch update records")
 	}
 
 	result := make(map[string]*imagetypes.UpdateInfo, len(updateRecords))
 	for i := range updateRecords {
-		result[updateRecords[i].ID] = buildUpdateInfo(&updateRecords[i])
+		result[updateRecords[i].ID] = updateRecords[i].UpdateInfo()
 	}
 
+	return result, nil
+}
+
+// GetUpdateInfoByContainers returns checks matching each container's current policy.
+func (s *ImageService) GetUpdateInfoByContainers(ctx context.Context, containers []container.Summary) (map[string]*imagetypes.UpdateInfo, error) {
+	result := make(map[string]*imagetypes.UpdateInfo)
+	if s.db == nil || len(containers) == 0 {
+		return result, nil
+	}
+	containerIDs := make([]string, 0, len(containers))
+	policies := make(map[string]string, len(containers))
+	for _, cnt := range containers {
+		policy, policyErr := tagpolicy.Resolve(cnt.Image, updater.DefaultLabelPolicy().TagPolicy(cnt.Labels))
+		if (policyErr == nil && policy.Strategy == "digest") || labels.IsUpdateDisabled(cnt.Labels) {
+			continue
+		}
+		containerIDs = append(containerIDs, cnt.ID)
+		policies[cnt.ID] = imageref.UpdatePolicyKey(cnt.Image, cnt.Labels)
+	}
+	if len(containerIDs) == 0 {
+		return result, nil
+	}
+	var records []imageupdate.ImageUpdateRecord
+	if err := s.db.WithContext(ctx).Where("container_id IN ?", containerIDs).Find(&records).Error; err != nil {
+		return nil, errors.WrapIf(err, "failed to fetch container update records")
+	}
+	for i := range records {
+		if records[i].PolicyKey == policies[records[i].ContainerID] {
+			result[records[i].ContainerID] = records[i].UpdateInfo()
+		}
+	}
 	return result, nil
 }
 
@@ -704,7 +738,7 @@ func (s *ImageService) GetUpdateInfoByImageRefs(ctx context.Context, imageRefs [
 
 	var updateRecords []imageupdate.ImageUpdateRecord
 	if err := s.db.WithContext(ctx).
-		Where("tag IN ? AND repository IN ?", tags, repositoryCandidates).
+		Where("container_id = ? AND project_id = ? AND tag IN ? AND repository IN ?", "", "", tags, repositoryCandidates).
 		Order("check_time DESC").
 		Find(&updateRecords).Error; err != nil {
 		return nil, errors.WrapIf(err, "failed to fetch update records by image refs")
@@ -712,7 +746,7 @@ func (s *ImageService) GetUpdateInfoByImageRefs(ctx context.Context, imageRefs [
 
 	for _, lookup := range lookups {
 		if record := selectLatestMatchingImageUpdateRecordInternal(lookup, updateRecords); record != nil {
-			result[lookup.originalRef] = buildUpdateInfo(record)
+			result[lookup.originalRef] = record.UpdateInfo()
 		}
 	}
 
@@ -764,14 +798,14 @@ func (s *ImageService) ListImagesPaginated(ctx context.Context, params paginatio
 	}
 
 	if s.db != nil && len(imageIDs) > 0 {
-		if err := s.db.WithContext(ctx).Where("id IN ?", imageIDs).Find(&updateRecords).Error; err != nil {
+		if err := s.db.WithContext(ctx).Where("id IN ? OR image_id IN ?", imageIDs, imageIDs).Find(&updateRecords).Error; err != nil {
 			return nil, pagination.Response{}, errors.WrapIf(err, "failed to fetch image update records")
 		}
 	}
 
 	projectIDByName := s.BuildProjectIDMap(ctx, containers)
 	usageMap := BuildVolumeUsageMap(containers, projectIDByName)
-	updateMap := buildUpdateMap(updateRecords)
+	updateMap := buildUpdateMapInternal(updateRecords)
 
 	items := MapDockerImagesToDTOs(dockerImages, containers, usageMap, updateMap, nil)
 
@@ -968,10 +1002,24 @@ func BuildVolumeUsageMap(containers []container.Summary, projectIDByName map[str
 	return usageMap
 }
 
-func buildUpdateMap(records []imageupdate.ImageUpdateRecord) map[string]*imageupdate.ImageUpdateRecord {
+func buildUpdateMapInternal(records []imageupdate.ImageUpdateRecord) map[string]*imageupdate.ImageUpdateRecord {
 	updateMap := make(map[string]*imageupdate.ImageUpdateRecord, len(records))
 	for i := range records {
-		updateMap[records[i].ID] = &records[i]
+		if records[i].ContainerID == "" {
+			updateMap[records[i].ID] = &records[i]
+		}
+	}
+	for i := range records {
+		record := &records[i]
+		if record.ContainerID == "" || record.ImageID == "" || !record.HasUpdate {
+			continue
+		}
+		// A shared image can have several container policies and target tags.
+		aggregate := &imageupdate.ImageUpdateRecord{ID: record.ImageID, HasUpdate: true, CheckTime: record.CheckTime}
+		if existing := updateMap[record.ImageID]; existing != nil && existing.CheckTime.After(aggregate.CheckTime) {
+			aggregate.CheckTime = existing.CheckTime
+		}
+		updateMap[record.ImageID] = aggregate
 	}
 	return updateMap
 }
@@ -1049,24 +1097,6 @@ func determineRepoAndTag(di image.Summary) (repo, tag string) {
 	return "<none>", "<none>"
 }
 
-func buildUpdateInfo(updateRecord *imageupdate.ImageUpdateRecord) *imagetypes.UpdateInfo {
-	return &imagetypes.UpdateInfo{
-		HasUpdate:      updateRecord.HasUpdate,
-		UpdateType:     updateRecord.UpdateType,
-		CurrentVersion: updateRecord.CurrentVersion,
-		LatestVersion:  mo.PointerToOption(updateRecord.LatestVersion).OrEmpty(),
-		CurrentDigest:  mo.PointerToOption(updateRecord.CurrentDigest).OrEmpty(),
-		LatestDigest:   mo.PointerToOption(updateRecord.LatestDigest).OrEmpty(),
-		CheckTime:      updateRecord.CheckTime,
-		ResponseTimeMs: updateRecord.ResponseTimeMs,
-		Error:          mo.PointerToOption(updateRecord.LastError).OrEmpty(),
-		AuthMethod:     mo.PointerToOption(updateRecord.AuthMethod).OrEmpty(),
-		AuthUsername:   mo.PointerToOption(updateRecord.AuthUsername).OrEmpty(),
-		AuthRegistry:   mo.PointerToOption(updateRecord.AuthRegistry).OrEmpty(),
-		UsedCredential: updateRecord.UsedCredential,
-	}
-}
-
 func collectPinnedReferencesByImageIDInternal(containers []container.Summary) map[string][]string {
 	if len(containers) == 0 {
 		return nil
@@ -1136,7 +1166,7 @@ func MapDockerImagesToDTOs(dockerImages []image.Summary, containers []container.
 		}
 
 		if updateRecord, exists := updateMap[di.ID]; exists {
-			imageDto.UpdateInfo = buildUpdateInfo(updateRecord)
+			imageDto.UpdateInfo = updateRecord.UpdateInfo()
 		}
 
 		if vulnerabilityMap != nil {

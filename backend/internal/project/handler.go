@@ -966,7 +966,7 @@ func (h *ProjectHandler) updateProjectServicesActivityConfigInternal(services []
 		SuccessMessage:  "Project services updated successfully",
 		Queue:           true,
 		Action: func(runtimeCtx context.Context, projectID string, user common.User) error {
-			return h.projectService.UpdateProjectServices(runtimeCtx, projectID, services, user)
+			return h.projectService.UpdateProjectServices(runtimeCtx, projectID, services, user, true)
 		},
 		Error: projectArchivedActionErrorInternal(func(err error) error {
 			return huma.Error400BadRequest(errors.WithMessage(err, "Failed to update project").Error())

@@ -7,6 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	composetypes "github.com/compose-spec/compose-go/v2/types"
+	updaterlabels "go.getarcane.app/updater/labels"
+
 	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
 	"github.com/stretchr/testify/require"
 )
@@ -198,4 +201,98 @@ func TestNormalizeProjectTags(t *testing.T) {
 	}
 	_, err = NormalizeProjectTags(tooMany)
 	require.Error(t, err)
+}
+
+func TestUpdaterMetadataLabelsInternal(t *testing.T) {
+	const content = `x-arcane:
+  icon: alpine
+  updater:
+    enabled: true
+    strategy: tag
+    constraint: "3.x"
+    tag-pattern: 'v?(?P<version>\d+\.\d+\.\d+)'
+services:
+  inherited:
+    image: alpine:3.20.0
+  overridden:
+    image: alpine:3.20.0
+    x-arcane:
+      updater:
+        constraint: "=3.20.1"
+        enabled: false
+  explicit:
+    image: alpine:3.20.0
+    x-arcane:
+      updater:
+        constraint: "=3.20.1"
+    labels:
+      com.getarcaneapp.arcane.updater.strategy: digest
+      com.getarcaneapp.arcane.updater.constraint: ""
+      custom: keep
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "compose.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+	disk, err := LoadComposeProject(t.Context(), path, "metadata", dir, false, nil, nil, nil, false, nil, nil)
+	require.NoError(t, err)
+	memory, err := LoadComposeProjectFromContent(t.Context(), projecttypes.ComposeContentOptions{ComposeContent: content, WorkingDir: dir, ProjectName: "metadata"})
+	require.NoError(t, err)
+	for _, project := range []*composetypes.Project{disk, memory} {
+		inherited := project.Services["inherited"].Labels
+		require.Equal(t, "tag", inherited[updaterlabels.LabelUpdateStrategy])
+		require.Equal(t, "3.x", inherited[updaterlabels.LabelUpdateConstraint])
+		require.Equal(t, "true", inherited[updaterlabels.LabelUpdater])
+		overridden := project.Services["overridden"].Labels
+		require.Equal(t, "=3.20.1", overridden[updaterlabels.LabelUpdateConstraint])
+		require.Equal(t, "false", overridden[updaterlabels.LabelUpdater])
+		require.Equal(t, inherited[updaterlabels.LabelUpdateTagPattern], overridden[updaterlabels.LabelUpdateTagPattern])
+		explicit := project.Services["explicit"].Labels
+		require.Equal(t, "digest", explicit[updaterlabels.LabelUpdateStrategy])
+		require.Equal(t, "", explicit[updaterlabels.LabelUpdateConstraint])
+		require.Equal(t, "keep", explicit["custom"])
+	}
+	source, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, content, string(source), "loading must not rewrite source into labels")
+}
+
+func TestUpdaterMetadataValidationInternal(t *testing.T) {
+	for _, config := range []string{"updater: true", "updater: {enabled: maybe}", "updater: {strategy: newest}", "updater: {constraint: 123}", "updater: {tag-pattern: []}", "updater: {unknown: true}"} {
+		t.Run(config, func(t *testing.T) {
+			_, err := LoadComposeProjectFromContent(t.Context(), projecttypes.ComposeContentOptions{ComposeContent: "services:\n  app:\n    image: alpine:3.20.0\nx-arcane:\n  " + config + "\n", WorkingDir: t.TempDir(), ProjectName: "metadata"})
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "updater")
+		})
+	}
+}
+
+func TestUpdaterMetadataInterpolationAndIncludesInternal(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".env"), []byte("UPDATE_RANGE=3.20.x\nUPDATE_ENABLED=false\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "compose.yaml"), []byte(`include:
+  - included.yaml
+x-arcane:
+  updater:
+    strategy: tag
+    constraint: "${UPDATE_RANGE}"
+    enabled: "${UPDATE_ENABLED}"
+services:
+  main:
+    image: alpine:3.20.0
+`), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "included.yaml"), []byte(`services:
+  child:
+    image: alpine:3.20.0
+    x-arcane:
+      updater:
+        enabled: true
+        constraint: "=3.20.1"
+`), 0o600))
+	project, err := LoadComposeProject(t.Context(), filepath.Join(dir, "compose.yaml"), "metadata", dir, false, nil, nil, nil, false, nil, nil)
+	require.NoError(t, err)
+	require.Equal(t, "3.20.x", project.Services["main"].Labels[updaterlabels.LabelUpdateConstraint])
+	require.Equal(t, "false", project.Services["main"].Labels[updaterlabels.LabelUpdater])
+	require.Equal(t, "tag", project.Services["child"].Labels[updaterlabels.LabelUpdateStrategy])
+	require.Equal(t, "=3.20.1", project.Services["child"].Labels[updaterlabels.LabelUpdateConstraint])
+	require.Equal(t, "true", project.Services["child"].Labels[updaterlabels.LabelUpdater])
 }

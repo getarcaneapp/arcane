@@ -18,7 +18,6 @@
 	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '#lib/components/arcane-table/index.js';
 	import { UniversalMobileCard } from '#lib/components/arcane-table/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { imageService } from '#lib/services/image-service.js';
 	import { projectService } from '#lib/services/project-service.js';
 	import { FolderOpenIcon, LayersIcon, CalendarIcon, ProjectsIcon, GitBranchIcon, RefreshIcon } from '#lib/icons/index.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
@@ -82,8 +81,7 @@
 	}
 
 	async function handleCheckProjectUpdates(project: Project) {
-		const imageRefs = project.updateInfo?.imageRefs ?? [];
-		if (imageRefs.length === 0 || checkingProjectIds[project.id]) {
+		if (checkingProjectIds[project.id]) {
 			return;
 		}
 
@@ -95,10 +93,8 @@
 		try {
 			const operationResult = await tryCatch(
 				(async () => {
-					const results = await imageService.checkMultipleImages(imageRefs);
-					const firstError = Object.values(results)
-						.find((result) => !!result?.error?.trim())
-						?.error?.trim();
+					const result = await projectService.checkUpdates(project.id);
+					const firstError = result.errorMessage?.trim();
 					const hasErrors = !!firstError;
 					if (hasErrors) {
 						toast.error(firstError || m.containers_check_updates_failed());

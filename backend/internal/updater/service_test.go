@@ -1,7 +1,12 @@
 package updater
 
 import (
+	"fmt"
+
+	composetypes "github.com/compose-spec/compose-go/v2/types"
+	projectspkg "github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/notifications"
+	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 
@@ -15,6 +20,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -44,6 +50,7 @@ import (
 	"go.getarcane.app/updater"
 	"go.getarcane.app/updater/labels"
 	"go.getarcane.app/updater/refs"
+	updatertypes "go.getarcane.app/updater/types"
 	"gorm.io/gorm"
 )
 
@@ -96,9 +103,10 @@ func (f fakeUsedImageCollectorInternal) UsedImages(context.Context) (map[string]
 }
 
 type fakeProjectUpdaterInternal struct {
-	projects   map[string]updater.ComposeProject
-	updateErrs map[string]error
-	calls      []string
+	projects     map[string]updater.ComposeProject
+	updateErrs   map[string]error
+	calls        []string
+	imageChanges map[string]map[string]updatertypes.ServiceImageChange
 }
 
 func (f *fakeProjectUpdaterInternal) ProjectByComposeName(_ context.Context, composeName string) (updater.ComposeProject, error) {
@@ -113,6 +121,20 @@ func (f *fakeProjectUpdaterInternal) UpdateServices(_ context.Context, projectID
 	if f.updateErrs == nil {
 		return nil
 	}
+	return f.updateErrs[projectID]
+}
+
+func (f *fakeProjectUpdaterInternal) UpdateServiceImages(_ context.Context, projectID string, changes map[string]updatertypes.ServiceImageChange) error {
+	if f.imageChanges == nil {
+		f.imageChanges = map[string]map[string]updatertypes.ServiceImageChange{}
+	}
+	f.imageChanges[projectID] = changes
+	services := make([]string, 0, len(changes))
+	for service := range changes {
+		services = append(services, service)
+	}
+	slices.Sort(services)
+	f.calls = append(f.calls, projectID+":"+strings.Join(services, ","))
 	return f.updateErrs[projectID]
 }
 
@@ -679,6 +701,7 @@ func TestUpdaterService_ApplyPending_ProjectFailureDoesNotBlockOtherProjectsInte
 	}
 
 	inspectByID := map[string]container.InspectResponse{
+		"container-success-new": {ID: "container-success-new", Image: newImageIDUpdated, Config: &container.Config{Image: newRefUpdated, Labels: updatedLabels}, State: &container.State{Running: true}},
 		"container-fail": {
 			ID:    "container-fail",
 			Image: oldImageIDFailed,
@@ -765,12 +788,13 @@ func TestUpdaterService_ApplyPending_ProjectFailureDoesNotBlockOtherProjectsInte
 	result, err := svc.ApplyPending(ctx, arcaneupdater.Options{})
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	assert.Equal(t, 3, result.Updated, "updated count should include both image pulls and the successfully updated container")
+	assert.Equal(t, 1, result.Updated, "tag updates report successfully recreated containers")
 	assert.Equal(t, 1, result.Failed, "the failed project should be recorded as failed")
-	assert.GreaterOrEqual(t, len(result.Items), 4)
+	assert.Len(t, result.Items, 2)
 	assert.ElementsMatch(t, []string{newRefFailed, newRefUpdated}, puller.pulled)
 	assert.ElementsMatch(t, []string{"project-fail:app", "project-success:app"}, projectUpdater.calls)
 
+	assert.Equal(t, updatertypes.ServiceImageChange{ExpectedRef: oldRefUpdated, TargetRef: newRefUpdated}, projectUpdater.imageChanges["project-success"]["app"])
 	statusByResource := map[string]string{}
 	errorByResource := map[string]string{}
 	for _, item := range result.Items {
@@ -779,7 +803,7 @@ func TestUpdaterService_ApplyPending_ProjectFailureDoesNotBlockOtherProjectsInte
 	}
 
 	assert.Equal(t, string(updater.StatusFailed), statusByResource["container-fail"])
-	assert.Contains(t, errorByResource["container-fail"], "project-level update failed")
+	assert.Contains(t, errorByResource["container-fail"], "pull updated service images: unauthorized")
 	assert.Equal(t, string(updater.StatusUpdated), statusByResource["container-success"])
 
 	var recordedStatuses []updater.ResourceStatus
@@ -1042,4 +1066,126 @@ func setupProjectTestDBInternal(t *testing.T) *database.DB {
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&project.Project{}, &settings.SettingVariable{}, &imageupdate.ImageUpdateRecord{}, &event.Event{}))
 	return &database.DB{DB: db}
+}
+
+func TestUpdaterService_ScopedPendingRecordsIsolationInternal(t *testing.T) {
+	db := setupProjectTestDBInternal(t)
+	imageRef := "registry.example.com/team/app:1.2.3"
+	stored := []imageupdate.ImageUpdateRecord{
+		{ID: "shared-image", Repository: "registry.example.com/team/app", Tag: "1.2.3", HasUpdate: true, UpdateType: imageupdate.UpdateTypeDigest},
+		{ID: "container::tag-a", ContainerID: "tag-a", ImageID: "shared-image", Repository: "registry.example.com/team/app", Tag: "1.2.3", HasUpdate: true, UpdateType: imageupdate.UpdateTypeTag, LatestVersion: new("1.3.0")},
+		{ID: "container::tag-b", ContainerID: "tag-b", ImageID: "shared-image", Repository: "registry.example.com/team/app", Tag: "1.2.3", HasUpdate: true, UpdateType: imageupdate.UpdateTypeTag, LatestVersion: new("1.2.4")},
+	}
+	require.NoError(t, db.Create(&stored).Error)
+	containers := []container.Summary{
+		{ID: "tag-a", Image: imageRef, ImageID: "shared-image", Labels: map[string]string{labels.LabelUpdateStrategy: "tag"}, State: container.StateRunning},
+		{ID: "tag-b", Image: imageRef, ImageID: "shared-image", Labels: map[string]string{labels.LabelUpdateStrategy: "tag"}, State: container.StateRunning},
+		{ID: "digest-a", Labels: map[string]string{labels.LabelUpdateStrategy: "digest"}, Image: imageRef, ImageID: "shared-image", State: container.StateRunning},
+		{ID: "digest-b", Labels: map[string]string{labels.LabelUpdateStrategy: "digest"}, Image: imageRef, ImageID: "shared-image", State: container.StateRunning},
+	}
+	server := newUpdaterApplyPendingDockerServerInternal(t, containers, nil, nil, nil)
+	dockerSvc := docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClientInternal(t, server))
+	svc, err := NewUpdaterService(db, nil, dockerSvc, nil, nil, nil, nil, nil, nil, nil, nil)
+	require.NoError(t, err)
+	records, err := svc.PendingImageUpdates(t.Context())
+	require.NoError(t, err)
+	require.Len(t, records, 4)
+	byContainer := map[string]updater.ImageUpdateRecord{}
+	for _, record := range records {
+		byContainer[record.ContainerID] = record
+	}
+	assert.Equal(t, "1.3.0", *byContainer["tag-a"].LatestVersion)
+	assert.Equal(t, "1.2.4", *byContainer["tag-b"].LatestVersion)
+	assert.Equal(t, updater.UpdateTypeDigest, byContainer["digest-a"].UpdateType)
+	assert.Equal(t, updater.UpdateTypeDigest, byContainer["digest-b"].UpdateType)
+	assert.Equal(t, "shared-image", byContainer["digest-b"].ID)
+
+	require.NoError(t, svc.ClearImageUpdateRecord(t.Context(), byContainer["tag-a"]))
+	var pending []imageupdate.ImageUpdateRecord
+	require.NoError(t, db.Where("has_update = ?", true).Find(&pending).Error)
+	var pendingIDs []string
+	for _, record := range pending {
+		pendingIDs = append(pendingIDs, record.ID)
+	}
+	assert.ElementsMatch(t, []string{"shared-image", "container::tag-b"}, pendingIDs)
+}
+
+func TestUpdaterService_SharedDigestRecordClearingInternal(t *testing.T) {
+	for _, tt := range []struct {
+		name           string
+		remainingImage string
+		wantPending    bool
+	}{
+		{name: "another container still needs image", remainingImage: "old-image", wantPending: true},
+		{name: "all digest containers updated", remainingImage: "new-image", wantPending: false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			db := setupProjectTestDBInternal(t)
+			imageRef := "registry.example.com/team/app:1.2.3"
+			record := imageupdate.ImageUpdateRecord{ID: "shared-image", Repository: "registry.example.com/team/app", Tag: "1.2.3", HasUpdate: true, UpdateType: imageupdate.UpdateTypeDigest}
+			require.NoError(t, db.Create(&record).Error)
+			containers := []container.Summary{
+				{ID: "updated", Labels: map[string]string{labels.LabelUpdateStrategy: "digest"}, Image: imageRef, ImageID: "new-image", State: container.StateRunning},
+				{ID: "remaining", Labels: map[string]string{labels.LabelUpdateStrategy: "digest"}, Image: imageRef, ImageID: tt.remainingImage, State: container.StateRunning},
+				{ID: "separate-tag-policy", Image: imageRef, ImageID: "old-image", State: container.StateRunning, Labels: map[string]string{labels.LabelUpdateStrategy: "tag"}},
+			}
+			server := newUpdaterApplyPendingDockerServerInternal(t, containers, nil, nil, map[string]dockertypesimage.InspectResponse{imageRef: {ID: "new-image"}})
+			dockerSvc := docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClientInternal(t, server))
+			svc, err := NewUpdaterService(db, nil, dockerSvc, nil, nil, nil, nil, nil, nil, nil, nil)
+			require.NoError(t, err)
+			converted := imageUpdateRecordToModuleInternal(record)
+			converted.ContainerID = "updated"
+			require.NoError(t, svc.ClearImageUpdateRecord(t.Context(), converted))
+			var actual imageupdate.ImageUpdateRecord
+			require.NoError(t, db.First(&actual, "id = ?", record.ID).Error)
+			assert.Equal(t, tt.wantPending, actual.HasUpdate)
+		})
+	}
+}
+
+type projectCheckRegistryInternal struct{}
+
+func (projectCheckRegistryInternal) ListTags(context.Context, string) ([]string, error) {
+	return []string{"3.20.0", "3.20.1", "3.20.2"}, nil
+}
+
+func (projectCheckRegistryInternal) ImageDigest(context.Context, string) (string, error) {
+	return "sha256:" + strings.Repeat("a", 64), nil
+}
+
+func TestUpdaterProjectChecksWithoutContainersInternal(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Contains(t, r.URL.Path, "/images/", "project checks must not need containers")
+		w.Header().Set("Content-Type", "application/json")
+		require.NoError(t, json.NewEncoder(w).Encode(dockertypesimage.InspectResponse{ID: "sha256:" + strings.Repeat("a", 64), RepoDigests: []string{"alpine@sha256:" + strings.Repeat("a", 64)}}))
+	}))
+	defer server.Close()
+	puller := &fakeImagePullerInternal{}
+	engine, err := updater.New(updater.Config{DockerClientProvider: fakeDockerClientProviderInternal{client: newTestDockerClientInternal(t, server)}, RegistryTagLister: projectCheckRegistryInternal{}, RegistryDigestResolver: projectCheckRegistryInternal{}, ImagePuller: puller})
+	require.NoError(t, err)
+	service := &UpdaterService{engine: engine}
+	for _, metadata := range []bool{false, true} {
+		for _, tt := range []struct {
+			name, constraint, target string
+			available                bool
+		}{
+			{"first", "=3.20.1", "3.20.1", true},
+			{"second", "=3.20.2", "3.20.2", true},
+			{"control", "=3.20.0", "3.20.0", false},
+		} {
+			config := composetypes.ServiceConfig{Name: tt.name, Image: "alpine:3.20.0", Labels: map[string]string{labels.LabelUpdateConstraint: tt.constraint}}
+			if metadata {
+				model, loadErr := projectspkg.LoadComposeProjectFromContent(t.Context(), projecttypes.ComposeContentOptions{ProjectName: "metadata", WorkingDir: t.TempDir(), ComposeContent: fmt.Sprintf("x-arcane:\n  updater:\n    strategy: auto\nservices:\n  %s:\n    image: alpine:3.20.0\n    x-arcane:\n      updater:\n        constraint: %q\n", tt.name, tt.constraint)})
+				require.NoError(t, loadErr)
+				config = model.Services[tt.name]
+			}
+			record := service.checkProjectServiceInternal(t.Context(), "project", config)
+			require.Nil(t, record.LastError)
+			require.Equal(t, tt.available, record.HasUpdate)
+			require.Equal(t, tt.target, *record.LatestVersion)
+			require.Equal(t, "project", record.ProjectID)
+			require.Empty(t, record.ContainerID)
+		}
+	}
+	require.Empty(t, puller.pulled)
 }

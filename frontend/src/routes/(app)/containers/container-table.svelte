@@ -520,6 +520,11 @@
 	<ImageUpdateItem
 		updateInfo={item.updateInfo}
 		imageId={item.imageId}
+		imageRef={item.image}
+		containerId={item.id}
+		tagUpdates={item.updateStrategy
+			? item.updateStrategy !== 'digest'
+			: item.labels?.['com.getarcaneapp.arcane.updater.strategy']?.trim() === 'tag'}
 		repo={imageRef.repo}
 		tag={imageRef.tag}
 		onUpdateContainer={canUpdateContainers ? () => handleUpdateContainer(item) : undefined}

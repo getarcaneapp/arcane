@@ -8,6 +8,7 @@
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import {
 		AlertIcon,
+		ArrowRightIcon,
 		CircleArrowUpIcon,
 		ClockIcon,
 		DownloadIcon,
@@ -41,7 +42,11 @@
 	const updatedImageRefs = $derived(updateInfo?.updatedImageRefs ?? []);
 	const notPulledImageRefs = $derived(updateInfo?.notPulledImageRefs ?? []);
 	const updateInfoByRef = $derived(updateInfo?.updateInfoByRef ?? {});
-	const canCheck = $derived(!!onCheck && !disabled && imageRefs.length > 0);
+	const serviceUpdates = $derived(Object.entries(updateInfo?.serviceUpdates ?? {}));
+	const fallbackUpdatedImageRefs = $derived(
+		updatedImageRefs.filter((ref) => !serviceUpdates.some(([, service]) => service.imageRef === ref))
+	);
+	const canCheck = $derived(!!onCheck && !disabled && (imageRefs.length > 0 || serviceUpdates.length > 0));
 	const directCheckFromTrigger = $derived(canCheck && (status === 'unknown' || status === 'error'));
 
 	const summaryText = $derived.by(() => {
@@ -282,11 +287,36 @@
 							</div>
 						{/if}
 
-						{#if status === 'has_update' && updatedImageRefs.length > 0}
+						{#if serviceUpdates.length > 0}
+							<div class="space-y-2">
+								<div class="text-[11px] font-medium tracking-wide text-foreground uppercase">{m.services()}</div>
+								<div class="max-h-60 space-y-1 overflow-auto">
+									{#each serviceUpdates as [serviceName, service] (serviceName)}
+										{@const parsed = parseImageRef(service.imageRef)}
+										<div class="rounded-md bg-muted px-2 py-1.5">
+											<div class="flex items-center gap-2">
+												<ImageUpdateItem updateInfo={service.updateInfo ?? undefined} repo={parsed.repo} tag={parsed.tag} />
+												<span class="min-w-0 flex-1 text-xs font-medium break-all">{serviceName}</span>
+											</div>
+											<div class="mt-1 font-mono text-[11px] break-all text-muted-foreground">{service.imageRef}</div>
+											{#if service.updateInfo?.hasUpdate && service.updateInfo.updateType === 'tag' && service.updateInfo.latestVersion}
+												<div class="mt-1 flex flex-wrap items-center gap-1 font-mono text-xs break-all">
+													<span>{parsed.tag}</span>
+													<ArrowRightIcon class="size-3 shrink-0" />
+													<span>{service.updateInfo.latestVersion}</span>
+												</div>
+											{/if}
+										</div>
+									{/each}
+								</div>
+							</div>
+						{/if}
+
+						{#if status === 'has_update' && fallbackUpdatedImageRefs.length > 0}
 							<div class="space-y-2">
 								<div class="text-[11px] font-medium tracking-wide text-foreground uppercase">{m.images_has_updates()}</div>
 								<div class="max-h-40 space-y-1 overflow-auto">
-									{#each updatedImageRefs as imageRef (imageRef)}
+									{#each fallbackUpdatedImageRefs as imageRef (imageRef)}
 										{@render refRow(imageRef)}
 									{/each}
 								</div>
@@ -299,7 +329,7 @@
 							<div class="text-xs leading-relaxed text-muted-foreground">
 								{errorMessage || m.image_update_could_not_query_registry()}
 							</div>
-						{:else}
+						{:else if status === 'unknown'}
 							<div class="text-xs leading-relaxed text-muted-foreground">
 								{#if canCheck}
 									{m.image_update_click_to_check()}

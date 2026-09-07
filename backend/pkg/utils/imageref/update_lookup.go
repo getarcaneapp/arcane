@@ -5,6 +5,10 @@ import (
 	"fmt"
 	"strings"
 
+	"go.getarcane.app/updater"
+	"go.getarcane.app/updater/pkg/utils/tagpolicy"
+	"go.getarcane.app/updater/refs"
+
 	ref "github.com/distribution/reference"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/registryauth"
 )
@@ -54,4 +58,13 @@ func ParseUpdateLookup(imageRef string) (originalRef, tag string, repositoryCand
 	}
 
 	return trimmedRef, tag, repositoryCandidates, true
+}
+
+// UpdatePolicyKey identifies the configured reference and selection policy.
+func UpdatePolicyKey(imageRef string, labels map[string]string) string {
+	policy := updater.DefaultLabelPolicy().TagPolicy(labels)
+	if resolved, err := tagpolicy.Resolve(imageRef, policy); err == nil {
+		policy = resolved
+	}
+	return fmt.Sprintf("%q:%q:%q:%q:%t", refs.NormalizeImageUpdateRef(imageRef), policy.Strategy, policy.Constraint, policy.TagPattern, updater.DefaultLabelPolicy().IsUpdateDisabled(labels))
 }

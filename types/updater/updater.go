@@ -164,3 +164,9 @@ type Status struct {
 	// Required: true
 	ProjectIds []string `json:"projectIds"`
 }
+
+// CheckProjectInput identifies the project whose service policies should be checked.
+type CheckProjectInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	ProjectID     string `path:"projectId" doc:"Project ID"`
+}

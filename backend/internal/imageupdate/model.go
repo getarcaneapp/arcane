@@ -2,12 +2,21 @@ package imageupdate
 
 import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
+	"github.com/samber/mo"
 
 	"time"
 )
 
 type ImageUpdateRecord struct {
 	database.BaseModel
+
+	ProjectID   string `json:"projectId,omitempty" gorm:"column:project_id;not null;default:'';index"`
+	ServiceName string `json:"serviceName,omitempty" gorm:"column:service_name;not null;default:''"`
+	PolicyKey   string `json:"-" gorm:"column:policy_key;not null;default:''"`
+
+	ContainerID string `json:"containerId,omitempty" gorm:"column:container_id;not null;default:'';index"`
+	ImageID     string `json:"imageId,omitempty" gorm:"column:image_id;not null;default:'';index"`
 
 	CheckTime        time.Time `json:"checkTime" gorm:"column:check_time"`
 	LatestVersion    *string   `json:"latestVersion,omitempty" gorm:"column:latest_version"`
@@ -57,4 +66,23 @@ func (i *ImageUpdateRecord) IsDigestUpdate() bool {
 
 func (i *ImageUpdateRecord) IsTagUpdate() bool {
 	return i.UpdateType == UpdateTypeTag
+}
+
+// UpdateInfo returns the public status of this check.
+func (i *ImageUpdateRecord) UpdateInfo() *imagetypes.UpdateInfo {
+	return &imagetypes.UpdateInfo{
+		HasUpdate:      i.HasUpdate,
+		UpdateType:     i.UpdateType,
+		CurrentVersion: i.CurrentVersion,
+		LatestVersion:  mo.PointerToOption(i.LatestVersion).OrEmpty(),
+		CurrentDigest:  mo.PointerToOption(i.CurrentDigest).OrEmpty(),
+		LatestDigest:   mo.PointerToOption(i.LatestDigest).OrEmpty(),
+		CheckTime:      i.CheckTime,
+		ResponseTimeMs: i.ResponseTimeMs,
+		Error:          mo.PointerToOption(i.LastError).OrEmpty(),
+		AuthMethod:     mo.PointerToOption(i.AuthMethod).OrEmpty(),
+		AuthUsername:   mo.PointerToOption(i.AuthUsername).OrEmpty(),
+		AuthRegistry:   mo.PointerToOption(i.AuthRegistry).OrEmpty(),
+		UsedCredential: i.UsedCredential,
+	}
 }

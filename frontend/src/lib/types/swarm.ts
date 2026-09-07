@@ -584,6 +584,7 @@ export interface ProjectUpdateInfo {
 	updatedImageRefs?: string[];
 	notPulledImageRefs?: string[];
 	updateInfoByRef?: Record<string, ImageUpdateData>;
+	serviceUpdates?: Record<string, { imageRef: string; updateInfo?: ImageUpdateData | null }>;
 	lastCheckedAt?: string;
 }
 

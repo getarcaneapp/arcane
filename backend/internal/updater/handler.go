@@ -12,6 +12,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 	"github.com/getarcaneapp/arcane/types/v2/base"
+	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
 	"github.com/getarcaneapp/arcane/types/v2/updater"
 )
 
@@ -49,6 +50,11 @@ func RegisterUpdater(api huma.API, updaterService *UpdaterService, appCtx handle
 		appCtx:         appCtx.Context(),
 	}
 
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "check-project-updates", Method: http.MethodPost,
+		Path:    "/environments/{id}/updater/projects/{projectId}/check",
+		Summary: "Check project service updates", Tags: []string{"Updater"}, Security: handlerutil.DefaultOperationSecurity(),
+	}, authz.PermImageUpdatesCheck, h.CheckProjectUpdates)
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "run-updater",
 		Method:      http.MethodPost,
@@ -160,4 +166,13 @@ func (h *UpdaterHandler) UpdateContainer(ctx context.Context, input *UpdateConta
 			Data:    out,
 		},
 	}, nil
+}
+
+// CheckProjectUpdates checks Compose policies through the updater service.
+func (h *UpdaterHandler) CheckProjectUpdates(ctx context.Context, input *updater.CheckProjectInput) (*handlerutil.Out[*projecttypes.UpdateInfo], error) {
+	result, err := h.updaterService.CheckProjectUpdates(ctx, input.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	return &handlerutil.Out[*projecttypes.UpdateInfo]{Body: base.ApiResponse[*projecttypes.UpdateInfo]{Success: true, Data: result}}, nil
 }

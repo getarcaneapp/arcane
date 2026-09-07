@@ -1,3 +1,4 @@
+import { m } from '#lib/paraglide/messages.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 import Ajv, { type ValidateFunction } from 'ajv';
 import type { Completion } from '@codemirror/autocomplete';
@@ -103,6 +104,29 @@ const ARCANE_TAG_COMPLETIONS: ArcaneCompletionSpec[] = [
 ];
 
 const ARCANE_TAG_COLORS = ['gray', 'purple', 'blue', 'green', 'yellow', 'orange', 'red', 'pink'];
+
+function getUpdaterCompletionSpecs(): ArcaneCompletionSpec[] {
+	return [
+		{ label: 'enabled', detail: m.editor_compose_updater_enabled_detail(), info: m.editor_compose_updater_enabled_info() },
+		{ label: 'strategy', detail: m.editor_compose_updater_strategy_detail(), info: m.editor_compose_updater_strategy_info() },
+		{
+			label: 'constraint',
+			detail: m.editor_compose_updater_constraint_detail(),
+			info: m.editor_compose_updater_constraint_info()
+		},
+		{
+			label: 'tag-pattern',
+			detail: m.editor_compose_updater_tag_pattern_detail(),
+			info: m.editor_compose_updater_tag_pattern_info()
+		}
+	];
+}
+
+function getUpdaterPathIndex(path: Array<string | number>): number {
+	if (isRootArcanePath(path.slice(0, 1)) && path[1] === 'updater') return 1;
+	if (isServiceArcanePath(path.slice(0, 3)) && path[3] === 'updater') return 3;
+	return -1;
+}
 
 function asSchemaObject(value: unknown): SchemaObject | null {
 	if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
@@ -286,9 +310,12 @@ function toArcaneCompletion(spec: ArcaneCompletionSpec): Completion {
 
 function getArcaneCompletionOptionsForPath(path: Array<string | number>, prefix = ''): Completion[] {
 	const normalizedPrefix = prefix.toLowerCase();
+	const updaterPathIndex = getUpdaterPathIndex(path);
 	let specs: ArcaneCompletionSpec[] = [];
 
-	if (isRootPath(path)) {
+	if (updaterPathIndex >= 0 && path.length === updaterPathIndex + 1) {
+		specs = getUpdaterCompletionSpecs();
+	} else if (isRootPath(path)) {
 		specs = ARCANE_ROOT_EXTENSION_COMPLETIONS;
 	} else if (isRootArcanePath(path)) {
 		specs = ARCANE_BLOCK_COMPLETIONS;
@@ -298,6 +325,10 @@ function getArcaneCompletionOptionsForPath(path: Array<string | number>, prefix 
 		specs = ARCANE_SERVICE_BLOCK_COMPLETIONS;
 	} else if (path.length === 3 && path[0] === 'x-arcane' && path[1] === 'tags' && typeof path[2] === 'number') {
 		specs = ARCANE_TAG_COMPLETIONS;
+	}
+
+	if (isRootArcanePath(path) || isServiceArcanePath(path)) {
+		specs = [...specs, { label: 'updater', detail: m.editor_compose_updater_detail(), info: m.editor_compose_updater_info() }];
 	}
 
 	return specs
@@ -360,6 +391,23 @@ function getServiceArcaneSchemaDoc(path: Array<string | number>): SchemaDoc | nu
 }
 
 function getArcaneSchemaDocForPath(path: Array<string | number>): SchemaDoc | null {
+	const updaterPathIndex = getUpdaterPathIndex(path);
+	if (updaterPathIndex >= 0) {
+		const title = updaterPathIndex === 1 ? 'x-arcane.updater' : 'services.<name>.x-arcane.updater';
+		if (path.length === updaterPathIndex + 1) {
+			return { title, description: m.editor_compose_updater_info() };
+		}
+		if (path.length === updaterPathIndex + 2) {
+			const field = getUpdaterCompletionSpecs().find((spec) => spec.label === path[updaterPathIndex + 1]);
+			if (field)
+				return {
+					title: `${title}.${field.label}`,
+					description: field.info,
+					...(field.label === 'strategy' ? { defaultValue: 'auto' } : {})
+				};
+		}
+		return null;
+	}
 	if (isServiceArcanePath(path.slice(0, 3))) return getServiceArcaneSchemaDoc(path);
 	if (path[0] !== 'x-arcane') return null;
 	if (path.length === 1) return ARCANE_SCHEMA_DOCS['x-arcane'] ?? null;
@@ -468,6 +516,18 @@ export function getCompletionOptionsForPath(
 
 export function getEnumValueCompletions(schema: SchemaObject | null, path: Array<string | number>): Completion[] {
 	const values = new Set<string>();
+	const updaterPathIndex = getUpdaterPathIndex(path);
+	if (updaterPathIndex >= 0 && path.length === updaterPathIndex + 2) {
+		const field = path[updaterPathIndex + 1];
+		if (field === 'strategy') {
+			values.add('auto');
+			values.add('digest');
+			values.add('tag');
+		} else if (field === 'enabled') {
+			values.add('true');
+			values.add('false');
+		}
+	}
 	if (getArcaneSchemaDocForPath(path)?.title === 'x-arcane.tags[].color') {
 		for (const color of ARCANE_TAG_COLORS) values.add(color);
 	}

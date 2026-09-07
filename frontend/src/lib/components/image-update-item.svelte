@@ -32,6 +32,8 @@
 		updateInfo?: ImageUpdateData;
 		isLoadingInBackground?: boolean;
 		imageId?: string;
+		containerId?: string;
+		tagUpdates?: boolean;
 		/** Image reference for ref-scoped checks when no local image ID exists (e.g. not-pulled refs) */
 		imageRef?: string;
 		repo?: string;
@@ -48,6 +50,8 @@
 		updateInfo,
 		isLoadingInBackground = false,
 		imageId,
+		containerId,
+		tagUpdates = false,
 		imageRef,
 		repo,
 		tag,
@@ -63,12 +67,24 @@
 	}
 
 	const imageUpdateQuery = createQuery<ImageUpdateData>(() => ({
-		queryKey: queryKeys.images.updateCheck(environmentStore.selected?.id || '0', imageId || imageRef || ''),
+		queryKey: queryKeys.images.updateCheck(
+			environmentStore.selected?.id || '0',
+			containerId ? `container:${containerId}` : imageId || imageRef || ''
+		),
 		queryFn: async () => {
-			if (imageId) return imageService.checkImageUpdateByID(imageId);
-			const results = await imageService.checkMultipleImages([imageRef ?? '']);
-			const result = results[imageRef ?? ''];
+			const result =
+				imageId && !(containerId && imageRef)
+					? await imageService.checkImageUpdateByID(imageId)
+					: (await imageService.checkMultipleImages([imageRef ?? '']))[imageRef ?? ''];
 			if (!result) throw new Error(m.images_update_check_failed());
+			if (containerId) {
+				if (tagUpdates) {
+					const scopedResult = result.containerUpdates?.[containerId];
+					if (!scopedResult) throw new Error(result.error || m.images_update_check_failed());
+					return { ...scopedResult, activityId: scopedResult.activityId ?? result.activityId };
+				}
+				return result.imageUpdate ?? result;
+			}
 			return result;
 		},
 		enabled: false,

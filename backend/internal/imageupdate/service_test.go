@@ -1,6 +1,7 @@
 package imageupdate
 
 import (
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/imageref"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/notifications"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
@@ -506,6 +507,12 @@ func TestImageUpdateService_CheckMultipleImages_ComposeBuildMissingLocallySkipsR
 	}).Error)
 
 	dockerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/containers/json") {
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode([]dockertypescontainer.Summary{}))
+			return
+		}
+
 		http.Error(w, "No such image", http.StatusNotFound)
 	}))
 	t.Cleanup(dockerServer.Close)
@@ -540,6 +547,12 @@ func newArcaneLocalImageUpdateServiceInternal(t *testing.T, imageExists bool) (*
 	db := setupImageUpdateTestDB(t)
 	localDigest := digest.FromString("arcane-local-build").String()
 	dockerServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/containers/json") {
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode([]dockertypescontainer.Summary{}))
+			return
+		}
+
 		if imageExists && strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json") {
 			w.Header().Set("Content-Type", "application/json")
 			assert.NoError(t, json.NewEncoder(w).Encode(dockertypesimage.InspectResponse{
@@ -622,6 +635,12 @@ func TestImageUpdateService_CheckMultipleImages_OtherDottedRegistryStillChecked(
 
 func TestImageUpdateService_InspectLocalImageSnapshot_NoRepoDigestsRemainsLocal(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/containers/json") {
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode([]dockertypescontainer.Summary{}))
+			return
+		}
+
 		if strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json") {
 			w.Header().Set("Content-Type", "application/json")
 			if !assert.NoError(t, json.NewEncoder(w).Encode(dockertypesimage.InspectResponse{
@@ -655,6 +674,12 @@ func newImageUpdateFallbackServer(t *testing.T, repositoryTag, localDigest, remo
 	manifestPath := fmt.Sprintf("/v2/%s/manifests/%s", repository, tag)
 
 	return httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/containers/json") {
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode([]dockertypescontainer.Summary{}))
+			return
+		}
+
 		switch {
 		case strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json"):
 			imageRef := r.Host + "/" + repositoryTag
@@ -694,6 +719,12 @@ func newImageUpdateRegistryOnlyServer(t *testing.T, repositoryTag, remoteDigest 
 	manifestPath := fmt.Sprintf("/v2/%s/manifests/%s", repository, tag)
 
 	return httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/containers/json") {
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode([]dockertypescontainer.Summary{}))
+			return
+		}
+
 		switch {
 		case strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json"):
 			http.Error(w, "not found", http.StatusNotFound)
@@ -880,6 +911,12 @@ func newImageUpdateNoRepoTagsServer(t *testing.T, imageID, localDigest string) *
 	t.Helper()
 
 	return httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/containers/json") {
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode([]dockertypescontainer.Summary{}))
+			return
+		}
+
 		if strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json") {
 			w.Header().Set("Content-Type", "application/json")
 			if !assert.NoError(t, json.NewEncoder(w).Encode(dockertypesimage.InspectResponse{
@@ -1970,6 +2007,12 @@ func newBlockedDockerAPIServerInternal(t *testing.T, pathContains string) *httpt
 	t.Helper()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/containers/json") {
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode([]dockertypescontainer.Summary{}))
+			return
+		}
+
 		if strings.Contains(r.URL.Path, pathContains) {
 			<-r.Context().Done()
 			return
@@ -2369,3 +2412,109 @@ type testProjectRow struct {
 }
 
 func (testProjectRow) TableName() string { return "projects" }
+
+func TestContainerTagChecksPersistIndependentPoliciesInternal(t *testing.T) {
+	db := setupImageUpdateRegistryTestDBInternal(t)
+	registryServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/tags/list") {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"name": "team/app", "tags": []string{"1.0.0", "1.1.0", "2.0.0"}}))
+	}))
+	defer registryServer.Close()
+	registryURL, err := url.Parse(registryServer.URL)
+	require.NoError(t, err)
+	imageRef := registryURL.Host + "/team/app:1.0.0"
+	imageID := digest.FromString("shared").String()
+	values := map[string]map[string]string{
+		"one": {},
+		"two": {labels.LabelUpdateStrategy: "auto", labels.LabelUpdateConstraint: "2.x"},
+	}
+	dockerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/containers/json"):
+			require.NoError(t, json.NewEncoder(w).Encode([]dockertypescontainer.Summary{{ID: "one", Image: imageRef, ImageID: imageID, Labels: values["one"]}, {ID: "two", Image: imageRef, ImageID: imageID, Labels: values["two"]}}))
+		case strings.Contains(r.URL.Path, "/images/"):
+			require.NoError(t, json.NewEncoder(w).Encode(dockertypesimage.InspectResponse{ID: imageID, RepoTags: []string{imageRef}, RepoDigests: []string{registryURL.Host + "/team/app@" + imageID}}))
+		case strings.Contains(r.URL.Path, "/containers/"):
+			id := "one"
+			if strings.Contains(r.URL.Path, "/two/") {
+				id = "two"
+			}
+			require.NoError(t, json.NewEncoder(w).Encode(dockertypescontainer.InspectResponse{ID: id, Image: imageID, Config: &dockertypescontainer.Config{Image: imageRef, Labels: values[id]}}))
+		default:
+			t.Errorf("unexpected Docker request %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer dockerServer.Close()
+	registryService := registry.NewContainerRegistryService(db, func(context.Context) (registry.RegistryDaemonClient, error) {
+		return &fakeRegistryDaemonClient{distributionInspectFn: func(context.Context, string, client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+			return client.DistributionInspectResult{}, errors.New("manifest not found")
+		}}, nil
+	}, nil, registryServer.Client())
+	svc := NewImageUpdateService(db, nil, registryService, &docker.DockerClientService{Client: newImageUpdateTestDockerClientInternal(t, dockerServer)}, nil, nil, nil)
+	checks, err := svc.checkContainerTagUpdatesInternal(t.Context(), []string{imageRef}, nil)
+	require.NoError(t, err)
+	require.Len(t, checks, 2)
+	require.Equal(t, "1.1.0", checks["one"].LatestVersion)
+	require.Equal(t, "2.0.0", checks["two"].LatestVersion)
+	var records []ImageUpdateRecord
+	require.NoError(t, db.Order("container_id").Find(&records).Error)
+	require.Len(t, records, 2)
+	require.Equal(t, "container::one", records[0].ID)
+	require.Equal(t, imageID, records[0].ImageID)
+	require.Equal(t, imageID, records[1].ImageID)
+	require.True(t, records[0].HasUpdate)
+	svc.eventService = event.NewEventService(db, nil, nil)
+	single, checkErr := svc.CheckImageUpdate(t.Context(), imageRef)
+	require.NoError(t, checkErr)
+	require.True(t, single.HasUpdate)
+	require.NotEmpty(t, single.Error, "keep the old-tag digest error visible")
+	require.Len(t, single.ContainerUpdates, 2)
+	// The image-level digest error is stored independently of container candidates.
+	require.NoError(t, db.Where("container_id = ?", "").Delete(&ImageUpdateRecord{}).Error)
+	// Changing one policy to an invalid expression clears its actionable state
+	// without overwriting the other container's result.
+	values["one"][labels.LabelUpdateConstraint] = "invalid"
+	checks, err = svc.checkContainerTagUpdatesInternal(t.Context(), []string{imageRef}, nil)
+	require.NoError(t, err)
+	require.NotEmpty(t, checks["one"].Error)
+	require.False(t, checks["one"].HasUpdate)
+	records = nil
+	require.NoError(t, db.Order("container_id").Find(&records).Error)
+	require.False(t, records[0].HasUpdate)
+	require.True(t, records[1].HasUpdate)
+	limited := &imageupdate.Response{UpdateType: UpdateTypeTag, Error: "registry status: 429", CheckTime: time.Now().UTC()}
+	current := dockertypescontainer.Summary{ID: "two", Image: imageRef, ImageID: imageID, Labels: values["two"]}
+	require.NoError(t, svc.saveContainerTagResultInternal(t.Context(), current, limited))
+	var retained ImageUpdateRecord
+	require.NoError(t, db.First(&retained, "id = ?", "container::two").Error)
+	require.True(t, retained.HasUpdate, "same-policy rate limits retain the last good result")
+	require.Equal(t, imageref.UpdatePolicyKey(imageRef, current.Labels), retained.PolicyKey)
+	current.Labels = map[string]string{labels.LabelUpdateStrategy: "tag", labels.LabelUpdateConstraint: "1.x"}
+	require.NoError(t, svc.saveContainerTagResultInternal(t.Context(), current, limited))
+	retained = ImageUpdateRecord{}
+	require.NoError(t, db.First(&retained, "id = ?", "container::two").Error)
+	require.False(t, retained.HasUpdate, "a changed policy cannot inherit the previous candidate")
+	require.Equal(t, imageref.UpdatePolicyKey(imageRef, current.Labels), retained.PolicyKey)
+	require.Equal(t, limited.Error, *retained.LastError)
+
+}
+
+func TestContainerAggregationPreservesImageResultInternal(t *testing.T) {
+	original := &imageupdate.Response{HasUpdate: false, UpdateType: UpdateTypeDigest, CurrentVersion: "3.20.0", LatestVersion: "3.20.0"}
+	results := map[string]*imageupdate.Response{"alpine:3.20.0": original}
+	scoped := &imageupdate.Response{ImageRef: "docker.io/library/alpine:3.20.0", HasUpdate: true, UpdateType: UpdateTypeTag, CurrentVersion: "3.20.0", LatestVersion: "3.20.1"}
+	attachContainerUpdatesInternal(results, map[string]*imageupdate.Response{"tagged": scoped})
+	require.True(t, original.HasUpdate)
+	require.Same(t, scoped, original.ContainerUpdates["tagged"])
+	require.NotNil(t, original.ImageUpdate)
+	require.False(t, original.ImageUpdate.HasUpdate, "untagged siblings must keep the original digest result")
+	require.Equal(t, UpdateTypeDigest, original.ImageUpdate.UpdateType)
+	require.Nil(t, original.ImageUpdate.ContainerUpdates)
+	require.Nil(t, original.ImageUpdate.ImageUpdate, "snapshot must not create recursive JSON")
+}

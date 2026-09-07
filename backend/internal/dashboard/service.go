@@ -37,7 +37,9 @@ import (
 	versiontypes "github.com/getarcaneapp/arcane/types/v2/version"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"go.getarcane.app/sys/cgroup"
+	"go.getarcane.app/updater"
 	"go.getarcane.app/updater/labels"
+	"go.getarcane.app/updater/pkg/utils/tagpolicy"
 )
 
 const (
@@ -386,7 +388,7 @@ func (s *DashboardService) getPendingResourceUpdatesCountInternal(ctx context.Co
 
 	filteredContainers := container.FilterInternalContainers(allContainers, false)
 	standaloneContainers := filterStandaloneDockerContainersInternal(filteredContainers)
-	containerCount, err := s.getPendingContainerUpdatesCountForImageIDsInternal(ctx, container.CollectImageIDs(standaloneContainers))
+	containerCount, err := s.getPendingContainerUpdatesCountInternal(ctx, standaloneContainers)
 	if err != nil {
 		return 0, err
 	}
@@ -410,20 +412,28 @@ func filterStandaloneDockerContainersInternal(containers []dockercontainer.Summa
 	return filtered
 }
 
-func (s *DashboardService) getPendingContainerUpdatesCountForImageIDsInternal(ctx context.Context, imageIDs []string) (int, error) {
-	if s.db == nil || len(imageIDs) == 0 {
+func (s *DashboardService) getPendingContainerUpdatesCountInternal(ctx context.Context, containers []dockercontainer.Summary) (int, error) {
+	if s.db == nil || len(containers) == 0 {
 		return 0, nil
 	}
-
+	var imageIDs, containerIDs []string
+	for _, c := range containers {
+		if labels.IsUpdateDisabled(c.Labels) {
+			continue
+		}
+		policy, policyErr := tagpolicy.Resolve(c.Image, updater.DefaultLabelPolicy().TagPolicy(c.Labels))
+		if policyErr != nil || policy.Strategy == "tag" {
+			containerIDs = append(containerIDs, c.ID)
+		} else {
+			imageIDs = append(imageIDs, c.ImageID)
+		}
+	}
 	var count int64
-	err := s.db.WithContext(ctx).
-		Model(&imageupdate.ImageUpdateRecord{}).
-		Where("id IN ? AND has_update = ?", imageIDs, true).
-		Count(&count).Error
+	err := s.db.WithContext(ctx).Model(&imageupdate.ImageUpdateRecord{}).
+		Where("has_update = ? AND ((container_id = ? AND id IN ?) OR container_id IN ?)", true, "", imageIDs, containerIDs).Count(&count).Error
 	if err != nil {
 		return 0, errors.WrapIf(err, "failed to count pending container updates")
 	}
-
 	return int(count), nil
 }
 

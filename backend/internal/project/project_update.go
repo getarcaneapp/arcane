@@ -10,7 +10,13 @@ import (
 	"strings"
 	"time"
 
+	"bytes"
+	"fmt"
+	"io"
+	"slices"
+
 	"emperror.dev/errors"
+	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
@@ -22,6 +28,11 @@ import (
 	"github.com/moby/moby/client"
 	"go.getarcane.app/acfs"
 	acfstypes "go.getarcane.app/acfs/types"
+	"go.getarcane.app/updater"
+	"go.getarcane.app/updater/pkg/utils/tagpolicy"
+	"go.getarcane.app/updater/refs"
+	updatertypes "go.getarcane.app/updater/types"
+	"go.yaml.in/yaml/v4"
 	"gorm.io/gorm"
 )
 
@@ -992,4 +1003,235 @@ func (s *ProjectService) renameRecoveryOperationsInternal() projecttypes.RenameR
 			}).Error
 		},
 	}
+}
+
+// UpdateProjectServiceImages persists selected service image tags before recreating them.
+func (s *ProjectService) UpdateProjectServiceImages(ctx context.Context, projectID string, changes map[string]updatertypes.ServiceImageChange, user common.User) error {
+	services, err := s.persistProjectImageChangesInternal(ctx, projectID, changes)
+	if err != nil {
+		return err
+	}
+	return s.updateProjectServicesInternal(ctx, projectID, services, user)
+}
+
+func (s *ProjectService) persistProjectImageChangesInternal(ctx context.Context, projectID string, changes map[string]updatertypes.ServiceImageChange) ([]string, error) {
+	if len(changes) == 0 {
+		return nil, errors.New("service image changes are required")
+	}
+	proj, err := s.getMutableProjectInternal(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	if proj.GitOpsManagedBy != nil && strings.TrimSpace(*proj.GitOpsManagedBy) != "" {
+		return nil, errors.New("tag updates cannot edit a GitOps-managed project; update image tags in the source repository")
+	}
+	effective, _, err := s.loadComposeProjectForProjectInternal(ctx, proj)
+	if err != nil {
+		return nil, fmt.Errorf("load project for tag update: %w", err)
+	}
+	if len(effective.ComposeFiles) != 1 {
+		return nil, errors.New("tag updates require one authoritative Compose file; multi-file selections and overrides must be updated manually")
+	}
+	logical, err := acfs.LogicalPath(proj.Path, effective.ComposeFiles[0])
+	if err != nil {
+		return nil, fmt.Errorf("tag update Compose file must be inside the project directory: %w", err)
+	}
+	original, err := acfs.ReadFile(ctx, proj.Path, logical)
+	if err != nil {
+		return nil, fmt.Errorf("read Compose source for tag update: %w", err)
+	}
+	updated, services, err := prepareProjectServiceImagesInternal(original, effective, changes)
+	if err != nil {
+		return nil, err
+	}
+	if err := persistProjectServiceImagesInternal(ctx, proj.Path, logical, original, updated); err != nil {
+		return nil, err
+	}
+	s.invalidateProjectCachesInternal(projectID)
+	// Keep the desired source on deployment failure: Compose may have partially
+	// recreated services, and the pending update must remain retryable.
+	return services, nil
+}
+
+func prepareProjectServiceImagesInternal(source []byte, effective *composetypes.Project, changes map[string]updatertypes.ServiceImageChange) ([]byte, []string, error) {
+	var document yaml.Node
+	decoder := yaml.NewDecoder(bytes.NewReader(source))
+	if err := decoder.Decode(&document); err != nil {
+		return nil, nil, fmt.Errorf("parse Compose source: %w", err)
+	}
+	var extra yaml.Node
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		return nil, nil, errors.New("tag updates require a single YAML document")
+	}
+	if len(document.Content) != 1 {
+		return nil, nil, errors.New("Compose source must contain a mapping")
+	}
+	if err := validateImageUpdateSourceInternal(document.Content[0]); err != nil {
+		return nil, nil, err
+	}
+	if composeImageFieldInternal(document.Content[0], "include") != nil {
+		return nil, nil, errors.New("tag updates do not rewrite Compose includes; update their source manually")
+	}
+	servicesNode := composeImageFieldInternal(document.Content[0], "services")
+	if servicesNode == nil || servicesNode.Kind != yaml.MappingNode {
+		return nil, nil, errors.New("Compose source has no services mapping")
+	}
+	serviceNames := make([]string, 0, len(changes))
+	for name, change := range changes {
+		service, ok := effective.Services[name]
+		if !ok {
+			return nil, nil, fmt.Errorf("service %s is not active in the Compose project", name)
+		}
+		expected, target := refs.NormalizeImageUpdateRef(change.ExpectedRef), refs.NormalizeImageUpdateRef(change.TargetRef)
+		if expected == "" || target == "" || refs.IsImageIDLikeReference(change.ExpectedRef) || refs.IsImageIDLikeReference(change.TargetRef) {
+			return nil, nil, fmt.Errorf("service %s requires mutable image references", name)
+		}
+		if refs.NormalizeImageUpdateRef(service.Image) != expected && refs.NormalizeImageUpdateRef(service.Image) != target {
+			return nil, nil, fmt.Errorf("service %s image changed since update check: expected %s, found %s", name, change.ExpectedRef, service.Image)
+		}
+		serviceNode := composeImageFieldInternal(servicesNode, name)
+		if composeImageFieldInternal(serviceNode, "extends") != nil {
+			return nil, nil, errors.Errorf("tag updates do not rewrite extended service %s; update its source manually", name)
+		}
+		imageNode := composeImageFieldInternal(serviceNode, "image")
+		if imageNode == nil || imageNode.Kind != yaml.ScalarNode || imageNode.Tag != "!!str" {
+			return nil, nil, fmt.Errorf("service %s requires an explicit image scalar in the authoritative Compose file", name)
+		}
+		if !strings.Contains(imageNode.Value, "$") && refs.NormalizeImageUpdateRef(imageNode.Value) != expected && refs.NormalizeImageUpdateRef(imageNode.Value) != target {
+			return nil, nil, fmt.Errorf("service %s source image changed since Compose was loaded", name)
+		}
+		imageNode.Value = change.TargetRef
+		serviceNames = append(serviceNames, name)
+	}
+	slices.Sort(serviceNames)
+	var output bytes.Buffer
+	encoder := yaml.NewEncoder(&output)
+	encoder.SetIndent(2)
+	if err := encoder.Encode(&document); err != nil {
+		return nil, nil, fmt.Errorf("encode updated Compose source: %w", err)
+	}
+	if err := encoder.Close(); err != nil {
+		return nil, nil, fmt.Errorf("close updated Compose encoder: %w", err)
+	}
+	return output.Bytes(), serviceNames, nil
+}
+
+func validateImageUpdateSourceInternal(node *yaml.Node) error {
+	if node.Kind == yaml.AliasNode || node.Anchor != "" {
+		return errors.New("tag updates do not rewrite Compose YAML anchors or aliases; use explicit service images")
+	}
+	if node.Kind == yaml.MappingNode {
+		for i := 0; i+1 < len(node.Content); i += 2 {
+			if node.Content[i].Value == "<<" {
+				return fmt.Errorf("tag updates do not rewrite Compose %s declarations; update their source manually", node.Content[i].Value)
+			}
+		}
+	}
+	for _, child := range node.Content {
+		if err := validateImageUpdateSourceInternal(child); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func composeImageFieldInternal(node *yaml.Node, key string) *yaml.Node {
+	if node == nil || node.Kind != yaml.MappingNode {
+		return nil
+	}
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		if node.Content[i].Value == key {
+			return node.Content[i+1]
+		}
+	}
+	return nil
+}
+
+func persistProjectServiceImagesInternal(ctx context.Context, projectPath, logical string, original, updated []byte) error {
+	entry, err := acfs.Stat(ctx, projectPath, logical, false)
+	if err != nil {
+		return fmt.Errorf("inspect Compose source: %w", err)
+	}
+	if entry.IsSymlink {
+		return fmt.Errorf("tag updates refuse a symlinked Compose source: %s", filepath.Base(logical))
+	}
+	current, err := acfs.ReadFile(ctx, projectPath, logical)
+	if err != nil {
+		return fmt.Errorf("recheck Compose source: %w", err)
+	}
+	if !bytes.Equal(current, original) {
+		return errors.New("Compose source changed during the image update; check updates again")
+	}
+	if err := acfs.Write(ctx, projectPath, logical, updated, acfs.WriteOptions{Mode: os.FileMode(entry.UnixMode).Perm()}); err != nil {
+		return fmt.Errorf("persist Compose image changes: %w", err)
+	}
+	return nil
+}
+
+func (s *ProjectService) projectServiceImageChangesInternal(ctx context.Context, proj *Project, effective *composetypes.Project) (map[string]updatertypes.ServiceImageChange, error) {
+	changes := make(map[string]updatertypes.ServiceImageChange)
+	for _, name := range effective.ServiceNames() {
+		change, err := s.projectServiceImageChangeInternal(ctx, proj, effective.Services[name])
+		if err != nil {
+			return nil, err
+		}
+		if change != nil {
+			changes[name] = *change
+		}
+	}
+	return changes, nil
+}
+
+func (s *ProjectService) projectServiceImageChangeInternal(ctx context.Context, proj *Project, service composetypes.ServiceConfig) (*updatertypes.ServiceImageChange, error) {
+	policy := updater.DefaultLabelPolicy()
+	name := service.Name
+	configuredPolicy := policy.TagPolicy(service.Labels)
+	if service.Build != nil && (configuredPolicy.Strategy == "" || configuredPolicy.Strategy == "auto") && configuredPolicy.Constraint == "" && configuredPolicy.TagPattern == "" {
+		return nil, nil
+	}
+	if configuredPolicy.Strategy == "tag" && (refs.IsDigestPinnedReference(service.Image) || refs.IsImageIDLikeReference(service.Image)) {
+		return nil, errors.Errorf("service %s has an immutable image reference", name)
+	}
+	tagPolicy, resolveErr := tagpolicy.Resolve(service.Image, configuredPolicy)
+	if resolveErr != nil {
+		return nil, errors.WrapIff(resolveErr, "resolve service %s update policy", name)
+	}
+	if tagPolicy.Strategy == "digest" {
+		return nil, nil
+	}
+	if policy.IsUpdateDisabled(service.Labels) {
+		return nil, errors.Errorf("updates are disabled for service %s", name)
+	}
+	if service.Build != nil {
+		return nil, errors.Errorf("tag discovery is unsupported for locally built service %s", name)
+	}
+	if proj.GitOpsManagedBy != nil && strings.TrimSpace(*proj.GitOpsManagedBy) != "" {
+		return nil, errors.New("tag updates cannot edit a GitOps-managed project; update image tags in the source repository")
+	}
+	if refs.IsDigestPinnedReference(service.Image) || refs.IsImageIDLikeReference(service.Image) {
+		return nil, errors.Errorf("service %s has an immutable image reference", name)
+	}
+	parsed, err := refs.NormalizeReference(service.Image)
+	if err != nil {
+		return nil, errors.WrapIff(err, "parse service %s image", name)
+	}
+	if s.containerRegistryService == nil {
+		return nil, errors.New("registry service unavailable for tag updates")
+	}
+	credentials, err := s.ResolveRegistryCredentials(ctx)
+	if err != nil {
+		return nil, err
+	}
+	tags, err := s.containerRegistryService.ListImageTags(ctx, service.Image, credentials)
+	if err != nil {
+		return nil, errors.WrapIff(err, "list service %s image tags", name)
+	}
+	selected, err := tagpolicy.Select(parsed.Tag, tags, tagPolicy)
+	if err != nil {
+		return nil, errors.WrapIff(err, "select service %s image tag", name)
+	}
+	if selected != parsed.Tag {
+		return &updatertypes.ServiceImageChange{ExpectedRef: service.Image, TargetRef: parsed.RegistryHost + "/" + parsed.Repository + ":" + selected}, nil
+	}
+	return nil, nil
 }

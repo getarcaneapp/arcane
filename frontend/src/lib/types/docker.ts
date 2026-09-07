@@ -168,6 +168,7 @@ export interface ContainerEditConfigDto {
 }
 
 export interface ContainerSummaryDto extends BaseContainer {
+	updateStrategy?: string;
 	ports: ContainerPorts[];
 	hostConfig: ContainerHostConfig;
 	networkSettings: ContainerNetworkSettings;
@@ -445,6 +446,8 @@ export interface ContainerStats {
 // --- Image DTOs ---
 
 export interface ImageUpdateInfoDto {
+	imageUpdate?: ImageUpdateInfoDto;
+	containerUpdates?: Record<string, ImageUpdateInfoDto>;
 	hasUpdate: boolean;
 	updateType: string;
 	currentVersion: string;

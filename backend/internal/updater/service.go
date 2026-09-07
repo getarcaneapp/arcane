@@ -126,6 +126,7 @@ func (s *UpdaterService) configInternal() updater.Config {
 		RunRecorder:            s,
 		Settings:               s,
 		RegistryDigestResolver: s.registryDigestResolverInternal(),
+		RegistryTagLister:      s,
 		ProjectUpdater:         s,
 		SelfUpdater:            s,
 		Notifier:               s,
@@ -631,7 +632,7 @@ func (s *UpdaterService) PendingImageUpdates(ctx context.Context) ([]updater.Ima
 	}
 
 	var records []imageupdate.ImageUpdateRecord
-	if err := s.deps.DB.WithContext(ctx).Where("has_update = ?", true).Find(&records).Error; err != nil {
+	if err := s.deps.DB.WithContext(ctx).Where("has_update = ? AND project_id = ?", true, "").Find(&records).Error; err != nil {
 		return nil, errors.WrapIf(err, "query pending image updates")
 	}
 
@@ -649,11 +650,7 @@ func (s *UpdaterService) PendingImageUpdates(ctx context.Context) ([]updater.Ima
 		10,
 	)
 
-	out := make([]updater.ImageUpdateRecord, 0, len(records))
-	for _, record := range records {
-		out = append(out, imageUpdateRecordToModuleInternal(record))
-	}
-	return out, nil
+	return s.scopedPendingRecordsInternal(ctx, records)
 }
 
 // ClearImageUpdateRecord clears a pending image update record after it is handled.
@@ -703,7 +700,7 @@ func (s *UpdaterService) UpdateServices(ctx context.Context, projectID string, s
 	if s == nil || s.deps.Projects == nil {
 		return common.Classify(common.ErrUnavailable, errors.New("project service unavailable"))
 	}
-	return s.deps.Projects.UpdateProjectServices(ctx, projectID, services, s.deps.SystemUser)
+	return s.deps.Projects.UpdateProjectServices(ctx, projectID, services, s.deps.SystemUser, false)
 }
 
 // TriggerSelfUpdate runs Arcane's CLI-backed self-update hook.
@@ -979,6 +976,7 @@ func (s *UpdaterService) trackActivityInternal(ctx context.Context, activityID s
 func imageUpdateRecordToModuleInternal(record imageupdate.ImageUpdateRecord) updater.ImageUpdateRecord {
 	return updater.ImageUpdateRecord{
 		ID:             record.ID,
+		ContainerID:    record.ContainerID,
 		Repository:     record.Repository,
 		Tag:            record.Tag,
 		HasUpdate:      record.HasUpdate,
@@ -1100,7 +1098,15 @@ func (s *UpdaterService) clearImageUpdateRecordForModuleInternal(ctx context.Con
 		return nil
 	}
 
+	if record.ContainerID != "" && !strings.HasPrefix(record.ID, "container::") {
+		return s.clearUnscopedRecordInternal(ctx, record)
+	}
 	query := s.deps.DB.WithContext(ctx).Model(&imageupdate.ImageUpdateRecord{})
+	if record.ContainerID != "" {
+		query = query.Where("container_id = ?", record.ContainerID)
+	} else {
+		query = query.Where("container_id = ?", "")
+	}
 	if strings.TrimSpace(record.ID) != "" {
 		return query.Where("id = ?", record.ID).Update("has_update", false).Error
 	}

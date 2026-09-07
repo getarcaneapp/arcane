@@ -290,6 +290,15 @@ func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef stri
 	if err == nil && digestResult == nil {
 		err = errors.New("digest update check returned no result")
 	}
+	var tagRefs []string
+	if digestResult == nil || digestResult.UpdateType != UpdateTypeLocal {
+		tagRefs = append(tagRefs, imageRef)
+	}
+	containerUpdates, tagErr := s.checkContainerTagUpdatesInternal(ctx, tagRefs, nil)
+	if tagErr != nil {
+		s.completeImageUpdateActivityInternal(ctx, activityID, false, tagErr.Error())
+		return digestResult, tagErr
+	}
 	if err != nil {
 		result := &imageupdate.Response{
 			Error:          err.Error(),
@@ -309,7 +318,12 @@ func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef stri
 		if saveErr := s.saveUpdateResultWithSnapshotInternal(ctx, imageRef, result, snapshot); saveErr != nil {
 			slog.WarnContext(ctx, "Failed to save update result", "imageRef", imageRef, "error", saveErr.Error())
 		}
+		attachContainerUpdatesInternal(map[string]*imageupdate.Response{imageRef: result}, containerUpdates)
 		s.completeImageUpdateActivityInternal(ctx, activityID, false, result.Error)
+		if result.HasUpdate {
+			s.SendBatchUpdateNotifications(ctx)
+			return result, nil
+		}
 		return result, err
 	}
 
@@ -335,6 +349,10 @@ func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef stri
 	}
 
 	s.notifyImageUpdateInternal(ctx, imageRef, digestResult, snapshot)
+	attachContainerUpdatesInternal(map[string]*imageupdate.Response{imageRef: digestResult}, containerUpdates)
+	if len(containerUpdates) > 0 {
+		s.SendBatchUpdateNotifications(ctx)
+	}
 
 	finalMessage := "Image update check completed"
 	if digestResult.HasUpdate {
@@ -914,8 +932,10 @@ func (s *ImageUpdateService) CheckImageUpdateByID(ctx context.Context, imageID s
 	if err != nil {
 		return nil, err
 	}
-	if saveErr := s.saveUpdateResultByIDInternal(ctx, imageID, result, s.parseImageReference(imageRef)); saveErr != nil {
-		slog.WarnContext(ctx, "Failed to save update result by ID", "imageID", imageID, "error", saveErr.Error())
+	if len(result.ContainerUpdates) == 0 {
+		if saveErr := s.saveUpdateResultByIDInternal(ctx, imageID, result, s.parseImageReference(imageRef)); saveErr != nil {
+			slog.WarnContext(ctx, "Failed to save update result by ID", "imageID", imageID, "error", saveErr.Error())
+		}
 	}
 	return result, nil
 }
@@ -969,7 +989,14 @@ func countBatchResultOutcomesInternal(imageRefs []string, results map[string]*im
 
 	for _, imageRef := range imageRefs {
 		result := results[imageRef]
-		if result != nil && strings.TrimSpace(result.Error) == "" {
+		hasError := result == nil
+		if result != nil {
+			hasError = strings.TrimSpace(result.Error) != ""
+			for _, containerUpdate := range result.ContainerUpdates {
+				hasError = hasError || containerUpdate.Error != ""
+			}
+		}
+		if !hasError {
 			successCount++
 			continue
 		}
@@ -1236,7 +1263,7 @@ func (s *ImageUpdateService) StoredUpdateByImageID(ctx context.Context, imageID 
 func (s *ImageUpdateService) GetUnnotifiedUpdates(ctx context.Context) (map[string]*ImageUpdateRecord, error) {
 	var records []ImageUpdateRecord
 	if err := s.db.WithContext(ctx).
-		Where("has_update = ? AND notification_sent = ?", true, false).
+		Where("has_update = ? AND notification_sent = ? AND project_id = ?", true, false, "").
 		Find(&records).Error; err != nil {
 		return nil, errors.WrapIf(err, "failed to get unnotified updates")
 	}
@@ -1633,6 +1660,17 @@ func (s *ImageUpdateService) CheckMultipleImages(ctx context.Context, imageRefs 
 		return results, err
 	}
 
+	var tagRefs []string
+	for _, imageRef := range imageRefs {
+		if res := results[imageRef]; res != nil && res.UpdateType != UpdateTypeLocal {
+			tagRefs = append(tagRefs, imageRef)
+		}
+	}
+	containerUpdates, tagErr := s.checkContainerTagUpdatesInternal(scanCtx, tagRefs, resolvedCreds)
+	if tagErr != nil {
+		return results, tagErr
+	}
+	attachContainerUpdatesInternal(results, containerUpdates)
 	successCount, errorCount := countBatchResultOutcomesInternal(imageRefs, results)
 	slog.InfoContext(ctx, "Batch image update check completed",
 		"totalImages", len(imageRefs),
@@ -1678,7 +1716,7 @@ func (s *ImageUpdateService) SendBatchUpdateNotifications(ctx context.Context) {
 		imageIDsToMark := make([]string, 0, len(unnotifiedUpdates))
 
 		for imageID, record := range unnotifiedUpdates {
-			imageRef := fmt.Sprintf("%s:%s", record.Repository, record.Tag)
+			imageRef := containerUpdateNotificationKeyInternal(record)
 			updatesToNotify[imageRef] = &imageupdate.Response{
 				HasUpdate:      record.HasUpdate,
 				UpdateType:     record.UpdateType,
@@ -1767,14 +1805,29 @@ func (s *ImageUpdateService) CleanupOrphanedRecords(ctx context.Context) error {
 
 	var result *gorm.DB
 	if len(dockerImageIDs) == 0 {
-		result = s.db.WithContext(ctx).Where("1 = 1").Delete(&ImageUpdateRecord{})
+		result = s.db.WithContext(ctx).Where("container_id = ? AND project_id = ?", "", "").Delete(&ImageUpdateRecord{})
 	} else {
-		result = s.db.WithContext(ctx).Where("id NOT IN ?", dockerImageIDs).Delete(&ImageUpdateRecord{})
+		result = s.db.WithContext(ctx).Where("container_id = ? AND project_id = ? AND id NOT IN ?", "", "", dockerImageIDs).Delete(&ImageUpdateRecord{})
 	}
 	if result.Error != nil {
 		return errors.WrapIf(result.Error, "failed to delete orphaned records")
 	}
 
+	containers, listErr := dockerClient.ContainerList(apiCtx, client.ContainerListOptions{All: true})
+	if listErr != nil {
+		return listErr
+	}
+	ids := make([]string, 0, len(containers.Items))
+	for _, cnt := range containers.Items {
+		ids = append(ids, cnt.ID)
+	}
+	scoped := s.db.WithContext(ctx).Where("container_id <> ?", "")
+	if len(ids) > 0 {
+		scoped = scoped.Where("container_id NOT IN ?", ids)
+	}
+	if err := scoped.Delete(&ImageUpdateRecord{}).Error; err != nil {
+		return err
+	}
 	if result.RowsAffected > 0 {
 		slog.InfoContext(ctx, "Cleaned up orphaned image update records", "deletedCount", result.RowsAffected)
 	} else {
@@ -1818,11 +1871,11 @@ func (s *ImageUpdateService) getUpdateSummaryForImageIDsInternal(ctx context.Con
 	if err := s.db.WithContext(ctx).
 		Model(&ImageUpdateRecord{}).
 		Select(`
-			COALESCE(SUM(CASE WHEN has_update THEN 1 ELSE 0 END), 0) AS images_with_updates,
-			COALESCE(SUM(CASE WHEN has_update AND update_type = ? THEN 1 ELSE 0 END), 0) AS digest_updates,
-			COALESCE(SUM(CASE WHEN last_error IS NOT NULL AND last_error != '' THEN 1 ELSE 0 END), 0) AS errors_count
+			COUNT(DISTINCT CASE WHEN has_update THEN COALESCE(NULLIF(image_id, ''),id) END) AS images_with_updates,
+			COUNT(DISTINCT CASE WHEN has_update AND update_type = ? THEN COALESCE(NULLIF(image_id, ''),id) END) AS digest_updates,
+			COUNT(DISTINCT CASE WHEN last_error IS NOT NULL AND last_error != '' THEN COALESCE(NULLIF(image_id, ''),id) END) AS errors_count
 		`, "digest").
-		Where("id IN ?", imageIDs).
+		Where("id IN ? OR image_id IN ?", imageIDs, imageIDs).
 		Scan(&aggregate).Error; err != nil {
 		return nil, err
 	}

@@ -7,6 +7,13 @@ import (
 )
 
 type Response struct {
+	// ImageUpdate preserves the image-scoped result before container-policy aggregation.
+	ImageUpdate *Response `json:"imageUpdate,omitempty"`
+	// ImageRef identifies the configured reference for a container-specific check.
+	ImageRef string `json:"imageRef,omitempty"`
+	// ContainerUpdates contains policy-specific results keyed by container ID.
+	ContainerUpdates map[string]*Response `json:"containerUpdates,omitempty"`
+
 	// CheckTime is the time when the update check was performed.
 	//
 	// Required: true

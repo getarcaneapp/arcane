@@ -2,6 +2,7 @@ package project
 
 import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
+	"github.com/moby/moby/api/types/container"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 
@@ -9,6 +10,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"maps"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -19,15 +21,19 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
+	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/iconcatalog"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/imageref"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 	"github.com/getarcaneapp/arcane/types/v2/project"
 	"github.com/samber/mo"
 	"go.getarcane.app/sys/cgroup"
+	"go.getarcane.app/updater"
 	"go.getarcane.app/updater/labels"
+	"go.getarcane.app/updater/pkg/utils/tagpolicy"
 )
 
 type ProjectServiceInfo struct {
@@ -280,17 +286,7 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 		resp.EnvContent = effectiveEnvContent
 	}
 
-	// Enrich with details
-	composeFile, composeFileErr := s.ResolveProjectComposeFile(ctx, proj)
-	if composeFileErr == nil {
-		resp.ComposeFileName = filepath.Base(composeFile)
-		if opts.IncludeIncludeFiles {
-			s.enrichWithIncludeFiles(ctx, composeFile, &resp)
-		}
-		if opts.IncludeServiceConfigs {
-			s.enrichWithComposeServiceConfigs(ctx, proj, composeFile, &resp)
-		}
-	}
+	s.enrichComposeDetailsInternal(ctx, proj, opts, &resp)
 	s.enrichWithGitOpsInfo(ctx, proj, &resp)
 
 	// Refresh runtime status/counts even when callers do not request the full
@@ -303,7 +299,7 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 		resp.RunningCount = runningCount
 		resp.Status = string(calculateProjectStatus(services))
 
-		if opts.IncludeRuntimeServices {
+		if opts.IncludeRuntimeServices || opts.IncludeUpdateInfo {
 			resp.RuntimeServices = buildProjectRuntimeServicesInternal(services)
 			for _, svc := range services {
 				if svc.RedeployDisabled {
@@ -316,6 +312,12 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 
 	if opts.IncludeUpdateInfo {
 		s.enrichProjectUpdateInfoInternal(ctx, &resp)
+	}
+	if !opts.IncludeRuntimeServices {
+		resp.RuntimeServices = nil
+	}
+	if !opts.IncludeServiceConfigs {
+		resp.Services = nil
 	}
 
 	return resp, nil
@@ -384,6 +386,7 @@ func buildProjectRuntimeServicesInternal(services []ProjectServiceInfo) []projec
 			Image:            svc.Image,
 			Status:           svc.Status,
 			ContainerID:      svc.ContainerID,
+			ContainerLabels:  svc.Labels,
 			ContainerName:    svc.ContainerName,
 			Ports:            svc.Ports,
 			Health:           svc.Health,
@@ -442,7 +445,13 @@ func (s *ProjectService) enrichProjectUpdateInfoInternal(ctx context.Context, re
 		}
 	}
 
-	resp.UpdateInfo = buildProjectUpdateInfoSummaryInternal(imageRefs, updateInfoByRef)
+	scoped := s.getProjectContainerUpdateInfoInternal(ctx, []project.Details{*resp})
+	if len(resp.Services) > 0 {
+		records := s.getProjectServiceUpdateRecordsInternal(ctx, []string{resp.ID})
+		resp.UpdateInfo = BuildConfiguredUpdateInfo(resp.ID, resp.Services, updateInfoByRef, records, configuredRuntimeServiceUpdateInfoInternal(resp.Services, resp.RuntimeServices, scoped))
+		return
+	}
+	resp.UpdateInfo = BuildUpdateInfoSummary(imageRefs, mergeProjectContainerUpdateInfoInternal(updateInfoByRef, resp.RuntimeServices, scoped))
 }
 
 func (s *ProjectService) enrichProjectsWithUpdateInfoInternal(
@@ -456,11 +465,14 @@ func (s *ProjectService) enrichProjectsWithUpdateInfoInternal(
 
 	imageRefsByProjectID := make(map[string][]string, len(projectsList))
 	allImageRefs := make([]string, 0)
+	servicesByProjectID := make(map[string][]composetypes.ServiceConfig, len(projectsList))
+	projectIDs := make([]string, 0, len(projectsList))
 	cfg := s.settingsService.GetSettingsOrDefaults(ctx)
 
 	type imageRefsResult struct {
 		projectID string
 		refs      []string
+		services  []composetypes.ServiceConfig
 	}
 
 	sem := make(chan struct{}, maxConcurrentComposeReads)
@@ -468,11 +480,7 @@ func (s *ProjectService) enrichProjectsWithUpdateInfoInternal(
 
 	var wg sync.WaitGroup
 	for _, proj := range projectsList {
-		if refs := projects.ParseImageRefsJSON(proj.ImageRefsJSON); len(refs) > 0 {
-			imageRefsByProjectID[proj.ID] = refs
-			allImageRefs = append(allImageRefs, refs...)
-			continue
-		}
+		projectIDs = append(projectIDs, proj.ID)
 
 		wg.Add(1)
 		go func(proj Project) {
@@ -485,13 +493,17 @@ func (s *ProjectService) enrichProjectsWithUpdateInfoInternal(
 			}
 			defer func() { <-sem }()
 
-			refs, _, err := s.getProjectImageRefsFromComposeInternal(ctx, proj, cfg)
+			composeProject, err := s.getCachedComposeProjectInternal(ctx, &proj, cfg)
 			if err != nil {
-				slog.WarnContext(ctx, "failed to resolve project image refs for update summary", "projectID", proj.ID, "projectName", proj.Name, "error", err)
+				slog.WarnContext(ctx, "failed to resolve project services for update summary", "projectID", proj.ID, "projectName", proj.Name, "error", err)
+				resultsCh <- imageRefsResult{projectID: proj.ID, refs: projects.ParseImageRefsJSON(proj.ImageRefsJSON)}
 				return
 			}
-
-			resultsCh <- imageRefsResult{projectID: proj.ID, refs: refs}
+			services := make([]composetypes.ServiceConfig, 0, len(composeProject.Services))
+			for _, service := range composeProject.Services {
+				services = append(services, service)
+			}
+			resultsCh <- imageRefsResult{projectID: proj.ID, refs: projects.ImageRefsFromComposeConfigs(services), services: services}
 		}(proj)
 	}
 
@@ -500,6 +512,7 @@ func (s *ProjectService) enrichProjectsWithUpdateInfoInternal(
 
 	for result := range resultsCh {
 		imageRefsByProjectID[result.projectID] = result.refs
+		servicesByProjectID[result.projectID] = result.services
 		allImageRefs = append(allImageRefs, result.refs...)
 	}
 
@@ -513,9 +526,161 @@ func (s *ProjectService) enrichProjectsWithUpdateInfoInternal(
 		}
 	}
 
+	records := s.getProjectServiceUpdateRecordsInternal(ctx, projectIDs)
+	scoped := s.getProjectContainerUpdateInfoInternal(ctx, details)
 	for i := range details {
-		details[i].UpdateInfo = buildProjectUpdateInfoSummaryInternal(imageRefsByProjectID[details[i].ID], updateInfoByRef)
+		if services := servicesByProjectID[details[i].ID]; len(services) > 0 {
+			details[i].UpdateInfo = BuildConfiguredUpdateInfo(details[i].ID, services, updateInfoByRef, records, configuredRuntimeServiceUpdateInfoInternal(services, details[i].RuntimeServices, scoped))
+			continue
+		}
+		refs := imageRefsByProjectID[details[i].ID]
+		if len(refs) == 0 {
+			refs = projects.ImageRefsFromRuntimeServices(details[i].RuntimeServices)
+		}
+		details[i].UpdateInfo = BuildUpdateInfoSummary(refs, mergeProjectContainerUpdateInfoInternal(updateInfoByRef, details[i].RuntimeServices, scoped))
 	}
+}
+
+func (s *ProjectService) getProjectServiceUpdateRecordsInternal(ctx context.Context, projectIDs []string) []imageupdate.ImageUpdateRecord {
+	if s.db == nil || len(projectIDs) == 0 {
+		return nil
+	}
+	var records []imageupdate.ImageUpdateRecord
+	if err := s.db.WithContext(ctx).Where("project_id <> ? AND project_id IN ?", "", projectIDs).Find(&records).Error; err != nil {
+		slog.WarnContext(ctx, "failed to fetch project service update checks", "error", err)
+		return nil
+	}
+	return records
+}
+
+// BuildConfiguredUpdateInfo matches checks to current services and aggregates their results.
+func BuildConfiguredUpdateInfo(projectID string, services []composetypes.ServiceConfig, byRef map[string]*imagetypes.UpdateInfo, records []imageupdate.ImageUpdateRecord, runtimeUpdates ...map[string]*imagetypes.UpdateInfo) *project.UpdateInfo {
+	checks := make(map[string]*imageupdate.ImageUpdateRecord)
+	for i := range records {
+		if records[i].ProjectID == projectID {
+			checks[records[i].ServiceName] = &records[i]
+		}
+	}
+	serviceUpdates := make(map[string]project.ServiceUpdateInfo, len(services))
+	selected := make(map[string]*imagetypes.UpdateInfo)
+	runtime := make([]project.RuntimeService, 0, len(services))
+	unknownRefs := make(map[string]bool)
+	for _, service := range services {
+		imageRef := strings.TrimSpace(service.Image)
+		if imageRef == "" {
+			continue
+		}
+		var info *imagetypes.UpdateInfo
+		record := checks[service.Name]
+		policy, policyErr := tagpolicy.Resolve(imageRef, updater.DefaultLabelPolicy().TagPolicy(service.Labels))
+		if record != nil && record.PolicyKey == imageref.UpdatePolicyKey(imageRef, service.Labels) {
+			info = record.UpdateInfo()
+		} else if policyErr == nil && policy.Strategy == "digest" {
+			info = byRef[imageRef]
+		}
+
+		if len(runtimeUpdates) > 0 && runtimeUpdates[0][service.Name] != nil {
+			info = mergeProjectContainerUpdateInfoInternal(nil, []project.RuntimeService{{ContainerID: "preview", Image: imageRef}, {ContainerID: "runtime", Image: imageRef}}, map[string]*imagetypes.UpdateInfo{"preview": info, "runtime": runtimeUpdates[0][service.Name]})[imageRef]
+		}
+		serviceUpdates[service.Name] = project.ServiceUpdateInfo{ImageRef: imageRef, UpdateInfo: info}
+		selected[service.Name] = info
+		runtime = append(runtime, project.RuntimeService{ContainerID: service.Name, Image: imageRef})
+		if info == nil {
+			unknownRefs[imageRef] = true
+		}
+	}
+	merged := mergeProjectContainerUpdateInfoInternal(nil, runtime, selected)
+	for imageRef := range unknownRefs {
+		if info := merged[imageRef]; info == nil || !info.HasUpdate {
+			delete(merged, imageRef)
+		}
+	}
+	summary := BuildUpdateInfoSummary(projects.ImageRefsFromComposeConfigs(services), merged)
+	summary.ServiceUpdates = serviceUpdates
+	return summary
+}
+
+// configuredRuntimeServiceUpdateInfoInternal also binds runtime checks to the
+// current Compose source, since container labels may predate an operator edit.
+func configuredRuntimeServiceUpdateInfoInternal(services []composetypes.ServiceConfig, runtime []project.RuntimeService, scoped map[string]*imagetypes.UpdateInfo) map[string]*imagetypes.UpdateInfo {
+	configs := make(map[string]composetypes.ServiceConfig, len(services))
+	for _, service := range services {
+		configs[service.Name] = service
+	}
+	grouped := make(map[string][]project.RuntimeService)
+	for _, service := range runtime {
+		name := service.Name
+		if name == "" {
+			name = dockerutil.ComposeServiceLabel(service.ContainerLabels)
+		}
+		config, ok := configs[name]
+		if !ok || scoped[service.ContainerID] == nil {
+			continue
+		}
+		if imageref.UpdatePolicyKey(config.Image, config.Labels) != imageref.UpdatePolicyKey(service.Image, service.ContainerLabels) {
+			continue
+		}
+		service.Image = config.Image
+		grouped[name] = append(grouped[name], service)
+	}
+	result := make(map[string]*imagetypes.UpdateInfo, len(grouped))
+	for name, replicas := range grouped {
+		result[name] = mergeProjectContainerUpdateInfoInternal(nil, replicas, scoped)[strings.TrimSpace(configs[name].Image)]
+	}
+	return result
+}
+
+func (s *ProjectService) getProjectContainerUpdateInfoInternal(ctx context.Context, details []project.Details) map[string]*imagetypes.UpdateInfo {
+	if s.imageService == nil {
+		return nil
+	}
+	var containers []container.Summary
+	for _, detail := range details {
+		for _, service := range detail.RuntimeServices {
+			if service.ContainerID != "" {
+				containers = append(containers, container.Summary{ID: service.ContainerID, Image: service.Image, Labels: service.ContainerLabels})
+			}
+		}
+	}
+	scoped, err := s.imageService.GetUpdateInfoByContainers(ctx, containers)
+	if err != nil {
+		slog.WarnContext(ctx, "failed to fetch project container update info", "error", err)
+		return nil
+	}
+	return scoped
+}
+
+func mergeProjectContainerUpdateInfoInternal(base map[string]*imagetypes.UpdateInfo, services []project.RuntimeService, scoped map[string]*imagetypes.UpdateInfo) map[string]*imagetypes.UpdateInfo {
+	result := make(map[string]*imagetypes.UpdateInfo, len(base))
+	maps.Copy(result, base)
+	seen := make(map[string]bool)
+	for _, service := range services {
+		info := scoped[service.ContainerID]
+		if info == nil {
+			continue
+		}
+		imageRef := strings.TrimSpace(service.Image)
+		if imageRef == "" {
+			continue
+		}
+		merged := *info
+		if seen[imageRef] {
+			previous := result[imageRef]
+			merged.HasUpdate = merged.HasUpdate || previous.HasUpdate
+			if previous.CheckTime.After(merged.CheckTime) {
+				merged.CheckTime = previous.CheckTime
+			}
+			if previous.LatestVersion != merged.LatestVersion || previous.LatestDigest != merged.LatestDigest || previous.UpdateType != merged.UpdateType {
+				merged.LatestVersion, merged.LatestDigest, merged.UpdateType = "", "", ""
+			}
+			if merged.Error == "" {
+				merged.Error = previous.Error
+			}
+		}
+		result[imageRef] = &merged
+		seen[imageRef] = true
+	}
+	return result
 }
 
 func (s *ProjectService) getProjectImageRefsFromComposeInternal(ctx context.Context, proj Project, cfg *settings.Settings) ([]string, []string, error) {
@@ -527,7 +692,8 @@ func (s *ProjectService) getProjectImageRefsFromComposeInternal(ctx context.Cont
 	return projects.ImageRefsFromComposeServices(composeProject.Services), projects.BuildImageRefsFromComposeProject(composeProject), nil
 }
 
-func buildProjectUpdateInfoSummaryInternal(
+// BuildUpdateInfoSummary aggregates image checks into a project update summary.
+func BuildUpdateInfoSummary(
 	imageRefs []string,
 	updateInfoByRef map[string]*imagetypes.UpdateInfo,
 ) *project.UpdateInfo {
@@ -606,7 +772,19 @@ func (s *ProjectService) enrichWithGitOpsInfo(ctx context.Context, proj *Project
 	}
 }
 
-func (s *ProjectService) enrichWithComposeServiceConfigs(ctx context.Context, proj *Project, composeFile string, resp *project.Details) {
+func (s *ProjectService) enrichComposeDetailsInternal(ctx context.Context, proj *Project, opts project.DetailsOptions, resp *project.Details) {
+	composeFile, err := s.ResolveProjectComposeFile(ctx, proj)
+	if err != nil {
+		return
+	}
+	resp.ComposeFileName = filepath.Base(composeFile)
+	if opts.IncludeIncludeFiles {
+		s.enrichWithIncludeFiles(ctx, composeFile, resp)
+	}
+	if !opts.IncludeServiceConfigs && !opts.IncludeUpdateInfo {
+		return
+	}
+
 	composeProj, loadErr := s.getCachedComposeProjectInternal(ctx, proj, nil)
 	if loadErr != nil {
 		slog.WarnContext(ctx, "failed to load compose service configs", "path", composeFile, "error", loadErr)

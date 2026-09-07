@@ -39,6 +39,7 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.getarcane.app/updater/labels"
 	"go.uber.org/fx/fxtest"
 	"gorm.io/gorm"
 )
@@ -427,4 +428,30 @@ func TestDashboardService_GetSnapshot_CachesFullSnapshotsPerIconCatalog(t *testi
 	userAgain, err := svc.GetSnapshot(userCtx, DashboardActionItemsOptions{}, true)
 	require.NoError(t, err)
 	require.Same(t, userSnapshot, userAgain)
+}
+
+func TestPendingContainerCountUsesScopedTagRecords(t *testing.T) {
+	db, _ := setupDashboardServiceTestDB(t)
+	records := []imageupdate.ImageUpdateRecord{
+		{ID: "shared", HasUpdate: true},
+		{ID: "container::first", ContainerID: "first", ImageID: "shared", HasUpdate: true},
+		{ID: "container::other-project", ContainerID: "other-project", ImageID: "shared", HasUpdate: true},
+	}
+	require.NoError(t, db.Create(&records).Error)
+	service := &DashboardService{db: db}
+	containers := []dockercontainer.Summary{
+		{ID: "first", Image: "app:1.2.3", ImageID: "shared", Labels: map[string]string{}},
+		{ID: "unchecked", Image: "app:1.2.3", ImageID: "shared"},
+	}
+	count, err := service.getPendingContainerUpdatesCountInternal(t.Context(), containers)
+	require.NoError(t, err)
+	require.Equal(t, 1, count)
+	containers = append(containers, dockercontainer.Summary{ID: "digest", Image: "app:latest", ImageID: "shared"})
+	count, err = service.getPendingContainerUpdatesCountInternal(t.Context(), containers)
+	require.NoError(t, err)
+	require.Equal(t, 2, count)
+	containers[0].Labels[labels.LabelUpdater] = "off"
+	count, err = service.getPendingContainerUpdatesCountInternal(t.Context(), containers)
+	require.NoError(t, err)
+	require.Equal(t, 1, count)
 }

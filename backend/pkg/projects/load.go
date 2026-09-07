@@ -458,6 +458,9 @@ func LoadComposeProject(
 }
 
 func finishLoadedProjectInternal(ctx context.Context, project *composetypes.Project, workingDir string, pathMapper projecttypes.VolumeSourcePathMapper, translateFileResources bool, rawSources map[string]string) (*composetypes.Project, error) {
+	if err := applyUpdaterMetadataInternal(project); err != nil {
+		return nil, err
+	}
 	project = project.WithoutUnnecessaryResources()
 	ResolveRelativeProjectPaths(project, workingDir)
 

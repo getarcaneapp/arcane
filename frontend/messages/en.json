@@ -3501,5 +3501,15 @@
   "jobs_local_health_check": "Local environment health",
   "jobs_health_check": "Environment health",
   "jobs_settings_details": "Settings and details",
- "jobs_health_scope_description": "Checks the health and connectivity of this environment."
+ "jobs_health_scope_description": "Checks the health and connectivity of this environment.",
+	"editor_compose_updater_detail": "Image update policy",
+	"editor_compose_updater_info": "Project defaults apply to all services. Service updater fields override project defaults. Explicit updater labels take precedence for each field.",
+	"editor_compose_updater_enabled_detail": "Enable image updates",
+	"editor_compose_updater_enabled_info": "Boolean. Set to false to disable image updates for the affected services.",
+	"editor_compose_updater_strategy_detail": "Update strategy",
+	"editor_compose_updater_strategy_info": "Defaults to auto: complete stable semantic version tags follow newer eligible tags; moving tags such as latest and alpine follow digest changes. Set digest to keep the current tag, or tag to require version-based selection.",
+	"editor_compose_updater_constraint_detail": "Version constraint",
+	"editor_compose_updater_constraint_info": "Semantic version constraint for tag updates, such as 3.x or >=3.1.0 <4.0.0. Without a constraint, updates stay within the current major, or the current minor for 0.x.",
+	"editor_compose_updater_tag_pattern_detail": "Tag pattern",
+	"editor_compose_updater_tag_pattern_info": "Regular expression matched against the whole tag. Use a named version capture to select a variant, such as (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
 }

@@ -52,7 +52,6 @@
 	import { projectService } from '#lib/services/project-service.js';
 	import { projectWorkspaceService } from '#lib/services/project-workspace-service.js';
 	import settingsStore from '#lib/stores/config-store.js';
-	import { imageService } from '#lib/services/image-service.js';
 	import { gitOpsSyncService } from '#lib/services/gitops-sync-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { hasPermission } from '#lib/utils/auth.js';
@@ -218,7 +217,6 @@
 		if (!detail) return null;
 		return withLoadedProjectIncludeContent(detail);
 	});
-	const projectImageRefs = $derived.by(() => getProjectImageRefs(project));
 	const serverName = $derived(project?.name ?? '');
 	const serverComposeContent = $derived(project?.composeContent ?? '');
 	const serverEnvContent = $derived(project?.envContent ?? '');
@@ -536,28 +534,6 @@
 		}
 	}
 
-	function getProjectImageRefs(details?: Project | null): string[] {
-		const refs = new Set<string>();
-
-		for (const service of details?.services ?? []) {
-			const imageRef = service.image?.trim();
-			if (imageRef) {
-				refs.add(imageRef);
-			}
-		}
-
-		if (refs.size === 0) {
-			for (const service of details?.runtimeServices ?? []) {
-				const imageRef = service.image?.trim();
-				if (imageRef) {
-					refs.add(imageRef);
-				}
-			}
-		}
-
-		return [...refs];
-	}
-
 	function getProjectIncludeFileContents(details: Project | null | undefined): Record<string, string> {
 		return Object.fromEntries(
 			(details?.includeFiles ?? []).flatMap((file) =>
@@ -644,23 +620,15 @@
 
 	const checkProjectUpdatesMutation = createMutation(() => ({
 		mutationKey: queryKeys.projects.detailCheckUpdates(envId ?? '0', projectId),
-		mutationFn: async () => {
-			if (projectImageRefs.length === 0) {
-				return {};
-			}
-			return imageService.checkMultipleImages(projectImageRefs);
-		},
-		onSuccess: async (results) => {
+		mutationFn: () => projectService.checkUpdates(projectId),
+		onSuccess: async (result) => {
 			const currentEnvId = envId ?? (await environmentStore.getCurrentEnvironmentId());
-			const firstError = Object.values(results)
-				.find((result) => !!result?.error?.trim())
-				?.error?.trim();
+			const firstError = result.errorMessage?.trim();
 			const hasErrors = !!firstError;
-			const toastOptions = activityToastOptions(extractActivityId(results));
 			if (hasErrors) {
-				toast.error(firstError || m.containers_check_updates_failed(), toastOptions);
+				toast.error(firstError || m.containers_check_updates_failed());
 			} else {
-				toast.success(m.images_update_check_completed(), toastOptions);
+				toast.success(m.images_update_check_completed());
 			}
 			await Promise.all([
 				refreshProjectDetails(),

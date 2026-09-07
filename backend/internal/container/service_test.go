@@ -554,3 +554,27 @@ func TestRecreateContainerDaemonCorrelationInternal(t *testing.T) {
 	require.True(t, events.ShouldSuppressDaemonEvent("container", "old-id", "", ""))
 	require.True(t, events.ShouldSuppressDaemonEvent("container", "new-id", "", ""))
 }
+
+func TestBuildSummariesUsesContainerTagPolicyUpdates(t *testing.T) {
+	service := &ContainerService{}
+	strategyLabel := "com.getarcaneapp.arcane.updater.strategy"
+	containers := []container.Summary{
+		{ID: "first", Image: "app:3.1.0", ImageID: "shared-image"},
+		{ID: "second", Image: "app:3.1.0", ImageID: "shared-image", Labels: map[string]string{strategyLabel: "auto"}},
+		{ID: "unchecked", Image: "app:3.1.0", ImageID: "shared-image", Labels: map[string]string{strategyLabel: "tag"}},
+		{ID: "digest", Image: "app:3.1.0", ImageID: "shared-image", Labels: map[string]string{strategyLabel: "digest"}},
+	}
+	updates := map[string]*imagetypes.UpdateInfo{
+		"shared-image":      {HasUpdate: true, UpdateType: "digest"},
+		"container::first":  {HasUpdate: true, UpdateType: "tag", LatestVersion: "3.2.0"},
+		"container::second": {HasUpdate: true, UpdateType: "tag", LatestVersion: "4.0.0"},
+	}
+	items := service.BuildSummaries(containers, updates, "", nil)
+	require.Equal(t, "tag", items[0].UpdateStrategy)
+	require.Equal(t, "tag", items[1].UpdateStrategy)
+	require.Equal(t, "digest", items[3].UpdateStrategy)
+	require.Equal(t, "3.2.0", items[0].UpdateInfo.LatestVersion)
+	require.Equal(t, "4.0.0", items[1].UpdateInfo.LatestVersion)
+	require.Nil(t, items[2].UpdateInfo)
+	require.Equal(t, "digest", items[3].UpdateInfo.UpdateType)
+}

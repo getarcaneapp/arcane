@@ -9,8 +9,11 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"unicode"
+
+	updaterlabels "go.getarcane.app/updater/labels"
 
 	"emperror.dev/errors"
 	"github.com/compose-spec/compose-go/v2/loader"
@@ -579,4 +582,98 @@ func NormalizeProjectTagColor(color projecttypes.TagColor) (projecttypes.TagColo
 		return "", fmt.Errorf("unsupported tag color %q", color)
 	}
 	return normalized, nil
+}
+
+// applyUpdaterMetadataInternal translates Compose metadata into the labels the
+// updater already consumes, before previews or deployment use the model.
+func applyUpdaterMetadataInternal(project *composetypes.Project) error {
+	defaults, err := updaterMetadataLabelsInternal(project.Extensions[arcaneBlockKey])
+	if err != nil {
+		return errors.WrapIf(err, "x-arcane.updater")
+	}
+	for name, service := range project.Services {
+		overrides, err := updaterMetadataLabelsInternal(service.Extensions[arcaneBlockKey])
+		if err != nil {
+			return errors.WrapIff(err, "service %s x-arcane.updater", name)
+		}
+		effective := maps.Clone(defaults)
+		if effective == nil {
+			effective = map[string]string{}
+		}
+		maps.Copy(effective, overrides)
+		if len(effective) == 0 {
+			continue
+		}
+		service.Labels = maps.Clone(service.Labels)
+		if service.Labels == nil {
+			service.Labels = composetypes.Labels{}
+		}
+		for key, value := range effective {
+			if _, explicit := service.Labels[key]; !explicit {
+				service.Labels[key] = value
+			}
+		}
+		project.Services[name] = service
+	}
+	return nil
+}
+
+func updaterMetadataLabelsInternal(block any) (map[string]string, error) {
+	arcane, ok := utils.AsStringMap(block).Get()
+	if !ok {
+		return nil, nil
+	}
+	raw, present := arcane["updater"]
+	if !present {
+		return nil, nil
+	}
+	config, ok := utils.AsStringMap(raw).Get()
+	if !ok {
+		return nil, errors.New("expected an updater mapping")
+	}
+	result := make(map[string]string, len(config))
+	for key, value := range config {
+		if key == "enabled" {
+			enabled, err := updaterMetadataEnabledInternal(value)
+			if err != nil {
+				return nil, err
+			}
+			result[updaterlabels.LabelUpdater] = strconv.FormatBool(enabled)
+			continue
+		}
+		var label string
+		switch key {
+		case "strategy":
+			label = updaterlabels.LabelUpdateStrategy
+		case "constraint":
+			label = updaterlabels.LabelUpdateConstraint
+		case "tag-pattern":
+			label = updaterlabels.LabelUpdateTagPattern
+		default:
+			return nil, errors.Errorf("unknown updater option %q", key)
+		}
+		text, ok := value.(string)
+		if !ok {
+			return nil, errors.Errorf("updater %s must be a string", key)
+		}
+		text = strings.TrimSpace(text)
+		if key == "strategy" && text != "auto" && text != "tag" && text != "digest" {
+			return nil, errors.Errorf("unknown updater strategy %q", text)
+		}
+		result[label] = text
+	}
+	return result, nil
+}
+
+func updaterMetadataEnabledInternal(value any) (bool, error) {
+	if enabled, ok := value.(bool); ok {
+		return enabled, nil
+	}
+	if text, ok := value.(string); ok {
+		enabled, err := strconv.ParseBool(strings.TrimSpace(text))
+		if err == nil {
+			return enabled, nil
+		}
+	}
+	return false, errors.New("updater enabled must be a boolean")
 }

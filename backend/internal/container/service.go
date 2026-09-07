@@ -41,7 +41,9 @@ import (
 	"github.com/samber/hot"
 	containerstats "go.getarcane.app/streams/stats"
 	"go.getarcane.app/sys/cgroup"
+	"go.getarcane.app/updater"
 	"go.getarcane.app/updater/labels"
+	"go.getarcane.app/updater/pkg/utils/tagpolicy"
 )
 
 type ContainerService struct {
@@ -550,7 +552,7 @@ func (s *ContainerService) tryRedeployViaComposeProjectInternal(ctx context.Cont
 		"service", serviceName,
 	)
 
-	if err := s.projectService.UpdateProjectServices(ctx, proj.ID, []string{serviceName}, user); err != nil {
+	if err := s.projectService.UpdateProjectServices(ctx, proj.ID, []string{serviceName}, user, false); err != nil {
 		s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", err, database.JSON{
 			"action":      "redeploy",
 			"step":        "compose_update_services",
@@ -1437,8 +1439,7 @@ func (s *ContainerService) ListContainersPaginated(
 	}
 
 	dockerContainers = FilterInternalContainers(dockerContainers, includeInternal)
-	imageIDs := CollectImageIDs(dockerContainers)
-	updateInfoMap := s.getUpdateInfoMapInternal(ctx, imageIDs)
+	updateInfoMap := s.getUpdateInfoMapInternal(ctx, dockerContainers)
 	currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
 	items := s.BuildSummaries(dockerContainers, updateInfoMap, currentContainerID, currentContainerErr)
 
@@ -1604,24 +1605,46 @@ func CollectImageIDs(containers []container.Summary) []string {
 	return imageIDs
 }
 
-func (s *ContainerService) getUpdateInfoMapInternal(ctx context.Context, imageIDs []string) map[string]*imagetypes.UpdateInfo {
-	if s.imageService == nil || len(imageIDs) == 0 {
-		return make(map[string]*imagetypes.UpdateInfo)
+func (s *ContainerService) getUpdateInfoMapInternal(ctx context.Context, containers []container.Summary) map[string]*imagetypes.UpdateInfo {
+	result := make(map[string]*imagetypes.UpdateInfo)
+	if s.imageService == nil || len(containers) == 0 {
+		return result
 	}
-
-	updateInfoMap, err := s.imageService.GetUpdateInfoByImageIDs(ctx, imageIDs)
+	updates, err := s.imageService.GetUpdateInfoByImageIDs(ctx, CollectImageIDs(containers))
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to fetch image update info for containers", "error", err)
-		return make(map[string]*imagetypes.UpdateInfo)
+	} else {
+		maps.Copy(result, updates)
 	}
-	return updateInfoMap
+	scoped, err := s.imageService.GetUpdateInfoByContainers(ctx, containers)
+	if err != nil {
+		slog.WarnContext(ctx, "Failed to fetch container tag update info", "error", err)
+		return result
+	}
+	for id, info := range scoped {
+		result["container::"+id] = info
+	}
+	return result
 }
 
 func (s *ContainerService) BuildSummaries(containers []container.Summary, updateInfoMap map[string]*imagetypes.UpdateInfo, currentContainerID string, currentContainerErr error) []containertypes.Summary {
 	items := make([]containertypes.Summary, 0, len(containers))
 	for _, dc := range containers {
 		summary := containertypes.NewSummary(dc)
-		if info, exists := updateInfoMap[dc.ImageID]; exists {
+		key := dc.ImageID
+		policy := updater.DefaultLabelPolicy().TagPolicy(dc.Labels)
+		resolved, policyErr := tagpolicy.Resolve(dc.Image, policy)
+		summary.UpdateStrategy = resolved.Strategy
+		if policyErr != nil {
+			summary.UpdateStrategy = policy.Strategy
+			if summary.UpdateStrategy == "" {
+				summary.UpdateStrategy = "auto"
+			}
+		}
+		if policyErr != nil || resolved.Strategy == "tag" {
+			key = "container::" + dc.ID
+		}
+		if info, exists := updateInfoMap[key]; exists {
 			summary.UpdateInfo = info
 		}
 		summary.RedeployDisabled = labels.ShouldDisableArcaneServerRedeploy(summary.Labels, summary.ID, currentContainerID, currentContainerErr)

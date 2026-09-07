@@ -163,6 +163,9 @@ type DeployOptions struct {
 
 // RuntimeService contains live container status information for a service.
 type RuntimeService struct {
+	// ContainerLabels carries runtime policy inputs for server-side update aggregation.
+	ContainerLabels map[string]string `json:"-"`
+
 	// Name is the service name from the compose file.
 	//
 	// Required: true
@@ -219,8 +222,15 @@ type RuntimeService struct {
 	RedeployDisabled bool `json:"redeployDisabled,omitempty"`
 }
 
+// ServiceUpdateInfo keeps version candidates separate for services sharing an image.
+type ServiceUpdateInfo struct {
+	ImageRef   string                 `json:"imageRef"`
+	UpdateInfo *imagetypes.UpdateInfo `json:"updateInfo,omitempty"`
+}
+
 // UpdateInfo contains aggregated image update status for a project.
 type UpdateInfo struct {
+	ServiceUpdates map[string]ServiceUpdateInfo `json:"serviceUpdates,omitempty"`
 	// Status is the aggregate update status for the project.
 	//
 	// Values: has_update | up_to_date | not_pulled | unknown | error
