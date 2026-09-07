@@ -3500,5 +3500,15 @@
   "jobs_local_health_check": "地域の環境衛生",
   "jobs_health_check": "環境衛生",
   "jobs_settings_details": "設定と詳細",
-  "jobs_health_scope_description": "この環境の正常動作状況と接続状態を確認します。"
+  "jobs_health_scope_description": "この環境の正常動作状況と接続状態を確認します。",
+  "editor_compose_updater_detail": "画像の更新方針",
+  "editor_compose_updater_info": "プロジェクトのデフォルト設定はすべてのサービスに適用されます。サービスのアップデータフィールドは、プロジェクトのデフォルト設定よりも優先されます。各フィールドについては、明示的に指定されたアップデータのラベルが優先されます。",
+  "editor_compose_updater_enabled_detail": "画像の更新を有効にする",
+  "editor_compose_updater_enabled_info": "ブール値。対象となるサービスの画像更新を無効にするには、false に設定します。",
+  "editor_compose_updater_strategy_detail": "更新戦略",
+  "editor_compose_updater_strategy_info": "デフォルトは「auto」です。完全な安定版セマンティックバージョンのタグは、対象となる新しいタグに従います。一方、「latest」や「alpine」などの移動タグは、ダイジェストの変更に従います。現在のタグを維持するには「digest」を指定し、バージョンに基づく選択を必須にするには「tag」を指定してください。",
+  "editor_compose_updater_constraint_detail": "バージョンの制約",
+  "editor_compose_updater_constraint_info": "タグの更新に対するセマンティックバージョンの制約。例：3.x や >=3.1.0 <4.0.0 など。制約がない場合、更新は現在のメジャーバージョン内、または 0.x の場合は現在のマイナーバージョン内に留まります。",
+  "editor_compose_updater_tag_pattern_detail": "Tag pattern",
+  "editor_compose_updater_tag_pattern_info": "Regular expression matched against the whole tag. Use a named version capture to select a variant, such as (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
 }
