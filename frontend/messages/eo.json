@@ -3500,5 +3500,15 @@
   "jobs_local_health_check": "Loka media sano",
   "jobs_health_check": "Medicina medio",
   "jobs_settings_details": "Agordoj kaj detaloj",
-  "jobs_health_scope_description": "Kontrolas la sanon kaj konekteblecon de ĉi tiu medio."
+  "jobs_health_scope_description": "Kontrolas la sanon kaj konekteblecon de ĉi tiu medio.",
+  "editor_compose_updater_detail": "Politiko pri ĝisdatigo de bildoj",
+  "editor_compose_updater_info": "La defaŭltoj de la projekto aplikiĝas al ĉiuj servoj. La kampoj de la serva ĝisdatigilo superregas la projektajn defaŭltojn. Eksplicitaj ĝisdatigiletikedoj havas prioritaton por ĉiu kampo.",
+  "editor_compose_updater_enabled_detail": "Aktivigu bildajn ĝisdatigojn",
+  "editor_compose_updater_enabled_info": "Boolea. Agordu al malvera por malŝalti ĝisdatigojn de bildoj por la tuŝitaj servoj.",
+  "editor_compose_updater_strategy_detail": "Ĝisdatigu strategion",
+  "editor_compose_updater_strategy_info": "Defaŭlte estas agordita al aŭtomata reĝimo: stabilaj semantikaj versioetikedoj sekvas pli novajn elekteblajn etikedojn; moviĝemaj etikedoj kiel latest kaj alpine sekvas digestŝanĝojn. Agordu digeston por konservi la aktualan etikedon, aŭ por etikedi tiel, ke necesas elekto bazita sur versio.",
+  "editor_compose_updater_constraint_detail": "Versia limigo",
+  "editor_compose_updater_constraint_info": "Semantika versio-kondiĉo por etikedaj ĝisdatigoj, ekzemple 3.x aŭ >=3.1.0 <4.0.0. Sen kondiĉo, ĝisdatigoj restas ene de la nuna ĉefa versio, aŭ ene de la nuna malgranda versio por 0.x.",
+  "editor_compose_updater_tag_pattern_detail": "Tag pattern",
+  "editor_compose_updater_tag_pattern_info": "Regular expression matched against the whole tag. Use a named version capture to select a variant, such as (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
 }
