@@ -3509,6 +3509,6 @@
   "editor_compose_updater_strategy_info": "預設值為 auto：完整的穩定語義版本標籤會跟隨較新的符合條件標籤；而「latest」和「alpine」等動態標籤則會跟隨摘要變更。若要保留當前標籤，請將 digest 設為「digest」；若要強制根據版本進行選擇，請將 tag 設為「tag」。",
   "editor_compose_updater_constraint_detail": "版本限制",
   "editor_compose_updater_constraint_info": "標籤更新的語義版本限制，例如 3.x 或 >=3.1.0 <4.0.0。若未設定限制，更新將維持在當前主版本範圍內；若為 0.x 版本，則維持在當前次版本範圍內。",
-  "editor_compose_updater_tag_pattern_detail": "Tag pattern",
-  "editor_compose_updater_tag_pattern_info": "Regular expression matched against the whole tag. Use a named version capture to select a variant, such as (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
+  "editor_compose_updater_tag_pattern_detail": "標籤模式",
+  "editor_compose_updater_tag_pattern_info": "正規表達式會與整個標籤進行比對。請使用命名捕獲來選取變體，例如 (?P<version>\\d+\\.\\d+\\.\\d+)-alpine。"
 }
