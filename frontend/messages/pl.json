@@ -3510,5 +3510,13 @@
   "editor_compose_updater_constraint_detail": "Ograniczenie dotyczące wersji",
   "editor_compose_updater_constraint_info": "Ograniczenie wersji semantycznej dla aktualizacji tagów, np. 3.x lub >=3.1.0 <4.0.0. Bez takiego ograniczenia aktualizacje pozostają w ramach bieżącej wersji głównej lub bieżącej wersji podrzędnej w przypadku wersji 0.x.",
   "editor_compose_updater_tag_pattern_detail": "Wzór tagów",
-  "editor_compose_updater_tag_pattern_info": "Wyrażenie regularne dopasowano do całego tagu. Aby wybrać konkretny wariant, należy użyć nazwanego zapisu przechwytywania, np. (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
+  "editor_compose_updater_tag_pattern_info": "Wyrażenie regularne dopasowano do całego tagu. Aby wybrać konkretny wariant, należy użyć nazwanego zapisu przechwytywania, np. (?P<version>\\d+\\.\\d+\\.\\d+)-alpine.",
+  "activity_type_job_run": "Przebieg automatyzacji",
+  "jobs_resolve_run": "Decyzja po rozpatrzeniu sprawy",
+  "jobs_resolve_description": "Potwierdź, że zapoznałeś się z tym przerwanym uruchomieniem i sprawdziłeś jego wyniki. Rozwiązanie tego problemu pozwala zachować historię i umożliwia kontynuację później zaplanowanych zadań. Nie powoduje to jednak przeprowadzenia aktualizacji ani oznaczenia tego uruchomienia jako zakończonego powodzeniem.",
+  "jobs_resolution_details": "Odpowiedź udzielona przez {user} w dniu {date}",
+  "jobs_activity_summary": "Aktywność biegowa",
+  "jobs_activity_output": "Wynik operacji",
+  "jobs_attention_schedule_blocked": "To uruchomienie wymaga weryfikacji i blokuje kolejne uruchomienia tego zadania.",
+  "jobs_resolution_reason": "Powód uchwały"
 }
