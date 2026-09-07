@@ -3510,5 +3510,13 @@
   "editor_compose_updater_constraint_detail": "Versiebeperking",
   "editor_compose_updater_constraint_info": "Semantische versiebeperking voor tag-updates, zoals 3.x of >=3.1.0 <4.0.0. Zonder een beperking blijven updates binnen de huidige hoofdversie, of binnen de huidige subversie voor 0.x.",
   "editor_compose_updater_tag_pattern_detail": "Tagpatroon",
-  "editor_compose_updater_tag_pattern_info": "De reguliere expressie is vergeleken met de volledige tag. Gebruik een benoemde variabele om een variant te selecteren, bijvoorbeeld (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
+  "editor_compose_updater_tag_pattern_info": "De reguliere expressie is vergeleken met de volledige tag. Gebruik een benoemde variabele om een variant te selecteren, bijvoorbeeld (?P<version>\\d+\\.\\d+\\.\\d+)-alpine.",
+  "activity_type_job_run": "Automatiseringsrun",
+  "jobs_resolve_run": "Besluit na beoordeling",
+  "jobs_resolve_description": "Bevestig dat u deze onderbroken run hebt bekeken en de resultaten ervan hebt gecontroleerd. Door het probleem op te lossen blijft de geschiedenis behouden en kunnen later geplande taken worden uitgevoerd. Er worden geen updates uitgevoerd en deze run wordt niet als succesvol gemarkeerd.",
+  "jobs_resolution_details": "Besloten door {user} op {date}",
+  "jobs_activity_summary": "Activiteit uitvoeren",
+  "jobs_activity_output": "Werkingsuitgang",
+  "jobs_attention_schedule_blocked": "Deze run moet worden gecontroleerd en blokkeert latere runs van deze taak.",
+  "jobs_resolution_reason": "Reden voor het besluit"
 }
