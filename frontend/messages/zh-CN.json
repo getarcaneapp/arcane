@@ -3510,5 +3510,13 @@
   "editor_compose_updater_constraint_detail": "版本限制",
   "editor_compose_updater_constraint_info": "标签更新的语义版本约束，例如 3.x 或 >=3.1.0 <4.0.0。如果没有约束，更新将保持在当前主版本范围内，对于 0.x 版本则保持在当前次版本范围内。",
   "editor_compose_updater_tag_pattern_detail": "标签模式",
-  "editor_compose_updater_tag_pattern_info": "正则表达式用于匹配整个标签。可使用命名捕获来选择特定变体，例如 (?P<version>\\d+\\.\\d+\\.\\d+)-alpine。"
+  "editor_compose_updater_tag_pattern_info": "正则表达式用于匹配整个标签。可使用命名捕获来选择特定变体，例如 (?P<version>\\d+\\.\\d+\\.\\d+)-alpine。",
+  "activity_type_job_run": "自动化运行",
+  "jobs_resolve_run": "审查后作出决定",
+  "jobs_resolve_description": "请确认您已查看此中断的运行并检查了其结果。解决此问题可保留其历史记录，并允许后续计划任务继续执行。此操作不会执行更新，也不会将此次运行标记为成功。",
+  "jobs_resolution_details": "由 {user} 于 {date}",
+  "jobs_activity_summary": "跑步活动",
+  "jobs_activity_output": "操作输出",
+  "jobs_attention_schedule_blocked": "此运行需要审核，并将阻塞该作业后续的运行。",
+  "jobs_resolution_reason": "决议理由"
 }
