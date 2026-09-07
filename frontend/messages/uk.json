@@ -3500,5 +3500,15 @@
   "jobs_local_health_check": "Гігієна навколишнього середовища",
   "jobs_health_check": "Екологічне здоров’я",
   "jobs_settings_details": "Налаштування та детальна інформація",
-  "jobs_health_scope_description": "Перевіряє працездатність та підключення цього середовища."
+  "jobs_health_scope_description": "Перевіряє працездатність та підключення цього середовища.",
+  "editor_compose_updater_detail": "Політика оновлення зображень",
+  "editor_compose_updater_info": "Значення за замовчуванням проекту застосовуються до всіх служб. Поля засобу оновлення служб мають пріоритет над значеннями за замовчуванням проекту. Явно вказані назви полів у засобі оновлення мають пріоритет для кожного поля.",
+  "editor_compose_updater_enabled_detail": "Увімкнути оновлення зображень",
+  "editor_compose_updater_enabled_info": "Логічне значення. Встановіть значення «false», щоб вимкнути оновлення зображень для відповідних служб.",
+  "editor_compose_updater_strategy_detail": "Стратегія оновлення",
+  "editor_compose_updater_strategy_info": "За замовчуванням встановлено значення «auto»: повні стабільні семантичні версії тегів слідують за новими відповідними тегами; рухомі теги, такі як «latest» та «alpine», слідують за змінами дайджесту. Встановіть параметр «digest», щоб зберегти поточний тег, або «tag», щоб вимагати вибір на основі версії.",
+  "editor_compose_updater_constraint_detail": "Обмеження щодо версії",
+  "editor_compose_updater_constraint_info": "Семантичне обмеження версії для оновлень тегів, наприклад 3.x або >=3.1.0 <4.0.0. Без такого обмеження оновлення залишаються в межах поточної головної версії або поточної другорядної версії для 0.x.",
+  "editor_compose_updater_tag_pattern_detail": "Tag pattern",
+  "editor_compose_updater_tag_pattern_info": "Regular expression matched against the whole tag. Use a named version capture to select a variant, such as (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
 }
