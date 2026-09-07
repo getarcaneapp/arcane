@@ -3510,5 +3510,13 @@
   "editor_compose_updater_constraint_detail": "バージョンの制約",
   "editor_compose_updater_constraint_info": "タグの更新に対するセマンティックバージョンの制約。例：3.x や >=3.1.0 <4.0.0 など。制約がない場合、更新は現在のメジャーバージョン内、または 0.x の場合は現在のマイナーバージョン内に留まります。",
   "editor_compose_updater_tag_pattern_detail": "タグのパターン",
-  "editor_compose_updater_tag_pattern_info": "正規表現はタグ全体に対して照合されます。バリアントを選択するには、名前付きキャプチャを使用してください。例：(?P<version>\\d+\\.\\d+\\.\\d+)-alpine。"
+  "editor_compose_updater_tag_pattern_info": "正規表現はタグ全体に対して照合されます。バリアントを選択するには、名前付きキャプチャを使用してください。例：(?P<version>\\d+\\.\\d+\\.\\d+)-alpine。",
+  "activity_type_job_run": "自動化の実行",
+  "jobs_resolve_run": "検討後の対応",
+  "jobs_resolve_description": "この中断された実行内容を確認し、その結果を点検したことを確認してください。これを解決すると、その履歴は保持され、その後予定されている処理が実行可能になります。ただし、更新は実行されず、この実行が成功したものとみなされることもありません。",
+  "jobs_resolution_details": "{user} により解決されました {date}",
+  "jobs_activity_summary": "アクティビティを実行する",
+  "jobs_activity_output": "動作出力",
+  "jobs_attention_schedule_blocked": "この実行は確認が必要であり、このジョブの後の実行をブロックしています。",
+  "jobs_resolution_reason": "決議の理由"
 }
