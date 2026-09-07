@@ -3500,5 +3500,15 @@
   "jobs_local_health_check": "Lokal miljö- och folkhälsa",
   "jobs_health_check": "Miljö och hälsa",
   "jobs_settings_details": "Inställningar och detaljer",
-  "jobs_health_scope_description": "Kontrollerar att miljön fungerar som den ska och att anslutningen är i ordning."
+  "jobs_health_scope_description": "Kontrollerar att miljön fungerar som den ska och att anslutningen är i ordning.",
+  "editor_compose_updater_detail": "Riktlinjer för uppdatering av bilder",
+  "editor_compose_updater_info": "Projektets standardinställningar gäller för alla tjänster. Fälten i tjänsteuppdateraren åsidosätter projektets standardinställningar. Explicita etiketter i uppdateraren har företräde för varje fält.",
+  "editor_compose_updater_enabled_detail": "Aktivera bilduppdateringar",
+  "editor_compose_updater_enabled_info": "Boolesk variabel. Ställ in på ”false” för att inaktivera bilduppdateringar för de berörda tjänsterna.",
+  "editor_compose_updater_strategy_detail": "Uppdateringsstrategi",
+  "editor_compose_updater_strategy_info": "Standardinställningen är ”auto”: kompletta stabila semantiska versionstaggar följer nyare taggar som uppfyller kraven; rörliga taggar som ”latest” och ”alpine” följer ändringar i sammanfattningen. Ställ in ”digest” för att behålla den aktuella taggen, eller ”tag” för att kräva versionsbaserat val.",
+  "editor_compose_updater_constraint_detail": "Versionsbegränsning",
+  "editor_compose_updater_constraint_info": "Semantisk versionsbegränsning för tagguppdateringar, till exempel 3.x eller >=3.1.0 <4.0.0. Utan en sådan begränsning sker uppdateringarna inom den aktuella huvudversionen, eller den aktuella underversionen för 0.x.",
+  "editor_compose_updater_tag_pattern_detail": "Tag pattern",
+  "editor_compose_updater_tag_pattern_info": "Regular expression matched against the whole tag. Use a named version capture to select a variant, such as (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
 }
