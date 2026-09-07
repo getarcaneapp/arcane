@@ -303,7 +303,7 @@ func ensureRemoteEnvironmentTunnelAvailableInternal(ctx context.Context, envID s
 		return nil
 	}
 
-	return errors.New("edge agent is not connected")
+	return remenv.ErrEnvironmentUnavailable
 }
 
 func doRemoteEnvironmentTunnelRequestInternal(
@@ -316,14 +316,17 @@ func doRemoteEnvironmentTunnelRequestInternal(
 ) (*remenv.Response, error) {
 	tunnel, ok := edge.GetRegistry().Get(envID).Get()
 	if !ok {
-		return nil, errors.Errorf("no active tunnel for environment %s", envID)
+		return nil, errors.WrapIff(remenv.ErrEnvironmentUnavailable, "no active tunnel for environment %s", envID)
 	}
 	if tunnel.Conn.IsClosed() {
-		return nil, errors.Errorf("tunnel for environment %s is closed", envID)
+		return nil, errors.WrapIff(remenv.ErrEnvironmentUnavailable, "tunnel for environment %s is closed", envID)
 	}
 
 	statusCode, respHeaders, respBody, err := edge.ProxyRequest(ctx, tunnel, method, path, "", headers, body)
 	if err != nil {
+		if errors.Is(err, edge.ErrTunnelConnectionClosed) {
+			err = errors.Combine(remenv.ErrEnvironmentUnavailable, err)
+		}
 		return nil, errors.WrapIf(err, "tunnel request failed")
 	}
 

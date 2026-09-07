@@ -1,3 +1,5 @@
+import { jobStatusLabel } from '#lib/components/job-card/job-status.js';
+import type { Activity } from '#lib/types/activity.type.js';
 import { m } from '#lib/paraglide/messages.js';
 import type { ActivityStatus, ActivityType } from '#lib/types/activity.type.js';
 import type { IconType } from '#lib/icons/index.js';
@@ -29,6 +31,7 @@ const statusDisplay = new Map(
 
 const typeDisplay = new Map(
 	Object.entries({
+		job_run: { label: m.activity_type_job_run, icon: ActivityIcon },
 		image_pull: { label: m.activity_type_image_pull, icon: DownloadIcon },
 		image_build: { label: m.activity_type_image_build, icon: HammerIcon },
 		image_update_check: { label: m.activity_type_image_update_check, icon: RefreshIcon },
@@ -70,4 +73,10 @@ export function activityTypeIcon(type: ActivityType): IconType {
 
 export function activityStatusAccentClass(status: ActivityStatus): string {
 	return statusDisplay.get(status)?.accentClass as string;
+}
+
+export function activityRunStatusLabel(activity: Activity): string {
+	return activity.type === 'job_run' && typeof activity.metadata?.['jobStatus'] === 'string'
+		? jobStatusLabel(activity.metadata['jobStatus'])
+		: activityStatusLabel(activity.status);
 }

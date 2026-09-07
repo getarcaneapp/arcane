@@ -1,6 +1,16 @@
 package scheduler
 
-import "time"
+import (
+	"context"
+	"time"
+)
+
+// RunObserver projects persisted runs into operator-facing activity records.
+// ActivityID must be deterministic and empty for runs that should stay quiet.
+type RunObserver interface {
+	ActivityID(run Run) string
+	SyncRunActivity(ctx context.Context, run Run) error
+}
 
 // QueueRecord holds atomic admission, claims, and checkpoints for one job and target.
 type QueueRecord struct {

@@ -15,6 +15,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
@@ -789,6 +790,9 @@ func (s *ActivityService) CancelActivity(ctx context.Context, environmentID, act
 	if err := s.db.WithContext(ctx).Where("id = ? AND environment_id = ?", activityID, environmentID).First(&model).Error; err != nil {
 		return nil, err
 	}
+	if model.Type == activitytypes.TypeJobRun {
+		return nil, ErrActivityNotCancelable
+	}
 	switch model.Status {
 	case activitytypes.StatusSuccess, activitytypes.StatusFailed, activitytypes.StatusCancelled:
 		return nil, ErrActivityNotCancelable
@@ -911,6 +915,7 @@ func (s *ActivityService) FailAbandonedActivities(ctx context.Context) (int64, e
 	var candidates []Activity
 	if err := s.db.WithContext(ctx).
 		Where("status IN ? AND started_at < ?", activeStatuses, cutoff).
+		Where("type <> ?", activitytypes.TypeJobRun).
 		Find(&candidates).Error; err != nil {
 		return 0, errors.WrapIf(err, "find abandoned activities")
 	}
@@ -971,6 +976,7 @@ func (s *ActivityService) ResolveOrphanedQueuedActivities(ctx context.Context) (
 	var queued []Activity
 	if err := s.db.WithContext(ctx).
 		Where("status = ?", activitytypes.StatusQueued).
+		Where("type <> ?", activitytypes.TypeJobRun).
 		Find(&queued).Error; err != nil {
 		return 0, errors.WrapIf(err, "find orphaned queued activities")
 	}
@@ -1096,6 +1102,7 @@ func (s *ActivityService) ListActivitiesPaginated(ctx context.Context, environme
 
 	var activities []Activity
 	q := s.db.WithContext(ctx).Model(&Activity{}).Where("environment_id = ?", environmentID)
+	q = scopeJobActivityVisibilityInternal(ctx, q, authz.PermActivitiesRead)
 
 	if term := strings.TrimSpace(params.Search); term != "" {
 		escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(term)
@@ -1225,7 +1232,7 @@ func (s *ActivityService) DeleteHistory(ctx context.Context, environmentID strin
 
 	var deleted int64
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		ids, err := findTerminalActivityIDsInternal(tx.Where("environment_id = ?", environmentID))
+		ids, err := findTerminalActivityIDsInternal(scopeJobActivityVisibilityInternal(ctx, tx.Where("environment_id = ?", environmentID), authz.PermActivitiesDelete))
 		if err != nil {
 			return errors.WrapIf(err, "failed to find activity history")
 		}

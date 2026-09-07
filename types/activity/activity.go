@@ -5,6 +5,7 @@ import "time"
 type Status string
 
 const (
+	TypeJobRun      Type   = "job_run"
 	StatusQueued    Status = "queued"
 	StatusRunning   Status = "running"
 	StatusSuccess   Status = "success"

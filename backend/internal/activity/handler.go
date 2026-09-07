@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"hash/fnv"
+	"maps"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -19,6 +20,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 	"github.com/getarcaneapp/arcane/types/v2/base"
@@ -138,16 +140,7 @@ func (h *ActivityHandler) ListActivities(ctx context.Context, input *ListActivit
 		return h.proxyListActivitiesInternal(ctx, input)
 	}
 
-	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
-	if input.Status != "" {
-		params.Filters["status"] = input.Status
-	}
-	if input.Type != "" {
-		params.Filters["type"] = input.Type
-	}
-	if input.ResourceType != "" {
-		params.Filters["resourceType"] = input.ResourceType
-	}
+	params := activityListParamsInternal(input)
 
 	activities, paginationResp, err := h.activityService.ListActivitiesPaginated(ctx, input.EnvironmentID, params)
 	if err != nil {
@@ -165,9 +158,6 @@ func (h *ActivityHandler) ListActivities(ctx context.Context, input *ListActivit
 }
 
 func (h *ActivityHandler) GetActivity(ctx context.Context, input *GetActivityInput) (*handlerutil.Out[activitytypes.Detail], error) {
-	if input.EnvironmentID != "0" {
-		return h.proxyGetActivityInternal(ctx, input)
-	}
 	if input.ActivityID == "" {
 		return nil, huma.Error400BadRequest("activity id is required")
 	}
@@ -175,9 +165,15 @@ func (h *ActivityHandler) GetActivity(ctx context.Context, input *GetActivityInp
 	detail, err := h.activityService.GetActivityDetail(ctx, input.EnvironmentID, input.ActivityID, input.Limit)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
+			if input.EnvironmentID != "0" {
+				return h.proxyGetActivityInternal(ctx, input)
+			}
 			return nil, huma.Error404NotFound("activity not found")
 		}
 		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	if !canReadJobActivityInternal(ctx, detail.Activity) {
+		return nil, huma.Error404NotFound("activity not found")
 	}
 	h.applyActivitySourceLabelInternal(ctx, input.EnvironmentID, &detail.Activity)
 
@@ -190,13 +186,18 @@ func (h *ActivityHandler) GetActivity(ctx context.Context, input *GetActivityInp
 }
 
 func (h *ActivityHandler) ClearHistory(ctx context.Context, input *ClearActivityHistoryInput) (*handlerutil.Out[activitytypes.ClearHistoryResult], error) {
-	if input.EnvironmentID != "0" {
-		return h.proxyClearHistoryInternal(ctx, input)
-	}
-
 	deleted, err := h.activityService.DeleteHistory(ctx, input.EnvironmentID)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
+	}
+
+	if input.EnvironmentID != "0" {
+		out, err := h.proxyClearHistoryInternal(ctx, input)
+		if err != nil {
+			return nil, err
+		}
+		out.Body.Data.Deleted += deleted
+		return out, nil
 	}
 
 	return &handlerutil.Out[activitytypes.ClearHistoryResult]{
@@ -208,9 +209,6 @@ func (h *ActivityHandler) ClearHistory(ctx context.Context, input *ClearActivity
 }
 
 func (h *ActivityHandler) CancelActivity(ctx context.Context, input *CancelActivityInput) (*handlerutil.Out[activitytypes.Activity], error) {
-	if input.EnvironmentID != "0" {
-		return h.proxyCancelActivityInternal(ctx, input)
-	}
 	if input.ActivityID == "" {
 		return nil, huma.Error400BadRequest("activity id is required")
 	}
@@ -220,6 +218,9 @@ func (h *ActivityHandler) CancelActivity(ctx context.Context, input *CancelActiv
 	if err != nil {
 		switch {
 		case errors.Is(err, gorm.ErrRecordNotFound):
+			if input.EnvironmentID != "0" {
+				return h.proxyCancelActivityInternal(ctx, input)
+			}
 			return nil, huma.Error404NotFound("activity not found")
 		case errors.Is(err, ErrActivityNotCancelable):
 			return nil, huma.Error409Conflict("activity is not running")
@@ -305,6 +306,9 @@ func (h *ActivityHandler) RunLocalStreamProducer(ctx context.Context, limit int,
 		case event, ok := <-eventCh:
 			if !ok {
 				return
+			}
+			if !h.canReadActivityStreamEventInternal(ctx, event) {
+				continue
 			}
 			event.EnvironmentID = "0"
 			h.applyActivityStreamEventSourceLabelInternal(ctx, "0", &event)
@@ -399,9 +403,6 @@ func (h *ActivityHandler) runRemoteActivityStreamPollerInternal(ctx context.Cont
 	lastFingerprint := ""
 
 	poll := func() {
-		pollCtx, cancelPoll := context.WithTimeout(ctx, activityStreamRemotePollTimeout)
-		defer cancelPoll()
-
 		currentEnvironment := environment
 		if h.environment.GetActiveRemoteEnvironment != nil {
 			var ok bool
@@ -411,7 +412,7 @@ func (h *ActivityHandler) runRemoteActivityStreamPollerInternal(ctx context.Cont
 			}
 		}
 
-		output, err := h.proxyListActivitiesForEnvironmentInternal(pollCtx, currentEnvironment, &ListActivitiesInput{
+		output, err := h.proxyListActivitiesForEnvironmentInternal(ctx, currentEnvironment, &ListActivitiesInput{
 			EnvironmentID: environmentID,
 			Limit:         resolveActivityStreamLimitInternal(limit),
 			Order:         "desc",
@@ -419,6 +420,19 @@ func (h *ActivityHandler) runRemoteActivityStreamPollerInternal(ctx context.Cont
 		if err != nil {
 			if ctx.Err() != nil {
 				return
+			}
+			if output != nil {
+				fingerprint := activitySnapshotFingerprintInternal(output.Body.Data)
+				if fingerprint != lastFingerprint {
+					publish(activitytypes.StreamEvent{
+						Type:          "snapshot",
+						EnvironmentID: environmentID,
+						Activities:    output.Body.Data,
+						Timestamp:     time.Now(),
+					})
+					lastFingerprint = fingerprint
+					lastError = ""
+				}
 			}
 			// A failing environment must not end the stream; surface the error
 			// once per distinct message and keep polling.
@@ -431,9 +445,10 @@ func (h *ActivityHandler) runRemoteActivityStreamPollerInternal(ctx context.Cont
 					Timestamp:     time.Now(),
 				})
 			}
-			// Force a resync once the environment recovers.
-			lastFingerprint = ""
 			return
+		}
+		if lastError != "" {
+			lastFingerprint = ""
 		}
 		lastError = ""
 		fingerprint := activitySnapshotFingerprintInternal(output.Body.Data)
@@ -462,26 +477,6 @@ func (h *ActivityHandler) runRemoteActivityStreamPollerInternal(ctx context.Cont
 			poll()
 		}
 	}
-}
-
-func (h *ActivityHandler) proxyListActivitiesInternal(ctx context.Context, input *ListActivitiesInput) (*handlerutil.Page[activitytypes.Activity], error) {
-	path := "/api/environments/0/activities?" + activityListQueryInternal(input).Encode()
-	out, err := h.environment.ProxyJSONRequest.JSON[base.Paginated[activitytypes.Activity]](ctx, input.EnvironmentID, http.MethodGet, path, nil)
-	if err != nil {
-		return nil, err
-	}
-	h.applyActivitySourceLabelsInternal(ctx, input.EnvironmentID, out.Data)
-	return &handlerutil.Page[activitytypes.Activity]{Body: *out}, nil
-}
-
-func (h *ActivityHandler) proxyListActivitiesForEnvironmentInternal(ctx context.Context, environment environment.Environment, input *ListActivitiesInput) (*handlerutil.Page[activitytypes.Activity], error) {
-	path := "/api/environments/0/activities?" + activityListQueryInternal(input).Encode()
-	var out base.Paginated[activitytypes.Activity]
-	if err := h.environment.ProxyJSONRequestForEnvironment(ctx, environment, http.MethodGet, path, nil, &out); err != nil {
-		return nil, handlerutil.TranslateRemoteProxyError(err)
-	}
-	applyActivitySourceLabelsForEnvironmentInternal(environment, out.Data)
-	return &handlerutil.Page[activitytypes.Activity]{Body: out}, nil
 }
 
 func (h *ActivityHandler) proxyGetActivityInternal(ctx context.Context, input *GetActivityInput) (*handlerutil.Out[activitytypes.Detail], error) {
@@ -558,6 +553,11 @@ func applyActivitySourceInternal(item *activitytypes.Activity, sourceID, sourceN
 	}
 	item.SourceEnvironmentID = sourceID
 	item.SourceEnvironmentName = sourceName
+	item.EnvironmentID = sourceID
+	if item.Type == activitytypes.TypeJobRun && item.Metadata != nil {
+		item.Metadata = maps.Clone(item.Metadata)
+		item.Metadata["environmentId"] = sourceID
+	}
 }
 
 func activityListQueryInternal(input *ListActivitiesInput) url.Values {
@@ -593,4 +593,76 @@ func resolveActivityStreamLimitInternal(limit int) int {
 		return 100
 	}
 	return limit
+}
+
+func activityListParamsInternal(input *ListActivitiesInput) pagination.QueryParams {
+	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
+	params.Filters["status"] = input.Status
+	params.Filters["type"] = input.Type
+	params.Filters["resourceType"] = input.ResourceType
+	return params
+}
+
+func (h *ActivityHandler) proxyListActivitiesInternal(ctx context.Context, input *ListActivitiesInput) (*handlerutil.Page[activitytypes.Activity], error) {
+	unavailable := false
+	out, err := h.listRemoteActivitiesInternal(ctx, input, func(path string) (*base.Paginated[activitytypes.Activity], error) {
+		var remote base.Paginated[activitytypes.Activity]
+		if proxyErr := h.environment.ProxyJSONRequest(ctx, input.EnvironmentID, http.MethodGet, path, nil, &remote); proxyErr != nil {
+			var transportErr *remenv.TransportError
+			unavailable = errors.As(proxyErr, &transportErr) && transportErr.Unavailable()
+			return nil, handlerutil.TranslateRemoteProxyError(proxyErr)
+		}
+		return &remote, nil
+	})
+	if out == nil {
+		return nil, err
+	}
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return nil, ctxErr
+	}
+	if err != nil && !unavailable {
+		return nil, err
+	}
+	// HTTP responses must not discard stored summaries when the agent is offline.
+	// Stream pollers retain the proxy error from the shared listing path.
+	out.Body.Success = true
+	return out, nil
+}
+
+func (h *ActivityHandler) proxyListActivitiesForEnvironmentInternal(ctx context.Context, environment environment.Environment, input *ListActivitiesInput) (*handlerutil.Page[activitytypes.Activity], error) {
+	out, err := h.listRemoteActivitiesInternal(ctx, input, func(path string) (*base.Paginated[activitytypes.Activity], error) {
+		pollCtx, cancelPoll := context.WithTimeout(ctx, activityStreamRemotePollTimeout)
+		defer cancelPoll()
+		var out base.Paginated[activitytypes.Activity]
+		if err := h.environment.ProxyJSONRequestForEnvironment(pollCtx, environment, http.MethodGet, path, nil, &out); err != nil {
+			return nil, handlerutil.TranslateRemoteProxyError(err)
+		}
+		return &out, nil
+	})
+	if out != nil {
+		applyActivitySourceLabelsForEnvironmentInternal(environment, out.Body.Data)
+	}
+	return out, err
+}
+
+func (h *ActivityHandler) listRemoteActivitiesInternal(ctx context.Context, input *ListActivitiesInput, fetch func(string) (*base.Paginated[activitytypes.Activity], error)) (*handlerutil.Page[activitytypes.Activity], error) {
+	all := *input
+	all.Start, all.Limit = 0, -1
+	remote, remoteErr := fetch("/api/environments/0/activities?" + activityListQueryInternal(&all).Encode())
+	var remoteActivities []activitytypes.Activity
+	if remoteErr == nil {
+		remoteActivities = remote.Data
+	}
+	// The proxy may have exhausted its timeout; manager summaries still need
+	// to be read so an offline environment's queued work remains visible.
+	activities, page, err := h.activityService.ListRemoteActivities(ctx, input.EnvironmentID, remoteActivities, activityListParamsInternal(input))
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	h.applyActivitySourceLabelsInternal(ctx, input.EnvironmentID, activities)
+	return &handlerutil.Page[activitytypes.Activity]{Body: base.Paginated[activitytypes.Activity]{
+		Success:    remoteErr == nil,
+		Data:       activities,
+		Pagination: handlerutil.PaginationResponse(page),
+	}}, remoteErr
 }

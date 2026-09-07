@@ -174,10 +174,13 @@ func (s *UpdaterService) registryDigestResolverInternal() updater.RegistryDigest
 // instead — same activity, events, and cleanup either way.
 func (s *UpdaterService) ApplyPending(ctx context.Context, options arcaneupdater.Options) (out *arcaneupdater.Result, err error) {
 	start := time.Now()
+	batchCompleted := false
 	activityID := s.startAutoUpdateActivityInternal(ctx, options.DryRun)
 	out = &arcaneupdater.Result{Items: []arcaneupdater.ResourceResult{}, ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()}
 	ctx = s.trackActivityInternal(ctx, activityID)
 	ctx = contextWithActivityIDInternal(ctx, activityID)
+	progress := &updateProgressInternal{}
+	ctx = context.WithValue(ctx, updateProgressKeyInternal{}, progress)
 	notifyBatch := &containerUpdateBatchInternal{}
 	ctx = context.WithValue(ctx, containerUpdateBatchContextKeyInternal{}, notifyBatch)
 
@@ -190,6 +193,7 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, options arcaneupdater
 			out.Duration = time.Since(start).String()
 		}
 		out.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
+		err = progress.completeBatchInternal(ctx, options, out, batchCompleted, err)
 		s.completeAutoUpdateActivityInternal(ctx, activityID, out, err)
 	}()
 
@@ -233,6 +237,9 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, options arcaneupdater
 			out.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
 			s.logResultItemsInternal(ctx, out)
 		}
+		if moduleResult == nil && engineErr == nil {
+			engineErr = errors.New("updater returned no batch result")
+		}
 		if engineErr != nil {
 			err = engineErr
 			return out, err
@@ -256,6 +263,7 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, options arcaneupdater
 		"duration":  out.Duration,
 		"time":      time.Now().UTC().Format(time.RFC3339),
 	})
+	batchCompleted = true
 	return out, nil
 }
 
@@ -661,14 +669,6 @@ func (s *UpdaterService) ClearImageUpdateRecord(ctx context.Context, record upda
 	return s.clearImageUpdateRecordForModuleInternal(ctx, record)
 }
 
-// RecordUpdateRun persists one updater resource result into Arcane history.
-func (s *UpdaterService) RecordUpdateRun(ctx context.Context, result updater.ResourceResult) error {
-	if s == nil || s.deps.DB == nil {
-		return nil
-	}
-	return s.recordRunInternal(ctx, resourceResultFromModuleInternal(result))
-}
-
 // ExcludedContainers returns auto-update exclusions from Arcane settings.
 func (s *UpdaterService) ExcludedContainers(ctx context.Context) ([]string, error) {
 	if s == nil {
@@ -722,6 +722,12 @@ func (s *UpdaterService) TriggerSelfUpdate(ctx context.Context, target updater.S
 
 	if _, err := s.deps.SelfUpgrade.TriggerUpgradeViaCLI(ctx, s.deps.SystemUser, target); err != nil {
 		return errors.WrapIf(err, "CLI upgrade failed")
+	}
+	if progress, ok := ctx.Value(updateProgressKeyInternal{}).(*updateProgressInternal); ok {
+		progress.mu.Lock()
+		progress.selfTriggered = true
+		progress.selfID = target.ContainerID
+		progress.mu.Unlock()
 	}
 	return nil
 }

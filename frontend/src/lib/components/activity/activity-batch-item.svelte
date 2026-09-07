@@ -8,6 +8,7 @@
 	import {
 		activityStatusAccentClass,
 		activityStatusLabel,
+		activityRunStatusLabel,
 		activityStatusVariant,
 		activityTypeIcon,
 		activityTypeLabel
@@ -22,7 +23,8 @@
 	} = $props();
 
 	// Batch groups are constructed with at least one member.
-	const leadActivity = $derived(group.items[0]!);
+	const jobActivity = $derived(group.items.find((item) => item.type === 'job_run'));
+	const leadActivity = $derived(jobActivity ?? group.items[0]!);
 	const IconComponent = $derived(activityTypeIcon(leadActivity.type));
 	const isActive = $derived(group.status === 'running' || group.status === 'queued');
 </script>
@@ -57,6 +59,7 @@
 					<span class="truncate text-sm font-semibold text-foreground">{activityTypeLabel(leadActivity.type)}</span>
 					<span class="shrink-0 text-[11px] text-muted-foreground/70">· {m.activity_batch_items({ count: group.total })}</span>
 				</div>
+				{#if jobActivity?.resourceName}<div class="truncate text-xs text-muted-foreground">{jobActivity.resourceName}</div>{/if}
 				<div class="flex min-w-0 flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
 					<span>{m.activity_batch_done_of_total({ done: group.done, total: group.total })}</span>
 					{#if group.failed > 0}
@@ -65,7 +68,9 @@
 					{/if}
 				</div>
 			</div>
-			<Badge variant={activityStatusVariant(group.status)} size="sm">{activityStatusLabel(group.status)}</Badge>
+			<Badge variant={activityStatusVariant(group.status)} size="sm"
+				>{jobActivity ? activityRunStatusLabel(jobActivity) : activityStatusLabel(group.status)}</Badge
+			>
 		</div>
 
 		{#if isActive}

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -15,10 +16,11 @@ import (
 )
 
 const (
-	HeaderAPIKey        = "X-Api-Key"            // #nosec G101: header name, not a credential
-	HeaderAgentToken    = "X-Arcane-Agent-Token" // #nosec G101: header name, not a credential
-	HeaderAuthorization = "Authorization"
-	bearerScheme        = "Bearer "
+	ErrEnvironmentUnavailable = errors.Sentinel("edge agent is not connected")
+	HeaderAPIKey              = "X-Api-Key"            // #nosec G101: header name, not a credential
+	HeaderAgentToken          = "X-Arcane-Agent-Token" // #nosec G101: header name, not a credential
+	HeaderAuthorization       = "Authorization"
+	bearerScheme              = "Bearer "
 )
 
 // ExtractBearerToken returns the token portion of an "Authorization: Bearer <token>"
@@ -202,6 +204,27 @@ func (r *Response) DecodeJSON[T any]() (T, error) {
 
 type TransportError struct {
 	Err error
+}
+
+// Unavailable reports connection failures that permit using locally stored data.
+// Invalid requests and failures reading an established response are not outages.
+func (e *TransportError) Unavailable() bool {
+	if e == nil || errors.Is(e.Err, context.Canceled) {
+		return false
+	}
+	if errors.Is(e.Err, context.DeadlineExceeded) || errors.Is(e.Err, ErrEnvironmentUnavailable) {
+		return true
+	}
+	var networkErr net.Error
+	if errors.As(e.Err, &networkErr) && networkErr.Timeout() {
+		return true
+	}
+	var operationErr *net.OpError
+	if !errors.As(e.Err, &operationErr) || operationErr.Op != "dial" {
+		return false
+	}
+	var addressErr *net.AddrError
+	return !errors.As(operationErr, &addressErr)
 }
 
 func (e *TransportError) Error() string {

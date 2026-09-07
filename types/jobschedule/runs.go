@@ -19,3 +19,12 @@ type RunInput struct {
 }
 type RunOutput struct{ Body st.Run }
 type ListRunsOutput struct{ Body st.RunList }
+
+// ResolveRunInput accepts the original operator identity only from trusted agent transport.
+type ResolveRunInput struct {
+	RunInput
+
+	Body struct {
+		ResolvedBy string `json:"resolvedBy,omitempty"`
+	}
+}

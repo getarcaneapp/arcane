@@ -16,6 +16,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 	"github.com/getarcaneapp/arcane/types/v2/meta"
 	st "github.com/getarcaneapp/arcane/types/v2/scheduler"
@@ -135,12 +136,16 @@ func (s *JobService) executeRunInternal(ctx context.Context, run st.Run) (st.Out
 		err := s.scheduler.RunBusWatcherNow(ctx, run.JobID)
 		return classifyOutcomeInternal(run.JobID, st.Outcome{}, err)
 	}
+	unavailableStatus := st.Canceled
+	if run.JobID == "auto-update" && run.AttemptCount > 1 {
+		unavailableStatus = st.NeedsAttention
+	}
 	job, ok := s.scheduler.GetJob(run.JobID)
 	if !ok {
-		return st.Outcome{Status: st.Canceled, Message: "Job or target no longer exists"}, nil
+		return st.Outcome{Status: unavailableStatus, Message: "Job or target no longer exists"}, nil
 	}
 	if conditional, ok := job.(st.ConditionalJob); ok && !conditional.ShouldSchedule(ctx) {
-		return st.Outcome{Status: st.Canceled, Message: "Job is disabled"}, nil
+		return st.Outcome{Status: unavailableStatus, Message: "Job is disabled"}, nil
 	}
 	outcome, err := job.Run(ctx)
 	return classifyOutcomeInternal(run.JobID, outcome, err)
@@ -196,6 +201,9 @@ func (s *JobService) reconcileRunInternal(ctx context.Context, run st.Run) (st.O
 	}
 	// A successful activity proves only that target, never the entire batch.
 	for index, target := range run.Outcome.Targets {
+		if run.JobID == "auto-update" {
+			break
+		}
 		if target.Status == st.Succeeded || target.Status == st.Skipped {
 			continue
 		}
@@ -224,6 +232,7 @@ func (s *JobService) reconcileRunInternal(ctx context.Context, run st.Run) (st.O
 }
 
 func (s *JobService) runContextInternal(ctx context.Context, run st.Run) context.Context {
+	ctx = utils.WithActivityBatchID(ctx, run.ID)
 	ctx = jobcontext.WithExecution(ctx, run, func(target st.TargetOutcome) error {
 		return s.Queue.UpdateRun(ctx, run, func(current *st.Run) error {
 			if current.Status != st.Running || current.Owner != run.Owner {

@@ -70,7 +70,7 @@ func collectCommandResponseInternal(ctx context.Context, tunnel *AgentTunnel, pe
 			if done, status, headers, body, err := state.drainTerminalResponseInternal(pending.ResponseCh, method); done {
 				return status, headers, body, err
 			}
-			return 0, nil, nil, errors.New("edge tunnel closed while waiting for response")
+			return 0, nil, nil, errors.WrapIf(ErrTunnelConnectionClosed, "edge tunnel closed while waiting for response")
 		case err := <-pending.failureCh:
 			if done, status, headers, body, err := state.drainTerminalResponseInternal(pending.ResponseCh, method); done {
 				return status, headers, body, err
@@ -78,7 +78,7 @@ func collectCommandResponseInternal(ctx context.Context, tunnel *AgentTunnel, pe
 			return 0, nil, nil, err
 		case incoming, ok := <-pending.ResponseCh:
 			if !ok {
-				return 0, nil, nil, errors.New("edge tunnel response channel closed before a response was received")
+				return 0, nil, nil, errors.WrapIf(ErrTunnelConnectionClosed, "edge tunnel response channel closed before a response was received")
 			}
 			if done, status, headers, body, err := state.handleTunnelMessageInternal(method, incoming); done {
 				return status, headers, body, err
@@ -127,7 +127,7 @@ func (s *grpcResponseState) drainTerminalResponseInternal(respCh <-chan *TunnelM
 		select {
 		case incoming, ok := <-respCh:
 			if !ok {
-				return true, 0, nil, nil, errors.New("edge tunnel response channel closed before a response was received")
+				return true, 0, nil, nil, errors.WrapIf(ErrTunnelConnectionClosed, "edge tunnel response channel closed before a response was received")
 			}
 			if done, status, headers, body, err := s.handleTunnelMessageInternal(method, incoming); done {
 				return true, status, headers, body, err

@@ -38,6 +38,9 @@ func (q *Queue) mutateInternal(ctx context.Context, environmentID, jobID string,
 		if err := change(&record); err != nil {
 			return err
 		}
+		for index := range record.Runs {
+			q.associateActivityInternal(&record.Runs[index])
+		}
 		next, err := json.Marshal(record)
 		if err != nil {
 			return err
@@ -74,6 +77,9 @@ func (q *Queue) Records(ctx context.Context) ([]st.QueueRecord, error) {
 		if err := json.Unmarshal([]byte(entry.Value), &record); err != nil {
 			return nil, errors.WrapIff(err, "decode job queue %s", entry.Key)
 		}
+		for index := range record.Runs {
+			q.associateActivityInternal(&record.Runs[index])
+		}
 		records = append(records, record)
 	}
 	return records, nil
@@ -95,10 +101,12 @@ func (q *Queue) Get(ctx context.Context, environmentID, jobID, runID string) (st
 	}
 	for _, run := range record.Runs {
 		if run.ID == runID {
+			q.associateActivityInternal(&run)
 			return run, nil
 		}
 	}
 	if run, ok := record.Receipts[runID]; ok {
+		q.associateActivityInternal(&run)
 		return run, nil
 	}
 	return st.Run{}, ErrRunNotFound
@@ -157,6 +165,9 @@ func (q *Queue) UpdateRun(ctx context.Context, run st.Run, change func(*st.Run) 
 	})
 	if err == nil && wake {
 		q.signalInternal()
+	}
+	if err == nil {
+		q.observeRunInternal(ctx, run)
 	}
 	return err
 }

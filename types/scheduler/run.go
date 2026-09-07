@@ -56,31 +56,40 @@ type Attempt struct {
 	Outcome    Outcome    `json:"outcome"`
 }
 
+type RunResolution struct {
+	ResolvedBy string    `json:"resolvedBy"`
+	ResolvedAt time.Time `json:"resolvedAt"`
+	Reason     string    `json:"reason"`
+}
+
 type Run struct {
-	RequestedWithKey        string     `json:"requestedWithKey,omitempty"`
-	ID                      string     `json:"id"`
-	JobID                   string     `json:"jobId"`
-	EnvironmentID           string     `json:"environmentId"`
-	Trigger                 string     `json:"trigger"`
-	RequestedBy             string     `json:"requestedBy,omitempty"`
-	Status                  RunStatus  `json:"status"`
-	CreatedAt               time.Time  `json:"createdAt"`
-	UpdatedAt               time.Time  `json:"updatedAt"`
-	StartedAt               *time.Time `json:"startedAt,omitempty"`
-	FinishedAt              *time.Time `json:"finishedAt,omitempty"`
-	NextAttempt             *time.Time `json:"nextAttempt,omitempty"`
-	AttemptCount            int        `json:"attemptCount"`
-	Owner                   string     `json:"owner,omitempty"`
-	Outcome                 Outcome    `json:"outcome"`
-	Attempts                []Attempt  `json:"attempts,omitempty"`
-	RemoteDeliveryAttempted bool       `json:"remoteDeliveryAttempted"`
-	RemoteOutcome           *Outcome   `json:"remoteOutcome,omitempty"`
-	RemoteRetryRequested    bool       `json:"remoteRetryRequested,omitempty"`
-	RemoteRetryAttempted    bool       `json:"remoteRetryAttempted,omitempty"`
-	RemoteAttemptCount      int        `json:"remoteAttemptCount,omitempty"`
-	RemoteAccepted          bool       `json:"remoteAccepted"`
-	RemoteSettled           bool       `json:"remoteSettled"`
-	LastConfirmedAt         *time.Time `json:"lastConfirmedAt,omitempty"`
+	ActivityEnvironmentID   string         `json:"activityEnvironmentId,omitempty"`
+	ActivityID              string         `json:"activityId,omitempty"`
+	Resolution              *RunResolution `json:"resolution,omitempty"`
+	RequestedWithKey        string         `json:"requestedWithKey,omitempty"`
+	ID                      string         `json:"id"`
+	JobID                   string         `json:"jobId"`
+	EnvironmentID           string         `json:"environmentId"`
+	Trigger                 string         `json:"trigger"`
+	RequestedBy             string         `json:"requestedBy,omitempty"`
+	Status                  RunStatus      `json:"status"`
+	CreatedAt               time.Time      `json:"createdAt"`
+	UpdatedAt               time.Time      `json:"updatedAt"`
+	StartedAt               *time.Time     `json:"startedAt,omitempty"`
+	FinishedAt              *time.Time     `json:"finishedAt,omitempty"`
+	NextAttempt             *time.Time     `json:"nextAttempt,omitempty"`
+	AttemptCount            int            `json:"attemptCount"`
+	Owner                   string         `json:"owner,omitempty"`
+	Outcome                 Outcome        `json:"outcome"`
+	Attempts                []Attempt      `json:"attempts,omitempty"`
+	RemoteDeliveryAttempted bool           `json:"remoteDeliveryAttempted"`
+	RemoteOutcome           *Outcome       `json:"remoteOutcome,omitempty"`
+	RemoteRetryRequested    bool           `json:"remoteRetryRequested,omitempty"`
+	RemoteRetryAttempted    bool           `json:"remoteRetryAttempted,omitempty"`
+	RemoteAttemptCount      int            `json:"remoteAttemptCount,omitempty"`
+	RemoteAccepted          bool           `json:"remoteAccepted"`
+	RemoteSettled           bool           `json:"remoteSettled"`
+	LastConfirmedAt         *time.Time     `json:"lastConfirmedAt,omitempty"`
 }
 
 type RunList struct {
@@ -125,3 +134,8 @@ func (e *OutcomeError) Error() string {
 }
 
 func (e *OutcomeError) Unwrap() error { return e.Cause }
+
+// RetryValidator rejects retries without safe persisted target evidence.
+type RetryValidator interface {
+	ValidateRetry(ctx context.Context, run Run) error
+}

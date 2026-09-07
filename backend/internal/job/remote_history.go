@@ -71,6 +71,9 @@ func (s *JobService) remoteHistoryInternal(ctx context.Context, environmentID, j
 		previous := len(runs)
 		for _, run := range response.Runs {
 			run.EnvironmentID = environmentID
+			if run.ActivityID != "" {
+				run.ActivityEnvironmentID = environmentID
+			}
 			runs[run.ID] = run
 		}
 		if len(runs) >= response.Total || len(runs) == previous {
@@ -93,6 +96,9 @@ func (s *JobService) GetRun(ctx context.Context, environmentID, jobID, runID str
 		return st.Run{}, errors.New("agent returned an inconsistent run identity")
 	}
 	run.EnvironmentID = environmentID
+	if run.ActivityID != "" {
+		run.ActivityEnvironmentID = environmentID
+	}
 	return run, nil
 }
 
@@ -126,5 +132,8 @@ func (s *JobService) mutateAgentRunInternal(ctx context.Context, environmentID, 
 		return st.Run{}, errors.New("agent returned an inconsistent run identity")
 	}
 	run.EnvironmentID = environmentID
+	if run.ActivityID != "" {
+		run.ActivityEnvironmentID = environmentID
+	}
 	return run, nil
 }

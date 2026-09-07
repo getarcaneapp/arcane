@@ -86,7 +86,7 @@
 
 {#snippet activityRow(activity: Activity, child: boolean)}
 	{@const expanded = activityStore.isExpanded(activity.id)}
-	{@const cancelable = activity.status === 'running' || activity.status === 'queued'}
+	{@const cancelable = activity.type !== 'job_run' && (activity.status === 'running' || activity.status === 'queued')}
 	<div class="group/activity relative">
 		<Collapsible.Root open={expanded} onOpenChange={(open) => activityStore.setActivityExpanded(activity.id, open)}>
 			<div class="relative">
@@ -125,6 +125,7 @@
 		{@render activityRow(group.activity, false)}
 	{:else}
 		{@const expanded = activityStore.isBatchExpanded(group.batchId)}
+		{@const summary = group.items.find((item) => item.type === 'job_run')}
 		<Collapsible.Root open={expanded} onOpenChange={(open) => activityStore.setBatchExpanded(group.batchId, open)}>
 			<Collapsible.Trigger
 				class="block w-full cursor-pointer appearance-none border-0 bg-transparent p-0 text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden focus-visible:ring-inset"
@@ -135,8 +136,9 @@
 			<Collapsible.Content
 				class="overflow-hidden data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-1 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-top-1"
 			>
+				{#if summary}<ActivityDetailPanel activity={summary} />{/if}
 				<div class="ml-6 border-l border-border/40">
-					{#each group.items as activity (activity.id)}
+					{#each group.items.filter((item) => item.type !== 'job_run') as activity (activity.id)}
 						{@render activityRow(activity, true)}
 					{/each}
 				</div>

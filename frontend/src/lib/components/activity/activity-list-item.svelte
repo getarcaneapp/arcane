@@ -9,7 +9,7 @@
 	import type { Activity } from '#lib/types/activity.type.js';
 	import {
 		activityStatusAccentClass,
-		activityStatusLabel,
+		activityRunStatusLabel,
 		activityStatusVariant,
 		activityTypeIcon,
 		activityTypeLabel
@@ -119,7 +119,7 @@
 					</div>
 				{/if}
 			</div>
-			<Badge variant={activityStatusVariant(activity.status)} size="sm">{activityStatusLabel(activity.status)}</Badge>
+			<Badge variant={activityStatusVariant(activity.status)} size="sm">{activityRunStatusLabel(activity)}</Badge>
 		</div>
 
 		{#if expanded}

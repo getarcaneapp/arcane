@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
+	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { createQuery, createMutation } from '@tanstack/svelte-query';
 	import { m } from '#lib/paraglide/messages.js';
@@ -8,7 +10,12 @@
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import { formatDateTimeShort } from '#lib/utils/formatting.js';
 	import { jobStatusLabel } from './job-status';
-	let { jobId, environmentId, onUpdate }: { jobId: string; environmentId: string; onUpdate?: () => void } = $props();
+	let {
+		jobId,
+		environmentId,
+		initialRunId,
+		onUpdate
+	}: { jobId: string; environmentId: string; initialRunId?: string; onUpdate?: () => void } = $props();
 	let open = $state(false);
 	let page = $state(1);
 	let selected = $state<string | undefined>();
@@ -25,11 +32,12 @@
 		refetchInterval: 5000
 	}));
 	const action = createMutation(() => ({
-		mutationFn: ({ runId, action }: { runId: string; action: 'retry' | 'cancel' }) =>
+		mutationFn: ({ runId, action }: { runId: string; action: 'retry' | 'cancel' | 'resolve' }) =>
 			jobScheduleService.updateRun(jobId, runId, action, environmentId),
 		onSuccess: () => {
 			void runs.refetch();
 			void detail.refetch();
+			void activityStore.refresh();
 			onUpdate?.();
 		}
 	}));
@@ -79,14 +87,30 @@
 			}
 		].filter((item) => item.visible)
 	);
+	function resolveRun(runId: string) {
+		openConfirmDialog({
+			title: m.jobs_resolve_run(),
+			message: m.jobs_resolve_description(),
+			confirm: {
+				label: m.jobs_resolve_run(),
+				action: () => action.mutateAsync({ runId, action: 'resolve' }).then(() => undefined)
+			}
+		});
+	}
 </script>
 
 {#snippet outcomeMessage(message: string | undefined)}
 	{#if message}<p class="break-words whitespace-pre-wrap">{message}</p>{/if}
 {/snippet}
 
-{#snippet outcomeActivity(activityId: string | undefined)}
-	{#if activityId}<Button variant="link" onclick={() => activityStore.openCenter(activityId)}>{m.activity()}</Button>{/if}
+{#snippet outcomeActivity(
+	activityId: string | undefined,
+	label = m.jobs_activity_output(),
+	activityEnvironmentId = environmentId
+)}
+	{#if activityId}<Button variant="link" onclick={() => activityStore.openCenter(activityId, undefined, activityEnvironmentId)}
+			>{label}</Button
+		>{/if}
 {/snippet}
 
 <Button
@@ -95,7 +119,7 @@
 	onclick={() => {
 		open = true;
 		page = 1;
-		selected = undefined;
+		selected = initialRunId;
 	}}>{m.jobs_run_history()}</Button
 >
 <Dialog.Root bind:open>
@@ -144,7 +168,15 @@
 				<p class="break-all"><strong>{m.jobs_run_id()}:</strong> {run.id}</p>
 				<p>{jobStatusLabel(run.status)}</p>
 				{#each metadata as item (item.id)}<p class={item.class}>{item.label ? `${item.label}: ` : ''}{item.value}</p>{/each}
+				{@render outcomeActivity(run.activityId, m.jobs_activity_summary(), run.activityEnvironmentId ?? environmentId)}
 				{@render outcomeActivity(run.outcome.activityId)}
+				{#if run.status === 'needs_attention'}<p>{m.jobs_attention_schedule_blocked()}</p>{/if}
+				{#if run.resolution}
+					<p>
+						{m.jobs_resolution_details({ user: run.resolution.resolvedBy, date: formatDateTimeShort(run.resolution.resolvedAt) })}
+					</p>
+					<p>{m.jobs_resolution_reason()}: {run.resolution.reason}</p>
+				{/if}
 				<h4 class="font-medium">{m.jobs_run_attempts()}: {run.attemptCount}</h4>
 				{#each run.attempts ?? [] as attempt (attempt.number)}
 					<div class="space-y-1 rounded border p-2">
@@ -163,13 +195,20 @@
 					{/each}
 				{/if}
 				{#if action.error}<p class="text-destructive">{action.error.message}</p>{/if}
-				{#each availableActions as item (item.id)}
-					<Button
-						variant={item.variant}
-						disabled={action.isPending}
-						onclick={() => action.mutate({ runId: run.id, action: item.id })}>{item.label}</Button
-					>
-				{/each}
+				<IfPermitted perm="jobs:manage" envId={environmentId}>
+					{#if run.status === 'needs_attention'}
+						<Button variant="outline" disabled={action.isPending} onclick={() => resolveRun(run.id)}
+							>{m.jobs_resolve_run()}</Button
+						>
+					{/if}
+					{#each availableActions as item (item.id)}
+						<Button
+							variant={item.variant}
+							disabled={action.isPending}
+							onclick={() => action.mutate({ runId: run.id, action: item.id })}>{item.label}</Button
+						>
+					{/each}
+				</IfPermitted>
 			</div>
 		{/if}
 	</Dialog.Content>

@@ -3511,5 +3511,13 @@
 	"editor_compose_updater_constraint_detail": "Version constraint",
 	"editor_compose_updater_constraint_info": "Semantic version constraint for tag updates, such as 3.x or >=3.1.0 <4.0.0. Without a constraint, updates stay within the current major, or the current minor for 0.x.",
 	"editor_compose_updater_tag_pattern_detail": "Tag pattern",
-	"editor_compose_updater_tag_pattern_info": "Regular expression matched against the whole tag. Use a named version capture to select a variant, such as (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
+	"editor_compose_updater_tag_pattern_info": "Regular expression matched against the whole tag. Use a named version capture to select a variant, such as (?P<version>\\d+\\.\\d+\\.\\d+)-alpine.",
+	"activity_type_job_run": "Automation run",
+	"jobs_resolve_run": "Resolve after review",
+	"jobs_resolve_description": "Confirm you have reviewed this interrupted run and checked its results. Resolving it preserves its history and allows later scheduled work to proceed. It does not run updates or mark this run successful.",
+	"jobs_resolution_details": "Resolved by {user} on {date}",
+	"jobs_activity_summary": "Run activity",
+	"jobs_activity_output": "Operation output",
+	"jobs_attention_schedule_blocked": "This run needs review and blocks later runs of this job.",
+	"jobs_resolution_reason": "Resolution reason"
 }

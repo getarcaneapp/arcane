@@ -5,8 +5,10 @@ import (
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	projectspkg "github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/notifications"
 	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
+	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 
@@ -239,7 +241,12 @@ func TestUpdaterService_ApplyPendingNoRecordsInternal(t *testing.T) {
 	svc, svcErr := NewUpdaterService(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	require.NoError(t, svcErr)
 
+	var checkpoints []schedulertypes.TargetOutcome
+	ctx = jobcontext.WithExecution(ctx, schedulertypes.Run{AttemptCount: 1}, func(target schedulertypes.TargetOutcome) error { checkpoints = append(checkpoints, target); return nil })
 	result, err := svc.ApplyPending(ctx, arcaneupdater.Options{DryRun: true})
+	require.Len(t, checkpoints, 2)
+	assert.Equal(t, schedulertypes.Running, checkpoints[0].Status)
+	assert.Equal(t, schedulertypes.Succeeded, checkpoints[1].Status)
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -248,6 +255,18 @@ func TestUpdaterService_ApplyPendingNoRecordsInternal(t *testing.T) {
 	assert.Zero(t, result.Skipped)
 	assert.Zero(t, result.Failed)
 	assert.Empty(t, result.Items)
+	ctx = jobcontext.WithExecution(context.Background(), schedulertypes.Run{AttemptCount: 1}, func(schedulertypes.TargetOutcome) error { return errors.New("checkpoint unavailable") })
+	_, err = svc.ApplyPending(ctx, arcaneupdater.Options{DryRun: true})
+	require.ErrorContains(t, err, "checkpoint unavailable")
+	var outcomeErr *schedulertypes.OutcomeError
+	require.ErrorAs(t, err, &outcomeErr)
+	assert.Equal(t, schedulertypes.NeedsAttention, outcomeErr.Outcome.Status)
+	checkpoints = nil
+	ctx = jobcontext.WithExecution(context.Background(), schedulertypes.Run{AttemptCount: 1}, func(target schedulertypes.TargetOutcome) error { checkpoints = append(checkpoints, target); return nil })
+	svc.engine = nil
+	require.Panics(t, func() { _, _ = svc.ApplyPending(ctx, arcaneupdater.Options{}) })
+	require.NotEmpty(t, checkpoints)
+	assert.Equal(t, schedulertypes.NeedsAttention, checkpoints[len(checkpoints)-1].Status)
 }
 
 // Type and ResourceIds are Arcane-side scoping the engine never acted on;
@@ -645,6 +664,15 @@ func TestUpdaterService_RecordUpdateRunAdapterInternal(t *testing.T) {
 	assert.Equal(t, "nginx:1.2.3", record.OldImageVersions["main"])
 	assert.Equal(t, "nginx:1.2.4", record.NewImageVersions["main"])
 	assert.Equal(t, "test", record.Details["source"])
+	progress := &updateProgressInternal{}
+	ctx = context.WithValue(ctx, updateProgressKeyInternal{}, progress)
+	ctx = jobcontext.WithExecution(ctx, schedulertypes.Run{AttemptCount: 1}, func(target schedulertypes.TargetOutcome) error {
+		assert.Equal(t, schedulertypes.Failed, target.Status)
+		return errors.New("progress unavailable")
+	})
+	err = svc.RecordUpdateRun(ctx, updater.ResourceResult{ResourceID: "failed-container", ResourceType: updater.ResourceTypeContainer, Status: updater.StatusFailed})
+	require.ErrorContains(t, err, "progress unavailable")
+	require.ErrorContains(t, progress.err, "progress unavailable")
 }
 
 func TestUpdaterService_ApplyPending_ProjectFailureDoesNotBlockOtherProjectsInternal(t *testing.T) {
@@ -905,8 +933,9 @@ func TestUpdaterService_ApplyPending_RoutesLegacyArcaneServerThroughSelfUpgradeI
 	})
 	svc.engine = engine
 
+	ctx = jobcontext.WithExecution(ctx, schedulertypes.Run{AttemptCount: 1}, nil)
 	result, err := svc.ApplyPending(ctx, arcaneupdater.Options{})
-	require.NoError(t, err)
+	require.ErrorContains(t, err, "self-update was triggered")
 	require.NotNil(t, result)
 	assert.True(t, mockUpgrade.triggerCalled, "scheduled auto-update should use CLI self-upgrade for legacy Arcane server labels")
 	assert.Empty(t, projectUpdater.calls, "legacy Arcane server should not be updated through project services")

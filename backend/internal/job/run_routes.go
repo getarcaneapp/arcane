@@ -22,6 +22,7 @@ func (h *JobSchedulesHandler) registerRunRoutesInternal(api huma.API) {
 	middleware.RegisterWithPermission(api, huma.Operation{OperationID: "get-job-run", Method: http.MethodGet, Path: base + "/runs/{runId}", Summary: "Get job run", Security: handlerutil.DefaultOperationSecurity()}, authz.PermJobsManage, h.GetRun)
 	middleware.RegisterWithPermission(api, huma.Operation{OperationID: "retry-job-run", Method: http.MethodPost, Path: base + "/runs/{runId}/retry", Summary: "Retry job run", Security: handlerutil.DefaultOperationSecurity()}, authz.PermJobsManage, h.RetryRun)
 	middleware.RegisterWithPermission(api, huma.Operation{OperationID: "cancel-job-run", Method: http.MethodPost, Path: base + "/runs/{runId}/cancel", Summary: "Cancel pending job run", Security: handlerutil.DefaultOperationSecurity()}, authz.PermJobsManage, h.CancelRun)
+	middleware.RegisterWithPermission(api, huma.Operation{OperationID: "resolve-job-run", Method: http.MethodPost, Path: base + "/runs/{runId}/resolve", Summary: "Resolve job run after review", Security: handlerutil.DefaultOperationSecurity()}, authz.PermJobsManage, h.ResolveRun)
 	middleware.RegisterWithPermission(api, huma.Operation{OperationID: "ack-job-run", Method: http.MethodPost, Path: base + "/runs/{runId}/ack", Summary: "Acknowledge remote run completion", Security: handlerutil.DefaultOperationSecurity()}, authz.PermJobsManage, h.AcknowledgeRun)
 	middleware.RegisterWithPermission(api, huma.Operation{OperationID: "restart-job-worker", Method: http.MethodPost, Path: base + "/restart", Summary: "Restart continuous job worker", Security: handlerutil.DefaultOperationSecurity()}, authz.PermJobsManage, h.RestartWorker)
 }
@@ -109,6 +110,10 @@ func (h *JobSchedulesHandler) RestartWorker(ctx context.Context, input *jobsched
 }
 
 func jobHTTPErrorInternal(err error) error {
+	var status huma.StatusError
+	if errors.As(err, &status) {
+		return err
+	}
 	if errors.Is(err, queue.ErrRunNotFound) {
 		return huma.Error404NotFound("Job run not found")
 	}
@@ -127,6 +132,19 @@ func (s *JobService) RetryRun(ctx context.Context, environmentID, jobID, runID s
 	if environmentID == "0" {
 		if err := s.validateLocalJobInternal(ctx, jobID); err != nil {
 			return st.Run{}, err
+		}
+	}
+	run, err := s.Queue.Get(ctx, environmentID, jobID, runID)
+	if err != nil {
+		return st.Run{}, err
+	}
+	if s.scheduler != nil {
+		if job, ok := s.scheduler.GetJob(jobID); ok {
+			if validator, ok := job.(st.RetryValidator); ok {
+				if err := validator.ValidateRetry(ctx, run); err != nil {
+					return run, err
+				}
+			}
 		}
 	}
 	return s.Queue.Retry(ctx, environmentID, jobID, runID)

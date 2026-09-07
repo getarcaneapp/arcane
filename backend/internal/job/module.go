@@ -3,6 +3,7 @@ package job
 
 import (
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -12,6 +13,7 @@ import (
 )
 
 type Dependencies struct {
+	Activity    *activity.ActivityService
 	Roles       *role.RoleService
 	DB          *database.DB
 	Settings    *settings.SettingsService
@@ -28,6 +30,10 @@ func New(deps Dependencies) *Module {
 	service := NewJobService(deps.DB, deps.Settings, deps.Config)
 	service.environment = deps.Environment
 	service.roles = deps.Roles
+	service.activity = deps.Activity
+	if deps.Activity != nil {
+		service.Queue.SetObserver(service)
+	}
 	return &Module{
 		service:     service,
 		environment: deps.Environment,

@@ -3,8 +3,11 @@ package remenv
 import (
 	"context"
 	"errors"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"syscall"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -122,6 +125,8 @@ func TestClientDoJSON_ClassifiesStatusAndDecodeErrors(t *testing.T) {
 	var statusErr *StatusError
 	require.ErrorAs(t, err, &statusErr)
 	require.Equal(t, http.StatusBadGateway, statusErr.StatusCode)
+	var transportErr *TransportError
+	require.False(t, errors.As(err, &transportErr))
 
 	_, err = client.DoJSON[map[string]any](context.Background(), Request{
 		Method: http.MethodGet,
@@ -130,12 +135,13 @@ func TestClientDoJSON_ClassifiesStatusAndDecodeErrors(t *testing.T) {
 	})
 	var decodeErr *DecodeError
 	require.ErrorAs(t, err, &decodeErr)
+	require.False(t, errors.As(err, &transportErr))
 }
 
 func TestClientDo_WrapsTransportErrors(t *testing.T) {
 	client := NewClient(nil, TunnelTransportFuncs{
 		EnsureAvailableFunc: func(ctx context.Context, envID string) error {
-			return errors.New("not connected")
+			return ErrEnvironmentUnavailable
 		},
 	})
 
@@ -148,4 +154,22 @@ func TestClientDo_WrapsTransportErrors(t *testing.T) {
 	var transportErr *TransportError
 	require.ErrorAs(t, err, &transportErr)
 	require.Contains(t, transportErr.Error(), "not connected")
+	require.True(t, transportErr.Unavailable())
+	for _, test := range []struct {
+		name        string
+		cause       error
+		unavailable bool
+	}{
+		{"deadline", context.DeadlineExceeded, true},
+		{"connection refused", &net.OpError{Op: "dial", Net: "tcp", Err: syscall.ECONNREFUSED}, true},
+		{"response truncated", io.ErrUnexpectedEOF, false},
+		{"invalid request", errors.New("invalid URL"), false},
+		{"invalid address", &net.OpError{Op: "dial", Err: &net.AddrError{Err: "invalid port", Addr: "agent:invalid"}}, false},
+		{"canceled", context.Canceled, false},
+		{"canceled dial", &net.OpError{Op: "dial", Err: context.Canceled}, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			require.Equal(t, test.unavailable, (&TransportError{Err: test.cause}).Unavailable())
+		})
+	}
 }

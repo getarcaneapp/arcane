@@ -362,8 +362,8 @@ func provideUserModuleInternal(service *user.UserService, auth *auth.AuthService
 	return user.New(user.Dependencies{Service: service, InvalidateUserTokenCache: auth.InvalidateUserTokenCache, Settings: settingsService})
 }
 
-func provideJobModuleInternal(db *database.DB, settingsService *settings.SettingsService, cfg *config.Config, environment *environment.EnvironmentService, roles *role.RoleService) *job.Module {
-	return job.New(job.Dependencies{DB: db, Settings: settingsService, Config: cfg, Environment: environment, Roles: roles})
+func provideJobModuleInternal(db *database.DB, settingsService *settings.SettingsService, cfg *config.Config, environment *environment.EnvironmentService, roles *role.RoleService, activityService *activity.ActivityService) *job.Module {
+	return job.New(job.Dependencies{DB: db, Settings: settingsService, Config: cfg, Environment: environment, Roles: roles, Activity: activityService})
 }
 
 func provideJobServiceInternal(module *job.Module) *job.JobService {

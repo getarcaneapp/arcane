@@ -27,7 +27,7 @@ import {
 	discardPendingActivityToasts,
 	queueActivityCompletionToast
 } from '#lib/components/activity/activity-completion-toasts.js';
-import { instantEpochMilliseconds } from '#lib/utils/formatting.js';
+import { instantEpochMilliseconds, parseInstant } from '#lib/utils/formatting.js';
 
 const ACTIVITY_LIST_LIMIT = 50;
 const ACTIVITY_DETAIL_LIMIT = 500;
@@ -118,9 +118,15 @@ function groupActivitiesInternal(items: Activity[]): ActivityGroup[] {
 }
 
 function finalizeBatchGroupInternal(group: ActivityBatchGroup) {
-	group.total = group.items.length;
-	group.done = group.items.filter((item) => !isActiveStatusInternal(item.status)).length;
-	group.failed = group.items.filter((item) => item.status === 'failed').length;
+	const jobActivity = group.items.find((item) => item.type === 'job_run');
+	const operations = jobActivity ? group.items.filter((item) => item.type !== 'job_run') : group.items;
+	group.total = operations.length;
+	group.done = operations.filter((item) => !isActiveStatusInternal(item.status)).length;
+	group.failed = operations.filter((item) => item.status === 'failed').length;
+	if (jobActivity) {
+		group.status = jobActivity.status;
+		return;
+	}
 	if (group.items.some((item) => isActiveStatusInternal(item.status))) {
 		group.status = group.items.some((item) => item.status === 'running') ? 'running' : 'queued';
 	} else if (group.failed > 0) {
@@ -155,6 +161,7 @@ function createActivityStore() {
 	let _open = $state(false);
 	let _currentEnvironmentId = $state(LOCAL_DOCKER_ENVIRONMENT_ID);
 	let sessionGeneration = 0;
+	let requestedEnvironments: Record<string, string> = {};
 	// Last observed status per activity, for completion-toast transition
 	// detection. Intentionally non-reactive: only stream handling reads it.
 	const observedStatusById = new Map<string, ActivityStatus>();
@@ -283,6 +290,13 @@ function createActivityStore() {
 	});
 
 	function normalizeActivityInternal(activity: Activity, environmentId: string): Activity {
+		if (activity.type === 'job_run') {
+			const current = _details[activity.id]?.activity ?? _activities.find((item) => item.id === activity.id);
+			const currentTime = parseInstant(current?.updatedAt);
+			const incomingTime = parseInstant(activity.updatedAt);
+			if (current && currentTime && (!incomingTime || incomingTime.epochNanoseconds <= currentTime.epochNanoseconds))
+				return current;
+		}
 		const state = core.environmentState(environmentId);
 		return {
 			...activity,
@@ -304,6 +318,8 @@ function createActivityStore() {
 		// for completion toasts has to happen here as well as in merges.
 		for (const activity of normalizedActivities) {
 			noteActivityStatusInternal(activity);
+			const detail = _details[activity.id];
+			if (activity.type === 'job_run' && detail) _details = { ..._details, [activity.id]: { ...detail, activity } };
 		}
 		_environmentActivities = {
 			..._environmentActivities,
@@ -394,7 +410,9 @@ function createActivityStore() {
 
 	function activityEnvironmentIdInternal(activityId: string): string {
 		const activity = _details[activityId]?.activity ?? _activities.find((item) => item.id === activityId) ?? null;
-		return sourceEnvironmentIdInternal(activity) || _currentEnvironmentId || LOCAL_DOCKER_ENVIRONMENT_ID;
+		return activity
+			? sourceEnvironmentIdInternal(activity)
+			: requestedEnvironments[activityId] || _currentEnvironmentId || LOCAL_DOCKER_ENVIRONMENT_ID;
 	}
 
 	async function loadDetailInternal(activityId: string) {
@@ -415,12 +433,14 @@ function createActivityStore() {
 					if (generation !== sessionGeneration) {
 						return;
 					}
-					const environmentId = sourceEnvironmentIdInternal(detail.activity);
+					const environmentId = activityEnvironmentIdInternal(activityId);
 					const normalized = {
 						...detail,
 						activity: normalizeActivityInternal(detail.activity, environmentId)
 					};
 					_details = { ..._details, [activityId]: normalized };
+					mergeActivityInternal(normalized.activity);
+					if (normalized.activity.batchId) setBatchExpandedInternal(normalized.activity.batchId, true);
 					const nextErrors = { ..._detailErrorIds };
 					delete nextErrors[activityId];
 					_detailErrorIds = nextErrors;
@@ -483,7 +503,8 @@ function createActivityStore() {
 		}
 	}
 
-	function openCenterInternal(activityId?: string, batchId?: string) {
+	function openCenterInternal(activityId?: string, batchId?: string, environmentId?: string) {
+		if (activityId && environmentId) requestedEnvironments[activityId] = environmentId;
 		_open = true;
 		discardPendingActivityToasts();
 		if (activityId) {
@@ -601,6 +622,7 @@ function createActivityStore() {
 			const wasStarted = core.stop(options);
 			if (options?.resetState) {
 				sessionGeneration += 1;
+				requestedEnvironments = {};
 				observedStatusById.clear();
 				discardPendingActivityToasts();
 				_activities = [];

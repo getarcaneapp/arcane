@@ -32,7 +32,7 @@ class JobScheduleService extends BaseAPIService {
 			this.api.get(`/environments/${environmentId}/jobs/${encodeURIComponent(jobId)}/runs/${encodeURIComponent(runId)}`)
 		);
 	}
-	async updateRun(jobId: string, runId: string, action: 'retry' | 'cancel', environmentId: string): Promise<JobRun> {
+	async updateRun(jobId: string, runId: string, action: 'retry' | 'cancel' | 'resolve', environmentId: string): Promise<JobRun> {
 		return this.handleResponse(
 			this.api.post(
 				`/environments/${environmentId}/jobs/${encodeURIComponent(jobId)}/runs/${encodeURIComponent(runId)}/${action}`

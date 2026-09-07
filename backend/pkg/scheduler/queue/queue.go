@@ -33,6 +33,9 @@ type Queue struct {
 	workers      sync.WaitGroup
 	execute      func(context.Context, st.Run) (st.Outcome, error)
 	reconcile    func(context.Context, st.Run) (st.Outcome, error)
+	observer     st.RunObserver
+	observerMu   sync.Mutex
+	pendingSync  map[string]st.Run
 }
 
 // Submit persists acceptance before waking the dispatcher. Run IDs deduplicate
@@ -62,6 +65,7 @@ func (q *Queue) Submit(ctx context.Context, request st.Request) (st.Run, error) 
 	}
 	now := time.Now().UTC()
 	result := st.Run{ID: request.RunID, JobID: request.JobID, EnvironmentID: request.EnvironmentID, Trigger: request.Trigger, RequestedBy: request.RequestedBy, RequestedWithKey: request.RequestedWithKey, RemoteAccepted: request.Trigger == "remote", Status: st.Queued, CreatedAt: now, UpdatedAt: now}
+	q.associateActivityInternal(&result)
 	err := q.mutateInternal(ctx, request.EnvironmentID, request.JobID, func(record *st.QueueRecord) error {
 		if request.Trigger == "scheduled" || request.Trigger == "recovery" {
 			record.LastEnqueuedAt = now
@@ -85,6 +89,7 @@ func (q *Queue) Submit(ctx context.Context, request st.Request) (st.Run, error) 
 		return nil
 	})
 	if err == nil {
+		q.observeRunInternal(ctx, result)
 		q.signalInternal()
 	}
 	return result, err
@@ -103,6 +108,7 @@ func (q *Queue) Checkpoint(ctx context.Context, jobID, schedule string, next tim
 	defer q.mu.Unlock()
 	first := !q.checkpointed[jobID]
 	recovered := false
+	var recoveredRun st.Run
 	err := q.mutateInternal(ctx, "0", jobID, func(record *st.QueueRecord) error {
 		now := time.Now().UTC()
 		if first && record.Schedule == schedule && !record.NextRun.IsZero() && !record.NextRun.After(now) && record.LastEnqueuedAt.Before(record.NextRun) {
@@ -116,7 +122,8 @@ func (q *Queue) Checkpoint(ctx context.Context, jobID, schedule string, next tim
 			if !pending {
 				recovered = true
 				record.LastEnqueuedAt = now
-				record.Runs = append(record.Runs, st.Run{ID: uuid.NewString(), JobID: jobID, EnvironmentID: "0", Trigger: "recovery", Status: st.Queued, CreatedAt: now, UpdatedAt: now})
+				recoveredRun = st.Run{ID: uuid.NewString(), JobID: jobID, EnvironmentID: "0", Trigger: "recovery", Status: st.Queued, CreatedAt: now, UpdatedAt: now}
+				record.Runs = append(record.Runs, recoveredRun)
 			}
 		}
 		record.Schedule = schedule
@@ -126,6 +133,7 @@ func (q *Queue) Checkpoint(ctx context.Context, jobID, schedule string, next tim
 	if err == nil {
 		q.checkpointed[jobID] = true
 		if recovered {
+			q.observeRunInternal(ctx, recoveredRun)
 			q.signalInternal()
 		}
 	}
@@ -144,8 +152,18 @@ func (q *Queue) Start(ctx context.Context) error {
 		return errors.New("job executor unavailable")
 	}
 	// Fail startup if persisted state cannot be read. Never replace it with empty state.
-	if _, err := q.Records(ctx); err != nil {
+	records, err := q.Records(ctx)
+	if err != nil {
 		return err
+	}
+	for _, record := range records {
+		for _, run := range record.Runs {
+			if q.observer != nil {
+				if err := q.UpdateRun(ctx, run, func(*st.Run) error { return nil }); err != nil {
+					return err
+				}
+			}
+		}
 	}
 	runCtx, cancel := context.WithCancel(ctx)
 	q.cancel = cancel
@@ -180,6 +198,7 @@ func (q *Queue) dispatchInternal(ctx context.Context) {
 	defer q.workers.Wait()
 	nextRetention := time.Now().Add(time.Hour)
 	for ctx.Err() == nil {
+		q.retryActivitySyncInternal(ctx)
 		if !time.Now().Before(nextRetention) {
 			if err := q.pruneInternal(ctx); err != nil && ctx.Err() == nil {
 				slog.ErrorContext(ctx, "Job retention failed", "error", err)
@@ -192,6 +211,9 @@ func (q *Queue) dispatchInternal(ctx context.Context) {
 			nextRetry = time.Now().Add(5 * time.Second)
 		}
 		nextWake := nextRetention
+		if q.hasPendingActivitySyncInternal() {
+			nextWake = time.Now().Add(5 * time.Second)
+		}
 		if !nextRetry.IsZero() && nextRetry.Before(nextWake) {
 			nextWake = nextRetry
 		}
