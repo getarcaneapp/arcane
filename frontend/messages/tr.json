@@ -3510,5 +3510,13 @@
   "editor_compose_updater_constraint_detail": "Sürüm kısıtlaması",
   "editor_compose_updater_constraint_info": "Etiket güncellemeleri için anlamsal sürüm kısıtlaması; örneğin 3.x veya >=3.1.0 <4.0.0. Kısıtlama olmadığında, güncellemeler mevcut ana sürüm kapsamında kalır; 0.x sürümlerinde ise mevcut alt sürüm kapsamında kalır.",
   "editor_compose_updater_tag_pattern_detail": "Etiket şablonu",
-  "editor_compose_updater_tag_pattern_info": "Düzenli ifade, etiketin tamamıyla eşleştirildi. Bir varyantı seçmek için adlandırılmış bir yakalama kullanın; örneğin: (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
+  "editor_compose_updater_tag_pattern_info": "Düzenli ifade, etiketin tamamıyla eşleştirildi. Bir varyantı seçmek için adlandırılmış bir yakalama kullanın; örneğin: (?P<version>\\d+\\.\\d+\\.\\d+)-alpine.",
+  "activity_type_job_run": "Otomasyon çalıştırması",
+  "jobs_resolve_run": "İncelemenin ardından karar verilmesi",
+  "jobs_resolve_description": "Bu kesintiye uğramış çalıştırmayı incelediğinizi ve sonuçlarını kontrol ettiğinizi teyit edin. Bu sorunu çözmek, çalıştırmanın geçmişini korur ve daha sonra planlanan işlerin devam etmesini sağlar. Güncellemeleri çalıştırmaz veya bu çalıştırmayı başarılı olarak işaretlemez.",
+  "jobs_resolution_details": "{user} tarafından şu tarihte çözüldü: {date}",
+  "jobs_activity_summary": "Etkinliği çalıştır",
+  "jobs_activity_output": "Çalışma çıkışı",
+  "jobs_attention_schedule_blocked": "Bu işin incelenmesi gerekiyor ve bu işin sonraki çalıştırmalarını engelliyor.",
+  "jobs_resolution_reason": "Karar nedeni"
 }
