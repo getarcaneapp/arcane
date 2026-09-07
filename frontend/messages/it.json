@@ -3500,5 +3500,15 @@
   "jobs_local_health_check": "Salute ambientale a livello locale",
   "jobs_health_check": "Salute ambientale",
   "jobs_settings_details": "Impostazioni e dettagli",
-  "jobs_health_scope_description": "Verifica lo stato di integrità e la connettività di questo ambiente."
+  "jobs_health_scope_description": "Verifica lo stato di integrità e la connettività di questo ambiente.",
+  "editor_compose_updater_detail": "Politica di aggiornamento delle immagini",
+  "editor_compose_updater_info": "Le impostazioni predefinite del progetto si applicano a tutti i servizi. I campi dell'aggiornamento del servizio hanno la precedenza sulle impostazioni predefinite del progetto. Le etichette esplicite dell'aggiornamento hanno la precedenza per ciascun campo.",
+  "editor_compose_updater_enabled_detail": "Abilita gli aggiornamenti delle immagini",
+  "editor_compose_updater_enabled_info": "Booleano. Impostare su \"false\" per disabilitare gli aggiornamenti delle immagini per i servizi interessati.",
+  "editor_compose_updater_strategy_detail": "Strategia di aggiornamento",
+  "editor_compose_updater_strategy_info": "L'impostazione predefinita è \"auto\": i tag di versione semantica stabili completi seguono i tag più recenti idonei; i tag dinamici come \"latest\" e \"alpine\" seguono le modifiche del digest. Impostare \"digest\" per mantenere il tag corrente, oppure \"tag\" per richiedere una selezione basata sulla versione.",
+  "editor_compose_updater_constraint_detail": "Vincolo di versione",
+  "editor_compose_updater_constraint_info": "Vincolo di versione semantica per gli aggiornamenti dei tag, ad esempio 3.x o >=3.1.0 <4.0.0. In assenza di un vincolo, gli aggiornamenti rimangono all'interno della versione principale corrente o, nel caso delle versioni 0.x, della versione secondaria corrente.",
+  "editor_compose_updater_tag_pattern_detail": "Tag pattern",
+  "editor_compose_updater_tag_pattern_info": "Regular expression matched against the whole tag. Use a named version capture to select a variant, such as (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
 }
