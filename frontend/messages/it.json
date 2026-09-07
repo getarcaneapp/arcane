@@ -3510,5 +3510,13 @@
   "editor_compose_updater_constraint_detail": "Vincolo di versione",
   "editor_compose_updater_constraint_info": "Vincolo di versione semantica per gli aggiornamenti dei tag, ad esempio 3.x o >=3.1.0 <4.0.0. In assenza di un vincolo, gli aggiornamenti rimangono all'interno della versione principale corrente o, nel caso delle versioni 0.x, della versione secondaria corrente.",
   "editor_compose_updater_tag_pattern_detail": "Modello di tag",
-  "editor_compose_updater_tag_pattern_info": "Espressione regolare applicata all'intero tag. Per selezionare una variante, utilizzare una cattura con nome, ad esempio (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
+  "editor_compose_updater_tag_pattern_info": "Espressione regolare applicata all'intero tag. Per selezionare una variante, utilizzare una cattura con nome, ad esempio (?P<version>\\d+\\.\\d+\\.\\d+)-alpine.",
+  "activity_type_job_run": "Esecuzione dell'automazione",
+  "jobs_resolve_run": "Decisione dopo la revisione",
+  "jobs_resolve_description": "Conferma di aver esaminato questa esecuzione interrotta e di averne verificato i risultati. La risoluzione di tale esecuzione ne preserva la cronologia e consente il proseguimento delle attività pianificate successive. Non comporta l'esecuzione di aggiornamenti né contrassegna tale esecuzione come riuscita.",
+  "jobs_resolution_details": "Risolto da {user} il {date}",
+  "jobs_activity_summary": "Attività di corsa",
+  "jobs_activity_output": "Uscita operativa",
+  "jobs_attention_schedule_blocked": "Questa esecuzione deve essere sottoposta a revisione e blocca le successive esecuzioni di questo processo.",
+  "jobs_resolution_reason": "Motivo della risoluzione"
 }
