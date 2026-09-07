@@ -3500,5 +3500,15 @@
   "jobs_local_health_check": "Состояние локального окружения",
   "jobs_health_check": "Состояние окружения",
   "jobs_settings_details": "Настройки и сведения",
-  "jobs_health_scope_description": "Проверяет работоспособность и доступность окружения."
+  "jobs_health_scope_description": "Проверяет работоспособность и доступность окружения.",
+  "editor_compose_updater_detail": "Политика обновления изображений",
+  "editor_compose_updater_info": "Значения по умолчанию проекта применяются ко всем службам. Поля средства обновления служб переопределяют значения по умолчанию проекта. Явные метки средства обновления имеют приоритет для каждого поля.",
+  "editor_compose_updater_enabled_detail": "Включить обновление изображений",
+  "editor_compose_updater_enabled_info": "Булево значение. Установите значение «false», чтобы отключить обновление изображений для соответствующих служб.",
+  "editor_compose_updater_strategy_detail": "Стратегия обновления",
+  "editor_compose_updater_strategy_info": "По умолчанию установлено значение «auto»: полные стабильные семантические версии тегов следуют за более новыми подходящими тегами; перемещаемые теги, такие как «latest» и «alpine», следуют за изменениями дайджеста. Установите параметр «digest», чтобы сохранить текущий тег, или «tag», чтобы выбрать тег на основе версии.",
+  "editor_compose_updater_constraint_detail": "Ограничение по версии",
+  "editor_compose_updater_constraint_info": "Ограничение семантической версии для обновлений тегов, например 3.x или >=3.1.0 <4.0.0. Без такого ограничения обновления остаются в пределах текущей главной версии или текущей второстепенной версии для версий 0.x.",
+  "editor_compose_updater_tag_pattern_detail": "Tag pattern",
+  "editor_compose_updater_tag_pattern_info": "Regular expression matched against the whole tag. Use a named version capture to select a variant, such as (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
 }
