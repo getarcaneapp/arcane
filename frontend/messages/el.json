@@ -3500,5 +3500,15 @@
   "jobs_local_health_check": "Υγιεινή του τοπικού περιβάλλοντος",
   "jobs_health_check": "Υγιεινή του περιβάλλοντος",
   "jobs_settings_details": "Ρυθμίσεις και λεπτομέρειες",
-  "jobs_health_scope_description": "Ελέγχει την κατάσταση και τη συνδεσιμότητα αυτού του περιβάλλοντος."
+  "jobs_health_scope_description": "Ελέγχει την κατάσταση και τη συνδεσιμότητα αυτού του περιβάλλοντος.",
+  "editor_compose_updater_detail": "Πολιτική ενημέρωσης εικόνων",
+  "editor_compose_updater_info": "Οι προεπιλογές του έργου ισχύουν για όλες τις υπηρεσίες. Τα πεδία του προγράμματος ενημέρωσης υπηρεσιών υπερισχύουν των προεπιλογών του έργου. Οι ρητές ετικέτες του προγράμματος ενημέρωσης έχουν προτεραιότητα για κάθε πεδίο.",
+  "editor_compose_updater_enabled_detail": "Ενεργοποίηση ενημερώσεων εικόνων",
+  "editor_compose_updater_enabled_info": "Boolean. Ορίστε την τιμή σε «false» για να απενεργοποιήσετε τις ενημερώσεις εικόνων για τις σχετικές υπηρεσίες.",
+  "editor_compose_updater_strategy_detail": "Στρατηγική ενημέρωσης",
+  "editor_compose_updater_strategy_info": "Η προεπιλεγμένη ρύθμιση είναι η αυτόματη: οι πλήρεις σταθερές ετικέτες σημασιολογικής έκδοσης ακολουθούν τις νεότερες επιλέξιμες ετικέτες· οι μεταβατικές ετικέτες, όπως «latest» και «alpine», ακολουθούν τις αλλαγές του digest. Ορίστε την επιλογή «digest» για να διατηρήσετε την τρέχουσα ετικέτα ή την επιλογή «tag» για να απαιτήσετε επιλογή βάσει έκδοσης.",
+  "editor_compose_updater_constraint_detail": "Περιορισμός έκδοσης",
+  "editor_compose_updater_constraint_info": "Σημασιολογικός περιορισμός έκδοσης για ενημερώσεις ετικετών, όπως 3.x ή >=3.1.0 <4.0.0. Χωρίς τέτοιο περιορισμό, οι ενημερώσεις παραμένουν εντός της τρέχουσας κύριας έκδοσης ή της τρέχουσας δευτερεύουσας έκδοσης για τις εκδόσεις 0.x.",
+  "editor_compose_updater_tag_pattern_detail": "Tag pattern",
+  "editor_compose_updater_tag_pattern_info": "Regular expression matched against the whole tag. Use a named version capture to select a variant, such as (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
 }
