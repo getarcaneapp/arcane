@@ -3510,5 +3510,13 @@
   "editor_compose_updater_constraint_detail": "版本限制",
   "editor_compose_updater_constraint_info": "標籤更新的語義版本限制，例如 3.x 或 >=3.1.0 <4.0.0。若未設定限制，更新將維持在當前主版本範圍內；若為 0.x 版本，則維持在當前次版本範圍內。",
   "editor_compose_updater_tag_pattern_detail": "標籤模式",
-  "editor_compose_updater_tag_pattern_info": "正規表達式會與整個標籤進行比對。請使用命名捕獲來選取變體，例如 (?P<version>\\d+\\.\\d+\\.\\d+)-alpine。"
+  "editor_compose_updater_tag_pattern_info": "正規表達式會與整個標籤進行比對。請使用命名捕獲來選取變體，例如 (?P<version>\\d+\\.\\d+\\.\\d+)-alpine。",
+  "activity_type_job_run": "自動化執行",
+  "jobs_resolve_run": "經審查後作出的決定",
+  "jobs_resolve_description": "請確認您已檢視此中斷的執行任務，並檢查其結果。解決此問題可保留其執行記錄，並讓後續排定的任務得以繼續進行。此操作不會執行更新，也不會將此執行任務標記為成功。",
+  "jobs_resolution_details": "由 {user} 於 {date}",
+  "jobs_activity_summary": "跑步活動",
+  "jobs_activity_output": "操作輸出",
+  "jobs_attention_schedule_blocked": "此執行程序需要進行審查，並會阻礙此工作後續的執行。",
+  "jobs_resolution_reason": "決議理由"
 }
