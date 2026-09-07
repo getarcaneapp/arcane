@@ -3500,5 +3500,15 @@
   "jobs_local_health_check": "Sức khỏe môi trường địa phương",
   "jobs_health_check": "Sức khỏe môi trường",
   "jobs_settings_details": "Cài đặt và thông tin chi tiết",
-  "jobs_health_scope_description": "Kiểm tra tình trạng hoạt động và kết nối của môi trường này."
+  "jobs_health_scope_description": "Kiểm tra tình trạng hoạt động và kết nối của môi trường này.",
+  "editor_compose_updater_detail": "Chính sách cập nhật hình ảnh",
+  "editor_compose_updater_info": "Các giá trị mặc định của dự án áp dụng cho tất cả các dịch vụ. Các trường trong công cụ cập nhật dịch vụ sẽ ghi đè lên các giá trị mặc định của dự án. Các nhãn được chỉ định rõ ràng trong công cụ cập nhật sẽ được ưu tiên áp dụng cho từng trường.",
+  "editor_compose_updater_enabled_detail": "Bật tính năng cập nhật hình ảnh",
+  "editor_compose_updater_enabled_info": "Boolean. Đặt thành false để vô hiệu hóa tính năng cập nhật hình ảnh cho các dịch vụ liên quan.",
+  "editor_compose_updater_strategy_detail": "Chiến lược cập nhật",
+  "editor_compose_updater_strategy_info": "Mặc định là \"auto\": các thẻ phiên bản ngữ nghĩa ổn định sẽ tuân theo các thẻ mới hơn đủ điều kiện; các thẻ động như \"latest\" và \"alpine\" sẽ tuân theo các thay đổi trong bản tóm tắt. Đặt thành \"digest\" để giữ nguyên thẻ hiện tại, hoặc đặt thành \"tag\" để yêu cầu lựa chọn dựa trên phiên bản.",
+  "editor_compose_updater_constraint_detail": "Hạn chế về phiên bản",
+  "editor_compose_updater_constraint_info": "Hạn chế phiên bản theo ngữ nghĩa đối với các bản cập nhật thẻ, chẳng hạn như 3.x hoặc >=3.1.0 <4.0.0. Nếu không có hạn chế này, các bản cập nhật sẽ vẫn nằm trong phạm vi phiên bản chính hiện tại, hoặc phiên bản phụ hiện tại đối với các phiên bản 0.x.",
+  "editor_compose_updater_tag_pattern_detail": "Tag pattern",
+  "editor_compose_updater_tag_pattern_info": "Regular expression matched against the whole tag. Use a named version capture to select a variant, such as (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
 }
