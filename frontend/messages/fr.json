@@ -3500,5 +3500,15 @@
   "jobs_local_health_check": "Santé environnementale locale",
   "jobs_health_check": "Santé environnementale",
   "jobs_settings_details": "Paramètres et détails",
-  "jobs_health_scope_description": "Vérifie l'état de fonctionnement et la connectivité de cet environnement."
+  "jobs_health_scope_description": "Vérifie l'état de fonctionnement et la connectivité de cet environnement.",
+  "editor_compose_updater_detail": "Politique de mise à jour des images",
+  "editor_compose_updater_info": "Les valeurs par défaut du projet s'appliquent à tous les services. Les champs de l'outil de mise à jour des services remplacent les valeurs par défaut du projet. Les libellés explicites définis dans l'outil de mise à jour ont la priorité pour chaque champ.",
+  "editor_compose_updater_enabled_detail": "Activer les mises à jour des images",
+  "editor_compose_updater_enabled_info": "Booléen. Définissez cette valeur sur « false » pour désactiver la mise à jour des images pour les services concernés.",
+  "editor_compose_updater_strategy_detail": "Stratégie de mise à jour",
+  "editor_compose_updater_strategy_info": "La valeur par défaut est « auto » : les balises de version sémantique stables complètes suivent les balises éligibles les plus récentes ; les balises mobiles telles que « latest » et « alpine » suivent les modifications du résumé. Définissez « digest » pour conserver la balise actuelle, ou « tag » pour exiger une sélection basée sur la version.",
+  "editor_compose_updater_constraint_detail": "Contrainte de version",
+  "editor_compose_updater_constraint_info": "Contrainte de version sémantique pour les mises à jour des balises, par exemple 3.x ou >=3.1.0 <4.0.0. En l'absence de contrainte, les mises à jour restent dans la même version majeure, ou dans la même version mineure pour les versions 0.x.",
+  "editor_compose_updater_tag_pattern_detail": "Tag pattern",
+  "editor_compose_updater_tag_pattern_info": "Regular expression matched against the whole tag. Use a named version capture to select a variant, such as (?P<version>\\d+\\.\\d+\\.\\d+)-alpine."
 }
