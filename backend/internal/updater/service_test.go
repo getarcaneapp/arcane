@@ -12,7 +12,10 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
+	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 
 	"bytes"
 	"context"
@@ -673,6 +676,60 @@ func TestUpdaterService_RecordUpdateRunAdapterInternal(t *testing.T) {
 	err = svc.RecordUpdateRun(ctx, updater.ResourceResult{ResourceID: "failed-container", ResourceType: updater.ResourceTypeContainer, Status: updater.StatusFailed})
 	require.ErrorContains(t, err, "progress unavailable")
 	require.ErrorContains(t, progress.err, "progress unavailable")
+}
+
+func TestUpdaterService_RecordUpdateRunAppendsActivityMessageInternal(t *testing.T) {
+	ctx := context.Background()
+	db := setupProjectTestDBInternal(t)
+	require.NoError(t, db.AutoMigrate(&AutoUpdateRecord{}, &activity.Activity{}, &activity.ActivityMessage{}))
+	activityService := activity.NewActivityService(db, nil)
+	svc, svcErr := NewUpdaterService(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, activityService)
+	require.NoError(t, svcErr)
+
+	for _, tt := range []struct {
+		name        string
+		result      updater.ResourceResult
+		wantLevel   activitytypes.MessageLevel
+		wantMessage string
+	}{
+		{
+			name:        "failed with reason",
+			result:      updater.ResourceResult{ResourceID: "c1", ResourceName: "sonarr", ResourceType: updater.ResourceTypeContainer, Status: updater.StatusFailed, Error: "pull failed: unexpected EOF"},
+			wantLevel:   activitytypes.MessageLevelError,
+			wantMessage: "sonarr: pull failed: unexpected EOF",
+		},
+		{
+			name:        "failed without reason falls back to status",
+			result:      updater.ResourceResult{ResourceID: "c2", ResourceName: "dozzle", ResourceType: updater.ResourceTypeContainer, Status: updater.StatusFailed},
+			wantLevel:   activitytypes.MessageLevelError,
+			wantMessage: "dozzle: failed",
+		},
+		{
+			name:        "updated includes image change",
+			result:      updater.ResourceResult{ResourceID: "c3", ResourceName: "maintainerr", ResourceType: updater.ResourceTypeContainer, Status: updater.StatusUpdated, OldImage: "sha256:old", NewImage: "ghcr.io/maintainerr/maintainerr:latest"},
+			wantLevel:   activitytypes.MessageLevelInfo,
+			wantMessage: "maintainerr: updated (sha256:old -> ghcr.io/maintainerr/maintainerr:latest)",
+		},
+		{
+			name:        "skipped unnamed uses resource id and reason",
+			result:      updater.ResourceResult{ResourceID: "arcane-id", ResourceType: updater.ResourceTypeContainer, Status: updater.StatusSkipped, Error: "container excluded by settings"},
+			wantLevel:   activitytypes.MessageLevelInfo,
+			wantMessage: "arcane-id: skipped (container excluded by settings)",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			started, err := activityService.StartActivity(ctx, activitylib.StartRequest{EnvironmentID: "0", Type: activitytypes.TypeAutoUpdate})
+			require.NoError(t, err)
+
+			require.NoError(t, svc.RecordUpdateRun(contextWithActivityIDInternal(ctx, started.ID), tt.result))
+
+			detail, err := activityService.GetActivityDetail(ctx, "0", started.ID, 10)
+			require.NoError(t, err)
+			require.Len(t, detail.Messages, 1)
+			assert.Equal(t, tt.wantLevel, detail.Messages[0].Level)
+			assert.Equal(t, tt.wantMessage, detail.Messages[0].Message)
+		})
+	}
 }
 
 func TestUpdaterService_ApplyPending_ProjectFailureDoesNotBlockOtherProjectsInternal(t *testing.T) {

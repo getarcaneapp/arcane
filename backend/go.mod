@@ -19,6 +19,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.3
 	github.com/aws/aws-sdk-go-v2/service/ecr v1.64.0
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.111.0
+	github.com/aws/smithy-go v1.28.1
 	github.com/cenkalti/backoff/v5 v5.0.3
 	github.com/coder/websocket v1.8.15
 	github.com/compose-spec/compose-go/v2 v2.15.0
@@ -57,6 +58,7 @@ require (
 	github.com/project-copacetic/copacetic v0.15.0
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/samber/hot v0.13.1
+	github.com/samber/lo v1.53.0
 	github.com/samber/mo v1.17.0
 	github.com/samber/slog-echo/v2 v2.1.0
 	github.com/shirou/gopsutil/v4 v4.26.8
@@ -72,7 +74,7 @@ require (
 	go.getarcane.app/streams v0.4.3
 	go.getarcane.app/sys/cgroup v0.2.3
 	go.getarcane.app/sys/crypto v0.2.1
-	go.getarcane.app/updater v0.9.1
+	go.getarcane.app/updater v0.9.2
 	go.uber.org/fx v1.24.0
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
 	golang.org/x/crypto v0.56.0
@@ -120,7 +122,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sso v1.37.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.42.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.49.0 // indirect
-	github.com/aws/smithy-go v1.28.1 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/buger/goterm v1.0.4 // indirect
@@ -249,7 +250,6 @@ require (
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/samber/go-singleflightx v0.3.2 // indirect
-	github.com/samber/lo v1.53.0 // indirect
 	github.com/samber/oops v1.18.1 // indirect
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3 // indirect
 	github.com/secure-systems-lab/go-securesystemslib v0.11.1 // indirect

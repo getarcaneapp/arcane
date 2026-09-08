@@ -2,10 +2,14 @@ package updater
 
 import (
 	"context"
+	"log/slog"
+	"strings"
 	"sync"
 
 	"emperror.dev/errors"
+	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
+	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	arcaneupdater "github.com/getarcaneapp/arcane/types/v2/updater"
 	"go.getarcane.app/updater"
@@ -25,16 +29,38 @@ func (s *UpdaterService) RecordUpdateRun(ctx context.Context, result updater.Res
 	if s != nil && s.deps.DB != nil {
 		recordErr = s.recordRunInternal(ctx, resourceResultFromModuleInternal(result))
 	}
+	name := strings.TrimSpace(result.ResourceName)
+	if name == "" {
+		name = result.ResourceID
+	}
+	message := name + ": " + string(result.Status)
+	level := activitytypes.MessageLevelInfo
 	status := schedulertypes.NeedsAttention
 	switch result.Status {
 	case updater.StatusUpdated, updater.StatusRestarted, updater.StatusUpToDate:
 		status = schedulertypes.Succeeded
+		if result.Status != updater.StatusUpToDate && result.OldImage != "" && result.NewImage != "" && result.OldImage != result.NewImage {
+			message += " (" + result.OldImage + " -> " + result.NewImage + ")"
+		}
 	case updater.StatusSkipped:
 		status = schedulertypes.Skipped
 	case updater.StatusChecked, updater.StatusUpdateAvailable:
 		status = schedulertypes.NeedsAttention
 	case updater.StatusFailed:
 		status = schedulertypes.Failed
+		level = activitytypes.MessageLevelError
+	}
+	if reason := strings.TrimSpace(result.Error); reason != "" {
+		if level == activitytypes.MessageLevelError {
+			message = name + ": " + reason
+		} else {
+			message += " (" + reason + ")"
+		}
+	}
+	if activityID := activityIDFromContextInternal(ctx); activityID != "" && s != nil && s.deps.Activity != nil {
+		if _, appendErr := s.deps.Activity.AppendMessage(ctx, activityID, activitylib.AppendMessageRequest{Level: level, Message: message, Step: "Applying updates"}); appendErr != nil {
+			slog.DebugContext(ctx, "failed to append update result activity message", "activityId", activityID, "resource", name, "error", appendErr)
+		}
 	}
 	progressErr := jobcontext.Progress(ctx, schedulertypes.TargetOutcome{ID: result.ResourceID, ResourceType: string(result.ResourceType), Status: status, Message: result.Error, ActivityID: activityIDFromContextInternal(ctx)})
 	err := errors.Combine(recordErr, progressErr)
