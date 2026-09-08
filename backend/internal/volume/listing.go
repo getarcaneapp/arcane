@@ -13,6 +13,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/moby/moby/api/types/container"
@@ -295,7 +296,8 @@ func (s *VolumeService) isInternalVolumeInternal(v volumetypes.Volume) bool {
 		return true
 	}
 
-	return libarcane.IsInternalContainer(v.Labels)
+	internal, _ := utils.ParseBool(v.Labels[libarcane.InternalResourceLabel])
+	return internal
 }
 
 var generatedAnonymousVolumeNameInternal = regexp.MustCompile(`^[a-f0-9]{64}$`)

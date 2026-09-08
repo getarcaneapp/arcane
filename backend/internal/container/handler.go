@@ -23,7 +23,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
@@ -61,6 +60,7 @@ type ListContainersInput struct {
 	Limit           int    `query:"limit" default:"20" doc:"Limit"`
 	GroupBy         string `query:"groupBy" doc:"Optional grouping mode (for example: project)"`
 	IncludeInternal bool   `query:"includeInternal" default:"false" doc:"Include internal containers"`
+	IncludeHidden   bool   `query:"includeHidden" default:"false" doc:"Include hidden containers"`
 	Updates         string `query:"updates" doc:"Filter by update status (has_update, up_to_date, error, unknown)"`
 	Standalone      string `query:"standalone" doc:"Filter standalone containers only (true/false)"`
 	Label           string `query:"label" doc:"Filter by label key or key=value"`
@@ -73,6 +73,7 @@ type ListContainersOutput struct {
 type GetContainerStatusCountsInput struct {
 	EnvironmentID   string `path:"id" doc:"Environment ID"`
 	IncludeInternal bool   `query:"includeInternal" default:"false" doc:"Include internal containers"`
+	IncludeHidden   bool   `query:"includeHidden" default:"false" doc:"Include hidden containers"`
 }
 
 type CreateContainerInput struct {
@@ -318,7 +319,7 @@ func (h *ContainerHandler) ListContainers(ctx context.Context, input *ListContai
 		params.Filters["label"] = input.Label
 	}
 
-	result, err := h.containerService.ListContainersPaginated(ctx, params, true, input.IncludeInternal, input.GroupBy)
+	result, err := h.containerService.ListContainersPaginated(ctx, params, true, input.IncludeInternal, input.IncludeHidden, input.GroupBy)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to list containers").Error())
 	}
@@ -340,16 +341,7 @@ func (h *ContainerHandler) GetContainerStatusCounts(ctx context.Context, input *
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to get container counts").Error())
 	}
 
-	if !input.IncludeInternal {
-		filtered := make([]dockercontainer.Summary, 0, len(containers))
-		for _, c := range containers {
-			if libarcane.IsInternalContainer(c.Labels) {
-				continue
-			}
-			filtered = append(filtered, c)
-		}
-		containers = filtered
-	}
+	containers = FilterExcludedContainers(containers, input.IncludeInternal, input.IncludeHidden)
 
 	running, stopped := 0, 0
 	for _, c := range containers {

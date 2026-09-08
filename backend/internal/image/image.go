@@ -1277,13 +1277,10 @@ func (s *ImageService) getImagePaginationConfig() pagination.Config[imagetypes.S
 						return i.UpdateInfo != nil && i.UpdateInfo.Error != ""
 					case "unknown":
 						return i.UpdateInfo == nil
-					// Legacy boolean support
-					case "true":
-						return i.UpdateInfo != nil && i.UpdateInfo.HasUpdate
-					case "false":
-						return i.UpdateInfo == nil || !i.UpdateInfo.HasUpdate
 					default:
-						return true
+						value, valid := utils.ParseBool(filterValue)
+						hasUpdate := i.UpdateInfo != nil && i.UpdateInfo.HasUpdate
+						return !valid || hasUpdate == value
 					}
 				},
 			},

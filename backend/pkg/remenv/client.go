@@ -3,7 +3,6 @@ package remenv
 import (
 	"bytes"
 	"context"
-	"encoding/json/v2"
 	"fmt"
 	"io"
 	"maps"
@@ -112,20 +111,6 @@ func (c *Client) Do(ctx context.Context, req Request) (*Response, error) {
 	return c.doDirectHTTPInternal(ctx, req)
 }
 
-func (c *Client) DoJSON[T any](ctx context.Context, req Request) (T, error) {
-	var zero T
-	resp, err := c.Do(ctx, req)
-	if err != nil {
-		return zero, err
-	}
-
-	if err := resp.RequireSuccess(); err != nil {
-		return zero, err
-	}
-
-	return resp.DecodeJSON[T]()
-}
-
 func (c *Client) doViaTunnelInternal(ctx context.Context, req Request) (*Response, error) {
 	if c.tunnel == nil {
 		return nil, &TransportError{Err: errors.New("edge transport unavailable")}
@@ -189,17 +174,6 @@ func (r *Response) RequireSuccess() error {
 		StatusCode: r.StatusCode,
 		Body:       r.Body,
 	}
-}
-
-func (r *Response) DecodeJSON[T any]() (T, error) {
-	var out T
-	if r == nil {
-		return out, &DecodeError{Err: errors.New("response is nil")}
-	}
-	if err := json.Unmarshal(r.Body, &out); err != nil {
-		return out, &DecodeError{Err: err}
-	}
-	return out, nil
 }
 
 type TransportError struct {

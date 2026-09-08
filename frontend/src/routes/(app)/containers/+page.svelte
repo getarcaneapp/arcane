@@ -196,7 +196,8 @@
 						pagination: options.pagination,
 						sort: options.sort,
 						filters: options.filters,
-						includeInternal: options.includeInternal
+						includeInternal: options.includeInternal,
+						includeHidden: options.includeHidden
 					};
 					return refreshContainers(options, requestedEnvId);
 				}}

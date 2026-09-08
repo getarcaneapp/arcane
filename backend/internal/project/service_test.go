@@ -32,6 +32,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumes"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
@@ -7455,12 +7456,17 @@ func TestCountProjectsWithPendingTagUpdatesUsesRuntimeContainers(t *testing.T) {
 	require.NoError(t, db.Create(&projects).Error)
 	require.NoError(t, db.Create(&imageupdate.ImageUpdateRecord{ID: "container::first-container", PolicyKey: imageref.UpdatePolicyKey("example:3.1.0", map[string]string{labels.LabelUpdateStrategy: "tag"}), ContainerID: "first-container", ImageID: "shared", HasUpdate: true, UpdateType: "tag"}).Error)
 	service := &ProjectService{db: db, settingsService: settingsService, imageService: image.NewImageService(db, nil, nil, nil, nil, nil)}
-	count, err := service.CountProjectsWithPendingUpdates(t.Context(), []container.Summary{
+	containers := []container.Summary{
 		{ID: "first-container", Image: "example:3.1.0", ImageID: "shared", Labels: map[string]string{labels.LabelUpdateStrategy: "tag", "com.docker.compose.project": "first", "com.docker.compose.service": "web"}},
 		{ID: "second-container", Image: "example:3.1.0", ImageID: "shared", Labels: map[string]string{"com.docker.compose.project": "second", "com.docker.compose.service": "web"}},
-	})
+	}
+	count, err := service.CountProjectsWithPendingUpdates(t.Context(), containers)
 	require.NoError(t, err)
 	require.Equal(t, 1, count)
+	containers[0].Labels[libarcane.HiddenResourceLabel] = "true"
+	count, err = service.CountProjectsWithPendingUpdates(t.Context(), containers)
+	require.NoError(t, err)
+	require.Zero(t, count)
 }
 
 type serviceTagTransportInternal struct {
@@ -7604,7 +7610,7 @@ func TestStoppedProjectTagPolicyNeverInheritsSharedDigestCheck(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(t.Context(), "projectsDirectory", projectsDir))
 	projectPath := createComposeProjectDir(t, projectsDir, "tag-stopped")
-	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services:\n  app:\n    image: nginx:3.1.0\n    labels:\n      com.getarcaneapp.arcane.updater.strategy: tag\n      com.getarcaneapp.arcane.updater.constraint: 3.x\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("x-arcane:\n  hidden: true\nservices:\n  app:\n    image: nginx:3.1.0\n    labels:\n      com.getarcaneapp.arcane.updater.strategy: tag\n      com.getarcaneapp.arcane.updater.constraint: 3.x\n"), 0o644))
 	projectRecord := &Project{ID: "tag-stopped", Name: "tag-stopped", DirName: new("tag-stopped"), Path: projectPath, Status: ProjectStatusStopped, ImageRefsJSON: `["nginx:3.1.0"]`}
 	require.NoError(t, db.Create(projectRecord).Error)
 	require.NoError(t, db.Create(&imageupdate.ImageUpdateRecord{ID: "shared-digest", Repository: "docker.io/library/nginx", Tag: "3.1.0", UpdateType: "digest", CheckTime: time.Now()}).Error)
@@ -7615,7 +7621,7 @@ func TestStoppedProjectTagPolicyNeverInheritsSharedDigestCheck(t *testing.T) {
 	require.Equal(t, "unknown", detail.UpdateInfo.Status)
 	require.Nil(t, detail.UpdateInfo.ServiceUpdates["app"].UpdateInfo)
 	list := []projecttypes.Details{{ID: projectRecord.ID}}
-	service.enrichProjectsWithUpdateInfoInternal(t.Context(), []Project{*projectRecord}, list)
+	service.enrichProjectsWithUpdateInfoInternal(t.Context(), []Project{*projectRecord}, list, true)
 	require.Equal(t, "unknown", list[0].UpdateInfo.Status)
 	require.Nil(t, list[0].UpdateInfo.ServiceUpdates["app"].UpdateInfo)
 	target := "3.2.0"
@@ -7625,8 +7631,11 @@ func TestStoppedProjectTagPolicyNeverInheritsSharedDigestCheck(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "has_update", detail.UpdateInfo.Status)
 	require.Equal(t, target, detail.UpdateInfo.ServiceUpdates["app"].UpdateInfo.LatestVersion)
-	service.enrichProjectsWithUpdateInfoInternal(t.Context(), []Project{*projectRecord}, list)
+	service.enrichProjectsWithUpdateInfoInternal(t.Context(), []Project{*projectRecord}, list, true)
 	require.Equal(t, "has_update", list[0].UpdateInfo.Status)
+	count, err := service.CountProjectsWithPendingUpdates(t.Context(), []container.Summary{})
+	require.NoError(t, err)
+	require.Zero(t, count, "hidden configured services must not contribute to the dashboard badge")
 }
 
 func TestConfiguredProjectUsesScheduledRuntimeChecks(t *testing.T) {
@@ -7670,7 +7679,7 @@ func TestConfiguredProjectUsesScheduledRuntimeChecks(t *testing.T) {
 			service.enrichProjectUpdateInfoInternal(ctx, &detail)
 			require.Equal(t, tt.wantUpdate, detail.UpdateInfo.HasUpdate)
 			list := []projecttypes.Details{{ID: proj.ID, RuntimeServices: runtime}}
-			service.enrichProjectsWithUpdateInfoInternal(ctx, []Project{proj}, list)
+			service.enrichProjectsWithUpdateInfoInternal(ctx, []Project{proj}, list, true)
 			require.Equal(t, tt.wantUpdate, list[0].UpdateInfo.HasUpdate)
 			for _, info := range []*projecttypes.UpdateInfo{detail.UpdateInfo, list[0].UpdateInfo} {
 				if tt.wantUpdate {

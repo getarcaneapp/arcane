@@ -119,15 +119,19 @@
 		return requestOptions?.pagination?.limit ?? containers?.pagination?.itemsPerPage ?? 20;
 	}
 
-	function setShowInternal(value: boolean) {
-		const currentSetting = (customSettings['showInternalContainers'] as boolean) ?? false;
-		const currentRequest = requestOptions?.includeInternal ?? false;
+	function setIncludeFlag(
+		settingsKey: 'showInternalContainers' | 'showHiddenContainers',
+		requestKey: 'includeInternal' | 'includeHidden',
+		value: boolean
+	) {
+		const currentSetting = (customSettings[settingsKey] as boolean) ?? false;
+		const currentRequest = requestOptions?.[requestKey] ?? false;
 		if (value === currentSetting && value === currentRequest) return;
 
-		customSettings = { ...customSettings, showInternalContainers: value };
+		customSettings = { ...customSettings, [settingsKey]: value };
 		const nextOptions: SearchPaginationSortRequest = {
 			...requestOptions,
-			includeInternal: value,
+			[requestKey]: value,
 			pagination: { page: 1, limit: getCurrentLimit() }
 		};
 		requestOptions = nextOptions;
@@ -162,6 +166,7 @@
 	let showInternal = $derived.by(() => {
 		return (customSettings['showInternalContainers'] as boolean) ?? false;
 	});
+	let showHidden = $derived((customSettings['showHiddenContainers'] as boolean) ?? false);
 	let hideExposedPorts = $derived.by(() => {
 		return (customSettings['hideExposedPorts'] as boolean) ?? false;
 	});
@@ -225,23 +230,22 @@
 		collapsedGroupsState = new PersistedState<Record<string, boolean>>('container-groups-collapsed', {});
 
 		const persistedInternal = (customSettings['showInternalContainers'] as boolean) ?? false;
-		const currentInternal = requestOptions?.includeInternal ?? false;
-		if (persistedInternal !== currentInternal) {
-			setShowInternal(persistedInternal);
-		}
-
+		const persistedHidden = (customSettings['showHiddenContainers'] as boolean) ?? false;
+		const includeFlagsChanged =
+			persistedInternal !== (requestOptions?.includeInternal ?? false) ||
+			persistedHidden !== (requestOptions?.includeHidden ?? false);
 		const persistedGroupByProject = (customSettings['groupByProject'] as boolean) ?? false;
-		if (persistedGroupByProject !== groupByProject) {
-			groupByProject = persistedGroupByProject;
-		}
+		groupByProject = persistedGroupByProject;
 
-		if (persistedGroupByProject) {
+		if (includeFlagsChanged || persistedGroupByProject) {
 			const nextOptions: SearchPaginationSortRequest = {
 				...requestOptions,
+				includeInternal: persistedInternal,
+				includeHidden: persistedHidden,
 				pagination: { page: 1, limit: getCurrentLimit() }
 			};
 			requestOptions = nextOptions;
-			void refreshContainers(nextOptions, true);
+			void refreshContainers(nextOptions, persistedGroupByProject);
 		}
 
 		return () => {
@@ -451,6 +455,9 @@
 	<div class="flex items-center gap-2">
 		<IconImage src={iconUrl} alt={displayName} fallback={BoxIcon} class="size-6" containerClass="size-8" />
 		<a class="font-medium hover:underline" href="/containers/{item.id}">{displayName}</a>
+		{#if item.hidden}
+			<Badge variant="gray" size="sm" class="font-normal text-muted-foreground">{m.hidden()}</Badge>
+		{/if}
 		{#if projectLabel && !groupByProject}
 			<Badge variant="gray" size="sm" class="max-w-40 truncate font-normal text-muted-foreground" title={projectLabel}>
 				{projectLabel}
@@ -833,8 +840,17 @@
 	<DropdownMenu.CheckboxItem checked={groupByProject} onCheckedChange={(v) => setGroupByProject(!!v)}>
 		{m.containers_group_by_project()}
 	</DropdownMenu.CheckboxItem>
-	<DropdownMenu.CheckboxItem checked={showInternal} onCheckedChange={(v) => setShowInternal(!!v)}>
+	<DropdownMenu.CheckboxItem
+		checked={showInternal}
+		onCheckedChange={(v) => setIncludeFlag('showInternalContainers', 'includeInternal', !!v)}
+	>
 		{`${m.common_show()} ${m.internal()} ${m.containers()}`}
+	</DropdownMenu.CheckboxItem>
+	<DropdownMenu.CheckboxItem
+		checked={showHidden}
+		onCheckedChange={(v) => setIncludeFlag('showHiddenContainers', 'includeHidden', !!v)}
+	>
+		{`${m.common_show()} ${m.hidden()} ${m.containers()}`}
 	</DropdownMenu.CheckboxItem>
 	<DropdownMenu.CheckboxItem
 		checked={hideExposedPorts}

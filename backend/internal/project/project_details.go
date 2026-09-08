@@ -22,6 +22,7 @@ import (
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/iconcatalog"
@@ -454,13 +455,46 @@ func (s *ProjectService) enrichProjectUpdateInfoInternal(ctx context.Context, re
 	resp.UpdateInfo = BuildUpdateInfoSummary(imageRefs, mergeProjectContainerUpdateInfoInternal(updateInfoByRef, resp.RuntimeServices, scoped))
 }
 
+func excludeHiddenRuntimeServicesInternal(details []project.Details) (map[string]map[string]bool, map[string]map[string]bool) {
+	hiddenServicesByProjectID := make(map[string]map[string]bool)
+	hiddenRefsByProjectID := make(map[string]map[string]bool)
+	for i := range details {
+		hiddenServices := make(map[string]bool)
+		hiddenRefs := make(map[string]bool)
+		visibleServices := make([]project.RuntimeService, 0, len(details[i].RuntimeServices))
+		for _, service := range details[i].RuntimeServices {
+			hidden, _ := utils.ParseBool(service.ContainerLabels[libarcane.HiddenResourceLabel])
+			if hidden {
+				hiddenServices[service.Name] = true
+				hiddenRefs[service.Image] = true
+				continue
+			}
+			visibleServices = append(visibleServices, service)
+		}
+		for _, service := range visibleServices {
+			delete(hiddenServices, service.Name)
+			delete(hiddenRefs, service.Image)
+		}
+		hiddenServicesByProjectID[details[i].ID] = hiddenServices
+		hiddenRefsByProjectID[details[i].ID] = hiddenRefs
+		details[i].RuntimeServices = visibleServices
+	}
+	return hiddenServicesByProjectID, hiddenRefsByProjectID
+}
+
 func (s *ProjectService) enrichProjectsWithUpdateInfoInternal(
 	ctx context.Context,
 	projectsList []Project,
 	details []project.Details,
+	includeHidden bool,
 ) {
 	if len(projectsList) == 0 || len(details) == 0 {
 		return
+	}
+
+	var hiddenServicesByProjectID, hiddenRefsByProjectID map[string]map[string]bool
+	if !includeHidden {
+		hiddenServicesByProjectID, hiddenRefsByProjectID = excludeHiddenRuntimeServicesInternal(details)
 	}
 
 	imageRefsByProjectID := make(map[string][]string, len(projectsList))
@@ -493,17 +527,8 @@ func (s *ProjectService) enrichProjectsWithUpdateInfoInternal(
 			}
 			defer func() { <-sem }()
 
-			composeProject, err := s.getCachedComposeProjectInternal(ctx, &proj, cfg)
-			if err != nil {
-				slog.WarnContext(ctx, "failed to resolve project services for update summary", "projectID", proj.ID, "projectName", proj.Name, "error", err)
-				resultsCh <- imageRefsResult{projectID: proj.ID, refs: projects.ParseImageRefsJSON(proj.ImageRefsJSON)}
-				return
-			}
-			services := make([]composetypes.ServiceConfig, 0, len(composeProject.Services))
-			for _, service := range composeProject.Services {
-				services = append(services, service)
-			}
-			resultsCh <- imageRefsResult{projectID: proj.ID, refs: projects.ImageRefsFromComposeConfigs(services), services: services}
+			refs, services := s.resolveProjectUpdateServicesInternal(ctx, proj, cfg, includeHidden, hiddenServicesByProjectID[proj.ID], hiddenRefsByProjectID[proj.ID])
+			resultsCh <- imageRefsResult{projectID: proj.ID, refs: refs, services: services}
 		}(proj)
 	}
 
@@ -529,7 +554,7 @@ func (s *ProjectService) enrichProjectsWithUpdateInfoInternal(
 	records := s.getProjectServiceUpdateRecordsInternal(ctx, projectIDs)
 	scoped := s.getProjectContainerUpdateInfoInternal(ctx, details)
 	for i := range details {
-		if services := servicesByProjectID[details[i].ID]; len(services) > 0 {
+		if services := servicesByProjectID[details[i].ID]; services != nil {
 			details[i].UpdateInfo = BuildConfiguredUpdateInfo(details[i].ID, services, updateInfoByRef, records, configuredRuntimeServiceUpdateInfoInternal(services, details[i].RuntimeServices, scoped))
 			continue
 		}
@@ -539,6 +564,24 @@ func (s *ProjectService) enrichProjectsWithUpdateInfoInternal(
 		}
 		details[i].UpdateInfo = BuildUpdateInfoSummary(refs, mergeProjectContainerUpdateInfoInternal(updateInfoByRef, details[i].RuntimeServices, scoped))
 	}
+}
+
+func (s *ProjectService) resolveProjectUpdateServicesInternal(ctx context.Context, proj Project, cfg *settings.Settings, includeHidden bool, hiddenRuntimeServices, hiddenRuntimeRefs map[string]bool) ([]string, []composetypes.ServiceConfig) {
+	composeProject, err := s.getCachedComposeProjectInternal(ctx, &proj, cfg)
+	if err != nil {
+		slog.WarnContext(ctx, "failed to resolve project services for update summary", "projectID", proj.ID, "projectName", proj.Name, "error", err)
+		refs := projects.ParseImageRefsJSON(proj.ImageRefsJSON)
+		return slices.DeleteFunc(refs, func(ref string) bool { return hiddenRuntimeRefs[ref] }), nil
+	}
+	services := make([]composetypes.ServiceConfig, 0, len(composeProject.Services))
+	for _, service := range composeProject.Services {
+		hidden, _ := utils.ParseBool(service.Labels[libarcane.HiddenResourceLabel])
+		if !includeHidden && (hidden || hiddenRuntimeServices[service.Name]) {
+			continue
+		}
+		services = append(services, service)
+	}
+	return projects.ImageRefsFromComposeConfigs(services), services
 }
 
 func (s *ProjectService) getProjectServiceUpdateRecordsInternal(ctx context.Context, projectIDs []string) []imageupdate.ImageUpdateRecord {

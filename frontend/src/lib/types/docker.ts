@@ -175,6 +175,7 @@ export interface ContainerSummaryDto extends BaseContainer {
 	mounts: ContainerMounts[];
 	updateInfo?: ImageUpdateInfoDto;
 	redeployDisabled?: boolean;
+	hidden?: boolean;
 }
 
 export interface ContainerSummaryGroupDto {

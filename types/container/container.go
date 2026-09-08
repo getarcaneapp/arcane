@@ -879,6 +879,11 @@ type Summary struct {
 	//
 	// Required: false
 	RedeployDisabled bool `json:"redeployDisabled,omitempty"`
+
+	// Hidden indicates whether the container is hidden from lists and dashboard counts.
+	//
+	// Required: false
+	Hidden bool `json:"hidden,omitempty"`
 }
 
 // ComposeInfo contains Docker Compose project information extracted from container labels.

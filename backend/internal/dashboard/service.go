@@ -174,7 +174,8 @@ func (s *DashboardService) buildSnapshotInternal(ctx context.Context, options Da
 	dockerContainers := dockerSnapshot.Containers
 	dockerImages := dockerSnapshot.Images
 
-	filteredContainers := container.FilterInternalContainers(dockerContainers, false)
+	filteredContainers := container.FilterExcludedContainers(dockerContainers, false, false)
+	imageConsumers := container.FilterExcludedContainers(dockerContainers, false, true)
 
 	containerCounts := containertypes.StatusCounts{TotalContainers: len(filteredContainers)}
 	for _, c := range filteredContainers {
@@ -213,11 +214,11 @@ func (s *DashboardService) buildSnapshotInternal(ctx context.Context, options Da
 
 		var projectIDByName map[string]string
 		if s.imageService != nil {
-			projectIDByName = s.imageService.BuildProjectIDMap(ctx, filteredContainers)
+			projectIDByName = s.imageService.BuildProjectIDMap(ctx, imageConsumers)
 		} else {
 			projectIDByName = map[string]string{}
 		}
-		imageUsageMap := image.BuildVolumeUsageMap(filteredContainers, projectIDByName)
+		imageUsageMap := image.BuildVolumeUsageMap(imageConsumers, projectIDByName)
 		imageItems := image.MapDockerImagesToDTOs(dockerImages, dockerContainers, imageUsageMap, nil, nil)
 		sort.Slice(imageItems, func(i, j int) bool {
 			if imageItems[i].Size == imageItems[j].Size {
@@ -228,7 +229,7 @@ func (s *DashboardService) buildSnapshotInternal(ctx context.Context, options Da
 		imagePage = imageItems[:min(dashboardSnapshotPreloadLimit, len(imageItems))]
 	}
 
-	imageUsageCounts := docker.CountImageUsage(dockerImages, filteredContainers)
+	imageUsageCounts := docker.CountImageUsage(dockerImages, imageConsumers)
 
 	// Uses the unfiltered container list so a volume mounted only by an internal
 	// container still counts as in use, matching the volumes page.
@@ -386,13 +387,14 @@ func (s *DashboardService) getPendingResourceUpdatesCountInternal(ctx context.Co
 		return 0, nil
 	}
 
-	filteredContainers := container.FilterInternalContainers(allContainers, false)
+	filteredContainers := container.FilterExcludedContainers(allContainers, false, false)
 	standaloneContainers := filterStandaloneDockerContainersInternal(filteredContainers)
 	containerCount, err := s.getPendingContainerUpdatesCountInternal(ctx, standaloneContainers)
 	if err != nil {
 		return 0, err
 	}
 
+	// Keep hidden service identities so project counting can exclude their Compose and cached image records.
 	projectCount, err := s.getPendingProjectUpdatesCountInternal(ctx, allContainers)
 	if err != nil {
 		return 0, err

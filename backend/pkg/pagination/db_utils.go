@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"emperror.dev/errors"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
 	"gorm.io/gorm"
 )
@@ -68,11 +69,8 @@ func ApplyBooleanFilter(q *gorm.DB, column string, value string) *gorm.DB {
 	var boolValues []bool
 
 	for _, part := range parts {
-		switch strings.TrimSpace(part) {
-		case "true", "1":
-			boolValues = append(boolValues, true)
-		case "false", "0":
-			boolValues = append(boolValues, false)
+		if value, valid := utils.ParseBool(part); valid {
+			boolValues = append(boolValues, value)
 		}
 	}
 

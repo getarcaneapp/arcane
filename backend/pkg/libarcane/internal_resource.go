@@ -13,28 +13,15 @@ import (
 	"go.getarcane.app/updater/labels"
 )
 
-// InternalResourceLabel marks containers used for Arcane utilities, e.g. temp containers used for viewing volume files.
-const InternalResourceLabel = "com.getarcaneapp.internal.resource"
-
-func IsInternalContainer(labels map[string]string) bool {
-	if labels == nil {
-		return false
-	}
-	for k, v := range labels {
-		if strings.EqualFold(k, InternalResourceLabel) {
-			switch strings.TrimSpace(strings.ToLower(v)) {
-			case "true", "1", "yes", "on":
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// LabelArcaneUpgrader marks the short-lived helper container that performs an
-// Arcane self-upgrade. It carries the Arcane label too, so container lookups
-// must skip it to avoid mistaking it for Arcane itself.
-const LabelArcaneUpgrader = "com.getarcaneapp.arcane.upgrader"
+const (
+	// InternalResourceLabel marks containers used for Arcane utilities.
+	InternalResourceLabel = "com.getarcaneapp.internal.resource"
+	// HiddenResourceLabel hides containers from container lists and dashboard counts.
+	HiddenResourceLabel = "com.getarcaneapp.arcane.hidden"
+	// LabelArcaneUpgrader marks the short-lived helper container that performs an
+	// Arcane self-upgrade. Container lookups must skip it despite its Arcane label.
+	LabelArcaneUpgrader = "com.getarcaneapp.arcane.upgrader"
+)
 
 // FindArcaneContainerIDByLabel locates Arcane's own container through the
 // Arcane label. Running containers win; otherwise the first match is returned.

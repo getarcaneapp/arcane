@@ -217,13 +217,8 @@ func (s *TemplateService) GetAllTemplatesPaginated(ctx context.Context, params p
 			{
 				Key: "type",
 				Fn: func(item tmpl.Template, filterValue string) bool {
-					switch filterValue {
-					case "true":
-						return item.IsRemote
-					case "false":
-						return !item.IsRemote
-					}
-					return true
+					value, valid := utils.ParseBool(filterValue)
+					return !valid || item.IsRemote == value
 				},
 			},
 		},

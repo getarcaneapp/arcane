@@ -15,6 +15,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
@@ -218,7 +219,7 @@ func (s *ProjectService) ListProjects(ctx context.Context, params pagination.Que
 	if err := s.enrichProjectsWithTagsInternal(ctx, result); err != nil {
 		return nil, pagination.Response{}, err
 	}
-	s.enrichProjectsWithUpdateInfoInternal(ctx, projectsArray, result)
+	s.enrichProjectsWithUpdateInfoInternal(ctx, projectsArray, result, true)
 
 	slog.DebugContext(ctx, "Completed ListProjects request",
 		"result_count", len(result))
@@ -227,14 +228,11 @@ func (s *ProjectService) ListProjects(ctx context.Context, params pagination.Que
 }
 
 func applyProjectArchivedDBFilterInternal(query *gorm.DB, filterValue string) *gorm.DB {
-	switch strings.ToLower(strings.TrimSpace(filterValue)) {
-	case "true":
-		return query.Where("is_archived = ?", true)
-	case "all":
+	if strings.EqualFold(strings.TrimSpace(filterValue), "all") {
 		return query
-	default:
-		return query.Where("is_archived = ?", false)
 	}
+	archived, _ := utils.ParseBool(filterValue)
+	return query.Where("is_archived = ?", archived)
 }
 
 func applyProjectTagsDBFilterInternal(query *gorm.DB, filterValue string) *gorm.DB {
@@ -312,7 +310,7 @@ func (s *ProjectService) filterProjectsWithDerivedFiltersInternal(
 	if err := s.enrichProjectsWithTagsInternal(ctx, items); err != nil {
 		return pagination.FilterResult[project.Details]{}, err
 	}
-	s.enrichProjectsWithUpdateInfoInternal(ctx, projectsArray, items)
+	s.enrichProjectsWithUpdateInfoInternal(ctx, projectsArray, items, true)
 	items = s.appendDiscoveredComposeProjectUpdatesInternal(ctx, params, projectsArray, items)
 
 	return s.buildProjectDerivedPaginationConfigInternal().SearchOrderAndPaginate(items, withoutProjectDBFiltersInternal(params)), nil
@@ -728,14 +726,11 @@ func buildProjectArchivedFilterAccessorInternal() pagination.FilterAccessor[proj
 	return pagination.FilterAccessor[project.Details]{
 		Key: "archived",
 		Fn: func(p project.Details, filterValue string) bool {
-			switch strings.ToLower(strings.TrimSpace(filterValue)) {
-			case "true":
-				return p.IsArchived
-			case "all":
+			if strings.EqualFold(strings.TrimSpace(filterValue), "all") {
 				return true
-			default:
-				return !p.IsArchived
 			}
+			archived, _ := utils.ParseBool(filterValue)
+			return p.IsArchived == archived
 		},
 	}
 }
@@ -749,7 +744,7 @@ func getProjectUpdateStatusInternal(updateInfo *project.UpdateInfo) string {
 }
 
 // CountProjectsWithPendingUpdates counts non-archived projects with at
-// least one image update pending, plus compose projects running on the daemon
+// least one visible service with an image update pending, plus compose projects running on the daemon
 // that Arcane does not track. It deliberately avoids the project-list pipeline:
 // that path builds full project DTOs (live status, icons, URLs, GitOps lookups)
 // and then throws all of them away for a single number, costing several full
@@ -760,6 +755,14 @@ func getProjectUpdateStatusInternal(updateInfo *project.UpdateInfo) string {
 func (s *ProjectService) CountProjectsWithPendingUpdates(ctx context.Context, allContainers []container.Summary) (int, error) {
 	if s.db == nil {
 		return 0, nil
+	}
+
+	if allContainers == nil {
+		var err error
+		allContainers, err = s.listGlobalComposeContainersInternal(ctx)
+		if err != nil {
+			return 0, errors.WrapIf(err, "failed to list containers for project update count")
+		}
 	}
 
 	// One full scan: archived projects are excluded from the update count but
@@ -786,7 +789,7 @@ func (s *ProjectService) CountProjectsWithPendingUpdates(ctx context.Context, al
 			details[i].RuntimeServices = append(details[i].RuntimeServices, project.RuntimeService{Name: dockerutil.ComposeServiceLabel(c.Labels), ContainerID: c.ID, Image: c.Image, ContainerLabels: c.Labels})
 		}
 	}
-	s.enrichProjectsWithUpdateInfoInternal(ctx, activeProjects, details)
+	s.enrichProjectsWithUpdateInfoInternal(ctx, activeProjects, details, false)
 
 	count := 0
 	for i := range details {
@@ -795,7 +798,14 @@ func (s *ProjectService) CountProjectsWithPendingUpdates(ctx context.Context, al
 		}
 	}
 
-	return count + s.countDiscoveredComposeProjectUpdatesInternal(ctx, allProjects, true, allContainers), nil
+	visibleContainers := make([]container.Summary, 0, len(allContainers))
+	for _, c := range allContainers {
+		hidden, _ := utils.ParseBool(c.Labels[libarcane.HiddenResourceLabel])
+		if !hidden {
+			visibleContainers = append(visibleContainers, c)
+		}
+	}
+	return count + s.countDiscoveredComposeProjectUpdatesInternal(ctx, allProjects, true, visibleContainers), nil
 }
 
 // countDiscoveredComposeProjectUpdatesInternal counts compose projects running on

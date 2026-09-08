@@ -17,6 +17,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
@@ -72,7 +73,7 @@ func (s *VolumeService) toolsImageInternal() string {
 }
 
 func isUnlabeledVolumeHelperContainerInternal(c container.Summary) bool {
-	if !libarcane.IsInternalContainer(c.Labels) {
+	if internal, _ := utils.ParseBool(c.Labels[libarcane.InternalResourceLabel]); !internal {
 		return false
 	}
 
@@ -94,7 +95,7 @@ func isVolumeHelperContainerInternal(c container.Summary) bool {
 	if isUnlabeledVolumeHelperContainerInternal(c) {
 		return true
 	}
-	if !libarcane.IsInternalContainer(c.Labels) {
+	if internal, _ := utils.ParseBool(c.Labels[libarcane.InternalResourceLabel]); !internal {
 		return false
 	}
 

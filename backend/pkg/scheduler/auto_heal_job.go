@@ -199,7 +199,7 @@ func (j *AutoHealJob) filterCandidatesInternal(containers []container.Summary, e
 			continue
 		}
 
-		if libarcane.IsInternalContainer(c.Labels) {
+		if internal, _ := utils.ParseBool(c.Labels[libarcane.InternalResourceLabel]); internal {
 			continue
 		}
 

@@ -19,6 +19,7 @@ export type SearchPaginationSortRequest = {
 	sort?: SortRequest;
 	filters?: FilterMap;
 	includeInternal?: boolean;
+	includeHidden?: boolean;
 };
 
 export type PaginationResponse = {

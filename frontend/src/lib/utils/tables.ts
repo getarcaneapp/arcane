@@ -21,7 +21,8 @@ function cloneRequest(options: SearchPaginationSortRequest): SearchPaginationSor
 		filters: options.filters ? { ...options.filters } : undefined,
 		pagination: options.pagination ? { ...options.pagination } : undefined,
 		sort: options.sort ? { ...options.sort } : undefined,
-		includeInternal: options.includeInternal
+		includeInternal: options.includeInternal,
+		includeHidden: options.includeHidden
 	};
 }
 
@@ -184,6 +185,9 @@ export function transformPaginationParams(options?: SearchPaginationSortRequest)
 		});
 	}
 
+	if (typeof options.includeHidden === 'boolean') {
+		params['includeHidden'] = String(options.includeHidden);
+	}
 	if (typeof options.includeInternal === 'boolean') {
 		params['includeInternal'] = String(options.includeInternal);
 	}

@@ -15,6 +15,7 @@ import (
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
@@ -304,7 +305,7 @@ func removeProjectVolumeHelperContainersInternal(ctx context.Context, dockerClie
 }
 
 func isProjectVolumeHelperContainerInternal(c container.Summary) bool {
-	if !libarcane.IsInternalContainer(c.Labels) {
+	if internal, _ := utils.ParseBool(c.Labels[libarcane.InternalResourceLabel]); !internal {
 		return false
 	}
 	if strings.EqualFold(c.Labels[volumehelper.ContainerLabel], "true") {

@@ -8,6 +8,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
 	"github.com/getarcaneapp/arcane/types/v2/environment"
 )
@@ -147,14 +148,8 @@ func (s *EnvironmentService) listEnvironmentsPaginatedWithRuntimeFiltersInternal
 			{
 				Key: "enabled",
 				Fn: func(item environment.Environment, filterValue string) bool {
-					switch strings.ToLower(strings.TrimSpace(filterValue)) {
-					case "true", "1":
-						return item.Enabled
-					case "false", "0":
-						return !item.Enabled
-					default:
-						return true
-					}
+					value, valid := utils.ParseBool(filterValue)
+					return !valid || item.Enabled == value
 				},
 			},
 			{

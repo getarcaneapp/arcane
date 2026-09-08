@@ -34,6 +34,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/iconcatalog"
 	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
@@ -1422,6 +1423,7 @@ func (s *ContainerService) ListContainersPaginated(
 	params pagination.QueryParams,
 	includeAll bool,
 	includeInternal bool,
+	includeHidden bool,
 	groupBy string,
 ) (ContainerListResult, error) {
 	dockerContainers, err := s.dockerService.ListContainers(ctx)
@@ -1438,7 +1440,7 @@ func (s *ContainerService) ListContainersPaginated(
 		dockerContainers = running
 	}
 
-	dockerContainers = FilterInternalContainers(dockerContainers, includeInternal)
+	dockerContainers = FilterExcludedContainers(dockerContainers, includeInternal, includeHidden)
 	updateInfoMap := s.getUpdateInfoMapInternal(ctx, dockerContainers)
 	currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
 	items := s.BuildSummaries(dockerContainers, updateInfoMap, currentContainerID, currentContainerErr)
@@ -1575,14 +1577,17 @@ func getContainerProjectNameInternal(container containertypes.Summary) string {
 	return projectName
 }
 
-func FilterInternalContainers(containers []container.Summary, includeInternal bool) []container.Summary {
-	if includeInternal {
+// FilterExcludedContainers removes internal and hidden containers unless their corresponding inclusion flags are enabled.
+func FilterExcludedContainers(containers []container.Summary, includeInternal, includeHidden bool) []container.Summary {
+	if includeInternal && includeHidden {
 		return containers
 	}
 
 	filtered := make([]container.Summary, 0, len(containers))
 	for _, dc := range containers {
-		if libarcane.IsInternalContainer(dc.Labels) {
+		internal, _ := utils.ParseBool(dc.Labels[libarcane.InternalResourceLabel])
+		hidden, _ := utils.ParseBool(dc.Labels[libarcane.HiddenResourceLabel])
+		if (!includeInternal && internal) || (!includeHidden && hidden) {
 			continue
 		}
 		filtered = append(filtered, dc)
@@ -1648,6 +1653,7 @@ func (s *ContainerService) BuildSummaries(containers []container.Summary, update
 			summary.UpdateInfo = info
 		}
 		summary.RedeployDisabled = labels.ShouldDisableArcaneServerRedeploy(summary.Labels, summary.ID, currentContainerID, currentContainerErr)
+		summary.Hidden, _ = utils.ParseBool(dc.Labels[libarcane.HiddenResourceLabel])
 		items = append(items, summary)
 	}
 	return items
@@ -1905,14 +1911,8 @@ func (s *ContainerService) buildContainerFilterAccessors() []pagination.FilterAc
 			Key: "standalone",
 			Fn: func(c containertypes.Summary, filterValue string) bool {
 				isStandalone := dockerutils.ComposeProjectLabel(c.Labels) == ""
-				switch filterValue {
-				case "true", "1":
-					return isStandalone
-				case "false", "0":
-					return !isStandalone
-				default:
-					return true
-				}
+				value, valid := utils.ParseBool(filterValue)
+				return !valid || isStandalone == value
 			},
 		},
 		{

@@ -101,43 +101,6 @@ func TestClientDo_EdgeUsesTunnelTransport(t *testing.T) {
 	require.Equal(t, `{"edge":true}`, string(resp.Body))
 }
 
-func TestClientDoJSON_ClassifiesStatusAndDecodeErrors(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/status":
-			http.Error(w, "bad gateway", http.StatusBadGateway)
-		case "/decode":
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"broken"`))
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer server.Close()
-
-	client := NewClient(server.Client(), nil)
-
-	_, err := client.DoJSON[map[string]any](context.Background(), Request{
-		Method: http.MethodGet,
-		URL:    server.URL + "/status",
-		Path:   "/status",
-	})
-	var statusErr *StatusError
-	require.ErrorAs(t, err, &statusErr)
-	require.Equal(t, http.StatusBadGateway, statusErr.StatusCode)
-	var transportErr *TransportError
-	require.False(t, errors.As(err, &transportErr))
-
-	_, err = client.DoJSON[map[string]any](context.Background(), Request{
-		Method: http.MethodGet,
-		URL:    server.URL + "/decode",
-		Path:   "/decode",
-	})
-	var decodeErr *DecodeError
-	require.ErrorAs(t, err, &decodeErr)
-	require.False(t, errors.As(err, &transportErr))
-}
-
 func TestClientDo_WrapsTransportErrors(t *testing.T) {
 	client := NewClient(nil, TunnelTransportFuncs{
 		EnsureAvailableFunc: func(ctx context.Context, envID string) error {

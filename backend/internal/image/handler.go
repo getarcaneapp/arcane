@@ -733,10 +733,10 @@ func resolvePruneImageModeInternal(input *PruneImagesInput) string {
 
 	if vals, ok := input.Body.Filters["dangling"]; ok {
 		for _, value := range vals {
-			switch value {
-			case "true", "1":
-				return "dangling"
-			case "false", "0":
+			if dangling, valid := utils.ParseBool(value); valid {
+				if dangling {
+					return "dangling"
+				}
 				return "all"
 			}
 		}

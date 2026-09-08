@@ -1,4 +1,7 @@
 {
+  "hidden": "Hidden",
+  "editor_compose_hidden_detail": "Hide from container list",
+  "editor_compose_hidden_info": "Boolean. Hidden containers are excluded from dashboard counts and hidden from the container list by default. Enable \"Show hidden containers\" to reveal them in the list. The project-level value is the default for every service; service-level values override it.",
   "$schema": "https://inlang.com/schema/inlang-message-format",
   "layout_title": "Arcane",
   "accent_color": "Accent Color",

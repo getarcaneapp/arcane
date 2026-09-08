@@ -30,6 +30,7 @@ var (
 	containersStandalone      string
 	containersLabelFilter     string
 	containersIncludeInternal bool
+	containersIncludeHidden   bool
 	containersDeleteVolumes   bool
 	forceFlag                 bool
 	jsonOutput                bool
@@ -88,6 +89,9 @@ func runContainersList(cmd *cobra.Command, forceHasUpdateFilter bool) error {
 	query := url.Values{}
 	if containersStandalone != "" {
 		query.Set("standalone", containersStandalone)
+	}
+	if containersIncludeHidden {
+		query.Set("includeHidden", "true")
 	}
 	if containersIncludeInternal {
 		query.Set("includeInternal", "true")
@@ -562,6 +566,7 @@ func init() {
 	containersListCmd.Flags().StringVar(&containersUpdatesFilter, "updates", "", "Filter by update status (has_update, up_to_date, error, unknown)")
 	containersListCmd.Flags().StringVar(&containersStandalone, "standalone", "", "Filter standalone containers only (true/false)")
 	containersListCmd.Flags().StringVar(&containersLabelFilter, "label", "", "Filter by label (key or key=value)")
+	containersListCmd.Flags().BoolVar(&containersIncludeHidden, "include-hidden", false, "Include hidden containers")
 	containersListCmd.Flags().BoolVar(&containersIncludeInternal, "include-internal", false, "Include Arcane-internal containers")
 	containersListCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	containersUpdatesCmd.Flags().IntVarP(&containersLimit, "limit", "n", 20, "Number of containers to show")

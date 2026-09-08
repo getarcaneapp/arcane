@@ -9,6 +9,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/volume"
 	"github.com/moby/moby/client"
@@ -81,7 +82,9 @@ func TestContainerSummaryMountsVolumeInternal(t *testing.T) {
 		},
 	}
 
-	require.True(t, libarcane.IsInternalContainer(summary.Labels))
+	internal, valid := utils.ParseBool(summary.Labels[libarcane.InternalResourceLabel])
+	require.True(t, valid)
+	require.True(t, internal)
 	require.True(t, containerSummaryMountsVolumeInternal(summary, "web_data"))
 	require.False(t, containerSummaryMountsVolumeInternal(summary, "nginx_data"))
 }
