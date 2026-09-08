@@ -152,8 +152,8 @@ func (m *AuthMiddleware) managerAuth(ctx context.Context, c *echo.Context, next 
 	req := c.Request()
 	if agentToken := req.Header.Get(utils.HeaderAgentToken); agentToken != "" {
 		if env, ok := m.resolveEnvironmentAccessToken(ctx, agentToken).Get(); ok {
-			environmentScopedInternal(c, env)
-			return next(c)
+			ps := environmentScopedInternal(c, env)
+			return m.authorizeAndContinueInternal(c, next, ps)
 		}
 	}
 
@@ -210,18 +210,11 @@ func (m *AuthMiddleware) managerAuth(ctx context.Context, c *echo.Context, next 
 	}
 
 	ps := m.resolvePermissionsOrDeny(ctx, user)
-	if m.options.AdminRequired && !ps.IsGlobalAdmin() {
-		return c.JSON(http.StatusForbidden, common.APIError{
-			Code:    "FORBIDDEN",
-			Message: "You don't have permission to access this resource",
-		})
-	}
-
 	c.Set(string(middleware.ContextKeyUserID), user.ID)
 	c.Set(string(middleware.ContextKeyCurrentUser), user)
 	c.Set(string(middleware.ContextKeyCurrentSessionID), sessionID)
 	c.Set(string(middleware.ContextKeyUserPermissions), ps)
-	return next(c)
+	return m.authorizeAndContinueInternal(c, next, ps)
 }
 
 // apiKeyHeaderAuth authenticates an X-API-Key credential: a user-owned API key
@@ -238,27 +231,31 @@ func (m *AuthMiddleware) apiKeyHeaderAuth(ctx context.Context, c *echo.Context, 
 			} else {
 				ps = m.resolveApiKeyPermissionsOrDeny(ctx, key.ID)
 			}
-			if m.options.AdminRequired && !ps.IsGlobalAdmin() {
-				return c.JSON(http.StatusForbidden, common.APIError{
-					Code:    "FORBIDDEN",
-					Message: "You don't have permission to access this resource",
-				})
-			}
 			c.Set(string(middleware.ContextKeyUserID), user.ID)
 			c.Set(string(middleware.ContextKeyCurrentUser), user)
 			c.Set(string(middleware.ContextKeyUserPermissions), ps)
 			c.Set(string(middleware.ContextKeyAuthMethod), "api_key")
-			return next(c)
+			return m.authorizeAndContinueInternal(c, next, ps)
 		}
 	}
 	if env, ok := m.resolveEnvironmentAccessToken(ctx, apiKey).Get(); ok {
-		environmentScopedInternal(c, env)
-		return next(c)
+		ps := environmentScopedInternal(c, env)
+		return m.authorizeAndContinueInternal(c, next, ps)
 	}
 	return c.JSON(http.StatusUnauthorized, common.APIError{
 		Code:    common.APIErrorCodeUnauthorized,
 		Message: "Invalid or expired API key",
 	})
+}
+
+func (m *AuthMiddleware) authorizeAndContinueInternal(c *echo.Context, next echo.HandlerFunc, ps *authz.PermissionSet) error {
+	if m.options.AdminRequired && !ps.IsGlobalAdmin() {
+		return c.JSON(http.StatusForbidden, common.APIError{
+			Code:    "FORBIDDEN",
+			Message: "You don't have permission to access this resource",
+		})
+	}
+	return next(c)
 }
 
 // resolvePermissionsOrDeny returns the user's permission set, or an empty
@@ -320,15 +317,17 @@ func agentSudoInternal(c *echo.Context) {
 	c.Set(string(middleware.ContextKeyAuthMethod), "agent_token")
 }
 
-func environmentScopedInternal(c *echo.Context, env *environment.Environment) {
+func environmentScopedInternal(c *echo.Context, env *environment.Environment) *authz.PermissionSet {
 	envUser := &common.User{
 		ID:       "environment:" + env.ID,
 		Username: env.Name,
 	}
 	c.Set(string(middleware.ContextKeyUserID), envUser.ID)
 	c.Set(string(middleware.ContextKeyCurrentUser), envUser)
-	c.Set(string(middleware.ContextKeyUserPermissions), authz.EnvironmentPermissionSet(env.ID))
+	ps := authz.EnvironmentPermissionSet(env.ID)
+	c.Set(string(middleware.ContextKeyUserPermissions), ps)
 	c.Set(string(middleware.ContextKeyAuthMethod), "environment_access_token")
+	return ps
 }
 
 func extractBearerOrCookieTokenInternal(c *echo.Context) (string, bool) {

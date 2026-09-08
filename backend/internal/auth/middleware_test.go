@@ -155,46 +155,68 @@ func TestAuthMiddleware_ManagerAuthResolvesPermissionsByKeyKind(t *testing.T) {
 	})
 }
 
-func TestAuthMiddleware_ManagerAuthAcceptsEnvironmentAccessTokenViaAPIKey(t *testing.T) {
+func TestAuthMiddleware_ManagerAuthEnvironmentAccessToken(t *testing.T) {
 	token := "env-access-token"
-	router := echo.New()
-	router.Use(
-		NewAuthMiddleware(nil, &config.Config{}).
-			WithEnvironmentAccessTokenResolver(testEnvironmentTokenResolver{
-				env: &environment.Environment{
-					ID:          "env-self",
-					Name:        "Self Target",
-					AccessToken: &token,
-				},
-			}).
-			Add(),
-	)
-	router.GET("/secure", func(c *echo.Context) error {
-		currentUser := c.Get("currentUser")
-		require.NotNil(t, currentUser)
+	cases := []struct {
+		name          string
+		header        string
+		adminRequired bool
+		wantStatus    int
+	}{
+		{name: "agent token ordinary route", header: "X-Arcane-Agent-Token", wantStatus: http.StatusOK},
+		{name: "API key ordinary route", header: "X-API-Key", wantStatus: http.StatusOK},
+		{name: "agent token admin route", header: "X-Arcane-Agent-Token", adminRequired: true, wantStatus: http.StatusForbidden},
+		{name: "API key admin route", header: "X-API-Key", adminRequired: true, wantStatus: http.StatusForbidden},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			router := echo.New()
+			authMiddleware := NewAuthMiddleware(nil, &config.Config{}).
+				WithEnvironmentAccessTokenResolver(testEnvironmentTokenResolver{
+					env: &environment.Environment{
+						ID:          "env-self",
+						Name:        "Self Target",
+						AccessToken: &token,
+					},
+				})
+			if tc.adminRequired {
+				authMiddleware = authMiddleware.WithAdminRequired()
+			}
+			router.Use(authMiddleware.Add())
+			called := false
+			router.GET("/secure", func(c *echo.Context) error {
+				called = true
+				currentUser := c.Get("currentUser")
+				require.NotNil(t, currentUser)
 
-		user, ok := currentUser.(*common.User)
-		require.True(t, ok)
-		require.Equal(t, "environment:env-self", user.ID)
-		require.Equal(t, "Self Target", user.Username)
-		require.Equal(t, "environment_access_token", c.Get("authMethod"))
+				user, ok := currentUser.(*common.User)
+				require.True(t, ok)
+				require.Equal(t, "environment:env-self", user.ID)
+				require.Equal(t, "Self Target", user.Username)
+				require.Equal(t, "environment_access_token", c.Get("authMethod"))
 
-		ps, ok := c.Get("userPermissions").(*authz.PermissionSet)
-		require.True(t, ok)
-		require.True(t, ps.Allows(authz.PermContainersStart, "env-self"))
-		require.False(t, ps.Allows(authz.PermContainersStart, "env-other"))
-		require.False(t, ps.Allows(authz.PermUsersList, ""))
-		require.False(t, ps.IsGlobalAdmin())
+				ps, ok := c.Get("userPermissions").(*authz.PermissionSet)
+				require.True(t, ok)
+				require.True(t, ps.Allows(authz.PermContainersStart, "env-self"))
+				require.False(t, ps.Allows(authz.PermContainersStart, "env-other"))
+				require.False(t, ps.Allows(authz.PermUsersList, ""))
+				require.False(t, ps.IsGlobalAdmin())
 
-		return c.JSON(http.StatusOK, map[string]any{"userId": user.ID})
-	})
+				return c.JSON(http.StatusOK, map[string]any{"userId": user.ID})
+			})
 
-	req := httptest.NewRequest(http.MethodGet, "/secure", nil)
-	req.Header.Set("X-API-Key", token)
-	rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, "/secure", nil)
+			req.Header.Set(tc.header, token)
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
 
-	router.ServeHTTP(rec, req)
-
-	require.Equal(t, http.StatusOK, rec.Code)
-	require.Contains(t, rec.Body.String(), "environment:env-self")
+			require.Equal(t, tc.wantStatus, rec.Code)
+			require.Equal(t, !tc.adminRequired, called)
+			if tc.adminRequired {
+				require.JSONEq(t, `{"statusCode":0,"code":"FORBIDDEN","message":"You don't have permission to access this resource"}`, rec.Body.String())
+			} else {
+				require.Contains(t, rec.Body.String(), "environment:env-self")
+			}
+		})
+	}
 }
