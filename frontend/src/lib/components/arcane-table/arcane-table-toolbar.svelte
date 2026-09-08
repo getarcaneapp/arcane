@@ -1,6 +1,7 @@
 <script lang="ts" generics="TData extends Record<string, any>">
 	import type { ArcaneSvelteTable } from './table-features';
 	import DataTableFacetedFilter from './arcane-table-filter.svelte';
+	import DataTableTextFilter from './arcane-table-text-filter.svelte';
 	import DataTableViewOptions from './arcane-table-view-options.svelte';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import {
@@ -83,23 +84,26 @@
 	const typeColumnFilterOptions = $derived(typeColumn?.columnDef.meta?.filterOptions ?? []);
 	const tagsColumn = $derived(table.getAllColumns().some((col) => col.id === 'tags') ? table.getColumn('tags') : undefined);
 	const tagsColumnFilterOptions = $derived(tagsColumn?.columnDef.meta?.filterOptions ?? []);
+	const labelColumn = $derived(table.getAllColumns().some((col) => col.id === 'label') ? table.getColumn('label') : undefined);
 
 	const debouncedSetGlobal = debounced((v: string) => table.setGlobalFilter(v), 300);
 	const imageNameFilterOptionsFormatted = $derived(imageNameFilterOptions.map((name) => ({ label: name, value: name })));
 	const hasSelection = $derived(!selectionDisabled && (selectedIds?.length ?? 0) > 0);
 	const hasBulkActions = $derived(bulkActions && bulkActions.length > 0);
 
-	// Check if any filter columns exist
 	const hasFilterColumns = $derived(
 		!withoutFilters &&
-			(!!(typeColumn && typeColumnFilterOptions.length > 0) ||
-				!!(tagsColumn && tagsColumnFilterOptions.length > 0) ||
-				!!usageColumn ||
-				!!updatesColumn ||
-				!!severityColumn ||
-				!!vulnSeverityColumn ||
-				!!(imageNameColumn && imageNameFilterOptions.length > 0) ||
-				!!(statusColumn && serviceCountColumn))
+			[
+				typeColumn && typeColumnFilterOptions.length > 0,
+				tagsColumn && tagsColumnFilterOptions.length > 0,
+				labelColumn,
+				usageColumn,
+				updatesColumn,
+				severityColumn,
+				vulnSeverityColumn,
+				imageNameColumn && imageNameFilterOptions.length > 0,
+				statusColumn && serviceCountColumn
+			].some(Boolean)
 	);
 	const activeFilterCount = $derived(table.atoms.columnFilters.get().length);
 </script>
@@ -110,6 +114,9 @@
 	{/if}
 	{#if tagsColumn && tagsColumnFilterOptions.length > 0}
 		<DataTableFacetedFilter column={tagsColumn} title={m.common_tags()} options={tagsColumnFilterOptions} />
+	{/if}
+	{#if labelColumn}
+		<DataTableTextFilter column={labelColumn} title={m.common_labels()} placeholder={m.label_filter_hint()} />
 	{/if}
 	{#if usageColumn}
 		<DataTableFacetedFilter column={usageColumn} title={m.common_usage()} options={usageFilters} />

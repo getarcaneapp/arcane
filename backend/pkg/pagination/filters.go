@@ -11,6 +11,8 @@ type FilterResult[T any] struct {
 type FilterAccessor[T any] struct {
 	Key string
 	Fn  func(item T, filterValue string) bool
+	// NoSplit passes the raw value through instead of treating commas as alternatives.
+	NoSplit bool
 }
 
 type Config[T any] struct {
@@ -108,7 +110,7 @@ func getAccessor[T any](key string, accessors []FilterAccessor[T]) *FilterAccess
 }
 
 func matchValue[T any](item T, value string, accessor *FilterAccessor[T]) bool {
-	if strings.Contains(value, ",") {
+	if !accessor.NoSplit && strings.Contains(value, ",") {
 		values := strings.SplitSeq(value, ",")
 		for v := range values {
 			v = strings.TrimSpace(v)

@@ -63,6 +63,7 @@ type ListContainersInput struct {
 	IncludeInternal bool   `query:"includeInternal" default:"false" doc:"Include internal containers"`
 	Updates         string `query:"updates" doc:"Filter by update status (has_update, up_to_date, error, unknown)"`
 	Standalone      string `query:"standalone" doc:"Filter standalone containers only (true/false)"`
+	Label           string `query:"label" doc:"Filter by label key or key=value"`
 }
 
 type ListContainersOutput struct {
@@ -312,6 +313,9 @@ func (h *ContainerHandler) ListContainers(ctx context.Context, input *ListContai
 	}
 	if input.Standalone != "" {
 		params.Filters["standalone"] = input.Standalone
+	}
+	if input.Label != "" {
+		params.Filters["label"] = input.Label
 	}
 
 	result, err := h.containerService.ListContainersPaginated(ctx, params, true, input.IncludeInternal, input.GroupBy)

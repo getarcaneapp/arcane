@@ -108,6 +108,7 @@
   "common_scope": "Scope",
   "common_mountpoint": "Mountpoint",
   "common_labels": "Labels",
+  "label_filter_hint": "key or key=value",
   "common_driver_options": "Driver Options",
   "common_back_to": "Back to {resource}",
   "common_back": "Back",

@@ -193,7 +193,8 @@
 					cell: UpdatesCell
 				},
 				{ accessorKey: 'createdAt', title: m.common_created(), sortable: true, cell: CreatedCell },
-				{ accessorKey: 'serviceCount', title: m.services(), sortable: true }
+				{ accessorKey: 'serviceCount', title: m.services(), sortable: true },
+				{ id: 'label', accessorFn: () => '', title: m.common_labels(), hidden: true }
 			] satisfies ColumnSpec<Project>[]
 	);
 

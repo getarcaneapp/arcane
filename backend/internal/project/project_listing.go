@@ -184,15 +184,17 @@ func (s *ProjectService) ListProjects(ctx context.Context, params pagination.Que
 	updatesFilter := ""
 	archivedFilter := ""
 	tagsFilter := ""
+	labelFilter := ""
 	if params.Filters != nil {
 		statusFilter = strings.TrimSpace(params.Filters["status"])
 		updatesFilter = strings.TrimSpace(params.Filters["updates"])
 		archivedFilter = strings.TrimSpace(params.Filters["archived"])
 		tagsFilter = strings.TrimSpace(params.Filters["tags"])
+		labelFilter = strings.TrimSpace(params.Filters["label"])
 	}
 	query = applyProjectArchivedDBFilterInternal(query, archivedFilter)
 	query = applyProjectTagsDBFilterInternal(query, tagsFilter)
-	if statusFilter != "" || updatesFilter != "" {
+	if statusFilter != "" || updatesFilter != "" || labelFilter != "" {
 		return s.listProjectsWithDerivedFiltersInternal(ctx, params, query)
 	}
 
@@ -679,6 +681,27 @@ func (s *ProjectService) buildProjectDerivedPaginationConfigInternal() paginatio
 			buildProjectStatusFilterAccessorInternal(),
 			buildProjectUpdatesFilterAccessorInternal(),
 			buildProjectArchivedFilterAccessorInternal(),
+			buildProjectLabelFilterAccessorInternal(),
+		},
+	}
+}
+
+func buildProjectLabelFilterAccessorInternal() pagination.FilterAccessor[project.Details] {
+	return pagination.FilterAccessor[project.Details]{
+		Key:     "label",
+		NoSplit: true,
+		Fn: func(p project.Details, filterValue string) bool {
+			key, value, hasValue := strings.Cut(filterValue, "=")
+			key = strings.TrimSpace(key)
+			if key == "" {
+				return true
+			}
+			for _, service := range p.RuntimeServices {
+				if actual, ok := service.ContainerLabels[key]; ok && (!hasValue || actual == value) {
+					return true
+				}
+			}
+			return false
 		},
 	}
 }

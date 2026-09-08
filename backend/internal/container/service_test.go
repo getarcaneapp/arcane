@@ -185,6 +185,38 @@ func TestBuildContainerFilterAccessors_FiltersStandaloneContainers(t *testing.T)
 	require.Equal(t, int64(1), result.TotalCount)
 }
 
+func TestBuildContainerFilterAccessors_FiltersByLabel(t *testing.T) {
+	service := &ContainerService{}
+	items := []containertypes.Summary{
+		{ID: "tagged", Labels: map[string]string{"heal": "true", "tags": "a,b"}},
+		{ID: "other", Labels: map[string]string{"heal": "false"}},
+		{ID: "bare", Labels: map[string]string{}},
+	}
+	config := pagination.Config[containertypes.Summary]{FilterAccessors: service.buildContainerFilterAccessors()}
+
+	tests := []struct {
+		name   string
+		filter string
+		want   []string
+	}{
+		{name: "key only", filter: "heal", want: []string{"tagged", "other"}},
+		{name: "key and value", filter: "heal=true", want: []string{"tagged"}},
+		{name: "missing key", filter: "missing", want: nil},
+		{name: "value containing comma", filter: "tags=a,b", want: []string{"tagged"}},
+		{name: "blank is a no-op", filter: " ", want: []string{"tagged", "other", "bare"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := config.SearchOrderAndPaginate(items, pagination.QueryParams{Filters: map[string]string{"label": tt.filter}})
+			var got []string
+			for _, item := range result.Items {
+				got = append(got, item.ID)
+			}
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func TestBuildCleanNetworkingConfigInternalPreservesEndpointSettings(t *testing.T) {
 	containerInspect := container.InspectResponse{
 		NetworkSettings: &container.NetworkSettings{

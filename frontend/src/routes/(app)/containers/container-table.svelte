@@ -303,7 +303,8 @@
 		{ accessorKey: 'status', title: m.common_status() },
 		{ accessorKey: 'networkSettings', id: 'ipAddress', title: m.containers_ip_address(), sortable: false, cell: IPAddressCell },
 		{ accessorKey: 'ports', title: m.common_ports(), sortable: !groupByProject, cell: PortsCell },
-		{ accessorKey: 'created', title: m.common_created(), sortable: !groupByProject, cell: CreatedCell }
+		{ accessorKey: 'created', title: m.common_created(), sortable: !groupByProject, cell: CreatedCell },
+		{ id: 'label', accessorFn: (row) => Object.keys(row.labels ?? {}).length, title: m.common_labels(), hidden: true }
 	] satisfies ColumnSpec<ContainerSummaryDto>[]);
 
 	const mobileFields = [

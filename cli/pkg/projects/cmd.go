@@ -35,6 +35,7 @@ var (
 	projectsUpdatesFilter  string
 	projectsStatusFilter   string
 	projectsArchivedFilter string
+	projectsLabelFilter    string
 	forceFlag              bool
 	jsonOutput             bool
 	destroyRemoveFiles     bool
@@ -91,6 +92,9 @@ func runProjectsList(cmd *cobra.Command, forceHasUpdateFilter bool) error {
 	}
 	if projectsStatusFilter != "" {
 		query.Set("status", projectsStatusFilter)
+	}
+	if labelFilter := strings.TrimSpace(projectsLabelFilter); labelFilter != "" {
+		query.Set("label", labelFilter)
 	}
 	// The server excludes archived projects unless asked, so --all has to opt
 	// into them explicitly to actually mean "everything".
@@ -666,6 +670,7 @@ func init() {
 	listCmd.Flags().StringVar(&projectsUpdatesFilter, "updates", "", "Filter by update status (has_update, up_to_date, error, unknown)")
 	listCmd.Flags().StringVar(&projectsStatusFilter, "status", "", "Filter by status (comma-separated: running, stopped, partially running)")
 	listCmd.Flags().StringVar(&projectsArchivedFilter, "archived", "", "Archived filter: 'true' for archived only, 'all' to include archived")
+	listCmd.Flags().StringVar(&projectsLabelFilter, "label", "", "Filter by container label (key or key=value)")
 	listCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	updatesCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of projects to show")
 	updatesCmd.Flags().IntVar(&startFlag, "start", 0, cmdutil.StartFlagUsage)

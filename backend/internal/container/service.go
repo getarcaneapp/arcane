@@ -1915,6 +1915,19 @@ func (s *ContainerService) buildContainerFilterAccessors() []pagination.FilterAc
 				}
 			},
 		},
+		{
+			Key:     "label",
+			NoSplit: true,
+			Fn: func(c containertypes.Summary, filterValue string) bool {
+				key, value, hasValue := strings.Cut(filterValue, "=")
+				key = strings.TrimSpace(key)
+				if key == "" {
+					return true
+				}
+				actual, ok := c.Labels[key]
+				return ok && (!hasValue || actual == value)
+			},
+		},
 	}
 }
 

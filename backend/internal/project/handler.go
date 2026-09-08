@@ -55,6 +55,7 @@ type ListProjectsInput struct {
 	Updates       string `query:"updates" doc:"Filter by update status (has_update, up_to_date, error, unknown)"`
 	Archived      string `query:"archived" doc:"Archived filter: 'true' (only archived), 'all' (include archived). Default excludes archived."`
 	Tags          string `query:"tags" doc:"Filter by tag names (comma-separated, OR semantics)"`
+	Label         string `query:"label" doc:"Filter by container label key or key=value on any running service"`
 }
 
 type GetProjectStatusCountsInput struct {
@@ -392,6 +393,9 @@ func (h *ProjectHandler) ListProjects(ctx context.Context, input *ListProjectsIn
 	}
 	if input.Tags != "" {
 		params.Filters["tags"] = input.Tags
+	}
+	if input.Label != "" {
+		params.Filters["label"] = input.Label
 	}
 
 	projects, paginationResp, err := h.projectService.ListProjects(ctx, params)

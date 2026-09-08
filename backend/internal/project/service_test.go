@@ -3708,6 +3708,40 @@ func TestProjectService_GetProjectDetails_PopulatesRuntimeServicesFromComposePs(
 	assert.Equal(t, "projecta-server-1", details.RuntimeServices[0].ContainerName)
 }
 
+func TestBuildProjectLabelFilterAccessorInternal(t *testing.T) {
+	items := []projecttypes.Details{
+		{ID: "tagged", RuntimeServices: []projecttypes.RuntimeService{
+			{Name: "web", ContainerLabels: map[string]string{"heal": "true"}},
+			{Name: "db", ContainerLabels: map[string]string{"tags": "a,b"}},
+		}},
+		{ID: "other", RuntimeServices: []projecttypes.RuntimeService{{Name: "web", ContainerLabels: map[string]string{"heal": "false"}}}},
+		{ID: "down"},
+	}
+	config := pagination.Config[projecttypes.Details]{FilterAccessors: []pagination.FilterAccessor[projecttypes.Details]{buildProjectLabelFilterAccessorInternal()}}
+
+	tests := []struct {
+		name   string
+		filter string
+		want   []string
+	}{
+		{name: "key only", filter: "heal", want: []string{"tagged", "other"}},
+		{name: "key and value", filter: "heal=true", want: []string{"tagged"}},
+		{name: "missing key", filter: "missing", want: nil},
+		{name: "value containing comma", filter: "tags=a,b", want: []string{"tagged"}},
+		{name: "blank is a no-op", filter: " ", want: []string{"tagged", "other", "down"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := config.SearchOrderAndPaginate(items, pagination.QueryParams{Filters: map[string]string{"label": tt.filter}})
+			var got []string
+			for _, item := range result.Items {
+				got = append(got, item.ID)
+			}
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func TestProjectService_ListProjects_FiltersByUpdateStatus(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := context.Background()

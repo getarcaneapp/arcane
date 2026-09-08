@@ -28,6 +28,7 @@ var (
 	containersAll             bool
 	containersUpdatesFilter   string
 	containersStandalone      string
+	containersLabelFilter     string
 	containersIncludeInternal bool
 	containersDeleteVolumes   bool
 	forceFlag                 bool
@@ -97,6 +98,9 @@ func runContainersList(cmd *cobra.Command, forceHasUpdateFilter bool) error {
 	}
 	if updatesFilter != "" {
 		query.Set("updates", updatesFilter)
+	}
+	if labelFilter := strings.TrimSpace(containersLabelFilter); labelFilter != "" {
+		query.Set("label", labelFilter)
 	}
 
 	spec := cmdutil.ListSpec[container.Summary]{
@@ -557,6 +561,7 @@ func init() {
 	containersListCmd.Flags().BoolVarP(&containersAll, "all", "a", false, cmdutil.AllFlagUsage)
 	containersListCmd.Flags().StringVar(&containersUpdatesFilter, "updates", "", "Filter by update status (has_update, up_to_date, error, unknown)")
 	containersListCmd.Flags().StringVar(&containersStandalone, "standalone", "", "Filter standalone containers only (true/false)")
+	containersListCmd.Flags().StringVar(&containersLabelFilter, "label", "", "Filter by label (key or key=value)")
 	containersListCmd.Flags().BoolVar(&containersIncludeInternal, "include-internal", false, "Include Arcane-internal containers")
 	containersListCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	containersUpdatesCmd.Flags().IntVarP(&containersLimit, "limit", "n", 20, "Number of containers to show")
