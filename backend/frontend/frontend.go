@@ -4,16 +4,15 @@ package frontend
 
 import (
 	"embed"
-	"fmt"
 	"io/fs"
-	"net/http"
-	"os"
+	"mime"
+	"path"
 	"strings"
-	"time"
 
 	"emperror.dev/errors"
 
 	"github.com/labstack/echo/v5"
+	"github.com/labstack/echo/v5/middleware"
 )
 
 //go:embed all:dist
@@ -21,112 +20,78 @@ var frontendFS embed.FS
 
 const indexHtmlFileConstant = "index.html"
 
-// RegisterFrontend mounts the embedded SPA as the Echo not-found fallback:
-// any path no API/WS route matched serves a real file when it exists and
-// falls back to index.html otherwise (preserving SvelteKit client-side
-// routing). Unknown /api paths are handled by the API group's own
-// RouteNotFound handler and never reach this route.
+// RegisterFrontend serves embedded assets and the SPA fallback outside /api.
 func RegisterFrontend(e *echo.Echo) error {
 	distFS, err := fs.Sub(frontendFS, "dist")
 	if err != nil {
 		return errors.WrapIf(err, "failed to create sub FS")
 	}
 
-	cacheMaxAge := time.Hour * 24
-	fileServer := NewFileServerWithCaching(http.FS(distFS), int(cacheMaxAge.Seconds()))
+	if err := mime.AddExtensionType(".webmanifest", "application/manifest+json"); err != nil {
+		return errors.WrapIf(err, "failed to register web manifest MIME type")
+	}
+	appFS, err := fs.Sub(distFS, "_app")
+	if err != nil {
+		return errors.WrapIf(err, "failed to create app sub FS")
+	}
 
-	e.RouteNotFound("/*", func(c *echo.Context) error {
-		req := c.Request()
-		requestedPath := strings.TrimPrefix(req.URL.Path, "/")
-		if requestedPath == "" {
-			requestedPath = indexHtmlFileConstant
-		}
+	skipAPI := func(c *echo.Context) bool {
+		return strings.HasPrefix(c.Request().URL.Path, "/api")
+	}
 
-		if _, statErr := fs.Stat(distFS, requestedPath); os.IsNotExist(statErr) {
-			if strings.HasPrefix(requestedPath, "_app/") {
-				return c.NoContent(http.StatusNotFound)
+	e.Use(middleware.GzipWithConfig(middleware.GzipConfig{
+		MinLength: 1024,
+		Skipper: func(c *echo.Context) bool {
+			if skipAPI(c) {
+				return true
 			}
-			req.URL.Path = "/"
-		}
+			switch strings.ToLower(path.Ext(c.Request().URL.Path)) {
+			case ".woff2", ".woff", ".png", ".jpg", ".jpeg", ".webp", ".avif", ".ico", ".gz":
+				return true
+			}
+			return false
+		},
+	}))
 
-		fileServer.ServeHTTP(c.Response(), req)
-		return nil
+	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c *echo.Context) error {
+			if skipAPI(c) {
+				return next(c)
+			}
+
+			p := strings.TrimPrefix(c.Request().URL.Path, "/")
+			if p == "" {
+				p = indexHtmlFileConstant
+			}
+			if _, statErr := fs.Stat(distFS, p); statErr != nil && !strings.HasPrefix(p, "_app/") {
+				p = indexHtmlFileConstant
+			}
+
+			header := c.Response().Header()
+			switch {
+			case p == indexHtmlFileConstant || p == "service-worker.js" || p == "app.webmanifest" || p == "_app/version.json":
+				header.Set("Cache-Control", "no-cache, no-store, must-revalidate")
+				header.Set("Pragma", "no-cache")
+				header.Set("Expires", "0")
+			case strings.HasPrefix(p, "_app/immutable/"):
+				header.Set("Cache-Control", "public, max-age=31536000, immutable")
+			default:
+				header.Set("Cache-Control", "public, max-age=86400")
+			}
+			return next(c)
+		}
 	})
 
+	// Missing chunks must return 404 so SvelteKit can recover after a redeploy.
+	e.StaticFS("/_app/", appFS)
+	e.Use(middleware.StaticWithConfig(middleware.StaticConfig{
+		Root:       ".",
+		Filesystem: distFS,
+		HTML5:      true,
+		Skipper: func(c *echo.Context) bool {
+			return skipAPI(c) || strings.HasPrefix(c.Request().URL.Path, "/_app/")
+		},
+	}))
+
 	return nil
-}
-
-type FileServerWithCaching struct {
-	root                    http.FileSystem
-	lastModified            time.Time
-	cacheMaxAge             int
-	lastModifiedHeaderValue string
-	cacheControlHeaderValue string
-}
-
-func NewFileServerWithCaching(root http.FileSystem, maxAge int) *FileServerWithCaching {
-	return &FileServerWithCaching{
-		root:                    root,
-		lastModified:            time.Now(),
-		cacheMaxAge:             maxAge,
-		lastModifiedHeaderValue: time.Now().UTC().Format(http.TimeFormat),
-		cacheControlHeaderValue: fmt.Sprintf("public, max-age=%d", maxAge),
-	}
-}
-
-func (f *FileServerWithCaching) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	path := strings.TrimPrefix(r.URL.Path, "/")
-	if path == "" {
-		path = indexHtmlFileConstant
-	}
-
-	// Service worker needs correct MIME type and no caching for PWA updates
-	if path == "service-worker.js" {
-		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
-		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
-		w.Header().Set("Pragma", "no-cache")
-		w.Header().Set("Expires", "0")
-		http.FileServer(f.root).ServeHTTP(w, r)
-		return
-	}
-
-	// Web manifest needs correct MIME type and no caching for PWA updates
-	if path == "app.webmanifest" {
-		w.Header().Set("Content-Type", "application/manifest+json; charset=utf-8")
-		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
-		w.Header().Set("Pragma", "no-cache")
-		w.Header().Set("Expires", "0")
-		http.FileServer(f.root).ServeHTTP(w, r)
-		return
-	}
-
-	// Never cache index.html or version.json - they need to be fresh to detect updates
-	if path == indexHtmlFileConstant || path == "_app/version.json" {
-		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
-		w.Header().Set("Pragma", "no-cache")
-		w.Header().Set("Expires", "0")
-		http.FileServer(f.root).ServeHTTP(w, r)
-		return
-	}
-
-	// For immutable assets (with content hashes), use long-term caching
-	if strings.HasPrefix(path, "_app/immutable/") {
-		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-		http.FileServer(f.root).ServeHTTP(w, r)
-		return
-	}
-
-	// For other static assets, use the configured cache duration
-	if ifModifiedSince := r.Header.Get("If-Modified-Since"); ifModifiedSince != "" {
-		ifModifiedSinceTime, err := time.Parse(http.TimeFormat, ifModifiedSince)
-		if err == nil && f.lastModified.Before(ifModifiedSinceTime.Add(1*time.Second)) {
-			w.WriteHeader(http.StatusNotModified)
-			return
-		}
-	}
-
-	w.Header().Set("Last-Modified", f.lastModifiedHeaderValue)
-	w.Header().Set("Cache-Control", f.cacheControlHeaderValue)
-
-	http.FileServer(f.root).ServeHTTP(w, r)
 }

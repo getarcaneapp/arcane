@@ -31,6 +31,11 @@ func TestRegisterFrontend_ServesSPA(t *testing.T) {
 		require.Contains(t, rec.Body.String(), "<!doctype html", "path %s should serve index.html", path)
 	}
 
+	missingChunk := httptest.NewRecorder()
+	e.ServeHTTP(missingChunk, httptest.NewRequest(http.MethodGet, "/_app/immutable/missing.js", nil))
+	require.Equal(t, http.StatusNotFound, missingChunk.Code)
+	require.NotContains(t, missingChunk.Body.String(), "<!doctype html")
+
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/health", nil))
 	require.Equal(t, http.StatusOK, rec.Code)

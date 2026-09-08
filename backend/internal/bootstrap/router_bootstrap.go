@@ -92,6 +92,7 @@ func requestLoggerMiddlewareInternal() echo.MiddlewareFunc {
 		ClientErrorLevel: slog.LevelWarn,
 		ServerErrorLevel: slog.LevelError,
 		Filters:          []slogecho.Filter{shouldLogRequestInternal},
+		WithRequestID:    true,
 	})
 
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
@@ -213,6 +214,7 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 	}
 
 	e.Use(echomiddleware.Recover())
+	e.Use(echomiddleware.RequestID())
 	e.Use(requestLoggerMiddlewareInternal())
 	e.Use(secureCookieContextMiddlewareInternal(trustedProxyNets))
 
