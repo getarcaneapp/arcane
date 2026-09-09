@@ -1932,6 +1932,8 @@
   "git_managed_env_note": "Tệp tin biến môi trường (.env) vẫn có thể được chỉnh sửa trong Arcane để cung cấp khả năng cấu hình thời gian thực.",
   "git_from_git_repo": "Từ kho lưu trữ git",
   "git_sync_from_git": "Đồng bộ từ Git",
+  "git_open_project_in_repository": "Mở dự án trong Git",
+  "git_edit_file_in_repository": "Chỉnh sửa tệp trong Git",
   "git_sync_file_limits_title": "Giới hạn tệp trong Git Sync",
   "git_sync_file_limits_description": "Áp dụng giới hạn chung cho toàn bộ môi trường khi Arcane sao chép các tệp trong kho lưu trữ trong quá trình đồng bộ hóa Git. Sử dụng giá trị 0 để loại bỏ giới hạn.",
   "git_sync_max_files_label": "Số tệp được đồng bộ hóa tối đa",
@@ -3355,6 +3357,11 @@
   "system_backups_recovery_key_required": "Nhập khóa khôi phục đã được tạo (8 nhóm, mỗi nhóm 6 ký tự).",
   "system_backups_recovery_key_needed": "Hãy thiết lập khóa khôi phục trước khi tạo bản sao lưu hệ thống.",
   "system_backups_reset_recovery_key": "Đặt lại khóa khôi phục",
+  "system_backups_reset_recovery_key_confirm_message": "Một khóa mới sẽ được tạo ra và thay thế khóa hiện tại. Các bản sao lưu hệ thống hiện có chỉ có thể được khôi phục bằng chính khóa đã được sử dụng để tạo ra chúng.",
+  "system_backups_create_recovery_key": "Tạo khóa khôi phục",
+  "system_backups_import_recovery_key": "Nhập khóa khôi phục",
+  "system_backups_import_recovery_key_description": "Nhập khóa khôi phục hiện có để lưu làm khóa khôi phục cho phiên bản này.",
+  "system_backups_import_recovery_key_alert": "Arcane đã có một khóa khôi phục. Các bản sao lưu hệ thống hiện có chỉ có thể được mở bằng chính khóa đã được sử dụng để tạo ra chúng, và không thể lưu trữ một khóa khác trong khi các bản sao lưu đó vẫn còn tồn tại.",
   "system_backups_recovery_key_alert": "Hãy lưu khóa này bên ngoài Arcane ngay bây giờ. Khóa này sẽ không được hiển thị lại, và nếu không có nó, các bản sao lưu hệ thống của bạn sẽ không thể được khôi phục.",
   "system_backups_recovery_key_enter_description": "Hãy nhập khóa khôi phục dùng để bảo vệ bản sao lưu này.",
   "system_backups_recovery_key_schedule_required": "Hãy thiết lập khóa khôi phục trước khi kích hoạt lịch trình này.",
@@ -3523,5 +3530,10 @@
   "jobs_activity_summary": "Hoạt động chạy bộ",
   "jobs_activity_output": "Kết quả hoạt động",
   "jobs_attention_schedule_blocked": "Quá trình chạy này cần được rà soát và sẽ ngăn cản các lần chạy tiếp theo của công việc này.",
-  "jobs_resolution_reason": "Lý do ra quyết định"
+  "jobs_resolution_reason": "Lý do ra quyết định",
+  "git_repository_url_placeholder": "https://github.com/user/repo.git",
+  "git_repository_token_url_change": "URL của kho lưu trữ đã thay đổi. Vui lòng nhập lại mã thông báo đã lưu hoặc chọn “Xóa mã thông báo đã lưu” trước khi lưu.",
+  "git_repository_ssh_key_url_change": "URL của kho lưu trữ đã thay đổi. Vui lòng nhập lại khóa SSH đã lưu hoặc chọn “Xóa khóa SSH đã lưu” trước khi lưu.",
+  "git_repository_clear_token": "Xóa mã thông báo đã lưu",
+  "git_repository_clear_ssh_key": "Xóa khóa SSH đã lưu"
 }
