@@ -1,4 +1,7 @@
 {
+  "hidden": "非表示",
+  "editor_compose_hidden_detail": "コンテナ一覧から非表示にする",
+  "editor_compose_hidden_info": "ブール値。非表示のコンテナは、デフォルトではダッシュボードの集計対象から除外され、コンテナ一覧からも非表示になります。「非表示のコンテナを表示」を有効にすると、一覧に表示されます。プロジェクトレベルの値がすべてのサービスに対するデフォルト値となりますが、サービスレベルの値が設定されている場合は、そちらが優先されます。",
   "$schema": "https://inlang.com/schema/inlang-message-format",
   "layout_title": "Arcane",
   "accent_color": "アクセントカラー",
