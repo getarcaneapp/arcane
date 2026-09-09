@@ -1,4 +1,7 @@
 {
+  "hidden": "Caché",
+  "editor_compose_hidden_detail": "Masquer de la liste des conteneurs",
+  "editor_compose_hidden_info": "Booléen. Par défaut, les conteneurs masqués sont exclus des décomptes du tableau de bord et ne apparaissent pas dans la liste des conteneurs. Activez l’option « Afficher les conteneurs masqués » pour les faire apparaître dans la liste. La valeur définie au niveau du projet s’applique par défaut à tous les services ; les valeurs définies au niveau du service la remplacent.",
   "$schema": "https://inlang.com/schema/inlang-message-format",
   "layout_title": "Arcane",
   "accent_color": "Couleur d'accentuation",
