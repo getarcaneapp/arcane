@@ -1932,6 +1932,8 @@
   "git_managed_env_note": "環境ファイル (.env) は、ランタイム設定を提供するために Arcane で編集できます。",
   "git_from_git_repo": "Git リポジトリから",
   "git_sync_from_git": "Git から同期",
+  "git_open_project_in_repository": "Gitでプロジェクトを開く",
+  "git_edit_file_in_repository": "Git でファイルを編集する",
   "git_sync_file_limits_title": "Git 同期ファイルの制限",
   "git_sync_file_limits_description": "Git同期中にArcaneがリポジトリファイルをコピーする際に、環境全体の上限を適用します。キャップを削除するには 0 を使用します。",
   "git_sync_max_files_label": "最大同期ファイル数",
@@ -3355,6 +3357,11 @@
   "system_backups_recovery_key_required": "生成された復旧キー（6文字×8グループ）を入力してください。",
   "system_backups_recovery_key_needed": "システムのバックアップを作成する前に、リカバリキーを設定してください。",
   "system_backups_reset_recovery_key": "リカバリーキーをリセットする",
+  "system_backups_reset_recovery_key_confirm_message": "新しいキーが生成され、現在のキーと置き換えられます。既存のシステムバックアップは、そのバックアップが作成された際に使用されたキーでのみ復元可能です。",
+  "system_backups_create_recovery_key": "復元キーを作成する",
+  "system_backups_import_recovery_key": "復旧キーのインポート",
+  "system_backups_import_recovery_key_description": "既存の復旧キーを入力して、このインスタンスの復旧キーとして保存してください。",
+  "system_backups_import_recovery_key_alert": "Arcaneにはすでに復元キーが存在します。既存のシステムバックアップは、作成時に使用されたキーでのみ開くことができ、それらが存在する限り、別のキーを保存することはできません。",
   "system_backups_recovery_key_alert": "このキーは、今すぐArcaneの外に保存しておいてください。このキーは二度と表示されませんが、これがないとシステムのバックアップを復元することができません。",
   "system_backups_recovery_key_enter_description": "このバックアップを保護する復元キーを入力してください。",
   "system_backups_recovery_key_schedule_required": "このスケジュールを有効にする前に、復旧キーを設定してください。",
@@ -3523,5 +3530,10 @@
   "jobs_activity_summary": "アクティビティを実行する",
   "jobs_activity_output": "動作出力",
   "jobs_attention_schedule_blocked": "この実行は確認が必要であり、このジョブの後の実行をブロックしています。",
-  "jobs_resolution_reason": "決議の理由"
+  "jobs_resolution_reason": "決議の理由",
+  "git_repository_url_placeholder": "https://github.com/user/repo.git",
+  "git_repository_token_url_change": "リポジトリのURLが変更されました。保存する前に、保存済みのトークンを再入力するか、「保存済みのトークンをクリア」を選択してください。",
+  "git_repository_ssh_key_url_change": "リポジトリのURLが変更されました。保存する前に、保存済みのSSHキーを再入力するか、「保存済みのSSHキーを消去」を選択してください。",
+  "git_repository_clear_token": "保存されたトークンを削除する",
+  "git_repository_clear_ssh_key": "保存済みのSSHキーを削除する"
 }
