@@ -1,4 +1,7 @@
 {
+  "hidden": "Gizli",
+  "editor_compose_hidden_detail": "Konteyner listesinden gizle",
+  "editor_compose_hidden_info": "Boolean. Gizli kapsayıcılar, varsayılan olarak gösterge tablosundaki sayımlara dahil edilmez ve kapsayıcı listesinde gizlenir. Bunları listede görüntülemek için “Gizli kapsayıcıları göster” seçeneğini etkinleştirin. Proje düzeyindeki değer, her hizmet için varsayılan değerdir; hizmet düzeyindeki değerler ise bu değeri geçersiz kılar.",
   "$schema": "https://inlang.com/schema/inlang-message-format",
   "layout_title": "\"Arcane\"",
   "accent_color": "Vurgu Rengi",
