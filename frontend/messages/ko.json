@@ -1,4 +1,7 @@
 {
+  "hidden": "숨김",
+  "editor_compose_hidden_detail": "컨테이너 목록에서 숨기기",
+  "editor_compose_hidden_info": "부울형. 숨겨진 컨테이너는 기본적으로 대시보드 집계에서 제외되며 컨테이너 목록에서도 표시되지 않습니다. 목록에 숨겨진 컨테이너를 표시하려면 “숨겨진 컨테이너 표시”를 활성화하십시오. 프로젝트 수준 값이 모든 서비스에 대한 기본값이지만, 서비스 수준 값이 이보다 우선 적용됩니다.",
   "$schema": "https://inlang.com/schema/inlang-message-format",
   "layout_title": "Arcane",
   "accent_color": "강조 색상",
