@@ -1932,6 +1932,8 @@
   "git_managed_env_note": "环境文件（.env）仍可在 Arcane 中编辑以提供运行时配置",
   "git_from_git_repo": "来自 Git 仓库",
   "git_sync_from_git": "从 Git 同步",
+  "git_open_project_in_repository": "在 Git 中打开项目",
+  "git_edit_file_in_repository": "在 Git 中编辑文件",
   "git_sync_file_limits_title": "Git 同步文件限制",
   "git_sync_file_limits_description": "在 Arcane 于 Git 同步期间复制仓库文件时，为整个环境设置上限。设为 0 可移除限制。",
   "git_sync_max_files_label": "最大同步文件数",
@@ -3355,6 +3357,11 @@
   "system_backups_recovery_key_required": "请输入生成的恢复密钥（8组，每组6个字符）。",
   "system_backups_recovery_key_needed": "在创建系统备份之前，请设置一个恢复密钥。",
   "system_backups_reset_recovery_key": "重置恢复密钥",
+  "system_backups_reset_recovery_key_confirm_message": "系统将生成一个新密钥并替换当前密钥。现有的系统备份只能使用创建时所用的密钥进行恢复。",
+  "system_backups_create_recovery_key": "创建恢复密钥",
+  "system_backups_import_recovery_key": "导入恢复密钥",
+  "system_backups_import_recovery_key_description": "输入一个现有的恢复密钥，将其保存为该实例的恢复密钥。",
+  "system_backups_import_recovery_key_alert": "Arcane 已经拥有一个恢复密钥。现有的系统备份只能使用创建它们时所用的密钥打开，且在这些备份存在期间，无法存储其他密钥。",
   "system_backups_recovery_key_alert": "请将此密钥保存在 Arcane 之外。该密钥将不再显示，且若无此密钥，则无法恢复您的系统备份。",
   "system_backups_recovery_key_enter_description": "请输入用于保护此备份的恢复密钥。",
   "system_backups_recovery_key_schedule_required": "在启用此计划之前，请先配置恢复密钥。",
@@ -3523,5 +3530,10 @@
   "jobs_activity_summary": "跑步活动",
   "jobs_activity_output": "操作输出",
   "jobs_attention_schedule_blocked": "此运行需要审核，并将阻塞该作业后续的运行。",
-  "jobs_resolution_reason": "决议理由"
+  "jobs_resolution_reason": "决议理由",
+  "git_repository_url_placeholder": "https://github.com/user/repo.git",
+  "git_repository_token_url_change": "存储库 URL 已更改。请在保存前重新输入已保存的令牌，或选择“清除已保存的令牌”。",
+  "git_repository_ssh_key_url_change": "仓库 URL 已更改。请重新输入已保存的 SSH 密钥，或在保存前选择“清除已保存的 SSH 密钥”。",
+  "git_repository_clear_token": "清除已存储的令牌",
+  "git_repository_clear_ssh_key": "清除已存储的 SSH 密钥"
 }
