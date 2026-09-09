@@ -1,4 +1,7 @@
 {
+  "hidden": "Oculto",
+  "editor_compose_hidden_detail": "Ocultar de la lista de contenedores",
+  "editor_compose_hidden_info": "Booleano. Los contenedores ocultos se excluyen de los recuentos del panel de control y, de forma predeterminada, no aparecen en la lista de contenedores. Activa la opción «Mostrar contenedores ocultos» para que aparezcan en la lista. El valor a nivel de proyecto es el predeterminado para todos los servicios; los valores a nivel de servicio lo anulan.",
   "$schema": "https://inlang.com/schema/inlang-message-format",
   "layout_title": "Arcane",
   "accent_color": "Color de acento",
