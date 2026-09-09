@@ -1,4 +1,7 @@
 {
+  "hidden": "Ẩn",
+  "editor_compose_hidden_detail": "Ẩn khỏi danh sách container",
+  "editor_compose_hidden_info": "Boolean. Theo mặc định, các container ẩn sẽ không được tính vào số liệu trên bảng điều khiển và bị ẩn khỏi danh sách container. Bật tùy chọn “Hiển thị container ẩn” để hiển thị chúng trong danh sách. Giá trị cấp dự án là giá trị mặc định cho mọi dịch vụ; các giá trị cấp dịch vụ sẽ ghi đè lên giá trị này.",
   "$schema": "https://inlang.com/schema/inlang-message-format",
   "layout_title": "Arcane",
   "accent_color": "Màu chủ đạo",
