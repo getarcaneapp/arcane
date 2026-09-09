@@ -1932,6 +1932,8 @@
   "git_managed_env_note": "La media dosiero (.env) ankoraŭ povas esti redaktita en Arcane por provizi kurantempan konfiguracion.",
   "git_from_git_repo": "El la Git-deponejo",
   "git_sync_from_git": "Sinkronigi el Git",
+  "git_open_project_in_repository": "Malfermi projekton en Git",
+  "git_edit_file_in_repository": "Redaktu dosieron en Git",
   "git_sync_file_limits_title": "Dosierlimoj de Git Sync",
   "git_sync_file_limits_description": "Apliku tutmedianajn limojn kiam Arcane kopias deponejajn dosierojn dum Git-sinkronigoj. Uzu 0 por forigi limon.",
   "git_sync_max_files_label": "Maksimumo da sinkronigitaj dosieroj",
@@ -3355,6 +3357,11 @@
   "system_backups_recovery_key_required": "Enigu la generitan reakirŝlosilon (8 grupoj po 6 signoj).",
   "system_backups_recovery_key_needed": "Agordu reakirŝlosilon antaŭ krei sistemajn sekurkopiojn.",
   "system_backups_reset_recovery_key": "Reagordi la reakiran ŝlosilon",
+  "system_backups_reset_recovery_key_confirm_message": "Nova ŝlosilo estos generita kaj anstataŭos la nunan. Ekzistantaj sistemaj sekurkopioj povas esti restarigitaj nur per la ŝlosilo, per kiu ili estis kreitaj.",
+  "system_backups_create_recovery_key": "Kreu restarigan ŝlosilon",
+  "system_backups_import_recovery_key": "Enportu reakirŝlosilon",
+  "system_backups_import_recovery_key_description": "Enigu ekzistantan reakirŝlosilon por konservi ĝin kiel la reakirŝlosilon de ĉi tiu instanco.",
+  "system_backups_import_recovery_key_alert": "Arcane jam havas reakirŝlosilon. Ekzistantaj sistemaj sekurkopioj povas esti malfermitaj nur per la ŝlosilo, per kiu ili estis kreitaj, kaj alia ŝlosilo ne povas esti konservita dum ili ekzistas.",
   "system_backups_recovery_key_alert": "Konservu ĉi tiun ŝlosilon ekster Arcane nun. Ĝi ne plu estos montrata, kaj sen ĝi viaj sistemaj sekurkopioj ne povas esti restarigitaj.",
   "system_backups_recovery_key_enter_description": "Enigu la restarigan ŝlosilon, kiu protektas ĉi tiun sekurkopion.",
   "system_backups_recovery_key_schedule_required": "Konfiguru reakirŝlosilon antaŭ ol ebligi ĉi tiun horaron.",
@@ -3523,5 +3530,10 @@
   "jobs_activity_summary": "Kuru aktivecon",
   "jobs_activity_output": "Operacia eligo",
   "jobs_attention_schedule_blocked": "Ĉi tiu rundo bezonas revizion kaj blokas la postajn rundojn de ĉi tiu tasko.",
-  "jobs_resolution_reason": "Kialo de rezolucio"
+  "jobs_resolution_reason": "Kialo de rezolucio",
+  "git_repository_url_placeholder": "https://github.com/user/repo.git",
+  "git_repository_token_url_change": "La URL de la deponejo ŝanĝiĝis. Re-enigu la konservitan tokenon aŭ elektu Forigi la konservitan tokenon antaŭ ol konservi.",
+  "git_repository_ssh_key_url_change": "La URL de la deponejo ŝanĝiĝis. Re-enigu la konservitan SSH-ŝlosilon aŭ elektu Forigi la konservitan SSH-ŝlosilon antaŭ ol konservi.",
+  "git_repository_clear_token": "Forviŝi konservitan jetonon",
+  "git_repository_clear_ssh_key": "Forigi konservitan SSH-ŝlosilon"
 }
