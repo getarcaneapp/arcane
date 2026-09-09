@@ -1932,6 +1932,8 @@
   "git_managed_env_note": "Soubor s prostředím (.env) lze stále upravovat v Arcane pro poskytnutí runtime konfigurace.",
   "git_from_git_repo": "Z Git repozitáře",
   "git_sync_from_git": "Synchronizovat z Gitu",
+  "git_open_project_in_repository": "Otevřít projekt v Git",
+  "git_edit_file_in_repository": "Úprava souboru v Git",
   "git_sync_file_limits_title": "Omezení synchronizace souborů",
   "git_sync_file_limits_description": "Použít limity na úrovni celého prostředí když Arcane kopíruje soubory repozitáře během synchronizací Git. Použijte 0 pro odstranění limitu.",
   "git_sync_max_files_label": "Maximální počet synchronizovaných souborů",
@@ -3355,6 +3357,11 @@
   "system_backups_recovery_key_required": "Zadejte vygenerovaný obnovovací klíč (8 skupin po 6 znacích).",
   "system_backups_recovery_key_needed": "Před vytvořením záloh systému si nastavte obnovovací klíč.",
   "system_backups_reset_recovery_key": "Resetovat obnovovací klíč",
+  "system_backups_reset_recovery_key_confirm_message": "Bude vygenerován nový klíč, který nahradí ten stávající. Stávající zálohy systému lze obnovit pouze pomocí klíče, s nímž byly vytvořeny.",
+  "system_backups_create_recovery_key": "Vytvořit obnovovací klíč",
+  "system_backups_import_recovery_key": "Načíst obnovovací klíč",
+  "system_backups_import_recovery_key_description": "Zadejte existující obnovovací klíč, který se má uložit jako obnovovací klíč této instance.",
+  "system_backups_import_recovery_key_alert": "Arcane již disponuje obnovovacím klíčem. Stávající systémové zálohy lze otevřít pouze pomocí klíče, s nímž byly vytvořeny, a dokud existují, nelze uložit žádný jiný klíč.",
   "system_backups_recovery_key_alert": "Tento klíč si nyní uložte mimo Arcane. Již nebude znovu zobrazen a bez něj nebude možné obnovit zálohy systému.",
   "system_backups_recovery_key_enter_description": "Zadejte obnovovací klíč, který chrání tuto zálohu.",
   "system_backups_recovery_key_schedule_required": "Před aktivací tohoto plánu si nastavte obnovovací klíč.",
@@ -3523,5 +3530,10 @@
   "jobs_activity_summary": "Spustit aktivitu",
   "jobs_activity_output": "Provozní výkon",
   "jobs_attention_schedule_blocked": "Tento běh vyžaduje kontrolu a blokuje další běhy této úlohy.",
-  "jobs_resolution_reason": "Důvod usnesení"
+  "jobs_resolution_reason": "Důvod usnesení",
+  "git_repository_url_placeholder": "https://github.com/user/repo.git",
+  "git_repository_token_url_change": "Adresa URL úložiště se změnila. Před uložením znovu zadejte uložený token nebo vyberte možnost Vymazat uložený token.",
+  "git_repository_ssh_key_url_change": "Adresa URL úložiště se změnila. Před uložením znovu zadejte uložený klíč SSH nebo vyberte možnost Vymazat uložený klíč SSH.",
+  "git_repository_clear_token": "Vymazat uložený token",
+  "git_repository_clear_ssh_key": "Vymazat uložený klíč SSH"
 }
