@@ -9,7 +9,7 @@ require (
 	charm.land/bubbletea/v2 v2.0.9
 	charm.land/fang/v2 v2.0.1
 	charm.land/lipgloss/v2 v2.0.6
-	charm.land/log/v2 v2.0.0
+	charm.land/log/v2 v2.0.1
 	emperror.dev/errors v0.8.1
 	github.com/charmbracelet/x/term v0.2.2
 	github.com/getarcaneapp/arcane/types/v2 v2.9.0
