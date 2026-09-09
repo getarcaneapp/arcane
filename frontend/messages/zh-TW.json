@@ -1,4 +1,7 @@
 {
+  "hidden": "隱藏",
+  "editor_compose_hidden_detail": "從容器清單中隱藏",
+  "editor_compose_hidden_info": "布林值。預設情況下，隱藏的容器不會計入儀表板的計數中，也不會顯示在容器清單中。啟用「顯示隱藏的容器」即可在清單中顯示這些容器。專案層級的設定值為所有服務的預設值；若服務層級有設定值，則以服務層級的設定值為準。",
   "$schema": "https://inlang.com/schema/inlang-message-format",
   "layout_title": "Arcane",
   "accent_color": "強調色",
