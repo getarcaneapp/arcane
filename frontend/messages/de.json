@@ -1932,6 +1932,8 @@
   "git_managed_env_note": "Die Umgebungsdatei (.env) kann weiterhin in Arcane bearbeitet werden, um Runtime-Konfiguration bereitzustellen.",
   "git_from_git_repo": "Aus Git-Repo",
   "git_sync_from_git": "Aus Git synchronisieren",
+  "git_open_project_in_repository": "Projekt in Git öffnen",
+  "git_edit_file_in_repository": "Datei in Git bearbeiten",
   "git_sync_file_limits_title": "Git Sync Dateigrenzen",
   "git_sync_file_limits_description": "Wenden Sie umgebungsweite Obergrenzen an, wenn Arcane bei Git-Synchronisierungen Repository-Dateien kopiert. Verwenden Sie 0, um eine Obergrenze zu entfernen.",
   "git_sync_max_files_label": "Maximal synchronisierte Dateien",
@@ -3355,6 +3357,11 @@
   "system_backups_recovery_key_required": "Geben Sie den generierten Wiederherstellungsschlüssel ein (8 Gruppen à 6 Zeichen).",
   "system_backups_recovery_key_needed": "Richten Sie einen Wiederherstellungsschlüssel ein, bevor Sie Systemsicherungen erstellen.",
   "system_backups_reset_recovery_key": "Wiederherstellungsschlüssel zurücksetzen",
+  "system_backups_reset_recovery_key_confirm_message": "Es wird ein neuer Schlüssel generiert, der den aktuellen ersetzt. Vorhandene Systemsicherungen können nur mit dem Schlüssel wiederhergestellt werden, mit dem sie erstellt wurden.",
+  "system_backups_create_recovery_key": "Wiederherstellungsschlüssel erstellen",
+  "system_backups_import_recovery_key": "Wiederherstellungsschlüssel importieren",
+  "system_backups_import_recovery_key_description": "Geben Sie einen vorhandenen Wiederherstellungsschlüssel ein, der als Wiederherstellungsschlüssel für diese Instanz gespeichert werden soll.",
+  "system_backups_import_recovery_key_alert": "Arcane verfügt bereits über einen Wiederherstellungsschlüssel. Vorhandene Systemsicherungen können nur mit dem Schlüssel geöffnet werden, mit dem sie erstellt wurden, und solange diese Sicherungen bestehen, kann kein anderer Schlüssel gespeichert werden.",
   "system_backups_recovery_key_alert": "Speichern Sie diesen Schlüssel jetzt außerhalb von Arcane. Er wird nicht erneut angezeigt, und ohne ihn können Ihre Systemsicherungen nicht wiederhergestellt werden.",
   "system_backups_recovery_key_enter_description": "Geben Sie den Wiederherstellungsschlüssel ein, der diese Sicherung schützt.",
   "system_backups_recovery_key_schedule_required": "Richten Sie einen Wiederherstellungsschlüssel ein, bevor Sie diesen Zeitplan aktivieren.",
@@ -3523,5 +3530,10 @@
   "jobs_activity_summary": "Aktivität ausführen",
   "jobs_activity_output": "Betriebsleistung",
   "jobs_attention_schedule_blocked": "Dieser Lauf muss überprüft werden und blockiert spätere Läufe dieses Jobs.",
-  "jobs_resolution_reason": "Grund für die Beschlussfassung"
+  "jobs_resolution_reason": "Grund für die Beschlussfassung",
+  "git_repository_url_placeholder": "https://github.com/user/repo.git",
+  "git_repository_token_url_change": "Die Repository-URL hat sich geändert. Geben Sie das gespeicherte Token erneut ein oder wählen Sie „Gespeichertes Token löschen“, bevor Sie speichern.",
+  "git_repository_ssh_key_url_change": "Die Repository-URL hat sich geändert. Geben Sie den gespeicherten SSH-Schlüssel erneut ein oder wählen Sie „Gespeicherten SSH-Schlüssel löschen“, bevor Sie speichern.",
+  "git_repository_clear_token": "Gespeichertes Token löschen",
+  "git_repository_clear_ssh_key": "Gespeicherten SSH-Schlüssel löschen"
 }
