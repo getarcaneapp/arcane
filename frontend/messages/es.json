@@ -1932,6 +1932,8 @@
   "git_managed_env_note": "El archivo de entorno (.env) todavía puede ser editado en Arcane para proporcionar la configuración de tiempo de ejecución.",
   "git_from_git_repo": "Desde Git Repo",
   "git_sync_from_git": "Sincronizar desde Git",
+  "git_open_project_in_repository": "Abrir proyecto en Git",
+  "git_edit_file_in_repository": "Editar un archivo en Git",
   "git_sync_file_limits_title": "Límites de archivos Git Sync",
   "git_sync_file_limits_description": "Aplica límites a todo el entorno cuando Arcane copia archivos de repositorio durante las sincronizaciones Git. Utilice 0 para eliminar un límite.",
   "git_sync_max_files_label": "Máximo de archivos sincronizados",
@@ -3355,6 +3357,11 @@
   "system_backups_recovery_key_required": "Introduce la clave de recuperación generada (8 grupos de 6 caracteres).",
   "system_backups_recovery_key_needed": "Configura una clave de recuperación antes de crear copias de seguridad del sistema.",
   "system_backups_reset_recovery_key": "Restablecer la clave de recuperación",
+  "system_backups_reset_recovery_key_confirm_message": "Se generará una nueva clave que sustituirá a la actual. Las copias de seguridad existentes del sistema solo se pueden restaurar con la clave con la que se crearon.",
+  "system_backups_create_recovery_key": "Crear clave de recuperación",
+  "system_backups_import_recovery_key": "Importar clave de recuperación",
+  "system_backups_import_recovery_key_description": "Introduce una clave de recuperación ya existente para guardarla como clave de recuperación de esta instancia.",
+  "system_backups_import_recovery_key_alert": "Arcane ya dispone de una clave de recuperación. Las copias de seguridad existentes del sistema solo pueden abrirse con la clave con la que se crearon, y no es posible almacenar una clave diferente mientras estas sigan existiendo.",
   "system_backups_recovery_key_alert": "Guarda esta clave fuera de Arcane ahora mismo. No volverá a aparecer y, sin ella, no se podrán restaurar las copias de seguridad de tu sistema.",
   "system_backups_recovery_key_enter_description": "Introduce la clave de recuperación que protege esta copia de seguridad.",
   "system_backups_recovery_key_schedule_required": "Configura una clave de recuperación antes de activar esta programación.",
@@ -3523,5 +3530,10 @@
   "jobs_activity_summary": "Actividad de carrera",
   "jobs_activity_output": "Salida de funcionamiento",
   "jobs_attention_schedule_blocked": "Esta ejecución debe revisarse y bloquea las ejecuciones posteriores de este trabajo.",
-  "jobs_resolution_reason": "Motivo de la resolución"
+  "jobs_resolution_reason": "Motivo de la resolución",
+  "git_repository_url_placeholder": "https://github.com/user/repo.git",
+  "git_repository_token_url_change": "La URL del repositorio ha cambiado. Vuelve a introducir el token guardado o selecciona «Borrar el token guardado» antes de guardar.",
+  "git_repository_ssh_key_url_change": "La URL del repositorio ha cambiado. Vuelve a introducir la clave SSH guardada o selecciona «Borrar la clave SSH guardada» antes de guardar.",
+  "git_repository_clear_token": "Borrar el token almacenado",
+  "git_repository_clear_ssh_key": "Borrar la clave SSH guardada"
 }
