@@ -1932,6 +1932,8 @@
   "git_managed_env_note": "Il file ambiente (.env) può ancora essere modificato in Arcane per fornire configurazione runtime.",
   "git_from_git_repo": "Da Git Repo",
   "git_sync_from_git": "Sincronizza da Git",
+  "git_open_project_in_repository": "Apri il progetto su Git",
+  "git_edit_file_in_repository": "Modifica file in Git",
   "git_sync_file_limits_title": "Limiti dei file di sincronizzazione Git",
   "git_sync_file_limits_description": "Applica dei limiti a livello di ambiente quando Arcane copia i file del repository durante le sincronizzazioni Git. Usare 0 per rimuovere un limite.",
   "git_sync_max_files_label": "Numero massimo di file sincronizzati",
@@ -3355,6 +3357,11 @@
   "system_backups_recovery_key_required": "Inserisci la chiave di ripristino generata (8 gruppi di 6 caratteri).",
   "system_backups_recovery_key_needed": "Configurare una chiave di ripristino prima di creare i backup di sistema.",
   "system_backups_reset_recovery_key": "Reimposta la chiave di ripristino",
+  "system_backups_reset_recovery_key_confirm_message": "Verrà generata una nuova chiave che sostituirà quella attuale. I backup di sistema esistenti possono essere ripristinati solo con la chiave utilizzata per crearli.",
+  "system_backups_create_recovery_key": "Crea chiave di ripristino",
+  "system_backups_import_recovery_key": "Importa chiave di ripristino",
+  "system_backups_import_recovery_key_description": "Inserisci una chiave di ripristino esistente da salvare come chiave di ripristino di questa istanza.",
+  "system_backups_import_recovery_key_alert": "Arcane dispone già di una chiave di ripristino. I backup di sistema esistenti possono essere aperti solo con la chiave utilizzata per crearli e, finché questi backup sono presenti, non è possibile memorizzarne una diversa.",
   "system_backups_recovery_key_alert": "Salva subito questa chiave al di fuori di Arcane. Non verrà più visualizzata e, senza di essa, non sarà possibile ripristinare i backup di sistema.",
   "system_backups_recovery_key_enter_description": "Inserisci la chiave di ripristino che protegge questo backup.",
   "system_backups_recovery_key_schedule_required": "Configurare una chiave di ripristino prima di attivare questa pianificazione.",
@@ -3523,5 +3530,10 @@
   "jobs_activity_summary": "Attività di corsa",
   "jobs_activity_output": "Uscita operativa",
   "jobs_attention_schedule_blocked": "Questa esecuzione deve essere sottoposta a revisione e blocca le successive esecuzioni di questo processo.",
-  "jobs_resolution_reason": "Motivo della risoluzione"
+  "jobs_resolution_reason": "Motivo della risoluzione",
+  "git_repository_url_placeholder": "https://github.com/user/repo.git",
+  "git_repository_token_url_change": "L'URL del repository è cambiato. Reinserisci il token salvato oppure seleziona \"Cancella token salvato\" prima di salvare.",
+  "git_repository_ssh_key_url_change": "L'URL del repository è cambiato. Reinserisci la chiave SSH salvata oppure seleziona \"Cancella chiave SSH salvata\" prima di salvare.",
+  "git_repository_clear_token": "Cancella il token memorizzato",
+  "git_repository_clear_ssh_key": "Elimina la chiave SSH salvata"
 }
