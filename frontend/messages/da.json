@@ -1,4 +1,7 @@
 {
+  "hidden": "Skjult",
+  "editor_compose_hidden_detail": "Skjul fra containerlisten",
+  "editor_compose_hidden_info": "Boolsk. Skjulte containere medregnes ikke i antallet på dashboardet og er som standard skjult på containerlisten. Aktivér »Vis skjulte containere« for at få dem vist på listen. Værdien på projektniveau er standard for alle tjenester; værdier på tjenesteniveau tilsidesætter denne.",
   "$schema": "https://inlang.com/schema/inlang-message-format",
   "layout_title": "Arcane",
   "accent_color": "Accentfarve",
