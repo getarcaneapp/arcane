@@ -1,4 +1,7 @@
 {
+  "hidden": "Dold",
+  "editor_compose_hidden_detail": "Dölj från listan över behållare",
+  "editor_compose_hidden_info": "Boolesk. Dolda behållare räknas inte med i översiktspanelen och döljs som standard i behållarlistan. Aktivera ”Visa dolda behållare” för att visa dem i listan. Värdet på projektnivå är standard för alla tjänster; värden på tjänstenivå har företräde framför detta.",
   "$schema": "https://inlang.com/schema/inlang-message-format",
   "layout_title": "Arcane",
   "accent_color": "Accentfärg",
