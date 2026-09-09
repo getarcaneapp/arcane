@@ -1,4 +1,7 @@
 {
+  "hidden": "Versteckt",
+  "editor_compose_hidden_detail": "Aus der Containerliste ausblenden",
+  "editor_compose_hidden_info": "Boolescher Wert. Ausgeblendete Container werden standardmäßig nicht in die Dashboard-Zählungen einbezogen und in der Containerliste ausgeblendet. Aktivieren Sie „Ausgeblendete Container anzeigen“, um sie in der Liste einzublenden. Der Wert auf Projektebene gilt als Standard für jeden Dienst; Werte auf Dienstebene haben Vorrang.",
   "$schema": "https://inlang.com/schema/inlang-message-format",
   "layout_title": "Arcane",
   "accent_color": "Akzentfarbe",
