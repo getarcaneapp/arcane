@@ -1,4 +1,7 @@
 {
+  "hidden": "Nascosto",
+  "editor_compose_hidden_detail": "Nascondi dall'elenco dei contenitori",
+  "editor_compose_hidden_info": "Booleano. Per impostazione predefinita, i contenitori nascosti vengono esclusi dai conteggi della dashboard e non vengono visualizzati nell'elenco dei contenitori. Attivare l'opzione \"Mostra contenitori nascosti\" per visualizzarli nell'elenco. Il valore a livello di progetto è quello predefinito per ogni servizio; i valori a livello di servizio hanno la precedenza su di esso.",
   "$schema": "https://inlang.com/schema/inlang-message-format",
   "layout_title": "Arcane",
   "accent_color": "Colore Secondario",
