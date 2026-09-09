@@ -1,4 +1,7 @@
 {
+  "hidden": "Skryté",
+  "editor_compose_hidden_detail": "Skrýt ze seznamu kontejnerů",
+  "editor_compose_hidden_info": "Logická hodnota. Skryté kontejnery nejsou ve výchozím nastavení zahrnuty do počtů na řídicím panelu a nejsou zobrazeny v seznamu kontejnerů. Chcete-li je v seznamu zobrazit, povolte možnost „Zobrazit skryté kontejnery“. Hodnota na úrovni projektu je výchozí pro všechny služby; hodnoty na úrovni služby ji přepisují.",
   "$schema": "https://inlang.com/schema/inlang-message-format",
   "layout_title": "Arcane",
   "accent_color": "Barevný akcent",
