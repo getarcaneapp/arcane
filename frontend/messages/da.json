@@ -1932,6 +1932,8 @@
   "git_managed_env_note": "The environment file (.env) can still be edited in Arcane to provide runtime configuration.",
   "git_from_git_repo": "From Git Repo",
   "git_sync_from_git": "Sync from Git",
+  "git_open_project_in_repository": "Åbn projekt i Git",
+  "git_edit_file_in_repository": "Rediger fil i Git",
   "git_sync_file_limits_title": "Git Sync File Limits",
   "git_sync_file_limits_description": "Apply environment-wide caps when Arcane copies repository files during Git syncs. Use 0 to remove a cap.",
   "git_sync_max_files_label": "Max Synced Files",
@@ -3355,6 +3357,11 @@
   "system_backups_recovery_key_required": "Indtast den genererede gendannelsesnøgle (8 grupper à 6 tegn).",
   "system_backups_recovery_key_needed": "Opret en gendannelsesnøgle, inden du laver sikkerhedskopier af systemet.",
   "system_backups_reset_recovery_key": "Nulstil gendannelsesnøgle",
+  "system_backups_reset_recovery_key_confirm_message": "Der genereres en ny nøgle, som erstatter den nuværende. Eksisterende sikkerhedskopier af systemet kan kun gendannes med den nøgle, de blev oprettet med.",
+  "system_backups_create_recovery_key": "Opret en gendannelsesnøgle",
+  "system_backups_import_recovery_key": "Importer gendannelsesnøgle",
+  "system_backups_import_recovery_key_description": "Indtast en eksisterende gendannelsesnøgle, der skal gemmes som denne instans’ gendannelsesnøgle.",
+  "system_backups_import_recovery_key_alert": "Arcane har allerede en gendannelsesnøgle. Eksisterende systembackups kan kun åbnes med den nøgle, de blev oprettet med, og der kan ikke gemmes en anden nøgle, så længe de findes.",
   "system_backups_recovery_key_alert": "Gem denne nøgle uden for Arcane nu. Den vises ikke igen, og uden den kan dine systembackups ikke gendannes.",
   "system_backups_recovery_key_enter_description": "Indtast den gendannelsesnøgle, der beskytter denne sikkerhedskopi.",
   "system_backups_recovery_key_schedule_required": "Konfigurer en gendannelsesnøgle, før du aktiverer denne tidsplan.",
@@ -3523,5 +3530,10 @@
   "jobs_activity_summary": "Løbeaktivitet",
   "jobs_activity_output": "Driftsydelse",
   "jobs_attention_schedule_blocked": "Dette kørsel skal gennemgås og blokerer senere kørsler af denne opgave.",
-  "jobs_resolution_reason": "Årsag til beslutningen"
+  "jobs_resolution_reason": "Årsag til beslutningen",
+  "git_repository_url_placeholder": "https://github.com/user/repo.git",
+  "git_repository_token_url_change": "URL’en til arkivet er ændret. Indtast det gemte token igen, eller vælg »Ryd gemt token«, før du gemmer.",
+  "git_repository_ssh_key_url_change": "URL’en til repositoriet er ændret. Indtast den gemte SSH-nøgle igen, eller vælg »Ryd gemt SSH-nøgle«, før du gemmer.",
+  "git_repository_clear_token": "Slet gemt token",
+  "git_repository_clear_ssh_key": "Slet gemt SSH-nøgle"
 }
