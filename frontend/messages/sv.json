@@ -1932,6 +1932,8 @@
   "git_managed_env_note": "Miljöfilen (.env) kan fortfarande redigeras i Arcane för att ge körtidskonfiguration.",
   "git_from_git_repo": "Från Git Repo",
   "git_sync_from_git": "Synkronisera från Git",
+  "git_open_project_in_repository": "Öppna projektet i Git",
+  "git_edit_file_in_repository": "Redigera fil i Git",
   "git_sync_file_limits_title": "Filgränser för Git Sync",
   "git_sync_file_limits_description": "Tillämpa miljöomfattande tak när Arcane kopierar arkivfiler under Git-synkroniseringar. Använd 0 för att ta bort ett tak.",
   "git_sync_max_files_label": "Max synkroniserade filer",
@@ -3355,6 +3357,11 @@
   "system_backups_recovery_key_required": "Ange den genererade återställningsnyckeln (8 grupper med 6 tecken vardera).",
   "system_backups_recovery_key_needed": "Skapa en återställningsnyckel innan du gör säkerhetskopior av systemet.",
   "system_backups_reset_recovery_key": "Återställ återställningsnyckeln",
+  "system_backups_reset_recovery_key_confirm_message": "En ny nyckel kommer att genereras och ersätta den nuvarande. Befintliga säkerhetskopior av systemet kan endast återställas med den nyckel som användes när de skapades.",
+  "system_backups_create_recovery_key": "Skapa återställningsnyckel",
+  "system_backups_import_recovery_key": "Importera återställningsnyckel",
+  "system_backups_import_recovery_key_description": "Ange en befintlig återställningsnyckel som ska sparas som återställningsnyckel för denna instans.",
+  "system_backups_import_recovery_key_alert": "Arcane har redan en återställningsnyckel. Befintliga systemsäkerhetskopior kan endast öppnas med den nyckel som användes när de skapades, och det går inte att spara en annan nyckel så länge de finns kvar.",
   "system_backups_recovery_key_alert": "Spara den här nyckeln utanför Arcane nu. Den kommer inte att visas igen, och utan den går det inte att återställa dina systemsäkerhetskopior.",
   "system_backups_recovery_key_enter_description": "Ange återställningsnyckeln som skyddar denna säkerhetskopia.",
   "system_backups_recovery_key_schedule_required": "Konfigurera en återställningsnyckel innan du aktiverar detta schema.",
@@ -3523,5 +3530,10 @@
   "jobs_activity_summary": "Kör aktivitet",
   "jobs_activity_output": "Driftsutgång",
   "jobs_attention_schedule_blocked": "Denna körning måste granskas och blockerar senare körningar av detta jobb.",
-  "jobs_resolution_reason": "Orsak till beslutet"
+  "jobs_resolution_reason": "Orsak till beslutet",
+  "git_repository_url_placeholder": "https://github.com/user/repo.git",
+  "git_repository_token_url_change": "URL-adressen till arkivet har ändrats. Ange det sparade tokenet på nytt eller välj ”Rensa sparat token” innan du sparar.",
+  "git_repository_ssh_key_url_change": "URL:en till arkivet har ändrats. Ange den sparade SSH-nyckeln på nytt eller välj ”Rensa sparad SSH-nyckel” innan du sparar.",
+  "git_repository_clear_token": "Rensa lagrat token",
+  "git_repository_clear_ssh_key": "Rensa lagrade SSH-nycklar"
 }
