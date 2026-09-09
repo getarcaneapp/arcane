@@ -1932,6 +1932,8 @@
   "git_managed_env_note": "The environment file (.env) can still be edited in Arcane to provide runtime configuration.",
   "git_from_git_repo": "From Git Repo",
   "git_sync_from_git": "Sync from Git",
+  "git_open_project_in_repository": "Otwórz projekt w Git",
+  "git_edit_file_in_repository": "Edytuj plik w systemie Git",
   "git_sync_file_limits_title": "Git Sync File Limits",
   "git_sync_file_limits_description": "Apply environment-wide caps when Arcane copies repository files during Git syncs. Use 0 to remove a cap.",
   "git_sync_max_files_label": "Max Synced Files",
@@ -3355,6 +3357,11 @@
   "system_backups_recovery_key_required": "Wprowadź wygenerowany klucz odzyskiwania (8 grup po 6 znaków).",
   "system_backups_recovery_key_needed": "Przed utworzeniem kopii zapasowych systemu należy skonfigurować klucz odzyskiwania.",
   "system_backups_reset_recovery_key": "Zresetuj klucz odzyskiwania",
+  "system_backups_reset_recovery_key_confirm_message": "Zostanie wygenerowany nowy klucz, który zastąpi obecny. Istniejące kopie zapasowe systemu można przywrócić wyłącznie przy użyciu klucza, za pomocą którego zostały utworzone.",
+  "system_backups_create_recovery_key": "Utwórz klucz odzyskiwania",
+  "system_backups_import_recovery_key": "Zaimportuj klucz odzyskiwania",
+  "system_backups_import_recovery_key_description": "Wprowadź istniejący klucz odzyskiwania, aby zapisać go jako klucz odzyskiwania tej instancji.",
+  "system_backups_import_recovery_key_alert": "Arcane posiada już klucz odtwarzający. Istniejące kopie zapasowe systemu można otworzyć wyłącznie za pomocą klucza, przy użyciu którego zostały utworzone, a dopóki istnieją, nie można zapisać innego klucza.",
   "system_backups_recovery_key_alert": "Zapisz ten klucz poza programem Arcane. Nie zostanie on już ponownie wyświetlony, a bez niego nie będzie można przywrócić kopii zapasowych systemu.",
   "system_backups_recovery_key_enter_description": "Wprowadź klucz odzyskiwania, który chroni tę kopię zapasową.",
   "system_backups_recovery_key_schedule_required": "Przed włączeniem tego harmonogramu należy skonfigurować klucz odzyskiwania.",
@@ -3523,5 +3530,10 @@
   "jobs_activity_summary": "Aktywność biegowa",
   "jobs_activity_output": "Wynik operacji",
   "jobs_attention_schedule_blocked": "To uruchomienie wymaga weryfikacji i blokuje kolejne uruchomienia tego zadania.",
-  "jobs_resolution_reason": "Powód uchwały"
+  "jobs_resolution_reason": "Powód uchwały",
+  "git_repository_url_placeholder": "https://github.com/user/repo.git",
+  "git_repository_token_url_change": "Adres URL repozytorium uległ zmianie. Przed zapisaniem wprowadź ponownie zapisany token lub wybierz opcję „Wyczyść zapisany token”.",
+  "git_repository_ssh_key_url_change": "Adres URL repozytorium uległ zmianie. Przed zapisaniem należy ponownie wprowadzić zapisany klucz SSH lub wybrać opcję „Wyczyść zapisany klucz SSH”.",
+  "git_repository_clear_token": "Wyczyść zapisany token",
+  "git_repository_clear_ssh_key": "Usuń zapisany klucz SSH"
 }
