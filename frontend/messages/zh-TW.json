@@ -1932,6 +1932,8 @@
   "git_managed_env_note": "環境變數檔案（.env）仍可在 Arcane 編輯以提供執行階段設定。",
   "git_from_git_repo": "從 Git 儲存庫",
   "git_sync_from_git": "從 Git 同步",
+  "git_open_project_in_repository": "在 Git 中開啟專案",
+  "git_edit_file_in_repository": "在 Git 中編輯檔案",
   "git_sync_file_limits_title": "Git 同步檔案限制",
   "git_sync_file_limits_description": "在 Git 同步期間，Arcane 複製套件庫檔案時會套用全環境上限。使用 0 移除上限。",
   "git_sync_max_files_label": "最大同步檔案數",
@@ -3355,6 +3357,11 @@
   "system_backups_recovery_key_required": "請輸入生成的恢復金鑰（8組，每組6個字元）。",
   "system_backups_recovery_key_needed": "在建立系統備份之前，請先設定還原金鑰。",
   "system_backups_reset_recovery_key": "重設復原金鑰",
+  "system_backups_reset_recovery_key_confirm_message": "系統將產生一組新金鑰，並取代現行金鑰。現有的系統備份只能使用當初建立備份時所用的金鑰來還原。",
+  "system_backups_create_recovery_key": "建立復原金鑰",
+  "system_backups_import_recovery_key": "匯入復原金鑰",
+  "system_backups_import_recovery_key_description": "請輸入現有的復原金鑰，以將其儲存為此執行個體的復原金鑰。",
+  "system_backups_import_recovery_key_alert": "Arcane 已經具備一個還原金鑰。現有的系統備份只能使用當初建立時所用的金鑰開啟，且在這些備份存在期間，無法儲存其他金鑰。",
   "system_backups_recovery_key_alert": "請將此金鑰儲存於 Arcane 之外。此金鑰將不再顯示，且若未持有此金鑰，您的系統備份將無法還原。",
   "system_backups_recovery_key_enter_description": "請輸入用於保護此備份的還原金鑰。",
   "system_backups_recovery_key_schedule_required": "在啟用此排程之前，請先設定一個復原金鑰。",
@@ -3523,5 +3530,10 @@
   "jobs_activity_summary": "跑步活動",
   "jobs_activity_output": "操作輸出",
   "jobs_attention_schedule_blocked": "此執行程序需要進行審查，並會阻礙此工作後續的執行。",
-  "jobs_resolution_reason": "決議理由"
+  "jobs_resolution_reason": "決議理由",
+  "git_repository_url_placeholder": "https://github.com/user/repo.git",
+  "git_repository_token_url_change": "儲存庫的 URL 已變更。請重新輸入已儲存的憑證，或在儲存前選取「清除已儲存的憑證」。",
+  "git_repository_ssh_key_url_change": "儲存庫的 URL 已變更。請重新輸入已儲存的 SSH 金鑰，或在儲存前選取「清除已儲存的 SSH 金鑰」。",
+  "git_repository_clear_token": "清除儲存的憑證",
+  "git_repository_clear_ssh_key": "清除儲存的 SSH 金鑰"
 }
