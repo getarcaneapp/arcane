@@ -1932,6 +1932,8 @@
   "git_managed_env_note": "O arquivo de ambiente (.env) ainda pode ser editado em Arcane para fornecer configuração de tempo de execução.",
   "git_from_git_repo": "Do Git Repo",
   "git_sync_from_git": "Sincronizar do Git",
+  "git_open_project_in_repository": "Abrir projeto no Git",
+  "git_edit_file_in_repository": "Editar arquivo no Git",
   "git_sync_file_limits_title": "Limites de arquivos do Git Sync",
   "git_sync_file_limits_description": "Aplique limites em todo o ambiente quando o Arcane copiar arquivos de repositório durante as sincronizações do Git. Use 0 para remover um limite.",
   "git_sync_max_files_label": "Máximo de arquivos sincronizados",
@@ -3355,6 +3357,11 @@
   "system_backups_recovery_key_required": "Digite a chave de recuperação gerada (8 grupos de 6 caracteres).",
   "system_backups_recovery_key_needed": "Configure uma chave de recuperação antes de criar backups do sistema.",
   "system_backups_reset_recovery_key": "Redefinir a chave de recuperação",
+  "system_backups_reset_recovery_key_confirm_message": "Uma nova chave será gerada e substituirá a atual. Os backups existentes do sistema só podem ser restaurados com a chave usada para criá-los.",
+  "system_backups_create_recovery_key": "Criar chave de recuperação",
+  "system_backups_import_recovery_key": "Importar chave de recuperação",
+  "system_backups_import_recovery_key_description": "Insira uma chave de recuperação existente para armazená-la como a chave de recuperação desta instância.",
+  "system_backups_import_recovery_key_alert": "O Arcane já possui uma chave de recuperação. Os backups existentes do sistema só podem ser abertos com a chave com a qual foram criados, e não é possível armazenar uma chave diferente enquanto eles existirem.",
   "system_backups_recovery_key_alert": "Salve essa chave fora do Arcane agora. Ela não será exibida novamente e, sem ela, os backups do seu sistema não poderão ser restaurados.",
   "system_backups_recovery_key_enter_description": "Digite a chave de recuperação que protege este backup.",
   "system_backups_recovery_key_schedule_required": "Configure uma chave de recuperação antes de ativar essa programação.",
@@ -3523,5 +3530,10 @@
   "jobs_activity_summary": "Atividade de corrida",
   "jobs_activity_output": "Saída operacional",
   "jobs_attention_schedule_blocked": "Essa execução precisa ser revisada e bloqueia as execuções posteriores dessa tarefa.",
-  "jobs_resolution_reason": "Motivo da resolução"
+  "jobs_resolution_reason": "Motivo da resolução",
+  "git_repository_url_placeholder": "https://github.com/user/repo.git",
+  "git_repository_token_url_change": "A URL do repositório foi alterada. Digite novamente o token salvo ou selecione “Limpar token salvo” antes de salvar.",
+  "git_repository_ssh_key_url_change": "A URL do repositório foi alterada. Digite novamente a chave SSH salva ou selecione “Limpar chave SSH salva” antes de salvar.",
+  "git_repository_clear_token": "Limpar o token armazenado",
+  "git_repository_clear_ssh_key": "Limpar a chave SSH armazenada"
 }
