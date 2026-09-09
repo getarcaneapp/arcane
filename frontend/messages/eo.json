@@ -1,4 +1,7 @@
 {
+  "hidden": "Kaŝita",
+  "editor_compose_hidden_detail": "Kaŝi de la listo de ujoj",
+  "editor_compose_hidden_info": "Boolea. Kaŝitaj ujoj estas defaŭlte ekskluditaj el la panelaj nombroj kaj kaŝitaj en la uja listo. Ebligu \"Montri kaŝitajn ujojn\" por malkaŝi ilin en la listo. La valoro je projekta nivelo estas la defaŭlto por ĉiu servo; valoroj je serva nivelo superregas ĝin.",
   "$schema": "https://inlang.com/schema/inlang-message-format",
   "layout_title": "Arcane",
   "accent_color": "Akcenta koloro",
