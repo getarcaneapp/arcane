@@ -1,4 +1,7 @@
 {
+  "hidden": "Verborgen",
+  "editor_compose_hidden_detail": "Verbergen in de containerlijst",
+  "editor_compose_hidden_info": "Booleaanse waarde. Verborgen containers worden standaard niet meegeteld in de tellingen op het dashboard en zijn standaard verborgen in de containerlijst. Schakel \"Verborgen containers weergeven\" in om ze in de lijst weer te geven. De waarde op projectniveau is de standaardinstelling voor elke service; waarden op serviceniveau hebben voorrang op deze standaardinstelling.",
   "$schema": "https://inlang.com/nl/schema/inlang-message-formaat",
   "layout_title": "Arcane",
   "accent_color": "Accent kleur",
