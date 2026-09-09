@@ -1,4 +1,7 @@
 {
+  "hidden": "Ukryte",
+  "editor_compose_hidden_detail": "Ukryj z listy kontenerów",
+  "editor_compose_hidden_info": "Wartość logiczna. Ukryte kontenery są domyślnie wykluczane z liczb wyświetlanych na pulpicie nawigacyjnym i ukrywane na liście kontenerów. Aby wyświetlić je na liście, należy włączyć opcję „Pokaż ukryte kontenery”. Wartość na poziomie projektu jest wartością domyślną dla każdej usługi; wartości na poziomie usługi mają pierwszeństwo przed tą wartością.",
   "$schema": "https://inlang.com/schema/inlang-message-format",
   "layout_title": "Arcane",
   "accent_color": "Kolor Akcentu",
