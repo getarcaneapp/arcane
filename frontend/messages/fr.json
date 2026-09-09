@@ -1932,6 +1932,8 @@
   "git_managed_env_note": "Le fichier d'environnement (.env) peut toujours être modifié dans Arcane pour définir la configuration d'exécution.",
   "git_from_git_repo": "Depuis un dépôt Git",
   "git_sync_from_git": "Synchroniser depuis Git",
+  "git_open_project_in_repository": "Ouvrir le projet dans Git",
+  "git_edit_file_in_repository": "Modifier un fichier dans Git",
   "git_sync_file_limits_title": "Limites de fichiers pour la synchronisation Git",
   "git_sync_file_limits_description": "Appliquer des plafonds à l'ensemble de l'environnement lorsqu'Arcane copie les fichiers du référentiel lors des synchronisations Git. Utilisez 0 pour supprimer un plafond.",
   "git_sync_max_files_label": "Nombre maximal de fichiers synchronisés",
@@ -3355,6 +3357,11 @@
   "system_backups_recovery_key_required": "Saisissez la clé de récupération générée (8 groupes de 6 caractères).",
   "system_backups_recovery_key_needed": "Configurez une clé de récupération avant de créer des sauvegardes du système.",
   "system_backups_reset_recovery_key": "Réinitialiser la clé de récupération",
+  "system_backups_reset_recovery_key_confirm_message": "Une nouvelle clé sera générée et remplacera la clé actuelle. Les sauvegardes existantes du système ne peuvent être restaurées qu'à l'aide de la clé utilisée lors de leur création.",
+  "system_backups_create_recovery_key": "Créer une clé de récupération",
+  "system_backups_import_recovery_key": "Importer la clé de récupération",
+  "system_backups_import_recovery_key_description": "Saisissez une clé de récupération existante pour l'enregistrer en tant que clé de récupération de cette instance.",
+  "system_backups_import_recovery_key_alert": "Arcane dispose déjà d’une clé de récupération. Les sauvegardes existantes du système ne peuvent être ouvertes qu’à l’aide de la clé avec laquelle elles ont été créées, et aucune autre clé ne peut être enregistrée tant qu’elles existent.",
   "system_backups_recovery_key_alert": "Enregistrez cette clé hors d'Arcane dès maintenant. Elle ne s'affichera plus, et sans elle, vos sauvegardes système ne pourront pas être restaurées.",
   "system_backups_recovery_key_enter_description": "Saisissez la clé de récupération qui protège cette sauvegarde.",
   "system_backups_recovery_key_schedule_required": "Configurez une clé de récupération avant d'activer cette planification.",
@@ -3523,5 +3530,10 @@
   "jobs_activity_summary": "Activité de course à pied",
   "jobs_activity_output": "Résultat de l'opération",
   "jobs_attention_schedule_blocked": "Cette exécution doit être vérifiée et bloque les exécutions suivantes de cette tâche.",
-  "jobs_resolution_reason": "Motif de la résolution"
+  "jobs_resolution_reason": "Motif de la résolution",
+  "git_repository_url_placeholder": "https://github.com/user/repo.git",
+  "git_repository_token_url_change": "L'URL du référentiel a changé. Saisissez à nouveau le jeton enregistré ou sélectionnez « Effacer le jeton enregistré » avant d'enregistrer.",
+  "git_repository_ssh_key_url_change": "L'URL du référentiel a changé. Saisissez à nouveau la clé SSH enregistrée ou sélectionnez « Effacer la clé SSH enregistrée » avant d'enregistrer.",
+  "git_repository_clear_token": "Effacer le jeton enregistré",
+  "git_repository_clear_ssh_key": "Supprimer la clé SSH enregistrée"
 }
