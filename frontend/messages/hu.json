@@ -1,4 +1,7 @@
 {
+  "hidden": "Rejtett",
+  "editor_compose_hidden_detail": "Elrejtés a konténerlistából",
+  "editor_compose_hidden_info": "Boolean. A rejtett konténerek alapértelmezés szerint nem szerepelnek a műszerfalon megjelenő számokban, és nem láthatók a konténerlistában. A „Rejtett konténerek megjelenítése” opció bekapcsolásával láthatóvá teheti őket a listában. A projektszintű érték minden szolgáltatás esetében az alapértelmezett; a szolgáltatási szintű értékek felülírják ezt.",
   "$schema": "https://inlang.com/schema/inlang-message-format",
   "layout_title": "Arcane",
   "accent_color": "Kiemelőszín",
