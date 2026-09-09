@@ -1,5 +1,4 @@
 import { m } from '#lib/paraglide/messages.js';
-import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 import type {
 	Project,
@@ -16,35 +15,29 @@ import type { DeployProjectOptions } from '#lib/types/project-deployment.js';
 import BaseAPIService from './api-service';
 
 class ProjectService extends BaseAPIService {
-	private async resolveEnvironmentId(environmentId?: string): Promise<string> {
-		return environmentId ?? (await environmentStore.getCurrentEnvironmentId());
-	}
-
-	async getProjects(options?: SearchPaginationSortRequest): Promise<Paginated<Project>> {
-		const envId = await this.resolveEnvironmentId();
-		return this.getProjectsForEnvironment(envId, options);
-	}
-
 	async getProjectsForEnvironment(environmentId: string, options?: SearchPaginationSortRequest): Promise<Paginated<Project>> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/environments/${environmentId}/projects`, { params });
-		return res.data;
+		const res = await this.api.get<Paginated<Omit<Project, 'environmentId'>>>(`/environments/${environmentId}/projects`, {
+			params
+		});
+		return { ...res.data, data: res.data.data.map((project) => ({ ...project, environmentId })) };
 	}
 
-	deployProject(projectId: string, mode: 'up' | 'redeploy', options?: DeployProjectOptions): Promise<Project>;
+	deployProject(envId: string, projectId: string, mode: 'up' | 'redeploy', options?: DeployProjectOptions): Promise<Project>;
 	deployProject(
+		envId: string,
 		projectId: string,
 		mode: 'up' | 'redeploy',
 		onLine: (data: unknown) => void,
 		options?: DeployProjectOptions
 	): Promise<Project>;
 	async deployProject(
+		envId: string,
 		projectId: string,
 		mode: 'up' | 'redeploy',
 		onLineOrOptions?: ((data: unknown) => void) | DeployProjectOptions,
 		maybeOptions?: DeployProjectOptions
 	): Promise<Project> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
 		const url = `/api/environments/${envId}/projects/${projectId}/${mode}`;
 		const onLine = typeof onLineOrOptions === 'function' ? onLineOrOptions : undefined;
 		const options = typeof onLineOrOptions === 'function' ? maybeOptions : onLineOrOptions;
@@ -55,22 +48,24 @@ class ProjectService extends BaseAPIService {
 		});
 
 		// The deploy stream doesn't return the project object; fetch fresh details.
-		return this.getProject(projectId);
+		return this.getProjectForEnvironment(envId, projectId);
 	}
 
-	async downProject(projectName: string): Promise<Project> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.handleResponse(this.api.post(`/environments/${envId}/projects/${projectName}/down`));
+	async downProject(envId: string, projectName: string): Promise<Project> {
+		const project = await this.handleResponse<Omit<Project, 'environmentId'>>(
+			this.api.post(`/environments/${envId}/projects/${projectName}/down`)
+		);
+		return { ...project, environmentId: envId };
 	}
 
 	async createProject(
+		envId: string,
 		projectName: string,
 		composeContent: string,
 		envContent?: string,
 		workspaceFiles: ProjectWorkspaceFileDraft[] = [],
 		tags: ProjectTag[] = []
 	): Promise<Project> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
 		const form = new FormData();
 		const uploads: File[] = [];
 		const fileChanges = workspaceFiles.map((file) => {
@@ -91,19 +86,16 @@ class ProjectService extends BaseAPIService {
 		);
 		form.append('manifest', JSON.stringify({ fileChanges }));
 		for (const file of uploads) form.append('files', file, file.name);
-		return this.handleResponse(this.api.post(`/environments/${envId}/projects`, form));
+		const project = await this.handleResponse<Omit<Project, 'environmentId'>>(
+			this.api.post(`/environments/${envId}/projects`, form)
+		);
+		return { ...project, environmentId: envId };
 	}
 
-	async checkUpdates(projectId: string): Promise<ProjectUpdateInfo> {
-		const envId = await this.resolveEnvironmentId();
+	async checkUpdates(envId: string, projectId: string): Promise<ProjectUpdateInfo> {
 		return this.handleResponse(
 			this.api.post(`/environments/${envId}/updater/projects/${encodeURIComponent(projectId)}/check`, {})
 		);
-	}
-
-	async getProject(projectId: string): Promise<Project> {
-		const envId = await this.resolveEnvironmentId();
-		return this.getProjectForEnvironment(envId, projectId);
 	}
 
 	async getProjectForEnvironment(environmentId: string, projectId: string): Promise<Project> {
@@ -119,15 +111,16 @@ class ProjectService extends BaseAPIService {
 			...summary,
 			...compose,
 			...runtime,
+			environmentId,
 			updateInfo: updates.updateInfo ?? compose.updateInfo ?? summary.updateInfo
 		};
 	}
 
-	private async getProjectSection(path: string): Promise<Project> {
-		const response = await this.handleResponse<{ project?: Project; success?: boolean } | Project>(
-			this.api.get(path, { cache: 'no-store' })
-		);
-		return 'project' in response && response.project ? response.project : (response as Project);
+	private async getProjectSection(path: string): Promise<Omit<Project, 'environmentId'>> {
+		const response = await this.handleResponse<
+			{ project?: Omit<Project, 'environmentId'>; success?: boolean } | Omit<Project, 'environmentId'>
+		>(this.api.get(path, { cache: 'no-store' }));
+		return 'project' in response && response.project ? response.project : (response as Omit<Project, 'environmentId'>);
 	}
 
 	private async readProjectStream(
@@ -164,11 +157,6 @@ class ProjectService extends BaseAPIService {
 		});
 	}
 
-	async getProjectStatusCounts(): Promise<ProjectStatusCounts> {
-		const envId = await this.resolveEnvironmentId();
-		return this.getProjectStatusCountsForEnvironment(envId);
-	}
-
 	async getProjectStatusCountsForEnvironment(environmentId: string): Promise<ProjectStatusCounts> {
 		const res = await this.api.get(`/environments/${environmentId}/projects/counts`);
 		return res.data.data;
@@ -179,23 +167,23 @@ class ProjectService extends BaseAPIService {
 	}
 
 	async updateProjectTag(
+		envId: string,
 		projectId: string,
 		name: string,
 		attached: boolean,
 		color?: ProjectTagColor
 	): Promise<{ tags: ProjectTag[]; activityId?: string }> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
 		return this.handleResponse(this.api.patch(`/environments/${envId}/projects/${projectId}/tags`, { name, attached, color }));
 	}
 
 	async updateProject(
+		envId: string,
 		projectId: string,
 		name?: string,
 		composeContent?: string,
 		envContent?: string,
 		overrideContent?: string
 	): Promise<Project> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
 		const payload: {
 			name?: string;
 			composeContent?: string;
@@ -214,11 +202,13 @@ class ProjectService extends BaseAPIService {
 		if (overrideContent !== undefined) {
 			payload.overrideContent = overrideContent;
 		}
-		return this.handleResponse(this.api.put(`/environments/${envId}/projects/${projectId}`, payload));
+		const project = await this.handleResponse<Omit<Project, 'environmentId'>>(
+			this.api.put(`/environments/${envId}/projects/${projectId}`, payload)
+		);
+		return { ...project, environmentId: envId };
 	}
 
-	async restartProject(projectId: string, services?: string[]): Promise<unknown> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async restartProject(envId: string, projectId: string, services?: string[]): Promise<unknown> {
 		let params: URLSearchParams | undefined;
 		if (services && services.length > 0) {
 			params = new URLSearchParams();
@@ -229,18 +219,15 @@ class ProjectService extends BaseAPIService {
 		return this.handleResponse(this.api.post(`/environments/${envId}/projects/${projectId}/restart`, undefined, { params }));
 	}
 
-	async archiveProject(projectId: string): Promise<void> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async archiveProject(envId: string, projectId: string): Promise<void> {
 		await this.handleResponse(this.api.post(`/environments/${envId}/projects/${projectId}/archive`));
 	}
 
-	async unarchiveProject(projectId: string): Promise<void> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async unarchiveProject(envId: string, projectId: string): Promise<void> {
 		await this.handleResponse(this.api.post(`/environments/${envId}/projects/${projectId}/unarchive`));
 	}
 
-	private async streamProjectPull(projectId: string, onLine?: (data: any) => void): Promise<void> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	private async streamProjectPull(envId: string, projectId: string, onLine?: (data: any) => void): Promise<void> {
 		const url = `/api/environments/${envId}/projects/${projectId}/pull`;
 
 		const res = await fetch(url, { method: 'POST' });
@@ -257,20 +244,22 @@ class ProjectService extends BaseAPIService {
 	}
 
 	buildProjectImages(
+		envId: string,
 		projectId: string,
 		options?: { services?: string[]; provider?: 'local' | 'depot'; push?: boolean; load?: boolean }
 	): Promise<void>;
 	buildProjectImages(
+		envId: string,
 		projectId: string,
 		options: { services?: string[]; provider?: 'local' | 'depot'; push?: boolean; load?: boolean } | undefined,
 		onLine: (data: any) => void
 	): Promise<void>;
 	async buildProjectImages(
+		envId: string,
 		projectId: string,
 		options?: { services?: string[]; provider?: 'local' | 'depot'; push?: boolean; load?: boolean },
 		onLine?: (data: any) => void
 	): Promise<void> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
 		const url = `/api/environments/${envId}/projects/${projectId}/build`;
 
 		await this.postProjectStream(url, options || {}, onLine, {
@@ -279,14 +268,13 @@ class ProjectService extends BaseAPIService {
 		});
 	}
 
-	pullProjectImages(projectId: string): Promise<void>;
-	pullProjectImages(projectId: string, onLine: (data: any) => void): Promise<void>;
-	async pullProjectImages(projectId: string, onLine?: (data: any) => void): Promise<void> {
-		await this.streamProjectPull(projectId, onLine);
+	pullProjectImages(envId: string, projectId: string): Promise<void>;
+	pullProjectImages(envId: string, projectId: string, onLine: (data: any) => void): Promise<void>;
+	async pullProjectImages(envId: string, projectId: string, onLine?: (data: any) => void): Promise<void> {
+		await this.streamProjectPull(envId, projectId, onLine);
 	}
 
-	async destroyProject(projectName: string, removeVolumes = false): Promise<void> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async destroyProject(envId: string, projectName: string, removeVolumes = false): Promise<void> {
 		await this.handleResponse(
 			this.api.delete(`/environments/${envId}/projects/${projectName}/destroy`, {
 				data: {

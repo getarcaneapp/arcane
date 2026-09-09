@@ -747,7 +747,7 @@ test.describe('New Compose Project Page', () => {
 		const projectName = `test-deploy-options-${Date.now()}`;
 
 		try {
-			await createProjectViaUI(page, projectName);
+			const projectId = await createProjectViaUI(page, projectName);
 
 			// Reset scroll so the floating header doesn't appear from stale scroll state
 			await page.mouse.wheel(0, -100000);
@@ -802,6 +802,7 @@ test.describe('New Compose Project Page', () => {
 			await page.getByRole('button', { name: 'Up', exact: true }).click();
 
 			const deployRequest = await deployRequestPromise;
+			expect(getPathname(deployRequest.url())).toBe(`${ROUTES.apiProjects}/${projectId}/up`);
 			const deployRequestBody = deployRequest.postDataJSON() as Record<string, unknown> | null;
 
 			await expect
@@ -836,7 +837,7 @@ test.describe('New Compose Project Page', () => {
 		const projectName = `test-redeploy-options-${Date.now()}`;
 
 		try {
-			await createProjectViaUI(page, projectName);
+			const projectId = await createProjectViaUI(page, projectName);
 
 			// Reset scroll so the floating header doesn't appear from stale scroll state
 			await page.mouse.wheel(0, -100000);
@@ -898,6 +899,9 @@ test.describe('New Compose Project Page', () => {
 			await dialog.getByRole('button', { name: 'Redeploy', exact: true }).click();
 
 			const redeployRequest = await redeployRequestPromise;
+			expect(getPathname(redeployRequest.url())).toBe(
+				`${ROUTES.apiProjects}/${projectId}/redeploy`
+			);
 			const redeployRequestBody = redeployRequest.postDataJSON() as Record<string, unknown> | null;
 
 			await expect

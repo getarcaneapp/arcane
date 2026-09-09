@@ -43,6 +43,7 @@
 	let { projects = $bindable(), requestOptions = $bindable(), updateInfoByRef = {}, onRefreshData }: Props = $props();
 
 	let selectedIds = $state<string[]>([]);
+	let selectedRows = $state<ProjectUpdateRow[]>([]);
 	let mobileFieldVisibility = $state<MobileFieldVisibility>({});
 	let updatingProjectIds = $state<Record<string, boolean>>({});
 	let bulkUpdating = $state(false);
@@ -120,7 +121,7 @@
 			setLoading: (loading) => {
 				updatingProjectIds = { ...updatingProjectIds, [item.projectId]: loading };
 			},
-			run: () => applyScopedUpdate('project', item.projectId),
+			run: () => applyScopedUpdate('project', item.projectId, item.project.environmentId),
 			failureMessage: m.updates_apply_all_failed(),
 			onSuccess: async (result) => {
 				summarizeUpdateResult(result);
@@ -130,12 +131,14 @@
 	}
 
 	function handleBulkUpdate(ids: string[]) {
+		const targets = new Map(selectedRows.filter((row) => ids.includes(row.id)).map((row) => [row.id, row.project]));
+		if (targets.size !== ids.length) return;
 		bulkConfirmAndRun({
 			ids,
 			title: m.updates_bulk_update_confirm_title({ count: ids.length }),
 			message: m.updates_bulk_update_confirm_message({ count: ids.length }),
 			confirmLabel: m.common_update(),
-			run: (id) => applyScopedUpdate('project', id).then(throwOnUpdateFailure),
+			run: (id) => applyScopedUpdate('project', id, targets.get(id)!.environmentId).then(throwOnUpdateFailure),
 			messages: {
 				success: (count) => m.updates_bulk_update_success({ count }),
 				partial: (success, total, failed) => m.updates_bulk_update_partial({ success, total, failed }),
@@ -148,7 +151,9 @@
 	}
 
 	const bulkActions = $derived<BulkAction[]>(
-		hasPermission('image-updates:check')
+		[...projects.data, ...selectedRows.map((row) => row.project)].some((project) =>
+			hasPermission('image-updates:check', project.environmentId)
+		)
 			? [
 					{
 						id: 'update',
@@ -156,7 +161,8 @@
 						action: 'update',
 						onClick: handleBulkUpdate,
 						loading: bulkUpdating,
-						disabled: bulkUpdating,
+						disabled:
+							bulkUpdating || selectedRows.some((row) => !hasPermission('image-updates:check', row.project.environmentId)),
 						icon: UpdateIcon
 					}
 				]
@@ -184,7 +190,7 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: ProjectUpdateRow })}
-	<IfPermitted perm="image-updates:check">
+	<IfPermitted perm="image-updates:check" envId={item.project.environmentId}>
 		<RowActionsMenu>
 			<DropdownMenu.Item onclick={() => handleUpdateProject(item)} disabled={!!updatingProjectIds[item.projectId]}>
 				{#if updatingProjectIds[item.projectId]}
@@ -234,6 +240,7 @@
 	items={tableItems}
 	bind:requestOptions
 	bind:selectedIds
+	bind:selectedItems={selectedRows}
 	bind:mobileFieldVisibility
 	onRefresh={async (options) => {
 		requestOptions = options;

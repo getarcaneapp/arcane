@@ -27,10 +27,10 @@
 	import { createMutation } from '@tanstack/svelte-query';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { isDepotBuildAvailable } from '#lib/utils/build-provider.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { Temporal } from 'temporal-polyfill';
 
 	type TargetType = 'container' | 'project';
+	type ActionTarget = Pick<Project, 'id' | 'environmentId'>;
 	type LoadingStates = {
 		start?: boolean;
 		stop?: boolean;
@@ -46,6 +46,7 @@
 
 	let {
 		id,
+		environmentId,
 		name,
 		type = 'container',
 		itemState = 'stopped',
@@ -65,6 +66,7 @@
 		beforeRemoveMenuItems
 	}: {
 		id: string;
+		environmentId: string;
 		name?: string;
 		type?: TargetType;
 		itemState?: string;
@@ -124,27 +126,35 @@
 	);
 
 	const startMutation = createMutation(() => ({
-		mutationKey: ['action', 'start', type, id],
-		mutationFn: () =>
+		mutationKey: ['action', 'start', type, environmentId, id],
+		mutationFn: ({ id, environmentId }: ActionTarget) =>
 			tryCatch(
 				type === 'container'
-					? containerService.startContainer(id)
-					: projectService.deployProject(id, 'up', deployOptionsStore.takeRequestOptions())
+					? containerService.startContainer(id, environmentId)
+					: projectService.deployProject(environmentId, id, 'up', deployOptionsStore.takeRequestOptions())
 			),
 		onMutate: () => setLoading('start', true),
 		onSettled: () => setLoading('start', false)
 	}));
 
 	const stopMutation = createMutation(() => ({
-		mutationKey: ['action', 'stop', type, id],
-		mutationFn: () => tryCatch(type === 'container' ? containerService.stopContainer(id) : projectService.downProject(id)),
+		mutationKey: ['action', 'stop', type, environmentId, id],
+		mutationFn: ({ id, environmentId }: ActionTarget) =>
+			tryCatch(
+				type === 'container' ? containerService.stopContainer(id, environmentId) : projectService.downProject(environmentId, id)
+			),
 		onMutate: () => setLoading('stop', true),
 		onSettled: () => setLoading('stop', false)
 	}));
 
 	const restartMutation = createMutation(() => ({
-		mutationKey: ['action', 'restart', type, id],
-		mutationFn: () => tryCatch(type === 'container' ? containerService.restartContainer(id) : projectService.restartProject(id)),
+		mutationKey: ['action', 'restart', type, environmentId, id],
+		mutationFn: ({ id, environmentId }: ActionTarget) =>
+			tryCatch(
+				type === 'container'
+					? containerService.restartContainer(id, environmentId)
+					: projectService.restartProject(environmentId, id)
+			),
 		onMutate: () => setLoading('restart', true),
 		onSettled: () => setLoading('restart', false)
 	}));
@@ -154,12 +164,13 @@
 	let redeployActivityId = $state<string | undefined>(undefined);
 
 	const redeployMutation = createMutation(() => ({
-		mutationKey: ['action', 'redeploy', type, id],
-		mutationFn: ({ watch = false }: { watch?: boolean } = {}) =>
+		mutationKey: ['action', 'redeploy', type, environmentId, id],
+		mutationFn: ({ target: { id, environmentId }, watch = false }: { target: ActionTarget; watch?: boolean }) =>
 			tryCatch(
 				(type === 'container'
-					? containerService.redeployContainer(id)
+					? containerService.redeployContainer(id, environmentId)
 					: projectService.deployProject(
+							environmentId,
 							id,
 							'redeploy',
 							(frame) => {
@@ -181,19 +192,19 @@
 	}));
 
 	const removeMutation = createMutation(() => ({
-		mutationKey: ['action', 'remove', type, id],
-		mutationFn: ({ removeVolumes }: { removeVolumes: boolean }) =>
+		mutationKey: ['action', 'remove', type, environmentId, id],
+		mutationFn: ({ target: { id, environmentId }, removeVolumes }: { target: ActionTarget; removeVolumes: boolean }) =>
 			tryCatch(
 				type === 'container'
-					? containerService.deleteContainer(id, { volumes: removeVolumes })
-					: projectService.destroyProject(id, removeVolumes)
+					? containerService.deleteContainer(id, { volumes: removeVolumes, environmentId })
+					: projectService.destroyProject(environmentId, id, removeVolumes)
 			),
 		onMutate: () => setLoading('remove', true),
 		onSettled: () => setLoading('remove', false)
 	}));
 
 	const refreshMutation = createMutation(() => ({
-		mutationKey: ['action', 'refresh', id],
+		mutationKey: ['action', 'refresh', environmentId, id],
 		mutationFn: () => tryCatch(Promise.resolve(onRefresh?.())),
 		onMutate: () => setLoading('refresh', true),
 		onSettled: () => setLoading('refresh', false)
@@ -203,10 +214,10 @@
 	const projectHasBuildDirective = $derived(type === 'project' && hasBuildDirective);
 
 	// Per-action RBAC gating. Each button hides if the caller lacks the
-	// corresponding permission on the currently-selected environment. Project
+	// corresponding permission on the resource's environment. Project
 	// pull / build / redeploy all share the `projects:deploy` permission since
 	// they're stages of the deploy flow.
-	const currentEnvId = $derived(environmentStore.selected?.id);
+	const currentEnvId = $derived(environmentId);
 	const canStart = $derived(
 		type === 'container' ? hasPermission('containers:start', currentEnvId) : hasPermission('projects:deploy', currentEnvId)
 	);
@@ -265,6 +276,7 @@
 	}
 
 	function confirmAction(action: string) {
+		const target = { id, environmentId };
 		if (action === 'remove') {
 			openConfirmDialog({
 				title: type === 'project' ? m.compose_destroy() : m.common_confirm_removal_title(),
@@ -278,7 +290,7 @@
 					action: async (checkboxStates) => {
 						const removeVolumes = checkboxStates['removeVolumes'] === true;
 
-						const result = await removeMutation.mutateAsync({ removeVolumes });
+						const result = await removeMutation.mutateAsync({ target, removeVolumes });
 						await handleApiResultWithCallbacks({
 							result,
 							message: m.common_action_failed_with_type({
@@ -313,6 +325,7 @@
 	}
 
 	function confirmRedeploy(watch: boolean) {
+		const target = { id, environmentId };
 		openConfirmDialog({
 			title: type === 'container' ? m.container_confirm_redeploy_title() : m.common_confirm_redeploy_title(),
 			message: type === 'container' ? m.container_confirm_redeploy_message() : m.common_confirm_redeploy_message(),
@@ -323,7 +336,7 @@
 					if (watch) {
 						operationWatchStore.start(`${m.common_redeploy()} — ${name ?? id}`);
 					}
-					const result = await redeployMutation.mutateAsync({ watch });
+					const result = await redeployMutation.mutateAsync({ target, watch });
 					if (watch && result.error) {
 						operationWatchStore.fail(
 							result.error.message || m.common_action_failed_with_type({ action: m.common_redeploy(), type })
@@ -331,7 +344,7 @@
 						return;
 					}
 					if (watch) {
-						enterInteractiveWatchInternal(operationStartedAt);
+						enterInteractiveWatchInternal(target, operationStartedAt);
 					}
 					await handleApiResultWithCallbacks({
 						result,
@@ -360,7 +373,7 @@
 	}
 
 	async function handleStart() {
-		const result = await startMutation.mutateAsync();
+		const result = await startMutation.mutateAsync({ id, environmentId });
 		await handleApiResultWithCallbacks({
 			result,
 			message: m.common_action_failed_with_type({ action: m.common_start(), type }),
@@ -372,6 +385,7 @@
 	}
 
 	async function handleDeploy(options?: DeployProjectOptions, watch = false) {
+		const target = { id, environmentId };
 		setLoading('start', true);
 
 		const operationStartedAt = Math.floor(Temporal.Now.instant().epochMilliseconds / 1000);
@@ -383,13 +397,14 @@
 			const operationResult1 = await tryCatch(
 				(async () => {
 					await projectService.deployProject(
-						id,
+						target.environmentId,
+						target.id,
 						'up',
 						watch ? (frame: unknown) => operationWatchStore.onLine(frame) : () => {},
 						options ?? deployOptionsStore.takeRequestOptions()
 					);
 					if (watch) {
-						enterInteractiveWatchInternal(operationStartedAt);
+						enterInteractiveWatchInternal(target, operationStartedAt);
 					}
 					await refreshAll();
 					itemState = 'running';
@@ -416,17 +431,17 @@
 	// output is followed by the containers' live logs — everything they wrote
 	// since the operation began — and dismissing the dialog is the Ctrl-C:
 	// the project is brought down.
-	function enterInteractiveWatchInternal(operationStartedAt: number) {
+	function enterInteractiveWatchInternal(target: ActionTarget, operationStartedAt: number) {
 		operationWatchStore.append(`Attaching to ${name ?? id}`);
-		const detach = attachProjectLogsToWatch(id, operationStartedAt);
+		const detach = attachProjectLogsToWatch(target.environmentId, target.id, operationStartedAt);
 		operationWatchStore.setOnClose(() => {
 			detach();
-			void handleStop();
+			void handleStop(target);
 		});
 	}
 
-	async function handleStop() {
-		const result = await stopMutation.mutateAsync();
+	async function handleStop(target: ActionTarget = { id, environmentId }) {
+		const result = await stopMutation.mutateAsync(target);
 		await handleApiResultWithCallbacks({
 			result,
 			message: m.common_action_failed_with_type({ action: m.common_stop(), type }),
@@ -445,7 +460,7 @@
 	}
 
 	async function handleRestart() {
-		const result = await restartMutation.mutateAsync();
+		const result = await restartMutation.mutateAsync({ id, environmentId });
 		await handleApiResultWithCallbacks({
 			result,
 			message: m.common_action_failed_with_type({ action: m.common_restart(), type }),
@@ -473,7 +488,11 @@
 		try {
 			const operationResult2 = await tryCatch(
 				(async () => {
-					await projectService.pullProjectImages(id, watch ? (frame: unknown) => operationWatchStore.onLine(frame) : () => {});
+					await projectService.pullProjectImages(
+						environmentId,
+						id,
+						watch ? (frame: unknown) => operationWatchStore.onLine(frame) : () => {}
+					);
 					await refreshAll();
 					onActionComplete(itemState);
 				})()
@@ -501,6 +520,7 @@
 				(async () => {
 					const buildProvider = projectBuildProvider;
 					await projectService.buildProjectImages(
+						environmentId,
 						id,
 						{
 							provider: buildProvider,
@@ -680,7 +700,7 @@
 					{/if}
 				{:else if isRunning}
 					{#if canStop}
-						<DropdownMenu.Item onclick={handleStop} disabled={uiLoading.stop}>
+						<DropdownMenu.Item onclick={() => handleStop()} disabled={uiLoading.stop}>
 							{type === 'project' ? m.common_down() : m.common_stop()}
 						</DropdownMenu.Item>
 					{/if}

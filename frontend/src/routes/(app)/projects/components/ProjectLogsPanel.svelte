@@ -8,10 +8,12 @@
 
 	let {
 		projectId,
+		environmentId,
 		autoScroll = $bindable(),
 		isRunning = true
 	}: {
 		projectId: string;
+		environmentId: string;
 		autoScroll: boolean;
 		isRunning?: boolean;
 	} = $props();
@@ -101,6 +103,7 @@
 	</Card.Header>
 	<Card.Content class="flex min-h-0 flex-1 flex-col p-0">
 		<LogViewer
+			{environmentId}
 			class="min-h-0 flex-1"
 			searchTerm={logSearchTerm}
 			bind:this={viewer}

@@ -125,7 +125,7 @@
 				projectsToUpdate.map(async (proj) => {
 					// deployProject with pullPolicy 'always' already pulls fresh images,
 					// so no separate pullProjectImages call is needed.
-					await projectService.deployProject(proj.id, 'up', { pullPolicy: 'always' });
+					await projectService.deployProject(proj.environmentId, proj.id, 'up', { pullPolicy: 'always' });
 					return proj.name;
 				})
 			);
@@ -257,22 +257,24 @@
 <ResourcePageLayout title={m.projects_title()} subtitle={m.compose_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
 		{#if projects}
-			<ProjectsTable
-				{projects}
-				bind:selectedIds
-				requestOptions={projectRequestOptions}
-				{showArchived}
-				availableTags={projectTags}
-				onToggleArchived={toggleArchived}
-				onRefreshData={async (options) => {
-					const requestedEnvId = envId;
-					baseProjectRequestOptions = withArchivedFilter(options, showArchived);
-					await Promise.all([projectsQuery.refetch(), projectStatusCountsQuery.refetch()]);
-					if (requestedEnvId !== envId) {
-						selectedIds = [];
-					}
-				}}
-			/>
+			{#key envId}
+				<ProjectsTable
+					{projects}
+					bind:selectedIds
+					requestOptions={projectRequestOptions}
+					{showArchived}
+					availableTags={projectTags}
+					onToggleArchived={toggleArchived}
+					onRefreshData={async (options) => {
+						const requestedEnvId = envId;
+						baseProjectRequestOptions = withArchivedFilter(options, showArchived);
+						await Promise.all([projectsQuery.refetch(), projectStatusCountsQuery.refetch()]);
+						if (requestedEnvId !== envId) {
+							selectedIds = [];
+						}
+					}}
+				/>
+			{/key}
 		{/if}
 	{/snippet}
 </ResourcePageLayout>

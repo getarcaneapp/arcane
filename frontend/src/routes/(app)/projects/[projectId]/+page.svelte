@@ -53,7 +53,6 @@
 	import { projectWorkspaceService } from '#lib/services/project-workspace-service.js';
 	import settingsStore from '#lib/stores/config-store.js';
 	import { gitOpsSyncService } from '#lib/services/gitops-sync-service.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { RefreshIcon } from '#lib/icons/index.js';
@@ -103,7 +102,7 @@
 		archiving: false
 	});
 
-	const envId = $derived(environmentStore.selected?.id || '0');
+	const envId = $derived(data.project.environmentId);
 	const canUpdateProject = $derived(hasPermission('projects:update', envId));
 	const canViewProjectLogs = $derived(hasPermission('projects:logs', envId));
 	// Project lifecycle permissions are evaluated per-button inside
@@ -137,7 +136,7 @@
 	const availableProjectTags = $derived(projectTagsQuery.data ?? []);
 
 	async function handleProjectTagToggle(name: string, attached: boolean, color: ProjectTagColor) {
-		const response = await projectService.updateProjectTag(projectId, name, attached, color);
+		const response = await projectService.updateProjectTag(envId, projectId, name, attached, color);
 		queryClient.setQueryData<Project>(queryKeys.projects.detail(envId, projectId), (current) =>
 			current ? { ...current, tags: response.tags } : current
 		);
@@ -604,7 +603,7 @@
 	}
 
 	async function syncProjectQueries(updatedProject: Project) {
-		const currentEnvId = envId ?? (await environmentStore.getCurrentEnvironmentId());
+		const currentEnvId = updatedProject.environmentId;
 
 		// The save response is slim (no directory walks), so merge it into the
 		// cached detail instead of replacing it wholesale.
@@ -619,10 +618,10 @@
 	}
 
 	const checkProjectUpdatesMutation = createMutation(() => ({
-		mutationKey: queryKeys.projects.detailCheckUpdates(envId ?? '0', projectId),
-		mutationFn: () => projectService.checkUpdates(projectId),
+		mutationKey: queryKeys.projects.detailCheckUpdates(envId, projectId),
+		mutationFn: () => projectService.checkUpdates(envId, projectId),
 		onSuccess: async (result) => {
-			const currentEnvId = envId ?? (await environmentStore.getCurrentEnvironmentId());
+			const currentEnvId = envId;
 			const firstError = result.errorMessage?.trim();
 			const hasErrors = !!firstError;
 			if (hasErrors) {
@@ -645,7 +644,7 @@
 		if (!project?.id) return;
 		if (lastPrefsProjectId === project.id) return;
 
-		const prefsStorageKey = `arcane.compose.ui:${project.id}`;
+		const prefsStorageKey = `arcane.compose.ui:${project.environmentId}:${project.id}`;
 		const hadStoredPrefs = sessionStorage.getItem(prefsStorageKey) !== null;
 		// The tree/classic auto-detect needs the lazily loaded workspace; without
 		// stored prefs, wait for its query to settle before finalizing.
@@ -756,6 +755,7 @@
 					}
 
 					const updatedProject = await projectService.updateProject(
+						envId,
 						projectId,
 						namePayload,
 						composePayload,
@@ -800,7 +800,7 @@
 		isLoading.archiving = true;
 		try {
 			const result = await tryCatch(
-				archiving ? projectService.archiveProject(project.id) : projectService.unarchiveProject(project.id)
+				archiving ? projectService.archiveProject(envId, project.id) : projectService.unarchiveProject(envId, project.id)
 			);
 			await handleApiResultWithCallbacks({
 				result,
@@ -808,7 +808,7 @@
 				onSuccess: async () => {
 					toast.success(archiving ? m.compose_archive_success() : m.compose_unarchive_success());
 					await refreshProjectDetails();
-					const currentEnvId = envId ?? (await environmentStore.getCurrentEnvironmentId());
+					const currentEnvId = envId;
 					await Promise.all([
 						queryClient.invalidateQueries({ queryKey: ['projects', currentEnvId] }),
 						queryClient.invalidateQueries({ queryKey: queryKeys.projects.statusCounts(currentEnvId) })
@@ -837,7 +837,7 @@
 	type ProjectWorkspaceSource = 'include' | 'directory' | 'workspace';
 
 	function getProjectWorkspaceCacheKey(projectId: string, kind: ProjectWorkspaceSource, relativePath: string): string {
-		return `${projectId}:${kind}:${relativePath}`;
+		return `${envId}:${projectId}:${kind}:${relativePath}`;
 	}
 
 	function updateLoadedProjectWorkspaceSource(kind: ProjectWorkspaceSource, relativePath: string, content: string) {
@@ -1303,7 +1303,7 @@
 	async function refreshProjectDetails(options: RefreshProjectDetailsOptions = {}) {
 		if (!projectId) return;
 		await handleApiResultWithCallbacks({
-			result: await tryCatch(projectService.getProject(projectId)),
+			result: await tryCatch(projectService.getProjectForEnvironment(envId, projectId)),
 			message: m.common_refresh_failed({ resource: m.project() }),
 			onSuccess: async (updatedProject) => {
 				if (options.forceRebaseDraft || !hasChanges) {
@@ -1366,7 +1366,7 @@
 			validationMode: 'compose',
 			error: $inputs.composeContent.error ?? undefined,
 			readOnly: !canEditCompose,
-			fileId: `project:${projectId}:compose`,
+			fileId: `project:${envId}:${projectId}:compose`,
 			originalValue: serverComposeContent,
 			enableDiff: true,
 			editorContext: codeEditorContext
@@ -1380,7 +1380,7 @@
 			validationMode: 'compose',
 			error: $inputs.overrideContent.error ?? undefined,
 			readOnly: !canEditOverride,
-			fileId: `project:${projectId}:override`,
+			fileId: `project:${envId}:${projectId}:override`,
 			originalValue: serverOverrideContent,
 			enableDiff: true,
 			editorContext: codeEditorContext
@@ -1394,7 +1394,7 @@
 			validationMode: 'env',
 			error: $inputs.envContent.error ?? undefined,
 			readOnly: !canEditEnv,
-			fileId: `project:${projectId}:env`,
+			fileId: `project:${envId}:${projectId}:env`,
 			originalValue: serverEnvContent,
 			enableDiff: true,
 			editorContext: codeEditorContext
@@ -1560,7 +1560,7 @@
 			readOnly={!canEditProjectWorkspace}
 			bind:hasErrors={projectWorkspaceHasErrors[relativePath]}
 			bind:validationReady={projectWorkspaceValidationReady[relativePath]}
-			fileId={`project:${projectId}:file:${relativePath}`}
+			fileId={`project:${envId}:${projectId}:file:${relativePath}`}
 			originalValue={loadedProjectWorkspaceContents[relativePath] ?? ''}
 			enableDiff={true}
 			editorContext={codeEditorContext}
@@ -1677,6 +1677,7 @@
 				>
 					{#snippet first()}
 						<ProjectServicesPanel
+							environmentId={project.environmentId}
 							services={project.runtimeServices}
 							{projectId}
 							updateInfoByRef={project.updateInfo?.updateInfoByRef}
@@ -1686,6 +1687,7 @@
 					{#snippet second()}
 						<div class="flex h-full min-h-0 flex-col overflow-hidden">
 							<ProjectsLogsPanel
+								environmentId={project.environmentId}
 								projectId={project.id}
 								bind:autoScroll={autoScrollStackLogs}
 								isRunning={project.status?.toLowerCase().includes('running')}
@@ -1697,6 +1699,7 @@
 		{:else}
 			<div class="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-card">
 				<ProjectServicesPanel
+					environmentId={project.environmentId}
 					services={project.runtimeServices}
 					{projectId}
 					updateInfoByRef={project.updateInfo?.updateInfoByRef}
@@ -1726,7 +1729,7 @@
 			readOnly={sourceLocked}
 			bind:hasErrors={includeFilesHasErrors[includeFile.relativePath]}
 			bind:validationReady={includeFilesValidationReady[includeFile.relativePath]}
-			fileId={`project:${projectId}:include:${includeFile.relativePath}`}
+			fileId={`project:${envId}:${projectId}:include:${includeFile.relativePath}`}
 			originalValue={serverIncludeFiles[includeFile.relativePath] ?? ''}
 			enableDiff={true}
 			editorContext={codeEditorContext}
@@ -2001,7 +2004,7 @@
 					updateInfo={project.updateInfo}
 					onCheck={handleCheckProjectUpdates}
 					checking={checkProjectUpdatesMutation.isPending}
-					disabled={!!project.isArchived}
+					disabled={!!project.isArchived || !hasPermission('image-updates:check', project.environmentId)}
 				/>
 			</div>
 
@@ -2076,7 +2079,7 @@
 						loadingLabel={m.common_saving()}
 					/>
 				{/if}
-				<IfPermitted perm="projects:archive">
+				<IfPermitted perm="projects:archive" {envId}>
 					<ArcaneButton
 						action="archive"
 						loading={isLoading.archiving}
@@ -2087,6 +2090,7 @@
 					/>
 				</IfPermitted>
 				<ActionButtons
+					environmentId={project.environmentId}
 					id={project.id}
 					name={project.name}
 					type="project"

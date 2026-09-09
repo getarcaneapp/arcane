@@ -268,18 +268,13 @@
 		const includes = proj.includeFiles ?? [];
 		if (includes.length === 0) return null;
 
-		const envId = await tryCatch(environmentStore.getCurrentEnvironmentId()).then((result) =>
-			result.error ? null : result.data
-		);
-		if (!envId) return null;
-
 		for (const f of includes) {
 			if (f.content && hasServiceInContent(f.content, svcName)) {
 				return { includeFile: f };
 			}
 			const sourceResult = await tryCatch(
 				(async () => {
-					const loaded = await projectWorkspaceService.getWorkspaceFile(proj.id, f.relativePath, envId);
+					const loaded = await projectWorkspaceService.getWorkspaceFile(proj.id, f.relativePath, proj.environmentId);
 					if (loaded?.content && hasServiceInContent(loaded.content, svcName)) {
 						return { includeFile: { ...f, content: loaded.content } };
 					}
@@ -601,6 +596,7 @@
 		{#snippet headerActions()}
 			<div class="container-detail-actions">
 				<ActionButtons
+					environmentId={currentEnvId}
 					id={container.id}
 					name={containerDisplayName}
 					type="container"

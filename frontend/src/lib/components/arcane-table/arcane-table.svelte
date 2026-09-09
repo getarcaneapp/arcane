@@ -55,6 +55,7 @@
 		mobileFields = [],
 		mobileFieldVisibility = $bindable<Record<string, boolean>>({}),
 		selectedIds = $bindable<string[]>([]),
+		selectedItems = $bindable<TData[]>([]),
 		bulkActions = [],
 		persistKey,
 		customViewOptions,
@@ -90,6 +91,7 @@
 		mobileFields?: FieldSpec[];
 		mobileFieldVisibility?: Record<string, boolean>;
 		selectedIds?: string[];
+		selectedItems?: TData[];
 		bulkActions?: BulkAction[];
 		persistKey?: string;
 		customViewOptions?: Snippet;
@@ -150,6 +152,15 @@
 	const isMobile = new IsMobile();
 	const scrollPositions = { desktop: { top: 0, left: 0 }, mobile: { top: 0, left: 0 } };
 	const selectedIdSet = $derived(new Set(selectedIds ?? []));
+
+	$effect(() => {
+		// Keep selected resources when pagination replaces the visible rows.
+		const byId = new Map([...untrack(() => selectedItems), ...(items.data ?? [])].map((item) => [item.id, item]));
+		selectedItems = (selectedIds ?? []).flatMap((id) => {
+			const item = byId.get(id);
+			return item ? [item] : [];
+		});
+	});
 
 	function restoreScroll(node: HTMLElement, view: keyof typeof scrollPositions) {
 		const position = scrollPositions[view];
