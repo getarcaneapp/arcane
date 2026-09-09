@@ -1932,6 +1932,8 @@
   "git_managed_env_note": "Arcane'de, çalışma zamanı yapılandırması sağlamak üzere ortam dosyası (.env) hala düzenlenebilir.",
   "git_from_git_repo": "Git deposundan",
   "git_sync_from_git": "Git üzerinden senkron et",
+  "git_open_project_in_repository": "Git'te Projeyi Aç",
+  "git_edit_file_in_repository": "Git'te Dosyayı Düzenle",
   "git_sync_file_limits_title": "Git Senkronizasyonu Dosya Sınırları",
   "git_sync_file_limits_description": "Git senkronizasyonu sırasında Arcane'in depo dosyalarını kopyalarken ortam genelinde sınırlamalar uygulayın. Sınırı kaldırmak için 0 değerini kullanın.",
   "git_sync_max_files_label": "Senkron Edilen Dosyaların Maksimum Sayısı",
@@ -3355,6 +3357,11 @@
   "system_backups_recovery_key_required": "Oluşturulan kurtarma anahtarını (6 karakterden oluşan 8 grup) girin.",
   "system_backups_recovery_key_needed": "Sistem yedeklemelerini oluşturmadan önce bir kurtarma anahtarı ayarlayın.",
   "system_backups_reset_recovery_key": "Kurtarma anahtarını sıfırla",
+  "system_backups_reset_recovery_key_confirm_message": "Yeni bir anahtar oluşturulacak ve mevcut anahtarın yerini alacaktır. Mevcut sistem yedekleri, yalnızca oluşturuldukları anahtarla geri yüklenebilir.",
+  "system_backups_create_recovery_key": "Kurtarma anahtarı oluştur",
+  "system_backups_import_recovery_key": "Kurtarma anahtarını içe aktar",
+  "system_backups_import_recovery_key_description": "Bu örneğin kurtarma anahtarı olarak kaydetmek üzere mevcut bir kurtarma anahtarı girin.",
+  "system_backups_import_recovery_key_alert": "Arcane’de halihazırda bir kurtarma anahtarı bulunmaktadır. Mevcut sistem yedekleri, yalnızca oluşturuldukları anahtarla açılabilir ve bu yedekler mevcut olduğu sürece farklı bir anahtar kaydedilemez.",
   "system_backups_recovery_key_alert": "Bu anahtarı artık Arcane dışında bir yere kaydedin. Bu anahtar bir daha gösterilmeyecek ve bu anahtar olmadan sistem yedekleriniz geri yüklenemez.",
   "system_backups_recovery_key_enter_description": "Bu yedeği koruyan kurtarma anahtarını girin.",
   "system_backups_recovery_key_schedule_required": "Bu zamanlamayı etkinleştirmeden önce bir kurtarma anahtarı yapılandırın.",
@@ -3523,5 +3530,10 @@
   "jobs_activity_summary": "Etkinliği çalıştır",
   "jobs_activity_output": "Çalışma çıkışı",
   "jobs_attention_schedule_blocked": "Bu işin incelenmesi gerekiyor ve bu işin sonraki çalıştırmalarını engelliyor.",
-  "jobs_resolution_reason": "Karar nedeni"
+  "jobs_resolution_reason": "Karar nedeni",
+  "git_repository_url_placeholder": "https://github.com/user/repo.git",
+  "git_repository_token_url_change": "Depo URL'si değişti. Kaydetmeden önce kayıtlı jetonu yeniden girin veya \"Kayıtlı jetonu sil\" seçeneğini seçin.",
+  "git_repository_ssh_key_url_change": "Depo URL’si değişti. Kaydetmeden önce kayıtlı SSH anahtarını yeniden girin veya “Kayıtlı SSH anahtarını sil” seçeneğini seçin.",
+  "git_repository_clear_token": "Kaydedilmiş jetonu sil",
+  "git_repository_clear_ssh_key": "Kaydedilmiş SSH anahtarını sil"
 }
