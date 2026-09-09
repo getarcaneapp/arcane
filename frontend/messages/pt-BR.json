@@ -1,4 +1,7 @@
 {
+  "hidden": "Oculto",
+  "editor_compose_hidden_detail": "Ocultar da lista de contêineres",
+  "editor_compose_hidden_info": "Booleano. Os contêineres ocultos são excluídos das contagens do painel e ocultados da lista de contêineres por padrão. Ative a opção “Mostrar contêineres ocultos” para exibi-los na lista. O valor no nível do projeto é o padrão para todos os serviços; os valores no nível do serviço têm prioridade sobre ele.",
   "$schema": "https://inlang.com/schema/inlang-message-format",
   "layout_title": "Arcane",
   "accent_color": "Cor de destaque",
