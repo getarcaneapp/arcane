@@ -1,4 +1,7 @@
 {
+  "hidden": "隐藏",
+  "editor_compose_hidden_detail": "从容器列表中隐藏",
+  "editor_compose_hidden_info": "布尔值。默认情况下，隐藏的容器不会计入仪表盘的统计数据，也不会显示在容器列表中。启用“显示隐藏的容器”选项可在列表中显示这些容器。项目级设置为所有服务的默认值；服务级设置将覆盖该项目级设置。",
   "$schema": "https://inlang.com/schema/inlang-message-format",
   "layout_title": "Arcane",
   "accent_color": "亮度颜色",
