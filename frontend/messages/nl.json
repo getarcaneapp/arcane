@@ -1932,6 +1932,8 @@
   "git_managed_env_note": "Het omgevingsbestand (.env) kan nog steeds in Arcane worden bewerkt om runtime configuratie te bieden.",
   "git_from_git_repo": "Van Git Repo",
   "git_sync_from_git": "Synchroniseren vanuit Git",
+  "git_open_project_in_repository": "Project openen in Git",
+  "git_edit_file_in_repository": "Bestand bewerken in Git",
   "git_sync_file_limits_title": "Git Sync Bestandslimieten",
   "git_sync_file_limits_description": "Pas omgevingsbrede limieten toe als Arcane repository bestanden kopieert tijdens Git syncs. Gebruik 0 om een limiet te verwijderen.",
   "git_sync_max_files_label": "Max. gesynchroniseerde bestanden",
@@ -3355,6 +3357,11 @@
   "system_backups_recovery_key_required": "Voer de gegenereerde herstelsleutel in (8 groepen van 6 tekens).",
   "system_backups_recovery_key_needed": "Stel een herstelsleutel in voordat u systeemback-ups maakt.",
   "system_backups_reset_recovery_key": "Herstelsleutel opnieuw instellen",
+  "system_backups_reset_recovery_key_confirm_message": "Er wordt een nieuwe sleutel gegenereerd, die de huidige vervangt. Bestaande systeemback-ups kunnen alleen worden hersteld met de sleutel waarmee ze zijn gemaakt.",
+  "system_backups_create_recovery_key": "Herstelsleutel aanmaken",
+  "system_backups_import_recovery_key": "Herstelsleutel importeren",
+  "system_backups_import_recovery_key_description": "Voer een bestaande herstelsleutel in om deze op te slaan als de herstelsleutel van deze instantie.",
+  "system_backups_import_recovery_key_alert": "Arcane beschikt al over een herstelsleutel. Bestaande systeemback-ups kunnen alleen worden geopend met de sleutel waarmee ze zijn aangemaakt, en zolang ze bestaan, kan er geen andere sleutel worden opgeslagen.",
   "system_backups_recovery_key_alert": "Sla deze sleutel nu buiten Arcane op. Hij wordt niet meer weergegeven en zonder deze sleutel kunnen je systeemback-ups niet worden hersteld.",
   "system_backups_recovery_key_enter_description": "Voer de herstelsleutel in waarmee deze back-up is beveiligd.",
   "system_backups_recovery_key_schedule_required": "Stel een herstelsleutel in voordat u dit schema inschakelt.",
@@ -3523,5 +3530,10 @@
   "jobs_activity_summary": "Activiteit uitvoeren",
   "jobs_activity_output": "Werkingsuitgang",
   "jobs_attention_schedule_blocked": "Deze run moet worden gecontroleerd en blokkeert latere runs van deze taak.",
-  "jobs_resolution_reason": "Reden voor het besluit"
+  "jobs_resolution_reason": "Reden voor het besluit",
+  "git_repository_url_placeholder": "https://github.com/user/repo.git",
+  "git_repository_token_url_change": "De URL van de repository is gewijzigd. Voer het opgeslagen token opnieuw in of selecteer ‘Opgeslagen token wissen’ voordat u opslaat.",
+  "git_repository_ssh_key_url_change": "De URL van de repository is gewijzigd. Voer de opgeslagen SSH-sleutel opnieuw in of selecteer ‘Opgeslagen SSH-sleutel wissen’ voordat u opslaat.",
+  "git_repository_clear_token": "Opgeslagen token wissen",
+  "git_repository_clear_ssh_key": "Opgeslagen SSH-sleutel wissen"
 }
