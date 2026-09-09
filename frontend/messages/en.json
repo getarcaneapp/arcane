@@ -3524,5 +3524,10 @@
 	"jobs_activity_summary": "Run activity",
 	"jobs_activity_output": "Operation output",
 	"jobs_attention_schedule_blocked": "This run needs review and blocks later runs of this job.",
-	"jobs_resolution_reason": "Resolution reason"
+	"jobs_resolution_reason": "Resolution reason",
+  "git_repository_url_placeholder": "https://github.com/user/repo.git",
+  "git_repository_token_url_change": "The repository URL has changed. Re-enter the stored token or select Clear stored token before saving.",
+  "git_repository_ssh_key_url_change": "The repository URL has changed. Re-enter the stored SSH key or select Clear stored SSH key before saving.",
+  "git_repository_clear_token": "Clear stored token",
+  "git_repository_clear_ssh_key": "Clear stored SSH key"
 }

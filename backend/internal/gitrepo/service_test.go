@@ -21,6 +21,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
 	"go.getarcane.app/sys/crypto"
 )
 
@@ -85,6 +87,15 @@ func createGitRepositoryServiceTestRepoInternal(t *testing.T, svc *GitRepository
 		Username: "admin",
 	})
 	require.NoError(t, err)
+	mapped, err := mapper.MapOne[*GitRepository, gitops.GitRepository](repo)
+	require.NoError(t, err)
+	assert.Equal(t, req.Token != "", mapped.HasToken)
+	assert.Equal(t, req.SSHKey != "", mapped.HasSshKey)
+	repositories, _, err := svc.GetRepositoriesPaginated(t.Context(), pagination.QueryParams{Limit: -1})
+	require.NoError(t, err)
+	require.Len(t, repositories, 1)
+	assert.Equal(t, mapped.HasToken, repositories[0].HasToken)
+	assert.Equal(t, mapped.HasSshKey, repositories[0].HasSshKey)
 	return repo
 }
 
@@ -180,6 +191,10 @@ func TestGitRepositoryService_UpdateRepository_AllowsURLChangeWhenTokenIsResuppl
 	decryptedToken, decryptErr := crypto.Decrypt(updated.Token)
 	require.NoError(t, decryptErr)
 	assert.Equal(t, "ghp_new_token", decryptedToken)
+	mapped, err := mapper.MapOne[*GitRepository, gitops.GitRepository](updated)
+	require.NoError(t, err)
+	assert.True(t, mapped.HasToken)
+	assert.False(t, mapped.HasSshKey)
 }
 
 func TestGitRepositoryService_UpdateRepository_AllowsURLChangeWhenTokenIsCleared(t *testing.T) {
@@ -200,6 +215,10 @@ func TestGitRepositoryService_UpdateRepository_AllowsURLChangeWhenTokenIsCleared
 
 	assert.Equal(t, "https://github.com/acme/public.git", updated.URL)
 	assert.Empty(t, updated.Token)
+	mapped, err := mapper.MapOne[*GitRepository, gitops.GitRepository](updated)
+	require.NoError(t, err)
+	assert.False(t, mapped.HasToken)
+	assert.False(t, mapped.HasSshKey)
 }
 
 func TestGitRepositoryService_UpdateRepository_AllowsSameURLWithoutCredentialResupply(t *testing.T) {

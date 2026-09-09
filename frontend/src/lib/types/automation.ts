@@ -107,6 +107,8 @@ export interface GitRepository {
 	name: string;
 	url: string;
 	authType: string;
+	hasToken: boolean;
+	hasSshKey: boolean;
 	username?: string;
 	sshHostKeyVerification?: string;
 	description?: string;

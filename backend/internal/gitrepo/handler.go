@@ -156,6 +156,20 @@ func (h *GitRepositoryHandler) UpdateRepository(ctx context.Context, input *Upda
 	repo, err := h.repoService.UpdateRepository(ctx, input.ID, input.Body, actor)
 	if err != nil {
 		apiErr := common.ToAPIError(err)
+		if apiErr.Code == common.APIErrorCodeValidationError {
+			return nil, &struct {
+				*huma.ErrorModel
+
+				Details any `json:"details,omitempty"`
+			}{
+				ErrorModel: &huma.ErrorModel{
+					Title:  "Bad Request",
+					Status: apiErr.HTTPStatus(),
+					Detail: apiErr.Message,
+				},
+				Details: apiErr.Details,
+			}
+		}
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to update git repository")
 	}
 

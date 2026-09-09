@@ -15,6 +15,8 @@
 	let repositories = $derived(data.repositories);
 	let selectedIds = $state<string[]>([]);
 	let isRepositoryDialogOpen = $state(false);
+	let clearToken = $state(false);
+	let clearSshKey = $state(false);
 	let repositoryToEdit = $state<GitRepository | null>(null);
 	let requestOptions = $derived(data.repositoryRequestOptions);
 
@@ -39,11 +41,15 @@
 
 	function openCreateRepositoryDialog() {
 		repositoryToEdit = null;
+		clearToken = false;
+		clearSshKey = false;
 		isRepositoryDialogOpen = true;
 	}
 
 	function openEditRepositoryDialog(repository: GitRepository) {
 		repositoryToEdit = repository;
+		clearToken = false;
+		clearSshKey = false;
 		isRepositoryDialogOpen = true;
 	}
 
@@ -67,6 +73,8 @@
 					}
 
 					repositories = await gitRepositoryService.getRepositories(requestOptions);
+					clearToken = false;
+					clearSshKey = false;
 					isRepositoryDialogOpen = false;
 				})()
 			);
@@ -112,6 +120,8 @@
 
 	{#snippet additionalContent()}
 		<GitRepositoryFormSheet
+			bind:clearToken
+			bind:clearSshKey
 			bind:open={isRepositoryDialogOpen}
 			bind:repositoryToEdit
 			onSubmit={handleRepositoryDialogSubmit}

@@ -24,6 +24,12 @@ type GitRepository struct {
 	// Required: true
 	AuthType string `json:"authType"`
 
+	// HasToken indicates whether an HTTP token is stored.
+	HasToken bool `json:"hasToken"`
+
+	// HasSshKey indicates whether an SSH private key is stored.
+	HasSshKey bool `json:"hasSshKey"`
+
 	// Username for HTTP authentication.
 	//
 	// Required: false
