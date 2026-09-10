@@ -34,7 +34,6 @@ export function getEffectiveNavigationSettings(): MobileNavigationSettings {
 	return {
 		pinnedItems: pinnedItemsStore.current.pinnedItems,
 		mode,
-		showLabels: preferences?.mobileNavigationShowLabels ?? defaultMobileNavigationSettings.showLabels,
 		scrollToHide: mode === 'floating'
 	};
 }

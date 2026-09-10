@@ -363,7 +363,6 @@ export function getLandingPageNavItems(): NavigationItem[] {
 export type MobileNavigationSettings = {
 	pinnedItems: string[];
 	mode: 'floating' | 'docked';
-	showLabels: boolean;
 	scrollToHide: boolean;
 };
 
@@ -403,7 +402,6 @@ export function getAvailableMobileNavItems(options?: {
 export const defaultMobileNavigationSettings: MobileNavigationSettings = {
 	pinnedItems: defaultMobilePinnedItems.map((item) => item.url),
 	mode: 'floating',
-	showLabels: true,
 	scrollToHide: true
 };
 
