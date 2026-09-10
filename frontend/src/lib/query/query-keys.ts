@@ -1,3 +1,4 @@
+import type { User } from '#lib/types/auth.js';
 import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 
 function stableSerialize(value: unknown): string {
@@ -13,6 +14,10 @@ function stableSerialize(value: unknown): string {
 }
 
 export const queryKeys = {
+	swarm: {
+		joinCandidates: (environmentId: string | null, user: Pick<User, 'id' | 'permissionsByEnv'> | null) =>
+			['swarm', environmentId, 'join-candidates', user?.id ?? null, stableSerialize(user?.permissionsByEnv)] as const
+	},
 	jobs: {
 		list: (environmentId: string) => ['environment-jobs', environmentId] as const,
 		runs: (environmentId: string, jobId: string, page: number) => ['job-runs', environmentId, jobId, page] as const,

@@ -11,6 +11,7 @@ export interface APIRequestConfig {
 	params?: SearchParamsOption;
 	responseType?: 'json' | 'text' | 'blob' | 'arrayBuffer';
 	retry?: number;
+	signal?: AbortSignal;
 	suppressAccessDeniedToast?: boolean;
 	timeout?: number | false;
 }
@@ -296,6 +297,7 @@ function buildRequestOptionsInternal(method: string, data: unknown, config: Inte
 		headers,
 		retry: config.retry ?? 0,
 		searchParams: config.params,
+		signal: config.signal,
 		timeout: config.timeout ?? false
 	};
 

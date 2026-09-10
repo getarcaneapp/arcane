@@ -20,7 +20,6 @@ import (
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/samber/hot"
-	"golang.org/x/net/http2"
 	"golang.org/x/oauth2"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
@@ -140,11 +139,12 @@ func (s *OidcService) getInsecureHttpClientInternal() *http.Client {
 	} else {
 		insecureTransport.TLSClientConfig.InsecureSkipVerify = true
 	}
-	// Force HTTP/2 even with custom TLS config to avoid "malformed HTTP response" errors
-	// when the server speaks HTTP/2 but the client disabled it due to custom TLS config.
-	if err := http2.ConfigureTransport(insecureTransport); err != nil {
-		slog.Warn("getInsecureHttpClientInternal: failed to configure http2 transport", "error", err)
+	// Enable HTTP/2 even with a custom TLS configuration.
+	if insecureTransport.Protocols == nil {
+		insecureTransport.Protocols = new(http.Protocols)
+		insecureTransport.Protocols.SetHTTP1(true)
 	}
+	insecureTransport.Protocols.SetHTTP2(true)
 	insecureClient.Transport = insecureTransport
 	s.insecureHttpClient = &insecureClient
 	return s.insecureHttpClient

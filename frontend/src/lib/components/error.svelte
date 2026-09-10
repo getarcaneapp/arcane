@@ -30,19 +30,15 @@
 	const isConnectionError = $derived.by(() => {
 		const lowerMessage = message.toLowerCase();
 		const connectionTerms = [
-			'connection',
-			'proxy',
-			'reset',
-			'timeout',
-			'network',
-			'tcp',
-			'dial',
-			'lookup',
-			'host',
-			'refused',
-			'internal error'
+			'cannot connect to the docker daemon',
+			'failed to connect to docker',
+			'error during connect:',
+			'edge agent is not connected',
+			'no active tunnel for environment',
+			'tunnel connection closed',
+			'proxy request failed'
 		];
-		return connectionTerms.some((term) => lowerMessage.includes(term)) || !status || [500, 502, 503, 504].includes(status);
+		return connectionTerms.some((term) => lowerMessage.includes(term));
 	});
 
 	const connectionErrorTitle = $derived.by(() => {

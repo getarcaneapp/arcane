@@ -1,4 +1,4 @@
-import BaseAPIService from './api-service';
+import BaseAPIService, { type APIRequestConfig } from './api-service';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import type { SearchPaginationSortRequest, Paginated } from '#lib/types/shared.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
@@ -231,9 +231,9 @@ class SwarmService extends BaseAPIService {
 		await this.handleResponse(this.api.post(`/environments/${envId}/swarm/join`, request));
 	}
 
-	async getSwarmJoinCandidates(environmentId?: string): Promise<SwarmJoinCandidate[]> {
+	async getSwarmJoinCandidates(environmentId?: string, config?: APIRequestConfig): Promise<SwarmJoinCandidate[]> {
 		const envId = environmentId ?? (await environmentStore.getCurrentEnvironmentId());
-		return this.handleResponse(this.api.get(`/environments/${envId}/swarm/join-candidates`));
+		return this.handleResponse(this.api.get(`/environments/${envId}/swarm/join-candidates`, config));
 	}
 
 	async joinEnvironments(request: SwarmJoinEnvironmentsRequest, environmentId?: string): Promise<SwarmJoinEnvironmentsResponse> {

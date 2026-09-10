@@ -1056,17 +1056,17 @@ func (s *SwarmService) fetchSwarmNodeIdentityViaEdgeInternal(ctx context.Context
 	defer cancel()
 
 	var parsed struct {
-		Success bool              `json:"success"`
-		Data    SwarmNodeIdentity `json:"data"`
+		Success bool               `json:"success"`
+		Data    *SwarmNodeIdentity `json:"data"`
 	}
 	if err := s.environmentService.ProxyJSONRequest(reqCtx, environmentID, http.MethodGet, "/api/swarm/node-identity", nil, &parsed); err != nil {
 		return nil, err
 	}
-	if !parsed.Success {
+	if !parsed.Success || parsed.Data == nil {
 		return nil, errors.New("swarm node identity probe failed")
 	}
 
-	return &parsed.Data, nil
+	return parsed.Data, nil
 }
 
 func (s *SwarmService) buildNodeAgentStatusInternal(nodeID string, env *environment.Environment, runtime swarmNodeAgentRuntime) swarmtypes.NodeAgentStatus {
