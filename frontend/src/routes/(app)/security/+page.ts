@@ -41,11 +41,11 @@ export const load: PageLoad = async ({ parent }) => {
 	const operationResult = await tryCatch(
 		(async () =>
 			Promise.all([
-				queryClient.fetchQuery({
+				queryClient.query({
 					queryKey: queryKeys.vulnerabilities.summaryByEnvironment(envId),
 					queryFn: () => vulnerabilityService.getEnvironmentSummaryForEnvironment(envId)
 				}),
-				queryClient.fetchQuery({
+				queryClient.query({
 					queryKey: queryKeys.vulnerabilities.allByEnvironment(envId, requestForApi),
 					queryFn: () => vulnerabilityService.getAllVulnerabilitiesForEnvironment(envId, requestForApi)
 				})

@@ -71,7 +71,12 @@
 	} = $props();
 
 	let open = $state(false);
-	let filteredItems = $state<SearchableSelectItem[]>([]);
+	let searchText = $state('');
+	const filteredItems = $derived.by(() => {
+		if (disableSearch || !searchText) return items;
+		const search = searchText.toLowerCase();
+		return items.filter((item) => item.label.toLowerCase().includes(search));
+	});
 
 	const resolvedLabel = $derived.by(() => {
 		if (displayText) return displayText;
@@ -114,27 +119,17 @@
 			document.getElementById(triggerId)?.focus();
 		});
 	}
-
-	function filterItems(searchString: string) {
-		if (!searchString) {
-			filteredItems = items;
-			return;
-		}
-		filteredItems = items.filter((item) => item.label.toLowerCase().includes(searchString.toLowerCase()));
-	}
-
-	$effect(() => {
-		filteredItems = items;
-	});
-
-	$effect(() => {
-		if (open) {
-			filteredItems = items;
-		}
-	});
 </script>
 
-<Popover.Root bind:open>
+<Popover.Root
+	bind:open={
+		() => open,
+		(value) => {
+			open = value;
+			if (value) searchText = '';
+		}
+	}
+>
 	<Popover.Trigger>
 		{#snippet child({ props })}
 			<ArcaneButton
@@ -166,14 +161,7 @@
 	>
 		<Command.Root shouldFilter={false} class={cn('rounded-none bg-transparent', commandClass)}>
 			{#if !disableSearch}
-				<Command.Input
-					placeholder={m.common_search()}
-					class={cn(inputClass)}
-					oninput={(e) => {
-						filterItems(e.currentTarget.value);
-						oninput?.(e);
-					}}
-				/>
+				<Command.Input placeholder={m.common_search()} class={cn(inputClass)} bind:value={searchText} {oninput} />
 			{/if}
 			<Command.Empty>
 				{#if isLoading}

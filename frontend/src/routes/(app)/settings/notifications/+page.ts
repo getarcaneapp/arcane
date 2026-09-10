@@ -8,7 +8,7 @@ export const load: PageLoad = async ({ parent }) => {
 
 	const operationResult = await tryCatch(
 		(async () => {
-			const notificationSettings = await queryClient.fetchQuery({
+			const notificationSettings = await queryClient.query({
 				queryKey: queryKeys.notifications.settings(),
 				queryFn: () => notificationService.getSettings()
 			});

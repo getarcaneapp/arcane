@@ -9,23 +9,9 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { toast } from 'svelte-sonner';
 
-	let checkboxStates = $state<Record<string, boolean>>({});
-
-	$effect(() => {
-		if ($confirmDialogStore.open && $confirmDialogStore.checkboxes) {
-			const newStates: Record<string, boolean> = {};
-
-			for (const checkbox of $confirmDialogStore.checkboxes) {
-				newStates[checkbox.id] = Boolean(checkbox.initialState);
-			}
-
-			checkboxStates = newStates;
-		}
-	});
-
 	async function handleConfirm() {
 		const action = $confirmDialogStore.confirm.action;
-		const states = $state.snapshot(checkboxStates);
+		const states = $state.snapshot($confirmDialogStore.checkboxStates);
 		$confirmDialogStore.open = false;
 		// Keep synchronous action failures inside the promise boundary.
 		const result = await tryCatch(Promise.resolve().then(() => action(states)));
@@ -58,10 +44,10 @@
 			<div class="mt-6 flex flex-col gap-4 border-t border-border pt-4">
 				{#each $confirmDialogStore.checkboxes as checkbox (checkbox.id)}
 					<div class="flex items-start space-x-3">
-						{#if checkboxStates[checkbox.id] !== undefined}
+						{#if $confirmDialogStore.checkboxStates[checkbox.id] !== undefined}
 							<Checkbox
 								id={checkbox.id}
-								bind:checked={checkboxStates[checkbox.id]}
+								bind:checked={$confirmDialogStore.checkboxStates[checkbox.id]}
 								aria-labelledby={`${checkbox.id}-label`}
 								class="mt-0.5"
 							/>
@@ -69,7 +55,7 @@
 							<Checkbox
 								id={checkbox.id}
 								checked={false}
-								onchange={() => (checkboxStates[checkbox.id] = true)}
+								onchange={() => ($confirmDialogStore.checkboxStates[checkbox.id] = true)}
 								aria-labelledby={`${checkbox.id}-label`}
 								class="mt-0.5"
 							/>
@@ -84,7 +70,7 @@
 								{checkbox.label}
 							</Label>
 
-							{#if checkbox.id === 'files' && checkboxStates[checkbox.id]}
+							{#if checkbox.id === 'files' && $confirmDialogStore.checkboxStates[checkbox.id]}
 								<div class="mt-1 text-xs leading-snug text-destructive">{m.confirm_remove_project_files_warning()}</div>
 							{/if}
 						</div>

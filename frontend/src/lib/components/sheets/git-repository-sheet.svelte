@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
 	import FormInput from '#lib/components/form/form-input.svelte';
@@ -42,21 +43,19 @@
 		enabled: z.boolean().default(true)
 	});
 
-	let formData = $derived({
-		name: open && repositoryToEdit ? repositoryToEdit.name : '',
-		url: open && repositoryToEdit ? repositoryToEdit.url : '',
-		authType: (open && repositoryToEdit ? repositoryToEdit.authType : 'http') as 'none' | 'http' | 'ssh',
-		username: open && repositoryToEdit ? repositoryToEdit.username || '' : '',
+	const formData = untrack(() => ({
+		name: repositoryToEdit?.name ?? '',
+		url: repositoryToEdit?.url ?? '',
+		authType: (repositoryToEdit?.authType ?? 'http') as 'none' | 'http' | 'ssh',
+		username: repositoryToEdit?.username || '',
 		token: '',
 		sshKey: '',
-		sshHostKeyVerification: (open && repositoryToEdit
-			? repositoryToEdit.sshHostKeyVerification || 'accept_new'
-			: 'accept_new') as 'strict' | 'accept_new' | 'skip',
-		description: open && repositoryToEdit ? repositoryToEdit.description || '' : '',
-		enabled: open && repositoryToEdit ? (repositoryToEdit.enabled ?? true) : true
-	});
+		sshHostKeyVerification: (repositoryToEdit?.sshHostKeyVerification || 'accept_new') as 'strict' | 'accept_new' | 'skip',
+		description: repositoryToEdit?.description || '',
+		enabled: repositoryToEdit?.enabled ?? true
+	}));
 
-	let { inputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, formData));
+	const { inputs, ...form } = createForm<typeof formSchema>(formSchema, formData);
 
 	let hasToken = $derived(!!repositoryToEdit?.hasToken);
 	let hasSshKey = $derived(!!repositoryToEdit?.hasSshKey);
@@ -65,13 +64,13 @@
 	let sshKeyNeedsAttention = $derived(urlChanged && hasSshKey && !clearSshKey && !$inputs.sshKey?.value?.trim());
 
 	let selectedAuthType = $state<{ value: string; label: string }>({
-		value: 'http',
-		label: m.git_repository_auth_http()
+		value: formData.authType,
+		label: getAuthTypeLabel(formData.authType)
 	});
 
 	let selectedSshHostKeyVerification = $state<{ value: string; label: string }>({
-		value: 'accept_new',
-		label: m.git_repository_ssh_host_key_accept_new()
+		value: formData.sshHostKeyVerification,
+		label: getSshHostKeyVerificationLabel(formData.sshHostKeyVerification)
 	});
 
 	function getAuthTypeLabel(type: string): string {
@@ -95,22 +94,6 @@
 				return m.git_repository_ssh_host_key_accept_new();
 		}
 	}
-
-	$effect(() => {
-		if (open && repositoryToEdit) {
-			selectedAuthType = {
-				value: repositoryToEdit.authType,
-				label: getAuthTypeLabel(repositoryToEdit.authType)
-			};
-			selectedSshHostKeyVerification = {
-				value: repositoryToEdit.sshHostKeyVerification || 'accept_new',
-				label: getSshHostKeyVerificationLabel(repositoryToEdit.sshHostKeyVerification || 'accept_new')
-			};
-		} else if (open && !repositoryToEdit) {
-			selectedAuthType = { value: 'http', label: m.git_repository_auth_http() };
-			selectedSshHostKeyVerification = { value: 'accept_new', label: m.git_repository_ssh_host_key_accept_new() };
-		}
-	});
 
 	function clearCredentialErrors() {
 		if ($inputs.token) $inputs.token.error = null;

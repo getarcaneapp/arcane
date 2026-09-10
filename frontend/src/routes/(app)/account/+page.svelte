@@ -62,29 +62,21 @@
 	);
 	const avatarMaxUploadSizeBytes = $derived(avatarUploadLimitBytes(avatarMaxUploadSizeMb));
 
-	let profileDisplayName = $state('');
-	let profileEmail = $state('');
+	let profileDraft = $state<{ userId: string; displayName: string; email: string } | null>(null);
+	const activeProfileDraft = $derived.by(() => {
+		if (profileDraft?.userId === currentUser?.id) return profileDraft;
+		return null;
+	});
+	const profileDisplayName = $derived(activeProfileDraft?.displayName ?? currentUser?.displayName ?? '');
+	const profileEmail = $derived(activeProfileDraft?.email ?? currentUser?.email ?? '');
 	let profileSaving = $state(false);
-	let profileLoaded = $state(false);
 
-	let avatarUrl = $state<string>(getDefaultProfilePicture());
+	const avatarUrl = $derived(updateAvatar(currentUser?.email, gravatarEnabled));
 	let avatarCacheBuster = $state(Temporal.Now.instant().epochMilliseconds);
 	const avatarSrc = $derived(currentUser?.avatarUrl ? `${currentUser.avatarUrl}?t=${avatarCacheBuster}` : '');
-	let cropperAvatarSrc = $derived(avatarSrc || avatarUrl);
+	let cropperAvatarSrc = $state('');
 
 	let avatarUploading = $state(false);
-
-	$effect(() => {
-		if (!profileLoaded && currentUser) {
-			profileDisplayName = currentUser.displayName ?? '';
-			profileEmail = currentUser.email ?? '';
-			profileLoaded = true;
-		}
-	});
-
-	$effect(() => {
-		void updateAvatar(currentUser?.email, gravatarEnabled);
-	});
 
 	const profileDirty = $derived(
 		profileDisplayName.trim() !== (currentUser?.displayName ?? '') || profileEmail.trim() !== (currentUser?.email ?? '')
@@ -92,8 +84,7 @@
 
 	async function updateAvatar(email: string | undefined, enabled: boolean) {
 		if (!enabled || !email) {
-			avatarUrl = getDefaultProfilePicture();
-			return;
+			return getDefaultProfilePicture();
 		}
 		const operationResult = await tryCatch(
 			(async () => {
@@ -103,16 +94,21 @@
 				const hash = Array.from(new Uint8Array(hashBuffer))
 					.map((b) => b.toString(16).padStart(2, '0'))
 					.join('');
-				avatarUrl = `https://www.gravatar.com/avatar/${hash}?s=128&d=404`;
+				return `https://www.gravatar.com/avatar/${hash}?s=128&d=404`;
 			})()
 		);
-		if (operationResult.error !== null) {
-			avatarUrl = getDefaultProfilePicture();
-		}
+		if (operationResult.error !== null) return getDefaultProfilePicture();
+		return operationResult.data;
+	}
+
+	function updateProfileField(field: 'displayName' | 'email', value: string) {
+		if (!currentUser) return;
+		profileDraft = { userId: currentUser.id, displayName: profileDisplayName, email: profileEmail, [field]: value };
 	}
 
 	async function saveProfile() {
 		if (!currentUser || !profileDirty || profileSaving) return;
+		const submittedDraft = profileDraft;
 		profileSaving = true;
 		try {
 			const operationResult = await tryCatch(
@@ -122,6 +118,7 @@
 						email: profileEmail.trim()
 					});
 					await userStore.setUser(updated);
+					if (profileDraft === submittedDraft) profileDraft = null;
 					toast.success(m.account_profile_updated());
 				})()
 			);
@@ -134,11 +131,6 @@
 		} finally {
 			profileSaving = false;
 		}
-	}
-
-	function resetProfile() {
-		profileDisplayName = currentUser?.displayName ?? '';
-		profileEmail = currentUser?.email ?? '';
 	}
 
 	async function handleCroppedAvatar(url: string) {
@@ -165,7 +157,7 @@
 		} finally {
 			avatarUploading = false;
 			URL.revokeObjectURL(url);
-			if (cropperAvatarSrc === url) cropperAvatarSrc = avatarSrc || avatarUrl;
+			if (cropperAvatarSrc === url) cropperAvatarSrc = '';
 		}
 	}
 
@@ -263,8 +255,12 @@
 										<Avatar.Root class="size-16 rounded-xl transition-all group-hover/avatar:opacity-80">
 											{#if avatarSrc}
 												<Avatar.Image src={avatarSrc} alt={currentUser.displayName ?? currentUser.username} />
-											{:else if avatarUrl}
-												<Avatar.Image src={avatarUrl} alt={currentUser.displayName ?? currentUser.username} />
+											{:else}
+												{#await avatarUrl}
+													<Avatar.Image src={getDefaultProfilePicture()} alt={currentUser.displayName ?? currentUser.username} />
+												{:then url}
+													<Avatar.Image src={url} alt={currentUser.displayName ?? currentUser.username} />
+												{/await}
 											{/if}
 											<Avatar.Fallback class="rounded-xl bg-primary text-xl font-semibold text-primary-foreground">
 												{(currentUser.displayName ?? currentUser.username).charAt(0).toUpperCase()}
@@ -316,7 +312,7 @@
 					<div class="grid gap-5 sm:grid-cols-2">
 						<TextInputWithLabel
 							id="account-display-name"
-							bind:value={profileDisplayName}
+							bind:value={() => profileDisplayName, (value) => updateProfileField('displayName', value)}
 							label={m.common_display_name()}
 							placeholder={m.account_display_name_placeholder()}
 							disabled={isOidcUser}
@@ -324,7 +320,7 @@
 						<TextInputWithLabel
 							id="account-email"
 							type="email"
-							bind:value={profileEmail}
+							bind:value={() => profileEmail, (value) => updateProfileField('email', value)}
 							label={m.common_email()}
 							placeholder={m.account_email_placeholder()}
 							disabled={isOidcUser}
@@ -336,7 +332,7 @@
 								action="cancel"
 								tone="outline"
 								customLabel={m.common_reset()}
-								onclick={resetProfile}
+								onclick={() => (profileDraft = null)}
 								disabled={!profileDirty || profileSaving}
 							/>
 							<ArcaneButton

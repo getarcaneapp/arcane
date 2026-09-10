@@ -21,16 +21,16 @@ export const load: PageLoad = async ({ parent }) => {
 	} satisfies SearchPaginationSortRequest);
 
 	const [users, roles, environmentsPage] = await Promise.all([
-		queryClient.fetchQuery({
+		queryClient.query({
 			queryKey: queryKeys.users.list(userRequestOptions),
 			queryFn: () => userService.getUsers(userRequestOptions)
 		}),
-		queryClient.fetchQuery({
+		queryClient.query({
 			queryKey: ['roles', 'all'],
 			queryFn: () => roleService.getAll(),
 			staleTime: 30_000
 		}),
-		queryClient.fetchQuery({
+		queryClient.query({
 			queryKey: ['environments', 'all-for-role-assignments'],
 			queryFn: () => environmentManagementService.getEnvironments({ pagination: { page: 1, limit: 1000 } }),
 			staleTime: 30_000

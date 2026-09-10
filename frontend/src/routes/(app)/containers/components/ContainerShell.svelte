@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import * as Card from '#lib/components/ui/card/index.js';
 	import Terminal from '#lib/components/terminal/terminal.svelte';
 	import TerminalControls from '#lib/components/terminal/terminal-controls.svelte';
@@ -14,47 +15,14 @@
 	} = $props();
 
 	let isConnected = $state(false);
-	let websocketUrl = $state('');
-	let selectedShell = $state($settingsStore.defaultShell || '/bin/sh');
+	let selectedShell = $derived($settingsStore.defaultShell || '/bin/sh');
 	let reconnectKey = $state(0);
-	let lastContainerId = $state<string | undefined>(undefined);
-	let lastShellForUrl = $state<string | undefined>(undefined);
-	let lastDefaultShell = $state<string | undefined>(undefined);
-
-	$effect(() => {
-		const defaultShell = $settingsStore.defaultShell;
-		if (defaultShell !== lastDefaultShell) {
-			lastDefaultShell = defaultShell;
-			const fallbackShell = defaultShell || '/bin/sh';
-			if (selectedShell !== fallbackShell) {
-				selectedShell = fallbackShell;
-			}
-		} else if (!selectedShell) {
-			selectedShell = defaultShell || '/bin/sh';
-		}
-
-		const currentContainer = containerId;
-		if (!containerId || !selectedShell) {
-			return;
-		}
-
-		if (lastContainerId === currentContainer && lastShellForUrl === selectedShell) {
-			return;
-		}
-
-		lastContainerId = currentContainer;
-		lastShellForUrl = selectedShell;
-		updateWebSocketUrl(selectedShell);
+	const websocketUrl = $derived.by(() => {
+		if (!containerId || !selectedShell) return '';
+		let protocol = 'ws:';
+		if (page.url.protocol === 'https:') protocol = 'wss:';
+		return `${protocol}//${page.url.host}/api/environments/${environmentStore.selected?.id ?? '0'}/ws/containers/${containerId}/terminal?shell=${encodeURIComponent(selectedShell)}`;
 	});
-
-	function updateWebSocketUrl(shell: string) {
-		(async () => {
-			const envId = await environmentStore.getCurrentEnvironmentId();
-			const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-			const host = window.location.host;
-			websocketUrl = `${protocol}//${host}/api/environments/${envId}/ws/containers/${containerId}/terminal?shell=${encodeURIComponent(shell)}`;
-		})();
-	}
 
 	function handleShellChange(shell: string) {
 		selectedShell = shell;
@@ -98,16 +66,18 @@
 	</Card.Header>
 	<Card.Content class="overflow-hidden p-2">
 		<div class="h-full overflow-hidden rounded-lg border">
-			{#if websocketUrl}
-				{#key reconnectKey}
-					<Terminal
-						{websocketUrl}
-						height="calc(100vh - 320px)"
-						onConnected={handleConnected}
-						onDisconnected={handleDisconnected}
-					/>
-				{/key}
-			{/if}
+			{#await environmentStore.ready then}
+				{#if websocketUrl}
+					{#key reconnectKey}
+						<Terminal
+							{websocketUrl}
+							height="calc(100vh - 320px)"
+							onConnected={handleConnected}
+							onDisconnected={handleDisconnected}
+						/>
+					{/key}
+				{/if}
+			{/await}
 		</div>
 	</Card.Content>
 </Card.Root>

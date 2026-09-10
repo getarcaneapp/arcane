@@ -2,7 +2,7 @@
 	import type { PageProps } from './$types';
 	import * as AlertDialog from '#lib/components/ui/alert-dialog/index.js';
 	import { z } from 'zod/v4';
-	import { getContext } from 'svelte';
+	import { untrack } from 'svelte';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
@@ -35,14 +35,6 @@
 
 	let { data }: PageProps = $props();
 	type AuthenticationTab = 'settings' | 'federated';
-	const formState = getContext('settingsFormState') as
-		| {
-				hasChanges: boolean;
-				isLoading: boolean;
-				saveFunction: (() => Promise<void>) | null;
-				resetFunction: (() => void) | null;
-		  }
-		| undefined;
 
 	const authenticationTabItems = $derived.by(
 		() =>
@@ -171,7 +163,7 @@
 		oidcProviderLogoUrl: currentSettings.oidcProviderLogoUrl
 	});
 
-	let { formInputs, form, settingsForm } = $derived(
+	const { formInputs, form, settingsForm } = untrack(() =>
 		createSettingsForm({
 			schema: formSchema,
 			currentSettings: formDefaults,
@@ -193,23 +185,6 @@
 			}),
 			successMessage: m.security_settings_saved()
 		})
-	);
-
-	const hasAuthenticationChanges = $derived(
-		$formInputs.authLocalEnabled.value !== currentSettings.authLocalEnabled ||
-			$formInputs.authSessionTimeout.value !== currentSettings.authSessionTimeout ||
-			$formInputs.authPasswordPolicy.value !== currentSettings.authPasswordPolicy ||
-			$formInputs.oidcEnabled.value !== currentSettings.oidcEnabled ||
-			$formInputs.oidcMergeAccounts.value !== currentSettings.oidcMergeAccounts ||
-			$formInputs.oidcSkipTlsVerify.value !== currentSettings.oidcSkipTlsVerify ||
-			$formInputs.oidcAutoRedirectToProvider.value !== currentSettings.oidcAutoRedirectToProvider ||
-			$formInputs.oidcClientId.value !== currentSettings.oidcClientId ||
-			$formInputs.oidcIssuerUrl.value !== currentSettings.oidcIssuerUrl ||
-			$formInputs.oidcScopes.value !== currentSettings.oidcScopes ||
-			$formInputs.oidcGroupsClaim.value !== currentSettings.oidcGroupsClaim ||
-			$formInputs.oidcProviderName.value !== currentSettings.oidcProviderName ||
-			$formInputs.oidcProviderLogoUrl.value !== currentSettings.oidcProviderLogoUrl ||
-			$formInputs.oidcClientSecret.value !== ''
 	);
 
 	const redirectUri = $derived(`${globalThis?.location?.origin ?? ''}/auth/oidc/callback`);
@@ -272,7 +247,7 @@
 	}
 
 	function customReset() {
-		form.reset();
+		form.reset(formDefaults);
 		$formInputs.oidcClientSecret.value = '';
 	}
 
@@ -311,12 +286,7 @@
 		showMergeAccountsAlert = false;
 	}
 
-	$effect(() => {
-		settingsForm.registerFormActions(customSubmit, customReset);
-		if (formState) {
-			formState.hasChanges = hasAuthenticationChanges;
-		}
-	});
+	settingsForm.registerFormActions(customSubmit, customReset);
 </script>
 
 {#snippet passwordPolicyOption(value: 'basic' | 'standard' | 'strong', label: string, tooltip: string)}

@@ -9,7 +9,7 @@
 	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte.js';
 	import type { EnvironmentVulnerabilitySummary, VulnerabilityWithImage } from '#lib/types/environment.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import SecurityVulnerabilityTable from './security-vulnerability-table.svelte';
 	import SecurityPatchTable from './security-patch-table.svelte';
 	import type { ImagePatchTargetDto } from '#lib/types/docker.js';
@@ -75,6 +75,7 @@
 		const operationResult = await tryCatch(
 			(async () => {
 				const response = await imageService.listPatchTargets(patchRequestOptions);
+				if (destroyed) return;
 				patchTargets = { ...response, data: (response.data ?? []).map((t) => ({ ...t, id: t.imageId })) };
 			})()
 		);
@@ -206,22 +207,29 @@
 
 	useEnvironmentRefresh(refreshAll);
 
-	let activePatchActivityIds = new Set<string>();
-	$effect(() => {
-		const active = new Set(
-			activityStore.activities
-				.filter(
-					(a) =>
-						(a.type === 'image_patch' || a.type === 'vulnerability_scan') && (a.status === 'queued' || a.status === 'running')
-				)
-				.map((a) => a.id)
-		);
-		const finished = [...activePatchActivityIds].some((id) => !active.has(id));
-		activePatchActivityIds = active;
-		if (finished) void loadPatches();
+	onMount(() => {
+		let activePatchActivityIds = new Set<string>();
+		let observedEnvironmentId: string | undefined;
+		return activityStore.subscribeActivities((activities) => {
+			const environmentId = environmentStore.selected?.id;
+			const active = new Set(
+				activities
+					.filter(
+						(activity) =>
+							(activity.sourceEnvironmentId || activity.environmentId || '0') === environmentId &&
+							(activity.type === 'image_patch' || activity.type === 'vulnerability_scan') &&
+							(activity.status === 'queued' || activity.status === 'running')
+					)
+					.map((activity) => activity.id)
+			);
+			const finished = observedEnvironmentId === environmentId && [...activePatchActivityIds].some((id) => !active.has(id));
+			observedEnvironmentId = environmentId;
+			activePatchActivityIds = active;
+			if (finished && environmentId && hasPermission('images:read', environmentId)) void loadPatches();
+		});
 	});
 
-	$effect(() => () => {
+	onDestroy(() => {
 		destroyed = true;
 		stopScanPolling();
 	});
@@ -236,7 +244,9 @@
 			const operationResult = await tryCatch(
 				(async () => {
 					// Fetch all images with a high limit to get all of them
-					const imagesResponse = await imageService.getImages({ pagination: { page: 1, limit: 1000 } });
+					const imagesResponse = await imageService.getImages({
+						pagination: { page: 1, limit: 1000 }
+					});
 					const images = imagesResponse.data ?? [];
 
 					if (images.length === 0) {

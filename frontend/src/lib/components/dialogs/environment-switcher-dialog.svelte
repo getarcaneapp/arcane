@@ -76,7 +76,7 @@
 		try {
 			const requestResult1 = await tryCatch(
 				(async () => {
-					const result = await queryClient.fetchQuery({
+					const result = await queryClient.query({
 						queryKey: queryKeys.environments.switcher(options),
 						queryFn: () => environmentManagementService.getEnvironments(options),
 						staleTime: 0

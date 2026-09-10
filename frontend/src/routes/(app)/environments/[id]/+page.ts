@@ -9,7 +9,7 @@ export const load: PageLoad = async ({ params, parent }) => {
 
 	const operationResult = await tryCatch(
 		(async () => {
-			const environment = await queryClient.fetchQuery({
+			const environment = await queryClient.query({
 				queryKey: queryKeys.environments.detail(params.id),
 				queryFn: () => environmentManagementService.get(params.id)
 			});
@@ -17,7 +17,7 @@ export const load: PageLoad = async ({ params, parent }) => {
 			let settings = null;
 			const operationResult = await tryCatch(
 				(async () =>
-					queryClient.fetchQuery({
+					queryClient.query({
 						queryKey: queryKeys.environments.settings(params.id),
 						queryFn: () => settingsService.getSettingsForEnvironment(params.id)
 					}))()

@@ -323,7 +323,7 @@
 	async function captureBaseline() {
 		const requestResult2 = await tryCatch(
 			(async () => {
-				baselineVersionInfo = await queryClient.fetchQuery({
+				baselineVersionInfo = await queryClient.query({
 					queryKey: queryKeys.system.versionInfo(environmentId ?? '0'),
 					queryFn: () => systemUpgradeService.getVersionInfo(environmentId ?? '0'),
 					staleTime: 0

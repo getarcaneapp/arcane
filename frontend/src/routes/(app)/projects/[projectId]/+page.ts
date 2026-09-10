@@ -10,7 +10,7 @@ import type { PageLoad } from './$types';
 
 async function loadGlobalVariables(queryClient: QueryClient) {
 	return tryCatch(
-		queryClient.fetchQuery({
+		queryClient.query({
 			queryKey: queryKeys.variables.list(),
 			queryFn: () => variableService.list()
 		})
@@ -34,7 +34,7 @@ export const load: PageLoad = async ({ params, parent }) => {
 	let project: ProjectData;
 	const operationResult = await tryCatch(
 		(async () =>
-			queryClient.fetchQuery({
+			queryClient.query({
 				queryKey: queryKeys.projects.detail(envId, params.projectId),
 				queryFn: () => projectService.getProjectForEnvironment(envId, params.projectId)
 			}))()

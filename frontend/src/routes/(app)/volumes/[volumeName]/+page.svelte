@@ -14,7 +14,8 @@
 		FileTextIcon,
 		AlertIcon
 	} from '#lib/icons/index.js';
-	import { goto } from '$app/navigation';
+	import { afterNavigate, goto } from '$app/navigation';
+	import { onMount, tick } from 'svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { formatDateTimeShort, truncateString } from '#lib/utils/formatting.js';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog//index.js';
@@ -114,16 +115,30 @@
 	let workspaceTreePaneWidth = $state(420);
 	type VolumeWorkspaceUIPrefs = { selectedFile: string; openTabs: string[] };
 	let workspacePrefs: PersistedState<VolumeWorkspaceUIPrefs> | null = null;
-	let lastWorkspacePrefsKey = $state('');
+	let lastWorkspacePrefsKey = '';
 
 	let showWorkspaceRestore = $state(false);
 	let workspaceRestorePath = $state('');
 	let workspaceBackups = $state<BackupEntry[]>([]);
 	let selectedWorkspaceBackupId = $state('');
 	let loadingWorkspaceBackups = $state(false);
-	let checkingWorkspaceBackup = $state(false);
-	let workspaceBackupHasPath = $state<boolean | null>(null);
-	let lastWorkspaceBackupCheck = '';
+	const workspaceBackupPathQuery = createQuery(() => {
+		const environmentId = currentEnvId;
+		const volumeName = volume.name;
+		const backupId = selectedWorkspaceBackupId;
+		const path = workspaceRestorePath;
+		return {
+			queryKey: queryKeys.volumes.backupHasPath(environmentId, volumeName, backupId, path),
+			queryFn: () => volumeBackupService.backupHasPath(backupId, `/${path}`),
+			enabled: showWorkspaceRestore && !!backupId && !!path && canReadVolume && canBackupVolume,
+			retry: false
+		};
+	});
+	const checkingWorkspaceBackup = $derived(workspaceBackupPathQuery.isFetching);
+	const workspaceBackupHasPath = $derived.by(() => {
+		if (workspaceBackupPathQuery.isFetching || workspaceBackupPathQuery.error) return null;
+		return workspaceBackupPathQuery.data ?? null;
+	});
 
 	const workspaceQuery = createQuery(() => ({
 		queryKey: queryKeys.volumes.workspace(currentEnvId, volume.name),
@@ -206,11 +221,12 @@
 		activeWorkspaceTab.startsWith('file:') ? workspaceFileMetadata[activeWorkspaceTab.slice(5)] : undefined
 	);
 
-	$effect(() => {
+	afterNavigate(() => {
+		initializeVolumePreferences();
 		if (selectedTab === 'workspace') workspaceRequested = true;
 	});
 
-	$effect(() => {
+	function initializeVolumePreferences() {
 		const key = `arcane.volume.workspace.ui:${currentEnvId}:${volume.name}`;
 		if (lastWorkspacePrefsKey === key) return;
 		lastWorkspacePrefsKey = key;
@@ -224,7 +240,8 @@
 		);
 		selectedWorkspaceFile = workspacePrefs.current.selectedFile;
 		openWorkspaceTabs = workspacePrefs.current.openTabs;
-	});
+		loadSelectedWorkspaceFile();
+	}
 
 	function persistWorkspacePrefs() {
 		if (!workspacePrefs) return;
@@ -243,6 +260,7 @@
 			selectedWorkspaceFile = remaining[Math.min(Math.max(index - 1, 0), remaining.length - 1)] ?? '';
 		}
 		persistWorkspacePrefs();
+		loadSelectedWorkspaceFile();
 	}
 
 	function openWorkspaceFile(key: string) {
@@ -252,11 +270,13 @@
 		if (entry.isDirectory) {
 			selectedWorkspaceFile = key;
 			persistWorkspacePrefs();
+			loadSelectedWorkspaceFile();
 			return;
 		}
 		if (!openWorkspaceTabs.includes(key)) openWorkspaceTabs = [...openWorkspaceTabs, key];
 		selectedWorkspaceFile = key;
 		persistWorkspacePrefs();
+		loadSelectedWorkspaceFile();
 	}
 
 	async function loadWorkspaceFile(relativePath: string) {
@@ -297,11 +317,18 @@
 		workspaceFileLoading = { ...workspaceFileLoading, [relativePath]: true };
 		workspaceFileLoadErrors = removeWorkspaceFileRecord(workspaceFileLoadErrors, relativePath);
 		const loadVersion = workspaceFileLoadVersions.get(relativePath) ?? 0;
+		const requestedEnvId = currentEnvId;
+		const requestedVolumeName = volume.name;
 		try {
 			const operationResult = await tryCatch(
 				(async () => {
-					const file = await volumeWorkspaceService.getWorkspaceFile(volume.name, relativePath, currentEnvId);
-					if (loadVersion !== (workspaceFileLoadVersions.get(relativePath) ?? 0)) return;
+					const file = await volumeWorkspaceService.getWorkspaceFile(requestedVolumeName, relativePath, requestedEnvId);
+					if (
+						requestedEnvId !== currentEnvId ||
+						requestedVolumeName !== volume.name ||
+						loadVersion !== (workspaceFileLoadVersions.get(relativePath) ?? 0)
+					)
+						return;
 					workspaceFileMetadata = { ...workspaceFileMetadata, [relativePath]: file };
 					if (file.editable) {
 						const content = file.content ?? '';
@@ -314,23 +341,66 @@
 			);
 			if (operationResult.error !== null) {
 				const error = operationResult.error;
-				if (loadVersion !== (workspaceFileLoadVersions.get(relativePath) ?? 0)) return;
+				if (
+					requestedEnvId !== currentEnvId ||
+					requestedVolumeName !== volume.name ||
+					loadVersion !== (workspaceFileLoadVersions.get(relativePath) ?? 0)
+				)
+					return;
 				workspaceFileLoadErrors = {
 					...workspaceFileLoadErrors,
 					[relativePath]: error instanceof Error ? error.message : String(error)
 				};
 			}
 		} finally {
-			if (loadVersion === (workspaceFileLoadVersions.get(relativePath) ?? 0)) {
+			if (
+				requestedEnvId === currentEnvId &&
+				requestedVolumeName === volume.name &&
+				loadVersion === (workspaceFileLoadVersions.get(relativePath) ?? 0)
+			) {
 				workspaceFileLoading = removeWorkspaceFileRecord(workspaceFileLoading, relativePath);
 			}
 		}
 	}
 
-	$effect(() => {
+	function loadSelectedWorkspaceFile() {
 		if (!activeWorkspaceTab.startsWith('file:')) return;
 		const relativePath = activeWorkspaceTab.slice(5);
 		if (!workspaceFileMetadata[relativePath] && !workspaceFileLoadErrors[relativePath]) void loadWorkspaceFile(relativePath);
+	}
+
+	onMount(() => {
+		let active = true;
+		const cache = queryClient.getQueryCache();
+		const loadAfterUpdate = async () => {
+			await tick();
+			if (!active) return;
+			initializeVolumePreferences();
+			loadSelectedWorkspaceFile();
+		};
+		const unsubscribe = cache.subscribe((event) => {
+			const backupPath = cache.find({
+				queryKey: queryKeys.volumes.backupHasPath(currentEnvId, volume.name, selectedWorkspaceBackupId, workspaceRestorePath),
+				exact: true
+			});
+			if (event.query === backupPath && (event.type === 'updated' || event.type === 'observerResultsUpdated')) {
+				notifyWorkspaceBackupError(event.query.state.error);
+			}
+			if (event.type !== 'updated' || event.action.type !== 'success') return;
+			if (event.query === cache.find({ queryKey: queryKeys.volumes.workspace(currentEnvId, volume.name), exact: true })) {
+				void loadAfterUpdate();
+			}
+		});
+		const unsubscribeEnvironment = environmentStore.subscribeSelected(() => {
+			void loadAfterUpdate();
+		});
+		void loadAfterUpdate();
+		notifyWorkspaceBackupError(workspaceBackupPathQuery.error);
+		return () => {
+			active = false;
+			unsubscribe();
+			unsubscribeEnvironment();
+		};
 	});
 
 	function createVolumeWorkspaceFile(parentPath: string, name: string) {
@@ -370,6 +440,7 @@
 		workspaceFileChanges = [...workspaceFileChanges, { operation: 'create_folder', relativePath }];
 		selectedWorkspaceFile = `file:${relativePath}`;
 		persistWorkspacePrefs();
+		loadSelectedWorkspaceFile();
 	}
 
 	function remapVolumeWorkspaceState(oldPath: string, newPath: string) {
@@ -385,6 +456,7 @@
 		const remappedSelection = remapSelectedWorkspaceFileKey(selectedWorkspaceFile, oldPath, newPath);
 		if (remappedSelection) selectedWorkspaceFile = remappedSelection;
 		persistWorkspacePrefs();
+		loadSelectedWorkspaceFile();
 	}
 
 	function renameVolumeWorkspaceFile(relativePath: string, newName: string) {
@@ -427,6 +499,7 @@
 		openWorkspaceTabs = openWorkspaceTabs.filter((tab) => !isWorkspaceFileSelectionUnder(tab, relativePath));
 		if (isWorkspaceFileSelectionUnder(selectedWorkspaceFile, relativePath)) selectedWorkspaceFile = openWorkspaceTabs[0] ?? '';
 		persistWorkspacePrefs();
+		loadSelectedWorkspaceFile();
 	}
 
 	function deleteVolumeWorkspaceFile(relativePath: string) {
@@ -572,17 +645,18 @@
 	}
 
 	async function openWorkspaceRestoreDialog(relativePath: string) {
+		const environmentId = currentEnvId;
+		const name = volume.name;
 		workspaceRestorePath = relativePath;
 		workspaceBackups = [];
 		selectedWorkspaceBackupId = '';
-		workspaceBackupHasPath = null;
-		lastWorkspaceBackupCheck = '';
 		showWorkspaceRestore = true;
 		loadingWorkspaceBackups = true;
 		try {
 			const operationResult = await tryCatch(
 				(async () => {
-					const response = await volumeBackupService.listBackups(volume.name, { pagination: { page: 1, limit: 100 } });
+					const response = await volumeBackupService.listBackups(name, { pagination: { page: 1, limit: 100 } });
+					if (environmentId !== currentEnvId || name !== volume.name || workspaceRestorePath !== relativePath) return;
 					workspaceBackups = response.data;
 					selectedWorkspaceBackupId = response.data[0]?.id ?? '';
 				})()
@@ -597,32 +671,13 @@
 		}
 	}
 
-	async function checkWorkspaceBackupPath(backupId: string, relativePath: string) {
-		const key = `${backupId}:${relativePath}`;
-		if (!backupId || !relativePath || key === lastWorkspaceBackupCheck) return;
-		lastWorkspaceBackupCheck = key;
-		checkingWorkspaceBackup = true;
-		workspaceBackupHasPath = null;
-		try {
-			const operationResult = await tryCatch((async () => volumeBackupService.backupHasPath(backupId, `/${relativePath}`))());
-			if (operationResult.error !== null) {
-				const error = operationResult.error;
-
-				workspaceBackupHasPath = null;
-				toast.error(error instanceof Error ? error.message : m.common_failed());
-			} else {
-				workspaceBackupHasPath = operationResult.data;
-			}
-		} finally {
-			checkingWorkspaceBackup = false;
-		}
+	let lastWorkspaceBackupError: unknown;
+	function notifyWorkspaceBackupError(error: unknown) {
+		if (!showWorkspaceRestore || !error || error === lastWorkspaceBackupError) return;
+		lastWorkspaceBackupError = error;
+		if (error instanceof Error) toast.error(error.message);
+		else toast.error(m.common_failed());
 	}
-
-	$effect(() => {
-		if (showWorkspaceRestore && selectedWorkspaceBackupId && workspaceRestorePath) {
-			void checkWorkspaceBackupPath(selectedWorkspaceBackupId, workspaceRestorePath);
-		}
-	});
 
 	function stageWorkspaceRestore() {
 		if (!workspaceRestorePath || !selectedWorkspaceBackupId || workspaceBackupHasPath !== true) return;
@@ -712,6 +767,7 @@
 	});
 
 	function onTabChange(value: string) {
+		if (value === 'workspace') workspaceRequested = true;
 		urlTab.select(value);
 	}
 </script>
@@ -852,8 +908,6 @@
 					value={selectedWorkspaceBackupId}
 					onValueChange={(value) => {
 						selectedWorkspaceBackupId = value;
-						workspaceBackupHasPath = null;
-						lastWorkspaceBackupCheck = '';
 					}}
 				>
 					<Select.Trigger id="workspace-restore-backup" class="h-10 w-full overflow-hidden">
@@ -904,40 +958,42 @@
 				</Alert.Root>
 			{/if}
 			<div class="flex h-[calc(100vh-15rem)] min-h-[32rem] flex-col overflow-hidden rounded-lg border border-border bg-card">
-				<ResizableSplit
-					class="h-full min-h-0 flex-1"
-					{...composeTreeSplitProps}
-					bind:size={workspaceTreePaneWidth}
-					ariaLabel={m.compose_editor_resize_files_panel()}
-					persistKey={`arcane.volume.workspace.split:${currentEnvId}:${volume.name}`}
-				>
-					{#snippet first()}
-						{@render volumeWorkspaceTree()}
-					{/snippet}
+				{#key `arcane.volume.workspace.split:${currentEnvId}:${volume.name}`}
+					<ResizableSplit
+						class="h-full min-h-0 flex-1"
+						{...composeTreeSplitProps}
+						bind:size={workspaceTreePaneWidth}
+						ariaLabel={m.compose_editor_resize_files_panel()}
+						persistKey={`arcane.volume.workspace.split:${currentEnvId}:${volume.name}`}
+					>
+						{#snippet first()}
+							{@render volumeWorkspaceTree()}
+						{/snippet}
 
-					{#snippet second()}
-						<div class="flex h-full min-h-0 flex-1 flex-col">
-							{#if workspaceTabs.length > 0}
-								<EditorTabStrip
-									tabs={workspaceTabs}
-									activeKey={activeWorkspaceTab}
-									onSelect={openWorkspaceFile}
-									onClose={closeWorkspaceTab}
-								/>
-							{/if}
-							<div class="flex min-h-0 flex-1 flex-col">
-								{#if !activeWorkspaceTab}
-									<div class="flex h-full items-center justify-center px-4 text-sm text-muted-foreground">
-										{m.volumes_workspace_select_file()}
-									</div>
-								{:else}
-									{@const relativePath = activeWorkspaceTab.slice(5)}
-									{@render volumeWorkspaceFileEditor(volume, relativePath)}
+						{#snippet second()}
+							<div class="flex h-full min-h-0 flex-1 flex-col">
+								{#if workspaceTabs.length > 0}
+									<EditorTabStrip
+										tabs={workspaceTabs}
+										activeKey={activeWorkspaceTab}
+										onSelect={openWorkspaceFile}
+										onClose={closeWorkspaceTab}
+									/>
 								{/if}
+								<div class="flex min-h-0 flex-1 flex-col">
+									{#if !activeWorkspaceTab}
+										<div class="flex h-full items-center justify-center px-4 text-sm text-muted-foreground">
+											{m.volumes_workspace_select_file()}
+										</div>
+									{:else}
+										{@const relativePath = activeWorkspaceTab.slice(5)}
+										{@render volumeWorkspaceFileEditor(volume, relativePath)}
+									{/if}
+								</div>
 							</div>
-						</div>
-					{/snippet}
-				</ResizableSplit>
+						{/snippet}
+					</ResizableSplit>
+				{/key}
 			</div>
 		</div>
 	{/if}
@@ -1018,7 +1074,9 @@
 				{:else if tab === 'workspace'}
 					{@render volumeWorkspace(volume)}
 				{:else if tab === 'backups'}
-					<BackupList volumeName={volume.name} {hasWorkspaceChanges} onWorkspaceRestored={refreshRestoredVolumeWorkspace} />
+					{#key `${currentEnvId}:${volume.name}`}
+						<BackupList volumeName={volume.name} {hasWorkspaceChanges} onWorkspaceRestored={refreshRestoredVolumeWorkspace} />
+					{/key}
 				{/if}
 			</div>
 		{/snippet}

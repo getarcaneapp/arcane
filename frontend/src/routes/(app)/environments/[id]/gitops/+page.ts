@@ -22,11 +22,11 @@ export const load: PageLoad = async ({ params, parent }) => {
 	} satisfies SearchPaginationSortRequest);
 
 	const [environment, syncs] = await Promise.all([
-		queryClient.fetchQuery({
+		queryClient.query({
 			queryKey: queryKeys.environments.detail(environmentId),
 			queryFn: () => environmentManagementService.get(environmentId)
 		}),
-		queryClient.fetchQuery({
+		queryClient.query({
 			queryKey: queryKeys.gitOpsSyncs.list(environmentId, syncRequestOptions),
 			queryFn: () => gitOpsSyncService.getSyncs(environmentId, syncRequestOptions)
 		})

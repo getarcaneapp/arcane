@@ -14,7 +14,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { gitOpsSyncService } from '#lib/services/gitops-sync-service.js';
 	import { page } from '$app/state';
-	import { goto } from '$app/navigation';
+	import { afterNavigate, goto } from '$app/navigation';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import SyncTable from './sync-table.svelte';
 	import { RefreshIcon, ClockIcon, SuccessIcon, GitBranchIcon, UploadIcon } from '#lib/icons/index.js';
@@ -24,6 +24,7 @@
 	let syncs = $derived(data.syncs);
 	let selectedIds = $state<string[]>([]);
 	let isSyncDialogOpen = $state(false);
+	let syncSession = $state(0);
 	let isImportDialogOpen = $state(false);
 	let syncToEdit = $state<GitOpsSync | null>(null);
 	let syncRequestOptions = $derived(data.syncRequestOptions);
@@ -43,25 +44,15 @@
 	};
 	const syncCounts = $derived(syncs?.counts ?? syncCountsFallback);
 
-	let targetTypeFromQuery = $derived(
-		page.url.searchParams.get('action') === 'create' ? (page.url.searchParams.get('targetType') ?? undefined) : undefined
-	);
-
 	let dialogTargetType = $state<string | undefined>(undefined);
 
-	$effect(() => {
-		if (page.url.searchParams.get('action') === 'create') {
-			const typeQuery = targetTypeFromQuery;
-			// Use a small timeout to ensure the page is fully mounted and ready
-			setTimeout(() => {
-				openCreateSyncDialog(typeQuery);
-				// Remove the query param so it doesn't reopen on refresh
-				const newUrl = new URL(page.url.href);
-				newUrl.searchParams.delete('action');
-				newUrl.searchParams.delete('targetType');
-				goto(newUrl.toString(), { replaceState: true, reset: false });
-			}, 100);
-		}
+	afterNavigate(() => {
+		if (page.url.searchParams.get('action') !== 'create') return;
+		openCreateSyncDialog(page.url.searchParams.get('targetType') ?? undefined);
+		const newUrl = new URL(page.url.href);
+		newUrl.searchParams.delete('action');
+		newUrl.searchParams.delete('targetType');
+		void goto(newUrl.toString(), { replaceState: true, reset: false });
 	});
 
 	async function refreshSyncs() {
@@ -80,12 +71,14 @@
 	function openCreateSyncDialog(targetType?: string | Event) {
 		syncToEdit = null;
 		dialogTargetType = typeof targetType === 'string' ? targetType : undefined;
+		syncSession += 1;
 		isSyncDialogOpen = true;
 	}
 
 	function openEditSyncDialog(sync: GitOpsSync) {
 		syncToEdit = sync;
 		dialogTargetType = undefined;
+		syncSession += 1;
 		isSyncDialogOpen = true;
 	}
 
@@ -232,14 +225,18 @@
 	{/snippet}
 
 	{#snippet additionalContent()}
-		<GitOpsSyncFormSheet
-			bind:open={isSyncDialogOpen}
-			bind:syncToEdit
-			{environmentId}
-			targetType={dialogTargetType}
-			onSubmit={handleSyncDialogSubmit}
-			isLoading={isLoading.create || isLoading.edit}
-		/>
+		{#if syncSession > 0}
+			{#key syncSession}
+				<GitOpsSyncFormSheet
+					bind:open={isSyncDialogOpen}
+					bind:syncToEdit
+					{environmentId}
+					targetType={dialogTargetType}
+					onSubmit={handleSyncDialogSubmit}
+					isLoading={isLoading.create || isLoading.edit}
+				/>
+			{/key}
+		{/if}
 		<GitOpsImportDialog bind:open={isImportDialogOpen} onSubmit={handleImportSubmit} isLoading={isLoading.import} />
 	{/snippet}
 </ResourcePageLayout>

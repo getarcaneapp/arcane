@@ -65,7 +65,7 @@
 				try {
 					const operationResult1 = await tryCatch(
 						(async () => {
-							const snippets = await queryClient.fetchQuery({
+							const snippets = await queryClient.query({
 								queryKey: queryKeys.environments.deploymentSnippets(created.id),
 								queryFn: () => environmentManagementService.getDeploymentSnippets(created.id),
 								staleTime: 0
@@ -103,7 +103,6 @@
 	const isSubmittingNewAgent = $derived(createEnvironmentMutation.isPending);
 
 	let newAgentUrlProtocol = $state<'https' | 'http'>('http');
-	let newAgentUrlHost = $state('');
 	let edgeMTLSEnabled = $state(false);
 
 	// Direct mode form schema requires URL
@@ -127,29 +126,12 @@
 	});
 
 	// Reset on open/close
-	$effect(() => {
-		if (open) {
-			createdEnvironment = null;
-			connectionMode = 'direct';
-			newAgentUrlProtocol = 'http';
-			newAgentUrlHost = '';
-			edgeMTLSEnabled = false;
-			$directInputs.name.value = '';
-			$directInputs.apiUrl.value = '';
-			$edgeInputs.name.value = '';
-		}
-	});
-
-	// Sync UrlInput value with form validation for direct mode
-	$effect(() => {
-		$directInputs.apiUrl.value = newAgentUrlHost;
-	});
 
 	function handleDirectSubmit() {
 		const data = directForm.validate();
 		if (!data) return;
 
-		const fullUrl = `${newAgentUrlProtocol}://${newAgentUrlHost}`;
+		const fullUrl = `${newAgentUrlProtocol}://${data.apiUrl}`;
 
 		const dto: CreateEnvironmentDTO = {
 			name: data.name,
@@ -336,7 +318,7 @@
 								label={m.environments_agent_address()}
 								placeholder={m.environments_agent_address_placeholder()}
 								description={m.environments_agent_address_description()}
-								bind:value={newAgentUrlHost}
+								bind:value={$directInputs.apiUrl.value}
 								bind:protocol={newAgentUrlProtocol}
 								disabled={isSubmittingNewAgent}
 								required

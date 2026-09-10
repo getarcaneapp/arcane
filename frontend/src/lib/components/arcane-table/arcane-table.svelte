@@ -3,7 +3,7 @@
 	import type { ColumnFiltersState, RowSelectionState, SortingState, ColumnVisibilityState } from '@tanstack/table-core';
 	import { arcaneTableFeatures, type ArcaneColumnDef, type ArcaneRow, type ArcaneTable } from './table-features';
 	import DataTableToolbar from './arcane-table-toolbar.svelte';
-	import { onMount, untrack } from 'svelte';
+	import { onDestroy, onMount, untrack } from 'svelte';
 	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import type { Snippet } from 'svelte';
@@ -26,13 +26,7 @@
 		type BulkAction
 	} from './arcane-table.types.svelte';
 	import type { Component } from 'svelte';
-	import {
-		extractPersistedPreferences,
-		filterMapsEqual,
-		fromFilterMap,
-		restoreTableRequestOptions,
-		toFilterMap
-	} from './arcane-table.utils';
+	import { extractPersistedPreferences, fromFilterMap, restoreTableRequestOptions, toFilterMap } from './arcane-table.utils';
 	import ArcaneTablePagination from './arcane-table-pagination.svelte';
 	import ArcaneTableHeader from './arcane-table-header.svelte';
 	import ArcaneTableCell from './arcane-table-cell.svelte';
@@ -122,12 +116,27 @@
 	// Default page size constant
 	const DEFAULT_LIMIT = 20;
 
-	// Table state slices owned outside the table; createTableState applies both value and
-	// functional updater forms from the on[State]Change callbacks. columnVisibility is the
-	// exception — parents two-way bind it, so it stays a $bindable prop.
 	const [rowSelection, setRowSelection] = createTableState<RowSelectionState>({});
-	const [columnFilters, setColumnFilters] = createTableState<ColumnFiltersState>([]);
-	const [sorting, setSorting] = createTableState<SortingState>([]);
+	const columnFilters = $derived(fromFilterMap(requestOptions?.filters));
+	const serverSort = $derived(requestOptions?.sort);
+	let clientSortOverride = $state.raw<{
+		serverSort: SearchPaginationSortRequest['sort'];
+		column?: string;
+		direction?: string;
+		sorting: SortingState;
+	} | null>(null);
+	const sorting = $derived.by((): SortingState => {
+		if (
+			clientSortOverride &&
+			clientSortOverride.serverSort === serverSort &&
+			clientSortOverride.column === serverSort?.column &&
+			clientSortOverride.direction === serverSort?.direction
+		) {
+			return clientSortOverride.sorting;
+		}
+		if (!serverSort) return [];
+		return [{ id: serverSort.column, desc: serverSort.direction === 'desc' }];
+	});
 	const [globalFilter, setGlobalFilter] = createTableState<string>(requestOptions?.search ?? '');
 
 	const enablePersist = $derived(!!persistKey);
@@ -194,7 +203,7 @@
 
 	const sortedData = $derived.by(() => {
 		const data = items.data ?? [];
-		const first = sorting()[0];
+		const first = sorting[0];
 		const accessor = first ? clientSortAccessors.get(String(first.id)) : undefined;
 		if (!first || !accessor) return data;
 		const direction = first.desc ? -1 : 1;
@@ -234,12 +243,15 @@
 		applyHiddenPatch(patchedVisibility, snapshot.hiddenColumns);
 		columnVisibility = patchedVisibility;
 
-		if (snapshot.restoredFilters.length) setColumnFilters(snapshot.restoredFilters);
 		const effectiveSearch = (requestOptions?.search ?? '').trim() || snapshot.search;
 		if (effectiveSearch !== globalFilter()) setGlobalFilter(effectiveSearch);
 
 		const persistedSort = snapshot.sort;
-		if (persistedSort && patchedVisibility[persistedSort.column] === false && hiddenSortFallback) {
+		if (
+			persistedSort &&
+			(patchedVisibility[persistedSort.column] ?? defaultColumnVisibility[persistedSort.column]) === false &&
+			hiddenSortFallback
+		) {
 			snapshot.sort = hiddenSortFallback;
 			if (snapshot.sort !== persistedSort && prefs) prefs.current = { ...prefs.current, s: encodeSort(snapshot.sort) };
 		}
@@ -258,6 +270,7 @@
 		}
 
 		preferencesReady = true;
+		persistCustomSettings(customSettings);
 	});
 
 	function updatePagination(patch: Partial<{ page: number; limit: number }>) {
@@ -392,23 +405,14 @@
 			if (spec.hidden) {
 				const accessorKey = spec.accessorKey;
 				const id = spec.id ?? (accessorKey as string) ?? `col_${i}`;
-				hidden[String(accessorKey ?? id)] = false;
+				hidden[id] = false;
 			}
 		});
 		return hidden;
 	}
 
-	// Apply initial hidden columns once on mount
-	let initialHiddenApplied = false;
-	$effect(() => {
-		if (!initialHiddenApplied && columns.length > 0) {
-			const hiddenCols = getInitialHiddenColumns(columns);
-			if (Object.keys(hiddenCols).length > 0) {
-				columnVisibility = { ...columnVisibility, ...hiddenCols };
-			}
-			initialHiddenApplied = true;
-		}
-	});
+	const defaultColumnVisibility = $derived(getInitialHiddenColumns(columns));
+	const effectiveColumnVisibility = $derived({ ...defaultColumnVisibility, ...columnVisibility });
 
 	// Memoize column definitions until their structure or facet options change.
 	// Facet catalogs can arrive after the table's first render, so their metadata
@@ -447,16 +451,16 @@
 		},
 		state: {
 			get sorting() {
-				return sorting();
+				return sorting;
 			},
 			get columnVisibility() {
-				return columnVisibility;
+				return effectiveColumnVisibility;
 			},
 			get rowSelection() {
 				return rowSelection();
 			},
 			get columnFilters() {
-				return columnFilters();
+				return columnFilters;
 			},
 			get globalFilter() {
 				return globalFilter();
@@ -470,13 +474,22 @@
 		},
 		onRowSelectionChange: setRowSelection,
 		onSortingChange: (updater) => {
-			const prev = sorting();
-			const wasClientSort = prev[0] && clientSortAccessors.has(String(prev[0].id));
-			setSorting(updater);
-			const first = sorting()[0];
-			// Client-sorted columns reorder locally — no server round-trip, no persisted sort.
-			if (first && clientSortAccessors.has(String(first.id))) return;
-			if (!first && wasClientSort) return;
+			const wasClientSort = sorting[0] && clientSortAccessors.has(String(sorting[0].id));
+			let next: SortingState;
+			if (typeof updater === 'function') next = updater(sorting);
+			else next = updater;
+			const first = next[0];
+			// Keep client-only sorting, including its cleared state, until the server sort changes.
+			if ((first && clientSortAccessors.has(String(first.id))) || (!first && wasClientSort)) {
+				clientSortOverride = {
+					serverSort,
+					column: serverSort?.column,
+					direction: serverSort?.direction,
+					sorting: next
+				};
+				return;
+			}
+			clientSortOverride = null;
 			const sortState = first
 				? { column: String(first.id), direction: (first.desc ? 'desc' : 'asc') as 'asc' | 'desc' }
 				: undefined;
@@ -497,13 +510,15 @@
 			onRefresh(requestOptions);
 		},
 		onColumnFiltersChange: (updater) => {
-			setColumnFilters(updater);
+			let next: ColumnFiltersState;
+			if (typeof updater === 'function') next = updater(columnFilters);
+			else next = updater;
 			if (enablePersist && prefs) {
-				prefs.current = { ...prefs.current, f: encodeFilters(columnFilters()) };
+				prefs.current = { ...prefs.current, f: encodeFilters(next) };
 			}
 			requestOptions = {
 				...requestOptions,
-				filters: toFilterMap(columnFilters()),
+				filters: toFilterMap(next),
 				pagination: {
 					page: 1,
 					limit: requestOptions?.pagination?.limit ?? items?.pagination?.itemsPerPage ?? 10
@@ -512,7 +527,9 @@
 			onRefresh(requestOptions);
 		},
 		onColumnVisibilityChange: (updater) => {
-			const nextVisibility = typeof updater === 'function' ? updater(columnVisibility) : updater;
+			let nextVisibility: ColumnVisibilityState;
+			if (typeof updater === 'function') nextVisibility = updater(effectiveColumnVisibility);
+			else nextVisibility = updater;
 			columnVisibility = nextVisibility;
 			// Persist visibility
 			if (enablePersist && prefs) {
@@ -521,7 +538,7 @@
 
 			const activeSort = requestOptions?.sort;
 			if (activeSort && nextVisibility[activeSort.column] === false && hiddenSortFallback) {
-				setSorting([{ id: hiddenSortFallback.column, desc: hiddenSortFallback.direction === 'desc' }]);
+				clientSortOverride = null;
 				requestOptions = {
 					...requestOptions,
 					sort: hiddenSortFallback,
@@ -638,70 +655,22 @@
 		}
 	}
 
-	$effect(() => {
-		const s = requestOptions?.sort;
-		const currentSort = untrack(() => sorting()[0]);
-
-		if (!s) {
-			if (currentSort) {
-				untrack(() => {
-					setSorting([]);
-				});
-			}
-			return;
-		}
-
-		const desc = s.direction === 'desc';
-		if (!currentSort || currentSort.id !== s.column || currentSort.desc !== desc) {
-			untrack(() => {
-				setSorting([{ id: s.column, desc }]);
-			});
-		}
-	});
-
-	// Reflect externally-set requestOptions.filters (e.g. a clickable stat card applying
-	// a filter) back into the facet UI so the displayed filters match the active query.
-	// Only mutates local columnFilters — never triggers onRefresh — so it can't loop with
-	// the forward onColumnFiltersChange path.
-	$effect(() => {
-		const incoming = requestOptions?.filters;
-		const currentMap = untrack(() => toFilterMap(columnFilters()));
-		if (filterMapsEqual(incoming, currentMap)) return;
-		untrack(() => {
-			setColumnFilters(fromFilterMap(incoming));
-		});
-	});
-
-	// Track last persisted settings to prevent infinite loops
 	let lastPersistedSettings: string | null = null;
-	let persistTimeout: ReturnType<typeof setTimeout> | null = null;
+	let persistTimeout: ReturnType<typeof setTimeout> | undefined;
 
-	$effect(() => {
-		if (!enablePersist || !prefs) return;
-
-		// Read current settings without creating dependency on the stringified value
-		const currentSettings = customSettings;
-		const settingsJson = JSON.stringify(currentSettings);
-
-		// Skip if unchanged
+	export function persistCustomSettings(settings: Record<string, unknown>) {
+		if (!preferencesReady || !prefs) return;
+		const settingsJson = JSON.stringify(settings);
+		clearTimeout(persistTimeout);
 		if (settingsJson === lastPersistedSettings) return;
-
-		// Debounce persistence to prevent rapid updates
-		if (persistTimeout) clearTimeout(persistTimeout);
-
+		const owner = prefs;
 		persistTimeout = setTimeout(() => {
-			untrack(() => {
-				if (prefs && settingsJson !== lastPersistedSettings) {
-					lastPersistedSettings = settingsJson;
-					prefs.current = { ...prefs.current, c: currentSettings };
-				}
-			});
+			owner.current = { ...owner.current, c: settings };
+			lastPersistedSettings = settingsJson;
 		}, 100);
+	}
 
-		return () => {
-			if (persistTimeout) clearTimeout(persistTimeout);
-		};
-	});
+	onDestroy(() => clearTimeout(persistTimeout));
 
 	// Styled/unstyled differ only in wrapper chrome; the inner table/mobile/pagination tree is shared.
 	const shellClass = $derived(

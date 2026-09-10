@@ -44,11 +44,8 @@
 		permissionsManifest?: PermissionsManifest | null;
 	} = $props();
 
-	let autoLoginEnabled = $state(false);
-	$effect(() => {
-		const unsub = settingsStore.autoLoginEnabled.subscribe((v) => (autoLoginEnabled = v));
-		return unsub;
-	});
+	const autoLogin = fromStore(settingsStore.autoLoginEnabled);
+	const autoLoginEnabled = $derived(autoLogin.current);
 
 	const sidebar = useSidebar();
 

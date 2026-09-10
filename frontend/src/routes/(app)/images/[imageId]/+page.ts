@@ -20,7 +20,7 @@ export const load: PageLoad = async ({ params, parent }): Promise<ImageDetailDat
 
 	const operationResult = await tryCatch(
 		(async () => {
-			const image = await queryClient.fetchQuery({
+			const image = await queryClient.query({
 				queryKey: queryKeys.images.detail(envId, imageId),
 				queryFn: () => imageService.getImageForEnvironment(envId, imageId)
 			});

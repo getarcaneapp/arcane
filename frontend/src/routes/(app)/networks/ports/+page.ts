@@ -18,7 +18,7 @@ export const load: PageLoad = async ({ parent }) => {
 	let ports;
 	const operationResult = await tryCatch(
 		(async () =>
-			queryClient.fetchQuery({
+			queryClient.query({
 				queryKey: queryKeys.ports.list(envId, portRequestOptions),
 				queryFn: () => portService.getPortsForEnvironment(envId, portRequestOptions)
 			}))()

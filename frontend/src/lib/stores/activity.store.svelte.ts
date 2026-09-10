@@ -165,6 +165,7 @@ function createActivityStore() {
 	// Last observed status per activity, for completion-toast transition
 	// detection. Intentionally non-reactive: only stream handling reads it.
 	const observedStatusById = new Map<string, ActivityStatus>();
+	const activitySubscribers = new Set<(activities: readonly Activity[]) => void>();
 
 	// Toast when an activity this session observed as active reaches
 	// success/failed while the sheet is closed. Activities that first appear
@@ -352,6 +353,7 @@ function createActivityStore() {
 				observedStatusById.delete(id);
 			}
 		}
+		for (const subscriber of activitySubscribers) subscriber(_activities);
 	}
 
 	function mergeActivityInternal(activity: Activity) {
@@ -544,6 +546,13 @@ function createActivityStore() {
 	}
 
 	return {
+		subscribeActivities(subscriber: (activities: readonly Activity[]) => void): () => void {
+			activitySubscribers.add(subscriber);
+			subscriber(_activities);
+			return () => {
+				activitySubscribers.delete(subscriber);
+			};
+		},
 		get activities(): Activity[] {
 			return _activities;
 		},

@@ -4,6 +4,7 @@
 	import * as Card from '#lib/components/ui/card/index.js';
 	import LogViewer from '#lib/components/logs/log-viewer.svelte';
 	import LogControls from '#lib/components/logs/log-controls.svelte';
+	import { UseLogPreferences } from '#lib/hooks/use-log-preferences.svelte.js';
 	import LogPanelTitle from '#lib/components/logs/log-panel-title.svelte';
 	import type { ContainerStats, ContainerStatsHistorySample } from '#lib/types/docker.js';
 	import { m } from '#lib/paraglide/messages.js';
@@ -13,7 +14,6 @@
 	import { CpuIcon, FileTextIcon, MemoryStickIcon } from '#lib/icons/index.js';
 	import ContainerLogStatMonitor from './ContainerLogStatMonitor.svelte';
 
-	const HISTORY_LIMIT = 30;
 	type StatHistoryPoint = { percent: number; tooltip: string };
 
 	let {
@@ -38,15 +38,11 @@
 
 	let isStreaming = $state(false);
 	let viewer = $state<ReturnType<typeof LogViewer>>();
-	let autoStartLogs = $state(false);
+	const preferences = new UseLogPreferences();
 	let logSearchTerm = $state('');
 	let hasAutoStarted = $state(false);
-	let showParsedJson = $state(false);
-	let cpuHistory = $state<StatHistoryPoint[]>([]);
-	let memoryHistory = $state<StatHistoryPoint[]>([]);
-	let cpuHistoryAccumulator: StatHistoryPoint[] = [];
-	let memoryHistoryAccumulator: StatHistoryPoint[] = [];
-	let lastStatsRead: string | null = null;
+	const cpuHistory = $derived((stats?.statsHistory ?? []).map(toCPUHistoryPoint));
+	const memoryHistory = $derived((stats?.statsHistory ?? []).map(toMemoryHistoryPoint));
 
 	const cpuUsagePercent = $derived(calculateCPUPercent(stats));
 	const memoryUsageBytes = $derived(calculateMemoryUsage(stats));
@@ -69,22 +65,6 @@
 		if (!memoryLimitBytes) return m.common_na();
 		return bytes.format(memoryLimitBytes, { unitSeparator: ' ' }) ?? '';
 	});
-
-	function resetHistory() {
-		cpuHistoryAccumulator = [];
-		memoryHistoryAccumulator = [];
-		cpuHistory = [];
-		memoryHistory = [];
-		lastStatsRead = null;
-	}
-
-	function appendHistorySample(history: StatHistoryPoint[], value: StatHistoryPoint): StatHistoryPoint[] {
-		const next = [...history, value];
-		if (next.length > HISTORY_LIMIT) {
-			next.shift();
-		}
-		return next;
-	}
 
 	function percentFromTenths(tenths: number | undefined): number {
 		if (typeof tenths !== 'number' || Number.isNaN(tenths)) {
@@ -121,14 +101,6 @@
 		};
 	}
 
-	function applyBackendHistory(samples: ContainerStatsHistorySample[] | undefined) {
-		const history = samples ?? [];
-		cpuHistoryAccumulator = history.map(toCPUHistoryPoint);
-		memoryHistoryAccumulator = history.map(toMemoryHistoryPoint);
-		cpuHistory = cpuHistoryAccumulator;
-		memoryHistory = memoryHistoryAccumulator;
-	}
-
 	function handleStart() {
 		startLogViewerStream(viewer);
 	}
@@ -153,40 +125,9 @@
 	}
 
 	$effect(() => {
-		if (containerId) {
-			hasAutoStarted = false;
-			resetHistory();
-		}
-	});
-
-	$effect(() => {
-		if (autoStartLogs && !hasAutoStarted && !isStreaming && containerId) {
+		if (preferences.autoStartLogs && !hasAutoStarted && !isStreaming && containerId && viewer) {
 			hasAutoStarted = true;
 			handleStart();
-		}
-	});
-
-	$effect(() => {
-		if (!isRunning) {
-			return;
-		}
-
-		if (stats?.statsHistory?.length) {
-			applyBackendHistory(stats.statsHistory);
-			lastStatsRead = stats.read;
-			return;
-		}
-
-		if (!stats?.read || stats.read === lastStatsRead) {
-			return;
-		}
-
-		lastStatsRead = stats.read;
-		if (stats.currentHistorySample) {
-			cpuHistoryAccumulator = appendHistorySample(cpuHistoryAccumulator, toCPUHistoryPoint(stats.currentHistorySample));
-			memoryHistoryAccumulator = appendHistorySample(memoryHistoryAccumulator, toMemoryHistoryPoint(stats.currentHistorySample));
-			cpuHistory = cpuHistoryAccumulator;
-			memoryHistory = memoryHistoryAccumulator;
 		}
 	});
 </script>
@@ -200,8 +141,7 @@
 					<LogControls
 						bind:searchTerm={logSearchTerm}
 						bind:autoScroll
-						bind:autoStartLogs
-						bind:showParsedJson
+						{preferences}
 						mobileLayout="full"
 						showDesktop={false}
 						{isStreaming}
@@ -216,8 +156,7 @@
 			<LogControls
 				bind:searchTerm={logSearchTerm}
 				bind:autoScroll
-				bind:autoStartLogs
-				bind:showParsedJson
+				{preferences}
 				mobileLayout="none"
 				{isStreaming}
 				disabled={!containerId}
@@ -261,7 +200,8 @@
 				bind:autoScroll
 				type="container"
 				{containerId}
-				bind:showParsedJson
+				bind:showParsedJson={preferences.showParsedJson}
+				tailLines={preferences.tailLines}
 				maxLines={500}
 				showTimestamps={true}
 				groupAdjacentLines={true}

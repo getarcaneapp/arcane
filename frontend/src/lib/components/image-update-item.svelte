@@ -4,7 +4,7 @@
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { Badge, type BadgeVariant } from '#lib/components/ui/badge/index.js';
 	import { toast } from 'svelte-sonner';
-	import type { ImageUpdateData } from '#lib/types/docker.js';
+	import type { ImageUpdateData, ImageUpdateInfoDto } from '#lib/types/docker.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { imageService } from '#lib/services/image-service.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
@@ -66,30 +66,36 @@
 		return instantEpochMilliseconds(info.checkTime) ?? 0;
 	}
 
-	const imageUpdateQuery = createQuery<ImageUpdateData>(() => ({
-		queryKey: queryKeys.images.updateCheck(
-			environmentStore.selected?.id || '0',
-			containerId ? `container:${containerId}` : imageId || imageRef || ''
-		),
-		queryFn: async () => {
-			const result =
-				imageId && !(containerId && imageRef)
-					? await imageService.checkImageUpdateByID(imageId)
-					: (await imageService.checkMultipleImages([imageRef ?? '']))[imageRef ?? ''];
-			if (!result) throw new Error(m.images_update_check_failed());
-			if (containerId) {
-				if (tagUpdates) {
-					const scopedResult = result.containerUpdates?.[containerId];
-					if (!scopedResult) throw new Error(result.error || m.images_update_check_failed());
-					return { ...scopedResult, activityId: scopedResult.activityId ?? result.activityId };
+	const imageUpdateQuery = createQuery<ImageUpdateData>(() => {
+		const environmentId = environmentStore.selected?.id || '0';
+		const target = { imageId, containerId, imageRef, tagUpdates };
+		let key = target.imageId || target.imageRef || '';
+		if (target.containerId) key = `container:${target.containerId}`;
+		return {
+			queryKey: queryKeys.images.updateCheck(environmentId, key),
+			queryFn: async () => {
+				let result: ImageUpdateInfoDto | undefined;
+				if (target.imageId && !(target.containerId && target.imageRef)) {
+					result = await imageService.checkImageUpdateByID(target.imageId);
+				} else {
+					const ref = target.imageRef ?? '';
+					result = (await imageService.checkMultipleImages([ref]))[ref];
 				}
-				return result.imageUpdate ?? result;
-			}
-			return result;
-		},
-		enabled: false,
-		retry: false
-	}));
+				if (!result) throw new Error(m.images_update_check_failed());
+				if (target.containerId) {
+					if (target.tagUpdates) {
+						const scopedResult = result.containerUpdates?.[target.containerId];
+						if (!scopedResult) throw new Error(result.error || m.images_update_check_failed());
+						return { ...scopedResult, activityId: scopedResult.activityId ?? result.activityId };
+					}
+					return result.imageUpdate ?? result;
+				}
+				return result;
+			},
+			enabled: false,
+			retry: false
+		};
+	});
 
 	const errorFromQuery = $derived.by((): ImageUpdateData | undefined => {
 		if (!imageUpdateQuery.error) return undefined;

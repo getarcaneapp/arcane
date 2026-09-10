@@ -26,15 +26,15 @@ export const load: PageLoad = async ({ parent }) => {
 	// configure groups claim + the mappings that read from it in one place.
 	const [mappings, federatedCredentials, roles, environmentsPage] = await Promise.all([
 		oidcMappingService.list(),
-		queryClient.fetchQuery({
+		queryClient.query({
 			queryKey: queryKeys.federatedCredentials.list(federatedCredentialRequestOptions),
 			queryFn: () => federatedCredentialService.list(federatedCredentialRequestOptions)
 		}),
-		queryClient.fetchQuery({
+		queryClient.query({
 			queryKey: ['roles', 'all'],
 			queryFn: () => roleService.getAll()
 		}),
-		queryClient.fetchQuery({
+		queryClient.query({
 			queryKey: queryKeys.environments.list({
 				pagination: { page: 1, limit: 1000 },
 				sort: { column: 'name', direction: 'asc' }

@@ -2,8 +2,9 @@ import { writable } from 'svelte/store';
 import { m } from '#lib/paraglide/messages.js';
 import type { ConfirmDialogOptions } from '#lib/types/confirm-dialog.js';
 
-export const confirmDialogStore = writable<ConfirmDialogOptions & { open: boolean }>({
+export const confirmDialogStore = writable<ConfirmDialogOptions & { open: boolean; checkboxStates: Record<string, boolean> }>({
 	open: false,
+	checkboxStates: {},
 	title: '',
 	message: '',
 	confirm: {
@@ -16,6 +17,7 @@ export const confirmDialogStore = writable<ConfirmDialogOptions & { open: boolea
 export function openConfirmDialog({ title, message, confirm, checkboxes }: ConfirmDialogOptions) {
 	confirmDialogStore.update(() => ({
 		open: true,
+		checkboxStates: Object.fromEntries((checkboxes ?? []).map((checkbox) => [checkbox.id, Boolean(checkbox.initialState)])),
 		title,
 		message,
 		confirm: {

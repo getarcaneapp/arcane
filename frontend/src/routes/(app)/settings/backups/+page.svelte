@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
-	import { goto } from '$app/navigation';
+	import { goto, afterNavigate } from '$app/navigation';
+	import { onMount, onDestroy } from 'svelte';
+	import userStore from '#lib/stores/user-store.js';
 	import { useBackupActivity } from '#lib/hooks/use-backup-activity.svelte.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import { toast } from 'svelte-sonner';
@@ -47,6 +49,7 @@
 	let systemVolumeOptions = $state<SystemVolumeBackupOption[]>([]);
 	let requestOptions = $derived<SearchPaginationSortRequest>(data.requestOptions);
 	let scheduleOpen = $state(false);
+	let scheduleSession = $state(0);
 	let scheduleType = $state<'system' | 'volume'>('system');
 	let editingScheduleId = $state<string | undefined>();
 	let keyOpen = $state(false);
@@ -140,6 +143,8 @@
 	const invalid = $derived(Boolean(actionKeyInvalid || keyError || destinationError));
 
 	function openSchedule(type: 'system' | 'volume' = 'system', id?: string) {
+		scheduleSession += 1;
+		if (type === 'volume') void loadSystemVolumeOptions();
 		scheduleType = type;
 		editingScheduleId = id;
 		scheduleOpen = true;
@@ -157,6 +162,7 @@
 					await systemBackupService.setRecoveryKey(generated.recoveryKey);
 					newRecoveryKey = generated.recoveryKey;
 					policyCollection = { ...policyCollection, recoveryKeyStored: true };
+					void discoverStoredBackups();
 					keyOpen = true;
 				})()
 			);
@@ -201,6 +207,7 @@
 				(async () => {
 					await systemBackupService.setRecoveryKey(importKeyInput.trim());
 					policyCollection = { ...policyCollection, recoveryKeyStored: true };
+					void discoverStoredBackups();
 					importKeyOpen = false;
 					toast.success(m.system_backups_recovery_key_saved());
 				})()
@@ -234,8 +241,6 @@
 		actionOpen = true;
 	}
 
-	// The picker resets its own selection and search whenever the provider
-	// changes, so the dialog only manages target, key, and provider.
 	async function openRestoreFiles(backup: BackupHistoryEntry) {
 		restoreFilesTarget = backup;
 		restoreFilesRecoveryKey = '';
@@ -247,10 +252,6 @@
 
 	function closeRestoreFiles() {
 		restoreFilesOpen = false;
-		restoreFilesTarget = null;
-		restoreFilesRecoveryKey = '';
-		restoreFilesProvider = null;
-		restoreFilesLoaded = false;
 	}
 
 	function updateRestoreFilesRecoveryKey(value: string) {
@@ -261,6 +262,9 @@
 
 	function loadRestoreFiles() {
 		if (!restoreFilesTarget || restoreFilesKeyInvalid) return;
+		restoreFilesSelectedPaths = [];
+		restoreFilesSelectAll = false;
+		restoreFilesSearch = '';
 		const backupID = restoreFilesTarget.id;
 		const recoveryKey = restoreFilesRecoveryKey.trim();
 		restoreFilesProvider = {
@@ -366,26 +370,32 @@
 		await goto(`/volumes/${encodeURIComponent(backup.resourceName)}?tab=backups`);
 	}
 
-	// With a stored key the S3 repositories are scanned automatically, so
-	// remote snapshots just appear in the table; the manual Find S3 backups
-	// flow only exists for fresh instances that must supply an old key.
 	let autoDiscovered = false;
-	$effect(() => {
-		if (autoDiscovered || !policyCollection.recoveryKeyStored || data.destinations.length === 0) return;
+	let mounted = false;
+	async function discoverStoredBackups() {
+		if (!mounted || autoDiscovered || !policyCollection.recoveryKeyStored || !data.destinations.length) return;
+		if (!hasPermission('system-backups:manage')) return;
 		autoDiscovered = true;
-		void (async () => {
-			const operationResult = await tryCatch(
-				(async () => {
-					const counts = await Promise.all(data.destinations.map((item) => systemBackupService.discover(item.id, '')));
-					if (counts.some((count) => count > 0)) await refresh();
-				})()
-			);
-			if (operationResult.error !== null) {
-				const error = operationResult.error;
-
-				console.warn('S3 backup discovery failed', error);
-			}
-		})();
+		const destinations = data.destinations;
+		const result = await tryCatch(Promise.all(destinations.map((item) => systemBackupService.discover(item.id, ''))));
+		if (!mounted) return;
+		if (result.error !== null) {
+			console.warn('S3 backup discovery failed', result.error);
+			return;
+		}
+		if (result.data.some((count) => count > 0)) await refresh();
+	}
+	onMount(() => {
+		mounted = true;
+		return userStore.subscribe(() => {
+			void discoverStoredBackups();
+		});
+	});
+	onDestroy(() => {
+		mounted = false;
+	});
+	afterNavigate(() => {
+		void discoverStoredBackups();
 	});
 
 	const backupActivity = useBackupActivity(
@@ -783,12 +793,14 @@
 				</div>
 
 				{#if restoreFilesProvider}
-					<BackupFilePicker
-						provider={restoreFilesProvider}
-						bind:selectedPaths={restoreFilesSelectedPaths}
-						bind:selectAll={restoreFilesSelectAll}
-						bind:search={restoreFilesSearch}
-					/>
+					{#key restoreFilesProvider}
+						<BackupFilePicker
+							provider={restoreFilesProvider}
+							bind:selectedPaths={restoreFilesSelectedPaths}
+							bind:selectAll={restoreFilesSelectAll}
+							bind:search={restoreFilesSearch}
+						/>
+					{/key}
 
 					<Alert.Root variant="warning" class="py-2 [&>svg]:top-2">
 						<AlertIcon class="size-4" />
@@ -879,21 +891,23 @@
 		</div>
 	{/snippet}
 	{#snippet additionalContent()}
-		{#if scheduleOpen}
-			<SystemBackupScheduleDialog
-				bind:open={scheduleOpen}
-				initialType={scheduleType}
-				policyId={editingScheduleId}
-				systemPolicies={policyCollection.policies}
-				volumePolicies={systemVolumePolicyCollection.policies}
-				recoveryKeyStored={policyCollection.recoveryKeyStored}
-				destinations={data.destinations}
-				volumeOptions={systemVolumeOptions}
-				volumeOptionsLoading={systemVolumeOptionsLoading}
-				onLoadVolumeOptions={loadSystemVolumeOptions}
-				onSystemSaved={(policies) => (policyCollection = { ...policyCollection, policies })}
-				onVolumeSaved={(policies) => (systemVolumePolicyCollection = { policies })}
-			/>
+		{#if scheduleSession > 0}
+			{#key scheduleSession}
+				<SystemBackupScheduleDialog
+					bind:open={scheduleOpen}
+					initialType={scheduleType}
+					policyId={editingScheduleId}
+					systemPolicies={policyCollection.policies}
+					volumePolicies={systemVolumePolicyCollection.policies}
+					recoveryKeyStored={policyCollection.recoveryKeyStored}
+					destinations={data.destinations}
+					volumeOptions={systemVolumeOptions}
+					volumeOptionsLoading={systemVolumeOptionsLoading}
+					onLoadVolumeOptions={loadSystemVolumeOptions}
+					onSystemSaved={(policies) => (policyCollection = { ...policyCollection, policies })}
+					onVolumeSaved={(policies) => (systemVolumePolicyCollection = { policies })}
+				/>
+			{/key}
 		{/if}
 
 		{@render recoveryKeyDialog()}

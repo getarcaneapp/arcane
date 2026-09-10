@@ -11,16 +11,13 @@
 	import { EyeOffIcon, EyeOnIcon, LockIcon, SettingsIcon, UsersIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { createQuery } from '@tanstack/svelte-query';
+	import { queryKeys } from '#lib/query/query-keys.js';
+	import userStore from '#lib/stores/user-store.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import type {
-		SwarmInfo,
-		SwarmInitRequest,
-		SwarmJoinRequest,
-		SwarmJoinTokensResponse,
-		SwarmUpdateRequest
-	} from '#lib/types/swarm.js';
+	import type { SwarmInitRequest, SwarmJoinRequest, SwarmUpdateRequest } from '#lib/types/swarm.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import { toast } from 'svelte-sonner';
@@ -30,13 +27,53 @@
 	const canManageSwarm = $derived(hasPermission('swarm:nodes', currentEnvId));
 	const canEasyJoin = $derived(hasPermission('swarm:nodes', currentEnvId) && hasPermission('swarm:unlock', currentEnvId));
 
-	let swarmInfo = $state<SwarmInfo | null>(null);
-	let joinTokens = $state<SwarmJoinTokensResponse | null>(null);
-	let unlockKey = $state('');
+	const swarmInfoQuery = createQuery(() => {
+		const environmentId = currentEnvId;
+		$userStore;
+		return {
+			queryKey: queryKeys.swarm.info(environmentId ?? ''),
+			queryFn: async () => {
+				await environmentStore.ready;
+				return swarmService.getSwarmInfo();
+			},
+			enabled: !!environmentId && hasPermission('swarm:read', environmentId),
+			retry: false
+		};
+	});
+	const joinTokensQuery = createQuery(() => {
+		const environmentId = currentEnvId;
+		$userStore;
+		return {
+			queryKey: queryKeys.swarm.joinTokens(environmentId ?? ''),
+			queryFn: async () => {
+				await environmentStore.ready;
+				return swarmService.getSwarmJoinTokens();
+			},
+			enabled: !!environmentId && hasPermission('swarm:unlock', environmentId),
+			retry: false
+		};
+	});
+	const unlockKeyQuery = createQuery(() => {
+		const environmentId = currentEnvId;
+		$userStore;
+		return {
+			queryKey: queryKeys.swarm.unlockKey(environmentId ?? ''),
+			queryFn: async () => {
+				await environmentStore.ready;
+				return swarmService.getSwarmUnlockKey();
+			},
+			enabled: !!environmentId && hasPermission('swarm:unlock', environmentId),
+			retry: false
+		};
+	});
+	const swarmInfo = $derived(swarmInfoQuery.data ?? null);
+	const joinTokens = $derived(joinTokensQuery.data ?? null);
+	const unlockKey = $derived(unlockKeyQuery.data?.unlockKey ?? '');
 	let showManagerToken = $state(false);
 	let showWorkerToken = $state(false);
 	let securityDialogOpen = $state(false);
 	let easyJoinDialogOpen = $state(false);
+	let easyJoinSession = $state(0);
 	const isSwarmInitialized = $derived(!!swarmInfo?.id);
 
 	let initForm = $state({
@@ -56,9 +93,10 @@
 
 	let leaveForce = $state(false);
 	let unlockInput = $state('');
+	let specDraft = $state<string | null>(null);
+	const updateSpec = $derived(specDraft ?? JSON.stringify(swarmInfo?.spec ?? {}, null, 2));
 	let updateForm = $state({
 		version: '',
-		spec: '{}',
 		rotateWorkerToken: false,
 		rotateManagerToken: false,
 		rotateManagerUnlockKey: false
@@ -97,36 +135,38 @@
 
 	function loadCurrentSpec() {
 		const currentSpec = swarmInfo?.spec ?? {};
-		updateForm.spec = JSON.stringify(currentSpec, null, 2);
+		specDraft = JSON.stringify(currentSpec, null, 2);
 	}
 
 	async function refresh() {
+		const environmentId = currentEnvId;
+		if (!environmentId) return;
 		isLoading.refresh = true;
+		showManagerToken = false;
+		showWorkerToken = false;
 		try {
-			const [infoRes, tokensRes, unlockRes] = await Promise.allSettled([
-				swarmService.getSwarmInfo(),
-				swarmService.getSwarmJoinTokens(),
-				swarmService.getSwarmUnlockKey()
-			]);
-
-			swarmInfo = infoRes.status === 'fulfilled' ? infoRes.value : null;
-			joinTokens = tokensRes.status === 'fulfilled' ? tokensRes.value : null;
-			unlockKey = unlockRes.status === 'fulfilled' ? unlockRes.value.unlockKey : '';
-			showManagerToken = false;
-			showWorkerToken = false;
-
-			if (swarmInfo && updateForm.spec === '{}') {
-				loadCurrentSpec();
-			}
+			const requests: Promise<unknown>[] = [];
+			if (hasPermission('swarm:read', environmentId)) requests.push(swarmInfoQuery.refetch());
+			if (hasPermission('swarm:unlock', environmentId)) requests.push(joinTokensQuery.refetch(), unlockKeyQuery.refetch());
+			await Promise.all(requests);
 		} finally {
-			isLoading.refresh = false;
+			if (environmentId === currentEnvId) isLoading.refresh = false;
 		}
 	}
 
-	useEnvironmentRefresh(refresh);
-
-	$effect(() => {
-		refresh();
+	useEnvironmentRefresh(() => {
+		showManagerToken = false;
+		showWorkerToken = false;
+		securityDialogOpen = false;
+		easyJoinDialogOpen = false;
+		specDraft = null;
+		updateForm.version = '';
+		updateForm.rotateWorkerToken = false;
+		updateForm.rotateManagerToken = false;
+		updateForm.rotateManagerUnlockKey = false;
+		unlockInput = '';
+		joinForm.joinToken = '';
+		isLoading.refresh = false;
 	});
 
 	async function handleInit() {
@@ -230,7 +270,7 @@
 	}
 
 	async function handleUpdateSpec() {
-		const spec = parseObjectJSON(updateForm.spec, m.swarm_cluster_spec_label());
+		const spec = parseObjectJSON(updateSpec, m.swarm_cluster_spec_label());
 		if (!spec) return;
 
 		const parsedVersion = Number.parseInt(updateForm.version, 10);
@@ -264,7 +304,10 @@
 						id: 'easy-join',
 						action: 'create' as const,
 						label: m.swarm_easy_join_action(),
-						onclick: () => (easyJoinDialogOpen = true)
+						onclick: () => {
+							easyJoinSession += 1;
+							easyJoinDialogOpen = true;
+						}
 					}
 				]
 			: []),
@@ -460,7 +503,7 @@
 						<Textarea
 							rows={22}
 							placeholder={m.swarm_cluster_spec_placeholder()}
-							bind:value={updateForm.spec}
+							bind:value={() => updateSpec, (value) => (specDraft = value)}
 							class="min-h-[34rem] font-mono text-xs"
 						/>
 						<div class="flex justify-end border-t pt-4">
@@ -627,6 +670,8 @@
 			{/snippet}
 		</ResponsiveDialog>
 
-		<EasyJoinDialog bind:open={easyJoinDialogOpen} onComplete={refresh} />
+		{#key `${easyJoinSession}:${currentEnvId}`}
+			<EasyJoinDialog bind:open={easyJoinDialogOpen} onComplete={refresh} />
+		{/key}
 	{/snippet}
 </ResourcePageLayout>

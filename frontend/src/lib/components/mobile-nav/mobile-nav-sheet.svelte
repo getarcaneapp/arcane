@@ -31,15 +31,8 @@
 		debug?: boolean;
 	} = $props();
 
-	let storeUser = $state<User | null>(null);
-
-	$effect(() => {
-		const unsub = userStore.subscribe((u) => (storeUser = u));
-		return unsub;
-	});
-
 	const currentPath = $derived(page.url.pathname);
-	const memoizedUser = $derived.by(() => user ?? storeUser);
+	const memoizedUser = $derived(user ?? $userStore);
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
 	const managementItemsRaw = $derived(getManagementItems(currentEnvId));
 	const managementItems = $derived(

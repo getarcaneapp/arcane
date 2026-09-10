@@ -22,7 +22,7 @@ export const load: PageLoad = async ({
 
 	const [templates, registries] = await Promise.all([
 		tryCatch(
-			queryClient.fetchQuery({
+			queryClient.query({
 				queryKey: queryKeys.templates.list(templateRequestOptions),
 				queryFn: () => templateService.getTemplates(templateRequestOptions)
 			})
@@ -35,7 +35,7 @@ export const load: PageLoad = async ({
 				: result.data
 		),
 		tryCatch(
-			queryClient.fetchQuery({
+			queryClient.query({
 				queryKey: queryKeys.templates.registries(),
 				queryFn: () => templateService.getRegistries()
 			})

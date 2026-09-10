@@ -7,7 +7,10 @@
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import { toast } from 'svelte-sonner';
-	import { onDestroy } from 'svelte';
+	import { onMount, onDestroy, tick } from 'svelte';
+	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
+	import { queryKeys } from '#lib/query/query-keys.js';
+	import userStore from '#lib/stores/user-store.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { imageService } from '#lib/services/image-service.js';
@@ -75,43 +78,47 @@
 	});
 	let tagDialogOpen = $state(false);
 
-	let vulnerabilityScan = $state<VulnerabilityScanResult | null>(null);
-	let hasLoadedVulnerabilities = $state(false);
-	let stopScanPolling: (() => void) | null = $state(null);
-	let lastScanRequestedAt = $state<string | null>(null);
-
-	// Load vulnerability scan data when image changes
-	$effect(() => {
-		if (image?.id && !hasLoadedVulnerabilities) {
-			loadVulnerabilityScan();
-		}
+	const queryClient = useQueryClient();
+	const scanQueryKey = $derived(queryKeys.vulnerabilities.scanResult(currentEnvId, image?.id ?? ''));
+	const scanQuery = createQuery(() => {
+		const environmentId = currentEnvId;
+		const imageId = image?.id;
+		$userStore;
+		return {
+			queryKey: queryKeys.vulnerabilities.scanResult(environmentId, imageId ?? ''),
+			queryFn: async () => {
+				await environmentStore.ready;
+				return vulnerabilityService.getScanResult(imageId!);
+			},
+			enabled: !!imageId && hasPermission('vulnerabilities:read', environmentId),
+			retry: false
+		};
 	});
-
-	async function loadVulnerabilityScan() {
-		if (!image?.id) return;
-		const operationResult = await tryCatch(
-			(async () => {
-				const result = await vulnerabilityService.getScanResult(image.id);
-				vulnerabilityScan = result;
-				lastScanRequestedAt = result.scanTime || lastScanRequestedAt;
-			})()
-		);
-		if (operationResult.error !== null) {
-			// No scan data found, that's okay
-			vulnerabilityScan = null;
-		}
-		hasLoadedVulnerabilities = true;
-	}
+	const vulnerabilityScan = $derived(scanQuery.data ?? null);
+	const scanInProgress = $derived(isVulnerabilityScanInProgress(vulnerabilityScan?.status));
+	let stopScanPolling: (() => void) | null = null;
+	let pollingScope = '';
+	let scanRequest = $state<{ scope: string; time: string } | null>(null);
+	const lastScanRequestedAt = $derived.by(() => {
+		if (scanRequest?.scope === `${currentEnvId}:${image?.id}`) return scanRequest.time;
+		return vulnerabilityScan?.scanTime ?? null;
+	});
+	let destroyed = false;
 
 	async function handleScanImage() {
 		if (!image?.id || isLoading.scanning) return;
+		const environmentId = currentEnvId;
+		const requestedImageId = image.id;
+		const requestedKey = scanQueryKey;
 		isLoading.scanning = true;
 		try {
 			const operationResult = await tryCatch(
 				(async () => {
-					const result = await vulnerabilityService.scanImage(image.id);
-					vulnerabilityScan = result;
-					lastScanRequestedAt = result.scanTime || nowInstantString();
+					await queryClient.cancelQueries({ queryKey: requestedKey });
+					const result = await vulnerabilityService.scanImage(requestedImageId);
+					queryClient.setQueryData(requestedKey, result);
+					if (destroyed || environmentId !== currentEnvId || requestedImageId !== image.id) return;
+					scanRequest = { scope: `${environmentId}:${requestedImageId}`, time: result.scanTime || nowInstantString() };
 					if (isVulnerabilityScanInProgress(result.status)) {
 						toastVulnerabilityScanStatus(result, { includeStarted: true });
 						beginScanPolling(true);
@@ -158,9 +165,14 @@
 
 	function beginScanPolling(showToast: boolean) {
 		if (!image?.id || stopScanPolling) return;
-		const cancel = startVulnerabilityScanPolling(image.id, (id) => vulnerabilityService.getScanSummary(id), {
+		const environmentId = currentEnvId;
+		const requestedImageId = image.id;
+		const requestedKey = scanQueryKey;
+		pollingScope = `${environmentId}:${requestedImageId}`;
+		const cancel = startVulnerabilityScanPolling(requestedImageId, (id) => vulnerabilityService.getScanSummary(id), {
 			onUpdate: (summary) => {
-				vulnerabilityScan = {
+				if (destroyed || environmentId !== currentEnvId || requestedImageId !== image.id) return;
+				queryClient.setQueryData(requestedKey, {
 					...(vulnerabilityScan ?? {}),
 					imageId: summary.imageId,
 					scanTime: summary.scanTime,
@@ -168,9 +180,10 @@
 					scanPhase: summary.scanPhase,
 					summary: summary.summary,
 					error: summary.error
-				} as VulnerabilityScanResult;
+				} as VulnerabilityScanResult);
 			},
 			onComplete: async (summary) => {
+				if (destroyed || environmentId !== currentEnvId || requestedImageId !== image.id) return;
 				let resolvedSummary = summary;
 				const operationResult = await tryCatch(
 					(async () =>
@@ -184,8 +197,9 @@
 					resolvedSummary = operationResult.data;
 				}
 
+				if (destroyed || environmentId !== currentEnvId || requestedImageId !== image.id) return;
 				if (isVulnerabilityScanInProgress(resolvedSummary.status)) {
-					vulnerabilityScan = {
+					queryClient.setQueryData(requestedKey, {
 						...(vulnerabilityScan ?? {}),
 						imageId: resolvedSummary.imageId,
 						scanTime: resolvedSummary.scanTime,
@@ -193,7 +207,7 @@
 						scanPhase: resolvedSummary.scanPhase,
 						summary: resolvedSummary.summary,
 						error: resolvedSummary.error
-					} as VulnerabilityScanResult;
+					} as VulnerabilityScanResult);
 					stopPolling();
 					beginScanPolling(false);
 					return;
@@ -201,11 +215,12 @@
 
 				stopPolling();
 				const operationResult2 = await tryCatch((async () => vulnerabilityService.getScanResult(resolvedSummary.imageId))());
+				if (destroyed || environmentId !== currentEnvId || requestedImageId !== image.id) return;
 				if (operationResult2.error !== null) {
 					const error = operationResult2.error;
 
 					console.error('Failed to load scan result:', error);
-					vulnerabilityScan = {
+					queryClient.setQueryData(requestedKey, {
 						...(vulnerabilityScan ?? {}),
 						imageId: resolvedSummary.imageId,
 						scanTime: resolvedSummary.scanTime,
@@ -213,9 +228,9 @@
 						scanPhase: resolvedSummary.scanPhase,
 						summary: resolvedSummary.summary,
 						error: resolvedSummary.error
-					} as VulnerabilityScanResult;
+					} as VulnerabilityScanResult);
 				} else {
-					vulnerabilityScan = operationResult2.data;
+					queryClient.setQueryData(requestedKey, operationResult2.data);
 				}
 				if (showToast) {
 					toastVulnerabilityScanStatus(resolvedSummary);
@@ -227,19 +242,25 @@
 		stopScanPolling = cancel;
 	}
 
-	$effect(() => {
-		if (!lastScanRequestedAt && vulnerabilityScan?.scanTime) {
-			lastScanRequestedAt = vulnerabilityScan.scanTime;
+	onMount(() => {
+		const cache = queryClient.getQueryCache();
+		function updateScanPolling() {
+			if (destroyed) return;
+			const scope = `${currentEnvId}:${image?.id}`;
+			if (scope !== pollingScope) stopPolling();
+			if (scanInProgress) beginScanPolling(false);
+			else stopPolling();
 		}
-		const scanning = isVulnerabilityScanInProgress(vulnerabilityScan?.status);
-		if (scanning) {
-			beginScanPolling(false);
-		} else {
-			stopPolling();
-		}
+		updateScanPolling();
+		return cache.subscribe((event) => {
+			if (event.type !== 'updated' && event.type !== 'observerResultsUpdated') return;
+			if (event.query !== cache.find({ queryKey: scanQueryKey, exact: true })) return;
+			void tick().then(updateScanPolling);
+		});
 	});
 
 	onDestroy(() => {
+		destroyed = true;
 		stopPolling();
 	});
 

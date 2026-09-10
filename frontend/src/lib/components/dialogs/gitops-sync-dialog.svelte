@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import FormInput from '#lib/components/form/form-input.svelte';
@@ -70,7 +71,12 @@
 
 	const composeFileFilter = (file: FileTreeNode) =>
 		file.type === 'file' && (file.name.endsWith('.yml') || file.name.endsWith('.yaml'));
-	let selectedTargetType = $state<GitOpsSyncTargetType>('project');
+	let selectedTargetType = $state<GitOpsSyncTargetType>(untrack(() => normalizeTargetType(syncToEdit?.targetType ?? targetType)));
+
+	const defaultComposePath = $derived.by(() => {
+		if (selectedTargetType === 'swarm_stack') return 'compose.yml';
+		return 'docker-compose.yml';
+	});
 
 	const targetTypeOptions = [
 		{ value: 'project', label: m.project() },
@@ -113,47 +119,63 @@
 		return value * bytesPerMegabyte;
 	}
 
-	const settingsQuery = createQuery(() => ({
-		queryKey: queryKeys.settings.byEnvironment(environmentId),
-		queryFn: () => settingsService.getSettingsForEnvironmentMerged(environmentId),
-		enabled: open,
-		staleTime: 0,
-		refetchOnMount: 'always'
-	}));
+	const settingsQuery = createQuery(() => {
+		const requestEnvironmentId = environmentId;
+		return {
+			queryKey: queryKeys.settings.byEnvironment(requestEnvironmentId),
+			queryFn: () => settingsService.getSettingsForEnvironmentMerged(requestEnvironmentId),
+			enabled: open,
+			staleTime: 0,
+			refetchOnMount: 'always'
+		};
+	});
 	const lifecycleEnabled = $derived(settingsQuery.data?.lifecycleEnabled ?? false);
 	const lifecycleDefaultRunnerImage = $derived(settingsQuery.data?.lifecycleDefaultRunnerImage?.trim() || 'alpine:latest');
 
-	let formData = $derived({
-		name: open && syncToEdit ? syncToEdit.name : '',
-		repositoryId: open && syncToEdit ? syncToEdit.repositoryId : '',
-		branch: open && syncToEdit ? syncToEdit.branch : 'main',
-		composePath:
-			open && syncToEdit ? syncToEdit.composePath : selectedTargetType === 'swarm_stack' ? 'compose.yml' : 'docker-compose.yml',
-		syncDirectory: open && syncToEdit ? (syncToEdit.syncDirectory ?? false) : false,
-		pullImageAfterSync: open && syncToEdit ? (syncToEdit.pullImageAfterSync ?? false) : false,
-		redeployAfterSync: open && syncToEdit ? (syncToEdit.redeployAfterSync ?? false) : false,
-		maxSyncFiles: open && syncToEdit ? (syncToEdit.maxSyncFiles ?? 0) : (settingsQuery.data?.gitSyncMaxFiles ?? 0),
-		maxSyncTotalSizeMb:
-			open && syncToEdit
-				? bytesToMegabytesInternal(syncToEdit.maxSyncTotalSize, 0)
-				: (settingsQuery.data?.gitSyncMaxTotalSizeMb ?? 0),
-		maxSyncBinarySizeMb:
-			open && syncToEdit
-				? bytesToMegabytesInternal(syncToEdit.maxSyncBinarySize, 0)
-				: (settingsQuery.data?.gitSyncMaxBinarySizeMb ?? 0),
-		autoSync: open && syncToEdit ? (syncToEdit.autoSync ?? true) : true,
-		syncInterval: open && syncToEdit ? (syncToEdit.syncInterval ?? 5) : 5,
-		preDeployScriptPath: open && syncToEdit ? (syncToEdit.preDeployScriptPath ?? '') : '',
-		preDeployRunnerImage: open && syncToEdit ? (syncToEdit.preDeployRunnerImage ?? '') : lifecycleDefaultRunnerImage,
-		preDeployTimeoutSec: open && syncToEdit ? (syncToEdit.preDeployTimeoutSec ?? 60) : 60,
-		preDeployNetworkMode: open && syncToEdit ? (syncToEdit.preDeployNetworkMode ?? 'none') : 'none',
-		preDeployEnv: open && syncToEdit ? (syncToEdit.preDeployEnv ?? '') : '',
-		preDeployExtraMounts: open && syncToEdit ? (syncToEdit.preDeployExtraMounts ?? '') : ''
+	const formData = $derived.by(() => {
+		// New drafts use the first settings response; later refreshes preserve edits.
+		if (!untrack(() => isEditMode)) settingsQuery.isFetchedAfterMount;
+		return untrack(() => {
+			let maxSyncFiles = settingsQuery.data?.gitSyncMaxFiles ?? 0;
+			let maxSyncTotalSizeMb = settingsQuery.data?.gitSyncMaxTotalSizeMb ?? 0;
+			let maxSyncBinarySizeMb = settingsQuery.data?.gitSyncMaxBinarySizeMb ?? 0;
+			let preDeployRunnerImage = lifecycleDefaultRunnerImage;
+			if (syncToEdit) {
+				maxSyncFiles = syncToEdit.maxSyncFiles ?? 0;
+				maxSyncTotalSizeMb = bytesToMegabytesInternal(syncToEdit.maxSyncTotalSize, 0);
+				maxSyncBinarySizeMb = bytesToMegabytesInternal(syncToEdit.maxSyncBinarySize, 0);
+				preDeployRunnerImage = syncToEdit.preDeployRunnerImage ?? '';
+			}
+			return {
+				name: syncToEdit?.name ?? '',
+				repositoryId: syncToEdit?.repositoryId ?? '',
+				branch: syncToEdit?.branch ?? 'main',
+				composePath: syncToEdit?.composePath ?? defaultComposePath,
+				syncDirectory: syncToEdit?.syncDirectory ?? false,
+				pullImageAfterSync: syncToEdit?.pullImageAfterSync ?? false,
+				redeployAfterSync: syncToEdit?.redeployAfterSync ?? false,
+				maxSyncFiles,
+				maxSyncTotalSizeMb,
+				maxSyncBinarySizeMb,
+				autoSync: syncToEdit?.autoSync ?? true,
+				syncInterval: syncToEdit?.syncInterval ?? 5,
+				preDeployScriptPath: syncToEdit?.preDeployScriptPath ?? '',
+				preDeployRunnerImage,
+				preDeployTimeoutSec: syncToEdit?.preDeployTimeoutSec ?? 60,
+				preDeployNetworkMode: syncToEdit?.preDeployNetworkMode ?? 'none',
+				preDeployEnv: syncToEdit?.preDeployEnv ?? '',
+				preDeployExtraMounts: syncToEdit?.preDeployExtraMounts ?? ''
+			};
+		});
 	});
 
 	let { inputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, formData));
 
-	let selectedRepository = $state<{ value: string; label: string } | undefined>(undefined);
+	const selectedRepository = $derived.by(() => {
+		const repository = repositories.find((item) => item.id === $inputs.repositoryId.value);
+		if (!repository) return undefined;
+		return { value: repository.id, label: repository.name };
+	});
 	const repositoriesQuery = createQuery(() => ({
 		queryKey: queryKeys.gitRepositories.syncDialog(),
 		queryFn: () => gitRepositoryService.getRepositories({ pagination: { page: 1, limit: 100 } }),
@@ -164,12 +186,15 @@
 	const loadingSettings = $derived(!isEditMode && (settingsQuery.isPending || settingsQuery.isFetching));
 	const loadingData = $derived(repositoriesQuery.isPending || repositoriesQuery.isFetching || loadingSettings);
 
-	const branchesQuery = createQuery(() => ({
-		queryKey: queryKeys.gitRepositories.branches(selectedRepository?.value || ''),
-		queryFn: () => gitRepositoryService.getBranches(selectedRepository?.value || ''),
-		enabled: open && !!selectedRepository?.value,
-		staleTime: 0
-	}));
+	const branchesQuery = createQuery(() => {
+		const repositoryId = selectedRepository?.value || '';
+		return {
+			queryKey: queryKeys.gitRepositories.branches(repositoryId),
+			queryFn: () => gitRepositoryService.getBranches(repositoryId),
+			enabled: open && !!repositoryId,
+			staleTime: 0
+		};
+	});
 	const branches = $derived<BranchInfo[]>(branchesQuery.data?.branches ?? []);
 	const loadingBranches = $derived(!!selectedRepository?.value && (branchesQuery.isPending || branchesQuery.isFetching));
 
@@ -213,35 +238,13 @@
 		);
 	}
 
-	$effect(() => {
-		if (open) {
-			selectedRepository = undefined;
-			showFileBrowser = false;
-			selectedTargetType = isEditMode ? normalizeTargetType(syncToEdit?.targetType) : normalizeTargetType(targetType);
-			if (!isEditMode) {
-				form.reset();
-			}
-		}
-	});
-
-	$effect(() => {
-		if (!open || !syncToEdit || repositories.length === 0 || selectedRepository) return;
-		const repo = repositories.find((r) => r.id === syncToEdit.repositoryId);
-		if (repo) {
-			selectedRepository = { value: repo.id, label: repo.name };
-			$inputs.repositoryId.value = repo.id;
-		}
-	});
-
-	$effect(() => {
-		if (!open || isEditMode || branches.length === 0) return;
-		const defaultBranch = branches.find((b) => b.isDefault);
-		if (defaultBranch && !$inputs.branch.value) {
-			$inputs.branch.value = defaultBranch.name;
-		}
+	const selectedBranch = $derived.by(() => {
+		if ($inputs.branch.value || isEditMode) return $inputs.branch.value;
+		return branches.find((branch) => branch.isDefault)?.name ?? '';
 	});
 
 	function handleSubmit() {
+		$inputs.branch.value = selectedBranch;
 		const data = form.validate();
 		if (!data) return;
 
@@ -284,7 +287,7 @@
 			fileBrowserTarget = target;
 			showFileBrowser = true;
 		}}
-		disabled={!selectedRepository?.value || !$inputs.branch.value}
+		disabled={!selectedRepository?.value || !selectedBranch}
 		title={m.git_sync_browse_files_title()}
 	>
 		<FolderOpenIcon class="size-4" />
@@ -318,7 +321,13 @@
 							label={m.target_type()}
 							value={selectedTargetType}
 							options={targetTypeOptions}
-							onValueChange={(value) => (selectedTargetType = value as GitOpsSyncTargetType)}
+							onValueChange={(value) => {
+								const previousDefault = defaultComposePath;
+								selectedTargetType = value as GitOpsSyncTargetType;
+								if ($inputs.composePath.value === previousDefault) {
+									$inputs.composePath.value = defaultComposePath;
+								}
+							}}
 						/>
 					</div>
 
@@ -332,7 +341,6 @@
 									if (v) {
 										const repo = repositories.find((r) => r.id === v);
 										if (repo) {
-											selectedRepository = { value: repo.id, label: repo.name };
 											$inputs.repositoryId.value = v;
 										}
 									}
@@ -362,7 +370,7 @@
 							{:else if branches.length > 0}
 								<Select.Root
 									type="single"
-									value={$inputs.branch.value}
+									value={selectedBranch}
 									onValueChange={(v) => {
 										if (v) {
 											$inputs.branch.value = v;
@@ -370,7 +378,7 @@
 									}}
 								>
 									<Select.Trigger id="branch" class="w-full" aria-invalid={$inputs.branch.error ? 'true' : undefined}>
-										<span>{$inputs.branch.value || m.common_select_placeholder()}</span>
+										<span>{selectedBranch || m.common_select_placeholder()}</span>
 									</Select.Trigger>
 									<Select.Content style="width: var(--bits-select-anchor-width);">
 										{#each branches as branch (branch.name)}
@@ -689,7 +697,7 @@
 <FileBrowserDialog
 	bind:open={showFileBrowser}
 	repositoryId={selectedRepository?.value || ''}
-	branch={$inputs.branch.value}
+	branch={selectedBranch}
 	description={fileBrowserTarget === 'preDeployScript'
 		? m.git_sync_browse_files_description_script()
 		: m.git_sync_browse_files_description()}

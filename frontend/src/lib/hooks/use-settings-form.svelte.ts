@@ -1,16 +1,10 @@
-import { getContext } from 'svelte';
+import { getContext, onDestroy } from 'svelte';
 import settingsStore from '#lib/stores/config-store.js';
 import { settingsService } from '#lib/services/settings-service.js';
 import type { Settings } from '#lib/types/settings.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
-import type { Readable } from 'svelte/store';
-
-type SettingsFormState = {
-	hasChanges: boolean;
-	isLoading: boolean;
-	saveFunction?: () => Promise<void> | void;
-	resetFunction?: () => void;
-};
+import { fromStore, type Readable } from 'svelte/store';
+import type { SettingsFormContext } from '#lib/types/settings-form.js';
 
 type SettingsPayload = Partial<Settings> & Record<string, unknown>;
 
@@ -29,42 +23,31 @@ export class UseSettingsForm<
 	TSaveData extends SettingsPayload
 > {
 	#isLoading = $state(false);
-	#formValues = $state<TFormInputs | null>(null);
+	#formValues: { readonly current: TFormInputs };
 	#saveFunction: (() => Promise<void> | void) | null = null;
 	#resetFunction: (() => void) | null = null;
-	private formState: SettingsFormState | undefined;
+	private formContext: SettingsFormContext | undefined;
 	private getCurrentSettings: () => TSaveData;
 	private customOnSave?: (data: TSaveData) => Promise<void>;
 
 	constructor({ formInputs, getCurrentSettings, onSave }: Options<TFormInputs, TSaveData>) {
 		this.getCurrentSettings = getCurrentSettings;
 		this.customOnSave = onSave;
+		this.#formValues = fromStore(formInputs);
 
-		try {
-			this.formState = getContext('settingsFormState') as SettingsFormState | undefined;
-		} catch {
-			// Context not available
+		this.formContext = getContext<SettingsFormContext | undefined>('settingsFormState');
+
+		if (this.formContext) {
+			onDestroy(() => {
+				if (this.formContext?.activeForm === this) {
+					this.formContext.activeForm = undefined;
+				}
+			});
 		}
-
-		// Subscribe to form inputs store to track changes
-		formInputs.subscribe((value) => {
-			this.#formValues = value;
-		});
-
-		$effect(() => {
-			// Sync to external context (side effect)
-			if (this.formState) {
-				this.formState.hasChanges = this.hasChanges;
-				this.formState.isLoading = this.isLoading;
-				if (this.#saveFunction) this.formState.saveFunction = this.#saveFunction;
-				if (this.#resetFunction) this.formState.resetFunction = this.#resetFunction;
-			}
-		});
 	}
 
 	#hasChanges = $derived.by(() => {
-		const currentFormValues = this.#formValues;
-		if (!currentFormValues) return false;
+		const currentFormValues = this.#formValues.current;
 
 		const settingsToCompare = this.getCurrentSettings();
 		const keys = Object.keys(currentFormValues) as (keyof TFormInputs)[];
@@ -101,6 +84,7 @@ export class UseSettingsForm<
 	registerFormActions(saveFunction: () => Promise<void> | void, resetFunction: () => void) {
 		this.#saveFunction = saveFunction;
 		this.#resetFunction = resetFunction;
+		if (this.formContext) this.formContext.activeForm = this;
 	}
 
 	setLoading(loading: boolean) {
@@ -113,5 +97,13 @@ export class UseSettingsForm<
 
 	get isLoading() {
 		return this.#isLoading;
+	}
+
+	get saveFunction() {
+		return this.#saveFunction ?? undefined;
+	}
+
+	get resetFunction() {
+		return this.#resetFunction ?? undefined;
 	}
 }

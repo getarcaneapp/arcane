@@ -9,11 +9,13 @@
 
 	let {
 		inputs,
+		provider,
 		providerOptions,
 		isBuilding = false,
 		onBuild
 	}: {
 		inputs: BuildFormInputsStore;
+		provider: 'local' | 'depot';
 		providerOptions: BuildProviderOption[];
 		isBuilding?: boolean;
 		onBuild?: () => void;
@@ -28,7 +30,13 @@
 		triggerSize="sm"
 		triggerClass="w-[160px]"
 		options={providerOptions}
-		bind:value={$inputs.provider.value}
+		bind:value={
+			() => provider,
+			(value) => {
+				if (value === 'depot') $inputs.provider.value = 'depot';
+				else $inputs.provider.value = 'local';
+			}
+		}
 	/>
 
 	<div class="hidden h-6 w-px bg-border lg:block"></div>
@@ -43,7 +51,7 @@
 			id="build-load"
 			checked={$inputs.load.value}
 			onCheckedChange={(v) => ($inputs.load.value = v === true)}
-			disabled={$inputs.provider.value === 'depot'}
+			disabled={provider === 'depot'}
 		/>
 		<Label for="build-load" class="text-sm">{m.load()}</Label>
 	</div>

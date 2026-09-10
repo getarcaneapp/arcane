@@ -64,11 +64,15 @@
 		return 'gray';
 	}
 
-	async function refreshNodes() {
-		nodes = await swarmService.getNodes(requestOptions);
+	async function refreshNodes(options = requestOptions) {
+		const environmentId = await environmentStore.getCurrentEnvironmentId();
+		const result = await swarmService.getNodes(options);
+		if (environmentId !== currentEnvId) return nodes;
+		nodes = result;
 		if (selectedNode) {
 			selectedNode = nodes.data.find((node) => node.id === selectedNode?.id) ?? selectedNode;
 		}
+		return nodes;
 	}
 
 	async function loadAgentDeployment(node: SwarmNodeSummary, rotate = false) {
@@ -483,7 +487,7 @@
 	bind:requestOptions
 	bind:mobileFieldVisibility
 	selectionDisabled={true}
-	onRefresh={async (options) => (nodes = await swarmService.getNodes(options))}
+	onRefresh={refreshNodes}
 	{columns}
 	{mobileFields}
 	rowActions={RowActions}

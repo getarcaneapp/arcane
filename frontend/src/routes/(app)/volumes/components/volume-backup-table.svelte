@@ -8,7 +8,7 @@
 	import { volumeService } from '#lib/services/volume-service.js';
 	import type { BackupEntry, CreateVolumeBackupRequest, VolumeBackupPolicy } from '#lib/types/shared.js';
 	import type { S3Destination } from '#lib/types/s3-destination.js';
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { useBackupActivity } from '#lib/hooks/use-backup-activity.svelte.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import {
@@ -95,6 +95,7 @@
 	let backupPolicies = $state<VolumeBackupPolicy[]>([]);
 	let s3Destinations = $state<S3Destination[]>([]);
 	let showBackupPolicy = $state(false);
+	let policySession = $state(0);
 	let editingBackupPolicyId = $state<string | undefined>();
 	let showS3DestinationDialog = $state(false);
 	let onDemandDestination = $state<'s3' | 'local_s3'>('s3');
@@ -117,23 +118,30 @@
 	let backupFilesSearch = $state('');
 	let selectedPaths = $state<string[]>([]);
 	let selectAllBackupFiles = $state(false);
-	async function loadData(options: SearchPaginationSortRequest): Promise<VolumeBackupListResponse> {
-		const operationResult = await tryCatch(
-			(async () => {
-				const result = await volumeBackupService.listBackups(volumeName, options);
-				backupsPaginated = result;
-				backupWarnings = result.warnings ?? [];
-				return result;
-			})()
-		);
-		if (operationResult.error !== null) {
-			const error = operationResult.error;
+	let backupLoadVersion = 0;
+	let active = true;
+	onDestroy(() => {
+		active = false;
+		backupLoadVersion += 1;
+	});
 
-			toast.error(error instanceof Error ? error.message : m.volumes_backup_load_failed());
+	async function loadData(options: SearchPaginationSortRequest): Promise<VolumeBackupListResponse> {
+		await environmentStore.ready;
+		if (!active) return backupsPaginated;
+		const environmentId = currentEnvId;
+		const name = volumeName;
+		const version = ++backupLoadVersion;
+		const result = await tryCatch(volumeBackupService.listBackups(name, options, environmentId));
+		if (version !== backupLoadVersion || environmentId !== currentEnvId || name !== volumeName) return backupsPaginated;
+		if (result.error !== null) {
+			let message: string = m.volumes_backup_load_failed();
+			if (result.error instanceof Error) message = result.error.message;
+			toast.error(message);
 			return backupsPaginated;
-		} else {
-			return operationResult.data;
 		}
+		backupsPaginated = result.data;
+		backupWarnings = result.data.warnings ?? [];
+		return result.data;
 	}
 
 	const backupActivity = useBackupActivity(
@@ -177,14 +185,20 @@
 	async function handleCreate(request?: CreateVolumeBackupRequest) {
 		if (creating || backupActivity.activeIds.length) return false;
 		creating = true;
+		const environmentId = currentEnvId;
+		const name = volumeName;
+		const tracksActivities = canReadActivities;
 		try {
 			const operationResult = await tryCatch(
 				(async () => {
-					const result = await volumeBackupService.createBackup(volumeName, request);
+					const result = await volumeBackupService.createBackup(name, request);
+					if (!active || environmentId !== currentEnvId || name !== volumeName) return false;
 					showS3DestinationDialog = false;
 					onDemandS3DestinationId = '';
 					creating = false;
-					backupActivity.accepted(canReadActivities ? extractActivityId(result) : result.id);
+					let activityId: string | undefined = result.id;
+					if (tracksActivities) activityId = extractActivityId(result);
+					backupActivity.accepted(activityId);
 					toast.success(
 						m.backups_started(),
 						canReadActivities ? activityToastOptions(extractActivityId(result), false) : undefined
@@ -296,7 +310,9 @@
 
 	function openRestoreFilesDialog(backup: BackupEntry) {
 		restoreTarget = backup;
-		// The picker clears its selection and search when it sees the new provider.
+		selectedPaths = [];
+		selectAllBackupFiles = false;
+		backupFilesSearch = '';
 		backupFileProvider = {
 			browse: (request) => volumeBackupService.browseBackupFiles(backup.id, request)
 		};
@@ -304,6 +320,7 @@
 	}
 
 	async function handleRestore(backup: BackupEntry) {
+		const name = volumeName;
 		// Check if volume is in use
 		let usageWarning = '';
 		const operationResult = await tryCatch(
@@ -330,7 +347,7 @@
 				action: async () => {
 					const operationResult = await tryCatch(
 						(async () => {
-							const result = await volumeBackupService.restoreBackup(volumeName, backup.id);
+							const result = await volumeBackupService.restoreBackup(name, backup.id);
 							await onWorkspaceRestored?.();
 							toast.success(m.volumes_backup_restore_success(), activityToastOptions(extractActivityId(result)));
 							await loadData(requestOptions);
@@ -350,12 +367,14 @@
 		if (!restoreTarget) return;
 		if (!selectAllBackupFiles && !selectedPaths.length) return;
 
+		const name = volumeName;
+		const backupId = restoreTarget.id;
 		const selection = { paths: [...selectedPaths], selectAll: selectAllBackupFiles };
 		restoringFiles = true;
 		try {
 			const operationResult = await tryCatch(
 				(async () => {
-					const result = await volumeBackupService.restoreBackupFiles(volumeName, restoreTarget.id, {
+					const result = await volumeBackupService.restoreBackupFiles(name, backupId, {
 						...selection,
 						search: selection.selectAll ? backupFilesSearch.trim() : undefined
 					});
@@ -379,13 +398,17 @@
 	}
 
 	onMount(async () => {
+		await environmentStore.ready;
+		const environmentId = currentEnvId;
+		const name = volumeName;
 		const [collection, destinations] = await Promise.all([
-			volumeBackupService.getPolicies(volumeName),
+			volumeBackupService.getPolicies(name),
 			canBackupVolume
 				? tryCatch(s3DestinationService.listAll()).then((result) => (result.error ? [] : result.data))
 				: Promise.resolve([]),
 			loadData(requestOptions)
 		]);
+		if (!active || environmentId !== currentEnvId || name !== volumeName) return;
 		backupPolicies = collection.policies;
 		s3Destinations = destinations;
 	});
@@ -514,6 +537,7 @@
 				customLabel={m.volume_backup_add_schedule()}
 				onclick={() => {
 					editingBackupPolicyId = undefined;
+					policySession += 1;
 					showBackupPolicy = true;
 				}}
 				size="sm"
@@ -638,6 +662,7 @@
 				onEdit={canBackupVolume
 					? () => {
 							editingBackupPolicyId = policy.id;
+							policySession += 1;
 							showBackupPolicy = true;
 						}
 					: undefined}
@@ -679,9 +704,6 @@
 
 <ResponsiveDialog
 	bind:open={showRestoreFiles}
-	onOpenChange={(open) => {
-		if (!open) backupFileProvider = null;
-	}}
 	title={m.volume_restore_files()}
 	description={m.volumes_backup_restore_desc()}
 	contentClass="sm:max-w-[640px]"
@@ -696,12 +718,14 @@
 			</Alert.Root>
 
 			{#if backupFileProvider}
-				<BackupFilePicker
-					provider={backupFileProvider}
-					bind:selectedPaths
-					bind:selectAll={selectAllBackupFiles}
-					bind:search={backupFilesSearch}
-				/>
+				{#key backupFileProvider}
+					<BackupFilePicker
+						provider={backupFileProvider}
+						bind:selectedPaths
+						bind:selectAll={selectAllBackupFiles}
+						bind:search={backupFilesSearch}
+					/>
+				{/key}
 			{/if}
 
 			<Alert.Root variant="warning" class="py-2 [&>svg]:top-2">
@@ -727,7 +751,6 @@
 			action="cancel"
 			onclick={() => {
 				showRestoreFiles = false;
-				backupFileProvider = null;
 			}}
 		/>
 		{#if canBackupVolume}
@@ -775,21 +798,25 @@
 	{/snippet}
 </ResponsiveDialog>
 
-<BackupPolicyDialog
-	bind:open={showBackupPolicy}
-	idPrefix="volume-backup-policy"
-	policies={backupPolicies}
-	policyId={editingBackupPolicyId}
-	addTitle={m.volume_backup_add_schedule()}
-	description={m.volume_backup_policy_description()}
-	enabledDescription={m.volume_backup_policy_enabled_description()}
-	defaultSchedule="0 0 2 * * *"
-	showStopContainers
-	updatePolicies={async (policies) => (await volumeBackupService.updatePolicies(volumeName, policies)).policies}
-	messages={{
-		saved: m.volume_backup_policy_saved(),
-		saveFailed: m.volume_backup_policy_save_failed(),
-		removed: m.volume_backup_schedule_removed()
-	}}
-	onSaved={(policies) => (backupPolicies = policies)}
-/>
+{#if policySession > 0}
+	{#key policySession}
+		<BackupPolicyDialog
+			bind:open={showBackupPolicy}
+			idPrefix="volume-backup-policy"
+			policies={backupPolicies}
+			policyId={editingBackupPolicyId}
+			addTitle={m.volume_backup_add_schedule()}
+			description={m.volume_backup_policy_description()}
+			enabledDescription={m.volume_backup_policy_enabled_description()}
+			defaultSchedule="0 0 2 * * *"
+			showStopContainers
+			updatePolicies={async (policies) => (await volumeBackupService.updatePolicies(volumeName, policies)).policies}
+			messages={{
+				saved: m.volume_backup_policy_saved(),
+				saveFailed: m.volume_backup_policy_save_failed(),
+				removed: m.volume_backup_schedule_removed()
+			}}
+			onSaved={(policies) => (backupPolicies = policies)}
+		/>
+	{/key}
+{/if}

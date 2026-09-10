@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
+	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte.js';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { ResourcePageLayout, type ActionButton } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
@@ -14,7 +14,6 @@
 	let selectedIds = $state<string[]>([]);
 
 	const envId = $derived(environmentStore.selected?.id || '0');
-	let previousEnvId = untrack(() => envId);
 
 	const portsQuery = createQuery(() => {
 		const queryEnvId = envId;
@@ -27,9 +26,7 @@
 	});
 	const ports = $derived(portsQuery.data?.envId === envId ? portsQuery.data.value : null);
 
-	$effect(() => {
-		if (envId === previousEnvId) return;
-		previousEnvId = envId;
+	useEnvironmentRefresh(() => {
 		selectedIds = [];
 	});
 

@@ -20,8 +20,9 @@
 	import { TrashIcon, InspectIcon, VolumesIcon, CalendarIcon, EditIcon } from '#lib/icons/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import settingsStore from '#lib/stores/config-store.js';
-	import { untrack } from 'svelte';
-	import { SvelteMap } from 'svelte/reactivity';
+	import { onMount } from 'svelte';
+	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import type { ColumnVisibilityState } from '@tanstack/table-core';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { hasPermission } from '#lib/utils/auth.js';
@@ -48,6 +49,7 @@
 	});
 	let volumeToRename = $state<VolumeSummaryDto | null>(null);
 	let renameDialogOpen = $state(false);
+	let renameSession = $state(0);
 	let renameEnvironmentId = $state('0');
 
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
@@ -61,6 +63,7 @@
 		$userStore;
 		return hasPermission('volumes:rename', currentEnvId);
 	});
+	let tablePreferences = $state<{ persistCustomSettings(settings: Record<string, unknown>): void }>();
 	let customSettings = $state<Record<string, unknown>>({});
 	let showInternal = $derived.by(() => {
 		return (customSettings['showInternalVolumes'] as boolean) ?? false;
@@ -72,8 +75,8 @@
 		} else {
 			volumes = await volumeService.getVolumes(options);
 		}
-		if (refreshSizes && tablePreferencesReady && columnVisibility['size'] !== false) {
-			void loadVolumeSizes(currentEnvId);
+		if (refreshSizes && sizesEnabled) {
+			await sizesQuery.refetch({ cancelRefetch: false });
 		}
 	}
 
@@ -87,6 +90,7 @@
 		if (value === currentSetting && value === currentRequest) return;
 
 		customSettings = { ...customSettings, showInternalVolumes: value };
+		tablePreferences?.persistCustomSettings(customSettings);
 		const nextOptions: SearchPaginationSortRequest = {
 			...requestOptions,
 			includeInternal: value,
@@ -100,52 +104,52 @@
 	const isBackupVolumeName = (name?: string) => (name ?? '') === backupVolumeName;
 	const isBackupVolume = (item: VolumeSummaryDto) => isBackupVolumeName(item.name);
 
-	// Lazy load volume sizes - this is a slow operation
-	let sizesMap = new SvelteMap<string, VolumeSizeInfo>();
-	let sizeLoadPromises = new SvelteMap<string, Promise<void>>();
-	let sizesLoading = $state(false);
 	let columnVisibility = $state<ColumnVisibilityState>({});
 	let tablePreferencesReady = $state(false);
+	const queryClient = useQueryClient();
+	const sizesEnabled = $derived.by(() => {
+		$userStore;
+		return (
+			tablePreferencesReady &&
+			!!environmentStore.selected?.id &&
+			columnVisibility['size'] !== false &&
+			hasPermission('volumes:read', currentEnvId)
+		);
+	});
+	const sizesQuery = createQuery(() => {
+		const environmentId = currentEnvId;
+		return {
+			queryKey: queryKeys.volumes.sizes(environmentId),
+			queryFn: () => volumeService.getVolumeSizes(environmentId),
+			enabled: sizesEnabled,
+			refetchOnWindowFocus: false,
+			retry: false
+		};
+	});
+	const sizesMap = $derived.by(() => {
+		const sizes = new Map<string, VolumeSizeInfo>();
+		if (!sizesEnabled) return sizes;
+		for (const size of sizesQuery.data ?? []) sizes.set(size.name, size);
+		return sizes;
+	});
+	const sizesLoading = $derived(sizesEnabled && sizesQuery.isFetching);
 
-	function loadVolumeSizes(environmentId: string): Promise<void> {
-		const existing = sizeLoadPromises.get(environmentId);
-		if (existing) return existing;
-
-		const request = (async () => {
-			if (currentEnvId === environmentId) {
-				sizesLoading = true;
+	onMount(() => {
+		const cache = queryClient.getQueryCache();
+		return cache.subscribe((event) => {
+			if (event.type !== 'updated') return;
+			if (event.query !== cache.find({ queryKey: queryKeys.volumes.sizes(currentEnvId), exact: true })) return;
+			if (event.action.type === 'error') {
+				console.error('Failed to load volume sizes:', event.query.state.error);
+				return;
 			}
-			try {
-				const operationResult = await tryCatch(
-					(async () => {
-						const sizes = await volumeService.getVolumeSizes(environmentId);
-						if (currentEnvId !== environmentId || columnVisibility['size'] === false) return;
-
-						sizesMap.clear();
-						for (const s of sizes) {
-							sizesMap.set(s.name, s);
-						}
-
-						if (requestOptions?.sort?.column === 'size') {
-							await refreshVolumes(requestOptions, false);
-						}
-					})()
-				);
-				if (operationResult.error !== null) {
-					const error = operationResult.error;
-					console.error('Failed to load volume sizes:', error);
-				}
-			} finally {
-				sizeLoadPromises.delete(environmentId);
-				if (currentEnvId === environmentId) {
-					sizesLoading = false;
-				}
+			if (event.action.type === 'success' && sizesEnabled && requestOptions?.sort?.column === 'size') {
+				void tryCatch(refreshVolumes(requestOptions, false)).then((result) => {
+					if (result.error) console.error('Failed to refresh volume size sorting:', result.error);
+				});
 			}
-		})();
-
-		sizeLoadPromises.set(environmentId, request);
-		return request;
-	}
+		});
+	});
 
 	async function handleRemoveVolumeConfirm(name: string) {
 		const safeName = name?.trim() || m.common_unknown();
@@ -178,6 +182,7 @@
 	function handleRenameVolume(item: VolumeSummaryDto) {
 		volumeToRename = item;
 		renameEnvironmentId = currentEnvId;
+		renameSession += 1;
 		renameDialogOpen = true;
 	}
 
@@ -192,7 +197,6 @@
 			onSuccess: async (data) => {
 				toast.success(m.volumes_rename_success({ oldName, newName }), activityToastOptions(extractActivityId(data)));
 				renameDialogOpen = false;
-				volumeToRename = null;
 				if (renameEnvironmentId === currentEnvId) await refreshVolumes();
 			}
 		});
@@ -258,32 +262,6 @@
 	]);
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
-
-	let persistedSettingsApplied = false;
-	$effect(() => {
-		if (!tablePreferencesReady) return;
-
-		const environmentId = currentEnvId;
-		const sizeVisible = columnVisibility['size'] !== false;
-		if (!sizeVisible) {
-			sizesMap.clear();
-			sizesLoading = false;
-		} else {
-			untrack(() => {
-				sizesMap.clear();
-				void loadVolumeSizes(environmentId);
-			});
-		}
-
-		if (!persistedSettingsApplied) {
-			persistedSettingsApplied = true;
-			const persistedInternal = (customSettings['showInternalVolumes'] as boolean) ?? false;
-			const currentInternal = requestOptions?.includeInternal ?? false;
-			if (persistedInternal !== currentInternal) {
-				untrack(() => setShowInternal(persistedInternal));
-			}
-		}
-	});
 </script>
 
 {#snippet NameCell({ item }: { item: VolumeSummaryDto })}
@@ -391,6 +369,7 @@
 {/snippet}
 
 <ArcaneTable
+	bind:this={tablePreferences}
 	persistKey="arcane-volumes-table"
 	items={volumes}
 	bind:requestOptions
@@ -398,7 +377,16 @@
 	bind:mobileFieldVisibility
 	bind:customSettings
 	bind:columnVisibility
-	bind:preferencesReady={tablePreferencesReady}
+	bind:preferencesReady={
+		() => tablePreferencesReady,
+		(ready) => {
+			const wasReady = tablePreferencesReady;
+			tablePreferencesReady = ready;
+			if (!ready || wasReady) return;
+			const persistedInternal = (customSettings['showInternalVolumes'] as boolean) ?? false;
+			if (persistedInternal !== (requestOptions?.includeInternal ?? false)) setShowInternal(persistedInternal);
+		}
+	}
 	hiddenSortFallback={{ column: 'name', direction: 'asc' }}
 	{bulkActions}
 	onRefresh={async (options) => {
@@ -413,12 +401,16 @@
 	customViewOptions={CustomViewOptions}
 />
 
-<RenameVolumeDialog
-	bind:open={renameDialogOpen}
-	volume={volumeToRename}
-	isLoading={isLoading.renaming}
-	onSubmit={handleRenameSubmit}
-/>
+{#if renameSession > 0}
+	{#key renameSession}
+		<RenameVolumeDialog
+			bind:open={renameDialogOpen}
+			volume={volumeToRename}
+			isLoading={isLoading.renaming}
+			onSubmit={handleRenameSubmit}
+		/>
+	{/key}
+{/if}
 
 {#snippet CustomViewOptions()}
 	<DropdownMenu.CheckboxItem checked={showInternal} onCheckedChange={(v) => setShowInternal(!!v)}>

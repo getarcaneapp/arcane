@@ -49,7 +49,8 @@
 	import ProjectsLogsPanel from '../components/ProjectLogsPanel.svelte';
 	import ResizableSplit from '#lib/components/resizable-split.svelte';
 	import { Switch } from '#lib/components/ui/switch/index.js';
-	import { untrack } from 'svelte';
+	import { onMount, tick, untrack } from 'svelte';
+	import { afterNavigate } from '$app/navigation';
 	import { projectService } from '#lib/services/project-service.js';
 	import { projectWorkspaceService } from '#lib/services/project-workspace-service.js';
 	import settingsStore from '#lib/stores/config-store.js';
@@ -645,7 +646,7 @@
 		}
 	}));
 
-	$effect(() => {
+	function initializeProjectPreferences() {
 		if (!project?.id) return;
 		if (lastPrefsProjectId === project.id) return;
 
@@ -663,7 +664,8 @@
 		const cur = prefs.current ?? {};
 		const userSelectedTabForProject = userSelectedTabProjectId === project.id;
 		const requestedTab = new URL(window.location.href).searchParams.get('tab');
-		const urlTabValue = tabItems.some((tab) => tab.value === requestedTab) ? (requestedTab as ProjectTab) : null;
+		let urlTabValue: ProjectTab | null = null;
+		if (tabItems.some((tab) => tab.value === requestedTab)) urlTabValue = requestedTab as ProjectTab;
 		if (!userSelectedTabForProject) {
 			selectedTab = urlTabValue ?? cur.tab ?? defaultComposeUIPrefs.tab;
 			// Logs merged into the services tab (#3367): honor legacy ?tab=logs deep
@@ -679,21 +681,27 @@
 		envOpen = cur.envOpen ?? defaultComposeUIPrefs.envOpen;
 		autoScrollStackLogs = cur.autoScroll ?? defaultComposeUIPrefs.autoScroll;
 		selectedFilePreference = cur.selectedFile ?? defaultComposeUIPrefs.selectedFile ?? 'compose';
-		openTabsPreference = cur.openTabs && cur.openTabs.length > 0 ? cur.openTabs : [selectedFilePreference];
+		openTabsPreference = [selectedFilePreference];
+		if (cur.openTabs && cur.openTabs.length > 0) openTabsPreference = cur.openTabs;
 
 		// Auto-detect layout mode from includes and workspace entries. PersistedState
 		// always materializes the defaults, so only trust the stored layoutMode when
 		// this project actually had persisted prefs.
 		const hasIncludes = project?.includeFiles && project.includeFiles.length > 0;
 		const hasWorkspaceEntries = projectWorkspaceEntries.length > 0;
-		const defaultMode = hasIncludes || hasWorkspaceEntries ? 'tree' : 'classic';
-		layoutMode = hadStoredPrefs ? (cur.layoutMode ?? defaultMode) : defaultMode;
+		let defaultMode: 'tree' | 'classic' = 'classic';
+		if (hasIncludes || hasWorkspaceEntries) defaultMode = 'tree';
+		layoutMode = defaultMode;
+		if (hadStoredPrefs) layoutMode = cur.layoutMode ?? defaultMode;
 		// PersistedState seeds storage with the defaults on first mount; persist the
 		// resolved state so the auto-detected layout survives the next visit.
 		if (!hadStoredPrefs || userSelectedTabForProject) {
 			persistPrefs();
 		}
-	});
+		loadSelectedProjectWorkspaceFiles();
+	}
+
+	afterNavigate(initializeProjectPreferences);
 
 	async function handleSaveChanges() {
 		if (!project || !hasChanges) return;
@@ -956,14 +964,21 @@
 			return existingPromise;
 		}
 
+		const requestedEnvId = envId;
+		const pendingFiles = projectWorkspaceFilePromises;
 		const promise = (async () => {
-			const file = await projectWorkspaceService.getWorkspaceFile(currentProjectId, relativePath, envId);
-			if (kind !== 'workspace') {
+			const file = await projectWorkspaceService.getWorkspaceFile(currentProjectId, relativePath, requestedEnvId);
+			if (
+				kind !== 'workspace' &&
+				currentProjectId === projectId &&
+				requestedEnvId === envId &&
+				pendingFiles === projectWorkspaceFilePromises
+			) {
 				updateLoadedProjectWorkspaceSource(kind, relativePath, file.content ?? '');
 			}
 			return file;
 		})().finally(() => {
-			delete projectWorkspaceFilePromises[requestKey];
+			delete pendingFiles[requestKey];
 		});
 
 		projectWorkspaceFilePromises[requestKey] = promise;
@@ -989,6 +1004,7 @@
 		if (layoutMode === 'tree') {
 			persistPrefs();
 		}
+		loadSelectedProjectWorkspaceFiles();
 	}
 
 	function closeFileTab(key: string) {
@@ -1005,6 +1021,7 @@
 			selectedFilePreference = remaining[Math.min(Math.max(index - 1, 0), remaining.length - 1)] ?? 'compose';
 		}
 		persistPrefs();
+		loadSelectedProjectWorkspaceFiles();
 	}
 
 	function treeTabLabel(key: string): string {
@@ -1060,6 +1077,9 @@
 	}
 
 	async function loadProjectWorkspaceFileDraft(relativePath: string) {
+		const requestedProjectId = projectId;
+		const requestedEnvId = envId;
+		const pendingFiles = projectWorkspaceFilePromises;
 		if (!relativePath || projectWorkspaceContents[relativePath] !== undefined || projectWorkspaceLoading[relativePath]) {
 			return;
 		}
@@ -1074,11 +1094,14 @@
 			const operationResult = await tryCatch(
 				(async () => {
 					const file = await getProjectWorkspaceFileResource('workspace', relativePath);
+					if (requestedProjectId !== projectId || requestedEnvId !== envId || pendingFiles !== projectWorkspaceFilePromises)
+						return;
 					projectWorkspaceFileMetadata = { ...projectWorkspaceFileMetadata, [relativePath]: file };
 					if (file.editable) updateLoadedProjectWorkspaceFile(relativePath, file.content ?? '');
 				})()
 			);
 			if (operationResult.error !== null) {
+				if (requestedProjectId !== projectId || requestedEnvId !== envId || pendingFiles !== projectWorkspaceFilePromises) return;
 				const error = operationResult.error;
 
 				projectWorkspaceLoadErrors = {
@@ -1087,26 +1110,16 @@
 				};
 			}
 		} finally {
-			projectWorkspaceLoading = removeWorkspaceFileRecord(projectWorkspaceLoading, relativePath);
+			if (requestedProjectId === projectId && requestedEnvId === envId && pendingFiles === projectWorkspaceFilePromises) {
+				projectWorkspaceLoading = removeWorkspaceFileRecord(projectWorkspaceLoading, relativePath);
+			}
 		}
 	}
 
-	$effect(() => {
-		const relativePath = selectedProjectWorkspacePath;
-		const entry = selectedProjectWorkspaceEntry;
-		const hasContent = relativePath ? projectWorkspaceContents[relativePath] !== undefined : true;
-		const hasMetadata = relativePath ? projectWorkspaceFileMetadata[relativePath] !== undefined : true;
-		const isLoadingFile = relativePath ? projectWorkspaceLoading[relativePath] === true : false;
-		const hasLoadError = relativePath ? projectWorkspaceLoadErrors[relativePath] !== undefined : false;
-
-		if (!relativePath || !entry || entry.isDirectory || hasContent || hasMetadata || isLoadingFile || hasLoadError) {
-			return;
-		}
-
-		void loadProjectWorkspaceFileDraft(relativePath);
-	});
-
 	async function loadProjectSourceFile(kind: 'include' | 'directory', relativePath: string) {
+		const requestedProjectId = projectId;
+		const requestedEnvId = envId;
+		const pendingFiles = projectWorkspaceFilePromises;
 		projectWorkspaceLoading = {
 			...projectWorkspaceLoading,
 			[relativePath]: true
@@ -1120,6 +1133,7 @@
 				})()
 			);
 			if (operationResult.error !== null) {
+				if (requestedProjectId !== projectId || requestedEnvId !== envId || pendingFiles !== projectWorkspaceFilePromises) return;
 				const error = operationResult.error;
 
 				projectWorkspaceLoadErrors = {
@@ -1128,23 +1142,54 @@
 				};
 			}
 		} finally {
-			projectWorkspaceLoading = removeWorkspaceFileRecord(projectWorkspaceLoading, relativePath);
+			if (requestedProjectId === projectId && requestedEnvId === envId && pendingFiles === projectWorkspaceFilePromises) {
+				projectWorkspaceLoading = removeWorkspaceFileRecord(projectWorkspaceLoading, relativePath);
+			}
 		}
 	}
 
-	$effect(() => {
-		const relativePath = selectedIncludeTab;
-		if (!relativePath) return;
-		const kind = includeFilePaths.has(relativePath) ? 'include' : 'directory';
-		const loaded =
-			kind === 'include'
-				? includeFilesState[relativePath] !== undefined
-				: loadedDirectoryFileContents[relativePath] !== undefined;
-		if (loaded || projectWorkspaceLoading[relativePath] || projectWorkspaceLoadErrors[relativePath] !== undefined) {
-			return;
+	function loadSelectedProjectWorkspaceFiles() {
+		const relativePath = selectedProjectWorkspacePath;
+		if (
+			relativePath &&
+			selectedProjectWorkspaceEntry &&
+			!selectedProjectWorkspaceEntry.isDirectory &&
+			projectWorkspaceContents[relativePath] === undefined &&
+			!projectWorkspaceFileMetadata[relativePath] &&
+			!projectWorkspaceLoading[relativePath] &&
+			projectWorkspaceLoadErrors[relativePath] === undefined
+		) {
+			void loadProjectWorkspaceFileDraft(relativePath);
 		}
+		const sourcePath = selectedIncludeTab;
+		if (!sourcePath || projectWorkspaceLoading[sourcePath] || projectWorkspaceLoadErrors[sourcePath] !== undefined) return;
+		if (includeFilePaths.has(sourcePath)) {
+			if (includeFilesState[sourcePath] === undefined) void loadProjectSourceFile('include', sourcePath);
+		} else if (loadedDirectoryFileContents[sourcePath] === undefined) {
+			void loadProjectSourceFile('directory', sourcePath);
+		}
+	}
 
-		void loadProjectSourceFile(kind, relativePath);
+	onMount(() => {
+		let active = true;
+		const cache = queryClient.getQueryCache();
+		const loadAfterUpdate = async () => {
+			await tick();
+			if (!active) return;
+			initializeProjectPreferences();
+			loadSelectedProjectWorkspaceFiles();
+		};
+		const unsubscribe = cache.subscribe((event) => {
+			if (event.type !== 'updated' || (event.action.type !== 'success' && event.action.type !== 'error')) return;
+			const workspace = cache.find({ queryKey: queryKeys.projects.workspace(envId, projectId), exact: true });
+			const detail = cache.find({ queryKey: queryKeys.projects.detail(envId, projectId), exact: true });
+			if (event.query === workspace || event.query === detail) void loadAfterUpdate();
+		});
+		void loadAfterUpdate();
+		return () => {
+			active = false;
+			unsubscribe();
+		};
 	});
 
 	function remapProjectWorkspaceState(oldPath: string, newPath: string) {
@@ -1167,6 +1212,7 @@
 		if (remappedSelection) {
 			selectedFilePreference = remappedSelection;
 		}
+		loadSelectedProjectWorkspaceFiles();
 	}
 
 	function removeProjectWorkspaceState(relativePath: string) {
@@ -1188,6 +1234,7 @@
 		if (isWorkspaceFileSelectionUnder(selectedFile, relativePath)) {
 			selectedFilePreference = openTabs[0] ?? 'compose';
 		}
+		loadSelectedProjectWorkspaceFiles();
 	}
 
 	function createProjectWorkspaceFile(parentPath: string, name: string, content = '', stagedFile?: File) {
@@ -1290,7 +1337,9 @@
 
 	function toggleIncludeFileTab(relativePath: string) {
 		ensureIncludeFileUiState(relativePath);
-		selectedIncludeTabPreference = selectedIncludeTab === relativePath ? null : relativePath;
+		if (selectedIncludeTab === relativePath) selectedIncludeTabPreference = null;
+		else selectedIncludeTabPreference = relativePath;
+		loadSelectedProjectWorkspaceFiles();
 	}
 
 	const allComposeContents = $derived.by(() => {
@@ -1494,35 +1543,37 @@
 						{#if selectedIncludeTab}
 							{@render selectedIncludeEditor(project, selectedIncludeTab)}
 						{:else}
-							<ResizableSplit
-								class="min-h-0 flex-1 lg:gap-2"
-								firstClass="flex min-h-0 flex-col"
-								secondClass="flex min-h-0 flex-col"
-								bind:size={composeSplitWidth}
-								minSize={minComposePaneWidth}
-								minSecondSize={minEnvPaneWidth}
-								defaultRatio={0.6}
-								stackBelow={1024}
-								ariaLabel={m.compose_editor_resize_compose_env()}
-								persistKey={`arcane.compose.split:${project.id}:classic`}
-								onResizeEnd={persistPrefs}
-							>
-								{#snippet first()}
-									{@render composeOverrideEditor()}
-								{/snippet}
+							{#key `arcane.compose.split:${project.id}:classic`}
+								<ResizableSplit
+									class="min-h-0 flex-1 lg:gap-2"
+									firstClass="flex min-h-0 flex-col"
+									secondClass="flex min-h-0 flex-col"
+									bind:size={composeSplitWidth}
+									minSize={minComposePaneWidth}
+									minSecondSize={minEnvPaneWidth}
+									defaultRatio={0.6}
+									stackBelow={1024}
+									ariaLabel={m.compose_editor_resize_compose_env()}
+									persistKey={`arcane.compose.split:${project.id}:classic`}
+									onResizeEnd={persistPrefs}
+								>
+									{#snippet first()}
+										{@render composeOverrideEditor()}
+									{/snippet}
 
-								{#snippet second()}
-									<div class="flex min-h-0 flex-1 flex-col">
-										<CodePanel
-											{...envPanelProps()}
-											bind:open={envOpen}
-											bind:value={$inputs.envContent.value}
-											bind:hasErrors={envHasErrors}
-											bind:validationReady={envValidationReady}
-										/>
-									</div>
-								{/snippet}
-							</ResizableSplit>
+									{#snippet second()}
+										<div class="flex min-h-0 flex-1 flex-col">
+											<CodePanel
+												{...envPanelProps()}
+												bind:open={envOpen}
+												bind:value={$inputs.envContent.value}
+												bind:hasErrors={envHasErrors}
+												bind:validationReady={envValidationReady}
+											/>
+										</div>
+									{/snippet}
+								</ResizableSplit>
+							{/key}
 						{/if}
 					</div>
 				{/if}
@@ -1692,11 +1743,13 @@
 					{/snippet}
 					{#snippet second()}
 						<div class="flex h-full min-h-0 flex-col overflow-hidden">
-							<ProjectsLogsPanel
-								projectId={project.id}
-								bind:autoScroll={autoScrollStackLogs}
-								isRunning={project.status?.toLowerCase().includes('running')}
-							/>
+							{#key project.id}
+								<ProjectsLogsPanel
+									projectId={project.id}
+									bind:autoScroll={autoScrollStackLogs}
+									isRunning={project.status?.toLowerCase().includes('running')}
+								/>
+							{/key}
 						</div>
 					{/snippet}
 				</ResizableSplit>

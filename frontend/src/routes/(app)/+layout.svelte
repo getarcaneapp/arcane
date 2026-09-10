@@ -10,7 +10,7 @@
 	import OperationWatchDialog from '#lib/components/operation-watch-dialog.svelte';
 	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
 	import { IsTablet } from '#lib/hooks/is-tablet.svelte.js';
-	import { getEffectiveLandingPage, getEffectiveNavigationSettings } from '#lib/utils/navigation.js';
+	import { getEffectiveLandingPage, getEffectiveNavigationSettings, setMobileNavigation } from '#lib/utils/navigation.js';
 	import { browser } from '$app/env';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { environmentStatusStore } from '#lib/stores/environment-status.store.svelte.js';
@@ -38,10 +38,22 @@
 	const navigationSettings = $derived.by(() => {
 		// Track the store, not the loader snapshot: saving a preference calls
 		// userStore.setUser() without re-running load().
-		$userStore;
+		void $userStore;
 		return getEffectiveNavigationSettings();
 	});
 	const navigationMode = $derived(navigationSettings.mode);
+	let hiddenNavigationSettings = $state.raw<typeof navigationSettings>();
+	setMobileNavigation({
+		get settings() {
+			return navigationSettings;
+		},
+		get visible() {
+			return !isMobile.current || !navigationSettings.scrollToHide || hiddenNavigationSettings !== navigationSettings;
+		},
+		set visible(value: boolean) {
+			hiddenNavigationSettings = value ? undefined : navigationSettings;
+		}
+	});
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
 	const managementItemsRaw = $derived(getManagementItems(currentEnvId));
 	const managementItems = $derived(filterByPermissions(managementItemsRaw, user ?? null, currentEnvId, permissionsManifest));
@@ -102,7 +114,6 @@
 		event.preventDefault();
 		goto(match.url);
 	}
-	$effect(() => void handleNavigationShortcut);
 
 	function flattenNavigationItems(items: NavigationItem[]): NavigationItem[] {
 		return items.flatMap((item) => [item, ...(item.items ? flattenNavigationItems(item.items) : [])]);
@@ -138,7 +149,7 @@
 	</main>
 
 	{#if isMobile.current}
-		<MobileNav {navigationSettings} {user} {versionInformation} {swarmEnabled} {permissionsManifest} />
+		<MobileNav {user} {versionInformation} {swarmEnabled} {permissionsManifest} />
 	{/if}
 </Sidebar.Provider>
 

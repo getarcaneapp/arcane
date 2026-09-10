@@ -1,14 +1,12 @@
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 
-export class ResourceListPageState<TItems, TReq> {
-	items = $state() as TItems;
+export class ResourceListPageState<TReq> {
 	requestOptions = $state() as TReq;
 	selectedIds = $state<string[]>([]);
 	isCreateDialogOpen = $state(false);
 	envId = $derived(environmentStore.selected?.id || '0');
 
-	constructor(items: TItems, requestOptions: TReq) {
-		this.items = items;
+	constructor(requestOptions: TReq) {
 		this.requestOptions = requestOptions;
 	}
 }

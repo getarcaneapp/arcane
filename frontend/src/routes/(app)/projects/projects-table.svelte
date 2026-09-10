@@ -60,10 +60,7 @@
 
 	let actionStatus = $state<Record<string, ActionStatus>>({});
 	let checkingProjectIds = $state<Record<string, boolean>>({});
-	let tagCatalog = $state<ProjectTagOption[]>([]);
-	$effect(() => {
-		tagCatalog = availableTags;
-	});
+	let tagCatalog = $derived(availableTags);
 
 	let isBulkLoading = $state({
 		up: false,

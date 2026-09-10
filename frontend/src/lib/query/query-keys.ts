@@ -15,8 +15,12 @@ function stableSerialize(value: unknown): string {
 
 export const queryKeys = {
 	swarm: {
+		info: (environmentId: string) => ['swarm', environmentId, 'info'] as const,
+		joinTokens: (environmentId: string) => ['swarm', environmentId, 'join-tokens'] as const,
+		unlockKey: (environmentId: string) => ['swarm', environmentId, 'unlock-key'] as const,
 		joinCandidates: (environmentId: string | null, user: Pick<User, 'id' | 'permissionsByEnv'> | null) =>
-			['swarm', environmentId, 'join-candidates', user?.id ?? null, stableSerialize(user?.permissionsByEnv)] as const
+			['swarm', environmentId, 'join-candidates', user?.id ?? null, stableSerialize(user?.permissionsByEnv)] as const,
+		serviceTasks: (environmentId: string, serviceId: string) => ['swarm', environmentId, 'service-tasks', serviceId] as const
 	},
 	jobs: {
 		list: (environmentId: string) => ['environment-jobs', environmentId] as const,
@@ -114,7 +118,9 @@ export const queryKeys = {
 		list: (environmentId: string, options: SearchPaginationSortRequest) =>
 			['images', environmentId, stableSerialize(options)] as const,
 		usageCounts: (environmentId: string) => ['images', 'usage-counts', environmentId] as const,
+		history: (environmentId: string, imageId: string) => ['image', environmentId, imageId, 'history'] as const,
 		detail: (environmentId: string, imageId: string) => ['image', environmentId, imageId] as const,
+		updateInfoByRef: (environmentId: string, imageRef: string) => ['image-update-info', environmentId, imageRef] as const,
 		updateCheck: (environmentId: string, imageId: string) => ['image-update', environmentId, imageId] as const,
 		builds: (environmentId: string) => ['images', environmentId, 'builds'] as const,
 		buildsList: (environmentId: string, options: SearchPaginationSortRequest) =>
@@ -156,6 +162,7 @@ export const queryKeys = {
 		detail: (environmentId: string, syncId: string) => ['gitops-syncs', environmentId, syncId] as const
 	},
 	volumes: {
+		sizes: (environmentId: string) => ['volume-sizes', environmentId] as const,
 		table: (environmentId: string, options: SearchPaginationSortRequest) =>
 			['volumes', environmentId, stableSerialize(options)] as const,
 		detail: (environmentId: string, volumeName: string) => ['volume', environmentId, volumeName] as const,
@@ -163,11 +170,12 @@ export const queryKeys = {
 		workspaceFile: (environmentId: string, volumeName: string, relativePath: string) =>
 			['volume', environmentId, volumeName, 'workspace-file', relativePath] as const,
 		backups: (volumeName: string) => ['volume-backups', volumeName] as const,
-		backupHasPath: (backupId: string, path: string) => ['volume-backups', backupId, 'has-path', path] as const
+		backupHasPath: (environmentId: string, volumeName: string, backupId: string, path: string) =>
+			['volume-backups', environmentId, volumeName, backupId, 'has-path', path] as const
 	},
 	vulnerabilities: {
 		summaryByEnvironment: (environmentId: string) => ['vulnerabilities', 'summary', environmentId] as const,
-		summaryByImage: (imageId: string) => ['vulnerabilities', 'image-summary', imageId] as const,
+		scanResult: (environmentId: string, imageId: string) => ['vulnerabilities', 'scan-result', environmentId, imageId] as const,
 		allByEnvironment: (environmentId: string, request: SearchPaginationSortRequest) =>
 			['vulnerabilities', 'all', environmentId, stableSerialize(request)] as const,
 		imageRows: (imageId: string, request: SearchPaginationSortRequest) =>

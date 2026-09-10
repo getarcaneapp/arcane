@@ -1,5 +1,11 @@
 <script lang="ts">
 	import { tryCatch } from '#lib/utils/try-catch.js';
+	import { createQuery } from '@tanstack/svelte-query';
+	import { queryKeys } from '#lib/query/query-keys.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import userStore from '#lib/stores/user-store.js';
+	import { hasPermission } from '#lib/utils/auth.js';
+	import { onDestroy } from 'svelte';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
@@ -19,52 +25,51 @@
 	};
 
 	let { open = $bindable(false), managerEnvironmentId, targetEnvironmentId, onComplete }: Props = $props();
-	let candidates = $state<SwarmJoinCandidate[]>([]);
-	let targets = $state<Record<string, SwarmJoinEnvironmentTarget>>({});
-	let results = $state<SwarmJoinEnvironmentResult[]>([]);
-	let errorMessage = $state('');
-	let isLoading = $state(false);
-	let loaded = $state(false);
-
-	$effect(() => {
-		if (!open) {
-			loaded = false;
-			return;
-		}
-		if (loaded) return;
-		loaded = true;
-		void loadCandidates();
+	const requestedManagerId = $derived(managerEnvironmentId ?? environmentStore.selected?.id);
+	const candidatesQuery = createQuery(() => {
+		const environmentId = requestedManagerId;
+		return {
+			queryKey: queryKeys.swarm.joinCandidates(environmentId ?? null, $userStore),
+			queryFn: async () => {
+				await environmentStore.ready;
+				return swarmService.getSwarmJoinCandidates(environmentId!);
+			},
+			enabled: open && !!environmentId && hasPermission('swarm:join', environmentId)
+		};
 	});
-
-	async function loadCandidates() {
-		isLoading = true;
-		errorMessage = '';
-		candidates = [];
-		targets = {};
-		results = [];
-		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					const candidateData = await swarmService.getSwarmJoinCandidates(managerEnvironmentId);
-					candidates = targetEnvironmentId
-						? candidateData.filter((candidate) => candidate.environmentId === targetEnvironmentId)
-						: candidateData;
-					if (targetEnvironmentId && candidates[0]) toggleCandidate(candidates[0], true);
-				})()
-			);
-			if (operationResult.error !== null) {
-				const error = operationResult.error;
-
-				errorMessage = extractApiErrorMessage(error);
+	const candidates = $derived(
+		(candidatesQuery.data ?? []).filter((candidate) => !targetEnvironmentId || candidate.environmentId === targetEnvironmentId)
+	);
+	let targetDraft = $state<Record<string, SwarmJoinEnvironmentTarget> | null>(null);
+	const targets = $derived.by(() => {
+		if (targetDraft) return targetDraft;
+		if (!targetEnvironmentId || !candidates[0]) return {};
+		const candidate = candidates[0];
+		return {
+			[candidate.environmentId]: {
+				environmentId: candidate.environmentId,
+				role: 'worker' as const,
+				availability: 'active' as const
 			}
-		} finally {
-			isLoading = false;
-		}
-	}
+		};
+	});
+	let results = $state<SwarmJoinEnvironmentResult[]>([]);
+	let mutationError = $state('');
+	const errorMessage = $derived.by(() => {
+		if (mutationError) return mutationError;
+		if (candidatesQuery.error) return extractApiErrorMessage(candidatesQuery.error);
+		return '';
+	});
+	let isJoining = $state(false);
+	const isLoading = $derived(candidatesQuery.isFetching || isJoining);
+	let destroyed = false;
+	onDestroy(() => {
+		destroyed = true;
+	});
 
 	function toggleCandidate(candidate: SwarmJoinCandidate, selected: boolean) {
 		if (selected) {
-			targets = {
+			targetDraft = {
 				...targets,
 				[candidate.environmentId]: {
 					environmentId: candidate.environmentId,
@@ -76,42 +81,42 @@
 		}
 		const next = { ...targets };
 		delete next[candidate.environmentId];
-		targets = next;
+		targetDraft = next;
 	}
 
 	function updateTarget(environmentId: string, update: Partial<SwarmJoinEnvironmentTarget>) {
 		const current = targets[environmentId];
 		if (!current) return;
-		targets = { ...targets, [environmentId]: { ...current, ...update } };
+		targetDraft = { ...targets, [environmentId]: { ...current, ...update } };
 	}
 
 	async function joinSelected() {
+		const environmentId = requestedManagerId;
+		if (!environmentId) return;
 		const selectedTargets = Object.values(targets);
 		if (selectedTargets.length === 0) {
-			errorMessage = m.swarm_easy_join_targets_required();
+			mutationError = m.swarm_easy_join_targets_required();
 			return;
 		}
-		isLoading = true;
-		errorMessage = '';
+		isJoining = true;
+		mutationError = '';
 		results = [];
 		try {
 			const operationResult = await tryCatch(
 				(async () => {
-					const response = await swarmService.joinEnvironments(
-						{ remoteAddrs: [], targets: selectedTargets },
-						managerEnvironmentId
-					);
+					const response = await swarmService.joinEnvironments({ remoteAddrs: [], targets: selectedTargets }, environmentId);
+					if (destroyed || environmentId !== requestedManagerId) return;
 					results = response.results;
 					await onComplete?.();
 				})()
 			);
-			if (operationResult.error !== null) {
+			if (operationResult.error !== null && !destroyed && environmentId === requestedManagerId) {
 				const error = operationResult.error;
 
-				errorMessage = extractApiErrorMessage(error);
+				mutationError = extractApiErrorMessage(error);
 			}
 		} finally {
-			isLoading = false;
+			isJoining = false;
 		}
 	}
 

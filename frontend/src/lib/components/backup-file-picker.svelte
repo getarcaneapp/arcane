@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onDestroy, onMount, tick, untrack } from 'svelte';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
@@ -36,11 +37,10 @@
 	let pages = $state<Record<string, FolderPageState>>({});
 	let expandedFolders = $state<Set<string>>(new Set());
 	let selectedDirectoryPaths = $state<Set<string>>(new Set());
-	let debouncedSearch = $state('');
-	let selectionSearch = $state('');
-	let generation = $state(0);
+	let debouncedSearch = $state(untrack(() => search.trim()));
+	let generation = 0;
+	let searchTimeout: ReturnType<typeof setTimeout> | undefined;
 	let nextRequestID = 0;
-	let initializedProvider: BackupFileProvider | null = null;
 	let scrollElement = $state<HTMLElement | null>(null);
 
 	const selectedSet = $derived(new Set(selectedPaths));
@@ -63,7 +63,10 @@
 			return row?.kind === 'entry' ? `entry:${row.entry.path}` : `continuation:${row?.folder ?? ''}`;
 		},
 		estimateSize: () => 34,
-		overscan: 8
+		overscan: 8,
+		onChange: (instance) => {
+			loadVisibleContinuationsInternal(instance.getVirtualItems().map((item) => item.index));
+		}
 	}));
 
 	function pageStateInternal(folder: string): FolderPageState {
@@ -132,20 +135,30 @@
 			const latest = pages[folder];
 			if (generation !== requestGeneration || latest?.requestID !== requestID) return;
 			updatePageInternal(folder, { ...latest, loading: false, error: true });
+			return;
+		}
+		await tick();
+		if (generation === requestGeneration) {
+			loadVisibleContinuationsInternal(rowVirtualizer.virtualItems.map((item) => item.index));
 		}
 	}
 
-	function toggleFolderInternal(folder: string) {
+	async function toggleFolderInternal(folder: string) {
 		if (searchActive) return;
+		const requestGeneration = generation;
 		const next = new Set(expandedFolders);
 		if (next.has(folder)) {
 			next.delete(folder);
 			expandedFolders = next;
-			return;
+		} else {
+			next.add(folder);
+			expandedFolders = next;
+			if (!pages[folder]) void loadPageInternal(folder, 0, true);
 		}
-		next.add(folder);
-		expandedFolders = next;
-		if (!pages[folder]) void loadPageInternal(folder, 0, true);
+		await tick();
+		if (generation === requestGeneration) {
+			loadVisibleContinuationsInternal(rowVirtualizer.virtualItems.map((item) => item.index));
+		}
 	}
 
 	function coveringAncestorInternal(entryPath: string): string | undefined {
@@ -187,59 +200,48 @@
 	function selectAllInternal() {
 		selectedPaths = [];
 		selectAll = true;
-		selectionSearch = search.trim();
 	}
 
 	function clearSelectionInternal() {
 		selectedPaths = [];
 		selectAll = false;
-		selectionSearch = '';
 	}
 
-	// A new provider means a new backup tree: the picker owns clearing its
-	// selection and search state so every parent dialog doesn't have to.
-	$effect(() => {
-		const currentProvider = provider;
-		if (initializedProvider === currentProvider) return;
-		initializedProvider = currentProvider;
-		selectedPaths = [];
-		selectAll = false;
-		selectionSearch = '';
-		selectedDirectoryPaths = new Set();
-		search = '';
-		debouncedSearch = '';
-		resetPagesInternal();
+	onMount(() => {
+		void loadPageInternal('', 0, true);
+	});
+	onDestroy(() => {
+		generation += 1;
+		clearTimeout(searchTimeout);
 	});
 
-	$effect(() => {
-		const query = search.trim();
-		if (selectAll && query !== selectionSearch) {
-			selectAll = false;
-			selectionSearch = '';
-		}
+	function updateSearchInternal(value: string) {
+		const query = value.trim();
+		if (selectAll && query !== search.trim()) selectAll = false;
+		search = value;
+		clearTimeout(searchTimeout);
 		if (query === debouncedSearch) return;
-		const timeout = window.setTimeout(() => {
+		searchTimeout = setTimeout(() => {
 			debouncedSearch = query;
 			resetPagesInternal();
 		}, 250);
-		return () => window.clearTimeout(timeout);
-	});
+	}
 
-	$effect(() => {
-		for (const virtualItem of rowVirtualizer.virtualItems) {
-			const row = rows[virtualItem.index];
+	function loadVisibleContinuationsInternal(indices: number[]) {
+		for (const index of indices) {
+			const row = rows[index];
 			if (row?.kind !== 'continuation') continue;
 			const state = pages[row.folder];
 			if (state?.continuationStart !== undefined && !state.loading && !state.error) {
 				void loadPageInternal(row.folder, state.continuationStart, false);
 			}
 		}
-	});
+	}
 </script>
 
 <div class="space-y-3">
 	<div class="flex items-center justify-between gap-2">
-		<Input class="h-9" placeholder={m.volume_search_files()} bind:value={search} />
+		<Input class="h-9" placeholder={m.volume_search_files()} bind:value={() => search, updateSearchInternal} />
 		<div class="flex items-center gap-2">
 			<ArcaneButton
 				action="base"

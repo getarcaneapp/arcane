@@ -12,7 +12,7 @@ export const load: PageLoad = async ({ parent }) => {
 	let topology;
 	const operationResult = await tryCatch(
 		(async () =>
-			queryClient.fetchQuery({
+			queryClient.query({
 				queryKey: queryKeys.networks.topology(envId),
 				queryFn: () => networkService.getNetworkTopology(envId)
 			}))()

@@ -18,16 +18,19 @@
 	let requestOptions = $derived<SearchPaginationSortRequest>(data.requestOptions);
 	let selected = $state<S3Destination | null>(null);
 	let dialogOpen = $state(false);
+	let destinationSession = $state(0);
 	let saving = $state(false);
 	const isReadOnly = $derived.by(() => $settingsStore.uiConfigDisabled);
 
 	function openCreate() {
 		selected = null;
+		destinationSession += 1;
 		dialogOpen = true;
 	}
 
 	function openEdit(destination: S3Destination) {
 		selected = destination;
+		destinationSession += 1;
 		dialogOpen = true;
 	}
 
@@ -45,7 +48,6 @@
 					}
 					destinations = await s3DestinationService.list(requestOptions);
 					dialogOpen = false;
-					selected = null;
 				})()
 			);
 			if (operationResult.error !== null) {
@@ -112,6 +114,10 @@
 		/>
 	{/snippet}
 	{#snippet additionalContent()}
-		<S3DestinationDialog bind:open={dialogOpen} destination={selected} {saving} onSubmit={saveDestination} />
+		{#if destinationSession > 0}
+			{#key destinationSession}
+				<S3DestinationDialog bind:open={dialogOpen} destination={selected} {saving} onSubmit={saveDestination} />
+			{/key}
+		{/if}
 	{/snippet}
 </SettingsPageLayout>

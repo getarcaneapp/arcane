@@ -1,6 +1,7 @@
 import { browser } from '$app/env';
 import { PersistedState } from 'runed';
 import { get } from 'svelte/store';
+import { createContext } from 'svelte';
 import {
 	DEFAULT_LANDING_PAGE,
 	defaultMobileNavigationSettings,
@@ -13,19 +14,10 @@ import userStore from '#lib/stores/user-store.js';
 
 const pinnedItemsStore = new PersistedState('mobile-nav-settings', defaultMobileNavigationSettings);
 
-type NavigationVisibilityController = {
-	resetVisibility: () => void;
-};
-
-let mobileNavController: NavigationVisibilityController | null = null;
-
-export function registerNavigationVisibilityController(controller: NavigationVisibilityController | null) {
-	mobileNavController = controller;
-}
-
-export function resetNavigationVisibility() {
-	mobileNavController?.resetVisibility();
-}
+export const [getMobileNavigation, setMobileNavigation] = createContext<{
+	readonly settings: MobileNavigationSettings;
+	visible: boolean;
+}>();
 
 export function getEffectiveNavigationSettings(): MobileNavigationSettings {
 	const preferences = get(userStore)?.preferences;

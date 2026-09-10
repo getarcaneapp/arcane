@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
@@ -53,19 +54,19 @@
 			}
 		});
 
-	let formData = $derived<CreateS3Destination>({
-		name: open && destination ? destination.name : '',
-		endpoint: open && destination ? (destination.endpoint ?? '') : '',
-		bucket: open && destination ? destination.bucket : '',
-		region: open && destination ? destination.region : 'us-east-1',
-		accessKeyId: open && destination ? destination.accessKeyId : '',
+	const formData = untrack((): CreateS3Destination => ({
+		name: destination?.name ?? '',
+		endpoint: destination?.endpoint ?? '',
+		bucket: destination?.bucket ?? '',
+		region: destination?.region ?? 'us-east-1',
+		accessKeyId: destination?.accessKeyId ?? '',
 		secretAccessKey: '',
-		prefix: open && destination ? (destination.prefix ?? '') : '',
-		useSsl: open && destination ? destination.useSsl : true,
-		forcePathStyle: open && destination ? destination.forcePathStyle : true
-	});
+		prefix: destination?.prefix ?? '',
+		useSsl: destination?.useSsl ?? true,
+		forcePathStyle: destination?.forcePathStyle ?? true
+	}));
 
-	let { inputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, formData));
+	const { inputs, ...form } = createForm<typeof formSchema>(formSchema, formData);
 	let testing = $state(false);
 	let testedConfiguration = $state<string | null>(null);
 	const currentConfiguration = $derived(
@@ -81,12 +82,6 @@
 		})
 	);
 	const connectionVerified = $derived(testedConfiguration === currentConfiguration);
-
-	$effect(() => {
-		open;
-		destination?.id;
-		testedConfiguration = null;
-	});
 
 	function handleSubmit() {
 		const data = form.validate();

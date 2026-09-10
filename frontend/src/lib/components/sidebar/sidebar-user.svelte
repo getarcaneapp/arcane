@@ -16,15 +16,7 @@
 	}: { user: User; isCollapsed: boolean; autoLoginEnabled?: boolean } = $props();
 	const sidebar = useSidebar();
 
-	let dropdownOpen = $state(false);
-
 	const displayLabel = $derived(user.displayName || user.username);
-
-	$effect(() => {
-		if (sidebar.state === 'collapsed' && !sidebar.isHovered && dropdownOpen) {
-			dropdownOpen = false;
-		}
-	});
 
 	async function getGravatarUrl(email: string | undefined, size = 40): Promise<string> {
 		if (!email) return '';
@@ -41,124 +33,122 @@
 
 <Sidebar.Menu>
 	<Sidebar.MenuItem>
-		<DropdownMenu.Root bind:open={dropdownOpen}>
-			<DropdownMenu.Trigger>
-				{#snippet child({ props })}
-					<Sidebar.MenuButton
-						size="lg"
-						class="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
-						{...props}
-					>
-						{#key user?.updatedAt}
-							<Avatar.Root class="size-8 rounded-lg">
-								{#if user?.avatarUrl}
-									<Avatar.Image src={`${user.avatarUrl}?t=${user.updatedAt}`} alt={displayLabel} />
-								{:else if $settingsStore.enableGravatar}
-									{#await getGravatarUrl(user?.email)}
-										<!-- Loading gravatar, show fallback -->
-									{:then url}
-										<Avatar.Image src={url} alt={displayLabel} />
-									{:catch}
-										<!-- Gravatar failed, show fallback -->
-									{/await}
-								{/if}
-								<Avatar.Fallback class="rounded-lg bg-primary text-sm font-semibold text-primary-foreground">
-									{displayLabel.charAt(0).toUpperCase()}
-								</Avatar.Fallback>
-							</Avatar.Root>
-						{/key}
-						{#if !isCollapsed}
-							<div class="grid flex-1 pl-0 text-left text-sm leading-tight">
-								<span class="truncate font-medium">{displayLabel}</span>
-								<span class="truncate text-xs">{user.email}</span>
-							</div>
-							<ArrowsUpDownIcon class="ml-auto size-4 shrink-0 text-muted-foreground" />
-						{/if}
-					</Sidebar.MenuButton>
-				{/snippet}
-			</DropdownMenu.Trigger>
-			<DropdownMenu.Content
-				class="min-w-60 rounded-xl border border-border/30 p-1.5 shadow-lg backdrop-blur-2xl backdrop-saturate-150"
-				side="right"
-				align="end"
-				sideOffset={12}
-			>
-				<div
-					role="group"
-					tabindex="-1"
-					onmouseenter={() => {
-						if (sidebar.state === 'collapsed') {
-							sidebar.setHovered(true);
-						}
-					}}
-					onmouseleave={() => {
-						sidebar.setHovered(false, 150);
-					}}
+		{#key sidebar.state === 'collapsed' && !sidebar.isHovered}
+			<DropdownMenu.Root>
+				<DropdownMenu.Trigger>
+					{#snippet child({ props })}
+						<Sidebar.MenuButton
+							size="lg"
+							class="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+							{...props}
+						>
+							{#key user?.updatedAt}
+								<Avatar.Root class="size-8 rounded-lg">
+									{#if user?.avatarUrl}
+										<Avatar.Image src={`${user.avatarUrl}?t=${user.updatedAt}`} alt={displayLabel} />
+									{:else if $settingsStore.enableGravatar}
+										{#await getGravatarUrl(user?.email)}
+											<!-- Loading gravatar, show fallback -->
+										{:then url}
+											<Avatar.Image src={url} alt={displayLabel} />
+										{:catch}
+											<!-- Gravatar failed, show fallback -->
+										{/await}
+									{/if}
+									<Avatar.Fallback class="rounded-lg bg-primary text-sm font-semibold text-primary-foreground">
+										{displayLabel.charAt(0).toUpperCase()}
+									</Avatar.Fallback>
+								</Avatar.Root>
+							{/key}
+							{#if !isCollapsed}
+								<div class="grid flex-1 pl-0 text-left text-sm leading-tight">
+									<span class="truncate font-medium">{displayLabel}</span>
+									<span class="truncate text-xs">{user.email}</span>
+								</div>
+								<ArrowsUpDownIcon class="ml-auto size-4 shrink-0 text-muted-foreground" />
+							{/if}
+						</Sidebar.MenuButton>
+					{/snippet}
+				</DropdownMenu.Trigger>
+				<DropdownMenu.Content
+					class="min-w-60 rounded-xl border border-border/30 p-1.5 shadow-lg backdrop-blur-2xl backdrop-saturate-150"
+					side="right"
+					align="end"
+					sideOffset={12}
 				>
-					<div class="flex items-center gap-2.5 px-2 py-2">
-						{#key user?.updatedAt}
-							<Avatar.Root class="size-8 shrink-0 rounded-lg">
-								{#if user?.avatarUrl}
-									<Avatar.Image src={`${user.avatarUrl}?t=${user.updatedAt}`} alt={displayLabel} />
-								{:else if $settingsStore.enableGravatar}
-									{#await getGravatarUrl(user?.email)}
-										<!-- Loading gravatar, show fallback -->
-									{:then url}
-										<Avatar.Image src={url} alt={displayLabel} />
-									{:catch}
-										<!-- Gravatar failed, show fallback -->
-									{/await}
-								{/if}
-								<Avatar.Fallback class="rounded-lg bg-primary text-xs font-semibold text-primary-foreground">
-									{displayLabel.charAt(0).toUpperCase()}
-								</Avatar.Fallback>
-							</Avatar.Root>
-						{/key}
-						<div class="grid min-w-0 flex-1 leading-tight">
-							<span class="truncate text-sm font-medium">{displayLabel}</span>
-							<span class="truncate text-xs text-muted-foreground">{user.email}</span>
+					<div
+						role="group"
+						tabindex="-1"
+						onmouseenter={() => {
+							if (sidebar.state === 'collapsed') {
+								sidebar.setHovered(true);
+							}
+						}}
+						onmouseleave={() => {
+							sidebar.setHovered(false, 150);
+						}}
+					>
+						<div class="flex items-center gap-2.5 px-2 py-2">
+							{#key user?.updatedAt}
+								<Avatar.Root class="size-8 shrink-0 rounded-lg">
+									{#if user?.avatarUrl}
+										<Avatar.Image src={`${user.avatarUrl}?t=${user.updatedAt}`} alt={displayLabel} />
+									{:else if $settingsStore.enableGravatar}
+										{#await getGravatarUrl(user?.email)}
+											<!-- Loading gravatar, show fallback -->
+										{:then url}
+											<Avatar.Image src={url} alt={displayLabel} />
+										{:catch}
+											<!-- Gravatar failed, show fallback -->
+										{/await}
+									{/if}
+									<Avatar.Fallback class="rounded-lg bg-primary text-xs font-semibold text-primary-foreground">
+										{displayLabel.charAt(0).toUpperCase()}
+									</Avatar.Fallback>
+								</Avatar.Root>
+							{/key}
+							<div class="grid min-w-0 flex-1 leading-tight">
+								<span class="truncate text-sm font-medium">{displayLabel}</span>
+								<span class="truncate text-xs text-muted-foreground">{user.email}</span>
+							</div>
 						</div>
+
+						<DropdownMenu.Separator class="my-1" />
+
+						<DropdownMenu.Item
+							class="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-sm text-foreground transition-colors hover:bg-muted/60"
+							onSelect={() => {
+								goto('/account');
+							}}
+						>
+							<UserIcon class="size-4 shrink-0 text-muted-foreground" />
+							<span>{m.common_account()}</span>
+						</DropdownMenu.Item>
+
+						<DropdownMenu.Item
+							class="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-sm text-foreground transition-colors hover:bg-muted/60"
+							onSelect={() => {
+								goto('/account?tab=preferences');
+							}}
+						>
+							<SettingsIcon class="size-4 shrink-0 text-muted-foreground" />
+							<span>{m.account_preferences()}</span>
+						</DropdownMenu.Item>
+
+						{#if !autoLoginEnabled}
+							<form action="/logout" method="POST" class="w-full">
+								<button
+									type="submit"
+									class="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-sm text-destructive transition-colors hover:bg-destructive/10"
+								>
+									<LogoutIcon class="size-4 shrink-0" />
+									<span>{m.common_log_out()}</span>
+								</button>
+							</form>
+						{/if}
 					</div>
-
-					<DropdownMenu.Separator class="my-1" />
-
-					<button
-						type="button"
-						class="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-sm text-foreground transition-colors hover:bg-muted/60"
-						onclick={() => {
-							dropdownOpen = false;
-							goto('/account');
-						}}
-					>
-						<UserIcon class="size-4 shrink-0 text-muted-foreground" />
-						<span>{m.common_account()}</span>
-					</button>
-
-					<button
-						type="button"
-						class="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-sm text-foreground transition-colors hover:bg-muted/60"
-						onclick={() => {
-							dropdownOpen = false;
-							goto('/account?tab=preferences');
-						}}
-					>
-						<SettingsIcon class="size-4 shrink-0 text-muted-foreground" />
-						<span>{m.account_preferences()}</span>
-					</button>
-
-					{#if !autoLoginEnabled}
-						<form action="/logout" method="POST" class="w-full">
-							<button
-								type="submit"
-								class="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-sm text-destructive transition-colors hover:bg-destructive/10"
-							>
-								<LogoutIcon class="size-4 shrink-0" />
-								<span>{m.common_log_out()}</span>
-							</button>
-						</form>
-					{/if}
-				</div>
-			</DropdownMenu.Content>
-		</DropdownMenu.Root>
+				</DropdownMenu.Content>
+			</DropdownMenu.Root>
+		{/key}
 	</Sidebar.MenuItem>
 </Sidebar.Menu>

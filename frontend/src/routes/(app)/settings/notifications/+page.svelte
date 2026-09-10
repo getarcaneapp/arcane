@@ -6,7 +6,8 @@
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { toast } from 'svelte-sonner';
-	import { getContext, onMount } from 'svelte';
+	import { getContext, onDestroy, onMount } from 'svelte';
+	import type { SettingsFormContext, SettingsFormState } from '#lib/types/settings-form.js';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import settingsStore from '#lib/stores/config-store.js';
 	import { m } from '#lib/paraglide/messages.js';
@@ -67,15 +68,9 @@
 	let mobileDevices = $state<ApnsDevice[]>([]);
 	let testingDeviceId = $state<string | null>(null);
 
-	type SettingsFormState = {
-		hasChanges: boolean;
-		isLoading: boolean;
-		saveFunction: (() => Promise<void>) | null;
-		resetFunction: (() => void) | null;
-	};
 	type ProviderFormRef = { isValid: () => boolean };
 
-	const formState = getContext<SettingsFormState | undefined>('settingsFormState');
+	const formContext = getContext<SettingsFormContext | undefined>('settingsFormState');
 	let providerFormRefs = $state<Partial<Record<NotificationProviderKey, ProviderFormRef>>>({});
 	let savedSettings = $state<NotificationSettingsByProvider>(createNotificationSettingsByProvider());
 	let providerValues = $state<NotificationProviderFormState>(createNotificationProviderFormState());
@@ -91,14 +86,19 @@
 		return settings?.config ? Object.prototype.hasOwnProperty.call(settings.config, field) : false;
 	}
 
-	// Sync with settings form context
-	$effect(() => {
-		if (formState) {
-			formState.hasChanges = hasChanges;
-			formState.isLoading = isLoading;
-			formState.saveFunction = onSubmit;
-			formState.resetFunction = resetForm;
-		}
+	const activeForm: SettingsFormState = {
+		get hasChanges() {
+			return hasChanges;
+		},
+		get isLoading() {
+			return isLoading;
+		},
+		saveFunction: onSubmit,
+		resetFunction: resetForm
+	};
+	if (formContext) formContext.activeForm = activeForm;
+	onDestroy(() => {
+		if (formContext?.activeForm === activeForm) formContext.activeForm = undefined;
 	});
 
 	onMount(() => {

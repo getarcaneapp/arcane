@@ -7,14 +7,12 @@
 	import * as Select from '#lib/components/ui/select/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { PersistedState } from 'runed';
+	import type { UseLogPreferences } from '#lib/hooks/use-log-preferences.svelte.js';
 
 	let {
 		autoScroll = $bindable(),
-		tailLines = $bindable(100),
-		autoStartLogs = $bindable(false),
+		preferences,
 		searchTerm = $bindable(''),
-		showParsedJson = $bindable(false),
 		mobileLayout = 'full',
 		showDesktop = true,
 		isStreaming = false,
@@ -24,10 +22,8 @@
 		onRefresh
 	}: {
 		autoScroll: boolean;
-		tailLines?: number;
-		autoStartLogs?: boolean;
+		preferences: UseLogPreferences;
 		searchTerm?: string;
-		showParsedJson?: boolean;
 		mobileLayout?: 'full' | 'menu-only' | 'actions-only' | 'none';
 		showDesktop?: boolean;
 		isStreaming?: boolean;
@@ -46,39 +42,14 @@
 		{ value: 'all', label: m.log_tail_all_lines() }
 	];
 
-	const persistedTailLines = new PersistedState('arcane_log_tail_lines', '100');
-	const persistedAutoStart = new PersistedState('arcane_log_auto_start', 'false');
-	const persistedJsonParsing = new PersistedState('arcane_log_json_parsing_v3', 'false');
-
-	let selectedTail = $state<string>(persistedTailLines.current || (tailLines >= 999999 ? 'all' : String(tailLines)));
-
-	$effect(() => {
-		persistedTailLines.current = selectedTail;
-		if (selectedTail === 'all') {
-			tailLines = 999999;
-		} else {
-			tailLines = parseInt(selectedTail, 10);
-		}
+	const parsedModeLabel = $derived.by(() => {
+		if (preferences.showParsedJson) return m.common_parsed();
+		return m.common_raw();
 	});
 
-	$effect(() => {
-		autoStartLogs = persistedAutoStart.current === 'true';
-	});
-
-	$effect(() => {
-		persistedAutoStart.current = autoStartLogs ? 'true' : 'false';
-	});
-
-	$effect(() => {
-		showParsedJson = persistedJsonParsing.current === 'true';
-	});
-
-	function handleParsedModeChange(checked: boolean): void {
-		showParsedJson = checked;
-		persistedJsonParsing.current = checked ? 'true' : 'false';
-	}
-
-	const selectedLabel = $derived(tailOptions.find((o) => o.value === selectedTail)?.label ?? m.log_tail_100_lines());
+	const selectedLabel = $derived(
+		tailOptions.find((o) => o.value === preferences.selectedTail.current)?.label ?? m.log_tail_100_lines()
+	);
 </script>
 
 {#snippet mobileActionButtons()}
@@ -132,7 +103,10 @@
 
 		<DropdownMenu.Content align="end" class="w-72">
 			<DropdownMenu.Label>{selectedLabel}</DropdownMenu.Label>
-			<DropdownMenu.RadioGroup value={selectedTail} onValueChange={(value) => (selectedTail = value)}>
+			<DropdownMenu.RadioGroup
+				value={preferences.selectedTail.current}
+				onValueChange={(value) => (preferences.selectedTail.current = value)}
+			>
 				{#each tailOptions as option (option.value)}
 					<DropdownMenu.RadioItem value={option.value} disabled={isStreaming}>{option.label}</DropdownMenu.RadioItem>
 				{/each}
@@ -152,9 +126,9 @@
 				</div>
 			</DropdownMenu.CheckboxItem>
 			<DropdownMenu.CheckboxItem
-				checked={autoStartLogs}
+				checked={preferences.autoStartLogs}
 				onCheckedChange={(checked) => {
-					autoStartLogs = checked === true;
+					preferences.autoStartLogs = checked === true;
 				}}
 			>
 				<div class="flex flex-col gap-0.5">
@@ -163,13 +137,13 @@
 				</div>
 			</DropdownMenu.CheckboxItem>
 			<DropdownMenu.CheckboxItem
-				checked={showParsedJson}
+				checked={preferences.showParsedJson}
 				onCheckedChange={(checked) => {
-					handleParsedModeChange(checked === true);
+					preferences.setParsedMode(checked === true);
 				}}
 			>
 				<div class="flex flex-col gap-0.5">
-					<span class="font-medium">{showParsedJson ? m.common_parsed() : m.common_raw()}</span>
+					<span class="font-medium">{parsedModeLabel}</span>
 					<span class="text-xs text-muted-foreground">{m.log_parsed_mode_tooltip()}</span>
 				</div>
 			</DropdownMenu.CheckboxItem>
@@ -225,10 +199,10 @@
 						<SwitchWithLabel
 							triggerProps={props}
 							id="auto-start-logs-toggle"
-							checked={autoStartLogs}
+							checked={preferences.autoStartLogs}
 							label={m.auto_start()}
 							onCheckedChange={(checked) => {
-								autoStartLogs = checked;
+								preferences.autoStartLogs = checked;
 							}}
 						/>
 					{/snippet}
@@ -244,10 +218,10 @@
 						<SwitchWithLabel
 							triggerProps={props}
 							id="parsed-log-mode-toggle"
-							checked={showParsedJson}
-							label={showParsedJson ? m.common_parsed() : m.common_raw()}
+							checked={preferences.showParsedJson}
+							label={parsedModeLabel}
 							onCheckedChange={(checked) => {
-								handleParsedModeChange(checked);
+								preferences.setParsedMode(checked);
 							}}
 						/>
 					{/snippet}
@@ -260,7 +234,12 @@
 
 		<Input type="search" placeholder={m.common_search()} bind:value={searchTerm} class="h-9 w-44 text-xs" />
 
-		<Select.Root type="single" bind:value={selectedTail} disabled={isStreaming} onValueChange={(v: string) => (selectedTail = v)}>
+		<Select.Root
+			type="single"
+			value={preferences.selectedTail.current}
+			disabled={isStreaming}
+			onValueChange={(v: string) => (preferences.selectedTail.current = v)}
+		>
 			<Select.Trigger class="h-9 w-32 text-xs">
 				<span>{selectedLabel}</span>
 			</Select.Trigger>

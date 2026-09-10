@@ -11,6 +11,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { settingsService } from '#lib/services/settings-service.js';
 	import { systemService } from '#lib/services/system-service.js';
+	import type { Activity } from '#lib/types/activity.type.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import { dashboardStore } from '#lib/stores/dashboard.store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
@@ -334,23 +335,17 @@
 		});
 	});
 
-	// A prune runs as a background activity; once the streamed activity reaches a
-	// terminal state, refresh so the dashboard reflects the post-prune resource counts.
-	// A plain (non-reactive) guard dedupes so the refresh fires once per activity
-	// without writing $state inside the effect.
 	let refreshedPruneActivityId: string | null = null;
-	$effect(() => {
+	function refreshCompletedPrune(activities: readonly Activity[] = activityStore.activities) {
 		const id = pendingPruneActivityId;
-		if (!id || id === refreshedPruneActivityId) {
-			return;
-		}
+		if (!id || id === refreshedPruneActivityId) return;
+		const status = activities.find((activity) => activity.id === id)?.status;
+		if (status !== 'success' && status !== 'failed' && status !== 'cancelled') return;
+		refreshedPruneActivityId = id;
+		void refreshOverview();
+	}
 
-		const status = activityStore.getActivity(id)?.status;
-		if (status === 'success' || status === 'failed' || status === 'cancelled') {
-			refreshedPruneActivityId = id;
-			void refreshOverview();
-		}
-	});
+	onMount(() => activityStore.subscribeActivities(refreshCompletedPrune));
 
 	onMount(() => {
 		void dashboardStore.start({ debugAllGood });
@@ -600,6 +595,7 @@
 				// an immediate refresh when no activity id is returned.
 				if (activityId) {
 					pendingPruneActivityId = activityId;
+					refreshCompletedPrune();
 				} else {
 					await refreshOverview();
 				}

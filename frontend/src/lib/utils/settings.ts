@@ -136,11 +136,11 @@ export function createForm<T extends z.ZodType<any, any>>(schema: T, initialValu
 		return (result.success ? result.data : values) as z.infer<T>;
 	}
 
-	function reset() {
+	function reset(values: z.infer<T> = initialValues) {
 		inputsStore.update((inputs) => {
 			for (const input of Object.keys(inputs)) {
 				inputs[input as keyof z.infer<T>] = {
-					value: initialValues[input as keyof z.infer<T>],
+					value: values[input as keyof z.infer<T>],
 					error: null
 				};
 			}

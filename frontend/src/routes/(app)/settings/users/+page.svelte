@@ -168,12 +168,8 @@
 	const avatarMaxUploadSizeMb = $derived(
 		Number($settingsStore?.avatarMaxUploadSizeMb) > 0 ? Number($settingsStore?.avatarMaxUploadSizeMb) : 2
 	);
-	let avatarSizeInput = $state('');
+	let avatarSizeInput = $derived(String(avatarMaxUploadSizeMb));
 	let avatarSizeError = $state<string | null>(null);
-
-	$effect(() => {
-		avatarSizeInput = String(avatarMaxUploadSizeMb);
-	});
 
 	async function saveAvatarSettings(patch: Partial<Settings>) {
 		const operationResult = await tryCatch(

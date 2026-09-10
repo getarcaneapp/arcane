@@ -31,7 +31,10 @@ export function useEasyJoinCandidates() {
 			gcTime: 0
 		};
 	});
-	const candidates = $derived(canDiscover && !candidatesQuery.isError ? (candidatesQuery.data ?? []) : []);
+	const candidates = $derived.by(() => {
+		if (!canDiscover || candidatesQuery.isError) return [];
+		return candidatesQuery.data ?? [];
+	});
 
 	return {
 		get managerEnvironmentId() {

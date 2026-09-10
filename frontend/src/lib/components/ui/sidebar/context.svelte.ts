@@ -1,5 +1,7 @@
 import { IsTablet } from '#lib/hooks/is-tablet.svelte.js';
-import { getContext, setContext } from 'svelte';
+import { getContext, setContext, onDestroy } from 'svelte';
+import { fromStore } from 'svelte/store';
+import userStore from '#lib/stores/user-store.js';
 import { PersistedState } from 'runed';
 import { SIDEBAR_KEYBOARD_SHORTCUT } from './constants.js';
 
@@ -11,7 +13,7 @@ export type SidebarStateProps = {
 	 * We use a getter function here to support `bind:open` on the `Sidebar.Provider`
 	 * component.
 	 */
-	open: Getter<boolean>;
+	open: Getter<boolean | undefined>;
 
 	/**
 	 * A function that sets the open state of the sidebar. To support `bind:open`, we need
@@ -23,13 +25,14 @@ export type SidebarStateProps = {
 
 class SidebarState {
 	readonly props: SidebarStateProps;
-	open = $derived.by(() => this.props.open());
+	open = $derived.by(() => {
+		if (this.#isTablet.current) return false;
+		return this.props.open() ?? this.#isPinnedState.current;
+	});
 	setOpen: SidebarStateProps['setOpen'];
 	#isTablet: IsTablet;
 	#isPinnedState = new PersistedState('sidebar-pinned', true);
-	// Effective value comes from the signed-in user's `sidebarHoverExpansion`
-	// preference, synced in by `sidebar-provider.svelte`.
-	#hoverExpansionEnabled = $state(true);
+	#user = fromStore(userStore);
 	#isHovered = $state(false);
 	#hoverTimeout: ReturnType<typeof setTimeout> | null = null;
 	state = $derived.by(() => (this.open ? 'expanded' : 'collapsed'));
@@ -38,20 +41,8 @@ class SidebarState {
 		this.setOpen = props.setOpen;
 		this.#isTablet = new IsTablet();
 		this.props = props;
-
-		// Sync the open state based on pinning preference and screen size
-		$effect(() => {
-			// On tablet, always collapse regardless of pinning preference
-			if (this.#isTablet.current) {
-				if (this.open) {
-					this.setOpen(false);
-				}
-			} else {
-				// On desktop, respect the pinning preference
-				if (this.open !== this.#isPinnedState.current) {
-					this.setOpen(this.#isPinnedState.current);
-				}
-			}
+		onDestroy(() => {
+			if (this.#hoverTimeout !== null) clearTimeout(this.#hoverTimeout);
 		});
 	}
 
@@ -67,18 +58,13 @@ class SidebarState {
 
 	// Getter for pinning preference
 	get isPinned() {
-		return this.#isPinnedState.current;
+		return this.props.open() ?? this.#isPinnedState.current;
 	}
 
 	// Getter for hover expansion preference
 	get hoverExpansionEnabled() {
-		return this.#hoverExpansionEnabled;
+		return this.#user.current?.preferences?.sidebarHoverExpansion ?? true;
 	}
-
-	// Setter for hover expansion preference
-	setHoverExpansion = (enabled: boolean) => {
-		this.#hoverExpansionEnabled = enabled;
-	};
 
 	// Derived state that shows if sidebar should be visually expanded (either open or hovered)
 	get isExpanded() {
@@ -88,7 +74,7 @@ class SidebarState {
 			return this.#isHovered;
 		}
 		// Only consider hover state for expansion if hover expansion is enabled
-		const shouldExpandOnHover = !this.open && this.#isHovered && this.#hoverExpansionEnabled;
+		const shouldExpandOnHover = !this.open && this.#isHovered && this.hoverExpansionEnabled;
 		return this.open || shouldExpandOnHover;
 	}
 
@@ -129,7 +115,7 @@ class SidebarState {
 	toggle = () => {
 		if (!this.#isTablet.current) {
 			// On desktop, toggle the pinning preference
-			this.#isPinnedState.current = !this.#isPinnedState.current;
+			this.#isPinnedState.current = !this.isPinned;
 			return this.setOpen(this.#isPinnedState.current);
 		}
 	};

@@ -26,11 +26,7 @@
 
 	let { user, class: className = '' }: Props = $props();
 
-	let autoLoginEnabled = $state(false);
-	$effect(() => {
-		const unsub = settingsStore.autoLoginEnabled.subscribe((v) => (autoLoginEnabled = v));
-		return unsub;
-	});
+	const autoLoginEnabled = settingsStore.autoLoginEnabled;
 
 	let userCardExpanded = $state(false);
 	let envDialogOpen = $state(false);
@@ -71,7 +67,7 @@
 			>
 				<ArrowDownIcon class="size-8" />
 			</div>
-			{#if !autoLoginEnabled}
+			{#if !$autoLoginEnabled}
 				<form action="/logout" method="POST">
 					<ArcaneButton
 						action="base"

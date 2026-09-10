@@ -1,12 +1,15 @@
 <script lang="ts">
-	import { tryCatch } from '#lib/utils/try-catch.js';
+	import { createQuery } from '@tanstack/svelte-query';
+	import { queryKeys } from '#lib/query/query-keys.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import userStore from '#lib/stores/user-store.js';
+	import { hasPermission } from '#lib/utils/auth.js';
 
 	import * as Card from '#lib/components/ui/card/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
-	import type { SwarmTaskSummary } from '#lib/types/swarm.js';
 	import { getSwarmTaskStateVariant, sortSwarmTasks } from '#lib/utils/swarm-tasks.js';
 	import { JobsIcon, ConnectionIcon } from '#lib/icons/index.js';
 
@@ -18,37 +21,22 @@
 		serviceId: string;
 	} = $props();
 
-	let tasks = $state<SwarmTaskSummary[]>([]);
-	let isLoading = $state(false);
-	let hasLoaded = $state(false);
-
-	async function loadTasks() {
-		isLoading = true;
-		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					const result = await swarmService.getServiceTasks(serviceId, {
-						pagination: { page: 1, limit: 100 }
-					});
-					tasks = sortSwarmTasks(result.data ?? []);
-				})()
-			);
-			if (operationResult.error !== null) {
-				const err = operationResult.error;
-
-				console.error(m.swarm_service_tasks_load_failed_log(), err);
-			}
-		} finally {
-			isLoading = false;
-			hasLoaded = true;
-		}
-	}
-
-	$effect(() => {
-		if (serviceName && serviceId && !hasLoaded) {
-			loadTasks();
-		}
+	const tasksQuery = createQuery(() => {
+		const environmentId = environmentStore.selected?.id;
+		const requestedServiceId = serviceId;
+		$userStore;
+		return {
+			queryKey: queryKeys.swarm.serviceTasks(environmentId ?? '', requestedServiceId),
+			queryFn: async () => {
+				await environmentStore.ready;
+				return swarmService.getServiceTasks(requestedServiceId, { pagination: { page: 1, limit: 100 } });
+			},
+			enabled: !!environmentId && !!serviceName && !!requestedServiceId && hasPermission('swarm:read', environmentId)
+		};
 	});
+	const tasks = $derived(sortSwarmTasks(tasksQuery.data?.data ?? []));
+	const isLoading = $derived(tasksQuery.isFetching);
+	const hasLoaded = $derived(tasksQuery.isFetched);
 </script>
 
 <Card.Root>
@@ -62,7 +50,7 @@
 					{m.swarm_service_tasks_count({ count: tasks.length })}
 				</Card.Description>
 			</div>
-			<ArcaneButton action="refresh" size="sm" onclick={loadTasks} disabled={isLoading}>
+			<ArcaneButton action="refresh" size="sm" onclick={() => tasksQuery.refetch()} disabled={isLoading}>
 				{m.common_refresh()}
 			</ArcaneButton>
 		</div>

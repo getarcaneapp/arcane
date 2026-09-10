@@ -25,6 +25,7 @@
 
 	let variables = $derived(data.variables);
 	let isSheetOpen = $state(false);
+	let variableSession = $state(0);
 	let variableToEdit = $state<GlobalVariable | null>(null);
 	let isSubmitting = $state(false);
 
@@ -43,11 +44,13 @@
 
 	function openCreateSheet() {
 		variableToEdit = null;
+		variableSession += 1;
 		isSheetOpen = true;
 	}
 
 	function openEditSheet(variable: GlobalVariable) {
 		variableToEdit = variable;
+		variableSession += 1;
 		isSheetOpen = true;
 	}
 
@@ -77,7 +80,6 @@
 					reportSyncResults(response?.syncResults);
 
 					isSheetOpen = false;
-					variableToEdit = null;
 				})()
 			);
 			if (operationResult.error !== null) {
@@ -147,13 +149,17 @@
 	{/snippet}
 
 	{#snippet additionalContent()}
-		<VariableFormSheet
-			bind:open={isSheetOpen}
-			bind:variableToEdit
-			environments={data.environments}
-			existingVariables={variables}
-			isLoading={isSubmitting}
-			onSubmit={handleSheetSubmit}
-		/>
+		{#if variableSession > 0}
+			{#key variableSession}
+				<VariableFormSheet
+					bind:open={isSheetOpen}
+					bind:variableToEdit
+					environments={data.environments}
+					existingVariables={variables}
+					isLoading={isSubmitting}
+					onSubmit={handleSheetSubmit}
+				/>
+			{/key}
+		{/if}
 	{/snippet}
 </ResourcePageLayout>

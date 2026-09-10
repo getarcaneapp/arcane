@@ -18,7 +18,8 @@
 	import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
 	import { settingsService } from '#lib/services/settings-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import type { AppVersionInformation } from '#lib/types/settings.js';
+	import { createQuery } from '@tanstack/svelte-query';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import type { Environment, EnvironmentStatus } from '#lib/types/environment.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { isEnvironmentOnline, resolveEnvironmentStatus } from '#lib/utils/docker.js';
@@ -69,18 +70,28 @@
 	let showRegenerateDialog = $state(false);
 	let regeneratedApiKey = $state<string | null>(null);
 	let easyJoinDialogOpen = $state(false);
+	let easyJoinSession = $state(0);
 	let nameInputRef = $state<HTMLInputElement | null>(null);
 	let isEditingApiUrl = $state(false);
 	const easyJoinCandidates = useEasyJoinCandidates();
-
-	// Version state
-	let remoteVersion = $state<AppVersionInformation | null>(null);
-	let isLoadingVersion = $state(false);
 
 	// Only non-edge custom URL tests should temporarily override the displayed status.
 	let statusOverride = $state<EnvironmentStatus | null>(null);
 	let currentStatus = $derived(resolveEnvironmentStatus(runtimeEnvironment, statusOverride));
 	let isCurrentlyOnline = $derived(isEnvironmentOnline(runtimeEnvironment, statusOverride));
+
+	const versionQuery = createQuery(() => {
+		const environmentId = environment.id;
+		return {
+			queryKey: queryKeys.system.versionInfo(environmentId),
+			queryFn: () => environmentManagementService.getVersion(environmentId),
+			enabled: environmentId !== '0' && isCurrentlyOnline,
+			retry: false
+		};
+	});
+	const remoteVersion = $derived(versionQuery.data ?? null);
+	const isLoadingVersion = $derived(versionQuery.isFetching);
+
 	let isCurrentlyStandby = $derived(currentStatus === 'standby');
 	let showSettingsTabs = $derived(runtimeEnvironment.enabled && isCurrentlyOnline && settings !== null);
 	let hasMTLSAssets = $derived(Boolean(runtimeEnvironment.edgeMTLSCertificate));
@@ -149,7 +160,10 @@
 				id: 'easy-join',
 				action: 'create',
 				label: m.swarm_easy_join_action(),
-				onclick: () => (easyJoinDialogOpen = true),
+				onclick: () => {
+					easyJoinSession += 1;
+					easyJoinDialogOpen = true;
+				},
 				icon: ConnectionIcon
 			});
 		}
@@ -421,13 +435,6 @@
 		}
 	}
 
-	// Fetch version when environment is online
-	$effect(() => {
-		if (environment.id !== '0' && isCurrentlyOnline && !remoteVersion && !isLoadingVersion) {
-			fetchVersion();
-		}
-	});
-
 	onMount(() => {
 		if (environment.isEdge) {
 			void refreshRuntimeEnvironment();
@@ -457,24 +464,6 @@
 		}
 	}
 
-	async function fetchVersion() {
-		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					isLoadingVersion = true;
-					remoteVersion = await environmentManagementService.getVersion(environment.id);
-				})()
-			);
-			if (operationResult.error !== null) {
-				const err = operationResult.error;
-
-				console.error('Failed to fetch environment version:', err);
-			}
-		} finally {
-			isLoadingVersion = false;
-		}
-	}
-
 	async function refreshEnvironment() {
 		if (isRefreshing) return;
 		try {
@@ -482,7 +471,7 @@
 				(async () => {
 					isRefreshing = true;
 					statusOverride = null;
-					remoteVersion = null;
+					if (environment.id !== '0' && isCurrentlyOnline) await versionQuery.refetch();
 					await refreshAll();
 				})()
 			);
@@ -847,12 +836,14 @@
 	</AlertDialog.Root>
 </div>
 
-<EasyJoinDialog
-	bind:open={easyJoinDialogOpen}
-	managerEnvironmentId={easyJoinCandidates.managerEnvironmentId ?? undefined}
-	targetEnvironmentId={runtimeEnvironment.id}
-	onComplete={easyJoinCandidates.refresh}
-/>
+{#key `${easyJoinSession}:${easyJoinCandidates.managerEnvironmentId}`}
+	<EasyJoinDialog
+		bind:open={easyJoinDialogOpen}
+		managerEnvironmentId={easyJoinCandidates.managerEnvironmentId ?? undefined}
+		targetEnvironmentId={runtimeEnvironment.id}
+		onComplete={easyJoinCandidates.refresh}
+	/>
+{/key}
 
 <MobileFloatingFormActions
 	hasChanges={settingsForm.hasChanges}

@@ -20,16 +20,16 @@ export const load: PageLoad = async ({
 	const operationResult = await tryCatch(
 		(async () => {
 			const [templateData, allTemplates, globalVariables] = await Promise.all([
-				queryClient.fetchQuery({
+				queryClient.query({
 					queryKey: queryKeys.templates.content(params.id),
 					queryFn: () => templateService.getTemplateContent(params.id)
 				}),
-				queryClient.fetchQuery({
+				queryClient.query({
 					queryKey: queryKeys.templates.allTemplates(),
 					queryFn: () => templateService.getAllTemplates()
 				}),
 				tryCatch(
-					queryClient.fetchQuery({
+					queryClient.query({
 						queryKey: queryKeys.variables.list(),
 						queryFn: () => variableService.list()
 					})

@@ -4,7 +4,9 @@
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { goto } from '$app/navigation';
-	import { onDestroy } from 'svelte';
+	import { onMount, onDestroy, tick } from 'svelte';
+	import { useQueryClient } from '@tanstack/svelte-query';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { toast } from 'svelte-sonner';
 	import { bytes, formatDateTimeShort, nowInstantString } from '#lib/utils/formatting.js';
 	import { inUseBadge } from '#lib/utils/mobile-card-badges.js';
@@ -64,6 +66,7 @@
 		loading?: boolean;
 	} = $props();
 
+	const queryClient = useQueryClient();
 	let isLoading = $state({
 		removing: false,
 		checking: false
@@ -189,7 +192,9 @@
 	}
 
 	async function handleInlineVulnerabilityScan(imageId: string) {
+		const requestedEnvId = currentEnvId;
 		const result = await tryCatch(vulnerabilityService.scanImage(imageId));
+		if (destroyed || requestedEnvId !== currentEnvId) return;
 		await handleApiResultWithCallbacks({
 			result,
 			message: m.vuln_scan_failed(),
@@ -240,22 +245,26 @@
 	}
 
 	async function handleUpdateInfoChanged(imageId: string, newUpdateInfo: ImageUpdateInfoDto) {
-		const imageIndex = images.data.findIndex((img) => img.id === imageId);
-		const image = imageIndex !== -1 ? images.data[imageIndex] : undefined;
-		if (image) {
-			image.updateInfo = newUpdateInfo;
-			images = { ...images, data: [...images.data] };
-		}
+		if (destroyed) return;
+		images = {
+			...images,
+			data: images.data.map((image) => {
+				if (image.id === imageId) return { ...image, updateInfo: newUpdateInfo };
+				return image;
+			})
+		};
 		await onImageUpdated?.();
 	}
 
 	async function handleVulnerabilityScanChanged(imageId: string, newScanSummary: VulnerabilityScanSummary) {
-		const imageIndex = images.data.findIndex((img) => img.id === imageId);
-		const image = imageIndex !== -1 ? images.data[imageIndex] : undefined;
-		if (image) {
-			image.vulnerabilityScan = newScanSummary;
-			images = { ...images, data: [...images.data] };
-		}
+		if (destroyed) return;
+		images = {
+			...images,
+			data: images.data.map((image) => {
+				if (image.id === imageId) return { ...image, vulnerabilityScan: newScanSummary };
+				return image;
+			})
+		};
 		if (newScanSummary.status === 'completed' || newScanSummary.status === 'failed') {
 			if (scanRequestedAtByImage[imageId]) {
 				delete scanRequestedAtByImage[imageId];
@@ -283,6 +292,7 @@
 	}
 
 	async function pollBatchScanSummaries() {
+		const requestedEnvId = currentEnvId;
 		const imageIds = getScanningImageIds();
 		if (imageIds.length === 0) {
 			stopBatchScanPolling();
@@ -299,7 +309,7 @@
 			const operationResult = await tryCatch(
 				(async () => {
 					const response = await vulnerabilityService.getScanSummaries(imageIds);
-					if (destroyed) return;
+					if (destroyed || requestedEnvId !== currentEnvId) return;
 					const summaries = response?.summaries ?? {};
 
 					if (Object.keys(summaries).length > 0 && images.data?.length) {
@@ -357,12 +367,19 @@
 		void pollBatchScanSummaries();
 	}
 
-	$effect(() => {
-		if (getScanningImageIds().length > 0) {
-			startBatchScanPolling();
-		} else {
-			stopBatchScanPolling();
+	onMount(() => {
+		const cache = queryClient.getQueryCache();
+		function updateScanPolling() {
+			if (destroyed) return;
+			if (getScanningImageIds().length > 0) startBatchScanPolling();
+			else stopBatchScanPolling();
 		}
+		updateScanPolling();
+		return cache.subscribe((event) => {
+			if (event.type !== 'updated' && event.type !== 'observerResultsUpdated') return;
+			if (event.query !== cache.find({ queryKey: queryKeys.images.list(currentEnvId, requestOptions), exact: true })) return;
+			void tick().then(updateScanPolling);
+		});
 	});
 
 	onDestroy(() => {
@@ -608,7 +625,6 @@
 		<VulnerabilityScanItem
 			scanSummary={item.vulnerabilityScan}
 			imageId={item.id}
-			pollingEnabled={false}
 			onScanned={(newSummary) => handleVulnerabilityScanChanged(item.id, newSummary)}
 		/>
 	</div>

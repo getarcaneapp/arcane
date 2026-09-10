@@ -72,22 +72,17 @@ export function createSettingsForm<T extends z.ZodType<any, any>>(config: Settin
 	};
 
 	const resetForm = () => {
-		form.reset();
+		form.reset(getCurrentSettings?.() ?? currentSettings);
 		onReset?.();
 	};
 
 	settingsForm.registerFormActions(onSubmit, resetForm);
-
-	const registerOnMount = () => {
-		settingsForm.registerFormActions(onSubmit, resetForm);
-	};
 
 	return {
 		formInputs,
 		form,
 		settingsForm,
 		onSubmit,
-		resetForm,
-		registerOnMount
+		resetForm
 	};
 }

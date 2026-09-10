@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte.js';
 	import { BoxIcon, ProjectsIcon, StartIcon, StopIcon } from '#lib/icons/index.js';
 	import { toast } from 'svelte-sonner';
 	import ProjectsTable from './projects-table.svelte';
@@ -37,7 +38,6 @@
 	let selectedIds = $state<string[]>([]);
 	let isManualRefreshing = $state(false);
 	const envId = $derived(environmentStore.selected?.id || '0');
-	let previousEnvId = untrack(() => envId);
 	const showArchived = $derived(page.url.searchParams.get('archived') === 'true');
 	const projectRequestOptions = $derived(withArchivedFilter(baseProjectRequestOptions, showArchived));
 	const countsFallback: ProjectStatusCounts = {
@@ -83,9 +83,7 @@
 	const projectTags = $derived(projectTagsQuery.data?.envId === envId ? projectTagsQuery.data.value : []);
 	const resourcesReady = $derived(projects !== null);
 
-	$effect(() => {
-		if (envId === previousEnvId) return;
-		previousEnvId = envId;
+	useEnvironmentRefresh(() => {
 		selectedIds = [];
 		isManualRefreshing = false;
 	});

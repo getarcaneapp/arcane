@@ -44,7 +44,14 @@
 					options={registryOptions}
 					description={!registryLoadFailed && registryOptions.length === 0 ? m.registries_none_enabled() : undefined}
 					error={registryLoadFailed ? m.registries_no_list_permission() : null}
-					bind:value={$inputs.registryId.value}
+					bind:value={
+						() => $inputs.registryId.value,
+						(value) => {
+							if (value === $inputs.registryId.value) return;
+							$inputs.registryId.value = value;
+							$inputs.repositoryName.value = '';
+						}
+					}
 				/>
 
 				<SelectWithLabel

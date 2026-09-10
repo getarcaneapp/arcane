@@ -15,6 +15,7 @@
 	let repositories = $derived(data.repositories);
 	let selectedIds = $state<string[]>([]);
 	let isRepositoryDialogOpen = $state(false);
+	let repositorySession = $state(0);
 	let clearToken = $state(false);
 	let clearSshKey = $state(false);
 	let repositoryToEdit = $state<GitRepository | null>(null);
@@ -43,6 +44,7 @@
 		repositoryToEdit = null;
 		clearToken = false;
 		clearSshKey = false;
+		repositorySession += 1;
 		isRepositoryDialogOpen = true;
 	}
 
@@ -50,6 +52,7 @@
 		repositoryToEdit = repository;
 		clearToken = false;
 		clearSshKey = false;
+		repositorySession += 1;
 		isRepositoryDialogOpen = true;
 	}
 
@@ -119,13 +122,17 @@
 	{/snippet}
 
 	{#snippet additionalContent()}
-		<GitRepositoryFormSheet
-			bind:clearToken
-			bind:clearSshKey
-			bind:open={isRepositoryDialogOpen}
-			bind:repositoryToEdit
-			onSubmit={handleRepositoryDialogSubmit}
-			isLoading={isLoading.create || isLoading.edit}
-		/>
+		{#if repositorySession > 0}
+			{#key repositorySession}
+				<GitRepositoryFormSheet
+					bind:clearToken
+					bind:clearSshKey
+					bind:open={isRepositoryDialogOpen}
+					bind:repositoryToEdit
+					onSubmit={handleRepositoryDialogSubmit}
+					isLoading={isLoading.create || isLoading.edit}
+				/>
+			{/key}
+		{/if}
 	{/snippet}
 </ResourcePageLayout>

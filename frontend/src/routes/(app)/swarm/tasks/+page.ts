@@ -21,7 +21,9 @@ export const load: PageLoad = async ({ url }) => {
 		requestOptions.search = searchParam;
 	}
 
-	const tasks = nodeId ? await swarmService.getNodeTasks(nodeId, requestOptions) : await swarmService.getTasks(requestOptions);
+	let tasks;
+	if (nodeId) tasks = await swarmService.getNodeTasks(nodeId, requestOptions);
+	else tasks = await swarmService.getTasks(requestOptions);
 
 	return {
 		tasks,

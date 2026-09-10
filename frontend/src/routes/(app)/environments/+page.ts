@@ -23,7 +23,7 @@ export const load: PageLoad = async ({ parent }) => {
 	let environments;
 	const operationResult = await tryCatch(
 		(async () =>
-			queryClient.fetchQuery({
+			queryClient.query({
 				queryKey: queryKeys.environments.list(environmentRequestOptions),
 				queryFn: () => environmentManagementService.getEnvironments(environmentRequestOptions)
 			}))()

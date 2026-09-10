@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
+	import userStore from '#lib/stores/user-store.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import * as Alert from '#lib/components/ui/alert/index.js';
@@ -18,14 +20,16 @@
 	let nodes = $derived(data.nodes);
 	let requestOptions = $derived(data.requestOptions);
 	let isLoading = $state({ refresh: false });
-	let reconciledEnvironmentId = $state<string | null>(null);
+
 	const currentEnvironmentId = $derived(environmentStore.selected?.id ?? null);
-	const canManageNodes = $derived(hasPermission('swarm:nodes', currentEnvironmentId ?? undefined));
 
 	async function refresh() {
+		const environmentId = await environmentStore.getCurrentEnvironmentId();
 		await simpleRefresh(
 			() => swarmService.getNodes(requestOptions),
-			(data) => (nodes = data),
+			(data) => {
+				if (environmentId === currentEnvironmentId) nodes = data;
+			},
 			m.common_refresh_failed({ resource: m.nodes() }),
 			(loading) => (isLoading.refresh = loading)
 		);
@@ -33,11 +37,30 @@
 
 	useEnvironmentRefresh(refresh);
 
-	$effect(() => {
-		const environmentId = currentEnvironmentId;
-		if (!environmentId || !canManageNodes || reconciledEnvironmentId === environmentId) return;
-		reconciledEnvironmentId = environmentId;
-		void tryCatch(swarmService.reconcileNodeAgents().then(refresh)).then((result) => (result.error ? undefined : result.data));
+	onMount(() => {
+		let active = true;
+		let reconciledEnvironmentId: string | null = null;
+		async function reconcileSelectedEnvironment() {
+			await environmentStore.ready;
+			const environmentId = environmentStore.selected?.id;
+			if (!active || !environmentId || !hasPermission('swarm:nodes', environmentId) || reconciledEnvironmentId === environmentId)
+				return;
+			reconciledEnvironmentId = environmentId;
+			const result = await tryCatch(swarmService.reconcileNodeAgents());
+			if (!active || environmentId !== environmentStore.selected?.id || result.error !== null) return;
+			await refresh();
+		}
+		const unsubscribeUser = userStore.subscribe(() => {
+			void reconcileSelectedEnvironment();
+		});
+		const unsubscribeEnvironment = environmentStore.subscribeSelected(() => {
+			void reconcileSelectedEnvironment();
+		});
+		return () => {
+			active = false;
+			unsubscribeUser();
+			unsubscribeEnvironment();
+		};
 	});
 
 	const totalNodes = $derived(nodes?.pagination?.totalItems ?? nodes?.data?.length ?? 0);

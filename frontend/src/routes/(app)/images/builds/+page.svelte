@@ -191,16 +191,6 @@
 			: ''
 	);
 
-	// Clear the repository name when registry changes to prevent cross-registry mismatches.
-	let lastRegistryId = $state($inputs.registryId.value);
-	$effect(() => {
-		const current = $inputs.registryId.value;
-		if (current !== lastRegistryId) {
-			lastRegistryId = current;
-			$inputs.repositoryName.value = '';
-		}
-	});
-
 	type ImageBuildRequest = { envId: string; provider: 'local' | 'depot' } & Pick<
 		ImageBuildRecord,
 		| 'contextDir'
@@ -356,12 +346,6 @@
 
 		mq.addEventListener('change', update);
 		return () => mq.removeEventListener('change', update);
-	});
-
-	$effect(() => {
-		if (!depotAvailable && $inputs.provider.value === 'depot') {
-			$inputs.provider.value = 'local';
-		}
 	});
 
 	function resetState() {
@@ -633,7 +617,7 @@
 {#snippet configPanel()}
 	<BuildConfigPanel
 		{inputs}
-		provider={$inputs.provider.value}
+		provider={resolvedProvider}
 		bind:showAdvanced
 		{isPushMode}
 		{registryOptions}
@@ -678,7 +662,7 @@
 				</Tabs.List>
 
 				<div class="flex items-center gap-3 pr-2">
-					<BuildControls {inputs} {providerOptions} {isBuilding} onBuild={handleSubmit} />
+					<BuildControls {inputs} provider={resolvedProvider} {providerOptions} {isBuilding} onBuild={handleSubmit} />
 					<div class="hidden h-4 w-px bg-border xl:block"></div>
 					<div class="flex items-center gap-2">
 						<div class="relative flex items-center">
@@ -787,7 +771,7 @@
 
 		{#snippet headerActions()}
 			{#if mainTab === 'build'}
-				<BuildControls {inputs} {providerOptions} {isBuilding} onBuild={handleSubmit} />
+				<BuildControls {inputs} provider={resolvedProvider} {providerOptions} {isBuilding} onBuild={handleSubmit} />
 			{/if}
 		{/snippet}
 
@@ -807,7 +791,7 @@
 							</div>
 						{/snippet}
 						{#snippet headerActions()}
-							<BuildControls {inputs} {providerOptions} {isBuilding} onBuild={handleSubmit} />
+							<BuildControls {inputs} provider={resolvedProvider} {providerOptions} {isBuilding} onBuild={handleSubmit} />
 						{/snippet}
 						{#snippet tabContent(buildTabValue)}
 							{#if buildTabValue === 'workspace'}

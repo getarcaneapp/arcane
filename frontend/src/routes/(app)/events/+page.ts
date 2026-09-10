@@ -25,11 +25,11 @@ export const load: PageLoad = async ({ parent }) => {
 	const operationResult = await tryCatch(
 		(async () =>
 			Promise.all([
-				queryClient.fetchQuery({
+				queryClient.query({
 					queryKey: queryKeys.events.listGlobal(eventRequestOptions),
 					queryFn: () => eventService.getEvents(eventRequestOptions)
 				}),
-				queryClient.fetchQuery({
+				queryClient.query({
 					queryKey: queryKeys.events.statsGlobal(),
 					queryFn: () => eventService.getEventStats()
 				})

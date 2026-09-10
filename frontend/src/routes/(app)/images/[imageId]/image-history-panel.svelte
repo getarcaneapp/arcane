@@ -1,43 +1,39 @@
 <script lang="ts">
-	import { tryCatch } from '#lib/utils/try-catch.js';
+	import { createQuery } from '@tanstack/svelte-query';
+	import { queryKeys } from '#lib/query/query-keys.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import userStore from '#lib/stores/user-store.js';
+	import { hasPermission } from '#lib/utils/auth.js';
 
 	import * as Card from '#lib/components/ui/card/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { bytes, formatDateTimeShort } from '#lib/utils/formatting.js';
 	import { imageService } from '#lib/services/image-service.js';
-	import type { ImageHistoryItemDto } from '#lib/types/docker.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { Temporal } from 'temporal-polyfill';
 
 	let { imageId }: { imageId: string } = $props();
 
-	let history = $state<ImageHistoryItemDto[]>([]);
-	let loading = $state(true);
-	let error = $state<string | null>(null);
-
-	$effect(() => {
-		if (!imageId) return;
-		void loadHistory(imageId);
+	const historyQuery = createQuery(() => {
+		const environmentId = environmentStore.selected?.id;
+		const requestedImageId = imageId;
+		$userStore;
+		return {
+			queryKey: queryKeys.images.history(environmentId ?? '', requestedImageId),
+			queryFn: async () => {
+				await environmentStore.ready;
+				return imageService.getImageHistory(requestedImageId);
+			},
+			enabled: !!environmentId && !!requestedImageId && hasPermission('images:read', environmentId)
+		};
 	});
-
-	async function loadHistory(id: string) {
-		loading = true;
-		error = null;
-		try {
-			const operationResult = await tryCatch((async () => imageService.getImageHistory(id))());
-			if (operationResult.error !== null) {
-				const err = operationResult.error;
-
-				console.error('Failed to load image history:', err);
-				error = m.images_history_load_failed();
-			} else {
-				history = operationResult.data;
-			}
-		} finally {
-			loading = false;
-		}
-	}
+	const history = $derived(historyQuery.data ?? []);
+	const loading = $derived(historyQuery.isPending);
+	const error = $derived.by(() => {
+		if (historyQuery.error) return m.images_history_load_failed();
+		return null;
+	});
 
 	function formatCreated(created: number) {
 		if (!created) return m.common_na();

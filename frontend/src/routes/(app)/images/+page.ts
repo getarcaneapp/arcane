@@ -21,15 +21,15 @@ export const load: PageLoad = async ({ parent }) => {
 	const operationResult = await tryCatch(
 		(async () =>
 			Promise.all([
-				queryClient.fetchQuery({
+				queryClient.query({
 					queryKey: queryKeys.images.list(envId, imageRequestOptions),
 					queryFn: () => imageService.getImagesForEnvironment(envId, imageRequestOptions)
 				}),
-				queryClient.fetchQuery({
+				queryClient.query({
 					queryKey: queryKeys.settings.byEnvironment(envId),
 					queryFn: () => settingsService.getSettingsForEnvironmentMerged(envId)
 				}),
-				queryClient.fetchQuery({
+				queryClient.query({
 					queryKey: queryKeys.images.usageCounts(envId),
 					queryFn: () => imageService.getImageUsageCountsForEnvironment(envId)
 				})

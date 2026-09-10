@@ -31,29 +31,18 @@
 		subHeader,
 		tabContent,
 		class: className = '',
-		showFloatingHeader = false
+		showFloatingHeader
 	}: Props = $props();
 
-	let scrollContainer = $state<HTMLDivElement | null>(null);
-
-	$effect(() => {
-		const getScrollTop = () => (scrollContainer ? scrollContainer.scrollTop : window.scrollY);
-		const onScroll = () => {
-			showFloatingHeader = getScrollTop() > 100;
-		};
-
-		const target: Window | HTMLDivElement = scrollContainer ?? window;
-		target.addEventListener('scroll', onScroll as EventListener);
-		onScroll();
-		return () => target.removeEventListener('scroll', onScroll as EventListener);
-	});
+	let scrollTop = $state(0);
+	const floatingHeaderVisible = $derived(showFloatingHeader ?? scrollTop > 100);
 </script>
 
 <div class={cn('flex h-full min-h-0 flex-col bg-background', className)}>
 	<Tabs.Root value={selectedTab} class="flex min-h-0 w-full flex-1 flex-col">
 		<div
 			class="sticky top-0 border-b transition-opacity duration-300"
-			style="opacity: {showFloatingHeader ? 0 : 1}; pointer-events: {showFloatingHeader ? 'none' : 'auto'};"
+			style="opacity: {floatingHeaderVisible ? 0 : 1}; pointer-events: {floatingHeaderVisible ? 'none' : 'auto'};"
 		>
 			<div class="max-w-full px-4 py-3">
 				<div class="flex items-start justify-between gap-3">
@@ -83,7 +72,7 @@
 			</div>
 		</div>
 
-		{#if showFloatingHeader}
+		{#if floatingHeaderVisible}
 			<div class="fixed top-4 left-1/2 z-[var(--arcane-z-page-floating)] -translate-x-1/2">
 				<div
 					class="bubble-shadow-lg rounded-lg border border-border/50 bg-popover/90 px-4 py-3 backdrop-blur-md supports-backdrop-filter:bg-popover/80"
@@ -101,7 +90,7 @@
 			</div>
 		{/if}
 
-		<div class="min-h-0 flex-1 overflow-y-auto" bind:this={scrollContainer}>
+		<div class="min-h-0 flex-1 overflow-y-auto" onscroll={(event) => (scrollTop = event.currentTarget.scrollTop)}>
 			<div class="flex h-full min-h-0 flex-col px-1 py-4 pb-2 sm:px-4">
 				{@render tabContent(selectedTab)}
 			</div>

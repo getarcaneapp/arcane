@@ -40,7 +40,7 @@ let authenticatedUserId: string | null | undefined;
 export const load: LayoutLoad = async ({ url }) => {
 	const versionInformationRequest = versionService.getVersionInformation();
 	const autoLoginConfigRequest = browser
-		? queryClient.fetchQuery({
+		? queryClient.query({
 				queryKey: queryKeys.auth.autoLoginConfig(),
 				queryFn: () => authService.getAutoLoginConfig()
 			})
@@ -55,7 +55,7 @@ export const load: LayoutLoad = async ({ url }) => {
 			settingsStore.autoLoginEnabled.set(true);
 			settingsStore.autoLoginEnabled.clearDisabledCache();
 			if (!user) {
-				user = await queryClient.fetchQuery({
+				user = await queryClient.query({
 					queryKey: queryKeys.auth.autoLoginAttempt(),
 					queryFn: () => authService.attemptAutoLogin()
 				});
@@ -151,7 +151,7 @@ export const load: LayoutLoad = async ({ url }) => {
 				currentDigest: info.currentDigest,
 				displayVersion: info.displayVersion,
 				revision: info.revision,
-				shortRevision: info.shortRevision || (info.revision?.slice(0, 8) ?? 'unknown'),
+				shortRevision: info.shortRevision || 'unknown',
 				goVersion: info.goVersion || 'unknown',
 				nodeVersion: info.nodeVersion || 'unknown',
 				svelteKitVersion: info.svelteKitVersion || 'unknown',

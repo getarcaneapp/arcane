@@ -5,6 +5,7 @@
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { getContext } from 'svelte';
+	import type { SettingsFormContext } from '#lib/types/settings-form.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { EllipsisIcon, ResetIcon, type IconType, ArrowDownIcon } from '#lib/icons/index.js';
 	import { cn } from '#lib/utils.js';
@@ -39,12 +40,8 @@
 	const mobileVisibleButtons = $derived(actionButtons.filter((btn) => btn.showOnMobile));
 	const mobileDropdownButtons = $derived(actionButtons.filter((btn) => !btn.showOnMobile));
 
-	const formState = getContext<{
-		hasChanges: boolean;
-		isLoading: boolean;
-		saveFunction: (() => Promise<void>) | null;
-		resetFunction: (() => void) | null;
-	}>('settingsFormState');
+	const formContext = getContext<SettingsFormContext | undefined>('settingsFormState');
+	const formState = $derived(formContext?.activeForm);
 </script>
 
 {#snippet ActionOptions(options: SettingsActionOption[], disabled = false, showIcons = true)}
@@ -155,7 +152,7 @@
 								action="base"
 								tone="outline"
 								size="sm"
-								onclick={() => formState.resetFunction?.()}
+								onclick={() => formState?.resetFunction?.()}
 								disabled={formState.isLoading}
 								class="gap-2"
 								icon={ResetIcon}
@@ -165,7 +162,7 @@
 
 						<ArcaneButton
 							action="save"
-							onclick={() => formState.saveFunction?.()}
+							onclick={() => formState?.saveFunction?.()}
 							disabled={!formState.hasChanges}
 							loading={formState.isLoading}
 							size="sm"

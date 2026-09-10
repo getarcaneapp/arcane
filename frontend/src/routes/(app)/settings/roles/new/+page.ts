@@ -13,7 +13,7 @@ export const load: PageLoad = async ({ parent }) => {
 		throw redirect(302, '/settings/roles');
 	}
 
-	const permissionsManifest = await queryClient.fetchQuery({
+	const permissionsManifest = await queryClient.query({
 		queryKey: ['roles', 'permissions-manifest'],
 		queryFn: () => roleService.getPermissionsManifest()
 	});

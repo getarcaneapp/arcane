@@ -55,7 +55,7 @@
 		await refreshAll();
 		const operationResult = await tryCatch(
 			(async () => {
-				const settings = await queryClient.fetchQuery({
+				const settings = await queryClient.query({
 					queryKey: queryKeys.settings.global(),
 					queryFn: () => settingsService.getSettings()
 				});

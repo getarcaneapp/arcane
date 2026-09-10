@@ -380,12 +380,14 @@ test.describe('Images Page', () => {
 			}
 		);
 
-		const imageRow = page
-			.getByRole('row')
-			.filter({
-				has: page.getByRole('link', { name: removableImage.repo, exact: true })
-			})
-			.first();
+		// The API list and the UI use different sorting, so the selected image may be on another page.
+		const search = page.getByRole('textbox', { name: 'Search…', exact: true });
+		await search.fill(removableImage.id);
+		await search.press('Enter');
+
+		const imageRow = getImageRows(page).filter({
+			has: page.locator(`a[href="/images/${removableImage.id}"]`)
+		});
 		const menu = await openRowActionsMenu(page, imageRow);
 		await menu.getByRole('menuitem', { name: 'Remove', exact: true }).click();
 

@@ -19,12 +19,12 @@ export const load: PageLoad = async ({ parent }) => {
 		}
 	} satisfies SearchPaginationSortRequest);
 
-	const registries = await queryClient.fetchQuery({
+	const registries = await queryClient.query({
 		queryKey: queryKeys.containerRegistries.list(registryRequestOptions),
 		queryFn: () => containerRegistryService.getRegistries(registryRequestOptions)
 	});
 	const pullUsage = await tryCatch(
-		queryClient.fetchQuery({
+		queryClient.query({
 			queryKey: queryKeys.containerRegistries.pullUsage(),
 			queryFn: () => containerRegistryService.getPullUsage()
 		})

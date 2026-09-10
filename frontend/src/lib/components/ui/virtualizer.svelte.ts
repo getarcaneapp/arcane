@@ -1,3 +1,4 @@
+import { onMount } from 'svelte';
 import {
 	Virtualizer,
 	elementScroll,
@@ -62,7 +63,7 @@ export function createVirtualizer<TScroll extends Element, TItem extends Element
 	});
 
 	// Attach scroll/resize observers after the DOM (and the bound scroll element) exists.
-	$effect(() => instance._didMount());
+	onMount(() => instance._didMount());
 
 	return {
 		get virtualItems() {

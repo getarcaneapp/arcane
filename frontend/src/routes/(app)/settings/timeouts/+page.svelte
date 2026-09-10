@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { z } from 'zod/v4';
 	import settingsStore from '#lib/stores/config-store.js';
 	import { m } from '#lib/paraglide/messages.js';
@@ -37,14 +36,12 @@
 		};
 	};
 
-	const { formInputs, registerOnMount } = createSettingsForm({
+	const { formInputs } = createSettingsForm({
 		schema: formSchema,
 		currentSettings: getFormDefaults(),
 		getCurrentSettings: getFormDefaults,
 		successMessage: m.timeouts_save()
 	});
-
-	onMount(() => registerOnMount());
 </script>
 
 <SettingsPageLayout

@@ -2,6 +2,7 @@
 	import * as Card from '#lib/components/ui/card/index.js';
 	import LogViewer from '#lib/components/logs/log-viewer.svelte';
 	import LogControls from '#lib/components/logs/log-controls.svelte';
+	import { UseLogPreferences } from '#lib/hooks/use-log-preferences.svelte.js';
 	import LogPanelTitle from '#lib/components/logs/log-panel-title.svelte';
 	import { m } from '#lib/paraglide/messages.js';
 	import { TerminalIcon } from '#lib/icons/index.js';
@@ -18,11 +19,9 @@
 
 	let isStreaming = $state(false);
 	let viewer = $state<ReturnType<typeof LogViewer>>();
-	let tailLines = $state(100);
-	let autoStartLogs = $state(false);
+	const preferences = new UseLogPreferences();
 	let logSearchTerm = $state('');
 	let hasAutoStarted = $state(false);
-	let showParsedJson = $state(false);
 
 	function handleStart() {
 		isStreaming = true;
@@ -38,12 +37,6 @@
 		await viewer?.clearLogs({ hard: true, restart: true });
 	}
 
-	$effect(() => {
-		if (projectId) {
-			hasAutoStarted = false;
-		}
-	});
-
 	// The panel stays visible while the project is stopped; the stream pauses and
 	// picks back up (via auto-start) once the project is running again.
 	$effect(() => {
@@ -54,7 +47,7 @@
 	});
 
 	$effect(() => {
-		if (autoStartLogs && !hasAutoStarted && !isStreaming && projectId && isRunning) {
+		if (preferences.autoStartLogs && !hasAutoStarted && !isStreaming && projectId && isRunning && viewer) {
 			hasAutoStarted = true;
 			handleStart();
 		}
@@ -70,9 +63,7 @@
 					<LogControls
 						bind:searchTerm={logSearchTerm}
 						bind:autoScroll
-						bind:tailLines
-						bind:autoStartLogs
-						bind:showParsedJson
+						{preferences}
 						mobileLayout="full"
 						showDesktop={false}
 						{isStreaming}
@@ -87,9 +78,7 @@
 			<LogControls
 				bind:searchTerm={logSearchTerm}
 				bind:autoScroll
-				bind:tailLines
-				bind:autoStartLogs
-				bind:showParsedJson
+				{preferences}
 				mobileLayout="none"
 				{isStreaming}
 				disabled={!projectId}
@@ -106,8 +95,8 @@
 			bind:this={viewer}
 			bind:autoScroll
 			{projectId}
-			{tailLines}
-			bind:showParsedJson
+			tailLines={preferences.tailLines}
+			bind:showParsedJson={preferences.showParsedJson}
 			type="project"
 			maxLines={500}
 			showTimestamps={true}

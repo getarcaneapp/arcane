@@ -16,12 +16,12 @@ export const load: PageLoad = async ({ parent, params }) => {
 
 	const [role, permissionsManifest] = await Promise.all([
 		tryCatch(
-			queryClient.fetchQuery({
+			queryClient.query({
 				queryKey: ['roles', 'detail', params.id],
 				queryFn: () => roleService.get(params.id)
 			})
 		).then((result) => (result.error ? null : result.data)),
-		queryClient.fetchQuery({
+		queryClient.query({
 			queryKey: ['roles', 'permissions-manifest'],
 			queryFn: () => roleService.getPermissionsManifest()
 		})

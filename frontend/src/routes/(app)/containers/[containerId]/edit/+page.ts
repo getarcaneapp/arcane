@@ -14,7 +14,7 @@ export const load: PageLoad = async ({ params, parent }) => {
 		redirect(302, `/containers/${containerId}`);
 	}
 
-	const editConfig = await queryClient.fetchQuery({
+	const editConfig = await queryClient.query({
 		queryKey: queryKeys.containers.editConfig(envId, containerId),
 		queryFn: () => containerService.getContainerEditConfig(containerId, envId)
 	});

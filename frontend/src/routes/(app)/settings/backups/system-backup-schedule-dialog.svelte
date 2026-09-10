@@ -49,21 +49,19 @@
 
 	const editing = untrack(() => Boolean(policyId));
 	let backupType = $state<BackupType>(untrack(() => initialType));
-	let selectionMode = $state<SystemVolumeBackupSelectionMode>('all');
-	let volumeNames = $state<string[]>([]);
-	let ignoreAnonymous = $state(true);
+	const initialVolumePolicy = untrack(() => volumePolicies.find((policy) => policy.id === policyId));
+	let selectionMode = $state<SystemVolumeBackupSelectionMode>(initialVolumePolicy?.selectionMode ?? 'all');
+	let volumeNames = $state<string[]>([...(initialVolumePolicy?.volumeNames ?? [])]);
+	let ignoreAnonymous = $state(initialVolumePolicy?.ignoreAnonymous ?? true);
 	const typeOptions = $derived([
 		{ label: m.system(), value: 'system', description: m.system_backups_type_system_description() },
 		{ label: m.resource_volume_cap(), value: 'volume', description: m.system_backups_type_volume_description() }
 	]);
 
-	$effect(() => {
-		if (backupType === 'volume') void onLoadVolumeOptions();
-	});
-
 	function changeType(value: string) {
 		if (editing) return;
 		backupType = value as BackupType;
+		if (backupType === 'volume') void onLoadVolumeOptions();
 		selectionMode = 'all';
 		volumeNames = [];
 		ignoreAnonymous = true;
@@ -86,12 +84,6 @@
 			volumeNames,
 			ignoreAnonymous
 		};
-	}
-
-	function resetVolumeScope(policy?: SystemVolumeBackupPolicy) {
-		selectionMode = policy?.selectionMode ?? 'all';
-		volumeNames = policy ? [...policy.volumeNames] : [];
-		ignoreAnonymous = policy?.ignoreAnonymous ?? true;
 	}
 
 	async function updateSystemPolicies(policies: UpdateSystemBackupPolicy[]) {
@@ -144,7 +136,6 @@
 		defaultSchedule="0 0 3 * * *"
 		defaultEnabled={recoveryKeyStored}
 		{destinations}
-		resetKey={backupType}
 		beforeFields={TypeField}
 		updatePolicies={updateSystemPolicies}
 		messages={{
@@ -167,7 +158,6 @@
 		defaultSchedule="0 0 2 * * *"
 		showStopContainers
 		{destinations}
-		resetKey={backupType}
 		beforeFields={TypeField}
 		afterFields={VolumeScope}
 		policyPayload={volumePayload}
@@ -179,7 +169,6 @@
 			removed: m.system_volume_backups_schedule_removed()
 		}}
 		onSaved={onVolumeSaved}
-		onReset={resetVolumeScope}
 		contentClass="sm:max-w-[760px]"
 	/>
 {/if}

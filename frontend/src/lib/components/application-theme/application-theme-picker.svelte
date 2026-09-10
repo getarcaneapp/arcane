@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onDestroy } from 'svelte';
 	import * as Card from '#lib/components/ui/card/index.js';
 	import * as Carousel from '#lib/components/ui/carousel/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
@@ -77,12 +78,16 @@
 		hasInitializedCarouselPosition = true;
 	});
 
-	$effect(() => {
-		if (!carouselApi) {
+	let releaseCarouselListeners: (() => void) | undefined;
+	onDestroy(() => releaseCarouselListeners?.());
+
+	function setCarouselApi(api: CarouselAPI | undefined) {
+		releaseCarouselListeners?.();
+		releaseCarouselListeners = undefined;
+		carouselApi = api;
+		if (!api) {
 			return;
 		}
-
-		const api = carouselApi;
 
 		const syncCenteredTheme = () => {
 			const centeredTheme = APPLICATION_THEME_OPTIONS[api.selectedScrollSnap()]?.value;
@@ -99,11 +104,11 @@
 		api.on('select', syncCenteredTheme);
 		api.on('reInit', syncCenteredTheme);
 
-		return () => {
+		releaseCarouselListeners = () => {
 			api.off('select', syncCenteredTheme);
 			api.off('reInit', syncCenteredTheme);
 		};
-	});
+	}
 
 	function handleThemeChange(value: string) {
 		if (disabled) {
@@ -119,13 +124,7 @@
 
 <RadioGroup.Root class="space-y-3" value={selectedTheme} onValueChange={handleThemeChange}>
 	<div class="overflow-hidden rounded-xl border border-dashed bg-background/30 p-2 sm:p-3">
-		<Carousel.Root
-			class="w-full"
-			opts={{ align: 'center', loop: true }}
-			setApi={(api) => {
-				carouselApi = api;
-			}}
-		>
+		<Carousel.Root class="w-full" opts={{ align: 'center', loop: true }} setApi={setCarouselApi}>
 			<Carousel.Content>
 				{#each APPLICATION_THEME_OPTIONS as theme (theme.value)}
 					{@const option = themeCopy[theme.value]}

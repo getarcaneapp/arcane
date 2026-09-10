@@ -14,7 +14,6 @@
 
 	let { data } = $props();
 
-	let events = $derived(data.events);
 	let selectedIds = $state<string[]>([]);
 	let requestOptions = $derived(data.eventRequestOptions);
 	let isDeleting = $state(false);
@@ -32,12 +31,7 @@
 		initialData: data.eventStats
 	}));
 
-	$effect(() => {
-		if (eventsQuery.data) {
-			events = eventsQuery.data;
-		}
-	});
-
+	const events = $derived(eventsQuery.data ?? data.events);
 	const counts = $derived(statsQuery.data);
 	const isRefreshing = $derived(eventsQuery.isFetching && !eventsQuery.isPending);
 
@@ -203,7 +197,7 @@
 <ResourcePageLayout title={m.events_title()} subtitle={m.events_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
 		<EventTable
-			bind:events
+			{events}
 			bind:selectedIds
 			bind:requestOptions
 			onRefreshData={async (options) => {

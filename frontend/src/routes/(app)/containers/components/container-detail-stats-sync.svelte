@@ -3,7 +3,7 @@
 
 	import { createContainerStatsWebSocket, type ReconnectingWebSocket } from '#lib/utils/ws.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import type { ContainerStats as ContainerStatsType } from '#lib/types/docker.js';
+	import type { ContainerStats as ContainerStatsType, ContainerStatsHistorySample } from '#lib/types/docker.js';
 	import { refreshAll } from '$app/navigation';
 	import { onDestroy } from 'svelte';
 
@@ -19,11 +19,14 @@
 		hasInitialStatsLoaded?: boolean;
 	} = $props();
 
-	void stats;
-	void hasInitialStatsLoaded;
+	stats = null;
+	hasInitialStatsLoaded = false;
 
 	let statsWebSocket: ReconnectingWebSocket<ContainerStatsType> | null = null;
 	let isConnecting = false;
+	let generation = 0;
+	let history: ContainerStatsHistorySample[] = [];
+	let lastStatsRead: string | null = null;
 
 	async function startStatsStream() {
 		if (!enabled || isConnecting || statsWebSocket || !containerId) {
@@ -32,20 +35,30 @@
 
 		hasInitialStatsLoaded = false;
 		isConnecting = true;
+		const requestGeneration = generation;
+		const requestedContainerId = containerId;
 		const operationResult = await tryCatch(
 			(async () => {
 				const envId = await environmentStore.getCurrentEnvironmentId();
+				if (requestGeneration !== generation || !enabled || requestedContainerId !== containerId) return;
 
 				const ws = createContainerStatsWebSocket({
 					getEnvId: () => envId,
-					containerId,
+					containerId: requestedContainerId,
 					onMessage: (statsData) => {
+						if (requestGeneration !== generation) return;
 						if (statsData.removed) {
 							void refreshAll();
 							return;
 						}
 
-						stats = statsData;
+						if (statsData.statsHistory?.length) {
+							history = statsData.statsHistory;
+						} else if (statsData.read && statsData.read !== lastStatsRead && statsData.currentHistorySample) {
+							history = [...history, statsData.currentHistorySample].slice(-30);
+						}
+						lastStatsRead = statsData.read;
+						stats = { ...statsData, statsHistory: history };
 						hasInitialStatsLoaded = true;
 					},
 					onOpen: () => {
@@ -66,6 +79,7 @@
 				statsWebSocket = ws;
 			})()
 		);
+		if (requestGeneration !== generation) return;
 		if (operationResult.error !== null) {
 			const error = operationResult.error;
 
@@ -75,6 +89,7 @@
 	}
 
 	function closeStatsStream() {
+		generation += 1;
 		if (statsWebSocket) {
 			statsWebSocket.close();
 			statsWebSocket = null;

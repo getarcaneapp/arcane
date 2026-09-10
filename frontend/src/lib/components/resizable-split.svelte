@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import { onDestroy, onMount } from 'svelte';
+	import { untrack } from 'svelte';
 	import { PersistedState } from 'runed';
 	import { DoubleArrowLeftIcon, DoubleArrowRightIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
@@ -51,38 +51,51 @@
 		onResizeEnd = () => {}
 	}: Props = $props();
 
-	let containerRef = $state<HTMLDivElement | null>(null);
-	let isResizing = $state(false);
-	let collapsedSide = $state<'first' | 'second' | null>(null);
-	let isStacked = $state(false);
+	let containerRef: HTMLDivElement | null = null;
+	let containerWidth = $state(0);
+	let isResizing = false;
 	let lastSize = 0;
-	let persistedState = $state<PersistedState<number | null> | null>(null);
-	let persistedKey = $state<string | null>(null);
-	let resizeObserver: ResizeObserver | null = null;
-
+	const initialPreferences = untrack(() => ({ key: persistKey, size, storage: persistStorage }));
+	let persistedState: PersistedState<number | null> | null = null;
+	if (initialPreferences.key) {
+		persistedState = new PersistedState<number | null>(initialPreferences.key, initialPreferences.size, {
+			storage: initialPreferences.storage,
+			syncTabs: false
+		});
+	}
+	const storedSize = persistedState?.current;
+	if (storedSize !== null && storedSize !== undefined) size = storedSize;
+	const isStacked = $derived(stackBelow !== undefined && containerWidth < stackBelow);
 	let resizeStartX = 0;
 	let resizeStartWidth = 0;
 
-	const evaluateStacked = () => {
-		if (stackBelow === undefined) return;
-		if (!containerRef && typeof window === 'undefined') return;
-		const width = containerRef ? containerRef.getBoundingClientRect().width : window.innerWidth;
-		isStacked = width < stackBelow;
-	};
-
 	const clampSize = (value: number, minValue: number, maxValue: number) => Math.min(Math.max(value, minValue), maxValue);
 
-	const layoutHandleSize = $derived(variant === 'flush' ? 1 : handleSize);
+	const layoutHandleSize = $derived.by(() => {
+		if (variant === 'flush') return 1;
+		return handleSize;
+	});
 
-	const getAvailableWidth = () => {
-		if (!containerRef) return 0;
-		return Math.max(0, containerRef.getBoundingClientRect().width - layoutHandleSize);
-	};
+	const getAvailableWidth = () => Math.max(0, containerWidth - layoutHandleSize);
 
 	const getMaxNormalSize = () => {
 		const base = Math.max(0, getAvailableWidth() - minSecondSize);
-		return maxSize !== undefined ? Math.min(base, maxSize) : base;
+		if (maxSize !== undefined) return Math.min(base, maxSize);
+		return base;
 	};
+
+	const layout = $derived.by(() => {
+		const available = getAvailableWidth();
+		const requested = size ?? Math.round(available * defaultRatio);
+		if (available <= 0) return { size: 0, collapsedSide: null };
+		if (allowCollapse && requested <= collapseThreshold) return { size: 0, collapsedSide: 'first' };
+		if (allowCollapse && maxSize === undefined && requested >= available - collapseThreshold) {
+			return { size: available, collapsedSide: 'second' };
+		}
+		const maxNormal = getMaxNormalSize();
+		return { size: clampSize(requested, Math.min(minSize, maxNormal), maxNormal), collapsedSide: null };
+	});
+	const collapsedSide = $derived(layout.collapsedSide);
 
 	const ensureInitialSize = () => {
 		if (!containerRef || size !== null) return;
@@ -107,19 +120,16 @@
 		const safeMin = Math.min(minSize, maxNormal);
 
 		if (allowCollapse && nextSize <= collapseThreshold) {
-			collapsedSide = 'first';
 			size = 0;
 			if (persist) commitSize();
 			return;
 		}
 		if (allowCollapse && maxSize === undefined && nextSize >= available - collapseThreshold) {
-			collapsedSide = 'second';
 			size = available;
 			if (persist) commitSize();
 			return;
 		}
 
-		collapsedSide = null;
 		const clamped = clampSize(nextSize, safeMin, maxNormal);
 		size = clamped;
 		lastSize = clamped;
@@ -134,35 +144,31 @@
 	const stopResize = () => {
 		if (!isResizing) return;
 		isResizing = false;
-		window.removeEventListener('pointermove', handleMove);
-		window.removeEventListener('pointerup', stopResize);
 		document.body.style.cursor = '';
 		document.body.style.userSelect = '';
 		commitSize();
 		onResizeEnd();
 	};
 
-	const handleWindowResize = () => {
-		if (isResizing) return;
-		evaluateStacked();
-		if (isStacked) return;
-		if (size === null) {
+	function measureContainer(node: HTMLDivElement) {
+		containerRef = node;
+		containerWidth = node.getBoundingClientRect().width;
+		const observer = new ResizeObserver(() => {
+			containerWidth = node.getBoundingClientRect().width;
+			if (isResizing || isStacked) return;
 			ensureInitialSize();
-			if (size === null) return;
-		}
-		applySize(size);
-	};
-
-	const handleContainerResize = () => {
-		if (isResizing) return;
-		evaluateStacked();
-		if (isStacked) return;
-		if (size === null) {
-			ensureInitialSize();
-			if (size === null) return;
-		}
-		applySize(size);
-	};
+			if (size !== null) applySize(size);
+		});
+		observer.observe(node);
+		return () => {
+			observer.disconnect();
+			containerRef = null;
+			if (!isResizing) return;
+			isResizing = false;
+			document.body.style.cursor = '';
+			document.body.style.userSelect = '';
+		};
+	}
 
 	function startResize(event: PointerEvent) {
 		if (!containerRef) return;
@@ -170,8 +176,6 @@
 		resizeStartX = event.clientX;
 		resizeStartWidth = size ?? 0;
 		isResizing = true;
-		window.addEventListener('pointermove', handleMove);
-		window.addEventListener('pointerup', stopResize);
 		document.body.style.cursor = 'col-resize';
 		document.body.style.userSelect = 'none';
 		event.preventDefault();
@@ -181,66 +185,22 @@
 		const maxNormal = getMaxNormalSize();
 		const safeMin = Math.min(minSize, maxNormal);
 		const restored = clampSize(lastSize || safeMin, safeMin, maxNormal);
-		collapsedSide = null;
 		size = restored;
 		lastSize = restored;
 		commitSize();
 		onResizeEnd();
 	}
-
-	$effect(() => {
-		if (!persistKey) {
-			persistedState = null;
-			persistedKey = null;
-			return;
-		}
-		if (persistedKey === persistKey && persistedState) return;
-		persistedState = new PersistedState<number | null>(persistKey, size ?? null, {
-			storage: persistStorage,
-			syncTabs: false
-		});
-		persistedKey = persistKey;
-		const stored = persistedState.current;
-		if (stored !== null && stored !== undefined) {
-			size = stored;
-		}
-	});
-
-	$effect(() => {
-		if (!containerRef || size === null || isResizing || isStacked) return;
-		applySize(size, false);
-	});
-
-	onMount(() => {
-		evaluateStacked();
-		if (!isStacked) {
-			ensureInitialSize();
-		}
-		window.addEventListener('resize', handleWindowResize);
-		if (stackBelow !== undefined && typeof ResizeObserver !== 'undefined' && containerRef) {
-			resizeObserver = new ResizeObserver(handleContainerResize);
-			resizeObserver.observe(containerRef);
-		}
-		return () => {
-			window.removeEventListener('resize', handleWindowResize);
-			resizeObserver?.disconnect();
-			resizeObserver = null;
-		};
-	});
-
-	onDestroy(() => {
-		window.removeEventListener('pointermove', handleMove);
-		window.removeEventListener('pointerup', stopResize);
-	});
 </script>
 
+<svelte:window onpointermove={handleMove} onpointerup={stopResize} />
+
 <div
-	bind:this={containerRef}
+	{@attach measureContainer}
 	class={['flex min-h-0 min-w-0', isStacked && (variant === 'flush' ? 'flex-col' : 'flex-col gap-4'), className]}
 >
 	<div
 		class={['min-h-0 min-w-0 overflow-hidden', isStacked ? 'flex-1' : 'flex-none', firstClass]}
-		style={isStacked ? '' : `width: ${size ?? 0}px;`}
+		style={isStacked ? '' : `width: ${layout.size}px;`}
 		aria-hidden={!isStacked && collapsedSide === 'first'}
 	>
 		{#if isStacked || collapsedSide !== 'first'}

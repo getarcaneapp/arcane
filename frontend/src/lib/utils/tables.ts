@@ -133,7 +133,7 @@ export function resolveInitialListPageRequest(
 }
 
 type QueryClientLike = {
-	fetchQuery: <T>(options: { queryKey: unknown; queryFn: () => Promise<T> }) => Promise<T>;
+	query: <T>(options: { queryKey: unknown; queryFn: () => Promise<T> }) => Promise<T>;
 };
 
 type ParentWithQueryClient = () => Promise<unknown>;
