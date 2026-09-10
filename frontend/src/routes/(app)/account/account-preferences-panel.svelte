@@ -37,7 +37,6 @@
 	const sidebarHoverExpansionEnabled = $derived(preferences.sidebarHoverExpansion ?? true);
 	const keyboardShortcutsEnabled = $derived(preferences.keyboardShortcutsEnabled ?? true);
 	const mobileNavigationMode = $derived(preferences.mobileNavigationMode ?? 'floating');
-	const mobileNavigationShowLabels = $derived(preferences.mobileNavigationShowLabels ?? true);
 	const isDarkMode = $derived(mode.current === 'dark');
 	const isDefaultApplicationTheme = $derived(applicationThemeValue === 'default');
 
@@ -250,13 +249,6 @@
 						</button>
 					{/each}
 				</div>
-			</SettingsRow>
-			<SettingsRow label={m.navigation_show_labels_label()} description={m.navigation_show_labels_description()} layout="inline">
-				<Switch
-					id="account-mobile-nav-labels"
-					checked={mobileNavigationShowLabels}
-					onCheckedChange={(checked) => void savePreferences({ mobileNavigationShowLabels: checked })}
-				/>
 			</SettingsRow>
 		</div>
 	</section>

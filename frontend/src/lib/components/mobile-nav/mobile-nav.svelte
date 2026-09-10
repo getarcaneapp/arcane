@@ -42,7 +42,7 @@
 	});
 
 	const currentPath = $derived(page.url.pathname);
-	const showLabels = $derived(navigationSettings?.showLabels ?? true);
+	const showLabels = false;
 	const scrollToHideEnabled = $derived(navigationSettings?.scrollToHide ?? true);
 	const mode = $derived(navigationSettings?.mode ?? 'floating');
 

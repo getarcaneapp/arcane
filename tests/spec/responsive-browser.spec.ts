@@ -4,7 +4,10 @@ test('navigation matches the configured mobile or tablet viewport', async ({ pag
 	await page.goto('/dashboard');
 
 	if (testInfo.project.name === 'mobile-chromium') {
-		await expect(page.getByTestId(/mobile-(floating|docked)-nav/)).toBeVisible();
+		const mobileNav = page.getByTestId(/mobile-(floating|docked)-nav/);
+		await expect(mobileNav).toBeVisible();
+		await expect(mobileNav.getByRole('link', { name: 'Containers', exact: true })).toBeVisible();
+		await expect(mobileNav.getByTestId('mobile-nav-label')).toHaveCount(0);
 		await expect(page.locator('[data-slot="sidebar"]')).toHaveCount(0);
 
 		await page.getByTestId('mobile-nav-open').click();

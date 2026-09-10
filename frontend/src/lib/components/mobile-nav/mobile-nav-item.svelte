@@ -40,7 +40,12 @@
 	{@const IconComponent = item.icon}
 	<IconComponent size={showLabels ? 20 : 24} aria-hidden="true" />
 	{#if showLabels}
-		<span class="w-full truncate text-center text-[10px] leading-none font-normal text-muted-foreground">{item.title}</span>
+		<span
+			class="w-full truncate text-center text-[10px] leading-none font-normal text-muted-foreground"
+			data-testid="mobile-nav-label"
+		>
+			{item.title}
+		</span>
 	{:else}
 		<span class="sr-only">{item.title}</span>
 	{/if}
