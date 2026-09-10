@@ -13,7 +13,6 @@
 	import type { ImageUpdateData } from '#lib/types/docker.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { projectService } from '#lib/services/project-service.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { toast } from 'svelte-sonner';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
@@ -24,19 +23,20 @@
 	import { StartIcon, StopIcon, RefreshIcon, TrashIcon, InspectIcon, LayersIcon, BoxIcon, HealthIcon } from '#lib/icons/index.js';
 
 	interface Props {
+		environmentId: string;
 		services?: RuntimeService[];
 		projectId?: string;
 		updateInfoByRef?: Record<string, ImageUpdateData>;
 		onRefresh?: () => Promise<void>;
 	}
 
-	let { services = [], projectId, updateInfoByRef = {}, onRefresh }: Props = $props();
+	let { environmentId, services = [], projectId, updateInfoByRef = {}, onRefresh }: Props = $props();
 
 	function serviceImageRef(service: RuntimeService): string {
 		return service.serviceConfig?.image || service.image || '';
 	}
 
-	const currentEnvId = $derived(environmentStore.selected?.id || '0');
+	const currentEnvId = $derived(environmentId);
 	const canStartContainer = $derived(hasPermission('containers:start', currentEnvId));
 	const canStopContainer = $derived(hasPermission('containers:stop', currentEnvId));
 	const canRestartProject = $derived(hasPermission('projects:restart', currentEnvId));
@@ -90,6 +90,7 @@
 
 	async function performContainerAction(action: 'start' | 'stop' | 'restart', id: string) {
 		await runContainerLifecycleAction({
+			environmentId,
 			action,
 			containerId: id,
 			setStatus: (status) => {
@@ -111,7 +112,7 @@
 		const operationResult = await tryCatch(
 			(async () => {
 				await handleApiResultWithCallbacks({
-					result: await tryCatch(projectService.restartProject(projectId, [item.name])),
+					result: await tryCatch(projectService.restartProject(environmentId, projectId, [item.name])),
 					message: m.containers_restart_failed(),
 					setLoadingState: (value) => {
 						actionStatus[id] = value ? 'restarting' : '';
@@ -134,6 +135,7 @@
 
 	function handleRemoveContainer(id: string, name: string) {
 		confirmAndRemoveContainer({
+			environmentId,
 			containerId: id,
 			containerName: name,
 			setStatus: (status) => {

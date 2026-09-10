@@ -184,7 +184,7 @@
 			validate: () => validateTemplateEditorForm(validationState, form.validate),
 			setLoading: (value) => (ui.saving = value),
 			submit: ({ name, composeContent, envContent }) =>
-				projectService.createProject(name, composeContent, envContent, workspaceDraft.toDrafts(), newProjectTags),
+				projectService.createProject(currentEnvId, name, composeContent, envContent, workspaceDraft.toDrafts(), newProjectTags),
 			failureMessage: (name) => m.common_create_failed({ resource: `${m.resource_project()} "${name}"` }),
 			onSuccess: async (project, { name }) => {
 				toast.success(

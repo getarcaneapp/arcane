@@ -1,4 +1,3 @@
-import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import { operationWatchStore } from '#lib/stores/operation-watch.store.svelte.js';
 import { ReconnectingWebSocket } from '#lib/utils/ws.js';
 
@@ -10,12 +9,11 @@ import { ReconnectingWebSocket } from '#lib/utils/ws.js';
  * operation began (application startup included) without dredging up history
  * from previous runs. Returns a detach function that closes the stream.
  */
-export function attachProjectLogsToWatch(projectId: string, sinceEpochSeconds: number): () => void {
+export function attachProjectLogsToWatch(envId: string, projectId: string, sinceEpochSeconds: number): () => void {
 	let active = true;
 
 	const client = new ReconnectingWebSocket<string>({
 		buildUrl: async () => {
-			const envId = await environmentStore.getCurrentEnvironmentId();
 			const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
 			return `${protocol}://${window.location.host}/api/environments/${envId}/ws/projects/${projectId}/logs?follow=true&tail=all&since=${sinceEpochSeconds}&timestamps=false&format=json&batched=true`;
 		},

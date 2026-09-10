@@ -16,8 +16,12 @@ import type { AutoUpdateResourceType, AutoUpdateResult } from '#lib/types/automa
  */
 
 /** Applies pending updates for a single resource via a scoped updater run. */
-export function applyScopedUpdate(type: Extract<AutoUpdateResourceType, 'container' | 'project'>, id: string) {
-	return imageService.runAutoUpdate({ type, resourceIds: [id] });
+export function applyScopedUpdate(
+	type: Extract<AutoUpdateResourceType, 'container' | 'project'>,
+	id: string,
+	environmentId?: string
+) {
+	return imageService.runAutoUpdate({ type, resourceIds: [id] }, environmentId);
 }
 
 /**

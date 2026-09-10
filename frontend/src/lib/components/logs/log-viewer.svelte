@@ -21,6 +21,7 @@
 	import StructuredLogEntry from './structured-log-entry.svelte';
 
 	interface Props {
+		environmentId?: string;
 		class?: string;
 		containerId?: string | null;
 		projectId?: string | null;
@@ -41,6 +42,7 @@
 
 	let {
 		class: className,
+		environmentId,
 		containerId = null,
 		projectId = null,
 		serviceId = null,
@@ -176,7 +178,7 @@
 	}
 
 	async function buildLogWsEndpoint(): Promise<string> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+		const envId = environmentId ?? (await environmentStore.getCurrentEnvironmentId());
 		const basePath =
 			type === 'project'
 				? `/api/environments/${envId}/ws/projects/${projectId}/logs`

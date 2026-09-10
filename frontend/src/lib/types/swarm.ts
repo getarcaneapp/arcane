@@ -604,6 +604,8 @@ export interface ProjectTagOption {
 
 export interface Project {
 	id: string;
+	// Manager-visible ID of the environment that supplied this project.
+	environmentId: string;
 	name: string;
 	dirName?: string;
 	relativePath?: string;

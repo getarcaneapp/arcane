@@ -10,6 +10,7 @@ import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toa
 import type { TableActionConfig, TableBulkActionConfig } from '#lib/utils/table-action-types.js';
 import { toast } from 'svelte-sonner';
 import type { ActionStatus } from './projects-table.helpers';
+import type { Project } from '#lib/types/swarm.js';
 import { bulkConfirmAndRun } from '#lib/utils/bulk-actions.js';
 
 type BulkLoadingState = {
@@ -25,13 +26,13 @@ type ActionDeps = {
 	setSelectedIds: (next: string[]) => void;
 	actionStatus: Record<string, ActionStatus>;
 	isBulkLoading: BulkLoadingState;
-	getEnvId: () => string | undefined;
+	getProjects: () => Project[];
 };
 
 type ProjectActionKind = 'start' | 'stop' | 'restart' | 'redeploy' | 'archive' | 'unarchive';
 
-type ProjectActionConfig = TableActionConfig<ActionStatus>;
-type BulkActionConfig = TableBulkActionConfig<keyof BulkLoadingState>;
+type ProjectActionConfig = TableActionConfig<ActionStatus, Project>;
+type BulkActionConfig = TableBulkActionConfig<keyof BulkLoadingState, Project>;
 
 type DestroyConfirmResult = {
 	checkboxes?: {
@@ -43,9 +44,9 @@ type DestroyConfirmResult = {
 };
 
 type ProjectActions = {
-	performProjectAction: (action: ProjectActionKind, id: string) => Promise<void>;
-	handleDestroyProject: (id: string) => Promise<void>;
-	handleSyncFromGit: (projectId: string, gitOpsSyncId: string) => Promise<void>;
+	performProjectAction: (action: ProjectActionKind, project: Project) => Promise<void>;
+	handleDestroyProject: (project: Project) => Promise<void>;
+	handleSyncFromGit: (project: Project, gitOpsSyncId: string) => Promise<void>;
 	handleBulkUp: (ids: string[]) => Promise<void>;
 	handleBulkDown: (ids: string[]) => Promise<void>;
 	handleBulkRedeploy: (ids: string[]) => Promise<void>;
@@ -55,37 +56,39 @@ type ProjectActions = {
 const projectActionConfigs: Record<ProjectActionKind, ProjectActionConfig> = {
 	start: {
 		status: 'starting',
-		run: (id) => projectService.deployProject(id, 'up', deployOptionsStore.takeRequestOptions()),
+		run: (project) =>
+			projectService.deployProject(project.environmentId, project.id, 'up', deployOptionsStore.takeRequestOptions()),
 		success: () => m.compose_start_success(),
 		failure: () => m.compose_start_failed()
 	},
 	stop: {
 		status: 'stopping',
-		run: (id) => projectService.downProject(id),
+		run: (project) => projectService.downProject(project.environmentId, project.id),
 		success: () => m.compose_stop_success(),
 		failure: () => m.compose_stop_failed()
 	},
 	restart: {
 		status: 'restarting',
-		run: (id) => projectService.restartProject(id),
+		run: (project) => projectService.restartProject(project.environmentId, project.id),
 		success: () => m.compose_restart_success(),
 		failure: () => m.compose_restart_failed()
 	},
 	redeploy: {
 		status: 'redeploying',
-		run: (id) => projectService.deployProject(id, 'redeploy', deployOptionsStore.takeRequestOptions()),
+		run: (project) =>
+			projectService.deployProject(project.environmentId, project.id, 'redeploy', deployOptionsStore.takeRequestOptions()),
 		success: () => m.compose_pull_success(),
 		failure: () => m.compose_pull_failed()
 	},
 	archive: {
 		status: 'archiving',
-		run: (id) => projectService.archiveProject(id),
+		run: (project) => projectService.archiveProject(project.environmentId, project.id),
 		success: () => m.compose_archive_success(),
 		failure: () => m.compose_archive_failed()
 	},
 	unarchive: {
 		status: 'unarchiving',
-		run: (id) => projectService.unarchiveProject(id),
+		run: (project) => projectService.unarchiveProject(project.environmentId, project.id),
 		success: () => m.compose_unarchive_success(),
 		failure: () => m.compose_unarchive_failed()
 	}
@@ -97,16 +100,17 @@ export function createProjectActions({
 	setSelectedIds,
 	actionStatus,
 	isBulkLoading,
-	getEnvId
+	getProjects
 }: ActionDeps): ProjectActions {
-	async function performProjectAction(action: ProjectActionKind, id: string): Promise<void> {
+	async function performProjectAction(action: ProjectActionKind, project: Project): Promise<void> {
+		const { id } = project;
 		const config = projectActionConfigs[action];
 		actionStatus[id] = config.status;
 
 		const operationResult = await tryCatch(
 			(async () => {
 				await handleApiResultWithCallbacks({
-					result: await tryCatch(config.run(id)),
+					result: await tryCatch(config.run(project)),
 					message: config.failure(),
 					setLoadingState: (value) => {
 						actionStatus[id] = value ? config.status : '';
@@ -124,7 +128,8 @@ export function createProjectActions({
 		}
 	}
 
-	async function handleDestroyProject(id: string): Promise<void> {
+	async function handleDestroyProject(project: Project): Promise<void> {
+		const { id } = project;
 		openConfirmDialog({
 			title: m.common_confirm_removal_title(),
 			message: m.compose_confirm_removal_message(),
@@ -143,7 +148,7 @@ export function createProjectActions({
 					actionStatus[id] = 'destroying';
 
 					await handleApiResultWithCallbacks({
-						result: await tryCatch(projectService.destroyProject(id, removeVolumes)),
+						result: await tryCatch(projectService.destroyProject(project.environmentId, project.id, removeVolumes)),
 						message: m.compose_destroy_failed(),
 						setLoadingState: (value) => {
 							actionStatus[id] = value ? 'destroying' : '';
@@ -158,9 +163,8 @@ export function createProjectActions({
 		});
 	}
 
-	async function handleSyncFromGit(projectId: string, gitOpsSyncId: string): Promise<void> {
-		const envId = getEnvId();
-		if (!envId) return;
+	async function handleSyncFromGit(project: Project, gitOpsSyncId: string): Promise<void> {
+		const { id: projectId, environmentId: envId } = project;
 
 		actionStatus[projectId] = 'syncing';
 		const result = await tryCatch(gitOpsSyncService.performSync(envId, gitOpsSyncId));
@@ -180,6 +184,12 @@ export function createProjectActions({
 
 	async function runBulkAction(ids: string[], config: BulkActionConfig): Promise<void> {
 		if (!ids || ids.length === 0) return;
+		const targets = new Map(
+			getProjects()
+				.filter((project) => ids.includes(project.id))
+				.map((project) => [project.id, project])
+		);
+		if (targets.size !== ids.length) return;
 
 		bulkConfirmAndRun({
 			ids,
@@ -187,7 +197,7 @@ export function createProjectActions({
 			message: config.message(ids.length),
 			confirmLabel: config.label,
 			destructive: config.destructive ?? false,
-			run: (id) => config.run(id),
+			run: (id) => config.run(targets.get(id)!),
 			messages: {
 				success: config.success,
 				partial: config.partial,
@@ -211,7 +221,13 @@ export function createProjectActions({
 			message: (count) => m.projects_bulk_up_confirm_message({ count }),
 			label: m.common_up(),
 			loadingKey: 'up',
-			run: (id) => projectService.deployProject(id, 'up', (deployOptions ??= deployOptionsStore.takeRequestOptions())),
+			run: (project) =>
+				projectService.deployProject(
+					project.environmentId,
+					project.id,
+					'up',
+					(deployOptions ??= deployOptionsStore.takeRequestOptions())
+				),
 			success: (count) => m.projects_bulk_up_success({ count }),
 			partial: (success, total, failed) => m.projects_bulk_up_partial({ success, total, failed }),
 			failure: () => m.compose_start_failed()
@@ -224,7 +240,7 @@ export function createProjectActions({
 			message: (count) => m.projects_bulk_down_confirm_message({ count }),
 			label: m.common_down(),
 			loadingKey: 'down',
-			run: (id) => projectService.downProject(id),
+			run: (project) => projectService.downProject(project.environmentId, project.id),
 			success: (count) => m.projects_bulk_down_success({ count }),
 			partial: (success, total, failed) => m.projects_bulk_down_partial({ success, total, failed }),
 			failure: () => m.compose_stop_failed()
@@ -239,7 +255,13 @@ export function createProjectActions({
 			message: (count) => m.projects_bulk_redeploy_confirm_message({ count }),
 			label: m.compose_pull_redeploy(),
 			loadingKey: 'redeploy',
-			run: (id) => projectService.deployProject(id, 'redeploy', (deployOptions ??= deployOptionsStore.takeRequestOptions())),
+			run: (project) =>
+				projectService.deployProject(
+					project.environmentId,
+					project.id,
+					'redeploy',
+					(deployOptions ??= deployOptionsStore.takeRequestOptions())
+				),
 			success: (count) => m.projects_bulk_redeploy_success({ count }),
 			partial: (success, total, failed) => m.projects_bulk_redeploy_partial({ success, total, failed }),
 			failure: () => m.compose_pull_failed()
@@ -252,7 +274,7 @@ export function createProjectActions({
 			message: (count) => m.projects_bulk_archive_confirm_message({ count }),
 			label: m.projects_archive(),
 			loadingKey: 'archive',
-			run: (id) => projectService.archiveProject(id),
+			run: (project) => projectService.archiveProject(project.environmentId, project.id),
 			success: (count) => m.projects_bulk_archive_success({ count }),
 			partial: (success, total, failed) => m.projects_bulk_archive_partial({ success, total, failed }),
 			failure: () => m.compose_archive_failed()

@@ -20,7 +20,6 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { projectService } from '#lib/services/project-service.js';
 	import { FolderOpenIcon, LayersIcon, CalendarIcon, ProjectsIcon, GitBranchIcon, RefreshIcon } from '#lib/icons/index.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { hasAnyLoadingState } from '#lib/utils/bulk-actions.js';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
@@ -54,7 +53,7 @@
 		withoutFilters?: boolean;
 		showArchived?: boolean;
 		onToggleArchived?: (checked: boolean) => void | Promise<void>;
-		onRefreshData?: (options: SearchPaginationSortRequest) => Promise<void>;
+		onRefreshData: (options: SearchPaginationSortRequest) => Promise<void>;
 		availableTags?: ProjectTagOption[];
 	} = $props();
 
@@ -73,11 +72,7 @@
 	});
 
 	async function refreshProjects(options: SearchPaginationSortRequest = requestOptions) {
-		if (onRefreshData) {
-			await onRefreshData(options);
-			return;
-		}
-		projects = await projectService.getProjects(options);
+		await onRefreshData(options);
 	}
 
 	async function handleCheckProjectUpdates(project: Project) {
@@ -93,7 +88,7 @@
 		try {
 			const operationResult = await tryCatch(
 				(async () => {
-					const result = await projectService.checkUpdates(project.id);
+					const result = await projectService.checkUpdates(project.environmentId, project.id);
 					const firstError = result.errorMessage?.trim();
 					const hasErrors = !!firstError;
 					if (hasErrors) {
@@ -116,7 +111,7 @@
 	}
 
 	async function handleTagToggle(project: Project, name: string, attached: boolean, color: ProjectTagColor) {
-		const response = await projectService.updateProjectTag(project.id, name, attached, color);
+		const response = await projectService.updateProjectTag(project.environmentId, project.id, name, attached, color);
 		if (attached && !tagCatalog.some((tag) => tag.name === name)) {
 			tagCatalog = [...tagCatalog, { name, color }].sort((a, b) => a.name.localeCompare(b.name));
 		}
@@ -132,12 +127,6 @@
 	}
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
-	const envId = $derived(environmentStore.selected?.id);
-	const currentEnvId = $derived(environmentStore.selected?.id || '0');
-	const canUpdateProject = $derived(hasPermission('projects:update', currentEnvId));
-	const canDeployProject = $derived(hasPermission('projects:deploy', currentEnvId));
-	const canDownProject = $derived(hasPermission('projects:down', currentEnvId));
-	const canArchiveProject = $derived(hasPermission('projects:archive', currentEnvId));
 
 	const {
 		performProjectAction,
@@ -155,11 +144,11 @@
 		},
 		actionStatus,
 		isBulkLoading,
-		getEnvId: () => envId
+		getProjects: () => selectedProjects
 	});
 
 	const isAnyLoading = $derived(hasAnyLoadingState(actionStatus, isBulkLoading));
-	const selectedProjects = $derived.by(() => (projects?.data ?? []).filter((project) => selectedIds?.includes(project.id)));
+	let selectedProjects = $state<Project[]>([]);
 	const hasRedeployDisabledSelection = $derived.by(() => selectedProjects.some((project) => project.redeployDisabled));
 	const hasArchivedSelection = $derived.by(() => selectedProjects.some((project) => project.isArchived));
 	const isProjectArchiveBlocked = (project: Project) =>
@@ -216,7 +205,10 @@
 			action: 'up',
 			onClick: handleBulkUp,
 			loading: isBulkLoading.up,
-			disabled: !canDeployProject || isAnyLoading || hasArchivedSelection,
+			disabled:
+				!selectedProjects.every((project) => hasPermission('projects:deploy', project.environmentId)) ||
+				isAnyLoading ||
+				hasArchivedSelection,
 			disabledReason: hasArchivedSelection ? m.projects_archived_badge() : undefined,
 			icon: StartIcon
 		},
@@ -226,7 +218,10 @@
 			action: 'down',
 			onClick: handleBulkDown,
 			loading: isBulkLoading.down,
-			disabled: !canDownProject || isAnyLoading || hasArchivedSelection,
+			disabled:
+				!selectedProjects.every((project) => hasPermission('projects:down', project.environmentId)) ||
+				isAnyLoading ||
+				hasArchivedSelection,
 			disabledReason: hasArchivedSelection ? m.projects_archived_badge() : undefined,
 			icon: StopIcon
 		},
@@ -236,7 +231,11 @@
 			action: 'redeploy',
 			onClick: handleBulkRedeploy,
 			loading: isBulkLoading.redeploy,
-			disabled: !canDeployProject || isAnyLoading || hasRedeployDisabledSelection || hasArchivedSelection,
+			disabled:
+				!selectedProjects.every((project) => hasPermission('projects:deploy', project.environmentId)) ||
+				isAnyLoading ||
+				hasRedeployDisabledSelection ||
+				hasArchivedSelection,
 			disabledReason: hasArchivedSelection
 				? m.projects_archived_badge()
 				: hasRedeployDisabledSelection
@@ -250,7 +249,11 @@
 			action: 'archive',
 			onClick: handleBulkArchive,
 			loading: isBulkLoading.archive,
-			disabled: !canArchiveProject || isAnyLoading || hasArchivedSelection || hasRunningSelection,
+			disabled:
+				!selectedProjects.every((project) => hasPermission('projects:archive', project.environmentId)) ||
+				isAnyLoading ||
+				hasArchivedSelection ||
+				hasRunningSelection,
 			disabledReason: hasRunningSelection
 				? m.projects_archive_requires_stopped()
 				: hasArchivedSelection
@@ -280,7 +283,7 @@
 	<ProjectTagEditor
 		tags={item.tags ?? []}
 		availableTags={tagCatalog}
-		canEdit={canUpdateProject && !item.isDiscovered}
+		canEdit={hasPermission('projects:update', item.environmentId) && !item.isDiscovered}
 		onToggle={(name, attached, color) => handleTagToggle(item, name, attached, color)}
 	/>
 {/snippet}
@@ -293,7 +296,7 @@
 	<div class="flex items-center gap-2">
 		{#if item.gitOpsManagedBy}
 			<GitBranchIcon class="size-4" />
-			<a class="font-medium hover:underline" href="/environments/{envId}/gitops">
+			<a class="font-medium hover:underline" href="/environments/{item.environmentId}/gitops">
 				{m.git()}
 			</a>
 		{:else}
@@ -332,7 +335,7 @@
 		updateInfo={item.updateInfo}
 		onCheck={() => handleCheckProjectUpdates(item)}
 		checking={!!checkingProjectIds[item.id]}
-		disabled={!!item.isArchived}
+		disabled={!!item.isArchived || !hasPermission('image-updates:check', item.environmentId)}
 		class="mr-2"
 	/>
 {/snippet}
@@ -441,9 +444,9 @@
 			{m.common_edit()}
 		</DropdownMenu.Item>
 
-		{#if item.gitOpsManagedBy && canUpdateProject}
+		{#if item.gitOpsManagedBy && hasPermission('projects:update', item.environmentId)}
 			<ContainerActionMenuItem
-				onclick={() => handleSyncFromGit(item.id, item.gitOpsManagedBy!)}
+				onclick={() => handleSyncFromGit(item, item.gitOpsManagedBy!)}
 				disabled={isAnyLoading}
 				icon={RefreshIcon}
 				label={m.git_sync_from_git()}
@@ -454,9 +457,9 @@
 		<DropdownMenu.Separator />
 
 		{#if item.status !== 'running'}
-			<IfPermitted perm="projects:deploy" envId={currentEnvId}>
+			<IfPermitted perm="projects:deploy" envId={item.environmentId}>
 				<ContainerActionMenuItem
-					onclick={() => performProjectAction('start', item.id)}
+					onclick={() => performProjectAction('start', item)}
 					disabled={lifecycleDisabled}
 					title={archivedTitle}
 					icon={StartIcon}
@@ -465,9 +468,9 @@
 				/>
 			</IfPermitted>
 		{:else}
-			<IfPermitted perm="projects:down" envId={currentEnvId}>
+			<IfPermitted perm="projects:down" envId={item.environmentId}>
 				<ContainerActionMenuItem
-					onclick={() => performProjectAction('stop', item.id)}
+					onclick={() => performProjectAction('stop', item)}
 					disabled={lifecycleDisabled}
 					title={archivedTitle}
 					icon={StopIcon}
@@ -476,9 +479,9 @@
 				/>
 			</IfPermitted>
 
-			<IfPermitted perm="projects:restart">
+			<IfPermitted perm="projects:restart" envId={item.environmentId}>
 				<ContainerActionMenuItem
-					onclick={() => performProjectAction('restart', item.id)}
+					onclick={() => performProjectAction('restart', item)}
 					disabled={lifecycleDisabled}
 					title={archivedTitle}
 					icon={RestartIcon}
@@ -488,7 +491,7 @@
 			</IfPermitted>
 		{/if}
 
-		<IfPermitted perm="projects:deploy" envId={currentEnvId}>
+		<IfPermitted perm="projects:deploy" envId={item.environmentId}>
 			{#if item.redeployDisabled}
 				<DropdownMenu.Item disabled title={m.common_redeploy_disabled_arcane_self()}>
 					<RedeployIcon class="size-4 opacity-50" />
@@ -496,7 +499,7 @@
 				</DropdownMenu.Item>
 			{:else}
 				<ContainerActionMenuItem
-					onclick={() => performProjectAction('redeploy', item.id)}
+					onclick={() => performProjectAction('redeploy', item)}
 					disabled={lifecycleDisabled}
 					title={archivedTitle}
 					icon={RedeployIcon}
@@ -508,10 +511,10 @@
 
 		<DropdownMenu.Separator />
 
-		<IfPermitted perm="projects:archive" envId={currentEnvId}>
+		<IfPermitted perm="projects:archive" envId={item.environmentId}>
 			{#if item.isArchived}
 				<ContainerActionMenuItem
-					onclick={() => performProjectAction('unarchive', item.id)}
+					onclick={() => performProjectAction('unarchive', item)}
 					disabled={isAnyLoading}
 					icon={BoxIcon}
 					label={m.projects_unarchive()}
@@ -519,7 +522,7 @@
 				/>
 			{:else}
 				<ContainerActionMenuItem
-					onclick={() => performProjectAction('archive', item.id)}
+					onclick={() => performProjectAction('archive', item)}
 					disabled={isProjectArchiveBlocked(item) || isAnyLoading}
 					title={isProjectArchiveBlocked(item) ? m.projects_archive_requires_stopped() : undefined}
 					icon={BoxIcon}
@@ -529,10 +532,10 @@
 			{/if}
 		</IfPermitted>
 
-		<IfPermitted perm="projects:delete">
+		<IfPermitted perm="projects:delete" envId={item.environmentId}>
 			<ContainerActionMenuItem
 				destructive
-				onclick={() => handleDestroyProject(item.id)}
+				onclick={() => handleDestroyProject(item)}
 				disabled={isAnyLoading}
 				icon={TrashIcon}
 				label={m.compose_destroy()}
@@ -564,6 +567,7 @@
 	items={projects}
 	bind:requestOptions
 	bind:selectedIds
+	bind:selectedItems={selectedProjects}
 	bind:mobileFieldVisibility
 	{withoutFilters}
 	onRefresh={async (options) => {

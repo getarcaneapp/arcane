@@ -11,4 +11,6 @@
 
 <svelte:head><title>{pageTitle}</title></svelte:head>
 
-{@render children()}
+{#key `${page.data['project'].environmentId}:${page.data['project'].id}`}
+	{@render children()}
+{/key}

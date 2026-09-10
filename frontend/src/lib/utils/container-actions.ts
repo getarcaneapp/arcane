@@ -12,7 +12,7 @@ type ContainerRemoveStatus = 'removing' | '';
 
 type ContainerLifecycleActionConfig = {
 	status: Exclude<ContainerLifecycleStatus, ''>;
-	run: (id: string) => Promise<unknown>;
+	run: (id: string, environmentId?: string) => Promise<unknown>;
 	success: () => string;
 	failure: () => string;
 };
@@ -20,37 +20,38 @@ type ContainerLifecycleActionConfig = {
 const containerLifecycleActionConfigs: Record<ContainerLifecycleAction, ContainerLifecycleActionConfig> = {
 	start: {
 		status: 'starting',
-		run: (id) => containerService.startContainer(id),
+		run: (id, environmentId) => containerService.startContainer(id, environmentId),
 		success: () => m.containers_start_success(),
 		failure: () => m.containers_start_failed()
 	},
 	stop: {
 		status: 'stopping',
-		run: (id) => containerService.stopContainer(id),
+		run: (id, environmentId) => containerService.stopContainer(id, environmentId),
 		success: () => m.containers_stop_success(),
 		failure: () => m.containers_stop_failed()
 	},
 	restart: {
 		status: 'restarting',
-		run: (id) => containerService.restartContainer(id),
+		run: (id, environmentId) => containerService.restartContainer(id, environmentId),
 		success: () => m.containers_restart_success(),
 		failure: () => m.containers_restart_failed()
 	},
 	pause: {
 		status: 'pausing',
-		run: (id) => containerService.pauseContainer(id),
+		run: (id, environmentId) => containerService.pauseContainer(id, environmentId),
 		success: () => m.containers_pause_success(),
 		failure: () => m.containers_pause_failed()
 	},
 	unpause: {
 		status: 'unpausing',
-		run: (id) => containerService.unpauseContainer(id),
+		run: (id, environmentId) => containerService.unpauseContainer(id, environmentId),
 		success: () => m.containers_unpause_success(),
 		failure: () => m.containers_unpause_failed()
 	}
 };
 
 type RunContainerLifecycleActionOptions = {
+	environmentId?: string;
 	action: ContainerLifecycleAction;
 	containerId: string;
 	setStatus: (status: ContainerLifecycleStatus) => void;
@@ -58,6 +59,7 @@ type RunContainerLifecycleActionOptions = {
 };
 
 export async function runContainerLifecycleAction({
+	environmentId,
 	action,
 	containerId,
 	setStatus,
@@ -71,7 +73,7 @@ export async function runContainerLifecycleAction({
 	const operationResult = await tryCatch(
 		(async () => {
 			await handleApiResultWithCallbacks({
-				result: await tryCatch(config.run(containerId)),
+				result: await tryCatch(config.run(containerId, environmentId)),
 				message: config.failure(),
 				setLoadingState: (value) => {
 					setStatus(value ? config.status : '');
@@ -92,6 +94,7 @@ export async function runContainerLifecycleAction({
 }
 
 type ConfirmAndRemoveContainerOptions = {
+	environmentId?: string;
 	containerId: string;
 	containerName: string;
 	setStatus: (status: ContainerRemoveStatus) => void;
@@ -99,6 +102,7 @@ type ConfirmAndRemoveContainerOptions = {
 };
 
 export function confirmAndRemoveContainer({
+	environmentId,
 	containerId,
 	containerName,
 	setStatus,
@@ -119,7 +123,7 @@ export function confirmAndRemoveContainer({
 				const volumes = !!checkboxStates['volumes'];
 				setStatus('removing');
 				await handleApiResultWithCallbacks({
-					result: await tryCatch(containerService.deleteContainer(containerId, { force, volumes })),
+					result: await tryCatch(containerService.deleteContainer(containerId, { force, volumes, environmentId })),
 					message: m.containers_remove_failed(),
 					setLoadingState: (value) => {
 						setStatus(value ? 'removing' : '');

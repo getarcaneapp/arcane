@@ -30,17 +30,18 @@
 
 	async function save() {
 		if (includeFile) {
-			const workspace = await projectWorkspaceService.getWorkspace(project.id);
+			const workspace = await projectWorkspaceService.getWorkspace(project.id, project.environmentId);
 			await projectWorkspaceService.updateWorkspace(
 				project.id,
 				{
 					fileTreeRevision: workspace.fileTreeRevision,
 					fileChanges: [{ operation: 'update_file', relativePath: includeFile.relativePath, uploadIndex: 0 }]
 				},
-				[new File([composeContent], includeFile.relativePath, { type: 'text/yaml' })]
+				[new File([composeContent], includeFile.relativePath, { type: 'text/yaml' })],
+				project.environmentId
 			);
 		} else {
-			await projectService.updateProject(project.id, undefined, composeContent);
+			await projectService.updateProject(project.environmentId, project.id, undefined, composeContent);
 		}
 	}
 </script>

@@ -62,8 +62,8 @@ class ContainerService extends BaseAPIService {
 		return this.handleResponse(this.api.get(`/environments/${environmentId}/containers/${containerId}`));
 	}
 
-	async startContainer(containerId: string): Promise<any> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async startContainer(containerId: string, environmentId?: string): Promise<any> {
+		const envId = await this.resolveEnvironmentId(environmentId);
 		return this.handleResponse(this.api.post(`/environments/${envId}/containers/${containerId}/start`));
 	}
 
@@ -72,13 +72,13 @@ class ContainerService extends BaseAPIService {
 		return this.handleResponse(this.api.post(`/environments/${envId}/containers`, options));
 	}
 
-	async stopContainer(containerId: string): Promise<any> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async stopContainer(containerId: string, environmentId?: string): Promise<any> {
+		const envId = await this.resolveEnvironmentId(environmentId);
 		return this.handleResponse(this.api.post(`/environments/${envId}/containers/${containerId}/stop`));
 	}
 
-	async restartContainer(containerId: string): Promise<any> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async restartContainer(containerId: string, environmentId?: string): Promise<any> {
+		const envId = await this.resolveEnvironmentId(environmentId);
 		return this.handleResponse(this.api.post(`/environments/${envId}/containers/${containerId}/restart`));
 	}
 
@@ -89,13 +89,13 @@ class ContainerService extends BaseAPIService {
 		return this.handleResponse(this.api.post(`/environments/${envId}/containers/${containerId}/kill`, undefined, { params }));
 	}
 
-	async pauseContainer(containerId: string): Promise<any> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async pauseContainer(containerId: string, environmentId?: string): Promise<any> {
+		const envId = await this.resolveEnvironmentId(environmentId);
 		return this.handleResponse(this.api.post(`/environments/${envId}/containers/${containerId}/pause`));
 	}
 
-	async unpauseContainer(containerId: string): Promise<any> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async unpauseContainer(containerId: string, environmentId?: string): Promise<any> {
+		const envId = await this.resolveEnvironmentId(environmentId);
 		return this.handleResponse(this.api.post(`/environments/${envId}/containers/${containerId}/unpause`));
 	}
 
@@ -121,8 +121,8 @@ class ContainerService extends BaseAPIService {
 		return this.handleResponse(this.api.post(`/environments/${envId}/containers/${containerId}/update`));
 	}
 
-	async redeployContainer(containerId: string): Promise<ContainerDetailsDto> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async redeployContainer(containerId: string, environmentId?: string): Promise<ContainerDetailsDto> {
+		const envId = await this.resolveEnvironmentId(environmentId);
 		return this.handleResponse(this.api.post(`/environments/${envId}/containers/${containerId}/redeploy`));
 	}
 
