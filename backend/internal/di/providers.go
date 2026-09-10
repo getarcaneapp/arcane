@@ -252,20 +252,21 @@ func provideS3ServiceInternal(module *s3domain.Module) *s3domain.S3DestinationSe
 	return module.Service()
 }
 
-func provideVolumeModuleInternal(lc fx.Lifecycle, db *database.DB, dockerService *docker.DockerClientService, eventService *event.EventService, settingsService *settings.SettingsService, imageService *image.ImageService, activityService *activity.ActivityService, containerModule *container.Module, engine *backup.Engine, s3Service *s3domain.S3DestinationService, environmentService *environment.EnvironmentService, cfg *config.Config, uploadService *upload.UploadService) *volume.Module {
+func provideVolumeModuleInternal(lc fx.Lifecycle, db *database.DB, dockerService *docker.DockerClientService, eventService *event.EventService, settingsService *settings.SettingsService, imageService *image.ImageService, activityService *activity.ActivityService, containerModule *container.Module, engine *backup.Engine, s3Service *s3domain.S3DestinationService, environmentService *environment.EnvironmentService, cfg *config.Config, uploadService *upload.UploadService, recoveryKeys *backup.RecoveryKeyStore) *volume.Module {
 	module := volume.New(volume.Dependencies{
-		DB:          db,
-		Docker:      dockerService,
-		Event:       eventService,
-		Settings:    settingsService,
-		Image:       imageService,
-		Activity:    activityService,
-		Environment: environmentService,
-		Container:   containerModule.Service(),
-		Engine:      engine,
-		S3:          s3Service,
-		Config:      cfg,
-		Upload:      uploadService,
+		DB:           db,
+		Docker:       dockerService,
+		Event:        eventService,
+		Settings:     settingsService,
+		Image:        imageService,
+		Activity:     activityService,
+		Environment:  environmentService,
+		Container:    containerModule.Service(),
+		Engine:       engine,
+		S3:           s3Service,
+		Config:       cfg,
+		Upload:       uploadService,
+		RecoveryKeys: recoveryKeys,
 	})
 	lc.Append(fx.Hook{
 		OnStop: func(ctx context.Context) error {
@@ -280,8 +281,8 @@ func provideVolumeServiceInternal(module *volume.Module) *volume.VolumeService {
 	return module.Service()
 }
 
-func provideSystemBackupServiceInternal(db *database.DB, dockerService *docker.DockerClientService, volumeModule *volume.Module, engine *backup.Engine, s3Service *s3domain.S3DestinationService, activityService *activity.ActivityService, settingsService *settings.SettingsService, cfg *config.Config) *systembackup.SystemBackupService {
-	return systembackup.NewSystemBackupService(db, dockerService, volumeModule.Service(), engine, s3Service, activityService, settingsService, cfg)
+func provideSystemBackupServiceInternal(db *database.DB, dockerService *docker.DockerClientService, volumeModule *volume.Module, engine *backup.Engine, s3Service *s3domain.S3DestinationService, activityService *activity.ActivityService, settingsService *settings.SettingsService, cfg *config.Config, recoveryKeys *backup.RecoveryKeyStore) *systembackup.SystemBackupService {
+	return systembackup.NewSystemBackupService(db, dockerService, volumeModule.Service(), engine, s3Service, activityService, settingsService, cfg, recoveryKeys)
 }
 
 func provideContainerModuleInternal(event *event.EventService, docker *docker.DockerClientService, image *image.ImageService, settings *settings.SettingsService, project *project.ProjectService, activity *activity.ActivityService) *container.Module {

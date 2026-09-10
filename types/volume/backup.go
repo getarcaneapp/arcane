@@ -20,6 +20,15 @@ type UploadBackupRequest struct {
 	S3DestinationID string `json:"s3DestinationId" doc:"S3 destination for the uploaded backup"`
 }
 
+type DiscoverBackupsRequest struct {
+	S3DestinationID string `json:"s3DestinationId" doc:"S3 destination to scan for existing volume backups"`
+}
+
+type DiscoverBackupsResponse struct {
+	Count  int      `json:"count" doc:"Number of newly discovered volume backups"`
+	Errors []string `json:"errors,omitempty" doc:"Per-repository failures encountered during discovery"`
+}
+
 type BackupFormat string
 
 const (

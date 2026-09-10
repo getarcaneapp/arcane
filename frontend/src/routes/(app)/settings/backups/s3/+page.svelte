@@ -7,6 +7,7 @@
 	import { RemoteEnvironmentIcon } from '#lib/icons/index.js';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import { s3DestinationService } from '#lib/services/s3-destination-service.js';
+	import { discoverDestinationBackups } from '#lib/utils/backups.js';
 	import type { CreateS3Destination, S3Destination } from '#lib/types/s3-destination.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import * as m from '#lib/paraglide/messages.js';
@@ -34,18 +35,20 @@
 	async function saveDestination(input: CreateS3Destination) {
 		saving = true;
 		try {
+			let created: S3Destination | null = null;
 			const operationResult = await tryCatch(
 				(async () => {
 					if (selected) {
 						await s3DestinationService.update(selected.id, input);
 						toast.success(m.s3_destination_updated({ name: input.name }));
 					} else {
-						await s3DestinationService.create(input);
+						created = await s3DestinationService.create(input);
 						toast.success(m.s3_destination_created({ name: input.name }));
 					}
 					destinations = await s3DestinationService.list(requestOptions);
 					dialogOpen = false;
 					selected = null;
+					if (created) await discoverDestinationBackups(created.id);
 				})()
 			);
 			if (operationResult.error !== null) {

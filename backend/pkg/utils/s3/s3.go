@@ -255,6 +255,44 @@ func checkBackupObjectInternal(ctx context.Context, client *awss3.Client, bucket
 	return object.Body.Close()
 }
 
+// ListRepositoryRoots returns the first-level path segments below root in the
+// configured bucket. Volume backup repositories live one root per Arcane
+// instance, so enumerating them is how another instance's backups are
+// discovered when a destination is connected.
+func ListRepositoryRoots(ctx context.Context, configuration Configuration, root string) ([]string, error) {
+	configuration = configuration.Normalized()
+	if err := configuration.Validate(true); err != nil {
+		return nil, err
+	}
+	client, err := newClientInternal(ctx, configuration)
+	if err != nil {
+		return nil, fmt.Errorf("failed to configure S3 repository listing: %w", err)
+	}
+	prefix := path.Join(configuration.Prefix, strings.Trim(root, "/")) + "/"
+	var roots []string
+	paginator := awss3.NewListObjectsV2Paginator(client, &awss3.ListObjectsV2Input{
+		Bucket:    aws.String(configuration.Bucket),
+		Prefix:    aws.String(prefix),
+		Delimiter: aws.String("/"),
+	})
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list S3 repository roots: %w", err)
+		}
+		for _, commonPrefix := range page.CommonPrefixes {
+			if commonPrefix.Prefix == nil {
+				continue
+			}
+			name := strings.Trim(strings.TrimPrefix(*commonPrefix.Prefix, prefix), "/")
+			if name != "" {
+				roots = append(roots, name)
+			}
+		}
+	}
+	return roots, nil
+}
+
 func isMissingResourceInternal(err error, codes ...string) bool {
 	var apiErr smithy.APIError
 	if !errors.As(err, &apiErr) {

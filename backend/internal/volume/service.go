@@ -46,6 +46,9 @@ type VolumeService struct {
 	s3Destinations            *s3domain.S3DestinationService
 	backupVolumeName          string
 	encryptionKey             string
+	recoveryKeys              *backup.RecoveryKeyStore
+	rekeyMu                   sync.Mutex
+	rekeyDoneKey              string
 	workspaceMaxDepth         int
 	workspaceMaxEntries       int
 	workspaceMaxFileSizeBytes int64
@@ -75,7 +78,7 @@ type volumeWorkspaceLockContextInternal struct {
 
 const internalVolumePruneFilterValue = libarcane.InternalResourceLabel + "=true"
 
-func NewVolumeService(db *database.DB, dockerService *docker.DockerClientService, eventService *event.EventService, activityService *activity.ActivityService, settingsService *settings.SettingsService, containerService *container.ContainerService, imageService *image.ImageService, engine *backup.Engine, s3Destinations *s3domain.S3DestinationService, cfg *config.Config) *VolumeService {
+func NewVolumeService(db *database.DB, dockerService *docker.DockerClientService, eventService *event.EventService, activityService *activity.ActivityService, settingsService *settings.SettingsService, containerService *container.ContainerService, imageService *image.ImageService, engine *backup.Engine, s3Destinations *s3domain.S3DestinationService, cfg *config.Config, recoveryKeys *backup.RecoveryKeyStore) *VolumeService {
 	slog.Debug("volume service: new")
 	backupVolumeName := ""
 	encryptionKey := ""
@@ -104,6 +107,7 @@ func NewVolumeService(db *database.DB, dockerService *docker.DockerClientService
 		s3Destinations:            s3Destinations,
 		backupVolumeName:          backupVolumeName,
 		encryptionKey:             encryptionKey,
+		recoveryKeys:              recoveryKeys,
 		workspaceMaxDepth:         workspaceMaxDepth,
 		workspaceMaxEntries:       workspaceMaxEntries,
 		workspaceMaxFileSizeBytes: workspacepkg.MaxFileSizeBytes(workspaceMaxFileSizeMB),

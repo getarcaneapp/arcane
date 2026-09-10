@@ -81,12 +81,13 @@ func TestRecoveryHelperExecutableInternal(t *testing.T) {
 func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 	gormDB, err := gorm.Open(sqlite.Open("file:system-backup-schedules?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, gormDB.AutoMigrate(&SystemBackupPolicy{}, &SystemBackupRun{}, &SystemBackupRecoveryConfig{}))
+	require.NoError(t, gormDB.AutoMigrate(&SystemBackupPolicy{}, &SystemBackupRun{}, &backup.SystemBackupRecoveryConfig{}))
 	crypto.InitEncryption(&crypto.Config{EncryptionKey: "system-backup-policy-test-key-32bytes", Environment: "test"})
 	service := &SystemBackupService{
-		db:     &database.DB{DB: gormDB},
-		config: &config.Config{DatabaseURL: "file:system-backup-schedules-test.db"},
-		jobs:   entityjobs.New("system-backup:", backup.SystemAdmissionScope),
+		db:           &database.DB{DB: gormDB},
+		config:       &config.Config{DatabaseURL: "file:system-backup-schedules-test.db"},
+		recoveryKeys: backup.NewRecoveryKeyStore(&database.DB{DB: gormDB}),
+		jobs:         entityjobs.New("system-backup:", backup.SystemAdmissionScope),
 	}
 	scheduler := &systemBackupPolicySchedulerInternal{jobs: make(map[string]schedulertypes.Job)}
 	require.NoError(t, service.SetScheduler(context.Background(), scheduler, newSystemBackupAdmissionGateForTestInternal(t)))
@@ -148,10 +149,11 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 func TestSystemBackupPolicyRequiresConfiguredRecoveryKeyWhenEnabled(t *testing.T) {
 	gormDB, err := gorm.Open(sqlite.Open("file:system-backup-key-required?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, gormDB.AutoMigrate(&SystemBackupPolicy{}, &SystemBackupRecoveryConfig{}))
+	require.NoError(t, gormDB.AutoMigrate(&SystemBackupPolicy{}, &backup.SystemBackupRecoveryConfig{}))
 	service := &SystemBackupService{
-		db:     &database.DB{DB: gormDB},
-		config: &config.Config{DatabaseURL: "file:system-backup-key-required-test.db"},
+		db:           &database.DB{DB: gormDB},
+		config:       &config.Config{DatabaseURL: "file:system-backup-key-required-test.db"},
+		recoveryKeys: backup.NewRecoveryKeyStore(&database.DB{DB: gormDB}),
 	}
 
 	_, err = service.UpdatePolicies(context.Background(), []backuptypes.UpdateSystemBackupPolicy{{
