@@ -3535,5 +3535,9 @@
   "git_repository_token_url_change": "リポジトリのURLが変更されました。保存する前に、保存済みのトークンを再入力するか、「保存済みのトークンをクリア」を選択してください。",
   "git_repository_ssh_key_url_change": "リポジトリのURLが変更されました。保存する前に、保存済みのSSHキーを再入力するか、「保存済みのSSHキーを消去」を選択してください。",
   "git_repository_clear_token": "保存されたトークンを削除する",
-  "git_repository_clear_ssh_key": "保存済みのSSHキーを削除する"
+  "git_repository_clear_ssh_key": "保存済みのSSHキーを削除する",
+  "host_ip_placeholder": "0.0.0.0",
+  "container_port_placeholder": "80",
+  "protocol_tcp": "TCP",
+  "protocol_udp": "UDP"
 }
