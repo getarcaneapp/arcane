@@ -3535,5 +3535,9 @@
   "git_repository_token_url_change": "URL-adressen till arkivet har ändrats. Ange det sparade tokenet på nytt eller välj ”Rensa sparat token” innan du sparar.",
   "git_repository_ssh_key_url_change": "URL:en till arkivet har ändrats. Ange den sparade SSH-nyckeln på nytt eller välj ”Rensa sparad SSH-nyckel” innan du sparar.",
   "git_repository_clear_token": "Rensa lagrat token",
-  "git_repository_clear_ssh_key": "Rensa lagrade SSH-nycklar"
+  "git_repository_clear_ssh_key": "Rensa lagrade SSH-nycklar",
+  "host_ip_placeholder": "0.0.0.0",
+  "container_port_placeholder": "80",
+  "protocol_tcp": "TCP",
+  "protocol_udp": "UDP"
 }
