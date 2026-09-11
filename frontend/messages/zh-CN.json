@@ -3535,5 +3535,9 @@
   "git_repository_token_url_change": "存储库 URL 已更改。请在保存前重新输入已保存的令牌，或选择“清除已保存的令牌”。",
   "git_repository_ssh_key_url_change": "仓库 URL 已更改。请重新输入已保存的 SSH 密钥，或在保存前选择“清除已保存的 SSH 密钥”。",
   "git_repository_clear_token": "清除已存储的令牌",
-  "git_repository_clear_ssh_key": "清除已存储的 SSH 密钥"
+  "git_repository_clear_ssh_key": "清除已存储的 SSH 密钥",
+  "host_ip_placeholder": "0.0.0.0",
+  "container_port_placeholder": "80",
+  "protocol_tcp": "TCP",
+  "protocol_udp": "UDP"
 }
