@@ -3535,5 +3535,9 @@
   "git_repository_token_url_change": "儲存庫的 URL 已變更。請重新輸入已儲存的憑證，或在儲存前選取「清除已儲存的憑證」。",
   "git_repository_ssh_key_url_change": "儲存庫的 URL 已變更。請重新輸入已儲存的 SSH 金鑰，或在儲存前選取「清除已儲存的 SSH 金鑰」。",
   "git_repository_clear_token": "清除儲存的憑證",
-  "git_repository_clear_ssh_key": "清除儲存的 SSH 金鑰"
+  "git_repository_clear_ssh_key": "清除儲存的 SSH 金鑰",
+  "host_ip_placeholder": "0.0.0.0",
+  "container_port_placeholder": "80",
+  "protocol_tcp": "TCP",
+  "protocol_udp": "UDP"
 }
