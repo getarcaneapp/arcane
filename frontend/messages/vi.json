@@ -3535,5 +3535,9 @@
   "git_repository_token_url_change": "URL của kho lưu trữ đã thay đổi. Vui lòng nhập lại mã thông báo đã lưu hoặc chọn “Xóa mã thông báo đã lưu” trước khi lưu.",
   "git_repository_ssh_key_url_change": "URL của kho lưu trữ đã thay đổi. Vui lòng nhập lại khóa SSH đã lưu hoặc chọn “Xóa khóa SSH đã lưu” trước khi lưu.",
   "git_repository_clear_token": "Xóa mã thông báo đã lưu",
-  "git_repository_clear_ssh_key": "Xóa khóa SSH đã lưu"
+  "git_repository_clear_ssh_key": "Xóa khóa SSH đã lưu",
+  "host_ip_placeholder": "0.0.0.0",
+  "container_port_placeholder": "80",
+  "protocol_tcp": "TCP",
+  "protocol_udp": "UDP"
 }
