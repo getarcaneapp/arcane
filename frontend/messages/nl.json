@@ -3535,5 +3535,9 @@
   "git_repository_token_url_change": "De URL van de repository is gewijzigd. Voer het opgeslagen token opnieuw in of selecteer ‘Opgeslagen token wissen’ voordat u opslaat.",
   "git_repository_ssh_key_url_change": "De URL van de repository is gewijzigd. Voer de opgeslagen SSH-sleutel opnieuw in of selecteer ‘Opgeslagen SSH-sleutel wissen’ voordat u opslaat.",
   "git_repository_clear_token": "Opgeslagen token wissen",
-  "git_repository_clear_ssh_key": "Opgeslagen SSH-sleutel wissen"
+  "git_repository_clear_ssh_key": "Opgeslagen SSH-sleutel wissen",
+  "host_ip_placeholder": "0.0.0.0",
+  "container_port_placeholder": "80",
+  "protocol_tcp": "TCP",
+  "protocol_udp": "UDP"
 }
