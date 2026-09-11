@@ -3535,5 +3535,9 @@
   "git_repository_token_url_change": "Depo URL'si değişti. Kaydetmeden önce kayıtlı jetonu yeniden girin veya \"Kayıtlı jetonu sil\" seçeneğini seçin.",
   "git_repository_ssh_key_url_change": "Depo URL’si değişti. Kaydetmeden önce kayıtlı SSH anahtarını yeniden girin veya “Kayıtlı SSH anahtarını sil” seçeneğini seçin.",
   "git_repository_clear_token": "Kaydedilmiş jetonu sil",
-  "git_repository_clear_ssh_key": "Kaydedilmiş SSH anahtarını sil"
+  "git_repository_clear_ssh_key": "Kaydedilmiş SSH anahtarını sil",
+  "host_ip_placeholder": "0.0.0.0",
+  "container_port_placeholder": "80",
+  "protocol_tcp": "TCP",
+  "protocol_udp": "UDP"
 }
